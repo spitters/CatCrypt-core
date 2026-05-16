@@ -11,9 +11,6 @@ package catcryptCore where
 lean_lib CatCrypt where
   globs := #[.submodules `CatCrypt]
 
-require mathlib from git
-  "https://github.com/leanprover-community/mathlib4" @ "v4.29.1"
-
 -- lean-smt: dhsorens fork has no 4.29 branch yet (2026-05-16). Drop if lake
 -- update fails — no code in CatCrypt-core imports Smt.
 require smt from git
@@ -27,3 +24,8 @@ require Duper from git
 
 require VCVio from git
   "https://github.com/Verified-zkEVM/VCV-io" @ "v4.29.0"
+
+-- mathlib LAST so its proofwidgets/aesop versions win on conflicts;
+-- this is required for `lake exe cache get` to find oleans.
+require mathlib from git
+  "https://github.com/leanprover-community/mathlib4" @ "v4.29.1"
