@@ -109,13 +109,7 @@ theorem pure_bind' (a : α) (f : α → SPComp β) (h : Heap) :
 /-- Binding pure after a computation is identity -/
 theorem bind_pure' (c : SPComp α) (h : Heap) :
     (SPComp.bind c pure) h = c h := by
-  unfold SPComp.bind pure
-  -- (c h).bind (fun (a, h') => SDistr.pure (a, h')) = c h
-  -- This is essentially the monad right identity
-  have heq : (fun (p : α × Heap) => SDistr.pure (p.1, p.2)) = SDistr.pure := by
-    funext p
-    cases p; rfl
-  rw [heq, SDistr.bind_pure]
+  simp only [SPComp.bind, pure, Prod.mk.eta, SDistr.bind_pure]
 
 /-- Monad bind on SPComp is SPComp.bind -/
 @[simp]
@@ -130,11 +124,7 @@ theorem monad_pure_eq {α : Type*} (a : α) : (Pure.pure a : SPComp α) = SPComp
 theorem sample_bind_pure (α : Type*) [Fintype α] [Nonempty α] (f : α → β) (h : Heap) :
     (SPComp.bind (sample α) (fun a => pure (f a))) h =
     (SDistr.uniform α).bind (fun a => SDistr.pure (f a, h)) := by
-  unfold SPComp.bind sample pure
-  rw [SDistr.bind_assoc]
-  congr 1
-  funext a
-  rw [SDistr.pure_bind]
+  simp only [SPComp.bind, sample, pure, SDistr.bind_assoc, SDistr.pure_bind]
 
 /-- Sample followed by pure of the sampled value simplifies to uniform bind.
     Special case where f is identity. -/
@@ -161,9 +151,7 @@ theorem sample_prod_eq (A B : Type) [Fintype A] [Fintype B] [Nonempty A] [Nonemp
 @[simp, grind =]
 theorem bind_assoc (c : SPComp α) (f : α → SPComp β) (g : β → SPComp γ) :
     SPComp.bind (SPComp.bind c f) g = SPComp.bind c (fun a => SPComp.bind (f a) g) := by
-  funext h
-  unfold SPComp.bind
-  rw [SDistr.bind_assoc]
+  funext h; simp only [SPComp.bind, SDistr.bind_assoc]
 
 /-- Right identity: bind with pure -/
 @[simp, grind =]

@@ -53,6 +53,44 @@ noncomputable def fromSDistr {α : Type} (d : SDistr α) : SPMF α := SPMF.mk d
 @[simp] theorem fromSDistr_toSDistr {α : Type} (p : SPMF α) :
     fromSDistr (toSDistr p) = p := SPMF.mk_toPMF p
 
+/-! ## SDistr ≡ SPMF alignment (bridge simp lemmas)
+
+VCVio's `SPMF` and CatCrypt's `SDistr` are definitionally the same type —
+both unfold to `PMF (Option α)`.  However, they carry independent monad
+typeclass instances:
+
+* `SPMF` inherits `AlternativeMonad`, `LawfulMonad`, `LawfulAlternative`,
+  `LawfulMonadLift PMF SPMF` from the `OptionT PMF` structure.
+* `SDistr` declares its own `Monad` and `LawfulMonad` instances directly
+  via `SDistr.pure` / `SDistr.bind`.
+
+The lemmas below bridge the two so VCVio's SPMF-level lemmas apply to
+`SDistr` values after a single `simp [...]` normalization step, and
+vice-versa.  Each lemma holds by `rfl` — the underlying operations are
+already the same PMF computation; only the namespace annotations differ. -/
+
+/-- `SDistr.pure` in SPMF-view. Named (not `@[simp]`) to avoid
+    interference with CatCrypt's existing `SDistr.pure_bind` simp set. -/
+theorem SDistr.pure_eq_SPMF {α : Type} (a : α) :
+    (SDistr.pure a : SDistr α) = toSDistr (SPMF.mk (PMF.pure (some a))) := rfl
+
+/-- `SDistr.fail` in SPMF-view. -/
+theorem SDistr.fail_eq_SPMF {α : Type} :
+    (SDistr.fail : SDistr α) = toSDistr (SPMF.mk (PMF.pure none)) := rfl
+
+/-- `SDistr.uniform` in SPMF-view. -/
+theorem SDistr.uniform_eq_SPMF {α : Type} [Fintype α] [Nonempty α] :
+    SDistr.uniform α = toSDistr (SPMF.mk ((PMF.uniformOfFintype α).map some)) := rfl
+
+/-- `SPMF.mk` commutes with `SDistr.pure` → `Pure.pure`. -/
+theorem SPMF.mk_SDistr_pure {α : Type} (a : α) :
+    SPMF.mk (SDistr.pure a) = (pure a : SPMF α) := rfl
+
+/-- `SPMF.mk` commutes with `SDistr.fail` → `failure`. -/
+theorem SPMF.mk_SDistr_fail {α : Type} :
+    SPMF.mk (SDistr.fail : SDistr α) = failure :=
+  SPMF.failure_eq_mk.symm
+
 /-! ## ProbComp Embedding into SDistr -/
 
 /-- Embed VCVio's `ProbComp` into `SDistr` via `evalDist`. -/

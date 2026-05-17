@@ -92,6 +92,17 @@ instance {a : CryptoTy} [Nonempty a.denote] {b : CryptoTy} :
 instance {n : Nat} : Nonempty (CryptoTy.sword n).denote := ⟨0⟩
 instance {n : Nat} : Nonempty (CryptoTy.memref n).denote := ⟨fun _ => 0⟩
 
+/-- Recursive default witness for `CryptoTy.denote`. -/
+def CryptoTy.default : (t : CryptoTy) → t.denote
+  | .bit => false
+  | .unit => ()
+  | .pair a b => (default a, default b)
+  | .sum a _ => Sum.inl (default a)
+  | .sword _ => 0
+  | .memref _ => fun _ => 0
+
+instance {t : CryptoTy} : Nonempty t.denote := ⟨CryptoTy.default t⟩
+
 /-! ## Section 2: Typing Contexts and Variables -/
 
 /-- Typing context: a list of CryptoSSA types (De Bruijn, like lean-mlir's `Ctxt`). -/
@@ -144,6 +155,43 @@ def CVar.lookup : CVar Γ t → HVec Γ → t.denote
 /-- Extend a valuation with a new value at the head. -/
 def HVec.extend (V : HVec Γ) (val : t.denote) : HVec (t :: Γ) :=
   .cons val V
+
+/-! ## Section 3b: Heterogeneous Vector (typed)
+
+Generic heterogeneous vector indexed by a `List CryptoTy`, with a per-element
+type function `f`. Structurally identical to `VIR.HVector` so the translation
+to VIR `Expr` is a trivial map (no list-vs-HVector shape mismatch).
+
+Introduced 2026-05-14 as part of the `extCall` HVector refactor. -/
+
+/-- A heterogeneous list of items indexed by `List CryptoTy`, with a per-tag
+    type function. -/
+inductive CHVector (f : CryptoTy → Type) : List CryptoTy → Type where
+  | nil : CHVector f []
+  | cons {t : CryptoTy} {ts : List CryptoTy} :
+      f t → CHVector f ts → CHVector f (t :: ts)
+
+namespace CHVector
+
+/-- Map a CHVector pointwise. -/
+def map {f g : CryptoTy → Type} (h : ∀ {t}, f t → g t) :
+    {ts : List CryptoTy} → CHVector f ts → CHVector g ts
+  | [], .nil => .nil
+  | _ :: _, .cons x xs => .cons (h x) (map h xs)
+
+end CHVector
+
+/-- Convert a runtime-typed `List (Σ t, f t)` into a typed pair
+    `(argTys, CHVector f argTys)`. The `argTys` is the projected first
+    components in order. Used for migrating call sites that previously
+    accumulated `List (Σ t : CryptoTy, CVar Γ t)`. -/
+def listSigmaToCHVector {f : CryptoTy → Type} :
+    (xs : List (Σ t : CryptoTy, f t)) →
+    Σ argTys : List CryptoTy, CHVector f argTys
+  | [] => ⟨[], .nil⟩
+  | ⟨t, v⟩ :: rest =>
+    match listSigmaToCHVector rest with
+    | ⟨ts, hv⟩ => ⟨t :: ts, .cons v hv⟩
 
 /-! ## Section 4: Expressions and Programs -/
 
@@ -200,6 +248,15 @@ inductive CExpr (Γ : Ctx) : CryptoTy → Type where
   | bvShiftL (a : CVar Γ (.sword n)) (k : Nat) : CExpr Γ (.sword n)
   /-- Right shift by constant amount. -/
   | bvShiftR (a : CVar Γ (.sword n)) (k : Nat) : CExpr Γ (.sword n)
+  /-- Add-with-carry-in-zero on BitVec. Returns (carry-out, sum) as a pair
+      of BitVecs (carry represented as `BitVec n` with `0` or `1`).
+      Models Jasmin's multi-output `#ADD_64` intrinsic. -/
+  | bvAdd64 (a b : CVar Γ (.sword n)) : CExpr Γ (.pair (.sword n) (.sword n))
+  /-- Add-with-carry on BitVec. Takes (a, b, cin) and returns (cout, sum)
+      as a pair of BitVecs (carries represented as `BitVec n` with `0` or `1`;
+      `cin` is treated as non-zero ↦ true, zero ↦ false).
+      Models Jasmin's multi-output `#ADC_64` intrinsic. -/
+  | bvAdc (a b cin : CVar Γ (.sword n)) : CExpr Γ (.pair (.sword n) (.sword n))
   /-- Sample uniform random BitVec. -/
   | sampleBv (n : Nat) : CExpr Γ (.sword n)
   /-- Conditional move: if-then-else on a bit condition.
@@ -217,6 +274,19 @@ inductive CExpr (Γ : Ctx) : CryptoTy → Type where
   /-- Functional load: read limb `i` from the memref. -/
   | memrefGet {n : Nat} (arr : CVar Γ (.memref n)) (i : Fin n) :
       CExpr Γ (.sword 64)
+  /-- External call to a named oracle (e.g., fiat-crypto leaf like
+      `fp_mul`). `args` is a typed heterogeneous vector of vars indexed by
+      the declared `argTys`. Denotation here is opaque (returns a default
+      value from `retTy.denote`); concrete semantics is supplied via a
+      `CallEnv` when needed for proofs, or via `func.call` in textual MLIR.
+
+      Refactored 2026-05-14: `args` now carries its types intrinsically as
+      a `CHVector`, eliminating the previous `List (Σ t, CVar Γ t)` shape
+      and the convention `args.map Sigma.fst = argTys`. This unblocks the
+      `CryptoSSA → VIR` translation for `extCall`. -/
+  | extCall (name : String) (retTy : CryptoTy)
+      {argTys : List CryptoTy}
+      (args : CHVector (fun t => CVar Γ t) argTys) : CExpr Γ retTy
 
 /-- Program in A-normal form (like lean-mlir's `Com`).
 
@@ -238,6 +308,7 @@ def CExpr.isPure : CExpr Γ t → Bool
   | .memrefZero _ => true
   | .memrefSet _ _ _ => true
   | .memrefGet _ _ => true
+  | .extCall _ _ _ => true  -- oracle: deterministic but opaque
   | _ => true
 
 /-- Denote an expression as an `SPComp` computation. -/
@@ -266,12 +337,27 @@ noncomputable def CExpr.denote : CExpr Γ t → HVec Γ → SPComp t.denote
   | .bvEq a b, V => SPComp.pure (decide (a.lookup V = b.lookup V))
   | .bvShiftL a k, V => SPComp.pure (a.lookup V <<< k)
   | .bvShiftR a k, V => SPComp.pure (BitVec.ushiftRight (a.lookup V) k)
+  | .bvAdd64 a b, V =>
+      let p := BitVec.adc (a.lookup V) (b.lookup V) false
+      SPComp.pure ((if p.fst then (1 : BitVec _) else 0), p.snd)
+  | .bvAdc a b cin, V =>
+      let p := BitVec.adc (a.lookup V) (b.lookup V) ((cin.lookup V).toNat ≠ 0)
+      SPComp.pure ((if p.fst then (1 : BitVec _) else 0), p.snd)
   | .sampleBv n, _ => SPComp.sample (BitVec n)
   | .ite c a b, V => SPComp.pure (if c.lookup V then a.lookup V else b.lookup V)
   | .memrefZero _, _ => SPComp.pure (fun _ => 0)
   | .memrefSet arr i v, V => SPComp.pure
       (fun j => if j = i then v.lookup V else (arr.lookup V) j)
   | .memrefGet arr i, V => SPComp.pure ((arr.lookup V) i)
+  | .extCall _ retTy _, _ =>
+      -- Opaque denotation: returns the recursive `CryptoTy.default`
+      -- witness. Concrete semantics is supplied by a `CallEnv` (future
+      -- work) or by a textual MLIR emission as `func.call @<name>`.
+      -- We use `CryptoTy.default` rather than `Classical.arbitrary` so
+      -- that the value is computational (no `Classical.choice` axiom)
+      -- and definitionally matches the VIR-side denotation in
+      -- `CatCryptDialect`, enabling Qed of `toVIRExpr_denote_pure`.
+      SPComp.pure (CryptoTy.default retTy)
 
 /-- Denote a program as an `SPComp` computation.
 
@@ -312,12 +398,19 @@ theorem CExpr.denote_pure_eq {Γ : Ctx} {t : CryptoTy}
   | bvEq a b => exact ⟨decide (a.lookup V = b.lookup V), rfl⟩
   | bvShiftL a k => exact ⟨a.lookup V <<< k, rfl⟩
   | bvShiftR a k => exact ⟨BitVec.ushiftRight (a.lookup V) k, rfl⟩
+  | bvAdd64 a b =>
+      let p := BitVec.adc (a.lookup V) (b.lookup V) false
+      exact ⟨((if p.fst then (1 : BitVec _) else 0), p.snd), rfl⟩
+  | bvAdc a b cin =>
+      let p := BitVec.adc (a.lookup V) (b.lookup V) ((cin.lookup V).toNat ≠ 0)
+      exact ⟨((if p.fst then (1 : BitVec _) else 0), p.snd), rfl⟩
   | sampleBv _ => simp [isPure] at h
   | ite c a b => exact ⟨if c.lookup V then a.lookup V else b.lookup V, rfl⟩
   | memrefZero _ => exact ⟨fun _ => 0, rfl⟩
   | memrefSet arr i v =>
       exact ⟨fun j => if j = i then v.lookup V else (arr.lookup V) j, rfl⟩
   | memrefGet arr i => exact ⟨(arr.lookup V) i, rfl⟩
+  | extCall _ _ _ => exact ⟨CryptoTy.default t, rfl⟩
 
 /-- Pure expression denotation simplifies: bind with pure body is just substitution. -/
 theorem CExpr.denote_pure_bind {Γ : Ctx} {t s : CryptoTy}

@@ -107,7 +107,7 @@ noncomputable def braidIsoPMF (X Y : KleisliCat PMF) :
   hom_inv_id := by funext ⟨x, y⟩; simp [braidHomPMF]
   inv_hom_id := by funext ⟨y, x⟩; simp [braidHomPMF]
 
-noncomputable instance : MonoidalCategoryStruct (KleisliCat PMF) where
+noncomputable instance : MonoidalCategoryStruct (KleisliCat.{0, 0} PMF) where
   tensorObj X Y := (show KleisliCat PMF from X × Y)
   whiskerLeft := whiskerLeftPMF
   whiskerRight := whiskerRightPMF
@@ -156,7 +156,7 @@ theorem rightUnitor_inv_eq (X : KleisliCat PMF) :
 
 /-! ## MonoidalCategory -/
 
-noncomputable instance : MonoidalCategory (KleisliCat PMF) where
+noncomputable instance : MonoidalCategory (KleisliCat.{0, 0} PMF) where
   tensorHom_def _ _ := rfl
   id_tensorHom_id X₁ X₂ := by
     funext ⟨x, y⟩; simp [whiskerLeftPMF, whiskerRightPMF]
@@ -226,7 +226,8 @@ theorem braiding_inv_eq (X Y : KleisliCat PMF) :
 noncomputable instance instIsCommComonObjPMF (X : KleisliCat PMF) : IsCommComonObj X where
   comul_comm := by
     funext x
-    simp only [comp_apply, instComonObjPMF, braiding_hom_eq, braidHomPMF, PMF.pure_bind]
+    change (PMF.pure (x, x)).bind _ = PMF.pure (x, x)
+    simp only [comp_apply, braiding_hom_eq, braidHomPMF, PMF.pure_bind]
 
 /-! ## CopyDiscardCategory -/
 
@@ -241,19 +242,31 @@ theorem tensorμ_apply (X₁ X₂ Y₁ Y₂ : KleisliCat PMF)
 noncomputable instance : CopyDiscardCategory (KleisliCat PMF) where
   copy_tensor X Y := by
     funext ⟨x, y⟩
-    simp only [comp_apply, instComonObjPMF, tensorHom_eq, whiskerRightPMF,
-      whiskerLeftPMF, PMF.pure_bind]
+    -- Goal LHS is the comul on `X × Y`; RHS expands `comul ⊗ comul` then tensorμ.
+    -- The structural projections `ComonObj.comul` don't reduce automatically in 4.29.
+    change PMF.pure ((x, y), (x, y))
+      = (((PMF.pure (x, x)).bind fun x' => PMF.pure (x', y)).bind
+          ((X ⊗ X).whiskerLeftPMF (fun (b : Y) => PMF.pure (b, b)))).bind
+          (tensorμ X X Y Y)
+    rw [PMF.pure_bind]
+    simp only [whiskerLeftPMF, PMF.pure_bind]
     exact (tensorμ_apply X X Y Y x x y y).symm
   discard_tensor X Y := by
     funext ⟨x, y⟩
-    simp only [comp_apply, instComonObjPMF, tensorHom_eq, whiskerRightPMF,
-      whiskerLeftPMF, leftUnitor_hom_eq, leftUnitorPMF, PMF.pure_bind]
+    change PMF.pure PUnit.unit
+      = (((PMF.pure PUnit.unit).bind fun x' => PMF.pure (x', y)).bind
+          ((𝟙_ (KleisliCat PMF)).whiskerLeftPMF (fun (_ : Y) => PMF.pure PUnit.unit))).bind
+          (fun x => PMF.pure x.2)
+    rw [PMF.pure_bind]
+    simp only [whiskerLeftPMF, PMF.pure_bind, leftUnitor_hom_eq, leftUnitorPMF]
   copy_unit := by
     funext ⟨⟩
-    simp only [instComonObjPMF, leftUnitor_inv_eq, leftUnitorPMF]
+    change PMF.pure (PUnit.unit, PUnit.unit) = _
+    simp only [leftUnitor_inv_eq, leftUnitorPMF]
   discard_unit := by
     funext ⟨⟩
-    simp only [instComonObjPMF, id_apply]
+    change PMF.pure PUnit.unit = _
+    simp only [id_apply]
 
 /-! ## MarkovCategory -/
 

@@ -136,7 +136,7 @@ def xProjW (A : F) : (montgomeryW A).toAffine.Point → F × F
 
 @[simp] lemma xProjW_some (A : F) {x y : F}
     (h : (montgomeryW A).toAffine.Nonsingular x y) :
-    xProjW A (.some h) = (x, 1) := rfl
+    xProjW A (.some x y h) = (x, 1) := rfl
 
 /-- **`xProjW` is negation-invariant.** The x-coordinate of `-P` equals
     that of `P`, since Montgomery negation only flips `y`. -/
@@ -186,7 +186,7 @@ theorem xdbl_spec_W [DecidableEq F] (h2 : (2 : F) ≠ 0) (A a24 : F)
       -- hence 4x(x²+Ax+1) = 4y² = 0.
       rw [WeierstrassCurve.Affine.Point.add_self_of_Y_eq hy_eq]
       rw [montgomeryW_negY] at hy_eq
-      have h2y : 2 * y = 0 := by linear_combination hy_eq
+      have h2y : 2 * y = 0 := by grind
       have hy_zero : y = 0 := (mul_eq_zero.mp h2y).resolve_left h2
       have hCurve : y^2 = x^3 + A * x^2 + x := (montgomeryW_equation A x y).mp h.1
       have hx_factor : (4 : F) * x * (x^2 + A * x + 1) = 0 := by
@@ -272,23 +272,23 @@ theorem xdadd_spec_W [DecidableEq F] (h2 : (2 : F) ≠ 0) (A : F)
       simp [xProjW, xdadd]
     · -- Q = some; P + Q = Q, P - Q = -Q
       rw [show (WeierstrassCurve.Affine.Point.zero : (montgomeryW A).toAffine.Point)
-              + WeierstrassCurve.Affine.Point.some hQ =
-            WeierstrassCurve.Affine.Point.some hQ from zero_add _,
+              + WeierstrassCurve.Affine.Point.some xq yq hQ =
+            WeierstrassCurve.Affine.Point.some xq yq hQ from zero_add _,
           show (WeierstrassCurve.Affine.Point.zero : (montgomeryW A).toAffine.Point)
-              - WeierstrassCurve.Affine.Point.some hQ =
-            -WeierstrassCurve.Affine.Point.some hQ from zero_sub _,
+              - WeierstrassCurve.Affine.Point.some xq yq hQ =
+            -WeierstrassCurve.Affine.Point.some xq yq hQ from zero_sub _,
           WeierstrassCurve.Affine.Point.neg_some]
       simp only [xProjW_some, xProjW_zero, xdadd, montgomeryW_negY]
       ring
   · -- P = some hP
     obtain (_ | @⟨xq, yq, hQ⟩) := Q
     · -- Q = zero
-      rw [show WeierstrassCurve.Affine.Point.some hP +
+      rw [show WeierstrassCurve.Affine.Point.some xp yp hP +
             (WeierstrassCurve.Affine.Point.zero : (montgomeryW A).toAffine.Point) =
-            WeierstrassCurve.Affine.Point.some hP from add_zero _,
-          show WeierstrassCurve.Affine.Point.some hP -
+            WeierstrassCurve.Affine.Point.some xp yp hP from add_zero _,
+          show WeierstrassCurve.Affine.Point.some xp yp hP -
             (WeierstrassCurve.Affine.Point.zero : (montgomeryW A).toAffine.Point) =
-            WeierstrassCurve.Affine.Point.some hP from sub_zero _]
+            WeierstrassCurve.Affine.Point.some xp yp hP from sub_zero _]
       simp only [xProjW_some, xProjW_zero, xdadd]
       ring
     · -- Both P, Q nonzero. Case on xp = xq.
@@ -301,8 +301,8 @@ theorem xdadd_spec_W [DecidableEq F] (h2 : (2 : F) ≠ 0) (A : F)
         simp only [xProjW_some, hxd2, mul_zero]
         by_cases hy : yp = -yq
         · -- P = -Q: P + Q = 0, xProjW(P+Q) = (1, 0), Za = 0.
-          have h_eqNeg : WeierstrassCurve.Affine.Point.some hP +
-              WeierstrassCurve.Affine.Point.some hQ = 0 := by
+          have h_eqNeg : WeierstrassCurve.Affine.Point.some xp yp hP +
+              WeierstrassCurve.Affine.Point.some xp yq hQ = 0 := by
             apply WeierstrassCurve.Affine.Point.add_of_Y_eq rfl
             rw [montgomeryW_negY]; exact hy
           rw [h_eqNeg,
@@ -323,12 +323,12 @@ theorem xdadd_spec_W [DecidableEq F] (h2 : (2 : F) ≠ 0) (A : F)
             · exact sub_eq_zero.mp h
             · exfalso; apply hy; linear_combination h
           subst hy'
-          have h_sub : WeierstrassCurve.Affine.Point.some hP -
-              WeierstrassCurve.Affine.Point.some hQ = 0 := by
+          have h_sub : WeierstrassCurve.Affine.Point.some xp yp hP -
+              WeierstrassCurve.Affine.Point.some xp yp hQ = 0 := by
             rw [show hQ = hP from Subsingleton.elim _ _, sub_self]
           have h_XProjSub :
-              xProjW A (WeierstrassCurve.Affine.Point.some hP -
-                  WeierstrassCurve.Affine.Point.some hQ) = (1, 0) := by
+              xProjW A (WeierstrassCurve.Affine.Point.some xp yp hP -
+                  WeierstrassCurve.Affine.Point.some xp yp hQ) = (1, 0) := by
             rw [h_sub,
                 show ((0 : (montgomeryW A).toAffine.Point))
                        = WeierstrassCurve.Affine.Point.zero from rfl,

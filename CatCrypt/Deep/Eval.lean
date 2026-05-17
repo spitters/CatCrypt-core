@@ -92,6 +92,7 @@ noncomputable def RawCode.eval : {α : Type*} → RawCode α → SPComp α
   | _, .put ℓ v => SPComp.bind (SPComp.set ℓ v) fun _ => SPComp.pure ⟨()⟩
   | _, .fail => SPComp.fail
   | _, .oracleCall _ _ _ _ => SPComp.fail
+  | _, .embed c => c
 
 /-! ## Evaluation properties
 
@@ -182,6 +183,7 @@ noncomputable def RawCode.evalWith
   | _, .put ℓ v => SPComp.bind (SPComp.set ℓ v) fun _ => SPComp.pure ⟨()⟩
   | _, .fail => SPComp.fail
   | _, .oracleCall op dom codom x => oracle op dom codom x
+  | _, .embed c => c
 
 /-- `evalWith` with the fail oracle is just `eval`. -/
 @[simp]
@@ -198,6 +200,7 @@ theorem RawCode.evalWith_fail :
   | put ℓ v => rfl
   | fail => rfl
   | oracleCall _ _ _ _ => rfl
+  | embed _ => rfl
 
 /-- `evalWith` on code without oracle calls equals `eval`, regardless of oracle handler.
 
@@ -215,6 +218,7 @@ theorem RawCode.evalWith_eq_eval_no_oracle {α : Type u} {c : RawCode α}
   | get _ => rfl
   | put _ _ => rfl
   | fail => rfl
+  | embed _ => rfl
 
 /-! ### Correctness of substOracle
 
@@ -255,6 +259,7 @@ theorem eval_substOracle {α : Type u} (c : RawCode α)
   | put ℓ v => rfl
   | fail => rfl
   | oracleCall op dom codom x => rfl
+  | embed _ => rfl
 
 /-! ## evalWith composition
 
@@ -280,6 +285,7 @@ theorem evalWith_substOracle {α : Type u} (c : RawCode α)
   | put ℓ v => rfl
   | fail => rfl
   | oracleCall op dom codom x => rfl
+  | embed _ => rfl
 
 /-- Two evalWith handlers that agree produce the same SPComp.
 
@@ -298,6 +304,7 @@ theorem evalWith_congr {α : Type u} (c : RawCode α)
   | put ℓ v => rfl
   | fail => rfl
   | oracleCall op dom codom x => exact heq op dom codom x
+  | embed _ => rfl
 
 /-- `substOracle` commutes with type casts (`▸`).
 

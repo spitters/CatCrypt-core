@@ -431,7 +431,9 @@ theorem condForkProb_eq [Fintype R] [Nonempty R] [DecidableEq R]
   conv_rhs => rw [show ((↑s : ℝ≥0∞) / N) ^ 2 = ↑s ^ 2 / N ^ 2 from by
     simp only [div_eq_mul_inv, mul_pow, ← ENNReal.inv_pow]]
   -- Goal: ↑(s*s-s) / N^2 = ↑s^2 / N^2 - ↑s / N^2
-  rw [← ENNReal.sub_div (by intro _ _; positivity)]
+  have hN_ne : (N : ℝ≥0∞) ≠ 0 := by
+    simp [hN_def, Nat.cast_ne_zero, Fintype.card_ne_zero]
+  rw [← ENNReal.sub_div (fun _ _ => pow_ne_zero _ hN_ne)]
   -- Goal: ↑(s*s-s) / N^2 = (↑s^2 - ↑s) / N^2
   congr 1
   rw [ENNReal.natCast_sub, Nat.cast_mul, ← sq]

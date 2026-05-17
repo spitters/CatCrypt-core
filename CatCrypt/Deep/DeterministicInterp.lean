@@ -51,6 +51,7 @@ noncomputable def interpDet : {α : Type} → (c : RawCode α) → IsDeterminist
   | _, @RawCode.sample T _ft _ne, h => absurd h IsDeterministic.not_sample
   | _, .fail, h => absurd h IsDeterministic.not_fail
   | _, .oracleCall _ _ _ _, h => absurd h IsDeterministic.not_oracleCall
+  | _, .embed _, h => absurd h IsDeterministic.not_embed
 
 /-- Convert a `DetCode` to `StateM Heap` using `interpDet`. -/
 noncomputable def DetCode.toStateM {α : Type} (dc : DetCode α) : StateM Heap α :=
@@ -76,7 +77,13 @@ theorem interpDet_sound {α : Type} (c : RawCode α) (hdet : IsDeterministic c) 
     have hc := hdet.of_bind_left
     have hk := hdet.of_bind_right
     simp only [eval_bind, SPComp.bind, interpDet]
-    rw [ihc hc h, SDistr.pure_bind]
+    rw [ihc hc h]
+    -- Under 4.29 the surface `(SDistr.pure ...).bind fun x ↦ (k x.1).eval x.2`
+    -- displays as `Bind.bind` (the Monad instance method), not the raw
+    -- `SDistr.bind`. Normalise via the change tactic, then apply the
+    -- standard left-unit law and finish via `ihk`.
+    change (SDistr.bind (SDistr.pure _) _) = _
+    rw [SDistr.pure_bind]
     exact ihk _ (hk _) _
   | @sample T _ _ => exact absurd hdet IsDeterministic.not_sample
   | fail => exact absurd hdet IsDeterministic.not_fail
@@ -87,6 +94,7 @@ theorem interpDet_sound {α : Type} (c : RawCode α) (hdet : IsDeterministic c) 
     simp only [eval_put, SPComp.bind, SPComp.set, SDistr.pure_bind, SPComp.pure, interpDet]
     rfl
   | oracleCall _ _ _ _ => exact absurd hdet IsDeterministic.not_oracleCall
+  | embed _ => exact absurd hdet IsDeterministic.not_embed
 
 /-- Corollary: deterministic code has zero advantage against itself.
     Any two runs of the same deterministic code from the same heap produce

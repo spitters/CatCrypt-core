@@ -4,6 +4,7 @@ Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
 import CatCrypt.Core.Location
+import CatCrypt.Core.Code
 import CatCrypt.Deep.Location
 import CatCrypt.Tactics.LeOfSum
 import Mathlib.Data.Fintype.Basic
@@ -78,6 +79,11 @@ inductive RawCode : Type u → Type (u+1) where
   | put (ℓ : CatCrypt.Core.Location) (v : ℓ.ty) : RawCode (ULift.{u} Unit)
   | fail {α : Type u} : RawCode α
   | oracleCall (op : ℕ) (dom : Type u) (codom : Type u) (x : dom) : RawCode codom
+  /-- Embed an arbitrary `SPComp` value as opaque code.
+      Used to express completeness: any heap-manipulating probabilistic
+      computation has a corresponding `RawCode` representation whose
+      `eval` is the original `SPComp`. -/
+  | embed {α : Type u} (c : CatCrypt.Core.SPComp α) : RawCode α
 
 namespace RawCode
 
@@ -118,7 +124,8 @@ def inductionOn {α : Type u} {motive : ∀ {α : Type u}, RawCode α → Prop}
     (put : ∀ (ℓ : CatCrypt.Core.Location) (v : ℓ.ty), motive (RawCode.put ℓ v))
     (fail : ∀ {α : Type u}, motive (@RawCode.fail α))
     (oracleCall : ∀ (op : ℕ) (dom codom : Type u) (x : dom),
-      motive (RawCode.oracleCall op dom codom x)) :
+      motive (RawCode.oracleCall op dom codom x))
+    (embed : ∀ {α : Type u} (c : CatCrypt.Core.SPComp α), motive (RawCode.embed c)) :
     motive c := by
   induction c with
   | ret a => exact ret a
@@ -128,6 +135,7 @@ def inductionOn {α : Type u} {motive : ∀ {α : Type u}, RawCode α → Prop}
   | put ℓ v => exact put ℓ v
   | fail => exact fail
   | oracleCall op dom codom x => exact oracleCall op dom codom x
+  | embed c => exact embed c
 
 /-- Helper: sample from a non-empty fintype (with explicit instance arguments) -/
 def sampleFrom (T : Type u) [Fintype T] [Nonempty T] : RawCode T :=
@@ -173,6 +181,7 @@ def substOracle {α : Type u} (c : RawCode α)
   | .put ℓ v => .put ℓ v
   | .fail => .fail
   | .oracleCall op dom codom x => env op dom codom x
+  | .embed c => .embed c
 
 /-- Substituting with the identity oracle environment (oracleCall) is a no-op.
 
@@ -190,6 +199,7 @@ def substOracle {α : Type u} (c : RawCode α)
   | put ℓ v => rfl
   | fail => rfl
   | oracleCall op dom codom x => rfl
+  | embed c => rfl
 
 /-- Double substitution can be composed into a single substitution.
 
@@ -210,6 +220,7 @@ theorem substOracle_comp {α : Type u} (c : RawCode α)
   | put ℓ v => rfl
   | fail => rfl
   | oracleCall op dom codom x => rfl
+  | embed c => rfl
 
 /-- Substituting into `fail` gives `fail`. -/
 @[simp]
@@ -239,6 +250,7 @@ inductive NoOracleCall : {α : Type u} → RawCode α → Prop where
   | get (ℓ : CatCrypt.Core.Location) : NoOracleCall (.get ℓ)
   | put (ℓ : CatCrypt.Core.Location) (v : ℓ.ty) : NoOracleCall (.put ℓ v)
   | fail {α : Type u} : NoOracleCall (@RawCode.fail α)
+  | embed {α : Type u} (c : CatCrypt.Core.SPComp α) : NoOracleCall (.embed c)
 
 /-- `substOracle` is a no-op on code without oracle calls.
 
@@ -256,6 +268,7 @@ theorem substOracle_eq_self {α : Type u} {c : RawCode α}
   | get _ => rfl
   | put _ _ => rfl
   | fail => rfl
+  | embed _ => rfl
 
 end RawCode
 

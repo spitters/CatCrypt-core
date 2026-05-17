@@ -56,12 +56,19 @@ def encodeChars : List Char → Nat
 def encodeVarName (name : String) : Nat :=
   encodeChars name.toList
 
-/-- Encode a Jasmin type as a natural number. -/
+/-- Encode a Jasmin type as a natural number.
+
+    Uses parity to distinguish `sarr` from `sword`: arrays get even codes
+    `2 * (2 + n)` and words get odd codes `2 * ws.bits + 1`.  This makes the
+    `sword` / `sarr` disjointness lemma `wordLoc_id_ne_towerLoc_id` work
+    unconditionally for any `TowerType` byteSize (Phase D/E/I/K extensions
+    introduce arbitrary-byteSize tower types like `TFpGen` / `TBytes`).
+    `sbool` and `sint` retain their constants 0 and 1. -/
 def encodeSType : SType → Nat
   | .sbool    => 0
   | .sint     => 1
-  | .sarr n   => 2 + n
-  | .sword ws => 1000 + ws.bits
+  | .sarr n   => 2 * (2 + n)
+  | .sword ws => 2 * ws.bits + 1
 
 /-- Map a Jasmin variable to an CatCrypt location id within a given scope.
     Uses Cantor pairing for injectivity: distinct (sid, type, name) triples map

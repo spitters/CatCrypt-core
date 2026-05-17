@@ -108,6 +108,7 @@ inductive ValidCode (L : LocSet) : (α : Type u) → RawCode α → Prop where
   | fail : ∀ {α : Type u}, ValidCode L α (@RawCode.fail α)
   | oracleCall : ∀ (op : ℕ) (dom codom : Type u) (x : dom),
       ValidCode L codom (RawCode.oracleCall op dom codom x)
+  | embed : ∀ {α : Type u} (c : Core.SPComp α), ValidCode L α (RawCode.embed c)
 
 /-- Monotonicity: if code is valid for L and L ⊆ L', then code is valid for L'. -/
 theorem ValidCode.mono {L L' : LocSet} (h_sub : L ⊆ L')
@@ -122,6 +123,7 @@ theorem ValidCode.mono {L L' : LocSet} (h_sub : L ⊆ L')
   | put ℓ v hℓ => exact ValidCode.put ℓ v (h_sub hℓ)
   | fail => exact ValidCode.fail
   | oracleCall op dom codom x => exact ValidCode.oracleCall op dom codom x
+  | embed c => exact ValidCode.embed c
 
 /-- A valid code bundle: code together with its validity proof.
     This is the structure used in packages. -/
@@ -237,6 +239,7 @@ theorem substOracle_valid {L₁ L₂ : LocSet} {α : Type u} {c : RawCode α}
   | put ℓ v hℓ => exact ValidCode.put ℓ v (Finset.mem_union_left _ hℓ)
   | fail => exact ValidCode.fail
   | oracleCall op dom codom x => exact henv op dom codom x
+  | embed c => exact ValidCode.embed c
 
 /-! ## Deep Packages -/
 

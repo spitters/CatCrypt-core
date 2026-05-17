@@ -63,6 +63,13 @@ theorem IsDeterministic.not_oracleCall {op : ℕ} {dom codom : Type u} {x : dom}
     ¬IsDeterministic (RawCode.oracleCall op dom codom x) := by
   intro h; cases h
 
+/-- Deterministic code never starts with `embed` — an embedded `SPComp` may
+    be probabilistic, so we conservatively rule it out of the deterministic
+    fragment. -/
+theorem IsDeterministic.not_embed {α : Type u} {c : Core.SPComp α} :
+    ¬IsDeterministic (RawCode.embed c) := by
+  intro h; cases h
+
 /-- If `bind c k` is deterministic, then `c` is deterministic. -/
 theorem IsDeterministic.of_bind_left {α β : Type u} {c : RawCode α} {k : α → RawCode β}
     (h : IsDeterministic (RawCode.bind c k)) : IsDeterministic c := by

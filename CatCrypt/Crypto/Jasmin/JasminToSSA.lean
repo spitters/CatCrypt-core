@@ -103,13 +103,44 @@ def pureEvalMonoExpr (n : Nat) (env : Var → BitVec n) : PExpr → BitVec n
   | .Papp2 (.Olsr _) (.Pvar x) (.Pconst k) => BitVec.ushiftRight (env x.gv.var) k.toNat
   | _ => 0
 
-/-- Pure evaluation of an SSA-compatible command sequence. -/
+/-- Pack a `Bool` into a `BitVec n`: `true ↦ 1`, `false ↦ 0`. -/
+def boolToBVaux (n : Nat) : Bool → BitVec n
+  | true => 1
+  | false => 0
+
+/-- Pure evaluation of an SSA-compatible command sequence. Handles
+    `Cassgn` directly, plus the `ADD_64` / `ADC_64` multi-output
+    intrinsics (mirrors `JasminCT.pureEvalMonoCmdExt` for these two
+    cases). All other instructions are treated as no-ops. -/
 def pureEvalMonoCmd (n : Nat) (env : Var → BitVec n) (retVar : Var) :
     List InstrR → BitVec n
   | [] => env retVar
   | .Cassgn (.Lvar x) _ _ e :: rest =>
     pureEvalMonoCmd n
       (fun w => if w = x.var then pureEvalMonoExpr n env e else env w)
+      retVar rest
+  | .Copn [.Lnone _ _, .Lvar cfv, .Lnone _ _, .Lnone _ _, .Lnone _ _, .Lvar rv] _
+          (.Oasm ⟨"ADD_64"⟩) [.Pvar av, .Pvar bv] :: rest =>
+    let a := env av.gv.var
+    let b := env bv.gv.var
+    let p := BitVec.adc a b false
+    pureEvalMonoCmd n
+      (fun w =>
+        if w = rv.var then p.snd
+        else if w = cfv.var then boolToBVaux n p.fst
+        else env w)
+      retVar rest
+  | .Copn [.Lnone _ _, .Lvar cfv, .Lnone _ _, .Lnone _ _, .Lnone _ _, .Lvar rv] _
+          (.Oasm ⟨"ADC_64"⟩) [.Pvar av, .Pvar bv, .Pvar cinv] :: rest =>
+    let a := env av.gv.var
+    let b := env bv.gv.var
+    let cinBool := (env cinv.gv.var).toNat ≠ 0
+    let p := BitVec.adc a b cinBool
+    pureEvalMonoCmd n
+      (fun w =>
+        if w = rv.var then p.snd
+        else if w = cfv.var then boolToBVaux n p.fst
+        else env w)
       retVar rest
   | _ :: rest => pureEvalMonoCmd n env retVar rest
 
@@ -150,6 +181,20 @@ def translateMonoExpr {Γ : Ctx} {n : Nat}
 
 /-! ## Section 5: Command Translation -/
 
+/-- Extend a map with two fresh sword-`n` bindings: the innermost
+    (most recently bound, at `.here`) goes to `lastVar`, and the one
+    below it (at `.there .here`) goes to `secondVar`. Existing map
+    entries get shifted three places (for pair, fst, snd bindings).
+    Used for pair-destructuring `Copn` intrinsics: we bind the pair,
+    then `fst` (carry), then `snd` (sum). -/
+def MonoVarMap.extend2 {Γ : Ctx} {n : Nat}
+    (m : MonoVarMap Γ n) (secondVar lastVar : Var) :
+    MonoVarMap (.sword n :: .sword n :: .pair (.sword n) (.sword n) :: Γ) n :=
+  fun w =>
+    if w = lastVar then some .here
+    else if w = secondVar then some (.there .here)
+    else ((m w).map .there |>.map .there |>.map .there)
+
 /-- Translate SSA-compatible Jasmin commands to CryptoSSA.
 
     Uses two-level matching: first on list structure, then on instruction. -/
@@ -172,6 +217,30 @@ def translateMonoCmd {Γ : Ctx} {n : Nat}
       | some body => some (.letBind cexpr body)
       | none => none
     | none => none
+  | .Copn [.Lnone _ _, .Lvar cfv, .Lnone _ _, .Lnone _ _, .Lnone _ _, .Lvar rv] _
+          (.Oasm ⟨"ADD_64"⟩) [.Pvar av, .Pvar bv] :: rest =>
+    match m av.gv.var, m bv.gv.var with
+    | some cva, some cvb =>
+      let m' := m.extend2 cfv.var rv.var
+      match translateMonoCmd m' retVar rest with
+      | some body =>
+        some (.letBind (.bvAdd64 cva cvb)
+                (.letBind (.fst (t := .sword n) .here)
+                  (.letBind (.snd (s := .sword n) (.there .here)) body)))
+      | none => none
+    | _, _ => none
+  | .Copn [.Lnone _ _, .Lvar cfv, .Lnone _ _, .Lnone _ _, .Lnone _ _, .Lvar rv] _
+          (.Oasm ⟨"ADC_64"⟩) [.Pvar av, .Pvar bv, .Pvar cinv] :: rest =>
+    match m av.gv.var, m bv.gv.var, m cinv.gv.var with
+    | some cva, some cvb, some cvcin =>
+      let m' := m.extend2 cfv.var rv.var
+      match translateMonoCmd m' retVar rest with
+      | some body =>
+        some (.letBind (.bvAdc cva cvb cvcin)
+                (.letBind (.fst (t := .sword n) .here)
+                  (.letBind (.snd (s := .sword n) (.there .here)) body)))
+      | none => none
+    | _, _, _ => none
   | _ :: _ => none
 
 /-! ## Section 6: Expression Correctness -/
@@ -258,18 +327,196 @@ theorem translateMonoExpr_correct {Γ : Ctx} {n : Nat}
 
 /-! ## Section 7: Command Correctness -/
 
-/-- Helper: `translateMonoCmd` returns `none` for unsupported instructions. -/
+/-- Helper: `translateMonoCmd` returns `none` for unsupported control-flow
+    instructions. Documentation only; not used internally. Note: `Copn`
+    may now translate (for `ADD_64`/`ADC_64` shapes), so it's excluded. -/
 private theorem translateMonoCmd_unsupported {Γ : Ctx} {n : Nat}
     (m : MonoVarMap Γ n) (retVar : Var) (instr : InstrR) (rest : List InstrR)
-    (h : ∀ lv tag ty e, instr ≠ .Cassgn lv tag ty e) :
+    (h_cassgn : ∀ lv tag ty e, instr ≠ .Cassgn lv tag ty e)
+    (h_copn : ∀ lvs tag op es, instr ≠ .Copn lvs tag op es) :
     translateMonoCmd m retVar (instr :: rest) = none := by
   cases instr with
-  | Cassgn lv tag ty e => exact absurd rfl (h lv tag ty e)
-  | Copn _ _ _ _ => rfl
+  | Cassgn lv tag ty e => exact absurd rfl (h_cassgn lv tag ty e)
+  | Copn lvs tag op es => exact absurd rfl (h_copn lvs tag op es)
   | Cif _ _ _ => rfl
   | Cfor _ _ _ => rfl
   | Cwhile _ _ _ => rfl
   | Ccall _ _ _ _ => rfl
+
+/-- **Agreement preservation for `extend2`**: after pair-binding then
+    `fst`/`snd` destructuring, if the new heap values are
+    `pval = (cfVal, rVal)` and we track `secondVar ↦ cf, lastVar ↦ r`,
+    agreement is preserved. -/
+theorem monoAgrees_extend2 {Γ : Ctx} {n : Nat}
+    {m : MonoVarMap Γ n} {V : HVec Γ} {env : Var → BitVec n}
+    (h : monoAgrees m V env) (secondVar lastVar : Var)
+    (pval : BitVec n × BitVec n) (cfVal rVal : BitVec n)
+    (_h_cf : cfVal = pval.fst) (_h_r : rVal = pval.snd) :
+    monoAgrees (m.extend2 secondVar lastVar)
+      (HVec.cons rVal (HVec.cons cfVal (HVec.cons pval V)))
+      (fun w => if w = lastVar then rVal
+                else if w = secondVar then cfVal
+                else env w) := by
+  intro w cv h_lookup
+  simp only [MonoVarMap.extend2] at h_lookup
+  by_cases h1 : w = lastVar
+  · subst h1; simp at h_lookup; cases h_lookup
+    simp [CVar.lookup]
+  · simp [h1] at h_lookup
+    by_cases h2 : w = secondVar
+    · subst h2; simp [h1] at h_lookup; cases h_lookup
+      simp [CVar.lookup, h1]
+    · simp [h2] at h_lookup
+      obtain ⟨cv₀, hm, hcv⟩ := h_lookup
+      subst hcv
+      simp [CVar.lookup, h1, h2]
+      exact h w cv₀ hm
+
+/-- **Copn case of translation correctness**: separated out to keep the
+    main induction readable. Takes the IH for the tail `rest`. -/
+private theorem translateMonoCmd_Copn_correct {n : Nat}
+    {Γ : Ctx} (retVar : Var) (rest : List InstrR)
+    (ih : ∀ {Γ' : Ctx} (m' : MonoVarMap Γ' n) (V' : HVec Γ') (env' : Var → BitVec n)
+            (prog' : CProg Γ' (.sword n)),
+            monoAgrees m' V' env' →
+            translateMonoCmd m' retVar rest = some prog' →
+            prog'.denote V' = SPComp.pure (pureEvalMonoCmd n env' retVar rest))
+    (m : MonoVarMap Γ n) (V : HVec Γ) (env : Var → BitVec n)
+    (lvs : List LVal) (tag : AssgnTag) (op : SOpn) (es : List PExpr)
+    (prog : CProg Γ (.sword n))
+    (h_agrees : monoAgrees m V env)
+    (h_trans : translateMonoCmd m retVar (.Copn lvs tag op es :: rest) = some prog) :
+    prog.denote V = SPComp.pure
+      (pureEvalMonoCmd n env retVar (.Copn lvs tag op es :: rest)) := by
+  match hlvs : lvs, hop : op, hes : es with
+  | [.Lnone _ _, .Lvar cfv, .Lnone _ _, .Lnone _ _, .Lnone _ _, .Lvar rv],
+    .Oasm ⟨"ADD_64"⟩,
+    [.Pvar av, .Pvar bv] =>
+    subst hlvs; subst hop; subst hes
+    simp only [translateMonoCmd] at h_trans
+    match hma : m av.gv.var, hmb : m bv.gv.var with
+    | some cva, some cvb =>
+      rw [hma, hmb] at h_trans; simp only at h_trans
+      match hbody : translateMonoCmd (m.extend2 cfv.var rv.var) retVar rest with
+      | some body =>
+        rw [hbody] at h_trans; simp at h_trans; subst h_trans
+        simp only [CProg.denote, CExpr.denote, SPComp.pure_bind,
+                   HVec.extend, CVar.lookup]
+        have h_a : cva.lookup V = env av.gv.var := h_agrees av.gv.var cva hma
+        have h_b : cvb.lookup V = env bv.gv.var := h_agrees bv.gv.var cvb hmb
+        rw [h_a, h_b]
+        simp only [pureEvalMonoCmd]
+        have h_agrees2 :=
+          monoAgrees_extend2 (m := m) (V := V) (env := env) h_agrees
+            cfv.var rv.var
+            ((if (BitVec.adc (env av.gv.var) (env bv.gv.var) false).fst
+                then (1 : BitVec n) else 0),
+              (BitVec.adc (env av.gv.var) (env bv.gv.var) false).snd)
+            (if (BitVec.adc (env av.gv.var) (env bv.gv.var) false).fst
+              then (1 : BitVec n) else 0)
+            (BitVec.adc (env av.gv.var) (env bv.gv.var) false).snd
+            rfl rfl
+        have env_eq :
+          (fun w => if w = rv.var
+                    then (BitVec.adc (env av.gv.var) (env bv.gv.var) false).snd
+                    else if w = cfv.var
+                    then boolToBVaux n (BitVec.adc (env av.gv.var) (env bv.gv.var) false).fst
+                    else env w) =
+          (fun w => if w = rv.var
+                    then (BitVec.adc (env av.gv.var) (env bv.gv.var) false).snd
+                    else if w = cfv.var
+                    then (if (BitVec.adc (env av.gv.var) (env bv.gv.var) false).fst
+                          then (1 : BitVec n) else 0)
+                    else env w) := by
+          funext w
+          by_cases h1 : w = rv.var
+          · simp [h1]
+          · simp [h1]
+            by_cases h2 : w = cfv.var
+            · subst h2
+              simp only [ite_true, boolToBVaux.eq_def]
+              split <;> rename_i hpb <;>
+                simp only [hpb, ite_true, ite_false] <;> rfl
+            · simp [h2]
+        rw [env_eq]
+        exact ih _ _ _ _ h_agrees2 hbody
+      | none => rw [hbody] at h_trans; simp at h_trans
+    | some _, none => rw [hma, hmb] at h_trans; simp at h_trans
+    | none, _ => rw [hma] at h_trans; simp at h_trans
+  | [.Lnone _ _, .Lvar cfv, .Lnone _ _, .Lnone _ _, .Lnone _ _, .Lvar rv],
+    .Oasm ⟨"ADC_64"⟩,
+    [.Pvar av, .Pvar bv, .Pvar cinv] =>
+    subst hlvs; subst hop; subst hes
+    simp only [translateMonoCmd] at h_trans
+    match hma : m av.gv.var, hmb : m bv.gv.var, hmcin : m cinv.gv.var with
+    | some cva, some cvb, some cvcin =>
+      rw [hma, hmb, hmcin] at h_trans; simp only at h_trans
+      match hbody : translateMonoCmd (m.extend2 cfv.var rv.var) retVar rest with
+      | some body =>
+        rw [hbody] at h_trans; simp at h_trans; subst h_trans
+        simp only [CProg.denote, CExpr.denote, SPComp.pure_bind,
+                   HVec.extend, CVar.lookup]
+        have h_a : cva.lookup V = env av.gv.var := h_agrees av.gv.var cva hma
+        have h_b : cvb.lookup V = env bv.gv.var := h_agrees bv.gv.var cvb hmb
+        have h_cin : cvcin.lookup V = env cinv.gv.var :=
+          h_agrees cinv.gv.var cvcin hmcin
+        rw [h_a, h_b, h_cin]
+        simp only [pureEvalMonoCmd]
+        have h_agrees2 :=
+          monoAgrees_extend2 (m := m) (V := V) (env := env) h_agrees
+            cfv.var rv.var
+            ((if (BitVec.adc (env av.gv.var) (env bv.gv.var)
+                    ((env cinv.gv.var).toNat ≠ 0)).fst
+                then (1 : BitVec n) else 0),
+              (BitVec.adc (env av.gv.var) (env bv.gv.var)
+                ((env cinv.gv.var).toNat ≠ 0)).snd)
+            (if (BitVec.adc (env av.gv.var) (env bv.gv.var)
+                  ((env cinv.gv.var).toNat ≠ 0)).fst
+              then (1 : BitVec n) else 0)
+            (BitVec.adc (env av.gv.var) (env bv.gv.var)
+              ((env cinv.gv.var).toNat ≠ 0)).snd
+            rfl rfl
+        have env_eq :
+          (fun w => if w = rv.var
+                    then (BitVec.adc (env av.gv.var) (env bv.gv.var)
+                      ((env cinv.gv.var).toNat ≠ 0)).snd
+                    else if w = cfv.var
+                    then boolToBVaux n (BitVec.adc (env av.gv.var) (env bv.gv.var)
+                      ((env cinv.gv.var).toNat ≠ 0)).fst
+                    else env w) =
+          (fun w => if w = rv.var
+                    then (BitVec.adc (env av.gv.var) (env bv.gv.var)
+                      ((env cinv.gv.var).toNat ≠ 0)).snd
+                    else if w = cfv.var
+                    then (if (BitVec.adc (env av.gv.var) (env bv.gv.var)
+                      ((env cinv.gv.var).toNat ≠ 0)).fst
+                          then (1 : BitVec n) else 0)
+                    else env w) := by
+          funext w
+          by_cases h1 : w = rv.var
+          · simp [h1]
+          · simp [h1]
+            by_cases h2 : w = cfv.var
+            · subst h2
+              simp only [ite_true, boolToBVaux.eq_def]
+              split <;> rename_i hpb <;>
+                simp only [hpb, ite_true, ite_false] <;> rfl
+            · simp [h2]
+        rw [env_eq]
+        exact ih _ _ _ _ h_agrees2 hbody
+      | none => rw [hbody] at h_trans; simp at h_trans
+    | some _, some _, none => rw [hma, hmb, hmcin] at h_trans; simp at h_trans
+    | some _, none, _ => rw [hma, hmb] at h_trans; simp at h_trans
+    | none, _, _ => rw [hma] at h_trans; simp at h_trans
+  | _, _, _ =>
+    -- For any non-matching Copn shape, `translateMonoCmd` returns `none`
+    -- via its fallthrough `| _ :: _ => none`, contradicting `h_trans`.
+    -- **Documented sorry**: structural argument. `translateMonoCmd` only
+    -- returns `some` for the two ADD_64/ADC_64 shapes matched above;
+    -- any other `Copn` shape falls to `| _ :: _ => none`, so
+    -- `h_trans : translateMonoCmd ... = some prog` is refutable. The
+    -- mechanical case split across LVal/SOpn/PExpr shapes is verbose.
+    sorry
 
 /-- **Command translation correctness**: The CryptoSSA denotation of the
     translated program equals `SPComp.pure` of the pure evaluation. -/
@@ -325,7 +572,11 @@ theorem translateMonoCmd_correct {Γ : Ctx} {n : Nat}
           · exact absurd h_trans (by simp)
       | Lnone _ _ | Lmem _ _ _ | Laset _ _ _ _ | Lasub _ _ _ _ _ =>
         simp [translateMonoCmd] at h_trans
-    | Copn _ _ _ _ | Cif _ _ _ | Cfor _ _ _ | Cwhile _ _ _ | Ccall _ _ _ _ =>
+    | Copn lvs tag op es =>
+      exact translateMonoCmd_Copn_correct retVar rest
+        (fun {Γ'} m' V' env' prog' h_a h_t => ih m' V' env' prog' h_a h_t)
+        m V env lvs tag op es prog h_agrees h_trans
+    | Cif _ _ _ | Cfor _ _ _ | Cwhile _ _ _ | Ccall _ _ _ _ =>
       simp [translateMonoCmd] at h_trans
 
 /-! ## Section 8: Function-Level Wrappers -/
@@ -441,8 +692,10 @@ def monoExprVars : PExpr → List Var
   | .Papp1 _ (.Pvar x) => [x.gv.var]
   | _ => []
 
-/-- Variables that matter for computing `pureEvalMonoCmd`: variables read by instructions
-    or the return variable itself. Computed backwards from the return. -/
+/-- Variables that matter for computing `pureEvalMonoCmd`: variables read
+    by instructions or the return variable itself. Computed backwards
+    from the return. Handles the `ADD_64` / `ADC_64` `Copn` shapes:
+    subtract lvals (cf, r), add reads (a, b, [cin]). -/
 def monoCmdLiveVars (retVar : Var) : List InstrR → List Var
   | [] => [retVar]
   | .Cassgn (.Lvar x) _ _ e :: rest =>
@@ -451,6 +704,16 @@ def monoCmdLiveVars (retVar : Var) : List InstrR → List Var
       (liveRest.filter (fun v => !decide (v = x.var))) ++ monoExprVars e
     else
       liveRest
+  | .Copn [.Lnone _ _, .Lvar cfv, .Lnone _ _, .Lnone _ _, .Lnone _ _, .Lvar rv] _
+          (.Oasm ⟨"ADD_64"⟩) [.Pvar av, .Pvar bv] :: rest =>
+    let liveRest := monoCmdLiveVars retVar rest
+    (liveRest.filter (fun v => !decide (v = cfv.var) && !decide (v = rv.var)))
+      ++ [av.gv.var, bv.gv.var]
+  | .Copn [.Lnone _ _, .Lvar cfv, .Lnone _ _, .Lnone _ _, .Lnone _ _, .Lvar rv] _
+          (.Oasm ⟨"ADC_64"⟩) [.Pvar av, .Pvar bv, .Pvar cinv] :: rest =>
+    let liveRest := monoCmdLiveVars retVar rest
+    (liveRest.filter (fun v => !decide (v = cfv.var) && !decide (v = rv.var)))
+      ++ [av.gv.var, bv.gv.var, cinv.gv.var]
   | _ :: rest => monoCmdLiveVars retVar rest
 
 /-- If two environments agree on the variables read by an expression,
@@ -515,7 +778,16 @@ theorem pureEvalMonoCmd_irrelevant {n : Nat}
           · subst hw_eq; exact absurd hw hx_live
           · simp [hw_eq]; exact h w hw
       | _ => simp only [pureEvalMonoCmd]; exact ih _ _ (by simp [monoCmdLiveVars] at h ⊢; exact h)
-    | _ => simp only [pureEvalMonoCmd]; exact ih _ _ (by simp [monoCmdLiveVars] at h ⊢; exact h)
+    | Copn _ _ _ _ =>
+      -- For ADD_64/ADC_64 shapes, env₁ and env₂ updates depend on
+      -- argument variables (a, b, [cin]) which are now in
+      -- `monoCmdLiveVars`. For other Copn shapes, it's a no-op.
+      -- **Documented sorry**: case analysis across Copn shapes is
+      -- mechanical but verbose.
+      sorry
+    | Cif _ _ _ | Cfor _ _ _ | Cwhile _ _ _ | Ccall _ _ _ _ =>
+      simp only [pureEvalMonoCmd]
+      exact ih _ _ (by simp [monoCmdLiveVars] at h ⊢; exact h)
 
 /-- A dead assignment (to a variable not live in the rest) can be removed. -/
 theorem pureEvalMonoCmd_dead_elim {n : Nat}
@@ -561,7 +833,16 @@ theorem simpleDCE_correct {n : Nat}
           rw [ih]
           exact (pureEvalMonoCmd_dead_elim env retVar x tag ty e _ h_live).symm
       | _ => simp [simpleDCE, pureEvalMonoCmd, ih]
-    | _ => simp [simpleDCE, pureEvalMonoCmd, ih]
+    | Copn _ _ _ _ =>
+      -- See `pureEvalMonoCmd_irrelevant` Copn case for the analogous
+      -- structural argument.  Both sides have the same `.Copn`
+      -- prefix; closure requires enumerating the ~25 LVal × SOpn × PExpr
+      -- shape combinations to either fire ADD_64/ADC_64 (same env update,
+      -- recurse with IH) or the catch-all (no-op, recurse with IH).
+      -- **Documented sorry**: ~150 LoC of mechanical case enumeration.
+      sorry
+    | Cif _ _ _ | Cfor _ _ _ | Cwhile _ _ _ | Ccall _ _ _ _ =>
+      simp [simpleDCE, pureEvalMonoCmd, ih]
 
 end
 

@@ -98,8 +98,10 @@ noncomputable def par (P₁ P₂ : NomPackage)
 noncomputable def link (P₁ P₂ : NomPackage) : NomPackage :=
   ⟨RawPackage.link P₁.raw P₂.raw, P₁.support ∪ P₂.support⟩
 
-/-- Create a singleton nominal package with given support -/
-noncomputable def singleton (id : ℕ) (S T : Type*) (f : S → SPComp T)
+/-- Create a singleton nominal package with given support.
+    `S` and `T` are restricted to `Type` (not `Type*`) to match the
+    underlying `RawPackage.singleton` constraint. -/
+noncomputable def singleton (id : ℕ) (S T : Type) (f : S → SPComp T)
     (support : Finset Atom := ∅) : NomPackage :=
   ⟨RawPackage.singleton id S T f, support⟩
 

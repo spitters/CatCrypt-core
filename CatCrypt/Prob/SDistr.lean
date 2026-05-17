@@ -78,7 +78,7 @@ def support (d : SDistr α) : Set α :=
 
 /-! ## Basic lemmas -/
 
-@[simp]
+@[simp, grind =]
 theorem pure_apply_some (a b : α) [DecidableEq α] :
     (pure a : SDistr α) (some b) = if a = b then 1 else 0 := by
   unfold pure
@@ -86,30 +86,30 @@ theorem pure_apply_some (a b : α) [DecidableEq α] :
   simp only [Option.some.injEq]
   by_cases h : a = b <;> simp [h, eq_comm]
 
-@[simp]
+@[simp, grind =]
 theorem pure_apply_none (a : α) : (pure a : SDistr α) none = 0 := by
   unfold pure
   rw [PMF.pure_apply]
   simp
 
-@[simp]
+@[simp, grind =]
 theorem fail_apply_some (a : α) : (fail : SDistr α) (some a) = 0 := by
   unfold fail
   rw [PMF.pure_apply]
   simp
 
-@[simp]
+@[simp, grind =]
 theorem fail_apply_none : (fail : SDistr α) none = 1 := by
   unfold fail
   rw [PMF.pure_apply]
   simp
 
-@[simp] theorem mass_pure (a : α) : mass (pure a) = 1 := by
+@[simp, grind =] theorem mass_pure (a : α) : mass (pure a) = 1 := by
   unfold mass
   rw [pure_apply_none]
   simp
 
-@[simp] theorem mass_fail : mass (fail : SDistr α) = 0 := by
+@[simp, grind =] theorem mass_fail : mass (fail : SDistr α) = 0 := by
   unfold mass
   rw [fail_apply_none]
   simp
@@ -130,6 +130,7 @@ theorem mem_support_pure_iff (a b : α) : b ∈ (pure a : SDistr α).support ↔
   · intro h
     simp only [h, ite_true, one_ne_zero, not_false_eq_true]
 
+@[grind =]
 theorem support_pure [DecidableEq α] (a : α) : (pure a).support = {a} := by
   ext b
   unfold support
@@ -141,12 +142,14 @@ theorem support_pure [DecidableEq α] (a : α) : (pure a).support = {a} := by
   · intro h
     simp only [h, ite_true, ne_eq, one_ne_zero, not_false_eq_true]
 
+@[grind =]
 theorem support_fail : (fail : SDistr α).support = ∅ := by
   ext a
   unfold support
   simp
 
 /-- Binding fail with any function gives fail -/
+@[grind =]
 theorem bind_fail (f : α → SDistr β) : (fail : SDistr α).bind f = fail := by
   unfold bind fail
   -- PMF.bind (PMF.pure none) (match · with some a => f a | none => PMF.pure none)
@@ -154,11 +157,13 @@ theorem bind_fail (f : α → SDistr β) : (fail : SDistr α).bind f = fail := b
   rw [PMF.pure_bind]
 
 /-- Binding pure with a function gives the function applied to the value -/
+@[grind =]
 theorem pure_bind (a : α) (f : α → SDistr β) : (pure a).bind f = f a := by
   unfold bind pure
   rw [PMF.pure_bind]
 
 /-- Binding with pure is identity -/
+@[grind =]
 theorem bind_pure (d : SDistr α) : d.bind pure = d := by
   unfold bind pure fail
   -- Show: PMF.bind d (match · with some a => PMF.pure (some a) | none => PMF.pure none) = d
@@ -168,6 +173,7 @@ theorem bind_pure (d : SDistr α) : d.bind pure = d := by
   rw [h, PMF.bind_pure]
 
 /-- Bind is associative -/
+@[grind =]
 theorem bind_assoc (d : SDistr α) (f : α → SDistr β) (g : β → SDistr γ) :
     (d.bind f).bind g = d.bind (fun a => (f a).bind g) := by
   unfold bind
@@ -231,6 +237,7 @@ theorem bind_congr_support' {d₁ d₂ : SDistr α} {f g : α → SDistr β}
 
 /-! ## Uniform distribution lemmas -/
 
+@[grind =]
 theorem uniform_apply_some [Fintype α] [Nonempty α] (a : α) :
     (uniform α) (some a) = (Fintype.card α : ℝ≥0∞)⁻¹ := by
   classical
@@ -244,13 +251,14 @@ theorem uniform_apply_some [Fintype α] [Nonempty α] (a : α) :
     · exact absurd h.symm ha'
     · rfl
 
+@[grind =]
 theorem uniform_apply_none [Fintype α] [Nonempty α] :
     (uniform α) none = 0 := by
   unfold uniform
   simp only [PMF.map_apply]
   simp only [reduceCtorEq, ite_false, tsum_zero]
 
-@[simp] theorem mass_uniform [Fintype α] [Nonempty α] : mass (uniform α) = 1 := by
+@[simp, grind =] theorem mass_uniform [Fintype α] [Nonempty α] : mass (uniform α) = 1 := by
   unfold mass
   rw [uniform_apply_none]
   simp

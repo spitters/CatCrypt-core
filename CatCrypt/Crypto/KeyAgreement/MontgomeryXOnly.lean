@@ -344,16 +344,10 @@ theorem ProjEquiv.trans {F : Type*} [Field F] {p q r : F × F}
       have hp2 : p.2 = 0 := (mul_eq_zero.mp hpq.symm).resolve_left hq1
       have hr2 : r.2 = 0 := (mul_eq_zero.mp hqr).resolve_left hq1
       rw [hp2, hr2, mul_zero, mul_zero]
-    · -- q.2 ≠ 0: multiply hpq by r.2, hqr by p.2, compare.
-      have h1 : p.1 * q.2 * r.2 = q.1 * p.2 * r.2 := by rw [hpq]
-      have h2 : q.1 * r.2 * p.2 = r.1 * q.2 * p.2 := by rw [hqr]
-      have : p.1 * r.2 * q.2 = r.1 * p.2 * q.2 := by linear_combination h1 + h2
-      exact mul_right_cancel₀ hq2 this
+    · -- q.2 ≠ 0
+      grind
   · -- q.2 ≠ 0 directly
-    have h1 : p.1 * q.2 * r.2 = q.1 * p.2 * r.2 := by rw [hpq]
-    have h2 : q.1 * r.2 * p.2 = r.1 * q.2 * p.2 := by rw [hqr]
-    have : p.1 * r.2 * q.2 = r.1 * p.2 * q.2 := by linear_combination h1 + h2
-    exact mul_right_cancel₀ hq2 this
+    grind
 
 /-- **Doubling step preserves ProjEquiv**, given the intermediate
     `xdbl (xProj (n·P))` is nondegenerate (Z ≠ 0). This is the

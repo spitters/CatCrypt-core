@@ -243,6 +243,74 @@ theorem sdist_comp_left {α β γ : Type*} (f : α → SPComp β)
       (by rw [absDiff_comm]; exact le_iSup₂_of_le D b (le_iSup_of_le h' le_rfl))
 
 
+/-- Two-level `sdist_comp_left`: pre-composition with two nested binds
+    (shared across both sides) does not increase sdist. Derives from
+    a single `sdist_comp_left` by collapsing the two binds via associativity. -/
+theorem sdist_comp_left_two {α β₁ β₂ γ : Type*}
+    (f : α → SPComp β₁) (h : β₁ → SPComp β₂)
+    (g₁ g₂ : β₂ → SPComp γ) :
+    sdist (fun a => SPComp.bind (f a) (fun b₁ => SPComp.bind (h b₁) g₁))
+          (fun a => SPComp.bind (f a) (fun b₁ => SPComp.bind (h b₁) g₂))
+      ≤ sdist g₁ g₂ := by
+  have eq₁ : (fun a : α => SPComp.bind (f a) (fun b₁ => SPComp.bind (h b₁) g₁)) =
+             (fun a : α => SPComp.bind (SPComp.bind (f a) h) g₁) := by
+    funext a; rw [SPComp.bind_assoc]
+  have eq₂ : (fun a : α => SPComp.bind (f a) (fun b₁ => SPComp.bind (h b₁) g₂)) =
+             (fun a : α => SPComp.bind (SPComp.bind (f a) h) g₂) := by
+    funext a; rw [SPComp.bind_assoc]
+  rw [eq₁, eq₂]
+  exact sdist_comp_left (fun a => SPComp.bind (f a) h) g₁ g₂
+
+/-- **Dependent two-level `sdist_comp_left`** (uniform bound variant):
+    if the innermost continuations `g₁ b₁, g₂ b₁` are pointwise-`ε`-close
+    for every intermediate value `b₁`, then the full two-bind composition
+    is also `ε`-close.
+
+    The dependent version is needed when the continuation depends on both
+    the intermediate bind value and the sampled one — e.g., when routing
+    ciphertext-output `p.1` from an outer epoch ratchet into the final
+    output while an inner `sample W` supplies the next epoch's chain key. -/
+theorem sdist_comp_left_two_dep {α β₁ β₂ γ : Type*}
+    (f : α → SPComp β₁) (h : β₁ → SPComp β₂)
+    (g₁ g₂ : β₁ → β₂ → SPComp γ) (ε : ℝ≥0∞)
+    (hbound : ∀ b₁, sdist (g₁ b₁) (g₂ b₁) ≤ ε) :
+    sdist (fun a => SPComp.bind (f a) (fun b₁ => SPComp.bind (h b₁) (g₁ b₁)))
+          (fun a => SPComp.bind (f a) (fun b₁ => SPComp.bind (h b₁) (g₂ b₁)))
+      ≤ ε := by
+  -- Peel `f` via sdist_comp_left; reduce to a sdist over `β₁ → SPComp γ`.
+  refine le_trans
+    (sdist_comp_left f (fun b₁ => SPComp.bind (h b₁) (g₁ b₁))
+                       (fun b₁ => SPComp.bind (h b₁) (g₂ b₁))) ?_
+  -- Remaining goal: sdist (fun b₁ => h b₁ >>= g₁ b₁) (fun b₁ => h b₁ >>= g₂ b₁) ≤ ε.
+  -- For each specific b₁, the pointwise bound
+  --   sdist (fun _ : Unit => h b₁ >>= g₁ b₁) (fun _ => h b₁ >>= g₂ b₁) ≤ ε
+  -- follows from sdist_comp_left on (fun _ => h b₁) and (hbound b₁).
+  -- The outer sdist then bounds as the sup over b₁ of the per-b₁ ones.
+  apply iSup_le; intro D
+  apply iSup_le; intro b₁
+  apply iSup_le; intro heap
+  -- target: absDiff (prTrue ((h b₁ >>= g₁ b₁) >>= D) heap)
+  --                 (prTrue ((h b₁ >>= g₂ b₁) >>= D) heap) ≤ ε
+  have hPerB :
+      sdist (fun (_ : Unit) => SPComp.bind (h b₁) (g₁ b₁))
+            (fun (_ : Unit) => SPComp.bind (h b₁) (g₂ b₁)) ≤ ε := by
+    refine le_trans (sdist_comp_left (fun (_ : Unit) => h b₁)
+                      (g₁ b₁) (g₂ b₁)) ?_
+    exact hbound b₁
+  -- Specialize hPerB at D, (), heap: unfold sdist to extract absDiff bound.
+  have hSingle :
+      absDiff (prTrue (SPComp.bind (SPComp.bind (h b₁) (g₁ b₁)) D) heap)
+              (prTrue (SPComp.bind (SPComp.bind (h b₁) (g₂ b₁)) D) heap)
+      ≤ sdist (fun (_ : Unit) => SPComp.bind (h b₁) (g₁ b₁))
+              (fun (_ : Unit) => SPComp.bind (h b₁) (g₂ b₁)) := by
+    unfold sdist
+    apply le_trans _ (le_iSup_of_le D le_rfl)
+    apply le_trans _ (le_iSup_of_le (() : Unit) le_rfl)
+    exact le_iSup (fun hp : Heap =>
+      absDiff (prTrue (SPComp.bind (SPComp.bind (h b₁) (g₁ b₁)) D) hp)
+              (prTrue (SPComp.bind (SPComp.bind (h b₁) (g₂ b₁)) D) hp)) heap
+  exact le_trans hSingle hPerB
+
 /-! ## Tensor (Coproduct) Distance Bounds -/
 
 /-- Distance of right-whiskered morphisms. On `.inl`, only `f` runs; on `.inr`, distance is 0. -/

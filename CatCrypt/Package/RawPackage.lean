@@ -34,9 +34,9 @@ open CatCrypt.Prob
 /-- A typed function: source type, target type, and implementation -/
 structure TypedFun where
   /-- Input type -/
-  src : Type*
+  src : Type
   /-- Output type -/
-  tgt : Type*
+  tgt : Type
   /-- Implementation: src → SPComp tgt -/
   impl : src → SPComp tgt
 
@@ -70,7 +70,7 @@ noncomputable def ids (P : RawPackage) : Finset ℕ :=
   P.entries.image (·.id)
 
 /-- Check if a package implements an operation with given id and types -/
-def has (P : RawPackage) (id : ℕ) (S T : Type*) : Prop :=
+def has (P : RawPackage) (id : ℕ) (S T : Type) : Prop :=
   ∃ e ∈ P.entries, e.id = id ∧ e.fun_.src = S ∧ e.fun_.tgt = T
 
 /-- Lookup an implementation by id (noncomputable) -/
@@ -81,7 +81,7 @@ noncomputable def lookup (P : RawPackage) (id : ℕ) : Option TypedFun :=
     none
 
 /-- Single function package -/
-noncomputable def singleton (id : ℕ) (S T : Type*) (f : S → SPComp T) : RawPackage :=
+noncomputable def singleton (id : ℕ) (S T : Type) (f : S → SPComp T) : RawPackage :=
   ⟨{⟨id, ⟨S, T, f⟩⟩}, fun e₁ e₂ h₁ h₂ _ => by
     simp only [Finset.mem_singleton] at h₁ h₂
     rw [h₁, h₂]⟩
@@ -120,7 +120,7 @@ theorem par_ids {P₁ P₂ : RawPackage} (h : Disjoint P₁ P₂) :
 
 /-- Resolve: find the implementation for an operation id and call it.
     Returns `fail` if the operation is not implemented. -/
-noncomputable def resolve (P : RawPackage) (id : ℕ) {S T : Type*}
+noncomputable def resolve (P : RawPackage) (id : ℕ) {S T : Type}
     (x : S) : SPComp T :=
   match lookup P id with
   | some f =>
@@ -157,7 +157,7 @@ noncomputable def idPkg (I : Interface) : RawPackage := empty
 
 theorem empty_ids : (∅ : RawPackage).ids = ∅ := Finset.image_empty _
 
-theorem empty_not_has (id : ℕ) (S T : Type*) : ¬(empty.has id S T) := by
+theorem empty_not_has (id : ℕ) (S T : Type) : ¬(empty.has id S T) := by
   simp only [empty, has]
   intro ⟨e, he, _, _, _⟩
   exact Finset.notMem_empty _ he

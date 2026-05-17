@@ -28,8 +28,8 @@ namespace CatCrypt.Package
 
 /-- Operation signature: specifies the input type (src) and output type (tgt) -/
 structure OpSig where
-  src : Type*
-  tgt : Type*
+  src : Type
+  tgt : Type
 
 /-- Two operation signatures are equal if their types are the same.
     Note: This uses heterogeneous equality for Type universes. -/
@@ -58,7 +58,7 @@ def empty : Interface := ⟨∅, fun _ _ h => (Finset.notMem_empty _ h).elim⟩
 instance : EmptyCollection Interface := ⟨empty⟩
 
 /-- Check if an interface declares an operation with given id and signature -/
-def has (I : Interface) (id : ℕ) (S T : Type*) : Prop :=
+def has (I : Interface) (id : ℕ) (S T : Type) : Prop :=
   ∃ e ∈ I.entries, e.id = id ∧ e.sig = ⟨S, T⟩
 
 /-- The set of operation ids in the interface -/
@@ -77,18 +77,18 @@ def Disjoint (I₁ I₂ : Interface) : Prop :=
   _root_.Disjoint I₁.ids I₂.ids
 
 /-- A single operation interface -/
-noncomputable def singleton (id : ℕ) (S T : Type*) : Interface :=
+noncomputable def singleton (id : ℕ) (S T : Type) : Interface :=
   ⟨{⟨id, ⟨S, T⟩⟩}, fun e₁ e₂ h₁ h₂ _ => by
     simp only [Finset.mem_singleton] at h₁ h₂
     rw [h₁, h₂]⟩
 
-theorem singleton_has (id : ℕ) (S T : Type*) :
+theorem singleton_has (id : ℕ) (S T : Type) :
     (singleton id S T).has id S T := by
   simp only [singleton, has]
   exact ⟨⟨id, ⟨S, T⟩⟩, Finset.mem_singleton_self _, rfl, rfl⟩
 
 /-- Empty interface has no operations -/
-theorem empty_not_has (id : ℕ) (S T : Type*) : ¬(empty.has id S T) := by
+theorem empty_not_has (id : ℕ) (S T : Type) : ¬(empty.has id S T) := by
   simp only [empty, has]
   intro ⟨e, he, _, _⟩
   exact Finset.notMem_empty _ he
@@ -120,13 +120,13 @@ noncomputable def union (I₁ I₂ : Interface) (h : Disjoint I₁ I₂) : Inter
 
 /-- Union contains operations from both interfaces -/
 theorem union_has_left {I₁ I₂ : Interface} (h : Disjoint I₁ I₂)
-    (id : ℕ) (S T : Type*) (hI₁ : I₁.has id S T) :
+    (id : ℕ) (S T : Type) (hI₁ : I₁.has id S T) :
     (union I₁ I₂ h).has id S T := by
   obtain ⟨e, he, hid, hsig⟩ := hI₁; simp only [union, has]
   exact ⟨e, Finset.mem_union_left _ he, hid, hsig⟩
 
 theorem union_has_right {I₁ I₂ : Interface} (h : Disjoint I₁ I₂)
-    (id : ℕ) (S T : Type*) (hI₂ : I₂.has id S T) :
+    (id : ℕ) (S T : Type) (hI₂ : I₂.has id S T) :
     (union I₁ I₂ h).has id S T := by
   obtain ⟨e, he, hid, hsig⟩ := hI₂; simp only [union, has]
   exact ⟨e, Finset.mem_union_right _ he, hid, hsig⟩

@@ -102,41 +102,19 @@ notation:50 d₁ " ⟨" R "⟩# " d₂ => liftR R d₁ d₂
 /-- Diagonal/identity coupling: couple each element with itself -/
 noncomputable def Coupling.diagonal (d : SDistr α) : Coupling d d where
   joint := d.bind fun a => SDistr.pure (a, a)
-  left_marginal := fun a => by
-    -- Need: (d.bind (fun a => pure (a,a))).bind (fun p => pure p.1) (some a) = d (some a)
-    -- By bind associativity and pure_bind:
-    -- = d.bind (fun x => (pure (x,x)).bind (fun p => pure p.1)) (some a)
-    -- = d.bind (fun x => pure x) (some a)
-    -- = d (some a)
-    rw [SDistr.bind_assoc]
-    -- Now: (d.bind fun x => (SDistr.pure (x, x)).bind fun p => SDistr.pure p.1) (some a)
-    have h : (fun (x : α) => (SDistr.pure (x, x)).bind fun p => SDistr.pure p.1) =
-             fun (x : α) => SDistr.pure x := by
-      funext x; rw [SDistr.pure_bind]
-    rw [h, SDistr.bind_pure]
-  right_marginal := fun a => by
-    rw [SDistr.bind_assoc]
-    have h : (fun (x : α) => (SDistr.pure (x, x)).bind fun p => SDistr.pure p.2) =
-             fun (x : α) => SDistr.pure x := by
-      funext x; rw [SDistr.pure_bind]
-    rw [h, SDistr.bind_pure]
+  left_marginal := fun _ => by
+    simp only [SDistr.bind_assoc, SDistr.pure_bind, SDistr.bind_pure]
+  right_marginal := fun _ => by
+    simp only [SDistr.bind_assoc, SDistr.pure_bind, SDistr.bind_pure]
 
 /-- Bijection coupling: couple a with f(a) -/
 noncomputable def Coupling.fromBij (d : SDistr α) (f : α ≃ β) :
     Coupling d (d.bind fun a => SDistr.pure (f a)) where
   joint := d.bind fun a => SDistr.pure (a, f a)
-  left_marginal := fun a => by
-    rw [SDistr.bind_assoc]
-    have h : (fun (x : α) => (SDistr.pure (x, f x)).bind fun p => SDistr.pure p.1) =
-             fun (x : α) => SDistr.pure x := by
-      funext x; rw [SDistr.pure_bind]
-    rw [h, SDistr.bind_pure]
-  right_marginal := fun b => by
-    rw [SDistr.bind_assoc]
-    have h : (fun (x : α) => (SDistr.pure (x, f x)).bind fun p => SDistr.pure p.2) =
-             fun (x : α) => SDistr.pure (f x) := by
-      funext x; rw [SDistr.pure_bind]
-    rw [h]
+  left_marginal := fun _ => by
+    simp only [SDistr.bind_assoc, SDistr.pure_bind, SDistr.bind_pure]
+  right_marginal := fun _ => by
+    simp only [SDistr.bind_assoc, SDistr.pure_bind]
 
 /-! ## Key lifting lemmas -/
 
@@ -179,21 +157,10 @@ theorem liftR_symm {R : α → β → Prop} {d₁ : SDistr α} {d₂ : SDistr β
   use {
     joint := c.joint.bind fun p => SDistr.pure (p.2, p.1)
     left_marginal := fun b => by
-      rw [SDistr.bind_assoc]
-      -- Inner function: (α × β) → SDistr β
-      have h2 : (fun (p : α × β) => (SDistr.pure (p.2, p.1) : SDistr (β × α)).bind
-                  fun (q : β × α) => SDistr.pure q.1) =
-                (fun (p : α × β) => SDistr.pure p.2) := by
-        funext p; rw [SDistr.pure_bind]
-      rw [h2]
+      simp only [SDistr.bind_assoc, SDistr.pure_bind]
       exact c.right_marginal b
     right_marginal := fun a => by
-      rw [SDistr.bind_assoc]
-      have h2 : (fun (p : α × β) => (SDistr.pure (p.2, p.1) : SDistr (β × α)).bind
-                  fun (q : β × α) => SDistr.pure q.2) =
-                (fun (p : α × β) => SDistr.pure p.1) := by
-        funext p; rw [SDistr.pure_bind]
-      rw [h2]
+      simp only [SDistr.bind_assoc, SDistr.pure_bind]
       exact c.left_marginal a
   }
   intro b a hab
