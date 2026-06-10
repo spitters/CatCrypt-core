@@ -157,29 +157,13 @@ noncomputable def SPRP_Advantage (P : PRPDef W) (A : SPRP_Adversary W) : ℝ≥0
     and a random function for q queries is at most q(q-1)/(2|W|).
 
     This is the standard birthday-bound result (Boneh-Shoup Thm. 4.4,
-    Bellare-Rogaway 2006). -/
+    Bellare-Rogaway 2006). The switching *theorem* itself is not
+    formalised here: bounds below that include this term (e.g.
+    `PRP_Full_Bound`) take it as part of the stated bound, and a proof
+    would proceed by the up-to-bad argument over the collision event
+    bounded in `CatCrypt.Prob.BirthdayBound`. -/
 noncomputable def PRP_PRF_SwitchingBound (q : ℕ) (domainSize : ℕ) : ℝ≥0∞ :=
   (q * (q - 1) : ℕ) / (2 * domainSize : ℕ)
-
-/-- PRP/PRF switching theorem (statement only).
-
-    For any distinguisher making at most `q` queries, the advantage in
-    distinguishing a random permutation from a random function is
-    bounded by the birthday term.
-
-    **Proof sketch** (Boneh-Shoup Thm. 4.4):
-    A random function `f` and a random permutation `π` agree on `q`
-    distinct queries unless two outputs of `f` collide (a "birthday
-    event"). The probability of any collision among `q` uniform samples
-    from `{0, …, N-1}` is at most `q(q-1)/(2N)`.
-
-    EasyCrypt proves this via the up-to-bad technique in `PRP.eca`.
-    Here we state it as an axiom connecting to the birthday bound
-    infrastructure in `CatCrypt.Prob.BirthdayBound`. -/
-axiom PRP_PRF_Switching (q : ℕ) [Fintype W] :
-    ∀ (A : W → SPComp Bool),
-    AdvantageA (SPComp.sample W) (SPComp.sample W) A
-      ≤ PRP_PRF_SwitchingBound q (Fintype.card W)
 
 /-! ## Composition: full PRP bound -/
 
