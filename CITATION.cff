@@ -1,0 +1,32 @@
+cff-version: 1.2.0
+message: >-
+  If you use CatCrypt in your research, please cite the paper below
+  (see preferred-citation).
+title: CatCrypt
+abstract: >-
+  CatCrypt-core: machine-checked foundations for game-based cryptographic
+  security proofs in Lean 4 — sub-distributions, a stateful-probabilistic
+  program monad, probabilistic relational Hoare logic, state-separated
+  packages, and proof automation.
+type: software
+authors:
+  - family-names: Spitters
+    given-names: Bas
+license: MIT
+repository-code: "https://github.com/spitters/CatCrypt-core"
+keywords:
+  - cryptography
+  - formal verification
+  - Lean 4
+  - game-based security proofs
+  - relational Hoare logic
+preferred-citation:
+  type: article
+  title: "CatCrypt: From Rust to Cryptographic Security in Lean"
+  authors:
+    - family-names: Spitters
+      given-names: Bas
+  year: 2026
+  journal: "Cryptology ePrint Archive"
+  number: "Paper 2026/604"
+  url: "https://eprint.iacr.org/2026/604"
