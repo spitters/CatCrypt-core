@@ -23,7 +23,7 @@ that may fail (return `none`).
 
 ## References
 
-* CatCrypt: https://github.com/CatCrypt/ssprove
+* SSProve: https://github.com/SSProve/ssprove
 * EasyCrypt sub-distributions
 -/
 

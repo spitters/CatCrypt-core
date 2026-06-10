@@ -23,7 +23,7 @@ This file defines the fundamental pRHL judgment.
 
 ## References
 
-* CatCrypt: theories/Crypt/package/pkg_rhl.v
+* SSProve: theories/Crypt/package/pkg_rhl.v
 * EasyCrypt pRHL
 -/
 

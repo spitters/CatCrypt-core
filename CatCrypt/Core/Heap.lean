@@ -14,12 +14,12 @@ This file defines the heap model for stateful computations.
 
 ## Design
 
-Following the Rocq CatCrypt design, values are stored using their Fintype encoding
+Following the Rocq SSProve design, values are stored using their Fintype encoding
 as natural numbers in a **partial finite map** (`Finmap`) from location ids to
 encoded values. Unaccessed locations map to `none`; `get` returns `default` for
 such locations.
 
-This is the Lean 4 analogue of Rocq CatCrypt's `{fmap nat → nat}`.
+This is the Lean 4 analogue of Rocq SSProve's `{fmap nat → nat}`.
 
 ## Key Properties
 

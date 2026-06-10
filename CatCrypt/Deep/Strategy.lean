@@ -120,7 +120,7 @@ enables seamless movement between embeddings.
 - **Use `ssprove_code_simpl`** early to normalize SPComp terms before
   applying relational rules.
 
-- **Don't implement full package algebra first** (unlike Rocq CatCrypt).
+- **Don't implement full package algebra first** (unlike Rocq SSProve).
   Instead, prove structural equivalences directly as program equalities.
 
 - **For CryptoBox-style proofs**: Define the monolithic oracle in the

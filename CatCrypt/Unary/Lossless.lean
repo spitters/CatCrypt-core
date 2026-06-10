@@ -31,7 +31,7 @@ it never fails (never produces the `none` outcome in the underlying sub-distribu
 ## References
 
 * EasyCrypt: `islossless` predicate on distributions
-* CatCrypt (Rocq): lossless reasoning in pHL
+* SSProve (Rocq): lossless reasoning in pHL
 -/
 
 namespace CatCrypt.Unary

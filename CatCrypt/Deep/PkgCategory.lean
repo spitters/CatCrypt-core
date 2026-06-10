@@ -319,7 +319,7 @@ noncomputable def rightUnitorIso (X : DeepInterface.{u}) :
 
     **Important**: The naturality axioms (`tensorHom_comp_tensorHom`,
     `associator_naturality`, `braiding_naturality`) require that tensor
-    components have **disjoint** operation lists. This matches Rocq CatCrypt,
+    components have **disjoint** operation lists. This matches Rocq SSProve,
     which enforces disjointness via `:|:` (disjoint union of finite maps).
     With overlapping operations, `dite`-based dispatch becomes inconsistent
     between left-whiskered and right-whiskered morphisms.

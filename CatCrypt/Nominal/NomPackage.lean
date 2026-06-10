@@ -29,7 +29,7 @@ abstract memory locations. The key insight is that:
 
 ## References
 
-* [Benton et al., *Nominal CatCrypt*](https://eprint.iacr.org/2025/598)
+* [Benton et al., *Nominal SSProve*](https://eprint.iacr.org/2025/598)
 * [Pitts, *Nominal Sets*], Chapter 6
 -/
 

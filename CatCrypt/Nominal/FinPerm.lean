@@ -30,7 +30,7 @@ permutations, even though the set of atoms is infinite.
 ## References
 
 * [Pitts, *Nominal Sets*], Chapter 2
-* CatCrypt `theories/Crypt/nominal/Nominal.v`
+* SSProve `theories/Crypt/nominal/Nominal.v`
 -/
 
 namespace CatCrypt.Nominal

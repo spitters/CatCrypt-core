@@ -20,7 +20,7 @@ implement their interface and only access declared locations.
 
 ## References
 
-* [Benton et al., *Nominal CatCrypt*](https://eprint.iacr.org/2025/598)
+* [Benton et al., *Nominal SSProve*](https://eprint.iacr.org/2025/598)
 -/
 
 namespace CatCrypt.Package

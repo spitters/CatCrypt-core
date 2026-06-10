@@ -41,7 +41,7 @@ This entire unary logic layer is **new to CatCrypt** - the Rocq version
 
 * EasyCrypt: `phoare`, `byphoare`, `fel` tactics
 * CertiCrypt (Barthe et al.): unary reasoning in Coq
-* CatCrypt (Rocq): only has pRHL (this layer is an extension)
+* SSProve (Rocq): only has pRHL (this layer is an extension)
 -/
 
 namespace CatCrypt.Unary

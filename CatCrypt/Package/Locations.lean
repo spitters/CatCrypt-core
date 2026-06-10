@@ -22,7 +22,7 @@ Locations are tracked as a finite set with type information.
 
 ## References
 
-* [Benton et al., *Nominal CatCrypt*](https://eprint.iacr.org/2025/598)
+* [Benton et al., *Nominal SSProve*](https://eprint.iacr.org/2025/598)
 -/
 
 namespace CatCrypt.Package

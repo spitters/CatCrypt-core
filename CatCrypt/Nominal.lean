@@ -25,5 +25,5 @@ Nominal sets are mathematical structures for reasoning about names and binding.
 ## References
 
 * [Pitts, *Nominal Sets*]
-* [Benton et al., *Nominal CatCrypt*](https://eprint.iacr.org/2025/598)
+* [Benton et al., *Nominal SSProve*](https://eprint.iacr.org/2025/598)
 -/

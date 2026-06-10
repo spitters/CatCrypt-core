@@ -20,7 +20,7 @@ nominal CatCrypt's state separation.
 ## References
 
 * [Pitts, *Nominal Sets*], Chapter 3
-* [Benton et al., *Nominal CatCrypt*](https://eprint.iacr.org/2025/598)
+* [Benton et al., *Nominal SSProve*](https://eprint.iacr.org/2025/598)
 -/
 
 namespace CatCrypt.Nominal
@@ -128,7 +128,7 @@ theorem shifted_ne_mem {s : Finset Atom} {base : ℕ} {a b : Atom}
     The key property is that when `base ≥ offset s`, the images
     are above the offset, hence disjoint from any set with offset ≤ base.
 
-    Following Rocq CatCrypt's `fperm (λ a, atomize (offset (supp x) + natize a)) (supp y)`. -/
+    Following Rocq SSProve's `fperm (λ a, atomize (offset (supp x) + natize a)) (supp y)`. -/
 noncomputable def freshPerm (s : Finset Atom) (base : ℕ) : FinPerm :=
   -- Build the permutation by composing swaps for each element
   -- We use List.foldl since FinPerm multiplication is associative

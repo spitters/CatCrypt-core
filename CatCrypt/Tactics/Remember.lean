@@ -50,8 +50,8 @@ ssprove_remind_lhs
 
 ## References
 
-* CatCrypt: theories/Crypt/package/pkg_rhl.v (r_get_remember_lhs, etc.)
-* CatCrypt: theories/Crypt/package/pkg_user_util.v (ssprove_forget)
+* SSProve: theories/Crypt/package/pkg_rhl.v (r_get_remember_lhs, etc.)
+* SSProve: theories/Crypt/package/pkg_user_util.v (ssprove_forget)
 -/
 
 namespace CatCrypt.Relational

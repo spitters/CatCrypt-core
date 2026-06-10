@@ -30,7 +30,7 @@ the nominal analogue of alpha-equivalence for binders.
 ## References
 
 * [Pitts, *Nominal Sets*], Chapter 4
-* [Benton et al., *Nominal CatCrypt*](https://eprint.iacr.org/2025/598)
+* [Benton et al., *Nominal SSProve*](https://eprint.iacr.org/2025/598)
 -/
 
 namespace CatCrypt.Nominal

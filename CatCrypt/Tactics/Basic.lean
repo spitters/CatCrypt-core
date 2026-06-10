@@ -26,7 +26,7 @@ including tactics for ValidCode goals and code simplification.
 
 ## References
 
-* CatCrypt: theories/Crypt/package/pkg_tactics.v
+* SSProve: theories/Crypt/package/pkg_tactics.v
 -/
 
 namespace CatCrypt.Tactics

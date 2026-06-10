@@ -31,8 +31,8 @@ a sequence of hybrid games.
 
 ## References
 
-* CatCrypt: theories/Crypt/package/pkg_advantage.v
-* [Benton et al., *Nominal CatCrypt*](https://eprint.iacr.org/2025/598)
+* SSProve: theories/Crypt/package/pkg_advantage.v
+* [Benton et al., *Nominal SSProve*](https://eprint.iacr.org/2025/598)
 -/
 
 namespace CatCrypt.Crypto

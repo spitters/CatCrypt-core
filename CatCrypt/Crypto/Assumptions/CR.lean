@@ -54,7 +54,7 @@ SLH-DSA.
 **Equivalent formalizations:**
 - EasyCrypt: `CRHash.ec` (search CR + indistinguishability variant),
   `KeyedHashFunctions.eca` (TCR, SPR, PRE, CR, DSPR, UD, ITSR)
-- CatCrypt (Rocq): CR in `MerkleTree/Reduction.lean` (distinguishing form),
+- SSProve (Rocq): CR in `MerkleTree/Reduction.lean` (distinguishing form),
   TCR in `CramerShoup.lean`
 
 ## References

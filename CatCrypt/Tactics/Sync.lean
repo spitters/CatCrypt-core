@@ -29,7 +29,7 @@ The tactics try each rule in sequence until one succeeds:
 
 ## References
 
-* CatCrypt: theories/Crypt/package/pkg_rhl.v
+* SSProve: theories/Crypt/package/pkg_rhl.v
 -/
 
 namespace CatCrypt.Tactics
@@ -405,7 +405,7 @@ macro "ssprove_swap_sample_set_rhs" : tactic => `(tactic| (
 /-! ## Swap Sequence Tactics
 
 These tactics apply a sequence of swap operations in order.
-They are ported from Rocq CatCrypt's `ssprove_swap_seq_lhs` and `ssprove_swap_seq_rhs`.
+They are ported from Rocq SSProve's `ssprove_swap_seq_lhs` and `ssprove_swap_seq_rhs`.
 -/
 
 /-- `ssprove_swap_seq_lhs [eq₁, eq₂, ...]` applies a sequence of swap lemmas on the left side.

@@ -22,7 +22,7 @@ orbit/stabilizer theory, etc.
 ## References
 
 * [Pitts, *Nominal Sets*], Chapters 2-3
-* CatCrypt `theories/Crypt/nominal/Nominal.v`
+* SSProve `theories/Crypt/nominal/Nominal.v`
 -/
 
 namespace CatCrypt.Nominal

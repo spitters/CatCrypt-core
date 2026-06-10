@@ -33,7 +33,7 @@ This is the computational analogue of DDH; DDH ⟹ CDH but not vice versa.
 
 **Equivalent formalizations:**
 - EasyCrypt: `CDH` theory in `theories/crypto/DiffieHellman.ec`
-- CatCrypt (Rocq): not formalized (only DDH)
+- SSProve (Rocq): not formalized (only DDH)
 
 **Relationship to other assumptions:**
 - DDH ⟹ CDH (if you can't distinguish, you can't compute)

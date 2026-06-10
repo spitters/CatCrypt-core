@@ -106,7 +106,7 @@ example : rHoare eqPre (sample α) (sample α) (fun a h₁ b h₂ => eqPre h₁ 
 
 ## References
 
-* [Benton et al., *Nominal CatCrypt*](https://eprint.iacr.org/2025/598)
+* [Benton et al., *Nominal SSProve*](https://eprint.iacr.org/2025/598)
 -/
 
 namespace CatCrypt.Tactics

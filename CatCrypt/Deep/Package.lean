@@ -42,8 +42,8 @@ Separation reasoning can be based on either:
 
 ## References
 
-* [Benton et al., *Nominal CatCrypt*](https://eprint.iacr.org/2025/598)
-* CatCrypt Rocq: `theories/Crypt/nominal/Nominal.v`, `free_code.v`
+* [Benton et al., *Nominal SSProve*](https://eprint.iacr.org/2025/598)
+* SSProve Rocq: `theories/Crypt/nominal/Nominal.v`, `free_code.v`
 -/
 
 namespace CatCrypt.Deep
@@ -88,14 +88,14 @@ end DeepInterface
 
 /-! ## Valid Code (Inductive Definition)
 
-Following Rocq CatCrypt, we define validity inductively. This approach:
+Following Rocq SSProve, we define validity inductively. This approach:
 1. Avoids the problem of computing continuation locations for bind
 2. Makes HEq proofs trivial via proof irrelevance
 3. Matches the Rocq implementation exactly -/
 
 /-- Valid code uses only locations from a declared set.
 
-    Defined inductively following Rocq CatCrypt's `valid_code`.
+    Defined inductively following Rocq SSProve's `valid_code`.
     Each constructor checks that location accesses are within the declared set `L`.
     Note: We use LocSet (= Finset Nat) for location id sets. -/
 inductive ValidCode (L : LocSet) : (α : Type u) → RawCode α → Prop where

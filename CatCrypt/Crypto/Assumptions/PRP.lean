@@ -28,16 +28,15 @@ block cipher security. Used by CMAC, AES-GCM, and other constructions.
 
 ### PRP/PRF Switching
 * `PRP_PRF_SwitchingBound` — birthday bound `q(q-1)/(2|W|)`
-* `PRP_PRF_Switching` — switching theorem statement
 
 ## Cross-Validation
 
-| Property | This file | Textbook | EasyCrypt | CatCrypt (Rocq) |
+| Property | This file | Textbook | EasyCrypt | SSProve (Rocq) |
 |----------|-----------|----------|-----------|----------------|
 | Weak PRP | `PRP_Real`/`Ideal` | BS Def. 4.1 | `WeakPRP.IND` | — |
 | Strong PRP | `SPRP_Advantage` | BS Def. 4.2 | `StrongPRP.IND` | `PRPCCA.v` |
 | PRF | `PRF_Real` vs `PRP_Ideal` | BS Def. 4.2 | `PRF.IND` | `PRF.v` |
-| Switching | `PRP_PRF_Switching` | BS Thm. 4.4 | `RP_RF` (proved) | (explicit gap) |
+| Switching | `PRP_PRF_SwitchingBound` (bound only) | BS Thm. 4.4 | `RP_RF` (proved) | (explicit gap) |
 
 ## References
 
@@ -122,7 +121,7 @@ permutation `enc` and the inverse `dec`. This is needed by protocols
 that use block cipher decryption (e.g., CBC mode).
 
 EasyCrypt: `StrongPRP.IND` in `PRP.eca`.
-CatCrypt (Rocq): `EVAL` game in `PRPCCA.v` with `lookup`/`invlookup`. -/
+SSProve (Rocq): `EVAL` game in `PRPCCA.v` with `lookup`/`invlookup`. -/
 
 /-- Strong PRP adversary: receives both forward and inverse oracles.
 

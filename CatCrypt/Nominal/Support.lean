@@ -20,7 +20,7 @@ and `Fresh.lean`.
 ## References
 
 * [Pitts, *Nominal Sets*], Chapter 2
-* CatCrypt `theories/Crypt/nominal/Nominal.v`
+* SSProve `theories/Crypt/nominal/Nominal.v`
 -/
 
 namespace CatCrypt.Nominal

@@ -29,8 +29,8 @@ the main lemma `eq_rel_perf_ind` for proving it using invariants.
 
 ## References
 
-* [Benton et al., *Nominal CatCrypt*](https://eprint.iacr.org/2025/598)
-* CatCrypt: theories/Crypt/package/pkg_rhl.v
+* [Benton et al., *Nominal SSProve*](https://eprint.iacr.org/2025/598)
+* SSProve: theories/Crypt/package/pkg_rhl.v
 -/
 
 namespace CatCrypt.Invariant

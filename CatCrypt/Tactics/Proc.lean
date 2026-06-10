@@ -30,7 +30,7 @@ Since our games are plain Lean functions (not a separate language),
 ## References
 
 * EasyCrypt: ecProc tactic
-* CatCrypt: theories/Crypt/package/pkg_rhl.v
+* SSProve: theories/Crypt/package/pkg_rhl.v
 -/
 
 namespace CatCrypt.Tactics

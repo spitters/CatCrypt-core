@@ -27,8 +27,8 @@ more precise relational specifications. The `ssprove_sync` and
 
 ## References
 
-* [Benton et al., *Nominal CatCrypt*](https://eprint.iacr.org/2025/598)
-* CatCrypt: theories/Crypt/package/pkg_heap_comp.v
+* [Benton et al., *Nominal SSProve*](https://eprint.iacr.org/2025/598)
+* SSProve: theories/Crypt/package/pkg_heap_comp.v
 -/
 
 namespace CatCrypt.Invariant

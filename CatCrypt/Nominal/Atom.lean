@@ -25,7 +25,7 @@ supply of distinguishable names.
 ## References
 
 * [Pitts, *Nominal Sets*]
-* [CatCrypt Nominal Package](https://github.com/CatCrypt/ssprove)
+* [SSProve Nominal Package](https://github.com/SSProve/ssprove)
 -/
 
 namespace CatCrypt.Nominal

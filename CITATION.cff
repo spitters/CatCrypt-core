@@ -4,6 +4,8 @@ message: >-
   (see preferred-citation).
 title: CatCrypt
 type: software
+version: 0.2.0
+date-released: 2026-06-10
 authors:
   - family-names: Spitters
     given-names: Bas

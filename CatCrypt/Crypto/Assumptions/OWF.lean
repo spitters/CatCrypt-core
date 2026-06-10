@@ -36,7 +36,7 @@ no efficient adversary can find any preimage `x'` such that `f(x') = f(x)`.
 
 **Equivalent formalizations:**
 - EasyCrypt: `OW` game in `OW.ec`
-- CatCrypt (Rocq): not formalized
+- SSProve (Rocq): not formalized
 
 **Relationship to other assumptions:**
 - PRG ⟹ OWF (BS Thm 8.1): `prg_implies_owf`

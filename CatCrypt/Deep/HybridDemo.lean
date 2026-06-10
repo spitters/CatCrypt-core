@@ -42,9 +42,10 @@ properties.
 
 ## References
 
-* [Benton et al., *Nominal CatCrypt*](https://eprint.iacr.org/2025/598)
-* [Barthe et al., *CatCrypt: Cryptographic Proofs in Coq*]
-* CatCrypt Rocq: `theories/Crypt/examples/PRF_example.v`
+* [Benton et al., *Nominal SSProve*](https://eprint.iacr.org/2025/598)
+* [Haselwarter et al., *SSProve: A Foundational Framework for Modular
+  Cryptographic Proofs in Coq*](https://doi.org/10.1145/3594735)
+* SSProve Rocq: `theories/Crypt/examples/PRF_example.v`
 -/
 
 namespace CatCrypt.Deep.HybridDemo

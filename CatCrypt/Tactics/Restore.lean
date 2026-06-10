@@ -32,8 +32,8 @@ invariant is preserved by the write.
 
 ## References
 
-* CatCrypt: theories/Crypt/package/pkg_user_util.v
-* CatCrypt: theories/Crypt/package/pkg_invariants.v
+* SSProve: theories/Crypt/package/pkg_user_util.v
+* SSProve: theories/Crypt/package/pkg_invariants.v
 -/
 
 namespace CatCrypt.Relational

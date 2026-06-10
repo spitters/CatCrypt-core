@@ -39,7 +39,7 @@ probabilistic Hoare logic (pRHL) and the advantage/probability framework.
 ## References
 
 * EasyCrypt: `byphoare`, `phoare`, and `fel` tactics
-* CatCrypt (Rocq): `rhl_semantics`, advantage framework
+* SSProve (Rocq): `rhl_semantics`, advantage framework
 * Barthe et al., "CertiCrypt: Computer-Verified, Implementation-Level Code-Based
   Cryptographic Proofs" (failure event lemma)
 -/

@@ -51,8 +51,8 @@ so evaluation is a simple mapping:
 
 ## References
 
-* CatCrypt: theories/Crypt/rhl_semantics/free_prot/free_prot_semantics.v
-* [Benton et al., *Nominal CatCrypt*](https://eprint.iacr.org/2025/598)
+* SSProve: theories/Crypt/rhl_semantics/free_prot/free_prot_semantics.v
+* [Benton et al., *Nominal SSProve*](https://eprint.iacr.org/2025/598)
 -/
 
 namespace CatCrypt.Deep

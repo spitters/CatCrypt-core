@@ -48,8 +48,8 @@ When both `rem_lhs l v` and `syncsAt l` hold, we can derive `rem_rhs l v`.
 
 ## References
 
-* CatCrypt: theories/Crypt/package/pkg_user_util.v
-* CatCrypt: theories/Crypt/package/pkg_invariants.v
+* SSProve: theories/Crypt/package/pkg_user_util.v
+* SSProve: theories/Crypt/package/pkg_invariants.v
 * EasyCrypt: `auto`/`sp`/`wp` for invariant preservation
 -/
 

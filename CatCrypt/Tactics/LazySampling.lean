@@ -41,7 +41,7 @@ The abstract interface is:
 
 ## References
 
-* CatCrypt PRF.v (Rocq): lazy sampling for PRF security games
+* SSProve PRF.v (Rocq): lazy sampling for PRF security games
 * [Bellare & Rogaway, Introduction to Modern Cryptography]
 -/
 

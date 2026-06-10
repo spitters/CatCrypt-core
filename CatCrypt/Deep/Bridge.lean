@@ -44,7 +44,7 @@ The bridge serves multiple purposes:
 
 ## References
 
-* [Benton et al., *Nominal CatCrypt*](https://eprint.iacr.org/2025/598)
+* [Benton et al., *Nominal SSProve*](https://eprint.iacr.org/2025/598)
 * [Dupressoir et al., *How Hard Can It Be?*](https://eprint.iacr.org/2025/1569)
 -/
 

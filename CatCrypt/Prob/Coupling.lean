@@ -26,7 +26,7 @@ that is fundamental to probabilistic relational Hoare logic.
 ## References
 
 * Probabilistic couplings in verification
-* CatCrypt: theories/Crypt/rhl_semantics/only_prob/Couplings.v
+* SSProve: theories/Crypt/rhl_semantics/only_prob/Couplings.v
 -/
 
 namespace CatCrypt.Prob

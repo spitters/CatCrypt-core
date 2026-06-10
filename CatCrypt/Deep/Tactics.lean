@@ -26,8 +26,8 @@ example (p₁ p₂ : DeepPackage) (h : Disjoint p₁.locs p₂.locs) : DeepPacka
 
 ## References
 
-* [Benton et al., *Nominal CatCrypt*](https://eprint.iacr.org/2025/598)
-* CatCrypt Rocq: `theories/Crypt/Package.v` (package tactics)
+* [Benton et al., *Nominal SSProve*](https://eprint.iacr.org/2025/598)
+* SSProve Rocq: `theories/Crypt/Package.v` (package tactics)
 -/
 
 namespace CatCrypt
