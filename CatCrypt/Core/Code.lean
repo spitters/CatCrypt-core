@@ -165,6 +165,22 @@ theorem pure_bind (a : α) (f : α → SPComp β) : SPComp.bind (pure a) f = f a
   funext h
   exact pure_bind' a f h
 
+/-- `Bind.bind` form of `pure_bind`. When a goal arrives with the typeclass-method
+    `Bind.bind` (from `Monad SPComp` instance projection) rather than the prefix
+    `SPComp.bind`, `pure_bind`'s LHS pattern does not unify because the head symbols
+    differ syntactically. This bridge lemma is a definitional `rfl` (the `Monad`
+    instance defines `bind := SPComp.bind`) and is safe as `@[simp]`: confluent
+    with `pure_bind` and `monad_bind_eq`. -/
+@[simp]
+theorem bind_pure_left {α β : Type} (a : α) (f : α → SPComp β) :
+    (Bind.bind (SPComp.pure a) f : SPComp β) = f a := pure_bind a f
+
+/-- HBind operator form (`x >>= f`) of `pure_bind`. Mirrors `bind_pure_left`
+    for the bind operator. Safe as `@[simp]`: rfl-true and confluent. -/
+@[simp]
+theorem hBind_pure_left {α β : Type} (a : α) (f : α → SPComp β) :
+    (SPComp.pure a >>= f : SPComp β) = f a := pure_bind a f
+
 /-! ## Functorial map -/
 
 /-- Functorial map for SPComp -/

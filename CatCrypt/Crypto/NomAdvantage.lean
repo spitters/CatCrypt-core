@@ -493,7 +493,6 @@ For TLS games (which use heap state), `NomPkgSecure` is the strongest notion
 achievable without proving IsPure for linked packages.
 -/
 
-universe u_nps in
 /-- Adversary-dependent game-based security for NomPkg games.
 
     `NomPkgSecure G G' ε` states that for all adversaries `A : NomPackage`,
@@ -501,47 +500,42 @@ universe u_nps in
 
     This captures the standard cryptographic game-based security notion where
     the bound depends on the adversary's complexity (time, oracle queries). -/
-def NomPkgSecure (G G' : CatCrypt.Deep.NomPackage.{0, u_nps})
-    (ε : CatCrypt.Deep.NomPackage.{0, u_nps} → ℝ≥0∞) : Prop :=
-  ∀ (A : CatCrypt.Deep.NomPackage.{0, u_nps}), DeepNomAdvantage G G' A ≤ ε A
+def NomPkgSecure (G G' : CatCrypt.Deep.NomPackage)
+    (ε : CatCrypt.Deep.NomPackage → ℝ≥0∞) : Prop :=
+  ∀ (A : CatCrypt.Deep.NomPackage), DeepNomAdvantage G G' A ≤ ε A
 
-universe u_nps in
 /-- Reflexivity: any game is trivially secure against itself. -/
-theorem NomPkgSecure_refl (G : CatCrypt.Deep.NomPackage.{0, u_nps}) :
+theorem NomPkgSecure_refl (G : CatCrypt.Deep.NomPackage) :
     NomPkgSecure G G (fun _ => 0) :=
   fun A => le_of_eq (DeepNomAdvantage_self G A)
 
-universe u_nps in
 /-- Symmetry: swapping real and ideal preserves the bound. -/
-theorem NomPkgSecure_sym {G G' : CatCrypt.Deep.NomPackage.{0, u_nps}}
-    {ε : CatCrypt.Deep.NomPackage.{0, u_nps} → ℝ≥0∞}
+theorem NomPkgSecure_sym {G G' : CatCrypt.Deep.NomPackage}
+    {ε : CatCrypt.Deep.NomPackage → ℝ≥0∞}
     (h : NomPkgSecure G G' ε) :
     NomPkgSecure G' G ε :=
   fun A => (DeepNomAdvantage_comm G G' A) ▸ (h A)
 
-universe u_nps in
 /-- Transitivity: composition via triangle inequality.
     The adversary-dependent bounds add pointwise. -/
-theorem NomPkgSecure_trans {G₁ G₂ G₃ : CatCrypt.Deep.NomPackage.{0, u_nps}}
-    {ε₁ ε₂ : CatCrypt.Deep.NomPackage.{0, u_nps} → ℝ≥0∞}
+theorem NomPkgSecure_trans {G₁ G₂ G₃ : CatCrypt.Deep.NomPackage}
+    {ε₁ ε₂ : CatCrypt.Deep.NomPackage → ℝ≥0∞}
     (h₁ : NomPkgSecure G₁ G₂ ε₁)
     (h₂ : NomPkgSecure G₂ G₃ ε₂) :
     NomPkgSecure G₁ G₃ (fun A => ε₁ A + ε₂ A) :=
   fun A => le_trans (DeepNomAdvantage_triangle G₁ G₂ G₃ A) (add_le_add (h₁ A) (h₂ A))
 
-universe u_nps in
 /-- Monotonicity: weakening the bound. -/
-theorem NomPkgSecure_mono {G G' : CatCrypt.Deep.NomPackage.{0, u_nps}}
-    {ε₁ ε₂ : CatCrypt.Deep.NomPackage.{0, u_nps} → ℝ≥0∞}
+theorem NomPkgSecure_mono {G G' : CatCrypt.Deep.NomPackage}
+    {ε₁ ε₂ : CatCrypt.Deep.NomPackage → ℝ≥0∞}
     (h : NomPkgSecure G G' ε₁)
     (hle : ∀ A, ε₁ A ≤ ε₂ A) :
     NomPkgSecure G G' ε₂ :=
   fun A => le_trans (h A) (hle A)
 
-universe u_nps in
 /-- Uniform bound version: when the bound doesn't depend on the adversary. -/
-theorem NomPkgSecure_uniform {G G' : CatCrypt.Deep.NomPackage.{0, u_nps}}
-    {ε : CatCrypt.Deep.NomPackage.{0, u_nps} → ℝ≥0∞} {ε_u : ℝ≥0∞}
+theorem NomPkgSecure_uniform {G G' : CatCrypt.Deep.NomPackage}
+    {ε : CatCrypt.Deep.NomPackage → ℝ≥0∞} {ε_u : ℝ≥0∞}
     (h : NomPkgSecure G G' ε)
     (hle : ∀ A, ε A ≤ ε_u) :
     NomPkgSecure G G' (fun _ => ε_u) :=

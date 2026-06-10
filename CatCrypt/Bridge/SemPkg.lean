@@ -4,6 +4,7 @@ Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
 import CatCrypt.Category.PkgFam
+import CatCrypt.Tactics.SumCases
 import Mathlib.CategoryTheory.Monoidal.Braided.Basic
 
 /-!
@@ -129,7 +130,7 @@ def pair (h₁ : TypedHandler I) (h₂ : TypedHandler J) :
 
 @[simp] theorem fst_pair_snd (h : TypedHandler (I.tensor J)) :
     pair h.fst h.snd = h := by
-  funext k; cases k <;> rfl
+  pkg_coherence_lite
 
 end TypedHandler
 
@@ -177,8 +178,8 @@ instance pkgMCS : MonoidalCategoryStruct PkgInterface where
       | .inl (.inl i) => h (.inl i)
       | .inl (.inr j) => h (.inr (.inl j))
       | .inr k => h (.inr (.inr k))
-    hom_inv_id := by funext h k; rcases k with (i | j) | k <;> rfl
-    inv_hom_id := by funext h k; rcases k with i | (j | k) <;> rfl
+    hom_inv_id := by pkg_coherence_lite
+    inv_hom_id := by pkg_coherence_lite
   }
   leftUnitor I := {
     hom := fun h i => h (.inr i)
@@ -198,15 +199,15 @@ instance pkgMCS : MonoidalCategoryStruct PkgInterface where
   }
 
 instance pkgMonoidal : MonoidalCategory PkgInterface where
-  tensorHom_def _ _ := by funext h k; cases k <;> rfl
-  id_tensorHom_id _ _ := by funext h k; cases k <;> rfl
-  tensorHom_comp_tensorHom _ _ _ _ := by funext h k; cases k <;> rfl
-  whiskerLeft_id _ _ := by funext h k; cases k <;> rfl
-  id_whiskerRight _ _ := by funext h k; cases k <;> rfl
-  associator_naturality _ _ _ := by funext h k; rcases k with y₁ | (y₂ | y₃) <;> rfl
+  tensorHom_def _ _ := by pkg_coherence_lite
+  id_tensorHom_id _ _ := by pkg_coherence_lite
+  tensorHom_comp_tensorHom _ _ _ _ := by pkg_coherence_lite
+  whiskerLeft_id _ _ := by pkg_coherence_lite
+  id_whiskerRight _ _ := by pkg_coherence_lite
+  associator_naturality _ _ _ := by pkg_coherence_lite
   leftUnitor_naturality _ := rfl
   rightUnitor_naturality _ := rfl
-  pentagon _ _ _ _ := by funext h k; rcases k with w | (x | (y | z)) <;> rfl
+  pentagon _ _ _ _ := by pkg_coherence_lite
   triangle _ _ := rfl
 
 /-! ## Braiding and Symmetric Structure
@@ -224,16 +225,16 @@ private def braidIso (I J : PkgInterface) : I.tensor J ≅ J.tensor I where
   inv := fun h k => match k with
     | .inl i => h (.inr i)
     | .inr j => h (.inl j)
-  hom_inv_id := by funext h k; cases k <;> rfl
-  inv_hom_id := by funext h k; cases k <;> rfl
+  hom_inv_id := by pkg_coherence_lite
+  inv_hom_id := by pkg_coherence_lite
 
 instance pkgSMC : SymmetricCategory PkgInterface where
   braiding I J := braidIso I J
-  braiding_naturality_right := by intros; funext h k; cases k <;> rfl
-  braiding_naturality_left := by intros; funext h k; cases k <;> rfl
-  hexagon_forward := by intros; funext h k; rcases k with x | (y | z) <;> rfl
-  hexagon_reverse := by intros; funext h k; rcases k with (x | y) | z <;> rfl
-  symmetry := by intros; funext h k; cases k <;> rfl
+  braiding_naturality_right := by intros; pkg_coherence_lite
+  braiding_naturality_left := by intros; pkg_coherence_lite
+  hexagon_forward := by intros; pkg_coherence_lite
+  hexagon_reverse := by intros; pkg_coherence_lite
+  symmetry := by intros; pkg_coherence_lite
 
 /-! ## Connection to Untyped Handlers
 

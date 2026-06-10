@@ -100,6 +100,13 @@ private theorem castKl'_dep_fn_congr {ι : Type} {F : ι → ℕ × Type × Type
     (eq_a : F a = t) (eq_b : F b = t) :
     castKl' eq_a (f a) = castKl' eq_b (f b) := by subst hab; rfl
 
+/-- Sum-indexed variant of `castKl'_dep_fn`. -/
+private theorem castKl'_dep_fn_sum {ιL ιR : Type} {F : ιL ⊕ ιR → ℕ × Type × Type}
+    {a b : ιL ⊕ ιR} (hab : a = b)
+    (f : ∀ k, (F k).2.1 → SPComp (F k).2.2)
+    (eq : F a = F b) :
+    castKl' eq (f a) = f b := by subst hab; rfl
+
 /-! ## Tensor-Append Isomorphism -/
 
 /-- Forward: handler for `diAppend I J` → handler for `toPI I ⊗ toPI J`. -/
@@ -149,10 +156,24 @@ noncomputable def tensorAppendIso :
       simp only [i.isLt, dite_true]
       exact castKl'_castKl'_symm _ _ _
     | inr j =>
-      simp only [show ¬(I.ops.length + j.val < I.ops.length) by omega, dite_false,
-        castKl'_trans]
-      have hval : I.ops.length + j.val - I.ops.length = j.val := by omega
-      exact castKl'_dep_fn (Fin.ext hval) (fun j => h (.inr j)) _
+      simp only [show ¬(I.ops.length + j.val < I.ops.length) by omega, dite_false]
+      -- The elaborator cannot infer the `Fin` term for `Fin.ext` here;
+      -- supply it explicitly. The Fin equality transports the chained
+      -- `castKl'` to a single one via `castKl'_dep_fn`.
+      have hval : (⟨I.ops.length + j.val - I.ops.length, by omega⟩ : Fin J.ops.length) = j :=
+        Fin.ext (by show I.ops.length + j.val - I.ops.length = j.val; omega)
+      -- Collapse the chained cast to a single one via proof irrelevance,
+      -- then apply the dependent-function transport `castKl'_dep_fn` at the
+      -- right summand index `Fin J.ops.length`.
+      have key : ∀ (a : Fin J.ops.length)
+          (eq_outer : (I.ops ++ J.ops).get ⟨I.ops.length + j.val, by simp⟩ = J.ops.get j)
+          (eq_inner : J.ops.get a = (I.ops ++ J.ops).get ⟨I.ops.length + j.val, by simp⟩)
+          (ha : a = j),
+          castKl' eq_outer (castKl' eq_inner (h (.inr a))) = h (.inr j) := by
+        intro a eq_outer eq_inner ha
+        subst ha
+        exact castKl'_castKl'_symm _ _ _
+      exact key _ _ _ hval
 
 /-! ## Unit Correspondence -/
 
@@ -237,29 +258,75 @@ theorem tensorAppend_assoc_coherence :
       (tensorAppendIso I (diAppend J K)).hom ≫
       toPI I ◁ (tensorAppendIso J K).hom := by
   funext h k
-  simp only [pkg_comp_apply, pkgMCS]
-  rcases k with i | (j | k')
-  · dsimp only
-    simp only [tensorAppendIso_hom, appendAssocIso_hom]
+  have he : diAppend (diAppend I J) K = diAppend I (diAppend J K) :=
+    diAppend_assoc I J K
+  rcases k with i | (j | l)
+  all_goals simp only [pkg_comp_apply, tensorAppendIso_hom, appendAssocIso_hom]
+  · -- I branch (Sum.inl i): LHS and RHS both reduce to two nested `castKl'`
+    -- applied to `h ⟨i.val, _⟩`. Use a key lambda over both Fins with subst.
+    show appendToTensor I J (fun i' => appendToTensor (diAppend I J) K h (Sum.inl i'))
+          (Sum.inl i)
+        = appendToTensor I (diAppend J K) (eqToHom (congrArg toPI he) h) (Sum.inl i)
     simp only [appendToTensor]
-    -- Goal: castKl' ⋯ (castKl' ⋯ (h ⟨↑i, ⋯⟩)) = castKl' ⋯ (eqToHom ⋯ h ⟨↑i, ⋯⟩)
-    have he := eqToHom_handler (diAppend_assoc I J K) h
-    rw [he, handler_transport_apply]
-    simp only [castKl'_trans]
-  · dsimp only
-    simp only [tensorAppendIso_hom, appendAssocIso_hom]
+    rw [eqToHom_handler, handler_transport_apply he]
+    · rcases i with ⟨i, hi⟩
+      have key : ∀ (a b : Fin (diAppend (diAppend I J) K).ops.length) (hab : a = b)
+          {t₁L t₂L t₁R t₂R : ℕ × Type × Type}
+          (eqL1 : (diAppend (diAppend I J) K).ops.get a = t₁L) (eqL2 : t₁L = t₂L)
+          (eqR1 : (diAppend (diAppend I J) K).ops.get b = t₁R) (eqR2 : t₁R = t₂R)
+          (hT : t₂L = t₂R),
+          castKl' eqL2 (castKl' eqL1 (h a)) =
+            hT ▸ castKl' eqR2 (castKl' eqR1 (h b)) := by
+        intro a b hab t₁L t₂L t₁R t₂R eqL1 eqL2 eqR1 eqR2 hT
+        subst hab; subst eqL1; subst eqL2; subst eqR1; subst eqR2; rfl
+      exact key _ _ (Fin.ext rfl) _ _ _ _ rfl
+    · exact he
+  · -- J branch (Sum.inr (Sum.inl j)): LHS has 2 nested castKl' applied to
+    -- `h ⟨I.ops.length + j.val, _⟩`; RHS has 3 (extra cast from
+    -- `handler_transport_apply he`). Use a key lambda that absorbs the chain
+    -- by subst on the Fin index equality.
+    show appendToTensor I J (fun i' => appendToTensor (diAppend I J) K h (Sum.inl i'))
+          (Sum.inr j)
+        = appendToTensor J K (fun j' =>
+            appendToTensor I (diAppend J K) (eqToHom (congrArg toPI he) h) (Sum.inr j'))
+          (Sum.inl j)
     simp only [appendToTensor]
-    have he := eqToHom_handler (diAppend_assoc I J K) h
-    rw [he, handler_transport_apply]
-    simp only [castKl'_trans]
-  · dsimp only
-    simp only [tensorAppendIso_hom, appendAssocIso_hom]
+    rw [eqToHom_handler, handler_transport_apply he]
+    · rcases j with ⟨j, hj⟩
+      have key : ∀ (a b : Fin (diAppend (diAppend I J) K).ops.length) (hab : a = b)
+          {t₁L t₂L t₁R t₂R t₃R : ℕ × Type × Type}
+          (eqL1 : (diAppend (diAppend I J) K).ops.get a = t₁L) (eqL2 : t₁L = t₂L)
+          (eqR1 : (diAppend (diAppend I J) K).ops.get b = t₁R) (eqR2 : t₁R = t₂R)
+          (eqR3 : t₂R = t₃R) (hT : t₂L = t₃R),
+          castKl' eqL2 (castKl' eqL1 (h a)) =
+            hT ▸ castKl' eqR3 (castKl' eqR2 (castKl' eqR1 (h b))) := by
+        intro a b hab t₁L t₂L t₁R t₂R t₃R eqL1 eqL2 eqR1 eqR2 eqR3 hT
+        subst hab; subst eqL1; subst eqL2; subst eqR1; subst eqR2; subst eqR3; rfl
+      exact key _ _ (Fin.ext rfl) _ _ _ _ _ rfl
+    · exact he
+  · -- K branch (Sum.inr (Sum.inr l)): LHS has 1 castKl' applied to
+    -- `h ⟨(I.ops.length + J.ops.length) + l.val, _⟩`; RHS has 3 casts applied
+    -- to `h ⟨I.ops.length + (J.ops.length + l.val), _⟩`. Indices differ by
+    -- Nat-addition-assoc.
+    show appendToTensor (diAppend I J) K h (Sum.inr l)
+        = appendToTensor J K (fun j' =>
+            appendToTensor I (diAppend J K) (eqToHom (congrArg toPI he) h) (Sum.inr j'))
+          (Sum.inr l)
     simp only [appendToTensor]
-    have he := eqToHom_handler (diAppend_assoc I J K) h
-    rw [he, handler_transport_apply]
-    simp only [castKl'_trans]
-    -- Goal: castKl' ⋯ (h ⟨(I++J).length + k', ⋯⟩) = castKl' ⋯ (h ⟨I.length + (J.length + k'), ⋯⟩)
-    exact castKl'_dep_fn_congr (Fin.ext (by simp [diAppend, DeepInterface.append]; omega)) h _ _
+    rw [eqToHom_handler, handler_transport_apply he]
+    · rcases l with ⟨l, hl⟩
+      have key : ∀ (a b : Fin (diAppend (diAppend I J) K).ops.length) (hab : a = b)
+          {t₁L t₁R t₂R t₃R : ℕ × Type × Type}
+          (eqL1 : (diAppend (diAppend I J) K).ops.get a = t₁L)
+          (eqR1 : (diAppend (diAppend I J) K).ops.get b = t₁R) (eqR2 : t₁R = t₂R)
+          (eqR3 : t₂R = t₃R) (hT : t₁L = t₃R),
+          castKl' eqL1 (h a) =
+            hT ▸ castKl' eqR3 (castKl' eqR2 (castKl' eqR1 (h b))) := by
+        intro a b hab t₁L t₁R t₂R t₃R eqL1 eqR1 eqR2 eqR3 hT
+        subst hab; subst eqL1; subst eqR1; subst eqR2; subst eqR3; rfl
+      exact key _ _ (Fin.ext (by simp [diAppend, DeepInterface.append]; omega))
+        _ _ _ _ rfl
+    · exact he
 
 /-! ## Linking = Categorical Composition
 
@@ -324,11 +391,14 @@ theorem tensorAppend_rightUnitor_coherence :
     (tensorAppendIso I ⟨[]⟩).hom ≫ (toPI I ◁ unitIso.hom) ≫ (ρ_ (toPI I)).hom =
     (appendEmptyRightIso I).hom := by
   funext h k
-  simp only [pkg_comp_apply, pkgMCS, tensorAppendIso_hom, appendToTensor]
-  -- RHS: unfold appendEmptyRightIso to eqToHom, then to castKl' form
-  simp only [appendEmptyRightIso, eqToIso]
-  have he := eqToHom_handler (diAppend_empty_right I) h
-  rw [he, handler_transport_apply]
+  show appendToTensor I ⟨[]⟩ h (Sum.inl k) = _
+  simp only [appendToTensor]
+  have he : diAppend I ⟨[]⟩ = I := diAppend_empty_right I
+  rw [show (appendEmptyRightIso I).hom =
+        eqToHom (congrArg toPI he) from rfl,
+      eqToHom_handler, handler_transport_apply he]
+  · rfl
+  · exact he
 
 /-- Left unitor coherence: the two paths from `toPI(⟨[]⟩ ++ I)` to `toPI(I)` agree.
     Path 1: `toPI(⟨[]⟩++I) → toPI(⟨[]⟩) ⊗ toPI(I) → 𝟙_ ⊗ toPI(I) → toPI(I)`
@@ -336,17 +406,9 @@ theorem tensorAppend_rightUnitor_coherence :
 theorem tensorAppend_leftUnitor_coherence :
     (tensorAppendIso ⟨[]⟩ I).hom ≫ (unitIso.hom ▷ toPI I) ≫ (λ_ (toPI I)).hom =
     (appendEmptyLeftIso I).hom := by
-  -- Since diAppend_empty_left I = rfl, appendEmptyLeftIso = eqToIso rfl = Iso.refl
-  -- Both sides should be the identity on toPI I
-  have : appendEmptyLeftIso I = Iso.refl (toPI I) := by
-    simp [appendEmptyLeftIso, diAppend_empty_left]
-  rw [this, Iso.refl_hom]
   funext h k
-  simp only [pkg_comp_apply, pkg_id_apply, pkgMCS, tensorAppendIso_hom, appendToTensor]
-  -- castKl' proof is reflexive when I_left = ⟨[]⟩ (since [] ++ l = l)
-  convert castKl'_rfl (h k) using 2
-  · simp [diAppend, DeepInterface.append]
-  · congr 1; exact Fin.ext (by simp)
+  simp [unitIso, appendEmptyLeftIso]
+  exact castKl'_dep_fn (Fin.ext (Nat.zero_add k.val)) h _
 
 /-! ## Braiding Bridge -/
 

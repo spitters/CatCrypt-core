@@ -34,16 +34,14 @@ This is the **invariant-based** correctness argument: standard folklore
 dating to Montgomery's 1987 paper, formalised here as a pure induction
 on bit length.
 
-## What is NOT proved (see `docs/jasmin-lean.md`)
+## What is NOT proved
 
 - **Field-op correctness.** The x-only differential-addition formula
   `dadd(x₀, x₁, x_P) = x(R₀ + R₁)` when `x_P = x(R₁ - R₀)`: this is the
   algebraic identity that makes the x-only ladder work. Proving it
   requires the full Montgomery-form group law (a case analysis and
   polynomial identity over the base field). Fiat-crypto proves it in
-  Rocq; porting ~3–4 weeks.
-- **Connection to Jasmin sem.** Axiom-level trust edge; see
-  `rustExecSoundInJasmin` and the plan doc.
+  Rocq.
 
 ## References
 

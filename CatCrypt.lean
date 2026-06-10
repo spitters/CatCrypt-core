@@ -62,6 +62,7 @@ import CatCrypt.Deep.ProofFrog
 import CatCrypt.Deep.HybridDemo
 import CatCrypt.Deep.Bridge
 import CatCrypt.Deep.Tactics
+import CatCrypt.Deep.Reflect
 
 -- Semantic bridge
 import CatCrypt.Bridge.SemPkg

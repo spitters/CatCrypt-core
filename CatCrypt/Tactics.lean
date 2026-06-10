@@ -19,6 +19,11 @@ import CatCrypt.Tactics.Auto
 import CatCrypt.Tactics.SP
 import CatCrypt.Tactics.LeOfSum
 import CatCrypt.Tactics.BridgeGen
+import CatCrypt.Tactics.SumCases
+import CatCrypt.Tactics.SPNormalize
+import CatCrypt.Tactics.Remember
+import CatCrypt.Tactics.Triangle
+import CatCrypt.Tactics.CryptoAuto
 
 /-!
 # CatCrypt Tactics Module
@@ -38,6 +43,11 @@ This module provides tactic automation for CatCrypt proofs.
 * `CatCrypt.Tactics.Sim` - Automated bisimulation (ssprove_sim)
 * `CatCrypt.Tactics.Auto` - EasyCrypt-style auto (ssprove_auto_ec)
 * `CatCrypt.Tactics.SP` - Strongest postcondition (ssprove_sp)
+* `CatCrypt.Tactics.SumCases` - Sum-type case explosion (sum_cases, pkg_coherence_lite)
+* `CatCrypt.Tactics.SPNormalize` - SPComp bind-chain normalization
+* `CatCrypt.Tactics.Remember` - Remembered-value reasoning (ssprove_remember, ssprove_forget)
+* `CatCrypt.Tactics.Triangle` - Advantage triangle-inequality chaining
+* `CatCrypt.Tactics.CryptoAuto` - Crypto-goal automation on top of Auto
 
 ## Overview
 
