@@ -47,10 +47,6 @@ Pinned in `lakefile.lean` and `lake-manifest.json`:
 
 - [Mathlib](https://github.com/leanprover-community/mathlib4) `v4.29.1`
 - [VCVio](https://github.com/Verified-zkEVM/VCV-io) `v4.29.0` (used by `Bridges/VCVioBridge/*`)
-- [Duper](https://github.com/leanprover-community/duper) `v4.29.0`,
-  [lean-auto](https://github.com/leanprover-community/lean-auto) `v4.29.0-hammer`,
-  [lean-smt](https://github.com/dhsorens/lean-smt) `dhsorens/4_28_0-update` —
-  hammer tools used by some proofs
 
 ## Trust edges
 

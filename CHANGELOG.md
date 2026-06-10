@@ -16,6 +16,8 @@
   CryptoAuto}` and `Deep/Reflect` (an `SPComp` → `RawCode` reifier).
 - Added `CITATION.cff`, `CHANGELOG.md`, `CONTRIBUTING.md`, and a CI workflow
   with sorry/axiom guards.
+- Dropped the unused Duper, lean-auto, and lean-smt dependencies (no module
+  imported them); the dependency set is now Mathlib + VCVio + hammer-free.
 
 ## v0.1.0 — 2026-04-23
 
