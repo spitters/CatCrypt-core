@@ -32,6 +32,7 @@ import CatCrypt.Relational.Rules
 import CatCrypt.Relational.Sync
 import CatCrypt.Relational.Frame
 import CatCrypt.Relational.Reorder
+import CatCrypt.Relational.ForLoop
 
 -- Package algebra
 import CatCrypt.Package.Interface

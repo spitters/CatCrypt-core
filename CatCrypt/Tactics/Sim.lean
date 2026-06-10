@@ -22,6 +22,8 @@ analogous to EasyCrypt's `sim` tactic.
 ## Main tactics
 
 * `ssprove_sim` - automatically prove equivalence by structural matching
+* `ssprove_sim?` - like `ssprove_sim`, but also emits a `Try this:` suggestion
+  with the explicit script of steps that fired
 * `ssprove_sim_bij f` - sim with explicit bijection for sampling steps
 * `ssprove_sim_step` - one step of sim (match heads, apply rule)
 
@@ -271,6 +273,163 @@ macro "ssprove_sim" : tactic => `(tactic| (
     | skip)
 ))
 
+/-! ## Script-Emitting Variant: `ssprove_sim?` -/
+
+/-- Run a tactic syntax on the current state. On failure, restore the state and
+return `false`. -/
+private def trySimTac (stx : TSyntax `tactic) : TacticM Bool := do
+  let s ← Tactic.saveState
+  try
+    evalTactic stx
+    return true
+  catch _ =>
+    s.restore
+    return false
+
+/-- The alternatives tried by `ssprove_sim_step`, in order, each paired with
+the replay text that `ssprove_sim?` emits when the alternative fires.
+
+Must stay in sync with the `ssprove_sim_step` macro (minus its final `fail`,
+which corresponds to no alternative firing). Lemma names are emitted fully
+qualified so the replay script works regardless of `open` context. -/
+private def simStepAlternatives : TacticM (Array (String × TSyntax `tactic)) := do
+  return #[
+    -- Reflexivity shortcuts (identical code)
+    ("apply CatCrypt.Relational.rHoare_refl",
+      ← `(tactic| apply CatCrypt.Relational.rHoare_refl)),
+    ("apply CatCrypt.Relational.rHoare_ret_same_eq",
+      ← `(tactic| apply CatCrypt.Relational.rHoare_ret_same_eq)),
+    ("apply CatCrypt.Relational.rHoare_ret_same",
+      ← `(tactic| apply CatCrypt.Relational.rHoare_ret_same)),
+    -- Sampling rules
+    ("apply CatCrypt.Relational.rHoare_sample_same_eq",
+      ← `(tactic| apply CatCrypt.Relational.rHoare_sample_same_eq)),
+    ("apply CatCrypt.Relational.rHoare_sample_same",
+      ← `(tactic| apply CatCrypt.Relational.rHoare_sample_same)),
+    -- Get rules
+    ("apply CatCrypt.Relational.rHoare_get_sync_eq",
+      ← `(tactic| apply CatCrypt.Relational.rHoare_get_sync_eq)),
+    ("(apply CatCrypt.Relational.rHoare_get_sync <;> [intro h₁ h₂ _; rfl])",
+      ← `(tactic| (apply CatCrypt.Relational.rHoare_get_sync <;> [intro h₁ h₂ _; rfl]))),
+    ("(apply CatCrypt.Relational.rHoare_get_sync <;> [intro h₁ h₂ heq; rw [heq]])",
+      ← `(tactic| (apply CatCrypt.Relational.rHoare_get_sync <;> [intro h₁ h₂ heq; rw [heq]]))),
+    -- Set rules
+    ("apply CatCrypt.Relational.rHoare_set_sync_eq",
+      ← `(tactic| apply CatCrypt.Relational.rHoare_set_sync_eq)),
+    ("(apply CatCrypt.Relational.rHoare_set_sync <;> [intro h₁ h₂ _; assumption])",
+      ← `(tactic| (apply CatCrypt.Relational.rHoare_set_sync <;> [intro h₁ h₂ _; assumption]))),
+    ("(apply CatCrypt.Relational.rHoare_set_sync <;> [intro h₁ h₂ heq; rw [heq]])",
+      ← `(tactic| (apply CatCrypt.Relational.rHoare_set_sync <;> [intro h₁ h₂ heq; rw [heq]]))),
+    -- Combined coupling steps (sample >>= k with same distribution)
+    ("(apply CatCrypt.Relational.rHoare_same_step; intro _)",
+      ← `(tactic| (apply CatCrypt.Relational.rHoare_same_step; intro _))),
+    -- Bind decomposition (with eqPost intermediate or general)
+    ("(apply CatCrypt.Relational.rHoare_bind_eq <;> [skip; intro _])",
+      ← `(tactic| (apply CatCrypt.Relational.rHoare_bind_eq <;> [skip; intro _]))),
+    ("(apply CatCrypt.Relational.rHoare_bind <;> [skip; intro _ _])",
+      ← `(tactic| (apply CatCrypt.Relational.rHoare_bind <;> [skip; intro _ _]))),
+    -- WP to absorb tail (composite tactic: replays as itself)
+    ("ssprove_wp_step", ← `(tactic| ssprove_wp_step)),
+    -- RSpec lookup (dynamic @[rspec] discrimination-tree query: replays as itself)
+    ("ssprove_rspec", ← `(tactic| ssprove_rspec)),
+    -- Reorder: commute mismatched heads (composite tactic: replays as itself)
+    ("ssprove_reorder", ← `(tactic| ssprove_reorder))]
+
+/-- The goal-closing alternatives from the tail of `ssprove_sim`
+(`all_goals (first | ... | skip)`), in order, paired with replay text.
+Must stay in sync with the `ssprove_sim` macro. -/
+private def simCloserAlternatives : TacticM (Array (String × TSyntax `tactic)) := do
+  return #[
+    ("rfl", ← `(tactic| rfl)),
+    ("assumption", ← `(tactic| assumption)),
+    ("(constructor <;> [rfl; rfl])", ← `(tactic| (constructor <;> [rfl; rfl]))),
+    ("(intro _ _ _ _ h; exact h)", ← `(tactic| (intro _ _ _ _ h; exact h))),
+    ("(intro _ _ _ _ ⟨h, _⟩; exact h)", ← `(tactic| (intro _ _ _ _ ⟨h, _⟩; exact h))),
+    ("(intro _ _ _ _ ⟨_, h⟩; exact h)", ← `(tactic| (intro _ _ _ _ ⟨_, h⟩; exact h))),
+    ("simp_all", ← `(tactic| simp_all)),
+    ("grind", ← `(tactic| grind)),
+    ("skip", ← `(tactic| skip))]
+
+/-- The literal closing combo of `ssprove_sim`, emitted as a single fallback
+line when some goal is not fully closed by its recorded closer (so a flat
+per-goal replay sequence would not be faithful). -/
+private def simClosingComboText : String :=
+  "all_goals (first | rfl | assumption | (constructor <;> [rfl; rfl]) | " ++
+  "(intro _ _ _ _ h; exact h) | (intro _ _ _ _ ⟨h, _⟩; exact h) | " ++
+  "(intro _ _ _ _ ⟨_, h⟩; exact h) | simp_all | grind | skip)"
+
+/-- `ssprove_sim?` runs the same fixpoint as `ssprove_sim`, records which
+underlying steps fired (normalization, sync/sample/ret/bind rules, rspec
+lookups, reorders, per-goal closers) in order, and emits a `Try this:`
+suggestion with the equivalent explicit tactic script. Use it to freeze an
+automated `ssprove_sim` proof into an explicit script.
+
+The proof state after `ssprove_sim?` is the same as after `ssprove_sim`
+(same alternatives tried in the same order), so it can be left in place or
+replaced by the suggestion.
+
+Replay notes:
+* Step lines are emitted with fully-qualified lemma names and replay
+  sequentially (each step acts on the then-current main goal, exactly as
+  `repeat ssprove_sim_step` does).
+* `ssprove_wp_step`, `ssprove_rspec`, and `ssprove_reorder` are composite/
+  dynamic steps; they are recorded as themselves rather than expanded.
+* If every remaining goal is fully closed by its closer, one closer line is
+  emitted per goal; otherwise the original `all_goals (first | ...)` combo
+  is emitted as a single faithful fallback line. -/
+elab tk:"ssprove_sim?" : tactic => do
+  let mut lines : Array String := #[]
+  -- Phase 1: `try ssprove_code_simpl`
+  if ← trySimTac (← `(tactic| ssprove_code_simpl)) then
+    lines := lines.push "ssprove_code_simpl"
+  -- Phase 2: `repeat ssprove_sim_step` (stop when no alternative fires on the
+  -- main goal, matching `repeat` semantics; fuel-capped for safety)
+  let alts ← simStepAlternatives
+  for _ in [0:512] do
+    if (← getUnsolvedGoals).isEmpty then
+      break
+    let mut fired := false
+    for (txt, stx) in alts do
+      if ← trySimTac stx then
+        lines := lines.push txt
+        fired := true
+        break
+    unless fired do
+      break
+  -- Phase 3: `all_goals (first | ... | skip)`, recording per-goal closers
+  let closers ← simCloserAlternatives
+  let goals ← getUnsolvedGoals
+  let mut leftovers : Array MVarId := #[]
+  let mut closerLines : Array String := #[]
+  let mut allClosed := true
+  for g in goals do
+    setGoals [g]
+    let mut handled := false
+    for (txt, stx) in closers do
+      if ← trySimTac stx then
+        let rest ← getUnsolvedGoals
+        if rest.isEmpty then
+          closerLines := closerLines.push txt
+        else
+          allClosed := false
+          leftovers := leftovers ++ rest.toArray
+        handled := true
+        break
+    unless handled do
+      -- Unreachable in practice (`skip` always succeeds), kept for safety.
+      allClosed := false
+      leftovers := leftovers.push g
+  setGoals leftovers.toList
+  if allClosed then
+    lines := lines ++ closerLines
+  else
+    lines := lines.push simClosingComboText
+  if lines.isEmpty then
+    lines := lines.push "ssprove_sim"
+  Lean.Meta.Tactic.TryThis.addSuggestion tk
+    { suggestion := .string (String.intercalate "\n" lines.toList) }
+    (origSpan? := some tk)
+
 /-- `ssprove_sim_bij f` applies sim with an explicit bijection for
 the first sampling step.
 
@@ -380,5 +539,23 @@ macro "ssprove_try_bij" f:term : tactic => `(tactic| (
   | (apply rHoare_bij_step_bare_r $f; intro _)
   | (apply rHoare_bij_step_bare_l $f; intro _)
 ))
+
+/-! ## `ssprove_sim?` smoke test
+
+The example below is closed by `ssprove_sim` and exercises the recording
+variant: it produces a `Try this:` info suggestion with the explicit script. -/
+
+example : rHoare eqPre
+    (do let k ← SPComp.sample Bool; SPComp.pure k)
+    (do let k ← SPComp.sample Bool; SPComp.pure k)
+    eqPost := by
+  ssprove_sim?
+
+example {Φ : RPre} :
+    rHoare Φ
+      (do let k ← SPComp.sample Bool; let j ← SPComp.sample Bool; SPComp.pure (k, j))
+      (do let k ← SPComp.sample Bool; let j ← SPComp.sample Bool; SPComp.pure (k, j))
+      (fun a₁ h₁ a₂ h₂ => Φ h₁ h₂ ∧ a₁ = a₂) := by
+  ssprove_sim?
 
 end CatCrypt.Tactics
