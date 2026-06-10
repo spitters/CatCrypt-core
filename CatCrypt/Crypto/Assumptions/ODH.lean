@@ -40,7 +40,8 @@ then ODH security reduces to DDH + PRF security:
 
     ODH_Advantage ≤ DDH_Advantage + PRF_Advantage
 
-* `odh_of_ddh_prf` — the reduction theorem (sorry for proof body)
+* `odh_of_ddh_prf` — the reduction theorem (two-hop hybrid via the
+  triangle inequality)
 
 ## Cross-Validation
 
