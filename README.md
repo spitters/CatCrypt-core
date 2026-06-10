@@ -4,6 +4,9 @@ A Lean 4 port of the SSProve program-logic and package-algebra stack, with
 native forking lemmas, an Arklib-compatible soundness interface, a VCVio
 interop bridge, and classical Montgomery-curve mathematics.
 
+For the design lineage (SSProve, EasyCrypt, ProofFrog, …) and what is new
+relative to those sources, see [DESIGN.md](DESIGN.md).
+
 This is the **minimal-basis release**. The universal-composability theory,
 concurrent UC, quantum verification, the verified compilation pipeline, and
 the full catalogue of concrete protocols live in separate, larger
