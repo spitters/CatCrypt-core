@@ -109,7 +109,13 @@ into verified tactics.
 
 7. **Forking lemmas over this substrate.** Pointcheval–Stern and
    Bellare–Neven general forking proved directly over the
-   `SPComp`/`PMF` stack.
+   `SPComp`/`PMF` stack. Rewinding the adversary is known to be hard to
+   express in EasyCrypt (see [ePrint 2021/1377](https://eprint.iacr.org/2021/1377.pdf));
+   in SSProve and here it is straightforward, because the adversary is
+   data — the deep embedding gives its code as a syntactic object and
+   the shallow side runs it as a function, so "run the adversary twice
+   from a common prefix" is an ordinary definition rather than a logic
+   extension.
 
 8. **The Montgomery-to-Weierstrass transport.** X-only ladder
    correctness stated against an abstract `MontyCurveGroup` and intended
