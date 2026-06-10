@@ -8,8 +8,8 @@ Authors: CatCrypt Contributors
 
 Top-level entry point for the minimal-basis release. Re-exports the
 program-logic + package-algebra stack, native forking lemmas, Arklib-compatible
-SNARK soundness, the VCVio interop bridge, the classical Montgomery-curve and
-X25519 mathematics, and the verified RustCmd → Jasmin compilation pipeline. -/
+SNARK soundness, the VCVio interop bridge, and the classical Montgomery-curve
+and X25519 mathematics. -/
 
 -- Probability and core computation
 import CatCrypt.Prob.SDistr
@@ -96,23 +96,3 @@ import CatCrypt.Crypto.KeyAgreement.MontgomeryLadder
 import CatCrypt.Crypto.KeyAgreement.MontgomeryAsWeierstrass
 import CatCrypt.Crypto.KeyAgreement.MontgomeryXOnly
 import CatCrypt.Crypto.KeyAgreement.Curve25519
-
--- Verified RustCmd → Jasmin compilation pipeline
-import CatCrypt.Crypto.SecureCompilation.CryptoSSA
-import CatCrypt.Crypto.Jasmin.RustCmd
-import CatCrypt.Crypto.Jasmin.RustCmdBorrowCheck
-import CatCrypt.Crypto.Jasmin.RustCmdToJasmin
-import CatCrypt.Crypto.Jasmin.RustEmit
-import CatCrypt.Crypto.Jasmin.JasminAST
-import CatCrypt.Crypto.Jasmin.JasminTypes
-import CatCrypt.Crypto.Jasmin.JasminVar
-import CatCrypt.Crypto.Jasmin.JasminOps
-import CatCrypt.Crypto.Jasmin.JasminSem
-import CatCrypt.Crypto.Jasmin.JasminTranslate
-import CatCrypt.Crypto.Jasmin.JasminToSSA
-import CatCrypt.Crypto.Jasmin.PassFramework
-import CatCrypt.Crypto.Jasmin.ISA
-import CatCrypt.Crypto.Jasmin.ChaCha20QR
-import CatCrypt.Crypto.Jasmin.Passes.ConstantFold
-import CatCrypt.Crypto.Jasmin.Passes.NopElim
-import CatCrypt.Crypto.Jasmin.Passes.DeadCode
