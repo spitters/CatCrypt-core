@@ -1,0 +1,65 @@
+\chapter{The program monad}
+
+\begin{definition}[Sub-distribution]
+  \label{def:sdistr}
+  \lean{CatCrypt.Prob.SDistr}
+  \leanok
+  A \emph{sub-distribution} over a type $\alpha$ is a probability mass function
+  on $\mathrm{Option}\,\alpha$; the mass on $\mathsf{none}$ absorbs the missing
+  weight, so a sub-distribution may sum to less than one. This makes partial and
+  failing computations first-class.
+\end{definition}
+
+\begin{definition}[Typed heap]
+  \label{def:heap}
+  \lean{CatCrypt.Core.Heap}
+  \leanok
+  A \emph{heap} is a typed store: a finite map from typed locations to their
+  values, the mutable state a computation reads and writes.
+\end{definition}
+
+\begin{definition}[Stateful-probabilistic computation]
+  \label{def:spcomp}
+  \uses{def:sdistr, def:heap}
+  \lean{CatCrypt.Core.SPComp}
+  \leanok
+  A \emph{stateful-probabilistic computation} returning $\alpha$ maps an initial
+  heap to a sub-distribution over its result paired with the final heap:
+  \[
+    \mathsf{SPComp}\,\alpha \;=\; \mathrm{Heap} \to \mathrm{SDistr}(\alpha \times \mathrm{Heap}).
+  \]
+\end{definition}
+
+\begin{definition}[Monad operations]
+  \label{def:spcomp-ops}
+  \uses{def:spcomp}
+  \lean{CatCrypt.Core.SPComp.pure, CatCrypt.Core.SPComp.bind, CatCrypt.Core.SPComp.sample}
+  \leanok
+  $\mathsf{SPComp}$ carries $\mathsf{pure}$ (the Dirac computation), $\mathsf{bind}$
+  (sequential composition threading the heap), and $\mathsf{sample}$ (drawing from
+  a distribution).
+\end{definition}
+
+\begin{lemma}[Left identity]
+  \label{lem:pure-bind}
+  \uses{def:spcomp-ops}
+  \lean{CatCrypt.Core.SPComp.pure_bind}
+  \leanok
+  $\mathsf{bind}\,(\mathsf{pure}\,a)\,f = f\,a$.
+\end{lemma}
+
+\begin{lemma}[Right identity]
+  \label{lem:bind-pure}
+  \uses{def:spcomp-ops}
+  \lean{CatCrypt.Core.SPComp.bind_pure}
+  \leanok
+  $\mathsf{bind}\,c\,\mathsf{pure} = c$.
+\end{lemma}
+
+\begin{lemma}[Associativity]
+  \label{lem:bind-assoc}
+  \uses{def:spcomp-ops}
+  \lean{CatCrypt.Core.SPComp.bind_assoc}
+  \leanok
+  $\mathsf{bind}\,(\mathsf{bind}\,c\,f)\,g = \mathsf{bind}\,c\,(\lambda a.\,\mathsf{bind}\,(f\,a)\,g)$.
+\end{lemma}

@@ -1,0 +1,20 @@
+% Print/PDF version entry point for leanblueprint
+\documentclass[a4paper]{book}
+\usepackage[project=../..]{blueprint}
+\usepackage{amsmath,amssymb,amsthm}
+\input{macros/common}
+\input{macros/print}
+
+\title{CatCrypt: A Foundational Framework for Modular Cryptographic Proofs in Lean~4}
+\author{CatCrypt Contributors}
+
+\begin{document}
+\maketitle
+
+\tableofcontents
+
+\input{content}
+
+\bibliographystyle{alpha}
+\bibliography{refs}
+\end{document}

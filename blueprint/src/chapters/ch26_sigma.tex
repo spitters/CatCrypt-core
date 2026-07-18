@@ -1,0 +1,45 @@
+\chapter{Worked example: $\Sigma$-protocol zero knowledge}
+
+The zero-knowledge side of Schnorr, complementing the forking soundness of
+Chapter~11. For the abstract $\Sigma$-protocol (instantiated by the XOR relation
+$\mathsf{simpleSigma}$), all four standard properties hold, and the commitment
+hiding/binding pair follows. Each proof is a few lines: the coupling toolkit and
+$\mathsf{ssprove\_distr\_simp}$ reduce the arguments to a single bijection couple
+or a finite case split.
+
+\begin{theorem}[Completeness]
+  \label{thm:sigma-complete}
+  \uses{def:spcomp}
+  \lean{CatCrypt.Examples.SigmaProtocol.simpleSigma_complete}
+  \leanok
+  Honest execution with a valid witness always verifies.
+\end{theorem}
+
+\begin{theorem}[Special honest-verifier zero knowledge]
+  \label{thm:sigma-shvzk}
+  \uses{thm:sigma-complete}
+  \lean{CatCrypt.Examples.SigmaProtocol.simpleSigma_shvzk, CatCrypt.Examples.SigmaProtocol.simpleSigma_shvzk_zero_adv}
+  \leanok
+  Real and simulated transcripts are identically distributed: the simulator, given
+  the challenge, produces a transcript coupled to the real one through a single
+  bijection, so the distinguishing advantage is $0$.
+\end{theorem}
+
+\begin{theorem}[Special soundness]
+  \label{thm:sigma-sound}
+  \uses{thm:sigma-complete}
+  \lean{CatCrypt.Examples.SigmaProtocol.simpleSigma_special_sound}
+  \leanok
+  Two accepting transcripts sharing a commitment but differing in challenge yield
+  the witness through an explicit extractor.
+\end{theorem}
+
+\begin{theorem}[Commitment hiding and binding]
+  \label{thm:sigma-commitment}
+  \uses{thm:sigma-shvzk, thm:sigma-sound}
+  \lean{CatCrypt.Examples.SigmaProtocol.simpleSigma_hiding, CatCrypt.Examples.SigmaProtocol.simpleSigma_binding}
+  \leanok
+  The associated commitment is perfectly hiding (a direct instance of SHVZK's
+  one-time-pad coupling) and binding (a double opening yields two accepting
+  transcripts, hence the witness by special soundness).
+\end{theorem}

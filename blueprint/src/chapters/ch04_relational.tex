@@ -1,0 +1,290 @@
+\chapter{The relational program logic}
+
+This chapter develops the coupling-based probabilistic relational Hoare logic
+(pRHL) that underlies CatCrypt's game-hopping proofs. The semantics rests on
+\emph{probabilistic couplings} of sub-distributions; the judgment
+$\vDash \couple{\Phi} c_1 \sim c_2 \couple{\Psi}$ asserts the existence of a
+coupling of the two output distributions whose support respects the
+postcondition. The structural rules are proved sound directly against this
+semantics, and the advantage-level corollaries connect the logic to the
+distinguishing advantage used in security reductions.
+
+\section{Couplings and lifting}
+
+\begin{lemma}[Monotonicity of lifting]
+  \label{lem:liftr-mono}
+  \uses{def:liftr}
+  \lean{CatCrypt.Prob.liftR_mono}
+  \leanok
+  If $R \subseteq S$ pointwise (i.e.\ $R\,a\,b \to S\,a\,b$ for all $a,b$) and
+  $d_1 \liftrel{R} d_2$, then $d_1 \liftrel{S} d_2$.
+\end{lemma}
+
+\begin{lemma}[Symmetry of lifting]
+  \label{lem:liftr-symm}
+  \uses{def:liftr}
+  \lean{CatCrypt.Prob.liftR_symm}
+  \leanok
+  If $d_1 \liftrel{R} d_2$, then $d_2 \liftrel{R^{-1}} d_1$, where
+  $R^{-1}\,b\,a := R\,a\,b$; the witnessing coupling is obtained by swapping the
+  two coordinates of the joint distribution.
+\end{lemma}
+
+\begin{lemma}[Equality coupling forces equality]
+  \label{lem:liftr-eq-implies-eq}
+  \uses{def:liftr}
+  \lean{CatCrypt.Prob.liftR_eq_implies_eq}
+  \leanok
+  If $d_1 \liftrel{(=)} d_2$, then $d_1 = d_2$. An equality coupling places all
+  mass on the diagonal, so both marginal sums collapse to the same diagonal
+  values.
+\end{lemma}
+
+\section{Relational assertions and the judgment}
+
+\begin{definition}[Relational precondition]
+  \label{def:rpre}
+  \lean{CatCrypt.Relational.RPre}
+  \leanok
+  A \emph{relational precondition} $\RPre$ is a predicate on pairs of heaps,
+  $\Heap \to \Heap \to \Prop$.
+\end{definition}
+
+\begin{definition}[Relational postcondition]
+  \label{def:rpost}
+  \lean{CatCrypt.Relational.RPost}
+  \leanok
+  A \emph{relational postcondition} $\RPost\,\alpha\,\beta$ is a predicate
+  relating two result--heap pairs,
+  $\alpha \to \Heap \to \beta \to \Heap \to \Prop$.
+\end{definition}
+
+\begin{definition}[Equality precondition]
+  \label{def:eqpre}
+  \uses{def:rpre}
+  \lean{CatCrypt.Relational.eqPre}
+  \leanok
+  The equality precondition $\eqPre$ holds of $(h_1,h_2)$ exactly when
+  $h_1 = h_2$.
+\end{definition}
+
+\begin{definition}[Equality postcondition]
+  \label{def:eqpost}
+  \uses{def:rpost}
+  \lean{CatCrypt.Relational.eqPost}
+  \leanok
+  The equality postcondition $\eqPost$ relates $(a_1,h_1)$ and $(a_2,h_2)$ when
+  both the results and the heaps agree, $a_1 = a_2 \wedge h_1 = h_2$.
+\end{definition}
+
+\begin{definition}[The pRHL judgment]
+  \label{def:rhoare}
+  \uses{def:spcomp,def:liftr,def:rpre,def:rpost}
+  \lean{CatCrypt.Relational.rHoare}
+  \leanok
+  For programs $c_1 : \SPComp\,\alpha$, $c_2 : \SPComp\,\beta$, a precondition
+  $\Phi : \RPre$ and a postcondition $\Psi : \RPost\,\alpha\,\beta$, the
+  judgment $\rHoare\,\Phi\,c_1\,c_2\,\Psi$, written
+  $\vDash \couple{\Phi} c_1 \sim c_2 \couple{\Psi}$, is defined as: for all heaps
+  $h_1,h_2$ with $\Phi\,h_1\,h_2$, the output distributions are coupled along the
+  postcondition,
+  \[
+    (c_1\,h_1) \;\liftrel{\,\lambda p_1\,p_2.\ \Psi\,p_1.1\,p_1.2\,p_2.1\,p_2.2\,}\; (c_2\,h_2).
+  \]
+\end{definition}
+
+\section{Structural rules}
+
+\begin{theorem}[Consequence]
+  \label{thm:rhoare-conseq}
+  \uses{def:rhoare,lem:liftr-mono}
+  \lean{CatCrypt.Relational.rHoare_conseq}
+  \leanok
+  If $\Phi' \Rightarrow \Phi$ (pointwise), $\Psi \Rightarrow \Psi'$ (pointwise),
+  and $\rHoare\,\Phi\,c_1\,c_2\,\Psi$, then $\rHoare\,\Phi'\,c_1\,c_2\,\Psi'$.
+\end{theorem}
+
+\begin{theorem}[Symmetry]
+  \label{thm:rhoare-symm}
+  \uses{def:rhoare,lem:liftr-symm}
+  \lean{CatCrypt.Relational.rHoare_symm}
+  \leanok
+  The judgment is symmetric: from
+  $\rHoare\,(\lambda h_1\,h_2.\ \Phi\,h_2\,h_1)\,c_2\,c_1\,(\lambda a_2\,h_2\,a_1\,h_1.\ \Psi\,a_1\,h_1\,a_2\,h_2)$
+  one derives $\rHoare\,\Phi\,c_1\,c_2\,\Psi$.
+\end{theorem}
+
+\begin{theorem}[Sequential composition / bind]
+  \label{thm:rhoare-bind}
+  \uses{def:rhoare,thm:liftr-bind}
+  \lean{CatCrypt.Relational.rHoare_bind}
+  \leanok
+  Suppose $\rHoare\,\Phi\,c_1\,c_2\,\Psi$ and, for all $a,b$,
+  $\rHoare\,(\lambda h_1\,h_2.\ \Psi\,a\,h_1\,b\,h_2)\,(f_1\,a)\,(f_2\,b)\,\Theta$.
+  Then
+  \[
+    \rHoare\,\Phi\,(c_1 \bind f_1)\,(c_2 \bind f_2)\,\Theta .
+  \]
+\end{theorem}
+
+\begin{theorem}[Reflexivity]
+  \label{thm:rhoare-refl}
+  \uses{def:rhoare,def:eqpre,def:eqpost,lem:liftr-refl}
+  \lean{CatCrypt.Relational.rHoare_refl}
+  \leanok
+  Every program is related to itself under equality: for all $c$,
+  $\rHoare\,\eqPre\,c\,c\,\eqPost$.
+\end{theorem}
+
+\section{Sampling rules}
+
+\begin{theorem}[Synchronized sampling, diagonal coupling]
+  \label{thm:rhoare-sample-same}
+  \uses{def:rhoare,thm:liftr-bind,lem:liftr-refl}
+  \lean{CatCrypt.Relational.rHoare_sample_same}
+  \leanok
+  Sampling the same finite nonempty type on both sides with the diagonal
+  coupling yields equal samples:
+  \[
+    \rHoare\,\Phi\,(\mathsf{sample}\,\alpha)\,(\mathsf{sample}\,\alpha)\,
+      (\lambda a_1\,h_1\,a_2\,h_2.\ \Phi\,h_1\,h_2 \wedge a_1 = a_2).
+  \]
+\end{theorem}
+
+\begin{theorem}[Bijection sampling]
+  \label{thm:rhoare-sample-bij}
+  \uses{def:rhoare,thm:liftr-bind,lem:liftr-uniform-bij}
+  \lean{CatCrypt.Relational.rHoare_sample_bij}
+  \leanok
+  Sampling along a bijection $f : \alpha \simeq \beta$ relates the two samples by
+  $f$:
+  \[
+    \rHoare\,\Phi\,(\mathsf{sample}\,\alpha)\,(\mathsf{sample}\,\beta)\,
+      (\lambda a\,h_1\,b\,h_2.\ \Phi\,h_1\,h_2 \wedge f\,a = b).
+  \]
+\end{theorem}
+
+\section{Frame rules}
+
+\begin{theorem}[Frame]
+  \label{thm:r-frame}
+  \uses{def:rhoare,lem:liftr-mono}
+  \lean{CatCrypt.Relational.r_frame}
+  \leanok
+  If $\rHoare\,\Phi\,c_1\,c_2\,\Theta$ and the frame $\Psi$ follows from the
+  postcondition ($\Theta\,a\,h_1\,b\,h_2 \to \Psi\,h_1\,h_2$), then the frame may
+  be carried alongside:
+  \[
+    \rHoare\,(\Phi \wedge \Psi)\,c_1\,c_2\,(\lambda a\,h_1\,b\,h_2.\ \Theta\,a\,h_1\,b\,h_2 \wedge \Psi\,h_1\,h_2).
+  \]
+\end{theorem}
+
+\begin{definition}[Assertion locality]
+  \label{def:depends-on}
+  \uses{def:rpre}
+  \lean{CatCrypt.Relational.DependsOn}
+  \leanok
+  $\DependsOn\,P\,L$ holds when the assertion $P$ only inspects locations in the
+  set $L$: whenever two heap pairs agree on all locations of $L$, $P$ cannot
+  distinguish them.
+\end{definition}
+
+\begin{definition}[Computation footprint]
+  \label{def:preserves-outside}
+  \uses{def:spcomp}
+  \lean{CatCrypt.Relational.PreservesOutside}
+  \leanok
+  $\PreservesOutside\,c\,L$ holds when $c$ never modifies locations outside $L$:
+  for every output $(a,h')$ in the support of $c\,h$ and every $\mathit{id} \notin L$,
+  the value of $\mathit{id}$ in $h'$ equals its value in $h$.
+\end{definition}
+
+\begin{theorem}[Location-based frame rule]
+  \label{thm:r-frame-local}
+  \uses{def:rhoare,def:depends-on,def:preserves-outside}
+  \lean{CatCrypt.Relational.r_frame_local}
+  \leanok
+  Suppose both programs preserve everything outside $L_c$, the frame assertion
+  depends only on $L_f$, and $L_c$ and $L_f$ are disjoint. Then, from
+  $\rHoare\,\Phi\,c_1\,c_2\,\Psi$,
+  \[
+    \rHoare\,(\Phi \wedge \mathit{Frame})\,c_1\,c_2\,
+      (\lambda a\,h_1\,b\,h_2.\ \Psi\,a\,h_1\,b\,h_2 \wedge \mathit{Frame}\,h_1\,h_2).
+  \]
+  This is the CatCrypt analogue of the separation-logic frame rule.
+\end{theorem}
+
+\section{Reordering and swap rules}
+
+\begin{theorem}[Reorder a pure prefix on the left]
+  \label{thm:rhoare-reorder-pure-l}
+  \uses{def:rhoare}
+  \lean{CatCrypt.Relational.rHoare_reorder_pure_l}
+  \leanok
+  If $c$ is heap-independent ($\mathsf{IsPure}\,c$), the pure operation may be
+  commuted past an independent computation $d$ on the left side:
+  from a judgment for $d \bind (\lambda y.\ c \bind (\lambda x.\ k\,x\,y))$ one
+  obtains the judgment for $c \bind (\lambda x.\ d \bind (\lambda y.\ k\,x\,y))$
+  against the same right side.
+\end{theorem}
+
+\begin{theorem}[Swap two samples in opposite order]
+  \label{thm:rhoare-sample-comm}
+  \uses{def:rhoare,thm:liftr-bind,lem:liftr-refl}
+  \lean{CatCrypt.Relational.rHoare_sample_comm}
+  \leanok
+  When the left side samples $\alpha$ then $\beta$ and the right side samples
+  $\beta$ then $\alpha$, the two orders may be aligned: if
+  $\rHoare\,\Phi\,(k_1\,a\,b)\,(k_2\,a\,b)\,\Psi$ for all $a,b$, then the
+  differently-ordered sampling programs are related under $\Phi$ and $\Psi$.
+\end{theorem}
+
+\section{Advantage-level consequences}
+
+\begin{theorem}[Zero advantage from pRHL equality]
+  \label{thm:advantage-zero-of-rhoare}
+  \uses{def:rhoare,def:eqpre,def:eqpost,lem:liftr-eq-implies-eq,def:advantageA}
+  \lean{CatCrypt.Crypto.advantage_zero_of_rHoare}
+  \leanok
+  If $\rHoare\,\eqPre\,G_0\,G_1\,\eqPost$, then no adversary can distinguish the
+  two games: for every $A$, $\AdvantageA\,G_0\,G_1\,A = 0$. The equality
+  postcondition forces the empty-heap output distributions to coincide.
+\end{theorem}
+
+\begin{theorem}[Advantage factorization]
+  \label{thm:advantage-factorization}
+  \uses{def:advantageA}
+  \lean{CatCrypt.Relational.advantage_factorization}
+  \leanok
+  Post-composing both games with the same $f$ moves $f$ into the distinguisher
+  without changing the advantage:
+  \[
+    \AdvantageA\,(G_1 \bind f)\,(G_2 \bind f)\,A
+      = \AdvantageA\,G_1\,G_2\,(\lambda x.\ (f\,x) \bind A).
+  \]
+  The one-directional ``post-processing cannot increase advantage'' bound is the
+  immediate consequence.
+\end{theorem}
+
+\begin{theorem}[Factorization with a commuted pure prefix]
+  \label{thm:advantage-factorization-comm}
+  \uses{def:advantageA,thm:advantage-factorization}
+  \lean{CatCrypt.Relational.advantage_factorization_comm}
+  \leanok
+  When both games share a pure prefix $\mathit{pfx}$, it may be commuted past the
+  varying parts and factored into the distinguisher: for $\mathsf{IsPure}\,\mathit{pfx}$,
+  \[
+    \AdvantageA\,(\mathit{pfx} \bind \lambda p.\ G_1 \bind \lambda r.\ k\,p\,r)\,
+                 (\mathit{pfx} \bind \lambda p.\ G_2 \bind \lambda r.\ k\,p\,r)\,A
+    = \AdvantageA\,G_1\,G_2\,(\lambda r.\ \mathit{pfx} \bind \lambda p.\ (k\,p\,r) \bind A).
+  \]
+\end{theorem}
+
+\begin{theorem}[Symmetry of advantage]
+  \label{thm:advantage-symm}
+  \uses{def:advantage}
+  \lean{CatCrypt.Relational.advantage_symm}
+  \leanok
+  The distinguishing advantage is symmetric in its two games:
+  $\Advantage\,G_1\,G_2 = \Advantage\,G_2\,G_1$.
+\end{theorem}

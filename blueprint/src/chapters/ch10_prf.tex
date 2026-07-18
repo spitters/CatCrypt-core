@@ -1,0 +1,66 @@
+\chapter{Worked example: pseudorandom functions}
+
+Following Rosulek, \emph{The Joy of Cryptography}, §6. A pseudorandom function is
+\emph{perfectly} secure when it is built from a family of bijections: for each
+input the keyed map is a bijection of the key space onto the output space, so a
+uniform key produces a uniform output and the real (keyed) and ideal (random)
+oracles are indistinguishable with advantage exactly $0$. As with the one-time pad
+this is a single bijection coupling, over an abstract, possibly cross-type,
+key/output pair.
+
+\begin{definition}[Bijection PRF family]
+  \label{def:bijprf}
+  \uses{def:spcomp}
+  \lean{CatCrypt.Examples.PRF.BijPRFFamily, CatCrypt.Examples.PRF.BijPRFFamily.toPRFScheme}
+  \leanok
+  A bijection PRF family has finite nonempty key, input, and output types together
+  with, for each input $x$, a bijection $\mathsf{bij}_x : \mathrm{Key} \simeq
+  \mathrm{Output}$. It induces a PRF scheme evaluating $\mathsf{eval}(k, x) =
+  \mathsf{bij}_x(k)$.
+\end{definition}
+
+\begin{lemma}[Real and ideal oracles couple]
+  \label{lem:bijprf-coupling}
+  \uses{def:bijprf}
+  \lean{CatCrypt.Examples.PRF.bijPRF_coupling}
+  \leanok
+  For every input $x$, the real oracle (a uniform key run through
+  $\mathsf{bij}_x$) and the ideal oracle (a uniform output) are related by the
+  bijection coupling $\mathsf{bij}_x$.
+\end{lemma}
+
+\begin{theorem}[Perfect PRF security]
+  \label{thm:bijprf-perfect}
+  \uses{lem:bijprf-coupling}
+  \lean{CatCrypt.Examples.PRF.bijPRF_perfect}
+  \leanok
+  A bijection PRF family has perfect security: for every input $x$ and adversary
+  $A$, the PRF advantage $\mathsf{Adv}^{\mathrm{PRF}}(x, A) = 0$.
+\end{theorem}
+
+\begin{corollary}[XOR PRF]
+  \label{cor:xorprf}
+  \uses{thm:bijprf-perfect}
+  \lean{CatCrypt.Examples.PRF.boolXorPRF, CatCrypt.Examples.PRF.boolXorPRF_perfect}
+  \leanok
+  The XOR pseudorandom function $F(k, x) = k \oplus x$, instantiating the family by
+  $x \mapsto (k \mapsto k \oplus x)$, has perfect PRF security.
+\end{corollary}
+
+\begin{theorem}[Cascade PRF security bound]
+  \label{thm:cascade-prf}
+  \uses{def:bijprf}
+  \lean{CatCrypt.Examples.PRF.cascade_prf_bound}
+  \leanok
+  The \emph{computational} cascade result. For the double construction
+  $\mathrm{cascade}(k_1, k_2, x) = F(k_2, F(k_1, x))$, composing the two
+  PRF-security hops and the PRF/PRP switching hop through the advantage triangle
+  inequality gives
+  \[
+    \mathsf{Adv}^{\mathrm{PRF}}_{\mathrm{cascade}} \;\le\; 2\,\varepsilon_{\mathrm{prf}}
+    + \frac{q(q-1)}{2N},
+  \]
+  where the birthday term is \emph{proved} (via the switching lemma), not assumed.
+  The three hops are the named cryptographic hypotheses, discharged by a keyed
+  $\varepsilon$-PRF-security assumption.
+\end{theorem}

@@ -1,0 +1,48 @@
+\chapter{Worked example: the one-time pad}
+
+The first worked scheme, following Rosulek, \emph{The Joy of Cryptography}, §2:
+the one-time pad has \emph{perfect} secrecy. In the game-based reading it achieves
+IND-CPA with advantage exactly $0$ --- an information-theoretic result, not a
+computational bound. The proof is a single bijection coupling of the two
+challenge games, so it exercises the coupling-based relational logic directly.
+
+\begin{definition}[One-time pad (over $\Bool$)]
+  \label{def:otp-scheme}
+  \uses{def:spcomp}
+  \lean{CatCrypt.Examples.OTP.BoolOTP}
+  \leanok
+  The one-time pad $\mathsf{BoolOTP}$ is the encryption scheme on
+  $\Bool$ with a uniform key, $\mathsf{enc}(k,m) = k \oplus m$ and
+  $\mathsf{dec}(k,c) = k \oplus c$.
+\end{definition}
+
+\begin{theorem}[Correctness]
+  \label{thm:otp-correct}
+  \uses{def:otp-scheme}
+  \lean{CatCrypt.Examples.OTP.otp_correct}
+  \leanok
+  Decryption inverts encryption: $\mathsf{dec}(k, \mathsf{enc}(k, m)) = m$.
+\end{theorem}
+
+\begin{lemma}[Challenge games couple]
+  \label{lem:otp-coupling}
+  \uses{def:otp-scheme}
+  \lean{CatCrypt.Examples.OTP.otp_indcpa_coupling}
+  \leanok
+  For all messages $m_0, m_1$, the two IND-CPA challenge games --- encrypting
+  $m_0$ versus $m_1$ under a uniform key --- are related by the identity coupling:
+  they differ only by XOR-ing the uniform key with $m_0$ against $m_1$, and
+  $k \mapsto k \oplus (m_0 \oplus m_1)$ is a bijection of the uniform key.
+\end{lemma}
+
+\begin{theorem}[Perfect IND-CPA security]
+  \label{thm:otp-perfect}
+  \uses{lem:otp-coupling}
+  \lean{CatCrypt.Examples.OTP.otp_perfect_indcpa}
+  \leanok
+  The one-time pad has \emph{perfect} IND-CPA security: for all messages
+  $m_0, m_1$ and every adversary $A$,
+  \[
+    \mathsf{Adv}^{\mathrm{IND\text{-}CPA}}_{\mathsf{BoolOTP}}(m_0, m_1, A) \;=\; 0.
+  \]
+\end{theorem}

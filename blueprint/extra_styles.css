@@ -1,0 +1,69 @@
+/* Two-column blueprint nodes (scripts/inject_lean_sigs.py): informal LaTeX on
+   the left, the formal Lean statement(s) on the right — side by side, no clicks. */
+
+/* Widen the content column so the two statement columns have room (the theme
+   caps it at 75ch, which halves to ~36ch per column). Doubled to 150ch. */
+div.content-wrapper { max-width: 150ch !important; }
+
+.definition_thmcontent,
+.theorem_thmcontent,
+.lemma_thmcontent,
+.proposition_thmcontent,
+.corollary_thmcontent {
+  display: flex;
+  gap: 1.4em;
+  align-items: flex-start;
+}
+/* The informal statement is primary (two-thirds); the formal Lean signature is a
+   narrower secondary reference (one-third) — its full detail lives one click away
+   in the API page it links to. */
+.latex-col { flex: 2 1 0; min-width: 0; }
+
+.lean-col {
+  flex: 1 1 0;
+  min-width: 0;
+  padding-left: 0.9em;
+  border-left: 3px solid #98b2c0;
+}
+.lean-col-head {
+  font-variant: small-caps;
+  font-size: 0.72em;
+  letter-spacing: 0.06em;
+  color: #6a7f8c;
+  margin-bottom: 0.3em;
+}
+.lean-sig {
+  margin: 0 0 0.55em 0;
+}
+.lean-sig-name {
+  display: block;
+  font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  font-size: 0.72em;
+  color: #6a7f8c;
+  text-decoration: none;
+  margin-bottom: 1px;
+}
+.lean-sig-name:hover { text-decoration: underline; }
+.lean-sig code {
+  display: block;
+  font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  font-size: 0.82em;
+  line-height: 1.4;
+  background: #f6f8fa;
+  padding: 5px 9px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: #1f2328;
+}
+
+/* Stack the columns on narrow screens. */
+@media (max-width: 800px) {
+  .definition_thmcontent, .theorem_thmcontent, .lemma_thmcontent,
+  .proposition_thmcontent, .corollary_thmcontent { flex-direction: column; gap: 0.6em; }
+  .lean-col { border-left: none; padding-left: 0; }
+}
+
+@media (prefers-color-scheme: dark) {
+  .lean-sig code { background: #161b22; color: #c9d1d9; }
+  .lean-col { border-left-color: #3d5a6c; }
+}

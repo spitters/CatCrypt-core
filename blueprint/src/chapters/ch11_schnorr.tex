@@ -1,0 +1,60 @@
+\chapter{Worked example: the Schnorr $\Sigma$-protocol}
+
+Schnorr's identification protocol runs over an abstract
+prime-order group $\mathbb{G} = \langle g \rangle$ of order $p$. Its soundness
+rests on two pillars --- \emph{special soundness} (two accepting transcripts that
+share a commitment but differ in challenge reveal the witness) and the
+\emph{forking lemma} (a forger can be rewound to produce exactly such a pair) ---
+and this chapter exercises both, reducing a Schnorr forger to a discrete-log
+solver.
+
+\begin{definition}[Acceptance]
+  \label{def:schnorr-accepts}
+  A transcript $(a, c, s)$ is accepting for public key $\mathit{pk}$ when
+  $g^{s} = a \cdot \mathit{pk}^{c}$.
+  \lean{CatCrypt.Examples.Schnorr.schnorrAccepts}
+  \leanok
+\end{definition}
+
+\begin{theorem}[Completeness]
+  \label{thm:schnorr-complete}
+  \uses{def:schnorr-accepts}
+  \lean{CatCrypt.Examples.Schnorr.schnorr_honest_accepts}
+  \leanok
+  The honest prover with witness $w$, commitment $a = g^{r}$, and response
+  $s = r + w c$ is always accepted.
+\end{theorem}
+
+\begin{theorem}[Special soundness]
+  \label{thm:schnorr-soundness}
+  \uses{def:schnorr-accepts}
+  \lean{CatCrypt.Examples.Schnorr.schnorr_special_soundness}
+  \leanok
+  Two accepting transcripts $(a, c_1, s_1)$ and $(a, c_2, s_2)$ with the same
+  commitment and $c_1 \neq c_2$ determine the discrete-log witness:
+  \[
+    \mathit{pk} \;=\; g^{\,(s_1 - s_2)(c_1 - c_2)^{-1}}.
+  \]
+\end{theorem}
+
+\begin{theorem}[Forking bound]
+  \label{thm:schnorr-forking}
+  \uses{thm:schnorr-soundness}
+  \lean{CatCrypt.Examples.Schnorr.schnorr_forking_bound}
+  \leanok
+  Instantiating the general forking lemma at a Schnorr forger $A$ bounds the
+  probability of a successful fork below by
+  $\mathrm{acc}(A)^2 - \mathrm{acc}(A)/p$, where $\mathrm{acc}(A)$ is $A$'s
+  acceptance probability.
+\end{theorem}
+
+\begin{theorem}[Discrete log from forking]
+  \label{thm:schnorr-dl}
+  \uses{thm:schnorr-soundness, thm:schnorr-forking}
+  \lean{CatCrypt.Examples.Schnorr.dlFromForking, CatCrypt.Examples.Schnorr.dlFromForking_correct}
+  \leanok
+  Forking a Schnorr forger and applying special-soundness extraction yields a
+  discrete-log solver: on a successful fork the extracted scalar is the true
+  discrete logarithm of the public key, $g^{(s_1 - s_2)(c_1 - c_2)^{-1}} =
+  \mathit{pk}$.
+\end{theorem}

@@ -1,0 +1,85 @@
+name: docs
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Allow the workflow to publish to GitHub Pages.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One concurrent Pages deployment; don't cancel an in-progress one.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free up disk space
+        # doc-gen4 documents the full Mathlib closure (oleans + HTML for ~20k
+        # modules), which fills a stock runner. Without headroom the build succeeds
+        # but the cache tarball fails to write ("No space left on device"), so nothing
+        # persists and every run re-documents Mathlib cold. Reclaim the preinstalled
+        # toolchains this job never uses.
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/.ghcup \
+            /usr/local/lib/android /usr/local/share/boost /opt/hostedtoolcache/CodeQL
+          sudo docker image prune --all --force || true
+          df -h /
+
+      - name: Install elan
+        run: |
+          curl https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh -sSf \
+            | sh -s -- -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+
+      - name: Cache docbuild .lake
+        uses: actions/cache@v4
+        with:
+          path: docbuild/.lake
+          # Reuse doc-gen4's Mathlib output across builds. The exact key is per-run
+          # (github.run_id) so every run SAVES a fresh cache; restore-keys then falls
+          # back to the newest cache with the same toolchain + dependency versions
+          # (i.e. the same Mathlib). So the multi-hour Mathlib re-documentation runs
+          # only on a toolchain/Mathlib bump — an ordinary change restores those pages
+          # and re-documents just the changed modules incrementally. The version-pinned
+          # prefix (first restore-key) only restores same-Mathlib pages; the bare prefix
+          # (second) bootstraps off the newest cache across a bump (safe — Lake re-docs
+          # any module whose olean changed).
+          key: docbuild-lake-${{ hashFiles('docbuild/lakefile.toml', 'docbuild/lean-toolchain', 'lake-manifest.json') }}-${{ github.run_id }}
+          restore-keys: |
+            docbuild-lake-${{ hashFiles('docbuild/lakefile.toml', 'docbuild/lean-toolchain', 'lake-manifest.json') }}
+            docbuild-lake-
+
+      - name: Build the doc-gen4 API reference
+        run: |
+          cd docbuild
+          MATHLIB_NO_CACHE_ON_UPDATE=1 lake update
+          lake exe cache get || true   # prebuilt Mathlib oleans, so extraction doesn't rebuild it
+          lake build CatCryptCore:docs
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docbuild/.lake/build/doc
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

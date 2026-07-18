@@ -1,0 +1,42 @@
+\chapter{Worked example: chosen-ciphertext security}
+
+Following Rosulek, \emph{The Joy of Cryptography} (CCA security / authenticated
+encryption). IND-CCA gives the adversary a decryption oracle on every ciphertext
+but the challenge. The oracle is an ordinary function closing over the secret
+key: decryption is stateless, so no oracle-state threading is needed. Unlike the
+earlier examples, perfect CCA security is \emph{impossible} here (a decryption
+oracle over the one-time pad leaks the key, and no perfect MAC exists over a
+finite tag space), so the result is a reduction: for Encrypt-then-MAC,
+confidentiality contributes nothing and the whole advantage is the MAC-integrity
+gap --- authenticated encryption as confidentiality plus integrity.
+
+\begin{definition}[IND-CCA game]
+  \label{def:indcca}
+  \uses{def:spcomp}
+  \lean{CatCrypt.Crypto.SecurityDefs.INDCCA_Game, CatCrypt.Crypto.SecurityDefs.ccaDecOracle}
+  \leanok
+  The adversary receives the challenge ciphertext and a decryption oracle that
+  answers every ciphertext except the challenge; the ideal variant answers with
+  the always-reject oracle.
+\end{definition}
+
+\begin{theorem}[Generic CCA reduction]
+  \label{thm:indcca-reduction}
+  \uses{def:indcca}
+  \lean{CatCrypt.Crypto.SecurityDefs.INDCCA_reduces_to_INDCPA}
+  \leanok
+  For any scheme, the IND-CCA advantage is bounded by its IND-CPA advantage
+  (against the reject-oracle adversary) plus the two integrity gaps measuring how
+  far the real decryption oracle is from always rejecting.
+\end{theorem}
+
+\begin{theorem}[Encrypt-then-MAC is authenticated encryption]
+  \label{thm:etm-cca}
+  \uses{thm:indcca-reduction, thm:etm-perfect}
+  \lean{CatCrypt.Examples.EtMCCA.boolEtM_indcca_reduces}
+  \leanok
+  For the one-time-pad Encrypt-then-MAC scheme the confidentiality term is exactly
+  $0$ (its perfect IND-CPA security), so its entire IND-CCA advantage is the pair
+  of MAC-integrity gaps: chosen-ciphertext security is precisely the
+  unforgeability of the MAC.
+\end{theorem}

@@ -1,0 +1,14 @@
+/-
+Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
+Released under MIT license as described in the file LICENSE.
+Authors: CatCrypt Contributors
+-/
+import Nominal.FinPerm
+
+/-!
+# `CatCryptCore.Nominal.FinPerm` (shim)
+
+The nominal-sets theory lives upstream in the `nominal-lean` package (namespace
+`CatCrypt.Nominal`); this module re-exports `Nominal.FinPerm` and preserves the
+`CatCryptCore.Nominal.FinPerm` import path for downstream code.
+-/

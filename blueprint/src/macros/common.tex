@@ -1,0 +1,57 @@
+% Shared macros for both web and print versions
+
+% Theorem environments (required for leanblueprint/depgraph)
+\newtheorem{theorem}{Theorem}[chapter]
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{corollary}[theorem]{Corollary}
+
+\theoremstyle{definition}
+\newtheorem{definition}[theorem]{Definition}
+\newtheorem{example}[theorem]{Example}
+\newtheorem{remark}[theorem]{Remark}
+
+% Semantic abbreviations
+\newcommand{\SPComp}{\operatorname{SPComp}}
+\newcommand{\SDistr}{\operatorname{SDistr}}
+\newcommand{\RawCode}{\operatorname{RawCode}}
+\newcommand{\Adv}{\operatorname{Adv}}
+\newcommand{\Pr}{\operatorname{Pr}}
+\newcommand{\rHoare}[4]{\{#1\}\;#2 \sim #3\;\{#4\}}
+\newcommand{\pHoare}[3]{\{#1\}\;#2\;\{#3\}}
+\newcommand{\NN}{\mathbb{N}}
+\newcommand{\RR}{\mathbb{R}}
+\newcommand{\ZZ}{\mathbb{Z}}
+\newcommand{\FF}{\mathbb{F}}
+\newcommand{\Bool}{\mathsf{Bool}}
+\newcommand{\supp}{\operatorname{supp}}
+\newcommand{\fix}{\operatorname{fix}}
+
+% TLS key schedule macros (Chapter 7)
+\newcommand{\xtr}{\mathsf{XTR}}
+\newcommand{\xpd}{\mathsf{XPD}}
+\newcommand{\Gks}{G_{\mathrm{ks}}}
+\newcommand{\PrntN}{\operatorname{PrntN}}
+\newcommand{\Ostar}{O^{*}}
+\newcommand{\HKDF}{\mathsf{HKDF}}
+\newcommand{\NomPkg}{\mathsf{NomPkg}}
+
+% UC composition macros (Chapter 16)
+\newcommand{\sdist}{\operatorname{sdist}}
+\newcommand{\kdist}{\operatorname{kdist}}
+\newcommand{\bind}{\mathbin{\gg\!=}}
+
+% Macros used by the JoyOfCrypto / core blueprint chapters
+\newcommand{\Advantage}{\operatorname{Adv}}
+\newcommand{\AdvantageA}{\operatorname{Adv}}
+\newcommand{\Heap}{\operatorname{Heap}}
+\newcommand{\Prop}{\mathsf{Prop}}
+\newcommand{\couple}{\operatorname{couple}}
+\newcommand{\liftrel}{\mathrel{\sim}}
+\newcommand{\fatsemi}{\mathbin{;\!;}}
+\newcommand{\eqPre}{\operatorname{eqPre}}
+\newcommand{\eqPost}{\operatorname{eqPost}}
+\newcommand{\RPre}{\operatorname{RPre}}
+\newcommand{\RPost}{\operatorname{RPost}}
+\newcommand{\DependsOn}{\operatorname{DependsOn}}
+\newcommand{\PreservesOutside}{\operatorname{PreservesOutside}}

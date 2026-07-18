@@ -1,0 +1,506 @@
+\chapter{Montgomery-curve mathematics}
+
+This chapter formalises the arithmetic behind Curve25519 / X25519: the
+projective $x$-only differential-addition and doubling formulas, the
+Montgomery ladder, the transport of the Montgomery curve to Weierstrass
+form (so its group law comes for free from Mathlib), and the capstone
+correctness theorem for the RFC~7748 base point. Four facts about
+Curve25519 that are expensive to certify inside Lean (primality of the
+base field, primality of the subgroup order, the base point and its
+order) are bridged across the Rocq$\leftrightarrow$Lean boundary from the
+AUCurves development and recorded as axioms; everything downstream of them
+is proved.
+
+\section{The \texorpdfstring{$x$}{x}-only formulas}
+
+\begin{definition}[Projective $x$-only doubling]
+  \label{def:xdbl}
+  \lean{CatCrypt.Crypto.ECC.xdbl}
+  \leanok
+  For a Montgomery curve constant $a_{24} = (A+2)/4$, the projective
+  doubling map on a pair $(X,Z)$ representing $x = X/Z$ (Costello--Smith
+  eq.~12) is
+  \[
+    \mathsf{xdbl}\,a_{24}\,(X,Z) \;=\;
+      \bigl(\,(X+Z)^2 (X-Z)^2,\;\; c\,((X-Z)^2 + a_{24}\,c)\,\bigr),
+    \qquad c = (X+Z)^2 - (X-Z)^2,
+  \]
+  where $c = 4XZ$. Its output represents $x(2\cdot P)$ when $(X,Z)$
+  represents $x(P)$.
+\end{definition}
+
+\begin{definition}[Projective $x$-only differential addition]
+  \label{def:xdadd}
+  \lean{CatCrypt.Crypto.ECC.xdadd}
+  \leanok
+  Given projective $x$-coordinates of $P$, $Q$ and their difference
+  $P-Q$ (Costello--Smith eq.~13),
+  \begin{align*}
+    \mathrm{DA} &= (X_P - Z_P)(X_Q + Z_Q), &
+    \mathrm{CB} &= (X_P + Z_P)(X_Q - Z_Q), \\
+    \mathsf{xdadd}\,(X_P,Z_P)\,(X_Q,Z_Q)\,(X_D,Z_D)
+      &= \bigl(\,Z_D\,(\mathrm{DA}+\mathrm{CB})^2,\;\;
+                  X_D\,(\mathrm{DA}-\mathrm{CB})^2\,\bigr).
+  \end{align*}
+  Its output represents $x(P+Q)$.
+\end{definition}
+
+\begin{lemma}[Symmetry of $\mathsf{xdadd}$]
+  \label{lem:xdadd-symm}
+  \uses{def:xdadd}
+  \lean{CatCrypt.Crypto.ECC.xdadd_symm}
+  \leanok
+  $\mathsf{xdadd}\,PZ\,QZ\,DZ = \mathsf{xdadd}\,QZ\,PZ\,DZ$: the difference
+  term $\mathrm{DA}-\mathrm{CB}$ is squared, so swapping the two summands
+  leaves the result unchanged.
+\end{lemma}
+
+\begin{definition}[Montgomery curve parameters]
+  \label{def:monty-params}
+  \lean{CatCrypt.Crypto.ECC.MontyParams}
+  \leanok
+  A parameter record over a commutative ring $F$ carrying the curve
+  coefficient $A$ (for $y^2 = x^3 + A x^2 + x$) and the derived constant
+  $a_{24}$, kept as an independent field subject to the well-formedness
+  invariant $4\,a_{24} = A + 2$ (avoiding division in the representation).
+\end{definition}
+
+\begin{definition}[Curve25519 parameters]
+  \label{def:curve25519-params}
+  \uses{def:monty-params}
+  \lean{CatCrypt.Crypto.ECC.curve25519Params}
+  \leanok
+  The Montgomery parameters of Curve25519: $A = 486662$ and
+  $a_{24} = 121666 = (486662 + 2)/4$.
+\end{definition}
+
+\section{Projective equivalence and homogeneity}
+
+\begin{definition}[Projective equivalence]
+  \label{def:proj-equiv}
+  \lean{CatCrypt.Crypto.ECC.ProjEquiv}
+  \leanok
+  Two pairs are $x$-equivalent, written $(X_1,Z_1) \sim (X_2,Z_2)$, iff
+  $X_1 Z_2 = X_2 Z_1$; i.e.\ they carry the same $x$-coordinate
+  $X/Z$ in the field of fractions. The relation is reflexive and
+  symmetric.
+\end{definition}
+
+\begin{lemma}[Restricted transitivity of $\sim$]
+  \label{lem:proj-equiv-trans}
+  \uses{def:proj-equiv}
+  \lean{CatCrypt.Crypto.ECC.ProjEquiv.trans}
+  \leanok
+  Over a field, if $p \sim q$, $q \sim r$, and $q$ is nondegenerate
+  ($q.1 \neq 0$ or $q.2 \neq 0$), then $p \sim r$. Transitivity can fail
+  when the middle term is $(0,0)$, so nondegeneracy is required.
+\end{lemma}
+
+\begin{theorem}[$\mathsf{xdbl}$ respects $\sim$]
+  \label{thm:xdbl-projequiv}
+  \uses{def:xdbl, def:proj-equiv}
+  \lean{CatCrypt.Crypto.ECC.xdbl_projEquiv}
+  \leanok
+  If $p \sim q$ then $\mathsf{xdbl}\,a_{24}\,p \sim \mathsf{xdbl}\,a_{24}\,q$.
+  Both coordinates of $\mathsf{xdbl}$ are homogeneous of degree $4$ in
+  $(X,Z)$, so a common scaling of the input scales the output uniformly.
+\end{theorem}
+
+\begin{theorem}[$\mathsf{xdadd}$ respects $\sim$]
+  \label{thm:xdadd-projequiv}
+  \uses{def:xdadd, def:proj-equiv}
+  \lean{CatCrypt.Crypto.ECC.xdadd_projEquiv}
+  \leanok
+  If $p \sim p'$, $q \sim q'$, and $d \sim d'$ then
+  $\mathsf{xdadd}\,p\,q\,d \sim \mathsf{xdadd}\,p'\,q'\,d'$: each of
+  $\mathrm{DA}+\mathrm{CB} = 2(X_P X_Q - Z_P Z_Q)$ and
+  $\mathrm{DA}-\mathrm{CB} = 2(X_P Z_Q - X_Q Z_P)$ is homogeneous in each
+  argument, and the $X_D/Z_D$ factors cancel.
+\end{theorem}
+
+\section{The abstract correspondence: \texorpdfstring{$\mathsf{MontyCurveGroup}$}{MontyCurveGroup}}
+
+\begin{definition}[$\mathsf{MontyCurveGroup}$]
+  \label{def:monty-curve-group}
+  \uses{def:xdbl, def:xdadd, def:monty-params}
+  \lean{CatCrypt.Crypto.ECC.MontyCurveGroup}
+  \leanok
+  A hypothesis class packaging the Costello--Smith~\S4 correspondence: an
+  abelian group $G$ of curve points, an $x$-coordinate projection
+  $\mathsf{xProj} : G \to F \times F$, and the two specifications
+  \begin{align*}
+    \text{(doubling)}\quad&\mathsf{xdbl}\,a_{24}\,(\mathsf{xProj}\,P)
+      \;\sim\; \mathsf{xProj}\,(P+P), \\
+    \text{(addition)}\quad&\mathsf{xdadd}\,(\mathsf{xProj}\,P)\,
+      (\mathsf{xProj}\,Q)\,(\mathsf{xProj}\,(P-Q))
+      \;\sim\; \mathsf{xProj}\,(P+Q),
+  \end{align*}
+  stated up to projective equivalence.
+\end{definition}
+
+\section{The Montgomery ladder (group level)}
+
+\begin{definition}[Bits to natural]
+  \label{def:bits-to-nat}
+  \lean{CatCrypt.Crypto.ECC.bitsToNat}
+  \leanok
+  The natural number read from a bit list, MSB first:
+  $\mathsf{bitsToNat}(b::bs) = 2\,\mathsf{bitsToNat}(bs) + [b]$ and
+  $\mathsf{bitsToNat}\,[] = 0$.
+\end{definition}
+
+\begin{definition}[Ladder step]
+  \label{def:ladder-step}
+  \lean{CatCrypt.Crypto.ECC.ladderStep}
+  \leanok
+  One double-and-add step on a state $(R_0, R_1)$ of an abelian group,
+  branching on bit $b$:
+  \[
+    \mathsf{ladderStep}\,(R_0,R_1)\,b =
+      \begin{cases}
+        (R_0 + R_1,\; R_1 + R_1) & b = \mathsf{true},\\
+        (R_0 + R_0,\; R_0 + R_1) & b = \mathsf{false}.
+      \end{cases}
+  \]
+\end{definition}
+
+\begin{definition}[Ladder fold]
+  \label{def:ladder-fold}
+  \uses{def:ladder-step}
+  \lean{CatCrypt.Crypto.ECC.ladderFold}
+  \leanok
+  Iterating $\mathsf{ladderStep}$ over a bit list (head processed first,
+  MSB first) from the initial state $(0, P)$.
+\end{definition}
+
+\begin{definition}[Ladder invariant]
+  \label{def:ladder-inv}
+  \lean{CatCrypt.Crypto.ECC.LadderInv}
+  \leanok
+  The predicate $\mathsf{LadderInv}\,P\,a\,(R_0,R_1)$ asserting
+  $R_0 = a \cdot P$ and $R_1 = (a+1)\cdot P$.
+\end{definition}
+
+\begin{theorem}[Montgomery ladder correctness (algebraic)]
+  \label{thm:ladder-fold-correct}
+  \uses{def:ladder-fold, def:ladder-inv, def:bits-to-nat}
+  \lean{CatCrypt.Crypto.ECC.ladderFold_correct}
+  \leanok
+  For any abelian group $G$, any $P : G$ and any bit list $bits$,
+  \[
+    \mathsf{LadderInv}\,P\,(\mathsf{bitsToNat}\,bits)\,
+      (\mathsf{ladderFold}\,P\,bits),
+  \]
+  i.e.\ the fold ends in state $(n\cdot P, (n+1)\cdot P)$ with
+  $n = \mathsf{bitsToNat}\,bits$. Proved by induction on bit length.
+\end{theorem}
+
+\section{The field-level \texorpdfstring{$x$}{x}-only ladder}
+
+\begin{definition}[Field-level ladder step]
+  \label{def:xladder-step}
+  \uses{def:xdbl, def:xdadd}
+  \lean{CatCrypt.Crypto.ECC.xladderStep}
+  \leanok
+  One step of the $x$-only ladder on projective state
+  $(R_0, R_1) \in (F\times F)^2$, carrying the base $x$-coordinate $x_P$
+  as the invariant difference:
+  \[
+    \mathsf{xladderStep}\,a_{24}\,x_P\,(R_0,R_1)\,b =
+      \begin{cases}
+        (\mathsf{xdadd}\,R_0\,R_1\,x_P,\; \mathsf{xdbl}\,a_{24}\,R_1) & b,\\
+        (\mathsf{xdbl}\,a_{24}\,R_0,\; \mathsf{xdadd}\,R_0\,R_1\,x_P) & \neg b.
+      \end{cases}
+  \]
+  This is the pure field program a Jasmin/bedrock2/Rust implementation runs.
+\end{definition}
+
+\begin{definition}[Field-level ladder fold]
+  \label{def:xladder-fold}
+  \uses{def:xladder-step}
+  \lean{CatCrypt.Crypto.ECC.xladderFold}
+  \leanok
+  Iterating $\mathsf{xladderStep}$ over a bit list from the initial
+  projective state $((1,0),\,x_P)$, where $(1,0)$ represents the point at
+  infinity.
+\end{definition}
+
+\begin{definition}[Field-level ladder invariant]
+  \label{def:xladder-inv}
+  \uses{def:proj-equiv, def:monty-curve-group}
+  \lean{CatCrypt.Crypto.ECC.XLadderInv}
+  \leanok
+  The projective invariant tying the field state to the abstract group:
+  $\mathsf{XLadderInv}\,P\,n\,(s_0,s_1)$ holds iff
+  $s_0 \sim \mathsf{xProj}\,(n\cdot P)$ and
+  $s_1 \sim \mathsf{xProj}\,((n+1)\cdot P)$.
+\end{definition}
+
+\begin{theorem}[Field-level step preserves the invariant]
+  \label{thm:xladder-step-preserves}
+  \uses{def:xladder-step, def:xladder-inv, thm:xdbl-projequiv, thm:xdadd-projequiv, lem:proj-equiv-trans, def:monty-curve-group}
+  \lean{CatCrypt.Crypto.ECC.xladderStep_preserves_invariant}
+  \leanok
+  Over a field, given negation-invariance of $\mathsf{xProj}$ and
+  nondegeneracy of the intermediate $\mathsf{xdbl}$/$\mathsf{xdadd}$
+  outputs, if $\mathsf{XLadderInv}\,P\,n\,s$ holds then so does
+  $\mathsf{XLadderInv}\,P\,(2n + [b])\,(\mathsf{xladderStep}\,a_{24}\,
+  (\mathsf{xProj}\,P)\,s\,b)$. Composes
+  \ref{thm:xdbl-projequiv}, \ref{thm:xdadd-projequiv} and
+  \ref{lem:proj-equiv-trans} with the group specs.
+\end{theorem}
+
+\section{Montgomery as a Weierstrass curve}
+
+\begin{definition}[Montgomery curve as Weierstrass curve]
+  \label{def:montgomeryW}
+  \lean{CatCrypt.Crypto.ECC.montgomeryW}
+  \leanok
+  The equation $y^2 = x^3 + A x^2 + x$ is literally the Weierstrass curve
+  with $(a_1,a_2,a_3,a_4,a_6) = (0, A, 0, 1, 0)$. Instantiating Mathlib's
+  \texttt{WeierstrassCurve} at these coefficients reuses its proved
+  \texttt{AddCommGroup} structure on affine points.
+\end{definition}
+
+\begin{lemma}[Weierstrass equation is the Montgomery equation]
+  \label{lem:montgomeryW-equation}
+  \uses{def:montgomeryW}
+  \lean{CatCrypt.Crypto.ECC.montgomeryW_equation}
+  \leanok
+  A point $(x,y)$ lies on $\mathsf{montgomeryW}\,A$ iff
+  $y^2 = x^3 + A x^2 + x$.
+\end{lemma}
+
+\begin{definition}[Projective $x$-coordinate map]
+  \label{def:xprojW}
+  \uses{def:montgomeryW}
+  \lean{CatCrypt.Crypto.ECC.xProjW}
+  \leanok
+  The map sending a Weierstrass affine point to its projective
+  $x$-coordinate: the point at infinity $\mapsto (1,0)$, and a finite
+  point $(x,y) \mapsto (x,1)$. It is negation-invariant, since Montgomery
+  negation flips only $y$.
+\end{definition}
+
+\begin{theorem}[$\mathsf{xdbl}$ doubling spec on Weierstrass points]
+  \label{thm:xdbl-spec-w}
+  \uses{def:xdbl, def:xprojW, def:proj-equiv, lem:montgomeryW-equation}
+  \lean{CatCrypt.Crypto.ECC.xdbl_spec_W}
+  \leanok
+  For $2 \neq 0$ and $4\,a_{24} = A + 2$, and every point $P$ on
+  $\mathsf{montgomeryW}\,A$,
+  \[
+    \mathsf{xdbl}\,a_{24}\,(\mathsf{xProjW}\,A\,P)
+      \;\sim\; \mathsf{xProjW}\,A\,(P+P),
+  \]
+  covering the point at infinity, the $2$-torsion case, and the generic
+  case.
+\end{theorem}
+
+\begin{theorem}[$\mathsf{xdadd}$ addition spec on Weierstrass points]
+  \label{thm:xdadd-spec-w}
+  \uses{def:xdadd, def:xprojW, def:proj-equiv, lem:montgomeryW-equation}
+  \lean{CatCrypt.Crypto.ECC.xdadd_spec_W}
+  \leanok
+  For $2 \neq 0$ and all points $P, Q$ on $\mathsf{montgomeryW}\,A$,
+  \[
+    \mathsf{xdadd}\,(\mathsf{xProjW}\,A\,P)\,(\mathsf{xProjW}\,A\,Q)\,
+      (\mathsf{xProjW}\,A\,(P-Q))
+      \;\sim\; \mathsf{xProjW}\,A\,(P+Q),
+  \]
+  covering $P = 0$, $Q = 0$, $P = \pm Q$, and the generic
+  ($x_P \neq x_Q$) case. Reduces to a polynomial identity over the field
+  using only the two curve equations.
+\end{theorem}
+
+\begin{definition}[Weierstrass transport into $\mathsf{MontyCurveGroup}$]
+  \label{def:montgomeryW-mcg}
+  \uses{def:monty-curve-group, def:montgomeryW, def:xprojW, thm:xdbl-spec-w, thm:xdadd-spec-w}
+  \lean{CatCrypt.Crypto.ECC.montgomeryW_MontyCurveGroup}
+  \leanok
+  Packaging: the Weierstrass group on $(\mathsf{montgomeryW}\,A)$'s affine
+  points, with $x$-map $\mathsf{xProjW}\,A$, is a
+  $\mathsf{MontyCurveGroup}$ instance whenever $2 \neq 0$ and
+  $4\,a_{24} = A + 2$. This discharges the Costello--Smith~\S4
+  correspondence with no separate Montgomery-form group-law port.
+\end{definition}
+
+\section{Curve25519}
+
+\begin{definition}[Curve25519 base-field prime]
+  \label{def:curve25519-prime}
+  \lean{CatCrypt.Crypto.ECC.curve25519Prime}
+  \leanok
+  $p = 2^{255} - 19$.
+\end{definition}
+
+\begin{definition}[Curve25519 base field]
+  \label{def:fp25519}
+  \uses{def:curve25519-prime}
+  \lean{CatCrypt.Crypto.ECC.Fp25519}
+  \leanok
+  The type alias $\mathbb{F}_p = \mathbb{Z}/p\mathbb{Z}$ for
+  $p = 2^{255} - 19$.
+\end{definition}
+
+\begin{definition}[Base-field primality (AUCurves bridge, taken as an axiom)]
+  \label{def:curve25519-prime-prime}
+  \uses{def:curve25519-prime}
+  \lean{CatCrypt.Crypto.ECC.curve25519Prime_prime}
+  \leanok
+  $\mathsf{Nat.Prime}\,(2^{255} - 19)$. Proving this in Lean needs a costly
+  Pocklington/Pratt certificate; it is discharged in the Rocq AUCurves
+  development and imported across the Rocq$\leftrightarrow$Lean boundary as
+  an axiom. It unlocks $\mathsf{Field}\,\mathbb{F}_p$.
+\end{definition}
+
+\begin{definition}[Concrete Curve25519 point group]
+  \label{def:curve25519-point}
+  \uses{def:montgomeryW, def:fp25519}
+  \lean{CatCrypt.Crypto.ECC.Curve25519Point}
+  \leanok
+  The affine points of $\mathsf{montgomeryW}\,(486662)$ over
+  $\mathbb{F}_p$, an $\mathsf{AddCommGroup}$ inherited from Mathlib.
+\end{definition}
+
+\begin{definition}[Curve25519 $\mathsf{MontyCurveGroup}$ instance]
+  \label{def:curve25519-mcg}
+  \uses{def:curve25519-point, def:montgomeryW-mcg, def:curve25519-params, def:curve25519-prime-prime}
+  \lean{CatCrypt.Crypto.ECC.curve25519_MontyCurveGroup}
+  \leanok
+  Specialising \ref{def:montgomeryW-mcg} to $A = 486662$,
+  $a_{24} = 121666$ over $\mathbb{F}_p$ (using $2 \neq 0$ and
+  $4\cdot 121666 = 486662 + 2$): the $x$-only formulas correctly compute
+  scalar multiplication on $\mathsf{Curve25519Point}$.
+\end{definition}
+
+\begin{definition}[X25519 scalar multiplication]
+  \label{def:x25519}
+  \lean{CatCrypt.Crypto.ECC.x25519}
+  \leanok
+  $\mathsf{x25519}\,k\,P = k \cdot P$ in the group. For the Curve25519
+  base point this is X25519 scalar multiplication.
+\end{definition}
+
+\begin{theorem}[Ladder computes X25519]
+  \label{thm:x25519-eq-ladder}
+  \uses{def:x25519, def:ladder-fold, thm:ladder-fold-correct}
+  \lean{CatCrypt.Crypto.ECC.x25519_eq_ladder}
+  \leanok
+  $\mathsf{x25519}\,(\mathsf{bitsToNat}\,bits)\,P
+     = (\mathsf{ladderFold}\,P\,bits).1$, a corollary of
+  \ref{thm:ladder-fold-correct}.
+\end{theorem}
+
+\section{The subgroup order and the base point (AUCurves bridges)}
+
+\begin{definition}[Curve25519 subgroup order]
+  \label{def:curve25519-suborder}
+  \lean{CatCrypt.Crypto.ECC.curve25519SubgroupOrder}
+  \leanok
+  $\ell = 2^{252} + 27742317777372353535851937790883648493$, the order of
+  Curve25519's prime-order subgroup and of the RFC~7748 base point.
+\end{definition}
+
+\begin{definition}[Subgroup order primality (AUCurves bridge, taken as an axiom)]
+  \label{def:curve25519-suborder-prime}
+  \uses{def:curve25519-suborder}
+  \lean{CatCrypt.Crypto.ECC.curve25519SubgroupOrder_prime}
+  \leanok
+  $\mathsf{Nat.Prime}\,\ell$. Bridged from the AUCurves development
+  ($E/E[4]$ has prime order $\ell$); imported as an axiom exactly as
+  \ref{def:curve25519-prime-prime}. This underpins the cyclic-subgroup
+  argument that $n\cdot B \neq 0$ for $0 < n < \ell$.
+\end{definition}
+
+\begin{definition}[Curve25519 base point (AUCurves bridge, taken as an axiom)]
+  \label{def:curve25519-basepoint}
+  \uses{def:curve25519-point}
+  \lean{CatCrypt.Crypto.ECC.curve25519_basepoint}
+  \leanok
+  A concrete $\mathsf{Curve25519Point}$ standing for the RFC~7748 base
+  point $u = 9$. Bridged from AUCurves and taken as an axiom; only its
+  additive order is constrained (see \ref{def:curve25519-basepoint-addorder}),
+  so downstream results hold for any order-$\ell$ point.
+\end{definition}
+
+\begin{definition}[Base-point order (AUCurves bridge, taken as an axiom)]
+  \label{def:curve25519-basepoint-addorder}
+  \uses{def:curve25519-basepoint, def:curve25519-suborder}
+  \lean{CatCrypt.Crypto.ECC.curve25519_basepoint_addOrder}
+  \leanok
+  $\mathsf{addOrderOf}\,B = \ell$: the base point has additive order equal
+  to the subgroup order ($E\_basepoint\_order$, AUCurves). Bridged and
+  taken as an axiom.
+\end{definition}
+
+\section{Ladder nondegeneracy and the capstone}
+
+\begin{definition}[Ladder nondegeneracy]
+  \label{def:ladder-nondeg}
+  \uses{def:xdbl, def:xdadd, def:curve25519-point, def:curve25519-mcg}
+  \lean{CatCrypt.Crypto.ECC.LadderNondeg}
+  \leanok
+  The predicate asserting that, at every scalar $n \le \mathsf{bitsToNat}\,bits$
+  along the ladder path over $P$, the intermediate $\mathsf{xdbl}$ and
+  $\mathsf{xdadd}$ outputs are projectively nondegenerate (not $(0,0)$).
+  This is the side condition needed to invoke
+  \ref{lem:proj-equiv-trans} at each step.
+\end{definition}
+
+\begin{theorem}[Field-level ladder correctness for Curve25519]
+  \label{thm:xladder-curve25519-correct}
+  \uses{def:xladder-fold, def:xladder-inv, thm:xladder-step-preserves, def:curve25519-mcg, def:ladder-nondeg}
+  \lean{CatCrypt.Crypto.ECC.xladderFold_curve25519_correct}
+  \leanok
+  For a point $P$, a bit list, and $\mathsf{LadderNondeg}\,P\,bits$, the
+  field-level fold $\mathsf{xladderFold}$ satisfies $\mathsf{XLadderInv}$
+  with the abstract-group ladder. Proved by induction, stepping with
+  \ref{thm:xladder-step-preserves}.
+\end{theorem}
+
+\begin{theorem}[End-to-end X25519 correctness, conditional on nondegeneracy]
+  \label{thm:x25519-ladder-correct}
+  \uses{thm:xladder-curve25519-correct, def:x25519, def:ladder-nondeg}
+  \lean{CatCrypt.Crypto.ECC.x25519_ladder_correct}
+  \leanok
+  Given $\mathsf{LadderNondeg}\,P\,bits$, the first component of the
+  field-level ladder run on $\mathsf{xProj}\,P$ is projectively equivalent
+  to $\mathsf{xProj}\,(\mathsf{x25519}\,(\mathsf{bitsToNat}\,bits)\,P)$ ---
+  correctness wherever the ladder path stays nondegenerate.
+\end{theorem}
+
+\begin{theorem}[Base point discharges nondegeneracy]
+  \label{thm:curve25519-basepoint-laddernondeg}
+  \uses{def:ladder-nondeg, def:curve25519-basepoint, def:curve25519-basepoint-addorder, def:curve25519-suborder-prime}
+  \lean{CatCrypt.Crypto.ECC.curve25519_basepoint_LadderNondeg}
+  \leanok
+  For any bit list whose value is below the subgroup order $\ell$, the
+  entire ladder path over the base point $B$ is projectively nondegenerate:
+  $\mathsf{LadderNondeg}\,B\,bits$. Since $\ell$ is an odd prime, no
+  non-identity multiple $n\cdot B$ ($0 < n < \ell$) is a $4$-torsion point,
+  which is exactly what forces each $\mathsf{xdbl}$/$\mathsf{xdadd}$ output
+  to be nondegenerate.
+\end{theorem}
+
+\begin{theorem}[Unconditional X25519 ladder correctness for the base point]
+  \label{thm:x25519-ladder-correct-basepoint}
+  \uses{thm:x25519-ladder-correct, thm:curve25519-basepoint-laddernondeg, def:curve25519-prime-prime, def:curve25519-suborder-prime, def:curve25519-basepoint, def:curve25519-basepoint-addorder}
+  \lean{CatCrypt.Crypto.ECC.x25519_ladder_correct_basepoint}
+  \leanok
+  \textbf{Capstone.} For every scalar below the subgroup order $\ell$
+  (i.e.\ $\mathsf{bitsToNat}\,bits < \ell$), the first component of the
+  field-level Montgomery ladder run on $\mathsf{xProj}\,B$ is projectively
+  equivalent to $\mathsf{xProj}\,(\mathsf{x25519}\,(\mathsf{bitsToNat}\,bits)\,B)$:
+  \[
+    (\mathsf{xladderFold}\,a_{24}\,(\mathsf{xProj}\,B)\,bits).1
+      \;\sim\; \mathsf{xProj}\,(\mathsf{x25519}\,(\mathsf{bitsToNat}\,bits)\,B).
+  \]
+  This is \ref{thm:x25519-ladder-correct} with the $\mathsf{LadderNondeg}$
+  side condition \emph{discharged} via
+  \ref{thm:curve25519-basepoint-laddernondeg}: it carries \emph{no}
+  nondegeneracy hypothesis and is unconditional on the RFC~7748 scalar
+  range $k < \ell$. It rests only on the four AUCurves-bridged axioms
+  (\ref{def:curve25519-prime-prime}, \ref{def:curve25519-suborder-prime},
+  \ref{def:curve25519-basepoint}, \ref{def:curve25519-basepoint-addorder}).
+\end{theorem}

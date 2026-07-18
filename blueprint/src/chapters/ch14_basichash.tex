@@ -1,0 +1,37 @@
+\chapter{Worked example: Basic Hash (RFID)}
+
+The proof-ladders ``protocol'' benchmark. The Basic Hash RFID scheme has a tag
+answer a reader's nonce with a keyed hash. Two complementary results: for a
+bijection-family hash, authentication is \emph{perfect}; but the XOR hash is
+correlated across sessions, so it \emph{fails} unlinkability --- a negative result
+that the positive authentication proof does not rule out.
+
+\begin{definition}[Keyed hash tag]
+  \label{def:basichash}
+  \uses{def:spcomp}
+  \lean{CatCrypt.Examples.BasicHash.HashFunc, CatCrypt.Examples.BasicHash.xorHash}
+  \leanok
+  A hash function keys a nonce to a tag; the reader accepts when the tag matches.
+  The XOR hash is $H(k, n) = k \oplus n$.
+\end{definition}
+
+\begin{theorem}[Perfect authentication]
+  \label{thm:basichash-auth}
+  \uses{def:basichash}
+  \lean{CatCrypt.Examples.BasicHash.auth_perfect_bij, CatCrypt.Examples.BasicHash.auth_zero_advantage_xor}
+  \leanok
+  For any bijection-family hash, authentication is perfect: the real and ideal
+  games couple, so the authentication advantage is $0$ for every nonce and
+  adversary. The XOR hash is such a family.
+\end{theorem}
+
+\begin{theorem}[Unlinkability counterexample]
+  \label{thm:basichash-unlink}
+  \uses{def:basichash}
+  \lean{CatCrypt.Examples.BasicHash.xorHash_correlated, CatCrypt.Examples.BasicHash.unlink_real_always_true, CatCrypt.Examples.BasicHash.unlink_ideal_not_always_true}
+  \leanok
+  The XOR hash leaks a key-independent correlation, $\,(k \oplus n_1) \oplus (k
+  \oplus n_2) = n_1 \oplus n_2$. A distinguisher testing this relation accepts the
+  shared-key (real) game with certainty, but with independent keys the same test
+  can fail --- so the two unlinkability games differ, and unlinkability fails.
+\end{theorem}

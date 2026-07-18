@@ -1,0 +1,36 @@
+\chapter{Worked example: Encrypt-then-MAC}
+
+Following Rosulek, \emph{The Joy of Cryptography}, §9--10 (Construction 10.9). The
+Encrypt-then-MAC combinator tags a ciphertext with a MAC over that ciphertext,
+composing an encryption scheme with a message authentication code. The combinator
+is generic; here it is instantiated with the one-time pad and the XOR MAC, and the
+result is proved perfectly IND-CPA secure.
+
+\begin{definition}[Encrypt-then-MAC combinator]
+  \label{def:etm}
+  \uses{def:otp-scheme}
+  \lean{CatCrypt.Examples.EncryptThenMAC.EtM}
+  \leanok
+  Given an encryption scheme $E$ and a MAC $\mathsf{mac}$, the combinator encrypts
+  with $E$ and appends the tag: $\mathsf{enc}((k_e, k_m), m) = (c,
+  \mathsf{mac}(k_m, c))$ where $c \leftarrow E.\mathsf{enc}(k_e, m)$; decryption
+  checks the tag before decrypting.
+\end{definition}
+
+\begin{theorem}[Correctness is preserved]
+  \label{thm:etm-correct}
+  \uses{def:etm}
+  \lean{CatCrypt.Examples.EncryptThenMAC.EtM_correct}
+  \leanok
+  If the underlying encryption scheme is correct, so is the Encrypt-then-MAC
+  combinator built from it, for any MAC.
+\end{theorem}
+
+\begin{theorem}[Perfect IND-CPA of the XOR instantiation]
+  \label{thm:etm-perfect}
+  \uses{def:etm, thm:otp-perfect}
+  \lean{CatCrypt.Examples.EncryptThenMAC.boolEtM_perfect_indcpa}
+  \leanok
+  The one-time pad composed with the XOR MAC has perfect IND-CPA security:
+  advantage exactly $0$ for every adversary.
+\end{theorem}

@@ -1,0 +1,41 @@
+\chapter{Worked example: CBC mode}
+
+Following Rosulek, \emph{The Joy of Cryptography}, §8 (block-cipher modes).
+Cipher-block chaining encrypts a block $m$ as $(\mathit{IV}, F(k, \mathit{IV}
+\oplus m))$ with a uniform IV. The IV is public, so masking alone does not give
+perfect security; the rigorous argument is the same random-\emph{key} coupling as
+CPA-from-PRF, which requires the block cipher to be bijective in both arguments (a
+Latin square).
+
+\begin{definition}[Single-block CBC]
+  \label{def:cbc}
+  \uses{def:cpafromprf}
+  \lean{CatCrypt.Examples.CBCMode.CBCBlockCipher}
+  \leanok
+  A CBC block cipher carries two coherent views --- a permutation per key (for
+  decryption) and a bijection $k \mapsto F(k, x)$ per input (for a uniform output)
+  --- tied by a coherence law. Encryption is $(\mathit{IV}, F(k, \mathit{IV}
+  \oplus m))$.
+\end{definition}
+
+\begin{theorem}[Perfect IND-CPA]
+  \label{thm:cbc-perfect}
+  \uses{def:cbc, thm:cpafromprf-perfect}
+  \lean{CatCrypt.Examples.CBCMode.cbc_perfect_indcpa, CatCrypt.Examples.CBCMode.boolCBC_perfect_indcpa}
+  \leanok
+  Single-block CBC from a two-sided bijection block cipher has perfect IND-CPA
+  security: advantage exactly $0$, via the per-IV random-key coupling. (Multi-block
+  chaining is only computationally secure --- a PRP reduction --- and is out of
+  scope.)
+\end{theorem}
+
+\begin{theorem}[Computational bound from a PRP]
+  \label{thm:cbc-bound}
+  \uses{def:cbc, thm:cpafromprf-bound}
+  \lean{CatCrypt.Examples.CBCMode.cbc_indcpa_bound}
+  \leanok
+  For a general block cipher with PRP-advantage $\varepsilon$, single-block CBC has
+  $\mathsf{Adv}^{\mathrm{IND\text{-}CPA}} \le 2\varepsilon$ --- the real-or-random
+  ladder swaps the permutation for random on both the real-true and real-false
+  sides, with the uniform-IV masking perfect in between.
+\end{theorem}

@@ -1,0 +1,13 @@
+web/
+lean_decls
+src/*.aux
+src/*.log
+src/*.fls
+src/*.fdb_latexmk
+src/*.paux
+src/*.pdf
+src/*.xdv
+*.aux
+*.log
+*.fls
+*.fdb_latexmk

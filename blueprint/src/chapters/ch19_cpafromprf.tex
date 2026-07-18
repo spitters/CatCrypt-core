@@ -1,0 +1,61 @@
+\chapter{Worked example: CPA security from a PRF}
+
+Following Rosulek, \emph{The Joy of Cryptography}, §7 (CPA security). Encrypting
+$m$ as $(r, F(k, r) \oplus m)$ for fresh randomness $r$ turns a pseudorandom
+function $F$ into a chosen-plaintext-secure encryption scheme. When $F$ is a
+perfect (bijection-family) PRF the scheme is perfectly IND-CPA: fresh randomness
+each query reduces security to the one-time-pad argument at each drawn $r$.
+
+\begin{definition}[PRF-based encryption]
+  \label{def:cpafromprf}
+  \uses{def:bijprf}
+  \lean{CatCrypt.Examples.CPAFromPRF.BijCPAScheme, CatCrypt.Examples.CPAFromPRF.BijCPAScheme.toBijPRFFamily}
+  \leanok
+  From a bijection PRF family, the scheme encrypts $m$ as $(r, F(k, r) \oplus m)$
+  with fresh uniform $r$; the underlying PRF is exposed for the reduction.
+\end{definition}
+
+\begin{theorem}[Correctness]
+  \label{thm:cpafromprf-correct}
+  \uses{def:cpafromprf}
+  \lean{CatCrypt.Examples.CPAFromPRF.bijCPA_correct}
+  \leanok
+  Decryption recovers the message: $F(k, r) \oplus (F(k, r) \oplus m) = m$.
+\end{theorem}
+
+\begin{theorem}[Perfect IND-CPA]
+  \label{thm:cpafromprf-perfect}
+  \uses{def:cpafromprf, thm:bijprf-perfect, thm:otp-perfect}
+  \lean{CatCrypt.Examples.CPAFromPRF.bijCPA_perfect_indcpa, CatCrypt.Examples.CPAFromPRF.boolXorCPA_perfect_indcpa}
+  \leanok
+  Built on a perfect PRF, the scheme has perfect IND-CPA security: advantage
+  exactly $0$. Fresh randomness is drawn first and synchronized across the two
+  games, and at each $r$ the key coupling makes the ciphertexts coincide.
+\end{theorem}
+
+\begin{theorem}[Computational IND-CPA from a PRF]
+  \label{thm:cpafromprf-bound}
+  \uses{def:cpafromprf, thm:otp-perfect}
+  \lean{CatCrypt.Examples.CPAFromPRF.cpa_from_prf_bound}
+  \leanok
+  For a general PRF $F$ with advantage $\varepsilon$, replacing $F(k, \cdot)$ by a
+  random function turns the scheme into a one-time pad (perfect), so composing the
+  PRF-swap hop with the perfect-OTP hop through the advantage triangle inequality
+  gives $\mathsf{Adv}^{\mathrm{IND\text{-}CPA}} \le \varepsilon$.
+\end{theorem}
+
+\begin{theorem}[Synthesized reduction]
+  \label{thm:cpafromprf-reduction}
+  \uses{def:cpafromprf, thm:otp-perfect}
+  \lean{CatCrypt.Examples.CPAFromPRF.cpa_from_prf_reduction}
+  \leanok
+  The PRF-swap hop is discharged, not assumed: an explicit distinguisher
+  $R_A(y) = A(r, y \oplus m)$ turns the IND-CPA adversary into a PRF distinguisher,
+  and at each fixed randomness the swap advantage \emph{equals}
+  $\mathsf{Adv}^{\mathrm{PRF}}(R_A)$. Averaging over the fresh randomness and
+  bounding each slice by $\varepsilon$ gives, with no hop hypothesis,
+  \[
+    \mathsf{Adv}^{\mathrm{IND\text{-}CPA}} \;\le\; 2\varepsilon.
+  \]
+  The factor two is the two independent PRF replacements, one per challenge world.
+\end{theorem}

@@ -1,0 +1,252 @@
+\chapter{Forking lemmas}
+
+The forking lemma (Pointcheval--Stern, Bellare--Neven) is the central rewinding
+argument behind the security of Fiat--Shamir signatures in the random-oracle
+model. Running an adversary twice on the same commitment but with fresh oracle
+responses yields two accepting transcripts, from which special-soundness
+extraction recovers a witness. This chapter records the single-query bound and
+its Bellare--Neven generalisation to $q$ oracle queries.
+
+\section{The forkable adversary}
+
+\begin{definition}[Forkable adversary]
+  \label{def:forkable-adversary}
+  \lean{CatCrypt.Crypto.ForkingLemma.ForkableAdversary}
+  \leanok
+  A \emph{forkable adversary} for the single-query random-oracle model is a
+  two-phase machine over input $X$, commitment $C$, response space $R$, and
+  output $Y$: a probabilistic commit phase
+  $\mathsf{coins} : X \to \mathsf{SPComp}\,C$ (everything computed before the
+  oracle query) and a deterministic response phase
+  $\mathsf{respond} : X \to C \to R \to Y$ (the computation after the oracle
+  answers). Sharing the commit phase across two runs is what enables forking.
+\end{definition}
+
+\begin{definition}[Acceptance probability]
+  \label{def:fork-accept-prob}
+  \uses{def:forkable-adversary}
+  \lean{CatCrypt.Crypto.ForkingLemma.acceptProb}
+  \leanok
+  The \emph{acceptance probability} of $A$ on input $x$ under predicate
+  $\mathsf{accept} : Y \to \mathsf{Bool}$ is
+  \[
+    \mathrm{acc}(A,x) \;=\;
+    \Pr\big[\, c \leftarrow \mathsf{coins}\,x;\;
+      e \leftarrow_{\$} R \;:\;
+      \mathsf{accept}(\mathsf{respond}\,x\,c\,e) \,\big].
+  \]
+\end{definition}
+
+\begin{definition}[Forking algorithm]
+  \label{def:fork-alg}
+  \uses{def:forkable-adversary}
+  \lean{CatCrypt.Crypto.ForkingLemma.forkAlg}
+  \leanok
+  The \emph{forking algorithm} runs $A$ once to obtain a commitment $c$, then
+  samples two independent oracle responses $e_1, e_2 \leftarrow_{\$} R$ and
+  replays the response phase on each, returning
+  $(c, e_1, y_1, e_2, y_2)$ with $y_i = \mathsf{respond}\,x\,c\,e_i$.
+\end{definition}
+
+\begin{definition}[Fork success probability]
+  \label{def:fork-succ-prob}
+  \uses{def:fork-alg}
+  \lean{CatCrypt.Crypto.ForkingLemma.forkSuccProb}
+  \leanok
+  The \emph{fork success probability} is the probability that both replayed runs
+  accept on distinct oracle responses:
+  \[
+    \mathrm{frk}(A,x) \;=\;
+    \Pr\big[\,\mathsf{accept}\,y_1 \wedge \mathsf{accept}\,y_2 \wedge e_1 \neq e_2\,\big],
+  \]
+  taken over the forking algorithm.
+\end{definition}
+
+\section{Jensen's inequality for sub-PMFs}
+
+\begin{lemma}[AM--GM for extended non-negative reals]
+  \label{lem:ennreal-amgm}
+  \lean{CatCrypt.Crypto.ForkingLemma.ennreal_two_mul_le_add_sq}
+  \leanok
+  For all $a, b \in \overline{\mathbb{R}}_{\geq 0}$,
+  \[
+    2ab \;\leq\; a^2 + b^2 .
+  \]
+\end{lemma}
+
+\begin{lemma}[Jensen's inequality under sub-PMF weights]
+  \label{lem:jensen-sub-pmf}
+  \uses{lem:ennreal-amgm}
+  \lean{CatCrypt.Crypto.ForkingLemma.jensen_sub_pmf_sq}
+  \leanok
+  Let $w : \iota \to \overline{\mathbb{R}}_{\geq 0}$ with
+  $\sum_i w_i \leq 1$ and $f : \iota \to \overline{\mathbb{R}}_{\geq 0}$ with
+  $f_i \leq 1$ for all $i$. Then squaring is convex against the weights $w$:
+  \[
+    \Big(\sum_i w_i\, f_i\Big)^2 \;\leq\; \sum_i w_i\, f_i^{\,2} .
+  \]
+\end{lemma}
+
+\section{The conditional fork, per commitment}
+
+\begin{definition}[Conditional acceptance probability]
+  \label{def:cond-acc-prob}
+  \uses{def:forkable-adversary}
+  \lean{CatCrypt.Crypto.ForkingLemma.condAccProb}
+  \leanok
+  Fixing a commitment $c$, the \emph{conditional acceptance probability}
+  $\mathrm{acc}_c$ is the probability that a single freshly sampled oracle
+  response $e \leftarrow_{\$} R$ makes $\mathsf{respond}\,x\,c\,e$ accept.
+\end{definition}
+
+\begin{definition}[Conditional fork probability]
+  \label{def:cond-fork-prob}
+  \uses{def:forkable-adversary}
+  \lean{CatCrypt.Crypto.ForkingLemma.condForkProb}
+  \leanok
+  Fixing a commitment $c$, the \emph{conditional fork probability}
+  $\mathrm{frk}_c$ is the probability that two independent responses
+  $e_1, e_2 \leftarrow_{\$} R$ both accept and are distinct.
+\end{definition}
+
+\begin{lemma}[Exact conditional fork count]
+  \label{lem:cond-fork-prob-eq}
+  \uses{def:cond-acc-prob, def:cond-fork-prob}
+  \lean{CatCrypt.Crypto.ForkingLemma.condForkProb_eq}
+  \leanok
+  For each fixed commitment $c$, exact counting over $R \times R$ gives
+  \[
+    \mathrm{frk}_c \;=\; \mathrm{acc}_c^{\,2} \;-\; \frac{\mathrm{acc}_c}{\lvert R\rvert},
+  \]
+  the off-diagonal accepting pairs divided by $\lvert R\rvert^2$.
+\end{lemma}
+
+\begin{lemma}[Decomposition over commitments]
+  \label{lem:fork-decompose}
+  \uses{def:fork-accept-prob, def:fork-succ-prob, def:cond-acc-prob, def:cond-fork-prob}
+  \lean{CatCrypt.Crypto.ForkingLemma.acceptProb_decompose, CatCrypt.Crypto.ForkingLemma.forkSuccProb_decompose}
+  \leanok
+  Both $\mathrm{acc}(A,x)$ and $\mathrm{frk}(A,x)$ decompose as weighted sums over
+  the commitment PMF: $\mathrm{acc} = \sum_c w_c\,\mathrm{acc}_c$ and
+  $\mathrm{frk} = \sum_c w_c\,\mathrm{frk}_c$, where $w_c$ is the probability the
+  commit phase outputs $c$.
+\end{lemma}
+
+\section{The single-query forking lemma}
+
+\begin{theorem}[Forking lemma, $q = 1$]
+  \label{thm:fork-success-ge}
+  \uses{lem:jensen-sub-pmf, lem:cond-fork-prob-eq, lem:fork-decompose}
+  \lean{CatCrypt.Crypto.ForkingLemma.fork_success_ge}
+  \leanok
+  For every forkable adversary $A$, input $x$, and acceptance predicate,
+  \[
+    \mathrm{frk}(A,x) \;\geq\;
+    \mathrm{acc}(A,x)^2 \;-\; \frac{\mathrm{acc}(A,x)}{\lvert R\rvert}.
+  \]
+  The bound follows by decomposing over commitments, applying the exact
+  conditional identity per commitment, and using Jensen's inequality to move the
+  square outside the commitment average.
+\end{theorem}
+
+\section{The Bellare--Neven multi-query lemma}
+
+\begin{definition}[$q$-query forkable adversary]
+  \label{def:qforkable-adversary}
+  \lean{CatCrypt.Crypto.GeneralForkingLemma.QForkableAdversary}
+  \leanok
+  A \emph{$q$-query forkable adversary} has a probabilistic commit phase
+  $\mathsf{coins} : X \to \mathsf{SPComp}\,C$ and a deterministic response phase
+  $\mathsf{respond} : X \to C \to (\mathrm{Fin}\,q \to R) \to \mathrm{Fin}\,q \times Y$
+  that, given all $q$ oracle responses, outputs an index identifying the relevant
+  query together with its result.
+\end{definition}
+
+\begin{definition}[$q$-query acceptance probability]
+  \label{def:qaccept-prob}
+  \uses{def:qforkable-adversary}
+  \lean{CatCrypt.Crypto.GeneralForkingLemma.qAcceptProb}
+  \leanok
+  $\mathrm{acc}(A,x)$ for a $q$-query adversary is the probability that, over a
+  commitment and a uniform response vector $\mathrm{Fin}\,q \to R$, the predicate
+  accepts the produced $(\text{index}, \text{output})$ pair.
+\end{definition}
+
+\begin{definition}[Guess reduction to a single query]
+  \label{def:guess-reduction}
+  \uses{def:qforkable-adversary, def:forkable-adversary}
+  \lean{CatCrypt.Crypto.GeneralForkingLemma.guessReduction}
+  \leanok
+  For a guess $I : \mathrm{Fin}\,q$, the \emph{guess reduction} builds a
+  single-query forkable adversary: its commit phase absorbs the commitment and a
+  full uniform response vector, and its response phase overwrites position $I$
+  with the single oracle challenge via $\mathsf{Function.update}$ before running
+  $\mathsf{respond}$.
+\end{definition}
+
+\begin{definition}[Acceptance at a guess]
+  \label{def:accept-at-guess}
+  \lean{CatCrypt.Crypto.GeneralForkingLemma.acceptAtGuess}
+  \leanok
+  The predicate $\mathsf{acceptAtGuess}(\mathsf{accept}, I)$ accepts a pair
+  $(j, y)$ exactly when $j = I$ and $\mathsf{accept}(j,y)$ holds; it restricts
+  attention to transcripts whose fork index matches the guess.
+\end{definition}
+
+\begin{lemma}[Guesses partition acceptance]
+  \label{lem:sum-accept-at-guess}
+  \uses{def:accept-at-guess, def:guess-reduction, def:qaccept-prob}
+  \lean{CatCrypt.Crypto.GeneralForkingLemma.sum_acceptAtGuess_eq}
+  \leanok
+  Summing the reduced acceptance probabilities over all guesses recovers the
+  $q$-query acceptance probability:
+  \[
+    \sum_{I : \mathrm{Fin}\,q}
+      \mathrm{acc}\big(\mathsf{guessReduction}(A,I),\, x,\, \mathsf{acceptAtGuess}(\mathsf{accept},I)\big)
+    \;=\; \mathrm{acc}(A,x).
+  \]
+\end{lemma}
+
+\begin{theorem}[Bellare--Neven aggregation]
+  \label{thm:bellare-neven-agg}
+  \uses{lem:ennreal-amgm}
+  \lean{CatCrypt.Crypto.GeneralForkingLemma.bellare_neven_aggregation}
+  \leanok
+  Let $q > 0$ and $a, f : \mathrm{Fin}\,q \to \overline{\mathbb{R}}_{\geq 0}$ with
+  $f_j \geq a_j^2 - a_j / N$ for every $j$. Then, by Cauchy--Schwarz on the
+  per-index bounds,
+  \[
+    \sum_{j} f_j \;\geq\;
+    \frac{\big(\sum_j a_j\big)^2}{q} \;-\; \frac{\sum_j a_j}{N}.
+  \]
+\end{theorem}
+
+\begin{definition}[Indexed $q$-fork success probability]
+  \label{def:qfork-succ-prob}
+  \uses{def:guess-reduction, def:accept-at-guess, def:fork-succ-prob}
+  \lean{CatCrypt.Crypto.GeneralForkingLemma.qForkSuccProb}
+  \leanok
+  The \emph{indexed $q$-fork success probability} sums the single-query fork
+  success of every guess reduction, each measured against its guess-restricted
+  predicate:
+  \[
+    \mathrm{qfrk}(A,x) \;=\;
+    \sum_{I : \mathrm{Fin}\,q}
+      \mathrm{frk}\big(\mathsf{guessReduction}(A,I),\, x,\, \mathsf{acceptAtGuess}(\mathsf{accept},I)\big).
+  \]
+\end{definition}
+
+\begin{theorem}[General forking lemma, Bellare--Neven 2006]
+  \label{thm:qfork-success-ge}
+  \uses{thm:fork-success-ge, thm:bellare-neven-agg, lem:sum-accept-at-guess, def:qfork-succ-prob, def:qaccept-prob}
+  \lean{CatCrypt.Crypto.GeneralForkingLemma.qFork_success_ge}
+  \leanok
+  For every $q$-query forkable adversary $A$ with $q > 0$,
+  \[
+    \mathrm{qfrk}(A,x) \;\geq\;
+    \frac{\mathrm{acc}(A,x)^2}{q} \;-\; \frac{\mathrm{acc}(A,x)}{\lvert R\rvert}.
+  \]
+  Combining the single-query bound applied to each guess reduction, the guess
+  partition of acceptance, and the Cauchy--Schwarz aggregation yields the
+  Bellare--Neven bound.
+\end{theorem}

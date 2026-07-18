@@ -1,0 +1,388 @@
+\chapter{Games, advantage, and statistical distance}
+
+This chapter builds the quantitative layer of the framework on top of the program
+monad $\mathsf{SPComp}$ (Chapter~1). A \emph{game} is a Boolean-valued computation;
+an adversary's \emph{advantage} measures how well it separates two games; and
+\emph{statistical distance} lifts this to a genuine pseudometric on Kleisli
+morphisms, giving the algebraic laws (triangle, post-processing, composition) that
+drive game-hopping security proofs.
+
+\section{Games and advantage}
+
+\begin{definition}[Game]
+  \label{def:game}
+  \uses{def:spcomp}
+  \lean{CatCrypt.Crypto.Game}
+  \leanok
+  A \emph{game} is a Boolean-valued stateful-probabilistic computation selected by
+  a bit (real versus ideal): a map $\mathrm{Bool} \to \mathsf{SPComp}\,\mathrm{Bool}$.
+\end{definition}
+
+\begin{definition}[Probability of returning true]
+  \label{def:prtrue}
+  \uses{def:spcomp, def:sdistr}
+  \lean{CatCrypt.Crypto.prTrue}
+  \leanok
+  For a game $G : \mathsf{SPComp}\,\mathrm{Bool}$ and an initial heap $h_0$, the
+  probability that $G$ returns $\mathsf{true}$ is the total mass on $\mathsf{true}$
+  across all final heaps:
+  \[
+    \Pr[G \Downarrow \mathsf{true} \mid h_0]
+      \;=\; \sum_{h} (G\,h_0)\bigl(\mathsf{some}\,(\mathsf{true}, h)\bigr).
+  \]
+\end{definition}
+
+\begin{definition}[Advantage]
+  \label{def:advantage}
+  \uses{def:prtrue}
+  \lean{CatCrypt.Crypto.Advantage}
+  \leanok
+  The \emph{advantage} between two Boolean games $G_0, G_1$ is the unsigned
+  difference of their acceptance probabilities, measured from the empty heap:
+  \[
+    \mathsf{Adv}(G_0, G_1)
+      \;=\; (p_0 - p_1) \sqcup (p_1 - p_0),
+      \qquad p_b = \Pr[G_b \Downarrow \mathsf{true} \mid \mathrm{Heap.empty}],
+  \]
+  where subtraction is truncated in $\mathbb{R}_{\ge 0}^{\infty}$. This is the
+  empty-heap distinguishing probability; the all-heap supremum is
+  $\mathsf{sdist}$ (Definition~\ref{def:sdist}).
+\end{definition}
+
+\begin{definition}[Advantage against an adversary]
+  \label{def:advantageA}
+  \uses{def:advantage, def:spcomp}
+  \lean{CatCrypt.Crypto.AdvantageA}
+  \leanok
+  Given games $G_0, G_1 : \mathsf{SPComp}\,\alpha$ and an adversary
+  $A : \alpha \to \mathsf{SPComp}\,\mathrm{Bool}$ that post-processes the game output
+  into a guess, the \emph{adversarial advantage} is
+  \[
+    \mathsf{Adv}^A(G_0, G_1) \;=\; \mathsf{Adv}(G_0 \bind A,\; G_1 \bind A).
+  \]
+\end{definition}
+
+\begin{theorem}[Triangle inequality for advantage]
+  \label{thm:advantageA-triangle}
+  \uses{def:advantageA}
+  \lean{CatCrypt.Crypto.advantageA_triangle}
+  \leanok
+  For all games $G_0, G_1, G_2$ and every adversary $A$,
+  \[
+    \mathsf{Adv}^A(G_0, G_2)
+      \;\le\; \mathsf{Adv}^A(G_0, G_1) + \mathsf{Adv}^A(G_1, G_2).
+  \]
+\end{theorem}
+
+\begin{theorem}[Factoring a pure prefix]
+  \label{thm:advantageA-isPure-bind}
+  \uses{def:advantageA}
+  \lean{CatCrypt.Crypto.advantageA_isPure_bind}
+  \leanok
+  Let $\mathit{pfx}$ be a heap-independent (pure) computation. If for every prefix
+  value $x$ the continuations satisfy $\mathsf{Adv}^A(f\,x, g\,x) \le \varepsilon$,
+  then
+  \[
+    \mathsf{Adv}^A(\mathit{pfx} \bind f,\; \mathit{pfx} \bind g)
+      \;\le\; \varepsilon.
+  \]
+\end{theorem}
+
+\begin{theorem}[Factoring a uniform-sampling prefix]
+  \label{thm:advantageA-sample-bind}
+  \uses{def:advantageA}
+  \lean{CatCrypt.Crypto.advantageA_sample_bind}
+  \leanok
+  For a finite nonempty type $\alpha$, if
+  $\mathsf{Adv}^A(f\,x, g\,x) \le \varepsilon$ for every sampled value $x$, then
+  sampling a shared uniform prefix preserves the bound:
+  \[
+    \mathsf{Adv}^A\!\bigl(\mathsf{sample}\,\alpha \bind f,\;
+      \mathsf{sample}\,\alpha \bind g\bigr) \;\le\; \varepsilon.
+  \]
+\end{theorem}
+
+\section{Statistical distance}
+
+\begin{definition}[Unsigned difference]
+  \label{def:absdiff}
+  \lean{CatCrypt.Crypto.absDiff}
+  \leanok
+  The unsigned difference in $\mathbb{R}_{\ge 0}^{\infty}$ is
+  $\mathsf{absDiff}(a, b) = (a - b) \sqcup (b - a)$, using truncated subtraction.
+\end{definition}
+
+\begin{lemma}[Triangle inequality for the unsigned difference]
+  \label{lem:absdiff-triangle}
+  \uses{def:absdiff}
+  \lean{CatCrypt.Crypto.absDiff_triangle}
+  \leanok
+  $\mathsf{absDiff}(a, c) \le \mathsf{absDiff}(a, b) + \mathsf{absDiff}(b, c)$.
+\end{lemma}
+
+\begin{definition}[Statistical distance]
+  \label{def:sdist}
+  \uses{def:absdiff, def:prtrue, def:spcomp}
+  \lean{CatCrypt.Crypto.sdist}
+  \leanok
+  The \emph{statistical distance} between Kleisli morphisms
+  $f, g : \alpha \to \mathsf{SPComp}\,\beta$ is the supremum, over all
+  distinguishers $D$, inputs $a$, and initial heaps $h_0$, of the difference in
+  acceptance probability:
+  \[
+    \mathsf{sdist}(f, g)
+      \;=\; \bigsqcup_{D, a, h_0}
+        \mathsf{absDiff}\bigl(
+          \Pr[f\,a \bind D \Downarrow \mathsf{true} \mid h_0],\;
+          \Pr[g\,a \bind D \Downarrow \mathsf{true} \mid h_0]\bigr).
+  \]
+  Unlike $\mathsf{Adv}$, it maximizes over every initial heap, so the adversary
+  may choose the starting state.
+\end{definition}
+
+\begin{theorem}[Symmetry of statistical distance]
+  \label{thm:sdist-sym}
+  \uses{def:sdist}
+  \lean{CatCrypt.Crypto.sdist_sym}
+  \leanok
+  $\mathsf{sdist}(f, g) = \mathsf{sdist}(g, f)$.
+\end{theorem}
+
+\begin{definition}[Kleisli morphisms as a pseudometric space]
+  \label{def:klmorph}
+  \uses{def:sdist, thm:sdist-sym}
+  \lean{CatCrypt.Crypto.KlMorph}
+  \leanok
+  Kleisli morphisms $\alpha \to \mathsf{SPComp}\,\beta$, wrapped as $\mathsf{KlMorph}$,
+  carry a \emph{pseudo-extended-metric space} structure whose extended distance is
+  $\mathsf{sdist}$. The three pseudometric axioms hold: reflexivity
+  $\mathsf{sdist}(f, f) = 0$, symmetry (Theorem~\ref{thm:sdist-sym}), and the
+  triangle inequality $\mathsf{sdist}(f, h) \le \mathsf{sdist}(f, g) + \mathsf{sdist}(g, h)$.
+  It is only a \emph{pseudo}metric: $\mathsf{sdist}(f, g) = 0$ does not force
+  $f = g$, since two operationally distinct programs may induce identical output
+  distributions.
+\end{definition}
+
+\begin{theorem}[Right post-processing lemma]
+  \label{thm:sdist-comp-right}
+  \uses{def:sdist}
+  \lean{CatCrypt.Crypto.sdist_comp_right}
+  \leanok
+  Post-composition with a shared continuation $g$ does not increase distance:
+  \[
+    \mathsf{sdist}\bigl(a \mapsto f_1\,a \bind g,\; a \mapsto f_2\,a \bind g\bigr)
+      \;\le\; \mathsf{sdist}(f_1, f_2).
+  \]
+\end{theorem}
+
+\begin{theorem}[Left post-processing lemma]
+  \label{thm:sdist-comp-left}
+  \uses{def:sdist}
+  \lean{CatCrypt.Crypto.sdist_comp_left}
+  \leanok
+  Pre-composition with a shared prefix $f$ does not increase distance:
+  \[
+    \mathsf{sdist}\bigl(a \mapsto f\,a \bind g_1,\; a \mapsto f\,a \bind g_2\bigr)
+      \;\le\; \mathsf{sdist}(g_1, g_2).
+  \]
+\end{theorem}
+
+\begin{theorem}[Composition of $\varepsilon$-close morphisms]
+  \label{thm:sdist-comp-add}
+  \uses{thm:sdist-comp-right, thm:sdist-comp-left}
+  \lean{CatCrypt.Crypto.sdist_comp_add}
+  \leanok
+  If $\mathsf{sdist}(f_1, f_2) \le \varepsilon_1$ and
+  $\mathsf{sdist}(g_1, g_2) \le \varepsilon_2$, then the composites are
+  $(\varepsilon_1 + \varepsilon_2)$-close:
+  \[
+    \mathsf{sdist}\bigl(a \mapsto f_1\,a \bind g_1,\;
+      a \mapsto f_2\,a \bind g_2\bigr) \;\le\; \varepsilon_1 + \varepsilon_2.
+  \]
+  This makes $\mathsf{sdist}$-bounded pairs the morphisms of a wide sub-SMC of the
+  Kleisli category, the semantic foundation of game hopping.
+\end{theorem}
+
+\begin{theorem}[Advantage bounds statistical distance for pure games]
+  \label{thm:sdist-isPure-le}
+  \uses{def:sdist, def:advantage}
+  \lean{CatCrypt.Crypto.sdist_isPure_le}
+  \leanok
+  If $f$ and $g$ are pointwise heap-independent and, for every distinguisher $D$
+  and input $a$, the empty-heap unsigned difference is bounded by $\varepsilon$,
+  then $\mathsf{sdist}(f, g) \le \varepsilon$. Purity lets the empty-heap bound be
+  promoted to the all-heap supremum by shifting the heap into the distinguisher.
+\end{theorem}
+
+\begin{theorem}[Statistical distance from per-input advantage]
+  \label{thm:sdist-of-isPure-advantageA}
+  \uses{thm:sdist-isPure-le, def:advantageA}
+  \lean{CatCrypt.Crypto.sdist_of_isPure_advantageA}
+  \leanok
+  For pointwise-pure $f, g$: if
+  $\mathsf{Adv}^D(f\,a, g\,a) \le \varepsilon$ for every input $a$ and distinguisher
+  $D$, then $\mathsf{sdist}(f, g) \le \varepsilon$. This matches the argument order
+  of security definitions and is the common bridge in protocol proofs.
+\end{theorem}
+
+\begin{theorem}[Statistical distance for oracle games]
+  \label{thm:sdist-oracleGame-le}
+  \uses{def:sdist, def:advantage}
+  \lean{CatCrypt.Crypto.sdist_oracleGame_le}
+  \leanok
+  Suppose $G_{\mathrm{real}}\,A = A\,o_{\mathrm{real}}$ and
+  $G_{\mathrm{ideal}}\,A = A\,o_{\mathrm{ideal}}$ hand the adversary an oracle record.
+  If $\mathsf{Adv}(G_{\mathrm{real}}\,A, G_{\mathrm{ideal}}\,A) \le \varepsilon$ for
+  every $A$, then $\mathsf{sdist}(G_{\mathrm{real}}, G_{\mathrm{ideal}}) \le \varepsilon$.
+  The distinguisher and the initial heap are both absorbed into the adversary.
+\end{theorem}
+
+\section{The hybrid argument}
+
+\begin{theorem}[Dependent hybrid bound]
+  \label{thm:advantage-hybrid-dep}
+  \uses{def:advantageA, thm:advantageA-triangle}
+  \lean{CatCrypt.Crypto.HybridArgument.advantage_hybrid_dep}
+  \leanok
+  For a sequence of games $G : \mathbb{N} \to \mathsf{SPComp}\,\alpha$ and an
+  adversary $A$, the advantage between endpoints is bounded by the sum of per-step
+  advantages:
+  \[
+    \mathsf{Adv}^A(G_0, G_n)
+      \;\le\; \sum_{i < n} \mathsf{Adv}^A(G_i, G_{i+1}).
+  \]
+\end{theorem}
+
+\begin{theorem}[Uniform hybrid bound]
+  \label{thm:advantage-hybrid-uniform}
+  \uses{thm:advantage-hybrid-dep}
+  \lean{CatCrypt.Crypto.HybridArgument.advantage_hybrid_uniform}
+  \leanok
+  If every step satisfies $\mathsf{Adv}^A(G_i, G_{i+1}) \le \varepsilon$ for $i < n$,
+  then $\mathsf{Adv}^A(G_0, G_n) \le n \cdot \varepsilon$.
+\end{theorem}
+
+\begin{theorem}[Hybrid with perfect steps]
+  \label{thm:advantage-hybrid-zero}
+  \uses{thm:advantage-hybrid-uniform, thm:advantage-zero-of-rhoare}
+  \lean{CatCrypt.Crypto.HybridArgument.advantage_hybrid_zero}
+  \leanok
+  If every adjacent pair $G_i, G_{i+1}$ is perfectly indistinguishable (related by
+  $\mathsf{rHoare}\;\mathsf{eqPre}\;\cdot\;\cdot\;\mathsf{eqPost}$), then the total
+  advantage vanishes: $\mathsf{Adv}^A(G_0, G_n) = 0$.
+\end{theorem}
+
+\begin{theorem}[Factored hybrid bound]
+  \label{thm:advantage-hybrid-factored}
+  \uses{thm:advantage-factorization, thm:advantage-hybrid-uniform}
+  \lean{CatCrypt.Crypto.HybridArgument.advantage_hybrid_factored}
+  \leanok
+  When real and ideal games share a common post-processing $f$, and each base step
+  is bounded by $\varepsilon$ against the folded adversary $x \mapsto f\,x \bind A$,
+  then
+  \[
+    \mathsf{Adv}^A\!\bigl((G_{\mathrm{base}}\,0) \bind f,\;
+      (G_{\mathrm{base}}\,n) \bind f\bigr) \;\le\; n \cdot \varepsilon.
+  \]
+\end{theorem}
+
+\section{Security definitions}
+
+\begin{definition}[Symmetric encryption scheme]
+  \label{def:encscheme}
+  \uses{def:spcomp}
+  \lean{CatCrypt.Crypto.EncScheme}
+  \leanok
+  An \emph{encryption scheme} bundles key, plaintext, and ciphertext types (keys and
+  ciphertexts finite and nonempty) with probabilistic algorithms: key generation
+  $\mathsf{keyGen} : \mathsf{SPComp}\,\mathrm{Key}$, encryption
+  $\mathsf{encrypt} : \mathrm{Key} \to \mathrm{Plaintext} \to \mathsf{SPComp}\,\mathrm{Ciphertext}$,
+  and decryption
+  $\mathsf{decrypt} : \mathrm{Key} \to \mathrm{Ciphertext} \to \mathsf{SPComp}\,(\mathrm{Option}\,\mathrm{Plaintext})$.
+\end{definition}
+
+\begin{definition}[Correctness]
+  \label{def:enc-correct}
+  \uses{def:encscheme}
+  \lean{CatCrypt.Crypto.EncScheme.Correct}
+  \leanok
+  A scheme is \emph{correct} if decryption recovers the message on every reachable
+  path: for all $k, m, h$, whenever $(c, h')$ is in the support of
+  $\mathsf{encrypt}\,k\,m\,h$ and $(\mathit{result}, h'')$ is in the support of
+  $\mathsf{decrypt}\,k\,c\,h'$, then $\mathit{result} = \mathsf{some}\,m$.
+\end{definition}
+
+\begin{definition}[IND-CPA game]
+  \label{def:indcpa-game}
+  \uses{def:encscheme}
+  \lean{CatCrypt.Crypto.SecurityDefs.INDCPA_Game}
+  \leanok
+  The IND-CPA game generates a fresh key and encrypts one of two adversary-chosen
+  messages, selected by the challenge bit:
+  \[
+    \mathsf{INDCPA}(E, m_0, m_1, b) \;=\;
+      k \gets E.\mathsf{keyGen};\; E.\mathsf{encrypt}\,k\,(\text{if } b \text{ then } m_0 \text{ else } m_1).
+  \]
+\end{definition}
+
+\begin{definition}[IND-CPA advantage]
+  \label{def:indcpa-adv}
+  \uses{def:indcpa-game, def:advantageA}
+  \lean{CatCrypt.Crypto.SecurityDefs.INDCPA_Adv}
+  \leanok
+  The IND-CPA advantage of $A$ is the adversarial advantage between the two
+  challenge bits:
+  \[
+    \mathsf{INDCPA\text{-}Adv}(E, m_0, m_1, A)
+      \;=\; \mathsf{Adv}^A\!\bigl(\mathsf{INDCPA}(E, m_0, m_1, \mathsf{true}),\;
+        \mathsf{INDCPA}(E, m_0, m_1, \mathsf{false})\bigr).
+  \]
+\end{definition}
+
+\begin{definition}[Pseudorandom function family]
+  \label{def:prfscheme}
+  \lean{CatCrypt.Crypto.SecurityDefs.PRFScheme}
+  \leanok
+  A \emph{PRF family} bundles finite nonempty key and output types, an input type,
+  and an evaluation function $\mathsf{eval} : \mathrm{Key} \to \mathrm{Input} \to \mathrm{Output}$.
+\end{definition}
+
+\begin{definition}[PRF advantage]
+  \label{def:prf-adv}
+  \uses{def:prfscheme, def:advantageA}
+  \lean{CatCrypt.Crypto.SecurityDefs.PRF_Adv}
+  \leanok
+  The PRF advantage compares the real game (evaluate $\mathsf{eval}$ under a uniformly
+  random key) against the ideal game (return a uniformly random output):
+  \[
+    \mathsf{PRF\text{-}Adv}(F, x, A)
+      \;=\; \mathsf{Adv}^A(\mathsf{PRF\_Real}\,F\,x,\; \mathsf{PRF\_Ideal}\,F),
+  \]
+  where $\mathsf{PRF\_Real}\,F\,x = (k \gets \mathsf{sample}\,\mathrm{Key};\; \mathsf{eval}\,k\,x)$
+  and $\mathsf{PRF\_Ideal}\,F = \mathsf{sample}\,\mathrm{Output}$.
+\end{definition}
+
+\begin{definition}[Message authentication code]
+  \label{def:macscheme}
+  \lean{CatCrypt.Crypto.SecurityDefs.MACScheme}
+  \leanok
+  A \emph{MAC scheme} bundles finite nonempty key and tag types (tags with decidable
+  equality), a message type, a tag function $\mathsf{mac} : \mathrm{Key} \to \mathrm{Message} \to \mathrm{Tag}$,
+  and a verifier $\mathsf{verify}$ that by default recomputes and compares the tag.
+\end{definition}
+
+\begin{definition}[EUF-CMA advantage]
+  \label{def:eufcma-adv}
+  \uses{def:macscheme, def:prtrue}
+  \lean{CatCrypt.Crypto.SecurityDefs.EUF_CMA_Adv}
+  \leanok
+  In the single-query EUF-CMA game, the adversary sees a tag on a message $m$ and
+  submits a forgery $(m^{*}, t^{*})$; the game returns whether the forgery verifies.
+  The advantage is the acceptance probability of the forgery composed with the
+  adversary:
+  \[
+    \mathsf{EUF\text{-}CMA\text{-}Adv}(M, m, m^{*}, t^{*}, A)
+      \;=\; \Pr[\mathsf{EUF\_CMA\_Real}\,M\,m\,m^{*}\,t^{*} \bind A \Downarrow \mathsf{true}
+        \mid \mathrm{Heap.empty}].
+  \]
+\end{definition}

@@ -1,0 +1,337 @@
+\chapter{Cryptographic assumptions}
+
+The security theorems of CatCrypt are \emph{reductions}: each takes the hardness
+of a standard primitive as a hypothesis and concludes protocol security. This
+chapter collects those hypotheses. Every assumption is phrased as an
+\emph{advantage} --- a distance between a real and an ideal game, or a winning
+probability in a search game --- and the assumption itself states that this
+quantity is bounded (negligible) for all adversaries. All games are expressed in
+the probabilistic program monad, and each advantage is measured with the
+distinguishing notion of Chapter~3.
+
+\section{Bilinear pairing groups}
+
+\begin{definition}[Bilinear pairing group]
+  \label{def:pairing-group}
+  \lean{CatCrypt.Crypto.PairingGroup}
+  \leanok
+  A \emph{pairing group} (Type~III) bundles three cyclic groups
+  $G_1, G_2, G_T$ of common prime order $p$, generators $g_1 \in G_1$,
+  $g_2 \in G_2$, and a pairing $e : G_1 \to G_2 \to G_T$ that is bilinear in
+  each argument ($e(a\cdot b, y) = e(a,y)\cdot e(b,y)$ and
+  $e(x, a\cdot b) = e(x,a)\cdot e(x,b)$) and non-degenerate ($e(g_1, g_2) \neq 1$).
+  Each group is finite with $|G_1| = |G_2| = p$, and $g_1$, $g_2$ generate their
+  groups.
+\end{definition}
+
+\begin{lemma}[Pairing bilinearity on exponents]
+  \label{def:pairing-bilinear}
+  \uses{def:pairing-group}
+  \lean{CatCrypt.Crypto.PairingGroup.e_bilinear}
+  \leanok
+  For integer exponents $a, b$,
+  $e(g_1^{\,a},\, g_2^{\,b}) = e(g_1, g_2)^{\,a b}$. This is the identity that
+  makes pairing-based verification equations checkable from public group
+  elements.
+\end{lemma}
+
+\begin{definition}[KZG structured reference string]
+  \label{def:kzg-srs}
+  \uses{def:pairing-group}
+  \lean{CatCrypt.Crypto.PairingGroup.srs₁}
+  \leanok
+  For a secret $\alpha \in \mathbb{Z}_p$ and degree bound $t$, the KZG
+  structured reference string in $G_1$ is the tuple
+  $\mathrm{srs}_1(\alpha, t) = (g_1, g_1^{\alpha}, g_1^{\alpha^2}, \dots,
+  g_1^{\alpha^t})$; the companion $\mathrm{srs}_2(\alpha) = (g_2, g_2^{\alpha})$
+  in $G_2$ supplies the verification key.
+\end{definition}
+
+\section{Discrete-logarithm assumptions}
+
+\begin{definition}[Discrete logarithm advantage]
+  \label{def:dl}
+  \uses{def:pairing-group, def:advantage}
+  \lean{CatCrypt.Crypto.Assumptions.DL_Advantage}
+  \leanok
+  In the DL game the challenger samples $x \in \mathbb{Z}_p$, hands the
+  adversary $h = g_1^{\,x}$, and the adversary wins if it returns $x$. The
+  \emph{DL advantage} of $A$ is $\Pr[\text{$A$ outputs }x]$. The DL assumption
+  states this is negligible: no efficient adversary recovers exponents.
+\end{definition}
+
+\begin{definition}[Diffie--Hellman group]
+  \label{def:ddh-def}
+  \lean{CatCrypt.Crypto.Assumptions.DDHDef}
+  \leanok
+  Abstractly, a Diffie--Hellman group is a scalar-multiplication operation
+  $\mathrm{ecdh} : W \to W \to W$ together with a (heap-independent) key
+  generator producing pairs $(\text{private}, \text{public})$. This models
+  $g \mapsto g^a$ and key sampling without committing to a concrete group.
+\end{definition}
+
+\begin{definition}[Decisional Diffie--Hellman advantage]
+  \label{def:ddh}
+  \uses{def:ddh-def, def:advantage}
+  \lean{CatCrypt.Crypto.Assumptions.DDH_Advantage}
+  \leanok
+  The DDH advantage is the distinguishing distance between the real game, which
+  gives the adversary $(g^a, g^b, g^{ab})$, and the ideal game, which gives
+  $(g^a, g^b, c)$ for a fresh uniform $c$. The DDH assumption states this
+  advantage is negligible: the true shared secret is indistinguishable from a
+  random group element.
+\end{definition}
+
+\begin{definition}[Computational Diffie--Hellman advantage]
+  \label{def:cdh}
+  \uses{def:ddh-def}
+  \lean{CatCrypt.Crypto.Assumptions.CDH_Advantage}
+  \leanok
+  In the CDH game the adversary receives $(g^a, g^b)$ and wins by outputting the
+  shared secret $g^{ab}$. The CDH advantage is $\Pr[\text{$A$ outputs }g^{ab}]$;
+  the CDH assumption states it is negligible. CDH is the computational analogue
+  of DDH: distinguishing (DDH) implies computing (CDH), but not conversely.
+\end{definition}
+
+\begin{definition}[co-CDH advantage]
+  \label{def:cocdh}
+  \uses{def:pairing-group}
+  \lean{CatCrypt.Crypto.Assumptions.CoCDH_Advantage}
+  \leanok
+  In a Type~III pairing group the co-CDH game samples $a, b \in \mathbb{Z}_p$,
+  gives the adversary $(g_1^{\,a}, g_2^{\,b})$ across the two source groups, and
+  the adversary wins by outputting $g_1^{\,ab}$. The co-CDH advantage is this
+  winning probability. It is the hardness assumption underlying BLS signatures.
+\end{definition}
+
+\begin{definition}[Gap Diffie--Hellman advantage]
+  \label{def:gapdh}
+  \uses{def:ddh-def, def:advantage}
+  \lean{CatCrypt.Crypto.Assumptions.GapDH_Advantage}
+  \leanok
+  GapDH strengthens CDH by granting the adversary a DDH decision oracle: it must
+  still \emph{compute} $g^{ab}$ from $(g^a, g^b)$, even though it can \emph{check}
+  candidate triples. The advantage is the distinguishing distance between the DH
+  output and a fresh random value; the assumption states it is negligible. GapDH
+  is the standard assumption for X25519-based protocols (WireGuard, Noise), and
+  any DDH group is a fortiori a GapDH group.
+\end{definition}
+
+\begin{definition}[$t$-Strong Diffie--Hellman advantage]
+  \label{def:tsdh}
+  \uses{def:kzg-srs}
+  \lean{CatCrypt.Crypto.Assumptions.tSDH_Advantage}
+  \leanok
+  In the $t$-SDH game the challenger samples $\alpha$ and publishes the SRS
+  $(g_1, g_1^{\alpha}, \dots, g_1^{\alpha^t})$. The adversary wins by producing a
+  pair $(c, h)$ with $h = g_1^{\,1/(\alpha + c)}$, checked via the pairing
+  equation $e(h, g_2^{\,\alpha + c}) = e(g_1, g_2)$. The $t$-SDH advantage is
+  this winning probability; it is the core hardness assumption for KZG
+  polynomial commitments.
+\end{definition}
+
+\begin{definition}[$q$-SDH group]
+  \label{def:qsdh-group}
+  \lean{CatCrypt.Crypto.Assumptions.qSDH_Group}
+  \leanok
+  An abstract cyclic group of prime order carrying scalar arithmetic
+  (addition, multiplication, inverse) and scalar multiplication $g \mapsto g^a$,
+  finite and with decidable equality. This is the algebraic setting for $q$-SDH,
+  abstracting the $G_1$ component of a pairing group without the pairing itself.
+\end{definition}
+
+\begin{definition}[$q$-Strong Diffie--Hellman advantage]
+  \label{def:qsdh}
+  \uses{def:qsdh-group}
+  \lean{CatCrypt.Crypto.Assumptions.qSDH_Advantage}
+  \leanok
+  The challenger samples a secret $x$ and hands the adversary the challenge
+  $(g, g^x, g^{x^2}, \dots, g^{x^q})$; the adversary wins with a pair $(c, h)$
+  satisfying $h^{\,x + c} = g$, i.e.\ $h = g^{\,1/(x+c)}$. The $q$-SDH advantage
+  is this winning probability. It underlies BBS/BBS+ signatures and anonymous
+  credentials, capturing the same hardness as $t$-SDH in a pairing-free setting.
+\end{definition}
+
+\section{Oracle Diffie--Hellman}
+
+\begin{definition}[Oracle Diffie--Hellman advantage]
+  \label{def:odh}
+  \uses{def:ddh-def, def:advantage}
+  \lean{CatCrypt.Crypto.Assumptions.ODH_Advantage}
+  \leanok
+  ODH augments a DH group with a keyed hash $H$ whose key is the DH secret. The
+  advantage is the distinguishing distance between the real game, which returns
+  $H(g^{ab}, \ell)$ for a sampled label $\ell$, and the ideal game, which returns
+  a fresh random value. The ODH assumption states this is negligible; taking $H$
+  to be the identity recovers DDH.
+\end{definition}
+
+\begin{lemma}[DDH and PRF imply ODH]
+  \label{def:odh-reduction}
+  \uses{def:odh, def:ddh, def:prf}
+  \lean{CatCrypt.Crypto.Assumptions.odh_of_ddh_prf}
+  \leanok
+  If the DH secret can be replaced by a random key at cost $\varepsilon_{ddh}$
+  (a DDH step) and the hash keyed by a random value is a PRF at cost
+  $\varepsilon_{prf}$, then the ODH advantage is bounded by
+  $\varepsilon_{ddh} + \varepsilon_{prf}$, via a two-hop hybrid through the
+  triangle inequality.
+\end{lemma}
+
+\section{Hash-function assumptions}
+
+\begin{definition}[Collision-resistance advantage]
+  \label{def:cr-search}
+  \uses{def:advantage}
+  \lean{CatCrypt.Crypto.Assumptions.CR_Search_Advantage}
+  \leanok
+  For a hash $h$, the search-CR game has the adversary output a pair
+  $(x_1, x_2)$ and wins when $h(x_1) = h(x_2)$ with $x_1 \neq x_2$. The CR
+  advantage is this winning probability; collision resistance states it is
+  negligible.
+\end{definition}
+
+\begin{definition}[Target collision resistance advantage]
+  \label{def:tcr}
+  \uses{def:advantage}
+  \lean{CatCrypt.Crypto.Assumptions.TCR_Advantage}
+  \leanok
+  In the TCR (second-preimage) game the adversary receives a random target $x$
+  together with $h(x)$ and must find $x' \neq x$ with $h(x') = h(x)$. The TCR
+  advantage is this winning probability. TCR is weaker than CR: collision
+  resistance implies target collision resistance.
+\end{definition}
+
+\begin{definition}[Preimage-resistance advantage]
+  \label{def:pre}
+  \uses{def:advantage}
+  \lean{CatCrypt.Crypto.Assumptions.Pre_Advantage}
+  \leanok
+  In the preimage game the adversary receives $y = h(x)$ for a random $x$ and
+  wins by outputting any $x'$ with $h(x') = y$. The Pre advantage is this
+  probability. For compressing hashes it is implied by collision resistance.
+\end{definition}
+
+\section{One-way functions and generators}
+
+\begin{definition}[One-wayness advantage]
+  \label{def:owf}
+  \uses{def:advantage}
+  \lean{CatCrypt.Crypto.Assumptions.OWF_Advantage}
+  \leanok
+  For a function $f$, the inversion game samples $x$, hands the adversary
+  $f(x)$, and it wins by returning any preimage $x'$ with $f(x') = f(x)$. The
+  OWF advantage is this winning probability; one-wayness states it is negligible.
+\end{definition}
+
+\begin{definition}[One-way permutation]
+  \label{def:owp}
+  \uses{def:owf}
+  \lean{CatCrypt.Crypto.Assumptions.OWPDef}
+  \leanok
+  A one-way permutation is a one-way function that is additionally a bijection.
+  RSA is the canonical conjectured instance.
+\end{definition}
+
+\begin{definition}[Pseudorandom-generator advantage]
+  \label{def:prg}
+  \uses{def:advantage}
+  \lean{CatCrypt.Crypto.Assumptions.PRG_Advantage}
+  \leanok
+  For a stretch function $G$, the PRG advantage is the distinguishing distance
+  between $G(\text{seed})$ for a random seed and a uniformly random output. The
+  PRG assumption states this is negligible; a secure PRG is in particular a
+  one-way function.
+\end{definition}
+
+\begin{definition}[RSA inversion advantage]
+  \label{def:rsa}
+  \uses{def:advantage}
+  \lean{CatCrypt.Crypto.Assumptions.RSA_Advantage}
+  \leanok
+  The RSA game samples a key pair and a random preimage $x$, sets
+  $y = \mathrm{rsa}(pk, x)$, and asks the adversary for $x'$ with
+  $\mathrm{rsa}(pk, x') = y$. The RSA advantage is the distinguishing distance
+  between this real game and the always-reject ideal game; the RSA assumption
+  states it is negligible.
+\end{definition}
+
+\section{Symmetric primitives}
+
+\begin{definition}[Pseudorandom-permutation advantage]
+  \label{def:prp}
+  \uses{def:advantage}
+  \lean{CatCrypt.Crypto.Assumptions.PRP_Advantage}
+  \leanok
+  For a block cipher $E$, the PRP advantage is the distinguishing distance
+  between the keyed permutation $E(k, \cdot)$ (random key) and a random
+  \emph{function}. Together with the switching bound below this yields the full
+  PRP security bound.
+\end{definition}
+
+\begin{definition}[Strong-PRP advantage]
+  \label{def:sprp}
+  \uses{def:advantage}
+  \lean{CatCrypt.Crypto.Assumptions.SPRP_Advantage}
+  \leanok
+  The strong-PRP game grants the adversary both the forward oracle $E(k, \cdot)$
+  and the inverse oracle $D(k, \cdot)$; the SPRP advantage is the distinguishing
+  distance from a pair of independent random functions. This is the notion
+  needed by modes that decrypt (e.g.\ CBC).
+\end{definition}
+
+\begin{definition}[Pseudorandom-function advantage]
+  \label{def:prf}
+  \uses{def:advantage}
+  \lean{CatCrypt.Crypto.Assumptions.PRF_Advantage}
+  \leanok
+  For a keyed function $F$, the (single-query) PRF advantage is the
+  distinguishing distance between $F(k, x)$ for a random key and a uniformly
+  random output. The PRF assumption states this is negligible.
+\end{definition}
+
+\begin{definition}[PRP/PRF switching bound]
+  \label{def:prp-prf-switch}
+  \lean{CatCrypt.Crypto.Assumptions.PRP_PRF_SwitchingBound}
+  \leanok
+  The birthday term $q(q-1)/(2|W|)$ bounding the statistical gap between a random
+  permutation and a random function over $q$ queries on a domain of size $|W|$.
+  It is the additive correction relating the PRP advantage (which uses a random
+  function as ideal) to true permutation security.
+\end{definition}
+
+\begin{definition}[MAC forgery advantage]
+  \label{def:mac}
+  \uses{def:advantage}
+  \lean{CatCrypt.Crypto.Assumptions.MAC_Advantage}
+  \leanok
+  In the (indistinguishability form of) MAC game a random key is sampled and the
+  adversary receives the tag on its chosen message; the MAC advantage is the
+  distinguishing distance between this real tag and a uniformly random tag. The
+  unforgeability assumption states it is negligible --- equivalent to
+  single-query strong unforgeability up to a $1/|W|$ term.
+\end{definition}
+
+\begin{definition}[AEAD confidentiality advantage]
+  \label{def:aead}
+  \uses{def:advantage}
+  \lean{CatCrypt.Crypto.Assumptions.AEAD_Advantage}
+  \leanok
+  For an authenticated-encryption scheme the (IND-CPA form) AEAD advantage is the
+  distinguishing distance between the real game, which returns
+  $\mathrm{encrypt}(k, \mathit{pt}, \mathit{ad})$ under a random key, and the
+  ideal game, which returns a uniformly random ciphertext. Security states this
+  is negligible.
+\end{definition}
+
+\begin{definition}[AEAD IND-CCA2 advantage]
+  \label{def:aead-cca}
+  \uses{def:aead}
+  \lean{CatCrypt.Crypto.Assumptions.AEAD_CCA_Advantage}
+  \leanok
+  The IND-CCA2 game equips the adversary with both an encryption oracle and a
+  decryption oracle; the advantage is the distinguishing distance between real
+  encryption-plus-decryption and (random encryption, reject-all decryption). This
+  combines confidentiality and ciphertext integrity, and implies the IND-CPA
+  notion above.
+\end{definition}

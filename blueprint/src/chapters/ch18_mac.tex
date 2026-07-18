@@ -1,0 +1,35 @@
+\chapter{Worked example: message authentication codes}
+
+Following Rosulek, \emph{The Joy of Cryptography}, §9 (MACs). Unlike the hiding
+examples, a MAC's forgery probability is not $0$ --- a forger can always guess a
+tag --- so the sharp result is the \emph{optimum}: a MAC built from a bijection
+family has single-query forgery probability exactly $1/|\mathrm{Tag}|$, the
+information-theoretic best possible.
+
+\begin{definition}[Bijection MAC family]
+  \label{def:bijmac}
+  \uses{def:spcomp}
+  \lean{CatCrypt.Examples.MAC.BijMACFamily, CatCrypt.Examples.MAC.BijMACFamily.toMACScheme}
+  \leanok
+  A bijection MAC family tags each message by a key-indexed bijection
+  $\mathrm{Key} \simeq \mathrm{Tag}$, inducing a MAC scheme.
+\end{definition}
+
+\begin{theorem}[Optimal forgery probability]
+  \label{thm:bijmac-forgery}
+  \uses{def:bijmac}
+  \lean{CatCrypt.Examples.MAC.bijMAC_forgery_prob, CatCrypt.Examples.MAC.bijMAC_euf_cma_adv}
+  \leanok
+  A bijection MAC has single-query EUF-CMA forgery probability exactly
+  $1/|\mathrm{Tag}|$: a forged tag verifies under exactly one key, so a blind
+  forgery succeeds with probability $1/|\mathrm{Key}| = 1/|\mathrm{Tag}|$.
+\end{theorem}
+
+\begin{corollary}[XOR MAC]
+  \label{cor:xormac}
+  \uses{thm:bijmac-forgery}
+  \lean{CatCrypt.Examples.MAC.boolXorMAC, CatCrypt.Examples.MAC.boolXorMAC_forgery_prob}
+  \leanok
+  The XOR MAC $\mathsf{mac}(k, m) = k \oplus m$ attains the optimal one-bit forgery
+  probability $1/2$.
+\end{corollary}

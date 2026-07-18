@@ -1,0 +1,40 @@
+\chapter{Worked example: Diffie--Hellman key agreement}
+
+Following Rosulek, \emph{The Joy of Cryptography} (Diffie--Hellman). Alice sends
+$g^{a}$, Bob sends $g^{b}$, and both compute the shared key $g^{ab}$. Security means
+that an eavesdropper seeing the transcript $(g^{a}, g^{b})$ cannot distinguish the
+real shared key from a uniform group element --- exactly the decisional
+Diffie--Hellman assumption. The example makes that identification precise as an
+equality of advantages.
+
+\begin{definition}[Key-agreement distinguishing game]
+  \label{def:ka-game}
+  \uses{def:spcomp, def:elgamal}
+  \lean{CatCrypt.Examples.DiffieHellman.KA_Game_Real, CatCrypt.Examples.DiffieHellman.KA_Advantage}
+  \leanok
+  The real game hands the distinguisher the transcript $(g^{a}, g^{b})$ and the
+  true shared key $g^{ab}$; the ideal game replaces the key by a uniform group
+  element. The advantage is the distance between them.
+\end{definition}
+
+\begin{theorem}[Key indistinguishability equals DDH]
+  \label{thm:ka-ddh}
+  \uses{def:ka-game}
+  \lean{CatCrypt.Examples.DiffieHellman.ka_advantage_eq_ddh}
+  \leanok
+  The key-agreement advantage is \emph{equal} to the DDH advantage of an explicit
+  reduction adversary that repackages a DDH triple $(g^{a}, g^{b}, z)$ into the
+  transcript-plus-candidate-key shape:
+  \[
+    \mathsf{Adv}^{\mathrm{KA}}(D) \;=\; \mathsf{Adv}^{\mathrm{DDH}}(R_D).
+  \]
+\end{theorem}
+
+\begin{corollary}[Security under DDH]
+  \label{cor:ka-secure}
+  \uses{thm:ka-ddh}
+  \lean{CatCrypt.Examples.DiffieHellman.ka_secure_under_ddh}
+  \leanok
+  If DDH is $\varepsilon$-hard in the group, Diffie--Hellman key agreement has
+  advantage at most $\varepsilon$.
+\end{corollary}

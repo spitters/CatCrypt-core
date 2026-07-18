@@ -1,0 +1,25 @@
+name = "docbuild"
+reservoir = false
+version = "0.1.0"
+# doc-gen4 API reference for the CatCrypt-core library, isolated from the main
+# package (so doc-gen4 is not a transitive dependency of library consumers).
+# Build from this directory with its own .lake:
+#   lake update && lake exe cache get && lake build CatCryptCore:docs
+# Output: .lake/build/doc/  (open index.html)
+
+[[require]]
+name = "catcryptCore"
+path = "../"
+
+[[require]]
+scope = "leanprover"
+name = "doc-gen4"
+# doc-gen4's `v4.30.0` tag is built for Lean v4.30.0 (this project's toolchain).
+rev = "v4.30.0"
+
+# mathlib last: its pinned transitive deps must win over doc-gen4's to match the
+# published olean cache.
+[[require]]
+name = "mathlib"
+git = "https://github.com/leanprover-community/mathlib4"
+rev = "v4.30.0"

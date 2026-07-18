@@ -1,0 +1,493 @@
+\chapter{Packages and categorical structure}
+
+This chapter develops the package layer that sits on top of the program monad
+$\mathsf{SPComp}$ (Definition~\ref{def:spcomp}). Two representations coexist. A
+\emph{shallow} layer stores oracle-free typed functions and inherits its
+categorical structure directly from the Kleisli category of $\mathsf{SPComp}$.
+A \emph{deep} layer represents computations as syntax trees (a free monad),
+where oracle calls are explicit and real linking is oracle substitution. The
+package-algebra results — correctness and associativity of deep linking, the
+interchange law, and the reduction lemma for advantage — all live in the deep
+layer.
+
+\section{Interfaces and raw packages (shallow layer)}
+
+\begin{definition}[Operation signature]
+  \label{def:opsig}
+  \lean{CatCrypt.Package.OpSig}
+  \leanok
+  An \emph{operation signature} $\mathsf{OpSig}$ is a pair of types
+  $(\mathsf{src}, \mathsf{tgt})$: the input and output type of a single oracle
+  operation.
+\end{definition}
+
+\begin{definition}[Interface]
+  \label{def:interface}
+  \uses{def:opsig}
+  \lean{CatCrypt.Package.Interface}
+  \leanok
+  An \emph{interface} is a finite set of entries, each pairing an operation
+  identifier $\mathrm{id} \in \mathbb{N}$ with a signature, subject to
+  uniqueness of identifiers. Interfaces carry an empty interface, a membership
+  predicate $\mathsf{has}\,I\,\mathrm{id}\,S\,T$, a disjointness relation, and a
+  union of identifier-disjoint interfaces.
+\end{definition}
+
+\begin{definition}[Typed function]
+  \label{def:typedfun}
+  \uses{def:spcomp}
+  \lean{CatCrypt.Package.TypedFun}
+  \leanok
+  A \emph{typed function} bundles an input type $\mathsf{src}$, an output type
+  $\mathsf{tgt}$, and an implementation $\mathsf{impl} : \mathsf{src} \to
+  \mathsf{SPComp}\,\mathsf{tgt}$. These implementations are oracle-free: they
+  are ordinary stateful-probabilistic computations with nothing left to
+  substitute.
+\end{definition}
+
+\begin{definition}[Raw package]
+  \label{def:rawpackage}
+  \uses{def:typedfun}
+  \lean{CatCrypt.Package.RawPackage}
+  \leanok
+  A \emph{raw package} is a finite set of package entries, each pairing an
+  operation identifier with a typed function, again with unique identifiers. It
+  carries $\mathsf{ids}$, $\mathsf{has}$, $\mathsf{lookup}$, a $\mathsf{singleton}$
+  constructor, and an empty package.
+\end{definition}
+
+\begin{definition}[Parallel composition of raw packages]
+  \label{def:rawpackage-par}
+  \uses{def:rawpackage}
+  \lean{CatCrypt.Package.RawPackage.par}
+  \leanok
+  For identifier-disjoint packages $P_1, P_2$, the parallel composition
+  $\mathsf{par}\,P_1\,P_2$ is the union of their entries; disjointness of
+  identifiers guarantees the uniqueness invariant.
+\end{definition}
+
+\begin{definition}[Resolving an operation]
+  \label{def:rawpackage-resolve}
+  \uses{def:rawpackage, def:spcomp}
+  \lean{CatCrypt.Package.RawPackage.resolve}
+  \leanok
+  $\mathsf{resolve}\,P\,\mathrm{id}\,x$ looks up the implementation of
+  operation $\mathrm{id}$, checks that the stored source and target types match
+  the requested ones, and calls it; if the operation is absent or the types
+  mismatch it returns $\mathsf{SPComp.fail}$. This is how a shallow package is
+  run.
+\end{definition}
+
+\begin{definition}[Linking of raw packages is a stub]
+  \label{def:rawpackage-link}
+  \uses{def:rawpackage}
+  \lean{CatCrypt.Package.RawPackage.link}
+  \leanok
+  $\mathsf{link}\,P_1\,P_2 = P_1$ is a \emph{shallow-layer no-op stub}. Because
+  $\mathsf{RawPackage}$ stores oracle-free typed functions, there are no oracle
+  calls to substitute, so linking has nothing to do. Oracle-substituting
+  linking is defined in the deep embedding
+  (Definition~\ref{def:deeppackage-link}) and proved correct and associative by
+  Theorems~\ref{thm:runpkg-link} and~\ref{thm:runpkg-link-assoc}.
+\end{definition}
+
+\section{The Kleisli category of \texorpdfstring{$\mathsf{SPComp}$}{SPComp}}
+
+\begin{definition}[Kleisli category of $\mathsf{SPComp}$]
+  \label{def:klspcomp}
+  \uses{def:spcomp, def:spcomp-ops}
+  \lean{CatCrypt.Core.KlSPComp}
+  \leanok
+  $\mathsf{KlSPComp}$ is the type of objects of the Kleisli category of
+  $\mathsf{SPComp}$ (an opaque copy of $\mathsf{Type}$). A morphism $\alpha \to
+  \beta$ is a function $\alpha \to \mathsf{SPComp}\,\beta$; identity is
+  $\mathsf{pure}$ and composition is $\mathsf{bind}$. The category laws are the
+  monad laws (Lemmas~\ref{lem:pure-bind}, \ref{lem:bind-pure},
+  \ref{lem:bind-assoc}). With $\mathrm{Sum}$ as tensor and $\mathrm{Empty}$ as
+  unit, $\mathsf{KlSPComp}$ is a symmetric monoidal category.
+\end{definition}
+
+\begin{lemma}[Composition is bind]
+  \label{lem:klspcomp-comp}
+  \uses{def:klspcomp}
+  \lean{CatCrypt.Core.KlSPComp.comp_apply}
+  \leanok
+  For $f : \alpha \to \beta$ and $g : \beta \to \gamma$ in $\mathsf{KlSPComp}$,
+  $(f \fatsemi g)\,x = \mathsf{bind}\,(f\,x)\,g$.
+\end{lemma}
+
+\begin{definition}[Cocartesian monoidal category]
+  \label{def:cocartesian-class}
+  \lean{CategoryTheory.CocartesianMonoidalCategory}
+  \leanok
+  A monoidal category is \emph{cocartesian} when its unit is initial and its
+  tensor is the categorical binary coproduct (the dual of a cartesian monoidal
+  category). It provides coprojections $\mathsf{inl}, \mathsf{inr}$ and a
+  copairing $\mathsf{desc}$ with the expected universal property.
+\end{definition}
+
+\begin{definition}[Copairing in $\mathsf{KlSPComp}$]
+  \label{def:klspcomp-codesc}
+  \uses{def:klspcomp}
+  \lean{CatCrypt.Core.KlSPComp.klDesc}
+  \leanok
+  Given $f : \alpha \to \gamma$ and $g : \beta \to \gamma$ in
+  $\mathsf{KlSPComp}$, the copairing $\mathsf{klDesc}\,f\,g$ maps
+  $\mathrm{inl}\,a \mapsto f\,a$ and $\mathrm{inr}\,b \mapsto g\,b$. The
+  coprojections $\mathsf{klInl}, \mathsf{klInr}$ embed a summand via
+  $\mathsf{pure}$.
+\end{definition}
+
+\begin{proposition}[$\mathsf{KlSPComp}$ is cocartesian]
+  \label{prop:klspcomp-cocartesian}
+  \uses{def:cocartesian-class, def:klspcomp-codesc}
+  \lean{CatCrypt.Core.KlSPComp.binaryCoproductIsColimit}
+  \leanok
+  The cofan $\mathrm{BinaryCofan}(\mathsf{klInl}, \mathsf{klInr})$ is a colimit:
+  $\mathrm{Sum}$ is the coproduct in $\mathsf{KlSPComp}$, with $\mathrm{Empty}$
+  initial. Hence $\mathsf{KlSPComp}$ is a cocartesian monoidal category.
+\end{proposition}
+
+\begin{definition}[Affine monoidal category]
+  \label{def:affine-class}
+  \lean{CategoryTheory.AffineMonoidalCategory}
+  \leanok
+  An \emph{affine} monoidal category equips every object with a natural discard
+  morphism $\mathsf{del}\,X : X \to \mathbf{1}$ satisfying $\mathsf{del}\,
+  \mathbf{1} = \mathrm{id}$ and naturality $f \fatsemi \mathsf{del}\,Y =
+  \mathsf{del}\,X$. Every computation can be discarded.
+\end{definition}
+
+\begin{definition}[Discard in $\mathsf{KlSPComp}$]
+  \label{def:klspcomp-del}
+  \uses{def:affine-class, def:klspcomp}
+  \lean{CatCrypt.Core.KlSPComp.klDel}
+  \leanok
+  The discard morphism $\mathsf{klDel}\,\alpha : \alpha \to \mathrm{Empty}$
+  sends every value to the failing computation $\mathsf{SPComp.fail}$. This
+  makes $\mathsf{KlSPComp}$ an affine monoidal category.
+\end{definition}
+
+\section{The family (bi)category and package interfaces}
+
+\begin{definition}[Category of families]
+  \label{def:famobj}
+  \lean{CatCrypt.Category.FamObj}
+  \leanok
+  For a category $C$, an object of $\mathsf{FamObj}\,C$ is a pair $(\iota,
+  \mathsf{objs})$ of an index type $\iota$ and a family $\mathsf{objs} : \iota
+  \to C$. A morphism carries an index equivalence $\sigma : \iota_1 \simeq
+  \iota_2$ together with componentwise $C$-morphisms $\mathsf{map}\,i :
+  \mathsf{objs}_1\,i \to \mathsf{objs}_2(\sigma\,i)$. This is a symmetric
+  monoidal category with $\mathrm{Sum}$ tensor and $\mathrm{Empty}$ unit.
+\end{definition}
+
+\begin{definition}[Package interface]
+  \label{def:pkginterface}
+  \uses{def:klspcomp}
+  \lean{CatCrypt.Category.PkgInterface}
+  \leanok
+  A \emph{package interface} $I$ is an index type $\iota$ together with domain
+  and codomain families $\mathsf{doms}, \mathsf{codoms} : \iota \to
+  \mathsf{KlSPComp}$. It presents domain and codomain objects
+  $\mathsf{domFam}\,I, \mathsf{codomFam}\,I$ in $\mathsf{FamObj}\,
+  \mathsf{KlSPComp}$. Parallel combination $\mathsf{tensor}$ (via $\mathrm{Sum}$)
+  and the empty interface $\mathsf{unit}$ agree definitionally with the family
+  tensor and unit.
+\end{definition}
+
+\begin{definition}[Package implementation]
+  \label{def:pkgimpl}
+  \uses{def:pkginterface, def:famobj}
+  \lean{CatCrypt.Category.PkgImpl}
+  \leanok
+  A \emph{package implementation} of interface $I$ is a morphism
+  $\mathsf{domFam}\,I \to \mathsf{codomFam}\,I$ in
+  $\mathsf{FamObj}\,\mathsf{KlSPComp}$: an index permutation together with, for
+  each operation $i$, a Kleisli arrow $\mathsf{doms}\,i \to
+  \mathsf{SPComp}(\mathsf{codoms}(\sigma\,i))$.
+\end{definition}
+
+\begin{definition}[Kleisli linking of package implementations]
+  \label{def:pkgimpl-link}
+  \uses{def:pkgimpl}
+  \lean{CatCrypt.Category.PkgImpl.link}
+  \leanok
+  Linking $\mathsf{link}\,p_1\,p_2 = p_1 \fatsemi p_2$ is composition in
+  $\mathsf{FamObj}\,\mathsf{KlSPComp}$. At each operation it computes as
+  $\mathsf{bind}\,(p_1.\mathsf{map}\,i\,x)\,(p_2.\mathsf{map}(p_1.\sigma\,i))$:
+  a first-order \emph{data pipeline} (run $p_1$, feed the result to $p_2$),
+  \emph{not} second-order oracle substitution. Cryptographic package linking is
+  the oracle-resolving $\mathsf{DeepPackage.link}$
+  (Definition~\ref{def:deeppackage-link}).
+\end{definition}
+
+\begin{definition}[Parallel composition of package implementations]
+  \label{def:pkgimpl-par}
+  \uses{def:pkgimpl, def:famobj}
+  \lean{CatCrypt.Category.PkgImpl.par}
+  \leanok
+  $\mathsf{par}\,p_1\,p_2 = p_1 \otimes p_2$ is the family tensor of the two
+  implementations. It dispatches an operation $\mathrm{inl}\,i$ to $p_1$ and
+  $\mathrm{inr}\,j$ to $p_2$. This is parallel composition proper, shared with
+  the package category, and inherits the symmetric monoidal laws from
+  $\mathsf{FamObj}$.
+\end{definition}
+
+\begin{definition}[Bridge from deep interfaces to package interfaces]
+  \label{def:deepinterface-topkg}
+  \uses{def:pkginterface, def:deepinterface}
+  \lean{CatCrypt.Category.DeepInterface.toPkgInterface}
+  \leanok
+  A list-based $\mathsf{DeepInterface}$ becomes a family-based
+  $\mathsf{PkgInterface}$ by $\mathrm{Fin}$-indexing its operation list: each
+  position becomes an index, with domain and codomain read off the entry.
+\end{definition}
+
+\section{The deep embedding}
+
+\begin{definition}[Raw code: a free monad]
+  \label{def:rawcode}
+  \uses{def:spcomp}
+  \lean{CatCrypt.Deep.RawCode.inductionOn}
+  \leanok
+  $\mathsf{RawCode}\,\alpha$ is the free monad of computation syntax trees,
+  with constructors $\mathsf{ret}$, $\mathsf{bind}$, $\mathsf{sample}$,
+  $\mathsf{get}$, $\mathsf{put}$, $\mathsf{fail}$, $\mathsf{oracleCall}$, and
+  $\mathsf{embed}$ (which injects an arbitrary $\mathsf{SPComp}$ value as opaque
+  code, expressing completeness). Unlike the shallow layer, oracle calls are
+  first-class syntax. The structural recursor $\mathsf{inductionOn}$ enumerates
+  these constructors.
+\end{definition}
+
+\begin{definition}[Deep interface]
+  \label{def:deepinterface}
+  \lean{CatCrypt.Deep.DeepInterface}
+  \leanok
+  A \emph{deep interface} is a list of operation entries $(\mathrm{id}, \mathrm{dom},
+  \mathrm{codom})$ of matching universe. It carries an empty interface, a
+  membership predicate $\mathsf{contains}$, and extensionality by the operation
+  list.
+\end{definition}
+
+\begin{definition}[Valid code bundle]
+  \label{def:validcodebundle}
+  \uses{def:rawcode}
+  \lean{CatCrypt.Deep.ValidCodeBundle}
+  \leanok
+  Validity of code is the inductive predicate $\mathsf{ValidCode}\,L$ that every
+  $\mathsf{get}/\mathsf{put}$ touches only a location id in the declared set
+  $L$. A \emph{valid code bundle} pairs a $\mathsf{RawCode}\,\alpha$ with its
+  $\mathsf{ValidCode}\,L$ proof; by proof irrelevance two bundles are equal
+  whenever their code is.
+\end{definition}
+
+\begin{definition}[Deep package]
+  \label{def:deeppackage}
+  \uses{def:deepinterface, def:validcodebundle}
+  \lean{CatCrypt.Deep.DeepPackage}
+  \leanok
+  A \emph{deep package} bundles a finite location set $\mathsf{locs}$, an
+  import interface, an export interface, and, for every exported operation, an
+  implementation mapping a domain value to a valid code bundle over
+  $\mathsf{locs}$. The location invariant makes modular composition and
+  separation reasoning sound.
+\end{definition}
+
+\begin{definition}[Separation]
+  \label{def:deeppackage-sep}
+  \uses{def:deeppackage}
+  \lean{CatCrypt.Deep.DeepPackage.sep}
+  \leanok
+  Two deep packages are \emph{separated}, $\mathsf{sep}\,p_1\,p_2$, when their
+  location sets are disjoint. Separated packages cannot interfere with each
+  other's state.
+\end{definition}
+
+\begin{definition}[Oracle substitution]
+  \label{def:substoracle}
+  \uses{def:rawcode}
+  \lean{CatCrypt.Deep.RawCode.substOracle}
+  \leanok
+  $\mathsf{substOracle}\,c\,\mathsf{env}$ recursively replaces every
+  $\mathsf{oracleCall}\,\mathrm{op}\,\mathrm{dom}\,\mathrm{codom}\,x$ node in
+  $c$ by $\mathsf{env}\,\mathrm{op}\,\mathrm{dom}\,\mathrm{codom}\,x$, leaving
+  the other constructors intact. This is the engine of real package linking.
+\end{definition}
+
+\begin{lemma}[Substitution composes]
+  \label{lem:substoracle-comp}
+  \uses{def:substoracle}
+  \lean{CatCrypt.Deep.RawCode.substOracle_comp}
+  \leanok
+  $(\mathsf{substOracle}\,c\,\mathsf{env}_1)\,\mathsf{substOracle}\,\mathsf{env}_2
+  = \mathsf{substOracle}\,c\,(\lambda\,\mathrm{op}\,\mathrm{dom}\,\mathrm{codom}\,x.\,
+  \mathsf{substOracle}\,(\mathsf{env}_1\,\mathrm{op}\,\mathrm{dom}\,\mathrm{codom}\,x)\,
+  \mathsf{env}_2)$. Double substitution is a single substitution through a
+  composed environment.
+\end{lemma}
+
+\begin{lemma}[Substitution is a no-op on oracle-free code]
+  \label{lem:substoracle-self}
+  \uses{def:substoracle}
+  \lean{CatCrypt.Deep.RawCode.substOracle_eq_self}
+  \leanok
+  If $c$ contains no $\mathsf{oracleCall}$ node (predicate $\mathsf{NoOracleCall}\,c$),
+  then $\mathsf{substOracle}\,c\,\mathsf{env} = c$ for every environment. This is
+  the foundational lemma for reduction packages, whose non-delegated operations
+  never call imports.
+\end{lemma}
+
+\begin{definition}[Deep linking]
+  \label{def:deeppackage-link}
+  \uses{def:deeppackage, def:substoracle}
+  \lean{CatCrypt.Deep.DeepPackage.link}
+  \leanok
+  $\mathsf{link}\,p_1\,p_2$ connects $p_2$'s exports to $p_1$'s imports. It uses
+  the union of locations, imports $p_2$'s imports, exports $p_1$'s exports, and
+  implements each exported operation by $\mathsf{substOracle}$ on $p_1$'s code,
+  replacing every call to an operation in $p_2$'s exports with $p_2$'s
+  implementation (and every other call with $\mathsf{fail}$). This is the real,
+  oracle-resolving package linking.
+\end{definition}
+
+\begin{definition}[Deep parallel composition]
+  \label{def:deeppackage-par}
+  \uses{def:deeppackage, def:deeppackage-sep}
+  \lean{CatCrypt.Deep.DeepPackage.par}
+  \leanok
+  For separated $p_1, p_2$, $\mathsf{par}\,p_1\,p_2$ takes the union of
+  locations and the concatenation of import/export interfaces, dispatching each
+  exported operation to whichever package declares it. Separation is preserved
+  by parallel composition on either side.
+\end{definition}
+
+\begin{definition}[Identity package]
+  \label{def:deeppackage-id}
+  \uses{def:deeppackage}
+  \lean{CatCrypt.Deep.DeepPackage.id}
+  \leanok
+  $\mathsf{id}\,I$ is the stateless passthrough for interface $I$: it exports
+  and imports $I$, and implements each operation by a single
+  $\mathsf{oracleCall}$ forwarding the request. It is the unit of linking at the
+  evaluation level.
+\end{definition}
+
+\section{Deep-to-shallow bridge and package advantage}
+
+\begin{definition}[Evaluation to $\mathsf{SPComp}$]
+  \label{def:eval}
+  \uses{def:rawcode, def:spcomp}
+  \lean{CatCrypt.Deep.RawCode.eval}
+  \leanok
+  $\mathsf{RawCode.eval}$ interprets a syntax tree as an $\mathsf{SPComp}$
+  program, mapping each constructor to the corresponding monad operation and
+  sending unresolved $\mathsf{oracleCall}$ nodes to $\mathsf{fail}$; a variant
+  $\mathsf{evalWith}$ takes an explicit oracle handler. In the reverse
+  direction, an elaboration-time reifier $\mathsf{rawCode\%}$ turns a shallow
+  $\mathsf{SPComp}$ program over the six core constructors back into
+  $\mathsf{RawCode}$, and the two round-trip up to the monad laws.
+\end{definition}
+
+\begin{lemma}[Substitution commutes with evaluation]
+  \label{lem:eval-substoracle}
+  \uses{def:substoracle, def:eval}
+  \lean{CatCrypt.Deep.eval_substOracle}
+  \leanok
+  Evaluating $\mathsf{substOracle}\,c\,\mathsf{env}$ equals evaluating $c$ with
+  the handler that evaluates each environment entry:
+  $(\mathsf{substOracle}\,c\,\mathsf{env}).\mathsf{eval} =
+  c.\mathsf{evalWith}(\lambda\ldots.\,(\mathsf{env}\ldots).\mathsf{eval})$. This
+  is the bridge that makes syntactic linking semantically correct.
+\end{lemma}
+
+\begin{definition}[Running a deep package]
+  \label{def:runpkg}
+  \uses{def:deeppackage, def:eval}
+  \lean{CatCrypt.Crypto.runPkg}
+  \leanok
+  $\mathsf{runPkg}\,p$ evaluates the conventional main export
+  $(0, \mathrm{Unit}, \mathrm{Bool})$ of a deep package to an
+  $\mathsf{SPComp}\,\mathrm{Bool}$ (returning $\mathsf{pure}\,\mathsf{true}$ if
+  no such export exists), mirroring the cryptographic convention that an
+  adversary's main procedure takes no input and returns a boolean guess.
+\end{definition}
+
+\begin{definition}[Deep nominal advantage]
+  \label{def:deepnomadv}
+  \uses{def:runpkg, def:deeppackage-link}
+  \lean{CatCrypt.Crypto.DeepNomAdvantage}
+  \leanok
+  For nominal packages $G, G', A$,
+  \[
+    \mathsf{DeepNomAdvantage}\,G\,G'\,A =
+    \mathsf{Advantage}\bigl(\mathsf{runPkg}(\mathsf{link}\,A\,G),\
+    \mathsf{runPkg}(\mathsf{link}\,A\,G')\bigr),
+  \]
+  the distinguishing probability of adversary $A$ linked against each game via
+  real (oracle-resolving) deep linking.
+\end{definition}
+
+\begin{theorem}[Correctness of linking under evaluation]
+  \label{thm:runpkg-link}
+  \uses{def:runpkg, def:deeppackage-link, lem:eval-substoracle}
+  \lean{CatCrypt.Crypto.runPkg_link}
+  \leanok
+  $\mathsf{runPkg}(\mathsf{link}\,p_1\,p_2)$ equals evaluating $p_1$'s main
+  procedure with the oracle handler that resolves each call through $p_2$'s
+  exports (and sends absent operations to $\mathsf{fail}$). Syntactic linking on
+  the free monad implements semantic oracle resolution on $\mathsf{SPComp}$.
+\end{theorem}
+
+\begin{theorem}[Associativity of linking under evaluation]
+  \label{thm:runpkg-link-assoc}
+  \uses{def:runpkg, def:deeppackage-link, lem:substoracle-comp, lem:eval-substoracle}
+  \lean{CatCrypt.Crypto.runPkg_link_assoc}
+  \leanok
+  $\mathsf{runPkg}(\mathsf{link}(\mathsf{link}\,p_1\,p_2)\,p_3) =
+  \mathsf{runPkg}(\mathsf{link}\,p_1\,(\mathsf{link}\,p_2\,p_3))$. The two
+  packages are not definitionally equal — their oracle environments differ
+  structurally — but they agree after evaluation, via $\mathsf{substOracle\_comp}$
+  and the fact that $\mathsf{fail}$ substitutes to $\mathsf{fail}$.
+\end{theorem}
+
+\begin{theorem}[Interchange law]
+  \label{thm:runpkg-interchange}
+  \uses{def:runpkg, def:deeppackage-link, def:deeppackage-par}
+  \lean{CatCrypt.Crypto.runPkg_interchange}
+  \leanok
+  Under an interface-matching condition on the oracle environments,
+  \[
+    \mathsf{runPkg}\bigl(\mathsf{link}\,(\mathsf{par}\,p_1\,p_2)\,(\mathsf{par}\,p_3\,p_4)\bigr)
+    = \mathsf{runPkg}\bigl(\mathsf{par}\,(\mathsf{link}\,p_1\,p_3)\,(\mathsf{link}\,p_2\,p_4)\bigr).
+  \]
+  Linking after tensoring agrees with tensoring after linking, the exchange law
+  that makes packages a (bi)categorical composition structure.
+\end{theorem}
+
+\begin{theorem}[Reduction lemma for advantage]
+  \label{thm:deepnomadv-link}
+  \uses{def:deepnomadv, thm:runpkg-link-assoc}
+  \lean{CatCrypt.Crypto.DeepNomAdvantage_link}
+  \leanok
+  For compatible registries,
+  \[
+    \mathsf{DeepNomAdvantage}\,G_0\,G_1\,(\mathsf{link}\,A\,R) =
+    \mathsf{DeepNomAdvantage}\,(\mathsf{link}\,R\,G_0)\,(\mathsf{link}\,R\,G_1)\,A.
+  \]
+  A reduction wrapper $R$ can be absorbed into the adversary — the standard move
+  in hybrid arguments — and this follows directly from
+  Theorem~\ref{thm:runpkg-link-assoc}.
+\end{theorem}
+
+\begin{definition}[Game-based security for deep packages]
+  \label{def:nompkgsecure}
+  \uses{def:deepnomadv}
+  \lean{CatCrypt.Crypto.NomPkgSecure}
+  \leanok
+  $\mathsf{NomPkgSecure}\,G\,G'\,\varepsilon$ holds when for every adversary
+  package $A$, $\mathsf{DeepNomAdvantage}\,G\,G'\,A \le \varepsilon\,A$. The
+  bound is adversary-dependent, supporting concrete security; it is reflexive
+  at $0$, symmetric, and transitive with pointwise-added bounds via the triangle
+  inequality.
+\end{definition}

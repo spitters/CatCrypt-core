@@ -1,0 +1,18 @@
+# Lake build artifacts
+.lake/
+lake-packages/
+build/
+
+# Verso manual output (docs/) — generated HTML
+_out/
+
+# Editor files
+.vscode/
+*.olean
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Generated from blueprint/plastex.cfg by build_web.sh (portable packages-dirs)
+blueprint/plastex.local.cfg

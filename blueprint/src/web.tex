@@ -1,0 +1,20 @@
+% Web entry point for leanblueprint (dependency-graph HTML).
+\documentclass[a4paper]{book}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage[dep_graph,project=../..]{blueprint}
+\input{macros/common}
+\input{macros/web}
+
+% Where `\lean{X}` node links resolve: the doc-gen4 API reference, which
+% `build_web.sh` mounts at `web/api/` (a subdirectory of this blueprint), so the
+% blueprint is self-contained. doc-gen4's `find/` redirect resolves
+% `?pattern=<decl>` to the declaration's page.
+\dochome{api}
+
+\title{CatCrypt Core --- Formal Statements}
+\author{CatCrypt Contributors}
+
+\begin{document}
+\maketitle
+\input{content}
+\end{document}

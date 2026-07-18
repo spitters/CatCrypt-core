@@ -1,0 +1,47 @@
+\chapter{Worked example: KEM-DEM hybrid encryption}
+
+The proof-ladders ``asymmetric'' benchmark, following Rosulek's hybrid encryption.
+A key-encapsulation mechanism (KEM) transports a symmetric key that a data-
+encapsulation mechanism (DEM) uses to encrypt the payload. Composing a secure KEM
+with a secure DEM yields a secure public-key scheme, with the three-term hybrid
+bound; the XOR-DEM instantiation is perfectly secure.
+
+\begin{definition}[Hybrid public-key scheme]
+  \label{def:hybridpke}
+  \uses{def:spcomp}
+  \lean{CatCrypt.Examples.KEMDEM.KEMScheme, CatCrypt.Examples.KEMDEM.DEMScheme, CatCrypt.Examples.KEMDEM.HybridPKE}
+  \leanok
+  From a KEM and a DEM, the hybrid scheme encapsulates a key, encrypts the payload
+  under it with the DEM, and ships both encapsulations.
+\end{definition}
+
+\begin{theorem}[Hybrid correctness]
+  \label{thm:hybridpke-correct}
+  \uses{def:hybridpke}
+  \lean{CatCrypt.Examples.KEMDEM.hybridPKE_correct}
+  \leanok
+  Component correctness of the KEM and DEM lifts to correctness of the hybrid
+  scheme.
+\end{theorem}
+
+\begin{theorem}[Hybrid security bound]
+  \label{thm:kemdem-bound}
+  \uses{def:hybridpke}
+  \lean{CatCrypt.Examples.KEMDEM.pke_security}
+  \leanok
+  The hybrid scheme's IND-CCA advantage is bounded by the sum of the KEM, DEM, and
+  KEM advantages of explicit reductions:
+  \[
+    \mathsf{Adv}^{\mathrm{CCA}}_{\mathrm{hyb}} \;\le\; \mathsf{Adv}_{\mathrm{KEM}}
+    + \mathsf{Adv}_{\mathrm{DEM}} + \mathsf{Adv}_{\mathrm{KEM}}.
+  \]
+\end{theorem}
+
+\begin{theorem}[Perfect security of the XOR-DEM hybrid]
+  \label{thm:kemdem-perfect}
+  \uses{thm:kemdem-bound}
+  \lean{CatCrypt.Examples.KEMDEM.pke_perfect_security, CatCrypt.Examples.KEMDEM.xorHybrid_advantage_zero}
+  \leanok
+  A perfectly-secure KEM composed with the XOR one-time-pad DEM has advantage
+  exactly $0$.
+\end{theorem}

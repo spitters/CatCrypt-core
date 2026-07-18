@@ -1,0 +1,56 @@
+\chapter{Worked example: ElGamal encryption}
+
+Following Rosulek, \emph{The Joy of Cryptography} (ElGamal / DDH). ElGamal is the
+first \emph{computational} example: over an abstract prime-order group its IND-CPA
+security is not perfect but reduces to the decisional Diffie--Hellman assumption,
+with the standard factor-two bound. This exercises the reduction machinery rather
+than a bijection coupling.
+
+\begin{definition}[ElGamal over a prime-order group]
+  \label{def:elgamal}
+  \uses{def:spcomp}
+  \lean{CatCrypt.Examples.ElGamal.elgamalEnc, CatCrypt.Examples.ElGamal.elgamalDDH}
+  \leanok
+  With public key $\mathit{pk} = g^{x}$, ElGamal encrypts $m$ as $(g^{r}, m \cdot
+  \mathit{pk}^{r})$ for fresh $r$. The matching DDH instance fixes
+  $\mathsf{ecdh}(g^{a}, g^{b}) = g^{ab}$ on group elements.
+\end{definition}
+
+\begin{theorem}[Correctness]
+  \label{thm:elgamal-correct}
+  \uses{def:elgamal}
+  \lean{CatCrypt.Examples.ElGamal.elgamal_dec_enc}
+  \leanok
+  Decryption inverts encryption: $(m \cdot \mathit{pk}^{r}) \cdot (g^{r})^{-x} =
+  m$.
+\end{theorem}
+
+\begin{theorem}[IND-CPA reduces to DDH]
+  \label{thm:elgamal-ddh}
+  \uses{def:elgamal}
+  \lean{CatCrypt.Examples.ElGamal.elgamal_indcpa_le_ddh}
+  \leanok
+  ElGamal's IND-CPA advantage is bounded by the DDH advantage of two explicit
+  reduction adversaries:
+  \[
+    \mathsf{Adv}^{\mathrm{IND\text{-}CPA}}_{\mathrm{ElGamal}}(m_0, m_1, A) \;\le\;
+    \mathsf{Adv}^{\mathrm{DDH}}(R_{m_0}) + \mathsf{Adv}^{\mathrm{DDH}}(R_{m_1}).
+  \]
+  The three-hop argument passes through the game where the mask is uniform, in
+  which the message is absorbed and the two challenges coincide.
+\end{theorem}
+
+\begin{theorem}[Exact real-or-random bound]
+  \label{thm:elgamal-eq-ddh}
+  \uses{def:elgamal}
+  \lean{CatCrypt.Examples.ElGamal.elgamal_indcpa_eq_ddh}
+  \leanok
+  In the real-or-random framing (real encryption versus a random ciphertext), the
+  advantage \emph{equals} a single DDH advantage --- no factor and no sum:
+  \[
+    \mathsf{Adv}(\mathrm{Enc}\,m_0,\ \mathrm{random}) \;=\;
+    \mathsf{Adv}^{\mathrm{DDH}}(R_{m_0}).
+  \]
+  This matches SSProve-Rocq's exact one-time-secrecy result; the two-message
+  left-or-right advantage above is a different, two-term quantity.
+\end{theorem}

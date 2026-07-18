@@ -1,0 +1,51 @@
+\chapter{Worked example: pseudorandom generators}
+
+Following Rosulek, \emph{The Joy of Cryptography}, §5. A pseudorandom generator
+stretches a short seed into a longer pseudorandom string. When the generator is a
+bijection its output is \emph{perfectly} uniform, so the real (stretched seed) and
+ideal (uniform output) games are indistinguishable with advantage $0$. A bijection
+forces equal seed and output sizes, so this captures the information-theoretic
+boundary: length extension is only computationally secure.
+
+\begin{definition}[Bijection generator]
+  \label{def:bijprg}
+  \uses{def:spcomp}
+  \lean{CatCrypt.Examples.PRG.PRGScheme, CatCrypt.Examples.PRG.BijPRG, CatCrypt.Examples.PRG.BijPRG.toPRGScheme}
+  \leanok
+  A PRG scheme has a stretch map $\mathrm{Seed} \to \mathrm{Output}$; a bijection
+  generator is one whose stretch map is a bijection $\mathrm{Seed} \simeq
+  \mathrm{Output}$.
+\end{definition}
+
+\begin{lemma}[Real and ideal generators couple]
+  \label{lem:bijprg-coupling}
+  \uses{def:bijprg}
+  \lean{CatCrypt.Examples.PRG.bijPRG_coupling}
+  \leanok
+  Stretching a uniform seed through a bijection and sampling a uniform output are
+  related by the bijection coupling.
+\end{lemma}
+
+\begin{theorem}[Perfect PRG security]
+  \label{thm:bijprg-perfect}
+  \uses{lem:bijprg-coupling}
+  \lean{CatCrypt.Examples.PRG.bijPRG_perfect, CatCrypt.Examples.PRG.boolXorPRG_perfect}
+  \leanok
+  A bijection generator has perfect security: for every adversary $A$, the PRG
+  advantage is $0$. The XOR generator is a concrete instance.
+\end{theorem}
+
+\begin{theorem}[Triple-from-double bound]
+  \label{thm:triple-prg}
+  \uses{def:bijprg}
+  \lean{CatCrypt.Examples.PRG.triple_prg_uniform_bound}
+  \leanok
+  The \emph{computational} length-tripling result. Extending a
+  length-doubling generator $G$ to $G_3$ and composing the two hybrid hops through
+  the advantage triangle inequality gives
+  \[
+    \mathsf{Adv}^{\mathrm{PRG}}(G_3) \;\le\; 2\,\varepsilon,
+  \]
+  where each hop is bounded by the $\mathrm{PRG}$-advantage $\varepsilon$ of the
+  base generator (a $\mathrm{PRGAssumption}$ hypothesis).
+\end{theorem}

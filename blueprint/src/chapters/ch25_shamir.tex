@@ -1,0 +1,38 @@
+\chapter{Worked example: Shamir $t$-of-$n$ secret sharing}
+
+Following Shamir (1979). The 2-of-2 scheme generalizes to a threshold: a secret
+$s \in \mathbb{F}_p$ is the constant term of a random degree-${<}t$ polynomial $f$,
+and share $i$ is $f(x_i)$ at distinct nonzero points. Any $t$ shares reconstruct
+$s$ by interpolation; any $t-1$ shares reveal nothing. Both directions are proved
+in full generality in $t$ and $n$.
+
+\begin{definition}[Polynomial share]
+  \label{def:shamir-share}
+  \uses{def:spcomp}
+  \lean{CatCrypt.Examples.ShamirSecretSharing.shareVal}
+  \leanok
+  A degree-${<}t$ polynomial is its constant term $s$ plus $t-1$ free
+  coefficients; the share at $q$ is $f(q) = s + \sum_i a_i q^{i+1}$.
+\end{definition}
+
+\begin{theorem}[Reconstruction]
+  \label{thm:shamir-reconstruct}
+  \uses{def:shamir-share}
+  \lean{CatCrypt.Examples.ShamirSecretSharing.shamir_reconstruct}
+  \leanok
+  Lagrange interpolation through any $t$ distinct evaluation points recovers
+  $f(0) = s$.
+\end{theorem}
+
+\begin{theorem}[Perfect privacy]
+  \label{thm:shamir-privacy}
+  \uses{def:shamir-share}
+  \lean{CatCrypt.Examples.ShamirSecretSharing.shamir_perfect_privacy}
+  \leanok
+  For any $t-1$ nonzero evaluation points, any two secrets, and any adversary, the
+  distinguishing advantage from those $t-1$ shares is exactly $0$. The two games
+  couple by translating the free coefficients by those of $(s_1 - s_0)\,L$, where
+  $L$ is the degree-${<}t$ polynomial that is $1$ at $0$ and $0$ at every revealed
+  point --- a bijection of the coefficient space, so no Vandermonde inversion is
+  needed.
+\end{theorem}

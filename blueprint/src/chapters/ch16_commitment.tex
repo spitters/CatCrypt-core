@@ -1,0 +1,36 @@
+\chapter{Worked example: commitment schemes}
+
+Following Rosulek, \emph{The Joy of Cryptography} (commitments). A commitment binds
+a committer to a value while hiding it until opening. Perfect hiding and perfect
+binding are information-theoretically incompatible, so the two properties are
+shown on complementary schemes: a mask (one-time-pad) commitment is perfectly
+hiding, and the identity commitment is perfectly binding.
+
+\begin{definition}[Commitment scheme]
+  \label{def:commscheme}
+  \uses{def:spcomp}
+  \lean{CatCrypt.Examples.Commitment.CommScheme}
+  \leanok
+  A commitment scheme has a $\mathsf{commit}$ map (value and randomness to a
+  commitment) and a $\mathsf{verify}$ check used at opening.
+\end{definition}
+
+\begin{theorem}[Perfect hiding of the mask commitment]
+  \label{thm:comm-hiding}
+  \uses{def:commscheme, thm:otp-perfect}
+  \lean{CatCrypt.Examples.Commitment.maskComm_perfect_hiding}
+  \leanok
+  The mask commitment $\mathsf{commit}(r, m) = r \oplus m$ with uniform randomness
+  $r$ is perfectly hiding: the hiding advantage is exactly $0$ for every
+  adversary, by the one-time-pad argument.
+\end{theorem}
+
+\begin{theorem}[Perfect binding of the identity commitment]
+  \label{thm:comm-binding}
+  \uses{def:commscheme}
+  \lean{CatCrypt.Examples.Commitment.idComm_perfectly_binding}
+  \leanok
+  The identity commitment cannot be opened to two distinct messages --- it is
+  perfectly binding (and, being the complement of the mask commitment, not
+  hiding).
+\end{theorem}

@@ -1,0 +1,37 @@
+\chapter{Worked example: CTR mode}
+
+Following Rosulek, \emph{The Joy of Cryptography}, §8 (block-cipher modes).
+Counter mode encrypts a block $m$ as $(\mathit{nonce}, E(k, \mathit{nonce}) \oplus
+m)$ with fresh randomness. Single-block CTR is exactly the CPA-from-PRF
+construction with the PRF input fixed to the counter, so a bijection block cipher
+makes it perfectly IND-CPA.
+
+\begin{definition}[Single-block CTR]
+  \label{def:ctr}
+  \uses{def:cpafromprf}
+  \lean{CatCrypt.Examples.CTRMode.CTRBlockScheme, CatCrypt.Examples.CTRMode.CTRBlockScheme.toBijCPAScheme}
+  \leanok
+  A CTR block scheme is a keystream bijection family $\mathrm{Block} \to
+  (\mathrm{Key} \simeq \mathrm{Block})$ modelling $k \mapsto E(k, \mathit{ctr})$;
+  it maps directly onto the PRF-based encryption scheme.
+\end{definition}
+
+\begin{theorem}[Perfect IND-CPA]
+  \label{thm:ctr-perfect}
+  \uses{def:ctr, thm:cpafromprf-perfect}
+  \lean{CatCrypt.Examples.CTRMode.ctr_perfect_indcpa, CatCrypt.Examples.CTRMode.boolCTR_perfect_indcpa}
+  \leanok
+  Single-block CTR from a bijection block cipher has perfect IND-CPA security:
+  advantage exactly $0$, inherited from the CPA-from-PRF result. (Multi-block CTR
+  needs a product-of-bijections argument and is out of scope.)
+\end{theorem}
+
+\begin{theorem}[Computational bound from a PRF]
+  \label{thm:ctr-bound}
+  \uses{def:ctr, thm:cpafromprf-bound}
+  \lean{CatCrypt.Examples.CTRMode.ctr_indcpa_bound}
+  \leanok
+  For a general block cipher with PRF-advantage $\varepsilon$, single-block CTR has
+  $\mathsf{Adv}^{\mathrm{IND\text{-}CPA}} \le \varepsilon$, routing through the same
+  PRF-swap and perfect hops as CPA-from-PRF.
+\end{theorem}

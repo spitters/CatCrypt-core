@@ -1,0 +1,309 @@
+\chapter{Probability}
+
+The probability layer builds the semantic domain in which cryptographic games
+are interpreted: sub-distributions over a result type, their monadic structure,
+probabilistic couplings (the engine of relational reasoning), and several
+quantitative results --- the birthday bound, the Schwartz--Zippel
+lemma, XOR one-time-pad indistinguishability, and discrete conditional
+probability with Bayesian inversion.
+
+\section{Sub-distributions}
+
+Recall from Chapter~1 that a sub-distribution $\mathsf{SDistr}\,\alpha$
+(Definition~\ref{def:sdistr}) is a probability mass function over
+$\mathrm{Option}\,\alpha$, the weight on $\mathsf{none}$ recording the
+probability of failure.
+
+\begin{definition}[Constructors and bind]
+  \label{def:sdistr-ops}
+  \uses{def:sdistr}
+  \lean{CatCrypt.Prob.SDistr.pure, CatCrypt.Prob.SDistr.bind, CatCrypt.Prob.SDistr.fail}
+  \leanok
+  $\mathsf{SDistr}$ carries the point mass $\mathsf{pure}\,a$ (all weight on
+  $\mathsf{some}\,a$), the failing computation $\mathsf{fail}$ (all weight on
+  $\mathsf{none}$), and the monadic bind $\mathsf{bind}\,d\,f$, which samples
+  $d$ and, on a successful outcome $a$, continues with $f\,a$, while a failure
+  of $d$ propagates to failure of the whole computation. These make
+  $\mathsf{SDistr}$ a monad.
+\end{definition}
+
+\begin{definition}[Uniform distribution]
+  \label{def:sdistr-uniform}
+  \uses{def:sdistr}
+  \lean{CatCrypt.Prob.SDistr.uniform}
+  \leanok
+  For a finite nonempty type $\alpha$, the uniform sub-distribution
+  $\mathsf{uniform}\,\alpha$ places mass $1/\lvert\alpha\rvert$ on every
+  $\mathsf{some}\,a$ and mass $0$ on $\mathsf{none}$.
+\end{definition}
+
+\begin{definition}[Mass and support]
+  \label{def:sdistr-measures}
+  \uses{def:sdistr}
+  \lean{CatCrypt.Prob.SDistr.mass, CatCrypt.Prob.SDistr.support}
+  \leanok
+  The \emph{mass} of $d$ is $\mathsf{mass}\,d = 1 - d(\mathsf{none})$, the total
+  probability of not failing. The \emph{support} of $d$ is the set
+  $\{\,a \mid d(\mathsf{some}\,a) \neq 0\,\}$ of outcomes with nonzero
+  probability.
+\end{definition}
+
+\begin{lemma}[Monad laws]
+  \label{lem:sdistr-monad-laws}
+  \uses{def:sdistr-ops}
+  \lean{CatCrypt.Prob.SDistr.pure_bind, CatCrypt.Prob.SDistr.bind_pure, CatCrypt.Prob.SDistr.bind_assoc}
+  \leanok
+  Bind satisfies the three monad laws: left identity
+  $\mathsf{bind}\,(\mathsf{pure}\,a)\,f = f\,a$, right identity
+  $\mathsf{bind}\,d\,\mathsf{pure} = d$, and associativity
+  $\mathsf{bind}\,(\mathsf{bind}\,d\,f)\,g
+   = \mathsf{bind}\,d\,(\lambda a.\,\mathsf{bind}\,(f\,a)\,g)$.
+\end{lemma}
+
+\begin{lemma}[Congruence on the support]
+  \label{lem:bind-congr-support}
+  \uses{def:sdistr-ops, def:sdistr-measures}
+  \lean{CatCrypt.Prob.SDistr.bind_congr_support}
+  \leanok
+  If two continuations $f$ and $g$ agree on every outcome in the support of
+  $d$, that is $f\,a = g\,a$ whenever $d(\mathsf{some}\,a) \neq 0$, then
+  $\mathsf{bind}\,d\,f = \mathsf{bind}\,d\,g$. Behaviour off the support is
+  irrelevant because it carries no weight.
+\end{lemma}
+
+\begin{lemma}[Bijection on a uniform distribution]
+  \label{lem:uniform-bind-bij}
+  \uses{def:sdistr-ops, def:sdistr-uniform}
+  \lean{CatCrypt.Prob.SDistr.uniform_bind_bij}
+  \leanok
+  Pushing a bijection $f : \alpha \simeq \beta$ through a uniform distribution
+  yields the uniform distribution on the target:
+  $\mathsf{bind}\,(\mathsf{uniform}\,\alpha)\,(\lambda a.\,\mathsf{pure}\,(f\,a))
+   = \mathsf{uniform}\,\beta$. This is the reindexing invariance underlying
+  one-time-pad arguments.
+\end{lemma}
+
+\begin{lemma}[Bind support witness]
+  \label{lem:bind-support-witness}
+  \uses{def:sdistr-ops, def:sdistr-measures}
+  \lean{CatCrypt.Prob.SDistr.bind_support_witness}
+  \leanok
+  If a bind has nonzero probability on some final outcome $b$, that is
+  $(\mathsf{bind}\,d\,f)(\mathsf{some}\,b) \neq 0$, then there is an
+  intermediate outcome $a$ with $d(\mathsf{some}\,a) \neq 0$ and
+  $(f\,a)(\mathsf{some}\,b) \neq 0$. This extracts an existential witness from a
+  probability observation, and drives the unary probabilistic Hoare logic.
+\end{lemma}
+
+\section{Couplings}
+
+A coupling packages two sub-distributions into a joint distribution with the
+right marginals; lifting a relation through couplings is what makes
+probabilistic relational Hoare logic compose.
+
+\begin{definition}[Coupling]
+  \label{def:coupling}
+  \uses{def:sdistr, def:sdistr-ops}
+  \lean{CatCrypt.Prob.Coupling}
+  \leanok
+  A \emph{coupling} of $d_1 : \mathsf{SDistr}\,\alpha$ and
+  $d_2 : \mathsf{SDistr}\,\beta$ is a joint sub-distribution
+  $\mathsf{joint} : \mathsf{SDistr}(\alpha \times \beta)$ whose two projections
+  reproduce the given marginals: the left marginal of $\mathsf{joint}$ equals
+  $d_1$ and the right marginal equals $d_2$.
+\end{definition}
+
+\begin{definition}[Satisfying a relation]
+  \label{def:coupling-satisfies}
+  \uses{def:coupling}
+  \lean{CatCrypt.Prob.Coupling.satisfies}
+  \leanok
+  A coupling $c$ \emph{satisfies} a relation $R : \alpha \to \beta \to
+  \mathrm{Prop}$ when every jointly-supported pair is related: for all $a, b$,
+  if $c.\mathsf{joint}(\mathsf{some}\,(a,b)) \neq 0$ then $R\,a\,b$.
+\end{definition}
+
+\begin{definition}[Lifting a relation]
+  \label{def:liftr}
+  \uses{def:coupling, def:coupling-satisfies}
+  \lean{CatCrypt.Prob.liftR}
+  \leanok
+  A relation $R$ \emph{lifts} to sub-distributions $d_1$ and $d_2$, written
+  $d_1\,\langle R\rangle\#\,d_2$, when there exists a coupling of $d_1$ and
+  $d_2$ that satisfies $R$. This is the probabilistic analogue of a relational
+  postcondition.
+\end{definition}
+
+\begin{definition}[Diagonal and bijection couplings]
+  \label{def:coupling-constructions}
+  \uses{def:coupling, def:sdistr-ops}
+  \lean{CatCrypt.Prob.Coupling.diagonal, CatCrypt.Prob.Coupling.fromBij}
+  \leanok
+  The \emph{diagonal} coupling of $d$ with itself pairs each outcome with
+  itself, via $\mathsf{bind}\,d\,(\lambda a.\,\mathsf{pure}\,(a,a))$. The
+  \emph{bijection} coupling of $d$ with its image under $f : \alpha \simeq
+  \beta$ pairs each $a$ with $f\,a$, via
+  $\mathsf{bind}\,d\,(\lambda a.\,\mathsf{pure}\,(a, f\,a))$.
+\end{definition}
+
+\begin{lemma}[Reflexivity of lifting]
+  \label{lem:liftr-refl}
+  \uses{def:liftr, def:coupling-constructions}
+  \lean{CatCrypt.Prob.liftR_refl}
+  \leanok
+  Equality lifts to any sub-distribution: $d\,\langle {=}\rangle\#\,d$, witnessed
+  by the diagonal coupling.
+\end{lemma}
+
+\begin{lemma}[Lifting of pure]
+  \label{lem:liftr-pure}
+  \uses{def:liftr, def:sdistr-ops}
+  \lean{CatCrypt.Prob.liftR_pure}
+  \leanok
+  If $R\,a\,b$ holds then it lifts to the point masses:
+  $(\mathsf{pure}\,a)\,\langle R\rangle\#\,(\mathsf{pure}\,b)$.
+\end{lemma}
+
+\begin{theorem}[Lifting composes through bind]
+  \label{thm:liftr-bind}
+  \uses{def:liftr, lem:bind-congr-support, lem:liftr-pure}
+  \lean{CatCrypt.Prob.liftR_bind}
+  \leanok
+  If $R$ lifts to $d_1, d_2$ and, for every related pair $a, b$ with $R\,a\,b$,
+  the postcondition $S$ lifts to the continuations $f_1\,a, f_2\,b$, then $S$
+  lifts to the bound computations:
+  $(\mathsf{bind}\,d_1\,f_1)\,\langle S\rangle\#\,(\mathsf{bind}\,d_2\,f_2)$.
+  This is the sequencing rule of probabilistic relational Hoare logic.
+\end{theorem}
+
+\begin{lemma}[Uniform distributions lift along a bijection]
+  \label{lem:liftr-uniform-bij}
+  \uses{def:liftr, lem:uniform-bind-bij}
+  \lean{CatCrypt.Prob.liftR_uniform_bij}
+  \leanok
+  For a bijection $f : \alpha \simeq \beta$, the relation
+  $\lambda a\,b.\,f\,a = b$ lifts to the two uniform distributions:
+  $(\mathsf{uniform}\,\alpha)\,\langle \lambda a\,b.\,f\,a = b\rangle\#\,
+   (\mathsf{uniform}\,\beta)$.
+\end{lemma}
+
+\section{The birthday bound}
+
+\begin{theorem}[Gauss sum in extended reals]
+  \label{thm:gauss-sum}
+  \lean{CatCrypt.Prob.BirthdayBound.gauss_sum_ennreal}
+  \leanok
+  For any $q \in \mathbb{N}$ and $N \in \overline{\mathbb{R}}_{\geq 0}$,
+  \[
+    \sum_{i < q} \frac{i}{N} = \frac{q(q-1)/2}{N}.
+  \]
+\end{theorem}
+
+\begin{theorem}[Birthday bound from per-step bounds]
+  \label{thm:birthday-bound-sum}
+  \uses{thm:gauss-sum}
+  \lean{CatCrypt.Prob.BirthdayBound.birthday_bound_sum}
+  \leanok
+  If the collision probability at step $i$ is at most $i/N$ for every $i < q$,
+  then the total collision probability, bounded by the union bound, is at most
+  $q(q-1)/(2N)$:
+  \[
+    \sum_{i < q} \mathsf{step\_pr}(i) \leq \frac{q(q-1)/2}{N}.
+  \]
+\end{theorem}
+
+\begin{theorem}[Birthday bound for advantage]
+  \label{thm:birthday-advantage}
+  \uses{thm:birthday-bound-sum, def:spcomp}
+  \lean{CatCrypt.Prob.BirthdayBound.birthday_advantage}
+  \leanok
+  Given a family of games $G_0, \dots, G_q$ where the distinguishing advantage
+  of the step $i \to i+1$ is at most $i/N$, the advantage between the endpoints
+  $G_0$ and $G_q$ is at most $q(q-1)/(2N)$. This combines the birthday
+  arithmetic with the hybrid argument.
+\end{theorem}
+
+\section{The Schwartz--Zippel lemma}
+
+\begin{theorem}[Schwartz--Zippel]
+  \label{thm:schwartz-zippel}
+  \uses{def:spcomp-ops}
+  \lean{CatCrypt.Prob.schwartz_zippel}
+  \leanok
+  For a nonzero polynomial $\varphi$ over $\mathbb{Z}/p\mathbb{Z}$ with $p$
+  prime, a uniformly random point is a root with probability at most
+  $\deg\varphi / p$:
+  \[
+    \Pr_{x \leftarrow \mathbb{Z}/p\mathbb{Z}}[\varphi(x) = 0]
+    \;\leq\; \frac{\deg\varphi}{p}.
+  \]
+\end{theorem}
+
+\begin{corollary}[Polynomial identity testing]
+  \label{cor:poly-identity}
+  \uses{thm:schwartz-zippel}
+  \lean{CatCrypt.Prob.poly_identity_test}
+  \leanok
+  For distinct polynomials $\varphi \neq \psi$ over $\mathbb{Z}/p\mathbb{Z}$, a
+  uniformly random point satisfies $\varphi(x) = \psi(x)$ with probability at
+  most $\max(\deg\varphi, \deg\psi)/p$, obtained by applying Schwartz--Zippel to
+  the nonzero difference $\varphi - \psi$.
+\end{corollary}
+
+\section{XOR bijections and the one-time pad}
+
+\begin{definition}[XOR bijections]
+  \label{def:xor-bij}
+  \lean{CatCrypt.Prob.XorBij.xorEquiv, CatCrypt.Prob.XorBij.boolXorBij, CatCrypt.Prob.XorBij.boolXorBij_symm}
+  \leanok
+  For an involutive binary operation $\mathsf{op}$ satisfying
+  $\mathsf{op}\,(\mathsf{op}\,a\,b)\,b = a$, the map $k \mapsto \mathsf{op}\,k\,x$
+  is a self-inverse equivalence $\alpha \simeq \alpha$. Its specialisation to
+  boolean exclusive-or, $k \mapsto k \oplus x$, is the bijection underlying
+  one-time-pad, PRF, MAC, and PRG proofs.
+\end{definition}
+
+\begin{lemma}[Sampling through a bijection is indistinguishable]
+  \label{lem:rhoare-sample-bij}
+  \uses{def:xor-bij, lem:liftr-uniform-bij, thm:liftr-bind, lem:liftr-pure}
+  \lean{CatCrypt.Prob.XorBij.rHoare_sample_bij}
+  \leanok
+  For any bijection $f : \alpha \simeq \alpha$ on a finite nonempty type,
+  sampling a uniform key and applying $f$ is relationally equivalent to sampling
+  uniformly: the programs $k \leftarrow \mathsf{sample}\,\alpha;\;
+  \mathsf{pure}\,(f\,k)$ and $\mathsf{sample}\,\alpha$ are coupled by equality on
+  their outputs. Consequently every distinguisher has zero advantage against the
+  XOR one-time pad.
+\end{lemma}
+
+\section{Conditional probability}
+
+\begin{definition}[Set probability and conditioning]
+  \label{def:pmf-condprob}
+  \lean{PMF.prob, PMF.condProb}
+  \leanok
+  For a probability mass function $p$, the probability of a set $A$ is
+  $\Pr_p[A] = \sum_a \mathbf{1}_A(a)\,p(a)$, and the conditional probability of
+  $A$ given $B$ is $\Pr_p[A \mid B] = \Pr_p[A \cap B] / \Pr_p[B]$.
+\end{definition}
+
+\begin{theorem}[Bayes' theorem]
+  \label{thm:bayes}
+  \uses{def:pmf-condprob}
+  \lean{PMF.bayes_theorem}
+  \leanok
+  For any events $A, B$ under a mass function $p$,
+  $\Pr_p[A \mid B]\cdot\Pr_p[B] = \Pr_p[B \mid A]\cdot\Pr_p[A]$.
+\end{theorem}
+
+\begin{definition}[Bayesian inversion and recovery]
+  \label{def:bayes-inv}
+  \uses{def:pmf-condprob}
+  \lean{CatCrypt.Prob.bayesInv, CatCrypt.Prob.bayesInv_recovery}
+  \leanok
+  Given a prior $\pi$ over $\alpha$ and a likelihood $f : \alpha \to
+  \mathrm{PMF}\,\beta$, the posterior $\mathsf{bayesInv}\,\pi\,f\,b$ is the
+  normalisation of $a \mapsto \pi(a)\cdot f(a)(b)$ (defined whenever the
+  $\beta$-marginal at $b$ is nonzero). It satisfies the discrete recovery
+  equation $\mathsf{posterior}(a)\cdot\mathsf{marginal}(b) = \pi(a)\cdot f(a)(b)$.
+\end{definition}
