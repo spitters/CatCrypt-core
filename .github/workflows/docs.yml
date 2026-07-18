@@ -1,8 +1,11 @@
 name: docs
 
 on:
-  push:
-    branches: [main]
+  # NOT on every push — the doc-gen4 render documents the full Mathlib closure
+  # (multi-hour, cold on the first run / any Mathlib bump), so triggering it per
+  # commit burns Actions minutes. Publish docs only on a release, or on demand.
+  release:
+    types: [published]
   workflow_dispatch:
 
 # Allow the workflow to publish to GitHub Pages.
