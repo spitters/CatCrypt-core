@@ -137,6 +137,11 @@ import CatCryptCore.Examples.Cryptobox.AE
 import CatCryptCore.Examples.Cryptobox.Cryptobox
 import CatCryptCore.Examples.Cryptobox.GameHopping
 import CatCryptCore.Examples.Cryptobox.HYBRID
+import CatCryptCore.Examples.Commitments.CommitmentScheme
+import CatCryptCore.Examples.Commitments.PolyCommitScheme
+import CatCryptCore.Examples.Commitments.KZG.Def
+import CatCryptCore.Examples.Commitments.KZG.KnowledgeSoundness
+import CatCryptCore.Examples.Commitments.Pedersen
 import CatCryptCore.Examples.EncryptThenMAC
 import CatCryptCore.Examples.BasicHash
 import CatCryptCore.Examples.KEMDEM
