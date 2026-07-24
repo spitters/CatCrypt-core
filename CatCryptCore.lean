@@ -120,6 +120,16 @@ import CatCryptCore.Examples.Sigma
 import CatCryptCore.Examples.PKE.Scheme
 import CatCryptCore.Examples.PKE.OneToMany
 import CatCryptCore.Examples.PKE.MultiInstance
+import CatCryptCore.Examples.Cryptobox.Scheme
+import CatCryptCore.Examples.Cryptobox.KEY
+import CatCryptCore.Examples.Cryptobox.PKEY
+import CatCryptCore.Examples.Cryptobox.SAE
+import CatCryptCore.Examples.Cryptobox.NIKE
+import CatCryptCore.Examples.Cryptobox.PKAE
+import CatCryptCore.Examples.Cryptobox.AE
+import CatCryptCore.Examples.Cryptobox.Cryptobox
+import CatCryptCore.Examples.Cryptobox.GameHopping
+import CatCryptCore.Examples.Cryptobox.HYBRID
 import CatCryptCore.Examples.EncryptThenMAC
 import CatCryptCore.Examples.BasicHash
 import CatCryptCore.Examples.KEMDEM
