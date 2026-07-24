@@ -117,6 +117,9 @@ import CatCryptCore.Examples.PRFMAC
 import CatCryptCore.Examples.PRFPRG
 import CatCryptCore.Examples.PRG
 import CatCryptCore.Examples.Sigma
+import CatCryptCore.Examples.PKE.Scheme
+import CatCryptCore.Examples.PKE.OneToMany
+import CatCryptCore.Examples.PKE.MultiInstance
 import CatCryptCore.Examples.EncryptThenMAC
 import CatCryptCore.Examples.BasicHash
 import CatCryptCore.Examples.KEMDEM
