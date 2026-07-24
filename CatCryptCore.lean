@@ -17,6 +17,7 @@ import CatCryptCore.Core.Location
 import CatCryptCore.Core.Heap
 import CatCryptCore.Core.Code
 import CatCryptCore.Core.SPTree
+import CatCryptCore.Core.StdDoBridge
 
 -- Relational logic (pRHL)
 import CatCryptCore.Relational.Basic
@@ -73,6 +74,7 @@ import CatCryptCore.Nominal
 -- Tactics
 import CatCryptCore.Tactics
 import CatCryptCore.Tactics.BindVcgenSum
+import CatCryptCore.Tactics.VC
 
 -- Crypto foundation
 import CatCryptCore.Crypto.Game
@@ -86,6 +88,7 @@ import CatCryptCore.Crypto.HybridArgument
 import CatCryptCore.Crypto.NomAdvantage
 import CatCryptCore.Crypto.EvalComplete
 import CatCryptCore.Crypto.NomPkgBridge
+import CatCryptCore.Crypto.EasyCryptBridge
 import CatCryptCore.Crypto.BadEvent
 import CatCryptCore.Crypto.ForkingLemma
 import CatCryptCore.Crypto.GameReject
