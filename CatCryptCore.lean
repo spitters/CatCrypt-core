@@ -110,9 +110,13 @@ import CatCryptCore.Crypto.KeyAgreement.MontgomeryLadder
 import CatCryptCore.Crypto.KeyAgreement.MontgomeryAsWeierstrass
 import CatCryptCore.Crypto.KeyAgreement.MontgomeryXOnly
 import CatCryptCore.Crypto.KeyAgreement.Curve25519
+import CatCryptCore.Examples.DeepHybrid
 import CatCryptCore.Examples.OneTimePad
 import CatCryptCore.Examples.PRF
+import CatCryptCore.Examples.PRFMAC
+import CatCryptCore.Examples.PRFPRG
 import CatCryptCore.Examples.PRG
+import CatCryptCore.Examples.Sigma
 import CatCryptCore.Examples.EncryptThenMAC
 import CatCryptCore.Examples.BasicHash
 import CatCryptCore.Examples.KEMDEM
