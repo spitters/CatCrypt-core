@@ -604,9 +604,7 @@ theorem cache_hit_eq_compute {K V : Type} [DecidableEq K]
     (match cache k with
     | some v => v
     | none => f k) = f k := by
-  cases h : cache k with
-  | none => rfl
-  | some v => exact h_inv k v h
+  cases h : cache k with | none => rfl | some v => exact h_inv k v h
 
 set_option linter.unusedSectionVars false in
 /-- Variant with `Option.getD`: looking up `k` in a cache that satisfies
@@ -615,9 +613,7 @@ theorem cache_getD_eq_compute {K V : Type} [DecidableEq K]
     (f : K → V) (cache : K → Option V) (k : K)
     (h_inv : ∀ k' v, cache k' = some v → v = f k') :
     (cache k).getD (f k) = f k := by
-  cases h : cache k with
-  | none => rfl
-  | some v => exact h_inv k v h
+  cases h : cache k with | none => rfl | some v => exact h_inv k v h
 
 /-! ## NIKE Reduction Structure -/
 

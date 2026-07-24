@@ -195,7 +195,6 @@ noncomputable def pkeyOracles_nocc (N : @NIKEScheme CT) : PKEYOracles :=
 theorem PKEY_eq_with_oracles (N : @NIKEScheme CT) (b : Bool)
     (A : PKEYOracles → SPComp Bool) :
     PKEY N b A = A (if b then pkeyOracles_cc N else pkeyOracles_nocc N) := by
-  simp only [PKEY, pkeyOracles_cc, pkeyOracles_nocc]
   cases b <;> rfl
 
 /-! ## PKEY Switching Lemma -/
@@ -508,9 +507,7 @@ omit CT in
     Note: `pkeyBadInstr` is STRICTLY stronger than `pkeyBadFinal` because it also
     catches duplicate honest-honest collisions. -/
 theorem pkeyBadInstr_implies_flag_set (h : Heap) :
-    pkeyBadInstr h → Heap.get h pkeyCollFlag = true := by
-  intro hbad
-  exact hbad
+    pkeyBadInstr h → Heap.get h pkeyCollFlag = true := id
 
 /-! ### Per-Query Collision Probability
 

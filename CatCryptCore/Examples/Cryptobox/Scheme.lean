@@ -150,11 +150,7 @@ noncomputable def sortSID [LinearOrder CT.PK] (pk1 pk2 : CT.PK) : SID :=
 theorem sortSID_comm [LinearOrder CT.PK] (pk1 pk2 : CT.PK) :
     sortSID pk1 pk2 = sortSID pk2 pk1 := by
   unfold sortSID
-  by_cases h1 : pk1 ≤ pk2 <;> by_cases h2 : pk2 ≤ pk1
-  · simp [le_antisymm h1 h2]
-  · simp [h1, h2]
-  · simp [h1, h2]
-  · exact absurd (le_of_not_ge h1) h2
+  split <;> split <;> first | rfl | (congr 1 <;> order)
 
 /-! ## NIKE Commutativity
 
