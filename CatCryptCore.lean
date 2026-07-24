@@ -88,11 +88,13 @@ import CatCryptCore.Crypto.EvalComplete
 import CatCryptCore.Crypto.NomPkgBridge
 import CatCryptCore.Crypto.BadEvent
 import CatCryptCore.Crypto.ForkingLemma
+import CatCryptCore.Crypto.GameReject
 import CatCryptCore.Crypto.GeneralForkingLemma
 import CatCryptCore.Crypto.SwitchingLemma
 import CatCryptCore.Crypto.MultiQueryPRF
 import CatCryptCore.Crypto.PRFAssumption
 import CatCryptCore.Crypto.Assumptions.Catalog
+import CatCryptCore.Crypto.BLSSig.Security
 
 -- UC ideal functionalities (F_commit, F_ZK, F_OT) + shared group scaffolding
 import CatCryptCore.Examples.GroupParam
@@ -123,6 +125,14 @@ import CatCryptCore.Examples.EtMCCA
 import CatCryptCore.Examples.CTRMode
 import CatCryptCore.Examples.CBCMode
 import CatCryptCore.Examples.DiffieHellman
+import CatCryptCore.Examples.CyclicGroupDDH
+import CatCryptCore.Examples.HashedElGamal
+import CatCryptCore.Examples.ChaumPedersen
+import CatCryptCore.Examples.UniversalHash
+import CatCryptCore.Examples.DetCPA
+import CatCryptCore.Examples.CoinToss
+import CatCryptCore.Examples.INDCPA
+import CatCryptCore.Examples.ElGamalDDH
 
 /-! # CatCrypt Core — umbrella
 

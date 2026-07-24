@@ -163,8 +163,8 @@ noncomputable def elgamalEnc (P : PairingGroup) : EncScheme where
     the ElGamal decryption formula inverts the encryption formula. -/
 theorem elgamal_dec_enc (sk r : ZMod P.p) (m : P.G₁) :
     ((P.g₁ ^ᵍ sk) ^ᵍ r * m) * ((P.g₁ ^ᵍ r) ^ᵍ sk)⁻¹ = m := by
-  rw [zpowZMod₁_zpowZMod₁, zpowZMod₁_zpowZMod₁, mul_comm sk r]
-  rw [mul_comm ((P.g₁ ^ᵍ (r * sk))) m, mul_assoc, mul_inv_cancel, mul_one]
+  rw [zpowZMod₁_zpowZMod₁, zpowZMod₁_zpowZMod₁, mul_comm sk r,
+    mul_comm ((P.g₁ ^ᵍ (r * sk))) m, mul_assoc, mul_inv_cancel, mul_one]
 
 /-! ## The reduction adversary -/
 
@@ -209,12 +209,7 @@ private theorem mask_absorb (gb m : P.G₁) (A : (P.G₁ × P.G₁) → SPComp B
 theorem elgamal_ideal_eq (m₀ m₁ : P.G₁) (A : (P.G₁ × P.G₁) → SPComp Bool) :
     DDH_Game_Ideal (elgamalDDH P) (elgamalReduction m₀ A) =
       DDH_Game_Ideal (elgamalDDH P) (elgamalReduction m₁ A) := by
-  simp only [DDH_Game_Ideal, elgamalDDH, elgamalReduction]
-  congr 1
-  funext p₁
-  congr 1
-  funext p₂
-  rw [mask_absorb, mask_absorb]
+  simp only [DDH_Game_Ideal, elgamalDDH, elgamalReduction, mask_absorb]
 
 /-! ## The IND-CPA → DDH reduction bound -/
 
@@ -259,33 +254,28 @@ theorem elgamal_indcpa_le_ddh (m₀ m₁ : P.G₁) (A : (P.G₁ × P.G₁) → S
     _ = Advantage R0r R0i + Advantage R1r R1i := by
           rw [zero_add, Advantage_sym R1i R1r]
 
-/-- **ElGamal one-time real-or-random secrecy is EXACTLY a single DDH advantage.**
-    This is the tight analog of SSProve-Rocq's `OT_CPA_elgamal`
-    (`AdvOf (OT_CPA elgamal) A = AdvOf (LDDH G) (A ∘ RED)`), whose `OT_CPA` game is a
-    *real-or-random* one-time-secrecy game: the `true` branch is a genuine encryption of
-    `m₀`, the `false` branch is a ciphertext whose second component is uniformly random
-    and independent of the message.
+/-- **ElGamal real-or-random secrecy equals a single DDH advantage.** The analog of
+    SSProve-Rocq's `OT_CPA_elgamal` (`AdvOf (OT_CPA elgamal) A = AdvOf (LDDH G) (A ∘ RED)`),
+    whose `OT_CPA` game is a real-or-random one-time-secrecy game: the `true` branch
+    encrypts `m₀`, the `false` branch returns a ciphertext whose second component is
+    uniform and independent of the message.
 
     The left game is a real ElGamal encryption of `m₀` post-composed with the
-    distinguisher; the right game is the ideal (random-ciphertext) game. Their
-    distinguishing advantage equals — with NO factor `2` and NO two-term sum — the DDH
-    advantage of the single reduction `elgamalReduction m₀ A`:
+    distinguisher; the right is the ideal random-ciphertext game. Their distinguishing
+    advantage is the DDH advantage of the single reduction `elgamalReduction m₀ A`, with
+    no factor of `2` and no two-term sum:
 
     `Advantage (bind (INDCPA_Game ⋯ m₀ m₁ true) A) (DDH_Game_Ideal ⋯ (elgamalReduction m₁ A))`
     `  = DDH_Advantage (elgamalDDH P) (elgamalReduction m₀ A)`.
 
-    The ideal game on the left is built from the `m₁`-reduction, yet the advantage is
-    exactly the `m₀`-reduction's DDH advantage: this is precisely because the two ideal
-    games coincide (`elgamal_ideal_eq`) — the uniform mask absorbs the message. The proof
-    is the exact-equality core underlying the looser `elgamal_indcpa_le_ddh` bound:
-    the real game is a real DDH game (`elgamal_real₀_eq`) and the ideal is
-    message-independent (`elgamal_ideal_eq`).
+    The ideal game on the left uses the `m₁`-reduction, yet the advantage is the
+    `m₀`-reduction's, because the two ideal games coincide (`elgamal_ideal_eq`) — the
+    uniform mask absorbs the message. The real game is a DDH-real game
+    (`elgamal_real₀_eq`).
 
-    Note: the two-message left-or-right `INDCPA_Adv` (encrypt `m₀` vs encrypt `m₁`) is a
-    *different* quantity; it genuinely requires the two-term bound `elgamal_indcpa_le_ddh`
-    (the real encryption of `m₁` is not the ideal random ciphertext). SSProve's exact
-    result — reproduced here — is the real-or-random one, which is the single-DDH-term
-    statement. -/
+    The two-message `INDCPA_Adv` (encrypt `m₀` vs encrypt `m₁`) is a different quantity
+    that needs the two-term bound `elgamal_indcpa_le_ddh`, since a real encryption of `m₁`
+    is not the ideal random ciphertext. -/
 theorem elgamal_indcpa_eq_ddh (m₀ m₁ : P.G₁) (A : (P.G₁ × P.G₁) → SPComp Bool) :
     Advantage (SPComp.bind (INDCPA_Game (elgamalEnc P) m₀ m₁ true) A)
               (DDH_Game_Ideal (elgamalDDH P) (elgamalReduction m₁ A))

@@ -15,13 +15,13 @@ a decryption oracle on every ciphertext except the challenge. Following Rosulek,
 *The Joy of Cryptography*, §10 (authenticated encryption), and Bellare &
 Namprempre, *Authenticated Encryption: Relations among Notions*.
 
-## The honest headline: a reduction, not perfect security
+## A reduction, not perfect security
 
 The natural hope is that Encrypt-then-MAC achieves *perfect* IND-CCA (advantage
 `0`) because "a MAC that rejects forged ciphertexts makes the decryption oracle
 useless." That hope is **false** in this information-theoretic single-shot model,
-for two independent reasons, both of which are genuine cryptographic content
-rather than framework artifacts:
+for two independent reasons, both cryptographic content rather than framework
+artifacts:
 
 1. **No perfect MAC exists over a finite tag space.** An unbounded adversary can
    present an off-challenge ciphertext with a guessed tag; it verifies with
@@ -42,7 +42,7 @@ The correct, non-vacuous statement is therefore the standard
 by the IND-CPA advantage plus the decryption-oracle authenticity gaps. This is
 `SecurityDefs.INDCCA_reduces_to_INDCPA`, which holds for *any* scheme. For the
 XOR instantiation the IND-CPA contribution collapses to exactly `0`
-(`boolEtM_perfect_indcpa`), leaving only the two integrity gaps — the genuine
+(`boolEtM_perfect_indcpa`), leaving only the two integrity gaps — the
 MAC-unforgeability terms.
 
 ## Main result
@@ -77,10 +77,9 @@ from the always-reject oracle in each world.
 The general reduction `INDCCA_reduces_to_INDCPA` supplies a middle IND-CPA term;
 here it is exactly `0` by `boolEtM_perfect_indcpa`, the perfect IND-CPA security
 of the one-time pad. What remains is pure ciphertext integrity: the adversary can
-only gain from the decryption oracle by forging, and this bound makes that the
-*only* thing it can gain from. The bound is not `0`: over a single-bit tag the
-XOR MAC is forgeable, so both gaps are strictly positive — `BoolEtM` is not
-IND-CCA secure, exactly as it should not be. -/
+only gain from the decryption oracle by forging, and this bound isolates that
+gain. The bound is not `0`: over a single-bit tag the XOR MAC is forgeable, so
+both gaps are strictly positive — `BoolEtM` is not IND-CCA secure. -/
 theorem boolEtM_indcca_reduces (m₀ m₁ : Bool)
     (A : (BoolEtM.Ciphertext → SPComp (Option BoolEtM.Plaintext)) →
          BoolEtM.Ciphertext → SPComp Bool) :

@@ -25,9 +25,10 @@ proofs where security bounds depend on the number of oracle queries.
 ## Main results
 
 * `pHoare_bounded_call` - pHL rule for a single bounded oracle call
-* `pHoare_query_bound` - After q bounded calls, counter ≤ q
-* `lossless_bounded_call` - Bounded oracle call is lossless when under budget
-* `prBad_induction` - Inductive bound: Pr[bad after q calls] ≤ q * ε
+* `prEvent_bind_eq` - Bad mass of a bind as the expectation of the continuation's bad mass
+* `prEventComp_bind_step_le` - Per-step subadditivity: one step adds at most `ε`
+* `prBad_induction` - Adaptive union bound: Pr[bad after q calls] ≤ q * ε
+* `advantage_le_query_bound_derived` - Advantage bound `≤ q * ε` from per-step freshness
 
 ## Design
 
@@ -57,6 +58,7 @@ namespace CatCrypt.Unary
 
 open CatCrypt.Core CatCrypt.Prob CatCrypt.Crypto
 open scoped ENNReal
+open Classical
 
 variable {K V α : Type*}
 
@@ -179,16 +181,6 @@ Rather than proving this inductively over the number of calls
 (which requires tracking execution traces), we provide it as
 a composition lemma that the user applies. -/
 
-/-- If pHoare proves the counter is bounded by q, and the bad event
-    probability in the postcondition is bounded, combine them. -/
-theorem prBad_of_bounded_count
-    (G : SPComp Bool) (h₀ : Heap)
-    (bad : Heap → Prop) (count : QueryCounter)
-    (q : ℕ) (ε : ℝ≥0∞)
-    (h_count : pHoare (fun h => h = h₀) G (fun _ h' => count h' ≤ q))
-    (h_bad_bound : prEventComp G h₀ (fun _ h' => bad h') ≤ q * ε) :
-    prEventComp G h₀ (fun _ h' => bad h') ≤ q * ε := h_bad_bound
-
 /-- Birthday bound pattern: q queries to a domain of size N
     gives collision probability at most q * (q-1) / (2 * N).
 
@@ -229,6 +221,233 @@ theorem query_bound_from_zero
     (c : SPComp Bool) (q : ℕ)
     (h : pHoare (counterAt count 0) c (fun _ h' => count h' ≤ q)) :
     pHoare (counterAt count 0) c (fun _ h' => count h' ≤ q) := h
+
+/-! ## Adaptive q-Query Union Bound
+
+A `q`-fold loop of oracle calls, where each call adds at most `ε` to the
+bad-event probability, has total bad probability at most `q * ε`.
+
+The loop is `repeatStep step q`, an unrolled `q`-fold sequential composition of
+a single step `step : SPComp Unit`. The bound is proved by induction on `q`
+from a per-step increment hypothesis; that increment is in turn derived from a
+single-step freshness bound via `prEventComp_bind_step_le`. -/
+
+/-- The total mass of a sub-distribution is at most one. -/
+theorem sdistr_mass_le_one {β : Type*} (d : SDistr β) : SDistr.mass d ≤ 1 := by
+  unfold SDistr.mass; exact tsub_le_self
+
+/-- A `q`-fold sequential iteration of a single step computation.
+    `repeatStep step 0` is the trivial computation; `repeatStep step (q+1)`
+    runs `repeatStep step q` and then one more `step`. -/
+noncomputable def repeatStep (step : SPComp Unit) : ℕ → SPComp Unit
+  | 0 => SPComp.pure ()
+  | q + 1 => (repeatStep step q).bind (fun _ => step)
+
+/-- The bad-event probability of a point mass at `(a, h)` is the indicator of
+    `bad h`: `1` if `bad h`, else `0`. -/
+theorem prEvent_pure {δ : Type*} (a : δ) (h : Heap) (bad : Heap → Prop) :
+    prEvent (SDistr.pure (a, h)) (fun _ h' => bad h') =
+      (if bad h then 1 else 0) := by
+  unfold prEvent
+  rw [tsum_eq_single (a, h)]
+  · by_cases hb : bad h <;>
+      simp [hb, SDistr.pure_apply_some]
+  · intro p hp
+    have hz : (SDistr.pure (a, h) : SDistr (δ × Heap)) (some p) = 0 := by
+      rw [SDistr.pure_apply_some]
+      exact if_neg (fun heq => hp heq.symm)
+    simp [hz]
+
+/-- The bad-event probability of a pure computation from `h₀` is the indicator
+    of `bad h₀`: `1` if `bad h₀`, else `0`. -/
+theorem prEventComp_pure (a : α) (h₀ : Heap) (bad : Heap → Prop) :
+    prEventComp (SPComp.pure a) h₀ (fun _ h' => bad h') =
+      (if bad h₀ then 1 else 0) := by
+  unfold prEventComp
+  rw [SPComp.pure_def]
+  exact prEvent_pure a h₀ bad
+
+/-- Pointwise value of a sub-distribution `bind` at a `some` outcome: the
+    probability sums, over reachable intermediate outcomes, the intermediate
+    probability times the continuation probability. -/
+theorem SDistr_bind_apply_some {β γ : Type*} (d : SDistr (β × Heap))
+    (g : β × Heap → SDistr (γ × Heap)) (b : γ × Heap) :
+    (d.bind g) (some b) = ∑' a : β × Heap, d (some a) * (g a) (some b) := by
+  unfold SDistr.bind
+  rw [PMF.bind_apply, tsum_option_split]
+  simp only [SDistr.fail_apply_some, mul_zero, zero_add]
+
+/-- Bad-mass of a sub-distribution `bind`: the event probability of `d.bind g`
+    is the `d`-expectation of the event probability of the continuation `g`
+    started from each reachable intermediate outcome. -/
+theorem prEvent_bind_eq {β γ : Type*} (d : SDistr (β × Heap))
+    (g : β × Heap → SDistr (γ × Heap)) (E : γ → Heap → Prop) :
+    prEvent (d.bind g) E =
+      ∑' q : β × Heap, d (some q) * prEvent (g q) E := by
+  unfold prEvent
+  calc ∑' p : γ × Heap, (if E p.1 p.2 then (d.bind g) (some p) else 0)
+      = ∑' p : γ × Heap, ∑' a : β × Heap,
+          (if E p.1 p.2 then d (some a) * (g a) (some p) else 0) := by
+        apply tsum_congr; intro p; rw [SDistr_bind_apply_some]
+        by_cases hE : E p.1 p.2
+        · simp only [hE, if_true]
+        · simp only [hE, if_false, tsum_zero]
+    _ = ∑' a : β × Heap, ∑' p : γ × Heap,
+          (if E p.1 p.2 then d (some a) * (g a) (some p) else 0) := ENNReal.tsum_comm
+    _ = ∑' a : β × Heap, d (some a) *
+          ∑' p : γ × Heap, (if E p.1 p.2 then (g a) (some p) else 0) := by
+        apply tsum_congr; intro a
+        rw [← ENNReal.tsum_mul_left]
+        apply tsum_congr; intro p
+        by_cases hE : E p.1 p.2
+        · simp only [hE, if_true]
+        · simp only [hE, if_false, mul_zero]
+
+/-- Decomposition of the bad-event mass of a loop step: the bad mass of
+    `m.bind (fun _ => step)` is the `m`-expectation of the bad mass of `step`
+    started from each reachable intermediate heap. -/
+theorem prEvent_bind_step_eq_tsum
+    (m : SPComp Unit) (step : SPComp Unit) (h₀ : Heap) (bad : Heap → Prop) :
+    prEventComp (m.bind (fun _ => step)) h₀ (fun _ h' => bad h') =
+      ∑' p : Unit × Heap,
+        (m h₀) (some p) * prEvent (step p.2) (fun _ h' => bad h') := by
+  unfold prEventComp
+  rw [SPComp.bind_def, prEvent_bind_eq]
+
+/-- Per-step subadditivity of bad mass: if from every non-bad reachable heap the
+    single step introduces bad with probability at most `ε`, then prepending any
+    prefix `m` adds at most `ε` to the bad probability. -/
+theorem prEventComp_bind_step_le
+    (m : SPComp Unit) (step : SPComp Unit) (h₀ : Heap) (bad : Heap → Prop)
+    (ε : ℝ≥0∞)
+    (h_fresh : ∀ h₁ : Heap, ¬ bad h₁ →
+      prEvent (step h₁) (fun _ h' => bad h') ≤ ε) :
+    prEventComp (m.bind (fun _ => step)) h₀ (fun _ h' => bad h') ≤
+      prEventComp m h₀ (fun _ h' => bad h') + ε := by
+  rw [prEvent_bind_step_eq_tsum]
+  -- Bound each term by (m-mass at p) * (bad h₁ ? 1 : ε).
+  have hterm : ∀ p : Unit × Heap,
+      (m h₀) (some p) * prEvent (step p.2) (fun _ h' => bad h') ≤
+        (if bad p.2 then (m h₀) (some p) else 0) +
+        (if ¬ bad p.2 then (m h₀) (some p) else 0) * ε := by
+    intro p
+    by_cases hb : bad p.2
+    · simp only [hb, if_true, not_true_eq_false, if_false, zero_mul, add_zero]
+      calc (m h₀) (some p) * prEvent (step p.2) (fun _ h' => bad h')
+          ≤ (m h₀) (some p) * 1 :=
+            mul_le_mul' le_rfl ((prEvent_le_mass _ _).trans (sdistr_mass_le_one _))
+        _ = (m h₀) (some p) := mul_one _
+    · simp only [hb, if_false, not_false_eq_true, if_true, zero_add]
+      exact mul_le_mul' le_rfl (h_fresh p.2 hb)
+  calc ∑' p : Unit × Heap,
+          (m h₀) (some p) * prEvent (step p.2) (fun _ h' => bad h')
+      ≤ ∑' p : Unit × Heap,
+          ((if bad p.2 then (m h₀) (some p) else 0) +
+           (if ¬ bad p.2 then (m h₀) (some p) else 0) * ε) :=
+        ENNReal.tsum_le_tsum hterm
+    _ = (∑' p : Unit × Heap, (if bad p.2 then (m h₀) (some p) else 0)) +
+        (∑' p : Unit × Heap, (if ¬ bad p.2 then (m h₀) (some p) else 0) * ε) :=
+        ENNReal.tsum_add
+    _ ≤ prEventComp m h₀ (fun _ h' => bad h') + ε := by
+        apply add_le_add
+        · exact le_of_eq rfl
+        · rw [ENNReal.tsum_mul_right]
+          calc (∑' p : Unit × Heap, (if ¬ bad p.2 then (m h₀) (some p) else 0)) * ε
+              ≤ (∑' p : Unit × Heap, (m h₀) (some p)) * ε :=
+                mul_le_mul' (tsum_ite_le _ _) le_rfl
+            _ = SDistr.mass (m h₀) * ε := by rw [tsum_some_eq_mass]
+            _ ≤ 1 * ε := mul_le_mul' (sdistr_mass_le_one _) le_rfl
+            _ = ε := one_mul ε
+
+/-- **Adaptive q-query union bound.**
+
+    A `q`-fold loop of `step`, where each single step from a non-bad heap
+    introduces the bad event with probability at most `ε`, has total bad
+    probability at most `q * ε`.
+
+    Proved by induction on `q`: the base case is `0` (the initial heap is
+    non-bad); the step case combines the inductive hypothesis with the per-step
+    increment `prEventComp_bind_step_le`. -/
+theorem prBad_induction
+    (step : SPComp Unit) (h₀ : Heap) (bad : Heap → Prop) (ε : ℝ≥0∞)
+    (h_start : ¬ bad h₀)
+    (h_fresh : ∀ h₁ : Heap, ¬ bad h₁ →
+      prEvent (step h₁) (fun _ h' => bad h') ≤ ε)
+    (q : ℕ) :
+    prEventComp (repeatStep step q) h₀ (fun _ h' => bad h') ≤ q * ε := by
+  induction q with
+  | zero =>
+    simp only [repeatStep, Nat.cast_zero, zero_mul, nonpos_iff_eq_zero]
+    rw [prEventComp_pure]
+    exact if_neg h_start
+  | succ q ihq =>
+    calc prEventComp (repeatStep step (q + 1)) h₀ (fun _ h' => bad h')
+        = prEventComp ((repeatStep step q).bind (fun _ => step)) h₀
+            (fun _ h' => bad h') := rfl
+      _ ≤ prEventComp (repeatStep step q) h₀ (fun _ h' => bad h') + ε :=
+          prEventComp_bind_step_le _ step h₀ bad ε h_fresh
+      _ ≤ (q : ℝ≥0∞) * ε + ε := add_le_add ihq le_rfl
+      _ = ((q : ℝ≥0∞) + 1) * ε := by rw [add_mul, one_mul]
+      _ = ((q + 1 : ℕ) : ℝ≥0∞) * ε := by push_cast; ring
+
+/-- Adaptive q-query union bound over a loop of counted oracle calls.
+
+    If `step` from any non-bad heap introduces the bad event with probability at
+    most `ε`, and the initial heap is non-bad, then after `q` iterations the bad
+    probability is at most `q * ε`. Derived from the per-step freshness
+    hypothesis by `prBad_induction`, not assumed. -/
+theorem prBad_of_bounded_count
+    (step : SPComp Unit) (h₀ : Heap) (bad : Heap → Prop)
+    (q : ℕ) (ε : ℝ≥0∞)
+    (h_start : ¬ bad h₀)
+    (h_fresh : ∀ h₁ : Heap, ¬ bad h₁ →
+      prEvent (step h₁) (fun _ h' => bad h') ≤ ε) :
+    prEventComp (repeatStep step q) h₀ (fun _ h' => bad h') ≤ q * ε :=
+  prBad_induction step h₀ bad ε h_start h_fresh q
+
+/-- A `q`-query loop presented as a `Bool` game: run `repeatStep step q`, then
+    return the fixed answer `b₀`. The tail `SPComp.pure b₀` leaves the heap
+    unchanged, so it does not affect the bad-event probability. -/
+noncomputable def loopGame (step : SPComp Unit) (q : ℕ) (b₀ : Bool) : SPComp Bool :=
+  (repeatStep step q).bind (fun _ => SPComp.pure b₀)
+
+/-- The bad-event probability of `loopGame` equals that of the underlying loop:
+    the deterministic `Bool`-returning tail preserves the final heap. -/
+theorem prEventComp_loopGame
+    (step : SPComp Unit) (q : ℕ) (b₀ : Bool) (h₀ : Heap) (bad : Heap → Prop) :
+    prEventComp (loopGame step q b₀) h₀ (fun _ h' => bad h') =
+      prEventComp (repeatStep step q) h₀ (fun _ h' => bad h') := by
+  unfold loopGame prEventComp
+  rw [SPComp.bind_def, prEvent_bind_eq]
+  unfold prEvent
+  apply tsum_congr; rintro ⟨u, h'⟩
+  show (repeatStep step q h₀) (some (u, h')) *
+      prEvent (SDistr.pure (b₀, h')) (fun _ h'' => bad h'')
+    = (if bad h' then (repeatStep step q h₀) (some (u, h')) else 0)
+  rw [prEvent_pure]
+  by_cases hb : bad h' <;> simp [hb]
+
+/-- **Adaptive q-query union bound as an advantage bound.**
+
+    For the `q`-query game `loopGame step q b₀`, if each step from a non-bad heap
+    introduces the bad event with probability at most `ε`, and the game agrees
+    with `G₁` on all non-bad outcomes (and is lossless), then the advantage is at
+    most `q * ε`. The bad bound is supplied by `prBad_induction`, not assumed. -/
+theorem advantage_le_query_bound_derived
+    (step : SPComp Unit) (q : ℕ) (b₀ : Bool) (G₁ : SPComp Bool)
+    (bad : Heap → Prop) (ε : ℝ≥0∞)
+    (h_start : ¬ bad Heap.empty)
+    (h_fresh : ∀ h₁ : Heap, ¬ bad h₁ →
+      prEvent (step h₁) (fun _ h' => bad h') ≤ ε)
+    (h_agree : ∀ b h', ¬ bad h' →
+      (loopGame step q b₀ Heap.empty) (some (b, h')) =
+      (G₁ Heap.empty) (some (b, h')))
+    (hll : isLossless (loopGame step q b₀)) :
+    Advantage (loopGame step q b₀) G₁ ≤ q * ε := by
+  refine (failure_event_lemma (loopGame step q b₀) G₁ Heap.empty bad h_agree
+    (isLossless_implies_if _ hll)).trans ?_
+  rw [prEventComp_loopGame]
+  exact prBad_induction step Heap.empty bad ε h_start h_fresh q
 
 /-! ## Integration with Failure Event Lemma
 

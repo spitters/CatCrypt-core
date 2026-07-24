@@ -144,4 +144,26 @@ structure GroupParam where
 attribute [instance] GroupParam.finG GroupParam.neG GroupParam.decG GroupParam.finScalar
   GroupParam.neScalar GroupParam.decScalar
 
+/-! ## Derived scalar-field lemmas -/
+
+/-- Multiplication distributes over negation: `a · (-b) = -(a · b)`. -/
+lemma scalarMul_neg (gp : GroupParam) (a b : gp.Scalar) :
+    gp.scalarMul a (gp.scalarNeg b) = gp.scalarNeg (gp.scalarMul a b) := by
+  have h : gp.scalarAdd (gp.scalarMul a b) (gp.scalarMul a (gp.scalarNeg b)) = gp.scalarZero := by
+    rw [← gp.scalarMul_add, gp.scalarAdd_neg, gp.scalarMul_zero]
+  calc gp.scalarMul a (gp.scalarNeg b)
+      = gp.scalarAdd gp.scalarZero (gp.scalarMul a (gp.scalarNeg b)) := by rw [gp.scalarZero_add]
+    _ = gp.scalarAdd (gp.scalarAdd (gp.scalarNeg (gp.scalarMul a b)) (gp.scalarMul a b))
+          (gp.scalarMul a (gp.scalarNeg b)) := by rw [gp.scalarNeg_add]
+    _ = gp.scalarAdd (gp.scalarNeg (gp.scalarMul a b))
+          (gp.scalarAdd (gp.scalarMul a b) (gp.scalarMul a (gp.scalarNeg b))) := by
+          rw [gp.scalarAdd_assoc]
+    _ = gp.scalarAdd (gp.scalarNeg (gp.scalarMul a b)) gp.scalarZero := by rw [h]
+    _ = gp.scalarNeg (gp.scalarMul a b) := by rw [gp.scalarAdd_zero]
+
+/-- Multiplication distributes over negation on the left: `(-a) · b = -(a · b)`. -/
+lemma scalarNeg_mul (gp : GroupParam) (a b : gp.Scalar) :
+    gp.scalarMul (gp.scalarNeg a) b = gp.scalarNeg (gp.scalarMul a b) := by
+  rw [gp.scalarMul_comm, scalarMul_neg, gp.scalarMul_comm]
+
 end CatCrypt.Examples

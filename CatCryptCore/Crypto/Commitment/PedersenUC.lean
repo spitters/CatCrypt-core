@@ -176,6 +176,21 @@ theorem pedersen_view_eq (crs : PedersenCRS gp)
   exact congrArg (fun c => SPComp.bind c (fun a => SPComp.pure (Sum.inr a)))
     (congrArg (fun y => A (e r, y)) (e.left_inv r).symm)
 
+/-- The Pedersen commitment `C = g ^ m · h ^ r` varies with the committed message:
+    for fixed randomness, distinct messages give distinct commitments (the
+    generator has prime order, so `exp` is injective). Perfect hiding therefore
+    comes from the uniform randomness `r`, not from the commit function ignoring
+    the message. -/
+theorem pedersen_commit_output_depends_on_message (crs : PedersenCRS gp)
+    (m₀ m₁ r : gp.Scalar) (hm : m₀ ≠ m₁) :
+    pedersen_commit gp crs m₀ r ≠ pedersen_commit gp crs m₁ r := by
+  unfold pedersen_commit
+  intro h
+  apply hm
+  apply gp.exp_inj
+  have hc := congrArg (fun w => gp.groupMul w (gp.groupInv (gp.groupExp crs.h r))) h
+  simpa only [gp.groupMul_assoc, gp.groupMul_inv, gp.groupMul_identity] using hc
+
 /-- **Pedersen commitment with a CRS trapdoor realizes the equivocation
     direction of UC commitment at `ε = 0`** (perfect), with a non-trivial
     simulator. This is the honest-committer / corrupt-receiver direction: given

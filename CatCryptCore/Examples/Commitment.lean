@@ -171,6 +171,14 @@ theorem maskComm_perfect_hiding (m₀ m₁ : Bool)
     Hiding_Adv MaskComm m₀ m₁ A = 0 :=
   advantage_zero_of_rHoare _ _ (maskComm_hiding_coupling m₀ m₁) A
 
+/-- The masking commitment's output varies with the committed message: for fixed
+    randomness there are two messages whose commitments differ. Perfect hiding
+    therefore comes from the uniform mask, not from the commit function ignoring
+    the message. -/
+theorem maskComm_output_depends_on_secret :
+    ∃ (m₀ m₁ r : Bool), m₀ ≠ m₁ ∧ MaskComm.commit r m₀ ≠ MaskComm.commit r m₁ :=
+  ⟨true, false, false, by decide, by simp [MaskComm]⟩
+
 /-! ## Reflection into the Package / UC Stack
 
 The shallow `maskComm_perfect_hiding` bounds a single distinguisher applied to the

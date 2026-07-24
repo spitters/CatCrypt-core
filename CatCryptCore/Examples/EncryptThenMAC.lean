@@ -166,8 +166,8 @@ theorem boolEtM_indcpa_coupling (m₀ m₁ : Bool) :
       (INDCPA_Game BoolEtM m₀ m₁ true)
       (INDCPA_Game BoolEtM m₀ m₁ false)
       eqPost := by
-  rw [boolEtM_indcpa_game_eq, boolEtM_indcpa_game_eq]
-  simp only [if_true, if_false, Bool.false_eq_true, SPComp.monad_bind_eq]
+  simp only [boolEtM_indcpa_game_eq, if_true, if_false, Bool.false_eq_true,
+    SPComp.monad_bind_eq]
   ssprove_couple_bij (prodBoolXorBij (xor m₀ m₁, false))
   simp [encF]
 

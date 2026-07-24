@@ -130,6 +130,29 @@ noncomputable def simulatedTranscript (sp : SigmaProtocol) (x : sp.Statement)
   let (a, z) ← sp.simulate x e
   return ⟨a, e, z⟩
 
+/-! ## Challenge-Sampling Transcript Distributions
+
+The challenge-sampling variants draw `e` uniformly inside the distribution
+rather than receiving it as input. They match the transcript distributions used
+when the whole run — commitment, challenge, and response — is observed. -/
+
+/-- Real transcript with the challenge sampled internally: honest prover commits,
+    a uniform challenge is drawn, and the prover responds. -/
+noncomputable def realTranscriptSampled (sp : SigmaProtocol) (x : sp.Statement)
+    (w : sp.Witness) : SPComp (Transcript sp) := do
+  let a ← sp.commit x w
+  let e ← SPComp.sample sp.Challenge
+  let z ← sp.respond x w a e
+  return ⟨a, e, z⟩
+
+/-- Simulated transcript with the challenge sampled internally: a uniform
+    challenge is drawn and the simulator produces `(a, z)` without the witness. -/
+noncomputable def simulatedTranscriptSampled (sp : SigmaProtocol) (x : sp.Statement) :
+    SPComp (Transcript sp) := do
+  let e ← SPComp.sample sp.Challenge
+  let (a, z) ← sp.simulate x e
+  return ⟨a, e, z⟩
+
 /-! ## Property Predicates -/
 
 /-- Completeness: honest transcripts verify. -/

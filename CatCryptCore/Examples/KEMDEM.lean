@@ -52,8 +52,8 @@ key (KEM), swap the payload for a null message (DEM), swap the random key back
 (KEM). When both components are *perfectly* secure the composition is perfectly
 secure (`pke_perfect_security`): every advantage collapses to `0`.
 
-As a concrete headline, `BoolXorDEM` (the one-time-pad DEM over `Bool`) is
-perfectly DEM-secure via the XOR bijection coupling, so composing it with any
+As a concrete instance, `BoolXorDEM` (the one-time-pad DEM over `Bool`) is
+perfectly DEM-secure via the XOR bijection coupling; composing it with any
 perfectly-secure KEM gives a perfectly-secure hybrid PKE
 (`xorHybrid_perfect_security`).
 
@@ -654,12 +654,7 @@ private theorem hybrid1_eq_hybrid2
     have hdem_eq_all : ∀ h, (DEM_CPA_real DEM m) h = (DEM_CPA_ideal DEM nullPlain m) h := by
       intro h
       exact liftR_eq_implies_eq (eqPost_to_eq ((hDEM m) h h rfl))
-    rw [h1, h2]
-    congr 1; funext ⟨⟨pk, sk⟩, h⟩
-    simp only []
-    congr 1; funext ⟨⟨kval, ek⟩, h'⟩
-    simp only []
-    rw [hdem_eq_all h']
+    rw [h1, h2]; simp only [hdem_eq_all]
   rw [h_prog_eq]
   apply eq_to_eqPost
   exact liftR_refl _

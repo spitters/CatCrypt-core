@@ -204,6 +204,16 @@ theorem shamir_perfect_privacy (rp : Fin d → ZMod p) (hrp : ∀ j, rp j ≠ 0)
     PrivAdv rp s0 s1 A = 0 :=
   advantage_zero_of_rHoare _ _ (priv_coupling rp hrp s0 s1) A
 
+/-- A share at a nonzero evaluation point varies with the secret: with the free
+    coefficients fixed to zero, two distinct secrets give distinct shares at the
+    point `1 ≠ 0`. Privacy therefore relies on the random free coefficients (and
+    the `rp j ≠ 0` hypothesis that keeps the revealed points off the constant
+    term), not on the share function discarding the secret. -/
+theorem shamir_share_depends_on_secret :
+    ∃ (s₀ s₁ : ZMod p) (coeffs : Fin d → ZMod p) (x : ZMod p),
+      s₀ ≠ s₁ ∧ x ≠ 0 ∧ shareVal s₀ coeffs x ≠ shareVal s₁ coeffs x :=
+  ⟨0, 1, 0, 1, zero_ne_one, one_ne_zero, by simp [shareVal]⟩
+
 /-! ## Reflection into the Package / UC Stack
 
 The shallow `shamir_perfect_privacy` bounds a single distinguisher applied to the
