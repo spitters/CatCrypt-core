@@ -43,7 +43,7 @@ key management, and provides additional encryption/decryption oracles.
 * Dupressoir et al., CSF 2022 (Section 4.4)
 -/
 
-namespace CatCrypt.Examples.Cryptobox
+namespace CatCrypt.Examples.Cryptobox.PKAEGame
 
 open CatCrypt.Core
 open CatCrypt.Prob
@@ -177,4 +177,4 @@ noncomputable def pkaeAdvantage (N : @NIKEScheme CT) (E : @NBSES CT)
     (I : @KeyInjection CT) (A : PKAEOracles → SPComp Bool) : ℝ≥0∞ :=
   Advantage (GPKAE N E I false A) (GPKAE N E I true A)
 
-end CatCrypt.Examples.Cryptobox
+end CatCrypt.Examples.Cryptobox.PKAEGame
