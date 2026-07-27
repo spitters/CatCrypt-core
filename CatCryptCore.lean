@@ -18,6 +18,11 @@ import CatCryptCore.Core.Heap
 import CatCryptCore.Core.Code
 import CatCryptCore.Core.SPTree
 import CatCryptCore.Core.StdDoBridge
+import CatCryptCore.Core.GenHeap
+import CatCryptCore.Core.GenHeapRandomOracle
+
+-- Non-uniform sampling and the unbounded loop
+import CatCryptCore.NonUniform
 
 -- Relational logic (pRHL)
 import CatCryptCore.Relational.Basic

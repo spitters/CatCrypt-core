@@ -28,8 +28,9 @@ are relative to `CatCryptCore/`.
 | Layer | Modules |
 |---|---|
 | Probability | `Prob/*` — sub-distributions, couplings, support, birthday bound, Schwartz–Zippel |
-| Core | `Core/*` — typed heap, `SPComp` stateful-probabilistic monad, `SPTree` syntactic trees |
+| Core | `Core/*` — typed heap (finite- and countable-typed locations), `SPComp` stateful-probabilistic monad, `SPTree` syntactic trees |
 | Relational | `Relational/*` — pRHL judgment, sync/frame/reorder rules |
+| Non-uniform | `NonUniform/*` — sampling from an arbitrary sub-distribution, conditioning, products, the unbounded `while` loop and its pHL / pRHL rules |
 | Package | `Package/*` — interface-based package algebra |
 | Category | `Category/*` — Kleisli of SPComp, family bicategory, cocartesian / affine structure |
 | Deep embedding | `Deep/*` — syntactic package calculus with semantic evaluation, `SPComp` → `RawCode` reflection |
