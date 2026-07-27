@@ -227,6 +227,19 @@ theorem bind_congr_support {d : SDistr α} {f g : α → SDistr β}
     · simp [hda]
     · rw [h a hda]
 
+/-- `bind` is monotone in its continuation at a fixed outcome: if `f a` assigns at
+most as much mass to `o` as `g a` does for every `a`, then `d.bind f` assigns at
+most as much mass to `o` as `d.bind g` does. The outcome is an `Option β`, so this
+covers the failure component as well as the values. -/
+theorem bind_apply_mono (d : SDistr α) {f g : α → SDistr β}
+    (o : Option β) (hfg : ∀ a, f a o ≤ g a o) :
+    (d.bind f) o ≤ (d.bind g) o := by
+  simp only [bind, PMF.bind_apply]
+  refine ENNReal.tsum_le_tsum fun oa => ?_
+  cases oa with
+  | none => exact le_rfl
+  | some a => exact mul_le_mul_right (hfg a) _
+
 /-- Variant: congruence with explicit equality of distributions -/
 theorem bind_congr_support' {d₁ d₂ : SDistr α} {f g : α → SDistr β}
     (hd : d₁ = d₂)
