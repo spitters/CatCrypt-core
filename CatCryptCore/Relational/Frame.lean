@@ -19,6 +19,8 @@ computations with bounded footprints enable compositional reasoning.
 * `DependsOn P L` — assertion P only examines locations in L
 * `PreservesOutside c L` — computation c only modifies locations in L
 * `r_frame_local` — the frame rule: disjoint footprints preserve the frame
+* `r_frame_of_preservesNothing` — any frame survives computations that write nothing
+* `r_frame_agreeOff` — `agreeOff L` survives computations that write only inside `L`
 
 ## Design notes
 
@@ -26,6 +28,26 @@ computations with bounded footprints enable compositional reasoning.
 The right analogue of Bluebell's probabilistic separation is *location-based
 separation*: assertions on disjoint heap regions + computations with bounded
 footprints.
+
+## The three frame rules
+
+The three rules cover three shapes of frame footprint, and none of them is an
+instance of another.
+
+* `r_frame_local` frames an assertion with a **finite** footprint `L_f`
+  (`DependsOn Frame L_f`) across computations writing only inside a `L_c`
+  disjoint from it.
+* `r_frame_of_preservesNothing` frames an **arbitrary** assertion, at the price
+  of asking both computations to write nothing at all.
+* `r_frame_agreeOff` frames the specific assertion `agreeOff L`, whose footprint
+  is **co-finite**, across computations writing only inside `L`. `DependsOn
+  (agreeOff L) L_f` fails for every finite `L_f`, so `r_frame_local` does not
+  reach it; the computations write, so `r_frame_of_preservesNothing` does not
+  either.
+
+At `L = ∅` the last two rules meet without either containing the other:
+`agreeOff ∅` is whole-heap equality (`agreeOff_empty_iff`), one assertion, while
+`r_frame_of_preservesNothing` at the same footprint frames every assertion.
 
 ## References
 
@@ -270,5 +292,31 @@ theorem r_frame_of_preservesNothing {Φ : RPre} {Ψ : RPost α β}
   have e₂ : h₂' = h₂ :=
     heap_eq_of_preservesOutside_empty hc₂ (coupling.in_right_support hjoint)
   exact e₁ ▸ e₂ ▸ hΦ
+
+/-- Frame rule for agreement outside a write-set: if both computations write only
+inside `L` and the two initial heaps agree outside `L`, the two final heaps agree
+outside `L`.
+
+The frame `agreeOff L` constrains every location outside a finite set, so it has
+no finite footprint and `DependsOn (agreeOff L) L_f` fails for every `L_f`; the
+computations write inside `L`, so `r_frame_of_preservesNothing` does not apply.
+What replaces the disjointness hypothesis is that the frame's footprint is the
+complement of the write-set: each side's final heap agrees with its own initial
+heap outside `L`, and the initial heaps agree with each other there. -/
+theorem r_frame_agreeOff {Φ : RPre} {Ψ : RPost α β}
+    {c₁ : SPComp α} {c₂ : SPComp β} {L : LocSet}
+    (hc₁ : PreservesOutside c₁ L) (hc₂ : PreservesOutside c₂ L)
+    (hInner : rHoare Φ c₁ c₂ Ψ) :
+    rHoare (Φ ⋀ agreeOff L) c₁ c₂
+      (fun a h₁ b h₂ => Ψ a h₁ b h₂ ∧ agreeOff L h₁ h₂) := by
+  intro h₁ h₂ ⟨hΦ, hoff⟩
+  obtain ⟨coupling, hsat⟩ := hInner h₁ h₂ hΦ
+  refine ⟨coupling, ?_⟩
+  intro ⟨a, h₁'⟩ ⟨b, h₂'⟩ hjoint
+  refine ⟨hsat ⟨a, h₁'⟩ ⟨b, h₂'⟩ hjoint, ?_⟩
+  intro id hid
+  have e₁ := hc₁ h₁ a h₁' (coupling.in_left_support hjoint) id hid
+  have e₂ := hc₂ h₂ b h₂' (coupling.in_right_support hjoint) id hid
+  exact e₁.trans ((hoff id hid).trans e₂.symm)
 
 end CatCrypt.Relational

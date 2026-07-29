@@ -30,6 +30,7 @@ import CatCryptCore.Relational.Judgment
 import CatCryptCore.Relational.Rules
 import CatCryptCore.Relational.Sync
 import CatCryptCore.Relational.Frame
+import CatCryptCore.Relational.Separation
 import CatCryptCore.Relational.Reorder
 import CatCryptCore.Relational.ForLoop
 

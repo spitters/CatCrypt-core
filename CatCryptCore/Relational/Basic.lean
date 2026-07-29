@@ -121,6 +121,43 @@ def rightHas (l : Location) (v : l.ty) : RPre := fun _ h₂ => h₂.get l = v
 @[grind =] theorem rightHas_eq (l : Location) (v : l.ty) (h₁ h₂ : Heap) :
     rightHas l v h₁ h₂ = (h₂.get l = v) := rfl
 
+/-! ## Agreement outside a footprint -/
+
+/-- Two heaps agree outside the location ids `locs`: every location not in
+`locs` has the same contents on both sides. This is the complement of
+`Heap.agreeOn locs`, so its footprint is co-finite: for a finite `locs` it
+constrains infinitely many locations. -/
+def agreeOff (locs : LocSet) : RPre :=
+  fun h₁ h₂ => ∀ id, id ∉ locs → h₁.data.lookup id = h₂.data.lookup id
+
+theorem agreeOff_refl (locs : LocSet) (h : Heap) : agreeOff locs h h := fun _ _ => rfl
+
+theorem agreeOff_of_eq {locs : LocSet} {h₁ h₂ : Heap} (h : h₁ = h₂) :
+    agreeOff locs h₁ h₂ := h ▸ agreeOff_refl locs h₁
+
+/-- Agreement outside the empty footprint is whole-heap equality. -/
+theorem agreeOff_empty_iff (h₁ h₂ : Heap) : agreeOff ∅ h₁ h₂ ↔ h₁ = h₂ :=
+  ⟨fun h => Heap.ext_lookup (fun id => h id (Finset.notMem_empty id)),
+   fun h => agreeOff_of_eq h⟩
+
+/-- Writing to a location inside the footprint preserves agreement outside it,
+with possibly different values on the two sides. -/
+theorem agreeOff_set (locs : LocSet) (l : Location) (hl : l.id ∈ locs)
+    {h₁ h₂ : Heap} (h : agreeOff locs h₁ h₂) (v₁ v₂ : l.ty) :
+    agreeOff locs (h₁.set l v₁) (h₂.set l v₂) := by
+  intro id hid
+  have hne : id ≠ l.id := fun he => hid (he ▸ hl)
+  simpa only [Heap.set, Finmap.lookup_insert_of_ne _ hne] using h id hid
+
+/-- Overwriting the single location of the footprint with the same value turns
+agreement outside the footprint into heap equality. -/
+theorem heap_eq_of_agreeOff_singleton (l : Location) {h₁ h₂ : Heap}
+    (h : agreeOff {l.id} h₁ h₂) (v : l.ty) : h₁.set l v = h₂.set l v := by
+  refine Heap.ext_lookup (fun id => ?_)
+  by_cases hid : id = l.id
+  · subst hid; simp only [Heap.set, Finmap.lookup_insert]
+  · simpa only [Heap.set, Finmap.lookup_insert_of_ne _ hid] using h id (by simpa using hid)
+
 /-! ## Lemmas -/
 
 @[simp]
