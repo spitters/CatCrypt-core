@@ -241,4 +241,34 @@ theorem r_frame_local {Φ Frame : RPre} {Ψ : RPost α β}
     -- Apply DependsOn to transfer Frame
     exact hFrame h₁ h₁' h₂ h₂' h₁_agree h₂_agree hFr
 
+/-- A computation that modifies nothing leaves its heap alone. -/
+theorem heap_eq_of_preservesOutside_empty {c : SPComp α} (h : PreservesOutside c ∅)
+    {h₀ : Heap} {a : α} {h' : Heap} (hsupp : (c h₀) (some (a, h')) ≠ 0) :
+    h' = h₀ :=
+  Heap.ext_lookup fun id => h h₀ a h' hsupp id (Finset.notMem_empty id)
+
+/-- Frame rule for computations that modify no location: the precondition
+carries through to the postcondition, whatever it is.
+
+`r_frame_local` asks the frame to depend on a `LocSet`, which is a `Finset`, so
+it cannot frame an assertion with no finite footprint — `eqPre`, whole-heap
+equality, is one such. Nothing is needed of the assertion here, because the two
+computations leave their heaps as they found them, so the assertion holds of the
+final pair exactly when it held of the initial pair. -/
+theorem r_frame_of_preservesNothing {Φ : RPre} {Ψ : RPost α β}
+    {c₁ : SPComp α} {c₂ : SPComp β}
+    (hc₁ : PreservesOutside c₁ ∅) (hc₂ : PreservesOutside c₂ ∅)
+    (hInner : rHoare truePre c₁ c₂ Ψ) :
+    rHoare Φ c₁ c₂ (fun a h₁ b h₂ => Ψ a h₁ b h₂ ∧ Φ h₁ h₂) := by
+  intro h₁ h₂ hΦ
+  obtain ⟨coupling, hsat⟩ := hInner h₁ h₂ trivial
+  refine ⟨coupling, ?_⟩
+  intro ⟨a, h₁'⟩ ⟨b, h₂'⟩ hjoint
+  refine ⟨hsat ⟨a, h₁'⟩ ⟨b, h₂'⟩ hjoint, ?_⟩
+  have e₁ : h₁' = h₁ :=
+    heap_eq_of_preservesOutside_empty hc₁ (coupling.in_left_support hjoint)
+  have e₂ : h₂' = h₂ :=
+    heap_eq_of_preservesOutside_empty hc₂ (coupling.in_right_support hjoint)
+  exact e₁ ▸ e₂ ▸ hΦ
+
 end CatCrypt.Relational
