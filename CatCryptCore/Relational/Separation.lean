@@ -481,7 +481,7 @@ theorem r_frame_sep_agreeOff {Φ : RPre} {Ψ : RPost α β} {L : LocSet}
 
 /-- Writing the same value to the same owned location on both sides keeps the two heaps
 equal. The precondition carries the ownership of `l` that `frameable_set` needs. -/
-theorem rHoare_set_sync (l : Location) (v : l.ty) :
+theorem rHoare_set_sync_owned (l : Location) (v : l.ty) :
     rHoare (fun h₁ h₂ => h₁ = h₂ ∧ Owns l h₁) (SPComp.set l v) (SPComp.set l v)
       (fun _ h₁ _ h₂ => h₁ = h₂) := by
   rintro h₁ h₂ ⟨rfl, _⟩
@@ -493,7 +493,7 @@ theorem r_frame_set_sync (l : Location) (v : l.ty) (R : RPre) :
     rHoare ((fun h₁ h₂ => h₁ = h₂ ∧ Owns l h₁) ∗ R) (SPComp.set l v) (SPComp.set l v)
       ((fun _ h₁ _ h₂ => h₁ = h₂) ∗ᵖ R) :=
   r_frame_sep (frameable_set l v) (frameable_set l v)
-    (fun _ _ h => h.2) (fun _ _ h => h.1 ▸ h.2) (rHoare_set_sync l v)
+    (fun _ _ h => h.2) (fun _ _ h => h.1 ▸ h.2) (rHoare_set_sync_owned l v)
 
 /-- The synchronised write framed by whole-heap equality of the untouched region: the
 frame assertion here has no finite footprint, so `r_frame_local` does not apply to it. -/
