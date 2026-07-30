@@ -9,7 +9,7 @@ open Lake DSL
 --   cd docs && lake update && lake build && lake exe core-manual --output _out
 -- Open docs/_out/html-single/index.html (a single self-contained page).
 require verso from git
-  "https://github.com/leanprover/verso.git" @ "v4.29.0"
+  "https://github.com/leanprover/verso.git" @ "v4.30.0"
 
 package catcryptCoreDocs where
   leanOptions := #[⟨`pp.unicode.fun, true⟩]
