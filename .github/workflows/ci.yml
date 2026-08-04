@@ -20,19 +20,15 @@ jobs:
       - name: Get Mathlib cache
         run: lake exe cache get || true
 
-      - name: Build
+      - name: Build, which is also the sorry guard
+        # The package is built under `-E hasSorry` (see lakefile.lean), so Lean
+        # reports a declaration whose proof term reaches `sorryAx` as an error
+        # and the build fails on it. The previous separate step grepped the log
+        # for "uses 'sorry'" with straight quotes; Lean writes the word in
+        # backticks, so that step matched nothing and passed unconditionally.
         run: |
           set -euo pipefail
           lake build 2>&1 | tee build.log
-
-      - name: Guard — no sorry
-        run: |
-          set -euo pipefail
-          if grep -q "uses 'sorry'" build.log; then
-            echo "::error::Build contains sorry:"
-            grep -B1 "uses 'sorry'" build.log
-            exit 1
-          fi
 
       - name: Guard — axiom allowlist
         run: |

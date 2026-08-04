@@ -6,6 +6,13 @@ package catcryptCore where
     ⟨`pp.unicode.fun, true⟩,
     ⟨`autoImplicit, false⟩
   ]
+  -- `-E <kind>` reports Lean messages of that kind as errors. `hasSorry` is the
+  -- kind Lean attaches to a declaration whose proof term reaches `sorryAx`, so
+  -- building this package refuses such a declaration and no separate step has to
+  -- read the build's output. The word in a comment, a docstring or a string
+  -- literal carries no such message; a declaration reaching `sorryAx` through a
+  -- tactic carries one even though the word appears nowhere in its source.
+  moreLeanArgs := #["-E", "hasSorry"]
 
 @[default_target]
 lean_lib CatCryptCore where
