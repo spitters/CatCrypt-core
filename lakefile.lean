@@ -26,10 +26,11 @@ lean_lib CatCryptCore where
   -- and the facet sees 0 root modules.
   globs := #[.andSubmodules `CatCryptCore]
 
-require nominalLean from git
-  "https://github.com/spitters/nominal-lean" @ "d65d9fd36b0f33a5b704e56c0d104470dd3ba0a5"
+-- 4.32 upgrade, temporary: path-require the sibling until its bump commit is
+-- pushed to spitters/nominal-lean; then repin the git SHA here.
+require nominalLean from "../nominal-lean"
 
 -- mathlib LAST so its proofwidgets/aesop versions win on conflicts;
 -- this is required for `lake exe cache get` to find oleans.
 require mathlib from git
-  "https://github.com/leanprover-community/mathlib4" @ "v4.30.0"
+  "https://github.com/leanprover-community/mathlib4" @ "v4.32.0"
