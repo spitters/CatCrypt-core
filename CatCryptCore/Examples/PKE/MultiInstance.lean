@@ -97,8 +97,8 @@ private theorem MI_hybridLoop_full_eq (pks : List P.PK) (j : ℕ) (msgs : List (
   induction msgs generalizing j with
   | nil => simp [MI_hybridLoop, MI_sampleN]
   | cons m ms ih =>
-    simp only [MI_hybridLoop, MI_sampleN, SPComp.monad_bind_eq]
     have hlen : (m :: ms).length = ms.length + 1 := rfl
+    simp only [List.length_cons, MI_hybridLoop, MI_sampleN, SPComp.monad_bind_eq]
     have : j < thresh := by omega
     simp only [this, ↓reduceIte]
     simp_rw [ih (j + 1) (by omega)]

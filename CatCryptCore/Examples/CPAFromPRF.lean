@@ -590,6 +590,6 @@ theorem cpa_from_prf_reduction_gamehop (P : PRFEncScheme) (H : PRFAssumption P.F
   adv_game_hop [P.otpGame m₀ m₁ true, P.otpGame m₀ m₁ false]
   · exact P.indcpa_otp_hop H m₀ m₁ A true
   · exact le_of_eq (P.otp_advantage_zero m₀ m₁ A)
-  · simpa only [AdvantageA, Advantage_sym] using P.indcpa_otp_hop H m₀ m₁ A false
+  · simpa only [AdvantageA, Advantage_sym] using! P.indcpa_otp_hop H m₀ m₁ A false
 
 end CatCrypt.Examples.CPAFromPRF

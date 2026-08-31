@@ -133,7 +133,6 @@ theorem expMul_zero (a : CGR.Exp) : CGR.expMul CGR.expZero a = CGR.expZero := by
   have h := expAdd_mul CGR.expZero CGR.expZero a
   rw [CGR.expAdd_zero CGR.expZero] at h
   have h2 := congrArg (CGR.expAdd · (CGR.expNeg (CGR.expMul CGR.expZero a))) h
-  simp only at h2
   rw [CGR.expAdd_neg, CGR.expAdd_assoc, CGR.expAdd_neg, CGR.expAdd_zero] at h2
   exact h2.symm
 
@@ -247,7 +246,6 @@ theorem matrixMap_injective (a b d : CGR.Exp)
   have h2' : CGR.expAdd (CGR.expMul d s1)
       (CGR.expMul b (CGR.expAdd r1 (CGR.expNeg r2))) = CGR.expMul d s2 := by
     have := congrArg (CGR.expAdd · (CGR.expNeg (CGR.expMul b r2))) h2
-    simp only at this
     rw [CGR.expAdd_assoc, CGR.expAdd_assoc, CGR.expAdd_neg, CGR.expAdd_zero] at this
     rwa [← CyclicGroupRing.expMul_neg b, ← CGR.expMul_add] at this
   -- Step 4: Substitute hr into h2' to get d·s1 + (ab)·(s2-s1) = d·s2
@@ -257,7 +255,6 @@ theorem matrixMap_injective (a b d : CGR.Exp)
                         (CGR.expAdd s1 (CGR.expNeg s2)) = CGR.expZero := by
     -- From h2': d·s1 + (ab)·(s2-s1) = d·s2, subtract d·s2
     have step := congrArg (CGR.expAdd · (CGR.expNeg (CGR.expMul d s2))) h2'
-    simp only at step
     rw [CGR.expAdd_neg] at step
     -- step: (d·s1 + (ab)·(s2-s1)) + (-(d·s2)) = 0
     rw [CGR.expAdd_assoc (CGR.expMul d s1)] at step
@@ -285,7 +282,6 @@ theorem matrixMap_injective (a b d : CGR.Exp)
     hinj (key.trans (CyclicGroupRing.expZero_mul _).symm)
   have : s1 = s2 := by
     have := congrArg (CGR.expAdd · s2) hsub0
-    simp only at this
     rwa [CyclicGroupRing.expZero_add, CGR.expAdd_assoc,
          CGR.expAdd_comm (CGR.expNeg s2), CGR.expAdd_neg, CGR.expAdd_zero] at this
   exact absurd this hne

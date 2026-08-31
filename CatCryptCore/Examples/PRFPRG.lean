@@ -712,7 +712,6 @@ theorem prg_decomp_security_bound (F : PRFPRG_PRFDef) (A : PRGOutput → SPComp 
     _ ≤ prf_advantage F zero (wrapAdv_decomp0_snd F A) +
         prf_advantage F one (wrapAdv_snd A) := by
         have h1 := decomp_hyb_adjacent_bound F 1 (by norm_num) A
-        simp only at h1
         unfold AdvantageA at h1
         exact add_le_add le_rfl h1
 

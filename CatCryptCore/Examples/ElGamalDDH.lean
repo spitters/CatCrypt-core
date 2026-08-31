@@ -274,9 +274,9 @@ theorem reduction_ideal_indep_message (G : Type) [CG : CyclicGroup G] (m0 m1 : G
   ssprove_distr_simp
   apply liftR_eq_implies_eq
   apply liftR_bind (liftR_refl _)
-  intro a a' haa'; simp only at haa'; rw [haa']
+  intro a a' haa'; rw [haa']
   apply liftR_bind (liftR_refl _)
-  intro b b' hbb'; simp only at hbb'; rw [hbb']
+  intro b b' hbb'; rw [hbb']
   have mul_bij : ∀ (m : G), Function.Bijective (fun b => CG.mul m (CG.pow b)) := by
     intro m
     constructor
