@@ -114,14 +114,17 @@ Proving `Nat.Prime (2²⁵⁵ − 19)` in Lean requires a Pratt certificate
 that is both costly to construct and kernel-check. Mirroring the Rocq
 AUCurves development (which uses `Spec/XEdDSA_Curve25519.v` abstractly
 over `Z/pZ` without discharging primality) and standard fiat-crypto
-convention, we take primality as an axiom. It is one of four
+convention, we take primality as an axiom. It is one of five
 AUCurves-bridged trust edges in this file — each documented at its
 definition and imported across the Rocq↔Lean boundary:
 `curve25519Prime_prime` (base-field prime), `curve25519SubgroupOrder_prime`
 (the subgroup order `l` is prime), and `curve25519_basepoint` /
-`curve25519_basepoint_addOrder` (the RFC 7748 base point and its order `l`).
-Everything else — including the unconditional ladder capstone
-`x25519_ladder_correct_basepoint` — is proved. -/
+`curve25519_basepoint_order_nsmul` / `curve25519_basepoint_ne_zero` (the
+RFC 7748 base point, its annihilation `l • B = 0`, and its non-identity).
+The exact order `addOrderOf B = l` is the theorem
+`curve25519_basepoint_addOrder`, derived from those two facts and the
+primality of `l`. Everything else — including the unconditional ladder
+capstone `x25519_ladder_correct_basepoint` — is proved. -/
 
 /-- **Trust edge**: Curve25519's base-field modulus is prime. Registered
     as an axiom because proving `Nat.Prime (2²⁵⁵ − 19)` in Lean requires
@@ -401,17 +404,24 @@ theorem fp25519_sixteen_a24_sub_ne_zero :
 /-! ### Curve25519 base point (AUCurves bridge)
 
 `curve25519_basepoint` is the RFC 7748 base point `u = 9` as a concrete
-`Curve25519Point`, and `curve25519_basepoint_addOrder` records that its order in
-the Weierstrass group is `l = curve25519SubgroupOrder`. Both are bridged across
-the Rocq↔Lean boundary from the AUCurves development: `E_basepoint_order` in
-`Spec/Curve25519_BasepointOrder.v` establishes `l • B = 0` (with `l` the prime
-subgroup order of `E/E[4]` from fiat-crypto's `Spec/Ristretto255.v`), and the
-minimality of `l` as the additive order follows there from primality of `l`
-together with `B ≠ 0`. Imported here as axioms exactly as `curve25519Prime_prime`
-and `curve25519SubgroupOrder_prime` are; everything downstream of them is proved. -/
+`Curve25519Point`. Two of its properties are bridged across the Rocq↔Lean
+boundary from the AUCurves development, each an axiom exactly as
+`curve25519Prime_prime` and `curve25519SubgroupOrder_prime` are:
+`curve25519_basepoint_order_nsmul` records the annihilation `l • B = 0`
+(`E_basepoint_order` in `Spec/Curve25519_BasepointOrder.v`, with `l` the prime
+subgroup order of `E/E[4]` from fiat-crypto's `Spec/Ristretto255.v` — the Rocq
+lemma is `Qed`, but its key input `scalarmult_l_eq_zero` in the same file is
+`Admitted`: the tactic chain closes interactively and its `Qed` kernel check
+exhausts memory at ~40 GB), and
+`curve25519_basepoint_ne_zero` records that the base point is affine, hence not
+the group identity. The exact additive order `addOrderOf B = l` is not bridged:
+`curve25519_basepoint_addOrder` derives it from the two axioms and the
+primality of `l` (a point annihilated by a prime and distinct from the identity
+has that prime as its order). Everything downstream of these is proved. -/
 
 /-- **AUCurves bridge**: an order-`l` point of the Curve25519 group. Only its
-    additive order is constrained (by `curve25519_basepoint_addOrder`); nothing
+    additive order is constrained (by `curve25519_basepoint_order_nsmul` and
+    `curve25519_basepoint_ne_zero` via `curve25519_basepoint_addOrder`); nothing
     here pins its x-coordinate. The intended instantiation is the RFC 7748 base
     point `u = 9`, but because only the order is used, the capstone
     `x25519_ladder_correct_basepoint` in fact holds for *any* order-`l` point
@@ -419,10 +429,29 @@ and `curve25519SubgroupOrder_prime` are; everything downstream of them is proved
     `(9, 1)` would need a further concrete-coordinate bridge, not present here. -/
 axiom curve25519_basepoint : Curve25519Point
 
-/-- **AUCurves bridge**: the base point has additive order `l`
-    (`E_basepoint_order`, `Spec/Curve25519_BasepointOrder.v`). -/
-axiom curve25519_basepoint_addOrder :
-    addOrderOf curve25519_basepoint = curve25519SubgroupOrder
+/-- **AUCurves bridge**: `l • B = 0` for the base point
+    (`E_basepoint_order`, `Spec/Curve25519_BasepointOrder.v`). The cited lemma
+    establishes exactly this annihilation and does not speak to minimality.
+    It is `Qed`, but rests on `scalarmult_l_eq_zero` in the same file, which
+    is `Admitted` upstream: its tactic chain closes interactively and the
+    `Qed` kernel check exhausts memory at ~40 GB. -/
+axiom curve25519_basepoint_order_nsmul :
+    curve25519SubgroupOrder • curve25519_basepoint = 0
+
+/-- **AUCurves bridge**: the base point is not the identity. RFC 7748's base
+    point is the affine point `u = 9`; the identity of the Weierstrass point
+    group is the point at infinity. -/
+axiom curve25519_basepoint_ne_zero : curve25519_basepoint ≠ 0
+
+/-- The base point has additive order exactly `l`: it is annihilated by the
+    prime `l` (`curve25519_basepoint_order_nsmul`) and is not the identity
+    (`curve25519_basepoint_ne_zero`), so `addOrderOf_eq_prime` pins the order. -/
+theorem curve25519_basepoint_addOrder :
+    addOrderOf curve25519_basepoint = curve25519SubgroupOrder :=
+  haveI : Fact (Nat.Prime curve25519SubgroupOrder) :=
+    ⟨curve25519SubgroupOrder_prime⟩
+  addOrderOf_eq_prime curve25519_basepoint_order_nsmul
+    curve25519_basepoint_ne_zero
 
 /-- Non-vanishing of small multiples of a point of order `l`: for
     `0 < n < l`, `n • B ≠ 0`. -/
@@ -548,20 +577,6 @@ theorem xProjW_snd_of_ne_zero (Q : Curve25519Point) (hQ : Q ≠ 0) :
   obtain (_ | @⟨x, y, h⟩) := Q
   · exact absurd rfl hQ
   · rw [curve25519_xProj_eq, xProjW_some]
-
-/-- `l • B = 0`. -/
-theorem curve25519_basepoint_order_nsmul :
-    curve25519SubgroupOrder • curve25519_basepoint = 0 := by
-  rw [← curve25519_basepoint_addOrder]
-  exact (addOrderOf_dvd_iff_nsmul_eq_zero).mp dvd_rfl
-
-/-- The base point is not the identity. -/
-theorem curve25519_basepoint_ne_zero : curve25519_basepoint ≠ 0 := by
-  intro h
-  have hord := curve25519_basepoint_addOrder
-  rw [h, addOrderOf_zero] at hord
-  have := four_lt_curve25519SubgroupOrder
-  omega
 
 /-- The base point's projective second coordinate is `1` (it is affine). -/
 theorem curve25519_basepoint_xProj_snd_eq_one :
