@@ -74,7 +74,7 @@ theorem pHoare_of_rHoare_diag {P : UPre} {c : SPComp α} {Q : UPost α}
   rw [← hmarg] at hsupp
   -- Extract witness from nonzero tsum (contrapositive of tsum_eq_zero)
   rw [ne_eq, ENNReal.tsum_eq_zero] at hsupp
-  push_neg at hsupp
+  push Not at hsupp
   obtain ⟨p₂, hp₂⟩ := hsupp
   -- The coupling postcondition gives Q a h'
   exact (hsat (a, h') p₂ hp₂).2.2

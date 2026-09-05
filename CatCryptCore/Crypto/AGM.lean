@@ -75,7 +75,7 @@ noncomputable def AGMRepr.toPoly (repr : AGMRepr P t) : Polynomial (ZMod P.p) :=
 theorem AGMRepr.toPoly_coeff (repr : AGMRepr P t) (j : Fin (t + 1)) :
     (repr.toPoly).coeff j.val = repr.coeffs j := by
   unfold AGMRepr.toPoly
-  rw [Polynomial.finset_sum_coeff]
+  rw [Polynomial.finsetSum_coeff]
   rw [Finset.sum_eq_single j]
   · rw [Polynomial.coeff_C_mul_X_pow]; simp
   · intro i _ hij

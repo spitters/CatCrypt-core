@@ -117,7 +117,7 @@ theorem advantage_le_prBad_union
       prEventComp G₀ Heap.empty (fun _ h' => bad₀ h' ∨ bad₁ h') := by
   apply advantage_le_prBad G₀ G₁ (fun h' => bad₀ h' ∨ bad₁ h')
   · intro b h' hbad
-    push_neg at hbad
+    push Not at hbad
     exact h_agree b h' hbad.1 hbad.2
   · exact hll₀
 

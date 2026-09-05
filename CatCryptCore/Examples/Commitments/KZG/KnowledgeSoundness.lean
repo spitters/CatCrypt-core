@@ -171,7 +171,7 @@ theorem knowledge_soundness_implies_root (α z y : ZMod P.p)
       -- Show ∑ i, coeffs i * α^i = φ.eval α
       calc ∑ i : Fin (t + 1), C_repr.coeffs i * α ^ i.val
         _ = (∑ i : Fin (t + 1), C (C_repr.coeffs i) * X ^ i.val).eval α := by
-            simp only [Polynomial.eval_finset_sum, Polynomial.eval_mul, Polynomial.eval_C,
+            simp only [Polynomial.eval_finsetSum, Polynomial.eval_mul, Polynomial.eval_C,
                        Polynomial.eval_pow, Polynomial.eval_X]
         _ = φ.eval α := rfl
     have hw_eval : w_repr.element = P.g₁ ^ᵍ (ψ.eval α) := by
@@ -184,7 +184,7 @@ theorem knowledge_soundness_implies_root (α z y : ZMod P.p)
       -- Show ∑ i, coeffs i * α^i = ψ.eval α
       calc ∑ i : Fin (t + 1), w_repr.coeffs i * α ^ i.val
         _ = (∑ i : Fin (t + 1), C (w_repr.coeffs i) * X ^ i.val).eval α := by
-            simp only [Polynomial.eval_finset_sum, Polynomial.eval_mul, Polynomial.eval_C,
+            simp only [Polynomial.eval_finsetSum, Polynomial.eval_mul, Polynomial.eval_C,
                        Polynomial.eval_pow, Polynomial.eval_X]
         _ = ψ.eval α := rfl
     -- Now use verify_eval to extract the polynomial equation

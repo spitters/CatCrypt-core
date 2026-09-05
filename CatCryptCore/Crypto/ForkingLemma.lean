@@ -251,7 +251,7 @@ theorem prTrue_bind_mono {α : Type}
   intro p
   cases p with
   | none => simp
-  | some p => exact mul_le_mul_left' (hk p.1 p.2) _
+  | some p => exact mul_le_mul_right (hk p.1 p.2) _
 
 /-- Scaled monotonicity: if `prTrue(k₁ a) ≤ c * prTrue(k₂ a)` pointwise,
     then `prTrue(bind comp k₁) ≤ c * prTrue(bind comp k₂)`. -/
@@ -274,7 +274,7 @@ theorem prTrue_bind_mono_const {α : Type} (c : ℝ≥0∞)
     | some p => exact hk p.1 p.2
   calc ∑' p, (comp h₀ : PMF _) p * f₁ p
       ≤ ∑' p, (comp h₀ : PMF _) p * (c * f₂ p) :=
-        ENNReal.tsum_le_tsum fun p => mul_le_mul_left' (hpw p) _
+        ENNReal.tsum_le_tsum fun p => mul_le_mul_right (hpw p) _
     _ = ∑' p, c * ((comp h₀ : PMF _) p * f₂ p) := by
         congr 1; funext p; rw [mul_left_comm]
     _ = c * ∑' p, (comp h₀ : PMF _) p * f₂ p := ENNReal.tsum_mul_left
