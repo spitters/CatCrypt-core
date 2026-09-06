@@ -3,9 +3,11 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Examples.MAC
-import CatCryptCore.Examples.PRF
-import CatCryptCore.Prob.XorBij
+module
+
+public import CatCryptCore.Examples.MAC
+public import CatCryptCore.Examples.PRF
+public import CatCryptCore.Prob.XorBij
 
 /-!
 # MAC from PRF Construction
@@ -64,6 +66,8 @@ where:
 * [Rosulek, The Joy of Cryptography, Claim 10.4]
 * [SSProve PRFMAC.v](https://github.com/SSProve/ssprove/blob/main/theories/Crypt/examples/PRFMAC.v)
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Examples.PRFMAC
 

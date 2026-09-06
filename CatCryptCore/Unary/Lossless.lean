@@ -3,7 +3,9 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Unary.Judgment
+module
+
+public import CatCryptCore.Unary.Judgment
 
 /-!
 # Losslessness for Stateful Probabilistic Computations
@@ -33,6 +35,8 @@ it never fails (never produces the `none` outcome in the underlying sub-distribu
 * EasyCrypt: `islossless` predicate on distributions
 * SSProve (Rocq): lossless reasoning in pHL
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Unary
 

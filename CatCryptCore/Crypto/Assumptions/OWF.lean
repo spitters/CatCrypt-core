@@ -3,9 +3,11 @@ Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Crypto.Advantage
-import CatCryptCore.Crypto.CryptoWord
-import CatCryptCore.Tactics
+module
+
+public import CatCryptCore.Crypto.Advantage
+public import CatCryptCore.Crypto.CryptoWord
+public import CatCryptCore.Tactics
 
 /-!
 # One-Way Function (OWF) Assumption
@@ -48,6 +50,8 @@ no efficient adversary can find any preimage `x'` such that `f(x') = f(x)`.
 * Boneh & Shoup, *A Graduate Course in Applied Cryptography*, §8.1, Def. 8.1; §3.1
 * Katz & Lindell, *Introduction to Modern Cryptography*, §8.1, Def. 8.1
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Crypto.Assumptions
 

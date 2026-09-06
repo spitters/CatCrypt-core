@@ -3,8 +3,10 @@ Copyright (c) 2025 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Crypto.Advantage
-import CatCryptCore.Crypto.CryptoWord
+module
+
+public import CatCryptCore.Crypto.Advantage
+public import CatCryptCore.Crypto.CryptoWord
 
 /-!
 # AEAD (Authenticated Encryption with Associated Data) Security
@@ -58,6 +60,8 @@ where the adversary can submit chosen ciphertexts (multi-message, interactive).
 * Boneh & Shoup, *A Graduate Course in Applied Cryptography*, §9.5
 * RFC 9528 — EDHOC, Section 5.3-5.4
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Crypto.Assumptions
 
@@ -178,7 +182,7 @@ noncomputable def AEAD_CPA_to_CCA (pt ad : W) (A : AEAD_Adversary W) :
 
 /-- Sampling and discarding the result does not change a computation.
     `SPComp.sample` has total mass 1, so `bind (sample W) (fun _ => M) = M`. -/
-private theorem sample_bind_const (M : SPComp Bool) :
+theorem sample_bind_const (M : SPComp Bool) :
     SPComp.bind (SPComp.sample W) (fun _ => M) = M := by
   funext h
   simp only [SPComp.bind_def, SPComp.sample]

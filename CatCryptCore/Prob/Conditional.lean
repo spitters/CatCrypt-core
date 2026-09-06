@@ -5,9 +5,13 @@
   Part B: Bayesian inversion in Kl(PMF) — posterior distribution, recovery equation
   Part C: Uniform conditioning — counting arguments for PMF.uniformOfFintype
 -/
-import Mathlib.Probability.ProbabilityMassFunction.Constructions
-import Mathlib.Probability.Distributions.Uniform
+module
 
+public import Mathlib.Probability.ProbabilityMassFunction.Constructions
+public import Mathlib.Probability.Distributions.Uniform
+
+
+@[expose] public section
 open scoped ENNReal
 open Set
 
@@ -125,14 +129,14 @@ theorem marginalβ_eq_bind (π : PMF α) (f : α → PMF β) (b : β) :
     π.marginalβ f b = (π.bind f) b := by
   simp [marginalβ, bind_apply]
 
-private theorem marginalβ_le_one (π : PMF α) (f : α → PMF β) (b : β) :
+theorem marginalβ_le_one (π : PMF α) (f : α → PMF β) (b : β) :
     π.marginalβ f b ≤ 1 := by
   calc ∑' a, π a * (f a) b
       ≤ ∑' a, π a * 1 :=
         ENNReal.tsum_le_tsum (fun a => by gcongr; exact coe_le_one (f a) b)
     _ = 1 := by simp [tsum_coe]
 
-private theorem marginalβ_ne_top (π : PMF α) (f : α → PMF β) (b : β) :
+theorem marginalβ_ne_top (π : PMF α) (f : α → PMF β) (b : β) :
     π.marginalβ f b ≠ ⊤ :=
   ne_top_of_le_ne_top ENNReal.one_ne_top (marginalβ_le_one π f b)
 

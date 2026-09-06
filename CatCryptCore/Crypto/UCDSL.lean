@@ -3,10 +3,12 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Crypto.UC
-import CatCryptCore.Crypto.UCMonad.SPCompInstance
-import CatCryptCore.Crypto.UCComposition
-import CatCryptCore.Crypto.UCAlg
+module
+
+public import CatCryptCore.Crypto.UC
+public import CatCryptCore.Crypto.UCMonad.SPCompInstance
+public import CatCryptCore.Crypto.UCComposition
+public import CatCryptCore.Crypto.UCAlg
 
 /-!
 # Enhanced UC DSL (v2)
@@ -40,6 +42,8 @@ eliminating boilerplate in UC proofs.
 * `UCEmulatesAlg` composition tracking simulators
 * `Trans` instance for algebraic calc-style proofs
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Crypto.UCDSL
 

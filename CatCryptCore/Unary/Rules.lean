@@ -3,8 +3,10 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Unary.Judgment
-import CatCryptCore.Prob.Support
+module
+
+public import CatCryptCore.Unary.Judgment
+public import CatCryptCore.Prob.Support
 
 /-!
 # Unary Probabilistic Hoare Logic - Proof Rules
@@ -33,6 +35,8 @@ there must exist some `x` with `d(some x) ≠ 0` and `(f x)(some y) ≠ 0`.
 This requires analyzing the sum `∑ x, d(x) * (f x)(y)` which is nonzero
 only if at least one term is nonzero.
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Unary
 

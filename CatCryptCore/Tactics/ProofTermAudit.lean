@@ -3,7 +3,9 @@ Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import Lean
+module
+
+public import Lean
 
 /-!
 # `ProofTermAudit` — machine-checked shell / vacuity detection over proof terms
@@ -82,6 +84,10 @@ are guarding.
   statement faithfully renders the informal/RFC claim. This is the
   LLM-token path and is explicitly out of scope here.
 -/
+
+public section
+
+meta section
 
 open Lean Meta Elab
 

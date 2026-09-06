@@ -3,8 +3,10 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Bridge.SemPkg
-import CatCryptCore.Bridge.GamePkgView
+module
+
+public import CatCryptCore.Bridge.SemPkg
+public import CatCryptCore.Bridge.GamePkgView
 
 /-!
 # Package Coherence Tactic
@@ -33,6 +35,8 @@ reduce to `Sum` case analysis with `rfl` closures.
 * `pkg_coherence` — closes goals of the form `f = g` where `f, g` are
   handler transformers built from structural operations
 -/
+
+@[expose] public section
 
 set_option autoImplicit false
 

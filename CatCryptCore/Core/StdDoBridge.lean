@@ -3,11 +3,15 @@ Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import Std.Do.Triple
-import Std.Tactic.Do
-import CatCryptCore.Unary.Judgment
-import CatCryptCore.Crypto.NomPkgBridge
+module
 
+public import Std.Do.Triple
+public import Std.Tactic.Do
+public import CatCryptCore.Unary.Judgment
+public import CatCryptCore.Crypto.NomPkgBridge
+
+
+@[expose] public section
 set_option autoImplicit false
 
 /-!

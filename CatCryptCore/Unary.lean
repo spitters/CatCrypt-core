@@ -3,13 +3,15 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Unary.Judgment
-import CatCryptCore.Unary.Lossless
-import CatCryptCore.Unary.Rules
-import CatCryptCore.Unary.Event
-import CatCryptCore.Unary.Bridge
-import CatCryptCore.Unary.FailureEvent
-import CatCryptCore.Unary.QueryBound
+module
+
+public import CatCryptCore.Unary.Judgment
+public import CatCryptCore.Unary.Lossless
+public import CatCryptCore.Unary.Rules
+public import CatCryptCore.Unary.Event
+public import CatCryptCore.Unary.Bridge
+public import CatCryptCore.Unary.FailureEvent
+public import CatCryptCore.Unary.QueryBound
 
 /-!
 # Unary Probabilistic Hoare Logic (pHL)
@@ -43,6 +45,8 @@ This entire unary logic layer is **new to CatCrypt** - the Rocq version
 * CertiCrypt (Barthe et al.): unary reasoning in Coq
 * SSProve (Rocq): only has pRHL (this layer is an extension)
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Unary
 

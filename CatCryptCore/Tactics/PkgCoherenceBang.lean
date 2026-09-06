@@ -3,11 +3,13 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Tactics.PkgCoherence
-import CatCryptCore.Tactics.SPNormalize
-import CatCryptCore.Deep.Reflect
-import CatCryptCore.Deep.Eval
-import CatCryptCore.Deep.MonadNormalize
+module
+
+public import CatCryptCore.Tactics.PkgCoherence
+public import CatCryptCore.Tactics.SPNormalize
+public import CatCryptCore.Deep.Reflect
+public import CatCryptCore.Deep.Eval
+public import CatCryptCore.Deep.MonadNormalize
 
 /-!
 # Enhanced Package Coherence (`pkg_coherence!`)
@@ -34,6 +36,8 @@ are `evalWith`-parameterized handlers, reified programs obtained via
 `pkg_coherence!` covers those by turning the leaf into a simp goal over the
 deep-embedding evaluation semantics.
 -/
+
+@[expose] public section
 
 set_option autoImplicit false
 

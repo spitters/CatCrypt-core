@@ -3,13 +3,15 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Package
-import CatCryptCore.Invariant
-import CatCryptCore.Crypto.Advantage
-import CatCryptCore.Relational.Rules
-import CatCryptCore.Examples.PRF
-import CatCryptCore.Tactics.Basic
-import CatCryptCore.Prob.XorBij
+module
+
+public import CatCryptCore.Package
+public import CatCryptCore.Invariant
+public import CatCryptCore.Crypto.Advantage
+public import CatCryptCore.Relational.Rules
+public import CatCryptCore.Examples.PRF
+public import CatCryptCore.Tactics.Basic
+public import CatCryptCore.Prob.XorBij
 
 /-!
 # PRG from PRF (Counter Mode Construction)
@@ -57,6 +59,8 @@ use the PRF security to bound the distinguishing advantage.
 * [Goldreich, Goldwasser, Micali - How to Construct Random Functions, 1986]
 * SSProve Rocq: theories/Crypt/examples/PRFPRG.v
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Examples.PRFPRG
 

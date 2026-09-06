@@ -3,9 +3,11 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Category.Fam
-import CatCryptCore.Category.KlSPComp
-import CatCryptCore.Deep.Package
+module
+
+public import CatCryptCore.Category.Fam
+public import CatCryptCore.Category.KlSPComp
+public import CatCryptCore.Deep.Package
 
 /-!
 # Package Interfaces and Fam(KlSPComp) Morphisms
@@ -50,6 +52,8 @@ the monoidal category laws apply directly to `PkgImpl` parallel composition.
 The full SMC structure on `PkgInterface` (with substitution-style composition)
 is in `SemPkg.lean`.
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Category
 

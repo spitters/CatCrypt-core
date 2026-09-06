@@ -3,8 +3,10 @@ Copyright (c) 2025 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Core.Code
-import CatCryptCore.Tactics.LeOfSum
+module
+
+public import CatCryptCore.Core.Code
+public import CatCryptCore.Tactics.LeOfSum
 
 /-!
 # SPTree: Syntactic Computation Trees for SPComp
@@ -26,6 +28,8 @@ analysis by structural recursion.
 * `compile_bind` — compilation commutes with bind
 * `queryCost_bind` — cost of bind ≤ cost of tree + bound on continuation
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Core
 

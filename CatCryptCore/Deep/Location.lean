@@ -3,11 +3,15 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Nominal.Nominal
-import CatCryptCore.Nominal.Fresh
-import Mathlib.Data.Fintype.Basic
-import Mathlib.Logic.Basic
+module
 
+public import CatCryptCore.Nominal.Nominal
+public import CatCryptCore.Nominal.Fresh
+public import Mathlib.Data.Fintype.Basic
+public import Mathlib.Logic.Basic
+
+
+@[expose] public section
 open scoped Classical
 
 /-!

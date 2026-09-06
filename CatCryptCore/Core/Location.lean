@@ -3,14 +3,18 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import Mathlib.Data.Finset.Basic
-import Mathlib.Data.Fintype.Basic
+module
+
+public import Mathlib.Data.Finset.Basic
+public import Mathlib.Data.Fintype.Basic
 
 /-!
 # Memory Locations
 
 This file defines memory locations for stateful computations.
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Core
 

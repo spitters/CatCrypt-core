@@ -3,11 +3,13 @@ Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Crypto.KeyAgreement.MontgomeryLadder
-import CatCryptCore.Crypto.KeyAgreement.MontgomeryXOnly
-import CatCryptCore.Crypto.KeyAgreement.MontgomeryAsWeierstrass
-import Mathlib.Data.ZMod.Basic
-import Mathlib.Algebra.Field.ZMod
+module
+
+public import CatCryptCore.Crypto.KeyAgreement.MontgomeryLadder
+public import CatCryptCore.Crypto.KeyAgreement.MontgomeryXOnly
+public import CatCryptCore.Crypto.KeyAgreement.MontgomeryAsWeierstrass
+public import Mathlib.Data.ZMod.Basic
+public import Mathlib.Algebra.Field.ZMod
 
 /-!
 # Curve25519 as an abelian group
@@ -45,6 +47,8 @@ concrete statement about X25519 scalar multiplication.
 - RFC 7748, "Elliptic Curves for Security" (defines X25519).
 - Bernstein, "Curve25519: new Diffie-Hellman speed records", PKC 2006.
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Crypto.ECC
 

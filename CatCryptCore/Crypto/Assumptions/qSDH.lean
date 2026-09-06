@@ -3,7 +3,9 @@ Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Crypto.Advantage
+module
+
+public import CatCryptCore.Crypto.Advantage
 
 /-!
 # q-Strong Diffie-Hellman (q-SDH) Assumption
@@ -46,6 +48,8 @@ Given a group of prime order p with generator g:
 * [Boneh, Boyen. *Short Signatures Without Random Oracles.* EUROCRYPT 2004, Def. 3]
 * [Tessaro, Zhu. *Revisiting BBS Signatures.* EUROCRYPT 2023]
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Crypto.Assumptions
 

@@ -3,9 +3,11 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Crypto.Advantage
-import CatCryptCore.Deep.Package
-import CatCryptCore.Deep.Eval
+module
+
+public import CatCryptCore.Crypto.Advantage
+public import CatCryptCore.Deep.Package
+public import CatCryptCore.Deep.Eval
 
 /-!
 # Nominal Advantage
@@ -25,6 +27,8 @@ via `RawCode.substOracle`, enabling adversary-game composition.
 
 * [Larsen and Schürmann, *Nominal State-Separating Proofs*](https://eprint.iacr.org/2025/598)
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Crypto
 

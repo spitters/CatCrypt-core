@@ -3,8 +3,10 @@ Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import Mathlib.Algebra.Group.Defs
-import Mathlib.Data.Nat.Bits
+module
+
+public import Mathlib.Algebra.Group.Defs
+public import Mathlib.Data.Nat.Bits
 
 /-!
 # Montgomery Ladder Algebraic Correctness
@@ -51,6 +53,8 @@ on bit length.
 - Costello & Smith, "Montgomery curves and the Montgomery ladder",
   IACR eprint 2017/212, §4.
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Crypto.ECC
 

@@ -3,7 +3,9 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Prob.SDistr
+module
+
+public import CatCryptCore.Prob.SDistr
 
 /-!
 # Couplings
@@ -28,6 +30,8 @@ that is fundamental to probabilistic relational Hoare logic.
 * Probabilistic couplings in verification
 * SSProve: theories/Crypt/rhl_semantics/only_prob/Couplings.v
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Prob
 
@@ -197,7 +201,7 @@ theorem liftR_symm {R : α → β → Prop} {d₁ : SDistr α} {d₂ : SDistr β
 /-! ## Marginal sum lemmas -/
 
 /-- If mass d = 1, then d none = 0 -/
-private theorem SDistr.mass_one_implies_none_zero {d : SDistr α} (h : SDistr.mass d = 1) :
+theorem SDistr.mass_one_implies_none_zero {d : SDistr α} (h : SDistr.mass d = 1) :
     d none = 0 := by
   unfold SDistr.mass at h
   -- h : 1 - d none = 1
@@ -213,7 +217,7 @@ private theorem SDistr.mass_one_implies_none_zero {d : SDistr α} (h : SDistr.ma
   exact absurd h (ne_of_lt h1)
 
 /-- Binding with a constant (when mass = 1) -/
-private theorem SDistr.bind_const_mass_one {d : SDistr α} {e : SDistr β}
+theorem SDistr.bind_const_mass_one {d : SDistr α} {e : SDistr β}
     (h : SDistr.mass d = 1) : d.bind (fun _ => e) = e := by
   have hd_none := SDistr.mass_one_implies_none_zero h
   -- d.bind (fun _ => e) = e when d is a proper distribution (d none = 0)
@@ -425,7 +429,7 @@ theorem liftR_trans_eq {d₁ d₂ d₃ : SDistr α}
     prove that projecting the composed joint gives the expected bound distribution.
     This abstracts the shared proof structure used for both left and right marginals
     in `liftR_bind`. -/
-private theorem coupling_marginal_proof
+theorem coupling_marginal_proof
     {α' β' γ' δ' ε₁ ε₂ : Type*}
     (joint : SDistr (α' × β'))
     (kd : α' × β' → SDistr (γ' × δ'))

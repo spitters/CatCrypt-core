@@ -3,12 +3,14 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Examples.Cryptobox.Scheme
-import CatCryptCore.Examples.Cryptobox.PKEY
-import CatCryptCore.Crypto.Advantage
-import Mathlib.Data.Fintype.Pi
-import Mathlib.Data.Fintype.Prod
-import Mathlib.Data.Fintype.Option
+module
+
+public import CatCryptCore.Examples.Cryptobox.Scheme
+public import CatCryptCore.Examples.Cryptobox.PKEY
+public import CatCryptCore.Crypto.Advantage
+public import Mathlib.Data.Fintype.Pi
+public import Mathlib.Data.Fintype.Prod
+public import Mathlib.Data.Fintype.Option
 
 /-!
 # NIKE: Non-Interactive Key Exchange Game
@@ -29,6 +31,8 @@ tracking, secret key retrieval, and honesty checks).
 * Rocq SSProve: theories/Cryptobox/NIKE.v
 * Dupressoir et al., CSF 2022 (Section 4.2)
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Examples.Cryptobox
 

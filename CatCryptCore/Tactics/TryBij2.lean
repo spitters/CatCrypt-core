@@ -3,7 +3,9 @@ Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Relational.Rules
+module
+
+public import CatCryptCore.Relational.Rules
 
 /-!
 # `ssprove_try_bij₂` — two-sample bijection coupling
@@ -27,6 +29,8 @@ rw [← C.coh, …]; simp [C.keyEquiv, …]
 ```
 Here `f : α → (β ≃ β)` is the outer-sample-indexed bijection on the inner sample.
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Tactics
 

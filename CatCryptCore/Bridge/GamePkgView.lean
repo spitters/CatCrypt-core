@@ -3,7 +3,9 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Bridge.SemPkg
+module
+
+public import CatCryptCore.Bridge.SemPkg
 
 /-!
 # Game Package View: UC-Free Game/Handler Layer
@@ -21,6 +23,8 @@ file.
 * `singleIface` — interface with one operation
 * `GamePkg.ofGame` / `GamePkg.toGame` — isomorphism `(A → SPComp B) ≃ GamePkg A B`
 -/
+
+@[expose] public section
 
 set_option autoImplicit false
 

@@ -3,11 +3,13 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Deep.RawCode
-import CatCryptCore.Core.Code
-import CatCryptCore.Prob.SDistr
-import CatCryptCore.Relational.Judgment
-import CatCryptCore.Package.RawPackage
+module
+
+public import CatCryptCore.Deep.RawCode
+public import CatCryptCore.Core.Code
+public import CatCryptCore.Prob.SDistr
+public import CatCryptCore.Relational.Judgment
+public import CatCryptCore.Package.RawPackage
 
 /-!
 # Interpretation from Deep to Shallow Embedding
@@ -54,6 +56,8 @@ so evaluation is a simple mapping:
 * SSProve: theories/Crypt/rhl_semantics/free_prot/free_prot_semantics.v
 * [Larsen and Schürmann, *Nominal State-Separating Proofs*](https://eprint.iacr.org/2025/598)
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Deep
 

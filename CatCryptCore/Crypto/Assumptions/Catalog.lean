@@ -3,20 +3,22 @@ Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Crypto.Assumptions.DDH
-import CatCryptCore.Crypto.Assumptions.CDH
-import CatCryptCore.Crypto.Assumptions.GapDH
-import CatCryptCore.Crypto.Assumptions.DL
-import CatCryptCore.Crypto.Assumptions.tSDH
-import CatCryptCore.Crypto.Assumptions.qSDH
-import CatCryptCore.Crypto.Assumptions.CoCDH
-import CatCryptCore.Crypto.Assumptions.AEAD
-import CatCryptCore.Crypto.Assumptions.MAC
-import CatCryptCore.Crypto.Assumptions.PRP
-import CatCryptCore.Crypto.Assumptions.RSA
-import CatCryptCore.Crypto.Assumptions.CR
-import CatCryptCore.Crypto.Assumptions.OWF
-import CatCryptCore.Crypto.Assumptions.ODH
+module
+
+public import CatCryptCore.Crypto.Assumptions.DDH
+public import CatCryptCore.Crypto.Assumptions.CDH
+public import CatCryptCore.Crypto.Assumptions.GapDH
+public import CatCryptCore.Crypto.Assumptions.DL
+public import CatCryptCore.Crypto.Assumptions.tSDH
+public import CatCryptCore.Crypto.Assumptions.qSDH
+public import CatCryptCore.Crypto.Assumptions.CoCDH
+public import CatCryptCore.Crypto.Assumptions.AEAD
+public import CatCryptCore.Crypto.Assumptions.MAC
+public import CatCryptCore.Crypto.Assumptions.PRP
+public import CatCryptCore.Crypto.Assumptions.RSA
+public import CatCryptCore.Crypto.Assumptions.CR
+public import CatCryptCore.Crypto.Assumptions.OWF
+public import CatCryptCore.Crypto.Assumptions.ODH
 
 /-!
 # Cryptographic Assumption Catalog
@@ -92,3 +94,5 @@ at the instantiation site, not here.
 - Standard Expand ⇏ Expand_Composed: KDM-PRF gap (no general reduction)
 - Expand_Composed ⇏ Expand_Composed_Leak: Leakage gap (no general reduction)
 -/
+
+@[expose] public section

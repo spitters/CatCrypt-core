@@ -3,7 +3,9 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Relational.Rules
+module
+
+public import CatCryptCore.Relational.Rules
 
 /-!
 # Seq-Swap / Reorder Rules
@@ -25,6 +27,8 @@ independent operations past each other to bring them into alignment.
 
 * Bluebell (POPL 2025) — `seq-swap` rule for randomness alignment
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Relational
 

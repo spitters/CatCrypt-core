@@ -3,8 +3,10 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Core.Code
-import CatCryptCore.Crypto.Advantage
+module
+
+public import CatCryptCore.Core.Code
+public import CatCryptCore.Crypto.Advantage
 
 /-!
 # Abstract Commitment Schemes
@@ -24,6 +26,8 @@ security games (correctness, hiding, binding).
 * [SSProve/Commitments — Com.v](https://github.com/SSProve/Commitments)
 * [Kate, Zaverucha, Goldberg 2010 — §3]
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Examples.Commitments
 

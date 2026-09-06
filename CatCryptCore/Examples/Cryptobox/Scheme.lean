@@ -3,7 +3,9 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Core.Code
+module
+
+public import CatCryptCore.Core.Code
 
 /-!
 # Cryptobox Scheme Definitions
@@ -37,6 +39,8 @@ introduced only in the game definitions (PKEY, KEY, SAE, etc.).
 * Myssenburg et al., Rocq SSProve Cryptobox (nominal-ssprove)
 * Bernstein, Lange, Schwabe, "NaCl: Networking and Cryptography library"
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Examples.Cryptobox
 

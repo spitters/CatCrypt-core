@@ -4,6 +4,8 @@ Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
 
+module
+
 /-!
 # Proof Strategy Guide: Deep vs Shallow Embedding
 
@@ -133,3 +135,5 @@ enables seamless movement between embeddings.
 * `CatCrypt.Tactics` - Tactic automation for proofs
 * `CatCrypt.Examples.Cryptobox` - CryptoBox case study
 -/
+
+@[expose] public section

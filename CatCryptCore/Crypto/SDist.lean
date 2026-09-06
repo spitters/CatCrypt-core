@@ -3,9 +3,11 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Crypto.Advantage
-import CatCryptCore.Category.KlSPComp
-import Mathlib.Topology.EMetricSpace.Defs
+module
+
+public import CatCryptCore.Crypto.Advantage
+public import CatCryptCore.Category.KlSPComp
+public import Mathlib.Topology.EMetricSpace.Defs
 
 /-!
 # Statistical Distance on Kleisli Morphisms
@@ -48,6 +50,8 @@ rather than via TV distance on `SDistr`. This makes the right PPL trivial (compo
 to get a new distinguisher) and matches the game-hopping methodology directly.
 The left PPL requires a convexity/weighted-average argument (`absDiff_prTrue_bind_le`).
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Crypto
 
@@ -398,7 +402,7 @@ theorem sdist_le_of_forall {α β : Type*} {f g : α → SPComp β} {ε : ℝ≥
 /-- For IsPure computations, `SPComp.bind c D` at heap `h₀` equals
     `d.bind (fun a => D a h₀)` where `d` is the pure distribution witness.
     This removes the dependence on `h₀` through `c`, leaving it only through `D`. -/
-private theorem isPure_bind_expand {α β : Type*} {c : SPComp α} {d : SDistr α}
+theorem isPure_bind_expand {α β : Type*} {c : SPComp α} {d : SDistr α}
     (hc : ∀ h, c h = d.bind (fun a => SDistr.pure (a, h)))
     (D : α → SPComp β) (h₀ : Heap) :
     (SPComp.bind c D) h₀ = d.bind (fun a => D a h₀) := by

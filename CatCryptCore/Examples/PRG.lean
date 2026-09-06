@@ -3,9 +3,11 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Crypto.SecurityDefs
-import CatCryptCore.Prob.XorBij
-import CatCryptCore.Tactics
+module
+
+public import CatCryptCore.Crypto.SecurityDefs
+public import CatCryptCore.Prob.XorBij
+public import CatCryptCore.Tactics
 
 /-!
 # Bijection PRG: Perfect Security
@@ -55,6 +57,8 @@ computationally elsewhere (`CatCrypt.Examples.TriplePRG`).
 
 * [Rosulek, The Joy of Cryptography, §5 (pseudorandom generators)]
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Examples.PRG
 

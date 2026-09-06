@@ -3,12 +3,14 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Core.Location
-import CatCryptCore.Core.Code
-import CatCryptCore.Deep.Location
-import CatCryptCore.Tactics.LeOfSum
-import Mathlib.Data.Fintype.Basic
-import Mathlib.Data.Finset.Basic
+module
+
+public import CatCryptCore.Core.Location
+public import CatCryptCore.Core.Code
+public import CatCryptCore.Deep.Location
+public import CatCryptCore.Tactics.LeOfSum
+public import Mathlib.Data.Fintype.Basic
+public import Mathlib.Data.Finset.Basic
 
 /-!
 # Raw Code: Free Monad for Computations
@@ -49,6 +51,8 @@ the deep and shallow embeddings.
 * SSProve `theories/Crypt/rhl_semantics/free_prot/free_code.v`
 * [Larsen and Schürmann, *Nominal State-Separating Proofs*](https://eprint.iacr.org/2025/598)
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Deep
 

@@ -3,10 +3,12 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Crypto.SDist
-import CatCryptCore.Crypto.UC
-import CatCryptCore.Crypto.Advantage
-import CatCryptCore.Relational.Rules
+module
+
+public import CatCryptCore.Crypto.SDist
+public import CatCryptCore.Crypto.UC
+public import CatCryptCore.Crypto.Advantage
+public import CatCryptCore.Relational.Rules
 
 /-!
 # EasyCrypt Semantic Bridge
@@ -27,6 +29,8 @@ and CatCrypt's UC security framework (sdist, UCEmulates).
 * `ModuleRefines_to_UCEmulates` — Module refinement → UCEmulates
 * `module_hybrid_bound` — n-step hybrid argument
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Crypto.EasyCryptBridge
 
@@ -49,7 +53,7 @@ theorem pRHL_eq_implies_advantage_zero {α : Type*}
   advantage_zero_of_rHoare G₀ G₁ h A
 
 /-- The lifted eqPost relation equals `Eq` (via Prod.ext). -/
-private theorem lifted_eqPost_eq' {β : Type*} :
+theorem lifted_eqPost_eq' {β : Type*} :
     (fun (p₁ : β × Heap) (p₂ : β × Heap) => eqPost p₁.1 p₁.2 p₂.1 p₂.2) = Eq := by
   funext p₁ p₂
   simp only [eqPost, eq_iff_iff]

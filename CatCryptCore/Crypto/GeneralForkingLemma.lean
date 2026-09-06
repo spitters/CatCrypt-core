@@ -3,8 +3,12 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Crypto.ForkingLemma
+module
 
+public import CatCryptCore.Crypto.ForkingLemma
+
+
+@[expose] public section
 set_option maxHeartbeats 400000
 set_option linter.unusedSimpArgs false
 
@@ -94,7 +98,7 @@ noncomputable def swapAtEquiv [DecidableEq (Fin q)] (j : Fin q) :
 
 /-! ## Sample-Update Distribution Lemma -/
 
-private theorem sample_bind_const' {β : Type} (c : SPComp β)
+theorem sample_bind_const' {β : Type} (c : SPComp β)
     {α : Type} [Fintype α] [Nonempty α] :
     SPComp.bind (SPComp.sample α) (fun (_ : α) => c) = c := by
   funext h; simp only [SPComp.bind_def, SPComp.sample]
@@ -170,7 +174,7 @@ def acceptAtGuess (accept : Fin q × Y → Bool) (I : Fin q) : Fin q × Y → Bo
   fun ⟨j, y⟩ => decide (j = I) && accept (j, y)
 
 /-- Helper: the SPComp for the reduced adversary equals the q-query SPComp. -/
-private theorem guessReduction_comp_eq [Fintype R] [Nonempty R] [DecidableEq (Fin q)]
+theorem guessReduction_comp_eq [Fintype R] [Nonempty R] [DecidableEq (Fin q)]
     [Fintype (Fin q → R)] [Nonempty (Fin q → R)]
     (A : QForkableAdversary X C R Y q) (x : X)
     (I : Fin q) (P : Fin q × Y → Bool) :
@@ -309,7 +313,7 @@ theorem bellare_neven_aggregation (hq : 0 < q)
 /-! ## Indexed Forking: Partition + Main Theorem -/
 
 /-- Algebraic partition: `∑_I acceptAtGuess(accept, I, out) = accept(out)` as Bool→ℕ. -/
-private theorem sum_acceptAtGuess_bool (accept : Fin q × Y → Bool) (out : Fin q × Y) :
+theorem sum_acceptAtGuess_bool (accept : Fin q × Y → Bool) (out : Fin q × Y) :
     (∑ I : Fin q, if acceptAtGuess accept I out then (1 : ℝ≥0∞) else 0) =
     if accept out then 1 else 0 := by
   simp only [acceptAtGuess]

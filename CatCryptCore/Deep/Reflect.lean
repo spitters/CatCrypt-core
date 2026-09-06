@@ -3,10 +3,12 @@ Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Core.Code
-import CatCryptCore.Deep.RawCode
-import CatCryptCore.Deep.Eval
-import Lean
+module
+
+public import CatCryptCore.Core.Code
+public import CatCryptCore.Deep.RawCode
+public import CatCryptCore.Deep.Eval
+public import Lean
 
 /-!
 # Reflection: `SPComp` → `RawCode`
@@ -69,9 +71,13 @@ the reified form reduces definitionally (up to the pure-right monad law for
 `eval_fail`) normalize round-trip identities.
 -/
 
+@[expose] public section
+
 namespace CatCrypt.Deep.Reflect
 
 open Lean Meta Elab Term
+
+meta section
 
 /-- Reduce to a form whose head is an `SPComp` constructor.  We `whnfR` first
     (which does not unfold `SPComp.bind`/`SPComp.pure`, since they are not
@@ -82,7 +88,7 @@ open Lean Meta Elab Term
     reflects as readily as an inline one.  The six `SPComp` constructors are
     matched *before* the unfold fallback, so they stay opaque and reflection
     stops at them rather than collapsing into the `Heap → SDistr` body. -/
-private partial def normalizeHead (e : Expr) : MetaM Expr := do
+partial def normalizeHead (e : Expr) : MetaM Expr := do
   let e ← whnfR e
   match e.getAppFnArgs with
   | (``Bind.bind, _) | (``Pure.pure, _) =>
@@ -194,6 +200,7 @@ elab "rawCode% " e:term : term => do
   let e' ← instantiateMVars e'
   reifySPComp e'
 
+end            -- meta section
 end CatCrypt.Deep.Reflect
 
 /-! ## Smoke tests
@@ -214,37 +221,37 @@ section SmokeTest
 open CatCrypt.Core CatCrypt.Deep
 
 /-- Sample-then-return, inlined in `rawCode%`. -/
-private noncomputable def deepCoin : RawCode Bool :=
+noncomputable def deepCoin : RawCode Bool :=
   rawCode% (SPComp.bind (SPComp.sample Bool) (fun b => SPComp.pure b))
 
 /-- Failure. -/
-private noncomputable def deepFail : RawCode Bool :=
+noncomputable def deepFail : RawCode Bool :=
   rawCode% (SPComp.fail : SPComp Bool)
 
 /-- `pure` applied directly. -/
-private noncomputable def deepPure : RawCode Nat :=
+noncomputable def deepPure : RawCode Nat :=
   rawCode% (SPComp.pure 42)
 
 /-- A top-level `def` written in do-notation reflects without inlining: the
     reifier unfolds `smokeGame` and projects the monad instance, stopping at the
     `SPComp` constructors. -/
-private noncomputable def smokeGame : SPComp Bool := do
+noncomputable def smokeGame : SPComp Bool := do
   let b ← SPComp.sample Bool
   SPComp.pure (xor b true)
 
-private noncomputable def smokeGameRaw : RawCode Bool := rawCode% smokeGame
+noncomputable def smokeGameRaw : RawCode Bool := rawCode% smokeGame
 
 /-- The reflected named program evaluates back to the original shallow game. -/
-private theorem smokeGame_reflect : smokeGameRaw.eval = smokeGame := by
+theorem smokeGame_reflect : smokeGameRaw.eval = smokeGame := by
   simp [smokeGameRaw, RawCode.eval, smokeGame]
 
 /-- A named oracle *family* reflects under a binder: `fun m => rawCode% (f m)`
     unfolds `f` applied to the bound `m`. -/
-private noncomputable def smokeOracle : Bool → SPComp Bool := fun m => do
+noncomputable def smokeOracle : Bool → SPComp Bool := fun m => do
   let k ← SPComp.sample Bool
   SPComp.pure (xor k m)
 
-private noncomputable def smokeOracleRaw : Bool → RawCode Bool :=
+noncomputable def smokeOracleRaw : Bool → RawCode Bool :=
   fun m => rawCode% (smokeOracle m)
 
 /-! ### Reflecting abstract-primitive games
@@ -257,23 +264,23 @@ variable (f : Bool → SPComp Bool)
 
 /-- A game calling an abstract primitive reflects to a `RawCode` (does not throw):
     `f true` becomes an `embed` leaf, the trailing `SPComp.pure` a `ret`. -/
-private noncomputable def deepAbstract : RawCode Bool :=
+noncomputable def deepAbstract : RawCode Bool :=
   rawCode% (SPComp.bind (f true) (fun b => SPComp.pure b))
 
 /-- `eval` round-trips the abstract-primitive game to the original shallow term.
     Definitional: `eval (embed (f true)) = f true` and `eval (ret b) = pure b`,
     then η collapses `fun b => SPComp.pure b` to `SPComp.pure`. -/
-private theorem deepAbstract_reflect :
+theorem deepAbstract_reflect :
     (deepAbstract f).eval = SPComp.bind (f true) SPComp.pure := rfl
 
 /-- Concrete and opaque heads coexist: `sample Bool` reflects to `RawCode.sample`,
     the following abstract `f b` to an `embed` leaf. -/
-private noncomputable def deepMixed : RawCode Bool :=
+noncomputable def deepMixed : RawCode Bool :=
   rawCode% (SPComp.bind (SPComp.sample Bool) (fun b => f b))
 
 /-- The mixed game round-trips: the `sample` and the embedded `f b` both evaluate
     back to their shallow images. -/
-private theorem deepMixed_reflect :
+theorem deepMixed_reflect :
     (deepMixed f).eval = SPComp.bind (SPComp.sample Bool) (fun b => f b) := rfl
 
 end SmokeTest

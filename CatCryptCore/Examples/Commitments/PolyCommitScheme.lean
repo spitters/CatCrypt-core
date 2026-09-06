@@ -3,7 +3,9 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Examples.Commitments.CommitmentScheme
+module
+
+public import CatCryptCore.Examples.Commitments.CommitmentScheme
 
 /-!
 # Abstract Polynomial Commitment Schemes
@@ -24,6 +26,8 @@ value at a given point, without revealing the polynomial.
 * [SSProve/Commitments — PolyCom.v](https://github.com/SSProve/Commitments)
 * [Kate, Zaverucha, Goldberg, 2010 — §3.2]
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Examples.Commitments
 

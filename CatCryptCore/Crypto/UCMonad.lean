@@ -3,8 +3,10 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import Mathlib.Order.BoundedOrder.Basic
-import Mathlib.Topology.EMetricSpace.Defs
+module
+
+public import Mathlib.Order.BoundedOrder.Basic
+public import Mathlib.Topology.EMetricSpace.Defs
 
 /-!
 # Generic UC Monad Typeclass
@@ -74,6 +76,8 @@ The theory splits cleanly into two layers:
 This file has **no CatCrypt imports** — it is self-contained, depending only on
 Mathlib for `ℝ≥0∞`. The concrete `SPComp` instance is in `UCMonad/SPCompInstance.lean`.
 -/
+
+@[expose] public section
 
 open scoped ENNReal
 

@@ -3,10 +3,12 @@ Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Crypto.SecurityDefs
-import CatCryptCore.Crypto.Assumptions.DDH
-import CatCryptCore.Crypto.PairingGroup
-import CatCryptCore.Tactics
+module
+
+public import CatCryptCore.Crypto.SecurityDefs
+public import CatCryptCore.Crypto.Assumptions.DDH
+public import CatCryptCore.Crypto.PairingGroup
+public import CatCryptCore.Tactics
 
 /-!
 # ElGamal Public-Key Encryption: IND-CPA Security from DDH
@@ -65,6 +67,8 @@ the bound `INDCPA_Adv ≤ DDH_Advantage(m₀) + DDH_Advantage(m₁)`.
 * `CatCryptCore.Crypto.PairingGroup` for the abstract prime-order group.
 -/
 
+@[expose] public section
+
 namespace CatCrypt.Examples.ElGamal
 
 open CatCrypt.Core CatCrypt.Prob CatCrypt.Crypto
@@ -89,7 +93,7 @@ bijective. Its inverse is the (noncomputable) discrete log, which we use to give
 `ecdh` its intended meaning `g^a, g^b ↦ g^{ab}`. -/
 
 /-- `s ↦ g₁ ^ᵍ s` is injective. -/
-private theorem exp_injective : Function.Injective (fun s : ZMod P.p => P.g₁ ^ᵍ s) := by
+theorem exp_injective : Function.Injective (fun s : ZMod P.p => P.g₁ ^ᵍ s) := by
   intro a b hab
   simp only at hab
   have h1 : P.g₁ ^ᵍ (a - b) = 1 := by
@@ -98,7 +102,7 @@ private theorem exp_injective : Function.Injective (fun s : ZMod P.p => P.g₁ ^
   exact sub_eq_zero.mp h2
 
 /-- `s ↦ g₁ ^ᵍ s` is bijective (equal cardinalities). -/
-private theorem exp_bijective : Function.Bijective (fun s : ZMod P.p => P.g₁ ^ᵍ s) := by
+theorem exp_bijective : Function.Bijective (fun s : ZMod P.p => P.g₁ ^ᵍ s) := by
   haveI : NeZero P.p := ⟨P.instPrime.out.ne_zero⟩
   rw [Fintype.bijective_iff_injective_and_card]
   refine ⟨exp_injective, ?_⟩
@@ -199,7 +203,7 @@ theorem elgamal_real₁_eq (m₀ m₁ : P.G₁) (A : (P.G₁ × P.G₁) → SPCo
 /-- Absorbing the mask: for any first component `gb`, sampling the DDH mask `c` and
     running `A` on `(gb, c · m)` has the same distribution as running `A` on `(gb, c)`
     — multiplication by `m` is a bijection of the uniform mask. -/
-private theorem mask_absorb (gb m : P.G₁) (A : (P.G₁ × P.G₁) → SPComp Bool) :
+theorem mask_absorb (gb m : P.G₁) (A : (P.G₁ × P.G₁) → SPComp Bool) :
     (SPComp.sample P.G₁ >>= fun c => A (gb, c * m)) =
       (SPComp.sample P.G₁ >>= fun c => A (gb, c)) := by
   simpa using SPComp.sample_bind_equiv (Equiv.mulRight m) (fun c => A (gb, c))

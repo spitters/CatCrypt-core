@@ -3,9 +3,11 @@ Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Deep.RawCode
-import CatCryptCore.Deep.Eval
-import CatCryptCore.Deep.Reflect
+module
+
+public import CatCryptCore.Deep.RawCode
+public import CatCryptCore.Deep.Eval
+public import CatCryptCore.Deep.Reflect
 
 /-!
 # Syntactic purity: state-free deep code evaluates to `IsPure`
@@ -43,6 +45,8 @@ support-level fact. Sampling and failure are compatible with purity; only
 `get`/`put` (and opaque code: `oracleCall`, `embed`) break the syntactic
 criterion.
 -/
+
+@[expose] public section
 
 set_option autoImplicit false
 

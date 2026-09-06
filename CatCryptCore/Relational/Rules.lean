@@ -3,14 +3,18 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Relational.Judgment
-import CatCryptCore.Crypto.Advantage
+module
+
+public import CatCryptCore.Relational.Judgment
+public import CatCryptCore.Crypto.Advantage
 
 /-!
 # pRHL Proof Rules
 
 This file contains the core proof rules for probabilistic relational Hoare logic.
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Relational
 

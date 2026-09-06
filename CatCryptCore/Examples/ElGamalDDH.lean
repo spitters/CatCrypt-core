@@ -3,12 +3,14 @@ Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Examples.CyclicGroupDDH
-import CatCryptCore.Examples.INDCPA
-import CatCryptCore.Crypto.Advantage
-import CatCryptCore.Prob.XorBij
-import CatCryptCore.Relational.Rules
-import CatCryptCore.Tactics.Basic
+module
+
+public import CatCryptCore.Examples.CyclicGroupDDH
+public import CatCryptCore.Examples.INDCPA
+public import CatCryptCore.Crypto.Advantage
+public import CatCryptCore.Prob.XorBij
+public import CatCryptCore.Relational.Rules
+public import CatCryptCore.Tactics.Basic
 
 /-!
 # ElGamal Encryption and DDH Security
@@ -46,6 +48,8 @@ game (a bijection-coupling argument).
 * [Boneh & Shoup, *A Graduate Course in Applied Cryptography*, Chapter 11]
 * [SSProve: theories/Crypt/examples/PKE/ElGamal.v]
 -/
+
+@[expose] public section
 
 set_option autoImplicit false
 
@@ -172,7 +176,7 @@ noncomputable def Reduction (G : Type) [CG : CyclicGroup G]
 /-! ## Main Security Theorem -/
 
 /-- Simplify `keyGen` bind. -/
-private theorem keyGen_bind_eq (G : Type) [CG : CyclicGroup G] (m : G) :
+theorem keyGen_bind_eq (G : Type) [CG : CyclicGroup G] (m : G) :
     ElGamal_INDCPA_real G m m =
     SPComp.bind (SPComp.sample CG.Exp) (fun sk =>
       SPComp.bind (ElGamalScheme.encrypt G (CG.pow sk) m) (fun ct =>
@@ -187,7 +191,7 @@ private theorem keyGen_bind_eq (G : Type) [CG : CyclicGroup G] (m : G) :
   rw [SPComp.pure_bind]
 
 /-- Simplify `encrypt`. -/
-private theorem encrypt_eq (G : Type) [CG : CyclicGroup G] (m : G) (pk : G) :
+theorem encrypt_eq (G : Type) [CG : CyclicGroup G] (m : G) (pk : G) :
     ElGamalScheme.encrypt G pk m =
     SPComp.bind (SPComp.sample CG.Exp) (fun r =>
       SPComp.pure (CG.pow r, CG.mul m (CyclicGroup.elemPow pk r))) := by
@@ -196,7 +200,7 @@ private theorem encrypt_eq (G : Type) [CG : CyclicGroup G] (m : G) (pk : G) :
   rfl
 
 /-- Fully simplified form of `ElGamal_INDCPA_real`. -/
-private theorem ElGamal_INDCPA_real_simplified (G : Type) [CG : CyclicGroup G] (m : G) :
+theorem ElGamal_INDCPA_real_simplified (G : Type) [CG : CyclicGroup G] (m : G) :
     ElGamal_INDCPA_real G m m = (do
       let sk ← SPComp.sample CG.Exp
       let r ← SPComp.sample CG.Exp
@@ -212,7 +216,7 @@ private theorem ElGamal_INDCPA_real_simplified (G : Type) [CG : CyclicGroup G] (
   rw [CyclicGroup.elemPow_pow]
 
 /-- Simplify the LHS of the reduction to explicit samples and application. -/
-private theorem reduction_real_lhs_eq (G : Type) [CG : CyclicGroup G] (m : G)
+theorem reduction_real_lhs_eq (G : Type) [CG : CyclicGroup G] (m : G)
     (A : G × ElGamalScheme.Ciphertext G → SPComp Bool) :
     (DDH_real G).bind (Reduction G m A) =
     SPComp.bind (SPComp.sample CG.Exp) (fun a =>
@@ -230,7 +234,7 @@ private theorem reduction_real_lhs_eq (G : Type) [CG : CyclicGroup G] (m : G)
   rw [SPComp.pure_bind]
 
 /-- Simplify the RHS of the reduction to explicit samples and application. -/
-private theorem reduction_real_rhs_eq (G : Type) [CG : CyclicGroup G] (m : G)
+theorem reduction_real_rhs_eq (G : Type) [CG : CyclicGroup G] (m : G)
     (A : G × ElGamalScheme.Ciphertext G → SPComp Bool) :
     (ElGamal_INDCPA_real G m m).bind A =
     SPComp.bind (SPComp.sample CG.Exp) (fun a =>
@@ -315,12 +319,12 @@ theorem reduction_ideal_indep_message (G : Type) [CG : CyclicGroup G] (m0 m1 : G
   exact liftR_refl _
 
 /-- `ElGamal_INDCPA_real` ignores the second message argument. -/
-private theorem INDCPA_real_ignores_m1 (G : Type) [CG : CyclicGroup G] (m0 m1 m1' : G) :
+theorem INDCPA_real_ignores_m1 (G : Type) [CG : CyclicGroup G] (m0 m1 m1' : G) :
     ElGamal_INDCPA_real G m0 m1 = ElGamal_INDCPA_real G m0 m1' := by
   unfold ElGamal_INDCPA_real; rfl
 
 /-- `ElGamal_INDCPA_ideal` equals `ElGamal_INDCPA_real` with the second message. -/
-private theorem INDCPA_ideal_eq_real_m1 (G : Type) [CG : CyclicGroup G] (m0 m1 : G) :
+theorem INDCPA_ideal_eq_real_m1 (G : Type) [CG : CyclicGroup G] (m0 m1 : G) :
     ElGamal_INDCPA_ideal G m0 m1 = ElGamal_INDCPA_real G m1 m1 := by
   unfold ElGamal_INDCPA_ideal ElGamal_INDCPA_real; rfl
 

@@ -3,8 +3,10 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Crypto.PairingGroup
-import CatCryptCore.Core.Code
+module
+
+public import CatCryptCore.Crypto.PairingGroup
+public import CatCryptCore.Core.Code
 
 /-!
 # Algebraic Group Model (AGM)
@@ -34,6 +36,8 @@ This means the adversary "knows" a polynomial `φ(X) = ∑ cᵢ Xⁱ` such that
 * [Rothmann, Kreuzer — Algebraic_Group_Model.thy in Isabelle]
 * [ArkLib — AGM/Basic.lean]
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Crypto
 

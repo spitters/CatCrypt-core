@@ -3,15 +3,17 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Examples.Cryptobox.Scheme
-import CatCryptCore.Prob.Coupling
-import CatCryptCore.Relational.Rules
-import CatCryptCore.Crypto.Advantage
-import CatCryptCore.Crypto.SDist
-import CatCryptCore.Unary.FailureEvent
-import CatCryptCore.Crypto.GameReject
-import Mathlib.Data.Fintype.Pi
-import Mathlib.Data.Fintype.Prod
+module
+
+public import CatCryptCore.Examples.Cryptobox.Scheme
+public import CatCryptCore.Prob.Coupling
+public import CatCryptCore.Relational.Rules
+public import CatCryptCore.Crypto.Advantage
+public import CatCryptCore.Crypto.SDist
+public import CatCryptCore.Unary.FailureEvent
+public import CatCryptCore.Crypto.GameReject
+public import Mathlib.Data.Fintype.Pi
+public import Mathlib.Data.Fintype.Prod
 
 /-!
 # PKEY: Public Key Management Game
@@ -31,6 +33,8 @@ The PKEY Switching Lemma bounds the advantage by collision probability via FEL.
 * Rocq SSProve: theories/Cryptobox/PKEY.v
 * Dupressoir et al., CSF 2022 (Section 4.1)
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Examples.Cryptobox
 
@@ -416,7 +420,7 @@ For any outcome `(pk, h')` with `¬pkeyBadInstr h'` (i.e., `Heap.get h' pkeyColl
 6. Therefore, every term in the sum is equal, so the total is equal. -/
 -- Helper: SPComp.fail bind gives fail (at the SPComp level)
 omit CT in
-private theorem spcomp_fail_bind {α : Type} {β : Type} (f : α → SPComp β) :
+theorem spcomp_fail_bind {α : Type} {β : Type} (f : α → SPComp β) :
     SPComp.bind SPComp.fail f = SPComp.fail := by
   funext h
   simp only [SPComp.bind, SPComp.fail]
@@ -425,14 +429,14 @@ private theorem spcomp_fail_bind {α : Type} {β : Type} (f : α → SPComp β) 
 -- Helper: SPComp.bind with the same continuation produces equal results
 -- when the first computations are equal
 omit CT in
-private theorem spcomp_bind_congr_left {α : Type} {β : Type} {c₁ c₂ : SPComp α}
+theorem spcomp_bind_congr_left {α : Type} {β : Type} {c₁ c₂ : SPComp α}
     (f : α → SPComp β) (h : c₁ = c₂) : SPComp.bind c₁ f = SPComp.bind c₂ f := by
   rw [h]
 
 -- Helper: when the collision flag is set in h₁, subsequent set operations
 -- on locations with different ids preserve the flag value
 omit CT in
-private theorem collFlag_preserved_by_set (h₁ : Heap) (l : Location)
+theorem collFlag_preserved_by_set (h₁ : Heap) (l : Location)
     (v : l.ty) (hid : l.id ≠ pkeyCollFlag.id)
     (hset : Heap.get h₁ pkeyCollFlag = true) :
     Heap.get (h₁.set l v) pkeyCollFlag = true := by

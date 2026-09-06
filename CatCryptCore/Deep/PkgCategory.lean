@@ -3,11 +3,13 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Deep.Package
-import CatCryptCore.Deep.Eval
-import Mathlib.CategoryTheory.Category.Basic
-import Mathlib.CategoryTheory.Monoidal.Category
-import Mathlib.CategoryTheory.Monoidal.Braided.Basic
+module
+
+public import CatCryptCore.Deep.Package
+public import CatCryptCore.Deep.Eval
+public import Mathlib.CategoryTheory.Category.Basic
+public import Mathlib.CategoryTheory.Monoidal.Category
+public import Mathlib.CategoryTheory.Monoidal.Braided.Basic
 
 /-!
 # Package Category
@@ -33,6 +35,8 @@ from concrete code representations and work purely with oracle handlers.
 This gives all category laws definitionally (by `rfl`), following the
 Kleisli category construction for the State+Prob monad.
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Deep
 

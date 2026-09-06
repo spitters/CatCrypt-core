@@ -3,8 +3,10 @@ Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Core.Code
-import CatCryptCore.Unary.Lossless
+module
+
+public import CatCryptCore.Core.Code
+public import CatCryptCore.Unary.Lossless
 
 /-!
 # Sampling from an arbitrary sub-distribution
@@ -30,6 +32,8 @@ biased coins, discrete Gaussians — are expressible as `SPComp` programs.
 * `bind_const_of_mass_one`, `dead_sampleFrom` — a lossless sample whose result is
   discarded is a no-op
 -/
+
+@[expose] public section
 
 namespace CatCrypt.NonUniform
 

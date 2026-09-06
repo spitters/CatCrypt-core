@@ -3,9 +3,11 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Deep.RawCode
-import CatCryptCore.Deep.Eval
-import CatCryptCore.Relational.Rules
+module
+
+public import CatCryptCore.Deep.RawCode
+public import CatCryptCore.Deep.Eval
+public import CatCryptCore.Relational.Rules
 
 /-!
 # Deep Embedding: ProofFrog-Style Transformations
@@ -62,6 +64,8 @@ which is the correct semantics for game-based cryptographic proofs.
 * ProofFrog: https://github.com/ProofFrog/ProofFrog
 * [Barbosa et al., "Mechanizing Proofs about Adversaries"]
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Deep
 

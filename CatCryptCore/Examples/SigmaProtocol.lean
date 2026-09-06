@@ -3,9 +3,11 @@ Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Crypto.Advantage
-import CatCryptCore.Prob.XorBij
-import CatCryptCore.Tactics
+module
+
+public import CatCryptCore.Crypto.Advantage
+public import CatCryptCore.Prob.XorBij
+public import CatCryptCore.Tactics
 
 /-!
 # Σ-Protocols: Completeness, SHVZK, Special Soundness, and Commitment
@@ -55,6 +57,8 @@ coupling toolkit used by the core one-time-pad and masking-commitment examples.
 * [Schnorr, *Efficient Signature Generation by Smart Cards*, J. Cryptology 1991]
 * SSProve, `theories/Crypt/examples/Schnorr.v` and `SigmaProtocol.v`
 -/
+
+@[expose] public section
 
 set_option autoImplicit false
 -- The example's central structure is itself named `SigmaProtocol`, matching the

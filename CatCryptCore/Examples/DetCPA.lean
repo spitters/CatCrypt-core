@@ -3,8 +3,10 @@ Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Crypto.Advantage
-import CatCryptCore.Crypto.ForkingLemma
+module
+
+public import CatCryptCore.Crypto.Advantage
+public import CatCryptCore.Crypto.ForkingLemma
 
 /-!
 # Deterministic CPA Impossibility
@@ -25,6 +27,8 @@ No UC wrapper — this is an attack/insecurity result.
 
 * [Rosulek, The Joy of Cryptography, Section 7.1]
 -/
+
+@[expose] public section
 
 namespace CatCryptCore.Examples.DetCPA
 
@@ -60,7 +64,7 @@ noncomputable def eq_adversary : (Bool × Bool) → SPComp Bool :=
 
 /-- For the XOR scheme encrypting the same message twice:
     the adversary always returns true (advantage 1 side). -/
-private theorem same_msg_prTrue (m : Bool) :
+theorem same_msg_prTrue (m : Bool) :
     prTrue ((det_enc_pair xorDet m m).bind eq_adversary) Heap.empty = 1 := by
   unfold det_enc_pair eq_adversary xorDet
   simp only [SPComp.monad_bind_eq, SPComp.bind_assoc, SPComp.pure_bind]
@@ -73,7 +77,7 @@ private theorem same_msg_prTrue (m : Bool) :
 
 /-- For the XOR scheme encrypting different messages:
     the adversary always returns false (advantage 0 side). -/
-private theorem diff_msg_prTrue (m : Bool) :
+theorem diff_msg_prTrue (m : Bool) :
     prTrue ((det_enc_pair xorDet m (!m)).bind eq_adversary) Heap.empty = 0 := by
   unfold det_enc_pair eq_adversary xorDet
   simp only [SPComp.monad_bind_eq, SPComp.bind_assoc, SPComp.pure_bind]

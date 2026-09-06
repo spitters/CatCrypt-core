@@ -3,10 +3,12 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Core.Code
-import CatCryptCore.Crypto.Advantage
-import CatCryptCore.Crypto.HybridArgument
-import CatCryptCore.Relational.Rules
+module
+
+public import CatCryptCore.Core.Code
+public import CatCryptCore.Crypto.Advantage
+public import CatCryptCore.Crypto.HybridArgument
+public import CatCryptCore.Relational.Rules
 
 /-!
 # Abstract Public-Key Encryption Scheme and CPA Games
@@ -38,6 +40,8 @@ for hybrid arguments, as each encryption query can be independently switched.
 * [Larsen & Schurmann, Mechanizing Nested Hybrid Arguments, CSF 2025, Fig. 5-9]
 * [Bellare et al., Relations Among Notions of Security for PKE]
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Examples.PKE
 
@@ -172,7 +176,7 @@ noncomputable def MT_CPA_Advantage (pk : P.PK) (msgs : List P.M)
 /-! ## Boundary Conditions -/
 
 /-- Helper: hybridLoop with threshold 0 equals MT_CPA_real. -/
-private theorem hybridLoop_zero_eq_real (pk : P.PK) (j : ℕ) (msgs : List P.M) :
+theorem hybridLoop_zero_eq_real (pk : P.PK) (j : ℕ) (msgs : List P.M) :
     hybridLoop P pk 0 j msgs = MT_CPA_real P pk msgs := by
   induction msgs generalizing j with
   | nil => simp [hybridLoop, MT_CPA_real]
@@ -188,7 +192,7 @@ theorem hybrid_game_zero (pk : P.PK) (msgs : List P.M) :
   exact hybridLoop_zero_eq_real P pk 0 msgs
 
 /-- Helper: hybridLoop at full length equals MT_CPA_ideal. -/
-private theorem hybridLoop_length_eq_ideal (pk : P.PK) (j : ℕ) (msgs : List P.M) :
+theorem hybridLoop_length_eq_ideal (pk : P.PK) (j : ℕ) (msgs : List P.M) :
     hybridLoop P pk (j + msgs.length) j msgs = MT_CPA_ideal P msgs := by
   induction msgs generalizing j with
   | nil => simp [hybridLoop, MT_CPA_ideal]
@@ -218,7 +222,7 @@ theorem hybrid_game_length (pk : P.PK) (msgs : List P.M) :
     OT-CPA$ query at position i. -/
 
 /-- Helper: hybridLoop agrees on positions where the condition is the same. -/
-private theorem hybridLoop_agree_prefix (pk : P.PK) (i j : ℕ) (msgs : List P.M)
+theorem hybridLoop_agree_prefix (pk : P.PK) (i j : ℕ) (msgs : List P.M)
     (hj : j + msgs.length ≤ i) :
     hybridLoop P pk i j msgs = hybridLoop P pk (i + 1) j msgs := by
   induction msgs generalizing j with
@@ -232,7 +236,7 @@ private theorem hybridLoop_agree_prefix (pk : P.PK) (i j : ℕ) (msgs : List P.M
     rw [ih (j + 1) (by omega)]
 
 /-- Helper: hybridLoop agrees on positions after the switch point. -/
-private theorem hybridLoop_agree_suffix (pk : P.PK) (i j : ℕ) (msgs : List P.M)
+theorem hybridLoop_agree_suffix (pk : P.PK) (i j : ℕ) (msgs : List P.M)
     (hj : i < j) :
     hybridLoop P pk i j msgs = hybridLoop P pk (i + 1) j msgs := by
   induction msgs generalizing j with

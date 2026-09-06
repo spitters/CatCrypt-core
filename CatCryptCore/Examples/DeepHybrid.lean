@@ -3,15 +3,17 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Deep.RawCode
-import CatCryptCore.Deep.Eval
-import CatCryptCore.Prob.Coupling
-import CatCryptCore.Prob.XorBij
-import CatCryptCore.Relational.Rules
-import CatCryptCore.Crypto.Advantage
-import CatCryptCore.Crypto.HybridArgument
-import CatCryptCore.Tactics.Basic
-import CatCryptCore.Tactics.Sim
+module
+
+public import CatCryptCore.Deep.RawCode
+public import CatCryptCore.Deep.Eval
+public import CatCryptCore.Prob.Coupling
+public import CatCryptCore.Prob.XorBij
+public import CatCryptCore.Relational.Rules
+public import CatCryptCore.Crypto.Advantage
+public import CatCryptCore.Crypto.HybridArgument
+public import CatCryptCore.Tactics.Basic
+public import CatCryptCore.Tactics.Sim
 
 /-!
 # Deep Embedding: Generic Hybrid Argument
@@ -57,6 +59,8 @@ CatCrypt deep embedding:
 * [Bellare-Rogaway, Code-Based Game-Playing Proofs]
 * [Rosulek, The Joy of Cryptography, Chapter 5]
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Examples.DeepHybrid
 

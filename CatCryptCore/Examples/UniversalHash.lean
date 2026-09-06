@@ -3,10 +3,12 @@ Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Crypto.Advantage
-import CatCryptCore.Relational.Rules
-import CatCryptCore.Prob.XorBij
-import CatCryptCore.Tactics.Basic
+module
+
+public import CatCryptCore.Crypto.Advantage
+public import CatCryptCore.Relational.Rules
+public import CatCryptCore.Prob.XorBij
+public import CatCryptCore.Tactics.Basic
 
 /-!
 # Universal Hashing and Carter-Wegman MAC
@@ -31,6 +33,8 @@ construction from Chapter 12 of "The Joy of Cryptography".
 * [Rosulek, The Joy of Cryptography, Chapter 12]
 * [Carter & Wegman, Universal Classes of Hash Functions, 1979]
 -/
+
+@[expose] public section
 
 namespace CatCryptCore.Examples.UniversalHash
 
@@ -94,7 +98,7 @@ theorem uh_forge_ideal_isPure : SPComp.IsPure uh_forge_ideal :=
 /-! ## Arithmetic Helpers -/
 
 /-- 2 × 4⁻¹ = 2⁻¹ in ENNReal. -/
-private theorem two_mul_four_inv : 2 * (4 : ENNReal)⁻¹ = (2 : ENNReal)⁻¹ := by
+theorem two_mul_four_inv : 2 * (4 : ENNReal)⁻¹ = (2 : ENNReal)⁻¹ := by
   rw [show (4 : ENNReal) = 2 * 2 from by norm_num,
       ENNReal.mul_inv (Or.inl (by norm_num : (2 : ENNReal) ≠ 0))
                        (Or.inl (by norm_num : (2 : ENNReal) ≠ ⊤)),
@@ -102,11 +106,11 @@ private theorem two_mul_four_inv : 2 * (4 : ENNReal)⁻¹ = (2 : ENNReal)⁻¹ :
                                            (by norm_num : (2 : ENNReal) ≠ ⊤), one_mul]
 
 /-- 4⁻¹ + 4⁻¹ = 2⁻¹ in ENNReal. -/
-private theorem four_inv_add : (4 : ENNReal)⁻¹ + (4 : ENNReal)⁻¹ = (2 : ENNReal)⁻¹ := by
+theorem four_inv_add : (4 : ENNReal)⁻¹ + (4 : ENNReal)⁻¹ = (2 : ENNReal)⁻¹ := by
   rw [← two_mul]; exact two_mul_four_inv
 
 /-- Doubling a quarter gives a half: 4⁻¹*x + 4⁻¹*x = 2⁻¹*x in ENNReal. -/
-private theorem four_inv_double (x : ENNReal) :
+theorem four_inv_double (x : ENNReal) :
     (4 : ENNReal)⁻¹ * x + (4 : ENNReal)⁻¹ * x = (2 : ENNReal)⁻¹ * x := by
   rw [← add_mul, four_inv_add]
 
@@ -117,7 +121,7 @@ private theorem four_inv_double (x : ENNReal) :
 
     The proof expands the sums over Bool × Bool, computes the hash values,
     and uses arithmetic to show the 4-element sum equals the 2-element sum. -/
-private theorem forge_prTrue_eq (m m_star : Bool) (t_star : Bool)
+theorem forge_prTrue_eq (m m_star : Bool) (t_star : Bool)
     (h_diff : m_star ≠ m) (A : Bool → SPComp Bool) (h₀ : Heap) :
     prTrue ((uh_forge_real boolPairwiseHash m m_star t_star).bind A) h₀ =
     prTrue ((SPComp.sample Bool).bind A) h₀ := by
@@ -168,7 +172,7 @@ def IsUniversal (H : UHFamily) : Prop :=
     ∀ A, AdvantageA (collision_game H m₁ m₂) (SPComp.pure false) A ≤ H.epsilon
 
 /-- Collision prTrue equals uniform Bool prTrue (same argument as forge). -/
-private theorem collision_prTrue_eq (m₁ m₂ : Bool) (h_ne : m₁ ≠ m₂)
+theorem collision_prTrue_eq (m₁ m₂ : Bool) (h_ne : m₁ ≠ m₂)
     (A : Bool → SPComp Bool) (h₀ : Heap) :
     prTrue ((collision_game boolPairwiseHash m₁ m₂).bind A) h₀ =
     prTrue ((SPComp.sample Bool).bind A) h₀ := by

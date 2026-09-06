@@ -3,10 +3,12 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Invariant.Basic
-import CatCryptCore.Invariant.Coupling
-import CatCryptCore.Invariant.SemiInvariant
-import CatCryptCore.Invariant.EqUpToInv
+module
+
+public import CatCryptCore.Invariant.Basic
+public import CatCryptCore.Invariant.Coupling
+public import CatCryptCore.Invariant.SemiInvariant
+public import CatCryptCore.Invariant.EqUpToInv
 
 /-!
 # Invariant System
@@ -38,6 +40,8 @@ A security bound (a zero or bounded `Advantage`) is proved in the deep embedding
 
 * [Larsen and Schürmann, *Nominal State-Separating Proofs*](https://eprint.iacr.org/2025/598)
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Invariant
 

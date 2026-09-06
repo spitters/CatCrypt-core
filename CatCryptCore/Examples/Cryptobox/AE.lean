@@ -3,13 +3,15 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Examples.Cryptobox.Scheme
-import CatCryptCore.Examples.Cryptobox.KEY
-import CatCryptCore.Examples.Cryptobox.SAE
-import CatCryptCore.Crypto.Advantage
-import Mathlib.Data.Fintype.Pi
-import Mathlib.Data.Fintype.Prod
-import Mathlib.Data.Fintype.Option
+module
+
+public import CatCryptCore.Examples.Cryptobox.Scheme
+public import CatCryptCore.Examples.Cryptobox.KEY
+public import CatCryptCore.Examples.Cryptobox.SAE
+public import CatCryptCore.Crypto.Advantage
+public import Mathlib.Data.Fintype.Pi
+public import Mathlib.Data.Fintype.Prod
+public import Mathlib.Data.Fintype.Option
 
 /-!
 # AE: Multi-instance Authenticated Encryption Game
@@ -38,6 +40,8 @@ The AE oracles internally query KEY oracles for key retrieval and honesty checks
 * Rocq SSProve: theories/Cryptobox/AE.v
 * Dupressoir et al., CSF 2022 (Section 4.4)
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Examples.Cryptobox
 

@@ -3,12 +3,14 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Unary.Judgment
-import CatCryptCore.Unary.Lossless
-import CatCryptCore.Unary.Event
-import CatCryptCore.Relational.Judgment
-import CatCryptCore.Crypto.Advantage
-import CatCryptCore.Prob.Support
+module
+
+public import CatCryptCore.Unary.Judgment
+public import CatCryptCore.Unary.Lossless
+public import CatCryptCore.Unary.Event
+public import CatCryptCore.Relational.Judgment
+public import CatCryptCore.Crypto.Advantage
+public import CatCryptCore.Prob.Support
 
 /-!
 # Bridge: Connecting Unary Logic to Relational Logic and Probability
@@ -43,6 +45,8 @@ probabilistic Hoare logic (pRHL) and the advantage/probability framework.
 * Barthe et al., "CertiCrypt: Computer-Verified, Implementation-Level Code-Based
   Cryptographic Proofs" (failure event lemma)
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Unary
 

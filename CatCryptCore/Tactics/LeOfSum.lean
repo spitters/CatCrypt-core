@@ -3,7 +3,9 @@ Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import Lean
+module
+
+public import Lean
 
 /-!
 # `le_of_sum` Tactic
@@ -13,8 +15,12 @@ showing a single summand is bounded by a left-associated sum. Replaces
 8-line `calc` chains of `le_add_self`/`le_self_add` with a single call.
 -/
 
+public section
+
+meta section
+
 open Lean Elab Tactic in
-private partial def leOfSumImpl : TacticM Unit := do
+partial def leOfSumImpl : TacticM Unit := do
   -- Build unhygienic tactic syntax
   let leSelfAdd := mkIdent `le_self_add
   let leAddSelf := mkIdent `le_add_self

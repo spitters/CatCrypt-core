@@ -3,7 +3,9 @@ Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Relational.Rules
+module
+
+public import CatCryptCore.Relational.Rules
 
 /-!
 # pRHL Loop-Congruence Rules
@@ -44,6 +46,8 @@ example (l : Location) (vs : List l.ty) :
   rHoare_forM_same vs fun v _ => rHoare_set_sync l v ...
 ```
 -/
+
+@[expose] public section
 
 set_option autoImplicit false
 

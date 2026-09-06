@@ -1,10 +1,12 @@
-import CatCryptCore.Nominal.Atom
-import CatCryptCore.Nominal.FinPerm
-import CatCryptCore.Nominal.Nominal
-import CatCryptCore.Nominal.Fresh
-import CatCryptCore.Nominal.NameAbstraction
-import CatCryptCore.Nominal.Support
-import CatCryptCore.Nominal.NomPackage
+module
+
+public import CatCryptCore.Nominal.Atom
+public import CatCryptCore.Nominal.FinPerm
+public import CatCryptCore.Nominal.Nominal
+public import CatCryptCore.Nominal.Fresh
+public import CatCryptCore.Nominal.NameAbstraction
+public import CatCryptCore.Nominal.Support
+public import CatCryptCore.Nominal.NomPackage
 
 /-!
 # Nominal Sets
@@ -27,3 +29,5 @@ Nominal sets are mathematical structures for reasoning about names and binding.
 * [Pitts, *Nominal Sets*]
 * [Larsen and Schürmann, *Nominal State-Separating Proofs*](https://eprint.iacr.org/2025/598)
 -/
+
+@[expose] public section

@@ -3,9 +3,11 @@ Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.NonUniform.Sample
-import CatCryptCore.Unary.Event
-import CatCryptCore.Crypto.ForkingLemma
+module
+
+public import CatCryptCore.NonUniform.Sample
+public import CatCryptCore.Unary.Event
+public import CatCryptCore.Crypto.ForkingLemma
 
 /-!
 # Unary rules for sampling from an arbitrary distribution
@@ -23,6 +25,8 @@ average the continuation's probabilities against the weights `d (some a)`.
   the uniform instance, with the statement of the existing lemma verbatim
 * `mass_bind_sampleFrom` — mass averages the same way
 -/
+
+@[expose] public section
 
 namespace CatCrypt.NonUniform
 

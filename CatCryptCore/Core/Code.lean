@@ -3,8 +3,10 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Core.Heap
-import CatCryptCore.Prob.SDistr
+module
+
+public import CatCryptCore.Core.Heap
+public import CatCryptCore.Prob.SDistr
 
 /-!
 # Code Representation
@@ -22,6 +24,8 @@ We use the direct semantic model: `SPComp α = Heap → SDistr (α × Heap)`.
 * `SPComp.fail` - Failed computation
 * `SPComp.assert` - Assertion (fail if false)
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Core
 

@@ -3,7 +3,9 @@ Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Deep.Eval
+module
+
+public import CatCryptCore.Deep.Eval
 
 /-!
 # Reflective normalization for the `RawCode` free monad
@@ -51,6 +53,8 @@ normal form is computed once and the goal closes by a definitional comparison.
 * `Mathlib.Tactic.CategoryTheory.Monoidal` — reflective coherence for monoidal
   categories.
 -/
+
+@[expose] public section
 
 set_option autoImplicit false
 

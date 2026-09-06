@@ -3,7 +3,9 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import Lean
+module
+
+public import Lean
 
 /-!
 # CatCrypt Simp Attribute Declarations
@@ -19,6 +21,8 @@ by any file that wants to tag lemmas with these attributes.
 * `ssprove_simpl` - SPComp normalization (monad laws, dead code, contraction)
 * `ssprove_eval` - Deep→shallow bridge evaluation lemmas
 -/
+
+@[expose] public section
 
 /-- `ssprove_simpl` is the named simp set for normalizing SPComp terms.
 

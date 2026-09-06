@@ -3,7 +3,9 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Relational.Rules
+module
+
+public import CatCryptCore.Relational.Rules
 
 /-!
 # XOR Bijection Library
@@ -31,6 +33,8 @@ across 20+ example files.
 
 * [Shannon, Communication Theory of Secrecy Systems, 1949]
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Prob.XorBij
 

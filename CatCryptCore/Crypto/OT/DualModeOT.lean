@@ -3,9 +3,11 @@ Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Crypto.UC
-import CatCryptCore.Crypto.SDist
-import CatCryptCore.Examples.GroupParam
+module
+
+public import CatCryptCore.Crypto.UC
+public import CatCryptCore.Crypto.SDist
+public import CatCryptCore.Examples.GroupParam
 
 /-!
 # Oblivious Transfer with Information-Theoretic Sender-Message Privacy
@@ -45,6 +47,8 @@ both public keys are non-identity.
 * `sim_if = Bool × G` — the ideal hands the simulator the choice bit and the
   chosen message's ciphertext; the simulator fakes the other ciphertext.
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Crypto.OT.DualModeOT
 

@@ -3,15 +3,19 @@ Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Crypto.Encryption
-import CatCryptCore.Crypto.Advantage
-import CatCryptCore.Crypto.ShallowModule
-import CatCryptCore.Relational.Rules
-import CatCryptCore.Tactics.Basic
-import CatCryptCore.Tactics.BindAlign
-import CatCryptCore.Tactics.Sim
-import CatCryptCore.Prob.XorBij
+module
 
+public import CatCryptCore.Crypto.Encryption
+public import CatCryptCore.Crypto.Advantage
+public import CatCryptCore.Crypto.ShallowModule
+public import CatCryptCore.Relational.Rules
+public import CatCryptCore.Tactics.Basic
+public import CatCryptCore.Tactics.BindAlign
+public import CatCryptCore.Tactics.Sim
+public import CatCryptCore.Prob.XorBij
+
+
+@[expose] public section
 set_option linter.unusedSectionVars false
 
 /-!
@@ -568,7 +572,7 @@ If both components are perfectly secure, so is the composition.
 -/
 
 /-- `eqPost`-coupling implies `Eq`-coupling on `α × Heap` pairs. -/
-private theorem eqPost_to_eq {α : Type*} {d₁ d₂ : SDistr (α × Heap)}
+theorem eqPost_to_eq {α : Type*} {d₁ d₂ : SDistr (α × Heap)}
     (h : d₁ ⟨fun p₁ p₂ => eqPost p₁.1 p₁.2 p₂.1 p₂.2⟩# d₂) :
     d₁ ⟨Eq⟩# d₂ := by
   apply liftR_mono _ h
@@ -577,7 +581,7 @@ private theorem eqPost_to_eq {α : Type*} {d₁ d₂ : SDistr (α × Heap)}
   exact Prod.ext heqpost.1 heqpost.2
 
 /-- `Eq`-coupling implies `eqPost`-coupling on `α × Heap` pairs. -/
-private theorem eq_to_eqPost {α : Type*} {d₁ d₂ : SDistr (α × Heap)}
+theorem eq_to_eqPost {α : Type*} {d₁ d₂ : SDistr (α × Heap)}
     (h : d₁ ⟨Eq⟩# d₂) :
     d₁ ⟨fun p₁ p₂ => eqPost p₁.1 p₁.2 p₂.1 p₂.2⟩# d₂ := by
   apply liftR_mono _ h
@@ -586,7 +590,7 @@ private theorem eq_to_eqPost {α : Type*} {d₁ d₂ : SDistr (α × Heap)}
   simp only [eqPost]
   exact heq
 
-private theorem pke_real_eq_hybrid1
+theorem pke_real_eq_hybrid1
     {PKey SKey Key EKey Plain Cipher : Type}
     [Fintype Key] [Nonempty Key]
     [Fintype EKey] [Nonempty EKey]
@@ -618,7 +622,7 @@ private theorem pke_real_eq_hybrid1
   apply eq_to_eqPost
   exact liftR_refl _
 
-private theorem hybrid1_eq_hybrid2
+theorem hybrid1_eq_hybrid2
     {PKey SKey Key EKey Plain Cipher : Type}
     [Fintype Key] [Nonempty Key]
     [Fintype EKey] [Nonempty EKey]
@@ -659,7 +663,7 @@ private theorem hybrid1_eq_hybrid2
   apply eq_to_eqPost
   exact liftR_refl _
 
-private theorem hybrid2_eq_pke_ideal
+theorem hybrid2_eq_pke_ideal
     {PKey SKey Key EKey Plain Cipher : Type}
     [Fintype Key] [Nonempty Key]
     [Fintype EKey] [Nonempty EKey]

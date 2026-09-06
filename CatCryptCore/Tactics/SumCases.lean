@@ -3,7 +3,9 @@ Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import Lean
+module
+
+public import Lean
 
 /-!
 # `sum_cases` and `pkg_coherence_lite`
@@ -38,6 +40,10 @@ For richer closers that additionally normalize `SPComp` monad chains or
 reach into the deep embedding, see `Tactics/SPNormalize.lean` and
 `Tactics/PkgCoherenceBang.lean`.
 -/
+
+public section
+
+meta section
 
 namespace CatCrypt.Tactics
 

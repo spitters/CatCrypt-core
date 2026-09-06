@@ -3,8 +3,10 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Crypto.PairingGroup
-import CatCryptCore.Crypto.Advantage
+module
+
+public import CatCryptCore.Crypto.PairingGroup
+public import CatCryptCore.Crypto.Advantage
 
 /-!
 # Discrete Logarithm Assumption
@@ -35,6 +37,8 @@ The DL assumption is used for the hiding property of KZG.
 * Katz & Lindell, *Introduction to Modern Cryptography*, §9.3
 * [Palak, Haines, *Formal Verification of KZG Polynomial Commitments*, ESORICS 2025]
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Crypto.Assumptions
 

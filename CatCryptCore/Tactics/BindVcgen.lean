@@ -3,8 +3,12 @@ Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Tactics.BindAlign
-import CatCryptCore.Core.Code
+module
+
+public meta import CatCryptCore.Tactics.BindAlign
+public import CatCryptCore.Tactics.BindAlign
+public meta import CatCryptCore.Core.Code
+public import CatCryptCore.Core.Code
 
 /-!
 # `bind_vcgen` — run-to-completion for `SPComp`-*equality* goals
@@ -57,6 +61,10 @@ synthesize:
   to the right-hand `sample`), then peels again, leaving the pointwise
   `f a = g (e a)` obligation (discharged from `e.left_inv`).
 -/
+
+public section
+
+meta section
 
 namespace CatCrypt.Tactic
 

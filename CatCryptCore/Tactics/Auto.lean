@@ -3,11 +3,13 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import Lean
-import CatCryptCore.Tactics.WP
-import CatCryptCore.Tactics.Sync
-import CatCryptCore.Tactics.ProofFrog
-import CatCryptCore.Tactics.Conditional
+module
+
+public import Lean
+public import CatCryptCore.Tactics.WP
+public import CatCryptCore.Tactics.Sync
+public import CatCryptCore.Tactics.ProofFrog
+public import CatCryptCore.Tactics.Conditional
 
 /-!
 # EasyCrypt-Style Auto Tactic
@@ -41,6 +43,8 @@ We chain our existing tactics in the same order:
 
 * EasyCrypt: ecAuto tactic
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Tactics
 

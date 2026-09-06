@@ -3,10 +3,12 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import Mathlib.CategoryTheory.Monoidal.Category
-import Mathlib.CategoryTheory.Monoidal.Braided.Basic
-import Mathlib.Tactic.CategoryTheory.Reassoc
-import Mathlib.Logic.Equiv.Sum
+module
+
+public import Mathlib.CategoryTheory.Monoidal.Category
+public import Mathlib.CategoryTheory.Monoidal.Braided.Basic
+public import Mathlib.Tactic.CategoryTheory.Reassoc
+public import Mathlib.Logic.Equiv.Sum
 
 /-!
 # Category of Families as a Symmetric Monoidal Category
@@ -27,6 +29,8 @@ definitional reductions for all structural morphisms (associator, braiding, unit
 * `BraidedCategory (FamObj C)` — braiding via `Sum.swap`
 * `SymmetricCategory (FamObj C)` — braiding is self-inverse
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Category
 
@@ -487,7 +491,7 @@ For naturality axioms, we use morphism-level intermediate lemmas
 
 /-! ## MonoidalCategory -/
 
-private theorem assocNat {X₁ Y₁ X₂ Y₂ X₃ Y₃ : FamObj C}
+theorem assocNat {X₁ Y₁ X₂ Y₂ X₃ Y₃ : FamObj C}
     (f₁ : X₁ ⟶ Y₁) (f₂ : X₂ ⟶ Y₂) (f₃ : X₃ ⟶ Y₃) :
     ((f₁ ⊗ₘ f₂) ⊗ₘ f₃) ≫ (α_ Y₁ Y₂ Y₃).hom =
     (α_ X₁ X₂ X₃).hom ≫ (f₁ ⊗ₘ (f₂ ⊗ₘ f₃)) := by

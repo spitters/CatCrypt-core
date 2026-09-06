@@ -3,9 +3,11 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Invariant.SemiInvariant
-import CatCryptCore.Relational.Judgment
-import CatCryptCore.Package.ValidPackage
+module
+
+public import CatCryptCore.Invariant.SemiInvariant
+public import CatCryptCore.Relational.Judgment
+public import CatCryptCore.Package.ValidPackage
 
 /-!
 # Equality up to an invariant
@@ -23,6 +25,8 @@ over `DeepPackage.link`.
 * [Larsen and Schürmann, *Nominal State-Separating Proofs*](https://eprint.iacr.org/2025/598)
 * SSProve: theories/Crypt/package/pkg_rhl.v
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Invariant
 

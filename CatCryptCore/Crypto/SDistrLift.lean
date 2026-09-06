@@ -3,8 +3,10 @@ Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Crypto.SDist
-import CatCryptCore.Prob.Support
+module
+
+public import CatCryptCore.Crypto.SDist
+public import CatCryptCore.Prob.Support
 
 /-!
 # State-independent lift `SDistr → SPComp`
@@ -31,6 +33,8 @@ VCVio-free core module rather than dragging the VCVio library into their closure
 * `bind_sdistrToSPComp_eq` — running a bind of the lift at a heap.
 * `marginalize_heap` — marginalising the heap out of an `SDistr (Bool × Heap)`.
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Crypto.SDistrLift
 

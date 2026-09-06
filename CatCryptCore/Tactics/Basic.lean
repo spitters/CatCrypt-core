@@ -3,10 +3,12 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import Lean
-import CatCryptCore.Core.Code
-import CatCryptCore.Relational.Rules
-import CatCryptCore.Tactics.SimpAttr
+module
+
+public import Lean
+public import CatCryptCore.Core.Code
+public import CatCryptCore.Relational.Rules
+public import CatCryptCore.Tactics.SimpAttr
 
 /-!
 # Basic CatCrypt Tactics
@@ -28,6 +30,8 @@ including tactics for ValidCode goals and code simplification.
 
 * SSProve: theories/Crypt/package/pkg_tactics.v
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Tactics
 

@@ -3,7 +3,9 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Examples.PKE.Scheme
+module
+
+public import CatCryptCore.Examples.PKE.Scheme
 
 /-!
 # Many-Time → One-Time CPA$ Reduction via SLIDE
@@ -34,6 +36,8 @@ random. This difference is exactly one OT-CPA$ query.
 
 * [Larsen & Schurmann, Mechanizing Nested Hybrid Arguments, CSF 2025, §4.1]
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Examples.PKE.OneToMany
 
@@ -76,7 +80,7 @@ theorem dHybrid_length (pk : P.PK) (msgs : List P.M) :
     by defining the prefix/suffix computations recursively. -/
 
 /-- Sample `n` random ciphertexts. -/
-private noncomputable def sampleN : ℕ → SPComp (List P.C)
+noncomputable def sampleN : ℕ → SPComp (List P.C)
   | 0 => SPComp.pure []
   | n + 1 => do
     let c ← P.sampleCip
@@ -84,7 +88,7 @@ private noncomputable def sampleN : ℕ → SPComp (List P.C)
     SPComp.pure (c :: cs)
 
 /-- Encrypt a list of messages under a public key. -/
-private noncomputable def encList (pk : P.PK) : List P.M → SPComp (List P.C)
+noncomputable def encList (pk : P.PK) : List P.M → SPComp (List P.C)
   | [] => SPComp.pure []
   | m :: ms => do
     let c ← P.enc pk m
@@ -94,7 +98,7 @@ private noncomputable def encList (pk : P.PK) : List P.M → SPComp (List P.C)
 /-! ## Structural helpers for hybridLoop -/
 
 /-- Shifting both threshold and position by 1 is a no-op. -/
-private theorem hybridLoop_shift (pk : P.PK) (i j : ℕ) (msgs : List P.M) :
+theorem hybridLoop_shift (pk : P.PK) (i j : ℕ) (msgs : List P.M) :
     hybridLoop P pk (i + 1) (j + 1) msgs = hybridLoop P pk i j msgs := by
   induction msgs generalizing j with
   | nil => simp [hybridLoop]
@@ -105,7 +109,7 @@ private theorem hybridLoop_shift (pk : P.PK) (i j : ℕ) (msgs : List P.M) :
       (congr 1; funext c; congr 1; exact ih (j + 1))
 
 /-- When threshold ≤ position, hybridLoop encrypts everything = encList. -/
-private theorem hybridLoop_suffix_eq_encList (pk : P.PK) (i j : ℕ) (msgs : List P.M)
+theorem hybridLoop_suffix_eq_encList (pk : P.PK) (i j : ℕ) (msgs : List P.M)
     (hj : i ≤ j) :
     hybridLoop P pk i j msgs = encList P pk msgs := by
   induction msgs generalizing j with
@@ -118,13 +122,13 @@ private theorem hybridLoop_suffix_eq_encList (pk : P.PK) (i j : ℕ) (msgs : Lis
 
 /-! ## IsPure helpers -/
 
-private theorem sampleN_isPure (hP : P.IsPure) : ∀ n, SPComp.IsPure (sampleN P n)
+theorem sampleN_isPure (hP : P.IsPure) : ∀ n, SPComp.IsPure (sampleN P n)
   | 0 => SPComp.pure_isPure []
   | n + 1 => by
     exact SPComp.bind_isPure hP.sampleCip_isPure fun c =>
       SPComp.bind_isPure (sampleN_isPure hP n) fun cs => SPComp.pure_isPure (c :: cs)
 
-private theorem encList_isPure (hP : P.IsPure) (pk : P.PK) :
+theorem encList_isPure (hP : P.IsPure) (pk : P.PK) :
     ∀ ms, SPComp.IsPure (encList P pk ms)
   | [] => SPComp.pure_isPure []
   | m :: ms => by
@@ -137,7 +141,7 @@ private theorem encList_isPure (hP : P.IsPure) (pk : P.PK) :
     Proved by induction on `i` (the switch position), using `hybridLoop_shift` to
     reduce the successor case to the base case on the tail of the message list. -/
 
-private theorem hybridLoop_decomp_enc (pk : P.PK) :
+theorem hybridLoop_decomp_enc (pk : P.PK) :
     ∀ (i : ℕ) (msgs : List P.M) (hi : i < msgs.length),
     hybridLoop P pk i 0 msgs =
     (sampleN P i).bind fun pre =>
@@ -158,7 +162,7 @@ private theorem hybridLoop_decomp_enc (pk : P.PK) :
       rw [sampleN]; simp only [SPComp.monad_bind_eq, SPComp.bind_assoc, SPComp.pure_bind]
     rfl
 
-private theorem hybridLoop_decomp_samp (pk : P.PK) :
+theorem hybridLoop_decomp_samp (pk : P.PK) :
     ∀ (i : ℕ) (msgs : List P.M) (_hi : i < msgs.length),
     hybridLoop P pk (i + 1) 0 msgs =
     (sampleN P i).bind fun pre =>

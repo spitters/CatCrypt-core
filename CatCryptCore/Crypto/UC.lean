@@ -3,9 +3,13 @@ Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Crypto.SDist
-import CatCryptCore.Category.KlSPComp
+module
 
+public import CatCryptCore.Crypto.SDist
+public import CatCryptCore.Category.KlSPComp
+
+
+@[expose] public section
 set_option autoImplicit false
 
 /-!

@@ -3,9 +3,11 @@ Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.NonUniform.CouplingRules
-import CatCryptCore.NonUniform.Product
-import CatCryptCore.NonUniform.UnaryRules
+module
+
+public import CatCryptCore.NonUniform.CouplingRules
+public import CatCryptCore.NonUniform.Product
+public import CatCryptCore.NonUniform.UnaryRules
 
 /-!
 # The centered binomial distribution and sign independence
@@ -38,6 +40,8 @@ for both values of `s`.
 * `cbd_signed_indep` — a secret sign on the noise term is unobservable
 * `prTrue_cbd_bind` — the unary averaging rule at `cbd η`
 -/
+
+@[expose] public section
 
 namespace CatCrypt.NonUniform
 

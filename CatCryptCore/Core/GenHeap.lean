@@ -3,8 +3,10 @@ Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Core.Code
-import CatCryptCore.Relational.Frame
+module
+
+public import CatCryptCore.Core.Code
+public import CatCryptCore.Relational.Frame
 
 /-!
 # Countable-Typed Heap Locations
@@ -34,6 +36,8 @@ operations.
 * `SPComp.gget`, `SPComp.gset` — the corresponding stateful operations
 * `CatCrypt.Relational.gLeftHas`, `gRightHas` — one-sided pRHL assertions
 -/
+
+@[expose] public section
 
 open scoped Classical
 

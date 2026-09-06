@@ -3,10 +3,12 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Examples.Cryptobox.Scheme
-import CatCryptCore.Crypto.Advantage
-import Mathlib.Data.Fintype.Pi
-import Mathlib.Data.Fintype.Prod
+module
+
+public import CatCryptCore.Examples.Cryptobox.Scheme
+public import CatCryptCore.Crypto.Advantage
+public import Mathlib.Data.Fintype.Pi
+public import Mathlib.Data.Fintype.Prod
 
 /-!
 # KEY: Shared Key Management Game
@@ -31,6 +33,8 @@ Two variants parameterized by `b : Bool`:
 * Rocq SSProve: theories/Cryptobox/KEY.v
 * Dupressoir et al., CSF 2022 (Section 4.2)
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Examples.Cryptobox
 

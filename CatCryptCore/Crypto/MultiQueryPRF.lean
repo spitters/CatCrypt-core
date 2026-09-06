@@ -3,9 +3,11 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Crypto.Advantage
-import CatCryptCore.Crypto.HybridArgument
-import CatCryptCore.Relational.Rules
+module
+
+public import CatCryptCore.Crypto.Advantage
+public import CatCryptCore.Crypto.HybridArgument
+public import CatCryptCore.Relational.Rules
 
 /-!
 # Multi-Query PRF Security via Hybrid Argument
@@ -38,6 +40,8 @@ advantage. The total advantage is then at most `q · ε₁`.
 * [Bellare & Rogaway, Introduction to Modern Cryptography]
 * [Rosulek, The Joy of Cryptography, Claim 6.1]
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Crypto.MultiQueryPRF
 

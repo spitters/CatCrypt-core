@@ -3,8 +3,10 @@ Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Examples.CPAFromPRF
-import CatCryptCore.Tactics
+module
+
+public import CatCryptCore.Examples.CPAFromPRF
+public import CatCryptCore.Tactics
 
 /-!
 # Counter (CTR) Mode: the Perfect Single-Block Instantiation
@@ -58,6 +60,8 @@ core, and is deliberately out of scope here.
 
 * [Rosulek, The Joy of Cryptography, §8 (block cipher modes)]
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Examples.CTRMode
 

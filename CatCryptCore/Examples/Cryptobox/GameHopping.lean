@@ -3,7 +3,9 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Examples.Cryptobox.Cryptobox
+module
+
+public import CatCryptCore.Examples.Cryptobox.Cryptobox
 
 /-!
 # Cryptobox Game-Hopping Chain
@@ -52,6 +54,8 @@ This is further decomposed into:
 * Dupressoir et al., "Bringing SSP to EasyCrypt" (CSF 2022)
 * Myssenburg et al., Rocq SSProve Cryptobox
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Examples.Cryptobox
 
@@ -130,7 +134,7 @@ theorem PKAE_cc_eq_PKEY_check (N : @NIKEScheme CT) (E : @NBSES CT) (I : @KeyInje
 
 set_option linter.unusedSectionVars false in
 /-- Advantage is symmetric: `Advantage G₀ G₁ = Advantage G₁ G₀`. -/
-private theorem advantage_comm (G₀ G₁ : SPComp Bool) :
+theorem advantage_comm (G₀ G₁ : SPComp Bool) :
     Advantage G₀ G₁ = Advantage G₁ G₀ := by
   unfold Advantage; exact max_comm _ _
 

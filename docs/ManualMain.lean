@@ -3,9 +3,13 @@ Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import VersoManual
-import CoreManual
+module
 
+public import VersoManual
+public import CoreManual
+
+
+@[expose] public section
 open Verso Doc
 open Verso.Genre Manual
 

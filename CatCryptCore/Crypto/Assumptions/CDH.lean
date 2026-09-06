@@ -3,9 +3,11 @@ Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Crypto.Advantage
-import CatCryptCore.Crypto.Assumptions.DDH
-import CatCryptCore.Tactics
+module
+
+public import CatCryptCore.Crypto.Advantage
+public import CatCryptCore.Crypto.Assumptions.DDH
+public import CatCryptCore.Tactics
 
 /-!
 # Computational Diffie-Hellman (CDH) Assumption
@@ -47,6 +49,8 @@ See also `CDH_DL.lean` for the CDH ⟹ DL reduction over `PairingGroup`.
 * Boneh & Shoup, *A Graduate Course in Applied Cryptography*, §11.3, Def. 11.1; §11.3 Prop. 11.4
 * Diffie & Hellman, *New Directions in Cryptography*, IEEE-IT 1976
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Crypto.Assumptions
 

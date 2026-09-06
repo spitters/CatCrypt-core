@@ -3,9 +3,11 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Category.PkgFam
-import CatCryptCore.Tactics.SumCases
-import Mathlib.CategoryTheory.Monoidal.Braided.Basic
+module
+
+public import CatCryptCore.Category.PkgFam
+public import CatCryptCore.Tactics.SumCases
+public import Mathlib.CategoryTheory.Monoidal.Braided.Basic
 
 /-!
 # The Package Category: Substitution, Not Sequencing
@@ -87,6 +89,8 @@ assigned to `MonoidalCategory` via `toMonoidalCategoryStruct`. This ensures:
 3. The braiding iso can be defined on `PkgInterface.tensor` (where `Sum`
    structure is visible) and coerced via definitional equality.
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Category
 
@@ -218,7 +222,7 @@ definitional equality `I.tensor J = I ⊗ J`. -/
 
 /-- The braiding isomorphism: swap the left and right components of a tensor.
     Defined on `PkgInterface.tensor` to keep `Sum` structure visible. -/
-private def braidIso (I J : PkgInterface) : I.tensor J ≅ J.tensor I where
+def braidIso (I J : PkgInterface) : I.tensor J ≅ J.tensor I where
   hom := fun h k => match k with
     | .inl j => h (.inr j)
     | .inr i => h (.inl i)

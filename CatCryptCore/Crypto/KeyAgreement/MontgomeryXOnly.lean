@@ -3,10 +3,12 @@ Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import Mathlib.Algebra.Field.Basic
-import Mathlib.Tactic.Ring
-import Mathlib.Tactic.LinearCombination
-import CatCryptCore.Crypto.KeyAgreement.MontgomeryLadder
+module
+
+public import Mathlib.Algebra.Field.Basic
+public import Mathlib.Tactic.Ring
+public import Mathlib.Tactic.LinearCombination
+public import CatCryptCore.Crypto.KeyAgreement.MontgomeryLadder
 
 /-!
 # Montgomery curve x-only formulas (Costello–Smith §4)
@@ -56,6 +58,8 @@ correctness proof in `MontgomeryLadder.lean`.
   IACR eprint 2017/212, §4 (equations 8, 9, 12, 13).
 - Bernstein, "Curve25519: new Diffie-Hellman speed records", PKC 2006.
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Crypto.ECC
 

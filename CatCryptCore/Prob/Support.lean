@@ -3,7 +3,9 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Prob.SDistr
+module
+
+public import CatCryptCore.Prob.SDistr
 
 /-!
 # Support Analysis for Sub-Distributions
@@ -30,6 +32,8 @@ existential witnesses from nonzero probability observations.
 * EasyCrypt: support analysis in pRHL `rnd` tactic
 * CertiCrypt (Barthe et al.): coupling and support reasoning in Coq
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Prob
 

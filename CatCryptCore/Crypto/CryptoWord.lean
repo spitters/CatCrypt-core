@@ -3,7 +3,9 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Prob.XorBij
+module
+
+public import CatCryptCore.Prob.XorBij
 
 /-!
 # CryptoWord Typeclass
@@ -29,6 +31,8 @@ generically while existing Bool-specific proofs remain untouched.
 * `SampleableType Bool` / `CryptoWord Bool` instances
 * `SampleableType (BitVec n)` / `CryptoWord (BitVec n)` instances
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Crypto
 

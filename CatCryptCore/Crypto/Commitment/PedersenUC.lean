@@ -3,10 +3,12 @@ Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Crypto.UC
-import CatCryptCore.Crypto.SDist
-import CatCryptCore.Examples.GroupParam
-import CatCryptCore.Tactics.BindVcgenSum
+module
+
+public import CatCryptCore.Crypto.UC
+public import CatCryptCore.Crypto.SDist
+public import CatCryptCore.Examples.GroupParam
+public import CatCryptCore.Tactics.BindVcgenSum
 
 /-!
 # Pedersen Commitment: UC Security via a Trapdoor Equivocator
@@ -74,6 +76,8 @@ equivocation, retroactively opening a commitment produced without the message.
   the message `m`. The simulator turns `(s, m)` into a view indistinguishable
   from `(s, r)`.
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Crypto.Commitment.PedersenUC
 

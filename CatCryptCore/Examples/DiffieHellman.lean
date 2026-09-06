@@ -3,11 +3,13 @@ Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Crypto.SecurityDefs
-import CatCryptCore.Crypto.Assumptions.DDH
-import CatCryptCore.Crypto.PairingGroup
-import CatCryptCore.Examples.ElGamal
-import CatCryptCore.Tactics
+module
+
+public import CatCryptCore.Crypto.SecurityDefs
+public import CatCryptCore.Crypto.Assumptions.DDH
+public import CatCryptCore.Crypto.PairingGroup
+public import CatCryptCore.Examples.ElGamal
+public import CatCryptCore.Tactics
 
 /-!
 # Diffie–Hellman Key Agreement: Key-Indistinguishability from DDH
@@ -71,6 +73,8 @@ DH key-agreement real/ideal experiments.
 * `CatCryptCore.Examples.ElGamal` for the shared DH group (`elgamalDDH`).
 * `CatCryptCore.Crypto.PairingGroup` for the abstract prime-order group.
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Examples.DiffieHellman
 

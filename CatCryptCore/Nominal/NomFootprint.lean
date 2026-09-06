@@ -3,7 +3,9 @@ Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Nominal.NomPackage
+module
+
+public import CatCryptCore.Nominal.NomPackage
 
 /-!
 # Generic Nominal Footprint
@@ -35,6 +37,8 @@ bijection `NomPackage ≃ NomOver RawPackage`, and the `to_*` lemmas show it car
 
 * [Larsen and Schürmann, *Nominal State-Separating Proofs*](https://eprint.iacr.org/2025/598)
 -/
+
+@[expose] public section
 
 set_option autoImplicit false
 

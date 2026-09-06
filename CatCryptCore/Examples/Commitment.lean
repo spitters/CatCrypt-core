@@ -3,9 +3,11 @@ Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Prob.XorBij
-import CatCryptCore.Tactics
-import CatCryptCore.Deep.ReflectUCHelpers
+module
+
+public import CatCryptCore.Prob.XorBij
+public import CatCryptCore.Tactics
+public import CatCryptCore.Deep.ReflectUCHelpers
 
 /-!
 # Commitment Schemes: Perfect Hiding and Perfect Binding
@@ -53,6 +55,8 @@ binding predicate is inhabited.
 * [Rosulek, The Joy of Cryptography, Chapter on commitment schemes]
 * [Shannon, Communication Theory of Secrecy Systems, 1949]
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Examples.Commitment
 

@@ -3,14 +3,16 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Crypto.SecurityDefs
-import CatCryptCore.Crypto.PRFAssumption
-import CatCryptCore.Crypto.SwitchingLemma
-import CatCryptCore.Crypto.MultiQueryPRF
-import CatCryptCore.Prob.BirthdayBound
-import CatCryptCore.Prob.XorBij
-import CatCryptCore.Examples.OneTimePad
-import CatCryptCore.Tactics
+module
+
+public import CatCryptCore.Crypto.SecurityDefs
+public import CatCryptCore.Crypto.PRFAssumption
+public import CatCryptCore.Crypto.SwitchingLemma
+public import CatCryptCore.Crypto.MultiQueryPRF
+public import CatCryptCore.Prob.BirthdayBound
+public import CatCryptCore.Prob.XorBij
+public import CatCryptCore.Examples.OneTimePad
+public import CatCryptCore.Tactics
 
 /-!
 # Bijection-Family PRF: Perfect Security
@@ -48,6 +50,8 @@ structure of the games; and `PRF_Adv_zero_of_rHoare` collapses the advantage to
 
 * [Rosulek, The Joy of Cryptography, §6 (pseudorandom functions)]
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Examples.PRF
 

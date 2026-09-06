@@ -3,9 +3,11 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Crypto.Assumptions.DL
-import CatCryptCore.Crypto.ForkingLemma
-import CatCryptCore.Tactics
+module
+
+public import CatCryptCore.Crypto.Assumptions.DL
+public import CatCryptCore.Crypto.ForkingLemma
+public import CatCryptCore.Tactics
 
 /-!
 # Schnorr's Σ-Protocol: Special Soundness and the Forking Reduction to DL
@@ -56,6 +58,8 @@ The honest prover samples `r`, sends `a = g₁ ^ᵍ r`, and answers `s = r + w·
 * `CatCryptCore.Crypto.Assumptions.DL` for the discrete-log game.
 -/
 
+@[expose] public section
+
 namespace CatCrypt.Examples.Schnorr
 
 open CatCrypt.Core CatCrypt.Prob CatCrypt.Crypto
@@ -73,25 +77,25 @@ lift them to a general base element. Every element of `G₁` has order dividing 
 prime `p`, so `x ^ᵍ` is a `ZMod p`-module action just like `g₁ ^ᵍ`. -/
 
 /-- `x ^ᵍ a = x ^ a.val` as a `ℕ`-power. -/
-private theorem zpowZMod₁_eq_natpow (x : P.G₁) (a : ZMod P.p) :
+theorem zpowZMod₁_eq_natpow (x : P.G₁) (a : ZMod P.p) :
     zpowZMod₁ (P := P) x a = x ^ a.val := by
   rw [zpowZMod₁, zpow_natCast]
 
 /-- Exponent-additivity for a general base: `x ^ᵍ (a + b) = (x ^ᵍ a) * (x ^ᵍ b)`. -/
-private theorem zpowZMod₁_add_gen (x : P.G₁) (a b : ZMod P.p) :
+theorem zpowZMod₁_add_gen (x : P.G₁) (a b : ZMod P.p) :
     zpowZMod₁ (P := P) x (a + b) =
     zpowZMod₁ (P := P) x a * zpowZMod₁ (P := P) x b := by
   simp [zpowZMod₁_eq_natpow, ← pow_add, pow_mod_G₁, ZMod.val_add]
 
 /-- Exponent-negation for a general base: `(x ^ᵍ a)⁻¹ = x ^ᵍ (-a)`. -/
-private theorem zpowZMod₁_neg_gen (x : P.G₁) (a : ZMod P.p) :
+theorem zpowZMod₁_neg_gen (x : P.G₁) (a : ZMod P.p) :
     (zpowZMod₁ (P := P) x a)⁻¹ = zpowZMod₁ (P := P) x (-a) := by
   have h : zpowZMod₁ (P := P) x (-a) * zpowZMod₁ (P := P) x a = 1 := by
     rw [← zpowZMod₁_add_gen, neg_add_cancel, zpowZMod₁_eq_natpow, ZMod.val_zero, pow_zero]
   exact (mul_eq_one_iff_eq_inv.mp h).symm
 
 /-- Exponent-subtraction for a general base: `x ^ᵍ (a - b) = (x ^ᵍ a) * (x ^ᵍ b)⁻¹`. -/
-private theorem zpowZMod₁_sub_gen (x : P.G₁) (a b : ZMod P.p) :
+theorem zpowZMod₁_sub_gen (x : P.G₁) (a b : ZMod P.p) :
     zpowZMod₁ (P := P) x (a - b) =
     zpowZMod₁ (P := P) x a * (zpowZMod₁ (P := P) x b)⁻¹ := by
   rw [sub_eq_add_neg, zpowZMod₁_add_gen, zpowZMod₁_neg_gen]
@@ -99,7 +103,7 @@ private theorem zpowZMod₁_sub_gen (x : P.G₁) (a b : ZMod P.p) :
 /-- In `ZMod P.p` (prime `p`) every nonzero element is invertible:
     `a * a⁻¹ = 1`. Proved via `ZMod.mul_inv_eq_gcd` and primality, matching
     the ambient `ZMod.instInv` used throughout. -/
-private theorem scalar_mul_inv_cancel (a : ZMod P.p) (ha : a ≠ 0) :
+theorem scalar_mul_inv_cancel (a : ZMod P.p) (ha : a ≠ 0) :
     a * a⁻¹ = 1 := by
   field_simp
 

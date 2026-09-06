@@ -3,12 +3,14 @@ Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Crypto.SecurityDefs
-import CatCryptCore.Prob.XorBij
-import CatCryptCore.Prob.Support
-import CatCryptCore.Examples.PRF
-import CatCryptCore.Examples.CPAFromPRF
-import CatCryptCore.Tactics
+module
+
+public import CatCryptCore.Crypto.SecurityDefs
+public import CatCryptCore.Prob.XorBij
+public import CatCryptCore.Prob.Support
+public import CatCryptCore.Examples.PRF
+public import CatCryptCore.Examples.CPAFromPRF
+public import CatCryptCore.Tactics
 
 /-!
 # CBC Mode: Perfect IND-CPA Security for a Single Block
@@ -87,6 +89,8 @@ the pseudorandomness of the block cipher — and is deliberately out of scope.
 
 * [Rosulek, The Joy of Cryptography, §8 (block cipher modes)]
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Examples.CBCMode
 

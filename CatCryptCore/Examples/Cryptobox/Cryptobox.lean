@@ -3,14 +3,16 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Examples.Cryptobox.Scheme
-import CatCryptCore.Examples.Cryptobox.PKEY
-import CatCryptCore.Examples.Cryptobox.NIKE
-import CatCryptCore.Examples.Cryptobox.KEY
-import CatCryptCore.Examples.Cryptobox.SAE
-import CatCryptCore.Examples.Cryptobox.AE
-import CatCryptCore.Crypto.Advantage
-import Mathlib.Algebra.BigOperators.Group.Finset.Basic
+module
+
+public import CatCryptCore.Examples.Cryptobox.Scheme
+public import CatCryptCore.Examples.Cryptobox.PKEY
+public import CatCryptCore.Examples.Cryptobox.NIKE
+public import CatCryptCore.Examples.Cryptobox.KEY
+public import CatCryptCore.Examples.Cryptobox.SAE
+public import CatCryptCore.Examples.Cryptobox.AE
+public import CatCryptCore.Crypto.Advantage
+public import Mathlib.Algebra.BigOperators.Group.Finset.Basic
 
 /-!
 # Cryptobox: Main Security Theorem
@@ -84,6 +86,8 @@ See `GameHopping.lean` for the state-of-the-art version.
 * Myssenburg et al., Rocq SSProve Cryptobox (nominal-ssprove)
 * Bernstein, Lange, Schwabe, "NaCl: Networking and Cryptography library"
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Examples.Cryptobox
 

@@ -3,10 +3,12 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Deep.Eval
-import CatCryptCore.Deep.Package
-import CatCryptCore.Tactics.SimpAttr
-import CatCryptCore.Relational.Rules
+module
+
+public import CatCryptCore.Deep.Eval
+public import CatCryptCore.Deep.Package
+public import CatCryptCore.Tactics.SimpAttr
+public import CatCryptCore.Relational.Rules
 
 /-!
 # Deep/Shallow Bridge Library
@@ -47,6 +49,8 @@ The bridge serves multiple purposes:
 * [Larsen and Schürmann, *Nominal State-Separating Proofs*](https://eprint.iacr.org/2025/598)
 * [Dupressoir et al., *How Hard Can It Be?*](https://eprint.iacr.org/2025/1569)
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Deep
 

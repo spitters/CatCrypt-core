@@ -3,9 +3,11 @@ Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.NonUniform.WhileApproxMono
-import CatCryptCore.NonUniform.WhileUnary
-import CatCryptCore.NonUniform.Limit
+module
+
+public import CatCryptCore.NonUniform.WhileApproxMono
+public import CatCryptCore.NonUniform.WhileUnary
+public import CatCryptCore.NonUniform.Limit
 
 /-!
 # The unbounded loop
@@ -20,6 +22,8 @@ The pHL rule transports from the approximants because `pHoare` constrains the
 support: a heap in the support of the limit is in the support of some
 approximant, and the invariant rule holds at every budget.
 -/
+
+@[expose] public section
 
 set_option autoImplicit false
 

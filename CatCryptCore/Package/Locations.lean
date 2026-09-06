@@ -3,9 +3,11 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Core.Location
-import Mathlib.Data.Finset.Basic
-import Mathlib.Data.Finset.Card
+module
+
+public import CatCryptCore.Core.Location
+public import Mathlib.Data.Finset.Basic
+public import Mathlib.Data.Finset.Card
 
 /-!
 # Enhanced Location Tracking
@@ -24,6 +26,8 @@ Locations are tracked as a finite set with type information.
 
 * [Larsen and Schürmann, *Nominal State-Separating Proofs*](https://eprint.iacr.org/2025/598)
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Package
 

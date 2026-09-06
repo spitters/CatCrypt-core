@@ -3,7 +3,9 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Relational.Rules
+module
+
+public import CatCryptCore.Relational.Rules
 
 /-!
 # Synchronized pRHL Rules
@@ -22,6 +24,8 @@ on both sides of the relational judgment simultaneously.
 * SSProve: theories/Crypt/package/pkg_rhl.v
 * EasyCrypt pRHL
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Relational
 

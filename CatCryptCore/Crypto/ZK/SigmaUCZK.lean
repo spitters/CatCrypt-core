@@ -3,10 +3,12 @@ Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Crypto.UC
-import CatCryptCore.Crypto.SDist
-import CatCryptCore.Examples.SigmaProtocol
-import CatCryptCore.Tactics.BindVcgenSum
+module
+
+public import CatCryptCore.Crypto.UC
+public import CatCryptCore.Crypto.SDist
+public import CatCryptCore.Examples.SigmaProtocol
+public import CatCryptCore.Tactics.BindVcgenSum
 
 /-!
 # Σ-Protocol to Honest-Verifier UC Zero-Knowledge via a Witness-Free Simulator
@@ -65,6 +67,8 @@ zero-knowledge property.
 
 * [Damgård, *On Σ-Protocols*]
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Crypto.ZK.SigmaUCZK
 

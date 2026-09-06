@@ -3,7 +3,9 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Crypto.SecurityDefs
+module
+
+public import CatCryptCore.Crypto.SecurityDefs
 
 /-!
 # Keyed PRF Security Assumption
@@ -34,6 +36,8 @@ as a hypothesis. It is parameterized over the abstract `PRFScheme` of
 * [Bellare & Rogaway, Introduction to Modern Cryptography]
 * [Rosulek, The Joy of Cryptography, §6]
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Crypto
 

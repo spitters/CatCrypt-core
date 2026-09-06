@@ -3,12 +3,14 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Crypto.Advantage
-import CatCryptCore.Crypto.HybridArgument
-import Mathlib.Algebra.BigOperators.Group.Finset.Basic
-import Mathlib.Algebra.BigOperators.Ring.Finset
-import Mathlib.Data.ENNReal.Inv
-import Mathlib.Algebra.BigOperators.Intervals
+module
+
+public import CatCryptCore.Crypto.Advantage
+public import CatCryptCore.Crypto.HybridArgument
+public import Mathlib.Algebra.BigOperators.Group.Finset.Basic
+public import Mathlib.Algebra.BigOperators.Ring.Finset
+public import Mathlib.Data.ENNReal.Inv
+public import Mathlib.Algebra.BigOperators.Intervals
 
 /-!
 # Birthday Bound
@@ -37,6 +39,8 @@ advantage between random function and random permutation games is small.
 * [Bellare & Rogaway, Introduction to Modern Cryptography]
 * [Shoup, Sequences of Games]
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Prob.BirthdayBound
 

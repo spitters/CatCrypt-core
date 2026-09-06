@@ -3,8 +3,10 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Crypto.UCMonad
-import CatCryptCore.Crypto.SDist
+module
+
+public import CatCryptCore.Crypto.UCMonad
+public import CatCryptCore.Crypto.SDist
 
 /-!
 # SPComp Instance of UCMonad
@@ -29,6 +31,8 @@ The instance fields map directly:
 - `ucSdist` → `sdist` (from `SDist.lean`)
 -/
 
+@[expose] public section
+
 namespace UCMonad
 
 open CatCrypt.Core CatCrypt.Prob CatCrypt.Crypto
@@ -36,7 +40,7 @@ open scoped ENNReal
 
 /-! ## Re-derive bind_fail_right (private in Affine.lean) -/
 
-private theorem spcomp_bind_fail {α β : Type} (c : SPComp α) :
+theorem spcomp_bind_fail {α β : Type} (c : SPComp α) :
     SPComp.bind c (fun _ => (SPComp.fail : SPComp β)) = SPComp.fail := by
   funext h
   simp only [SPComp.bind_def, SPComp.fail]

@@ -3,7 +3,9 @@ Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Crypto.BadEvent
+module
+
+public import CatCryptCore.Crypto.BadEvent
 
 /-!
 # Up-To-Bad Tactic
@@ -50,6 +52,8 @@ example ... : Advantage G₀ G₁ ≤ ε := by
 * Bellare & Rogaway, *Code-Based Game-Playing Proofs*, EUROCRYPT 2006.
 * VCVio's `by_upto` / EasyCrypt's `byupto` (equivalent tactic surface).
 -/
+
+@[expose] public section
 
 set_option autoImplicit false
 

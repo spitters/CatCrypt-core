@@ -3,8 +3,10 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Crypto.PairingGroup
-import CatCryptCore.Crypto.Advantage
+module
+
+public import CatCryptCore.Crypto.PairingGroup
+public import CatCryptCore.Crypto.Advantage
 
 /-!
 # t-Strong Diffie-Hellman Assumption
@@ -34,6 +36,8 @@ core hardness assumption for KZG polynomial commitments.
 * [Boneh, Boyen, *Short Signatures Without Random Oracles*, EUROCRYPT 2004, Def. 3]
 * [Kate, Zaverucha, Goldberg, *Constant-Size Commitments to Polynomials*, ASIACRYPT 2010, §3.1]
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Crypto.Assumptions
 

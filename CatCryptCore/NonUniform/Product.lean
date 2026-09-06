@@ -3,7 +3,9 @@ Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.NonUniform.Sample
+module
+
+public import CatCryptCore.NonUniform.Sample
 
 /-!
 # Independent products of sub-distributions
@@ -33,6 +35,8 @@ index of `Fin n`, returned as a function.
 definition `dprod_dlet` gives as `dlet da (fun a => dmap db (fun b => (a, b)))` —
 the bind form `prod` is defined by.
 -/
+
+@[expose] public section
 
 set_option autoImplicit false
 

@@ -3,37 +3,39 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Tactics.Basic
-import CatCryptCore.Tactics.Sync
-import CatCryptCore.Tactics.Invariant
-import CatCryptCore.Tactics.ProofFrog
-import CatCryptCore.Tactics.Restore
-import CatCryptCore.Tactics.LazySampling
-import CatCryptCore.Tactics.Conditional
-import CatCryptCore.Tactics.Call
-import CatCryptCore.Tactics.Proc
-import CatCryptCore.Tactics.WP
-import CatCryptCore.Tactics.RSpec
-import CatCryptCore.Tactics.Sim
-import CatCryptCore.Tactics.TryBij2
-import CatCryptCore.Tactics.Auto
-import CatCryptCore.Tactics.SP
-import CatCryptCore.Tactics.LeOfSum
-import CatCryptCore.Tactics.BridgeGen
-import CatCryptCore.Tactics.SumCases
-import CatCryptCore.Tactics.SPNormalize
-import CatCryptCore.Tactics.PkgCoherence
-import CatCryptCore.Tactics.PkgCoherenceBang
-import CatCryptCore.Tactics.Remember
-import CatCryptCore.Tactics.Triangle
-import CatCryptCore.Tactics.CryptoAuto
-import CatCryptCore.Tactics.BindMatch
-import CatCryptCore.Tactics.BindAlign
-import CatCryptCore.Tactics.BindVcgen
-import CatCryptCore.Tactics.FieldClear
-import CatCryptCore.Tactics.EnvSearch
-import CatCryptCore.Tactics.ProofTermAudit
-import CatCryptCore.Tactics.UpToBad
+module
+
+public import CatCryptCore.Tactics.Basic
+public import CatCryptCore.Tactics.Sync
+public import CatCryptCore.Tactics.Invariant
+public import CatCryptCore.Tactics.ProofFrog
+public import CatCryptCore.Tactics.Restore
+public import CatCryptCore.Tactics.LazySampling
+public import CatCryptCore.Tactics.Conditional
+public import CatCryptCore.Tactics.Call
+public import CatCryptCore.Tactics.Proc
+public import CatCryptCore.Tactics.WP
+public import CatCryptCore.Tactics.RSpec
+public import CatCryptCore.Tactics.Sim
+public import CatCryptCore.Tactics.TryBij2
+public import CatCryptCore.Tactics.Auto
+public import CatCryptCore.Tactics.SP
+public import CatCryptCore.Tactics.LeOfSum
+public import CatCryptCore.Tactics.BridgeGen
+public import CatCryptCore.Tactics.SumCases
+public import CatCryptCore.Tactics.SPNormalize
+public import CatCryptCore.Tactics.PkgCoherence
+public import CatCryptCore.Tactics.PkgCoherenceBang
+public import CatCryptCore.Tactics.Remember
+public import CatCryptCore.Tactics.Triangle
+public import CatCryptCore.Tactics.CryptoAuto
+public import CatCryptCore.Tactics.BindMatch
+public import CatCryptCore.Tactics.BindAlign
+public import CatCryptCore.Tactics.BindVcgen
+public import CatCryptCore.Tactics.FieldClear
+public import CatCryptCore.Tactics.EnvSearch
+public import CatCryptCore.Tactics.ProofTermAudit
+public import CatCryptCore.Tactics.UpToBad
 
 /-!
 # CatCrypt Tactics Module
@@ -105,8 +107,10 @@ The CatCrypt tactic library provides automation for:
 Import this module to get access to all CatCrypt tactics:
 
 ```lean
-import CatCryptCore.Tactics
+public import CatCryptCore.Tactics
 
+
+@[expose] public section
 example : rHoare eqPre (sample α) (sample α) (fun a h₁ b h₂ => eqPre h₁ h₂ ∧ a = b) := by
   ssprove_sync
 ```

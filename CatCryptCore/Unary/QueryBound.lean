@@ -3,11 +3,13 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Unary.Rules
-import CatCryptCore.Unary.Lossless
-import CatCryptCore.Unary.Event
-import CatCryptCore.Unary.Bridge
-import CatCryptCore.Crypto.Advantage
+module
+
+public import CatCryptCore.Unary.Rules
+public import CatCryptCore.Unary.Lossless
+public import CatCryptCore.Unary.Event
+public import CatCryptCore.Unary.Bridge
+public import CatCryptCore.Crypto.Advantage
 
 /-!
 # Query-Bounded Adversary Infrastructure
@@ -53,6 +55,8 @@ and the FEL machinery from `Bridge.lean` / `FailureEvent.lean`.
 * Bellare & Rogaway: birthday bound via query counting
 * Shoup: "Sequences of Games" (query counting methodology)
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Unary
 

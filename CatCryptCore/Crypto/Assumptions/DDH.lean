@@ -3,8 +3,10 @@ Copyright (c) 2025 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Crypto.Advantage
-import CatCryptCore.Crypto.CryptoWord
+module
+
+public import CatCryptCore.Crypto.Advantage
+public import CatCryptCore.Crypto.CryptoWord
 
 /-!
 # Decisional Diffie-Hellman (DDH) Assumption
@@ -59,6 +61,8 @@ Each DH operation contributes one `ε_ddh` to the security bound.
 * Diffie & Hellman, *New Directions in Cryptography*, IEEE-IT 1976
 * RFC 9528 — EDHOC, Section 9 (security considerations)
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Crypto.Assumptions
 

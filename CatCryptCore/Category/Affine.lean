@@ -3,7 +3,9 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Category.Cocartesian
+module
+
+public import CatCryptCore.Category.Cocartesian
 
 /-!
 # Affine Monoidal Categories
@@ -23,6 +25,8 @@ computation can be discarded.
 * Every `SemiCartesianMonoidalCategory` is affine (via `toUnit`)
 * Every `SemiCocartesianMonoidalCategory` has a dual "co-affine" structure (`fromUnit`)
 -/
+
+@[expose] public section
 
 namespace CategoryTheory
 
@@ -78,10 +82,10 @@ namespace KlSPComp
 noncomputable def klDel (α : KlSPComp) : α ⟶ (show KlSPComp from Empty) :=
   fun _ => SPComp.fail
 
-private theorem klDel_unit : klDel (show KlSPComp from Empty) = 𝟙 _ := by
+theorem klDel_unit : klDel (show KlSPComp from Empty) = 𝟙 _ := by
   funext e; exact Empty.elim e
 
-private theorem bind_fail_right {α β : Type*} (c : SPComp α) :
+theorem bind_fail_right {α β : Type*} (c : SPComp α) :
     SPComp.bind c (fun _ => (SPComp.fail : SPComp β)) = SPComp.fail := by
   funext h
   simp only [SPComp.bind_def, SPComp.fail]
@@ -92,7 +96,7 @@ private theorem bind_fail_right {α β : Type*} (c : SPComp α) :
         congr 1; funext oa; cases oa <;> rfl
     _ = PMF.pure none := PMF.bind_const _ _
 
-private theorem klDel_naturality {α β : KlSPComp} (f : α ⟶ β) :
+theorem klDel_naturality {α β : KlSPComp} (f : α ⟶ β) :
     f ≫ klDel β = klDel α := by
   funext a
   show SPComp.bind (f a) (klDel β) = klDel α a

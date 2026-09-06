@@ -3,9 +3,11 @@ Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.NonUniform.WhileApprox
-import CatCryptCore.Unary.Rules
-import CatCryptCore.Unary.Event
+module
+
+public import CatCryptCore.NonUniform.WhileApprox
+public import CatCryptCore.Unary.Rules
+public import CatCryptCore.Unary.Event
 
 /-!
 # The unary invariant rule for bounded loop approximants
@@ -27,6 +29,8 @@ has probability one.
 * `prEvent_whileApprox_eq_one` — probability one under conditional losslessness
 * `prEvent_whileApprox_eq_one_of_isLossless` — the unconditional variant
 -/
+
+@[expose] public section
 
 set_option autoImplicit false
 

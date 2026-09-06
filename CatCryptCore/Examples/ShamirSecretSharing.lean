@@ -3,13 +3,15 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Crypto.SecurityDefs
-import CatCryptCore.Relational.Rules
-import Mathlib.LinearAlgebra.Lagrange
-import Mathlib.Algebra.Field.ZMod
-import Mathlib.Data.ZMod.Basic
-import CatCryptCore.Tactics
-import CatCryptCore.Deep.ReflectUCHelpers
+module
+
+public import CatCryptCore.Crypto.SecurityDefs
+public import CatCryptCore.Relational.Rules
+public import Mathlib.LinearAlgebra.Lagrange
+public import Mathlib.Algebra.Field.ZMod
+public import Mathlib.Data.ZMod.Basic
+public import CatCryptCore.Tactics
+public import CatCryptCore.Deep.ReflectUCHelpers
 
 /-!
 # Shamir `t`-out-of-`n` Secret Sharing: Reconstruction and Perfect Privacy
@@ -54,6 +56,8 @@ proof, adapted to a coefficient-vector coupling.
 * [Rosulek, The Joy of Cryptography, §3.13 (Shamir secret sharing)]
 * [Shamir, How to Share a Secret, CACM 1979]
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Examples.ShamirSecretSharing
 

@@ -3,9 +3,11 @@ Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import Mathlib.AlgebraicGeometry.EllipticCurve.Affine.Formula
-import Mathlib.AlgebraicGeometry.EllipticCurve.Affine.Point
-import CatCryptCore.Crypto.KeyAgreement.MontgomeryXOnly
+module
+
+public import Mathlib.AlgebraicGeometry.EllipticCurve.Affine.Formula
+public import Mathlib.AlgebraicGeometry.EllipticCurve.Affine.Point
+public import CatCryptCore.Crypto.KeyAgreement.MontgomeryXOnly
 
 /-!
 # Montgomery curve as a Weierstrass curve (Option B)
@@ -40,6 +42,8 @@ curve equations for `P, Q`.
   IACR eprint 2017/212, §4.
 - Mathlib, `AlgebraicGeometry/EllipticCurve/Affine/Formula.lean`.
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Crypto.ECC
 

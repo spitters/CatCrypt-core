@@ -3,9 +3,11 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import Mathlib.CategoryTheory.MarkovCategory.Basic
-import Mathlib.CategoryTheory.Category.KleisliCat
-import Mathlib.Probability.ProbabilityMassFunction.Constructions
+module
+
+public import Mathlib.CategoryTheory.MarkovCategory.Basic
+public import Mathlib.CategoryTheory.Category.KleisliCat
+public import Mathlib.Probability.ProbabilityMassFunction.Constructions
 
 /-!
 # Kleisli Category of PMF as a Markov Category
@@ -26,6 +28,8 @@ Full probability (`PMF`) rather than sub-probability (`PMF (Option α)`) is need
 * `CopyDiscardCategory (KleisliCat PMF)` — diagonal copy, terminal discard
 * `MarkovCategory (KleisliCat PMF)` — `discard_natural` via `PMF.bind_const`
 -/
+
+@[expose] public section
 
 namespace CategoryTheory.KleisliCat
 

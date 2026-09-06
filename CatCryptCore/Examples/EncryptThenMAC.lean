@@ -3,10 +3,12 @@ Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Crypto.SecurityDefs
-import CatCryptCore.Examples.OneTimePad
-import CatCryptCore.Prob.Support
-import CatCryptCore.Tactics
+module
+
+public import CatCryptCore.Crypto.SecurityDefs
+public import CatCryptCore.Examples.OneTimePad
+public import CatCryptCore.Prob.Support
+public import CatCryptCore.Tactics
 
 /-!
 # Encrypt-then-MAC: a composed authenticated-encryption scheme
@@ -59,6 +61,8 @@ the XOR instantiation, proved by the bijection-coupling technique of
 * [Rosulek, The Joy of Cryptography, §9-10; Construction 10.9, Claim 10.10]
 * [Bellare & Namprempre, Authenticated Encryption: Relations among Notions]
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Examples.EncryptThenMAC
 
@@ -147,7 +151,7 @@ def encF (k : Bool × Bool) (m : Bool) : Bool × Bool :=
 followed by a pure ciphertext — the shape used by `OneTimePad.lean`. The two
 independent key samples fuse into one product sample (`sample_prod_eq`), and the
 OTP encryption's `pure` bind collapses (`SPComp.pure_bind`). -/
-private theorem boolEtM_indcpa_game_eq (m₀ m₁ b : Bool) :
+theorem boolEtM_indcpa_game_eq (m₀ m₁ b : Bool) :
     INDCPA_Game BoolEtM m₀ m₁ b =
       (do
         let k ← SPComp.sample (Bool × Bool)

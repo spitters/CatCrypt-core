@@ -3,7 +3,9 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Examples.PKE.OneToMany
+module
+
+public import CatCryptCore.Examples.PKE.OneToMany
 
 /-!
 # Multi-Instance → Single-Instance Reduction (Case Study 2)
@@ -24,6 +26,8 @@ single-instance (many-time) CPA$ security using a second layer of SLIDE.
 
 * [Larsen & Schurmann, Mechanizing Nested Hybrid Arguments, CSF 2025, §4.2]
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Examples.PKE.MultiInstance
 
@@ -64,7 +68,7 @@ noncomputable def MI_Advantage (pks : List P.PK) (msgs : List (List P.M))
 /-! ## Prefix/Suffix Helpers -/
 
 /-- Sample `n` instances as ideal (random) ciphertexts. -/
-private noncomputable def MI_sampleN :
+noncomputable def MI_sampleN :
     ℕ → List (List P.M) → SPComp (List (List P.C))
   | 0, _ => SPComp.pure []
   | _ + 1, [] => SPComp.pure []
@@ -74,7 +78,7 @@ private noncomputable def MI_sampleN :
     SPComp.pure (cs :: rest)
 
 /-- Encrypt instances under their keys (all real), starting at position `j`. -/
-private noncomputable def MI_encList (pks : List P.PK) :
+noncomputable def MI_encList (pks : List P.PK) :
     ℕ → List (List P.M) → SPComp (List (List P.C))
   | _, [] => SPComp.pure []
   | j, m :: ms => do
@@ -84,14 +88,14 @@ private noncomputable def MI_encList (pks : List P.PK) :
 
 /-! ## Boundary Conditions -/
 
-private theorem MI_hybridLoop_zero_eq (pks : List P.PK) (j : ℕ) (msgs : List (List P.M)) :
+theorem MI_hybridLoop_zero_eq (pks : List P.PK) (j : ℕ) (msgs : List (List P.M)) :
     MI_hybridLoop P pks 0 j msgs = MI_encList P pks j msgs := by
   induction msgs generalizing j with
   | nil => simp [MI_hybridLoop, MI_encList]
   | cons m ms ih =>
     simp only [MI_hybridLoop, Nat.not_lt_zero, ↓reduceIte, MI_encList, SPComp.monad_bind_eq, ih]
 
-private theorem MI_hybridLoop_full_eq (pks : List P.PK) (j : ℕ) (msgs : List (List P.M))
+theorem MI_hybridLoop_full_eq (pks : List P.PK) (j : ℕ) (msgs : List (List P.M))
     {thresh : ℕ} (hi : j + msgs.length ≤ thresh) :
     MI_hybridLoop P pks thresh j msgs = MI_sampleN P msgs.length msgs := by
   induction msgs generalizing j with
@@ -108,7 +112,7 @@ theorem MI_hybrid_length (pks : List P.PK) (msgs : List (List P.M)) :
   MI_hybridLoop_full_eq P pks 0 msgs (by omega)
 
 /-- When threshold ≤ position, MI_hybridLoop encrypts everything. -/
-private theorem MI_hybridLoop_suffix_eq (pks : List P.PK) (i j : ℕ)
+theorem MI_hybridLoop_suffix_eq (pks : List P.PK) (i j : ℕ)
     (msgs : List (List P.M)) (hj : i ≤ j) :
     MI_hybridLoop P pks i j msgs = MI_encList P pks j msgs := by
   induction msgs generalizing j with
@@ -121,7 +125,7 @@ private theorem MI_hybridLoop_suffix_eq (pks : List P.PK) (i j : ℕ)
 
 /-! ## IsPure Lemmas -/
 
-private theorem MI_sampleN_isPure (hP : P.IsPure) :
+theorem MI_sampleN_isPure (hP : P.IsPure) :
     ∀ (n : ℕ) (msgs : List (List P.M)), SPComp.IsPure (MI_sampleN P n msgs)
   | 0, _ => SPComp.pure_isPure []
   | _ + 1, [] => SPComp.pure_isPure []
@@ -131,7 +135,7 @@ private theorem MI_sampleN_isPure (hP : P.IsPure) :
       SPComp.bind_isPure (MI_sampleN_isPure hP n ms) (fun rest =>
         SPComp.pure_isPure (cs :: rest)))
 
-private theorem MI_encList_isPure (hP : P.IsPure) (pks : List P.PK) :
+theorem MI_encList_isPure (hP : P.IsPure) (pks : List P.PK) :
     ∀ (j : ℕ) (msgs : List (List P.M)), SPComp.IsPure (MI_encList P pks j msgs)
   | _, [] => SPComp.pure_isPure []
   | j, m :: ms => by
@@ -150,7 +154,7 @@ private theorem MI_encList_isPure (hP : P.IsPure) (pks : List P.PK) :
     works because `(j+1) + k = j + (k+1)` preserves the `pks.getD` index. -/
 
 /-- Generalized decomposition with real core at position `j + k`. -/
-private theorem MI_hybridLoop_decomp_real_gen (pks : List P.PK) :
+theorem MI_hybridLoop_decomp_real_gen (pks : List P.PK) :
     ∀ (j k : ℕ) (msgs : List (List P.M)) (_hk : k < msgs.length),
     MI_hybridLoop P pks (j + k) j msgs =
     (MI_sampleN P k msgs).bind fun pre =>
@@ -175,7 +179,7 @@ private theorem MI_hybridLoop_decomp_real_gen (pks : List P.PK) :
     congr 1
 
 /-- Generalized decomposition with ideal core at position `j + k`. -/
-private theorem MI_hybridLoop_decomp_ideal_gen (pks : List P.PK) :
+theorem MI_hybridLoop_decomp_ideal_gen (pks : List P.PK) :
     ∀ (j k : ℕ) (msgs : List (List P.M)) (_hk : k < msgs.length),
     MI_hybridLoop P pks (j + k + 1) j msgs =
     (MI_sampleN P k msgs).bind fun pre =>
@@ -201,7 +205,7 @@ private theorem MI_hybridLoop_decomp_ideal_gen (pks : List P.PK) :
     congr 1
 
 /-- Decomposition with real core, specialized to position 0. -/
-private theorem MI_hybridLoop_decomp_real (pks : List P.PK) (i : ℕ) (msgs : List (List P.M))
+theorem MI_hybridLoop_decomp_real (pks : List P.PK) (i : ℕ) (msgs : List (List P.M))
     (hi : i < msgs.length) :
     MI_hybridLoop P pks i 0 msgs =
     (MI_sampleN P i msgs).bind fun pre =>
@@ -211,7 +215,7 @@ private theorem MI_hybridLoop_decomp_real (pks : List P.PK) (i : ℕ) (msgs : Li
   simpa only [Nat.zero_add] using MI_hybridLoop_decomp_real_gen P pks 0 i msgs hi
 
 /-- Decomposition with ideal core, specialized to position 0. -/
-private theorem MI_hybridLoop_decomp_ideal (pks : List P.PK) (i : ℕ) (msgs : List (List P.M))
+theorem MI_hybridLoop_decomp_ideal (pks : List P.PK) (i : ℕ) (msgs : List (List P.M))
     (hi : i < msgs.length) :
     MI_hybridLoop P pks (i + 1) 0 msgs =
     (MI_sampleN P i msgs).bind fun pre =>

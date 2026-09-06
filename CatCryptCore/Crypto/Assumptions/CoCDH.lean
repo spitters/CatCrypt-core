@@ -3,8 +3,10 @@ Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Crypto.PairingGroup
-import CatCryptCore.Crypto.Advantage
+module
+
+public import CatCryptCore.Crypto.PairingGroup
+public import CatCryptCore.Crypto.Advantage
 
 /-!
 # Computational co-Diffie-Hellman (co-CDH) Assumption
@@ -40,6 +42,8 @@ the pairing exists, but stated in the Type III setting.
 * Boneh, Lynn, Shacham. *Short Signatures from the Weil Pairing.*
   J. Cryptology, 2004, §3.
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Crypto.Assumptions
 

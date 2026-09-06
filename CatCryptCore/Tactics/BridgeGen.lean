@@ -3,7 +3,10 @@ Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import Lean
+module
+
+public meta import Lean.Meta.Tactic.Refl
+public import Lean
 
 /-!
 # Bridge Lemma Generator
@@ -44,6 +47,10 @@ The tactic works in two modes:
    attempt `rfl` for each against each field of the Dependencies structure,
    reporting successes and failures.
 -/
+
+public section
+
+meta section
 
 namespace CatCrypt.Tactics.BridgeGen
 

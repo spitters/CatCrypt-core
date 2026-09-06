@@ -3,8 +3,10 @@ Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.NonUniform.CouplingRules
-import CatCryptCore.NonUniform.UnaryRules
+module
+
+public import CatCryptCore.NonUniform.CouplingRules
+public import CatCryptCore.NonUniform.UnaryRules
 
 /-!
 # Biased coins: a non-uniform coupling worked out
@@ -28,6 +30,8 @@ renamed as the negation of a `bernoulli (1 - p)` sample inside any program.
 * `bernoulli_flip_program_eq` — the two programs are equal
 * `prTrue_bernoulli_bind`, `prTrue_bernoulli` — the unary averaging rule applied
 -/
+
+@[expose] public section
 
 namespace CatCrypt.NonUniform
 

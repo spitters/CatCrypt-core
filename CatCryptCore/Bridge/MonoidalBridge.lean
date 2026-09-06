@@ -3,8 +3,10 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Bridge.SemPkg
-import CatCryptCore.Bridge.PkgEval
+module
+
+public import CatCryptCore.Bridge.SemPkg
+public import CatCryptCore.Bridge.PkgEval
 
 /-!
 # Monoidal Bridge: DeepPackage ↔ PkgInterface SMC
@@ -32,6 +34,8 @@ with the roundtrip proofs handled by `castKl'_castKl'_symm` and
 `castKl'_dep_fn` (dependent function transport).
 -/
 
+@[expose] public section
+
 namespace CatCrypt.Bridge.MonoidalBridge
 
 open CatCrypt.Core CatCrypt.Deep CatCrypt.Category CatCrypt.Crypto
@@ -44,21 +48,21 @@ abbrev diAppend := DeepInterface.append
 
 variable (I J K : DeepInterface)
 
-private theorem ops_get_left (i : Fin I.ops.length) :
+theorem ops_get_left (i : Fin I.ops.length) :
     (I.ops ++ J.ops).get ⟨i.val, by simp; omega⟩ = I.ops.get i := by
   simp [List.get_eq_getElem, List.getElem_append_left]
 
-private theorem ops_get_right (j : Fin J.ops.length) :
+theorem ops_get_right (j : Fin J.ops.length) :
     (I.ops ++ J.ops).get ⟨I.ops.length + j.val, by simp⟩ = J.ops.get j := by
   simp [List.get_eq_getElem, List.getElem_append_right]
 
-private theorem ops_get_dispatch_left {k : Fin (I.ops ++ J.ops).length}
+theorem ops_get_dispatch_left {k : Fin (I.ops ++ J.ops).length}
     (hk : k.val < I.ops.length) :
     (I.ops ++ J.ops).get k = I.ops.get ⟨k.val, hk⟩ := by
   simp only [List.get_eq_getElem]
   exact List.getElem_append_left hk
 
-private theorem ops_get_dispatch_right {k : Fin (I.ops ++ J.ops).length}
+theorem ops_get_dispatch_right {k : Fin (I.ops ++ J.ops).length}
     (hk : ¬(k.val < I.ops.length)) :
     (I.ops ++ J.ops).get k =
       J.ops.get ⟨k.val - I.ops.length, by have := k.isLt; simp at this; omega⟩ := by
@@ -69,39 +73,39 @@ private theorem ops_get_dispatch_right {k : Fin (I.ops ++ J.ops).length}
 
 /-- Transport a Kleisli arrow along an equality of operation triples.
     Defined via `▸` (Eq.mpr) to leverage proof irrelevance. -/
-private noncomputable def castKl' {t₁ t₂ : ℕ × Type × Type} (h : t₁ = t₂)
+noncomputable def castKl' {t₁ t₂ : ℕ × Type × Type} (h : t₁ = t₂)
     (f : t₁.2.1 → SPComp t₁.2.2) : t₂.2.1 → SPComp t₂.2.2 :=
   h ▸ f
 
-@[simp] private theorem castKl'_rfl {t : ℕ × Type × Type}
+@[simp] theorem castKl'_rfl {t : ℕ × Type × Type}
     (f : t.2.1 → SPComp t.2.2) : castKl' rfl f = f := rfl
 
-@[simp] private theorem castKl'_castKl'_symm {t₁ t₂ : ℕ × Type × Type}
+@[simp] theorem castKl'_castKl'_symm {t₁ t₂ : ℕ × Type × Type}
     (h₁ : t₁ = t₂) (h₂ : t₂ = t₁) (f : t₁.2.1 → SPComp t₁.2.2) :
     castKl' h₂ (castKl' h₁ f) = f := by subst h₁; rfl
 
-@[simp] private theorem castKl'_trans {t₁ t₂ t₃ : ℕ × Type × Type}
+@[simp] theorem castKl'_trans {t₁ t₂ t₃ : ℕ × Type × Type}
     (h₁ : t₁ = t₂) (h₂ : t₂ = t₃) (f : t₁.2.1 → SPComp t₁.2.2) :
     castKl' h₂ (castKl' h₁ f) = castKl' (h₁.trans h₂) f := by subst h₁; rfl
 
 /-- A dependent function application transports correctly along `castKl'`.
     If `a = b` as indices and `eq` is the induced operation equality,
     then `castKl' eq (f a) = f b`. -/
-private theorem castKl'_dep_fn {ι : Type} {F : ι → ℕ × Type × Type}
+theorem castKl'_dep_fn {ι : Type} {F : ι → ℕ × Type × Type}
     {a b : ι} (hab : a = b)
     (f : ∀ i, (F i).2.1 → SPComp (F i).2.2)
     (eq : F a = F b) :
     castKl' eq (f a) = f b := by subst hab; rfl
 
 /-- Two `castKl'` applications to the same target agree when the indices are equal. -/
-private theorem castKl'_dep_fn_congr {ι : Type} {F : ι → ℕ × Type × Type}
+theorem castKl'_dep_fn_congr {ι : Type} {F : ι → ℕ × Type × Type}
     {t : ℕ × Type × Type} {a b : ι} (hab : a = b)
     (f : ∀ i, (F i).2.1 → SPComp (F i).2.2)
     (eq_a : F a = t) (eq_b : F b = t) :
     castKl' eq_a (f a) = castKl' eq_b (f b) := by subst hab; rfl
 
 /-- Sum-indexed variant of `castKl'_dep_fn`. -/
-private theorem castKl'_dep_fn_sum {ιL ιR : Type} {F : ιL ⊕ ιR → ℕ × Type × Type}
+theorem castKl'_dep_fn_sum {ιL ιR : Type} {F : ιL ⊕ ιR → ℕ × Type × Type}
     {a b : ιL ⊕ ιR} (hab : a = b)
     (f : ∀ k, (F k).2.1 → SPComp (F k).2.2)
     (eq : F a = F b) :
@@ -230,24 +234,24 @@ equal operation triples, so the casts agree by proof irrelevance.
 -/
 
 /-- `eqToHom` on PkgInterface acts as `▸` (transport) on handlers. -/
-private theorem eqToHom_handler {I J : DeepInterface} (h_eq : I = J)
+theorem eqToHom_handler {I J : DeepInterface} (h_eq : I = J)
     (handler : TypedHandler (toPI I)) :
     eqToHom (congrArg toPI h_eq) handler = h_eq ▸ handler := by
   subst h_eq; rfl
 
 /-- Transport of a handler along a DeepInterface equality is pointwise identity
     up to `castKl'` at the same `Fin.val`. -/
-private theorem handler_transport_apply {I J : DeepInterface} (h_eq : I = J)
+theorem handler_transport_apply {I J : DeepInterface} (h_eq : I = J)
     (handler : TypedHandler (toPI I)) (k : (toPI J).ι) :
     (h_eq ▸ handler) k =
     castKl' (by subst h_eq; rfl)
       (handler ⟨k.val, by subst h_eq; exact k.isLt⟩) := by
   subst h_eq; rfl
 
-@[simp] private theorem tensorAppendIso_hom :
+@[simp] theorem tensorAppendIso_hom :
     (tensorAppendIso I J).hom = appendToTensor I J := rfl
 
-@[simp] private theorem appendAssocIso_hom :
+@[simp] theorem appendAssocIso_hom :
     (appendAssocIso I J K).hom = eqToHom (congrArg toPI (diAppend_assoc I J K)) := rfl
 
 theorem tensorAppend_assoc_coherence :
@@ -349,7 +353,7 @@ theorem toSemPkg_link_resolve (p₁ p₂ : DeepPackage) (oracle : Handler) :
   exact toSemPkg_link p₁ p₂ oracle op dom codom x
 
 /-- Transport of a `SemPkg` along an import equality preserves `resolve`. -/
-private theorem SemPkg.resolve_transport {I₁ I₂ I_exp : DeepInterface}
+theorem SemPkg.resolve_transport {I₁ I₂ I_exp : DeepInterface}
     (h : I₁ = I₂) (s : SemPkg I₁ I_exp) :
     (h ▸ s).resolve = s.resolve := by subst h; rfl
 
@@ -364,7 +368,7 @@ theorem toSemPkg_link_comp (p₁ p₂ : DeepPackage) (h : p₁.imports = p₂.ex
   exact toSemPkg_link_resolve p₁ p₂ oracle
 
 /-- `eqToHom` in `Category DeepInterface` preserves `resolve`. -/
-private theorem eqToHom_resolve {I J : DeepInterface} (h : I = J) :
+theorem eqToHom_resolve {I J : DeepInterface} (h : I = J) :
     (eqToHom h : SemPkg I J).resolve = _root_.id := by subst h; rfl
 
 /-- `toSemPkg` preserves linking as categorical composition `≫` in

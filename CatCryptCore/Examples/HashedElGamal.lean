@@ -3,9 +3,11 @@ Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Examples.CyclicGroupDDH
-import CatCryptCore.Prob.XorBij
-import CatCryptCore.Tactics.Triangle
+module
+
+public import CatCryptCore.Examples.CyclicGroupDDH
+public import CatCryptCore.Prob.XorBij
+public import CatCryptCore.Tactics.Triangle
 
 /-!
 # Hashed ElGamal Encryption
@@ -39,6 +41,8 @@ The reduction:
 * [Abdalla, Bellare & Rogaway, The Oracle Diffie-Hellman Assumptions, 2001]
 * [Shoup, A Proposal for an ISO Standard for PKE, 2001]
 -/
+
+@[expose] public section
 
 set_option autoImplicit false
 
@@ -144,7 +148,7 @@ noncomputable def heg_ddh_reduction (H : G → Bool) (m : Bool)
   A ct
 
 /-- LHS normal form: heg_real.bind A as explicit double-sample. -/
-private theorem heg_real_bind_eq (H : G → Bool) (m : Bool)
+theorem heg_real_bind_eq (H : G → Bool) (m : Bool)
     (A : (G × Bool) → SPComp Bool) :
     (heg_real H m).bind A =
     SPComp.bind (SPComp.sample CG.Exp) (fun sk =>
@@ -159,7 +163,7 @@ private theorem heg_real_bind_eq (H : G → Bool) (m : Bool)
   rw [SPComp.pure_bind]
 
 /-- RHS normal form: DDH_real.bind reduction as explicit double-sample. -/
-private theorem ddh_real_bind_red_eq (H : G → Bool) (m : Bool)
+theorem ddh_real_bind_red_eq (H : G → Bool) (m : Bool)
     (A : (G × Bool) → SPComp Bool) :
     (DDH_real G).bind (heg_ddh_reduction H m A) =
     SPComp.bind (SPComp.sample CG.Exp) (fun a =>
@@ -175,7 +179,7 @@ private theorem ddh_real_bind_red_eq (H : G → Bool) (m : Bool)
 
 /-- Program equality: the real Hashed ElGamal game composed with adversary A
     equals the DDH real game composed with the DDH reduction. -/
-private theorem heg_real_eq_ddh_real (H : G → Bool) (m : Bool)
+theorem heg_real_eq_ddh_real (H : G → Bool) (m : Bool)
     (A : (G × Bool) → SPComp Bool) :
     (heg_real H m).bind A = (DDH_real G).bind (heg_ddh_reduction H m A) := by
   rw [heg_real_bind_eq, ddh_real_bind_red_eq]
@@ -234,7 +238,7 @@ omit CG in
     `(c₁, mask)` — the message `m` is masked away. This is the one-time-pad
     bijection (`boolXorBij m`) applied inside the sampled mask, giving perfect
     secrecy of the ideal Hashed ElGamal game. -/
-private theorem heg_ideal_mask_indep (c₁ : G) (m : Bool) :
+theorem heg_ideal_mask_indep (c₁ : G) (m : Bool) :
     (SPComp.sample Bool).bind (fun mask => SPComp.pure (c₁, xor mask m)) =
     (SPComp.sample Bool).bind (fun mask => SPComp.pure (c₁, mask)) := by
   funext h

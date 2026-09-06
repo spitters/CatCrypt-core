@@ -3,8 +3,10 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Unary.Bridge
-import CatCryptCore.Prob.Support
+module
+
+public import CatCryptCore.Unary.Bridge
+public import CatCryptCore.Prob.Support
 
 /-!
 # Enhanced Failure Event Lemma Variants
@@ -39,6 +41,8 @@ security proofs.
 * Bellare & Rogaway, "The Security of Triple Encryption and a Framework
   for Code-Based Game-Playing Proofs" (game hopping)
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Unary
 

@@ -3,8 +3,10 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Relational.Rules
-import CatCryptCore.Unary.Rules
+module
+
+public import CatCryptCore.Relational.Rules
+public import CatCryptCore.Unary.Rules
 
 /-!
 # Lazy Sampling Infrastructure
@@ -44,6 +46,8 @@ The abstract interface is:
 * SSProve PRF.v (Rocq): lazy sampling for PRF security games
 * [Bellare & Rogaway, Introduction to Modern Cryptography]
 -/
+
+@[expose] public section
 
 namespace CatCrypt.LazySampling
 

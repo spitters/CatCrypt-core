@@ -3,8 +3,10 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Package.RawPackage
-import CatCryptCore.Package.Locations
+module
+
+public import CatCryptCore.Package.RawPackage
+public import CatCryptCore.Package.Locations
 
 /-!
 # Valid Packages
@@ -22,6 +24,8 @@ implement their interface and only access declared locations.
 
 * [Larsen and Schürmann, *Nominal State-Separating Proofs*](https://eprint.iacr.org/2025/598)
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Package
 

@@ -3,9 +3,11 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Core.Location
-import Mathlib.Data.Finmap
-import Mathlib.Data.Fintype.EquivFin
+module
+
+public import CatCryptCore.Core.Location
+public import Mathlib.Data.Finmap
+public import Mathlib.Data.Fintype.EquivFin
 
 /-!
 # Heap Model
@@ -28,6 +30,8 @@ This is the Lean 4 analogue of Rocq SSProve's `{fmap nat → nat}`.
 * `set_set_same`: Double write contracts to a single write
 * `set_set_comm`: Writes to different locations commute
 -/
+
+@[expose] public section
 
 open scoped Classical
 

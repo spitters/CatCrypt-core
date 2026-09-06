@@ -3,9 +3,11 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Core.Code
-import CatCryptCore.Crypto.Advantage
-import CatCryptCore.Prob.Support
+module
+
+public import CatCryptCore.Core.Code
+public import CatCryptCore.Crypto.Advantage
+public import CatCryptCore.Prob.Support
 
 /-!
 # Forking Lemma
@@ -52,6 +54,8 @@ enabling special soundness extraction from the two accepting transcripts.
 * [Pointcheval, Stern, *Security arguments for digital signatures and blind signatures*]
 * [Firsov, Unruh, *Reflection, rewinding, and coin-toss in EasyCrypt*]
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Crypto.ForkingLemma
 
@@ -320,7 +324,7 @@ noncomputable def condForkProb [Fintype R] [Nonempty R] [DecidableEq R]
         decide (e₁ ≠ e₂))) h₀
 
 /-- Helper: double SPComp.sample reduces to nested SDistr.uniform.bind at the SDistr level. -/
-private theorem double_sample_sdisrt [Fintype R] [Nonempty R] {β : Type}
+theorem double_sample_sdisrt [Fintype R] [Nonempty R] {β : Type}
     (f : R → R → β) (h₀ : Heap) :
     (SPComp.bind (SPComp.sample R) fun e₁ =>
       SPComp.bind (SPComp.sample R) fun e₂ =>

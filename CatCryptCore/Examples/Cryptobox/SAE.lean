@@ -3,11 +3,13 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Examples.Cryptobox.Scheme
-import CatCryptCore.Crypto.Advantage
-import Mathlib.Data.Fintype.Pi
-import Mathlib.Data.Fintype.Prod
-import Mathlib.Data.Fintype.Option
+module
+
+public import CatCryptCore.Examples.Cryptobox.Scheme
+public import CatCryptCore.Crypto.Advantage
+public import Mathlib.Data.Fintype.Pi
+public import Mathlib.Data.Fintype.Prod
+public import Mathlib.Data.Fintype.Option
 
 /-!
 # SAE: Single-instance Authenticated Encryption Game
@@ -33,6 +35,8 @@ Two variants parameterized by `b : Bool`:
 * Rocq SSProve: theories/Cryptobox/SAE.v
 * Dupressoir et al., CSF 2022 (Section 4.3)
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Examples.Cryptobox
 

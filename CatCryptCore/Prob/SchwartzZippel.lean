@@ -3,14 +3,16 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Core.Code
-import CatCryptCore.Prob.SDistr
-import CatCryptCore.Crypto.Advantage
-import CatCryptCore.Crypto.ForkingLemma
-import Mathlib.Algebra.Polynomial.FieldDivision
-import Mathlib.Algebra.Polynomial.Roots
-import Mathlib.Algebra.Field.ZMod
-import Mathlib.Data.ZMod.Basic
+module
+
+public import CatCryptCore.Core.Code
+public import CatCryptCore.Prob.SDistr
+public import CatCryptCore.Crypto.Advantage
+public import CatCryptCore.Crypto.ForkingLemma
+public import Mathlib.Algebra.Polynomial.FieldDivision
+public import Mathlib.Algebra.Polynomial.Roots
+public import Mathlib.Algebra.Field.ZMod
+public import Mathlib.Data.ZMod.Basic
 
 /-!
 # Schwartz-Zippel Lemma
@@ -34,6 +36,8 @@ Schwartz-Zippel, this happens with probability at most deg(δ) / p.
 * [Schwartz 1980, Zippel 1979 — Probabilistic algorithms for sparse polynomials]
 * [Mitzenmacher-Upfal, *Probability and Computing*, §7.2]
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Prob
 

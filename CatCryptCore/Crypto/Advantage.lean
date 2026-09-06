@@ -3,15 +3,19 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Core.Code
-import CatCryptCore.Relational.Judgment
-import Mathlib.Data.Real.Basic
+module
+
+public import CatCryptCore.Core.Code
+public import CatCryptCore.Relational.Judgment
+public import Mathlib.Data.Real.Basic
 
 /-!
 # Cryptographic Advantage
 
 This file defines the advantage of an adversary in distinguishing games.
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Crypto
 
@@ -49,7 +53,7 @@ noncomputable def AdvantageA {α : Type*} (G₀ G₁ : SPComp α) (A : α → SP
 
 /-- Helper: absolute difference in ENNReal satisfies triangle inequality.
     Using (a - b) ⊔ (b - a) as "absolute difference" for nonnegative numbers -/
-private theorem abs_diff_triangle (a b c : ℝ≥0∞) :
+theorem abs_diff_triangle (a b c : ℝ≥0∞) :
     (a - c) ⊔ (c - a) ≤ ((a - b) ⊔ (b - a)) + ((b - c) ⊔ (c - b)) := by
   -- Key insight: (a - c) ≤ (a - b) + (b - c) in ENNReal (tsub_le_tsub_add_tsub)
   -- And similarly (c - a) ≤ (c - b) + (b - a)
@@ -82,7 +86,7 @@ private theorem abs_diff_triangle (a b c : ℝ≥0∞) :
   simp only [Advantage, abs_diff_triangle]
 
 /-- The lifted eqPost relation is equivalent to Eq on pairs -/
-private theorem lifted_eqPost_eq {α : Type*} :
+theorem lifted_eqPost_eq {α : Type*} :
     (fun (p₁ : α × Heap) (p₂ : α × Heap) => eqPost p₁.1 p₁.2 p₂.1 p₂.2) = Eq := by
   funext p₁ p₂
   simp only [eqPost, eq_iff_iff]
@@ -186,7 +190,7 @@ theorem advantage_zero_of_inv {α : Type*} (I : RPre) (G₀ G₁ : SPComp α)
 /-! ## Utility Lemmas for Advantage Bounds -/
 
 /-- Helper: sample Bool bind equates to SDistr.uniform bind -/
-private theorem sample_bind_eq (A : Bool → SPComp Bool) (h₀ : Heap) :
+theorem sample_bind_eq (A : Bool → SPComp Bool) (h₀ : Heap) :
     (SPComp.bind (SPComp.sample Bool) A) h₀ =
     (SDistr.uniform Bool).bind (fun b => A b h₀) := by
   simp only [SPComp.bind_def, SPComp.sample]
@@ -246,7 +250,7 @@ theorem advantage_sample_vs_pure_false (A : Bool → SPComp Bool) :
 /-! ## General Sampling Lemmas -/
 
 /-- Generalized sample-bind equation for any finite nonempty type. -/
-private theorem sample_bind_eq_general {α β : Type*} [Fintype α] [Nonempty α]
+theorem sample_bind_eq_general {α β : Type*} [Fintype α] [Nonempty α]
     (f : α → SPComp β) (h₀ : Heap) :
     (SPComp.bind (SPComp.sample α) f) h₀ =
     (SDistr.uniform α).bind (fun a => f a h₀) := by
@@ -269,7 +273,7 @@ theorem prTrue_bind_sample {α : Type*} [Fintype α] [Nonempty α]
 
 /-- Weighted sum bound: if each term is bounded, the weighted average is bounded.
     Used for proving that sampling from a common distribution preserves advantage bounds. -/
-private theorem weighted_sum_le {α : Type*} [Fintype α] [Nonempty α]
+theorem weighted_sum_le {α : Type*} [Fintype α] [Nonempty α]
     (p q : α → ℝ≥0∞) (ε : ℝ≥0∞)
     (h : ∀ x, p x ≤ q x + ε) :
     ∑ x : α, (↑(Fintype.card α) : ℝ≥0∞)⁻¹ * p x ≤

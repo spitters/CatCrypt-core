@@ -3,10 +3,12 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Crypto.SecurityDefs
-import CatCryptCore.Prob.XorBij
-import CatCryptCore.Tactics
-import CatCryptCore.Deep.ReflectUCHelpers
+module
+
+public import CatCryptCore.Crypto.SecurityDefs
+public import CatCryptCore.Prob.XorBij
+public import CatCryptCore.Tactics
+public import CatCryptCore.Deep.ReflectUCHelpers
 
 /-!
 # 2-out-of-2 Additive Secret Sharing: Perfect Privacy
@@ -59,6 +61,8 @@ collapses the advantage to `0`.
 * [Rosulek, The Joy of Cryptography, §3 (secret sharing)]
 * [Shamir, How to Share a Secret, 1979]
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Examples.SecretSharing
 

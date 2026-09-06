@@ -3,9 +3,11 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Category.PkgFam
-import CatCryptCore.Deep.Eval
-import CatCryptCore.Crypto.NomAdvantage
+module
+
+public import CatCryptCore.Category.PkgFam
+public import CatCryptCore.Deep.Eval
+public import CatCryptCore.Crypto.NomAdvantage
 
 /-!
 # Evaluation Bridge: DeepPackage → PkgImpl
@@ -33,6 +35,8 @@ uses Kleisli bind. The theorem `eval_substOracle` connects these:
 * `evalImpl_par_eval_left/right` — parallel composition dispatches correctly
 * `runPkg_eq_eval` — connects runPkg to the eval bridge
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Bridge
 

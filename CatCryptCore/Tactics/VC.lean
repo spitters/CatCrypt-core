@@ -3,9 +3,11 @@ Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Core.StdDoBridge
-import CatCryptCore.Tactics.UpToBad
-import CatCryptCore.Deep.PureCode
+module
+
+public import CatCryptCore.Core.StdDoBridge
+public import CatCryptCore.Tactics.UpToBad
+public import CatCryptCore.Deep.PureCode
 
 /-!
 # VC tactics: `mvcgen`-driven closers for SPComp side conditions
@@ -43,6 +45,8 @@ Each tactic also takes an optional ident list (e.g. `ssprove_nofail [myGame]`)
 that `unfold`s the named definitions first, so `mvcgen` / the combinator
 cascade can see the underlying do-block.
 -/
+
+@[expose] public section
 
 set_option autoImplicit false
 

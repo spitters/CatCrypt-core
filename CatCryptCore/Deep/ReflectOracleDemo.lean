@@ -3,8 +3,10 @@ Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Deep.Reflect
-import CatCryptCore.Deep.Package
+module
+
+public import CatCryptCore.Deep.Reflect
+public import CatCryptCore.Deep.Package
 
 /-!
 # Reflecting games that call abstract primitives / opaque oracles
@@ -25,6 +27,8 @@ and `substOracle` are all wired) and is the right choice when the opaque head is
 meant to be *linked* later — but its `eval` is `SPComp.fail`, so it does not
 round-trip on its own. The final section demonstrates that path.
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Deep.ReflectOracleDemo
 

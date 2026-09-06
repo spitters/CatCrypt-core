@@ -3,8 +3,10 @@ Copyright (c) 2025 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Crypto.Advantage
-import CatCryptCore.Crypto.CryptoWord
+module
+
+public import CatCryptCore.Crypto.Advantage
+public import CatCryptCore.Crypto.CryptoWord
 
 /-!
 # RSA One-Way Assumption
@@ -38,6 +40,8 @@ The RSA game captures the difficulty of inverting the RSA function:
 * Blanchet, Pointcheval. *Automated Security Proofs with Sequences of Games.*
   CRYPTO 2006.
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Crypto.Assumptions
 

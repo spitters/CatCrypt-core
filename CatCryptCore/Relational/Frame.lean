@@ -3,8 +3,10 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Relational.Judgment
-import CatCryptCore.Prob.Coupling
+module
+
+public import CatCryptCore.Relational.Judgment
+public import CatCryptCore.Prob.Coupling
 
 /-!
 # Location-Based Frame Rule
@@ -54,6 +56,8 @@ At `L = ∅` the last two rules meet without either containing the other:
 * Bluebell (POPL 2025) — `P * Q` separating conjunction for independence
 * O'Hearn, Reynolds, Yang — Separation logic
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Relational
 

@@ -3,12 +3,14 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Crypto.SecurityDefs
-import CatCryptCore.Prob.XorBij
-import CatCryptCore.Tactics
-import CatCryptCore.Deep.OracleGamePackage
-import CatCryptCore.Deep.ReflectUCHelpers
-import CatCryptCore.Crypto.NomPkgBridge
+module
+
+public import CatCryptCore.Crypto.SecurityDefs
+public import CatCryptCore.Prob.XorBij
+public import CatCryptCore.Tactics
+public import CatCryptCore.Deep.OracleGamePackage
+public import CatCryptCore.Deep.ReflectUCHelpers
+public import CatCryptCore.Crypto.NomPkgBridge
 
 /-!
 # One-Time Pad: Perfect IND-CPA Security
@@ -51,6 +53,8 @@ collapses the advantage to `0`.
 * [Rosulek, The Joy of Cryptography, §2 (one-time secrecy)]
 * [Shannon, Communication Theory of Secrecy Systems, 1949]
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Examples.OTP
 

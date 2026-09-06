@@ -3,9 +3,11 @@ Copyright (c) 2025 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Deep.Deterministic
-import CatCryptCore.Deep.Eval
-import CatCryptCore.Core.Heap
+module
+
+public import CatCryptCore.Deep.Deterministic
+public import CatCryptCore.Deep.Eval
+public import CatCryptCore.Core.Heap
 
 /-!
 # Deterministic Code Interpretation
@@ -25,6 +27,8 @@ on deterministic code (evaluating to a Dirac distribution).
 cases via `absurd`. We recurse on `RawCode` (which lives in `Type`) since
 `IsDeterministic` lives in `Prop` and cannot eliminate into `Type`.
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Deep
 

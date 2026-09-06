@@ -3,12 +3,14 @@ Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Examples.Commitments.CommitmentScheme
-import CatCryptCore.Crypto.Assumptions.DL
-import CatCryptCore.Crypto.PairingGroup
-import CatCryptCore.Crypto.UCDSL
-import CatCryptCore.Crypto.ForkingLemma
-import Mathlib.Algebra.Field.ZMod
+module
+
+public import CatCryptCore.Examples.Commitments.CommitmentScheme
+public import CatCryptCore.Crypto.Assumptions.DL
+public import CatCryptCore.Crypto.PairingGroup
+public import CatCryptCore.Crypto.UCDSL
+public import CatCryptCore.Crypto.ForkingLemma
+public import Mathlib.Algebra.Field.ZMod
 
 /-!
 # Pedersen Commitment Scheme
@@ -40,6 +42,8 @@ Given a pairing group with generators `g₁` and a second generator `h = g₁^β
   Secret Sharing, CRYPTO 1991]
 * [CatCrypt KZGPed hiding — bijection argument pattern]
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Examples.Commitments.Pedersen
 
@@ -75,7 +79,7 @@ variable (pp : PedersenParams)
 /-- The second generator h = g₁^β -/
 noncomputable def h : pp.P.G₁ := pp.P.g₁ ^ᵍ pp.β
 
-private instance : Fact (Nat.Prime pp.P.p) := pp.P.instPrime
+instance : Fact (Nat.Prime pp.P.p) := pp.P.instPrime
 
 /-! ## Commitment Operations -/
 
@@ -121,7 +125,7 @@ noncomputable def PedHiding_Advantage (A : pp.PedHidingAdv) : ℝ≥0∞ :=
 transforms a commitment to `m₀` into a commitment to `m₁`.
 
 Specifically: `commit(m₁, r) = commit(m₀, r + β⁻¹·(m₁ - m₀))`. -/
-private theorem commit_shift (m₀ m₁ r : ZMod pp.P.p) :
+theorem commit_shift (m₀ m₁ r : ZMod pp.P.p) :
     pp.commit m₁ r = pp.commit m₀ (r + pp.β⁻¹ * (m₁ - m₀)) := by
   rw [commit_eq_zpow, commit_eq_zpow]
   congr 1
@@ -197,7 +201,7 @@ noncomputable def binding_to_dlog (P : PairingGroup)
 /-! ## Algebraic Core Lemmas -/
 
 /-- Injectivity of `g₁^·` : if `g₁ ^ᵍ a = g₁ ^ᵍ b` then `a = b` in `ZMod p`. -/
-private theorem zpowZMod₁_g₁_injective (P : PairingGroup) (a b : ZMod P.p)
+theorem zpowZMod₁_g₁_injective (P : PairingGroup) (a b : ZMod P.p)
     (h : zpowZMod₁ (P := P) P.g₁ a = zpowZMod₁ (P := P) P.g₁ b) : a = b := by
   rw [← sub_eq_zero, ← zpowZMod₁_eq_one_iff, zpowZMod₁_sub, h, mul_inv_cancel]
 
@@ -205,7 +209,7 @@ private theorem zpowZMod₁_g₁_injective (P : PairingGroup) (a b : ZMod P.p)
 we can extract `β = (m₁ - m₂) · (r₂ - r₁)⁻¹`.
 
 This is the algebraic heart of the binding-to-DLog reduction. -/
-private theorem binding_extracts_dlog (P : PairingGroup) [Fact (Nat.Prime P.p)]
+theorem binding_extracts_dlog (P : PairingGroup) [Fact (Nat.Prime P.p)]
     (β m₁ m₂ r₁ r₂ : ZMod P.p)
     (hne : m₁ ≠ m₂)
     (hcommit : m₁ + β * r₁ = m₂ + β * r₂) :

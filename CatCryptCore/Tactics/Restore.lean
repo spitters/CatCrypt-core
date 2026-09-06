@@ -3,9 +3,11 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import Lean
-import CatCryptCore.Relational.Rules
-import CatCryptCore.Invariant
+module
+
+public import Lean
+public import CatCryptCore.Relational.Rules
+public import CatCryptCore.Invariant
 
 /-!
 # Invariant Restoration Tactics
@@ -35,6 +37,8 @@ invariant is preserved by the write.
 * SSProve: theories/Crypt/package/pkg_user_util.v
 * SSProve: theories/Crypt/package/pkg_invariants.v
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Relational
 

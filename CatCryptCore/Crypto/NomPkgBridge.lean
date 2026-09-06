@@ -3,10 +3,12 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Crypto.NomAdvantage
-import CatCryptCore.Crypto.SDist
-import CatCryptCore.Crypto.EvalComplete
-import CatCryptCore.Crypto.UC
+module
+
+public import CatCryptCore.Crypto.NomAdvantage
+public import CatCryptCore.Crypto.SDist
+public import CatCryptCore.Crypto.EvalComplete
+public import CatCryptCore.Crypto.UC
 
 /-!
 # NomPkg Bridge: Game-Based Security → sdist
@@ -27,6 +29,8 @@ For Bool-valued IsPure+NoFail computations, any post-processing distinguisher
 `D : Bool → SPComp Bool` cannot increase the advantage beyond what the identity
 distinguisher achieves. This is a post-processing lemma for binary channels.
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Crypto
 
@@ -85,7 +89,7 @@ end Assumptions
 /-! ## IsPure + NoFail Helpers -/
 
 /-- For IsPure c, the bind `c >>= D` at h₀ equals `d.bind(fun a => D a h₀)`. -/
-private theorem isPure_bind_eq {α β : Type*} {c : SPComp α} {d : SDistr α}
+theorem isPure_bind_eq {α β : Type*} {c : SPComp α} {d : SDistr α}
     (hc : ∀ h, c h = d.bind (fun a => SDistr.pure (a, h)))
     (D : α → SPComp β) (h₀ : Heap) :
     (SPComp.bind c D) h₀ = d.bind (fun a => D a h₀) := by
@@ -106,7 +110,7 @@ theorem isPure_noFail_d_none {α : Type*} {c : SPComp α} {d : SDistr α}
 
 /-- For IsPure c : SPComp Bool with witness d, the bind `(d.bind f)(some(b, h₀))`
     is zero when `h ≠ h₀`, because d.bind produces outputs only at heap h₀. -/
-private theorem isPure_bind_some_ne {c : SPComp Bool} {d : SDistr Bool}
+theorem isPure_bind_some_ne {c : SPComp Bool} {d : SDistr Bool}
     (hc : ∀ h, c h = d.bind (fun a => SDistr.pure (a, h)))
     (h₀ h : Heap) (b : Bool) (hne : h ≠ h₀) :
     (c h₀) (some (b, h)) = 0 := by
@@ -140,7 +144,7 @@ theorem prTrue_isPure_eq {c : SPComp Bool} {d : SDistr Bool}
   simp [SDistr.pure, PMF.pure_apply]
 
 /-- For IsPure+NoFail d : SDistr Bool, d(some false) = 1 - d(some true). -/
-private theorem isPure_noFail_complement {d : SDistr Bool}
+theorem isPure_noFail_complement {d : SDistr Bool}
     (hnf : d none = 0) :
     d (some false) = 1 - d (some true) := by
   have htotal := d.tsum_coe
@@ -152,7 +156,7 @@ private theorem isPure_noFail_complement {d : SDistr Bool}
   exact (ENNReal.add_sub_cancel_left h_ne_top).symm
 
 /-- For IsPure+NoFail, d(some true) ≤ 1. -/
-private theorem isPure_noFail_le_one {d : SDistr Bool}
+theorem isPure_noFail_le_one {d : SDistr Bool}
     (hnf : d none = 0) :
     d (some true) ≤ 1 := by
   have htotal := d.tsum_coe
@@ -165,7 +169,7 @@ private theorem isPure_noFail_le_one {d : SDistr Bool}
 /-- Auxiliary: for r ≤ s ≤ 1, the expression with smaller weight r is bounded by
     the expression with larger weight s plus the weight difference (s - r).
     This is one direction of the convex bound. -/
-private theorem convex_le_add_tsub₁ {x y : ℝ≥0∞}
+theorem convex_le_add_tsub₁ {x y : ℝ≥0∞}
     (r s : ℝ≥0∞) (hrs : r ≤ s) (hs1 : s ≤ 1) (hy : y ≤ 1) :
     r * x + (1 - r) * y ≤ (s * x + (1 - s) * y) + (s - r) := by
   have h_split : 1 - r = (1 - s) + (s - r) := (tsub_add_tsub_cancel hs1 hrs).symm
@@ -179,7 +183,7 @@ private theorem convex_le_add_tsub₁ {x y : ℝ≥0∞}
 
 /-- Auxiliary: the reverse direction — the expression with larger weight s is also
     bounded by the expression with smaller weight r plus (s - r). -/
-private theorem convex_le_add_tsub₂ {x y : ℝ≥0∞}
+theorem convex_le_add_tsub₂ {x y : ℝ≥0∞}
     (r s : ℝ≥0∞) (hrs : r ≤ s) (_hs1 : s ≤ 1) (hx : x ≤ 1) :
     s * x + (1 - s) * y ≤ (r * x + (1 - r) * y) + (s - r) := by
   calc s * x + (1 - s) * y
@@ -430,7 +434,7 @@ noncomputable def wrapMainNomPkg
 
     After linking with G, oracle calls in A's code get resolved. The
     ofSPComp phases (heapReset and D) are transparent to substOracle. -/
-private theorem wrapMainNomPkg_impl_code
+theorem wrapMainNomPkg_impl_code
     (A : CatCrypt.Deep.NomPackage)
     (h_main : (0, Unit, Bool) ∈ A.pkg.exports.ops)
     (D : Bool → SPComp Bool) (h₀ : Heap)

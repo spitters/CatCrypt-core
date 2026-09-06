@@ -3,7 +3,9 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Core.Code
+module
+
+public import CatCryptCore.Core.Code
 
 /-!
 # Encryption Scheme Definition
@@ -24,6 +26,8 @@ in cryptographic security proofs.
 * [Bellare & Rogaway, Introduction to Modern Cryptography]
 * [Katz & Lindell, Introduction to Modern Cryptography]
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Crypto
 

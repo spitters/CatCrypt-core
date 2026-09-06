@@ -3,9 +3,11 @@ Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Crypto.Advantage
-import CatCryptCore.Crypto.CryptoWord
-import CatCryptCore.Tactics
+module
+
+public import CatCryptCore.Crypto.Advantage
+public import CatCryptCore.Crypto.CryptoWord
+public import CatCryptCore.Tactics
 
 /-!
 # Collision Resistance (CR) Assumptions
@@ -63,6 +65,8 @@ SLH-DSA.
 * Boneh & Shoup, *A Graduate Course in Applied Cryptography*, §8.1.
 * Katz & Lindell, *Introduction to Modern Cryptography*, §8.1, Props. 8.3–8.4.
 -/
+
+@[expose] public section
 
 set_option autoImplicit false
 

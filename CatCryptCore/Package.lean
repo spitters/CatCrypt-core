@@ -1,7 +1,9 @@
-import CatCryptCore.Package.Interface
-import CatCryptCore.Package.Locations
-import CatCryptCore.Package.RawPackage
-import CatCryptCore.Package.ValidPackage
+module
+
+public import CatCryptCore.Package.Interface
+public import CatCryptCore.Package.Locations
+public import CatCryptCore.Package.RawPackage
+public import CatCryptCore.Package.ValidPackage
 
 /-!
 # Package System
@@ -20,3 +22,5 @@ Packages are composable cryptographic components with interfaces.
 
 * [Larsen and Schürmann, *Nominal State-Separating Proofs*](https://eprint.iacr.org/2025/598)
 -/
+
+@[expose] public section

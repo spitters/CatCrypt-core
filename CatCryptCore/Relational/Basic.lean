@@ -3,7 +3,9 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Core.Heap
+module
+
+public import CatCryptCore.Core.Heap
 
 /-!
 # Relational Assertions
@@ -22,6 +24,8 @@ This file defines relational preconditions and postconditions for pRHL.
 * `⟨1⟩` - Access left component
 * `⟨2⟩` - Access right component
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Relational
 

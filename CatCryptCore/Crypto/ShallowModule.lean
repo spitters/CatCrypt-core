@@ -3,7 +3,9 @@ Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Crypto.Advantage
+module
+
+public import CatCryptCore.Crypto.Advantage
 
 /-!
 # Shallow module/functor SSP layer
@@ -28,6 +30,8 @@ hand-rolled proofs carry.
 * `hybrid_bound₃` — a three-hop reduction bound assembled from `advantageA_absorb`
   + `advantage_triangle`, the reusable skeleton a KEM-DEM-style proof plugs into.
 -/
+
+@[expose] public section
 
 set_option autoImplicit false
 

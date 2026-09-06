@@ -3,11 +3,15 @@ Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Deep.Reflect
-import CatCryptCore.Deep.Package
-import CatCryptCore.Deep.Bridge
-import CatCryptCore.Crypto.NomAdvantage
+module
 
+public import CatCryptCore.Deep.Reflect
+public import CatCryptCore.Deep.Package
+public import CatCryptCore.Deep.Bridge
+public import CatCryptCore.Crypto.NomAdvantage
+
+
+@[expose] public section
 set_option autoImplicit false
 
 /-!

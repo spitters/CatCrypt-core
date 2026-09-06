@@ -3,12 +3,14 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import Mathlib.GroupTheory.SpecificGroups.Cyclic
-import Mathlib.Algebra.Group.Nat.Defs
-import Mathlib.GroupTheory.OrderOfElement
-import Mathlib.Data.ZMod.Basic
-import Mathlib.Algebra.Field.ZMod
-import CatCryptCore.Core.Code
+module
+
+public import Mathlib.GroupTheory.SpecificGroups.Cyclic
+public import Mathlib.Algebra.Group.Nat.Defs
+public import Mathlib.GroupTheory.OrderOfElement
+public import Mathlib.Data.ZMod.Basic
+public import Mathlib.Algebra.Field.ZMod
+public import CatCryptCore.Core.Code
 
 /-!
 # Bilinear Pairing Groups
@@ -28,6 +30,8 @@ algebraic hierarchy.
 * [Kate, Zaverucha, Goldberg, *Constant-Size Commitments to Polynomials and Their
   Applications*, ASIACRYPT 2010]
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Crypto
 
@@ -424,7 +428,7 @@ theorem zpowZMod₁_one (x : P.G₁) : zpowZMod₁ (P := P) x 1 = x := by
   unfold zpowZMod₁; rw [ZMod.val_one]; simp
 
 /-- In `ZMod p` with `p` prime, nonzero elements satisfy `a * a⁻¹ = 1`. -/
-private theorem zpow_mul_inv_cancel (a : ZMod P.p) (ha : a ≠ 0) : a * a⁻¹ = 1 := by
+theorem zpow_mul_inv_cancel (a : ZMod P.p) (ha : a ≠ 0) : a * a⁻¹ = 1 := by
   rw [ZMod.mul_inv_eq_gcd]
   have : Nat.Coprime a.val P.p :=
     Nat.Coprime.symm (P.instPrime.out.coprime_iff_not_dvd.mpr

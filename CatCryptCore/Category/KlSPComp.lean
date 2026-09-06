@@ -3,9 +3,11 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Core.Code
-import Mathlib.CategoryTheory.Monoidal.Category
-import Mathlib.CategoryTheory.Monoidal.Braided.Basic
+module
+
+public import CatCryptCore.Core.Code
+public import Mathlib.CategoryTheory.Monoidal.Category
+public import Mathlib.CategoryTheory.Monoidal.Braided.Basic
 
 /-!
 # Kleisli Category of SPComp as a Symmetric Monoidal Category
@@ -20,6 +22,8 @@ forms a symmetric monoidal category with `Sum` as tensor and `Empty` as unit.
 * `BraidedCategory KlSPComp` — braiding swaps summands via `pure`
 * `SymmetricCategory KlSPComp` — braiding is self-inverse
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Core
 

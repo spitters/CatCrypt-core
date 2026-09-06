@@ -3,10 +3,12 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Deep.Eval
-import CatCryptCore.Deep.Package
-import CatCryptCore.Deep.Bridge
-import CatCryptCore.Crypto.Advantage
+module
+
+public import CatCryptCore.Deep.Eval
+public import CatCryptCore.Deep.Package
+public import CatCryptCore.Deep.Bridge
+public import CatCryptCore.Crypto.Advantage
 
 /-!
 # Package Behavioral Equivalence
@@ -43,6 +45,8 @@ arbitrary environments.
 
 * [Larsen and Schürmann, *Nominal State-Separating Proofs*](https://eprint.iacr.org/2025/598)
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Deep
 

@@ -3,8 +3,10 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Deep.Package
-import Mathlib.Tactic.SimpRw
+module
+
+public import CatCryptCore.Deep.Package
+public import Mathlib.Tactic.SimpRw
 
 /-!
 # Tactics for Deep Embedding Reasoning
@@ -29,6 +31,8 @@ example (p₁ p₂ : DeepPackage) (h : Disjoint p₁.locs p₂.locs) : DeepPacka
 * [Larsen and Schürmann, *Nominal State-Separating Proofs*](https://eprint.iacr.org/2025/598)
 * SSProve Rocq: `theories/Crypt/Package.v` (package tactics)
 -/
+
+@[expose] public section
 
 namespace CatCrypt
 

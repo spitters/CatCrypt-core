@@ -3,9 +3,13 @@ Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Examples.OneTimePad
-import CatCryptCore.Deep.ReflectTactic
+module
 
+public import CatCryptCore.Examples.OneTimePad
+public import CatCryptCore.Deep.ReflectTactic
+
+
+@[expose] public section
 set_option autoImplicit false
 
 /-!

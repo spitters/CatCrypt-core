@@ -3,9 +3,11 @@ Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.NonUniform.Sample
-import CatCryptCore.Relational.Rules
-import CatCryptCore.Relational.Sync
+module
+
+public import CatCryptCore.NonUniform.Sample
+public import CatCryptCore.Relational.Rules
+public import CatCryptCore.Relational.Sync
 
 /-!
 # pRHL sampling rules for arbitrary distributions
@@ -30,6 +32,8 @@ step is available for any pair of distributions, not just uniform ones.
 * `eq_of_rHoare_eqPost` — a full-equality judgment identifies the output
   sub-distributions
 -/
+
+@[expose] public section
 
 namespace CatCrypt.NonUniform
 

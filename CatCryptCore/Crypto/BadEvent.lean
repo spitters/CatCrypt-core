@@ -3,9 +3,11 @@ Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Crypto.Advantage
-import CatCryptCore.Crypto.HybridArgument
-import CatCryptCore.Crypto.NomPkgBridge
+module
+
+public import CatCryptCore.Crypto.Advantage
+public import CatCryptCore.Crypto.HybridArgument
+public import CatCryptCore.Crypto.NomPkgBridge
 
 /-!
 # Fundamental Lemma of Game Playing + Multi-Query Games
@@ -65,6 +67,8 @@ This file provides three layers of game-playing infrastructure:
 * Boneh & Shoup, *A Graduate Course in Applied Cryptography*, Ch. 4.
 -/
 
+@[expose] public section
+
 set_option autoImplicit false
 
 namespace CatCrypt.Crypto.BadEvent
@@ -113,11 +117,11 @@ Then:
 EasyCrypt proves this via the `upto_bad` tactic. -/
 
 /-- prFalse: probability of returning false (helper for Shoup's lemma). -/
-private noncomputable def prFalse (G : SPComp Bool) (h₀ : Heap) : ℝ≥0∞ :=
+noncomputable def prFalse (G : SPComp Bool) (h₀ : Heap) : ℝ≥0∞ :=
   ∑' h, (G h₀) (some (false, h))
 
 /-- prTrue + prFalse + none mass = 1 for any SPComp Bool, via PMF total mass. -/
-private theorem prTrue_prFalse_none_sum (G : SPComp Bool) (h₀ : Heap) :
+theorem prTrue_prFalse_none_sum (G : SPComp Bool) (h₀ : Heap) :
     (G h₀) none + prTrue G h₀ + prFalse G h₀ = 1 := by
   have hmass : (∑' x, (G h₀) x) = 1 := (G h₀).tsum_coe
   rw [SDistr.tsum_option_eq_add] at hmass
@@ -130,7 +134,7 @@ private theorem prTrue_prFalse_none_sum (G : SPComp Bool) (h₀ : Heap) :
   ring
 
 /-- Under NoFail, prTrue + prFalse = 1. -/
-private theorem prTrue_prFalse_eq_one_of_noFail (G : SPComp Bool) (h₀ : Heap)
+theorem prTrue_prFalse_eq_one_of_noFail (G : SPComp Bool) (h₀ : Heap)
     (hnf : SPComp.NoFail G) :
     prTrue G h₀ + prFalse G h₀ = 1 := by
   have h := prTrue_prFalse_none_sum G h₀
@@ -138,7 +142,7 @@ private theorem prTrue_prFalse_eq_one_of_noFail (G : SPComp Bool) (h₀ : Heap)
   exact h
 
 /-- prFalse equals 1 - prTrue under NoFail. -/
-private theorem prFalse_eq_one_sub_prTrue (G : SPComp Bool) (h₀ : Heap)
+theorem prFalse_eq_one_sub_prTrue (G : SPComp Bool) (h₀ : Heap)
     (hnf : SPComp.NoFail G) :
     prFalse G h₀ = 1 - prTrue G h₀ := by
   have h := prTrue_prFalse_eq_one_of_noFail G h₀ hnf
@@ -398,14 +402,14 @@ noncomputable def bad_union (bads : List (SPComp Bool)) : SPComp Bool :=
 
     **Proof strategy**: Induction on the list, applying `prTrue_union_bound`
     at each step to peel off one event from the disjunction. -/
-private theorem prTrue_pure_false_eq_zero (h₀ : Heap) :
+theorem prTrue_pure_false_eq_zero (h₀ : Heap) :
     prTrue (SPComp.pure false) h₀ = 0 := by
   unfold prTrue SPComp.pure
   simp only [SDistr.pure, PMF.pure_apply, Option.some.injEq, Prod.mk.injEq,
     reduceCtorEq, false_and, ite_false, tsum_zero]
 
 /-- `bad_union` of IsPure+NoFail events is itself IsPure+NoFail. -/
-private theorem bad_union_isPure_noFail :
+theorem bad_union_isPure_noFail :
     (bads : List (SPComp Bool)) →
     (∀ b ∈ bads, SPComp.IsPure b) →
     (∀ b ∈ bads, SPComp.NoFail b) →
@@ -709,7 +713,7 @@ noncomputable def sequential_sample {R : Type} [Fintype R] [Nonempty R] :
     SPComp.pure (r :: rs)
 
 /-- Binding `sample R` with a constant continuation reduces to the constant. -/
-private theorem spcomp_sample_bind_const {α β : Type} [Fintype α] [Nonempty α]
+theorem spcomp_sample_bind_const {α β : Type} [Fintype α] [Nonempty α]
     (c : SPComp β) :
     SPComp.bind (SPComp.sample α) (fun (_ : α) => c) = c := by
   funext h
@@ -721,7 +725,7 @@ private theorem spcomp_sample_bind_const {α β : Type} [Fintype α] [Nonempty �
 /-- The lazy direction of `lazy_eager_equiv`: `lazy_process` with a table
     that has `none` at every queried point (and `Nodup` queries) reduces
     to a sequential iid R-uniform sampling of `queries.length` values. -/
-private theorem lazy_process_eq_sequential {D R : Type} [DecidableEq D]
+theorem lazy_process_eq_sequential {D R : Type} [DecidableEq D]
     [Fintype R] [Nonempty R] :
     ∀ (qs : List D) (T : D → Option R), qs.Nodup → (∀ q ∈ qs, T q = none) →
       lazy_process qs T = sequential_sample qs.length
@@ -762,7 +766,7 @@ private theorem lazy_process_eq_sequential {D R : Type} [DecidableEq D]
     rfl
 
 /-- SPComp-level version of `SDistr.uniform_bind_equiv_comp`. -/
-private theorem spcomp_sample_bind_equiv_comp {α β γ : Type}
+theorem spcomp_sample_bind_equiv_comp {α β γ : Type}
     [Fintype α] [Fintype β] [Nonempty α] [Nonempty β]
     (σ : α ≃ β) (k : β → SPComp γ) :
     SPComp.bind (SPComp.sample α) (fun a => k (σ a)) =
@@ -774,7 +778,7 @@ private theorem spcomp_sample_bind_equiv_comp {α β γ : Type}
   exact SDistr.uniform_bind_equiv_comp σ (fun b => k b h₀)
 
 /-- SPComp-level: sampling a product type equals nested independent samples. -/
-private theorem spcomp_sample_prod {A B γ : Type}
+theorem spcomp_sample_prod {A B γ : Type}
     [Fintype A] [Fintype B] [Nonempty A] [Nonempty B]
     (k : (A × B) → SPComp γ) :
     SPComp.bind (SPComp.sample (A × B)) k =
@@ -788,7 +792,7 @@ private theorem spcomp_sample_prod {A B γ : Type}
 
 /-- Sampling uniformly from `Fin n → R` then taking `List.ofFn` equals
     sequential iid sampling of `n` uniforms. -/
-private theorem sample_fin_ofFn_eq_sequential {R : Type} [Fintype R] [Nonempty R] :
+theorem sample_fin_ofFn_eq_sequential {R : Type} [Fintype R] [Nonempty R] :
     ∀ (n : ℕ),
       SPComp.bind (SPComp.sample (Fin n → R))
         (fun g => SPComp.pure (List.ofFn g)) =
@@ -814,7 +818,7 @@ private theorem sample_fin_ofFn_eq_sequential {R : Type} [Fintype R] [Nonempty R
 /-- The bijection `(D → R) ≃ (Fin qs.length → R) × ({d // d ∉ qs} → R)` for
     `Nodup` `qs`. The first component picks out values at qs-indexed positions;
     the second component holds values at non-qs points. -/
-private noncomputable def qsBij {D R : Type} [DecidableEq D] [Fintype D]
+noncomputable def qsBij {D R : Type} [DecidableEq D] [Fintype D]
     (qs : List D) (hnodup : qs.Nodup) :
     (D → R) ≃ (Fin qs.length → R) × ({d : D // d ∉ qs} → R) where
   toFun f := (fun i => f (qs.get i), fun d => f d.val)
@@ -846,7 +850,7 @@ private noncomputable def qsBij {D R : Type} [DecidableEq D] [Fintype D]
 
 /-- Under `qsBij.symm (g, h)`, `qs.map` reduces to `List.ofFn g` — the non-qs
     component `h` is unused since `qs.map` only accesses qs-indexed values. -/
-private theorem qsBij_symm_map {D R : Type} [DecidableEq D] [Fintype D]
+theorem qsBij_symm_map {D R : Type} [DecidableEq D] [Fintype D]
     (qs : List D) (hnodup : qs.Nodup)
     (g : Fin qs.length → R) (h : {d : D // d ∉ qs} → R) :
     qs.map ((qsBij (R := R) qs hnodup).symm (g, h)) = List.ofFn g := by
@@ -863,7 +867,7 @@ private theorem qsBij_symm_map {D R : Type} [DecidableEq D] [Fintype D]
   simpa using List.Nodup.idxOf_getElem hnodup i.val i.isLt
 
 /-- **Eager direction** of `lazy_eager_equiv`. -/
-private theorem eager_process_eq_sequential {D R : Type} [DecidableEq D]
+theorem eager_process_eq_sequential {D R : Type} [DecidableEq D]
     [Fintype D] [Fintype R] [Nonempty R]
     (qs : List D) (hnodup : qs.Nodup) :
     (eager_process qs : SPComp (List R)) = sequential_sample (R := R) qs.length := by

@@ -3,10 +3,12 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Core.Code
-import CatCryptCore.Prob.SDistr
-import CatCryptCore.Prob.Support
-import CatCryptCore.Unary.Judgment
+module
+
+public import CatCryptCore.Core.Code
+public import CatCryptCore.Prob.SDistr
+public import CatCryptCore.Prob.Support
+public import CatCryptCore.Unary.Judgment
 
 /-!
 # Event Probability for Unary Computations
@@ -34,6 +36,8 @@ bridging pHL judgments to actual probability bounds.
 * EasyCrypt pHL (unary probabilistic Hoare logic)
 * CatCrypt.Unary.Judgment (pHL judgment definition)
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Unary
 

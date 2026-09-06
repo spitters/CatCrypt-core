@@ -3,10 +3,12 @@ Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Crypto.SecurityDefs
-import CatCryptCore.Crypto.ForkingLemma
-import CatCryptCore.Prob.XorBij
-import CatCryptCore.Tactics
+module
+
+public import CatCryptCore.Crypto.SecurityDefs
+public import CatCryptCore.Crypto.ForkingLemma
+public import CatCryptCore.Prob.XorBij
+public import CatCryptCore.Tactics
 
 /-!
 # Bijection-Family MAC: Optimal Information-Theoretic Unforgeability
@@ -52,6 +54,8 @@ that count exactly `1`, and `|Key| = |Tag|` since `bij m*` is an equivalence.
 * [Rosulek, The Joy of Cryptography, §9 (MACs)]
 * [Wegman & Carter, New hash functions and their use in authentication, 1981]
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Examples.MAC
 

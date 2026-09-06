@@ -3,8 +3,10 @@ Copyright (c) 2025 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Crypto.Advantage
-import CatCryptCore.Crypto.CryptoWord
+module
+
+public import CatCryptCore.Crypto.Advantage
+public import CatCryptCore.Crypto.CryptoWord
 
 /-!
 # MAC (Message Authentication Code) EUF-CMA Security
@@ -45,6 +47,8 @@ adversaries. The indistinguishability formulation composes better with game-hopp
 * Cade, Blanchet. *From Computationally-Proved Protocol Specifications to
   Implementations.* JCS 2015.
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Crypto.Assumptions
 

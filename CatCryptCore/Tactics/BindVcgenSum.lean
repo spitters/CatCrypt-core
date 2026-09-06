@@ -3,8 +3,12 @@ Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Tactics.BindVcgen
-import CatCryptCore.Crypto.UC
+module
+
+public meta import CatCryptCore.Tactics.BindVcgen
+public import CatCryptCore.Tactics.BindVcgen
+public meta import CatCryptCore.Crypto.UC
+public import CatCryptCore.Crypto.UC
 
 /-!
 # `bind_vcgen_sum` — a `mapSum`-extended run-to-completion driver
@@ -16,6 +20,10 @@ interface flattens. This is what the genuine-UC view equalities over `Sum`-typed
 interfaces need (e.g. `pedersen_view_eq`, `sigma_view_eq`). The `mapSum` lemmas
 live in `CatCryptCore.Crypto.UC`, above the base `BindVcgen` layer.
 -/
+
+public section
+
+meta section
 
 namespace CatCrypt.Tactic
 

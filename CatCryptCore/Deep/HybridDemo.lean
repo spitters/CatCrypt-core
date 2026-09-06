@@ -3,7 +3,9 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Deep.Package
+module
+
+public import CatCryptCore.Deep.Package
 
 /-!
 # Hybrid Argument Demonstration using Deep Embedding
@@ -47,6 +49,8 @@ properties.
   Cryptographic Proofs in Coq*](https://doi.org/10.1145/3594735)
 * SSProve Rocq: `theories/Crypt/examples/PRF_example.v`
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Deep.HybridDemo
 

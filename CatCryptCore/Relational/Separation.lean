@@ -3,8 +3,10 @@ Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Relational.Judgment
-import CatCryptCore.Prob.Coupling
+module
+
+public import CatCryptCore.Relational.Judgment
+public import CatCryptCore.Prob.Coupling
 
 /-!
 # Relational Separating Conjunction
@@ -99,6 +101,8 @@ The four rules therefore cover four points:
 * O'Hearn, Reynolds, Yang — Separation logic; locality = safety monotonicity + the frame
   property
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Relational
 

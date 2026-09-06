@@ -3,9 +3,11 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Nominal.Support
-import CatCryptCore.Nominal.Fresh
-import CatCryptCore.Package
+module
+
+public import CatCryptCore.Nominal.Support
+public import CatCryptCore.Nominal.Fresh
+public import CatCryptCore.Package
 
 /-!
 # Nominal Packages
@@ -32,6 +34,8 @@ abstract memory locations. The key insight is that:
 * [Larsen and Schürmann, *Nominal State-Separating Proofs*](https://eprint.iacr.org/2025/598)
 * [Pitts, *Nominal Sets*], Chapter 6
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Nominal
 

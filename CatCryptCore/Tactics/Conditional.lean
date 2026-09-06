@@ -3,8 +3,10 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import Lean
-import CatCryptCore.Relational.Rules
+module
+
+public import Lean
+public import CatCryptCore.Relational.Rules
 
 /-!
 # Conditional Resolution Tactics
@@ -37,6 +39,8 @@ users must manually `simp [h]` or `split_ifs`, which is verbose and fragile.
 * EasyCrypt: `rcondt`, `rcondf` tactics
 * CatCrypt: manual branch resolution via `simp`
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Relational
 

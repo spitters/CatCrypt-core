@@ -3,7 +3,9 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Crypto.UC
+module
+
+public import CatCryptCore.Crypto.UC
 
 /-!
 # Algebraic UC Emulation: Explicit Simulator Constructions
@@ -41,6 +43,8 @@ factorization system" was rhetorical: the small-object argument and
 genuine algebra structure of an AWFS are not used here — the content is
 "explicit simulator + sdist bound, composed pointwise".
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Crypto.UCAlg
 

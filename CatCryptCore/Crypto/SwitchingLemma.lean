@@ -3,9 +3,11 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Crypto.Advantage
-import CatCryptCore.Prob.BirthdayBound
-import CatCryptCore.Unary
+module
+
+public import CatCryptCore.Crypto.Advantage
+public import CatCryptCore.Prob.BirthdayBound
+public import CatCryptCore.Unary
 
 /-!
 # PRF/PRP Switching Lemma
@@ -48,6 +50,8 @@ query models.
 * [Impagliazzo & Luby, One-Way Functions are Essential for Complexity-Based Cryptography]
 * [Shoup, Sequences of Games, Lemma 1]
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Crypto.SwitchingLemma
 

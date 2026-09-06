@@ -3,7 +3,9 @@ Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Crypto.Advantage
+module
+
+public import CatCryptCore.Crypto.Advantage
 
 /-!
 # Cyclic Group Abstraction and the DDH Games
@@ -37,6 +39,8 @@ shared-secret operation `elemPow` is defined through the discrete logarithm.
 * [Boneh & Shoup, *A Graduate Course in Applied Cryptography*, Chapter 11]
 * [SSProve: theories/Crypt/examples/PKE/ElGamal.v]
 -/
+
+@[expose] public section
 
 set_option autoImplicit false
 

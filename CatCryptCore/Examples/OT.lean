@@ -3,10 +3,12 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Examples.CyclicGroupDDH
-import CatCryptCore.Crypto.Advantage
-import CatCryptCore.Relational.Rules
-import CatCryptCore.Tactics.Basic
+module
+
+public import CatCryptCore.Examples.CyclicGroupDDH
+public import CatCryptCore.Crypto.Advantage
+public import CatCryptCore.Relational.Rules
+public import CatCryptCore.Tactics.Basic
 
 /-!
 # Naor-Pinkas Oblivious Transfer (OT)
@@ -43,6 +45,8 @@ a DDH triple at the choice position. Distinguishing `σ=0` from `σ=1` reduces t
 * EasyCrypt: beschmi/oblivious_transfer
 * CryptHOL: Multi_Party_Computation AFP entry
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Examples.OT
 
@@ -368,7 +372,7 @@ theorem otEnc_message_independent (a b d : CGR.Exp) (m0 m1 : G)
     congr 1
     rw [CGR.mul_assoc, CGR.mul_comm (CGR.inv m1) m1, CGR.mul_inv, CGR.mul_one]
 
-private theorem ot_sender_secure_false (m0 m1 : G)
+theorem ot_sender_secure_false (m0 m1 : G)
     (hnd : ∀ a b c : CGR.Exp,
       CyclicGroupRing.expSub c (CGR.expMul a b) ≠ CGR.expZero) :
     ot_real (G := G) m0 m1 false = ot_ideal (G := G) m0 m1 false :=
@@ -380,7 +384,7 @@ private theorem ot_sender_secure_false (m0 m1 : G)
     SPComp.pure (CGR.pow a, CGR.pow b, ct0, ct1)))
     (otEnc_message_independent a b c m1 CGR.one (hnd a b c))))))
 
-private theorem ot_sender_secure_true (m0 m1 : G)
+theorem ot_sender_secure_true (m0 m1 : G)
     (hnd : ∀ a b c : CGR.Exp,
       CyclicGroupRing.expSub c (CGR.expMul a b) ≠ CGR.expZero) :
     ot_real (G := G) m0 m1 true = ot_ideal (G := G) m0 m1 true :=
@@ -431,7 +435,7 @@ noncomputable def receiverReduction (sigma : Bool)
              if sigma then z else rand)
 
 /-- Bridge lemma: monad `pure` equals `SPComp.pure` for simp matching. -/
-private theorem pure_eq_spcomp_pure {α : Type} (a : α) :
+theorem pure_eq_spcomp_pure {α : Type} (a : α) :
     (pure a : SPComp α) = SPComp.pure a := rfl
 
 /-- The reduction with real DDH matches the receiver's view. -/

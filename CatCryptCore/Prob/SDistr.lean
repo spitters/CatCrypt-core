@@ -3,8 +3,10 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import Mathlib.Probability.ProbabilityMassFunction.Monad
-import Mathlib.Probability.Distributions.Uniform
+module
+
+public import Mathlib.Probability.ProbabilityMassFunction.Monad
+public import Mathlib.Probability.Distributions.Uniform
 
 /-!
 # Sub-distributions
@@ -26,6 +28,8 @@ that may fail (return `none`).
 * SSProve: https://github.com/SSProve/ssprove
 * EasyCrypt sub-distributions
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Prob
 
@@ -401,7 +405,7 @@ theorem uniform_bind_const [Fintype α] [Nonempty α] (d : SDistr β) :
 /-- Helper for `bind_comm`: distributes a constant factor `c₁ * c₂` over a
     PMF sum `∑' x, d x`, rewriting `c₁ * c₂ = ∑' x, c₁ * d x * c₂`.
     Used for the `none` branch of both LHS and RHS transformations. -/
-private theorem bind_comm_none_expand {ε : Type*} (c₁ c₂ : ℝ≥0∞)
+theorem bind_comm_none_expand {ε : Type*} (c₁ c₂ : ℝ≥0∞)
     (d : PMF (Option ε)) : c₁ * c₂ = ∑' x, c₁ * d x * c₂ := by
   calc c₁ * c₂
       = c₁ * c₂ * 1 := by ring
@@ -412,7 +416,7 @@ private theorem bind_comm_none_expand {ε : Type*} (c₁ c₂ : ℝ≥0∞)
 /-- Helper for `bind_comm`: expands `w * (∑' x, d x * g x)` into
     `∑' x, w * d x * g x`. Used for the `some` branch of both
     LHS and RHS transformations. -/
-private theorem bind_comm_some_expand {ε : Type*} (w : ℝ≥0∞) (d : PMF (Option ε))
+theorem bind_comm_some_expand {ε : Type*} (w : ℝ≥0∞) (d : PMF (Option ε))
     (g : Option ε → ℝ≥0∞) :
     w * (∑' x, d x * g x) = ∑' x, w * d x * g x := by
   calc w * (∑' x, d x * g x)

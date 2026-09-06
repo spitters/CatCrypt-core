@@ -3,7 +3,9 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Examples.Cryptobox.GameHopping
+module
+
+public import CatCryptCore.Examples.Cryptobox.GameHopping
 
 /-!
 # AE Hybrid Argument for Cryptobox
@@ -52,6 +54,8 @@ Each step switches a single session `sid` from real to ideal:
 * Dupressoir et al., "Bringing SSP to EasyCrypt" (CSF 2022)
 * Myssenburg et al., Rocq SSProve Cryptobox
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Examples.Cryptobox
 

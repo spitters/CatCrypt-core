@@ -3,8 +3,10 @@ Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Crypto.Advantage
-import CatCryptCore.Crypto.CryptoWord
+module
+
+public import CatCryptCore.Crypto.Advantage
+public import CatCryptCore.Crypto.CryptoWord
 
 /-!
 # PRP (Pseudorandom Permutation), SPRP, and PRP/PRF Switching
@@ -45,6 +47,8 @@ block cipher security. Used by CMAC, AES-GCM, and other constructions.
 * Bellare, Kilian, Rogaway. *The Security of the Cipher Block Chaining
   Message Authentication Code.* JCSS 2000.
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Crypto.Assumptions
 

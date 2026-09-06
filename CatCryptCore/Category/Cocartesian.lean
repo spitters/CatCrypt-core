@@ -3,9 +3,11 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Category.KlSPComp
-import Mathlib.CategoryTheory.Limits.Shapes.BinaryProducts
-import Mathlib.CategoryTheory.Monoidal.Cartesian.Basic
+module
+
+public import CatCryptCore.Category.KlSPComp
+public import Mathlib.CategoryTheory.Limits.Shapes.BinaryProducts
+public import Mathlib.CategoryTheory.Monoidal.Cartesian.Basic
 
 /-!
 # Cocartesian Monoidal Categories
@@ -19,6 +21,8 @@ that `KlSPComp` is cocartesian with `Sum` as coproduct and `Empty` as initial ob
 * `CocartesianMonoidalCategory` — tensor is the categorical coproduct
 * `KlSPComp` instance of `CocartesianMonoidalCategory`
 -/
+
+@[expose] public section
 
 namespace CategoryTheory
 
@@ -266,7 +270,7 @@ noncomputable def binaryCoproductIsColimit (α β : KlSPComp) :
 
 /-! ### inl_def / inr_def compatibility -/
 
-private theorem klInl_eq_rUnit_inv_wkL (α β : KlSPComp) :
+theorem klInl_eq_rUnit_inv_wkL (α β : KlSPComp) :
     klInl α β = (ρ_ α).inv ≫ α ◁ emptyIsInitial.to β := by
   funext a
   simp only [comp_apply, whiskerLeft_def]
@@ -274,7 +278,7 @@ private theorem klInl_eq_rUnit_inv_wkL (α β : KlSPComp) :
     SPComp.bind ((rUnit α).inv a) (wkL α (emptyIsInitial.to β))
   simp [rUnit, wkL]
 
-private theorem klInr_eq_lUnit_inv_wkR (α β : KlSPComp) :
+theorem klInr_eq_lUnit_inv_wkR (α β : KlSPComp) :
     klInr α β = (λ_ β).inv ≫ emptyIsInitial.to α ▷ β := by
   funext b
   simp only [comp_apply, whiskerRight_def]

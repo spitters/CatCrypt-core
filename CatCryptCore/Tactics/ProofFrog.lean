@@ -3,10 +3,12 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import Lean
-import CatCryptCore.Relational.Rules
-import CatCryptCore.Tactics.Basic
-import CatCryptCore.Tactics.Sync
+module
+
+public import Lean
+public import CatCryptCore.Relational.Rules
+public import CatCryptCore.Tactics.Basic
+public import CatCryptCore.Tactics.Sync
 
 /-!
 # ProofFrog-Inspired Tactics
@@ -44,6 +46,8 @@ explicit lemmas for each transformation.
 * ProofFrog: https://prooffrog.github.io/ (source: https://github.com/ProofFrog/ProofFrog)
 * [Barbosa et al., "Mechanizing Proofs about Adversaries"]
 -/
+
+@[expose] public section
 
 initialize Lean.registerTraceClass `ssprove.tactics
 

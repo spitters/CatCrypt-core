@@ -3,7 +3,10 @@ Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Core.Code
+module
+
+public meta import CatCryptCore.Core.Code
+public import CatCryptCore.Core.Code
 
 /-!
 # Bind-Match Normalization and Swap Tactics
@@ -28,6 +31,10 @@ With these tools, game-equality proofs that need to commute independent
 `IsPure` samplings across `do`-notation match expressions become a single
 tactic call.
 -/
+
+public section
+
+meta section
 
 namespace CatCrypt.Core.SPComp
 

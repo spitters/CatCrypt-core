@@ -3,10 +3,12 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Examples.Commitments.KZG.Def
-import CatCryptCore.Crypto.AGM
-import CatCryptCore.Crypto.ForkingLemma
-import Mathlib.Algebra.Field.ZMod
+module
+
+public import CatCryptCore.Examples.Commitments.KZG.Def
+public import CatCryptCore.Crypto.AGM
+public import CatCryptCore.Crypto.ForkingLemma
+public import Mathlib.Algebra.Field.ZMod
 
 /-!
 # KZG Knowledge Soundness in the AGM
@@ -37,6 +39,8 @@ we can extract a nontrivial polynomial with α as a root, which breaks t-SDH.
 * [Rothmann, Kreuzer — KZG_Knowledge_Soundness.thy in Isabelle]
 * [Kate, Zaverucha, Goldberg, 2010 — Theorem 2 (informal)]
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Examples.Commitments.KZG
 

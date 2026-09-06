@@ -3,8 +3,10 @@ Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.NonUniform.While
-import CatCryptCore.NonUniform.WhileRelational
+module
+
+public import CatCryptCore.NonUniform.While
+public import CatCryptCore.NonUniform.WhileRelational
 
 /-!
 # The pRHL rule for the unbounded loop
@@ -40,6 +42,8 @@ a restriction of the coupling at budget `n + 1`.
   guards false
 * `rHoare_whileLoop` — the synchronous invariant rule at the unbounded loop
 -/
+
+@[expose] public section
 
 set_option autoImplicit false
 

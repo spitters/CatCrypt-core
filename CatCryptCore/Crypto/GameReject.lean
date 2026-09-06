@@ -3,8 +3,10 @@ Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Unary.QueryBound
-import CatCryptCore.Crypto.BadEvent
+module
+
+public import CatCryptCore.Unary.QueryBound
+public import CatCryptCore.Crypto.BadEvent
 
 /-!
 # Up-to-Bad Game Kit: Guessing Bound and Value-Carrying Output Games
@@ -26,6 +28,8 @@ failure-event query bound `prBad_induction` (`Unary/QueryBound`).
   every non-bad state are identical-until-bad (`IdenticalUntilBad`), so an up-to-bad advantage
   bound covers a distinguisher reading any value carried in `W`, not only a leak indicator.
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Unary
 

@@ -3,8 +3,11 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import Lean
-import CatCryptCore.Relational.Judgment
+module
+
+public import Lean
+public meta import CatCryptCore.Relational.Judgment
+public import CatCryptCore.Relational.Judgment
 
 /-!
 # @[rspec] Attribute for Automatic Relational Spec Lookup
@@ -19,6 +22,10 @@ this tree when head-matching fails, enabling automatic spec application.
 * `@[rspec]` - attribute to register a lemma for automatic lookup
 * `rspecLookup` - query the tree for lemmas matching a goal
 -/
+
+public section
+
+meta section
 
 namespace CatCrypt.Tactics
 

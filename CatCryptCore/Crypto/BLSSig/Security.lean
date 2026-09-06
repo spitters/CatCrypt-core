@@ -3,7 +3,9 @@ Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Crypto.Assumptions.CoCDH
+module
+
+public import CatCryptCore.Crypto.Assumptions.CoCDH
 
 /-!
 # BLS EUF-CMA Security via the co-CDH Reduction (ROM)
@@ -50,6 +52,8 @@ scheme (`BLSCoCDHSecure`).
 * Boneh, Lynn, Shacham. *Short Signatures from the Weil Pairing.*
   J. Cryptology, 2004, §3 (security from co-CDH in the ROM).
 -/
+
+@[expose] public section
 
 namespace CatCryptCore.Crypto.BLSSig
 

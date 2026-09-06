@@ -3,7 +3,9 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Deep.RawCode
+module
+
+public import CatCryptCore.Deep.RawCode
 
 /-!
 # Deep Embedding Packages
@@ -45,6 +47,8 @@ Separation reasoning can be based on either:
 * [Larsen and Schürmann, *Nominal State-Separating Proofs*](https://eprint.iacr.org/2025/598)
 * SSProve Rocq: `theories/Crypt/nominal/Nominal.v`, `free_code.v`
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Deep
 

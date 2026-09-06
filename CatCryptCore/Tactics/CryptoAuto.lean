@@ -3,8 +3,12 @@ Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Tactics.Auto
-import CatCryptCore.Crypto.Advantage
+module
+
+public meta import CatCryptCore.Tactics.Auto
+public import CatCryptCore.Tactics.Auto
+public meta import CatCryptCore.Crypto.Advantage
+public import CatCryptCore.Crypto.Advantage
 
 /-!
 # Cryptographic proof auto-driver and probability-goal lowering
@@ -49,6 +53,10 @@ probability obligation.
   `replicate` / `List.foldlM` / `List.mapM`, bind-cut speculation,
   per-step "Try this" hints.
 -/
+
+public section
+
+meta section
 
 namespace CatCrypt.Tactics
 

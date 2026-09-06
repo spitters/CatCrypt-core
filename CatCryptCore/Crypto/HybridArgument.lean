@@ -3,9 +3,11 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Crypto.Advantage
-import CatCryptCore.Relational.Rules
-import Mathlib.Algebra.BigOperators.Group.Finset.Basic
+module
+
+public import CatCryptCore.Crypto.Advantage
+public import CatCryptCore.Relational.Rules
+public import Mathlib.Algebra.BigOperators.Group.Finset.Basic
 
 /-!
 # General Hybrid Argument Theory
@@ -43,6 +45,8 @@ equality case follows from zero-advantage of perfectly indistinguishable games.
 * CatCrypt/Lean: `CatCrypt/Tactics/Triangle.lean` (basic triangle chains)
 * CatCrypt/Lean: `CatCrypt/Examples/SymmRatchet.lean` (concrete hybrid argument)
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Crypto.HybridArgument
 

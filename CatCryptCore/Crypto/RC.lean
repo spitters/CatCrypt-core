@@ -3,7 +3,9 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Crypto.UC
+module
+
+public import CatCryptCore.Crypto.UC
 
 /-!
 # Robust Compilation (RC), RHP, and the UC = RC Equivalence
@@ -63,6 +65,8 @@ via `UCEmulates_trans` (simulator chaining) and `UCEmulates_of_sdist`.
 For the general case (different interfaces), the categorical structure is
 richer and involves simulator composition — a 2-categorical notion.
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Crypto
 

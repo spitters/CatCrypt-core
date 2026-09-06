@@ -3,8 +3,10 @@ Copyright (c) 2025 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Crypto.Assumptions.DDH
-import CatCryptCore.Crypto.CryptoWord
+module
+
+public import CatCryptCore.Crypto.Assumptions.DDH
+public import CatCryptCore.Crypto.CryptoWord
 
 /-!
 # Gap Diffie-Hellman (GapDH) Assumption
@@ -65,6 +67,8 @@ WireGuard uses 4 DH operations (X25519), each contributing one `ε_gdh`:
 * Lipp, Blanchet, Bhargavan. *A Mechanised Cryptographic Proof of the
   WireGuard Virtual Private Network Protocol.* EuroS&P 2019.
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Crypto.Assumptions
 

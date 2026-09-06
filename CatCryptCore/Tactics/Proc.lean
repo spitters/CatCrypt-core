@@ -3,8 +3,10 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import Lean
-import CatCryptCore.Tactics.Basic
+module
+
+public import Lean
+public import CatCryptCore.Tactics.Basic
 
 /-!
 # Procedure Unfolding Tactics
@@ -32,6 +34,8 @@ Since our games are plain Lean functions (not a separate language),
 * EasyCrypt: ecProc tactic
 * SSProve: theories/Crypt/package/pkg_rhl.v
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Tactics
 

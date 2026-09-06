@@ -3,12 +3,14 @@ Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Crypto.SecurityDefs
-import CatCryptCore.Prob.XorBij
-import CatCryptCore.Prob.Support
-import CatCryptCore.Examples.PRF
-import CatCryptCore.Tactics
-import CatCryptCore.Deep.ReflectUCHelpers
+module
+
+public import CatCryptCore.Crypto.SecurityDefs
+public import CatCryptCore.Prob.XorBij
+public import CatCryptCore.Prob.Support
+public import CatCryptCore.Examples.PRF
+public import CatCryptCore.Tactics
+public import CatCryptCore.Deep.ReflectUCHelpers
 
 /-!
 # CPA Security from a PRF: the Perfect Instantiation
@@ -63,6 +65,8 @@ coincide (`rHoare_bij_step`).
 
 * [Rosulek, The Joy of Cryptography, §7 (CPA security)]
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Examples.CPAFromPRF
 

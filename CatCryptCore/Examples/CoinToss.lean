@@ -3,9 +3,11 @@ Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Crypto.Advantage
-import CatCryptCore.Prob.SDistr
-import Mathlib.Data.ZMod.Basic
+module
+
+public import CatCryptCore.Crypto.Advantage
+public import CatCryptCore.Prob.SDistr
+public import Mathlib.Data.ZMod.Basic
 
 /-!
 # Coin Tossing Protocol
@@ -29,6 +31,8 @@ The result is uniformly distributed, because for any fixed `a`, the map
 * `add_uniform_eq_uniform` — adding a constant to a uniform sample is uniform
 * `coinToss_eq` — real and ideal coin toss produce identical distributions
 -/
+
+@[expose] public section
 
 namespace CatCryptCore.Examples.CoinToss
 
@@ -71,7 +75,7 @@ theorem add_uniform_eq_uniform (a : ZMod p) (h : Heap) :
 /-! ## Main Theorem -/
 
 /-- The inner computation: sampling `b` and returning `a + b` equals just sampling. -/
-private theorem inner_eq (a : ZMod p) :
+theorem inner_eq (a : ZMod p) :
     SPComp.bind (SPComp.sample (ZMod p)) (fun b => SPComp.pure (a + b)) =
     SPComp.sample (ZMod p) := by
   funext h; exact add_uniform_eq_uniform p a h

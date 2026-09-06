@@ -3,7 +3,9 @@ Copyright (c) 2025 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Deep.RawCode
+module
+
+public import CatCryptCore.Deep.RawCode
 
 /-!
 # Deterministic Code Predicate
@@ -23,6 +25,8 @@ sampling. However, many extracted programs (from hax) are purely deterministic:
 they only use `ret`, `bind`, `get`, and `put`. This predicate identifies
 such programs, enabling reasoning about determinism in cryptographic proofs.
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Deep
 

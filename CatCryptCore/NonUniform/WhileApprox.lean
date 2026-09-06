@@ -3,8 +3,10 @@ Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Core.Code
-import CatCryptCore.Unary.Lossless
+module
+
+public import CatCryptCore.Core.Code
+public import CatCryptCore.Unary.Lossless
 
 /-!
 # Bounded approximants of an unbounded loop
@@ -22,6 +24,8 @@ at a value, never move it.
 The loop itself is the limit of this sequence, which is developed separately;
 this file fixes the approximants and their defining equations.
 -/
+
+@[expose] public section
 
 set_option autoImplicit false
 

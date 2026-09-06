@@ -3,7 +3,9 @@ Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import Lean
+module
+
+public import Lean
 
 /-!
 # `bind_align` — peel matching `SPComp.bind` layers from a goal equality
@@ -33,6 +35,10 @@ The peel is generic — it works for any `f x = g x` where `f`, `g` are
 function applications with matching head, not just `SPComp.bind`.  In
 practice the only callers are bind chains.
 -/
+
+public section
+
+meta section
 
 namespace CatCrypt.Tactic
 

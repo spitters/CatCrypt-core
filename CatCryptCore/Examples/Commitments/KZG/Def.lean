@@ -3,10 +3,12 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Crypto.Assumptions.tSDH
-import CatCryptCore.Examples.Commitments.PolyCommitScheme
-import Mathlib.Algebra.Polynomial.Div
-import Mathlib.Algebra.Polynomial.RingDivision
+module
+
+public import CatCryptCore.Crypto.Assumptions.tSDH
+public import CatCryptCore.Examples.Commitments.PolyCommitScheme
+public import Mathlib.Algebra.Polynomial.Div
+public import Mathlib.Algebra.Polynomial.RingDivision
 
 /-!
 # KZG Polynomial Commitment (PolyCommitDL) — Definitions
@@ -33,6 +35,8 @@ following the SSProve/Commitments approach.
 * [Kate, Zaverucha, Goldberg, *Constant-Size Commitments to Polynomials*, 2010 — §3.2]
 * [SSProve/Commitments — KZG.v](https://github.com/SSProve/Commitments)
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Examples.Commitments.KZG
 

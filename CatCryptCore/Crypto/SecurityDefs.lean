@@ -3,8 +3,10 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Crypto.Advantage
-import CatCryptCore.Crypto.Encryption
+module
+
+public import CatCryptCore.Crypto.Advantage
+public import CatCryptCore.Crypto.Encryption
 
 /-!
 # Standard Security Definitions
@@ -44,6 +46,8 @@ These abstract definitions are instantiated in the example files:
 * [Katz & Lindell, Introduction to Modern Cryptography, 3rd ed.]
 * [Rosulek, The Joy of Cryptography]
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Crypto.SecurityDefs
 

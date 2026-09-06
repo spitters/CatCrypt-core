@@ -3,7 +3,9 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Crypto.RC
+module
+
+public import CatCryptCore.Crypto.RC
 
 /-!
 # UC Subroutine Composition
@@ -32,6 +34,8 @@ The proof uses the triangle inequality:
 * Canetti, Universally Composable Security, 2001
 * Patrignani et al., UC is RC, TOPLAS 2024
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Crypto.UCComposition
 

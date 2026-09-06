@@ -3,7 +3,9 @@ Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import Mathlib.Data.Fintype.Card
+module
+
+public import Mathlib.Data.Fintype.Card
 
 /-!
 # Abstract Cyclic-Group Parameters
@@ -19,6 +21,8 @@ every downstream proof reasons purely equationally.
 This is the abstract group interface used by the UC examples over discrete-log
 groups (Pedersen commitment, dual-mode oblivious transfer).
 -/
+
+@[expose] public section
 
 set_option autoImplicit false
 

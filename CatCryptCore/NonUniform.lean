@@ -3,20 +3,22 @@ Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.NonUniform.Sample
-import CatCryptCore.NonUniform.Conditional
-import CatCryptCore.NonUniform.Product
-import CatCryptCore.NonUniform.CouplingRules
-import CatCryptCore.NonUniform.UnaryRules
-import CatCryptCore.NonUniform.Bernoulli
-import CatCryptCore.NonUniform.CenteredBinomial
-import CatCryptCore.NonUniform.Limit
-import CatCryptCore.NonUniform.WhileApprox
-import CatCryptCore.NonUniform.WhileApproxMono
-import CatCryptCore.NonUniform.WhileUnary
-import CatCryptCore.NonUniform.WhileRelational
-import CatCryptCore.NonUniform.While
-import CatCryptCore.NonUniform.WhileRelationalLimit
+module
+
+public import CatCryptCore.NonUniform.Sample
+public import CatCryptCore.NonUniform.Conditional
+public import CatCryptCore.NonUniform.Product
+public import CatCryptCore.NonUniform.CouplingRules
+public import CatCryptCore.NonUniform.UnaryRules
+public import CatCryptCore.NonUniform.Bernoulli
+public import CatCryptCore.NonUniform.CenteredBinomial
+public import CatCryptCore.NonUniform.Limit
+public import CatCryptCore.NonUniform.WhileApprox
+public import CatCryptCore.NonUniform.WhileApproxMono
+public import CatCryptCore.NonUniform.WhileUnary
+public import CatCryptCore.NonUniform.WhileRelational
+public import CatCryptCore.NonUniform.While
+public import CatCryptCore.NonUniform.WhileRelationalLimit
 
 /-!
 # Non-uniform sampling
@@ -73,3 +75,5 @@ that the uniform versions `rHoare_sample_l/r` do not need, because
 `SDistr.mass (SDistr.uniform α) = 1` is automatic. The uniform rules are therefore
 corollaries, not instances of a strictly weaker statement.
 -/
+
+@[expose] public section

@@ -3,8 +3,10 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import Lean
-import CatCryptCore.Crypto.Advantage
+module
+
+public import Lean
+public import CatCryptCore.Crypto.Advantage
 
 /-!
 # Triangle Inequality Tactic
@@ -34,6 +36,8 @@ a sequence of hybrid games.
 * SSProve: theories/Crypt/package/pkg_advantage.v
 * [Larsen and Schürmann, *Nominal State-Separating Proofs*](https://eprint.iacr.org/2025/598)
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Crypto
 

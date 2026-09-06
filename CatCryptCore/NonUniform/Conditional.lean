@@ -3,7 +3,9 @@ Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.NonUniform.Sample
+module
+
+public import CatCryptCore.NonUniform.Sample
 
 /-!
 # Restricting, rescaling and conditioning a sub-distribution
@@ -38,6 +40,8 @@ of EasyCrypt's `Distr` and `Dexcepted` theories, whose definitions are
 `condition_apply_some` is the image of `dexcepted1E`, `mem_support_condition_iff`
 of `supp_dexcepted`, and `mass_condition_of_ne_zero` of `dexcepted_ll`.
 -/
+
+@[expose] public section
 
 set_option autoImplicit false
 

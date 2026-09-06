@@ -3,9 +3,11 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Core.Code
-import CatCryptCore.Prob.Coupling
-import CatCryptCore.Relational.Basic
+module
+
+public import CatCryptCore.Core.Code
+public import CatCryptCore.Prob.Coupling
+public import CatCryptCore.Relational.Basic
 
 /-!
 # Probabilistic Relational Hoare Logic - Judgment
@@ -26,6 +28,8 @@ This file defines the fundamental pRHL judgment.
 * SSProve: theories/Crypt/package/pkg_rhl.v
 * EasyCrypt pRHL
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Relational
 

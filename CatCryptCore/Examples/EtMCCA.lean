@@ -3,8 +3,10 @@ Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Examples.EncryptThenMAC
-import CatCryptCore.Tactics
+module
+
+public import CatCryptCore.Examples.EncryptThenMAC
+public import CatCryptCore.Tactics
 
 /-!
 # Encrypt-then-MAC under Chosen-Ciphertext Attack
@@ -57,6 +59,8 @@ MAC-unforgeability terms.
 * [Rosulek, The Joy of Cryptography, §10; Construction 10.9, Claim 10.10]
 * [Bellare & Namprempre, Authenticated Encryption: Relations among Notions]
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Examples.EtMCCA
 

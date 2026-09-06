@@ -3,8 +3,10 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Deep.Eval
-import CatCryptCore.Deep.Package
+module
+
+public import CatCryptCore.Deep.Eval
+public import CatCryptCore.Deep.Package
 
 /-!
 # Eval Completeness: Embedding `SPComp` into `RawCode`
@@ -31,6 +33,8 @@ what makes the `nomPkg_absorb` construction go through, but it is **unsound in
 quantum UC** due to no-cloning. For quantum-safe results, use the `IsPure + NoFail`
 path (`sdist_of_deepNomAdvantage`), which does not depend on these definitions.
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Deep
 

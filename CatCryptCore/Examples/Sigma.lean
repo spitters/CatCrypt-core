@@ -3,12 +3,14 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Package
-import CatCryptCore.Invariant
-import CatCryptCore.Crypto.Advantage
-import CatCryptCore.Relational.Rules
-import CatCryptCore.Tactics.Basic
-import CatCryptCore.Tactics.Sim
+module
+
+public import CatCryptCore.Package
+public import CatCryptCore.Invariant
+public import CatCryptCore.Crypto.Advantage
+public import CatCryptCore.Relational.Rules
+public import CatCryptCore.Tactics.Basic
+public import CatCryptCore.Tactics.Sim
 
 /-!
 # Sigma Protocol Example
@@ -43,6 +45,8 @@ it produces the same distribution as the real protocol.
 * [Damgard, On Sigma Protocols]
 * [Cramer & Damgard, Sigma Protocols and Efficient Zero-Knowledge]
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Examples.Sigma
 

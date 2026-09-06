@@ -3,7 +3,9 @@ Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Core.Code
+module
+
+public import CatCryptCore.Core.Code
 
 /-!
 # `sp_normalize` — minimal monad-law simp for `SPComp`
@@ -31,6 +33,8 @@ For the extended leaf-closer that also unfolds `RawCode.eval`, see
 * `SPComp.monad_bind_eq` — `c >>= f = SPComp.bind c f` (class redirection)
 * `SPComp.monad_pure_eq` — `Pure.pure a = SPComp.pure a` (class redirection)
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Tactics
 

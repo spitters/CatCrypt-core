@@ -3,8 +3,10 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Core.Code
-import CatCryptCore.Prob.SDistr
+module
+
+public import CatCryptCore.Core.Code
+public import CatCryptCore.Prob.SDistr
 
 /-!
 # Unary Probabilistic Hoare Logic - Judgment
@@ -24,6 +26,8 @@ It is analogous to EasyCrypt's pHL but for our `SPComp` monad.
 * EasyCrypt pHL (unary probabilistic Hoare logic)
 * CatCrypt Relational.Judgment (the relational counterpart)
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Unary
 

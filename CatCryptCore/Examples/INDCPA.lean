@@ -3,9 +3,11 @@ Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Crypto.Encryption
-import CatCryptCore.Crypto.Advantage
-import CatCryptCore.Relational.Rules
+module
+
+public import CatCryptCore.Crypto.Encryption
+public import CatCryptCore.Crypto.Advantage
+public import CatCryptCore.Relational.Rules
 
 /-!
 # IND-CPA Security Games
@@ -34,6 +36,8 @@ with probability significantly better than `1/2`.
 * [Bellare & Rogaway, *Introduction to Modern Cryptography*]
 * [Katz & Lindell, *Introduction to Modern Cryptography*, Chapter 3]
 -/
+
+@[expose] public section
 
 set_option autoImplicit false
 

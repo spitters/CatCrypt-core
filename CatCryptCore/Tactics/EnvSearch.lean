@@ -3,7 +3,9 @@ Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import Lean
+module
+
+public import Lean
 
 /-!
 # `EnvSearch` — "loogle-lite" local declaration search over the elaborated env
@@ -62,9 +64,13 @@ single multi-line `logInfo`, so one diagnostic carries the whole answer.
 ### Example queries
 
 ```lean
-import CatCrypt.Tactic.EnvSearch
-import CatCrypt.Crypto.SecureCompilation.ThirToComFront
+public import CatCrypt.Tactic.EnvSearch
+public import CatCrypt.Crypto.SecureCompilation.ThirToComFront
 
+
+public section
+
+meta section
 -- defs/theorems whose *type* mentions `Com jasminDialect`, under `CatCrypt`:
 #typeFind "Com jasminDialect" in CatCrypt
 
@@ -83,7 +89,7 @@ namespace CatCrypt.Tactic.EnvSearch
 /-- Heuristic: is `n` an internal / auto-generated name we want to hide?
     Covers the compiler-mangled and proof-helper families that swamp a raw
     `name`-substring scan without being useful search hits. -/
-def isInternalName (n : Name) : Bool :=
+meta def isInternalName (n : Name) : Bool :=
   -- Lean's own marker for inaccessible / internal names.
   n.isInternal ||
   -- Anonymous-constructor and macro-scope hygiene markers anywhere in the name.
@@ -105,14 +111,14 @@ def isInternalName (n : Name) : Bool :=
     | _ => false)
 
 /-- Lowercase substring containment test. -/
-def containsCI (hay needle : String) : Bool :=
+meta def containsCI (hay needle : String) : Bool :=
   let parts := (hay.toLower).splitOn (needle.toLower)
   parts.length > 1
 
 /-- Characters that can legitimately appear *inside* a (possibly dotted)
     Lean identifier. Anything else is a separator when we collapse qualified
     names to their final component. -/
-def isIdentChar (c : Char) : Bool :=
+meta def isIdentChar (c : Char) : Bool :=
   c.isAlphanum || c == '_' || c == '.' || c == '\'' || c == '!' || c == '?'
 
 /-- Collapse every dotted qualified identifier in `s` to its **final
@@ -120,7 +126,7 @@ def isIdentChar (c : Char) : Bool :=
     `#typeFind "Com jasminDialect"` match a type the pretty-printer rendered
     fully-qualified as `…VIR.Com …VIR.jasminDialect`, without the caller having
     to `open` the right namespaces or spell the full path. -/
-def collapseQualified (s : String) : String := Id.run do
+meta def collapseQualified (s : String) : String := Id.run do
   let cs := s.toList
   let mut out : String := ""
   let mut tok : String := ""
@@ -138,7 +144,7 @@ def collapseQualified (s : String) : String := Id.run do
 
 /-- Pretty-print a declaration's type to a single-line `String`, with binders
     and a generous width so the substring match sees a stable rendering. -/
-def ppTypeString (ty : Expr) : MetaM String := do
+meta def ppTypeString (ty : Expr) : MetaM String := do
   -- Drop universe-level clutter so the printed `name : type` stays readable.
   -- (Namespace abbreviation is handled at match time by `collapseQualified`,
   -- which works regardless of which namespaces the caller has `open`ed.)
@@ -151,14 +157,14 @@ def ppTypeString (ty : Expr) : MetaM String := do
   return " ".intercalate (s.splitOn " " |>.filter (· ≠ ""))
 
 /-- Format one hit as `name : type`. -/
-def fmtHit (n : Name) (tyStr : String) : String :=
+meta def fmtHit (n : Name) (tyStr : String) : String :=
   s!"  {n} : {tyStr}"
 
 /-- Flatten a docstring to one line (trim each line, drop blanks, single-space
     join), then return a ~180-char window around the first case-insensitive
     occurrence of `needle` (starting a little before it for context). Used to
     render a `#docFind` hit on one line. -/
-def docSnippet (doc needle : String) : String :=
+meta def docSnippet (doc needle : String) : String :=
   let flat := " ".intercalate
     ((doc.replace "\n" " ").splitOn " " |>.filter (· ≠ ""))
   let chars := flat.toList
@@ -172,7 +178,7 @@ def docSnippet (doc needle : String) : String :=
 
 /-- Render the accumulated hit lines (or the empty-result message) for command
     `cmd` with the given `query`, noting truncation if the cap was reached. -/
-def renderResult (cmd query : String) (hits : Array String)
+meta def renderResult (cmd query : String) (hits : Array String)
     (scanned cap : Nat) (truncated : Bool) : MessageData :=
   if hits.isEmpty then
     m!"{cmd} {query}: no matches (scanned {scanned} decl(s))"

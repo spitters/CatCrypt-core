@@ -3,8 +3,10 @@ Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Core.GenHeap
-import CatCryptCore.Relational.Rules
+module
+
+public import CatCryptCore.Core.GenHeap
+public import CatCryptCore.Relational.Rules
 
 /-!
 # Lazily-Sampled Random Oracle with a Heap-Resident Query Log
@@ -37,6 +39,8 @@ with, and handed to, an arbitrary `SPComp` adversary.
 * `msgLog_no_fintype` — the log type of a random oracle on arbitrary-length bit
   strings is not finite
 -/
+
+@[expose] public section
 
 open scoped Classical
 

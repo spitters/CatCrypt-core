@@ -3,9 +3,11 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import Lean
-import CatCryptCore.Invariant
-import CatCryptCore.Relational.Rules
+module
+
+public import Lean
+public import CatCryptCore.Invariant
+public import CatCryptCore.Relational.Rules
 
 /-!
 # Invariant Tactics
@@ -52,6 +54,8 @@ When both `rem_lhs l v` and `syncsAt l` hold, we can derive `rem_rhs l v`.
 * SSProve: theories/Crypt/package/pkg_invariants.v
 * EasyCrypt: `auto`/`sp`/`wp` for invariant preservation
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Relational
 

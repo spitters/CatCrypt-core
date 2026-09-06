@@ -3,15 +3,18 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import Lean
-import CatCryptCore.Relational.Rules
-import CatCryptCore.Relational.Reorder
-import CatCryptCore.Tactics.Basic
-import CatCryptCore.Tactics.Sync
-import CatCryptCore.Tactics.WP
-import CatCryptCore.Tactics.Call
-import CatCryptCore.Tactics.RSpec
-import CatCryptCore.Prob.XorBij
+module
+
+public meta import CatCryptCore.Tactics.RSpec
+public import Lean
+public import CatCryptCore.Relational.Rules
+public import CatCryptCore.Relational.Reorder
+public import CatCryptCore.Tactics.Basic
+public import CatCryptCore.Tactics.Sync
+public import CatCryptCore.Tactics.WP
+public import CatCryptCore.Tactics.Call
+public import CatCryptCore.Tactics.RSpec
+public import CatCryptCore.Prob.XorBij
 
 /-!
 # Automated Bisimulation Tactic
@@ -55,6 +58,8 @@ We compose existing tactics in the same structural matching order:
 * EasyCrypt: `sim` tactic
 * CatCrypt/Rocq: `r_reflexivity_alt` procedure
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Relational
 
@@ -277,7 +282,7 @@ macro "ssprove_sim" : tactic => `(tactic| (
 
 /-- Run a tactic syntax on the current state. On failure, restore the state and
 return `false`. -/
-private def trySimTac (stx : TSyntax `tactic) : TacticM Bool := do
+meta def trySimTac (stx : TSyntax `tactic) : TacticM Bool := do
   let s ← Tactic.saveState
   try
     evalTactic stx
@@ -292,7 +297,7 @@ the replay text that `ssprove_sim?` emits when the alternative fires.
 Must stay in sync with the `ssprove_sim_step` macro (minus its final `fail`,
 which corresponds to no alternative firing). Lemma names are emitted fully
 qualified so the replay script works regardless of `open` context. -/
-private def simStepAlternatives : TacticM (Array (String × TSyntax `tactic)) := do
+meta def simStepAlternatives : TacticM (Array (String × TSyntax `tactic)) := do
   return #[
     -- Reflexivity shortcuts (identical code)
     ("apply CatCrypt.Relational.rHoare_refl",
@@ -338,7 +343,7 @@ private def simStepAlternatives : TacticM (Array (String × TSyntax `tactic)) :=
 /-- The goal-closing alternatives from the tail of `ssprove_sim`
 (`all_goals (first | ... | skip)`), in order, paired with replay text.
 Must stay in sync with the `ssprove_sim` macro. -/
-private def simCloserAlternatives : TacticM (Array (String × TSyntax `tactic)) := do
+meta def simCloserAlternatives : TacticM (Array (String × TSyntax `tactic)) := do
   return #[
     ("rfl", ← `(tactic| rfl)),
     ("assumption", ← `(tactic| assumption)),
@@ -353,7 +358,7 @@ private def simCloserAlternatives : TacticM (Array (String × TSyntax `tactic)) 
 /-- The literal closing combo of `ssprove_sim`, emitted as a single fallback
 line when some goal is not fully closed by its recorded closer (so a flat
 per-goal replay sequence would not be faithful). -/
-private def simClosingComboText : String :=
+meta def simClosingComboText : String :=
   "all_goals (first | rfl | assumption | (constructor <;> [rfl; rfl]) | " ++
   "(intro _ _ _ _ h; exact h) | (intro _ _ _ _ ⟨h, _⟩; exact h) | " ++
   "(intro _ _ _ _ ⟨_, h⟩; exact h) | simp_all | grind | skip)"

@@ -3,7 +3,9 @@ Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.NonUniform.WhileApprox
+module
+
+public import CatCryptCore.NonUniform.WhileApprox
 
 /-!
 # Order theory of the bounded loop approximants
@@ -27,6 +29,8 @@ construction for `while guard do body` consumes.
 * `iSup_whileApprox_apply_le_one`, `tsum_iSup_whileApprox_apply_le_one` — the same
   bounds for the pointwise supremum over budgets
 -/
+
+@[expose] public section
 
 set_option autoImplicit false
 

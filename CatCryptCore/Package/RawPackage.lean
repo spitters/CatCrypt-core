@@ -3,9 +3,11 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Package.Interface
-import CatCryptCore.Core.Code
-import Mathlib.Data.Finset.Image
+module
+
+public import CatCryptCore.Package.Interface
+public import CatCryptCore.Core.Code
+public import Mathlib.Data.Finset.Image
 
 /-!
 # Raw Packages
@@ -29,6 +31,8 @@ A raw package maps operation identifiers to their implementations.
 
 * [Larsen and Schürmann, *Nominal State-Separating Proofs*](https://eprint.iacr.org/2025/598)
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Package
 

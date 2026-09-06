@@ -3,7 +3,9 @@ Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.NonUniform.While
+module
+
+public import CatCryptCore.NonUniform.While
 
 /-!
 # The unbounded loop over a threaded state
@@ -22,6 +24,8 @@ The development follows `WhileApprox`, `WhileApproxMono` and `While` line for
 line: the approximants fail at budget zero, which makes the mass at a value
 non-decreasing in the budget, and the loop is the pointwise limit.
 -/
+
+@[expose] public section
 
 set_option autoImplicit false
 

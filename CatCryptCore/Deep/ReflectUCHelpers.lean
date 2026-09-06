@@ -3,12 +3,16 @@ Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Deep.OracleGamePackage
-import CatCryptCore.Crypto.NomPkgBridge
-import CatCryptCore.Crypto.UC
-import CatCryptCore.Relational.Judgment
-import CatCryptCore.Prob.Coupling
+module
 
+public import CatCryptCore.Deep.OracleGamePackage
+public import CatCryptCore.Crypto.NomPkgBridge
+public import CatCryptCore.Crypto.UC
+public import CatCryptCore.Relational.Judgment
+public import CatCryptCore.Prob.Coupling
+
+
+@[expose] public section
 set_option autoImplicit false
 
 /-!
@@ -51,7 +55,7 @@ open scoped ENNReal
     `d ↦ d.bind (fun a => SDistr.pure (a, h))` recovers `d` at every point
     (`d none` at `none`, `d (some a)` at `some (a, h)`), so two distributions with
     equal pushforwards are equal. -/
-private theorem push_inj {α : Type} (h : Heap) {d₀ d₁ : SDistr α}
+theorem push_inj {α : Type} (h : Heap) {d₀ d₁ : SDistr α}
     (heq : d₀.bind (fun a => SDistr.pure (a, h)) = d₁.bind (fun a => SDistr.pure (a, h))) :
     d₀ = d₁ := by
   classical

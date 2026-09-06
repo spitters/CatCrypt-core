@@ -3,9 +3,11 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import Lean
-import CatCryptCore.Relational.Rules
-import CatCryptCore.Invariant.Coupling
+module
+
+public import Lean
+public import CatCryptCore.Relational.Rules
+public import CatCryptCore.Invariant.Coupling
 
 /-!
 # Memory/Remember Tactics
@@ -53,6 +55,8 @@ ssprove_remind_lhs
 * SSProve: theories/Crypt/package/pkg_rhl.v (r_get_remember_lhs, etc.)
 * SSProve: theories/Crypt/package/pkg_user_util.v (ssprove_forget)
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Relational
 

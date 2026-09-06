@@ -3,9 +3,11 @@ Copyright (c) 2024 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import Lean
-import CatCryptCore.Relational.Rules
-import CatCryptCore.Tactics.Basic
+module
+
+public import Lean
+public import CatCryptCore.Relational.Rules
+public import CatCryptCore.Tactics.Basic
 
 /-!
 # Strongest Postcondition Tactics
@@ -41,6 +43,8 @@ In our monadic setting, prefix consumption means decomposing
 
 * EasyCrypt: ecSp tactic
 -/
+
+@[expose] public section
 
 namespace CatCrypt.Relational
 

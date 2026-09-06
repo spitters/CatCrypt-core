@@ -4,174 +4,176 @@ Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
 
+module
+
 -- Probability and core computation
-import CatCryptCore.Prob.SDistr
-import CatCryptCore.Prob.Coupling
-import CatCryptCore.Prob.Support
-import CatCryptCore.Prob.Conditional
-import CatCryptCore.Prob.BirthdayBound
-import CatCryptCore.Prob.SchwartzZippel
-import CatCryptCore.Prob.XorBij
-import CatCryptCore.Core.Basic
-import CatCryptCore.Core.Location
-import CatCryptCore.Core.Heap
-import CatCryptCore.Core.Code
-import CatCryptCore.Core.SPTree
-import CatCryptCore.Core.StdDoBridge
-import CatCryptCore.Core.GenHeap
-import CatCryptCore.Core.GenHeapRandomOracle
+public import CatCryptCore.Prob.SDistr
+public import CatCryptCore.Prob.Coupling
+public import CatCryptCore.Prob.Support
+public import CatCryptCore.Prob.Conditional
+public import CatCryptCore.Prob.BirthdayBound
+public import CatCryptCore.Prob.SchwartzZippel
+public import CatCryptCore.Prob.XorBij
+public import CatCryptCore.Core.Basic
+public import CatCryptCore.Core.Location
+public import CatCryptCore.Core.Heap
+public import CatCryptCore.Core.Code
+public import CatCryptCore.Core.SPTree
+public import CatCryptCore.Core.StdDoBridge
+public import CatCryptCore.Core.GenHeap
+public import CatCryptCore.Core.GenHeapRandomOracle
 
 -- Non-uniform sampling and the unbounded loop
-import CatCryptCore.NonUniform
+public import CatCryptCore.NonUniform
 
 -- Relational logic (pRHL)
-import CatCryptCore.Relational.Basic
-import CatCryptCore.Relational.Judgment
-import CatCryptCore.Relational.Rules
-import CatCryptCore.Relational.Sync
-import CatCryptCore.Relational.Frame
-import CatCryptCore.Relational.Separation
-import CatCryptCore.Relational.Reorder
-import CatCryptCore.Relational.ForLoop
+public import CatCryptCore.Relational.Basic
+public import CatCryptCore.Relational.Judgment
+public import CatCryptCore.Relational.Rules
+public import CatCryptCore.Relational.Sync
+public import CatCryptCore.Relational.Frame
+public import CatCryptCore.Relational.Separation
+public import CatCryptCore.Relational.Reorder
+public import CatCryptCore.Relational.ForLoop
 
 -- Package algebra
-import CatCryptCore.Package.Interface
-import CatCryptCore.Package.RawPackage
-import CatCryptCore.Package.ValidPackage
-import CatCryptCore.Package.Locations
+public import CatCryptCore.Package.Interface
+public import CatCryptCore.Package.RawPackage
+public import CatCryptCore.Package.ValidPackage
+public import CatCryptCore.Package.Locations
 
 -- Category-theoretic foundation
-import CatCryptCore.Category.KlPMF
-import CatCryptCore.Category.KlSPComp
-import CatCryptCore.Category.Fam
-import CatCryptCore.Category.PkgFam
-import CatCryptCore.Category.Cocartesian
-import CatCryptCore.Category.Affine
-import CatCryptCore.Category.Effectus
+public import CatCryptCore.Category.KlPMF
+public import CatCryptCore.Category.KlSPComp
+public import CatCryptCore.Category.Fam
+public import CatCryptCore.Category.PkgFam
+public import CatCryptCore.Category.Cocartesian
+public import CatCryptCore.Category.Affine
+public import CatCryptCore.Category.Effectus
 
 -- Deep embedding
-import CatCryptCore.Deep.RawCode
-import CatCryptCore.Deep.Location
-import CatCryptCore.Deep.Package
-import CatCryptCore.Deep.Eval
-import CatCryptCore.Deep.PackageEquiv
-import CatCryptCore.Deep.PkgCategory
-import CatCryptCore.Deep.Deterministic
-import CatCryptCore.Deep.DeterministicInterp
-import CatCryptCore.Deep.Strategy
-import CatCryptCore.Deep.ProofFrog
-import CatCryptCore.Deep.HybridDemo
-import CatCryptCore.Deep.Bridge
-import CatCryptCore.Deep.Tactics
-import CatCryptCore.Deep.Reflect
-import CatCryptCore.Deep.GamePackage
-import CatCryptCore.Deep.OracleGamePackage
-import CatCryptCore.Deep.ReflectUCHelpers
+public import CatCryptCore.Deep.RawCode
+public import CatCryptCore.Deep.Location
+public import CatCryptCore.Deep.Package
+public import CatCryptCore.Deep.Eval
+public import CatCryptCore.Deep.PackageEquiv
+public import CatCryptCore.Deep.PkgCategory
+public import CatCryptCore.Deep.Deterministic
+public import CatCryptCore.Deep.DeterministicInterp
+public import CatCryptCore.Deep.Strategy
+public import CatCryptCore.Deep.ProofFrog
+public import CatCryptCore.Deep.HybridDemo
+public import CatCryptCore.Deep.Bridge
+public import CatCryptCore.Deep.Tactics
+public import CatCryptCore.Deep.Reflect
+public import CatCryptCore.Deep.GamePackage
+public import CatCryptCore.Deep.OracleGamePackage
+public import CatCryptCore.Deep.ReflectUCHelpers
 
 -- Semantic bridge
-import CatCryptCore.Bridge.SemPkg
-import CatCryptCore.Bridge.PkgEval
-import CatCryptCore.Bridge.MonoidalBridge
+public import CatCryptCore.Bridge.SemPkg
+public import CatCryptCore.Bridge.PkgEval
+public import CatCryptCore.Bridge.MonoidalBridge
 
 -- Unary logic, nominal sets
-import CatCryptCore.Unary
-import CatCryptCore.Nominal
+public import CatCryptCore.Unary
+public import CatCryptCore.Nominal
 
 -- Tactics
-import CatCryptCore.Tactics
-import CatCryptCore.Tactics.BindVcgenSum
-import CatCryptCore.Tactics.VC
+public import CatCryptCore.Tactics
+public import CatCryptCore.Tactics.BindVcgenSum
+public import CatCryptCore.Tactics.VC
 
 -- Crypto foundation
-import CatCryptCore.Crypto.Game
-import CatCryptCore.Crypto.Advantage
-import CatCryptCore.Crypto.SDist
-import CatCryptCore.Crypto.SDistrLift
-import CatCryptCore.Crypto.UC
-import CatCryptCore.Crypto.UCMonad
-import CatCryptCore.Crypto.UCMonad.SPCompInstance
-import CatCryptCore.Crypto.RC
-import CatCryptCore.Crypto.UCAlg
-import CatCryptCore.Crypto.UCComposition
-import CatCryptCore.Crypto.UCDSL
-import CatCryptCore.Crypto.AGM
-import CatCryptCore.Crypto.SecurityDefs
-import CatCryptCore.Crypto.Encryption
-import CatCryptCore.Crypto.HybridArgument
-import CatCryptCore.Crypto.NomAdvantage
-import CatCryptCore.Crypto.EvalComplete
-import CatCryptCore.Crypto.NomPkgBridge
-import CatCryptCore.Crypto.EasyCryptBridge
-import CatCryptCore.Crypto.BadEvent
-import CatCryptCore.Crypto.ForkingLemma
-import CatCryptCore.Crypto.GameReject
-import CatCryptCore.Crypto.GeneralForkingLemma
-import CatCryptCore.Crypto.SwitchingLemma
-import CatCryptCore.Crypto.MultiQueryPRF
-import CatCryptCore.Crypto.PRFAssumption
-import CatCryptCore.Crypto.Assumptions.Catalog
-import CatCryptCore.Crypto.BLSSig.Security
+public import CatCryptCore.Crypto.Game
+public import CatCryptCore.Crypto.Advantage
+public import CatCryptCore.Crypto.SDist
+public import CatCryptCore.Crypto.SDistrLift
+public import CatCryptCore.Crypto.UC
+public import CatCryptCore.Crypto.UCMonad
+public import CatCryptCore.Crypto.UCMonad.SPCompInstance
+public import CatCryptCore.Crypto.RC
+public import CatCryptCore.Crypto.UCAlg
+public import CatCryptCore.Crypto.UCComposition
+public import CatCryptCore.Crypto.UCDSL
+public import CatCryptCore.Crypto.AGM
+public import CatCryptCore.Crypto.SecurityDefs
+public import CatCryptCore.Crypto.Encryption
+public import CatCryptCore.Crypto.HybridArgument
+public import CatCryptCore.Crypto.NomAdvantage
+public import CatCryptCore.Crypto.EvalComplete
+public import CatCryptCore.Crypto.NomPkgBridge
+public import CatCryptCore.Crypto.EasyCryptBridge
+public import CatCryptCore.Crypto.BadEvent
+public import CatCryptCore.Crypto.ForkingLemma
+public import CatCryptCore.Crypto.GameReject
+public import CatCryptCore.Crypto.GeneralForkingLemma
+public import CatCryptCore.Crypto.SwitchingLemma
+public import CatCryptCore.Crypto.MultiQueryPRF
+public import CatCryptCore.Crypto.PRFAssumption
+public import CatCryptCore.Crypto.Assumptions.Catalog
+public import CatCryptCore.Crypto.BLSSig.Security
 
 -- UC ideal functionalities (F_commit, F_ZK, F_OT) + shared group scaffolding
-import CatCryptCore.Examples.GroupParam
-import CatCryptCore.Crypto.Commitment.PedersenUC
-import CatCryptCore.Crypto.ZK.SigmaUCZK
-import CatCryptCore.Crypto.OT.DualModeOT
+public import CatCryptCore.Examples.GroupParam
+public import CatCryptCore.Crypto.Commitment.PedersenUC
+public import CatCryptCore.Crypto.ZK.SigmaUCZK
+public import CatCryptCore.Crypto.OT.DualModeOT
 
 -- Classical curve mathematics
-import CatCryptCore.Crypto.KeyAgreement.MontgomeryLadder
-import CatCryptCore.Crypto.KeyAgreement.MontgomeryAsWeierstrass
-import CatCryptCore.Crypto.KeyAgreement.MontgomeryXOnly
-import CatCryptCore.Crypto.KeyAgreement.Curve25519
-import CatCryptCore.Examples.DeepHybrid
-import CatCryptCore.Examples.OneTimePad
-import CatCryptCore.Examples.OT
-import CatCryptCore.Examples.PRF
-import CatCryptCore.Examples.PRFMAC
-import CatCryptCore.Examples.PRFPRG
-import CatCryptCore.Examples.PRG
-import CatCryptCore.Examples.Sigma
-import CatCryptCore.Examples.PKE.Scheme
-import CatCryptCore.Examples.PKE.OneToMany
-import CatCryptCore.Examples.PKE.MultiInstance
-import CatCryptCore.Examples.Cryptobox.Scheme
-import CatCryptCore.Examples.Cryptobox.KEY
-import CatCryptCore.Examples.Cryptobox.PKEY
-import CatCryptCore.Examples.Cryptobox.SAE
-import CatCryptCore.Examples.Cryptobox.NIKE
-import CatCryptCore.Examples.Cryptobox.PKAE
-import CatCryptCore.Examples.Cryptobox.AE
-import CatCryptCore.Examples.Cryptobox.Cryptobox
-import CatCryptCore.Examples.Cryptobox.GameHopping
-import CatCryptCore.Examples.Cryptobox.HYBRID
-import CatCryptCore.Examples.Commitments.CommitmentScheme
-import CatCryptCore.Examples.Commitments.PolyCommitScheme
-import CatCryptCore.Examples.Commitments.KZG.Def
-import CatCryptCore.Examples.Commitments.KZG.KnowledgeSoundness
-import CatCryptCore.Examples.Commitments.Pedersen
-import CatCryptCore.Examples.EncryptThenMAC
-import CatCryptCore.Examples.BasicHash
-import CatCryptCore.Examples.KEMDEM
-import CatCryptCore.Examples.Schnorr
-import CatCryptCore.Examples.SigmaProtocol
-import CatCryptCore.Examples.ElGamal
-import CatCryptCore.Examples.MAC
-import CatCryptCore.Examples.SecretSharing
-import CatCryptCore.Examples.ShamirSecretSharing
-import CatCryptCore.Examples.Commitment
-import CatCryptCore.Examples.CPAFromPRF
-import CatCryptCore.Examples.EtMCCA
-import CatCryptCore.Examples.CTRMode
-import CatCryptCore.Examples.CBCMode
-import CatCryptCore.Examples.DiffieHellman
-import CatCryptCore.Examples.CyclicGroupDDH
-import CatCryptCore.Examples.HashedElGamal
-import CatCryptCore.Examples.ChaumPedersen
-import CatCryptCore.Examples.UniversalHash
-import CatCryptCore.Examples.DetCPA
-import CatCryptCore.Examples.CoinToss
-import CatCryptCore.Examples.INDCPA
-import CatCryptCore.Examples.ElGamalDDH
+public import CatCryptCore.Crypto.KeyAgreement.MontgomeryLadder
+public import CatCryptCore.Crypto.KeyAgreement.MontgomeryAsWeierstrass
+public import CatCryptCore.Crypto.KeyAgreement.MontgomeryXOnly
+public import CatCryptCore.Crypto.KeyAgreement.Curve25519
+public import CatCryptCore.Examples.DeepHybrid
+public import CatCryptCore.Examples.OneTimePad
+public import CatCryptCore.Examples.OT
+public import CatCryptCore.Examples.PRF
+public import CatCryptCore.Examples.PRFMAC
+public import CatCryptCore.Examples.PRFPRG
+public import CatCryptCore.Examples.PRG
+public import CatCryptCore.Examples.Sigma
+public import CatCryptCore.Examples.PKE.Scheme
+public import CatCryptCore.Examples.PKE.OneToMany
+public import CatCryptCore.Examples.PKE.MultiInstance
+public import CatCryptCore.Examples.Cryptobox.Scheme
+public import CatCryptCore.Examples.Cryptobox.KEY
+public import CatCryptCore.Examples.Cryptobox.PKEY
+public import CatCryptCore.Examples.Cryptobox.SAE
+public import CatCryptCore.Examples.Cryptobox.NIKE
+public import CatCryptCore.Examples.Cryptobox.PKAE
+public import CatCryptCore.Examples.Cryptobox.AE
+public import CatCryptCore.Examples.Cryptobox.Cryptobox
+public import CatCryptCore.Examples.Cryptobox.GameHopping
+public import CatCryptCore.Examples.Cryptobox.HYBRID
+public import CatCryptCore.Examples.Commitments.CommitmentScheme
+public import CatCryptCore.Examples.Commitments.PolyCommitScheme
+public import CatCryptCore.Examples.Commitments.KZG.Def
+public import CatCryptCore.Examples.Commitments.KZG.KnowledgeSoundness
+public import CatCryptCore.Examples.Commitments.Pedersen
+public import CatCryptCore.Examples.EncryptThenMAC
+public import CatCryptCore.Examples.BasicHash
+public import CatCryptCore.Examples.KEMDEM
+public import CatCryptCore.Examples.Schnorr
+public import CatCryptCore.Examples.SigmaProtocol
+public import CatCryptCore.Examples.ElGamal
+public import CatCryptCore.Examples.MAC
+public import CatCryptCore.Examples.SecretSharing
+public import CatCryptCore.Examples.ShamirSecretSharing
+public import CatCryptCore.Examples.Commitment
+public import CatCryptCore.Examples.CPAFromPRF
+public import CatCryptCore.Examples.EtMCCA
+public import CatCryptCore.Examples.CTRMode
+public import CatCryptCore.Examples.CBCMode
+public import CatCryptCore.Examples.DiffieHellman
+public import CatCryptCore.Examples.CyclicGroupDDH
+public import CatCryptCore.Examples.HashedElGamal
+public import CatCryptCore.Examples.ChaumPedersen
+public import CatCryptCore.Examples.UniversalHash
+public import CatCryptCore.Examples.DetCPA
+public import CatCryptCore.Examples.CoinToss
+public import CatCryptCore.Examples.INDCPA
+public import CatCryptCore.Examples.ElGamalDDH
 
 /-! # CatCrypt Core — umbrella
 
@@ -180,3 +182,5 @@ program-logic + package-algebra stack, native forking lemmas, and the classical
 Montgomery-curve and X25519 mathematics. VCVio / ArkLib interoperability is not
 part of this basis — it lives in the separate `catcrypt-vcvio` / `catcrypt-arklib`
 packages built on top of core. -/
+
+@[expose] public section

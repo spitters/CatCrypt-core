@@ -3,9 +3,11 @@ Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Examples.SigmaProtocol
-import CatCryptCore.Examples.GroupParam
-import CatCryptCore.Crypto.UC
+module
+
+public import CatCryptCore.Examples.SigmaProtocol
+public import CatCryptCore.Examples.GroupParam
+public import CatCryptCore.Crypto.UC
 
 /-!
 # Chaum-Pedersen Protocol: Equality of Discrete Logarithms
@@ -44,6 +46,8 @@ to `g` and `h` respectively, without revealing the exponent.
 * [Chaum & Pedersen, Wallet Databases with Observers, CRYPTO 1992]
 * [Damgard, On Sigma Protocols]
 -/
+
+@[expose] public section
 
 set_option autoImplicit false
 
@@ -145,18 +149,18 @@ def cpVisibleTranscriptEq (t₁ t₂ : Transcript (chaumPedersenSigma gp)) : Pro
 /-! ## Helper lemmas -/
 
 /-- groupExp distributes: `groupExp g (scalarAdd a b) = groupMul (groupExp g a) (groupExp g b)`. -/
-private theorem groupExp_add_gen (g : gp.G) (a b : gp.Scalar) :
+theorem groupExp_add_gen (g : gp.G) (a b : gp.Scalar) :
     gp.groupExp g (gp.scalarAdd a b) = gp.groupMul (gp.groupExp g a) (gp.groupExp g b) :=
   gp.groupExp_add g a b
 
 /-- groupInv of groupExp: `groupInv (groupExp g e) = groupExp g (scalarNeg e)`. -/
-private theorem groupInv_groupExp_gen (g : gp.G) (e : gp.Scalar) :
+theorem groupInv_groupExp_gen (g : gp.G) (e : gp.Scalar) :
     gp.groupInv (gp.groupExp g e) = gp.groupExp g (gp.scalarNeg e) :=
   gp.groupInv_groupExp g e
 
 /-- groupExp composed: `groupExp (groupExp g w) e = groupExp g (scalarMul w e)`.
     Proved via `exp_surj` + `groupExp_exp` + `scalarMul_assoc`. -/
-private theorem groupExp_groupExp_gen (g : gp.G) (w e : gp.Scalar) :
+theorem groupExp_groupExp_gen (g : gp.G) (w e : gp.Scalar) :
     gp.groupExp (gp.groupExp g w) e = gp.groupExp g (gp.scalarMul w e) := by
   obtain ⟨k, hk⟩ := gp.exp_surj g
   rw [← hk, gp.groupExp_exp, gp.groupExp_exp, gp.groupExp_exp]
@@ -186,7 +190,7 @@ theorem chaumPedersen_complete (stmt : CPStatement gp) (w : CPWitness gp)
 
 /-- The key algebraic identity: `groupExp g r = groupMul (groupExp g z) (groupInv (groupExp u e))`
     when `u = groupExp g w` and `z = r + e*w`. -/
-private theorem commitment_recovery (g : gp.G) (u : gp.G) (w r z e : gp.Scalar)
+theorem commitment_recovery (g : gp.G) (u : gp.G) (w r z e : gp.Scalar)
     (hu : u = gp.groupExp g w) (hz : z = gp.scalarAdd r (gp.scalarMul e w)) :
     gp.groupExp g r =
     gp.groupMul (gp.groupExp g z) (gp.groupInv (gp.groupExp u e)) := by
@@ -200,7 +204,7 @@ private theorem commitment_recovery (g : gp.G) (u : gp.G) (w r z e : gp.Scalar)
 /-! ## Cancellation helper for special soundness -/
 
 /-- Cancellation: `(ka + t1) + (-ka + -t2) = t1 + (-t2)`. -/
-private theorem cancel_add_neg (ka t1 t2 : gp.Scalar) :
+theorem cancel_add_neg (ka t1 t2 : gp.Scalar) :
     gp.scalarAdd (gp.scalarAdd ka t1) (gp.scalarAdd (gp.scalarNeg ka) (gp.scalarNeg t2)) =
     gp.scalarAdd t1 (gp.scalarNeg t2) := by
   calc gp.scalarAdd (gp.scalarAdd ka t1)
@@ -226,7 +230,7 @@ private theorem cancel_add_neg (ka t1 t2 : gp.Scalar) :
         rw [gp.scalarZero_add]
 
 /-- Division distributes: `scalarDiv (scalarMul k x) y = scalarMul k (scalarDiv x y)`. -/
-private theorem scalarMul_div (k x y : gp.Scalar) (hy : y ≠ gp.scalarZero) :
+theorem scalarMul_div (k x y : gp.Scalar) (hy : y ≠ gp.scalarZero) :
     gp.scalarDiv (gp.scalarMul k x) y = gp.scalarMul k (gp.scalarDiv x y) := by
   apply gp.exp_inj
   have hlhs : gp.scalarMul (gp.scalarDiv (gp.scalarMul k x) y) y = gp.scalarMul k x :=

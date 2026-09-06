@@ -3,9 +3,11 @@ Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.Crypto.Advantage
-import CatCryptCore.Crypto.Assumptions.DDH
-import CatCryptCore.Tactics
+module
+
+public import CatCryptCore.Crypto.Advantage
+public import CatCryptCore.Crypto.Assumptions.DDH
+public import CatCryptCore.Tactics
 
 /-!
 # Oracle Diffie-Hellman (ODH) Assumption
@@ -58,6 +60,8 @@ then ODH security reduces to DDH + PRF security:
 * Boneh & Shoup, *A Graduate Course in Applied Cryptography*, §12.4.
 * EasyCrypt: `assumptions/ODH.ec`
 -/
+
+@[expose] public section
 
 set_option autoImplicit false
 

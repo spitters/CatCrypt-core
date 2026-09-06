@@ -3,7 +3,9 @@ Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import CatCryptCore.NonUniform.Conditional
+module
+
+public import CatCryptCore.NonUniform.Conditional
 
 /-!
 # Monotone limits of sub-distributions
@@ -35,6 +37,8 @@ total weight of the values, and constructing the limit needs the bound
 `mlim_bind` and `bind_mlim` are the images of `dlet_lim` and `dlim_let` of the
 `Distr` theory, the two laws that carry the denotation of `while` through a bind.
 -/
+
+@[expose] public section
 
 set_option autoImplicit false
 

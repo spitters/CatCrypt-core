@@ -3,8 +3,12 @@ Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
 Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
-import VersoManual
+module
 
+public import VersoManual
+
+
+@[expose] public section
 open Verso.Genre Manual
 
 #doc (Manual) "CatCrypt Core — machine-checked foundations for cryptographic proofs" =>
