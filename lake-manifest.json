@@ -15,12 +15,15 @@
       "configFile": "lakefile.lean"
     },
     {
-      "type": "path",
+      "url": "https://github.com/spitters/nominal-lean",
+      "type": "git",
+      "subDir": null,
       "scope": "",
+      "rev": "b21139c3a5d3d744b43d74a41635197c76087929",
       "name": "nominalLean",
       "manifestFile": "lake-manifest.json",
+      "inputRev": "lean-upgrade-4.32",
       "inherited": false,
-      "dir": "../nominal-lean",
       "configFile": "lakefile.lean"
     },
     {

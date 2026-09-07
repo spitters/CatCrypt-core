@@ -26,9 +26,10 @@ lean_lib CatCryptCore where
   -- and the facet sees 0 root modules.
   globs := #[.andSubmodules `CatCryptCore]
 
--- 4.32 upgrade, temporary: path-require the sibling until its bump commit is
--- pushed to spitters/nominal-lean; then repin the git SHA here.
-require nominalLean from "../nominal-lean"
+-- Pinned to the module-system port on spitters/nominal-lean. A path-require of
+-- the sibling builds locally but breaks CI, which has no sibling checkout.
+require nominalLean from git
+  "https://github.com/spitters/nominal-lean" @ "lean-upgrade-4.32"
 
 -- mathlib LAST so its proofwidgets/aesop versions win on conflicts;
 -- this is required for `lake exe cache get` to find oleans.
