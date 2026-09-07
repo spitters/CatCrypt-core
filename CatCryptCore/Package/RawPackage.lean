@@ -7,7 +7,6 @@ module
 
 public import CatCryptCore.Package.Interface
 public import CatCryptCore.Core.Code
-public import Mathlib.Data.Finset.Image
 
 /-!
 # Raw Packages

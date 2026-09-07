@@ -6,7 +6,6 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Relational.Judgment
-public import CatCryptCore.Prob.Coupling
 
 /-!
 # Relational Separating Conjunction

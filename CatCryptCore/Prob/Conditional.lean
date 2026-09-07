@@ -7,7 +7,6 @@
 -/
 module
 
-public import Mathlib.Probability.ProbabilityMassFunction.Constructions
 public import Mathlib.Probability.Distributions.Uniform
 
 

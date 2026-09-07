@@ -4,8 +4,9 @@ Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
 module
+public import CatCryptCore.Category.KlSPComp
+public import Mathlib.CategoryTheory.Monoidal.Cartesian.Basic
 
-public import CatCryptCore.Category.Cocartesian
 
 /-!
 # Affine Monoidal Categories

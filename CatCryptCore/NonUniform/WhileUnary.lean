@@ -4,6 +4,7 @@ Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
 module
+public import CatCryptCore.Unary.Lossless
 
 public import CatCryptCore.NonUniform.WhileApprox
 public import CatCryptCore.Unary.Rules

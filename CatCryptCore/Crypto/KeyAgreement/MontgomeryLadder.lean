@@ -6,7 +6,6 @@ Authors: CatCrypt Contributors
 module
 
 public import Mathlib.Algebra.Group.Defs
-public import Mathlib.Data.Nat.Bits
 
 /-!
 # Montgomery Ladder Algebraic Correctness

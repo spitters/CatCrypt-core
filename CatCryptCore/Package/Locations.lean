@@ -6,7 +6,6 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Core.Location
-public import Mathlib.Data.Finset.Basic
 public import Mathlib.Data.Finset.Card
 
 /-!

@@ -7,7 +7,6 @@ module
 
 public import CatCryptCore.Crypto.Advantage
 public import CatCryptCore.Category.KlSPComp
-public import Mathlib.Topology.EMetricSpace.Defs
 
 /-!
 # Statistical Distance on Kleisli Morphisms

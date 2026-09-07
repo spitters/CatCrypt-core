@@ -6,7 +6,6 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Crypto.SDist
-public import CatCryptCore.Category.KlSPComp
 
 
 @[expose] public section

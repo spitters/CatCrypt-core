@@ -7,9 +7,6 @@ module
 
 public import CatCryptCore.Examples.Cryptobox.Scheme
 public import CatCryptCore.Crypto.Advantage
-public import Mathlib.Data.Fintype.Pi
-public import Mathlib.Data.Fintype.Prod
-public import Mathlib.Data.Fintype.Option
 
 /-!
 # SAE: Single-instance Authenticated Encryption Game

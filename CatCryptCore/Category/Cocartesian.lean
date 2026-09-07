@@ -7,7 +7,6 @@ module
 
 public import CatCryptCore.Category.KlSPComp
 public import Mathlib.CategoryTheory.Limits.Shapes.BinaryProducts
-public import Mathlib.CategoryTheory.Monoidal.Cartesian.Basic
 
 /-!
 # Cocartesian Monoidal Categories

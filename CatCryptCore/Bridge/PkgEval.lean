@@ -6,7 +6,6 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Category.PkgFam
-public import CatCryptCore.Deep.Eval
 public import CatCryptCore.Crypto.NomAdvantage
 
 /-!

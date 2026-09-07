@@ -5,7 +5,6 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import CatCryptCore.Invariant.SemiInvariant
 public import CatCryptCore.Relational.Judgment
 public import CatCryptCore.Package.ValidPackage
 

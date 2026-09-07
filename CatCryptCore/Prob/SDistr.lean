@@ -5,7 +5,6 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import Mathlib.Probability.ProbabilityMassFunction.Monad
 public import Mathlib.Probability.Distributions.Uniform
 
 /-!

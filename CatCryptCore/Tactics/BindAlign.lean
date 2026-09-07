@@ -5,7 +5,6 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import Lean
 
 /-!
 # `bind_align` — peel matching `SPComp.bind` layers from a goal equality

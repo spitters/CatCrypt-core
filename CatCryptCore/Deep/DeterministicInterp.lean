@@ -7,7 +7,6 @@ module
 
 public import CatCryptCore.Deep.Deterministic
 public import CatCryptCore.Deep.Eval
-public import CatCryptCore.Core.Heap
 
 /-!
 # Deterministic Code Interpretation

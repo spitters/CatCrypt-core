@@ -5,9 +5,7 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import CatCryptCore.Core.Code
 public import CatCryptCore.Relational.Judgment
-public import Mathlib.Data.Real.Basic
 
 /-!
 # Cryptographic Advantage

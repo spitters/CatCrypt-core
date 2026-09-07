@@ -5,8 +5,6 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import Std.Do.Triple
-public import Std.Tactic.Do
 public import CatCryptCore.Unary.Judgment
 public import CatCryptCore.Crypto.NomPkgBridge
 

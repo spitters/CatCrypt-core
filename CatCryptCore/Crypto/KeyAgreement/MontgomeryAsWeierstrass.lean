@@ -5,7 +5,6 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import Mathlib.AlgebraicGeometry.EllipticCurve.Affine.Formula
 public import Mathlib.AlgebraicGeometry.EllipticCurve.Affine.Point
 public import CatCryptCore.Crypto.KeyAgreement.MontgomeryXOnly
 

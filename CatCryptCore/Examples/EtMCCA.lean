@@ -6,7 +6,6 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Examples.EncryptThenMAC
-public import CatCryptCore.Tactics
 
 /-!
 # Encrypt-then-MAC under Chosen-Ciphertext Attack

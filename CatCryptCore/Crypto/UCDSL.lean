@@ -5,9 +5,6 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import CatCryptCore.Crypto.UC
-public import CatCryptCore.Crypto.UCMonad.SPCompInstance
-public import CatCryptCore.Crypto.UCComposition
 public import CatCryptCore.Crypto.UCAlg
 
 /-!

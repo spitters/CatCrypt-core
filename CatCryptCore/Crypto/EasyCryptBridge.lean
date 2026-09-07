@@ -5,10 +5,7 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import CatCryptCore.Crypto.SDist
 public import CatCryptCore.Crypto.UC
-public import CatCryptCore.Crypto.Advantage
-public import CatCryptCore.Relational.Rules
 
 /-!
 # EasyCrypt Semantic Bridge

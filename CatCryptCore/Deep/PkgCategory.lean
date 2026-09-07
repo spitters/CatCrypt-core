@@ -7,9 +7,7 @@ module
 
 public import CatCryptCore.Deep.Package
 public import CatCryptCore.Deep.Eval
-public import Mathlib.CategoryTheory.Category.Basic
 public import Mathlib.CategoryTheory.Monoidal.Category
-public import Mathlib.CategoryTheory.Monoidal.Braided.Basic
 
 /-!
 # Package Category

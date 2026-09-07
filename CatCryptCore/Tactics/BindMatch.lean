@@ -5,7 +5,6 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public meta import CatCryptCore.Core.Code
 public import CatCryptCore.Core.Code
 
 /-!

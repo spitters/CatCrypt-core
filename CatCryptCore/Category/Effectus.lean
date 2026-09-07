@@ -5,7 +5,6 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import Mathlib.Order.Basic
 
 
 @[expose] public section

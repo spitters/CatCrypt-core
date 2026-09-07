@@ -6,7 +6,6 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Crypto.Assumptions.DDH
-public import CatCryptCore.Crypto.CryptoWord
 
 /-!
 # Gap Diffie-Hellman (GapDH) Assumption

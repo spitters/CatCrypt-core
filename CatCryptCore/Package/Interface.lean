@@ -5,7 +5,6 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import Mathlib.Data.Finset.Basic
 public import Mathlib.Data.Finset.Image
 
 /-!

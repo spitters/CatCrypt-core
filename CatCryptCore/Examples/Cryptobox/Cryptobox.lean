@@ -5,14 +5,9 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import CatCryptCore.Examples.Cryptobox.Scheme
-public import CatCryptCore.Examples.Cryptobox.PKEY
 public import CatCryptCore.Examples.Cryptobox.NIKE
-public import CatCryptCore.Examples.Cryptobox.KEY
 public import CatCryptCore.Examples.Cryptobox.SAE
 public import CatCryptCore.Examples.Cryptobox.AE
-public import CatCryptCore.Crypto.Advantage
-public import Mathlib.Algebra.BigOperators.Group.Finset.Basic
 
 /-!
 # Cryptobox: Main Security Theorem

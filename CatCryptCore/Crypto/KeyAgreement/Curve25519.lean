@@ -6,9 +6,7 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Crypto.KeyAgreement.MontgomeryLadder
-public import CatCryptCore.Crypto.KeyAgreement.MontgomeryXOnly
 public import CatCryptCore.Crypto.KeyAgreement.MontgomeryAsWeierstrass
-public import Mathlib.Data.ZMod.Basic
 public import Mathlib.Algebra.Field.ZMod
 
 /-!

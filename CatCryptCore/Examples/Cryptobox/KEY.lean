@@ -4,11 +4,9 @@ Released under MIT license as described in the file LICENSE.
 Authors: CatCrypt Contributors
 -/
 module
+public import CatCryptCore.Crypto.Advantage
 
 public import CatCryptCore.Examples.Cryptobox.Scheme
-public import CatCryptCore.Crypto.Advantage
-public import Mathlib.Data.Fintype.Pi
-public import Mathlib.Data.Fintype.Prod
 
 /-!
 # KEY: Shared Key Management Game

@@ -5,10 +5,7 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import CatCryptCore.Core.Code
-public import CatCryptCore.Deep.RawCode
 public import CatCryptCore.Deep.Eval
-public import Lean
 
 /-!
 # Reflection: `SPComp` → `RawCode`

@@ -5,7 +5,6 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import Lean
 public import CatCryptCore.Crypto.Advantage
 
 /-!

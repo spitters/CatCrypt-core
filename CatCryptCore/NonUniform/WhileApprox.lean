@@ -6,7 +6,6 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Core.Code
-public import CatCryptCore.Unary.Lossless
 
 /-!
 # Bounded approximants of an unbounded loop

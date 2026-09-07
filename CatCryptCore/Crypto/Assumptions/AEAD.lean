@@ -5,7 +5,6 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import CatCryptCore.Crypto.Advantage
 public import CatCryptCore.Crypto.CryptoWord
 
 /-!

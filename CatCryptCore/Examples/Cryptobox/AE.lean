@@ -5,13 +5,8 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import CatCryptCore.Examples.Cryptobox.Scheme
 public import CatCryptCore.Examples.Cryptobox.KEY
-public import CatCryptCore.Examples.Cryptobox.SAE
 public import CatCryptCore.Crypto.Advantage
-public import Mathlib.Data.Fintype.Pi
-public import Mathlib.Data.Fintype.Prod
-public import Mathlib.Data.Fintype.Option
 
 /-!
 # AE: Multi-instance Authenticated Encryption Game

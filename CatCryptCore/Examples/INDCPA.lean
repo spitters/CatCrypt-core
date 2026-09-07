@@ -7,7 +7,6 @@ module
 
 public import CatCryptCore.Crypto.Encryption
 public import CatCryptCore.Crypto.Advantage
-public import CatCryptCore.Relational.Rules
 
 /-!
 # IND-CPA Security Games
