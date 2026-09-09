@@ -124,6 +124,8 @@ example : rHoare eqPre (sample α) (sample α) (fun a h₁ b h₂ => eqPre h₁ 
 * [Larsen and Schürmann, *Nominal State-Separating Proofs*](https://eprint.iacr.org/2025/598)
 -/
 
+@[expose] public section
+
 namespace CatCrypt.Tactics
 
 -- Re-export tactics from submodules

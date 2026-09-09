@@ -82,6 +82,8 @@ meta section
 ```
 -/
 
+public section
+
 open Lean Elab Command Meta
 
 namespace CatCrypt.Tactic.EnvSearch
