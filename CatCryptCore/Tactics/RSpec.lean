@@ -35,7 +35,7 @@ open Lean Meta
 initialize rspecExt :
     SimpleScopedEnvExtension (Name × Array DiscrTree.Key) (DiscrTree Name) ←
   registerSimpleScopedEnvExtension {
-    addEntry := fun dt (n, ks) => dt.insertCore ks n
+    addEntry := fun dt (n, ks) => dt.insertKeyValue ks n
     initial := {}
   }
 
