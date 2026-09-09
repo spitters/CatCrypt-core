@@ -62,9 +62,13 @@ open CatCrypt.Crypto
 /-- Use Bool as simple finite type for demonstration -/
 abbrev Value := Bool
 
-instance : Fintype Value := inferInstance
-instance : Nonempty Value := ⟨false⟩
-instance : DecidableEq Value := inferInstance
+-- `Value` is an `abbrev` for `Bool`, so an unscoped restatement here is a second
+-- `Fintype Bool` / `DecidableEq Bool` instance, and instance search answers with
+-- it in every module that imports this one. `scoped` keeps them to this
+-- namespace, where the abbreviation is the one in use.
+scoped instance : Fintype Value := inferInstance
+scoped instance : Nonempty Value := ⟨false⟩
+scoped instance : DecidableEq Value := inferInstance
 
 /-! ## Sigma Protocol Structure -/
 
