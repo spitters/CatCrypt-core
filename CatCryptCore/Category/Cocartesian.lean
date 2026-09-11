@@ -243,19 +243,19 @@ noncomputable def klDesc {α β γ : KlSPComp} (f : α ⟶ γ) (g : β ⟶ γ) :
 
 theorem klInl_klDesc {α β γ : KlSPComp} (f : α ⟶ γ) (g : β ⟶ γ) :
     klInl α β ≫ klDesc f g = f := by
-  funext a; simp [klInl, klDesc]
+  funext a; unfold KlSPComp at *; simp [klInl, klDesc, CategoryStruct.comp]
 
 theorem klInr_klDesc {α β γ : KlSPComp} (f : α ⟶ γ) (g : β ⟶ γ) :
     klInr α β ≫ klDesc f g = g := by
-  funext b; simp [klInr, klDesc]
+  funext b; unfold KlSPComp at *; simp [klInr, klDesc, CategoryStruct.comp]
 
 theorem klDesc_unique {α β γ : KlSPComp} {f : α ⟶ γ} {g : β ⟶ γ}
     {h : (show KlSPComp from α ⊕ β) ⟶ γ}
     (hl : klInl α β ≫ h = f) (hr : klInr α β ≫ h = g) :
     h = klDesc f g := by
-  funext x; rcases x with a | b
-  · have := congrFun hl a; simp [klInl] at this; simp [klDesc, this]
-  · have := congrFun hr b; simp [klInr] at this; simp [klDesc, this]
+  funext x; unfold KlSPComp at *; rcases x with a | b
+  · have := congrFun hl a; simp [klInl, CategoryStruct.comp] at this; simp [klDesc, this]
+  · have := congrFun hr b; simp [klInr, CategoryStruct.comp] at this; simp [klDesc, this]
 
 /-! ### Coproduct is colimit -/
 
@@ -280,7 +280,7 @@ theorem klInl_eq_rUnit_inv_wkL (α β : KlSPComp) :
 theorem klInr_eq_lUnit_inv_wkR (α β : KlSPComp) :
     klInr α β = (λ_ β).inv ≫ emptyIsInitial.to α ▷ β := by
   funext b
-  simp only [comp_apply, whiskerRight_def]
+  simp only [comp_apply]
   show SPComp.pure (Sum.inr b) =
     SPComp.bind ((lUnit β).inv b) (wkR (emptyIsInitial.to α) β)
   simp [lUnit, wkR]

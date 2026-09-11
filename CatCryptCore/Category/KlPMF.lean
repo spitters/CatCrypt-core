@@ -79,24 +79,42 @@ noncomputable def assocIsoPMF (X Y Z : KleisliCat PMF) :
     (show KleisliCat PMF from (X × Y) × Z) ≅ (show KleisliCat PMF from X × (Y × Z)) where
   hom := assocHomPMF X Y Z
   inv := assocInvPMF X Y Z
-  hom_inv_id := by funext ⟨⟨x, y⟩, z⟩; simp [assocHomPMF, assocInvPMF]
-  inv_hom_id := by funext ⟨x, y, z⟩; simp [assocHomPMF, assocInvPMF]
+  hom_inv_id := by
+    funext ⟨⟨x, y⟩, z⟩; unfold KleisliCat at *
+    simp +unfoldPartialApp [assocHomPMF, assocInvPMF, CategoryStruct.comp, CategoryStruct.id,
+      Bind.kleisliRight, Bind.bind, Pure.pure]
+  inv_hom_id := by
+    funext ⟨x, y, z⟩; unfold KleisliCat at *
+    simp +unfoldPartialApp [assocHomPMF, assocInvPMF, CategoryStruct.comp, CategoryStruct.id,
+      Bind.kleisliRight, Bind.bind, Pure.pure]
 
 /-- Left unitor: `PUnit ⊗ X ≅ X`. -/
 noncomputable def leftUnitorPMF (X : KleisliCat PMF) :
     (show KleisliCat PMF from PUnit × X) ≅ X where
   hom := fun ⟨_, x⟩ => PMF.pure x
   inv := fun x => PMF.pure (PUnit.unit, x)
-  hom_inv_id := by funext ⟨⟨⟩, x⟩; simp
-  inv_hom_id := by funext x; simp
+  hom_inv_id := by
+    funext ⟨⟨⟩, x⟩; unfold KleisliCat at *
+    simp +unfoldPartialApp [CategoryStruct.comp, CategoryStruct.id, Bind.kleisliRight, Bind.bind,
+      Pure.pure]
+  inv_hom_id := by
+    funext x; unfold KleisliCat at *
+    simp +unfoldPartialApp [CategoryStruct.comp, CategoryStruct.id, Bind.kleisliRight, Bind.bind,
+      Pure.pure]
 
 /-- Right unitor: `X ⊗ PUnit ≅ X`. -/
 noncomputable def rightUnitorPMF (X : KleisliCat PMF) :
     (show KleisliCat PMF from X × PUnit) ≅ X where
   hom := fun ⟨x, _⟩ => PMF.pure x
   inv := fun x => PMF.pure (x, PUnit.unit)
-  hom_inv_id := by funext ⟨x, ⟨⟩⟩; simp
-  inv_hom_id := by funext x; simp
+  hom_inv_id := by
+    funext ⟨x, ⟨⟩⟩; unfold KleisliCat at *
+    simp +unfoldPartialApp [CategoryStruct.comp, CategoryStruct.id, Bind.kleisliRight, Bind.bind,
+      Pure.pure]
+  inv_hom_id := by
+    funext x; unfold KleisliCat at *
+    simp +unfoldPartialApp [CategoryStruct.comp, CategoryStruct.id, Bind.kleisliRight, Bind.bind,
+      Pure.pure]
 
 /-- Forward component of the braiding: swaps the two components. -/
 noncomputable def braidHomPMF (X Y : KleisliCat PMF) :
@@ -108,8 +126,14 @@ noncomputable def braidIsoPMF (X Y : KleisliCat PMF) :
     (show KleisliCat PMF from X × Y) ≅ (show KleisliCat PMF from Y × X) where
   hom := braidHomPMF X Y
   inv := braidHomPMF Y X
-  hom_inv_id := by funext ⟨x, y⟩; simp [braidHomPMF]
-  inv_hom_id := by funext ⟨y, x⟩; simp [braidHomPMF]
+  hom_inv_id := by
+    funext ⟨x, y⟩; unfold KleisliCat at *
+    simp +unfoldPartialApp [braidHomPMF, CategoryStruct.comp, CategoryStruct.id,
+      Bind.kleisliRight, Bind.bind, Pure.pure]
+  inv_hom_id := by
+    funext ⟨y, x⟩; unfold KleisliCat at *
+    simp +unfoldPartialApp [braidHomPMF, CategoryStruct.comp, CategoryStruct.id,
+      Bind.kleisliRight, Bind.bind, Pure.pure]
 
 noncomputable instance : MonoidalCategoryStruct (KleisliCat.{0, 0} PMF) where
   tensorObj X Y := (show KleisliCat PMF from X × Y)
@@ -158,46 +182,57 @@ theorem rightUnitor_hom_eq (X : KleisliCat PMF) :
 theorem rightUnitor_inv_eq (X : KleisliCat PMF) :
     (ρ_ X).inv = (rightUnitorPMF X).inv := rfl
 
+/-- Closes a pointwise equality of Kleisli morphisms: unfolds `KleisliCat` in the
+    context so every object is a `Type`, unfolds the category and monoidal
+    structure projections to their `PMF` definitions, and applies the `PMF`
+    monad laws. -/
+local macro "kl_simp" : tactic =>
+  `(tactic| (unfold KleisliCat at *
+             simp +unfoldPartialApp [whiskerLeftPMF, whiskerRightPMF, assocHomPMF, assocInvPMF,
+               assocIsoPMF, leftUnitorPMF, rightUnitorPMF, braidHomPMF, braidIsoPMF,
+               CategoryStruct.comp, CategoryStruct.id, Bind.kleisliRight, Bind.bind, Pure.pure,
+               MonoidalCategoryStruct.tensorObj, MonoidalCategoryStruct.tensorHom,
+               MonoidalCategoryStruct.whiskerLeft, MonoidalCategoryStruct.whiskerRight,
+               MonoidalCategoryStruct.associator, MonoidalCategoryStruct.leftUnitor,
+               MonoidalCategoryStruct.rightUnitor]))
+
 /-! ## MonoidalCategory -/
 
 noncomputable instance : MonoidalCategory (KleisliCat.{0, 0} PMF) where
   tensorHom_def _ _ := rfl
   id_tensorHom_id X₁ X₂ := by
-    funext ⟨x, y⟩; simp [whiskerLeftPMF, whiskerRightPMF]
+    funext ⟨x, y⟩; kl_simp
   tensorHom_comp_tensorHom f₁ f₂ g₁ g₂ := by
-    funext ⟨x, y⟩; simp [whiskerLeftPMF, whiskerRightPMF]
+    funext ⟨x, y⟩; kl_simp
     congr 1; funext x'
     exact PMF.bind_comm (f₂ y) (g₁ x') _
   whiskerLeft_id X Y := by
-    funext ⟨x, y⟩; simp [whiskerLeftPMF]
+    funext ⟨x, y⟩; kl_simp
   id_whiskerRight X Y := by
-    funext ⟨x, y⟩; simp [whiskerRightPMF]
+    funext ⟨x, y⟩; kl_simp
   associator_naturality f₁ f₂ f₃ := by
-    funext ⟨⟨x₁, x₂⟩, x₃⟩; simp [whiskerLeftPMF, whiskerRightPMF, assocHomPMF]
+    funext ⟨⟨x₁, x₂⟩, x₃⟩; kl_simp
   leftUnitor_naturality f := by
-    funext ⟨⟨⟩, x⟩; simp [whiskerLeftPMF, leftUnitorPMF]
+    funext ⟨⟨⟩, x⟩; kl_simp
   rightUnitor_naturality f := by
-    funext ⟨x, ⟨⟩⟩; simp [whiskerRightPMF, rightUnitorPMF]
+    funext ⟨x, ⟨⟩⟩; kl_simp
   pentagon W X Y Z := by
-    funext ⟨⟨⟨w, x⟩, y⟩, z⟩; simp [whiskerLeftPMF, whiskerRightPMF, assocHomPMF]
+    funext ⟨⟨⟨w, x⟩, y⟩, z⟩; kl_simp
   triangle X Y := by
-    funext ⟨⟨x, ⟨⟩⟩, y⟩
-    simp [whiskerLeftPMF, whiskerRightPMF, assocHomPMF, leftUnitorPMF, rightUnitorPMF]
+    funext ⟨⟨x, ⟨⟩⟩, y⟩; kl_simp
 
 /-! ## BraidedCategory and SymmetricCategory -/
 
 noncomputable instance : BraidedCategory (KleisliCat PMF) where
   braiding := braidIsoPMF
   braiding_naturality_right X {Y Z} f := by
-    funext ⟨x, y⟩; simp [whiskerLeftPMF, whiskerRightPMF, braidHomPMF, braidIsoPMF]
+    funext ⟨x, y⟩; kl_simp
   braiding_naturality_left {X Y} f Z := by
-    funext ⟨x, z⟩; simp [whiskerLeftPMF, whiskerRightPMF, braidHomPMF, braidIsoPMF]
+    funext ⟨x, z⟩; kl_simp
   hexagon_forward X Y Z := by
-    funext ⟨⟨x, y⟩, z⟩
-    simp [whiskerLeftPMF, whiskerRightPMF, assocHomPMF, braidHomPMF, braidIsoPMF]
+    funext ⟨⟨x, y⟩, z⟩; kl_simp
   hexagon_reverse X Y Z := by
-    funext ⟨x, y, z⟩
-    simp [whiskerLeftPMF, whiskerRightPMF, assocInvPMF, braidHomPMF, braidIsoPMF]
+    funext ⟨x, y, z⟩; kl_simp
 
 noncomputable instance : SymmetricCategory (KleisliCat PMF) where
   symmetry X Y := by
@@ -212,11 +247,11 @@ noncomputable instance instComonObjPMF (X : KleisliCat PMF) : ComonObj X where
   comul := fun x => PMF.pure (x, x)
   counit := fun _ => PMF.pure PUnit.unit
   counit_comul := by
-    funext x; simp [whiskerRightPMF, leftUnitorPMF]
+    funext x; kl_simp
   comul_counit := by
-    funext x; simp [whiskerLeftPMF, rightUnitorPMF]
+    funext x; kl_simp
   comul_assoc := by
-    funext x; simp [whiskerLeftPMF, whiskerRightPMF, assocHomPMF]
+    funext x; kl_simp
 
 @[simp]
 theorem braiding_hom_eq (X Y : KleisliCat PMF) :
@@ -231,7 +266,7 @@ noncomputable instance instIsCommComonObjPMF (X : KleisliCat PMF) : IsCommComonO
   comul_comm := by
     funext x
     change (PMF.pure (x, x)).bind _ = PMF.pure (x, x)
-    simp only [comp_apply, braiding_hom_eq, braidHomPMF, PMF.pure_bind]
+    simp only [braiding_hom_eq, braidHomPMF, PMF.pure_bind]
 
 /-! ## CopyDiscardCategory -/
 
@@ -241,7 +276,7 @@ theorem tensorμ_apply (X₁ X₂ Y₁ Y₂ : KleisliCat PMF)
     tensorμ X₁ X₂ Y₁ Y₂ ((x₁, x₂), (y₁, y₂)) =
       PMF.pure ((x₁, y₁), (x₂, y₂)) := by
   simp only [tensorμ, braiding_hom_eq]
-  simp [whiskerLeftPMF, whiskerRightPMF, assocHomPMF, assocInvPMF, braidHomPMF]
+  kl_simp
 
 noncomputable instance : CopyDiscardCategory (KleisliCat PMF) where
   copy_tensor X Y := by
@@ -253,7 +288,7 @@ noncomputable instance : CopyDiscardCategory (KleisliCat PMF) where
           ((X ⊗ X).whiskerLeftPMF (fun (b : Y) => PMF.pure (b, b)))).bind
           (tensorμ X X Y Y)
     rw [PMF.pure_bind]
-    simp only [whiskerLeftPMF, PMF.pure_bind]
+    simp only [whiskerLeftPMF, MonoidalCategoryStruct.tensorObj, PMF.pure_bind]
     exact (tensorμ_apply X X Y Y x x y y).symm
   discard_tensor X Y := by
     funext ⟨x, y⟩
@@ -262,7 +297,7 @@ noncomputable instance : CopyDiscardCategory (KleisliCat PMF) where
           ((𝟙_ (KleisliCat PMF)).whiskerLeftPMF (fun (_ : Y) => PMF.pure PUnit.unit))).bind
           (fun x => PMF.pure x.2)
     rw [PMF.pure_bind]
-    simp only [whiskerLeftPMF, PMF.pure_bind, leftUnitor_hom_eq, leftUnitorPMF]
+    simp only [whiskerLeftPMF, PMF.pure_bind]
   copy_unit := by
     funext ⟨⟩
     change PMF.pure (PUnit.unit, PUnit.unit) = _

@@ -160,7 +160,7 @@ theorem evalImplWith_fail (p : DeepPackage) :
 theorem oracleHandler_id (I : DeepInterface)
     (op : ℕ) (dom codom : Type) (x : dom) :
     oracleHandler (DeepPackage.id I) op dom codom x = SPComp.fail := by
-  simp only [oracleHandler, DeepPackage.id]
+  dsimp only [oracleHandler, DeepPackage.id]
   split
   · simp [RawCode.eval]
   · rfl
@@ -197,8 +197,8 @@ theorem evalImpl_link_id_left (p : DeepPackage) :
     -- Code is (oracleCall op dom codom x).substOracle(linkEnv p)
     -- = linkEnv p op dom codom x (by substOracle on oracleCall)
     simp only [RawCode.substOracle]
-    -- The dite resolves positively since the operation IS in p.exports.ops
-    simp
+    -- The dite resolves positively since the operation is in p.exports.ops
+    exact congrArg RawCode.eval (dif_pos (List.get_mem _ _))
 
 /-! ## Functoriality: Associativity -/
 
@@ -345,7 +345,7 @@ theorem toSemPkg_link (p₁ p₂ : DeepPackage)
     (oracle : Handler) (op : ℕ) (dom codom : Type) (x : dom) :
     (toSemPkg (DeepPackage.link p₁ p₂)).resolve oracle op dom codom x =
     (toSemPkg p₁).resolve ((toSemPkg p₂).resolve oracle) op dom codom x := by
-  simp only [toSemPkg, DeepPackage.link]
+  dsimp only [toSemPkg, DeepPackage.link]
   split
   · next h =>
     rw [evalWith_substOracle]
@@ -364,7 +364,9 @@ theorem toSemPkg_id_mem (I : DeepInterface)
     (h : (op, dom, codom) ∈ I.ops) :
     (toSemPkg (DeepPackage.id I)).resolve oracle op dom codom x =
     oracle op dom codom x := by
-  simp only [toSemPkg, DeepPackage.id, h, dite_true, RawCode.evalWith]
+  dsimp only [toSemPkg, DeepPackage.id]
+  rw [dif_pos h]
+  rfl
 
 /-! ## Category Instance for DeepInterface
 
