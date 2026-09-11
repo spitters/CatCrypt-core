@@ -72,7 +72,7 @@ theorem ops_get_dispatch_right {k : Fin (I.ops ++ J.ops).length}
 /-! ## Type-level cast for operation families -/
 
 /-- Transport a Kleisli arrow along an equality of operation triples.
-    Defined via `▸` (Eq.mpr) to leverage proof irrelevance. -/
+    Defined via `▸` (Eq.mpr), so the transport is proof-irrelevant in `h`. -/
 noncomputable def castKl' {t₁ t₂ : ℕ × Type × Type} (h : t₁ = t₂)
     (f : t₁.2.1 → SPComp t₁.2.2) : t₂.2.1 → SPComp t₂.2.2 :=
   h ▸ f
@@ -122,7 +122,7 @@ noncomputable def appendToTensor :
       (h ⟨i.val, by simp [diAppend, DeepInterface.append]; omega⟩)
   | .inr j =>
     castKl' (ops_get_right I J j)
-      (h ⟨I.ops.length + j.val, by simp [diAppend, DeepInterface.append]⟩)
+      (h ⟨I.ops.length + j.val, by simp [diAppend, DeepInterface.append]; exact j.isLt⟩)
 
 /-- Inverse: handler for `toPI I ⊗ toPI J` → handler for `diAppend I J`. -/
 noncomputable def tensorToAppend :
@@ -147,20 +147,17 @@ noncomputable def tensorAppendIso :
     funext h k
     simp only [pkg_comp_apply, pkg_id_apply, appendToTensor, tensorToAppend]
     by_cases hk : k.val < I.ops.length
-    · simp only [hk, dite_true]
-      exact castKl'_castKl'_symm _ _ _
-    · simp only [hk, dite_false, castKl'_trans]
-      have hval : I.ops.length + (k.val - I.ops.length) = k.val := by omega
-      exact castKl'_dep_fn (Fin.ext hval) h _
+    · exact (dif_pos hk).trans (castKl'_castKl'_symm _ _ _)
+    · have hval : I.ops.length + (k.val - I.ops.length) = k.val := by omega
+      exact (dif_neg hk).trans
+        ((castKl'_trans _ _ _).trans (castKl'_dep_fn (Fin.ext hval) h _))
   inv_hom_id := by
     funext h k
     simp only [pkg_comp_apply, pkg_id_apply, appendToTensor, tensorToAppend]
     cases k with
     | inl i =>
-      simp only [i.isLt, dite_true]
-      exact castKl'_castKl'_symm _ _ _
+      exact (congrArg (castKl' _) (dif_pos i.isLt)).trans (castKl'_castKl'_symm _ _ _)
     | inr j =>
-      simp only [show ¬(I.ops.length + j.val < I.ops.length) by omega, dite_false]
       -- The elaborator cannot infer the `Fin` term for `Fin.ext` here;
       -- supply it explicitly. The Fin equality transports the chained
       -- `castKl'` to a single one via `castKl'_dep_fn`.
@@ -170,14 +167,18 @@ noncomputable def tensorAppendIso :
       -- then apply the dependent-function transport `castKl'_dep_fn` at the
       -- right summand index `Fin J.ops.length`.
       have key : ∀ (a : Fin J.ops.length)
-          (eq_outer : (I.ops ++ J.ops).get ⟨I.ops.length + j.val, by simp⟩ = J.ops.get j)
-          (eq_inner : J.ops.get a = (I.ops ++ J.ops).get ⟨I.ops.length + j.val, by simp⟩)
+          (eq_outer : (I.ops ++ J.ops).get ⟨I.ops.length + j.val, by simp; exact j.isLt⟩ =
+            J.ops.get j)
+          (eq_inner : J.ops.get a =
+            (I.ops ++ J.ops).get ⟨I.ops.length + j.val, by simp; exact j.isLt⟩)
           (ha : a = j),
           castKl' eq_outer (castKl' eq_inner (h (.inr a))) = h (.inr j) := by
         intro a eq_outer eq_inner ha
         subst ha
         exact castKl'_castKl'_symm _ _ _
-      exact key _ _ _ hval
+      exact (congrArg (castKl' _)
+        (dif_neg (show ¬(I.ops.length + j.val < I.ops.length) by omega))).trans
+        (key _ _ _ hval)
 
 /-! ## Unit Correspondence -/
 
@@ -272,19 +273,19 @@ theorem tensorAppend_assoc_coherence :
           (Sum.inl i)
         = appendToTensor I (diAppend J K) (eqToHom (congrArg toPI he) h) (Sum.inl i)
     simp only [appendToTensor]
-    rw [eqToHom_handler, handler_transport_apply he]
-    · rcases i with ⟨i, hi⟩
-      have key : ∀ (a b : Fin (diAppend (diAppend I J) K).ops.length) (hab : a = b)
-          {t₁L t₂L t₁R t₂R : ℕ × Type × Type}
-          (eqL1 : (diAppend (diAppend I J) K).ops.get a = t₁L) (eqL2 : t₁L = t₂L)
-          (eqR1 : (diAppend (diAppend I J) K).ops.get b = t₁R) (eqR2 : t₁R = t₂R)
-          (hT : t₂L = t₂R),
-          castKl' eqL2 (castKl' eqL1 (h a)) =
-            hT ▸ castKl' eqR2 (castKl' eqR1 (h b)) := by
-        intro a b hab t₁L t₂L t₁R t₂R eqL1 eqL2 eqR1 eqR2 hT
-        subst hab; subst eqL1; subst eqL2; subst eqR1; subst eqR2; rfl
-      exact key _ _ (Fin.ext rfl) _ _ _ _ rfl
-    · exact he
+    rw [eqToHom_handler he, handler_transport_apply he h
+      ⟨i.val, by have := i.isLt; simp [diAppend, DeepInterface.append]; omega⟩]
+    rcases i with ⟨i, hi⟩
+    have key : ∀ (a b : Fin (diAppend (diAppend I J) K).ops.length) (hab : a = b)
+        {t₁L t₂L t₁R t₂R : ℕ × Type × Type}
+        (eqL1 : (diAppend (diAppend I J) K).ops.get a = t₁L) (eqL2 : t₁L = t₂L)
+        (eqR1 : (diAppend (diAppend I J) K).ops.get b = t₁R) (eqR2 : t₁R = t₂R)
+        (hT : t₂L = t₂R),
+        castKl' eqL2 (castKl' eqL1 (h a)) =
+          hT ▸ castKl' eqR2 (castKl' eqR1 (h b)) := by
+      intro a b hab t₁L t₂L t₁R t₂R eqL1 eqL2 eqR1 eqR2 hT
+      subst hab; subst eqL1; subst eqL2; subst eqR1; subst eqR2; rfl
+    exact key _ _ (Fin.ext rfl) _ _ _ _ rfl
   · -- J branch (Sum.inr (Sum.inl j)): LHS has 2 nested castKl' applied to
     -- `h ⟨I.ops.length + j.val, _⟩`; RHS has 3 (extra cast from
     -- `handler_transport_apply he`). Use a key lambda that absorbs the chain
@@ -295,19 +296,19 @@ theorem tensorAppend_assoc_coherence :
             appendToTensor I (diAppend J K) (eqToHom (congrArg toPI he) h) (Sum.inr j'))
           (Sum.inl j)
     simp only [appendToTensor]
-    rw [eqToHom_handler, handler_transport_apply he]
-    · rcases j with ⟨j, hj⟩
-      have key : ∀ (a b : Fin (diAppend (diAppend I J) K).ops.length) (hab : a = b)
-          {t₁L t₂L t₁R t₂R t₃R : ℕ × Type × Type}
-          (eqL1 : (diAppend (diAppend I J) K).ops.get a = t₁L) (eqL2 : t₁L = t₂L)
-          (eqR1 : (diAppend (diAppend I J) K).ops.get b = t₁R) (eqR2 : t₁R = t₂R)
-          (eqR3 : t₂R = t₃R) (hT : t₂L = t₃R),
-          castKl' eqL2 (castKl' eqL1 (h a)) =
-            hT ▸ castKl' eqR3 (castKl' eqR2 (castKl' eqR1 (h b))) := by
-        intro a b hab t₁L t₂L t₁R t₂R t₃R eqL1 eqL2 eqR1 eqR2 eqR3 hT
-        subst hab; subst eqL1; subst eqL2; subst eqR1; subst eqR2; subst eqR3; rfl
-      exact key _ _ (Fin.ext rfl) _ _ _ _ _ rfl
-    · exact he
+    rw [eqToHom_handler he, handler_transport_apply he h
+      ⟨I.ops.length + j.val, by have := j.isLt; simp [diAppend, DeepInterface.append]; omega⟩]
+    rcases j with ⟨j, hj⟩
+    have key : ∀ (a b : Fin (diAppend (diAppend I J) K).ops.length) (hab : a = b)
+        {t₁L t₂L t₁R t₂R t₃R : ℕ × Type × Type}
+        (eqL1 : (diAppend (diAppend I J) K).ops.get a = t₁L) (eqL2 : t₁L = t₂L)
+        (eqR1 : (diAppend (diAppend I J) K).ops.get b = t₁R) (eqR2 : t₁R = t₂R)
+        (eqR3 : t₂R = t₃R) (hT : t₂L = t₃R),
+        castKl' eqL2 (castKl' eqL1 (h a)) =
+          hT ▸ castKl' eqR3 (castKl' eqR2 (castKl' eqR1 (h b))) := by
+      intro a b hab t₁L t₂L t₁R t₂R t₃R eqL1 eqL2 eqR1 eqR2 eqR3 hT
+      subst hab; subst eqL1; subst eqL2; subst eqR1; subst eqR2; subst eqR3; rfl
+    exact key _ _ (Fin.ext rfl) _ _ _ _ _ rfl
   · -- K branch (Sum.inr (Sum.inr l)): LHS has 1 castKl' applied to
     -- `h ⟨(I.ops.length + J.ops.length) + l.val, _⟩`; RHS has 3 casts applied
     -- to `h ⟨I.ops.length + (J.ops.length + l.val), _⟩`. Indices differ by
@@ -317,20 +318,21 @@ theorem tensorAppend_assoc_coherence :
             appendToTensor I (diAppend J K) (eqToHom (congrArg toPI he) h) (Sum.inr j'))
           (Sum.inr l)
     simp only [appendToTensor]
-    rw [eqToHom_handler, handler_transport_apply he]
-    · rcases l with ⟨l, hl⟩
-      have key : ∀ (a b : Fin (diAppend (diAppend I J) K).ops.length) (hab : a = b)
-          {t₁L t₁R t₂R t₃R : ℕ × Type × Type}
-          (eqL1 : (diAppend (diAppend I J) K).ops.get a = t₁L)
-          (eqR1 : (diAppend (diAppend I J) K).ops.get b = t₁R) (eqR2 : t₁R = t₂R)
-          (eqR3 : t₂R = t₃R) (hT : t₁L = t₃R),
-          castKl' eqL1 (h a) =
-            hT ▸ castKl' eqR3 (castKl' eqR2 (castKl' eqR1 (h b))) := by
-        intro a b hab t₁L t₁R t₂R t₃R eqL1 eqR1 eqR2 eqR3 hT
-        subst hab; subst eqL1; subst eqR1; subst eqR2; subst eqR3; rfl
-      exact key _ _ (Fin.ext (by simp [diAppend, DeepInterface.append]; omega))
-        _ _ _ _ rfl
-    · exact he
+    rw [eqToHom_handler he, handler_transport_apply he h
+      ⟨I.ops.length + (J.ops.length + l.val), by
+        have := l.isLt; simp [diAppend, DeepInterface.append]; omega⟩]
+    rcases l with ⟨l, hl⟩
+    have key : ∀ (a b : Fin (diAppend (diAppend I J) K).ops.length) (hab : a = b)
+        {t₁L t₁R t₂R t₃R : ℕ × Type × Type}
+        (eqL1 : (diAppend (diAppend I J) K).ops.get a = t₁L)
+        (eqR1 : (diAppend (diAppend I J) K).ops.get b = t₁R) (eqR2 : t₁R = t₂R)
+        (eqR3 : t₂R = t₃R) (hT : t₁L = t₃R),
+        castKl' eqL1 (h a) =
+          hT ▸ castKl' eqR3 (castKl' eqR2 (castKl' eqR1 (h b))) := by
+      intro a b hab t₁L t₁R t₂R t₃R eqL1 eqR1 eqR2 eqR3 hT
+      subst hab; subst eqL1; subst eqR1; subst eqR2; subst eqR3; rfl
+    exact key _ _ (Fin.ext (by simp [diAppend, DeepInterface.append]; omega))
+      _ _ _ _ rfl
 
 /-! ## Linking = Categorical Composition
 
@@ -364,7 +366,8 @@ theorem SemPkg.resolve_transport {I₁ I₂ I_exp : DeepInterface}
 theorem toSemPkg_link_comp (p₁ p₂ : DeepPackage) (h : p₁.imports = p₂.exports) :
     toSemPkg (DeepPackage.link p₁ p₂) = (h ▸ toSemPkg p₁).comp (toSemPkg p₂) := by
   apply SemPkg.ext; funext oracle
-  simp only [SemPkg.comp_resolve, SemPkg.resolve_transport]
+  change _ = (h ▸ toSemPkg p₁).resolve ((toSemPkg p₂).resolve oracle)
+  rw [SemPkg.resolve_transport]
   exact toSemPkg_link_resolve p₁ p₂ oracle
 
 /-- `eqToHom` in `Category DeepInterface` preserves `resolve`. -/
