@@ -166,7 +166,8 @@ noncomputable def dualEncEquiv (s : gp.Scalar) (m : gp.G) (hs : s ≠ gp.scalarZ
 @[simp] theorem dualEncEquiv_apply (s : gp.Scalar) (m : gp.G) (hs : s ≠ gp.scalarZero)
     (r : gp.Scalar) :
     dualEncEquiv gp s m hs r = gp.groupMul (gp.exp (gp.scalarMul s r)) m := by
-  simp only [dualEncEquiv, Equiv.trans_apply, Equiv.coe_fn_mk, Equiv.ofBijective_apply]
+  simp only [dualEncEquiv, Equiv.trans_apply, Equiv.coe_fn_mk]
+  rfl
 
 /-- **Ciphertext uniformity.** For a non-identity public key `pk`, encrypting `m`
     with uniform randomness is *exactly* the uniform distribution on the group.
@@ -357,8 +358,8 @@ theorem dualOT_uc_secure_zero (crs : DualModeCRS gp)
 /-! ## Nice-to-have: the full dual-mode construction
 
 The statement above is corrupt-receiver / sender-message privacy only, and its
-simulator ignores the `DualModeCRS` trapdoor. The genuine Peikert–Vaikuntanathan–
-Waters dual-mode OT would make the CRS load-bearing and additionally cover the
+simulator ignores the `DualModeCRS` trapdoor. The Peikert–Vaikuntanathan–Waters
+dual-mode OT uses the CRS trapdoor and additionally covers the
 corrupt-sender / receiver-privacy direction:
 
 * **Two indistinguishable CRS modes.** In *messy* mode one public key produces
@@ -375,7 +376,7 @@ corrupt-sender / receiver-privacy direction:
   via `sk`, extracts both messages, and forwards them to `F_OT` — the case the
   present ideal functionality does not model at all.
 
-Realizing this needs a genuine `dualOT_ideal` that hides the choice bit, a
+Realizing this needs a `dualOT_ideal` that hides the choice bit, a
 CRS-mode-indistinguishability game, and per-mode simulators; it is not attempted
 here.
 

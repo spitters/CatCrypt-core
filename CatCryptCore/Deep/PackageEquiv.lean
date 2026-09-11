@@ -159,7 +159,8 @@ theorem DeepPackage.BehavEquiv.link_congr_right
     simp only [DeepPackage.link]
   · intro op dom codom h₁₂ h₁₃ x oracle
     -- Unfold link and use evalWith_substOracle
-    rw [DeepPackage.link_evalWith_eq, DeepPackage.link_evalWith_eq]
+    rw [DeepPackage.link_evalWith_eq p₁ p₂ op dom codom h₁₂ x,
+      DeepPackage.link_evalWith_eq p₁ p₃ op dom codom h₁₃ x]
     -- Now show the composed handlers agree
     apply evalWith_congr
     intro op' dom' codom' x'
@@ -195,7 +196,8 @@ theorem DeepPackage.BehavEquiv.link_congr_left
     simp only [DeepPackage.link, h.exports_eq]
   · intro op dom codom h_l h_r x oracle
     -- Rewrite both sides using link_evalWith_eq
-    rw [DeepPackage.link_evalWith_eq, DeepPackage.link_evalWith_eq]
+    rw [DeepPackage.link_evalWith_eq p₁ q op dom codom h_l x,
+      DeepPackage.link_evalWith_eq p₂ q op dom codom h_r x]
     -- The oracle environments are the same (both use linkEnv q)
     -- The code differs: p₁.impl vs p₂.impl
     -- But h.impl_eq tells us they agree on evalWith for any handler

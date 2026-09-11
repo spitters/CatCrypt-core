@@ -171,8 +171,8 @@ theorem runPkg_link_forward (body : RawCode Bool) [IsValid (∅ : LocSet) body] 
       (DeepPackage.link forwardAdv.pkg
         (NomPackage.ofOracle 1 Unit Bool (fun _ => body)).pkg) = body.eval := by
   rw [CatCrypt.Crypto.runPkg_link]
-  simp only [forwardAdv, NomPackage.ofOracle, DeepPackage.ofOracle, ValidCodeBundle.auto,
-    List.mem_singleton, RawCode.evalWith, dite_eq_ite, if_true]
+  dsimp only [forwardAdv, NomPackage.ofOracle, DeepPackage.ofOracle, ValidCodeBundle.auto]
+  simp only [List.mem_singleton, RawCode.evalWith, dite_eq_ite, if_true]
 
 /-- **Worked reduction.** The deep-package advantage of the two reflected oracle
     games against the forwarding adversary equals the shallow `Advantage` of the
