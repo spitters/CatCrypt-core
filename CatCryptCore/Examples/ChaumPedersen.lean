@@ -254,8 +254,7 @@ theorem chaumPedersen_SHVZK_visible :
       (realTranscript (chaumPedersenSigma gp) stmt w e)
       (simulatedTranscript (chaumPedersenSigma gp) stmt e)
       (fun t₁ _ t₂ _ => cpVisibleTranscriptEq gp t₁ t₂) := by
-  intro stmt w e hrel
-  intro h₁ h₂ _
+  intro stmt w e hrel h₁ h₂ _
   unfold realTranscript simulatedTranscript
   simp only [chaumPedersenSigma, cpCommit, cpRespond, cpSimulate]
   simp only [SPComp.monad_bind_eq]
@@ -296,10 +295,10 @@ theorem chaumPedersen_special_soundness : SpecialSoundness (chaumPedersenSigma g
 
   set w := gp.scalarDiv (gp.scalarSub tt.response₁ tt.response₂)
             (gp.scalarSub tt.challenge₁ tt.challenge₂)
-  set z1 := tt.response₁
-  set z2 := tt.response₂
-  set e1 := tt.challenge₁
-  set e2 := tt.challenge₂
+  set z1 : gp.Scalar := tt.response₁
+  set z2 : gp.Scalar := tt.response₂
+  set e1 : gp.Scalar := tt.challenge₁
+  set e2 : gp.Scalar := tt.challenge₂
 
   -- Extract accepting equations
   have hacc1 := tt.accept₁
