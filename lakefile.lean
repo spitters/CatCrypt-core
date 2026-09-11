@@ -29,9 +29,9 @@ lean_lib CatCryptCore where
 -- Pinned to the module-system port on spitters/nominal-lean. A path-require of
 -- the sibling builds locally but breaks CI, which has no sibling checkout.
 require nominalLean from git
-  "https://github.com/spitters/nominal-lean" @ "lean-upgrade-4.32"
+  "https://github.com/spitters/nominal-lean" @ "lean-upgrade-4.33"
 
 -- mathlib LAST so its proofwidgets/aesop versions win on conflicts;
 -- this is required for `lake exe cache get` to find oleans.
 require mathlib from git
-  "https://github.com/leanprover-community/mathlib4" @ "v4.32.0"
+  "https://github.com/leanprover-community/mathlib4" @ "v4.33.1"
