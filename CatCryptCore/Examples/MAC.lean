@@ -159,6 +159,7 @@ def boolXorMAC : BijMACFamily where
 theorem boolXorMAC_forgery_prob (m m_star t_star : Bool) :
     prTrue (EUF_CMA_Real boolXorMAC.toMACScheme m m_star t_star) Heap.empty
       = 1 / 2 := by
-  simp [bijMAC_forgery_prob, show Fintype.card boolXorMAC.Tag = 2 from rfl]
+  refine (bijMAC_forgery_prob boolXorMAC m m_star t_star).trans ?_
+  simp [show Fintype.card boolXorMAC.Tag = 2 from rfl]
 
 end CatCrypt.Examples.MAC

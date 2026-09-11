@@ -92,6 +92,7 @@ theorem otp_correct : BoolOTP.Correct := by
   apply EncScheme.correct_of_simple_correct BoolOTP
     (encryptF := fun k m => xor k m) (decryptF := fun k c => some (xor k c))
   all_goals (intro a b; simp [BoolOTP])
+  cases a <;> cases b <;> rfl
 
 /-! ## Perfect IND-CPA Security -/
 
@@ -225,8 +226,8 @@ theorem otp_deepnom_forward_eq_indcpa (m₀ m₁ : Bool) :
     INDCPA_Adv BoolOTP m₀ m₁ SPComp.pure := by
   unfold DeepNomAdvantage otpGameTrue otpGameFalse
   rw [runPkg_link_forward (otpGameRaw m₀), runPkg_link_forward (otpGameRaw m₁),
-    otpGameRaw_eval_indcpa_true m₀ m₁, otpGameRaw_eval_indcpa_false m₀ m₁,
-    INDCPA_Adv, AdvantageA]
+    otpGameRaw_eval_indcpa_true m₀ m₁, otpGameRaw_eval_indcpa_false m₀ m₁]
+  dsimp only [INDCPA_Adv, AdvantageA]
   congr 1 <;> exact (SPComp.bind_pure _).symm
 
 end CatCrypt.Examples.OTP

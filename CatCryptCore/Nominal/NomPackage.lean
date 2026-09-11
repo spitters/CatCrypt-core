@@ -286,7 +286,6 @@ theorem sep_assoc_eq (P₁ P₂ P₃ : NomPackage)
     congr 1
     exact Finset.union_assoc _ _ _
   · -- Supports: (S₁ ∪ S₂) ∪ S₃ = S₁ ∪ (S₂ ∪ S₃)
-    simp only [sep_support]
     exact Finset.union_assoc _ _ _
 
 /-- Associativity of separated composition up to alpha-equivalence -/
