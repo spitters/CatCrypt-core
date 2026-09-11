@@ -20,10 +20,9 @@ the tag and only decrypts if it verifies. Following Rosulek, *The Joy of
 Cryptography*, §9-10 (MACs and authenticated encryption; Construction 10.9,
 Claim 10.10).
 
-This file gives the construction as a *combinator* on core's `EncScheme`, proves
-its correctness generically, and then studies the XOR / one-time-pad
-instantiation, for which it achieves **perfect** IND-CPA security (advantage
-exactly `0`).
+The construction is a *combinator* on core's `EncScheme`; its correctness is
+proved generically, and the XOR / one-time-pad instantiation achieves
+**perfect** IND-CPA security (advantage exactly `0`).
 
 ## The construction
 
@@ -39,7 +38,7 @@ Given an encryption scheme `E` and a MAC `macF : MacKey → E.Ciphertext → Tag
 
 * `EtM` — the Encrypt-then-MAC combinator on `EncScheme`.
 * `EtM_correct` — the combinator preserves correctness: if `E` is correct, so is
-  `EtM E … macF`. An honestly produced ciphertext always carries a matching tag,
+  `EtM E … macF`. A ciphertext produced by `encrypt` carries a matching tag,
   so decryption clears the tag check and recovers the message.
 * `BoolEtM` — the XOR instantiation: OTP encryption composed with the XOR MAC
   `macF km c = km ⊕ c` over `Bool`.
@@ -102,7 +101,7 @@ noncomputable def EtM (E : EncScheme) (MacKey Tag : Type)
 
 /-! ## Correctness of the combinator -/
 
-/-- Encrypt-then-MAC preserves correctness. An honestly generated ciphertext
+/-- Encrypt-then-MAC preserves correctness. A ciphertext produced by `encrypt`,
 `(c, macF km c)` carries the matching tag, so decryption passes the tag check and
 falls through to `E.decrypt`, which recovers the message by `hE`. -/
 theorem EtM_correct (E : EncScheme) (MacKey Tag : Type)
@@ -173,7 +172,8 @@ theorem boolEtM_indcpa_coupling (m₀ m₁ : Bool) :
   simp only [boolEtM_indcpa_game_eq, if_true, if_false, Bool.false_eq_true,
     SPComp.monad_bind_eq]
   ssprove_couple_bij (prodBoolXorBij (xor m₀ m₁, false))
-  simp [encF]
+  simp [encF, Bool.xor]
+  rfl
 
 /-- **`BoolEtM` has perfect IND-CPA security**: every adversary has IND-CPA
 advantage exactly `0`. -/
