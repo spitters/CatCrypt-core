@@ -150,7 +150,7 @@
     {
       "configFile": "lakefile.toml",
       "inherited": false,
-      "inputRev": "main",
+      "inputRev": "dca90385fb40dd5eb8da9145da6348ed17f5cd8b",
       "manifestFile": "lake-manifest.json",
       "name": "ArkLib",
       "rev": "dca90385fb40dd5eb8da9145da6348ed17f5cd8b",
