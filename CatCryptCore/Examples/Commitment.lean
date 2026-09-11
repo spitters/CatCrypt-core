@@ -99,7 +99,7 @@ namespace CommScheme
 
 variable (C : CommScheme)
 
-/-- Correctness: an honestly produced commitment opens back to its message. -/
+/-- Correctness: a commitment produced by `commit` opens back to its message. -/
 def Correct : Prop :=
   ∀ (r : C.Randomness) (m : C.Message), C.verify (C.commit r m) m r = true
 
@@ -299,5 +299,6 @@ theorem idComm_correct : IdComm.Correct := by
 theorem idComm_perfectly_binding : IdComm.PerfectlyBinding := by
   intro c m₀ m₁ r₀ r₁ h₀ h₁
   simp_all [IdComm]
+  rfl
 
 end CatCrypt.Examples.Commitment

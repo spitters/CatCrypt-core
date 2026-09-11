@@ -313,6 +313,7 @@ theorem simpleSigma_shvzk_given : SHVZK_given simpleSigma := by
   unfold realTranscriptGiven simulatedTranscriptGiven simpleSigma
   ssprove_code_simpl
   ssprove_couple_bij (xorTransformBij x e)
+  cases x <;> cases e <;> simp
 
 /-- SHVZK for `simpleSigma` with the challenge sampled internally rather than
     supplied as input.
@@ -330,6 +331,7 @@ theorem simpleSigma_shvzk : SHVZK simpleSigma := by
   apply rHoare_swap_lhs (SPComp.swap_sample_sample Bool Bool _ _)
   apply rHoare_same_step; intro e
   ssprove_couple_bij (xorTransformBij x e)
+  cases x <;> cases e <;> simp
 
 /-! ## Special Soundness for simpleSigma -/
 
