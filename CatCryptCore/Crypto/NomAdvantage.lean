@@ -174,7 +174,7 @@ theorem runPkg_link (p₁ p₂ : CatCrypt.Deep.DeepPackage) :
       vc.code.evalWith (fun op dom codom x => (env op dom codom x).eval)
     else
       SPComp.pure true) := by
-  simp only [runPkg, CatCrypt.Deep.DeepPackage.link]
+  dsimp only [runPkg, CatCrypt.Deep.DeepPackage.link]
   split
   · next h =>
     exact CatCrypt.Deep.eval_substOracle _ _
@@ -250,7 +250,7 @@ open CatCrypt.Deep in
 theorem runPkg_link_assoc (p₁ p₂ p₃ : CatCrypt.Deep.DeepPackage) :
     runPkg (CatCrypt.Deep.DeepPackage.link (CatCrypt.Deep.DeepPackage.link p₁ p₂) p₃) =
     runPkg (CatCrypt.Deep.DeepPackage.link p₁ (CatCrypt.Deep.DeepPackage.link p₂ p₃)) := by
-  simp only [runPkg, CatCrypt.Deep.DeepPackage.link]
+  dsimp only [runPkg, CatCrypt.Deep.DeepPackage.link]
   -- Both sides check if (0, Unit, Bool) ∈ p₁.exports.ops
   -- (since link preserves the first package's exports)
   split
@@ -349,7 +349,7 @@ open CatCrypt.Deep in
 theorem runPkg_link_id_right (p : CatCrypt.Deep.DeepPackage) :
     runPkg (CatCrypt.Deep.DeepPackage.link p (CatCrypt.Deep.DeepPackage.id p.imports)) =
     runPkg p := by
-  simp only [runPkg, CatCrypt.Deep.DeepPackage.link, CatCrypt.Deep.DeepPackage.id]
+  dsimp only [runPkg, CatCrypt.Deep.DeepPackage.link, CatCrypt.Deep.DeepPackage.id]
   split
   · next h =>
     -- Main export exists; show linked code evaluates same as original
@@ -387,7 +387,7 @@ theorem runPkg_link_id_left (p : CatCrypt.Deep.DeepPackage)
     (h_main : (0, Unit, Bool) ∈ p.exports.ops) :
     runPkg (CatCrypt.Deep.DeepPackage.link (CatCrypt.Deep.DeepPackage.id p.exports) p) =
     runPkg p := by
-  simp only [runPkg, CatCrypt.Deep.DeepPackage.link, CatCrypt.Deep.DeepPackage.id]
+  dsimp only [runPkg, CatCrypt.Deep.DeepPackage.link, CatCrypt.Deep.DeepPackage.id]
   -- (0, Unit, Bool) is in (id p.exports).exports = p.exports
   simp only [h_main, dite_true]
   -- id's implementation for (0, Unit, Bool) is oracleCall 0 Unit Bool ()
@@ -448,7 +448,7 @@ theorem runPkg_interchange (p₁ p₂ p₃ p₄ : CatCrypt.Deep.DeepPackage)
       (CatCrypt.Deep.DeepPackage.link p₁ p₃)
       (CatCrypt.Deep.DeepPackage.link p₂ p₄) h_link_sep) := by
   -- Step 1: Unfold runPkg and link on both sides
-  simp only [runPkg, CatCrypt.Deep.DeepPackage.link, CatCrypt.Deep.DeepPackage.par]
+  dsimp only [runPkg, CatCrypt.Deep.DeepPackage.link, CatCrypt.Deep.DeepPackage.par]
   -- Step 2: Both sides check (0, Unit, Bool) membership in p₁.exports.ops ++ p₂.exports.ops
   -- Since h_main says it's in p₁.exports.ops, it's in the appended list
   have h_app : (0, Unit, Bool) ∈ p₁.exports.ops ++ p₂.exports.ops :=
@@ -532,7 +532,7 @@ theorem runPkg_interchange_right (p₁ p₂ p₃ p₄ : CatCrypt.Deep.DeepPackag
     runPkg (CatCrypt.Deep.DeepPackage.par
       (CatCrypt.Deep.DeepPackage.link p₁ p₃)
       (CatCrypt.Deep.DeepPackage.link p₂ p₄) h_link_sep) := by
-  simp only [runPkg, CatCrypt.Deep.DeepPackage.link, CatCrypt.Deep.DeepPackage.par]
+  dsimp only [runPkg, CatCrypt.Deep.DeepPackage.link, CatCrypt.Deep.DeepPackage.par]
   have h_app : (0, Unit, Bool) ∈ p₁.exports.ops ++ p₂.exports.ops :=
     List.mem_append_right _ h_main
   simp only [h_app, dite_true]

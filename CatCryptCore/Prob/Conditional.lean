@@ -157,8 +157,8 @@ noncomputable def bayesInv (π : PMF α) (f : α → PMF β) (b : β)
 
 theorem bayesInv_apply (π : PMF α) (f : α → PMF β) (b : β)
     (hmarg : π.marginalβ f b ≠ 0) (a : α) :
-    (bayesInv π f b hmarg) a = π a * (f a) b * (π.marginalβ f b)⁻¹ := by
-  simp [bayesInv, PMF.normalize_apply, PMF.marginalβ]
+    (bayesInv π f b hmarg) a = π a * (f a) b * (π.marginalβ f b)⁻¹ :=
+  rfl
 
 /-- Recovery equation (discrete Bayes' theorem):
     `posterior(a) · marginal(b) = π(a) · f(a)(b)`. -/

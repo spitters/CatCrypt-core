@@ -174,7 +174,8 @@ the generalized interface behaves exactly as it does through `Heap.get`/`Heap.se
 @[simp]
 theorem gget_ofLocation (h : Heap) (l : Location) :
     h.gget (GLocation.ofLocation l) = h.get l := by
-  simp only [gget, get, GLocation.ofLocation_id, GLocation.ofLocation_ty, gdecode_eq_decode]
+  dsimp only [gget, get, GLocation.ofLocation]
+  rw [gdecode_eq_decode]
   rfl
 
 @[simp]

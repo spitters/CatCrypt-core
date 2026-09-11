@@ -84,8 +84,12 @@ noncomputable def assocIso (X Y Z : KlSPComp) :
     (show KlSPComp from (X ⊕ Y) ⊕ Z) ≅ (show KlSPComp from X ⊕ (Y ⊕ Z)) where
   hom := assocHom X Y Z
   inv := assocInv X Y Z
-  hom_inv_id := by funext x; rcases x with (a | b) | c <;> simp [assocHom, assocInv]
-  inv_hom_id := by funext x; rcases x with a | (b | c) <;> simp [assocHom, assocInv]
+  hom_inv_id := by
+    funext x; rcases x with (a | b) | c <;>
+      simp [assocHom, assocInv, CategoryStruct.comp, CategoryStruct.id]
+  inv_hom_id := by
+    funext x; rcases x with a | (b | c) <;>
+      simp [assocHom, assocInv, CategoryStruct.comp, CategoryStruct.id]
 
 noncomputable def lUnit (X : KlSPComp) :
     (show KlSPComp from Empty ⊕ X) ≅ X where
@@ -116,8 +120,10 @@ noncomputable def braidIso (X Y : KlSPComp) :
     (show KlSPComp from X ⊕ Y) ≅ (show KlSPComp from Y ⊕ X) where
   hom := braidHom X Y
   inv := braidHom Y X
-  hom_inv_id := by funext x; rcases x with a | b <;> simp [braidHom]
-  inv_hom_id := by funext x; rcases x with b | a <;> simp [braidHom]
+  hom_inv_id := by
+    funext x; rcases x with a | b <;> simp [braidHom, CategoryStruct.comp, CategoryStruct.id]
+  inv_hom_id := by
+    funext x; rcases x with b | a <;> simp [braidHom, CategoryStruct.comp, CategoryStruct.id]
 
 noncomputable instance : MonoidalCategoryStruct KlSPComp where
   tensorObj X Y := (show KlSPComp from X ⊕ Y)
@@ -155,50 +161,54 @@ concrete definitions (`wkL`, `wkR`, `assocIso`, `lUnit`, `rUnit`). -/
 @[simp] theorem rightUnitor_hom_eq (X : KlSPComp) :
     (ρ_ X).hom = (rUnit X).hom := rfl
 
+/-- Closes a pointwise equality of Kleisli morphisms: unfolds `KlSPComp` in the
+    context so every object is a `Type`, unfolds the category and monoidal
+    structure projections to their `SPComp` definitions, and applies the
+    `SPComp` monad laws. -/
+local macro "kl_simp" : tactic =>
+  `(tactic| (unfold KlSPComp at *
+             simp [wkR, wkL, assocHom, assocInv, assocIso, lUnit, rUnit, braidHom, braidIso,
+               SPComp.map, CategoryStruct.comp, CategoryStruct.id,
+               MonoidalCategoryStruct.tensorObj, MonoidalCategoryStruct.tensorHom,
+               MonoidalCategoryStruct.whiskerLeft, MonoidalCategoryStruct.whiskerRight,
+               MonoidalCategoryStruct.associator, MonoidalCategoryStruct.leftUnitor,
+               MonoidalCategoryStruct.rightUnitor]))
+
 /-! ## MonoidalCategory -/
 
 noncomputable instance : MonoidalCategory KlSPComp where
   tensorHom_def _ _ := rfl
   id_tensorHom_id X₁ X₂ := funext fun
-    | .inl a => by simp [wkR, wkL, SPComp.map]
-    | .inr c => by simp [wkR, wkL, SPComp.map]
+    | .inl a => by kl_simp
+    | .inr c => by kl_simp
   tensorHom_comp_tensorHom f₁ f₂ g₁ g₂ := funext fun
-    | .inl a => by simp [wkR, wkL, SPComp.map, SPComp.bind_assoc]
-    | .inr c => by simp [wkR, wkL, SPComp.map, SPComp.bind_assoc]
+    | .inl a => by kl_simp
+    | .inr c => by kl_simp
   whiskerLeft_id X Y := funext fun
     | .inl _ => rfl
-    | .inr c => by simp [wkL, SPComp.map]
+    | .inr c => by kl_simp
   id_whiskerRight X Y := funext fun
-    | .inl a => by simp [wkR, SPComp.map]
+    | .inl a => by kl_simp
     | .inr _ => rfl
   associator_naturality f₁ f₂ f₃ := funext fun
-    | .inl (.inl a) => by
-        simp [assocHom, wkL, wkR, SPComp.map, SPComp.bind_assoc]
-    | .inl (.inr b) => by
-        simp [assocHom, wkL, wkR, SPComp.map, SPComp.bind_assoc]
-    | .inr c => by
-        simp [assocHom, wkL, wkR, SPComp.map, SPComp.bind_assoc]
+    | .inl (.inl a) => by kl_simp
+    | .inl (.inr b) => by kl_simp
+    | .inr c => by kl_simp
   leftUnitor_naturality f := funext fun
     | .inl e => (Empty.elim e)
-    | .inr a => by simp [lUnit, wkL, SPComp.map, SPComp.bind_assoc]
+    | .inr a => by kl_simp
   rightUnitor_naturality f := funext fun
-    | .inl a => by simp [rUnit, wkR, SPComp.map, SPComp.bind_assoc]
+    | .inl a => by kl_simp
     | .inr e => (Empty.elim e)
   pentagon W X Y Z := funext fun
-    | .inl (.inl (.inl w)) => by
-        simp [assocHom, wkL, wkR, SPComp.map]
-    | .inl (.inl (.inr x)) => by
-        simp [assocHom, wkL, wkR, SPComp.map]
-    | .inl (.inr y) => by
-        simp [assocHom, wkL, wkR, SPComp.map]
-    | .inr z => by
-        simp [assocHom, wkL, wkR, SPComp.map]
+    | .inl (.inl (.inl w)) => by kl_simp
+    | .inl (.inl (.inr x)) => by kl_simp
+    | .inl (.inr y) => by kl_simp
+    | .inr z => by kl_simp
   triangle X Y := funext fun
-    | .inl (.inl a) => by
-        simp [assocHom, rUnit, lUnit, wkL, wkR, SPComp.map]
+    | .inl (.inl a) => by kl_simp
     | .inl (.inr e) => (Empty.elim e)
-    | .inr b => by
-        simp [assocHom, rUnit, lUnit, wkL, wkR, SPComp.map]
+    | .inr b => by kl_simp
 
 /-! ## BraidedCategory and SymmetricCategory -/
 
@@ -206,30 +216,18 @@ noncomputable instance : BraidedCategory KlSPComp where
   braiding := braidIso
   braiding_naturality_right X {Y Z} f := by
     change wkL X f ≫ braidHom X Z = braidHom X Y ≫ wkR f X
-    funext x; rcases x with a | c
-    · simp [braidHom, wkL, wkR]
-    · simp [braidHom, wkL, wkR, SPComp.map, SPComp.bind_assoc]
+    funext x; rcases x with a | c <;> kl_simp
   braiding_naturality_left {X Y} f Z := by
     change wkR f Z ≫ braidHom Y Z = braidHom X Z ≫ wkL Z f
-    funext x; rcases x with a | c
-    · simp [braidHom, wkL, wkR, SPComp.map, SPComp.bind_assoc]
-    · simp [braidHom, wkL, wkR]
+    funext x; rcases x with a | c <;> kl_simp
   hexagon_forward X Y Z := by
     change assocHom X Y Z ≫ braidHom X _ ≫ assocHom Y Z X =
       braidHom X Y ▷ Z ≫ assocHom Y X Z ≫ Y ◁ braidHom X Z
-    simp only [whiskerLeft_def, whiskerRight_def]
-    funext x; rcases x with (a | b) | c
-    · simp [braidHom, assocHom, wkL, wkR, SPComp.map]
-    · simp [braidHom, assocHom, wkL, wkR, SPComp.map]
-    · simp [braidHom, assocHom, wkL, wkR, SPComp.map]
+    funext x; rcases x with (a | b) | c <;> kl_simp
   hexagon_reverse X Y Z := by
     change assocInv X Y Z ≫ braidHom _ Z ≫ assocInv Z X Y =
       X ◁ braidHom Y Z ≫ assocInv X Z Y ≫ braidHom X Z ▷ Y
-    simp only [whiskerLeft_def, whiskerRight_def]
-    funext x; rcases x with a | (b | c)
-    · simp [braidHom, assocInv, wkL, wkR, SPComp.map]
-    · simp [braidHom, assocInv, wkL, wkR, SPComp.map]
-    · simp [braidHom, assocInv, wkL, wkR, SPComp.map]
+    funext x; rcases x with a | (b | c) <;> kl_simp
 
 noncomputable instance : SymmetricCategory KlSPComp where
   symmetry X Y := by
