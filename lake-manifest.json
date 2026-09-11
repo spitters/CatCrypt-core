@@ -21,7 +21,7 @@
       "inputRev": "lean-upgrade-4.33",
       "manifestFile": "lake-manifest.json",
       "name": "nominalLean",
-      "rev": "191bf97a444e7a2159bfa938cfedb62ed1bc6a5e",
+      "rev": "c6694972f92736b7ff82c194e1b3501326f356cd",
       "scope": "",
       "subDir": null,
       "type": "git",
