@@ -249,7 +249,6 @@ theorem simpleSigma_shvzk : SHVZK simpleSigma := by
   unfold realTranscript simulatedTranscript
   simp only [simpleSigma, ssprove_simpl, SPComp.monad_pure_eq]
   ssprove_couple_bij (xorTransformBij x e)
-  cases x <;> cases e <;> simp
 
 /-- Perfect SHVZK, advantage form: no distinguisher separates the real from the
     simulated transcript. -/
@@ -269,7 +268,6 @@ theorem simpleSigma_special_sound : SpecialSoundness simpleSigma := by
   refine ⟨simpleSigmaExtractor, fun x tt => ?_⟩
   have := tt.accept₁
   simp_all [simpleSigma, simpleSigmaExtractor]
-  cases x <;> cases tt.challenge₁ <;> rfl
 
 /-! ## Derived Commitment Scheme
 
