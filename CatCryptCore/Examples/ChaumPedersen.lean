@@ -122,6 +122,7 @@ def cpExtractor (_stmt : CPStatement gp) (_msg : CPMessage gp)
 /-! ## Sigma Protocol Instance -/
 
 /-- Chaum-Pedersen identification as a Sigma protocol. -/
+@[implicit_reducible]
 noncomputable def chaumPedersenSigma : SigmaProtocol where
   Statement := CPStatement gp
   Witness := CPWitness gp

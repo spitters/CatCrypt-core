@@ -214,6 +214,7 @@ theorem xorTransformBij_apply (w e a : Bool) :
     xorTransformBij w e a = xor (xor a w) e := rfl
 
 /-- The XOR-based Σ-protocol over `Bool`. -/
+@[implicit_reducible]
 noncomputable def simpleSigma : SigmaProtocol where
   Statement := Bool
   Witness := Bool
