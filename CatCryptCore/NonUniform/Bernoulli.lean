@@ -7,6 +7,7 @@ module
 
 public import CatCryptCore.NonUniform.CouplingRules
 public import CatCryptCore.NonUniform.UnaryRules
+public import Mathlib.Probability.Distributions.Bernoulli
 
 /-!
 # Biased coins: a non-uniform coupling worked out
@@ -42,14 +43,26 @@ variable {γ δ : Type*}
 
 /-! ## The distribution -/
 
-/-- The coin that comes up `true` with probability `p`. -/
+/-- The coin that comes up `true` with probability `p`: the Bernoulli measure on
+`Bool` with mass `p` at `true` and `1 - p` at `false`, read back as a `PMF`. -/
 noncomputable def bernoulli (p : ℝ≥0) (hp : p ≤ 1) : SDistr Bool :=
-  ofPMF (PMF.bernoulli p hp)
+  ofPMF (ProbabilityTheory.bernoulliMeasure true false
+    ⟨p, p.coe_nonneg, by exact_mod_cast hp⟩).toPMF
 
 /-- The mass of a Bernoulli coin at a Boolean outcome. -/
 theorem bernoulli_apply_some (p : ℝ≥0) (hp : p ≤ 1) (b : Bool) :
     bernoulli p hp (some b) = ((bif b then p else 1 - p : ℝ≥0) : ℝ≥0∞) := by
-  rw [bernoulli, ofPMF_apply_some, PMF.bernoulli_apply]
+  classical
+  rw [bernoulli, ofPMF_apply_some, MeasureTheory.Measure.toPMF_apply,
+    ProbabilityTheory.bernoulliMeasure_apply _ (MeasurableSet.singleton b)]
+  cases b
+  · simp only [Set.mem_singleton_iff, Bool.true_eq_false, if_false, if_true, Bool.cond_false]
+    congr 1
+    ext
+    rw [NNReal.coe_sub hp]
+    rfl
+  · simp [unitInterval.toNNReal]
+    rfl
 
 @[simp]
 theorem bernoulli_apply_true (p : ℝ≥0) (hp : p ≤ 1) :

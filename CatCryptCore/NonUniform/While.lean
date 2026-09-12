@@ -48,7 +48,7 @@ theorem exists_whileApprox_ne_zero {guard : Heap → Bool} {body : SPComp Unit}
     {h : Heap} {p : Unit × Heap} (hp : whileLoop guard body h (some p) ≠ 0) :
     ∃ n, whileApprox guard body n h (some p) ≠ 0 := by
   by_contra hcon
-  push_neg at hcon
+  push Not at hcon
   exact hp (by simpa [whileLoop_apply_some] using iSup_eq_bot.mpr hcon)
 
 /-- **The pHL rule for the unbounded loop.** If the body preserves the invariant

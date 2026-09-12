@@ -124,7 +124,7 @@ theorem mem_support_iff (d : SDistr α) (a : α) : a ∈ d.support ↔ d (some a
 /-- Membership in support of pure implies equality (without DecidableEq) -/
 theorem mem_support_pure_iff (a b : α) : b ∈ (pure a : SDistr α).support ↔ a = b := by
   unfold support pure
-  simp only [Set.mem_setOf_eq, PMF.pure_apply, Option.some.injEq, ne_eq]
+  simp only [Set.mem_ofPred_eq, PMF.pure_apply, Option.some.injEq, ne_eq]
   constructor
   · intro h
     by_contra hne
@@ -137,7 +137,7 @@ theorem mem_support_pure_iff (a b : α) : b ∈ (pure a : SDistr α).support ↔
 theorem support_pure [DecidableEq α] (a : α) : (pure a).support = {a} := by
   ext b
   unfold support
-  simp only [Set.mem_setOf_eq, pure_apply_some, Set.mem_singleton_iff]
+  simp only [Set.mem_ofPred_eq, pure_apply_some, Set.mem_singleton_iff]
   constructor
   · intro h
     by_contra hne
