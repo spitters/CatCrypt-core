@@ -110,6 +110,8 @@ public import CatCryptCore.Crypto.GameReject
 public import CatCryptCore.Crypto.GeneralForkingLemma
 public import CatCryptCore.Crypto.SwitchingLemma
 public import CatCryptCore.Crypto.MultiQueryPRF
+public import CatCryptCore.Crypto.OracleAdversary
+public import CatCryptCore.Crypto.PRPPRFSwitching
 public import CatCryptCore.Crypto.PRFAssumption
 public import CatCryptCore.Crypto.Assumptions.Catalog
 public import CatCryptCore.Crypto.BLSSig.Security
