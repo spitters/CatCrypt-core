@@ -299,6 +299,117 @@ theorem uptobadA_advantage {α : Type} (G₀ G₁ : SPComp α)
     (advantage_upto_bad_A G₀ G₁ bad h.noFail_left h.noFail_right h.identical A hnfA)
     h.pr_bad
 
+/-! ## Lifting to Arbitrary Distinguishers and to `sdist`
+
+The one-sided gap `Pr[G₀ ; D] - Pr[G₁ ; D]` of any distinguisher `D`, failing
+or not, is at most the gap of the event distinguisher that returns whether the
+output/heap pair has at least as much mass under `G₀` as under `G₁`. That event
+distinguisher never fails, so bounds stated for non-failing distinguishers
+extend to all distinguishers. -/
+
+/-- For any distinguisher `D` and initial heap `h₀` there is a non-failing
+    distinguisher `A` whose one-sided gap between `G₀` and `G₁` at `h₀` is at
+    least that of `D`. -/
+theorem exists_noFail_tsub_le {α : Type} (G₀ G₁ : SPComp α) (D : α → SPComp Bool)
+    (h₀ : Heap) :
+    ∃ A : α → SPComp Bool, (∀ a, SPComp.NoFail (A a)) ∧
+      prTrue (G₀.bind D) h₀ - prTrue (G₁.bind D) h₀ ≤
+        prTrue (G₀.bind A) h₀ - prTrue (G₁.bind A) h₀ := by
+  classical
+  let A : α → SPComp Bool := fun a h' =>
+    SPComp.pure (decide ((G₁ h₀) (some (a, h')) ≤ (G₀ h₀) (some (a, h')))) h'
+  refine ⟨A, fun a h => SPComp.pure_noFail _ h, ?_⟩
+  rw [prTrue_bind_eq_weighted G₀ D h₀, prTrue_bind_eq_weighted G₁ D h₀,
+    prTrue_bind_eq_weighted G₀ A h₀, prTrue_bind_eq_weighted G₁ A h₀]
+  let v : Option (α × Heap) → ℝ≥0∞ := fun p =>
+    match p with | some ⟨a, h'⟩ => prTrue (D a) h' | none => 0
+  let e : Option (α × Heap) → ℝ≥0∞ := fun p =>
+    match p with | some ⟨a, h'⟩ => prTrue (A a) h' | none => 0
+  change ∑' p, (G₀ h₀ : PMF _) p * v p - ∑' p, (G₁ h₀ : PMF _) p * v p ≤
+    ∑' p, (G₀ h₀ : PMF _) p * e p - ∑' p, (G₁ h₀ : PMF _) p * e p
+  have hA : ∀ a h', prTrue (A a) h' =
+      if (G₁ h₀) (some (a, h')) ≤ (G₀ h₀) (some (a, h')) then 1 else 0 := by
+    intro a h'
+    unfold prTrue
+    by_cases hle : (G₁ h₀) (some (a, h')) ≤ (G₀ h₀) (some (a, h')) <;>
+      simp [A, hle, SPComp.pure, SDistr.pure, PMF.pure_apply]
+  have hpt : ∀ p, (G₀ h₀ : PMF _) p * v p + (G₁ h₀ : PMF _) p * e p ≤
+      (G₁ h₀ : PMF _) p * v p + (G₀ h₀ : PMF _) p * e p := by
+    rintro (_ | ⟨a, h'⟩)
+    · simp [v, e]
+    · have hv : prTrue (D a) h' ≤ 1 := prTrue_le_one _ _
+      simp only [v, e, hA]
+      by_cases hle : (G₁ h₀) (some (a, h')) ≤ (G₀ h₀) (some (a, h'))
+      · simp only [hle, if_true, mul_one]
+        obtain ⟨δ, hδ⟩ := exists_add_of_le hle
+        rw [hδ, add_mul]
+        calc (G₁ h₀) (some (a, h')) * prTrue (D a) h' + δ * prTrue (D a) h' +
+              (G₁ h₀) (some (a, h'))
+            ≤ (G₁ h₀) (some (a, h')) * prTrue (D a) h' + δ +
+              (G₁ h₀) (some (a, h')) := by
+              gcongr; exact mul_le_of_le_one_right zero_le hv
+          _ = _ := by ring
+      · simp only [hle, if_false, mul_zero, add_zero]
+        exact mul_le_mul_left (le_of_lt (not_le.mp hle)) _
+  have hsum := ENNReal.tsum_le_tsum hpt
+  rw [ENNReal.tsum_add, ENNReal.tsum_add] at hsum
+  have he_le : ∑' p, (G₁ h₀ : PMF _) p * e p ≤ ∑' p, (G₀ h₀ : PMF _) p * e p := by
+    apply ENNReal.tsum_le_tsum
+    rintro (_ | ⟨a, h'⟩)
+    · simp [e]
+    · simp only [e, hA]
+      split_ifs with hle
+      · simpa using hle
+      · simp
+  have hne : ∑' p, (G₁ h₀ : PMF _) p * e p ≠ ⊤ := by
+    refine ne_top_of_le_ne_top ENNReal.one_ne_top ?_
+    calc ∑' p, (G₁ h₀ : PMF _) p * e p ≤ ∑' p, (G₁ h₀ : PMF _) p := by
+          apply ENNReal.tsum_le_tsum; intro p
+          apply mul_le_of_le_one_right zero_le
+          rcases p with _ | ⟨a, h'⟩
+          · simp [e]
+          · exact prTrue_le_one _ _
+      _ = 1 := (G₁ h₀).tsum_coe
+  rw [tsub_le_iff_right, add_comm]
+  refine ENNReal.le_of_add_le_add_right hne (hsum.trans_eq ?_)
+  conv_lhs => rw [← tsub_add_cancel_of_le he_le]
+  ring
+
+/-- An advantage bound against every non-failing distinguisher is an advantage
+    bound against every distinguisher. -/
+theorem advantageA_le_of_noFail_distinguishers {α : Type} {G₀ G₁ : SPComp α}
+    {ε : ℝ≥0∞}
+    (h : ∀ A : α → SPComp Bool, (∀ a, SPComp.NoFail (A a)) → AdvantageA G₀ G₁ A ≤ ε)
+    (D : α → SPComp Bool) :
+    AdvantageA G₀ G₁ D ≤ ε := by
+  simp only [AdvantageA, Advantage]
+  apply max_le
+  · obtain ⟨A, hA, hle⟩ := exists_noFail_tsub_le G₀ G₁ D Heap.empty
+    exact hle.trans ((le_max_left _ _).trans (h A hA))
+  · obtain ⟨A, hA, hle⟩ := exists_noFail_tsub_le G₁ G₀ D Heap.empty
+    exact hle.trans ((le_max_right _ _).trans (h A hA))
+
+/-- Fundamental lemma against every distinguisher: an `UpToBadA` witness bounds
+    the advantage of all distinguishers, including failing ones, by the
+    bad-event probability. -/
+theorem uptobadA_advantage_all {α : Type} (G₀ G₁ : SPComp α)
+    (bad : SPComp Bool) (ε_bad : ℝ≥0∞)
+    (h : UpToBadA G₀ G₁ bad ε_bad) (D : α → SPComp Bool) :
+    AdvantageA G₀ G₁ D ≤ ε_bad :=
+  advantageA_le_of_noFail_distinguishers (uptobadA_advantage G₀ G₁ bad ε_bad h) D
+
+/-- Fundamental lemma as a statistical-distance bound: for families of
+    heap-independent games that are identical until a bad event of probability
+    at most `ε_bad`, `sdist f g ≤ ε_bad`. `IsPure` is needed because `sdist`
+    ranges over all initial heaps while `UpToBadA` fixes the empty heap. -/
+theorem sdist_le_of_uptobadA {α β : Type} {f g : α → SPComp β}
+    (bad : α → SPComp Bool) (ε_bad : ℝ≥0∞)
+    (hf : ∀ a, SPComp.IsPure (f a)) (hg : ∀ a, SPComp.IsPure (g a))
+    (h : ∀ a, UpToBadA (f a) (g a) (bad a) ε_bad) :
+    sdist f g ≤ ε_bad :=
+  sdist_of_isPure_advantageA hf hg fun a D =>
+    uptobadA_advantage_all (f a) (g a) (bad a) ε_bad (h a) D
+
 /-! ## Corollary: Union Bound for Multiple Bad Events
 
 When a proof involves multiple bad events, the union bound gives:
