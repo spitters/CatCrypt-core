@@ -16,19 +16,29 @@ algebraic representations of all group elements they output.
 
 ## Main definitions
 
-* `AGMRepr` — An algebraic representation: vector of exponents
-* `AGMAdversary` — An adversary in the AGM that provides representations
-* `extracted_poly` — The polynomial extracted from an AGM representation
+* `AGMRepr` — a group element of G₁ paired with a claimed exponent vector
+* `AGMRepr.Valid` — the representation equation against a given basis
+* `AGMRepr.ofCoeffs` — the element computed from a basis and an exponent vector
+* `AGMAdversary` — an adversary that receives the SRS and outputs representations
+
+## Main results
+
+* `AGMRepr.ofCoeffs_valid` — the computed element satisfies the equation
+* `AGMRepr.element_eq_of_valid_srs₁` — against the KZG SRS, a valid
+  representation is `g₁ ^ᵍ φ(α)` for the extracted polynomial `φ`
 
 ## Overview
 
 In the AGM, any group element output by the adversary must be accompanied by
 a vector of exponents showing how it was computed from the input group elements.
 For KZG, the input is the SRS `[g₁, g₁^α, ..., g₁^(αᵗ)]`, and the output
-commitment C must come with `[c₀, ..., cₜ]` such that `C = ∏ srs[i]^cᵢ`.
+commitment C comes with `[c₀, ..., cₜ]`. A representation is valid for the SRS
+`srs` when `C = ∏ srs[i]^cᵢ`. Validity is relative to the SRS the game supplies:
+the game checks it and counts an invalid representation as a loss for the
+adversary (Fuchsbauer–Kiltz–Loss, Definition 2.1).
 
-This means the adversary "knows" a polynomial `φ(X) = ∑ cᵢ Xⁱ` such that
-`C = g₁^(φ(α))`, enabling knowledge extraction.
+A valid representation means the adversary "knows" a polynomial
+`φ(X) = ∑ cᵢ Xⁱ` such that `C = g₁^(φ(α))`, enabling knowledge extraction.
 
 ## References
 
@@ -50,23 +60,36 @@ variable (P : PairingGroup) (t : ℕ)
 
 /-! ## AGM Representation -/
 
-/-- An algebraic representation of a group element in G₁ with respect to
-    the SRS of size t+1.
-
-    A representation is a vector of exponents `[c₀, ..., cₜ]` in ZMod p
-    such that the group element equals `∏ᵢ srs[i]^cᵢ`. -/
+/-- A group element of G₁ together with a claimed algebraic representation
+    with respect to a basis of size `t + 1`: a vector of exponents
+    `[c₀, ..., cₜ]` in `ZMod p`. Whether the exponents represent the element
+    depends on the basis and is the proposition `AGMRepr.Valid`. -/
 structure AGMRepr where
   /-- The exponent vector -/
   coeffs : Fin (t + 1) → ZMod P.p
   /-- The represented group element -/
   element : P.G₁
-  /-- The representation is valid for a given SRS: element = ∏ srs[i]^coeffs[i].
 
-      **Note:** The universal quantification over all pk is an AGM axiom: the adversary
-      must provide coefficients that work for ANY group elements, not just the specific SRS.
-      In practice, the game supplies one specific pk and validity is checked against it. -/
-  valid : ∀ (pk : Fin (t + 1) → P.G₁),
-    element = ∏ i : Fin (t + 1), pk i ^ᵍ (coeffs i)
+/-- The representation equation against the basis `pk`:
+    `element = ∏ᵢ pk[i]^coeffs[i]`. -/
+def AGMRepr.Valid (repr : AGMRepr P t) (pk : Fin (t + 1) → P.G₁) : Prop :=
+  repr.element = ∏ i : Fin (t + 1), pk i ^ᵍ (repr.coeffs i)
+
+noncomputable instance AGMRepr.instDecidableValid (repr : AGMRepr P t) (pk : Fin (t + 1) → P.G₁) :
+    Decidable (repr.Valid P t pk) :=
+  inferInstanceAs (Decidable (_ = _))
+
+/-- The representation whose element is computed from the basis `pk` and the
+    exponent vector `coeffs`. -/
+noncomputable def AGMRepr.ofCoeffs (pk : Fin (t + 1) → P.G₁)
+    (coeffs : Fin (t + 1) → ZMod P.p) : AGMRepr P t :=
+  ⟨coeffs, ∏ i : Fin (t + 1), pk i ^ᵍ (coeffs i)⟩
+
+/-- A representation computed from a basis is valid for that basis. -/
+theorem AGMRepr.ofCoeffs_valid (pk : Fin (t + 1) → P.G₁)
+    (coeffs : Fin (t + 1) → ZMod P.p) :
+    (AGMRepr.ofCoeffs P t pk coeffs).Valid P t pk :=
+  rfl
 
 /-- Extract the polynomial from an AGM representation.
     The polynomial is `φ(X) = ∑ᵢ cᵢ · Xⁱ` where cᵢ are the coefficients. -/
@@ -94,53 +117,41 @@ theorem AGMRepr.toPoly_natDegree_le (repr : AGMRepr P t) :
   intro i _
   exact le_trans (natDegree_C_mul_X_pow_le _ _) (Nat.lt_succ_iff.mp i.isLt)
 
+/-- The representation whose exponents are the first `t + 1` coefficients of `φ`
+    extracts to `φ` when `φ` has degree at most `t`. -/
+theorem AGMRepr.toPoly_ofCoeffs_coeff (pk : Fin (t + 1) → P.G₁)
+    (φ : Polynomial (ZMod P.p)) (hdeg : φ.natDegree ≤ t) :
+    (AGMRepr.ofCoeffs P t pk (fun i => φ.coeff i)).toPoly = φ := by
+  unfold AGMRepr.toPoly AGMRepr.ofCoeffs
+  rw [Fin.sum_univ_eq_sum_range (fun i => C (φ.coeff i) * X ^ i) (t + 1)]
+  exact (as_sum_range_C_mul_X_pow' φ (Nat.lt_succ_of_le hdeg)).symm
+
+/-- A representation valid for the KZG SRS `srs₁ α t` has element `g₁ ^ᵍ φ(α)`,
+    where `φ` is the extracted polynomial. -/
+theorem AGMRepr.element_eq_of_valid_srs₁ (α : ZMod P.p) (repr : AGMRepr P t)
+    (hvalid : repr.Valid P t (srs₁ (P := P) α t)) :
+    repr.element = P.g₁ ^ᵍ (repr.toPoly.eval α) := by
+  unfold AGMRepr.Valid srs₁ at hvalid
+  rw [hvalid]
+  simp_rw [zpowZMod₁_zpowZMod₁, mul_comm (α ^ _)]
+  rw [zpowZMod₁_finprod_univ]
+  congr 1
+  simp only [AGMRepr.toPoly, Polynomial.eval_finsetSum, Polynomial.eval_mul,
+    Polynomial.eval_C, Polynomial.eval_pow, Polynomial.eval_X]
+
 /-! ## AGM Adversary -/
 
 /-- An AGM adversary for KZG.
 
 In the AGM, the adversary receives the SRS and outputs a commitment C together
-with an algebraic representation showing how C was computed from the SRS.
-
-The representation implicitly reveals the committed polynomial. -/
+with an algebraic representation of C in terms of the SRS, an evaluation point,
+a claimed value, and a witness with its representation. The game that runs the
+adversary checks the representations against the SRS it supplied. -/
 structure AGMAdversary where
-  /-- The adversary's computation: given SRS, output (commitment, evaluation proof)
-      together with algebraic representations. -/
+  /-- The adversary's computation: given the SRS, output
+      `(C_repr, z, y, w_repr)`, the commitment representation, the evaluation
+      point, the claimed value and the witness representation. -/
   run : (Fin (t + 1) → P.G₁) →
     SPComp (AGMRepr P t × ZMod P.p × ZMod P.p × AGMRepr P t)
-  -- Output: (C_repr, z, y, w_repr) where C_repr is commitment representation,
-  -- z is evaluation point, y is claimed value, w_repr is witness representation
-
-/-- The polynomial extracted from the commitment representation.
-    This is a placeholder function — the actual extraction happens
-    inline in `KnowledgeSoundness_Game` via `C_repr.toPoly`. -/
-noncomputable def AGMAdversary.committedPoly (_A : AGMAdversary P t)
-    (_pk : Fin (t + 1) → P.G₁) :
-    (Fin (t + 1) → P.G₁) → Polynomial (ZMod P.p) :=
-  fun _ => 0
-
-/-! ## Knowledge Soundness Game -/
-
-/-- Knowledge soundness game in the AGM:
-    Adversary outputs (C, z, y, w) with algebraic representations.
-    Adversary wins if:
-    1. The evaluation proof verifies (pairing check passes)
-    2. But y ≠ φ(z) where φ is the extracted polynomial
-
-    If the adversary cannot win, then knowledge soundness holds:
-    any valid evaluation proof implies knowledge of the committed polynomial.
-
-    **Note:** This simplified game only checks y ≠ φ(z). The full game should also
-    check `verify_eval` (the pairing check), but that lives in `KZG.Def` which would
-    create heavy dependencies. The `verify_eval` check is needed in the actual security
-    proof to establish that δ(α) = 0 (from the pairing equation). For the full game
-    with verify_eval, see `KZG.KnowledgeSoundness`. -/
-noncomputable def KnowledgeSoundness_Game (A : AGMAdversary P t) : SPComp Bool := do
-  let α ← SPComp.sample (ZMod P.p)
-  let pk := srs₁ (P := P) α t
-  let _vk := srs₂ (P := P) α
-  let (C_repr, z, y, _w_repr) ← A.run pk
-  let φ := C_repr.toPoly
-  -- Adversary wins if y ≠ φ(z) (simplified; full game also checks verify_eval)
-  SPComp.pure (decide (y ≠ φ.eval z))
 
 end CatCrypt.Crypto
