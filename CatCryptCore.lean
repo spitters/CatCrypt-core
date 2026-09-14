@@ -96,6 +96,7 @@ public import CatCryptCore.Crypto.RC
 public import CatCryptCore.Crypto.UCAlg
 public import CatCryptCore.Crypto.UCComposition
 public import CatCryptCore.Crypto.UCDSL
+public import CatCryptCore.Crypto.UCConcrete
 public import CatCryptCore.Crypto.AGM
 public import CatCryptCore.Crypto.SecurityDefs
 public import CatCryptCore.Crypto.Encryption
@@ -177,6 +178,7 @@ public import CatCryptCore.Examples.DetCPA
 public import CatCryptCore.Examples.CoinToss
 public import CatCryptCore.Examples.INDCPA
 public import CatCryptCore.Examples.ElGamalDDH
+public import CatCryptCore.Examples.ElGamalUCConcrete
 
 /-! # CatCrypt Core — umbrella
 
