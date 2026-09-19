@@ -33,6 +33,16 @@ A Sigma protocol is a three-move public-coin interactive proof system:
 * **Special Honest-Verifier Zero-Knowledge (SHVZK)**: A simulator can produce
   transcripts indistinguishable from real ones given only the statement and challenge
 
+## Main definitions
+
+* `SigmaProtocol` — the three-move structure with a stateless prover.
+* `SigmaProtocolS` — the three-move structure whose prover carries state from
+  the first move to the third, with `SigmaProtocol.toSigmaProtocolS` for the
+  trivial-state case and `SigmaProtocolS.toSigmaProtocol` for the stateless
+  protocol whose first message carries the state.
+* `Completeness`, `SpecialSoundness`, `SHVZK`, `SHVZK_given` — the property
+  predicates.
+
 ## Implementation
 
 We use a simplified model over Bool types (like PRF.lean) to demonstrate the
@@ -101,6 +111,89 @@ structure SigmaProtocol where
   simulate : Statement → Challenge → SPComp (Message × Response)
 
 attribute [instance] SigmaProtocol.finChallenge SigmaProtocol.neChallenge
+
+/-! ## Sigma Protocols with Prover State -/
+
+/-- A Sigma protocol whose prover carries state from the first move to the
+    third. The commitment step returns a message together with a private state
+    `PState`, and the response step reads that state.
+
+    `SigmaProtocol` is the special case `PState = Unit`, recorded by
+    `SigmaProtocol.toSigmaProtocolS`. A protocol whose response depends on
+    randomness that the commitment does not determine — because the map from
+    that randomness to the message loses information — is expressible here and
+    not over `SigmaProtocol`. -/
+structure SigmaProtocolS where
+  /-- Type of statements (what we're proving) -/
+  Statement : Type
+  /-- Type of witnesses (secret known to prover) -/
+  Witness : Type
+  /-- Type of first message (commitment) -/
+  Message : Type
+  /-- Type of challenge (from verifier) -/
+  Challenge : Type
+  /-- Type of response -/
+  Response : Type
+  /-- Type of the prover's private state between the first and third move -/
+  PState : Type
+  /-- Challenge type is finite (for uniform sampling) -/
+  [finChallenge : Fintype Challenge]
+  /-- Challenge type is nonempty -/
+  [neChallenge : Nonempty Challenge]
+  /-- The prover-state type is nonempty -/
+  [neState : Nonempty PState]
+  /-- The NP relation: R(x, w) means w is a valid witness for x -/
+  relation : Statement → Witness → Prop
+  /-- Prover's first message together with the state it retains -/
+  commit : Statement → Witness → SPComp (Message × PState)
+  /-- Prover's response, reading the retained state -/
+  respond : Statement → Witness → PState → Message → Challenge → SPComp Response
+  /-- Verifier's check, on the public transcript only -/
+  verify : Statement → Message → Challenge → Response → Bool
+  /-- Simulator for SHVZK, producing a public transcript -/
+  simulate : Statement → Challenge → SPComp (Message × Response)
+
+attribute [instance] SigmaProtocolS.finChallenge SigmaProtocolS.neChallenge
+  SigmaProtocolS.neState
+
+/-- A `SigmaProtocol` viewed as a `SigmaProtocolS` with trivial prover state. -/
+noncomputable def SigmaProtocol.toSigmaProtocolS (sp : SigmaProtocol) : SigmaProtocolS where
+  Statement := sp.Statement
+  Witness := sp.Witness
+  Message := sp.Message
+  Challenge := sp.Challenge
+  Response := sp.Response
+  PState := Unit
+  relation := sp.relation
+  commit := fun x w => do
+    let a ← sp.commit x w
+    SPComp.pure (a, ())
+  respond := fun x w _ps a e => sp.respond x w a e
+  verify := sp.verify
+  simulate := sp.simulate
+
+/-- The stateless Sigma protocol obtained by appending the prover state to the
+    first message. The verifier ignores the appended component, so the
+    predicates that read only the types and `verify` — the soundness error,
+    `TwoTranscripts`, `SpecialSoundness` — are statements about the same
+    verification equation as `sps`.
+
+    The simulator has no state to produce and emits an arbitrary one, so the
+    zero-knowledge predicates, which compare real and simulated first messages,
+    do not transfer. -/
+noncomputable def SigmaProtocolS.toSigmaProtocol (sps : SigmaProtocolS) : SigmaProtocol where
+  Statement := sps.Statement
+  Witness := sps.Witness
+  Message := sps.Message × sps.PState
+  Challenge := sps.Challenge
+  Response := sps.Response
+  relation := sps.relation
+  commit := sps.commit
+  respond := fun x w ap e => sps.respond x w ap.2 ap.1 e
+  verify := fun x ap e z => sps.verify x ap.1 e z
+  simulate := fun x e => do
+    let (a, z) ← sps.simulate x e
+    SPComp.pure ((a, Classical.arbitrary sps.PState), z)
 
 /-! ## Transcript Type -/
 
