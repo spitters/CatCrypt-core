@@ -267,6 +267,165 @@ def tagsFor (n : Name) : MetaM (Array Tag) := do
     ts := Tag.customHypothesisInType :: ts
   return ts.toArray
 
+/-! ## Statement-level detectors
+
+The tags above read a proof term. The three detectors here read a *statement*,
+so they apply to axioms (which have no term) and to theorems whatever their
+proof.
+
+* `statementFromBinders` — the conclusion is definitionally the type of a
+  hypothesis binder, or of a Prop-valued field of a structure-typed binder. For
+  an axiom this means the axiom is provable (`fun P => P.field`) and asserts
+  nothing while adding a name to every downstream `#print axioms`. For a
+  theorem it is the self-hypothesis shape, detected after unfolding, so a
+  hypothesis wrapped in a named `Prop` (`h : Bound P` with `Bound P := …`) is
+  caught as well.
+* `isNominalStatement` — a theorem whose conclusion and at least one hypothesis
+  are propositions about numbers only: every local occurs either with a numeric
+  type or as the argument of a projection with a numeric result type, after
+  unfolding Prop-valued definitions from the CatCrypt namespaces, and an opaque
+  constant of numeric type counts as a number. Such a theorem relates named
+  quantities to named quantities; no game, adversary or scheme constrains it.
+  A statement whose type mentions no CatCrypt constant at all is plain
+  arithmetic and is not reported.
+-/
+
+/-- Types whose values the nominal-bound detector treats as numbers. -/
+def isNumericTypeName (n : Name) : Bool :=
+  [``Nat, ``Int, ``Real, ``ENNReal, ``NNReal, ``Rat].contains n
+
+/-- Is `t` (up to reducible unfolding) one of the numeric carrier types? -/
+def isNumericType (t : Expr) : MetaM Bool := do
+  let t ← whnfR t
+  match t.getAppFn.constName? with
+  | some n => return isNumericTypeName n
+  | none => return false
+
+/-- Is `n` in a CatCrypt namespace (dev or core)? -/
+def isCatCryptName (n : Name) : Bool :=
+  let r := n.getRoot
+  r == `CatCrypt || r == `CatCryptCore
+
+/-- Does the type of `n` mention a constant from a CatCrypt namespace? -/
+def typeMentionsCatCrypt (n : Name) : MetaM Bool := do
+  let env ← getEnv
+  let some ci := env.find? n | return false
+  return ci.type.getUsedConstants.any isCatCryptName
+
+/-- `isDefEq` under a heartbeat cap, with failures read as `false`. -/
+def isDefEqCapped (a b : Expr) : MetaM Bool := do
+  try
+    withTheReader Core.Context (fun c => { c with maxHeartbeats := 400000 * 1000 })
+      (isDefEq a b)
+  catch _ => return false
+
+/-- The Prop-valued fields of the structure-typed local `x` whose type is
+    definitionally `concl`; the first such field name. -/
+def projectionMatchingConcl (x : Expr) (concl : Expr) : MetaM (Option Name) := do
+  let env ← getEnv
+  let xT ← whnfR (← inferType x)
+  let some sName := xT.getAppFn.constName? | return none
+  unless isStructure env sName do return none
+  for f in getStructureFieldsFlattened env sName (includeSubobjectFields := false) do
+    let hit ← try
+        let p ← mkProjection x f
+        let pT ← inferType p
+        if (← isProp pT) then isDefEqCapped pT concl else pure false
+      catch _ => pure false
+    if hit then return some f
+  return none
+
+/-- For a declaration of type `∀ xs, C` with `C : Prop`: a witness that `C` is
+    definitionally the type of a hypothesis binder, or of a Prop-valued field of
+    a structure-typed binder. `reducibleOnly` restricts unfolding to reducible
+    definitions (the syntactic tier); otherwise definitions unfold, which is the
+    tier that sees through a named-`Prop` wrapper. -/
+def statementFromBinders (n : Name) (reducibleOnly : Bool) : MetaM (Option String) := do
+  let env ← getEnv
+  let some ci := env.find? n | return none
+  let run : MetaM (Option String) :=
+    forallTelescope ci.type fun xs concl => do
+      unless (← isProp concl) do return none
+      for x in xs do
+        let xT ← inferType x
+        let xn ← x.fvarId!.getUserName
+        if (← isProp xT) then
+          if ← isDefEqCapped xT concl then
+            return some s!"hypothesis {xn}"
+        else if let some f ← projectionMatchingConcl x concl then
+          return some s!"field {f} of {xn}"
+      return none
+  try
+    if reducibleOnly then withReducible run else run
+  catch _ => return none
+
+/-- Unfold the head of `e` while it is a definition from a CatCrypt namespace
+    whose value is a proposition, at most `fuel` times. -/
+partial def unfoldCatCryptProp (e : Expr) (fuel : Nat) : MetaM Expr := do
+  if fuel == 0 then return e
+  let some hn := e.getAppFn.constName? | return e
+  unless isCatCryptName hn do return e
+  let env ← getEnv
+  let some (.defnInfo _) := env.find? hn | return e
+  unless (← isProp e) do return e
+  match ← unfoldDefinition? e with
+  | some e' => unfoldCatCryptProp e'.headBeta (fuel - 1)
+  | none => return e
+
+/-- Is `e` a proposition about numbers only, relative to the locals `xs`? Every
+    local occurrence must be numeric-typed or the argument of a projection with a
+    numeric result type; an application of an opaque constant with a numeric
+    result type is a number; binders inside `e` are not admitted. -/
+partial def nominalExpr (xs : Array Expr) (e : Expr) : MetaM Bool := do
+  let env ← getEnv
+  let e ← unfoldCatCryptProp e 8
+  match e with
+  | .fvar _ =>
+    if xs.contains e then isNumericType (← inferType e) else return true
+  | .app .. =>
+    let hd := e.getAppFn
+    let args := e.getAppArgs
+    if let some hn := hd.constName? then
+      -- a projection of a local with a numeric result type
+      if (env.getProjectionFnInfo? hn).isSome then
+        if let some last := args.back? then
+          if xs.contains last then
+            if ← isNumericType (← inferType e) then
+              return ← (args.pop).allM (nominalExpr xs)
+      -- an opaque constant of numeric type is a named number
+      if let some (.opaqueInfo _) := env.find? hn then
+        if ← isNumericType (← inferType e) then return true
+    let hdOk ← match hd with
+      | .fvar _ => nominalExpr xs hd
+      | _ => pure true
+    if !hdOk then return false
+    args.allM (nominalExpr xs)
+  | .proj _ _ b =>
+    if xs.contains b then
+      if ← isNumericType (← inferType e) then return true else return false
+    nominalExpr xs b
+  | .mdata _ b => nominalExpr xs b
+  | .lam .. | .forallE .. | .letE .. => return false
+  | _ => return true
+
+/-- Is theorem `n` a nominal-bound statement: a Prop-typed declaration whose
+    type mentions a CatCrypt constant, whose conclusion is a proposition about
+    numbers only, and at least one of whose hypothesis binders is too? -/
+def isNominalStatement (n : Name) : MetaM Bool := do
+  let env ← getEnv
+  let some ci := env.find? n | return false
+  unless (← typeMentionsCatCrypt n) do return false
+  try
+    forallTelescope ci.type fun xs concl => do
+      unless (← isProp concl) do return false
+      unless (← nominalExpr xs concl) do return false
+      for x in xs do
+        let xT ← inferType x
+        if (← isProp xT) then
+          if ← nominalExpr xs xT then return true
+      return false
+  catch _ => return false
+
 /-- Pretty one-line summary of a decl's tags (`""` if clean). -/
 def summaryFor (n : Name) : MetaM String := do
   let ts ← tagsFor n
