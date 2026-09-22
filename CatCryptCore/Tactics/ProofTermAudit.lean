@@ -292,7 +292,9 @@ proof.
 
 /-- Types whose values the nominal-bound detector treats as numbers. -/
 def isNumericTypeName (n : Name) : Bool :=
-  [``Nat, ``Int, ``Real, ``ENNReal, ``NNReal, ``Rat].contains n
+  -- name literals without resolution: this module imports only `Lean`, so the
+  -- real-number types are not in scope here; the comparison is by name.
+  [`Nat, `Int, `Real, `ENNReal, `NNReal, `Rat].contains n
 
 /-- Is `t` (up to reducible unfolding) one of the numeric carrier types? -/
 def isNumericType (t : Expr) : MetaM Bool := do
