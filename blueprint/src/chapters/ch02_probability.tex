@@ -67,9 +67,10 @@ probability of failure.
   \leanok
   If two continuations $f$ and $g$ agree on every outcome in the support of
   $d$, that is $f\,a = g\,a$ whenever $d(\mathsf{some}\,a) \neq 0$, then
-  $\mathsf{bind}\,d\,f = \mathsf{bind}\,d\,g$. Behaviour off the support is
-  irrelevant because it carries no weight.
+  $\mathsf{bind}\,d\,f = \mathsf{bind}\,d\,g$.
 \end{lemma}
+
+Outcomes off the support carry no weight, so the continuations may differ there.
 
 \begin{lemma}[Bijection on a uniform distribution]
   \label{lem:uniform-bind-bij}
@@ -79,9 +80,10 @@ probability of failure.
   Pushing a bijection $f : \alpha \simeq \beta$ through a uniform distribution
   yields the uniform distribution on the target:
   $\mathsf{bind}\,(\mathsf{uniform}\,\alpha)\,(\lambda a.\,\mathsf{pure}\,(f\,a))
-   = \mathsf{uniform}\,\beta$. This is the reindexing invariance underlying
-  one-time-pad arguments.
+   = \mathsf{uniform}\,\beta$.
 \end{lemma}
+
+One-time-pad arguments rest on this reindexing invariance.
 
 \begin{lemma}[Bind support witness]
   \label{lem:bind-support-witness}
@@ -130,9 +132,10 @@ probabilistic relational Hoare logic compose.
   \leanok
   A relation $R$ \emph{lifts} to sub-distributions $d_1$ and $d_2$, written
   $d_1\,\langle R\rangle\#\,d_2$, when there exists a coupling of $d_1$ and
-  $d_2$ that satisfies $R$. This is the probabilistic analogue of a relational
-  postcondition.
+  $d_2$ that satisfies $R$.
 \end{definition}
+
+A lifted relation plays the part of a relational postcondition for sub-distributions.
 
 \begin{definition}[Diagonal and bijection couplings]
   \label{def:coupling-constructions}
@@ -173,8 +176,9 @@ probabilistic relational Hoare logic compose.
   the postcondition $S$ lifts to the continuations $f_1\,a, f_2\,b$, then $S$
   lifts to the bound computations:
   $(\mathsf{bind}\,d_1\,f_1)\,\langle S\rangle\#\,(\mathsf{bind}\,d_2\,f_2)$.
-  This is the sequencing rule of probabilistic relational Hoare logic.
 \end{theorem}
+
+This is the sequencing rule of probabilistic relational Hoare logic.
 
 \begin{lemma}[Uniform distributions lift along a bijection]
   \label{lem:liftr-uniform-bij}

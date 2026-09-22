@@ -38,24 +38,34 @@ each query reduces security to the one-time-pad argument at each drawn $r$.
   \uses{def:cpafromprf, thm:otp-perfect}
   \lean{CatCrypt.Examples.CPAFromPRF.cpa_from_prf_bound}
   \leanok
-  For a general PRF $F$ with advantage $\varepsilon$, replacing $F(k, \cdot)$ by a
-  random function turns the scheme into a one-time pad (perfect), so composing the
-  PRF-swap hop with the perfect-OTP hop through the advantage triangle inequality
-  gives $\mathsf{Adv}^{\mathrm{IND\text{-}CPA}} \le \varepsilon$.
+  Let $F$ satisfy the single-query PRF bound $\varepsilon$, and suppose the two
+  PRF-swap hops together have advantage at most $\mathsf{Adv}^{\mathrm{PRF}}(R)$ for a
+  distinguisher $R$. Then $\mathsf{Adv}^{\mathrm{IND\text{-}CPA}} \le \varepsilon$.
 \end{theorem}
+
+Replacing $F(k, \cdot)$ by a random function turns the scheme into a one-time pad,
+which is perfectly secure (Theorem~\ref{thm:otp-perfect}), so the triangle inequality
+for advantage composes the swap hop with the perfect hop. The swap hop enters as a
+hypothesis here; Theorem~\ref{thm:cpafromprf-reduction} discharges it.
 
 \begin{theorem}[Synthesized reduction]
   \label{thm:cpafromprf-reduction}
   \uses{def:cpafromprf, thm:otp-perfect}
-  \lean{CatCrypt.Examples.CPAFromPRF.cpa_from_prf_reduction}
+  \lean{CatCrypt.Examples.CPAFromPRF.cpa_from_prf_reduction_gamehop}
   \leanok
-  The PRF-swap hop is discharged, not assumed: an explicit distinguisher
-  $R_A(y) = A(r, y \oplus m)$ turns the IND-CPA adversary into a PRF distinguisher,
-  and at each fixed randomness the swap advantage \emph{equals}
-  $\mathsf{Adv}^{\mathrm{PRF}}(R_A)$. Averaging over the fresh randomness and
-  bounding each slice by $\varepsilon$ gives, with no hop hypothesis,
+  Let $F$ satisfy the single-query PRF bound $\varepsilon$. Then
   \[
     \mathsf{Adv}^{\mathrm{IND\text{-}CPA}} \;\le\; 2\varepsilon.
   \]
-  The factor two is the two independent PRF replacements, one per challenge world.
 \end{theorem}
+
+The distinguisher $R_A(y) = A(r, y \oplus m)$ turns the IND-CPA adversary into a PRF
+distinguisher, and at each fixed randomness the swap advantage equals
+$\mathsf{Adv}^{\mathrm{PRF}}(R_A)$. Averaging over the fresh randomness and bounding
+each slice by $\varepsilon$ gives the bound; the factor two counts the two PRF
+replacements, one per challenge world.
+
+The single-query PRF bound quantifies over every distinguisher that sees one output,
+with no bound on its running time. For one query that is a statistical statement: its
+least $\varepsilon$ is the distance of $F(K, x)$ from uniform. It is weaker than the
+standard multi-query PRF assumption.

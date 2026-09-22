@@ -30,10 +30,11 @@ distinguishing notion of Chapter~3.
   \lean{CatCrypt.Crypto.PairingGroup.e_bilinear}
   \leanok
   For integer exponents $a, b$,
-  $e(g_1^{\,a},\, g_2^{\,b}) = e(g_1, g_2)^{\,a b}$. This is the identity that
-  makes pairing-based verification equations checkable from public group
-  elements.
+  $e(g_1^{\,a},\, g_2^{\,b}) = e(g_1, g_2)^{\,a b}$.
 \end{lemma}
+
+Bilinearity lets a pairing-based verification equation be checked from public group
+elements.
 
 \begin{definition}[KZG structured reference string]
   \label{def:kzg-srs}
@@ -77,10 +78,13 @@ distinguishing notion of Chapter~3.
   \leanok
   The DDH advantage is the distinguishing distance between the real game, which
   gives the adversary $(g^a, g^b, g^{ab})$, and the ideal game, which gives
-  $(g^a, g^b, c)$ for a fresh uniform $c$. The DDH assumption states this
-  advantage is negligible: the true shared secret is indistinguishable from a
-  random group element.
+  $(g^a, g^b, c)$ for a fresh uniform $c$.
 \end{definition}
+
+The DDH assumption is that this advantage is small for efficient adversaries: the
+shared secret $g^{ab}$ looks like a random group element. Results over DDH are stated as
+reductions, bounding a protocol's advantage by the DDH advantage of an explicit
+adversary, with no numeric bound assumed on it.
 
 \begin{definition}[Computational Diffie--Hellman advantage]
   \label{def:cdh}
@@ -136,9 +140,11 @@ distinguishing notion of Chapter~3.
   \leanok
   An abstract cyclic group of prime order carrying scalar arithmetic
   (addition, multiplication, inverse) and scalar multiplication $g \mapsto g^a$,
-  finite and with decidable equality. This is the algebraic setting for $q$-SDH,
-  abstracting the $G_1$ component of a pairing group without the pairing itself.
+  finite and with decidable equality.
 \end{definition}
+
+The $q$-SDH assumption is stated over this group, which abstracts the $G_1$ component of
+a pairing group without the pairing.
 
 \begin{definition}[$q$-Strong Diffie--Hellman advantage]
   \label{def:qsdh}
@@ -162,9 +168,10 @@ distinguishing notion of Chapter~3.
   ODH augments a DH group with a keyed hash $H$ whose key is the DH secret. The
   advantage is the distinguishing distance between the real game, which returns
   $H(g^{ab}, \ell)$ for a sampled label $\ell$, and the ideal game, which returns
-  a fresh random value. The ODH assumption states this is negligible; taking $H$
-  to be the identity recovers DDH.
+  a fresh random value.
 \end{definition}
+
+Taking $H$ to be the identity recovers DDH.
 
 \begin{lemma}[DDH and PRF imply ODH]
   \label{def:odh-reduction}
@@ -276,9 +283,10 @@ distinguishing notion of Chapter~3.
   \leanok
   The strong-PRP game grants the adversary both the forward oracle $E(k, \cdot)$
   and the inverse oracle $D(k, \cdot)$; the SPRP advantage is the distinguishing
-  distance from a pair of independent random functions. This is the notion
-  needed by modes that decrypt (e.g.\ CBC).
+  distance from a pair of independent random functions.
 \end{definition}
+
+Modes that decrypt, such as CBC, need the inverse oracle and so this notion.
 
 \begin{definition}[Pseudorandom-function advantage]
   \label{def:prf}
@@ -320,8 +328,7 @@ distinguishing notion of Chapter~3.
   For an authenticated-encryption scheme the (IND-CPA form) AEAD advantage is the
   distinguishing distance between the real game, which returns
   $\mathrm{encrypt}(k, \mathit{pt}, \mathit{ad})$ under a random key, and the
-  ideal game, which returns a uniformly random ciphertext. Security states this
-  is negligible.
+  ideal game, which returns a uniformly random ciphertext.
 \end{definition}
 
 \begin{definition}[AEAD IND-CCA2 advantage]

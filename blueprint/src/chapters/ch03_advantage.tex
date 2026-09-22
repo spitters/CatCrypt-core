@@ -3,9 +3,9 @@
 This chapter builds the quantitative layer of the framework on top of the program
 monad $\mathsf{SPComp}$ (Chapter~1). A \emph{game} is a Boolean-valued computation;
 an adversary's \emph{advantage} measures how well it separates two games; and
-\emph{statistical distance} lifts this to a genuine pseudometric on Kleisli
-morphisms, giving the algebraic laws (triangle, post-processing, composition) that
-drive game-hopping security proofs.
+\emph{statistical distance} lifts this to a pseudometric on Kleisli morphisms, with
+the algebraic laws (triangle, post-processing, composition) that game-hopping proofs
+use.
 
 \section{Games and advantage}
 
@@ -44,10 +44,11 @@ drive game-hopping security proofs.
       \;=\; (p_0 - p_1) \sqcup (p_1 - p_0),
       \qquad p_b = \Pr[G_b \Downarrow \mathsf{true} \mid \mathrm{Heap.empty}],
   \]
-  where subtraction is truncated in $\mathbb{R}_{\ge 0}^{\infty}$. This is the
-  empty-heap distinguishing probability; the all-heap supremum is
-  $\mathsf{sdist}$ (Definition~\ref{def:sdist}).
+  where subtraction is truncated in $\mathbb{R}_{\ge 0}^{\infty}$.
 \end{definition}
+
+Advantage is the distinguishing probability from the empty heap; its supremum over all
+heaps is $\mathsf{sdist}$ (Definition~\ref{def:sdist}).
 
 \begin{definition}[Advantage against an adversary]
   \label{def:advantageA}
@@ -158,10 +159,10 @@ drive game-hopping security proofs.
   $\mathsf{sdist}$. The three pseudometric axioms hold: reflexivity
   $\mathsf{sdist}(f, f) = 0$, symmetry (Theorem~\ref{thm:sdist-sym}), and the
   triangle inequality $\mathsf{sdist}(f, h) \le \mathsf{sdist}(f, g) + \mathsf{sdist}(g, h)$.
-  It is only a \emph{pseudo}metric: $\mathsf{sdist}(f, g) = 0$ does not force
-  $f = g$, since two operationally distinct programs may induce identical output
-  distributions.
 \end{definition}
+
+Two operationally distinct programs can induce the same output distributions, so
+$\mathsf{sdist}(f, g) = 0$ does not force $f = g$ and the structure is a pseudometric.
 
 \begin{theorem}[Right post-processing lemma]
   \label{thm:sdist-comp-right}
@@ -199,9 +200,10 @@ drive game-hopping security proofs.
     \mathsf{sdist}\bigl(a \mapsto f_1\,a \bind g_1,\;
       a \mapsto f_2\,a \bind g_2\bigr) \;\le\; \varepsilon_1 + \varepsilon_2.
   \]
-  This makes $\mathsf{sdist}$-bounded pairs the morphisms of a wide sub-SMC of the
-  Kleisli category, the semantic foundation of game hopping.
 \end{theorem}
+
+The $\mathsf{sdist}$-bounded pairs are therefore the morphisms of a wide symmetric
+monoidal subcategory of the Kleisli category, and game hopping composes within it.
 
 \begin{theorem}[Advantage bounds statistical distance for pure games]
   \label{thm:sdist-isPure-le}

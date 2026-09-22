@@ -74,9 +74,10 @@ layer.
   $\mathsf{resolve}\,P\,\mathrm{id}\,x$ looks up the implementation of
   operation $\mathrm{id}$, checks that the stored source and target types match
   the requested ones, and calls it; if the operation is absent or the types
-  mismatch it returns $\mathsf{SPComp.fail}$. This is how a shallow package is
-  run.
+  mismatch it returns $\mathsf{SPComp.fail}$.
 \end{definition}
+
+A shallow package is run through $\mathsf{resolve}$.
 
 \begin{definition}[Linking of raw packages is a stub]
   \label{def:rawpackage-link}
@@ -178,9 +179,11 @@ layer.
   \mathsf{objs})$ of an index type $\iota$ and a family $\mathsf{objs} : \iota
   \to C$. A morphism carries an index equivalence $\sigma : \iota_1 \simeq
   \iota_2$ together with componentwise $C$-morphisms $\mathsf{map}\,i :
-  \mathsf{objs}_1\,i \to \mathsf{objs}_2(\sigma\,i)$. This is a symmetric
-  monoidal category with $\mathrm{Sum}$ tensor and $\mathrm{Empty}$ unit.
+  \mathsf{objs}_1\,i \to \mathsf{objs}_2(\sigma\,i)$.
 \end{definition}
+
+$\mathsf{FamObj}\,C$ is a symmetric monoidal category, with $\mathrm{Sum}$ as tensor
+and $\mathrm{Empty}$ as unit.
 
 \begin{definition}[Package interface]
   \label{def:pkginterface}
@@ -229,10 +232,11 @@ layer.
   \leanok
   $\mathsf{par}\,p_1\,p_2 = p_1 \otimes p_2$ is the family tensor of the two
   implementations. It dispatches an operation $\mathrm{inl}\,i$ to $p_1$ and
-  $\mathrm{inr}\,j$ to $p_2$. This is parallel composition proper, shared with
-  the package category, and inherits the symmetric monoidal laws from
-  $\mathsf{FamObj}$.
+  $\mathrm{inr}\,j$ to $p_2$.
 \end{definition}
+
+The package category uses the same tensor for parallel composition, which inherits the
+symmetric monoidal laws of $\mathsf{FamObj}$.
 
 \begin{definition}[Bridge from deep interfaces to package interfaces]
   \label{def:deepinterface-topkg}
@@ -312,8 +316,10 @@ layer.
   $\mathsf{substOracle}\,c\,\mathsf{env}$ recursively replaces every
   $\mathsf{oracleCall}\,\mathrm{op}\,\mathrm{dom}\,\mathrm{codom}\,x$ node in
   $c$ by $\mathsf{env}\,\mathrm{op}\,\mathrm{dom}\,\mathrm{codom}\,x$, leaving
-  the other constructors intact. This is the engine of real package linking.
+  the other constructors intact.
 \end{definition}
+
+Deep linking (Definition~\ref{def:deeppackage-link}) is defined by substitution.
 
 \begin{lemma}[Substitution composes]
   \label{lem:substoracle-comp}
@@ -333,10 +339,10 @@ layer.
   \lean{CatCrypt.Deep.RawCode.substOracle_eq_self}
   \leanok
   If $c$ contains no $\mathsf{oracleCall}$ node (predicate $\mathsf{NoOracleCall}\,c$),
-  then $\mathsf{substOracle}\,c\,\mathsf{env} = c$ for every environment. This is
-  the foundational lemma for reduction packages, whose non-delegated operations
-  never call imports.
+  then $\mathsf{substOracle}\,c\,\mathsf{env} = c$ for every environment.
 \end{lemma}
+
+Reduction packages use this lemma: their non-delegated operations never call imports.
 
 \begin{definition}[Deep linking]
   \label{def:deeppackage-link}
@@ -347,9 +353,11 @@ layer.
   the union of locations, imports $p_2$'s imports, exports $p_1$'s exports, and
   implements each exported operation by $\mathsf{substOracle}$ on $p_1$'s code,
   replacing every call to an operation in $p_2$'s exports with $p_2$'s
-  implementation (and every other call with $\mathsf{fail}$). This is the real,
-  oracle-resolving package linking.
+  implementation (and every other call with $\mathsf{fail}$).
 \end{definition}
+
+Deep linking resolves the oracle calls of the linked code, which shallow linking leaves
+in place.
 
 \begin{definition}[Deep parallel composition]
   \label{def:deeppackage-par}

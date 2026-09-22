@@ -3,13 +3,13 @@
 This chapter formalises the arithmetic behind Curve25519 / X25519: the
 projective $x$-only differential-addition and doubling formulas, the
 Montgomery ladder, the transport of the Montgomery curve to Weierstrass
-form (so its group law comes for free from Mathlib), and the capstone
-correctness theorem for the RFC~7748 base point. Four facts about
+form (so its group law is Mathlib's), and the correctness theorem for the
+RFC~7748 base point. Four facts about
 Curve25519 that are expensive to certify inside Lean (primality of the
 base field, primality of the subgroup order, the base point and its
 order) are bridged across the Rocq$\leftrightarrow$Lean boundary from the
-AUCurves development and recorded as axioms; everything downstream of them
-is proved.
+AUCurves development and recorded as five axioms, the order as the two facts
+$\ell \cdot B = 0$ and $B \neq 0$; everything downstream of them is proved.
 
 \section{The \texorpdfstring{$x$}{x}-only formulas}
 
@@ -212,8 +212,10 @@ is proved.
         (\mathsf{xdbl}\,a_{24}\,R_0,\; \mathsf{xdadd}\,R_0\,R_1\,x_P) & \neg b.
       \end{cases}
   \]
-  This is the pure field program a Jasmin/bedrock2/Rust implementation runs.
 \end{definition}
+
+The step is a pure field program, the one an implementation of the $x$-only ladder
+computes.
 
 \begin{definition}[Field-level ladder fold]
   \label{def:xladder-fold}
@@ -278,9 +280,10 @@ is proved.
   \leanok
   The map sending a Weierstrass affine point to its projective
   $x$-coordinate: the point at infinity $\mapsto (1,0)$, and a finite
-  point $(x,y) \mapsto (x,1)$. It is negation-invariant, since Montgomery
-  negation flips only $y$.
+  point $(x,y) \mapsto (x,1)$.
 \end{definition}
+
+The map is invariant under negation, since Montgomery negation changes only $y$.
 
 \begin{theorem}[$\mathsf{xdbl}$ doubling spec on Weierstrass points]
   \label{thm:xdbl-spec-w}
@@ -444,9 +447,10 @@ is proved.
   The predicate asserting that, at every scalar $n \le \mathsf{bitsToNat}\,bits$
   along the ladder path over $P$, the intermediate $\mathsf{xdbl}$ and
   $\mathsf{xdadd}$ outputs are projectively nondegenerate (not $(0,0)$).
-  This is the side condition needed to invoke
-  \ref{lem:proj-equiv-trans} at each step.
 \end{definition}
+
+Each ladder step invokes Lemma~\ref{lem:proj-equiv-trans}, whose side condition this
+predicate supplies.
 
 \begin{theorem}[Field-level ladder correctness for Curve25519]
   \label{thm:xladder-curve25519-correct}
@@ -483,24 +487,27 @@ is proved.
   to be nondegenerate.
 \end{theorem}
 
-\begin{theorem}[Unconditional X25519 ladder correctness for the base point]
+\begin{theorem}[X25519 ladder correctness for the base point]
   \label{thm:x25519-ladder-correct-basepoint}
   \uses{thm:x25519-ladder-correct, thm:curve25519-basepoint-laddernondeg, def:curve25519-prime-prime, def:curve25519-suborder-prime, def:curve25519-basepoint, def:curve25519-basepoint-addorder}
   \lean{CatCrypt.Crypto.ECC.x25519_ladder_correct_basepoint}
   \leanok
-  \textbf{Capstone.} For every scalar below the subgroup order $\ell$
-  (i.e.\ $\mathsf{bitsToNat}\,bits < \ell$), the first component of the
-  field-level Montgomery ladder run on $\mathsf{xProj}\,B$ is projectively
-  equivalent to $\mathsf{xProj}\,(\mathsf{x25519}\,(\mathsf{bitsToNat}\,bits)\,B)$:
+  For every scalar below the subgroup order $\ell$ (that is,
+  $\mathsf{bitsToNat}\,bits < \ell$),
+  the first component of the field-level Montgomery ladder run on $\mathsf{xProj}\,B$ is
+  projectively equivalent to $\mathsf{xProj}\,(\mathsf{x25519}\,(\mathsf{bitsToNat}\,bits)\,B)$:
   \[
     (\mathsf{xladderFold}\,a_{24}\,(\mathsf{xProj}\,B)\,bits).1
       \;\sim\; \mathsf{xProj}\,(\mathsf{x25519}\,(\mathsf{bitsToNat}\,bits)\,B).
   \]
-  This is \ref{thm:x25519-ladder-correct} with the $\mathsf{LadderNondeg}$
-  side condition \emph{discharged} via
-  \ref{thm:curve25519-basepoint-laddernondeg}: it carries \emph{no}
-  nondegeneracy hypothesis and is unconditional on the RFC~7748 scalar
-  range $k < \ell$. It rests only on the four AUCurves-bridged axioms
-  (\ref{def:curve25519-prime-prime}, \ref{def:curve25519-suborder-prime},
-  \ref{def:curve25519-basepoint}, \ref{def:curve25519-basepoint-addorder}).
 \end{theorem}
+
+This is Theorem~\ref{thm:x25519-ladder-correct} with its $\mathsf{LadderNondeg}$ side
+condition discharged by Theorem~\ref{thm:curve25519-basepoint-laddernondeg}, so it
+carries no nondegeneracy hypothesis over the RFC~7748 scalar range $k < \ell$. It
+depends on five Lean axioms carried across from the AUCurves Rocq development: the
+primality of the base field (\ref{def:curve25519-prime-prime}), the primality of the
+subgroup order (\ref{def:curve25519-suborder-prime}), the base point
+(\ref{def:curve25519-basepoint}), and the two facts $\ell \cdot B = 0$ and $B \neq 0$,
+from which the order of the base point (\ref{def:curve25519-basepoint-addorder}) is
+proved.

@@ -6,9 +6,11 @@
   \leanok
   A \emph{sub-distribution} over a type $\alpha$ is a probability mass function
   on $\mathrm{Option}\,\alpha$; the mass on $\mathsf{none}$ absorbs the missing
-  weight, so a sub-distribution may sum to less than one. This makes partial and
-  failing computations first-class.
+  weight, so a sub-distribution may sum to less than one.
 \end{definition}
+
+The mass on $\mathsf{none}$ lets partial and failing computations be represented
+directly.
 
 \begin{definition}[Typed heap]
   \label{def:heap}
