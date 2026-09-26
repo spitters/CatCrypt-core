@@ -39,8 +39,7 @@ auto-derives common variants:
 - `mul_ne_zero hA hB : a * b ≠ 0` (pairwise products)
 
 then calls `field_simp` with the augmented set. Designed for use after
-the SymPy-witness + `set` atoms approach (see
-`~/.claude/skills/rocq-to-lean-porting/field_fsatz_porting.md`).
+the SymPy-witness + `set` atoms approach.
 
 ## Caveats
 
