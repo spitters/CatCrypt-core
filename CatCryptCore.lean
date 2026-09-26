@@ -6,6 +6,9 @@ Authors: CatCrypt Contributors
 
 module
 
+-- Lemmas for Mathlib (the upstream queue)
+public import CatCryptCore.ForMathlib
+
 -- Probability and core computation
 public import CatCryptCore.Prob.SDistr
 public import CatCryptCore.Prob.Coupling
