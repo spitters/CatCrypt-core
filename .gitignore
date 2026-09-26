@@ -16,3 +16,7 @@ Thumbs.db
 
 # Generated from blueprint/plastex.cfg by build_web.sh (portable packages-dirs)
 blueprint/plastex.local.cfg
+
+# Local prose-lint configuration and styles for the blueprint sources
+blueprint/src/.vale.ini
+blueprint/src/styles/
