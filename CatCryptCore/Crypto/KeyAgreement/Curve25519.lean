@@ -8,6 +8,8 @@ module
 public import CatCryptCore.Crypto.KeyAgreement.MontgomeryLadder
 public import CatCryptCore.Crypto.KeyAgreement.MontgomeryAsWeierstrass
 public import Mathlib.Algebra.Field.ZMod
+public import CatCryptCore.Crypto.KeyAgreement.P25519PrimeCert
+public import CatCryptCore.Crypto.KeyAgreement.Ed25519LPrimeCert
 
 /-!
 # Curve25519 as an abelian group
@@ -32,7 +34,7 @@ concrete statement about X25519 scalar multiplication.
    defined via `nsmul` from the group structure.
 6. `x25519_eq_ladder` — the ladder computes X25519 scalar multiplication.
 
-## What remains (the fiat-crypto trust edge)
+## What remains for the abstract group
 
 - Realising `Curve25519` as `{ P : Fp25519 × Fp25519 // y² = x³ + Ax² + x }`
   with an explicit group law. ~3–6 weeks of Mathlib-style work, or
@@ -110,17 +112,15 @@ Weierstrass curve `y² = x³ + 486662·x² + x` over `Fp25519`. The
 Weierstrass points; the `MontyCurveGroup` instance is closed via
 `montgomeryW_MontyCurveGroup` from `MontgomeryAsWeierstrass.lean`.
 
-## Trust edge
+## Primality and trust edges
 
-Proving `Nat.Prime (2²⁵⁵ − 19)` in Lean requires a Pratt certificate
-that is both costly to construct and kernel-check. Mirroring the Rocq
-AUCurves development (which uses `Spec/XEdDSA_Curve25519.v` abstractly
-over `Z/pZ` without discharging primality) and standard fiat-crypto
-convention, we take primality as an axiom. It is one of five
-AUCurves-bridged trust edges in this file — each documented at its
-definition and imported across the Rocq↔Lean boundary:
-`curve25519Prime_prime` (base-field prime), `curve25519SubgroupOrder_prime`
-(the subgroup order `l` is prime), and `curve25519_basepoint` /
+Both primes are theorems proved by Pratt certificates that the kernel checks
+(`CatCrypt.PrattCertificate.pratt_prime`): `curve25519Prime_prime`
+(base-field prime, from `P25519PrimeCert.p25519lit_prime`) and
+`curve25519SubgroupOrder_prime` (the subgroup order `l`, from
+`Ed25519LPrimeCert.ed25519Llit_prime`). The remaining three trust edges are
+axioms bridged across the Rocq↔Lean boundary from the AUCurves development,
+each documented at its definition: `curve25519_basepoint` /
 `curve25519_basepoint_order_nsmul` / `curve25519_basepoint_ne_zero` (the
 RFC 7748 base point, its annihilation `l • B = 0`, and its non-identity).
 The exact order `addOrderOf B = l` is the theorem
@@ -128,12 +128,13 @@ The exact order `addOrderOf B = l` is the theorem
 primality of `l`. Everything else — including the unconditional ladder
 capstone `x25519_ladder_correct_basepoint` — is proved. -/
 
-/-- **Trust edge**: Curve25519's base-field modulus is prime. Registered
-    as an axiom because proving `Nat.Prime (2²⁵⁵ − 19)` in Lean requires
-    a costly Pocklington/Pratt certificate; this is already discharged
-    in the Rocq AUCurves development and we import it across the
-    Rocq↔Lean boundary. -/
-axiom curve25519Prime_prime : Nat.Prime curve25519Prime
+/-- Curve25519's base-field modulus `2²⁵⁵ − 19` is prime, by the Pratt
+    certificate `P25519PrimeCert.p25519lit_prime` checked by kernel reduction. -/
+theorem curve25519Prime_prime : Nat.Prime curve25519Prime := by
+  have h : curve25519Prime = CatCrypt.Crypto.Util.P25519PrimeCert.p25519lit := by
+    decide +kernel
+  rw [h]
+  exact CatCrypt.Crypto.Util.P25519PrimeCert.p25519lit_prime
 
 /-- Register primality as a typeclass fact, unlocking `Field (ZMod p)`
     and hence `Field Fp25519`. -/
@@ -215,13 +216,9 @@ nondegenerate — the group-theoretic half of discharging `LadderNondeg`. -/
 def curve25519SubgroupOrder : ℕ :=
   2 ^ 252 + 27742317777372353535851937790883648493
 
-/-- **`l` is prime.** Bridged across the Rocq↔Lean boundary from the AUCurves
-    development — `E_basepoint_order` in `Spec/Curve25519_BasepointOrder.v`
-    establishes `l • B = 0` (Qed-sealed; its Montgomery-side link
-    `scalarmult_l_eq_zero` is tactic-complete but left `Admitted` there only
-    because the Coq kernel-check times out), and the quotient `E/E[4]` has prime
-    order `l` in fiat-crypto's `Spec/Ristretto255.v`. Imported here as an axiom
-    exactly as `curve25519Prime_prime` is. This underpins the cyclic-subgroup
+/-- **`l` is prime**, by the Pratt certificate
+    `Ed25519LPrimeCert.ed25519Llit_prime` (the Ed25519 group order is the same
+    `l`) checked by kernel reduction. This underpins the cyclic-subgroup
     argument that `n • B ≠ 0` for `0 < n < l`, the group-theoretic input to
     discharging the `LadderNondeg` side-condition of `x25519_ladder_correct`.
 
@@ -229,7 +226,11 @@ def curve25519SubgroupOrder : ℕ :=
     non-identity affine points are `(0,0)`-free — plus a concrete
     `Curve25519Point` basepoint of order `l`, together turn `x25519_ladder_correct`
     unconditional in the intended regime; that proof is not yet carried here. -/
-axiom curve25519SubgroupOrder_prime : Nat.Prime curve25519SubgroupOrder
+theorem curve25519SubgroupOrder_prime : Nat.Prime curve25519SubgroupOrder := by
+  have h : curve25519SubgroupOrder = CatCrypt.Crypto.Util.Ed25519LPrimeCert.ed25519Llit := by
+    decide +kernel
+  rw [h]
+  exact CatCrypt.Crypto.Util.Ed25519LPrimeCert.ed25519Llit_prime
 
 /-- Combined nondegeneracy hypothesis over a list of bits: at every
     point of the ladder run, the intermediate projective outputs are
@@ -319,7 +320,7 @@ theorem xladderFold_curve25519_correct
     point and scalars below the subgroup order `curve25519SubgroupOrder` (`l`),
     so the theorem is unconditional in the intended regime. The group-theoretic
     input to discharging it — that `n • B ≠ 0` for `0 < n < l` — follows from
-    `curve25519SubgroupOrder_prime` (the AUCurves order bridge); the remaining
+    `curve25519SubgroupOrder_prime` (a Pratt certificate); the remaining
     field-algebraic step (`xdbl`/`xdadd` non-`(0,0)` on non-identity affine
     points) plus a concrete order-`l` basepoint would remove `hND` entirely.
     Until that lands, read this as correctness *wherever the ladder path stays
@@ -407,8 +408,7 @@ theorem fp25519_sixteen_a24_sub_ne_zero :
 
 `curve25519_basepoint` is the RFC 7748 base point `u = 9` as a concrete
 `Curve25519Point`. Two of its properties are bridged across the Rocq↔Lean
-boundary from the AUCurves development, each an axiom exactly as
-`curve25519Prime_prime` and `curve25519SubgroupOrder_prime` are:
+boundary from the AUCurves development, each as an axiom:
 `curve25519_basepoint_order_nsmul` records the annihilation `l • B = 0`
 (`E_basepoint_order` in `Spec/Curve25519_BasepointOrder.v`, with `l` the prime
 subgroup order of `E/E[4]` from fiat-crypto's `Spec/Ristretto255.v` — the Rocq
