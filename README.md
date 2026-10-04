@@ -10,7 +10,8 @@ logic, state-separated packages, proof automation, forking lemmas, and
 Montgomery-curve mathematics.
 
 📖 **Documentation:** [hosted API reference](https://spitters.github.io/CatCrypt-core/) ·
-[design & influences](DESIGN.md)
+[design & influences](DESIGN.md) · [The Joy of Cryptography in CatCrypt](JoyOfCrypto.md) ·
+[blueprint](blueprint/src/)
 
 This is the **minimal-basis release**. The universal-composability theory,
 concurrent UC, quantum verification, the verified compilation pipeline, and
@@ -48,14 +49,18 @@ See [BUILDING.md](BUILDING.md) for building the library and the documentation.
 
 ## Dependencies
 
-Pinned in `lakefile.lean` and `lake-manifest.json`:
+Pinned in `lakefile.lean` and `lake-manifest.json`; the toolchain is in `lean-toolchain`:
 
-- [Mathlib](https://github.com/leanprover-community/mathlib4) `v4.30.0`
+- [Mathlib](https://github.com/leanprover-community/mathlib4)
 - [nominal-lean](https://github.com/spitters/nominal-lean) — the nominal-sets layer (`Nominal/`)
 
 ## Documentation
 
 - **API reference:** [doc-gen4](https://spitters.github.io/CatCrypt-core/)
+- **The Joy of Cryptography:** [JoyOfCrypto.md](JoyOfCrypto.md) maps the chapters of
+  Rosulek's textbook to the worked schemes in `CatCryptCore/Examples/`; the
+  [blueprint](blueprint/src/) (leanblueprint, built by `blueprint/build_web.sh`) has a
+  chapter per foundation layer and per worked scheme, from the one-time pad to Σ-protocols.
 - **Design and influences:** [DESIGN.md](DESIGN.md) ·
   **Changelog:** [CHANGELOG.md](CHANGELOG.md) ·
   **Contributing:** [CONTRIBUTING.md](CONTRIBUTING.md)

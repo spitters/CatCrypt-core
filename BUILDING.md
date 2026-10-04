@@ -2,8 +2,8 @@
 
 ## The library
 
-Requires [elan](https://github.com/leanprover/elan). The pinned toolchain is
-`leanprover/lean4:v4.30.0` (see `lean-toolchain`).
+Requires [elan](https://github.com/leanprover/elan), which installs the toolchain
+named in `lean-toolchain`.
 
 ```
 lake exe cache get    # optional: pull the Mathlib olean cache
