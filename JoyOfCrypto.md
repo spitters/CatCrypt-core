@@ -1,180 +1,118 @@
-# The Joy of Cryptography in CatCrypt — a roadmap
+# The Joy of Cryptography in CatCrypt
 
-A plan for growing CatCrypt-core into a mechanized companion to Mike Rosulek's
-free textbook *[The Joy of Cryptography](https://joyofcryptography.com/)*.
+This document maps Mike Rosulek's free textbook
+*[The Joy of Cryptography](https://joyofcryptography.com/)* to the worked schemes in
+`CatCryptCore/Examples/`. Rosulek proves security with *interchangeable libraries*: a
+proof replaces one library by an indistinguishable one, simplifies the composed code,
+and repeats. CatCrypt's state-separating packages are the same device, and the
+simplification steps are performed by the tactics `ssprove_code_simpl`,
+`ssprove_contract_*`, `ssprove_copy_propagate_*`, `ssprove_crypto` and `adv_game_hop`.
 
-**Why this book.** Rosulek teaches with *interchangeable libraries*: a proof
-replaces one library by an indistinguishable one, simplifies the composed code,
-and repeats. That is exactly the state-separating-packages framework CatCrypt is
-built on, and the "simplify the composed code" step is what the new tactics
-(`ssprove_code_simpl`, `ssprove_contract_*`, `ssprove_copy_propagate_*`,
-`ssprove_crypto`) automate. The book is therefore the natural showcase curriculum
-— and, unusually, most of it is already formalized in the wider CatCrypt tree.
+Every module listed here is part of this repository and of its library build. The
+library is built with `sorry` reported as an error, so every theorem named below is
+proved; the statement column records the hypotheses a theorem carries. The
+[blueprint](https://spitters.github.io/CatCrypt-core/blueprint/) states the same
+results informally, one chapter or section per module, with links to the declarations.
 
-**How to read this roadmap.** It is aspirational, not a contract. Where we
-already have a *stronger* statement than the book's (an exact bound, a perfect-
-security corollary, a machine-checked reduction with no axioms, or a descent all
-the way to field arithmetic), we take that instead of the textbook version —
-those cases are called out below. "Have (dev)" means a proof exists in the
-development monorepo; the extension is curating clean, self-contained,
-book-aligned versions into core, each with its own blueprint chapter. "Blueprint"
-points at the foundations the result rests on (already in `blueprint/`); the
-example chapters themselves are the roadmap's deliverables.
+## How to read the tables
 
----
+- *Perfect* means an advantage equal to `0` for every adversary. Most perfect results
+  instantiate a primitive by a bijection family (for each input, `k ↦ F(k, x)` is a
+  bijection from keys to outputs); over a uniform key such a primitive is
+  information-theoretically ideal, and the proof is a single bijection coupling.
+- *Reduction* means a bound of the form `Adv_scheme(A) ≤ Σ Adv_prim(B_i(A))` with
+  each `B_i` an explicit adversary defined in the module.
+- *Hop hypotheses* means the composition is proved and the individual game hops
+  (typically the soundness of a reduction) are arguments of the theorem.
 
-## Landed in core (`CatCryptCore/Examples/`)
+Chapter numbers follow the online edition of the book.
 
-Eighteen worked schemes are now formalized directly in core — each core-clean
-(imports only core + Mathlib), sorry-free, `lean_verify`-checked to use only the
-standard axioms (`propext`, `Classical.choice`, `Quot.sound`), and carrying its own
-blueprint chapter (26 chapters total). The **proof-ladder benchmark is complete**:
-symmetric 3/3 (PRF, PRG, Encrypt-then-MAC), asymmetric 1/1 (KEM-DEM), protocol 1/1
-(Basic Hash).
+## Chapters of the book
 
-| Module | Headline result |
-|---|---|
-| `OneTimePad` | `otp_perfect_indcpa` — perfect IND-CPA (Adv = 0) |
-| `PRG` | `bijPRG_perfect` — perfect PRG security |
-| `PRF` | `bijPRF_perfect` — perfect PRF security |
-| `CPAFromPRF` | `bijCPA_perfect_indcpa` — a PRF gives IND-CPA encryption |
-| `EncryptThenMAC` | `boolEtM_perfect_indcpa` — generic EtM combinator + perfect instantiation |
-| `MAC` | `bijMAC_forgery_prob = 1/\|Tag\|` — the information-theoretic optimum |
-| `BasicHash` | `auth_zero_advantage_xor` (perfect auth) + unlinkability counterexample |
-| `Commitment` | `maskComm_perfect_hiding` + `idComm_perfectly_binding` |
-| `SecretSharing` | `ss_perfect_privacy` — 2-of-2 XOR, one share reveals nothing |
-| `ShamirSecretSharing` | `shamir_perfect_privacy` — general `t`-of-`n`, any `t−1` shares reveal nothing (+ `shamir_reconstruct`) |
-| `KEMDEM` | `pke_security` — full three-term hybrid bound + perfect XOR-DEM |
-| `ElGamal` | `elgamal_indcpa_eq_ddh` — exact real-or-random `= DDH` (matches SSProve `OT_CPA`); `elgamal_indcpa_le_ddh` — l-or-r `≤ 2·DDH` |
-| `Schnorr` | `schnorr_special_soundness` + `dlFromForking_correct` (forking → DL) |
-| `SigmaProtocol` | `simpleSigma_shvzk` + `simpleSigma_special_sound` — SHVZK + special soundness (⇒ `commitment_binding`) |
-| `EtMCCA` | `boolEtM_indcca_reduces` — IND-CCA = confidentiality + MAC integrity |
-| `CTRMode` | `ctr_perfect_indcpa` — single-block CTR is perfectly IND-CPA |
-| `CBCMode` | `cbc_perfect_indcpa` — single-block CBC is perfectly IND-CPA |
-| `DiffieHellman` | `ka_advantage_eq_ddh` — DH key indistinguishability = DDH |
+| Ch. | Topic | Module | Main results | Statement |
+|---|---|---|---|---|
+| 1–2 | One-time pad, one-time secrecy | `OneTimePad` | `otp_correct`, `otp_perfect_indcpa`, `otp_nompkg_secure`, `otp_uc` | Perfect IND-CPA over `Bool`; the same games as perfectly secure packages and as UC emulation with error 0 |
+| 1–2 | (same, by reflection) | `ReflectTacticDemo` | `demo_otp_nompkg_secure`, `demo_otp_uc` | The two package-level OTP results, each by one call of the reflective package tactic |
+| 3 | Secret sharing | `SecretSharing` | `shareXor_reconstruct`, `ss_perfect_privacy` | 2-out-of-2 XOR sharing; one share has advantage 0 |
+| 3 | Secret sharing | `ShamirSecretSharing` | `shamir_reconstruct`, `shamir_perfect_privacy` | Shamir `t`-out-of-`n` over `ZMod p`: Lagrange reconstruction from `t` shares; any `t − 1` shares have advantage 0 |
+| 5 | Pseudorandom generators | `PRG` | `bijPRG_perfect`, `triple_prg_bound_of_assumption` | Perfect security of a bijective generator (length-preserving); triple-from-double bound `2·ε` with hop hypotheses |
+| 6 | Pseudorandom functions | `PRF` | `bijPRF_perfect`, `cascade_prf_bound` | Perfect bijection-family PRF; cascade bound `2·ε + q(q−1)/2N` with hop hypotheses |
+| 6 | PRG from a PRF | `PRFPRG` | `prg_decomp_security_bound` | Over `Bool`, two counters: sum of two PRF advantages of explicit reductions, for the variant with independent seeds |
+| 7 | CPA security | `CPAFromPRF` | `bijCPA_perfect_indcpa`, `cpa_from_prf_bound` | `(r, F(k, r) ⊕ m)`: perfect for a bijection family; `≤ ε` under a PRF assumption with the PRF-swap hop as a hypothesis |
+| 7 | Deterministic encryption | `DetCPA` | `det_enc_xor_insecure` | Deterministic XOR encryption: a distinguisher with advantage exactly 1 |
+| 7 | IND-CPA games | `INDCPA` | `perfect_indcpa_zero_advantage` | Standalone IND-CPA games; perfect security gives advantage 0 |
+| 8 | Block-cipher modes | `CTRMode` | `ctr_perfect_indcpa`, `ctr_indcpa_bound` | Single-block CTR: perfect for a bijection family; `≤ ε` under a PRF assumption, with the PRF-swap hop as a hypothesis |
+| 8 | Block-cipher modes | `CBCMode` | `cbc_perfect_indcpa`, `cbc_indcpa_bound` | Single-block CBC: perfect for a family bijective in key and input; `≤ 2·ε` for a real cipher under a PRF assumption, with the two swap hops as hypotheses |
+| 9 | Chosen-ciphertext attacks | `Crypto/SecurityDefs` | `INDCCA_Game`, `INDCCA_reduces_to_INDCPA` | IND-CCA game with a decryption oracle; IND-CCA ≤ IND-CPA + two decryption-oracle integrity gaps, for any scheme |
+| 10 | MACs | `MAC` | `bijMAC_forgery_prob`, `boolXorMAC_forgery_prob` | Bijection-family MAC: single-query forgery probability exactly `1/\|Tag\|` |
+| 10 | MAC from a PRF | `PRFMAC` | `security_based_on_prf` | Over `Bool`: forgery on an unqueried message, two PRF advantages plus a statistical gap of 1/2 |
+| 12 | Encrypt-then-MAC | `EncryptThenMAC` | `EtM_correct`, `boolEtM_perfect_indcpa` | Generic EtM combinator preserves correctness; perfect IND-CPA of the XOR instance |
+| 12 | Encrypt-then-MAC under CCA | `EtMCCA` | `boolEtM_indcca_reduces` | IND-CCA advantage of the XOR instance equals its MAC-integrity gaps (the IND-CPA term is 0) |
+| 12 | Universal hashing | `UniversalHash` | `boolPairwiseHash_is_universal`, `boolPairwiseHash_mac_security` | A 1/2-universal family over `Bool`; one-time forgery advantage ≤ 1/2 |
+| 13 | Signatures | `Schnorr` | `schnorr_special_soundness`, `schnorr_forking_bound`, `dlFromForking_correct` | Schnorr: special soundness; fork success ≥ `acc² − acc/p` by the core forking lemma; extraction returns the discrete log |
+| 14 | Diffie–Hellman | `DiffieHellman` | `ka_advantage_eq_ddh` | Key-indistinguishability advantage equals the DDH advantage of an explicit reduction |
+| 15 | ElGamal | `ElGamal` | `elgamal_indcpa_le_ddh`, `elgamal_indcpa_eq_ddh` | Pairing-group formulation: IND-CPA ≤ two DDH advantages of explicit reductions; the distance from the real encryption of `m₀` to the ideal DDH world equals one DDH advantage |
+| 15 | ElGamal | `ElGamalDDH`, `CyclicGroupDDH` | `elgamal_correct`, `elgamal_indcpa_security` | Cyclic group with explicit exponents: IND-CPA ≤ two DDH advantages of explicit reductions |
+| 15 | ElGamal as UC | `ElGamalUCConcrete` | `elgamal_uc_concrete` | Concrete UC emulation bounded by the DDH advantages of the reductions |
+| 15 | Hashed ElGamal | `HashedElGamal` | `heg_indcpa_le_ddh`, `heg_perfect_hash_security` | Two DDH advantages, under a message-independence hypothesis on the ideal reduction; advantage 0 when the mask is uniform |
+| 15 | Hybrid encryption | `KEMDEM` | `pke_security`, `pke_perfect_security`, `xorHybrid_perfect_security` | `Adv_PKE ≤ Adv_KEM + Adv_DEM + Adv_KEM` with three explicit reductions; perfect when both components are |
 
-`SecurityDefs` now also carries a faithful `INDCCA_Game` (a key-closing decryption
-oracle) and the generic `INDCCA_reduces_to_INDCPA`. Perfect CCA is deliberately
-*not* claimed — it is impossible in this information-theoretic model — so the CCA
-result is the honest authenticated-encryption reduction, not a vacuous Adv = 0.
+Chapter 4 (intractable computations) and Chapter 11 (hash functions) have no
+dedicated module. The hardness assumptions used above (DDH, CDH, DL, t-SDH, ODH, CR,
+OWF, PRP, RSA and others) are defined in `Crypto/Assumptions/`.
 
-The fuller / heavier variants and the published-mirror packaging live in the sibling
-`catcrypt-examples` layer (requires core only). The block-cipher modes are proved at
-the single-block perfect level; multi-block (CTR product-of-bijections, CBC/PRP
-chaining) is the honest computational-only frontier, documented per module rather
-than faked. With that, the Joy-of-Cryptography curriculum is covered.
+### Where the core statement differs from the book
 
----
+- The block-cipher modes are proved for a single block. Multi-block CTR needs a
+  product-of-bijections argument and multi-block CBC a PRP-chaining argument; neither
+  is formalized.
+- A bijective generator is length-preserving, so `bijPRG_perfect` does not cover a
+  length-extending PRG; the length-extending case is the triple-from-double bound.
+- Perfect IND-CCA is impossible in this information-theoretic model: a one-time-pad
+  decryption oracle leaks the key, and a finite tag space admits guessing. The CCA
+  results are therefore reductions to integrity gaps.
+- `PRFPRG` and `PRFMAC` work over `Bool`, so their bounds are concrete numbers rather
+  than functions of a security parameter.
 
-## Chapter roadmap
+## Beyond the book
 
-| JoC topic | Textbook result | CatCrypt status | Stronger than the book? |
+| Topic | Module | Main results | Statement |
 |---|---|---|---|
-| One-time pad / perfect secrecy | OTP is perfectly secret | Have (dev: `OTPExample`) | **Yes** — proved as *exact* `Advantage = 0` (information-theoretic), via bijection coupling |
-| Pseudorandom generators | PRG security; length extension | Have (dev: `TriplePRG`) | **Yes** — triple-from-double `Adv ≤ 2ε`, *plus* a perfect-security case and a distinguishability *counterexample* |
-| PRFs / PRPs / block ciphers | PRF security; PRP/PRF switching | Have (dev: `CascadePRF`, switching lemma) | **Yes** — cascade `Adv ≤ 2ε_prf + q(q-1)/2N` with the birthday term *proved* (not assumed), and a perfect-security corollary |
-| CPA security | IND-CPA of PRF-based encryption | Have (dev: `INDCPAExample`) | Matches |
-| Block-cipher modes | CTR / CBC security | Have (dev: `CTRMode`, `CBCMode`) | Matches |
-| CCA security | IND-CCA; padding attacks | Have (dev: `INDCCA`, `CramerShoup`) | Matches (also a full Cramer–Shoup, beyond the book) |
-| MACs | EUF-CMA; CBC-MAC | Have (dev: `CBCMAC`, `EUFCMA`) | Matches |
-| Hash functions | collision resistance | Have (dev: `BasicHash`, `Hash`) | **Yes** — perfect authentication *and* an unlinkability counterexample no other treatment gives |
-| Authenticated encryption / AEAD | Encrypt-then-MAC; AEAD | Have (dev: `EncryptThenMAC`, `AsconAEAD`) | EtM proved as a combined IND-CCA bound + perfect XOR case |
-| Diffie–Hellman / key agreement | DH key exchange | Have (dev: `KeyExchange`) | **Yes** — plus a Curve25519 x-only ladder capstone proved *down to the field arithmetic* (`x25519_ladder_correct_basepoint`) |
-| Public-key / ElGamal / hybrid | ElGamal IND-CPA; hybrid encryption | Have (dev: `ThresholdElGamalEx`, `KEMDEM`) | KEM-DEM `Adv ≤ KEM + DEM + KEM` + perfect XOR instantiation |
-| Digital signatures | signature security; Schnorr | Have (dev: `Schnorr`, `SchnorrForking`) | Schnorr → DL via the (formalized) general forking lemma |
-| Commitments; secret sharing | hiding/binding; threshold sharing | Have (dev: `Commitment`, `SecretSharingEx`) | Matches |
+| Basic Hash (RFID protocol) | `BasicHash` | `auth_zero_advantage_xor`, `unlink_real_always_true`, `unlink_ideal_not_always_true` | Perfect authentication for a bijection-family hash; for the XOR hash the two unlinkability games are distinguishable |
+| Commitments | `Commitment` | `maskComm_perfect_hiding`, `idComm_perfectly_binding` | A perfectly hiding and a perfectly binding commitment over `Bool` |
+| Σ-protocols | `SigmaProtocol` | `simpleSigma_shvzk`, `simpleSigma_special_sound`, `simpleSigma_hiding`, `simpleSigma_binding` | Completeness, perfect SHVZK and special soundness; the derived commitment is hiding and binding |
+| Σ-protocols with prover state | `Sigma` | `simpleSigma_shvzk_given`, `simpleSigma_shvzk`, `simpleSigma_special_sound` | The same properties for a stateful prover, with a fixed or a sampled challenge |
+| Chaum–Pedersen | `ChaumPedersen`, `GroupParam` | `chaumPedersen_SHVZK_visible`, `chaumPedersen_special_soundness`, `chaumPedersen_uc_secure` | Equality of discrete logarithms: SHVZK, special soundness, UC emulation with error 0 |
+| Oblivious transfer | `OT` | `otEnc_message_independent`, `receiver_security` | Naor–Pinkas: per-instance sender privacy when `d ≠ ab`; receiver privacy ≤ two DDH advantages |
+| Coin tossing | `CoinToss` | `coinToss_eq` | The sum of two uniform elements of `ZMod p` is uniform |
+| Pedersen commitments | `Commitments/Pedersen`, `Commitments/CommitmentScheme` | `pedersen_perfect_hiding`, `pedersen_binding_le_dlog`, `pedersen_hiding_uc` | Perfect hiding; binding ≤ DL advantage of an explicit reduction; UC hiding with error 0 |
+| KZG commitments | `Commitments/KZG/*`, `Commitments/PolyCommitScheme` | `KZG_knowledge_sound`, `honestAGMOutput_checks` | Knowledge soundness in the algebraic group model: ≤ `(t + 1)` · t-SDH advantage of an explicit reduction |
+| Nested hybrids | `PKE/*` | `Adv_MT_CPA_OT`, `Adv_MI_MT_CPA_nested` | Larsen–Schürmann (CSF 2025): many-time ≤ `q·ε`, multi-instance ≤ `n·q·ε`, from per-step hypotheses on the SLIDE adversaries |
+| Cryptobox (NaCl `crypto_box`) | `Cryptobox/*` | `pkae_game_hopping`, `cryptobox_security_full` | PKAE ≤ `2·ε_pkey + ε_nike + ε_ae`; the PKEY hops are proved, the NIKE and AE hop bounds are hypotheses |
+| Hybrid argument | `DeepHybrid` | `two_instance_advantage_bound`, `three_instance_triangle` | Hybrid ladders over the deep embedding for XOR encryption |
 
-**Suggested first arc into core:** OTP → PRG → PRF → CPA. OTP validates the
-examples-in-core + layering pattern end to end; PRG/PRF/CPA are where the
-interchangeable-library tactic story first pays off.
+The OT module also states a game-level sender-privacy equality, `ot_sender_secure`.
+Its hypothesis requires `c ≠ ab` for every triple of exponents, which fails at
+`c = ab`; the per-instance lemma above is the usable statement, and the
+`1/|Exp|` term for the event `c = ab` is not formalized.
 
----
+## Proof-ladders benchmark
 
-## Proof-ladder protocols
+The community [proof-ladders](https://github.com/proof-ladders/) benchmark poses a
+fixed set of challenges. The modules above cover the following.
 
-Concrete evidence that these are real theorems, not slideware: CatCrypt's entries
-in the community **[proof-ladders](https://github.com/proof-ladders/) benchmark**,
-which pits provers against a fixed challenge set. CatCrypt-Lean is the first Lean 4
-entrant and the only one carrying **0 axioms and 0 `sorry`** across its solutions.
+| Ladder | Challenge | Module | Statement |
+|---|---|---|---|
+| Symmetric | PRF cascade | `PRF` | `cascade_prf_bound`: `2·ε + q(q−1)/2N`, all three hop bounds (including the switching hop) as hypotheses |
+| Symmetric | PRG triple | `PRG` | `triple_prg_bound_of_assumption`: `2·ε`, hop soundness as hypotheses |
+| Symmetric | Encrypt-then-MAC | `EtMCCA` | `boolEtM_indcca_reduces`: IND-CCA reduced to MAC integrity |
+| Asymmetric | KEM-DEM | `KEMDEM` | `pke_security`: three explicit reductions, no hypotheses |
+| Protocol | Basic Hash | `BasicHash` | Perfect authentication and the unlinkability counterexample |
 
-| Ladder | Challenges | CatCrypt | Others |
-|---|---|:--:|---|
-| Symmetric | PRF, PRG, Encrypt-then-MAC | **3/3** | EasyCrypt 3/3, CryptoVerif 1/3 |
-| Asymmetric | KEM+DEM PKE | **1/1** | EasyCrypt 1/1, ProofFrog 1/1, Domino 1/1 (draft) |
-| Protocol | 6 problems | **1/6** (Basic Hash) | Tamarin 6/6, ProVerif/CryptoVerif/Squirrel 3/6, EasyCrypt 2/6 |
-| Implementation | 18 exercises | 0/18 | out of scope (Aeneas/Jasmin territory) |
+The other protocol challenges and the implementation ladder are not addressed.
 
-These `Examples/` (CascadePRF, TriplePRG, EncryptThenMAC, BasicHash, KEMDEM, …) are
-exactly the Joy-of-Crypto results above, and are the first candidates to pull into
-a core `Examples/` suite.
+## Attribution
 
----
-
-## Comparison with other provers
-
-### Qualitative — do we prove the same theorems?
-
-**On the symmetric ladder and KEM-DEM, yes — and often more.** For PRF, PRG,
-Encrypt-then-MAC and KEM-DEM we prove the same computational bound EasyCrypt does,
-and additionally a *perfect-security corollary* (`Advantage = 0` for the XOR /
-bijection instantiation) that the computational tools don't state. For Basic Hash
-we prove perfect authentication and an explicit *negative* result (XOR-hash breaks
-unlinkability) that is unique among the ladder solutions.
-
-**Where other tools are genuinely ahead:**
-- **EasyCrypt** proves *exact* reductions (equalities, e.g. `Adv_CPA = Adv_CPA(E,R)`), where our combined bounds go through the triangle inequality. That precision is theirs.
-- **EasyCrypt** has demonstrated heavy stateful/multi-query reasoning end-to-end (its ~960-line Basic Hash unlinkability proof handles lazy sampling + bad events). We have the tactics and lemmas for this but have not yet driven them through that example.
-- **CryptoVerif** is far more concise via built-in crypto macros and automated game-hopping (its Encrypt-then-MAC is ~26 lines) — at the cost of an opaque, tool-internal proof.
-- **Tamarin / ProVerif** work in a symbolic model under active attackers with unbounded sessions — a different, stronger threat model than game-based security, and they cover all 6 protocol problems where we cover 1.
-
-**The structural difference:** CatCrypt is a *general-purpose* prover (Lean 4 +
-Mathlib); every competitor here is domain-specific (EasyCrypt = crypto pRHL,
-CryptoVerif = game-hopping, Tamarin = protocol search). We inherit Mathlib's
-mathematics for free (the curve capstone reuses the Weierstrass group law); they
-get crypto-specialized automation for free.
-
-### Quantitative — proof size (code lines, one comment-stripped counter, 2026-07-06)
-
-Measured from local sources with a single language-aware counter that drops blank
-lines and both block (`(* *)` / `/- -/`) and line (`--`) comments, so "code" means the
-same thing for every tool. EasyCrypt = the `proof-ladders` benchmark solutions;
-SSProve-Rocq = `coq-ssprove.0.3.0`; CatCrypt = core/dev `Examples/` + shared libs.
-Matched on statement strength.
-
-| Challenge (computational) | CatCrypt | SSProve-Rocq | EasyCrypt |
-|---|:--:|:--:|:--:|
-| PRF cascade | **94** + 214 shared ² | 344 ¹ | 618 + 36 shared |
-| PRG triple | **161** | 151 ³ | 255 |
-| KEM-DEM (IND-CPA) | 599 | 604 | **200** |
-| Basic Hash | 87 ⁴ | — | 191 + 725 ⁴ |
-| **Axioms / admitted** | **0** | **0** | 0–13 per file |
-
-¹ SSProve `PRF.v` leaves its birthday `statistical_gap` negligible; CatCrypt's dev
-cascade discharges it fully. ² Shared libs (SwitchingLemma 36 + MultiQueryPRF 41 +
-BirthdayBound 68 + XorBij 69 = 214 code) amortize across every cascade-style proof.
-³ `StretchPRG.v` is the simpler double-from-single variant. ⁴ Not a like-for-like
-row: CatCrypt proves perfect auth + an unlinkability *counterexample*; EasyCrypt's 725
-lines prove *computational* unlinkability (lazy sampling + bad events).
-
-Read this as *rough magnitude, not a ranking* — the tools count different things and
-reflect different proof styles. Two honest takeaways: EasyCrypt's module system wins
-KEM-DEM decisively (~3×); on the PRF cascade CatCrypt's proof file is ~6.5× smaller
-than EasyCrypt's (94 vs 618), or ~2× once amortized shared libraries are folded in — a
-narrower margin than earlier drafts claimed, and with no axioms.
-
----
-
-## Caveats and attribution
-
-- **This roadmap is flexible.** Prefer the stronger available theorem to the
-  textbook one; skip or reorder freely.
-- **Layering.** Core examples may use only core foundations, the assumption
-  catalog, the tactics, and Mathlib — never a downstream (development-monorepo) import.
-  Adapting the dev proofs means extracting the book-level core and stripping
-  downstream dependencies.
-- **Book-level, not the advanced variant.** Several dev proofs overshoot the book
-  (`CramerShoup`, `ThresholdElGamal`, `AsconAEAD`); take the pedagogical core.
-- **Attribution.** *The Joy of Cryptography* is CC BY-NC-SA. Definitions and
-  theorems are not copyrightable; formalize the *results* with a clear
-  "following Rosulek, *The Joy of Cryptography*, §N" credit per module. Do not
-  copy the book's prose or figures.
+*The Joy of Cryptography* is licensed CC BY-NC-SA. The modules formalize its results,
+credit the relevant chapter in their docstrings, and do not reproduce its prose or
+figures.
