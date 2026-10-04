@@ -1,0 +1,133 @@
+\chapter{Worked examples: further symmetric-key results}
+
+Six smaller modules complete the symmetric-key part of Rosulek, \emph{The Joy of
+Cryptography}: the insecurity of deterministic encryption (Chapter~7), a PRG from
+a PRF (Chapter~6), a MAC from a PRF (Chapter~10), universal hashing and the
+Carter--Wegman MAC (Chapter~12), a standalone IND-CPA game, and a hybrid argument
+over the deep embedding. Several of them are stated over $\Bool$ so that every
+probability is computed exactly; the text below records where a statement is
+narrower than the textbook claim.
+
+\section{Deterministic encryption is not CPA-secure}
+
+\begin{theorem}[Deterministic XOR encryption is broken]
+  \label{thm:detcpa-insecure}
+  \uses{def:advantage}
+  \lean{CatCryptCore.Examples.DetCPA.same_msg_prTrue, CatCryptCore.Examples.DetCPA.diff_msg_prTrue, CatCryptCore.Examples.DetCPA.det_enc_xor_insecure}
+  \leanok
+  For the deterministic scheme $\mathsf{enc}(k, m) = k \oplus m$, the game that
+  encrypts $m$ twice and the game that encrypts $m$ and $\lnot m$ are
+  distinguished with advantage exactly $1$ by the adversary that compares the two
+  ciphertexts (Rosulek, §7.1).
+\end{theorem}
+
+\section{A standalone IND-CPA game}
+
+\begin{definition}[IND-CPA games]
+  \label{def:indcpa-standalone}
+  \uses{def:spcomp, def:advantage}
+  \lean{CatCryptCore.Examples.INDCPA.indCPA_real, CatCryptCore.Examples.INDCPA.INDCPA_Advantage, CatCryptCore.Examples.INDCPA.PerfectINDCPA}
+  \leanok
+  The left and right challenge games of a symmetric scheme, their advantage, and
+  perfect IND-CPA security as a relational judgement between them.
+\end{definition}
+
+\begin{theorem}[Perfect IND-CPA gives advantage zero]
+  \label{thm:indcpa-standalone-zero}
+  \uses{def:indcpa-standalone, thm:advantage-zero-of-rhoare}
+  \lean{CatCryptCore.Examples.INDCPA.perfect_indcpa_zero_advantage}
+  \leanok
+  A perfectly IND-CPA scheme has advantage $0$ against every adversary.
+\end{theorem}
+
+\section{A PRG from a PRF}
+
+Rosulek, Claim~6.3: $G(s) = (F(s, 0), F(s, 1))$. The module works over
+$\mathsf{Word} = \Bool$ with two counter values.
+
+\begin{definition}[Decomposed hybrids]
+  \label{def:prfprg-decomp}
+  \uses{def:spcomp}
+  \lean{CatCrypt.Examples.PRFPRG.gen_hyb_decomp, CatCrypt.Examples.PRFPRG.prf_advantage}
+  \leanok
+  Hybrid games in which the two PRF evaluations use independent seeds; hybrid
+  $i$ replaces the first $i$ outputs by uniform words.
+\end{definition}
+
+\begin{theorem}[Hybrid bound]
+  \label{thm:prfprg-bound}
+  \uses{def:prfprg-decomp, thm:advantageA-triangle}
+  \lean{CatCrypt.Examples.PRFPRG.prg_decomp_security_bound}
+  \leanok
+  The distance between the first and last decomposed hybrid is at most the sum of
+  two PRF advantages of explicit reduction adversaries. The bound concerns the
+  decomposed games, in which the two evaluations use independent seeds; it is not
+  a bound on the counter-mode generator with a single seed.
+\end{theorem}
+
+\begin{theorem}[The XOR instantiation]
+  \label{thm:prfprg-xor}
+  \uses{def:prfprg-decomp}
+  \lean{CatCrypt.Examples.PRFPRG.xorPRF_zero_advantage, CatCrypt.Examples.PRFPRG.xorPRF_hyb_1_to_2_zero_advantage}
+  \leanok
+  For the XOR function the single-query PRF advantage is $0$, and so is the
+  advantage between the second and third hybrids of the single-seed construction.
+\end{theorem}
+
+\section{A MAC from a PRF}
+
+Rosulek, Claim~10.4: $\mathsf{GetTag}(m) = F_k(m)$. The module proves the
+individual game hops over $\Bool$ and composes them for a forgery on a message
+other than the one queried.
+
+\begin{lemma}[Game hops]
+  \label{lem:prfmac-hops}
+  \uses{lem:liftr-uniform-bij}
+  \lean{CatCrypt.Examples.PRFMAC.prf_uniform, CatCrypt.Examples.PRFMAC.mac_same_message_coupling, CatCrypt.Examples.PRFMAC.forgery_diff_message_uniform}
+  \leanok
+  The PRF output on a uniform key is uniform; on the queried message the real and
+  ideal tags couple; a forgery on another message verifies with a uniform bit.
+\end{lemma}
+
+\begin{theorem}[Forgery bound]
+  \label{thm:prfmac-bound}
+  \uses{lem:prfmac-hops, thm:advantageA-triangle}
+  \lean{CatCrypt.Examples.PRFMAC.security_based_on_prf}
+  \leanok
+  For a forgery on a message different from the queried one, the distance between
+  the real and ideal MAC games is at most two PRF advantages plus a statistical
+  gap of $1/2$, the guessing probability of a one-bit tag.
+\end{theorem}
+
+\section{Universal hashing and the Carter--Wegman MAC}
+
+\begin{definition}[Universal hash family]
+  \label{def:uhf}
+  \uses{def:spcomp}
+  \lean{CatCryptCore.Examples.UniversalHash.UHFamily, CatCryptCore.Examples.UniversalHash.IsUniversal, CatCryptCore.Examples.UniversalHash.boolPairwiseHash}
+  \leanok
+  A keyed hash family with a collision bound $\varepsilon$; the pairwise
+  independent family $H_{k_1,k_2}(m) = (k_1 \wedge m) \oplus k_2$ over $\Bool$.
+\end{definition}
+
+\begin{theorem}[Universality and one-time MAC security]
+  \label{thm:uhf-mac}
+  \uses{def:uhf}
+  \lean{CatCryptCore.Examples.UniversalHash.boolPairwiseHash_is_universal, CatCryptCore.Examples.UniversalHash.boolHash_forge_advantage, CatCryptCore.Examples.UniversalHash.boolPairwiseHash_mac_security}
+  \leanok
+  The $\Bool$ family is $1/2$-universal, and the one-time forgery advantage on a
+  message other than the queried one is at most $1/2$.
+\end{theorem}
+
+\section{A hybrid argument in the deep embedding}
+
+\begin{theorem}[Two- and three-instance hybrids]
+  \label{thm:deephybrid}
+  \uses{thm:advantageA-triangle, def:rawcode}
+  \lean{CatCrypt.Examples.DeepHybrid.single_oracle_zero_advantage, CatCrypt.Examples.DeepHybrid.two_instance_advantage_bound, CatCrypt.Examples.DeepHybrid.three_instance_triangle, CatCrypt.Examples.DeepHybrid.hybrid_step_zero_advantage}
+  \leanok
+  For XOR encryption with independent keys, a single instance has advantage $0$;
+  the two-instance game is bounded by its two hybrid steps, the three-instance
+  game by the sum of its three steps, and each step of the three-instance ladder
+  has advantage $0$.
+\end{theorem}

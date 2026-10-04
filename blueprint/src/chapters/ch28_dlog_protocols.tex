@@ -1,0 +1,129 @@
+\chapter{Worked examples: discrete-logarithm schemes and protocols}
+
+These modules work over an abstract cyclic group presented with explicit
+exponents, in contrast to the pairing-group formulation used in the ElGamal and
+Diffie--Hellman chapters. Public-key encryption
+follows Rosulek, \emph{The Joy of Cryptography}, Chapter~15; oblivious transfer,
+the Chaum--Pedersen protocol and coin tossing go beyond the book.
+
+\section{Cyclic groups and DDH}
+
+\begin{definition}[Cyclic group with exponents; DDH games]
+  \label{def:cyclicgroup-ddh}
+  \uses{def:spcomp, def:advantage}
+  \lean{CatCryptCore.Examples.CyclicGroupDDH.CyclicGroup, CatCryptCore.Examples.CyclicGroupDDH.DDH_real, CatCryptCore.Examples.CyclicGroupDDH.DDH_Advantage}
+  \leanok
+  A finite group with a bijective exponentiation $\mathsf{pow} : \mathsf{Exp} \to G$
+  of the generator; the real game outputs $(g^a, g^b, g^{ab})$, the ideal game
+  $(g^a, g^b, g^c)$, and the DDH advantage is the distance between them.
+\end{definition}
+
+\begin{definition}[Prime-order group parameters]
+  \label{def:groupparam}
+  \lean{CatCrypt.Examples.GroupParam}
+  \leanok
+  A cyclic group of prime order with its scalar field, packaged as one structure
+  whose fields record the group and field axioms.
+\end{definition}
+
+\section{ElGamal under DDH}
+
+\begin{theorem}[Correctness and IND-CPA security]
+  \label{thm:elgamal-cyclic}
+  \uses{def:cyclicgroup-ddh, thm:advantageA-triangle}
+  \lean{CatCryptCore.Examples.ElGamalDDH.ElGamalScheme, CatCryptCore.Examples.ElGamalDDH.elgamal_correct, CatCryptCore.Examples.ElGamalDDH.Reduction, CatCryptCore.Examples.ElGamalDDH.elgamal_indcpa_security}
+  \leanok
+  Decryption inverts encryption, and for messages $m_0, m_1$ and every adversary
+  $A$ the IND-CPA advantage is at most
+  $\Adv^{\mathrm{DDH}}(R_{m_0}(A)) + \Adv^{\mathrm{DDH}}(R_{m_1}(A))$ for the
+  explicit reduction $R_m$, which embeds a DDH triple as public key and
+  ciphertext.
+\end{theorem}
+
+\begin{theorem}[Concrete UC emulation]
+  \label{thm:elgamal-uc}
+  \uses{thm:elgamal-cyclic}
+  \lean{CatCryptCore.Examples.ElGamalUCConcrete.elgamalGameAdvBoundC, CatCryptCore.Examples.ElGamalUCConcrete.elgamal_uc_concrete, CatCryptCore.Examples.ElGamalUCConcrete.elgamal_uc_concrete_apply}
+  \leanok
+  The ElGamal game pair, indexed by the message pair, is a concrete UC emulation:
+  for every adversary $A$ and environment $Z$ the gap is at most the two DDH
+  advantages of the reductions applied to the composite of $A$ and $Z$.
+\end{theorem}
+
+\section{Hashed ElGamal}
+
+\begin{theorem}[Correctness and the DDH reduction]
+  \label{thm:hashed-elgamal}
+  \uses{def:cyclicgroup-ddh, thm:advantageA-triangle}
+  \lean{CatCryptCore.Examples.HashedElGamal.heg_correct_bool, CatCryptCore.Examples.HashedElGamal.heg_ddh_reduction, CatCryptCore.Examples.HashedElGamal.heg_indcpa_le_ddh, CatCryptCore.Examples.HashedElGamal.heg_perfect_hash_security}
+  \leanok
+  Encryption masks a bit with $H(\mathit{pk}^r)$ and decryption removes the mask.
+  The distance between the real games for $m_0$ and $m_1$ is at most two DDH
+  advantages of explicit reductions, under the hypothesis that the reductions run
+  on the ideal DDH triple are independent of the message. Separately, when the
+  mask is a uniform bit the two games have advantage exactly $0$.
+\end{theorem}
+
+\section{Oblivious transfer}
+
+The Naor--Pinkas 1-out-of-2 oblivious transfer.
+
+\begin{theorem}[Sender privacy for one encryption]
+  \label{thm:ot-sender}
+  \uses{def:cyclicgroup-ddh}
+  \lean{CatCrypt.Examples.OT.CyclicGroupRing, CatCrypt.Examples.OT.otEnc_message_independent}
+  \leanok
+  When the exponent $d$ at the non-DDH position satisfies $d \neq ab$, the map
+  $(s, r) \mapsto (as + r,\ ds + br)$ is a bijection, so the sender's encryption
+  at that position has the same distribution for every message.
+\end{theorem}
+
+The game-level statement \texttt{ot\_sender\_secure} assumes $c \neq ab$ for
+\emph{every} triple of exponents. That hypothesis fails at $c = ab$, so the
+game-level equality is stated under an unsatisfiable hypothesis; the
+$1/|\mathsf{Exp}|$ term for the event $c = ab$ is not yet formalized.
+
+\begin{theorem}[Receiver privacy]
+  \label{thm:ot-receiver}
+  \uses{def:cyclicgroup-ddh, thm:advantageA-triangle}
+  \lean{CatCrypt.Examples.OT.receiverView, CatCrypt.Examples.OT.receiver_security}
+  \leanok
+  The advantage in distinguishing the receiver's message for choice bit $0$ from
+  that for choice bit $1$ is at most the sum of two DDH advantages of explicit
+  reductions.
+\end{theorem}
+
+\section{The Chaum--Pedersen protocol}
+
+A $\Sigma$-protocol for equality of discrete logarithms, $u = g^x$ and $v = h^x$,
+built on the $\Sigma$-protocol interface of the $\Sigma$-protocol chapter.
+
+\begin{theorem}[Completeness, SHVZK and special soundness]
+  \label{thm:chaum-pedersen}
+  \uses{def:groupparam, thm:sigma-complete}
+  \lean{CatCryptCore.Examples.ChaumPedersen.chaumPedersenSigma, CatCryptCore.Examples.ChaumPedersen.chaumPedersen_complete, CatCryptCore.Examples.ChaumPedersen.chaumPedersen_SHVZK_visible, CatCryptCore.Examples.ChaumPedersen.chaumPedersen_special_soundness}
+  \leanok
+  Honest transcripts verify; for each challenge the real and simulated
+  transcripts are equal in distribution; two accepting transcripts with one
+  commitment and distinct challenges yield the common exponent.
+\end{theorem}
+
+\begin{theorem}[UC security]
+  \label{thm:chaum-pedersen-uc}
+  \uses{thm:chaum-pedersen}
+  \lean{CatCryptCore.Examples.ChaumPedersen.chaumPedersen_uc_secure}
+  \leanok
+  For a statement in the relation, the real protocol UC-emulates the ideal one
+  with error $0$.
+\end{theorem}
+
+\section{Coin tossing}
+
+\begin{theorem}[Two-party coin toss is uniform]
+  \label{thm:cointoss}
+  \uses{def:sdistr-uniform}
+  \lean{CatCryptCore.Examples.CoinToss.coinTossReal, CatCryptCore.Examples.CoinToss.coinTossIdeal, CatCryptCore.Examples.CoinToss.add_uniform_eq_uniform, CatCryptCore.Examples.CoinToss.coinToss_eq}
+  \leanok
+  The sum of two independent uniform elements of $\ZZ/p$ is uniform: the real
+  protocol and the ideal functionality are equal as computations.
+\end{theorem}

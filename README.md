@@ -10,8 +10,8 @@ logic, state-separated packages, proof automation, forking lemmas, and
 Montgomery-curve mathematics.
 
 📖 **Documentation:** [hosted API reference](https://spitters.github.io/CatCrypt-core/) ·
-[design & influences](DESIGN.md) · [The Joy of Cryptography in CatCrypt](JoyOfCrypto.md) ·
-[blueprint](blueprint/src/)
+[blueprint](https://spitters.github.io/CatCrypt-core/blueprint/) ([dependency graph](https://spitters.github.io/CatCrypt-core/blueprint/dep_graph_document.html)) ·
+[design & influences](DESIGN.md) · [The Joy of Cryptography in CatCrypt](JoyOfCrypto.md)
 
 This is the **minimal-basis release**. The universal-composability theory,
 concurrent UC, quantum verification, the verified compilation pipeline, and
@@ -57,15 +57,18 @@ Pinned in `lakefile.lean` and `lake-manifest.json`; the toolchain is in `lean-to
 ## Documentation
 
 - **API reference:** [doc-gen4](https://spitters.github.io/CatCrypt-core/)
+- **Blueprint:** [hosted blueprint](https://spitters.github.io/CatCrypt-core/blueprint/) and its
+  [dependency graph](https://spitters.github.io/CatCrypt-core/blueprint/dep_graph_document.html) (leanblueprint; sources in
+  [`blueprint/src/`](blueprint/src/)). It states the foundation layers and every worked
+  scheme in `CatCryptCore/Examples/`, each statement linked to its Lean declaration in
+  the API reference.
 - **The Joy of Cryptography:** [JoyOfCrypto.md](JoyOfCrypto.md) maps the chapters of
-  Rosulek's textbook to the worked schemes in `CatCryptCore/Examples/`; the
-  [blueprint](blueprint/src/) (leanblueprint, built by `blueprint/build_web.sh`) has a
-  chapter per foundation layer and per worked scheme, from the one-time pad to Σ-protocols.
+  Rosulek's textbook to the worked schemes in `CatCryptCore/Examples/`.
 - **Design and influences:** [DESIGN.md](DESIGN.md) ·
   **Changelog:** [CHANGELOG.md](CHANGELOG.md) ·
   **Contributing:** [CONTRIBUTING.md](CONTRIBUTING.md)
 
-To build the manual or the API reference locally, see [BUILDING.md](BUILDING.md).
+To build the manual, the API reference or the blueprint locally, see [BUILDING.md](BUILDING.md).
 
 ## Relation to SSProve
 

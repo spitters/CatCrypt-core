@@ -1,0 +1,78 @@
+\chapter{Worked examples: Pedersen and KZG commitments}
+
+Computational commitment schemes over pairing groups, beyond the scope of
+Rosulek's book. The abstract interfaces follow the SSProve commitment
+development; the KZG knowledge-soundness argument follows the Isabelle proof of
+Rothmann and Kreuzer.
+
+\begin{definition}[Commitment and polynomial-commitment schemes]
+  \label{def:commitment-abstract}
+  \uses{def:spcomp}
+  \lean{CatCrypt.Examples.Commitments.CommitmentScheme, CatCrypt.Examples.Commitments.PolyCommitScheme}
+  \leanok
+  A commitment scheme with setup, commit and verify, and its extension by
+  evaluation witnesses for committed polynomials, each with its correctness,
+  hiding and binding games.
+\end{definition}
+
+\section{Pedersen commitments}
+
+\begin{theorem}[Perfect hiding]
+  \label{thm:pedersen-hiding}
+  \uses{def:pairing-group, thm:rhoare-sample-bij}
+  \lean{CatCrypt.Examples.Commitments.Pedersen.PedersenParams.commit, CatCrypt.Examples.Commitments.Pedersen.PedersenParams.pedersen_perfect_hiding}
+  \leanok
+  For $\mathsf{commit}(m, r) = g^m h^r$ with $h = g^\beta$, $\beta \neq 0$, the
+  hiding advantage of every adversary is $0$: $r \mapsto r + \beta^{-1}(m_1 - m_0)$
+  is a bijection of the randomness.
+\end{theorem}
+
+\begin{theorem}[Binding from discrete logarithm]
+  \label{thm:pedersen-binding}
+  \uses{def:dl}
+  \lean{CatCrypt.Examples.Commitments.Pedersen.PedersenParams.pedersen_binding_le_dlog}
+  \leanok
+  The probability that an adversary opens one commitment to two messages is at
+  most the discrete-logarithm advantage of an explicit reduction.
+\end{theorem}
+
+\begin{theorem}[Combined statement and UC hiding]
+  \label{thm:pedersen-full}
+  \uses{thm:pedersen-hiding, thm:pedersen-binding}
+  \lean{CatCrypt.Examples.Commitments.Pedersen.PedersenParams.pedersen_hiding_uc, CatCrypt.Examples.Commitments.Pedersen.PedersenParams.pedersen_full_security}
+  \leanok
+  Perfect hiding lifts to UC emulation with error $0$; the conjunction of
+  Theorems~\ref{thm:pedersen-hiding} and~\ref{thm:pedersen-binding}.
+\end{theorem}
+
+\section{KZG polynomial commitments}
+
+\begin{definition}[KZG]
+  \label{def:kzg}
+  \uses{def:pairing-group, def:kzg-srs}
+  \lean{CatCrypt.Examples.Commitments.KZG.setup, CatCrypt.Examples.Commitments.KZG.commit, CatCrypt.Examples.Commitments.KZG.create_witness, CatCrypt.Examples.Commitments.KZG.verify_eval}
+  \leanok
+  The structured reference string $(g^{\alpha^i})_{i \le t}$, the commitment
+  $\prod_i (g^{\alpha^i})^{c_i}$ to $\varphi = \sum_i c_i X^i$, the evaluation
+  witness from the quotient $(\varphi - \varphi(z))/(X - z)$, and pairing-based
+  verification.
+\end{definition}
+
+\begin{lemma}[Witness polynomial]
+  \label{lem:kzg-witness}
+  \uses{def:kzg}
+  \lean{CatCrypt.Examples.Commitments.KZG.witnessPoly_spec}
+  \leanok
+  $\varphi - \varphi(z) = \psi \cdot (X - z)$ for the witness polynomial $\psi$.
+\end{lemma}
+
+\begin{theorem}[Knowledge soundness in the algebraic group model]
+  \label{thm:kzg-ks}
+  \uses{lem:kzg-witness, def:tsdh}
+  \lean{CatCrypt.Examples.Commitments.KZG.KnowledgeSoundness_Game_Full, CatCrypt.Examples.Commitments.KZG.KZG_knowledge_sound, CatCrypt.Examples.Commitments.KZG.honestAGMOutput_checks}
+  \leanok
+  For every algebraic adversary, the probability of a valid evaluation proof that
+  does not match the extracted polynomial is at most $(t + 1)$ times the $t$-SDH
+  advantage of an explicit reduction. The honest committer's output passes the
+  game's representation and pairing checks.
+\end{theorem}

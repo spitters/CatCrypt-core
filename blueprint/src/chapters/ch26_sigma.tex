@@ -43,3 +43,28 @@ or a finite case split.
   one-time-pad coupling) and binding (a double opening yields two accepting
   transcripts, hence the witness by special soundness).
 \end{theorem}
+
+\section{Stateful provers and the given-challenge formulation}
+
+A second module develops the same three properties with a prover that carries
+state from the first move to the third, together with conversions between the
+stateful and the stateless presentations. SHVZK is stated both for a sampled
+challenge and for a challenge fixed in advance.
+
+\begin{definition}[$\Sigma$-protocol with prover state]
+  \label{def:sigma-stateful}
+  \uses{def:spcomp}
+  \lean{CatCrypt.Examples.Sigma.SigmaProtocol, CatCrypt.Examples.Sigma.SigmaProtocolS, CatCrypt.Examples.Sigma.SHVZK_given, CatCrypt.Examples.Sigma.SpecialSoundness}
+  \leanok
+  A three-move protocol whose prover state passes from the commitment to the
+  response, with the completeness, special-soundness and SHVZK predicates.
+\end{definition}
+
+\begin{theorem}[The XOR protocol, stateful presentation]
+  \label{thm:sigma-stateful-xor}
+  \uses{def:sigma-stateful}
+  \lean{CatCrypt.Examples.Sigma.simpleSigma_shvzk_given, CatCrypt.Examples.Sigma.simpleSigma_shvzk, CatCrypt.Examples.Sigma.simpleSigma_special_sound}
+  \leanok
+  The XOR relation protocol is SHVZK for a given challenge and for a sampled
+  challenge, and is specially sound.
+\end{theorem}

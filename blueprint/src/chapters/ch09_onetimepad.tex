@@ -46,3 +46,31 @@ challenge games, so it exercises the coupling-based relational logic directly.
     \mathsf{Adv}^{\mathrm{IND\text{-}CPA}}_{\mathsf{BoolOTP}}(m_0, m_1, A) \;=\; 0.
   \]
 \end{theorem}
+
+\section{The package and UC statements by reflection}
+
+The module also lifts the coupling to the package layer: the deep-embedded
+one-time-pad games are perfectly indistinguishable as nominal packages, and the
+two challenge worlds are related by UC emulation with error $0$. A second
+module reproduces the two package-level statements on the same games, each by a
+single invocation of the reflective package tactic, from the shallow game family
+and the coupling of Lemma~\ref{lem:otp-coupling}.
+
+\begin{theorem}[Package-level perfect security]
+  \label{thm:otp-package}
+  \uses{thm:otp-perfect, def:nompkgsecure}
+  \lean{CatCrypt.Examples.OTP.otp_nompkg_secure, CatCrypt.Examples.OTP.otp_uc}
+  \leanok
+  The deep-embedded one-time-pad games are perfectly secure as nominal packages,
+  and the real world UC-emulates the ideal world with $\varepsilon = 0$ through
+  the identity simulator, over an interface with no leakage.
+\end{theorem}
+
+\begin{theorem}[The same statements by the reflective tactic]
+  \label{thm:otp-reflect}
+  \uses{thm:otp-package}
+  \lean{CatCrypt.Examples.ReflectTacticDemo.demo_otp_nompkg_secure, CatCrypt.Examples.ReflectTacticDemo.demo_otp_uc}
+  \leanok
+  Theorem~\ref{thm:otp-package}, each part obtained by one call of the
+  reflective package tactic in place of the hand-written reflection section.
+\end{theorem}

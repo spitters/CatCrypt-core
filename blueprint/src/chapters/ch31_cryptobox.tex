@@ -1,0 +1,66 @@
+\chapter{Worked example: the Cryptobox game-hopping proof}
+
+NaCl's \texttt{crypto\_box} combines a non-interactive key exchange (NIKE) with a
+nonce-based symmetric encryption scheme to obtain public-key authenticated
+encryption (PKAE). The module set follows Dupressoir et al., \emph{Bringing State
+Separating Proofs to EasyCrypt} (CSF 2022), and its Rocq SSProve counterpart. The
+security theorem is a chain of game hops whose individual steps are either
+proved or exposed as named hypotheses; this chapter records which is which.
+
+\begin{definition}[Schemes and games]
+  \label{def:cryptobox-games}
+  \uses{def:spcomp, def:advantage}
+  \lean{CatCrypt.Examples.Cryptobox.NBSES, CatCrypt.Examples.Cryptobox.NIKEScheme, CatCrypt.Examples.Cryptobox.PKEY, CatCrypt.Examples.Cryptobox.KEY, CatCrypt.Examples.Cryptobox.SAE, CatCrypt.Examples.Cryptobox.GAE, CatCrypt.Examples.Cryptobox.GNIKE, CatCrypt.Examples.Cryptobox.PKAEGame.GPKAE, CatCrypt.Examples.Cryptobox.PKAE}
+  \leanok
+  The nonce-based symmetric scheme, the NIKE, and the stateful games for public-key
+  management (PKEY), shared keys (KEY), single- and multi-instance authenticated
+  encryption (SAE, AE), NIKE security, and PKAE security, each with a real and an
+  ideal variant.
+\end{definition}
+
+\begin{theorem}[PKEY switching steps]
+  \label{thm:cryptobox-pkey}
+  \uses{def:cryptobox-games, thm:advantageA-triangle}
+  \lean{CatCrypt.Examples.Cryptobox.PKAE_eq_PKEY_nocheck, CatCrypt.Examples.Cryptobox.pkae_game_hopping}
+  \leanok
+  The PKAE game and its collision-checking variant are the PKEY game composed with
+  an explicit reduction adversary (a definitional equality), so the PKAE
+  advantage is at most two PKEY advantages plus the advantage between the real
+  and ideal collision-checking games.
+\end{theorem}
+
+\begin{theorem}[Collision bound for PKEY]
+  \label{thm:cryptobox-collision}
+  \uses{def:cryptobox-games}
+  \lean{CatCrypt.Examples.Cryptobox.pkeyAdvantage_le_collision, CatCrypt.Examples.Cryptobox.collision_prob_multi_query_bound}
+  \leanok
+  If the two PKEY games agree on every run that does not set the collision flag
+  and the real game is lossless, the PKEY advantage is at most the probability of
+  the collision flag. The sum of the per-query collision probabilities over
+  $q_{\mathrm{gen}}$ generation queries is computed in closed form.
+\end{theorem}
+
+\begin{theorem}[AE hybrid over sessions]
+  \label{thm:cryptobox-ae}
+  \uses{def:cryptobox-games, thm:advantageA-triangle}
+  \lean{CatCrypt.Examples.Cryptobox.aeHybrid_empty, CatCrypt.Examples.Cryptobox.aeHybrid_univ, CatCrypt.Examples.Cryptobox.aeStep_triangle, CatCrypt.Examples.Cryptobox.aeStep_bounded_by_sae}
+  \leanok
+  The AE switching step is a hybrid over session identifiers with the stated
+  boundary games. Under the hypothesis that each hybrid step is the SAE game run
+  against an explicit reduction adversary, its advantage is at most the sum of
+  the per-session SAE bounds.
+\end{theorem}
+
+\begin{theorem}[Cryptobox security]
+  \label{thm:cryptobox}
+  \uses{thm:cryptobox-pkey, thm:cryptobox-collision, thm:cryptobox-ae}
+  \lean{CatCrypt.Examples.Cryptobox.cryptobox_security_chain, CatCrypt.Examples.Cryptobox.cryptobox_security_full, CatCrypt.Examples.Cryptobox.cryptobox_security_with_nike_reduction}
+  \leanok
+  Given bounds $\varepsilon_{\mathrm{pkey}}$ on both PKEY reduction advantages,
+  $\varepsilon_{\mathrm{nike}}$ on the NIKE switching step and
+  $\varepsilon_{\mathrm{ae}}$ on the AE switching step, the PKAE advantage is at
+  most $2\varepsilon_{\mathrm{pkey}} + \varepsilon_{\mathrm{nike}} +
+  \varepsilon_{\mathrm{ae}}$. The last variant replaces the NIKE step by the
+  advantage of an explicit NIKE reduction plus a caching gap that is a
+  hypothesis.
+\end{theorem}

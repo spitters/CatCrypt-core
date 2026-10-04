@@ -1,26 +1,31 @@
 #!/bin/bash
-# Build blueprint web version using the leanblueprint venv's plastex
-# This ensures the blueprint and depgraph plugins are found correctly.
+# Build the web version of the blueprint with plastex and the leanblueprint
+# plugins. Output: blueprint/web/ (index.html, dep_graph_document.html).
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-VENV_DIR="$(dirname "$(dirname "$(readlink -f "$(which leanblueprint)")")")"
+
+# Locate plastex and the leanblueprint plastex Packages. Both come from
+# `pip install leanblueprint` (or a pipx venv with leanblueprint injected); the
+# Packages directory is resolved through the interpreter that runs plastex, so
+# no absolute path is checked in. `PLASTEX` and `LEANBLUEPRINT_PACKAGES` override
+# the discovery.
+PLASTEX="${PLASTEX:-$(command -v plastex)}"
+PLASTEX_PY="$(head -1 "$(readlink -f "$PLASTEX")" | sed 's/^#!//')"
+if [ -z "${LEANBLUEPRINT_PACKAGES:-}" ]; then
+  # Unquoted: the shebang may be `/usr/bin/env python3`.
+  LEANBLUEPRINT_PACKAGES="$($PLASTEX_PY -c \
+    'import os, leanblueprint; print(os.path.join(os.path.dirname(leanblueprint.__file__), "Packages"))')"
+fi
 
 cd "$SCRIPT_DIR/src"
 
-# leanblueprint's plastex Packages ship in the `plastex` pipx venv. Resolve the
-# path from $HOME (portable) and materialize a local config from the committed
-# template, so no absolute personal path is checked in (plastex .cfg has no env
-# expansion). The generated config is git-ignored / regenerated each build.
-PLASTEX_SITE="$HOME/.local/share/pipx/venvs/plastex/lib/python3.12/site-packages"
-LEANBLUEPRINT_PACKAGES="$PLASTEX_SITE/leanblueprint/Packages"
+# plastex .cfg has no environment expansion: materialize a local config from the
+# committed template (the generated file is git-ignored).
 sed "s|@LEANBLUEPRINT_PACKAGES@|$LEANBLUEPRINT_PACKAGES|" \
   "$SCRIPT_DIR/plastex.cfg" > "$SCRIPT_DIR/plastex.local.cfg"
 
-# Use the plastex from the leanblueprint venv to ensure plugin compatibility.
-# Add the plastex venv to PYTHONPATH so leanblueprint's Packages are found.
-PYTHONPATH="$PLASTEX_SITE:${PYTHONPATH:-}" \
-  "$VENV_DIR/bin/plastex" -c ../plastex.local.cfg web.tex
+"$PLASTEX" -c ../plastex.local.cfg web.tex
 
 # Move output to blueprint/web/
 rm -rf "$SCRIPT_DIR/web"
@@ -48,12 +53,20 @@ if [ -x "$(command -v python3)" ]; then
   fi
 fi
 
-# Mount the doc-gen4 API under web/api/ so the two-column Lean links resolve
-# locally (the GitHub repo is private / on a non-main branch, so blob URLs 404).
-DOCGEN="$SCRIPT_DIR/../docbuild/.lake/build/doc"
-if [ -d "$DOCGEN" ]; then
-  ln -sfn "$DOCGEN" "$SCRIPT_DIR/web/api"
-  echo "Mounted doc-gen4 at web/api/"
+# Declaration links point at `api/` (see `\dochome` in src/web.tex). Locally the
+# doc-gen4 output is mounted there. When the blueprint is published beside the
+# API reference, set BLUEPRINT_API_BASE to the reference's location relative to
+# the blueprint (`..` when the blueprint is served from `<site>/blueprint/`).
+if [ -n "${BLUEPRINT_API_BASE:-}" ]; then
+  find "$SCRIPT_DIR/web" -name '*.html' -exec sed -i \
+    "s|href=\"api/|href=\"$BLUEPRINT_API_BASE/|g" {} +
+  echo "Declaration links rewritten to $BLUEPRINT_API_BASE/"
+else
+  DOCGEN="$SCRIPT_DIR/../docbuild/.lake/build/doc"
+  if [ -d "$DOCGEN" ]; then
+    ln -sfn "$DOCGEN" "$SCRIPT_DIR/web/api"
+    echo "Mounted doc-gen4 at web/api/"
+  fi
 fi
 
 echo "Blueprint web built successfully in $SCRIPT_DIR/web/"

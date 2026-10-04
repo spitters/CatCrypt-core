@@ -20,7 +20,55 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  blueprint:
+    # The leanblueprint web version (blueprint/src/). plastex renders it without
+    # loading Lean; the declaration check below is textual, against the
+    # declaration list that build_web.sh extracts from the sources.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install leanblueprint
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y graphviz libgraphviz-dev
+          python -m pip install --upgrade pip
+          python -m pip install leanblueprint==0.0.20   # the version the build script is tested with
+
+      - name: Build the blueprint web version
+        # Published at <site>/blueprint/, beside the API reference at <site>/, so
+        # declaration links are rewritten from `api/` to `../`.
+        env:
+          BLUEPRINT_API_BASE: ".."
+        run: bash blueprint/build_web.sh
+
+      - name: Check that every \lean{...} reference names a declaration
+        run: |
+          python - <<'PY'
+          import glob, re, sys
+          decls = set(open("blueprint/lean_decls").read().split())
+          missing = []
+          for f in sorted(glob.glob("blueprint/src/chapters/*.tex")):
+              for m in re.finditer(r"\\lean\{([^}]*)\}", open(f).read()):
+                  missing += [(f, n.strip()) for n in m.group(1).split(",")
+                              if n.strip() not in decls]
+          for f, n in missing:
+              print(f"::error file={f}::unknown declaration {n}")
+          sys.exit(1 if missing else 0)
+          PY
+
+      - name: Upload the blueprint
+        uses: actions/upload-artifact@v4
+        with:
+          name: blueprint-web
+          path: blueprint/web
+
   build:
+    needs: blueprint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -68,6 +116,12 @@ jobs:
           lake exe cache get || true   # prebuilt Mathlib oleans, so extraction doesn't rebuild it
           lake build CatCryptCore:docs
 
+      - name: Add the blueprint under /blueprint/
+        uses: actions/download-artifact@v4
+        with:
+          name: blueprint-web
+          path: docbuild/.lake/build/doc/blueprint
+
       - name: Configure Pages
         uses: actions/configure-pages@v5
 
@@ -75,6 +129,10 @@ jobs:
         uses: actions/upload-pages-artifact@v3
         with:
           path: docbuild/.lake/build/doc
+
+      - name: Keep the blueprint out of the docbuild cache
+        if: always()
+        run: rm -rf docbuild/.lake/build/doc/blueprint
 
   deploy:
     needs: build

@@ -1,0 +1,47 @@
+\chapter{Worked example: nested hybrid arguments for public-key encryption}
+
+The two case studies of Larsen and Schürmann, \emph{Mechanizing Nested Hybrid
+Arguments} (CSF 2025): many-time CPA\$ security from one-time CPA\$ security, and
+multi-instance from single-instance security, each by the SLIDE construction.
+CPA\$ compares encryption of the queried message with a uniformly random
+ciphertext.
+
+\begin{definition}[PKE scheme and CPA\$ games]
+  \label{def:pke-cpad}
+  \uses{def:spcomp, def:advantage}
+  \lean{CatCrypt.Examples.PKE.PKEScheme, CatCrypt.Examples.PKE.OT_CPA_Advantage, CatCrypt.Examples.PKE.MT_CPA_Advantage}
+  \leanok
+  An abstract public-key scheme; the one-time game answers a single query and the
+  many-time game a list of $q$ queries.
+\end{definition}
+
+\begin{theorem}[Hybrid bound]
+  \label{thm:pke-mt-bound}
+  \uses{def:pke-cpad, thm:advantage-hybrid-uniform}
+  \lean{CatCrypt.Examples.PKE.MT_CPA_bound, CatCrypt.Examples.PKE.MT_CPA_perfect}
+  \leanok
+  If each adjacent pair of hybrids has advantage at most $\varepsilon$, the
+  many-time advantage is at most $q \cdot \varepsilon$; when each adjacent pair
+  of hybrids is related by an equality coupling, the many-time advantage is $0$.
+\end{theorem}
+
+\begin{theorem}[Many-time from one-time security]
+  \label{thm:pke-slide}
+  \uses{thm:pke-mt-bound}
+  \lean{CatCrypt.Examples.PKE.OneToMany.slideAdv, CatCrypt.Examples.PKE.OneToMany.Adv_MT_CPA_OT}
+  \leanok
+  For a scheme with pure operations, if the one-time CPA\$ advantage of the SLIDE
+  adversary at each position $i$ is at most $\varepsilon$, then the many-time
+  advantage is at most $q \cdot \varepsilon$.
+\end{theorem}
+
+\begin{theorem}[Multi-instance from single-instance security]
+  \label{thm:pke-mi}
+  \uses{thm:pke-slide}
+  \lean{CatCrypt.Examples.PKE.MultiInstance.MI_Advantage, CatCrypt.Examples.PKE.MultiInstance.Adv_MI_MT_CPA, CatCrypt.Examples.PKE.MultiInstance.Adv_MI_MT_CPA_nested}
+  \leanok
+  A second layer of SLIDE over the $n$ instances bounds the multi-instance
+  advantage by $n \cdot \varepsilon$ when each instance step is bounded by
+  $\varepsilon$, and by $n \cdot q \cdot \varepsilon$ when each instance step is a
+  many-time game bounded through Theorem~\ref{thm:pke-slide}.
+\end{theorem}
