@@ -14,12 +14,14 @@ path = "../"
 [[require]]
 scope = "leanprover"
 name = "doc-gen4"
-# doc-gen4's `v4.30.0` tag is built for Lean v4.30.0 (this project's toolchain).
-rev = "v4.30.0"
+# doc-gen4 is tagged per Lean release; this tag must name the release in
+# ../lean-toolchain.
+rev = "v4.33.1"
 
 # mathlib last: its pinned transitive deps must win over doc-gen4's to match the
 # published olean cache.
 [[require]]
 name = "mathlib"
 git = "https://github.com/leanprover-community/mathlib4"
-rev = "v4.30.0"
+# The same tag as the library's own lakefile.
+rev = "v4.33.1"
