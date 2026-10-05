@@ -6,6 +6,33 @@ on:
   pull_request:
 
 jobs:
+  blueprint-refs:
+    # Every blueprint \lean{...} reference must name a declaration in the
+    # sources. Textual, without loading Lean: the declaration list is the one
+    # build_web.sh extracts for the published blueprint (docs.yml runs the same
+    # check), so the blueprint cannot drift from the library between releases.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Extract the declaration list
+        run: python3 scripts/gen_decl_index.py
+
+      - name: Check that every \lean{...} reference names a declaration
+        run: |
+          python3 - <<'PY'
+          import glob, re, sys
+          decls = set(open("blueprint/lean_decls").read().split())
+          missing = []
+          for f in sorted(glob.glob("blueprint/src/chapters/*.tex")):
+              for m in re.finditer(r"\\lean\{([^}]*)\}", open(f).read()):
+                  missing += [(f, n.strip()) for n in m.group(1).split(",")
+                              if n.strip() not in decls]
+          for f, n in missing:
+              print(f"::error file={f}::unknown declaration {n}")
+          sys.exit(1 if missing else 0)
+          PY
+
   build:
     runs-on: ubuntu-latest
     steps:
