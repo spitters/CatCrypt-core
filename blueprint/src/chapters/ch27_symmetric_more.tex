@@ -99,6 +99,16 @@ other than the one queried.
   gap of $1/2$, the guessing probability of a one-bit tag.
 \end{theorem}
 
+\begin{theorem}[No perfect coupling on an unqueried message]
+  \label{thm:prfmac-no-coupling}
+  \uses{lem:prfmac-hops}
+  \lean{CatCrypt.Examples.PRFMAC.not_rHoare_macReal_macIdeal_of_ne}
+  \leanok
+  For a forgery on a message different from the queried one, the real and ideal
+  MAC games admit no equality coupling: the identity distinguisher has advantage
+  $1/2$, so the statistical gap in the forgery bound cannot be removed.
+\end{theorem}
+
 \section{Universal hashing and the Carter--Wegman MAC}
 
 \begin{definition}[Universal hash family]
@@ -119,11 +129,11 @@ other than the one queried.
   message other than the queried one is at most $1/2$.
 \end{theorem}
 
-\section{A hybrid argument in the deep embedding}
+\section{A hybrid argument for XOR encryption}
 
 \begin{theorem}[Two- and three-instance hybrids]
   \label{thm:deephybrid}
-  \uses{thm:advantageA-triangle, def:rawcode}
+  \uses{thm:advantageA-triangle}
   \lean{CatCrypt.Examples.DeepHybrid.single_oracle_zero_advantage, CatCrypt.Examples.DeepHybrid.two_instance_advantage_bound, CatCrypt.Examples.DeepHybrid.three_instance_triangle, CatCrypt.Examples.DeepHybrid.hybrid_step_zero_advantage}
   \leanok
   For XOR encryption with independent keys, a single instance has advantage $0$;

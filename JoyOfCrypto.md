@@ -83,18 +83,13 @@ OWF, PRP, RSA and others) are defined in `Crypto/Assumptions/`.
 | Σ-protocols | `SigmaProtocol` | `simpleSigma_shvzk`, `simpleSigma_special_sound`, `simpleSigma_hiding`, `simpleSigma_binding` | Completeness, perfect SHVZK and special soundness; the derived commitment is hiding and binding |
 | Σ-protocols with prover state | `Sigma` | `simpleSigma_shvzk_given`, `simpleSigma_shvzk`, `simpleSigma_special_sound` | The same properties for a stateful prover, with a fixed or a sampled challenge |
 | Chaum–Pedersen | `ChaumPedersen`, `GroupParam` | `chaumPedersen_SHVZK_visible`, `chaumPedersen_special_soundness`, `chaumPedersen_uc_secure` | Equality of discrete logarithms: SHVZK, special soundness, UC emulation with error 0 |
-| Oblivious transfer | `OT` | `otEnc_message_independent`, `receiver_security` | Naor–Pinkas: per-instance sender privacy when `d ≠ ab`; receiver privacy ≤ two DDH advantages |
+| Oblivious transfer | `OT` | `otEnc_message_independent`, `ot_sender_secure`, `receiver_security` | Naor–Pinkas: per-instance sender privacy when `d ≠ ab`; sender privacy of the whole transcript ≤ `1/\|Exp\|` (the probability of `c = ab`); receiver privacy ≤ two DDH advantages |
 | Coin tossing | `CoinToss` | `coinToss_eq` | The sum of two uniform elements of `ZMod p` is uniform |
 | Pedersen commitments | `Commitments/Pedersen`, `Commitments/CommitmentScheme` | `pedersen_perfect_hiding`, `pedersen_binding_le_dlog`, `pedersen_hiding_uc` | Perfect hiding; binding ≤ DL advantage of an explicit reduction; UC hiding with error 0 |
 | KZG commitments | `Commitments/KZG/*`, `Commitments/PolyCommitScheme` | `KZG_knowledge_sound`, `honestAGMOutput_checks` | Knowledge soundness in the algebraic group model: ≤ `(t + 1)` · t-SDH advantage of an explicit reduction |
 | Nested hybrids | `PKE/*` | `Adv_MT_CPA_OT`, `Adv_MI_MT_CPA_nested` | Larsen–Schürmann (CSF 2025): many-time ≤ `q·ε`, multi-instance ≤ `n·q·ε`, from per-step hypotheses on the SLIDE adversaries |
 | Cryptobox (NaCl `crypto_box`) | `Cryptobox/*` | `pkae_game_hopping`, `cryptobox_security_full` | PKAE ≤ `2·ε_pkey + ε_nike + ε_ae`; the PKEY hops are proved, the NIKE and AE hop bounds are hypotheses |
-| Hybrid argument | `DeepHybrid` | `two_instance_advantage_bound`, `three_instance_triangle` | Hybrid ladders over the deep embedding for XOR encryption |
-
-The OT module also states a game-level sender-privacy equality, `ot_sender_secure`.
-Its hypothesis requires `c ≠ ab` for every triple of exponents, which fails at
-`c = ab`; the per-instance lemma above is the usable statement, and the
-`1/|Exp|` term for the event `c = ab` is not formalized.
+| Hybrid argument | `DeepHybrid` | `two_instance_advantage_bound`, `three_instance_triangle` | Hybrid ladders of shallow games for XOR encryption |
 
 ## Proof-ladders benchmark
 

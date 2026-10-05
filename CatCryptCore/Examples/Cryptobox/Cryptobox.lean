@@ -71,7 +71,7 @@ The `cryptobox_security_full` theorem in `GameHopping.lean` improves on
         ← PKAE_cc_eq_PKEY_check -- PKAE_cc = PKEY(check) ∘ R_PKEY (by rfl)
 ```
 
-See `GameHopping.lean` for the state-of-the-art version.
+`GameHopping.lean` composes the full hop chain (`cryptobox_security_full`).
 
 ## References
 
@@ -182,7 +182,10 @@ noncomputable def PKAE (N : @NIKEScheme CT) (E : @NBSES CT) (I : @KeyInjection C
       enc := pkaeEncOracle N E I b pkeyO,
       dec := pkaeDecOracle N E I b pkeyO }
 
-/-- PKAE advantage: distinguishing real from ideal PKAE. -/
+/-- PKAE advantage: distinguishing real from ideal PKAE. This is the advantage that
+    the Cryptobox hop chain bounds. The collision-checking variant with the narrower
+    oracle record, `GPKAE` in module `PKAE`, has its own advantage
+    `PKAEGame.gpkaeAdvantage`. -/
 noncomputable def pkaeAdvantage (N : @NIKEScheme CT) (E : @NBSES CT)
     (I : @KeyInjection CT) (A : PKAEOracles → SPComp Bool) : ℝ≥0∞ :=
   Advantage (PKAE N E I false A) (PKAE N E I true A)

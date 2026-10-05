@@ -134,6 +134,7 @@ public import CatCryptCore.Crypto.KeyAgreement.MontgomeryXOnly
 public import CatCryptCore.Crypto.KeyAgreement.Curve25519
 public import CatCryptCore.Examples.DeepHybrid
 public import CatCryptCore.Examples.OneTimePad
+public import CatCryptCore.Examples.ReflectTacticDemo
 public import CatCryptCore.Examples.OT
 public import CatCryptCore.Examples.PRF
 public import CatCryptCore.Examples.PRFMAC

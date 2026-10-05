@@ -34,10 +34,11 @@ to `0`.
 
 A bijection forces `|Seed| = |Output|`, so a bijection generator is *not*
 length-extending. This is the information-theoretic boundary of Rosulek §5: a
-genuinely length-extending PRG has an image that is a vanishing subset of the
+length-extending PRG has an image that is a vanishing subset of the
 output space, so it can only be *computationally* secure. The corresponding
-reduction — the triple-from-double bound `Adv(G₃) ≤ 2·Adv(G)` — is proved
-computationally elsewhere (`CatCrypt.Examples.TriplePRG`).
+reduction, the triple-from-double bound `Adv(G₃) ≤ 2·Adv(G)`, is stated below
+for a length-doubling generator (`triple_prg_uniform_bound`,
+`triple_prg_bound_of_assumption`).
 
 ## Main definitions
 
@@ -180,7 +181,7 @@ theorem boolXorPRG_perfect (c : Bool)
 
 /-! ## PRG security assumption
 
-The bijection results above are *perfect* (`ε = 0`). A genuinely length-extending
+The bijection results above are *perfect* (`ε = 0`). A length-extending
 generator can only be *computationally* secure, so the reduction below takes the
 base generator's security as a hypothesis. `PRGAssumption` is the PRG analogue of
 `CatCrypt.Crypto.PRFAssumption`: it packages the standard "`G` is an ε-secure
@@ -345,8 +346,7 @@ theorem triple_prg_hybrid_bound {α : Type} (H : ℕ → SPComp α) (A : α → 
 /-- **Triple PRG uniform bound**: when both decomposed hybrid hops have advantage
 at most `ε`, the triple construction advantage is at most `2·ε`.
 
-This is the tight reduction `Adv_PRG(G₃) ≤ 2·Adv_PRG(G)`, mirroring the dev
-`CatCrypt.Examples.TriplePRG.triple_prg_uniform_bound`. -/
+This is the tight reduction `Adv_PRG(G₃) ≤ 2·Adv_PRG(G)`. -/
 theorem triple_prg_uniform_bound (G : DoublePRG) (ε : ℝ≥0∞)
     (A : (G.Seed × G.Seed × G.Seed) → SPComp Bool)
     (h_inner : AdvantageA (G.hyb 0) (G.hyb 1) A ≤ ε)

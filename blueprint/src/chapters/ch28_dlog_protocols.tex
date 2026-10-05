@@ -78,10 +78,16 @@ The Naor--Pinkas 1-out-of-2 oblivious transfer.
   at that position has the same distribution for every message.
 \end{theorem}
 
-The game-level statement \texttt{ot\_sender\_secure} assumes $c \neq ab$ for
-\emph{every} triple of exponents. That hypothesis fails at $c = ab$, so the
-game-level equality is stated under an unsatisfiable hypothesis; the
-$1/|\mathsf{Exp}|$ term for the event $c = ab$ is not yet formalized.
+\begin{theorem}[Sender privacy for the transcript]
+  \label{thm:ot-sender-game}
+  \uses{thm:ot-sender}
+  \lean{CatCrypt.Examples.OT.advantageA_sample_bind_le_of_eq_off, CatCrypt.Examples.OT.ot_sender_secure}
+  \leanok
+  For every choice bit and every distinguisher, the real transcript and the ideal
+  transcript, in which the unchosen message is replaced by the identity, are at
+  advantage at most $1/|\mathsf{Exp}|$. The two games agree on every receiver
+  sample with $c \neq ab$; the bound is the probability of the event $c = ab$.
+\end{theorem}
 
 \begin{theorem}[Receiver privacy]
   \label{thm:ot-receiver}

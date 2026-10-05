@@ -32,11 +32,11 @@ proved or exposed as named hypotheses; this chapter records which is which.
 \begin{theorem}[Collision bound for PKEY]
   \label{thm:cryptobox-collision}
   \uses{def:cryptobox-games}
-  \lean{CatCrypt.Examples.Cryptobox.pkeyAdvantage_le_collision, CatCrypt.Examples.Cryptobox.collision_prob_multi_query_bound}
+  \lean{CatCrypt.Examples.Cryptobox.pkeyAdvantage_le_collision, CatCrypt.Examples.Cryptobox.pkey_switching, CatCrypt.Examples.Cryptobox.collision_prob_multi_query_bound}
   \leanok
   If the two PKEY games agree on every run that does not set the collision flag
   and the real game is lossless, the PKEY advantage is at most the probability of
-  the collision flag. The sum of the per-query collision probabilities over
+  the collision flag, and hence at most any bound on that probability. The sum of the per-query collision probabilities over
   $q_{\mathrm{gen}}$ generation queries is computed in closed form.
 \end{theorem}
 

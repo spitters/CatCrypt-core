@@ -201,27 +201,6 @@ theorem PKEY_eq_with_oracles (N : @NIKEScheme CT) (b : Bool)
     PKEY N b A = A (if b then pkeyOracles_cc N else pkeyOracles_nocc N) := by
   cases b <;> rfl
 
-/-! ## PKEY Switching Lemma -/
-
-/-- PKEY switching: advantage bounded by collision probability.
-
-    The hypothesis `hcoll` represents the FEL application: PKEY(0) and PKEY(1)
-    agree unless a pk collision occurs, and the collision probability is bounded.
-
-    In a concrete instantiation, `hcoll` would be discharged by:
-    - Wiring query counting into the PKEY game (via QueryBound.lean)
-    - Proving that with q_gen GEN queries and q_csetpk CSETPK queries,
-      the collision probability is at most q_gen * q_csetpk / |PK|
-
-    This matches the Rocq SSProve approach where the collision bound
-    follows from FEL + union bound over the query sequence. -/
-theorem pkey_switching (N : @NIKEScheme CT)
-    (A : PKEYOracles → SPComp Bool)
-    (coll_bound : ℝ≥0∞)
-    (hcoll : pkeyAdvantage N A ≤ coll_bound) :
-    pkeyAdvantage N A ≤ coll_bound :=
-  hcoll
-
 /-! ## genOracle Analysis
 
 Properties of the collision check in `genOracle`. These are building blocks
@@ -285,6 +264,23 @@ theorem pkeyAdvantage_le_collision (N : @NIKEScheme CT) (B : PKEYOracles → SPC
     pkeyAdvantage N B ≤ Unary.prEventComp (PKEY N false B) Heap.empty
       (fun _ h' => pkeyBadFinal h') :=
   Unary.advantage_le_prBad (PKEY N false B) (PKEY N true B) pkeyBadFinal h_agree hll
+
+/-- PKEY switching as a game hop: when the two PKEY games agree off the collision
+event `pkeyBadFinal`, the collision-free game is lossless, and the probability of
+`pkeyBadFinal` in the collision-free game is at most `coll_bound`, the switching
+advantage is at most `coll_bound`. The bound on the collision probability is a
+hypothesis on the collision-free game; `collision_prob_single_query` bounds the
+collision probability of one GEN query and `collision_prob_multi_query_bound`
+evaluates the union-bound sum over the queries. -/
+theorem pkey_switching (N : @NIKEScheme CT) (B : PKEYOracles → SPComp Bool)
+    (coll_bound : ℝ≥0∞)
+    (h_agree : ∀ b h', ¬pkeyBadFinal h' →
+      (PKEY N false B Heap.empty) (some (b, h')) = (PKEY N true B Heap.empty) (some (b, h')))
+    (hll : Unary.isLossless (PKEY N false B))
+    (hcoll : Unary.prEventComp (PKEY N false B) Heap.empty (fun _ h' => pkeyBadFinal h') ≤
+      coll_bound) :
+    pkeyAdvantage N B ≤ coll_bound :=
+  le_trans (pkeyAdvantage_le_collision N B h_agree hll) hcoll
 
 /-! ## Collision-Flag Instrumented Game Infrastructure
 

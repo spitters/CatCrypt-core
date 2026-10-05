@@ -34,7 +34,10 @@ The receiver holds a choice bit σ ∈ {0,1}. The sender holds messages m₀, m�
 
 **Sender security**: When `d ≠ ab` (non-DDH position), the map
 `(s, r) ↦ (as + r, ds + br)` is a bijection on `Exp × Exp`, so `(wᵢ, eᵢ)`
-is uniformly distributed — the message is information-theoretically hidden.
+is uniformly distributed and the message is information-theoretically hidden
+(`otEnc_message_independent`). The honest receiver samples `c` uniformly, so
+`c = ab` occurs with probability `1 / |Exp|`; `ot_sender_secure` bounds the
+real/ideal advantage by that probability.
 
 **Receiver security**: The receiver's public values `(g^a, g^b, z₀, z₁)` contain
 a DDH triple at the choice position. Distinguishing `σ=0` from `σ=1` reduces to DDH.
@@ -211,6 +214,30 @@ noncomputable def ot_ideal (m0 m1 : G) (sigma : Bool) : SPComp (OTTranscript G) 
   SPComp.bind (otEnc a b d1 m1') fun ct1 =>
   SPComp.pure (CGR.pow a, CGR.pow b, ct0, ct1)
 
+/-- The Naor-Pinkas encryption step `otEnc` does not read or write the heap. -/
+theorem otEnc_isPure (a b d : CGR.Exp) (m : G) : SPComp.IsPure (otEnc a b d m) := by
+  unfold otEnc
+  exact SPComp.bind_isPure (SPComp.sample_isPure _) fun _ =>
+    SPComp.bind_isPure (SPComp.sample_isPure _) fun _ => SPComp.pure_isPure _
+
+/-- The real OT game `ot_real` does not read or write the heap. -/
+theorem ot_real_isPure (m0 m1 : G) (sigma : Bool) :
+    SPComp.IsPure (ot_real (G := G) m0 m1 sigma) :=
+  SPComp.bind_isPure (SPComp.sample_isPure _) fun _ =>
+    SPComp.bind_isPure (SPComp.sample_isPure _) fun _ =>
+    SPComp.bind_isPure (SPComp.sample_isPure _) fun _ =>
+    SPComp.bind_isPure (otEnc_isPure _ _ _ _) fun _ =>
+    SPComp.bind_isPure (otEnc_isPure _ _ _ _) fun _ => SPComp.pure_isPure _
+
+/-- The ideal OT game `ot_ideal` does not read or write the heap. -/
+theorem ot_ideal_isPure (m0 m1 : G) (sigma : Bool) :
+    SPComp.IsPure (ot_ideal (G := G) m0 m1 sigma) :=
+  SPComp.bind_isPure (SPComp.sample_isPure _) fun _ =>
+    SPComp.bind_isPure (SPComp.sample_isPure _) fun _ =>
+    SPComp.bind_isPure (SPComp.sample_isPure _) fun _ =>
+    SPComp.bind_isPure (otEnc_isPure _ _ _ _) fun _ =>
+    SPComp.bind_isPure (otEnc_isPure _ _ _ _) fun _ => SPComp.pure_isPure _
+
 /-! ## Matrix Bijection
 
 The key algebraic fact for sender security: the linear map
@@ -372,38 +399,66 @@ theorem otEnc_message_independent (a b d : CGR.Exp) (m0 m1 : G)
     congr 1
     rw [CGR.mul_assoc, CGR.mul_comm (CGR.inv m1) m1, CGR.mul_inv, CGR.mul_one]
 
-theorem ot_sender_secure_false (m0 m1 : G)
-    (hnd : ∀ a b c : CGR.Exp,
-      CyclicGroupRing.expSub c (CGR.expMul a b) ≠ CGR.expZero) :
-    ot_real (G := G) m0 m1 false = ot_ideal (G := G) m0 m1 false :=
-  congrArg (SPComp.bind (SPComp.sample CGR.Exp)) (funext fun a =>
-  congrArg (SPComp.bind (SPComp.sample CGR.Exp)) (funext fun b =>
-  congrArg (SPComp.bind (SPComp.sample CGR.Exp)) (funext fun c =>
-  congrArg (SPComp.bind (otEnc a b (CGR.expMul a b) m0)) (funext fun ct0 =>
-  congrArg (fun e => SPComp.bind e (fun ct1 =>
-    SPComp.pure (CGR.pow a, CGR.pow b, ct0, ct1)))
-    (otEnc_message_independent a b c m1 CGR.one (hnd a b c))))))
+/-- `c ≠ d` implies `c - d ≠ 0` on exponents. -/
+theorem expSub_ne_zero_of_ne {c d : CGR.Exp} (h : c ≠ d) :
+    CyclicGroupRing.expSub c d ≠ CGR.expZero := by
+  intro h0
+  apply h
+  rw [← CyclicGroupRing.expSub_add c d, h0, CyclicGroupRing.expZero_add]
 
-theorem ot_sender_secure_true (m0 m1 : G)
-    (hnd : ∀ a b c : CGR.Exp,
-      CyclicGroupRing.expSub c (CGR.expMul a b) ≠ CGR.expZero) :
-    ot_real (G := G) m0 m1 true = ot_ideal (G := G) m0 m1 true :=
-  congrArg (SPComp.bind (SPComp.sample CGR.Exp)) (funext fun a =>
-  congrArg (SPComp.bind (SPComp.sample CGR.Exp)) (funext fun b =>
-  congrArg (SPComp.bind (SPComp.sample CGR.Exp)) (funext fun c =>
-  congrArg (fun e => SPComp.bind e (fun ct0 =>
-    SPComp.bind (otEnc a b (CGR.expMul a b) m1) (fun ct1 =>
-    SPComp.pure (CGR.pow a, CGR.pow b, ct0, ct1))))
-    (otEnc_message_independent a b c m0 CGR.one (hnd a b c)))))
+/-- Sampling a uniform `x` and continuing with `f x` or with `g x` gives an advantage
+of at most `1 / |α|` against every distinguisher, when `f` and `g` agree at every
+point except `x₀`. -/
+theorem advantageA_sample_bind_le_of_eq_off {α β : Type} [Fintype α] [Nonempty α]
+    (f g : α → SPComp β) (A : β → SPComp Bool) (x₀ : α)
+    (h : ∀ x, x ≠ x₀ → f x = g x) :
+    AdvantageA (SPComp.bind (SPComp.sample α) f) (SPComp.bind (SPComp.sample α) g) A ≤
+      (Fintype.card α : ℝ≥0∞)⁻¹ := by
+  classical
+  simp only [AdvantageA, Advantage, SPComp.bind_assoc]
+  rw [prTrue_bind_sample, prTrue_bind_sample]
+  set w := (Fintype.card α : ℝ≥0∞)⁻¹
+  have key : ∀ P Q : α → ℝ≥0∞, (∀ x, x ≠ x₀ → P x = Q x) → P x₀ ≤ 1 →
+      ∑ x, w * P x ≤ w + ∑ x, w * Q x := by
+    intro P Q hPQ hP
+    rw [← Finset.add_sum_erase _ _ (Finset.mem_univ x₀),
+      ← Finset.add_sum_erase _ _ (Finset.mem_univ x₀),
+      Finset.sum_congr rfl (fun x hx => by rw [hPQ x (Finset.ne_of_mem_erase hx)])]
+    calc w * P x₀ + ∑ x ∈ Finset.univ.erase x₀, w * Q x
+        ≤ w + ∑ x ∈ Finset.univ.erase x₀, w * Q x := by
+          gcongr; exact mul_le_of_le_one_right' hP
+      _ ≤ w + (w * Q x₀ + ∑ x ∈ Finset.univ.erase x₀, w * Q x) := by
+          gcongr; exact le_add_self
+  apply max_le <;> rw [tsub_le_iff_right]
+  · exact key (fun x => prTrue ((f x).bind A) Heap.empty)
+      (fun x => prTrue ((g x).bind A) Heap.empty) (fun x hx => by simp only [h x hx])
+      (prTrue_le_one _ _)
+  · exact key (fun x => prTrue ((g x).bind A) Heap.empty)
+      (fun x => prTrue ((f x).bind A) Heap.empty) (fun x hx => by simp only [h x hx])
+      (prTrue_le_one _ _)
 
-/-- Full sender security: real and ideal OT games are equal. -/
-theorem ot_sender_secure (m0 m1 : G) (sigma : Bool)
-    (hnd : ∀ a b c : CGR.Exp,
-      CyclicGroupRing.expSub c (CGR.expMul a b) ≠ CGR.expZero) :
-    ot_real (G := G) m0 m1 sigma = ot_ideal (G := G) m0 m1 sigma := by
+/-- Sender security of Naor–Pinkas OT, statistical form.
+
+For every distinguisher `A` and every choice bit `sigma`, the real transcript (both
+messages encrypted) and the ideal transcript (the unchosen message replaced by the
+identity) are at advantage at most `1 / |Exp|`. The two games coincide on every
+receiver sample with `c ≠ a·b` (`otEnc_message_independent`); the term `1 / |Exp|`
+is the probability of the event `c = a·b`, on which the unchosen position is a DDH
+triple and its message is decryptable. -/
+theorem ot_sender_secure (m0 m1 : G) (sigma : Bool) (A : OTTranscript G → SPComp Bool) :
+    AdvantageA (ot_real (G := G) m0 m1 sigma) (ot_ideal (G := G) m0 m1 sigma) A ≤
+      (Fintype.card CGR.Exp : ℝ≥0∞)⁻¹ := by
+  unfold ot_real ot_ideal
+  apply advantageA_sample_bind; intro a
+  apply advantageA_sample_bind; intro b
+  apply advantageA_sample_bind_le_of_eq_off _ _ A (CGR.expMul a b)
+  intro c hc
+  have hnd := expSub_ne_zero_of_ne (G := G) hc
   cases sigma
-  · exact ot_sender_secure_false m0 m1 hnd
-  · exact ot_sender_secure_true m0 m1 hnd
+  · simp only [Bool.false_eq_true, ↓reduceIte]
+    rw [otEnc_message_independent a b c m1 CGR.one hnd]
+  · simp only [↓reduceIte]
+    rw [otEnc_message_independent a b c m0 CGR.one hnd]
 
 /-! ## Receiver Security
 

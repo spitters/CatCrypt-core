@@ -169,10 +169,19 @@ noncomputable def GPKAE (N : @NIKEScheme CT) (E : @NBSES CT) (I : @KeyInjection 
 
 /-! ## PKAE Advantage -/
 
-/-- PKAE advantage: distinguishing distance between real and ideal games.
-    Measures the adversary's ability to distinguish real encryption from
-    random ciphertexts in the PKAE game. -/
-noncomputable def pkaeAdvantage (N : @NIKEScheme CT) (E : @NBSES CT)
+/-- Advantage of the `GPKAE` game: the distinguishing distance between its real and
+    ideal variants.
+
+    This is a different game from the one measured by
+    `CatCrypt.Examples.Cryptobox.pkaeAdvantage` (module `Cryptobox`), which the
+    Cryptobox hop chain (`pkae_game_hopping`) bounds. The two games differ in three
+    respects: `GPKAE` runs the collision-checking key oracle (`genOracle N true`)
+    where `Cryptobox.PKAE` runs `genOracle N false`; its oracle record
+    (`PKAEGame.PKAEOracles`) exposes only key generation, corruption, encryption
+    and decryption, without the `getsk` and `honpk` oracles; and its log is
+    indexed by the ordered pair `(pk_s, pk_r, n)` where `Cryptobox.PKAE` uses the
+    sorted session identifier. No equation between the two advantages is proved. -/
+noncomputable def gpkaeAdvantage (N : @NIKEScheme CT) (E : @NBSES CT)
     (I : @KeyInjection CT) (A : PKAEOracles → SPComp Bool) : ℝ≥0∞ :=
   Advantage (GPKAE N E I false A) (GPKAE N E I true A)
 

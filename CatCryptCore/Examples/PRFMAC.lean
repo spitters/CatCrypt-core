@@ -12,7 +12,8 @@ public import CatCryptCore.Prob.XorBij
 /-!
 # MAC from PRF Construction
 
-This file formalizes Claim 10.4 from "The Joy of Cryptography" (p. 188):
+This file formalizes Claim 10.4 of "The Joy of Cryptography" (online edition,
+Chapter 10, Message Authentication Codes):
 constructing a secure MAC (Message Authentication Code) from a PRF
 (Pseudorandom Function).
 
@@ -63,7 +64,7 @@ where:
 
 ## References
 
-* [Rosulek, The Joy of Cryptography, Claim 10.4]
+* [Rosulek, The Joy of Cryptography, online edition, Chapter 10, Claim 10.4]
 * [SSProve PRFMAC.v](https://github.com/SSProve/ssprove/blob/main/theories/Crypt/examples/PRFMAC.v)
 -/
 
@@ -345,27 +346,14 @@ For our simplified Bool model with XOR "PRF", both are zero, giving perfect secu
 -/
 
 /-!
-### Why Perfect Indistinguishability Fails
+### Perfect indistinguishability fails on an unqueried message
 
-The following theorem is **FALSE** and cannot be proven:
-
-```
-theorem prfmac_forgery_bound_FALSE (m m_check : Word) (t_guess : Word)
-    (hdiff : m_check ≠ m) :
-    rHoare eqPre (macReal m m_check t_guess) (macIdeal m m_check t_guess) eqPost
-```
-
-**Reason:** When m_check ≠ m (forgery on a different message):
-- **Real game**: Returns uniform Bool (verification against PRF output)
-- **Ideal game**: Always returns false (message wasn't queried)
-
-These distributions ARE distinguishable with probability 1/2.
-
-**This is precisely the statistical gap in the PRF-MAC security proof.**
-- For Bool (n=1): gap = 1/2 (significant)
-- For Word = {0,1}^n: gap = 1/2^n (negligible)
-
-The correct security statement is an ADVANTAGE BOUND, not perfect equality.
+When `m_check ≠ m`, the real game returns a uniform Boolean (the guess is checked
+against the PRF output) and the ideal game returns `false`. The identity
+distinguisher separates them with advantage `1/2`, so no equality coupling between
+the two games exists (`not_rHoare_macReal_macIdeal_of_ne`). The gap is the
+statistical term of the PRF-MAC bound: `1/2` over `Bool`, `1/2^n` over `{0,1}^n`.
+The security statement is therefore an advantage bound (`security_based_on_prf`).
 -/
 
 /-- The advantage in distinguishing real vs ideal MAC for forgery attempts.
@@ -421,6 +409,46 @@ theorem macIdeal_diff_eq_pure_false (m m_check : Word) (t_guess : Word)
   simp only [macIdeal, prf, SPComp.monad_bind_eq, SPComp.bind_def, SPComp.sample,
     SPComp.pure_def, SDistr.bind_assoc, SDistr.pure_bind, hbeq]
   exact SDistr.uniform_bind_const _
+
+/-- `prTrue` of a constant Boolean computation from the empty heap. -/
+theorem prTrue_pure_empty (b : Bool) :
+    prTrue (SPComp.pure b) Heap.empty = if b then 1 else 0 := by
+  unfold prTrue SPComp.pure
+  simp only [SDistr.pure, PMF.pure_apply, Option.some.injEq, Prod.mk.injEq]
+  cases b with
+  | true =>
+    simp only [true_and, ite_true]
+    exact tsum_ite_eq Heap.empty (fun _ => 1)
+  | false =>
+    simp only [reduceCtorEq, ite_false, false_and, tsum_zero]
+
+/-- Refutation of perfect indistinguishability for a forgery on an unqueried
+message: for `m_check ≠ m` there is no equality coupling between `macReal` and
+`macIdeal`. The identity distinguisher has advantage `1/2`, while an equality
+coupling forces advantage `0`. -/
+theorem not_rHoare_macReal_macIdeal_of_ne (m m_check : Word) (t_guess : Word)
+    (hdiff : m_check ≠ m) :
+    ¬ rHoare eqPre (macReal m m_check t_guess) (macIdeal m m_check t_guess) eqPost := by
+  intro hc
+  have h1 := advantage_zero_of_rHoare _ _ hc SPComp.pure
+  have h0 := advantage_zero_of_rHoare _ _
+    (forgery_diff_message_uniform m m_check t_guess hdiff) SPComp.pure
+  rw [macIdeal_diff_eq_pure_false m m_check t_guess hdiff] at h1
+  have hzero : AdvantageA (SPComp.sample Bool) (SPComp.pure false) SPComp.pure = 0 := by
+    apply le_antisymm _ zero_le
+    have h0' : Advantage ((SPComp.sample Bool).bind SPComp.pure)
+        ((macReal m m_check t_guess).bind SPComp.pure) = 0 := by
+      rw [Advantage_sym]; exact h0
+    calc AdvantageA (SPComp.sample Bool) (SPComp.pure false) SPComp.pure
+        ≤ Advantage ((SPComp.sample Bool).bind SPComp.pure)
+            ((macReal m m_check t_guess).bind SPComp.pure) +
+          AdvantageA (macReal m m_check t_guess) (SPComp.pure false) SPComp.pure :=
+          advantage_triangle _ _ _
+      _ = 0 := by rw [h0', h1, add_zero]
+  unfold AdvantageA Advantage at hzero
+  rw [SPComp.pure_bind, prTrue_bind_sample_Bool, prTrue_pure_empty, prTrue_pure_empty]
+    at hzero
+  simp at hzero
 
 /-! ## Security Statement
 

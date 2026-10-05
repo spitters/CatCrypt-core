@@ -16,10 +16,11 @@ public import CatCryptCore.Tactics.Basic
 public import CatCryptCore.Tactics.Sim
 
 /-!
-# Deep Embedding: Generic Hybrid Argument
+# Hybrid Argument for XOR Encryption
 
-This file formalizes a generic hybrid argument for security proofs using CatCrypt's
-deep embedding, inspired by ProofFrog's Hybrid protocol.
+This file carries out the hybrid argument for two and three instances of one-bit
+XOR encryption, after ProofFrog's Hybrid protocol. The games are shallow `SPComp`
+computations.
 
 ## Overview
 
@@ -37,10 +38,14 @@ a reduction to single-instance security.
 
 ## Main Results
 
-* `HybridGame` - Generic hybrid game structure
-* `HybridLadder` - Sequence of hybrid games from real to ideal
-* `hybrid_triangle_bound` - Triangle inequality bound on total advantage
-* `single_xor_perfect` - XOR encryption has zero single-instance advantage
+* `single_oracle_zero_advantage` - one XOR encryption has advantage `0` against a
+  uniform ciphertext
+* `twoReal` / `twoHybrid` / `twoIdeal` and `threeHybrid` - the hybrid ladders for
+  two and three instances
+* `two_instance_advantage_bound`, `three_instance_triangle` - the real-to-ideal
+  advantage is at most the sum of the adjacent-step advantages
+* `hybrid_step_zero_advantage` - every adjacent step of the three-instance ladder
+  has advantage `0`
 
 ## ProofFrog Comparison
 
@@ -48,10 +53,10 @@ ProofFrog's Hybrid protocol (for PubEnc):
 - Automatically generates hybrid sequence
 - Uses Z3 for equivalence checking
 
-CatCrypt deep embedding:
-- Explicit hybrid game definition using RawCode
-- Machine-checked advantage bounds via triangle inequality
-- Compositional reasoning via pRHL
+This file:
+- Explicit hybrid games as `SPComp` computations (`selectOracle`, `threeHybrid`)
+- Advantage bounds via the triangle inequality
+- Step couplings via pRHL
 
 ## References
 
@@ -325,8 +330,8 @@ This file demonstrates the generic hybrid argument pattern:
 
 ### ProofFrog Comparison
 
-| ProofFrog | CatCrypt Deep |
-|-----------|--------------|
+| ProofFrog | This file |
+|-----------|-----------|
 | Auto hybrid generation | Explicit `selectOracle` |
 | Z3 for equivalence | `rHoare` + coupling |
 | ~50 lines | ~350 lines |
@@ -344,14 +349,15 @@ For computationally secure primitives, the bound would be:
 
 This is the standard "n-factor security loss" of hybrid arguments.
 
-### What's Proven
+### Proved results
 
-- `single_oracle_coupling`: Fully proven via bijection coupling
-- `single_oracle_zero_advantage`: Follows from coupling
-- `step_0_1_coupling`: Partial - needs debugging of SDistr rewrites
-- `two_instance_advantage_bound`: Uses triangle inequality
-- `three_instance_triangle`: Triangle bound for 3 instances
-- `hybrid_step_zero_advantage`: Trivial bound for XOR (0 advantage)
+- `single_oracle_coupling`: bijection coupling of one XOR encryption with a uniform
+  ciphertext
+- `single_oracle_zero_advantage`: advantage `0`, from the coupling
+- `step_0_1_coupling`, `step_1_2_coupling`: the two-instance step couplings
+- `two_instance_advantage_bound`: triangle inequality over the two-instance ladder
+- `three_instance_triangle`: triangle inequality over the three-instance ladder
+- `hybrid_step_zero_advantage`: every three-instance step has advantage `0`
 -/
 
 end CatCrypt.Examples.DeepHybrid
