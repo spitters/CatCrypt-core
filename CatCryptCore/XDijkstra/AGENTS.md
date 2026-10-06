@@ -36,6 +36,10 @@ namespace `CatCrypt.XDijkstra`.
   does not import `XMvcgenReg` lacks `xpure_apply`, `xbind_apply`, `xseq_apply`,
   `xprod_apply` and `xwp_graded_bind`.
 - `xmvcgen_ctl` does not unfold `XRelTriple`.
+- The assertion types of `XCoreWP` are not output parameters; only the grade
+  type is. Where an argument such as `⟨⟩` does not determine a type, write
+  `XCoreWP.Triple (EPred := …)`. A function `θ` with an implicit result type is
+  passed to `XWPMorphism.toCoreWPHom` as `@θ`, with `(m := …) (n := …)`.
 - The parameters `ps` and `Ω` of `XWP` are not output parameters. Write
   `XTriple (m := …) (ps := …) (Ω := …)` and `XPT (ps := …)` in statements.
 - `XPostCond` is reducible and has to stay so. A reduction lemma quantifies over
@@ -103,9 +107,16 @@ attribute [local instance] XAssertion.preorder XExceptConds.preorder XAssertion.
 
 ## Where a new lemma goes
 
-- A rule that holds for every ordered assertion type: `XPredCore.lean`.
+- A rule that holds for every ordered assertion type, including a rule about an
+  observation `XCoreWP` or a morphism `XCoreWPHom`: `XPredCore.lean`. A new rule
+  about programs is stated for `XCoreWP` first and reaches `XWP` through
+  `XWP.toCoreWP` and `xtriple_iff_core`.
 - Its instance at a shape, or a fact about `XAssertion`, `XPostCond`, `XWP`,
   `XBI`, `XWPMorphism`: `XPostShape.lean`.
+- An `XCoreWP` observation at assertion types that no shape computes: the module
+  of the monad, as a global instance. `XWP.toCoreWP` stays a definition; a module
+  that needs it writes `attribute [local instance] XWP.toCoreWP` after the line
+  for `XAssertion.preorder` and `XExceptConds.preorder`.
 - The reduction lemmas of a new combinator: the module that defines the
   combinator, tagged `@[simp, xspec]`; that module imports `XMvcgen`.
 - An `XWP`, `XBI` or `XWPMorphism` instance for a concrete monad or carrier: its

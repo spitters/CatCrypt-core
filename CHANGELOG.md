@@ -11,6 +11,11 @@
   the shape `.graded ℕ (.arg σ .pure)` (`instXWPCostM`), the soundness theorem
   `CostM.sound` against the run, and reduction lemmas in the `xspec` set. The
   tutorial has a section on a graded triple about a `CostM` program.
+- `XDijkstra/XPredCore.lean`: the observation of a monad without a shape
+  (`XCoreWP`, `XCoreWP.Triple`, `LawfulXCoreWP` with `XCoreWP.bind_triple`) and
+  morphisms of observations with a joint map on the pair of postconditions
+  (`XCoreWPHom`, `XCoreWPHom.triple`). `XWP` and `XWPMorphism` convert to them
+  (`XWP.toCoreWP`, `xtriple_iff_core`, `XWPMorphism.toCoreWPHom`).
 - `XDijkstra/Rel/`: graded relational coupling over `RelQ0` monads
   (`XRelTripleQ0`), the coupling specification monad `RelPT` with the tactics
   `relmvcgen` and `relmvcgen_ctl`, and `XDijkstra/XAdvantageHybrid.lean` with the

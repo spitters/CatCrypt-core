@@ -33,6 +33,8 @@ uses a rule stated over an arbitrary assertion type at two instances.
 * `readT`: the transformer that returns the state.
 * `setStep`: a transformer over the assertion type `Set ℕ`, which is not computed
   from a shape.
+* `setWP`: the observation of `StateM ℕ` at the assertion type `Set ℕ`, an
+  `XCoreWP` observation without a shape.
 * `bump`: a program of the cost-counting monad `CostM` with two ticks and a state
   update.
 
@@ -51,6 +53,10 @@ uses a rule stated over an arbitrary assertion type at two instances.
   exception layer.
 * `setStep_seq`, `stepT_seq_core`, `xseq_local`: `XCorePT.seq_triple` at `Set ℕ`
   and at a shape, and locality of `xseq` from `XCorePT.seq_local`.
+* `modify_set`, `addTwo_set`: triples of `StateM ℕ` programs at `Set ℕ`, composed
+  by `XCoreWP.bind_triple`.
+* `addTwo_core`, `costM_seq_core`: a shape-level triple as a core triple, and
+  graded sequencing of two `CostM` programs from `XCoreWP.seq_triple_of_wp_eq`.
 * `bump_budget`, `bump_run`: a graded triple about the `CostM` program `bump`, and
   the bound on the ticks of its run obtained from `CostM.sound`.
 -/
@@ -232,6 +238,95 @@ theorem xseq_local {ps : XPostShape.{0}} {Ω : Type} [Preorder Ω] [XBI Ω] [Add
     (hx : XLocal x) (hy : XLocal y) : XLocal (xseq x y) :=
   (xlocal_iff_core _).2 <|
     XCorePT.seq_local ((xlocal_iff_core x).1 hx) ((xlocal_iff_core y).1 hy)
+
+/-! ### Observing a monad without a shape
+
+`XCoreWP m Pred EPred G` observes the programs of a monad at assertion types given
+directly. Below, `StateM ℕ` is observed at `Set ℕ`: an assertion is a set of
+states. The observation commutes with `pure` and `bind` (`LawfulXCoreWP`), so
+`XCoreWP.bind_triple` composes triples along a `do` block. The exception
+postcondition type is `PUnit`; a statement names it, because the argument `⟨⟩`
+does not determine it. -/
+
+/-- The observation of a `StateM ℕ` program over sets of states: the initial
+states from which the run ends in the postcondition of the returned value. -/
+def setWP {α : Type} (c : StateM ℕ α) : XCorePT (Set ℕ) PUnit ℕ α where
+  apply post _ := {s | (c.run s).2 ∈ post (c.run s).1}
+  grade := 0
+  mono h _ := fun _ hs => h _ hs
+
+/-- `StateM ℕ` observed at the assertion type `Set ℕ`. -/
+local instance instXCoreWPStateSet : XCoreWP (StateM ℕ) (Set ℕ) PUnit ℕ where
+  wp := setWP
+
+/-- The observation at `Set ℕ` commutes with `pure` and `bind`. -/
+local instance instLawfulXCoreWPStateSet : LawfulXCoreWP (StateM ℕ) (Set ℕ) PUnit where
+  wp_pure _ := rfl
+  wp_bind _ _ := rfl
+
+/-- One increment takes the set `{n}` to `{n + 1}`. -/
+theorem modify_set (n : ℕ) :
+    XCoreWP.Triple (EPred := PUnit) ({n} : Set ℕ) (modify (· + 1) : StateM ℕ PUnit)
+      (fun _ => {n + 1}) ⟨⟩ := by
+  rintro s rfl; rfl
+
+/-- The triple of `addTwo` at `Set ℕ`, by `XCoreWP.bind_triple`. -/
+theorem addTwo_set (n : ℕ) :
+    XCoreWP.Triple (EPred := PUnit) ({n} : Set ℕ) addTwo (fun _ => {n + 2}) ⟨⟩ :=
+  XCoreWP.bind_triple (modify_set n) (fun _ => modify_set (n + 1))
+
+/-! ### Shape-level observations as core observations
+
+`XWP.toCoreWP` turns an `XWP m ps Ω` instance into an `XCoreWP` observation at
+`XAssertion ps Ω` and `XExceptConds ps Ω`; as a local instance it applies to every
+`XWP` instance, and `xtriple_iff_core` identifies the triples.
+`XWPMorphism.toCoreWPHom` does the same for a morphism. -/
+
+attribute [local instance] XWP.toCoreWP
+
+/-- The observation of `StateM ℕ` at its shape, as a core observation. -/
+example : XCoreWP (StateM ℕ) (XAssertion (psState ℕ) Prop) (XExceptConds (psState ℕ) Prop)
+    PUnit := inferInstance
+
+/-- The self-observation of `XPredTrans ps Prop`, as a core observation. -/
+example {ps : XPostShape.{0}} :
+    XCoreWP (XPredTrans ps Prop) (XAssertion ps Prop) (XExceptConds ps Prop) ps.Grade :=
+  inferInstance
+
+/-- The observation of `CostM ℕ k`, as a core observation with grade type `ℕ × PUnit`. -/
+example (k : ℕ) :
+    XCoreWP (CostM ℕ k) (XAssertion (psCost ℕ) Prop) (XExceptConds (psCost ℕ) Prop)
+      (ℕ × PUnit) := inferInstance
+
+/-- The base-change morphism `thetaX`, as a core morphism of observations. -/
+example :=
+  XWPMorphism.toCoreWPHom (Ω := Prop) (psm := .graded ℕ (.arg ℕ .pure))
+    (psn := .graded ℕ (.arg ℕ (.except PUnit .pure)))
+    (m := XPredTrans (.graded ℕ (.arg ℕ .pure)) Prop) (fun {_} t => thetaX t)
+
+/-- The identity morphism, as a core morphism of observations. -/
+example {ps : XPostShape.{0}} :=
+  XWPMorphism.toCoreWPHom (Ω := Prop) (psm := ps) (psn := ps)
+    (m := XPredTrans ps Prop) (n := XPredTrans ps Prop) (fun {_} t => t)
+
+/-- The triple `addTwo_x` as a core triple, through `xtriple_iff_core`. -/
+theorem addTwo_core (n : ℕ) :
+    XCoreWP.Triple (m := StateM ℕ) (Pred := XAssertion (psState ℕ) Prop)
+      (EPred := XExceptConds (psState ℕ) Prop)
+      (fun s => s = n) addTwo (fun _ s => s = n + 2) PUnit.unit :=
+  (xtriple_iff_core _ _ _).1 (addTwo_x n)
+
+/-- Two sequenced `CostM` programs: the observation of `CostM.seq` is the core
+sequence of the observations, so `XCoreWP.seq_triple_of_wp_eq` composes their
+triples and adds their grades. -/
+theorem costM_seq_core {j k : ℕ} (c : CostM ℕ j Unit) (d : CostM ℕ k Unit)
+    {P R : ℕ → Prop} {post : Unit → ℕ → Prop}
+    (h₁ : XTriple (m := CostM ℕ j) (ps := psCost ℕ) (Ω := Prop) P c (fun _ => R, PUnit.unit))
+    (h₂ : XTriple (m := CostM ℕ k) (ps := psCost ℕ) (Ω := Prop) R d (post, PUnit.unit)) :
+    XTriple (m := CostM ℕ (j + k)) (ps := psCost ℕ) (Ω := Prop) P (c.seq d) (post, PUnit.unit) :=
+  (XCoreWP.seq_triple_of_wp_eq (m₁ := CostM ℕ j) (m₂ := CostM ℕ k) (m₃ := CostM ℕ (j + k))
+    (Pred := XAssertion (psCost ℕ) Prop) (EPred := XExceptConds (psCost ℕ) Prop)
+    (c := c) (d := d) (e := c.seq d) (epost := PUnit.unit) rfl h₁ h₂).1
 
 /-! ## (g) A program with a cost counter
 

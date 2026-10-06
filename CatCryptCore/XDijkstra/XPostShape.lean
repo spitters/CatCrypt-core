@@ -51,7 +51,11 @@ and `xprod` are the core's `ret`, `bind`, `seq` and `prod` (`xpure_toCore`,
 `xbind_toCore`, `xseq_toCore`, `xprod_toCore`), `XPT` is `XCorePT.Triple`
 (`xpt_iff_core`) and `XLocal` is `XCorePT.Local` (`xlocal_iff_core`). The axis laws
 `xseq_triple`, `xwp_graded_bind`, `xtriple_grade_le`, `xframe`, `xpure_local`,
-`xrel_seq` and `xwp_morphism` are instances of the core laws. The order and
+`xrel_seq` and `xwp_morphism` are instances of the core laws. An observation
+`XWP m ps Ω` is a core observation `XCoreWP` through `XWP.toCoreWP`, with
+`XTriple` the core triple of a program (`xtriple_iff_core`), and a morphism
+`XWPMorphism θ` is a core morphism `XCoreWPHom` (`XWPMorphism.toCoreWPHom`,
+`XWPMorphism.toCoreWPHom_triple`). The order and
 separation structures on `XAssertion ps Ω` are definitions, local instances of this
 file only.
 
@@ -717,5 +721,73 @@ theorem demo_morphism {ps : XPostShape.{0}} (t : XPredTrans ps Prop Nat)
   xwp_morphism (θ := fun {_} t => t) (P₀ := P) (Q := Q) t h
 
 end Demos
+
+/-! ## 11. The shape-level observation as a core observation
+
+An `XWP m ps Ω` observation is an `XCoreWP` observation at the parameters
+computed from the shape, through `XPredTrans.toCore`. The conversion
+`XWP.toCoreWP` is a definition and not a global instance: its assertion types are
+ordered by `XAssertion.preorder` and `XExceptConds.preorder`, which are local
+instances, and instance resolution outside such a scope could not state its
+type. A file that reasons at the core level makes the three definitions local
+instances. A morphism `XWPMorphism θ` is an `XCoreWPHom` between the converted
+observations, and the core transfer rule at it has the statement of
+`xwp_morphism`. -/
+
+section CoreBridge
+
+/-- The core observation of a shape-level observation: the core transformer of
+`XWP.xwp`. -/
+@[reducible] def XWP.toCoreWP (m : Type u → Type v) (ps : XPostShape.{u}) (Ω : Type u)
+    [Preorder Ω] [XWP m ps Ω] :
+    XCoreWP m (XAssertion ps Ω) (XExceptConds ps Ω) ps.Grade where
+  wp c := (XWP.xwp c).toCore
+
+attribute [local instance] XWP.toCoreWP
+
+/-- The core observation of a program is the core transformer of its shape-level
+observation. -/
+theorem XWP.toCoreWP_wp {m : Type u → Type v} {ps : XPostShape.{u}} {α : Type u}
+    [XWP m ps Ω] (c : m α) :
+    (XCoreWP.wp c : XCorePT (XAssertion ps Ω) (XExceptConds ps Ω) ps.Grade α)
+      = (XWP.xwp c : XPredTrans ps Ω α).toCore := rfl
+
+/-- The program-level triple is the core triple of the converted observation. -/
+theorem xtriple_iff_core {m : Type u → Type v} {ps : XPostShape.{u}} {α : Type u}
+    [XWP m ps Ω] (P : XAssertion ps Ω) (c : m α) (Q : XPostCond α ps Ω) :
+    XTriple P c Q ↔ XCoreWP.Triple (m := m) P c Q.1 Q.2 := Iff.rfl
+
+/-- The self-observation of `XPredTrans ps Ω` commutes with `pure` and `bind` of
+`instMonad`, grade included. -/
+theorem XPredTrans.lawfulCoreWP {ps : XPostShape.{u}} [Zero ps.Grade] :
+    LawfulXCoreWP (XPredTrans ps Ω) (XAssertion ps Ω) (XExceptConds ps Ω) where
+  wp_pure _ := rfl
+  wp_bind _ _ := rfl
+
+/-- A shape-level morphism of observations is a core morphism between the
+converted observations, with the same maps. -/
+def XWPMorphism.toCoreWPHom {m n : Type u → Type v} {psm psn : XPostShape.{u}}
+    [XWP m psm Ω] [XWP n psn Ω] (θ : {α : Type u} → m α → n α)
+    [inst : XWPMorphism (Ω := Ω) (m := m) (n := n) (psm := psm) (psn := psn) θ] :
+    XCoreWPHom (m := m) (n := n) (XAssertion psm Ω) (XExceptConds psm Ω)
+      (XAssertion psn Ω) (XExceptConds psn Ω) θ where
+  postMap Q := inst.postMap Q
+  preMap := inst.preMap
+  preMap_mono := inst.preMap_mono
+  transfer c post epost := inst.transfer c (post, epost)
+
+/-- The core transfer rule `XCoreWPHom.triple` at the converted morphism; the
+statement is that of `xwp_morphism`. -/
+theorem XWPMorphism.toCoreWPHom_triple {m n : Type u → Type v} {psm psn : XPostShape.{u}}
+    [XWP m psm Ω] [XWP n psn Ω] {θ : {α : Type u} → m α → n α}
+    [inst : XWPMorphism (Ω := Ω) (m := m) (n := n) (psm := psm) (psn := psn) θ]
+    {α : Type u} (c : m α) {P₀ : XAssertion psm Ω} {Q : XPostCond α psn Ω}
+    (h : XTriple (m := m) P₀ c (inst.postMap Q)) :
+    XTriple (m := n) (inst.preMap P₀) (θ c) Q :=
+  (xtriple_iff_core _ _ _).2 <|
+    (XWPMorphism.toCoreWPHom (Ω := Ω) (m := m) (n := n) (psm := psm) (psn := psn) @θ).triple
+      c (post := Q.1) (epost := Q.2) ((xtriple_iff_core _ _ _).1 h)
+
+end CoreBridge
 
 end CatCrypt.XDijkstra

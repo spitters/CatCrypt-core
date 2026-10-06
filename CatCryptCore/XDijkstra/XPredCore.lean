@@ -39,6 +39,11 @@ monotone addition.
   argument, and the frame property of a transformer.
 * `XCorePT.mapGrade`, `XCoreHom`, `XCoreHom.map`: change of grade, and change of
   assertions and grade together.
+* `XCoreWP`, `XCoreWP.Triple`, `LawfulXCoreWP`: the observation of a monad as
+  transformers, the triple of a program, and commutation of the observation with
+  `pure` and `bind`.
+* `XCoreWPHom`, `XCoreHom.toWPHom`: a morphism of observations with a joint map
+  on the pair of postconditions, and the componentwise case.
 
 ## Main results
 
@@ -53,11 +58,16 @@ monotone addition.
 * `XCorePT.Triple.transfer`, `XCoreHom.map_triple`, `XCoreHom.map_ret`,
   `XCoreHom.map_bind`, `XCoreHom.map_seq`: transfer of triples along a change of
   assertions, and its commutation with return, bind and sequencing.
+* `XCoreWP.pure_triple`, `XCoreWP.bind_triple`, `XCoreWP.bind_grade`: the rules
+  of a lawful observation.
+* `XCoreWP.seq_triple_of_wp_eq`: graded sequencing for programs whose
+  observation is a sequence, as in a family of monads indexed by the grade.
+* `XCoreWPHom.triple`: transfer of triples along a morphism of observations.
 -/
 
 namespace CatCrypt.XDijkstra
 
-universe u v w x y
+universe u v w x y z
 
 /-- A graded predicate transformer: a monotone weakest-precondition map from a
 postcondition `α → Pred` and an exception postcondition `EPred` to a
@@ -414,5 +424,181 @@ theorem map_seq [Add G₁] [Add G₂] (θ : XCoreHom Pred₁ EPred₁ G₁ Pred�
   XCorePT.ext (fun post epost => by simp [hret]) (hadd s.grade t.grade)
 
 end XCoreHom
+
+/-! ## Observation of a monad
+
+`XCoreWP m Pred EPred G` observes the programs of `m` as transformers over the
+assertion types `Pred` and `EPred`. The assertion types are ordinary parameters:
+one monad may be observed at several assertion types, and a triple names them in
+its precondition and postconditions. The grade type is an output parameter: it
+occurs in no argument of a triple, so it is determined from the monad and the
+assertion types. -/
+
+/-- A weakest-precondition observation of the programs of `m` as graded
+transformers over the assertion type `Pred`, the exception-postcondition type
+`EPred` and the grade type `G`. -/
+class XCoreWP (m : Type x → Type y) (Pred : Type u) (EPred : Type v)
+    (G : outParam (Type w)) [LE Pred] [LE EPred] where
+  /-- The transformer of a program. -/
+  wp {α : Type x} : m α → XCorePT Pred EPred G α
+
+namespace XCoreWP
+
+variable {m : Type x → Type y} {Pred : Type u} {EPred : Type v} {G : Type w}
+
+/-- The Hoare triple of a program: the triple of its transformer. -/
+def Triple [LE Pred] [LE EPred] [XCoreWP m Pred EPred G] {α : Type x}
+    (P : Pred) (c : m α) (post : α → Pred) (epost : EPred) : Prop :=
+  XCorePT.Triple P (wp c) post epost
+
+/-- Consequence for the triple of a program. -/
+theorem Triple.conseq [Preorder Pred] [LE EPred] [XCoreWP m Pred EPred G] {α : Type x}
+    {c : m α} {P P' : Pred} {post post' : α → Pred} {epost epost' : EPred}
+    (h : Triple P c post epost) (hP : P' ≤ P) (hpost : ∀ a, post a ≤ post' a)
+    (hepost : epost ≤ epost') : Triple P' c post' epost' :=
+  XCorePT.Triple.conseq h hP hpost hepost
+
+/-- Graded sequencing for three observed programs, which may belong to three
+members of a family of monads indexed by the grade. If the transformer of `e` is
+the sequence of the transformers of `c` and `d`, then triples of `c` and `d`
+compose to a triple of `e`, and the grade of `e` is the sum of the grades. -/
+theorem seq_triple_of_wp_eq {m₁ m₂ m₃ : Type x → Type y}
+    [Preorder Pred] [Preorder EPred] [Add G]
+    [XCoreWP m₁ Pred EPred G] [XCoreWP m₂ Pred EPred G] [XCoreWP m₃ Pred EPred G]
+    {α β : Type x} {c : m₁ α} {d : m₂ β} {e : m₃ β}
+    (he : (wp e : XCorePT Pred EPred G β) = (wp c : XCorePT Pred EPred G α).seq (wp d))
+    {P R : Pred} {post : β → Pred} {epost : EPred}
+    (h₁ : Triple P c (fun _ => R) epost) (h₂ : Triple R d post epost) :
+    Triple P e post epost
+      ∧ (wp e : XCorePT Pred EPred G β).grade
+          = (wp c : XCorePT Pred EPred G α).grade + (wp d : XCorePT Pred EPred G β).grade := by
+  unfold Triple at *
+  rw [he]
+  exact ⟨XCorePT.seq_triple h₁ h₂, rfl⟩
+
+end XCoreWP
+
+/-- A transformer observes itself. -/
+instance XCorePT.instXCoreWP {Pred : Type u} {EPred : Type v} {G : Type w}
+    [LE Pred] [LE EPred] : XCoreWP (XCorePT.{u, v, w, x} Pred EPred G) Pred EPred G where
+  wp := id
+
+/-- The observation of a transformer is the transformer. -/
+@[simp] theorem XCorePT.wp_self {Pred : Type u} {EPred : Type v} {G : Type w}
+    [LE Pred] [LE EPred] {α : Type x} (t : XCorePT Pred EPred G α) :
+    (XCoreWP.wp t : XCorePT Pred EPred G α) = t := rfl
+
+/-- The observation of a monad commutes with `pure` and `bind`: `pure` is
+observed as `XCorePT.ret`, at grade `0`, and `bind` as `XCorePT.bind`, at the
+grade of the head. -/
+class LawfulXCoreWP (m : Type x → Type y) (Pred : Type u) (EPred : Type v)
+    {G : Type w} [Monad m] [LE Pred] [LE EPred] [Zero G] [XCoreWP m Pred EPred G] :
+    Prop where
+  /-- `pure` is observed as return. -/
+  wp_pure {α : Type x} (a : α) :
+    (XCoreWP.wp (pure a : m α) : XCorePT Pred EPred G α) = XCorePT.ret a
+  /-- `bind` is observed as the bind of the observations. -/
+  wp_bind {α β : Type x} (c : m α) (f : α → m β) :
+    (XCoreWP.wp (c >>= f) : XCorePT Pred EPred G β)
+      = (XCoreWP.wp c : XCorePT Pred EPred G α).bind (fun a => XCoreWP.wp (f a))
+
+namespace XCoreWP
+
+variable {m : Type x → Type y} {Pred : Type u} {EPred : Type v} {G : Type w}
+
+/-- The triple of `pure a` from the postcondition at `a`. -/
+theorem pure_triple [Monad m] [Preorder Pred] [LE EPred] [Zero G] [XCoreWP m Pred EPred G]
+    [LawfulXCoreWP m Pred EPred] {α : Type x} (a : α) (post : α → Pred) (epost : EPred) :
+    Triple (post a) (pure a : m α) post epost := by
+  unfold Triple
+  rw [LawfulXCoreWP.wp_pure]
+  exact le_refl (post a)
+
+/-- Hoare composition for `bind` in a monad with a lawful observation. -/
+theorem bind_triple [Monad m] [Preorder Pred] [Preorder EPred] [Zero G]
+    [XCoreWP m Pred EPred G] [LawfulXCoreWP m Pred EPred] {α β : Type x} {c : m α}
+    {f : α → m β} {P : Pred} {R : α → Pred} {post : β → Pred} {epost : EPred}
+    (h₁ : Triple P c R epost) (h₂ : ∀ a, Triple (R a) (f a) post epost) :
+    Triple P (c >>= f) post epost := by
+  unfold Triple at *
+  rw [LawfulXCoreWP.wp_bind]
+  exact XCorePT.bind_triple h₁ h₂
+
+/-- The grade of a `bind` is the grade of its head. -/
+theorem bind_grade [Monad m] [LE Pred] [LE EPred] [Zero G] [XCoreWP m Pred EPred G]
+    [LawfulXCoreWP m Pred EPred] {α β : Type x} (c : m α) (f : α → m β) :
+    (wp (c >>= f) : XCorePT Pred EPred G β).grade
+      = (wp c : XCorePT Pred EPred G α).grade := by
+  rw [LawfulXCoreWP.wp_bind]; rfl
+
+end XCoreWP
+
+/-! ## Morphisms of observations -/
+
+/-- A morphism of observations along `θ : m → n`: a map `postMap` on the pair of
+a postcondition and an exception postcondition, a monotone map `preMap` on
+preconditions, and the transfer law relating the two observations. The map
+`postMap` acts on the pair jointly, so the pulled-back postcondition may depend
+on the exception postcondition and conversely. -/
+structure XCoreWPHom {m : Type x → Type y} {n : Type x → Type z}
+    (Pred₁ : Type u) (EPred₁ : Type v) (Pred₂ : Type u) (EPred₂ : Type v)
+    {G₁ G₂ : Type w} [LE Pred₁] [LE EPred₁] [LE Pred₂] [LE EPred₂]
+    [XCoreWP m Pred₁ EPred₁ G₁] [XCoreWP n Pred₂ EPred₂ G₂]
+    (θ : {α : Type x} → m α → n α) where
+  /-- The map from postcondition pairs of `n` to postcondition pairs of `m`. -/
+  postMap : {α : Type x} → (α → Pred₂) × EPred₂ → (α → Pred₁) × EPred₁
+  /-- The map on preconditions. -/
+  preMap : Pred₁ → Pred₂
+  /-- `preMap` is monotone. -/
+  preMap_mono : ∀ {A B : Pred₁}, A ≤ B → preMap A ≤ preMap B
+  /-- The weakest precondition of `θ c` is the image under `preMap` of that of
+  `c` at the pulled-back pair. -/
+  transfer : ∀ {α : Type x} (c : m α) (post : α → Pred₂) (epost : EPred₂),
+    (XCoreWP.wp (θ c : n α) : XCorePT Pred₂ EPred₂ G₂ α).apply post epost
+      = preMap ((XCoreWP.wp c : XCorePT Pred₁ EPred₁ G₁ α).apply
+          (postMap (post, epost)).1 (postMap (post, epost)).2)
+
+namespace XCoreWPHom
+
+variable {m : Type x → Type y} {n : Type x → Type z}
+  {Pred₁ : Type u} {EPred₁ : Type v} {Pred₂ : Type u} {EPred₂ : Type v} {G₁ G₂ : Type w}
+  [LE Pred₁] [LE EPred₁] [LE Pred₂] [LE EPred₂]
+  [XCoreWP m Pred₁ EPred₁ G₁] [XCoreWP n Pred₂ EPred₂ G₂] {θ : {α : Type x} → m α → n α}
+
+/-- Transfer of triples along a morphism of observations: a triple of `c` at the
+pulled-back pair gives a triple of `θ c` at the image of the precondition. -/
+theorem triple (φ : XCoreWPHom (m := m) (n := n) Pred₁ EPred₁ Pred₂ EPred₂ θ)
+    {α : Type x} (c : m α)
+    {P : Pred₁} {post : α → Pred₂} {epost : EPred₂}
+    (h : XCoreWP.Triple P c (φ.postMap (post, epost)).1 (φ.postMap (post, epost)).2) :
+    XCoreWP.Triple (m := n) (φ.preMap P) (θ c : n α) post epost :=
+  XCorePT.Triple.transfer φ.preMap_mono (φ.transfer c post epost) h
+
+end XCoreWPHom
+
+/-- A change of assertions is a morphism of the self-observations along its
+action on transformers; `postMap` acts on each component separately. -/
+def XCoreHom.toWPHom {Pred₁ : Type u} {EPred₁ : Type v} {G₁ : Type w}
+    {Pred₂ : Type u} {EPred₂ : Type v} {G₂ : Type w}
+    [LE Pred₁] [LE EPred₁] [LE Pred₂] [LE EPred₂]
+    (θ : XCoreHom Pred₁ EPred₁ G₁ Pred₂ EPred₂ G₂) :
+    XCoreWPHom (m := XCorePT.{u, v, w, x} Pred₁ EPred₁ G₁)
+      (n := XCorePT.{u, v, w, x} Pred₂ EPred₂ G₂)
+      Pred₁ EPred₁ Pred₂ EPred₂ (fun {_} t => θ.map t) where
+  postMap Q := (fun a => θ.post (Q.1 a), θ.epost Q.2)
+  preMap := θ.pre
+  preMap_mono := θ.pre_mono
+  transfer _ _ _ := rfl
+
+/-- The transfer rule of a change of assertions, obtained from the transfer rule
+of its morphism of observations; the statement is that of `XCoreHom.map_triple`. -/
+theorem XCoreHom.toWPHom_triple {Pred₁ : Type u} {EPred₁ : Type v} {G₁ : Type w}
+    {Pred₂ : Type u} {EPred₂ : Type v} {G₂ : Type w}
+    [LE Pred₁] [LE EPred₁] [LE Pred₂] [LE EPred₂]
+    (θ : XCoreHom Pred₁ EPred₁ G₁ Pred₂ EPred₂ G₂) {α : Type x}
+    {t : XCorePT Pred₁ EPred₁ G₁ α} {P : Pred₁} {post : α → Pred₂} {epost : EPred₂}
+    (h : XCorePT.Triple P t (fun a => θ.post (post a)) (θ.epost epost)) :
+    XCorePT.Triple (θ.pre P) (θ.map t) post epost :=
+  θ.toWPHom.triple t h
 
 end CatCrypt.XDijkstra

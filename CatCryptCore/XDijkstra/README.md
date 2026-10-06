@@ -25,7 +25,7 @@ All declarations are in the namespace `CatCrypt.XDijkstra`, except those of
 | `Assertion ps` | `XAssertion ps Ω` | assertions take values in a preordered carrier `Ω`; `Ω := Prop` gives plain propositions |
 | `ExceptConds ps`, `PostCond α ps` | `XExceptConds ps Ω`, `XPostCond α ps Ω` | a postcondition is a pair `(success, exceptions)`; there is no `⇓` notation |
 | `PredTrans ps α` | `XPredTrans ps Ω α`; without a shape, `XCorePT Pred EPred G α` | fields `apply`, `grade`, `mono` |
-| `WP m ps`, `wp⟦x⟧` | `XWP m ps Ω`, `XWP.xwp x` | no bracket notation is declared; `xwp⟦x⟧` appears in docstrings only. `ps` and `Ω` are not output parameters, so statements name them: `(m := …) (ps := …) (Ω := …)` |
+| `WP m ps`, `wp⟦x⟧` | `XWP m ps Ω`, `XWP.xwp x`; without a shape, `XCoreWP m Pred EPred G`, `XCoreWP.wp x` | no bracket notation is declared; `xwp⟦x⟧` appears in docstrings only. `ps` and `Ω` are not output parameters, so statements name them: `(m := …) (ps := …) (Ω := …)`. Of the parameters of `XCoreWP` only the grade type `G` is an output parameter |
 | `Triple x P Q`, `⦃P⦄ x ⦃Q⦄` | `XTriple P x Q` for a program, `XPT P t Q` for a transformer | no bracket notation; the precondition comes first |
 | `Q ⊢ₚ Q'` | `Q ⊢ₓ Q'` (`XPostCond.le`, scoped notation) | |
 | `@[spec]` | `@[xspec]` | `xspec` is a simp attribute for equations `(op …).apply Q = …` and `(op …).grade.1 = …`; it does not hold Hoare triples |
@@ -42,8 +42,8 @@ shape.
 
 | Module | Content |
 |---|---|
-| `XPredCore` | `XCorePT`, a graded transformer over an arbitrary ordered assertion type; `ret`, `bind`, `seq`, `prod`; the sequencing, frame, relational and transfer rules; `XCoreHom` |
-| `XPostShape` | `XPostShape`, `XAssertion`, `XPostCond`, `XPredTrans`, `XWP`, `XPT`, `XTriple`, `XBI`, `XRelTriple`, `XWPMorphism`; the rules of the four features as instances of the core rules; `XPredTrans.equivCore` |
+| `XPredCore` | `XCorePT`, a graded transformer over an arbitrary ordered assertion type; `ret`, `bind`, `seq`, `prod`; the sequencing, frame, relational and transfer rules; `XCoreHom`; the observation classes `XCoreWP` and `LawfulXCoreWP`; `XCoreWPHom`, a morphism of observations |
+| `XPostShape` | `XPostShape`, `XAssertion`, `XPostCond`, `XPredTrans`, `XWP`, `XPT`, `XTriple`, `XBI`, `XRelTriple`, `XWPMorphism`; the rules of the four features as instances of the core rules; `XPredTrans.equivCore`; `XWP.toCoreWP` and `XWPMorphism.toCoreWPHom` |
 | `XMvcgen` | the simp attribute `xspec` and the tactic `xmvcgen` |
 | `XMvcgenControl` | `xite`, `xphi`, `xfor` with their reduction lemmas and triple rules; the tactic `xmvcgen_ctl` |
 | `XMvcgenReg` | the core reductions added to `xspec`; the tactic `xmvcgen!` |
@@ -87,7 +87,7 @@ same for `RelPT` (`relational_axis_is_monad`, `relational_grade_adds`), and
 | Grade | `xseq_triple`, `xwp_graded_bind`, `xtriple_grade_le` | `XCorePT.seq_triple`, `XCorePT.seq_grade`, `XCorePT.seq_grade_le` |
 | Frame | `xframe`, `xpure_local` | `XCorePT.frame`, `XCorePT.ret_local`, `XCorePT.bind_local`, `XCorePT.seq_local` |
 | Relational | `xrel_seq`; for `PMF`: `Couples_bind`, `XRelTriplePMF_seq` | `XCorePT.rel_seq` |
-| Morphism | `xwp_morphism` | `XCorePT.Triple.transfer`, `XCoreHom.map_triple` |
+| Morphism | `xwp_morphism` | `XCorePT.Triple.transfer`, `XCoreHom.map_triple`, `XCoreWPHom.triple` |
 
 The grade is a field of the transformer. `xseq x y` has grade
 `x.grade + y.grade`. `xbind x f` has the grade of `x`, because the grade of `f a`
@@ -146,11 +146,34 @@ equivalence, and `xpure_toCore`, `xbind_toCore`, `xseq_toCore`, `xprod_toCore`,
 locality. A rule that does not mention the shape is proved at `XCorePT` and
 instantiated; `xseq_local` in `Demo.lean` is an example.
 
-The following are stated with a shape and have no counterpart at `XCorePT`: the
-classes `XWP`, `XBI` and `XWPMorphism`, the program-level `XTriple`, the three
-tactics and the `xspec` lemmas, and the combinators `xite`, `xphi`, `xfor` and
-`xpar`. `xphi`, `xfor` and `tick` are defined at the single shape
-`.graded ℕ .pure` over `Prop`.
+The observation of a monad is also stated without a shape. `XCoreWP m Pred EPred G`
+gives `wp : m α → XCorePT Pred EPred G α`, `XCoreWP.Triple` is the triple of a
+program, and `LawfulXCoreWP` states that the observation commutes with `pure` and
+`bind`, from which `XCoreWP.bind_triple` follows. The assertion types are
+ordinary parameters, since one monad is observed at several of them (`StateM ℕ`
+at `Set ℕ` and at `XAssertion (psState ℕ) Prop` in `Demo.lean`); the grade type
+is an output parameter, since no argument of a triple mentions it. `XCoreWPHom`
+is a morphism between two observations with one map on the pair of
+postconditions, as `XWPMorphism` has; `XCoreHom.toWPHom` is the case where the
+map acts on each component. `XWP.toCoreWP` turns an `XWP` instance into an
+`XCoreWP` observation and `XWPMorphism.toCoreWPHom` a morphism into a core
+morphism; both are definitions, used as local instances, because the order on
+`XAssertion ps Ω` is a local instance. `xtriple_iff_core` identifies `XTriple`
+with `XCoreWP.Triple`.
+
+| Notion | At `XCorePT` | Depends on the shape |
+|---|---|---|
+| Transformer, triple, rules of the four features | `XCorePT`, `XCorePT.Triple`, `XCorePT.seq_triple`, `XCorePT.frame`, `XCorePT.rel_seq` | `XPredTrans`, `XPT` take a postcondition as a pair `XPostCond α ps Ω` |
+| Observation of a monad | `XCoreWP`, `XCoreWP.Triple`, `LawfulXCoreWP` | `XWP`, `XTriple`; converted by `XWP.toCoreWP` |
+| Morphism of observations | `XCoreWPHom`, `XCoreWPHom.triple` | `XWPMorphism`, `xwp_morphism`; converted by `XWPMorphism.toCoreWPHom` |
+| Assertion types and their order | parameters `Pred`, `EPred` with `≤` | `XAssertion`, `XExceptConds`, `XAssertion.le`, computed by recursion on the shape |
+| Separation | `XCoreSep` on the assertion type | `XBI` on the carrier `Ω`, lifted by `XAssertion.sep` |
+| Reduction lemmas and tactics | none | the `xspec` set, `xmvcgen`, `xmvcgen_ctl`, `xmvcgen!` |
+| Control combinators | none | `xite`, `xphi`, `xfor`, `xpar` |
+| Relational layer of `Rel/` | none | `instXWPSDistr`, `couplingPT` and the statements that write a postcondition as a pair |
+
+`xphi`, `xfor` and `tick` are defined at the single shape `.graded ℕ .pure` over
+`Prop`.
 
 The Lean 4.33.1 toolchain contains, beside `Std.Do`, a library `Std.Internal.Do`
 whose `PredTrans Pred EPred α` is parameterised by an assertion type and an
