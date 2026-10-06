@@ -53,6 +53,16 @@ public import CatCryptCore.Category.PkgFam
 public import CatCryptCore.Category.Cocartesian
 public import CatCryptCore.Category.Affine
 public import CatCryptCore.Category.Effectus
+public import CatCryptCore.Category.ProtCategory
+public import CatCryptCore.Category.ProtBicat
+public import CatCryptCore.Category.CoParaGradedBridge
+public import CatCryptCore.Category.XCategoricalModel
+public import CatCryptCore.XDijkstra.XDijkstraAll
+public import CatCryptCore.XDijkstra.XMvcgenControl
+public import CatCryptCore.XDijkstra.XMvcgenReg
+public import CatCryptCore.XDijkstra.XMorphismInstance
+public import CatCryptCore.XDijkstra.XQuantaleGradeCore
+public import CatCryptCore.XDijkstra.GradedWP
 
 -- Deep embedding
 public import CatCryptCore.Deep.RawCode
@@ -94,6 +104,8 @@ public import CatCryptCore.Crypto.SDist
 public import CatCryptCore.Crypto.SDistrLift
 public import CatCryptCore.Crypto.UC
 public import CatCryptCore.Crypto.UCMonad
+public import CatCryptCore.Crypto.UCMonad.LeakageExceptT
+public import CatCryptCore.Crypto.UCMonad.UCLeakageDecomp
 public import CatCryptCore.Crypto.UCMonad.SPCompInstance
 public import CatCryptCore.Crypto.RC
 public import CatCryptCore.Crypto.UCAlg
