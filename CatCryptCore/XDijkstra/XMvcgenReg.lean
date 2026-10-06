@@ -169,4 +169,30 @@ theorem demo_branch_reg (budget : ℕ) (h : 2 ≤ budget) (b : Bool) :
   xmvcgen! [tick_grade_fst]
   cases b <;> simp <;> omega
 
+/-! ### 3d. A state layer and a postcondition written as a function
+
+At the shape `.arg ℕ .pure` an assertion is a function of the state, and the
+postcondition below is a pair of a `fun` and the unit. The reductions `xseq_apply`
+and `stateStep_apply` quantify over `Q : XPostCond …`; they rewrite the pair because
+`XPostCond` is reducible. -/
+
+/-- One increment of a natural-number state, at the shape `.arg ℕ .pure`. -/
+def stateStep : XPredTrans (.arg ℕ .pure) Prop Unit where
+  apply Q := fun s => Q.1 () (s + 1)
+  grade := ⟨⟩
+  mono h := fun s => h.1 () (s + 1)
+
+/-- The weakest precondition of `stateStep` evaluates the postcondition at the
+incremented state. -/
+@[simp, xspec] theorem stateStep_apply (Q : XPostCond Unit (.arg ℕ .pure) Prop) :
+    stateStep.apply Q = fun s => Q.1 () (s + 1) := rfl
+
+/-- Two increments take the state `n` to `n + 2`; `xmvcgen!` computes the weakest
+precondition from the `xspec` set alone. -/
+theorem demo_state_seq_reg (n : ℕ) :
+    XPT (ps := .arg ℕ .pure) (fun s => s = n)
+      (xseq stateStep stateStep) (fun _ s => s = n + 2, ⟨⟩) := by
+  xmvcgen!
+  rintro s rfl; rfl
+
 end CatCrypt.XDijkstra

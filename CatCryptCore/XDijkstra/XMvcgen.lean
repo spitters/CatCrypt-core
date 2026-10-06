@@ -173,23 +173,23 @@ theorem demo_relational_graded :
     xmvcgen [ret3Step]
     omega
   · -- relational axis: xmvcgen runs the product WP, leaving the residual
-    -- entailment `True → 3 = 3`.
+    -- entailment `True ≤ True` (`3 = 3` is closed by the tactic).
     xmvcgen [ret3Step]
-    exact fun _ => rfl
+    exact le_rfl
 
 /-! ### Demo (c) — relational via `xprod` on pure programs
 
 The minimal relational demo: two pure programs returning `3` are related by the
-diagonal through the product transformer. `xmvcgen` computes the product WP away,
-leaving `True → 3 = 3`. -/
+diagonal through the product transformer. `xmvcgen` computes the product WP away
+and closes `3 = 3`. -/
 theorem demo_relational_pure :
     XRelTriple (ps := .pure) True
       (xpure (Ω := Prop) (ps := .pure) (3 : Nat))
       (xpure (Ω := Prop) (ps := .pure) (3 : Nat))
       (fun p => p.1 = p.2) ⟨⟩ := by
-  -- xmvcgen runs the product WP; residual entailment `True → 3 = 3`.
+  -- xmvcgen runs the product WP and closes `3 = 3`; residual `True ≤ True`.
   xmvcgen
-  exact fun _ => rfl
+  exact le_rfl
 
 /-! ### Demo (d) — monad morphism: the transfer law normalizes
 

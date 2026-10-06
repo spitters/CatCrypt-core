@@ -83,12 +83,13 @@ theorem addTwo_std (n : ℕ) :
 
 end StdDo
 
-/-- The `XTriple` of `addTwo`, by `xmvcgen!`. The extra arguments unfold the
-observation of `StateM`: the class projection `XWP.xwp` and its value `stateWP`. -/
+/-- The `XTriple` of `addTwo`, by `xmvcgen!`. The extra arguments are the two
+reduction lemmas of the `StateM` observation: `xwp_stateM` rewrites `XWP.xwp` to
+`stateWP`, and `stateWP_apply` rewrites its weakest precondition to the run. -/
 theorem addTwo_x (n : ℕ) :
     XTriple (m := StateM ℕ) (ps := psState ℕ) (Ω := Prop)
       (fun s => s = n) addTwo (fun _ s => s = n + 2, PUnit.unit) := by
-  xmvcgen! [XWP.xwp, stateWP]
+  xmvcgen! [xwp_stateM, stateWP_apply]
   rintro s rfl; rfl
 
 /-! ## (b) A grade
@@ -97,9 +98,9 @@ theorem addTwo_x (n : ℕ) :
 the weakest precondition of one increment with grade `1`, at the shape
 `.graded ℕ (.arg ℕ .pure)`. Sequencing with `xseq` adds grades, and `xmvcgen`
 rewrites the grade of the sequence to the sum (`xwp_graded_bind`). A graded
-specification is the conjunction of a bound on the grade and a triple. For the
-triple, the definitions of the step and of `xseq` are passed to `xmvcgen`: at a
-shape with a state layer the weakest precondition is computed by unfolding them. -/
+specification is the conjunction of a bound on the grade and a triple. The
+definition of the step is passed to `xmvcgen`; the sequence is reduced by
+`xseq_apply`. -/
 
 /-- One increment of the state, at cost `1`. -/
 def stepT : XPredTrans (.graded ℕ (.arg ℕ .pure)) Prop Unit where
@@ -116,7 +117,7 @@ theorem stepT_seq_budget (n b : ℕ) (hb : 2 ≤ b) :
   refine ⟨?_, ?_⟩
   · xmvcgen [stepT]
     omega
-  · xmvcgen [stepT, xseq]
+  · xmvcgen [stepT]
     rintro s rfl; rfl
 
 /-! ## (c) The frame rule
@@ -163,7 +164,7 @@ theorem readT_rel :
     XRelTriple (ps := .arg ℕ .pure) (fun _ => True) readT readT
       (fun p _ => p.1 = p.2) ⟨⟩ := by
   xmvcgen [readT]
-  exact fun _ _ => rfl
+  exact fun _ => le_rfl
 
 /-- Two runs that sample from the same distribution and then apply `f` and `g`
 are coupled on `S` when `f` and `g` are pointwise related by `S`. -/

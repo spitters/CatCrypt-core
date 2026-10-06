@@ -149,8 +149,11 @@ def XExceptConds : XPostShape.{u} → Type u → Type u
   | .graded _ ps, Ω => XExceptConds ps Ω
 
 /-- A postcondition: a success assertion per return value plus the exception
-barrels. Mirrors `Std.Do.PostCond`. -/
-def XPostCond (α : Type u) (ps : XPostShape.{u}) (Ω : Type u) : Type u :=
+barrels. Mirrors `Std.Do.PostCond`. The definition is reducible: a reduction lemma
+quantifies over `Q : XPostCond α ps Ω`, a pair written in a goal has the product
+type, and unification of the lemma with the goal compares the two types with
+reducible definitions unfolded only. -/
+@[reducible] def XPostCond(α : Type u) (ps : XPostShape.{u}) (Ω : Type u) : Type u :=
   (α → XAssertion ps Ω) × XExceptConds ps Ω
 
 /-! ### Entailment

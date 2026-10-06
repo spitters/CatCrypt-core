@@ -61,6 +61,11 @@ def stateWP {σ α : Type} (x : StateM σ α) : XPredTrans (psState σ) Prop α 
 instance instXWPStateM {σ : Type} : XWP (StateM σ) (psState σ) Prop where
   xwp := stateWP
 
+/-- The observation of a `StateM` program is `stateWP`. With `stateWP_apply` this
+rewrites the weakest precondition of a program to its run. -/
+@[simp] theorem xwp_stateM {σ α : Type} (x : StateM σ α) :
+    XWP.xwp (ps := psState σ) (Ω := Prop) x = stateWP x := rfl
+
 /-- **Soundness characterization.** The extended `XTriple` over `StateM σ` *is* the
 ordinary state Hoare triple: `⦃P⦄ x ⦃Q⦄` in the framework holds iff for every
 initial state satisfying `P`, the returned value and final state of the run satisfy

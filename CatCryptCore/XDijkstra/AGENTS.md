@@ -35,9 +35,14 @@ namespace `CatCrypt.XDijkstra`.
 - `xmvcgen_ctl` does not unfold `XRelTriple`.
 - The parameters `ps` and `Ω` of `XWP` are not output parameters. Write
   `XTriple (m := …) (ps := …) (Ω := …)` and `XPT (ps := …)` in statements.
-- At a shape with a state layer and a postcondition written as a `fun`, the
-  `_apply` lemmas were observed not to rewrite. Pass the definitions (`xseq`, the
-  step, `XWP.xwp`, `stateWP`) as extra arguments.
+- `XPostCond` is reducible and has to stay so. A reduction lemma quantifies over
+  `Q : XPostCond α ps Ω`, while a postcondition written as a pair `(fun a => …, e)`
+  has the product type; `simp` and `rw` compare the two types with reducible
+  definitions unfolded only, and with a non-reducible `XPostCond` no `_apply`
+  lemma rewrites such a goal (`demo_state_seq_reg` is the regression example).
+- For a program of `StateM`, pass `xwp_stateM` and `stateWP_apply` to the tactic;
+  they are not in `xspec`. A new `XWP` instance needs the corresponding pair of
+  lemmas: `simp only` does not unfold the class projection `XWP.xwp`.
 - A transformer over `Prop` with a state layer is in general not `XLocal`
   (`stepT_not_local`); `xframe` then does not apply.
 - `xphi`, `xfor`, `tick`, `xfor_triple` are fixed at `.graded ℕ .pure` over `Prop`.
@@ -51,14 +56,14 @@ arithmetic or an entailment.
   refine ⟨?_, ?_⟩
   · xmvcgen [stepT]
     omega
-  · xmvcgen [stepT, xseq]
+  · xmvcgen [stepT]
     rintro s rfl; rfl
 ```
 
 A triple about a program of a monad with an `XWP` instance:
 
 ```lean
-  xmvcgen! [XWP.xwp, stateWP]
+  xmvcgen! [xwp_stateM, stateWP_apply]
   rintro s rfl; rfl
 ```
 

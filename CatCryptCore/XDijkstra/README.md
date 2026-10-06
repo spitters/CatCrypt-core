@@ -134,10 +134,10 @@ parameters and the grade.
 - The tactics are `simp only` macros. They do not look up triples, split a goal
   into named conditions, case on a `bif` (`demo_branch` uses `cases b`) or find
   loop invariants (`xfor_triple` is applied by hand).
-- At a shape with a state layer and a postcondition written as a `fun`, the
-  lemmas `xseq_apply` and `stateWP_apply` were observed not to rewrite; the
-  definitions (`xseq`, `stateWP`, `XWP.xwp`) are passed to the tactic instead.
-  `addTwo_x` and `stepT_seq_budget` in `Demo.lean` show the calls.
+- `xwp_stateM` and `stateWP_apply`, the reductions of the `StateM` observation,
+  are not in the `xspec` set, because their module does not import the module
+  that registers the attribute. They are passed to the tactic, as in `addTwo_x`
+  in `Demo.lean`.
 - This package has two `XWP` instances: `instXWPSelf` (a transformer observes
   itself) and `instXWPStateM`, whose shape has no grade layer. Every graded
   example is a transformer written by hand (`stepCost1`, `costStep`, `tick`,
