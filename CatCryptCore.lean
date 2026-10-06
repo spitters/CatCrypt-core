@@ -63,6 +63,7 @@ public import CatCryptCore.XDijkstra.XMvcgenReg
 public import CatCryptCore.XDijkstra.XMorphismInstance
 public import CatCryptCore.XDijkstra.XQuantaleGradeCore
 public import CatCryptCore.XDijkstra.GradedWP
+public import CatCryptCore.XDijkstra.XCostMonad
 public import CatCryptCore.XDijkstra.XAdvantageHybrid
 public import CatCryptCore.XDijkstra.Rel.XRelMvcgenControl
 public import CatCryptCore.XDijkstra.Rel.XCombinedAutomation

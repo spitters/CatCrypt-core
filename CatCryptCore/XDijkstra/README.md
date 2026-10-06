@@ -52,14 +52,33 @@ shape.
 | `XRelatorPMF` | `IsCoupling`, `Couples`, `XRelTriplePMF` for Mathlib's `PMF` |
 | `XQuantaleGradeCore` | the join of grades over `GradeQuantale`; the combinator `xpar` |
 | `GradedWP` | an earlier, self-contained transformer with the grade as a type index (`GPredTrans`, `gbind`), in the namespace `CatCrypt.Crypto.SecureCompilation.Ascent.GradedWP` |
+| `XCostMonad` | `CostM σ n`, a state monad with a tick counter, indexed by a bound `n` on the count; `instXWPCostM` at the shape `psCost σ`, which is `.graded ℕ (.arg σ .pure)`; `costWP_triple_iff` and `CostM.sound` against the run; `costWP_seq`, `costWP_bind_grade_fst` |
+| `XAdvantageHybrid` | `advChain_triangle`, `advChain_uniform`: the triangle inequality over a chain of games; the tactics `advmvcgen`, `advmvcgen_dep` |
 | `XDijkstraAll` | imports `XPostShape`, `XMvcgen`, `XRelatorPMF`, `XHeapSoundness` |
 | `Demo` | the tutorial |
 
+The directory `Rel/` holds the graded relational layer over the relational monads
+`RelQ0` (`PMF` and the sub-distribution monad `SDistr`).
+
+| Module | Content |
+|---|---|
+| `Rel/XRelQ0` | `XRelTripleQ0 ε R m₁ m₂`, a coupling of two computations up to error `ε`; `xrelQ0_pure`, `xrelQ0_seq` (errors add); `couples_iff_xrelQ0_zero` relates it to `Couples` on `PMF` |
+| `Rel/XSDistrSoundness` | `instXWPSDistr` and `sdistrWP_triple_iff`: the support-level observation of `SDistr`; `couplingPT`, a transformer whose grade is a coupling error |
+| `Rel/XRelSpecMonad` | `RelPT`, the specification monad on pairs of computations with the error as index; `relPure`, `relBind`, `relBind_spec`, `relSpec_seq` |
+| `Rel/XRelMvcgen` | the tactic `relmvcgen`, which applies `relBind_spec` and `relSpec_seq` along a chain of binds |
+| `Rel/XRelMvcgenControl` | `relSpec_ite`, `relForN`, `relSpec_forN`: a coupled conditional and a coupled bounded loop; the tactic `relmvcgen_ctl` |
+| `Rel/XHybridExample` | a hybrid argument over `SDistr` with the per-hop couplings as hypotheses: `hybrid3_bound`, `hybridN_bound` |
+| `Rel/XLargeReduction` | reductions with five hops and with `n` hops: `relSpec5_auto`, `largeN_reduction_uniform`, `largeN_reduction_varying` |
+| `Rel/XCombinedAutomation` | the tactics `advmvcgen!`, `advmvcgen_dep!` and `relmvcgen!`, which also discharge the arithmetic side conditions |
+| `Rel/XCoreProtocolReduction` | the multi-query PRF reduction as a coupling: `prf_multi_query_coupling` |
+| `Rel/XProbUCBaseline` | `sdistr_uc_iff_tvMargin`, `sdistr_uc_le_advantage`, `pmf_uc_zero_iff_eq`: the coupling at equality as a statistical-distance bound on `SDistr` and as equality on `PMF` |
+
 `Category/XCategoricalModel.lean` reads the kernel categorically
 (`GradedDijkstraObservation`, `self_gradedDijkstraObservation`,
-`grade_axis_is_lawvere_quantale`), and `Category/CoParaGradedBridge.lean` relates
-the grade addition of `GradedWP.gbind` to the size of a protocol interface
-(`ifaceGrade_hcomp`).
+`grade_axis_is_lawvere_quantale`), `Category/XCategoricalModelRel.lean` does the
+same for `RelPT` (`relational_axis_is_monad`, `relational_grade_adds`), and
+`Category/CoParaGradedBridge.lean` relates the grade addition of
+`GradedWP.gbind` to the size of a protocol interface (`ifaceGrade_hcomp`).
 
 ## The four features and their theorems
 
@@ -75,6 +94,14 @@ The grade is a field of the transformer. `xseq x y` has grade
 depends on the value `a`; the `Monad` instance `instMonad` uses `xbind`, so a
 `do` block over `XPredTrans` does not add grades. The monad laws are proved for
 the field `apply` (`xbind_pure_apply`, `xpure_bind_apply`, `xbind_assoc_apply`).
+
+A program monad that adds grades under `bind` is therefore a family indexed by
+the grade. `CostM σ n α` in `XCostMonad` is such a family: `CostM.bind` takes a
+head of index `m` and continuations of a common index `n` to index `m + n`, each
+`CostM σ n` has an `XWP` instance whose grade is `n`, and `costWP_seq` identifies
+the observation of `CostM.seq` with `xseq` of the observations. `CostM.sound`
+states what a triple with a grade bound means for the run: the result satisfies
+the postcondition and the number of ticks is at most the bound.
 
 ## Tactics
 
@@ -94,9 +121,10 @@ arguments in brackets, usually the definitions of the steps of the program.
 
 1. Choose the shape `ps` and the carrier `Ω`, and write the instance
    `XWP m ps Ω`: a function `xwp : m α → XPredTrans ps Ω α`, giving `apply`,
-   `grade` and a proof of `mono`. `instXWPStateM` with `stateWP` is the model.
+   `grade` and a proof of `mono`. `instXWPStateM` with `stateWP` is the model
+   without a grade, `instXWPCostM` with `costWP` the model with one.
 2. State what a triple means for the monad, as `stateWP_triple_iff` does for
-   `StateM`. The class `XWP` has no laws; `GradedDijkstraObservation` in
+   `StateM`, and what the grade means for the run, as `CostM.sound` does. The class `XWP` has no laws; `GradedDijkstraObservation` in
    `Category/XCategoricalModel.lean` states that the observation commutes with
    `pure` and `bind`.
 3. For each operation, state the reductions `(op …).apply Q = …` and
@@ -138,10 +166,16 @@ parameters and the grade.
   are not in the `xspec` set, because their module does not import the module
   that registers the attribute. They are passed to the tactic, as in `addTwo_x`
   in `Demo.lean`.
-- This package has two `XWP` instances: `instXWPSelf` (a transformer observes
-  itself) and `instXWPStateM`, whose shape has no grade layer. Every graded
-  example is a transformer written by hand (`stepCost1`, `costStep`, `tick`,
-  `xboost`, `stepT`); no program monad is observed at a graded shape here.
+- This package has four `XWP` instances: `instXWPSelf` (a transformer observes
+  itself), `instXWPStateM` and `instXWPSDistr`, whose shapes have no grade layer,
+  and `instXWPCostM`, at a graded shape. The grade of `instXWPCostM` is the index
+  of the type `CostM σ n`, a bound fixed per program: a program whose tick count
+  depends on a returned value is typed at a common bound of its continuations
+  (`CostM.relax` raises an index), and `CostM σ n` has no `Monad` instance, so
+  `do` notation is not available. The other graded examples are transformers
+  written by hand (`stepCost1`, `costStep`, `tick`, `xboost`, `stepT`).
+- The reductions of the `SDistr` observation, `xwp_sdistr` and `sdistrWP_apply`,
+  are passed to the tactic like those of `StateM`.
 - Locality is proved for `xpure` only (`xpure_local`). The framed examples
   `demo_frame` and `heap_framed_triple` frame around `xpure`. Over `Prop` with a
   state layer the product is pointwise conjunction, and a step that changes the
@@ -151,10 +185,14 @@ parameters and the grade.
   transfer law holds by `rfl`.
 - `xprod` runs its two arguments one after the other on the same shape. The
   coupling relation `Couples` on `PMF` is a separate definition: there is no
-  `XWP` instance for `PMF`, and `XRelTriplePMF` is not an `XRelTriple`.
+  `XWP` instance for `PMF`, and `XRelTriplePMF` is not an `XRelTriple`. The
+  couplings of `Rel/` (`XRelTripleQ0`, `RelPT`) are likewise stated on the
+  monad, not through `XRelTriple`, and the tactics `relmvcgen` and `advmvcgen`
+  apply composition rules; they do not use the `xspec` set.
 - That `XPredTrans ps Ω` is not a lawful monad is argued in the module docstring
   of `XPostShape`; it is not a Lean theorem.
 - `GradedWP` is not related to `XPredTrans` by a theorem.
 - `XDijkstraAll` does not import `XMvcgenControl`, `XMvcgenReg`,
-  `XMorphismInstance`, `XQuantaleGradeCore`, `GradedWP` or `Demo`; the root
-  module `CatCryptCore` imports them.
+  `XMorphismInstance`, `XQuantaleGradeCore`, `GradedWP`, `XCostMonad`,
+  `XAdvantageHybrid`, the modules of `Rel/` or `Demo`; the root module
+  `CatCryptCore` imports them.

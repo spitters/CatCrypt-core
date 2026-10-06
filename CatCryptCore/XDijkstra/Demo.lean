@@ -12,6 +12,7 @@ public import CatCryptCore.XDijkstra.XMvcgenReg
 public import CatCryptCore.XDijkstra.XHeapSoundness
 public import CatCryptCore.XDijkstra.XMorphismInstance
 public import CatCryptCore.XDijkstra.XRelatorPMF
+public import CatCryptCore.XDijkstra.XCostMonad
 
 @[expose] public section
 set_option autoImplicit false
@@ -32,6 +33,8 @@ uses a rule stated over an arbitrary assertion type at two instances.
 * `readT`: the transformer that returns the state.
 * `setStep`: a transformer over the assertion type `Set ℕ`, which is not computed
   from a shape.
+* `bump`: a program of the cost-counting monad `CostM` with two ticks and a state
+  update.
 
 ## Main results
 
@@ -48,6 +51,8 @@ uses a rule stated over an arbitrary assertion type at two instances.
   exception layer.
 * `setStep_seq`, `stepT_seq_core`, `xseq_local`: `XCorePT.seq_triple` at `Set ℕ`
   and at a shape, and locality of `xseq` from `XCorePT.seq_local`.
+* `bump_budget`, `bump_run`: a graded triple about the `CostM` program `bump`, and
+  the bound on the ticks of its run obtained from `CostM.sound`.
 -/
 
 namespace CatCrypt.XDijkstra.Demo
@@ -227,5 +232,43 @@ theorem xseq_local {ps : XPostShape.{0}} {Ω : Type} [Preorder Ω] [XBI Ω] [Add
     (hx : XLocal x) (hy : XLocal y) : XLocal (xseq x y) :=
   (xlocal_iff_core _).2 <|
     XCorePT.seq_local ((xlocal_iff_core x).1 hx) ((xlocal_iff_core y).1 hy)
+
+/-! ## (g) A program with a cost counter
+
+In (b) the grade is a field of a transformer written by hand. `CostM σ n α` is a
+type of programs: state programs over `σ` that count ticks, at most `n` on every
+run. Its observation `costWP` has the shape `psCost σ`, which is
+`.graded ℕ (.arg σ .pure)`, and its grade is the index `n`. The index of
+`CostM.seq` and `CostM.bind` is the sum of the indices of the parts, so the family
+has no `Monad` instance and the program below is written with `CostM.seq` instead
+of `do`. The reductions `xwp_costM`, `costWP_apply`, `costWP_grade_fst` and the
+`CostM.run_*` lemmas are in the `xspec` set; `xmvcgen!` needs the definition of the
+program only. `CostM.sound` turns the grade bound and the triple into a statement
+about the run. -/
+
+/-- Count one tick, increment the state, count two ticks. The index is the sum of
+the indices of the three steps. -/
+def bump : CostM ℕ (1 + (0 + 2)) Unit :=
+  (CostM.tick 1).seq <|
+  (CostM.modify (· + 1)).seq <|
+  CostM.tick 2
+
+/-- `bump` takes the state `n` to `n + 1` at a grade within any budget `b ≥ 3`.
+`xmvcgen!` leaves the inequality `1 + (0 + 2) ≤ b` and the state entailment. -/
+theorem bump_budget (n b : ℕ) (hb : 3 ≤ b) :
+    (XWP.xwp (ps := psCost ℕ) (Ω := Prop) bump).grade.1 ≤ b
+    ∧ XTriple (m := CostM ℕ (1 + (0 + 2))) (ps := psCost ℕ) (Ω := Prop)
+        (fun s => s = n) bump (fun _ s => s = n + 1, PUnit.unit) := by
+  refine ⟨?_, ?_⟩
+  · xmvcgen!
+    omega
+  · xmvcgen! [bump]
+    rintro s rfl; rfl
+
+/-- The run of `bump` from the state `n` ends in the state `n + 1` after at most
+`b` ticks, for every `b ≥ 3`. -/
+theorem bump_run (n b : ℕ) (hb : 3 ≤ b) :
+    (bump.run n).1.2 = n + 1 ∧ (bump.run n).2 ≤ b :=
+  CostM.sound bump (bump_budget n b hb).2 (bump_budget n b hb).1 n rfl
 
 end CatCrypt.XDijkstra.Demo

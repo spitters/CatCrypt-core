@@ -14,6 +14,9 @@ namespace `CatCrypt.XDijkstra`.
   `XCorePT` in `XPredCore.lean` and instantiate it through `XPredTrans.toCore`.
 - Expecting `do` notation over `XPredTrans` to add grades. `instMonad` uses
   `xbind`, whose grade is that of its first argument; only `xseq` adds.
+- Writing a `Monad` instance for a cost-counting monad and expecting a grade.
+  A grade that adds under `bind` is an index of the type: follow `CostM σ n` in
+  `XCostMonad.lean` and write programs with `CostM.bind` and `CostM.seq`.
 - Adding a lemma to the fixed list inside the `xmvcgen` macro. Tag it
   `@[simp, xspec]` in its own module and use `xmvcgen!`.
 
@@ -42,7 +45,14 @@ namespace `CatCrypt.XDijkstra`.
   lemma rewrites such a goal (`demo_state_seq_reg` is the regression example).
 - For a program of `StateM`, pass `xwp_stateM` and `stateWP_apply` to the tactic;
   they are not in `xspec`. A new `XWP` instance needs the corresponding pair of
-  lemmas: `simp only` does not unfold the class projection `XWP.xwp`.
+  lemmas: `simp only` does not unfold the class projection `XWP.xwp`. For
+  `CostM` the pair is `xwp_costM` and `costWP_apply`; they and the `CostM.run_*`
+  lemmas are in `xspec`, because `XCostMonad` imports `XMvcgenReg`.
+- The index of a `CostM` program is a sum such as `1 + (0 + 2)`. State the type
+  of the program and the `(m := CostM σ …)` argument of `XTriple` with the same
+  expression; `xmvcgen!` leaves the sum in the grade goal and `omega` closes it.
+- `CostM.sound` takes the grade bound in the form
+  `(XWP.xwp (ps := psCost σ) (Ω := Prop) x).grade.1 ≤ b`.
 - A transformer over `Prop` with a state layer is in general not `XLocal`
   (`stepT_not_local`); `xframe` then does not apply.
 - `xphi`, `xfor`, `tick`, `xfor_triple` are fixed at `.graded ℕ .pure` over `Prop`.
@@ -67,6 +77,19 @@ A triple about a program of a monad with an `XWP` instance:
   rintro s rfl; rfl
 ```
 
+A graded triple about a `CostM` program `bump`, and its consequence for the run
+(`bump_budget`, `bump_run` in `Demo.lean`):
+
+```lean
+  refine ⟨?_, ?_⟩
+  · xmvcgen!
+    omega
+  · xmvcgen! [bump]
+    rintro s rfl; rfl
+…
+  CostM.sound bump (bump_budget n b hb).2 (bump_budget n b hb).1 n rfl
+```
+
 The frame rule for a local transformer, and a core rule at a shape:
 
 ```lean
@@ -86,6 +109,7 @@ attribute [local instance] XAssertion.preorder XExceptConds.preorder XAssertion.
 - The reduction lemmas of a new combinator: the module that defines the
   combinator, tagged `@[simp, xspec]`; that module imports `XMvcgen`.
 - An `XWP`, `XBI` or `XWPMorphism` instance for a concrete monad or carrier: its
-  own module, as `XHeapSoundness` and `XMorphismInstance` are.
+  own module, as `XHeapSoundness`, `XCostMonad` and `XMorphismInstance` are.
+- A coupling rule or a relational tactic: the directory `Rel/`.
 - A lemma about Mathlib notions only: `CatCryptCore/ForMathlib/`.
 - A short example: `Demo.lean`. Register a new module in `CatCryptCore.lean`.

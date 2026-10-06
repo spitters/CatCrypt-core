@@ -6,6 +6,15 @@
   `XPostShape`, `XPredTrans`, `XTriple`, the `xmvcgen` tactics and the `xspec`
   simp set), with a guide for users of `mvcgen` (`XDijkstra/README.md`) and a
   tutorial module (`XDijkstra/Demo.lean`).
+- `XDijkstra/XCostMonad.lean`: the cost-counting state monad `CostM σ n`, a
+  graded monad indexed by a bound on the tick count, with an `XWP` instance at
+  the shape `.graded ℕ (.arg σ .pure)` (`instXWPCostM`), the soundness theorem
+  `CostM.sound` against the run, and reduction lemmas in the `xspec` set. The
+  tutorial has a section on a graded triple about a `CostM` program.
+- `XDijkstra/Rel/`: graded relational coupling over `RelQ0` monads
+  (`XRelTripleQ0`), the coupling specification monad `RelPT` with the tactics
+  `relmvcgen` and `relmvcgen_ctl`, and `XDijkstra/XAdvantageHybrid.lean` with the
+  tactic `advmvcgen` for advantage bounds over a chain of games.
 
 ## v0.2.0 — 2026-06-10
 
