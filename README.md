@@ -34,6 +34,7 @@ are relative to `CatCryptCore/`.
 | Non-uniform | `NonUniform/*` — sampling from an arbitrary sub-distribution, conditioning, products, the unbounded `while` loop and its pHL / pRHL rules |
 | Package | `Package/*` — interface-based package algebra |
 | Category | `Category/*` — Kleisli of SPComp, family bicategory, cocartesian / affine structure |
+| Graded WP kernel | `XDijkstra/*` — graded predicate transformers extending `Std.Do` with a grade, a frame rule, relational triples and transfer along monad morphisms; the `xmvcgen` tactics ([guide](CatCryptCore/XDijkstra/README.md)) |
 | Deep embedding | `Deep/*` — syntactic package calculus with semantic evaluation, `SPComp` → `RawCode` reflection |
 | Bridge | `Bridge/*` — deep-to-shallow semantic bridge |
 | Tactics | `Tactics/*` — pRHL automation (sync, invariant, WP/SP, ProofFrog, lazy sampling, remember/forget, triangle chaining, …) |
@@ -64,6 +65,9 @@ Pinned in `lakefile.lean` and `lake-manifest.json`; the toolchain is in `lean-to
   the API reference.
 - **The Joy of Cryptography:** [JoyOfCrypto.md](JoyOfCrypto.md) maps the chapters of
   Rosulek's textbook to the worked schemes in `CatCryptCore/Examples/`.
+- **Graded weakest preconditions:** [CatCryptCore/XDijkstra/README.md](CatCryptCore/XDijkstra/README.md)
+  relates the kernel to `Std.Do` and `mvcgen`;
+  [`Demo.lean`](CatCryptCore/XDijkstra/Demo.lean) is the tutorial.
 - **Design and influences:** [DESIGN.md](DESIGN.md) ·
   **Changelog:** [CHANGELOG.md](CHANGELOG.md) ·
   **Contributing:** [CONTRIBUTING.md](CONTRIBUTING.md)

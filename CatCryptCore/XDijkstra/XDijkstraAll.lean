@@ -41,9 +41,9 @@ silently rot the others.
   triple (`stateWP_triple_iff`, definitional).
 
 Stock `mvcgen` cannot fuse these axes over one extended `PostShape`: its `PredTrans ps`
-codomain has no grade slot (see `GradedMvcgenProbe`). Lineage: *The Next 700 Relational
+codomain has no grade slot. Lineage: *The Next 700 Relational
 Program Logics* (relational), graded Dijkstra monads (graded), *Dijkstra Monads for All*
-(morphism), and the `MVCGenToSL` chain (SL).
+(morphism), and separation logic over `mvcgen` (SL).
 -/
 
 @[expose] public section

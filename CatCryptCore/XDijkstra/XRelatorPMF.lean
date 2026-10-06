@@ -17,8 +17,8 @@ set_option autoImplicit false
 /-!
 # `T̂`: the probabilistic relational lifting (coupling monad) at `PMF`
 
-This is **Phase 3** of the extended-PostShape Dijkstra framework
-(`XPostShape.lean`). Phase 1 gave the relational axis its *deterministic*
+This is the probabilistic relational layer of the extended-PostShape Dijkstra framework
+(`XPostShape.lean`). `XPostShape` gave the relational axis its *deterministic*
 witness: `xprod t₁ t₂` runs two transformers **independently** and pairs the
 results, and `xrel_seq` closes the relational sequencing rule over that
 independent product. That is exactly the right object on the deterministic
@@ -32,7 +32,7 @@ x ← unif; y ← unif; assume x = y
 is only witnessed by a **joint** distribution whose two marginals are the two
 sampling distributions and whose support lies on the relation (`x = y`). The
 independent product `μ ⊗ ν` puts mass on every `(x, y)`, so it can never live on
-the diagonal. Phase 3 supplies the missing object: the **relational lifting**
+the diagonal. This module supplies the missing object: the **relational lifting**
 `T̂ R`, the set of couplings, here made concrete at Mathlib's probability monad
 `PMF`.
 
@@ -58,7 +58,7 @@ the diagonal. Phase 3 supplies the missing object: the **relational lifting**
   the marginal-and-support discipline the independent product lacks.
 * `XRelTriplePMF` / `XRelTriplePMF_seq` — the probabilistic relational Hoare
   triple whose post-relation is established by a coupling, and its sequencing
-  rule. This is `xrel_seq` (Phase 1's deterministic relational sequencing) lifted
+  rule. This is `xrel_seq` (the deterministic relational sequencing) lifted
   from the deterministic product to the coupling `bind`.
 -/
 

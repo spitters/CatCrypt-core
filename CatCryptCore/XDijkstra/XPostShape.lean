@@ -546,7 +546,7 @@ theorem xpure_local [XBI Ω] {ps : XPostShape.{u}} [Zero ps.Grade] {α : Type u}
 
 /-! ## 7. Axis-law III — relational: the product / self-composition
 
-Following `RelationalProductMvcgen.lean` (Route A): two programs on the same
+Two programs on the same
 effect are related via the product transformer `xprod t₁ t₂`, whose WP runs `t₁`
 then `t₂` and pairs the results. A relational Hoare judgment is then a unary
 triple over the product. The deterministic-coupling rule is `xrel_seq`. -/

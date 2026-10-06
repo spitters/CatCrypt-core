@@ -29,8 +29,7 @@ base, and describes the universal property. Statements that are one line over th
 metatheory are Lean lemmas here; categorical statements beyond that scope (a
 Mathlib `CategoryTheory` effectus instance, the universal property and the
 adjunction) are stated in this docstring only. The fourth axis, the relational
-lifting as a monad on pairs, is stated in `XCategoricalModelRel`, which depends on
-the relational coupling layer.
+lifting as a monad on pairs, depends on the relational coupling layer and is stated outside this library.
 
 The file builds on:
 
@@ -99,8 +98,7 @@ cancellation `EffectusPositiveCancel`): advantages cannot cancel because there i
 no zero to collapse them into.
 
 **(b) UC is a derived `∃ sim`-notion, not a categorical primitive.** The primitive
-is the relational coupling (the coupling monad on pairs of
-`XCategoricalModelRel`, or `RelLeakExact` over the `ExceptT` leakage branch). UC is
+is the relational coupling (the coupling monad on pairs, or `RelLeakExact` over the `ExceptT` leakage branch). UC is
 that coupling with a
 simulator existentially quantified: `UCviaRel π F = ∀ A, ∃ sim, real ≡
 ideal∘sim` (`uc_is_derived`, `ExactUCEmulates`). The `∃ sim` is the UC-specific
@@ -144,7 +142,7 @@ it would specialize; the `CategoryTheory` statement itself is not formalized her
   corollaries); §2 the dictionary one-liners (`grade_axis_is_lawvere_quantale`,
   `xseq_grade_is_gmul`, `sl_axis_boolean_effectus_sep`,
   `morphism_axis_transfers`; the relational pair `relational_axis_is_monad`,
-  `relational_grade_adds` is in `XCategoricalModelRel`); §3(a) the no-zero-object
+  `relational_grade_adds` is stated with the coupling layer); §3(a) the no-zero-object
   witnesses (`predicate_classifier_two_points`, `initial_ne_terminal`,
   `leakage_coproduct_unit`, `effectus_no_zero_object`); §3(b) UC-derived
   (`uc_is_derived`, `uc_needs_nontrivial_simulator`).
@@ -263,7 +261,8 @@ theorem sl_axis_boolean_effectus_sep (P R : Prop) :
 /-! ### Axis III — relational ↔ the relational-lifting monad on pairs
 
 The two lemmas of this axis, `relational_axis_is_monad` and
-`relational_grade_adds`, are stated in `XCategoricalModelRel`. -/
+`relational_grade_adds`, are stated with the relational coupling layer, outside this
+library. -/
 
 /-! ### Axis IV — morphism ↔ a graded monad morphism `XWPMorphism` -/
 

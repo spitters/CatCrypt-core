@@ -14,8 +14,8 @@ set_option autoImplicit false
 /-!
 # `XMvcgenControl`: lifting `xmvcgen` from straight-line code to control flow
 
-This module is **Phase 3** of the extended-PostShape Dijkstra framework. Phase 2
-(`XMvcgen`) gave a verification-condition generator `xmvcgen` that discharges
+This module is the control-flow layer of the extended-PostShape Dijkstra framework.
+`XMvcgen` gave a verification-condition generator `xmvcgen` that discharges
 *straight-line* fused goals — a single graded step, a framed pure step, a
 relational product. This module extends it along the dimension a program logic
 must cover: **control flow**. Three forms are added, each with its
@@ -56,7 +56,7 @@ The per-operation reductions below are tagged `@[simp, xspec]`: this is downstre
 of `XMvcgen`, so — unlike in that defining file — the `xspec` attribute registered
 there *is* taggable and referenceable here. Tagging populates the open `xspec`
 simp set with the control-flow reductions; the demos drive `xmvcgen [extra…]`
-(which appends the new lemmas to Phase 2's explicit bundle), and `xmvcgen_ctl`
+(which appends the new lemmas to `XMvcgen`'s explicit bundle), and `xmvcgen_ctl`
 below is the `simp only [xspec, …]`-driven variant that picks them up
 automatically.
 -/
@@ -261,16 +261,16 @@ theorem demo_loop_triple (n : ℕ) :
 
 /-! ## 4. Downstream `xmvcgen_ctl`: the `xspec`-driven control-flow variant
 
-`xmvcgen`'s in-file bundle (Phase 2) is explicit because the `xspec` attribute is
+`xmvcgen`'s in-file bundle (`XMvcgen`) is explicit because the `xspec` attribute is
 untaggable in its own defining file. Here, downstream, the attribute *is* live:
 the control-flow reductions above are tagged `@[xspec]`, so a `simp only [xspec,
 …]` normalizer picks them up automatically. `xmvcgen_ctl` is that variant — it
-folds the open `xspec` set into Phase 2's core reductions, so a further-downstream
+folds the open `xspec` set into `XMvcgen`'s core reductions, so a further-downstream
 module adding another control-flow operation need only tag its reduction `@[xspec]`
 for `xmvcgen_ctl` to handle it, with no change to the tactic. -/
 
 open Lean Parser.Tactic in
-/-- Control-flow VC generator: Phase 2's core reductions plus the open `xspec` set
+/-- Control-flow VC generator: `XMvcgen`'s core reductions plus the open `xspec` set
 (the `@[xspec]`-tagged control-flow reductions). `xmvcgen_ctl [h, …]` adds extra
 simp lemmas. -/
 syntax (name := xmvcgenCtlTac) "xmvcgen_ctl" (" [" simpLemma,* "]")? : tactic

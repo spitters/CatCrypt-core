@@ -14,7 +14,7 @@ set_option autoImplicit false
 /-!
 # `XMvcgen`: the verification-condition generator over the extended-PostShape core
 
-This module is **Phase 2** of the extended-PostShape Dijkstra framework: a
+This module is the tactic layer of the extended-PostShape Dijkstra framework: a
 verification-condition (VC) generator `xmvcgen` driving the core built in
 `XPostShape` (`CatCrypt.XDijkstra`).
 
@@ -22,7 +22,7 @@ The design mirrors how Lean's `Std.Do` weakest-precondition metatheory works —
 its per-operation WP reductions (`Std.Do.WP.pure`, `.bind`, `.seq`, …) are
 `@[simp]` lemmas of the shape `wp⟦x⟧ Q = …`, and `mvcgen` normalizes a triple by
 simp-rewriting with them until only the residual side-conditions remain. Here the
-analogous reductions are the `apply`/`grade` lemmas on `XPredTrans` from Phase 1,
+analogous reductions are the `apply`/`grade` lemmas on `XPredTrans` from `XPostShape`,
 and `xmvcgen` normalizes `(xwp⟦prog⟧).apply Q` the same way.
 
 ## What `xmvcgen` does
@@ -74,7 +74,7 @@ register_simp_attr xspec
 
 /-! ## 2. Additional `xspec`-shaped reductions
 
-Phase 1 already states the core reductions (`xpure_apply`, `xbind_apply`,
+`XPostShape` already states the core reductions (`xpure_apply`, `xbind_apply`,
 `xseq_apply`, `xseq_grade`, `xprod_apply`, `xwp_self`, `xwp_graded_bind`). Two
 convenience reductions used by the frame demo are stated here as clean rewrite
 lemmas so the VC generator computes the framed postcondition away. -/

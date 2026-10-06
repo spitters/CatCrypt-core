@@ -23,8 +23,7 @@ Two ingredients that make the extended-PostShape Dijkstra framework
    sub-structural: `pointsTo ℓ v ∗ pointsTo ℓ v` is **unsatisfiable**
    (`pointsTo_sep_self_empty`), distinguishing `∗` from `∧`. Over this carrier
    `xframe` is the frame rule; `heap_framed_triple` frames a points-to on a
-   disjoint cell (the extended-framework analogue of
-   `JStateSepLogic.sbb_framed_triple`).
+   disjoint cell.
 
 2. **A soundness `XWP` instance for the total state monad `StateM σ`.** The
    observation `stateWP` reads a program by its operational run: its weakest
@@ -169,8 +168,7 @@ theorem pointsTo_sep_self_empty {V : Type} (ℓ : Nat) (v : V) (h : Heap V) :
 /-! ## 3. The frame rule on the concrete heap — a framed points-to triple
 
 The extended-framework frame rule `xframe` applied over `XBI (HProp V)`. We frame a
-points-to on a disjoint cell onto a local step — the extended-framework analogue of
-`JStateSepLogic.sbb_framed_triple`, with `∗` disjoint-heap separation. -/
+points-to on a disjoint cell onto a local step, with `∗` disjoint-heap separation. -/
 
 /-- The demo postcondition: return `()`, asserting the heap holds `ℓ' ↦ w`. -/
 def demoPost {V : Type} (ℓ' : Nat) (w : V) : XPostCond Unit .pure (HProp V) :=

@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- New directory `XDijkstra/`: a graded Dijkstra-monad kernel (`XCorePT`,
+  `XPostShape`, `XPredTrans`, `XTriple`, the `xmvcgen` tactics and the `xspec`
+  simp set), with a guide for users of `mvcgen` (`XDijkstra/README.md`) and a
+  tutorial module (`XDijkstra/Demo.lean`).
+
 ## v0.2.0 — 2026-06-10
 
 - Toolchain: Lean 4.29.1, Mathlib `v4.29.1`, VCVio `v4.29.0`, Duper `v4.29.0`,
