@@ -63,6 +63,15 @@ public import CatCryptCore.XDijkstra.XMvcgenReg
 public import CatCryptCore.XDijkstra.XMorphismInstance
 public import CatCryptCore.XDijkstra.XQuantaleGradeCore
 public import CatCryptCore.XDijkstra.GradedWP
+public import CatCryptCore.XDijkstra.XAdvantageHybrid
+public import CatCryptCore.XDijkstra.Rel.XRelMvcgenControl
+public import CatCryptCore.XDijkstra.Rel.XCombinedAutomation
+public import CatCryptCore.XDijkstra.Rel.XCoreProtocolReduction
+public import CatCryptCore.XDijkstra.Rel.XProbUCBaseline
+public import CatCryptCore.Category.XCategoricalModelRel
+public import CatCryptCore.Relational.Approx
+public import CatCryptCore.Relational.RelationalQ0
+public import CatCryptCore.Crypto.UCMonad.SDistrInstance
 public import CatCryptCore.XDijkstra.Demo
 
 -- Deep embedding
