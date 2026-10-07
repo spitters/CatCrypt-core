@@ -30,6 +30,7 @@ All declarations are in the namespace `CatCrypt.XDijkstra`, except those of
 | `Q ⊢ₚ Q'` | `Q ⊢ₓ Q'` (`XPostCond.le`, scoped notation) | |
 | `@[spec]` | `@[xspec]` | `xspec` is a simp attribute for equations `(op …).apply Q = …` and `(op …).grade.1 = …`; it does not hold Hoare triples |
 | `mvcgen` | `xmvcgen`, `xmvcgen_ctl`, `xmvcgen!` | each is a `simp only` call; see "Tactics" |
+| `do` blocks of a `Monad` | `gdo` blocks of a `GradedMonad` | the grade of a block is the sum of the grades of its steps; `let x ← e`, `let x := v`, a step, and a final expression or `return v`; no `mut`, loops or early `return` |
 
 Stay with `mvcgen` when the goal is a triple about one program, has no grade and
 no separating conjunct. `mvcgen` looks up triple specifications, splits the goal
@@ -52,7 +53,9 @@ shape.
 | `XRelatorPMF` | `IsCoupling`, `Couples`, `XRelTriplePMF` for Mathlib's `PMF` |
 | `XQuantaleGradeCore` | the join of grades over `GradeQuantale`; the combinator `xpar` |
 | `GradedWP` | an earlier, self-contained transformer with the grade as a type index (`GPredTrans`, `gbind`), in the namespace `CatCrypt.Crypto.SecureCompilation.Ascent.GradedWP` |
-| `XCostMonad` | `CostM σ n`, a state monad with a tick counter, indexed by a bound `n` on the count; `instXWPCostM` at the shape `psCost σ`, which is `.graded ℕ (.arg σ .pure)`; `costWP_triple_iff` and `CostM.sound` against the run; `costWP_seq`, `costWP_bind_grade_fst` |
+| `GradedDo` | the classes `GradedMonad` (`gpure` at grade `0`, `gbind` adding the grades) and `LawfulGradedMonad`; `GradedMonad.gseq`; the block notation `gdo` |
+| `XCostMonad` | `CostM σ n`, a state monad with a tick counter, indexed by a bound `n` on the count; `instXWPCostM` at the shape `psCost σ`, which is `.graded ℕ (.arg σ .pure)`; `costWP_triple_iff` and `CostM.sound` against the run; `costWP_seq`, `costWP_bind_grade_fst`; `CostM.instGradedMonad`, `CostM.instLawfulGradedMonad` |
+| `XErrMonad` | `ErrM ε`, the sub-distributions that fail with weight at most `ε`; the union bound `sdistr_bind_none_le`; `ErrM.instGradedMonad`, `ErrM.instLawfulGradedMonad`; `instXWPErrM` at the shape `psErr`, which is `.graded ℝ≥0∞ .pure`; `errWP_triple_iff`, `ErrM.sound` and `ErrM.prob_post_ge` against the sub-distribution; `errWP_seq`, `errWP_bind_grade_fst` |
 | `XAdvantageHybrid` | `advChain_triangle`, `advChain_uniform`: the triangle inequality over a chain of games; the tactics `advmvcgen`, `advmvcgen_dep` |
 | `XDijkstraAll` | imports `XPostShape`, `XMvcgen`, `XRelatorPMF`, `XHeapSoundness` |
 | `Demo` | the tutorial |
@@ -102,6 +105,50 @@ head of index `m` and continuations of a common index `n` to index `m + n`, each
 the observation of `CostM.seq` with `xseq` of the observations. `CostM.sound`
 states what a triple with a grade bound means for the run: the result satisfies
 the postcondition and the number of ticks is at most the bound.
+
+Such a family is an instance of the class `GradedMonad` of `GradedDo`: a return
+`gpure` at grade `0` and a bind `gbind` that takes grades `g` and `h` to `g + h`
+(graded monads in the sense of Katsumata and of Orchard and Petricek).
+`LawfulGradedMonad` states the three monad laws as heterogeneous equalities,
+since their sides have the grades `0 + g` and `g`, `g + 0` and `g`,
+`(g + h) + k` and `g + (h + k)`. Lean's `do` notation elaborates to `Bind.bind`
+at one type constructor and does not apply to a family; the block notation `gdo`
+expands to `GradedMonad.gbind` instead, as a rebindable `do` does in Haskell.
+
+```lean
+def bumpDo : CostM ℕ (1 + (0 + 2)) Unit := gdo
+  CostM.tick 1
+  CostM.modify (· + 1)
+  CostM.tick 2
+```
+
+The expansion nests to the right, so a block with steps of grades `g₁, …, gₙ`
+has the grade `g₁ + (g₂ + (… + gₙ))`, with last summand `0` when it ends in
+`return`. The grade is not normalised: the type of the block names this sum
+(`bumpDo`), or the block is cast by a weakening of the family (`readThenTick`
+with `CostM.relax`).
+
+`ErrM ε α` in `XErrMonad` is a second instance, over the sub-distribution type
+`SDistr α`, which is `PMF (Option α)`. Its index bounds the failure weight
+`d none`, which is `1 - SDistr.mass d` (`one_sub_mass`). The failure weight of a
+bind is `d none + ∑' a, d (some a) * f a none` (`sdistr_bind_none_eq`), so bounds
+`ε₁` on the head and `ε₂` on every continuation give the bound `ε₁ + ε₂`
+(`sdistr_bind_none_le`, the union bound). The observation `errWP` has the
+weakest precondition of `sdistrWP`, the support-level observation of `SDistr`,
+and the index as grade. `ErrM.sound` states that under a triple with
+postcondition `Q` and a grade bound `b` every value of nonzero weight satisfies
+`Q` and the failure weight is at most `b`; `ErrM.prob_post_ge` states that the
+values satisfying `Q` have total weight at least `1 - b`.
+
+`ErrM` is the unary counterpart of the graded couplings of `Rel/XRelQ0`. There
+`XRelTripleQ0 ε R m₁ m₂` relates two computations up to an error `ε`, and
+`xrelQ0_seq` adds the errors of a head and of its continuations; in the
+specification monad `RelPT` of `Rel/XRelSpecMonad` the error is likewise an index
+that `relBind` adds. In both layers the grade is an element of `(ℝ≥0∞, +, 0)`
+that bounds a probability and is added under bind. The unary grade bounds the
+weight of failure of one computation and its triples speak about the support;
+the relational grade bounds the weight on which two computations are not coupled
+in the relation. No theorem of this package derives one from the other.
 
 ## Tactics
 
@@ -189,14 +236,27 @@ parameters and the grade.
   are not in the `xspec` set, because their module does not import the module
   that registers the attribute. They are passed to the tactic, as in `addTwo_x`
   in `Demo.lean`.
-- This package has four `XWP` instances: `instXWPSelf` (a transformer observes
+- This package has five `XWP` instances: `instXWPSelf` (a transformer observes
   itself), `instXWPStateM` and `instXWPSDistr`, whose shapes have no grade layer,
-  and `instXWPCostM`, at a graded shape. The grade of `instXWPCostM` is the index
-  of the type `CostM σ n`, a bound fixed per program: a program whose tick count
-  depends on a returned value is typed at a common bound of its continuations
-  (`CostM.relax` raises an index), and `CostM σ n` has no `Monad` instance, so
-  `do` notation is not available. The other graded examples are transformers
-  written by hand (`stepCost1`, `costStep`, `tick`, `xboost`, `stepT`).
+  and `instXWPCostM` and `instXWPErrM`, at graded shapes. The grade of the last
+  two is the index of the type (`CostM σ n`, `ErrM ε`), a bound fixed per
+  program: a program whose tick count or failure weight depends on a returned
+  value is typed at a common bound of its continuations (`CostM.relax` and
+  `ErrM.relax` raise an index). Neither family has a `Monad` instance, so Lean's
+  `do` notation does not apply; programs are `gdo` blocks. The other graded
+  examples are transformers written by hand (`stepCost1`, `costStep`, `tick`,
+  `xboost`, `stepT`).
+- The notation `gdo` covers `let x ← e`, `let x := v`, a step whose value is
+  discarded, and a final expression or `return v`. It has no `mut` variables,
+  loops, `if` without `else`, patterns in binders or early `return`, and it does
+  not normalise the grade: `0 + (1 + 0)` and `1` are different indices, related
+  by an explicit weakening. A step that is not the last may have a value of any
+  type, which is discarded without a warning.
+- The triples of `ErrM` are support-level: the postcondition holds at every
+  value of nonzero weight. The grade bounds the failure weight only; a bound on
+  the probability of an event other than failure is not a grade of `ErrM`.
+  `sdistr_bind_none_le` asks for the bound on every continuation, not only on
+  those at a value of nonzero weight.
 - The reductions of the `SDistr` observation, `xwp_sdistr` and `sdistrWP_apply`,
   are passed to the tactic like those of `StateM`.
 - Locality is proved for `xpure` only (`xpure_local`). The framed examples
@@ -216,6 +276,7 @@ parameters and the grade.
   of `XPostShape`; it is not a Lean theorem.
 - `GradedWP` is not related to `XPredTrans` by a theorem.
 - `XDijkstraAll` does not import `XMvcgenControl`, `XMvcgenReg`,
-  `XMorphismInstance`, `XQuantaleGradeCore`, `GradedWP`, `XCostMonad`,
+  `XMorphismInstance`, `XQuantaleGradeCore`, `GradedWP`, `GradedDo`, `XCostMonad`,
+  `XErrMonad`,
   `XAdvantageHybrid`, the modules of `Rel/` or `Demo`; the root module
   `CatCryptCore` imports them.

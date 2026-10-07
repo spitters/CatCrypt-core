@@ -11,6 +11,16 @@
   the shape `.graded ℕ (.arg σ .pure)` (`instXWPCostM`), the soundness theorem
   `CostM.sound` against the run, and reduction lemmas in the `xspec` set. The
   tutorial has a section on a graded triple about a `CostM` program.
+- `XDijkstra/GradedDo.lean`: the classes `GradedMonad` and `LawfulGradedMonad`
+  for families of type constructors indexed by a grade of an additive monoid,
+  and the block notation `gdo`, which expands to `GradedMonad.gbind`. `CostM σ`
+  is an instance (`CostM.instGradedMonad`, `CostM.instLawfulGradedMonad`), and
+  the tutorial states its cost example in the notation.
+- `XDijkstra/XErrMonad.lean`: `ErrM ε`, the sub-distributions that fail with
+  weight at most `ε`, a graded monad over `(ℝ≥0∞, +, 0)` by the union bound
+  `sdistr_bind_none_le`, with an `XWP` instance at the shape
+  `.graded ℝ≥0∞ .pure` (`instXWPErrM`) and the soundness theorems `ErrM.sound`
+  and `ErrM.prob_post_ge` against the sub-distribution.
 - `XDijkstra/XPredCore.lean`: the observation of a monad without a shape
   (`XCoreWP`, `XCoreWP.Triple`, `LawfulXCoreWP` with `XCoreWP.bind_triple`) and
   morphisms of observations with a joint map on the pair of postconditions

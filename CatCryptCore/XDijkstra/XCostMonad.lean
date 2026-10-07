@@ -8,6 +8,7 @@ module
 public import Mathlib.Algebra.Order.Group.Nat
 public import CatCryptCore.XDijkstra.XPostShape
 public import CatCryptCore.XDijkstra.XMvcgenReg
+public import CatCryptCore.XDijkstra.GradedDo
 
 @[expose] public section
 set_option autoImplicit false
@@ -26,7 +27,8 @@ The index is a parameter of the type, not of a single `Monad` instance, because
 the transformer `XPredTrans` stores one grade per program: a `Monad` instance on a
 fixed type constructor has a `bind` whose continuation may choose its cost from
 the value, and no grade fixed in advance bounds it. `CostM σ n` therefore has no
-`Monad` instance and `do` notation is not available; programs are written with
+`Monad` instance and Lean's `do` notation is not available. The family is an
+instance of `GradedMonad`, so programs are written as `gdo` blocks, or with
 `CostM.bind` and `CostM.seq`.
 
 ## Main definitions
@@ -34,6 +36,8 @@ the value, and no grade fixed in advance bounds it. `CostM σ n` therefore has n
 * `CostM`: the indexed family, with `CostM.run` and the invariant `CostM.cost_le`.
 * `CostM.pure`, `CostM.bind`, `CostM.seq`, `CostM.tick`, `CostM.get`, `CostM.set`,
   `CostM.modify`, `CostM.relax`: the operations.
+* `CostM.instGradedMonad`, `CostM.instLawfulGradedMonad`: the family as a lawful
+  graded monad over `(ℕ, +, 0)`.
 * `psCost`: the shape `.graded ℕ (.arg σ .pure)`.
 * `costWP`, `instXWPCostM`: the observation.
 
@@ -51,6 +55,9 @@ the value, and no grade fixed in advance bounds it. `CostM σ n` therefore has n
 * `xwp_costM`, `costWP_apply`, `costWP_grade_fst` and the `CostM.run_*` lemmas are
   in the `xspec` set, so `xmvcgen!` reduces a triple about a `CostM` program to a
   statement about states and a grade bound to an inequality between numbers.
+* `CostM.gpure_eq`, `CostM.gbind_eq`, `CostM.gseq_eq`: the operations of the
+  `GradedMonad` instance are `CostM.pure`, `CostM.bind` and `CostM.seq`; they are
+  in the `xspec` set, so the same reduction applies to a `gdo` block.
 -/
 
 namespace CatCrypt.XDijkstra
@@ -148,6 +155,44 @@ def relax (h : m ≤ n) (x : CostM σ m α) : CostM σ n α where
 /-- The run of `CostM.relax`. -/
 @[simp, xspec] theorem run_relax (h : m ≤ n) (x : CostM σ m α) (s : σ) :
     (x.relax h).run s = x.run s := rfl
+
+/-! ### The graded-monad instance -/
+
+/-- `CostM σ` is a graded monad over `(ℕ, +, 0)`, so a `CostM` program is written
+as a `gdo` block. -/
+instance instGradedMonad : GradedMonad ℕ (CostM σ) where
+  gpure := CostM.pure
+  gbind := CostM.bind
+
+/-- `GradedMonad.gpure` at `CostM σ` is `CostM.pure`. -/
+@[simp, xspec] theorem gpure_eq (a : α) :
+    (GradedMonad.gpure a : CostM σ 0 α) = CostM.pure a := rfl
+
+/-- `GradedMonad.gbind` at `CostM σ` is `CostM.bind`. -/
+@[simp, xspec] theorem gbind_eq (x : CostM σ m α) (f : α → CostM σ n β) :
+    GradedMonad.gbind x f = x.bind f := rfl
+
+/-- `GradedMonad.gseq` at `CostM σ` is `CostM.seq`. -/
+@[simp, xspec] theorem gseq_eq (x : CostM σ m α) (y : CostM σ n β) :
+    GradedMonad.gseq x y = x.seq y := rfl
+
+/-- Two programs at equal indices with the same run are heterogeneously equal. -/
+theorem heq_of_run_eq (h : m = n) {x : CostM σ m α} {y : CostM σ n α}
+    (hr : x.run = y.run) : HEq x y := by
+  subst h
+  cases x
+  cases y
+  cases hr
+  rfl
+
+/-- `CostM σ` satisfies the laws of a graded monad. -/
+instance instLawfulGradedMonad : LawfulGradedMonad ℕ (CostM σ) where
+  gpure_gbind a f := heq_of_run_eq (Nat.zero_add _) <| by
+    funext s; simp
+  gbind_gpure x := heq_of_run_eq (Nat.add_zero _) <| by
+    funext s; simp
+  gbind_assoc x f c := heq_of_run_eq (Nat.add_assoc _ _ _) <| by
+    funext s; simp [Nat.add_assoc]
 
 end CostM
 

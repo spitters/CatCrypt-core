@@ -16,7 +16,11 @@ namespace `CatCrypt.XDijkstra`.
   `xbind`, whose grade is that of its first argument; only `xseq` adds.
 - Writing a `Monad` instance for a cost-counting monad and expecting a grade.
   A grade that adds under `bind` is an index of the type: follow `CostM σ n` in
-  `XCostMonad.lean` and write programs with `CostM.bind` and `CostM.seq`.
+  `XCostMonad.lean` or `ErrM ε` in `XErrMonad.lean`, give the family a
+  `GradedMonad` instance and write programs as `gdo` blocks.
+- Writing chains of `.bind` and `.seq` for a family that has a `GradedMonad`
+  instance. Use a `gdo` block; use the operations of the family directly only for
+  a single application or inside a lemma about the operation.
 - Adding a lemma to the fixed list inside the `xmvcgen` macro. Tag it
   `@[simp, xspec]` in its own module and use `xmvcgen!`.
 
@@ -56,7 +60,37 @@ namespace `CatCrypt.XDijkstra`.
   of the program and the `(m := CostM σ …)` argument of `XTriple` with the same
   expression; `xmvcgen!` leaves the sum in the grade goal and `omega` closes it.
 - `CostM.sound` takes the grade bound in the form
-  `(XWP.xwp (ps := psCost σ) (Ω := Prop) x).grade.1 ≤ b`.
+  `(XWP.xwp (ps := psCost σ) (Ω := Prop) x).grade.1 ≤ b`; `ErrM.sound` and
+  `ErrM.prob_post_ge` take it at `psErr`.
+- The index of a `gdo` block is the right-nested sum of the indices of its
+  steps, with last summand `0` after `return`: three steps of indices `0`, `1`
+  and a `return` give `0 + (1 + 0)`. State the type of the block with that
+  expression, or apply the weakening of the family to the block and give the
+  source index explicitly, as `CostM.relax (m := 0 + (1 + 0)) (by omega) <| gdo …`
+  in `readThenTick`.
+- A new `GradedMonad` instance needs the equations `gpure_eq`, `gbind_eq` and
+  `gseq_eq` that rewrite the class operations to those of the family, tagged
+  `@[simp, xspec]`, as for `CostM` and `ErrM`: `simp only` does not unfold the
+  class projections, and the reduction lemmas are stated for the operations of
+  the family.
+- In a quotation pattern of a macro over a syntax category of block elements, an
+  antiquotation after a term needs its category (`$r:gdoElem $rs:gdoElem*`).
+  Without it the term parser reads the following antiquotations as arguments of
+  an application.
+- An element parser `term` of a block category is preceded by
+  `notFollowedBy("let")`. Otherwise `let x := v` followed by a line is parsed as
+  a term-level `let` whose body is that line, and `x` is not in scope in the rest
+  of the block.
+- `gdo` and `gdo_elems%` are tokens in every module that imports `GradedDo`; an
+  identifier `gdo` does not parse there.
+- `errWP_apply` has low simp priority in the `xspec` set. It applies to a step
+  that is a variable or an opaque constant; for `ErrM.pure`, `ErrM.bind`,
+  `ErrM.seq` and `ErrM.relax` the equations `errWP_apply_pure`,
+  `errWP_apply_bind`, `errWP_apply_seq` and `errWP_apply_relax` apply first. They
+  are equalities of propositions proved by `propext`, not by `rfl`: the support
+  of a bind is characterised by `SDistr.bind_apply_some_ne_zero_iff`.
+- A hypothesis `h : XTriple (m := ErrM ε) (ps := psErr) (Ω := Prop) P x (Q, PUnit.unit)`
+  is applied as a function, `h hP a ha`, or rewritten by `errWP_triple_iff`.
 - A transformer over `Prop` with a state layer is in general not `XLocal`
   (`stepT_not_local`); `xframe` then does not apply.
 - `xphi`, `xfor`, `tick`, `xfor_triple` are fixed at `.graded ℕ .pure` over `Prop`.
@@ -94,6 +128,19 @@ A graded triple about a `CostM` program `bump`, and its consequence for the run
   CostM.sound bump (bump_budget n b hb).2 (bump_budget n b hb).1 n rfl
 ```
 
+The same proof applies to a `gdo` block (`bumpDo_budget`). A graded triple about
+a `gdo` block of `ErrM` from the triples `hc`, `hd` of its steps
+(`addSamples_budget` in `Demo.lean`):
+
+```lean
+  refine ⟨?_, ?_⟩
+  · xmvcgen!
+    rw [add_zero]
+  · xmvcgen! [addSamples]
+    intro _ x hx y hy
+    exact ⟨x, y, hc trivial x hx, hd x (hc trivial x hx) y hy, rfl⟩
+```
+
 The frame rule for a local transformer, and a core rule at a shape:
 
 ```lean
@@ -120,7 +167,9 @@ attribute [local instance] XAssertion.preorder XExceptConds.preorder XAssertion.
 - The reduction lemmas of a new combinator: the module that defines the
   combinator, tagged `@[simp, xspec]`; that module imports `XMvcgen`.
 - An `XWP`, `XBI` or `XWPMorphism` instance for a concrete monad or carrier: its
-  own module, as `XHeapSoundness`, `XCostMonad` and `XMorphismInstance` are.
+  own module, as `XHeapSoundness`, `XCostMonad`, `XErrMonad` and
+  `XMorphismInstance` are. A `GradedMonad` instance goes in the module of the
+  family.
 - A coupling rule or a relational tactic: the directory `Rel/`.
 - A lemma about Mathlib notions only: `CatCryptCore/ForMathlib/`.
 - A short example: `Demo.lean`. Register a new module in `CatCryptCore.lean`.

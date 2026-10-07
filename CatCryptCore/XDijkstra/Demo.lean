@@ -13,6 +13,7 @@ public import CatCryptCore.XDijkstra.XHeapSoundness
 public import CatCryptCore.XDijkstra.XMorphismInstance
 public import CatCryptCore.XDijkstra.XRelatorPMF
 public import CatCryptCore.XDijkstra.XCostMonad
+public import CatCryptCore.XDijkstra.XErrMonad
 
 @[expose] public section
 set_option autoImplicit false
@@ -36,7 +37,10 @@ uses a rule stated over an arbitrary assertion type at two instances.
 * `setWP`: the observation of `StateM ℕ` at the assertion type `Set ℕ`, an
   `XCoreWP` observation without a shape.
 * `bump`: a program of the cost-counting monad `CostM` with two ticks and a state
-  update.
+  update; `bumpDo` and `readThenTick`: `CostM` programs in the block notation
+  `gdo`.
+* `addSamples`: a program of the failure-graded sub-distribution monad `ErrM` in
+  the notation `gdo`.
 
 ## Main results
 
@@ -59,6 +63,11 @@ uses a rule stated over an arbitrary assertion type at two instances.
   graded sequencing of two `CostM` programs from `XCoreWP.seq_triple_of_wp_eq`.
 * `bump_budget`, `bump_run`: a graded triple about the `CostM` program `bump`, and
   the bound on the ticks of its run obtained from `CostM.sound`.
+* `bumpDo_eq_bump`, `bumpDo_budget`, `bumpDo_run`, `readThenTick_budget`: the same
+  program and a second one as `gdo` blocks, with the index of each block.
+* `addSamples_budget`, `addSamples_run`: a graded triple about a `gdo` block of
+  the failure-graded sub-distribution monad `ErrM`, and the bounds on its failure
+  weight and on the probability of its postcondition.
 -/
 
 namespace CatCrypt.XDijkstra.Demo
@@ -335,8 +344,9 @@ type of programs: state programs over `σ` that count ticks, at most `n` on ever
 run. Its observation `costWP` has the shape `psCost σ`, which is
 `.graded ℕ (.arg σ .pure)`, and its grade is the index `n`. The index of
 `CostM.seq` and `CostM.bind` is the sum of the indices of the parts, so the family
-has no `Monad` instance and the program below is written with `CostM.seq` instead
-of `do`. The reductions `xwp_costM`, `costWP_apply`, `costWP_grade_fst` and the
+has no `Monad` instance and Lean's `do` notation does not apply. The program below
+is written with `CostM.seq` first and in the block notation `gdo` afterwards. The
+reductions `xwp_costM`, `costWP_apply`, `costWP_grade_fst` and the
 `CostM.run_*` lemmas are in the `xspec` set; `xmvcgen!` needs the definition of the
 program only. `CostM.sound` turns the grade bound and the triple into a statement
 about the run. -/
@@ -365,5 +375,122 @@ theorem bump_budget (n b : ℕ) (hb : 3 ≤ b) :
 theorem bump_run (n b : ℕ) (hb : 3 ≤ b) :
     (bump.run n).1.2 = n + 1 ∧ (bump.run n).2 ≤ b :=
   CostM.sound bump (bump_budget n b hb).2 (bump_budget n b hb).1 n rfl
+
+/-! ### The same program in `gdo` notation
+
+`CostM σ` is an instance of `GradedMonad`, and `gdo` is block notation for such
+an instance. A block expands to applications of `GradedMonad.gbind` nested to the
+right, so the index of a block with steps of indices `g₁, …, gₙ` is
+`g₁ + (g₂ + (… + gₙ))`, and a block that ends in `return` has last summand `0`.
+The type of a block names this sum, as `bumpDo` does, or the block is cast to
+another index by `CostM.relax`, as `readThenTick` is. The reductions
+`CostM.gbind_eq` and `CostM.gpure_eq` are in the `xspec` set, so the proofs about
+`bump` apply to `bumpDo` unchanged. -/
+
+/-- The program `bump` as a `gdo` block. The index is the sum that the expansion
+builds, which is the index of `bump`. -/
+def bumpDo : CostM ℕ (1 + (0 + 2)) Unit := gdo
+  CostM.tick 1
+  CostM.modify (· + 1)
+  CostM.tick 2
+
+/-- The block `bumpDo` expands to the term `bump`. -/
+theorem bumpDo_eq_bump : bumpDo = bump := rfl
+
+/-- `bumpDo` takes the state `n` to `n + 1` at a grade within any budget `b ≥ 3`:
+the statement and the proof of `bump_budget`. -/
+theorem bumpDo_budget (n b : ℕ) (hb : 3 ≤ b) :
+    (XWP.xwp (ps := psCost ℕ) (Ω := Prop) bumpDo).grade.1 ≤ b
+    ∧ XTriple (m := CostM ℕ (1 + (0 + 2))) (ps := psCost ℕ) (Ω := Prop)
+        (fun s => s = n) bumpDo (fun _ s => s = n + 1, PUnit.unit) := by
+  refine ⟨?_, ?_⟩
+  · xmvcgen!
+    omega
+  · xmvcgen! [bumpDo]
+    rintro s rfl; rfl
+
+/-- The run of `bumpDo` from the state `n` ends in the state `n + 1` after at most
+`b` ticks, for every `b ≥ 3`. -/
+theorem bumpDo_run (n b : ℕ) (hb : 3 ≤ b) :
+    (bumpDo.run n).1.2 = n + 1 ∧ (bumpDo.run n).2 ≤ b :=
+  CostM.sound bumpDo (bumpDo_budget n b hb).2 (bumpDo_budget n b hb).1 n rfl
+
+/-- A block with a bound variable, a local definition and `return`: read the
+state, count one tick, return the successor of the state. The expansion has the
+index `0 + (1 + 0)`; `CostM.relax` states it as `1`. -/
+def readThenTick : CostM ℕ 1 ℕ := CostM.relax (m := 0 + (1 + 0)) (by omega) <| gdo
+  let s ← CostM.get
+  CostM.tick 1
+  let r := s + 1
+  return r
+
+/-- `readThenTick` returns the successor of the state, leaves the state unchanged
+and has grade `1`. -/
+theorem readThenTick_budget (n : ℕ) :
+    (XWP.xwp (ps := psCost ℕ) (Ω := Prop) readThenTick).grade.1 ≤ 1
+    ∧ XTriple (m := CostM ℕ 1) (ps := psCost ℕ) (Ω := Prop)
+        (fun s => s = n) readThenTick (fun r s => r = n + 1 ∧ s = n, PUnit.unit) := by
+  refine ⟨?_, ?_⟩
+  · xmvcgen!
+    exact le_rfl
+  · xmvcgen! [readThenTick]
+    rintro s rfl; exact ⟨rfl, rfl⟩
+
+/-! ## (h) A program with a bound on the failure probability
+
+`ErrM ε α` is the type of sub-distributions on `α` that fail with weight at most
+`ε`. It is a graded monad over `(ℝ≥0∞, +, 0)`: the bound of a bind is the sum of
+the bounds, by the union bound `sdistr_bind_none_le`. Its observation `errWP` has
+the shape `psErr`, which is `.graded ℝ≥0∞ .pure`; the weakest precondition states
+that the postcondition holds at every value of nonzero weight, and the grade is
+the index `ε`. `ErrM.sound` and `ErrM.prob_post_ge` turn a triple and a grade
+bound into statements about the sub-distribution. -/
+
+section FailureBound
+
+open scoped ENNReal
+
+variable {ε₁ ε₂ : ℝ≥0∞}
+
+/-- Two steps with failure bounds `ε₁` and `ε₂`, the second depending on the
+value of the first, and the sum of the two values as result. The index is the sum
+that the expansion builds; its last summand `0` is the index of `return`. -/
+noncomputable def addSamples (c : ErrM ε₁ ℕ) (d : ℕ → ErrM ε₂ ℕ) : ErrM (ε₁ + (ε₂ + 0)) ℕ := gdo
+  let x ← c
+  let y ← d x
+  return x + y
+
+/-- From a triple of each step, a triple of the block at a grade within
+`ε₁ + ε₂`. `xmvcgen!` leaves the inequality `ε₁ + (ε₂ + 0) ≤ ε₁ + ε₂` and a
+statement about the supports of the two steps. -/
+theorem addSamples_budget (c : ErrM ε₁ ℕ) (d : ℕ → ErrM ε₂ ℕ) {R : ℕ → Prop}
+    {S : ℕ → ℕ → Prop}
+    (hc : XTriple (m := ErrM ε₁) (ps := psErr) (Ω := Prop) True c (R, PUnit.unit))
+    (hd : ∀ x, XTriple (m := ErrM ε₂) (ps := psErr) (Ω := Prop) (R x) (d x) (S x, PUnit.unit)) :
+    (XWP.xwp (ps := psErr) (Ω := Prop) (addSamples c d)).grade.1 ≤ ε₁ + ε₂
+    ∧ XTriple (m := ErrM (ε₁ + (ε₂ + 0))) (ps := psErr) (Ω := Prop)
+        True (addSamples c d) (fun z => ∃ x y, R x ∧ S x y ∧ z = x + y, PUnit.unit) := by
+  refine ⟨?_, ?_⟩
+  · xmvcgen!
+    rw [add_zero]
+  · xmvcgen! [addSamples]
+    intro _ x hx y hy
+    exact ⟨x, y, hc trivial x hx, hd x (hc trivial x hx) y hy, rfl⟩
+
+/-- The block fails with weight at most `ε₁ + ε₂`, and the values that are a sum
+`x + y` with `R x` and `S x y` have total weight at least `1 - (ε₁ + ε₂)`. -/
+theorem addSamples_run (c : ErrM ε₁ ℕ) (d : ℕ → ErrM ε₂ ℕ) {R : ℕ → Prop}
+    {S : ℕ → ℕ → Prop}
+    (hc : XTriple (m := ErrM ε₁) (ps := psErr) (Ω := Prop) True c (R, PUnit.unit))
+    (hd : ∀ x, XTriple (m := ErrM ε₂) (ps := psErr) (Ω := Prop) (R x) (d x) (S x, PUnit.unit)) :
+    (addSamples c d).dist none ≤ ε₁ + ε₂
+    ∧ 1 - (ε₁ + ε₂) ≤ ∑' z, Set.indicator {z | ∃ x y, R x ∧ S x y ∧ z = x + y}
+        (fun z => (addSamples c d).dist (some z)) z :=
+  ⟨((addSamples c d).sound (addSamples_budget c d hc hd).2
+      (addSamples_budget c d hc hd).1 trivial).2,
+    (addSamples c d).prob_post_ge (addSamples_budget c d hc hd).2
+      (addSamples_budget c d hc hd).1 trivial⟩
+
+end FailureBound
 
 end CatCrypt.XDijkstra.Demo
