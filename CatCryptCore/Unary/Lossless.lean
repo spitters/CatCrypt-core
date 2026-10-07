@@ -6,6 +6,7 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Unary.Judgment
+public import CatCryptCore.Prob.Support
 
 /-!
 # Losslessness for Stateful Probabilistic Computations
@@ -100,32 +101,6 @@ theorem mass_fail_eq_zero (h : Heap) : SDistr.mass ((SPComp.fail : SPComp α) h)
   simp only [SPComp.fail]
   exact SDistr.mass_fail
 
-/-! ## Helper lemmas for mass reasoning -/
-
-/-- If mass = 1, then the distribution assigns probability 0 to none.
-    This is the key connection between mass and the none outcome. -/
-private theorem mass_one_implies_none_zero {d : SDistr α} (h : SDistr.mass d = 1) :
-    d none = 0 := by
-  unfold SDistr.mass at h
-  -- h : 1 - d none = 1
-  -- In ENNReal: 1 - x = 1 implies x = 0 (when x ≤ 1)
-  by_contra hne
-  have h1 : (1 : ENNReal) - d none < 1 := by
-    apply ENNReal.sub_lt_self
-    · norm_num
-    · norm_num
-    · exact hne
-  exact absurd h (ne_of_lt h1)
-
-/-- If mass of `d` is 1, the sum over `some` values equals 1. -/
-private theorem tsum_some_of_mass_one {d : SDistr α} (h : SDistr.mass d = 1) :
-    ∑' a : α, d (some a) = 1 := by
-  have hd_none := mass_one_implies_none_zero h
-  have htotal := PMF.tsum_coe d
-  rw [SDistr.tsum_option_eq_add] at htotal
-  rw [hd_none, zero_add] at htotal
-  exact htotal
-
 /-! ## Losslessness of sample -/
 
 /-- `sample α` is lossless: sampling from a finite nonempty type never fails. -/
@@ -175,13 +150,13 @@ theorem lossless_bind {c : SPComp α} {f : α → SPComp β}
     cases oa with
     | none =>
       -- (c h) none = 0 because c is lossless
-      have hc_none := mass_one_implies_none_zero (hc h)
+      have hc_none := mass_one_implies_none_zero _ (hc h)
       rw [hc_none]
       simp
     | some p =>
       obtain ⟨a, h'⟩ := p
       -- (f a h') none = 0 because f a is lossless
-      have hf_none : (f a h') none = 0 := mass_one_implies_none_zero (hf a h')
+      have hf_none : (f a h') none = 0 := mass_one_implies_none_zero _ (hf a h')
       rw [hf_none]
       simp
   · simp
@@ -202,7 +177,7 @@ theorem lossless_bind_of_support {c : SPComp α} {f : α → SPComp β}
     intro oa
     cases oa with
     | none =>
-      have hc_none := mass_one_implies_none_zero (hc h)
+      have hc_none := mass_one_implies_none_zero _ (hc h)
       rw [hc_none]; simp
     | some p =>
       obtain ⟨a, h'⟩ := p
@@ -211,7 +186,7 @@ theorem lossless_bind_of_support {c : SPComp α} {f : α → SPComp β}
       · rw [hca]; simp
       · -- (c h)(some (a, h')) ≠ 0, so f a is lossless by hypothesis
         have hf_ll := hf h a h' hca
-        have hf_none : (f a h') none = 0 := mass_one_implies_none_zero (hf_ll h')
+        have hf_none : (f a h') none = 0 := mass_one_implies_none_zero _ (hf_ll h')
         rw [hf_none]; simp
   · simp
 
