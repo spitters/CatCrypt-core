@@ -21,10 +21,10 @@ set_option autoImplicit false
 the computation `d` fails; it equals `1 - SDistr.mass d` (`one_sub_mass`).
 `ErrM ε α` is the type of sub-distributions whose failure weight is at most `ε`.
 The family is a graded monad over `(ℝ≥0∞, +, 0)`: `ErrM.pure` has index `0`, and
-`ErrM.bind` adds the indices, by the union bound `sdistr_bind_none_le`. The grade
+`ErrM.bind` adds the indices, by the union bound `bind_none_le`. The grade
 is the failure weight and not a bound on the mass from below, because the failure
 weight of a bind is the sum
-`d none + ∑' a, d (some a) * f a none` (`sdistr_bind_none_eq`), which is additive
+`d none + ∑' a, d (some a) * f a none` (`SDistr.bind_apply_none`), which is additive
 in the two bounds, while the mass of a bind is bounded by a product.
 
 For each index `ε` the type constructor `ErrM ε` has an `XWP` instance at the
@@ -45,8 +45,9 @@ index `ε`.
 
 ## Main results
 
-* `sdistr_bind_none_eq`, `sdistr_bind_none_le`: the failure weight of a bind, and
-  the union bound.
+* `one_sub_mass`: the failure weight of a sub-distribution is the complement of
+  its mass. The failure weight of a bind and its union bound are
+  `SDistr.bind_apply_none` and `bind_none_le` of `CatCryptCore.Prob.Support`.
 * `errWP_triple_iff`: an `XTriple` over `ErrM ε` is the support-level Hoare
   triple of the sub-distribution.
 * `ErrM.sound`: from a triple and a bound `b` on the grade, every value of
@@ -73,32 +74,11 @@ open CatCrypt.Prob
 
 variable {α β γ : Type}
 
-/-! ## The failure weight of a bind -/
+/-! ## The failure weight -/
 
 /-- The failure weight is the complement of the mass. -/
 theorem one_sub_mass (d : SDistr α) : 1 - SDistr.mass d = d none :=
   ENNReal.sub_sub_cancel ENNReal.one_ne_top (PMF.coe_le_one d none)
-
-/-- The failure weight of a bind: the failure weight of the head, and for each
-value of the head its weight times the failure weight of the continuation. -/
-theorem sdistr_bind_none_eq (d : SDistr α) (f : α → SDistr β) :
-    (d.bind f) none = d none + ∑' a, d (some a) * f a none := by
-  rw [SDistr.bind, PMF.bind_apply, SDistr.tsum_option_eq_add]
-  simp only [SDistr.fail_apply_none, mul_one]
-
-/-- The union bound for a bind: if the head fails with weight at most `ε₁` and
-every continuation with weight at most `ε₂`, the bind fails with weight at most
-`ε₁ + ε₂`. -/
-theorem sdistr_bind_none_le {d : SDistr α} {f : α → SDistr β} {ε₁ ε₂ : ℝ≥0∞}
-    (hd : d none ≤ ε₁) (hf : ∀ a, f a none ≤ ε₂) :
-    (d.bind f) none ≤ ε₁ + ε₂ := by
-  rw [sdistr_bind_none_eq]
-  refine add_le_add hd ?_
-  calc ∑' a, d (some a) * f a none
-      ≤ ∑' a, d (some a) * ε₂ := ENNReal.tsum_le_tsum fun a => by gcongr; exact hf a
-    _ = (∑' a, d (some a)) * ε₂ := ENNReal.tsum_mul_right
-    _ ≤ 1 * ε₂ := by gcongr; exact SDistr.tsum_some_le_one d
-    _ = ε₂ := one_mul _
 
 /-! ## The indexed family -/
 
@@ -122,7 +102,7 @@ protected noncomputable def pure (a : α) : ErrM 0 α where
 add. -/
 protected noncomputable def bind (x : ErrM ε₁ α) (f : α → ErrM ε₂ β) : ErrM (ε₁ + ε₂) β where
   dist := x.dist.bind fun a => (f a).dist
-  fail_le := sdistr_bind_none_le x.fail_le fun a => (f a).fail_le
+  fail_le := bind_none_le x.fail_le fun a _ => (f a).fail_le
 
 /-- Run `x`, discard its value, then run `y`. -/
 protected noncomputable def seq (x : ErrM ε₁ α) (y : ErrM ε₂ β) : ErrM (ε₁ + ε₂) β :=

@@ -20,6 +20,12 @@ sub-distribution operations, particularly `SDistr.bind`.
 * `tsum_option_split` - Split a sum over `Option α` into the `none` term
   plus the sum over `some` terms.
 * `tsum_some_eq_mass` - The sum over `some` outcomes equals the mass.
+* `SDistr.bind_apply_none` - The failure weight of a bind is the failure weight
+  of the head plus, for each value of the head, its weight times the failure
+  weight of the continuation at that value.
+* `bind_none_le` - If the head fails with weight at most `ε₁` and the
+  continuation fails with weight at most `ε₂` at every value of nonzero weight,
+  the bind fails with weight at most `ε₁ + ε₂`.
 
 ## Motivation
 
@@ -140,6 +146,39 @@ theorem SDistr.bind_support_witness_pair {d : SDistr (α × β)} {f : α × β �
     ∃ a b, d (some (a, b)) ≠ 0 ∧ (f (a, b)) (some c) ≠ 0 := by
   obtain ⟨⟨a, b⟩, hd, hf⟩ := SDistr.bind_support_witness h
   exact ⟨a, b, hd, hf⟩
+
+/-! ## The failure weight of a bind
+
+The value of a bind at `some b` is `SDistr.bind_apply_some`. At `none`, the
+failure weight of the head passes through, because `SDistr.fail` has weight `1`
+at `none`, and each value of the head contributes its weight times the failure
+weight of its continuation. -/
+
+/-- The failure weight of a bind: the failure weight of the head, and for each
+    value of the head its weight times the failure weight of the continuation. -/
+theorem SDistr.bind_apply_none (d : SDistr α) (f : α → SDistr β) :
+    (d.bind f) none = d none + ∑' a, d (some a) * (f a) none := by
+  rw [SDistr.bind, PMF.bind_apply, tsum_option_split]
+  simp only [SDistr.fail_apply_none, mul_one]
+
+/-- The union bound for a bind: if the head fails with weight at most `ε₁` and
+    the continuation fails with weight at most `ε₂` at every value of nonzero
+    weight, the bind fails with weight at most `ε₁ + ε₂`. The sub-distributions
+    with a bound on the failure weight form a monad graded by `(ℝ≥0∞, +, 0)`. -/
+theorem bind_none_le {d : SDistr α} {k : α → SDistr β} {ε₁ ε₂ : ℝ≥0∞}
+    (hd : d none ≤ ε₁) (hk : ∀ a, d (some a) ≠ 0 → (k a) none ≤ ε₂) :
+    (d.bind k) none ≤ ε₁ + ε₂ := by
+  rw [SDistr.bind_apply_none]
+  refine add_le_add hd ?_
+  calc ∑' a, d (some a) * (k a) none
+      ≤ ∑' a, d (some a) * ε₂ := by
+        refine ENNReal.tsum_le_tsum fun a => ?_
+        by_cases h0 : d (some a) = 0
+        · simp [h0]
+        · exact mul_le_mul_right (hk a h0) _
+    _ = (∑' a, d (some a)) * ε₂ := ENNReal.tsum_mul_right
+    _ ≤ 1 * ε₂ := mul_le_mul_left ((tsum_some_eq_mass d).le.trans tsub_le_self) _
+    _ = ε₂ := one_mul _
 
 /-! ## Pointwise reasoning helpers -/
 

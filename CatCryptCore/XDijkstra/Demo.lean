@@ -440,7 +440,7 @@ theorem readThenTick_budget (n : ℕ) :
 
 `ErrM ε α` is the type of sub-distributions on `α` that fail with weight at most
 `ε`. It is a graded monad over `(ℝ≥0∞, +, 0)`: the bound of a bind is the sum of
-the bounds, by the union bound `sdistr_bind_none_le`. Its observation `errWP` has
+the bounds, by the union bound `bind_none_le`. Its observation `errWP` has
 the shape `psErr`, which is `.graded ℝ≥0∞ .pure`; the weakest precondition states
 that the postcondition holds at every value of nonzero weight, and the grade is
 the index `ε`. `ErrM.sound` and `ErrM.prob_post_ge` turn a triple and a grade
