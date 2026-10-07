@@ -117,34 +117,12 @@ private theorem mass_one_implies_none_zero {d : SDistr α} (h : SDistr.mass d = 
     · exact hne
   exact absurd h (ne_of_lt h1)
 
-/-- Sum over Option α can be split into the none term plus sum over some terms.
-    This mirrors the private `tsum_option_eq_add` in Coupling.lean. -/
-private theorem tsum_option_eq_add {γ : Type*} (f : Option γ → ENNReal) :
-    ∑' x : Option γ, f x = f none + ∑' a : γ, f (some a) := by
-  -- Use the equivalence Option γ ≃ γ ⊕ PUnit
-  let e := Equiv.optionEquivSumPUnit γ
-  have heq := e.symm.tsum_eq (f := f)
-  rw [← heq]
-  -- Split γ ⊕ PUnit using Summable.tsum_sum
-  have h := Summable.tsum_sum (f := fun y => f (e.symm y))
-             (ENNReal.summable) (ENNReal.summable)
-  rw [h]
-  have h_punit : ∑' u : PUnit, f (e.symm (Sum.inr u)) = f none := by
-    rw [tsum_eq_single ()]
-    · simp only [Equiv.optionEquivSumPUnit_symm_inr, e]
-    · intro u hu; exact absurd (PUnit.eq_punit u) hu
-  have h_gamma : ∑' a : γ, f (e.symm (Sum.inl a)) = ∑' a : γ, f (some a) := by
-    apply tsum_congr
-    intro a
-    simp only [Equiv.optionEquivSumPUnit_symm_inl, e]
-  rw [h_punit, h_gamma, add_comm]
-
 /-- If mass of `d` is 1, the sum over `some` values equals 1. -/
 private theorem tsum_some_of_mass_one {d : SDistr α} (h : SDistr.mass d = 1) :
     ∑' a : α, d (some a) = 1 := by
   have hd_none := mass_one_implies_none_zero h
   have htotal := PMF.tsum_coe d
-  rw [tsum_option_eq_add] at htotal
+  rw [SDistr.tsum_option_eq_add] at htotal
   rw [hd_none, zero_add] at htotal
   exact htotal
 

@@ -20,6 +20,7 @@ sub-distribution operations, particularly `SDistr.bind`.
 * `tsum_option_split` - Split a sum over `Option α` into the `none` term
   plus the sum over `some` terms.
 * `tsum_some_eq_mass` - The sum over `some` outcomes equals the mass.
+* `SDistr.tsum_some_le_one` - The sum over `some` outcomes is at most `1`.
 * `SDistr.bind_apply_none` - The failure weight of a bind is the failure weight
   of the head plus, for each value of the head, its weight times the failure
   weight of the continuation at that value.
@@ -52,22 +53,8 @@ variable {α β γ : Type*}
 /-- Sum over `Option α` splits into the `none` term plus sum over `some` terms.
     This is a fundamental decomposition for reasoning about sub-distributions. -/
 theorem tsum_option_split (f : Option α → ℝ≥0∞) :
-    ∑' x : Option α, f x = f none + ∑' a : α, f (some a) := by
-  let e := Equiv.optionEquivSumPUnit α
-  have heq := e.symm.tsum_eq (f := f)
-  rw [← heq]
-  have h := Summable.tsum_sum (f := fun y => f (e.symm y))
-           (ENNReal.summable) (ENNReal.summable)
-  rw [h]
-  have h_punit : ∑' u : PUnit, f (e.symm (Sum.inr u)) = f none := by
-    rw [tsum_eq_single ()]
-    · simp only [Equiv.optionEquivSumPUnit_symm_inr, e]
-    · intro u hu; exact absurd (PUnit.eq_punit u) hu
-  have h_gamma : ∑' a : α, f (e.symm (Sum.inl a)) = ∑' a : α, f (some a) := by
-    apply tsum_congr
-    intro a
-    simp only [Equiv.optionEquivSumPUnit_symm_inl, e]
-  rw [h_punit, h_gamma, add_comm]
+    ∑' x : Option α, f x = f none + ∑' a : α, f (some a) :=
+  SDistr.tsum_option_eq_add f
 
 /-- The sum over `some` outcomes equals the mass of the distribution. -/
 theorem tsum_some_eq_mass (d : SDistr α) :
@@ -83,6 +70,10 @@ theorem tsum_some_eq_mass (d : SDistr α) :
     _ = 1 := htotal
   rw [add_comm] at htotal
   exact ENNReal.eq_sub_of_add_eq hfin htotal
+
+/-- The sum of the weights of the `some` outcomes is at most `1`. -/
+theorem SDistr.tsum_some_le_one (d : SDistr α) : ∑' a, d (some a) ≤ 1 :=
+  (tsum_some_eq_mass d).le.trans tsub_le_self
 
 /-- If mass = 1, the sum over `some` outcomes equals 1. -/
 theorem tsum_some_of_mass_one (d : SDistr α) (h : SDistr.mass d = 1) :

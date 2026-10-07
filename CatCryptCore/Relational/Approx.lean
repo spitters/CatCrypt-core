@@ -9,6 +9,7 @@ public import CatCryptCore.Relational.SpanLifting
 public import CatCryptCore.Relational.Rules
 public import CatCryptCore.Crypto.SDist
 public import CatCryptCore.Crypto.BadEvent
+public import CatCryptCore.Prob.Support
 
 /-!
 # ε-Graded Approximate Relational Hoare Logic (apRHL-style)
@@ -96,13 +97,6 @@ open scoped ENNReal
 variable {α β γ δ : Type*}
 
 /-! ## tsum helpers -/
-
-/-- The mass of a sub-distribution on `some` values is at most 1. -/
-theorem SDistr.tsum_some_le_one (d : SDistr α) : ∑' a, d (some a) ≤ 1 :=
-  calc ∑' a, d (some a)
-      ≤ ∑' oa, d oa :=
-        ENNReal.tsum_comp_le_tsum_of_injective (Option.some_injective α) d
-    _ = 1 := d.tsum_coe
 
 /-- A sub-distribution with no failure mass has mass exactly 1 on `some`. -/
 theorem SDistr.tsum_some_eq_one_of_none_zero {d : SDistr α} (h : d none = 0) :
