@@ -31,6 +31,8 @@ concrete transformers of step relations, and their weakest-precondition lemmas.
 * `entryExitRel`: one relation to `S ⊕ S` from an entry and an exit relation to `S`.
 * `GuardRE`: the relation of the second postconditions for `guardProg`.
 * `wpRel`, `wpRelP`: the concrete transformers of a step relation.
+* `stepComp`: the relational composite of two step relations.
+* `GuardedRRelPT`: the refinement of a guarded update by a concrete transformer.
 
 ## Main results
 
@@ -42,6 +44,11 @@ concrete transformers of step relations, and their weakest-precondition lemmas.
   and `wpRel T` (resp. `wpRelP T`), at the assertion map of a state relation `SR` and
   with the abstract exception postcondition fixed to false, is the forward simulation
   of `f` by `T` (resp. its partial form).
+* `wpRel_comp`: `wpRel` of a composite step relation is the composite of the `wpRel`.
+* `corresRel_iff_rrelPT`, `corresRelP_iff_rrelPT`, `corresFun_iff_rrelPT`: the total,
+  partial and deterministic total forward simulations are `GuardedRRelPT`.
+* `GuardedRRelPT.weaken`, `GuardedRRelPT.seq`, `guardedRRelPT_trans`: consequence,
+  sequencing, and composition with a refinement at `AssnRel.ofRel R`.
 -/
 
 @[expose] public section
@@ -301,6 +308,144 @@ theorem rrelPT_optProg_wpRelP_iff {SR : σ → A → Prop} {Rv : B → α → Pr
       exact @hΦ p.1 v hR s' ⟨p.2, hs', hwp⟩
 
 end Sim
+
+/-! ## Composite step relations -/
+
+section Comp
+
+variable {σ α : Type}
+
+/-- The relational composite of a `Unit`-valued step relation `T₁` and a step relation
+    `T₂`: a `T₁`-step followed by a `T₂`-step. -/
+def stepComp (T₁ : σ → Unit → σ → Prop) (T₂ : σ → α → σ → Prop) : σ → α → σ → Prop :=
+  fun s b s'' => ∃ s', T₁ s () s' ∧ T₂ s' b s''
+
+/-- The weakest precondition of a composite step relation is the composite of the
+    weakest preconditions. -/
+theorem wpRel_comp (T₁ : σ → Unit → σ → Prop) (T₂ : σ → α → σ → Prop)
+    (Φ : α → Assertion (.arg σ .pure)) :
+    wpRel (stepComp T₁ T₂) Φ () = wpRel T₁ (fun _ => wpRel T₂ Φ ()) () := by
+  funext s
+  exact congrArg ULift.up (propext
+    ⟨fun ⟨b, s'', ⟨s', h₁, h₂⟩, hΦ⟩ => ⟨(), s', h₁, b, s'', h₂, hΦ⟩,
+     fun ⟨_, s', h₁, b, s'', h₂, hΦ⟩ => ⟨b, s'', ⟨s', h₁, h₂⟩, hΦ⟩⟩)
+
+end Comp
+
+/-! ## Refinement of a guarded update -/
+
+section Guarded
+
+variable {σ A : Type}
+
+/-- The refinement of the guarded update by a concrete transformer `wc`: the abstract
+    program `optProg` of the partial transformer that returns `()` in state `fa a` when
+    `P a` holds and fails otherwise, refined by `wc` at the assertion map
+    `AssnRel.ofStateRel SR`, with the abstract exception postcondition fixed to
+    `ExceptConds.false` and the trivial relation on `Unit` values. -/
+abbrev GuardedRRelPT {ε' : Type} (SR : σ → A → Prop) (P : A → Prop) (fa : A → A)
+    (wc : (Unit → Assertion (.arg σ .pure)) → ε' → Assertion (.arg σ .pure)) : Prop :=
+  RRelPT (AssnRel.ofStateRel (ε := PUnit) SR) (fun E (_ : ε') => E = ExceptConds.false)
+    (fun (_ : Unit) (_ : Unit) => True)
+    (fun Q E => wp⟦open Classical in
+      optProg (fun a => if P a then some ((), fa a) else none)⟧ (Q, E)) wc
+
+/-- **The total forward simulation is `GuardedRRelPT`.** From every `SR`-related state
+    with `P` some `T`-successor is related to `fa a` exactly when the guarded update is
+    refined by `wpRel T`; an instance of `rrelPT_optProg_wpRel_iff`. -/
+theorem corresRel_iff_rrelPT (SR : σ → A → Prop) (P : A → Prop) (fa : A → A)
+    (T : σ → σ → Prop) :
+    (∀ s a, SR s a → P a → ∃ s', T s s' ∧ SR s' (fa a)) ↔
+      GuardedRRelPT SR P fa (wpRel fun s (_ : Unit) s' => T s s') := by
+  refine Iff.trans ⟨fun h s a p hs hf => ?_, fun h s a hs hP => ?_⟩ rrelPT_optProg_wpRel_iff.symm
+  · split at hf
+    · cases hf
+      obtain ⟨s', hT, hs'⟩ := h s a hs ‹_›
+      exact ⟨(), s', hT, trivial, hs'⟩
+    · cases hf
+  · obtain ⟨_, s', hT, -, hs'⟩ := h s a ((), fa a) hs (if_pos hP)
+    exact ⟨s', hT, hs'⟩
+
+/-- **The partial forward simulation is `GuardedRRelPT`.** From every `SR`-related
+    state with `P` every `T`-successor is related to `fa a` exactly when the guarded
+    update is refined by `wpRelP T`; an instance of `rrelPT_optProg_wpRelP_iff`. -/
+theorem corresRelP_iff_rrelPT (SR : σ → A → Prop) (P : A → Prop) (fa : A → A)
+    (T : σ → σ → Prop) :
+    (∀ s a, SR s a → P a → ∀ s', T s s' → SR s' (fa a)) ↔
+      GuardedRRelPT SR P fa (wpRelP fun s (_ : Unit) s' => T s s') := by
+  refine Iff.trans ⟨fun h s a p hs hf v s' hT => ?_, fun h s a hs hP s' hT => ?_⟩
+    rrelPT_optProg_wpRelP_iff.symm
+  · split at hf
+    · cases hf
+      exact ⟨trivial, h s a hs ‹_› s' hT⟩
+    · cases hf
+  · exact (h s a ((), fa a) hs (if_pos hP) () s' hT).2
+
+/-- **The deterministic total forward simulation is `GuardedRRelPT`**, at the step
+    relation `s' = run s` of a total function `run`. -/
+theorem corresFun_iff_rrelPT (SR : σ → A → Prop) (P : A → Prop) (fa : A → A)
+    (run : σ → σ) :
+    (∀ s a, SR s a → P a → SR (run s) (fa a)) ↔
+      GuardedRRelPT SR P fa (wpRel fun s (_ : Unit) s' => s' = run s) :=
+  Iff.trans ⟨fun h s a hs hP => ⟨run s, rfl, h s a hs hP⟩,
+    fun h s a hs hP => by obtain ⟨_, rfl, h'⟩ := h s a hs hP; exact h'⟩
+    (corresRel_iff_rrelPT SR P fa _)
+
+/-- **Consequence.** `GuardedRRelPT` is contravariant in the guard: a refinement under
+    `P` is a refinement under every `P'` that implies `P`. -/
+theorem GuardedRRelPT.weaken {ε' : Type} {SR : σ → A → Prop} {P P' : A → Prop}
+    {fa : A → A} {wc : (Unit → Assertion (.arg σ .pure)) → ε' → Assertion (.arg σ .pure)}
+    (h : GuardedRRelPT SR P fa wc) (himp : ∀ a, P' a → P a) :
+    GuardedRRelPT SR P' fa wc := by
+  rintro Q Q' hQ E E' hE s ⟨a, hs, hwp⟩
+  refine @h Q Q' hQ E E' hE s ⟨a, hs, ?_⟩
+  subst hE
+  beta_reduce at hwp ⊢
+  rw [wp_optProg_apply] at hwp ⊢
+  by_cases hP' : P' a
+  · rw [if_pos hP'] at hwp
+    rwa [if_pos (himp a hP')]
+  · rw [if_neg hP'] at hwp
+    exact hwp.elim
+
+/-- **Sequencing.** Refinements of two guarded updates by `wpRel T₁` and `wpRel T₂`
+    compose to a refinement of the composite update by `wpRel` of the composite step
+    relation, when the first update establishes the second guard. -/
+theorem GuardedRRelPT.seq {SR : σ → A → Prop} {P Q : A → Prop} {fa ga : A → A}
+    {T₁ T₂ : σ → Unit → σ → Prop}
+    (h₁ : GuardedRRelPT SR P fa (wpRel T₁)) (h₂ : GuardedRRelPT SR Q ga (wpRel T₂))
+    (hpre : ∀ a, P a → Q (fa a)) :
+    GuardedRRelPT SR P (fun a => ga (fa a)) (wpRel (stepComp T₁ T₂)) := by
+  have e : ∀ T : σ → Unit → σ → Prop, (wpRel fun s (_ : Unit) s' => T s () s') = wpRel T :=
+    fun _ => rfl
+  rw [← e] at h₁ h₂ ⊢
+  rw [← corresRel_iff_rrelPT] at h₁ h₂ ⊢
+  intro s a hs hP
+  obtain ⟨s₁, hT₁, hs₁⟩ := h₁ s a hs hP
+  obtain ⟨s₂, hT₂, hs₂⟩ := h₂ s₁ (fa a) hs₁ (hpre a hP)
+  exact ⟨s₂, ⟨s₁, hT₁, hT₂⟩, hs₂⟩
+
+/-- **Composition by `RRelPT.trans`.** A refinement `GuardedRRelPT SR P fa wb` and a
+    refinement of `wb` by `wc` at the assertion map `AssnRel.ofRel R` give the
+    refinement by `wc` at the composite relation `fun s₂ a => ∃ s₁, R s₂ s₁ ∧ SR s₁ a`.
+    The element `E₁` witnesses the composite relation of the second arguments. -/
+theorem guardedRRelPT_trans {σ₂ ε₁ : Type} {SR : σ → A → Prop} {R : σ₂ → σ → Prop}
+    {P : A → Prop} {fa : A → A}
+    {wb : (Unit → Assertion (.arg σ .pure)) → ε₁ → Assertion (.arg σ .pure)}
+    {wc : (Unit → Assertion (.arg σ₂ .pure)) → Unit → Assertion (.arg σ₂ .pure)}
+    (E₁ : ε₁) (h₁ : GuardedRRelPT SR P fa wb)
+    (h₂ : RRelPT (AssnRel.ofRel R) (fun (_ : ε₁) (_ : Unit) => True)
+      (fun (_ : Unit) (_ : Unit) => True) wb wc) :
+    GuardedRRelPT (fun s₂ a => ∃ s₁, R s₂ s₁ ∧ SR s₁ a) P fa wc := by
+  have h := RRelPT.trans h₁ h₂
+  intro Q Q' hQ E E' hE
+  have hc := @h Q Q'
+    (fun _ _ _ => by rw [AssnRel.Rel, AssnRel.ofRel_comp_ofStateRel_γ]; exact @hQ () () trivial)
+    E E' ⟨E₁, hE, trivial⟩
+  rw [AssnRel.Rel] at hc ⊢
+  rwa [AssnRel.ofRel_comp_ofStateRel_γ] at hc
+
+end Guarded
 
 end CatCrypt.Refinement
 
