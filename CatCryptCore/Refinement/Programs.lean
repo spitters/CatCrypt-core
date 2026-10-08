@@ -29,12 +29,15 @@ concrete transformers of step relations, and their weakest-precondition lemmas.
 
 * `optProg`, `guardProg`: the abstract programs.
 * `entryExitRel`: one relation to `S ⊕ S` from an entry and an exit relation to `S`.
+* `GuardRE`: the relation of the second postconditions for `guardProg`.
 * `wpRel`, `wpRelP`: the concrete transformers of a step relation.
 
 ## Main results
 
 * `wp_eStateM_apply`, `wp_optProg_apply`, `wp_guardProg_iff`: the weakest
   preconditions of the abstract programs.
+* `guardProg_rrelPT_iff`: `RRelPT` between `guardProg G f` and a monotone transformer
+  is a triple from the entry states to the exit states.
 * `rrelPT_optProg_wpRel_iff`, `rrelPT_optProg_wpRelP_iff`: `RRelPT` between `optProg f`
   and `wpRel T` (resp. `wpRelP T`), at the assertion map of a state relation `SR` and
   with the abstract exception postcondition fixed to false, is the forward simulation
@@ -147,6 +150,67 @@ theorem wp_guardProg_iff {ε α : Type} {G : S → Prop} {f : S → Except ε α
       exact ⟨fun h => (hnone _ h).elim, fun ⟨_, h, hG', _⟩ => by cases h; exact (hG hG').elim⟩
   · simp only [EStateM.run, guardProg]
     exact ⟨fun h => (hnone _ h).elim, fun ⟨_, h, _⟩ => nomatch h⟩
+
+/-- The relation of the second postconditions for `guardProg` against a transformer
+    whose second argument is a postcondition `Ψ` of raised values: the abstract
+    exception `none` has the false postcondition, and the abstract postcondition of
+    `some r`, mapped by `ofStateRel SR`, entails `Ψ` at the encoding `encE r`. -/
+def GuardRE {σ ε V : Type} (SR : σ → S ⊕ S → Prop) (encE : ε → V)
+    (E : ExceptConds (.except (Option ε) (.arg (S ⊕ S) .pure)))
+    (Ψ : V → Assertion (.arg σ .pure)) : Prop :=
+  (∀ y, ¬ (E.1 none y).down) ∧
+    ∀ r, (AssnRel.ofStateRel (ε := Option ε) SR).γ (E.1 (some r)) ⊢ₛ Ψ (encE r)
+
+/-- **`RRelPT` from a guarded function, closed form.** For a transformer `wc` monotone
+    in both postconditions, the refinement of `guardProg G f` by `wc` at the assertion
+    map of `SR`, the value relation `Rv` and `GuardRE SR encE` holds exactly when, under
+    the guard, every state related to `.inl a` satisfies `wc` at two postconditions:
+    the state is related to `.inr a` and the value is `Rv`-related to `b` where
+    `f a = .ok b`; the state is related to `.inr a` and the value is `encE r` where
+    `f a = .error r`. -/
+theorem guardProg_rrelPT_iff {σ ε α V : Type} {SR : σ → S ⊕ S → Prop} {G : S → Prop}
+    {f : S → Except ε α} {Rv : α → V → Prop} {encE : ε → V}
+    {wc : (V → Assertion (.arg σ .pure)) → (V → Assertion (.arg σ .pure)) →
+      Assertion (.arg σ .pure)}
+    (hmono : ∀ Φ₁ Ψ₁ Φ₂ Ψ₂ : V → Assertion (.arg σ .pure),
+      (∀ v, Φ₁ v ⊢ₛ Φ₂ v) → (∀ v, Ψ₁ v ⊢ₛ Ψ₂ v) → wc Φ₁ Ψ₁ ⊢ₛ wc Φ₂ Ψ₂) :
+    RRelPT (AssnRel.ofStateRel SR) (GuardRE SR encE) Rv
+        (fun Φ E => wp⟦guardProg G f⟧ (Φ, E)) wc ↔
+      ∀ a, G a → ∀ s, SR s (.inl a) →
+        (wc (fun v s' => ⌜SR s' (.inr a) ∧ ∃ b, f a = .ok b ∧ Rv b v⌝)
+          (fun v s' => ⌜SR s' (.inr a) ∧ ∃ r, f a = .error r ∧ v = encE r⌝) s).down := by
+  constructor
+  · intro h a hG s hs
+    let E : ExceptConds (.except (Option ε) (.arg (S ⊕ S) .pure)) :=
+      (fun o y => ⌜∃ r, o = some r ∧ f a = .error r ∧ y = .inr a⌝, ())
+    have hnone : ∀ y, ¬ (E.1 none y).down := fun _ ⟨_, h, _⟩ => nomatch h
+    exact @h (fun b y => ⌜f a = .ok b ∧ y = .inr a⌝)
+      (fun v s' => ⌜SR s' (.inr a) ∧ ∃ b, f a = .ok b ∧ Rv b v⌝)
+      (fun b v hv s' ⟨_, hx, h₁, h₂⟩ => by subst h₂; exact ⟨hx, b, h₁, hv⟩)
+      E (fun v s' => ⌜SR s' (.inr a) ∧ ∃ r, f a = .error r ∧ v = encE r⌝)
+      ⟨hnone, fun r s' ⟨_, hx, _, h₀, h₁, h₂⟩ => by
+        cases h₀; subst h₂; exact ⟨hx, _, h₁, rfl⟩⟩ s
+      ⟨.inl a, hs, (wp_guardProg_iff hnone).mpr ⟨a, rfl, hG, by
+        cases hf : f a with
+        | ok b => exact Or.inl ⟨b, rfl, rfl, rfl⟩
+        | error r => exact Or.inr ⟨r, rfl, r, rfl, hf, rfl⟩⟩⟩
+  · rintro h Φ Φ' hΦ E E' ⟨hnone, hE⟩ s ⟨x, hx, hwp⟩
+    obtain ⟨a, rfl, hG, hp⟩ := (wp_guardProg_iff hnone).mp hwp
+    refine hmono _ _ Φ' E' ?_ ?_ s (h a hG s hx)
+    · rintro v s' ⟨hQ, b, hb, hR⟩
+      rcases hp with ⟨b', hb', hp⟩ | ⟨r, hr, _⟩
+      · rw [hb] at hb'
+        cases hb'
+        exact @hΦ b v hR s' ⟨.inr a, hQ, hp⟩
+      · rw [hb] at hr
+        cases hr
+    · rintro v s' ⟨hQ, r, hr, rfl⟩
+      rcases hp with ⟨b, hb, _⟩ | ⟨r', hr', hp⟩
+      · rw [hr] at hb
+        cases hb
+      · rw [hr] at hr'
+        cases hr'
+        exact hE r s' ⟨.inr a, hQ, hp⟩
 
 end GuardProg
 
