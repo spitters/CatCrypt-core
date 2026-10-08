@@ -57,6 +57,7 @@ public import CatCryptCore.Category.ProtCategory
 public import CatCryptCore.Category.ProtBicat
 public import CatCryptCore.Category.CoParaGradedBridge
 public import CatCryptCore.Category.XCategoricalModel
+public import CatCryptCore.Refinement.RRel
 public import CatCryptCore.XDijkstra.XDijkstraAll
 public import CatCryptCore.XDijkstra.XMvcgenControl
 public import CatCryptCore.XDijkstra.XMvcgenReg
