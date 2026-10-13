@@ -8,11 +8,14 @@ module
 public import CatCryptCore.Crypto.UCAdmClass
 
 /-!
-# Patrignani Security Levels 2 and 3
+# Security levels 2 and 3
 
 This file defines UC emulation at **Level 2** (computational distinguishers) and
 **Level 3** (fully computational: computational distinguishers + poly-time simulators),
-following Patrignani et al. ("UC is RC", TOPLAS 2024).
+following the computational robust compilation of Künnemann, Patrignani and Cecchetti
+("Computationally Bounded Robust Compilation and Universally Composable Security", CSF 2024);
+level 1 is the perfect UC of Patrignani, Künnemann, Wahby and Cecchetti ("Universal
+Composability Is Robust Compilation", TOPLAS 46(4), 2024). The numbering of the levels is ours.
 
 ## The Three Levels
 

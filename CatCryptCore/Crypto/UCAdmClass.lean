@@ -11,7 +11,7 @@ public import CatCryptCore.Crypto.UCMonad
 # Admissibility Classes and Computational Distance
 
 This file extends the UC monad framework with **admissibility classes** and
-**computational distance**, enabling Patrignani security levels 2 and 3
+**computational distance**, enabling security levels 2 and 3 (`UCLevels.lean`)
 (computational distinguishers and poly-time simulators).
 
 ## Key Design: Per-Distinguisher Decomposition
@@ -49,8 +49,13 @@ Computational Complexity (ICC): Bellantoni-Cook, BLL, Soft Affine Logic, etc.
 
 ## References
 
-* Patrignani et al., "UC is RC", TOPLAS 2024 — Levels 1–3
-* Katsumata, "Double-category analysis of graded linear exponential comonads", 2018
+* Patrignani, Künnemann, Wahby, Cecchetti, "Universal Composability Is Robust
+  Compilation", TOPLAS 46(4), 2024 — perfect UC (level 1)
+* Künnemann, Patrignani, Cecchetti, "Computationally Bounded Robust Compilation and
+  Universally Composable Security", CSF 2024 — computational UC (levels 2 and 3; the
+  numbering of the levels is ours)
+* Katsumata, "A Double Category Theoretic Analysis of Graded Linear Exponential Comonads",
+  FoSSaCS 2018
 * Atkey, "Polynomial Time and Dependent Types", POPL 2024
 -/
 

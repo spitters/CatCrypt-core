@@ -21,7 +21,11 @@ Level 3 using `UCAdmClass` constraints on distinguishers and simulators.
 
 ## References
 
-* Patrignani et al., "UC is RC", TOPLAS 2024
+* Patrignani, Künnemann, Wahby, Cecchetti, "Universal Composability Is Robust
+  Compilation", TOPLAS 46(4), 2024 — perfect UC (level 1)
+* Künnemann, Patrignani, Cecchetti, "Computationally Bounded Robust Compilation and
+  Universally Composable Security", CSF 2024 — computational UC (levels 2 and 3; the
+  numbering of the levels is ours)
 * RC.lean (L1 equivalence)
 * UCLevels.lean (Level definitions)
 -/

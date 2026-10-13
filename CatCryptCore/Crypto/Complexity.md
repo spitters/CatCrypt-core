@@ -40,11 +40,14 @@ equals the statistical distance (`ucCdist_eq_sdistRoundM` for `RoundM n`).
 
 ## Security levels and equivalences
 
-[`UCLevels`](UCLevels.lean) defines Patrignani's three levels of UC emulation: level 1 with the
+[`UCLevels`](UCLevels.lean) defines three levels of UC emulation: level 1 with the
 statistical distance, level 2 with `ucCdist` (`UCEmulatesL2`), level 3 with `ucCdist` and a
 simulator construction that preserves admissibility (`UCEmulatesL3`, `UCEmulatesAlgL3`). Level 1
 implies level 2 (`UCEmulatesL2_of_L1`) and level 3 implies level 2 (`UCEmulatesL3_implies_L2`);
-each level is reflexive, transitive and monotone in `ε`.
+each level is transitive and monotone in `ε`, and reflexive (level 3 for admissible
+adversaries). Level 1 follows Patrignani, Künnemann, Wahby and Cecchetti; levels 2 and 3
+follow the computational robust compilation of Künnemann, Patrignani and Cecchetti. The
+numbering of the levels is ours.
 
 [`DummyAdversary`](DummyAdversary.lean) proves that emulation against the dummy adversary
 implies emulation against every adversary (`dummy_completeness`) and that a specialised
@@ -70,3 +73,26 @@ bound for `SPComp`. [`TraceRelating`](TraceRelating.lean) proves that `ucCdist` 
 bound of a trace-relating compiler over admissible distinguishers
 (`ucCdist_eq_sInf_traceRelating`), and that a bound `ε` over all distinguishers holds exactly
 when `ucSdist ≤ ε` (`traceRelatingL1_iff_ucSdist`).
+
+## References
+
+- Marco Patrignani, Robert Künnemann, Riad S. Wahby, Ethan Cecchetti. Universal Composability
+  Is Robust Compilation. ACM TOPLAS 46(4), 2024.
+- Robert Künnemann, Marco Patrignani, Ethan Cecchetti. Computationally Bounded Robust
+  Compilation and Universally Composable Security. CSF 2024.
+- Ran Canetti. Universally Composable Security: A New Paradigm for Cryptographic Protocols.
+  FOCS 2001; IACR ePrint 2000/067.
+- Ueli Maurer, Renato Renner. Abstract Cryptography. ICS 2011.
+- Carmine Abate, Roberto Blanco, Ștefan Ciobâcă, Adrien Durier, Deepak Garg, Cătălin Hrițcu,
+  Marco Patrignani, Éric Tanter, Jérémy Thibault. Trace-Relating Compiler Correctness and
+  Secure Compilation. ESOP 2020.
+- Gilles Barthe, Sandrine Blazy, Benjamin Grégoire, Rémi Hutin, Vincent Laporte, David
+  Pichardie, Alix Trieu. Formal Verification of a Constant-Time Preserving C Compiler. POPL 2020.
+- Benjamin Lucien Kaminski, Joost-Pieter Katoen, Christoph Matheja, Federico Olmedo. Weakest
+  Precondition Reasoning for Expected Runtimes of Randomized Algorithms. J. ACM 65(5), 2018.
+- Philipp G. Haselwarter, Kwing Hei Li, Markus de Medeiros, Simon Oddershede Gregersen,
+  Alejandro Aguirre, Joseph Tassarotti, Lars Birkedal. Tachis: Higher-Order Separation Logic
+  with Credits for Expected Costs. OOPSLA 2024.
+- Oded Goldreich. Foundations of Cryptography, Vol. 1, Def. 4.7.2. Cambridge University
+  Press, 2001.
+- Mihir Bellare, Oded Goldreich. On Defining Proofs of Knowledge. CRYPTO 1992.

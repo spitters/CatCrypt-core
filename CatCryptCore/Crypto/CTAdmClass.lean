@@ -14,7 +14,8 @@ public import CatCryptCore.Crypto.MonadCostModel
 # Constant-Time as UCAdmClass
 
 This file shows that constant-time programs form a `UCAdmClass`, connecting
-to Barthe et al.'s constant-time compilation (POPL 2020, CCS 2014).
+to Barthe et al.'s constant-time compilation (POPL 2020) and system-level
+non-interference (CCS 2014).
 
 ## Architecture
 
@@ -37,8 +38,8 @@ while query-bounded only preserves the *count*. Both form valid `UCAdmClass`es.
 
 * Barthe et al., "System-Level Non-Interference for Constant-Time
   Cryptography", CCS 2014
-* Barthe et al., "Formally Verified Speculation and Buffer Overflow
-  Countermeasures", POPL 2020
+* Barthe, Blazy, Grégoire, Hutin, Laporte, Pichardie, Trieu, "Formal Verification of a
+  Constant-Time Preserving C Compiler", POPL 2020
 -/
 
 @[expose] public section

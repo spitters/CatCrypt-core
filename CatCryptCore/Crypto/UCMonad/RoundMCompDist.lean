@@ -12,7 +12,7 @@ public import CatCryptCore.Crypto.UCAdmClass.SPCompInstance
 # UCMonadCompDist Instance for RoundM
 
 This file provides the `UCMonadCompDist (RoundM n)` instance, enabling
-Level 2/3 security (Patrignani levels) for multi-round protocols.
+security levels 2 and 3 (`UCLevels.lean`) for multi-round protocols.
 
 ## Design
 

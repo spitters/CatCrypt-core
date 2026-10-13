@@ -30,7 +30,7 @@ SDistr ℝ≥0∞` expectation algebra that powers `wpE`
 The motivating client is the expected running time of knowledge extractors.
 A proof of knowledge whose extractor is a deterministic function of two
 transcripts, and the worst-case cost of `MonadCostModel`/`SPTree.queryCost`,
-do not describe Goldreich's extractor (Def. 4.7.1): it is a *rewinding loop*
+do not describe Goldreich's extractor (Def. 4.7.2): it is a *rewinding loop*
 whose natural complexity measure is **expected** running time. This file
 supplies the quantitative layer:
 
@@ -86,7 +86,7 @@ supplies the quantitative layer:
   `ecost_retryN_le` its geometric-loop rule, here obtained on top of the
   Hasuo-style ordered-monad-algebra expectation modality of
   `ExpectationWP.lean` rather than by a bespoke transformer recursion.
-* Oded Goldreich, *Foundations of Cryptography* Vol. 1, Def. 4.7.1, and
+* Oded Goldreich, *Foundations of Cryptography* Vol. 1, Def. 4.7.2, and
   Mihir Bellare, Oded Goldreich, *On Defining Proofs of Knowledge*,
   CRYPTO 1992 — knowledge extractors run in **expected** polynomial time;
   the geometric-retry bound is the standard argument that a rewinding
