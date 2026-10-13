@@ -18,10 +18,13 @@ the supremum over *all* distinguishers. This file proves it over the admissible-
 distance `ucCdist` (`UCMonad.ucCdist`, `UCAdmClass.lean`), and proves that a construction in
 the sense of Maurer ("Constructive Cryptography — A New Paradigm for Security Definitions and
 Proofs", TOSCA 2011, Def. 3; the security condition only, without the availability condition)
-is equivalent to UC emulation. That equivalence is ours, obtained from Maurer's notion of
-construction and the dummy-adversary theorem (Canetti, ePrint 2000/067, Claim 11); Maurer
-and Renner ("Abstract Cryptography", ICS 2011, App. C.2) remark on the relation between the
-two frameworks without stating it as a theorem.
+is equivalent to UC emulation, for single-shot systems: the honest interfaces are merged into
+one input, the adversary interface receives one leak and sends nothing, and the converter
+post-processes that leak. For interactive systems the corresponding equivalence is that of
+strong simulatability with UC (Küsters, Datta, Mitchell, Ramanathan, "On the Relationships
+between Notions of Simulation-Based Security", J. Cryptology 21(4), 2008, Def. 6, Thm. 10).
+Maurer and Renner ("Abstract Cryptography", ICS 2011, App. C.1) remark on the relation between
+the two frameworks.
 
 ## The transport is gated on adversary admissibility
 

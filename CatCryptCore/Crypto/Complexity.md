@@ -33,15 +33,16 @@ bounded class.
    and monotone in `ε`, and levels 1 and 3 each imply level 2.
 5. **Equivalences at a bounded class.** Dummy-adversary completeness and the equivalence of
    per-adversary and uniform simulators, over `ucSdist` ([`DummyAdversary`](DummyAdversary.lean))
-   and over `ucCdist` with admissible adversaries; the equivalence of a construction (a
-   converter relating the two protocols within `ε`) with UC emulation
-   ([`CompUCEquivalence`](CompUCEquivalence.lean)); both instantiated at query cost and size.
+   and over `ucCdist` with admissible adversaries ([`CompUCEquivalence`](CompUCEquivalence.lean)),
+   instantiated at query cost and size.
 6. **Robust compilation at level 3** ([`RCL3`](RCL3.lean)): equivalent to a bound on `ucCdist`;
    for a fixed simulator construction, level-3 emulation is equivalent to a preservation
    property. A per-distinguisher notion of trace relation has `ucCdist` as its least bound
    ([`TraceRelating`](TraceRelating.lean)).
 7. **Expected cost** ([`ExpectedCost`](../Unary/ExpectedCost.lean)): a cost counter averaged by
-   the expectation algebra of [`ExpectationWP`](../Unary/ExpectationWP.lean). The bind law
+   the expectation algebra of [`ExpectationWP`](../Unary/ExpectationWP.lean), where ordered
+   monad algebras are proved to be exactly the order-congruent Eilenberg–Moore algebras
+   (`orderedMonadAlgebra_laws_iff`). The bind law
    holds as an inequality, and as an equality for lossless continuations; worst-case query
    cost bounds expected cost; a loop that retries an attempt of expected cost `C` and
    success probability `p` has expected cost at most `C / p`.
@@ -58,15 +59,18 @@ bounded class.
   adversary. The level-3 equivalences of item 6 correspond to their UC ⟺ RHP theorems
   (TOPLAS Thm. 4, CSF Thms. 2–3) for a fixed simulator.
 - Item 5 follows Canetti's dummy-adversary completeness and black-box simulation
-  (ePrint 2000/067, Claims 11 and 13), stated here for distances. The notion of
-  construction is Maurer's (TOSCA 2011, Def. 3, security condition). Maurer (TOSCA 2011) and
-  Maurer and Renner (ICS 2011, App. C.2) discuss the relation to UC without stating the
-  equivalence as a theorem.
+  (ePrint 2000/067, Claims 11 and 13), stated here for distances and for single-shot
+  systems, in which the adversary receives one leak and sends nothing.
 - The trace relations of item 6 are a quantitative analogue of those of Abate et al.
   (ESOP 2020, Def. 1.2), whose setting has no probabilities.
 - The concrete constant-time predicate is the observational constant-time condition of
   Barthe et al. (POPL 2020, Def. 3.1) with every input secret.
-- The expectation algebra is Hasuo's (TCS 2015, Def. 2.4). The bind law of item 7
+- The ordered monad algebras of Loom (Gladshtein et al., POPL 2026, Def. 3.2) are, by
+  `orderedMonadAlgebra_laws_iff`, the order-congruent Eilenberg–Moore algebras of Hasuo
+  (TCS 2015, Def. 3.3 and Prop. 3.4) and the Pos-relative algebras of Hino, Kobayashi,
+  Hasuo and Jacobs (LICS 2016, Def. 4.2 and Prop. 4.12); Maillard et al. (ICFP 2019, §4.4)
+  relate such algebras to effect observations. Loom cites Maillard et al. but not Hasuo or
+  Hino et al.; the Lean theorem makes the identification explicit. The bind law of item 7
   corresponds to the sequential rule of the ert calculus (Kaminski et al., J. ACM 2018,
   Table 1 and Thm. 8.1), and the retry bound to the extractor construction of Bellare and
   Goldreich (CRYPTO 1992, §6).
@@ -79,8 +83,6 @@ bounded class.
   Compilation and Universally Composable Security. CSF 2024.
 - Ran Canetti. Universally Composable Security: A New Paradigm for Cryptographic Protocols.
   FOCS 2001; IACR ePrint 2000/067, version of 2020-02-11.
-- Ueli Maurer. Constructive Cryptography — A New Paradigm for Security Definitions and
-  Proofs. TOSCA 2011.
 - Carmine Abate, Roberto Blanco, Ștefan Ciobâcă, Adrien Durier, Deepak Garg, Cătălin Hrițcu,
   Marco Patrignani, Éric Tanter, Jérémy Thibault. Trace-Relating Compiler Correctness and
   Secure Compilation. ESOP 2020.
@@ -91,3 +93,9 @@ bounded class.
 - Benjamin Lucien Kaminski, Joost-Pieter Katoen, Christoph Matheja, Federico Olmedo. Weakest
   Precondition Reasoning for Expected Runtimes of Randomized Algorithms. J. ACM 65(5), 2018.
 - Mihir Bellare, Oded Goldreich. On Defining Proofs of Knowledge. CRYPTO 1992.
+- Vladimir Gladshtein, George Pîrlea, Qiyuan Zhao, Vitaly Kurin, Ilya Sergey. Foundational
+  Multi-Modal Program Verifiers. POPL 2026.
+- Wataru Hino, Hiroki Kobayashi, Ichiro Hasuo, Bart Jacobs. Healthiness from Duality.
+  LICS 2016.
+- Kenji Maillard, Danel Ahman, Robert Atkey, Guido Martínez, Cătălin Hriţcu, Exequiel Rivas,
+  Éric Tanter. Dijkstra Monads for All. ICFP 2019.
