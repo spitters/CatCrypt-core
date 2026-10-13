@@ -64,11 +64,13 @@ noncomputable def spcomp_distComp {α β : Type}
   ⨆ (a : α) (h₀ : Heap),
     absDiff (prTrue (SPComp.bind (f a) D) h₀) (prTrue (SPComp.bind (g a) D) h₀)
 
+/-- A program is at distance zero from itself for every distinguisher. -/
 theorem spcomp_distComp_self {α β : Type}
     (f : α → SPComp β) (D : β → SPComp Bool) :
     spcomp_distComp f f D = 0 := by
   simp [spcomp_distComp, absDiff_self]
 
+/-- The per-distinguisher distance is symmetric. -/
 theorem spcomp_distComp_comm {α β : Type}
     (f g : α → SPComp β) (D : β → SPComp Bool) :
     spcomp_distComp f g D = spcomp_distComp g f D := by
@@ -76,6 +78,7 @@ theorem spcomp_distComp_comm {α β : Type}
   congr 1; funext a; congr 1; funext h₀
   exact absDiff_comm _ _
 
+/-- The per-distinguisher distance satisfies the triangle inequality. -/
 theorem spcomp_distComp_triangle {α β : Type}
     (f g h : α → SPComp β) (D : β → SPComp Bool) :
     spcomp_distComp f h D ≤ spcomp_distComp f g D + spcomp_distComp g h D := by
@@ -93,11 +96,13 @@ theorem spcomp_distComp_triangle {α β : Type}
         · exact le_iSup₂_of_le a h₀ le_rfl
         · exact le_iSup₂_of_le a h₀ le_rfl
 
+/-- The statistical distance is the supremum of the per-distinguisher distances. -/
 theorem spcomp_sdist_eq_iSup {α β : Type}
     (f g : α → SPComp β) :
     sdist f g = ⨆ D, spcomp_distComp f g D := by
   simp only [sdist, spcomp_distComp]
 
+/-- Post-composing both programs with `k` is the same as pre-composing the distinguisher with `k`. -/
 theorem spcomp_distComp_bind_right {α β γ : Type}
     (f g : α → SPComp β) (k : β → SPComp γ) (D : γ → SPComp Bool) :
     spcomp_distComp (fun a => SPComp.bind (f a) k) (fun a => SPComp.bind (g a) k) D =

@@ -12,14 +12,11 @@ public import CatCryptCore.Crypto.UCAdmClass.SPCompInstance
 /-!
 # Computational transport of the dummy-adversary and Constructive-Cryptography UC equivalences
 
-The statistical dummy-adversary theorem (`CatCrypt.Crypto.ucEmulates_iff_dummy`) and the
-Constructive/Abstract-Cryptography correspondence
-(`CatCrypt.Crypto.Bridges.ConstructiveCryptoUC.ccConstructs_iff_ucEmulates`) live at the
-**information-theoretic** level: they are stated over statistical distance `sdist`, the
-supremum over *all* distinguishers. The eprint appendix argues in prose that the same
-equivalences "transport from statistical to computational distance". This file mechanizes
-that transport over the admissible-distinguisher distance `ucCdist`
-(`UCMonad.ucCdist`, `UCAdmClass.lean`).
+The dummy-adversary theorem (`CatCrypt.Crypto.ucEmulates_iff_dummy`, `DummyAdversary.lean`)
+and the correspondence between Constructive (Abstract) Cryptography constructions and UC
+emulation are **information-theoretic** statements: they are stated over the statistical
+distance `sdist`, the supremum over *all* distinguishers. This file proves both over the
+admissible-distinguisher distance `ucCdist` (`UCMonad.ucCdist`, `UCAdmClass.lean`).
 
 ## The transport is gated on adversary admissibility
 

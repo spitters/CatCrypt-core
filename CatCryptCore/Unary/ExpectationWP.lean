@@ -133,6 +133,7 @@ theorem μ_bind (x : m α) (f g : α → m l)
     (μ_bind_mono f g (fun a => (h a).le) x)
     (μ_bind_mono g f (fun a => (h a).ge) x)
 
+/-- The weakest pre-expectation of `pure x` is the postcondition at `x`. -/
 @[simp]
 theorem wp_pure [LawfulMonad m] (x : α) (post : α → l) :
     wp (pure x : m α) post = post x := by
@@ -152,6 +153,7 @@ theorem wp_bind [LawfulMonad m] (x : m α) (f : α → m β) (post : β → l) :
         (μ_pure (m := m) (l := l)
           (μ (f a >>= fun b => pure (post b)))).symm)
 
+/-- `wp` is monotone in the postcondition. -/
 theorem wp_mono (x : m α) {post post' : α → l} (h : ∀ a, post a ≤ post' a) :
     wp x post ≤ wp x post' := by
   unfold wp
@@ -240,6 +242,7 @@ theorem wp_sdistr_eq_tsum {α : Type} (d : SDistr α) (post : α → ℝ≥0∞)
 noncomputable def wpE {α : Type} (c : SPComp α) (post : α → Heap → ℝ≥0∞) (h : Heap) : ℝ≥0∞ :=
   OrderedMonadAlgebra.wp (m := SDistr) (c h) (fun p => post p.1 p.2)
 
+/-- `wpE` as a sum over the outcomes of the computation, weighted by their probabilities. -/
 theorem wpE_eq_tsum {α : Type} (c : SPComp α) (post : α → Heap → ℝ≥0∞) (h : Heap) :
     wpE c post h = ∑' p : α × Heap, (c h) (some p) * post p.1 p.2 :=
   wp_sdistr_eq_tsum (c h) _
@@ -278,6 +281,7 @@ theorem wpE_bind {α β : Type} (c : SPComp α) (f : α → SPComp β)
   rw [tsum_eq_single ((), h.set l v) (fun p hp => by simp [Ne.symm hp])]
   simp
 
+/-- `wpE` is monotone in the post-expectation. -/
 theorem wpE_mono {α : Type} (c : SPComp α) {post post' : α → Heap → ℝ≥0∞}
     (hpost : ∀ a h', post a h' ≤ post' a h') (h : Heap) :
     wpE c post h ≤ wpE c post' h :=
@@ -290,16 +294,19 @@ theorem wpE_mono {α : Type} (c : SPComp α) {post post' : α → Heap → ℝ�
 def TripleE {α : Type} (pre : Heap → ℝ≥0∞) (c : SPComp α) (post : α → Heap → ℝ≥0∞) : Prop :=
   ∀ h, pre h ≤ wpE c post h
 
+/-- Expectation triple for `pure`. -/
 theorem tripleE_pure {α : Type} (a : α) (post : α → Heap → ℝ≥0∞) :
     TripleE (fun h => post a h) (SPComp.pure a) post := by
   intro h; rw [wpE_pure]
 
+/-- Consequence rule: strengthen the pre-expectation bound and weaken the post-expectation. -/
 theorem tripleE_conseq {α : Type} {pre pre' : Heap → ℝ≥0∞} {c : SPComp α}
     {post post' : α → Heap → ℝ≥0∞}
     (hpre : ∀ h, pre' h ≤ pre h) (hpost : ∀ a h', post a h' ≤ post' a h')
     (h : TripleE pre c post) : TripleE pre' c post' :=
   fun h₀ => le_trans (hpre h₀) (le_trans (h h₀) (wpE_mono c hpost h₀))
 
+/-- Sequencing rule: compose two expectation triples through an intermediate expectation `cut`. -/
 theorem tripleE_bind {α β : Type} {pre : Heap → ℝ≥0∞} {c : SPComp α}
     {cut : α → Heap → ℝ≥0∞} {f : α → SPComp β} {post : β → Heap → ℝ≥0∞}
     (hc : TripleE pre c cut) (hf : ∀ a, TripleE (cut a) (f a) post) :

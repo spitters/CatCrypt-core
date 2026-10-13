@@ -41,6 +41,7 @@ are relative to `CatCryptCore/`.
 | Crypto foundation | `Crypto/{Game,Advantage,SDist,SecurityDefs,Encryption,HybridArgument,NomAdvantage}.lean` |
 | Forking | `Crypto/ForkingLemma.lean`, `Crypto/GeneralForkingLemma.lean` — Pointcheval–Stern and Bellare–Neven |
 | Up-to-bad | `Crypto/BadEvent.lean` — identical-until-bad / fundamental lemma of game-playing, bad-event union bounds, hybrid + up-to-bad, and lazy/eager sampling (`Tactics/UpToBad.lean` drives it) |
+| Complexity | `Crypto/{UCAdmClass,MonadCostModel,QueryBoundedUC,SizeBoundedUC,CTAdmClass,UCLevels,DummyAdversary,CompUCEquivalence,ConcreteReductions,RCL3,TraceRelating}.lean`, `Unary/ExpectedCost.lean` — admissibility classes from query cost, total size and constant-time shape; the computational distance over admissible distinguishers and Patrignani's three levels of UC emulation; the dummy-adversary and constructive-cryptography equivalences at a bounded class; negligible functions; expected cost with the geometric-retry bound ([guide](CatCryptCore/Crypto/Complexity.md)) |
 | Assumptions | `Crypto/Assumptions/*` — DDH, CDH, GapDH, DL, t-SDH, q-SDH, CoCDH, ODH, CR, OWF, PRP, RSA, AEAD, MAC |
 | Curve math | `Crypto/KeyAgreement/{MontgomeryLadder,MontgomeryAsWeierstrass,MontgomeryXOnly,Curve25519}.lean` |
 | Fujisaki–Okamoto | `Crypto/PKE/{Games,FOTransformT}.lean`, `Crypto/KEM/{Games,FOTransformU,FOTransform,FIPS203KEM,FIPS203Security}.lean` — PKE and KEM games, the T and U transforms with their classical reductions, the FIPS 203 KEM |

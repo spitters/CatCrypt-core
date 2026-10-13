@@ -137,6 +137,13 @@ public import CatCryptCore.Crypto.MonadCostModel
 public import CatCryptCore.Crypto.QueryBoundedUC
 public import CatCryptCore.Crypto.SizeBoundedUC
 public import CatCryptCore.Crypto.CTAdmClass
+public import CatCryptCore.Crypto.ConcreteReductions
+public import CatCryptCore.Crypto.UCMonad.RoundM
+public import CatCryptCore.Crypto.UCMonad.RoundMCompDist
+public import CatCryptCore.Crypto.UCAdmClass.SDistrInstance
+public import CatCryptCore.Crypto.RCL3
+public import CatCryptCore.Crypto.RCL3SPComp
+public import CatCryptCore.Crypto.TraceRelating
 public import CatCryptCore.Crypto.AGM
 public import CatCryptCore.Crypto.SecurityDefs
 public import CatCryptCore.Crypto.Encryption
