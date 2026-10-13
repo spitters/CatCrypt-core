@@ -16,7 +16,14 @@ set_option linter.unusedSimpArgs false
 # General Forking Lemma (q-query)
 
 Generalizes the forking lemma from `ForkingLemma.lean` (q = 1) to adversaries
-making q >= 1 oracle queries, following Bellare-Neven (CCS 2006, Lemma 1).
+making q >= 1 oracle queries. The bound has the form of Bellare-Neven (CCS 2006,
+Lemma 1), `acc²/q − acc/|R|`, but the fork experiment differs from theirs. Here
+the second run replaces only the I-th response and keeps every other response,
+including those after I (coordinate replacement). Bellare-Neven resample the
+whole suffix from the I-th response on (fresh-suffix replay). The two joint laws
+differ, and neither success probability bounds the other for every adversary.
+The fresh-suffix experiment for adaptive oracle adversaries is
+`OracleForkingLemma.lean`.
 
 ## Model
 
@@ -39,7 +46,7 @@ preserves the uniform distribution.
 * `qFork_success_ge_simple` -- simple bound: average fork >= acc^2 - acc/|R|
 * `bellare_neven_aggregation` -- abstract Cauchy-Schwarz aggregation step
 * `sum_acceptAtGuess_eq` -- partition of probability: sum accI = acc
-* `qFork_success_ge` -- Bellare-Neven: sum of indexed forks >= acc^2/q - acc/|R|
+* `qFork_success_ge` -- sum of the coordinate-replacement forks >= acc^2/q - acc/|R|
 
 ## References
 
@@ -388,8 +395,9 @@ noncomputable def qForkSuccProb [Fintype R] [Nonempty R] [DecidableEq (Fin q)]
   ∑ I : Fin q,
     forkSuccProb (guessReduction (R := R) A I) x (acceptAtGuess accept I)
 
-/-- **General Forking Lemma (Bellare-Neven 2006)**:
-    `qForkSuccProb >= acc^2/q - acc/|R|`. -/
+/-- **General forking lemma, coordinate replacement**:
+    `qForkSuccProb >= acc^2/q - acc/|R|`, the bound of Bellare-Neven (2006) for
+    forks that replace one response and keep all others. -/
 theorem qFork_success_ge [Fintype R] [Nonempty R] [DecidableEq (Fin q)]
     [DecidableEq R] [Fintype (Fin q → R)] [Nonempty (Fin q → R)]
     (A : QForkableAdversary X C R Y q) (x : X) (accept : Fin q × Y → Bool)
