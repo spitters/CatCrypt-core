@@ -1,0 +1,246 @@
+/-
+Copyright (c) 2025 CatCrypt Contributors. All rights reserved.
+Released under MIT license as described in the file LICENSE.
+Authors: CatCrypt Contributors
+-/
+module
+
+import all Init.Data.Repr
+public import CatCryptCore.Crypto.UCAdmClass
+public import CatCryptCore.Core.SPTree
+public import CatCryptCore.Crypto.MonadCostModel
+
+/-!
+# Constant-Time as UCAdmClass
+
+This file shows that constant-time programs form a `UCAdmClass`, connecting
+to Barthe et al.'s constant-time compilation (POPL 2020, CCS 2014).
+
+## Architecture
+
+```
+CT ⊂ query-bounded ⊂ admissible
+```
+
+CT preserves the entire execution *pattern* (which operations, in what order),
+while query-bounded only preserves the *count*. Both form valid `UCAdmClass`es.
+
+## Main definitions
+
+* `CTClass` — abstract constant-time predicate, closed under monad ops
+* `UCAdmClass_of_CTClass` — CT programs form a UCAdmClass
+* `SPShape` — SPTree with return values erased
+* `SPTree.toShape` — extract shape from an SPTree
+* `ct_spComp` — concrete CT predicate for SPComp via shape constancy
+
+## References
+
+* Barthe et al., "System-Level Non-Interference for Constant-Time
+  Cryptography", CCS 2014
+* Barthe et al., "Formally Verified Speculation and Buffer Overflow
+  Countermeasures", POPL 2020
+-/
+
+@[expose] public section
+
+open scoped ENNReal
+
+namespace UCMonad
+
+/-! ## Section 1: Abstract Constant-Time Class -/
+
+/-- Abstract constant-time predicate on Kleisli arrows.
+
+    A program `f : α → T β` is constant-time if its observable execution
+    pattern is independent of the input value. The axioms mirror `UCAdmClass`:
+    - `ct_pure`: no operations → trivially CT
+    - `ct_bind`: sequential CT programs compose to CT
+    - `ct_mapSum`: public branching on sum tags preserves CT -/
+class CTClass (T : Type → Type) [Monad T] [UCMonadBase T] where
+  /-- Constant-time predicate. -/
+  ct : {α β : Type} → (α → T β) → Prop
+  /-- Pure is constant-time (no operations). -/
+  ct_pure {α : Type} : ct (pure : α → T α)
+  /-- Kleisli composition preserves constant-time. -/
+  ct_bind {α β γ : Type} {f : α → T β} {g : β → T γ} :
+    ct f → ct g → ct (fun a => f a >>= g)
+  /-- Coproduct preserves constant-time (branching on public sum tag). -/
+  ct_mapSum {α β γ δ : Type} {f : α → T β} {g : γ → T δ} :
+    ct f → ct g → ct (UCMonadBase.ucMapSum f g)
+  /-- Precomposition with a pure function preserves constant-time. -/
+  ct_precomp {α α' β : Type} {g : α → T β} (f : α' → α) :
+    ct g → ct (g ∘ f)
+
+export CTClass (ct ct_pure ct_bind ct_mapSum ct_precomp)
+
+/-- CT programs form a UCAdmClass.
+
+    This is a `def`, not an `instance`, to avoid typeclass diamonds. -/
+noncomputable def UCAdmClass_of_CTClass
+    (T : Type → Type) [Monad T] [UCMonadBase T] [CTClass T] :
+    UCAdmClass T where
+  adm f := ct f
+  adm_pure := ct_pure
+  adm_bind := ct_bind
+  adm_mapSum := ct_mapSum
+  adm_precomp := ct_precomp
+
+end UCMonad
+
+/-! ## Section 2: SPTree Shapes -/
+
+open CatCrypt.Core CatCrypt.Crypto
+
+/-- SPTree with return values erased: captures the operation structure
+    (which operations, in what order, with what branching) while
+    forgetting the actual computed values. -/
+inductive SPShape : Type 1 where
+  | ret : SPShape
+  | sample (β : Type) (finβ : Fintype β) (neβ : Nonempty β) :
+      (β → SPShape) → SPShape
+  | get (l : Location) : (l.ty → SPShape) → SPShape
+  | set (l : Location) : SPShape → SPShape
+  | fail : SPShape
+
+namespace SPShape
+
+/-- Substitute a fixed shape at every `ret` node. -/
+def bind : SPShape → SPShape → SPShape
+  | .ret, s => s
+  | .sample β finβ neβ k, s => .sample β finβ neβ (fun b => (k b).bind s)
+  | .get l k, s => .get l (fun v => (k v).bind s)
+  | .set l t, s => .set l (t.bind s)
+  | .fail, _ => .fail
+
+/-- Operation count at shape level. -/
+def queryCost : SPShape → ℕ
+  | .ret => 0
+  | .sample β finβ _ k =>
+    letI := finβ
+    1 + Finset.univ.sup (fun b => (k b).queryCost)
+  | .get l k => 1 + Finset.univ.sup (fun v => (k v).queryCost)
+  | .set _ t => 1 + t.queryCost
+  | .fail => 0
+
+@[grind =] theorem bind_ret (s : SPShape) : s.bind .ret = s := by
+  induction s with
+  | ret => rfl
+  | sample β finβ neβ k ih => simp only [bind]; congr_funext
+  | get l k ih => simp only [bind]; congr_funext
+  | set l t ih => simp only [bind]; congr_funext
+  | fail => rfl
+
+@[grind =] theorem bind_assoc (s₁ s₂ s₃ : SPShape) :
+    (s₁.bind s₂).bind s₃ = s₁.bind (s₂.bind s₃) := by
+  induction s₁ with
+  | ret => rfl
+  | sample β finβ neβ k ih => simp only [bind]; congr_funext
+  | get l k ih => simp only [bind]; congr_funext
+  | set l t ih => simp only [bind]; congr_funext
+  | fail => rfl
+
+end SPShape
+
+namespace CatCrypt.Core.SPTree
+
+variable {α β : Type}
+
+/-- Extract the shape of an SPTree, erasing return values and set values. -/
+def toShape : SPTree α → SPShape
+  | .ret _ => .ret
+  | .sample β finβ neβ k => .sample β finβ neβ (fun b => (k b).toShape)
+  | .get l k => .get l (fun v => (k v).toShape)
+  | .set l _ t => .set l t.toShape
+  | .fail => .fail
+
+/-- queryCost factors through toShape. -/
+theorem queryCost_eq_shape_queryCost (s : SPTree α) :
+    s.queryCost = s.toShape.queryCost := by
+  induction s with
+  | ret _ => rfl
+  | sample β finβ neβ k ih =>
+    simp only [SPTree.queryCost, toShape, SPShape.queryCost]
+    congr 1; apply Finset.sup_congr rfl; intro b _; exact ih b
+  | get l k ih =>
+    simp only [SPTree.queryCost, toShape, SPShape.queryCost]
+    congr 1; apply Finset.sup_congr rfl; intro v _; exact ih v
+  | set l v t ih =>
+    simp only [SPTree.queryCost, toShape, SPShape.queryCost]; exact congr_arg _ ih
+  | fail => rfl
+
+/-- toShape commutes with bind when the continuation has constant shape. -/
+theorem toShape_bind (s : SPTree α) (f : α → SPTree β) (sf : SPShape)
+    (hf : ∀ a, (f a).toShape = sf) :
+    (s.bind f).toShape = s.toShape.bind sf := by
+  induction s with
+  | ret a =>
+    simp [SPTree.bind, toShape, SPShape.bind]; exact hf a
+  | sample γ finγ neγ k ih =>
+    simp only [SPTree.bind, toShape, SPShape.bind]; congr_funext
+  | get l k ih =>
+    simp only [SPTree.bind, toShape, SPShape.bind]; congr_funext
+  | set l v t ih =>
+    simp only [SPTree.bind, toShape, SPShape.bind]; congr_funext
+  | fail =>
+    simp [SPTree.bind, toShape, SPShape.bind]
+
+end CatCrypt.Core.SPTree
+
+/-! ## Section 3: Concrete CT for SPComp -/
+
+open CatCrypt.Core (SPTree SPComp Location)
+open UCMonad
+
+/-- A Kleisli arrow `f : α → SPComp β` is **constant-time** if there exists
+    an SPTree representation where the shape is independent of the input.
+
+    Strictly stronger than `spTreeQueryAdm`:
+    - CT: entire operation pattern is input-independent
+    - Query-bounded: only the operation count is bounded -/
+def ct_spComp {α β : Type} (f : α → SPComp β) : Prop :=
+  ∃ (s : α → SPTree β),
+    (∀ a, (s a).compile = f a) ∧
+    ∃ (shape : SPShape), ∀ a, (s a).toShape = shape
+
+/-- CT implies query-bounded: constant shape implies constant cost. -/
+theorem ct_spComp_implies_queryAdm {α β : Type} {f : α → SPComp β}
+    (h : ct_spComp f) : spTreeQueryAdm.adm f := by
+  obtain ⟨s, hs_compile, shape, hs_shape⟩ := h
+  refine ⟨s, hs_compile, shape.queryCost, fun a => ?_⟩
+  rw [SPTree.queryCost_eq_shape_queryCost, hs_shape]
+
+/-- Pure is constant-time. -/
+theorem ct_spComp_pure {α : Type} : ct_spComp (SPComp.pure : α → SPComp α) :=
+  ⟨SPTree.ret, fun _ => rfl, .ret, fun _ => rfl⟩
+
+/-- Kleisli composition preserves constant-time:
+    if `f` and `g` have constant shapes `sf` and `sg`, then `f >=> g`
+    has constant shape `sf.bind sg`. -/
+theorem ct_spComp_bind {α β γ : Type} {f : α → SPComp β} {g : β → SPComp γ}
+    (hf : ct_spComp f) (hg : ct_spComp g) :
+    ct_spComp (fun a => SPComp.bind (f a) g) := by
+  obtain ⟨sf, hsf, shapef, hshapef⟩ := hf
+  obtain ⟨sg, hsg, shapeg, hshapeg⟩ := hg
+  refine ⟨fun a => (sf a).bind sg, ?_, shapef.bind shapeg, ?_⟩
+  · intro a
+    rw [SPTree.compile_bind, hsf a]
+    congr_funext
+  · intro a
+    rw [SPTree.toShape_bind (sf a) sg shapeg hshapeg, hshapef]
+
+/-! ### Remark on `mapSum`
+
+  The concrete predicate `ct_spComp` demands a **single** shape for **all** inputs.
+  For `mapSum f g : (α ⊕ γ) → SPComp (β ⊕ δ)`, the `.inl` branch uses `shapef`
+  and the `.inr` branch uses `shapeg`, which may differ.  Consequently,
+  `ct_spComp_mapSum` is not provable in general — it holds only when both
+  branches happen to share the same shape.
+
+  This reflects the distinction in the constant-time literature (Barthe et al.,
+  CCS 2014) between **public** branching (the sum tag `.inl`/`.inr` is observable)
+  and **secret** inputs (values within each branch).  The abstract `CTClass`
+  (\S1) handles this correctly by making `ct_mapSum` an axiom — concrete
+  instances may use more refined predicates that track public/secret partitions.
+
+  The abstract bridge `UCAdmClass_of_CTClass` remains the recommended path for
+  obtaining admissibility from any CT predicate satisfying the three axioms. -/

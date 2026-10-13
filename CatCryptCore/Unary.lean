@@ -12,6 +12,8 @@ public import CatCryptCore.Unary.Event
 public import CatCryptCore.Unary.Bridge
 public import CatCryptCore.Unary.FailureEvent
 public import CatCryptCore.Unary.QueryBound
+public import CatCryptCore.Unary.ExpectationWP
+public import CatCryptCore.Unary.ExpectedCost
 
 /-!
 # Unary Probabilistic Hoare Logic (pHL)

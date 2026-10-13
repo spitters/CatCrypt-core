@@ -128,6 +128,15 @@ public import CatCryptCore.Crypto.UCAlg
 public import CatCryptCore.Crypto.UCComposition
 public import CatCryptCore.Crypto.UCDSL
 public import CatCryptCore.Crypto.UCConcrete
+public import CatCryptCore.Crypto.UCAdmClass
+public import CatCryptCore.Crypto.UCAdmClass.SPCompInstance
+public import CatCryptCore.Crypto.UCLevels
+public import CatCryptCore.Crypto.DummyAdversary
+public import CatCryptCore.Crypto.CompUCEquivalence
+public import CatCryptCore.Crypto.MonadCostModel
+public import CatCryptCore.Crypto.QueryBoundedUC
+public import CatCryptCore.Crypto.SizeBoundedUC
+public import CatCryptCore.Crypto.CTAdmClass
 public import CatCryptCore.Crypto.AGM
 public import CatCryptCore.Crypto.SecurityDefs
 public import CatCryptCore.Crypto.Encryption
