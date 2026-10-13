@@ -153,6 +153,10 @@ public import CatCryptCore.Crypto.TreeForkingLemma
 public import CatCryptCore.Crypto.SwitchingLemma
 public import CatCryptCore.Crypto.MultiQueryPRF
 public import CatCryptCore.Crypto.OracleAdversary
+public import CatCryptCore.Crypto.OracleForkingLemma
+public import CatCryptCore.Crypto.FiatShamirROM.Game
+public import CatCryptCore.Crypto.FiatShamirROM.Reduction
+public import CatCryptCore.Crypto.FiatShamirROM.Schnorr
 public import CatCryptCore.Crypto.PRPPRFSwitching
 public import CatCryptCore.Crypto.PRFAssumption
 public import CatCryptCore.Crypto.Assumptions.Catalog
