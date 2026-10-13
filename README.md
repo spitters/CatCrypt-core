@@ -43,6 +43,8 @@ are relative to `CatCryptCore/`.
 | Up-to-bad | `Crypto/BadEvent.lean` — identical-until-bad / fundamental lemma of game-playing, bad-event union bounds, hybrid + up-to-bad, and lazy/eager sampling (`Tactics/UpToBad.lean` drives it) |
 | Assumptions | `Crypto/Assumptions/*` — DDH, CDH, GapDH, DL, t-SDH, q-SDH, CoCDH, ODH, CR, OWF, PRP, RSA, AEAD, MAC |
 | Curve math | `Crypto/KeyAgreement/{MontgomeryLadder,MontgomeryAsWeierstrass,MontgomeryXOnly,Curve25519}.lean` |
+| Fujisaki–Okamoto | `Crypto/PKE/{Games,FOTransformT}.lean`, `Crypto/KEM/{Games,FOTransformU,FOTransform,FIPS203KEM,FIPS203Security}.lean` — PKE and KEM games, the T and U transforms with their classical reductions, the FIPS 203 KEM |
+| Quantum foundations | `Quantum/{Instrument,TraceNorm,UnitaryChannel,CPMap,Measurement,TensorProduct,KroneckerPSD}.lean` — instruments and channels on finite matrices, trace norm, completely positive maps, measurements, tensor products, positivity of Kronecker products |
 
 ## Build
 

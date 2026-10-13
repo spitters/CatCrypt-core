@@ -149,6 +149,27 @@ public import CatCryptCore.Crypto.PRFAssumption
 public import CatCryptCore.Crypto.Assumptions.Catalog
 public import CatCryptCore.Crypto.BLSSig.Security
 
+-- Fujisaki–Okamoto transforms, FIPS 203 KEM, total variation
+public import CatCryptCore.Crypto.OracleSimulation
+public import CatCryptCore.Crypto.TV
+public import CatCryptCore.Crypto.Constructions.ECBCPRFFlag
+public import CatCryptCore.Crypto.PKE.Games
+public import CatCryptCore.Crypto.PKE.FOTransformT
+public import CatCryptCore.Crypto.KEM.Games
+public import CatCryptCore.Crypto.KEM.FOTransformU
+public import CatCryptCore.Crypto.KEM.FOTransform
+public import CatCryptCore.Crypto.KEM.FIPS203KEM
+public import CatCryptCore.Crypto.KEM.FIPS203Security
+
+-- Quantum foundations: instruments, channels, trace norm, tensor products
+public import CatCryptCore.Quantum.Instrument
+public import CatCryptCore.Quantum.TraceNorm
+public import CatCryptCore.Quantum.UnitaryChannel
+public import CatCryptCore.Quantum.CPMap
+public import CatCryptCore.Quantum.Measurement
+public import CatCryptCore.Quantum.TensorProduct
+public import CatCryptCore.Quantum.KroneckerPSD
+
 -- UC ideal functionalities (F_commit, F_ZK, F_OT) + shared group scaffolding
 public import CatCryptCore.Examples.GroupParam
 public import CatCryptCore.Crypto.Commitment.PedersenUC
