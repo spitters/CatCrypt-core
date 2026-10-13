@@ -52,6 +52,18 @@ bounded class.
 
 ## Relation to the literature
 
+- Security definitions parametrised by an admissibility predicate with an additive cost model
+  are due to Petcher and Morrisett (FCF, POST 2015, §3.7). Barbosa, Barthe, Grégoire, Koutsos
+  and Strub (CCS 2021) prove costs in a Hoare logic and UC transitivity, composition and
+  dummy-adversary completeness under cost-restricted simulators and environments. The
+  distance as a supremum over a distinguisher class closed under converters is Maurer's
+  (TOSCA 2011, §4.5). New in items 1–2 are the cost-model axioms on the Kleisli arrows of an
+  arbitrary monad and the query, size and shape classes on `SPComp` syntax trees; item 3
+  states two elementary facts for these classes.
+- VCVio already instruments oracle computations with an additive cost, defines expected cost
+  through its weakest precondition and bounds it by worst-case query bounds; eHL (Avanzini et
+  al., OOPSLA 2024) proves expected-cost bounds in EasyCrypt. New in item 7 are the bind
+  inequality on the stateful monad `SPComp` and the retry bound for a generic round.
 - Level 1 at `ε = 0` is the perfect UC of Patrignani, Künnemann, Wahby and Cecchetti
   (TOPLAS 2024, Def. 2), for `ε > 0` the statistical UC of Künnemann, Patrignani and
   Cecchetti (CSF 2024, §IV-A). Levels 2 and 3 are instances of the predicate-parametrised
@@ -99,3 +111,9 @@ bounded class.
   LICS 2016.
 - Kenji Maillard, Danel Ahman, Robert Atkey, Guido Martínez, Cătălin Hriţcu, Exequiel Rivas,
   Éric Tanter. Dijkstra Monads for All. ICFP 2019.
+- Adam Petcher, Greg Morrisett. The Foundational Cryptography Framework. POST 2015.
+- Manuel Barbosa, Gilles Barthe, Benjamin Grégoire, Adrien Koutsos, Pierre-Yves Strub.
+  Mechanized Proofs of Adversarial Complexity and Application to Universal Composability.
+  CCS 2021.
+- Martin Avanzini, Gilles Barthe, Benjamin Grégoire, Georg Moser, Gabriele Vanoni. Hopping
+  Proofs of Expectation-Based Properties. OOPSLA 2024.
