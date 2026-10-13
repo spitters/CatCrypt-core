@@ -15,10 +15,14 @@ bounded class.
    ([`UCAdmClass`](UCAdmClass.lean)).
 2. **Classes from complexity measures.** A cost on Kleisli arrows, zero on `pure` and
    subadditive under bind, yields a class and a graded family of arrows of cost at most `n`
-   ([`MonadCostModel`](MonadCostModel.lean)). Instances: oracle-query cost on syntax trees
-   (`spTreeQueryAdm`); total size, which is multiplicative under bind and can be exponential
-   in query cost ([`SizeBoundedUC`](SizeBoundedUC.lean)); one operation shape for every
-   input ([`CTAdmClass`](CTAdmClass.lean)).
+   ([`MonadCostModel`](MonadCostModel.lean)). Two classes are defined on syntax trees: arrows
+   with a tree of bounded oracle-query cost (`spTreeQueryAdm`), and arrows with a tree of
+   bounded total size, which is multiplicative under bind and can be exponential in query
+   cost ([`SizeBoundedUC`](SizeBoundedUC.lean)). An abstract constant-time predicate closed
+   under `pure`, composition and coproducts yields a class; the concrete predicate "one
+   operation shape for every input" is closed under `pure` and composition, is contained in
+   the query class, and is closed under coproducts only when the two branches have the same
+   shape ([`CTAdmClass`](CTAdmClass.lean)).
 3. **Separation results.** At query cost and at size, a distinguisher that tests the output
    is admissible, so the computational and statistical distances coincide on the canonical
    separating pair ([`QueryBoundedUC`](QueryBoundedUC.lean), [`SizeBoundedUC`](SizeBoundedUC.lean)).
@@ -55,12 +59,13 @@ bounded class.
   (TOPLAS Thm. 4, CSF Thms. 2–3) for a fixed simulator.
 - Item 5 follows Canetti's dummy-adversary completeness and black-box simulation
   (ePrint 2000/067, Claims 11 and 13), stated here for distances. The notion of
-  construction is Maurer's (TOSCA 2011, Def. 3, security condition); its equivalence with UC
-  emulation is ours.
+  construction is Maurer's (TOSCA 2011, Def. 3, security condition). Maurer (TOSCA 2011) and
+  Maurer and Renner (ICS 2011, App. C.2) discuss the relation to UC without stating the
+  equivalence as a theorem.
 - The trace relations of item 6 are a quantitative analogue of those of Abate et al.
   (ESOP 2020, Def. 1.2), whose setting has no probabilities.
-- The constant-time class is the observational constant-time condition of Barthe et al.
-  (POPL 2020, Def. 3.1) with every input secret.
+- The concrete constant-time predicate is the observational constant-time condition of
+  Barthe et al. (POPL 2020, Def. 3.1) with every input secret.
 - The expectation algebra is Hasuo's (TCS 2015, Def. 2.4). The bind law of item 7
   corresponds to the sequential rule of the ert calculus (Kaminski et al., J. ACM 2018,
   Table 1 and Thm. 8.1), and the retry bound to the extractor construction of Bellare and
