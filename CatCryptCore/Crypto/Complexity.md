@@ -27,8 +27,8 @@ cost at most `n`.
 |---|---|---|
 | Query cost: oracle calls on the worst path of an `SPTree` | [`spTreeQueryAdm`](MonadCostModel.lean) | an admissibility class obtained from a cost model; some arrows are outside it. Pure output tests have query cost zero, so on the separating pair `Example.π` / `Example.F` the query-bounded distance equals the statistical distance, both `1` ([`ex_queryBounded_no_separation`](QueryBoundedUC.lean)) |
 | Total size: all nodes of an `SPTree`, summed over branches | [`spTreeSizeAdm`](SizeBoundedUC.lean) | size can be exponential in query cost ([`wideTree_queryCost`](SizeBoundedUC.lean), [`wideTree_size_ge`](SizeBoundedUC.lean)); size is multiplicative under bind ([`size_bind_mul`](SizeBoundedUC.lean)), so it is not a cost model and the class is built directly. If every admissible distinguisher has advantage at most `ε` and an inadmissible one reaches `c > ε`, then `ucCdist < ucSdist` ([`ucCdist_lt_ucSdist_of_bounded`](SizeBoundedUC.lean), [`ucCdist_lt_ucSdist_strict`](SizeBoundedUC.lean)) |
-| Constant-time shape: the `SPTree` with return values erased | [`UCAdmClass_of_CTClass`](CTAdmClass.lean), [`ct_spComp`](CTAdmClass.lean) | arrows given by syntax trees with one operation shape for every input form an admissibility class, contained in the query-bounded class (`ct_spComp_implies_queryAdm`) |
-| Expected cost: credits threaded through an `SPComp`, averaged by the expectation algebra | [`ecost`](../Unary/ExpectedCost.lean) | the bind law ([`ecost_bind_le`](../Unary/ExpectedCost.lean), exact for lossless continuations: `ecost_bind`); worst-case query cost bounds expected cost ([`ecost_compileCharged_le_queryCost`](../Unary/ExpectedCost.lean), [`ecost_of_spTreeQueryAdm`](../Unary/ExpectedCost.lean)); counting does not change the program ([`compileCharged_erase`](../Unary/ExpectedCost.lean)); a retry loop with per-round cost `C` and success probability `p` has expected cost at most `C / p` ([`ecost_retryN_le_div`](../Unary/ExpectedCost.lean)) |
+| Constant-time shape: the `SPTree` with return values erased | [`UCAdmClass_of_CTClass`](CTAdmClass.lean), [`ct_spComp`](CTAdmClass.lean) | arrows given by syntax trees with one operation shape for every input (the observational constant-time condition of Barthe et al., with every input secret) form an admissibility class, contained in the query-bounded class (`ct_spComp_implies_queryAdm`) |
+| Expected cost: a cost counter threaded through an `SPComp`, averaged by the expectation algebra | [`ecost`](../Unary/ExpectedCost.lean) | the bind law ([`ecost_bind_le`](../Unary/ExpectedCost.lean), exact for lossless continuations: `ecost_bind`); worst-case query cost bounds expected cost ([`ecost_compileCharged_le_queryCost`](../Unary/ExpectedCost.lean), [`ecost_of_spTreeQueryAdm`](../Unary/ExpectedCost.lean)); counting does not change the program ([`compileCharged_erase`](../Unary/ExpectedCost.lean)); a retry loop with per-round cost `C` and success probability `p` has expected cost at most `C / p` ([`ecost_retryN_le_div`](../Unary/ExpectedCost.lean)) |
 | Oracle-query count in a pHL judgment | [`Unary/QueryBound`](../Unary/QueryBound.lean) | after `q` queries the probability of a bad event is at most `q * ε` (`prBad_induction`, `advantage_le_query_bound_derived`) |
 | Ticks in a graded state monad | [`CostM σ n`](../XDijkstra/XCostMonad.lean) | every run of a `CostM σ n` program counts at most `n` ticks (`CostM.cost_le`); the family is a lawful graded monad over `(ℕ, +, 0)` with a weakest-precondition instance whose grade is `n` |
 
@@ -45,16 +45,22 @@ statistical distance, level 2 with `ucCdist` (`UCEmulatesL2`), level 3 with `ucC
 simulator construction that preserves admissibility (`UCEmulatesL3`, `UCEmulatesAlgL3`). Level 1
 implies level 2 (`UCEmulatesL2_of_L1`) and level 3 implies level 2 (`UCEmulatesL3_implies_L2`);
 each level is transitive and monotone in `ε`, and reflexive (level 3 for admissible
-adversaries). Level 1 follows Patrignani, Künnemann, Wahby and Cecchetti; levels 2 and 3
-follow the computational robust compilation of Künnemann, Patrignani and Cecchetti. The
-numbering of the levels is ours.
+adversaries). Level 1 is statistical UC; at `ε = 0` it is the perfect UC of Patrignani,
+Künnemann, Wahby and Cecchetti (Def. 2), and for `ε > 0` the statistical UC of Künnemann,
+Patrignani and Cecchetti (§IV-A). Levels 2 and 3 are instances, not named in that paper, of
+its predicate-parametrised robust compilation (Def. 7); its computational UC (Def. 3) also
+bounds the adversary. The numbering of the levels is ours, and the bounds are concrete in
+`ε`.
 
-[`DummyAdversary`](DummyAdversary.lean) proves that emulation against the dummy adversary
-implies emulation against every adversary (`dummy_completeness`) and that a specialised
-simulator yields a uniform construction (`specialized_iff_general`).
+[`DummyAdversary`](DummyAdversary.lean) proves, over the statistical distance, that emulation
+against the dummy adversary implies emulation against every adversary (`dummy_completeness`;
+Canetti, Claim 11) and that per-adversary simulators yield a uniform simulator construction
+(`specialized_iff_general`; cf. Canetti's black-box simulation, Claim 13).
 [`CompUCEquivalence`](CompUCEquivalence.lean) proves the same at `ucCdist` with admissible
-adversaries (`ucEmulatesCdist_iff_dummy`), and the equivalence of constructive-cryptography
-construction with UC emulation (`ccConstructsCdist_iff_ucEmulatesCdist`).
+adversaries (`ucEmulatesCdist_iff_dummy`), and that a construction in the sense of Maurer
+(TOSCA 2011, Def. 3, security condition only) is equivalent to UC emulation
+(`ccConstructsCdist_iff_ucEmulatesCdist`). That equivalence is ours; Maurer and Renner remark
+on the relation between the two frameworks without stating it as a theorem.
 [`QueryBoundedUC`](QueryBoundedUC.lean) and [`SizeBoundedUC`](SizeBoundedUC.lean) instantiate
 both equivalences at the query-bounded and size-bounded classes.
 
@@ -66,12 +72,16 @@ hybrids (`UCEmulatesNegl_hybrid_bound`).
 
 ## Secure compilation at level 3
 
-[`RCL3`](RCL3.lean) states robust compilation at level 3 and proves it equivalent to a bound
-on `ucCdist` (`RC_L3_iff_ucCdist`) and to robust hyperproperty preservation at level 3
-(`UCEmulatesAlgL3_iff_RHPL3`); [`RCL3SPComp`](RCL3SPComp.lean) proves the parallel-composition
-bound for `SPComp`. [`TraceRelating`](TraceRelating.lean) proves that `ucCdist` is the least
-bound of a trace-relating compiler over admissible distinguishers
-(`ucCdist_eq_sInf_traceRelating`), and that a bound `ε` over all distinguishers holds exactly
+[`RCL3`](RCL3.lean) states robust compilation at level 3, as closure under contexts and
+admissible distinguishers, and proves it equivalent to a bound on `ucCdist`
+(`RC_L3_iff_ucCdist`), and level-3 UC emulation with a fixed simulator construction
+equivalent to a level-3 preservation property (`UCEmulatesAlgL3_iff_RHPL3`). These are
+analogues of the equivalences of UC with robust hyperproperty preservation in the TOPLAS
+(Thm. 4) and CSF (Thms. 2 and 3) papers, whose RHP quantifies "for every target attacker
+there is a source attacker"; [`RCL3SPComp`](RCL3SPComp.lean) proves the parallel-composition
+bound for `SPComp`. [`TraceRelating`](TraceRelating.lean) defines a quantitative analogue, ours, of
+the trace relations of Abate et al., who work without probabilities, and proves that
+`ucCdist` is the least bound over admissible distinguishers (`ucCdist_eq_sInf_traceRelating`), and that a bound `ε` over all distinguishers holds exactly
 when `ucSdist ≤ ε` (`traceRelatingL1_iff_ucSdist`).
 
 ## References
@@ -81,7 +91,9 @@ when `ucSdist ≤ ε` (`traceRelatingL1_iff_ucSdist`).
 - Robert Künnemann, Marco Patrignani, Ethan Cecchetti. Computationally Bounded Robust
   Compilation and Universally Composable Security. CSF 2024.
 - Ran Canetti. Universally Composable Security: A New Paradigm for Cryptographic Protocols.
-  FOCS 2001; IACR ePrint 2000/067.
+  FOCS 2001; IACR ePrint 2000/067, version of 2020-02-11 (Claims 11 and 13).
+- Ueli Maurer. Constructive Cryptography — A New Paradigm for Security Definitions and
+  Proofs. TOSCA 2011.
 - Ueli Maurer, Renato Renner. Abstract Cryptography. ICS 2011.
 - Carmine Abate, Roberto Blanco, Ștefan Ciobâcă, Adrien Durier, Deepak Garg, Cătălin Hrițcu,
   Marco Patrignani, Éric Tanter, Jérémy Thibault. Trace-Relating Compiler Correctness and
@@ -95,4 +107,4 @@ when `ucSdist ≤ ε` (`traceRelatingL1_iff_ucSdist`).
   with Credits for Expected Costs. OOPSLA 2024.
 - Oded Goldreich. Foundations of Cryptography, Vol. 1, Def. 4.7.2. Cambridge University
   Press, 2001.
-- Mihir Bellare, Oded Goldreich. On Defining Proofs of Knowledge. CRYPTO 1992.
+- Mihir Bellare, Oded Goldreich. On Defining Proofs of Knowledge. CRYPTO 1992, §6.

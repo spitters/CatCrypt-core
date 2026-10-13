@@ -21,8 +21,8 @@ set_option autoImplicit false
 # Expected-cost transformer for `SPComp` (ert-style, over the expectation algebra)
 
 A weakest-preexpectation-style **expected cost** transformer for CatCrypt's
-stateful probability monad, in the credit-accounting style of Tachis: cost is
-an explicit `ℕ`-valued resource threaded through the computation, and the
+stateful probability monad: cost is an explicit `ℕ`-valued resource threaded through
+the computation, as the tick cost of Tachis (§3.3), and the
 *expected* accumulated cost is computed by the same `OrderedMonadAlgebra
 SDistr ℝ≥0∞` expectation algebra that powers `wpE`
 (`CatCryptCore/Unary/ExpectationWP.lean`).
@@ -30,8 +30,9 @@ SDistr ℝ≥0∞` expectation algebra that powers `wpE`
 The motivating client is the expected running time of knowledge extractors.
 A proof of knowledge whose extractor is a deterministic function of two
 transcripts, and the worst-case cost of `MonadCostModel`/`SPTree.queryCost`,
-do not describe Goldreich's extractor (Def. 4.7.2): it is a *rewinding loop*
-whose natural complexity measure is **expected** running time. This file
+do not describe Goldreich's knowledge extractor (Def. 4.7.2), whose **expected** running
+time is bounded by `q / (p − κ)`; Bellare and Goldreich obtain such extractors by
+repeating an attempt until it succeeds (§6, Prop. 6.1, and App. D). This file
 supplies the quantitative layer:
 
 1. `CostComp α := SPComp (α × ℕ)` — the minimal cost-instrumented wrapper:
@@ -42,8 +43,9 @@ supplies the quantitative layer:
    `ecost_charge = price`, and the **tower law** `ecost_bind`
    (exact for lossless continuations, `ecost_bind_le` unconditionally —
    the `≤` direction is what every upper bound uses; on sub-distributions
-   the deficit mass of the continuation makes the equality direction fail,
-   exactly as in the ert calculus's treatment of nontermination).
+   the equality direction fails because a run whose continuation fails discards the
+   cost accumulated before it; the composition rule of the ert calculus is exact,
+   since ert counts the time up to a halt).
 3. Worst-case ⟹ expected (`ecost_compileCharged_le_queryCost`,
    `ecost_of_spTreeQueryAdm`): an `SPTree` syntax tree compiled with
    unit charges has expected cost bounded by its worst-case `queryCost` —
@@ -51,8 +53,8 @@ supplies the quantitative layer:
 4. The **geometric-retry theorem** (`ecost_retryN_le`,
    `ecost_retryN_le_div`): a retry loop with per-round expected cost `≤ C`
    and per-round failure probability `≤ 1 - p` has expected cost `≤ C / p`
-   (truncated form `C * ∑_{i<n} q^i` for `n` rounds). This is the engine of
-   every rewinding-extractor running-time analysis.
+   (truncated form `C * ∑_{i<n} q^i` for `n` rounds). This is the bound used for
+   the retry construction of Bellare and Goldreich.
 
 ## Main definitions
 
@@ -77,21 +79,22 @@ supplies the quantitative layer:
 * Philipp G. Haselwarter, Kwing Hei Li, Markus de Medeiros, Simon Oddershede
   Gregersen, Alejandro Aguirre, Joseph Tassarotti, Lars Birkedal, *Tachis:
   Higher-Order Separation Logic with Credits for Expected Costs*,
-  OOPSLA 2024 — cost credits as an explicit resource; our `ℕ` component is
-  the (linear, heap-free) shadow of their credit assertion.
+  OOPSLA 2024 — our `ℕ` component is their tick cost (§3.3), whose expectation
+  their credits bound (Thm. 2, adequacy).
 * Benjamin Lucien Kaminski, Joost-Pieter Katoen, Christoph Matheja, Federico
   Olmedo, *Weakest Precondition Reasoning for Expected Runtimes of
   Randomized Algorithms*, J. ACM 65(5), 2018 (conference version ESOP 2016)
-  — the classical ert calculus; `ecost_bind` is ert's composition law,
-  `ecost_retryN_le` its geometric-loop rule, here obtained on top of the
-  Hasuo-style ordered-monad-algebra expectation modality of
-  `ExpectationWP.lean` rather than by a bespoke transformer recursion.
-* Oded Goldreich, *Foundations of Cryptography* Vol. 1, Def. 4.7.2, and
-  Mihir Bellare, Oded Goldreich, *On Defining Proofs of Knowledge*,
-  CRYPTO 1992 — knowledge extractors run in **expected** polynomial time;
-  the geometric-retry bound is the standard argument that a rewinding
-  extractor with per-attempt success probability `p` and per-attempt cost
-  `C` runs in expected time `O(C / p)`.
+  — the ert calculus; `ecost_bind` corresponds to its sequential-composition rule
+  (Table 1) in the additive form of Thm. 8.1, and `ecost_retryN_le` to an
+  upper-invariant bound for a loop (Thm. 4.2; cf. Ex. 4.3), here obtained on top
+  of the ordered-monad-algebra expectation modality of `ExpectationWP.lean`.
+* Oded Goldreich, *Foundations of Cryptography* Vol. 1, Def. 4.7.2 — the
+  knowledge extractor runs in expected time at most `q / (p − κ)`, with `p` the
+  acceptance probability.
+* Mihir Bellare, Oded Goldreich, *On Defining Proofs of Knowledge*, CRYPTO 1992,
+  §6, Prop. 6.1 and App. D — repeating an extraction attempt until it succeeds
+  gives expected time `poly / Pr[success]`. In `ecost_retryN_le_div`, `p` is the
+  per-attempt success probability, not the `p` of Goldreich's Def. 4.7.2.
 -/
 
 namespace CatCrypt.Unary

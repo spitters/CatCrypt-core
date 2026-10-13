@@ -102,7 +102,7 @@ noncomputable def UCAdmClass_of_costModel
     · exact max_lt hf hg
   adm_precomp f hg := lt_of_le_of_lt (cost_precomp f) hg
 
-/-! ## Section 3: Graded Subcategories -/
+/-! ## Section 3: Graded families of arrows -/
 
 section GradedSubcategories
 
@@ -110,19 +110,20 @@ variable {T : Type → Type} [Monad T] [UCMonadBase T] [MonadCostModel T]
 
 /-- A Kleisli arrow has cost bounded by `n`.
 
-    The family `costBounded n` for `n : ℕ` gives a filtered system of
-    wide subcategories of Kl(T):
-    ```
-      costBounded 0 ⊂ costBounded 1 ⊂ ... ⊂ costBounded n ⊂ ... ⊂ adm
-    ```
-    where `adm = ⋃ₙ costBounded n = {f | cost f < ⊤}`.
+    The family `costBounded n` for `n : ℕ` is graded: identities lie in
+    `costBounded 0`, composing an arrow of `costBounded n` with one of `costBounded m`
+    gives an arrow of `costBounded (n + m)`, and `costBounded n ⊆ costBounded m` for
+    `n ≤ m`; `adm = ⋃ₙ costBounded n = {f | cost f < ⊤}`. Only `costBounded 0` and `adm`
+    are closed under composition, so only they are wide subcategories of Kl(T).
 
-    This connects to Katsumata's graded monad framework: `cost` is a lax
-    monoidal functor from (Kl(T), >>=, pure) to (ℕ∞, +, 0, ≤). -/
+    The grades form the preordered monoid `(ℕ∞, ≤, 0, +)`, the kind of effect algebra of
+    Katsumata's parametric effect monads ("Parametric effect monads and semantics of
+    effect systems", POPL 2014); here the grading is on the Kleisli arrows of one monad,
+    not a family of monads `T e`. -/
 def costBounded (n : ℕ) {α β : Type} (f : α → T β) : Prop :=
   cost f ≤ n
 
-/-- Pure has cost 0: identity morphisms are in the 0-graded subcategory. -/
+/-- Pure has cost 0: identity morphisms are in `costBounded 0`. -/
 theorem costBounded_pure {α : Type} : costBounded (T := T) 0 (pure : α → T α) := by
   simp [costBounded, cost_pure]
 

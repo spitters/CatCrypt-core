@@ -19,26 +19,27 @@ set_option autoImplicit false
 The Hasuo-style ordered-monad-algebra ("PT situation") development for
 CatCrypt's probability monad: an `OrderedMonadAlgebra SDistr ℝ≥0∞` instance
 whose algebra map `μ` is the **expected value** of a sub-distribution
-(`SDistr α = PMF (Option α)`; the `none` branch contributes `0` — the
-demonic-total modality, in which a failing computation satisfies no
-postcondition).
+(`SDistr α = PMF (Option α)`; the `none` branch contributes `0` — Hasuo's total-correctness
+modality `τ_total` (§2.3.3), in which a failing computation satisfies no postcondition;
+Hasuo's carrier is `[0,1]`, ours is `ℝ≥0∞`).
 
 This is the quantitative counterpart of the Boolean/conjunctive predicate
 transformers of `Std.Do`: expectation is monotone but not conjunctive, so it
-lives in an ordered-monad-algebra interface (a weakening of an
-Eilenberg–Moore algebra on the truth-value carrier, after Hasuo's generic
-weakest-precondition framework for order-enriched monads) rather than in
+lives in an ordered-monad-algebra interface (an Eilenberg–Moore algebra on
+the truth-value carrier with Hasuo's monotonicity condition, Def. 2.4 of his
+generic weakest-precondition framework for order-enriched monads) rather than in
 `PredTrans`.
 
 The `OrderedMonadAlgebra` interface below is the standard categorical
 structure for generic weakest preconditions: an Eilenberg–Moore-style
 algebra `μ : m l → l` on an ordered carrier, used as a modality — Hasuo's
-"monads enriched with order" framework (the unit law `μ_pure` plus
-order-monotone binding suffice for monotone `wp`; the full EM
-multiplication law corresponds to `wp_bind` holding as an equality, which
-the `SDistr` instance proves). The same predicates-as-algebras reading
-appears in Jacobs' state-and-effect triangles. The Lean interface shape
-matches VCVio's `MAlgOrdered` (itself from Loom), so an
+"monads enriched with order" framework. The unit law `μ_pure` and monotone
+binding `μ_bind_mono` imply the Eilenberg–Moore multiplication law, and `wp_bind`
+holds for every instance: it is the functoriality of Hasuo's predicate transformer
+(Prop. 2.6, Thm. 2.14). Jacobs' state-and-effect triangles place such predicate
+transformers, `Kl(T) → P^op`, beside state transformers into the Eilenberg–Moore
+category (§2, triangle (2.3)). The Lean interface follows the ordered monad
+algebras of Loom (Def. 3.2, the class `MAlgOrdered`), so an
 `MAlgOrdered SDistr ℝ≥0∞` instance is derived from this file's instance.
 
 On top of the `SDistr` instance we define the heap-indexed weakest
@@ -72,21 +73,21 @@ exactly `CatCrypt.Unary.prEventComp` (and `CatCrypt.Crypto.prTrue` for
 
 * Ichiro Hasuo, *Generic weakest precondition semantics from monads enriched
   with order*, Theoretical Computer Science 604, 2015 (conference version
-  CMCS 2014) — the categorical source of this interface: ordered-monad
-  algebras as wp modalities.
+  CMCS 2014) — the categorical source of this interface: Eilenberg–Moore
+  algebras with a monotonicity condition as wp modalities (Def. 2.4), the
+  expectation modality `τ_total` (§2.3.3).
 * Bart Jacobs, *A Recipe for State-and-Effect Triangles*, Logical Methods in
-  Computer Science 13(2), 2017 (conference version CALCO 2015) — predicates
-  as Eilenberg–Moore algebras.
-* Kozen-style probabilistic PDL / McIver–Morgan weakest preexpectations —
-  the concrete `ℝ≥0∞` instance.
-* Engineering provenance of the Lean interface shape: VCVio's
-  `ToMathlib/Control/Monad/Algebra.lean` (`MAlgOrdered`), after Loom
-  (Gladshtein, Pîrlea, Zhao, Kurin, Sergey, *Foundational Multi-Modal
-  Program Verifiers*, POPL 2026, doi:10.1145/3776719). Loom's own novelty
-  claim is the *transformer*-level composition of such algebras; the
-  single-monad ordered algebra used here is the classical notion
-  (Hasuo's modality, with Kozen's expectation algebra as the concrete
-  ancestor).
+  Computer Science 13(2), 2017 (conference version CALCO 2015) — predicate
+  transformers beside state transformers (§2).
+* Dexter Kozen, *Semantics of probabilistic programs*, J. Comput. Syst. Sci.
+  22(3), 1981 (conference version FOCS 1979) — expectation as the probabilistic modality (credited in Hasuo
+  §2.3.3); unbounded `ℝ≥0∞` expectations as in Kaminski, Katoen, Matheja,
+  Olmedo, J. ACM 65(5), 2018, §8.
+* Gladshtein, Pîrlea, Zhao, Kurin, Sergey, *Foundational Multi-Modal Program
+  Verifiers*, POPL 2026, doi:10.1145/3776719 — ordered monad algebras (Def. 3.2,
+  `MAlgOrdered`), the shape of the Lean interface. The paper names ordered monad
+  *transformer* algebras as its main theoretical contribution; the single-monad
+  ordered algebra used here is the classical notion. Loom does not cite Hasuo.
 -/
 
 namespace CatCrypt
@@ -97,7 +98,8 @@ open scoped ENNReal
 
 Minimal interface for quantitative wp/triple reasoning: an algebra map `μ`
 from `m l` to the truth-value lattice `l`, respecting `pure` and monotone
-under `bind`. Adapted from VCVio's `MAlgOrdered` (Loom-style), reproduced to
+under `bind`. Adapted from `MAlgOrdered` of the PolyFun library
+(`PolyFun/Control/Monad/Algebra.lean`, after Loom's `MonadAlgebras`), reproduced to
 keep this foundational layer dependency-free. -/
 
 universe u v

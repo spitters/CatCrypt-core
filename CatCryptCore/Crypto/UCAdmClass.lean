@@ -12,7 +12,7 @@ public import CatCryptCore.Crypto.UCMonad
 
 This file extends the UC monad framework with **admissibility classes** and
 **computational distance**, enabling security levels 2 and 3 (`UCLevels.lean`)
-(computational distinguishers and poly-time simulators).
+(admissible distinguishers, and in addition admissible simulators).
 
 ## Key Design: Per-Distinguisher Decomposition
 
@@ -24,9 +24,12 @@ properties become **theorems** — 0 new axioms.
 ## Admissibility as Wide Sub-Kleisli-Category
 
 The `UCAdmClass` axioms (closed under pure, bind, mapSum) make admissible
-arrows a **wide subcategory** of the Kleisli category Kl(T). This is the
-categorical abstraction of "reasonable complexity class" from Implicit
-Computational Complexity (ICC): Bellantoni-Cook, BLL, Soft Affine Logic, etc.
+arrows a **wide subcategory** of the Kleisli category Kl(T). This reading is ours. It
+abstracts the closure properties shared by the characterisations of polynomial time in
+implicit computational complexity (Bellantoni–Cook safe recursion, bounded linear logic,
+soft affine logic; surveyed in Atkey, POPL 2024, §2 and Related Work). In bounded linear
+logic the exponential `!_p` is a graded linear exponential comonad (Katsumata, FoSSaCS
+2018). The table below is an analogy.
 
 | ICC Framework        | "Admissible arrows"         | Our abstraction         |
 |----------------------|-----------------------------|-------------------------|
@@ -50,13 +53,16 @@ Computational Complexity (ICC): Bellantoni-Cook, BLL, Soft Affine Logic, etc.
 ## References
 
 * Patrignani, Künnemann, Wahby, Cecchetti, "Universal Composability Is Robust
-  Compilation", TOPLAS 46(4), 2024 — perfect UC (level 1)
+  Compilation", TOPLAS 46(4), 2024 — perfect UC (Def. 2), our level 1 at `ε = 0`
 * Künnemann, Patrignani, Cecchetti, "Computationally Bounded Robust Compilation and
-  Universally Composable Security", CSF 2024 — computational UC (levels 2 and 3; the
-  numbering of the levels is ours)
+  Universally Composable Security", CSF 2024 — statistical UC (§IV-A) and
+  predicate-parametrised robust compilation (Def. 7), of which our levels 2 and 3 are
+  instances; its computational UC (Def. 3) bounds the adversary as well. The numbering of
+  the levels is ours.
 * Katsumata, "A Double Category Theoretic Analysis of Graded Linear Exponential Comonads",
-  FoSSaCS 2018
-* Atkey, "Polynomial Time and Dependent Types", POPL 2024
+  FoSSaCS 2018 — `!_p` of bounded linear logic as a graded linear exponential comonad
+* Atkey, "Polynomial Time and Dependent Types", POPL 2024 — §2 and Related Work survey the
+  linear-typing characterisations of polynomial time
 -/
 
 @[expose] public section

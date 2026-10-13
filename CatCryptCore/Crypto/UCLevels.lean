@@ -11,11 +11,14 @@ public import CatCryptCore.Crypto.UCAdmClass
 # Security levels 2 and 3
 
 This file defines UC emulation at **Level 2** (computational distinguishers) and
-**Level 3** (fully computational: computational distinguishers + poly-time simulators),
-following the computational robust compilation of Künnemann, Patrignani and Cecchetti
-("Computationally Bounded Robust Compilation and Universally Composable Security", CSF 2024);
-level 1 is the perfect UC of Patrignani, Künnemann, Wahby and Cecchetti ("Universal
-Composability Is Robust Compilation", TOPLAS 46(4), 2024). The numbering of the levels is ours.
+**Level 3** (admissible distinguishers and admissible simulators). Level 1 is
+statistical UC: at `ε = 0` it is the perfect UC of Patrignani, Künnemann, Wahby and
+Cecchetti ("Universal Composability Is Robust Compilation", TOPLAS 46(4), 2024, Def. 2), for
+`ε > 0` the statistical UC of Künnemann, Patrignani and Cecchetti ("Computationally Bounded
+Robust Compilation and Universally Composable Security", CSF 2024, §IV-A). Levels 2 and 3 are
+instances of the predicate-parametrised robust compilation of the CSF paper (Def. 7) that
+the paper does not name; its computational UC (Def. 3) bounds the adversary as well. The
+numbering of the levels is ours, and our bounds are concrete in `ε`.
 
 ## The Three Levels
 
@@ -89,7 +92,7 @@ theorem UCEmulatesL2_of_L1 [UCMonadCompDist T]
 
 /-- Same-interface Level 2 from sdist bound (unconditional).
 
-    The simulator is `S = A` (dummy adversary). The bound follows from
+    The simulator is the identity simulator `S = A`. The bound follows from
     `ucCdist ≤ ucSdist` and right PPL for `ucSdist`. -/
 theorem UCEmulatesL2_of_sdist [UCMonadCompDist T]
     {hon out leak view : Type} (ε : ℝ≥0∞)
@@ -304,9 +307,9 @@ theorem UCEmulatesAlgL3_of_ucSdist [UCMonadCompDist T]
       (le_trans (UCMonadMetric.ucSdist_comp_right π F
         (UCMonadBase.ucMapSum pure A)) h)⟩
 
-/-! ## Section 4: Dummy Adversary Analysis -/
+/-! ## Section 4: The identity simulator -/
 
-/-- The dummy adversary theorem for Level 2 (via sdist).
+/-- Level 2 with the identity simulator (via sdist).
 
     For same-interface protocols, if `ucSdist π F ≤ ε`, then `UCEmulatesL2 ε π F`
     with `S = A` for all adversaries. -/
@@ -317,7 +320,7 @@ theorem dummy_adversary_L2 [UCMonadCompDist T]
     UCEmulatesL2 (T := T) (view := view) ε π F :=
   UCEmulatesL2_of_sdist ε π F h
 
-/-- The dummy adversary for Level 3 requires admissible adversaries.
+/-- The identity simulator at Level 3 requires admissible adversaries.
 
     Unlike Level 2, we cannot use S = A unconditionally because S must be admissible.
     This theorem provides the Level 3 bound when A is known to be admissible. -/

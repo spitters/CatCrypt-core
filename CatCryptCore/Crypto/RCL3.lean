@@ -14,6 +14,12 @@ public import CatCryptCore.Crypto.UCLevels
 This file lifts the L1 equivalence `UCEmulates_iff_RHP` (from `RC.lean`) to
 Level 3 using `UCAdmClass` constraints on distinguishers and simulators.
 
+These equivalences are analogues, for a fixed simulator construction, of the equivalence of
+UC with robust hyperproperty preservation (TOPLAS 2024, Thm. 4) and of its computational
+form (CSF 2024, Thms. 2 and 3). `RobustCompilationL3` is closure under contexts and
+distinguishers; the RHP of TOPLAS 2024 (Def. 4) has the form "for every target attacker
+there is a source attacker", which this file does not state.
+
 ## Key Results
 
 * `RC_L3_iff_ucCdist` — `RC_L3 ε ↔ ucCdist ≤ ε`
@@ -22,10 +28,12 @@ Level 3 using `UCAdmClass` constraints on distinguishers and simulators.
 ## References
 
 * Patrignani, Künnemann, Wahby, Cecchetti, "Universal Composability Is Robust
-  Compilation", TOPLAS 46(4), 2024 — perfect UC (level 1)
+  Compilation", TOPLAS 46(4), 2024 — perfect UC (Def. 2), our level 1 at `ε = 0`
 * Künnemann, Patrignani, Cecchetti, "Computationally Bounded Robust Compilation and
-  Universally Composable Security", CSF 2024 — computational UC (levels 2 and 3; the
-  numbering of the levels is ours)
+  Universally Composable Security", CSF 2024 — statistical UC (§IV-A) and
+  predicate-parametrised robust compilation (Def. 7), of which our levels 2 and 3 are
+  instances; its computational UC (Def. 3) bounds the adversary as well. The numbering of
+  the levels is ours.
 * RC.lean (L1 equivalence)
 * UCLevels.lean (Level definitions)
 -/

@@ -130,8 +130,8 @@ theorem queryBounded_ucEmulatesCdist_iff_dummy
       ↔ @EmulatesDummyCdist SPComp queryBoundedCompDist ε hon out leak sim_if π F :=
   @ucEmulatesCdist_iff_dummy SPComp queryBoundedCompDist hon out leak sim_if ε π F
 
-/-- **Query-bounded computational CC ⟺ UC.** A Maurer–Renner construction within `ε` in the
-    query-bounded-distinguisher distance is exactly computational UC emulation within `ε`
+/-- **Query-bounded computational CC ⟺ UC.** A construction (Maurer, TOSCA 2011, Def. 3)
+    within `ε` in the query-bounded-distinguisher distance is exactly computational UC emulation within `ε`
     against every **query-bounded** adversary and every view. -/
 theorem queryBounded_ccConstructsCdist_iff_ucEmulatesCdist
     {hon out leak sim_if : Type} {ε : ℝ≥0∞}

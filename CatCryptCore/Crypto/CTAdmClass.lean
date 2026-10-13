@@ -13,9 +13,11 @@ public import CatCryptCore.Crypto.MonadCostModel
 /-!
 # Constant-Time as UCAdmClass
 
-This file shows that constant-time programs form a `UCAdmClass`, connecting
-to Barthe et al.'s constant-time compilation (POPL 2020) and system-level
-non-interference (CCS 2014).
+This file shows that constant-time programs form a `UCAdmClass`. `ct_spComp` is the
+observational constant-time condition of Barthe et al. (POPL 2020, Def. 3.1; CCS 2014,
+§4.1), with the operation shape as the leakage and every input secret: those papers
+compare executions whose initial states agree on public inputs, while `ct_spComp` asks for
+one shape for all inputs. The file proves nothing about compilation.
 
 ## Architecture
 
@@ -23,8 +25,8 @@ non-interference (CCS 2014).
 CT ⊂ query-bounded ⊂ admissible
 ```
 
-CT preserves the entire execution *pattern* (which operations, in what order),
-while query-bounded only preserves the *count*. Both form valid `UCAdmClass`es.
+CT fixes the entire execution *pattern* (which operations, in what order) for all inputs,
+while query-bounded only bounds the *count*. Both form valid `UCAdmClass`es.
 
 ## Main definitions
 
@@ -36,7 +38,7 @@ while query-bounded only preserves the *count*. Both form valid `UCAdmClass`es.
 
 ## References
 
-* Barthe et al., "System-Level Non-Interference for Constant-Time
+* Barthe, Betarte, Campo, Luna, Pichardie, "System-Level Non-Interference for Constant-Time
   Cryptography", CCS 2014
 * Barthe, Blazy, Grégoire, Hutin, Laporte, Pichardie, Trieu, "Formal Verification of a
   Constant-Time Preserving C Compiler", POPL 2020
@@ -237,11 +239,11 @@ theorem ct_spComp_bind {α β γ : Type} {f : α → SPComp β} {g : β → SPCo
   `ct_spComp_mapSum` is not provable in general — it holds only when both
   branches happen to share the same shape.
 
-  This reflects the distinction in the constant-time literature (Barthe et al.,
-  CCS 2014) between **public** branching (the sum tag `.inl`/`.inr` is observable)
-  and **secret** inputs (values within each branch).  The abstract `CTClass`
-  (\S1) handles this correctly by making `ct_mapSum` an axiom — concrete
-  instances may use more refined predicates that track public/secret partitions.
+  In the information-flow formulation of CCS 2014 (§3, §4.1), branching is permitted on
+  public (Low) data and forbidden on secret (High) data. `ct_mapSum` reads the sum tag
+  as public. `ct_spComp` has no public inputs, so `mapSum` is CT for it only when the two
+  branch shapes agree. The abstract `CTClass` takes `ct_mapSum` as an axiom; concrete
+  instances may use predicates that track a public/secret partition.
 
   The abstract bridge `UCAdmClass_of_CTClass` remains the recommended path for
   obtaining admissibility from any CT predicate satisfying the three axioms. -/

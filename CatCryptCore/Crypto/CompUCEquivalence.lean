@@ -13,10 +13,15 @@ public import CatCryptCore.Crypto.UCAdmClass.SPCompInstance
 # Computational transport of the dummy-adversary and Constructive-Cryptography UC equivalences
 
 The dummy-adversary theorem (`CatCrypt.Crypto.ucEmulates_iff_dummy`, `DummyAdversary.lean`)
-and the correspondence between Constructive (Abstract) Cryptography constructions and UC
-emulation are **information-theoretic** statements: they are stated over the statistical
-distance `sdist`, the supremum over *all* distinguishers. This file proves both over the
-admissible-distinguisher distance `ucCdist` (`UCMonad.ucCdist`, `UCAdmClass.lean`).
+is an **information-theoretic** statement: it is stated over the statistical distance `sdist`,
+the supremum over *all* distinguishers. This file proves it over the admissible-distinguisher
+distance `ucCdist` (`UCMonad.ucCdist`, `UCAdmClass.lean`), and proves that a construction in
+the sense of Maurer ("Constructive Cryptography — A New Paradigm for Security Definitions and
+Proofs", TOSCA 2011, Def. 3; the security condition only, without the availability condition)
+is equivalent to UC emulation. That equivalence is ours, obtained from Maurer's notion of
+construction and the dummy-adversary theorem (Canetti, ePrint 2000/067, Claim 11); Maurer
+and Renner ("Abstract Cryptography", ICS 2011, App. C.2) remark on the relation between the
+two frameworks without stating it as a theorem.
 
 ## The transport is gated on adversary admissibility
 
@@ -50,8 +55,8 @@ transport `EmulatesDummyCdist → UCEmulatesCdist` needs the `adm A` restriction
 * `UCEmulatesCdist ε π F` — computational-distance UC emulation quantifying over
   **admissible** adversaries.
 * `EmulatesDummyCdist ε π F` — computational emulation against the dummy adversary.
-* `CCConstructsCdist ε π F` — Maurer–Renner construction over `ucCdist` (definitionally
-  `EmulatesDummyCdist`).
+* `CCConstructsCdist ε π F` — construction over `ucCdist` (Maurer, TOSCA 2011, Def. 3;
+  definitionally `EmulatesDummyCdist`).
 
 ## Main results
 
@@ -120,7 +125,8 @@ def EmulatesDummyCdist (ε : ℝ≥0∞) {hon out leak sim_if : Type}
   ∃ (S : sim_if → T leak),
     ucCdist π (fun a => F a >>= UCMonadBase.ucMapSum pure S) ≤ ε
 
-/-- **Maurer–Renner construction over computational distance.** The converter `σ` turns
+/-- **Construction (Maurer, TOSCA 2011, Def. 3, security condition) over computational
+    distance.** The converter `σ` turns
     `F`'s interface into `π`'s, keeping them within `ε` in `ucCdist`, with no adversary
     quantifier. Definitionally `EmulatesDummyCdist`. -/
 def CCConstructsCdist (ε : ℝ≥0∞) {hon out leak sim_if : Type}
@@ -198,9 +204,9 @@ theorem ucEmulatesCdist_iff_dummy {hon out leak sim_if : Type} {ε : ℝ≥0∞}
 
 /-! ## Section 4: The computational Constructive-Cryptography equivalence -/
 
-/-- **Computational CC ⟺ dummy-adversary UC.** A Maurer–Renner construction within `ε` in
-    the admissible-distinguisher distance is exactly computational UC emulation within `ε`
-    against **every admissible** adversary and **every** environment view. The bridge is the
+/-- **Computational CC ⟺ dummy-adversary UC.** A construction (Maurer, TOSCA 2011, Def. 3)
+    within `ε` in the admissible-distinguisher distance is exactly computational UC emulation
+    within `ε` against **every admissible** adversary and **every** environment view. The bridge is the
     computational dummy-adversary theorem `ucEmulatesCdist_iff_dummy`.
 
     (composition plumbing) -/

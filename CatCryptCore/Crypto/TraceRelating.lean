@@ -10,20 +10,22 @@ public import CatCryptCore.Crypto.UCAdmClass
 /-!
 # Trace-Relating Secure Compilation
 
-This file formalizes the connection between Abate et al.'s trace-relating
-framework (ESOP 2020) and our `ucDistComp` per-distinguisher decomposition.
+This file defines a quantitative analogue, ours, of the trace relations of Abate et al.
+(ESOP 2020), over the per-distinguisher decomposition `ucDistComp`. Their framework is
+non-probabilistic: it has trace relations but no distinguishers and no `ε`.
 
 ## Trace-Relating Perspective
 
 Abate et al. define compiler correctness when source and target traces are
-connected by a relation `R : Trace_S → Trace_T → Prop`. In our setting:
+connected by a relation `R : Trace_S → Trace_T → Prop` (their Def. 1.2, with robust
+variants in Thms. 5.1–5.3). In our analogue:
 - Source traces = behaviors of `F` (ideal functionality)
 - Target traces = behaviors of `π` (real protocol)
 - Relation = connected by simulator: `t_π ≈_ε t_{S∘F}`
 - `ucDistComp` = per-distinguisher quantitative bound
 
 The key insight: `ucDistComp f g D ≤ ε` says "f and g are ε-related when
-observed through test D". This is a quantitative trace-relating condition.
+observed through test D". We read this as a quantitative analogue of a trace relation.
 
 ## Main definitions
 
@@ -32,15 +34,16 @@ observed through test D". This is a quantitative trace-relating condition.
 
 ## Main results
 
-* `ucCdist_eq_sInf_traceRelating` — ucCdist is the optimal trace-relating bound
+* `ucCdist_eq_sInf_traceRelating` — ucCdist is the least `ε` with `TraceRelating f g ε`
 * `traceRelatingL1_iff_ucSdist` — `TraceRelatingL1 f g ε ↔ ucSdist f g ≤ ε`
 * `traceRelating_comp_right` — composition preserves trace-relating bounds
 
 ## References
 
-* Abate et al., "Trace-Relating Compiler Correctness and Secure Compilation",
-  ESOP 2020
-* Patrignani et al., "UC is RC", TOPLAS 2024
+* Abate, Blanco, Ciobâcă, Durier, Garg, Hrițcu, Patrignani, Tanter, Thibault,
+  "Trace-Relating Compiler Correctness and Secure Compilation", ESOP 2020
+* Patrignani, Künnemann, Wahby, Cecchetti, "Universal Composability Is Robust
+  Compilation", TOPLAS 46(4), 2024
 -/
 
 @[expose] public section

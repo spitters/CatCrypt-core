@@ -9,9 +9,13 @@ public import CatCryptCore.Crypto.UC
 public import CatCryptCore.Crypto.ForkingLemma
 
 /-!
-# Dummy-Adversary Completeness and Simulator Uniformity (Canetti's robustness theorems)
+# Dummy-Adversary Completeness and Simulator Uniformity
 
-Two standard "the UC definition is robust" theorems, stated about the framework's
+Two robustness theorems of the UC definition, after Canetti (IACR ePrint 2000/067, version of
+2020-02-11): completeness of the dummy adversary (§4.3.1, Claim 11) and the equivalence of
+emulation with per-adversary and with uniform, black-box simulators (§4.3.2, Claim 13).
+Canetti states them for polynomial-time machines; here they are stated over the statistical
+distance, about the framework's
 existing `sdist`-graded emulation predicate `CatCrypt.Crypto.UCEmulates`
 (`UC.lean`), reusing `mapSum`, `sdist`, and `sdist_comp_right`.
 
@@ -40,8 +44,8 @@ post-adversary real world collapses to `π` itself).
     adversary and **every** view (⟸, the absorption argument): the simulator against `A`
     is `fun s => (S s).bind A`, i.e. the dummy simulator post-composed with `A`, and `A`
     is absorbed into the distinguisher via `sdist_comp_right`.
-* `Theorem 2 (specialized vs general simulator)`
-  - `ucEmulates_of_general` — general ⟹ specialized (trivial).
+* `Theorem 2 (per-adversary vs uniform simulator)`
+  - `ucEmulates_of_general` — uniform ⟹ per-adversary (trivial).
   - `general_of_dummy` — the dummy simulator yields a *uniform* construction.
   - `specialized_iff_general` — the two forms are equivalent (quantifying over `view`).
 
@@ -163,7 +167,7 @@ theorem ucEmulates_iff_dummy {hon out leak sim_if : Type} {ε : ℝ≥0∞}
       ↔ EmulatesDummy ε π F :=
   ⟨fun h => emulatesDummy_of_ucEmulates π F (h leak), dummy_completeness π F⟩
 
-/-! ## Theorem 2 — specialized vs general simulator -/
+/-! ## Theorem 2 — per-adversary vs uniform simulator -/
 
 /-- (⟹, trivial) A uniform simulator construction yields the per-adversary form. -/
 theorem ucEmulates_of_general {hon out leak sim_if view : Type} {ε : ℝ≥0∞}
@@ -184,10 +188,13 @@ theorem general_of_dummy {hon out leak sim_if : Type} {ε : ℝ≥0∞}
   intro view
   exact ⟨fun A s => SPComp.bind (S s) A, fun A => sdist_dummy_absorb π F S A hS⟩
 
-/-- **Theorem 2 (specialized ⇔ general simulator).**
+/-- **Theorem 2 (per-adversary ⇔ uniform simulator).**
 
-    The per-adversary ("specialized") simulator form and the uniform ("general")
-    simulator-construction form are equivalent (quantifying over the environment view).
+    The per-adversary simulator form and the uniform simulator-construction form are
+    equivalent (quantifying over the environment view); cf. Canetti's black-box simulation,
+    ePrint 2000/067, §4.3.2, Claim 13. The theorem name keeps the words "specialized" and
+    "general"; Canetti's "specialized simulators" (§4.3.3) are a different notion, where
+    the simulator may depend on the environment.
     The nontrivial ⟹ goes through the dummy simulator (Theorem 1); ⟸ is immediate. -/
 theorem specialized_iff_general {hon out leak sim_if : Type} {ε : ℝ≥0∞}
     (π : hon → SPComp (out ⊕ leak)) (F : hon → SPComp (out ⊕ sim_if)) :
