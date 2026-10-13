@@ -170,6 +170,55 @@ public import CatCryptCore.Quantum.Measurement
 public import CatCryptCore.Quantum.TensorProduct
 public import CatCryptCore.Quantum.KroneckerPSD
 
+-- Quantum random-oracle model: semi-classical one-way to hiding, KEM games and hops
+public import CatCryptCore.Quantum.QROM.CoherentCleanRun
+public import CatCryptCore.Quantum.QROM.CoinBadNumeric
+public import CatCryptCore.Quantum.QROM.CollisionWeight
+public import CatCryptCore.Quantum.QROM.CompositePerTable
+public import CatCryptCore.Quantum.QROM.DeltaStarLeLambda
+public import CatCryptCore.Quantum.QROM.FindToGuess
+public import CatCryptCore.Quantum.QROM.GenericSearchUniform
+public import CatCryptCore.Quantum.QROM.HopChallengeKey
+public import CatCryptCore.Quantum.QROM.HopCoinChallenge
+public import CatCryptCore.Quantum.QROM.HopDecaps
+public import CatCryptCore.Quantum.QROM.HopDecapsBijection
+public import CatCryptCore.Quantum.QROM.HopDecapsNumeric
+public import CatCryptCore.Quantum.QROM.HopDecapsNumericClose
+public import CatCryptCore.Quantum.QROM.HopDecapsSharp
+public import CatCryptCore.Quantum.QROM.HopDecapsSparse2
+public import CatCryptCore.Quantum.QROM.HopJPrefix
+public import CatCryptCore.Quantum.QROM.HopKeyFromCiphertext
+public import CatCryptCore.Quantum.QROM.HopResampleGood
+public import CatCryptCore.Quantum.QROM.KEMAdvNormalForm
+public import CatCryptCore.Quantum.QROM.KEMAdvNormalFormMR
+public import CatCryptCore.Quantum.QROM.KEMGuessReduction
+public import CatCryptCore.Quantum.QROM.KEMOwcpaReduction
+public import CatCryptCore.Quantum.QROM.KEMQuantumGame
+public import CatCryptCore.Quantum.QROM.KWiseOracle
+public import CatCryptCore.Quantum.QROM.MeasuredQueryRun
+public import CatCryptCore.Quantum.QROM.MultiRound
+public import CatCryptCore.Quantum.QROM.MultiRoundCoherent
+public import CatCryptCore.Quantum.QROM.NormalFormPrefix
+public import CatCryptCore.Quantum.QROM.NumericCorrectness
+public import CatCryptCore.Quantum.QROM.O2HTheorem
+public import CatCryptCore.Quantum.QROM.OracleRegisterProbe
+public import CatCryptCore.Quantum.QROM.PermUnitaryCore
+public import CatCryptCore.Quantum.QROM.PRFAdvEmbed
+public import CatCryptCore.Quantum.QROM.QAdvGame
+public import CatCryptCore.Quantum.QROM.QIndcpaAux
+public import CatCryptCore.Quantum.QROM.QOwcpaAux
+public import CatCryptCore.Quantum.QROM.QOwcpaAuxMeasured
+public import CatCryptCore.Quantum.QROM.QuantumOWCPA
+public import CatCryptCore.Quantum.QROM.QueryRoundAgreement
+public import CatCryptCore.Quantum.QROM.QueryRoundDeferred
+public import CatCryptCore.Quantum.QROM.QueryRoundPerms
+public import CatCryptCore.Quantum.QROM.ResampleKeyHop
+public import CatCryptCore.Quantum.QROM.RoundWeightDeferred
+public import CatCryptCore.Quantum.QROM.SearchOffChallenge
+public import CatCryptCore.Quantum.QROM.SemiClassicalOracle
+public import CatCryptCore.Quantum.QROM.SparseSearch
+public import CatCryptCore.Quantum.QROM.TTransformQROM
+
 -- UC ideal functionalities (F_commit, F_ZK, F_OT) + shared group scaffolding
 public import CatCryptCore.Examples.GroupParam
 public import CatCryptCore.Crypto.Commitment.PedersenUC

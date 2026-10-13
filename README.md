@@ -45,6 +45,7 @@ are relative to `CatCryptCore/`.
 | Curve math | `Crypto/KeyAgreement/{MontgomeryLadder,MontgomeryAsWeierstrass,MontgomeryXOnly,Curve25519}.lean` |
 | Fujisaki–Okamoto | `Crypto/PKE/{Games,FOTransformT}.lean`, `Crypto/KEM/{Games,FOTransformU,FOTransform,FIPS203KEM,FIPS203Security}.lean` — PKE and KEM games, the T and U transforms with their classical reductions, the FIPS 203 KEM |
 | Quantum foundations | `Quantum/{Instrument,TraceNorm,UnitaryChannel,CPMap,Measurement,TensorProduct,KroneckerPSD}.lean` — instruments and channels on finite matrices, trace norm, completely positive maps, measurements, tensor products, positivity of Kronecker products |
+| Quantum random oracles | `Quantum/QROM/*` — semi-classical one-way to hiding (`O2HTheorem.o2h_semiclassical`) and the search bound, quantum KEM games with classical decapsulation queries, normal form and Stinespring dilation of adversaries, and the game hops of the Fujisaki–Okamoto proof with implicit rejection |
 
 ## Build
 
