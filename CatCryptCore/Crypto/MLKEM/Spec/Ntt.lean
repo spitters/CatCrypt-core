@@ -7,12 +7,12 @@ module
 
 public import Mathlib.Algebra.Field.ZMod
 public import CatCryptCore.Crypto.MLKEM.Spec.Coeffs
-public import CatCryptCore.Crypto.Optimizer.Lattice.BitReversalGeneric
-public import CatCryptCore.Crypto.Optimizer.Lattice.ConcreteNttRoots
-public import CatCryptCore.Crypto.Optimizer.Lattice.DFTBijectionGeneric
-public import CatCryptCore.Crypto.Optimizer.Lattice.NegacyclicTransformGeneric
-public import CatCryptCore.Crypto.Optimizer.Lattice.SignedNegacyclicConv
-public import CatCryptCore.Crypto.SecureCompilation.VIR.Negacyclic
+public import CatCryptCore.Crypto.Lattice.BitReversalGeneric
+public import CatCryptCore.Crypto.Lattice.ConcreteNttRoots
+public import CatCryptCore.Crypto.Lattice.DFTBijectionGeneric
+public import CatCryptCore.Crypto.Lattice.NegacyclicTransformGeneric
+public import CatCryptCore.Crypto.Lattice.SignedNegacyclicConv
+public import CatCryptCore.Crypto.Lattice.Negacyclic
 
 /-!
 # The ML-KEM number-theoretic transform
@@ -104,11 +104,11 @@ namespace CatCrypt.Crypto.MLKEM.Spec.Ntt
 
 open Finset
 open CatCrypt.Crypto.MLKEM.Spec.Coeffs
-open CatCrypt.Crypto.Optimizer.Lattice.ConcreteNttRoots
-open CatCrypt.Crypto.Optimizer.Lattice.NegacyclicTransformGeneric
-open CatCrypt.Crypto.Optimizer.Lattice.NTTRecursionPass
-open CatCrypt.Crypto.Optimizer.Lattice.NTTFullInversionGeneric (idft idft_dft)
-open CatCrypt.Crypto.Optimizer.Lattice.DFTBijectionGeneric (dft_idft)
+open CatCrypt.Crypto.Lattice.ConcreteNttRoots
+open CatCrypt.Crypto.Lattice.NegacyclicTransformGeneric
+open CatCrypt.Crypto.Lattice.NTTRecursionPass
+open CatCrypt.Crypto.Lattice.NTTFullInversionGeneric (idft idft_dft)
+open CatCrypt.Crypto.Lattice.DFTBijectionGeneric (dft_idft)
 
 /-! ## The root of unity -/
 
@@ -137,7 +137,7 @@ theorem zetaKem_ne_zero : zetaKem ≠ 0 := by
 
 /-- `ζ^128 = -1`: the sign the negacyclic wraparound contributes. -/
 theorem zetaKem_pow_128 : zetaKem ^ 128 = -1 :=
-  CatCrypt.Crypto.Optimizer.Lattice.SignedNegacyclicConv.psi_pow_n
+  CatCrypt.Crypto.Lattice.SignedNegacyclicConv.psi_pow_n
     (n := 128) zetaKem_isPrimitiveRoot_two_mul
 
 /-! ## Output ordering and the quadratic moduli -/
@@ -145,11 +145,11 @@ theorem zetaKem_pow_128 : zetaKem ^ 128 = -1 :=
 /-- The 7-bit reversal `BitRev7` of FIPS 203 §4.3, the output ordering of the
 transform. -/
 def bitRev7 (i : Fin 128) : Fin 128 :=
-  CatCrypt.Crypto.Optimizer.Lattice.BitReversalGeneric.bitrevFin 7 i
+  CatCrypt.Crypto.Lattice.BitReversalGeneric.bitrevFin 7 i
 
 /-- `BitRev7` is an involution. -/
 theorem bitRev7_bitRev7 (i : Fin 128) : bitRev7 (bitRev7 i) = i :=
-  CatCrypt.Crypto.Optimizer.Lattice.BitReversalGeneric.bitrevFin_involutive 7 i
+  CatCrypt.Crypto.Lattice.BitReversalGeneric.bitrevFin_involutive 7 i
 
 /-- The root `ζ^(2·BitRev7 j + 1)` of the quadratic modulus `X^2 - γ_j` of pair `j`. -/
 def gammaKem (j : Fin 128) : ZMod q_kem := zetaKem ^ (2 * (bitRev7 j).val + 1)
@@ -289,10 +289,10 @@ def basemulKem (s t : Tq_kem) : Tq_kem := fun j => basemulPair (gammaKem j) (s j
 theorem basemulPair_modByMonic (γ : ZMod q_kem) (s t : ZMod q_kem × ZMod q_kem) :
     ((Polynomial.C s.1 + Polynomial.C s.2 * Polynomial.X)
         * (Polynomial.C t.1 + Polynomial.C t.2 * Polynomial.X))
-      %ₘ CatCrypt.Crypto.SecureCompilation.VIR.Negacyclic.quadPoly γ
+      %ₘ CatCrypt.Crypto.Lattice.Negacyclic.quadPoly γ
       = Polynomial.C (basemulPair γ s t).1
         + Polynomial.C (basemulPair γ s t).2 * Polynomial.X :=
-  CatCrypt.Crypto.SecureCompilation.VIR.Negacyclic.basemul_mod γ s.1 s.2 t.1 t.2
+  CatCrypt.Crypto.Lattice.Negacyclic.basemul_mod γ s.1 s.2 t.1 t.2
 
 /-! ## The negacyclic shift -/
 
@@ -347,8 +347,8 @@ exactly on the terms whose index wraps. An instance of
 `SignedNegacyclicConv.negaConv_eq_signed`. -/
 theorem negaConvKem_eq_signed (x y : Fin 128 → ZMod q_kem) :
     negaConvKem x y
-      = CatCrypt.Crypto.Optimizer.Lattice.SignedNegacyclicConv.signedNegaConv x y :=
-  CatCrypt.Crypto.Optimizer.Lattice.SignedNegacyclicConv.negaConv_eq_signed
+      = CatCrypt.Crypto.Lattice.SignedNegacyclicConv.signedNegaConv x y :=
+  CatCrypt.Crypto.Lattice.SignedNegacyclicConv.negaConv_eq_signed
     zetaKem_isPrimitiveRoot_two_mul x y
 
 /-- The transform diagonalizes the length-128 negacyclic convolution. An instance of
@@ -386,7 +386,7 @@ theorem nttKem_negaMulKem (a b : Fin 256 → ZMod q_kem) :
 /-- The length-256 negacyclic product of coefficient vectors: coefficient `k` of the
 product is `∑_i ± a i * b (k - i)`, negative exactly on the wrapped indices. -/
 def polyMulKem (a b : Fin 256 → ZMod q_kem) : Fin 256 → ZMod q_kem :=
-  CatCrypt.Crypto.Optimizer.Lattice.SignedNegacyclicConv.signedNegaConv a b
+  CatCrypt.Crypto.Lattice.SignedNegacyclicConv.signedNegaConv a b
 
 /-- `X ^ 256 = -1` in `Rq_kem`. -/
 lemma root_pow_256 : (AdjoinRoot.root mlkem_poly : Rq_kem) ^ 256 = -1 := by
@@ -446,7 +446,7 @@ theorem coeffsToRqKem_polyMulKem (a b : Fin 256 → ZMod q_kem) :
               else -(AdjoinRoot.of mlkem_poly (a i * b (k - i))
                 * (AdjoinRoot.root mlkem_poly : Rq_kem) ^ k.val)) := by
     intro k
-    simp only [polyMulKem, CatCrypt.Crypto.Optimizer.Lattice.SignedNegacyclicConv.signedNegaConv,
+    simp only [polyMulKem, CatCrypt.Crypto.Lattice.SignedNegacyclicConv.signedNegaConv,
       map_sum, Finset.sum_mul]
     refine Finset.sum_congr rfl (fun i _ => ?_)
     by_cases hc : i.val ≤ k.val <;> simp [hc, map_neg]
@@ -465,7 +465,7 @@ theorem coeffsToRqKem_polyMulKem (a b : Fin 256 → ZMod q_kem) :
 
 /-! ## The parity split -/
 
-open CatCrypt.Crypto.Optimizer.Lattice.SignedNegacyclicConv (signedNegaConv)
+open CatCrypt.Crypto.Lattice.SignedNegacyclicConv (signedNegaConv)
 
 /-- The index of the constant coefficient of pair `u` is `2u`. -/
 theorem pairFst_val (u : Fin 128) : (pairFst u).val = 2 * u.val := rfl

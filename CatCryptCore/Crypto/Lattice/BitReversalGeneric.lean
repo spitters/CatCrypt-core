@@ -49,7 +49,7 @@ Worked example (`w = 3`): `bitrev 3 1 = 4` (`001 ↦ 100`), and
 
 set_option autoImplicit false
 
-namespace CatCrypt.Crypto.Optimizer.Lattice.BitReversalGeneric
+namespace CatCrypt.Crypto.Lattice.BitReversalGeneric
 
 /-- The low-bit-first list of the bottom `w` bits of `i`. Entry `k` is bit `k`
 of `i`, so `(toBits w i)[k] = i.testBit k`. -/
@@ -162,4 +162,4 @@ example : bitrev 3 (bitrev 3 1) = 1 := by decide
 example : bitrev 3 2 = 2 := by decide
 example : bitrev 3 3 = 6 := by decide
 
-end CatCrypt.Crypto.Optimizer.Lattice.BitReversalGeneric
+end CatCrypt.Crypto.Lattice.BitReversalGeneric

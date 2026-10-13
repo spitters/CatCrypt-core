@@ -5,7 +5,7 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import CatCryptCore.Crypto.Optimizer.Lattice.NegacyclicTransformGeneric
+public import CatCryptCore.Crypto.Lattice.NegacyclicTransformGeneric
 
 /-!
 # The twist-defined negacyclic convolution is the explicit signed convolution
@@ -26,11 +26,11 @@ convolution `signedNegaConv`.
 
 set_option autoImplicit false
 
-namespace CatCrypt.Crypto.Optimizer.Lattice.SignedNegacyclicConv
+namespace CatCrypt.Crypto.Lattice.SignedNegacyclicConv
 
 open Finset
-open CatCrypt.Crypto.Optimizer.Lattice.CyclicConvolutionGeneric
-open CatCrypt.Crypto.Optimizer.Lattice.NegacyclicTransformGeneric
+open CatCrypt.Crypto.Lattice.CyclicConvolutionGeneric
+open CatCrypt.Crypto.Lattice.NegacyclicTransformGeneric
 
 /-- The explicit **signed** negacyclic convolution (multiplication in
 `R[X]/(Xⁿ+1)`): `(x ⋆ y) k = Σᵢ ±xᵢ · y_{k−i}` over `Fin n` subtraction, with the
@@ -113,4 +113,4 @@ theorem negaConv_eq_signed (hψ : IsPrimitiveRoot ψ (2 * n)) (x y : Fin n → R
   · rw [if_pos hik, if_pos hik, mul_one]
   · rw [if_neg hik, if_neg hik, mul_neg_one]
 
-end CatCrypt.Crypto.Optimizer.Lattice.SignedNegacyclicConv
+end CatCrypt.Crypto.Lattice.SignedNegacyclicConv

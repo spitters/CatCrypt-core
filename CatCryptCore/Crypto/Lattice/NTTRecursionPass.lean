@@ -53,7 +53,7 @@ The even/odd separation is `sum_range_two_mul` (a self-contained induction on
 
 set_option autoImplicit false
 
-namespace CatCrypt.Crypto.Optimizer.Lattice.NTTRecursionPass
+namespace CatCrypt.Crypto.Lattice.NTTRecursionPass
 
 open Finset
 
@@ -206,4 +206,4 @@ theorem dft_two (ω : R) (x : Fin 2 → R) :
   · simp [dft, Fin.sum_univ_two]
   · simp [dft, Fin.sum_univ_two]; ring
 
-end CatCrypt.Crypto.Optimizer.Lattice.NTTRecursionPass
+end CatCrypt.Crypto.Lattice.NTTRecursionPass

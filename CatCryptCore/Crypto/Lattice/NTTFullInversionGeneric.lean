@@ -5,7 +5,7 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import CatCryptCore.Crypto.Optimizer.Lattice.NTTInverseGeneric
+public import CatCryptCore.Crypto.Lattice.NTTInverseGeneric
 
 /-!
 # Full DFT inversion theorem: `idft ∘ dft = id`
@@ -37,11 +37,11 @@ else 0`; `Finset.sum_ite_eq'` kills the outer `l`-sum, leaving
 
 set_option autoImplicit false
 
-namespace CatCrypt.Crypto.Optimizer.Lattice.NTTFullInversionGeneric
+namespace CatCrypt.Crypto.Lattice.NTTFullInversionGeneric
 
 open Finset
-open CatCrypt.Crypto.Optimizer.Lattice.NTTRecursionPass
-open CatCrypt.Crypto.Optimizer.Lattice.NTTInverseGeneric
+open CatCrypt.Crypto.Lattice.NTTRecursionPass
+open CatCrypt.Crypto.Lattice.NTTInverseGeneric
 
 variable {R : Type*} [Field R]
 
@@ -81,4 +81,4 @@ theorem idft_dft {ω : R} {n : ℕ} (hω : IsPrimitiveRoot ω n) (hn : (n : R) �
     Finset.sum_ite_eq' Finset.univ k (fun l => x l * (n : R)), Finset.mem_univ, if_true]
   rw [mul_comm (x k) (n : R), ← mul_assoc, inv_mul_cancel₀ hn, one_mul]
 
-end CatCrypt.Crypto.Optimizer.Lattice.NTTFullInversionGeneric
+end CatCrypt.Crypto.Lattice.NTTFullInversionGeneric

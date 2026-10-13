@@ -5,7 +5,7 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import CatCryptCore.Crypto.Optimizer.Lattice.NTTRecursionPass
+public import CatCryptCore.Crypto.Lattice.NTTRecursionPass
 public import Mathlib.RingTheory.RootsOfUnity.PrimitiveRoots
 
 /-!
@@ -28,10 +28,10 @@ modular wraparound introduced by `Fin n` addition.
 
 set_option autoImplicit false
 
-namespace CatCrypt.Crypto.Optimizer.Lattice.CyclicConvolutionGeneric
+namespace CatCrypt.Crypto.Lattice.CyclicConvolutionGeneric
 
 open Finset
-open CatCrypt.Crypto.Optimizer.Lattice.NTTRecursionPass
+open CatCrypt.Crypto.Lattice.NTTRecursionPass
 
 variable {R : Type*} [CommRing R]
 
@@ -70,4 +70,4 @@ theorem dft_cyclicConv {ω : R} {n : ℕ} [NeZero n] (hω : IsPrimitiveRoot ω n
   rw [add_sub_cancel_right, Fin.add_def, ω_pow_mod_mul hn, Nat.add_mul, pow_add]
   ring
 
-end CatCrypt.Crypto.Optimizer.Lattice.CyclicConvolutionGeneric
+end CatCrypt.Crypto.Lattice.CyclicConvolutionGeneric

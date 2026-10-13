@@ -84,7 +84,7 @@ theorem sampleVec_zero (η : ℕ) : sampleVec η (fun _ _ => 0) = 0 := by
 /-- Multiplication by the zero polynomial in `Rq` is zero. -/
 theorem ringMul_zero (a : Rq) : ringMul a 0 = 0 := by
   funext k
-  simp [ringMul, CatCrypt.Crypto.Optimizer.Lattice.SignedNegacyclicConv.signedNegaConv]
+  simp [ringMul, CatCrypt.Crypto.Lattice.SignedNegacyclicConv.signedNegaConv]
 
 /-- `Compress₁ ∘ Decompress_4 ∘ Compress_4 ∘ Decompress₁` is the identity on bits. -/
 theorem compress1_roundtrip4 (b : Bool) :

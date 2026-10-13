@@ -8,7 +8,7 @@ module
 public import CatCryptCore.Crypto.MLKEM.MLWE_PKE_Scheme
 public import CatCryptCore.Crypto.MLKEM.Sampler
 public import CatCryptCore.Crypto.MLKEM.ConcreteParams
-public import CatCryptCore.Crypto.Optimizer.Lattice.SignedNegacyclicConv
+public import CatCryptCore.Crypto.Lattice.SignedNegacyclicConv
 public import CatCryptCore.NonUniform.CenteredBinomial
 public import CatCryptCore.Hax.CType
 
@@ -66,7 +66,7 @@ namespace CatCrypt.Crypto.MLKEM.MLKEM512Instance
 
 open CatCrypt.Prob
 open CatCrypt.Util
-open CatCrypt.Crypto.Optimizer.Lattice
+open CatCrypt.Crypto.Lattice
 open scoped ENNReal
 
 /-! ## The ring and the module -/

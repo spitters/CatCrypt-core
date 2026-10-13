@@ -82,7 +82,7 @@ underlying `incompleteNTT` is Mathlib's `Ideal.quotientInfRingEquivPiQuotient`.
 
 open Polynomial
 
-namespace CatCrypt.Crypto.SecureCompilation.VIR.Negacyclic
+namespace CatCrypt.Crypto.Lattice.Negacyclic
 
 /-! ### (1) The degree-2 `basemul` formula -/
 
@@ -462,4 +462,4 @@ theorem incompleteNTT_component_basemul (ζ a₀ a₁ b₀ b₁ : R) :
 
 end CRT
 
-end CatCrypt.Crypto.SecureCompilation.VIR.Negacyclic
+end CatCrypt.Crypto.Lattice.Negacyclic

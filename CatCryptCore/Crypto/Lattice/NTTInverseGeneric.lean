@@ -5,7 +5,7 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import CatCryptCore.Crypto.Optimizer.Lattice.NTTRecursionPass
+public import CatCryptCore.Crypto.Lattice.NTTRecursionPass
 public import Mathlib.RingTheory.RootsOfUnity.PrimitiveRoots
 public import Mathlib.Algebra.BigOperators.Ring.Finset
 
@@ -47,10 +47,10 @@ The DFT is invertible — this closes the inverse/synthesis half that the forwar
 
 set_option autoImplicit false
 
-namespace CatCrypt.Crypto.Optimizer.Lattice.NTTInverseGeneric
+namespace CatCrypt.Crypto.Lattice.NTTInverseGeneric
 
 open Finset
-open CatCrypt.Crypto.Optimizer.Lattice.NTTRecursionPass
+open CatCrypt.Crypto.Lattice.NTTRecursionPass
 
 variable {R : Type*} [Field R]
 
@@ -112,4 +112,4 @@ theorem ntt_orthogonality {ω : R} {n : ℕ} (hω : IsPrimitiveRoot ω n)
     rw [geom_sum_root_eq_zero c n hcn hc1]
     simp [hlj]
 
-end CatCrypt.Crypto.Optimizer.Lattice.NTTInverseGeneric
+end CatCrypt.Crypto.Lattice.NTTInverseGeneric

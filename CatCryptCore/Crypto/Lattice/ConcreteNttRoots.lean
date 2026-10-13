@@ -33,7 +33,7 @@ at the real crypto parameters.
 
 set_option autoImplicit false
 
-namespace CatCrypt.Crypto.Optimizer.Lattice.ConcreteNttRoots
+namespace CatCrypt.Crypto.Lattice.ConcreteNttRoots
 
 /-! ## Primality facts (so `ZMod q` is a field) -/
 
@@ -104,4 +104,4 @@ theorem isPrimitiveRoot_1753_512 : IsPrimitiveRoot (1753 : ZMod 8380417) 512 :=
     length in the ML-DSA negacyclic NTT inversion. -/
 theorem n_ne_zero_8380417 : (256 : ZMod 8380417) ≠ 0 := by decide
 
-end CatCrypt.Crypto.Optimizer.Lattice.ConcreteNttRoots
+end CatCrypt.Crypto.Lattice.ConcreteNttRoots

@@ -46,7 +46,7 @@ are relative to `CatCryptCore/`.
 | Fujisaki–Okamoto | `Crypto/PKE/{Games,FOTransformT}.lean`, `Crypto/KEM/{Games,FOTransformU,FOTransform,FIPS203KEM,FIPS203Security}.lean` — PKE and KEM games, the T and U transforms with their classical reductions, the FIPS 203 KEM |
 | Quantum foundations | `Quantum/{Instrument,TraceNorm,UnitaryChannel,CPMap,Measurement,TensorProduct,KroneckerPSD}.lean` — instruments and channels on finite matrices, trace norm, completely positive maps, measurements, tensor products, positivity of Kronecker products |
 | Quantum random oracles | `Quantum/QROM/*` — semi-classical one-way to hiding (`O2HTheorem.o2h_semiclassical`) and the search bound, quantum KEM games with classical decapsulation queries, normal form and Stinespring dilation of adversaries, and the game hops of the Fujisaki–Okamoto proof with implicit rejection |
-| ML-KEM | `Crypto/MLKEM/*` — the FIPS 203 specification over `Z/3329Z` with its NTT (`Spec/`, `Crypto/Optimizer/Lattice/*`), the module-LWE PKE, and IND-CCA security of ML-KEM-512 against quantum adversaries in the QROM, every term a proved number or a quantum module-LWE advantage of an explicit reduction ([proof structure](CatCryptCore/Crypto/MLKEM/QROM.md)) |
+| ML-KEM | `Crypto/MLKEM/*` — the FIPS 203 specification over `Z/3329Z` with its NTT (`Spec/`, `Crypto/Lattice/*`), the module-LWE PKE, and IND-CCA security of ML-KEM-512 against quantum adversaries in the QROM, every term a proved number or a quantum module-LWE advantage of an explicit reduction ([proof structure](CatCryptCore/Crypto/MLKEM/QROM.md)) |
 
 ## Build
 

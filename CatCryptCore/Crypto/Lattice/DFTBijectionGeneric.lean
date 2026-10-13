@@ -5,7 +5,7 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import CatCryptCore.Crypto.Optimizer.Lattice.NTTFullInversionGeneric
+public import CatCryptCore.Crypto.Lattice.NTTFullInversionGeneric
 
 /-!
 # DFT bijection: the synthesis half `dft ∘ idft = id`
@@ -38,12 +38,12 @@ whose `left_inv`/`right_inv` are `idft_dft` and `dft_idft`.
 
 set_option autoImplicit false
 
-namespace CatCrypt.Crypto.Optimizer.Lattice.DFTBijectionGeneric
+namespace CatCrypt.Crypto.Lattice.DFTBijectionGeneric
 
 open Finset
-open CatCrypt.Crypto.Optimizer.Lattice.NTTRecursionPass
-open CatCrypt.Crypto.Optimizer.Lattice.NTTInverseGeneric
-open CatCrypt.Crypto.Optimizer.Lattice.NTTFullInversionGeneric
+open CatCrypt.Crypto.Lattice.NTTRecursionPass
+open CatCrypt.Crypto.Lattice.NTTInverseGeneric
+open CatCrypt.Crypto.Lattice.NTTFullInversionGeneric
 
 variable {R : Type*} [Field R]
 
@@ -88,4 +88,4 @@ noncomputable def dftEquiv {ω : R} {n : ℕ} (hω : IsPrimitiveRoot ω n)
   left_inv := idft_dft hω hn
   right_inv := dft_idft hω hn
 
-end CatCrypt.Crypto.Optimizer.Lattice.DFTBijectionGeneric
+end CatCrypt.Crypto.Lattice.DFTBijectionGeneric

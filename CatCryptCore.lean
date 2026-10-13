@@ -225,16 +225,16 @@ public import CatCryptCore.Quantum.QROM.QMLWEAux
 -- Machine types, the field Z/3329Z and the number-theoretic transform
 public import CatCryptCore.Hax.CType
 public import CatCryptCore.Crypto.Util.ZMod3329
-public import CatCryptCore.Crypto.SecureCompilation.VIR.Negacyclic
-public import CatCryptCore.Crypto.Optimizer.Lattice.BitReversalGeneric
-public import CatCryptCore.Crypto.Optimizer.Lattice.ConcreteNttRoots
-public import CatCryptCore.Crypto.Optimizer.Lattice.CyclicConvolutionGeneric
-public import CatCryptCore.Crypto.Optimizer.Lattice.DFTBijectionGeneric
-public import CatCryptCore.Crypto.Optimizer.Lattice.NegacyclicTransformGeneric
-public import CatCryptCore.Crypto.Optimizer.Lattice.NTTFullInversionGeneric
-public import CatCryptCore.Crypto.Optimizer.Lattice.NTTInverseGeneric
-public import CatCryptCore.Crypto.Optimizer.Lattice.NTTRecursionPass
-public import CatCryptCore.Crypto.Optimizer.Lattice.SignedNegacyclicConv
+public import CatCryptCore.Crypto.Lattice.Negacyclic
+public import CatCryptCore.Crypto.Lattice.BitReversalGeneric
+public import CatCryptCore.Crypto.Lattice.ConcreteNttRoots
+public import CatCryptCore.Crypto.Lattice.CyclicConvolutionGeneric
+public import CatCryptCore.Crypto.Lattice.DFTBijectionGeneric
+public import CatCryptCore.Crypto.Lattice.NegacyclicTransformGeneric
+public import CatCryptCore.Crypto.Lattice.NTTFullInversionGeneric
+public import CatCryptCore.Crypto.Lattice.NTTInverseGeneric
+public import CatCryptCore.Crypto.Lattice.NTTRecursionPass
+public import CatCryptCore.Crypto.Lattice.SignedNegacyclicConv
 
 -- ML-KEM (FIPS 203): specification, module-LWE PKE, and ML-KEM-512 IND-CCA in the QROM
 public import CatCryptCore.Crypto.MLKEM.Compress

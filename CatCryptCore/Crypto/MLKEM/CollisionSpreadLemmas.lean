@@ -556,7 +556,7 @@ theorem samplePoly_three_eq (b : MLKEM512Instance.PrfBlock 3) :
 /-! ## The transform and the ring operations of `MLKEM512Instance` -/
 
 open CatCrypt.Crypto.MLKEM.MLKEM512Instance
-open CatCrypt.Crypto.Optimizer.Lattice
+open CatCrypt.Crypto.Lattice
 
 /-- `evens` is additive. -/
 theorem evens_add (a b : Fin 256 → ZMod q_kem) : evens (a + b) = evens a + evens b := rfl

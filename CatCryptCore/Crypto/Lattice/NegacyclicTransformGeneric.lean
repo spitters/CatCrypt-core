@@ -5,7 +5,7 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import CatCryptCore.Crypto.Optimizer.Lattice.CyclicConvolutionGeneric
+public import CatCryptCore.Crypto.Lattice.CyclicConvolutionGeneric
 
 /-!
 # The twisted DFT diagonalizes negacyclic convolution
@@ -40,11 +40,11 @@ twist-definition is the clean diagonalizable object.
 
 set_option autoImplicit false
 
-namespace CatCrypt.Crypto.Optimizer.Lattice.NegacyclicTransformGeneric
+namespace CatCrypt.Crypto.Lattice.NegacyclicTransformGeneric
 
 open Finset
-open CatCrypt.Crypto.Optimizer.Lattice.NTTRecursionPass
-open CatCrypt.Crypto.Optimizer.Lattice.CyclicConvolutionGeneric
+open CatCrypt.Crypto.Lattice.NTTRecursionPass
+open CatCrypt.Crypto.Lattice.CyclicConvolutionGeneric
 
 variable {R : Type*} [Field R] {ψ : R} {n : ℕ} [NeZero n]
 
@@ -88,4 +88,4 @@ theorem ndft_negaConv (hω : IsPrimitiveRoot (ψ ^ 2) n) (hψ : ψ ≠ 0)
   simp only [ndft, negaConv, twist_untwist hψ]
   exact dft_cyclicConv hω _ _ k
 
-end CatCrypt.Crypto.Optimizer.Lattice.NegacyclicTransformGeneric
+end CatCrypt.Crypto.Lattice.NegacyclicTransformGeneric
