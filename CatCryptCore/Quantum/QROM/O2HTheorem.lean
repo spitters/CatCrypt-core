@@ -57,8 +57,6 @@ times between `q + 1` unitaries, and ends with one projective measurement. The
 bounds are `2√(q · P_find)` against the `Find = false` branch and
 `4√(q · P_find)` between two functions. Since `q` counts oracle applications,
 these are at least as tight as the `d + 1` form of Ambainis–Hamburg–Unruh.
-Adversaries with mixed initial states are reduced to this class by their
-Stinespring dilation (`KEMAdvDilate`).
 
 ## References
 

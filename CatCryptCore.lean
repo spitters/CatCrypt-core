@@ -218,6 +218,61 @@ public import CatCryptCore.Quantum.QROM.SearchOffChallenge
 public import CatCryptCore.Quantum.QROM.SemiClassicalOracle
 public import CatCryptCore.Quantum.QROM.SparseSearch
 public import CatCryptCore.Quantum.QROM.TTransformQROM
+public import CatCryptCore.Quantum.QROM.PolyOracle
+public import CatCryptCore.Quantum.QROM.PRFChain
+public import CatCryptCore.Quantum.QROM.QMLWEAux
+
+-- Machine types, the field Z/3329Z and the number-theoretic transform
+public import CatCryptCore.Hax.CType
+public import CatCryptCore.Crypto.Util.ZMod3329
+public import CatCryptCore.Crypto.SecureCompilation.VIR.Negacyclic
+public import CatCryptCore.Crypto.Optimizer.Lattice.BitReversalGeneric
+public import CatCryptCore.Crypto.Optimizer.Lattice.ConcreteNttRoots
+public import CatCryptCore.Crypto.Optimizer.Lattice.CyclicConvolutionGeneric
+public import CatCryptCore.Crypto.Optimizer.Lattice.DFTBijectionGeneric
+public import CatCryptCore.Crypto.Optimizer.Lattice.NegacyclicTransformGeneric
+public import CatCryptCore.Crypto.Optimizer.Lattice.NTTFullInversionGeneric
+public import CatCryptCore.Crypto.Optimizer.Lattice.NTTInverseGeneric
+public import CatCryptCore.Crypto.Optimizer.Lattice.NTTRecursionPass
+public import CatCryptCore.Crypto.Optimizer.Lattice.SignedNegacyclicConv
+
+-- ML-KEM (FIPS 203): specification, module-LWE PKE, and ML-KEM-512 IND-CCA in the QROM
+public import CatCryptCore.Crypto.MLKEM.Compress
+public import CatCryptCore.Crypto.MLKEM.Libcrux.RqAlgebra
+public import CatCryptCore.Crypto.MLKEM.Spec.Coeffs
+public import CatCryptCore.Crypto.MLKEM.Spec.Ntt
+public import CatCryptCore.Crypto.MLKEM.ConcreteParams
+public import CatCryptCore.Crypto.MLKEM.Infrastructure.FEL
+public import CatCryptCore.Crypto.MLKEM.MLWE
+public import CatCryptCore.Crypto.MLKEM.MLWE_PKE_Basic
+public import CatCryptCore.Crypto.MLKEM.MLWE_PKE_Scheme
+public import CatCryptCore.Crypto.MLKEM.MLWE_PKE_Stateful
+public import CatCryptCore.Crypto.MLKEM.PKE_ROM
+public import CatCryptCore.Crypto.MLKEM.FOFromMLWE
+public import CatCryptCore.Crypto.MLKEM.Sampler
+public import CatCryptCore.Crypto.MLKEM.SamplerCbd
+public import CatCryptCore.Crypto.MLKEM.XOFMatrix
+public import CatCryptCore.Crypto.MLKEM.CompressedPKE
+public import CatCryptCore.Crypto.MLKEM.CorrectnessBounds
+public import CatCryptCore.Crypto.MLKEM.MLKEM512Params
+public import CatCryptCore.Crypto.MLKEM.MLKEM512Hypotheses
+public import CatCryptCore.Crypto.MLKEM.MLKEM512FailureBound
+public import CatCryptCore.Crypto.MLKEM.FIPS203QROMQuantumMLWE
+public import CatCryptCore.Crypto.MLKEM.MLKEM512QROM
+public import CatCryptCore.Crypto.MLKEM.MLKEM512QROMFinal
+public import CatCryptCore.Crypto.MLKEM.CollisionSpreadLemmas
+public import CatCryptCore.Crypto.MLKEM.CollisionSpreadBound
+public import CatCryptCore.Crypto.MLKEM.MLKEM512QROMNumeric
+public import CatCryptCore.Crypto.MLKEM.PRFOracle
+public import CatCryptCore.Crypto.MLKEM.PRFAuxHop
+public import CatCryptCore.Crypto.MLKEM.PRFBadTable
+public import CatCryptCore.Crypto.MLKEM.PRFBadTableKeyed
+public import CatCryptCore.Crypto.MLKEM.PRFCoinWeak
+public import CatCryptCore.Crypto.MLKEM.PRFInstance512
+public import CatCryptCore.Crypto.MLKEM.PRFKEMChain
+public import CatCryptCore.Crypto.MLKEM.PRFMLWE
+public import CatCryptCore.Crypto.MLKEM.MLKEM512QROMPrf
+public import CatCryptCore.Crypto.MLKEM.CollisionSpreadIdeal
 
 -- UC ideal functionalities (F_commit, F_ZK, F_OT) + shared group scaffolding
 public import CatCryptCore.Examples.GroupParam
