@@ -6,7 +6,7 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Crypto.FiatShamirROM.Reduction
-public import CatCryptCore.Examples.GroupParam
+public import CatCryptCore.Crypto.Assumptions.DLGroupParam
 
 /-!
 # Schnorr signatures as an instance of the generic Fiat–Shamir theorem
@@ -19,8 +19,6 @@ Its relation game is the discrete-logarithm game over the group.
 
 ## Main definitions
 
-* `GroupParam.dlGame gp B`, `GroupParam.DL_Advantage gp B` — the discrete-logarithm
-  game: sample `w`, give `g^w` to `B`, and accept an output `w'` with `g^w' = g^w`
 * `schnorrSigma gp` — the Schnorr Σ-protocol
 * `dlOfWitness gp B` — a witness-finding adversary as a discrete-logarithm adversary
 
@@ -52,18 +50,6 @@ open scoped ENNReal
 namespace CatCrypt.Examples.GroupParam
 
 variable (gp : GroupParam)
-
-/-- The discrete-logarithm game: sample `w`, give `h = g^w` to the adversary, and
-accept its output `w'` when `g^w' = h`. -/
-noncomputable def dlGame (adversary : gp.G → SPComp gp.Scalar) : SPComp Bool := do
-  let w ← SPComp.sample gp.Scalar
-  let h := gp.exp w
-  let w' ← adversary h
-  SPComp.pure (gp.exp w' == h)
-
-/-- The probability that the adversary wins the discrete-logarithm game. -/
-noncomputable def DL_Advantage (adversary : gp.G → SPComp gp.Scalar) : ℝ≥0∞ :=
-  prTrue (gp.dlGame adversary) Heap.empty
 
 /-- Cancellation of a common left summand under subtraction:
 `(s + a) − (s + b) = a − b`. -/

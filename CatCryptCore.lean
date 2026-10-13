@@ -167,6 +167,7 @@ public import CatCryptCore.Crypto.FiatShamirROM.Schnorr
 public import CatCryptCore.Crypto.PRPPRFSwitching
 public import CatCryptCore.Crypto.PRFAssumption
 public import CatCryptCore.Crypto.Assumptions.Catalog
+public import CatCryptCore.Crypto.Assumptions.DLGroupParam
 public import CatCryptCore.Crypto.BLSSig.Security
 
 -- Fujisaki–Okamoto transforms, FIPS 203 KEM, total variation
