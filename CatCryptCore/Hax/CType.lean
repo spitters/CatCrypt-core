@@ -160,6 +160,7 @@ noncomputable instance fintypeVector (α : Type) [Fintype α] (n : Nat) :
   Fintype.ofEquiv (Fin n → α) (vectorEquivFin α n).symm
 
 /-- `Fintype τ.denote` for any `τ : CType`, by structural recursion. -/
+@[instance_reducible]
 noncomputable def instFintype : (τ : CType) → Fintype τ.denote
   | .u8 => fintypeUInt8
   | .u16 => fintypeUInt16
@@ -212,6 +213,7 @@ def instDecidableEq : (τ : CType) → DecidableEq τ.denote
 /-! ## Inhabited / Nonempty instances -/
 
 /-- `Inhabited τ.denote` for any `τ : CType`, by structural recursion. -/
+@[instance_reducible]
 def instInhabited : (τ : CType) → Inhabited τ.denote
   | .u8 => ⟨0⟩
   | .u16 => ⟨0⟩
@@ -230,7 +232,7 @@ def instInhabited : (τ : CType) → Inhabited τ.denote
   | .result ok _ => ⟨Sum.inl (instInhabited ok).default⟩
 
 /-- `Nonempty τ.denote` for any `τ : CType`. -/
-def instNonempty (τ : CType) : Nonempty τ.denote :=
+theorem instNonempty (τ : CType) : Nonempty τ.denote :=
   ⟨(instInhabited τ).default⟩
 
 /-! ## Common crypto types
