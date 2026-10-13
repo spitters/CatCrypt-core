@@ -76,6 +76,12 @@ exactly `CatCrypt.Unary.prEventComp` (and `CatCrypt.Crypto.prTrue` for
   CMCS 2014) — the categorical source of this interface: Eilenberg–Moore
   algebras with a monotonicity condition as wp modalities (Def. 2.4), the
   expectation modality `τ_total` (§2.3.3).
+* Wataru Hino, Hiroki Kobayashi, Ichiro Hasuo, Bart Jacobs, *Healthiness from
+  Duality*, LICS 2016 — Eilenberg–Moore algebras on an arbitrary poset of truth values
+  with the pointwise monotonicity condition are the `Pos`-relative algebras, monad maps
+  into the monotone continuation monad (Def. 4.2, Prop. 4.12).
+* Kenji Maillard et al., *Dijkstra Monads for All*, ICFP 2019, §4.4 — effect observations
+  into the monotone continuation monad correspond to monotone monad algebras.
 * Bart Jacobs, *A Recipe for State-and-Effect Triangles*, Logical Methods in
   Computer Science 13(2), 2017 (conference version CALCO 2015) — predicate
   transformers beside state transformers (§2).
@@ -165,7 +171,100 @@ theorem wp_mono (x : m α) {post post' : α → l} (h : ∀ a, post a ≤ post' 
     (fun a => by simpa [μ_pure] using h a)
     x
 
+/-- The Eilenberg–Moore multiplication law in Kleisli form: `μ (x >>= f)` depends on the
+continuation `f` only through `μ ∘ f`. -/
+theorem μ_bind_μ (x : m α) (f : α → m l) :
+    μ (x >>= f) = μ (x >>= fun a => pure (μ (f a))) :=
+  μ_bind x f (fun a => pure (μ (f a))) (fun a => (μ_pure (m := m) (μ (f a))).symm)
+
 end OrderedMonadAlgebra
+
+/-! ## Ordered monad algebras as Eilenberg–Moore algebras
+
+An ordered monad algebra (Loom, Def. 3.2) is exactly an Eilenberg–Moore algebra
+`τ : m l → l` that is order-congruent in the sense of Hasuo (TCS 2015, Def. 3.3):
+`orderedMonadAlgebra_laws_iff`. Hasuo's Prop. 3.4 identifies order-congruence with the
+monotonicity condition of a PT situation (Def. 2.4) on `Sets`, where the truth-value
+carrier is `T Ω`, its order is the one given by the order-enrichment of `T`, and the order
+on `Sets(X, T Ω)` is pointwise. Here the carrier `l` is any partial order, independent of
+any order on `m`. -/
+
+section EilenbergMoore
+
+/-- Hasuo's order-congruence of `τ : m l → l` (TCS 2015, Def. 3.3, with `l` in the role of
+`T Ω`): for every `α`, the map `t ↦ τ ∘ (t <$> ·)` from `α → l` to `m α → l` is monotone
+for the pointwise orders. -/
+def OrderCongruent {m : Type u → Type v} {l : Type u} [Functor m] [LE l]
+    (τ : m l → l) : Prop :=
+  ∀ {α : Type u} (t t' : α → l), (∀ a, t a ≤ t' a) →
+    ∀ x : m α, τ (t <$> x) ≤ τ (t' <$> x)
+
+variable {m : Type u → Type u} {l : Type u} [Monad m]
+
+/-- The Eilenberg–Moore algebra laws for `τ : m l → l`: the unit law `τ ∘ pure = id` and
+the multiplication law `τ ∘ join = τ ∘ map τ`, where `join X` is `X >>= id`. -/
+def IsEMAlgebra (τ : m l → l) : Prop :=
+  (∀ x : l, τ (pure x) = x) ∧ ∀ X : m (m l), τ (X >>= id) = τ (τ <$> X)
+
+/-- For an Eilenberg–Moore algebra, `τ (x >>= f)` is `τ` of `x` mapped through `τ ∘ f`. -/
+theorem IsEMAlgebra.bind_eq [LawfulMonad m] {τ : m l → l} (h : IsEMAlgebra τ)
+    {α : Type u} (x : m α) (f : α → m l) :
+    τ (x >>= f) = τ ((fun a => τ (f a)) <$> x) := by
+  calc τ (x >>= f) = τ ((f <$> x) >>= id) := by rw [bind_map_left]; rfl
+    _ = τ (τ <$> (f <$> x)) := h.2 _
+    _ = τ ((fun a => τ (f a)) <$> x) := by rw [Functor.map_map]
+
+/-- The laws of an ordered monad algebra (Loom, Def. 3.2: `μ_pure` and `μ_bind_mono`) hold
+for `τ : m l → l` exactly when `τ` is an Eilenberg–Moore algebra that is order-congruent
+in Hasuo's sense. -/
+theorem orderedMonadAlgebra_laws_iff [LawfulMonad m] [PartialOrder l] (τ : m l → l) :
+    ((∀ x : l, τ (pure x) = x) ∧
+      ∀ {α : Type u} (f g : α → m l), (∀ a, τ (f a) ≤ τ (g a)) →
+        ∀ x : m α, τ (x >>= f) ≤ τ (x >>= g)) ↔
+    IsEMAlgebra τ ∧ OrderCongruent τ := by
+  constructor
+  · rintro ⟨hp, hb⟩
+    refine ⟨⟨hp, fun X => ?_⟩, fun t t' h x => ?_⟩
+    · rw [map_eq_pure_bind]
+      exact le_antisymm (hb id _ (fun a => (hp (τ a)).ge) X)
+        (hb _ id (fun a => (hp (τ a)).le) X)
+    · rw [map_eq_pure_bind, map_eq_pure_bind]
+      exact hb _ _ (fun a => by simpa [hp] using h a) x
+  · rintro ⟨he, hc⟩
+    refine ⟨he.1, fun f g hfg x => ?_⟩
+    rw [he.bind_eq x f, he.bind_eq x g]
+    exact hc _ _ hfg x
+
+/-- An order-congruent Eilenberg–Moore algebra on a complete lattice is an ordered monad
+algebra. -/
+@[instance_reducible]
+def OrderedMonadAlgebra.ofEilenbergMoore [LawfulMonad m] [CompleteLattice l]
+    (τ : m l → l) (he : IsEMAlgebra τ) (hc : OrderCongruent τ) :
+    OrderedMonadAlgebra m l where
+  μ := τ
+  μ_pure := he.1
+  μ_bind_mono := ((orderedMonadAlgebra_laws_iff τ).2 ⟨he, hc⟩).2
+
+/-- The algebra map of an ordered monad algebra is an Eilenberg–Moore algebra. -/
+theorem OrderedMonadAlgebra.isEMAlgebra [LawfulMonad m] [CompleteLattice l]
+    [OrderedMonadAlgebra m l] : IsEMAlgebra (OrderedMonadAlgebra.μ : m l → l) :=
+  ((orderedMonadAlgebra_laws_iff _).1
+    ⟨OrderedMonadAlgebra.μ_pure, OrderedMonadAlgebra.μ_bind_mono⟩).1
+
+/-- The algebra map of an ordered monad algebra is order-congruent. -/
+theorem OrderedMonadAlgebra.orderCongruent [LawfulMonad m] [CompleteLattice l]
+    [OrderedMonadAlgebra m l] : OrderCongruent (OrderedMonadAlgebra.μ : m l → l) :=
+  ((orderedMonadAlgebra_laws_iff _).1
+    ⟨OrderedMonadAlgebra.μ_pure, OrderedMonadAlgebra.μ_bind_mono⟩).2
+
+/-- The Eilenberg–Moore multiplication law for an ordered monad algebra:
+`μ (join X) = μ (μ <$> X)`. -/
+theorem OrderedMonadAlgebra.μ_join [LawfulMonad m] [CompleteLattice l]
+    [OrderedMonadAlgebra m l] (X : m (m l)) :
+    OrderedMonadAlgebra.μ (X >>= id) = OrderedMonadAlgebra.μ (OrderedMonadAlgebra.μ <$> X) :=
+  OrderedMonadAlgebra.isEMAlgebra.2 X
+
+end EilenbergMoore
 
 end CatCrypt
 
