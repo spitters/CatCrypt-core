@@ -160,7 +160,6 @@ theorem kronecker_mul_kronecker (A C : Matrix (Fin d₁) (Fin d₁) ℂ)
         congr 1; ext k; ring
     _ = (∑ k₁, A ip.1 k₁ * C k₁ jp.1) * (∑ k₂, B ip.2 k₂ * D k₂ jp.2) := by
         rw [Fintype.sum_prod_type_right]
-        simp only [Prod.fst, Prod.snd]
         rw [show ∑ y : Fin d₂, ∑ x : Fin d₁,
           A ip.1 x * C x jp.1 * (B ip.2 y * D y jp.2) =
           ∑ y : Fin d₂, (∑ x : Fin d₁, A ip.1 x * C x jp.1) *
@@ -347,8 +346,7 @@ theorem trace_localOp₁_fun (op : QComp d₁ α) (a : α)
     (ρ : Matrix (Fin (d₁ * d₂)) (Fin (d₁ * d₂)) ℂ) :
     (localOp₁_fun op a ρ).trace =
       ∑ k : Fin d₂, (op.branch a (extractBlock ρ k k)).trace := by
-  simp only [localOp₁_fun, Matrix.trace, Matrix.diag, Matrix.of_apply,
-    Equiv.toFun_as_coe]
+  simp only [localOp₁_fun, Matrix.trace, Matrix.diag, Matrix.of_apply]
   rw [Fintype.sum_equiv (finProdEquiv d₁ d₂).symm _
     (fun p : Fin d₁ × Fin d₂ =>
       (op.branch a (extractBlock ρ p.2 p.2)) p.1 p.1)
@@ -371,8 +369,7 @@ private theorem trace_localOp₂_fun (op : QComp d₂ β) (b : β)
     (localOp₂_fun op b ρ).trace =
       ∑ k : Fin d₁, (op.branch b (Matrix.of fun i₂ j₂ =>
         ρ (finProdEquiv d₁ d₂ (k, i₂)) (finProdEquiv d₁ d₂ (k, j₂)))).trace := by
-  simp only [localOp₂_fun, Matrix.trace, Matrix.diag, Matrix.of_apply,
-    Equiv.toFun_as_coe]
+  simp only [localOp₂_fun, Matrix.trace, Matrix.diag, Matrix.of_apply]
   rw [Fintype.sum_equiv (finProdEquiv d₁ d₂).symm _
     (fun p : Fin d₁ × Fin d₂ =>
       (op.branch b (of fun i₂' j₂' =>
@@ -581,11 +578,11 @@ theorem trace_kronecker_one_mul_localOp₁ (op : QComp d₁ α)
   rw [Fintype.sum_prod_type]
   -- Unfold kronecker and localOp₁_fun entries, simplify Equiv round-trips
   simp only [kronecker_apply, Matrix.one_apply, localOp₁_fun, Matrix.of_apply,
-    Equiv.toFun_as_coe, Equiv.symm_apply_apply]
+    Equiv.symm_apply_apply]
   -- Collapse δ sums
-  simp only [mul_ite, mul_one, mul_zero, ite_mul, one_mul, zero_mul,
-    Finset.sum_ite_eq', Finset.sum_ite_eq, Finset.mem_univ, if_true,
-    Matrix.mul_apply, extractBlock_apply]
+  simp only [mul_ite, mul_one, mul_zero, ite_mul, zero_mul,
+    Finset.sum_ite_eq, Finset.mem_univ, if_true,
+    Matrix.mul_apply]
 
 /-- Trace of `(E ⊗ₖ I) * ρ` decomposes into diagonal block traces. -/
 theorem trace_kronecker_one_mul (E : Matrix (Fin d₁) (Fin d₁) ℂ)
@@ -609,11 +606,10 @@ theorem trace_kronecker_one_mul (E : Matrix (Fin d₁) (Fin d₁) ℂ)
       ρ (finProdEquiv d₁ d₂ p) (finProdEquiv d₁ d₂ (k₁, k₂)) from
     (Fintype.sum_equiv (finProdEquiv d₁ d₂) _ _ (fun _ => rfl)).symm]
   rw [Fintype.sum_prod_type]
-  conv_lhs => simp only [Equiv.symm_apply_apply]
   simp only [kronecker_apply, Matrix.one_apply, extractBlock, Matrix.of_apply,
     Equiv.symm_apply_apply,
-    mul_ite, mul_one, mul_zero, ite_mul, one_mul, zero_mul,
-    Finset.sum_ite_eq', Finset.sum_ite_eq, Finset.mem_univ, if_true,
+    mul_ite, mul_one, mul_zero, ite_mul, zero_mul,
+    Finset.sum_ite_eq, Finset.mem_univ, if_true,
     Matrix.mul_apply]
 
 /-! ## First-Register-Fixed Block Extraction
@@ -679,11 +675,9 @@ theorem trace_one_kronecker_mul (M : Matrix (Fin d₂) (Fin d₂) ℂ)
       ρ (finProdEquiv d₁ d₂ p) (finProdEquiv d₁ d₂ (k₁, k₂)) from
     (Fintype.sum_equiv (finProdEquiv d₁ d₂) _ _ (fun _ => rfl)).symm]
   rw [Fintype.sum_prod_type]
-  conv_lhs => simp only [Equiv.symm_apply_apply]
   simp only [kronecker_apply, Matrix.one_apply, extractBlock₁, Matrix.of_apply,
     Equiv.symm_apply_apply,
-    mul_ite, mul_one, mul_zero, ite_mul, one_mul, zero_mul,
-    Finset.sum_ite_eq', Finset.sum_ite_eq, Finset.mem_univ, if_true,
+    ite_mul, one_mul, zero_mul,
     Matrix.mul_apply]
   -- Collapse the surviving indicators. Outer indicator is `if k₁ = x` —
   -- swap sums, then collapse for each fixed x_1.

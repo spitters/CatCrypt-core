@@ -95,10 +95,4 @@ theorem FEL_advantage
     _ ≤ ε_bad + ε_bad := add_le_add h_bad_true h_bad_false
     _ = 2 * ε_bad := (two_mul ε_bad).symm
 
-/-- Union bound: probability of disjunction bounded by sum. -/
-theorem union_bound (G : SDistr Bool) (bad1 bad2 : SDistr Bool)
-    (ε1 ε2 : ℝ≥0∞)
-    (h1 : prTrue bad1 ≤ ε1) (h2 : prTrue bad2 ≤ ε2) :
-    ε1 + ε2 ≥ ε1 + ε2 := le_refl _
-
 end CatCrypt.Crypto.MLKEM.Infrastructure

@@ -157,7 +157,7 @@ noncomputable def CPA_BASIC1
 /-- Game BASIC2: both pk and ciphertext are uniform. Independent of `b`. -/
 noncomputable def CPA_BASIC2
     (choose : PK P → SDistr (P.PT × P.PT))
-    (guess : CT P → SDistr Bool) (b : Bool) : SDistr Bool := do
+    (guess : CT P → SDistr Bool) (_b : Bool) : SDistr Bool := do
   let A ← SDistr.uniform P.Mat
   let t ← SDistr.uniform P.Vec
   let pk : PK P := (A, t)

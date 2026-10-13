@@ -135,7 +135,7 @@ def uint64EquivBitVec : UInt64 ≃ BitVec 64 where
 noncomputable def vectorEquivFin (α : Type) (n : Nat) : Vector α n ≃ (Fin n → α) where
   toFun v i := v[i]
   invFun f := Vector.ofFn f
-  left_inv v := by ext i; simp [Vector.getElem_ofFn]
+  left_inv v := by ext i; simp
   right_inv f := by ext i; simp [Vector.getElem_ofFn]
 
 /-! ## Fintype instances -/

@@ -130,7 +130,7 @@ noncomputable def CPA_Adv (choose : S.PK → SDistr (S.PT × S.PT))
 
     EasyCrypt: `OW_CPA(S, A).main()`. -/
 noncomputable def OW_CPA (find : S.PK → S.CT → SDistr (Option S.PT)) : SDistr Bool := do
-  let (pk, sk) ← S.kg
+  let (pk, _sk) ← S.kg
   let m ← SDistr.uniform S.PT
   let c ← S.enc pk m
   let m' ← find pk c
