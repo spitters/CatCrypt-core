@@ -33,12 +33,7 @@ public import CatCryptCore.Crypto.MLKEM.MLKEM512Params
   window space
 * `samplerIsCbd` — `MLKEM512Instance.SamplerIsCbd η` for every `η > 0`
 * `samplerIsCbd_two`, `samplerIsCbd_three` — the same at the two ML-KEM parameters
-
-## Scope
-
-`samplerIsCbd` holds for every positive `η`; at `η = 0` the window indexing divides
-by zero and the statement is not covered. Nothing is left open at `η = 2` and
-`η = 3`.
+  `η = 2` and `η = 3`
 -/
 
 @[expose] public section

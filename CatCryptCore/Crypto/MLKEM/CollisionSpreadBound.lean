@@ -14,7 +14,7 @@ public import CatCryptCore.Crypto.KEM.FOTransformU
 # The coin-collision weight of ML-KEM-512
 
 The probability-level assembly of the counting lemmas of
-`CatCrypt/Crypto/MLKEM/CollisionSpreadLemmas.lean` into a bound on the key-averaged
+`CollisionSpreadLemmas` into a bound on the key-averaged
 coin-collision weight `collWeight` of `CompressedPKE.mlkem512CompressedScheme`.
 
 Two seeds `sd`, `sd'` that encrypt a message to the same ciphertext under the key

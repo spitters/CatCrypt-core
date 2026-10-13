@@ -58,9 +58,9 @@ replaced by a polynomial of degree `< prfDeg q k Nc = 2 q' |Nc|`,
   advantages of `qRedEncF` and `qRedExtF`; `MLKEM512QROMPrf` carries it into
   `owTermStd` when key generation is only close to the K-PKE
 
-## Scope
+## The model
 
-The reductions hold no table: each draws `auxDeg q k` field elements for each of
+The reductions `qRedEncF` and `qRedExtF` hold no table: each draws `auxDeg q k` field elements for each of
 `G`, `J`, `Hq`, `T`, `prfDeg q k Nc` for `F`, and evaluates the polynomials at
 the points it needs. The hypotheses `hKey` and `hEnc` state that the row
 assemblies `kg ∘ eK` and `enc` at uniform rows have the distributions of the

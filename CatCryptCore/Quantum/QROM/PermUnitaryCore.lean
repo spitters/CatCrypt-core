@@ -37,12 +37,11 @@ unitary of the total register as a permutation unitary.
 * `oracleU_eq_permUnitary` — the oracle unitary on the total register is
   `permUnitary (oraclePerm m n w H)`
 
-## Scope
+## Index types
 
 Every statement is about permutation matrices over `ℂ` at an arbitrary finite
 index type, except the Kronecker product and the oracle identification, which
 use the row-major index `finProdEquiv` of the `Fin`-indexed Kronecker product.
-No matrix is reduced at a numeric dimension.
 -/
 
 @[expose] public section

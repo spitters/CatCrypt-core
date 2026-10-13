@@ -46,13 +46,13 @@ probabilities average against one weight on the reference tables.
 * `generic_search_uniform_card` — the same with the weight written as the
   inverse cardinality of the table type
 
-## Scope
+## The hypotheses
 
-Pure initial state, as in `SparseSearch`. The predicate `bad` reads the oracle
-value at the output only and has a good value at every point
-(`hgood : ∀ x, ∃ y, bad x y = false`), which makes the resampling weight a
-probability weight. The per-point hypothesis is
-`(badVals bad x).card / n ≤ lam` at every `x`, and the constant is
+In `generic_search_uniform` the adversary's initial state is pure (`hpure`), as
+in `SparseSearch`. The predicate `bad` reads the oracle value at the output only
+and has a good value at every point (`hgood : ∀ x, ∃ y, bad x y = false`), which
+makes the resampling weight a probability weight. The per-point hypothesis `hlam`
+is `(badVals bad x).card / n ≤ lam` at every `x`, and the constant is
 `4 (q + 1) (q + 1)`.
 
 ## References

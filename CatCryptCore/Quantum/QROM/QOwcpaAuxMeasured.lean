@@ -37,7 +37,7 @@ same query, and proves the two equal.
 * `qOwcpaAuxRun_eq_measured`, `qOwcpaAux_eq_measured` — the game of
   `QOwcpaAux` is the game with measured decapsulation rounds
 
-## Scope
+## The cut
 
 The cut at flat index `j` keeps the unitaries `U₀, …, U_j` of the flattened
 adversary. When `j` is the first index of a segment after round `r`, that

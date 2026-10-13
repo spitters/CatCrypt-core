@@ -60,20 +60,21 @@ flattened, it is again an adversary against a pointwise function of the table.
   average over key generation of a per-key bound `λ` on the decryption-failure
   fraction of every message
 
-## Scope
+## The hypotheses
 
-The left outer term requires the adversary's decapsulation rounds in the
+`absDiff_winReal_resample_le` takes the adversary's decapsulation rounds in the
 compiled form of `Quantum/QROM/HopDecapsNumericClose.lean`: work register
 `w₀ * ancDim (m₁ + m₂) n c`, every round `permRound`, segment unitaries commuting
 with `cleanProjM`, and an initial state supported by `cleanProjM`. The per-rest
-lemmas require the key pair to have, for each message, a coin that decrypts
-correctly (`CoinGood`); the composite bound does not, since a key pair that is
-not `CoinGood` has `λ ≥ 1` under `hlam` (`one_le_of_not_coinGood`).
+lemmas take a key pair that has, for each message, a coin that decrypts
+correctly (`CoinGood`); `absDiff_prWinKEM'_prWinKEMHq_le_of_lam` has no such
+hypothesis, since a key pair that is not `CoinGood` has `λ ≥ 1` under `hlam`
+(`one_le_of_not_coinGood`).
 
 The terms `8 q'' Λ^(1/2) + Λ + 8 q' Λ^(1/2)` are numeric once `λ` is
 instantiated: `Λ` is the expectation over key generation of the worst-case
 per-message decryption-failure probability, the δ-correctness figure of the
-Fujisaki–Okamoto analysis; no value of `Λ` is derived here.
+Fujisaki–Okamoto analysis.
 -/
 
 @[expose] public section

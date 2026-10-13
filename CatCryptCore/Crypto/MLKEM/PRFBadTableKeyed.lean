@@ -50,14 +50,15 @@ term of the chain is at most `6 · corrWorst + (t + 2) / N + |M| · 2⁻ᵗ`, wi
 * `avg_keyAvg_lamSup_le_corrWorst` — the averaged failure term is at most
   `6 · corrWorst + (t + 2) / N + |M| · 2⁻ᵗ`
 
-## Scope
+## The coin hypothesis
 
 The coin hypothesis of `qINDCCA_le_qOwcpaAux_numeric_coll` (every generated key
 pair has a correctly decrypting coin for every message) quantifies over every
 key pair in the support of key generation, which for `prfScheme F` is every seed
-of the table. `PRFCoinWeak` removes it: at `lam = lamSup` the failure of a key
-pair is paid inside the failure term, so the correctness error enters only that
-term.
+of the table. At `lam = lamSup` the failure of a key pair is paid inside the
+failure term bounded by `avg_keyAvg_lamSup_le_corrWorst`, so the correctness
+error enters only that term; `PRFCoinWeak` states the chain at `lamSup` without
+the coin hypothesis.
 -/
 
 @[expose] public section

@@ -54,7 +54,7 @@ random-oracle XOF instead of drawn uniformly.
   `m = 280` three-byte groups (five SHAKE-128 blocks), the change is at most
   `2 · 4 · C(560, 255) · (767 / 4096) ^ 305`
 
-## Scope
+## The model
 
 The oracle range of the chain is `Fin n` with `(K × Sd) ≃ Fin n`; at 32-byte
 keys and seeds `n = 2 ^ 512`, so one oracle value is a 64-byte chunk and the

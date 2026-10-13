@@ -111,11 +111,12 @@ The steps of `FOTransformU.uNotBot_indcca`, and how each maps onto `fips203`:
 Side conditions on `P`: only the correctness terms; rigidity is supplied by the
 re-encryption in decapsulation, and no injectivity of `P.enc` is used.
 
-## Scope
+## The model
 
-* The model is the classical random-oracle model; `hpk` is a fixed function.
-* `P` is an arbitrary public-key encryption scheme with finite message, coin and key
-  spaces; the bound is stated for `fips203 P hpk`, not for the ML-KEM parameter sets.
+* `fips203_indcca` is stated in the classical random-oracle model, with `hpk` a fixed
+  function.
+* `P` is a public-key encryption scheme with finite message, coin and key spaces, and
+  `fips203_indcca` bounds the advantage against `fips203 P hpk` for every such `P`.
 * The query bound passed to `tTransform_owpca_of_total` is the total `2·qRO`, one
   random-oracle and one plaintext-checking query per `G`-query at prefix `hpk pk`.
 

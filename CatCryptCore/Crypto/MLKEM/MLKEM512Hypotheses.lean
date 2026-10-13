@@ -33,15 +33,15 @@ The coin hypothesis of `FIPS203QROMQuantumMLWE.mlkem512_qindcca_qmlwe_coll` and
   of admissible windows, `e₁` blocks and encryption seeds
 * `mlkem512_isSpread` — the scheme is `(15/16)^512`-spread
 
-## Scope
+## Proof of spreadness
 
-The spreadness bound uses the `u`-component of the ciphertext alone: for fixed
+`mlkem512_isSpread` uses the `u`-component of the ciphertext alone: for fixed
 `r` and `e₂`, each of the 512 coefficients of `e₁` is read from its own 4-bit
 window of the PRF block (`SamplerCbd.windowMap_bijective`), and of the 16 windows
 at least one, the window of value `2` or the window of value `-2`, leaves the
-prescribed `Compress_{10}` value. The collision term of the ML-KEM-512 theorems
-is the coin-collision weight bound of `CollisionSpreadBound`, not this
-spreadness parameter.
+prescribed `Compress_{10}` value (`compress10_ne_add_four`,
+`card_uAdmissible_le`). The collision term of the ML-KEM-512 theorems is the
+coin-collision weight bound of `CollisionSpreadBound`.
 -/
 
 @[expose] public section

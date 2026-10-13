@@ -45,20 +45,17 @@ declarations live in the namespace `MLKEM512Instance`.
   `mlkem512_eta2`, `mlkem512_keySeed`, `mlkem512_seed` — the numeric fields
   of the record against `ConcreteParams.MLKEM512Params`
 
-## Scope
+## The model
 
-* **`dshort` and `cbd`.** `dshortPoly η` is *defined* as the pushforward of the
-  uniform `64·η`-byte PRF block along `Sampler.sampleCBD_eta η`, so `sampleShort_eq`
-  and `sampleKey_eq` hold by the product structure of the uniform seed. The
-  identification of that pushforward with the 256-fold independent product of
-  `CatCrypt.NonUniform.cbd η` is stated as `SamplerIsCbd`, and
-  `MLKEM/SamplerCbd.lean` proves it for every `η > 0`, so `dshortPoly η` carries
-  the centered-binomial law. No declaration in this file depends on the
-  proposition.
-* **Compression.** The base MLWE PKE has no ciphertext compression, so
-  `toScheme mlkem512Params` is the uncompressed scheme. FIPS 203 K-PKE, which
-  compresses `u` at `d_u = 10` and `v` at `d_v = 4`, is
-  `CompressedPKE.mlkem512CompressedScheme`.
+* `dshortPoly η` is the pushforward of the uniform `64·η`-byte PRF block along
+  `Sampler.sampleCBD_eta η`, so the fields `sampleShort_eq` and `sampleKey_eq` of
+  `mlkem512Params` hold by the product structure of the uniform seed
+  (`sampleNoise_eq`, `sampleVec_eq`). `SamplerIsCbd η` states that this pushforward
+  is the 256-fold independent product of `CatCrypt.NonUniform.cbd η`;
+  `SamplerCbd.samplerIsCbd` proves it for every `η > 0`.
+* The base MLWE PKE has no ciphertext compression, so `toScheme mlkem512Params` is
+  the uncompressed scheme. FIPS 203 K-PKE, which compresses `u` at `d_u = 10` and
+  `v` at `d_v = 4`, is `CompressedPKE.mlkem512CompressedScheme`.
 -/
 
 @[expose] public section

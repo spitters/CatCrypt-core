@@ -53,16 +53,15 @@ rank-`k` ciphertext, built from `Compress.compress_d` and `Compress.decompress_d
 * `mlkem512Compressed_indcca` — the IND-CCA bound of the FIPS 203 KEM over
   `mlkem512CompressedScheme`
 
-## Scope
+## The model
 
-* **Correctness.** `mlkem512Compressed_indcca` carries
-  `mlkem512CompressedScheme.corrWorst ≤ decryptionFailureProb mlkem512Noise δ_c` as a
-  hypothesis. The decryption error of the compressed scheme contains the rounding
-  error of `Compress_{d_u}` and `Compress_{d_v}` (bounded per coefficient by
-  `Compress.roundtrip_error_int`) in addition to the noise `e·r − s·e₁ + e₂`; no
-  module in the tree relates it to `δ_c`.
-* **Encoding.** The ciphertext is the pair of compressed coefficient vectors, not the
-  byte string of FIPS 203 `ByteEncode`.
+* `mlkem512Compressed_indcca` takes the worst-case correctness bound
+  `mlkem512CompressedScheme.corrWorst ≤ decryptionFailureProb mlkem512Noise δ_c` as
+  the hypothesis `hWorst`. The decryption error of the compressed scheme consists of
+  the noise `e·r − s·e₁ + e₂` and the rounding error of `Compress_{d_u}` and
+  `Compress_{d_v}`, which `Compress.roundtrip_error_int` bounds per coefficient.
+* The ciphertext of `mlkem512CompressedScheme` is the pair of compressed coefficient
+  vectors returned by `compressCT`, without the FIPS 203 `ByteEncode` byte encoding.
 -/
 
 @[expose] public section

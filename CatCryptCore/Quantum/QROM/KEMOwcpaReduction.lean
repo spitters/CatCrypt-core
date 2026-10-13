@@ -59,31 +59,23 @@ challenge ciphertext.
   a message differ from the oracle's key there exactly at the challenge message,
   unless `Hq` at that ciphertext equals the key of `u`
 
-## Scope
+## The game `prWinKEMHq`
 
 In `prWinKEMHq` the decapsulation answers are a function of `Hq` and the
 challenge ciphertext, the oracle is a function of `Hq`, the `G`-table, the
 table `T` and the `J`-table off the prefix `z`, and `z` itself is read nowhere.
-The remaining step to a one-wayness reduction is the challenge-key hop on this
-game. `decapsHq_oracleTabHK_iff` records that the reprogramming of
-`HopChallengeKey.hopKGame`, which replaces the whole `G`-entry at the challenge
-point by a fresh value, makes the pair of oracle table and decapsulation
-answers in `prWinKEMHq` locate the challenge message. A reprogramming that
-replaces only the coin part at the challenge point and keeps the key part equal
-to `Hq` at the ciphertext keeps the two consistent; that hop, its `Find` game
-and the reduction drawing `Hq`, the coin table and the `J`-table from
-`(pk, c*)` are not constructed here. The quantity
-`HopChallengeKey.prFindAvgK` is the `Find` probability of the game before the
-two hops of this module and is not rewritten by them. The quantum IND-CCA bound
-of the FIPS 203 key encapsulation is
+By `decapsHq_oracleTabHK_iff`, the reprogramming of `HopChallengeKey.hopKGame`,
+which replaces the whole `G`-entry at the challenge point by a fresh value, makes
+the pair of oracle table and decapsulation answers in `prWinKEMHq` locate the
+challenge message. The hop of `HopCoinChallenge` reprograms the challenge point
+so that the coin there is the coin of a fresh value `u` and the key part there is
+`Hq` at the encryption of `m*` under that coin. The quantum
+IND-CCA bound of the FIPS 203 key encapsulation is
 `CoinBadNumeric.qINDCCA_le_find_numeric_coll`.
 
-The two correctness terms quantify over every message: the failure term weighs
-the inputs on which some message is outside `kemGood`, and the injectivity term
-the inputs on which the encryption map is not injective. Both are union bounds
-over the message space, of size about `card M` times the per-message failure
-weight, so at ML-KEM parameters they exceed one. A numeric bound needs them
-restricted to the messages the adversary's queries reach.
+The two correctness terms quantify over every message: the failure term `δ_fail`
+weighs the inputs on which some message is outside `kemGood`, and the injectivity
+term `δ_inj` the inputs on which the encryption map is not injective.
 
 ## References
 

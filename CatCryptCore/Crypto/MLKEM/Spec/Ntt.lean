@@ -26,7 +26,7 @@ The transform is the length-128 twisted transform
 even- and odd-indexed coefficient subsequences. `ζ` has order 256 in `ZMod 3329`, so
 `ζ^2` is a primitive 128-th root and the generic negacyclic development applies at
 length 128 — the length at which `X^256 + 1 = (Y^128 + 1)|_{Y = X^2}` splits
-completely. It does not apply at length 256; see `## Scope`.
+completely; see `## The length of the transform`.
 
 Writing `a = a_e(X^2) + X · a_o(X^2)` with `a_e`, `a_o` of degree `< 128`, the product
 in `Rq_kem` has halves
@@ -81,16 +81,15 @@ interleaving, and `nttKem_negaMulKem` transforms it into `basemulKem`.
 * `polyMulKem_eq_invNttKem`, `rqKem_mul_eq_invNttKem` — the product of `Rq_kem` is the
   inverse transform of the base multiplication of the transforms
 
-## Scope
+## The length of the transform
 
-The generic negacyclic transform is instantiated at length **128**, not 256. Its
-hypothesis `IsPrimitiveRoot (ψ^2) n` at `n = 256` forces `ψ` to have order 512, and
-`512 ∤ 3329 - 1 = 13 · 2^8`, so that instance does not exist: the length-256
-statement `NegacyclicTransformGeneric.ndft_negaConv` is unavailable at the ML-KEM
-modulus, and `basemulKem` replaces the pointwise product it would give.
+The generic negacyclic transform is instantiated at length 128. Its hypothesis
+`IsPrimitiveRoot (ψ^2) n` at `n = 256` forces `ψ` to have order 512, and
+`512 ∤ 3329 - 1 = 13 · 2^8`, so `ZMod 3329` has no such root. The product of
+`Rq_kem` is therefore carried to `basemulKem`, the base multiplication in the 128
+quadratic moduli (`nttKem_rqKemToCoeffs_mul`).
 
-`bitRev7` enters only through `gammaKem` and the output index of `nttKem`; no result
-below uses that it is a bijection.
+`bitRev7` enters only through `gammaKem` and the output index of `nttKem`.
 
 ## References
 

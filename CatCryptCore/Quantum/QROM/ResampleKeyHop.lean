@@ -51,16 +51,14 @@ the single message `m*`.
 * `absDiff_winSimJ_winHJ_triangle`, `absDiff_prWinKEMSimJ_prWinKEMHJ_le` — the
   triangle through the resampled table, per rest and averaged over the rest
 
-## Scope
+## The triangle
 
-The two outer terms of the triangle, the distance between the uniform and the
-resampled table for the simulated and for the hopped game, are left unbounded
-here. `absDiff_resample_off_point` of `Quantum/QROM/HopResampleGood.lean`
-bounds such a term for a `q`-query adversary against the table alone; the games
-here also read the table through the challenge ciphertext and the simulated
-decapsulation. Every key pair is required to have, for each message, a coin
-that decrypts correctly (`hcoin`), so that the resampling weight is a
-probability weight.
+The bound of `absDiff_prWinKEMSimJ_prWinKEMHJ_le` is the average over the rest of
+the input of three terms: the distance between the uniform and the resampled
+table for the simulated game, the same distance for the hopped game, and the
+decryption-failure weight `restDelta r` of the challenge message. Its hypothesis `hcoin` states that every key pair in the support of
+`keygen` has, for each message, a coin that decrypts correctly, so that the
+resampling weight is a probability weight.
 -/
 
 @[expose] public section

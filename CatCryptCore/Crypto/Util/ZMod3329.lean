@@ -15,9 +15,8 @@ public import Mathlib.Tactic.NormNum.Prime
 /-!
 # Verified `ZMod 3329` — the ML-KEM prime field
 
-A computable, verified Lean reference implementation of `Z/3329Z` for use
-by the ML-KEM bridge (`MlkemHaxLowCTBridge`) to replace opaque encoder
-round-trip axioms with proven identities.
+A computable Lean reference implementation of `Z/3329Z` with proved encoder
+round-trips.
 
 `q = 3329 = 13 · 256 + 1` is the prime modulus for ML-KEM-512/768/1024
 (FIPS 203). Since 3329 is prime, `ZMod 3329` is a field — Mathlib provides
@@ -29,11 +28,7 @@ is in scope.
 * `Zq3329 := ZMod 3329` — the verified field
 * `Zq3329.ofNat`, `Zq3329.toNat`, `Zq3329.asInt`, `Zq3329.fromInt` —
   encoders to/from `Nat`/`Int`
-* `Zq3329.fromInt_asInt` — the proved round-trip identity used by bridge
-  proofs to discharge previously-axiomatised encoder round-trips.
-
-This file replaces no infrastructure; it adds a verified-field layer
-underneath the existing ML-KEM bridge's structural bijection axioms.
+* `Zq3329.fromInt_asInt` — the round-trip identity `fromInt (asInt x) = x`.
 -/
 
 @[expose] public section

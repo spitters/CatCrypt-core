@@ -41,15 +41,12 @@ probabilities to at most `4 q λ`.
   the value of the table at a point `t` that is exempted from the bad set
   (`SearchOffChallenge.offPoint`)
 
-## Scope
+## The hypotheses
 
-Pure initial states. The predicate `bad` has a good value at every point, and
-the bad values at every point are at most a `λ` fraction of `Fin n`; in the
-off-point form both hypotheses are required only away from `t`. The adversary
-is a `q`-query `QAdv` against the table; a game whose other oracles read the
-table (a decapsulation oracle that re-encrypts through `G`, a simulated
-decapsulation that searches `G` for a preimage) is covered only once those
-oracles are compiled into queries to the table.
+The adversary is a `q`-query `QAdv` against the table with a pure initial state
+(`hpure`). The predicate `bad` has a good value at every point (`hgood`), and the
+bad values at every point are at most a `λ` fraction of `Fin n` (`hlam`); in
+`absDiff_resample_off_point` both hypotheses are required only away from `t`.
 
 ## References
 

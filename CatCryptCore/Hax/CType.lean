@@ -259,10 +259,8 @@ example : (CType.option .u64).denote = Option UInt64 := rfl
 
 /-! ## Global instances for common crypto types
 
-These eliminate the duplicated `Fintype`/`Nonempty` boilerplate
-found in 6+ HaxBridge files. Each file previously defined:
-  `instFintypeBitVec8`, `instFintypeUInt8`, `vectorEquivFin`, `instFintypeVector`
-Now replaced by importing `CatCrypt.Hax.CType`. -/
+Global `Fintype` instances for the fixed-width unsigned integer types and for byte
+vectors, derived from `CType.instFintype`. -/
 
 noncomputable instance instGlobalFintypeUInt8 : Fintype UInt8 := instFintype .u8
 noncomputable instance instGlobalFintypeUInt16 : Fintype UInt16 := instFintype .u16

@@ -41,14 +41,15 @@ types.
 
 `MLKEM512QROMNumeric` states both at the proved collision term `collBound`.
 
-## Scope
+## The model
 
 With 32-byte keys, hashes and seeds, every table range has `2 ^ 256` or
 `2 ^ 6400` elements and every table domain at most `2 ^ 6400` elements: the
 encryption seed has `2 ^ 6144` elements (768 PRF bytes), the compressed
 ciphertext `2 ^ 6144` (`2 · 256 · 10 + 256 · 4` bits) and the message
 `2 ^ 256`. The field `GaloisField 2 6400` therefore carries all four tables.
-The K-PKE idealisations of `mlkem512_qindcca_coll` are unchanged.
+`mlkem512_qindcca_corrWorst_coll` and `mlkem512_qindcca_fips_coll` are stated
+over the K-PKE idealisations of `mlkem512_qindcca_coll`.
 -/
 
 @[expose] public section

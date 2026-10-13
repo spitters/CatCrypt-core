@@ -24,7 +24,7 @@ Instantiates the abstract ML-KEM parameters with the three NIST security levels.
 For ML-KEM-768 (Category 3, 128-bit classical / 192-bit quantum):
 - Best known classical attack: ~2^187 (primal lattice attack)
 - Best known quantum attack: ~2^170 (Grover-enhanced)
-- Decryption failure probability: ~2^{-174}
+- Decryption failure probability quoted by FIPS 203: about 2^{-174}
 
 ## References
 * NIST FIPS 203 (2024), Table 1
@@ -212,25 +212,6 @@ theorem mlkem1024_compress_u : 2 ^ MLKEM1024Params.d_u < MLKEM1024Params.q := by
 
 /-- ML-KEM-1024: 2^d_v = 32, which is less than q = 3329. -/
 theorem mlkem1024_compress_v : 2 ^ MLKEM1024Params.d_v < MLKEM1024Params.q := by decide
-
-/-! ## Decryption Failure -/
-
-/-- ML-KEM-768 decryption failure probability bound.
-
-    Status: assumed, not derived — and the concrete numeric bound is NOT
-    formalized. The statement is the reflexive placeholder `ε_fail ≤ ε_fail`
-    (with `h : ε_fail ≤ ε_fail`), proved `:= h`. It names neither
-    `Instantiation.securityParams` nor `Security.mlkem_cca_security`, and the
-    `2^{-174}` value from FIPS 203 Table 1 appears only in this docstring. A
-    real result would state `ε_fail ≤ 2^(-174)` against a formalized noise
-    distribution; the noise reached through `securityParams` is the opaque
-    placeholder `Libcrux/Distributions.dshort_vec` / `dshort_rq`.
-
-    FIPS 203, Table 1. -/
-theorem mlkem768_decryption_failure_bound
-    (ε_fail : ℝ≥0∞)
-    (h : ε_fail ≤ ε_fail) :
-    ε_fail ≤ ε_fail := h
 
 /-! ## Ciphertext and Key Sizes
 

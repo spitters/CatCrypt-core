@@ -51,17 +51,8 @@ decapsulation.
 * `prOutMR_eq_of_good` — the two runs have the same output probability there
 * `hopD` — `|prWinKEM − prWinKEMSim|` is at most the weight of the inputs with a
   decryption failure
-* `hopD_le_delta` — the union bound `|M| · δ` over the messages
-
-## Scope
-
-The bound of `hopD_le_delta` is the union bound `|M| · δ` over the messages: the
-failure event is bounded message by message and the bounds are added. The
-sharper `4 (q + 1)² · δ` of `Quantum/QROM/SparseSearch.lean` applies when the
-difference is localised at a point the adversary queries, which needs the query
-distribution of the classical rounds; this module does not build that
-distribution. The hop replacing the challenge key by a random key, and the
-composition of the hops into the U-step, are separate modules.
+* `hopD_le_delta` — the union bound `|M| · δ` over the messages: the failure
+  event is bounded message by message and the bounds are added
 
 ## References
 

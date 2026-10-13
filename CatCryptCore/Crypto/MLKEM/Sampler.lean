@@ -18,11 +18,10 @@ producing polynomials over the prime field `Zq3329 := ZMod 3329`:
 * `sampleCBD_eta` — FIPS 203 Algorithm 8 (`SamplePolyCBD_eta`): the centered
   binomial sampler for the noise polynomials, from a `64 * eta`-byte PRF stream.
 
-Both operate on the byte output of the owned sponge (`Crypto/Hash/SHAKE.lean`,
-`Crypto/Hash/Keccak.lean`): `sampleNTT` consumes the SHAKE-128 XOF squeeze of
-the seed `rho ‖ i ‖ j`; `sampleCBD_eta` consumes the SHAKE-256 PRF squeeze of
-`sigma ‖ N`. The byte stream is passed in explicitly so these definitions stay
-computable and axiom-free — the caller supplies the squeezed prefix.
+Both take a byte stream as an argument: in FIPS 203, `sampleNTT` consumes the
+SHAKE-128 squeeze of the seed `rho ‖ i ‖ j` and `sampleCBD_eta` the SHAKE-256
+squeeze of `sigma ‖ N`. The caller supplies the squeezed prefix, so the
+definitions are computable and independent of a sponge implementation.
 
 ## API
 

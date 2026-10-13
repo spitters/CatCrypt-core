@@ -25,15 +25,13 @@ for the key-generation noise `(s, e)`, together with the hypotheses that the
 pushforward of the uniform seed distribution along each sampler is the corresponding
 product of short distributions.
 
-## Scope
+## The model
 
-* **Coins.** `sampleShort_eq` and `sampleKey_eq` assume that a uniform seed pushed
-  through the sampler has exactly the short distribution of the scheme; in particular
-  `dshort_vec`, `dshort_vec2` and `dshort_R` are total. The sampler is a parameter,
-  not a model of
-  `SamplePolyCBD`.
-* **Scheme.** `toScheme P` is the base PKE (`MLWE_PKE_Basic`), not a KEM and not
-  FIPS 203 ML-KEM. The Fujisaki–Okamoto theorem
+* The fields `sampleShort_eq` and `sampleKey_eq` of `Params` state that a uniform
+  seed pushed through the sampler has exactly the short distribution of the scheme;
+  in particular `dshort_vec`, `dshort_vec2` and `dshort_R` are total. The samplers
+  `sampleShort` and `sampleKey` are parameters of `Params`.
+* `toScheme P` is the base PKE `MLWE_PKE_Basic`. The Fujisaki–Okamoto theorem
   `KEM.FOTransform.foNotBot_indcca_of_indcpa` applies to `toScheme P`, giving a bound
   on `foNotBot (toScheme P)` in terms of the IND-CPA advantage of the base PKE,
   which `indcpaGame_eq` and `indcpaAdvantage_eq_absDiff` relate to the

@@ -53,25 +53,13 @@ inside it.
 * `hopD_sharp` — the decapsulation hop bounded by the averaged round-measurement
   probabilities at `badFin`
 
-## Scope
+## The form of the bound
 
-The set where the two decapsulation functions differ, the round-measurement
-probability, and the bound of the hop by the summed round-measurement
-probabilities at that set. The constant is `1` per round: the two runs are
-compared round by round and each round contributes its own measurement weight,
-with no factor from the query count. The bound of `hopD_sharp` counts `k`
-round measurements rather than `Fintype.card M` messages, so the message space
-does not multiply the failure weight; it is a statement about the event that a
-round queries a failing ciphertext, and turning it into a numeric bound needs a
-bound on that event.
-
-The sparse-search bound of `Quantum/QROM/SparseSearch.lean` is not applied
-here. Its guessing probability is the weight of the *query* register of a
-single-run `QAdv` under `projS`, while a round of `QAdvMR` measures an abstract
-orthogonal projector family on the whole register whose outcomes are
-ciphertexts; relating the two needs a `KEMQAdv` whose rounds are the
-computational-basis measurements of a designated ciphertext sub-register, and a
-map carrying a measured ciphertext to the `G`-query point it comes from.
+The two runs are compared round by round, and each round contributes its own
+measurement weight with constant `1` and no factor from the query count. The bound
+of `hopD_sharp` is the `kemSample`-average of a sum over the `k` decapsulation
+rounds of the probability that the round's measurement lands in `badFin`, the event that the round queries a
+ciphertext carrying a message with a decryption failure.
 
 ## References
 

@@ -56,14 +56,14 @@ same average to every function that depends on at most `k` points.
   acceptance probability of a `q`-query adversary under a `2q`-wise independent
   weight equals its average under the uniform weight
 
-## Scope
+## The model
 
 The adversary is `QAdv` of `SemiClassicalOracle`: a fixed number of standard
 oracle calls interleaved with fixed unitaries, an arbitrary initial density
-matrix and a final projective measurement. Weights are arbitrary non-negative
-functions on tables; no normalisation is required. The construction of a
-`2q`-wise independent family (for example low-degree polynomials over a finite
-field) and its efficient evaluation are not part of this module.
+matrix and a final projective measurement. The weights of
+`prOut_avg_eq_of_cylinderAgree` are arbitrary functions `(Fin m → Fin n) → ℝ≥0`
+and those of `sum_mul_eq_of_cylinderAgree` arbitrary complex functions on tables;
+neither carries a normalisation hypothesis.
 
 ## References
 

@@ -51,14 +51,14 @@ tables, whose complement enters the bound with its weight.
   one-wayness probability is at most `|I₁ - I₀| + |M|⁻¹ + 2 δ` plus the averaged
   decryption error
 
-## Scope
+## The model
 
 The average is taken over the adversaries `A F` as a family: `avg_qINDCCA_le`
-holds for every function `F ↦ A F`. The one-wayness to IND-CPA step is kept in
-its signed form (`qOwcpaAux_le_qIndcpaAuxPr_true`,
-`qIndcpaAuxPr_indRed_false_le`), because an average of absolute differences is
-not bounded by the absolute difference of the averages that the PRF hop
-`PRFOracle.absDiff_prfReal_prfIdeal` controls.
+holds for every function `F ↦ A F`. The one-wayness to IND-CPA step is stated in
+signed form (`qOwcpaAux_le_qIndcpaAuxPr_true`, `qIndcpaAuxPr_indRed_false_le`),
+and `avg_qOwcpaAux_le_of_close` averages it against IND-CPA probabilities that
+are close to two values, the form of the PRF hop
+`PRFOracle.absDiff_prfReal_prfIdeal`.
 -/
 
 @[expose] public section

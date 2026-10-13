@@ -50,16 +50,6 @@ is bounded by a one-wayness advantage in `Quantum/QROM/QOwcpaAux.lean`
 * `sum_hopCoinGame_sample_fst`, `sum_coin_avg`, `sum_reorder8` — the finite-sum
   rearrangements of the averaged `Find` probability
 
-## Scope
-
-`δ*`, the weight of the inputs whose challenge message is outside `kemGood`, is
-at most the decryption-failure weight `δ_fail` of `qINDCCA_le_hopJDH_Hq`.
-`coinBadWeight` is bounded by `δ_fail` plus the probability that two independent
-coins give the same encryption of the challenge message, which is at most the
-spreadness bound `P.IsSpread` (`FIPS203QROM.coinSpreadWeight_le`). `δ_fail`
-quantifies over every message and carries the union bound recorded in
-`KEMOwcpaReduction`.
-
 ## References
 
 * [Hofheinz, Hövelmanns, Kiltz — A Modular Analysis of the Fujisaki–Okamoto

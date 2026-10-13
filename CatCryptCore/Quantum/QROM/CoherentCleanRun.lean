@@ -45,14 +45,13 @@ multi-round adversary whose segments leave the record and parked slots alone.
 * `prOutMRCoh_queryRound` — the output probability of the compiled run is that
   of a single `QAdv` with `flatQ q k q = q + k * q` queries
 
-## Scope
+## The hypotheses
 
-The equality of the two runs is an equality of their branches at a state
-supported by `cleanProjM`, not an equality of the two `QComp` values: off the
-clean slice the chain of a query round is not controlled by the record slot, so
-the two channels differ there. The hypothesis on the adversary's segments is
-that each segment unitary commutes with `cleanProjM`; the oracle unitary and the
-round unitary are proved to commute with it.
+`runMRCoh_cleanLift` equates the branches of the two runs at a state supported
+by `cleanProjM`. Its hypothesis `hseg` on the adversary's segments is that each
+segment unitary commutes with `cleanProjM`; the oracle unitary and the round
+unitary commute with it by `oracleU_comm_cleanProjM` and
+`roundChainU_comm_cleanProjM`.
 -/
 
 @[expose] public section

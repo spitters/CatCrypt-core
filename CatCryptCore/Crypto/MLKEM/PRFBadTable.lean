@@ -51,12 +51,12 @@ bound over the points `(φ, σ, m)` and `(φ, σ, m, c)` gives the total.
 * `avg_qINDCCA_prfScheme_le` — `avg_qINDCCA_le` for `prfScheme` with that weight
 * `choose_mul_pow_le` — `C(n, k) · p ^ k ≤ (n p) ^ k / k!`
 
-## Scope
+## The hypotheses
 
-The hypotheses on `p` and `ε` quantify over every key-noise row `v`, including
-rows that occur with negligible probability; a key pair whose failure fraction is
-large violates the hypothesis at any `p < 1`. The thresholds of `ChainGood` are
-not changed: the bound is stated at `Λ = k / N` and `ε' = j / N`.
+The hypotheses `hp` and `hε` of `avg_not_chainGood_prfScheme_le` bound the failure
+and the hit fraction for every key-noise row `v`, every point `φ`, message `m` and
+ciphertext `c`. The thresholds of `ChainGood` in the bound are `Λ = k / N` and
+`ε' = j / N`.
 -/
 
 @[expose] public section

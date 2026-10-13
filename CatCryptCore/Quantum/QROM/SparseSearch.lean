@@ -46,14 +46,15 @@ marginal bound.
 * `guessProb_eq_sum` — `guessProb A H S j = ∑ x ∈ S, guessProb A H {x} j`
 * `sparse_search` — `∑ H, w H · prBad bad A H ≤ 4 (q + 1) (q + 1) λ`
 
-## Scope
+## The hypotheses
 
-Pure initial state, as in `O2HTheorem`. The predicate `bad` reads the oracle
-value at the output only. The weights on the oracles are arbitrary with the
-marginal bound `∑ H, w H · [bad x (H x)] ≤ λ` at every `x`; no independence
-across `x` is used. The oracles of nonzero weight agree with the reference
-oracle `H₀` outside their bad set, which is the setting of the reference
-(oracle values in `{0, 1}`, `bad x y = (y = 1)`, `H₀ = 0`).
+The hypotheses of `sparse_search` are: the adversary's initial state is pure
+(`hpure`), as in `O2HTheorem`; the predicate `bad` reads the oracle value at the
+output only; the weights `μ` on the oracles satisfy the marginal bound
+`∑ H, μ H · [bad x (H x)] ≤ λ` at every `x` (`hlam`), with no further condition
+relating different points; and the oracles of nonzero weight agree with the
+reference oracle `H₀` outside their bad set (`hagree`). The reference has oracle
+values in `{0, 1}`, `bad x y = (y = 1)` and `H₀ = 0`.
 
 ## References
 

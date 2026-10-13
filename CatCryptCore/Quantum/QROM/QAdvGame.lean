@@ -36,15 +36,14 @@ probabilities (Ambainis–Hamburg–Unruh, CRYPTO 2019, §3).
 * `o2h_avg` — `|prWin G − prWin' G| ≤ 4 √(q · prFindAvg G)`
 * `o2h_avg_sq` — the squared form `|prWin G − prWin' G|² ≤ (4q)² · prFindAvg G`
 
-## Scope
+## The model
 
-The side information is a finite classical input `i : ι` with `Fintype ι`,
-sampled with weights `sample i` that sum to one as a `Finset.sum`; the
-adversary, the two oracles and the punctured set are functions of `i`; each
-adversary starts from a pure state. The averaged probabilities are the
-`Finset.sum` over `ι` weighted by `sample`. The Fujisaki–Okamoto T-transform
-hop (Hofheinz–Hövelmanns–Kiltz, TCC 2017, §4.1) is the intended instance of
-this layer and is not in this module.
+In a `QGame` the side information is a finite classical input `i : ι` with
+`Fintype ι`, sampled with weights `sample i` that sum to one as a `Finset.sum`;
+the adversary, the two oracles and the punctured set are functions of `i`; each
+adversary starts from a pure state (the field `pure`). The averaged
+probabilities `prWin`, `prWin'` and `prFindAvg` are the `Finset.sum` over `ι`
+weighted by `sample`.
 
 ## References
 

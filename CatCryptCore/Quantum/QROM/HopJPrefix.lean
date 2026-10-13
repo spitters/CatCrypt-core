@@ -62,15 +62,13 @@ orthogonal, so the guessing probabilities summed over `z` are at most one.
 * `prFindAvg_hopJ_le` — `prFindAvg (hopJGame A b) ≤ 4 q' / |Z|`
 * `hopJ`, `hopJ'` — `|prWinKEM − prWinKEM'| ≤ 4 √(q' · 4 q' / |Z|) = 8 q' / √|Z|`
 
-## Scope
+## The model
 
-This is the first hop of the U-step; the decapsulation oracle of the
-reprogrammed game still uses the secret key. The table `T` is a uniform table
-of range encodings `C → Fin n`, read through `eKR` and projected to the key as
-`J` is, so that the key the adversary sees on the prefix is uniform. The
-embedded query count is `q' = flatQ q k q = (k + 1) q`. The hops replacing
-decapsulation by the encrypt-then-hash simulation and the challenge key by a
-random key follow in their own modules.
+In `prWinKEM'` the decapsulation oracle of the reprogrammed game uses the secret
+key. The table `T` is a uniform table of range encodings `C → Fin n`, read
+through `eKR` and projected to the key as `J` is, so that the key the adversary
+sees on the prefix is uniform. The embedded query count is
+`q' = flatQ q k q = (k + 1) q`.
 
 ## References
 

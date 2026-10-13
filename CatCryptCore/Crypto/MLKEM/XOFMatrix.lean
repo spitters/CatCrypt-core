@@ -52,15 +52,15 @@ module-LWE game.
   `MLWE.advantage`; `mlwe_advantage_xofMatrix_seed_le` is the same bound for a
   distinguisher that also receives `ρ`.
 
-## Scope
+## The model
 
 The XOF is modelled as a random oracle: the outputs on the `k²` distinct inputs
 `(ρ, j, i)` are independent uniform streams, independent of `ρ`. The stream
 length `m` (in three-byte groups) is a parameter, and the result holds for every
 `m`; the non-fill probability is the quantity `nonFillProb m`, defined as a
-probability over a uniform stream. The adversary's own XOF queries are not part
-of this hop: the matrix is public, so an adversary can recompute it, and this hop
-changes only the distribution of the challenger's matrix.
+probability over a uniform stream. The hop changes the distribution of the
+challenger's matrix; the distinguisher of `gameSeed` receives `ρ` and so can
+recompute the matrix.
 -/
 
 @[expose] public section

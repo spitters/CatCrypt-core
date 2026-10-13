@@ -51,11 +51,11 @@ shared by the challenger, decapsulation and the adversary.
 4. `PKE.FOTransformT.tTransform_owpca_of_total` bounds the OW-PCA advantage of
    `uRedROM B`, which asks at most `qRO` queries.
 
-## Scope
+## The model
 
-The model is the classical random-oracle model: the adversary queries `G` and `H`
-on classical inputs. The results say nothing about adversaries with superposition
-access to the oracles (the quantum random-oracle model).
+The game `rom2INDCCAGame` is the classical random-oracle model: the adversary
+queries `G` and `H` on classical inputs, and `qRO` bounds the number of these
+queries.
 
 ## References
 

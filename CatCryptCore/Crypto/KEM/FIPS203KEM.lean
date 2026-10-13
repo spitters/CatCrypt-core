@@ -44,26 +44,22 @@ coins, a public-key hash `hpk : PK → Hash`, and two random oracles
   that holds the query of encapsulation
 * `isTUFactoring` — `fips203 P hpk` satisfies `IsTUFactoring P hpk`
 
-## Scope
+## The model
 
-* The model is the classical random-oracle model: `G` and `J` are the two lazily
-  sampled oracles of `rom2INDCCAGame`, queried on classical inputs. A quantum game
-  needs the two oracles merged into one tagged domain and is not defined here.
-* `hpk` is a fixed function. FIPS 203 computes `H(ek)` with SHA3-256; the analysis
-  treats it as a public value determined by the public key, so it is not an oracle.
-* The oracle programs query `G` and `J` only on the branch that uses the answer,
-  where FIPS 203 evaluates both hashes unconditionally. The two oracles are
-  independent, so the answers returned have the same distribution.
-* The factoring through `KEM.FOTransform.foNotBot = uNotBot[tTransform[P, G], H]`
-  does not apply as stated: `tTransform` derandomises with a single oracle `M → R`
-  independent of the public key, and `uNotBot` derives both the key `H(m, c)` and the
-  rejection value `H(s, c)` from one oracle on `M × C`. Expressing `fips203` with
-  those transforms requires (i) `tTransform` over a derandomiser `PK → M → R` whose
-  oracle also returns the key, and (ii) `uNotBot` with a key-derivation function in
-  place of `H(m, c)` and a separate oracle for rejection. `tKeyed` and `uKeyed` are
-  those two generalisations for fixed oracle functions; a security bound for them is
-  not proved here.
-* Nothing here concerns the concrete parameters of K-PKE.
+* `fips203` is a `KEM.Games.ROM2Scheme`: `G` and `J` are the two lazily sampled
+  oracles of `rom2INDCCAGame`, queried on classical inputs.
+* `hpk` is a fixed function of the public key. FIPS 203 computes `H(ek)` with
+  SHA3-256; `fips203` takes it as a public value determined by the public key.
+* The oracle programs of `fips203` query `G` and `J` only on the branch that uses
+  the answer, where FIPS 203 evaluates both hashes unconditionally. The two oracles
+  are independent, so the answers returned have the same distribution.
+* `tKeyed` is `PKE.FOTransformT.tTransform` with a derandomiser `PK → M → R` that
+  depends on the public key, and `uKeyed` is `KEM.FOTransformU.uNotBot` with a
+  key-derivation function in place of `H(m, c)` and a separate oracle `J` for
+  rejection. `isTUFactoring` identifies `fips203 P hpk` with `uKeyed[tKeyed[P, G'], J]` for
+  fixed oracle functions `g` and `j`.
+* `P` is an arbitrary scheme with explicit coins; no statement fixes K-PKE
+  parameters.
 
 ## References
 

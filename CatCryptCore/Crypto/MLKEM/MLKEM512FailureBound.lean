@@ -30,13 +30,14 @@ that theorem is the correctness error `corrWorst` of `mlkem512CompressedScheme`.
 * `hlam_lamWorst` — `lamWorst` satisfies the failure-bound hypothesis `hlam`
 * `sum_kemSample_lamWorst` — `Λ` at `lamWorst` equals `corrWorst`
 
-## Scope
+## The correctness hypothesis
 
-No value of `δ_c` is derived: FIPS 203 quotes `2^-139` from a numerical convolution
-of the noise distributions. The hypothesis
-`corrWorst ≤ decryptionFailureProb mlkem512Noise δ_c` is the single remaining
-hypothesis of both the classical (`CompressedPKE.mlkem512Compressed_indcca`) and the
-quantum (`MLKEM512QROM.mlkem512_qindcca_coll`) ML-KEM-512 theorems.
+The classical theorem `CompressedPKE.mlkem512Compressed_indcca` and the quantum
+theorem `MLKEM512QROM.mlkem512_qindcca_coll` take the correctness hypothesis
+`corrWorst ≤ decryptionFailureProb mlkem512Noise δ_c`; by `sum_kemSample_lamWorst`,
+the failure term `Λ` at `lamWorst` is that `corrWorst`. FIPS 203 states the value
+`2^-139` for the decryption-failure probability, computed by a numerical convolution
+of the noise distributions.
 
 References: Hofheinz, Hövelmanns, Kiltz, "A modular analysis of the
 Fujisaki-Okamoto transformation", TCC 2017, ePrint 2017/604 (δ-correctness as

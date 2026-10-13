@@ -33,17 +33,14 @@ basis states, which is the shape the guessing probabilities of
 * `measuresCiphertext_apply_of_ne` — a round measuring a label annihilates the
   basis states whose label differs from the outcome
 
-## Scope
+## The hypothesis
 
-Stage 1 of the numeric decapsulation hop: the measurement shape.
-`MeasuresCiphertext` is a predicate carried as a hypothesis; it is not derivable
-for the adversaries of `Quantum/QROM/KEMQuantumGame.lean`, whose `KEMQAdv.run`
-returns a `QAdvMR` with an unconstrained `rounds` field, so the label and the
-diagonal form are extra data and extra hypotheses at every use.
-
-No Prop is assumed by any theorem here, and no numeric bound is established:
-the query point of a measured ciphertext (stage 2) and the composition with
-`SparseSearch.sparse_search` (stage 3) are not in this module.
+`MeasuresCiphertext` is a predicate on a round, taken as a hypothesis by
+`roundProjS_eq_diagonal_of_measuresCiphertext` and
+`measuresCiphertext_apply_of_ne`. The `rounds` field of the `QAdvMR` returned by
+`KEMQAdv.run` of `Quantum/QROM/KEMQuantumGame.lean` is an arbitrary family of
+classical rounds, so for those adversaries the label and the diagonal form are
+supplied at each use.
 
 ## References
 

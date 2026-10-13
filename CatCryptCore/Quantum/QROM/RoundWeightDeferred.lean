@@ -29,30 +29,15 @@ projector `projS` as its final projector.
   `projS m n (ancW c j w) S'`
 * `queries_toQAdv_truncMR` — its query count is `(j + 1) * q`
 
-## Scope
+## The hypotheses
 
-The hypotheses carried are those of `roundGuessProb_eq_query_weight`:
-`MeasuresCiphertext (A.rounds j) reg` at the round in question and the set
-correspondence `∀ x, reg x ∈ S ↔ xPart m n w x ∈ S'`, together with
-`[NeZero n]` and `[NeZero c]`.
-
-The identification is with a truncated adversary, not with a plain state of
-`toQAdv A f`. The flattening merges round `j` into the head unitary at index
-`(j + 1) * q`: that entry of `mergeChain` is `B 0 * roundV * head ((j+1)*q)`,
-so `plainState (toQAdv A f) H ψ ⟨(j+1)*q⟩` is the state after the deferred
-round and after the first unitary of segment `j + 1`, while the round weight is
-the weight before them. The two differ whenever the answer unitary of the round
-moves the query register, so no plain state of `toQAdv A f` carries the
-pre-round weight.
-
-`SparseSearch.sparse_search` bounds `∑ H, μ H * prBad bad A H`, and
-`prBad bad A H` is `prOut (extend A (badSet bad H)) H`. Turning
-`prOut (toQAdv (truncMR A S' j) f) H` into that form needs `toQAdv
-(truncMR A S' j) f` exhibited as `extend A' (badSet bad H)` for some `A'`:
-a last unitary of the flattened head of the form `swapU * U`, an identity
-unitary after one further query, and a work register of the shape `m * w'`
-for the swap to typecheck. None of those is available from the data of a
-`QAdvMR`, so no numeric bound on the decapsulation hop follows here.
+The hypotheses of `roundGuessProb_eq_prOut_flatten` are those of
+`roundGuessProb_eq_query_weight`: `MeasuresCiphertext (A.rounds j) reg` at the
+round in question and the set correspondence
+`∀ x, reg x ∈ S ↔ xPart m n w x ∈ S'`, together with `[NeZero n]` and
+`[NeZero c]`. The round weight is identified with the acceptance probability of
+the truncated adversary `truncMR A S' j`, which runs `A` up to segment `j` and
+measures the query register at `S'`.
 
 ## References
 

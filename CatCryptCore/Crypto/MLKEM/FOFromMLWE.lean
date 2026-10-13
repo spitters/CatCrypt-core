@@ -42,16 +42,13 @@ replaced by its four MLWE terms.
   by eight MLWE terms of named reductions, the correctness error and the message-space
   terms of the Fujisaki–Okamoto bound
 
-## Scope
+## The model
 
-* **KEM.** The KEM is `foNotBot (toScheme P)`, `U⊥̸[T[P, G], H]` with key `H(m, c)` and
-  implicit rejection `H(s, c)`. FIPS 203 ML-KEM derives the key from `m` and the hash
-  of the public key and rejects with `J(z ‖ c)`; the statement here is not about
-  ML-KEM.
-* **Model.** The random-oracle model is classical: nothing here covers adversaries with
-  superposition access to `G` and `H`. The MLWE adversaries are classical.
-* **Coins.** The hypotheses `sampleShort_eq` and `sampleKey_eq` of
-  `MLWE_PKE_Scheme.Params` are the model of `SamplePolyCBD` over a uniform seed.
+* The KEM of `foNotBot_indcca_mlwe` is `foNotBot (toScheme P)`, `U⊥̸[T[P, G], H]` with
+  key `H(m, c)` and implicit rejection `H(s, c)`.
+* The random oracles `G` and `H` are classical, and the MLWE adversaries are classical.
+* The fields `sampleShort_eq` and `sampleKey_eq` of `MLWE_PKE_Scheme.Params` model
+  `SamplePolyCBD` over a uniform seed.
 -/
 
 @[expose] public section

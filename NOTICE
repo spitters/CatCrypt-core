@@ -1,0 +1,17 @@
+CatCrypt-core
+Copyright (c) 2026 CatCrypt Contributors
+Released under the MIT License (see LICENSE).
+
+This library depends on the following packages, which are fetched at build time
+and are not redistributed here:
+
+- Mathlib (https://github.com/leanprover-community/mathlib4), Apache License 2.0.
+- nominal-lean (https://github.com/spitters/nominal-lean), MIT License.
+
+The library follows the design of SSProve (https://github.com/SSProve/ssprove,
+MIT License), and several game definitions mirror EasyCrypt developments
+(https://github.com/EasyCrypt/easycrypt); no source code of either is included.
+
+Specifications formalised in this library are cited in the module docstrings,
+among them NIST FIPS 203, Module-Lattice-Based Key-Encapsulation Mechanism
+Standard (2024).

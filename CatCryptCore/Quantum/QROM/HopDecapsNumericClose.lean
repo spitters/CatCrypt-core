@@ -45,25 +45,13 @@ not mention the oracle table.
   probability of a chain whose unitaries and rounds do not mention the oracle
   table
 
-## Scope
+## Hypotheses
 
-The identification of the run is at the level of `mrChain`: the rounds are
-still measurement instruments, not unitaries on an enlarged register. The
-hypotheses of `prOutMR_eq_fixed_program` are those of
+The identification of the run is at the level of `mrChain`, with the rounds kept as
+measurement instruments. The hypotheses of `prOutMR_eq_fixed_program` are those of
 `MeasuredQueryRun.prOutMR_eq_compiled`: every segment unitary commutes with
 `cleanProjM`, every round of the adversary is `permRound m n w c Ans`, and the
 initial state is supported by `cleanProjM`.
-
-`GenericSearchUniform.generic_search_uniform` averages `prBad` of a single
-`QAdv`, so applying it needs the chain of `prOutMR_eq_fixed_program` flattened
-by `MultiRound.flatten` into a `QAdv` whose unitaries are the ones exhibited
-here. `flatten` takes the classical function of the rounds as a parameter and
-carries it into the merged head unitaries through `roundV`; the record copy has
-`ans = 1`, so that parameter drops out, but no lemma stating
-`flatten f k A = flatten f' k A` for rounds with `ans = 1` is available. The
-remaining steps are recorded in the module documentation of
-`Quantum/QROM/TruncExtend.lean` and `Quantum/QROM/RoundWeightDeferred.lean`;
-no numeric bound on the decapsulation hop follows from this module.
 
 ## References
 

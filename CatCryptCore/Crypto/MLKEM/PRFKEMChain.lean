@@ -49,11 +49,11 @@ oracle and holds no table.
   advantages of `redAdv` in the experiment with uniform noise, the message-space
   term, twice the `PRF_η` hop and the averaged decryption error
 
-## Scope
+## The model
 
-The scheme is `prfScheme eD kg enc dec eK id F` of `PRFAuxHop`. The bound keeps
-the weight of the tables outside `ChainGood` as a term. `PRFCoinWeak` gives the
-form without the coin condition, where the only table condition is spreadness.
+The scheme is `prfScheme eD kg enc dec eK id F` of `PRFAuxHop`. The bounds
+`avg_qINDCCAF_le` and `avg_qINDCCAF_le_ideal` carry the weight of the tables
+outside `ChainGood` as a term.
 -/
 
 @[expose] public section

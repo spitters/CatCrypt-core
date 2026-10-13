@@ -63,9 +63,6 @@ of the ML-KEM PKE.
 * `decryptionFailureProb` -- union bound over the per-coefficient failure probability
 * `fo_correctness_amplification` -- FO transform correctness amplification
 
-The combination with the CCA bound of `Security.lean`
-(`mlkem_correctness_security`) is in `CorrectnessSecurity.lean`.
-
 ## References
 
 * NIST FIPS 203 (2024): ML-KEM specification, Section 4

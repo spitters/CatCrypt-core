@@ -35,12 +35,9 @@ ML-KEM security proof. It ports the `PKE` and `PKE_ROM` theories from
 
 ### Reductions
 * `PKE.BOWp` — OW → correctness reduction
-* `PKE.OWvsIND.Bowl` — OW-list → IND reduction
-* `PKE.OWvsIND.BL` — single → list adapter
 
 ### Theorems
 * `PKE.pr_CPA_LR` — `|Pr[CPA_L] - Pr[CPA_R]| = 2|Pr[CPA] - 1/2|`
-* `PKE.ow_ind` — OW → IND reduction bound
 * `PKE.ow_perfect` — OW with/without correctness gap
 
 ## References
@@ -203,70 +200,6 @@ theorem ow_perfect (find : S.PK → S.CT → SDistr (Option S.PT)) :
   rw [h]
   simp only [UCMonad.SDistrUC.absDiffD, tsub_self, max_self]
   exact zero_le
-
-/-! ## OW vs IND Reduction -/
-
-namespace OWvsIND
-
-/-- BL: single-guess → list adapter.
-
-    EasyCrypt: `BL(A)` wraps a single-guess OW adversary into a list-returning one. -/
-noncomputable def BL (find : S.PK → S.CT → SDistr (Option S.PT)) :
-    S.PK → S.CT → SDistr (List S.PT) := fun pk c => do
-  let m' ← find pk c
-  match m' with
-  | some m => SDistr.pure [m]
-  | none => SDistr.pure []
-
-/-- Bowl: OW-list → IND-CPA reduction.
-
-    Given a list-returning OW adversary, constructs an IND-CPA adversary.
-    The choose phase picks two random messages; the guess phase checks if
-    the target message appears in the adversary's list.
-
-    EasyCrypt: `Bowl(A)`. -/
-noncomputable def Bowl (findL : S.PK → S.CT → SDistr (List S.PT)) :
-    (S.PK → SDistr (S.PT × S.PT)) × (S.CT → SDistr Bool) :=
-  (fun pk => do
-     let m0 ← SDistr.uniform S.PT
-     let m1 ← SDistr.uniform S.PT
-     SDistr.pure (m0, m1),
-   fun c => do
-     -- Bowl needs pk, but in the CPA game it's provided during choose.
-     -- In EasyCrypt, Bowl stores pk in a module variable.
-     -- Here we model this by closing over the adversary.
-     -- This is a placeholder — the actual reduction threads pk through.
-     SDistr.pure false)
-
-end OWvsIND
-
-/-- OW → IND reduction bound.
-
-    `Pr[OW_CPA(S, A)] ≤ 2(eps_msg + |Pr[CPA(S, Bowl(BL(A)))] - 1/2|) + Pr[Correctness(S, BOWp(A))]`
-
-    The bound is passed as hypothesis. The full reduction requires:
-    1. Hybrid argument over the choice of challenge message
-    2. Coupling between OW and CPA games via the Bowl reduction
-    3. Correctness gap analysis
-    In EasyCrypt, this is ~500 LOC of module-level reasoning.
-
-    EasyCrypt: `ow_ind`.
-
-    Status: assumed, not derived. The proof is `:= h`, so the conclusion
-    re-exports the hypothesis `h`. The OW≤IND reduction is moreover a stub:
-    the guess phase of `OWvsIND.Bowl` is a `SDistr.pure false` placeholder
-    (pk is not threaded through), so even the reduction adversary it
-    quantifies over is not the real one. A real derivation would need the
-    hybrid + coupling + correctness-gap argument. -/
-theorem ow_ind (find : S.PK → S.CT → SDistr (Option S.PT))
-    (ε_cpa : ℝ≥0∞) (ε_corr : ℝ≥0∞)
-    (h_cpa : CPA_Adv S (OWvsIND.Bowl S (OWvsIND.BL S find)).1
-                       (OWvsIND.Bowl S (OWvsIND.BL S find)).2 ≤ ε_cpa)
-    (h_corr : UCMonad.SDistrUC.prTrueD (Correctness_Adv S (BOWp S find)) ≤ ε_corr)
-    (h : UCMonad.SDistrUC.prTrueD (OW_CPA S find) ≤
-      2 * (eps_msg S + ε_cpa) + ε_corr) :
-    UCMonad.SDistrUC.prTrueD (OW_CPA S find) ≤
-      2 * (eps_msg S + ε_cpa) + ε_corr := h
 
 /-! ## ROM Variant -/
 

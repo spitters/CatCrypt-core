@@ -51,13 +51,12 @@ ancilla that records the outcome, so a multi-round adversary is a single-run
 * `o2h_MR`, `o2h_extraction_MR` — the one-way-to-hiding bound for multi-round
   adversaries, with the query count of `toQAdv`
 
-## Scope
+## The model
 
 Rounds are classical in the outcome and in the answer: the outcome is a
 projective measurement result `y : Fin c`, the answer is `f y : Fin a` written
 by a fixed unitary. The classical function `f` is the same in every round and
-depends only on the outcome; a round-indexed or stateful classical oracle is
-the next extension. The ancilla register `Fin c` per round is a proof device:
+depends only on the outcome. The ancilla register `Fin c` per round is a proof device:
 `runMR` never allocates it, only `toQAdv` does. The query count of `toQAdv` is
 `flatQ q k q`, which is `(k + 1) * q` written as `q + (q + ⋯ + q)`, and its work
 register is `ancW c k w`, which is `w * c ^ k` written as `(⋯((w * c) * c)⋯) * c`.

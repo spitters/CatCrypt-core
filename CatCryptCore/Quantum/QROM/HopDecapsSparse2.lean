@@ -27,23 +27,14 @@ the two projectors coincide, and the round-measurement probability
 * `roundGuessProb_eq_query_weight` — `roundGuessProb A H f S j` is the
   probability that the query register of the pre-round chain lies in `S'`
 
-## Scope
+## The hypotheses
 
-The projector-level identification only. It carries no hypothesis on the
-adversary beyond `MeasuresCiphertext` at the round in question and the set
-correspondence `∀ x, reg x ∈ S ↔ xPart m n w x ∈ S'`, and it asserts nothing
-about the query count.
-
-The sparse-search bound of `Quantum/QROM/SparseSearch.lean` is stated for the
-plain state of a `QAdv`, which is the initial state conjugated by a single
-unitary prefix. The pre-round chain of a `QAdvMR` interleaves the classical
-rounds, each a measurement instrument followed by an answer unitary, so it is
-not a unitary conjugation and `roundGuessProb` is not a `guessProb` of any
-`QAdv` on the same register. Closing that step needs a dilation of the rounds
-into unitaries on an enlarged ancilla register together with the equality of
-the dilated plain-state weight and the round-measurement weight; no such
-dilation is constructed here, and no numeric bound on the decapsulation hop
-follows from this module.
+`roundProjS_eq_projS_of_label` and `roundGuessProb_eq_query_weight` assume of
+the adversary only `MeasuresCiphertext` at the round in question, together with
+the set correspondence `∀ x, reg x ∈ S ↔ xPart m n w x ∈ S'`.
+`roundGuessProb_eq_prOut_flatten` of `Quantum/QROM/RoundWeightDeferred.lean`
+expresses the same weight as the acceptance probability of a flattened
+single-run adversary.
 
 ## References
 

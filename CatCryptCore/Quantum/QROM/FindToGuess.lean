@@ -52,12 +52,13 @@ register into the output register, and outputs it.
 * `tOw_le_qOwcpa_two` — the T transform in the QROM with both reductions
   named
 
-## Scope
+## The model
 
-Pure initial state, as in `O2HTheorem`. The guess reduction's coins include
-the oracle table (the unbounded-adversary form, as `tReduction`). The constant
-`4q` is that of Ambainis–Hamburg–Unruh, Theorem 2; `q ≠ 0` is required for
-the coin type of the reduction to be non-empty.
+The adversary's initial state is pure, as in `O2HTheorem`. The coins of
+`guessReduction` include the oracle table, as do those of `tReduction` in
+`QuantumOWCPA`. The constant `4q` of `tFind_le_qOwcpa` is that of
+Ambainis–Hamburg–Unruh, Theorem 2; the instance `[NeZero q]` makes the coin type
+`Fin q × (Fin m → Fin n)` of the reduction non-empty.
 
 ## References
 

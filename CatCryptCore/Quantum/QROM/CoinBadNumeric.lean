@@ -62,24 +62,25 @@ and the middle term is at most `δ* + ε`.
   with every correctness term numeric in `Λ` and the `Find` probability of the
   hop bounded by `4 q' (F b + δ*)` for any `F` bounding the one-wayness step
 
-## Scope
+## The hypotheses
 
 In `qINDCCA_le_find_numeric` no correctness term quantifies over every
 message. The terms `8 q' / √|Z|` and the multiples of `Λ^(1/2)` and `Λ` are
 numeric once `Λ` and the query counts are given; `Λ` is the expectation over key
 generation of a per-key bound `λ` on the worst-message decryption-failure
-fraction, carried as the hypothesis `hlam`, and no value of it is derived here.
-The parameter `ε` bounds the coin-collision weight `collWeight P` of
-`Quantum/QROM/CollisionWeight.lean`, carried as the hypothesis `hcoll` in the
-forms with suffix `_coll`; the forms without the suffix take `ε`-spreadness
-`hε`, which implies `hcoll` (`collWeight_le_of_isSpread`). The forms with
-suffix `_of_lam` carry no coin hypothesis: the `G`-table is resampled only at
-the key pairs that are `CoinGood`, and at the others `hlam` gives `λ ≥ 1`; the
-forms without the suffix also take the coin hypothesis `hcoin`. `δ*`, the weight of the inputs whose challenge
-message is outside `kemGood`, stays inside the two one-wayness terms; it is a
-failure probability of the challenge message alone, and is bounded by `Λ` in
-`deltaStar_le_Lambda` (`Quantum/QROM/DeltaStarLeLambda.lean`). The structural hypotheses `hw`, `hrounds`, `hseg`, `hinit` on the
-adversary's decapsulation rounds are those of `absDiff_winReal_resample_le`.
+fraction, carried as the hypothesis `hlam`. The parameter `ε` bounds the
+coin-collision weight `collWeight P` of `Quantum/QROM/CollisionWeight.lean`,
+carried as the hypothesis `hcoll` in the forms with suffix `_coll`; the forms
+without the suffix take `ε`-spreadness `hε`, which implies `hcoll`
+(`collWeight_le_of_isSpread`). The forms with suffix `_of_lam` carry no coin
+hypothesis: the `G`-table is resampled only at the key pairs that are
+`CoinGood`, and at the others `hlam` gives `λ ≥ 1`; the forms without the suffix
+also take the coin hypothesis `hcoin`. `δ*`, the weight of the inputs whose
+challenge message is outside `kemGood`, stays inside the two one-wayness terms;
+it is a failure probability of the challenge message alone, and
+`deltaStar_le_Lambda` (`Quantum/QROM/DeltaStarLeLambda.lean`) bounds it by `Λ`.
+The structural hypotheses `hw`, `hrounds`, `hseg`, `hinit` on the adversary's
+decapsulation rounds are those of `absDiff_winReal_resample_le`.
 -/
 
 @[expose] public section
@@ -932,10 +933,7 @@ exchange in the quantum random oracle model", PKC 2020, ePrint 2018/928, and
 Bindel, Hamburg, Hövelmanns, Hülsing, Persichetti, "Tighter proofs of CCA
 security in the quantum random oracle model", TCC 2019, ePrint 2019/590 (the
 `q √(ε + δ)` shape of the FO⊥̸ bounds built on the semi-classical
-one-way-to-hiding theorem of Ambainis, Hamburg, Unruh, CRYPTO 2019); Kuchta,
-Sakzad, Stehlé, Steinfeld, Sun, "Measure-rewind-measure: tighter quantum random
-oracle model proofs for one-way to hiding and CCA security", EUROCRYPT 2020,
-ePrint 2021/454 (the tighter alternative, not used here). -/
+one-way-to-hiding theorem of Ambainis, Hamburg, Unruh, CRYPTO 2019). -/
 theorem qINDCCA_le_find_numeric_coll [NeZero (flatQ q k q)]
     (A : KEMQAdv m₁ m₂ n w q k c a PK C K)
     (_hcoin : ∀ pk sk, P.keygen (pk, sk) ≠ 0 → ∀ m, ∃ ρ, P.dec sk (P.enc pk m ρ) = some m)

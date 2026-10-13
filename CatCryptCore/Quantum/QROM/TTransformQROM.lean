@@ -49,13 +49,12 @@ its first factor carries the adversary's output message.
 * `tOwAdvantage'_eq` — the reprogrammed game is the OW-CPA game of `P` with
   fresh coins and an oracle independent of them
 
-## Scope
+## The two remaining terms
 
-The module gives the one-way-to-hiding step only. Bounding `tOwAdvantage'` by
-the OW-CPA advantage of a quantum adversary against `P`, and `tFind` by the
-OW-CPA advantage of the adversary that measures a random query, needs a quantum
-OW-CPA game for `P` and the extraction of the found query, which `runSC` does
-not return; both belong to the next module.
+`tOwAdvantage'_eq_qOwcpa` of `Quantum/QROM/QuantumOWCPA.lean` identifies
+`tOwAdvantage'` with the quantum OW-CPA advantage of `tReduction A` against `P`,
+and `tFind_le_qOwcpa` of `Quantum/QROM/FindToGuess.lean` bounds `tFind` by `4q`
+times that of `guessReduction A`.
 
 ## References
 

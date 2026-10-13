@@ -64,13 +64,9 @@ Both `basemul_mod` and `negacyclic_modByMonic_coeff` split on
 has its expected degree, so `modByMonic_eq_self_iff` and
 `modByMonic_eq_zero_iff_dvd` apply.
 
-The *concrete* factorization `X^256 + 1 = ∏_{i<128} (X^2 - ζ_i)` over `ZMod 3329`,
-and the pairwise coprimality of those quadratics, is cyclotomic algebra
-over a specific finite field. It is the `hcop` and `hfact` hypotheses of
-`incompleteNTT` / `incompleteNTTOfModulus`, which the statements here take as
-hypotheses. `MLKEMFactorization.lean` discharges both for the ML-KEM twiddles
-`ζ_i = 17 ^ (2i + 1)` (`mlkemZeta_hcop`, `mlkemZeta_hfact`) and states the
-unconditional `mlkem_incompleteNTT_map_mul_concrete`.
+The statements about `incompleteNTT` / `incompleteNTTOfModulus` take the
+factorization `X^256 + 1 = ∏_{i<128} (X^2 - ζ_i)` over the coefficient ring and the
+pairwise coprimality of the quadratic factors as hypotheses (`hfact`, `hcop`).
 
 ## References
 

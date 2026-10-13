@@ -54,14 +54,11 @@ of key tables, and the uniform average over key tables is unchanged.
 * `prob_not_good_le` — the weight of the messages outside `Good` is the
   correctness error of the scheme
 
-## Scope
+## Use
 
-This module is the combinatorial pivot of the decapsulation hop: it is stated
-over an abstract encryption map `enc` and partial inverse `dec`, so it applies
-to the classical and the quantum game alike. No game and no quantum computation
-appears here. The game-level statement — that re-indexing leaves the averaged
-win probability unchanged, and that the two decapsulation oracles agree off the
-failure set — is the next module.
+The statements are over an abstract encryption map `enc` and partial inverse
+`dec`, so they apply to the classical and the quantum game alike. `HopDecaps`
+applies them to the decapsulation hop.
 
 ## References
 

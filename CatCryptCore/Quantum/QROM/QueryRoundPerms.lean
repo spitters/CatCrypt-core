@@ -49,11 +49,10 @@ ciphertext record `Fin c` and two parked query slots `Fin m × Fin n`.
   record slot is `r`, the chain acts on the query and work registers by
   `A (φ r (H (ν₁ r)) (H (ν₂ r)))` and returns the parked slots to `0`
 
-## Scope
+## The model
 
-Everything here is an identity of index maps: permutations of
-`Fin (m * n * (w * ancDim m n c))` and their values, with no matrix and no
-unitary. The answer family `A` is a family of permutations of the query and work
+Every result here is an identity of index maps: permutations of
+`Fin (m * n * (w * ancDim m n c))` and their values. The answer family `A` is a family of permutations of the query and work
 registers, the permutation form of the answer unitaries of a classical round.
 The oracle enters only through `oraclePerm`, and every other factor of the chain
 is independent of `H`.

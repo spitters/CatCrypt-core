@@ -33,11 +33,12 @@ adversary fixed.
 * `generic_search_off_point` — `∑ H, (n ^ m)⁻¹ · prBad (offPoint bad t) (A (H t)) H ≤
   4 (q + 1)² λ` for an adversary family `A : Fin n → QAdv _ _ _ q`
 
-## Scope
+## The hypotheses
 
-Pure initial states, as in `GenericSearchUniform`. The per-point hypotheses
-`hgood` and `hlam` are required only at the points `x ≠ t`. The adversary
-depends on the table only through its oracle and through the value `H t`.
+In `generic_search_off_point` the initial states are pure, as in
+`GenericSearchUniform`, and the per-point hypotheses `hgood` and `hlam` hold at
+the points `x ≠ t`. The adversary depends on the table only through its oracle
+and through the value `H t`.
 -/
 
 @[expose] public section

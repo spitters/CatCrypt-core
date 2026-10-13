@@ -50,7 +50,7 @@ slots `j, j + 1, …` are `0` (`SlotData.Good j`).
   normal form has the advantage of `A` and satisfies the four adversary-shape
   hypotheses `hw`, `hseg`, `hrounds`, `hinit` of `qINDCCA_le_find_numeric`
 
-## Scope
+## The registers of the normal form
 
 The work register of `nfKEM A` is `w * (a * (c * a) ^ k * ancDim …)`: one answer
 register and, for each of the `k` rounds, a slot holding the record and the

@@ -42,7 +42,7 @@ the two rows are replaced by fresh uniform rows.
   distribution to the uniform distribution, the second experiment is the IND-CPA
   experiment of the scheme with uniform key-generation seed and coins
 
-## Scope
+## The model and the proof
 
 The oracle answer at a point may read at most one row of `F`, named by `rd`; the
 hypothesis `hloc` of `absDiff_prfReal_prfIdeal` states that the answer depends on

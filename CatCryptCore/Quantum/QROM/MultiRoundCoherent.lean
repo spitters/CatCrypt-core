@@ -48,17 +48,15 @@ into the surrounding segments.
   round `roundCoh (permRoundCoh …)` agrees with the unitary `roundChainU` of the
   compiled query round
 
-## Scope
+## Registers and query count
 
 The register of `toQAdvCoh` is the register of the adversary: merging a coherent
 round allocates no ancilla and changes no dimension, so the work register `w` is
-unchanged and only the query count grows, to `flatQ q k q`. The commutation
-field of `CoherentRound` is what makes `∑ y, ans (f y) * P y` unitary; without
-it the sum need not be. The agreement of `permRoundCoh` with `roundChainU` is
-the agreement of the two matrices on the clean record-`y` slice, as in
-`roundChainU_mul_cleanRecProj`; off the clean slice the chain of a query round
-is not a controlled unitary of the record slot, so no equality of the two as
-matrices of the extended register is stated.
+unchanged and the query count becomes `flatQ q k q`. The commutation field of
+`CoherentRound` is the hypothesis under which `roundCoh_mul_conjTranspose_self`
+proves `∑ y, ans (f y) * P y` unitary. The agreement of `permRoundCoh` with
+`roundChainU` in `roundCoh_permRoundCoh_mul_cleanRecProj` is the agreement of the
+two matrices on the clean record-`y` slice, as in `roundChainU_mul_cleanRecProj`.
 
 ## References
 

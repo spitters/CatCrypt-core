@@ -64,17 +64,16 @@ off the ciphertexts of the slice are uniform and independent.
 * `hopH_cost_le` — that weight is at most the decryption-failure weight of
   `hopD`
 
-## Scope
+## The hopped decapsulation
 
-The hop is stated against `prWinKEMSim` of `Quantum/QROM/HopDecaps.lean`. By
+The hop `hopH` is stated against `prWinKEMSim` of `Quantum/QROM/HopDecaps.lean`. By
 `decapsH_eq_decapsHq` the hopped decapsulation is `decapsHq` at the table that
 is `Hq` on the image of the slice and `J(z, ·)` off it; `decapsHq` reads that
 table and `c*` only. The image is read off the coin table at every message, and
 `J(z, ·)` is part of the oracle the adversary queries in this game. By
 `sum_mergeOn` the merged table has the law of `Hq` when the rejection table is
 an independent uniform table read nowhere else, and by `sum_keyHop` `Hq` off
-the image is independent of the hopped oracle table; the game in which
-`J(z, ·)` is such a table is not constructed here.
+the image is independent of the hopped oracle table.
 
 ## References
 

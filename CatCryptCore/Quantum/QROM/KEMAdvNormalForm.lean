@@ -49,14 +49,10 @@ the IND-CCA advantage, is unchanged.
   a round that measures the record in the computational basis and answers by a
   shift, and the controlled answer `ctrlAns`
 
-## Scope
+## Rounds
 
-The rounds of `padAdv A` are the rounds of `A` tensored with the identity, so
-they are not of the form `permRound` when `A` has rounds: `permRound` measures
-the record slot of the ancilla, which `padAdv A` never touches. The hypothesis
-`hrounds` of `qINDCCA_le_find_numeric` holds for `padAdv A` only at `k = 0`.
-
-`trace_normalForm_round` is a single round on an abstract Kronecker layout
+The rounds of `padAdv A` are the rounds of `A` tensored with the identity.
+`trace_normalForm_round` treats a single round on an abstract Kronecker layout
 `d ⊗ c ⊗ a`. The multi-round form, with the record and the answer register of
 round `j` swapped into fresh work slots before round `j + 1`, and its placement
 in the `roundIndex` layout of `permRound`, is `nfKEM` in

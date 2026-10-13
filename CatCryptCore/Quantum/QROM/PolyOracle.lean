@@ -64,7 +64,7 @@ the key `Hq p` reads one.
 * `mlkem512_qindcca_qmlwe_std` — the ML-KEM-512 QROM bound under quantum
   module-LWE and extended module-LWE, with no auxiliary oracles
 
-## Scope
+## The reduction and the assumption
 
 The added cost of `qRedPoly` over the distinguisher is drawing `auxDeg q k`
 field elements per table and evaluating a polynomial of degree `< auxDeg q k`

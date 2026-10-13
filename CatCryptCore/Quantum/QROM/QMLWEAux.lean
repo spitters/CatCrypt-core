@@ -57,7 +57,7 @@ view transform of its sample and runs the distinguisher once.
   `qIndcpaAux D ≤ qMLWEAux (qRedEnc D true) + qMLWEExtAux (qRedExt D true) +
   qMLWEExtAux (qRedExt D false) + qMLWEAux (qRedEnc D false)`
 
-## Scope
+## The reductions and the assumption
 
 The code of `qRedEnc S D b` on a sample `(A, t)` is one encryption under
 `(A, t)` of the message of `D` selected by `b`, with coins it draws, followed

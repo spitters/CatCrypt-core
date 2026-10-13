@@ -53,30 +53,27 @@ challenge ciphertext excluded.
 * `prTrue_Q_le_one`, `prOutMR_le_one`, `prWinKEM_le_one` — the probabilities are
   at most one
 
-## Scope
+## The model
 
 The game models quantum access to `G` and `J` through one oracle on the tagged
 domain, classical decapsulation queries answered by `decapsFixed` on every
 ciphertext other than the challenge, and one final output bit. The number of
-rounds `k` and the queries per segment `q` are fixed by the adversary type;
-there is no adaptive query count. The oracle `J` is read through the range
-encoding `eKR : K × R ≃ Fin n` and the first projection, so that a uniform
-table gives a uniform key. The classical advantage `rom2INDCCAAdvantage` of
-`Crypto/KEM/FIPS203KEM.lean` is not related to `qINDCCAAdvantage` here.
+rounds `k` and the queries per segment `q` are parameters of the adversary type
+`KEMQAdv`. The oracle `J` is read through the range encoding
+`eKR : K × R ≃ Fin n` and the first projection, so that a uniform table gives a
+uniform key.
 
-The U-step proof makes the following hops on this game, in order, each in a
-module of its own:
+## The hops of the U-step
 
-1. `J(z, ·)` is replaced by an independent random function: `o2h_MR` on the
-   merged oracle with `S₂ = {z} × C` embedded by `Fin.natAdd`, the `Find`
-   probability bounded by the probability of guessing `z`.
-2. Decapsulation is answered by `G`-derived keys without the secret key: the
-   encrypt-then-hash simulation, exact when `P` is correct on the queried
-   ciphertexts.
-3. The challenge key is replaced by a random key: `o2h_MR` on
-   `S₁ = {(m*, hpk pk)}` embedded by `Fin.castAdd`, the `Find` probability
-   bounded by the T-transform OW-CPA advantage of
-   `Quantum/QROM/TTransformQROM.lean`.
+1. `Quantum/QROM/HopJPrefix.lean`: `J(z, ·)` is replaced by an independent
+   table; the oracles agree outside `{z} × C` embedded by `Fin.natAdd`, and the
+   `Find` probability is bounded by the probability of guessing `z`.
+2. `Quantum/QROM/HopDecaps.lean`: decapsulation is answered from the `G`-table
+   without the secret key, with the same answers on inputs whose `G`-table has
+   no decryption failure.
+3. `Quantum/QROM/HopChallengeKey.lean`: the `G`-table is reprogrammed at the
+   challenge point `eG (m*, hpk pk)`, embedded by `Fin.castAdd`, and the
+   challenge key becomes independent of the adversary's oracle.
 
 ## References
 

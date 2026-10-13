@@ -33,7 +33,7 @@ its ancilla.
   the compiled round: the deferred round agrees with `roundChainU ⊗ 1` on a
   clean state only when the record slot carries no weight away from `0`
 
-## Scope
+## The two record slots
 
 The register of `roundV e R f` is `Fin d'` with `e : Fin (d * c) ≃ Fin d'`,
 so its record ancilla is a tensor factor beyond the register `Fin d` carrying

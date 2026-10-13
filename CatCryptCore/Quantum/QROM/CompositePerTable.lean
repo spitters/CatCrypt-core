@@ -37,13 +37,14 @@ seed, challenge message and fake key, once the `J`-table is averaged.
 * `sum_J_winHJ_eq_winHq` — at a fixed `G`-table, key pair, seed, challenge
   message and fake key, the sums of `winHJ` and `winHq` over the `J`-table agree
 
-## Scope
+## The averaging
 
 In `sum_J_winHJ_eq_winHq` the `J`-table is summed: in `winHJ` the decapsulation
 answers off the image of the encryption map are the row `J(z, ·)`, in `winHq`
-they are `Hq`, and the two agree only in law. The sum over `Hq` is inside
+they are `Hq`, and the two have the same law. The sum over `Hq` is inside
 `winHJ` and `winHq`, and the sum over the table `T` reprogramming the row
-`J(z, ·)` inside `winSimJ` and `winHq`.
+`J(z, ·)` is inside `winHq` and inside `winSimJ` of
+`Quantum/QROM/KEMOwcpaReduction.lean`.
 -/
 
 @[expose] public section

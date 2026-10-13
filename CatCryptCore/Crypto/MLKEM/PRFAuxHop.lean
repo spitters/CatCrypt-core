@@ -43,11 +43,10 @@ uniform rows while the oracle keeps reading `F`.
   decrypting coin for the message: the coin hypothesis of the KEM bound does not
   hold at every table
 
-## Scope
+## The model
 
-The adversary's program is a `QAdv` with a fixed number `q` of queries. The
-IND-CPA reduction `indRed` of the KEM chain stops at a query index drawn from
-its coins, so it has a view-dependent query count and is not of this form.
+The program of a `QIndAuxPrfAdv` is a `QAdv` with a fixed number `q` of queries
+to `auxOracleF`.
 -/
 
 @[expose] public section

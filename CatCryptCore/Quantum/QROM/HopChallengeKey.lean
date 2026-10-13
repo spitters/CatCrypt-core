@@ -54,20 +54,18 @@ probability.
 * `prFindAvgK_le` — the averaged `Find` probability is at most four times the
   averaged guessing probability at the challenge point, summed over the queries
 
-## Scope
+## The proof
 
-The bound is over `prWinKEMSim`, the game of `Quantum/QROM/HopDecaps.lean`
-whose decapsulation reads the `G`-table instead of the secret key, not over
-`prWinKEM`; composing the hops `hopJ`, `hopD` and `hopK` into the U-step is a
-separate module. `prWinKEMK_indep` is unconditional, and the fact that carries
+The bound of `hopK` is over `prWinKEMSim`, the game of
+`Quantum/QROM/HopDecaps.lean` whose decapsulation reads the `G`-table instead of
+the secret key. `prWinKEMK_indep` has no hypothesis, and the fact that carries
 it is the reprogramming: the summand at a fixed fresh value depends on the key
 part of the `G`-table at the challenge point only through the challenge key,
 because `kemOracleK` overwrites that entry and `decapsSim` reads it only at the
 challenge ciphertext, where it answers with a fixed key. `hopK_o2h` rests on the
 agreement of the two oracles outside the singleton, and `hopK` on
-`prWinKEMK_indep` through the triangle inequality. `prFindAvgK_le` leaves the
-identification of the guessing probability with an OW-CPA reduction to a
-further module.
+`prWinKEMK_indep` through the triangle inequality. `prFindAvgK_le` bounds the
+averaged `Find` probability by a guessing probability at the challenge point.
 
 ## References
 

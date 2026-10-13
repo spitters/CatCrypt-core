@@ -47,23 +47,19 @@ matrix entries.
   `X = Y = Fin 2` is an involution, checked by `decide` at dimension 16 as a
   static pin of the index encoding
 
-## Scope
+## The representation
 
-The register representation costs nothing to define at any `|X|`, `|Y|`: the
-matrix is `permMatrixHom` of an `Equiv.Perm`, and unitarity and the ket action
-are proved once for every permutation, so `stdOracleRegG m n` elaborates in the
-same time at every `m`. What does scale is any reduction of the matrix: an entry
-evaluation or a `decide` over the index type visits all `m · n · n ^ m` basis
-states, which is usable at dimension 128 and not at 4096 (the measurements are
-recorded outside the source). A `Matrix (Fin 4096) (Fin 4096) ℂ` is never reduced.
-A QROM proof needs no such reduction: it needs the oracle as a unitary channel
-with the ket action above, and those are the structural facts this module
-provides at every size. The recommendation is the register form as a `QComp`
-over `Fin (m * (n * n ^ m))` for statements that quantify over the function
-register, together with the symbolic form `stdOracleFixedQ H` for the
-per-function oracle, with the purification `∑_G |G⟩` introduced in proofs and
-never evaluated — the design Heidler–Unruh (CPP 2025) use in Isabelle over an
-abstract `ell2` type.
+The matrix of each oracle is `permMatrixHom` of an `Equiv.Perm`, and unitarity
+and the ket action are proved once for every permutation
+(`permMatrix_mem_unitaryGroup`, `permUnitary_mulVec_single`), so
+`stdOracleFixedG_unitary`, `stdOracleRegG_unitary`, `stdOracleFixedG_ket` and
+`stdOracleRegG_ket` hold at every `m` and `n` without reducing a matrix. An
+entry evaluation or a `decide` over the index type visits all `m · n · n ^ m`
+basis states; the only such check in this module is
+`stdOracleRegPerm_fin2_involutive`, at dimension 16. The register form over
+`Fin (m * (n * n ^ m))` and the per-function form `stdOracleFixedQ H` follow the
+design of Heidler–Unruh (CPP 2025) in Isabelle over an abstract `ell2` type,
+with the purification `∑_G |G⟩` introduced in proofs and never evaluated.
 -/
 
 @[expose] public section

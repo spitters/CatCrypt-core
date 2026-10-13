@@ -48,14 +48,14 @@ record slot, and returns the slice to itself.
   `roundChainU` and the answer unitary of `permRound` at `queryFun … y` agree
   on the clean record-`y` slice
 
-## Scope
+## Form of the statements
 
 Every statement is about the unitary of a permutation of the extended
-register's index set; no matrix is reduced at a numeric dimension. The
-agreement with `ClassicalRound` is the agreement with its answer unitary on the
-clean record-`y` slice. The measuring round `roundU` of `MultiRound` dephases
-the record slot and `roundChainU` does not, so no equality of the two as
-`QComp` values is stated here.
+register's index set, at symbolic dimensions. The agreement with
+`ClassicalRound` in `roundChainU_mul_cleanRecProj` is the agreement with its
+answer unitary on the clean record-`y` slice; `runMRCoh_cleanLift` of
+`Quantum/QROM/CoherentCleanRun.lean` lifts it to the runs of a multi-round
+adversary.
 -/
 
 @[expose] public section

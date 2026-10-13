@@ -33,26 +33,23 @@ weight of the scheme and the query-count terms.
   `MLKEM512QROMNumeric.mlkem512_qindcca_numeric` is this bound at the proved
   collision term `collBound`.
 
-## Scope
+## The model
 
-The K-PKE is idealised in three places. The random oracle `G` returns the key
-together with the whole pseudorandom block from which the encryption noise is
-sampled, so FIPS 203's 32-byte coin `r` and `PRF_η(r, N)` are not modelled; the
-key-generation noise is drawn uniformly rather than from `PRF_η(σ, N)` with
-`(ρ, σ) := G(d ‖ k)`; and the matrix `A` is drawn uniformly rather than
-expanded as `SampleNTT(XOF(ρ))`. The bound therefore contains no PRF or XOF
-term.
+The K-PKE `CompressedPKE.mlkem512CompressedScheme` is idealised in three places:
+the random oracle `G` returns the key together with the whole pseudorandom block
+from which the encryption noise is sampled, the key-generation noise is drawn
+uniformly, and the matrix `A` is drawn uniformly. The bound contains no PRF or XOF
+term. The noise derived as `PRF_η` and the matrix expanded as `SampleNTT(XOF(ρ))`
+are treated in `PRFOracle` and `XOFMatrix`.
 
-The assumptions are:
+The hypotheses of `mlkem512_qindcca_coll` are:
 
 * module-LWE (`qMLWE`, the key-generation instance) and extended module-LWE
   (`qMLWEExt`, a `(k+1) × k` instance with the secret at `η₁` and the errors at
   `η₂`) at `mlkem512Params`, against quantum distinguishers without oracle
-  access; the four advantages in each `qMLWEStdBound` measure them, and no
-  reduction from the extended instance to the key-generation instance is proved;
+  access, as the four advantages in each `qMLWEStdBound`;
 * `hWorst : corrWorst ≤ decryptionFailureProb mlkem512Noise δ_c`, the correctness
   hypothesis of the classical theorem `CompressedPKE.mlkem512Compressed_indcca`;
-  no value of `δ_c` is derived;
 * the polynomial-oracle data `PG`, `PJ`, `PH`, `PT` for the four auxiliary tables.
   `PolyData.nonempty_galois` supplies them over `GaloisField 2 N` when the range
   sizes `|K|` and `n` are powers of two and each domain has at most `2 ^ N`

@@ -25,10 +25,9 @@ that value is bad for the key pair.
   challenge point and the value `G` takes there
 * `deltaStar_le_Lambda` — `δ* ≤ Λ`
 
-## Scope
-
-`hlam` is used at the challenge point only, and only on the support of key
-generation.
+The hypothesis `hlam` of `deltaStar_le_Lambda` bounds the bad fraction at every
+point for the key pairs in the support of `keygen`; the proof applies it at the
+challenge point.
 -/
 
 @[expose] public section

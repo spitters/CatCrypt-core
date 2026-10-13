@@ -37,18 +37,19 @@ adversary's oracle calls. The one-wayness link of the coin hop is
   each one-wayness term `qMLWEBound` at the normal form `nfKEM A` and each `δ*`
   replaced by `Λ`
 
-## Scope
+## The model
 
 The reductions are `owRedQuery` (the adversary's circuit up to a uniformly drawn
 query index, with its oracle calls kept), `indRed` (two classical message draws
 and one projector) and `qRedEnc`, `qRedExt` (one encryption or compression, then
 one run); none of them draws an oracle table or computes a distribution. The
 assumption is module-LWE against quantum distinguishers with independent
-auxiliary random oracles. `Λ`, `ε` and `hcoin` are hypotheses; no value for them
-is derived here; `MLKEM512Hypotheses` and `MLKEM512FailureBound` discharge them at
-ML-KEM-512, and `PolyOracle` simulates the auxiliary oracles by random
-low-degree polynomials to reach quantum module-LWE and extended module-LWE
-without oracle access.
+auxiliary random oracles. In `mlkem512_qindcca_qmlwe_coll` the per-key bound `Λ`
+(`lam` with `hlam`), the collision bound `ε` (`hcoll`) and the decryption
+condition `hcoin` are hypotheses; `MLKEM512Hypotheses` and `MLKEM512FailureBound`
+discharge them at ML-KEM-512, and `PolyOracle` simulates the auxiliary oracles by
+random low-degree polynomials, which reaches quantum module-LWE and extended
+module-LWE without oracle access.
 -/
 
 @[expose] public section

@@ -45,12 +45,11 @@ into the record-slot measurement, which reads no oracle, followed by
 * `compiledQueryCount` — the query count of a run with `k` rounds and segments
   of `q` queries
 
-## Scope
+## The hypotheses
 
-The agreement of the two runs is an equality of their branches at a state
-supported by `cleanProjM`, not an equality of the two `QComp` values: off the
-clean slice the answer unitary of `permRound` and `roundChainU` differ. The
-hypotheses are that every segment unitary commutes with `cleanProjM`, that
+`runMR_measured_eq_compiled` is an equality of the branches of the two runs at a
+state supported by `cleanProjM`; off the clean slice the answer unitary of
+`permRound` and `roundChainU` differ. Its hypotheses are that every segment unitary commutes with `cleanProjM`, that
 every round of the adversary is `permRound`, and that the initial state is
 supported by `cleanProjM`.
 -/

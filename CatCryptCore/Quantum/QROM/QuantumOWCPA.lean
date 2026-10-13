@@ -41,24 +41,17 @@ one-way-to-hiding step becomes a bound in terms of a named reduction.
 * `tOw_le_qOwcpa_add_find` —
   `tOwAdvantage P A ≤ qOwcpaAdvantage P (tReduction A) + 4 √(q · tFind P A)`
 
-## Scope
+## The game
 
 `qOwcpaAdvantage` is the quantum counterpart of `PKE.Games.owcpaAdvantage`: the
 key pair is drawn from `keygen`, the message `m*` and the coins `r` uniformly
 (as `tSample` does), and the win event `output = m*` is read off `winProj`.
-The two advantages are not related here; a classical adversary embeds as a
-`QAdv` with a diagonal unitary, which is not in this module. The reduction's
-coins are the whole oracle table, the unbounded-adversary form; a bounded
-reduction would draw `G` from a `2q`-wise independent family (Zhandry, CRYPTO
-2012). Bounding `tFind` by a second reduction needs the measured query, which
-`runSC` does not return; that belongs to the next module.
+The coins of `tReduction A` are the whole oracle table `G`.
 
 ## References
 
 * [Hofheinz, Hövelmanns, Kiltz — A Modular Analysis of the Fujisaki–Okamoto
   Transformation, TCC 2017], §4.1, Theorem 4.4
-* [Zhandry — Secure Identity-Based Encryption in the Quantum Random Oracle
-  Model, CRYPTO 2012], Theorem 3.1
 -/
 
 @[expose] public section

@@ -338,10 +338,8 @@ measured on the circle `ZMod q_kem`. The reduction modulo `2 ^ d` inside
 `Compress.compress_d` is included: when it wraps, `x` lies within
 `Compress.errorBound d` of `q_kem` and the decompressed value is `0`.
 
-## Scope
-
-`1 ≤ d ≤ 12`. The upper bound gives `2 ^ d / 2 < q_kem`, which is what makes the
-decompressed natural number already reduced modulo `q_kem`. It holds for every
+The hypotheses are `1 ≤ d ≤ 12`. The upper bound gives `2 ^ d / 2 < q_kem`, so the
+decompressed natural number is already reduced modulo `q_kem`. The range contains every
 FIPS 203 compression parameter: `d_u ∈ {10, 11}`, `d_v ∈ {4, 5}`, `d = 1` for the
 message encoding and `d = 12` for the 12-bit byte encoding. -/
 theorem compress_decompress_centered (d : ℕ) (hd : 1 ≤ d) (hd12 : d ≤ 12)

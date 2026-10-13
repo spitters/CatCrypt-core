@@ -17,8 +17,8 @@ OW-CPA advantage of a reduction. For the KEM adversary of
 `Quantum/QROM/KEMQuantumGame.lean` that step needs two pieces: a map from the
 challenge point of the merged oracle back to a message index, and an embedding
 of the KEM adversary's register into the register a `QOWAdv` measures. This
-module supplies the first and shows that the second does not exist for
-`QOWAdv` as stated.
+module defines the first and proves that the second exists only when `Hash` is
+a singleton and the second oracle summand is empty.
 
 ## Main definitions
 
@@ -45,13 +45,13 @@ module supplies the first and shows that the second does not exist for
 * `kem_owcpa_index_mismatch` — that equality holds only when `Hash` is a
   singleton and the second oracle summand is empty
 
-## Scope
+## The point map and the register embedding
 
-The point map is unconditional: it is the `Fin.addCases` inverse of the left
-tagging, and the singleton identification of the hop's punctured set is an
-identity of `Finset`s.
+The point map `kemPtMsg` is the `Fin.addCases` inverse of the left tagging, and
+`mergeSet_kemPt_eq_singleton` is an identity of `Finset`s; neither has a
+hypothesis.
 
-The register embedding is not constructed. `QOWAdv m n w PK C` of
+`QOWAdv m n w PK C` of
 `Quantum/QROM/QuantumOWCPA.lean` identifies three index ranges: the oracle
 domain, the target-message range of `run`, and the output factor of the work
 register `Fin (m * w)`, on which `final_eq` pins the final projector to
@@ -64,16 +64,6 @@ that is a permutation of the index type: equal total dimension and, since a
 unitary conjugation preserves the trace, equal projector trace. Together these
 give `m₁ + m₂ = m`, which by `kem_owcpa_index_mismatch` holds only when
 `Fintype.card Hash = 1` and `m₂ = 0`.
-
-A formulation of the OW-CPA adversary that would admit the embedding has to
-separate the three ranges: an oracle domain `Fin d`, a target-message range
-`Fin m` with an injection `Fin m → Fin d` recording where the challenge point
-sits, a work register `Fin W` unconstrained by `d`, and a final projector read
-off the measured query register rather than an output factor of the work
-register — that is, `projS d n W {t}` in place of `winProj m n w x`, with the
-win condition `kemPtMsg` of the measured query equalling the target index. With
-the projector on the query register, the swap of `FindToGuess.swapU` is not
-needed and the prefix adversary is already the required `0`-query adversary.
 
 ## References
 

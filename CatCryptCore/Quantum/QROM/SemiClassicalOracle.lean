@@ -55,18 +55,15 @@ produces.
 * `scOracleQ_branch_false_congr`, `runSC_branch_find_false_congr` — the
   `find = false` branch of the semi-classical run is the same for `H` and `H'`
 
-## Scope
+## The model
 
-Modelled: a fixed-function oracle `H : Fin m → Fin n` as the symbolic
-per-function unitary, one query register `Fin m × Fin n`, one work register
-`Fin w`, an adversary alternating unitaries with oracle calls a fixed number of
-times, and a classical output read by one final projective measurement. The
-initial state is a field of the adversary, not an input to the run.
-
-Not modelled: a function register (no `∑_G |G⟩` purification is reduced here),
-an adaptive query count, auxiliary input beyond the adversary's initial state,
-and mixed classical control between queries. The O2H bound itself is the next
-module; this one provides the run-level identities it needs.
+The oracle is a fixed function `H : Fin m → Fin n`, applied as the symbolic
+per-function unitary `oracleU m n w H`, on one query register `Fin m × Fin n`
+and one work register `Fin w`. A `QAdv m n w q` alternates `q + 1` unitaries
+with `q` oracle calls and produces a classical output by one final projective
+measurement; its initial state is a field of the adversary. The O2H bound of
+`Quantum/QROM/O2HTheorem.lean` is proved from the run-level identities of this
+module.
 
 ## References
 

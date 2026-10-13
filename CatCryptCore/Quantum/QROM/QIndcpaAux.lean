@@ -43,7 +43,7 @@ of a reduction that keeps its oracle calls.
 * `qOwcpaAux_le_qIndcpaAux` —
   `qOwcpaAux B ≤ qIndcpaAux (indRed B) + |M|⁻¹ + corrErr P`
 
-## Scope
+## The reduction
 
 The code of `indRed B` is the code of `B`, two uniform classical message draws
 and one projector on the query register, the preimage of the second message

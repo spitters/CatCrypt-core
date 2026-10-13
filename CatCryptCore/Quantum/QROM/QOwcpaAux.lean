@@ -42,7 +42,7 @@ the challenger owns the random-oracle tables and the adversary queries them.
 * `prFindCoin_le_qOwcpaAux` —
   `prFindCoin A b ≤ 4 q' (qOwcpaAux (owRedQuery A b) + δ*)`
 
-## Scope
+## The reduction and the game
 
 The code of `owRedQuery A b` is the unitaries of `A`, its oracle calls to the
 challenger's merged oracle, its classical rounds, and one measurement of the
@@ -56,8 +56,8 @@ at `c*`, which the game hands to the adversary as the answer of one classical
 query. The merged oracle `auxOracle` evaluates `G`, `Hq`, `J`, `T` and one
 encryption at the queried point. The query-register measurement of the
 truncated deferred run is the game's definition of the adversary's output;
-`QOwcpaAuxMeasured.qOwcpaAux_eq_measured` identifies it with the run whose
-decapsulation rounds are measured.
+`qOwcpaAux_eq_measured` (`Quantum/QROM/QOwcpaAuxMeasured.lean`) identifies it
+with the run whose decapsulation rounds are measured.
 
 `δ*` is the weight of the inputs whose challenge message is outside `kemGood`.
 
