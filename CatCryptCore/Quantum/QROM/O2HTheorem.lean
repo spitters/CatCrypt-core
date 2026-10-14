@@ -700,4 +700,177 @@ theorem o2h_extraction_of_QAdv (A : QAdv m n w q) (H H' : Fin m → Fin n) (S : 
 
 end O2H
 
+/-! ## The O2H inequality for a mixed initial state -/
+
+section O2HMixed
+
+/-- A positive semidefinite matrix is a sum of rank-one matrices `ψₖ ψₖ†`, with
+    `ψₖ = √λₖ uₖ` for the eigenvalues `λₖ` and the unit eigenvectors `uₖ`. -/
+theorem exists_eq_sum_vecMulVec_of_posSemidef {d : ℕ} {ρ : Matrix (Fin d) (Fin d) ℂ}
+    (hρ : ρ.PosSemidef) :
+    ∃ ψ : Fin d → Fin d → ℂ, ρ = ∑ k, vecMulVec (ψ k) (star (ψ k)) := by
+  set U : Matrix (Fin d) (Fin d) ℂ := ↑hρ.isHermitian.eigenvectorUnitary
+  set ev := hρ.isHermitian.eigenvalues
+  have hs : ρ = U * diagonal (Complex.ofReal ∘ ev) * star U := by
+    have hs := hρ.isHermitian.spectral_theorem
+    simp only [Unitary.conjStarAlgAut_apply] at hs
+    convert hs using 1
+    rfl
+  refine ⟨fun k a => U a k * (Real.sqrt (ev k) : ℂ), ?_⟩
+  rw [hs]
+  ext a b
+  rw [Matrix.sum_apply, Matrix.mul_apply]
+  refine Finset.sum_congr rfl fun k _ => ?_
+  rw [Matrix.mul_diagonal, star_apply, vecMulVec_apply]
+  simp only [Function.comp_apply, Pi.star_apply]
+  have h : (ev k : ℂ) = (Real.sqrt (ev k) : ℂ) * (Real.sqrt (ev k) : ℂ) := by
+    exact_mod_cast (Real.mul_self_sqrt (hρ.eigenvalues_nonneg k)).symm
+  rw [h, star_mul', Complex.star_def, Complex.conj_ofReal]
+  ring
+
+/-- The trace of a conjugated sum of rank-one matrices is the sum of the
+    squared norms of the images. -/
+theorem trace_mul_sum_vecMulVec_mul_conjTranspose {d : ℕ} {ι : Type} [Fintype ι]
+    (X : Matrix (Fin d) (Fin d) ℂ) (ψ : ι → Fin d → ℂ) :
+    (X * (∑ k, vecMulVec (ψ k) (star (ψ k))) * Xᴴ).trace =
+      ((∑ k, nrm (X *ᵥ ψ k) ^ 2 : ℝ) : ℂ) := by
+  rw [Finset.mul_sum, Finset.sum_mul, trace_sum, Complex.ofReal_sum]
+  exact Finset.sum_congr rfl fun k _ => trace_mul_vecMulVec_star_mul_conjTranspose X (ψ k)
+
+variable {m n w q : ℕ} [NeZero n]
+
+/-- The core inequality for a vector `ψ` of any norm:
+    `|‖M R ψ‖² − ‖M S ψ‖²| ≤ 2 ‖ψ‖ √(q · ∑ᵢ ‖Π θᵢ‖²)`. -/
+theorem abs_nrm_sq_sub_le_nrm_mul_sqrt (A : QAdv m n w q) (H : Fin m → Fin n)
+    (S : Finset (Fin m)) (ψ : Fin (m * n * w) → ℂ) :
+    |nrm (A.final *ᵥ (runOp A H *ᵥ ψ)) ^ 2 - nrm (A.final *ᵥ (scOp A H S *ᵥ ψ)) ^ 2| ≤
+      2 * nrm ψ *
+        Real.sqrt ((q : ℝ) * ∑ i, nrm (projS m n w S *ᵥ scState A H S ψ i) ^ 2) := by
+  have hI := A.final_mul_self
+  have hH := A.final_conjTranspose
+  have hO := (oracleU m n w H).prop
+  have hPI := projS_mul_self m n w S
+  have hPH := projS_conjTranspose m n w S
+  set a := A.final *ᵥ (runOp A H *ᵥ ψ)
+  set b := A.final *ᵥ (scOp A H S *ᵥ ψ)
+  have ha : nrm a ≤ nrm ψ := by
+    calc nrm a ≤ nrm (runOp A H *ᵥ ψ) := nrm_proj_mulVec_le hI hH _
+      _ = nrm ψ := by
+        unfold runOp
+        rw [nrm_chainOp_mulVec_eq _ (nrm_mulVec_of_mem_unitaryGroup hO)]
+  have hb : nrm b ≤ nrm ψ := by
+    calc nrm b ≤ nrm (scOp A H S *ᵥ ψ) := nrm_proj_mulVec_le hI hH _
+      _ ≤ nrm ψ := by
+        unfold scOp
+        refine nrm_chainOp_mulVec_le _ (fun v => ?_) q A.U ψ
+        rw [← mulVec_mulVec, nrm_mulVec_of_mem_unitaryGroup hO]
+        exact nrm_proj_mulVec_le (P := 1 - projS m n w S)
+          (by simp only [sub_mul, mul_sub, one_mul, mul_one, hPI]; abel)
+          (by rw [conjTranspose_sub, conjTranspose_one, hPH]) v
+  have hab : nrm (a - b) ≤ ∑ i, nrm (projS m n w S *ᵥ scState A H S ψ i) := by
+    calc nrm (a - b) = nrm (A.final *ᵥ (runOp A H *ᵥ ψ - scOp A H S *ᵥ ψ)) := by
+          simp only [a, b, mulVec_sub]
+      _ ≤ nrm (runOp A H *ᵥ ψ - scOp A H S *ᵥ ψ) := nrm_proj_mulVec_le hI hH _
+      _ ≤ _ := nrm_chainOp_sub_le (projS m n w S) hO q A.U ψ
+  have hcs := sum_le_sqrt_card_mul_sum_sq (fun i => nrm (projS m n w S *ᵥ scState A H S ψ i))
+    (fun i => nrm_nonneg _)
+  rw [Fintype.card_fin] at hcs
+  have hψ := nrm_nonneg ψ
+  calc |nrm a ^ 2 - nrm b ^ 2| ≤ nrm (a - b) * (nrm a + nrm b) := abs_nrm_sq_sub_nrm_sq_le a b
+    _ ≤ nrm (a - b) * (2 * nrm ψ) := mul_le_mul_of_nonneg_left (by linarith) (nrm_nonneg _)
+    _ ≤ (∑ i, nrm (projS m n w S *ᵥ scState A H S ψ i)) * (2 * nrm ψ) := by gcongr
+    _ ≤ Real.sqrt ((q : ℝ) * ∑ i, nrm (projS m n w S *ᵥ scState A H S ψ i) ^ 2) *
+          (2 * nrm ψ) := by gcongr
+    _ = _ := by ring
+
+/-- The semi-classical one-way-to-hiding bound (Ambainis–Hamburg–Unruh,
+    CRYPTO 2019, Theorem 1, the `Pr[out = 1 ∧ ¬Find]` form) for an arbitrary
+    initial density matrix:
+    `|Pr[out = 1 : A^H] − Pr[out = 1 ∧ ¬Find : A^{H \ S}]| ≤ 2 √(q · Pr[Find])`.
+    The initial state is a sum `∑ₖ ψₖ ψₖ†` with `∑ₖ ‖ψₖ‖² = 1`; the three
+    probabilities are the sums of their values on the `ψₖ`, and Cauchy–Schwarz
+    over `k` combines the bounds of `abs_nrm_sq_sub_le_nrm_mul_sqrt`.
+
+    References: Ambainis, Hamburg, Unruh, "Quantum security proofs using
+    semi-classical oracles", CRYPTO 2019, ePrint 2018/904, Theorem 1. -/
+theorem o2h_semiclassical_mixed (A : QAdv m n w q) (H : Fin m → Fin n) (S : Finset (Fin m)) :
+    absDiff (prOut A H) (prOutNoFind A H S) ≤
+      2 * ((q : ℝ≥0∞) * prFind A H S) ^ (1 / 2 : ℝ) := by
+  obtain ⟨ψ, hρ⟩ := exists_eq_sum_vecMulVec_of_posSemidef A.init.psd
+  set C := chainOp ((oracleU m n w H : Matrix _ _ ℂ) * (1 - projS m n w S)) q A.U
+  have hout : prOut A H =
+      ENNReal.ofReal (∑ k, nrm (A.final *ᵥ (runOp A H *ᵥ ψ k)) ^ 2) := by
+    unfold prOut prTrue_Q
+    rw [run_branch_true, hρ, trace_mul_sum_vecMulVec_mul_conjTranspose, Complex.ofReal_re]
+    simp only [mulVec_mulVec]
+  have hnf : prOutNoFind A H S =
+      ENNReal.ofReal (∑ k, nrm (A.final *ᵥ (scOp A H S *ᵥ ψ k)) ^ 2) := by
+    rw [prOutNoFind_eq_trace, scChain_branch_false_eq]
+    have : A.final * (C * A.init.val * Cᴴ) * A.final =
+        (A.final * scOp A H S) * A.init.val * (A.final * scOp A H S)ᴴ := by
+      rw [conjTranspose_mul, A.final_conjTranspose]
+      simp only [C, scOp, Matrix.mul_assoc]
+    rw [this, hρ, trace_mul_sum_vecMulVec_mul_conjTranspose, Complex.ofReal_re]
+    simp only [mulVec_mulVec]
+  have htr : (∑ k, vecMulVec (ψ k) (star (ψ k))).trace = ((∑ k, nrm (ψ k) ^ 2 : ℝ) : ℂ) := by
+    rw [trace_sum, Complex.ofReal_sum]
+    exact Finset.sum_congr rfl fun k _ => by rw [trace_vecMulVec, dotProduct_star_self]
+  have hnorm : ∑ k, nrm (ψ k) ^ 2 = 1 := by
+    have h := A.init.tr_one
+    rw [hρ, htr] at h
+    exact_mod_cast h
+  have hfind : prFind A H S =
+      ENNReal.ofReal (∑ k, ∑ i, nrm (projS m n w S *ᵥ scState A H S (ψ k) i) ^ 2) := by
+    rw [prFind_eq_trace]
+    congr 1
+    have htp := scChain_trace_add (scOracleQ m n w H S) (scOracleQ_trace_add H S) q A.U
+      A.init.val
+    rw [scChain_branch_false_eq, hρ, trace_mul_sum_vecMulVec_mul_conjTranspose, htr] at htp
+    have hpy : ∀ k, nrm (C *ᵥ ψ k) ^ 2 +
+        ∑ i, nrm (projS m n w S *ᵥ scState A H S (ψ k) i) ^ 2 = nrm (ψ k) ^ 2 := fun k =>
+      nrm_sq_chainOp_add_sum_nrm_sq_scStates (oracleU m n w H).prop
+        (projS_mul_self m n w S) (projS_conjTranspose m n w S) q A.U (ψ k)
+    have hsum : ((∑ k, nrm (C *ᵥ ψ k) ^ 2 : ℝ) : ℂ) +
+        ((∑ k, ∑ i, nrm (projS m n w S *ᵥ scState A H S (ψ k) i) ^ 2 : ℝ) : ℂ) =
+        ((∑ k, nrm (ψ k) ^ 2 : ℝ) : ℂ) := by
+      rw [← Finset.sum_congr rfl fun k _ => hpy k, Finset.sum_add_distrib]
+      push_cast
+      ring
+    rw [hρ]
+    have hre : ((scChain (scOracleQ m n w H S) q A.U).branch true
+        (∑ k, vecMulVec (ψ k) (star (ψ k)))).trace =
+        ((∑ k, ∑ i, nrm (projS m n w S *ᵥ scState A H S (ψ k) i) ^ 2 : ℝ) : ℂ) := by
+      linear_combination htp - hsum
+    rw [hre, Complex.ofReal_re]
+  have hF : ∀ k, 0 ≤ ∑ i, nrm (projS m n w S *ᵥ scState A H S (ψ k) i) ^ 2 := fun k =>
+    Finset.sum_nonneg fun i _ => sq_nonneg _
+  rw [hout, hnf, hfind, ← ofReal_two_mul_sqrt (Finset.sum_nonneg fun k _ => hF k)]
+  refine (absDiff_ofReal_le (Finset.sum_nonneg fun k _ => sq_nonneg _)
+    (Finset.sum_nonneg fun k _ => sq_nonneg _)).trans (ENNReal.ofReal_le_ofReal ?_)
+  calc |∑ k, nrm (A.final *ᵥ (runOp A H *ᵥ ψ k)) ^ 2 -
+        ∑ k, nrm (A.final *ᵥ (scOp A H S *ᵥ ψ k)) ^ 2|
+      = |∑ k, (nrm (A.final *ᵥ (runOp A H *ᵥ ψ k)) ^ 2 -
+          nrm (A.final *ᵥ (scOp A H S *ᵥ ψ k)) ^ 2)| := by rw [Finset.sum_sub_distrib]
+    _ ≤ ∑ k, |nrm (A.final *ᵥ (runOp A H *ᵥ ψ k)) ^ 2 -
+          nrm (A.final *ᵥ (scOp A H S *ᵥ ψ k)) ^ 2| := Finset.abs_sum_le_sum_abs _ _
+    _ ≤ ∑ k, 2 * nrm (ψ k) * Real.sqrt ((q : ℝ) *
+          ∑ i, nrm (projS m n w S *ᵥ scState A H S (ψ k) i) ^ 2) :=
+        Finset.sum_le_sum fun k _ => abs_nrm_sq_sub_le_nrm_mul_sqrt A H S (ψ k)
+    _ = 2 * ∑ k, nrm (ψ k) * Real.sqrt ((q : ℝ) *
+          ∑ i, nrm (projS m n w S *ᵥ scState A H S (ψ k) i) ^ 2) := by
+        rw [Finset.mul_sum]
+        simp only [mul_assoc]
+    _ ≤ 2 * (Real.sqrt (∑ k, nrm (ψ k) ^ 2) * Real.sqrt (∑ k, Real.sqrt ((q : ℝ) *
+          ∑ i, nrm (projS m n w S *ᵥ scState A H S (ψ k) i) ^ 2) ^ 2)) := by
+        gcongr
+        exact Real.sum_mul_le_sqrt_mul_sqrt _ _ _
+    _ = 2 * Real.sqrt ((q : ℝ) *
+          ∑ k, ∑ i, nrm (projS m n w S *ᵥ scState A H S (ψ k) i) ^ 2) := by
+        rw [hnorm, Real.sqrt_one, one_mul, Finset.mul_sum]
+        congr 2
+        exact Finset.sum_congr rfl fun k _ =>
+          Real.sq_sqrt (mul_nonneg (Nat.cast_nonneg _) (hF k))
+
+end O2HMixed
+
 end CatCrypt.Quantum.QROM
