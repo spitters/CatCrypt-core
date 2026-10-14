@@ -22,7 +22,8 @@ is equivalent to UC emulation, for single-shot systems: the honest interfaces ar
 one input, the adversary interface receives one leak and sends nothing, and the converter
 post-processes that leak. For interactive systems the corresponding equivalence is that of
 strong simulatability with UC (Küsters, Datta, Mitchell, Ramanathan, "On the Relationships
-between Notions of Simulation-Based Security", J. Cryptology 21(4), 2008, Def. 6, Thm. 10).
+between Notions of Simulation-Based Security", J. Cryptology 21(4), 2008, Def. 6, Thm. 16; the direction from UC to strong simulatability
+holds for network-predictable protocols).
 Maurer and Renner ("Abstract Cryptography", ICS 2011, App. C.1) remark on the relation between
 the two frameworks.
 

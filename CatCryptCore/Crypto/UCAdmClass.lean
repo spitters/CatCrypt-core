@@ -27,9 +27,8 @@ The `UCAdmClass` axioms (closed under pure, bind, mapSum) make admissible
 arrows a **wide subcategory** of the Kleisli category Kl(T). This reading is ours. It
 abstracts the closure properties shared by the characterisations of polynomial time in
 implicit computational complexity (Bellantoni–Cook safe recursion, bounded linear logic,
-soft affine logic; surveyed in Atkey, POPL 2024, §2 and Related Work). In bounded linear
-logic the exponential `!_p` is a graded linear exponential comonad (Katsumata, FoSSaCS
-2018). The table below is an analogy.
+soft affine logic; surveyed in Atkey, POPL 2024, §2 and Related Work). Graded linear exponential comonads give a categorical semantics of the indexed
+exponential `!_r`, which originates in bounded linear logic (Katsumata, FoSSaCS 2018). The table below is an analogy.
 
 | ICC Framework        | "Admissible arrows"         | Our abstraction         |
 |----------------------|-----------------------------|-------------------------|
@@ -60,7 +59,7 @@ logic the exponential `!_p` is a graded linear exponential comonad (Katsumata, F
   instances; its computational UC (Def. 3) bounds the adversary as well. The numbering of
   the levels is ours.
 * Katsumata, "A Double Category Theoretic Analysis of Graded Linear Exponential Comonads",
-  FoSSaCS 2018 — `!_p` of bounded linear logic as a graded linear exponential comonad
+  FoSSaCS 2018 — categorical semantics of the indexed exponential `!_r`
 * Atkey, "Polynomial Time and Dependent Types", POPL 2024 — §2 and Related Work survey the
   linear-typing characterisations of polynomial time
 -/

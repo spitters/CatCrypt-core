@@ -38,7 +38,7 @@ binding `μ_bind_mono` imply the Eilenberg–Moore multiplication law, and `wp_b
 holds for every instance: it is the functoriality of Hasuo's predicate transformer
 (Prop. 2.6, Thm. 2.14). Jacobs' state-and-effect triangles place such predicate
 transformers, `Kl(T) → P^op`, beside state transformers into the Eilenberg–Moore
-category (§2, triangle (2.3)). The Lean interface follows the ordered monad
+category (§2, Corollary 2, triangle (2.2)). The Lean interface follows the ordered monad
 algebras of Loom (Def. 3.2, the class `MAlgOrdered`), so an
 `MAlgOrdered SDistr ℝ≥0∞` instance is derived from this file's instance.
 
