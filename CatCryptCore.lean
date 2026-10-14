@@ -190,6 +190,9 @@ public import CatCryptCore.Quantum.CPMap
 public import CatCryptCore.Quantum.Measurement
 public import CatCryptCore.Quantum.TensorProduct
 public import CatCryptCore.Quantum.KroneckerPSD
+public import CatCryptCore.Quantum.ChoiKraus
+public import CatCryptCore.Quantum.PartialTrace
+public import CatCryptCore.Quantum.Stinespring
 
 -- Quantum random-oracle model: semi-classical one-way to hiding, KEM games and hops
 public import CatCryptCore.Quantum.QROM.CoherentCleanRun
