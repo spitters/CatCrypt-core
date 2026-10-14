@@ -194,6 +194,19 @@ public import CatCryptCore.Quantum.ChoiKraus
 public import CatCryptCore.Quantum.PartialTrace
 public import CatCryptCore.Quantum.Stinespring
 
+-- Quantum distinguishing distance, diamond norm, classical lifts, quantum relational Hoare logic
+public import CatCryptCore.Quantum.QRHL
+public import CatCryptCore.Quantum.ClassicalEmbed
+public import CatCryptCore.Quantum.ClassicalLift
+public import CatCryptCore.Quantum.ClassicalDiamondLift
+public import CatCryptCore.Crypto.UCMonad.QuantumUC
+public import CatCryptCore.Crypto.UCMonad.LocalOpFunctorial
+public import CatCryptCore.Crypto.UCMonad.DiamondNormStates
+public import CatCryptCore.Crypto.UCMonad.DiamondNorm
+public import CatCryptCore.Crypto.UCMonad.DiamondDominates
+public import CatCryptCore.Crypto.UCMonad.DiamondTensorStable
+public import CatCryptCore.Crypto.UCMonad.QIndistDiamond
+
 -- Quantum random-oracle model: semi-classical one-way to hiding, KEM games and hops
 public import CatCryptCore.Quantum.QROM.CoherentCleanRun
 public import CatCryptCore.Quantum.QROM.CoinBadNumeric
