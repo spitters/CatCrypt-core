@@ -216,6 +216,7 @@ public import CatCryptCore.Quantum.QROM.CoinBadNumeric
 public import CatCryptCore.Quantum.QROM.CollisionWeight
 public import CatCryptCore.Quantum.QROM.CompositePerTable
 public import CatCryptCore.Quantum.QROM.DeltaStarLeLambda
+public import CatCryptCore.Quantum.QROM.FindToGuessGeneral
 public import CatCryptCore.Quantum.QROM.FindToGuess
 public import CatCryptCore.Quantum.QROM.GenericSearchUniform
 public import CatCryptCore.Quantum.QROM.HopChallengeKey

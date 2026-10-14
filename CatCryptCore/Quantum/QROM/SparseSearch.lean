@@ -5,7 +5,7 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import CatCryptCore.Quantum.QROM.FindToGuess
+public import CatCryptCore.Quantum.QROM.FindToGuessGeneral
 
 /-!
 # Search in an unstructured function

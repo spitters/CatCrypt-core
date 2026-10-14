@@ -6,6 +6,7 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Quantum.QROM.TTransformQROM
+public import CatCryptCore.Quantum.QROM.FindToGuessGeneral
 
 /-!
 # The quantum OW-CPA game and the T-transform reduction
@@ -17,13 +18,12 @@ challenge. An adversary of this library is unbounded, so the reduction samples
 unitaries; the resulting adversary makes no oracle query. This module defines
 the quantum OW-CPA game for adversaries with internal randomness and proves
 that `tOwAdvantage'` is that game at the absorbing reduction, so the
-one-way-to-hiding step becomes a bound in terms of a named reduction.
+one-way-to-hiding step becomes a bound in terms of a named reduction. The
+absorbing adversary `absorbOracle A G` and its unitary `absorbU` are defined in
+`Quantum/QROM/FindToGuessGeneral.lean`.
 
 ## Main definitions
 
-* `absorbU G q U` — the unitary `U_q O_G U_{q-1} ⋯ O_G U_0`
-* `absorbOracle A G` — the `0`-query adversary with the single unitary
-  `absorbU G q A.U`, the initial state and the final projector of `A`
 * `QOWAdv m n w PK C` — a quantum OW-CPA adversary with internal randomness:
   a finite coin type with a weight summing to one, and at each coin a
   `0`-query adversary for each public key, challenge ciphertext and target
@@ -34,9 +34,6 @@ one-way-to-hiding step becomes a bound in terms of a named reduction.
 
 ## Main results
 
-* `absorbU_val` — the value of `absorbU` is `chainOp (oracleU G)`
-* `prOut_absorbOracle` — the absorbed adversary wins as `A` does against `G`,
-  whatever oracle it is run against
 * `tOwAdvantage'_eq_qOwcpa` — `tOwAdvantage' P A = qOwcpaAdvantage P (tReduction A)`
 * `tOw_le_qOwcpa_add_find` —
   `tOwAdvantage P A ≤ qOwcpaAdvantage P (tReduction A) + 4 √(q · tFind P A)`
@@ -65,65 +62,6 @@ open CatCrypt.Crypto.PKE.Games (Scheme)
 noncomputable section
 
 namespace CatCrypt.Quantum.QROM
-
-/-! ## Absorbing the oracle into the adversary's unitaries -/
-
-section Absorb
-
-variable {m n w q : ℕ} [NeZero n]
-
-/-- The unitary `U_q O_G U_{q-1} ⋯ O_G U_0` of a `q`-query adversary with the
-    standard oracle for `G` at each query. -/
-def absorbU (G : Fin m → Fin n) :
-    (q : ℕ) → (Fin (q + 1) → Matrix.unitaryGroup (Fin (m * n * w)) ℂ) →
-      Matrix.unitaryGroup (Fin (m * n * w)) ℂ
-  | 0, U => U 0
-  | q + 1, U => absorbU G q (Fin.tail U) * oracleU m n w G * U 0
-
-/-- The value of `absorbU` is the chain operator of the oracle unitary. -/
-theorem absorbU_val (G : Fin m → Fin n) (q : ℕ)
-    (U : Fin (q + 1) → Matrix.unitaryGroup (Fin (m * n * w)) ℂ) :
-    (absorbU G q U : Matrix (Fin (m * n * w)) (Fin (m * n * w)) ℂ) =
-      chainOp (oracleU m n w G : Matrix _ _ ℂ) q U := by
-  induction q with
-  | zero => rfl
-  | succ q ih => simp only [absorbU, chainOp, Submonoid.coe_mul, ih]
-
-/-- The `0`-query adversary with the single unitary `absorbU G q A.U`, the
-    initial state and the final projector of `A`. -/
-def absorbOracle (A : QAdv m n w q) (G : Fin m → Fin n) : QAdv m n w 0 where
-  U _ := absorbU G q A.U
-  init := A.init
-  final := A.final
-  final_conjTranspose := A.final_conjTranspose
-  final_mul_self := A.final_mul_self
-
-/-- The run operator of a `0`-query adversary is its unitary, whatever the
-    oracle. -/
-theorem runOp_zero (A : QAdv m n w 0) (H : Fin m → Fin n) :
-    runOp A H = (A.U 0 : Matrix _ _ ℂ) := rfl
-
-/-- The run operator of the absorbed adversary is the run operator of `A`
-    against `G`. -/
-theorem runOp_absorbOracle (A : QAdv m n w q) (G H : Fin m → Fin n) :
-    runOp (absorbOracle A G) H = runOp A G := by
-  rw [runOp_zero]
-  exact absorbU_val G q A.U
-
-/-- A `0`-query adversary wins with the same probability against every oracle. -/
-theorem prOut_zero (A : QAdv m n w 0) (H H' : Fin m → Fin n) : prOut A H = prOut A H' := by
-  unfold prOut prTrue_Q
-  rw [run_branch_true, run_branch_true, runOp_zero, runOp_zero]
-
-/-- The absorbed adversary wins, against any oracle, with the probability of
-    `A` against `G`. -/
-theorem prOut_absorbOracle (A : QAdv m n w q) (G H : Fin m → Fin n) :
-    prOut (absorbOracle A G) H = prOut A G := by
-  unfold prOut prTrue_Q
-  rw [run_branch_true, run_branch_true, runOp_absorbOracle]
-  simp only [absorbOracle]
-
-end Absorb
 
 /-! ## The quantum OW-CPA adversary and game -/
 
