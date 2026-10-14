@@ -94,3 +94,52 @@ the task does not allow.
 * Time: building `CatCryptCore.Unary.ExpectationVCGen` from source took 40 min (2696 jobs,
   4 cores). The full run, from setup to the report, took about 65 min. A rebuild of the new
   module alone takes about 5 s.
+
+## Second cloud run: loop invariants through `forIn`
+
+A second run of the same scheduled task worked in parallel. It reached the same results for
+the five non-loop theorems, and its version was pushed after the first run's commit above, so
+the first run's file is kept unchanged. This section adds only what the second run found
+about loop invariants. The new module is `CatCryptCore/Unary/ExpectationVCGenLoops.lean`.
+It is a Lean `module`, which works with `import all CatCryptCore.Unary.ExpectedCost`; that
+import gives access to the bodies of `ecost`, `CostComp.bind` and `retryN`.
+
+`vcgen` can carry a loop invariant for these two theorems once the loop is written as a
+`forIn` over `List.range n` in `SPCompU`. The rule `Spec.forIn_list` of `Std.Internal.Do`
+then does the induction, and the proof states the invariant with
+`vcgen [specs] invariants · inv`. Neither `_forIn_vcgen` proof contains an induction on `n`.
+The cost is one equation lemma per loop, relating the `forIn` presentation to the recursive
+definition.
+
+| Theorem | Original lines | `_forIn_vcgen` lines | Equation lemmas (lines) |
+|---|---|---|---|
+| `prBad_induction` | 14 | 29 | `repeatStep_succ_eq_bind` (10), `forIn_eq_repeatStep` (5) |
+| `ecost_retryN_le` | 29 | 31 | `retryStep`, `retryStepU` (4 + 4), `forIn_retryStep_eq` (11) |
+
+* `prBad_induction_forIn_vcgen`: the invariant at a cursor with `m` iterations left is
+  `[bad h] + m * ε`. `vcgen` leaves three verification conditions. The initial and final
+  conditions close by `simp`. The step condition is the per-step estimate: `wpE_add`,
+  `wpE_const_le`, and `h_fresh` or the mass bound, depending on whether `bad h` holds.
+  `repeatStep` is left-nested (`repeatStep q >>= step`) while `forIn` is right-nested, so the
+  equation lemma first moves the last step to the front (`repeatStep_succ_eq_bind`).
+* `ecost_retryN_le_forIn_vcgen`: the accumulated cost is part of the result, so the loop
+  state is `(result, cost)` and a `some` result returns `.done`. The invariant is
+  `acc.2 + C * ∑_{i < m} q^i`. The step condition uses `wpE_add`, `wpE_const_mul`, `hC`, `hq`
+  and `geom_sum_succ`. The equation lemma `forIn_retryStep_eq` generalises over the initial
+  cost.
+* Practical points:
+  * `simp` and `rw` lemmas do not fire on terms that mix the `SPComp` and `SPCompU` types;
+    for example `List.forIn_cons` does not fire on `forIn (m := SPCompU)` when the body has
+    type `SPComp`. The `retryN` equation lemma is therefore proved for
+    `forIn (m := SPComp)` and connected to the `SPCompU` loop by `rfl`.
+  * Verification conditions written after `invariants · inv` as `·` bullets are parsed as
+    more invariant alternatives, so they have to be addressed with `case vcN ... =>`.
+  * `vcgen` also fails with "could not determine the program type of the goal" when the
+    spec hypotheses are introduced with `have` inside the `by` block of the triple. It works
+    when they are introduced one level up.
+* Build: `lake build CatCryptCore.Unary.ExpectationVCGenExamples
+  CatCryptCore.Unary.ExpectationVCGenLoops` succeeded (2712 jobs), with no warnings from the
+  new module. The two modules can be imported together. `#print axioms` gives
+  `[propext, Classical.choice, Quot.sound]` for both `_forIn_vcgen` theorems and both
+  equation lemmas; the scratch file was deleted. Time: the from-source Mathlib build took
+  about 122 minutes in this container; the proofs took about 30 minutes.
