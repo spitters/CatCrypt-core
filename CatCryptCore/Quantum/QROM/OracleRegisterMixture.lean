@@ -36,7 +36,7 @@ produces. The register oracle is `stdOracleRegG m n ⊗ₖ 1_w` reindexed along
   index space `Fin (m * (n * n ^ m) * w)` of `stdOracleRegG m n ⊗ₖ 1_w`
 * `oracleRegU m n w`, `oracleRegQ m n w` — the register oracle on the total
   register, as a unitary and as a unitary channel
-* `liftU t U` — the unitary `U ⊗ₖ 1_t`
+* `tableLiftU t U` — the unitary `U ⊗ₖ 1_t`
 * `tableProj m n G` — the projector `|G⟩⟨G|` on the table register
 * `tableMix m n` — the uniform mixture `(n ^ m)⁻¹ ∑_G |G⟩⟨G|`
 * `runReg A`, `initReg A`, `prOutReg A` — the run of `A` against the register
@@ -124,14 +124,14 @@ theorem submatrix_equiv_mem_unitaryGroup {ι κ : Type} [Fintype ι] [DecidableE
   rw [conjTranspose_submatrix, submatrix_mul_equiv, hA, submatrix_one_equiv]
 
 /-- The unitary `U ⊗ₖ 1_t`. -/
-def liftU {d : ℕ} (t : ℕ) (U : Matrix.unitaryGroup (Fin d) ℂ) :
+def tableLiftU {d : ℕ} (t : ℕ) (U : Matrix.unitaryGroup (Fin d) ℂ) :
     Matrix.unitaryGroup (Fin (d * t)) ℂ :=
   ⟨(U : Matrix (Fin d) (Fin d) ℂ) ⊗ₖ (1 : Matrix (Fin t) (Fin t) ℂ),
     kronecker_mem_unitaryGroup U.property (Matrix.mem_unitaryGroup_iff.mpr (by simp))⟩
 
 @[simp]
-theorem liftU_val {d : ℕ} (t : ℕ) (U : Matrix.unitaryGroup (Fin d) ℂ) :
-    (liftU t U : Matrix (Fin (d * t)) (Fin (d * t)) ℂ) =
+theorem tableLiftU_val {d : ℕ} (t : ℕ) (U : Matrix.unitaryGroup (Fin d) ℂ) :
+    (tableLiftU t U : Matrix (Fin (d * t)) (Fin (d * t)) ℂ) =
       (U : Matrix (Fin d) (Fin d) ℂ) ⊗ₖ (1 : Matrix (Fin t) (Fin t) ℂ) := rfl
 
 /-- Conjugation by `V ⊗ₖ 1` acts on the first factor. -/
@@ -185,7 +185,7 @@ theorem stdOracleRegG_apply_regIndex (p p' : Fin m × Fin n × (Fin m → Fin n)
   exact if_congr (by simp) rfl rfl
 
 /-- The entry of `stdOracleFixedG` between two basis kets. -/
-theorem stdOracleFixedG_apply_fixedIndex (H : Fin m → Fin n) (p p' : Fin m × Fin n) :
+theorem stdOracleFixedG_apply_fixedIndex_pair (H : Fin m → Fin n) (p p' : Fin m × Fin n) :
     stdOracleFixedG m n H (fixedIndex m n p) (fixedIndex m n p') =
       if p = stdOraclePerm H p' then 1 else 0 := by
   obtain ⟨x, y⟩ := p'
@@ -236,7 +236,7 @@ theorem oracleRegU_mul_one_kronecker_tableProj (G : Fin m → Fin n) :
   · subst hG
     simp only [oracleRegU, regReindex_totIndex, submatrix_apply, kronecker_apply,
       Equiv.symm_apply_apply, stdOracleRegG_apply_regIndex, oracleU_val,
-      finProdEquiv_symm_totIndex, stdOracleFixedG_apply_fixedIndex, Matrix.one_apply,
+      finProdEquiv_symm_totIndex, stdOracleFixedG_apply_fixedIndex_pair, Matrix.one_apply,
       stdOracleRegPerm_apply, stdOraclePerm_apply, Prod.mk.injEq,
       EmbeddingLike.apply_eq_iff_eq]
     split_ifs <;> simp_all
@@ -284,16 +284,16 @@ theorem oracleRegU_conj_kronecker_tableProj (G : Fin m → Fin n)
 theorem oracleChain_reg_branch (G : Fin m → Fin n) (k : ℕ)
     (V : Fin (k + 1) → Matrix.unitaryGroup (Fin (m * n * w)) ℂ)
     (X : Matrix (Fin (m * n * w)) (Fin (m * n * w)) ℂ) :
-    (oracleChain (oracleRegQ m n w) k (fun i => liftU (n ^ m) (V i))).branch ()
+    (oracleChain (oracleRegQ m n w) k (fun i => tableLiftU (n ^ m) (V i))).branch ()
         (X ⊗ₖ tableProj m n G) =
       (oracleChain (oracleQ m n w G) k V).branch () X ⊗ₖ tableProj m n G := by
   induction k generalizing X with
   | zero =>
-    simp only [oracleChain, unitaryChannel_branch_apply, liftU_val, kronecker_one_conj]
+    simp only [oracleChain, unitaryChannel_branch_apply, tableLiftU_val, kronecker_one_conj]
   | succ k ih =>
     simp only [oracleChain]
     rw [qbind_unit_branch, qbind_unit_branch, qbind_unit_branch, qbind_unit_branch]
-    rw [unitaryChannel_branch_apply, unitaryChannel_branch_apply, liftU_val, kronecker_one_conj]
+    rw [unitaryChannel_branch_apply, unitaryChannel_branch_apply, tableLiftU_val, kronecker_one_conj]
     rw [oracleRegQ, oracleQ, unitaryChannel_branch_apply, unitaryChannel_branch_apply,
       oracleRegU_conj_kronecker_tableProj]
     exact ih (Fin.tail V) _
@@ -326,7 +326,7 @@ def QAdv.measureReg (A : QAdv m n w q) : QComp (m * n * w * n ^ m) Bool :=
 /-- The run of `A` against the register oracle:
     `U₀ ⊗ 1 ; O_reg ; U₁ ⊗ 1 ; … ; O_reg ; U_q ⊗ 1 ; measure (final ⊗ 1)`. -/
 def runReg (A : QAdv m n w q) : QComp (m * n * w * n ^ m) Bool :=
-  QComp.qbind (oracleChain (oracleRegQ m n w) q (fun i => liftU (n ^ m) (A.U i)))
+  QComp.qbind (oracleChain (oracleRegQ m n w) q (fun i => tableLiftU (n ^ m) (A.U i)))
     fun _ => A.measureReg
 
 omit [NeZero n] in
