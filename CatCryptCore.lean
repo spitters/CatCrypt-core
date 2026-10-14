@@ -228,6 +228,7 @@ public import CatCryptCore.Quantum.QROM.O2HTheorem
 public import CatCryptCore.Quantum.QROM.OracleRegisterProbe
 public import CatCryptCore.Quantum.QROM.PermUnitaryCore
 public import CatCryptCore.Quantum.QROM.OracleLaws
+public import CatCryptCore.Quantum.QROM.OracleRegisterMixture
 public import CatCryptCore.Quantum.QROM.PRFAdvEmbed
 public import CatCryptCore.Quantum.QROM.QAdvGame
 public import CatCryptCore.Quantum.QROM.QIndcpaAux
