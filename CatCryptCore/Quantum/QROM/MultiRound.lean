@@ -45,8 +45,8 @@ ancilla that records the outcome, so a multi-round adversary is a single-run
 * `trace_kr_one_mul_sum` — `tr ((X ⊗ 1) ∑ y y', B y y' ⊗ |y⟩⟨y'|) = ∑ y, tr (X B y y)`
 * `trace_flatten` — the deferred single run and the multi-round run agree on
   every observable `X ⊗ 1` and every branch
-* `prOutMR_eq`, `prFindMR_eq` — the two probabilities of a multi-round adversary
-  are those of its `toQAdv`
+* `prOutMR_eq`, `prFindMR_eq`, `prOutNoFindMR_eq` — the probabilities of output,
+  Find, and output without Find of a multi-round adversary are those of its `toQAdv`
 * `pure_toQAdv` — a rank-one initial state stays rank one
 * `o2h_MR`, `o2h_extraction_MR` — the one-way-to-hiding bound for multi-round
   adversaries, with the query count of `toQAdv`
@@ -993,6 +993,12 @@ def prFindMR (A : QAdvMR m n w q k c a) (H : Fin m → Fin n) (f : Fin c → Fin
     (S : Finset (Fin m)) : ℝ≥0∞ :=
   prTrue_Q (QComp.qbind (runSCMR A H f S) fun p => QComp.qpure p.2) A.init
 
+/-- The probability that the semi-classical run outputs `1` and `Find` does not
+    occur. -/
+def prOutNoFindMR (A : QAdvMR m n w q k c a) (H : Fin m → Fin n) (f : Fin c → Fin a)
+    (S : Finset (Fin m)) : ℝ≥0∞ :=
+  prTrue_Q (QComp.qbind (runSCMR A H f S) fun p => QComp.qpure (p.1 && !p.2)) A.init
+
 /-- The single-run adversary of `A`: `k` deferred measurements on the work
     register `ancW c k w`, with `flatQ q k q` oracle queries. -/
 def toQAdv [NeZero c] (A : QAdvMR m n w q k c a) (f : Fin c → Fin a) :
@@ -1087,6 +1093,22 @@ theorem prFindMR_eq (A : QAdvMR m n w q k c a) (H : Fin m → Fin n) (f : Fin c 
   have h := trace_flatten H S f k A.toMRH 1 true
   rw [liftK_one, one_mul, one_mul] at h
   exact congrArg (fun t : ℂ => ENNReal.ofReal t.re) h.symm
+
+/-- The probability of `out = 1 ∧ ¬Find` of a multi-round adversary is that of
+    its single-run embedding. -/
+theorem prOutNoFindMR_eq (A : QAdvMR m n w q k c a) (H : Fin m → Fin n) (f : Fin c → Fin a)
+    (S : Finset (Fin m)) : prOutNoFindMR A H f S = prOutNoFind (toQAdv A f) H S := by
+  rw [prOutNoFind_eq_trace]
+  unfold prOutNoFindMR prTrue_Q
+  simp only [qbind_branch_apply, tsum_fintype, Fintype.sum_prod_type, Fintype.sum_bool,
+    qpure_branch_apply, runSCMR_branch_apply]
+  simp only [Bool.and_self, Bool.not_true, Bool.and_false, Bool.false_and, Bool.not_false,
+    Bool.true_eq_false, ↓reduceIte, zero_add, add_zero]
+  unfold QAdvMR.measure toQAdv
+  rw [measProj_branch_true, A.final_conjTranspose, trace_proj_mul_mul_proj A.final_mul_self,
+    trace_proj_mul_mul_proj (flatten f k A.toMRH).final_mul_self, flatten_final]
+  exact congrArg (fun t : ℂ => ENNReal.ofReal t.re)
+    (trace_flatten H S f k A.toMRH A.final false).symm
 
 omit [NeZero n] in
 /-- A rank-one initial state gives a rank-one initial state of `toQAdv`. -/
