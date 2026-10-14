@@ -9,15 +9,13 @@ public import CatCryptCore.Crypto.UCMonad.RoundM
 public import CatCryptCore.Crypto.UCAdmClass.SPCompInstance
 
 /-!
-# UCMonadCompDist Instance for RoundM
+# `UCMonadCompDist` instance for `RoundM`
 
-This file provides the `UCMonadCompDist (RoundM n)` instance, enabling
-security levels 2 and 3 (`UCLevels.lean`) for multi-round protocols.
-
-## Design
-
-Mirrors `UCAdmClass/SPCompInstance.lean`. The per-distinguisher component
-reduces to SPComp level via `flattenAll`:
+This file defines the trivial admissibility class and the per-distinguisher decomposition of
+`sdistRoundM` on `RoundM n`, so that security levels 2 and 3 (`UCLevels.lean`) apply to
+multi-round protocols. It proves that `ucCdist` equals `sdistRoundM` there and that level 2
+is equivalent to level 1. The construction follows `UCAdmClass/SPCompInstance.lean`; the
+per-distinguisher component is computed on `SPComp` through `flattenAll`:
 
 ```
 ucDistComp f g D = ⨆ (a : α) (h₀ : Heap),
@@ -25,19 +23,24 @@ ucDistComp f g D = ⨆ (a : α) (h₀ : Heap),
           (prTrue (flattenAll(g a) >>= flattenAll∘D) h₀)
 ```
 
-Key helper: `liftSPComp` embeds SPComp into RoundM and satisfies
-`flattenAll (liftSPComp c) = c`, ensuring the iSup over RoundM
-distinguishers equals the iSup over SPComp distinguishers.
+`liftSPComp` embeds `SPComp` into `RoundM n` with `flattenAll (liftSPComp c) = c`, so the
+supremum over `RoundM` distinguishers equals the supremum over `SPComp` distinguishers.
+
+## Main definitions
+
+* `liftSPComp` — embedding of `SPComp` into `RoundM n`
+* `roundm_distComp` — the per-distinguisher component
 
 ## Main results
 
-* `UCAdmClass (RoundM n)` — trivial admissibility
-* `UCMonadCompDist (RoundM n)` — per-distinguisher decomposition
-* `ucCdist_eq_sdistRoundM` — with trivial adm, `ucCdist = sdistRoundM`
+* `UCAdmClass (RoundM n)` — trivial admissibility instance
+* `UCMonadCompDist (RoundM n)` — per-distinguisher decomposition instance
+* `flattenAll_liftSPComp` — `flattenAll (liftSPComp n c) = c`
+* `roundm_sdist_eq_iSup` — `sdistRoundM` is the supremum of the per-distinguisher component
+* `ucCdist_eq_sdistRoundM` — `ucCdist = sdistRoundM`
+* `L2_iff_L1_RoundM` — level 2 is equivalent to level 1 on `RoundM n`
 
-## Axiom status
-
-0 axioms, 0 sorries.
+Relation to the literature: `CatCryptCore/Crypto/Complexity.md`.
 -/
 
 @[expose] public section

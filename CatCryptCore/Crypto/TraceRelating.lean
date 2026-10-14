@@ -8,35 +8,29 @@ module
 public import CatCryptCore.Crypto.UCAdmClass
 
 /-!
-# Trace-Relating Secure Compilation
+# Per-distinguisher ε-relatedness
 
-This file defines a quantitative analogue, ours, of the trace relations of Abate et al.
-(ESOP 2020), over the per-distinguisher decomposition `ucDistComp`. Their framework is
-non-probabilistic: it has trace relations but no distinguishers and no `ε`.
-
-## Trace-Relating Perspective
-
-Abate et al. define compiler correctness when source and target traces are
-connected by a relation `R : Trace_S → Trace_T → Prop` (their Def. 1.2, with robust
-variants in Thms. 5.1–5.3). In our analogue:
-- Source traces = behaviors of `F` (ideal functionality)
-- Target traces = behaviors of `π` (real protocol)
-- Relation = connected by simulator: `t_π ≈_ε t_{S∘F}`
-- `ucDistComp` = per-distinguisher quantitative bound
-
-The key insight: `ucDistComp f g D ≤ ε` says "f and g are ε-related when
-observed through test D". We read this as a quantitative analogue of a trace relation.
+This file defines `TraceRelating f g ε`, which holds when `ucDistComp f g D ≤ ε` for every
+admissible distinguisher `D`, and `TraceRelatingL1`, the same condition for every
+distinguisher. It proves that `ucCdist f g` is the least `ε` with `TraceRelating f g ε`,
+that `TraceRelatingL1 f g ε` is equivalent to `ucSdist f g ≤ ε`, and that the relation is
+reflexive, symmetric, satisfies the triangle inequality, is monotone in `ε`, and is preserved
+by pre- and post-composition.
 
 ## Main definitions
 
-* `TraceRelating` — per-distinguisher ε-equivalence (admissible D only)
-* `TraceRelatingL1` — per-distinguisher ε-equivalence (all D)
+* `TraceRelating` — per-distinguisher ε-bound over admissible distinguishers
+* `TraceRelatingL1` — per-distinguisher ε-bound over all distinguishers
 
 ## Main results
 
-* `ucCdist_eq_sInf_traceRelating` — ucCdist is the least `ε` with `TraceRelating f g ε`
+* `traceRelating_iff_ucCdist` — `TraceRelating f g ε ↔ ucCdist f g ≤ ε`
+* `ucCdist_eq_sInf_traceRelating` — `ucCdist` is the least `ε` with `TraceRelating f g ε`
 * `traceRelatingL1_iff_ucSdist` — `TraceRelatingL1 f g ε ↔ ucSdist f g ≤ ε`
-* `traceRelating_comp_right` — composition preserves trace-relating bounds
+* `traceRelating_self`, `traceRelating_symm`, `traceRelating_triangle`, `traceRelating_mono`
+* `traceRelating_comp_right`, `traceRelating_comp_left` — preservation under composition
+
+Relation to the literature: `CatCryptCore/Crypto/Complexity.md`.
 
 ## References
 

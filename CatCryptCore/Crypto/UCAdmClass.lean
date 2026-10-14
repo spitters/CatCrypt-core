@@ -8,56 +8,40 @@ module
 public import CatCryptCore.Crypto.UCMonad
 
 /-!
-# Admissibility Classes and Computational Distance
+# Admissibility classes and computational distance
 
-This file extends the UC monad framework with **admissibility classes** and
-**computational distance**, enabling security levels 2 and 3 (`UCLevels.lean`)
-(admissible distinguishers, and in addition admissible simulators).
+This file defines admissibility classes on Kleisli arrows (`UCAdmClass`), the
+per-distinguisher decomposition of `ucSdist` (`UCMonadCompDist`), and the computational
+distance `ucCdist`, the supremum of the per-distinguisher distance over admissible
+distinguishers. It proves that `ucCdist` is a pseudometric bounded by `ucSdist` and that
+pre- and post-composition do not increase it. Security levels 2 and 3 (`UCLevels.lean`) are
+stated over `ucCdist`.
 
-## Key Design: Per-Distinguisher Decomposition
-
-The central idea is to decompose `ucSdist` into per-distinguisher components
-via `UCMonadCompDist`. This makes computational distance (`ucCdist`) a
-**definition** (restricted supremum) rather than an axiom, and all metric
-properties become **theorems** — 0 new axioms.
-
-## Admissibility as Wide Sub-Kleisli-Category
-
-The `UCAdmClass` axioms (closed under pure, bind, mapSum) make admissible
-arrows a **wide subcategory** of the Kleisli category Kl(T). This reading is ours. It
-abstracts the closure properties shared by the characterisations of polynomial time in
-implicit computational complexity (Bellantoni–Cook safe recursion, bounded linear logic,
-soft affine logic; surveyed in Atkey, POPL 2024, §2 and Related Work). Graded linear exponential comonads give a categorical semantics of the indexed
-exponential `!_r`, which originates in bounded linear logic (Katsumata, FoSSaCS 2018). The table below is an analogy.
-
-| ICC Framework        | "Admissible arrows"         | Our abstraction         |
-|----------------------|-----------------------------|-------------------------|
-| Bellantoni-Cook      | Safe-recursive functions    | `adm_pure` + `adm_bind` |
-| Bounded Linear Logic | Poly-bounded `!_p` arrows   | `adm_bind` (graded)     |
-| Soft Affine Logic    | Poly-time proofs            | `adm_bind`              |
+An admissibility class is closed under `pure`, `bind` and `mapSum`, so the admissible arrows
+form a wide subcategory of the Kleisli category of `T`.
 
 ## Main definitions
 
-* `UCAdmClass` — admissibility predicate on Kleisli arrows, closed under monad ops
+* `UCAdmClass` — admissibility predicate on Kleisli arrows, closed under the monad operations
 * `UCMonadCompDist` — per-distinguisher decomposition of `ucSdist`
-* `ucCdist` — computational distance (restricted supremum over admissible D)
+* `ucCdist` — computational distance, the supremum over admissible distinguishers
 
 ## Main results
 
-* `ucCdist_le_ucSdist` — computational ≤ statistical distance
-* `ucCdist_self`, `ucCdist_sym`, `ucCdist_triangle` — pseudometric properties
-* `ucCdist_comp_right` — post-composition non-expansiveness (THEOREM, not axiom; requires `adm k`)
-* `ucCdist_comp_left` — pre-composition non-expansiveness (no `adm` needed)
+* `ucCdist_le_ucSdist` — the computational distance is at most the statistical distance
+* `ucCdist_self`, `ucCdist_sym`, `ucCdist_triangle` — pseudometric laws
+* `ucCdist_comp_right` — post-composition with an admissible arrow does not increase `ucCdist`
+* `ucCdist_comp_left` — pre-composition with any arrow does not increase `ucCdist`
+
+Relation to the literature: `CatCryptCore/Crypto/Complexity.md`.
 
 ## References
 
 * Patrignani, Künnemann, Wahby, Cecchetti, "Universal Composability Is Robust
-  Compilation", TOPLAS 46(4), 2024 — perfect UC (Def. 2), our level 1 at `ε = 0`
+  Compilation", TOPLAS 46(4), 2024 — perfect UC (Def. 2)
 * Künnemann, Patrignani, Cecchetti, "Computationally Bounded Robust Compilation and
-  Universally Composable Security", CSF 2024 — statistical UC (§IV-A) and
-  predicate-parametrised robust compilation (Def. 7), of which our levels 2 and 3 are
-  instances; its computational UC (Def. 3) bounds the adversary as well. The numbering of
-  the levels is ours.
+  Universally Composable Security", CSF 2024 — statistical UC (§IV-A), computational UC
+  (Def. 3), predicate-parametrised robust compilation (Def. 7)
 * Katsumata, "A Double Category Theoretic Analysis of Graded Linear Exponential Comonads",
   FoSSaCS 2018 — categorical semantics of the indexed exponential `!_r`
 * Atkey, "Polynomial Time and Dependent Types", POPL 2024 — §2 and Related Work survey the
@@ -105,13 +89,10 @@ export UCAdmClass (adm adm_pure adm_bind adm_mapSum adm_precomp)
 
 /-! ## Section 2: Per-Distinguisher Decomposition -/
 
-/-- Exposes the per-distinguisher structure of `ucSdist`.
+/-- Decomposition of `ucSdist` into components indexed by distinguishers. The computational
+    distance `ucCdist` is the supremum of the components over admissible distinguishers.
 
-    This is the key innovation: by decomposing `ucSdist` into components
-    indexed by distinguishers, we can define computational distance as
-    a restricted supremum and derive ALL metric properties as theorems.
-
-    The axioms are genuinely structural (not metric):
+    The fields:
     - `ucDistComp_bind_right` = monad associativity at the distribution level
     - `ucDistComp_self/comm/triangle` = pointwise lift of `absDiff` properties
     - `ucSdist_eq_iSup_distComp` = connects to existing abstract metric -/

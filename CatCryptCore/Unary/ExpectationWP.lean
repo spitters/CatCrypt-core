@@ -16,65 +16,45 @@ set_option autoImplicit false
 /-!
 # Quantitative weakest preexpectation for `SDistr` / `SPComp`
 
-The Hasuo-style ordered-monad-algebra ("PT situation") development for
-CatCrypt's probability monad: an `OrderedMonadAlgebra SDistr ℝ≥0∞` instance
-whose algebra map `μ` is the **expected value** of a sub-distribution
-(`SDistr α = PMF (Option α)`; the `none` branch contributes `0` — Hasuo's total-correctness
-modality `τ_total` (§2.3.3), in which a failing computation satisfies no postcondition;
-Hasuo's carrier is `[0,1]`, ours is `ℝ≥0∞`).
+This file defines the interface `OrderedMonadAlgebra` (an algebra map `μ : m l → l` on an
+ordered carrier with unit law `μ_pure` and monotone binding `μ_bind_mono`) with its induced
+weakest precondition `wp`, and proves the laws `wp_pure`, `wp_bind` and `wp_mono` for every
+instance. It gives an instance `OrderedMonadAlgebra SDistr ℝ≥0∞` whose map `μ` is the
+expected value of a sub-distribution (`SDistr α = PMF (Option α)`; the `none` branch
+contributes `0`). On `SPComp α = Heap → SDistr (α × Heap)` it defines the heap-indexed
+weakest preexpectation `wpE`, proves its monad-morphism laws, and proves that `wpE` of an
+indicator postcondition is the event probability `CatCrypt.Unary.prEventComp`, and
+`CatCrypt.Crypto.prTrue` for `Bool`-valued games.
 
-This is the quantitative counterpart of the Boolean/conjunctive predicate
-transformers of `Std.Do`: expectation is monotone but not conjunctive, so it
-lives in an ordered-monad-algebra interface (an Eilenberg–Moore algebra on
-the truth-value carrier with Hasuo's monotonicity condition, Def. 2.4 of his
-generic weakest-precondition framework for order-enriched monads) rather than in
-`PredTrans`.
-
-The `OrderedMonadAlgebra` interface below is the standard categorical
-structure for generic weakest preconditions: an Eilenberg–Moore-style
-algebra `μ : m l → l` on an ordered carrier, used as a modality — Hasuo's
-"monads enriched with order" framework. The unit law `μ_pure` and monotone
-binding `μ_bind_mono` imply the Eilenberg–Moore multiplication law, and `wp_bind`
-holds for every instance: it is the functoriality of Hasuo's predicate transformer
-(Prop. 2.6, Thm. 2.14). Jacobs' state-and-effect triangles place such predicate
-transformers, `Kl(T) → P^op`, beside state transformers into the Eilenberg–Moore
-category (§2, Corollary 2, triangle (2.2)). The Lean interface follows the ordered monad
-algebras of Loom (Def. 3.2, the class `MAlgOrdered`), so an
-`MAlgOrdered SDistr ℝ≥0∞` instance is derived from this file's instance.
-
-On top of the `SDistr` instance we define the heap-indexed weakest
-preexpectation `wpE` for `SPComp α = Heap → SDistr (α × Heap)`, prove the
-monad-morphism laws (`wpE_pure`, `wpE_bind`), and tie the construction to the
-existing probability-of-event layer: `wpE` of an indicator postcondition is
-exactly `CatCrypt.Unary.prEventComp` (and `CatCrypt.Crypto.prTrue` for
-`Bool`-valued games).
+Expectation is monotone but not conjunctive, so it is stated through an ordered monad
+algebra and not through the conjunctive predicate transformers `PredTrans` of `Std.Do`.
 
 ## Main definitions
 
-* `CatCrypt.OrderedMonadAlgebra` — minimal ordered-monad-algebra interface
-  (`μ`, `μ_pure`, `μ_bind_mono`) with the induced `wp` and its laws
+* `CatCrypt.OrderedMonadAlgebra` — ordered-monad-algebra interface (`μ`, `μ_pure`,
+  `μ_bind_mono`) with the induced `wp`
 * `sdistrExpect` — expected value of `d : SDistr ℝ≥0∞` (`none` ↦ `0`)
-* `instOrderedMonadAlgebraSDistr` — the `OrderedMonadAlgebra SDistr ℝ≥0∞`
-  instance
+* `instOrderedMonadAlgebraSDistr` — the `OrderedMonadAlgebra SDistr ℝ≥0∞` instance
 * `wpE c post h` — heap-indexed weakest preexpectation for `SPComp`
-* `TripleE pre c post` — heap-indexed quantitative triple
-  `∀ h, pre h ≤ wpE c post h`
+* `TripleE pre c post` — heap-indexed quantitative triple `∀ h, pre h ≤ wpE c post h`
 
 ## Main results
 
-* `wpE_pure` / `wpE_bind` / `wpE_mono` — the weakest-preexpectation laws
-* `wpE_indicator_eq_prEventComp` — **adequacy**: `wpE` at an indicator
-  postcondition is the event probability `prEventComp`
-* `wpE_indicator_eq_prTrue` — adequacy specialized to `Bool` games / `prTrue`,
-  the seam to the `Advantage` layer
+* `wp_pure`, `wp_bind`, `wp_mono` — laws of `wp` for every instance
+* `wpE_pure`, `wpE_bind`, `wpE_mono` — the weakest-preexpectation laws
+* `wpE_indicator_eq_prEventComp` — `wpE` at an indicator postcondition is the event
+  probability `prEventComp`
+* `wpE_indicator_eq_prTrue` — the same for `Bool` games and `prTrue`
 * `wpE_sample` — `wpE` of a uniform sample is the average of the postcondition
+
+Relation to the literature: `CatCryptCore/Crypto/Complexity.md`.
 
 ## References
 
 * Ichiro Hasuo, *Generic weakest precondition semantics from monads enriched
   with order*, Theoretical Computer Science 604, 2015 (conference version
-  CMCS 2014) — the categorical source of this interface: Eilenberg–Moore
-  algebras with a monotonicity condition as wp modalities (Def. 2.4), the
+  CMCS 2014) — Eilenberg–Moore algebras with a monotonicity condition as wp modalities
+  (Def. 2.4), functoriality of the predicate transformer (Prop. 2.6, Thm. 2.14), the
   expectation modality `τ_total` (§2.3.3).
 * Wataru Hino, Hiroki Kobayashi, Ichiro Hasuo, Bart Jacobs, *Healthiness from
   Duality*, LICS 2016 — Eilenberg–Moore algebras on an arbitrary poset of truth values
@@ -86,14 +66,12 @@ exactly `CatCrypt.Unary.prEventComp` (and `CatCrypt.Crypto.prTrue` for
   Computer Science 13(2), 2017 (conference version CALCO 2015) — predicate
   transformers beside state transformers (§2).
 * Dexter Kozen, *Semantics of probabilistic programs*, J. Comput. Syst. Sci.
-  22(3), 1981 (conference version FOCS 1979) — expectation as the probabilistic modality (credited in Hasuo
-  §2.3.3); unbounded `ℝ≥0∞` expectations as in Kaminski, Katoen, Matheja,
-  Olmedo, J. ACM 65(5), 2018, §8.
+  22(3), 1981 (conference version FOCS 1979) — expectation as the probabilistic modality;
+  unbounded `ℝ≥0∞` expectations as in Kaminski, Katoen, Matheja, Olmedo, J. ACM 65(5),
+  2018, §8.
 * Gladshtein, Pîrlea, Zhao, Kurin, Sergey, *Foundational Multi-Modal Program
   Verifiers*, POPL 2026, doi:10.1145/3776719 — ordered monad algebras (Def. 3.2,
-  `MAlgOrdered`), the shape of the Lean interface. The paper names ordered monad
-  *transformer* algebras as its main theoretical contribution; the single-monad
-  ordered algebra used here is the classical notion. Loom does not cite Hasuo.
+  `MAlgOrdered`), the shape of the Lean interface.
 -/
 
 namespace CatCrypt

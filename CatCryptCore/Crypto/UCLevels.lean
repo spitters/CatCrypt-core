@@ -10,46 +10,44 @@ public import CatCryptCore.Crypto.UCAdmClass
 /-!
 # Security levels 2 and 3
 
-This file defines UC emulation at **Level 2** (computational distinguishers) and
-**Level 3** (admissible distinguishers and admissible simulators). Level 1 is
-statistical UC: at `ε = 0` it is the perfect UC of Patrignani, Künnemann, Wahby and
-Cecchetti ("Universal Composability Is Robust Compilation", TOPLAS 46(4), 2024, Def. 2), for
-`ε > 0` the statistical UC of Künnemann, Patrignani and Cecchetti ("Computationally Bounded
-Robust Compilation and Universally Composable Security", CSF 2024, §IV-A). Levels 2 and 3 are
-instances of the predicate-parametrised robust compilation of the CSF paper (Def. 7) that
-the paper does not name; its computational UC (Def. 3) bounds the adversary as well. The
-numbering of the levels is ours, and our bounds are concrete in `ε`.
-
-## The Three Levels
+This file defines UC emulation at level 2, over the computational distance `ucCdist`
+(admissible distinguishers), and at level 3, which in addition requires an admissible
+simulator. Level 1 is the statistical emulation `UCEmulates` over `ucSdist`. The file proves
+that level 1 and level 3 each imply level 2, and reflexivity, transitivity and monotonicity
+for levels 2 and 3 and for the algebraic level 3 with an explicit simulator construction.
 
 | Level | Metric | Adversary | Simulator |
 |-------|--------|-----------|-----------|
-| **1** (info-theoretic) | `ucSdist` (all D) | ∀ A | ∃ S |
-| **2** (comp. distinguishers) | `ucCdist` (adm D only) | ∀ A | ∃ S |
-| **3** (fully computational) | `ucCdist` (adm D only) | ∀ A | ∃ S, adm S |
-
-## Hierarchy
-
-```
-L1 → L2 (via ucCdist ≤ ucSdist)
-L3 → L2 (forget adm S)
-L2 ⊬ L3 (S = A may not be admissible)
-```
+| 1 | `ucSdist` (all D) | ∀ A | ∃ S |
+| 2 | `ucCdist` (admissible D) | ∀ A | ∃ S |
+| 3 | `ucCdist` (admissible D) | ∀ A | ∃ S, adm S |
 
 ## Main definitions
 
-* `UCEmulatesL2` — Level 2 UC emulation (computational distinguishers)
-* `UCEmulatesL3` — Level 3 UC emulation (fully computational)
-* `SimConstruction.admPreserving` — simulator preserves admissibility
-* `UCEmulatesAlgL3` — algebraic Level 3 with explicit simulator construction
+* `UCEmulatesL2` — level 2 UC emulation
+* `UCEmulatesL3` — level 3 UC emulation
+* `SimConstruction.admPreserving` — a simulator construction preserves admissibility
+* `UCEmulatesAlgL3` — level 3 with an explicit simulator construction
 
 ## Main results
 
-* `UCEmulatesL2_of_L1` — Level 1 implies Level 2
-* `UCEmulatesL3_implies_L2` — Level 3 implies Level 2
-* `UCEmulatesL2_of_sdist` — same-interface from sdist bound
-* `UCEmulatesL2_refl`, `_trans`, `_mono` — structural properties
-* `UCEmulatesL3_refl_adm`, `_trans`, `_mono` — structural properties
+* `UCEmulatesL2_of_L1` — level 1 implies level 2
+* `UCEmulatesL3_implies_L2` — level 3 implies level 2
+* `levels_hierarchy` — both implications together
+* `UCEmulatesL2_of_sdist` — level 2 from an `sdist` bound on same-interface systems
+* `UCEmulatesL2_refl`, `UCEmulatesL2_trans`, `UCEmulatesL2_mono`
+* `UCEmulatesL3_refl_adm`, `UCEmulatesL3_trans`, `UCEmulatesL3_mono`
+* `UCEmulatesAlgL3_refl`, `UCEmulatesAlgL3_trans`, `UCEmulatesAlgL3_mono`
+
+Relation to the literature: `CatCryptCore/Crypto/Complexity.md`.
+
+## References
+
+* Patrignani, Künnemann, Wahby, Cecchetti, "Universal Composability Is Robust
+  Compilation", TOPLAS 46(4), 2024 — perfect UC (Def. 2), level 1 at `ε = 0`
+* Künnemann, Patrignani, Cecchetti, "Computationally Bounded Robust Compilation and
+  Universally Composable Security", CSF 2024 — statistical UC (§IV-A), level 1 at `ε > 0`;
+  computational UC (Def. 3); predicate-parametrised robust compilation (Def. 7)
 -/
 
 @[expose] public section
@@ -294,9 +292,7 @@ theorem UCEmulatesAlgL3_trans [UCMonadCompDist T]
 
 /-- Lift a same-interface `ucSdist` bound to `UCEmulatesAlgL3` with `SimConstruction.id`.
 
-    Since `SimConstruction.id` preserves admissibility for ANY `UCAdmClass`
-    (not just trivial), this works for genuine computational admissibility.
-    The bound follows from `ucCdist ≤ ucSdist` and right PPL for `ucSdist`. -/
+    `SimConstruction.id` preserves admissibility for every `UCAdmClass`. The bound follows from `ucCdist ≤ ucSdist` and right PPL for `ucSdist`. -/
 theorem UCEmulatesAlgL3_of_ucSdist [UCMonadCompDist T]
     {ε : ℝ≥0∞} {hon out leak view : Type}
     (π F : hon → T (out ⊕ leak))

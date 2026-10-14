@@ -8,37 +8,33 @@ module
 public import CatCryptCore.Crypto.UCLevels
 
 /-!
-# Negligible Functions and Parametric UC Security
+# Negligible functions and parametric UC emulation
 
-This file provides the negligible function infrastructure and parametric
-(security-parameter-indexed) UC emulation, enabling concrete security
-reductions with asymptotic conclusions.
+This file defines negligible functions `ℕ → ℝ≥0∞`, UC emulation indexed by a security
+parameter, and UC emulation with a negligible bound. It proves that negligible functions are
+closed under addition, multiplication by a constant and multiplication by a polynomial, and
+that negligible emulation is transitive, follows from perfect emulation, and follows from
+emulation with bound `q λ * ε λ` for a polynomially bounded `q` and a negligible `ε`.
+
+Negligibility is stated multiplicatively, `f λ * λ ^ c ≤ 1` for every `c` and all large
+`λ`, which avoids division in `ℝ≥0∞`; for `λ > 0` it is equivalent to `f λ ≤ 1 / λ ^ c`.
 
 ## Main definitions
 
-* `IsNegligible` — negligible function: vanishes faster than any inverse polynomial
-* `UCEmulatesParam` — UC emulation indexed by security parameter λ
-* `UCEmulatesNegl` — negligible UC emulation: ∃ negl ε, ∀ λ, UCEmulates (ε λ)
+* `IsNegligible` — `f` vanishes faster than every inverse polynomial
+* `UCEmulatesParam` — UC emulation indexed by the security parameter `λ`
+* `UCEmulatesNegl` — UC emulation with a negligible bound: `∃ ε` negligible, `∀ λ`,
+  `UCEmulates (ε λ)`
 
 ## Main results
 
-* `isNegligible_zero` — the zero function is negligible
-* `isNegligible_add` — sum of negligibles is negligible
-* `isNegligible_mul_const` — constant × negligible is negligible
-* `isNegligible_poly_mul` — polynomial × negligible is negligible
-* `UCEmulatesNegl_trans` — transitivity of negligible UC emulation
-* `UCEmulatesNegl_of_perfect` — perfect emulation gives negligible
-* `UCEmulatesNegl_hybrid_bound` — poly × negl hybrid bound
+* `isNegligible_zero`, `isNegligible_add`, `isNegligible_mul_const`, `isNegligible_poly_mul` —
+  closure of negligible functions
+* `UCEmulatesNegl_trans` — transitivity of negligible emulation
+* `UCEmulatesNegl_of_perfect` — perfect emulation is negligible emulation
+* `UCEmulatesNegl_hybrid_bound` — a hybrid argument over polynomially many steps
 
-## Design: ENNReal formulation
-
-We use a multiplicative formulation `f λ * λ^c ≤ 1` to avoid division in
-`ℝ≥0∞` (which is problematic). This is equivalent to the standard
-`f λ ≤ 1/λ^c` when `λ > 0`.
-
-## Axiom status
-
-0 axioms, 0 sorries.
+Relation to the literature: `CatCryptCore/Crypto/Complexity.md`.
 -/
 
 @[expose] public section

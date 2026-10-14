@@ -9,25 +9,21 @@ public import CatCryptCore.Crypto.RCL3
 public import CatCryptCore.Crypto.UCAdmClass.SPCompInstance
 
 /-!
-# Level 3 Parallel Composition for SPComp
+# Parallel composition at level 3 for `SPComp`
 
-This file provides the SPComp-specific parallel composition theorem for
-`ucCdist` and `RobustCompilationL3`, which cannot be proven at the
-abstract `UCMonadCompDist` level.
-
-## Why SPComp-specific?
-
-The abstract `ucCdist_mapSum_le` would require a new axiom
-`ucDistComp_mapSum` on `UCMonadCompDist`, because the existing axioms
-(PPL, triangle inequality) cannot decompose `ucSdist` over sum inputs.
-
-For SPComp specifically, `ucCdist = ucSdist = sdist` (trivial admissibility),
-so we bridge through the concrete `sdist_mapSum_le` from `RC.lean`.
+This file proves parallel composition of `ucCdist` bounds and of `RobustCompilationL3` for
+the trivial `UCMonadCompDist SPComp` instance. There `ucCdist = ucSdist = sdist`
+(`ucCdist_eq_ucSdist_trivial`, `ucSdist_eq_sdist`), and the bound follows from
+`sdist_mapSum_le` of `RC.lean`. The generic statements are `UCMonad.ucCdist_mapSum_le` and
+`RobustCompilationL3_mapSum`.
 
 ## Main results
 
-* `ucCdist_mapSum_le_SPComp` — `ucCdist (mapSum π₁ π₂) ≤ max(ucCdist π₁, ucCdist π₂)`
-* `RobustCompilationL3_mapSum_SPComp` — parallel composition of RC_L3 for SPComp
+* `ucSdist_eq_sdist` — `ucSdist = sdist` on `SPComp`
+* `ucCdist_mapSum_le_SPComp` — `ucCdist (mapSum f₁ g₁) (mapSum f₂ g₂) ≤ ε₁ ⊔ ε₂`
+* `RobustCompilationL3_mapSum_SPComp` — parallel composition of `RobustCompilationL3`
+
+Relation to the literature: `CatCryptCore/Crypto/Complexity.md`.
 -/
 
 @[expose] public section

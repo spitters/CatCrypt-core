@@ -11,52 +11,34 @@ public import CatCryptCore.Crypto.CompUCEquivalence
 /-!
 # Query-bounded computational UC for `SPComp`
 
-The trivial `UCMonadCompDist SPComp` instance (`UCAdmClass/SPCompInstance.lean`) uses
-`adm = fun _ => True`, so its `ucCdist` collapses to `ucSdist` (the information-theoretic
-reading). This file makes the computational distance **concrete** by pairing the genuine
-query-bounded admissibility class `spTreeQueryAdm` (`MonadCostModel.lean`) with the
-per-distinguisher decomposition of that same trivial instance.
+This file defines `queryBoundedCompDist : UCMonadCompDist SPComp`, the per-distinguisher
+decomposition of the trivial instance (`UCAdmClass/SPCompInstance.lean`) with the
+admissibility fields replaced by those of the query-bounded class `spTreeQueryAdm`
+(`MonadCostModel.lean`). It instantiates the dummy-adversary and construction equivalences of
+`CompUCEquivalence.lean` at this class, so that the adversaries range over query-bounded
+arrows, and proves that on the pair `Example.π` / `Example.F` the computational and
+statistical distances are both `1`.
 
-## The query-bounded compdist
+`queryBoundedCompDist` is a `def` and not an instance, which avoids a diamond with the trivial
+`UCMonadCompDist SPComp` instance. Every pure predicate test `fun b => SPComp.pure (p b)` has
+query cost `0` and is admissible (`adm_pure_predicate`); on the example pair such a test has
+advantage `1`.
 
-`queryBoundedCompDist : UCMonadCompDist SPComp` reuses the trivial instance's
-per-distinguisher structure (`ucDistComp`, the metric fields, `ucSdist_eq_iSup_distComp`)
-**verbatim** and swaps only the admissibility fields for `spTreeQueryAdm`'s. It is a `def`
-(not an `instance`) to avoid a diamond with the already-registered trivial
-`instance : UCMonadCompDist SPComp`. Its `adm` is *definitionally* `spTreeQueryAdm.adm`
-(`queryBoundedCompDist_adm_iff`), i.e. "has a syntax-tree witness with uniformly bounded
-query cost" — a genuine (non-trivial) class, not `True`.
+## Main definitions
 
-## The equivalences at the query-bounded compdist
+* `queryBoundedCompDist` — `UCMonadCompDist SPComp` with query-bounded admissibility
 
-`dummy_completeness_cdist`, `ucEmulatesCdist_iff_dummy`, and
-`ccConstructsCdist_iff_ucEmulatesCdist` are generic over `[UCMonadCompDist T]`; supplying
-`queryBoundedCompDist` explicitly gives concrete `SPComp` statements in which the quantified
-adversaries `A` range over **query-bounded** (`spTreeQueryAdm.adm`) arrows only. These are
-`queryBounded_dummy_completeness_cdist`, `queryBounded_ucEmulatesCdist_iff_dummy`,
-`queryBounded_ccConstructsCdist_iff_ucEmulatesCdist`.
+## Main results
 
-## No separation for output differences
+* `queryBoundedCompDist_adm_iff` — its `adm` is `spTreeQueryAdm.adm`
+* `queryBounded_dummy_completeness_cdist`, `queryBounded_ucEmulatesCdist_iff_dummy`,
+  `queryBounded_ccConstructsCdist_iff_ucEmulatesCdist` — the equivalences with
+  query-bounded adversaries
+* `adm_pure_predicate` — pure predicate tests are admissible
+* `ex_queryBounded_ucCdist_eq_one`, `ex_queryBounded_no_separation` —
+  `ucCdist queryBoundedCompDist π F = ucSdist π F = 1` on the example pair
 
-A strict `ucCdist queryBoundedCompDist f g < ucSdist f g` is **not** achievable via this
-admissibility class, and the reason is structural: `ucCdist` restricts the distinguisher
-`D`, but the query cost of `spTreeQueryAdm` bounds `D`'s *own* sampling/state operations,
-not its ability to *threshold the received output*. Every "pure predicate test"
-`fun b => SPComp.pure (p b)` has query cost `0`, hence is admissible
-(`adm_pure_predicate`), and such tests already realise the statistical distance (the
-received output is a sufficient statistic; thresholding it is optimal — the data-processing
-inequality). On the canonical separating pair `Example.π` / `Example.F` we prove this
-concretely: a query-`0` distinguisher achieves advantage `1`, so
-`ucCdist queryBoundedCompDist π F = ucSdist π F = 1` (`ex_queryBounded_ucCdist_eq_one`,
-`ex_queryBounded_no_separation`) — no gap.
-
-A genuine `ucCdist < ucSdist` would need a pair whose *optimal* distinguisher has
-**unbounded per-output-value query cost** (no uniformly bounded `SPTree` witness), together
-with a query-complexity lower bound showing every uniformly-query-bounded `D` is strictly
-worse. A computational gap in the
-cryptographic sense requires restricting the distinguisher's *output post-processing*
-(circuit size / PRG-style hardness), which `SPTree.queryCost` does not model; the size
-model of `SizeBoundedUC.lean` does.
+Relation to the literature: `CatCryptCore/Crypto/Complexity.md`.
 -/
 
 @[expose] public section

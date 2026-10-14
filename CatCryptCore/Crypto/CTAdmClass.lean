@@ -11,30 +11,31 @@ public import CatCryptCore.Core.SPTree
 public import CatCryptCore.Crypto.MonadCostModel
 
 /-!
-# Constant-Time as UCAdmClass
+# Constant-time programs as an admissibility class
 
-This file shows that constant-time programs form a `UCAdmClass`. `ct_spComp` is the
-observational constant-time condition of Barthe et al. (POPL 2020, Def. 3.1; CCS 2014,
-§4.1), with the operation shape as the leakage and every input secret: those papers
-compare executions whose initial states agree on public inputs, while `ct_spComp` asks for
-one shape for all inputs. The file proves nothing about compilation.
-
-## Architecture
-
-```
-CT ⊂ query-bounded ⊂ admissible
-```
-
-CT fixes the entire execution *pattern* (which operations, in what order) for all inputs,
-while query-bounded only bounds the *count*. Both form valid `UCAdmClass`es.
+This file defines an abstract constant-time predicate `CTClass`, closed under the monad
+operations, and the admissibility class `UCAdmClass_of_CTClass` it induces. For `SPComp` it
+defines the operation shape `SPShape` of a syntax tree (the tree with return values erased)
+and the predicate `ct_spComp`: an arrow is constant-time when it is the compilation of a
+family of syntax trees that all have one shape. It proves that `ct_spComp` holds for `pure`,
+is closed under bind, and implies query-bounded admissibility (`spTreeQueryAdm`), since a
+fixed shape fixes the query count.
 
 ## Main definitions
 
-* `CTClass` — abstract constant-time predicate, closed under monad ops
-* `UCAdmClass_of_CTClass` — CT programs form a UCAdmClass
-* `SPShape` — SPTree with return values erased
-* `SPTree.toShape` — extract shape from an SPTree
-* `ct_spComp` — concrete CT predicate for SPComp via shape constancy
+* `CTClass` — abstract constant-time predicate, closed under the monad operations
+* `UCAdmClass_of_CTClass` — the admissibility class of constant-time arrows
+* `SPShape` — `SPTree` with return values erased
+* `SPTree.toShape` — the shape of an `SPTree`
+* `ct_spComp` — constant-time predicate on `SPComp` arrows
+
+## Main results
+
+* `queryCost_eq_shape_queryCost`, `toShape_bind` — query cost and bind computed on shapes
+* `ct_spComp_pure`, `ct_spComp_bind` — closure of `ct_spComp`
+* `ct_spComp_implies_queryAdm` — constant-time arrows are query-bounded
+
+Relation to the literature: `CatCryptCore/Crypto/Complexity.md`.
 
 ## References
 

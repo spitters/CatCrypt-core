@@ -11,42 +11,32 @@ public import CatCryptCore.Core.SPTree
 public import CatCryptCore.Crypto.UCMonad.SPCompInstance
 
 /-!
-# Monad Cost Model and Query-Bounded Admissibility
+# Monad cost model and query-bounded admissibility
 
-This file defines `MonadCostModel`, a graded refinement of `UCAdmClass`, and
-provides a concrete **query-bounded admissibility** class for `SPComp` via
-`SPTree` syntax trees.
+This file defines `MonadCostModel`, an assignment of `ℕ∞` costs to Kleisli arrows that is
+subadditive under bind, the admissibility class `adm f := cost f < ⊤` it induces, and the
+query-bounded admissibility class `spTreeQueryAdm` on `SPComp`: an arrow is admissible when
+it is the compilation of a family of `SPTree` syntax trees with uniformly bounded query cost.
+It proves that the arrows of bounded cost are closed under `pure`, `bind` and `mapSum` and
+are admissible.
 
-## The Classical Cost Insight
-
-All quantum admissibility candidates (BQP, reactive poly-time, query complexity)
-depend on a *classical* complexity measure of the program description. The cost
-algebra `(ℕ∞, +, ≤)` is shared between `SPComp` and `QComp`. Only the cost
-*function* differs — counting sample calls vs. instrument applications.
-
-## Architecture
-
-```
-UCAdmClass T                     (abstract: adm predicate)
-     ↑
-MonadCostModel T                 (graded: cost : (α → T β) → ℕ∞)
-     ↑
-spTreeQueryAdm : UCAdmClass SPComp   (concrete: adm via SPTree witnesses)
-```
-
-`spTreeQueryAdm` is a **def** (not instance) to avoid diamond with the existing
-trivial `UCAdmClass SPComp` instance. Use `letI := spTreeQueryAdm` locally.
+`spTreeQueryAdm` is a `def` and not an instance, which avoids a diamond with the trivial
+`UCAdmClass SPComp` instance; it is used through `letI := spTreeQueryAdm`.
 
 ## Main definitions
 
-* `MonadCostModel` — assigns `ℕ∞` costs, subadditive under bind
-* `UCAdmClass_of_costModel` — derives `UCAdmClass` with `adm f := cost f < ⊤`
-* `spTreeQueryAdm` — concrete `UCAdmClass SPComp` via SPTree witnesses
+* `MonadCostModel` — `ℕ∞` costs on Kleisli arrows, subadditive under bind
+* `UCAdmClass_of_costModel` — the admissibility class `adm f := cost f < ⊤`
+* `costBounded` — arrows of cost at most `n`
+* `spTreeQueryAdm` — query-bounded admissibility on `SPComp` via `SPTree` witnesses
 
 ## Main results
 
-* `spTreeQueryAdm` is an admissibility class that some Kleisli arrows fail:
-  an opaque function with no syntax-tree witness is outside it
+* `costBounded_pure`, `costBounded_bind`, `costBounded_mapSum`, `costBounded_mono` —
+  closure of the cost-bounded arrows
+* `adm_of_costBounded` — a cost-bounded arrow is admissible
+
+Relation to the literature: `CatCryptCore/Crypto/Complexity.md`.
 -/
 
 @[expose] public section

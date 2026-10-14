@@ -9,33 +9,41 @@ public import CatCryptCore.Crypto.RC
 public import CatCryptCore.Crypto.UCLevels
 
 /-!
-# Robust Compilation at Level 3
+# Robust compilation at levels 2 and 3
 
-This file lifts the L1 equivalence `UCEmulates_iff_RHP` (from `RC.lean`) to
-Level 3 using `UCAdmClass` constraints on distinguishers and simulators.
+This file defines robust compilation over the computational distance
+(`RobustCompilationL3`: closure under contexts and admissible distinguishers) and the
+robust-preservation predicates `RHPL3` and `RHPL2` for a fixed simulator construction. It
+proves `RobustCompilationL3 ε` equivalent to `ucCdist ≤ ε`, the algebraic level 3 emulation
+`UCEmulatesAlgL3` equivalent to `RHPL3`, level 2 emulation equivalent to `RHPL2`, and
+transitivity and parallel composition of `RobustCompilationL3`. These lift the level 1
+equivalence `UCEmulates_iff_RHP` of `RC.lean` to the levels of `UCLevels.lean`.
 
-These equivalences are analogues, for a fixed simulator construction, of the equivalence of
-UC with robust hyperproperty preservation (TOPLAS 2024, Thm. 4) and of its computational
-form (CSF 2024, Thms. 2 and 3). `RobustCompilationL3` is closure under contexts and
-distinguishers; the RHP of TOPLAS 2024 (Def. 4) has the form "for every target attacker
-there is a source attacker", which this file does not state.
+## Main definitions
 
-## Key Results
+* `RobustCompilationL3` — robust compilation over `ucCdist`
+* `ContextEquivL3` — context equivalence over admissible distinguishers
+* `RHPL3`, `RHPL2` — robust preservation for a fixed simulator construction
 
-* `RC_L3_iff_ucCdist` — `RC_L3 ε ↔ ucCdist ≤ ε`
+## Main results
+
+* `RC_L3_iff_ucCdist` — `RobustCompilationL3 ε ↔ ucCdist ≤ ε`
 * `UCEmulatesAlgL3_iff_RHPL3` — `UCEmulatesAlgL3 ε ↔ RHPL3 ε`
+* `UCEmulatesL2_iff_RHPL2` — `UCEmulatesL2 ε ↔ RHPL2 ε`
+* `RHPL2_of_RHPL3` — level 3 preservation implies level 2 preservation
+* `RobustCompilationL3_trans`, `RobustCompilationL3_mapSum` — transitivity and parallel
+  composition
+
+Relation to the literature: `CatCryptCore/Crypto/Complexity.md`.
 
 ## References
 
 * Patrignani, Künnemann, Wahby, Cecchetti, "Universal Composability Is Robust
-  Compilation", TOPLAS 46(4), 2024 — perfect UC (Def. 2), our level 1 at `ε = 0`
+  Compilation", TOPLAS 46(4), 2024 — perfect UC (Def. 2), robust hyperproperty preservation
+  (Def. 4), its equivalence with UC (Thm. 4)
 * Künnemann, Patrignani, Cecchetti, "Computationally Bounded Robust Compilation and
-  Universally Composable Security", CSF 2024 — statistical UC (§IV-A) and
-  predicate-parametrised robust compilation (Def. 7), of which our levels 2 and 3 are
-  instances; its computational UC (Def. 3) bounds the adversary as well. The numbering of
-  the levels is ours.
-* RC.lean (L1 equivalence)
-* UCLevels.lean (Level definitions)
+  Universally Composable Security", CSF 2024 — statistical UC (§IV-A), computational UC
+  (Def. 3), predicate-parametrised robust compilation (Def. 7), Thms. 2 and 3
 -/
 
 @[expose] public section
@@ -269,8 +277,7 @@ theorem RHPL2_of_RHPL3
     If `f₁ ≈_{ε₁} f₂` and `g₁ ≈_{ε₂} g₂` at Level 3, then
     `mapSum f₁ g₁ ≈_{max(ε₁,ε₂)} mapSum f₂ g₂` at Level 3.
 
-    This is the abstract version of `RobustCompilationL3_mapSum_SPComp`
-    (from `RCL3SPComp.lean`), now derivable for any `UCMonadCompDist T`. -/
+    The `SPComp` instance is `RobustCompilationL3_mapSum_SPComp` (`RCL3SPComp.lean`). -/
 theorem RobustCompilationL3_mapSum {α₁ β₁ α₂ β₂ : Type}
     {ε₁ ε₂ : ℝ≥0∞}
     {f₁ f₂ : α₁ → T β₁} {g₁ g₂ : α₂ → T β₂}

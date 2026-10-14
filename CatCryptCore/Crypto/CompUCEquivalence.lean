@@ -10,89 +10,61 @@ public import CatCryptCore.Crypto.DummyAdversary
 public import CatCryptCore.Crypto.UCAdmClass.SPCompInstance
 
 /-!
-# Computational transport of the dummy-adversary and Constructive-Cryptography UC equivalences
+# Computational dummy-adversary and constructive-cryptography equivalences
 
-The dummy-adversary theorem (`CatCrypt.Crypto.ucEmulates_iff_dummy`, `DummyAdversary.lean`)
-is an **information-theoretic** statement: it is stated over the statistical distance `sdist`,
-the supremum over *all* distinguishers. This file proves it over the admissible-distinguisher
-distance `ucCdist` (`UCMonad.ucCdist`, `UCAdmClass.lean`), and proves that a construction in
-the sense of Maurer ("Constructive Cryptography — A New Paradigm for Security Definitions and
-Proofs", TOSCA 2011, Def. 3; the security condition only, without the availability condition)
-is equivalent to UC emulation, for single-shot systems: the honest interfaces are merged into
-one input, the adversary interface receives one leak and sends nothing, and the converter
-post-processes that leak. For interactive systems the corresponding equivalence is that of
-strong simulatability with UC (Küsters, Datta, Mitchell, Ramanathan, "On the Relationships
-between Notions of Simulation-Based Security", J. Cryptology 21(4), 2008, Def. 6, Thm. 16; the direction from UC to strong simulatability
-holds for network-predictable protocols).
-Maurer and Renner ("Abstract Cryptography", ICS 2011, App. C.1) remark on the relation between
-the two frameworks.
+This file defines UC emulation over the computational distance `ucCdist` (`UCAdmClass.lean`)
+quantified over admissible adversaries, proves the dummy-adversary theorem for it, and proves
+it equivalent to a construction over `ucCdist` in the sense of Maurer (the security condition,
+without the availability condition) for single-shot systems: the honest interfaces are merged
+into one input, the adversary interface receives one leak and sends nothing, and the converter
+post-processes that leak. The results are generic over `[UCMonadCompDist T]`;
+`QueryBoundedUC.lean` and `SizeBoundedUC.lean` instantiate them on `SPComp`.
 
-## The transport is gated on adversary admissibility
-
-`ucCdist` is a supremum over **admissible** distinguishers only. The right
-post-composition non-expansiveness is therefore conditional: `UCMonad.ucCdist_comp_right` absorbs an
-arrow `k` into the distinguisher **only when `adm k`** (a `PRG` counterexample shows the
-`adm k` hypothesis is necessary, see its docstring). The dummy-adversary absorption
-composes the environment adversary `A` into the distinguisher through exactly this law,
-so it requires `adm (ucMapSum pure A)` — discharged from `adm A` by `adm_mapSum adm_pure`.
-
-Consequently the *computational* dummy-adversary theorem can only quantify over
-**admissible** adversaries. This is the standard computational-UC restriction, and it is
-the reason `UCLevels.lean`'s `UCEmulatesL2` (which quantifies over *all* `A`) carries no
-dummy-adversary completeness: the transport is available precisely for the
-admissible-adversary predicate defined here.
-
-## Relationship to `UCEmulatesL2` / `UCEmulatesL3`
+The absorption step uses `UCMonad.ucCdist_comp_right`, which absorbs an arrow `k` into the
+distinguisher under the hypothesis `adm k`. Absorbing the adversary `A` needs
+`adm (ucMapSum pure A)`, obtained from `adm A` by `adm_mapSum adm_pure`; the adversary
+quantifier of `UCEmulatesCdist` therefore ranges over admissible arrows.
 
 | Predicate | Metric | Adversary `A` | Simulator `S` |
 |-----------|--------|---------------|----------------|
-| `UCEmulatesL2` | `ucCdist` | ∀ (unrestricted) | ∃ |
-| **`UCEmulatesCdist`** (here) | `ucCdist` | ∀ **admissible** | ∃ |
-| `UCEmulatesL3` | `ucCdist` | ∀ (unrestricted) | ∃ **admissible** |
-
-`UCEmulatesL2 → UCEmulatesCdist` (dropping to admissible `A` is weaker), but the converse
-transport `EmulatesDummyCdist → UCEmulatesCdist` needs the `adm A` restriction and so does
-**not** upgrade to `UCEmulatesL2`.
+| `UCEmulatesL2` | `ucCdist` | ∀ | ∃ |
+| `UCEmulatesCdist` | `ucCdist` | ∀ admissible | ∃ |
+| `UCEmulatesL3` | `ucCdist` | ∀ | ∃ admissible |
 
 ## Main definitions
 
-* `UCEmulatesCdist ε π F` — computational-distance UC emulation quantifying over
-  **admissible** adversaries.
-* `EmulatesDummyCdist ε π F` — computational emulation against the dummy adversary.
-* `CCConstructsCdist ε π F` — construction over `ucCdist` (Maurer, TOSCA 2011, Def. 3;
-  definitionally `EmulatesDummyCdist`).
+* `UCEmulatesCdist ε π F` — emulation over `ucCdist` against admissible adversaries
+* `EmulatesDummyCdist ε π F` — emulation over `ucCdist` against the dummy adversary
+* `CCConstructsCdist ε π F` — construction over `ucCdist` (Maurer, TOSCA 2011, Def. 3);
+  definitionally `EmulatesDummyCdist`
 
 ## Main results
 
-* `ucCdist_dummy_absorb` — the computational absorption core (post-composition non-expansiveness, `adm A`).
-* `dummy_completeness_cdist` / `ucEmulatesCdist_iff_dummy` — the computational
-  dummy-adversary theorem.
-* `ccConstructsCdist_iff_ucEmulatesCdist` — the computational CC ⟺ UC equivalence.
-* `ucEmulatesCdist_of_ucEmulates` — `ucCdist ≤ ucSdist` gives statistical ⟹ computational.
+* `ucCdist_dummy_absorb` — absorption of an admissible adversary into the distinguisher
+* `dummy_completeness_cdist`, `ucEmulatesCdist_iff_dummy` — the dummy-adversary theorem
+  over `ucCdist`
+* `ccConstructsCdist_iff_ucEmulatesCdist` — construction over `ucCdist` is equivalent to
+  `UCEmulatesCdist`
+* `ucEmulatesCdist_of_ucEmulates` — statistical emulation implies `UCEmulatesCdist`
+* `ucEmulatesCdist_of_ucEmulatesL2` — level 2 emulation implies `UCEmulatesCdist`
+* `adm_dummy_adversary` — the dummy adversary is admissible in every instance
 
-## Non-vacuity
+## Examples
 
-`adm_pure` makes the dummy adversary `pure` admissible in **every** `UCMonadCompDist`
-instance, so `UCEmulatesCdist`'s obligation is never vacuous (`adm` is inhabited). Over the
-concrete `UCMonadCompDist SPComp` instance, `ccConstructsCdist_perfect_witness` is a perfect
-(`ε = 0`) construction whose converter is **not** the identity relay, while
-`ccConstructsCdist_identity_converter_fails` (`1 ≤ ucCdist π F`) rules out the identity
-converter — so the transport carries content beyond the trivial `S = A` lift.
+Over the `UCMonadCompDist SPComp` instance, `ccConstructsCdist_perfect_witness` is a perfect
+(`ε = 0`) construction whose converter is not the identity relay, and
+`ccConstructsCdist_identity_converter_fails` proves `1 ≤ ucCdist π F` for the identity
+converter.
 
-## Scope note (`SPComp` instance)
+Relation to the literature: `CatCryptCore/Crypto/Complexity.md`.
 
-The only `UCMonadCompDist SPComp` instance (`UCAdmClass/SPCompInstance.lean`) uses
-**trivial** admissibility `adm = fun _ => True`, so there `ucCdist = ucSdist` (the
-information-theoretic reading; `ucCdist_eq_ucSdist_trivial`). Genuine non-trivial
-`UCAdmClass SPComp` instances exist — the query-bounded `MonadCostModel.spTreeQueryAdm`
-and the constant-time `CTAdmClass.UCAdmClass_of_CTClass`. `QueryBoundedUC.lean` pairs the
-query-bounded one into a `UCMonadCompDist SPComp` and instantiates these equivalences with
-query-bounded ADVERSARIES; it also proves `ucCdist = ucSdist` there (query cost bounds a
-distinguisher's own sampling, not its output post-processing), so the query class does NOT
-separate `ucCdist` from `ucSdist`. A strict `ucCdist < ucSdist` needs a distinguisher class
-bounding output post-processing (circuit/PRG); `RoundM n` carries the full structure. The
-theorems here are proved generically over
-`[UCMonadCompDist T]`, so they apply verbatim to any such future instance.
+## References
+
+* Maurer, "Constructive Cryptography — A New Paradigm for Security Definitions and Proofs",
+  TOSCA 2011, Def. 3
+* Küsters, Datta, Mitchell, Ramanathan, "On the Relationships between Notions of
+  Simulation-Based Security", J. Cryptology 21(4), 2008, Def. 6, Thm. 16
+* Maurer, Renner, "Abstract Cryptography", ICS 2011, App. C.1
 -/
 
 @[expose] public section

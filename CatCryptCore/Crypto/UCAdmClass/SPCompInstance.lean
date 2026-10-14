@@ -10,30 +10,22 @@ public import CatCryptCore.Crypto.UCLevels
 public import CatCryptCore.Crypto.UCMonad.SPCompInstance
 
 /-!
-# SPComp Instance of UCAdmClass and UCMonadCompDist
+# `SPComp` instance of `UCAdmClass` and `UCMonadCompDist`
 
-This file provides the concrete `UCMonadCompDist SPComp` instance with
-**trivial admissibility** (everything is admissible), connecting the
-computational security framework to the existing `SPComp` infrastructure.
-
-## Design: Trivial Admissibility
-
-With `adm := fun _ => True`, every Kleisli arrow is admissible. This means:
-- `ucCdist = ucSdist` (restricted sup = unrestricted sup)
-- Level 2 = Level 1
-- Level 3 = Level 1 (since all simulators are admissible)
-
-This is the correct instance for information-theoretic security.
-For genuine computational security (Level 2 ≠ Level 1), one would provide
-a different `UCAdmClass SPComp` instance with `adm` restricting to
-polynomial-time Kleisli arrows (requires a cost model not currently in CatCrypt).
+This file defines the trivial admissibility class `adm := fun _ => True` on `SPComp` and the
+per-distinguisher decomposition of `sdist`. Every Kleisli arrow is admissible, so `ucCdist`
+equals `ucSdist` and security levels 2 and 3 are equivalent to level 1. Non-trivial
+admissibility classes on `SPComp` are definitions, not instances, in `MonadCostModel.lean`,
+`SizeBoundedUC.lean` and `CTAdmClass.lean`.
 
 ## Main results
 
 * `UCAdmClass SPComp` — trivial admissibility instance
 * `UCMonadCompDist SPComp` — per-distinguisher decomposition instance
-* `ucCdist_eq_ucSdist_trivial` — `ucCdist = ucSdist` with trivial adm
-* `L2_iff_L1_trivial` — Level 2 ↔ Level 1 equivalence
+* `ucCdist_eq_ucSdist_trivial` — `ucCdist = ucSdist`
+* `L2_iff_L1_trivial`, `L3_iff_L1_trivial` — levels 2 and 3 are equivalent to level 1
+
+Relation to the literature: `CatCryptCore/Crypto/Complexity.md`.
 -/
 
 @[expose] public section

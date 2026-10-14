@@ -11,78 +11,45 @@ public import CatCryptCore.Crypto.CompUCEquivalence
 /-!
 # Size-bounded computational UC for `SPComp`
 
-`QueryBoundedUC.lean` pairs the *query-cost* admissibility class
-(`MonadCostModel.spTreeQueryAdm`, cost = number of sample/get/set operations on the
-worst-case path) into a `UCMonadCompDist SPComp` and proves, on the canonical separating
-pair, that it does **not** separate `ucCdist` from `ucSdist`: an output-threshold test has
-query cost `0`, is therefore admissible, and already realises the full statistical distance.
+This file defines the total node count `SPTree.size`, the admissibility class
+`spTreeSizeAdm` of arrows that are compilations of `SPTree` families of uniformly bounded
+size, and `sizeCompDist : UCMonadCompDist SPComp`, the per-distinguisher decomposition of the
+trivial instance with the admissibility fields of `spTreeSizeAdm`. It proves a conditional
+separation `ucCdist < ucSdist`: if every admissible distinguisher has advantage at most `ε`
+and some inadmissible distinguisher has advantage at least `c > ε`, then
+`ucCdist ≤ ε < c ≤ ucSdist`. It instantiates the dummy-adversary and construction
+equivalences of `CompUCEquivalence.lean` at `sizeCompDist`, and proves that on the pair `Example.π` / `Example.F` both distances
+are `1`.
 
-This file builds the **size** (total-node-count) analogue and, on top of it, the *genuine
-computational separation* — the conditional theorem `ucCdist_lt_ucSdist_of_bounded` that the
-query model provably could not carry — and states what a concrete PRG instantiation
-needs.
+`size` sums over the branches of a `sample` or `get` node, while `queryCost` takes their
+supremum; `wideTree n` has query cost `1` and size at least `2 ^ n`. Bind duplicates the
+continuation at every leaf, so `size` satisfies the multiplicative law `size_bind_mul` in
+place of the additive `cost_bind` of `MonadCostModel`; `spTreeSizeAdm` is therefore defined
+directly and not through `UCAdmClass_of_costModel`. Every pure predicate test has size `1`
+and is admissible (`adm_pure_predicate_size`).
 
-## What `size` measures, and how it differs from query cost
+## Main definitions
 
-`SPTree.size` counts **every** constructor by **summing** over the branches of a `sample` /
-`get` node (`size (sample β k) = 1 + ∑_{b} size (k b)`), whereas `queryCost` takes the
-**supremum** (`queryCost (sample β k) = 1 + ⨆_b queryCost (k b)`). Query cost is therefore
-the *depth* (number of oracle calls on the worst path); size is the *total gate/description
-count* of the whole computation. The gap is exponential: `wideTree n` (a single fan-out over
-`Fin (2^n)`) has `queryCost = 1` but `size ≥ 2^n` (`wideTree_queryCost`,
-`wideTree_size_ge`). This is exactly the "counts the whole computation" content — a
-distinguisher that is cheap in oracle calls can still be an enormous circuit.
+* `SPTree.size` — total node count of a syntax tree
+* `spTreeSizeAdm` — size-bounded admissibility on `SPComp`
+* `sizeCompDist` — `UCMonadCompDist SPComp` with size-bounded admissibility
+* `wideTree` — a single fan-out over `Fin (2 ^ n)`
 
-Because total node count is **super-additive** under substitution (bind duplicates the
-continuation at every leaf), `size` obeys a *multiplicative* bind law
-`size_bind_mul : size (s.bind f) ≤ size s * (bound + 1)` rather than the additive
-`queryCost_bind`. That super-additivity is why `size` is **not** a `MonadCostModel`
-(whose `cost_bind` is additive and `cost_pure = 0`): the additive grading collapses total
-count back to depth. So `spTreeSizeAdm` is built **directly** (the `UCAdmClass_of_costModel`
-route is unavailable *by design* — that is the mathematical distinction from query cost),
-mirroring `spTreeQueryAdm`'s closure proofs with `size_bind_mul` in place of
-`queryCost_bind`.
+## Main results
 
-## Main definitions and results
+* `size_bind_mul` — multiplicative bound on the size of a bind
+* `wideTree_queryCost`, `wideTree_size_ge` — query cost `1`, size at least `2 ^ n`
+* `sizeCompDist_adm_iff` — the `adm` of `sizeCompDist` is `spTreeSizeAdm.adm`
+* `ucCdist_lt_ucSdist_of_bounded`, `ucCdist_lt_ucSdist_strict` — the conditional separation,
+  generic over `[UCMonadCompDist T]`; `size_ucCdist_lt_ucSdist_of_bounded`,
+  `size_ucCdist_lt_ucSdist_strict` at `sizeCompDist`
+* `size_dummy_completeness_cdist`, `size_ucEmulatesCdist_iff_dummy`,
+  `size_ccConstructsCdist_iff_ucEmulatesCdist` — the equivalences with size-bounded
+  adversaries
+* `adm_pure_predicate_size` — pure predicate tests are admissible
+* `ex_size_no_separation` — `ucCdist sizeCompDist π F = ucSdist π F = 1` on the example pair
 
-* `spTreeSizeAdm : UCAdmClass SPComp` — "has a syntax-tree family of uniformly bounded total
-  node count". Genuinely non-trivial (`sizeCompDist_adm_iff`), not `fun _ => True`.
-* `sizeCompDist : UCMonadCompDist SPComp` — the trivial per-distinguisher instance with only
-  the `adm*` fields swapped for `spTreeSizeAdm`'s.
-* `ucCdist_lt_ucSdist_of_bounded` / `..._strict` — **the computational separation**, generic
-  over `[UCMonadCompDist T]` and specialised to `sizeCompDist`. Given the hardness assumption
-  `h_bounded` (every *admissible* distinguisher has advantage `≤ ε`) and an *inadmissible*
-  high-size witness beating `c`, it concludes `ucCdist ≤ ε` and `c ≤ ucSdist`, hence
-  `ucCdist < ucSdist` when `ε < c`. The `ucCdist ≤ ε` half routes `h_bounded` through
-  `iSup₂_le` (admissible sup); the `c ≤ ucSdist` half routes the witness through
-  `ucSdist_eq_iSup_distComp` (unrestricted sup).
-* The dummy-adversary / CC ⟺ UC equivalences at `sizeCompDist` (size-bounded adversaries).
-
-## The separation is conditional; where the two lower bounds live
-
-`ucCdist_lt_ucSdist_of_bounded` is a genuine *conditional* theorem; it is **not** an
-unconditional `ucCdist < ucSdist` (that would need a circuit lower bound, which is open).
-Two facts fix the scope precisely:
-
-1. **The obstruction survives for output differences.** Every *pure predicate*
-   `fun b => pure (p b)` has size `1` (`adm_pure_predicate_size`) and — by `adm_precomp` on
-   `adm_pure` — is admissible in *every* lawful `UCAdmClass`. Pure predicates are
-   statistically optimal for distinguishing two *output* distributions, so on the canonical
-   output-difference pair `Example.π` / `Example.F` we still get
-   `ucCdist sizeCompDist = ucSdist = 1` (`ex_size_no_separation`) — no gap, exactly as for
-   query cost. A separation is therefore impossible for any pair whose optimal distinguisher
-   is a pure output predicate.
-
-2. **`h_bounded` becomes *consistent* (not automatically false) only for a pair the pure
-   class cannot read.** The intended witness is a re-derivation / membership test whose
-   *reified* computation is large (`size`-inadmissible) while the pure class it competes
-   against has advantage bounded by `ε`. Proving `h_bounded` unconditionally for such a pair
-   is a circuit/PRG lower bound (open); proving the witness `size`-inadmissible at the
-   `SPComp` level needs a distribution-support ⇒ tree-size lower bound (the `SPComp`
-   denotation forgets the tree, so the tree-level gap `wideTree_size_ge` does not transfer
-   for free). Both are stated, neither is faked. The theorem is delivered with `h_bounded`
-   and the inadmissible witness as **hypotheses** — this is the standard
-   "separation conditional on a hardness assumption", made precise.
+Relation to the literature: `CatCryptCore/Crypto/Complexity.md`.
 -/
 
 @[expose] public section
@@ -144,9 +111,7 @@ theorem size_bind_mul {α β : Type} (s : SPTree α) (f : α → SPTree β) (bou
 
 `wideTree n` fans out once over `Fin (2^n)` and returns immediately. It has query cost `1`
 (one sampling node, then leaves) but total size `1 + 2^n`. So the family `wideTree` is
-uniformly query-bounded yet has unbounded size: the size class strictly refines the query
-class. This is the concrete witness that "size counts the whole computation" is a genuine
-strengthening, not a relabelling. -/
+uniformly query-bounded and has unbounded size. -/
 
 /-- A single fan-out over `Fin (2^n)`: query cost `1`, total size `1 + 2^n`. -/
 noncomputable def wideTree (n : ℕ) : SPTree Bool :=
@@ -362,9 +327,7 @@ theorem size_ccConstructsCdist_iff_ucEmulatesCdist
 On the canonical **output-difference** pair `Example.π` / `Example.F`, the leaked bit is on
 the output channel, so a pure predicate reads it directly. Pure predicates are size-`1`
 admissible (`adm_pure_predicate_size`), so the size-bounded `ucCdist` still equals `ucSdist`
-here: `size` does not beat query cost when the difference is in the output. A genuine
-separation therefore needs a pair the pure class cannot read (a heap / re-derivation
-difference), which is where `h_bounded` stops being automatically false. -/
+on this pair. -/
 
 /-- The canonical separating distinguisher (reads the leaked bit off the `.inr` channel),
     written as a pure predicate test so it is manifestly size-bounded. -/

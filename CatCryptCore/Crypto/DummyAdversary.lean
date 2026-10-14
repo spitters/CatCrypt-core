@@ -9,54 +9,51 @@ public import CatCryptCore.Crypto.UC
 public import CatCryptCore.Crypto.ForkingLemma
 
 /-!
-# Dummy-Adversary Completeness and Simulator Uniformity
+# Dummy-adversary completeness and simulator uniformity
 
-Two robustness theorems of the UC definition, after Canetti (IACR ePrint 2000/067, version of
-2020-02-11): completeness of the dummy adversary (§4.3.1, Claim 11) and the equivalence of
-emulation with per-adversary and with uniform, black-box simulators (§4.3.2, Claim 13).
-Canetti states them for polynomial-time machines; here they are stated over the statistical
-distance, about the framework's
-existing `sdist`-graded emulation predicate `CatCrypt.Crypto.UCEmulates`
-(`UC.lean`), reusing `mapSum`, `sdist`, and `sdist_comp_right`.
-
-## Setup
+This file proves two facts about the `sdist`-graded emulation predicate
+`CatCrypt.Crypto.UCEmulates` (`UC.lean`): emulation against the dummy adversary implies
+emulation against every adversary and every view, and emulation with a per-adversary
+simulator is equivalent to emulation with one uniform simulator construction. Both rest on
+`sdist_dummy_absorb`: the simulator against `A` is `fun s => (S s).bind A`, the dummy
+simulator post-composed with `A`, and `A` is absorbed into the distinguisher by
+`sdist_comp_right`.
 
 `UCEmulates ε ⟨hon, out, leak, sim_if, view⟩ π F` unfolds to
 `∀ A : leak → SPComp view, ∃ S : sim_if → SPComp view,`
 `  sdist (fun a => (π a).bind (mapSum pure A)) (fun a => (F a).bind (mapSum pure S)) ≤ ε`.
-
-The **dummy adversary** is the relay `A_dummy = SPComp.pure : leak → SPComp leak`:
-it copies each leak message to its view unchanged (`mapSum pure pure = pure`, so the
-post-adversary real world collapses to `π` itself).
+The dummy adversary `SPComp.pure : leak → SPComp leak` relays each leak message unchanged;
+since `mapSum pure pure = pure`, the real world against it is `π`.
 
 ## Main definitions
 
-* `EmulatesDummy ε π F` — emulation against the dummy adversary only:
-  `∃ S : sim_if → SPComp leak, sdist π (fun a => (F a).bind (mapSum pure S)) ≤ ε`.
-* `GeneralUCEmulates ε π F` — one *uniform* simulator construction
-  `Sim : (leak → SPComp view) → (sim_if → SPComp view)` that works against every `A`.
+* `EmulatesDummy ε π F` — emulation against the dummy adversary:
+  `∃ S : sim_if → SPComp leak, sdist π (fun a => (F a).bind (mapSum pure S)) ≤ ε`
+* `GeneralUCEmulates ε π F` — one uniform simulator construction
+  `Sim : (leak → SPComp view) → (sim_if → SPComp view)` that works against every `A`
 
 ## Main results
 
-* `Theorem 1 (dummy-adversary completeness)`
-  - `emulatesDummy_of_ucEmulates` — the dummy form is one instance of the general form (⟹, trivial).
-  - `dummy_completeness` — from the dummy form, emulation holds against **every**
-    adversary and **every** view (⟸, the absorption argument): the simulator against `A`
-    is `fun s => (S s).bind A`, i.e. the dummy simulator post-composed with `A`, and `A`
-    is absorbed into the distinguisher via `sdist_comp_right`.
-* `Theorem 2 (per-adversary vs uniform simulator)`
-  - `ucEmulates_of_general` — uniform ⟹ per-adversary (trivial).
-  - `general_of_dummy` — the dummy simulator yields a *uniform* construction.
-  - `specialized_iff_general` — the two forms are equivalent (quantifying over `view`).
+* `emulatesDummy_of_ucEmulates` — emulation implies emulation against the dummy adversary
+* `dummy_completeness`, `ucEmulates_iff_dummy` — emulation against the dummy adversary
+  implies emulation against every adversary and every view
+* `ucEmulates_of_general` — a uniform simulator construction gives per-adversary simulators
+* `general_of_dummy` — the dummy simulator yields a uniform construction
+* `specialized_iff_general` — the per-adversary and uniform forms are equivalent
+* `sdist_dummy_absorb` — absorption of the adversary into the distinguisher
 
-The engine of both is `sdist_dummy_absorb`.
+## Examples
 
-## Non-vacuity
+`Example.emulatesDummy_perfect` is a perfect (`ε = 0`) dummy emulation whose simulator is not
+the identity relay; `Example.identity_sim_fails` proves `1 ≤ sdist π F`, so the identity
+simulator does not achieve it.
 
-`Example.emulatesDummy_perfect` : a concrete perfect (`ε = 0`) dummy emulation whose
-dummy simulator is **not** the identity relay, and `Example.identity_sim_fails`
-(`1 ≤ sdist π F`) shows the identity simulator cannot achieve it — so the absorption
-argument, not `UCEmulates_of_sdist`, is what carries these examples.
+Relation to the literature: `CatCryptCore/Crypto/Complexity.md`.
+
+## References
+
+* Canetti, IACR ePrint 2000/067, version of 2020-02-11 — completeness of the dummy adversary
+  (§4.3.1, Claim 11); per-adversary and black-box simulators (§4.3.2, Claim 13)
 -/
 
 @[expose] public section

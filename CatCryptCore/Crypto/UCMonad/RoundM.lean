@@ -10,24 +10,38 @@ public import CatCryptCore.Crypto.UCMonad.SPCompInstance
 public import CatCryptCore.Crypto.SDist
 
 /-!
-# Round-Indexed Monad for Multi-Round UC Protocols
+# Round-indexed monad for multi-round UC protocols
 
-This file defines `RoundM n α`, a round-indexed monad for multi-round UC protocols.
-`RoundM` is defined by recursion on `Nat`, so no inductive type with a nested
-occurrence, and no strict-positivity check, is involved.
-
-## Key idea
+This file defines `RoundM n α`, a monad of computations with at most `n` intermediate
+rounds, proves the monad laws, and equips it with the UC metric structure: coproduct
+`mapSumRoundM` and statistical distance `sdistRoundM`. `RoundM` is defined by recursion on
+`Nat`, so no inductive type with a nested occurrence, and no strict-positivity check, is
+involved:
 
 ```
 RoundM 0 α       = SPComp α
 RoundM (n+1) α   = SPComp (α ⊕ RoundM n α)
 ```
 
-## Proof technique
+`flatten_bind'` (one-step flattening is a monad morphism) gives bind associativity, and
+`flattenAll_bind` (full flattening to `SPComp` is a monad morphism) reduces the metric laws
+of `sdistRoundM`, defined through `flattenAll`, to those of `sdist` on `SPComp`.
 
-- `flatten_bind'` — flatten is a monad morphism (used for bind associativity)
-- `flattenAll_bind` — full flattening is a monad morphism (used for PPL proofs)
-- `sdistRoundM` defined via `flattenAll`, reducing all PPL proofs to `SPComp` level
+## Main definitions
+
+* `RoundM` — the round-indexed monad; `RoundM.done`, `RoundM.yield`, `RoundM.fail`
+* `RoundM.flatten`, `RoundM.flattenAll` — one-step and full flattening
+* `mapSumRoundM` — coproduct of Kleisli arrows
+* `sdistRoundM` — statistical distance through `flattenAll`
+
+## Main results
+
+* `flatten_bind'`, `flattenAll_bind` — flattening is a monad morphism
+* `roundM_pure_bind`, `roundM_bind_done`, `roundM_bind_assoc` — monad laws
+* `sdistRoundM_self`, `sdistRoundM_sym`, `sdistRoundM_triangle`, `sdistRoundM_comp_right`,
+  `sdistRoundM_comp_left` — the metric laws of the `UCMonadMetric (RoundM n)` instance
+
+Relation to the literature: `CatCryptCore/Crypto/Complexity.md`.
 -/
 
 @[expose] public section
@@ -293,7 +307,7 @@ theorem mapSumRoundM_pure_kleisli (n : Nat) {α β γ δ : Type}
 
 /-! ## Section 8: Statistical Distance
 
-The key insight: define `sdistRoundM` via `flattenAll`, which collapses all rounds to `SPComp`.
+`sdistRoundM` is defined through `flattenAll`, which collapses all rounds to `SPComp`.
 Since `flattenAll` is a monad morphism (`flattenAll_bind`), both PPLs reduce directly to
 the corresponding `SPComp`-level properties (`sdist_comp_right`, `sdist_comp_left`). -/
 
