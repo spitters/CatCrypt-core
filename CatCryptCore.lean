@@ -236,6 +236,7 @@ public import CatCryptCore.Quantum.QROM.KEMAdvGeneral
 public import CatCryptCore.Quantum.QROM.KEMAdvDilate
 public import CatCryptCore.Quantum.QROM.O2HGeneral
 public import CatCryptCore.Quantum.QROM.MeasureReprogram
+public import CatCryptCore.Quantum.QROM.CompressedOracle
 public import CatCryptCore.Quantum.QROM.CPRun
 public import CatCryptCore.Quantum.QROM.KEMGuessReduction
 public import CatCryptCore.Quantum.QROM.KEMOwcpaReduction
