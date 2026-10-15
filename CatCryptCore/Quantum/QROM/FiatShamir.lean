@@ -6,6 +6,7 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Quantum.QROM.MeasureReprogram
+public import CatCryptCore.Quantum.ClassicalEmbed
 
 /-!
 # The Fiat–Shamir reduction in the quantum random-oracle model
@@ -344,22 +345,18 @@ section Uniform
 variable {d : ℕ}
 
 /-- The uniform mixture over a finite nonempty type `α` as an instrument: the
-    branch at every outcome scales the state by `1 / |α|`. -/
-def uniformQ (α : Type) [Fintype α] [Nonempty α] : QComp d α where
-  branch _ := (((Fintype.card α : ℝ)⁻¹ : ℝ) : ℂ) • LinearMap.id
-  branch_psd _ ρ hρ := hρ.smul (Complex.zero_le_real.mpr (by positivity))
-  branch_summable _ := (hasSum_fintype _).summable
-  branch_stp ρ _ := by
-    have hc : (Fintype.card α : ℂ) * (((Fintype.card α : ℝ)⁻¹ : ℝ) : ℂ) = 1 := by
-      push_cast
-      exact mul_inv_cancel₀ (Nat.cast_ne_zero.mpr Fintype.card_ne_zero)
-    simp only [LinearMap.smul_apply, LinearMap.id_apply, Matrix.trace_smul, smul_eq_mul,
-      tsum_fintype, Finset.sum_const, Finset.card_univ, nsmul_eq_mul, ← mul_assoc, hc, one_mul,
-      le_refl]
+    classical embedding of the uniform sub-distribution, whose branch at every
+    outcome scales the state by `1 / |α|`. -/
+def uniformQ (α : Type) [Fintype α] [Nonempty α] : QComp d α :=
+  classicalEmbed (CatCrypt.Prob.SDistr.uniform α)
 
 theorem uniformQ_branch_apply (α : Type) [Fintype α] [Nonempty α] (a : α)
     (ρ : Matrix (Fin d) (Fin d) ℂ) :
-    (uniformQ α : QComp d α).branch a ρ = (((Fintype.card α : ℝ)⁻¹ : ℝ) : ℂ) • ρ := rfl
+    (uniformQ α : QComp d α).branch a ρ = (((Fintype.card α : ℝ)⁻¹ : ℝ) : ℂ) • ρ := by
+  show ((((CatCrypt.Prob.SDistr.uniform α) (some a)).toReal : ℝ) : ℂ) • ρ = _
+  simp only [CatCrypt.Prob.SDistr.uniform, PMF.map_apply, Option.some.injEq,
+    PMF.uniformOfFintype_apply, tsum_fintype, Finset.sum_ite_eq, Finset.mem_univ, ↓reduceIte,
+    ENNReal.toReal_inv, ENNReal.toReal_natCast, Complex.ofReal_inv, Complex.ofReal_natCast]
 
 /-- The real trace of a branch of a bind over a finite type is the sum over the
     intermediate outcomes. -/
