@@ -273,7 +273,7 @@ theorem prf_uniform (m : Word) :
   -- hkr : boolXorBij m k = r, i.e., k ⊕ m = r
   apply liftR_pure
   simp only [eqPost, boolXorBij_apply, prf] at hkr ⊢
-  exact ⟨hkr, trivial⟩
+  simp_all
 
 /-! ### Hop 1: TAG_real ≈ TAG_EVAL_tt ∘ EVAL_real
 
@@ -334,7 +334,7 @@ theorem forgery_diff_message_uniform (m m_check : Word) (t_guess : Word)
   intro k r hkr
   apply liftR_pure
   simp only [eqPost]
-  exact ⟨hkr, trivial⟩
+  grind
 
 /-! ### Main Security Theorem
 
@@ -393,7 +393,7 @@ theorem mac_same_message_coupling (m : Word) (t_guess : Word) :
   intro p₁ p₂ heq
   simp only [eqPost]
   rw [heq]
-  exact ⟨rfl, rfl⟩
+  simp_all
 
 /-! ## macIdeal Simplification -/
 
@@ -408,7 +408,7 @@ theorem macIdeal_diff_eq_pure_false (m m_check : Word) (t_guess : Word)
     intro k; cases m_check <;> cases m <;> simp_all
   simp only [macIdeal, prf, SPComp.monad_bind_eq, SPComp.bind_def, SPComp.sample,
     SPComp.pure_def, SDistr.bind_assoc, SDistr.pure_bind, hbeq]
-  exact SDistr.uniform_bind_const _
+  simp_all [SDistr.uniform_bind_const]
 
 /-- `prTrue` of a constant Boolean computation from the empty heap. -/
 theorem prTrue_pure_empty (b : Bool) :
@@ -418,9 +418,9 @@ theorem prTrue_pure_empty (b : Bool) :
   cases b with
   | true =>
     simp only [true_and, ite_true]
-    exact tsum_ite_eq Heap.empty (fun _ => 1)
+    simp_all [tsum_ite_eq]
   | false =>
-    simp only [reduceCtorEq, ite_false, false_and, tsum_zero]
+    simp_all [false_and, tsum_zero]
 
 /-- Refutation of perfect indistinguishability for a forgery on an unqueried
 message: for `m_check ≠ m` there is no equality coupling between `macReal` and
@@ -444,11 +444,11 @@ theorem not_rHoare_macReal_macIdeal_of_ne (m m_check : Word) (t_guess : Word)
             ((macReal m m_check t_guess).bind SPComp.pure) +
           AdvantageA (macReal m m_check t_guess) (SPComp.pure false) SPComp.pure :=
           advantage_triangle _ _ _
-      _ = 0 := by rw [h0', h1, add_zero]
+      _ = 0 := by simp_all [add_zero]
   unfold AdvantageA Advantage at hzero
   rw [SPComp.pure_bind, prTrue_bind_sample_Bool, prTrue_pure_empty, prTrue_pure_empty]
     at hzero
-  simp at hzero
+  simp_all
 
 /-! ## Security Statement
 
@@ -524,7 +524,7 @@ theorem security_based_on_prf
     advantage_zero_of_rHoare _ _ (forgery_diff_message_uniform m m_check t_guess hdiff) A
   have h12 : AdvantageA (SPComp.sample Bool) (macIdeal m m_check t_guess) A ≤ (2 : ℝ≥0∞)⁻¹ := by
     rw [show macIdeal m m_check t_guess = SPComp.pure false from hideal]
-    exact advantage_sample_vs_pure_false A
+    grind [advantage_sample_vs_pure_false]
   -- Triangle inequality through sample Bool, then pad with prf_epsilon ≥ 0
   calc AdvantageA (macReal m m_check t_guess) (macIdeal m m_check t_guess) A
       ≤ AdvantageA (macReal m m_check t_guess) (SPComp.sample Bool) A +
