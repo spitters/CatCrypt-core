@@ -40,6 +40,14 @@ distributions, with **no computational assumption and no DDH reduction**;
 `dualOT_uc_secure_zero` threads it into a perfect (`ε = 0`) UC statement whenever
 both public keys are non-identity.
 
+The parametric statement `dualOT_uc_secure` with the hypothesis
+`CiphertextPseudorandom ε` (ciphertext `ε`-close to uniform for every public
+key) is removed: at the identity key the ciphertext `pk ^ r · m = m` is
+deterministic, so the hypothesis fails for every `ε < 1 - 1/|G|`, and for
+non-identity keys it holds at `ε = 0`. `dualOT_uc_secure_zero` is the
+replacement; `dualOT_reduction` keeps the bound for per-key hypotheses on
+`crs.pk₀` and `crs.pk₁`.
+
 ## Interface types
 
 * `leak = G × G` — the real world leaks the two ciphertexts.
@@ -189,23 +197,6 @@ theorem sdist_dualEnc_uniform (pk m : gp.G) (h : pk ≠ gp.identity) :
           (fun _ : Unit => SPComp.sample gp.G) = 0 := by
   simp_all [dualEnc_uniform, sdist_self]
 
-/-! ## Ciphertext Pseudorandomness (parametric form)
-
-`CiphertextPseudorandom ε` is the `sdist` statement that encryption with uniform
-randomness is `ε`-close to a uniform group element, for every key. It is an
-*information-theoretic hiding* statement, not a DDH reduction: for any
-non-identity key it holds at `ε = 0` (`sdist_dualEnc_uniform`). This parametric
-predicate lets downstream compositions quantify over an abstract bound; the
-honest, discharged instance is `dualOT_uc_secure_zero` below. -/
-
-/-- Encryption of `m` under `pk` with uniform randomness is `sdist`-close to a
-    uniform group element, within error `ε`. -/
-noncomputable def CiphertextPseudorandom (ε : ℝ≥0∞) : Prop :=
-  ∀ (pk : gp.G) (m : gp.G),
-    sdist (fun (_ : Unit) => SPComp.bind (SPComp.sample gp.Scalar)
-            (fun r => SPComp.pure (dualEnc gp pk m r)))
-          (fun (_ : Unit) => SPComp.sample gp.G) ≤ ε
-
 /-! ## Security Reduction -/
 
 /-- The core reduction: given per-key bounds on the statistical distance between a
@@ -323,19 +314,6 @@ theorem dualOT_reduction (crs : DualModeCRS gp) (V : Type) (ε : ℝ≥0∞)
     exact final crs.pk₀ a.m₀ _ (hb0 a.m₀)
 
 /-! ## Security Proof -/
-
-/-- **Sender-message privacy, parametric.** For any per-key ciphertext-hiding
-    bound `ε` (`CiphertextPseudorandom`), the OT is UC-secure with error `ε`
-    against a corrupt receiver: the simulator `dualOT_sim` fakes the unchosen
-    ciphertext with a uniform group element, and the gap between the real
-    unchosen ciphertext and a uniform one is bounded by `ε`. For concrete
-    non-identity keys this discharges at `ε = 0` — see `dualOT_uc_secure_zero`.
-    (genuine UC) -/
-theorem dualOT_uc_secure (crs : DualModeCRS gp)
-    (ε : ℝ≥0∞) (hcpr : CiphertextPseudorandom gp ε) (V : Type) :
-    UCEmulates ε (dualOTSpec gp V)
-      (dualOT_real gp crs) (dualOT_ideal gp crs) :=
-  dualOT_reduction gp crs V ε (fun m => hcpr crs.pk₀ m) (fun m => hcpr crs.pk₁ m)
 
 /-- **Sender-message privacy, perfect.** When both public keys are non-identity
     (in a prime-order group, both are generators), the OT is *perfectly*

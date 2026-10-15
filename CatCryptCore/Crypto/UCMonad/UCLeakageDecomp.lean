@@ -223,7 +223,7 @@ theorem UCviaRelAlg_implies_UCviaRel [UCMonadBase T]
 The following shows one side of the non-collapse. If the **identity** simulator
 already relates real and ideal (same interface, `sim = A`), UC holds. The converse
 — UC forcing identity agreement — is **false**: UC results
-(`pedersen_uc_commit_open`, `dualOT_uc_secure`, `sigma_uc_zk_secure`) hold precisely via
+(`pedersen_uc_commit_open`, `dualOT_uc_secure_zero`, `sigma_uc_zk_secure`) hold precisely via
 a *non-trivial* equivocating / extracting / RO-programming simulator with `S ≠ A`,
 where `real ≠ ideal` as leakage channels. Hence forcing `sim = id` is a strictly
 stronger requirement than UC, and the `∃ sim` quantifier cannot be dropped: UC is
