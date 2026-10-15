@@ -40,11 +40,22 @@ are a `Finset`. Supermajority thresholds are stated without division:
 * `accountable_safety_kFinalized`: accountable safety for `k`-finalization (Gasper,
   Definition 4.3), with possibly different `k` for the two checkpoints.
 * `accountable_safety`: accountable safety for finalization with `k = 1`.
+* `plausible_liveness`: if an honest set `H` holds at least two thirds of the stake, no
+  validator of `H` is slashable, `j` is justified and no honest vote has its source above
+  `j.epoch`, then the explicit votes `livenessVotes H d votes j` finalize a new checkpoint
+  descending from `j`, above every target epoch cast so far, and leave every validator of `H`
+  unslashable. `plausible_liveness_of_highest` derives the source condition when `j` is a
+  justified checkpoint of maximal epoch and honest votes have justified sources. Without a
+  condition of this kind the statement fails: an honest vote `s → t` with
+  `s.epoch < t.epoch` and `s` unjustified above every justified epoch is surrounded by every
+  link that justifies a new checkpoint above all cast target epochs.
 
 The slashable set `slashable w votes` is an explicit `Finset`: the validators with
 two distinct votes of equal target epoch (condition E1) or with a vote surrounding
 another of their votes (condition E2).
 -/
+
+set_option autoImplicit false
 
 @[expose] public section
 
@@ -342,5 +353,153 @@ theorem accountable_safety {T : BlockTree B} {w : V → ℕ} {votes : Finset (Vo
     (hc : T.Conflicting f₁.block f₂.block) :
     3 * stake w (slashable votes) ≥ totalStake w :=
   accountable_safety_kFinalized h₁.kFinalized h₂.kFinalized hc
+
+/-! ### Plausible liveness -/
+
+theorem voters_mono {votes votes' : Finset (Vote V B)} (h : votes ⊆ votes')
+    (s t : Checkpoint B) : voters votes s t ⊆ voters votes' s t := by
+  intro v hv
+  exact mem_voters.2 (h (mem_voters.1 hv))
+
+theorem SupermajorityLink.mono {T : BlockTree B} {w : V → ℕ} {votes votes' : Finset (Vote V B)}
+    {s t : Checkpoint B} (h : votes ⊆ votes') (hl : SupermajorityLink T w votes s t) :
+    SupermajorityLink T w votes' s t :=
+  ⟨hl.1, hl.2.1, le_trans hl.2.2 (Nat.mul_le_mul_left 3 (stake_mono w (voters_mono h s t)))⟩
+
+/-- Justification is monotone in the vote set. -/
+theorem Justified.mono {T : BlockTree B} {w : V → ℕ} {votes votes' : Finset (Vote V B)}
+    {c : Checkpoint B} (h : votes ⊆ votes') (hc : Justified T w votes c) :
+    Justified T w votes' c := by
+  induction hc with
+  | genesis => exact Justified.genesis
+  | link _ hl ih => exact Justified.link ih (hl.mono h)
+
+/-- The epoch of the new checkpoint: one more than the epoch of `j` and than every target
+epoch occurring in `votes`. -/
+def livenessEpoch (votes : Finset (Vote V B)) (j : Checkpoint B) : ℕ :=
+  max j.epoch (votes.sup fun x => x.target.epoch) + 1
+
+/-- The new checkpoint: the block `d j.block e` at epoch `e = livenessEpoch votes j`, where
+`d b e` is a descendant of `b` supplied by the block tree. -/
+def livenessTarget (d : B → ℕ → B) (votes : Finset (Vote V B)) (j : Checkpoint B) :
+    Checkpoint B :=
+  ⟨d j.block (livenessEpoch votes j), livenessEpoch votes j⟩
+
+/-- The checkpoint at the epoch after `livenessTarget d votes j`, on a descendant of its
+block; the link to it finalizes `livenessTarget d votes j`. -/
+def livenessNext (d : B → ℕ → B) (votes : Finset (Vote V B)) (j : Checkpoint B) :
+    Checkpoint B :=
+  ⟨d (livenessTarget d votes j).block (livenessEpoch votes j + 1), livenessEpoch votes j + 1⟩
+
+/-- The votes added by the honest validators `H`: each `v ∈ H` votes for the links
+`j → livenessTarget d votes j` and `livenessTarget d votes j → livenessNext d votes j`. -/
+def livenessVotes (H : Finset V) (d : B → ℕ → B) (votes : Finset (Vote V B))
+    (j : Checkpoint B) : Finset (Vote V B) :=
+  H.image (fun v => ⟨v, j, livenessTarget d votes j⟩) ∪
+    H.image (fun v => ⟨v, livenessTarget d votes j, livenessNext d votes j⟩)
+
+omit [Fintype V] [DecidableEq V] [DecidableEq B] in
+theorem lt_livenessEpoch_of_mem {votes : Finset (Vote V B)} {x : Vote V B} (hx : x ∈ votes)
+    (j : Checkpoint B) : x.target.epoch < livenessEpoch votes j := by
+  have := Finset.le_sup (f := fun x : Vote V B => x.target.epoch) hx
+  simp only [livenessEpoch] at this ⊢
+  omega
+
+omit [Fintype V] [DecidableEq V] [DecidableEq B] in
+theorem epoch_lt_livenessEpoch (votes : Finset (Vote V B)) (j : Checkpoint B) :
+    j.epoch < livenessEpoch votes j := by
+  simp only [livenessEpoch]
+  omega
+
+/-- Plausible liveness (Casper FFG, Theorem 2; Gasper, §4). Let `H` hold at least two
+thirds of the stake, let no validator of `H` be slashable in `votes`, let `j` be justified,
+and let every vote of a validator of `H` have its source at an epoch not above `j.epoch`.
+Let `d b e` be a descendant of `b` for every block `b` and epoch `e`. Then after the
+validators of `H` add the votes `livenessVotes H d votes j`:
+the new checkpoint `livenessTarget d votes j` descends from `j`, its epoch exceeds that of
+`j` and every target epoch in `votes`, it is finalized, and no validator of `H` is
+slashable. -/
+theorem plausible_liveness {T : BlockTree B} {w : V → ℕ} {votes : Finset (Vote V B)}
+    {H : Finset V} {j : Checkpoint B} (d : B → ℕ → B) (hd : ∀ b e, T.anc b (d b e))
+    (hH : 2 * totalStake w ≤ 3 * stake w H) (hj : Justified T w votes j)
+    (hsrc : ∀ x ∈ votes, x.validator ∈ H → x.source.epoch ≤ j.epoch)
+    (hhon : slashable votes ∩ H = ∅) :
+    T.anc j.block (livenessTarget d votes j).block ∧
+      j.epoch < (livenessTarget d votes j).epoch ∧
+      (∀ x ∈ votes, x.target.epoch < (livenessTarget d votes j).epoch) ∧
+      Finalized T w (votes ∪ livenessVotes H d votes j) (livenessTarget d votes j) ∧
+      slashable (votes ∪ livenessVotes H d votes j) ∩ H = ∅ := by
+  set c₁ := livenessTarget d votes j with hc₁
+  set c₂ := livenessNext d votes j with hc₂
+  set A := livenessVotes H d votes j with hA
+  set e := livenessEpoch votes j with he
+  have he₁ : c₁.epoch = e := rfl
+  have he₂ : c₂.epoch = e + 1 := rfl
+  have hje : j.epoch < e := epoch_lt_livenessEpoch votes j
+  have hsub : votes ⊆ votes ∪ A := Finset.subset_union_left
+  have hlink : ∀ s t : Checkpoint B, s.epoch < t.epoch → T.anc s.block t.block →
+      (∀ v ∈ H, (⟨v, s, t⟩ : Vote V B) ∈ A) → SupermajorityLink T w (votes ∪ A) s t := by
+    intro s t hst hanc hmem
+    refine ⟨hst, hanc, le_trans hH (Nat.mul_le_mul_left 3 (stake_mono w ?_))⟩
+    intro v hv
+    exact mem_voters.2 (Finset.mem_union_right _ (hmem v hv))
+  have hl₁ : SupermajorityLink T w (votes ∪ A) j c₁ :=
+    hlink j c₁ (by omega) (hd _ _) fun v hv =>
+      Finset.mem_union_left _ (Finset.mem_image_of_mem _ hv)
+  have hl₂ : SupermajorityLink T w (votes ∪ A) c₁ c₂ :=
+    hlink c₁ c₂ (by omega) (hd _ _) fun v hv =>
+      Finset.mem_union_right _ (Finset.mem_image_of_mem _ hv)
+  refine ⟨hd _ _, hje, fun x hx => lt_livenessEpoch_of_mem hx j,
+    ⟨Justified.link (hj.mono hsub) hl₁, c₂, he₂, hl₂⟩, ?_⟩
+  -- Every vote of an honest validator is an old vote or one of its two new votes.
+  have key : ∀ v ∈ H, ∀ x ∈ votes ∪ A, x.validator = v →
+      (x ∈ votes ∧ x.source.epoch ≤ j.epoch ∧ x.target.epoch < e) ∨
+        x = ⟨v, j, c₁⟩ ∨ x = ⟨v, c₁, c₂⟩ := by
+    intro v hv x hx hxv
+    rcases Finset.mem_union.1 hx with hx | hx
+    · exact Or.inl ⟨hx, hsrc x hx (hxv ▸ hv), lt_livenessEpoch_of_mem hx j⟩
+    · rcases Finset.mem_union.1 hx with hx | hx
+      · obtain ⟨u, -, rfl⟩ := Finset.mem_image.1 hx
+        subst hxv
+        exact Or.inr (Or.inl rfl)
+      · obtain ⟨u, -, rfl⟩ := Finset.mem_image.1 hx
+        subst hxv
+        exact Or.inr (Or.inr rfl)
+  have hold : ∀ v ∈ H, ¬ (DoubleVote votes v ∨ SurroundVote votes v) := by
+    intro v hv h
+    have : v ∈ slashable votes ∩ H := Finset.mem_inter.2 ⟨mem_slashable.2 h, hv⟩
+    simp [hhon] at this
+  refine Finset.eq_empty_of_forall_notMem fun v hvm => ?_
+  obtain ⟨hvs, hv⟩ := Finset.mem_inter.1 hvm
+  rcases mem_slashable.1 hvs with ⟨x, hx, y, hy, hxv, hyv, hne, hxy⟩ |
+      ⟨x, hx, y, hy, hxv, hyv, h₁, h₂, h₃⟩
+  · rcases key v hv x hx hxv with ⟨hx', -, hxt⟩ | rfl | rfl <;>
+      rcases key v hv y hy hyv with ⟨hy', -, hyt⟩ | rfl | rfl
+    · exact hold v hv (Or.inl ⟨x, hx', y, hy', hxv, hyv, hne, hxy⟩)
+    all_goals first
+      | exact absurd rfl hne
+      | (dsimp only at hxy; omega)
+  · rcases key v hv x hx hxv with ⟨hx', hxs, hxt⟩ | rfl | rfl <;>
+      rcases key v hv y hy hyv with ⟨hy', hys, hyt⟩ | rfl | rfl
+    · exact hold v hv (Or.inr ⟨x, hx', y, hy', hxv, hyv, h₁, h₂, h₃⟩)
+    all_goals (dsimp only at h₁ h₂ h₃; omega)
+
+/-- Plausible liveness from the highest justified checkpoint: if `j` is a justified
+checkpoint of maximal epoch, every vote of a validator of `H` has a justified source, `H`
+holds at least two thirds of the stake and no validator of `H` is slashable, then the
+votes `livenessVotes H d votes j` finalize a new checkpoint descending from `j` and leave
+every validator of `H` unslashable. -/
+theorem plausible_liveness_of_highest {T : BlockTree B} {w : V → ℕ}
+    {votes : Finset (Vote V B)} {H : Finset V} {j : Checkpoint B} (d : B → ℕ → B)
+    (hd : ∀ b e, T.anc b (d b e)) (hH : 2 * totalStake w ≤ 3 * stake w H)
+    (hj : Justified T w votes j) (hmax : ∀ c, Justified T w votes c → c.epoch ≤ j.epoch)
+    (hsrc : ∀ x ∈ votes, x.validator ∈ H → Justified T w votes x.source)
+    (hhon : slashable votes ∩ H = ∅) :
+    T.anc j.block (livenessTarget d votes j).block ∧
+      j.epoch < (livenessTarget d votes j).epoch ∧
+      (∀ x ∈ votes, x.target.epoch < (livenessTarget d votes j).epoch) ∧
+      Finalized T w (votes ∪ livenessVotes H d votes j) (livenessTarget d votes j) ∧
+      slashable (votes ∪ livenessVotes H d votes j) ∩ H = ∅ :=
+  plausible_liveness d hd hH hj (fun x hx hv => hmax _ (hsrc x hx hv)) hhon
 
 end CatCryptCore.Consensus.FFG
