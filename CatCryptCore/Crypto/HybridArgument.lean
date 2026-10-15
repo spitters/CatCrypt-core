@@ -77,7 +77,7 @@ theorem advantage_hybrid_dep {α : Type} (G : ℕ → SPComp α) (A : α → SPC
   induction n with
   | zero =>
     unfold AdvantageA Advantage
-    simp [Finset.range_zero, Finset.sum_empty]
+    bound
   | succ k ih =>
     have htri : AdvantageA (G 0) (G (k + 1)) A ≤
         AdvantageA (G 0) (G k) A + AdvantageA (G k) (G (k + 1)) A := by
@@ -87,7 +87,7 @@ theorem advantage_hybrid_dep {α : Type} (G : ℕ → SPComp α) (A : α → SPC
       _ ≤ (∑ i ∈ Finset.range k, AdvantageA (G i) (G (i + 1)) A) +
           AdvantageA (G k) (G (k + 1)) A := by gcongr
       _ = ∑ i ∈ Finset.range (k + 1), AdvantageA (G i) (G (i + 1)) A := by
-          rw [Finset.sum_range_succ]
+          simp_all [Finset.sum_range_succ]
 
 /-- **Dependent hybrid inequality for Advantage** (Bool games, no adversary). -/
 theorem advantage_hybrid_dep_bool (G : ℕ → SPComp Bool) (n : ℕ) :
@@ -102,7 +102,7 @@ theorem advantage_hybrid_dep_bool (G : ℕ → SPComp Bool) (n : ℕ) :
       _ ≤ (∑ i ∈ Finset.range k, Advantage (G i) (G (i + 1))) +
           Advantage (G k) (G (k + 1)) := by gcongr
       _ = ∑ i ∈ Finset.range (k + 1), Advantage (G i) (G (i + 1)) := by
-          rw [Finset.sum_range_succ]
+          simp_all [Finset.sum_range_succ]
 
 /-- **Uniform hybrid bound**: when each step is bounded by the same ε,
     the total advantage is at most `n * ε`.
@@ -115,13 +115,13 @@ theorem advantage_hybrid_uniform {α : Type} (G : ℕ → SPComp α) (A : α →
     AdvantageA (G 0) (G n) A ≤ n * ε := by
   calc AdvantageA (G 0) (G n) A
       ≤ ∑ i ∈ Finset.range n, AdvantageA (G i) (G (i + 1)) A :=
-        advantage_hybrid_dep G A n
+        by solve_by_elim [advantage_hybrid_dep, advantage_hybrid_dep_bool]
     _ ≤ ∑ _ ∈ Finset.range n, ε := by
         apply Finset.sum_le_sum
         intro i hi
         exact hstep i (Finset.mem_range.mp hi)
     _ = n * ε := by
-        simp only [Finset.sum_const, Finset.card_range, nsmul_eq_mul]
+        simp_all [Finset.sum_const, Finset.card_range, nsmul_eq_mul]
 
 /-- **Hybrid equality**: when all adjacent games are perfectly indistinguishable
     (via rHoare eqPre/eqPost), the advantage is 0.
@@ -164,7 +164,7 @@ theorem advantage_hybrid_dep_bound {α : Type} (real ideal : SPComp α)
   rw [hleft, hright]
   calc AdvantageA (G 0) (G n) A
       ≤ ∑ i ∈ Finset.range n, AdvantageA (G i) (G (i + 1)) A :=
-        advantage_hybrid_dep G A n
+        by solve_by_elim [advantage_hybrid_dep, advantage_hybrid_dep_bool, advantage_hybrid_zero]
     _ ≤ ∑ i ∈ Finset.range n, ε i := by
         apply Finset.sum_le_sum
         intro i hi
@@ -235,6 +235,6 @@ theorem advantage_hybrid_nested_eq {α : Type} (G : ℕ → SPComp α) (A : α �
     AdvantageA (G 0) (G m) A ≤ m * q * ε := by
   calc AdvantageA (G 0) (G m) A ≤ m * (q * ε) :=
         advantage_hybrid_nested G A m q ε hstep
-    _ = m * q * ε := by ring
+    _ = m * q * ε := by grind
 
 end CatCrypt.Crypto.HybridArgument
