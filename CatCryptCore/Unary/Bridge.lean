@@ -206,7 +206,7 @@ theorem prTrue_eq_prEventComp (G : SPComp Bool) (h₀ : Heap) :
   rw [tsum_bool_prod_eq]
   -- true part: ∑' h, if true = true then ... else 0 = ∑' h, G h₀ (some (true, h))
   -- false part: ∑' h, if false = true then ... else 0 = 0
-  simp only [decide_true, ite_true, Bool.false_eq_true, ite_false]
+  simp only [ite_true, Bool.false_eq_true, ite_false]
   rw [ENNReal.tsum_eq_zero.mpr (fun _ => rfl), add_zero]
 
 /-! ## Failure Event Lemma (FEL) -/
