@@ -138,8 +138,8 @@ theorem ss_privacy_coupling (i s₀ s₁ : Bool) :
     privacy advantage is exactly `0`. A single share is uniform and independent
     of the secret. -/
 theorem ss_perfect_privacy (i s₀ s₁ : Bool) (A : Bool → SPComp Bool) :
-    SS_Privacy_Adv i s₀ s₁ A = 0 :=
-  advantage_zero_of_rHoare _ _ (ss_privacy_coupling i s₀ s₁) A
+    SS_Privacy_Adv i s₀ s₁ A = 0 := by
+  (unfold CatCrypt.Examples.SecretSharing.SS_Privacy_Adv; grind [advantage_zero_of_rHoare, ss_privacy_coupling])
 
 /-! ## Reflection into the Package / UC Stack
 
@@ -165,7 +165,7 @@ instance instValidSsGameRaw (i s₀ s₁ b : Bool) : IsValid (∅ : LocSet) (ssG
 /-- The reflected body evaluates back to the shallow privacy game. -/
 theorem ssGameRaw_eval_shallow (i s₀ s₁ b : Bool) :
     (ssGameRaw i s₀ s₁ b).eval = SS_Privacy_Game i s₀ s₁ b := by
-  simp [ssGameRaw, RawCode.eval, SS_Privacy_Game, SPComp.monad_bind_eq]
+  bind_vcgen
 
 /-- The privacy game is heap-independent (a uniform sample then a pure reveal). -/
 theorem ss_game_isPure (i s₀ s₁ b : Bool) : SPComp.IsPure (SS_Privacy_Game i s₀ s₁ b) := by
@@ -221,9 +221,7 @@ theorem ss_uc (i s₀ s₁ : Bool) :
 theorem ss_deepnom_forward_eq_adv (i s₀ s₁ : Bool) :
     DeepNomAdvantage (ssGameTrue i s₀ s₁) (ssGameFalse i s₀ s₁) forwardAdv =
     SS_Privacy_Adv i s₀ s₁ SPComp.pure := by
-  unfold DeepNomAdvantage ssGameTrue ssGameFalse
-  rw [runPkg_link_forward (ssGameRaw i s₀ s₁ true),
-      runPkg_link_forward (ssGameRaw i s₀ s₁ false),
-      ssGameRaw_eval_shallow, ssGameRaw_eval_shallow, SS_Privacy_Adv, AdvantageA_pure]
+  grind [runPkg_link_forward, ssGameRaw, ssGameRaw_eval_shallow, SS_Privacy_Adv, AdvantageA_pure,
+    DeepNomAdvantage, ssGameTrue, ssGameFalse]
 
 end CatCrypt.Examples.SecretSharing
