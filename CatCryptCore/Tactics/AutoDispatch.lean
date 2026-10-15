@@ -35,10 +35,12 @@ the instantiated goal with its `set`/`let` variables replaced by their values
 
 The hop chain arm applies to `Advantage G₀ Gₙ ≤ ε` and `AdvantageA G₀ Gₙ A ≤ ε`:
 it searches the local hypotheses and the arguments for a path of hops
-`Advantage Gᵢ Gᵢ₊₁ ≤ εᵢ` (for `AdvantageA`, also `∀ A, AdvantageA Gᵢ Gᵢ₊₁ A ≤ εᵢ`
-instantiated at the goal's adversary) from `G₀` to `Gₙ`, chains them by
+`Advantage Gᵢ Gᵢ₊₁ ≤ εᵢ` (for `AdvantageA`, `AdvantageA Gᵢ Gᵢ₊₁ A ≤ εᵢ` at the
+goal's adversary `A`) from `G₀` to `Gₙ`, chains them by
 `Advantage_triangle_chain` or `AdvantageA_triangle_chain`, and closes
-`ε₁ + (ε₂ + …) ≤ ε` by `ring` or `catcrypt_grind`.
+`ε₁ + (ε₂ + …) ≤ ε` by `ring` or `catcrypt_grind`. A hop is a local hypothesis
+or an argument whose type is such an inequality; a `∀`-quantified hypothesis is
+not instantiated.
 
 `bound` runs under a quarter of the arm budget, and not at all when a local
 hypothesis is a `∀`-quantified inequality: `bound` then tries to unify that
@@ -51,8 +53,9 @@ hypothesis's conclusion with the goal, which unfolds the game definitions.
 Each arm runs under a heartbeat budget of its own, counted from the arm's start:
 `catcrypt_auto.maxHeartbeats` heartbeats (default 20000, in the unit of
 `maxHeartbeats`), with error recovery off, so that a combinator such as `<;>`
-reports the first error of a branch. An arm that fails, leaves a goal open, or
-exceeds its budget (a runtime exception, caught) is undone and the next arm runs.
+reports the first error of a branch. An arm that fails, leaves a goal open, logs
+an error, assigns the goal a term containing `sorry`, or exceeds its budget (a
+runtime exception, caught) is undone with its messages, and the next arm runs.
 When every arm fails, the error names the shape and each arm with the first line
 of its error.
 
@@ -215,19 +218,10 @@ def hopOf? (ty : Expr) : MetaM (Option (Expr × Expr × Option Expr)) := do
   | _ => return none
 
 /-- The hop of a proof of type `ty` with source text `txt`, at the adversary
-`adv?` of the goal: `ty` itself, or `ty` instantiated at the adversary when `ty`
-is `∀ A, AdvantageA G H A ≤ _`. -/
-def hopAt? (adv? : Option Expr) (advText : String) (ty : Expr) (txt : String) :
-    MetaM (Option Hop) := do
-  let ty ← instantiateMVars ty
-  let direct ← hopOf? ty
-  let (inst, txt) ← match direct, adv?, ty with
-    | some _, _, _ => pure (direct, txt)
-    | none, some adv, .forallE _ _ _ _ =>
-      try pure (← hopOf? (← instantiateForall ty #[adv]), s!"{txt} {paren advText}")
-      catch _ => pure (none, txt)
-    | _, _, _ => pure (none, txt)
-  let some (g, h, a?) := inst | return none
+`adv?` of the goal, when `ty` is itself `Advantage G H ≤ _` or
+`AdvantageA G H adv ≤ _`. A `∀`-quantified `ty` is no hop. -/
+def hopAt? (adv? : Option Expr) (ty : Expr) (txt : String) : MetaM (Option Hop) := do
+  let some (g, h, a?) ← hopOf? ty | return none
   match adv?, a? with
   | some adv, some a =>
     unless ← withReducible (isDefEq adv a) do return none
@@ -253,13 +247,10 @@ to `Gₙ` exists. -/
 def hopChainArm? (g : MVarId) (ts : Array Term) : TacticM (Option String) :=
   g.withContext do withoutModifyingState do
     let some (g₀, gₙ, adv?) ← hopOf? (← g.getType) | return none
-    let advText ← match adv? with
-      | some a => pure (toString (← ppExpr a))
-      | none => pure ""
     let mut hops : Array Hop := #[]
     for d in ← getLCtx do
       if d.isImplementationDetail || d.userName.hasMacroScopes then continue
-      if let some hop ← hopAt? adv? advText d.type d.userName.toString then
+      if let some hop ← hopAt? adv? d.type d.userName.toString then
         hops := hops.push hop
     for t in ts do
       let ty ← try
@@ -267,7 +258,7 @@ def hopChainArm? (g : MVarId) (ts : Array Term) : TacticM (Option String) :=
           pure (some (← inferType e))
         catch _ => pure none
       if let some ty := ty then
-        if let some hop ← hopAt? adv? advText ty (← termText t) then
+        if let some hop ← hopAt? adv? ty (← termText t) then
           hops := hops.push hop
     let some path ← hopPath hops g₀ gₙ [] | return none
     let mids ← (path.dropLast.map (·.dst)).mapM fun e => do return toString (← ppExpr e)
@@ -339,14 +330,27 @@ def arms (sh : Shape) (g : MVarId) (ts : Array Term) (hb : Nat) : TacticM (Array
   | .other => return #[← mk s!"simp_all{lst}", ← mk s!"grind{lst}"]
 
 /-- Run `x` under a budget of `hb` heartbeats (in the unit of `maxHeartbeats`)
-counted from its start, with error recovery off. A failure, including an exceeded
-heartbeat budget or another runtime exception, restores the state and returns the
+counted from its start, with error recovery off. The run is accepted only when
+`x` logs no error (a nested `by` block reports its unsolved goals by logging an
+error and admitting them) and the goals it starts on are assigned terms without
+`sorry`. A rejected run, a failure, an exceeded heartbeat budget or another
+runtime exception restores the state, including the message log, and returns the
 error on one line, cut at 160 characters. -/
 def budgeted (hb : Nat) (x : TacticM Unit) : TacticM (Except String Unit) := do
   let saved ← Tactic.saveState
+  let goals ← getGoals
+  let log ← Core.getMessageLog
   tryCatchRuntimeEx
     (withTheReader Core.Context (fun c => { c with maxHeartbeats := hb * 1000 }) do
+      modifyThe Core.State fun s => { s with messages := {} }
       withCurrHeartbeats (Term.withoutErrToSorry (withoutRecover x))
+      let new ← Core.getMessageLog
+      if let some m := new.toList.find? (·.severity == .error) then
+        throwError m!"logged the error: {m.data}"
+      for g in goals do
+        if (← instantiateMVars (mkMVar g)).hasSorry then
+          throwError "the proof term contains sorry"
+      modifyThe Core.State fun s => { s with messages := log ++ new }
       return .ok ())
     fun ex => do
       saved.restore

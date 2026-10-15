@@ -103,12 +103,18 @@ match, the head of its `whnfR`.
 
 The hop chain arm applies to `Advantage G₀ Gₙ ≤ ε` and `AdvantageA G₀ Gₙ A ≤ ε`.
 It finds a path of hops `AdvantageA Gᵢ Gᵢ₊₁ A ≤ εᵢ` from `G₀` to `Gₙ` among the
-named hypotheses (a `∀ A` hypothesis is instantiated at the goal's adversary)
-and the arguments, applies `AdvantageA_triangle_chain` (or
-`Advantage_triangle_chain`) through the intermediate games, and closes the sum of
-the `εᵢ` against `ε` by `ring` or `catcrypt_grind`.
+named hypotheses and the arguments whose types are such inequalities, applies
+`AdvantageA_triangle_chain` (or `Advantage_triangle_chain`) through the
+intermediate games, and closes the sum of the `εᵢ` against `ε` by `ring` or
+`catcrypt_grind`. A `∀`-quantified hypothesis, such as `∀ A, AdvantageA G H A ≤ ε`,
+is not instantiated and is no hop; a hop for the goal's adversary is passed as
+an argument (`h A`, or a reduction lemma applied to `A`).
 
-An arm succeeds only when it closes the goal. Error recovery is off inside an
+An arm succeeds only when it closes the goal, logs no error, and assigns the
+goal a proof term without `sorry`. A nested `by` block that fails inside an arm
+(for example `exact le_of_eq (by ring)` under `first`) logs its error and admits
+its goal instead of throwing; such an arm is rejected, and its messages are
+undone with it. Error recovery is off inside an
 arm, so a `<;>` branch reports its first error. Each arm runs under
 `catcrypt_auto.maxHeartbeats` heartbeats (default 20000, in the unit of
 `maxHeartbeats`), counted from its start. An arm that fails, leaves a goal open

@@ -134,6 +134,33 @@ example {α : Type} (G₀ G₁ G₂ : SPComp α) (ε₁ ε₂ : ℝ≥0∞) (A :
     AdvantageA G₀ G₂ A ≤ ε₁ + ε₂ := by
   catcrypt_auto? [advHop_of hd]
 
+-- The residual of SPHINCSPlus/Reduction.lean:243: the hop chain reaches
+-- `ε₁ + ε₂ ≤ h * ε₁ + l * ε₂`, which neither `ring` nor `catcrypt_grind`
+-- closes. The arm logs an error inside its `first` and is rejected; every arm
+-- fails with an error naming the shape.
+/--
+error: catcrypt_auto: goal shape advantage/sdist inequality; every arm failed
+-/
+#guard_msgs (substring := true) in
+example {α : Type} (G₀ G₁ G₂ : SPComp α) (A : α → SPComp Bool) (ε₁ ε₂ : ℝ≥0∞) (h l : ℕ)
+    (_hh : 1 ≤ h) (_hl : 1 ≤ l) (h₁ : AdvantageA G₀ G₁ A ≤ ε₁)
+    (h₂ : AdvantageA G₁ G₂ A ≤ ε₂) :
+    AdvantageA G₀ G₂ A ≤ h * ε₁ + l * ε₂ := by
+  catcrypt_auto?
+
+-- A hop given only as a hypothesis quantified over the adversary is not
+-- instantiated by the hop chain: with the per-adversary bound `f B` the hop
+-- chain arm is absent and the suggestion is a later arm.
+/--
+info: Try this:
+  [apply] catcrypt_grind
+-/
+#guard_msgs (substring := true) in
+example {α : Type} (G₀ G₁ : SPComp α) (A : α → SPComp Bool)
+    (f : (α → SPComp Bool) → ℝ≥0∞) (hB : ∀ B, AdvantageA G₀ G₁ B ≤ f B) :
+    AdvantageA G₀ G₁ A ≤ f A := by
+  catcrypt_auto?
+
 /-! ## Hop leaves and arguments -/
 
 /-- An `sdist` hop assumption packaged in a structure (the KEMTLS assumptions). -/
