@@ -68,8 +68,6 @@ theorem add_uniform_eq_uniform (a : ZMod p) (h : Heap) :
     (SPComp.bind (SPComp.sample (ZMod p)) (fun b => SPComp.pure (a + b))) h =
     (SPComp.sample (ZMod p)) h := by
   rw [SPComp.sample_bind_pure]
-  show (SDistr.uniform (ZMod p)).bind (fun b => SDistr.pure (a + b, h)) =
-       (SDistr.uniform (ZMod p)).bind (fun b => SDistr.pure (b, h))
   exact SDistr.uniform_bind_equiv_comp (addEquiv p a) (fun b => SDistr.pure (b, h))
 
 /-! ## Main Theorem -/
@@ -94,8 +92,7 @@ theorem coinToss_eq : coinTossReal p = coinTossIdeal p := by
   show ((SDistr.uniform (ZMod p)).bind (fun a => SDistr.pure (a, h))).bind
     (fun x => (SDistr.uniform (ZMod p)).bind (fun b => SDistr.pure (b, x.2))) =
     (SDistr.uniform (ZMod p)).bind (fun a => SDistr.pure (a, h))
-  rw [SDistr.bind_assoc]
-  simp only [SDistr.pure_bind]
+  simp only [SDistr.bind_assoc, SDistr.pure_bind]
   exact SDistr.uniform_bind_const (α := ZMod p) _
 
 end CatCryptCore.Examples.CoinToss
