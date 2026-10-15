@@ -265,8 +265,8 @@ theorem INDCCA_reduces_to_INDCPA (E : EncScheme) (m₀ m₁ : E.Plaintext)
   calc INDCCA_Adv E m₀ m₁ A
       = Advantage (INDCCA_Game E m₀ m₁ true A) (INDCCA_Game E m₀ m₁ false A) := rfl
     _ ≤ Advantage (INDCCA_Game E m₀ m₁ true A) (INDCCA_rejectGame E m₀ m₁ true A)
-          + Advantage (INDCCA_rejectGame E m₀ m₁ true A) (INDCCA_Game E m₀ m₁ false A) :=
-        advantage_triangle _ _ _
+          + Advantage (INDCCA_rejectGame E m₀ m₁ true A) (INDCCA_Game E m₀ m₁ false A) := by
+        grind
     _ ≤ Advantage (INDCCA_Game E m₀ m₁ true A) (INDCCA_rejectGame E m₀ m₁ true A)
           + (Advantage (INDCCA_rejectGame E m₀ m₁ true A) (INDCCA_rejectGame E m₀ m₁ false A)
              + Advantage (INDCCA_rejectGame E m₀ m₁ false A) (INDCCA_Game E m₀ m₁ false A)) := by
