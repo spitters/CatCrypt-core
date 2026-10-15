@@ -98,7 +98,7 @@ theorem spcomp_eq_of_isPure_coupling {α : Type} {G₀ G₁ : SPComp α}
     have hEq : liftR Eq (G₀ Heap.empty) (G₁ Heap.empty) := by
       apply liftR_mono _ hl
       rintro ⟨a₁, k₁⟩ ⟨a₂, k₂⟩ ⟨ha, hk⟩
-      simp_all [eqPost]
+      simp_all
     grind [liftR_eq_implies_eq]
   have hdd : d₀ = d₁ :=
     push_inj Heap.empty (by rw [← hd₀ Heap.empty, ← hd₁ Heap.empty]; exact hemp)
