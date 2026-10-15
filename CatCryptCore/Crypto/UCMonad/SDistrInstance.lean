@@ -63,17 +63,13 @@ theorem mapSumD_inr {α β γ δ : Type} (f : α → SDistr β) (g : γ → SDis
 /-- `mapSumD pure pure = pure` (identity on Sum). -/
 theorem mapSumD_pure_pure {α β : Type} :
     mapSumD (SDistr.pure (α := α)) (SDistr.pure (α := β)) = SDistr.pure := by
-  funext x; rcases x with a | b
-  · simp [mapSumD, SDistr.pure_bind]
-  · simp [mapSumD, SDistr.pure_bind]
+  funext x; rcases x with a | b <;> simp [mapSumD, SDistr.pure_bind]
 
 /-- Kleisli functoriality: `(id ⊕ f) ∘ₖ (id ⊕ g) = id ⊕ (f ∘ₖ g)`. -/
 theorem mapSumD_pure_kleisli {α β γ δ : Type} (f : β → SDistr γ) (g : γ → SDistr δ) :
     (fun x : α ⊕ β => SDistr.bind (mapSumD SDistr.pure f x) (mapSumD SDistr.pure g))
     = mapSumD SDistr.pure (fun b => SDistr.bind (f b) g) := by
-  funext x; rcases x with a | b
-  · simp [mapSumD, SDistr.pure_bind]
-  · simp [mapSumD, SDistr.pure_bind, SDistr.bind_assoc]
+  funext x; rcases x with a | b <;> simp [mapSumD, SDistr.pure_bind, SDistr.bind_assoc]
 
 /-! ## Statistical Distance -/
 
@@ -89,15 +85,9 @@ theorem absDiffD_comm (a b : ℝ≥0∞) : absDiffD a b = absDiffD b a := by
 theorem absDiffD_triangle (a b c : ℝ≥0∞) :
     absDiffD a c ≤ absDiffD a b + absDiffD b c := by
   simp only [absDiffD]
-  apply max_le
-  · calc a - c ≤ (a - b) + (b - c) := tsub_le_tsub_add_tsub
-      _ ≤ ((a - b) ⊔ (b - a)) + ((b - c) ⊔ (c - b)) :=
-        add_le_add (le_max_left _ _) (le_max_left _ _)
-  · calc c - a ≤ (c - b) + (b - a) := tsub_le_tsub_add_tsub
-      _ ≤ ((c - b) ⊔ (b - c)) + ((b - a) ⊔ (a - b)) :=
-        add_le_add (le_max_left _ _) (le_max_left _ _)
-      _ = ((a - b) ⊔ (b - a)) + ((b - c) ⊔ (c - b)) := by
-        rw [max_comm (c - b), max_comm (b - a), add_comm]
+  exact max_le (tsub_le_tsub_add_tsub.trans (add_le_add (le_max_left _ _) (le_max_left _ _)))
+    (tsub_le_tsub_add_tsub.trans
+      ((add_comm _ _).trans_le (add_le_add (le_max_right _ _) (le_max_right _ _))))
 
 /-- Probability of `true` in a Bool sub-distribution. -/
 noncomputable def prTrueD (d : SDistr Bool) : ℝ≥0∞ := d (some true)
@@ -121,37 +111,22 @@ theorem sdistD_sym {α β : Type} (f g : α → SDistr β) : sdistD f g = sdistD
 
 theorem sdistD_triangle {α β : Type} (f g h : α → SDistr β) :
     sdistD f h ≤ sdistD f g + sdistD g h := by
-  apply iSup_le; intro D; apply iSup_le; intro a
-  calc absDiffD (prTrueD (SDistr.bind (f a) D)) (prTrueD (SDistr.bind (h a) D))
-      ≤ absDiffD (prTrueD (SDistr.bind (f a) D)) (prTrueD (SDistr.bind (g a) D))
-        + absDiffD (prTrueD (SDistr.bind (g a) D)) (prTrueD (SDistr.bind (h a) D)) :=
-        absDiffD_triangle _ _ _
-    _ ≤ sdistD f g + sdistD g h := add_le_add
-        (le_iSup_of_le D (le_iSup_of_le a le_rfl))
-        (le_iSup_of_le D (le_iSup_of_le a le_rfl))
+  exact iSup₂_le fun D a => (absDiffD_triangle _ _ _).trans
+    (add_le_add (le_iSup₂_of_le D a le_rfl) (le_iSup₂_of_le D a le_rfl))
 
 /-! ## Post-Processing Lemmas -/
 
 /-- Right PPL: post-composition doesn't increase distance. -/
 theorem sdistD_comp_right {α β γ : Type} (f g : α → SDistr β) (k : β → SDistr γ) :
     sdistD (fun a => SDistr.bind (f a) k) (fun a => SDistr.bind (g a) k) ≤ sdistD f g := by
-  apply iSup_le; intro D; apply iSup_le; intro a
-  have hf : SDistr.bind (SDistr.bind (f a) k) D =
-      SDistr.bind (f a) (fun b => SDistr.bind (k b) D) :=
-    SDistr.bind_assoc _ _ _
-  have hg : SDistr.bind (SDistr.bind (g a) k) D =
-      SDistr.bind (g a) (fun b => SDistr.bind (k b) D) :=
-    SDistr.bind_assoc _ _ _
-  rw [hf, hg]
-  exact le_iSup_of_le (fun b => SDistr.bind (k b) D) (le_iSup_of_le a le_rfl)
+  refine iSup₂_le fun D a => ?_
+  rw [SDistr.bind_assoc, SDistr.bind_assoc]
+  exact le_iSup₂_of_le (fun b => SDistr.bind (k b) D) a le_rfl
 
 /-- `absDiffD a b ≤ ε` implies `a ≤ b + ε`. -/
 theorem le_add_of_absDiffD_le {a b ε : ℝ≥0∞} (h : absDiffD a b ≤ ε) :
     a ≤ b + ε := by
-  have hab : a - b ≤ ε := le_trans (le_max_left _ _) h
-  calc a ≤ a - b + b := le_tsub_add
-    _ ≤ ε + b := by gcongr
-    _ = b + ε := add_comm _ _
+  exact (tsub_le_iff_right.1 ((le_max_left _ _).trans h)).trans_eq (add_comm _ _)
 
 /-- Weighted average bound: if `∀ i, f i ≤ g i + ε` and `∑ w i ≤ 1`,
     then `∑ w i * f i ≤ (∑ w i * g i) + ε`. -/
@@ -191,32 +166,21 @@ theorem absDiffD_prTrueD_bind_le {α : Type}
   have hv : ∀ p : Option α,
       (match p with | some a => prTrueD (k₁ a) | none => 0) ≤
       (match p with | some a => prTrueD (k₂ a) | none => 0) + ε := by
-    intro p; cases p with
-    | none => exact zero_le
-    | some a => exact hk a
+    rintro (_ | a); exacts [zero_le, hk a]
   have hv' : ∀ p : Option α,
       (match p with | some a => prTrueD (k₂ a) | none => 0) ≤
       (match p with | some a => prTrueD (k₁ a) | none => 0) + ε := by
-    intro p; cases p with
-    | none => exact zero_le
-    | some a => exact hk' a
+    rintro (_ | a); exacts [zero_le, hk' a]
   have hw : ∑' p, c p ≤ 1 := le_of_eq c.tsum_coe
   simp only [absDiffD]
-  apply max_le
-  · rw [tsub_le_iff_right]
-    exact le_trans (weighted_bound _ _ _ ε hv hw) (le_of_eq (add_comm _ _))
-  · rw [tsub_le_iff_right]
-    exact le_trans (weighted_bound _ _ _ ε hv' hw) (le_of_eq (add_comm _ _))
+  exact max_le (tsub_le_iff_right.2 ((weighted_bound _ _ _ ε hv hw).trans_eq (add_comm _ _)))
+    (tsub_le_iff_right.2 ((weighted_bound _ _ _ ε hv' hw).trans_eq (add_comm _ _)))
 
 /-- Left PPL: pre-composition with shared prefix doesn't increase distance. -/
 theorem sdistD_comp_left {α β γ : Type} (f : α → SDistr β) (g₁ g₂ : β → SDistr γ) :
     sdistD (fun a => SDistr.bind (f a) g₁) (fun a => SDistr.bind (f a) g₂) ≤ sdistD g₁ g₂ := by
   apply iSup_le; intro D; apply iSup_le; intro a
-  have eq1 : SDistr.bind (SDistr.bind (f a) g₁) D =
-    SDistr.bind (f a) (fun b => SDistr.bind (g₁ b) D) := SDistr.bind_assoc _ _ _
-  have eq2 : SDistr.bind (SDistr.bind (f a) g₂) D =
-    SDistr.bind (f a) (fun b => SDistr.bind (g₂ b) D) := SDistr.bind_assoc _ _ _
-  rw [eq1, eq2]
+  rw [SDistr.bind_assoc, SDistr.bind_assoc]
   set ε := sdistD g₁ g₂
   apply absDiffD_prTrueD_bind_le (f a) _ _ ε
   · intro b
