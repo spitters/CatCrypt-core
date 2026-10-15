@@ -114,6 +114,21 @@ example (hyw : y ≤ w) (hwz : w ≤ z) : x + y ≤ x + z := by
   gcongr
   exact hyw.trans hwz
 
+/-- A sum over a literal range is read after `Finset.sum_range_succ` expands it. -/
+example (f : ℕ → ℝ≥0∞) (h₀ : f 0 ≤ x) (h₁ : f 1 ≤ y) :
+    ∑ i ∈ Finset.range 2, f i ≤ x + y := by
+  sum_atoms_le
+
+/-- A sum over `Finset.range (k + 1)` is read as the sum over `Finset.range k` and the
+last summand. -/
+example (k : ℕ) (f : ℕ → ℝ≥0∞) (h : ∑ i ∈ Finset.range k, f i ≤ x) :
+    ∑ i ∈ Finset.range (k + 1), f i ≤ x + f k := by
+  sum_atoms_le
+
+/-- A conditional on a Boolean literal equation is reduced before the atoms are read. -/
+example : x + (if false = true then 1 else 0) ≤ x := by
+  sum_atoms_le
+
 end Atoms
 
 /-! ## Monotonicity -/

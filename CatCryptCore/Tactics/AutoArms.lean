@@ -24,7 +24,9 @@ This module provides three procedures.
   residual inequality between the sum of the hop bounds and `e` with `sum_atoms_le`.
 * `sum_atoms_le` decides inequalities between ℕ-weighted sums of atoms in an ordered
   commutative semiring whose elements are nonnegative (`ℝ≥0∞` in practice), using in
-  addition hypotheses `a ≤ b` between atoms.
+  addition hypotheses `a ≤ b` between atoms; a goal outside the fragment is read again
+  after expanding sums over `Finset.range (n + 1)` and reducing conditionals on Boolean
+  literal equations.
 * `gcongr_unfold [defs]` introduces the binders of a goal that unfolds to a universally
   quantified relation (for example `Monotone f`), unfolds the listed definitions, and runs
   `gcongr` with a fixed discharger.
@@ -446,9 +448,34 @@ def sumAtomsLe (g : MVarId) : TacticM Unit := g.withContext do
     throwError "sum_atoms_le: internal error: proof type mismatch"
   g.assign pf
 
+set_option hygiene false in
+/-- The normalisation that `sum_atoms_le` applies before its second reading of a goal:
+finite sums over `Finset.range (n + 1)` and `Finset.range 0` are expanded, and
+conditionals on the Boolean literal equations `false = true` and `true = false` are
+reduced. -/
+def sumAtomsNorm : TacticM (TSyntax `tactic) :=
+  `(tactic| simp only [Finset.sum_range_succ, Finset.sum_range_zero, Bool.false_eq_true,
+    Bool.true_eq_false, ↓reduceIte])
+
+/-- Prove `S ≤ E` for the goal `g` by `sumAtomsLe`; when that fails, normalise the goal
+by `sumAtomsNorm` and read it again. The error of the first reading is reported when the
+normalisation does not change the goal. -/
+def sumAtomsLeNorm (g : MVarId) : TacticM Unit := do
+  try sumAtomsLe g
+  catch e =>
+    let gs ← try Tactic.run g (evalTactic (← sumAtomsNorm)) catch _ => throw e
+    match gs with
+    | [] => pure ()
+    | [g'] => sumAtomsLe g'
+    | _ => throw e
+
 /-- `sum_atoms_le` proves `S ≤ E` where `S` and `E` are sums of atoms with natural-number
 literal weights (`a + b`, `0`, `n * a`, `a * n`, `n • a`; any other term is an atom),
 in an ordered commutative semiring with `0 ≤ x` for all `x` (`ℝ≥0∞` in practice).
+When the goal is not in this fragment as stated, it is read a second time after
+`simp only [Finset.sum_range_succ, Finset.sum_range_zero, Bool.false_eq_true,
+Bool.true_eq_false, ↓reduceIte]`: a sum over `Finset.range (n + 1)` is a sum of atoms
+once expanded, and `if false = true then a else b` is the atom `b`.
 
 Reading each atom as an independent variable, the inequality holds in every such
 semiring if and only if the weight of each atom on the left is at most its weight on the
@@ -464,7 +491,7 @@ syntax (name := sumAtomsLeStx) "sum_atoms_le" : tactic
 
 @[tactic sumAtomsLeStx] def evalSumAtomsLe : Tactic := fun _ => do
   let g ← getMainGoal
-  sumAtomsLe g
+  sumAtomsLeNorm g
   replaceMainGoal []
 
 /-! ## Hop chains -/
@@ -520,7 +547,7 @@ def hopChainCore (extra : Array Expr) : TacticM Unit := do
   unless ← isDefEq (← inferType pf) (← g.getType) do
     throwError "hop_chain: internal error: proof type mismatch"
   g.assign pf
-  try sumAtomsLe res.mvarId!
+  try sumAtomsLeNorm res.mvarId!
   catch e =>
     throwError "hop_chain: the hops compose to{indentExpr bound}\nbut the residual \
       inequality is not closed: {e.toMessageData}"

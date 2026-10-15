@@ -377,4 +377,121 @@ example {α : Type} (a b : α) (h' : Heap)
     some (b, h') ≠ some (a, Heap.empty.set testFlagLoc true) := by
   catcrypt_auto?
 
+/-! ## Argument handling -/
+
+-- A local hypothesis among the arguments does not reach `grind`, which rejects it
+-- as a redundant parameter.
+/--
+info: Try this:
+  [apply] grind [CatCrypt.Core.Heap.get_set_same, CatCrypt.Core.Heap.get_set_other]
+-/
+#guard_msgs (substring := true) in
+example (h₁ : Heap) (l l' : Location) (v : l.ty) (b : l'.ty) (hid : l.id ≠ l'.id)
+    (hset : Heap.get h₁ l' = b) : Heap.get (h₁.set l v) l' = b := by
+  catcrypt_auto? [hset]
+
+-- An applied hypothesis reaches `aesop` as one rule, in parentheses.
+/--
+(add unsafe (hf a))
+-/
+#guard_msgs (substring := true) in
+example {α β : Type} (a : α) (f : α → SPComp β) (hf : ∀ x, SPComp.NoFail (f x)) :
+    SPComp.NoFail ((pure a : SPComp α) >>= f) := by
+  catcrypt_auto? [hf a]
+
+-- A term with a hole is elaborated against the goal by `exact`.
+/--
+info: Try this:
+  [apply] exact hPQ _ h
+-/
+#guard_msgs (substring := true) in
+example (P Q : ℕ → Prop) (hPQ : ∀ n, P n → Q n) (h : P 3) : Q 3 := by
+  catcrypt_auto? [hPQ _ h]
+
+-- A lemma whose type class arguments stay stuck without an expected type is a
+-- proof, passed to `simp_all` as a lemma argument.
+/--
+info: Try this:
+  [apply] simp_all [mul_comm]
+-/
+#guard_msgs (substring := true) in
+example (a b : ℕ) (h : a * b = 5) : b * a = 5 := by
+  catcrypt_auto? [mul_comm]
+
+/-- A game given as a definition. -/
+noncomputable def testGame : SPComp Bool := do
+  let a ← SPComp.sample Bool
+  let b ← SPComp.sample Bool
+  pure (a && b)
+
+-- A definition among the arguments is unfolded, not added to `aesop`.
+/--
+info: Try this:
+  [apply] (unfold CatCrypt.Tactics.AutoDispatchTest.testGame;
+-/
+#guard_msgs (substring := true) in
+example : SPComp.IsPure testGame := by
+  catcrypt_auto? [testGame]
+
+/-! ## Unfolding -/
+
+/-- A predicate given as a definition. -/
+def testInv (x : ℕ) : Prop := x + 0 = x
+
+-- The head of a goal of shape `other` is unfolded before the shape is read.
+/--
+info: Try this:
+  [apply] (unfold CatCrypt.Tactics.AutoDispatchTest.testInv; simp_all)
+-/
+#guard_msgs (substring := true) in
+example : testInv 3 := by
+  catcrypt_auto?
+
+-- The game under `IsPure` is unfolded once every arm fails on the folded goal.
+/--
+info: Try this:
+  [apply] (unfold CatCrypt.Tactics.AutoDispatchTest.testGame;
+-/
+#guard_msgs (substring := true) in
+example : SPComp.IsPure testGame := by
+  catcrypt_auto?
+
+/-! ## Sums of atoms outside the distance shape -/
+
+-- `sum_atoms_le` runs on a `≤` goal of shape `other`.
+/--
+info: Try this:
+  [apply] sum_atoms_le
+-/
+#guard_msgs (substring := true) in
+example (c S r : ℝ≥0∞) : c * S ≤ r + c * S := by
+  catcrypt_auto?
+
+-- The hop chain of a hybrid argument whose bound is a sum over `range (k + 1)`
+-- (Crypto/HybridArgument.lean:85): the residual is read after expanding the sum.
+/--
+info: Try this:
+  [apply] hop_chain
+-/
+#guard_msgs (substring := true) in
+example {α : Type} (G : ℕ → SPComp α) (A : α → SPComp Bool) (ε : ℕ → ℝ≥0∞) (k : ℕ)
+    (ih : AdvantageA (G 0) (G k) A ≤ ∑ i ∈ Finset.range k, ε i)
+    (hk : AdvantageA (G k) (G (k + 1)) A ≤ ε k) :
+    AdvantageA (G 0) (G (k + 1)) A ≤ ∑ i ∈ Finset.range (k + 1), ε i := by
+  catcrypt_auto?
+
+/-! ## `set` equations -/
+
+-- `hm` and `_hn` rewrite into each other and `simp_all` reaches the maximum
+-- recursion depth; the `simp_all` arm runs after `clear hm`.
+/--
+info: Try this:
+  [apply] (clear hm; simp_all)
+-/
+#guard_msgs (substring := true) in
+example (n : ℕ) (h : n = 3) : n + 1 = 4 := by
+  set m := n + 1 with hm
+  have _hn : n = m - 1 := by omega
+  catcrypt_auto?
+
 end CatCrypt.Tactics.AutoDispatchTest

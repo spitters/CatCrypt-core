@@ -26,11 +26,16 @@ it suggests. When every arm fails, the error names the goal shape and the first
 line of each arm's error; the shape selects the family in the registry below.
 When the goal needs a hop lemma, a triangle lemma or a definition that is not in
 context, pass it: `catcrypt_auto? [t₁, …, tₙ]` (terms, e.g. `kemtls_hop1 P ε h`,
-`advantageA_triangle`, a definition name). The terms go to the `grind`,
-`catcrypt_grind` and `simp_all` arms as lemma arguments, to the `aesop` arms as
-`(add unsafe tᵢ)`, to `hop_chain` as further hop facts (those that are proofs of
-unquantified propositions), and to `gcongr_unfold` as definitions to unfold
-(those that are identifiers); the suggestion keeps them.
+`advantageA_triangle`, a definition name). Each term is elaborated as one term
+and goes to the arms by its kind: a local hypothesis to `simp_all` and `aesop`
+(never to `grind`, which uses the local context and rejects it as a redundant
+parameter); a definition to `grind`, `catcrypt_grind`, `simp_all`,
+`gcongr_unfold` and the unfolding pass (never to `aesop`); a term with a hole
+`_`, a term whose type is not a proposition, or a term that needs the goal to
+elaborate to the arms `exact t` and `apply t` only, tried first; any other proof
+to `grind`, `catcrypt_grind` and `simp_all` as a lemma argument, to `aesop` as
+`(add unsafe (t))`, and to `hop_chain` when it is not `∀`-quantified. The
+suggestion keeps them.
 
 ## Registry
 
@@ -103,10 +108,34 @@ match, the head of its `whnfR`.
 | side condition | `SPComp.IsPure _`, `SPComp.NoFail _` | `aesop` over `CatCryptRel` | `AutoDispatch` |
 | relational | `rHoare _ _ _ _` | `aesop` over `CatCryptRel`; `ssprove_crypto`; `ssprove_crypto_grind` | `AutoDispatch` |
 | distance inequality | `_ ≤ _` over `ℝ≥0∞` or `ℝ` whose left side is a registered distance (after unfolding `@[hop_metric]` definitions, else after `whnfR`) or a sum with one as summand, or that mentions a registered head, `prTrue` or `prEvent` | `hop_chain`; `sum_atoms_le`; `gcongr <;> catcrypt_grind`; `catcrypt_grind`; `bound` (a quarter of the budget; skipped when a `∀`-quantified inequality is in context) | `AutoDispatch` |
-| monotonicity | `f a₁ … aₙ ≤ f b₁ … bₙ` or `<`, the same head on both sides; `Monotone f`, `Antitone f`, `StrictMono f`, `StrictAnti f` | `gcongr_unfold`; `gcongr`; `gcongr <;> catcrypt_grind`; `simp_all`; `grind` | `AutoDispatch` |
+| monotonicity | `f a₁ … aₙ ≤ f b₁ … bₙ` or `<`, the same head on both sides; `Monotone f`, `Antitone f`, `StrictMono f`, `StrictAnti f` | `gcongr_unfold`; `gcongr`; `gcongr <;> catcrypt_grind`; `sum_atoms_le` (on `≤`); `simp_all`; `grind` | `AutoDispatch` |
 | heap read | `Heap.get (Heap.set _ _ _) _ = _`, either side; `=`, `≠` or `¬ _ = _` mentioning `Heap.set` | `grind [Heap.get_set_same, Heap.get_set_other]` | `AutoDispatch` |
 | game equality | `_ = _` over `SPComp _` | `catcrypt_grind`; `bind_vcgen` | `AutoDispatch` |
-| other | anything else | `simp_all`; `grind` | `AutoDispatch` |
+| other | anything else | `sum_atoms_le` (on `≤`); `simp_all`; `grind` | `AutoDispatch` |
+
+Four rules hold across the shapes of `AutoDispatch`.
+
+- Arguments are sorted by kind as stated under "Leaf goals"; the `exact t` and
+  `apply t` arms of non-proof terms run before the arms of the shape.
+- Unfolding: a goal of shape `other` whose head is a definition is unfolded
+  before the shape is read. When every arm fails, the unfolding pass unfolds the
+  first definition head on each branch of the goal's explicit arguments (down to
+  depth 3) and the definition arguments that occur in the goal, and the arms of
+  the new shape run. A definition is unfolded when it is non-recursive, of
+  regular reducibility, not an instance, projection or matcher, not from the
+  Lean core, Mathlib, Batteries, Aesop or Qq, not a shape head, registered head
+  or probability constant, and not an operation on the representation of its
+  type (its value is not a `fun` beyond the binders of its declared type, which
+  keeps `SPComp.bind` and `SPComp.pure` folded). The suggestion records each
+  `unfold` step.
+- `sum_atoms_le` runs on every `≤` goal of the distance, monotonicity and `other`
+  shapes; it reads a goal outside its fragment again after expanding sums over
+  `Finset.range (n + 1)` and reducing conditionals on `false = true` and
+  `true = false`. `hop_chain` closes its residual the same way.
+- Every `simp_all` arm runs after `clear` of the equations of `set x := e with h`:
+  such an equation rewrites `x` back into `e`, and beside a hypothesis that
+  states a subterm of `e` in terms of `x` the two rewrite into each other until
+  the maximum recursion depth.
 
 The `hop_chain` arm applies to every distance registered with `@[hop_metric]`;
 its failure (no path, an unregistered left side, a residual outside the fragment
