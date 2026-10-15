@@ -42,8 +42,8 @@ at most `C` and per-round failure probability at most `1 - p` has expected cost 
 ## Main results
 
 * `ecost_bind_le`, `ecost_bind` — the tower law
-* `ecost_compileCharged_le_queryCost`, `ecost_of_spTreeQueryAdm` — worst-case query cost
-  bounds expected cost
+* `ecost_compileCharged_le_queryCost`, `ecost_of_spTreeQueryAdm`, `ecost_of_costBounded` —
+  worst-case query cost bounds expected cost
 * `compileCharged_erase` — instrumentation does not change the erased computation
 * `ecost_retryN_le`, `ecost_retryN_le_geometric`, `ecost_retryN_le_div` — the
   geometric-retry bounds
@@ -444,6 +444,18 @@ theorem ecost_of_spTreeQueryAdm {f : α → SPComp β}
       (∀ a, (g a).erase = f a) ∧ ∀ a h, ecost (g a) h ≤ (n : ℝ≥0∞) := by
   obtain ⟨s, hs, n, hn⟩ := hadm
   refine ⟨fun a => compileCharged (s a), n, fun a => ?_, fun a h => ?_⟩
+  · rw [compileCharged_erase, hs a]
+  · exact le_trans (ecost_compileCharged_le_queryCost (s a) h)
+      (Nat.cast_le.mpr (hn a))
+
+/-- **Bounded cost ⟹ expected-cost instrumentation.** An arrow of query cost at most `n` in
+    the cost model `MonadCostModel SPComp` admits a cost instrumentation with the same
+    semantics and expected cost at most `n`. -/
+theorem ecost_of_costBounded {f : α → SPComp β} {n : ℕ}
+    (h : UCMonad.costBounded n f) :
+    ∃ g : α → CostComp β, (∀ a, (g a).erase = f a) ∧ ∀ a h, ecost (g a) h ≤ (n : ℝ≥0∞) := by
+  obtain ⟨s, hs, hn⟩ := (UCMonad.spTreeQueryCost_le_iff n).mp h
+  refine ⟨fun a => compileCharged (s a), fun a => ?_, fun a h => ?_⟩
   · rw [compileCharged_erase, hs a]
   · exact le_trans (ecost_compileCharged_le_queryCost (s a) h)
       (Nat.cast_le.mpr (hn a))
