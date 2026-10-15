@@ -89,25 +89,21 @@ variable {α β γ : Type}
 /-- `wpE` is additive in the postexpectation. -/
 theorem wpE_add (c : SPComp α) (p q : α → Heap → ℝ≥0∞) (h : Heap) :
     wpE c (fun a h' => p a h' + q a h') h = wpE c p h + wpE c q h := by
-  simp only [wpE_eq_tsum, mul_add]
-  exact ENNReal.tsum_add
+  simp_all [wpE_eq_tsum, mul_add, ENNReal.tsum_add]
 
 /-- `wpE` commutes with scalar multiplication of the postexpectation. -/
 theorem wpE_const_mul (c : SPComp α) (k : ℝ≥0∞) (p : α → Heap → ℝ≥0∞) (h : Heap) :
     wpE c (fun a h' => k * p a h') h = k * wpE c p h := by
-  simp only [wpE_eq_tsum]
-  rw [← ENNReal.tsum_mul_left]
-  exact tsum_congr fun x => by ring
+  grind [wpE_eq_tsum, ENNReal.tsum_mul_left, tsum_congr]
 
 @[simp] theorem wpE_zero (c : SPComp α) (h : Heap) :
     wpE c (fun _ _ => (0 : ℝ≥0∞)) h = 0 := by
-  simp [wpE_eq_tsum]
+  simp_all [wpE_eq_tsum]
 
 /-- Pointwise-equal postexpectations give equal `wpE`. -/
 theorem wpE_congr (c : SPComp α) {p q : α → Heap → ℝ≥0∞}
     (hpq : ∀ a h', p a h' = q a h') (h : Heap) : wpE c p h = wpE c q h := by
-  have : p = q := funext fun a => funext fun h' => hpq a h'
-  rw [this]
+  (unfold CatCrypt.Unary.wpE; simp_all)
 
 /-- `wpE` of a constant postexpectation is at most the constant
     (the constant times the surviving mass). -/
@@ -120,7 +116,7 @@ theorem wpE_const_le (c : SPComp α) (k : ℝ≥0∞) (h : Heap) :
 /-- For lossless programs, `wpE` of a constant is exactly the constant. -/
 theorem wpE_const_of_lossless {c : SPComp α} (hc : isLossless c) (k : ℝ≥0∞) (h : Heap) :
     wpE c (fun _ _ => k) h = k := by
-  rw [wpE_eq_tsum, ENNReal.tsum_mul_right, tsum_some_eq_mass, hc h, one_mul]
+  simp_all [wpE_eq_tsum, ENNReal.tsum_mul_right, tsum_some_eq_mass, hc h, one_mul]
 
 /-! ## `CostComp`: the cost-instrumented computation
 
@@ -180,8 +176,7 @@ noncomputable def ecost (c : CostComp α) (h : Heap) : ℝ≥0∞ :=
 
 @[simp] theorem ecost_pure (a : α) (h : Heap) : ecost (CostComp.pure a) h = 0 := by
   unfold ecost CostComp.pure
-  rw [wpE_pure]
-  simp
+  simp [wpE_pure]
 
 @[simp] theorem ecost_charge (n : ℕ) (h : Heap) :
     ecost (CostComp.charge n) h = n := by
@@ -208,15 +203,7 @@ theorem ecost_lift_le (c : SPComp α) (price : ℕ) (h : Heap) :
 /-- A flat-priced lift of a lossless computation costs exactly its price. -/
 theorem ecost_lift_of_lossless {c : SPComp α} (hc : isLossless c) (price : ℕ) (h : Heap) :
     ecost (CostComp.lift c price) h = price := by
-  unfold ecost CostComp.lift
-  rw [wpE_bind]
-  have heq : (fun (a : α) (h' : Heap) =>
-      wpE (SPComp.pure (a, price)) (fun p (_ : Heap) => (p.2 : ℝ≥0∞)) h')
-      = fun _ _ => (price : ℝ≥0∞) := by
-    funext a h'
-    rw [wpE_pure]
-  rw [heq]
-  exact wpE_const_of_lossless hc _ h
+  simp_all [wpE_bind, wpE_pure, ecost, CostComp.lift, wpE_const_of_lossless]
 
 /-! ### The tower law (additivity under `bind`)
 
@@ -553,7 +540,7 @@ theorem spcomp_bind_support {c : SPComp α} {f : α → SPComp β}
 theorem spcomp_pure_support {a : α} {h : Heap} {b : α} {h' : Heap}
     (hne : (SPComp.pure a h) (some (b, h')) ≠ 0) : b = a ∧ h' = h := by
   have hmem : (a, h) = (b, h') := (SDistr.mem_support_pure_iff (a, h) (b, h')).mp hne
-  exact ⟨(Prod.ext_iff.mp hmem).1.symm, (Prod.ext_iff.mp hmem).2.symm⟩
+  simp_all
 
 /-- Any successful (`some`) outcome of a retry loop traces back to a
     successful outcome of a single round of the body. -/
