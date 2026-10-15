@@ -344,7 +344,7 @@ noncomputable def DeepRHoare (pre : RPre) (c₁ c₂ : RawCode α) (post : RPost
 theorem eval_rHoare (c₁ c₂ : RawCode α)
     (pre : RPre) (post : RPost α α) :
     DeepRHoare pre c₁ c₂ post ↔ rHoare pre c₁.eval c₂.eval post := by
-  rfl
+  (unfold CatCrypt.Deep.DeepRHoare; simp_all)
 
 /-! ## Package evaluation
 
