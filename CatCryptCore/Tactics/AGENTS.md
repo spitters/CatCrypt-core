@@ -79,8 +79,9 @@ them.
 ## Arms of `catcrypt_auto`
 
 The elaborator of `AutoDispatchExt` runs first. On a goal of none of its shapes,
-or when all its arms fail, the arms of `AutoDispatch` run; the error of a goal
-that stays open then names both shapes and every failed arm. `AutoDispatch`
+or when all its arms fail, Lean runs the elaborator of `AutoDispatch`; the error
+of a goal that stays open is the one of `AutoDispatch`, naming its shape and its
+failed arms. `AutoDispatch`
 first rewrites a goal containing `>>=` by `simp only [SPComp.monad_bind_eq]`,
 keeping the rewrite only when it changes the goal, then reads the head of the
 goal with its `set`/`let` variables replaced by their values and, failing a

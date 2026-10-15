@@ -19,10 +19,10 @@ A second elaborator for the syntax of `catcrypt_auto` and `catcrypt_auto?`
 (`CatCryptCore.Tactics.AutoDispatch`). It reads the goal shape; on a shape of the
 table below it runs the arms in order, each under the heartbeat budget
 `catcrypt_auto.maxHeartbeats`. On any other goal it yields to the elaborator of
-`AutoDispatch` (by `throwUnsupportedSyntax`). When every arm fails it runs the
-arms of `AutoDispatch` (`AutoDispatch.run`, with the arguments of the call), and
-the error then names the shape of this module, its failed arms, the shape read by
-`AutoDispatch` and its failed arms. On a hybrid advantage goal the arms of
+`AutoDispatch` (by `throwUnsupportedSyntax`). When every arm fails it throws an
+error naming the shape and its failed arms, and Lean then runs the elaborator of
+`AutoDispatch`, whose error is the one reported if that also fails. On a hybrid
+advantage goal the arms of
 `AutoDispatch` include the hop chain over the hop hypotheses in context.
 
 | Shape | Detected head | Arms, in order |
@@ -106,11 +106,10 @@ def ExtShape.name : ExtShape → String
   | .extendedTriple => "extended triple"
 
 /-- Close the main goal by the arms of its shape and return the closing arm.
-Throws `unsupportedSyntax` when the goal has no shape of this module, so that the
-elaborator of `AutoDispatch` runs. When every arm fails, runs
-`AutoDispatch.run` with the arguments `ts` and the failed arms, whose error
-reports both. -/
-def runExt (ts : Array Term) : TacticM (TSyntax `tactic) := do
+Throws `unsupportedSyntax` when the goal has no shape of this module, and an
+error naming the shape and the failed arms when every arm fails; in both cases
+Lean then runs the elaborator of `AutoDispatch`. -/
+def runExt (_ts : Array Term) : TacticM (TSyntax `tactic) := do
   let goal ← getMainGoal
   let some sh ← goal.withContext do extShapeOf? (← goal.getType)
     | throwUnsupportedSyntax
@@ -130,7 +129,8 @@ def runExt (ts : Array Term) : TacticM (TSyntax `tactic) := do
     | .error e =>
       s.restore
       tried := tried.push m!"\n  {arm}: {e}"
-  CatCrypt.Tactics.AutoDispatch.run ts tried sh.name
+  throwError m!"catcrypt_auto: goal shape {sh.name} (arms of AutoDispatchExt); \
+    every arm failed:{MessageData.joinSep tried.toList ""}"
 
 /-- `catcrypt_auto` on the shapes of this module. -/
 @[tactic CatCrypt.Tactics.AutoDispatch.catcryptAuto] def evalCatcryptAutoExt : Tactic :=
