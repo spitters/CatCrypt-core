@@ -118,7 +118,7 @@ theorem rHoare_sample_bij {α : Type} [Fintype α] [Nonempty α]
   apply liftR_bind hCoupling
   intro k r hkr
   apply liftR_pure
-  grind
+  simp_all
 
 /-- Coupling for Bool XOR: sampling a key and XORing with a message has the same
     distribution as sampling directly.
