@@ -590,9 +590,9 @@ theorem sdist_hcomp {T : Type → Type} [UCMonadMetric T]
     | inl m =>
       simp only [K, UCMonadBase.ucMapSum_inl, bind_assoc, pure_bind]
       congr 1; funext y; cases y with
-      | inl o => simp [wrap]
-      | inr j => simp [wrap]
-    | inr i => simp [K, UCMonadBase.ucMapSum_inr, pure_bind, wrap]
+      | inl o => simp_all [wrap]
+      | inr j => simp_all [wrap]
+    | inr i => simp_all [K, UCMonadBase.ucMapSum_inr, pure_bind, wrap]
   rw [hK, hK, hKq, hKq]
   -- By ucSdist_comp_add, split into π₁/F₁ and K components
   exact ucSdist_comp_add π₁ F₁ _ _ h₁ <| calc
