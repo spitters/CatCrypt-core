@@ -148,11 +148,11 @@ def ForgedBy (ω : Seed Tx Hash np n Hz Sch) (A : Adversary Tx Hash np n Hz Sch)
 
 /-- **The forging event for party `i`.** Some adversary call in the first `K` phases of the real
 execution forges a block of party `i`. -/
-def ForgeBy (P : Protocol Tx Hash np) (ω : Seed Tx Hash np n Hz Sch)
+def ForgeBy (P : Protocol Tx Hash np n Hz) (ω : Seed Tx Hash np n Hz Sch)
     (A : Adversary Tx Hash np n Hz Sch) (K : ℕ) (i : Fin np) : Prop :=
   ∃ c ∈ traceCalls P ω A K, ForgedBy ω A i c
 
-theorem forge_iff_exists (P : Protocol Tx Hash np) (ω : Seed Tx Hash np n Hz Sch)
+theorem forge_iff_exists (P : Protocol Tx Hash np n Hz) (ω : Seed Tx Hash np n Hz Sch)
     (A : Adversary Tx Hash np n Hz Sch) (K : ℕ) :
     Forge P ω A K → ∃ i, ForgeBy P ω A K i := by
   rintro ⟨c, hc, x, hx, h1, h2⟩
@@ -209,7 +209,7 @@ theorem findForgery_eq_none {AdvState : Type} {i : Fin np} {pks : Fin np → Sch
   simp only [Bool.and_eq_true, Bool.not_eq_eq_eq_not, Bool.not_true, decide_eq_true_eq] at hx'
   exact h ⟨x, hx, hx'.1.1, hx'.1.2, hx'.2⟩
 
-variable (P : Protocol Tx Hash np) (A : Adversary Tx Hash np n Hz Sch) (i : Fin np)
+variable (P : Protocol Tx Hash np n Hz) (A : Adversary Tx Hash np n Hz Sch) (i : Fin np)
   (pk : Sch.PK) (ω : Seed Tx Hash np n Hz Sch)
 
 /-- Oracle programs for the forger. -/
@@ -684,7 +684,7 @@ theorem seedDist_withKey (ν : PMF SlotKind) (W : ℕ) (i : Fin np) :
   conv_rhs => rw [keyDist, ← piFin_update Sch.keygen i, ← keyDist]
   simp only [PMF.bind_bind, PMF.pure_bind]
 
-variable (P : Protocol Tx Hash np) (A : Adversary Tx Hash np n Hz Sch)
+variable (P : Protocol Tx Hash np n Hz) (A : Adversary Tx Hash np n Hz Sch)
 
 /-- **The reduction.** The EUF-CMA adversary obtained from the adversary `A` against the signed
 protocol and the party `i`: its coins are a seed drawn from `seedDist`, and it runs

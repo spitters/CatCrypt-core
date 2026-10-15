@@ -27,7 +27,8 @@ all later slots are honest (`slotDist`, `kindAt`). The executions considered in
 `CatCryptCore/Consensus/PoSNSB/Prob.lean` end before slot `W`, so the later slots only serve
 to state the condition of `chain_quality_gen`, which quantifies over all intervals of slots.
 A lottery map `lot : SlotKind → Party → Bool` turns the string of kinds into the lottery
-`Winner p sl = lot (kindAt κ sl) p` (`lotteryParams`). The hypotheses `LotteryHyp` say that
+`Winner p sl = lot (kindAt κ sl) p` for `sl ≠ 0` (`lotteryParams`); the genesis slot `0` is led
+as an honest slot, so that the genesis block can be a correct block for every string. The hypotheses `LotteryHyp` say that
 an honest slot has exactly one honest initial leader and that a corrupt party leads only
 adversarial slots.
 
@@ -84,11 +85,11 @@ def kindAt {n : ℕ} (κ : Fin n → SlotKind) (sl : ℕ) : SlotKind :=
 theorem kindAt_fin {n : ℕ} (κ : Fin n → SlotKind) (i : Fin n) : kindAt κ i = κ i := by
   simp [kindAt]
 
-/-- The lottery read off a string of slot kinds: party `p` leads slot `sl` when
-`lot (kindAt κ sl) p`. -/
+/-- The lottery read off a string of slot kinds: party `p` leads slot `sl ≠ 0` when
+`lot (kindAt κ sl) p`; the genesis slot `0` is led as an honest slot. -/
 abbrev lotteryParams {Party : Type} (IP : List Party) (lot : SlotKind → Party → Bool) {n : ℕ}
     (κ : Fin n → SlotKind) : Parameters Party :=
-  ⟨IP, fun p sl => lot (kindAt κ sl) p⟩
+  ⟨IP, fun p sl => if sl = 0 then lot .honest p else lot (kindAt κ sl) p⟩
 
 /-- Hypotheses on a lottery map: an honest slot has exactly one honest leader among the
 initial parties, and a corrupt party leads only adversarial slots. -/
@@ -115,7 +116,7 @@ theorem super_of_kind (hL : LotteryHyp IP lot) (sl : ℕ) (h : honestKind κ sl 
     letI := lotteryParams IP lot κ
     super_slot (Party := Party) sl = true := by
   simp only [honestKind, decide_eq_true_eq] at h
-  simp only [super_slot, Parameters.Winner, Parameters.InitParties, h, decide_eq_true_eq]
+  simp only [super_slot, Parameters.Winner, Parameters.InitParties, h, ite_self, decide_eq_true_eq]
   exact hL.honest_one
 
 /-- A slot of honest kind has an honest initial leader. -/
@@ -130,7 +131,10 @@ theorem adv_of_winner (hL : LotteryHyp IP lot) (p : Party) (sl : ℕ)
     (hw : (lotteryParams IP lot κ).Winner p sl = true) (hc : is_corrupt p = true) :
     advKind κ sl = true := by
   simp only [advKind, decide_eq_true_eq]
-  exact hL.corrupt_adv _ p hw hc
+  simp only [Parameters.Winner] at hw
+  split_ifs at hw
+  · exact absurd (hL.corrupt_adv _ p hw hc) (by decide)
+  · exact hL.corrupt_adv _ p hw hc
 
 end Lottery
 

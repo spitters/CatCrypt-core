@@ -187,10 +187,12 @@ theorem encB_inj {Hz : ℕ} {b b' : Block Tx Hash (Fin np)} (h : b.sl ≤ Hz) (h
   rw [Nat.mod_eq_of_lt (by simp at h; omega), Nat.mod_eq_of_lt (by simp at h'; omega)] at h1
   rw [h1]
 
+variable {n Hz : ℕ}
+
 /-- The fixed parameters of the protocol: the initial parties, the lottery map, the genesis
-block, the tree type of each party for every lottery and hash function, and the selection of
-transactions. -/
-structure Protocol (Tx Hash : Type) (np : ℕ) where
+block, the tree type of each party for every string of slot kinds and every random oracle, and
+the selection of transactions. -/
+structure Protocol (Tx Hash : Type) (np n Hz : ℕ) where
   /-- The initial parties. -/
   IP : List (Fin np)
   /-- The lottery map from slot kinds to leaders. -/
@@ -198,8 +200,8 @@ structure Protocol (Tx Hash : Type) (np : ℕ) where
   /-- The genesis block. -/
   GB : Block Tx Hash (Fin np)
   /-- The tree type of each party. -/
-  trees : (P : Parameters (Fin np)) → (B : BlockParameters Tx Hash (Fin np)) → Fin np →
-    @TreeType Tx Hash (Fin np) P B
+  trees : (κ : Fin n → SlotKind) → (f : BlockDom Tx Hash np Hz → Hash) → Fin np →
+    @TreeType Tx Hash (Fin np) (lotteryParams IP lot κ) ⟨GB, fun b => f (encB Hz b)⟩
   /-- The transactions of honest blocks. -/
   txSel : Slot → Fin np → Tx
 
@@ -213,15 +215,15 @@ structure Seed (Tx Hash : Type) (np n Hz : ℕ) (Sch : SigScheme (Block Tx Hash 
   /-- The key pairs. -/
   ks : Fin np → Sch.PK × Sch.SK
 
-variable {n Hz : ℕ} {Sch : SigScheme (Block Tx Hash (Fin np))}
+variable {Sch : SigScheme (Block Tx Hash (Fin np))}
 
 /-- The lottery of a seed. -/
-abbrev Seed.params (P : Protocol Tx Hash np) (ω : Seed Tx Hash np n Hz Sch) :
+abbrev Seed.params (P : Protocol Tx Hash np n Hz) (ω : Seed Tx Hash np n Hz Sch) :
     Parameters (Fin np) :=
   lotteryParams P.IP P.lot ω.κ
 
 /-- The genesis block and the hash function `b ↦ f (encB b)` of a seed. -/
-abbrev Seed.bparams (P : Protocol Tx Hash np) (ω : Seed Tx Hash np n Hz Sch) :
+abbrev Seed.bparams (P : Protocol Tx Hash np n Hz) (ω : Seed Tx Hash np n Hz Sch) :
     BlockParameters Tx Hash (Fin np) :=
   ⟨P.GB, fun b => ω.f (encB Hz b)⟩
 
@@ -302,12 +304,12 @@ def advRaw (ω : Seed Tx Hash np n Hz Sch) (A : Adversary Tx Hash np n Hz Sch)
 
 /-- The execution parameters of the real (`ideal = false`) or the ideal (`ideal = true`)
 execution for the seed `ω` and the adversary `A`. -/
-@[instance_reducible] def mkExec (ideal : Bool) (P : Protocol Tx Hash np) (ω : Seed Tx Hash np n Hz Sch)
+@[instance_reducible] def mkExec (ideal : Bool) (P : Protocol Tx Hash np n Hz) (ω : Seed Tx Hash np n Hz Sch)
     (A : Adversary Tx Hash np n Hz Sch) :
     @Execution Tx Hash (Fin np) A.AdvState (ω.params P) (ω.bparams P) :=
   letI := ω.params P; letI := ω.bparams P
   { AdvState0 := A.st0
-    TreeTypeMap := P.trees (ω.params P) (ω.bparams P)
+    TreeTypeMap := P.trees ω.κ ω.f
     AdversarialBake := fun sl hist mb st =>
       let r := advRaw ω A ⟨none, sl, hist, mb, st⟩
       (outFilter ideal (fun j => (ω.ks j).1) sl hist r.1, r.2)
@@ -316,14 +318,14 @@ execution for the seed `ω` and the adversary `A`. -/
       (outFilter ideal (fun j => (ω.ks j).1) sl hist r.1, r.2)
     TxSelection := P.txSel }
 
-theorem mkExec_bake (ideal : Bool) (P : Protocol Tx Hash np) (ω : Seed Tx Hash np n Hz Sch)
+theorem mkExec_bake (ideal : Bool) (P : Protocol Tx Hash np n Hz) (ω : Seed Tx Hash np n Hz Sch)
     (A : Adversary Tx Hash np n Hz Sch) (sl : Slot) (hist : History Tx Hash (Fin np))
     (mb : MessagePool Tx Hash (Fin np)) (st : A.AdvState) :
     (mkExec ideal P ω A).AdversarialBake sl hist mb st =
       (outFilter ideal (fun j => (ω.ks j).1) sl hist (advRaw ω A ⟨none, sl, hist, mb, st⟩).1,
         (advRaw ω A ⟨none, sl, hist, mb, st⟩).2) := rfl
 
-theorem mkExec_rcv (ideal : Bool) (P : Protocol Tx Hash np) (ω : Seed Tx Hash np n Hz Sch)
+theorem mkExec_rcv (ideal : Bool) (P : Protocol Tx Hash np n Hz) (ω : Seed Tx Hash np n Hz Sch)
     (A : Adversary Tx Hash np n Hz Sch) (ms : Messages Tx Hash (Fin np)) (sl : Slot)
     (hist : History Tx Hash (Fin np)) (mb : MessagePool Tx Hash (Fin np)) (st : A.AdvState) :
     (mkExec ideal P ω A).AdversarialRcv ms sl hist mb st =
@@ -353,7 +355,7 @@ theorem outFilter_eq_of_not_forged {ω : Seed Tx Hash np n Hz Sch}
 
 section Exec
 
-variable (P : Protocol Tx Hash np) (ω : Seed Tx Hash np n Hz Sch) (A : Adversary Tx Hash np n Hz Sch)
+variable (P : Protocol Tx Hash np n Hz) (ω : Seed Tx Hash np n Hz Sch) (A : Adversary Tx Hash np n Hz Sch)
 
 /-- The state type of the executions of `ω` and `A`. -/
 abbrev GS := @GlobalState Tx Hash (Fin np) A.AdvState (ω.params P) (ω.bparams P)

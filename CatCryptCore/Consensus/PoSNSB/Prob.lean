@@ -62,29 +62,39 @@ section Combine
 
 variable {Tx Hash : Type} [DecidableEq Tx] [DecidableEq Hash] {np : ℕ} [Corruption (Fin np)]
   {n Hz : ℕ} {Sch : SigScheme (Block Tx Hash (Fin np))}
-  (P : Protocol Tx Hash np) (A : Adversary Tx Hash np n Hz Sch)
+  (P : Protocol Tx Hash np n Hz) (A : Adversary Tx Hash np n Hz Sch)
 
 /-- The hypotheses on the protocol. -/
-structure ProtocolHyp (P : Protocol Tx Hash np) : Prop where
+structure ProtocolHyp (P : Protocol Tx Hash np n Hz) : Prop where
   /-- The initial parties are distinct. -/
   nodup : P.IP.Nodup
   /-- The lottery map has one honest leader in honest slots and corrupt leaders only in
   adversarial slots. -/
   lottery : LotteryHyp P.IP P.lot
   /-- Every tree type follows the longest-chain rule. -/
-  longest : ∀ (Pa : Parameters (Fin np)) (Ba : BlockParameters Tx Hash (Fin np)) (p : Fin np),
-    letI := Pa; letI := Ba; (P.trees Pa Ba p).LongestChainRule
+  longest : ∀ (κ : Fin n → SlotKind) (f : BlockDom Tx Hash np Hz → Hash) (p : Fin np),
+    letI := lotteryParams P.IP P.lot κ
+    letI : BlockParameters Tx Hash (Fin np) := ⟨P.GB, fun b => f (encB Hz b)⟩
+    (P.trees κ f p).LongestChainRule
   /-- The genesis block is honest. -/
   genesis_honest : honest_block P.GB = true
   /-- The genesis block has slot at most `1`. -/
   genesis_slot : P.GB.sl ≤ 1
 
-/-- The tree types of the honest tree chain, for every lottery and hash function. -/
-abbrev TreeFamily (Tx Hash : Type) (np : ℕ) :=
-  (Pa : Parameters (Fin np)) → (Ba : BlockParameters Tx Hash (Fin np)) →
-    @TreeType Tx Hash (Fin np) Pa Ba
+/-- The tree types of the honest tree chain, for every string of slot kinds and every random
+oracle. -/
+abbrev TreeFamily (P : Protocol Tx Hash np n Hz) :=
+  (κ : Fin n → SlotKind) → (f : BlockDom Tx Hash np Hz → Hash) →
+    @TreeType Tx Hash (Fin np) (lotteryParams P.IP P.lot κ) ⟨P.GB, fun b => f (encB Hz b)⟩
 
-variable (Tree : TreeFamily Tx Hash np) (ν : PMF SlotKind) (K d w : ℕ) (ε : ℝ)
+/-- The tree types of the honest tree chain follow the longest-chain rule. -/
+def TreeFamily.Longest {P : Protocol Tx Hash np n Hz} (Tree : TreeFamily P) : Prop :=
+  ∀ (κ : Fin n → SlotKind) (f : BlockDom Tx Hash np Hz → Hash),
+    letI := lotteryParams P.IP P.lot κ
+    letI : BlockParameters Tx Hash (Fin np) := ⟨P.GB, fun b => f (encB Hz b)⟩
+    (Tree κ f).LongestChainRule
+
+variable (Tree : TreeFamily P) (ν : PMF SlotKind) (K d w : ℕ) (ε : ℝ)
 
 /-- **Chain growth** for the first `K` phases of the real execution: from a state at the start
 of a slot to a later state at least `d` slots later, the honest tree chain grows by every
@@ -95,8 +105,8 @@ def CGGood (ω : Seed Tx Hash np n Hz Sch) : Prop :=
     (sTrace P ω A false j1).t_now + d ≤ (sTrace P ω A false j2).t_now →
     ∀ w' : ℕ, (w' : ℝ) ≤ (pH ν - ε) *
         (((sTrace P ω A false j2).t_now - (sTrace P ω A false j1).t_now : ℕ) : ℝ) →
-      (honest_tree_chain (Tree (ω.params P) (ω.bparams P)) (sTrace P ω A false j1)).length + w' ≤
-        (honest_tree_chain (Tree (ω.params P) (ω.bparams P)) (sTrace P ω A false j2)).length
+      (honest_tree_chain (Tree ω.κ ω.f) (sTrace P ω A false j1)).length + w' ≤
+        (honest_tree_chain (Tree ω.κ ω.f) (sTrace P ω A false j2)).length
 
 /-- **Chain quality** for the first `K` phases of the real execution: a fragment
 `b_j :: c ++ [b_i]` of the chain of an honest party with `sl b_i + 1 + d ≤ sl b_j` contains at
@@ -134,8 +144,7 @@ theorem sTrace_t_now (ω : Seed Tx Hash np n Hz Sch) (ideal : Bool) (j : ℕ) :
 
 /-- **Chain growth from the slot condition.** -/
 theorem cg_of_not_bad (hP : ProtocolHyp P)
-    (hTree : ∀ (Pa : Parameters (Fin np)) (Ba : BlockParameters Tx Hash (Fin np)),
-      letI := Pa; letI := Ba; (Tree Pa Ba).LongestChainRule)
+    (hTree : Tree.Longest)
     (ω : Seed Tx Hash np n Hz Sch) (hn : K + 2 ≤ n) (hCG : ¬CGBad ν n d ε ω.κ) :
     CGGood P A Tree ν K d ε ω := by
   let _ := ω.params P; let _ := ω.bparams P; let _ := mkExec false P ω A
@@ -240,8 +249,7 @@ theorem cf_of_not_collision (hP : ProtocolHyp P) (ω : Seed Tx Hash np n Hz Sch)
 padded with honest slots, a random-oracle collision, a forgery), chain growth, chain quality
 and common prefix hold for the first `K` phases of the real execution. -/
 theorem good_of_not_bad (hP : ProtocolHyp P)
-    (hTree : ∀ (Pa : Parameters (Fin np)) (Ba : BlockParameters Tx Hash (Fin np)),
-      letI := Pa; letI := Ba; (Tree Pa Ba).LongestChainRule)
+    (hTree : Tree.Longest)
     (ω : Seed Tx Hash np n Hz Sch) {W : ℕ} (hd : 1 ≤ d) (hwd : w ≤ d) (hWn : W + d ≤ n)
     (hn : K + 2 ≤ n) (hHz : K + 1 ≤ Hz) (q : ℕ) (next : Querier (BlockDom Tx Hash np Hz) Hash)
     (hq : ∀ j ≤ K, letI := ω.params P; letI := ω.bparams P;
@@ -311,7 +319,7 @@ theorem seedDist_ROCollision_le (ν : PMF SlotKind) (W q : ℕ)
   rw [this, PMF.toOuterMeasure_map_apply]
   exact prob_ROCollision_le (next κ ks) q
 
-variable (P : Protocol Tx Hash np) (A : Adversary Tx Hash np n Hz Sch) (Tree : TreeFamily Tx Hash np)
+variable (P : Protocol Tx Hash np n Hz) (A : Adversary Tx Hash np n Hz Sch) (Tree : TreeFamily P)
 
 /-- **Security of PoS-NSB with signed blocks.** Under the hypotheses on the protocol, the
 lottery distribution and the numbers, and the random-oracle hypothesis `hRO`, chain growth,
@@ -321,8 +329,7 @@ probability at most
 the Chernoff-Hoeffding bound on the slot conditions, the birthday bound, and the EUF-CMA
 advantages of the explicit forgers. -/
 theorem pos_nsb_security (hP : ProtocolHyp P)
-    (hTree : ∀ (Pa : Parameters (Fin np)) (Ba : BlockParameters Tx Hash (Fin np)),
-      letI := Pa; letI := Ba; (Tree Pa Ba).LongestChainRule)
+    (hTree : Tree.Longest)
     (ν : PMF SlotKind) (W K d w : ℕ) (ε : ℝ)
     (hd : 1 ≤ d) (hwd : w ≤ d) (hWn : W + d ≤ n) (hn : K + 2 ≤ n) (hHz : K + 1 ≤ Hz)
     (hε : 0 ≤ ε) (hγ : 2 * pA ν ≤ pH ν) (hw : (w : ℝ) ≤ d * (pH ν - pA ν))
@@ -351,5 +358,174 @@ theorem pos_nsb_security (hP : ProtocolHyp P)
   exact prob_slotBad_le ν W n d w hε hγ hw h3
 
 end Bound
+
+/-! ## A tree type with the longest-chain rule -/
+
+section LongestTree
+
+variable {Tx Hash Party : Type} [Parameters Party] [BlockParameters Tx Hash Party]
+
+/-- A valid chain of blocks of `t` with slots at most `s`. -/
+def Cand (t : List (Block Tx Hash Party)) (s : Slot) (c : Chain Tx Hash Party) : Prop :=
+  valid_chain c ∧ ∀ b ∈ c, b ∈ t ∧ b.sl ≤ s
+
+theorem Cand.length_le {t : List (Block Tx Hash Party)} {s : Slot} {c : Chain Tx Hash Party}
+    (h : Cand t s c) : c.length ≤ t.length := by
+  have hnd : c.Nodup := h.1.2.2.imp fun hlt heq => by subst heq; exact lt_irrefl _ hlt
+  exact (hnd.subperm fun b hb => (h.2 b hb).1).length_le
+
+open Classical in
+/-- The length of a longest valid chain of blocks of `t` with slots at most `s`. -/
+noncomputable def bestLen (t : List (Block Tx Hash Party)) (s : Slot) : ℕ :=
+  Nat.findGreatest (fun k => ∃ c, Cand t s c ∧ c.length = k) t.length
+
+theorem exists_best (hGB : valid_chain [(GenesisBlock : Block Tx Hash Party)])
+    (hsl : (GenesisBlock : Block Tx Hash Party).sl = 0) (t : List (Block Tx Hash Party))
+    (ht : GenesisBlock ∈ t) (s : Slot) : ∃ c, Cand t s c ∧ c.length = bestLen t s := by
+  classical
+  have h1 : ∃ c, Cand t s c ∧ c.length = 1 :=
+    ⟨[GenesisBlock], ⟨hGB, by simp [ht, hsl]⟩, rfl⟩
+  exact Nat.findGreatest_spec (P := fun k => ∃ c, Cand t s c ∧ c.length = k)
+    (List.length_pos_of_mem ht) h1
+
+/-- The tree type whose trees are lists of blocks containing the genesis block and whose
+chain-selection rule picks a longest valid chain of blocks of the tree with slots at most
+`s`. -/
+noncomputable def longestTree (hGB : valid_chain [(GenesisBlock : Block Tx Hash Party)])
+    (hsl : (GenesisBlock : Block Tx Hash Party).sl = 0) : TreeType Tx Hash Party where
+  T := {t : List (Block Tx Hash Party) // GenesisBlock ∈ t}
+  extendTree t b := ⟨t.1 ++ [b], List.mem_append_left _ t.2⟩
+  bestChain s t := Classical.choose (exists_best hGB hsl t.1 t.2 s)
+  allBlocks t := t.1
+  tree0 := ⟨[GenesisBlock], List.mem_singleton_self _⟩
+  all_tree0 _ := Iff.rfl
+  all_extend _ _ _ := Iff.rfl
+  best_chain_valid t s := (Classical.choose_spec (exists_best hGB hsl t.1 t.2 s)).1.1
+  best_chain_in_all s t b hb := by
+    have := (Classical.choose_spec (exists_best hGB hsl t.1 t.2 s)).1.2 b hb
+    exact List.mem_filter.2 ⟨this.1, decide_eq_true this.2⟩
+
+/-- `longestTree` follows the longest-chain rule. -/
+theorem longestTree_longest (hGB : valid_chain [(GenesisBlock : Block Tx Hash Party)])
+    (hsl : (GenesisBlock : Block Tx Hash Party).sl = 0) :
+    (longestTree hGB hsl).LongestChainRule := by
+  classical
+  intro c s t hc hall
+  have hcand : Cand t.1 s c := ⟨hc, fun b hb => by
+    have := List.mem_filter.1 (hall b hb)
+    exact ⟨this.1, by simpa using this.2⟩⟩
+  show c.length ≤ (Classical.choose (exists_best hGB hsl t.1 t.2 s)).length
+  rw [(Classical.choose_spec (exists_best hGB hsl t.1 t.2 s)).2]
+  exact Nat.le_findGreatest hcand.length_le ⟨c, hcand, rfl⟩
+
+end LongestTree
+
+/-! ## A concrete instance -/
+
+namespace Instance
+
+/-- The single party is honest. -/
+@[instance_reducible] def corruption : Corruption (Fin 1) := ⟨fun _ => .Honest⟩
+
+attribute [local instance] corruption
+
+/-- The genesis block: slot `0`, baked by the single party. -/
+def GB : Block Unit Unit (Fin 1) := ⟨0, (), (), 0⟩
+
+/-- The single party leads every slot. -/
+def lot : SlotKind → Fin 1 → Bool := fun _ _ => true
+
+theorem gb_valid (κ : Fin 4 → SlotKind) (f : BlockDom Unit Unit 1 1 → Unit) :
+    letI := lotteryParams [0] lot κ
+    letI : BlockParameters Unit Unit (Fin 1) := ⟨GB, fun b => f (encB 1 b)⟩
+    valid_chain [(GenesisBlock : Block Unit Unit (Fin 1))] := by
+  refine ⟨?_, rfl, List.pairwise_singleton _ _⟩
+  intro b hb
+  rw [List.mem_singleton] at hb
+  subst hb
+  rfl
+
+/-- The protocol: one party, the longest-chain tree type, `4` slots of lottery and the random
+oracle on blocks of slots at most `1`. -/
+noncomputable def P : Protocol Unit Unit 1 4 1 where
+  IP := [0]
+  lot := lot
+  GB := GB
+  trees κ f _ :=
+    letI := lotteryParams [0] lot κ
+    letI : BlockParameters Unit Unit (Fin 1) := ⟨GB, fun b => f (encB 1 b)⟩
+    longestTree (gb_valid κ f) rfl
+  txSel _ _ := ()
+
+/-- The honest tree chain is selected by the longest-chain tree type. -/
+noncomputable def Tree : TreeFamily P := fun κ f =>
+  letI := lotteryParams [0] lot κ
+  letI : BlockParameters Unit Unit (Fin 1) := ⟨GB, fun b => f (encB 1 b)⟩
+  longestTree (gb_valid κ f) rfl
+
+/-- A signature scheme with trivial keys and signatures. -/
+noncomputable def Sch : SigScheme (Block Unit Unit (Fin 1)) where
+  PK := Unit
+  SK := Unit
+  Sig := Unit
+  keygen := PMF.pure ((), ())
+  sign _ _ := ()
+  verify _ _ _ := true
+
+/-- The adversary that sends no message. -/
+def A : Adversary Unit Unit 1 4 1 Sch where
+  AdvState := Unit
+  st0 := ()
+  bake _ _ _ _ _ st := ([], st)
+  rcv _ _ _ _ _ _ st := ([], st)
+
+/-- Every slot is honest. -/
+noncomputable def ν : PMF SlotKind := PMF.pure .honest
+
+/-- The querier that asks for the hash of the genesis block. -/
+def next : (Fin 4 → SlotKind) → (Fin 1 → Sch.PK × Sch.SK) → Querier (BlockDom Unit Unit 1 1) Unit :=
+  fun _ _ _ => encB 1 GB
+
+theorem pH_ν : pH ν = 1 := by simp [pH, ν]
+
+theorem pA_ν : pA ν = 0 := by simp [pA, ν]
+
+/-- **Non-vacuity.** The hypotheses of `pos_nsb_security` hold for the instance with
+`W = 1`, `K = 0`, `d = 3`, `w = 1`, `ε = 0` and `q = 1`. -/
+theorem instance_hyps :
+    ProtocolHyp P ∧ Tree.Longest ∧ 1 ≤ 3 ∧ 1 ≤ 3 ∧ 1 + 3 ≤ 4 ∧ 0 + 2 ≤ 4 ∧ 0 + 1 ≤ 1 ∧
+      (0 : ℝ) ≤ 0 ∧ 2 * pA ν ≤ pH ν ∧ ((1 : ℕ) : ℝ) ≤ (3 : ℕ) * (pH ν - pA ν) ∧
+      (3 : ℝ) ≤ (3 : ℕ) * (pH ν - 2 * pA ν) ∧
+      ∀ ω : Seed Unit Unit 1 4 1 Sch, ∀ j ≤ 0, letI := ω.params P; letI := ω.bparams P;
+        ∀ b ∈ block_hist_gb (sTrace P ω A false j), ∃ k < 1, query (next ω.κ ω.ks) ω.f k = encB 1 b := by
+  have hcor : ∀ p : Fin 1, is_corrupt p = false := fun _ => rfl
+  refine ⟨⟨by simp [P], ⟨by decide, fun _ p _ hc => absurd hc (by rw [hcor]; decide)⟩,
+    fun κ f _ =>
+      letI := lotteryParams [0] lot κ
+      letI : BlockParameters Unit Unit (Fin 1) := ⟨GB, fun b => f (encB 1 b)⟩
+      longestTree_longest (gb_valid κ f) rfl, by decide, by decide⟩,
+    fun κ f =>
+      letI := lotteryParams [0] lot κ
+      letI : BlockParameters Unit Unit (Fin 1) := ⟨GB, fun b => f (encB 1 b)⟩
+      longestTree_longest (gb_valid κ f) rfl, by norm_num, by norm_num, by norm_num, by norm_num,
+    by norm_num, le_rfl, by rw [pH_ν, pA_ν]; norm_num, by rw [pH_ν, pA_ν]; norm_num,
+    by rw [pH_ν, pA_ν]; norm_num, ?_⟩
+  intro ω j hj b hb
+  obtain rfl : j = 0 := by omega
+  simp only [sTrace, runTrace, Function.iterate_zero, id, block_hist_gb, block_history, N0,
+    List.map_nil, List.mem_singleton] at hb
+  subst hb
+  exact ⟨0, by norm_num, rfl⟩
+
+/-- **The instance of the security theorem.** For the instance, chain growth, chain quality and
+common prefix fail with probability at most `slotBound ν 4 3 1 0 + 0 / 1 + eufAdv (forger P A ν 1 0 0)`. -/
+theorem instance_security :
+    (seedDist ν 1 4 1 Sch).toOuterMeasure {ω | ¬Good P A Tree ν 0 3 1 0 ω} ≤
+      slotBound ν 4 3 1 0 + ((1 * (1 - 1) / 2 : ℕ) : ℝ≥0∞) / Fintype.card Unit +
+        ∑ i : Fin 1, eufAdv (forger P A ν 1 0 i) := by
+  obtain ⟨hP, hT, hd, hwd, hWn, hn, hHz, hε, hγ, hw, h3, hRO⟩ := instance_hyps
+  exact pos_nsb_security P A Tree hP hT ν 1 0 3 1 0 hd hwd hWn hn hHz hε hγ hw h3 1 next hRO
+
+end Instance
 
 end CatCryptCore.Consensus.PoSNSB
