@@ -22,22 +22,16 @@ ML-KEM security proof. It ports the `PKE` and `PKE_ROM` theories from
 * `PKE_ROM_Scheme` — PKE scheme with random oracle access
 
 ### Security games
-* `PKE.CPA` — IND-CPA game (left-or-right)
+* `PKE.CPA` — IND-CPA game (left-or-right) for a two-stage adversary with state
+* `PKE.CPA_Adv` — `|Pr[CPA true] - Pr[CPA false]|`
 * `PKE.OW_CPA` — one-wayness under CPA
 * `PKE.OWL_CPA` — list-returning one-wayness
 * `PKE.Correctness_Adv` — adversarial correctness game
-
-### Adversary types
-* `PKE.CPA_ADV` — CPA adversary (choose + guess)
-* `PKE.OW_CPA_ADV` — OW-CPA adversary
-* `PKE.OWL_CPA_ADV` — OW-CPA list adversary
-* `PKE.CORR_ADV` — correctness adversary
 
 ### Reductions
 * `PKE.BOWp` — OW → correctness reduction
 
 ### Theorems
-* `PKE.pr_CPA_LR` — `|Pr[CPA_L] - Pr[CPA_R]| = 2|Pr[CPA] - 1/2|`
 * `PKE.ow_perfect` — OW with/without correctness gap
 
 ## References
@@ -94,35 +88,35 @@ noncomputable def eps_msg : ℝ≥0∞ :=
 
 /-! ## CPA Security -/
 
-/-- IND-CPA game (real-or-random, bit `b`).
+/-- IND-CPA game (left-or-right, bit `b`) for a two-stage adversary: `choose`
+receives the public key and returns two plaintexts and a state, `guess`
+receives the state and the challenge ciphertext.
 
-    EasyCrypt: `CPA(S, A).main()`. -/
-noncomputable def CPA (choose : S.PK → SDistr (S.PT × S.PT))
-    (guess : S.CT → SDistr Bool) (b : Bool) : SDistr Bool := do
+    EasyCrypt: `CPA(S, A).main()` with the challenge bit fixed to `b`. -/
+noncomputable def CPA {St : Type} (choose : S.PK → SDistr (S.PT × S.PT × St))
+    (guess : St → S.CT → SDistr Bool) (b : Bool) : SDistr Bool := do
   let (pk, _sk) ← S.kg
-  let (m0, m1) ← choose pk
+  let (m0, m1, st) ← choose pk
   let c ← S.enc pk (if b then m1 else m0)
-  guess c
+  guess st c
 
 /-- IND-CPA left game: encrypts m0. -/
-noncomputable def CPA_L (choose : S.PK → SDistr (S.PT × S.PT))
-    (guess : S.CT → SDistr Bool) : SDistr Bool :=
+noncomputable def CPA_L {St : Type} (choose : S.PK → SDistr (S.PT × S.PT × St))
+    (guess : St → S.CT → SDistr Bool) : SDistr Bool :=
   CPA S choose guess false
 
 /-- IND-CPA right game: encrypts m1. -/
-noncomputable def CPA_R (choose : S.PK → SDistr (S.PT × S.PT))
-    (guess : S.CT → SDistr Bool) : SDistr Bool :=
+noncomputable def CPA_R {St : Type} (choose : S.PK → SDistr (S.PT × S.PT × St))
+    (guess : St → S.CT → SDistr Bool) : SDistr Bool :=
   CPA S choose guess true
 
-/-- IND-CPA advantage: `|Pr[CPA(b=true)] - 1/2|`.
-
-    EasyCrypt measures this as `|Pr[CPA.main() : res] - 1/2|`. We use the
-    real-or-random formulation where the game samples `b ← {0,1}` internally. -/
-noncomputable def CPA_Adv (choose : S.PK → SDistr (S.PT × S.PT))
-    (guess : S.CT → SDistr Bool) : ℝ≥0∞ :=
+/-- IND-CPA advantage: `|Pr[CPA true] - Pr[CPA false]|`, the left-or-right
+distinguishing advantage. -/
+noncomputable def CPA_Adv {St : Type} (choose : S.PK → SDistr (S.PT × S.PT × St))
+    (guess : St → S.CT → SDistr Bool) : ℝ≥0∞ :=
   UCMonad.SDistrUC.absDiffD
     (UCMonad.SDistrUC.prTrueD (CPA S choose guess true))
-    (ENNReal.ofReal (1/2))
+    (UCMonad.SDistrUC.prTrueD (CPA S choose guess false))
 
 /-! ## One-Wayness under CPA -/
 

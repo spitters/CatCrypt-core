@@ -43,10 +43,10 @@ at the instantiation site, not here.
 | `OMDL_Advantage` | `Assumptions/OMDL.lean` | Bellare et al., ASIACRYPT 2003 |
 | `OMDL1_Advantage` | `Assumptions/OMDL.lean` | q=1 specialization for FROST |
 | `AEAD_Advantage` | `Assumptions/AEAD.lean` | Rogaway, CCS 2002; Boneh-Shoup §9.5 (IND-CPA only) |
-| `AEAD_CCA_Advantage` | `Assumptions/AEAD.lean` | Rogaway, CCS 2002 (IND-CCA2: enc + dec oracles) |
+| `AEAD_CCA_Advantage` | `Assumptions/AEAD.lean` | Rogaway-Shrimpton, EUROCRYPT 2006 (deterministic AE: adaptive enc + dec oracles) |
 | `MAC_Advantage` | `Assumptions/MAC.lean` | Bellare-Kilian-Rogaway, JCSS 2000 |
 | `PRP_Advantage` | `Assumptions/PRP.lean` | Boneh-Shoup §4.1 (ideal = random fn, not perm) |
-| `SPRP_Advantage` | `Assumptions/PRP.lean` | Boneh-Shoup §4.2 (forward + inverse) |
+| `SPRP_Advantage` | `Assumptions/PRP.lean` | Boneh-Shoup §4.2 (adaptive forward + inverse, lazy random permutation) |
 | `PRF_Advantage` | `Assumptions/PRP.lean` | Boneh-Shoup §4.2 (single-query) |
 | `RSA_Advantage` | `Assumptions/RSA.lean` | Boneh-Shoup §10.2 |
 | `CR_Search_Advantage` | `Assumptions/CR.lean` | Rogaway-Shrimpton, FSE 2004 |
@@ -66,8 +66,8 @@ at the instantiation site, not here.
 |------------|------|-----------|----------------------|
 | `Expand_Composed_Advantage` | `HKDF_UC.lean` | Expand | KDM-PRF (`f : W → W`) |
 | `Expand_Composed_Leak_Advantage` | `HKDF_UC.lean` | Expand | KDM-PRF + key leakage |
-| `AEAD_Keyed_Advantage` | `Assumptions/AEAD.lean` | AEAD | KDM + key leakage |
-| `MAC_Keyed_Advantage` | `Assumptions/MAC.lean` | MAC | KDM + key leakage |
+| `AEAD_Keyed_Advantage` | `Assumptions/AEAD.lean` | AEAD | KDM (single sample) |
+| `MAC_Keyed_Advantage` | `Assumptions/MAC.lean` | MAC | KDM (single sample) |
 
 ## Protocol Usage Matrix
 
