@@ -85,7 +85,7 @@ theorem advantage_hybrid_dep {α : Type} (G : ℕ → SPComp α) (A : α → SPC
     calc AdvantageA (G 0) (G (k + 1)) A
         ≤ AdvantageA (G 0) (G k) A + AdvantageA (G k) (G (k + 1)) A := htri
       _ ≤ (∑ i ∈ Finset.range k, AdvantageA (G i) (G (i + 1)) A) +
-          AdvantageA (G k) (G (k + 1)) A := add_le_add ih le_rfl
+          AdvantageA (G k) (G (k + 1)) A := by gcongr
       _ = ∑ i ∈ Finset.range (k + 1), AdvantageA (G i) (G (i + 1)) A := by
           rw [Finset.sum_range_succ]
 
@@ -98,10 +98,9 @@ theorem advantage_hybrid_dep_bool (G : ℕ → SPComp Bool) (n : ℕ) :
     simp [Finset.range_zero, Finset.sum_empty, Advantage]
   | succ k ih =>
     calc Advantage (G 0) (G (k + 1))
-        ≤ Advantage (G 0) (G k) + Advantage (G k) (G (k + 1)) :=
-          advantage_triangle _ _ _
+        ≤ Advantage (G 0) (G k) + Advantage (G k) (G (k + 1)) := by grind
       _ ≤ (∑ i ∈ Finset.range k, Advantage (G i) (G (i + 1))) +
-          Advantage (G k) (G (k + 1)) := add_le_add ih le_rfl
+          Advantage (G k) (G (k + 1)) := by gcongr
       _ = ∑ i ∈ Finset.range (k + 1), Advantage (G i) (G (i + 1)) := by
           rw [Finset.sum_range_succ]
 
