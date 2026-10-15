@@ -194,7 +194,7 @@ theorem prBad_induction_vcgen
     · simpa [hb, prEventComp] using
         ((prEvent_le_mass _ _).trans (sdistr_mass_le_one _)).trans
           (le_self_add : (1 : ℝ≥0∞) ≤ 1 + ε)
-    · simpa [hb, prEventComp] using h_fresh h hb
+    · simp_all [prEventComp]
   have hinv : ∀ (n : ℕ) (c : ℝ≥0∞),
       Triple (SPCompU.lift (α := PUnit) (repeatStep step n))
       (fun h => OrderDual.toDual ((if bad h then 1 else 0) + (n * ε + c)))
@@ -206,7 +206,7 @@ theorem prBad_induction_vcgen
       intro c
       simp only [repeatStep]
       vcgen
-      simp
+      simp_all
     | succ n ih =>
       intro c
       have hr := ih (ε + c)
@@ -221,12 +221,10 @@ theorem prBad_induction_vcgen
         simp only [leanOrder_rel_dual_iff, OrderDual.ofDual_toDual]
         apply le_of_eq
         push_cast
-        ring
+        grind
       exact key
   have := (SPCompU.triple_iff_wpE_le _ _ _).1 (hinv q 0) h₀
-  simp only [add_zero] at this
-  rw [wpE_indicator_eq_prEventComp] at this
-  simpa [h_start] using this
+  simp_all [wpE_indicator_eq_prEventComp]
 
 set_option mvcgen.warning false in
 /-- `ecost_retryN_le` by `vcgen` on `SPCompU`. `retryN` is structural recursion, so the
@@ -306,10 +304,9 @@ theorem prTrue_union_bound_vcgen (bad₁ bad₂ : SPComp Bool)
           change wpE (SPComp.bind bad₂ fun b₂ => SPComp.pure (b || b₂)) _ h' ≤ _
           rw [wpE_bind]
           cases b
-          · simp only [wpE_pure, Bool.false_or, Bool.false_eq_true, ↓reduceIte, zero_add,
-              wpE_indicator_eq_prTrue, prTrue_isPure_eq hd₂, le_refl]
+          · simp_all [wpE_pure, wpE_indicator_eq_prTrue, prTrue_isPure_eq hd₂]
           · simp only [wpE_pure, Bool.true_or, ↓reduceIte]
-            exact le_add_right (wpE_const_le _ _ _)
+            simp_all [le_add_right, wpE_const_le]
       _ ≤ _ := by
           rw [wpE_add]
           exact add_le_add le_rfl (wpE_const_le _ _ _)
@@ -339,8 +336,7 @@ theorem prTrue_double_sample_pure_bool_vcgen {R : Type} [Fintype R] [Nonempty R]
       (Fintype.card R : ℝ≥0∞) ^ 2 := by
     rw [sq, ENNReal.div_eq_inv_mul, ENNReal.mul_inv (by simp) (by simp), Finset.card_filter,
       Finset.sum_product]
-    simp only [tsum_fintype, ← Finset.mul_sum, Nat.cast_sum, Nat.cast_ite, Nat.cast_one,
-      Nat.cast_zero, mul_assoc]
+    simp_all [tsum_fintype, Finset.mul_sum, Nat.cast_sum, mul_assoc]
   have hlo : Triple (SPComp.bind (SPComp.sample R) fun e₁ =>
       SPComp.bind (SPComp.sample R) fun e₂ => SPComp.pure (f e₁ e₂))
       (fun _ => ((Finset.univ ×ˢ Finset.univ).filter (fun p : R × R => f p.1 p.2)).card /
@@ -348,7 +344,7 @@ theorem prTrue_double_sample_pure_bool_vcgen {R : Type} [Fintype R] [Nonempty R]
       (fun b _ => if b then (1 : ℝ≥0∞) else 0) Lean.Order.bot := by
     vcgen
     simp only [leanOrder_rel_iff_le, wp_eq_wpEF, wpEF_bind, wpEF_sample, wpEF_pure]
-    exact harith.ge
+    simp_all
   have hup : Triple (SPCompU.lift (SPComp.bind (SPComp.sample R) fun e₁ =>
       SPComp.bind (SPComp.sample R) fun e₂ => SPComp.pure (f e₁ e₂)))
       (fun _ => OrderDual.toDual
@@ -358,7 +354,7 @@ theorem prTrue_double_sample_pure_bool_vcgen {R : Type} [Fintype R] [Nonempty R]
     vcgen
     simp only [leanOrder_rel_dual_iff, OrderDual.ofDual_toDual, SPCompU.wp_eq, wpEF_bind,
       wpEF_sample, wpEF_pure]
-    exact harith.le
+    simp_all
   exact le_antisymm ((SPCompU.triple_iff_wpE_le _ _ _).1 hup h₀)
     ((triple_iff_le_wpE _ _ _).1 hlo h₀)
 
