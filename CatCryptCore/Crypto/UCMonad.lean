@@ -411,7 +411,7 @@ theorem approxFact_of_sdist [UCMonadMetric T] {hon out iface : Type}
   refine ⟨pure, ?_⟩
   have : (fun a => F a >>= UCMonadBase.ucMapSum (T := T) pure pure) = F := by
     funext a; simp [UCMonadBase.ucMapSum_pure_pure]
-  rw [this]; exact h
+  simp_all
 
 /-! ## Section 5: Generic UC Emulation -/
 

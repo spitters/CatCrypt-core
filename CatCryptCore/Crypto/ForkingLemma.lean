@@ -199,9 +199,9 @@ theorem prTrue_pure_bool (b : Bool) (h₀ : Heap) :
   cases b with
   | true =>
     simp only [true_and, ite_true]
-    exact tsum_ite_eq h₀ (fun _ => 1)
+    simp_all [tsum_ite_eq]
   | false =>
-    simp only [reduceCtorEq, ite_false, false_and, ite_false, tsum_zero]
+    simp_all [false_and, tsum_zero]
 
 /-- prTrue of sampling from R then applying a pure Boolean function. -/
 theorem prTrue_sample_pure_bool [Fintype R] [Nonempty R]
@@ -231,7 +231,7 @@ theorem prTrue_sample_pure_bool [Fintype R] [Nonempty R]
   rw [← Finset.sum_filter, Finset.sum_const, nsmul_eq_mul, eq_comm,
     ENNReal.div_eq_inv_mul, mul_comm]
   congr 1
-  norm_cast; congr 1; exact Finset.filter_congr (fun a _ => ⟨fun h => h.symm, fun h => h.symm⟩)
+  simp_all
 
 /-! ## Monotonicity Lemmas for prTrue -/
 
@@ -242,7 +242,7 @@ theorem prTrue_pure_decide_mono {Q R : Prop} [Decidable Q] [Decidable R]
   rw [prTrue_pure_bool, prTrue_pure_bool]
   by_cases hQ : Q
   · simp [decide_eq_true hQ, decide_eq_true (h hQ)]
-  · simp [decide_eq_false hQ]
+  · simp_all
 
 /-- Monotonicity of `prTrue` under `bind`:
     if `k₁` is pointwise ≤ `k₂`, then `bind c k₁` ≤ `bind c k₂`. -/
@@ -294,7 +294,7 @@ theorem prTrue_sample_bind_ge [Fintype R] [Nonempty R]
         (match (some (a₀, h₀)) with | some ⟨a, h'⟩ => prTrue (k a) h' | none => 0) := by
         simp only [SPComp.sample, SDistr.bind, PMF.bind_apply]
         rw [tsum_eq_single (some a₀)]
-        · simp [SDistr.uniform_apply_some, SDistr.pure, PMF.pure_apply]
+        · simp_all [SDistr.uniform_apply_some, SDistr.pure, PMF.pure_apply]
         · intro b hb; cases b with
           | none => simp [SDistr.uniform_apply_none]
           | some a =>
@@ -331,9 +331,7 @@ theorem double_sample_sdisrt [Fintype R] [Nonempty R] {β : Type}
     (SDistr.uniform R).bind (fun e₁ =>
       (SDistr.uniform R).bind (fun e₂ =>
         SDistr.pure (f e₁ e₂, h₀))) := by
-  simp only [SPComp.bind_def, SPComp.sample, SPComp.pure]
-  rw [SDistr.bind_assoc]; congr 1; funext e₁; rw [SDistr.pure_bind]
-  rw [SDistr.bind_assoc]; congr 1; funext e₂; rw [SDistr.pure_bind]
+  simp_all [SPComp.bind_def, SPComp.sample, SPComp.pure, SDistr.bind_assoc, SDistr.pure_bind]
 
 /-- prTrue of two independent samples from R then applying a pure Boolean function.
     The result counts accepting pairs divided by N². -/
@@ -380,7 +378,7 @@ theorem prTrue_double_sample_pure_bool [Fintype R] [Nonempty R]
   congr 1
   -- ∑ e₁ ∈ univ, ↑|{e₂ : f e₁ e₂}| = ↑|{(e₁,e₂) ∈ univ ×ˢ univ : f e₁ e₂}|
   norm_cast
-  simp only [Finset.card_filter, Finset.sum_product]
+  grind [Finset.card_filter, Finset.sum_product]
 
 /-- The conditional fork probability equals acc_c² - acc_c/|R| (exact counting). -/
 theorem condForkProb_eq [Fintype R] [Nonempty R] [DecidableEq R]

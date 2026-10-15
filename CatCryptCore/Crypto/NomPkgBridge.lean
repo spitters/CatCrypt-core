@@ -68,8 +68,7 @@ theorem SPComp.bind_noFail {α β : Type*}
   apply ENNReal.tsum_eq_zero.mpr
   rintro ⟨a, h'⟩
   show (c h) (some (a, h')) * (f a h') none = 0
-  rw [hf a h']
-  ring
+  simp_all [hf a h']
 
 /-- **`SPComp.sample` is NoFail**: uniform distributions assign 0
 mass to the failure slot. -/
@@ -81,7 +80,7 @@ theorem SPComp.sample_noFail {α : Type} [Fintype α] [Nonempty α] :
   apply ENNReal.tsum_eq_zero.mpr
   intro a
   show (SDistr.uniform α) (some a) * (SDistr.pure (a, h)) none = 0
-  rw [SDistr.pure_apply_none, mul_zero]
+  simp_all [SDistr.pure_apply_none, mul_zero]
 
 end Assumptions
 
@@ -92,7 +91,7 @@ theorem isPure_bind_eq {α β : Type*} {c : SPComp α} {d : SDistr α}
     (hc : ∀ h, c h = d.bind (fun a => SDistr.pure (a, h)))
     (D : α → SPComp β) (h₀ : Heap) :
     (SPComp.bind c D) h₀ = d.bind (fun a => D a h₀) := by
-  simp only [SPComp.bind, hc h₀, SDistr.bind_assoc, SDistr.pure_bind]
+  simp_all [SPComp.bind, hc h₀, SDistr.bind_assoc, SDistr.pure_bind]
 
 /-- For IsPure+NoFail, the witness distribution d has d(none) = 0. -/
 theorem isPure_noFail_d_none {α : Type*} {c : SPComp α} {d : SDistr α}
@@ -105,7 +104,7 @@ theorem isPure_noFail_d_none {α : Type*} {c : SPComp α} {d : SDistr α}
   rw [SDistr.tsum_option_eq_add] at h
   simp only [SDistr.fail_apply_none, mul_one, SDistr.pure_apply_none, mul_zero,
              tsum_zero, add_zero] at h
-  exact h
+  simp_all
 
 /-- For IsPure c : SPComp Bool with witness d, the bind `(d.bind f)(some(b, h₀))`
     is zero when `h ≠ h₀`, because d.bind produces outputs only at heap h₀. -/
@@ -258,7 +257,7 @@ theorem prTrue_isPure_noFail_bind {c : SPComp Bool} {d : SDistr Bool}
   conv_lhs => arg 1; ext h; rw [tsum_bool]
   -- Step 5: Distribute outer tsum over addition, factor out constants
   -- tsum_bool gives f false + f true, so we need add_comm to match the goal
-  rw [ENNReal.tsum_add, ENNReal.tsum_mul_left, ENNReal.tsum_mul_left, add_comm]
+  simp_all [ENNReal.tsum_add, ENNReal.tsum_mul_left, add_comm]
 
 /-! ## D-Absorption for Bool (Post-Processing Lemma) -/
 
@@ -284,8 +283,8 @@ theorem absDiff_bind_le_advantage {c₁ c₂ : SPComp Bool}
     show absDiff (prTrue c₁ Heap.empty) (prTrue c₂ Heap.empty) =
       absDiff (d₁ (some true)) (d₂ (some true))
     congr 1
-    · exact prTrue_isPure_eq hd₁ Heap.empty
-    · exact prTrue_isPure_eq hd₂ Heap.empty
+    · grind [prTrue_isPure_eq]
+    · grind [prTrue_isPure_eq]
   rw [hAdv]
   exact absDiff_convex_le _ _ _ _
     (isPure_noFail_le_one hd₁_nf) (isPure_noFail_le_one hd₂_nf)
@@ -384,13 +383,12 @@ theorem heapReset_apply (h₀ h : Heap) : (heapReset h₀) h = SDistr.pure ((), 
     `SPComp.bind (heapReset h₀) f` at any heap `h` equals `f () h₀`. -/
 theorem bind_heapReset {β : Type*} (h₀ : Heap) (f : Unit → SPComp β) (h : Heap) :
     (SPComp.bind (heapReset h₀) f) h = f () h₀ := by
-  simp only [SPComp.bind, heapReset, SDistr.pure_bind]
+  simp_all [SPComp.bind, heapReset, SDistr.pure_bind]
 
 /-- `prTrue` after heap reset shifts the initial heap. -/
 theorem prTrue_bind_heapReset (h₀ : Heap) (c : SPComp Bool) :
     prTrue (SPComp.bind (heapReset h₀) (fun _ => c)) Heap.empty = prTrue c h₀ := by
-  unfold prTrue
-  simp only [bind_heapReset]
+  simp_all [bind_heapReset, prTrue]
 
 /-- Construct a NomPkg that wraps A's main export with heap reset and
     post-processing D. A' has the same exports, imports, and locations as A,
@@ -441,8 +439,7 @@ theorem wrapMainNomPkg_impl_code
     .bind (CatCrypt.Deep.RawCode.ofSPComp (heapReset h₀))
       (fun _ => .bind (A.pkg.impl 0 Unit Bool h_main ()).code
         (fun b => CatCrypt.Deep.RawCode.ofSPComp (D b))) := by
-  unfold wrapMainNomPkg
-  simp only [dite_true]
+  simp_all [wrapMainNomPkg]
 
 theorem runPkg_wrapMain_eq
     (A : CatCrypt.Deep.NomPackage)
@@ -501,9 +498,9 @@ theorem nomPkg_absorb
     -- When (0, Unit, Bool) ∉ A.pkg.exports.ops, runPkg returns pure true
     -- link preserves exports, so the condition still fails
     have h_link_real : (0, Unit, Bool) ∉ (CatCrypt.Deep.DeepPackage.link A.pkg G.pkg).exports.ops := by
-      simp only [CatCrypt.Deep.DeepPackage.link]; exact h_main
+      simp_all [CatCrypt.Deep.DeepPackage.link]
     have h_link_ideal : (0, Unit, Bool) ∉ (CatCrypt.Deep.DeepPackage.link A.pkg G'.pkg).exports.ops := by
-      simp only [CatCrypt.Deep.DeepPackage.link]; exact h_main
+      simp_all [CatCrypt.Deep.DeepPackage.link]
     simp only [runPkg, h_link_real, h_link_ideal, dite_false]
     simp only [Advantage, absDiff_self]
     exact zero_le

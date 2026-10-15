@@ -79,14 +79,8 @@ theorem same_msg_prTrue (m : Bool) :
     the adversary always returns false (advantage 0 side). -/
 theorem diff_msg_prTrue (m : Bool) :
     prTrue ((det_enc_pair xorDet m (!m)).bind eq_adversary) Heap.empty = 0 := by
-  unfold det_enc_pair eq_adversary xorDet
-  simp only [SPComp.monad_bind_eq, SPComp.bind_assoc, SPComp.pure_bind]
-  rw [prTrue_bind_sample_Bool]
-  -- xor k m == xor k (!m) = false for all k
-  simp only [show (xor false m == xor false (!m)) = false from by cases m <;> rfl,
-             show (xor true m == xor true (!m)) = false from by cases m <;> rfl,
-             prTrue_pure_bool]
-  simp
+  simp_all [SPComp.monad_bind_eq, SPComp.bind_assoc, SPComp.pure_bind, prTrue_bind_sample_Bool, prTrue_pure_bool,
+      det_enc_pair, eq_adversary, xorDet]
 
 /-- **Main theorem**: XOR deterministic encryption is completely insecure.
 
@@ -94,7 +88,6 @@ theorem diff_msg_prTrue (m : Bool) :
     same-message encryption from different-message encryption. -/
 theorem det_enc_xor_insecure (m : Bool) :
     AdvantageA (det_enc_pair xorDet m m) (det_enc_pair xorDet m (!m)) eq_adversary = 1 := by
-  unfold AdvantageA Advantage
-  simp [same_msg_prTrue, diff_msg_prTrue]
+  simp_all [same_msg_prTrue, diff_msg_prTrue, AdvantageA, Advantage]
 
 end CatCryptCore.Examples.DetCPA

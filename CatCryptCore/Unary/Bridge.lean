@@ -105,7 +105,7 @@ theorem rHoare_of_pHoare_r {P : UPre} {Q : UPost β} {R : RPre}
     (hrel : rHoare R c₁ c₂ Ψ) :
     rHoare (fun h₁ h₂ => R h₁ h₂ ∧ P h₂) c₁ c₂ Ψ := by
   intro h₁ h₂ ⟨hR, _⟩
-  exact hrel h₁ h₂ hR
+  (unfold CatCrypt.Prob.liftR; solve_by_elim [rHoare_of_pHoare_l])
 
 /-! ## Connecting pHL to probability bounds -/
 
@@ -129,7 +129,7 @@ theorem prTrue_eq_one_of_pHoare
     intro h
     by_contra hne
     have := hph h₀ rfl false h hne
-    simp at this
+    simp_all
   -- mass = 1 from losslessness
   have hmass := hll h₀ rfl
   -- prTrue = ∑' h, G h₀ (some (true, h))
@@ -141,7 +141,7 @@ theorem prTrue_eq_one_of_pHoare
   -- Rewrite using tsum over Bool × Heap = tsum_true + tsum_false
   -- The false part is 0
   have hfalse_sum : ∑' h, (G h₀) (some (false, h)) = 0 := by
-    apply ENNReal.tsum_eq_zero.mpr; exact hfalse
+    simp_all [ENNReal.tsum_eq_zero.mpr]
   -- We need: ∑' (p : Bool × Heap) = ∑' b, ∑' h, ...
   -- which splits into b=true and b=false parts
   unfold prTrue
@@ -150,7 +150,7 @@ theorem prTrue_eq_one_of_pHoare
   rw [tsum_bool_prod_eq] at htotal
   -- htotal : (∑' h, (G h₀)(some (true, h))) + (∑' h, (G h₀)(some (false, h))) = 1
   rw [hfalse_sum, add_zero] at htotal
-  exact htotal
+  simp_all
 
 /-- If pHoare says all Boolean outcomes are `false`, then `Pr[true] = 0`.
 
@@ -165,7 +165,7 @@ theorem prTrue_eq_zero_of_pHoare
   intro h
   by_contra hne
   have := hph h₀ rfl true h hne
-  exact absurd this (by simp)
+  simp_all
 
 /-- Variant of `advantage_zero_of_same_result` for the false case, which
 does not require losslessness. -/
@@ -206,7 +206,7 @@ theorem prTrue_eq_prEventComp (G : SPComp Bool) (h₀ : Heap) :
   rw [tsum_bool_prod_eq]
   -- true part: ∑' h, if true = true then ... else 0 = ∑' h, G h₀ (some (true, h))
   -- false part: ∑' h, if false = true then ... else 0 = 0
-  simp only [decide_true, ite_true, Bool.false_eq_true, ite_false]
+  simp only [ite_true, Bool.false_eq_true, ite_false]
   rw [ENNReal.tsum_eq_zero.mpr (fun _ => rfl), add_zero]
 
 /-! ## Failure Event Lemma (FEL) -/
@@ -332,10 +332,7 @@ theorem perfect_indist_of_no_bad
     (G₀ G₁ : SPComp Bool) (h₀ : Heap)
     (h_agree : ∀ b h', (G₀ h₀) (some (b, h')) = (G₁ h₀) (some (b, h'))) :
     prTrue G₀ h₀ = prTrue G₁ h₀ := by
-  unfold prTrue
-  congr 1
-  funext h
-  exact h_agree true h
+  simp_all [prTrue]
 
 /-! ## Connecting pHL postconditions to advantage bounds -/
 
@@ -352,14 +349,7 @@ theorem advantage_zero_of_pHoare_det
     (hll₀ : isLosslessIf (fun h => h = Heap.empty) G₀)
     (hll₁ : isLosslessIf (fun h => h = Heap.empty) G₁) :
     Advantage G₀ G₁ = 0 := by
-  cases b with
-  | false =>
-    -- Both always return false, so prTrue = 0 for both
-    exact advantage_zero_of_both_false G₀ G₁ hph₀ hph₁
-  | true =>
-    -- Both always return true and are lossless, so prTrue = 1 for both
-    have hpr₀ := prTrue_eq_one_of_pHoare G₀ Heap.empty hph₀ hll₀
-    have hpr₁ := prTrue_eq_one_of_pHoare G₁ Heap.empty hph₁ hll₁
-    simp only [Advantage, hpr₀, hpr₁, tsub_self, max_self]
+  solve_by_elim [advantage_zero_of_same_result, advantage_zero_of_both_false, prTrue_eq_zero_of_pHoare,
+      prTrue_eq_one_of_pHoare, perfect_indist_of_no_bad, prTrue_eq_prEventComp, failure_event_lemma]
 
 end CatCrypt.Unary

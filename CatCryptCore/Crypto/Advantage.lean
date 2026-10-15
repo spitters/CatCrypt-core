@@ -81,7 +81,7 @@ theorem abs_diff_triangle (a b c : ℝ≥0∞) :
     |Pr[G₀] - Pr[G₂]| ≤ |Pr[G₀] - Pr[G₁]| + |Pr[G₁] - Pr[G₂]| -/
 @[grind] theorem advantage_triangle (G₀ G₁ G₂ : SPComp Bool) :
     Advantage G₀ G₂ ≤ Advantage G₀ G₁ + Advantage G₁ G₂ := by
-  simp only [Advantage, abs_diff_triangle]
+  grind [Advantage, abs_diff_triangle]
 
 /-- The lifted eqPost relation is equivalent to Eq on pairs -/
 theorem lifted_eqPost_eq {α : Type*} :
@@ -110,14 +110,14 @@ theorem advantage_zero_of_rHoare {α : Type*} (G₀ G₁ : SPComp α)
   have h_distr_eq : G₀ Heap.empty = G₁ Heap.empty := liftR_eq_implies_eq h_lift
   -- Therefore the bound computations are also equal
   have h_bound_eq : (G₀.bind A) Heap.empty = (G₁.bind A) Heap.empty := by
-    simp only [SPComp.bind_def, h_distr_eq]
+    simp_all [SPComp.bind_def]
   -- prTrue values are equal
   have h_pr_eq : prTrue (G₀.bind A) Heap.empty = prTrue (G₁.bind A) Heap.empty := by
-    simp only [prTrue, h_bound_eq]
+    simp_all [prTrue]
   -- Advantage is 0 when probabilities are equal
   simp only [AdvantageA, Advantage, h_pr_eq]
   -- (x - x) ⊔ (x - x) = 0 ⊔ 0 = 0
-  simp only [tsub_self, max_self]
+  simp_all [tsub_self, max_self]
 
 /-- Zero advantage from invariant-preserving judgment with state separation.
 
@@ -166,23 +166,23 @@ theorem advantage_zero_of_inv {α : Type*} (I : RPre) (G₀ G₁ : SPComp α)
     simp only
     have hAeq : A p₁.1 p₁.2 = A p₂.1 p₂.2 := by
       rw [heq_a]
-      exact hA_respects p₂.1 p₁.2 p₂.2 hI_h
+      grind
     simp [hAeq, liftR_refl]
   -- Now the bound computations are equal
   simp only [SPComp.bind, heq_distrs, tsub_self]
   -- max 0 0 = 0
-  simp only [max_self]
+  simp_all [max_self]
 
 /-! ## Symmetry and Reflexivity -/
 
 /-- Advantage is symmetric: swapping games doesn't change the advantage. -/
 @[simp] theorem Advantage_sym (G₀ G₁ : SPComp Bool) :
     Advantage G₀ G₁ = Advantage G₁ G₀ := by
-  simp only [Advantage, max_comm]
+  simp_all [Advantage, max_comm]
 
 /-- Self-advantage is zero: no adversary can distinguish a game from itself. -/
 @[simp] theorem Advantage_self (G : SPComp Bool) : Advantage G G = 0 := by
-  simp only [Advantage, tsub_self, max_self]
+  simp_all [Advantage, tsub_self, max_self]
 
 /-! ## Utility Lemmas for Advantage Bounds -/
 
@@ -190,8 +190,7 @@ theorem advantage_zero_of_inv {α : Type*} (I : RPre) (G₀ G₁ : SPComp α)
 theorem sample_bind_eq (A : Bool → SPComp Bool) (h₀ : Heap) :
     (SPComp.bind (SPComp.sample Bool) A) h₀ =
     (SDistr.uniform Bool).bind (fun b => A b h₀) := by
-  simp only [SPComp.bind_def, SPComp.sample]
-  rw [SDistr.bind_assoc]; congr 1; funext b; rw [SDistr.pure_bind]
+  simp_all [SPComp.bind_def, SPComp.sample, SDistr.bind_assoc, SDistr.pure_bind]
 
 /-- prTrue is at most 1 (probability bound). -/
 @[grind] theorem prTrue_le_one (G : SPComp Bool) (h₀ : Heap) : prTrue G h₀ ≤ 1 := by
@@ -215,7 +214,7 @@ theorem prTrue_bind_sample_Bool (A : Bool → SPComp Bool) (h₀ : Heap) :
   rw [tsum_fintype, Fintype.sum_option]
   simp only [SDistr.uniform_apply_none, SDistr.uniform_apply_some, Fintype.card_bool,
              SDistr.fail_apply_some, ENNReal.tsum_eq_zero.mpr (fun _ => rfl), mul_zero, zero_add]
-  simp [add_comm]
+  simp_all [add_comm]
 
 /-- Advantage of sampling uniform Bool vs pure constant is at most 1/2. -/
 theorem advantage_sample_vs_pure_false (A : Bool → SPComp Bool) :
@@ -250,8 +249,7 @@ theorem sample_bind_eq_general {α β : Type*} [Fintype α] [Nonempty α]
     (f : α → SPComp β) (h₀ : Heap) :
     (SPComp.bind (SPComp.sample α) f) h₀ =
     (SDistr.uniform α).bind (fun a => f a h₀) := by
-  simp only [SPComp.bind_def, SPComp.sample]
-  rw [SDistr.bind_assoc]; congr 1; funext a; rw [SDistr.pure_bind]
+  simp_all [SPComp.bind_def, SPComp.sample, SDistr.bind_assoc, SDistr.pure_bind]
 
 /-- prTrue of sampling then applying F decomposes as weighted sum over the sampled type. -/
 theorem prTrue_bind_sample {α : Type*} [Fintype α] [Nonempty α]
@@ -263,9 +261,7 @@ theorem prTrue_bind_sample {α : Type*} [Fintype α] [Nonempty α]
   simp only [SDistr.bind, PMF.bind_apply]
   rw [ENNReal.tsum_comm]
   simp_rw [ENNReal.tsum_mul_left]
-  rw [tsum_fintype, Fintype.sum_option]
-  simp only [SDistr.uniform_apply_none, SDistr.uniform_apply_some,
-             SDistr.fail_apply_some, ENNReal.tsum_eq_zero.mpr (fun _ => rfl), mul_zero, zero_add]
+  simp_all [tsum_fintype, Fintype.sum_option, SDistr.uniform_apply_none, SDistr.uniform_apply_some]
 
 /-- Weighted sum bound: if each term is bounded, the weighted average is bounded.
     Used for proving that sampling from a common distribution preserves advantage bounds. -/

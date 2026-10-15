@@ -260,13 +260,10 @@ noncomputable def sdistrExpect (d : SDistr ℝ≥0∞) : ℝ≥0∞ :=
 
 @[simp] theorem sdistrExpect_pure (x : ℝ≥0∞) :
     sdistrExpect (SDistr.pure x) = x := by
-  classical
-  unfold sdistrExpect
-  rw [tsum_eq_single x (fun y hy => by simp [Ne.symm hy])]
-  simp
+  simp_all [sdistrExpect]
 
 @[simp] theorem sdistrExpect_fail : sdistrExpect (SDistr.fail) = 0 := by
-  simp [sdistrExpect]
+  simp_all [sdistrExpect]
 
 /-- Expectation of a bind is the `d`-weighted sum of the continuation's
     expectations. -/
@@ -293,7 +290,7 @@ theorem sdistrExpect_bind_eq_tsum {α : Type} (d : SDistr α) (f : α → SDistr
           exact tsum_congr fun y => (mul_assoc _ _ _)
     _ = ∑' a : α, d (some a) * ∑' y, (f a) (some y) * y := by
           refine SDistr.tsum_option_none_zero _ ?_
-          simp
+          simp_all
 
 /-- `SDistr` is a quantitative (Hasuo-style) ordered monad algebra over `ℝ≥0∞`:
     the algebra map is expectation, with failure collapsing to `⊥ = 0`. -/
@@ -310,8 +307,7 @@ noncomputable instance instOrderedMonadAlgebraSDistr :
 theorem wp_sdistr_eq_tsum {α : Type} (d : SDistr α) (post : α → ℝ≥0∞) :
     OrderedMonadAlgebra.wp (m := SDistr) d post = ∑' a : α, d (some a) * post a := by
   show sdistrExpect (SDistr.bind d fun a => SDistr.pure (post a)) = _
-  rw [sdistrExpect_bind_eq_tsum]
-  exact tsum_congr fun a => by rw [sdistrExpect_pure]
+  simp_all [sdistrExpect_bind_eq_tsum, sdistrExpect_pure]
 
 /-! ## Heap-indexed weakest preexpectation for `SPComp` -/
 
@@ -328,25 +324,23 @@ theorem wpE_eq_tsum {α : Type} (c : SPComp α) (post : α → Heap → ℝ≥0�
 
 @[simp] theorem wpE_pure {α : Type} (a : α) (post : α → Heap → ℝ≥0∞) (h : Heap) :
     wpE (SPComp.pure a) post h = post a h := by
-  classical
-  rw [wpE_eq_tsum]
-  show (∑' p : α × Heap, (SDistr.pure (a, h)) (some p) * post p.1 p.2) = post a h
-  rw [tsum_eq_single (a, h) (fun p hp => by simp [Ne.symm hp])]
-  simp
+  solve_by_elim [sdistrExpect_pure, sdistrExpect_fail, wpE_eq_tsum, wp_sdistr_eq_tsum,
+      CatCrypt.OrderedMonadAlgebra.μ_bind, CatCrypt.OrderedMonadAlgebra.wp_bind, CatCrypt.OrderedMonadAlgebra.wp_pure,
+      CatCrypt.IsEMAlgebra.bind_eq, sdistrExpect_bind_eq_tsum, CatCrypt.OrderedMonadAlgebra.μ_bind_μ,
+      CatCrypt.OrderedMonadAlgebra.μ_join, CatCrypt.orderedMonadAlgebra_laws_iff]
 
 /-- `wpE` is a monad morphism on bind: the `wp_bind` law, heap-indexed. -/
 theorem wpE_bind {α β : Type} (c : SPComp α) (f : α → SPComp β)
     (post : β → Heap → ℝ≥0∞) (h : Heap) :
     wpE (SPComp.bind c f) post h = wpE c (fun a h' => wpE (f a) post h') h := by
-  unfold wpE
-  show OrderedMonadAlgebra.wp (m := SDistr)
-    ((c h) >>= fun p : α × Heap => f p.1 p.2) (fun p => post p.1 p.2) = _
-  rw [OrderedMonadAlgebra.wp_bind]
+  solve_by_elim [wpE_pure, sdistrExpect_pure, wpE_eq_tsum, sdistrExpect_fail, wp_sdistr_eq_tsum,
+      CatCrypt.OrderedMonadAlgebra.μ_bind, sdistrExpect_bind_eq_tsum, CatCrypt.OrderedMonadAlgebra.wp_bind,
+      CatCrypt.OrderedMonadAlgebra.wp_pure, CatCrypt.IsEMAlgebra.bind_eq, CatCrypt.OrderedMonadAlgebra.μ_bind_μ,
+      CatCrypt.OrderedMonadAlgebra.μ_join, CatCrypt.orderedMonadAlgebra_laws_iff]
 
 @[simp] theorem wpE_fail {α : Type} (post : α → Heap → ℝ≥0∞) (h : Heap) :
     wpE (SPComp.fail) post h = 0 := by
-  rw [wpE_eq_tsum]
-  simp [SPComp.fail]
+  simp_all [wpE_eq_tsum, SPComp.fail]
 
 @[simp] theorem wpE_get (l : Location) (post : l.ty → Heap → ℝ≥0∞) (h : Heap) :
     wpE (SPComp.get l) post h = post (h.get l) h :=
@@ -354,11 +348,10 @@ theorem wpE_bind {α β : Type} (c : SPComp α) (f : α → SPComp β)
 
 @[simp] theorem wpE_set (l : Location) (v : l.ty) (post : Unit → Heap → ℝ≥0∞) (h : Heap) :
     wpE (SPComp.set l v) post h = post () (h.set l v) := by
-  classical
-  rw [wpE_eq_tsum]
-  show (∑' p : Unit × Heap, (SDistr.pure ((), h.set l v)) (some p) * post p.1 p.2) = _
-  rw [tsum_eq_single ((), h.set l v) (fun p hp => by simp [Ne.symm hp])]
-  simp
+  solve_by_elim [wpE_pure, wpE_bind, wpE_fail, wpE_get, sdistrExpect_pure, sdistrExpect_fail, wpE_eq_tsum,
+      wp_sdistr_eq_tsum, sdistrExpect_bind_eq_tsum, CatCrypt.OrderedMonadAlgebra.μ_bind,
+      CatCrypt.OrderedMonadAlgebra.wp_bind, CatCrypt.OrderedMonadAlgebra.wp_pure, CatCrypt.IsEMAlgebra.bind_eq,
+      CatCrypt.OrderedMonadAlgebra.μ_bind_μ, CatCrypt.OrderedMonadAlgebra.μ_join]
 
 /-- `wpE` is monotone in the post-expectation. -/
 theorem wpE_mono {α : Type} (c : SPComp α) {post post' : α → Heap → ℝ≥0∞}
@@ -405,27 +398,20 @@ probability-of-event machinery (`CatCrypt.Unary.prEventComp`,
 theorem wpE_indicator_eq_prEventComp {α : Type} (c : SPComp α) (E : α → Heap → Prop)
     [∀ a h', Decidable (E a h')] (h : Heap) :
     wpE c (fun a h' => if E a h' then 1 else 0) h = prEventComp c h E := by
-  rw [wpE_eq_tsum]
-  unfold prEventComp prEvent
-  refine tsum_congr fun p => ?_
-  by_cases hE : E p.1 p.2 <;> simp [hE]
+  grind [wpE_eq_tsum, prEventComp, prEvent, tsum_congr]
 
 /-- Adequacy specialized to `Bool`-valued games: `wpE` of the `true`-indicator
     is `prTrue`, the quantity the `Advantage` layer is built from. -/
 theorem wpE_indicator_eq_prTrue (G : SPComp Bool) (h : Heap) :
     wpE G (fun b _ => if b then 1 else 0) h = CatCrypt.Crypto.prTrue G h := by
-  rw [wpE_eq_tsum]
-  unfold CatCrypt.Crypto.prTrue
-  rw [ENNReal.tsum_prod']
-  rw [tsum_bool]
-  simp
+  simp_all [wpE_eq_tsum, ENNReal.tsum_prod', CatCrypt.Crypto.prTrue]
 
 /-- Lower bounds on event probability are exactly indicator-postcondition
     preexpectation bounds (the `vcgen`-style lowering seam). -/
 theorem le_prEventComp_iff_le_wpE {α : Type} (c : SPComp α) (E : α → Heap → Prop)
     [∀ a h', Decidable (E a h')] (h : Heap) (r : ℝ≥0∞) :
     r ≤ prEventComp c h E ↔ r ≤ wpE c (fun a h' => if E a h' then 1 else 0) h := by
-  rw [wpE_indicator_eq_prEventComp]
+  simp_all [wpE_indicator_eq_prEventComp]
 
 /-- Event probability, as an exact quantitative triple. -/
 theorem tripleE_prEventComp {α : Type} (c : SPComp α) (E : α → Heap → Prop)
@@ -457,11 +443,11 @@ theorem wpE_sample (α : Type) [Fintype α] [Nonempty α]
         (fun a => OrderedMonadAlgebra.wp (m := SDistr) (SDistr.pure (a, h))
           (fun p => post p.1 p.2))
       = OrderedMonadAlgebra.wp (m := SDistr) (SDistr.uniform α) (fun a => post a h) := by
-        exact congrArg _ (funext hinner)
+        simp_all [congrArg]
     _ = ∑' a : α, (SDistr.uniform α) (some a) * post a h := wp_sdistr_eq_tsum _ _
     _ = (Fintype.card α : ℝ≥0∞)⁻¹ * ∑' a : α, post a h := by
         rw [← ENNReal.tsum_mul_left]
-        exact tsum_congr fun a => by rw [SDistr.uniform_apply_some]
+        simp_all [SDistr.uniform_apply_some]
 
 /-- A uniform coin lands `true` with preexpectation `1/2`: the indicator
     adequacy plus `wpE_sample`, giving `prTrue`-level information for free. -/

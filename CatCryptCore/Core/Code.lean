@@ -107,13 +107,12 @@ theorem set_def (l : Location) (v : l.ty) (h : Heap) :
 @[simp]
 theorem pure_bind' (a : α) (f : α → SPComp β) (h : Heap) :
     (SPComp.bind (pure a) f) h = f a h := by
-  unfold SPComp.bind pure
-  rw [SDistr.pure_bind]
+  simp_all [SDistr.pure_bind, SPComp.bind, pure]
 
 /-- Binding pure after a computation is identity -/
 theorem bind_pure' (c : SPComp α) (h : Heap) :
     (SPComp.bind c pure) h = c h := by
-  simp only [SPComp.bind, pure, Prod.mk.eta, SDistr.bind_pure]
+  simp_all [SPComp.bind, pure, Prod.mk.eta, SDistr.bind_pure]
 
 /-- Monad bind on SPComp is SPComp.bind -/
 @[simp]
@@ -128,7 +127,7 @@ theorem monad_pure_eq {α : Type*} (a : α) : (Pure.pure a : SPComp α) = SPComp
 theorem sample_bind_pure (α : Type*) [Fintype α] [Nonempty α] (f : α → β) (h : Heap) :
     (SPComp.bind (sample α) (fun a => pure (f a))) h =
     (SDistr.uniform α).bind (fun a => SDistr.pure (f a, h)) := by
-  simp only [SPComp.bind, sample, pure, SDistr.bind_assoc, SDistr.pure_bind]
+  simp_all [SPComp.bind, sample, pure, SDistr.bind_assoc, SDistr.pure_bind]
 
 /-- Sample followed by pure of the sampled value simplifies to uniform bind.
     Special case where f is identity. -/
@@ -146,7 +145,7 @@ theorem sample_prod_eq (A B : Type) [Fintype A] [Fintype B] [Nonempty A] [Nonemp
   simp only [sample, SPComp.bind, SPComp.pure, SDistr.bind_assoc, SDistr.pure_bind]
   have := congr_arg (fun d => d.bind (fun ab => SDistr.pure (ab, h)))
     (SDistr.uniform_nested_eq_prod A B)
-  simp only [SDistr.bind_assoc, SDistr.pure_bind, this.symm]
+  simp_all [SDistr.bind_assoc, SDistr.pure_bind]
 
 /-! ## Associativity and unit laws -/
 
@@ -160,13 +159,13 @@ theorem bind_assoc (c : SPComp α) (f : α → SPComp β) (g : β → SPComp γ)
 @[simp, grind =]
 theorem bind_pure (c : SPComp α) : SPComp.bind c pure = c := by
   funext h
-  exact bind_pure' c h
+  simp_all [bind_pure']
 
 /-- Left identity: pure then bind -/
 @[simp, grind =]
 theorem pure_bind (a : α) (f : α → SPComp β) : SPComp.bind (pure a) f = f a := by
   funext h
-  exact pure_bind' a f h
+  simp_all [pure_bind']
 
 /-- `Bind.bind` form of `pure_bind`. When a goal arrives with the typeclass-method
     `Bind.bind` (from `Monad SPComp` instance projection) rather than the prefix
@@ -271,8 +270,7 @@ theorem bind_isPure {c : SPComp α} {f : α → SPComp β}
   obtain ⟨dc, hdc⟩ := hc
   choose df hdf using hf
   refine ⟨dc.bind (fun a => df a), fun h => ?_⟩
-  simp only [bind, hdc h, SDistr.bind_assoc]
-  simp_all [SDistr.pure_bind]
+  simp_all [bind, hdc h, SDistr.bind_assoc, SDistr.pure_bind]
 
 /-- Two pure computations commute in bind (Fubini for SPComp).
 
