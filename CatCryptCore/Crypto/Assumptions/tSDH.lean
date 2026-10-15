@@ -99,7 +99,7 @@ noncomputable def tSDH_Advantage_ext (t : ℕ) (A : tSDH_Adversary_ext P t) : �
     The advantage is preserved. -/
 theorem tSDH_Advantage_eq_ext (t : ℕ) (A : tSDH_Adversary P t) :
     tSDH_Advantage P t A = tSDH_Advantage_ext P t (fun pk _vk => A pk) := by
-  simp only [tSDH_Advantage, tSDH_Advantage_ext, tSDH_Game, tSDH_Game_ext]
+  simp_all [tSDH_Advantage, tSDH_Advantage_ext, tSDH_Game, tSDH_Game_ext]
 
 /-! ## Useful lemma: SRS evaluation equals polynomial commitment -/
 

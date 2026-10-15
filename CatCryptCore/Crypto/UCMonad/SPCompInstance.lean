@@ -79,9 +79,7 @@ noncomputable def mapSumSP {α β γ δ : Type} (f : α → SPComp β) (g : γ �
 
 theorem mapSumSP_pure_pure {α β : Type} :
     mapSumSP (SPComp.pure (α := α)) (SPComp.pure (α := β)) = SPComp.pure := by
-  funext x; rcases x with a | b
-  · exact mapSumSP_pure_left _ a
-  · exact mapSumSP_pure_right _ b
+  funext x; cases x <;> simp
 
 theorem mapSumSP_pure_kleisli_comp {α β γ δ : Type}
     (f : β → SPComp γ) (g : γ → SPComp δ) :
@@ -99,36 +97,12 @@ theorem sdist_mapSumSP_le {α₁ α₂ β₁ β₂ : Type}
     (f₁ f₂ : α₁ → SPComp α₂) (g₁ g₂ : β₁ → SPComp β₂)
     {ε₁ ε₂ : ℝ≥0∞} (hf : sdist f₁ f₂ ≤ ε₁) (hg : sdist g₁ g₂ ≤ ε₂) :
     sdist (mapSumSP f₁ g₁) (mapSumSP f₂ g₂) ≤ ε₁ ⊔ ε₂ := by
-  apply iSup_le; intro D
-  apply iSup_le; intro x
-  apply iSup_le; intro h₀
+  refine iSup_le fun D => iSup_le fun x => iSup_le fun h₀ => ?_
   rcases x with a | c
-  · simp only [mapSumSP_inl, SPComp.map]
-    have eq1 : SPComp.bind (SPComp.bind (f₁ a) fun b => SPComp.pure (Sum.inl b)) D =
-      SPComp.bind (f₁ a) (fun b => D (Sum.inl b)) := by
-      rw [SPComp.bind_assoc]; congr 1; funext b; simp
-    have eq2 : SPComp.bind (SPComp.bind (f₂ a) fun b => SPComp.pure (Sum.inl b)) D =
-      SPComp.bind (f₂ a) (fun b => D (Sum.inl b)) := by
-      rw [SPComp.bind_assoc]; congr 1; funext b; simp
-    rw [eq1, eq2]
-    calc absDiff (prTrue (SPComp.bind (f₁ a) fun b => D (Sum.inl b)) h₀)
-                 (prTrue (SPComp.bind (f₂ a) fun b => D (Sum.inl b)) h₀)
-        ≤ sdist f₁ f₂ := by apply sdist_le_of_forall le_rfl
-      _ ≤ ε₁ := hf
-      _ ≤ ε₁ ⊔ ε₂ := le_max_left _ _
-  · simp only [mapSumSP_inr, SPComp.map]
-    have eq1 : SPComp.bind (SPComp.bind (g₁ c) fun d => SPComp.pure (Sum.inr d)) D =
-      SPComp.bind (g₁ c) (fun d => D (Sum.inr d)) := by
-      rw [SPComp.bind_assoc]; congr 1; funext d; simp
-    have eq2 : SPComp.bind (SPComp.bind (g₂ c) fun d => SPComp.pure (Sum.inr d)) D =
-      SPComp.bind (g₂ c) (fun d => D (Sum.inr d)) := by
-      rw [SPComp.bind_assoc]; congr 1; funext d; simp
-    rw [eq1, eq2]
-    calc absDiff (prTrue (SPComp.bind (g₁ c) fun d => D (Sum.inr d)) h₀)
-                 (prTrue (SPComp.bind (g₂ c) fun d => D (Sum.inr d)) h₀)
-        ≤ sdist g₁ g₂ := by apply sdist_le_of_forall le_rfl
-      _ ≤ ε₂ := hg
-      _ ≤ ε₁ ⊔ ε₂ := le_max_right _ _
+  · simp only [mapSumSP_inl, SPComp.map, SPComp.bind_assoc, SPComp.pure_bind]
+    exact le_sup_of_le_left (sdist_le_of_forall hf _ _ _)
+  · simp only [mapSumSP_inr, SPComp.map, SPComp.bind_assoc, SPComp.pure_bind]
+    exact le_sup_of_le_right (sdist_le_of_forall hg _ _ _)
 
 /-! ## The UCMonad instance for SPComp -/
 

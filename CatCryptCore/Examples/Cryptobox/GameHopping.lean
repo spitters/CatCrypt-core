@@ -121,22 +121,19 @@ with the reduction adversary. The proofs are by definitional equality. -/
     `R_PKEY N E I b A`. -/
 theorem PKAE_eq_PKEY_nocheck (N : @NIKEScheme CT) (E : @NBSES CT) (I : @KeyInjection CT)
     (b : Bool) (A : PKAEOracles → SPComp Bool) :
-    PKAE N E I b A = PKEY N false (R_PKEY N E I b A) := by
-  simp only [PKAE, PKEY, R_PKEY]
+    PKAE N E I b A = PKEY N false (R_PKEY N E I b A) := by grind [PKAE, PKEY, R_PKEY]
 
 /-- PKAE_cc = PKEY(collision-check) with PKEY reduction adversary. -/
 theorem PKAE_cc_eq_PKEY_check (N : @NIKEScheme CT) (E : @NBSES CT) (I : @KeyInjection CT)
     (b : Bool) (A : PKAEOracles → SPComp Bool) :
-    PKAE_cc N E I b A = PKEY N true (R_PKEY N E I b A) := by
-  simp only [PKAE_cc, PKEY, R_PKEY]
+    PKAE_cc N E I b A = PKEY N true (R_PKEY N E I b A) := by grind [PKAE_cc, PKEY, R_PKEY]
 
 /-! ## PKEY Switching Steps -/
 
 set_option linter.unusedSectionVars false in
 /-- Advantage is symmetric: `Advantage G₀ G₁ = Advantage G₁ G₀`. -/
 theorem advantage_comm (G₀ G₁ : SPComp Bool) :
-    Advantage G₀ G₁ = Advantage G₁ G₀ := by
-  unfold Advantage; exact max_comm _ _
+    Advantage G₀ G₁ = Advantage G₁ G₀ := by simp_all
 
 /-- The distance between PKAE and PKAE_cc equals the PKEY advantage
     of the reduction adversary.
@@ -148,14 +145,13 @@ theorem pkae_pkey_step (N : @NIKEScheme CT) (E : @NBSES CT) (I : @KeyInjection C
     Advantage (PKAE N E I b A) (PKAE_cc N E I b A) =
     pkeyAdvantage N (R_PKEY N E I b A) := by
   unfold pkeyAdvantage
-  rw [PKAE_eq_PKEY_nocheck, PKAE_cc_eq_PKEY_check]
+  simp_all [PKAE_eq_PKEY_nocheck, PKAE_cc_eq_PKEY_check]
 
 /-- The distance from PKAE_cc to PKAE is also the PKEY advantage (by symmetry). -/
 theorem pkae_pkey_step_rev (N : @NIKEScheme CT) (E : @NBSES CT) (I : @KeyInjection CT)
     (b : Bool) (A : PKAEOracles → SPComp Bool) :
     Advantage (PKAE_cc N E I b A) (PKAE N E I b A) =
-    pkeyAdvantage N (R_PKEY N E I b A) := by
-  rw [advantage_comm, pkae_pkey_step]
+    pkeyAdvantage N (R_PKEY N E I b A) := by simp_all [pkae_pkey_step]
 
 /-! ## Game-Hopping Chain -/
 
@@ -188,12 +184,12 @@ theorem pkae_game_hopping (N : @NIKEScheme CT) (E : @NBSES CT) (I : @KeyInjectio
     _ ≤ Advantage (PKAE N E I false A) (PKAE_cc N E I false A)
         + (Advantage (PKAE_cc N E I false A) (PKAE_cc N E I true A)
            + Advantage (PKAE_cc N E I true A) (PKAE N E I true A)) := by
-        gcongr; exact advantage_triangle _ _ _
+        gcongr; grind
     _ = pkeyAdvantage N (R_PKEY N E I false A)
         + (Advantage (PKAE_cc N E I false A) (PKAE_cc N E I true A)
            + pkeyAdvantage N (R_PKEY N E I true A)) := by
-        rw [pkae_pkey_step, pkae_pkey_step_rev]
-    _ = _ := by rw [add_assoc]
+        simp_all [pkae_pkey_step]
+    _ = _ := by simp_all [add_assoc]
 
 /-! ## Main Security Theorem (Chain Version) -/
 
@@ -338,8 +334,7 @@ theorem middle_step_triangle (N : @NIKEScheme CT) (E : @NBSES CT)
     middleAdvantage N E I A ≤
       Advantage (PKAE_cc N E I false A) (PKAE_nikeSwitch N E I A) +
       Advantage (PKAE_nikeSwitch N E I A) (PKAE_cc N E I true A) := by
-  unfold middleAdvantage
-  exact advantage_triangle _ _ _
+  unfold middleAdvantage; grind
 
 /-- The NIKE switching advantage: distance between real shared keys
     and random shared keys for honest-honest pairs. -/
@@ -399,7 +394,7 @@ theorem cryptobox_security_full
           h_pkey_real h_pkey_ideal le_rfl
     _ ≤ 2 * pkey_eps + (nike_eps + ae_eps) :=
         add_le_add le_rfl h_middle
-    _ = 2 * pkey_eps + nike_eps + ae_eps := by rw [add_assoc]
+    _ = 2 * pkey_eps + nike_eps + ae_eps := by simp_all [add_assoc]
 
 /-! ## Corollaries
 
@@ -419,7 +414,7 @@ theorem cryptobox_security_no_collision
   have := cryptobox_security_full N E I A 0 nike_eps ae_eps
     (le_of_eq h_pkey_real) (le_of_eq h_pkey_ideal) h_nike h_ae
   simp only [mul_zero, zero_add] at this
-  exact this
+  simp_all
 
 /-- When NIKE and AE are perfectly secure (e.g., information-theoretic),
     the PKAE advantage is bounded purely by the collision probability. -/
@@ -435,7 +430,7 @@ theorem cryptobox_security_collision_only
   have := cryptobox_security_full N E I A pkey_eps 0 0
     h_pkey_real h_pkey_ideal (le_of_eq h_nike) (le_of_eq h_ae)
   simp only [add_zero] at this
-  exact this
+  simp_all
 
 /-! ## Proof Obligation Summary
 
@@ -654,7 +649,7 @@ theorem nikeStep_structure (N : @NIKEScheme CT) (E : @NBSES CT)
               (GNIKE N true pkeyO (R_NIKE N E I A))
           + Advantage (GNIKE N true pkeyO (R_NIKE N E I A)) (PKAE_nikeSwitch N E I A) := by
         gcongr
-        exact advantage_triangle _ _ _
+        grind
 
 /-- The NIKE step advantage is bounded by the NIKE reduction advantage
     plus a "caching gap" term that accounts for the difference between
@@ -732,10 +727,7 @@ theorem cryptobox_security_with_nike_reduction
     -- AE switching bound
     (h_ae : aeStepAdvantage N E I A ≤ ae_eps) :
     pkaeAdvantage N E I A ≤ 2 * pkey_eps + (nike_eps + caching_gap) + ae_eps := by
-  have h_nike_step : nikeStepAdvantage N E I A ≤ nike_eps + caching_gap :=
-    nikeStep_bounded N E I A pkeyO nike_eps caching_gap h_nike h_cache
-  exact cryptobox_security_full N E I A pkey_eps (nike_eps + caching_gap) ae_eps
-    h_pkey_real h_pkey_ideal h_nike_step h_ae
+  grind [nikeStep_bounded, cryptobox_security_full]
 
 /-- **Simplified version when the caching gap is zero.**
 
@@ -757,9 +749,6 @@ theorem cryptobox_security_with_nike_reduction_no_gap
     -- AE switching bound
     (h_ae : aeStepAdvantage N E I A ≤ ae_eps) :
     pkaeAdvantage N E I A ≤ 2 * pkey_eps + nike_eps + ae_eps := by
-  have h_nike_step : nikeStepAdvantage N E I A ≤ nike_eps :=
-    h_cache.trans h_nike
-  exact cryptobox_security_full N E I A pkey_eps nike_eps ae_eps
-    h_pkey_real h_pkey_ideal h_nike_step h_ae
+  simp_all [h_cache.trans, cryptobox_security_full]
 
 end CatCrypt.Examples.Cryptobox

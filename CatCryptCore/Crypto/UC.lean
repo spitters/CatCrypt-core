@@ -108,18 +108,15 @@ theorem mapSum_inr {α β γ δ : Type*} (f : α → SPComp β) (g : γ → SPCo
 /-- `mapSum pure pure = pure` (identity on Sum). -/
 @[simp] theorem mapSum_pure_pure {α β : Type*} :
     mapSum (SPComp.pure (α := α)) (SPComp.pure (α := β)) = SPComp.pure := by
-  funext x; rcases x with a | b
-  · exact mapSum_pure_left _ a
-  · exact mapSum_pure_right _ b
+  funext x; cases x <;> simp
 
 /-- `mapSum f g` equals the KlSPComp tensor product `wkR f ≫ wkL g`. -/
 theorem mapSum_eq_tensorHom {α₁ α₂ β₁ β₂ : Type}
     (f : α₁ → SPComp α₂) (g : β₁ → SPComp β₂) :
     mapSum f g = fun x => SPComp.bind (KlSPComp.wkR f β₁ x)
       (KlSPComp.wkL α₂ g) := by
-  funext x; rcases x with a | c
-  · simp [mapSum, KlSPComp.wkR, KlSPComp.wkL, SPComp.map, SPComp.bind_assoc]
-  · simp [mapSum, KlSPComp.wkR, KlSPComp.wkL, SPComp.map]
+  funext x; rcases x with a | c <;>
+    simp [mapSum, KlSPComp.wkR, KlSPComp.wkL, SPComp.map, SPComp.bind_assoc]
 
 /-! ## Real and Ideal Worlds -/
 
@@ -169,8 +166,7 @@ theorem UCEmulates_of_sdist {out leak : Type*} (ε : ℝ≥0∞)
     (π F : hon → SPComp (out ⊕ leak))
     (h : sdist π F ≤ ε) :
     UCEmulates ε ⟨hon, out, leak, leak, view⟩ π F := by
-  intro A
-  exact ⟨A, le_trans (sdist_comp_right π F (mapSum SPComp.pure A)) h⟩
+  exact fun A => ⟨A, le_trans (sdist_comp_right π F (mapSum SPComp.pure A)) h⟩
 
 /-- Monotonicity: UC emulation with tighter bound implies looser bound. -/
 @[grind →] theorem UCEmulates_mono {spec : UCSpec}
@@ -178,9 +174,7 @@ theorem UCEmulates_of_sdist {out leak : Type*} (ε : ℝ≥0∞)
     {F : spec.hon → SPComp (spec.out ⊕ spec.sim_if)} {ε₁ ε₂ : ℝ≥0∞}
     (h : UCEmulates ε₁ spec π F) (hle : ε₁ ≤ ε₂) :
     UCEmulates ε₂ spec π F := by
-  intro A
-  obtain ⟨S, hS⟩ := h A
-  exact ⟨S, le_trans hS hle⟩
+  exact fun A => (h A).imp fun _ hS => le_trans hS hle
 
 /-- Dummy adversary sufficiency (same-interface case: `view = leak`).
 
@@ -201,8 +195,7 @@ theorem UCEmulates_of_dummy {hon out leak : Type*} (ε : ℝ≥0∞)
 theorem UCEmulates_refl {hon out leak view : Type*}
     (π : hon → SPComp (out ⊕ leak)) :
     UCEmulates 0 ⟨hon, out, leak, leak, view⟩ π π := by
-  intro A
-  exact ⟨A, by simp [sdist_self]⟩
+  exact fun A => ⟨A, by simp [sdist_self]⟩
 
 /-- Transitivity of UC emulation (same-interface case).
 
@@ -214,10 +207,8 @@ theorem UCEmulates_trans {hon out leak view : Type*} {ε₁ ε₂ : ℝ≥0∞}
     (h₁ : UCEmulates ε₁ ⟨hon, out, leak, leak, view⟩ π₁ π₂)
     (h₂ : UCEmulates ε₂ ⟨hon, out, leak, leak, view⟩ π₂ π₃) :
     UCEmulates (ε₁ + ε₂) ⟨hon, out, leak, leak, view⟩ π₁ π₃ := by
-  intro A
-  obtain ⟨S₁, hS₁⟩ := h₁ A
-  obtain ⟨S₂, hS₂⟩ := h₂ S₁
-  exact ⟨S₂, le_trans (sdist_triangle _ _ _) (add_le_add hS₁ hS₂)⟩
+  exact fun A => (h₁ A).elim fun S₁ hS₁ => (h₂ S₁).imp fun _ hS₂ =>
+    le_trans (sdist_triangle _ _ _) (add_le_add hS₁ hS₂)
 
 /-! ## Heterogeneous Transitivity -/
 
@@ -231,10 +222,8 @@ theorem UCEmulates_trans_hetero {hon out leak₁ leak₂ sim_if view : Type*} {�
     (h₁ : UCEmulates ε₁ ⟨hon, out, leak₁, leak₂, view⟩ π₁ π₂)
     (h₂ : UCEmulates ε₂ ⟨hon, out, leak₂, sim_if, view⟩ π₂ π₃) :
     UCEmulates (ε₁ + ε₂) ⟨hon, out, leak₁, sim_if, view⟩ π₁ π₃ := by
-  intro A
-  obtain ⟨S₁, hS₁⟩ := h₁ A
-  obtain ⟨S₂, hS₂⟩ := h₂ S₁
-  exact ⟨S₂, le_trans (sdist_triangle _ _ _) (add_le_add hS₁ hS₂)⟩
+  exact fun A => (h₁ A).elim fun S₁ hS₁ => (h₂ S₁).imp fun _ hS₂ =>
+    le_trans (sdist_triangle _ _ _) (add_le_add hS₁ hS₂)
 
 /-- Heterogeneous transitivity for 3-step pipelines. -/
 theorem UCEmulates_trans_hetero₃ {hon out l₁ l₂ l₃ sim view : Type*}

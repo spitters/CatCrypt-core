@@ -126,11 +126,7 @@ theorem sdistr_bind_map_some {α β : Type} (p : PMF α) (f : α → SDistr β) 
 
 /-- The `true`-probability of a total distribution. -/
 theorem prTrue_map_some (p : PMF Bool) : prTrue (p.map some) = p true := by
-  unfold prTrue
-  rw [PMF.map_apply, tsum_eq_single true]
-  · simp
-  · intro b hb
-    simp [hb]
+  (unfold CatCrypt.Crypto.MLKEM.prTrue; simp_all [PMF.map_apply])
 
 /-- `Advantage` between two heap-independent games is the absolute difference of
 their `true`-probabilities. -/

@@ -138,13 +138,12 @@ theorem bernoulli_flip_program_eq {α : Type*}
 theorem prTrue_bernoulli_bind (p : ℝ≥0) (hp : p ≤ 1) (k : Bool → SPComp Bool) (h₀ : Heap) :
     prTrue (SPComp.bind (sampleFrom (bernoulli p hp)) k) h₀
       = (p : ℝ≥0∞) * prTrue (k true) h₀ + ((1 - p : ℝ≥0) : ℝ≥0∞) * prTrue (k false) h₀ := by
-  rw [prTrue_bind_sampleFrom, tsum_fintype, Fintype.sum_bool,
-      bernoulli_apply_true, bernoulli_apply_false]
+  simp_all [prTrue_bind_sampleFrom, tsum_fintype, bernoulli_apply_true, bernoulli_apply_false]
 
 /-- A biased coin returns `true` with probability exactly `p`. -/
 theorem prTrue_bernoulli (p : ℝ≥0) (hp : p ≤ 1) (h₀ : Heap) :
     prTrue (sampleFrom (bernoulli p hp)) h₀ = (p : ℝ≥0∞) := by
-  rw [prTrue_sampleFrom, bernoulli_apply_true]
+  simp_all [prTrue_sampleFrom, bernoulli_apply_true]
 
 /-- Cross-check of the coupling against the unary rule: negating a `bernoulli p`
     coin is a `bernoulli (1 - p)` coin, both routes giving `1 - p`. -/

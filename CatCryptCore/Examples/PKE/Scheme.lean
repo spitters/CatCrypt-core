@@ -337,6 +337,6 @@ theorem MT_CPA_perfect (pk : P.PK) (msgs : List P.M)
     MT_CPA_Advantage P pk msgs A = 0 := by
   unfold MT_CPA_Advantage
   rw [← hybrid_game_zero P pk msgs, ← hybrid_game_length P pk msgs]
-  exact advantage_hybrid_zero (hybrid_game P pk msgs) msgs.length hperf A
+  simp_all [advantage_hybrid_zero]
 
 end CatCrypt.Examples.PKE

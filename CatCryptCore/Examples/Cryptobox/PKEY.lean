@@ -420,14 +420,13 @@ theorem spcomp_fail_bind {α : Type} {β : Type} (f : α → SPComp β) :
     SPComp.bind SPComp.fail f = SPComp.fail := by
   funext h
   simp only [SPComp.bind, SPComp.fail]
-  exact SDistr.bind_fail _
+  simp_all [SDistr.bind_fail]
 
 -- Helper: SPComp.bind with the same continuation produces equal results
 -- when the first computations are equal
 omit CT in
 theorem spcomp_bind_congr_left {α : Type} {β : Type} {c₁ c₂ : SPComp α}
-    (f : α → SPComp β) (h : c₁ = c₂) : SPComp.bind c₁ f = SPComp.bind c₂ f := by
-  rw [h]
+    (f : α → SPComp β) (h : c₁ = c₂) : SPComp.bind c₁ f = SPComp.bind c₂ f := by grind
 
 -- Helper: when the collision flag is set in h₁, subsequent set operations
 -- on locations with different ids preserve the flag value
@@ -529,7 +528,7 @@ theorem collision_prob_single_query (h₀ : Heap) (q_existing : ℕ)
   refine le_trans (Finset.card_le_card ?_) (le_of_eq hScard)
   intro pk hpk
   rw [Finset.mem_filter] at hpk
-  exact hScov pk hpk.2
+  simp_all
 
 /-- Multi-query collision bound via union bound.
 

@@ -59,7 +59,7 @@ theorem sdistrToSPComp_bind {α β : Type} (d : SDistr α) (f : α → SDistr β
     SPComp.bind (sdistrToSPComp d) (fun a => sdistrToSPComp (f a)) := by
   funext h
   unfold sdistrToSPComp SPComp.bind
-  simp only [SDistr.bind_assoc, SDistr.pure_bind]
+  simp_all [SDistr.bind_assoc, SDistr.pure_bind]
 
 /-- The state-independent lift produces `IsPure` computations. -/
 theorem sdistrToSPComp_isPure {α : Type} (d : SDistr α) :
@@ -71,8 +71,7 @@ theorem sdistrToSPComp_isPure {α : Type} (d : SDistr α) :
 theorem bind_sdistrToSPComp_eq {β : Type} (d : SDistr β) (D : β → SPComp Bool)
     (h₀ : Heap) :
     SPComp.bind (sdistrToSPComp d) D h₀ = SDistr.bind d (fun b => D b h₀) := by
-  unfold sdistrToSPComp SPComp.bind
-  simp only [SDistr.bind_assoc, SDistr.pure_bind]
+  simp_all [SPComp.bind, SDistr.bind_assoc, SDistr.pure_bind]
 
 /-- Marginalising the heap out of an `SDistr (Bool × Heap)`: summing the
     probability of `(true, ·)` over all heaps equals the probability of `true`
@@ -84,7 +83,6 @@ theorem marginalize_heap (M : SDistr (Bool × Heap)) :
   rw [PMF.bind_apply]; symm
   rw [tsum_option_split]
   simp only [PMF.pure_apply, Option.some.injEq, reduceCtorEq, ite_false, mul_zero, zero_add]
-  rw [tsum_bool_prod_eq]
-  simp
+  simp [tsum_bool_prod_eq]
 
 end CatCrypt.Crypto.SDistrLift

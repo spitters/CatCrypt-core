@@ -426,7 +426,7 @@ theorem advantageA_sample_bind_le_of_eq_off {α β : Type} [Fintype α] [Nonempt
       Finset.sum_congr rfl (fun x hx => by rw [hPQ x (Finset.ne_of_mem_erase hx)])]
     calc w * P x₀ + ∑ x ∈ Finset.univ.erase x₀, w * Q x
         ≤ w + ∑ x ∈ Finset.univ.erase x₀, w * Q x := by
-          gcongr; exact mul_le_of_le_one_right' hP
+          gcongr; grind [mul_le_of_le_one_right']
       _ ≤ w + (w * Q x₀ + ∑ x ∈ Finset.univ.erase x₀, w * Q x) := by
           gcongr; exact le_add_self
   apply max_le <;> rw [tsub_le_iff_right]

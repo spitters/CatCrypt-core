@@ -13,6 +13,7 @@ public import CatCryptCore.Prob.BirthdayBound
 public import CatCryptCore.Prob.XorBij
 public import CatCryptCore.Examples.OneTimePad
 public import CatCryptCore.Tactics
+public import CatCryptCore.Tactics.AutoMetrics
 
 /-!
 # Bijection-Family PRF: Perfect Security
@@ -182,10 +183,7 @@ theorem cascade_prf_bound {α : Type} (G : ℕ → SPComp α) (A : α → SPComp
     (h01 : AdvantageA (G 0) (G 1) A ≤ ε_prf)
     (h12 : AdvantageA (G 1) (G 2) A ≤ birthdayTerm q N)
     (h23 : AdvantageA (G 2) (G 3) A ≤ ε_prf) :
-    AdvantageA (G 0) (G 3) A ≤ 2 * ε_prf + birthdayTerm q N := by
-  calc AdvantageA (G 0) (G 3) A ≤ ε_prf + birthdayTerm q N + ε_prf := by
-        adv_game_hop [G 1, G 2]
-    _ = 2 * ε_prf + birthdayTerm q N := by ring
+    AdvantageA (G 0) (G 3) A ≤ 2 * ε_prf + birthdayTerm q N := by hop_chain
 
 /-- **Cascade PRF bound from a base-PRF security assumption.**
 
@@ -218,7 +216,7 @@ theorem cascade_prf_perfect {α : Type} (G : ℕ → SPComp α) (A : α → SPCo
     (h12 : AdvantageA (G 1) (G 2) A ≤ birthdayTerm q N)
     (h23 : AdvantageA (G 2) (G 3) A ≤ 0) :
     AdvantageA (G 0) (G 3) A = 0 := by
-  have hbirth : birthdayTerm q N = 0 := by interval_cases q <;> simp [birthdayTerm]
+  have hbirth : birthdayTerm q N = 0 := by unfold birthdayTerm; simp_all
   simpa [hbirth] using cascade_prf_bound G A 0 q N h01 h12 h23
 
 /-! ## Tactic showcase: discharging a cascade hop with `bind_vcgen`
@@ -247,7 +245,7 @@ coupling of `bijPRF_perfect`). This is exactly a cascade hop with `ε_prf = 0`. 
 theorem bijPRF_adv_zero_via_vcgen (B : BijPRFFamily) (x : B.Input)
     (A : B.toPRFScheme.Output → SPComp Bool) :
     PRF_Adv B.toPRFScheme x A = 0 := by
-  simp only [PRF_Adv, AdvantageA, bijPRF_game_eq, Advantage_self]
+  simp_all [PRF_Adv, AdvantageA, bijPRF_game_eq, Advantage_self]
 
 /-- A bijection-family base function satisfies the `PRFAssumption` with `ε = 0`,
 witnessed by the `bind_vcgen` proof `bijPRF_adv_zero_via_vcgen`. -/

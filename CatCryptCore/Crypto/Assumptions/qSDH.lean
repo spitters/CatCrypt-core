@@ -150,7 +150,6 @@ theorem qSDH_Game_isPure (q : ℕ) (A : qSDH_Adversary QG q)
     SPComp.IsPure (qSDH_Game QG q A) := by
   unfold qSDH_Game
   apply SPComp.bind_isPure (SPComp.sample_isPure _); intro x
-  apply SPComp.bind_isPure (hA _); intro ⟨c, h⟩
-  exact SPComp.pure_isPure _
+  simp_all [SPComp.bind_isPure, SPComp.pure_isPure]
 
 end CatCrypt.Crypto.Assumptions

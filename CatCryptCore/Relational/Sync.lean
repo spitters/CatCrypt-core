@@ -51,7 +51,6 @@ theorem r_get_vs_get' {Φ : RPre} (l : Location)
     rHoare Φ (SPComp.get l) (SPComp.get l)
       (fun v₁ h₁ v₂ h₂ => Φ h₁ h₂ ∧ v₁ = h₁.get l ∧ v₂ = h₂.get l) := by
   intro h₁ h₂ hΦ
-  simp only [SPComp.get_def]
   exact liftR_pure ⟨hΦ, rfl, rfl⟩
 
 /-- Synchronized get at different locations with same type.
@@ -81,7 +80,6 @@ theorem r_put_vs_put_diff {Φ Ψ : RPre} (l : Location) (v₁ v₂ : l.ty)
     rHoare Φ (SPComp.set l v₁) (SPComp.set l v₂)
       (fun _ h₁ _ h₂ => Ψ h₁ h₂) := by
   intro h₁ h₂ hΦ
-  simp only [SPComp.set_def]
   exact liftR_pure (hTrans h₁ h₂ hΦ)
 
 /-- Synchronized put at different locations.
@@ -91,7 +89,6 @@ theorem r_put_vs_put_diff_loc {Φ Ψ : RPre} (l₁ l₂ : Location) (v₁ : l₁
     rHoare Φ (SPComp.set l₁ v₁) (SPComp.set l₂ v₂)
       (fun _ h₁ _ h₂ => Ψ h₁ h₂) := by
   intro h₁ h₂ hΦ
-  simp only [SPComp.set_def]
   exact liftR_pure (hTrans h₁ h₂ hΦ)
 
 /-! ## Synchronized Sampling Rules -/
@@ -121,7 +118,6 @@ theorem r_sample_vs_sample_coupling {Φ : RPre} (α β : Type*)
     rHoare Φ (SPComp.sample α) (SPComp.sample β)
       (fun a h₁ b h₂ => Φ h₁ h₂ ∧ R a b) := by
   intro h₁ h₂ hΦ
-  simp only [SPComp.sample]
   apply liftR_bind hCoupling
   intro a b hRab
   exact liftR_pure ⟨hΦ, hRab⟩
@@ -154,15 +150,7 @@ theorem r_sample_put_vs_sample_put {Φ Ψ : RPre} (l : Location) [Fintype l.ty] 
              (SPComp.sample l.ty >>= fun v => SPComp.set l v)
       (fun _ h₁ _ h₂ => Ψ h₁ h₂) := by
   intro h₁ h₂ hΦ
-  -- The >>= desugars to SPComp.bind via the Monad instance
-  simp only [bind, SPComp.bind, SPComp.sample, SPComp.set, SDistr.bind_assoc]
-  -- (uniform l.ty).bind (fun v => pure (v, h₁).bind (fun (v, h) => pure ((), h.set l v)))
-  -- = (uniform l.ty).bind (fun v => pure ((), h₁.set l v))
-  have heq₁ : ∀ v, (SDistr.pure (v, h₁)).bind (fun p => SDistr.pure ((), p.2.set l p.1)) =
-                   SDistr.pure ((), h₁.set l v) := fun v => SDistr.pure_bind _ _
-  have heq₂ : ∀ v, (SDistr.pure (v, h₂)).bind (fun p => SDistr.pure ((), p.2.set l p.1)) =
-                   SDistr.pure ((), h₂.set l v) := fun v => SDistr.pure_bind _ _
-  simp only [heq₁, heq₂]
+  simp only [bind, SPComp.bind, SPComp.sample, SPComp.set, SDistr.bind_assoc, SDistr.pure_bind]
   -- Now apply diagonal coupling
   apply liftR_bind liftR_uniform_same
   intro v v' hvv
@@ -192,6 +180,6 @@ theorem r_frame {Φ Ψ : RPre} {Θ : RPost α β}
   have hh := hInner h₁ h₂ hΦ
   apply liftR_mono _ hh
   intro ⟨a, h₁'⟩ ⟨b, h₂'⟩ hΘ
-  exact ⟨hΘ, hFrame a h₁' b h₂' hΘ⟩
+  grind
 
 end CatCrypt.Relational

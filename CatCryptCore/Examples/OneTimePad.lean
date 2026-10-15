@@ -146,8 +146,7 @@ instance instValidOtpGameRaw (m : Bool) : IsValid (∅ : LocSet) (otpGameRaw m) 
 /-- The reflected body evaluates back to the shallow IND-CPA game body. -/
 theorem otpGameRaw_eval (m : Bool) :
     (otpGameRaw m).eval =
-      SPComp.bind (SPComp.sample Bool) (fun k => SPComp.pure (xor k m)) := by
-  simp [otpGameRaw, RawCode.eval]
+      SPComp.bind (SPComp.sample Bool) (fun k => SPComp.pure (xor k m)) := by bind_vcgen
 
 /-- The reflected body's evaluation is the uniform sample, independent of `m`:
     XOR-by-`m` is a bijection of the uniform key. This is the distribution-level

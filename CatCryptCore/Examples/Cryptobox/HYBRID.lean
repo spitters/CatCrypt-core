@@ -233,7 +233,7 @@ theorem aeHybridStepAdvantage_mem (N : @NIKEScheme CT) (E : @NBSES CT)
     (I : @KeyInjection CT) (S : Finset SID) (sid : SID)
     (A : PKAEOracles → SPComp Bool) (hmem : sid ∈ S) :
     aeHybridStepAdvantage N E I S sid A = 0 := by
-  simp [aeHybridStepAdvantage, Finset.insert_eq_of_mem hmem, Advantage, tsub_self, max_self]
+  simp_all [aeHybridStepAdvantage, Advantage, tsub_self, max_self]
 
 /-! ## SAE Reduction Adversary
 
@@ -346,7 +346,7 @@ theorem aeHybrid_step_bound (N : @NIKEScheme CT) (E : @NBSES CT) (I : @KeyInject
       SAE E true (R_SAE_hybrid N E I S sid A)) :
     aeHybridStepAdvantage N E I S sid A ≤
       saeAdvantage E (R_SAE_hybrid N E I S sid A) := by
-  simp [aeHybridStepAdvantage, saeAdvantage, h_real, h_ideal]
+  simp_all [aeHybridStepAdvantage, saeAdvantage]
 
 /-! ## Triangle Inequality over Hybrid Chain
 
@@ -379,7 +379,7 @@ theorem aeHybrid_union_triangle (N : @NIKEScheme CT) (E : @NBSES CT)
     have hx_not_S : x ∉ S := hdisjoint x List.mem_cons_self
     -- Rewrite: S ∪ (x :: xs).toFinset = insert x S ∪ xs.toFinset
     have h_union : S ∪ (x :: xs).toFinset = insert x S ∪ xs.toFinset := by
-      simp only [List.toFinset_cons, Finset.union_comm S, Finset.insert_union]
+      simp_all [List.toFinset_cons, Finset.insert_union]
     rw [h_union]
     -- IH hypotheses for xs with base set (insert x S)
     have hxs_disj : ∀ sid ∈ xs, sid ∉ insert x S := fun sid hmem => by
@@ -416,9 +416,8 @@ theorem aeHybrid_union_triangle (N : @NIKEScheme CT) (E : @NBSES CT)
               have h_tw : List.takeWhile (· ≠ sid) (x :: xs)
                   = x :: List.takeWhile (· ≠ sid) xs :=
                 List.takeWhile_cons_of_pos (by simp [Ne.symm hne])
-              simp only [h_tw, List.toFinset_cons,
-                Finset.union_insert, Finset.insert_union]
-          rw [h_maps_eq]
+              simp_all [List.toFinset_cons, Finset.union_insert, Finset.insert_union]
+          grind
 
 /-- **AE step triangle inequality**: the AE step advantage (from `PKAE_nikeSwitch`
     to `PKAE_cc true`) is bounded by the sum of per-step hybrid advantages
@@ -519,7 +518,7 @@ theorem aeStep_bounded_by_sae_finset (N : @NIKEScheme CT) (E : @NBSES CT)
   intro T
   refine Finset.induction_on T ?_ ?_
   · -- Base: Advantage(H(∅), H(∅)) = 0 ≤ 0 = ∅.sum
-    simp [Finset.sum_empty, Advantage, tsub_self, max_self]
+    grind [Finset.sum_empty, Advantage, tsub_self, max_self]
   · -- Step: insert a into s
     intro a s hns ih
     calc Advantage (aeHybrid N E I ∅ A) (aeHybrid N E I (insert a s) A)
@@ -529,6 +528,6 @@ theorem aeStep_bounded_by_sae_finset (N : @NIKEScheme CT) (E : @NBSES CT)
       _ ≤ s.sum sae_eps + sae_eps a :=
           add_le_add ih (hsteps s a hns)
       _ = (insert a s).sum sae_eps := by
-          rw [Finset.sum_insert hns, add_comm]
+          simp_all [add_comm]
 
 end CatCrypt.Examples.Cryptobox

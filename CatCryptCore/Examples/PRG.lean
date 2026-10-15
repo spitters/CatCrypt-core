@@ -8,6 +8,7 @@ module
 public import CatCryptCore.Crypto.SecurityDefs
 public import CatCryptCore.Prob.XorBij
 public import CatCryptCore.Tactics
+public import CatCryptCore.Tactics.AutoMetrics
 
 /-!
 # Bijection PRG: Perfect Security
@@ -159,8 +160,8 @@ theorem bijPRG_coupling (B : BijPRG) :
 /-- **A bijection PRG has perfect security**: every adversary has PRG advantage
 exactly `0`. -/
 theorem bijPRG_perfect (B : BijPRG) (A : B.toPRGScheme.Output → SPComp Bool) :
-    PRG_Adv B.toPRGScheme A = 0 :=
-  PRG_Adv_zero_of_rHoare B.toPRGScheme (bijPRG_coupling B) A
+    PRG_Adv B.toPRGScheme A = 0 := by
+  grind [PRG_Adv_zero_of_rHoare, bijPRG_coupling]
 
 /-! ## Example: the XOR PRG over `Bool`
 
@@ -176,8 +177,8 @@ def boolXorPRG (c : Bool) : BijPRG where
 /-- The XOR generator over `Bool` has perfect PRG security. -/
 theorem boolXorPRG_perfect (c : Bool)
     (A : (boolXorPRG c).toPRGScheme.Output → SPComp Bool) :
-    PRG_Adv (boolXorPRG c).toPRGScheme A = 0 :=
-  bijPRG_perfect (boolXorPRG c) A
+    PRG_Adv (boolXorPRG c).toPRGScheme A = 0 := by
+  grind [bijPRG_perfect, boolXorPRG]
 
 /-! ## PRG security assumption
 
@@ -201,8 +202,8 @@ structure PRGAssumption (G : PRGScheme) where
 
 /-- The packaged advantage bound of a PRG assumption. -/
 theorem PRGAssumption.advantage_bound {G : PRGScheme} (H : PRGAssumption G)
-    (A : G.Output → SPComp Bool) : PRG_Adv G A ≤ H.ε :=
-  H.bound A
+    (A : G.Output → SPComp Bool) : PRG_Adv G A ≤ H.ε := by
+  grind [H.bound]
 
 /-- A perfectly secure PRG (every adversary has advantage exactly `0`) satisfies
 the PRG assumption with `ε = 0`. -/
@@ -235,7 +236,7 @@ game-equality `bijPRG_game_eq` (an alternative to the relational coupling of
 theorem bijPRG_adv_zero_via_vcgen (B : BijPRG)
     (A : B.toPRGScheme.Output → SPComp Bool) :
     PRG_Adv B.toPRGScheme A = 0 := by
-  simp only [PRG_Adv, AdvantageA, bijPRG_game_eq, Advantage_self]
+  simp_all [PRG_Adv, AdvantageA, bijPRG_game_eq, Advantage_self]
 
 /-- A bijection PRG satisfies the `PRGAssumption` with `ε = 0`, witnessed by the
 `bind_vcgen` proof `bijPRG_adv_zero_via_vcgen`. -/
@@ -328,7 +329,7 @@ theorem DoublePRG.hyb_2_ideal (G : DoublePRG) :
       let d ← SPComp.sample G.Seed
       let b ← SPComp.sample G.Seed
       SPComp.pure (c, d, b)) := by
-  simp only [DoublePRG.hyb, ge_iff_le, le_refl, ↓reduceIte]
+  (simp only [CatCrypt.Core.SPComp.monad_bind_eq]; bind_vcgen)
 
 /-- **Triple-from-double hybrid bound** (the composition core).
 
@@ -340,8 +341,7 @@ theorem triple_prg_hybrid_bound {α : Type} (H : ℕ → SPComp α) (A : α → 
     (h01 : AdvantageA (H 0) (H 1) A ≤ ε)
     (h12 : AdvantageA (H 1) (H 2) A ≤ ε) :
     AdvantageA (H 0) (H 2) A ≤ 2 * ε := by
-  adv_game_hop [H 1]
-  rw [two_mul]; exact add_le_add h01 h12
+  hop_chain
 
 /-- **Triple PRG uniform bound**: when both decomposed hybrid hops have advantage
 at most `ε`, the triple construction advantage is at most `2·ε`.
@@ -351,8 +351,8 @@ theorem triple_prg_uniform_bound (G : DoublePRG) (ε : ℝ≥0∞)
     (A : (G.Seed × G.Seed × G.Seed) → SPComp Bool)
     (h_inner : AdvantageA (G.hyb 0) (G.hyb 1) A ≤ ε)
     (h_outer : AdvantageA (G.hyb 1) (G.hyb 2) A ≤ ε) :
-    AdvantageA (G.hyb 0) (G.hyb 2) A ≤ 2 * ε :=
-  triple_prg_hybrid_bound G.hyb A ε h_inner h_outer
+    AdvantageA (G.hyb 0) (G.hyb 2) A ≤ 2 * ε := by
+  hop_chain
 
 /-- **Triple PRG bound from a base-PRG security assumption.**
 

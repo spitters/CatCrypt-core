@@ -193,11 +193,7 @@ theorem RoundM.hbind_succ {α β : Type} (n : Nat) (c : RoundM (n + 1) α)
 /-- Left unit law of `RoundM.bind'`. -/
 theorem roundM_pure_bind {α β : Type} (n : Nat) (a : α) (f : α → RoundM n β) :
     RoundM.bind' n (RoundM.done n a) f = f a := by
-  cases n with
-  | zero => exact SPComp.pure_bind a f
-  | succ n =>
-    show SPComp.bind (SPComp.pure (Sum.inl a)) _ = f a
-    exact SPComp.pure_bind (Sum.inl a) _
+  cases n <;> exact SPComp.pure_bind _ _
 
 -- bind_done: bind' n m (done n) = m
 /-- Right unit law of `RoundM.bind'`. -/
@@ -213,15 +209,9 @@ theorem roundM_bind_done {α : Type} (n : Nat) (m : RoundM n α) :
     | inr k =>
       show SPComp.pure (Sum.inr (RoundM.bind' n k
         (fun a => RoundM.flatten n (RoundM.done (n + 1) a)))) = _
-      -- flatten_done: flatten n (done (n+1) a) = done n a
       have hfd : ∀ a : α, RoundM.flatten n (RoundM.done (n + 1) a) = RoundM.done n a := by
-        intro a; cases n with
-        | zero =>
-          unfold RoundM.flatten RoundM.done
-          exact SPComp.pure_bind (Sum.inl a) _
-        | succ m =>
-          unfold RoundM.flatten RoundM.done
-          exact SPComp.pure_bind (Sum.inl a) _
+        intro a
+        cases n <;> (unfold RoundM.flatten RoundM.done; exact SPComp.pure_bind (Sum.inl a) _)
       simp only [hfd]
       exact congrArg SPComp.pure (congrArg Sum.inr (ih k))
 
@@ -292,18 +282,14 @@ theorem mapSumRoundM_inr (n : Nat) {α β γ δ : Type}
 /-- The coproduct of two identities is the identity. -/
 theorem mapSumRoundM_pure_pure (n : Nat) {α β : Type} :
     mapSumRoundM n (pure : α → RoundM n α) (pure : β → RoundM n β) = pure := by
-  funext x; cases x with
-  | inl a => exact pure_bind a _
-  | inr b => exact pure_bind b _
+  funext x; cases x <;> exact pure_bind _ _
 
 /-- The coproduct with the identity on the left commutes with Kleisli composition. -/
 theorem mapSumRoundM_pure_kleisli (n : Nat) {α β γ δ : Type}
     (f : β → RoundM n γ) (g : γ → RoundM n δ) :
     (fun x : α ⊕ β => mapSumRoundM n pure f x >>= mapSumRoundM n pure g)
     = mapSumRoundM n pure (fun b => f b >>= g) := by
-  funext x; cases x with
-  | inl a => simp only [mapSumRoundM_inl, pure_bind]
-  | inr b => simp only [mapSumRoundM_inr, pure_bind, bind_assoc]
+  funext x; cases x <;> simp only [mapSumRoundM_inl, mapSumRoundM_inr, pure_bind, bind_assoc]
 
 /-! ## Section 8: Statistical Distance
 

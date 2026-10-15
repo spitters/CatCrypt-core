@@ -146,8 +146,7 @@ theorem sample_prod_eq (A B : Type) [Fintype A] [Fintype B] [Nonempty A] [Nonemp
   simp only [sample, SPComp.bind, SPComp.pure, SDistr.bind_assoc, SDistr.pure_bind]
   have := congr_arg (fun d => d.bind (fun ab => SDistr.pure (ab, h)))
     (SDistr.uniform_nested_eq_prod A B)
-  simp only [SDistr.bind_assoc, SDistr.pure_bind] at this
-  exact this.symm
+  simp only [SDistr.bind_assoc, SDistr.pure_bind, this.symm]
 
 /-! ## Associativity and unit laws -/
 
@@ -243,8 +242,7 @@ theorem bind_sample_bijection {δ : Type*} [Fintype α] [Fintype β] [Nonempty �
     (c : SPComp γ) (e : γ → (α ≃ β)) (k : γ → β → SPComp δ) :
     SPComp.bind c (fun x => SPComp.bind (SPComp.sample α) (fun a => k x (e x a))) =
     SPComp.bind c (fun x => SPComp.bind (SPComp.sample β) (fun b => k x b)) := by
-  congr 1; funext x
-  exact sample_bind_equiv (e x) (k x)
+  simp [sample_bind_equiv]
 
 /-! ## Purity: Heap-Independent Computations -/
 
@@ -274,9 +272,7 @@ theorem bind_isPure {c : SPComp α} {f : α → SPComp β}
   choose df hdf using hf
   refine ⟨dc.bind (fun a => df a), fun h => ?_⟩
   simp only [bind, hdc h, SDistr.bind_assoc]
-  congr 1
-  funext a
-  simp only [SDistr.pure_bind, hdf a h]
+  simp_all [SDistr.pure_bind]
 
 /-- Two pure computations commute in bind (Fubini for SPComp).
 
@@ -347,8 +343,7 @@ theorem foldM_append (init : α) (xs ys : List (α → SPComp α)) :
   | cons f rest ih =>
     simp only [List.cons_append, foldM_cons]
     show SPComp.bind (f init) _ = SPComp.bind (SPComp.bind (f init) _) _
-    rw [SPComp.bind_assoc]
-    congr 1; funext a; exact ih a
+    simp_all [SPComp.bind_assoc]
 
 end SPComp
 

@@ -155,8 +155,7 @@ theorem exD_advantage_one :
     simp [Example.π, exD, SPComp.pure_bind, Sum.elim_inr]
   have h2 : SPComp.bind (Example.F ()) exD = SPComp.pure false := by
     simp [Example.F, exD, SPComp.pure_bind, Sum.elim_inr]
-  rw [h1, h2, ForkingLemma.prTrue_pure_bool, ForkingLemma.prTrue_pure_bool]
-  simp [absDiff]
+  simp [h1, h2, ForkingLemma.prTrue_pure_bool, absDiff]
 
 /-- The query-bounded computational distance on the canonical pair is at least `1`:
     the admissible query-`0` distinguisher `exD` already achieves advantage `1`. -/
@@ -186,20 +185,14 @@ theorem ex_ucSdist_le_one :
 theorem ex_queryBounded_no_separation :
     @ucCdist SPComp queryBoundedCompDist Unit (Unit ⊕ Bool) Example.π Example.F
       = UCMonadMetric.ucSdist (self := queryBoundedCompDist.toUCMonadMetric)
-          Example.π Example.F :=
-  le_antisymm
-    (@ucCdist_le_ucSdist SPComp queryBoundedCompDist Unit (Unit ⊕ Bool)
-      Example.π Example.F)
-    (le_trans ex_ucSdist_le_one ex_queryBounded_ucCdist_ge_one)
+          Example.π Example.F := by
+  grind [le_antisymm, ucCdist_le_ucSdist, Example.F, ex_ucSdist_le_one,
+    ex_queryBounded_ucCdist_ge_one]
 
 /-- The query-bounded computational distance on the canonical pair is exactly `1`. -/
 theorem ex_queryBounded_ucCdist_eq_one :
-    @ucCdist SPComp queryBoundedCompDist Unit (Unit ⊕ Bool) Example.π Example.F = 1 :=
-  le_antisymm
-    (le_trans
-      (@ucCdist_le_ucSdist SPComp queryBoundedCompDist Unit (Unit ⊕ Bool)
-        Example.π Example.F)
-      ex_ucSdist_le_one)
-    ex_queryBounded_ucCdist_ge_one
+    @ucCdist SPComp queryBoundedCompDist Unit (Unit ⊕ Bool) Example.π Example.F = 1 := by
+  grind [le_antisymm, ucCdist_le_ucSdist, Example.F, ex_ucSdist_le_one,
+    ex_queryBounded_ucCdist_ge_one]
 
 end CatCrypt.Crypto.QueryBoundedUC

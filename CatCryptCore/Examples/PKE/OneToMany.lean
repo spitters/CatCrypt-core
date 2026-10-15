@@ -233,7 +233,7 @@ theorem dHybrid_step_eq (pk : P.PK) (msgs : List P.M) (i : ℕ) (hi : i < msgs.l
     congr 1; funext c
     simp only [slideAdv, hmin, SPComp.monad_bind_eq]
   show Advantage _ _ = Advantage _ _
-  rw [heq_enc, heq_samp]
+  simp_all
 
 /-- **Per-step advantage reduction**: adjacent hybrid advantage ≤ OT-CPA$ advantage.
 
@@ -267,10 +267,7 @@ theorem Adv_MT_CPA_OT (pk : P.PK) (msgs : List P.M) (ε : ℝ≥0∞)
   rw [← dHybrid_zero P pk msgs, ← dHybrid_length P pk msgs]
   apply advantage_hybrid_uniform (dHybrid P pk msgs) A msgs.length ε
   intro i hi
-  calc AdvantageA (dHybrid P pk msgs i) (dHybrid P pk msgs (i + 1)) A
-      ≤ OT_CPA_Advantage P pk msgs[i] (slideAdv P pk msgs i A) :=
-        dHybrid_step_bound P pk msgs i hi A hP
-    _ ≤ ε := hOT i hi
+  grind [dHybrid_step_bound]
 
 /-- **Alternative: MT-CPA bound with explicit per-step hypothesis**.
 
@@ -295,6 +292,6 @@ theorem MT_CPA_perfect (pk : P.PK) (msgs : List P.M)
     MT_CPA_Advantage P pk msgs A = 0 := by
   unfold MT_CPA_Advantage
   rw [← dHybrid_zero P pk msgs, ← dHybrid_length P pk msgs]
-  exact advantage_hybrid_zero (dHybrid P pk msgs) msgs.length hperf A
+  simp_all [advantage_hybrid_zero]
 
 end CatCrypt.Examples.PKE.OneToMany

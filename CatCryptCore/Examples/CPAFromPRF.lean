@@ -165,8 +165,8 @@ theorem bijCPA_correct (B : BijCPAScheme) : B.toEncScheme.Correct := by
 /-- The bijection-family PRF underlying the scheme has perfect PRF security. -/
 theorem bijCPA_prf_perfect (B : BijCPAScheme) (x : B.Input)
     (A : B.toBijPRFFamily.toPRFScheme.Output → SPComp Bool) :
-    PRF_Adv B.toBijPRFFamily.toPRFScheme x A = 0 :=
-  bijPRF_perfect B.toBijPRFFamily x A
+    PRF_Adv B.toBijPRFFamily.toPRFScheme x A = 0 := by
+  grind [bijPRF_perfect]
 
 /-! ## Perfect IND-CPA Security -/
 
@@ -210,14 +210,14 @@ theorem bijCPA_indcpa_coupling (B : BijCPAScheme) (m₀ m₁ : B.Output) :
   congr 1
   -- `bij r (keyEquiv r m₀ m₁ k) = (bij r k ⊕ m₀) ⊕ m₁`, then cancel `⊕ m₁`.
   simp only [BijCPAScheme.keyEquiv, Equiv.coe_fn_mk, Equiv.apply_symm_apply]
-  rw [B.xorOut_cancel]
+  simp_all [B.xorOut_cancel]
 
 /-- **The scheme has perfect IND-CPA security**: every adversary has IND-CPA
 advantage exactly `0`. -/
 theorem bijCPA_perfect_indcpa (B : BijCPAScheme) (m₀ m₁ : B.Output)
     (A : B.toEncScheme.Ciphertext → SPComp Bool) :
-    INDCPA_Adv B.toEncScheme m₀ m₁ A = 0 :=
-  INDCPA_Adv_zero_of_rHoare B.toEncScheme m₀ m₁ (bijCPA_indcpa_coupling B m₀ m₁) A
+    INDCPA_Adv B.toEncScheme m₀ m₁ A = 0 := by
+  grind [INDCPA_Adv_zero_of_rHoare, bijCPA_indcpa_coupling]
 
 /-! ## Example: the XOR CPA scheme over `Bool`
 
@@ -241,8 +241,8 @@ theorem boolXorCPA_correct : boolXorCPA.toEncScheme.Correct :=
 /-- **The XOR CPA scheme over `Bool` has perfect IND-CPA security.** -/
 theorem boolXorCPA_perfect_indcpa (m₀ m₁ : Bool)
     (A : boolXorCPA.toEncScheme.Ciphertext → SPComp Bool) :
-    INDCPA_Adv boolXorCPA.toEncScheme m₀ m₁ A = 0 :=
-  bijCPA_perfect_indcpa boolXorCPA m₀ m₁ A
+    INDCPA_Adv boolXorCPA.toEncScheme m₀ m₁ A = 0 := by
+  grind [bijCPA_perfect_indcpa]
 
 /-! ## Reflection into the Package / UC Stack
 
@@ -429,7 +429,7 @@ the `m₀`- from the `m₁`-world. Its advantage is exactly `0`. -/
 theorem PRFEncScheme.otp_advantage_zero (P : PRFEncScheme) (m₀ m₁ : P.F.Output)
     (A : (P.F.Input × P.F.Output) → SPComp Bool) :
     AdvantageA (P.otpGame m₀ m₁ true) (P.otpGame m₀ m₁ false) A = 0 := by
-  simp only [AdvantageA, P.otpGame_true_eq_false, Advantage_self]
+  simp_all [AdvantageA, P.otpGame_true_eq_false, Advantage_self]
 
 /-- **IND-CPA security from a PRF assumption** (the computational headline).
 
@@ -468,25 +468,8 @@ theorem cpa_from_prf_bound (P : PRFEncScheme) (H : PRFAssumption P.F)
     ((P.otpGame m₀ m₁ false).bind A)
     ((INDCPA_Game P.toEncScheme m₀ m₁ false).bind A)
   simp only [INDCPA_Adv, AdvantageA] at hotp hswap ⊢
-  calc Advantage ((INDCPA_Game P.toEncScheme m₀ m₁ true).bind A)
-          ((INDCPA_Game P.toEncScheme m₀ m₁ false).bind A)
-      ≤ Advantage ((INDCPA_Game P.toEncScheme m₀ m₁ true).bind A)
-            ((P.otpGame m₀ m₁ true).bind A)
-          + Advantage ((P.otpGame m₀ m₁ true).bind A)
-            ((INDCPA_Game P.toEncScheme m₀ m₁ false).bind A) := htri1
-    _ ≤ Advantage ((INDCPA_Game P.toEncScheme m₀ m₁ true).bind A)
-            ((P.otpGame m₀ m₁ true).bind A)
-          + (Advantage ((P.otpGame m₀ m₁ true).bind A) ((P.otpGame m₀ m₁ false).bind A)
-             + Advantage ((P.otpGame m₀ m₁ false).bind A)
-                ((INDCPA_Game P.toEncScheme m₀ m₁ false).bind A)) :=
-        add_le_add le_rfl htri2
-    _ = Advantage ((INDCPA_Game P.toEncScheme m₀ m₁ true).bind A)
-            ((P.otpGame m₀ m₁ true).bind A)
-          + Advantage ((P.otpGame m₀ m₁ false).bind A)
-            ((INDCPA_Game P.toEncScheme m₀ m₁ false).bind A) := by
-        rw [hotp, zero_add]
-    _ ≤ PRF_Adv P.F x Ared := hswap
-    _ ≤ H.ε := H.bound x Ared
+  rw [hotp, zero_add] at htri2
+  exact (htri1.trans (add_le_add le_rfl htri2)).trans (hswap.trans (H.bound x Ared))
 
 /-! ## The Synthesized Reduction: discharging the PRF-swap hop
 
@@ -566,7 +549,7 @@ theorem PRFEncScheme.indcpa_otp_hop (P : PRFEncScheme) (H : PRFAssumption P.F)
       = SPComp.bind (SPComp.sample P.F.Input) (fun r =>
           SPComp.bind (SPComp.sample P.F.Output) (fun u =>
             SPComp.pure (r, P.xorOut u (if b then m₀ else m₁)))) := by
-    simp only [PRFEncScheme.otpGame, SPComp.monad_bind_eq]
+    bind_vcgen
   rw [hotp]
   exact advantageA_sample_bind _ _ _ _ (fun r =>
     (P.slice_eq r (if b then m₀ else m₁) A).le.trans (H.bound r _))

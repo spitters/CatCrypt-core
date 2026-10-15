@@ -363,9 +363,7 @@ theorem romINDCCAAdvantage_le_flag {qH qD : ℕ} (B : ROMINDCCAAdversary PK K C 
     intro a t
     simp only [flagDist, PMF.bind_apply]
     refine tsum_congr fun x => congrArg _ ?_
-    exact OracleAdv.run_apply_flag_false_eq _ _ (oFlag_apply_true_false P _ _ _ _)
-      (oFlag_apply_true_false P _ _ _ _)
-      (fun st d r T' => oFlag_apply_false_eq P _ _ _ _ _ st d r T') _ _ a t
+    grind [OracleAdv.run_apply_flag_false_eq, oFlag_apply_true_false, oFlag_apply_false_eq]
   unfold romINDCCAAdvantage
   rw [h₁, h₂]
   simp only [Advantage, prTrue_pmfGame_map]
@@ -1016,7 +1014,7 @@ theorem owpcaAdvantage_uReduction {qH qD : ℕ} (B : ROMINDCCAAdversary PK K C (
   simp only [PMF.toOuterMeasure_bind_apply, Scheme.encDist, PMF.bind_map, Function.comp_def]
   refine tsum_congr fun ks => congrArg _ (tsum_congr fun m => congrArg _
     (tsum_congr fun r => congrArg _ ?_))
-  exact uReduction_prob P B ks.1 ks.2 _
+  grind [uReduction_prob]
 
 omit [DecidableEq C] in
 theorem corrErr_eq :

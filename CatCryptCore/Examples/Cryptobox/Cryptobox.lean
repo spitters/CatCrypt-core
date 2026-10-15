@@ -249,10 +249,7 @@ theorem ae_hybrid_bound (E : @NBSES CT) (I : @KeyInjection CT)
     (hdecomp : aeAdvantage E I keyO A ≤ Finset.sum (Finset.range q) step_adv)
     (hsteps : ∀ i, i < q → step_adv i ≤ sae_eps i) :
     aeAdvantage E I keyO A ≤ Finset.sum (Finset.range q) sae_eps :=
-  calc aeAdvantage E I keyO A
-      ≤ Finset.sum (Finset.range q) step_adv := hdecomp
-    _ ≤ Finset.sum (Finset.range q) sae_eps :=
-        Finset.sum_le_sum fun i hi => hsteps i (Finset.mem_range.mp hi)
+  hdecomp.trans (Finset.sum_le_sum fun i hi => hsteps i (Finset.mem_range.mp hi))
 
 /-! ## Main Security Theorem -/
 
@@ -297,9 +294,7 @@ theorem cryptobox_security
       2 * (q_gen * q_csetpk : ℕ) * (1 / Fintype.card CT.PK : ℝ≥0∞)
       + nike_eps
       + Finset.sum (Finset.range q) sae_eps :=
-  calc pkaeAdvantage N E I A
-      ≤ pkey_adv + nike_adv + ae_adv := hdecomp
-    _ ≤ _ := add_le_add (add_le_add hpkey hnike) hae
+  hdecomp.trans (add_le_add (add_le_add hpkey hnike) hae)
 
 /-! ## Instantiation: X25519 + XSalsa20-Poly1305
 

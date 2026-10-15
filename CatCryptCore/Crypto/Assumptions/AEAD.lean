@@ -183,14 +183,7 @@ noncomputable def AEAD_CPA_to_CCA (pt ad : W) (A : AEAD_Adversary W) :
     `SPComp.sample` has total mass 1, so `bind (sample W) (fun _ => M) = M`. -/
 theorem sample_bind_const (M : SPComp Bool) :
     SPComp.bind (SPComp.sample W) (fun _ => M) = M := by
-  funext h
-  simp only [SPComp.bind_def, SPComp.sample]
-  rw [SDistr.bind_assoc]
-  simp only [SDistr.pure_bind]
-  -- Goal: SDistr.bind (SDistr.uniform W) (fun _ => M h) = M h
-  unfold SDistr.bind SDistr.fail SDistr.uniform
-  rw [PMF.bind_map]
-  exact PMF.bind_const _ _
+  simp
 
 theorem AEAD_CPA_le_CCA (D : AEADDef W) (pt ad : W)
     (A : AEAD_Adversary W) :
@@ -199,8 +192,7 @@ theorem AEAD_CPA_le_CCA (D : AEADDef W) (pt ad : W)
   unfold AEAD_Advantage AEAD_CCA_Advantage Advantage
   unfold AEAD_Game_Real AEAD_Game_Ideal
   unfold AEAD_CCA_Game_Real AEAD_CCA_Game_Ideal AEAD_CPA_to_CCA
-  simp only [SPComp.monad_bind_eq, SPComp.pure_bind, sample_bind_const]
-  exact le_refl _
+  simp only [SPComp.monad_bind_eq, SPComp.pure_bind, sample_bind_const, le_refl]
 
 /-! ## IsPure Proofs (CCA) -/
 

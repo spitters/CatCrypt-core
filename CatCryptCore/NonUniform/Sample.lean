@@ -87,7 +87,7 @@ theorem sampleFrom_fail : sampleFrom (SDistr.fail : SDistr α) = SPComp.fail :=
 theorem sampleFrom_bind_sampleFrom (d : SDistr α) (f : α → SDistr β) :
     SPComp.bind (sampleFrom d) (fun a => sampleFrom (f a)) = sampleFrom (d.bind f) := by
   funext h
-  simp only [sampleFrom_bind_apply, sampleFrom_apply, SDistr.bind_assoc]
+  simp_all [sampleFrom_bind_apply, sampleFrom_apply, SDistr.bind_assoc]
 
 /-- `sampleFrom d` does not read or write the heap. -/
 theorem sampleFrom_isPure (d : SDistr α) : SPComp.IsPure (sampleFrom d) :=

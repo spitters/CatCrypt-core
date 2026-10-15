@@ -108,15 +108,13 @@ theorem sdistrToSPComp_uniform (α : Type) [Fintype α] [Nonempty α] :
 theorem prfQueryRealSD_lift (F : PRFSpec K D V) (x : D) :
     sdistrToSPComp (prfQueryRealSD F x) = prf_query_real F x := by
   unfold prfQueryRealSD prf_query_real
-  rw [sdistrToSPComp_bind, sdistrToSPComp_uniform]
-  simp only [sdistrToSPComp_pure]
+  simp only [sdistrToSPComp_bind, sdistrToSPComp_uniform, sdistrToSPComp_pure]
   rfl
 
 /-- **Tie to the Core def:** the `SDistr` ideal single-query game embeds to the
     Core `MultiQueryPRF.prf_query_ideal`. -/
 theorem prfQueryIdealSD_lift (x : D) :
     sdistrToSPComp (prfQueryIdealSD (V := V) x) = prf_query_ideal (R := V) x := by
-  unfold prfQueryIdealSD prf_query_ideal
   exact sdistrToSPComp_uniform V
 
 /-! ## 2. The q-query hybrid as a coupled loop -/
@@ -159,7 +157,7 @@ theorem prf_multi_query_coupling
       (relForN (prfRoundReal F xs) init₁ n) (relForN (prfRoundIdeal xs) init₂ n) := by
   relmvcgen_ctl
   · exact hbase                          -- base coupling of the initial loop states
-  · intro a b hab; exact hstep a b hab   -- per-round PRF query coupling leaf
+  · exact hstep                          -- per-round PRF query coupling leaf
 
 /-- The loop grade `n • ε` is `↑n * ε`: the coupling grade of `prf_multi_query_coupling`
     has exactly the shape of the Core `prf_multi_query_bound`'s advantage bound
@@ -195,7 +193,7 @@ theorem prf_three_query_coupling
         (fun _ => prfQueryIdealSD (V := V) x₂)) (fun _ => prfQueryIdealSD (V := V) x₃)) := by
   relmvcgen
   · exact h₁
-  · intro a b hab; exact h₂ a b hab
-  · intro a b hab; exact h₃ a b hab
+  · exact h₂
+  · exact h₃
 
 end CatCrypt.XDijkstra

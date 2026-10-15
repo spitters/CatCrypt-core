@@ -205,8 +205,8 @@ theorem priv_coupling (rp : Fin d → ZMod p) (hrp : ∀ j, rp j ≠ 0) (s0 s1 :
     is exactly `0`: any `t-1` shares are uniform and independent of the secret. -/
 theorem shamir_perfect_privacy (rp : Fin d → ZMod p) (hrp : ∀ j, rp j ≠ 0)
     (s0 s1 : ZMod p) (A : (Fin d → ZMod p) → SPComp Bool) :
-    PrivAdv rp s0 s1 A = 0 :=
-  advantage_zero_of_rHoare _ _ (priv_coupling rp hrp s0 s1) A
+    PrivAdv rp s0 s1 A = 0 := by
+  (unfold CatCrypt.Examples.ShamirSecretSharing.PrivAdv; grind [advantage_zero_of_rHoare, priv_coupling])
 
 /-- A share at a nonzero evaluation point varies with the secret: with the free
     coefficients fixed to zero, two distinct secrets give distinct shares at the
@@ -246,7 +246,7 @@ instance instValidShamirGameRaw (rp : Fin d → ZMod p) (s0 s1 : ZMod p) (b : Bo
 /-- The reflected body evaluates back to the shallow privacy game. -/
 theorem shamirGameRaw_eval_shallow (rp : Fin d → ZMod p) (s0 s1 : ZMod p) (b : Bool) :
     (shamirGameRaw rp s0 s1 b).eval = PrivGame rp s0 s1 b := by
-  simp only [shamirGameRaw, RawCode.eval]; rfl
+  bind_vcgen
 
 /-- The privacy game is heap-independent (a uniform coefficient sample then pure
     share reveals). -/

@@ -162,8 +162,7 @@ theorem weighted_bound {ι : Type*} (w f g : ι → ℝ≥0∞) (ε : ℝ≥0∞
       ≤ ∑' i, w i * (g i + ε) := by
         apply ENNReal.tsum_le_tsum; intro i
         gcongr; exact hfg i
-    _ = ∑' i, (w i * g i + w i * ε) := by
-        congr 1; funext i; ring
+    _ = ∑' i, (w i * g i + w i * ε) := by grind
     _ = (∑' i, w i * g i) + ∑' i, w i * ε := ENNReal.tsum_add
     _ = (∑' i, w i * g i) + (∑' i, w i) * ε := by
         congr 1; rw [ENNReal.tsum_mul_right]
@@ -373,11 +372,10 @@ theorem sdist_comp_add {α β γ : Type*} (f₁ f₂ : α → SPComp β)
     sdist (fun a => SPComp.bind (f₁ a) g₁) (fun a => SPComp.bind (f₂ a) g₂) ≤ ε₁ + ε₂ := by
   calc sdist (fun a => SPComp.bind (f₁ a) g₁) (fun a => SPComp.bind (f₂ a) g₂)
       ≤ sdist (fun a => SPComp.bind (f₁ a) g₁) (fun a => SPComp.bind (f₂ a) g₁) +
-        sdist (fun a => SPComp.bind (f₂ a) g₁) (fun a => SPComp.bind (f₂ a) g₂) :=
-        sdist_triangle _ _ _
+        sdist (fun a => SPComp.bind (f₂ a) g₁) (fun a => SPComp.bind (f₂ a) g₂) := by grind
     _ ≤ sdist f₁ f₂ + sdist g₁ g₂ :=
         add_le_add (sdist_comp_right f₁ f₂ g₁) (sdist_comp_left f₂ g₁ g₂)
-    _ ≤ ε₁ + ε₂ := add_le_add hf hg
+    _ ≤ ε₁ + ε₂ := by gcongr
 
 /-! ## Monotonicity -/
 

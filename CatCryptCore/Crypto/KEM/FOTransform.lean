@@ -716,7 +716,7 @@ theorem foNotBot_indcca (P : Scheme PK SK M C R) {qRO qD : ℕ}
           owpca_eq, corrErr_fixedT]
     _ ≤ _ := by
         gcongr
-        exact tTransform_owpca_of_total P (uRedROM B) qRO hB
+        grind [tTransform_owpca_of_total]
 
 /-- **FO⊥̸ is IND-CCA secure from IND-CPA in the random-oracle model.** For every
 public-key encryption scheme `P` and every IND-CCA adversary `B` against `foNotBot P`

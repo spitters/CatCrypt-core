@@ -163,8 +163,7 @@ theorem query_consistent (id : Nat) (x : D) :
   simp only [SPComp.bind]
   cases hc : logFind x (h.gget (logLoc D R id)) with
   | some r =>
-      rw [query_apply_cached D R id x h r hc, SDistr.pure_bind, SDistr.pure_bind,
-        query_apply_cached D R id x h r hc, SDistr.pure_bind]
+      simp_all [query_apply_cached D R id x h r hc, SDistr.pure_bind]
   | none =>
       rw [query_apply_fresh D R id x h hc, SDistr.bind_assoc, SDistr.bind_assoc]
       exact congrArg _ (funext fun r => by

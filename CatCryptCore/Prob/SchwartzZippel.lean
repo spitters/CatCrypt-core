@@ -113,9 +113,9 @@ theorem poly_identity_test (φ ψ : Polynomial (ZMod p)) (hne : φ ≠ ψ) :
         gcongr
         -- Goal: ↑(φ - ψ).natDegree ≤ max ↑φ.natDegree ↑ψ.natDegree
         have h_deg : (φ - ψ).natDegree ≤ max φ.natDegree ψ.natDegree :=
-          calc (φ - ψ).natDegree = (φ + (-ψ)).natDegree := by rw [sub_eq_add_neg]
+          calc (φ - ψ).natDegree = (φ + (-ψ)).natDegree := by simp_all [sub_eq_add_neg]
             _ ≤ max φ.natDegree (-ψ).natDegree := natDegree_add_le φ (-ψ)
-            _ = max φ.natDegree ψ.natDegree := by rw [natDegree_neg]
+            _ = max φ.natDegree ψ.natDegree := by simp_all [natDegree_neg]
         rcases le_max_iff.mp h_deg with h | h
         · exact le_trans (Nat.cast_le.mpr h) (le_max_left _ _)
         · exact le_trans (Nat.cast_le.mpr h) (le_max_right _ _)

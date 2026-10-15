@@ -186,7 +186,7 @@ theorem cbd_signed_indep (η : ℕ) (k : ℤ → SPComp α) (s₁ s₂ : Bool) :
     noise, as the `cbd η`-average of the branch probabilities. -/
 theorem prTrue_cbd_bind (η : ℕ) (k : ℤ → SPComp Bool) (h₀ : Heap) :
     prTrue (SPComp.bind (sampleFrom (cbd η)) k) h₀
-      = ∑' e : ℤ, cbd η (some e) * prTrue (k e) h₀ :=
-  prTrue_bind_sampleFrom (cbd η) k h₀
+      = ∑' e : ℤ, cbd η (some e) * prTrue (k e) h₀ := by
+  grind [prTrue_bind_sampleFrom, cbd]
 
 end CatCrypt.NonUniform

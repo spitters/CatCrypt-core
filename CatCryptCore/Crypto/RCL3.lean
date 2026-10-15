@@ -101,8 +101,7 @@ theorem ucCdist_of_contextEquivL3 {α β : Type} {f g : α → T β} {ε : ℝ�
   have eq_D : (fun b => D b >>= pure) = D := by funext b; simp [bind_pure]
   calc UCMonadCompDist.ucDistComp f g D
       = UCMonadCompDist.ucDistComp f g (fun b => D b >>= pure) := by rw [eq_D]
-    _ = UCMonadCompDist.ucDistComp (fun a => f a >>= D) (fun a => g a >>= D) pure :=
-        bind_right.symm
+    _ = UCMonadCompDist.ucDistComp (fun a => f a >>= D) (fun a => g a >>= D) pure := by gcongr
     _ ≤ ucCdist (fun a => f a >>= D) (fun a => g a >>= D) :=
         le_iSup₂ (f := fun D' _ =>
           UCMonadCompDist.ucDistComp (fun a => f a >>= D) (fun a => g a >>= D) D')

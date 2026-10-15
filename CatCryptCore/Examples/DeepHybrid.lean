@@ -177,7 +177,7 @@ theorem step_0_1_coupling (m₀ m₁ : Word) :
   apply liftR_bind liftR_uniform_same
   intro k₁ k₁' hk1
   apply liftR_pure
-  simp only [eqPre, hk1, true_and]
+  simp_all [eqPre]
 
 /-- Coupling between twoHybrid and twoIdeal (differ in position 1)
 
@@ -200,7 +200,7 @@ theorem step_1_2_coupling (m₀ m₁ : Word) :
   apply liftR_bind liftR_uniform_same
   intro k₁ c₁ _hk1
   apply liftR_pure
-  simp only [eqPre, hc0, true_and]
+  simp_all [eqPre]
 
 end TwoInstance
 
@@ -303,8 +303,7 @@ theorem threeHybrid_simpl (i : Nat) (m₀ m₁ m₂ : Word) :
 theorem hybrid_step_zero_advantage (i : Nat) (m₀ m₁ m₂ : Word)
     (A : ThreeOutput → SPComp Bool) (_hi : i < 3) :
     AdvantageA (threeHybrid i m₀ m₁ m₂) (threeHybrid (i + 1) m₀ m₁ m₂) A ≤
-    (0 : ENNReal) := by
-  simp only [threeHybrid_simpl, AdvantageA, Advantage, tsub_self, max_self, le_refl]
+    (0 : ENNReal) := by grind [threeHybrid_simpl, AdvantageA, Advantage, tsub_self, max_self]
 
 /-! ## Summary
 

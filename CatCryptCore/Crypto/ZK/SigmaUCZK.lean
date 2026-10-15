@@ -193,11 +193,9 @@ theorem sigma_view_eq
   have key : ∀ (K : sp.Message → sp.Response → SPComp (Unit ⊕ V)),
       SPComp.bind (sp.commit x w) (fun a =>
         SPComp.bind (sp.respond x w a e) (fun z => K a z)) =
-      SPComp.bind (sp.simulate x e) (fun p => K p.1 p.2) := by
-    intro K
-    have := congr_arg (fun c => SPComp.bind c (fun p => K p.1 p.2)) hshvzk_e
-    simp only [ssprove_simpl] at this
-    exact this
+      SPComp.bind (sp.simulate x e) (fun p => K p.1 p.2) := fun K => by
+    simpa only [ssprove_simpl] using
+      congr_arg (fun c => SPComp.bind c (fun p => K p.1 p.2)) hshvzk_e
   exact key _
 
 /-- **A Σ-protocol with SHVZK gives honest-verifier UC zero-knowledge at `ε = 0`**
@@ -213,17 +211,9 @@ theorem sigma_uc_zk_secure
     (hshvzk : SHVZK sp) (V : Type) :
     UCEmulates 0 (sigmaUCZKSpec sp V) (sigma_real sp) (sigma_ideal sp) := by
   intro A
-  use sigma_uc_sim sp V A
-  show sdist _ _ ≤ 0
-  have h : ∀ a, (sigma_real sp a).bind (mapSum SPComp.pure A) =
-           (sigma_ideal sp a).bind (mapSum SPComp.pure (sigma_uc_sim sp V A)) :=
-    fun ⟨x, w⟩ => sigma_view_eq sp hshvzk x w V A
-  refine le_of_eq ?_
-  calc sdist (fun a => (sigma_real sp a).bind (mapSum SPComp.pure A))
-             (fun a => (sigma_ideal sp a).bind (mapSum SPComp.pure (sigma_uc_sim sp V A)))
-      = sdist (fun a => (sigma_ideal sp a).bind (mapSum SPComp.pure (sigma_uc_sim sp V A)))
-              (fun a => (sigma_ideal sp a).bind (mapSum SPComp.pure (sigma_uc_sim sp V A))) := by
-          congr 1; funext a; exact h a
-    _ = 0 := sdist_self _
+  refine ⟨sigma_uc_sim sp V A, le_of_eq ?_⟩
+  show sdist _ _ = 0
+  exact (congrArg (sdist · _) (funext fun ⟨x, w⟩ => sigma_view_eq sp hshvzk x w V A)).trans
+    (sdist_self _)
 
 end CatCrypt.Crypto.ZK.SigmaUCZK

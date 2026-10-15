@@ -187,11 +187,7 @@ theorem sdist_dualEnc_uniform (pk m : gp.G) (h : pk ≠ gp.identity) :
     sdist (fun _ : Unit => SPComp.bind (SPComp.sample gp.Scalar)
             (fun r => SPComp.pure (dualEnc gp pk m r)))
           (fun _ : Unit => SPComp.sample gp.G) = 0 := by
-  rw [show (fun _ : Unit => SPComp.bind (SPComp.sample gp.Scalar)
-        (fun r => SPComp.pure (dualEnc gp pk m r)))
-        = (fun _ : Unit => SPComp.sample gp.G) from
-      funext (fun _ => dualEnc_uniform gp pk m h)]
-  exact sdist_self _
+  simp_all [dualEnc_uniform, sdist_self]
 
 /-! ## Ciphertext Pseudorandomness (parametric form)
 

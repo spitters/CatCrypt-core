@@ -83,9 +83,7 @@ theorem gdecode_eq_decode {α : Type} [Fintype α] [Inhabited α] :
       ⟨(Fintype.equivFin α).symm ⟨n, hlt⟩, by rw [hval, Equiv.apply_symm_apply]⟩
     rw [gdecode, dif_pos hmem, Heap.decode, dif_pos hlt]
     exact gencode_injective α (by rw [hmem.choose_spec, hval, Equiv.apply_symm_apply])
-  · have hmem : ¬ ∃ a : α, gencode α a = n :=
-      fun ⟨a, ha⟩ => hlt (ha ▸ hval a ▸ (Fintype.equivFin α a).isLt)
-    rw [gdecode, dif_neg hmem, Heap.decode, dif_neg hlt]
+  · grind [gdecode, Heap.decode]
 
 /-! ## Locations with a countable value type -/
 
@@ -252,15 +250,14 @@ theorem preservesOutside_gget (l : GLocation) : PreservesOutside (SPComp.gget l)
   intro h a h' hne id _
   simp only [SPComp.gget_def, SDistr.pure, PMF.pure_apply, ne_eq, ite_eq_right_iff,
     Classical.not_imp, Option.some.injEq, Prod.mk.injEq] at hne
-  rw [hne.1.2]
+  simp_all [hne.1.2]
 
 theorem preservesOutside_gset (l : GLocation) (v : l.ty) :
     PreservesOutside (SPComp.gset l v) {l.id} := by
   intro h a h' hne id hnotin
   simp only [SPComp.gset_def, SDistr.pure, PMF.pure_apply, ne_eq, ite_eq_right_iff,
     Classical.not_imp, Option.some.injEq, Prod.mk.injEq] at hne
-  rw [hne.1.2]
-  exact Heap.gset_lookup_of_ne _ _ _ fun hid => hnotin (Finset.mem_singleton.mpr hid)
+  simp_all [hne.1.2, Heap.gset_lookup_of_ne]
 
 end CatCrypt.Relational
 
@@ -287,7 +284,7 @@ noncomputable def incr (id : Nat) : SPComp Nat :=
 theorem incr_twice_empty (id : Nat) :
     SPComp.bind (incr id) (fun _ => incr id) Heap.empty =
       CatCrypt.Prob.SDistr.pure (2, Heap.empty.gset (natCounter id) 2) := by
-  simp [incr, SPComp.bind, SPComp.gget, SPComp.gset, SPComp.pure,
-    CatCrypt.Prob.SDistr.pure_bind]
+  simp_all [incr, SPComp.bind, SPComp.gget, SPComp.gset, SPComp.pure,
+      CatCrypt.Prob.SDistr.pure_bind]
 
 end CatCrypt.Core

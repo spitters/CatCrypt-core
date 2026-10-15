@@ -63,8 +63,8 @@ theorem advantageA_absorb {α β : Type*} (H₀ H₁ : SPComp α) (R : α → SP
 /-- Symmetric form: a reduction applied on the *left* of the adversary chain. -/
 theorem advantageA_absorb_left {α β : Type*} (H₀ H₁ : SPComp α) (R : α → SPComp β)
     (A : β → SPComp Bool) :
-    AdvantageA H₀ H₁ (fun x => (R x).bind A) = AdvantageA (H₀.bind R) (H₁.bind R) A :=
-  (advantageA_absorb H₀ H₁ R A).symm
+    AdvantageA H₀ H₁ (fun x => (R x).bind A) = AdvantageA (H₀.bind R) (H₁.bind R) A := by
+  simp_all [advantageA_absorb]
 
 /-! ## The module record
 
@@ -104,10 +104,10 @@ proof plugs its three hops into — no bespoke `*_eq_*_bind` lemmas. -/
     three-term game-hopping reduction (e.g. KEM-DEM: `KEM + DEM + KEM`). -/
 theorem hybrid_bound₃ (G₀ G₁ G₂ G₃ : SPComp Bool) :
     Advantage G₀ G₃ ≤ Advantage G₀ G₁ + Advantage G₁ G₂ + Advantage G₂ G₃ := by
-  calc Advantage G₀ G₃ ≤ Advantage G₀ G₁ + Advantage G₁ G₃ := advantage_triangle G₀ G₁ G₃
+  calc Advantage G₀ G₃ ≤ Advantage G₀ G₁ + Advantage G₁ G₃ := by grind
     _ ≤ Advantage G₀ G₁ + (Advantage G₁ G₂ + Advantage G₂ G₃) :=
         add_le_add le_rfl (advantage_triangle G₁ G₂ G₃)
-    _ = Advantage G₀ G₁ + Advantage G₁ G₂ + Advantage G₂ G₃ := (add_assoc _ _ _).symm
+    _ = Advantage G₀ G₁ + Advantage G₁ G₂ + Advantage G₂ G₃ := by grind
 
 /-- Adversary-level three-hop bound: the same skeleton at the `AdvantageA` level,
     so each hop can be discharged by `advantageA_absorb` down to a component. -/

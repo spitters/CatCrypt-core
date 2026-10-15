@@ -663,9 +663,7 @@ theorem advantage_le_flag {qRO qD : ℕ}
     intro a t
     simp only [flagDist, PMF.bind_apply]
     refine tsum_congr fun x => congrArg _ ?_
-    exact OracleAdv.run_apply_flag_false_eq _ _ (oFlag_apply_true_false P hpk _ _ _ _ _ _)
-      (oFlag_apply_true_false P hpk _ _ _ _ _ _)
-      (fun st d r T' => oFlag_apply_false_eq P hpk _ _ _ _ _ _ _ st d r T') _ _ a t
+    grind [OracleAdv.run_apply_flag_false_eq, oFlag_apply_true_false, oFlag_apply_false_eq]
   unfold rom2INDCCAAdvantage
   rw [h₁, h₂]
   simp only [Advantage, prTrue_pmfGame_map]
@@ -1720,8 +1718,7 @@ theorem simOracle_progF_map (sk : SK) (pk : PK) (z : Z) (mstar : M) (rstar : R) 
           · by_cases he : P.enc pk m w.2 = c
             · simp [he, flatF, PMF.pure_map, joinG_update]
             · rw [if_neg he, if_neg he]
-              rw [hjR (Function.update U m (some w))]
-              simp [flatF, joinG_update]
+              simp [hjR (Function.update U m (some w)), flatF, joinG_update]
 
 /-- The state of the split oracle assembled from the state of `progS` and the table of
 the key oracle. -/

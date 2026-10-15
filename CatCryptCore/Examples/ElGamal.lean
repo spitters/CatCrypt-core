@@ -9,6 +9,7 @@ public import CatCryptCore.Crypto.SecurityDefs
 public import CatCryptCore.Crypto.Assumptions.DDH
 public import CatCryptCore.Crypto.PairingGroup
 public import CatCryptCore.Tactics
+public import CatCryptCore.Tactics.AutoMetrics
 
 /-!
 # ElGamal Public-Key Encryption: IND-CPA Security from DDH
@@ -252,7 +253,7 @@ theorem elgamal_indcpa_le_ddh (m₀ m₁ : P.G₁) (A : (P.G₁ × P.G₁) → S
   simp only [CatCrypt.Crypto.advantage_sum]
   refine le_trans (add_le_add (le_refl (Advantage R0r R0i))
     (add_le_add (le_of_eq hmid) (le_of_eq (Advantage_sym R1i R1r)))) ?_
-  exact le_of_eq (by ring)
+  sum_atoms_le
 
 /-- **ElGamal real-or-random secrecy equals a single DDH advantage.** The analog of
     SSProve-Rocq's `OT_CPA_elgamal` (`AdvOf (OT_CPA elgamal) A = AdvOf (LDDH G) (A ∘ RED)`),

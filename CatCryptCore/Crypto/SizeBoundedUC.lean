@@ -94,16 +94,14 @@ theorem size_bind_mul {α β : Type} (s : SPTree α) (f : α → SPTree β) (bou
         ≤ 1 + Finset.univ.sum (fun c => (k c).size * (bound + 1)) := by
           gcongr with c; exact ih c
       _ = 1 + (Finset.univ.sum (fun c => (k c).size)) * (bound + 1) := by rw [Finset.sum_mul]
-      _ ≤ (1 + Finset.univ.sum (fun c => (k c).size)) * (bound + 1) := by
-          nlinarith [Nat.zero_le bound]
+      _ ≤ (1 + Finset.univ.sum (fun c => (k c).size)) * (bound + 1) := by linarith
   | get l k ih =>
     simp only [SPTree.bind, size]
     calc 1 + Finset.univ.sum (fun v => ((k v).bind f).size)
         ≤ 1 + Finset.univ.sum (fun v => (k v).size * (bound + 1)) := by
           gcongr with v; exact ih v
       _ = 1 + (Finset.univ.sum (fun v => (k v).size)) * (bound + 1) := by rw [Finset.sum_mul]
-      _ ≤ (1 + Finset.univ.sum (fun v => (k v).size)) * (bound + 1) := by
-          nlinarith [Nat.zero_le bound]
+      _ ≤ (1 + Finset.univ.sum (fun v => (k v).size)) * (bound + 1) := by linarith
   | set l v t ih => simp only [SPTree.bind, size]; nlinarith [ih, Nat.zero_le bound]
   | fail => simp [SPTree.bind, size]
 
@@ -171,12 +169,12 @@ open scoped ENNReal
         simp only [SPTree.compile_bind, SPTree.compile_ret, hsf]
         show SPComp.bind (f a) (fun b => SPComp.pure (Sum.inl b)) =
           UCMonadBase.ucMapSum f g (.inl a)
-        simp [UCMonadBase.ucMapSum, mapSum, SPComp.map]
+        simp [UCMonadBase.ucMapSum, SPComp.map]
       | inr c =>
         simp only [SPTree.compile_bind, SPTree.compile_ret, hsg]
         show SPComp.bind (g c) (fun b => SPComp.pure (Sum.inr b)) =
           UCMonadBase.ucMapSum f g (.inr c)
-        simp [UCMonadBase.ucMapSum, mapSum, SPComp.map]
+        simp [UCMonadBase.ucMapSum, SPComp.map]
     · intro x; cases x with
       | inl a =>
         show ((sf a).bind (fun b => SPTree.ret (Sum.inl b))).size ≤ max (nf * 2) (ng * 2)
@@ -347,8 +345,7 @@ theorem exD_advantage_one :
     simp [Example.π, exD, SPComp.pure_bind, Sum.elim_inr]
   have h2 : SPComp.bind (Example.F ()) exD = SPComp.pure false := by
     simp [Example.F, exD, SPComp.pure_bind, Sum.elim_inr]
-  rw [h1, h2, ForkingLemma.prTrue_pure_bool, ForkingLemma.prTrue_pure_bool]
-  simp [absDiff]
+  simp [h1, h2, ForkingLemma.prTrue_pure_bool, absDiff]
 
 /-- The size-bounded computational distance on the canonical pair is at least `1`: the
     admissible size-`1` distinguisher `exD` already achieves advantage `1`. -/
@@ -378,9 +375,7 @@ theorem ex_size_ucSdist_le_one :
 theorem ex_size_no_separation :
     @ucCdist SPComp sizeCompDist Unit (Unit ⊕ Bool) Example.π Example.F
       = UCMonadMetric.ucSdist (self := sizeCompDist.toUCMonadMetric)
-          Example.π Example.F :=
-  le_antisymm
-    (@ucCdist_le_ucSdist SPComp sizeCompDist Unit (Unit ⊕ Bool) Example.π Example.F)
-    (le_trans ex_size_ucSdist_le_one ex_size_ucCdist_ge_one)
+          Example.π Example.F := by
+  grind [le_antisymm, ucCdist_le_ucSdist, Example.F, ex_size_ucSdist_le_one, ex_size_ucCdist_ge_one]
 
 end CatCrypt.Crypto.SizeBoundedUC

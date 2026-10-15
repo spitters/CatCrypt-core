@@ -247,10 +247,8 @@ theorem pedersen_binding_le_dlog (P : PairingGroup)
   intro ⟨hne, hcommit⟩
   -- hcommit : g₁^(m₁ + β·r₁) = g₁^(m₂ + β·r₂)
   -- By injectivity of g₁^·: m₁ + β·r₁ = m₂ + β·r₂
-  have hexp_eq : out.1 + β * out.2.2.1 = out.2.1 + β * out.2.2.2 :=
-    zpowZMod₁_g₁_injective P _ _ hcommit
-  -- By algebraic extraction: (m₁ - m₂)·(r₂ - r₁)⁻¹ = β
-  exact binding_extracts_dlog P β out.1 out.2.1 out.2.2.1 out.2.2.2 hne hexp_eq
+  -- then by algebraic extraction: (m₁ - m₂)·(r₂ - r₁)⁻¹ = β
+  grind [binding_extracts_dlog, zpowZMod₁_g₁_injective]
 
 /-! ## UC Wrapping -/
 
@@ -285,8 +283,8 @@ the scheme is perfectly hiding and computationally binding under DLog. -/
 theorem pedersen_full_security :
     (∀ A, pp.PedHiding_Advantage A = 0) ∧
     (∀ A, prTrue (PedBinding_Game_sampled pp.P A) Heap.empty ≤
-          DL_Advantage pp.P (binding_to_dlog pp.P A)) :=
-  ⟨pedersen_perfect_hiding pp, pedersen_binding_le_dlog pp.P⟩
+          DL_Advantage pp.P (binding_to_dlog pp.P A)) := by
+  simp_all [pedersen_perfect_hiding, pedersen_binding_le_dlog]
 
 end PedersenParams
 

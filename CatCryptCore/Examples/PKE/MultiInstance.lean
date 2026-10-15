@@ -169,7 +169,7 @@ theorem MI_hybridLoop_decomp_real_gen (pks : List P.PK) :
   | j, k + 1, m :: ms, hk => by
     have hlt : j < j + (k + 1) := by omega
     simp only [MI_hybridLoop, hlt, ↓reduceIte, SPComp.monad_bind_eq]
-    have hms : k < ms.length := by simp at hk; omega
+    have hms : k < ms.length := by simp_all
     rw [show j + (k + 1) = (j + 1) + k from by omega]
     simp_rw [MI_hybridLoop_decomp_real_gen pks (j + 1) k ms hms]
     simp only [SPComp.bind_assoc, SPComp.pure_bind]
@@ -195,7 +195,7 @@ theorem MI_hybridLoop_decomp_ideal_gen (pks : List P.PK) :
   | j, k + 1, m :: ms, hk => by
     have hlt : j < j + (k + 1) + 1 := by omega
     simp only [MI_hybridLoop, hlt, ↓reduceIte, SPComp.monad_bind_eq]
-    have hms : k < ms.length := by simp at hk; omega
+    have hms : k < ms.length := by simp_all
     rw [show j + (k + 1) + 1 = (j + 1) + k + 1 from by omega]
     simp_rw [MI_hybridLoop_decomp_ideal_gen pks (j + 1) k ms hms]
     simp only [SPComp.bind_assoc, SPComp.pure_bind]
@@ -279,7 +279,7 @@ theorem MI_step_eq (pks : List P.PK) (msgs : List (List P.M)) (i : ℕ) (hi : i 
     congr 1; funext cs
     simp only [MI_slideAdv, hmin, SPComp.monad_bind_eq]
   show Advantage _ _ = Advantage _ _
-  rw [heq_real, heq_ideal]
+  simp_all
 
 /-- Per-step advantage bound (≤ version). -/
 theorem MI_step_bound (pks : List P.PK) (msgs : List (List P.M)) (i : ℕ) (hi : i < msgs.length)
@@ -301,11 +301,7 @@ theorem Adv_MI_MT_CPA (pks : List P.PK) (msgs : List (List P.M)) (ε : ℝ≥0�
   unfold MI_Advantage
   apply advantage_hybrid_uniform (MI_hybrid P pks msgs) A msgs.length ε
   intro i hi
-  calc AdvantageA (MI_hybrid P pks msgs i) (MI_hybrid P pks msgs (i + 1)) A
-      ≤ MT_CPA_Advantage P (pks.getD i (defPK P)) (msgs.getD i [])
-          (MI_slideAdv P pks msgs i A) :=
-        MI_step_bound P pks msgs i hi A hP
-    _ ≤ ε := hMT i hi
+  grind [MI_hybrid, MI_step_bound]
 
 /-- **Alternative: MI-CPA bound with explicit per-step hypothesis**. -/
 theorem Adv_MI_direct (pks : List P.PK) (msgs : List (List P.M)) (ε : ℝ≥0∞)

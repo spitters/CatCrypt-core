@@ -211,8 +211,7 @@ theorem unlink_real_always_true (n1 n2 : Word) :
     (unlink_real xorHash n1 n2).bind (unlink_distinguisher n1 n2) =
     SPComp.bind (SPComp.sample Word) (fun _ => SPComp.pure true) := by
   simp only [unlink_real, unlink_distinguisher, xorHash, SPComp.monad_bind_eq,
-    SPComp.bind_assoc, SPComp.pure_bind]
-  bind_align; rw [xorHash_correlated]; simp
+    SPComp.bind_assoc, SPComp.pure_bind, xorHash_correlated, beq_self_eq_true]
 
 /-- **Against the ideal game the distinguisher can reject**: for distinct nonces
 there are independent keys making the correlation check fail, so the real and

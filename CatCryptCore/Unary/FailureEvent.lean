@@ -83,7 +83,7 @@ theorem advantage_le_prBad_right
   -- Advantage is symmetric: Advantage G₀ G₁ = Advantage G₁ G₀
   -- by max commutativity
   have hadv_comm : Advantage G₀ G₁ = Advantage G₁ G₀ := by
-    unfold Advantage; exact max_comm _ _
+    simp_all [Advantage, max_comm]
   rw [hadv_comm]
   exact failure_event_lemma G₁ G₀ Heap.empty bad
     (fun b h' hb => (h_agree b h' hb).symm)
@@ -122,7 +122,7 @@ theorem advantage_le_prBad_union
   apply advantage_le_prBad G₀ G₁ (fun h' => bad₀ h' ∨ bad₁ h')
   · intro b h' hbad
     push Not at hbad
-    exact h_agree b h' hbad.1 hbad.2
+    grind
   · exact hll₀
 
 /-! ## Game Hopping Chains -/
@@ -209,10 +209,10 @@ theorem prEvent_diff_le_prBad
            (if bad p.2 then (G₀ h₀) (some p) else 0 : ℝ≥0∞)) := by
           apply ENNReal.tsum_le_tsum; intro p
           by_cases hb : bad p.2
-          · by_cases hE : E p.1 p.2 <;> simp [hE, hb, le_self_add]
+          · by_cases hE : E p.1 p.2 <;> simp_all
           · by_cases hE : E p.1 p.2 <;> simp [hE, hb, h_agree p.1 p.2 hb]
       _ = (∑' p, (if E p.1 p.2 then (G₁ h₀) (some p) else 0 : ℝ≥0∞)) +
-          (∑' p, (if bad p.2 then (G₀ h₀) (some p) else 0 : ℝ≥0∞)) := ENNReal.tsum_add
+          (∑' p, (if bad p.2 then (G₀ h₀) (some p) else 0 : ℝ≥0∞)) := by simp_all [ENNReal.tsum_add]
   -- One-sided bound: prEvent G₁ ≤ prEvent G₀ + Pb
   have h2 : prEventComp G₁ h₀ E ≤ prEventComp G₀ h₀ E + Pb := by
     unfold prEventComp prEvent
@@ -234,8 +234,8 @@ theorem prEvent_diff_le_prBad
       rw [hG₀_total] at hG₀_split
       have hG₁_total_le : ∑' p : Bool × Heap, (G₁ h₀) (some p) ≤ 1 := by
         calc ∑' p : Bool × Heap, (G₁ h₀) (some p)
-            = SDistr.mass (G₁ h₀) := tsum_some_eq_mass (G₁ h₀)
-          _ ≤ 1 := by unfold SDistr.mass; exact tsub_le_self
+            = SDistr.mass (G₁ h₀) := by simp_all [tsum_some_eq_mass]
+          _ ≤ 1 := by simp_all [SDistr.mass]
       have hG₁_split := tsum_ite_add_compl (fun p : Bool × Heap => bad p.2)
         (fun p => (G₁ h₀) (some p))
       rw [hnonbad] at hG₁_split
@@ -244,21 +244,21 @@ theorem prEvent_diff_le_prBad
       have hN_ne_top : N ≠ ⊤ :=
         ne_top_of_le_ne_top ENNReal.one_ne_top
           (le_add_self.trans (le_of_eq hG₀_split))
-      rwa [ENNReal.add_le_add_iff_right hN_ne_top] at hle
+      simp_all
     calc ∑' p : Bool × Heap, (if E p.1 p.2 then (G₁ h₀) (some p) else 0 : ℝ≥0∞)
         ≤ ∑' p : Bool × Heap,
           ((if E p.1 p.2 then (G₀ h₀) (some p) else 0 : ℝ≥0∞) +
            (if bad p.2 then (G₁ h₀) (some p) else 0 : ℝ≥0∞)) := by
           apply ENNReal.tsum_le_tsum; intro p
           by_cases hb : bad p.2
-          · by_cases hE : E p.1 p.2 <;> simp [hE, hb, le_self_add]
+          · by_cases hE : E p.1 p.2 <;> simp_all
           · by_cases hE : E p.1 p.2 <;> simp [hE, hb, (h_agree p.1 p.2 hb).symm]
       _ = (∑' p, (if E p.1 p.2 then (G₀ h₀) (some p) else 0 : ℝ≥0∞)) +
-          (∑' p, (if bad p.2 then (G₁ h₀) (some p) else 0 : ℝ≥0∞)) := ENNReal.tsum_add
+          (∑' p, (if bad p.2 then (G₁ h₀) (some p) else 0 : ℝ≥0∞)) := by simp_all [ENNReal.tsum_add]
       _ ≤ (∑' p, (if E p.1 p.2 then (G₀ h₀) (some p) else 0 : ℝ≥0∞)) +
           (∑' p, (if bad p.2 then (G₀ h₀) (some p) else 0 : ℝ≥0∞)) :=
             add_le_add le_rfl bad_G₁_le
-  exact max_le (tsub_le_iff_left.mpr h1) (tsub_le_iff_left.mpr h2)
+  grind [max_le, tsub_le_iff_left]
 
 /-- When games agree on all outcomes, event probabilities agree exactly. -/
 theorem prEvent_agree_of_no_bad
@@ -266,11 +266,7 @@ theorem prEvent_agree_of_no_bad
     (E : Bool → Heap → Prop)
     (h_agree : ∀ b h', (G₀ h₀) (some (b, h')) = (G₁ h₀) (some (b, h'))) :
     prEventComp G₀ h₀ E = prEventComp G₁ h₀ E := by
-  unfold prEventComp prEvent
-  congr 1; funext p
-  by_cases hE : E p.1 p.2
-  · simp only [hE, ↓reduceIte, h_agree p.1 p.2]
-  · simp only [hE, ↓reduceIte]
+  grind [prEventComp, prEvent]
 
 /-! ## Composition Lemmas -/
 
@@ -408,8 +404,8 @@ theorem prBad_le_of_agree
   rw [hG₀_total] at hG₀_split
   have hG₁_total_le : ∑' p : Bool × Heap, (G₁ h₀) (some p) ≤ 1 := by
     calc ∑' p : Bool × Heap, (G₁ h₀) (some p)
-        = SDistr.mass (G₁ h₀) := tsum_some_eq_mass (G₁ h₀)
-      _ ≤ 1 := by unfold SDistr.mass; exact tsub_le_self
+        = SDistr.mass (G₁ h₀) := by simp_all [tsum_some_eq_mass]
+      _ ≤ 1 := by simp_all [SDistr.mass]
   have hG₁_split := tsum_ite_add_compl (fun p : Bool × Heap => bad p.2)
     (fun p => (G₁ h₀) (some p))
   rw [hnonbad] at hG₁_split
@@ -419,7 +415,7 @@ theorem prBad_le_of_agree
   have hN_ne_top : N ≠ ⊤ :=
     ne_top_of_le_ne_top ENNReal.one_ne_top
       (le_add_self.trans (le_of_eq hG₀_split))
-  rwa [ENNReal.add_le_add_iff_right hN_ne_top] at hle
+  simp_all
 
 /-- When both games are lossless and agree on non-bad outcomes,
     their bad-event probabilities are equal.
@@ -435,8 +431,7 @@ theorem prBad_eq_of_agree
     prEventComp G₀ h₀ (fun _ h' => bad h') =
       prEventComp G₁ h₀ (fun _ h' => bad h') := by
   apply le_antisymm
-  · exact prBad_le_of_agree G₁ G₀ h₀ bad
-      (fun b h' hb => (h_agree b h' hb).symm) hll₁
-  · exact prBad_le_of_agree G₀ G₁ h₀ bad h_agree hll₀
+  · simp_all [prBad_le_of_agree]
+  · simp_all [prBad_le_of_agree]
 
 end CatCrypt.Unary

@@ -172,8 +172,9 @@ theorem maskComm_hiding_coupling (m₀ m₁ : Bool) :
     advantage exactly `0`. -/
 theorem maskComm_perfect_hiding (m₀ m₁ : Bool)
     (A : MaskComm.Commitment → SPComp Bool) :
-    Hiding_Adv MaskComm m₀ m₁ A = 0 :=
-  advantage_zero_of_rHoare _ _ (maskComm_hiding_coupling m₀ m₁) A
+    Hiding_Adv MaskComm m₀ m₁ A = 0 := by
+  unfold CatCrypt.Examples.Commitment.Hiding_Adv
+  simp_all [advantage_zero_of_rHoare, maskComm_hiding_coupling]
 
 /-- The masking commitment's output varies with the committed message: for fixed
     randomness there are two messages whose commitments differ. Perfect hiding

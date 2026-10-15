@@ -167,8 +167,7 @@ theorem advantage_zero_of_inv {α : Type*} (I : RPre) (G₀ G₁ : SPComp α)
     have hAeq : A p₁.1 p₁.2 = A p₂.1 p₂.2 := by
       rw [heq_a]
       exact hA_respects p₂.1 p₁.2 p₂.2 hI_h
-    rw [hAeq]
-    exact liftR_refl _
+    simp [hAeq, liftR_refl]
   -- Now the bound computations are equal
   simp only [SPComp.bind, heq_distrs, tsub_self]
   -- max 0 0 = 0
@@ -216,7 +215,6 @@ theorem prTrue_bind_sample_Bool (A : Bool → SPComp Bool) (h₀ : Heap) :
   rw [tsum_fintype, Fintype.sum_option]
   simp only [SDistr.uniform_apply_none, SDistr.uniform_apply_some, Fintype.card_bool,
              SDistr.fail_apply_some, ENNReal.tsum_eq_zero.mpr (fun _ => rfl), mul_zero, zero_add]
-  rw [Fintype.sum_bool]
   simp [add_comm]
 
 /-- Advantage of sampling uniform Bool vs pure constant is at most 1/2. -/
@@ -288,8 +286,7 @@ theorem weighted_sum_le {α : Type*} [Fintype α] [Nonempty α]
     rw [Finset.sum_const, Finset.card_univ]
     change ↑(Fintype.card α) • (w * ε) = ε
     rw [nsmul_eq_mul, ← mul_assoc, hnw, one_mul]
-  calc ∑ x, w * p x ≤ (∑ x, w * q x) + ∑ _x : α, w * ε := h1
-    _ = (∑ x, w * q x) + ε := by rw [h2]
+  simp_all
 
 /-- Advantage with uniform prefix sampling.
 
@@ -376,9 +373,7 @@ theorem advantageA_isPure_bind {α β : Type*}
       exact SDistr.tsum_option_none_zero _
         (by simp only [SDistr.fail_apply_some, mul_zero])
     simp_rw [bind_expand]
-    rw [ENNReal.tsum_comm]
-    congr 1; funext a
-    exact ENNReal.tsum_mul_left
+    simp [ENNReal.tsum_comm, ENNReal.tsum_mul_left]
   -- Helper: weighted tsum with sub-probability weights preserves bounds
   have weighted_bound : ∀ (P Q : α → ℝ≥0∞),
       (∀ x, P x ≤ Q x + ε) →

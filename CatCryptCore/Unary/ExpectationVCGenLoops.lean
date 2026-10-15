@@ -51,8 +51,7 @@ theorem repeatStep_succ_eq_bind (step : SPComp Unit) (n : ℕ) :
   induction n with
   | zero =>
     show (SPComp.pure ()).bind (fun _ => step) = step.bind (fun _ => SPComp.pure ())
-    rw [SPComp.pure_bind]
-    exact (SPComp.bind_pure step).symm
+    rw [SPComp.pure_bind, SPComp.bind_pure]
   | succ n ih =>
     show ((repeatStep step n).bind fun _ => step).bind (fun _ => step)
       = step.bind (fun _ => (repeatStep step n).bind fun _ => step)
@@ -91,8 +90,8 @@ theorem prBad_induction_forIn_vcgen
       (fun _ h => OrderDual.toDual (if bad h then (1 : ℝ≥0∞) else 0)) (OrderDual.toDual 0) := by
     vcgen [hs] invariants
     · fun c _ h => OrderDual.toDual ((if bad h then (1 : ℝ≥0∞) else 0) + c.suffix.length * ε)
-    case vc1 => simp
-    case vc2 => simp
+    case vc1 => simp_all
+    case vc2 => simp_all
     case vc3 s =>
       simp only [leanOrder_rel_dual_iff, OrderDual.ofDual_toDual, SPCompU.wp_pure,
         List.length_cons, Nat.cast_add, Nat.cast_one]
@@ -103,13 +102,13 @@ theorem prBad_induction_forIn_vcgen
         · simp only [hb, if_true]
           exact ((wpE_mono step (fun _ _ => by split_ifs <;> simp) s).trans
             (wpE_const_le step 1 s)).trans le_self_add
-        · simpa [hb, wpE_indicator_eq_prEventComp, prEventComp] using h_fresh s hb
+        · simp_all [wpE_indicator_eq_prEventComp, prEventComp]
       calc _ ≤ ((if bad s then 1 else 0) + ε) + _ := add_le_add h1 (wpE_const_le _ _ _)
-        _ = _ := by ring
+        _ = _ := by grind
   rw [← wpE_indicator_eq_prEventComp, ← List.length_range (n := q), ← forIn_eq_repeatStep,
     List.length_range]
   refine ((SPCompU.triple_iff_wpE_le _ _ _).1 ht h₀).trans ?_
-  simp [h_start]
+  simp_all
 
 /-- One round of the retry loop as the body of a `for` loop in `SPComp`: the accumulator
 holds the result so far and the accumulated cost; a `some` result ends the loop. -/

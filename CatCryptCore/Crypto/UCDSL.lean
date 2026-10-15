@@ -96,9 +96,8 @@ theorem UCEmulates_of_isPure_advantage {hon leak V : Type} {ε : ℝ≥0∞}
               (prTrue (SPComp.bind (G_ideal x) D) Heap.empty) ≤ ε) :
     UCEmulates ε (UCSpec.ofGame hon leak V)
       (UCProtocol.ofGame G_real) (UCProtocol.ofGame G_ideal) := by
-  apply UCEmulates_of_sdist
-  apply le_trans (sdist_comp_right _ _ _)
-  exact sdist_isPure_le hPure_r hPure_i hAdv
+  exact UCEmulates_of_sdist _ _ _
+    (le_trans (sdist_comp_right _ _ _) (sdist_isPure_le hPure_r hPure_i hAdv))
 
 /-- Perfect UC emulation from program equality.
 
@@ -120,11 +119,8 @@ theorem UCEmulates_of_game_eq {hon leak V : Type}
     (h : G_real = G_ideal) :
     UCEmulates 0 (UCSpec.ofGame hon leak V)
       (UCProtocol.ofGame G_real) (UCProtocol.ofGame G_ideal) := by
-  apply UCEmulates_of_sdist
-  have : UCProtocol.ofGame G_real = UCProtocol.ofGame G_ideal := by
-    unfold UCProtocol.ofGame; rw [h]
-  rw [this]
-  exact le_of_eq (sdist_self _)
+  subst h
+  exact UCEmulates_of_sdist _ _ _ (le_of_eq (sdist_self _))
 
 /-- UC emulation from sdist bound at the game level.
 
@@ -135,8 +131,7 @@ theorem UCEmulates_of_game_sdist {hon leak V : Type} {ε : ℝ≥0∞}
     (h : sdist G_real G_ideal ≤ ε) :
     UCEmulates ε (UCSpec.ofGame hon leak V)
       (UCProtocol.ofGame G_real) (UCProtocol.ofGame G_ideal) := by
-  apply UCEmulates_of_sdist
-  exact le_trans (sdist_comp_right _ _ _) h
+  exact UCEmulates_of_sdist _ _ _ (le_trans (sdist_comp_right _ _ _) h)
 
 /-- Variant of `UCEmulates_of_isPure_advantage` using `AdvantageA`.
 
@@ -149,10 +144,8 @@ theorem UCEmulates_of_isPure_advantageA {hon leak V : Type} {ε : ℝ≥0∞}
     (hAdv : ∀ x (D : leak → SPComp Bool), AdvantageA (G_real x) (G_ideal x) D ≤ ε) :
     UCEmulates ε (UCSpec.ofGame hon leak V)
       (UCProtocol.ofGame G_real) (UCProtocol.ofGame G_ideal) := by
-  apply UCEmulates_of_sdist
-  apply le_trans (sdist_comp_right _ _ _)
-  apply sdist_isPure_le hPure_r hPure_i
-  intro D x; exact hAdv x D
+  exact UCEmulates_of_sdist _ _ _ (le_trans (sdist_comp_right _ _ _)
+    (sdist_isPure_le hPure_r hPure_i fun D x => hAdv x D))
 
 /-! ## Component C: Game-Hop Chaining -/
 
@@ -174,8 +167,7 @@ theorem sdist_game_hop₃ {α β : Type} {ε₁ ε₂ ε₃ : ℝ≥0∞}
     {G₀ G₁ G₂ G₃ : α → SPComp β}
     (h₁ : sdist G₀ G₁ ≤ ε₁) (h₂ : sdist G₁ G₂ ≤ ε₂) (h₃ : sdist G₂ G₃ ≤ ε₃) :
     sdist G₀ G₃ ≤ ε₁ + ε₂ + ε₃ := by
-  calc sdist G₀ G₃ ≤ sdist G₀ G₂ + sdist G₂ G₃ := sdist_triangle G₀ G₂ G₃
-    _ ≤ (ε₁ + ε₂) + ε₃ := add_le_add (sdist_game_hop₂ h₁ h₂) h₃
+  exact le_trans (sdist_triangle G₀ G₂ G₃) (add_le_add (sdist_game_hop₂ h₁ h₂) h₃)
 
 /-- 4-step game hop (covers Cryptobox compositional decomposition).
 
@@ -186,8 +178,7 @@ theorem sdist_game_hop₄ {α β : Type} {ε₁ ε₂ ε₃ ε₄ : ℝ≥0∞}
     (h₁ : sdist G₀ G₁ ≤ ε₁) (h₂ : sdist G₁ G₂ ≤ ε₂)
     (h₃ : sdist G₂ G₃ ≤ ε₃) (h₄ : sdist G₃ G₄ ≤ ε₄) :
     sdist G₀ G₄ ≤ ε₁ + ε₂ + ε₃ + ε₄ := by
-  calc sdist G₀ G₄ ≤ sdist G₀ G₃ + sdist G₃ G₄ := sdist_triangle G₀ G₃ G₄
-    _ ≤ (ε₁ + ε₂ + ε₃) + ε₄ := add_le_add (sdist_game_hop₃ h₁ h₂ h₃) h₄
+  exact le_trans (sdist_triangle G₀ G₃ G₄) (add_le_add (sdist_game_hop₃ h₁ h₂ h₃) h₄)
 
 /-- UC emulation via 2-step game hop.
 

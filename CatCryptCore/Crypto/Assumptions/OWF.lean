@@ -104,8 +104,7 @@ theorem OWF_Game_isPure (F : OWFDef W) (A : OWF_Adversary W)
     SPComp.IsPure (OWF_Game F A) := by
   unfold OWF_Game
   apply SPComp.bind_isPure (SPComp.sample_isPure _); intro x
-  apply SPComp.bind_isPure (hA _); intro x'
-  exact SPComp.pure_isPure _
+  simp_all [SPComp.bind_isPure, SPComp.pure_isPure]
 
 /-! ## Pseudorandom Generator (PRG)
 

@@ -150,9 +150,7 @@ theorem ODH_Game_Real_isPure (D : ODHDef W) (A : ODH_Adversary W)
   apply SPComp.bind_isPure D.keygen_isPure; intro ⟨a, pub_a⟩
   apply SPComp.bind_isPure D.keygen_isPure; intro ⟨_b, pub_b⟩
   apply SPComp.bind_isPure (SPComp.sample_isPure _); intro label
-  apply SPComp.bind_isPure (hA pub_a pub_b (D.hash (D.ecdh a pub_b) label))
-  intro ⟨_, bit⟩
-  exact SPComp.pure_isPure _
+  simp_all [SPComp.bind_isPure, SPComp.pure_isPure]
 
 theorem ODH_Game_Ideal_isPure (D : ODHDef W) (A : ODH_Adversary W)
     (hA : ∀ x y z, SPComp.IsPure (A x y z)) :
@@ -161,8 +159,7 @@ theorem ODH_Game_Ideal_isPure (D : ODHDef W) (A : ODH_Adversary W)
   apply SPComp.bind_isPure D.keygen_isPure; intro ⟨_, pub_a⟩
   apply SPComp.bind_isPure D.keygen_isPure; intro ⟨_b, pub_b⟩
   apply SPComp.bind_isPure (SPComp.sample_isPure _); intro r
-  apply SPComp.bind_isPure (hA pub_a pub_b r); intro ⟨_, bit⟩
-  exact SPComp.pure_isPure _
+  simp_all [SPComp.bind_isPure, SPComp.pure_isPure]
 
 /-! ## Relationship to DDH
 
@@ -241,7 +238,7 @@ theorem odh_of_ddh_prf (D : ODHDef W) (A : ODH_Adversary W)
           unfold DDH_Game_Ideal ODH_Hybrid B; rfl
         calc Advantage (ODH_Game_Real D A) (ODH_Hybrid D A)
             = Advantage (DDH_Game_Real D.toDDHDef B) (DDH_Game_Ideal D.toDDHDef B) := by
-              rw [hreal, hideal]
+              simp_all
           _ = DDH_Advantage D.toDDHDef B := rfl
           _ ≤ ε_ddh := h_ddh B
 

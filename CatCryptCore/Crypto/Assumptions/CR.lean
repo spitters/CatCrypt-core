@@ -256,12 +256,10 @@ theorem CRSecure_implies_TCRSecure (h : HashScheme) [SampleableType h.Input]
       rw [SPComp.bind_assoc]
       congr 1; funext x'
       simp only [SPComp.pure_bind]
-      congr 1; congr 1
-      exact propext ⟨fun ⟨h1, h2⟩ => ⟨h1.symm, Ne.symm h2⟩,
-                      fun ⟨h1, h2⟩ => ⟨h1.symm, Ne.symm h2⟩⟩
+      grind
     have hle : TCR_Advantage h A = CR_Search_Advantage h B := by
       unfold TCR_Advantage CR_Search_Advantage
-      rw [hgame]
+      simp_all
     rw [hle]; exact hCR.cr_bound B
 
 /-- CR implies preimage resistance (for fixed-length hash functions).
