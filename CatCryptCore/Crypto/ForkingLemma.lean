@@ -164,16 +164,16 @@ theorem jensen_sub_pmf_sq {ι : Type} (w : ι → ℝ≥0∞) (f : ι → ℝ≥
       = ∑' i, w i * f i * μ + ∑' i, w i * f i * μ := by
         rw [show μ * μ = (∑' i, w i * f i) * μ from rfl, ENNReal.tsum_mul_right]
     _ = ∑' i, (w i * f i * μ + w i * f i * μ) := ENNReal.tsum_add.symm
-    _ = ∑' i, w i * (2 * f i * μ) := by congr 1; funext i; ring
+    _ = ∑' i, w i * (2 * f i * μ) := by grind
     _ ≤ ∑' i, w i * (f i ^ 2 + μ ^ 2) := by
         apply ENNReal.tsum_le_tsum; intro i; gcongr
         exact ennreal_two_mul_le_add_sq (f i) μ
-    _ = ∑' i, (w i * f i ^ 2 + w i * μ ^ 2) := by congr 1; funext i; rw [mul_add]
+    _ = ∑' i, (w i * f i ^ 2 + w i * μ ^ 2) := by grind
     _ = (∑' i, w i * f i ^ 2) + ∑' i, w i * μ ^ 2 := ENNReal.tsum_add
     _ = (∑' i, w i * f i ^ 2) + (∑' i, w i) * μ ^ 2 := by
         congr 1; rw [ENNReal.tsum_mul_right]
     _ ≤ (∑' i, w i * f i ^ 2) + 1 * μ ^ 2 := by gcongr
-    _ = (∑' i, w i * f i ^ 2) + μ * μ := by rw [one_mul, sq]
+    _ = (∑' i, w i * f i ^ 2) + μ * μ := by grind
 
 /-! ## Representation Lemmas -/
 
@@ -279,8 +279,7 @@ theorem prTrue_bind_mono_const {α : Type} (c : ℝ≥0∞)
   calc ∑' p, (comp h₀ : PMF _) p * f₁ p
       ≤ ∑' p, (comp h₀ : PMF _) p * (c * f₂ p) :=
         ENNReal.tsum_le_tsum fun p => mul_le_mul_right (hpw p) _
-    _ = ∑' p, c * ((comp h₀ : PMF _) p * f₂ p) := by
-        congr 1; funext p; rw [mul_left_comm]
+    _ = ∑' p, c * ((comp h₀ : PMF _) p * f₂ p) := by grind
     _ = c * ∑' p, (comp h₀ : PMF _) p * f₂ p := ENNReal.tsum_mul_left
 
 /-- Lower bound: sampling then testing has probability ≥ 1/|R| times any witness's probability. -/
