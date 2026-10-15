@@ -98,13 +98,12 @@ theorem spcomp_bind_apply_none {α β : Type} (c : SPComp α) (f : α → SPComp
       (c h) none + ∑' p : α × Heap, (c h) (some p) * (f p.1 p.2) none := by
   show (SDistr.bind (c h) fun p : α × Heap => f p.1 p.2) none = _
   unfold SDistr.bind
-  rw [PMF.bind_apply, SDistr.tsum_option_eq_add]
-  simp only [SDistr.fail_apply_none, mul_one]
+  simp_all [PMF.bind_apply, SDistr.tsum_option_eq_add, SDistr.fail_apply_none, mul_one]
 
 /-- `wpEF` of `pure`. -/
 @[simp] theorem wpEF_pure {α : Type} (a : α) (post : α → Heap → ℝ≥0∞) (e : ℝ≥0∞)
     (h : Heap) : wpEF (SPComp.pure a) post e h = post a h := by
-  simp only [wpEF, wpE_pure, SPComp.pure, SDistr.pure_apply_none, mul_zero, add_zero]
+  simp_all [wpEF, wpE_pure, SPComp.pure, SDistr.pure_apply_none, mul_zero, add_zero]
 
 /-- `wpEF` is a monad morphism on bind. -/
 theorem wpEF_bind {α β : Type} (c : SPComp α) (f : α → SPComp β)
@@ -113,7 +112,7 @@ theorem wpEF_bind {α β : Type} (c : SPComp α) (f : α → SPComp β)
   simp only [wpEF]
   rw [wpE_bind, spcomp_bind_apply_none, wpE_add, wpE_const_mul,
     wpE_eq_tsum c (fun a h' => (f a h') none)]
-  ring
+  (unfold CatCrypt.Unary.wpE; grind)
 
 /-- `wpEF` is monotone in both the post-expectation and the failure weight. -/
 theorem wpEF_mono {α : Type} (c : SPComp α) {post post' : α → Heap → ℝ≥0∞}
@@ -129,23 +128,23 @@ theorem wpEF_sample (α : Type) [Fintype α] [Nonempty α] (post : α → Heap �
     show ((SDistr.uniform α).bind fun a => SDistr.pure (a, h)) none = 0
     unfold SDistr.bind
     rw [PMF.bind_apply, SDistr.tsum_option_eq_add]
-    simp [SDistr.uniform_apply_none, SDistr.pure_apply_none]
-  rw [wpEF, wpE_sample, hnone, mul_zero, add_zero]
+    simp_all [SDistr.uniform_apply_none, SDistr.pure_apply_none]
+  simp_all [wpEF, wpE_sample, mul_zero, add_zero]
 
 /-- `wpEF` of a heap read. -/
 @[simp] theorem wpEF_get (l : Location) (post : l.ty → Heap → ℝ≥0∞) (e : ℝ≥0∞) (h : Heap) :
     wpEF (SPComp.get l) post e h = post (h.get l) h := by
-  simp only [wpEF, wpE_get, SPComp.get, SDistr.pure_apply_none, mul_zero, add_zero]
+  simp_all [wpEF, wpE_get, SPComp.get, SDistr.pure_apply_none, mul_zero, add_zero]
 
 /-- `wpEF` of a heap write. -/
 @[simp] theorem wpEF_set (l : Location) (v : l.ty) (post : Unit → Heap → ℝ≥0∞) (e : ℝ≥0∞)
     (h : Heap) : wpEF (SPComp.set l v) post e h = post () (h.set l v) := by
-  simp only [wpEF, wpE_set, SPComp.set, SDistr.pure_apply_none, mul_zero, add_zero]
+  solve_by_elim [wpEF_pure, wpEF_bind, wpEF_get, wpEF_sample, spcomp_bind_apply_none, wpEF_mono]
 
 /-- `wpEF` of failure is the failure weight. -/
 @[simp] theorem wpEF_fail {α : Type} (post : α → Heap → ℝ≥0∞) (e : ℝ≥0∞) (h : Heap) :
     wpEF (SPComp.fail : SPComp α) post e h = e := by
-  simp only [wpEF, wpE_fail, SPComp.fail, SDistr.fail_apply_none, mul_one, zero_add]
+  simp_all [wpEF, wpE_fail, SPComp.fail, SDistr.fail_apply_none, mul_one, zero_add]
 
 /-! ## The lower-bound instance -/
 
@@ -173,7 +172,7 @@ theorem lean_order_bot_eq_zero : (Lean.Order.bot : ℝ≥0∞) = 0 :=
 theorem wp_bot_eq_wpE {α : Type} (c : SPComp α) (post : α → Heap → ℝ≥0∞) :
     wp c post Lean.Order.bot = wpE c post := by
   funext h
-  rw [wp_eq_wpEF, wpEF, lean_order_bot_eq_zero, zero_mul, add_zero]
+  simp_all [wp_eq_wpEF, wpEF, lean_order_bot_eq_zero, zero_mul, add_zero]
 
 /-- A lower-bound triple at exception postcondition `⊥` is the pointwise bound
 `P ≤ wpE c Q`. -/
@@ -248,7 +247,7 @@ theorem same_msg_prTrue_vcgen (m : Bool) :
       Fintype.card_bool, beq_self_eq_true]
     all_goals simp only [if_true, ← two_mul, Nat.cast_ofNat, mul_one]
     all_goals rw [ENNReal.inv_mul_cancel] <;> simp
-  exact (triple_iff_le_wpE _ _ _).1 ht Heap.empty
+  simp_all [triple_iff_le_wpE]
 
 /-! ## The upper-bound instance -/
 
