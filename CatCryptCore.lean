@@ -190,6 +190,7 @@ public import CatCryptCore.Quantum.CPCompMonad
 public import CatCryptCore.Quantum.TraceNorm
 public import CatCryptCore.Quantum.UnitaryChannel
 public import CatCryptCore.Quantum.CPMap
+public import CatCryptCore.Quantum.DualMap
 public import CatCryptCore.Quantum.Measurement
 public import CatCryptCore.Quantum.TensorProduct
 public import CatCryptCore.Quantum.KroneckerPSD
