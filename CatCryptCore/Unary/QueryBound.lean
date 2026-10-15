@@ -255,21 +255,19 @@ theorem prEvent_pure {δ : Type*} (a : δ) (h : Heap) (bad : Heap → Prop) :
   unfold prEvent
   rw [tsum_eq_single (a, h)]
   · by_cases hb : bad h <;>
-      simp [hb, SDistr.pure_apply_some]
+      simp_all [SDistr.pure_apply_some]
   · intro p hp
     have hz : (SDistr.pure (a, h) : SDistr (δ × Heap)) (some p) = 0 := by
       rw [SDistr.pure_apply_some]
       exact if_neg (fun heq => hp heq.symm)
-    simp [hz]
+    simp_all
 
 /-- The bad-event probability of a pure computation from `h₀` is the indicator
     of `bad h₀`: `1` if `bad h₀`, else `0`. -/
 theorem prEventComp_pure (a : α) (h₀ : Heap) (bad : Heap → Prop) :
     prEventComp (SPComp.pure a) h₀ (fun _ h' => bad h') =
       (if bad h₀ then 1 else 0) := by
-  unfold prEventComp
-  rw [SPComp.pure_def]
-  exact prEvent_pure a h₀ bad
+  simp_all [SPComp.pure_def, prEventComp, prEvent_pure]
 
 /-- Pointwise value of a sub-distribution `bind` at a `some` outcome: the
     probability sums, over reachable intermediate outcomes, the intermediate
@@ -278,8 +276,7 @@ theorem SDistr_bind_apply_some {β γ : Type*} (d : SDistr (β × Heap))
     (g : β × Heap → SDistr (γ × Heap)) (b : γ × Heap) :
     (d.bind g) (some b) = ∑' a : β × Heap, d (some a) * (g a) (some b) := by
   unfold SDistr.bind
-  rw [PMF.bind_apply, tsum_option_split]
-  simp only [SDistr.fail_apply_some, mul_zero, zero_add]
+  simp [PMF.bind_apply, tsum_option_split, SDistr.fail_apply_some, mul_zero, zero_add]
 
 /-- Bad-mass of a sub-distribution `bind`: the event probability of `d.bind g`
     is the `d`-expectation of the event probability of the continuation `g`
@@ -315,8 +312,7 @@ theorem prEvent_bind_step_eq_tsum
     prEventComp (m.bind (fun _ => step)) h₀ (fun _ h' => bad h') =
       ∑' p : Unit × Heap,
         (m h₀) (some p) * prEvent (step p.2) (fun _ h' => bad h') := by
-  unfold prEventComp
-  rw [SPComp.bind_def, prEvent_bind_eq]
+  simp_all [SPComp.bind_def, prEvent_bind_eq, prEventComp]
 
 /-- Per-step subadditivity of bad mass: if from every non-bad reachable heap the
     single step introduces bad with probability at most `ε`, then prepending any
@@ -340,7 +336,7 @@ theorem prEventComp_bind_step_le
       calc (m h₀) (some p) * prEvent (step p.2) (fun _ h' => bad h')
           ≤ (m h₀) (some p) * 1 :=
             mul_le_mul' le_rfl ((prEvent_le_mass _ _).trans (sdistr_mass_le_one _))
-        _ = (m h₀) (some p) := mul_one _
+        _ = (m h₀) (some p) := by simp_all
     · simp only [hb, if_false, not_false_eq_true, if_true, zero_add]
       exact mul_le_mul' le_rfl (h_fresh p.2 hb)
   calc ∑' p : Unit × Heap,
@@ -382,8 +378,7 @@ theorem prBad_induction
   induction q with
   | zero =>
     simp only [repeatStep, Nat.cast_zero, zero_mul, nonpos_iff_eq_zero]
-    rw [prEventComp_pure]
-    exact if_neg h_start
+    simp_all [prEventComp_pure]
   | succ q ihq =>
     calc prEventComp (repeatStep step (q + 1)) h₀ (fun _ h' => bad h')
         = prEventComp ((repeatStep step q).bind (fun _ => step)) h₀
@@ -391,8 +386,8 @@ theorem prBad_induction
       _ ≤ prEventComp (repeatStep step q) h₀ (fun _ h' => bad h') + ε :=
           prEventComp_bind_step_le _ step h₀ bad ε h_fresh
       _ ≤ (q : ℝ≥0∞) * ε + ε := add_le_add ihq le_rfl
-      _ = ((q : ℝ≥0∞) + 1) * ε := by rw [add_mul, one_mul]
-      _ = ((q + 1 : ℕ) : ℝ≥0∞) * ε := by push_cast; ring
+      _ = ((q : ℝ≥0∞) + 1) * ε := by simp_all [add_mul, one_mul]
+      _ = ((q + 1 : ℕ) : ℝ≥0∞) * ε := by simp_all
 
 /-- Adaptive q-query union bound over a loop of counted oracle calls.
 
@@ -450,8 +445,7 @@ theorem advantage_le_query_bound_derived
     Advantage (loopGame step q b₀) G₁ ≤ q * ε := by
   refine (failure_event_lemma (loopGame step q b₀) G₁ Heap.empty bad h_agree
     (isLossless_implies_if _ hll)).trans ?_
-  rw [prEventComp_loopGame]
-  exact prBad_induction step Heap.empty bad ε h_start h_fresh q
+  simp_all [prEventComp_loopGame, prBad_induction]
 
 /-! ## Integration with Failure Event Lemma
 
