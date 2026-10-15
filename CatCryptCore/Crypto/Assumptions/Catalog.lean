@@ -35,7 +35,7 @@ at the instantiation site, not here.
 |------------|------|-----------|
 | `DDH_Advantage` | `Assumptions/DDH.lean` | Boneh-Shoup Def. 11.2 |
 | `CDH_Advantage` | `Assumptions/CDH.lean` | Boneh-Shoup Def. 11.1 |
-| `GapDH_Advantage` | `Assumptions/GapDH.lean` | OP01 Def. 5 (decisional formulation) |
+| `GapDH_Advantage` | `Assumptions/GapDH.lean` | OP01 Def. 5 (search game with DDH oracle) |
 | `DL_Advantage` | `Assumptions/DL.lean` | Boneh-Shoup Def. 10.6 |
 | `tSDH_Advantage` | `Assumptions/tSDH.lean` | Boneh-Boyen, EUROCRYPT 2008 |
 | `qSDH_Advantage` | `Assumptions/qSDH.lean` | Boneh-Boyen, EUROCRYPT 2008 |
@@ -85,7 +85,6 @@ at the instantiation site, not here.
 - PRG ⟹ OWF: Proved (`prg_implies_owf`) (`OWF.lean`)
 - DDH + PRF ⟹ ODH: Reduction via `odh_of_ddh_prf` (`ODH.lean`)
 - DDH ⟹ CDH: Reduction via `ddh_of_cdh` (`CDH.lean`)
-- DDH ⟹ GapDH: Proved (`GapDHDef.ofDDH`)
 - CDH ⟹ DL: Standard (not formalized; not needed by current protocols)
 - HKDF ← Extract + Expand: Proved (`hkdf_advantage_bound`)
 - Expand_Composed(const f) = Expand: Definitional equality

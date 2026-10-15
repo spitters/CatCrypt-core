@@ -12,7 +12,11 @@ public import CatCryptCore.Crypto.MLKEM.Infrastructure.FEL
 # Basic MLWE-PKE: CPA Security from MLWE
 
 This file defines the basic MLWE-based PKE scheme and proves its IND-CPA security
-reduces to the MLWE assumption via a 2-hop argument.
+reduces to the MLWE assumption via a 2-hop argument, for adversaries whose guess
+stage receives neither the public key nor a state. The game for two-stage
+adversaries with state, `CPA_Adv_st`, and its bound `main_theorem_st` are in
+`MLWE_PKE_Stateful`; they supersede `CPA_Game`, `CPA_Adv` and `main_theorem`
+here.
 
 Ports `MLWE_PKE_Basic.ec` from `formosa-crypto/formosa-mlkem`.
 
@@ -124,7 +128,12 @@ noncomputable def dec (sk : SK P) (c : CT P) : SDistr (Option P.PT) := do
 
 /-! ## Security Games -/
 
-/-- IND-CPA game for the basic MLWE-PKE.
+/-- IND-CPA game for the basic MLWE-PKE against an adversary whose guess stage
+    receives neither the public key nor a state.
+
+    Superseded by `MLWE_PKE_Stateful.CPA_Game_st`, the game for a two-stage
+    adversary with state; this game is its case `St := Unit`
+    (`MLWE_PKE_Stateful.CPA_Game_eq_CPA_Game_st`).
 
     EasyCrypt: `PKE.CPA(MLWE_PKE_BASIC, A).main()`.
     The adversary `choose` picks two messages, `guess` distinguishes. -/
@@ -136,7 +145,9 @@ noncomputable def CPA_Game
   let c ← enc P pk (if b then m1 else m0)
   guess c
 
-/-- IND-CPA advantage. -/
+/-- IND-CPA advantage against an adversary whose guess stage receives neither
+    the public key nor a state. Superseded by `MLWE_PKE_Stateful.CPA_Adv_st`
+    (`MLWE_PKE_Stateful.CPA_Adv_eq_CPA_Adv_st`). -/
 noncomputable def CPA_Adv
     (choose : PK P → SDistr (P.PT × P.PT))
     (guess : CT P → SDistr Bool) : ℝ≥0∞ :=
@@ -387,6 +398,9 @@ theorem basic2_independent (choose : PK P → SDistr (P.PT × P.PT))
     `hop2_left`, `hop2_right`, and `basic2_independent`. The gaps (`—εᵢ—`)
     are the four advantages (two standard MLWE for B1, two extended MLWE
     for B2_ext). No hypotheses remain.
+
+    Superseded by `MLWE_PKE_Stateful.main_theorem_st`, the same bound for a
+    two-stage adversary with state.
 
     EasyCrypt: `main_theorem`. -/
 theorem main_theorem (choose : PK P → SDistr (P.PT × P.PT))

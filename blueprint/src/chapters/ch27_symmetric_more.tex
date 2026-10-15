@@ -123,10 +123,10 @@ other than the one queried.
 \begin{theorem}[Universality and one-time MAC security]
   \label{thm:uhf-mac}
   \uses{def:uhf}
-  \lean{CatCryptCore.Examples.UniversalHash.boolPairwiseHash_is_universal, CatCryptCore.Examples.UniversalHash.boolHash_forge_advantage, CatCryptCore.Examples.UniversalHash.boolPairwiseHash_mac_security}
+  \lean{CatCryptCore.Examples.UniversalHash.boolPairwiseHash_is_universal, CatCryptCore.Examples.UniversalHash.boolHash_forge_prob_le, CatCryptCore.Examples.UniversalHash.boolPairwiseHash_mac_security}
   \leanok
-  The $\Bool$ family is $1/2$-universal, and the one-time forgery advantage on a
-  message other than the queried one is at most $1/2$.
+  The $\Bool$ family is $1/2$-universal, and an adversary that sees the tag of
+  one message forges a tag on another message with probability at most $1/2$.
 \end{theorem}
 
 \section{A hybrid argument for XOR encryption}

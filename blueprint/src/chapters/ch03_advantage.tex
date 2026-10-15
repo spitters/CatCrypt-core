@@ -378,13 +378,13 @@ monoidal subcategory of the Kleisli category, and game hopping composes within i
   \uses{def:macscheme, def:prtrue}
   \lean{CatCrypt.Crypto.SecurityDefs.EUF_CMA_Adv}
   \leanok
-  In the single-query EUF-CMA game, the adversary sees a tag on a message $m$ and
-  submits a forgery $(m^{*}, t^{*})$; the game returns whether the forgery verifies.
-  The advantage is the acceptance probability of the forgery composed with the
-  adversary:
+  In the EUF-CMA game a key $k$ is sampled, the adversary queries a tagging
+  oracle $m \mapsto \mathsf{mac}(k, m)$ adaptively and outputs a forgery
+  $(m^{*}, t^{*})$; the game returns whether the forgery verifies under $k$ and
+  $m^{*}$ was not queried. The advantage is the probability that the game
+  returns $\mathsf{true}$:
   \[
-    \mathsf{EUF\text{-}CMA\text{-}Adv}(M, m, m^{*}, t^{*}, A)
-      \;=\; \Pr[\mathsf{EUF\_CMA\_Real}\,M\,m\,m^{*}\,t^{*} \bind A \Downarrow \mathsf{true}
-        \mid \mathrm{Heap.empty}].
+    \mathsf{EUF\text{-}CMA\text{-}Adv}(M, A)
+      \;=\; \Pr[\mathsf{EUF\_CMA\_Real}\,M\,A = \mathsf{true}].
   \]
 \end{definition}

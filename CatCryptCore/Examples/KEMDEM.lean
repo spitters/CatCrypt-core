@@ -54,13 +54,17 @@ The distinguishing advantage against the composed PKE-CPA game is bounded by
 
 via three game hops (`pke_security`): swap the encapsulated key for a random
 key (KEM), swap the payload for a null message (DEM), swap the random key back
-(KEM). When both components are *perfectly* secure the composition is perfectly
-secure (`pke_perfect_security`): every advantage collapses to `0`.
+(KEM). When the DEM is perfectly secure the DEM term is `0`
+(`pke_security_of_perfectDEM`), and the bound consists of the two KEM terms.
 
 As a concrete instance, `BoolXorDEM` (the one-time-pad DEM over `Bool`) is
-perfectly DEM-secure via the XOR bijection coupling; composing it with any
-perfectly-secure KEM gives a perfectly-secure hybrid PKE
-(`xorHybrid_perfect_security`).
+perfectly DEM-secure via the XOR bijection coupling; composed with any KEM the
+hybrid PKE advantage is bounded by two KEM-CPA advantages
+(`xorHybrid_advantage_le`).
+
+Perfect KEM-CPA security (equality of the real and ideal KEM games) is not used:
+for a correct KEM the encapsulated key is a function of `(pk, ek)` on the
+support, so equality with a uniform independent key forces `|Key| = 1`.
 
 ## Main definitions
 
@@ -72,9 +76,11 @@ perfectly-secure KEM gives a perfectly-secure hybrid PKE
 
 * `hybridPKE_correct` — correctness of the composition from component correctness.
 * `pke_security` — the three-term hybrid bound `Adv_PKE ≤ Adv_KEM + Adv_DEM + Adv_KEM`.
-* `pke_perfect_security` — perfect KEM + perfect DEM ⇒ perfect PKE.
+* `pke_security_of_perfectDEM` — with a perfectly secure DEM,
+  `Adv_PKE ≤ Adv_KEM + Adv_KEM`.
 * `boolXorDEM_perfect` — the XOR DEM is perfectly DEM-secure (XOR-bijection coupling).
-* `xorHybrid_perfect_security` — perfect hybrid PKE from a perfect KEM and the XOR DEM.
+* `xorHybrid_advantage_le` — the hybrid PKE with the XOR DEM has advantage at
+  most the sum of two KEM-CPA advantages.
 
 ## References
 
@@ -265,10 +271,6 @@ noncomputable def KEM_CPA_Advantage
     (KEM : KEMScheme PKey SKey Key EKey)
     (A : PKey × EKey × Key → SPComp Bool) : ℝ≥0∞ :=
   AdvantageA (KEM_CPA_real KEM) (KEM_CPA_ideal KEM) A
-
-/-- Perfect KEM-CPA security: the real and ideal games are perfectly coupled. -/
-def PerfectKEM_CPA (KEM : KEMScheme PKey SKey Key EKey) : Prop :=
-  rHoare eqPre (KEM_CPA_real KEM) (KEM_CPA_ideal KEM) eqPost
 
 end KEM_CPA
 
@@ -567,9 +569,9 @@ theorem pke_security
   unfold PKE_CPA_Advantage
   hop_chain
 
-/-! ## Corollary: Perfect Security
+/-! ## Corollary: Perfectly Secure DEM
 
-If both components are perfectly secure, so is the composition.
+If the DEM is perfectly secure, the DEM term of `pke_security` is `0`.
 -/
 
 /-- `eqPost`-coupling implies `Eq`-coupling on `α × Heap` pairs. -/
@@ -590,38 +592,6 @@ theorem eq_to_eqPost {α : Type*} {d₁ d₂ : SDistr (α × Heap)}
   simp only [Prod.mk.injEq] at heq
   simp only [eqPost]
   exact heq
-
-theorem pke_real_eq_hybrid1
-    {PKey SKey Key EKey Plain Cipher : Type}
-    [Fintype Key] [Nonempty Key]
-    [Fintype EKey] [Nonempty EKey]
-    [Fintype Cipher] [Nonempty Cipher]
-    (KEM : KEMScheme PKey SKey Key EKey)
-    (DEM : DEMScheme Key Plain Cipher)
-    (m : Plain)
-    (hKEM : PerfectKEM_CPA KEM) :
-    rHoare eqPre (PKE_CPA_real (HybridPKE KEM DEM) m) (HybridGame1 KEM DEM m) eqPost := by
-  intro h₁ h₂ hheq
-  simp only [eqPre] at hheq
-  subst hheq
-  have hkem_eq := liftR_eq_implies_eq (eqPost_to_eq (hKEM h₁ h₁ rfl))
-  have h_prog_eq : (PKE_CPA_real (HybridPKE KEM DEM) m) h₁ = (HybridGame1 KEM DEM m) h₁ := by
-    have h1 : (PKE_CPA_real (HybridPKE KEM DEM) m) h₁ =
-        (KEM_CPA_real KEM h₁).bind (fun ⟨⟨pk, ek, k⟩, h⟩ => SDistr.pure ((pk, ek, DEM.enc k m), h)) := by
-      unfold PKE_CPA_real HybridPKE KEM_CPA_real
-      simp only [SPComp.monad_bind_eq, SPComp.bind_def, SDistr.bind_assoc]
-      bind_align
-      simp_all [SPComp.pure, SDistr.pure_bind]
-    have h2 : (HybridGame1 KEM DEM m) h₁ =
-        (KEM_CPA_ideal KEM h₁).bind (fun ⟨⟨pk, ek, k⟩, h⟩ => SDistr.pure ((pk, ek, DEM.enc k m), h)) := by
-      unfold HybridGame1 KEM_CPA_ideal
-      simp only [SPComp.monad_bind_eq, SPComp.bind_def, SDistr.bind_assoc]
-      bind_align
-      simp_all [SPComp.pure, SDistr.pure_bind]
-    simp_all
-  rw [h_prog_eq]
-  apply eq_to_eqPost
-  exact liftR_refl _
 
 theorem hybrid1_eq_hybrid2
     {PKey SKey Key EKey Plain Cipher : Type}
@@ -664,47 +634,11 @@ theorem hybrid1_eq_hybrid2
   apply eq_to_eqPost
   exact liftR_refl _
 
-theorem hybrid2_eq_pke_ideal
-    {PKey SKey Key EKey Plain Cipher : Type}
-    [Fintype Key] [Nonempty Key]
-    [Fintype EKey] [Nonempty EKey]
-    [Fintype Cipher] [Nonempty Cipher]
-    (KEM : KEMScheme PKey SKey Key EKey)
-    (DEM : DEMScheme Key Plain Cipher)
-    (nullPlain : Plain)
-    (m : Plain)
-    (hKEM : PerfectKEM_CPA KEM) :
-    rHoare eqPre (HybridGame2 KEM DEM nullPlain m) (PKE_CPA_ideal (HybridPKE KEM DEM) nullPlain m) eqPost := by
-  intro h₁ h₂ hheq
-  simp only [eqPre] at hheq
-  subst hheq
-  have hkem_eq_all : ∀ h, (KEM_CPA_real KEM) h = (KEM_CPA_ideal KEM) h := by
-    intro h
-    exact liftR_eq_implies_eq (eqPost_to_eq (hKEM h h rfl))
-  have h_prog_eq : (HybridGame2 KEM DEM nullPlain m) h₁ = (PKE_CPA_ideal (HybridPKE KEM DEM) nullPlain m) h₁ := by
-    have h1 : (HybridGame2 KEM DEM nullPlain m) h₁ =
-        (KEM_CPA_ideal KEM h₁).bind (fun ⟨⟨pk, ek, k⟩, h⟩ =>
-          SDistr.pure ((pk, ek, DEM.enc k nullPlain), h)) := by
-      unfold HybridGame2 KEM_CPA_ideal
-      simp only [SPComp.monad_bind_eq, SPComp.bind_def, SDistr.bind_assoc]
-      bind_align
-      simp_all [SPComp.pure, SDistr.pure_bind]
-    have h2 : (PKE_CPA_ideal (HybridPKE KEM DEM) nullPlain m) h₁ =
-        (KEM_CPA_real KEM h₁).bind (fun ⟨⟨pk, ek, k⟩, h⟩ =>
-          SDistr.pure ((pk, ek, DEM.enc k nullPlain), h)) := by
-      unfold PKE_CPA_ideal HybridPKE KEM_CPA_real
-      simp only [SPComp.monad_bind_eq, SPComp.bind_def, SDistr.bind_assoc]
-      bind_align
-      simp_all [SPComp.pure, SDistr.pure_bind]
-    simp_all
-  rw [h_prog_eq]
-  apply eq_to_eqPost
-  exact liftR_refl _
+/-- **KEM-DEM security with a perfectly secure DEM**: the hybrid PKE-CPA
+advantage is bounded by the two KEM-CPA advantages of `pke_security`,
 
-/-- **Perfect KEM-DEM security**: if the KEM and DEM are perfectly secure, then
-the hybrid PKE is perfectly secure. Proved by transitivity through the hybrid
-games `PKE_real ≈ Hybrid1 ≈ Hybrid2 ≈ PKE_ideal`. -/
-theorem pke_perfect_security
+  `Adv_PKE(A) ≤ Adv_KEM(ReductionKEM1 A) + Adv_KEM(ReductionKEM2 A)`. -/
+theorem pke_security_of_perfectDEM
     {PKey SKey Key EKey Plain Cipher : Type}
     [Fintype Key] [Nonempty Key]
     [Fintype EKey] [Nonempty EKey]
@@ -712,23 +646,23 @@ theorem pke_perfect_security
     (KEM : KEMScheme PKey SKey Key EKey)
     (DEM : DEMScheme Key Plain Cipher)
     (nullPlain : Plain)
-    (hKEM : PerfectKEM_CPA KEM)
     (hDEM : PerfectDEM_CPA DEM nullPlain)
-    : PerfectPKE_CPA (HybridPKE KEM DEM) nullPlain := by
-  intro m
-  apply rHoare_trans _ (HybridGame1 KEM DEM m)
-  · exact pke_real_eq_hybrid1 KEM DEM m hKEM
-  · apply rHoare_trans _ (HybridGame2 KEM DEM nullPlain m)
-    · exact hybrid1_eq_hybrid2 KEM DEM nullPlain m hDEM
-    · exact hybrid2_eq_pke_ideal KEM DEM nullPlain m hKEM
+    (m : Plain)
+    (A : PKey × EKey × Cipher → SPComp Bool) :
+    PKE_CPA_Advantage (HybridPKE KEM DEM) nullPlain m A ≤
+      KEM_CPA_Advantage KEM (ReductionKEM1 DEM m A) +
+      KEM_CPA_Advantage KEM (ReductionKEM2 DEM nullPlain A) := by
+  have h := pke_security KEM DEM nullPlain m A
+  rwa [show DEM_CPA_Advantage DEM nullPlain m (ReductionDEM KEM A) = 0 from
+    advantage_zero_of_rHoare _ _ (hDEM m) _, add_zero] at h
 
 /-! ## XOR-DEM Instantiation: Perfect Security
 
 The one-time-pad DEM over `Bool` (`enc k m = k ⊕ m`) is perfectly DEM-secure:
 encrypting the real message and encrypting the null message `false` are both
 uniform over the sampled key, so they couple through the XOR bijection
-(`Prob/XorBij`). Composed with any perfectly-secure KEM, the hybrid PKE has
-advantage exactly `0`.
+(`Prob/XorBij`). Composed with any KEM, the hybrid PKE advantage is bounded by
+the two KEM-CPA advantages.
 -/
 
 /-- The XOR (one-time-pad) DEM over `Bool`: `enc k m = k ⊕ m`, `dec k c = k ⊕ c`. -/
@@ -752,27 +686,18 @@ theorem boolXorDEM_perfect : PerfectDEM_CPA BoolXorDEM false := by
     SPComp.monad_pure_eq]
   ssprove_couple_bij (boolXorBij m)
 
-/-- **Perfect hybrid PKE from the XOR DEM**: composing any perfectly-secure KEM
-with the one-time-pad DEM over `Bool` yields a perfectly-secure hybrid PKE —
-every distinguisher has advantage exactly `0`. -/
-theorem xorHybrid_perfect_security
+/-- **Hybrid PKE with the XOR DEM**: composing any KEM with the one-time-pad
+DEM over `Bool` gives a hybrid PKE whose advantage is at most the sum of the
+two KEM-CPA advantages of `pke_security_of_perfectDEM`. -/
+theorem xorHybrid_advantage_le
     {PKey SKey EKey : Type}
     [Fintype EKey] [Nonempty EKey]
     (KEM : KEMScheme PKey SKey Bool EKey)
-    (hKEM : PerfectKEM_CPA KEM) :
-    PerfectPKE_CPA (HybridPKE KEM BoolXorDEM) false :=
-  pke_perfect_security KEM BoolXorDEM false hKEM boolXorDEM_perfect
-
-/-- The XOR-hybrid PKE is perfectly indistinguishable, so **every adversary's
-distinguishing advantage is exactly `0`**. -/
-theorem xorHybrid_advantage_zero
-    {PKey SKey EKey : Type}
-    [Fintype EKey] [Nonempty EKey]
-    (KEM : KEMScheme PKey SKey Bool EKey)
-    (hKEM : PerfectKEM_CPA KEM)
     (m : Bool)
     (A : PKey × EKey × Bool → SPComp Bool) :
-    PKE_CPA_Advantage (HybridPKE KEM BoolXorDEM) false m A = 0 :=
-  advantage_zero_of_rHoare _ _ (xorHybrid_perfect_security KEM hKEM m) A
+    PKE_CPA_Advantage (HybridPKE KEM BoolXorDEM) false m A ≤
+      KEM_CPA_Advantage KEM (ReductionKEM1 BoolXorDEM m A) +
+      KEM_CPA_Advantage KEM (ReductionKEM2 BoolXorDEM false A) :=
+  pke_security_of_perfectDEM KEM BoolXorDEM false boolXorDEM_perfect m A
 
 end CatCrypt.Examples.KEMDEM
