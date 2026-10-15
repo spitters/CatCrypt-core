@@ -295,11 +295,7 @@ theorem exists_loopJoint_ne_zero
       body₁ body₂ (fun _ h₁ _ h₂ => I h₁ h₂)} {h₁ h₂ : Heap}
     {x : (Unit × Heap) × (Unit × Heap)} (hne : loopJointLim hbody h₁ h₂ (some x) ≠ 0) :
     ∃ n, loopJoint guard₁ (bodyJoint hbody) n h₁ h₂ (some x) ≠ 0 := by
-  by_contra hcon
-  push Not at hcon
-  refine hne ?_
-  simp only [loopJointLim, mlim_apply_some]
-  simpa using iSup_eq_bot.mpr hcon
+  simp_all [loopJointLim, mlim_apply_some]
 
 /-- The left marginal of the limit is the left loop. -/
 theorem loopJointLim_bind_fst
