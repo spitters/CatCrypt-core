@@ -8,6 +8,7 @@ module
 public import CatCryptCore.ForMathlib.GradeQuantale
 public import CatCryptCore.ForMathlib.GaloisRing
 public import CatCryptCore.ForMathlib.Matrix.Hermitian
+public import CatCryptCore.ForMathlib.Matrix.ProjectorRewinding
 
 /-!
 # Lemmas for Mathlib
