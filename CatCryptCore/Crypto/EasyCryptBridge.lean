@@ -74,8 +74,7 @@ theorem pRHL_to_UCEmulates {hon out leak view : Type*}
     (h : ∀ (a : hon), rHoare eqPre (π a) (F a) eqPost) :
     UCEmulates 0 ⟨hon, out, leak, leak, view⟩ π F := by
   have h_eq : π = F := pRHL_eq_implies_prog_eq π F h
-  rw [h_eq]
-  exact UCEmulates_refl F
+  simp [h_eq, UCEmulates_refl]
 
 /-- sdist bound → UCEmulates, same interface, via `UCEmulates_of_sdist`.
 (composition plumbing) -/
@@ -165,7 +164,7 @@ theorem ModuleRefines_chain {hon out leak view : Type*}
 theorem sdist_zero_of_eq {α β : Type*}
     (f g : α → SPComp β) (h : ∀ (a : α), f a = g a) :
     sdist f g = 0 := by
-  rw [show f = g from funext h, sdist_self]
+  simp_all [show f = g from funext h, sdist_self]
 
 /-- pRHL at all inputs → ModuleRefines at 0. -/
 theorem pRHL_to_ModuleRefines {hon β : Type*}
@@ -197,7 +196,7 @@ theorem module_hybrid_bound {α β : Type*} (n : ℕ)
           + sdist (games (Fin.last n).castSucc) (games (Fin.last (n + 1))) :=
           sdist_triangle _ _ _
       _ ≤ ↑n * ε + ε := add_le_add h_ih h_last
-      _ = (↑n + 1) * ε := by rw [add_mul, one_mul]
+      _ = (↑n + 1) * ε := by simp_all [add_mul, one_mul]
       _ = ↑(n + 1) * ε := by push_cast; ring
 
 end CatCrypt.Crypto.EasyCryptBridge
