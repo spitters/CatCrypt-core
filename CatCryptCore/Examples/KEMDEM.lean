@@ -13,6 +13,7 @@ public import CatCryptCore.Tactics.Basic
 public import CatCryptCore.Tactics.BindAlign
 public import CatCryptCore.Tactics.Sim
 public import CatCryptCore.Prob.XorBij
+public import CatCryptCore.Tactics.AutoMetrics
 
 
 @[expose] public section
@@ -564,7 +565,7 @@ theorem pke_security
     (HybridGame2 KEM DEM nullPlain m) (PKE_CPA_ideal (HybridPKE KEM DEM) nullPlain m) A
   rw [hop1, hop2, hop3] at hbound
   unfold PKE_CPA_Advantage
-  exact hbound
+  hop_chain
 
 /-! ## Corollary: Perfect Security
 
@@ -610,14 +611,14 @@ theorem pke_real_eq_hybrid1
       unfold PKE_CPA_real HybridPKE KEM_CPA_real
       simp only [SPComp.monad_bind_eq, SPComp.bind_def, SDistr.bind_assoc]
       bind_align
-      simp [SPComp.pure, SDistr.pure_bind]
+      simp_all [SPComp.pure, SDistr.pure_bind]
     have h2 : (HybridGame1 KEM DEM m) h₁ =
         (KEM_CPA_ideal KEM h₁).bind (fun ⟨⟨pk, ek, k⟩, h⟩ => SDistr.pure ((pk, ek, DEM.enc k m), h)) := by
       unfold HybridGame1 KEM_CPA_ideal
       simp only [SPComp.monad_bind_eq, SPComp.bind_def, SDistr.bind_assoc]
       bind_align
-      simp [SPComp.pure, SDistr.pure_bind]
-    rw [h1, h2, hkem_eq]
+      simp_all [SPComp.pure, SDistr.pure_bind]
+    simp_all
   rw [h_prog_eq]
   apply eq_to_eqPost
   exact liftR_refl _
@@ -645,7 +646,7 @@ theorem hybrid1_eq_hybrid2
       unfold HybridGame1 DEM_CPA_real
       simp only [SPComp.monad_bind_eq, SPComp.bind_def, SDistr.bind_assoc]
       bind_align
-      simp [SPComp.pure, SDistr.pure_bind]
+      simp_all [SPComp.pure, SDistr.pure_bind]
     have h2 : (HybridGame2 KEM DEM nullPlain m) h₁ =
         (KEM.kgen h₁).bind (fun ⟨⟨pk, _sk⟩, h⟩ =>
           (KEM.encap pk h).bind (fun ⟨⟨_, ek⟩, h'⟩ =>
@@ -654,11 +655,11 @@ theorem hybrid1_eq_hybrid2
       unfold HybridGame2 DEM_CPA_ideal
       simp only [SPComp.monad_bind_eq, SPComp.bind_def, SDistr.bind_assoc]
       bind_align
-      simp [SPComp.pure, SDistr.pure_bind]
+      simp_all [SPComp.pure, SDistr.pure_bind]
     have hdem_eq_all : ∀ h, (DEM_CPA_real DEM m) h = (DEM_CPA_ideal DEM nullPlain m) h := by
       intro h
       exact liftR_eq_implies_eq (eqPost_to_eq ((hDEM m) h h rfl))
-    rw [h1, h2]; simp only [hdem_eq_all]
+    simp_all
   rw [h_prog_eq]
   apply eq_to_eqPost
   exact liftR_refl _
@@ -687,15 +688,15 @@ theorem hybrid2_eq_pke_ideal
       unfold HybridGame2 KEM_CPA_ideal
       simp only [SPComp.monad_bind_eq, SPComp.bind_def, SDistr.bind_assoc]
       bind_align
-      simp [SPComp.pure, SDistr.pure_bind]
+      simp_all [SPComp.pure, SDistr.pure_bind]
     have h2 : (PKE_CPA_ideal (HybridPKE KEM DEM) nullPlain m) h₁ =
         (KEM_CPA_real KEM h₁).bind (fun ⟨⟨pk, ek, k⟩, h⟩ =>
           SDistr.pure ((pk, ek, DEM.enc k nullPlain), h)) := by
       unfold PKE_CPA_ideal HybridPKE KEM_CPA_real
       simp only [SPComp.monad_bind_eq, SPComp.bind_def, SDistr.bind_assoc]
       bind_align
-      simp [SPComp.pure, SDistr.pure_bind]
-    rw [h1, h2, hkem_eq_all h₁]
+      simp_all [SPComp.pure, SDistr.pure_bind]
+    simp_all
   rw [h_prog_eq]
   apply eq_to_eqPost
   exact liftR_refl _
