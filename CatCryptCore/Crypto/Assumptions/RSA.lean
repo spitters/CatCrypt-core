@@ -101,7 +101,6 @@ theorem RSA_Game_Real_isPure (D : RSADef W) (A : RSA_Adversary W)
   unfold RSA_Game_Real
   apply SPComp.bind_isPure D.keygen_isPure; intro ⟨_, pk⟩
   apply SPComp.bind_isPure (SPComp.sample_isPure _); intro x
-  apply SPComp.bind_isPure (hA pk _); intro x'
-  exact SPComp.pure_isPure _
+  simp_all [SPComp.bind_isPure, SPComp.pure_isPure]
 
 end CatCrypt.Crypto.Assumptions
