@@ -7,6 +7,7 @@ module
 
 public import CatCryptCore.Crypto.Advantage
 public import CatCryptCore.Crypto.CryptoWord
+public import CatCryptCore.Crypto.ForkingLemma
 public import CatCryptCore.Tactics
 
 /-!
@@ -18,29 +19,40 @@ SLH-DSA.
 
 ## Main definitions
 
-### Search-style CR (standard)
-* `HashScheme` — abstract hash function with typed input/output
-* `CR_Search_Game` — adversary finds two inputs with the same hash
+### Search-style CR (keyed family)
+* `HashScheme` — keyed hash family `hash : Key → Input → Output`; every game samples
+  the key and gives it to the adversary
+* `CR_Search_Game` — adversary finds two inputs with the same hash under the sampled key
 * `CR_Search_Advantage` — probability of finding a collision
-* `CRSearchSecure` — CR hardness assumption
 
 ### Distinguishing-style CR (for game-hopping)
 * `CRDef` — compression function with keyed input sampling
 * `CR_Dist_Game_Real` / `CR_Dist_Game_Ideal` — real/ideal games
 * `CR_Dist_Advantage` — distinguishing advantage
 
-### Target Collision Resistance (TCR)
-* `TCR_Game` — adversary finds a second preimage for a given target
+### Second-preimage resistance on a random target (TCR)
+* `TCR_Game` — adversary receives the key and a random `x`, finds `x' ≠ x` with the
+  same hash
 * `TCR_Advantage` — probability of finding a target collision
 
 ### Preimage Resistance (Pre)
-* `Pre_Game` — adversary inverts the hash on a random output
+* `Pre_Game` — adversary inverts the hash on the image of a random input
 * `Pre_Advantage` — probability of finding a preimage
-* `PreSecure` — preimage resistance assumption
 
 ### Reductions
-* `CRSecure_implies_TCRSecure` — CR implies TCR (Rogaway-Shrimpton Prop. 7)
-* `CRSecure_implies_PreSecure` — CR implies Pre for fixed-length hashes (KL Prop. 8.4)
+* `tcrToCR`, `tcr_eq_cr` — `TCR_Advantage h A = CR_Search_Advantage h (tcrToCR h A)`
+  (Rogaway-Shrimpton Prop. 7)
+* `preToCR`, `pre_le_cr` —
+  `Pre_Advantage h A ≤ CR_Search_Advantage h (preToCR h A) + |Output| / |Input|`
+  (KL Prop. 8.4)
+
+The hash was previously an unkeyed function `Input → Output`. For a compressing unkeyed
+function a constant adversary outputs a fixed collision, so the former classes
+`CRSearchSecure h ε`, `TCRSecure h ε`, `PreSecure h ε` (`∀ A, … ≤ ε`) could hold only for
+`ε ≥ 1`, and `CRImpliesPre` had the conclusion of `CRSecure_implies_PreSecure` as its only
+field. These classes and the theorems `CRSecure_implies_TCRSecure` and
+`CRSecure_implies_PreSecure` are removed; `tcr_eq_cr` and `pre_le_cr` replace the
+theorems.
 
 ## Cross-Validation
 
@@ -50,8 +62,8 @@ SLH-DSA.
 | CR (distinguishing) | `CR_Dist_Game` | — | §8.1 | — |
 | TCR | `TCR_Game` | Def. 5 | — | §8.1 |
 | Pre | `Pre_Game` | Def. 3 | §8.1 | §8.1 |
-| CR⟹TCR | `CRSecure_implies_TCRSecure` | Prop. 7 | — | Prop. 8.3 |
-| CR⟹Pre | `CRSecure_implies_PreSecure` | — | — | Prop. 8.4 |
+| CR⟹TCR | `tcr_eq_cr` | Prop. 7 | — | Prop. 8.3 |
+| CR⟹Pre | `pre_le_cr` | — | — | Prop. 8.4 |
 
 **Equivalent formalizations:**
 - EasyCrypt: `CRHash.ec` (search CR + indistinguishability variant),
@@ -77,42 +89,48 @@ open scoped ENNReal
 
 /-! ## Hash Function Scheme -/
 
-/-- Abstract hash function with typed input and output. -/
+/-- Keyed hash family with typed key, input and output. The key is sampled uniformly in
+    each game and given to the adversary. -/
 structure HashScheme where
+  /-- Key type -/
+  Key : Type
   /-- Input type -/
   Input : Type
   /-- Output type -/
   Output : Type
+  [instFintypeKey : Fintype Key]
+  [instNeKey : Nonempty Key]
   [instFintypeOut : Fintype Output]
   [instNeOut : Nonempty Output]
   [instDecEqOut : DecidableEq Output]
   [instDecEqIn : DecidableEq Input]
-  /-- The hash function -/
-  hash : Input → Output
+  /-- The hash function under key `k` -/
+  hash : Key → Input → Output
 
-attribute [instance] HashScheme.instFintypeOut HashScheme.instNeOut
+attribute [instance] HashScheme.instFintypeKey HashScheme.instNeKey
+  HashScheme.instFintypeOut HashScheme.instNeOut
   HashScheme.instDecEqOut HashScheme.instDecEqIn
 
 /-! ## Search-Style Collision Resistance
 
-The standard formulation: adversary produces two distinct inputs that
-hash to the same output. -/
+The standard formulation: given the key, the adversary produces two distinct inputs
+that hash to the same output. -/
 
-/-- CR search game: adversary finds a collision `(x₁, x₂)` with
-    `hash(x₁) = hash(x₂)` and `x₁ ≠ x₂`. -/
-noncomputable def CR_Search_Game (h : HashScheme)
-    (A : SPComp (h.Input × h.Input)) : SPComp Bool := do
-  let ⟨x₁, x₂⟩ ← A
-  SPComp.pure (decide (h.hash x₁ = h.hash x₂ ∧ x₁ ≠ x₂))
+/-- CR search adversary: given the key, output a candidate collision. -/
+abbrev CR_Search_Adversary (h : HashScheme) := h.Key → SPComp (h.Input × h.Input)
+
+/-- CR search game: sample `k`, the adversary finds `(x₁, x₂)` with
+    `hash k x₁ = hash k x₂` and `x₁ ≠ x₂`. -/
+noncomputable def CR_Search_Game (h : HashScheme) (A : CR_Search_Adversary h) :
+    SPComp Bool := do
+  let k ← SPComp.sample h.Key
+  let ⟨x₁, x₂⟩ ← A k
+  SPComp.pure (decide (h.hash k x₁ = h.hash k x₂ ∧ x₁ ≠ x₂))
 
 /-- CR search advantage: probability that adversary finds a collision. -/
-noncomputable def CR_Search_Advantage (h : HashScheme)
-    (A : SPComp (h.Input × h.Input)) : ℝ≥0∞ :=
+noncomputable def CR_Search_Advantage (h : HashScheme) (A : CR_Search_Adversary h) :
+    ℝ≥0∞ :=
   prTrue (CR_Search_Game h A) Heap.empty
-
-/-- CR hardness (search form). -/
-class CRSearchSecure (h : HashScheme) (ε : ℝ≥0∞) : Prop where
-  cr_bound : ∀ A, CR_Search_Advantage h A ≤ ε
 
 /-! ## Distinguishing-Style Collision Resistance
 
@@ -156,137 +174,193 @@ noncomputable def CR_Dist_Advantage (C : CRDef W) (A : CR_Dist_Adversary W) :
     ℝ≥0∞ :=
   Advantage (CR_Dist_Game_Real C A) (CR_Dist_Game_Ideal C A)
 
-/-! ## Target Collision Resistance (TCR)
+/-! ## Second-Preimage Resistance on a Random Target (TCR)
 
-Second-preimage resistance: given `x`, find `x' ≠ x` with
-`hash(x') = hash(x)`. Weaker than CR. -/
+Given the key and a uniformly random `x`, find `x' ≠ x` with `hash k x' = hash k x`.
+Weaker than CR. -/
 
-/-- TCR game: adversary receives `(x, hash(x))` and must find `x' ≠ x`
-    with `hash(x') = hash(x)`. -/
-noncomputable def TCR_Game (h : HashScheme) [SampleableType h.Input]
-    (A : h.Input → h.Output → SPComp h.Input) : SPComp Bool := do
+section Finite
+
+variable (h : HashScheme) [Fintype h.Input] [Nonempty h.Input]
+
+/-- TCR adversary: given the key, the target `x` and `hash k x`, output `x'`. -/
+abbrev TCR_Adversary := h.Key → h.Input → h.Output → SPComp h.Input
+
+/-- TCR game: sample `k` and `x`, the adversary receives `(k, x, hash k x)` and must find
+    `x' ≠ x` with `hash k x' = hash k x`. -/
+noncomputable def TCR_Game (A : TCR_Adversary h) : SPComp Bool := do
+  let k ← SPComp.sample h.Key
   let x ← SPComp.sample h.Input
-  let y := h.hash x
-  let x' ← A x y
-  SPComp.pure (decide (h.hash x' = y ∧ x' ≠ x))
+  let y := h.hash k x
+  let x' ← A k x y
+  SPComp.pure (decide (h.hash k x' = y ∧ x' ≠ x))
 
 /-- TCR advantage: probability of finding a target collision. -/
-noncomputable def TCR_Advantage (h : HashScheme) [SampleableType h.Input]
-    (A : h.Input → h.Output → SPComp h.Input) : ℝ≥0∞ :=
+noncomputable def TCR_Advantage (A : TCR_Adversary h) : ℝ≥0∞ :=
   prTrue (TCR_Game h A) Heap.empty
-
-/-- TCR hardness assumption. -/
-class TCRSecure (h : HashScheme) [SampleableType h.Input] (ε : ℝ≥0∞) : Prop where
-  tcr_bound : ∀ A, TCR_Advantage h A ≤ ε
 
 /-! ## Preimage Resistance (Pre)
 
-Given a hash output y = hash(x) for random x, find any x' with hash(x') = y.
+Given the key and `y = hash k x` for random `x`, find any `x'` with `hash k x' = y`.
 Weaker than both CR and TCR. -/
 
-/-- Pre game: sample random `x`, give `hash(x)` to adversary, check if
-    adversary's output `x'` satisfies `hash(x') = hash(x)`. -/
-noncomputable def Pre_Game (h : HashScheme) [SampleableType h.Input]
-    (A : h.Output → SPComp h.Input) : SPComp Bool := do
+/-- Pre adversary: given the key and an output, output a candidate preimage. -/
+abbrev Pre_Adversary := h.Key → h.Output → SPComp h.Input
+
+/-- Pre game: sample `k` and `x`, give `(k, hash k x)` to the adversary, check whether
+    its output `x'` satisfies `hash k x' = hash k x`. -/
+noncomputable def Pre_Game (A : Pre_Adversary h) : SPComp Bool := do
+  let k ← SPComp.sample h.Key
   let x ← SPComp.sample h.Input
-  let y := h.hash x
-  let x' ← A y
-  SPComp.pure (decide (h.hash x' = y))
+  let y := h.hash k x
+  let x' ← A k y
+  SPComp.pure (decide (h.hash k x' = y))
 
 /-- Pre advantage: probability of finding a preimage. -/
-noncomputable def Pre_Advantage (h : HashScheme) [SampleableType h.Input]
-    (A : h.Output → SPComp h.Input) : ℝ≥0∞ :=
+noncomputable def Pre_Advantage (A : Pre_Adversary h) : ℝ≥0∞ :=
   prTrue (Pre_Game h A) Heap.empty
-
-/-- Preimage resistance hardness assumption. -/
-class PreSecure (h : HashScheme) [SampleableType h.Input] (ε : ℝ≥0∞) : Prop where
-  pre_bound : ∀ A, Pre_Advantage h A ≤ ε
 
 /-! ## Reductions -/
 
-/-- CR implies TCR: a collision finder trivially finds target collisions.
-    Given a target `x` and `hash(x)`, a CR adversary can find `x' ≠ x` with
-    `hash(x') = hash(x)` by finding any collision and checking if one
-    element matches.
+/-- CR adversary from a TCR adversary: sample `x`, run `A k x (hash k x)` to get `x'`,
+    output `(x, x')`. -/
+noncomputable def tcrToCR (A : TCR_Adversary h) : CR_Search_Adversary h :=
+  fun k => do
+    let x ← SPComp.sample h.Input
+    let x' ← A k x (h.hash k x)
+    SPComp.pure (x, x')
 
-    Bound: `TCR_Advantage ≤ CR_Search_Advantage`.
+/-- **CR ⟹ TCR** (Rogaway-Shrimpton 2004 Prop. 7, KL Prop. 8.3). The CR game of
+    `tcrToCR h A` is the TCR game of `A`, so
+    `TCR_Advantage h A = CR_Search_Advantage h (tcrToCR h A)`. -/
+theorem tcr_eq_cr (A : TCR_Adversary h) :
+    TCR_Advantage h A = CR_Search_Advantage h (tcrToCR h A) := by
+  have hgame : CR_Search_Game h (tcrToCR h A) = TCR_Game h A := by
+    unfold CR_Search_Game TCR_Game tcrToCR
+    simp only [SPComp.monad_bind_eq, SPComp.bind_assoc, SPComp.pure_bind]
+    congr 1; funext k
+    congr 1; funext x
+    congr 1; funext x'
+    congr 1
+    exact decide_eq_decide.mpr ⟨fun ⟨h1, h2⟩ => ⟨h1.symm, Ne.symm h2⟩,
+      fun ⟨h1, h2⟩ => ⟨h1.symm, Ne.symm h2⟩⟩
+  unfold TCR_Advantage CR_Search_Advantage
+  rw [hgame]
 
-    Reference: Rogaway-Shrimpton 2004 Prop. 7, Katz-Lindell Prop. 8.3. -/
-theorem CRSecure_implies_TCRSecure (h : HashScheme) [SampleableType h.Input]
-    (ε : ℝ≥0∞) [hCR : CRSearchSecure h ε] : TCRSecure h ε where
-  tcr_bound := fun A => by
-    -- Reduction: given TCR adversary A, construct CR adversary B.
-    -- B samples random x, runs A(x, hash(x)) to get x', outputs (x, x').
-    -- If A finds a target collision (hash(x') = hash(x) ∧ x' ≠ x),
-    -- then (x, x') is a collision for hash.
-    --
-    -- The TCR game IS the CR game with B, so TCR_Advantage A = CR_Search_Advantage B ≤ ε.
-    let B : SPComp (h.Input × h.Input) := do
-      let x ← SPComp.sample h.Input
-      let y := h.hash x
-      let x' ← A x y
-      SPComp.pure (x, x')
-    -- TCR_Advantage A ≤ CR_Search_Advantage B ≤ ε
-    -- The CR_Search_Game with B is: B >>= fun (x₁,x₂) => pure(decide(hash x₁ = hash x₂ ∧ x₁ ≠ x₂))
-    -- Inlining B: sample x >>= A(x, hash x) >>= fun x' => pure(decide(hash x = hash x' ∧ x ≠ x'))
-    -- The TCR_Game with A is: sample x >>= A(x, hash x) >>= fun x' => pure(decide(hash x' = hash x ∧ x' ≠ x))
-    -- These are equal (symmetric equality and inequality).
-    -- Step 1: Show CR_Search_Game h B = TCR_Game h A as SPComp Bool
-    -- CR_Search_Game h B = B >>= fun (x₁,x₂) => pure(decide(hash x₁ = hash x₂ ∧ x₁ ≠ x₂))
-    -- Inline B: (sample >>= fun x => A(x,hash x) >>= fun x' => pure (x,x'))
-    --           >>= fun (x₁,x₂) => pure(decide(hash x₁ = hash x₂ ∧ x₁ ≠ x₂))
-    -- By bind_assoc + pure_bind:
-    --   sample >>= fun x => A(x,hash x) >>= fun x' => pure(decide(hash x = hash x' ∧ x ≠ x'))
-    -- TCR_Game: sample >>= fun x => A(x,hash x) >>= fun x' => pure(decide(hash x' = hash x ∧ x' ≠ x))
-    -- These are equal by symmetry of = and ≠.
-    have hgame : CR_Search_Game h B = TCR_Game h A := by
-      -- Inline B into CR_Search_Game, then flatten with bind_assoc + pure_bind
-      show SPComp.bind B (fun ⟨x₁, x₂⟩ => SPComp.pure (decide (h.hash x₁ = h.hash x₂ ∧ x₁ ≠ x₂))) =
-           SPComp.bind (SPComp.sample h.Input) (fun x =>
-             SPComp.bind (A x (h.hash x)) (fun x' =>
-               SPComp.pure (decide (h.hash x' = h.hash x ∧ x' ≠ x))))
-      show SPComp.bind (SPComp.bind (SPComp.sample h.Input) (fun x =>
-             SPComp.bind (A x (h.hash x)) (fun x' =>
-               SPComp.pure (x, x')))) (fun ⟨x₁, x₂⟩ => SPComp.pure (decide (h.hash x₁ = h.hash x₂ ∧ x₁ ≠ x₂))) =
-           SPComp.bind (SPComp.sample h.Input) (fun x =>
-             SPComp.bind (A x (h.hash x)) (fun x' =>
-               SPComp.pure (decide (h.hash x' = h.hash x ∧ x' ≠ x))))
-      rw [SPComp.bind_assoc]
-      congr 1; funext x
-      rw [SPComp.bind_assoc]
-      congr 1; funext x'
-      simp only [SPComp.pure_bind]
-      grind
-    have hle : TCR_Advantage h A = CR_Search_Advantage h B := by
-      unfold TCR_Advantage CR_Search_Advantage
-      simp_all
-    rw [hle]; exact hCR.cr_bound B
+/-- CR adversary from a Pre adversary: sample `x`, run `A k (hash k x)` to get `x'`,
+    output `(x, x')`. -/
+noncomputable def preToCR (A : Pre_Adversary h) : CR_Search_Adversary h :=
+  fun k => do
+    let x ← SPComp.sample h.Input
+    let x' ← A k (h.hash k x)
+    SPComp.pure (x, x')
 
-/-- CR implies preimage resistance (for fixed-length hash functions).
-    If an adversary can find a preimage `x'` of `y = hash(x)`, then
-    with probability ≥ 1/2, `x' ≠ x`, giving a collision.
+omit [Nonempty h.Input] in
+/-- The events `{c returns x}` for distinct `x` are disjoint, so their probabilities sum
+    to at most `1`. -/
+theorem sum_prTrue_bind_eq_le_one (c : SPComp h.Input) (h₀ : Heap) :
+    ∑ x : h.Input, prTrue (c.bind fun x' => SPComp.pure (decide (x' = x))) h₀ ≤ 1 := by
+  simp only [ForkingLemma.prTrue_bind_eq_weighted]
+  rw [← tsum_fintype (L := SummationFilter.unconditional _), ENNReal.tsum_comm]
+  refine (ENNReal.tsum_le_tsum (g := fun p => (c h₀ : PMF _) p * 1) fun p => ?_).trans ?_
+  · rw [ENNReal.tsum_mul_left]
+    gcongr
+    rcases p with _ | ⟨a, h'⟩
+    · simp
+    · simp [ForkingLemma.prTrue_pure_bool]
+  · simp
 
-    Bound: `Pre_Advantage ≤ CR_Search_Advantage`.
+/-- Union bound for one bind: if `P a` implies `Q a ∨ R a`, the probability that `c`
+    returns a value satisfying `P` is at most the sum of the probabilities for `Q` and
+    `R`. -/
+theorem prTrue_bind_decide_le_add {α : Type} (c : SPComp α) (P Q R : α → Prop)
+    [DecidablePred P] [DecidablePred Q] [DecidablePred R]
+    (hPQR : ∀ a, P a → Q a ∨ R a) (h₀ : Heap) :
+    prTrue (c.bind fun a => SPComp.pure (decide (P a))) h₀ ≤
+      prTrue (c.bind fun a => SPComp.pure (decide (Q a))) h₀ +
+        prTrue (c.bind fun a => SPComp.pure (decide (R a))) h₀ := by
+  simp only [ForkingLemma.prTrue_bind_eq_weighted]
+  rw [← ENNReal.tsum_add]
+  refine ENNReal.tsum_le_tsum fun p => ?_
+  rcases p with _ | ⟨a, h'⟩
+  · simp
+  · simp only [ForkingLemma.prTrue_pure_bool, ← mul_add]
+    gcongr
+    by_cases hP : P a
+    · rcases hPQR a hP with hQ | hR
+      · simp [hP, hQ]
+      · simp [hP, hR]
+    · simp [hP]
 
-    Reference: Katz-Lindell Prop. 8.4.
+/-- **CR ⟹ Pre** (KL Prop. 8.4). For every Pre adversary `A`,
 
-    The compression hypothesis `Fintype.card h.Input > Fintype.card h.Output`
-    is essential: for injective hash, CR holds trivially but Pre may not. -/
-class CRImpliesPre (h : HashScheme) [SampleableType h.Input] : Prop where
-  bound : ∀ {ε} (h_compress : Fintype.card h.Input > Fintype.card h.Output)
-    (hCR : CRSearchSecure h ε) (A : h.Output → SPComp h.Input),
-    Pre_Advantage h A ≤ ε
+    `Pre_Advantage h A ≤ CR_Search_Advantage h (preToCR h A) + |Output| / |Input|`.
 
-theorem CRSecure_implies_PreSecure (h : HashScheme) [SampleableType h.Input] [CRImpliesPre h]
-    (ε : ℝ≥0∞) [hCR : CRSearchSecure h ε]
-    (h_compress : Fintype.card h.Input > Fintype.card h.Output) : PreSecure h ε where
-  pre_bound := fun A => by
-    -- The reduction constructs CR adversary B from Pre adversary A:
-    --   B: sample x, run A(hash(x)) to get x', return (x, x')
-    -- Pre succeeds when hash(x') = hash(x). CR succeeds when additionally x ≠ x'.
-    -- By compression (pigeonhole), hash has collisions, so x' ≠ x w.h.p.
-    -- The formal bound Pre ≤ CR + 1/|Input| requires probability conditioning
-    -- that's captured by the CRImpliesPre typeclass hypothesis.
-    exact CRImpliesPre.bound h_compress inferInstance A
+    `preToCR h A` wins whenever `A` returns a preimage `x'` of `hash k x` with `x' ≠ x`;
+    the remaining event `x' = x` has probability at most `|Output| / |Input|`, since for
+    each output `y` the events `{A k y returns x}` are disjoint. -/
+theorem pre_le_cr (A : Pre_Adversary h) :
+    Pre_Advantage h A ≤ CR_Search_Advantage h (preToCR h A) +
+      (Fintype.card h.Output : ℝ≥0∞) / Fintype.card h.Input := by
+  have hcr : CR_Search_Game h (preToCR h A) =
+      (SPComp.sample h.Key).bind fun k => (SPComp.sample h.Input).bind fun x =>
+        (A k (h.hash k x)).bind fun x' =>
+          SPComp.pure (decide (h.hash k x' = h.hash k x ∧ x' ≠ x)) := by
+    unfold CR_Search_Game preToCR
+    simp only [SPComp.monad_bind_eq, SPComp.bind_assoc, SPComp.pure_bind]
+    congr 1; funext k
+    congr 1; funext x
+    congr 1; funext x'
+    congr 1
+    exact decide_eq_decide.mpr ⟨fun ⟨h1, h2⟩ => ⟨h1.symm, Ne.symm h2⟩,
+      fun ⟨h1, h2⟩ => ⟨h1.symm, Ne.symm h2⟩⟩
+  unfold Pre_Advantage CR_Search_Advantage Pre_Game
+  rw [hcr]
+  simp only [SPComp.monad_bind_eq]
+  rw [prTrue_bind_sample, prTrue_bind_sample]
+  refine weighted_sum_le _ _ _ fun k => ?_
+  rw [prTrue_bind_sample, prTrue_bind_sample]
+  set w := (Fintype.card h.Input : ℝ≥0∞)⁻¹
+  have hE : ∑ x : h.Input,
+      prTrue ((A k (h.hash k x)).bind fun x' => SPComp.pure (decide (x' = x))) Heap.empty ≤
+        Fintype.card h.Output := by
+    calc ∑ x : h.Input,
+          prTrue ((A k (h.hash k x)).bind fun x' => SPComp.pure (decide (x' = x))) Heap.empty
+        ≤ ∑ x : h.Input, ∑ y : h.Output,
+          prTrue ((A k y).bind fun x' => SPComp.pure (decide (x' = x))) Heap.empty :=
+          Finset.sum_le_sum fun x _ => Finset.single_le_sum
+            (f := fun y => prTrue ((A k y).bind fun x' => SPComp.pure (decide (x' = x)))
+              Heap.empty) (fun _ _ => zero_le) (Finset.mem_univ (h.hash k x))
+      _ = ∑ y : h.Output, ∑ x : h.Input,
+          prTrue ((A k y).bind fun x' => SPComp.pure (decide (x' = x))) Heap.empty :=
+          Finset.sum_comm
+      _ ≤ ∑ _y : h.Output, (1 : ℝ≥0∞) :=
+          Finset.sum_le_sum fun y _ => sum_prTrue_bind_eq_le_one h (A k y) Heap.empty
+      _ = Fintype.card h.Output := by simp
+  calc ∑ x : h.Input, w *
+        prTrue ((A k (h.hash k x)).bind fun x' =>
+          SPComp.pure (decide (h.hash k x' = h.hash k x))) Heap.empty
+      ≤ ∑ x : h.Input, (w *
+          prTrue ((A k (h.hash k x)).bind fun x' =>
+            SPComp.pure (decide (h.hash k x' = h.hash k x ∧ x' ≠ x))) Heap.empty +
+        w * prTrue ((A k (h.hash k x)).bind fun x' =>
+            SPComp.pure (decide (x' = x))) Heap.empty) :=
+        Finset.sum_le_sum fun x _ => by
+          rw [← mul_add]
+          gcongr
+          exact prTrue_bind_decide_le_add _ _ _ _
+            (fun x' hx' => (em (x' = x)).symm.imp (fun hne => ⟨hx', hne⟩) id) _
+    _ = ∑ x : h.Input, w *
+          prTrue ((A k (h.hash k x)).bind fun x' =>
+            SPComp.pure (decide (h.hash k x' = h.hash k x ∧ x' ≠ x))) Heap.empty +
+        w * ∑ x : h.Input, prTrue ((A k (h.hash k x)).bind fun x' =>
+            SPComp.pure (decide (x' = x))) Heap.empty := by
+        rw [Finset.sum_add_distrib, Finset.mul_sum]
+    _ ≤ _ := by
+        gcongr
+        rw [ENNReal.div_eq_inv_mul]
+        exact mul_le_mul' le_rfl hE
+
+end Finite
 
 end CatCrypt.Crypto.Assumptions
