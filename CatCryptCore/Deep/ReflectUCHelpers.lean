@@ -98,12 +98,10 @@ theorem spcomp_eq_of_isPure_coupling {α : Type} {G₀ G₁ : SPComp α}
     have hEq : liftR Eq (G₀ Heap.empty) (G₁ Heap.empty) := by
       apply liftR_mono _ hl
       rintro ⟨a₁, k₁⟩ ⟨a₂, k₂⟩ ⟨ha, hk⟩
-      simp only [eqPost] at *
-      subst ha; subst hk; rfl
-    exact liftR_eq_implies_eq hEq
-  have hdd : d₀ = d₁ := by
-    apply push_inj Heap.empty
-    rw [← hd₀ Heap.empty, ← hd₁ Heap.empty]; exact hemp
+      simp_all [eqPost]
+    grind [liftR_eq_implies_eq]
+  have hdd : d₀ = d₁ :=
+    push_inj Heap.empty (by rw [← hd₀ Heap.empty, ← hd₁ Heap.empty]; exact hemp)
   funext h; rw [hd₀ h, hd₁ h, hdd]
 
 /-! ## Advantage / UC packaging -/
@@ -111,8 +109,7 @@ theorem spcomp_eq_of_isPure_coupling {α : Type} {G₀ G₁ : SPComp α}
 /-- The identity distinguisher is a no-op: `AdvantageA g₀ g₁ pure = Advantage g₀ g₁`. -/
 theorem AdvantageA_pure (g₀ g₁ : SPComp Bool) :
     AdvantageA g₀ g₁ SPComp.pure = Advantage g₀ g₁ := by
-  unfold AdvantageA
-  rw [SPComp.bind_pure, SPComp.bind_pure]
+  simp_all [AdvantageA, SPComp.bind_pure]
 
 /-- From a statistical-distance bound on two `SPComp Bool` game families, conclude
     `UCEmulates` over the trivial-leak interface (`out = Bool`, `leak = Empty`),
@@ -204,7 +201,7 @@ theorem sdist_ofOracle_zero {op : ℕ} {dom codom : Type}
         runPkg (DeepPackage.link A.pkg (NomPackage.ofOracle op dom codom impl₀).pkg)) =
       (fun A : NomPackage =>
         runPkg (DeepPackage.link A.pkg (NomPackage.ofOracle op dom codom impl₁).pkg)) := by
-    funext A; exact runPkg_link_ofOracle_congr impl₀ impl₁ h A
+    grind [runPkg_link_ofOracle_congr]
   rw [hfun]; exact sdist_self _
 
 /-- Package-level perfect security (`NomPkgSecure`): the reflected games emulate
