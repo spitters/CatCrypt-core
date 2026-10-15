@@ -77,8 +77,7 @@ theorem SPComp.sample_noFail {α : Type} [Fintype α] [Nonempty α] :
     SPComp.NoFail (SPComp.sample α) := by
   intro h
   simp only [SPComp.sample, SDistr.bind, PMF.bind_apply]
-  rw [SDistr.tsum_option_eq_add]
-  rw [SDistr.uniform_apply_none, zero_mul, zero_add]
+  rw [SDistr.tsum_option_eq_add, SDistr.uniform_apply_none, zero_mul, zero_add]
   apply ENNReal.tsum_eq_zero.mpr
   intro a
   show (SDistr.uniform α) (some a) * (SDistr.pure (a, h)) none = 0
@@ -140,7 +139,6 @@ theorem prTrue_isPure_eq {c : SPComp Bool} {d : SDistr Bool}
   rw [SDistr.tsum_option_eq_add]
   simp only [SDistr.fail_apply_some, mul_zero, zero_add]
   -- ∑' a, d(some a) * SDistr.pure(a, h₀)(some(true, h₀))
-  rw [tsum_bool]
   simp [SDistr.pure, PMF.pure_apply]
 
 /-- For IsPure+NoFail d : SDistr Bool, d(some false) = 1 - d(some true). -/
@@ -174,9 +172,9 @@ theorem convex_le_add_tsub₁ {x y : ℝ≥0∞}
     r * x + (1 - r) * y ≤ (s * x + (1 - s) * y) + (s - r) := by
   have h_split : 1 - r = (1 - s) + (s - r) := (tsub_add_tsub_cancel hs1 hrs).symm
   calc r * x + (1 - r) * y
-      = r * x + ((1 - s) + (s - r)) * y := by rw [h_split]
-    _ = r * x + ((1 - s) * y + (s - r) * y) := by rw [add_mul]
-    _ = (r * x + (1 - s) * y) + (s - r) * y := by rw [add_assoc]
+      = r * x + ((1 - s) + (s - r)) * y := by grind
+    _ = r * x + ((1 - s) * y + (s - r) * y) := by grind
+    _ = (r * x + (1 - s) * y) + (s - r) * y := by grind
     _ ≤ (s * x + (1 - s) * y) + (s - r) * y := by gcongr
     _ ≤ (s * x + (1 - s) * y) + (s - r) := by
         gcongr; exact mul_le_of_le_one_right (zero_le) hy
