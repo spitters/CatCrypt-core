@@ -188,7 +188,7 @@ theorem keyGen_bind_eq (G : Type) [CG : CyclicGroup G] (m : G) :
   show ((SPComp.pure (a, CG.pow a)).bind fun __discr ↦
       (ElGamalScheme.encrypt G __discr.2 m).bind fun ct ↦ SPComp.pure (__discr.2, ct)) =
     (ElGamalScheme.encrypt G (CG.pow a) m).bind fun ct ↦ SPComp.pure (CG.pow a, ct)
-  rw [SPComp.pure_bind]
+  grind
 
 /-- Simplify `encrypt`. -/
 theorem encrypt_eq (G : Type) [CG : CyclicGroup G] (m : G) (pk : G) :
@@ -213,7 +213,7 @@ theorem ElGamal_INDCPA_real_simplified (G : Type) [CG : CyclicGroup G] (m : G) :
   simp only [SPComp.bind_assoc, SPComp.pure_bind]
   congr 1
   funext r
-  rw [CyclicGroup.elemPow_pow]
+  grind [CyclicGroup.elemPow_pow]
 
 /-- Simplify the LHS of the reduction to explicit samples and application. -/
 theorem reduction_real_lhs_eq (G : Type) [CG : CyclicGroup G] (m : G)
@@ -231,7 +231,7 @@ theorem reduction_real_lhs_eq (G : Type) [CG : CyclicGroup G] (m : G)
   show (SPComp.pure (CG.pow a, CG.pow b, CG.pow (CG.expMul a b))).bind (fun challenge =>
       A (challenge.1, challenge.2.1, CG.mul m challenge.2.2)) =
     A (CG.pow a, (CG.pow b, CG.mul m (CG.pow (CG.expMul a b))))
-  rw [SPComp.pure_bind]
+  grind
 
 /-- Simplify the RHS of the reduction to explicit samples and application. -/
 theorem reduction_real_rhs_eq (G : Type) [CG : CyclicGroup G] (m : G)
@@ -248,8 +248,7 @@ adversary. -/
 theorem reduction_real_eq_indcpa_real (G : Type) [CG : CyclicGroup G] (m : G)
     (A : G × ElGamalScheme.Ciphertext G → SPComp Bool) :
     (DDH_real G).bind (Reduction G m A) =
-    (ElGamal_INDCPA_real G m m).bind A := by
-  rw [reduction_real_lhs_eq, reduction_real_rhs_eq]
+    (ElGamal_INDCPA_real G m m).bind A := by grind [reduction_real_lhs_eq, reduction_real_rhs_eq]
 
 /-- When `z = g^c` for random `c`, the ciphertext is independent of the message:
 for any messages `m₀`, `m₁`, the DDH ideal game composed with the reduction gives
@@ -286,19 +285,17 @@ theorem reduction_ideal_indep_message (G : Type) [CG : CyclicGroup G] (m0 m1 : G
     constructor
     · intro b1 b2 heq
       have hmul : ∀ x, CG.mul (CG.inv m) (CG.mul m x) = x := fun x => by
-        rw [← CG.mul_assoc, CG.mul_comm (CG.inv m) m, CG.mul_inv, CG.mul_comm, CG.mul_one]
+        grind [CG.mul_assoc, CG.mul_inv, CG.mul_comm, CG.mul_one]
       have hp : CG.pow b1 = CG.pow b2 := by
-        calc CG.pow b1 = CG.mul (CG.inv m) (CG.mul m (CG.pow b1)) := (hmul _).symm
-          _ = CG.mul (CG.inv m) (CG.mul m (CG.pow b2)) := by simp only at heq; rw [heq]
-          _ = CG.pow b2 := hmul _
-      exact CG.pow_bij.1 hp
+        grind
+      grind [CG.pow_bij.1]
     · intro y
       obtain ⟨x, hx⟩ := CG.pow_bij.2 (CG.mul (CG.inv m) y)
       use x
-      calc CG.mul m (CG.pow x) = CG.mul m (CG.mul (CG.inv m) y) := by rw [hx]
-        _ = CG.mul (CG.mul m (CG.inv m)) y := by rw [CG.mul_assoc]
-        _ = CG.mul CG.one y := by rw [CG.mul_inv]
-        _ = y := by rw [CG.mul_comm, CG.mul_one]
+      calc CG.mul m (CG.pow x) = CG.mul m (CG.mul (CG.inv m) y) := by simp_all
+        _ = CG.mul (CG.mul m (CG.inv m)) y := by simp_all [CG.mul_assoc]
+        _ = CG.mul CG.one y := by simp_all [CG.mul_inv]
+        _ = y := by simp_all [CG.mul_comm, CG.mul_one]
   let msgBij : CG.Exp ≃ CG.Exp :=
     (Equiv.ofBijective (fun b => CG.mul m0 (CG.pow b)) (mul_bij m0)).trans
     (Equiv.ofBijective (fun b => CG.mul m1 (CG.pow b)) (mul_bij m1)).symm
@@ -314,7 +311,7 @@ theorem reduction_ideal_indep_message (G : Type) [CG : CyclicGroup G] (m0 m1 : G
     have h2 : e1 (e1.symm (e0 c)) = e0 c := e1.apply_symm_apply (e0 c)
     have h3 : e0 c = CG.mul m0 (CG.pow c) := rfl
     simp only [e1, e0] at h1 h2 h3
-    rw [h1, h2, h3]
+    simp_all
   conv_lhs => rw [heq]
   exact liftR_refl _
 
@@ -360,12 +357,12 @@ theorem elgamal_indcpa_security (G : Type) [CG : CyclicGroup G]
         Advantage ((DDH_ideal G).bind (Reduction G m0 A)) ((DDH_real G).bind (Reduction G m1 A)) := htri
     _ = Advantage ((DDH_real G).bind (Reduction G m0 A)) ((DDH_ideal G).bind (Reduction G m0 A)) +
         Advantage ((DDH_ideal G).bind (Reduction G m1 A)) ((DDH_real G).bind (Reduction G m1 A)) := by
-        rw [h_ideal_indep]
+        simp_all
     _ = Advantage ((DDH_real G).bind (Reduction G m0 A)) ((DDH_ideal G).bind (Reduction G m0 A)) +
         Advantage ((DDH_real G).bind (Reduction G m1 A)) ((DDH_ideal G).bind (Reduction G m1 A)) := by
         congr 1
         unfold Advantage
-        rw [max_comm]
+        simp_all [max_comm]
 
 /-! ## Correctness of ElGamal -/
 
@@ -401,11 +398,7 @@ theorem mul_pow_bijective (G : Type) [CG : CyclicGroup G] (m : G) :
       intro x
       rw [← CG.mul_assoc, CG.mul_comm (CG.inv m) m, CG.mul_inv, CG.mul_comm, CG.mul_one]
     have h : CG.pow b1 = CG.pow b2 := by
-      calc CG.pow b1 = CG.mul (CG.inv m) (CG.mul m (CG.pow b1)) := (hmul _).symm
-        _ = CG.mul (CG.inv m) (CG.mul m (CG.pow b2)) := by
-            simp only at heq
-            rw [heq]
-        _ = CG.pow b2 := hmul _
+      grind
     exact CG.pow_bij.1 h
   · intro y
     obtain ⟨x, hx⟩ := CG.pow_bij.2 (CG.mul (CG.inv m) y)
