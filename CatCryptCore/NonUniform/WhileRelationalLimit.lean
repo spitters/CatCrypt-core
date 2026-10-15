@@ -198,7 +198,7 @@ theorem loopJoint_bind_fst
             whileApprox_succ_of_not_guard hg₁]
           rfl
       | true =>
-          have hg₂ : guard₂ h₂ = true := by rw [← hguard h₁ h₂ hI]; exact hg₁
+          have hg₂ : guard₂ h₂ = true := by grind
           obtain ⟨hm₁, _, hsup⟩ := bodyJoint_spec hbody hI hg₁ hg₂
           have hmarg : ((bodyJoint hbody h₁ h₂).bind fun q => SDistr.pure q.1) = body₁ h₁ :=
             SDistr.eq_of_some_eq hm₁
@@ -227,12 +227,12 @@ theorem loopJoint_bind_snd
       intro h₁ h₂ hI
       cases hg₁ : guard₁ h₁ with
       | false =>
-          have hg₂ : guard₂ h₂ = false := by rw [← hguard h₁ h₂ hI]; exact hg₁
+          have hg₂ : guard₂ h₂ = false := by grind
           rw [loopJoint_succ_of_not_guard _ hg₁, SDistr.pure_bind,
             whileApprox_succ_of_not_guard hg₂]
           rfl
       | true =>
-          have hg₂ : guard₂ h₂ = true := by rw [← hguard h₁ h₂ hI]; exact hg₁
+          have hg₂ : guard₂ h₂ = true := by grind
           obtain ⟨_, hm₂, hsup⟩ := bodyJoint_spec hbody hI hg₁ hg₂
           have hmarg : ((bodyJoint hbody h₁ h₂).bind fun q => SDistr.pure q.2) = body₂ h₂ :=
             SDistr.eq_of_some_eq hm₂
@@ -263,7 +263,7 @@ theorem loopJoint_support
       intro h₁ h₂ hI p q hne
       cases hg₁ : guard₁ h₁ with
       | false =>
-          have hg₂ : guard₂ h₂ = false := by rw [← hguard h₁ h₂ hI]; exact hg₁
+          have hg₂ : guard₂ h₂ = false := by grind
           rw [loopJoint_succ_of_not_guard _ hg₁] at hne
           have heq : (((), h₁), ((), h₂)) = (p, q) :=
             (SDistr.mem_support_pure_iff _ (p, q)).mp hne
@@ -273,7 +273,7 @@ theorem loopJoint_support
           subst hq
           exact ⟨hI, hg₁, hg₂⟩
       | true =>
-          have hg₂ : guard₂ h₂ = true := by rw [← hguard h₁ h₂ hI]; exact hg₁
+          have hg₂ : guard₂ h₂ = true := by grind
           rw [loopJoint_succ_of_guard _ hg₁] at hne
           obtain ⟨pq, hpq, hrest⟩ := exists_ne_zero_of_bind_apply_ne_zero hne
           obtain ⟨_, _, hsup⟩ := bodyJoint_spec hbody hI hg₁ hg₂
@@ -309,9 +309,7 @@ theorem loopJointLim_bind_fst
     (p : Unit × Heap) :
     ((loopJointLim hbody h₁ h₂).bind fun q => SDistr.pure q.1) (some p)
       = whileLoop guard₁ body₁ h₁ (some p) := by
-  simp only [loopJointLim]
-  rw [mlim_bind, mlim_apply_some, whileLoop_apply_some]
-  exact iSup_congr fun n => by rw [loopJoint_bind_fst hguard hbody n h₁ h₂ hI]
+  grind [loopJointLim, mlim_bind, mlim_apply_some, whileLoop_apply_some, loopJoint_bind_fst, iSup_congr]
 
 /-- The right marginal of the limit is the right loop. -/
 theorem loopJointLim_bind_snd
@@ -321,9 +319,7 @@ theorem loopJointLim_bind_snd
     (p : Unit × Heap) :
     ((loopJointLim hbody h₁ h₂).bind fun q => SDistr.pure q.2) (some p)
       = whileLoop guard₂ body₂ h₂ (some p) := by
-  simp only [loopJointLim]
-  rw [mlim_bind, mlim_apply_some, whileLoop_apply_some]
-  exact iSup_congr fun n => by rw [loopJoint_bind_snd hguard hbody n h₁ h₂ hI]
+  grind [loopJointLim, mlim_bind, mlim_apply_some, whileLoop_apply_some, loopJoint_bind_snd, iSup_congr]
 
 /-! ## The rule -/
 
