@@ -119,4 +119,70 @@ example (h₁ : Heap) (l l' : Location) (v : l.ty) (b : l'.ty) (hid : l.id ≠ l
     Heap.get (h₁.set l v) l' = b := by
   ssprove_crypto_grind
 
+/-! ## Additions from the closing-goal sweep -/
+
+/-- Monotone step of the triangle chain in `elgamal_secure` (Examples/ElGamal.lean:256):
+`add_le_add` with the `@[grind]` triangle inequality. -/
+example (R0r R0i R1i R1r : SPComp Bool) :
+    Advantage R0r R0i + Advantage R0i R1r ≤
+      Advantage R0r R0i + (Advantage R0i R1i + Advantage R1i R1r) := by
+  catcrypt_grind
+
+/-- Zero case of `advantage_hybrid_dep` (Crypto/HybridArgument.lean:79). -/
+example {α : Type} (G : ℕ → SPComp α) (A : α → SPComp Bool) :
+    AdvantageA (G 0) (G 0) A ≤ ∑ i ∈ Finset.range 0, AdvantageA (G i) (G (i + 1)) A := by
+  catcrypt_grind
+
+/-- Triangle step of `advantage_hybrid_dep` (Crypto/HybridArgument.lean:84). -/
+example {α : Type} (G : ℕ → SPComp α) (A : α → SPComp Bool) (k : ℕ) :
+    AdvantageA (G 0) (G (k + 1)) A ≤
+      AdvantageA (G 0) (G k) A + AdvantageA (G k) (G (k + 1)) A := by
+  catcrypt_grind
+
+/-- Two hop leaves of a game-hopping sum (the shape at KEMTLS/Reduction:161). -/
+example (G₀ G₁ G₂ : SPComp Bool) (ε δ : ℝ≥0∞) (h₁ : Advantage G₀ G₁ ≤ ε)
+    (h₂ : Advantage G₁ G₂ ≤ δ) :
+    Advantage G₀ G₁ + Advantage G₁ G₂ ≤ ε + δ := by
+  catcrypt_grind
+
+/-- Synchronised sampling and reflexivity (the shape at Test/EasyCryptTacticTest:229). -/
+example (Φ : RPre) :
+    rHoare eqPre (SPComp.sample Bool) (SPComp.sample Bool) eqPost ∧
+      rHoare Φ (SPComp.sample Bool) (SPComp.sample Bool)
+        (fun a₁ h₁ a₂ h₂ => Φ h₁ h₂ ∧ a₁ = a₂) := by
+  catcrypt_grind
+
+/-- A fresh lazy evaluation against a direct sample (the shape at
+Test/EasyCryptTacticTest:334). -/
+example (lookup : ℕ → SPComp (Option Bool)) (store : ℕ → Bool → SPComp Unit) (k : ℕ)
+    (h_fresh : lookup k = SPComp.pure none) (h_dead : ∀ v, store k v = SPComp.pure ()) :
+    rHoare eqPre (CatCrypt.LazySampling.lazyEvalAbstract lookup store k)
+      (SPComp.sample Bool) eqPost := by
+  catcrypt_grind
+
+/-- `IsPure` of a `do` block with a pair pattern (the shape at NoiseIK/Spec:105). -/
+example (kg : SPComp (Bool × Bool)) (hkg : SPComp.IsPure kg) :
+    SPComp.IsPure (do
+      let ⟨a, b⟩ ← kg
+      let x ← SPComp.sample Bool
+      pure (xor a (xor b x))) := by
+  aesop (rule_sets := [CatCryptRel])
+
+/-- `NoFail` of a `do` block (the shape at IrisBridge/RatchetUCGrounding:140). -/
+example (kg : SPComp (Bool × Bool)) (hkg : SPComp.NoFail kg) :
+    SPComp.NoFail (do
+      let ⟨a, b⟩ ← kg
+      let x ← SPComp.sample Bool
+      pure (xor a (xor b x))) := by
+  aesop (rule_sets := [CatCryptRel])
+
+/-- Division monotonicity with a cast from `ℕ` (the shape at OEKE/Reduction:292). -/
+example (q₁ q₂ d : ℕ) (h : q₁ ≤ q₂) : (q₁ : ℝ≥0∞) / d ≤ (q₂ : ℝ≥0∞) / d := by
+  bound
+
+/-- Coefficient bounds `ε ≤ n * ε` (the shape at SPHINCSPlus/Reduction:247). -/
+example (a b : ℕ) (ha : 1 ≤ a) (hb : 1 ≤ b) (ε₁ ε₂ : ℝ≥0∞) :
+    ε₁ + ε₂ ≤ (a : ℝ≥0∞) * ε₁ + (b : ℝ≥0∞) * ε₂ := by
+  bound
+
 end CatCrypt.Tactics.AutoSetsTest
