@@ -264,11 +264,9 @@ theorem chaumPedersen_SHVZK_visible :
     toFun := fun r => gp.scalarAdd r (gp.scalarMul e w)
     invFun := fun z => gp.scalarSub z (gp.scalarMul e w)
     left_inv := fun r => by
-      show gp.scalarSub (gp.scalarAdd r (gp.scalarMul e w)) (gp.scalarMul e w) = r
-      rw [gp.scalarSub_eq, gp.scalarAdd_assoc, gp.scalarAdd_neg, gp.scalarAdd_zero]
+      simp_all [gp.scalarSub_eq, gp.scalarAdd_assoc, gp.scalarAdd_neg, gp.scalarAdd_zero]
     right_inv := fun z => by
-      show gp.scalarAdd (gp.scalarSub z (gp.scalarMul e w)) (gp.scalarMul e w) = z
-      rw [gp.scalarSub_eq, gp.scalarAdd_assoc, gp.scalarNeg_add, gp.scalarAdd_zero]
+      simp_all [gp.scalarSub_eq, gp.scalarAdd_assoc, gp.scalarNeg_add, gp.scalarAdd_zero]
   }
   have hBij := liftR_uniform_bij bij
   apply liftR_bind hBij
@@ -276,12 +274,7 @@ theorem chaumPedersen_SHVZK_visible :
   apply liftR_pure
   -- Goal: cpVisibleTranscriptEq gp (real transcript) (sim transcript)
   obtain ⟨hu, hv⟩ := hrel
-  have hz : z = gp.scalarAdd r (gp.scalarMul e w) := hrz.symm
-  refine ⟨?_, ?_, ?_, ?_⟩
-  · exact commitment_recovery gp stmt.1 stmt.2.2.1 w r z e hu hz
-  · exact commitment_recovery gp stmt.2.1 stmt.2.2.2 w r z e hv hz
-  · rfl
-  · exact hrz
+  exact ⟨by grind [commitment_recovery], by grind [commitment_recovery], by simp_all, hrz⟩
 
 /-! ## Special Soundness -/
 
