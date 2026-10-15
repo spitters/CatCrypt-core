@@ -208,6 +208,7 @@ public import CatCryptCore.Crypto.UCMonad.DiamondNormStates
 public import CatCryptCore.Crypto.UCMonad.DiamondNorm
 public import CatCryptCore.Crypto.UCMonad.DiamondDominates
 public import CatCryptCore.Crypto.UCMonad.DiamondTensorStable
+public import CatCryptCore.Crypto.UCMonad.DiamondEmulation
 public import CatCryptCore.Crypto.UCMonad.QIndistDiamond
 
 -- Quantum random-oracle model: semi-classical one-way to hiding, KEM games and hops
