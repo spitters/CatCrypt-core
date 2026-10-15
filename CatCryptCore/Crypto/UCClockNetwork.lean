@@ -820,6 +820,98 @@ theorem clockNet_hybrid_compose {τ EH OH : Type} (H : Finset Pty) (Δ : ℕ)
 
 end Transparent
 
+/-! ## Non-vacuity: two parties, Δ = 1 -/
+
+namespace Example
+
+/-- Both parties of `Fin 2` are honest. -/
+def H₂ : Finset (Fin 2) := Finset.univ
+
+/-- The clock-and-network functionality for two honest parties, `Δ = 1`,
+    unit messages. -/
+abbrev CN₂ : DetFunc (CNSt (Fin 2) Unit) (CNEv (Fin 2) Unit) (CNOut (Fin 2) Unit) :=
+  clockNet H₂ 1
+
+/-- After the send of party `0` to party `1` in round `0`: both parties
+    signal twice, and the adversary never delivers. -/
+def post₂ : List (CNEv (Fin 2) Unit) :=
+  [.inl (0, .signal), .inl (1, .signal), .inl (0, .signal), .inl (1, .signal)]
+
+/-- The full run: the send, then `post₂`. -/
+def run₂ : List (CNEv (Fin 2) Unit) := [] ++ .inl (0, .send 1 ()) :: post₂
+
+/-- The run reaches round `2`. -/
+theorem run₂_round : (CN₂.exec CN₂.init run₂).1.round = 2 := by decide
+
+/-- The message was delivered by the network in round `1` (forced at the
+    end of round `1`, its deadline), and nothing is pending. -/
+theorem run₂_net : (CN₂.exec CN₂.init run₂).2 = ⟨2, [], [(⟨0, 1, (), 0⟩, 1)]⟩ := by decide
+
+/-- The hypothesis of `clockNet_delivered_within` holds on `run₂`
+    (`0 + 1 < 2`), and its conclusion is witnessed by the delivery round
+    `1`. -/
+theorem run₂_delivered :
+    (CN₂.exec CN₂.init []).1.round + 1 < (CN₂.exec CN₂.init run₂).1.round ∧
+      ∃ d, ((⟨0, 1, (), (CN₂.exec CN₂.init []).1.round⟩ : Msg (Fin 2) Unit), d) ∈
+          (CN₂.exec CN₂.init run₂).2.delivered ∧
+        (CN₂.exec CN₂.init []).1.round ≤ d ∧ d ≤ (CN₂.exec CN₂.init []).1.round + 1 := by
+  have h : (CN₂.exec CN₂.init []).1.round + 1 < (CN₂.exec CN₂.init run₂).1.round := by
+    rw [run₂_round]; decide
+  exact ⟨h, clockNet_delivered_within H₂ 1 [] post₂ 0 1 () h⟩
+
+/-- The hypotheses of `clockNet_advance_requires_signals` hold on `run₂`
+    (initial signalled set empty, round changed), and both parties signal. -/
+theorem run₂_signals : ∀ q ∈ H₂, (.inl (q, .signal) : CNEv (Fin 2) Unit) ∈ run₂ :=
+  clockNet_advance_requires_signals H₂ 1 CN₂.init rfl run₂ (by rw [run₂_round]; decide)
+
+/-- With only one of the two parties signalling, the round does not
+    change. -/
+theorem one_signal_no_advance :
+    (CN₂.exec CN₂.init [.inl (0, .signal), .inl (0, .signal)]).1.round = 0 := by decide
+
+/-- The adversary may deliver early: delivering the pending message right
+    after it is sent puts it in the delivered list in round `0`. -/
+theorem early_delivery :
+    (CN₂.exec CN₂.init [.inl (0, .send 1 ()), .inr (.deliver 0)]).2 =
+      ⟨0, [], [(⟨0, 1, (), 0⟩, 0)]⟩ := by decide
+
+/-- The pass-through hybrid protocol: every outer event is forwarded to the
+    clock-and-network functionality and its answer is returned. -/
+noncomputable def passthrough :
+    Hybrid Unit (CNEv (Fin 2) Unit) (CNOut (Fin 2) Unit) (CNEv (Fin 2) Unit) (CNOut (Fin 2) Unit)
+    where
+  init := ()
+  pre s e := SPComp.pure (s, e)
+  post s o := SPComp.pure (s, o)
+  pre_noFail _ _ := SPComp.pure_noFail _
+  post_noFail _ _ := SPComp.pure_noFail _
+
+/-- The hybrid world of `passthrough`. -/
+noncomputable abbrev hybridWorld₂ :=
+  passthrough.withSub (ideal (clockNetF H₂ 1) CN₂.proto)
+
+/-- A transparent functionality over the hybrid world with the always-true
+    guard. -/
+noncomputable def trueF :
+    TFunc (Unit × CNSt (Fin 2) Unit × Trace (CNSt (Fin 2) Unit) (CNEv (Fin 2) Unit)
+      (CNOut (Fin 2) Unit) × Bool) (CNEv (Fin 2) Unit) (CNOut (Fin 2) Unit) :=
+  ⟨hybridWorld₂.init, fun _ => true, (0, [])⟩
+
+/-- **Non-vacuity of the composition theorem.** All hypotheses of
+    `clockNet_hybrid_compose` hold for `passthrough` with the copy simulator,
+    and the resulting bound is `0`: `passthrough` running with the reference
+    clock and network realizes `ideal trueF hybridWorld₂` exactly. -/
+theorem passthrough_realizes :
+    Realizes (passthrough.withSub CN₂.proto) (ideal trueF hybridWorld₂) (fun _ _ => 0) := by
+  intro ζ Z
+  have h := clockNet_hybrid_compose H₂ 1 passthrough hybridWorld₂ trueF
+    (Hybrid.withSub_noFail _ _ (Hybrid.ideal_noFail _ _ fun _ _ => SPComp.pure_noFail _))
+    rfl (fun _ _ _ => rfl) ζ Z
+  beta_reduce at h
+  rwa [show trueF.guard = fun _ => true from rfl, guardFail_true] at h
+
+end Example
+
 end ClockNet
 
 end CatCrypt.Crypto.UCTransparent
