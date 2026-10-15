@@ -317,7 +317,7 @@ theorem sdist_mapSum_le {α₁ α₂ β₁ β₂ : Type*}
         ≤ sdist f₁ f₂ := by
           apply sdist_le_of_forall le_rfl
       _ ≤ ε₁ := hf
-      _ ≤ ε₁ ⊔ ε₂ := le_max_left _ _
+      _ ≤ ε₁ ⊔ ε₂ := by grind
   · -- .inr c: only g runs
     simp only [mapSum_inr, SPComp.map]
     have eq1 : SPComp.bind (SPComp.bind (g₁ c) fun d => SPComp.pure (Sum.inr d)) D =
@@ -332,7 +332,7 @@ theorem sdist_mapSum_le {α₁ α₂ β₁ β₂ : Type*}
         ≤ sdist g₁ g₂ := by
           apply sdist_le_of_forall le_rfl
       _ ≤ ε₂ := hg
-      _ ≤ ε₁ ⊔ ε₂ := le_max_right _ _
+      _ ≤ ε₁ ⊔ ε₂ := by grind
 
 /-! ## Sequential and Parallel Composition of RC -/
 
