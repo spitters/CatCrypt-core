@@ -38,6 +38,12 @@ both a vector and scalar challenge sharing the same secret. This avoids the
 correlation issue with the standard MLWE game (where the adversary cannot
 compute `⟨t, r⟩` from the MLWE challenge `A^T·r+e1` without knowing `r`).
 
+## Correctness
+
+`correctness_le_corrWorst` bounds the adversarial correctness game by the
+worst-case decryption-failure probability `corrWorst`. It replaces
+`correctness_theorem`, whose hypothesis was its conclusion.
+
 ## References
 
 * EasyCrypt source: `formosa-crypto/formosa-mlkem/proof/security/MLWE_PKE_Basic.ec`
@@ -447,23 +453,43 @@ theorem main_theorem (choose : PK P → SDistr (P.PT × P.PT))
 
 /-! ## Correctness -/
 
-/-- (assumed bound) Correctness: the decryption-failure probability of the
-    basic scheme is at most `fail_prob`, taken as the hypothesis `h_fail`.
+/-- Decryption-failure probability of an honest encryption of `m` under the
+    key pair `k`. -/
+noncomputable def failProb (k : PK P × SK P) (m : P.PT) : ℝ≥0∞ :=
+  prTrue (do
+    let c ← enc P k.1 m
+    let m' ← dec P k.2 c
+    SDistr.pure (decide (m' ≠ some m)))
 
-    Discharging it needs a norm on `P.R` with the ring laws relating
-    `ring_sub`, `ring_add`, `vec_dot` and `mat_vec_mul`, the identity
-    `m_decode (m_encode m + δ) = m` for every `δ` below the decoding
-    threshold, and a tail bound on the noise `⟨e, r⟩ + e₂ - ⟨s, e₁⟩` under
-    `dshort_vec`, `dshort_vec2` and `dshort_R`; `Params` carries none of these, and the
-    EasyCrypt `axiom good_decode` (the noise-free round trip
-    `m_decode (m_encode m) = m`) is a property of a consumer's instantiation
-    of `m_encode`/`m_decode`, not of this scheme.
+/-- Worst-case decryption-failure probability over all key pairs and messages. -/
+noncomputable def corrWorst : ℝ≥0∞ :=
+  ⨆ (k : PK P × SK P) (m : P.PT), failProb P k m
 
-    EasyCrypt: `correctness_theorem`. -/
-theorem correctness_theorem (fail_prob : ℝ≥0∞)
-    (find : PK P → SK P → SDistr P.PT)
-    (h_fail : prTrue (Correctness_Game P find) ≤ fail_prob) :
-    prTrue (Correctness_Game P find) ≤ fail_prob :=
-  h_fail
+/-- The probability of a value after `bind` is at most the supremum of that
+    probability over the bound values. -/
+theorem _root_.CatCrypt.Prob.SDistr.bind_apply_some_le_iSup {α β : Type} (d : SDistr α)
+    (f : α → SDistr β) (b : β) :
+    (d.bind f) (some b) ≤ ⨆ a, f a (some b) := by
+  simp only [SDistr.bind, PMF.bind_apply]
+  calc ∑' oa, d oa * (match oa with | some a => f a | none => SDistr.fail) (some b)
+      ≤ ∑' oa, d oa * ⨆ a, f a (some b) := ENNReal.tsum_le_tsum fun oa => by
+        cases oa with
+        | none => simp [SDistr.fail]
+        | some a => exact mul_le_mul_right (le_iSup (fun a => f a (some b)) a) _
+    _ = ⨆ a, f a (some b) := by rw [ENNReal.tsum_mul_right, PMF.tsum_coe, one_mul]
+
+/-- **Correctness.** The adversarial correctness game, in which `find` chooses
+    the message from both keys, fails with probability at most the worst-case
+    decryption-failure probability `corrWorst`.
+
+    EasyCrypt: `correctness_theorem` takes the bound as a hypothesis; this
+    statement bounds the game by `corrWorst` for every `find`. -/
+theorem correctness_le_corrWorst (find : PK P → SK P → SDistr P.PT) :
+    prTrue (Correctness_Game P find) ≤ corrWorst P := by
+  unfold Correctness_Game prTrue
+  refine (SDistr.bind_apply_some_le_iSup _ _ _).trans (iSup_le fun k => ?_)
+  obtain ⟨pk, sk⟩ := k
+  refine (SDistr.bind_apply_some_le_iSup _ _ _).trans (iSup_le fun m => ?_)
+  exact le_iSup₂_of_le (f := fun k m => failProb P k m) (pk, sk) m le_rfl
 
 end CatCrypt.Crypto.MLKEM.MLWE_PKE_Basic
