@@ -130,14 +130,14 @@ theorem prTrue_prFalse_none_sum (G : SPComp Bool) (h₀ : Heap) :
   convert hmass using 2
   -- Goal: prTrue G h₀ + prFalse G h₀ = ∑' x : Bool × Heap, (G h₀)(some x)
   unfold prTrue prFalse
-  simp [ENNReal.tsum_prod']
+  simp_all [ENNReal.tsum_prod']
 /-- Under NoFail, prTrue + prFalse = 1. -/
 theorem prTrue_prFalse_eq_one_of_noFail (G : SPComp Bool) (h₀ : Heap)
     (hnf : SPComp.NoFail G) :
     prTrue G h₀ + prFalse G h₀ = 1 := by
   have h := prTrue_prFalse_none_sum G h₀
   rw [hnf h₀, zero_add] at h
-  exact h
+  simp_all
 
 /-- prFalse equals 1 - prTrue under NoFail. -/
 theorem prFalse_eq_one_sub_prTrue (G : SPComp Bool) (h₀ : Heap)
@@ -147,7 +147,7 @@ theorem prFalse_eq_one_sub_prTrue (G : SPComp Bool) (h₀ : Heap)
   have h_ne_top : prTrue G h₀ ≠ ⊤ :=
     ne_top_of_le_ne_top ENNReal.one_ne_top (h ▸ le_self_add)
   rw [← h]
-  exact (ENNReal.add_sub_cancel_left h_ne_top).symm
+  grind [ENNReal.add_sub_cancel_left]
 
 /-- **Shoup's Fundamental Lemma**: if two games are identical until bad,
     then their advantage is bounded by the probability of the bad event.
@@ -193,8 +193,8 @@ theorem advantage_upto_bad (G₀ G₁ bad : SPComp Bool)
           ≤ ((1 - prTrue G₁ Heap.empty) + prTrue bad Heap.empty) +
             prTrue G₁ Heap.empty := by gcongr
         _ = (1 - prTrue G₁ Heap.empty + prTrue G₁ Heap.empty) +
-            prTrue bad Heap.empty := by ring
-        _ = 1 + prTrue bad Heap.empty := by rw [tsub_add_cancel_of_le h_p1]
+            prTrue bad Heap.empty := by grind
+        _ = 1 + prTrue bad Heap.empty := by simp_all [tsub_add_cancel_of_le h_p1]
     have h2 : prTrue G₁ Heap.empty + 1 ≤
               1 + (prTrue G₀ Heap.empty + prTrue bad Heap.empty) := by
       calc prTrue G₁ Heap.empty + 1
@@ -461,7 +461,7 @@ theorem prTrue_union_bound (bad₁ bad₂ : SPComp Bool)
   have h_pt_true : prTrue (SPComp.pure true) Heap.empty = 1 := by
     unfold prTrue SPComp.pure
     rw [tsum_eq_single Heap.empty]
-    · simp [SDistr.pure_apply_some]
+    · simp_all [SDistr.pure_apply_some]
     · intro h hne
       simp only [SDistr.pure_apply_some, Prod.mk.injEq, true_and, ite_eq_right_iff]
       intro heq; exact absurd heq.symm hne
@@ -473,7 +473,7 @@ theorem prTrue_union_bound (bad₁ bad₂ : SPComp Bool)
     -- d₂(some true) + d₂(some false) = 1 under NoFail.
     have htotal := d₂.tsum_coe
     rw [SDistr.tsum_option_eq_add, hd₂_nf, zero_add, tsum_bool, add_comm] at htotal
-    exact htotal
+    simp_all
   -- Plug into the decomposition: term₁ = d₁(some true) · 1 = d₁(some true) = prTrue bad₁
   -- term₂ = d₁(some false) · prTrue bad₂.
   rw [h_left_eq_one, mul_one]
@@ -594,7 +594,7 @@ theorem advantage_hybrid_upto_bad (G : ℕ → SPComp Bool) (n : ℕ) (ε : ℝ�
         advantage_hybrid_dep_bool G n
     _ ≤ ∑ _ ∈ Finset.range n, ε :=
         Finset.sum_le_sum fun i hi => hstep i (Finset.mem_range.mp hi)
-    _ = n * ε := by simp [Finset.sum_const, Finset.card_range]
+    _ = n * ε := by simp_all [Finset.sum_const, Finset.card_range]
 
 /-! ## Multi-Query Game Abstraction
 
