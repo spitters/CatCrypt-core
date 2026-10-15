@@ -105,8 +105,7 @@ theorem CDH_Game_isPure (D : DDHDef W) (A : CDH_Adversary W)
   unfold CDH_Game
   apply SPComp.bind_isPure D.keygen_isPure; intro ⟨a, g_a⟩
   apply SPComp.bind_isPure D.keygen_isPure; intro ⟨_, g_b⟩
-  apply SPComp.bind_isPure (hA g_a g_b); intro answer
-  exact SPComp.pure_isPure _
+  simp_all [SPComp.bind_isPure, SPComp.pure_isPure]
 
 /-! ## Reduction: CDH ⟹ DL (abstract DDHDef setting)
 
@@ -178,7 +177,7 @@ theorem dl_le_cdh_ddh (D : DDHDef W)
     unfold DL_Game_DDH CDH_Game cdh_of_dl_ddh
     -- The CDH side has a nested bind: (A_dl g_a >>= fun a' => pure(ecdh a' g_b)) >>= fun answer => pure(decide(...))
     -- Flatten with bind_assoc then simplify pure_bind
-    simp only [ssprove_simpl]
+    (simp only [CatCrypt.Core.SPComp.monad_bind_eq]; bind_vcgen)
   unfold DL_Advantage_DDH CDH_Advantage
   rw [hgame]
 
