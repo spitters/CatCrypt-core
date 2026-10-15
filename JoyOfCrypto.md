@@ -6,7 +6,7 @@ This document maps Mike Rosulek's free textbook
 proof replaces one library by an indistinguishable one, simplifies the composed code,
 and repeats. CatCrypt's state-separating packages are the same device, and the
 simplification steps are performed by the tactics `ssprove_code_simpl`,
-`ssprove_contract_*`, `ssprove_copy_propagate_*`, `ssprove_crypto` and `adv_game_hop`.
+`ssprove_contract_*`, `ssprove_copy_propagate`, `ssprove_crypto` and `adv_game_hop`.
 
 Every module listed here is part of this repository and of its library build. The
 library is built with `sorry` reported as an error, so every theorem named below is
