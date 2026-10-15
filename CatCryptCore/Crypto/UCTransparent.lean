@@ -200,6 +200,7 @@ theorem adv_eq_advantageA (R : Sys τ E O) (I : Sys υ E O) (Z : Env (Strat ζ E
 
 /-! ## Auxiliary facts on `SPComp` -/
 
+/-- Binding into a constant failure is failure. -/
 theorem bind_fail_right {α β : Type} (c : SPComp α) :
     SPComp.bind c (fun _ => (SPComp.fail : SPComp β)) = SPComp.fail := by
   funext h
@@ -236,10 +237,12 @@ theorem prTrue_bind_le_of_le {α : Type} (X : SPComp α) (K₁ K₂ : α → SPC
   · simp
   · exact mul_le_mul_right (hK a h') _
 
+/-- Acceptance probability of a constant. -/
 theorem prTrue_pure (b : Bool) (h : Heap) :
     prTrue (SPComp.pure b) h = if b then 1 else 0 := by
   cases b <;> simp [prTrue, SPComp.pure, SDistr.pure, PMF.pure_apply]
 
+/-- Failure accepts with probability 0. -/
 theorem prTrue_fail (h : Heap) : prTrue (SPComp.fail : SPComp Bool) h = 0 := by
   simp [prTrue, SPComp.fail, SDistr.fail, PMF.pure_apply]
 
@@ -472,6 +475,11 @@ structure TFunc (σ E O : Type) where
   guard : Trace σ E O → Bool
   /-- The output after the guard has failed. -/
   exploded : O
+
+/-- The current state of the functionality after the trace `tr`: the state
+    of the last entry, or the initial state on the empty trace. -/
+def TFunc.state (F : TFunc σ E O) (tr : Trace σ E O) : σ :=
+  (tr.getLast?.map fun x => x.2.2).getD F.init
 
 /-- The protocol `π` with a passive monitor that records the trace and sets
     the flag when the guard `G` fails on a prefix of the trace. -/
