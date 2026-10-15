@@ -200,8 +200,7 @@ theorem specialized_iff_general {hon out leak sim_if : Type} {ε : ℝ≥0∞}
   constructor
   · intro h view
     exact general_of_dummy π F (emulatesDummy_of_ucEmulates π F (h leak)) view
-  · intro h view
-    exact ucEmulates_of_general π F (h view)
+  · simp_all [ucEmulates_of_general]
 
 /-! ## Non-vacuity -/
 
@@ -250,8 +249,7 @@ theorem identity_sim_fails : (1 : ℝ≥0∞) ≤ sdist π F := by
       simp [π, hD, SPComp.pure_bind]
     have h2 : SPComp.bind (F ()) D = SPComp.pure false := by
       simp [F, hD, SPComp.pure_bind]
-    rw [h1, h2, ForkingLemma.prTrue_pure_bool, ForkingLemma.prTrue_pure_bool]
-    simp [absDiff]
+    simp [h1, h2, ForkingLemma.prTrue_pure_bool, absDiff]
   calc (1 : ℝ≥0∞) = absDiff (prTrue (SPComp.bind (π ()) D) Heap.empty)
                     (prTrue (SPComp.bind (F ()) D) Heap.empty) := hb.symm
     _ ≤ sdist π F := le_iSup₂_of_le D () (le_iSup_of_le Heap.empty le_rfl)
