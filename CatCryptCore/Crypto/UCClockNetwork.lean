@@ -217,7 +217,7 @@ end DetFunc
 
 namespace ClockNet
 
-variable {Pty M : Type} [DecidableEq Pty] [DecidableEq M]
+variable {Pty M : Type}
 
 /-- The state of the global clock: the current round and the set of parties
     that have signalled the end of the current round. -/
@@ -235,6 +235,10 @@ inductive ClockReq where
   /-- Read the current round. -/
   | read
 deriving DecidableEq
+
+section Clock
+
+variable [DecidableEq Pty]
 
 /-- Clock events: a party request `(p, r)`, or an adversary read. -/
 abbrev ClockEv (Pty : Type) := Event (Pty × ClockReq) Unit
@@ -333,6 +337,198 @@ theorem clock_advance_requires_signals (H : Finset Pty) (s : ClockSt Pty)
   rcases (clock_exec_signals H s es).2 h q hq with h' | h'
   · simp [hs] at h'
   · exact h'
+
+end Clock
+
+/-! ## The Δ-bounded network (Afgjort §4.2) -/
+
+/-- A message in transit: sender, receiver, content and the round in which
+    it was sent. -/
+structure Msg (Pty M : Type) where
+  /-- Sender. -/
+  src : Pty
+  /-- Receiver. -/
+  dst : Pty
+  /-- Content. -/
+  body : M
+  /-- Round in which the message was sent. -/
+  sent : ℕ
+deriving DecidableEq
+
+/-- The state of the network: its view of the current round, the messages in
+    transit (in sending order), and the delivered messages with their
+    delivery round. -/
+structure NetSt (Pty M : Type) where
+  /-- Current round. -/
+  round : ℕ
+  /-- Messages in transit. -/
+  pending : List (Msg Pty M)
+  /-- Delivered messages with their delivery round. -/
+  delivered : List (Msg Pty M × ℕ)
+deriving DecidableEq
+
+/-- The honest party `p` sends `m` to `q`: the message enters the pending
+    list with the current round. Nothing is delivered. -/
+def netSend (s : NetSt Pty M) (p q : Pty) (m : M) : NetSt Pty M × List (Msg Pty M) :=
+  (⟨s.round, s.pending ++ [⟨p, q, m, s.round⟩], s.delivered⟩, [])
+
+/-- The adversary delivers the `i`-th pending message now (no change if
+    there is none). This is how the adversary chooses delays and order. -/
+def netDeliver (s : NetSt Pty M) (i : ℕ) : NetSt Pty M × List (Msg Pty M) :=
+  match s.pending[i]? with
+  | some x => (⟨s.round, s.pending.eraseIdx i, s.delivered ++ [(x, s.round)]⟩, [x])
+  | none => (s, [])
+
+/-- The messages that must be delivered before round `s.round` ends:
+    those sent at least `Δ` rounds ago. -/
+def due (Δ : ℕ) (s : NetSt Pty M) : List (Msg Pty M) :=
+  s.pending.filter fun x => decide (x.sent + Δ ≤ s.round)
+
+/-- The end of a round: every due message is delivered in the current
+    round, the others stay pending, and the round advances by one. -/
+def netTick (Δ : ℕ) (s : NetSt Pty M) : NetSt Pty M × List (Msg Pty M) :=
+  (⟨s.round + 1, s.pending.filter (fun x => !decide (x.sent + Δ ≤ s.round)),
+    s.delivered ++ (due Δ s).map fun x => (x, s.round)⟩, due Δ s)
+
+/-- Requests to the stand-alone network: an honest send, or the end of the
+    round signalled by the clock. -/
+inductive NetReq (Pty M : Type) where
+  /-- The honest party `p` sends `m` to `q`. -/
+  | send (p q : Pty) (m : M)
+  /-- The clock has advanced. -/
+  | tick
+deriving DecidableEq
+
+/-- Network events: requests, or the adversary delivering the `i`-th pending
+    message. -/
+abbrev NetEv (Pty M : Type) := Event (NetReq Pty M) ℕ
+
+/-- One activation of the network with delay bound `Δ`. The output is the
+    list of messages delivered in this activation. -/
+def netStep (Δ : ℕ) (s : NetSt Pty M) : NetEv Pty M → NetSt Pty M × List (Msg Pty M)
+  | .inl (.send p q m) => netSend s p q m
+  | .inl .tick => netTick Δ s
+  | .inr i => netDeliver s i
+
+/-- The Δ-bounded network `F_NET` from round `0`. -/
+def network (Δ : ℕ) : DetFunc (NetSt Pty M) (NetEv Pty M) (List (Msg Pty M)) :=
+  ⟨⟨0, [], []⟩, netStep Δ⟩
+
+/-- The network invariant: every pending message was sent in the current
+    round or earlier and is not overdue (the current round is at most `Δ`
+    after its sending round), and every delivered message was delivered no
+    earlier than its sending round and at most `Δ` rounds after it. -/
+def NetInv (Δ : ℕ) (s : NetSt Pty M) : Prop :=
+  (∀ x ∈ s.pending, x.sent ≤ s.round ∧ s.round ≤ x.sent + Δ) ∧
+    ∀ y ∈ s.delivered, y.1.sent ≤ y.2 ∧ y.2 ≤ y.1.sent + Δ
+
+/-- The message `x` is still accounted for: pending or delivered. -/
+def Tracked (x : Msg Pty M) (s : NetSt Pty M) : Prop :=
+  x ∈ s.pending ∨ ∃ d, (x, d) ∈ s.delivered
+
+/-- A step of the network state from `s` to `s'` that preserves the
+    invariant and loses no message. -/
+def NetStepOK (Δ : ℕ) (s s' : NetSt Pty M) : Prop :=
+  (NetInv Δ s → NetInv Δ s') ∧ ∀ x, Tracked x s → Tracked x s'
+
+theorem netStepOK_refl (Δ : ℕ) (s : NetSt Pty M) : NetStepOK Δ s s :=
+  ⟨id, fun _ => id⟩
+
+theorem netSend_ok (Δ : ℕ) (s : NetSt Pty M) (p q : Pty) (m : M) :
+    NetStepOK Δ s (netSend s p q m).1 := by
+  refine ⟨fun ⟨h1, h2⟩ => ⟨fun x hx => ?_, h2⟩, fun x hx => ?_⟩
+  · simp only [netSend, List.mem_append, List.mem_singleton] at hx ⊢
+    rcases hx with hx | rfl
+    · exact h1 x hx
+    · simp
+  · rcases hx with hx | hx
+    · exact .inl (by simp [netSend, hx])
+    · exact .inr (by simpa [netSend] using hx)
+
+theorem netDeliver_ok (Δ : ℕ) (s : NetSt Pty M) (i : ℕ) :
+    NetStepOK Δ s (netDeliver s i).1 := by
+  unfold netDeliver
+  split
+  · rename_i x hx
+    have hxm : x ∈ s.pending := List.mem_of_getElem? hx
+    refine ⟨fun ⟨h1, h2⟩ => ⟨fun y hy => h1 y (List.mem_of_mem_eraseIdx hy), fun y hy => ?_⟩,
+      fun y hy => ?_⟩
+    · simp only [List.mem_append, List.mem_singleton] at hy
+      rcases hy with hy | rfl
+      · exact h2 y hy
+      · exact h1 x hxm
+    · rcases hy with hy | ⟨d, hd⟩
+      · obtain ⟨j, hj⟩ := List.mem_iff_getElem?.mp hy
+        by_cases hji : j = i
+        · subst hji
+          rw [hx] at hj
+          cases hj
+          exact .inr ⟨s.round, by simp⟩
+        · exact .inl (List.mem_eraseIdx_iff_getElem?.mpr ⟨j, hji, hj⟩)
+      · exact .inr ⟨d, by simp [hd]⟩
+  · exact netStepOK_refl Δ s
+
+theorem netTick_ok (Δ : ℕ) (s : NetSt Pty M) : NetStepOK Δ s (netTick Δ s).1 := by
+  refine ⟨fun ⟨h1, h2⟩ => ⟨fun x hx => ?_, fun y hy => ?_⟩, fun x hx => ?_⟩
+  · simp only [netTick, List.mem_filter, Bool.not_eq_true', decide_eq_false_iff_not,
+      not_le] at hx ⊢
+    have := h1 x hx.1
+    omega
+  · simp only [netTick, due, List.mem_append, List.mem_map, List.mem_filter,
+      decide_eq_true_eq] at hy
+    rcases hy with hy | ⟨x, ⟨hx, -⟩, rfl⟩
+    · exact h2 y hy
+    · exact h1 x hx
+  · rcases hx with hx | ⟨d, hd⟩
+    · by_cases hdue : x.sent + Δ ≤ s.round
+      · exact .inr ⟨s.round, by simp [netTick, due, hx, hdue]⟩
+      · exact .inl (by simp [netTick, hx, hdue])
+    · exact .inr ⟨d, by simp [netTick, hd]⟩
+
+theorem netStep_ok (Δ : ℕ) (s : NetSt Pty M) (e : NetEv Pty M) :
+    NetStepOK Δ s (netStep Δ s e).1 := by
+  rcases e with (⟨p, q, m⟩ | _) | i
+  · exact netSend_ok Δ s p q m
+  · exact netTick_ok Δ s
+  · exact netDeliver_ok Δ s i
+
+/-- A tracked message whose deadline has passed is delivered, and its
+    delivery round lies between its sending round and `Δ` rounds later. -/
+theorem delivered_of_tracked (Δ : ℕ) (s : NetSt Pty M) (x : Msg Pty M)
+    (hinv : NetInv Δ s) (hx : Tracked x s) (hlate : x.sent + Δ < s.round) :
+    ∃ d, (x, d) ∈ s.delivered ∧ x.sent ≤ d ∧ d ≤ x.sent + Δ := by
+  rcases hx with hx | ⟨d, hd⟩
+  · have := (hinv.1 x hx).2
+    omega
+  · exact ⟨d, hd, hinv.2 _ hd⟩
+
+/-- Every state reached by the network satisfies the invariant. -/
+theorem network_inv (Δ : ℕ) (es : List (NetEv Pty M)) :
+    NetInv Δ ((network (M := M) (Pty := Pty) Δ).exec (network Δ).init es) :=
+  DetFunc.exec_inv _ (NetInv Δ) (fun s e h => (netStep_ok Δ s e).1 h) es _
+    ⟨fun _ h => by simp [network] at h, fun _ h => by simp [network] at h⟩
+
+/-- **Δ-bounded delivery for the stand-alone network.** Let `pre` be the
+    events before the honest party `p` sends `m` to `q`, sent in round
+    `r`, and `post` the events after it. If the round reached after `post`
+    exceeds `r + Δ`, the message has been delivered in a round `d` with
+    `r ≤ d ≤ r + Δ`. -/
+theorem network_delivered_within (Δ : ℕ) (pre post : List (NetEv Pty M)) (p q : Pty) (m : M)
+    (hlate : ((network Δ).exec (network Δ).init pre).round + Δ <
+      ((network Δ).exec (network Δ).init (pre ++ .inl (.send p q m) :: post)).round) :
+    ∃ d, (⟨p, q, m, ((network Δ).exec (network Δ).init pre).round⟩, d) ∈
+        ((network Δ).exec (network Δ).init (pre ++ .inl (.send p q m) :: post)).delivered ∧
+      ((network Δ).exec (network Δ).init pre).round ≤ d ∧
+      d ≤ ((network Δ).exec (network Δ).init pre).round + Δ := by
+  set s₀ := (network (M := M) (Pty := Pty) Δ).exec (network Δ).init pre
+  set x : Msg Pty M := ⟨p, q, m, s₀.round⟩
+  rw [DetFunc.exec_append, DetFunc.exec_cons] at hlate ⊢
+  have h₁ : NetInv Δ ((network Δ).step s₀ (.inl (.send p q m))).1 ∧
+      Tracked x ((network Δ).step s₀ (.inl (.send p q m))).1 :=
+    ⟨(netSend_ok Δ s₀ p q m).1 (network_inv Δ pre), .inl (by simp [network, netStep, netSend, x])⟩
+  have h₂ := DetFunc.exec_inv (network Δ) (fun s => NetInv Δ s ∧ Tracked x s)
+    (fun s e h => ⟨(netStep_ok Δ s e).1 h.1, (netStep_ok Δ s e).2 x h.2⟩) post _ h₁
+  exact delivered_of_tracked Δ _ x h₂.1 h₂.2 hlate
 
 end ClockNet
 
