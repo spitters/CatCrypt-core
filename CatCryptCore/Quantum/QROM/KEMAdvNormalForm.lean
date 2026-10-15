@@ -10,7 +10,7 @@ public import CatCryptCore.Quantum.QROM.DeltaStarLeLambda
 /-!
 # Padding a KEM adversary with the round ancilla
 
-The numeric bound `qINDCCA_le_find_numeric` reads the work register of the
+The numeric bound `qINDCCA_le_find_numeric_of_lam` reads the work register of the
 adversary as `w₀` work qubits followed by the ancilla `RoundAnc` of the compiled
 decapsulation rounds, and assumes that the
 segment unitaries leave the parked query slots of that ancilla alone and that
@@ -42,7 +42,7 @@ the IND-CCA advantage, is unchanged.
 * `cleanProjM_eq_kr` — `cleanProjM` is `1 ⊗ ancCleanProj`
 * `qINDCCAAdvantage_padAdv` — padding leaves the IND-CCA advantage unchanged
 * `padAdv_hseg`, `padAdv_hinit` — the padded adversary satisfies the segment
-  and initial-state hypotheses of `qINDCCA_le_find_numeric` at `w₀ = 2 * w`
+  and initial-state hypotheses of `qINDCCA_le_find_numeric_of_lam` at `w₀ = 2 * w`
 * `trace_normalForm_round` — one classical round `R`, with an arbitrary
   projector family and arbitrary answer unitaries, is reproduced on every
   observable `X ⊗ 1 ⊗ 1` by: the copy `roundW` of its outcome into a record,

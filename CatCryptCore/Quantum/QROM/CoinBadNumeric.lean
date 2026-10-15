@@ -54,17 +54,18 @@ and the middle term is at most `δ* + ε`.
   the coin-collision weight `collWeight P`
 * `coinBad_ind_le`, `coinBadW_resWeight_le` — on the resampled table
   `coinBadW ≤ Λ + ε`
-* `absDiff_prWinKEMHqCoin_le` —
+* `absDiff_prWinKEMHqCoin_le_of_lam` —
   `|prWinKEMHqCoin true − prWinKEMHqCoin false| ≤ 8 q' Λ^(1/2) + (Λ + ε) + 8 q' Λ^(1/2)`
-* `absDiff_prWinKEMHq_le_numeric` — the bound of `absDiff_prWinKEMHq_le` with
-  `coinBadWeight` replaced by that term
-* `qINDCCA_le_find_numeric` — the quantum IND-CCA advantage through the coin hop,
-  with every correctness term numeric in `Λ` and the `Find` probability of the
-  hop bounded by `4 q' (F b + δ*)` for any `F` bounding the one-wayness step
+* `absDiff_prWinKEMHq_le_numeric_of_lam` — the bound of `absDiff_prWinKEMHq_le`
+  with `coinBadWeight` replaced by that term
+* `qINDCCA_le_find_numeric_of_lam` — the quantum IND-CCA advantage through the
+  coin hop, with every correctness term numeric in `Λ` and the `Find`
+  probability of the hop bounded by `4 q' (F b + δ*)` for any `F` bounding the
+  one-wayness step
 
 ## The hypotheses
 
-In `qINDCCA_le_find_numeric` no correctness term quantifies over every
+In `qINDCCA_le_find_numeric_of_lam` no correctness term quantifies over every
 message. The terms `8 q' / √|Z|` and the multiples of `Λ^(1/2)` and `Λ` are
 numeric once `Λ` and the query counts are given; `Λ` is the expectation over key
 generation of a per-key bound `λ` on the worst-message decryption-failure
@@ -72,10 +73,11 @@ fraction, carried as the hypothesis `hlam`. The parameter `ε` bounds the
 coin-collision weight `collWeight P` of `Quantum/QROM/CollisionWeight.lean`,
 carried as the hypothesis `hcoll` in the forms with suffix `_coll`; the forms
 without the suffix take `ε`-spreadness `hε`, which implies `hcoll`
-(`collWeight_le_of_isSpread`). The forms with suffix `_of_lam` carry no coin
-hypothesis: the `G`-table is resampled only at the key pairs that are
-`CoinGood`, and at the others `hlam` gives `λ ≥ 1`; the forms without the suffix
-also take the coin hypothesis `hcoin`. `δ*`, the weight of the inputs whose
+(`collWeight_le_of_isSpread`). No form carries a coin hypothesis: the `G`-table
+is resampled only at the key pairs that are `CoinGood`, and at the others `hlam`
+gives `λ ≥ 1`. `qINDCCA_le_find_numeric_coll` restates
+`qINDCCA_le_find_numeric_of_lam_coll` with an additional coin hypothesis that
+its proof does not use. `δ*`, the weight of the inputs whose
 challenge message is outside `kemGood`, stays inside the two one-wayness terms;
 it is a failure probability of the challenge message alone, and
 `deltaStar_le_Lambda` (`Quantum/QROM/DeltaStarLeLambda.lean`) bounds it by `Λ`.
@@ -674,40 +676,6 @@ theorem absDiff_prWinKEMHqCoin_le_of_lam (A : KEMQAdv m₁ m₂ n w q k c a PK C
   absDiff_prWinKEMHqCoin_le_of_lam_coll P hpk eG eJ eKR eC eKa A lam hlam ε
     (collWeight_le_of_isSpread P ε hε)
 
-/-- `absDiff_prWinKEMHqCoin_le_of_lam_coll` under the coin hypothesis at every
-key pair in the support of key generation. -/
-theorem absDiff_prWinKEMHqCoin_le_coll (A : KEMQAdv m₁ m₂ n w q k c a PK C K)
-    (_hcoin : ∀ pk sk, P.keygen (pk, sk) ≠ 0 → ∀ m, ∃ ρ, P.dec sk (P.enc pk m ρ) = some m)
-    (lam : PK × SK → ℝ≥0∞)
-    (hlam : ∀ pk sk, P.keygen (pk, sk) ≠ 0 → ∀ x,
-      ((badVals (kemBad P hpk eG eKR pk sk) x).card : ℝ≥0∞) / (n : ℝ≥0∞) ≤ lam (pk, sk))
-    (ε : ℝ≥0∞) (hcoll : collWeight P ≤ ε) :
-    absDiff (prWinKEMHqCoin P hpk eG eJ eKR eC eKa A true)
-        (prWinKEMHqCoin P hpk eG eJ eKR eC eKa A false) ≤
-      8 * (flatQ q k q : ℝ≥0∞) *
-          (∑ i : KEMInput PK SK Z M K m₁ m₂ n, kemSample P i * lam i.1) ^ (1 / 2 : ℝ) +
-        (∑ i : KEMInput PK SK Z M K m₁ m₂ n, kemSample P i * lam i.1 + ε) +
-        8 * (flatQ q k q : ℝ≥0∞) *
-          (∑ i : KEMInput PK SK Z M K m₁ m₂ n, kemSample P i * lam i.1) ^ (1 / 2 : ℝ) :=
-  absDiff_prWinKEMHqCoin_le_of_lam_coll P hpk eG eJ eKR eC eKa A lam hlam ε hcoll
-
-/-- `absDiff_prWinKEMHqCoin_le_of_lam` under the coin hypothesis at every key
-pair in the support of key generation. -/
-theorem absDiff_prWinKEMHqCoin_le (A : KEMQAdv m₁ m₂ n w q k c a PK C K)
-    (_hcoin : ∀ pk sk, P.keygen (pk, sk) ≠ 0 → ∀ m, ∃ ρ, P.dec sk (P.enc pk m ρ) = some m)
-    (lam : PK × SK → ℝ≥0∞)
-    (hlam : ∀ pk sk, P.keygen (pk, sk) ≠ 0 → ∀ x,
-      ((badVals (kemBad P hpk eG eKR pk sk) x).card : ℝ≥0∞) / (n : ℝ≥0∞) ≤ lam (pk, sk))
-    (ε : ℝ≥0∞) (hε : P.IsSpread ε) :
-    absDiff (prWinKEMHqCoin P hpk eG eJ eKR eC eKa A true)
-        (prWinKEMHqCoin P hpk eG eJ eKR eC eKa A false) ≤
-      8 * (flatQ q k q : ℝ≥0∞) *
-          (∑ i : KEMInput PK SK Z M K m₁ m₂ n, kemSample P i * lam i.1) ^ (1 / 2 : ℝ) +
-        (∑ i : KEMInput PK SK Z M K m₁ m₂ n, kemSample P i * lam i.1 + ε) +
-        8 * (flatQ q k q : ℝ≥0∞) *
-          (∑ i : KEMInput PK SK Z M K m₁ m₂ n, kemSample P i * lam i.1) ^ (1 / 2 : ℝ) :=
-  absDiff_prWinKEMHqCoin_le_of_lam P hpk eG eJ eKR eC eKa A lam hlam ε hε
-
 /-- The advantage in `prWinKEMHq` bounded by the two one-way-to-hiding terms of
 the coin hop and the bound of `absDiff_prWinKEMHqCoin_le_of_lam_coll`. -/
 theorem absDiff_prWinKEMHq_le_numeric_of_lam_coll (A : KEMQAdv m₁ m₂ n w q k c a PK C K)
@@ -749,44 +717,6 @@ theorem absDiff_prWinKEMHq_le_numeric_of_lam (A : KEMQAdv m₁ m₂ n w q k c a 
         4 * ((flatQ q k q : ℝ≥0∞) * prFindCoin P hpk eG eJ eKR eC eKa A false) ^ (1 / 2 : ℝ) :=
   absDiff_prWinKEMHq_le_numeric_of_lam_coll P hpk eG eJ eKR eC eKa A lam hlam ε
     (collWeight_le_of_isSpread P ε hε)
-
-/-- `absDiff_prWinKEMHq_le_numeric_of_lam_coll` under the coin hypothesis at every
-key pair in the support of key generation. -/
-theorem absDiff_prWinKEMHq_le_numeric_coll (A : KEMQAdv m₁ m₂ n w q k c a PK C K)
-    (_hcoin : ∀ pk sk, P.keygen (pk, sk) ≠ 0 → ∀ m, ∃ ρ, P.dec sk (P.enc pk m ρ) = some m)
-    (lam : PK × SK → ℝ≥0∞)
-    (hlam : ∀ pk sk, P.keygen (pk, sk) ≠ 0 → ∀ x,
-      ((badVals (kemBad P hpk eG eKR pk sk) x).card : ℝ≥0∞) / (n : ℝ≥0∞) ≤ lam (pk, sk))
-    (ε : ℝ≥0∞) (hcoll : collWeight P ≤ ε) :
-    absDiff (prWinKEMHq P hpk eG eJ eKR eC eKa A true)
-        (prWinKEMHq P hpk eG eJ eKR eC eKa A false) ≤
-      4 * ((flatQ q k q : ℝ≥0∞) * prFindCoin P hpk eG eJ eKR eC eKa A true) ^ (1 / 2 : ℝ) +
-        (8 * (flatQ q k q : ℝ≥0∞) *
-            (∑ i : KEMInput PK SK Z M K m₁ m₂ n, kemSample P i * lam i.1) ^ (1 / 2 : ℝ) +
-          (∑ i : KEMInput PK SK Z M K m₁ m₂ n, kemSample P i * lam i.1 + ε) +
-          8 * (flatQ q k q : ℝ≥0∞) *
-            (∑ i : KEMInput PK SK Z M K m₁ m₂ n, kemSample P i * lam i.1) ^ (1 / 2 : ℝ)) +
-        4 * ((flatQ q k q : ℝ≥0∞) * prFindCoin P hpk eG eJ eKR eC eKa A false) ^ (1 / 2 : ℝ) :=
-  absDiff_prWinKEMHq_le_numeric_of_lam_coll P hpk eG eJ eKR eC eKa A lam hlam ε hcoll
-
-/-- `absDiff_prWinKEMHq_le_numeric_of_lam` under the coin hypothesis at every key
-pair in the support of key generation. -/
-theorem absDiff_prWinKEMHq_le_numeric (A : KEMQAdv m₁ m₂ n w q k c a PK C K)
-    (_hcoin : ∀ pk sk, P.keygen (pk, sk) ≠ 0 → ∀ m, ∃ ρ, P.dec sk (P.enc pk m ρ) = some m)
-    (lam : PK × SK → ℝ≥0∞)
-    (hlam : ∀ pk sk, P.keygen (pk, sk) ≠ 0 → ∀ x,
-      ((badVals (kemBad P hpk eG eKR pk sk) x).card : ℝ≥0∞) / (n : ℝ≥0∞) ≤ lam (pk, sk))
-    (ε : ℝ≥0∞) (hε : P.IsSpread ε) :
-    absDiff (prWinKEMHq P hpk eG eJ eKR eC eKa A true)
-        (prWinKEMHq P hpk eG eJ eKR eC eKa A false) ≤
-      4 * ((flatQ q k q : ℝ≥0∞) * prFindCoin P hpk eG eJ eKR eC eKa A true) ^ (1 / 2 : ℝ) +
-        (8 * (flatQ q k q : ℝ≥0∞) *
-            (∑ i : KEMInput PK SK Z M K m₁ m₂ n, kemSample P i * lam i.1) ^ (1 / 2 : ℝ) +
-          (∑ i : KEMInput PK SK Z M K m₁ m₂ n, kemSample P i * lam i.1 + ε) +
-          8 * (flatQ q k q : ℝ≥0∞) *
-            (∑ i : KEMInput PK SK Z M K m₁ m₂ n, kemSample P i * lam i.1) ^ (1 / 2 : ℝ)) +
-        4 * ((flatQ q k q : ℝ≥0∞) * prFindCoin P hpk eG eJ eKR eC eKa A false) ^ (1 / 2 : ℝ) :=
-  absDiff_prWinKEMHq_le_numeric_of_lam P hpk eG eJ eKR eC eKa A lam hlam ε hε
 
 variable [NeZero (m₁ + m₂)]
 
@@ -976,52 +906,6 @@ theorem qINDCCA_le_find_numeric_coll [NeZero (flatQ q k q)]
             (∑ i : KEMInput PK SK Z M K m₁ m₂ n, kemSample P i * lam i.1) ^ (1 / 2 : ℝ))) :=
   qINDCCA_le_find_numeric_of_lam_coll P hpk eG eJ eKR eC eKa A lam hlam ε hcoll F hF w₀ hw Ans
     hseg hrounds hinit
-
-open scoped Classical in
-/-- `qINDCCA_le_find_numeric_of_lam` under the coin hypothesis at every key pair
-in the support of key generation. -/
-theorem qINDCCA_le_find_numeric [NeZero (flatQ q k q)]
-    (A : KEMQAdv m₁ m₂ n w q k c a PK C K)
-    (_hcoin : ∀ pk sk, P.keygen (pk, sk) ≠ 0 → ∀ m, ∃ ρ, P.dec sk (P.enc pk m ρ) = some m)
-    (lam : PK × SK → ℝ≥0∞)
-    (hlam : ∀ pk sk, P.keygen (pk, sk) ≠ 0 → ∀ x,
-      ((badVals (kemBad P hpk eG eKR pk sk) x).card : ℝ≥0∞) / (n : ℝ≥0∞) ≤ lam (pk, sk))
-    (ε : ℝ≥0∞) (hε : P.IsSpread ε) (F : Bool → ℝ≥0∞)
-    (hF : ∀ b, prFindCoin P hpk eG eJ eKR eC eKa A b ≤
-      4 * (flatQ q k q : ℝ≥0∞) *
-        (F b + ∑ i : KEMInput PK SK Z M K m₁ m₂ n, kemSample P i *
-          (if i.2.2.1 ∈ kemGood P hpk eG eKR i then 0 else 1)))
-    (w₀ : ℕ) (hw : 2 * w = w₀ * ancDim (m₁ + m₂) n c)
-    (Ans : PK → C → K → Fin a → Equiv.Perm ((Fin (m₁ + m₂) × Fin n) × Fin w₀))
-    (hseg : ∀ pk cs κ j i, ((castMR hw (A.run pk cs κ)).seg j i : Matrix _ _ ℂ) *
-        cleanProjM (m₁ + m₂) n w₀ c =
-      cleanProjM (m₁ + m₂) n w₀ c * ((castMR hw (A.run pk cs κ)).seg j i : Matrix _ _ ℂ))
-    (hrounds : ∀ pk cs κ j,
-      (castMR hw (A.run pk cs κ)).rounds j = permRound (m₁ + m₂) n w₀ c (Ans pk cs κ))
-    (hinit : ∀ pk cs κ,
-      SupportedOn (cleanProjM (m₁ + m₂) n w₀ c) (castMR hw (A.run pk cs κ)).init.val) :
-    qINDCCAAdvantage P hpk eG eJ eKR eC eKa A ≤
-      (4 * ((flatQ q k q : ℝ≥0∞) * (4 * (flatQ q k q : ℝ≥0∞) *
-          (F true +
-            ∑ i : KEMInput PK SK Z M K m₁ m₂ n, kemSample P i *
-              (if i.2.2.1 ∈ kemGood P hpk eG eKR i then 0 else 1)))) ^ (1 / 2 : ℝ) +
-        (8 * (flatQ q k q : ℝ≥0∞) *
-            (∑ i : KEMInput PK SK Z M K m₁ m₂ n, kemSample P i * lam i.1) ^ (1 / 2 : ℝ) +
-          (∑ i : KEMInput PK SK Z M K m₁ m₂ n, kemSample P i * lam i.1 + ε) +
-          8 * (flatQ q k q : ℝ≥0∞) *
-            (∑ i : KEMInput PK SK Z M K m₁ m₂ n, kemSample P i * lam i.1) ^ (1 / 2 : ℝ)) +
-        4 * ((flatQ q k q : ℝ≥0∞) * (4 * (flatQ q k q : ℝ≥0∞) *
-          (F false +
-            ∑ i : KEMInput PK SK Z M K m₁ m₂ n, kemSample P i *
-              (if i.2.2.1 ∈ kemGood P hpk eG eKR i then 0 else 1)))) ^ (1 / 2 : ℝ)) +
-      2 * (8 * (flatQ q k q : ℝ≥0∞) * ((Fintype.card Z : ℝ≥0∞)⁻¹) ^ (1 / 2 : ℝ) +
-        (8 * (flatQ (q + 4) k q : ℝ≥0∞) *
-            (∑ i : KEMInput PK SK Z M K m₁ m₂ n, kemSample P i * lam i.1) ^ (1 / 2 : ℝ) +
-          ∑ i : KEMInput PK SK Z M K m₁ m₂ n, kemSample P i * lam i.1 +
-          8 * (flatQ q k q : ℝ≥0∞) *
-            (∑ i : KEMInput PK SK Z M K m₁ m₂ n, kemSample P i * lam i.1) ^ (1 / 2 : ℝ))) :=
-  qINDCCA_le_find_numeric_of_lam P hpk eG eJ eKR eC eKa A lam hlam ε hε F hF w₀ hw Ans hseg
-    hrounds hinit
 
 end Numeric
 

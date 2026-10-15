@@ -48,7 +48,7 @@ slots `j, j + 1, …` are `0` (`SlotData.Good j`).
   register
 * `qINDCCAAdvantage_nfKEM`, `nfKEM_hseg`, `nfKEM_hrounds`, `nfKEM_hinit` — the
   normal form has the advantage of `A` and satisfies the four adversary-shape
-  hypotheses `hw`, `hseg`, `hrounds`, `hinit` of `qINDCCA_le_find_numeric`
+  hypotheses `hw`, `hseg`, `hrounds`, `hinit` of `qINDCCA_le_find_numeric_of_lam`
 
 ## The registers of the normal form
 

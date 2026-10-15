@@ -913,31 +913,6 @@ theorem absDiff_prWinKEM'_prWinKEMHq_le_of_lam (A : KEMQAdv m₁ m₂ n w q k c 
   rw [hΛ]
   exact add_le_add (add_le_add (hJ _) le_rfl) (hJ _)
 
-/-- `absDiff_prWinKEM'_prWinKEMHq_le_of_lam` under the coin hypothesis at every
-key pair in the support of key generation. -/
-theorem absDiff_prWinKEM'_prWinKEMHq_le (A : KEMQAdv m₁ m₂ n w q k c a PK C K) (b : Bool)
-    (_hcoin : ∀ pk sk, P.keygen (pk, sk) ≠ 0 → ∀ m, ∃ ρ, P.dec sk (P.enc pk m ρ) = some m)
-    (lam : PK × SK → ℝ≥0∞)
-    (hlam : ∀ pk sk, P.keygen (pk, sk) ≠ 0 → ∀ x,
-      ((badVals (kemBad P hpk eG eKR pk sk) x).card : ℝ≥0∞) / (n : ℝ≥0∞) ≤ lam (pk, sk))
-    (w₀ : ℕ) (hw : 2 * w = w₀ * ancDim (m₁ + m₂) n c)
-    (Ans : PK → C → K → Fin a → Equiv.Perm ((Fin (m₁ + m₂) × Fin n) × Fin w₀))
-    (hseg : ∀ pk cs κ j i, ((castMR hw (A.run pk cs κ)).seg j i : Matrix _ _ ℂ) *
-        cleanProjM (m₁ + m₂) n w₀ c =
-      cleanProjM (m₁ + m₂) n w₀ c * ((castMR hw (A.run pk cs κ)).seg j i : Matrix _ _ ℂ))
-    (hrounds : ∀ pk cs κ j,
-      (castMR hw (A.run pk cs κ)).rounds j = permRound (m₁ + m₂) n w₀ c (Ans pk cs κ))
-    (hinit : ∀ pk cs κ,
-      SupportedOn (cleanProjM (m₁ + m₂) n w₀ c) (castMR hw (A.run pk cs κ)).init.val) :
-    absDiff (prWinKEM' P hpk eG eJ eKR eC eKa A b) (prWinKEMHq P hpk eG eJ eKR eC eKa A b) ≤
-      8 * (flatQ (q + 4) k q : ℝ≥0∞) *
-          (∑ i : KEMInput PK SK Z M K m₁ m₂ n, kemSample P i * lam i.1) ^ (1 / 2 : ℝ) +
-        ∑ i : KEMInput PK SK Z M K m₁ m₂ n, kemSample P i * lam i.1 +
-        8 * (flatQ q k q : ℝ≥0∞) *
-          (∑ i : KEMInput PK SK Z M K m₁ m₂ n, kemSample P i * lam i.1) ^ (1 / 2 : ℝ) :=
-  absDiff_prWinKEM'_prWinKEMHq_le_of_lam P hpk eG eJ eKR eC eKa A b lam hlam w₀ hw Ans hseg
-    hrounds hinit
-
 end KEMNumeric
 
 end CatCrypt.Quantum.QROM
