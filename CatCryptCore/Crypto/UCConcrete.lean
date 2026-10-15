@@ -140,10 +140,8 @@ theorem DistC.triangle {α β : Type*} {f g k : α → SPComp β} {b₁ b₂ : E
 theorem DistC.comp_right {α β γ : Type*} {f₁ f₂ : α → SPComp β}
     {b : Env α β → ℝ≥0∞} (k : β → SPComp γ) (h : DistC f₁ f₂ b) :
     DistC (fun a => SPComp.bind (f₁ a) k) (fun a => SPComp.bind (f₂ a) k)
-      (fun Z => b (Env.postcomp k Z)) := by
-  intro Z
-  have := h (Env.postcomp k Z)
-  simpa [Env.gap, Env.postcomp, SPComp.bind_assoc] using this
+      (fun Z => b (Env.postcomp k Z)) :=
+  fun Z => by simpa [Env.gap, Env.postcomp, SPComp.bind_assoc] using h (Env.postcomp k Z)
 
 /-- Pre-composition with a common computation: the bound is the supremum of
     the continuation bound over intermediate values and heaps, with the
@@ -225,13 +223,8 @@ theorem UCEmulatesC_iff_exists_sim {spec : UCSpec}
     {π : spec.hon → SPComp (spec.out ⊕ spec.leak)}
     {F : spec.hon → SPComp (spec.out ⊕ spec.sim_if)}
     {bound : (spec.leak → SPComp spec.view) → Env spec.hon (spec.out ⊕ spec.view) → ℝ≥0∞} :
-    UCEmulatesC spec π F bound ↔ ∃ sim, UCEmulatesCSim spec π F sim bound := by
-  constructor
-  · intro h
-    choose sim hsim using h
-    exact ⟨sim, hsim⟩
-  · rintro ⟨sim, h⟩
-    exact h.forget
+    UCEmulatesC spec π F bound ↔ ∃ sim, UCEmulatesCSim spec π F sim bound :=
+  Classical.skolem
 
 /-- A constant concrete bound is numeric UC emulation. -/
 theorem UCEmulatesC_const_iff {spec : UCSpec}
@@ -255,10 +248,8 @@ theorem UCEmulatesC.mono {spec : UCSpec}
     {F : spec.hon → SPComp (spec.out ⊕ spec.sim_if)}
     {b₁ b₂ : (spec.leak → SPComp spec.view) → Env spec.hon (spec.out ⊕ spec.view) → ℝ≥0∞}
     (h : UCEmulatesC spec π F b₁) (hle : ∀ A Z, b₁ A Z ≤ b₂ A Z) :
-    UCEmulatesC spec π F b₂ := by
-  intro A
-  obtain ⟨S, hS⟩ := h A
-  exact ⟨S, hS.mono (hle A)⟩
+    UCEmulatesC spec π F b₂ :=
+  fun A => (h A).imp fun _ hS => hS.mono (hle A)
 
 /-- Monotonicity in the bound, simulator map fixed. -/
 theorem UCEmulatesCSim.mono {spec : UCSpec}
