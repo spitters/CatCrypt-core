@@ -244,3 +244,128 @@ theorem rewinding_vector_of_norm_eq_one {P : Fin n → Matrix d d ℂ}
   simpa [hΦ] using rewinding_vector hP Φ
 
 end Matrix
+
+namespace Real
+
+/-- Hölder's inequality with exponents `3/2` and `3`, in the form used for the density version
+of the rewinding inequality: if `0 ≤ a i, t i, f i` and `a i ^ 3 ≤ f i * t i ^ 2`, then
+`(∑ a i) ^ 3 ≤ (∑ f i) * (∑ t i) ^ 2`. -/
+theorem pow_three_sum_le_sum_mul_sq_sum {ι : Type*} (s : Finset ι) (a t f : ι → ℝ)
+    (ha : ∀ i ∈ s, 0 ≤ a i) (ht : ∀ i ∈ s, 0 ≤ t i) (hf : ∀ i ∈ s, 0 ≤ f i)
+    (h : ∀ i ∈ s, a i ^ 3 ≤ f i * t i ^ 2) :
+    (∑ i ∈ s, a i) ^ 3 ≤ (∑ i ∈ s, f i) * (∑ i ∈ s, t i) ^ 2 := by
+  -- `t i = 0` forces `a i = 0`
+  have hat : ∀ i ∈ s, t i = 0 → a i = 0 := fun i hi h0 => by
+    have := h i hi
+    rw [h0] at this
+    exact pow_eq_zero_iff (n := 3) (by norm_num) |>.mp
+      (le_antisymm (by simpa using this) (pow_nonneg (ha i hi) 3))
+  set T := ∑ i ∈ s, t i with hT
+  have hT0 : 0 ≤ T := Finset.sum_nonneg ht
+  rcases hT0.eq_or_lt with hT0 | hTpos
+  · have hti : ∀ i ∈ s, t i = 0 := (Finset.sum_eq_zero_iff_of_nonneg ht).mp hT0.symm
+    rw [Finset.sum_eq_zero fun i hi => hat i hi (hti i hi), ← hT0]
+    simp
+  have hw : ∀ i ∈ s, 0 ≤ t i / T := fun i hi => div_nonneg (ht i hi) hTpos.le
+  have hw' : ∑ i ∈ s, t i / T = 1 := by rw [← Finset.sum_div, div_self hTpos.ne']
+  have hz : ∀ i ∈ s, 0 ≤ a i / t i := fun i hi => div_nonneg (ha i hi) (ht i hi)
+  have hj := Real.pow_arith_mean_le_arith_mean_pow s _ _ hw hw' hz 3
+  have hl : ∀ i ∈ s, t i / T * (a i / t i) = a i / T := fun i hi => by
+    rcases (ht i hi).eq_or_lt with h0 | hpos
+    · rw [← h0, hat i hi h0.symm]; simp
+    · field_simp
+  have hr : ∀ i ∈ s, t i / T * (a i / t i) ^ 3 ≤ f i / T := fun i hi => by
+    rcases (ht i hi).eq_or_lt with h0 | hpos
+    · rw [← h0]; simpa using div_nonneg (hf i hi) hTpos.le
+    · rw [div_pow, div_mul_div_comm, div_le_div_iff₀ (by positivity) hTpos]
+      have := h i hi
+      calc t i * a i ^ 3 * T ≤ t i * (f i * t i ^ 2) * T := by gcongr
+        _ = f i * (T * t i ^ 3) := by ring
+  rw [Finset.sum_congr rfl hl, ← Finset.sum_div, div_pow] at hj
+  have hj' := hj.trans (Finset.sum_le_sum hr)
+  rw [← Finset.sum_div, div_le_div_iff₀ (by positivity) hTpos] at hj'
+  nlinarith [hj', hTpos]
+
+end Real
+
+namespace Matrix
+
+variable {d : Type*} [Fintype d] {n : ℕ}
+
+/-- `trace (M * ∑ i, u i (u i)ᴴ) = ∑ i, (u i)ᴴ (M (u i))`. -/
+theorem trace_mul_sum_vecMulVec_star {m : ℕ} (M : Matrix d d ℂ) (u : Fin m → d → ℂ) :
+    (M * ∑ i, vecMulVec (u i) (star (u i))).trace = ∑ i, star (u i) ⬝ᵥ (M *ᵥ u i) := by
+  rw [Finset.mul_sum, trace_sum]
+  refine Finset.sum_congr rfl fun i _ => ?_
+  rw [mul_vecMulVec, trace_vecMulVec, dotProduct_comm]
+
+/-- `trace (X * (∑ i, u i (u i)ᴴ) * Xᴴ) = ∑ i, (X (u i))ᴴ (X (u i))`. -/
+theorem trace_mul_sum_vecMulVec_star_mul_conjTranspose {m : ℕ} (X : Matrix d d ℂ)
+    (u : Fin m → d → ℂ) :
+    (X * (∑ i, vecMulVec (u i) (star (u i))) * Xᴴ).trace =
+      ∑ i, star (X *ᵥ u i) ⬝ᵥ (X *ᵥ u i) := by
+  rw [Finset.mul_sum, Finset.sum_mul, trace_sum]
+  refine Finset.sum_congr rfl fun i _ => ?_
+  rw [mul_vecMulVec, vecMulVec_mul, trace_vecMulVec, star_mulVec, dotProduct_comm]
+
+/-- **Rewinding inequality**, density form with the trace (Unruh 2012, Lemma 7): for a positive
+semidefinite `ρ`, `V ρ ^ 3 ≤ F ρ * (re (trace ρ)) ^ 2`, with
+`V ρ = n⁻¹ ∑ θ re (trace (P θ ρ))` and `F ρ = n⁻² ∑ θ₁ ∑ θ₂ re (trace (P θ₂ P θ₁ ρ P θ₁ P θ₂))`. -/
+theorem rewinding_density_trace {P : Fin n → Matrix d d ℂ} (hP : ∀ θ, IsStarProjection (P θ))
+    {ρ : Matrix d d ℂ} (hρ : ρ.PosSemidef) :
+    ((n : ℝ)⁻¹ * ∑ θ, (P θ * ρ).trace.re) ^ 3 ≤
+      (((n : ℝ) ^ 2)⁻¹ * ∑ θ₁, ∑ θ₂, (P θ₂ * P θ₁ * ρ * P θ₁ * P θ₂).trace.re) *
+        ρ.trace.re ^ 2 := by
+  classical
+  obtain ⟨m, u, rfl⟩ := posSemidef_iff_eq_sum_vecMulVec.mp hρ
+  have hV : (n : ℝ)⁻¹ * ∑ θ, (P θ * ∑ i, vecMulVec (u i) (star (u i))).trace.re =
+      ∑ i, (n : ℝ)⁻¹ * ∑ θ, ‖WithLp.toLp 2 (P θ *ᵥ u i)‖ ^ 2 := by
+    simp only [trace_mul_sum_vecMulVec_star, Complex.re_sum, norm_toLp_sq_eq_re_star_dotProduct,
+      (hP _).star_mulVec_dotProduct_mulVec, ← Finset.mul_sum]
+    rw [Finset.sum_comm]
+  have hF : ((n : ℝ) ^ 2)⁻¹ * ∑ θ₁, ∑ θ₂,
+        (P θ₂ * P θ₁ * (∑ i, vecMulVec (u i) (star (u i))) * P θ₁ * P θ₂).trace.re =
+      ∑ i, ((n : ℝ) ^ 2)⁻¹ * ∑ θ₁, ∑ θ₂, ‖WithLp.toLp 2 (P θ₂ *ᵥ (P θ₁ *ᵥ u i))‖ ^ 2 := by
+    have e : ∀ θ₁ θ₂, P θ₂ * P θ₁ * (∑ i, vecMulVec (u i) (star (u i))) * P θ₁ * P θ₂ =
+        (P θ₂ * P θ₁) * (∑ i, vecMulVec (u i) (star (u i))) * (P θ₂ * P θ₁)ᴴ := fun θ₁ θ₂ => by
+      have h1 : (P θ₁)ᴴ = P θ₁ := (hP θ₁).isSelfAdjoint
+      have h2 : (P θ₂)ᴴ = P θ₂ := (hP θ₂).isSelfAdjoint
+      rw [conjTranspose_mul, h1, h2, Matrix.mul_assoc _ (P θ₁) (P θ₂)]
+    simp only [e, trace_mul_sum_vecMulVec_star_mul_conjTranspose, Complex.re_sum,
+      norm_toLp_sq_eq_re_star_dotProduct, mulVec_mulVec, ← Finset.mul_sum]
+    rw [Finset.sum_comm (γ := Fin m)]
+    congr 1
+    refine Finset.sum_congr rfl fun θ₁ _ => ?_
+    rw [Finset.sum_comm]
+  have ht : (∑ i, vecMulVec (u i) (star (u i))).trace.re = ∑ i, ‖WithLp.toLp 2 (u i)‖ ^ 2 := by
+    rw [← Matrix.one_mul (∑ i, vecMulVec (u i) (star (u i))), trace_mul_sum_vecMulVec_star,
+      Complex.re_sum]
+    simp only [one_mulVec, norm_toLp_sq_eq_re_star_dotProduct]
+  rw [hV, hF, ht]
+  refine Real.pow_three_sum_le_sum_mul_sq_sum _ _ _ _ (fun i _ => by positivity)
+    (fun i _ => by positivity) (fun i _ => by positivity) fun i _ => ?_
+  have := rewinding_vector hP (u i)
+  rwa [show ‖WithLp.toLp 2 (u i)‖ ^ 4 = (‖WithLp.toLp 2 (u i)‖ ^ 2) ^ 2 by ring] at this
+
+/-- **Rewinding inequality**, density form (Unruh 2012, Lemma 7): for a positive semidefinite
+`ρ` with `re (trace ρ) ≤ 1`, `V ρ ^ 3 ≤ F ρ`. -/
+theorem rewinding_density {P : Fin n → Matrix d d ℂ} (hP : ∀ θ, IsStarProjection (P θ))
+    {ρ : Matrix d d ℂ} (hρ : ρ.PosSemidef) (htr : ρ.trace.re ≤ 1) :
+    ((n : ℝ)⁻¹ * ∑ θ, (P θ * ρ).trace.re) ^ 3 ≤
+      ((n : ℝ) ^ 2)⁻¹ * ∑ θ₁, ∑ θ₂, (P θ₂ * P θ₁ * ρ * P θ₁ * P θ₂).trace.re := by
+  have h := rewinding_density_trace hP hρ
+  have ht0 : 0 ≤ ρ.trace.re := by
+    simpa using Complex.nonneg_iff.mp hρ.trace_nonneg |>.1
+  have hF : 0 ≤ ((n : ℝ) ^ 2)⁻¹ * ∑ θ₁, ∑ θ₂, (P θ₂ * P θ₁ * ρ * P θ₁ * P θ₂).trace.re := by
+    refine mul_nonneg (by positivity) (Finset.sum_nonneg fun θ₁ _ => Finset.sum_nonneg
+      fun θ₂ _ => ?_)
+    have : (P θ₂ * P θ₁ * ρ * P θ₁ * P θ₂).PosSemidef := by
+      have h1 : (P θ₁)ᴴ = P θ₁ := (hP θ₁).isSelfAdjoint
+      have h2 : (P θ₂)ᴴ = P θ₂ := (hP θ₂).isSelfAdjoint
+      have := hρ.mul_mul_conjTranspose_same (P θ₂ * P θ₁)
+      rwa [conjTranspose_mul, h1, h2, ← Matrix.mul_assoc] at this
+    simpa using Complex.nonneg_iff.mp this.trace_nonneg |>.1
+  calc _ ≤ _ := h
+    _ ≤ _ := mul_le_of_le_one_right hF (pow_le_one₀ ht0 htr)
+
+end Matrix
