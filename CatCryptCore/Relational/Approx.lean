@@ -965,8 +965,7 @@ theorem rHoareApprox_absDiff_prTrue {G₀ G₁ : SPComp α} {ε : ℝ≥0∞}
   have hrw : ∀ G : SPComp α, prTrue (SPComp.bind G A) h₀ =
       ∑' p : α × Heap, (G h₀) (some p) * prTrue (A p.1) p.2 := by
     intro G
-    rw [prTrue_bind_eq_weighted, SDistr.tsum_option_eq_add]
-    simp only [mul_zero, zero_add]
+    simp [prTrue_bind_eq_weighted, SDistr.tsum_option_eq_add, mul_zero, zero_add]
   have hv : ∀ p : α × Heap, prTrue (A p.1) p.2 ≤ 1 := fun p => prTrue_le_one _ _
   have h01 : prTrue (SPComp.bind G₀ A) h₀ ≤ prTrue (SPComp.bind G₁ A) h₀ + ε := by
     rw [hrw G₀, hrw G₁]
@@ -1063,8 +1062,7 @@ theorem prTrue_indicatorAdv_not_mem {S : Set (α × Heap)} {a : α} {h : Heap}
 theorem prTrue_bind_weighted' (G : SPComp α) (A : α → SPComp Bool) (h₀ : Heap) :
     prTrue (SPComp.bind G A) h₀ =
       ∑' p : α × Heap, (G h₀) (some p) * prTrue (A p.1) p.2 := by
-  rw [prTrue_bind_eq_weighted, SDistr.tsum_option_eq_add]
-  simp only [mul_zero, zero_add]
+  simp [prTrue_bind_eq_weighted, SDistr.tsum_option_eq_add, mul_zero, zero_add]
 
 /-- **The optimal distinguisher**: for every pair of games and every initial
     heap there is an adversary whose distinguishing probability dominates the
