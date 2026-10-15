@@ -188,8 +188,7 @@ theorem blsForgeGame_eq_cocdh (F : BLSForger P) :
   have hsign :
       (fun r => SPComp.pure (zpowZMod₁ (P := P) (zpowZMod₁ (P := P) P.g₁ r) x)) =
       (fun r => SPComp.pure (zpowZMod₁ (P := P) (zpowZMod₁ (P := P) P.g₁ x) r)) := by
-    funext r
-    rw [zpowZMod₁_zpowZMod₁, zpowZMod₁_zpowZMod₁, mul_comm]
+    simp [zpowZMod₁_zpowZMod₁, mul_comm]
   rw [hsign]
   congr 1
   funext σ
