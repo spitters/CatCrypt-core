@@ -16,6 +16,7 @@ public import CatCryptCore.Prob.Support
 public import CatCryptCore.Prob.Conditional
 public import CatCryptCore.Prob.BirthdayBound
 public import CatCryptCore.Prob.SchwartzZippel
+public import CatCryptCore.Prob.SchwartzZippelGaloisRing
 public import CatCryptCore.Prob.XorBij
 public import CatCryptCore.Core.Basic
 public import CatCryptCore.Core.Location
