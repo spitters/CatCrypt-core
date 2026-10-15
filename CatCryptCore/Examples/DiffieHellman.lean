@@ -156,7 +156,7 @@ theorem ka_ideal_eq (D : KA_Distinguisher P.G₁) :
     `ka_ideal_eq`). Rosulek, *The Joy of Cryptography* (Diffie–Hellman). -/
 theorem ka_advantage_eq_ddh (D : KA_Distinguisher P.G₁) :
     KA_Advantage P D = DDH_Advantage (elgamalDDH P) (dhReduction D) := by
-  rw [KA_Advantage, DDH_Advantage, ka_real_eq, ka_ideal_eq]
+  simp_all [KA_Advantage, DDH_Advantage, ka_real_eq, ka_ideal_eq]
 
 /-- **DH key agreement is secure under DDH.** If every DDH adversary over the group
     has advantage at most `ε`, then every key-indistinguishability distinguisher
@@ -164,7 +164,6 @@ theorem ka_advantage_eq_ddh (D : KA_Distinguisher P.G₁) :
 theorem ka_secure_under_ddh (ε : ℝ≥0∞)
     (h_ddh : ∀ A : DDH_Adversary P.G₁, DDH_Advantage (elgamalDDH P) A ≤ ε)
     (D : KA_Distinguisher P.G₁) :
-    KA_Advantage P D ≤ ε := by
-  simpa only [ka_advantage_eq_ddh] using h_ddh (dhReduction D)
+    KA_Advantage P D ≤ ε := by simp_all [ka_advantage_eq_ddh]
 
 end CatCrypt.Examples.DiffieHellman
