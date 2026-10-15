@@ -248,7 +248,7 @@ theorem pedersen_binding_le_dlog (P : PairingGroup)
   -- hcommit : g₁^(m₁ + β·r₁) = g₁^(m₂ + β·r₂)
   -- By injectivity of g₁^·: m₁ + β·r₁ = m₂ + β·r₂
   -- then by algebraic extraction: (m₁ - m₂)·(r₂ - r₁)⁻¹ = β
-  exact binding_extracts_dlog P β _ _ _ _ hne (zpowZMod₁_g₁_injective P _ _ hcommit)
+  grind [binding_extracts_dlog, zpowZMod₁_g₁_injective]
 
 /-! ## UC Wrapping -/
 
