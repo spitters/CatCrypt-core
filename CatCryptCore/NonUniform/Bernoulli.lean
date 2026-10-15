@@ -144,7 +144,7 @@ theorem prTrue_bernoulli_bind (p : ℝ≥0) (hp : p ≤ 1) (k : Bool → SPComp 
 /-- A biased coin returns `true` with probability exactly `p`. -/
 theorem prTrue_bernoulli (p : ℝ≥0) (hp : p ≤ 1) (h₀ : Heap) :
     prTrue (sampleFrom (bernoulli p hp)) h₀ = (p : ℝ≥0∞) := by
-  rw [prTrue_sampleFrom, bernoulli_apply_true]
+  simp_all [prTrue_sampleFrom, bernoulli_apply_true]
 
 /-- Cross-check of the coupling against the unary rule: negating a `bernoulli p`
     coin is a `bernoulli (1 - p)` coin, both routes giving `1 - p`. -/
