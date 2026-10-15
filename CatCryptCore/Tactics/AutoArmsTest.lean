@@ -163,7 +163,7 @@ example {α : Type} (G H₁ H₂ H₃ I : SPComp α) (A B : α → SPComp Bool) 
   hop_chain
 
 /-- A key-agreement advantage defined as an `Advantage` and equal to a DDH advantage
-(`ka_secure_under_ddh`, Examples/DiffieHellman.lean), at one reduction. -/
+(`ka_advantage_eq_ddh`, Examples/DiffieHellman.lean), at one reduction. -/
 noncomputable def kaAdv (Kr Ki : SPComp Bool) : ℝ≥0∞ := Advantage Kr Ki
 
 attribute [hop_metric] kaAdv
