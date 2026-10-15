@@ -38,7 +38,8 @@ needed for chain growth.
   grows by at least one block.
 * `slot_in_between`: an execution passes through the start of every slot in between.
 * `chain_growth_gen`, `chain_growth`, `chain_growth_charString`: chain growth.
-* `chain_growth_parties`: chain growth for the chains of two honest parties.
+* `chain_growth_parties_gen`, `chain_growth_parties`: chain growth for the chains of two
+  honest parties.
 
 ## Proof structure
 
@@ -361,6 +362,39 @@ theorem chain_growth_charString [Fintype Party] (hu : (InitParties : List Party)
   chain_growth_gen hu hL hLmap _ (fun sl h => (lucky_slot_iff_charString sl).2 (hP _ h)) w hR h
     hready hw
 
+/-- Chain growth for honest parties, for a slot condition `Q` that implies an honest leader:
+if honest `p1` holds `l1` at the start of a slot and honest `p2` holds `l2` in a later slot, the
+best chain of `p2` at the slot before its current one exceeds the best chain of `p1` at the
+slot before its current one by at least the number of slots satisfying `Q` from the slot of
+the first state up to, excluded, the slot before the second. -/
+theorem chain_growth_parties_gen (hu : (InitParties : List Party).Nodup)
+    {Tree : TreeType Tx Hash Party} (hL : Tree.LongestChainRule)
+    (hLmap : ∀ p : Party, (TreeTypeMap (Tx := Tx) (Hash := Hash) (AdvState := AdvState) p).LongestChainRule)
+    (Q : Slot → Bool) (hQ : ∀ sl, Q sl = true → lucky_slot (Party := Party) sl = true)
+    (w : ℕ) {N N' : GlobalState Tx Hash Party AdvState} {p1 p2 : Party}
+    {l1 l2 : LocalState Tx Hash Party} (hR : N0 AdvState ⇓ N) (h : N ⇓ N')
+    (ht : N.t_now < N'.t_now) (hready : N.progress = .Ready)
+    (hh1 : is_honest p1 = true) (hh2 : is_honest p2 = true)
+    (hl1 : N.state_map p1 = some l1) (hl2 : N'.state_map p2 = some l2)
+    (hw : w ≤ (p_slots_range Q N.t_now (N'.t_now - 1)).length) :
+    (l1.tT.bestChain (N.t_now - 1) l1.tree).length + w ≤
+      (l2.tT.bestChain (N'.t_now - 1) l2.tree).length := by
+  have hN := reachable_inv hR
+  have hN' := reachable_inv (hR.trans h)
+  obtain ⟨N2, hp2, ht2, h12, h23⟩ := slot_in_between hready h (sl := N'.t_now - 1) (by omega)
+    (by omega)
+  have hR2 := hR.trans h12
+  have h1 : (l1.tT.bestChain (N.t_now - 1) l1.tree).length ≤
+      (honest_tree_chain Tree N).length :=
+    subset_leq_chains hL _ fun b hb => (mem_honest_tree Tree N b).2
+      (Or.inr ⟨p1, hN.mem_order hl1, hh1, l1, hl1, hb⟩)
+  have h2 := chain_growth_gen hu hL hLmap Q hQ w hR h12 hready (Tree := Tree)
+    (by simpa [ht2] using hw)
+  have h3 : (honest_tree_chain Tree N2).length ≤ (l2.tT.bestChain (N'.t_now - 1) l2.tree).length :=
+    subset_leq_time_leq_chains (hN'.longest hLmap hl2)
+      (honest_tree_subset_ext hu Tree hR2 hp2 h23 (by omega) hh2 hl2) (by omega)
+  omega
+
 /-- Chain growth for honest parties (`chain_growth_parties`): if honest `p1` holds `l1` at the
 start of a slot and honest `p2` holds `l2` in a later slot, the best chain of `p2` at the slot
 before its current one exceeds the best chain of `p1` at the slot before its current one by
@@ -376,21 +410,8 @@ theorem chain_growth_parties (hu : (InitParties : List Party).Nodup)
     (hl1 : N.state_map p1 = some l1) (hl2 : N'.state_map p2 = some l2)
     (hw : w ≤ (lucky_slots_range (Party := Party) N.t_now (N'.t_now - 1)).length) :
     (l1.tT.bestChain (N.t_now - 1) l1.tree).length + w ≤
-      (l2.tT.bestChain (N'.t_now - 1) l2.tree).length := by
-  have hN := reachable_inv hR
-  have hN' := reachable_inv (hR.trans h)
-  obtain ⟨N2, hp2, ht2, h12, h23⟩ := slot_in_between hready h (sl := N'.t_now - 1) (by omega)
-    (by omega)
-  have hR2 := hR.trans h12
-  have h1 : (l1.tT.bestChain (N.t_now - 1) l1.tree).length ≤
-      (honest_tree_chain Tree N).length :=
-    subset_leq_chains hL _ fun b hb => (mem_honest_tree Tree N b).2
-      (Or.inr ⟨p1, hN.mem_order hl1, hh1, l1, hl1, hb⟩)
-  have h2 := chain_growth hu hL hLmap w hR h12 hready (Tree := Tree)
-    (by simpa [lucky_slots_worlds, ht2] using hw)
-  have h3 : (honest_tree_chain Tree N2).length ≤ (l2.tT.bestChain (N'.t_now - 1) l2.tree).length :=
-    subset_leq_time_leq_chains (hN'.longest hLmap hl2)
-      (honest_tree_subset_ext hu Tree hR2 hp2 h23 (by omega) hh2 hl2) (by omega)
-  omega
+      (l2.tT.bestChain (N'.t_now - 1) l2.tree).length :=
+  chain_growth_parties_gen hu hL hLmap lucky_slot (fun _ h => h) w hR h ht hready hh1 hh2 hl1 hl2
+    hw
 
 end CatCryptCore.Consensus.PoSNSB
