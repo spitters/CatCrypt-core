@@ -17,23 +17,14 @@ Two deliverables that extend CatCrypt's existing tactic suite with
 VCVio-inspired ergonomics, without re-implementing machinery that's
 already present.
 
-## `ssprove_crypto` — a fuller fixpoint driver
+## `ssprove_crypto` — the relational driver
 
-`ssprove_auto_ec` (in `Tactics/Auto.lean`) already chains
-`ssprove_wp_step + ssprove_sync + ssprove_rcondt/f + sampling_l/r +
-dead_code + assumption` in a fixpoint loop.  What it does **not** chain
-is the richer structural family we've built since then:
-
-* `ssprove_sim_step` — automated bisimulation step (matches heads on both
-  sides, applies the corresponding coupling rule).
-* `ssprove_sp_step` — strongest-postcondition propagation from the head.
-* `ssprove_restore_pre` / `ssprove_restore_mem` — invariant restoration
-  under `set_lhs` / `set_rhs`.
-* Per-iteration `ssprove_code_simpl` normalization.
-
-`ssprove_crypto` and `ssprove_crypto_step` fold all of these into a
-single driver.  Behaves like VCVio's `qvcgen` but targets CatCrypt's
-richer per-step substrate.
+`ssprove_crypto` is `ssprove_auto_ec!` (in `Tactics/Auto.lean`):
+`rHoare_refl`, and otherwise at most 64 rounds of `ssprove_wp_step +
+ssprove_sync + ssprove_rcondt/f + sampling_l/r + dead_code + assumption`,
+each round required to change a goal, followed by a closing tactic on the
+remaining goals. `ssprove_crypto_step` is one such round. Both terminate on
+every goal: they close it or fail.
 
 ## `prob_to_rHoare` — lift probability equalities to pRHL
 
@@ -65,14 +56,20 @@ open CatCrypt.Core
 /-! ## `ssprove_crypto` driver
 
 `ssprove_crypto` is the top-level entry point for cryptographic-equivalence
-goals. It delegates to `ssprove_auto_ec!`, the fixpoint driver that runs
-WP + sync + rcondt/f + sample + dead-code elimination to completion. -/
+goals. It delegates to `ssprove_auto_ec!`, which runs WP + sync + rcondt/f +
+sample + dead-code elimination while each round changes a goal, at most 64
+rounds. -/
 
 /-- Top-level driver for cryptographic-equivalence goals. Delegates to
-    `ssprove_auto_ec!` (WP + sync + rcondt/f + sample + dead-code
-    elimination, run to a fixpoint). -/
+    `ssprove_auto_ec!` (`rHoare_refl`, then at most 64 progressing rounds of
+    WP + sync + rcondt/f + sample + dead-code elimination and a closing
+    tactic). It closes the goal or fails. -/
 syntax "ssprove_crypto" : tactic
 macro_rules | `(tactic| ssprove_crypto) => `(tactic| ssprove_auto_ec!)
+
+/-- One round of `ssprove_crypto`: `ssprove_auto_step`, which fails when it
+    changes no goal. -/
+macro "ssprove_crypto_step" : tactic => `(tactic| ssprove_auto_step)
 
 /-! ## `prob_to_rHoare` — probability-goal lowering -/
 

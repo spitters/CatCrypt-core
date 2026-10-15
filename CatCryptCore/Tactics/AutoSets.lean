@@ -45,8 +45,9 @@ and two `ℝ≥0∞` coefficient facts.
 * `catcrypt_grind`: `grind` with the `CatCryptGrind` set active.
 * `ssprove_crypto_close`: closes a goal by `simp_all`, `catcrypt_grind` or
   `aesop` over `CatCryptRel`.
-* `ssprove_crypto_grind`: `ssprove_crypto_close`, and otherwise `ssprove_crypto`
-  followed by `ssprove_crypto_close` on each remaining goal.
+* `ssprove_crypto_grind`: `ssprove_crypto_close`, otherwise `ssprove_crypto`,
+  otherwise the bounded rounds of `ssprove_auto_repeat` followed by
+  `ssprove_crypto_close` on each remaining goal.
 -/
 
 @[expose] public section
@@ -140,12 +141,15 @@ macro "ssprove_crypto_close" : tactic => `(tactic| first
   | catcrypt_grind
   | aesop (rule_sets := [CatCryptRel]) (config := { terminal := true }))
 
-/-- `ssprove_crypto_grind` closes the goal by `ssprove_crypto_close`; when that
-fails, it runs `ssprove_crypto` and closes each remaining goal by
-`ssprove_crypto_close`. It fails when a goal stays open. -/
+/-- `ssprove_crypto_grind` closes the goal by the first of
+`ssprove_crypto_close`, `ssprove_crypto`, and the rounds of
+`ssprove_auto_repeat` followed by `ssprove_crypto_close` on each remaining
+goal. It fails when a goal stays open. -/
 macro "ssprove_crypto_grind" : tactic => `(tactic| first
   | ssprove_crypto_close
-  | (ssprove_crypto
+  | ssprove_crypto
+  | ((try ssprove_code_simpl)
+     ssprove_auto_repeat
      all_goals ssprove_crypto_close))
 
 end

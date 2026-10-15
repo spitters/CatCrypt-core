@@ -185,4 +185,44 @@ example (a b : ℕ) (ha : 1 ≤ a) (hb : 1 ≤ b) (ε₁ ε₂ : ℝ≥0∞) :
     ε₁ + ε₂ ≤ (a : ℝ≥0∞) * ε₁ + (b : ℝ≥0∞) * ε₂ := by
   bound
 
+/-! ## Termination of the relational drivers -/
+
+/-- On a goal that `rHoare_refl` does not close and that the closing tactics
+leave open, each driver fails within the default heartbeats. -/
+example : True := by
+  fail_if_success
+    have : rHoare eqPre (SPComp.sample Bool) (SPComp.pure true) eqPost := by ssprove_auto_step
+  fail_if_success
+    have : rHoare eqPre (SPComp.sample Bool) (SPComp.pure true) eqPost := by ssprove_crypto_step
+  fail_if_success
+    have : rHoare eqPre (SPComp.sample Bool) (SPComp.pure true) eqPost := by ssprove_auto_ec
+  fail_if_success
+    have : rHoare eqPre (SPComp.sample Bool) (SPComp.pure true) eqPost := by ssprove_auto_ec!
+  fail_if_success
+    have : rHoare eqPre (SPComp.sample Bool) (SPComp.pure true) eqPost := by ssprove_crypto
+  trivial
+
+/-- Synchronised sampling with a constant continuation: closed by `ssprove_auto_ec`
+after a `ssprove_sync` round. -/
+example : rHoare eqPre (SPComp.bind (SPComp.sample Bool) (fun _ => SPComp.pure (42 : ℕ)))
+    (SPComp.bind (SPComp.sample Bool) (fun _ => SPComp.pure (42 : ℕ))) eqPost := by
+  ssprove_auto_ec
+
+/-- A pure prefix against a constant: closed by `ssprove_crypto` through simplification. -/
+example (x : Bool) :
+    rHoare eqPre (SPComp.bind (SPComp.pure x) (fun k => SPComp.pure (xor k x)))
+      (SPComp.pure false) eqPost := by
+  ssprove_crypto
+
+/-- Identical programs: closed by `ssprove_auto_ec!` through `rHoare_refl`. -/
+example : rHoare eqPre (SPComp.bind (SPComp.sample Bool) (fun x => SPComp.pure x))
+    (SPComp.bind (SPComp.sample Bool) (fun x => SPComp.pure x)) eqPost := by
+  ssprove_auto_ec!
+
+/-- `ssprove_crypto_step` passes over alternatives that succeed without progress
+and closes the goal by `assumption`. -/
+example (h : rHoare eqPre (SPComp.sample Bool) (SPComp.pure true) eqPost) :
+    rHoare eqPre (SPComp.sample Bool) (SPComp.pure true) eqPost := by
+  ssprove_crypto_step
+
 end CatCrypt.Tactics.AutoSetsTest
