@@ -7,6 +7,7 @@ module
 
 public import CatCryptCore.Quantum.TensorProduct
 public import CatCryptCore.Quantum.Instrument
+public import CatCryptCore.Quantum.KroneckerPSD
 public import Mathlib.Analysis.Matrix.Order
 
 /-!
@@ -17,11 +18,9 @@ again a density matrix on the product dimension `d₁ * d₂`.
 
 ## Main results
 
-* `kronecker_posSemidef` — the flat Kronecker product of two PSD matrices is PSD,
-  obtained from mathlib's `Matrix.PosSemidef.kronecker` (over the product index)
-  transported along the reindexing `finProdEquiv`.
 * `kroneckerDensity` — packages `kronecker` of two `DensityMatrix` values into a
-  `DensityMatrix (d₁ * d₂)`.
+  `DensityMatrix (d₁ * d₂)`; positivity is `QHL.kronecker_posSemidef`
+  (`CatCryptCore/Quantum/KroneckerPSD.lean`).
 -/
 
 @[expose] public section
@@ -36,30 +35,11 @@ namespace CatCrypt.Crypto.UCMonad.DiamondNormStates
 
 variable {d₁ d₂ : ℕ}
 
-/-- The flat Kronecker product `kronecker A B` is the reindexing of mathlib's
-    `Matrix.kroneckerMap (·*·) A B` (indexed by `Fin d₁ × Fin d₂`) along the
-    equivalence `finProdEquiv`. -/
-theorem kronecker_eq_submatrix
-    (A : Matrix (Fin d₁) (Fin d₁) ℂ) (B : Matrix (Fin d₂) (Fin d₂) ℂ) :
-    kronecker A B =
-      (Matrix.kroneckerMap (· * ·) A B).submatrix
-        (finProdEquiv d₁ d₂).symm (finProdEquiv d₁ d₂).symm := by
-  ext i j
-  simp [kronecker_apply, Matrix.submatrix_apply, Matrix.kroneckerMap_apply]
-
-/-- The flat Kronecker product of two PSD matrices is PSD. -/
-theorem kronecker_posSemidef
-    {A : Matrix (Fin d₁) (Fin d₁) ℂ} {B : Matrix (Fin d₂) (Fin d₂) ℂ}
-    (hA : A.PosSemidef) (hB : B.PosSemidef) :
-    (kronecker A B).PosSemidef := by
-  rw [kronecker_eq_submatrix]
-  exact (hA.kronecker hB).submatrix (finProdEquiv d₁ d₂).symm
-
 /-- Kronecker product of two density matrices is a density matrix. -/
 noncomputable def kroneckerDensity
     (ρ : DensityMatrix d₁) (σ : DensityMatrix d₂) : DensityMatrix (d₁ * d₂) where
   val := kronecker ρ.val σ.val
-  psd := kronecker_posSemidef ρ.psd σ.psd
+  psd := QHL.kronecker_posSemidef ρ.psd σ.psd
   tr_one := by rw [trace_kronecker, ρ.tr_one, σ.tr_one]; ring
 
 @[simp]
