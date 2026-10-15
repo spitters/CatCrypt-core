@@ -117,17 +117,6 @@ structure ValidConfig where
   /-- Whether to use automation -/
   auto : Bool := true
 
-/-- `ssprove_valid!` is a more aggressive version of `ssprove_valid`
-that uses additional automation. -/
-elab "ssprove_valid!" : tactic => do
-  evalTactic (← `(tactic|
-    first
-    | trivial
-    | constructor <;> (first | trivial | assumption | decide)
-    | assumption
-    | decide
-  ))
-
 /-! ## Distribution-Level Simplification
 
 The `ssprove_distr_simp` tactic normalizes terms at the `SDistr` level,
@@ -195,15 +184,6 @@ macro "ssprove_proc" : tactic => `(tactic| (
             simp only [SPComp.monad_bind_eq, SPComp.bind_assoc, SPComp.monad_pure_eq,
                        SPComp.pure_bind, SPComp.bind_pure, Function.comp]
             <;> try rfl))
-  ))
-
-set_option hygiene false in
-/-- `ssprove_proc_unfold defs` unfolds definitions then normalizes.
-
-Usage: `ssprove_proc_unfold my_real my_ideal` -/
-macro "ssprove_proc_unfold " defs:ident* : tactic => `(tactic| (
-  unfold $defs*
-  ssprove_proc
   ))
 
 /-! ## Bijection Coupling Tactic

@@ -48,7 +48,7 @@ This module provides tactic automation for CatCrypt proofs.
 * `CatCrypt.Tactics.Sync` - Synchronization tactics (ssprove_sync, ssprove_sync_eq)
 * `CatCrypt.Tactics.Invariant` - Invariant tactics (ssprove_invariant, ssprove_restore)
 * `CatCrypt.Tactics.ProofFrog` - ProofFrog-inspired automation (copy propagation, dead code elimination)
-* `CatCrypt.Tactics.Restore` - Invariant restoration after put operations (ssprove_restore_pre, ssprove_restore_mem)
+* `CatCrypt.Tactics.Restore` - Consequence rules restoring a precondition after put operations
 * `CatCrypt.Tactics.LazySampling` - Lazy/eager sampling infrastructure for PRF proofs
 * `CatCrypt.Tactics.Proc` - Procedure unfolding (ssprove_proc)
 * `CatCrypt.Tactics.WP` - Weakest precondition (ssprove_wp)
@@ -77,8 +77,6 @@ The CatCrypt tactic library provides automation for:
 ### Invariant Reasoning
 - `ssprove_invariant` - Prove invariant preservation
 - `ssprove_restore` - Restore invariants after writes
-- `ssprove_restore_pre` - Restore precondition after put operations (from set_lhs/set_rhs)
-- `ssprove_restore_mem` - Restore precondition including remembered values
 
 ### EasyCrypt-Style Tactics
 - `ssprove_proc [d₁, d₂, ...]` - Unfold game/oracle definitions (EasyCrypt's `proc`)
@@ -100,7 +98,6 @@ The CatCrypt tactic library provides automation for:
 - `ssprove_contract_all` - Apply all contraction rules (duplicate get/put elimination)
 - `ssprove_canonicalize` - Normalize code structure (bind association, pure inlining)
 - `ssprove_auto_pf` - Apply all ProofFrog-style simplifications
-- `ssprove_auto_pf!` - Aggressive automation including sync rules
 
 ## Usage
 

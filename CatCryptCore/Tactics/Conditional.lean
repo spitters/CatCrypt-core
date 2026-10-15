@@ -18,7 +18,6 @@ proofs, inspired by EasyCrypt's `rcondt` and `rcondf` tactics.
 
 * `ssprove_rcondt` - resolve a conditional when condition is always true
 * `ssprove_rcondf` - resolve a conditional when condition is always false
-* `ssprove_ite` - try to resolve conditionals automatically
 
 ## Main lemmas
 
@@ -212,24 +211,6 @@ macro "ssprove_rcondf" : tactic => `(tactic| (
   | apply rHoare_ite_left_false
   | apply rHoare_ite_right_false
   | fail "ssprove_rcondf: no if-then-else found in goal"
-))
-
-/-- `ssprove_ite` tries to resolve if-then-else branches automatically.
-
-This tactic first tries `split_ifs` and then attempts to close goals with
-`simp_all`, `assumption`, or `decide`.
-
-Example:
-```lean
-theorem example : rHoare Φ (if true then t₁ else e₁) c₂ Ψ := by
-  ssprove_ite
-```
--/
-macro "ssprove_ite" : tactic => `(tactic| (
-  first
-  | simp only [ite_true, ite_false]
-  | split_ifs <;> first | assumption | simp_all | decide
-  | fail "ssprove_ite: could not resolve if-then-else"
 ))
 
 end CatCrypt.Tactics

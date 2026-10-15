@@ -110,28 +110,6 @@ macro "ssprove_sync_bij" f:term : tactic => `(tactic| (
   apply rHoare_sample_bij _ _ $f
 ))
 
-/-- `ssprove_sync_get` applies the synchronized get rule.
-
-This generates a subgoal requiring the precondition to imply
-that both heaps have the same value at the location.
--/
-macro "ssprove_sync_get" : tactic => `(tactic| (
-  first
-  | apply rHoare_get_sync
-  | fail "ssprove_sync_get: goal is not a synchronized get"
-))
-
-/-- `ssprove_sync_set` applies the synchronized set rule.
-
-This generates a subgoal requiring the precondition to be preserved
-after setting the same value on both heaps.
--/
-macro "ssprove_sync_set" : tactic => `(tactic| (
-  first
-  | apply rHoare_set_sync
-  | fail "ssprove_sync_set: goal is not a synchronized set"
-))
-
 /-- `ssprove_sync_ret` applies the return rule for same values. -/
 macro "ssprove_sync_ret" : tactic => `(tactic| (
   first
@@ -292,54 +270,6 @@ macro "ssprove_swap_rhs" eq:term : tactic => `(tactic| (
   apply rHoare_swap_rhs $eq
 ))
 
-/-! ## Swap Sequence Tactics
-
-These tactics apply a sequence of swap operations in order.
-They mirror Rocq SSProve's `ssprove_swap_seq_lhs` and `ssprove_swap_seq_rhs`.
--/
-
-/-- `ssprove_swap_seq_lhs [eq₁, eq₂, ...]` applies a sequence of swap lemmas on the left side.
-
-Each element in the list should be a proof that swaps two operations.
-The swaps are applied in order from left to right.
-
-Example:
-```
-theorem example : rHoare Φ (do
-    let z ← SPComp.sample γ
-    let y ← SPComp.sample β
-    let x ← SPComp.sample α
-    f x y z) c₂ Ψ := by
-  ssprove_swap_seq_lhs [SPComp.swap_sample_sample γ β _, SPComp.swap_sample_sample γ α _]
-  -- Goal is now: rHoare Φ (do let x ← sample α; let y ← sample β; let z ← sample γ; f x y z) c₂ Ψ
-```
--/
-macro "ssprove_swap_seq_lhs" "[" eqs:term,* "]" : tactic => do
-  let tacticList ← eqs.getElems.toList.mapM fun eq => `(tactic| ssprove_swap_lhs $eq)
-  let tactics : Array (Lean.TSyntax `tactic) := tacticList.toArray
-  `(tactic| ($[$tactics]*))
-
-/-- `ssprove_swap_seq_rhs [eq₁, eq₂, ...]` applies a sequence of swap lemmas on the right side.
-
-Each element in the list should be a proof that swaps two operations.
-The swaps are applied in order from left to right.
-
-Example:
-```
-theorem example : rHoare Φ c₁ (do
-    let z ← SPComp.sample γ
-    let y ← SPComp.sample β
-    let x ← SPComp.sample α
-    f x y z) Ψ := by
-  ssprove_swap_seq_rhs [SPComp.swap_sample_sample γ β _, SPComp.swap_sample_sample γ α _]
-  -- Goal is now: rHoare Φ c₁ (do let x ← sample α; let y ← sample β; let z ← sample γ; f x y z) Ψ
-```
--/
-macro "ssprove_swap_seq_rhs" "[" eqs:term,* "]" : tactic => do
-  let tacticList ← eqs.getElems.toList.mapM fun eq => `(tactic| ssprove_swap_rhs $eq)
-  let tactics : Array (Lean.TSyntax `tactic) := tacticList.toArray
-  `(tactic| ($[$tactics]*))
-
 /-- `ssprove_swap_samples_lhs n` repeatedly swaps samples on the left side `n` times.
 
 This is useful when you have multiple samples that need to be reordered and all are
@@ -361,56 +291,6 @@ macro "ssprove_swap_samples_lhs" n:num : tactic =>
 /-- `ssprove_swap_samples_rhs n` repeatedly swaps samples on the right side `n` times. -/
 macro "ssprove_swap_samples_rhs" n:num : tactic =>
   `(tactic| iterate $n (apply rHoare_swap_rhs; intro h; apply SPComp.swap_sample_sample))
-
-/-- `ssprove_swap_auto_lhs` tries to automatically apply a single swap on the left side.
-
-It tries each swap rule in sequence until one succeeds:
-1. sample-sample swap
-2. sample-get swap
-3. get-sample swap
-4. get-get swap
-5. set-sample swap
-6. sample-set swap
-
-This tactic is useful when you don't want to specify which swap to apply.
--/
-macro "ssprove_swap_auto_lhs" : tactic => `(tactic| (
-  first
-  | (apply rHoare_swap_lhs; intro h; apply SPComp.swap_sample_sample)
-  | (apply rHoare_swap_lhs; intro h; apply SPComp.swap_sample_get)
-  | (apply rHoare_swap_lhs; intro h; apply SPComp.swap_get_sample)
-  | (apply rHoare_swap_lhs; intro h; apply SPComp.swap_get_get)
-  | (apply rHoare_swap_lhs; intro h; apply SPComp.swap_set_sample)
-  | (apply rHoare_swap_lhs; intro h; apply SPComp.swap_sample_set)
-  | fail "ssprove_swap_auto_lhs: no applicable swap rule"
-))
-
-/-- `ssprove_swap_auto_rhs` tries to automatically apply a single swap on the right side.
-
-It tries each swap rule in sequence until one succeeds.
--/
-macro "ssprove_swap_auto_rhs" : tactic => `(tactic| (
-  first
-  | (apply rHoare_swap_rhs; intro h; apply SPComp.swap_sample_sample)
-  | (apply rHoare_swap_rhs; intro h; apply SPComp.swap_sample_get)
-  | (apply rHoare_swap_rhs; intro h; apply SPComp.swap_get_sample)
-  | (apply rHoare_swap_rhs; intro h; apply SPComp.swap_get_get)
-  | (apply rHoare_swap_rhs; intro h; apply SPComp.swap_set_sample)
-  | (apply rHoare_swap_rhs; intro h; apply SPComp.swap_sample_set)
-  | fail "ssprove_swap_auto_rhs: no applicable swap rule"
-))
-
-/-- `ssprove_swap_auto_seq_lhs n` automatically applies up to `n` swaps on the left side.
-
-This repeatedly calls `ssprove_swap_auto_lhs` until either `n` swaps have been applied
-or no more swaps are applicable.
--/
-macro "ssprove_swap_auto_seq_lhs" n:num : tactic =>
-  `(tactic| iterate $n (try ssprove_swap_auto_lhs))
-
-/-- `ssprove_swap_auto_seq_rhs n` automatically applies up to `n` swaps on the right side. -/
-macro "ssprove_swap_auto_seq_rhs" n:num : tactic =>
-  `(tactic| iterate $n (try ssprove_swap_auto_rhs))
 
 /-! ## One-Sided Sampling Tactics
 
@@ -452,52 +332,6 @@ macro "ssprove_rnd_rhs" : tactic => `(tactic| (
   first
   | (apply rHoare_sample_r; intro _)
   | fail "ssprove_rnd_rhs: right side does not start with sampling"
-))
-
-/-! ## Combined Coupling Step Tactics
-
-These combine bind + coupling + intro into a single tactic step.
--/
-
-/-- `ssprove_bij_step f` applies a bijection coupling step.
-
-When both sides of an rHoare goal sample, this combines:
-1. `rHoare_bind` with the appropriate intermediate postcondition
-2. `rHoare_sample_bij` with bijection `f`
-3. `intro` for the sampled values
-
-After this tactic, the goal becomes: for all `a`, prove the continuation
-with the left side using `a` and the right side using `f a`.
-
-Example:
-```
--- Goal: rHoare Φ (sample Bool >>= k₁) (sample Bool >>= k₂) Ψ
-ssprove_bij_step (xorBij m)
--- Goal: ∀ a, rHoare Φ (k₁ a) (k₂ (xorBij m a)) Ψ
-```
--/
-macro "ssprove_bij_step" f:term : tactic => `(tactic| (
-  first
-  | (apply rHoare_bij_step $f; intro _)
-  | fail "ssprove_bij_step: could not apply bijection coupling step"
-))
-
-/-- `ssprove_same_step` applies a same-distribution coupling step.
-
-When both sides of an rHoare goal sample from the same distribution, this
-combines bind + diagonal coupling + intro.
-
-Example:
-```
--- Goal: rHoare Φ (sample Bool >>= k₁) (sample Bool >>= k₂) Ψ
-ssprove_same_step
--- Goal: ∀ a, rHoare Φ (k₁ a) (k₂ a) Ψ
-```
--/
-macro "ssprove_same_step" : tactic => `(tactic| (
-  first
-  | (apply rHoare_same_step; intro _)
-  | fail "ssprove_same_step: could not apply same-distribution coupling step"
 ))
 
 end CatCrypt.Tactics

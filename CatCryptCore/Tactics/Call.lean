@@ -17,7 +17,6 @@ to head binds in relational proofs, inspired by EasyCrypt's `call` tactic.
 ## Main tactics
 
 * `ssprove_call spec` - apply a known specification to the head bind
-* `ssprove_call_with spec mid` - apply spec with explicit intermediate postcondition
 
 ## Design rationale
 
@@ -66,51 +65,6 @@ theorem example (hf : rHoare Φ f f' Mid) :
 macro "ssprove_call" spec:term : tactic =>
   `(tactic| (
     apply rHoare_bind $spec
-    intro _ _
-  ))
-
-/-- `ssprove_call_exact spec` applies a spec and immediately tries to close
-the continuation goal with `assumption` or `exact`.
-
-Useful when the continuation proof is already available.
--/
-macro "ssprove_call_exact" spec:term cont:term : tactic =>
-  `(tactic| (
-    exact rHoare_bind $spec (fun _ _ => $cont)
-  ))
-
-/-- `ssprove_call_conseq spec` applies a spec via consequence rule.
-
-This is useful when the precondition of `spec` doesn't exactly match
-the current precondition but can be derived from it.
-
-Generates subgoals for:
-1. Precondition implication
-2. Continuation proof
--/
-macro "ssprove_call_conseq" spec:term : tactic =>
-  `(tactic| (
-    apply rHoare_bind
-    · apply rHoare_conseq _ _ $spec
-      · intro _ _ h; exact h
-      · intro _ _ _ _ h; exact h
-    · intro _ _
-  ))
-
-/-- `ssprove_call_refl` handles the case where both sides execute the same
-computation. Applies reflexivity of rHoare via `rHoare_refl`.
-
-Example:
-```lean
--- When goal is: rHoare eqPre (f >>= g) (f >>= g') Ψ
--- and we know f preserves eqPre
-ssprove_call_refl
--- Generates: ∀ a b, rHoare (fun h₁ h₂ => eqPost a h₁ b h₂) (g a) (g' b) Ψ
-```
--/
-macro "ssprove_call_refl" : tactic =>
-  `(tactic| (
-    apply rHoare_bind (rHoare_refl _)
     intro _ _
   ))
 

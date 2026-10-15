@@ -28,7 +28,6 @@ and you want to avoid re-reading it.
 
 ### Tactics
 * `ssprove_forget` - Discard most recent remembered value from precondition
-* `ssprove_forget_all` - Discard all remembered values from precondition
 * `ssprove_remember_lhs` - Apply r_get_remember_lhs rule
 * `ssprove_remember_rhs` - Apply r_get_remember_rhs rule
 * `ssprove_remind_lhs` - Apply r_get_remind_lhs rule
@@ -272,21 +271,6 @@ macro "ssprove_forget" : tactic => `(tactic| (
   | fail "ssprove_forget: no rem_lhs or rem_rhs found in precondition"
 ))
 
-/-- `ssprove_forget_all` discards all remembered values from the precondition.
-
-This repeatedly applies `ssprove_forget` until no more remembered values remain.
-
-Example:
-```lean
--- Goal: rHoare (Φ ⋊ rem_lhs l₁ v₁ ⋊ rem_rhs l₂ v₂ ⋊ rem_lhs l₃ v₃) c₁ c₂ Ψ
-ssprove_forget_all
--- New goal: rHoare Φ c₁ c₂ Ψ
-```
--/
-macro "ssprove_forget_all" : tactic => `(tactic| (
-  repeat ssprove_forget
-))
-
 /-! ## Remember Tactics -/
 
 /-- `ssprove_remember_lhs` applies the r_get_remember_lhs rule.
@@ -362,32 +346,6 @@ macro "ssprove_remind_rhs" : tactic => `(tactic| (
   first
   | apply r_get_remind_rhs
   | fail "ssprove_remind_rhs: goal is not a get-bind on RHS or rem_rhs not in precondition"
-))
-
-/-! ## Combined Remember/Remind Tactics -/
-
-/-- `ssprove_get_lhs` handles a get on the left side by either remembering or reminding.
-
-If the precondition already contains `rem_lhs l v`, it uses the remembered value.
-Otherwise, it remembers the new value.
--/
-macro "ssprove_get_lhs" : tactic => `(tactic| (
-  first
-  | ssprove_remind_lhs
-  | ssprove_remember_lhs
-  | fail "ssprove_get_lhs: goal is not a get-bind on LHS"
-))
-
-/-- `ssprove_get_rhs` handles a get on the right side by either remembering or reminding.
-
-If the precondition already contains `rem_rhs l v`, it uses the remembered value.
-Otherwise, it remembers the new value.
--/
-macro "ssprove_get_rhs" : tactic => `(tactic| (
-  first
-  | ssprove_remind_rhs
-  | ssprove_remember_rhs
-  | fail "ssprove_get_rhs: goal is not a get-bind on RHS"
 ))
 
 end CatCrypt.Tactics

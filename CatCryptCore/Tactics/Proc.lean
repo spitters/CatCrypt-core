@@ -17,7 +17,6 @@ analogous to EasyCrypt's `proc` tactic.
 ## Main tactics
 
 * `ssprove_proc` - unfold named definitions and normalize SPComp
-* `ssprove_proc!` - aggressive version that also unfolds let bindings
 
 ## What EasyCrypt does
 
@@ -61,26 +60,6 @@ theorem game_equiv : rHoare eqPre myGame myGame eqPost := by
 -/
 macro "ssprove_proc" "[" defs:Lean.Parser.Tactic.simpLemma,* "]" : tactic => `(tactic| (
   simp only [$[$defs],*]
-  try ssprove_code_simpl
-))
-
-/-- `ssprove_proc!` aggressively unfolds all local definitions and normalizes.
-
-This variant uses `simp` with Function.comp and monad laws to expand
-all definitions in the goal, then normalizes the monad structure.
-
-Use this when you don't want to specify which definitions to unfold.
-
-Example:
-```
-theorem game_equiv : rHoare eqPre complexGame complexGame eqPost := by
-  ssprove_proc!
-  -- All definitions unfolded and code normalized
-  ...
-```
--/
-macro "ssprove_proc!" : tactic => `(tactic| (
-  simp only [Function.comp, SPComp.monad_bind_eq]
   try ssprove_code_simpl
 ))
 

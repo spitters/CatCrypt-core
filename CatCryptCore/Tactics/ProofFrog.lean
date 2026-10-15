@@ -148,22 +148,6 @@ These tactics substitute known values for variables, propagating
 information from earlier computations to later uses.
 -/
 
-/-- `ssprove_copy_propagate_get_lhs` propagates a known value from get.
-
-After `x ← get l`, if we know the heap value at `l`, we can substitute
-that value for `x` in subsequent code.
-
-Currently implemented as a rewrite using `get_value_eq`.
--/
-macro "ssprove_copy_propagate_get_lhs" : tactic => `(tactic| (
-  conv => arg 2; rw [get_value_eq]
-))
-
-/-- `ssprove_copy_propagate_get_rhs` propagates a known value on the right side. -/
-macro "ssprove_copy_propagate_get_rhs" : tactic => `(tactic| (
-  conv => arg 3; rw [get_value_eq]
-))
-
 /-- `ssprove_copy_propagate_set_get_lhs` propagates the set value to subsequent get.
 
 After `set l v`, a `get l` returns `v`. This tactic combines set and get
@@ -228,20 +212,6 @@ macro "ssprove_unreachable" : tactic => `(tactic| (
   | (intro h₁ h₂ hFalse; exact False.elim hFalse)
   | (intro h₁ h₂ hFalse; omega)
   | (intro h₁ h₂ hFalse; simp_all)
-))
-
-/-- `ssprove_unreachable_branch` eliminates an unreachable if-branch.
-
-When an if-condition is provably false, the else branch is taken.
--/
-macro "ssprove_unreachable_branch_lhs" : tactic => `(tactic| (
-  apply rHoare_rewrite_lhs
-  · simp only [ite_false, ite_true, decide_True, decide_False]
-))
-
-macro "ssprove_unreachable_branch_rhs" : tactic => `(tactic| (
-  apply rHoare_rewrite_rhs
-  · simp only [ite_false, ite_true, decide_True, decide_False]
 ))
 
 /-! ## Canonicalization
@@ -362,22 +332,6 @@ macro "ssprove_auto_pf" : tactic => `(tactic| (
   try ssprove_code_simpl
 ))
 
-/-- `ssprove_auto_pf!` is a more aggressive version that also tries sync rules.
-
-This adds:
-- Attempting reflexivity for identical code
-- Attempting sync rules for matching operations
-- Using simp for remaining simplifications
--/
-macro "ssprove_auto_pf!" : tactic => `(tactic| (
-  ssprove_auto_pf
-  first
-  | (apply rHoare_refl)
-  | ssprove_sync
-  | ssprove_sync_eq
-  | skip
-))
-
 /-! ## Game Transformation Helpers
 
 These tactics help with common game transformation patterns.
@@ -397,18 +351,6 @@ macro "ssprove_inline_lhs" def_name:ident : tactic => `(tactic| (
 macro "ssprove_inline_rhs" def_name:ident : tactic => `(tactic| (
   apply rHoare_rewrite_rhs
   · unfold $def_name; rfl
-))
-
-/-- `ssprove_rewrite_lhs` rewrites using an equality lemma on the left side. -/
-macro "ssprove_rewrite_lhs" eq:term : tactic => `(tactic| (
-  apply rHoare_rewrite_lhs
-  · exact $eq
-))
-
-/-- `ssprove_rewrite_rhs` rewrites using an equality lemma on the right side. -/
-macro "ssprove_rewrite_rhs" eq:term : tactic => `(tactic| (
-  apply rHoare_rewrite_rhs
-  · exact $eq
 ))
 
 end CatCrypt.Tactics

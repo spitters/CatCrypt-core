@@ -15,7 +15,7 @@ Automation for proving structural equalities between package compositions.
 
 ## Design (Canonicalization by Normalization)
 
-`PkgInterface` already carries genuine Mathlib `MonoidalCategory` and
+`PkgInterface` carries Mathlib `MonoidalCategory` and
 `SymmetricCategory` instances (`pkgMonoidal` / `pkgSMC` in
 `Bridge/SemPkg.lean`), so the structural isos `α_`, `λ_`, `ρ_`, `β_` used
 below are Mathlib's own. `pkg_coherence` re-implements the coherence decider
@@ -139,18 +139,3 @@ example {A B : Type} (game : A → SPComp B) :
     (GamePkg.ofGame game).toGame = game := by pkg_coherence
 
 end PkgCoherenceTests
-
-/-! ## Oracle Coherence
-
-Higher-level tactic for oracle game proofs: apply structural
-simplification to oracle-parameterized games. -/
-
-/-- Simplify oracle game expressions.
-
-    Unfolds `OracleGame.run`, `OracleGame.mk`, `GamePkg.toGame`,
-    `GamePkg.ofGame` and then applies `pkg_coherence`. -/
-macro "oracle_simp" : tactic =>
-  `(tactic| (
-    simp only [OracleGame.run, OracleGame.mk, OracleGame.ofSingleOracle,
-               GamePkg.toGame, GamePkg.ofGame, GamePkg.ofGame_apply,
-               GamePkg.ofGame_toGame]))

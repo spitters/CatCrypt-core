@@ -10,9 +10,10 @@ public import CatCryptCore.Relational.Rules
 public import CatCryptCore.Invariant
 
 /-!
-# Invariant Restoration Tactics
+# Invariant Restoration Rules
 
-This file provides tactics for restoring invariants after put (write) operations.
+This file states consequence rules that restore a precondition after put (write)
+operations.
 
 ## Background
 
@@ -24,13 +25,9 @@ In the Lean formulation:
 - `set_lhs l v pre h₀ h₁` means `pre (h₀.set l v) h₁`
 - `set_rhs l v pre h₀ h₁` means `pre h₀ (h₁.set l v)`
 
-These tactics help "unwrap" the set operations when we can show that the
-invariant is preserved by the write.
-
-## Main tactics
-
-* `ssprove_restore_pre` - Restore precondition after put operations
-* `ssprove_restore_mem` - Restore precondition including remembered values
+The rules `rHoare_restore_lhs_conseq` and `rHoare_restore_rhs_conseq` remove the
+`set_lhs`/`set_rhs` wrapper given a proof that the write preserves a weaker
+precondition.
 
 ## References
 
@@ -88,46 +85,3 @@ theorem rHoare_restore_rhs_conseq {α β : Type*} {l : Location} {v : l.ty}
   rHoare_conseq (set_rhs_conseq hweaken) (fun _ _ _ _ h => h) hrh
 
 end CatCrypt.Relational
-
-/-! ## Tactics -/
-
-namespace CatCrypt.Tactics
-
-open Lean Elab Tactic Meta
-open CatCrypt.Relational CatCrypt.Invariant
-
-/-- `ssprove_restore_pre` restores the precondition after put operations.
-
-After a `put` operation, the precondition is wrapped in `set_lhs` or `set_rhs`.
-This tactic applies the appropriate consequence-based restoration rule.
-
-Example:
-```lean
--- Goal: rHoare (set_lhs l v pre) c₁ c₂ post
--- After ssprove_restore_pre:
--- Goal 1: ∀ h₀ h₁, pre (h₀.set l v) h₁ → pre' h₀ h₁
--- Goal 2: rHoare pre' c₁ c₂ post
-```
--/
-macro "ssprove_restore_pre" : tactic => `(tactic| (
-  first
-  | apply rHoare_restore_lhs_conseq <;> [intro h₀ h₁ _; skip]
-  | apply rHoare_restore_rhs_conseq <;> [intro h₀ h₁ _; skip]
-  | fail "ssprove_restore_pre: could not identify set_lhs/set_rhs wrapper"
-))
-
-/-- `ssprove_restore_mem` restores the precondition including remembered values.
-
-This is an alias for `ssprove_restore_pre` in the current implementation.
--/
-macro "ssprove_restore_mem" : tactic => `(tactic| ssprove_restore_pre)
-
-/-- `ssprove_restore_inv` is an automation tactic that tries various restoration
-strategies and attempts to discharge preservation side conditions automatically. -/
-macro "ssprove_restore_inv" : tactic => `(tactic| (
-  first
-  | ssprove_restore_pre <;> [try assumption; skip]
-  | fail "ssprove_restore_inv: could not restore invariant automatically"
-))
-
-end CatCrypt.Tactics

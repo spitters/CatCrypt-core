@@ -149,10 +149,6 @@ Advantage G₀ G₄ ≤ Advantage G₀ G₁ + Advantage G₁ G₂ + Advantage G�
 
 After introduction, use `simp only [advantage_sum_nil, advantage_sum_cons] at ineq`
 to expand the sum into individual advantage terms.
-
-### Variants
-
-- `ssprove_triangle_A` - For games with explicit adversary `AdvantageA`
 -/
 
 /-- `ssprove_triangle G₀ gs Gₙ` introduces a hypothesis
@@ -168,27 +164,6 @@ to expand the sum into individual advantage terms.
     the advantage through a sequence of hybrid games. -/
 macro "ssprove_triangle" G₀:term gs:term Gn:term : tactic =>
   `(tactic| have ineq := Advantage_triangle_chain $G₀ $gs $Gn)
-
-/-- `ssprove_triangle_A G₀ gs Gₙ A` for AdvantageA.
-
-    Produces: `ineq : AdvantageA G₀ Gₙ A ≤ advantageA_sum G₀ gs Gₙ A` -/
-macro "ssprove_triangle_A" G₀:term gs:term Gn:term A:term : tactic =>
-  `(tactic| have ineq := AdvantageA_triangle_chain $G₀ $gs $Gn $A)
-
-/-- `ssprove_triangle_simpl` simplifies advantage_sum expressions.
-
-    After `ssprove_triangle`, the bound is in terms of `advantage_sum`.
-    This tactic expands it into explicit pairwise advantages.
-
-    Usage: `ssprove_triangle_simpl` or `ssprove_triangle_simpl at h` -/
-macro "ssprove_triangle_simpl" : tactic =>
-  `(tactic| simp only [advantage_sum_nil, advantage_sum_cons,
-                       advantageA_sum_nil, advantageA_sum_cons])
-
-/-- `ssprove_triangle_simpl at h` simplifies advantage_sum in hypothesis h. -/
-macro "ssprove_triangle_simpl" "at" h:ident : tactic =>
-  `(tactic| simp only [advantage_sum_nil, advantage_sum_cons,
-                       advantageA_sum_nil, advantageA_sum_cons] at $h:ident)
 
 /-- `adv_game_hop [G₁, …, Gₙ₋₁]` — the n-ary shallow game-hopping tactic. On a goal
     `AdvantageA G₀ Gₙ A ≤ ε₁ + … + εₙ`, insert the intermediate games and reduce to
