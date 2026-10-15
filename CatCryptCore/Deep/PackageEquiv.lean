@@ -158,29 +158,19 @@ theorem DeepPackage.BehavEquiv.link_congr_right
   · -- exports are the same: both are p₁.exports
     simp only [DeepPackage.link]
   · intro op dom codom h₁₂ h₁₃ x oracle
-    -- Unfold link and use evalWith_substOracle
     rw [DeepPackage.link_evalWith_eq p₁ p₂ op dom codom h₁₂ x,
       DeepPackage.link_evalWith_eq p₁ p₃ op dom codom h₁₃ x]
-    -- Now show the composed handlers agree
     apply evalWith_congr
     intro op' dom' codom' x'
-    -- Need: (linkEnv p₂ ...).evalWith oracle = (linkEnv p₃ ...).evalWith oracle
     simp only [DeepPackage.linkEnv]
-    -- Both sides do dite on membership in exports.ops
-    -- Since p₂.exports = p₃.exports, the dite conditions agree
-    have hexports : p₂.exports.ops = p₃.exports.ops := by
-      rw [h.exports_eq]
-    -- Split on whether the operation is in p₂'s exports
-    have := Classical.dec ((op', dom', codom') ∈ p₂.exports.ops)
+    have hexports : p₂.exports.ops = p₃.exports.ops := by rw [h.exports_eq]
     by_cases hmem : (op', dom', codom') ∈ p₂.exports.ops
     · -- Operation is in both exports
       have hmem₃ : (op', dom', codom') ∈ p₃.exports.ops := hexports ▸ hmem
       simp only [dif_pos hmem, dif_pos hmem₃]
       exact h.impl_eq op' dom' codom' hmem hmem₃ x' oracle
     · -- Operation is in neither exports
-      have hmem₃ : (op', dom', codom') ∉ p₃.exports.ops := by
-        rwa [← hexports]
-      simp only [dif_neg hmem, dif_neg hmem₃]
+      simp only [dif_neg hmem, dif_neg (hexports ▸ hmem : (op', dom', codom') ∉ p₃.exports.ops)]
 
 /-- **Left congruence for linking**: If `p₁` and `p₂` are behaviorally
     equivalent and have the same imports, then `p₁.link q` is behaviorally
@@ -195,17 +185,9 @@ theorem DeepPackage.BehavEquiv.link_congr_left
   · -- exports: p₁.exports = p₂.exports (from behavioral equiv)
     simp only [DeepPackage.link, h.exports_eq]
   · intro op dom codom h_l h_r x oracle
-    -- Rewrite both sides using link_evalWith_eq
     rw [DeepPackage.link_evalWith_eq p₁ q op dom codom h_l x,
       DeepPackage.link_evalWith_eq p₂ q op dom codom h_r x]
-    -- The oracle environments are the same (both use linkEnv q)
-    -- The code differs: p₁.impl vs p₂.impl
-    -- But h.impl_eq tells us they agree on evalWith for any handler
-    have h₁ : (op, dom, codom) ∈ p₁.exports.ops := by
-      simp only [DeepPackage.link] at h_l; exact h_l
-    have h₂ : (op, dom, codom) ∈ p₂.exports.ops := by
-      simp only [DeepPackage.link] at h_r; exact h_r
-    exact h.impl_eq op dom codom h₁ h₂ x _
+    exact h.impl_eq op dom codom h_l h_r x _
 
 /-! ## Advantage from Behavioral Equivalence -/
 
@@ -249,9 +231,7 @@ theorem DeepPackage.BehavEquiv.advantage_link_congr
       ((p₁.link p₂).evalOp op dom codom h₁₂ x)
       ((p₁.link p₃).evalOp op dom codom h₁₃ x) A = 0 := by
   intro A
-  have hequiv := h.link_congr_right p₁
-  have hevalOp := hequiv.evalOp_eq op dom codom h₁₂ h₁₃ x
-  rw [hevalOp]
+  rw [(h.link_congr_right p₁).evalOp_eq op dom codom h₁₂ h₁₃ x]
   simp only [AdvantageA, Advantage, tsub_self, max_self]
 
 /-! ## Useful Derived Lemmas -/
@@ -281,7 +261,6 @@ theorem DeepPackage.BehavEquiv.rHoare_evalOp
     (x : dom) :
     rHoare eqPre (p₁.evalOp op dom codom h₁ x)
                  (p₂.evalOp op dom codom h₂ x) eqPost := by
-  rw [h.evalOp_eq op dom codom h₁ h₂ x]
-  exact rHoare_refl _
+  exact h.evalOp_eq op dom codom h₁ h₂ x ▸ rHoare_refl _
 
 end CatCrypt.Deep
