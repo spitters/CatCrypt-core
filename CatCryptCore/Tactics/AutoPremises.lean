@@ -66,6 +66,12 @@ core selectors by `Lean.LibrarySuggestions.Selector.combine`.
 
 `catcrypt_premises?` prints the list for the main goal, one line per candidate with its
 score, source and term, and leaves the goal unchanged.
+
+## Use by `catcrypt_auto`
+
+The premise stage of `catcrypt_auto` (`CatCryptCore.Tactics.AutoDispatchCore`) passes the
+candidates of sources 1 and 2 to its `premises` arms, and its unfolding pass is the
+traversal `unfoldHeadsWith` of source 4 with the dispatcher's predicates.
 -/
 
 public section
@@ -152,7 +158,7 @@ partial def instantiateNonAdversary (term ty : Expr) : MetaM (Option (Expr × Ex
     if isAdversaryType d then
       let hard ← withLocalDeclD n d fun x => isHardnessShape x (b.instantiate1 x)
       if hard then return none
-      let (_, _, concl) ← forallMetaTelescopeReducing ty
+      let (_, _, concl) ← forallMetaTelescope ty
       return some (term, concl)
     let m ← mkFreshExprMVar d (userName := n)
     instantiateNonAdversary (mkApp term m) (b.instantiate1 m)
@@ -255,16 +261,22 @@ def isUnfoldCandidate (c : Name) : MetaM Bool := do
     let root := (env.header.moduleNames[idx.toNat]!).getRoot
     return !([`Init, `Std, `Lean, `Lake].contains root)
 
-/-- Source 4: the unfolding candidates of `e` at depth `d` and below, up to depth 3. -/
-partial def unfoldHeads (e : Expr) (d : Nat) (acc : Array (Name × Nat)) :
-    MetaM (Array (Name × Nat)) := do
+/-- The unfolding traversal: on each branch of `e` through the explicit arguments, read
+from depth `d` down to depth 3, the first head constant that `accept` accepts, with the
+depth at which it occurs. A branch whose head is not accepted and satisfies `stop` is not
+descended. Source 4 is this traversal with `isUnfoldCandidate`; the unfolding pass of
+`catcrypt_auto` (`CatCryptCore.Tactics.AutoDispatchCore`) uses it with its own
+predicates. -/
+partial def unfoldHeadsWith (accept stop : Name → MetaM Bool) (e : Expr) (d : Nat)
+    (acc : Array (Name × Nat)) : MetaM (Array (Name × Nat)) := do
   if d > 3 then return acc
   let e ← instantiateMVars e
   let e := e.cleanupAnnotations
   let some c := e.getAppFn.constName? | return acc
-  if ← isUnfoldCandidate c then
+  if ← accept c then
     if acc.any (·.1 == c) then return acc
     return acc.push (c, d)
+  if ← stop c then return acc
   let args := e.getAppArgs
   let fi ← getFunInfoNArgs e.getAppFn args.size
   let mut acc := acc
@@ -273,8 +285,13 @@ partial def unfoldHeads (e : Expr) (d : Nat) (acc : Array (Name × Nat)) :
       | some pi => pi.binderInfo.isExplicit
       | none => true
     if explicit then
-      acc ← unfoldHeads args[i] (d + 1) acc
+      acc ← unfoldHeadsWith accept stop args[i] (d + 1) acc
   return acc
+
+/-- Source 4: the unfolding candidates of `e` at depth `d` and below, up to depth 3. -/
+def unfoldHeads (e : Expr) (d : Nat) (acc : Array (Name × Nat)) :
+    MetaM (Array (Name × Nat)) :=
+  unfoldHeadsWith isUnfoldCandidate (fun _ => pure false) e d acc
 
 /-- Formats a score with two decimals. -/
 def fmtScore (s : Float) : String :=

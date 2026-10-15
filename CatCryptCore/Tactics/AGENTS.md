@@ -6,18 +6,33 @@ in [`../XDijkstra/`](../XDijkstra/). Tactics are in the namespace
 
 The modules [`AutoSetsDecl.lean`](AutoSetsDecl.lean),
 [`AutoSets.lean`](AutoSets.lean), [`AutoRules.lean`](AutoRules.lean),
+[`AutoHopRegistry.lean`](AutoHopRegistry.lean),
+[`AutoDispatchCore.lean`](AutoDispatchCore.lean), [`AutoBase.lean`](AutoBase.lean),
 [`AutoDispatch.lean`](AutoDispatch.lean),
-[`AutoDispatchExt.lean`](AutoDispatchExt.lean), [`AutoArms.lean`](AutoArms.lean)
-and [`AutoMetrics.lean`](AutoMetrics.lean) are leaves: the aggregate module
-`CatCryptCore.Tactics` does not import them, and a proof that uses them imports
-them itself. A proof that uses `catcrypt_auto` imports
-`CatCryptCore.Tactics.AutoDispatchExt`, which gives every arm: it imports
-`AutoDispatch`, which imports `AutoSets` (which imports `AutoSetsDecl`) and
-`AutoMetrics` (which imports `AutoArms`). No
-module of that chain imports `AutoRules`; a proof that needs its two rules in
-`CatCryptRel` (`rHoare_false`, `ssprove_nofail`) imports
-`CatCryptCore.Tactics.AutoRules` as well. Each module has its tests in the
-module of the same name with the suffix `Test`.
+[`AutoDispatchExt.lean`](AutoDispatchExt.lean), [`AutoArms.lean`](AutoArms.lean),
+[`AutoMetrics.lean`](AutoMetrics.lean) and [`AutoPremises.lean`](AutoPremises.lean)
+are leaves: the aggregate module `CatCryptCore.Tactics` does not import them, and a
+proof that uses them imports them itself.
+
+The dispatcher `catcrypt_auto` is in `AutoDispatchCore`, with its registry of shapes,
+arms and normalisation steps (`catcrypt_auto_shape`, `catcrypt_auto_arm`,
+`catcrypt_auto_norm`). `AutoDispatchCore` imports only `Lean`, `AutoHopRegistry` (the
+`@[hop_metric]` attribute) and `AutoPremises`, all three Lean-only; `AutoBase`
+registers by `Name` the shapes of the game-proof goals and the arms that use only Lean
+tactics, without importing the theory. A module at any level, including the modules
+that `AutoSets` imports (`Core/Code`, `Crypto/Advantage`, the XDijkstra files), uses
+`catcrypt_auto` by importing `CatCryptCore.Tactics.AutoBase`
+([`AutoBaseTest.lean`](AutoBaseTest.lean) prints its import closure). The other arms
+are registered beside the tactics they call: `AutoArms` (`hop_chain`, `sum_atoms_le`,
+`gcongr_unfold`, `gcongr`), `AutoSets` (`aesop` over `CatCryptRel`, `catcrypt_grind`,
+`ssprove_crypto`, `bound`), `AutoDispatch` (`bind_vcgen`) and `AutoDispatchExt` (the
+XDijkstra and zero-advantage shapes and arms). A proof that uses every arm imports
+`CatCryptCore.Tactics.AutoDispatchExt`: it imports `AutoDispatch`, which imports
+`AutoBase`, `AutoSets` (which imports `AutoSetsDecl`) and `AutoMetrics` (which imports
+`AutoArms`). No module of that chain imports `AutoRules`; a proof that needs its two
+rules in `CatCryptRel` (`rHoare_false`, `ssprove_nofail`) imports
+`CatCryptCore.Tactics.AutoRules` as well. Each module has its tests in the module of
+the same name with the suffix `Test`.
 
 ## Leaf goals
 
@@ -41,10 +56,12 @@ suggestion keeps them.
 
 | Family | Tactic or set | Module | What it does |
 |---|---|---|---|
-| Dispatch | `catcrypt_auto`, `catcrypt_auto [t₁, …]` | [`AutoDispatch.lean`](AutoDispatch.lean), [`AutoDispatchExt.lean`](AutoDispatchExt.lean) | Reads the shape of the main goal and runs the arms registered for that shape (next section) in order, each under its own heartbeat budget, with the terms `tᵢ` passed to the arms. Closes the goal or fails. |
-| Dispatch | `catcrypt_auto?`, `catcrypt_auto? [t₁, …]` | [`AutoDispatch.lean`](AutoDispatch.lean), [`AutoDispatchExt.lean`](AutoDispatchExt.lean) | Behaves as `catcrypt_auto` and adds a "Try this" suggestion with the closing arm and its arguments, preceded by `simp only [SPComp.monad_bind_eq]` when that normalisation changed the goal. |
+| Dispatch | `catcrypt_auto`, `catcrypt_auto [t₁, …]` | [`AutoDispatchCore.lean`](AutoDispatchCore.lean); registrations in [`AutoBase.lean`](AutoBase.lean), [`AutoArms.lean`](AutoArms.lean), [`AutoSets.lean`](AutoSets.lean), [`AutoDispatch.lean`](AutoDispatch.lean), [`AutoDispatchExt.lean`](AutoDispatchExt.lean) | Reads the shape of the main goal and runs the arms registered for that shape (next section) in order, each under its own heartbeat budget, with the terms `tᵢ` passed to the arms. Closes the goal or fails. |
+| Dispatch | `catcrypt_auto?`, `catcrypt_auto? [t₁, …]` | [`AutoDispatchCore.lean`](AutoDispatchCore.lean) | Behaves as `catcrypt_auto` and adds a "Try this" suggestion with the closing arm and its arguments, preceded by the normalisation and `unfold` steps that changed the goal. |
+| Dispatch | `catcrypt_auto_shape`, `catcrypt_auto_arm`, `catcrypt_auto_norm` | [`AutoDispatchCore.lean`](AutoDispatchCore.lean) | Register a shape (a matcher on head constants given by `Name`, a stage and a priority), an arm (tactic text with argument placeholders, an order, constants it needs) or a normalisation step. Registrations of imported modules are merged. |
+| Dispatch | `#import_closure_roots M` | [`AutoDispatchCore.lean`](AutoDispatchCore.lean) | Prints the root packages of the import closure of the module `M` and its modules outside `Init`, `Std` and `Lean`. |
 | Distances | `hop_chain`, `hop_chain [h₁, …]` | [`AutoArms.lean`](AutoArms.lean) | Proves `d x y ≤ e` for a distance `d` registered with `@[hop_metric]`: a breadth-first path of hop facts `d u v ≤ b` (or `= b`) from `x` to `y` among the unquantified hypotheses and the arguments, each usable backwards when a symmetry lemma is registered, composed by the triangle lemma; the residual sum goes to `sum_atoms_le`. |
-| Distances | `@[hop_metric]` | [`AutoArms.lean`](AutoArms.lean); standard registrations in [`AutoMetrics.lean`](AutoMetrics.lean) | Registers a triangle lemma, a symmetry lemma, an equation `D … = d …` or a definition to unfold. `AutoMetrics` registers `sdist`, `Advantage` and `AdvantageA`; an advantage- or probability-valued definition of a proof becomes a distance by `@[hop_metric]` on it. |
+| Distances | `@[hop_metric]` | [`AutoHopRegistry.lean`](AutoHopRegistry.lean) (imports only `Lean`); standard registrations in [`AutoMetrics.lean`](AutoMetrics.lean) | Registers a triangle lemma, a symmetry lemma, an equation `D … = d …` or a definition to unfold. `AutoMetrics` registers `sdist`, `Advantage` and `AdvantageA`; an advantage- or probability-valued definition of a proof becomes a distance by `@[hop_metric]` on it. |
 | Distances | `sum_atoms_le` | [`AutoArms.lean`](AutoArms.lean) | Decides `Σ aᵢ ≤ Σ bⱼ` for ℕ-weighted sums of atoms in a canonically ordered semiring (`ℝ≥0∞`), matching each left atom to a right atom equal to it or bounding it by a hypothesis `a ≤ b`. |
 | Monotonicity | `gcongr_unfold`, `gcongr_unfold [d₁, …]` | [`AutoArms.lean`](AutoArms.lean) | Introduces the binders of `Monotone f`-like goals, unfolds `dᵢ`, runs `gcongr` and closes the side goals by `assumption`, `positivity` or `norm_num`. |
 | Sets | `CatCryptRel` | [`AutoSetsDecl.lean`](AutoSetsDecl.lean) (declaration), [`AutoSets.lean`](AutoSets.lean), [`AutoRules.lean`](AutoRules.lean) | Aesop rule set. Safe `apply`: the `IsPure` and `NoFail` combinators for `pure`, `sample` and bind, in `SPComp.bind` and `>>=` form, and `rHoare_false`. Unsafe `apply`: `rHoare_ret_same`, `rHoare_refl`, `rHoare_sample_same`, `rHoare_fail` (70%); the synchronised and one-sided `get`/`set` rules, `rHoare_ite`, `rHoare_if` (50%). Unsafe tactic rule: `ssprove_nofail` (60%). Normalisation `simp`: the `SPComp` monad laws, `SPComp.monad_bind_eq`, `SPComp.monad_pure_eq`. Called as `aesop (rule_sets := [CatCryptRel]) (config := { terminal := true })`. |
@@ -90,30 +107,40 @@ suggestion keeps them.
 
 ## Arms of `catcrypt_auto`
 
-The elaborator of `AutoDispatchExt` runs first. On a goal of none of its shapes,
-or when all its arms fail, Lean runs the elaborator of `AutoDispatch`; the error
-of a goal that stays open is the one of `AutoDispatch`, naming its shape and its
-failed arms. `AutoDispatch`
-first rewrites a goal containing `>>=` by `simp only [SPComp.monad_bind_eq]`,
-keeping the rewrite only when it changes the goal, then reads the head of the
-goal with its `set`/`let` variables replaced by their values and, failing a
-match, the head of its `whnfR`.
+The shapes of the direct stage (registered in `AutoDispatchExt`) are read on the
+goal as stated, and the one of highest priority runs its arms first. When none
+matches, or all its arms fail, the normalised stage runs: the goal containing
+`>>=` is rewritten by `simp only [SPComp.monad_bind_eq]` (a step registered in
+`AutoBase` with `catcrypt_auto_norm`), keeping the rewrite only when it changes the
+goal, and the head of the goal is read with its `set`/`let` variables replaced by
+their values and, failing a match, the head of its `whnfR`. The error of a goal
+that stays open names the shape of the normalised stage and its failed arms, then
+the failures of the unfolding pass and the premise stage, then those of the direct
+stage. The table gives the arms in order, with the module registering each.
 
 | Shape | Detected head | Arms, in order | Module |
 |---|---|---|---|
-| coupling | `XRelTripleQ0 …`, `RelSpecTriple …` | `relmvcgen!?` | `AutoDispatchExt` |
-| hybrid advantage | `AdvantageA _ _ _ ≤ _` | `advmvcgen!?`; `advmvcgen_dep` with the leaf cascade of `advmvcgen!?` | `AutoDispatchExt` |
-| zero advantage | `AdvantageA _ _ _ = 0`, possibly under `∀ A` | `prob_to_rHoare`; `advantage_zero_of_rHoare` with `catcrypt_auto` on the `rHoare` premise | `AutoDispatchExt` |
-| extended triple | mentions `XTriple`, `XPT` or `XRelTriple` | `xmvcgen!`, then `omega`, `le_rfl`, `assumption`, `simp_all` or `grind` on each residual | `AutoDispatchExt` |
-| side condition | `SPComp.IsPure _`, `SPComp.NoFail _` | `aesop` over `CatCryptRel` | `AutoDispatch` |
-| relational | `rHoare _ _ _ _` | `aesop` over `CatCryptRel`; `ssprove_crypto`; `ssprove_crypto_grind` | `AutoDispatch` |
-| distance inequality | `_ ≤ _` over `ℝ≥0∞` or `ℝ` whose left side is a registered distance (after unfolding `@[hop_metric]` definitions, else after `whnfR`) or a sum with one as summand, or that mentions a registered head, `prTrue` or `prEvent` | `hop_chain`; `sum_atoms_le`; `gcongr <;> catcrypt_grind`; `catcrypt_grind`; `bound` (a quarter of the budget; skipped when a `∀`-quantified inequality is in context) | `AutoDispatch` |
-| monotonicity | `f a₁ … aₙ ≤ f b₁ … bₙ` or `<`, the same head on both sides; `Monotone f`, `Antitone f`, `StrictMono f`, `StrictAnti f` | `gcongr_unfold`; `gcongr`; `gcongr <;> catcrypt_grind`; `sum_atoms_le` (on `≤`); `simp_all`; `grind` | `AutoDispatch` |
-| heap read | `Heap.get (Heap.set _ _ _) _ = _`, either side; `=`, `≠` or `¬ _ = _` mentioning `Heap.set` | `grind [Heap.get_set_same, Heap.get_set_other]` | `AutoDispatch` |
-| game equality | `_ = _` over `SPComp _` | `catcrypt_grind`; `bind_vcgen` | `AutoDispatch` |
-| other | anything else | `sum_atoms_le` (on `≤`); `simp_all`; `grind` | `AutoDispatch` |
+| coupling (direct) | `XRelTripleQ0 …`, `RelSpecTriple …` | `relmvcgen!?` | `AutoDispatchExt` |
+| hybrid advantage (direct) | `AdvantageA _ _ _ ≤ _` | `advmvcgen!?`; `advmvcgen_dep` with the leaf cascade of `advmvcgen!?` | `AutoDispatchExt` |
+| zero advantage (direct) | `AdvantageA _ _ _ = 0`, possibly under `∀ A` | `prob_to_rHoare`; `advantage_zero_of_rHoare` with `catcrypt_auto` on the `rHoare` premise | `AutoDispatchExt` |
+| extended triple (direct) | mentions `XTriple`, `XPT` or `XRelTriple` | `xmvcgen!`, then `omega`, `le_rfl`, `assumption`, `simp_all` or `grind` on each residual | `AutoDispatchExt` |
+| side condition | `SPComp.IsPure _`, `SPComp.NoFail _` | `aesop` over `CatCryptRel`; `solve_by_elim` over the `IsPure` combinators; the same over the `NoFail` combinators | `AutoSets`; `AutoBase` |
+| relational | `rHoare _ _ _ _` | `aesop` over `CatCryptRel`; `ssprove_crypto`; `ssprove_crypto_grind` | `AutoSets` |
+| distance inequality | `_ ≤ _` over `ℝ≥0∞` or `ℝ` whose left side is a registered distance (after unfolding `@[hop_metric]` definitions, else after `whnfR`) or a sum with one as summand, or that mentions a registered head, `prTrue` or `prEvent` | `hop_chain`; `sum_atoms_le`; `gcongr <;> catcrypt_grind`; `catcrypt_grind`; `bound` (a quarter of the budget; skipped when a `∀`-quantified inequality is in context) | `AutoArms`; `AutoSets` |
+| monotonicity | `f a₁ … aₙ ≤ f b₁ … bₙ` or `<`, the same head on both sides; `Monotone f`, `Antitone f`, `StrictMono f`, `StrictAnti f` | `gcongr_unfold`; `gcongr`; `gcongr <;> catcrypt_grind`; `sum_atoms_le` (on `≤`); `simp_all`; `grind` | `AutoArms`; `AutoSets`; `AutoBase` |
+| heap read | `Heap.get (Heap.set _ _ _) _ = _`, either side; `=`, `≠` or `¬ _ = _` mentioning `Heap.set` | `grind [Heap.get_set_same, Heap.get_set_other]` | `AutoBase` |
+| game equality | `_ = _` over `SPComp _` | `catcrypt_grind`; `bind_vcgen` | `AutoSets`; `AutoDispatch` |
+| other | anything else | `sum_atoms_le` (on `≤`); `simp_all`; `grind` | `AutoArms`; `AutoBase` |
+| premises | (premise stage) | `solve_by_elim [p₁, …]` with the premises of `AutoPremises` | `AutoBase` |
 
-Four rules hold across the shapes of `AutoDispatch`.
+The shapes are matched by constant `Name`, so `AutoBase` registers them without
+importing the theory; an arm whose constants (`needs`) are absent or whose tactic
+does not parse at the call site is skipped, and the error says so. When the arms
+and the unfolding pass fail, the premise stage restores the normalised goal and runs
+the `premises` arms with the candidates of `AutoPremises.premises` from the theorems
+of the current file and the fields of local hypotheses.
+
+Four rules hold across the shapes of the normalised stage.
 
 - Arguments are sorted by kind as stated under "Leaf goals"; the `exact t` and
   `apply t` arms of non-proof terms run before the arms of the shape.
@@ -173,9 +200,14 @@ does.
   `ssprove_nofail`.
 - An Aesop tactic rule takes a tactic without arguments; a rule step with
   arguments (`ssprove_sync_bij f`, `ssprove_swap_at n …`) cannot be one.
-- A new arm of `catcrypt_auto` goes in `arms` of
-  [`AutoDispatch.lean`](AutoDispatch.lean) or `extArms` of
-  [`AutoDispatchExt.lean`](AutoDispatchExt.lean).
+- A new shape or arm of `catcrypt_auto` is a `catcrypt_auto_shape` or
+  `catcrypt_auto_arm` command (syntax in
+  [`AutoDispatchCore.lean`](AutoDispatchCore.lean)) in the module that defines the
+  tactic it calls, or in a leaf beside it that imports that module and
+  `AutoDispatchCore`; a shape names its head constants by `Name` and needs no import
+  of their module. The registration takes effect where the registering module is
+  imported. `AutoDispatchCore` itself declares the registry and cannot use it (an
+  `initialize` extension is not available in its own module).
 - Each registration or arm comes with a test in the matching `Test` module that
   closes a goal of the shape it is for.
 - `CatCryptGrind` holds no location constants (`grind` fails on location-id

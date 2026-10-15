@@ -17,6 +17,7 @@ public import CatCryptCore.Unary.Event
 public import CatCryptCore.Tactics.LazySampling
 public import CatCryptCore.Crypto.NomPkgBridge
 public import Mathlib.Algebra.BigOperators.Group.Finset.Basic
+public import CatCryptCore.Tactics.AutoDispatchCore
 
 /-!
 # Automation sets for game proofs
@@ -49,6 +50,12 @@ and two `ℝ≥0∞` coefficient facts.
 * `ssprove_crypto_grind`: `ssprove_crypto_close`, otherwise `ssprove_crypto`,
   otherwise the bounded rounds of `ssprove_auto_repeat` followed by
   `ssprove_crypto_close` on each remaining goal.
+* Arms of `catcrypt_auto` (`CatCryptCore.Tactics.AutoDispatchCore`): `aesop` over
+  `CatCryptRel` on side conditions and relational judgments, `ssprove_crypto` and
+  `ssprove_crypto_grind` on relational judgments, `catcrypt_grind` on distance
+  inequalities and `SPComp` equalities, `gcongr <;> catcrypt_grind` on distance and
+  monotonicity inequalities, `bound` on distance inequalities, and `apply t` with
+  `assumption` or `catcrypt_grind` on the premises for each term argument `t`.
 -/
 
 @[expose] public section
@@ -161,3 +168,23 @@ macro "ssprove_crypto_grind" : tactic => `(tactic| first
 end
 
 end CatCrypt.Tactics
+
+/-! ## Arms of `catcrypt_auto` -/
+
+catcrypt_auto_arm "*" order 20 := "(apply %TERM <;> (first | assumption | catcrypt_grind))"
+
+catcrypt_auto_arm "IsPure/NoFail side condition" order 10 :=
+  "aesop (rule_sets := [CatCryptRel]) (config := { terminal := true })%AESOP_ADD"
+
+catcrypt_auto_arm "relational rHoare judgment" order 10 :=
+  "aesop (rule_sets := [CatCryptRel]) (config := { terminal := true })%AESOP_ADD"
+catcrypt_auto_arm "relational rHoare judgment" order 20 := "ssprove_crypto"
+catcrypt_auto_arm "relational rHoare judgment" order 30 := "ssprove_crypto_grind"
+
+catcrypt_auto_arm "distance inequality" order 30 := "(gcongr <;> catcrypt_grind%GRIND)"
+catcrypt_auto_arm "distance inequality" order 40 := "catcrypt_grind%GRIND"
+catcrypt_auto_arm "distance inequality" order 50 skip_forall_ineq budget_div 4 := "bound"
+
+catcrypt_auto_arm "monotonicity inequality" order 30 := "(gcongr <;> catcrypt_grind%GRIND)"
+
+catcrypt_auto_arm "SPComp equality" order 10 := "catcrypt_grind%GRIND"
