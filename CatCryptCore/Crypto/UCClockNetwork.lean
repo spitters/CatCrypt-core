@@ -213,4 +213,127 @@ theorem hybrid_compose {τ EH OH : Type} (D : DetFunc σ E O) (x : O) (π : Hybr
 
 end DetFunc
 
+/-! ## The global clock (Afgjort §2.1) -/
+
+namespace ClockNet
+
+variable {Pty M : Type} [DecidableEq Pty] [DecidableEq M]
+
+/-- The state of the global clock: the current round and the set of parties
+    that have signalled the end of the current round. -/
+structure ClockSt (Pty : Type) where
+  /-- Current round. -/
+  round : ℕ
+  /-- Parties that have signalled the end of the current round. -/
+  signalled : Finset Pty
+deriving DecidableEq
+
+/-- Requests of a party to the clock. -/
+inductive ClockReq where
+  /-- Signal the end of the current round. -/
+  | signal
+  /-- Read the current round. -/
+  | read
+deriving DecidableEq
+
+/-- Clock events: a party request `(p, r)`, or an adversary read. -/
+abbrev ClockEv (Pty : Type) := Event (Pty × ClockReq) Unit
+
+/-- One activation of the clock with honest set `H`. A signal of `p` adds
+    `p` to the signalled set; when the signalled set then contains `H`, the
+    round advances by one and the signalled set is emptied. Every other event
+    leaves the state unchanged. The output is the round after the step. -/
+def clockStep (H : Finset Pty) (s : ClockSt Pty) : ClockEv Pty → ClockSt Pty × ℕ
+  | .inl (p, .signal) =>
+    if H ⊆ insert p s.signalled then (⟨s.round + 1, ∅⟩, s.round + 1)
+    else (⟨s.round, insert p s.signalled⟩, s.round)
+  | _ => (s, s.round)
+
+/-- The global clock `G_CLOCK` with honest set `H`, from round `0`. -/
+def clock (H : Finset Pty) : DetFunc (ClockSt Pty) (ClockEv Pty) ℕ :=
+  ⟨⟨0, ∅⟩, clockStep H⟩
+
+/-- The clock never goes back. -/
+theorem clockStep_round_mono (H : Finset Pty) (s : ClockSt Pty) (e : ClockEv Pty) :
+    s.round ≤ (clockStep H s e).1.round := by
+  rcases e with ⟨p, _ | _⟩ | _ <;> simp only [clockStep] <;> (try split_ifs) <;> simp
+
+/-- A step that changes the round is a signal of some party `p` after
+    which all honest parties have signalled; it increments the round by one
+    and empties the signalled set. -/
+theorem clockStep_advance (H : Finset Pty) (s : ClockSt Pty) (e : ClockEv Pty)
+    (h : (clockStep H s e).1.round ≠ s.round) :
+    ∃ p, e = .inl (p, .signal) ∧ H ⊆ insert p s.signalled ∧
+      (clockStep H s e).1 = ⟨s.round + 1, ∅⟩ := by
+  rcases e with ⟨p, _ | _⟩ | _
+  · simp only [clockStep] at h ⊢
+    split_ifs at h ⊢ with hH
+    · exact ⟨p, rfl, hH, rfl⟩
+    · exact absurd rfl h
+  · exact absurd rfl h
+  · exact absurd rfl h
+
+/-- Rounds increase monotonically along every run. -/
+theorem clock_exec_round_mono (H : Finset Pty) (s : ClockSt Pty) (es : List (ClockEv Pty)) :
+    s.round ≤ ((clock H).exec s es).round := by
+  induction es generalizing s with
+  | nil => exact le_rfl
+  | cons e es ih => exact (clockStep_round_mono H s e).trans (ih _)
+
+/-- Within a round, the signalled set holds only parties that signalled, and
+    a change of round requires a signal of every honest party: for every run
+    from `s` on the events `es`, if the round of the reached state differs
+    from that of `s`, every honest party `q` was in the signalled set of `s`
+    or issued a signal in `es`. -/
+theorem clock_exec_signals (H : Finset Pty) (s : ClockSt Pty) (es : List (ClockEv Pty)) :
+    (((clock H).exec s es).round = s.round →
+        ∀ q ∈ ((clock H).exec s es).signalled, q ∈ s.signalled ∨ .inl (q, .signal) ∈ es) ∧
+      (((clock H).exec s es).round ≠ s.round →
+        ∀ q ∈ H, q ∈ s.signalled ∨ .inl (q, .signal) ∈ es) := by
+  induction es using List.reverseRecOn with
+  | nil => exact ⟨fun _ q hq => .inl hq, fun h => absurd rfl h⟩
+  | append_singleton es e ih =>
+    rw [DetFunc.exec_concat]
+    set t := (clock H).exec s es with ht
+    have hmono : s.round ≤ t.round := clock_exec_round_mono H s es
+    have hsub : ∀ q, (q ∈ s.signalled ∨ .inl (q, .signal) ∈ es) →
+        q ∈ s.signalled ∨ .inl (q, ClockReq.signal) ∈ es ++ [e] := by
+      intro q hq; rcases hq with hq | hq
+      · exact .inl hq
+      · exact .inr (List.mem_append_left _ hq)
+    by_cases hts : t.round = s.round
+    · have ih1 := ih.1 hts
+      rcases e with ⟨p, _ | _⟩ | _
+      · simp only [clock, clockStep] at ih1 ⊢
+        split_ifs with hH
+        · refine ⟨fun h => absurd h (by simp only; omega), fun _ q hq => ?_⟩
+          rcases Finset.mem_insert.mp (hH hq) with rfl | hq'
+          · exact .inr (by simp)
+          · exact hsub q (ih1 q hq')
+        · refine ⟨fun _ q hq => ?_, fun h => absurd hts h⟩
+          rcases Finset.mem_insert.mp hq with rfl | hq'
+          · exact .inr (by simp)
+          · exact hsub q (ih1 q hq')
+      · exact ⟨fun _ q hq => hsub q (ih1 q hq), fun h => absurd hts h⟩
+      · exact ⟨fun _ q hq => hsub q (ih1 q hq), fun h => absurd hts h⟩
+    · have hlt : s.round < (clockStep H t e).1.round := lt_of_lt_of_le
+        (lt_of_le_of_ne hmono (Ne.symm hts)) (clockStep_round_mono H t e)
+      exact ⟨fun h => absurd h (by simp only [clock]; omega),
+        fun _ q hq => hsub q (ih.2 hts q hq)⟩
+
+/-- **Rounds advance only after all honest parties signal.** From a state at
+    the start of a round (empty signalled set), if a run on the events `es`
+    reaches a different round, then every honest party issued a signal in
+    `es`. -/
+theorem clock_advance_requires_signals (H : Finset Pty) (s : ClockSt Pty)
+    (hs : s.signalled = ∅) (es : List (ClockEv Pty))
+    (h : ((clock H).exec s es).round ≠ s.round) :
+    ∀ q ∈ H, (.inl (q, .signal) : ClockEv Pty) ∈ es := by
+  intro q hq
+  rcases (clock_exec_signals H s es).2 h q hq with h' | h'
+  · simp [hs] at h'
+  · exact h'
+
+end ClockNet
+
 end CatCrypt.Crypto.UCTransparent
