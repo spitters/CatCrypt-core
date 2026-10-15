@@ -117,20 +117,20 @@ example (G₀ G₁ G₂ : SPComp Bool) (ε : ℝ≥0∞) (h₁ : Advantage G₀ 
     (h₂ : Advantage G₁ G₂ ≤ ε) : Advantage G₀ G₂ ≤ 2 * ε := by
   catcrypt_auto?
 
-/-- A hop assumption packaged in a structure, as `DDH_Advantage` and the KEMTLS
-assumptions package theirs. -/
-structure AdvHopAsm {α : Type} (G₀ G₁ : SPComp α) (ε : ℝ≥0∞) : Prop where
-  bound : ∀ A, AdvantageA G₀ G₁ A ≤ ε
+/-- A hop bound for a fixed adversary packaged in a structure. -/
+structure AdvHopAsm {α : Type} (G₀ G₁ : SPComp α) (A : α → SPComp Bool) (ε : ℝ≥0∞) :
+    Prop where
+  bound : AdvantageA G₀ G₁ A ≤ ε
 
 /-- The hop lemma of `AdvHopAsm`. -/
-theorem advHop_of {α : Type} {G₀ G₁ : SPComp α} {ε : ℝ≥0∞} (h : AdvHopAsm G₀ G₁ ε)
-    (A : α → SPComp Bool) : AdvantageA G₀ G₁ A ≤ ε :=
-  h.bound A
+theorem advHop_of {α : Type} {G₀ G₁ : SPComp α} {A : α → SPComp Bool} {ε : ℝ≥0∞}
+    (h : AdvHopAsm G₀ G₁ A ε) : AdvantageA G₀ G₁ A ≤ ε :=
+  h.bound
 
-/-- A chain of a `∀ A` hypothesis and a hop passed as argument (the shape of
-SPHINCSPlus/Reduction.lean:243 before the triangle step). -/
-example {α : Type} (G₀ G₁ G₂ : SPComp α) (ε₁ ε₂ : ℝ≥0∞) (hd : AdvHopAsm G₁ G₂ ε₂)
-    (h₁ : ∀ A, AdvantageA G₀ G₁ A ≤ ε₁) (A : α → SPComp Bool) :
+/-- A chain of a hop hypothesis and a hop passed as argument (the shape of
+SPHINCSPlus/Reduction.lean:243 before the triangle step, for a fixed adversary). -/
+example {α : Type} (G₀ G₁ G₂ : SPComp α) (ε₁ ε₂ : ℝ≥0∞) (A : α → SPComp Bool)
+    (hd : AdvHopAsm G₁ G₂ A ε₂) (h₁ : AdvantageA G₀ G₁ A ≤ ε₁) :
     AdvantageA G₀ G₂ A ≤ ε₁ + ε₂ := by
   catcrypt_auto? [advHop_of hd]
 
@@ -163,21 +163,21 @@ example (R H₁ H₂ I : Unit → SPComp Bool) (e₁ e₂ e₃ : ℝ≥0∞) (h�
   catcrypt_auto? [sdistHop_of h₁, sdistHop_of h₂, sdistHop_of h₃]
 
 -- The leaf of OEKE/Reduction.lean:201 without its hop lemma: `bound` is skipped
--- because `_h_ic` is a `∀`-quantified inequality, and the error names the shape.
+-- because `_h_q` is a `∀`-quantified inequality, and the error names the shape.
 /--
 error: catcrypt_auto: goal shape advantage/sdist inequality; every arm failed
 -/
 #guard_msgs (substring := true) in
-example {α : Type} (R H I : SPComp α) (e : ℝ≥0∞) (hd : AdvHopAsm R H e)
-    (_h_ic : ∀ A : α → SPComp Bool, AdvantageA H I A ≤ e) (A : α → SPComp Bool) :
+example {α : Type} (R H I : SPComp α) (e : ℝ≥0∞) (A : α → SPComp Bool)
+    (hd : AdvHopAsm R H A e) (_h_q : ∀ n : ℕ, (n : ℝ≥0∞) * 0 ≤ e) :
     AdvantageA R H A + AdvantageA H I A ≤ e + AdvantageA H I A := by
   catcrypt_auto
 
 /-- The same goal with the hop lemma as argument. -/
-example {α : Type} (R H I : SPComp α) (e : ℝ≥0∞) (hd : AdvHopAsm R H e)
-    (_h_ic : ∀ A : α → SPComp Bool, AdvantageA H I A ≤ e) (A : α → SPComp Bool) :
+example {α : Type} (R H I : SPComp α) (e : ℝ≥0∞) (A : α → SPComp Bool)
+    (hd : AdvHopAsm R H A e) (_h_q : ∀ n : ℕ, (n : ℝ≥0∞) * 0 ≤ e) :
     AdvantageA R H A + AdvantageA H I A ≤ e + AdvantageA H I A := by
-  catcrypt_auto? [advHop_of hd A]
+  catcrypt_auto? [advHop_of hd]
 
 /-- The triangle step of OEKE/Reduction.lean:205 with `advantageA_triangle` as
 argument. -/
