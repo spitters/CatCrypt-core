@@ -91,20 +91,17 @@ theorem DeepNomAdvantage_triangle
     (G₁ G₂ G₃ A : CatCrypt.Deep.NomPackage) :
     DeepNomAdvantage G₁ G₃ A ≤
       DeepNomAdvantage G₁ G₂ A + DeepNomAdvantage G₂ G₃ A := by
-  simp only [DeepNomAdvantage]
-  exact advantage_triangle _ _ _
+  simp_all [DeepNomAdvantage, advantage_triangle]
 
 /-- Self-advantage is zero for deep nominal packages. -/
 theorem DeepNomAdvantage_self (G A : CatCrypt.Deep.NomPackage) :
     DeepNomAdvantage G G A = 0 := by
-  simp only [DeepNomAdvantage]
-  exact Advantage_self _
+  simp_all [DeepNomAdvantage, Advantage_self]
 
 /-- Deep nominal advantage is symmetric. -/
 theorem DeepNomAdvantage_comm (G G' A : CatCrypt.Deep.NomPackage) :
     DeepNomAdvantage G G' A = DeepNomAdvantage G' G A := by
-  simp only [DeepNomAdvantage, Advantage]
-  rw [max_comm]
+  simp_all [DeepNomAdvantage, Advantage, max_comm]
 
 /-- **Advantage equality under runPkg equivalence.**
 
@@ -133,7 +130,7 @@ theorem DeepNomAdvantage_congr
     (G₀ G₁ G₀' G₁' A : CatCrypt.Deep.NomPackage)
     (h₀ : G₀ = G₀') (h₁ : G₁ = G₁') :
     DeepNomAdvantage G₀ G₁ A = DeepNomAdvantage G₀' G₁' A := by
-  subst h₀; subst h₁; rfl
+  simp_all
 
 /-! ## Linking Correctness
 
@@ -179,7 +176,7 @@ theorem runPkg_link (p₁ p₂ : CatCrypt.Deep.DeepPackage) :
   · next h =>
     exact CatCrypt.Deep.eval_substOracle _ _
   · next h =>
-    rfl
+    solve_by_elim [DeepNomAdvantage_congr, DeepNomAdvantage_comm, DeepNomAdvantage_runPkg_eq, DeepNomAdvantage_self]
 
 /-- **Corollary**: If two games have the same oracle implementations for all
     operations that the adversary calls, then the linked packages produce
@@ -326,10 +323,7 @@ theorem DeepNomAdvantage_link (G₀ G₁ A R : CatCrypt.Deep.NomPackage)
     DeepNomAdvantage G₀ G₁ (CatCrypt.Deep.NomPackage.link A R hregAR) =
     DeepNomAdvantage (CatCrypt.Deep.NomPackage.link R G₀ hregRG₀)
                      (CatCrypt.Deep.NomPackage.link R G₁ hregRG₁) A := by
-  simp only [DeepNomAdvantage, CatCrypt.Deep.NomPackage.link]
-  congr 1
-  · exact runPkg_link_assoc A.pkg R.pkg G₀.pkg
-  · exact runPkg_link_assoc A.pkg R.pkg G₁.pkg
+  simp_all [DeepNomAdvantage, CatCrypt.Deep.NomPackage.link, runPkg_link_assoc]
 
 /-! ## ID Package Properties -/
 
