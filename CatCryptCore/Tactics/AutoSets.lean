@@ -42,7 +42,8 @@ and two `ℝ≥0∞` coefficient facts.
   monotonicity `add_le_add`, the relational facts `rHoare_refl` and
   `rHoare_sample_same`, and `lazyEval_fresh_eq_sample`. It is active where
   `CatCryptGrind` is open.
-* `catcrypt_grind`: `grind` with the `CatCryptGrind` set active.
+* `catcrypt_grind` and `catcrypt_grind [p₁, …]`: `grind`, with the given
+  parameters, and the `CatCryptGrind` set active.
 * `ssprove_crypto_close`: closes a goal by `simp_all`, `catcrypt_grind` or
   `aesop` over `CatCryptRel`.
 * `ssprove_crypto_grind`: `ssprove_crypto_close`, otherwise `ssprove_crypto`,
@@ -132,6 +133,11 @@ meta section
 /-- `catcrypt_grind` runs `grind` with the scoped lemma set of `CatCryptGrind`
 active. -/
 macro "catcrypt_grind" : tactic => `(tactic| open CatCryptGrind in grind)
+
+/-- `catcrypt_grind [p₁, …, pₙ]` runs `grind [p₁, …, pₙ]` with the scoped lemma
+set of `CatCryptGrind` active. -/
+macro "catcrypt_grind" " [" ps:Lean.Parser.Tactic.grindParam,* "]" : tactic =>
+  `(tactic| open CatCryptGrind in grind [$ps,*])
 
 /-- `ssprove_crypto_close` closes the main goal by the first of `simp_all`,
 `catcrypt_grind` and `aesop` over the rule set `CatCryptRel` that closes it,

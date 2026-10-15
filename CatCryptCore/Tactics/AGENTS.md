@@ -22,16 +22,22 @@ module of the same name with the suffix `Test`.
 At a leaf goal of a game proof, run `catcrypt_auto?` and replace it by the call
 it suggests. When every arm fails, the error names the goal shape and the first
 line of each arm's error; the shape selects the family in the registry below.
+When the goal needs a hop lemma, a triangle lemma or a definition that is not in
+context, pass it: `catcrypt_auto? [t₁, …, tₙ]` (terms, e.g. `kemtls_hop1 P ε h`,
+`advantageA_triangle`, a definition name). The terms go to the `grind`,
+`catcrypt_grind` and `simp_all` arms as lemma arguments, to the `aesop` arms as
+`(add unsafe tᵢ)`, and to the hop chain as further hops; the suggestion keeps
+them.
 
 ## Registry
 
 | Family | Tactic or set | Module | What it does |
 |---|---|---|---|
-| Dispatch | `catcrypt_auto` | [`AutoDispatch.lean`](AutoDispatch.lean), [`AutoDispatchExt.lean`](AutoDispatchExt.lean) | Reads the shape of the main goal and runs the arms registered for that shape (next section) in order, each under its own heartbeat budget. Closes the goal or fails. |
-| Dispatch | `catcrypt_auto?` | [`AutoDispatch.lean`](AutoDispatch.lean), [`AutoDispatchExt.lean`](AutoDispatchExt.lean) | Behaves as `catcrypt_auto` and adds a "Try this" suggestion with the closing arm, preceded by `simp only [SPComp.monad_bind_eq]` when that normalisation was applied. |
+| Dispatch | `catcrypt_auto`, `catcrypt_auto [t₁, …]` | [`AutoDispatch.lean`](AutoDispatch.lean), [`AutoDispatchExt.lean`](AutoDispatchExt.lean) | Reads the shape of the main goal and runs the arms registered for that shape (next section) in order, each under its own heartbeat budget, with the terms `tᵢ` passed to the arms. Closes the goal or fails. |
+| Dispatch | `catcrypt_auto?`, `catcrypt_auto? [t₁, …]` | [`AutoDispatch.lean`](AutoDispatch.lean), [`AutoDispatchExt.lean`](AutoDispatchExt.lean) | Behaves as `catcrypt_auto` and adds a "Try this" suggestion with the closing arm and its arguments, preceded by `simp only [SPComp.monad_bind_eq]` when that normalisation changed the goal. |
 | Sets | `CatCryptRel` | [`AutoSetsDecl.lean`](AutoSetsDecl.lean) (declaration), [`AutoSets.lean`](AutoSets.lean), [`AutoRules.lean`](AutoRules.lean) | Aesop rule set. Safe `apply`: the `IsPure` and `NoFail` combinators for `pure`, `sample` and bind, in `SPComp.bind` and `>>=` form, and `rHoare_false`. Unsafe `apply`: `rHoare_ret_same`, `rHoare_refl`, `rHoare_sample_same`, `rHoare_fail` (70%); the synchronised and one-sided `get`/`set` rules, `rHoare_ite`, `rHoare_if` (50%). Unsafe tactic rule: `ssprove_nofail` (60%). Normalisation `simp`: the `SPComp` monad laws, `SPComp.monad_bind_eq`, `SPComp.monad_pure_eq`. Called as `aesop (rule_sets := [CatCryptRel]) (config := { terminal := true })`. |
 | Sets | `CatCryptGrind` | [`AutoSets.lean`](AutoSets.lean) | Scoped `grind` set, active where the namespace `CatCryptGrind` is open. Equations: the `SPComp` monad laws, `Heap.get_set_same`, `Heap.get_set_other`, `Advantage_sym`, `Advantage_self`, the unfolding of `AdvantageA`, `Finset.sum_range_zero`, `Finset.sum_range_succ`, `lazyEval_fresh_eq_sample`. Facts: `add_le_add`, `rHoare_refl`, `rHoare_sample_same`. |
-| Sets | `catcrypt_grind` | [`AutoSets.lean`](AutoSets.lean) | `grind` with `CatCryptGrind` open. |
+| Sets | `catcrypt_grind`, `catcrypt_grind [p₁, …]` | [`AutoSets.lean`](AutoSets.lean) | `grind`, with the given `grind` parameters, and `CatCryptGrind` open. |
 | Sets | `@[gcongr]` | [`AutoSets.lean`](AutoSets.lean) | `wpE_mono`, `wpEF_mono` (monotonicity of the expectation transformers in the postcondition and the error term) and `prEvent_mono` (monotonicity in the event). |
 | Sets | `@[bound]` | [`AutoSets.lean`](AutoSets.lean) | `prTrue_le_one`, `ENNReal.div_le_div_right`, `natCast_le_natCast_of_le` (the cast `ℕ → ℝ≥0∞` is monotone) and `le_natCast_mul_of_one_le` (`ε ≤ n * ε` for `1 ≤ n`). |
 | Closers | `ssprove_crypto_close` | [`AutoSets.lean`](AutoSets.lean) | The first of `simp_all` (when it closes the goal), `catcrypt_grind` and `aesop` over `CatCryptRel` that closes the goal; fails otherwise. |
@@ -73,9 +79,12 @@ line of each arm's error; the shape selects the family in the registry below.
 ## Arms of `catcrypt_auto`
 
 The elaborator of `AutoDispatchExt` runs first. On a goal of none of its shapes,
-or when all its arms fail, the elaborator of `AutoDispatch` runs; it first
-rewrites the goal by `simp only [SPComp.monad_bind_eq]` when that applies, then
-reads the head of the goal and, failing a match, the head of its `whnfR`.
+or when all its arms fail, the arms of `AutoDispatch` run; the error of a goal
+that stays open then names both shapes and every failed arm. `AutoDispatch`
+first rewrites a goal containing `>>=` by `simp only [SPComp.monad_bind_eq]`,
+keeping the rewrite only when it changes the goal, then reads the head of the
+goal with its `set`/`let` variables replaced by their values and, failing a
+match, the head of its `whnfR`.
 
 | Shape | Detected head | Arms, in order | Module |
 |---|---|---|---|
@@ -85,12 +94,21 @@ reads the head of the goal and, failing a match, the head of its `whnfR`.
 | extended triple | mentions `XTriple`, `XPT` or `XRelTriple` | `xmvcgen!`, then `omega`, `le_rfl`, `assumption`, `simp_all` or `grind` on each residual | `AutoDispatchExt` |
 | side condition | `SPComp.IsPure _`, `SPComp.NoFail _` | `aesop` over `CatCryptRel` | `AutoDispatch` |
 | relational | `rHoare _ _ _ _` | `aesop` over `CatCryptRel`; `ssprove_crypto`; `ssprove_crypto_grind` | `AutoDispatch` |
-| advantage bound | `_ ≤ _` over `ℝ≥0∞` or `ℝ` mentioning `Advantage`, `AdvantageA`, `sdist`, `prTrue` or `prEvent` | `gcongr <;> catcrypt_grind`; `catcrypt_grind`; `bound` | `AutoDispatch` |
-| heap read | `Heap.get (Heap.set _ _ _) _ = _`, either side | `grind [Heap.get_set_same, Heap.get_set_other]` | `AutoDispatch` |
+| advantage bound | `_ ≤ _` over `ℝ≥0∞` or `ℝ` mentioning `Advantage`, `AdvantageA`, `sdist`, `prTrue` or `prEvent` | hop chain; `gcongr <;> catcrypt_grind`; `catcrypt_grind`; `bound` (a quarter of the budget; skipped when a `∀`-quantified inequality is in context) | `AutoDispatch` |
+| monotonicity | `f a₁ … aₙ ≤ f b₁ … bₙ` or `<`, the same head on both sides | `gcongr`; `gcongr <;> catcrypt_grind`; `simp_all`; `grind` | `AutoDispatch` |
+| heap read | `Heap.get (Heap.set _ _ _) _ = _`, either side; `=`, `≠` or `¬ _ = _` mentioning `Heap.set` | `grind [Heap.get_set_same, Heap.get_set_other]` | `AutoDispatch` |
 | game equality | `_ = _` over `SPComp _` | `catcrypt_grind`; `bind_vcgen` | `AutoDispatch` |
 | other | anything else | `simp_all`; `grind` | `AutoDispatch` |
 
-An arm succeeds only when it closes the goal. Each arm runs under
+The hop chain arm applies to `Advantage G₀ Gₙ ≤ ε` and `AdvantageA G₀ Gₙ A ≤ ε`.
+It finds a path of hops `AdvantageA Gᵢ Gᵢ₊₁ A ≤ εᵢ` from `G₀` to `Gₙ` among the
+named hypotheses (a `∀ A` hypothesis is instantiated at the goal's adversary)
+and the arguments, applies `AdvantageA_triangle_chain` (or
+`Advantage_triangle_chain`) through the intermediate games, and closes the sum of
+the `εᵢ` against `ε` by `ring` or `catcrypt_grind`.
+
+An arm succeeds only when it closes the goal. Error recovery is off inside an
+arm, so a `<;>` branch reports its first error. Each arm runs under
 `catcrypt_auto.maxHeartbeats` heartbeats (default 20000, in the unit of
 `maxHeartbeats`), counted from its start. An arm that fails, leaves a goal open
 or exhausts its budget is undone and the next arm runs; the exhausted budget is

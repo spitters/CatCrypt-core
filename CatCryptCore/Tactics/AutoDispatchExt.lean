@@ -18,9 +18,12 @@ public meta import CatCryptCore.XDijkstra.XMvcgenReg
 A second elaborator for the syntax of `catcrypt_auto` and `catcrypt_auto?`
 (`CatCryptCore.Tactics.AutoDispatch`). It reads the goal shape; on a shape of the
 table below it runs the arms in order, each under the heartbeat budget
-`catcrypt_auto.maxHeartbeats`, and on any other goal, or when every arm fails, it
-yields to the elaborator of `AutoDispatch` (by `throwUnsupportedSyntax`), whose
-error is the one reported.
+`catcrypt_auto.maxHeartbeats`. On any other goal it yields to the elaborator of
+`AutoDispatch` (by `throwUnsupportedSyntax`). When every arm fails it runs the
+arms of `AutoDispatch` (`AutoDispatch.run`, with the arguments of the call), and
+the error then names the shape of this module, its failed arms, the shape read by
+`AutoDispatch` and its failed arms. On a hybrid advantage goal the arms of
+`AutoDispatch` include the hop chain over the hop hypotheses in context.
 
 | Shape | Detected head | Arms, in order |
 |---|---|---|
@@ -95,15 +98,25 @@ def extArms : ExtShape → TacticM (Array (TSyntax `tactic))
       ← `(tactic| (xmvcgen! <;>
         (first | omega | exact le_rfl | assumption | (simp_all; done) | grind)))]
 
+/-- The name of a shape, as printed in the error messages. -/
+def ExtShape.name : ExtShape → String
+  | .coupling => "coupling"
+  | .hybridAdvantage => "hybrid advantage"
+  | .zeroAdvantage => "zero advantage"
+  | .extendedTriple => "extended triple"
+
 /-- Close the main goal by the arms of its shape and return the closing arm.
-Throws `unsupportedSyntax` when the goal has no shape of this module or every arm
-fails, so that the elaborator of `AutoDispatch` runs. -/
-def runExt : TacticM (TSyntax `tactic) := do
+Throws `unsupportedSyntax` when the goal has no shape of this module, so that the
+elaborator of `AutoDispatch` runs. When every arm fails, runs
+`AutoDispatch.run` with the arguments `ts` and the failed arms, whose error
+reports both. -/
+def runExt (ts : Array Term) : TacticM (TSyntax `tactic) := do
   let goal ← getMainGoal
   let some sh ← goal.withContext do extShapeOf? (← goal.getType)
     | throwUnsupportedSyntax
   let hb := catcrypt_auto.maxHeartbeats.get (← getOptions)
   let rest := (← getGoals).drop 1
+  let mut tried : Array MessageData := #[]
   for arm in ← extArms sh do
     let s ← Tactic.saveState
     setGoals [goal]
@@ -114,18 +127,22 @@ def runExt : TacticM (TSyntax `tactic) := do
     | .ok () =>
       setGoals rest
       return arm
-    | .error _ => s.restore
-  throwUnsupportedSyntax
+    | .error e =>
+      s.restore
+      tried := tried.push m!"\n  {arm}: {e}"
+  CatCrypt.Tactics.AutoDispatch.run ts tried sh.name
 
 /-- `catcrypt_auto` on the shapes of this module. -/
-@[tactic CatCrypt.Tactics.AutoDispatch.catcryptAuto] def evalCatcryptAutoExt : Tactic := fun _ => do
-  discard runExt
+@[tactic CatCrypt.Tactics.AutoDispatch.catcryptAuto] def evalCatcryptAutoExt : Tactic :=
+  fun stx => do
+    discard (runExt (argsOf stx))
 
 /-- `catcrypt_auto?` on the shapes of this module, with the closing arm as
 suggestion. -/
-@[tactic CatCrypt.Tactics.AutoDispatch.catcryptAutoTrace] def evalCatcryptAutoExtTrace : Tactic := fun stx => do
-  let arm ← runExt
-  Lean.Meta.Tactic.TryThis.addSuggestion stx arm
+@[tactic CatCrypt.Tactics.AutoDispatch.catcryptAutoTrace] def evalCatcryptAutoExtTrace : Tactic :=
+  fun stx => do
+    let arm ← runExt (argsOf stx)
+    Lean.Meta.Tactic.TryThis.addSuggestion stx arm
 
 end
 
