@@ -407,8 +407,7 @@ theorem RF_RP_Advantage_le (A : OracleAdv D R Bool) (q : ℕ) (hA : A.IsQueryBou
         rfFlagOracle_apply_true_false rpFlagOracle_apply_true_false rfFlagOracle_apply_false_eq]
     | true =>
       have hne : some (b, h') ≠ some (a, Heap.empty.set flagLoc true) := by
-        rintro h; simp only [Option.some.injEq, Prod.mk.injEq] at h
-        exact hbad (h.2 ▸ Heap.get_set_same _ _ _)
+        grind [Heap.get_set_same, Heap.get_set_other]
       simp only [hne, if_false]
   · rw [prEventComp_flagGame]
     refine (run_rfFlagOracle_flag_le A q hA []).trans_eq ?_

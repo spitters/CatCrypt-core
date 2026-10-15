@@ -187,8 +187,7 @@ theorem elgamal_real₀_eq (m₀ m₁ : P.G₁) (A : (P.G₁ × P.G₁) → SPCo
       DDH_Game_Real (elgamalDDH P) (elgamalReduction m₀ A) := by
   simp only [INDCPA_Game, DDH_Game_Real, elgamalEnc, elgamalDDH, elgamalKeygen,
     elgamalReduction, if_true, ssprove_simpl]
-  bind_align
-  rw [elgamalEcdh_exp, zpowZMod₁_zpowZMod₁]
+  grind [elgamalEcdh_exp, zpowZMod₁_zpowZMod₁]
 
 /-- The real IND-CPA game encrypting `m₁` (the `false` branch) equals the real DDH
     game with the `m₁`-reduction. -/
@@ -197,8 +196,7 @@ theorem elgamal_real₁_eq (m₀ m₁ : P.G₁) (A : (P.G₁ × P.G₁) → SPCo
       DDH_Game_Real (elgamalDDH P) (elgamalReduction m₁ A) := by
   simp only [INDCPA_Game, DDH_Game_Real, elgamalEnc, elgamalDDH, elgamalKeygen,
     elgamalReduction, Bool.false_eq_true, if_false, ssprove_simpl]
-  bind_align
-  rw [elgamalEcdh_exp, zpowZMod₁_zpowZMod₁]
+  grind [elgamalEcdh_exp, zpowZMod₁_zpowZMod₁]
 
 /-- Absorbing the mask: for any first component `gb`, sampling the DDH mask `c` and
     running `A` on `(gb, c · m)` has the same distribution as running `A` on `(gb, c)`
@@ -250,12 +248,11 @@ theorem elgamal_indcpa_le_ddh (m₀ m₁ : P.G₁) (A : (P.G₁ × P.G₁) → S
   set R1r := DDH_Game_Real (elgamalDDH P) (elgamalReduction m₁ A)
   set R0i := DDH_Game_Ideal (elgamalDDH P) (elgamalReduction m₀ A)
   set R1i := DDH_Game_Ideal (elgamalDDH P) (elgamalReduction m₁ A)
-  calc Advantage R0r R1r
-      ≤ Advantage R0r R0i + Advantage R0i R1r := advantage_triangle _ _ _
-    _ ≤ Advantage R0r R0i + (Advantage R0i R1i + Advantage R1i R1r) := by
-          gcongr; exact advantage_triangle _ _ _
-    _ = Advantage R0r R0i + (0 + Advantage R1i R1r) := by rw [hmid]
-    _ = Advantage R0r R0i + Advantage R1r R1i := by simp_all
+  refine le_trans (CatCrypt.Crypto.Advantage_triangle_chain _ [R0i, R1i] _) ?_
+  simp only [CatCrypt.Crypto.advantage_sum]
+  refine le_trans (add_le_add (le_refl (Advantage R0r R0i))
+    (add_le_add (le_of_eq hmid) (le_of_eq (Advantage_sym R1i R1r)))) ?_
+  exact le_of_eq (by ring)
 
 /-- **ElGamal real-or-random secrecy equals a single DDH advantage.** The analog of
     SSProve-Rocq's `OT_CPA_elgamal` (`AdvOf (OT_CPA elgamal) A = AdvOf (LDDH G) (A ∘ RED)`),

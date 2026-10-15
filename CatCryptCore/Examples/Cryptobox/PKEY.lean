@@ -467,13 +467,7 @@ theorem genOracle_instr_agree (N : @NIKEScheme CT) :
       -- Goal: if pk = pk_gen ∧ h' = h_final then 1 else 0 = 0
       rw [if_neg]
       intro ⟨_, heq⟩
-      have h1 : skStoreLoc.id ≠ pkeyCollFlag.id := by simp_all
-      have h2 : pkHonestLoc.id ≠ pkeyCollFlag.id := by simp_all
-      exact hnotbad (by
-        unfold pkeyBadInstr; rw [heq]
-        rw [Heap.get_set_other _ _ _ _ h1,
-            Heap.get_set_other _ _ _ _ h2,
-            Heap.get_set_same])
+      simp_all [pkeyBadInstr]
     · -- No collision case: both b=false and b=true execute pure (), identical
       rfl
 
