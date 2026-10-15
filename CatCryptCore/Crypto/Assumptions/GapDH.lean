@@ -35,6 +35,9 @@ group with generator `g` sets `cdh (g^a) (g^b) = g^(ab)` and
 * `GapDH_Game` — the search game with oracle access
 * `GapDH_Advantage` — the probability that the adversary outputs `cdh X Y`
 
+`GapDH_Game` replaces `GapDH_Game_Real` and `GapDH_Game_Ideal`, which formed the
+DDH game without an oracle, and `GapDHDef.ofDDH` is removed.
+
 ## Usage in WireGuard
 
 WireGuard uses 4 DH operations (X25519), each contributing one `ε_gdh`:

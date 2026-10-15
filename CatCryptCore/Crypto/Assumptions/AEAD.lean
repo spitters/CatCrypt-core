@@ -45,6 +45,11 @@ ciphertext type larger than the plaintext type.
 * `aeadRealOracle`, `aeadIdealOracle`, `AEAD_CCA_Advantage`
 * `aead_keyed_real` / `aead_keyed_ideal`, `AEAD_Keyed_Advantage`
 
+`AEAD_CCA_Game_Real` / `AEAD_CCA_Game_Ideal` previously gave the adversary a
+real decryption oracle that always answered `some _` and an ideal one that always
+answered `none`, so every adversary that queried decryption once had advantage
+`1`. The purity lemmas of those games and `sample_bind_const` are removed.
+
 ## Main results
 
 * `AEAD_CPA_le_CCA` — for an adversary `A` given as a probability mass function

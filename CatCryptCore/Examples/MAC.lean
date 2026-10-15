@@ -38,6 +38,10 @@ tag query: for the XOR MAC, the tag `k ⊕ m` on one message determines the key.
 * `boolXorMAC_euf_cma_adv_of_isQueryBound_zero` — the same for the `Bool` XOR
   MAC, with value `1 / 2`.
 
+These replace `bijMAC_forgery_prob`, `bijMAC_euf_cma_adv` and
+`boolXorMAC_forgery_prob`, which concerned a game whose forgery was a fixed
+parameter and whose adversary saw no tag.
+
 ## References
 
 * [Rosulek, The Joy of Cryptography, §9 (MACs)]

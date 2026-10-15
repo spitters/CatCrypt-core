@@ -65,6 +65,10 @@ hybrid PKE advantage is bounded by two KEM-CPA advantages
 Perfect KEM-CPA security (equality of the real and ideal KEM games) is not used:
 for a correct KEM the encapsulated key is a function of `(pk, ek)` on the
 support, so equality with a uniform independent key forces `|Key| = 1`.
+`pke_security_of_perfectDEM` and `xorHybrid_advantage_le` replace
+`PerfectKEM_CPA`, `pke_real_eq_hybrid1`, `hybrid2_eq_pke_ideal`,
+`pke_perfect_security`, `xorHybrid_perfect_security` and
+`xorHybrid_advantage_zero`.
 
 ## Main definitions
 

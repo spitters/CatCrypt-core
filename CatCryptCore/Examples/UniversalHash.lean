@@ -30,6 +30,11 @@ construction from Chapter 12 of "The Joy of Cryptography".
 * `boolHash_forge_prob_le` — one-time forgery probability ≤ 1/2 for the Bool hash
 * `boolPairwiseHash_is_universal` — Bool hash is 1/2-universal
 
+`uh_forge_game`, `UH_Forgery_Prob` and `boolHash_forge_prob_le` replace
+`uh_forge_real`, `uh_forge_ideal`, `UH_Forgery_Advantage`, `forge_prTrue_eq` and
+`boolHash_forge_advantage`, whose game fixed the forgery and gave the adversary
+no tag.
+
 ## References
 
 * [Rosulek, The Joy of Cryptography, Chapter 12]

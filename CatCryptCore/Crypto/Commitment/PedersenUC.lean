@@ -29,6 +29,9 @@ corrupt receiver:
   express hiding; it states that equivocating a commitment made without `m`
   reproduces the joint distribution of commitment and opening.
 
+`pedersen_uc_commit_open` is the former `pedersen_uc_secure`; the commit-phase
+statement `pedersen_uc_commit_phase` is new.
+
 Neither statement covers a corrupt committer (extraction and binding).
 Perfectly hiding Pedersen has no extractor: a commitment carries no
 information about the message.
