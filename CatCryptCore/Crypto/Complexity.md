@@ -15,10 +15,12 @@ bounded class.
    ([`UCAdmClass`](UCAdmClass.lean)).
 2. **Classes from complexity measures.** A cost on Kleisli arrows, zero on `pure` and
    subadditive under bind, yields a class and a graded family of arrows of cost at most `n`
-   ([`MonadCostModel`](MonadCostModel.lean)). Two classes are defined on syntax trees: arrows
-   with a tree of bounded oracle-query cost (`spTreeQueryAdm`), and arrows with a tree of
-   bounded total size, which is multiplicative under bind and can be exponential in query
-   cost ([`SizeBoundedUC`](SizeBoundedUC.lean)). An abstract constant-time predicate closed
+   ([`MonadCostModel`](MonadCostModel.lean)). Query cost on `SPComp` is an instance: the cost
+   of an arrow is the least worst-case oracle-query cost of a syntax tree compiling to it, and
+   the class of arrows with a tree of bounded query cost (`spTreeQueryAdm`) is the class this
+   instance induces (`spTreeQueryAdm_eq_costModel`). A second class consists of arrows with
+   a tree of bounded total size, which is multiplicative under bind and can be exponential in
+   query cost ([`SizeBoundedUC`](SizeBoundedUC.lean)). An abstract constant-time predicate closed
    under `pure`, composition and coproducts yields a class; the concrete predicate "one
    operation shape for every input" is closed under `pure` and composition, is contained in
    the query class, and is closed under coproducts only when the two branches have the same
