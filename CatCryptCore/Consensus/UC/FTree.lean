@@ -442,4 +442,140 @@ theorem finTree_guard_prefix (vw : σ → TreeView Party Blk) (honest : Party �
       ((stable_agreement T).and ((stable_deltaUpdated T Δ).and hsupp))))) s₀ ex hpre h
 
 end Func
+/-! ## The ideal world and realization by the copy simulator -/
+
+section Realize
+
+variable {Party Blk σ ζ E O : Type}
+
+/-- One step of C1's ideal world before explosion: the simulator's transition is
+appended to the trace, the flag records whether the guard fails on the extended trace,
+and the output is the simulator's output if the guard holds and the exploded output
+otherwise. -/
+theorem ideal_step_live (F : TFunc σ E O) (S : Sys σ E O) (s : σ) (tr : Trace σ E O)
+    (e : E) :
+    (ideal F S).step (s, tr, false) e = SPComp.bind (S.step s e) fun p =>
+      SPComp.pure ((p.1, tr ++ [(e, p.2, p.1)], !F.guard (tr ++ [(e, p.2, p.1)])),
+        if F.guard (tr ++ [(e, p.2, p.1)]) then p.2 else F.exploded) := by
+  simp only [ideal, Bool.false_or]
+  congr 1; funext p
+  cases F.guard (tr ++ [(e, p.2, p.1)]) <;> rfl
+
+/-- One step of C1's ideal world after explosion: the flag stays set and the output is
+the exploded output. -/
+theorem ideal_step_exploded (F : TFunc σ E O) (S : Sys σ E O) (s : σ) (tr : Trace σ E O)
+    (e : E) :
+    (ideal F S).step (s, tr, true) e = SPComp.bind (S.step s e) fun p =>
+      SPComp.pure ((p.1, tr ++ [(e, p.2, p.1)], true), F.exploded) := by
+  simp [ideal]
+
+/-- **Realization of a tree functionality.** For a lossless protocol `π`, the copy
+simulator (`π` itself, whose state is mapped by `vw` to the tree, positions and final
+blocks of the functionality) realizes `treeFunc vw honest G π.init ex`: every environment
+distinguishes the real world from the ideal world with advantage at most the probability
+that the real trace violates `G`. Instance of C1's `transparent_realizes_copy`. -/
+theorem treeFunc_realizes (π : Sys σ E O) (vw : σ → TreeView Party Blk)
+    (honest : Party → Prop) (G : TreeTrace Party Blk → Prop) (ex : O)
+    (hπ : ∀ s e, SPComp.NoFail (π.step s e)) :
+    Realizes π (ideal (treeFunc vw honest G π.init ex) π)
+      (fun _ Z => guardFail π (treeFunc vw honest G π.init ex).guard Z) :=
+  transparent_realizes_copy π _ hπ
+
+/-- **`F_Tree^P` is realized by the copy simulator up to guard failure.** For a lossless
+protocol `π` with view map `vw`, every environment has advantage at most the probability
+that the real tree trace is not well formed, violates a property of `P`, or has final
+blocks of honest parties off one chain. -/
+theorem fTree_realizes (π : Sys σ E O) (vw : σ → TreeView Party Blk) (honest : Party → Prop)
+    (T : BlockTree Blk) (P : List (TreeTrace Party Blk → Prop)) (ex : O)
+    (hπ : ∀ s e, SPComp.NoFail (π.step s e)) :
+    Realizes π (ideal (fTree vw honest T P π.init ex) π)
+      (fun _ Z => guardFail π (fTree vw honest T P π.init ex).guard Z) :=
+  treeFunc_realizes π vw honest _ ex hπ
+
+/-- **`F_FinTree^P'` is realized by the copy simulator up to guard failure.** For a
+lossless protocol `π` with view map `vw`, every environment has advantage at most the
+probability that the real tree trace violates well-formedness, `P`, chain-forming,
+agreement, `Δ`-updatedness or the support guard. -/
+theorem finTree_realizes (π : Sys σ E O) (vw : σ → TreeView Party Blk)
+    (honest : Party → Prop) (T : BlockTree Blk) (P : List (TreeTrace Party Blk → Prop))
+    (Δ : ℕ) (supp : TreeTrace Party Blk → Prop) (ex : O)
+    (hπ : ∀ s e, SPComp.NoFail (π.step s e)) :
+    Realizes π (ideal (finTree vw honest T P Δ supp π.init ex) π)
+      (fun _ Z => guardFail π (finTree vw honest T P Δ supp π.init ex).guard Z) :=
+  treeFunc_realizes π vw honest _ ex hπ
+
+/-- Perfect realization: an environment under which the real trace satisfies the guard of
+`treeFunc` with probability `1` has advantage `0`. -/
+theorem treeFunc_adv_eq_zero (π : Sys σ E O) (vw : σ → TreeView Party Blk)
+    (honest : Party → Prop) (G : TreeTrace Party Blk → Prop) (ex : O)
+    (hπ : ∀ s e, SPComp.NoFail (π.step s e)) (Z : Env (Strat ζ E O) ζ)
+    (hZ : guardFail π (treeFunc vw honest G π.init ex).guard Z = 0) :
+    adv π (ideal (treeFunc vw honest G π.init ex) π) Z = 0 :=
+  le_antisymm ((treeFunc_realizes π vw honest G ex hπ ζ Z).trans_eq hZ) zero_le
+
+/-- Perfect realization of `F_Tree^P` under every environment for which the real trace
+satisfies the guard with probability `1`. -/
+theorem fTree_adv_eq_zero (π : Sys σ E O) (vw : σ → TreeView Party Blk)
+    (honest : Party → Prop) (T : BlockTree Blk) (P : List (TreeTrace Party Blk → Prop))
+    (ex : O) (hπ : ∀ s e, SPComp.NoFail (π.step s e)) (Z : Env (Strat ζ E O) ζ)
+    (hZ : guardFail π (fTree vw honest T P π.init ex).guard Z = 0) :
+    adv π (ideal (fTree vw honest T P π.init ex) π) Z = 0 :=
+  treeFunc_adv_eq_zero π vw honest _ ex hπ Z hZ
+
+/-- Perfect realization of `F_FinTree^P'` under every environment for which the real trace
+satisfies the guard with probability `1`. -/
+theorem finTree_adv_eq_zero (π : Sys σ E O) (vw : σ → TreeView Party Blk)
+    (honest : Party → Prop) (T : BlockTree Blk) (P : List (TreeTrace Party Blk → Prop))
+    (Δ : ℕ) (supp : TreeTrace Party Blk → Prop) (ex : O)
+    (hπ : ∀ s e, SPComp.NoFail (π.step s e)) (Z : Env (Strat ζ E O) ζ)
+    (hZ : guardFail π (finTree vw honest T P Δ supp π.init ex).guard Z = 0) :
+    adv π (ideal (finTree vw honest T P Δ supp π.init ex) π) Z = 0 :=
+  treeFunc_adv_eq_zero π vw honest _ ex hπ Z hZ
+
+end Realize
+
+/-! ## Bad-event probability zero from an invariant -/
+
+section Invariant
+
+variable {τ ζ E O : Type}
+
+/-- A bind whose continuation accepts with probability `0` everywhere accepts with
+probability `0`. -/
+theorem prTrue_bind_eq_zero {α : Type} (X : SPComp α) (K : α → SPComp Bool) (h₀ : Heap)
+    (hK : ∀ a h', prTrue (K a) h' = 0) : prTrue (SPComp.bind X K) h₀ = 0 := by
+  refine le_antisymm ?_ zero_le
+  calc prTrue (SPComp.bind X K) h₀
+      ≤ prTrue (SPComp.bind X fun _ => (SPComp.fail : SPComp Bool)) h₀ :=
+        prTrue_bind_le_of_le X _ _ h₀ fun a h' => by rw [hK, prTrue_fail]
+    _ = 0 := by rw [bind_fail_right, prTrue_fail]
+
+/-- **Invariant.** Let `Inv` hold initially, exclude the bad states, and be preserved by
+every step in the sense that a step from an `Inv` state followed by a continuation that
+accepts with probability `0` from every `Inv` state accepts with probability `0`. Then the
+bad flag is set with probability `0` under every environment. -/
+theorem prBad_eq_zero_of_invariant (S : Sys τ E O) (bad : τ → Bool) (Inv : τ → Prop)
+    (hinit : Inv S.init) (hbad : ∀ t, Inv t → bad t = false)
+    (hstep : ∀ t e (K : τ × O → SPComp Bool) h, Inv t →
+      (∀ p h', Inv p.1 → prTrue (K p) h' = 0) → prTrue (SPComp.bind (S.step t e) K) h = 0)
+    (Z : Env (Strat ζ E O) ζ) : prBad S bad Z = 0 := by
+  have key : ∀ n z t h, Inv t →
+      prTrue (SPComp.bind (loop S bad Z.input n (z, t, false)) fun c => SPComp.pure c.2.2)
+        h = 0 := by
+    intro n
+    induction n with
+    | zero => intro z t h _; simp [loop, prTrue_pure]
+    | succ n ih =>
+      intro z t h ht
+      simp only [loop, SPComp.bind_assoc]
+      refine prTrue_bind_eq_zero _ _ _ fun a h' => hstep _ _ _ _ ht fun p h'' hp => ?_
+      refine prTrue_bind_eq_zero _ _ _ fun z' h''' => ?_
+      rw [hbad _ hp, Bool.or_false]
+      exact ih _ _ _ hp
+  unfold prBad run
+  rw [hbad _ hinit]
+  exact key _ _ _ _ hinit
+
+end Invariant
+
 end CatCryptCore.Consensus.UC.FTree
