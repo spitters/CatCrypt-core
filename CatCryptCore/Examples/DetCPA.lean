@@ -95,7 +95,6 @@ theorem diff_msg_prTrue (m : Bool) :
 theorem det_enc_xor_insecure (m : Bool) :
     AdvantageA (det_enc_pair xorDet m m) (det_enc_pair xorDet m (!m)) eq_adversary = 1 := by
   unfold AdvantageA Advantage
-  rw [same_msg_prTrue, diff_msg_prTrue]
-  simp
+  simp [same_msg_prTrue, diff_msg_prTrue]
 
 end CatCryptCore.Examples.DetCPA
