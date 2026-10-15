@@ -519,7 +519,13 @@ theorem qrhl_unitary
 
     `ρ` carries no reference register. The diamond-norm version, which adds a
     reference register and satisfies a frame rule, is `qIndistDiamond` in
-    `CatCryptCore.Crypto.UCMonad.QIndistDiamond`. -/
+    `CatCryptCore.Crypto.UCMonad.QIndistDiamond`.
+
+    At dimension `d₁ = 0` there is no density matrix (the trace of the empty
+    matrix is `0`, not `1`), so `qIndist C₁ C₂ ε` holds for all `C₁`, `C₂` and
+    `ε`. A statement about `qIndist` carries information only for `d₁ ≠ 0`,
+    which a caller over a variable dimension states as `[NeZero d₁]` (as the
+    lifting theorems of `Quantum/ClassicalLift.lean` do). -/
 def qIndist (C₁ C₂ : QComp d₁ α) (ε : ℝ≥0∞) : Prop :=
   ∀ (D : α → QComp d₁ Bool) (ρ : DensityMatrix d₁),
     absDiff (prTrue_Q (QComp.qbind C₁ D) ρ) (prTrue_Q (QComp.qbind C₂ D) ρ) ≤ ε

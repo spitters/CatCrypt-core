@@ -44,10 +44,9 @@ theorem r_get_vs_get {Φ : RPre} (l : Location)
       (fun v₁ h₁ v₂ h₂ => Φ h₁ h₂ ∧ v₁ = v₂) :=
   rHoare_get_sync l hSync
 
-/-- Synchronized get at same location, where the invariant implies equality.
-    This version gives a more explicit postcondition that captures the read value. -/
-theorem r_get_vs_get' {Φ : RPre} (l : Location)
-    (_hSync : ∀ h₁ h₂, Φ h₁ h₂ → h₁.get l = h₂.get l) :
+/-- Get at the same location on both sides, for any precondition: each side
+    returns the value stored at `l` in its own heap, and the heaps are unchanged. -/
+theorem r_get_vs_get' {Φ : RPre} (l : Location) :
     rHoare Φ (SPComp.get l) (SPComp.get l)
       (fun v₁ h₁ v₂ h₂ => Φ h₁ h₂ ∧ v₁ = h₁.get l ∧ v₂ = h₂.get l) := by
   intro h₁ h₂ hΦ
@@ -124,10 +123,10 @@ theorem r_sample_vs_sample_coupling {Φ : RPre} (α β : Type*)
 
 /-! ## Combined Synchronized Operations -/
 
-/-- Get then put on the same location, synchronized on both sides.
-    Updates the location with a function of its current value. -/
+/-- Get then put on the same location on both sides: each side updates `l` by
+    `f` applied to its own stored value, and `hInv` carries `Φ` to `Ψ` across
+    the two updates. -/
 theorem r_get_put_vs_get_put {Φ Ψ : RPre} (l : Location) (f : l.ty → l.ty)
-    (_hSync : ∀ h₁ h₂, Φ h₁ h₂ → h₁.get l = h₂.get l)
     (hInv : ∀ h₁ h₂, Φ h₁ h₂ → Ψ (h₁.set l (f (h₁.get l))) (h₂.set l (f (h₂.get l)))) :
     rHoare Φ (SPComp.get l >>= fun v => SPComp.set l (f v))
              (SPComp.get l >>= fun v => SPComp.set l (f v))

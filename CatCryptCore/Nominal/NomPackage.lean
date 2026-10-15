@@ -43,12 +43,17 @@ open CatCrypt.Package
 open CatCrypt.Core
 open CatCrypt.Prob
 
-/-- A nominal package: a raw package together with its atom support.
-    The support represents the abstract locations/names the package uses. -/
+/-- A nominal package: a raw package together with a finite set of atoms, its
+    support. The support is an annotation chosen by whoever builds the package:
+    a `RawPackage` stores its operations as `S → SPComp T` functions, which name
+    no atom, so no field relates `support` to the code, and the permutation
+    action (`rename`) acts on the support alone. In the deep embedding the
+    locations of the code are named by atoms, and a permutation acts on them
+    (`CatCrypt.Deep.Location.perm`). -/
 structure NomPackage where
   /-- The underlying raw package -/
   raw : RawPackage
-  /-- The support: atoms that matter for this package -/
+  /-- The support: an annotated finite set of atoms, not derived from `raw` -/
   support : Finset Atom
 
 namespace NomPackage
@@ -109,16 +114,10 @@ noncomputable def singleton (id : ℕ) (S T : Type) (f : S → SPComp T)
     (support : Finset Atom := ∅) : NomPackage :=
   ⟨RawPackage.singleton id S T f, support⟩
 
-/-- Rename atoms in a package using a finite permutation.
-    This changes the support according to the permutation.
-
-    **WARNING: This only renames the support, NOT the underlying code.**
-    The `RawPackage` stores `S → SPComp T` functions that have no notion of
-    atom/location identity, so there is nothing to rename inside the code.
-
-    For actual code renaming, use the deep embedding layer where `RawCode`
-    has explicit location references that can be permuted via
-    `RawCode.renameLocations`. -/
+/-- The action of a finite permutation `π` on a nominal package: the raw
+    package is unchanged and the support is its image under `π`. The raw
+    package names no atom, so the action on it is trivial; `rename_fresh`
+    states that a swap of two atoms outside the support fixes the package. -/
 noncomputable def rename (P : NomPackage) (π : FinPerm) : NomPackage :=
   ⟨P.raw, P.support.image (π ·)⟩
 

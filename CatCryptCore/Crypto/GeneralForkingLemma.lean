@@ -43,10 +43,16 @@ preserves the uniform distribution.
 
 ## Results
 
-* `qFork_success_ge_simple` -- simple bound: average fork >= acc^2 - acc/|R|
+* `qFork_success_ge_existential` -- for every guess `I`, the fork of the
+  reduced adversary succeeds with probability >= acc^2 - acc/|R|
 * `bellare_neven_aggregation` -- abstract Cauchy-Schwarz aggregation step
 * `sum_acceptAtGuess_eq` -- partition of probability: sum accI = acc
 * `qFork_success_ge` -- sum of the coordinate-replacement forks >= acc^2/q - acc/|R|
+
+The average over guesses of the per-guess fork success (`qForkSuccProbSimple`,
+whose event did not require the output index to equal the guess, with the bound
+`qFork_success_ge_simple`) is deleted in favour of `qFork_success_ge`, whose
+event at guess `I` requires the output index to equal `I`.
 
 ## References
 
@@ -206,49 +212,7 @@ theorem acceptProb_guessReduction [Fintype R] [Nonempty R] [DecidableEq (Fin q)]
   simp only [acceptProb, qAcceptProb]
   exact congrArg (prTrue · Heap.empty) (guessReduction_comp_eq A x I accept)
 
-/-! ## Simple q-Forking Bound (Non-Indexed) -/
-
-noncomputable def qForkSuccProbSimple [Fintype R] [Nonempty R] [DecidableEq (Fin q)]
-    [DecidableEq R] [Fintype (Fin q → R)] [Nonempty (Fin q → R)]
-    (A : QForkableAdversary X C R Y q) (x : X) (accept : Fin q × Y → Bool)
-    (_hq : 0 < q) : ℝ≥0∞ :=
-  (q : ℝ≥0∞)⁻¹ * ∑ I : Fin q, forkSuccProb (guessReduction (R := R) A I) x accept
-
-/-- Simple bound: average fork success >= acc^2 - acc/|R|. -/
-theorem qFork_success_ge_simple [Fintype R] [Nonempty R] [DecidableEq (Fin q)]
-    [DecidableEq R] [Fintype (Fin q → R)] [Nonempty (Fin q → R)]
-    (A : QForkableAdversary X C R Y q) (x : X) (accept : Fin q × Y → Bool)
-    (hq : 0 < q) :
-    qForkSuccProbSimple A x accept hq ≥
-      qAcceptProb A x accept ^ 2 - qAcceptProb A x accept / Fintype.card R := by
-  simp only [qForkSuccProbSimple, ge_iff_le, tsub_le_iff_right]
-  set acc := qAcceptProb A x accept; set N := (Fintype.card R : ℝ≥0∞)
-  set Q := (q : ℝ≥0∞)
-  have hQ_ne : Q ≠ 0 := Nat.cast_ne_zero.mpr (Nat.pos_iff_ne_zero.mp hq)
-  have hQ_ne_top : Q ≠ ⊤ := ENNReal.natCast_ne_top q
-  have h_per_I : ∀ I : Fin q,
-      forkSuccProb (guessReduction A I) x accept ≥ acc ^ 2 - acc / N := by
-    intro I
-    have heq := acceptProb_guessReduction A x I accept
-    calc acc ^ 2 - acc / N
-        = acceptProb (guessReduction A I) x accept ^ 2 -
-          acceptProb (guessReduction A I) x accept / N := by rw [heq]
-      _ ≤ forkSuccProb (guessReduction A I) x accept := fork_success_ge _ _ _
-  have h_sum : ∑ I : Fin q, forkSuccProb (guessReduction A I) x accept ≥
-      Q * (acc ^ 2 - acc / N) := by
-    calc Q * (acc ^ 2 - acc / N)
-        = ∑ _I : Fin q, (acc ^ 2 - acc / N) := by
-          rw [Finset.sum_const, Finset.card_fin, nsmul_eq_mul]
-      _ ≤ ∑ I : Fin q, forkSuccProb (guessReduction A I) x accept :=
-          Finset.sum_le_sum fun I _ => h_per_I I
-  calc acc ^ 2
-      ≤ (acc ^ 2 - acc / N) + acc / N := tsub_le_iff_right.mp le_rfl
-    _ ≤ Q⁻¹ * (∑ I, forkSuccProb (guessReduction A I) x accept) + acc / N := by
-        gcongr
-        calc acc ^ 2 - acc / N
-            = Q⁻¹ * (Q * (acc ^ 2 - acc / N)) := by
-              rw [← mul_assoc, ENNReal.inv_mul_cancel hQ_ne hQ_ne_top, one_mul]
-          _ ≤ Q⁻¹ * ∑ I, forkSuccProb (guessReduction A I) x accept := by gcongr
+/-! ## Per-Guess Bound -/
 
 /-- For every guess I, fork success >= acc^2 - acc/|R|. -/
 theorem qFork_success_ge_existential [Fintype R] [Nonempty R] [DecidableEq (Fin q)]

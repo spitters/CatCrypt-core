@@ -19,6 +19,10 @@ on deterministic code (evaluating to a Dirac distribution).
 
 * `interpDet` - Interpret deterministic RawCode into `StateM Heap`
 * `interpDet_sound` - Soundness: `interpDet` agrees with `eval`
+* `eval_eq_of_interpDet_run_eq` - deterministic programs with equal `interpDet`
+  runs from a heap have equal evaluations from that heap; it takes the place
+  of `det_self_advantage_zero`, whose conclusion `c.eval h = c.eval h` held by
+  reflexivity
 
 ## Design
 
@@ -99,11 +103,13 @@ theorem interpDet_sound {α : Type} (c : RawCode α) (hdet : IsDeterministic c) 
   | oracleCall _ _ _ _ => exact absurd hdet IsDeterministic.not_oracleCall
   | embed _ => exact absurd hdet IsDeterministic.not_embed
 
-/-- Corollary: deterministic code has zero advantage against itself.
-    Any two runs of the same deterministic code from the same heap produce
-    identical distributions. -/
-theorem det_self_advantage_zero {α : Type} (c : RawCode α) (_hdet : IsDeterministic c) :
-    ∀ h, c.eval h = c.eval h := by
-  intro _; rfl
+/-- Two deterministic programs whose `interpDet` runs agree from a heap `h`
+    have the same output distribution from `h`, so no distinguisher separates
+    them there. -/
+theorem eval_eq_of_interpDet_run_eq {α : Type} (c₁ c₂ : RawCode α)
+    (hdet₁ : IsDeterministic c₁) (hdet₂ : IsDeterministic c₂) (h : Heap)
+    (hrun : (interpDet c₁ hdet₁).run h = (interpDet c₂ hdet₂).run h) :
+    c₁.eval h = c₂.eval h := by
+  rw [interpDet_sound c₁ hdet₁ h, interpDet_sound c₂ hdet₂ h, hrun]
 
 end CatCrypt.Deep

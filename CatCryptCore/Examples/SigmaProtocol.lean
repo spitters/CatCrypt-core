@@ -47,8 +47,10 @@ coupling toolkit used by the core one-time-pad and masking-commitment examples.
   as distributions (advantage `0` for every transcript distinguisher, via
   `simpleSigma_shvzk_zero_adv`).
 * `simpleSigma_special_sound` — the extractor recovers the witness.
-* `simpleSigma_hiding` / `simpleSigma_binding` — the derived commitment is hiding
-  (from SHVZK) and binding (from special soundness).
+* `simpleSigma_hiding` — the derived commitment is hiding (from SHVZK).
+* `exists_witness_of_doubleOpening` / `simpleSigma_binding` — two accepting
+  openings of one commitment under different challenges yield a witness
+  (special soundness); no probabilistic binding bound is stated.
 
 ## References
 
@@ -312,15 +314,18 @@ def DoubleOpening.toTwoTranscripts {sp : SigmaProtocol} {x : sp.Statement}
   accept₂ := dop.verify₂
   diff := dop.diff
 
-/-- **Binding from special soundness.** An adversary who double-opens a
-    commitment yields a witness, so breaking binding solves the hard instance. -/
-theorem commitment_binding (sp : SigmaProtocol) (hSS : SpecialSoundness sp)
+/-- Witness extraction from a double opening: for a special-sound Sigma
+    protocol, two accepting openings of one commitment under different
+    challenges determine a witness for the statement (the special-soundness
+    extractor applied to them). -/
+theorem exists_witness_of_doubleOpening (sp : SigmaProtocol) (hSS : SpecialSoundness sp)
     (x : sp.Statement) (dop : DoubleOpening sp x) : ∃ w, sp.relation x w := by
   exact ⟨_, hSS.choose_spec x dop.toTwoTranscripts⟩
 
-/-- **Binding for the `simpleSigma` commitment.** -/
+/-- Witness extraction from a double opening of the `simpleSigma` commitment
+    (`exists_witness_of_doubleOpening` for `simpleSigma`). -/
 theorem simpleSigma_binding (x : Bool) (dop : DoubleOpening simpleSigma x) :
     ∃ w, simpleSigma.relation x w :=
-  commitment_binding simpleSigma simpleSigma_special_sound x dop
+  exists_witness_of_doubleOpening simpleSigma simpleSigma_special_sound x dop
 
 end CatCrypt.Examples.SigmaProtocol

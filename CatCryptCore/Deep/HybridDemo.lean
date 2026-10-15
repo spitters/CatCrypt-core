@@ -6,6 +6,7 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Deep.Package
+public import CatCryptCore.Deep.PackageEquiv
 
 /-!
 # Hybrid Argument Demonstration using Deep Embedding
@@ -42,6 +43,13 @@ In the **deep embedding**, games are syntax trees that allow structural inductio
 on syntax, automatic support/disjointness reasoning, and compositional separation
 properties.
 
+## Main results
+
+* `hybrid_transitivity` - adjacent behavioural equivalences
+  (`DeepPackage.BehavEquiv`) along a hybrid chain give the equivalence of its
+  end points. `DeepPackage.BehavEquiv` takes the place of `BehavioralEquiv`,
+  which compared export interfaces only.
+
 ## References
 
 * [Larsen and Schürmann, *Nominal State-Separating Proofs*](https://eprint.iacr.org/2025/598)
@@ -63,30 +71,15 @@ open CatCrypt.Core
 def queryInterface : DeepInterface :=
   ⟨[(0, Unit, Nat)]⟩
 
-/-! ## Behavioral Equivalence -/
+/-! ## Behavioural Equivalence
 
-/-- Behavioral equivalence of deep packages based on export interface equality.
+The equivalence of games in a hybrid chain is `DeepPackage.BehavEquiv`
+(`Deep/PackageEquiv.lean`): equal export interfaces, and for every exported
+operation, argument and oracle handler, equal evaluations of the two
+implementations. -/
 
-    In a full development, this would compare implementations via denotational
-    semantics. Here we use a simplified definition based on exports. -/
-def BehavioralEquiv (p₁ p₂ : DeepPackage) : Prop :=
-  p₁.exports = p₂.exports
-
-notation:50 p₁ " ≈ᵇ " p₂ => BehavioralEquiv p₁ p₂
-
-/-! ## Transitivity of Equivalence -/
-
-/-- Behavioral equivalence is reflexive -/
-theorem BehavioralEquiv.refl (p : DeepPackage) : p ≈ᵇ p := rfl
-
-/-- Behavioral equivalence is symmetric -/
-theorem BehavioralEquiv.symm {p₁ p₂ : DeepPackage} (h : p₁ ≈ᵇ p₂) : p₂ ≈ᵇ p₁ :=
-  Eq.symm h
-
-/-- Behavioral equivalence is transitive -/
-theorem BehavioralEquiv.trans {p₁ p₂ p₃ : DeepPackage}
-    (h₁₂ : p₁ ≈ᵇ p₂) (h₂₃ : p₂ ≈ᵇ p₃) : p₁ ≈ᵇ p₃ :=
-  Eq.trans h₁₂ h₂₃
+/-- Behavioural equivalence of deep packages, `DeepPackage.BehavEquiv`. -/
+notation:50 p₁ " ≈ᵇ " p₂ => DeepPackage.BehavEquiv p₁ p₂
 
 /-! ## Separation Properties Demo -/
 
@@ -111,11 +104,9 @@ structure HybridSequence where
   /-- Non-empty sequence -/
   nonempty : games ≠ []
 
-/-- The first and last games in a hybrid sequence are equivalent
-    if all adjacent pairs are equivalent.
-
-    This is the key theorem for hybrid arguments: we can chain
-    together local equivalences to get global equivalence. -/
+/-- If every adjacent pair of games in a non-empty list is behaviourally
+    equivalent (`DeepPackage.BehavEquiv`), then the first and the last game
+    are behaviourally equivalent. -/
 theorem hybrid_transitivity (games : List DeepPackage) (h_nonempty : games ≠ [])
     (h_adj : ∀ i, i + 1 < games.length →
       games.getD i DeepPackage.empty ≈ᵇ games.getD (i+1) DeepPackage.empty) :
@@ -124,7 +115,7 @@ theorem hybrid_transitivity (games : List DeepPackage) (h_nonempty : games ≠ [
   | nil => exact absurd rfl h_nonempty
   | cons g gs ih =>
     cases gs with
-    | nil => exact BehavioralEquiv.refl g
+    | nil => exact DeepPackage.BehavEquiv.refl g
     | cons g' gs' =>
       have h_adj' : ∀ i, i + 1 < (g' :: gs').length →
         (g' :: gs').getD i DeepPackage.empty ≈ᵇ (g' :: gs').getD (i+1) DeepPackage.empty := by
@@ -136,7 +127,7 @@ theorem hybrid_transitivity (games : List DeepPackage) (h_nonempty : games ≠ [
       simp only [List.getD_cons_zero, List.getD_cons_succ, List.getD_cons_zero] at h_first
       have h_rest := ih (List.cons_ne_nil g' gs') h_adj'
       simp only [List.head_cons] at h_rest ⊢
-      exact BehavioralEquiv.trans h_first h_rest
+      exact DeepPackage.BehavEquiv.trans h_first h_rest
 
 /-! ## Documentation: Benefits of Deep Embedding for Hybrid Arguments
 
