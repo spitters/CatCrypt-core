@@ -578,4 +578,190 @@ theorem prBad_eq_zero_of_invariant (S : Sys τ E O) (bad : τ → Bool) (Inv : �
 
 end Invariant
 
+/-! ## Non-vacuity: one honest party on a growing chain -/
+
+namespace Example
+
+open Finality.Examples
+
+/-- The view at round `n`: tree and position are the chain `[n, …, 0]`, and the final
+blocks are the blocks at least two deep, `[n - 2, …, 0]`. -/
+def lineView (n : ℕ) : TreeView Unit ℕ :=
+  ⟨n, fun _ => line n, fun _ => line n, fun _ => (line n).drop 2⟩
+
+/-- The tree trace whose view at time `t` is `lineView t`, with one honest party. -/
+def lineTT : TreeTrace Unit ℕ := ⟨fun _ => True, lineView⟩
+
+/-- Events: one honest input and one adversarial input, both without content. -/
+abbrev Ev := Event Unit Unit
+
+/-- The protocol: its state is the round `n`; every activation moves to round `n + 1` and
+outputs the new position `[n + 1, …, 0]`. -/
+noncomputable def lineProto : Sys ℕ Ev (List ℕ) where
+  init := 0
+  step n _ := SPComp.pure (n + 1, line (n + 1))
+
+theorem lineProto_noFail : ∀ s e, SPComp.NoFail (lineProto.step s e) :=
+  fun _ _ => SPComp.pure_noFail _
+
+/-- The positions of `lineTT` are F1's `lineTrace`. -/
+theorem lineTT_chains : lineTT.chains = lineTrace := rfl
+
+/-- The finalization of `lineTT` is F1's two-deep finality on `lineTrace`. -/
+theorem lineTT_finalized : lineTT.finalized = kDeep 2 lineTrace := rfl
+
+theorem drop_two_line_suffix {t t' : ℕ} (h : t ≤ t') : (line t).drop 2 <:+ (line t').drop 2 := by
+  rcases Nat.lt_or_ge t 2 with ht | ht
+  · rw [List.drop_eq_nil_of_le (by rw [length_line]; omega)]
+    exact List.nil_suffix
+  · rw [drop_line ht, drop_line (by omega)]
+    exact line_suffix (by omega)
+
+/-- The tree properties: common prefix `2`, chain growth of one block per round, chain
+quality `(evenBlock, 2, 1)`, and finality-respecting positions. -/
+def lineP : List (TreeTrace Unit ℕ → Prop) :=
+  [fun X => X.CommonPrefix 2, fun X => X.ChainGrowth 1 1, fun X => X.ChainQuality evenBlock 2 1,
+    fun X => X.FinalityRespectingPos]
+
+theorem lineP_stable : ∀ φ ∈ lineP, Stable φ := by
+  simp only [lineP, List.mem_cons, List.not_mem_nil, or_false]
+  rintro φ (rfl | rfl | rfl | rfl)
+  exacts [stable_commonPrefix 2, stable_chainGrowth 1 1, stable_chainQuality _ 2 1,
+    stable_finalityRespectingPos]
+
+theorem lineTT_wellFormed : lineTT.WellFormed lineTree :=
+  ⟨fun _ _ _ _ h => (line_suffix h).subset, fun _ _ _ => List.Subset.refl _,
+    lineTrace_chainsInTree, fun _ _ h => h⟩
+
+theorem lineTT_P : ∀ φ ∈ lineP, φ lineTT := by
+  simp only [lineP, List.mem_cons, List.not_mem_nil, or_false]
+  rintro φ (rfl | rfl | rfl | rfl)
+  · exact lineTrace_commonPrefix 2
+  · intro _ _ t t' _ _ h
+    simp only [lineTT, lineView, length_line] at h ⊢
+    omega
+  · exact lineTrace_chainQuality
+  · exact kDeep_finalityRespecting (lineTrace_commonPrefix 2)
+
+theorem lineTT_agreement : lineTT.Agreement lineTree :=
+  fun _ _ _ _ b b' _ _ _ _ _ _ => le_total b b'
+
+theorem lineTT_chainForming : lineTT.ChainForming lineTree :=
+  (kDeep_positionRespecting lineTrace_chainsInTree (lineTrace_commonPrefix 2)).chainForming
+
+theorem lineTT_deltaUpdated (Δ : ℕ) : lineTT.DeltaUpdated lineTree Δ := by
+  rintro _ _ t t' b i _ _ ⟨C, hC, hl⟩ hr
+  simp only [lineTT, lineView] at hr
+  exact ⟨b, i, ⟨C, hC.trans (drop_two_line_suffix (by omega)), hl⟩, lineTree.anc_refl b⟩
+
+theorem lineTT_kSupport : lineTT.KSupport 2 :=
+  fun _ t _ i _ hb => ⟨(), t, i, le_rfl, trivial, hb⟩
+
+theorem lineTT_validity : lineTT.Validity 1 := by
+  rintro _ t b _ _ ⟨C, hC, -⟩
+  refine ⟨Finset.univ, by simp, fun _ _ => ⟨trivial, t, le_rfl, ?_⟩⟩
+  exact (hC.trans ((List.drop_suffix _ _).trans (List.drop_suffix _ _))).subset
+    List.mem_cons_self
+
+/-- The guard of `F_Tree^P` holds on `lineTT`. -/
+theorem lineTT_fTreeGuard : FTreeGuard lineTree lineP lineTT :=
+  ⟨lineTT_wellFormed, lineTT_P, lineTT_agreement⟩
+
+/-- The guard of `F_FinTree^P'` with `2`-support holds on `lineTT`, for every `Δ`. -/
+theorem lineTT_finTreeGuardK (Δ : ℕ) :
+    FinTreeGuard lineTree lineP Δ (fun X => X.KSupport 2) lineTT :=
+  ⟨lineTT_wellFormed, lineTT_P, lineTT_chainForming, lineTT_agreement, lineTT_deltaUpdated Δ,
+    lineTT_kSupport⟩
+
+/-- The guard of `F_FinTree^P'` with `1`-validity holds on `lineTT`, for every `Δ`. -/
+theorem lineTT_finTreeGuardV (Δ : ℕ) :
+    FinTreeGuard lineTree lineP Δ (fun X => X.Validity 1) lineTT :=
+  ⟨lineTT_wellFormed, lineTT_P, lineTT_chainForming, lineTT_agreement, lineTT_deltaUpdated Δ,
+    lineTT_validity⟩
+
+/-- The state after `t` entries of a trace with one more entry. -/
+theorem stAt_snoc {σ E O : Type} (s₀ : σ) (tr : Trace σ E O) (x : E × O × σ) (t : ℕ) :
+    stAt s₀ (tr ++ [x]) t = if t ≤ tr.length then stAt s₀ tr t else x.2.2 := by
+  split_ifs with h
+  · exact stAt_append_of_le s₀ tr [x] h
+  · simp [stAt, List.take_of_length_le (show (tr ++ [x]).length ≤ t by simp; omega)]
+
+/-- A trace whose state after `t` entries is `min t (length)` has the tree trace
+`lineTT` truncated at its length. -/
+theorem traceOf_line {tr : Trace ℕ Ev (List ℕ)} (h : ∀ t, stAt 0 tr t = min t tr.length) :
+    traceOf lineView (fun _ => True) 0 tr = lineTT.clamp tr.length := by
+  simp only [traceOf, TreeTrace.clamp, lineTT, h]
+
+/-- The invariant of the monitored run of `lineProto`: the flag is unset, the state is the
+number of entries, and the state after `t` entries is `min t (length)`. -/
+def LineInv (m : ℕ × Trace ℕ Ev (List ℕ) × Bool) : Prop :=
+  m.2.2 = false ∧ m.1 = m.2.1.length ∧ ∀ t, stAt 0 m.2.1 t = min t m.2.1.length
+
+/-- For a stable guard `G` that holds on `lineTT`, the guard of `treeFunc` fails on the real
+trace of `lineProto` with probability `0` under every environment. -/
+theorem line_guardFail {ζ : Type} {G : TreeTrace Unit ℕ → Prop} (hG : Stable G)
+    (hl : G lineTT) (ex : List ℕ) (Z : Env (Strat ζ Ev (List ℕ)) ζ) :
+    guardFail lineProto (treeFunc lineView (fun _ => True) G lineProto.init ex).guard Z = 0 := by
+  unfold guardFail
+  refine prBad_eq_zero_of_invariant _ _ LineInv ⟨rfl, rfl, fun t => by simp [stAt, monitor]⟩
+    (fun m hm => hm.1) ?_ Z
+  rintro ⟨s, tr, b⟩ e K h ⟨hb, hs, htr⟩ hK
+  simp only at hb hs htr
+  subst hb hs
+  simp only [monitor, lineProto, SPComp.pure_bind]
+  have htr' : ∀ t, stAt 0 (tr ++ [(e, line (tr.length + 1), tr.length + 1)]) t =
+      min t (tr ++ [(e, line (tr.length + 1), tr.length + 1)]).length := by
+    intro t
+    rw [stAt_snoc, htr]
+    simp only [List.length_append, List.length_singleton]
+    split_ifs <;> omega
+  refine hK _ _ ⟨?_, by simp, htr'⟩
+  have hg : (treeFunc lineView (fun _ => True) G lineProto.init ex).guard
+      (tr ++ [(e, line (tr.length + 1), tr.length + 1)]) = true := by
+    rw [treeFunc_guard_iff]
+    exact (traceOf_line htr') ▸ hG _ _ hl
+  have hg' : (treeFunc lineView (fun _ => True) G 0 ex).guard
+      (tr ++ [(e, line (tr.length + 1), tr.length + 1)]) = true := hg
+  simp [hg']
+
+/-- **Non-vacuity of `F_Tree^P`.** `lineProto` satisfies the hypothesis of `fTree_realizes`
+(losslessness), block `3` is final at height `3` at time `5` of `lineTT`, the guard of
+`F_Tree^P` with common prefix, chain growth, chain quality and finality-respecting
+positions holds on `lineTT`, and the copy simulator realizes `F_Tree^P` perfectly: every
+environment has advantage `0`. -/
+theorem lineProto_fTree_adv :
+    (∀ s e, SPComp.NoFail (lineProto.step s e)) ∧ lineTT.finalized 5 () 3 3 ∧
+      FTreeGuard lineTree lineP lineTT ∧
+      ∀ (ζ : Type) (Z : Env (Strat ζ Ev (List ℕ)) ζ),
+        adv lineProto (ideal (fTree lineView (fun _ => True) lineTree lineP lineProto.init [])
+          lineProto) Z = 0 :=
+  ⟨lineProto_noFail, ⟨[2, 1, 0], by decide, rfl⟩, lineTT_fTreeGuard, fun _ Z =>
+    fTree_adv_eq_zero lineProto _ _ _ _ _ lineProto_noFail Z
+      (line_guardFail ((stable_wellFormed _).and ((stable_all lineP_stable).and
+        (stable_agreement _))) lineTT_fTreeGuard [] Z)⟩
+
+/-- **Non-vacuity of `F_FinTree^P'`.** For every `Δ`, the guards of `F_FinTree^P'` with
+`2`-support and with `1`-validity hold on `lineTT`, and the copy simulator realizes both
+perfectly: every environment has advantage `0`. -/
+theorem lineProto_finTree_adv (Δ : ℕ) :
+    FinTreeGuard lineTree lineP Δ (fun X => X.KSupport 2) lineTT ∧
+      FinTreeGuard lineTree lineP Δ (fun X => X.Validity 1) lineTT ∧
+      (∀ (ζ : Type) (Z : Env (Strat ζ Ev (List ℕ)) ζ),
+        adv lineProto (ideal (finTreeK lineView (fun _ => True) lineTree lineP Δ 2
+          lineProto.init []) lineProto) Z = 0) ∧
+      ∀ (ζ : Type) (Z : Env (Strat ζ Ev (List ℕ)) ζ),
+        adv lineProto (ideal (finTreeV lineView (fun _ => True) lineTree lineP Δ 1
+          lineProto.init []) lineProto) Z = 0 := by
+  have hst : ∀ {supp : TreeTrace Unit ℕ → Prop}, Stable supp →
+      Stable (FinTreeGuard lineTree lineP Δ supp) := fun hs =>
+    (stable_wellFormed _).and ((stable_all lineP_stable).and ((stable_chainForming _).and
+      ((stable_agreement _).and ((stable_deltaUpdated _ Δ).and hs))))
+  exact ⟨lineTT_finTreeGuardK Δ, lineTT_finTreeGuardV Δ,
+    fun _ Z => finTree_adv_eq_zero lineProto _ _ _ _ _ _ _ lineProto_noFail Z
+      (line_guardFail (hst (stable_kSupport 2)) (lineTT_finTreeGuardK Δ) [] Z),
+    fun _ Z => finTree_adv_eq_zero lineProto _ _ _ _ _ _ _ lineProto_noFail Z
+      (line_guardFail (hst (stable_validity 1)) (lineTT_finTreeGuardV Δ) [] Z)⟩
+
+end Example
+
 end CatCryptCore.Consensus.UC.FTree
