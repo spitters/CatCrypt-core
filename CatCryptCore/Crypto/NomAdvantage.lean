@@ -176,7 +176,7 @@ theorem runPkg_link (p₁ p₂ : CatCrypt.Deep.DeepPackage) :
   · next h =>
     exact CatCrypt.Deep.eval_substOracle _ _
   · next h =>
-    solve_by_elim [DeepNomAdvantage_congr, DeepNomAdvantage_comm, DeepNomAdvantage_runPkg_eq, DeepNomAdvantage_self]
+    rfl
 
 /-- **Corollary**: If two games have the same oracle implementations for all
     operations that the adversary calls, then the linked packages produce
