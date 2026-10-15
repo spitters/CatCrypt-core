@@ -66,9 +66,7 @@ theorem spcomp_distComp_self {α β : Type}
 theorem spcomp_distComp_comm {α β : Type}
     (f g : α → SPComp β) (D : β → SPComp Bool) :
     spcomp_distComp f g D = spcomp_distComp g f D := by
-  simp only [spcomp_distComp]
-  congr 1; funext a; congr 1; funext h₀
-  exact absDiff_comm _ _
+  simp_all [spcomp_distComp, absDiff_comm]
 
 /-- The per-distinguisher distance satisfies the triangle inequality. -/
 theorem spcomp_distComp_triangle {α β : Type}
@@ -99,11 +97,7 @@ theorem spcomp_distComp_bind_right {α β γ : Type}
     (f g : α → SPComp β) (k : β → SPComp γ) (D : γ → SPComp Bool) :
     spcomp_distComp (fun a => SPComp.bind (f a) k) (fun a => SPComp.bind (g a) k) D =
     spcomp_distComp f g (fun b => SPComp.bind (k b) D) := by
-  simp only [spcomp_distComp]
-  congr 1; funext a; congr 1; funext h₀
-  congr 1
-  · congr 1; exact SPComp.bind_assoc (f a) k D
-  · congr 1; exact SPComp.bind_assoc (g a) k D
+  simp_all [spcomp_distComp, SPComp.bind_assoc]
 
 /-- Left PPL at per-distinguisher level for SPComp.
     Uses the convexity argument: `absDiff` of weighted averages ≤ sup of pointwise `absDiff`. -/
