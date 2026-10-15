@@ -222,14 +222,14 @@ theorem cbc_indcpa_coupling (C : CBCBlockCipher) (m₀ m₁ : C.Block) :
   ssprove_try_bij₂ (fun iv => C.keyEquiv iv m₀ m₁)
   -- `F(keyEquiv iv m₀ m₁ k, iv ⊕ m₁) = F(k, iv ⊕ m₀)`.
   simp [← C.coh, CBCBlockCipher.keyEquiv]
-  rfl
+  grind
 
 /-- **Single-block CBC has perfect IND-CPA security**: every adversary has
 IND-CPA advantage exactly `0`. -/
 theorem cbc_perfect_indcpa (C : CBCBlockCipher) (m₀ m₁ : C.Block)
     (A : C.toEncScheme.Ciphertext → SPComp Bool) :
-    INDCPA_Adv C.toEncScheme m₀ m₁ A = 0 :=
-  INDCPA_Adv_zero_of_rHoare C.toEncScheme m₀ m₁ (cbc_indcpa_coupling C m₀ m₁) A
+    INDCPA_Adv C.toEncScheme m₀ m₁ A = 0 := by
+  grind [INDCPA_Adv_zero_of_rHoare, cbc_indcpa_coupling]
 
 /-! ## The computational reduction: CBC IND-CPA ≤ block-cipher PRP advantage
 
@@ -325,9 +325,7 @@ theorem cbc_indcpa_bound (C : CBCBlockCipher) (eval : C.Key → C.Block → C.Bl
   · -- swap hop `real_true → ideal_true`, bounded through the PRF assumption
     exact hswap0.trans (H.bound x₀ A₀)
   · -- perfect middle hop: both ideal games are the same uniform distribution
-    rw [cbc_ideal_game_uniform C m₀ m₁ true, cbc_ideal_game_uniform C m₀ m₁ false]
-    dsimp only [AdvantageA]
-    exact le_of_eq (Advantage_self _)
+    simp only [cbc_ideal_game_uniform, AdvantageA, Advantage_self, le_refl]
   · -- swap hop `ideal_false → real_false`, bounded through the PRF assumption
     exact hswap1.trans (H.bound x₁ A₁)
 
@@ -355,7 +353,7 @@ theorem boolCBC_correct : boolCBC.toEncScheme.Correct :=
 /-- **Single-block CBC over `Bool` has perfect IND-CPA security.** -/
 theorem boolCBC_perfect_indcpa (m₀ m₁ : Bool)
     (A : boolCBC.toEncScheme.Ciphertext → SPComp Bool) :
-    INDCPA_Adv boolCBC.toEncScheme m₀ m₁ A = 0 :=
-  cbc_perfect_indcpa boolCBC m₀ m₁ A
+    INDCPA_Adv boolCBC.toEncScheme m₀ m₁ A = 0 := by
+  grind [cbc_perfect_indcpa]
 
 end CatCrypt.Examples.CBCMode
