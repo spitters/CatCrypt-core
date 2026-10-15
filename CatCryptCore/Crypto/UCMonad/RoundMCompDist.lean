@@ -103,32 +103,14 @@ theorem roundm_distComp_self {α β : Type} (n : Nat)
 theorem roundm_distComp_comm {α β : Type} (n : Nat)
     (f g : α → RoundM n β) (D : β → RoundM n Bool) :
     roundm_distComp n f g D = roundm_distComp n g f D := by
-  simp only [roundm_distComp]
-  congr 1; funext a; congr 1; funext h₀
-  exact absDiff_comm _ _
+  simp only [roundm_distComp, absDiff_comm]
 
 /-- The per-distinguisher distance satisfies the triangle inequality. -/
 theorem roundm_distComp_triangle {α β : Type} (n : Nat)
     (f g h : α → RoundM n β) (D : β → RoundM n Bool) :
     roundm_distComp n f h D ≤ roundm_distComp n f g D + roundm_distComp n g h D := by
-  apply iSup_le; intro a
-  apply iSup_le; intro h₀
-  calc absDiff _ _
-      ≤ absDiff
-          (prTrue (SPComp.bind (RoundM.flattenAll n (f a))
-            (fun b => RoundM.flattenAll n (D b))) h₀)
-          (prTrue (SPComp.bind (RoundM.flattenAll n (g a))
-            (fun b => RoundM.flattenAll n (D b))) h₀) +
-        absDiff
-          (prTrue (SPComp.bind (RoundM.flattenAll n (g a))
-            (fun b => RoundM.flattenAll n (D b))) h₀)
-          (prTrue (SPComp.bind (RoundM.flattenAll n (h a))
-            (fun b => RoundM.flattenAll n (D b))) h₀) :=
-        absDiff_triangle _ _ _
-    _ ≤ roundm_distComp n f g D + roundm_distComp n g h D := by
-        apply add_le_add
-        · exact le_iSup₂_of_le a h₀ le_rfl
-        · exact le_iSup₂_of_le a h₀ le_rfl
+  exact iSup₂_le fun a h₀ => (absDiff_triangle _ _ _).trans
+    (add_le_add (le_iSup₂_of_le a h₀ le_rfl) (le_iSup₂_of_le a h₀ le_rfl))
 
 /-- `sdistRoundM = ⨆ D, roundm_distComp D`.
 
@@ -175,21 +157,8 @@ theorem roundm_distComp_bind_right {α β γ : Type} (n : Nat)
     roundm_distComp n f g (fun b => k b >>= D) := by
   simp only [roundm_distComp]
   congr 1; funext a; congr 1; funext h₀
-  congr 1
-  · congr 1
-    show SPComp.bind (RoundM.flattenAll n (RoundM.bind' n (f a) k))
-      (fun c => RoundM.flattenAll n (D c))
-      = SPComp.bind (RoundM.flattenAll n (f a))
-        (fun b => RoundM.flattenAll n (RoundM.bind' n (k b) D))
-    rw [flattenAll_bind]; rw [SPComp.bind_assoc]
-    congr 1; funext b; rw [flattenAll_bind]
-  · congr 1
-    show SPComp.bind (RoundM.flattenAll n (RoundM.bind' n (g a) k))
-      (fun c => RoundM.flattenAll n (D c))
-      = SPComp.bind (RoundM.flattenAll n (g a))
-        (fun b => RoundM.flattenAll n (RoundM.bind' n (k b) D))
-    rw [flattenAll_bind]; rw [SPComp.bind_assoc]
-    congr 1; funext b; rw [flattenAll_bind]
+  congr 2 <;>
+    (erw [flattenAll_bind, SPComp.bind_assoc]; congr 1; funext b; erw [flattenAll_bind])
 
 /-- `bind_left`: pre-composition doesn't increase per-distinguisher distance.
     Uses `absDiff_prTrue_bind_le` (convexity) from `SDist.lean`. -/
@@ -316,10 +285,7 @@ theorem L2_iff_L1_RoundM {hon out leak sim_if view : Type} {ε : ℝ≥0∞} (n 
     (F : hon → RoundM n (out ⊕ sim_if)) :
     UCEmulatesL2 (T := RoundM n) (view := view) ε π F ↔
     UCEmulates (T := RoundM n) (view := view) ε π F := by
-  constructor
-  · intro h A
-    obtain ⟨S, hS⟩ := h A
-    exact ⟨S, by rwa [ucCdist_eq_sdistRoundM] at hS⟩
-  · exact UCEmulatesL2_of_L1
+  exact ⟨fun h A => (h A).imp fun _ hS => by rwa [ucCdist_eq_sdistRoundM] at hS,
+    UCEmulatesL2_of_L1⟩
 
 end UCMonad.RoundMUC
