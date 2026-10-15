@@ -47,8 +47,8 @@ theorem spcomp_bind_fail {α β : Type} (c : SPComp α) :
   show SDistr.bind (c h) (fun _ => SDistr.fail) = SDistr.fail
   simp only [SDistr.bind, SDistr.fail]
   calc PMF.bind (c h) _ = PMF.bind (c h) (fun _ => PMF.pure (none : Option (β × Heap))) := by
-        congr 1; funext oa; cases oa <;> rfl
-    _ = PMF.pure none := PMF.bind_const _ _
+        grind
+    _ = PMF.pure none := by simp_all
 
 /-! ## Localized `mapSum` (UC-free copy)
 
