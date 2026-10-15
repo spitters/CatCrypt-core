@@ -61,14 +61,15 @@ universe u v w
 
 /-! ## `Protocol/Parameters.v` and `Protocol/Blocks.v` -/
 
-/-- Slots are natural numbers. -/
-abbrev Slot := ℕ
+/-- Slots are natural numbers. The name is a scoped notation for `ℕ`, so that `omega` sees
+slots as natural numbers. -/
+scoped notation "Slot" => ℕ
 
 /-- The first slot. -/
 def SlotZero : Slot := 0
 
-/-- Delays of messages in the network are natural numbers. -/
-abbrev Delay := ℕ
+/-- Delays of messages in the network are natural numbers (a scoped notation for `ℕ`). -/
+scoped notation "Delay" => ℕ
 
 /-- A block: its slot, its transactions, the hash of its predecessor and its baker. -/
 structure Block (Tx Hash Party : Type) where
