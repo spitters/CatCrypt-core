@@ -22,8 +22,7 @@ table below it runs the arms in order, each under the heartbeat budget
 `AutoDispatch` (by `throwUnsupportedSyntax`). When every arm fails it throws an
 error naming the shape and its failed arms, and Lean then runs the elaborator of
 `AutoDispatch`, whose error is the one reported if that also fails. On a hybrid
-advantage goal the arms of
-`AutoDispatch` include the hop chain over the hop hypotheses in context.
+advantage goal the arms of `AutoDispatch` include `hop_chain`.
 
 | Shape | Detected head | Arms, in order |
 |---|---|---|

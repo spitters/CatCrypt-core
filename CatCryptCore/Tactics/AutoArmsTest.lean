@@ -7,14 +7,15 @@ module
 
 public import CatCryptCore.Tactics.AutoArms
 public meta import CatCryptCore.Tactics.AutoArms
-public import CatCryptCore.Crypto.SDist
+public import CatCryptCore.Tactics.AutoMetrics
 
 /-!
 # Tests for `CatCryptCore.Tactics.AutoArms`
 
 The first part tests `hop_chain`, `sum_atoms_le` and `gcongr_unfold` on an abstract
-pseudometric and abstract atoms. The second part registers `sdist`, `Advantage` and
-`AdvantageA` and restates goal shapes of existing proofs as regression tests.
+pseudometric and abstract atoms. The second part restates goal shapes of existing
+proofs over `sdist`, `Advantage` and `AdvantageA`, registered in
+`CatCryptCore.Tactics.AutoMetrics`, as regression tests.
 -/
 
 set_option autoImplicit false
@@ -130,9 +131,6 @@ example (c : ℝ≥0∞) : Monotone (scaled c) := by
   gcongr_unfold [scaled]
 
 /-! ## Regression: goal shapes of existing proofs -/
-
-attribute [hop_metric] sdist_triangle sdist_sym advantage_triangle Advantage_sym
-  advantageA_triangle AdvantageA_sym
 
 /-- The `sdist` chain of `kemtls_advantage_bound` (KEMTLS/Reduction.lean). -/
 example {α β : Type} (R H₁ H₂ I : α → SPComp β) (ε₁ ε₂ ε₃ : ℝ≥0∞)

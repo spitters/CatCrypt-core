@@ -7,6 +7,7 @@ module
 
 public import CatCryptCore.Tactics.AutoDispatch
 public meta import CatCryptCore.Tactics.AutoDispatch
+public meta import CatCryptCore.Tactics.AutoArms
 
 /-!
 # Tests for `catcrypt_auto`
@@ -15,7 +16,10 @@ One example per shape of `CatCryptCore.Tactics.AutoDispatch`, a goal whose
 shape is detected but whose arms fail, goals on which an arm exceeds its
 heartbeat budget, and goals restated from game proofs: hop chains, hop leaves
 whose lemma is passed as an argument, monotonicity goals, goals behind `set`,
-heap disequalities under `some`, and the error on goals that stay open.
+heap disequalities under `some`, and the error on goals that stay open. The arms
+`hop_chain`, `sum_atoms_le` and `gcongr_unfold` are tested on a distance and a
+definition registered in this module, and a goal over an unregistered distance
+is shown to be of shape `other`.
 -/
 
 set_option autoImplicit false
@@ -105,7 +109,7 @@ example : (101 : ℕ) ≠ 103 := by
 /-! ## Hop chains -/
 
 /-- The three-hop chain of Examples/PRF.lean:187 (`cascade_prf_bound`), with the
-birthday term abstracted to `b`: the hop chain arm through `G 1` and `G 2`. -/
+birthday term abstracted to `b`: the `hop_chain` arm through `G 1` and `G 2`. -/
 example {α : Type} (G : ℕ → SPComp α) (A : α → SPComp Bool) (ε_prf b : ℝ≥0∞)
     (h01 : AdvantageA (G 0) (G 1) A ≤ ε_prf) (h12 : AdvantageA (G 1) (G 2) A ≤ b)
     (h23 : AdvantageA (G 2) (G 3) A ≤ ε_prf) :
@@ -134,12 +138,11 @@ example {α : Type} (G₀ G₁ G₂ : SPComp α) (ε₁ ε₂ : ℝ≥0∞) (A :
     AdvantageA G₀ G₂ A ≤ ε₁ + ε₂ := by
   catcrypt_auto? [advHop_of hd]
 
--- The residual of SPHINCSPlus/Reduction.lean:243: the hop chain reaches
--- `ε₁ + ε₂ ≤ h * ε₁ + l * ε₂`, which neither `ring` nor `catcrypt_grind`
--- closes. The arm logs an error inside its `first` and is rejected; every arm
--- fails with an error naming the shape.
+-- The residual of SPHINCSPlus/Reduction.lean:243: `hop_chain` reaches
+-- `ε₁ + ε₂ ≤ h * ε₁ + l * ε₂`, which is outside the fragment of `sum_atoms_le`;
+-- every arm fails with an error naming the shape and the residual.
 /--
-error: catcrypt_auto: goal shape advantage/sdist inequality; every arm failed
+error: catcrypt_auto: goal shape distance inequality; every arm failed
 -/
 #guard_msgs (substring := true) in
 example {α : Type} (G₀ G₁ G₂ : SPComp α) (A : α → SPComp Bool) (ε₁ ε₂ : ℝ≥0∞) (h l : ℕ)
@@ -149,8 +152,8 @@ example {α : Type} (G₀ G₁ G₂ : SPComp α) (A : α → SPComp Bool) (ε₁
   catcrypt_auto?
 
 -- A hop given only as a hypothesis quantified over the adversary is not
--- instantiated by the hop chain: with the per-adversary bound `f B` the hop
--- chain arm is absent and the suggestion is a later arm.
+-- instantiated by `hop_chain`: with the per-adversary bound `f B` the
+-- `hop_chain` arm fails and the suggestion is a later arm.
 /--
 info: Try this:
   [apply] catcrypt_grind
@@ -175,7 +178,7 @@ theorem sdistHop_of {G₀ G₁ : Unit → SPComp Bool} {ε : ℝ≥0∞} (h : Sd
 -- The leaves of KEMTLS/Reduction.lean:161 without their hop lemmas: every arm
 -- fails with an error naming the shape.
 /--
-error: catcrypt_auto: goal shape advantage/sdist inequality; every arm failed
+error: catcrypt_auto: goal shape distance inequality; every arm failed
 -/
 #guard_msgs (substring := true) in
 example (R H₁ H₂ I : Unit → SPComp Bool) (e₁ e₂ e₃ : ℝ≥0∞) (h₁ : SdistHopAsm R H₁ e₁)
@@ -192,7 +195,7 @@ example (R H₁ H₂ I : Unit → SPComp Bool) (e₁ e₂ e₃ : ℝ≥0∞) (h�
 -- The leaf of OEKE/Reduction.lean:201 without its hop lemma: `bound` is skipped
 -- because `_h_q` is a `∀`-quantified inequality, and the error names the shape.
 /--
-error: catcrypt_auto: goal shape advantage/sdist inequality; every arm failed
+error: catcrypt_auto: goal shape distance inequality; every arm failed
 -/
 #guard_msgs (substring := true) in
 example {α : Type} (R H I : SPComp α) (e : ℝ≥0∞) (A : α → SPComp Bool)
@@ -222,6 +225,122 @@ example (R H₁ H₂ I : Unit → SPComp Bool) :
 example {α β : Type} (a : α) (f : α → SPComp β) (hf : ∀ x, SPComp.NoFail (f x)) :
     SPComp.NoFail ((pure a : SPComp α) >>= f) := by
   catcrypt_auto? [hf]
+
+/-! ## Arms over a registered test distance -/
+
+/-- A pseudometric on `X` with values in `ℝ≥0∞`. -/
+structure TestMetric (X : Type) where
+  /-- The distance. -/
+  d : X → X → ℝ≥0∞
+  /-- Triangle inequality. -/
+  tri : ∀ x y z, d x z ≤ d x y + d y z
+  /-- Symmetry. -/
+  symm : ∀ x y, d x y = d y x
+
+/-- The triangle inequality of a `TestMetric`, stated on the distance. -/
+@[hop_metric] theorem TestMetric.d_triangle {X : Type} (M : TestMetric X) (x y z : X) :
+    M.d x z ≤ M.d x y + M.d y z := M.tri x y z
+
+/-- The symmetry of a `TestMetric`, stated on the distance. -/
+@[hop_metric] theorem TestMetric.d_symm {X : Type} (M : TestMetric X) (x y : X) :
+    M.d x y = M.d y x := M.symm x y
+
+/-- A distance-valued definition registered for unfolding. -/
+@[hop_metric] noncomputable def testAdv {X : Type} (M : TestMetric X) (x y : X) : ℝ≥0∞ :=
+  M.d x y
+
+/-- A hop bound packaged in a structure. -/
+structure TestHop {X : Type} (M : TestMetric X) (x y : X) (ε : ℝ≥0∞) : Prop where
+  bound : M.d x y ≤ ε
+
+/-- The hop lemma of `TestHop`. -/
+theorem testHop_of {X : Type} {M : TestMetric X} {x y : X} {ε : ℝ≥0∞}
+    (h : TestHop M x y ε) : M.d x y ≤ ε :=
+  h.bound
+
+-- The `hop_chain` arm, one hop used backwards through the registered symmetry.
+/--
+info: Try this:
+  [apply] hop_chain
+-/
+#guard_msgs (substring := true) in
+example {X : Type} (M : TestMetric X) (a b c : X) (e₁ e₂ : ℝ≥0∞)
+    (h₁ : M.d a b ≤ e₁) (h₂ : M.d c b ≤ e₂) : M.d a c ≤ e₂ + e₁ := by
+  catcrypt_auto?
+
+-- The `hop_chain` arm with a hop passed as argument; the quantified argument
+-- `M.tri` is not passed to `hop_chain`.
+/--
+info: Try this:
+  [apply] hop_chain [testHop_of h₂]
+-/
+#guard_msgs (substring := true) in
+example {X : Type} (M : TestMetric X) (a b c : X) (e₁ e₂ : ℝ≥0∞)
+    (h₁ : M.d a b ≤ e₁) (h₂ : TestHop M b c e₂) : M.d a c ≤ 2 * e₁ + e₂ := by
+  catcrypt_auto? [testHop_of h₂, M.tri]
+
+-- The `hop_chain` arm on a registered definition, read by unfolding.
+/--
+info: Try this:
+  [apply] hop_chain
+-/
+#guard_msgs (substring := true) in
+example {X : Type} (M : TestMetric X) (a b c : X) (e₁ e₂ : ℝ≥0∞)
+    (h₁ : testAdv M a b ≤ e₁) (h₂ : testAdv M b c = e₂) : testAdv M a c ≤ e₁ + e₂ := by
+  catcrypt_auto?
+
+-- The `sum_atoms_le` arm on a sum of distances.
+/--
+info: Try this:
+  [apply] sum_atoms_le
+-/
+#guard_msgs (substring := true) in
+example {X : Type} (M : TestMetric X) (a b c d : X) (e₁ e₂ f : ℝ≥0∞)
+    (h₁ : M.d a b ≤ e₁) (h₂ : M.d c d ≤ e₂) : M.d a b + M.d c d ≤ e₂ + f + e₁ := by
+  catcrypt_auto?
+
+-- Without a path the error reports the failure of `hop_chain`.
+/--
+hop_chain: no chain of hop facts
+-/
+#guard_msgs (substring := true) in
+example {X : Type} (M : TestMetric X) (a b c : X) (e₁ : ℝ≥0∞) (h₁ : M.d a b ≤ e₁) :
+    M.d a c ≤ e₁ := by
+  catcrypt_auto
+
+/-- A distance whose triangle lemma is not registered. -/
+noncomputable def unregDist {X : Type} (δ : X → X → ℝ≥0∞) (x y : X) : ℝ≥0∞ := δ x y
+
+-- A goal over the unregistered `unregDist` is of shape `other`; no arm closes it.
+/--
+error: catcrypt_auto: goal shape other; every arm failed
+-/
+#guard_msgs (substring := true) in
+example {X : Type} (δ : X → X → ℝ≥0∞) (a b c : X) (e₁ e₂ : ℝ≥0∞)
+    (h₁ : unregDist δ a b ≤ e₁) (h₂ : unregDist δ b c ≤ e₂) :
+    unregDist δ a c ≤ e₁ + e₂ := by
+  catcrypt_auto
+
+/-- A scaled bound `c * x`. -/
+noncomputable def testScaled (c x : ℝ≥0∞) : ℝ≥0∞ := c * x
+
+-- The `gcongr_unfold` arm on `Monotone`, with the definition as argument.
+/--
+info: Try this:
+  [apply] gcongr_unfold [testScaled]
+-/
+#guard_msgs (substring := true) in
+example (c : ℝ≥0∞) : Monotone (testScaled c) := by
+  catcrypt_auto? [testScaled]
+
+-- The `gcongr_unfold` arm on the same head on both sides.
+/--
+info: Try this:
+  [apply] gcongr_unfold [testScaled]
+-/
+#guard_msgs (substring := true) in
+example (c x y : ℝ≥0∞) (h : x ≤ y) : testScaled c x ≤ testScaled c y := by
+  catcrypt_auto? [testScaled]
 
 /-! ## Monotonicity, `set` variables and heap disequalities -/
 

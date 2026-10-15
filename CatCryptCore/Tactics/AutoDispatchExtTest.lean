@@ -12,7 +12,7 @@ public meta import CatCryptCore.Tactics.AutoDispatchExt
 # Tests for the `catcrypt_auto` arms of `AutoDispatchExt`
 
 One example per arm of `CatCryptCore.Tactics.AutoDispatchExt`, a coupling goal on
-which every arm fails, a hybrid advantage goal closed by the hop chain arm of
+which every arm fails, a hybrid advantage goal closed by the `hop_chain` arm of
 `AutoDispatch` after the arms of this module fail, the error naming both shapes,
 a goal of no shape of that module (handled by `AutoDispatch`), and the suggestion
 of `catcrypt_auto?`.
@@ -74,7 +74,7 @@ example {α : Type} (G : ℕ → SPComp α) (A : α → SPComp Bool) (q : ℕ) (
   catcrypt_auto
 
 /-- The three-hop chain of Examples/PRF.lean:187 (`cascade_prf_bound`), with the
-birthday term abstracted to `b`: the arms of this module fail and the hop chain
+birthday term abstracted to `b`: the arms of this module fail and the `hop_chain`
 arm of `AutoDispatch` closes the goal. -/
 example {α : Type} (G : ℕ → SPComp α) (A : α → SPComp Bool) (ε_prf b : ℝ≥0∞)
     (h01 : AdvantageA (G 0) (G 1) A ≤ ε_prf) (h12 : AdvantageA (G 1) (G 2) A ≤ b)
@@ -86,7 +86,7 @@ example {α : Type} (G : ℕ → SPComp α) (A : α → SPComp Bool) (ε_prf b :
 -- fails, Lean runs the elaborator of `AutoDispatch` next, and its error, which
 -- names the shape and the failed arms of `AutoDispatch`, is the one reported.
 /--
-error: catcrypt_auto: goal shape advantage/sdist inequality; every arm failed
+error: catcrypt_auto: goal shape distance inequality; every arm failed
 -/
 #guard_msgs (substring := true) in
 example {α : Type} (G₀ G₁ : SPComp α) (A : α → SPComp Bool) (ε : ℝ≥0∞) :

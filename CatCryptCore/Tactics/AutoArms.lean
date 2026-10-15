@@ -39,7 +39,7 @@ This module provides three procedures.
   as `KA_Advantage`), or an equation `D … = d …` whose right side is one.
 
 No distance is built into the procedures; the registrations of `Advantage`, `AdvantageA`
-and `sdist` are made in a module that imports this one.
+and `sdist` are in `CatCryptCore.Tactics.AutoMetrics`.
 -/
 
 @[expose] public section
@@ -48,7 +48,10 @@ namespace CatCrypt.Crypto
 
 open CatCrypt.Core
 
-/-- `AdvantageA` is symmetric in its two games at a fixed adversary. -/
+/-- `AdvantageA` is symmetric in its two games at a fixed adversary. It belongs
+beside `Advantage_sym` in `CatCryptCore.Crypto.Advantage` and is stated here so that
+the interface of that module, which has about 6,500 transitive importers, stays
+unchanged. -/
 theorem AdvantageA_sym {α : Type*} (G₀ G₁ : SPComp α) (A : α → SPComp Bool) :
     AdvantageA G₀ G₁ A = AdvantageA G₁ G₀ A := by
   simp only [AdvantageA]

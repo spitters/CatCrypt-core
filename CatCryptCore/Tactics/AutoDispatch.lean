@@ -12,6 +12,8 @@ public import Mathlib.Tactic.Ring
 public import CatCryptCore.Tactics.AutoSets
 public import CatCryptCore.Tactics.BindVcgen
 public import CatCryptCore.Tactics.Triangle
+public import CatCryptCore.Tactics.AutoMetrics
+public meta import CatCryptCore.Tactics.AutoArms
 
 /-!
 # Goal-shape dispatch over the automation sets
@@ -27,20 +29,25 @@ the instantiated goal with its `set`/`let` variables replaced by their values
 |---|---|---|
 | side condition | `SPComp.IsPure _`, `SPComp.NoFail _` | `aesop` over `CatCryptRel` |
 | relational | `rHoare _ _ _ _` | `aesop` over `CatCryptRel`; `ssprove_crypto`; `ssprove_crypto_grind` |
-| advantage bound | `_ ≤ _` over `ℝ≥0∞` or `ℝ` mentioning `Advantage`, `AdvantageA`, `sdist`, `prTrue` or `prEvent` | hop chain; `gcongr <;> catcrypt_grind`; `catcrypt_grind`; `bound` |
-| monotonicity | `f a₁ … aₙ ≤ f b₁ … bₙ` or `<`, the same head on both sides | `gcongr`; `gcongr <;> catcrypt_grind`; `simp_all`; `grind` |
+| distance inequality | `_ ≤ _` over `ℝ≥0∞` or `ℝ` whose left side is a registered distance or a sum with one as summand, or that mentions a registered head, `prTrue` or `prEvent` | `hop_chain`; `sum_atoms_le`; `gcongr <;> catcrypt_grind`; `catcrypt_grind`; `bound` |
+| monotonicity | `f a₁ … aₙ ≤ f b₁ … bₙ` or `<`, the same head on both sides; `Monotone f`, `Antitone f`, `StrictMono f`, `StrictAnti f` | `gcongr_unfold`; `gcongr`; `gcongr <;> catcrypt_grind`; `simp_all`; `grind` |
 | heap read | `Heap.get (Heap.set _ _ _) _ = _` (either side), or `=`, `≠`, `¬ _ = _` mentioning `Heap.set` | `grind [Heap.get_set_same, Heap.get_set_other]` |
 | game equality | `_ = _` over `SPComp _` | `catcrypt_grind`; `bind_vcgen` |
 | other | anything else | `simp_all`; `grind` |
 
-The hop chain arm applies to `Advantage G₀ Gₙ ≤ ε` and `AdvantageA G₀ Gₙ A ≤ ε`:
-it searches the local hypotheses and the arguments for a path of hops
-`Advantage Gᵢ Gᵢ₊₁ ≤ εᵢ` (for `AdvantageA`, `AdvantageA Gᵢ Gᵢ₊₁ A ≤ εᵢ` at the
-goal's adversary `A`) from `G₀` to `Gₙ`, chains them by
-`Advantage_triangle_chain` or `AdvantageA_triangle_chain`, and closes
-`ε₁ + (ε₂ + …) ≤ ε` by `ring` or `catcrypt_grind`. A hop is a local hypothesis
-or an argument whose type is such an inequality; a `∀`-quantified hypothesis is
-not instantiated.
+A registered distance is a term that `distView?` of `CatCryptCore.Tactics.AutoArms`
+reads as an application of a distance whose triangle lemma carries `@[hop_metric]`,
+after unfolding the definitions and equations registered with `@[hop_metric]`; a
+term that is not one is read again after `whnfR`. A registered head is the head
+constant of a `@[hop_metric]` registration. The registrations of `sdist`,
+`Advantage` and `AdvantageA` are in `CatCryptCore.Tactics.AutoMetrics`, which this
+module imports; a definition of an advantage or a probability becomes a registered
+distance by `@[hop_metric]` on it or on its defining equation.
+
+The `hop_chain` arm receives the arguments that elaborate to a proof of an
+unquantified proposition; the `sum_atoms_le` arm closes a sum of atoms against a
+sum of atoms with the inequalities of the local context; the `gcongr_unfold` arm
+receives the arguments that are identifiers as the definitions to unfold.
 
 `bound` runs under a quarter of the arm budget, and not at all when a local
 hypothesis is a `∀`-quantified inequality: `bound` then tries to unify that
@@ -48,7 +55,8 @@ hypothesis's conclusion with the goal, which unfolds the game definitions.
 
 `catcrypt_auto [t₁, …, tₙ]` passes the terms `tᵢ` to the arms: to `grind`,
 `catcrypt_grind` and `simp_all` as lemma arguments, to `aesop` as
-`(add unsafe tᵢ)`, and to the hop chain as further hops.
+`(add unsafe tᵢ)`, to `hop_chain` as further hop facts, and to `gcongr_unfold`
+as definitions to unfold.
 
 Each arm runs under a heartbeat budget of its own, counted from the arm's start:
 `catcrypt_auto.maxHeartbeats` heartbeats (default 20000, in the unit of
@@ -81,7 +89,7 @@ register_option catcrypt_auto.maxHeartbeats : Nat := {
 inductive Shape where
   | sideCondition
   | relational
-  | advantageBound
+  | distanceBound
   | monotone
   | heapRead
   | gameEquality
@@ -92,7 +100,7 @@ inductive Shape where
 def Shape.name : Shape → String
   | .sideCondition => "IsPure/NoFail side condition"
   | .relational => "relational rHoare judgment"
-  | .advantageBound => "advantage/sdist inequality"
+  | .distanceBound => "distance inequality"
   | .monotone => "monotonicity inequality"
   | .heapRead => "heap read after write"
   | .gameEquality => "SPComp equality"
@@ -104,14 +112,39 @@ def mentionsConst (cs : List Name) (e : Expr) : Bool :=
     | some n => cs.contains n
     | none => false).isSome
 
-/-- The constants whose occurrence marks an inequality as an advantage bound. -/
-def advantageConsts : List Name :=
-  [`CatCrypt.Crypto.Advantage, `CatCrypt.Crypto.AdvantageA, `CatCrypt.Crypto.sdist,
-   `CatCrypt.Crypto.prTrue, `CatCrypt.Unary.prEvent]
+/-- The probability constants whose occurrence marks an inequality as a distance
+inequality. -/
+def probabilityConsts : List Name :=
+  [`CatCrypt.Crypto.prTrue, `CatCrypt.Unary.prEvent]
 
-/-- `e` mentions one of `advantageConsts`. -/
-def mentionsAdvantage (e : Expr) : Bool :=
-  mentionsConst advantageConsts e
+/-- The head constants of the `@[hop_metric]` registrations. -/
+def registeredHeads : MetaM (List Name) := do
+  return (← AutoArms.hopEntries).toList.map (·.head)
+
+/-- `e` is a registered distance, read directly or after `whnfR`. -/
+def isDistance (e : Expr) : MetaM Bool := do
+  if (← AutoArms.distView? e).isSome then return true
+  return (← AutoArms.distView? (← whnfR e)).isSome
+
+/-- `e` is a registered distance or a sum with a registered distance as a
+summand. -/
+partial def hasDistanceSummand (e : Expr) : MetaM Bool := do
+  let e := e.cleanupAnnotations
+  if let some (a, b) := AutoArms.addSides? e then
+    return (← hasDistanceSummand a) || (← hasDistanceSummand b)
+  isDistance e
+
+/-- `a ≤ b` is a distance inequality: `a` is a registered distance or a sum with
+one as summand, or `a` or `b` mentions a registered head or a probability
+constant. -/
+def isDistanceIneq (a b : Expr) : MetaM Bool := do
+  let cs := probabilityConsts ++ (← registeredHeads)
+  if mentionsConst cs a || mentionsConst cs b then return true
+  hasDistanceSummand a
+
+/-- The monotonicity predicates read as the monotonicity shape. -/
+def monotonePreds : List Name :=
+  [``Monotone, ``Antitone, ``StrictMono, ``StrictAnti]
 
 /-- `e` is `Heap.get (Heap.set _ _ _) _`. -/
 def isGetOfSet (e : Expr) : Bool :=
@@ -133,9 +166,8 @@ def shapeOf? (t : Expr) : MetaM (Option Shape) := do
   | CatCrypt.Relational.rHoare _ _ _ _ _ _ => return some .relational
   | LE.le α _ a b =>
     let α ← whnfR α
-    if (α.isConstOf ``ENNReal || α.isConstOf ``Real) &&
-        (mentionsAdvantage a || mentionsAdvantage b) then
-      return some .advantageBound
+    if (α.isConstOf ``ENNReal || α.isConstOf ``Real) && (← isDistanceIneq a b) then
+      return some .distanceBound
     if sameHead a b then return some .monotone
     return none
   | LT.lt _ _ a b =>
@@ -154,7 +186,9 @@ def shapeOf? (t : Expr) : MetaM (Option Shape) := do
     if p.isAppOfArity ``Eq 3 && mentionsConst [``CatCrypt.Core.Heap.set] p then
       return some .heapRead
     return none
-  | _ => return none
+  | _ =>
+    if monotonePreds.any t.isAppOf then return some .monotone
+    return none
 
 /-- The shape of `t`: the head of `t` with its `let` variables replaced by their
 values, else the head of its `whnfR`. -/
@@ -179,103 +213,32 @@ def parseTactic (s : String) : TacticM (TSyntax `tactic) := do
   | .ok stx => return ⟨stx⟩
   | .error e => throwError "catcrypt_auto: cannot parse the arm `{s}`: {e}"
 
-/-- `s` is one parenthesised group `( … )`. -/
-def isParenGroup (s : String) : Bool := Id.run do
-  let cs := s.toList
-  unless cs.head? == some '(' && cs.getLast? == some ')' do return false
-  let mut depth : Int := 0
-  for (c, i) in cs.zipIdx do
-    if c == '(' then depth := depth + 1
-    if c == ')' then depth := depth - 1
-    if depth == 0 && i + 1 < cs.length then return false
-  return true
+/-! ## Arguments of the `hop_chain` and `gcongr_unfold` arms -/
 
-/-- `s` in parentheses when it contains a space and is not one parenthesised
-group. -/
-def paren (s : String) : String :=
-  if s.contains ' ' && !isParenGroup s then s!"({s})" else s
-
-/-! ## Hop chains -/
-
-/-- A hop `Advantage G H ≤ ε` or `AdvantageA G H A ≤ ε`, with the source text of
-its proof. -/
-structure Hop where
-  src : Expr
-  dst : Expr
-  proof : String
-  deriving Inhabited
-
-/-- The games and adversary of `ty` when `ty` is `Advantage G H ≤ _` (adversary
-`none`) or `AdvantageA G H A ≤ _`. -/
-def hopOf? (ty : Expr) : MetaM (Option (Expr × Expr × Option Expr)) := do
-  let ty := (← instantiateMVars ty).cleanupAnnotations
-  match_expr ty with
-  | LE.le _ _ a _ =>
-    match_expr a with
-    | CatCrypt.Crypto.AdvantageA _ g h adv => return some (g, h, some adv)
-    | CatCrypt.Crypto.Advantage g h => return some (g, h, none)
-    | _ => return none
-  | _ => return none
-
-/-- The hop of a proof of type `ty` with source text `txt`, at the adversary
-`adv?` of the goal, when `ty` is itself `Advantage G H ≤ _` or
-`AdvantageA G H adv ≤ _`. A `∀`-quantified `ty` is no hop. -/
-def hopAt? (adv? : Option Expr) (ty : Expr) (txt : String) : MetaM (Option Hop) := do
-  let some (g, h, a?) ← hopOf? ty | return none
-  match adv?, a? with
-  | some adv, some a =>
-    unless ← withReducible (isDefEq adv a) do return none
-  | none, none => pure ()
-  | _, _ => return none
-  return some { src := g, dst := h, proof := txt }
-
-/-- A path of hops from `src` to `dst`, visiting each hop at most once. -/
-partial def hopPath (hops : Array Hop) (src dst : Expr) (used : List Nat) :
-    MetaM (Option (List Hop)) := do
-  for i in [0:hops.size] do
-    if used.contains i then continue
-    let hop := hops[i]!
-    unless ← withReducible (isDefEq hop.src src) do continue
-    if ← withReducible (isDefEq hop.dst dst) then return some [hop]
-    if let some rest ← hopPath hops hop.dst dst (i :: used) then
-      return some (hop :: rest)
-  return none
-
-/-- The hop chain arm for the goal `g` and the arguments `ts`, when the goal is
-`Advantage G₀ Gₙ ≤ _` or `AdvantageA G₀ Gₙ A ≤ _` and a path of hops from `G₀`
-to `Gₙ` exists. -/
-def hopChainArm? (g : MVarId) (ts : Array Term) : TacticM (Option String) :=
+/-- The source texts of the arguments `ts` that elaborate, in the context of the
+goal `g`, to a proof of a proposition that is not `∀`-quantified: the hop facts
+`hop_chain` accepts. -/
+def hopArgTexts (g : MVarId) (ts : Array Term) : TacticM (Array String) :=
   g.withContext do withoutModifyingState do
-    let some (g₀, gₙ, adv?) ← hopOf? (← g.getType) | return none
-    let mut hops : Array Hop := #[]
-    for d in ← getLCtx do
-      if d.isImplementationDetail || d.userName.hasMacroScopes then continue
-      if let some hop ← hopAt? adv? d.type d.userName.toString then
-        hops := hops.push hop
+    let mut out := #[]
     for t in ts do
-      let ty ← try
-          let e ← Term.withSynthesize <| Term.elabTerm t none
-          pure (some (← inferType e))
-        catch _ => pure none
-      if let some ty := ty then
-        if let some hop ← hopAt? adv? ty (← termText t) then
-          hops := hops.push hop
-    let some path ← hopPath hops g₀ gₙ [] | return none
-    let mids ← (path.dropLast.map (·.dst)).mapM fun e => do return toString (← ppExpr e)
-    let leaves := path.map (paren ·.proof)
-    -- `leaves.reverse` is `[lₙ, …, l₁]`; the fold builds `add_le_add l₁ (… lₙ)`.
-    let sum := match leaves.reverse with
-      | [] => ""
-      | [only] => only
-      | last :: rest => rest.foldl (fun acc p => s!"add_le_add {p} {paren acc}") last
-    let (chain, unfold) := if adv?.isSome then
-        (s!"CatCrypt.Crypto.AdvantageA_triangle_chain _ [{", ".intercalate mids}] _ _",
-         "CatCrypt.Crypto.advantageA_sum")
-      else
-        (s!"CatCrypt.Crypto.Advantage_triangle_chain _ [{", ".intercalate mids}] _",
-         "CatCrypt.Crypto.advantage_sum")
-    return some s!"(refine le_trans ({chain}) ?_; simp only [{unfold}]; \
-      refine le_trans ({sum}) ?_; first | exact le_of_eq (by ring) | catcrypt_grind)"
+      let ok ← try
+          let e ← Term.withoutErrToSorry <| Term.withSynthesize <| Term.elabTerm t none
+          let ty ← inferType e
+          pure ((← isProp ty) && !(← whnfR ty).isForall)
+        catch _ => pure false
+      if ok then out := out.push (← termText t)
+    return out
+
+/-- The source texts of the arguments `ts` that are identifiers: the definitions
+`gcongr_unfold` unfolds. -/
+def identArgTexts (ts : Array Term) : TacticM (Array String) :=
+  (ts.filter (·.raw.isIdent)).mapM termText
+
+/-- `tac` followed by the list `[t₁, …, tₙ]` of `xs`, or `tac` alone when `xs` is
+empty. -/
+def withList (tac : String) (xs : Array String) : String :=
+  if xs.isEmpty then tac else s!"{tac} [{", ".intercalate xs.toList}]"
 
 /-! ## Arms -/
 
@@ -312,18 +275,16 @@ def arms (sh : Shape) (g : MVarId) (ts : Array Term) (hb : Nat) : TacticM (Array
   match sh with
   | .sideCondition => return #[← mk aesopTxt]
   | .relational => return #[← mk aesopTxt, ← mk "ssprove_crypto", ← mk "ssprove_crypto_grind"]
-  | .advantageBound =>
-    let chain ← match ← hopChainArm? g ts with
-      | some s => pure #[← mk s]
-      | none => pure #[]
+  | .distanceBound =>
     let skip ← match ← forallIneqHyp? g with
       | some n => pure (some s!"skipped: the ∀-quantified inequality {n} is in context, \
           and unifying its conclusion with the goal unfolds the game definitions")
       | none => pure none
-    return chain ++ #[← mk s!"(gcongr <;> catcrypt_grind{lst})", ← mk s!"catcrypt_grind{lst}",
+    return #[← mk (withList "hop_chain" (← hopArgTexts g ts)), ← mk "sum_atoms_le",
+      ← mk s!"(gcongr <;> catcrypt_grind{lst})", ← mk s!"catcrypt_grind{lst}",
       { tac := ← parseTactic "bound", budget := max 1 (hb / 4), skip }]
-  | .monotone => return #[← mk "gcongr", ← mk s!"(gcongr <;> catcrypt_grind{lst})",
-      ← mk s!"simp_all{lst}", ← mk s!"grind{lst}"]
+  | .monotone => return #[← mk (withList "gcongr_unfold" (← identArgTexts ts)), ← mk "gcongr",
+      ← mk s!"(gcongr <;> catcrypt_grind{lst})", ← mk s!"simp_all{lst}", ← mk s!"grind{lst}"]
   | .heapRead => return #[← mk s!"grind [CatCrypt.Core.Heap.get_set_same, \
       CatCrypt.Core.Heap.get_set_other{more}]"]
   | .gameEquality => return #[← mk s!"catcrypt_grind{lst}", ← mk "bind_vcgen"]
@@ -413,7 +374,7 @@ def run (ts : Array Term) (pre : Array MessageData := #[]) (preShape : String :=
 shape (see the module docstring), each under the heartbeat budget
 `catcrypt_auto.maxHeartbeats` (in the unit of `maxHeartbeats`).
 `catcrypt_auto [t₁, …, tₙ]` passes the terms to the `grind`, `simp_all`,
-`catcrypt_grind` and `aesop` arms and to the hop chain. -/
+`catcrypt_grind` and `aesop` arms, to `hop_chain` and to `gcongr_unfold`. -/
 syntax (name := catcryptAuto) "catcrypt_auto" (" [" term,* "]")? : tactic
 
 /-- `catcrypt_auto?` behaves as `catcrypt_auto` and suggests the closing arm. -/

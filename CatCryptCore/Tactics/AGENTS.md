@@ -6,12 +6,14 @@ in [`../XDijkstra/`](../XDijkstra/). Tactics are in the namespace
 
 The modules [`AutoSetsDecl.lean`](AutoSetsDecl.lean),
 [`AutoSets.lean`](AutoSets.lean), [`AutoRules.lean`](AutoRules.lean),
-[`AutoDispatch.lean`](AutoDispatch.lean) and
-[`AutoDispatchExt.lean`](AutoDispatchExt.lean) are leaves: the aggregate module
+[`AutoDispatch.lean`](AutoDispatch.lean),
+[`AutoDispatchExt.lean`](AutoDispatchExt.lean), [`AutoArms.lean`](AutoArms.lean)
+and [`AutoMetrics.lean`](AutoMetrics.lean) are leaves: the aggregate module
 `CatCryptCore.Tactics` does not import them, and a proof that uses them imports
 them itself. A proof that uses `catcrypt_auto` imports
 `CatCryptCore.Tactics.AutoDispatchExt`, which gives every arm: it imports
-`AutoDispatch`, which imports `AutoSets`, which imports `AutoSetsDecl`. No
+`AutoDispatch`, which imports `AutoSets` (which imports `AutoSetsDecl`) and
+`AutoMetrics` (which imports `AutoArms`). No
 module of that chain imports `AutoRules`; a proof that needs its two rules in
 `CatCryptRel` (`rHoare_false`, `ssprove_nofail`) imports
 `CatCryptCore.Tactics.AutoRules` as well. Each module has its tests in the
@@ -26,8 +28,9 @@ When the goal needs a hop lemma, a triangle lemma or a definition that is not in
 context, pass it: `catcrypt_auto? [t₁, …, tₙ]` (terms, e.g. `kemtls_hop1 P ε h`,
 `advantageA_triangle`, a definition name). The terms go to the `grind`,
 `catcrypt_grind` and `simp_all` arms as lemma arguments, to the `aesop` arms as
-`(add unsafe tᵢ)`, and to the hop chain as further hops; the suggestion keeps
-them.
+`(add unsafe tᵢ)`, to `hop_chain` as further hop facts (those that are proofs of
+unquantified propositions), and to `gcongr_unfold` as definitions to unfold
+(those that are identifiers); the suggestion keeps them.
 
 ## Registry
 
@@ -35,6 +38,10 @@ them.
 |---|---|---|---|
 | Dispatch | `catcrypt_auto`, `catcrypt_auto [t₁, …]` | [`AutoDispatch.lean`](AutoDispatch.lean), [`AutoDispatchExt.lean`](AutoDispatchExt.lean) | Reads the shape of the main goal and runs the arms registered for that shape (next section) in order, each under its own heartbeat budget, with the terms `tᵢ` passed to the arms. Closes the goal or fails. |
 | Dispatch | `catcrypt_auto?`, `catcrypt_auto? [t₁, …]` | [`AutoDispatch.lean`](AutoDispatch.lean), [`AutoDispatchExt.lean`](AutoDispatchExt.lean) | Behaves as `catcrypt_auto` and adds a "Try this" suggestion with the closing arm and its arguments, preceded by `simp only [SPComp.monad_bind_eq]` when that normalisation changed the goal. |
+| Distances | `hop_chain`, `hop_chain [h₁, …]` | [`AutoArms.lean`](AutoArms.lean) | Proves `d x y ≤ e` for a distance `d` registered with `@[hop_metric]`: a breadth-first path of hop facts `d u v ≤ b` (or `= b`) from `x` to `y` among the unquantified hypotheses and the arguments, each usable backwards when a symmetry lemma is registered, composed by the triangle lemma; the residual sum goes to `sum_atoms_le`. |
+| Distances | `@[hop_metric]` | [`AutoArms.lean`](AutoArms.lean); standard registrations in [`AutoMetrics.lean`](AutoMetrics.lean) | Registers a triangle lemma, a symmetry lemma, an equation `D … = d …` or a definition to unfold. `AutoMetrics` registers `sdist`, `Advantage` and `AdvantageA`; an advantage- or probability-valued definition of a proof becomes a distance by `@[hop_metric]` on it. |
+| Distances | `sum_atoms_le` | [`AutoArms.lean`](AutoArms.lean) | Decides `Σ aᵢ ≤ Σ bⱼ` for ℕ-weighted sums of atoms in a canonically ordered semiring (`ℝ≥0∞`), matching each left atom to a right atom equal to it or bounding it by a hypothesis `a ≤ b`. |
+| Monotonicity | `gcongr_unfold`, `gcongr_unfold [d₁, …]` | [`AutoArms.lean`](AutoArms.lean) | Introduces the binders of `Monotone f`-like goals, unfolds `dᵢ`, runs `gcongr` and closes the side goals by `assumption`, `positivity` or `norm_num`. |
 | Sets | `CatCryptRel` | [`AutoSetsDecl.lean`](AutoSetsDecl.lean) (declaration), [`AutoSets.lean`](AutoSets.lean), [`AutoRules.lean`](AutoRules.lean) | Aesop rule set. Safe `apply`: the `IsPure` and `NoFail` combinators for `pure`, `sample` and bind, in `SPComp.bind` and `>>=` form, and `rHoare_false`. Unsafe `apply`: `rHoare_ret_same`, `rHoare_refl`, `rHoare_sample_same`, `rHoare_fail` (70%); the synchronised and one-sided `get`/`set` rules, `rHoare_ite`, `rHoare_if` (50%). Unsafe tactic rule: `ssprove_nofail` (60%). Normalisation `simp`: the `SPComp` monad laws, `SPComp.monad_bind_eq`, `SPComp.monad_pure_eq`. Called as `aesop (rule_sets := [CatCryptRel]) (config := { terminal := true })`. |
 | Sets | `CatCryptGrind` | [`AutoSets.lean`](AutoSets.lean) | Scoped `grind` set, active where the namespace `CatCryptGrind` is open. Equations: the `SPComp` monad laws, `Heap.get_set_same`, `Heap.get_set_other`, `Advantage_sym`, `Advantage_self`, the unfolding of `AdvantageA`, `Finset.sum_range_zero`, `Finset.sum_range_succ`, `lazyEval_fresh_eq_sample`. Facts: `add_le_add`, `rHoare_refl`, `rHoare_sample_same`. |
 | Sets | `catcrypt_grind`, `catcrypt_grind [p₁, …]` | [`AutoSets.lean`](AutoSets.lean) | `grind`, with the given `grind` parameters, and `CatCryptGrind` open. |
@@ -95,20 +102,20 @@ match, the head of its `whnfR`.
 | extended triple | mentions `XTriple`, `XPT` or `XRelTriple` | `xmvcgen!`, then `omega`, `le_rfl`, `assumption`, `simp_all` or `grind` on each residual | `AutoDispatchExt` |
 | side condition | `SPComp.IsPure _`, `SPComp.NoFail _` | `aesop` over `CatCryptRel` | `AutoDispatch` |
 | relational | `rHoare _ _ _ _` | `aesop` over `CatCryptRel`; `ssprove_crypto`; `ssprove_crypto_grind` | `AutoDispatch` |
-| advantage bound | `_ ≤ _` over `ℝ≥0∞` or `ℝ` mentioning `Advantage`, `AdvantageA`, `sdist`, `prTrue` or `prEvent` | hop chain; `gcongr <;> catcrypt_grind`; `catcrypt_grind`; `bound` (a quarter of the budget; skipped when a `∀`-quantified inequality is in context) | `AutoDispatch` |
-| monotonicity | `f a₁ … aₙ ≤ f b₁ … bₙ` or `<`, the same head on both sides | `gcongr`; `gcongr <;> catcrypt_grind`; `simp_all`; `grind` | `AutoDispatch` |
+| distance inequality | `_ ≤ _` over `ℝ≥0∞` or `ℝ` whose left side is a registered distance (after unfolding `@[hop_metric]` definitions, else after `whnfR`) or a sum with one as summand, or that mentions a registered head, `prTrue` or `prEvent` | `hop_chain`; `sum_atoms_le`; `gcongr <;> catcrypt_grind`; `catcrypt_grind`; `bound` (a quarter of the budget; skipped when a `∀`-quantified inequality is in context) | `AutoDispatch` |
+| monotonicity | `f a₁ … aₙ ≤ f b₁ … bₙ` or `<`, the same head on both sides; `Monotone f`, `Antitone f`, `StrictMono f`, `StrictAnti f` | `gcongr_unfold`; `gcongr`; `gcongr <;> catcrypt_grind`; `simp_all`; `grind` | `AutoDispatch` |
 | heap read | `Heap.get (Heap.set _ _ _) _ = _`, either side; `=`, `≠` or `¬ _ = _` mentioning `Heap.set` | `grind [Heap.get_set_same, Heap.get_set_other]` | `AutoDispatch` |
 | game equality | `_ = _` over `SPComp _` | `catcrypt_grind`; `bind_vcgen` | `AutoDispatch` |
 | other | anything else | `simp_all`; `grind` | `AutoDispatch` |
 
-The hop chain arm applies to `Advantage G₀ Gₙ ≤ ε` and `AdvantageA G₀ Gₙ A ≤ ε`.
-It finds a path of hops `AdvantageA Gᵢ Gᵢ₊₁ A ≤ εᵢ` from `G₀` to `Gₙ` among the
-named hypotheses and the arguments whose types are such inequalities, applies
-`AdvantageA_triangle_chain` (or `Advantage_triangle_chain`) through the
-intermediate games, and closes the sum of the `εᵢ` against `ε` by `ring` or
-`catcrypt_grind`. A `∀`-quantified hypothesis, such as `∀ A, AdvantageA G H A ≤ ε`,
-is not instantiated and is no hop; a hop for the goal's adversary is passed as
-an argument (`h A`, or a reduction lemma applied to `A`).
+The `hop_chain` arm applies to every distance registered with `@[hop_metric]`;
+its failure (no path, an unregistered left side, a residual outside the fragment
+of `sum_atoms_le`) is reported in the error of `catcrypt_auto`. A `∀`-quantified
+hypothesis, such as `∀ A, AdvantageA G H A ≤ ε`, is not instantiated and is no
+hop; a hop for the goal's adversary is passed as an argument (`h A`, or a
+reduction lemma applied to `A`). A file-local advantage or probability
+definition is read as a distance once it, or its defining equation, carries
+`@[hop_metric]`.
 
 An arm succeeds only when it closes the goal, logs no error, and assigns the
 goal a proof term without `sorry`. A nested `by` block that fails inside an arm
