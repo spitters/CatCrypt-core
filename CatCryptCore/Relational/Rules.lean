@@ -139,18 +139,18 @@ theorem rHoare_trans (c₁ c₂ c₃ : SPComp α)
   have hc₁₂' : (c₁ h₁) ⟨Eq⟩# (c₂ h₁) := by
     apply liftR_mono _ hc₁₂
     intro ⟨a₁, h₁'⟩ ⟨a₂, h₂'⟩ heqpost
-    simp only [eqPost, Prod.mk.injEq] at heqpost ; exact Prod.ext heqpost.1 heqpost.2
+    simp only [eqPost] at heqpost ; exact Prod.ext heqpost.1 heqpost.2
   have hc₂₃' : (c₂ h₁) ⟨Eq⟩# (c₃ h₁) := by
     apply liftR_mono _ hc₂₃
     intro ⟨a₁, h₁'⟩ ⟨a₂, h₂'⟩ heqpost
-    simp only [eqPost, Prod.mk.injEq] at heqpost ; exact Prod.ext heqpost.1 heqpost.2
+    simp only [eqPost] at heqpost ; exact Prod.ext heqpost.1 heqpost.2
   -- Apply transitivity
   have hc₁₃' := liftR_trans_eq hc₁₂' hc₂₃'
   -- Convert back to eqPost
   apply liftR_mono _ hc₁₃'
   intro ⟨a₁, h₁'⟩ ⟨a₃, h₃'⟩ heq
   simp only [Prod.mk.injEq] at heq
-  simp only [eqPost, Prod.mk.injEq] ; exact heq
+  simp only [eqPost] ; exact heq
 
 /-! ## Sampling Rules -/
 
@@ -459,7 +459,6 @@ theorem SPComp.swap_sample_get (α β : Type) [Fintype α] [Nonempty α]
   -- LHS: (uniform α).bind (fun a => f a (h.get l) h)
   -- RHS: (pure (h.get l, h)).bind (fun (v, h') => (sample α h').bind ...)
   rw [SDistr.pure_bind]
-  simp only [SPComp.bind, SPComp.sample]
   rw [SDistr.bind_assoc]
   conv_rhs =>
     arg 2; ext a
