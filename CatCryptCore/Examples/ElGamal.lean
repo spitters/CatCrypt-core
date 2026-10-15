@@ -103,7 +103,7 @@ theorem exp_injective : Function.Injective (fun s : ZMod P.p => P.g₁ ^ᵍ s) :
 
 /-- `s ↦ g₁ ^ᵍ s` is bijective (equal cardinalities). -/
 theorem exp_bijective : Function.Bijective (fun s : ZMod P.p => P.g₁ ^ᵍ s) := by
-  haveI : NeZero P.p := ⟨P.instPrime.out.ne_zero⟩
+  have : NeZero P.p := ⟨P.instPrime.out.ne_zero⟩
   rw [Fintype.bijective_iff_injective_and_card]
   refine ⟨exp_injective, ?_⟩
   rw [ZMod.card, P.cardG₁]
@@ -255,8 +255,7 @@ theorem elgamal_indcpa_le_ddh (m₀ m₁ : P.G₁) (A : (P.G₁ × P.G₁) → S
     _ ≤ Advantage R0r R0i + (Advantage R0i R1i + Advantage R1i R1r) := by
           gcongr; exact advantage_triangle _ _ _
     _ = Advantage R0r R0i + (0 + Advantage R1i R1r) := by rw [hmid]
-    _ = Advantage R0r R0i + Advantage R1r R1i := by
-          rw [zero_add, Advantage_sym R1i R1r]
+    _ = Advantage R0r R0i + Advantage R1r R1i := by simp_all
 
 /-- **ElGamal real-or-random secrecy equals a single DDH advantage.** The analog of
     SSProve-Rocq's `OT_CPA_elgamal` (`AdvOf (OT_CPA elgamal) A = AdvOf (LDDH G) (A ∘ RED)`),

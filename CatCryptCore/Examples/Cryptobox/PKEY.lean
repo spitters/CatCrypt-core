@@ -436,8 +436,7 @@ theorem collFlag_preserved_by_set (h₁ : Heap) (l : Location)
     (v : l.ty) (hid : l.id ≠ pkeyCollFlag.id)
     (hset : Heap.get h₁ pkeyCollFlag = true) :
     Heap.get (h₁.set l v) pkeyCollFlag = true := by
-  rw [Heap.get_set_other h₁ l pkeyCollFlag v hid]
-  exact hset
+  grind [Heap.get_set_other]
 
 theorem genOracle_instr_agree (N : @NIKEScheme CT) :
     ∀ (h₀ : Heap) (pk : CT.PK) (h' : Heap), ¬pkeyBadInstr h' →
@@ -468,10 +467,8 @@ theorem genOracle_instr_agree (N : @NIKEScheme CT) :
       -- Goal: if pk = pk_gen ∧ h' = h_final then 1 else 0 = 0
       rw [if_neg]
       intro ⟨_, heq⟩
-      have h1 : skStoreLoc.id ≠ pkeyCollFlag.id := by
-        show (101 : ℕ) ≠ 103; omega
-      have h2 : pkHonestLoc.id ≠ pkeyCollFlag.id := by
-        show (100 : ℕ) ≠ 103; omega
+      have h1 : skStoreLoc.id ≠ pkeyCollFlag.id := by simp_all
+      have h2 : pkHonestLoc.id ≠ pkeyCollFlag.id := by simp_all
       exact hnotbad (by
         unfold pkeyBadInstr; rw [heq]
         rw [Heap.get_set_other _ _ _ _ h1,
