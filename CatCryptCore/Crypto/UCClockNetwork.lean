@@ -5,7 +5,7 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import CatCryptCore.Crypto.UCTransparentHybrid
+public import CatCryptCore.Crypto.UCClockNetworkDet
 
 @[expose] public section
 set_option autoImplicit false
@@ -13,234 +13,85 @@ set_option autoImplicit false
 /-!
 # Global clock and Δ-bounded network as transparent functionalities
 
-Placeholder.
+This file defines, in the framework of transparent functionalities of
+`CatCryptCore.Crypto.UCTransparent`, the global clock `G_CLOCK` and the
+Δ-bounded network `F_NET` of Afgjort (Dinsdale-Young, Magri, Matt, Nielsen,
+Tschudi, SCN 2020, §2.1 and §4.2), proves that they are transparent
+functionalities realized with bound `0` by their reference implementations,
+proves the two properties that protocols use, and instantiates the hybrid
+composition theorem of `CatCryptCore.Crypto.UCTransparentHybrid` with the
+clock and network as subroutine.
+
+Both functionalities are deterministic functionalities
+(`CatCryptCore.Crypto.UCClockNetworkDet`): every adversarial choice is an
+adversary event, and the guard accepts exactly the runs of the transition
+function.
+
+## Model
+
+* `clock H` — the clock with honest set `H`. State: the round and the set of
+  parties that signalled the end of the round. A signal of `p` adds `p`; once
+  the set contains `H` the round increments and the set is emptied.
+* `network Δ` — the network with delay bound `Δ`. State: the round, the
+  pending messages with their sending round, and the delivered messages with
+  their delivery round. Honest sends append to the pending list; the
+  adversary event `i` delivers the `i`-th pending message (the adversary
+  chooses delay and order); the round end (`tick`) delivers every message
+  sent `Δ` or more rounds ago and increments the round.
+* `clockNet H Δ` — both together: the network round ends exactly when the
+  clock advances. Party requests: `signal`, `read`, `send q m`; adversary
+  requests: `read`, `deliver i`.
+* `clockF`, `networkF`, `clockNetF` — the transparent functionalities.
+
+## Main results
+
+* `clock_realizes`, `network_realizes`, `clockNet_realizes` — each reference
+  implementation realizes the ideal world of its transparent functionality
+  with the copy simulator, with bound `0`.
+* `clock_advance_requires_signals`, `clockNet_advance_requires_signals` —
+  from a state with empty signalled set, a run that changes the round
+  contains a signal of every honest party; `cnStep_advance_resets` — every
+  change of round empties the signalled set.
+* `network_delivered_within`, `clockNet_delivered_within` — a message sent
+  by an honest party in round `r` is delivered in a round `d` with
+  `r ≤ d ≤ r + Δ` once the round exceeds `r + Δ`.
+* `clockNetF_delivered_within`, `clockNetF_advance_requires_signals` — the
+  same two properties on every trace accepted by the guard of `clockNetF`.
+* `clockNet_hybrid_compose` — a hybrid protocol in the clock-and-network
+  hybrid model, composed with the reference clock and network, realizes a
+  transparent functionality `F` with bound the guard-failure probability of
+  `F` in the hybrid world alone.
+
+## Hypotheses
+
+The functionalities take as parameters the honest set `H : Finset Pty` (with
+`DecidableEq Pty`), the delay bound `Δ : ℕ`, and for the guards
+`DecidableEq M` on message contents. `clockNet_hybrid_compose` assumes the
+three hypotheses of `Hybrid.transparent_compose` that concern the outer
+functionality `F`: the simulator `S_F` is lossless, starts in the initial
+state of the hybrid world, and agrees with the hybrid world on every
+transition that keeps the guard of `F` true. The hypotheses on the clock and
+network are discharged.
+
+## Non-vacuity
+
+`Example` takes two honest parties (`Fin 2`), `Δ = 1` and unit messages. In
+the run `run₂` party `0` sends to party `1` in round `0` and both parties
+signal twice; the run reaches round `2` and the message is delivered in
+round `1` (`run₂_net`), so the hypothesis of `clockNet_delivered_within`
+holds (`run₂_delivered`), and so do those of
+`clockNet_advance_requires_signals` (`run₂_signals`).
+`one_signal_no_advance` and `early_delivery` show that one party alone does
+not advance the clock and that the adversary may deliver early.
+`passthrough_realizes` instantiates `clockNet_hybrid_compose` with the
+pass-through hybrid protocol, the always-true guard and the copy simulator,
+with bound `0`.
 -/
 
 namespace CatCrypt.Crypto.UCTransparent
 
 open CatCrypt.Core CatCrypt.Prob CatCrypt.Crypto CatCrypt.Crypto.UCConcrete
 open scoped ENNReal
-
-/-! ## Deterministic transparent functionalities -/
-
-/-- A deterministic reactive functionality: an initial state and a
-    transition function from a state and an event to the next state and the
-    output. Adversarial choices (delays, delivery order) enter as adversary
-    events. -/
-structure DetFunc (σ E O : Type) where
-  /-- Initial state. -/
-  init : σ
-  /-- One activation: next state and output. -/
-  step : σ → E → σ × O
-
-namespace DetFunc
-
-variable {σ E O : Type}
-
-/-- The state reached from `s` after the events `es`. -/
-def exec (D : DetFunc σ E O) (s : σ) (es : List E) : σ :=
-  es.foldl (fun t e => (D.step t e).1) s
-
-/-- The state at the end of the trace `tr`, or `s` on the empty trace. -/
-def endState : σ → Trace σ E O → σ
-  | s, [] => s
-  | _, x :: tr => endState x.2.2 tr
-
-/-- The trace `tr` is a run of `D` from `s`: every entry carries the state
-    and output that `D.step` produces from the previous state on its event. -/
-def legal [DecidableEq σ] [DecidableEq O] (D : DetFunc σ E O) : σ → Trace σ E O → Bool
-  | _, [] => true
-  | s, x :: tr => decide (D.step s x.1 = (x.2.2, x.2.1)) && D.legal x.2.2 tr
-
-/-- The transparent functionality of `D`: its guard accepts exactly the
-    traces that are runs of `D` from the initial state. -/
-def toTFunc [DecidableEq σ] [DecidableEq O] (D : DetFunc σ E O) (exploded : O) : TFunc σ E O :=
-  ⟨D.init, D.legal D.init, exploded⟩
-
-/-- The reference implementation of `D` as a transition system. -/
-noncomputable def proto (D : DetFunc σ E O) : Sys σ E O :=
-  ⟨D.init, fun s e => SPComp.pure (D.step s e)⟩
-
-@[simp] theorem exec_nil (D : DetFunc σ E O) (s : σ) : D.exec s [] = s := rfl
-
-@[simp] theorem exec_cons (D : DetFunc σ E O) (s : σ) (e : E) (es : List E) :
-    D.exec s (e :: es) = D.exec (D.step s e).1 es := rfl
-
-theorem exec_append (D : DetFunc σ E O) (s : σ) (es es' : List E) :
-    D.exec s (es ++ es') = D.exec (D.exec s es) es' := by
-  simp [exec, List.foldl_append]
-
-@[simp] theorem exec_concat (D : DetFunc σ E O) (s : σ) (es : List E) (e : E) :
-    D.exec s (es ++ [e]) = (D.step (D.exec s es) e).1 := by
-  simp [exec_append]
-
-theorem endState_append (s : σ) (tr : Trace σ E O) (x : E × O × σ) :
-    endState s (tr ++ [x]) = x.2.2 := by
-  induction tr generalizing s with
-  | nil => rfl
-  | cons y tr ih => exact ih _
-
-theorem legal_append [DecidableEq σ] [DecidableEq O] (D : DetFunc σ E O) (s : σ)
-    (tr : Trace σ E O) (x : E × O × σ) :
-    D.legal s (tr ++ [x]) =
-      (D.legal s tr && decide (D.step (endState s tr) x.1 = (x.2.2, x.2.1))) := by
-  induction tr generalizing s with
-  | nil => simp [legal, endState]; congr
-  | cons y tr ih => simp [legal, endState, ih, Bool.and_assoc]; congr
-
-/-- The end state of a legal trace is the state reached on its events. -/
-theorem endState_of_legal [DecidableEq σ] [DecidableEq O] (D : DetFunc σ E O) :
-    ∀ (s : σ) (tr : Trace σ E O), D.legal s tr = true →
-      endState s tr = D.exec s (tr.map Prod.fst) := by
-  intro s tr
-  induction tr generalizing s with
-  | nil => intro _; rfl
-  | cons x tr ih =>
-    intro h
-    simp only [legal, Bool.and_eq_true, decide_eq_true_eq] at h
-    simp only [endState, List.map_cons, exec_cons, h.1]
-    exact ih _ h.2
-
-/-- Every prefix of a legal trace is legal. -/
-theorem legal_of_legal_append [DecidableEq σ] [DecidableEq O] (D : DetFunc σ E O) (s : σ)
-    (tr tr' : Trace σ E O) (h : D.legal s (tr ++ tr') = true) : D.legal s tr = true := by
-  induction tr generalizing s with
-  | nil => rfl
-  | cons x tr ih =>
-    simp only [List.cons_append, legal, Bool.and_eq_true] at h ⊢
-    exact ⟨h.1, ih _ h.2⟩
-
-/-- A state predicate preserved by every step holds on every state reached
-    from a state satisfying it. -/
-theorem exec_inv (D : DetFunc σ E O) (P : σ → Prop) (hP : ∀ s e, P s → P (D.step s e).1) :
-    ∀ (es : List E) (s : σ), P s → P (D.exec s es) := by
-  intro es
-  induction es with
-  | nil => intro s h; exact h
-  | cons e es ih => intro s h; exact ih _ (hP _ _ h)
-
-/-! ### The guard never fails on the reference implementation -/
-
-/-- A system whose steps are deterministic and preserve an invariant on
-    which `bad` is false never sets the bad flag: `prBad` is `0`. -/
-theorem prBad_eq_zero_of_inv {τ ζ : Type} (S : Sys τ E O) (bad : τ → Bool)
-    (f : τ → E → τ × O) (hf : ∀ t e, S.step t e = SPComp.pure (f t e))
-    (Inv : τ → Prop) (hinit : Inv S.init) (hpres : ∀ t e, Inv t → Inv (f t e).1)
-    (hbad : ∀ t, Inv t → bad t = false) (Z : Env (Strat ζ E O) ζ) :
-    prBad S bad Z = 0 := by
-  have key : ∀ n (z : ζ) (t : τ), Inv t →
-      SPComp.bind (loop S bad Z.input n (z, t, false)) (fun c => SPComp.pure c.2.2) =
-        SPComp.bind (loop S bad Z.input n (z, t, false)) (fun _ => SPComp.pure false) := by
-    intro n
-    induction n with
-    | zero => intro z t _; simp [loop, SPComp.pure_bind]
-    | succ n ih =>
-      intro z t ht
-      simp only [loop, SPComp.bind_assoc, hf, SPComp.pure_bind]
-      congr 1; funext a; congr 1; funext z'
-      rw [hbad _ (hpres t a.2 ht), Bool.false_or]
-      exact ih _ _ (hpres t a.2 ht)
-  unfold prBad run
-  rw [hbad _ hinit, key _ _ _ hinit]
-  refine le_antisymm ?_ bot_le
-  calc _ ≤ prTrue (SPComp.bind (loop S bad Z.input Z.input.rounds (Z.input.init, S.init, false))
-          (fun _ => (SPComp.fail : SPComp Bool))) Z.heap :=
-        prTrue_bind_le_of_le _ _ _ _ fun _ h' => by simp [prTrue_pure]
-    _ = 0 := by rw [bind_fail_right, prTrue_fail]
-
-/-- The always-true guard never fails: `guardFail π (fun _ => true)` is `0`
-    for every system `π` and environment. -/
-theorem _root_.CatCrypt.Crypto.UCTransparent.guardFail_true {τ E' O' ζ : Type}
-    (π : Sys τ E' O') (Z : Env (Strat ζ E' O') ζ) : guardFail π (fun _ => true) Z = 0 := by
-  have key : ∀ (Mo : Sys (τ × Trace τ E' O' × Bool) E' O'),
-      (∀ t e, Mo.step t e = SPComp.bind (π.step t.1 e) fun p =>
-        SPComp.pure ((p.1, t.2.1 ++ [(e, p.2, p.1)], t.2.2 || !true), p.2)) →
-      ∀ n (z : ζ) (t : τ × Trace τ E' O' × Bool), t.2.2 = false →
-      SPComp.bind (loop Mo exploded Z.input n (z, t, false)) (fun c => SPComp.pure c.2.2) =
-        SPComp.bind (loop Mo exploded Z.input n (z, t, false)) (fun _ => SPComp.pure false) := by
-    intro Mo hstep n
-    induction n with
-    | zero => intro z t _; simp [loop, SPComp.pure_bind]
-    | succ n ih =>
-      intro z t ht
-      simp only [loop, hstep, SPComp.bind_assoc, SPComp.pure_bind]
-      congr 1; funext a; congr 1; funext p; congr 1; funext z'
-      simp only [exploded, ht, Bool.not_true, Bool.or_false]
-      exact ih _ _ rfl
-  unfold guardFail prBad run
-  rw [show exploded (monitor π fun _ => true).init = false from rfl,
-    key _ (fun _ _ => rfl) _ _ _ rfl]
-  refine le_antisymm ?_ bot_le
-  calc _ ≤ prTrue (SPComp.bind (loop (monitor π fun _ => true) exploded Z.input Z.input.rounds
-          (Z.input.init, (monitor π fun _ => true).init, false))
-          (fun _ => (SPComp.fail : SPComp Bool))) Z.heap :=
-        prTrue_bind_le_of_le _ _ _ _ fun _ h' => by simp [prTrue_pure]
-    _ = 0 := by rw [bind_fail_right, prTrue_fail]
-
-variable [DecidableEq σ] [DecidableEq O]
-
-/-- On the reference implementation of a deterministic functionality the
-    guard of `toTFunc` never fails: `guardFail` is `0` for every
-    environment. -/
-theorem guardFail_proto (D : DetFunc σ E O) (x : O) {ζ : Type} (Z : Env (Strat ζ E O) ζ) :
-    guardFail D.proto (D.toTFunc x).guard Z = 0 := by
-  unfold guardFail
-  refine prBad_eq_zero_of_inv (monitor D.proto (D.toTFunc x).guard) exploded
-    (fun t e => (((D.step t.1 e).1, t.2.1 ++ [(e, (D.step t.1 e).2, (D.step t.1 e).1)],
-      t.2.2 || !D.legal D.init (t.2.1 ++ [(e, (D.step t.1 e).2, (D.step t.1 e).1)])),
-      (D.step t.1 e).2))
-    (fun t e => by simp [monitor, proto, toTFunc, SPComp.pure_bind])
-    (fun t => t.2.2 = false ∧ D.legal D.init t.2.1 = true ∧ endState D.init t.2.1 = t.1)
-    ⟨rfl, rfl, rfl⟩ ?_ (fun t h => h.1) Z
-  rintro ⟨s, tr, b⟩ e ⟨hb, hl, he⟩
-  simp only at hb hl he
-  subst hb he
-  have hl' : D.legal D.init (tr ++ [(e, (D.step (endState D.init tr) e).2,
-      (D.step (endState D.init tr) e).1)]) = true := by
-    simp [legal_append, hl]
-  exact ⟨by simp [hl'], hl', endState_append _ _ _⟩
-
-/-- **Transparency of a deterministic functionality.** The reference
-    implementation of `D` realizes the ideal world of `toTFunc D x` with the
-    copy simulator, with bound `0`. -/
-theorem realizes_proto (D : DetFunc σ E O) (x : O) :
-    Realizes D.proto (ideal (D.toTFunc x) D.proto) (fun _ _ => 0) := by
-  intro ζ Z
-  have h := transparent_realizes_copy D.proto (D.toTFunc x)
-    (fun _ _ => SPComp.pure_noFail _) ζ Z
-  beta_reduce at h
-  rwa [guardFail_proto] at h
-
-/-- **Hybrid composition with a deterministic functionality.** Let `π` be a
-    hybrid protocol that calls `D`, and let `F` be a transparent
-    functionality over the state space of the `D`-hybrid world
-    `π.withSub (ideal (D.toTFunc x) D.proto)`, with a lossless simulator
-    `S_F` that starts in the initial state of the hybrid world and agrees
-    with it on every transition that keeps the guard of `F` true. Then `π`
-    running with the reference implementation of `D` realizes
-    `ideal F S_F`, with bound the probability that the guard of `F` fails on
-    the run of the hybrid world. The contribution of `D` to the bound of
-    `Hybrid.transparent_compose` is `0`. -/
-theorem hybrid_compose {τ EH OH : Type} (D : DetFunc σ E O) (x : O) (π : Hybrid τ EH OH E O)
-    (S_F : Sys (τ × σ × Trace σ E O × Bool) EH OH)
-    (F : TFunc (τ × σ × Trace σ E O × Bool) EH OH)
-    (hSF : ∀ s e, SPComp.NoFail (S_F.step s e))
-    (hinitF : S_F.init = (π.withSub (ideal (D.toTFunc x) D.proto)).init)
-    (hsimF : ∀ s (tr : Trace (τ × σ × Trace σ E O × Bool) EH OH) e,
-      SPComp.bind ((π.withSub (ideal (D.toTFunc x) D.proto)).step s e)
-        (fun p => if F.guard (tr ++ [(e, p.2, p.1)]) then SPComp.pure p else SPComp.fail) =
-      SPComp.bind (S_F.step s e)
-        (fun p => if F.guard (tr ++ [(e, p.2, p.1)]) then SPComp.pure p else SPComp.fail)) :
-    Realizes (π.withSub D.proto) (ideal F S_F)
-      (fun _ Z => guardFail (π.withSub (ideal (D.toTFunc x) D.proto)) F.guard Z) := by
-  intro ζ Z
-  have h := Hybrid.transparent_compose π D.proto D.proto (D.toTFunc x) S_F F
-    (fun _ _ => SPComp.pure_noFail _) (fun _ _ => SPComp.pure_noFail _) hSF rfl hinitF
-    (fun _ _ _ => rfl) hsimF ζ Z
-  beta_reduce at h
-  rwa [guardFail_proto, zero_add] at h
-
-end DetFunc
 
 /-! ## The global clock (Afgjort §2.1) -/
 
