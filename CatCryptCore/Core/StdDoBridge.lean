@@ -98,9 +98,7 @@ theorem _root_.CatCrypt.Prob.SDistr.bind_apply_none_ne_zero_iff {α β : Type u}
   constructor
   · rintro ⟨oa, hoa⟩
     cases oa with
-    | none =>
-      left
-      simpa using hoa
+    | none => grind
     | some a => exact Or.inr ⟨a, mul_ne_zero_iff.mp hoa⟩
   · rintro (h | ⟨a, h1, h2⟩)
     · exact ⟨none, by simpa using h⟩
@@ -118,25 +116,13 @@ theorem bind_apply_some_ne_zero_iff (c : SPComp α) (f : α → SPComp β)
     (h : Heap) (b : β) (h'' : Heap) :
     ((SPComp.bind c f) h) (some (b, h'')) ≠ 0 ↔
       ∃ a h', (c h) (some (a, h')) ≠ 0 ∧ ((f a) h') (some (b, h'')) ≠ 0 := by
-  rw [SPComp.bind_def, SDistr.bind_apply_some_ne_zero_iff]
-  constructor
-  · rintro ⟨⟨a, h'⟩, h1, h2⟩
-    exact ⟨a, h', h1, h2⟩
-  · rintro ⟨a, h', h1, h2⟩
-    exact ⟨(a, h'), h1, h2⟩
+  grind [SPComp.bind_def, SDistr.bind_apply_some_ne_zero_iff]
 
 /-- Failure mass of a bound computation, in `≠ 0` form. -/
 theorem bind_apply_none_ne_zero_iff (c : SPComp α) (f : α → SPComp β) (h : Heap) :
     ((SPComp.bind c f) h) none ≠ 0 ↔
       (c h) none ≠ 0 ∨ ∃ a h', (c h) (some (a, h')) ≠ 0 ∧ ((f a) h') none ≠ 0 := by
-  rw [SPComp.bind_def, SDistr.bind_apply_none_ne_zero_iff]
-  constructor
-  · rintro (hn | ⟨⟨a, h'⟩, h1, h2⟩)
-    · exact Or.inl hn
-    · exact Or.inr ⟨a, h', h1, h2⟩
-  · rintro (hn | ⟨a, h', h1, h2⟩)
-    · exact Or.inl hn
-    · exact Or.inr ⟨(a, h'), h1, h2⟩
+  simp [SPComp.bind_def, SDistr.bind_apply_none_ne_zero_iff]
 
 /-! ## The support-level weakest precondition -/
 
@@ -354,8 +340,7 @@ theorem fail {α : Type} {Q : PostCond α spPostShape} :
   apply triple_of_forall
   · intro h _ a h' hs
     exact absurd (SDistr.fail_apply_some _) hs
-  · intro h hP _
-    exact hP
+  · grind
 
 /-- Spec for the prefix form `SPComp.pure` (the generic `Std.Do.Spec.pure`
 covers `Pure.pure`; this covers explicit `SPComp.pure` leaves). -/
