@@ -34,6 +34,13 @@ and continues against `H[x ↦ θ]`, and the verifier checks `V(x, θ)`.
   its average over the `2q + 1` slots
 * `fsChain A H c t` — the simulator's commitment phase when the challenge to
   the commitment `x` is `c x`
+* `uniformQ α` — the uniform mixture over a finite type as an instrument
+* `preChain`, `sufU` — the prefix of `measChain` before its instrument and the
+  unitary of its suffix after it
+* `fsInteractive A V H` — the interactive game as one program: a uniform slot,
+  the run of `A` against `H` up to it, the measurement of the commitment `x`, a
+  uniform challenge `θ`, the rest of the run against `H[x ↦ θ]` (response
+  unitary `fsSufU A H t x θ`), and the verifier projector `V(x, θ)`
 
 ## Main results
 
@@ -49,6 +56,16 @@ and continues against `H[x ↦ θ]`, and the verifier checks `V(x, θ)`.
   outside the language), the interactive success probability is at most `1/n`
 * `fiatShamir_unique_challenge` — then the Fiat–Shamir success probability is
   at most `(2q + 1)² / n` (DFMS19, Theorem 8 shape)
+* `measChain_eq_split` — `measChain` with unitary oracles is its prefix, its
+  instrument and its suffix unitary
+* `prTrue_fsInteractive` — the acceptance probability of `fsInteractive A V H`
+  is `∑ x, prInt A V H x`
+* `fiatShamir_interactive`, `fiatShamir_random_oracle_interactive` — the
+  Fiat–Shamir success probability is at most `(2q + 1)²` times the acceptance
+  probability of the interactive game, for a fixed and for a uniform oracle
+* `prTrue_fsInteractive_le_inv_of_unique_challenge` — with a unique accepting
+  challenge per commitment the interactive game accepts with probability at
+  most `1/n`
 
 ## References
 
@@ -319,5 +336,273 @@ theorem fiatShamir_unique_challenge (A : QAdv m n w q) (V : QVerifier m n w)
     (mul_le_mul_right (sum_prInt_le_inv_of_unique_challenge A V H c hV) _)
 
 end Unique
+
+/-! ## The uniform mixture -/
+
+section Uniform
+
+variable {d : ℕ}
+
+/-- The uniform mixture over a finite nonempty type `α` as an instrument: the
+    branch at every outcome scales the state by `1 / |α|`. -/
+def uniformQ (α : Type) [Fintype α] [Nonempty α] : QComp d α where
+  branch _ := (((Fintype.card α : ℝ)⁻¹ : ℝ) : ℂ) • LinearMap.id
+  branch_psd _ ρ hρ := hρ.smul (Complex.zero_le_real.mpr (by positivity))
+  branch_summable _ := (hasSum_fintype _).summable
+  branch_stp ρ _ := by
+    have hc : (Fintype.card α : ℂ) * (((Fintype.card α : ℝ)⁻¹ : ℝ) : ℂ) = 1 := by
+      push_cast
+      exact mul_inv_cancel₀ (Nat.cast_ne_zero.mpr Fintype.card_ne_zero)
+    simp only [LinearMap.smul_apply, LinearMap.id_apply, Matrix.trace_smul, smul_eq_mul,
+      tsum_fintype, Finset.sum_const, Finset.card_univ, nsmul_eq_mul, ← mul_assoc, hc, one_mul,
+      le_refl]
+
+theorem uniformQ_branch_apply (α : Type) [Fintype α] [Nonempty α] (a : α)
+    (ρ : Matrix (Fin d) (Fin d) ℂ) :
+    (uniformQ α : QComp d α).branch a ρ = (((Fintype.card α : ℝ)⁻¹ : ℝ) : ℂ) • ρ := rfl
+
+/-- The real trace of a branch of a bind over a finite type is the sum over the
+    intermediate outcomes. -/
+theorem trace_re_qbind_branch {α β : Type} [Fintype α] (I : QComp d α) (f : α → QComp d β)
+    (b : β) (ρ : Matrix (Fin d) (Fin d) ℂ) :
+    ((QComp.qbind I f).branch b ρ).trace.re = ∑ a, ((f a).branch b (I.branch a ρ)).trace.re := by
+  rw [qbind_branch_apply, tsum_fintype, Matrix.trace_sum, Complex.re_sum]
+
+/-- A uniform draw commutes with an instrument with finitely many outcomes. -/
+theorem qbind_uniformQ_comm {α β γ : Type} [Fintype α] [Fintype β] [Nonempty β]
+    (I : QComp d α) (f : α → β → QComp d γ) :
+    QComp.qbind I (fun a => QComp.qbind (uniformQ β) fun b => f a b) =
+      QComp.qbind (uniformQ β) fun b => QComp.qbind I fun a => f a b := by
+  apply QComp.ext_fun; intro c ρ
+  simp only [qbind_branch_apply, tsum_fintype, uniformQ_branch_apply, map_smul, Finset.smul_sum]
+  exact Finset.sum_comm
+
+/-- The acceptance probability after a uniform draw is the average of the
+    acceptance probabilities. -/
+theorem prTrue_Q_uniformQ_bind {α : Type} [Fintype α] [Nonempty α] (f : α → QComp d Bool)
+    (ρ : DensityMatrix d) :
+    prTrue_Q (QComp.qbind (uniformQ α) f) ρ =
+      (Fintype.card α : ℝ≥0∞)⁻¹ * ∑ a, prTrue_Q (f a) ρ := by
+  unfold prTrue_Q
+  rw [trace_re_qbind_branch]
+  simp only [uniformQ_branch_apply, map_smul, Matrix.trace_smul, smul_eq_mul,
+    Complex.re_ofReal_mul, ← Finset.mul_sum]
+  rw [ENNReal.ofReal_mul (by positivity), ENNReal.ofReal_sum_of_nonneg fun a _ =>
+      trace_re_nonneg_of_psd ((f a).branch_psd _ _ ρ.psd),
+    ENNReal.ofReal_inv_of_pos (by exact_mod_cast Fintype.card_pos), ENNReal.ofReal_natCast]
+
+/-- The acceptance probability of a bind over a finite type is the sum of the
+    acceptance probabilities of the continuations on the branches. -/
+theorem prTrue_Q_qbind_eq_sum {α : Type} [Fintype α] (I : QComp d α) (f : α → QComp d Bool)
+    (ρ : DensityMatrix d) :
+    prTrue_Q (QComp.qbind I f) ρ =
+      ∑ a, ENNReal.ofReal ((f a).branch true (I.branch a ρ.val)).trace.re := by
+  unfold prTrue_Q
+  rw [trace_re_qbind_branch, ENNReal.ofReal_sum_of_nonneg fun a _ =>
+    trace_re_nonneg_of_psd ((f a).branch_psd _ _ ((I.branch_psd a _ ρ.psd)))]
+
+/-- An event implied by another has at least its probability. -/
+theorem prTrue_Q_qbind_decide_mono {α : Type} [Fintype α] (I : QComp d α) (e e' : α → Bool)
+    (h : ∀ a, e a = true → e' a = true) (ρ : DensityMatrix d) :
+    prTrue_Q (QComp.qbind I fun a => QComp.qpure (e a)) ρ ≤
+      prTrue_Q (QComp.qbind I fun a => QComp.qpure (e' a)) ρ := by
+  rw [prTrue_Q_qbind_eq_sum, prTrue_Q_qbind_eq_sum]
+  refine Finset.sum_le_sum fun a _ => ?_
+  simp only [qpure_branch_apply]
+  by_cases ha : e a = true
+  · simp [ha, h a ha]
+  · simp [Bool.eq_false_iff.mpr ha]
+
+end Uniform
+
+/-! ## The commitment phase split at the measurement -/
+
+section Split
+
+variable {d : ℕ} {α : Type}
+
+/-- The identity unitary channel is the pure return. -/
+theorem unitaryChannel_one_eq_qpure_unit :
+    unitaryChannel (1 : Matrix.unitaryGroup (Fin d) ℂ) = QComp.qpure () := by
+  apply QComp.ext_fun; intro u ρ
+  cases u
+  rw [unitaryChannel_branch_apply, qpure_branch_apply]
+  simp
+
+/-- The unitary `U_q g ⋯ g U_0` of `oracleChain` for a unitary oracle `g`. -/
+def chainU (g : Matrix.unitaryGroup (Fin d) ℂ) :
+    (q : ℕ) → (Fin (q + 1) → Matrix.unitaryGroup (Fin d) ℂ) → Matrix.unitaryGroup (Fin d) ℂ
+  | 0, U => U 0
+  | q + 1, U => chainU g q (Fin.tail U) * g * U 0
+
+theorem oracleChain_unitaryChannel_eq (g : Matrix.unitaryGroup (Fin d) ℂ) (q : ℕ)
+    (U : Fin (q + 1) → Matrix.unitaryGroup (Fin d) ℂ) :
+    oracleChain (unitaryChannel g) q U = unitaryChannel (chainU g q U) := by
+  induction q with
+  | zero => rfl
+  | succ q ih =>
+    simp only [oracleChain, chainU, ih, unitaryChannel_compose]
+
+/-- The prefix of `measChain` before its instrument: `U₀ ; O ; ⋯ ; O ; U_j`,
+    or `U₀ ; ⋯ ; U_q` when `j ≥ q`. -/
+def preChain (O : QComp d Unit) :
+    (j q : ℕ) → (Fin (q + 1) → Matrix.unitaryGroup (Fin d) ℂ) → QComp d Unit
+  | 0, _, U => unitaryChannel (U 0)
+  | _ + 1, 0, U => unitaryChannel (U 0)
+  | j + 1, q + 1, U =>
+    QComp.qbind (unitaryChannel (U 0)) fun _ => QComp.qbind O fun _ => preChain O j q (Fin.tail U)
+
+/-- The unitary of the suffix of `measChain` after its instrument, for unitary
+    oracles `g` (after the measured query) and `r` (at the measured query):
+    `U_q g ⋯ g U_{j+1} r`, the identity when `j ≥ q`. -/
+def sufU (g r : Matrix.unitaryGroup (Fin d) ℂ) :
+    (j q : ℕ) → (Fin (q + 1) → Matrix.unitaryGroup (Fin d) ℂ) → Matrix.unitaryGroup (Fin d) ℂ
+  | 0, 0, _ => 1
+  | 0, q + 1, U => chainU g q (Fin.tail U) * r
+  | _ + 1, 0, _ => 1
+  | j + 1, q + 1, U => sufU g r j q (Fin.tail U)
+
+/-- `measChain` with unitary oracles is its prefix, the instrument with outcome
+    `a`, and the suffix unitary for `a`. -/
+theorem measChain_eq_split (o : Matrix.unitaryGroup (Fin d) ℂ) (M : QComp d α)
+    (g r : α → Matrix.unitaryGroup (Fin d) ℂ) (j q : ℕ)
+    (U : Fin (q + 1) → Matrix.unitaryGroup (Fin d) ℂ) :
+    measChain (unitaryChannel o) M (fun a => unitaryChannel (g a)) (fun a => unitaryChannel (r a))
+        j q U =
+      QComp.qbind (preChain (unitaryChannel o) j q U) fun _ => QComp.qbind M fun a =>
+        QComp.qbind (unitaryChannel (sufU (g a) (r a) j q U)) fun _ => QComp.qpure a := by
+  induction j generalizing q with
+  | zero =>
+    cases q with
+    | zero =>
+      simp only [measChain, preChain, sufU, unitaryChannel_one_eq_qpure_unit,
+        QComp.qpure_qbind]
+      exact congrArg _ (funext fun _ => (QComp.qbind_qpure M).symm)
+    | succ q =>
+      simp only [measChain, preChain, sufU, oracleChain_unitaryChannel_eq, QComp.qbind_assoc,
+        ← unitaryChannel_compose]
+  | succ j ih =>
+    cases q with
+    | zero =>
+      simp only [measChain, preChain, sufU, unitaryChannel_one_eq_qpure_unit,
+        QComp.qpure_qbind]
+      exact congrArg _ (funext fun _ => (QComp.qbind_qpure M).symm)
+    | succ q =>
+      simp only [measChain, preChain, sufU, ih, QComp.qbind_assoc]
+
+end Split
+
+/-! ## The interactive game as one program -/
+
+section Interactive
+
+variable {m n w q : ℕ} [NeZero n]
+
+/-- The suffix unitary of the simulator on the slot `t` for the commitment `x`
+    and the challenge `θ`: `mrOracleAt H θ t x` at the measured query, then the
+    remaining unitaries of `A` with the oracle `H[x ↦ θ]`. -/
+def fsSufU (A : QAdv m n w q) (H : Fin m → Fin n) (t : Option (Fin q × Bool)) (x : Fin m)
+    (θ : Fin n) : Matrix.unitaryGroup (Fin (m * n * w)) ℂ :=
+  sufU (oracleU m n w (Function.update H x θ)) (oracleU m n w (mrOracleAt H θ t x)) (mrSlot t) q
+    A.U
+
+/-- The commitment measurement followed by a uniform challenge: the query
+    register is measured with outcome `x`, then `θ` is drawn uniformly. -/
+def measXChal (m n w : ℕ) [NeZero n] : QComp (m * n * w) (Fin m × Fin n) :=
+  QComp.qbind (measX m n w) fun x => QComp.qbind (uniformQ (Fin n)) fun θ => QComp.qpure (x, θ)
+
+/-- The interactive commit–challenge–respond game of the prover `A` against the
+    verifier `V` as one program: a uniform slot `t` among the `2q + 1` slots;
+    the run of `A` against `H` up to the slot; the measurement of the commitment
+    `x`; a uniform challenge `θ`; the rest of the run against `H[x ↦ θ]`
+    (against `H` at the measured query on the slots `some (i, true)`); the
+    measurement of the query register; and the verifier projector `V(x, θ)`. -/
+def fsInteractive (A : QAdv m n w q) (V : QVerifier m n w) (H : Fin m → Fin n) :
+    QComp (m * n * w) Bool :=
+  QComp.qbind (uniformQ (Option (Fin q × Bool))) fun t =>
+    QComp.qbind (measChain (oracleQ m n w H) (measXChal m n w)
+        (fun c => oracleQ m n w (Function.update H c.1 c.2))
+        (fun c => oracleQ m n w (mrOracleAt H c.2 t c.1)) (mrSlot t) q A.U) fun c =>
+      QComp.qbind (measX m n w) fun _ => (A.withVerifier V c.1 c.2).measure
+
+/-- The interactive game with the commitment phase split at the measurement of
+    the commitment. -/
+theorem fsInteractive_eq_split (A : QAdv m n w q) (V : QVerifier m n w) (H : Fin m → Fin n) :
+    fsInteractive A V H =
+      QComp.qbind (uniformQ (Option (Fin q × Bool))) fun t =>
+        QComp.qbind (preChain (oracleQ m n w H) (mrSlot t) q A.U) fun _ =>
+          QComp.qbind (measX m n w) fun x => QComp.qbind (uniformQ (Fin n)) fun θ =>
+            QComp.qbind (unitaryChannel (fsSufU A H t x θ)) fun _ =>
+              QComp.qbind (measX m n w) fun _ => (A.withVerifier V x θ).measure := by
+  unfold fsInteractive
+  refine congrArg _ (funext fun t => ?_)
+  simp only [oracleQ, measChain_eq_split, measXChal, fsSufU, QComp.qbind_assoc,
+    QComp.qpure_qbind]
+
+/-- The interactive game with the challenge drawn before the run: the slot and
+    the challenge are uniform, and the simulator `simChain` runs with them. -/
+theorem fsInteractive_eq_simChain (A : QAdv m n w q) (V : QVerifier m n w)
+    (H : Fin m → Fin n) :
+    fsInteractive A V H =
+      QComp.qbind (uniformQ (Option (Fin q × Bool))) fun t =>
+        QComp.qbind (uniformQ (Fin n)) fun θ =>
+          QComp.qbind (simChain A H θ t) fun x =>
+            QComp.qbind (measX m n w) fun _ => (A.withVerifier V x θ).measure := by
+  rw [fsInteractive_eq_split]
+  refine congrArg _ (funext fun t => ?_)
+  simp only [simChain, oracleQ, fsSufU, measChain_eq_split, QComp.qbind_assoc, QComp.qpure_qbind]
+  simp only [qbind_uniformQ_comm]
+
+/-- The acceptance probability of the interactive game is the averaged success
+    probability `∑ x, prInt A V H x` of the measure-and-reprogram simulator. -/
+theorem prTrue_fsInteractive (A : QAdv m n w q) (V : QVerifier m n w) (H : Fin m → Fin n) :
+    prTrue_Q (fsInteractive A V H) A.init = ∑ x, prInt A V H x := by
+  have hS : ∀ t θ, prTrue_Q (QComp.qbind (simChain A H θ t) fun x =>
+      QComp.qbind (measX m n w) fun _ => (A.withVerifier V x θ).measure) A.init =
+        ∑ x, prSimAcc (A.withVerifier V x θ) H θ x t := by
+    intro t θ
+    rw [prTrue_Q_qbind_eq_sum]
+    refine Finset.sum_congr rfl fun x _ => ?_
+    unfold prSimAcc prTrue_Q
+    rw [prSimAcc_branch]
+    rfl
+  rw [fsInteractive_eq_simChain, prTrue_Q_uniformQ_bind]
+  simp only [prTrue_Q_uniformQ_bind, hS, prInt, prIntAt, card_mrIndex, Fintype.card_fin,
+    Finset.mul_sum]
+  rw [eq_comm, Finset.sum_comm]
+  exact Finset.sum_congr rfl fun _ _ => Finset.sum_comm
+
+/-- The Fiat–Shamir reduction against the interactive game: the Fiat–Shamir
+    success probability is at most `(2q + 1)²` times the acceptance probability
+    of `fsInteractive A V H`. -/
+theorem fiatShamir_interactive (A : QAdv m n w q) (V : QVerifier m n w) (H : Fin m → Fin n) :
+    ∑ x, prFSAt A V H x ≤
+      ((2 * q + 1 : ℕ) : ℝ≥0∞) ^ 2 * prTrue_Q (fsInteractive A V H) A.init := by
+  rw [prTrue_fsInteractive]
+  exact fiatShamir_measure_reprogram_sum A V H
+
+/-- The Fiat–Shamir reduction for a uniformly random oracle against the
+    interactive game: over a uniform `H`, the probability that `A^H` outputs a
+    commitment `x` accepted by `V(x, H x)` is at most `(2q + 1)²` times the
+    average acceptance probability of `fsInteractive A V H`. -/
+theorem fiatShamir_random_oracle_interactive (A : QAdv m n w q) (V : QVerifier m n w) :
+    (Fintype.card (Fin m → Fin n) : ℝ≥0∞)⁻¹ *
+        ∑ H : Fin m → Fin n, ∑ x, prOutAt (A.withVerifier V x (H x)) H x ≤
+      ((2 * q + 1 : ℕ) : ℝ≥0∞) ^ 2 *
+        ((Fintype.card (Fin m → Fin n) : ℝ≥0∞)⁻¹ *
+          ∑ H : Fin m → Fin n, prTrue_Q (fsInteractive A V H) A.init) := by
+  simp only [prTrue_fsInteractive]
+  exact fiatShamir_random_oracle A V
+
+/-- If every commitment has at most one challenge with a nonzero verifier
+    projector, the interactive game accepts with probability at most `1/n`. -/
+theorem prTrue_fsInteractive_le_inv_of_unique_challenge (A : QAdv m n w q)
+    (V : QVerifier m n w) (H : Fin m → Fin n) (c : Fin m → Fin n)
+    (hV : ∀ x θ, θ ≠ c x → V.proj x θ = 0) :
+    prTrue_Q (fsInteractive A V H) A.init ≤ (n : ℝ≥0∞)⁻¹ := by
+  rw [prTrue_fsInteractive]
+  exact sum_prInt_le_inv_of_unique_challenge A V H c hV
+
+end Interactive
 
 end CatCrypt.Quantum.QROM
