@@ -68,7 +68,7 @@ theorem rHoare_ret_same {Φ : RPre} {a : α} :
     rHoare Φ (pure a : SPComp α) (pure a : SPComp α) (fun a₁ h₁ a₂ h₂ => Φ h₁ h₂ ∧ a₁ = a₂) := by
   apply rHoare_ret
   intro h₁ h₂ hΦ
-  exact ⟨hΦ, rfl⟩
+  simp_all
 
 /-! ## Bind Rule -/
 
@@ -99,7 +99,7 @@ theorem rHoare_bind {Φ : RPre} {Ψ : RPost α β} {Θ : RPost γ δ}
   intro ⟨a, h₁'⟩ ⟨b, h₂'⟩ hΨ
   -- hΨ : Ψ a h₁' b h₂'
   -- Apply hf a b to get rHoare, then specialize to h₁', h₂'
-  exact hf a b h₁' h₂' hΨ
+  (unfold CatCrypt.Prob.liftR; solve_by_elim [rHoare_ret_same])
 
 /-! ## Reflexivity and Transitivity -/
 
@@ -113,7 +113,7 @@ theorem rHoare_refl (c : SPComp α) :
   have := liftR_refl (c h₁)
   apply liftR_mono _ this
   intro ⟨a₁, h₁'⟩ ⟨a₂, h₂'⟩ heq'
-  simp only [eqPost, Prod.mk.injEq] at heq' ⊢ ; exact heq'
+  simp_all [eqPost, Prod.mk.injEq]
 
 /-- Transitivity for equal-heap coupling.
 
@@ -173,7 +173,7 @@ theorem rHoare_sample_same {Φ : RPre} (α : Type*) [Fintype α] [Nonempty α] :
   -- where R = fun (v₁, h₁') (v₂, h₂') => Φ h₁' h₂' ∧ v₁ = v₂
   apply liftR_pure
   -- Goal: Φ h₁ h₂ ∧ a = a
-  exact ⟨hΦ, rfl⟩
+  simp_all
 
 /-- Bijection coupling -/
 theorem rHoare_sample_bij {Φ : RPre} (α β : Type*)
@@ -195,7 +195,7 @@ theorem rHoare_sample_bij {Φ : RPre} (α β : Type*)
   -- where R = fun (v₁, h₁') (v₂, h₂') => Φ h₁' h₂' ∧ f v₁ = v₂
   apply liftR_pure
   -- Goal: Φ h₁ h₂ ∧ f a = b
-  exact ⟨hΦ, hfab⟩
+  simp_all
 
 /-- One-sided sample on the left.
 
@@ -224,7 +224,7 @@ theorem rHoare_sample_l {σ τ ρ : Type*} {Φ : RPre} {Ψ : RPost τ ρ}
   · intro a a' heq
     subst heq
     -- Now show: (f a h₁) ⟨Ψ'⟩# (c₂ h₂)
-    exact h a h₁ h₂ hΦ
+    (unfold CatCrypt.Prob.liftR; solve_by_elim [rHoare_sample_same, rHoare_ret_same, rHoare_sample_bij])
 
 /-- One-sided sample on the right.
 
@@ -248,7 +248,7 @@ theorem rHoare_sample_r {σ τ ρ : Type*} {Φ : RPre} {Ψ : RPost ρ τ}
   · exact liftR_refl (SDistr.uniform σ)
   · intro a a' heq
     subst heq
-    exact h a h₁ h₂ hΦ
+    (unfold CatCrypt.Prob.liftR; solve_by_elim [rHoare_sample_same, rHoare_ret_same, rHoare_sample_bij])
 
 /-! ## State Rules -/
 
@@ -261,8 +261,8 @@ theorem rHoare_get_sync {Φ : RPre} (l : Location)
   simp only [SPComp.get_def]
   apply liftR_pure
   constructor
-  · exact hΦ
-  · exact hSync h₁ h₂ hΦ
+  · simp_all
+  · grind
 
 /-- Synchronized set: same location and value -/
 theorem rHoare_set_sync {Φ : RPre} (l : Location) (v : l.ty)
@@ -272,7 +272,7 @@ theorem rHoare_set_sync {Φ : RPre} (l : Location) (v : l.ty)
   intro h₁ h₂ hΦ
   simp only [SPComp.set_def]
   apply liftR_pure
-  exact hInv h₁ h₂ hΦ
+  simp_all
 
 /-- One-sided get on the left.
     Note: β is constrained to Type (universe 0) since l.ty : Type. -/
@@ -283,7 +283,7 @@ theorem rHoare_get_l {β γ : Type} {Φ : RPre} {Ψ : RPost β γ}
   intro h₁ h₂ hΦ
   have hv := h (h₁.get l) h₁ h₂ ⟨hΦ, rfl⟩
   have heq : (SPComp.get l >>= f) h₁ = f (h₁.get l) h₁ := by
-    simp only [bind, SPComp.bind, SPComp.get, SDistr.pure_bind]
+    simp_all [SPComp.bind, SPComp.get, SDistr.pure_bind]
   rw [heq]
   exact hv
 
@@ -296,7 +296,7 @@ theorem rHoare_get_r {β γ : Type} {Φ : RPre} {Ψ : RPost γ β}
   intro h₁ h₂ hΦ
   have hv := h (h₂.get l) h₁ h₂ ⟨hΦ, rfl⟩
   have heq : (SPComp.get l >>= f) h₂ = f (h₂.get l) h₂ := by
-    simp only [bind, SPComp.bind, SPComp.get, SDistr.pure_bind]
+    simp_all [SPComp.bind, SPComp.get, SDistr.pure_bind]
   rw [heq]
   exact hv
 
@@ -347,7 +347,7 @@ theorem rHoare_assert {Φ : RPre} (P : Prop) [Decidable P]
   simp only [hp, ↓reduceIte]
   simp only [SPComp.pure_def]
   apply liftR_pure
-  exact hΦ
+  simp_all
 
 /-! ## Conditional Rules -/
 
@@ -560,16 +560,13 @@ open CatCrypt.Crypto
 theorem advantage_factorization {α β : Type} (f : α → SPComp β)
     (G₁ G₂ : SPComp α) (A : β → SPComp Bool) :
     AdvantageA (G₁.bind f) (G₂.bind f) A = AdvantageA G₁ G₂ (fun x => (f x).bind A) := by
-  unfold AdvantageA
-  -- By associativity: (G.bind f).bind A = G.bind (fun x => (f x).bind A)
-  rw [SPComp.bind_assoc G₁ f A, SPComp.bind_assoc G₂ f A]
+  simp_all [SPComp.bind_assoc G₁ f A, SPComp.bind_assoc G₂ f A, AdvantageA]
 
 /-- Advantage is symmetric: swapping the games doesn't change the advantage.
     This follows from the symmetric definition using max of both directions. -/
 theorem advantage_symm (G₁ G₂ : SPComp Bool) :
     Advantage G₁ G₂ = Advantage G₂ G₁ := by
-  unfold Advantage
-  rw [max_comm]
+  simp_all [max_comm, Advantage]
 
 /-! ## Contract Rules
 
@@ -602,7 +599,7 @@ They are used by contract tactics to simplify code before relational reasoning.
   funext h
   simp only [SPComp.monad_bind_eq, SPComp.bind_def, SPComp.set_def, SDistr.pure_bind]
   congr 1
-  exact Heap.set_set_same h l v v'
+  grind [CatCrypt.Core.Heap.get_set_same, CatCrypt.Core.Heap.get_set_other, Heap.set_set_same]
 
 /-- Contract put-get: getting a location immediately after putting to it
     returns the value that was put.
@@ -658,7 +655,7 @@ theorem SDistr.bind_const_eq {α β : Type} [Fintype α] [Nonempty α] (d : SDis
   rw [SDistr.bind_assoc]
   simp only [SDistr.pure_bind]
   -- (SDistr.uniform α).bind (fun a => k h) = k h
-  exact SDistr.bind_const_eq (k h)
+  simp_all [SDistr.bind_const_eq]
 
 /-- Dead get: if a get result is not used, the get can be eliminated.
 
@@ -669,7 +666,7 @@ theorem SDistr.bind_const_eq {α β : Type} [Fintype α] [Nonempty α] (d : SDis
 @[simp] theorem dead_get {α : Type} (l : Location) (k : SPComp α) :
     (SPComp.get l).bind (fun _ => k) = k := by
   funext h
-  simp only [SPComp.bind_def, SPComp.get_def, SDistr.pure_bind]
+  simp_all [SPComp.bind_def, SPComp.get_def, SDistr.pure_bind]
 
 /-- Dead pure: if a pure result is not used, the pure can be eliminated.
 
@@ -686,7 +683,7 @@ theorem SDistr.bind_const_eq {α β : Type} [Fintype α] [Nonempty α] (d : SDis
   show ((SPComp.pure v).bind (fun _ => k)) h = k h
   rw [SPComp.bind_def, SPComp.pure_def]
   -- SDistr.pure (v, h).bind (fun x => k x.2) = k h
-  rw [SDistr.pure_bind]
+  simp_all [SDistr.pure_bind]
   -- Goal is now k h = k h which is rfl
 
 /-! ## Copy Propagation Rules
@@ -721,7 +718,7 @@ These rules help identify and eliminate unreachable code paths.
 theorem rHoare_false {Ψ : RPost α β} {c₁ : SPComp α} {c₂ : SPComp β} :
     rHoare (fun _ _ => False) c₁ c₂ Ψ := by
   intro h₁ h₂ hFalse
-  exact False.elim hFalse
+  simp_all
 
 /-- If we have an assertion `#assert false`, the code is unreachable. -/
 theorem assert_false_unreachable {α : Type} (k : SPComp α) :
