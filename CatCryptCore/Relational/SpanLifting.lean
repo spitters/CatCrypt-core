@@ -60,8 +60,7 @@ variable {α β : Type*}
 theorem SDistr.bind_apply_some {α β : Type*} (d : SDistr α) (g : α → SDistr β) (x : β) :
     (d.bind g) (some x) = ∑' a, d (some a) * (g a) (some x) := by
   show (PMF.bind d _) (some x) = _
-  rw [PMF.bind_apply, SDistr.tsum_option_eq_add]
-  simp only [SDistr.fail_apply_some, mul_zero, zero_add]
+  simp [PMF.bind_apply, SDistr.tsum_option_eq_add, SDistr.fail_apply_some, mul_zero, zero_add]
 
 /-! ## Span lifting -/
 
