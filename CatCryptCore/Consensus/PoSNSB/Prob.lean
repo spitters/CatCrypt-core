@@ -257,4 +257,99 @@ theorem good_of_not_bad (hP : ProtocolHyp P)
 
 end Combine
 
+/-! ## The probability bound -/
+
+/-- If every branch of a bind gives an event probability at most `c`, so does the bind. -/
+theorem PMF.toOuterMeasure_bind_le {α β : Type*} (p : PMF α) (f : α → PMF β) (s : Set β)
+    (c : ℝ≥0∞) (h : ∀ a, (f a).toOuterMeasure s ≤ c) : (p.bind f).toOuterMeasure s ≤ c := by
+  rw [PMF.toOuterMeasure_bind_apply]
+  calc ∑' a, p a * (f a).toOuterMeasure s ≤ ∑' a, p a * c :=
+        ENNReal.tsum_le_tsum fun a => mul_le_mul_right (h a) _
+    _ = c := by rw [ENNReal.tsum_mul_right, p.tsum_coe, one_mul]
+
+section Bound
+
+variable {Tx Hash : Type} [DecidableEq Tx] [DecidableEq Hash] [Fintype Tx] [Fintype Hash]
+  [Nonempty Hash] {np : ℕ} [Corruption (Fin np)] {n Hz : ℕ}
+  {Sch : SigScheme (Block Tx Hash (Fin np))}
+
+/-- An event on the slot kinds has the same probability under `seedDist` as under
+`kindDist`. -/
+theorem seedDist_kind (ν : PMF SlotKind) (W : ℕ) (E : Set (Fin n → SlotKind)) :
+    (seedDist ν W n Hz Sch).toOuterMeasure {ω | ω.κ ∈ E} = (kindDist ν W n).toOuterMeasure E := by
+  have : (seedDist ν W n Hz Sch).map Seed.κ = kindDist ν W n := by
+    simp only [seedDist, PMF.map_bind, PMF.pure_map, PMF.bind_const, PMF.bind_pure]
+  rw [← this, PMF.toOuterMeasure_map_apply]
+  rfl
+
+/-- The slot kinds from `W` on are honest almost surely. -/
+theorem kindDist_padded (ν : PMF SlotKind) (W : ℕ) :
+    (kindDist ν W n).toOuterMeasure {κ | ¬PaddedFrom W κ} = 0 := by
+  rw [PMF.toOuterMeasure_apply_eq_zero_iff, Set.disjoint_left]
+  intro κ hκ hnot
+  apply hnot
+  intro i hi
+  rw [PMF.mem_support_iff, kindDist, PMF.piFin_apply, Finset.prod_ne_zero_iff] at hκ
+  have := hκ i (Finset.mem_univ _)
+  simp only [slotDist, if_neg (not_lt.2 hi), PMF.pure_apply] at this
+  by_contra h
+  exact this (if_neg h)
+
+/-- **Collisions (part 2).** For a querier that depends on the slot kinds and the keys, the
+probability of a collision among its first `q` queries to the random oracle of the seed is at
+most the birthday bound `q (q - 1) / 2 / |Hash|`. -/
+theorem seedDist_ROCollision_le (ν : PMF SlotKind) (W q : ℕ)
+    (next : (Fin n → SlotKind) → (Fin np → Sch.PK × Sch.SK) → Querier (BlockDom Tx Hash np Hz) Hash) :
+    (seedDist ν W n Hz Sch).toOuterMeasure {ω | ROCollision (next ω.κ ω.ks) q ω.f} ≤
+      ((q * (q - 1) / 2 : ℕ) : ℝ≥0∞) / Fintype.card Hash := by
+  refine PMF.toOuterMeasure_bind_le _ _ _ _ fun κ => ?_
+  rw [PMF.bind_comm]
+  refine PMF.toOuterMeasure_bind_le _ _ _ _ fun ks => ?_
+  have : ((uniformFun (BlockDom Tx Hash np Hz) Hash).bind fun f =>
+      PMF.pure (⟨κ, f, ks⟩ : Seed Tx Hash np n Hz Sch)) =
+      (uniformFun (BlockDom Tx Hash np Hz) Hash).map fun f => ⟨κ, f, ks⟩ := rfl
+  rw [this, PMF.toOuterMeasure_map_apply]
+  exact prob_ROCollision_le (next κ ks) q
+
+variable (P : Protocol Tx Hash np) (A : Adversary Tx Hash np n Hz Sch) (Tree : TreeFamily Tx Hash np)
+
+/-- **Security of PoS-NSB with signed blocks.** Under the hypotheses on the protocol, the
+lottery distribution and the numbers, and the random-oracle hypothesis `hRO`, chain growth,
+chain quality and common prefix hold for the first `K` phases of the real execution except with
+probability at most
+`slotBound ν n d w ε + q (q - 1) / 2 / |Hash| + ∑ᵢ eufAdv (forger P A ν W K i)`:
+the Chernoff-Hoeffding bound on the slot conditions, the birthday bound, and the EUF-CMA
+advantages of the explicit forgers. -/
+theorem pos_nsb_security (hP : ProtocolHyp P)
+    (hTree : ∀ (Pa : Parameters (Fin np)) (Ba : BlockParameters Tx Hash (Fin np)),
+      letI := Pa; letI := Ba; (Tree Pa Ba).LongestChainRule)
+    (ν : PMF SlotKind) (W K d w : ℕ) (ε : ℝ)
+    (hd : 1 ≤ d) (hwd : w ≤ d) (hWn : W + d ≤ n) (hn : K + 2 ≤ n) (hHz : K + 1 ≤ Hz)
+    (hε : 0 ≤ ε) (hγ : 2 * pA ν ≤ pH ν) (hw : (w : ℝ) ≤ d * (pH ν - pA ν))
+    (h3 : (3 : ℝ) ≤ d * (pH ν - 2 * pA ν)) (q : ℕ)
+    (next : (Fin n → SlotKind) → (Fin np → Sch.PK × Sch.SK) → Querier (BlockDom Tx Hash np Hz) Hash)
+    (hRO : ∀ ω : Seed Tx Hash np n Hz Sch, ∀ j ≤ K, letI := ω.params P; letI := ω.bparams P;
+      ∀ b ∈ block_hist_gb (sTrace P ω A false j), ∃ k < q, query (next ω.κ ω.ks) ω.f k = encB Hz b) :
+    (seedDist ν W n Hz Sch).toOuterMeasure {ω | ¬Good P A Tree ν K d w ε ω} ≤
+      slotBound ν n d w ε + ((q * (q - 1) / 2 : ℕ) : ℝ≥0∞) / Fintype.card Hash +
+        ∑ i : Fin np, eufAdv (forger P A ν W K i) := by
+  have hsub : {ω | ¬Good P A Tree ν K d w ε ω} ⊆
+      (({ω | ω.κ ∈ {κ | SlotBad ν n d w ε κ}} ∪ {ω | ω.κ ∈ {κ | ¬PaddedFrom W κ}}) ∪
+        {ω : Seed Tx Hash np n Hz Sch | ROCollision (next ω.κ ω.ks) q ω.f}) ∪
+        {ω | Forge P ω A K} := by
+    intro ω hω
+    by_contra hc
+    simp only [Set.mem_union, Set.mem_ofPred_eq, not_or, not_not] at hc
+    exact hω (good_of_not_bad P A Tree ν K d w ε hP hTree ω hd hwd hWn hn hHz q (next ω.κ ω.ks)
+      (hRO ω) hc.1.1.1 hc.1.1.2 hc.1.2 hc.2)
+  refine (MeasureTheory.OuterMeasure.mono _ hsub).trans ?_
+  refine (MeasureTheory.measure_union_le _ _).trans (add_le_add ?_ (prob_forge_le P A ν W K))
+  refine (MeasureTheory.measure_union_le _ _).trans
+    (add_le_add ?_ (seedDist_ROCollision_le ν W q next))
+  refine (MeasureTheory.measure_union_le _ _).trans ?_
+  rw [seedDist_kind, seedDist_kind, kindDist_padded, add_zero]
+  exact prob_slotBad_le ν W n d w hε hγ hw h3
+
+end Bound
+
 end CatCryptCore.Consensus.PoSNSB
