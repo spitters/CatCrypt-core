@@ -160,7 +160,7 @@ theorem heg_real_bind_eq (H : G → Bool) (m : Bool)
   simp only [CyclicGroup.elemPow_pow]
   show (SPComp.pure (CG.pow r, xor (H (CG.pow (CG.expMul sk r))) m)).bind A =
        A (CG.pow r, xor (H (CG.pow (CG.expMul sk r))) m)
-  rw [SPComp.pure_bind]
+  grind
 
 /-- RHS normal form: DDH_real.bind reduction as explicit double-sample. -/
 theorem ddh_real_bind_red_eq (H : G → Bool) (m : Bool)
@@ -175,14 +175,14 @@ theorem ddh_real_bind_red_eq (H : G → Bool) (m : Bool)
   show (SPComp.pure (CG.pow a, CG.pow b, CG.pow (CG.expMul a b))).bind
       (fun challenge => A (challenge.2.1, xor (H challenge.2.2) m)) =
     A (CG.pow b, xor (H (CG.pow (CG.expMul a b))) m)
-  rw [SPComp.pure_bind]
+  grind
 
 /-- Program equality: the real Hashed ElGamal game composed with adversary A
     equals the DDH real game composed with the DDH reduction. -/
 theorem heg_real_eq_ddh_real (H : G → Bool) (m : Bool)
     (A : (G × Bool) → SPComp Bool) :
     (heg_real H m).bind A = (DDH_real G).bind (heg_ddh_reduction H m A) := by
-  rw [heg_real_bind_eq, ddh_real_bind_red_eq]
+  grind [heg_real_bind_eq, ddh_real_bind_red_eq]
 
 /-- Hashed ElGamal IND-CPA advantage is bounded by DDH advantage.
 
@@ -223,9 +223,9 @@ theorem heg_indcpa_le_ddh (H : G → Bool) (m₀ m₁ : Bool)
                             ((DDH_real G).bind (heg_ddh_reduction H m₁ A)) =
                   Advantage ((DDH_real G).bind (heg_ddh_reduction H m₁ A))
                             ((DDH_ideal G).bind (heg_ddh_reduction H m₁ A)) := by
-    rw [h_ideal_indep, Advantage_sym]
+    simp_all [Advantage_sym]
   rw [h_second] at htri
-  exact htri
+  bound
 
 /-! ## Perfect Security with Random Oracle
 
