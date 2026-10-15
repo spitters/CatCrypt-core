@@ -94,15 +94,13 @@ their evaluations produce equal results from equal heaps.
 For custom pre/post conditions, use `rHoare_conseq` after this lemma. -/
 theorem rHoare_of_code_eq {α : Type*} (c₁ c₂ : RawCode α) (h : c₁ = c₂) :
     rHoare eqPre c₁.eval c₂.eval eqPost := by
-  subst h
-  exact rHoare_refl c₁.eval
+  subst h; exact rHoare_refl c₁.eval
 
 /-- If two evaluations are equal as SPComp functions, rHoare holds. -/
 theorem rHoare_of_eval_eq {α : Type*} (c₁ c₂ : RawCode α)
     (h : c₁.eval = c₂.eval) :
     rHoare eqPre c₁.eval c₂.eval eqPost := by
-  rw [h]
-  exact rHoare_refl c₂.eval
+  rw [h]; exact rHoare_refl c₂.eval
 
 /-- Code equality lifts to eval equality. -/
 @[simp, ssprove_eval]
@@ -118,8 +116,7 @@ theorem evalOp_par_left (p₁ p₂ : DeepPackage.{u}) (h_sep : DeepPackage.sep p
     (DeepPackage.par p₁ p₂ h_sep).evalOp op dom codom
       (List.mem_append.mpr (Or.inl h₁)) x =
     p₁.evalOp op dom codom h₁ x := by
-  simp only [DeepPackage.evalOp, DeepPackage.par]
-  simp only [dif_pos h₁]
+  simp only [DeepPackage.evalOp, DeepPackage.par, dif_pos h₁]
   rfl
 
 /-! ## Bridge Lemmas for Common Patterns -/
@@ -127,7 +124,6 @@ theorem evalOp_par_left (p₁ p₂ : DeepPackage.{u}) (h_sep : DeepPackage.sep p
 /-- DeepRHoare from code equality (the most common bridge pattern). -/
 theorem DeepRHoare_of_eq {α : Type*} (c₁ c₂ : RawCode α) (h : c₁ = c₂) :
     DeepRHoare eqPre c₁ c₂ eqPost := by
-  unfold DeepRHoare
   exact rHoare_of_code_eq c₁ c₂ h
 
 /-- DeepRHoare unfolds to rHoare on eval. -/
