@@ -186,12 +186,12 @@ variable {T : Type → Type}
 theorem ucMapSum_pure_left [UCMonadBase T] {α β γ : Type}
     (g : β → T γ) (a : α) :
     UCMonadBase.ucMapSum (pure : α → T α) g (.inl a) = (pure (.inl a) : T (α ⊕ γ)) := by
-  rw [UCMonadBase.ucMapSum_inl]; simp
+  simp [UCMonadBase.ucMapSum_inl]
 
 theorem ucMapSum_pure_right [UCMonadBase T] {α β γ : Type}
     (f : α → T β) (c : γ) :
     UCMonadBase.ucMapSum f (pure : γ → T γ) (.inr c) = (pure (.inr c) : T (β ⊕ γ)) := by
-  rw [UCMonadBase.ucMapSum_inr]; simp
+  simp [UCMonadBase.ucMapSum_inr]
 
 theorem ucSdist_le_of_eq [UCMonadMetric T] {α β : Type}
     {f g : α → T β} (h : f = g) : UCMonadMetric.ucSdist f g = 0 := by
@@ -202,13 +202,9 @@ theorem ucSdist_comp_add [UCMonadMetric T] {α β γ : Type}
     (hf : UCMonadMetric.ucSdist f₁ f₂ ≤ ε₁)
     (hg : UCMonadMetric.ucSdist g₁ g₂ ≤ ε₂) :
     UCMonadMetric.ucSdist (fun a => f₁ a >>= g₁) (fun a => f₂ a >>= g₂) ≤ ε₁ + ε₂ := by
-  calc UCMonadMetric.ucSdist (fun a => f₁ a >>= g₁) (fun a => f₂ a >>= g₂)
-      ≤ UCMonadMetric.ucSdist (fun a => f₁ a >>= g₁) (fun a => f₂ a >>= g₁)
-        + UCMonadMetric.ucSdist (fun a => f₂ a >>= g₁) (fun a => f₂ a >>= g₂) :=
-        UCMonadMetric.ucSdist_triangle _ _ _
-    _ ≤ ε₁ + ε₂ := add_le_add
-        (le_trans (UCMonadMetric.ucSdist_comp_right f₁ f₂ g₁) hf)
-        (le_trans (UCMonadMetric.ucSdist_comp_left f₂ g₁ g₂) hg)
+  exact le_trans (UCMonadMetric.ucSdist_triangle _ (fun a => f₂ a >>= g₁) _) (add_le_add
+    (le_trans (UCMonadMetric.ucSdist_comp_right f₁ f₂ g₁) hf)
+    (le_trans (UCMonadMetric.ucSdist_comp_left f₂ g₁ g₂) hg))
 
 /-! ## Section 3: Generic Protocol Category -/
 
@@ -283,9 +279,7 @@ theorem factPre_refl [UCMonadBase T] {hon out : Type}
 theorem factPre_trans [UCMonadBase T] {hon out : Type}
     {P Q R : ProtObj T hon out}
     (hPQ : factPre P Q) (hQR : factPre Q R) : factPre P R := by
-  obtain ⟨fQP⟩ := hPQ
-  obtain ⟨fRQ⟩ := hQR
-  exact ⟨protMor_comp fRQ fQP⟩
+  exact hPQ.elim fun f => hQR.elim fun g => ⟨protMor_comp g f⟩
 
 /-! ## Section 3b: Exact UC Emulation (Standard Layer — no metric)
 
@@ -337,10 +331,7 @@ theorem ExactUCEmulates_trans [UCMonadBase T]
     (h₁ : ExactUCEmulates (T := T) (view := view) π₁ π₂)
     (h₂ : ExactUCEmulates (T := T) (view := view) π₂ π₃) :
     ExactUCEmulates (T := T) (view := view) π₁ π₃ := by
-  intro A
-  obtain ⟨S₁, hS₁⟩ := h₁ A
-  obtain ⟨S₂, hS₂⟩ := h₂ S₁
-  exact ⟨S₂, hS₁.trans hS₂⟩
+  exact fun A => (h₁ A).elim fun S₁ hS₁ => (h₂ S₁).imp fun _ hS₂ => hS₁.trans hS₂
 
 /-! ## Section 4: Generic Approximate Factorization -/
 
@@ -368,8 +359,7 @@ theorem approxFact_mono [UCMonadMetric T] {hon out : Type}
     {P Q : ProtObj T hon out} {ε₁ ε₂ : ℝ≥0∞}
     (h : approxFact ε₁ P Q) (hle : ε₁ ≤ ε₂) :
     approxFact ε₂ P Q := by
-  obtain ⟨S, hS⟩ := h
-  exact ⟨S, le_trans hS hle⟩
+  exact h.imp fun _ hS => le_trans hS hle
 
 /-- Transitivity: simulator chaining gives additive bound. -/
 theorem approxFact_trans [UCMonadMetric T] {hon out : Type}
@@ -451,8 +441,7 @@ theorem UCEmulates_of_sdist [UCMonadMetric T]
     (π F : hon → T (out ⊕ leak))
     (h : UCMonadMetric.ucSdist π F ≤ ε) :
     UCEmulates (T := T) (view := view) ε π F := by
-  intro A
-  exact ⟨A, le_trans (UCMonadMetric.ucSdist_comp_right π F
+  exact fun A => ⟨A, le_trans (UCMonadMetric.ucSdist_comp_right π F
     (UCMonadBase.ucMapSum pure A)) h⟩
 
 /-- Monotonicity: UC emulation with tighter bound implies looser bound. -/
@@ -462,17 +451,14 @@ theorem UCEmulates_mono [UCMonadMetric T]
     {ε₁ ε₂ : ℝ≥0∞}
     (h : UCEmulates (T := T) (view := view) ε₁ π F) (hle : ε₁ ≤ ε₂) :
     UCEmulates (T := T) (view := view) ε₂ π F := by
-  intro A
-  obtain ⟨S, hS⟩ := h A
-  exact ⟨S, le_trans hS hle⟩
+  exact fun A => (h A).imp fun _ hS => le_trans hS hle
 
 /-- Reflexivity: any protocol UC-emulates itself perfectly (same-interface). -/
 theorem UCEmulates_refl [UCMonadMetric T]
     {hon out leak view : Type}
     (π : hon → T (out ⊕ leak)) :
     UCEmulates (T := T) (view := view) 0 π π := by
-  intro A
-  exact ⟨A, by simp [UCMonadMetric.ucSdist_self]⟩
+  exact fun A => ⟨A, by simp [UCMonadMetric.ucSdist_self]⟩
 
 /-- Transitivity of UC emulation (same-interface case). -/
 theorem UCEmulates_trans [UCMonadMetric T]
@@ -481,10 +467,8 @@ theorem UCEmulates_trans [UCMonadMetric T]
     (h₁ : UCEmulates (T := T) (view := view) ε₁ π₁ π₂)
     (h₂ : UCEmulates (T := T) (view := view) ε₂ π₂ π₃) :
     UCEmulates (T := T) (view := view) (ε₁ + ε₂) π₁ π₃ := by
-  intro A
-  obtain ⟨S₁, hS₁⟩ := h₁ A
-  obtain ⟨S₂, hS₂⟩ := h₂ S₁
-  exact ⟨S₂, le_trans (UCMonadMetric.ucSdist_triangle _ _ _) (add_le_add hS₁ hS₂)⟩
+  exact fun A => (h₁ A).elim fun S₁ hS₁ => (h₂ S₁).imp fun _ hS₂ =>
+    le_trans (UCMonadMetric.ucSdist_triangle _ _ _) (add_le_add hS₁ hS₂)
 
 /-- Approximate factorization implies UC emulation. -/
 theorem approxFact_implies_UCEmulates [UCMonadMetric T]
@@ -522,9 +506,7 @@ theorem UCEmulates_of_ExactUCEmulates [UCMonadMetric T]
     {F : hon → T (out ⊕ sim_if)}
     (h : ExactUCEmulates (T := T) (view := view) π F) :
     UCEmulates (T := T) (view := view) 0 π F := by
-  intro A
-  obtain ⟨S, hS⟩ := h A
-  exact ⟨S, by rw [hS]; exact le_of_eq (UCMonadMetric.ucSdist_self _)⟩
+  exact fun A => (h A).imp fun _ hS => by rw [hS]; exact le_of_eq (UCMonadMetric.ucSdist_self _)
 
 /-! ## Section 6: Generic Algebraic UC (Explicit Simulator Construction) -/
 
