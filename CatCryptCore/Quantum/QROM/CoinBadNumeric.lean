@@ -856,7 +856,9 @@ theorem qINDCCA_le_find_numeric_of_lam [NeZero (flatQ q k q)]
 
 open scoped Classical in
 /-- `qINDCCA_le_find_numeric_of_lam_coll` under the coin hypothesis at every key
-pair in the support of key generation.
+pair in the support of key generation. The proof does not use the coin hypothesis;
+it is kept because `FIPS203QROMQuantumMLWE` passes it along the headline chain
+(the coin conjunct of `ChainGood(Coll)`).
 
 References: Hövelmanns, Kiltz, Schäge, Unruh, "Generic authenticated key
 exchange in the quantum random oracle model", PKC 2020, ePrint 2018/928, and
