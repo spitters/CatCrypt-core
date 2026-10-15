@@ -196,15 +196,8 @@ theorem RawCode.evalWith_fail :
     c.evalWith (fun _ _ _ _ => SPComp.fail) = c.eval := by
   intro α c
   induction c with
-  | ret _ => rfl
-  | bind c f ih_c ih_f =>
-    simp only [evalWith, eval, ih_c]; congr_funext
-  | sample T => rfl
-  | get ℓ => rfl
-  | put ℓ v => rfl
-  | fail => rfl
-  | oracleCall _ _ _ _ => rfl
-  | embed _ => rfl
+  | bind c f ih_c ih_f => simp only [evalWith, eval, ih_c]; congr_funext
+  | _ => rfl
 
 /-- `evalWith` on code without oracle calls equals `eval`, regardless of oracle handler.
 
@@ -215,14 +208,8 @@ theorem RawCode.evalWith_eq_eval_no_oracle {α : Type u} {c : RawCode α}
     (oracle : ∀ (op : ℕ) (dom codom : Type u), dom → SPComp codom) :
     c.evalWith oracle = c.eval := by
   induction h with
-  | ret _ => rfl
-  | bind _ _ ih_c ih_k =>
-    simp only [evalWith, eval, ih_c]; congr_funext
-  | sample => rfl
-  | get _ => rfl
-  | put _ _ => rfl
-  | fail => rfl
-  | embed _ => rfl
+  | bind _ _ ih_c ih_k => simp only [evalWith, eval, ih_c]; congr_funext
+  | _ => rfl
 
 /-! ### Correctness of substOracle
 
@@ -255,15 +242,9 @@ theorem eval_substOracle {α : Type u} (c : RawCode α)
     (env : ∀ (op : ℕ) (dom codom : Type u), dom → RawCode codom) :
     (c.substOracle env).eval = c.evalWith (fun op dom codom x => (env op dom codom x).eval) := by
   induction c with
-  | ret _ => rfl
   | bind c k ih_c ih_k =>
     simp only [RawCode.substOracle, RawCode.eval, RawCode.evalWith, ih_c]; congr_funext
-  | sample T => rfl
-  | get ℓ => rfl
-  | put ℓ v => rfl
-  | fail => rfl
-  | oracleCall op dom codom x => rfl
-  | embed _ => rfl
+  | _ => rfl
 
 /-! ## evalWith composition
 
@@ -281,15 +262,9 @@ theorem evalWith_substOracle {α : Type u} (c : RawCode α)
     (c.substOracle env).evalWith h =
     c.evalWith (fun op dom codom x => (env op dom codom x).evalWith h) := by
   induction c with
-  | ret _ => rfl
   | bind c k ih_c ih_k =>
     simp only [RawCode.substOracle, RawCode.evalWith, ih_c]; congr_funext
-  | sample T => rfl
-  | get ℓ => rfl
-  | put ℓ v => rfl
-  | fail => rfl
-  | oracleCall op dom codom x => rfl
-  | embed _ => rfl
+  | _ => rfl
 
 /-- Two evalWith handlers that agree produce the same SPComp.
 
@@ -300,15 +275,9 @@ theorem evalWith_congr {α : Type u} (c : RawCode α)
     (heq : ∀ op dom codom x, h₁ op dom codom x = h₂ op dom codom x) :
     c.evalWith h₁ = c.evalWith h₂ := by
   induction c with
-  | ret _ => rfl
-  | bind c k ih_c ih_k =>
-    simp only [RawCode.evalWith, ih_c]; congr_funext
-  | sample T => rfl
-  | get ℓ => rfl
-  | put ℓ v => rfl
-  | fail => rfl
+  | bind c k ih_c ih_k => simp only [RawCode.evalWith, ih_c]; congr_funext
   | oracleCall op dom codom x => exact heq op dom codom x
-  | embed _ => rfl
+  | _ => rfl
 
 /-- `substOracle` commutes with type casts (`▸`).
 
