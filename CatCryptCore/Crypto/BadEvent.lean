@@ -130,9 +130,7 @@ theorem prTrue_prFalse_none_sum (G : SPComp Bool) (h₀ : Heap) :
   convert hmass using 2
   -- Goal: prTrue G h₀ + prFalse G h₀ = ∑' x : Bool × Heap, (G h₀)(some x)
   unfold prTrue prFalse
-  rw [ENNReal.tsum_prod', tsum_bool]
-  ring
-
+  simp [ENNReal.tsum_prod']
 /-- Under NoFail, prTrue + prFalse = 1. -/
 theorem prTrue_prFalse_eq_one_of_noFail (G : SPComp Bool) (h₀ : Heap)
     (hnf : SPComp.NoFail G) :
@@ -216,12 +214,8 @@ theorem advantage_upto_bad (G₀ G₁ bad : SPComp Bool)
   show absDiff (prTrue G₀ Heap.empty) (prTrue G₁ Heap.empty) ≤ prTrue bad Heap.empty
   unfold absDiff
   apply max_le <;> rw [tsub_le_iff_right]
-  · calc prTrue G₀ Heap.empty
-        ≤ prTrue G₁ Heap.empty + prTrue bad Heap.empty := hA
-      _ = prTrue bad Heap.empty + prTrue G₁ Heap.empty := add_comm _ _
-  · calc prTrue G₁ Heap.empty
-        ≤ prTrue G₀ Heap.empty + prTrue bad Heap.empty := hB
-      _ = prTrue bad Heap.empty + prTrue G₀ Heap.empty := add_comm _ _
+  · simp [hA, add_comm]
+  · simp [hB, add_comm]
 
 /-- Bad-event lemma with adversary: if two computations are identical
     until bad for all adversaries, the adversary-parameterized advantage
@@ -458,9 +452,7 @@ theorem prTrue_union_bound (bad₁ bad₂ : SPComp Bool)
   rw [h_true_simp, h_false_simp]
   -- Right branch reduces: bind bad₂ pure = bad₂ via monad law.
   have h_bind_pure : SPComp.bind bad₂ SPComp.pure = bad₂ := by
-    funext h₀
-    unfold SPComp.bind SPComp.pure
-    simp [SDistr.bind_pure]
+    simp
   rw [h_bind_pure]
   -- Left branch: bind bad₂ (fun _ => pure true). Its prTrue is 1 under NoFail bad₂.
   -- Use prTrue_isPure_noFail_bind on bad₂ to decompose.
@@ -827,11 +819,7 @@ noncomputable def sequential_sample {R : Type} [Fintype R] [Nonempty R] :
 theorem spcomp_sample_bind_const {α β : Type} [Fintype α] [Nonempty α]
     (c : SPComp β) :
     SPComp.bind (SPComp.sample α) (fun (_ : α) => c) = c := by
-  funext h
-  unfold SPComp.bind SPComp.sample
-  rw [SDistr.bind_assoc]
-  simp only [SDistr.pure_bind]
-  exact SDistr.uniform_bind_const (c h)
+  simp
 
 /-- The lazy direction of `lazy_eager_equiv`: `lazy_process` with a table
     that has `none` at every queried point (and `Nodup` queries) reduces
@@ -847,9 +835,7 @@ theorem lazy_process_eq_sequential {D R : Type} [DecidableEq D]
     have hxs_nodup : xs.Nodup := (List.nodup_cons.mp hnodup).2
     have h_T_new : ∀ (r : R), ∀ q ∈ xs,
         (fun d => if d = x then some r else T d) q = none := by
-      intro r q hq
-      have hq_ne_x : q ≠ x := fun heq => hx_xs (heq ▸ hq)
-      simp [hq_ne_x, hT q (List.mem_cons_of_mem x hq)]
+      grind
     -- lazy_process (x :: xs) T unfolds to bind (lazy_sample T x) (...).
     -- With T x = none, lazy_sample T x = bind (sample R) (fun r => pure (r, T_new r)).
     show SPComp.bind (lazy_sample T x)
@@ -895,11 +881,7 @@ theorem spcomp_sample_prod {A B γ : Type}
     SPComp.bind (SPComp.sample (A × B)) k =
     SPComp.bind (SPComp.sample A) (fun a =>
       SPComp.bind (SPComp.sample B) (fun b => k (a, b))) := by
-  funext h₀
-  unfold SPComp.bind SPComp.sample
-  rw [← SDistr.uniform_nested_eq_prod]
-  rw [SDistr.bind_assoc, SDistr.bind_assoc]
-  simp only [SDistr.pure_bind, SDistr.bind_assoc]
+  simp
 
 /-- Sampling uniformly from `Fin n → R` then taking `List.ofFn` equals
     sequential iid sampling of `n` uniforms. -/
@@ -973,9 +955,7 @@ theorem qsBij_symm_map {D R : Type} [DecidableEq D] [Fintype D]
   simp only [Equiv.coe_fn_symm_mk]
   have h_in : qs[i.val] ∈ qs := List.getElem_mem _
   simp only [h_in, dite_true]
-  congr 1
-  apply Fin.ext
-  simpa using List.Nodup.idxOf_getElem hnodup i.val i.isLt
+  simp_all
 
 /-- **Eager direction** of `lazy_eager_equiv`. -/
 theorem eager_process_eq_sequential {D R : Type} [DecidableEq D]
@@ -992,9 +972,7 @@ theorem eager_process_eq_sequential {D R : Type} [DecidableEq D]
   rw [spcomp_sample_prod]
   simp only [qsBij_symm_map qs hnodup]
   -- Now: sample (Fin n → R); sample ({d // d ∉ qs} → R); pure (List.ofFn g)
-  -- The inner sample is unused — apply spcomp_sample_bind_const.
-  simp only [spcomp_sample_bind_const]
-  -- Now: sample (Fin qs.length → R); pure (List.ofFn g)
+  simp_all
   exact sample_fin_ofFn_eq_sequential qs.length
 
 /-- **Lazy/eager sampling equivalence**: for any sequence of distinct queries,
