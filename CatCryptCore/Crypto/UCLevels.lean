@@ -84,9 +84,7 @@ theorem UCEmulatesL2_of_L1 [UCMonadCompDist T]
     {π : hon → T (out ⊕ leak)} {F : hon → T (out ⊕ sim_if)}
     (h : UCEmulates (T := T) (view := view) ε π F) :
     UCEmulatesL2 (T := T) (view := view) ε π F := by
-  intro A
-  obtain ⟨S, hS⟩ := h A
-  exact ⟨S, le_trans (ucCdist_le_ucSdist _ _) hS⟩
+  exact fun A => (h A).imp fun _ hS => le_trans (ucCdist_le_ucSdist _ _) hS
 
 /-- Same-interface Level 2 from sdist bound (unconditional).
 
@@ -108,17 +106,14 @@ theorem UCEmulatesL2_mono [UCMonadCompDist T]
     {ε₁ ε₂ : ℝ≥0∞}
     (h : UCEmulatesL2 (T := T) (view := view) ε₁ π F) (hle : ε₁ ≤ ε₂) :
     UCEmulatesL2 (T := T) (view := view) ε₂ π F := by
-  intro A
-  obtain ⟨S, hS⟩ := h A
-  exact ⟨S, le_trans hS hle⟩
+  exact fun A => (h A).imp fun _ hS => le_trans hS hle
 
 /-- Reflexivity for Level 2. -/
 theorem UCEmulatesL2_refl [UCMonadCompDist T]
     {hon out leak view : Type}
     (π : hon → T (out ⊕ leak)) :
     UCEmulatesL2 (T := T) (view := view) 0 π π := by
-  intro A
-  exact ⟨A, by simp [ucCdist_self]⟩
+  exact fun A => ⟨A, by simp [ucCdist_self]⟩
 
 /-- Transitivity for Level 2 (same-interface). -/
 theorem UCEmulatesL2_trans [UCMonadCompDist T]
@@ -127,10 +122,8 @@ theorem UCEmulatesL2_trans [UCMonadCompDist T]
     (h₁ : UCEmulatesL2 (T := T) (view := view) ε₁ π₁ π₂)
     (h₂ : UCEmulatesL2 (T := T) (view := view) ε₂ π₂ π₃) :
     UCEmulatesL2 (T := T) (view := view) (ε₁ + ε₂) π₁ π₃ := by
-  intro A
-  obtain ⟨S₁, hS₁⟩ := h₁ A
-  obtain ⟨S₂, hS₂⟩ := h₂ S₁
-  exact ⟨S₂, le_trans (ucCdist_triangle _ _ _) (add_le_add hS₁ hS₂)⟩
+  exact fun A => (h₁ A).elim fun S₁ hS₁ => (h₂ S₁).imp fun _ hS₂ =>
+    le_trans (ucCdist_triangle _ _ _) (add_le_add hS₁ hS₂)
 
 /-! ## Section 2: Level 3 — Fully Computational -/
 
@@ -156,9 +149,7 @@ theorem UCEmulatesL3_implies_L2 [UCMonadCompDist T]
     {π : hon → T (out ⊕ leak)} {F : hon → T (out ⊕ sim_if)}
     (h : UCEmulatesL3 (T := T) (view := view) ε π F) :
     UCEmulatesL2 (T := T) (view := view) ε π F := by
-  intro A
-  obtain ⟨S, _, hS⟩ := h A
-  exact ⟨S, hS⟩
+  exact fun A => (h A).imp fun _ hS => hS.2
 
 /-! ### Level 3: Structural Properties -/
 
@@ -169,9 +160,7 @@ theorem UCEmulatesL3_mono [UCMonadCompDist T]
     {ε₁ ε₂ : ℝ≥0∞}
     (h : UCEmulatesL3 (T := T) (view := view) ε₁ π F) (hle : ε₁ ≤ ε₂) :
     UCEmulatesL3 (T := T) (view := view) ε₂ π F := by
-  intro A
-  obtain ⟨S, hS_adm, hS⟩ := h A
-  exact ⟨S, hS_adm, le_trans hS hle⟩
+  exact fun A => (h A).imp fun _ hS => ⟨hS.1, le_trans hS.2 hle⟩
 
 /-- Reflexivity for Level 3 with admissible adversaries.
 
@@ -183,8 +172,7 @@ theorem UCEmulatesL3_refl_adm [UCMonadCompDist T]
     (π : hon → T (out ⊕ leak))
     (hA : ∀ (A : leak → T view), adm A) :
     UCEmulatesL3 (T := T) (view := view) 0 π π := by
-  intro A
-  exact ⟨A, hA A, by simp [ucCdist_self]⟩
+  exact fun A => ⟨A, hA A, by simp [ucCdist_self]⟩
 
 /-- Transitivity for Level 3 (same-interface). -/
 theorem UCEmulatesL3_trans [UCMonadCompDist T]
@@ -193,10 +181,8 @@ theorem UCEmulatesL3_trans [UCMonadCompDist T]
     (h₁ : UCEmulatesL3 (T := T) (view := view) ε₁ π₁ π₂)
     (h₂ : UCEmulatesL3 (T := T) (view := view) ε₂ π₂ π₃) :
     UCEmulatesL3 (T := T) (view := view) (ε₁ + ε₂) π₁ π₃ := by
-  intro A
-  obtain ⟨S₁, hS₁_adm, hS₁⟩ := h₁ A
-  obtain ⟨S₂, hS₂_adm, hS₂⟩ := h₂ S₁
-  exact ⟨S₂, hS₂_adm, le_trans (ucCdist_triangle _ _ _) (add_le_add hS₁ hS₂)⟩
+  exact fun A => (h₁ A).elim fun S₁ hS₁ => (h₂ S₁).imp fun _ hS₂ =>
+    ⟨hS₂.1, le_trans (ucCdist_triangle _ _ _) (add_le_add hS₁.2 hS₂.2)⟩
 
 /-! ## Section 3: Algebraic Level 3 -/
 
@@ -328,14 +314,8 @@ theorem dummy_adversary_L3_restricted [UCMonadCompDist T]
       ∃ (S : leak → T view), adm S ∧
         ucCdist (fun a => π a >>= UCMonadBase.ucMapSum pure A)
                 (fun a => F a >>= UCMonadBase.ucMapSum pure S) ≤ ε := by
-  intro A hA
-  refine ⟨A, hA, ?_⟩
-  calc ucCdist (fun a => π a >>= UCMonadBase.ucMapSum pure A)
-               (fun a => F a >>= UCMonadBase.ucMapSum pure A)
-      ≤ UCMonadMetric.ucSdist π F :=
-        le_trans (ucCdist_le_ucSdist _ _)
-          (UCMonadMetric.ucSdist_comp_right π F (UCMonadBase.ucMapSum pure A))
-    _ ≤ ε := h
+  exact fun A hA => ⟨A, hA, le_trans (ucCdist_le_ucSdist _ _)
+    (le_trans (UCMonadMetric.ucSdist_comp_right π F (UCMonadBase.ucMapSum pure A)) h)⟩
 
 /-! ## Section 5: Level Summary -/
 
