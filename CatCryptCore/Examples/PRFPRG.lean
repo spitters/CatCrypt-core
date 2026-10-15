@@ -12,6 +12,7 @@ public import CatCryptCore.Relational.Rules
 public import CatCryptCore.Examples.PRF
 public import CatCryptCore.Tactics.Basic
 public import CatCryptCore.Prob.XorBij
+public import CatCryptCore.Tactics.AutoMetrics
 
 /-!
 # PRG from PRF (Counter Mode Construction)
@@ -202,12 +203,12 @@ noncomputable def gen_hyb (F : PRFPRG_PRFDef) (i : ℕ) : SPComp PRGOutput := do
 /-- gen_hyb 0 is equivalent to gen_real -/
 theorem gen_hyb_zero_eq_real (F : PRFPRG_PRFDef) :
     gen_hyb F 0 = gen_real F := by
-  rfl
+  bind_vcgen
 
 /-- gen_hyb 2 is equivalent to gen_ideal -/
 theorem gen_hyb_two_eq_ideal (F : PRFPRG_PRFDef) :
     gen_hyb F 2 = gen_ideal := by
-  rfl
+  bind_vcgen
 
 /-! ## PRF Advantage
 
@@ -474,7 +475,7 @@ theorem hyb2_eq_eval_ideal_wrap (A : PRGOutput → SPComp Bool) :
     This allows us to use hyb2_eq_eval_ideal_wrap with any F. -/
 theorem gen_hyb_2_independent_of_F (F G : PRFPRG_PRFDef) :
     gen_hyb F 2 = gen_hyb G 2 := by
-  rfl
+  bind_vcgen
 
 /-! ## Query-Counting Hybrid Structure
 
@@ -548,12 +549,12 @@ noncomputable def gen_hyb_decomp (F : PRFPRG_PRFDef) (i : ℕ) : SPComp PRGOutpu
 /-- gen_hyb_decomp 1 equals gen_hyb 1 (both have independent components) -/
 theorem gen_hyb_decomp_1_eq_hyb_1 (F : PRFPRG_PRFDef) :
     gen_hyb_decomp F 1 = gen_hyb F 1 := by
-  rfl
+  bind_vcgen
 
 /-- gen_hyb_decomp 2 equals gen_hyb 2 (both are fully random) -/
 theorem gen_hyb_decomp_2_eq_hyb_2 (F : PRFPRG_PRFDef) :
     gen_hyb_decomp F 2 = gen_hyb F 2 := by
-  rfl
+  bind_vcgen
 
 /-- gen_hyb_decomp 2 equals gen_ideal -/
 theorem gen_hyb_decomp_2_eq_ideal (F : PRFPRG_PRFDef) :
@@ -712,7 +713,7 @@ theorem prg_decomp_security_bound (F : PRFPRG_PRFDef) (A : PRGOutput → SPComp 
         have h0 := decomp_hyb_adjacent_bound F 0 (by norm_num) A
         simp only [ite_true] at h0
         unfold AdvantageA at h0
-        exact add_le_add h0 le_rfl
+        sum_atoms_le
     _ ≤ prf_advantage F zero (wrapAdv_decomp0_snd F A) +
         prf_advantage F one (wrapAdv_snd A) := by
         have h1 := decomp_hyb_adjacent_bound F 1 (by norm_num) A
