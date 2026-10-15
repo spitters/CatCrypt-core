@@ -94,12 +94,10 @@ noncomputable def sdist {α β : Type*} (f g : α → SPComp β) : ℝ≥0∞ :=
 /-! ## Pseudometric Properties -/
 
 @[simp] theorem sdist_self {α β : Type*} (f : α → SPComp β) : sdist f f = 0 := by
-  simp [sdist, absDiff_self]
+  simp_all [sdist, absDiff_self]
 
 theorem sdist_sym {α β : Type*} (f g : α → SPComp β) : sdist f g = sdist g f := by
-  simp only [sdist]
-  congr 1; funext D; congr 1; funext a; congr 1; funext h₀
-  exact absDiff_comm _ _
+  simp_all [sdist, absDiff_comm]
 
 @[grind] theorem sdist_triangle {α β : Type*} (f g h : α → SPComp β) :
     sdist f h ≤ sdist f g + sdist g h := by
@@ -339,8 +337,7 @@ theorem sdist_comp_left_two_dep {α β₁ β₂ γ : Type*}
     rw [eq1, eq2]
     exact le_iSup₂_of_le (fun b => D (Sum.inl b)) a (le_iSup_of_le h₀ le_rfl)
   · -- .inr c: both sides are SPComp.pure (Sum.inr c), so distance is 0
-    simp only [KlSPComp.wkR, absDiff_self]
-    exact zero_le
+    simp_all [KlSPComp.wkR, absDiff_self, zero_le]
 
 /-- Distance of left-whiskered morphisms. On `.inr`, only `g` runs; on `.inl`, distance is 0. -/
 @[grind] theorem sdist_wkL_le (X : Type) {β₁ β₂ : Type} (g₁ g₂ : β₁ → SPComp β₂) :
@@ -350,8 +347,7 @@ theorem sdist_comp_left_two_dep {α β₁ β₂ γ : Type*}
   apply iSup_le; intro h₀
   rcases x with a | c
   · -- .inl a: both sides are SPComp.pure (Sum.inl a), so distance is 0
-    simp only [KlSPComp.wkL, absDiff_self]
-    exact zero_le
+    simp_all [KlSPComp.wkL, absDiff_self, zero_le]
   · -- .inr c: wkL X g (.inr c) = SPComp.map Sum.inr (g c)
     simp only [KlSPComp.wkL, SPComp.map]
     have eq1 : SPComp.bind (SPComp.bind (g₁ c) fun b => SPComp.pure (Sum.inr b)) D =
@@ -403,7 +399,7 @@ theorem isPure_bind_expand {α β : Type*} {c : SPComp α} {d : SDistr α}
     (hc : ∀ h, c h = d.bind (fun a => SDistr.pure (a, h)))
     (D : α → SPComp β) (h₀ : Heap) :
     (SPComp.bind c D) h₀ = d.bind (fun a => D a h₀) := by
-  simp only [SPComp.bind, hc h₀, SDistr.bind_assoc, SDistr.pure_bind]
+  simp_all [SPComp.bind, hc h₀, SDistr.bind_assoc, SDistr.pure_bind]
 
 /-- For IsPure computations, sdist can be bounded using only `Heap.empty`.
 
@@ -502,7 +498,7 @@ noncomputable def SPComp.initHeap (h₀ : Heap) : SPComp Unit :=
 /-- Running `initHeap h₀ >> c` from any heap yields `c h₀`. -/
 theorem SPComp.initHeap_bind {α : Type*} (h₀ : Heap) (c : SPComp α) (h : Heap) :
     SPComp.bind (SPComp.initHeap h₀) (fun _ => c) h = c h₀ := by
-  simp [SPComp.bind, SPComp.initHeap, SDistr.pure_bind]
+  simp_all [SPComp.bind, SPComp.initHeap, SDistr.pure_bind]
 
 /-- For games of the form `G A = A record` (game is pure function application),
     `sdist` equals the supremum of `Advantage` over all adversaries.
