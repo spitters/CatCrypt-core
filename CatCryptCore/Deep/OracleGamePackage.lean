@@ -98,11 +98,7 @@ noncomputable def NomPackage.ofOracle (op : ℕ) (dom codom : Type)
 theorem runPkg_ofOracle_zero {L : LocSet} (c : RawCode Bool) [IsValid L c] :
     CatCrypt.Crypto.runPkg
       (DeepPackage.ofOracle (L := L) 0 Unit Bool (fun _ => c)) = c.eval := by
-  have hmem : (0, Unit, Bool) ∈
-      (DeepPackage.ofOracle (L := L) 0 Unit Bool (fun _ => c)).exports.ops :=
-    List.mem_singleton.mpr rfl
-  simp only [CatCrypt.Crypto.runPkg, dif_pos hmem]
-  rfl
+  simp [CatCrypt.Crypto.runPkg, DeepPackage.ofOracle, ValidCodeBundle.auto]
 
 /-! ## Feeding the constructor from shallow code by reflection
 
