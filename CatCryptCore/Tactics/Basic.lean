@@ -72,7 +72,7 @@ This tactic attempts to discharge `ValidCode` obligations by:
 
 Example:
 ```
-theorem mycode_valid : ValidCode L I (do
+theorem mycode_valid : ValidCode L _ (do
     let x ← get loc
     return x) := by
   ssprove_valid
