@@ -242,6 +242,7 @@ public import CatCryptCore.Quantum.QROM.O2HGeneral
 public import CatCryptCore.Quantum.QROM.MeasureReprogram
 public import CatCryptCore.Quantum.QROM.FiatShamir
 public import CatCryptCore.Quantum.QROM.Rewinding
+public import CatCryptCore.Quantum.QROM.FiatShamirSigma
 public import CatCryptCore.Quantum.QROM.CompressedOracle
 public import CatCryptCore.Quantum.QROM.CompressedOracleLocal
 public import CatCryptCore.Quantum.QROM.CPRun
