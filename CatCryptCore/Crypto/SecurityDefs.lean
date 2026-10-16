@@ -238,18 +238,6 @@ theorem INDCPA_Adv_zero_of_rHoare (E : EncScheme) (m₀ m₁ : E.Plaintext)
     ∀ A, INDCPA_Adv E m₀ m₁ A = 0 :=
   advantage_zero_of_rHoare _ _ h
 
-/-- If the two IND-CCA oracle-games are perfectly indistinguishable, the IND-CCA
-    advantage is 0. Note the hypothesis quantifies over the *whole* oracle-game
-    (adversary and decryption oracle included); for a genuinely confidential scheme
-    with two distinct messages it is only met degenerately (e.g. `m₀ = m₁`), because
-    the decryption oracle's answers depend on the secret key. -/
-theorem INDCCA_Adv_zero_of_rHoare (E : EncScheme) (m₀ m₁ : E.Plaintext)
-    (A : (E.Ciphertext → SPComp (Option E.Plaintext)) → E.Ciphertext → SPComp Bool)
-    (h : rHoare eqPre (INDCCA_Game E m₀ m₁ true A) (INDCCA_Game E m₀ m₁ false A) eqPost) :
-    INDCCA_Adv E m₀ m₁ A = 0 := by
-  have hz := advantage_zero_of_rHoare _ _ h SPComp.pure
-  simpa only [INDCCA_Adv, AdvantageA, SPComp.bind_pure] using hz
-
 /-- **IND-CCA reduces to IND-CPA plus decryption-oracle integrity.** For *any*
     encryption scheme, the IND-CCA advantage is bounded by
 

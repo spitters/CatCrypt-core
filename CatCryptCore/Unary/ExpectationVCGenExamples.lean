@@ -43,13 +43,6 @@ open Std.Internal.Do
 
 namespace CatCrypt.Unary
 
-/-- Every `SPComp` computation meets the lower-bound triple whose precondition is its
-preexpectation. -/
-theorem spec_wpE_lower {α : Type} (c : SPComp α) {post : α → Heap → ℝ≥0∞}
-    {e : ℝ≥0∞} :
-    Triple c (fun h => wpE c post h) post e :=
-  ⟨fun _ => le_self_add⟩
-
 set_option mvcgen.warning false in
 /-- `ecost_bind_le` by `vcgen` on `SPCompU`, with `c` as an abstract sub-program
 specified by `SPCompU.spec_wpE`. -/

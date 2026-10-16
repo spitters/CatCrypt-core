@@ -8,6 +8,10 @@ module
 public import CatCryptCore.Tactics.AutoArms
 public meta import CatCryptCore.Tactics.AutoArms
 public import CatCryptCore.Tactics.AutoMetrics
+public import CatCryptCore.Crypto.UCAdmClass
+public import CatCryptCore.Crypto.KEM.Games
+public import CatCryptCore.Crypto.PKE.Games
+public import CatCryptCore.Examples.DiffieHellman
 
 /-!
 # Tests for `CatCryptCore.Tactics.AutoArms`
@@ -15,7 +19,9 @@ public import CatCryptCore.Tactics.AutoMetrics
 The first part tests `hop_chain`, `sum_atoms_le` and `gcongr_unfold` on an abstract
 pseudometric and abstract atoms. The second part restates goal shapes of existing
 proofs over `sdist`, `Advantage` and `AdvantageA`, registered in
-`CatCryptCore.Tactics.AutoMetrics`, as regression tests.
+`CatCryptCore.Tactics.AutoMetrics`, as regression tests. The third part tests the
+distances registered with `@[hop_metric]` at their definition sites: `UCMonad.ucCdist`,
+`KA_Advantage` and the KEM and PKE `indcpaAdvantage`.
 -/
 
 set_option autoImplicit false
@@ -189,5 +195,43 @@ example {q₁ q₂ : ℕ} (hle : q₁ ≤ q₂) (dictSize : ℕ) :
 
 example (dictSize : ℕ) : Monotone (dictBound · dictSize) := by
   gcongr_unfold [dictBound]
+
+/-! ## Distances registered at their definition sites -/
+
+/-- `ucCdist` (`CatCryptCore.Crypto.UCAdmClass`): three hops, the middle one used
+backwards through `ucCdist_sym`. -/
+example {T : Type → Type} [UCMonad.UCMonadCompDist T] {α β : Type} (f g h k : α → T β)
+    (e₁ e₂ e₃ : ℝ≥0∞) (h₁ : UCMonad.ucCdist f g ≤ e₁) (h₂ : UCMonad.ucCdist h g ≤ e₂)
+    (h₃ : UCMonad.ucCdist h k ≤ e₃) :
+    UCMonad.ucCdist f k ≤ e₁ + e₂ + e₃ := by
+  hop_chain
+
+/-- `KA_Advantage` (`CatCryptCore.Examples.DiffieHellman`), unfolded to the `Advantage`
+between the real and the ideal experiment, through an intermediate game. -/
+example (P : PairingGroup)
+    (D : CatCrypt.Examples.DiffieHellman.KA_Distinguisher P.G₁) (G : SPComp Bool)
+    (e₁ e₂ : ℝ≥0∞)
+    (h₁ : Advantage (CatCrypt.Examples.DiffieHellman.KA_Game_Real P D) G ≤ e₁)
+    (h₂ : Advantage (CatCrypt.Examples.DiffieHellman.KA_Game_Ideal P D) G ≤ e₂) :
+    CatCrypt.Examples.DiffieHellman.KA_Advantage P D ≤ e₁ + e₂ := by
+  hop_chain
+
+/-- The KEM `indcpaAdvantage` (`CatCryptCore.Crypto.KEM.Games`), through an
+intermediate game. -/
+example {PK SK K C : Type} [Fintype K] [Nonempty K] (S : KEM.Games.Scheme PK SK K C)
+    (A : PK → C → K → PMF Bool) (G : SPComp Bool) (e₁ e₂ : ℝ≥0∞)
+    (h₁ : Advantage (PRPPRF.pmfGame (KEM.Games.indcpaGame S A true)) G ≤ e₁)
+    (h₂ : Advantage G (PRPPRF.pmfGame (KEM.Games.indcpaGame S A false)) ≤ e₂) :
+    KEM.Games.indcpaAdvantage S A ≤ e₁ + e₂ := by
+  hop_chain
+
+/-- The PKE `indcpaAdvantage` (`CatCryptCore.Crypto.PKE.Games`), through an
+intermediate game, the second hop used backwards. -/
+example {PK SK M C R : Type} [Fintype R] [Nonempty R] (P : PKE.Games.Scheme PK SK M C R)
+    (A : PKE.Games.INDCPAAdversary PK M C) (G : SPComp Bool) (e₁ e₂ : ℝ≥0∞)
+    (h₁ : Advantage (PRPPRF.pmfGame (PKE.Games.indcpaGame P A true)) G ≤ e₁)
+    (h₂ : Advantage (PRPPRF.pmfGame (PKE.Games.indcpaGame P A false)) G ≤ e₂) :
+    PKE.Games.indcpaAdvantage P A ≤ e₁ + e₂ := by
+  hop_chain
 
 end CatCrypt.Tactics.AutoArmsTest

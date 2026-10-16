@@ -8,6 +8,8 @@ module
 public import CatCryptCore.Crypto.Advantage
 public import CatCryptCore.Crypto.HybridArgument
 public import CatCryptCore.Crypto.NomPkgBridge
+import CatCryptCore.Unary.ExpectationVCGenCore
+import CatCryptCore.Unary.ExpectedCost
 
 /-!
 # Fundamental Lemma of Game Playing + Multi-Query Games
@@ -76,6 +78,7 @@ namespace CatCrypt.Crypto.BadEvent
 open CatCrypt.Core CatCrypt.Prob CatCrypt.Crypto
 open CatCrypt.Crypto.HybridArgument
 open scoped ENNReal
+open CatCrypt.Unary Std.Internal.Do
 
 /-! ## Identical-Until-Bad
 
@@ -412,6 +415,7 @@ When a proof involves multiple bad events, the union bound gives:
 
 This composes with the fundamental lemma to give multi-hop bounds. -/
 
+set_option mvcgen.warning false in
 /-- Union bound for two bad events under IsPure+NoFail: the probability
     of either bad event firing is at most the sum of their individual
     probabilities.
@@ -422,73 +426,44 @@ This composes with the fundamental lemma to give multi-hop bounds. -/
     returns whether it was written; then chained prTrue = 1 but
     prTrue bad₁ Heap.empty + prTrue bad₂ Heap.empty = 0.
 
-    **Proof**: Decompose `prTrue(bind bad₁ k)` via `prTrue_isPure_noFail_bind`
-    (NomPkgBridge). The first branch (b₁=true) makes the inner expression
-    `true || _ = true` so the prTrue equals bad₂'s mass = 1 (NoFail). The
-    second branch (b₁=false) reduces to `pure b₂`, so the prTrue equals
-    `prTrue bad₂`. Bound: `d₁(true)·1 + d₁(false)·prTrue bad₂ ≤
-    d₁(true) + prTrue bad₂` since `d₁(false) ≤ 1`. -/
+    **Proof**: by `vcgen` on the upper-bound instance `SPCompU`
+    (`CatCryptCore.Unary.ExpectationVCGenCore`), with `bad₁` and `bad₂` as abstract
+    sub-programs specified by `SPCompU.spec_wpE`. The proof uses only the purity of
+    `bad₂`; the purity of `bad₁` and the two `NoFail` hypotheses are not needed. -/
 theorem prTrue_union_bound (bad₁ bad₂ : SPComp Bool)
-    (hp₁ : SPComp.IsPure bad₁) (hp₂ : SPComp.IsPure bad₂)
-    (hnf₁ : SPComp.NoFail bad₁) (hnf₂ : SPComp.NoFail bad₂) :
+    (_hp₁ : SPComp.IsPure bad₁) (hp₂ : SPComp.IsPure bad₂)
+    (_hnf₁ : SPComp.NoFail bad₁) (_hnf₂ : SPComp.NoFail bad₂) :
     prTrue (do let b₁ ← bad₁; let b₂ ← bad₂; SPComp.pure (b₁ || b₂)) Heap.empty
     ≤ prTrue bad₁ Heap.empty + prTrue bad₂ Heap.empty := by
-  show prTrue (SPComp.bind bad₁ (fun b₁ =>
-                SPComp.bind bad₂ (fun b₂ => SPComp.pure (b₁ || b₂)))) Heap.empty ≤ _
-  obtain ⟨d₁, hd₁⟩ := hp₁
-  have hd₁_nf : d₁ none = 0 :=
-    CatCrypt.Crypto.isPure_noFail_d_none hd₁ hnf₁
-  -- Decompose prTrue using prTrue_isPure_noFail_bind.
-  rw [CatCrypt.Crypto.prTrue_isPure_noFail_bind hd₁ hd₁_nf
-      (fun b₁ => SPComp.bind bad₂ (fun b₂ => SPComp.pure (b₁ || b₂))) Heap.empty]
-  -- For b₁ = true: (true || b₂) = true → prTrue = bad₂'s mass.
-  -- For b₁ = false: (false || b₂) = b₂ → bind bad₂ pure = bad₂.
-  have h_true_simp : (fun b₂ : Bool => SPComp.pure (true || b₂)) =
-                     (fun _ => SPComp.pure true) := by
-    funext b₂; simp
-  have h_false_simp : (fun b₂ : Bool => SPComp.pure (false || b₂)) =
-                      SPComp.pure := by
-    funext b₂; simp
-  rw [h_true_simp, h_false_simp]
-  -- Right branch reduces: bind bad₂ pure = bad₂ via monad law.
-  have h_bind_pure : SPComp.bind bad₂ SPComp.pure = bad₂ := by
-    simp
-  rw [h_bind_pure]
-  -- Left branch: bind bad₂ (fun _ => pure true). Its prTrue is 1 under NoFail bad₂.
-  -- Use prTrue_isPure_noFail_bind on bad₂ to decompose.
   obtain ⟨d₂, hd₂⟩ := hp₂
-  have hd₂_nf := CatCrypt.Crypto.isPure_noFail_d_none hd₂ hnf₂
-  have h_pt_true : prTrue (SPComp.pure true) Heap.empty = 1 := by
-    unfold prTrue SPComp.pure
-    rw [tsum_eq_single Heap.empty]
-    · simp_all [SDistr.pure_apply_some]
-    · intro h hne
-      simp only [SDistr.pure_apply_some, Prod.mk.injEq, true_and, ite_eq_right_iff]
-      intro heq; exact absurd heq.symm hne
-  have h_left_eq_one :
-      prTrue (SPComp.bind bad₂ (fun _ => SPComp.pure true)) Heap.empty = 1 := by
-    rw [CatCrypt.Crypto.prTrue_isPure_noFail_bind hd₂ hd₂_nf
-        (fun _ => SPComp.pure true) Heap.empty]
-    rw [h_pt_true, mul_one, mul_one]
-    -- d₂(some true) + d₂(some false) = 1 under NoFail.
-    have htotal := d₂.tsum_coe
-    rw [SDistr.tsum_option_eq_add, hd₂_nf, zero_add, tsum_bool, add_comm] at htotal
-    simp_all
-  -- Plug into the decomposition: term₁ = d₁(some true) · 1 = d₁(some true) = prTrue bad₁
-  -- term₂ = d₁(some false) · prTrue bad₂.
-  rw [h_left_eq_one, mul_one]
-  rw [CatCrypt.Crypto.prTrue_isPure_eq hd₁ Heap.empty]
-  -- Goal: d₁(some true) + d₁(some false) · prTrue bad₂ ≤ d₁(some true) + prTrue bad₂
-  gcongr
-  -- d₁(some false) · prTrue bad₂ ≤ prTrue bad₂.
-  -- d₁(some false) ≤ 1 by PMF mass under NoFail.
-  have h_d1_false_le_one : d₁ (some false) ≤ 1 := by
-    have htotal := d₁.tsum_coe
-    rw [SDistr.tsum_option_eq_add, hd₁_nf, zero_add, tsum_bool, add_comm] at htotal
-    rw [← htotal]; exact le_add_self
-  calc d₁ (some false) * prTrue bad₂ Heap.empty
-      ≤ 1 * prTrue bad₂ Heap.empty := by gcongr
-    _ = prTrue bad₂ Heap.empty := one_mul _
+  rw [← wpE_indicator_eq_prTrue, ← wpE_indicator_eq_prTrue, ← wpE_indicator_eq_prTrue]
+  have hb : ∀ (c : SPComp Bool) (post : Bool → Heap → ℝ≥0∞ᵒᵈ),
+      Triple (SPCompU.lift c)
+      (fun h => OrderDual.toDual (wpE c (fun a h' => OrderDual.ofDual (post a h')) h))
+      post (OrderDual.toDual 0) := fun c _ => SPCompU.spec_wpE c
+  have ht : Triple
+      (SPCompU.lift (do let b₁ ← bad₁; let b₂ ← bad₂; SPComp.pure (b₁ || b₂)))
+      (fun h => OrderDual.toDual (wpE bad₁ (fun b _ => if b then 1 else 0) h +
+        wpE bad₂ (fun b _ => if b then 1 else 0) Heap.empty))
+      (fun b _ => OrderDual.toDual (if b then (1 : ℝ≥0∞) else 0)) (OrderDual.toDual 0) := by
+    vcgen [hb]
+    rename_i s
+    simp only [leanOrder_rel_dual_iff, OrderDual.ofDual_toDual]
+    calc _ ≤ wpE bad₁ (fun b _ => (if b then 1 else 0) +
+          wpE bad₂ (fun b _ => if b then (1 : ℝ≥0∞) else 0) Heap.empty) s := by
+          refine wpE_mono bad₁ (fun b h' => ?_) s
+          simp only [SPCompU.wp_eq, OrderDual.ofDual_toDual, wpEF, zero_mul, add_zero]
+          change wpE (SPComp.bind bad₂ fun b₂ => SPComp.pure (b || b₂)) _ h' ≤ _
+          rw [wpE_bind]
+          cases b
+          · simp only [wpE_pure, Bool.false_or, Bool.false_eq_true, ↓reduceIte, zero_add,
+              wpE_indicator_eq_prTrue, prTrue_isPure_eq hd₂, le_refl]
+          · simp only [wpE_pure, Bool.true_or, ↓reduceIte]
+            exact le_add_right (wpE_const_le _ _ _)
+      _ ≤ _ := by
+          rw [wpE_add]
+          exact add_le_add le_rfl (wpE_const_le _ _ _)
+  exact (SPCompU.triple_iff_wpE_le _ _ _).1 ht Heap.empty
 
 /-- Union bound for a finite list of bad events. -/
 noncomputable def bad_union (bads : List (SPComp Bool)) : SPComp Bool :=

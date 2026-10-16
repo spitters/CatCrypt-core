@@ -84,6 +84,17 @@ theorem SPComp.sample_noFail {α : Type} [Fintype α] [Nonempty α] :
 
 end Assumptions
 
+/-- Bind preserves `NoFail`, stated for `>>=`. -/
+theorem SPComp.bindOp_noFail {α β : Type} {c : SPComp α}
+    {f : α → SPComp β} (hc : SPComp.NoFail c)
+    (hf : ∀ a, SPComp.NoFail (f a)) : SPComp.NoFail (c >>= f) :=
+  Assumptions.SPComp.bind_noFail hc hf
+
+/-- `pure a` never fails, stated for the monad's `pure`. -/
+theorem SPComp.pureOp_noFail {α : Type} (a : α) :
+    SPComp.NoFail (pure a : SPComp α) :=
+  SPComp.pure_noFail a
+
 /-! ## IsPure + NoFail Helpers -/
 
 /-- For IsPure c, the bind `c >>= D` at h₀ equals `d.bind(fun a => D a h₀)`. -/

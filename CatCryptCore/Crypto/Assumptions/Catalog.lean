@@ -88,7 +88,8 @@ at the instantiation site, not here.
 - CDH ⟹ DL: Proved per adversary (`dl_le_cdh_ddh`, reduction `cdh_of_dl_ddh`) (`CDH.lean`)
 - HKDF ← Extract + Expand: Proved (`hkdf_advantage_bound`)
 - Expand_Composed(const f) = Expand: Definitional equality
-- PRP ← PRF + switching: `PRP_Full_Bound` (`PRP.lean`)
+- PRP ← PRF + switching: `PRP_Full_Bound`, proved for the adaptive games by
+  `PRP_q_Advantage_le_PRP_Full_Bound` (`PRP.lean`)
 - Standard AEAD ⇏ AEAD_Keyed: KDM gap (no general reduction)
 - Standard Expand ⇏ Expand_Composed: KDM-PRF gap (no general reduction)
 - Expand_Composed ⇏ Expand_Composed_Leak: Leakage gap (no general reduction)
