@@ -44,6 +44,9 @@ round is the slot `t_now`; there are no final blocks. Phases after `K` are repor
 
 * `prBad_le_of_potential`: a bad-event bound by a potential that does not increase in
   expectation along the steps of a system and is at least `1` on bad states.
+* `stable_slotChainGrowth`, `stable_slotChainQuality`, `stable_slotCommonPrefix`: the three
+  trace properties are stable under truncation, so the guard is a safety property
+  (`fTree_guard_prefix`) and explosion is permanent exactly as in C3.
 * `guard_of_good`: on a seed on which chain growth, chain quality and common prefix of D2
   hold (`Good`), the tree trace of every run prefix satisfies the guard of `F_Tree^P`.
 * `guardFail_le`: the guard of `F_Tree^P` fails on the run of the hybrid world with probability
@@ -737,5 +740,29 @@ theorem chain_UCEmulatesCSim (hP : ProtocolHyp P) (hTree : Tree.Longest)
     hRO).toUCEmulatesCSim ζ V
 
 end Protocol
+
+/-! ## A concrete instance -/
+
+namespace Instance
+
+open PoSNSB PoSNSB.Instance
+
+attribute [local instance] PoSNSB.Instance.corruption
+
+/-- **Non-vacuity.** For the one-party instance of D2 (`PoSNSB.Instance`: one honest party
+leading every slot, the longest-chain tree type, a trivial signature scheme, the adversary that
+sends nothing, `ν` concentrated on honest slots), with `W = 1`, `K = 0`, `d = 3`, `w = 1`,
+`ε = 0`, `q = 1` and delay bound `Δ = 2`, every hypothesis of `chain_realizes` holds, so the
+protocol realizes `F_Tree` with bound
+`slotBound ν 4 3 1 0 + 0 / 1 + eufAdv (forger P A ν 1 0 0)`. -/
+theorem instance_realizes :
+    Realizes (chainReal P A Tree 0 ν 1 2)
+      (ideal (chainF P A Tree 0 ν 1 2 3 1 0) (chainSim P A Tree 0 ν 1 2))
+      (fun _ _ => slotBound ν 4 3 1 0 + ((1 * (1 - 1) / 2 : ℕ) : ℝ≥0∞) / Fintype.card Unit +
+        ∑ i : Fin 1, eufAdv (forger P A ν 1 0 i)) := by
+  obtain ⟨hP, hT, hd, hwd, hWn, hn, hHz, hε, hγ, hw, h3, hRO⟩ := instance_hyps
+  exact chain_realizes P A Tree hP hT ν 1 0 3 1 0 2 hd hwd hWn hn hHz hε hγ hw h3 1 next hRO
+
+end Instance
 
 end CatCryptCore.Consensus.UC.Chain
