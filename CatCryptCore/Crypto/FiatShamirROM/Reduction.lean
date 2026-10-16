@@ -5,7 +5,7 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import CatCryptCore.Crypto.FiatShamirROM.Game
+public import CatCryptCore.Crypto.FiatShamirROM.StatHVZK
 
 /-!
 # EUF-CMA security of Fiat–Shamir signatures in the random-oracle model: the reduction
@@ -100,17 +100,12 @@ noncomputable def extractReduction (A : Adversary P M qH qS) : P.Stmt → PMF P.
 
 section Transitions
 
-omit [DecidableEq M] in
-theorem mem_support_sampleCh {β γ : Type} [Fintype β] [Nonempty β] {F : P.Ch → β → γ}
-    {y : γ} (hy : y ∈ (sampleCh F).support) : ∃ e b, y = F e b := by
-  simp only [sampleCh, PMF.mem_support_bind_iff, PMF.support_map, Set.mem_image] at hy
-  obtain ⟨e, _, b, _, rfl⟩ := hy
-  exact ⟨e, b, rfl⟩
-
 theorem simSignOut_hash (x : P.Stmt) (t : Tables P M) (b : Bool) (m : M) (e : P.Ch)
     (s : P.SimRand) : (simSignOut x t b m e s).2.1.hash = t.hash := by
   unfold simSignOut signOutOf
-  split <;> rfl
+  split_ifs
+  · split <;> rfl
+  · rfl
 
 theorem simStep_plain (x₀ : P.Stmt) (s : Tables P M × Bool) (d : Query P M)
     (p : PMF (Answer P × (Tables P M × Bool))) (h : simStep x₀ s d = .plain p)
@@ -186,14 +181,17 @@ theorem simStep_support (x₀ : P.Stmt) (s : Tables P M × Bool) (d : Query P M)
       by rw [simSignOut_hash]; omega⟩
     intro hinv
     unfold simSignOut signOutOf
-    split
+    split_ifs
+    · split
+      · intro p hp
+        exact List.mem_append_left _ (hinv p hp)
+      · intro p hp
+        simp only [List.mem_append, List.mem_singleton] at hp
+        rcases hp with hp | rfl
+        · exact List.mem_append_left _ (hinv p hp)
+        · exact List.mem_append_right _ (List.mem_singleton_self _)
     · intro p hp
       exact List.mem_append_left _ (hinv p hp)
-    · intro p hp
-      simp only [List.mem_append, List.mem_singleton] at hp
-      rcases hp with hp | rfl
-      · exact List.mem_append_left _ (hinv p hp)
-      · exact List.mem_append_right _ (List.mem_singleton_self _)
 
 variable {α : Type}
 
