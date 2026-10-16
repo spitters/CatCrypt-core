@@ -53,6 +53,23 @@ are a `Finset`. Supermajority thresholds are stated without division:
 The slashable set `slashable w votes` is an explicit `Finset`: the validators with
 two distinct votes of equal target epoch (condition E1) or with a vote surrounding
 another of their votes (condition E2).
+
+## Comparison with Gasper
+
+* `SupermajorityLink` (Gasper, Section 4) places the conditions on the link: the source
+  epoch is below the target epoch and the source block is an ancestor of the target block.
+  A single vote carries neither condition, and every vote for `s → t` counts towards
+  `voters votes s t`. In Gasper the conditions come with each attestation, whose source and
+  target are epoch boundary pairs of the attester's chain.
+* Condition E2 (`SurroundVote`) requires the surrounded vote `y` to satisfy
+  `y.source.epoch < y.target.epoch`, besides `x.source.epoch < y.source.epoch` and
+  `y.target.epoch < x.target.epoch`. The surround condition of Gasper and of the beacon chain
+  specification has no condition on `y` alone, so it slashes at least the validators slashed
+  here.
+* `slashable` reads every cast vote, including votes that are not valid for a link (a source
+  epoch not below the target epoch, or a source block that is not an ancestor of the target
+  block). Such a vote contributes to no supermajority link but can make its validator
+  slashable under E1 or E2.
 -/
 
 set_option autoImplicit false

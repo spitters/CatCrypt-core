@@ -53,6 +53,11 @@ support guard `1`-validity together with stake validity.
 * `Example.instance_hyps`, `Example.instance_realizes`, `Example.run_finalizes`: a one-validator
   instance satisfies every hypothesis (with `3 · 0 < W = 1`), and a run of its gadget
   finalizes the genesis block at time `2`.
+* `ForkExample.instance_realizes`, `ForkExample.run_accountable`: an instance over `forkTree`
+  with four validators of stake `1`, validator `3` adversarial, satisfies every hypothesis;
+  in a run of its gadget the adversarial validator votes for the conflicting block `2` and
+  double-votes, it is the only slashable validator, block `1` is final for an honest party,
+  and no two finalized checkpoints conflict.
 
 ## Hypotheses of the headline theorem
 
@@ -623,5 +628,225 @@ theorem run_finalizes :
   exact List.suffix_append s _
 
 end Example
+
+/-! ## An instance with a fork and an adversarial validator -/
+
+namespace ForkExample
+
+open CatCryptCore.Consensus.Finality.Examples FFG.Examples
+
+/-- The tree view at round `n`: every party has the tree `[2, 1, 0]` of `forkTree` (genesis `0`
+with the two children `1` and `2`), the position `[1, 0]`, and no final blocks of `F_Tree`. -/
+def fv (n : ℕ) : TreeView (Fin 4) (Fin 3) := ⟨n, fun _ => [2, 1, 0], fun _ => [1, 0], fun _ => []⟩
+
+/-- The tree simulator: its state is the round `n`; every activation moves to round `n + 1`
+and outputs the view of the new round. -/
+noncomputable def forkST : Sys ℕ Unit (TreeView (Fin 4) (Fin 3)) where
+  init := 0
+  step n _ := SPComp.pure (n + 1, fv (n + 1))
+
+/-- The gadget parameters: the block tree `forkTree`, four validators of stake `1`, the honest
+validators `0, 1, 2`, slots equal to block numbers, epochs of one slot, voting on the full
+position, delivery bound `1`. -/
+def cfg : Cfg (Fin 4) (Fin 3) := ⟨forkTree, unitStake, {0, 1, 2}, blockSlot, 1, fun v p => v.pos p, 1⟩
+
+/-- The tree property: common prefix `0`. -/
+def forkP : List (TreeTrace (Fin 4) (Fin 3) → Prop) := [fun X => X.CommonPrefix 0]
+
+theorem cfg_hA : 3 * stake cfg.w (Finset.univ \ cfg.H) < totalStake cfg.w := by decide
+
+/-- **Non-vacuity of the hypotheses with an adversarial validator.** For the instance with four
+validators of stake `1` of which validator `3` is adversarial (`3 · 1 < W = 4`), every
+hypothesis of `ffg_realizes` holds, with `out = fv`, `ov = id`, `exT = exF = fv 0`. -/
+theorem instance_hyps :
+    (∀ s e, SPComp.NoFail (forkST.step s e)) ∧
+      (∀ s e, ∃ C : SPComp ℕ, forkST.step s e = SPComp.bind C fun s' => SPComp.pure (s', fv s')) ∧
+      (∀ s, id (fv s) = fv s) ∧
+      FTreeGuard cfg.T forkP
+        (traceOf fv (· ∈ cfg.H) forkST.init ([] : Trace ℕ Unit (TreeView (Fin 4) (Fin 3)))) ∧
+      (∀ φ ∈ forkP, PosOnly φ) ∧ (∀ X, FTreeGuard cfg.T forkP X → Settled cfg.cut X) ∧
+      1 ≤ cfg.Δ ∧ 3 * stake cfg.w (Finset.univ \ cfg.H) < totalStake cfg.w := by
+  refine ⟨fun _ _ => SPComp.pure_noFail _,
+    fun n _ => ⟨SPComp.pure (n + 1), by rw [SPComp.pure_bind]; rfl⟩,
+    fun _ => rfl, ?_, ?_, ?_, le_rfl, cfg_hA⟩
+  · refine ⟨⟨?_, ?_, ?_, ?_⟩, ?_, ?_⟩
+    · intro p t t' _ _; simp [traceOf, stAt_nil]
+    · intro p t _; simp [traceOf, stAt_nil, fv]
+    · intro p t _
+      show List.Pairwise (fun b b' : Fin 3 => forkTree.anc b' b) [1, 0]
+      decide
+    · intro t t' _; simp [traceOf, stAt_nil]
+    · simp only [forkP, List.mem_singleton, forall_eq]
+      intro p q t t' _ _ _
+      simp only [TreeTrace.chains, traceOf, stAt_nil, List.drop_zero]
+      exact List.suffix_refl _
+    · rintro p q t t' b b' i j _ _ ⟨C, hC, -⟩
+      simp [TreeTrace.finChains, traceOf, stAt_nil, fv] at hC
+  · simp only [forkP, List.mem_singleton, forall_eq]
+    exact fun X f h => h
+  · intro X hX p q t t' hp hq h
+    exact hX.2.1 _ List.mem_cons_self p q t t' hp hq h
+
+/-- **The realization for the instance** (composition plumbing): the FFG gadget over the fork
+tree, with one adversarial validator of four, realizes `F_FinTree` with advantage `0` against
+every environment. -/
+theorem instance_realizes :
+    Realizes (ffgWorld cfg forkST fv forkP (fv 0) id (fv 0))
+      (ideal (finF cfg forkST fv forkP (fv 0) id (fv 0))
+        (ffgSim cfg forkST fv forkP (fv 0) id (fv 0)))
+      (fun _ _ => 0) := by
+  obtain ⟨hST, hout, hov, hinit, hP, hset, hΔ, hA⟩ := instance_hyps
+  exact ffg_realizes hST fv hov hinit hP hset hΔ hA hout
+
+/-- The votes of the run, in the order cast: the honest validators `0, 1, 2` vote from genesis
+to `(1, 1)`; the adversarial validator `3` votes from genesis to the conflicting checkpoint
+`(2, 1)` and from genesis to `(1, 1)` (a double vote); the honest validators vote from `(1, 1)`
+to `(1, 2)`. -/
+def fVotes : List (Vote (Fin 4) (Fin 3)) :=
+  [vote 0 0 0 1 1, vote 1 0 0 1 1, vote 2 0 0 1 1, vote 3 0 0 2 1, vote 3 0 0 1 1,
+   vote 0 1 1 1 2, vote 1 1 1 1 2, vote 2 1 1 1 2]
+
+/-- The `k`-th vote of the run. -/
+def fVote (k : ℕ) : Vote (Fin 4) (Fin 3) := fVotes.getD k (vote 0 0 0 0 0)
+
+/-- The action at step `k`: the adversarial votes at steps `3` and `4`, the honest votes at the
+other steps below `8`, and nothing afterwards. -/
+def fAct (k : ℕ) : GAct (Fin 4) (Fin 3) :=
+  if k = 3 ∨ k = 4 then .avote (fVote k) else if k < 8 then .hvote (fVote k) else .idle
+
+/-- The cast votes after `t` steps: the `k`-th vote cast in round `k + 1`. -/
+def castF : ℕ → Finset (Vote (Fin 4) (Fin 3) × ℕ)
+  | 0 => ∅
+  | t + 1 => if t < 8 then insert (fVote t, t + 1) (castF t) else castF t
+
+/-- A run of the gadget: at step `t < 9` the view of round `t + 1` and the action `fAct t`;
+the step `8` delivers every vote; afterwards nothing changes. -/
+noncomputable def runF : ℕ → GCore (Fin 4) (Fin 3)
+  | 0 => ginit (fv 0)
+  | t + 1 => if t < 9 then gstep cfg (runF t) (fAct t) (fv (t + 1)) else runF t
+
+theorem gstep_cast_hvote {c : Cfg (Fin 4) (Fin 3)} {g : GCore (Fin 4) (Fin 3)}
+    {x : Vote (Fin 4) (Fin 3)} {v : TreeView (Fin 4) (Fin 3)} (h : HonestOK c v g.votes x) :
+    (gstep c g (.hvote x) v).cast = insert (x, v.round) g.cast := by
+  rw [gstep_cast]
+  exact congrArg GCore.cast (if_pos h)
+
+theorem gstep_cast_avote {c : Cfg (Fin 4) (Fin 3)} {g : GCore (Fin 4) (Fin 3)}
+    {x : Vote (Fin 4) (Fin 3)} {v : TreeView (Fin 4) (Fin 3)} (h : x.validator ∉ c.H) :
+    (gstep c g (.avote x) v).cast = insert (x, v.round) g.cast := by
+  rw [gstep_cast]
+  exact congrArg GCore.cast (if_pos h)
+
+theorem runF_view (t : ℕ) : (runF t).view = fv (min t 9) := by
+  induction t with
+  | zero => rfl
+  | succ t ih =>
+    by_cases ht : t < 9
+    · rw [runF, if_pos ht, gstep_view, Nat.min_eq_left (by omega)]
+    · rw [runF, if_neg ht, ih, Nat.min_eq_right (by omega), Nat.min_eq_right (by omega)]
+
+theorem cast_runF (t : ℕ) : (runF t).cast = castF t := by
+  induction t with
+  | zero => rfl
+  | succ t ih =>
+    by_cases ht : t < 9
+    · rw [runF, if_pos ht]
+      interval_cases t <;>
+      first
+      | (rw [show fAct _ = .hvote (fVote _) from rfl,
+            gstep_cast_hvote (by rw [GCore.votes, ih]; unfold HonestOK; decide), ih]; rfl)
+      | (rw [show fAct _ = .avote (fVote _) from rfl, gstep_cast_avote (by decide), ih]; rfl)
+      | (rw [show fAct _ = .idle from rfl, gstep_cast]; exact ih)
+    · rw [runF, if_neg ht, ih, castF, if_neg (by omega)]
+
+/-- All votes of the run. -/
+def allV : Finset (Vote (Fin 4) (Fin 3)) := (castF 8).image Prod.fst
+
+theorem votes_runF_nine : (runF 9).votes = allV := by
+  rw [GCore.votes, cast_runF]; rfl
+
+theorem allV_subset_seen (p : Fin 4) : allV ⊆ (runF 9).seen p := by
+  intro x hx
+  show x ∈ (gstep cfg (runF 8) (fAct 8) (fv 9)).seen p
+  rw [gstep_seen]
+  refine Finset.mem_union_right _ ?_
+  show x ∈ overdue 1 9 (runF 8).cast
+  rw [cast_runF]
+  exact (show allV ⊆ overdue 1 9 (castF 8) by decide) hx
+
+theorem runF_run : Run cfg runF where
+  init_cast := rfl
+  init_seen _ := rfl
+  step t := by
+    by_cases ht : t < 9
+    · exact Or.inr ⟨fAct t, fv (t + 1), by rw [runF, if_pos ht]⟩
+    · exact Or.inl (by rw [runF, if_neg ht])
+  rounds t t' h := by
+    show (runF t).view.round ≤ (runF t').view.round
+    rw [runF_view, runF_view]
+    simp only [fv]
+    omega
+  settled p q t t' _ _ _ := by
+    show (runF t).view.pos p <:+ (runF t').view.pos q
+    rw [runF_view, runF_view]
+    exact List.suffix_refl _
+
+theorem allV_finalized : Finalized cfg.T cfg.w allV ⟨1, 1⟩ :=
+  finalized_of_links (c' := ⟨1, 2⟩) (by decide) rfl (by decide)
+
+/-- **Accountable safety on a run with a fork and an adversarial validator.** The run `runF`
+of the gadget over `forkTree` (blocks `1` and `2` conflict) satisfies the hypotheses of
+`finTreeGuard_of_run`, and its reported trace satisfies the guard of `F_FinTree^P'`. The
+adversarial validator `3` votes for the conflicting checkpoint `(2, 1)` and double-votes, and it
+is the only slashable validator, of stake `1` with `3 · 1 < W = 4`. Block `1` is final for the
+honest party `0` at time `9`, and at every time no two checkpoints finalized by the cast votes
+lie on conflicting blocks (`Run.anc_of_finalized`, from `FFG.anc_of_kFinalized_of_justified`). -/
+theorem run_accountable :
+    Run cfg runF ∧
+      FinTreeGuard cfg.T ((fun X => X.FinalityRespectingPos) :: FinalOnHonestPos :: forkP) cfg.Δ
+        (suppF cfg) (finTT cfg runF) ∧
+      cfg.T.Conflicting 1 2 ∧ vote 3 0 0 2 1 ∈ (runF 9).votes ∧
+      slashable (runF 9).votes = {3} ∧
+      3 * stake cfg.w (slashable (runF 9).votes) < totalStake cfg.w ∧
+      (∃ i, (finTT cfg runF).finalized 9 0 1 i) ∧
+      ∀ t b b' e e', Finalized cfg.T cfg.w (runF t).votes ⟨b, e⟩ →
+        Finalized cfg.T cfg.w (runF t).votes ⟨b', e'⟩ → ¬ cfg.T.Conflicting b b' := by
+  obtain ⟨-, -, -, -, hP, -, hΔ, hA⟩ := instance_hyps
+  have hwf : (posTT cfg runF).WellFormed cfg.T := by
+    refine ⟨fun p t t' _ h => ?_, fun p t _ => ?_, fun p t _ => ?_, runF_run.rounds⟩
+    · show (runF t).view.tree p ⊆ (runF t').view.tree p
+      rw [runF_view, runF_view]
+      exact List.Subset.refl _
+    · show (runF t).view.pos p ⊆ (runF t).view.tree p
+      rw [runF_view]
+      show ([1, 0] : List (Fin 3)) ⊆ [2, 1, 0]
+      decide
+    · show ((runF t).view.pos p).Pairwise fun b b' => forkTree.anc b' b
+      rw [runF_view]
+      show List.Pairwise (fun b b' : Fin 3 => forkTree.anc b' b) [1, 0]
+      decide
+  have hPG : ∀ φ ∈ forkP, φ (posTT cfg runF) := by
+    simp only [forkP, List.mem_singleton, forall_eq]
+    exact fun p q t t' hp hq h => runF_run.settled p q t t' hp hq h
+  refine ⟨runF_run, finTreeGuard_of_run runF_run hΔ hA hP hwf hPG, forkTree_conflicting,
+    by rw [votes_runF_nine]; decide, by rw [votes_runF_nine]; decide,
+    by rw [votes_runF_nine]; decide, ?_, ?_⟩
+  · have hfin : Finalized cfg.T cfg.w ((runF 9).seen 0) ⟨1, 1⟩ :=
+      Finalized.mono (allV_subset_seen 0) allV_finalized
+    have hmem : 1 ∈ finList cfg ((runF 9).seen 0) :=
+      mem_finList (by decide) hfin fun b' hb' =>
+        runF_run.finalized_unique hA (Finalized.mono (runF_run.seen_subset 9 0) hfin)
+          (Finalized.mono (runF_run.seen_subset 9 0) hb')
+    obtain ⟨s, l, hsl⟩ := List.append_of_mem hmem
+    refine ⟨l.length, l, ?_, rfl⟩
+    show 1 :: l <:+ finList cfg ((runF 9).seen 0)
+    rw [hsl]
+    exact List.suffix_append s _
+  · intro t b b' e e' hb hb' hc
+    rcases le_total e e' with hle | hle
+    · exact hc.1 (runF_run.anc_of_finalized hA hb hb' hle)
+    · exact hc.2 (runF_run.anc_of_finalized hA hb' hb hle)
+
+end ForkExample
 
 end CatCryptCore.Consensus.UC.FFGGadget

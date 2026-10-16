@@ -379,6 +379,7 @@ public import CatCryptCore.Consensus.UC.FinalityGadget
 public import CatCryptCore.Consensus.UC.Finality
 public import CatCryptCore.Consensus.UC.Chain
 public import CatCryptCore.Consensus.UC.Stack
+public import CatCryptCore.Consensus.UC.StackExamples
 
 -- Classical curve mathematics
 public import CatCryptCore.Crypto.KeyAgreement.MontgomeryLadder
