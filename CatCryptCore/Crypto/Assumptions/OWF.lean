@@ -7,6 +7,7 @@ module
 
 public import CatCryptCore.Crypto.Advantage
 public import CatCryptCore.Crypto.CryptoWord
+public import CatCryptCore.Crypto.ForkingLemma
 public import CatCryptCore.Tactics
 
 /-!
@@ -20,11 +21,18 @@ no efficient adversary can find any preimage `x'` such that `f(x') = f(x)`.
 * `OWFDef` — abstract one-way function
 * `OWF_Game` — the one-wayness game
 * `OWF_Advantage` — inversion probability
-* `OWFSecure` — one-wayness assumption
 * `OWPDef` — one-way permutation (bijective OWF)
 * `PRGDef` — pseudorandom generator definition
 * `PRG_Advantage` — PRG distinguishing advantage
-* `prg_implies_owf` — PRG ⟹ OWF reduction (BS Thm 8.1)
+* `prg_distinguisher_of_owf_inverter` — PRG distinguisher from an OWF inverter
+* `owf_le_prg` — PRG ⟹ OWF reduction (BS Thm 8.1): for every inverter `A`,
+  `OWF_Advantage (owf_of_prg G.stretch) A ≤
+    PRG_Advantage G (prg_distinguisher_of_owf_inverter G A) + |im G| / |W|`
+
+The predicates `OWFSecure F ε` and `PRGSecure G ε` (`∀ A, … ≤ ε`), the class
+`PRGImpliesOWF` (whose only field was the conclusion of `prg_implies_owf`), and the
+theorems `prg_implies_owf` and `prg_secure_implies_owf_secure` are removed; `owf_le_prg`
+replaces them.
 
 ## Cross-Validation
 
@@ -34,14 +42,14 @@ no efficient adversary can find any preimage `x'` such that `f(x') = f(x)`.
 | OWF Advantage | `OWF_Advantage` | `Pr[Invert]` |
 | OWP | `OWPDef` | BS Def. 8.2 (permutation variant) |
 | PRG | `PRGDef` | BS Def. 3.1 |
-| PRG ⟹ OWF | `prg_implies_owf` | BS Thm 8.1 |
+| PRG ⟹ OWF | `owf_le_prg` | BS Thm 8.1 |
 
 **Equivalent formalizations:**
 - EasyCrypt: `OW` game in `OW.ec`
 - SSProve (Rocq): not formalized
 
 **Relationship to other assumptions:**
-- PRG ⟹ OWF (BS Thm 8.1): `prg_implies_owf`
+- PRG ⟹ OWF (BS Thm 8.1): `owf_le_prg`
 - PRF ⟹ OWF (standard)
 - RSA is an OWP instance (see `RSA.lean`)
 
@@ -85,10 +93,6 @@ noncomputable def OWF_Game (F : OWFDef W) (A : OWF_Adversary W) :
 /-- OWF advantage: probability of finding a preimage. -/
 noncomputable def OWF_Advantage (F : OWFDef W) (A : OWF_Adversary W) : ℝ≥0∞ :=
   prTrue (OWF_Game F A) Heap.empty
-
-/-- One-wayness assumption. -/
-def OWFSecure (F : OWFDef W) (ε : ℝ≥0∞) : Prop :=
-  ∀ (A : OWF_Adversary W), OWF_Advantage F A ≤ ε
 
 /-! ## One-Way Permutation (OWP) -/
 
@@ -135,10 +139,6 @@ abbrev PRG_Adversary (Output : Type) := Output → SPComp Bool
 noncomputable def PRG_Advantage (G : PRGDef Seed Output) (A : PRG_Adversary Output) : ℝ≥0∞ :=
   AdvantageA (prg_real G) prg_ideal A
 
-/-- PRG security assumption. -/
-def PRGSecure (G : PRGDef Seed Output) (ε : ℝ≥0∞) : Prop :=
-  ∀ (A : PRG_Adversary Output), PRG_Advantage G A ≤ ε
-
 /-! ## PRG ⟹ OWF Reduction
 
 If `G : Seed → Output` is a PRG (pseudorandom generator), then `G` is also
@@ -154,11 +154,12 @@ a PRG distinguisher `A_prg` as follows:
 2. Run `A_owf(y)` to get candidate seed `s'`
 3. Output `decide (G(s') = y)`
 
-If `y = G(s)` (real case), then `A_owf` succeeds with noticeable probability,
-so `A_prg` outputs `true`. If `y` is random, `G(s') = y` is unlikely since
-`G`'s image is sparse in the output space.
+In the real case (`y = G(s)`) the distinguisher outputs `true` exactly when `A_owf`
+inverts, so its success probability is the OWF advantage. In the ideal case (`y`
+uniform) it can output `true` only if `y` lies in the image of `G`, which has
+probability `|im G| / |W|`. Hence
 
-The bound: `OWF_Advantage G A_owf ≤ PRG_Advantage G A_prg`. -/
+    OWF_Advantage G A_owf ≤ PRG_Advantage G A_prg + |im G| / |W|. -/
 
 /-- Construct an OWF from a PRG stretch function (same-type case).
 
@@ -183,33 +184,74 @@ noncomputable def prg_distinguisher_of_owf_inverter
     let s' ← A_owf y
     SPComp.pure (decide (G.stretch s' = y))
 
-/-- PRG ⟹ OWF reduction bound (Bertie pattern, BS Thm 8.1).
+/-- A continuation whose success probability is at most `ε` from every state keeps the
+    success probability of the composed computation at most `ε`. -/
+private theorem prTrue_bind_le_const {α : Type} (c : SPComp α) (k : α → SPComp Bool)
+    (ε : ℝ≥0∞) (h₀ : Heap) (hk : ∀ a h', prTrue (k a) h' ≤ ε) :
+    prTrue (c.bind k) h₀ ≤ ε :=
+  (ForkingLemma.prTrue_bind_mono_const ε c k (fun _ => SPComp.pure true) h₀ fun a h' => by
+      rw [ForkingLemma.prTrue_pure_bool]; simpa using hk a h').trans
+    (mul_le_of_le_one_right' (prTrue_le_one _ _))
 
-    The tight bound requires image sparsity: for same-type PRGs (W → W),
-    the OWF advantage includes a `|im(G)|/|W|` term for the probability
-    of inverting a truly random value. This is provided as a typeclass. -/
-class PRGImpliesOWF (G : PRGDef W W) : Prop where
-  bound : ∀ (A_owf : OWF_Adversary W),
+/-- The real PRG game run against `prg_distinguisher_of_owf_inverter G A_owf` is the OWF
+    game of `owf_of_prg G.stretch` against `A_owf`. -/
+theorem owf_game_eq_prg_real (G : PRGDef W W) (A_owf : OWF_Adversary W) :
+    OWF_Game (owf_of_prg G.stretch) A_owf =
+      (prg_real G).bind (prg_distinguisher_of_owf_inverter G A_owf) := by
+  unfold OWF_Game prg_real prg_distinguisher_of_owf_inverter owf_of_prg
+  simp only [SPComp.monad_bind_eq, SPComp.bind_assoc, SPComp.pure_bind]
+
+/-- In the ideal PRG game the distinguisher `prg_distinguisher_of_owf_inverter G A_owf`
+    outputs `true` with probability at most `|im G| / |W|`. -/
+theorem prTrue_prg_ideal_distinguisher_le (G : PRGDef W W) (A_owf : OWF_Adversary W) :
+    prTrue ((prg_ideal (Output := W)).bind (prg_distinguisher_of_owf_inverter G A_owf))
+        Heap.empty ≤
+      ((Finset.univ.image G.stretch).card : ℝ≥0∞) / Fintype.card W := by
+  unfold prg_ideal
+  rw [prTrue_bind_sample]
+  have hpt : ∀ y, prTrue (prg_distinguisher_of_owf_inverter G A_owf y) Heap.empty ≤
+      if y ∈ Finset.univ.image G.stretch then 1 else 0 := by
+    intro y
+    split_ifs with hy
+    · exact prTrue_le_one _ _
+    · unfold prg_distinguisher_of_owf_inverter
+      simp only [SPComp.monad_bind_eq]
+      refine prTrue_bind_le_const _ _ _ _ fun s' h' => ?_
+      have hne : G.stretch s' ≠ y := fun h => hy (Finset.mem_image.mpr ⟨s', by simp, h⟩)
+      simp [ForkingLemma.prTrue_pure_bool, hne]
+  calc ∑ y : W, (Fintype.card W : ℝ≥0∞)⁻¹ *
+          prTrue (prg_distinguisher_of_owf_inverter G A_owf y) Heap.empty
+      ≤ ∑ y : W, (Fintype.card W : ℝ≥0∞)⁻¹ *
+          (if y ∈ Finset.univ.image G.stretch then 1 else 0) :=
+        Finset.sum_le_sum fun y _ => by gcongr; exact hpt y
+    _ = ((Finset.univ.image G.stretch).card : ℝ≥0∞) / Fintype.card W := by
+        rw [← Finset.mul_sum, Finset.sum_boole, ENNReal.div_eq_inv_mul]
+        simp
+
+/-- **PRG ⟹ OWF** (BS Thm 8.1). For every inverter `A_owf`,
+
+    `OWF_Advantage (owf_of_prg G.stretch) A_owf ≤
+      PRG_Advantage G (prg_distinguisher_of_owf_inverter G A_owf) + |im G| / |W|`.
+
+    The OWF game is the real PRG game of the distinguisher (`owf_game_eq_prg_real`);
+    in the ideal game the distinguisher outputs `true` with probability at most
+    `|im G| / |W|` (`prTrue_prg_ideal_distinguisher_le`). -/
+theorem owf_le_prg (G : PRGDef W W) (A_owf : OWF_Adversary W) :
     OWF_Advantage (owf_of_prg G.stretch) A_owf ≤
-      PRG_Advantage G (prg_distinguisher_of_owf_inverter G A_owf)
-
-theorem prg_implies_owf (G : PRGDef W W) [PRGImpliesOWF G]
-    (A_owf : OWF_Adversary W) :
-    OWF_Advantage (owf_of_prg G.stretch) A_owf ≤
-      PRG_Advantage G (prg_distinguisher_of_owf_inverter G A_owf) :=
-  PRGImpliesOWF.bound A_owf
-
-/-- Corollary: PRG security implies OWF security.
-
-    If `G` is `ε`-PRG-secure, then `owf_of_prg G.stretch` is `ε`-OWF-secure. -/
-theorem prg_secure_implies_owf_secure (G : PRGDef W W) [PRGImpliesOWF G]
-    (ε : ℝ≥0∞) (h_prg : PRGSecure G ε) :
-    OWFSecure (owf_of_prg G.stretch) ε := by
-  intro A_owf
-  calc OWF_Advantage (owf_of_prg G.stretch) A_owf
-      ≤ PRG_Advantage G (prg_distinguisher_of_owf_inverter G A_owf) :=
-        prg_implies_owf G A_owf
-    _ ≤ ε := h_prg _
+      PRG_Advantage G (prg_distinguisher_of_owf_inverter G A_owf) +
+        ((Finset.univ.image G.stretch).card : ℝ≥0∞) / Fintype.card W := by
+  set D := prg_distinguisher_of_owf_inverter G A_owf
+  have hreal : OWF_Advantage (owf_of_prg G.stretch) A_owf =
+      prTrue ((prg_real G).bind D) Heap.empty := by
+    unfold OWF_Advantage; rw [owf_game_eq_prg_real]
+  rw [hreal]
+  calc prTrue ((prg_real G).bind D) Heap.empty
+      ≤ (prTrue ((prg_real G).bind D) Heap.empty -
+          prTrue ((prg_ideal (Output := W)).bind D) Heap.empty) +
+        prTrue ((prg_ideal (Output := W)).bind D) Heap.empty := le_tsub_add
+    _ ≤ PRG_Advantage G D +
+          ((Finset.univ.image G.stretch).card : ℝ≥0∞) / Fintype.card W :=
+        add_le_add (le_max_left _ _) (prTrue_prg_ideal_distinguisher_le G A_owf)
 
 /-! ## RSA as OWP
 

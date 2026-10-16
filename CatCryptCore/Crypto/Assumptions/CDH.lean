@@ -7,6 +7,7 @@ module
 
 public import CatCryptCore.Crypto.Advantage
 public import CatCryptCore.Crypto.Assumptions.DDH
+public import CatCryptCore.Crypto.ForkingLemma
 public import CatCryptCore.Tactics
 
 /-!
@@ -19,10 +20,16 @@ This is the computational analogue of DDH; DDH ⟹ CDH but not vice versa.
 
 * `CDH_Game` — the CDH game
 * `CDH_Advantage` — probability of computing the shared secret
-* `CDHSecure` — CDH hardness assumption
+* `ddh_of_cdh` — DDH adversary from a CDH adversary
+* `cdh_le_ddh` — `CDH_Advantage D A ≤ DDH_Advantage D (ddh_of_cdh A) + 1/|W|`
 * `DL_Adversary_DDH` — discrete log adversary over `DDHDef`
 * `DL_Game_DDH` — discrete log game over `DDHDef`
 * `cdh_of_dl_ddh` — CDH adversary from DL adversary (CDH ⟹ DL reduction)
+* `dl_le_cdh_ddh` — `DL_Advantage_DDH D A ≤ CDH_Advantage D (cdh_of_dl_ddh D A)`
+
+The former predicate `CDHSecure D ε := ∀ A, CDH_Advantage D A ≤ ε` and its corollary
+`cdh_secure_implies_dl_secure` are removed: the per-adversary reductions `cdh_le_ddh` and
+`dl_le_cdh_ddh` state the same relations without an assumption over all adversaries.
 
 ## Cross-Validation
 
@@ -80,10 +87,6 @@ noncomputable def CDH_Game (D : DDHDef W) (A : CDH_Adversary W) : SPComp Bool :=
 noncomputable def CDH_Advantage (D : DDHDef W) (A : CDH_Adversary W) : ℝ≥0∞ :=
   prTrue (CDH_Game D A) Heap.empty
 
-/-- CDH hardness: all adversaries have bounded advantage. -/
-def CDHSecure (D : DDHDef W) (ε : ℝ≥0∞) : Prop :=
-  ∀ (A : CDH_Adversary W), CDH_Advantage D A ≤ ε
-
 /-! ## Reduction: DDH ⟹ CDH
 
 If an adversary can compute `g^{ab}` (break CDH), it can also
@@ -96,6 +99,50 @@ noncomputable def ddh_of_cdh (A : CDH_Adversary W) : DDH_Adversary W :=
   fun g_a g_b challenge => do
     let answer ← A g_a g_b
     SPComp.pure (decide (answer = challenge))
+
+/-- A continuation whose success probability is at most `ε` from every state keeps the
+    success probability of the composed computation at most `ε`. -/
+private theorem prTrue_bind_le_const {α : Type} (c : SPComp α) (k : α → SPComp Bool)
+    (ε : ℝ≥0∞) (h₀ : Heap) (hk : ∀ a h', prTrue (k a) h' ≤ ε) :
+    prTrue (c.bind k) h₀ ≤ ε :=
+  (ForkingLemma.prTrue_bind_mono_const ε c k (fun _ => SPComp.pure true) h₀ fun a h' => by
+      rw [ForkingLemma.prTrue_pure_bool]; simpa using hk a h').trans
+    (mul_le_of_le_one_right' (prTrue_le_one _ _))
+
+/-- A value computed by `c` equals a uniform `r ← W` sampled before `c` runs with
+    probability at most `1/|W|`. -/
+theorem prTrue_sample_guess (c : SPComp W) (h₀ : Heap) :
+    prTrue ((SPComp.sample W).bind fun r => c.bind fun x => SPComp.pure (decide (x = r))) h₀
+      ≤ (Fintype.card W : ℝ≥0∞)⁻¹ := by
+  rw [SPComp.isPure_bind_comm_left _ _ _ (SPComp.sample_isPure W)]
+  refine prTrue_bind_le_const _ _ _ _ fun x h' => ?_
+  rw [ForkingLemma.prTrue_sample_pure_bool]
+  simp [Finset.filter_eq]
+
+/-- **DDH ⟹ CDH.** For every CDH adversary `A`,
+    `CDH_Advantage D A ≤ DDH_Advantage D (ddh_of_cdh A) + 1/|W|`.
+    The real DDH game with `ddh_of_cdh A` is the CDH game; in the ideal DDH game the
+    challenge is uniform and independent of `A`'s answer, so `ddh_of_cdh A` outputs
+    `true` there with probability at most `1/|W|`. -/
+theorem cdh_le_ddh (D : DDHDef W) (A : CDH_Adversary W) :
+    CDH_Advantage D A ≤ DDH_Advantage D (ddh_of_cdh A) + (Fintype.card W : ℝ≥0∞)⁻¹ := by
+  have hreal : CDH_Advantage D A = prTrue (DDH_Game_Real D (ddh_of_cdh A)) Heap.empty := rfl
+  have hideal : prTrue (DDH_Game_Ideal D (ddh_of_cdh A)) Heap.empty ≤
+      (Fintype.card W : ℝ≥0∞)⁻¹ := by
+    unfold DDH_Game_Ideal ddh_of_cdh
+    simp only [SPComp.monad_bind_eq]
+    refine prTrue_bind_le_const _ _ _ _ fun p _ => ?_
+    obtain ⟨_, g_a⟩ := p
+    refine prTrue_bind_le_const _ _ _ _ fun q _ => ?_
+    obtain ⟨_, g_b⟩ := q
+    exact prTrue_sample_guess (A g_a g_b) _
+  rw [hreal]
+  calc prTrue (DDH_Game_Real D (ddh_of_cdh A)) Heap.empty
+      ≤ (prTrue (DDH_Game_Real D (ddh_of_cdh A)) Heap.empty -
+          prTrue (DDH_Game_Ideal D (ddh_of_cdh A)) Heap.empty) +
+        prTrue (DDH_Game_Ideal D (ddh_of_cdh A)) Heap.empty := le_tsub_add
+    _ ≤ DDH_Advantage D (ddh_of_cdh A) + (Fintype.card W : ℝ≥0∞)⁻¹ :=
+        add_le_add (le_max_left _ _) hideal
 
 /-! ## IsPure Proofs -/
 
@@ -180,17 +227,5 @@ theorem dl_le_cdh_ddh (D : DDHDef W)
     (simp only [CatCrypt.Core.SPComp.monad_bind_eq]; bind_vcgen)
   unfold DL_Advantage_DDH CDH_Advantage
   rw [hgame]
-
-/-- Corollary: CDH security implies DL security.
-
-    If `D` is `ε`-CDH-secure, then for any DL adversary, the DL advantage
-    is at most `ε`. -/
-theorem cdh_secure_implies_dl_secure (D : DDHDef W)
-    (ε : ℝ≥0∞) (h_cdh : CDHSecure D ε)
-    (A_dl : DL_Adversary_DDH W) :
-    DL_Advantage_DDH D A_dl ≤ ε := by
-  calc DL_Advantage_DDH D A_dl
-      ≤ CDH_Advantage D (cdh_of_dl_ddh D A_dl) := dl_le_cdh_ddh D A_dl
-    _ ≤ ε := h_cdh _
 
 end CatCrypt.Crypto.Assumptions

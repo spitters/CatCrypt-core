@@ -176,13 +176,16 @@ Taking $H$ to be the identity recovers DDH.
 \begin{lemma}[DDH and PRF imply ODH]
   \label{def:odh-reduction}
   \uses{def:odh, def:ddh, def:prf}
-  \lean{CatCrypt.Crypto.Assumptions.odh_of_ddh_prf}
+  \lean{CatCrypt.Crypto.Assumptions.odh_le_ddh_add_prf}
   \leanok
-  If the DH secret can be replaced by a random key at cost $\varepsilon_{ddh}$
-  (a DDH step) and the hash keyed by a random value is a PRF at cost
-  $\varepsilon_{prf}$, then the ODH advantage is bounded by
-  $\varepsilon_{ddh} + \varepsilon_{prf}$, via a two-hop hybrid through the
-  triangle inequality.
+  For every ODH adversary $A$, with the DDH reduction $B_{ddh}(A)$ (sample a label
+  $\ell$, run $A$ on $H(z, \ell)$) and the PRF reduction $B_{prf}(A)$ (sample both
+  key pairs, run $A$ on the challenge),
+  \[
+    \mathsf{Adv}^{\mathrm{ODH}}(A) \le \mathsf{Adv}^{\mathrm{DDH}}(B_{ddh}(A))
+      + \frac{1}{|W|}\sum_{\ell} \mathsf{Adv}^{\mathrm{PRF}}_{\ell}(B_{prf}(A)),
+  \]
+  by a two-hop hybrid through the triangle inequality.
 \end{lemma}
 
 \section{Hash-function assumptions}

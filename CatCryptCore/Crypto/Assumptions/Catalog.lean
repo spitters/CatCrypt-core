@@ -82,11 +82,11 @@ at the instantiation site, not here.
 
 ## Reduction Status
 
-- PRG ⟹ OWF: Proved (`prg_implies_owf`) (`OWF.lean`)
-- DDH + PRF ⟹ ODH: Reduction via `odh_of_ddh_prf` (`ODH.lean`)
-- DDH ⟹ CDH: Reduction via `ddh_of_cdh` (`CDH.lean`)
+- PRG ⟹ OWF: Proved per inverter (`owf_le_prg`, with the image term `|im G| / |W|`) (`OWF.lean`)
+- DDH + PRF ⟹ ODH: Proved per adversary (`odh_le_ddh_add_prf`, reductions `ddhAdvOfODH`, `prfAdvOfODH`) (`ODH.lean`)
+- DDH ⟹ CDH: Proved per adversary (`cdh_le_ddh`, reduction `ddh_of_cdh`, term `1/|W|`) (`CDH.lean`)
 - DDH ⟹ GapDH: Proved (`GapDHDef.ofDDH`)
-- CDH ⟹ DL: Standard (not formalized; not needed by current protocols)
+- CDH ⟹ DL: Proved per adversary (`dl_le_cdh_ddh`, reduction `cdh_of_dl_ddh`) (`CDH.lean`)
 - HKDF ← Extract + Expand: Proved (`hkdf_advantage_bound`)
 - Expand_Composed(const f) = Expand: Definitional equality
 - PRP ← PRF + switching: `PRP_Full_Bound` (`PRP.lean`)

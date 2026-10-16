@@ -62,8 +62,10 @@ DH key-agreement real/ideal experiments.
 * `ka_advantage_eq_ddh` — **the headline**: the DH key-indistinguishability
   advantage *equals* the DDH advantage of the reduction,
   `KA_Advantage P D = DDH_Advantage (elgamalDDH P) (dhReduction D)`.
-* `ka_secure_under_ddh` — DH key agreement is secure under DDH: if every DDH
-  adversary has advantage at most `ε`, so does every key distinguisher.
+
+The former corollary `ka_secure_under_ddh`, which assumed
+`∀ A, DDH_Advantage (elgamalDDH P) A ≤ ε`, is removed; `ka_advantage_eq_ddh` is the
+per-distinguisher statement it was derived from.
 
 ## References
 
@@ -157,13 +159,5 @@ theorem ka_ideal_eq (D : KA_Distinguisher P.G₁) :
 theorem ka_advantage_eq_ddh (D : KA_Distinguisher P.G₁) :
     KA_Advantage P D = DDH_Advantage (elgamalDDH P) (dhReduction D) := by
   simp_all [KA_Advantage, DDH_Advantage, ka_real_eq, ka_ideal_eq]
-
-/-- **DH key agreement is secure under DDH.** If every DDH adversary over the group
-    has advantage at most `ε`, then every key-indistinguishability distinguisher
-    against the DH key exchange has advantage at most `ε`. -/
-theorem ka_secure_under_ddh (ε : ℝ≥0∞)
-    (h_ddh : ∀ A : DDH_Adversary P.G₁, DDH_Advantage (elgamalDDH P) A ≤ ε)
-    (D : KA_Distinguisher P.G₁) :
-    KA_Advantage P D ≤ ε := by simp_all [ka_advantage_eq_ddh]
 
 end CatCrypt.Examples.DiffieHellman
