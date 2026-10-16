@@ -382,10 +382,9 @@ noncomputable def roundExt (T : BlockTree B) (X : ChainTrace V B) (slot : B → 
     (v₀ : V) (ρ : ℕ → ℕ) (r : ℕ) : B → ℕ → B :=
   extendTo T (boundaryBlock slot E T.genesis (X.chain (ρ r) v₀))
 
-/-- The hypotheses of Δ-updatedness.
+/-- The hypotheses of Δ-updatedness on the votes.
 
-* `chain`: the hypotheses on the honest chains up to phase `hz` (`SlotChainHyp`), with common
-  prefix parameter `d` and chain-growth window `σ`.
+* `epoch_pos`, `delay_pos`: `1 ≤ E` and `1 ≤ Δ`.
 * `honest`, `mem_v₀`, `quorum`: the validators of `H` are honest, `v₀ ∈ H`, and `H` holds at
   least two thirds of the stake.
 * `pre_justified`, `pre_sources`, `pre_unslashable`, `pre_onChain`, `pre_cast`: the history
@@ -400,11 +399,10 @@ noncomputable def roundExt (T : BlockTree B) (X : ChainTrace V B) (slot : B → 
   `roundVotes`.
 * `sync`: synchrony after `GST` with delay `Δ`.
 -/
-structure UpdatedHyp (T : BlockTree B) (w : V → ℕ) (X : ChainTrace V B) (now : ℕ → ℕ)
+structure VoteHyp (T : BlockTree B) (w : V → ℕ) (X : ChainTrace V B) (now : ℕ → ℕ)
     (slot : B → ℕ) (E σ d Δ GST hz : ℕ) (H : Finset V) (v₀ : V) (pre : Finset (Vote V B))
     (j₀ : Checkpoint B) (τ₀ : ℕ) (ρ : ℕ → ℕ) (cast : ℕ → Finset (Vote V B))
     (seen : ℕ → V → Finset (Vote V B)) : Prop where
-  chain : SlotChainHyp T X now slot d σ hz
   epoch_pos : 1 ≤ E
   delay_pos : 1 ≤ Δ
   honest : ∀ v ∈ H, X.honest v
@@ -421,6 +419,16 @@ structure UpdatedHyp (T : BlockTree B) (w : V → ℕ) (X : ChainTrace V B) (now
   round_cast : ∀ r, ρ r ≤ hz → roundVotes H (roundExt T X slot E v₀ ρ) pre j₀ r ⊆ cast (ρ r)
   sync : ∀ p j t x, X.honest p → j ≤ t → x ∈ cast j → max (now j) GST + Δ ≤ now t →
     x ∈ seen t p
+
+/-- The hypotheses of Δ-updatedness: the hypotheses on the votes (`VoteHyp`) and on the honest
+chains up to phase `hz` (`SlotChainHyp`, with common prefix parameter `d` and chain-growth
+window `σ`). -/
+structure UpdatedHyp (T : BlockTree B) (w : V → ℕ) (X : ChainTrace V B) (now : ℕ → ℕ)
+    (slot : B → ℕ) (E σ d Δ GST hz : ℕ) (H : Finset V) (v₀ : V) (pre : Finset (Vote V B))
+    (j₀ : Checkpoint B) (τ₀ : ℕ) (ρ : ℕ → ℕ) (cast : ℕ → Finset (Vote V B))
+    (seen : ℕ → V → Finset (Vote V B)) : Prop
+    extends VoteHyp T w X now slot E σ d Δ GST hz H v₀ pre j₀ τ₀ ρ cast seen where
+  chain : SlotChainHyp T X now slot d σ hz
 
 namespace UpdatedHyp
 
