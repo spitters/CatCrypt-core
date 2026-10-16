@@ -355,7 +355,9 @@ public import CatCryptCore.Prob.Concentration
 public import CatCryptCore.Consensus.FFG
 public import CatCryptCore.Consensus.FFGExamples
 public import CatCryptCore.Consensus.FFGDynamic
+public import CatCryptCore.Consensus.FFGDynamicExamples
 public import CatCryptCore.Consensus.Finality
+public import CatCryptCore.Consensus.FinalityExamples
 public import CatCryptCore.Consensus.FinalityValidity
 public import CatCryptCore.Consensus.FinalityUpdated
 public import CatCryptCore.Consensus.FinalityUpdatedProb

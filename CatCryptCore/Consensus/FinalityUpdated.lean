@@ -5,7 +5,7 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import CatCryptCore.Consensus.Finality
+public import CatCryptCore.Consensus.FinalityExamples
 public import Mathlib.Tactic.Ring
 
 /-!

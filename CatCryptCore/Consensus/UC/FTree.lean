@@ -6,7 +6,7 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Crypto.UCTransparent
-public import CatCryptCore.Consensus.Finality
+public import CatCryptCore.Consensus.FinalityExamples
 
 @[expose] public section
 set_option autoImplicit false
