@@ -35,7 +35,7 @@ Chapter numbers follow the online edition of the book.
 | 1–2 | (same, by reflection) | `ReflectTacticDemo` | `demo_otp_nompkg_secure`, `demo_otp_uc` | The two package-level OTP results, each by one call of the reflective package tactic |
 | 3 | Secret sharing | `SecretSharing` | `shareXor_reconstruct`, `ss_perfect_privacy` | 2-out-of-2 XOR sharing; one share has advantage 0 |
 | 3 | Secret sharing | `ShamirSecretSharing` | `shamir_reconstruct`, `shamir_perfect_privacy` | Shamir `t`-out-of-`n` over `ZMod p`: Lagrange reconstruction from `t` shares; any `t − 1` shares have advantage 0 |
-| 5 | Pseudorandom generators | `PRG` | `bijPRG_perfect`, `triple_prg_bound_of_assumption` | Perfect security of a bijective generator (length-preserving); triple-from-double bound `2·ε` with hop hypotheses |
+| 5 | Pseudorandom generators | `PRG` | `bijPRG_perfect`, `triple_prg_bound` | Perfect security of a bijective generator (length-preserving); triple construction ≤ two PRG advantages of explicit reductions against the doubling generator |
 | 6 | Pseudorandom functions | `PRF` | `bijPRF_perfect`, `cascade_prf_bound` | Perfect bijection-family PRF; cascade bound `2·ε + q(q−1)/2N` with hop hypotheses |
 | 6 | PRG from a PRF | `PRFPRG` | `prg_decomp_security_bound` | Over `Bool`, two counters: sum of two PRF advantages of explicit reductions, for the variant with independent seeds |
 | 7 | CPA security | `CPAFromPRF` | `bijCPA_perfect_indcpa`, `cpa_from_prf_bound` | `(r, F(k, r) ⊕ m)`: perfect for a bijection family; `≤ ε` under a PRF assumption with the PRF-swap hop as a hypothesis |
@@ -99,7 +99,7 @@ fixed set of challenges. The modules above cover the following.
 | Ladder | Challenge | Module | Statement |
 |---|---|---|---|
 | Symmetric | PRF cascade | `PRF` | `cascade_prf_bound`: `2·ε + q(q−1)/2N`, all three hop bounds (including the switching hop) as hypotheses |
-| Symmetric | PRG triple | `PRG` | `triple_prg_bound_of_assumption`: `2·ε`, hop soundness as hypotheses |
+| Symmetric | PRG triple | `PRG` | `triple_prg_bound`: two PRG advantages of explicit reductions, no hypotheses |
 | Symmetric | Encrypt-then-MAC | `EtMCCA` | `boolEtM_indcca_reduces`: IND-CCA reduced to MAC integrity |
 | Asymmetric | KEM-DEM | `KEMDEM` | `pke_security`: three explicit reductions, no hypotheses |
 | Protocol | Basic Hash | `BasicHash` | Perfect authentication and the unlinkability counterexample |

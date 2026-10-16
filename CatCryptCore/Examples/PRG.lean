@@ -11,7 +11,7 @@ public import CatCryptCore.Tactics
 public import CatCryptCore.Tactics.AutoMetrics
 
 /-!
-# Bijection PRG: Perfect Security
+# Pseudorandom generators: bijections and the triple construction
 
 A pseudorandom generator that is a *bijection* from seeds to outputs has perfect
 security. Following Rosulek, The Joy of Cryptography, §5 (pseudorandom
@@ -34,12 +34,19 @@ structure of the real game; and `PRG_Adv_zero_of_rHoare` collapses the advantage
 to `0`.
 
 A bijection forces `|Seed| = |Output|`, so a bijection generator is *not*
-length-extending. This is the information-theoretic boundary of Rosulek §5: a
-length-extending PRG has an image that is a vanishing subset of the
-output space, so it can only be *computationally* secure. The corresponding
-reduction, the triple-from-double bound `Adv(G₃) ≤ 2·Adv(G)`, is stated below
-for a length-doubling generator (`triple_prg_uniform_bound`,
-`triple_prg_bound_of_assumption`).
+length-extending. A length-extending PRG has an image that is a vanishing subset
+of the output space, so it can only be *computationally* secure. For a
+length-doubling generator `G`, the triple construction `G₃` is reduced to `G`
+(`triple_prg_bound`): for every adversary `A`, the advantage against `G₃` is at
+most the sum of the advantages of two distinguishers against `G`, both defined
+in this file (`DoublePRG.tripleRedFirst`, `DoublePRG.tripleRedSecond`).
+
+The earlier statements `triple_prg_uniform_bound` and
+`triple_prg_bound_of_assumption` concerned a game with independent seeds, not
+`G₃`, and took the hop bounds as hypotheses; the structure `PRGAssumption`
+carried a bound `∀ A, PRG_Adv G A ≤ ε`, which no length-extending generator
+satisfies for `ε < 1 - |Seed|/|Output|`. All are replaced by
+`triple_prg_bound`.
 
 ## Main definitions
 
@@ -47,6 +54,10 @@ for a length-doubling generator (`triple_prg_uniform_bound`,
 * `PRG_Real` / `PRG_Ideal` / `PRG_Adv` — the PRG distinguishing game and advantage.
 * `BijPRG` — a seed→output bijection.
 * `BijPRG.toPRGScheme` — the `PRGScheme` it induces (`stretch s = bij s`).
+* `DoublePRG`, `DoublePRG.triple` — a length-doubling generator and the
+  length-tripling construction.
+* `DoublePRG.tripleRedFirst`, `DoublePRG.tripleRedSecond` — the two
+  distinguishers against the base generator.
 
 ## Main results
 
@@ -54,6 +65,8 @@ for a length-doubling generator (`triple_prg_uniform_bound`,
 * `bijPRG_coupling` — the real and ideal PRG games couple with `eqPost`.
 * `bijPRG_perfect` — a bijection PRG has perfect security:
   `PRG_Adv B.toPRGScheme A = 0` for every adversary `A`.
+* `triple_prg_bound` — `PRG_Adv G₃ A ≤ PRG_Adv G (tripleRedFirst A) +
+  PRG_Adv G (tripleRedSecond A)` for every adversary `A`.
 
 ## References
 
@@ -180,46 +193,14 @@ theorem boolXorPRG_perfect (c : Bool)
     PRG_Adv (boolXorPRG c).toPRGScheme A = 0 := by
   grind [bijPRG_perfect, boolXorPRG]
 
-/-! ## PRG security assumption
-
-The bijection results above are *perfect* (`ε = 0`). A length-extending
-generator can only be *computationally* secure, so the reduction below takes the
-base generator's security as a hypothesis. `PRGAssumption` is the PRG analogue of
-`CatCrypt.Crypto.PRFAssumption`: it packages the standard "`G` is an ε-secure
-PRG" hypothesis that reductions consume. -/
-
-open CatCrypt.Crypto
 open CatCrypt.Tactic
 
-/-- The **PRG security assumption**: `G` is an ε-secure pseudorandom generator.
-The field `bound` witnesses that no adversary beats advantage `ε` at
-distinguishing `PRG_Real G` from `PRG_Ideal G`. -/
-structure PRGAssumption (G : PRGScheme) where
-  /-- The PRG advantage bound `ε`. -/
-  ε : ℝ≥0∞
-  /-- Every adversary has PRG advantage at most `ε`. -/
-  bound : ∀ (A : G.Output → SPComp Bool), PRG_Adv G A ≤ ε
-
-/-- The packaged advantage bound of a PRG assumption. -/
-theorem PRGAssumption.advantage_bound {G : PRGScheme} (H : PRGAssumption G)
-    (A : G.Output → SPComp Bool) : PRG_Adv G A ≤ H.ε := by
-  grind [H.bound]
-
-/-- A perfectly secure PRG (every adversary has advantage exactly `0`) satisfies
-the PRG assumption with `ε = 0`. -/
-def PRGAssumption.of_perfect (G : PRGScheme)
-    (h : ∀ (A : G.Output → SPComp Bool), PRG_Adv G A = 0) :
-    PRGAssumption G where
-  ε := 0
-  bound := fun A => (h A).le
-
-/-! ### `bind_vcgen` witness for the `ε = 0` case
+/-! ### The bijection case by `bind_vcgen`
 
 For a bijection PRG the real and ideal games are the *same* `SPComp`
-distribution. We discharge this exact hop with the `bind_vcgen`
-run-to-completion tactic: through the supplied change-of-variables bijection
-`B.bij` it collapses `sample s; return bij s` to a fresh uniform sample. This is
-the perfect (`ε = 0`) base case that instantiates `PRGAssumption`. -/
+distribution. The `bind_vcgen` run-to-completion tactic proves this: through the
+change-of-variables bijection `B.bij` it collapses `sample s; return bij s` to a
+fresh uniform sample. -/
 
 /-- The real and ideal PRG games for a bijection PRG are the *same* `SPComp`
 computation. Proved by `bind_vcgen using B.bij`: the change-of-variables through
@@ -238,34 +219,31 @@ theorem bijPRG_adv_zero_via_vcgen (B : BijPRG)
     PRG_Adv B.toPRGScheme A = 0 := by
   simp_all [PRG_Adv, AdvantageA, bijPRG_game_eq, Advantage_self]
 
-/-- A bijection PRG satisfies the `PRGAssumption` with `ε = 0`, witnessed by the
-`bind_vcgen` proof `bijPRG_adv_zero_via_vcgen`. -/
-noncomputable def bijPRG_assumption (B : BijPRG) : PRGAssumption B.toPRGScheme :=
-  PRGAssumption.of_perfect B.toPRGScheme (bijPRG_adv_zero_via_vcgen B)
-
-/-! ## Triple-from-double PRG: the computational bound
+/-! ## Triple-from-double PRG: the reduction
 
 Given a *length-doubling* base generator `G : Seed → Seed × Seed`, the
 length-tripling construction
 
     `G₃(s) = let (a, b) := G(s); let (c, d) := G(a); (c, d, b)`
 
-satisfies `Adv_PRG(G₃) ≤ 2·ε` under a PRG-security assumption on `G` (Rosulek,
-The Joy of Cryptography, §5.3). This mirrors the cascade-PRF upgrade
-(`CatCrypt.Examples.PRF.cascade_prf_bound`): a computational bound composed from
-two named per-hop assumptions via the advantage triangle inequality, keeping the
-perfect (`ε = 0`) corollary.
+is a PRG whenever `G` is (Rosulek, The Joy of Cryptography, §5.3). The
+reduction runs three games on the output space `Seed × Seed × Seed`:
 
-The reduction runs the **decomposed** hybrid (Rosulek §5.3), which uses
-*independent* seeds for the two `G` calls to break their correlation:
+| Game | Output |
+|------|--------|
+| `H₀` = `PRG_Real G₃` | `G₃(s)` for a uniform seed `s` |
+| `H₁` = `tripleHyb` | `(G(a).1, G(a).2, b)` for uniform `a, b` |
+| `H₂` = `PRG_Ideal G₃` | a uniform triple |
 
-| Step | Transition | Bound |
-|------|-----------|-------|
-| 0→1 | inner `G(s₁)` (produces `c,d`) → random | `ε` (PRG assumption) |
-| 1→2 | outer `G(s₂).2` (produces `b`) → random | `ε` (PRG assumption) |
+The hop `H₀ → H₁` replaces the first call `G(s)` by a uniform pair; the
+distinguisher `tripleRedFirst A` receives the pair and finishes the
+construction. The hop `H₁ → H₂` replaces the second call `G(a)` by a uniform
+pair; the distinguisher `tripleRedSecond A` receives the pair and samples the
+last component itself. Both distinguishers attack the base generator `G`, and
+each hop is an equality of games, so `triple_prg_bound` states, for every
+adversary `A`,
 
-The hop bounds are the cryptographic hypotheses; the theorem composes them into
-the total bound by the advantage triangle inequality. -/
+    `PRG_Adv G₃ A ≤ PRG_Adv G (tripleRedFirst A) + PRG_Adv G (tripleRedSecond A)`. -/
 
 /-- A length-doubling base generator `stretch : Seed → Seed × Seed`, the input to
 the triple construction. -/
@@ -285,103 +263,88 @@ def DoublePRG.triple (G : DoublePRG) (s : G.Seed) : G.Seed × G.Seed × G.Seed :
   let (c, d) := G.stretch a
   (c, d, b)
 
-/-- The base doubling generator as a `PRGScheme` (`Output = Seed × Seed`), whose
-security is the inner-hop assumption. -/
+/-- The base doubling generator as a `PRGScheme` (`Output = Seed × Seed`). -/
 def DoublePRG.toInnerPRG (G : DoublePRG) : PRGScheme where
   Seed := G.Seed
   Output := G.Seed × G.Seed
   stretch := G.stretch
 
-/-- The projected doubling generator as a `PRGScheme` (`Output = Seed`, the second
-component), whose security is the outer-hop assumption. -/
-def DoublePRG.toOuterPRG (G : DoublePRG) : PRGScheme where
+/-- The triple construction as a `PRGScheme` (`Output = Seed × Seed × Seed`). -/
+def DoublePRG.toTriplePRG (G : DoublePRG) : PRGScheme where
   Seed := G.Seed
-  Output := G.Seed
-  stretch := fun s => (G.stretch s).2
+  Output := G.Seed × G.Seed × G.Seed
+  stretch := G.triple
 
-/-- Decomposed hybrid game (independent seeds per `G` call).
-
-* `i ≥ 2`: everything uniform (ideal `G₃`);
-* `i = 1`: inner `G` call replaced by random, outer `G` still real;
-* `i = 0`: both `G` calls real but with *independent* seeds. -/
-noncomputable def DoublePRG.hyb (G : DoublePRG) (i : ℕ) :
+/-- Intermediate game `H₁`: the first call of `G` is replaced by a uniform pair
+`(a, b)`, the second call `G(a)` is kept. -/
+noncomputable def DoublePRG.tripleHyb (G : DoublePRG) :
     SPComp (G.Seed × G.Seed × G.Seed) := do
-  if i ≥ 2 then
-    let c ← SPComp.sample G.Seed
-    let d ← SPComp.sample G.Seed
-    let b ← SPComp.sample G.Seed
-    SPComp.pure (c, d, b)
-  else if i = 1 then
-    let c ← SPComp.sample G.Seed
-    let d ← SPComp.sample G.Seed
-    let s ← SPComp.sample G.Seed
-    SPComp.pure (c, d, (G.stretch s).2)
-  else
-    let s₁ ← SPComp.sample G.Seed
-    let s₂ ← SPComp.sample G.Seed
-    SPComp.pure ((G.stretch s₁).1, (G.stretch s₁).2, (G.stretch s₂).2)
+  let a ← SPComp.sample G.Seed
+  let b ← SPComp.sample G.Seed
+  SPComp.pure ((G.stretch a).1, (G.stretch a).2, b)
 
-/-- Hybrid `2` is the ideal `G₃`: three independent uniform seeds, independent of
-the base generator's `stretch`. -/
-theorem DoublePRG.hyb_2_ideal (G : DoublePRG) :
-    G.hyb 2 = (do
-      let c ← SPComp.sample G.Seed
-      let d ← SPComp.sample G.Seed
-      let b ← SPComp.sample G.Seed
-      SPComp.pure (c, d, b)) := by
-  (simp only [CatCrypt.Core.SPComp.monad_bind_eq]; bind_vcgen)
+/-- Distinguisher against `G` for the hop `H₀ → H₁`: on a pair `(a, b)` it
+expands `a` with `G` and runs `A` on `(G(a).1, G(a).2, b)`. -/
+def DoublePRG.tripleRedFirst (G : DoublePRG)
+    (A : G.Seed × G.Seed × G.Seed → SPComp Bool) :
+    G.Seed × G.Seed → SPComp Bool :=
+  fun ab => A ((G.stretch ab.1).1, (G.stretch ab.1).2, ab.2)
 
-/-- **Triple-from-double hybrid bound** (the composition core).
+/-- Distinguisher against `G` for the hop `H₁ → H₂`: on a pair `(c, d)` it
+samples a uniform seed `b` and runs `A` on `(c, d, b)`. -/
+noncomputable def DoublePRG.tripleRedSecond (G : DoublePRG)
+    (A : G.Seed × G.Seed × G.Seed → SPComp Bool) :
+    G.Seed × G.Seed → SPComp Bool :=
+  fun cd => SPComp.bind (SPComp.sample G.Seed) fun b => A (cd.1, cd.2, b)
 
-For any 3-game hybrid sequence `H` realising the 2-hop ladder, if both hops are
-bounded by `ε`, then `Adv(H₀, H₂) ≤ 2·ε`. The composition is the advantage
-triangle inequality — the PRG analogue of `cascade_prf_bound`. -/
-theorem triple_prg_hybrid_bound {α : Type} (H : ℕ → SPComp α) (A : α → SPComp Bool)
-    (ε : ℝ≥0∞)
-    (h01 : AdvantageA (H 0) (H 1) A ≤ ε)
-    (h12 : AdvantageA (H 1) (H 2) A ≤ ε) :
-    AdvantageA (H 0) (H 2) A ≤ 2 * ε := by
-  hop_chain
+/-- `H₀` against `A` is the real `G` game against `tripleRedFirst A`. -/
+theorem DoublePRG.real_bind_eq_redFirst (G : DoublePRG)
+    (A : G.Seed × G.Seed × G.Seed → SPComp Bool) :
+    (PRG_Real G.toTriplePRG).bind A = (PRG_Real G.toInnerPRG).bind (G.tripleRedFirst A) := by
+  show ((SPComp.sample G.Seed).bind fun s => SPComp.pure (G.triple s)).bind A =
+    ((SPComp.sample G.Seed).bind fun s => SPComp.pure (G.stretch s)).bind (G.tripleRedFirst A)
+  simp only [DoublePRG.triple, DoublePRG.tripleRedFirst, SPComp.bind_assoc, SPComp.pure_bind]
 
-/-- **Triple PRG uniform bound**: when both decomposed hybrid hops have advantage
-at most `ε`, the triple construction advantage is at most `2·ε`.
+/-- The ideal `G` game against `tripleRedFirst A` is `H₁` against `A`. -/
+theorem DoublePRG.ideal_bind_redFirst_eq (G : DoublePRG)
+    (A : G.Seed × G.Seed × G.Seed → SPComp Bool) :
+    (PRG_Ideal G.toInnerPRG).bind (G.tripleRedFirst A) = G.tripleHyb.bind A := by
+  show (SPComp.sample (G.Seed × G.Seed)).bind (G.tripleRedFirst A) = G.tripleHyb.bind A
+  simp only [DoublePRG.tripleHyb, DoublePRG.tripleRedFirst, SPComp.sample_prod_eq,
+    SPComp.monad_bind_eq, SPComp.bind_assoc, SPComp.pure_bind]
 
-This is the tight reduction `Adv_PRG(G₃) ≤ 2·Adv_PRG(G)`. -/
-theorem triple_prg_uniform_bound (G : DoublePRG) (ε : ℝ≥0∞)
-    (A : (G.Seed × G.Seed × G.Seed) → SPComp Bool)
-    (h_inner : AdvantageA (G.hyb 0) (G.hyb 1) A ≤ ε)
-    (h_outer : AdvantageA (G.hyb 1) (G.hyb 2) A ≤ ε) :
-    AdvantageA (G.hyb 0) (G.hyb 2) A ≤ 2 * ε := by
-  hop_chain
+/-- `H₁` against `A` is the real `G` game against `tripleRedSecond A`. -/
+theorem DoublePRG.hyb_bind_eq_redSecond (G : DoublePRG)
+    (A : G.Seed × G.Seed × G.Seed → SPComp Bool) :
+    G.tripleHyb.bind A = (PRG_Real G.toInnerPRG).bind (G.tripleRedSecond A) := by
+  show G.tripleHyb.bind A =
+    ((SPComp.sample G.Seed).bind fun s => SPComp.pure (G.stretch s)).bind (G.tripleRedSecond A)
+  simp only [DoublePRG.tripleHyb, DoublePRG.tripleRedSecond, SPComp.monad_bind_eq,
+    SPComp.bind_assoc, SPComp.pure_bind]
 
-/-- **Triple PRG bound from a base-PRG security assumption.**
+/-- The ideal `G` game against `tripleRedSecond A` is `H₂` against `A`. -/
+theorem DoublePRG.ideal_bind_redSecond_eq (G : DoublePRG)
+    (A : G.Seed × G.Seed × G.Seed → SPComp Bool) :
+    (PRG_Ideal G.toInnerPRG).bind (G.tripleRedSecond A) =
+      (PRG_Ideal G.toTriplePRG).bind A := by
+  show (SPComp.sample (G.Seed × G.Seed)).bind (G.tripleRedSecond A) =
+    (SPComp.sample (G.Seed × G.Seed × G.Seed)).bind A
+  simp only [DoublePRG.tripleRedSecond, SPComp.sample_prod_eq, SPComp.bind_assoc,
+    SPComp.pure_bind]
 
-If the inner and outer decomposed hops are bounded by the corresponding base-PRG
-advantages (`h_inner`, `h_outer` — the reduction's soundness, whose reduction
-adversaries `Ain`/`Aout` are exposed as hypotheses), and the base generator
-satisfies a `PRGAssumption` on each induced scheme (with `Hout.ε ≤ Hin.ε`), then
-the triple advantage is at most `2·Hin.ε`. -/
-theorem triple_prg_bound_of_assumption (G : DoublePRG)
-    (Hin : PRGAssumption G.toInnerPRG) (Hout : PRGAssumption G.toOuterPRG)
-    (hε : Hout.ε ≤ Hin.ε)
-    (A : (G.Seed × G.Seed × G.Seed) → SPComp Bool)
-    (Ain : G.toInnerPRG.Output → SPComp Bool)
-    (Aout : G.toOuterPRG.Output → SPComp Bool)
-    (h_inner : AdvantageA (G.hyb 0) (G.hyb 1) A ≤ PRG_Adv G.toInnerPRG Ain)
-    (h_outer : AdvantageA (G.hyb 1) (G.hyb 2) A ≤ PRG_Adv G.toOuterPRG Aout) :
-    AdvantageA (G.hyb 0) (G.hyb 2) A ≤ 2 * Hin.ε :=
-  triple_prg_hybrid_bound G.hyb A Hin.ε
-    (h_inner.trans (Hin.bound Ain))
-    (h_outer.trans ((Hout.bound Aout).trans hε))
+/-- **Triple-from-double PRG bound.** For every adversary `A` against the triple
+construction,
 
-/-- **Perfect triple corollary.** When both hops are perfectly indistinguishable
-(`ε = 0`, e.g. a bijection base generator via `bijPRG_assumption`), the triple
-advantage is exactly `0`. -/
-theorem triple_prg_perfect (G : DoublePRG)
-    (A : (G.Seed × G.Seed × G.Seed) → SPComp Bool)
-    (h_inner : AdvantageA (G.hyb 0) (G.hyb 1) A ≤ 0)
-    (h_outer : AdvantageA (G.hyb 1) (G.hyb 2) A ≤ 0) :
-    AdvantageA (G.hyb 0) (G.hyb 2) A = 0 := by
-  simpa using triple_prg_hybrid_bound G.hyb A 0 h_inner h_outer
+    `PRG_Adv G₃ A ≤ PRG_Adv G (tripleRedFirst A) + PRG_Adv G (tripleRedSecond A)`,
+
+where both distinguishers attack the base doubling generator `G`. -/
+theorem triple_prg_bound (G : DoublePRG) (A : G.Seed × G.Seed × G.Seed → SPComp Bool) :
+    PRG_Adv G.toTriplePRG A ≤
+      PRG_Adv G.toInnerPRG (G.tripleRedFirst A) + PRG_Adv G.toInnerPRG (G.tripleRedSecond A) := by
+  unfold PRG_Adv AdvantageA
+  rw [G.real_bind_eq_redFirst A, ← G.ideal_bind_redSecond_eq A]
+  refine (advantage_triangle _ (G.tripleHyb.bind A) _).trans (add_le_add ?_ ?_)
+  · rw [← G.ideal_bind_redFirst_eq A]
+  · rw [G.hyb_bind_eq_redSecond A]
 
 end CatCrypt.Examples.PRG
