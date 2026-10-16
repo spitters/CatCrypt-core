@@ -60,6 +60,14 @@ coincide (`rHoare_bij_step`).
 * `bijCPA_perfect_indcpa` — **perfect IND-CPA security**:
   `INDCPA_Adv B.toEncScheme m₀ m₁ A = 0` for every adversary `A`.
 * `boolXorCPA_perfect_indcpa` — the `Bool` instantiation `(r, (k ⊕ r) ⊕ m)`.
+* `cpa_from_prf_reduction` — for an arbitrary PRF `F` and every adversary `A`,
+  `INDCPA_Adv ≤ Σ_{m ∈ {m₀, m₁}} E_r PRF_Adv F r (cpaReduction r m A)`.
+* `cpa_from_prf_reduction_gamehop` — the corollary `INDCPA_Adv ≤ 2·ε` under the
+  single-sample (statistical) assumption `PRFAssumption`.
+
+The earlier statement `cpa_from_prf_bound` took the PRF-swap hop as a hypothesis
+with a free distinguisher; it is replaced by `cpa_from_prf_reduction` and
+`cpa_from_prf_reduction_gamehop`.
 
 ## References
 
@@ -345,11 +353,11 @@ output `u`:
 
 The OTP hop is *perfect*: over a fresh uniform pad the two ciphertext
 distributions coincide (`otp_advantage_zero`, proved by the `bind_vcgen`
-change-of-variables tactic). The PRF-swap hop is the cryptographic reduction; its
-soundness — that distinguishing the real encryption from the one-time-pad world is
-no easier than distinguishing `F` from random — is taken as the hypothesis
-`hswap`, bounded through the `PRFAssumption`. The two hops compose by the
-advantage triangle inequality into `INDCPA_Adv ≤ ε_prf`.
+change-of-variables tactic). The PRF-swap hop is the reduction: at each value of
+the randomness `r` it is the PRF game at input `r` against the distinguisher
+`cpaReduction r m A`, so it is bounded by the average over `r` of these PRF
+advantages (`indcpa_otp_hop_le_sum`). The hops compose by the advantage triangle
+inequality into `cpa_from_prf_reduction`.
 -/
 
 open CatCrypt.Tactic
@@ -431,51 +439,10 @@ theorem PRFEncScheme.otp_advantage_zero (P : PRFEncScheme) (m₀ m₁ : P.F.Outp
     AdvantageA (P.otpGame m₀ m₁ true) (P.otpGame m₀ m₁ false) A = 0 := by
   simp_all [AdvantageA, P.otpGame_true_eq_false, Advantage_self]
 
-/-- **IND-CPA security from a PRF assumption** (the computational headline).
-
-For the PRF-based encryption `Enc(k, m) = (r, F(k, r) ⊕ m)`, the IND-CPA advantage
-of any adversary `A` is bounded by the PRF advantage `H.ε` of the underlying
-function `F`.
-
-The proof composes two hops by the advantage triangle inequality, routing through
-the one-time-pad world `otpGame`:
-
-* the **PRF-swap** hop `hswap` — the reduction's soundness: distinguishing the real
-  encryption from the one-time-pad world (in both challenge worlds) is bounded by a
-  single PRF distinguisher's advantage `PRF_Adv F x Ared`, hence by `H.ε` via the
-  assumption; and
-* the **perfect-OTP** hop `otp_advantage_zero` — a one-time pad on a fresh uniform
-  pad leaks nothing, contributing `0`.
-
-`x`/`Ared` are the reduction's PRF-distinguisher witness. The `hswap` hypothesis
-packages the (large) explicit-reduction construction, exactly as the cascade bound
-`CatCrypt.Examples.PRF.cascade_prf_bound` exposes its hop bounds as hypotheses. -/
-theorem cpa_from_prf_bound (P : PRFEncScheme) (H : PRFAssumption P.F)
-    (m₀ m₁ : P.F.Output) (A : (P.F.Input × P.F.Output) → SPComp Bool)
-    (x : P.F.Input) (Ared : P.F.Output → SPComp Bool)
-    (hswap :
-      AdvantageA (INDCPA_Game P.toEncScheme m₀ m₁ true) (P.otpGame m₀ m₁ true) A
-        + AdvantageA (P.otpGame m₀ m₁ false) (INDCPA_Game P.toEncScheme m₀ m₁ false) A
-        ≤ PRF_Adv P.F x Ared) :
-    INDCPA_Adv P.toEncScheme m₀ m₁ A ≤ H.ε := by
-  have hotp := P.otp_advantage_zero m₀ m₁ A
-  have htri1 := advantage_triangle
-    ((INDCPA_Game P.toEncScheme m₀ m₁ true).bind A)
-    ((P.otpGame m₀ m₁ true).bind A)
-    ((INDCPA_Game P.toEncScheme m₀ m₁ false).bind A)
-  have htri2 := advantage_triangle
-    ((P.otpGame m₀ m₁ true).bind A)
-    ((P.otpGame m₀ m₁ false).bind A)
-    ((INDCPA_Game P.toEncScheme m₀ m₁ false).bind A)
-  simp only [INDCPA_Adv, AdvantageA] at hotp hswap ⊢
-  rw [hotp, zero_add] at htri2
-  exact (htri1.trans (add_le_add le_rfl htri2)).trans (hswap.trans (H.bound x Ared))
-
 /-! ## The Synthesized Reduction: discharging the PRF-swap hop
 
-`cpa_from_prf_bound` takes the PRF-swap soundness `hswap` as a hypothesis. We now
-*build* the concrete PRF distinguisher and prove the swap hops outright, so the
-computational IND-CPA bound rests only on the `PRFAssumption` — no assumed hop.
+The concrete PRF distinguisher is built here and the swap hops are proved
+outright; no hop is assumed.
 
 The single-challenge IND-CPA game samples a *fresh* randomness `r` and pads with
 `F(k, r)`, whereas the single-query PRF game `PRF_Real F x` fixes its input `x`.
@@ -553,6 +520,78 @@ theorem PRFEncScheme.indcpa_otp_hop (P : PRFEncScheme) (H : PRFAssumption P.F)
   rw [hotp]
   exact advantageA_sample_bind _ _ _ _ (fun r =>
     (P.slice_eq r (if b then m₀ else m₁) A).le.trans (H.bound r _))
+
+/-- **Averaging over a uniform prefix.** The advantage between two games that
+first sample `x : α` uniformly is at most the average over `x` of the advantages
+between the continuations. -/
+theorem advantageA_sample_bind_le_sum {α β : Type} [Fintype α] [Nonempty α]
+    (f g : α → SPComp β) (A : β → SPComp Bool) :
+    AdvantageA (SPComp.bind (SPComp.sample α) f) (SPComp.bind (SPComp.sample α) g) A ≤
+      ∑ x : α, (↑(Fintype.card α) : ℝ≥0∞)⁻¹ * AdvantageA (f x) (g x) A := by
+  simp only [AdvantageA, Advantage, SPComp.bind_assoc]
+  rw [prTrue_bind_sample, prTrue_bind_sample]
+  set w := (↑(Fintype.card α) : ℝ≥0∞)⁻¹
+  set p := fun x => prTrue (SPComp.bind (f x) A) Heap.empty
+  set q := fun x => prTrue (SPComp.bind (g x) A) Heap.empty
+  have key : ∀ (p q : α → ℝ≥0∞),
+      (∑ x, w * p x) - (∑ x, w * q x) ≤ ∑ x, w * ((p x - q x) ⊔ (q x - p x)) := by
+    intro p q
+    refine tsub_le_iff_right.mpr ?_
+    rw [← Finset.sum_add_distrib]
+    refine Finset.sum_le_sum fun x _ => ?_
+    rw [← mul_add]
+    gcongr
+    calc p x ≤ p x - q x + q x := le_tsub_add
+      _ ≤ ((p x - q x) ⊔ (q x - p x)) + q x := by
+        gcongr
+        exact le_sup_left
+  refine max_le ?_ ?_
+  · exact key p q
+  · refine (key q p).trans_eq (Finset.sum_congr rfl fun x _ => ?_)
+    rw [max_comm]
+
+/-- **The PRF-swap hop as an average of PRF advantages.** For each challenge
+world `b`, the advantage between the real encryption game and the one-time-pad
+world is at most the average over the randomness `r` of the PRF advantages of
+`cpaReduction r m_b A`. -/
+theorem PRFEncScheme.indcpa_otp_hop_le_sum (P : PRFEncScheme)
+    (m₀ m₁ : P.F.Output) (A : (P.F.Input × P.F.Output) → SPComp Bool) (b : Bool) :
+    AdvantageA (INDCPA_Game P.toEncScheme m₀ m₁ b) (P.otpGame m₀ m₁ b) A ≤
+      ∑ r : P.F.Input, (↑(Fintype.card P.F.Input) : ℝ≥0∞)⁻¹ *
+        PRF_Adv P.F r (P.cpaReduction r (if b then m₀ else m₁) A) := by
+  rw [P.indcpa_game_eq m₀ m₁ b]
+  have hotp : P.otpGame m₀ m₁ b
+      = SPComp.bind (SPComp.sample P.F.Input) (fun r =>
+          SPComp.bind (SPComp.sample P.F.Output) (fun u =>
+            SPComp.pure (r, P.xorOut u (if b then m₀ else m₁)))) := by
+    bind_vcgen
+  rw [hotp]
+  refine (advantageA_sample_bind_le_sum _ _ _).trans_eq ?_
+  exact Finset.sum_congr rfl fun r _ => congrArg _ (P.slice_eq r (if b then m₀ else m₁) A)
+
+/-- **IND-CPA security from a PRF.** For the PRF-based encryption
+`Enc(k, m) = (r, F(k, r) ⊕ m)` and every adversary `A`, the IND-CPA advantage is
+at most the sum over the two challenge messages of the average over `r` of the
+PRF advantages of the distinguishers `cpaReduction r m A`. -/
+theorem cpa_from_prf_reduction (P : PRFEncScheme)
+    (m₀ m₁ : P.F.Output) (A : (P.F.Input × P.F.Output) → SPComp Bool) :
+    INDCPA_Adv P.toEncScheme m₀ m₁ A ≤
+      ∑ r : P.F.Input, (↑(Fintype.card P.F.Input) : ℝ≥0∞)⁻¹ *
+          PRF_Adv P.F r (P.cpaReduction r m₀ A) +
+        ∑ r : P.F.Input, (↑(Fintype.card P.F.Input) : ℝ≥0∞)⁻¹ *
+          PRF_Adv P.F r (P.cpaReduction r m₁ A) := by
+  rw [← add_zero (∑ r : P.F.Input, _ * PRF_Adv P.F r (P.cpaReduction r m₀ A))]
+  unfold INDCPA_Adv
+  adv_game_hop [P.otpGame m₀ m₁ true, P.otpGame m₀ m₁ false]
+  · have h := P.indcpa_otp_hop_le_sum m₀ m₁ A true
+    simp only [if_true] at h
+    exact h
+  · exact le_of_eq (P.otp_advantage_zero m₀ m₁ A)
+  · have h := P.indcpa_otp_hop_le_sum m₀ m₁ A false
+    simp only [Bool.false_eq_true, if_false] at h
+    unfold AdvantageA at h ⊢
+    rw [Advantage_sym]
+    exact h
 
 /-- **IND-CPA security from a PRF, fully synthesized** (no assumed swap hop).
 

@@ -38,11 +38,11 @@ Chapter numbers follow the online edition of the book.
 | 5 | Pseudorandom generators | `PRG` | `bijPRG_perfect`, `triple_prg_bound` | Perfect security of a bijective generator (length-preserving); triple construction ≤ two PRG advantages of explicit reductions against the doubling generator |
 | 6 | Pseudorandom functions | `PRF` | `bijPRF_perfect`, `cascade_prf_bound` | Perfect bijection-family PRF; cascade bound `2·ε + q(q−1)/2N` with hop hypotheses |
 | 6 | PRG from a PRF | `PRFPRG` | `prg_decomp_security_bound` | Over `Bool`, two counters: sum of two PRF advantages of explicit reductions, for the variant with independent seeds |
-| 7 | CPA security | `CPAFromPRF` | `bijCPA_perfect_indcpa`, `cpa_from_prf_bound` | `(r, F(k, r) ⊕ m)`: perfect for a bijection family; `≤ ε` under a PRF assumption with the PRF-swap hop as a hypothesis |
+| 7 | CPA security | `CPAFromPRF` | `bijCPA_perfect_indcpa`, `cpa_from_prf_reduction` | `(r, F(k, r) ⊕ m)`: perfect for a bijection family; for any `F`, ≤ two averages over `r` of PRF advantages of an explicit reduction |
 | 7 | Deterministic encryption | `DetCPA` | `det_enc_xor_insecure` | Deterministic XOR encryption: a distinguisher with advantage exactly 1 |
 | 7 | IND-CPA games | `INDCPA` | `perfect_indcpa_zero_advantage` | Standalone IND-CPA games; perfect security gives advantage 0 |
-| 8 | Block-cipher modes | `CTRMode` | `ctr_perfect_indcpa`, `ctr_indcpa_bound` | Single-block CTR: perfect for a bijection family; `≤ ε` under a PRF assumption, with the PRF-swap hop as a hypothesis |
-| 8 | Block-cipher modes | `CBCMode` | `cbc_perfect_indcpa`, `cbc_indcpa_bound` | Single-block CBC: perfect for a family bijective in key and input; `≤ 2·ε` for a real cipher under a PRF assumption, with the two swap hops as hypotheses |
+| 8 | Block-cipher modes | `CTRMode` | `ctr_perfect_indcpa`, `ctr_indcpa_bound` | Single-block CTR: perfect for a bijection family; ≤ two averages over the nonce of PRF advantages of the block cipher against an explicit reduction |
+| 8 | Block-cipher modes | `CBCMode` | `cbc_perfect_indcpa`, `cbc_indcpa_bound` | Single-block CBC: perfect for a family bijective in key and input; for an arbitrary block function, ≤ two averages over the IV of its PRF advantages against an explicit reduction |
 | 9 | Chosen-ciphertext attacks | `Crypto/SecurityDefs` | `INDCCA_Game`, `INDCCA_reduces_to_INDCPA` | IND-CCA game with a decryption oracle; IND-CCA ≤ IND-CPA + two decryption-oracle integrity gaps, for any scheme |
 | 10 | MACs | `MAC` | `bijMAC_forgery_prob`, `boolXorMAC_forgery_prob` | Bijection-family MAC: single-query forgery probability exactly `1/\|Tag\|` |
 | 10 | MAC from a PRF | `PRFMAC` | `security_based_on_prf` | Over `Bool`: forgery on an unqueried message, two PRF advantages plus a statistical gap of 1/2 |
