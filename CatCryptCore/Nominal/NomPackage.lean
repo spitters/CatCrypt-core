@@ -20,6 +20,10 @@ This file defines nominal packages - packages equipped with nominal structure
 * `NomPackage` - A package wrapped with support information
 * `NomPackage.sep` - Separated composition (packages with disjoint supports)
 
+Sequential composition (linking) is not defined on this layer, whose raw packages
+make no imported call; the nominal packages of the deep embedding have it
+(`CatCrypt.Deep.NomPackage.link`, `CatCryptCore/Deep/Package.lean`).
+
 ## Overview
 
 In nominal CatCrypt, packages are given a nominal structure where atoms represent
@@ -102,10 +106,6 @@ theorem sep_support (P₁ P₂ : NomPackage) (hDisj : Disjoint P₁ P₂)
 noncomputable def par (P₁ P₂ : NomPackage)
     (hIds : RawPackage.Disjoint P₁.raw P₂.raw) : NomPackage :=
   ⟨RawPackage.par P₁.raw P₂.raw hIds, P₁.support ∪ P₂.support⟩
-
-/-- Sequential composition (linking) of nominal packages -/
-noncomputable def link (P₁ P₂ : NomPackage) : NomPackage :=
-  ⟨RawPackage.link P₁.raw P₂.raw, P₁.support ∪ P₂.support⟩
 
 /-- Create a singleton nominal package with given support.
     `S` and `T` are restricted to `Type` (not `Type*`) to match the
