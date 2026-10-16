@@ -30,9 +30,9 @@ the prefix order of chains is therefore `List.IsSuffix` (`<:+`). Ancestry of blo
 * `ChainTrace.ChainsInTree T`: consecutive blocks of honest chains are related by the
   ancestor relation of `T`.
 * `ChainTrace.TraceGuard`: the conjunction of the four, the guard under which the finality
-  properties are required (our reading of the trace guard of Magri, Matt, Nielsen and
-  Tschudi, *Enig*, §3: the finality properties are only demanded on traces of the underlying
-  chain that satisfy the stated chain properties).
+  properties are required (our reading of the trace guard of Kamp, Nielsen, Thomsen and
+  Tschudi, *Enig* (ePrint 2022/201), §3: the finality properties are only demanded on
+  traces of the underlying chain that satisfy the stated chain properties).
 
 These are hypotheses of the theorems that use them, never axioms or instances.
 

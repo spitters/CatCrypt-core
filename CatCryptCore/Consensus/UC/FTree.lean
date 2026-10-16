@@ -16,7 +16,7 @@ set_option autoImplicit false
 
 This file defines, as transparent functionalities in the sense of
 `CatCrypt.Crypto.UCTransparent` (`TFunc`, `ideal`), the two functionalities of
-Magri, Matt, Nielsen and Tschudi, *Enig* (ePrint 2022/201), §3:
+Kamp, Nielsen, Thomsen and Tschudi, *Enig* (ePrint 2022/201), §3:
 
 * `F_Tree^P` (`fTree`): every party has a tree of blocks, a position (its selected
   chain) and a list of final blocks, whose head is its last final block. The adversary
@@ -37,7 +37,7 @@ Magri, Matt, Nielsen and Tschudi, *Enig* (ePrint 2022/201), §3:
   view at each time. `TreeTrace.chains` is the position trace and `TreeTrace.finalized`
   the finalization (block `b` final at position `i` when `b` is at height `i` in the
   final list), both in the vocabulary of `Consensus.Finality`.
-* `traceOf vw honest s₀ tr` — the tree trace of a C1 trace `tr` whose states are mapped
+* `traceOf vw honest s₀ tr` — the tree trace of a trace `tr` whose states are mapped
   to views by `vw`; time `t` is the state after `t` activations, and times beyond the end
   of `tr` see the last state.
 * `treeFunc vw honest G s₀ ex` — the transparent functionality with guard `G` on tree
@@ -46,7 +46,7 @@ Magri, Matt, Nielsen and Tschudi, *Enig* (ePrint 2022/201), §3:
 
 ## Trace properties
 
-Reused from `Consensus.Finality` (row F1), applied to `chains` and `finalized`:
+Reused from `Consensus.Finality`, applied to `chains` and `finalized`:
 `CommonPrefix` (`ChainTrace.CommonPrefix`), `ChainQuality` (`ChainTrace.ChainQuality`),
 positions in the block tree (`ChainTrace.ChainsInTree`, part of `WellFormed`),
 finality-respecting positions (`Finality.FinalityRespecting`: a block final for an
@@ -54,15 +54,15 @@ honest party stays on its position), `ChainForming` (`Finality.ChainForming`),
 `Agreement` (`Finality.Agreement`), and the depth predicate `Finality.kDeep` (for
 `finalized` with depth `0` and for `KSupport`).
 
-New here: `ChainGrowth` and `DeltaUpdated` measure time in rounds of the view (F1's
-`ChainTrace.ChainGrowth` measures it in steps of the trace, and a finite trace extended
-by its last state violates it), `KSupport` and `Validity` (the support guards of
+Defined in this file: `ChainGrowth` and `DeltaUpdated`, which measure time in rounds of
+the view (`ChainTrace.ChainGrowth` measures it in steps of the trace, and a finite trace
+extended by its last state violates it), `KSupport` and `Validity` (the support guards of
 `F_FinTree`), and the well-formedness conditions `TreesGrow`, `PositionsInTrees`,
 `RoundsMonotone`.
 
-Note on naming: F1's `PositionRespecting` (finality-respecting *positions* in the sense
-of finalization indices) is a different property; Enig's finality-respecting positions
-(a party's position extends its final blocks) is F1's `FinalityRespecting`.
+Naming: `Finality.PositionRespecting` (finality-respecting *positions* in the sense of
+finalization indices) is a different property; Enig's finality-respecting positions (a
+party's position extends its final blocks) is `Finality.FinalityRespecting`.
 
 ## Main results
 
@@ -70,7 +70,7 @@ of finalization indices) is a different property; Enig's finality-respecting pos
 * `fTree_guard_prefix`, `finTree_guard_prefix` — the guards are safety properties: a
   guard that holds on a trace holds on each of its prefixes, provided every property of
   `P` is stable under truncation (`Stable`); all properties defined here are
-  (`stable_*`). Hence explosion in C1's `ideal` is permanent exactly as the trace
+  (`stable_*`). Hence explosion in `UCTransparent.ideal` is permanent exactly as the trace
   property is violated permanently.
 * `ideal_step_live`, `ideal_step_exploded` — one step of the ideal world: before
   explosion it outputs the simulator's output iff the extended trace satisfies the
@@ -78,7 +78,7 @@ of finalization indices) is a different property; Enig's finality-respecting pos
 * `fTree_realizes`, `finTree_realizes` — the copy simulator, which runs the protocol and
   copies its tree, position and final blocks into the functionality, realizes `F_Tree^P`
   and `F_FinTree^P'` with advantage at most the probability that the real trace violates
-  the guard (instances of C1's `transparent_realizes_copy`, the up-to-bad lemma
+  the guard (instances of `transparent_realizes_copy`, the up-to-bad lemma
   `adv_le_prBad` on the monitored run).
 * `fTree_adv_eq_zero`, `finTree_adv_eq_zero` — the realization is perfect for every
   environment under which the real trace satisfies the guard almost surely.
@@ -94,7 +94,7 @@ of finalization indices) is a different property; Enig's finality-respecting pos
 ## Modelling choices
 
 In Enig, `F_Tree^P` ignores an adversarial input that would violate `P`, and explodes on
-inconsistent `SetFinal` calls. C1's `ideal` has a single reaction to a guard failure:
+inconsistent `SetFinal` calls. `UCTransparent.ideal` has a single reaction to a guard failure:
 explosion. The guard of `fTree` is therefore the conjunction of `P` and agreement of the
 final blocks, and an input violating `P` explodes the functionality instead of being
 ignored. For the copy simulator the two readings differ only on runs where the real trace
@@ -169,13 +169,13 @@ def RoundsMonotone : Prop :=
   ∀ t t', t ≤ t' → (X.st t).round ≤ (X.st t').round
 
 /-- Well-formedness: trees grow, positions lie in the trees and are chains of `T`
-(F1's `ChainsInTree`), and rounds do not decrease. -/
+(`ChainTrace.ChainsInTree`), and rounds do not decrease. -/
 def WellFormed (T : BlockTree Blk) : Prop :=
   X.TreesGrow ∧ X.PositionsInTrees ∧ X.chains.ChainsInTree T ∧ X.RoundsMonotone
 
 /-! ### Properties of the tree (the parameter `P` of `F_Tree^P`) -/
 
-/-- Common prefix with parameter `k` of the positions (F1's `ChainTrace.CommonPrefix`). -/
+/-- Common prefix with parameter `k` of the positions (`ChainTrace.CommonPrefix`). -/
 def CommonPrefix (k : ℕ) : Prop := X.chains.CommonPrefix k
 
 /-- Chain growth with `g` blocks per `s` rounds: if the round at `t'` is at least `s`
@@ -185,21 +185,21 @@ def ChainGrowth (s g : ℕ) : Prop :=
   ∀ p q t t', X.honest p → X.honest q → (X.st t).round + s ≤ (X.st t').round →
     ((X.st t).pos p).length + g ≤ ((X.st t').pos q).length
 
-/-- Chain quality of the positions (F1's `ChainTrace.ChainQuality`). -/
+/-- Chain quality of the positions (`ChainTrace.ChainQuality`). -/
 def ChainQuality (hb : Blk → Bool) (ℓ μ : ℕ) : Prop := X.chains.ChainQuality hb ℓ μ
 
 /-- Finality-respecting positions: a block final for an honest party lies on its position
-at every later time (F1's `FinalityRespecting`). -/
+at every later time (`Finality.FinalityRespecting`). -/
 def FinalityRespectingPos : Prop := FinalityRespecting X.chains X.finalized
 
 /-! ### Finality guards (the parameter `P'` of `F_FinTree^P'`) -/
 
 /-- Chain-forming: the final blocks of an honest party at one time form a chain of `T`
-(F1's `ChainForming`). -/
+(`Finality.ChainForming`). -/
 def ChainForming (T : BlockTree Blk) : Prop := Finality.ChainForming T X.chains X.finalized
 
 /-- Agreement: all blocks final for honest parties lie on one chain of `T`
-(F1's `Agreement`). -/
+(`Finality.Agreement`). -/
 def Agreement (T : BlockTree Blk) : Prop := Finality.Agreement T X.chains X.finalized
 
 /-- `Δ`-updated: if `b` is final for honest `p` at `t`, then at every time `t'` at least
@@ -209,7 +209,7 @@ def DeltaUpdated (T : BlockTree Blk) (Δ : ℕ) : Prop :=
     (X.st t).round + Δ ≤ (X.st t').round → ∃ b' j, X.finalized t' q b' j ∧ T.anc b b'
 
 /-- `k`-support: a block final for an honest party at `t` was at least `k` deep in the
-position of some honest party at some time `t₀ ≤ t` (via F1's `kDeep`). -/
+position of some honest party at some time `t₀ ≤ t` (via `Finality.kDeep`). -/
 def KSupport (k : ℕ) : Prop :=
   ∀ p t b i, X.honest p → X.finalized t p b i →
     ∃ q t₀ j, t₀ ≤ t ∧ X.honest q ∧ kDeep k X.chains t₀ q b j
@@ -299,7 +299,7 @@ theorem stable_all {P : List (TreeTrace Party Blk → Prop)} (hP : ∀ φ ∈ P,
 
 end Stable
 
-/-! ## Tree traces of C1 traces and the functionalities -/
+/-! ## Tree traces of transparent traces and the functionalities -/
 
 section Func
 
@@ -310,7 +310,7 @@ for `t` beyond the length of `tr`, the last state. -/
 def stAt (s₀ : σ) (tr : Trace σ E O) (t : ℕ) : σ :=
   ((tr.take t).getLast?.map fun x => x.2.2).getD s₀
 
-/-- The tree trace of the C1 trace `tr`, with views `vw` and honest parties `honest`. -/
+/-- The tree trace of the trace `tr`, with views `vw` and honest parties `honest`. -/
 def traceOf (vw : σ → TreeView Party Blk) (honest : Party → Prop) (s₀ : σ)
     (tr : Trace σ E O) : TreeTrace Party Blk :=
   ⟨honest, fun t => vw (stAt s₀ tr t)⟩
@@ -448,7 +448,7 @@ section Realize
 
 variable {Party Blk σ ζ E O : Type}
 
-/-- One step of C1's ideal world before explosion: the simulator's transition is
+/-- One step of the ideal world `ideal` before explosion: the simulator's transition is
 appended to the trace, the flag records whether the guard fails on the extended trace,
 and the output is the simulator's output if the guard holds and the exploded output
 otherwise. -/
@@ -461,7 +461,7 @@ theorem ideal_step_live (F : TFunc σ E O) (S : Sys σ E O) (s : σ) (tr : Trace
   congr 1; funext p
   cases F.guard (tr ++ [(e, p.2, p.1)]) <;> rfl
 
-/-- One step of C1's ideal world after explosion: the flag stays set and the output is
+/-- One step of the ideal world `ideal` after explosion: the flag stays set and the output is
 the exploded output. -/
 theorem ideal_step_exploded (F : TFunc σ E O) (S : Sys σ E O) (s : σ) (tr : Trace σ E O)
     (e : E) :
@@ -469,11 +469,12 @@ theorem ideal_step_exploded (F : TFunc σ E O) (S : Sys σ E O) (s : σ) (tr : T
       SPComp.pure ((p.1, tr ++ [(e, p.2, p.1)], true), F.exploded) := by
   simp [ideal]
 
-/-- **Realization of a tree functionality.** For a lossless protocol `π`, the copy
+/-- **Realization of a tree functionality** (composition plumbing). For a lossless protocol
+`π`, the copy
 simulator (`π` itself, whose state is mapped by `vw` to the tree, positions and final
 blocks of the functionality) realizes `treeFunc vw honest G π.init ex`: every environment
 distinguishes the real world from the ideal world with advantage at most the probability
-that the real trace violates `G`. Instance of C1's `transparent_realizes_copy`. -/
+that the real trace violates `G`. Instance of `transparent_realizes_copy`. -/
 theorem treeFunc_realizes (π : Sys σ E O) (vw : σ → TreeView Party Blk)
     (honest : Party → Prop) (G : TreeTrace Party Blk → Prop) (ex : O)
     (hπ : ∀ s e, SPComp.NoFail (π.step s e)) :
@@ -481,7 +482,8 @@ theorem treeFunc_realizes (π : Sys σ E O) (vw : σ → TreeView Party Blk)
       (fun _ Z => guardFail π (treeFunc vw honest G π.init ex).guard Z) :=
   transparent_realizes_copy π _ hπ
 
-/-- **`F_Tree^P` is realized by the copy simulator up to guard failure.** For a lossless
+/-- **`F_Tree^P` is realized by the copy simulator up to guard failure** (composition
+plumbing). For a lossless
 protocol `π` with view map `vw`, every environment has advantage at most the probability
 that the real tree trace is not well formed, violates a property of `P`, or has final
 blocks of honest parties off one chain. -/
@@ -492,7 +494,8 @@ theorem fTree_realizes (π : Sys σ E O) (vw : σ → TreeView Party Blk) (hones
       (fun _ Z => guardFail π (fTree vw honest T P π.init ex).guard Z) :=
   treeFunc_realizes π vw honest _ ex hπ
 
-/-- **`F_FinTree^P'` is realized by the copy simulator up to guard failure.** For a
+/-- **`F_FinTree^P'` is realized by the copy simulator up to guard failure** (composition
+plumbing). For a
 lossless protocol `π` with view map `vw`, every environment has advantage at most the
 probability that the real tree trace violates well-formedness, `P`, chain-forming,
 agreement, `Δ`-updatedness or the support guard. -/
@@ -504,8 +507,8 @@ theorem finTree_realizes (π : Sys σ E O) (vw : σ → TreeView Party Blk)
       (fun _ Z => guardFail π (finTree vw honest T P Δ supp π.init ex).guard Z) :=
   treeFunc_realizes π vw honest _ ex hπ
 
-/-- Perfect realization: an environment under which the real trace satisfies the guard of
-`treeFunc` with probability `1` has advantage `0`. -/
+/-- Perfect realization (composition plumbing): an environment under which the real trace
+satisfies the guard of `treeFunc` with probability `1` has advantage `0`. -/
 theorem treeFunc_adv_eq_zero (π : Sys σ E O) (vw : σ → TreeView Party Blk)
     (honest : Party → Prop) (G : TreeTrace Party Blk → Prop) (ex : O)
     (hπ : ∀ s e, SPComp.NoFail (π.step s e)) (Z : Env (Strat ζ E O) ζ)
@@ -513,8 +516,8 @@ theorem treeFunc_adv_eq_zero (π : Sys σ E O) (vw : σ → TreeView Party Blk)
     adv π (ideal (treeFunc vw honest G π.init ex) π) Z = 0 :=
   le_antisymm ((treeFunc_realizes π vw honest G ex hπ ζ Z).trans_eq hZ) zero_le
 
-/-- Perfect realization of `F_Tree^P` under every environment for which the real trace
-satisfies the guard with probability `1`. -/
+/-- Perfect realization of `F_Tree^P` (composition plumbing) under every environment for
+which the real trace satisfies the guard with probability `1`. -/
 theorem fTree_adv_eq_zero (π : Sys σ E O) (vw : σ → TreeView Party Blk)
     (honest : Party → Prop) (T : BlockTree Blk) (P : List (TreeTrace Party Blk → Prop))
     (ex : O) (hπ : ∀ s e, SPComp.NoFail (π.step s e)) (Z : Env (Strat ζ E O) ζ)
@@ -522,8 +525,8 @@ theorem fTree_adv_eq_zero (π : Sys σ E O) (vw : σ → TreeView Party Blk)
     adv π (ideal (fTree vw honest T P π.init ex) π) Z = 0 :=
   treeFunc_adv_eq_zero π vw honest _ ex hπ Z hZ
 
-/-- Perfect realization of `F_FinTree^P'` under every environment for which the real trace
-satisfies the guard with probability `1`. -/
+/-- Perfect realization of `F_FinTree^P'` (composition plumbing) under every environment
+for which the real trace satisfies the guard with probability `1`. -/
 theorem finTree_adv_eq_zero (π : Sys σ E O) (vw : σ → TreeView Party Blk)
     (honest : Party → Prop) (T : BlockTree Blk) (P : List (TreeTrace Party Blk → Prop))
     (Δ : ℕ) (supp : TreeTrace Party Blk → Prop) (ex : O)
@@ -604,10 +607,11 @@ noncomputable def lineProto : Sys ℕ Ev (List ℕ) where
 theorem lineProto_noFail : ∀ s e, SPComp.NoFail (lineProto.step s e) :=
   fun _ _ => SPComp.pure_noFail _
 
-/-- The positions of `lineTT` are F1's `lineTrace`. -/
+/-- The positions of `lineTT` are `Finality.Examples.lineTrace`. -/
 theorem lineTT_chains : lineTT.chains = lineTrace := rfl
 
-/-- The finalization of `lineTT` is F1's two-deep finality on `lineTrace`. -/
+/-- The finalization of `lineTT` is the two-deep finality of `Finality.Examples` on
+`lineTrace`. -/
 theorem lineTT_finalized : lineTT.finalized = kDeep 2 lineTrace := rfl
 
 theorem drop_two_line_suffix {t t' : ℕ} (h : t ≤ t') : (line t).drop 2 <:+ (line t').drop 2 := by

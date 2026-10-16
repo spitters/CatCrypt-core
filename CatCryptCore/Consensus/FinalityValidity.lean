@@ -56,7 +56,7 @@ third" (`3 * stake w (slashable votes ∪ (Finset.univ \ H)) < W`), and in parti
   under "honest validators are not slashable" and an adversarial stake (share `β`) below one
   third.
 * `ffg_finalityValidity`: v-validity and chain-forming together.
-* `Examples.ffgValidity_nonvacuous_allHonest`: all hypotheses hold on F1's instance
+* `Examples.ffgValidity_nonvacuous_allHonest`: all hypotheses hold on the instance
   `ffgTrace` with `H = univ` (`β = 0`).
 * `Examples.ffgValidity_nonvacuous_adversary`: all hypotheses hold on a trace with one
   adversarial validator of four (`β = 1/4`) that double votes and is slashable; the checkpoint
@@ -322,8 +322,8 @@ open FFG.Examples
 
 /-! #### All validators honest (`β = 0`) -/
 
-/-- On F1's instance `ffgTrace` with `honestVotes` and `H = univ`, all hypotheses of
-`ffg_finalityValidity` and `ffg_vValidity_share` (with `β = 0`) hold, and the checkpoint
+/-- On the instance `ffgTrace` of `Finality.Examples` with `honestVotes` and `H = univ`, all
+hypotheses of `ffg_finalityValidity` and `ffg_vValidity_share` (with `β = 0`) hold, and the checkpoint
 `(1, 1)` is finalized by an honest party. -/
 theorem ffgValidity_nonvacuous_allHonest :
     (∀ v ∈ (Finset.univ : Finset (Fin 4)), ffgTrace.honest v) ∧

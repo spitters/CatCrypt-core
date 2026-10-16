@@ -33,8 +33,9 @@ is perfect up to the event that the guard fails on the real trace.
   adversary (`A`).
 * `Strat ζ E O` — an interactive environment with internal state `ζ`: it
   chooses the next event, observes the output, and runs for `rounds`
-  activations. Under the dummy-adversary convention the environment also
-  drives the adversary's inputs. Its two transition functions are lossless
+  activations. When the adversary is the dummy adversary, the environment
+  also drives the adversary's inputs; a system whose adversary acts inside
+  the protocol receives none. Its two transition functions are lossless
   (`next_noFail`, `obs_noFail`): environments always halt.
 * `loop`, `run` — the joint run of an environment and a system, carrying a
   *bad flag* that is the disjunction of a state predicate `bad` over all
@@ -523,7 +524,7 @@ theorem view_monitor (π : Sys σ E O) (G : Trace σ E O → Bool) (Z : Strat ζ
     simp [SPComp.map, SPComp.bind_assoc]
   rw [h2, h]; rfl
 
-/-- **Transparent realization.** Let `π` be a lossless protocol, `F` a
+/-- **Transparent realization** (composition plumbing). Let `π` be a lossless protocol, `F` a
     transparent functionality and `S` a lossless simulator with the initial
     state of `π`, such that for every state `s`, trace `tr` and event `e`, the
     steps of `S` and of `π` from `s` agree on the transitions whose extended
@@ -577,7 +578,8 @@ theorem transparent_realizes (π : Sys σ E O) (F : TFunc σ E O) (S : Sys σ E 
     rw [h1, h2, hsim s tr e]
 
 /-- The copy simulator `S = π` realizes every transparent functionality with
-    bound the guard-failure probability on the real trace. -/
+    bound the guard-failure probability on the real trace (composition
+    plumbing). -/
 theorem transparent_realizes_copy (π : Sys σ E O) (F : TFunc σ E O)
     (hπ : ∀ s e, SPComp.NoFail (π.step s e)) :
     Realizes π (ideal F π) (fun _ Z => guardFail π F.guard Z) :=
@@ -585,7 +587,7 @@ theorem transparent_realizes_copy (π : Sys σ E O) (F : TFunc σ E O)
 
 /-! ## Bridge to `UCEmulatesCSim` -/
 
-/-- A realization gives concrete UC emulation in the sense of
+/-- A realization gives concrete UC emulation (composition plumbing) in the sense of
     `UCConcrete.UCEmulatesCSim`, for the spec whose honest input is the
     environment strategy, whose honest output is the environment's final
     state, with empty leakage (the adversary is part of the environment) and

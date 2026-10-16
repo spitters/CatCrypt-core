@@ -14,8 +14,8 @@ set_option autoImplicit false
 /-!
 # The FFG finality gadget over tree positions
 
-Row C4b of the Ethereum consensus plan, first part: the Casper FFG finality gadget as a
-transition on the positions of the tree functionality `F_Tree` of row C3, and the trace
+The Casper FFG finality gadget as a transition on the positions of the tree functionality
+`F_Tree` of `CatCryptCore.Consensus.UC.FTree`, and the trace
 theorem behind its realization of `F_FinTree` (`CatCryptCore.Consensus.UC.Finality`). This
 file contains no probability: it is the information-theoretic core of the realization.
 
@@ -45,27 +45,34 @@ first. `finView` is the view reported to `F_FinTree`: the tree view with these f
   stuttering between consecutive times, monotone rounds, and `Settled`: the pruned position
   of an honest party at `t` is a suffix of the position of every honest party at every later
   time (for `cut v p = (v.pos p).drop k` this is common prefix `k`).
+* `FinalOnHonestPos`, `FinalOnHonestPos.agree`: a block final for an honest party lies on the
+  position of every honest party at every later time; hence any two blocks final for honest
+  parties lie on one honest position.
 * `Run.honest_unslashable`, `Run.honest_onChain`, `Run.seen_subset`, `Run.overdue_seen`: the
   invariants of the gadget (slashing protection, voting on the pruned position, synchrony).
-* `Run.anc_of_finalized`, `Run.finalized_unique`: accountable safety (row A1,
-  `FFG.anc_of_kFinalized_of_justified`, `FFG.slashable_of_justified_same_epoch`) applied to the
+* `Run.anc_of_finalized`, `Run.finalized_unique`: accountable safety
+  (`FFG.anc_of_kFinalized_of_justified`, `FFG.slashable_of_justified_same_epoch`) applied to the
   cast votes when `3 * stake w (univ \ H) < W`.
-* `Run.validity`: v-validity (row F2, `Finality.finalized_validity`): a block final for an
+* `Run.validity`: v-validity (`Finality.finalized_validity`): a block final for an
   honest party at `t` lies on the pruned positions of honest validators `S` with
   `2 W ≤ 3 stake S + 3 stake (univ \ H)`, each at a time at most `t`.
 * `finTreeGuard_of_run` (headline): when `1 ≤ Δ` and `3 * stake w (univ \ H) < W`, the tree
   trace reported by the gadget satisfies the guard of `F_FinTree^P'` with
-  `P' = finality-respecting positions :: P` and the support guard `v`-validity with `v = 1`
+  `P' = finality-respecting positions :: FinalOnHonestPos :: P` and the support guard
+  `v`-validity with `v = 1`
   together with stake validity, provided the positions are well formed and satisfy `P`
   (`P` reading only rounds, trees and positions, `PosOnly`).
 
 ## Modelling choices
 
 * Votes are authenticated: the adversary casts votes only for adversarial validators.
-* The gadget has no fork choice of its own. Finality-respecting positions follow from voting
-  on pruned positions and `Settled`, as in Enig's composition of a finality layer with a tree
-  whose common prefix holds.
-* Row F3 (`Finality.finality_updated`) is a liveness statement (a finalized checkpoint close
+* The gadget has no fork choice of its own. Finality-respecting positions and
+  `FinalOnHonestPos` follow from voting on pruned positions and `Settled`, as in Enig's
+  composition of a finality layer with a tree whose common prefix holds.
+* `FinalOnHonestPos` states agreement of final blocks through the honest positions; it does
+  not refer to the block tree `T`, so it is informative also when `T` relates every two
+  blocks.
+* `Finality.finality_updated` is a liveness statement (a finalized checkpoint close
   to the tip after `GST`); `F_FinTree` enforces only safety guards, and its `Δ`-updatedness
   (`TreeTrace.DeltaUpdated`: a final block reaches every honest party within `Δ` rounds)
   follows here from the synchronous delivery of votes and the monotonicity of finalization.
@@ -106,6 +113,30 @@ def StakeValidity [Fintype Party] (w : Party → ℕ) (a : ℕ) (X : TreeTrace P
 /-- Common prefix `k` is settledness of the positions without their newest `k` blocks. -/
 theorem settled_drop_iff (k : ℕ) (X : TreeTrace Party Blk) :
     Settled (fun v p => (v.pos p).drop k) X ↔ X.CommonPrefix k := Iff.rfl
+
+/-- Final blocks lie on the honest positions: a block final for an honest party at `t` lies
+on the position of every honest party at every time `t' ≥ t`. -/
+def FinalOnHonestPos (X : TreeTrace Party Blk) : Prop :=
+  ∀ p q t t' b i, X.honest p → X.honest q → t ≤ t' → X.finalized t p b i → b ∈ (X.st t').pos q
+
+theorem stable_finalOnHonestPos :
+    Stable (fun X : TreeTrace Party Blk => FinalOnHonestPos X) :=
+  fun _ n h p q _ _ b i hp hq htt hb => h p q _ _ b i hp hq (min_le_min_right n htt) hb
+
+/-- Final blocks on the honest positions are finality-respecting positions. -/
+theorem FinalOnHonestPos.finalityRespectingPos {X : TreeTrace Party Blk}
+    (h : FinalOnHonestPos X) : X.FinalityRespectingPos :=
+  fun p t t' b i hp htt hb => h p p t t' b i hp hp htt hb
+
+/-- **Agreement on the honest positions.** If final blocks lie on the honest positions, then
+any two blocks final for honest parties `p` at `t` and `q` at `t'` both lie on the position of
+every honest party `r` at time `max t t'`: they are on one chain selected by an honest
+party. -/
+theorem FinalOnHonestPos.agree {X : TreeTrace Party Blk} (h : FinalOnHonestPos X)
+    {p q r : Party} {t t' i j : ℕ} {b b' : Blk} (hp : X.honest p) (hq : X.honest q)
+    (hr : X.honest r) (hb : X.finalized t p b i) (hb' : X.finalized t' q b' j) :
+    b ∈ (X.st (max t t')).pos r ∧ b' ∈ (X.st (max t t')).pos r :=
+  ⟨h p r t _ b i hp hr (le_max_left t t') hb, h q r t' _ b' j hq hr (le_max_right t t') hb'⟩
 
 theorem stable_stakeValidity [Fintype Party] (w : Party → ℕ) (a : ℕ) :
     Stable (fun X : TreeTrace Party Blk => StakeValidity w a X) := by
@@ -477,9 +508,9 @@ theorem finalized_of_final {t : ℕ} {p : Party} {b : Blk} {i : ℕ}
   obtain ⟨e, he⟩ := finalized_of_mem_finList (hC.subset List.mem_cons_self)
   exact ⟨e, Finalized.mono (h.seen_subset t p) he⟩
 
-/-- **v-validity** (row F2): a block final for party `p` at time `t` lies on the pruned
-positions of honest validators `S` with `2 W ≤ 3 stake S + 3 stake (univ \ H)`, each at some
-time at most `t`. -/
+/-- **v-validity** (`Finality.finalized_validity`): a block final for party `p` at time `t`
+lies on the pruned positions of honest validators `S` with
+`2 W ≤ 3 stake S + 3 stake (univ \ H)`, each at some time at most `t`. -/
 theorem validity {t : ℕ} {p : Party} {b : Blk} {i : ℕ} (hb : (finTT c G).finalized t p b i) :
     ∃ S ⊆ c.H, 2 * totalStake c.w ≤ 3 * stake c.w S + 3 * stake c.w (Finset.univ \ c.H) ∧
       ∀ q ∈ S, ∃ t₀ ≤ t, b ∈ c.cut (G t₀).view q := by
@@ -506,13 +537,14 @@ theorem slashable_lt (t : ℕ) : 3 * stake c.w (slashable (G t).votes) < totalSt
   have := stake_mono c.w hsub
   omega
 
-/-- Accountable safety on the cast votes (row A1). -/
+/-- Accountable safety on the cast votes (`FFG.anc_of_kFinalized_of_justified`). -/
 theorem anc_of_finalized {t : ℕ} {b b' : Blk} {e e' : ℕ}
     (hb : Finalized c.T c.w (G t).votes ⟨b, e⟩) (hb' : Finalized c.T c.w (G t).votes ⟨b', e'⟩)
     (hle : e ≤ e') : c.T.anc b b' :=
   anc_of_kFinalized_of_justified hb.kFinalized hb'.1 hle (h.slashable_lt hA t)
 
-/-- At most one block is finalized per epoch by the cast votes (row A1). -/
+/-- At most one block is finalized per epoch by the cast votes
+(`FFG.slashable_of_justified_same_epoch`). -/
 theorem finalized_unique {t : ℕ} {b b' : Blk} {e : ℕ}
     (hb : Finalized c.T c.w (G t).votes ⟨b, e⟩) (hb' : Finalized c.T c.w (G t).votes ⟨b', e⟩) :
     b' = b := by
@@ -550,24 +582,25 @@ adversarial validators hold less than a third of the stake, `3 * stake w (univ \
 every run `G` of the gadget whose positions are well formed and satisfy every property of `P`,
 where each property of `P` reads only rounds, trees and positions, the tree trace reported by
 the gadget satisfies the guard of `F_FinTree^P'` with
-`P' = finality-respecting positions :: P`, `Δ`-updatedness, and the support guard
-`1`-validity together with stake validity for the adversarial stake. -/
+`P' = finality-respecting positions :: FinalOnHonestPos :: P`, `Δ`-updatedness, and the
+support guard `1`-validity together with stake validity for the adversarial stake. -/
 theorem finTreeGuard_of_run {c : Cfg Party Blk} {G : ℕ → GCore Party Blk} (h : Run c G)
     (hΔ : 1 ≤ c.Δ) (hA : 3 * stake c.w (Finset.univ \ c.H) < totalStake c.w)
     {P : List (TreeTrace Party Blk → Prop)} (hP : ∀ φ ∈ P, PosOnly φ)
     (hwf : (posTT c G).WellFormed c.T) (hPG : ∀ φ ∈ P, φ (posTT c G)) :
-    FinTreeGuard c.T ((fun X => X.FinalityRespectingPos) :: P) c.Δ
+    FinTreeGuard c.T ((fun X => X.FinalityRespectingPos) :: FinalOnHonestPos :: P) c.Δ
       (fun X => X.Validity 1 ∧ StakeValidity c.w (stake c.w (Finset.univ \ c.H)) X)
       (finTT c G) := by
   have hW : 0 < totalStake c.w := by omega
-  refine ⟨hwf, ?_, ?_, ?_, ?_, ?_⟩
-  · -- finality-respecting positions and the properties of `P`
-    rw [List.forall_mem_cons]
-    refine ⟨?_, fun φ hφ => hP φ hφ _ _ (hPG φ hφ)⟩
-    intro p t t' b i hp htt hb
+  have hon : FinalOnHonestPos (finTT c G) := by
+    intro p r t t' b i _ hr htt hb
     obtain ⟨S, hSH, ⟨q, hq⟩, -, hS⟩ := h.exists_honest_support hA hb
     obtain ⟨t₀, ht₀, hm⟩ := hS q hq
-    exact (h.settled q p t₀ t' (hSH hq) hp (ht₀.trans htt)).subset hm
+    exact (h.settled q r t₀ t' (hSH hq) hr (ht₀.trans htt)).subset hm
+  refine ⟨hwf, ?_, ?_, ?_, ?_, ?_⟩
+  · -- finality-respecting positions, final blocks on honest positions, the properties of `P`
+    rw [List.forall_mem_cons, List.forall_mem_cons]
+    exact ⟨hon.finalityRespectingPos, hon, fun φ hφ => hP φ hφ _ _ (hPG φ hφ)⟩
   · -- chain-forming
     rintro p t b b' i j - ⟨C, hC, rfl⟩ ⟨C', hC', rfl⟩ hij
     exact anc_of_suffix_cons (h.finList_chain hA t p) hC hC' hij

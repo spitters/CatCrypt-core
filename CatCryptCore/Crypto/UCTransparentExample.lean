@@ -85,7 +85,8 @@ theorem prTrue_sample_Bool : prTrue (SPComp.sample Bool) Heap.empty = 2⁻¹ := 
   simp [h, prTrue_pure]
 
 /-- `coinProto` realizes the ideal world of `coinFunc` with the copy
-    simulator, with bound the guard-failure probability. -/
+    simulator, with bound the guard-failure probability (composition
+    plumbing). -/
 theorem coin_realizes :
     Realizes coinProto (ideal coinFunc coinProto) (fun _ Z => guardFail coinProto coinGuard Z) :=
   transparent_realizes_copy coinProto coinFunc coinProto_noFail

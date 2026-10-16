@@ -11,8 +11,8 @@ public import Mathlib.Tactic.Ring
 /-!
 # Casper FFG over a chain: the finalized checkpoint stays close to the tip
 
-This file proves Δ-updatedness (row F3 of the Ethereum consensus plan) for Casper FFG run on
-top of a chain whose selection rule is abstract (`ChainTrace`, rows F1 and F2): after the
+This file proves Δ-updatedness for Casper FFG run on top of a chain whose selection rule is
+abstract (`ChainTrace` of `CatCryptCore.Consensus.Finality`): after the
 global stabilization time `GST`, with honest validators holding at least two thirds of the
 stake, every honest party has a finalized checkpoint that is an epoch-boundary checkpoint of
 its selected chain and lies at most `3 E + σ + d + Δ` slots behind the current slot.
@@ -39,7 +39,7 @@ phases (`CatCryptCore.Consensus.PoSNSB.Good`).
 * honest chains are ordered by the ancestor relation of the block tree `T`, have strictly
   decreasing slots, and contain the genesis block, of slot `0`; the clock `now` is monotone.
 
-The length form of chain growth of F1 (`ChainTrace.ChainGrowth`) is not used: the
+The length form of chain growth (`ChainTrace.ChainGrowth`) is not used: the
 epoch-boundary checkpoint of epoch `e` is defined by slots, and it is fixed once some block
 of the chain has a slot in `(e E, now - d]`, which is what `SlotChainGrowth` provides.
 
@@ -53,7 +53,7 @@ the new epoch `e_r = FFG.livenessEpoch`, and from that checkpoint to the epoch-b
 checkpoint of epoch `e_r + 1`, both read off the selected chain at phase `ρ r`
 (`schedule`, `roundVotes`). The next round starts from the new checkpoint. All votes have
 epoch-boundary checkpoints of the voter's chain as source and target, so the honest votes
-follow the voting rule of F2 (`HonestVotesOnChain`, proved in `roundVotes_onChain`).
+follow the voting rule `HonestVotesOnChain` (proved in `roundVotes_onChain`).
 
 The extra hypothesis of `FFG.plausible_liveness` (every honest vote has its source at an epoch
 not above that of the justified checkpoint) is not a consequence of the execution model for
@@ -74,8 +74,8 @@ phase `t ≥ j` with `now t ≥ max (now j) GST + Δ`.
 * `schedule_spec`: in every round the checkpoint `j_r` is justified by the honest votes, every
   honest vote has its source at an epoch at most that of `j_r`, no validator of `H` is
   slashable, and `e_r = e₀ + 2 r`.
-* `roundVotes_onChain`: the votes of every round within the horizon follow the voting rule of
-  F2.
+* `roundVotes_onChain`: the votes of every round within the horizon follow the voting rule
+  `HonestVotesOnChain`.
 * `UpdatedHyp`: `VoteHyp` together with `SlotChainHyp`.
 * `finality_updated`: Δ-updatedness. At every phase `t ≤ hz` with `now t ≥ τ₀ + Δ`, every
   honest party `p` has received votes finalizing a checkpoint `c` that is the epoch-boundary
@@ -533,8 +533,8 @@ theorem onChain (r : ℕ) (hr : ρ r ≤ hz) :
     exact boundary_settled h.chain (h.honest v₀ h.mem_v₀) (h.honest v hv)
       (h.rho_mono (Nat.le_succ r)) hr (h.settled_le r (Nat.le_succ _))
 
-/-- The honest votes of every round within the horizon follow the voting rule of F2: each has
-source and target that are epoch-boundary checkpoints of the chain the voter selects at the
+/-- The honest votes of every round within the horizon follow the voting rule
+`HonestVotesOnChain`: each has source and target that are epoch-boundary checkpoints of the chain the voter selects at the
 phase of the round. -/
 theorem roundVotes_onChain (r : ℕ) (hr : ρ r ≤ hz) :
     HonestVotesOnChain X slot E (roundVotes H (roundExt T X slot E v₀ ρ) pre j₀ r) := by

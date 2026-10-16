@@ -14,17 +14,17 @@ set_option autoImplicit false
 /-!
 # FFG in the `F_Tree`-hybrid world realizes `F_FinTree`
 
-Row C4b (FIN-REALIZE) of the Ethereum consensus plan. The Casper FFG finality gadget of
-`CatCryptCore.Consensus.UC.FinalityGadget`, run as a hybrid protocol with one call per
-activation to the tree functionality `F_Tree^P` of row C3, realizes the finality
-functionality `F_FinTree^P'` of row C3 perfectly (advantage `0` against every environment)
+The Casper FFG finality gadget of `CatCryptCore.Consensus.UC.FinalityGadget`, run as a hybrid
+protocol with one call per activation to the tree functionality `F_Tree^P` of
+`CatCryptCore.Consensus.UC.FTree`, realizes the finality functionality `F_FinTree^P'` of the
+same module perfectly (advantage `0` against every environment)
 when the adversarial validators hold less than a third of the total stake `W`. The statement
 is information-theoretic.
 
 ## The hybrid protocol
 
 The subroutine is the ideal world `ideal (treeF …) ST` of `F_Tree^P` with an arbitrary lossless
-tree simulator `ST` (for instance the PoS-NSB simulator `Chain.chainSim` of row C4a). An outer
+tree simulator `ST` (for instance the PoS-NSB simulator `Chain.chainSim`). An outer
 event is a pair of a tree event and a gadget action (`GAct`). The gadget (`ffgHybrid`) passes
 the tree event to `F_Tree`, reads the tree view `ov o` from its output `o`, and takes one
 gadget step (`gstep`) with that view and the action. If `F_Tree` answers with its exploded
@@ -34,9 +34,10 @@ it outputs `finView`: the tree view with the final lists of the gadget.
 ## The simulator and the functionality
 
 `ffgSim` runs the gadget against `F_Tree` internally, with the tree simulator `ST`, and
-proposes its states to `F_FinTree` (the copy simulator of C3 for the hybrid world).
+proposes its states to `F_FinTree` (the copy simulator of `finTree_realizes` for the hybrid world).
 `finF` is `F_FinTree^P'` over the states of the simulator, with the view `finView` of the
-gadget component, `P' = finality-respecting positions :: P`, delivery bound `Δ`, and the
+gadget component, `P' = finality-respecting positions :: FinalOnHonestPos :: P`, delivery
+bound `Δ`, and the
 support guard `1`-validity together with stake validity.
 
 ## Main results
@@ -68,8 +69,8 @@ support guard `1`-validity together with stake validity.
 * The honest validators are both the honest parties of `F_Tree` and of `F_FinTree`
   (`· ∈ H`). Corruption is static.
 * The simulator is the copy simulator: since the trace of the hybrid world always satisfies
-  the guard of `F_FinTree`, the functionality never explodes and copying is exact. The theorem
-  is therefore not tagged as a UC statement with a non-trivial simulator.
+  the guard of `F_FinTree`, the functionality never explodes and copying is exact. The
+  realization theorems carry the tag of composition plumbing.
 -/
 
 namespace CatCryptCore.Consensus.UC.FFGGadget
@@ -147,11 +148,13 @@ def suppF (X : TreeTrace Party Blk) : Prop :=
   X.Validity 1 ∧ StakeValidity c.w (stake c.w (Finset.univ \ c.H)) X
 
 /-- **The functionality** `F_FinTree^P'` over the states of the simulator: view `finView` of
-the gadget component, honest parties `H`, `P' = finality-respecting positions :: P`, delivery
-bound `Δ`, support guard `suppF`, exploded output `exF`. -/
+the gadget component, honest parties `H`,
+`P' = finality-respecting positions :: FinalOnHonestPos :: P`, delivery bound `Δ`, support
+guard `suppF`, exploded output `exF`. -/
 noncomputable def finF :
     TFunc (WSt Party Blk σT ET OT) (ET × GAct Party Blk) (TreeView Party Blk) :=
-  finTree (fun s => finView c s.1.core) (· ∈ c.H) c.T ((fun X => X.FinalityRespectingPos) :: P)
+  finTree (fun s => finView c s.1.core) (· ∈ c.H) c.T
+    ((fun X => X.FinalityRespectingPos) :: FinalOnHonestPos :: P)
     c.Δ (suppF c) (ffgSim c ST vwT P exT ov exF).init exF
 
 end Hybrid
@@ -209,7 +212,8 @@ theorem guard_of_live (hP : ∀ φ ∈ P, PosOnly φ)
     {trT : Trace σT ET OT} (hG : FTreeGuard c.T P (traceOf vwT (· ∈ c.H) s₀T trT))
     {G : ℕ → GCore Party Blk} (hv : ∀ t, (G t).view = vwT (stAt s₀T trT t))
     (hrun : RunSteps c G) :
-    FinTreeGuard c.T ((fun X => X.FinalityRespectingPos) :: P) c.Δ (suppF c) (finTT c G) := by
+    FinTreeGuard c.T ((fun X => X.FinalityRespectingPos) :: FinalOnHonestPos :: P) c.Δ (suppF c)
+      (finTT c G) := by
   have e : posTT c G = traceOf vwT (· ∈ c.H) s₀T trT := by
     simp only [posTT, traceOf, TreeTrace.mk.injEq, true_and]
     funext t
@@ -226,7 +230,7 @@ the views of the gadget are the views of `F_Tree`, and the gadget makes gadget s
 def MInv (m : WSt Party Blk σT ET OT ×
     Trace (WSt Party Blk σT ET OT) (ET × GAct Party Blk) (TreeView Party Blk) × Bool) : Prop :=
   m.2.2 = false ∧
-    FinTreeGuard c.T ((fun X => X.FinalityRespectingPos) :: P) c.Δ (suppF c)
+    FinTreeGuard c.T ((fun X => X.FinalityRespectingPos) :: FinalOnHonestPos :: P) c.Δ (suppF c)
       (traceOf (fun s => finView c s.1.core) (· ∈ c.H) (ffgSim c ST vwT P exT ov exF).init m.2.1) ∧
     stAt (ffgSim c ST vwT P exT ov exF).init m.2.1 m.2.1.length = m.1 ∧
     (m.1.1.dead = false →
@@ -337,7 +341,7 @@ theorem inv_step_gen (m : MSt Party Blk σT ET OT) (e : ET × GAct Party Blk) (s
     rw [stAt_snoc', if_neg (by simp)]
   have hgold : (stAt s₀ tr tr.length).1.core = g.core := by rw [hlast]
   have hguardF : ∀ tr' : Trace (WSt Party Blk σT ET OT) (ET × GAct Party Blk) (TreeView Party Blk),
-      FinTreeGuard c.T ((fun X => X.FinalityRespectingPos) :: P) c.Δ (suppF c)
+      FinTreeGuard c.T ((fun X => X.FinalityRespectingPos) :: FinalOnHonestPos :: P) c.Δ (suppF c)
         (traceOf (fun s => finView c s.1.core) (· ∈ c.H) s₀ tr') →
       (finF c ST vwT P exT ov exF).guard tr' = true := fun tr' h' => by
     rw [finF, finTree_guard_iff]; exact h'
@@ -421,7 +425,8 @@ theorem guardFail_eq_zero
   exact hK _ _ (inv_step out hov hP hset hΔ hA m e s' hm)
 
 include hST hov hinit hP hset hΔ hA in
-/-- **FFG in the `F_Tree`-hybrid world realizes `F_FinTree` perfectly (row C4b).**
+/-- **FFG in the `F_Tree`-hybrid world realizes `F_FinTree` perfectly** (composition
+plumbing).
 Let the tree simulator `ST` be lossless and output a function `out` of its new state from
 which the gadget reads the view of that state (`ov (out s) = vwT s`); let the guard of
 `F_Tree^P` hold on the empty trace; let every property of `P` read only rounds, trees and
@@ -429,7 +434,8 @@ positions; let the guard of `F_Tree^P` imply that the pruned positions `cut` are
 `1 ≤ Δ`; and let the adversarial validators hold less than a third of the total stake,
 `3 * stake w (univ \ H) < W`. Then the FFG gadget running with the ideal world of `F_Tree^P`
 (`ffgWorld`) realizes the ideal world of `F_FinTree^P'` (`finF`, with
-`P' = finality-respecting positions :: P`, `Δ`-updatedness and the support guard `suppF`)
+`P' = finality-respecting positions :: FinalOnHonestPos :: P`, `Δ`-updatedness and the
+support guard `suppF`)
 with the simulator `ffgSim`: every environment has advantage `0`. -/
 theorem ffg_realizes
     (hout : ∀ s e, ∃ C : SPComp σT, ST.step s e = SPComp.bind C fun s' => SPComp.pure (s', out s')) :
@@ -443,9 +449,10 @@ theorem ffg_realizes
 
 include hST hov hinit hP hset hΔ hA in
 /-- **The realization as concrete UC emulation** (`UCConcrete.UCEmulatesCSim`) with the zero
-bound: with the environment strategy as honest input, the environment's final state as output,
-empty leakage and the identity simulator map, the view maps of the `F_Tree`-hybrid world and of
-the ideal world of `F_FinTree` are at distance `0` for every environment. -/
+bound (composition plumbing): with the environment strategy as honest input, the
+environment's final state as output, empty leakage and the identity simulator map, the view
+maps of the `F_Tree`-hybrid world and of the ideal world of `F_FinTree` are at distance `0`
+for every environment. -/
 theorem ffg_UCEmulatesCSim
     (hout : ∀ s e, ∃ C : SPComp σT, ST.step s e = SPComp.bind C fun s' => SPComp.pure (s', out s'))
     (ζ V : Type) :
@@ -510,8 +517,8 @@ theorem instance_hyps :
   · intro X hX p q t t' hp hq h
     exact hX.2.1 _ List.mem_cons_self p q t t' hp hq h
 
-/-- **The realization for the instance**: the FFG gadget over the one-party tree realizes
-`F_FinTree` with advantage `0` against every environment. -/
+/-- **The realization for the instance** (composition plumbing): the FFG gadget over the
+one-party tree realizes `F_FinTree` with advantage `0` against every environment. -/
 theorem instance_realizes :
     Realizes (ffgWorld cfg lineST lv lineP (lv 0) id (lv 0))
       (ideal (finF cfg lineST lv lineP (lv 0) id (lv 0)) (ffgSim cfg lineST lv lineP (lv 0) id (lv 0)))
@@ -585,7 +592,8 @@ the hypotheses of `finTreeGuard_of_run`, its reported trace satisfies the guard 
 `F_FinTree^P'`, and the genesis block is final for the honest party at time `2`. -/
 theorem run_finalizes :
     Run cfg runG ∧ (posTT cfg runG).WellFormed cfg.T ∧ (∀ φ ∈ lineP, φ (posTT cfg runG)) ∧
-      FinTreeGuard cfg.T ((fun X => X.FinalityRespectingPos) :: lineP) cfg.Δ (suppF cfg)
+      FinTreeGuard cfg.T ((fun X => X.FinalityRespectingPos) :: FinalOnHonestPos :: lineP) cfg.Δ
+        (suppF cfg)
         (finTT cfg runG) ∧
       ∃ i, (finTT cfg runG).finalized 2 0 0 i := by
   obtain ⟨-, -, -, -, hP, -, hΔ, hA⟩ := instance_hyps

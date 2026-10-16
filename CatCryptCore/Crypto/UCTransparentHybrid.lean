@@ -143,7 +143,7 @@ theorem adv_withSub (π : Hybrid σ E O EG OG) (X : Sys τ EG OG) (Y : Sys υ EG
   rw [adv_eq, adv_eq, view_withSub, view_withSub]
   simp [reduceEnv, SPComp.map, SPComp.bind_assoc]
 
-/-- **Hybrid composition.** If `π.withSub Y` realizes `I` with bound `b₁`
+/-- **Hybrid composition** (composition plumbing). If `π.withSub Y` realizes `I` with bound `b₁`
     and `X` realizes `Y` with bound `b₂`, then `π.withSub X` realizes `I`
     with the sum of `b₁` and of `b₂` at the reduced environment. -/
 theorem realizes_compose {υ' : Type} (π : Hybrid σ E O EG OG) (X : Sys τ EG OG)
@@ -179,7 +179,7 @@ theorem ideal_noFail {σ' E' O' : Type} (F : TFunc σ' E' O') (S : Sys σ' E' O'
   simp only [ideal]
   exact Assumptions.SPComp.bind_noFail (hS _ _) fun _ => SPComp.pure_noFail _
 
-/-- **Transparent hybrid composition.** Let `G` be a transparent
+/-- **Transparent hybrid composition** (composition plumbing). Let `G` be a transparent
     functionality realized by the lossless protocol `ρ` through the lossless
     simulator `S_G`, and let `F` be a transparent functionality over the
     state space of the `G`-hybrid world `π.withSub (ideal G S_G)`, with

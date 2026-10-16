@@ -592,13 +592,13 @@ def networkF (Δ : ℕ) : TFunc (NetSt Pty M) (NetEv Pty M) (List (Msg Pty M)) :
 def clockNetF (H : Finset Pty) (Δ : ℕ) : TFunc (CNSt Pty M) (CNEv Pty M) (CNOut Pty M) :=
   (clockNet H Δ).toTFunc (0, [])
 
-/-- **The clock is transparent.** Its reference implementation realizes the
+/-- **The clock is transparent** (composition plumbing). Its reference implementation realizes the
     ideal world of `clockF H` with the copy simulator, with bound `0`. -/
 theorem clock_realizes (H : Finset Pty) :
     Realizes (clock H).proto (ideal (clockF H) (clock H).proto) (fun _ _ => 0) :=
   DetFunc.realizes_proto _ _
 
-/-- **The network is transparent.** Its reference implementation realizes
+/-- **The network is transparent** (composition plumbing). Its reference implementation realizes
     the ideal world of `networkF Δ` with the copy simulator, with bound
     `0`. -/
 theorem network_realizes (Δ : ℕ) :
@@ -606,7 +606,8 @@ theorem network_realizes (Δ : ℕ) :
       (fun _ _ => 0) :=
   DetFunc.realizes_proto _ _
 
-/-- **The clock-and-network functionality is transparent.** Its reference
+/-- **The clock-and-network functionality is transparent** (composition
+    plumbing). Its reference
     implementation realizes the ideal world of `clockNetF H Δ` with the copy
     simulator, with bound `0`. -/
 theorem clockNet_realizes (H : Finset Pty) (Δ : ℕ) :
@@ -643,7 +644,8 @@ theorem clockNetF_advance_requires_signals (H : Finset Pty) (Δ : ℕ)
   rw [DetFunc.endState_of_legal _ _ _ hg] at h
   exact clockNet_advance_requires_signals H Δ _ rfl _ h
 
-/-- **Composition in the clock-and-network hybrid model.** Let `π` be a
+/-- **Composition in the clock-and-network hybrid model** (composition
+    plumbing). Let `π` be a
     hybrid protocol that calls the clock-and-network functionality, and let
     `F` be a transparent functionality over the state space of the hybrid
     world `π.withSub (ideal (clockNetF H Δ) (clockNet H Δ).proto)`, with a
@@ -748,7 +750,8 @@ noncomputable def trueF :
       (CNOut (Fin 2) Unit) × Bool) (CNEv (Fin 2) Unit) (CNOut (Fin 2) Unit) :=
   ⟨hybridWorld₂.init, fun _ => true, (0, [])⟩
 
-/-- **Non-vacuity of the composition theorem.** All hypotheses of
+/-- **Non-vacuity of the composition theorem** (composition plumbing). All
+    hypotheses of
     `clockNet_hybrid_compose` hold for `passthrough` with the copy simulator,
     and the resulting bound is `0`: `passthrough` running with the reference
     clock and network realizes `ideal trueF hybridWorld₂` exactly. -/

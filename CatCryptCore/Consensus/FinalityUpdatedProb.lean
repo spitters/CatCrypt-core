@@ -12,8 +12,8 @@ public import CatCryptCore.Consensus.PoSNSB.Prob
 # Δ-updatedness of Casper FFG over PoS-NSB, with high probability
 
 This file runs the finality layer of `CatCryptCore.Consensus.FinalityUpdated` on the real
-execution of PoS-NSB (`CatCryptCore.Consensus.PoSNSB.Prob`, rows D1 and D2) and bounds the
-probability that Δ-updatedness fails by the failure bound of D2 (`PoSNSB.pos_nsb_security`):
+execution of PoS-NSB (`CatCryptCore.Consensus.PoSNSB.Prob`) and bounds the probability that
+Δ-updatedness fails by the failure bound of `PoSNSB.pos_nsb_security`:
 
   `slotBound ν n d w ε + q (q - 1) / 2 / |Hash| + ∑ᵢ eufAdv (forger P A ν W K i)`,
 
@@ -36,7 +36,7 @@ For a seed `ω`, phase `j` of the real execution is `sTrace P ω A false j`:
 
 ## What is derived and what is assumed
 
-From the event `PoSNSB.Good` of D2 (`seed_slotChainHyp`): the monotone clock, chains ordered by
+From the event `PoSNSB.Good` (`seed_slotChainHyp`): the monotone clock, chains ordered by
 `seedTree` with strictly decreasing slots and containing genesis (from `best_chain_valid`), and
 common prefix by slots (`PoSNSB.CPGood`, which is exactly `ChainTrace.SlotCommonPrefix`).
 
@@ -44,9 +44,10 @@ Assumed explicitly in `finality_updated_prob`:
 
 * `hGB : P.GB.sl = 0`: the genesis block has slot `0` (`ProtocolHyp` gives `≤ 1`);
 * `hgrowth`: on every seed with `Good`, chain growth in slot form
-  (`ChainTrace.SlotChainGrowth` with window `σ`) holds up to phase `K`. D2 proves chain growth
-  for the length of the honest tree chain (`PoSNSB.CGGood`); that every window of `σ` slots
-  contains a block of every honest chain is not among the properties of D2;
+  (`ChainTrace.SlotChainGrowth` with window `σ`) holds up to phase `K`. `pos_nsb_security` bounds
+  chain growth for the length of the honest tree chain (`PoSNSB.CGGood`); that every window of
+  `σ` slots contains a block of every honest chain is not among the properties of
+  `PoSNSB.Good`;
 * `hvote`: on every seed, the vote layer (votes cast and received, the honest schedule, and
   the history before it) satisfies `VoteHyp`. PoS-NSB carries no FFG votes, so the vote layer
   is an additional component of the execution, given as functions of the seed.
@@ -59,9 +60,9 @@ Assumed explicitly in `finality_updated_prob`:
 * `seed_slotChainHyp`: on the event `CPGood`, given slot chain growth and `P.GB.sl = 0`, the
   traces of PoS-NSB satisfy `SlotChainHyp` up to phase `K`.
 * `finality_updated_prob`: Δ-updatedness with lag `3 E + σ + d + Δ` fails with probability at
-  most the failure bound of D2.
+  most the failure bound of `pos_nsb_security`.
 * `Instance.prob_hyps`: the hypotheses of `finality_updated_prob` hold for the concrete
-  instance of D2 (`PoSNSB.Instance`, horizon `K = 0`).
+  instance `PoSNSB.Instance` (horizon `K = 0`).
 -/
 
 set_option autoImplicit false
@@ -145,8 +146,8 @@ theorem seedChain_valid {ω : Seed Tx Hash np n Hz Sch} {K j : ℕ} {p : Fin np}
   simp only [seedChain, hl]
   exact l.tT.best_chain_valid _ _
 
-/-- **The chain hypotheses from D2.** On a seed with common prefix `CPGood` with parameter `d`
-up to phase `K`, if the genesis block has slot `0` and chain growth in slot form with window
+/-- **The chain hypotheses from `PoSNSB.Good`.** On a seed with common prefix `CPGood` with
+parameter `d` up to phase `K`, if the genesis block has slot `0` and chain growth in slot form with window
 `σ` holds, the real execution of PoS-NSB satisfies `SlotChainHyp` up to phase `K`. -/
 theorem seed_slotChainHyp (hGB : P.GB.sl = 0) {K d σ : ℕ} {ω : Seed Tx Hash np n Hz Sch}
     (hCP : CPGood P A K d ω)
@@ -196,8 +197,8 @@ def DeltaUpdated {V B : Type*} [Fintype V] [DecidableEq V] [DecidableEq B] (T : 
 
 variable (P : Protocol Tx Hash np n Hz) (A : Adversary Tx Hash np n Hz Sch) (Tree : TreeFamily P)
 
-/-- **Δ-updatedness of FFG over PoS-NSB, with high probability.** Let the hypotheses of D2
-(`PoSNSB.pos_nsb_security`) hold, let the genesis block have slot `0`, let chain growth in slot
+/-- **Δ-updatedness of FFG over PoS-NSB, with high probability.** Let the hypotheses of
+`PoSNSB.pos_nsb_security` hold, let the genesis block have slot `0`, let chain growth in slot
 form with window `σ` hold on every seed with `Good` (`hgrowth`), and let the vote layer of every
 seed satisfy `VoteHyp` with the earliest start `τ₀ ω = (e₀ + 1) E + σ + d` (`hvote`, `hτ₀`).
 Then the probability that Δ-updatedness with lag `3 E + σ + d + Δ` fails, from the phase of
@@ -291,7 +292,7 @@ theorem seedNow_three_mul (ω : Seed Tx Hash np n Hz Sch) (s : ℕ) :
 
 end SeedPhases
 
-/-! ### The concrete instance of D2 -/
+/-! ### The concrete instance `PoSNSB.Instance` -/
 
 namespace Instance
 
@@ -302,11 +303,11 @@ attribute [local instance] PoSNSB.Instance.corruption
 /-- The rounds of the schedule at the phases of slots `7 + 2 r`. -/
 def ρI (r : ℕ) : ℕ := 3 * (6 + r * (2 * 1))
 
-/-- **Non-vacuity of the hypotheses of `finality_updated_prob`.** For the instance of D2
+/-- **Non-vacuity of the hypotheses of `finality_updated_prob`.** For the instance `PoSNSB.Instance`
 (`PoSNSB.Instance`: one honest party, all slots honest, horizon `K = 0`, `d = 3`, `w = 1`,
 `ε = 0`, `q = 1`), with `E = 1`, `σ = 2`, `Δ = 1`, `GST = 0`, unit stake, `H = univ`, no
 votes, the genesis checkpoint as `j₀`, `τ₀ = 7` and rounds at the phases `ρI r`, all
-hypotheses of `finality_updated_prob` hold. The horizon `K = 0` of the D2 instance precedes the
+hypotheses of `finality_updated_prob` hold. The horizon `K = 0` of the instance precedes the
 first round, so the conclusion carries no information there. -/
 theorem prob_hyps :
     ProtocolHyp P ∧ Tree.Longest ∧ P.GB.sl = 0 ∧

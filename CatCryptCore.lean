@@ -342,6 +342,42 @@ public import CatCryptCore.Crypto.Commitment.PedersenUC
 public import CatCryptCore.Crypto.ZK.SigmaUCZK
 public import CatCryptCore.Crypto.OT.DualModeOT
 
+-- Transparent functionalities, hybrid composition, the clock and the network
+public import CatCryptCore.Crypto.UCTransparent
+public import CatCryptCore.Crypto.UCTransparentHybrid
+public import CatCryptCore.Crypto.UCTransparentExample
+public import CatCryptCore.Crypto.UCClockNetworkDet
+public import CatCryptCore.Crypto.UCClockNetwork
+
+-- Ethereum proof-of-stake consensus: Casper FFG, PoS-NSB, finality layers, the UC stack
+public import CatCryptCore.Prob.Concentration
+public import CatCryptCore.Consensus.FFG
+public import CatCryptCore.Consensus.FFGExamples
+public import CatCryptCore.Consensus.FFGDynamic
+public import CatCryptCore.Consensus.Finality
+public import CatCryptCore.Consensus.FinalityValidity
+public import CatCryptCore.Consensus.FinalityUpdated
+public import CatCryptCore.Consensus.FinalityUpdatedProb
+public import CatCryptCore.Consensus.PoSNSB.Model
+public import CatCryptCore.Consensus.PoSNSB.Steps
+public import CatCryptCore.Consensus.PoSNSB.Invariants
+public import CatCryptCore.Consensus.PoSNSB.TreeChain
+public import CatCryptCore.Consensus.PoSNSB.ChainGrowth
+public import CatCryptCore.Consensus.PoSNSB.ChainQualityPrelims
+public import CatCryptCore.Consensus.PoSNSB.ChainQuality
+public import CatCryptCore.Consensus.PoSNSB.CommonPrefixPrelims
+public import CatCryptCore.Consensus.PoSNSB.CommonPrefix
+public import CatCryptCore.Consensus.PoSNSB.Prob.Hash
+public import CatCryptCore.Consensus.PoSNSB.Prob.Slots
+public import CatCryptCore.Consensus.PoSNSB.Prob.Protocol
+public import CatCryptCore.Consensus.PoSNSB.Prob.Reduction
+public import CatCryptCore.Consensus.PoSNSB.Prob
+public import CatCryptCore.Consensus.UC.FTree
+public import CatCryptCore.Consensus.UC.FinalityGadget
+public import CatCryptCore.Consensus.UC.Finality
+public import CatCryptCore.Consensus.UC.Chain
+public import CatCryptCore.Consensus.UC.Stack
+
 -- Classical curve mathematics
 public import CatCryptCore.Crypto.KeyAgreement.MontgomeryLadder
 public import CatCryptCore.Crypto.KeyAgreement.MontgomeryAsWeierstrass

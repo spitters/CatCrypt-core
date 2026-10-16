@@ -222,7 +222,7 @@ theorem guardFail_proto (D : DetFunc σ E O) (x : O) {ζ : Type} (Z : Env (Strat
     simp [legal_append, hl]
   exact ⟨by simp [hl'], hl', endState_append _ _ _⟩
 
-/-- **Transparency of a deterministic functionality.** The reference
+/-- **Transparency of a deterministic functionality** (composition plumbing). The reference
     implementation of `D` realizes the ideal world of `toTFunc D x` with the
     copy simulator, with bound `0`. -/
 theorem realizes_proto (D : DetFunc σ E O) (x : O) :
@@ -233,7 +233,8 @@ theorem realizes_proto (D : DetFunc σ E O) (x : O) :
   beta_reduce at h
   rwa [guardFail_proto] at h
 
-/-- **Hybrid composition with a deterministic functionality.** Let `π` be a
+/-- **Hybrid composition with a deterministic functionality** (composition
+    plumbing). Let `π` be a
     hybrid protocol that calls `D`, and let `F` be a transparent
     functionality over the state space of the `D`-hybrid world
     `π.withSub (ideal (D.toTFunc x) D.proto)`, with a lossless simulator
