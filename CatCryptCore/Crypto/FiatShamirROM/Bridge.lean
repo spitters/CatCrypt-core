@@ -7,6 +7,7 @@ module
 
 public import CatCryptCore.Crypto.FiatShamirROM.Game
 public import CatCryptCore.Examples.Sigma
+public import CatCryptCore.ForMathlib.PMFSupport
 
 /-!
 # Σ-protocols with explicit randomness as `Examples.Sigma` protocols
@@ -65,19 +66,6 @@ noncomputable def fibreDist (c : R → A) (a : A) : PMF R :=
   if h : (Finset.univ.filter fun r => c r = a).Nonempty then PMF.uniformOfFinset _ h
   else PMF.uniformOfFintype R
 
-/-- The image of the uniform distribution under `c` puts weight
-`|c⁻¹(a)| / |R|` on `a`. -/
-theorem map_uniformOfFintype_apply (c : R → A) (a : A) :
-    ((PMF.uniformOfFintype R).map c) a =
-      ((Finset.univ.filter fun r => c r = a).card : ℝ≥0∞) / Fintype.card R := by
-  rw [PMF.map_apply, tsum_fintype]
-  simp only [PMF.uniformOfFintype_apply]
-  rw [Finset.sum_ite, Finset.sum_const_zero, add_zero, Finset.sum_const, nsmul_eq_mul,
-    div_eq_mul_inv]
-  congr 3
-  ext r
-  simp [eq_comm]
-
 /-- Sampling `c r` for uniform `r` and then a uniform element of the fibre over it
 is uniform sampling. -/
 theorem bind_fibreDist (c : R → A) :
@@ -87,7 +75,7 @@ theorem bind_fibreDist (c : R → A) :
   · have hne : (Finset.univ.filter fun r' => c r' = c r).Nonempty := ⟨r, by simp⟩
     rw [fibreDist, dif_pos hne,
       PMF.uniformOfFinset_apply_of_mem hne (Finset.mem_filter.mpr ⟨Finset.mem_univ _, rfl⟩),
-      map_uniformOfFintype_apply, PMF.uniformOfFintype_apply]
+      PMF.map_uniformOfFintype_apply, PMF.uniformOfFintype_apply]
     have h0 : ((Finset.univ.filter fun r' => c r' = c r).card : ℝ≥0∞) ≠ 0 := by
       exact_mod_cast hne.card_pos.ne'
     rw [div_eq_mul_inv, mul_comm _ (Fintype.card R : ℝ≥0∞)⁻¹, mul_assoc,
@@ -98,7 +86,7 @@ theorem bind_fibreDist (c : R → A) :
         PMF.uniformOfFinset_apply_of_notMem hne (fun h => ha (Finset.mem_filter.mp h).2.symm),
         mul_zero]
     · have h0 : ((PMF.uniformOfFintype R).map c) a = 0 := by
-        rw [map_uniformOfFintype_apply, Finset.not_nonempty_iff_eq_empty.mp hne]
+        rw [PMF.map_uniformOfFintype_apply, Finset.not_nonempty_iff_eq_empty.mp hne]
         simp
       rw [h0, zero_mul]
 
@@ -113,16 +101,6 @@ theorem eq_of_mem_support_fibreDist (c : R → A) {a : A}
   rw [fibreDist, dif_pos hne, PMF.mem_support_uniformOfFinset_iff] at hr
   exact (Finset.mem_filter.mp hr).2
 
-/-- Two kernels that agree on the support of `p` give the same bind. -/
-private theorem bind_congr_of_mem_support {α β : Type} (p : PMF α) {f g : α → PMF β}
-    (h : ∀ a ∈ p.support, f a = g a) : p.bind f = p.bind g := by
-  ext b
-  rw [PMF.bind_apply, PMF.bind_apply]
-  refine tsum_congr fun a => ?_
-  by_cases ha : a ∈ p.support
-  · rw [h a ha]
-  · rw [(PMF.apply_eq_zero_iff p a).mpr ha, zero_mul, zero_mul]
-
 /-- The joint distribution of `(c r, g r)` for uniform `r` is the image `a` of a
 uniform `r` followed by `g` of a uniform element of the fibre over `a`. -/
 theorem map_pair_eq_bind_fibreDist (c : R → A) (g : R → B) :
@@ -131,9 +109,9 @@ theorem map_pair_eq_bind_fibreDist (c : R → A) (g : R → B) :
         (fun a => ((fibreDist c a).map g).map fun z => (a, z)) := by
   conv_lhs => rw [← bind_fibreDist c]
   rw [PMF.map_bind]
-  refine bind_congr_of_mem_support _ fun a ha => ?_
+  refine PMF.bind_congr_support _ _ _ fun a ha => ?_
   rw [PMF.map_comp, ← PMF.bind_pure_comp, ← PMF.bind_pure_comp]
-  refine bind_congr_of_mem_support _ fun r hr => ?_
+  refine PMF.bind_congr_support _ _ _ fun r hr => ?_
   simp only [Function.comp_apply, eq_of_mem_support_fibreDist c ha hr]
 
 end Fibre

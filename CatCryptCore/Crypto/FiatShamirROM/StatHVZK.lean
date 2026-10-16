@@ -50,7 +50,9 @@ on the EUF-CMA advantage is then an expectation over the generator.
 * `Sigma.hvzkDistAt_le_on_add_on` — the HVZK distance at a pair is at most its
   part on an event plus its part on the complement;
   `Sigma.hvzkDistOn_eq_zero_of_eq` — the part on an event is `0` when the honest
-  and simulated transcripts in the event have equal probabilities
+  and simulated transcripts in the event have equal probabilities;
+  `Sigma.hvzkDistOn_reject_eq_zero` — the part on the rejected transcripts is `0`
+  when rejected responses are constant and accepted transcripts match
 -/
 
 @[expose] public section
@@ -550,6 +552,73 @@ theorem hvzkDistOn_eq_zero_of_eq (E : P.Resp → Bool) (x : P.Stmt) (w : P.Wit)
   by_cases ht : E t.2 = true
   · rw [h e t ht]
   · simp [ht]
+
+/-- **Rejected transcripts have distance zero when accepted ones match.** For a
+Σ-protocol whose rejected responses are all equal to `z₀`, if at `(x, w)` every
+accepted transcript has the same probability on the honest and the simulated
+side, the HVZK distance on the rejected transcripts is `0`: a test that does not
+read the commitment of a rejected transcript sees only the probability of
+rejection, which is one minus the probability of acceptance on both sides. -/
+theorem hvzkDistOn_reject_eq_zero (x : P.Stmt) (w : P.Wit)
+    (z₀ : P.Resp) (hz₀ : ∀ z, P.accept z = false → z = z₀)
+    (h : ∀ e (t : P.Com × P.Resp), P.accept t.2 = true →
+      (PMF.uniformOfFintype P.Rand).map (fun r => (P.commit x w r, P.respond x w r e)) t =
+        (PMF.uniformOfFintype P.SimRand).map (P.simulate x e) t) :
+    P.hvzkDistOn (fun z => !P.accept z) x w = 0 := by
+  refine le_antisymm (iSup_le fun e => iSup_le fun g => iSup_le fun _ => iSup_le fun hb => ?_)
+    zero_le
+  rw [tsub_le_iff_right, zero_add]
+  set a₀ : P.Com := (P.simulate x e (Classical.arbitrary _)).1
+  set c : ℝ≥0∞ := g (a₀, z₀)
+  have hg : ∀ t : P.Com × P.Resp, (if (!P.accept t.2) = true then g t else 0) =
+      c * (if P.accept t.2 = true then 0 else 1) := by
+    rintro ⟨a, z⟩
+    cases hz : P.accept z
+    · obtain rfl := hz₀ z hz
+      simp only [Bool.not_false, if_true, Bool.false_eq_true, if_false, mul_one]
+      exact hb a a₀ _ hz
+    · simp
+  -- the probability of acceptance under the image of `p` by `F`
+  have hacc : ∀ {β : Type} [Fintype β] [Nonempty β] (F : β → P.Com × P.Resp),
+      ∑' b, PMF.uniformOfFintype β b * (if P.accept (F b).2 = true then 0 else 1) =
+        1 - ∑' t, ((PMF.uniformOfFintype β).map F) t *
+          (if P.accept t.2 = true then 1 else 0) := by
+    intro β _ _ F
+    rw [tsum_map_mul']
+    refine ENNReal.eq_sub_of_add_eq (ne_top_of_le_ne_top ENNReal.one_ne_top ?_) ?_
+    · exact (ENNReal.tsum_le_tsum fun b => mul_le_of_le_one_right' (by split_ifs <;> simp)).trans
+        (le_of_eq (PMF.tsum_coe _))
+    · rw [← ENNReal.tsum_add]
+      refine (tsum_congr fun b => ?_).trans (PMF.tsum_coe (PMF.uniformOfFintype β))
+      rw [← mul_add]
+      split_ifs <;> simp
+  have hA : ∑' t, ((PMF.uniformOfFintype P.Rand).map
+        (fun r => (P.commit x w r, P.respond x w r e))) t *
+        (if P.accept t.2 = true then 1 else 0) =
+      ∑' t, ((PMF.uniformOfFintype P.SimRand).map (P.simulate x e)) t *
+        (if P.accept t.2 = true then 1 else 0) := by
+    refine tsum_congr fun t => ?_
+    by_cases ht : P.accept t.2 = true
+    · rw [h e t ht]
+    · simp [ht]
+  have h1 := hacc (fun r => (P.commit x w r, P.respond x w r e))
+  have h2 := hacc (P.simulate x e)
+  simp only at h1 h2
+  refine le_of_eq ?_
+  calc (∑' r, PMF.uniformOfFintype P.Rand r * (if (!P.accept (P.respond x w r e)) = true then
+          g (P.commit x w r, P.respond x w r e) else 0))
+      = c * ∑' r, PMF.uniformOfFintype P.Rand r *
+          (if P.accept (P.respond x w r e) = true then 0 else 1) := by
+        rw [← ENNReal.tsum_mul_left]
+        exact tsum_congr fun r => (congrArg (PMF.uniformOfFintype P.Rand r * ·)
+          (hg (P.commit x w r, P.respond x w r e))).trans (mul_left_comm _ _ _)
+    _ = c * ∑' s, PMF.uniformOfFintype P.SimRand s *
+          (if P.accept (P.simulate x e s).2 = true then 0 else 1) := by
+        rw [h1, h2, hA]
+    _ = _ := by
+        rw [← ENNReal.tsum_mul_left]
+        exact tsum_congr fun s => ((congrArg (PMF.uniformOfFintype P.SimRand s * ·)
+          (hg (P.simulate x e s))).trans (mul_left_comm _ _ _)).symm
 
 /-- **The HVZK distance split by an event on the response.** `hvzkDist` is at
 most the supremum, over generated pairs, of the distance on the transcripts whose

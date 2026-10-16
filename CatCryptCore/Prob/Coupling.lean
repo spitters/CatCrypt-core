@@ -24,6 +24,7 @@ that is fundamental to probabilistic relational Hoare logic.
 * `liftR_refl` - Equality lifts to any distribution (diagonal coupling)
 * `liftR_mono` - Lifting is monotone in the relation
 * `liftR_bind` - Lifting composes through bind (key for bind rule)
+* `SDistr.monad_bind_eq` - Monadic bind on `SDistr` is `SDistr.bind`
 
 ## References
 
@@ -215,6 +216,10 @@ theorem SDistr.mass_one_implies_none_zero {d : SDistr α} (h : SDistr.mass d = 1
     · norm_num  -- 1 ≠ 0
     · exact hne
   exact absurd h (ne_of_lt h1)
+
+/-- Monadic bind on `SDistr` is `SDistr.bind`. -/
+theorem SDistr.monad_bind_eq {α β : Type} (d : SDistr α) (f : α → SDistr β) :
+    (d >>= f) = d.bind f := rfl
 
 /-- Binding with a constant (when mass = 1) -/
 theorem SDistr.bind_const_mass_one {d : SDistr α} {e : SDistr β}

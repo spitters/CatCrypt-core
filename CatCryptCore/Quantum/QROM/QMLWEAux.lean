@@ -250,7 +250,7 @@ theorem prTrue_B1_st_bernAdv (hv : ∀ pk i c, v pk i c ≤ 1) (b : Bool) (A : P
         (FOFromMLWE.guess_st P (cpaReduction f (bernAdv msgs v hv))) b A t) =
       encExp (mapCiphertext (MLWE_PKE_Scheme.toScheme P) f g) msgs v b (A, t) := by
   simp only [MLWE_PKE_Stateful.B1_st, FOFromMLWE.choose_st, FOFromMLWE.guess_st,
-    ← MLWE_PKE_Scheme.encDist_eq, MLWE_PKE_Scheme.sdistr_bind_eq,
+    ← MLWE_PKE_Scheme.encDist_eq, CatCrypt.Prob.SDistr.monad_bind_eq,
     MLWE_PKE_Scheme.sdistr_bind_map_some, prTrue, cpaReduction, bernAdv, Scheme.encDist,
     PMF.bind_map, PMF.bind_apply, tsum_fintype, PMF.uniformOfFintype_apply, Function.comp_apply,
     map_some_apply_some, coinPMF_true, coe_toNNReal_of_le_one hv, encExp, mapCiphertext]
@@ -263,7 +263,8 @@ theorem prTrue_B2_ext_st_bernAdv (hv : ∀ pk i c, v pk i c ≤ 1) (b : Bool) (A
         (FOFromMLWE.guess_st P (cpaReduction f (bernAdv msgs v hv))) b A t u v') =
       extView P.toBasic f msgs v b (A, t, u, v') := by
   simp only [MLWE_PKE_Stateful.B2_ext_st, FOFromMLWE.choose_st, FOFromMLWE.guess_st,
-    MLWE_PKE_Scheme.sdistr_bind_eq, MLWE_PKE_Scheme.sdistr_bind_map_some, prTrue, cpaReduction,
+    CatCrypt.Prob.SDistr.monad_bind_eq, MLWE_PKE_Scheme.sdistr_bind_map_some, prTrue,
+    cpaReduction,
     bernAdv, PMF.bind_map, PMF.bind_apply, tsum_fintype, PMF.uniformOfFintype_apply,
     Function.comp_apply, map_some_apply_some, coinPMF_true, coe_toNNReal_of_le_one hv, extView]
 

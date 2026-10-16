@@ -15,6 +15,7 @@ public import CatCryptCore.Prob.XorBij
 public import CatCryptCore.Examples.OneTimePad
 public import CatCryptCore.Tactics
 public import CatCryptCore.Tactics.AutoMetrics
+public import CatCryptCore.ForMathlib.PMFSupport
 
 /-!
 # Bijection-Family PRF: Perfect Security
@@ -185,16 +186,6 @@ section Cascade
 open CatCrypt.Core CatCrypt.Crypto CatCrypt.Crypto.PRPPRF
 open scoped ENNReal
 
-/-- Two continuations that agree on the support of `p` give the same bind. -/
-theorem pmf_bind_congr_support {α β : Type} (p : PMF α) (f g : α → PMF β)
-    (h : ∀ a ∈ p.support, f a = g a) : p.bind f = p.bind g := by
-  ext b
-  simp only [PMF.bind_apply]
-  refine tsum_congr fun a => ?_
-  by_cases ha : p a = 0
-  · simp [ha]
-  · rw [h a ((PMF.mem_support_iff _ _).2 ha)]
-
 /-- The uniform distribution on a product is the product of the uniform
 distributions. -/
 theorem uniformOfFintype_prod {K : Type} [Fintype K] [Nonempty K] :
@@ -265,7 +256,7 @@ theorem run_map_state_of_inv {D R α S S' : Type} (O : S → D → PMF (R × S))
     exact congrArg _ (funext fun b => ih b s hs)
   | query d k ih =>
     rw [OracleAdv.run_query, PMF.map_bind,
-      pmf_bind_congr_support _ _ _ (fun z hz => ih z.1 z.2 (hI s d hs z hz)), OracleAdv.run_query,
+      PMF.bind_congr_support _ _ _ (fun z hz => ih z.1 z.2 (hI s d hs z hz)), OracleAdv.run_query,
       ← hO s d hs, PMF.bind_map]
     rfl
 
@@ -495,7 +486,7 @@ theorem rfrpOracle_map_comp (u : List (D × D × D)) (x : D) (hu : RfrpInv u) :
   rw [lookup_map_snd]
   rcases hx : List.lookup x u with _ | r
   · simp only [Option.map_none, PMF.map_bind, PMF.bind_map]
-    refine pmf_bind_congr_support _ _ _ fun r₁ hr₁ => ?_
+    refine PMF.bind_congr_support _ _ _ fun r₁ hr₁ => ?_
     have hfr := not_mem_of_mem_support_freshDist (compl_usedAnswers_nonempty hu hx) hr₁
     rw [usedAnswers_rfrp, List.mem_toFinset] at hfr
     have hl : List.lookup r₁ (u.map Prod.snd) = none :=

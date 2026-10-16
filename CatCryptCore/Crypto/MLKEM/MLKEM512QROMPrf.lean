@@ -388,7 +388,7 @@ theorem absDiff_avg_xofMatrix_le (k m : ℕ) {T : Type} [Fintype T] [Nonempty T]
     absDiff (avg fun H : Family k m => G (e (xofMatrix H))) (avg G) ≤
       ((k * k : ℕ) : ℝ≥0∞) * nonFillProb m := by
   have h1 : sdExp (xofMatrixDistVia (m := m) e) G = avg fun H : Family k m => G (e (xofMatrix H)) := by
-    rw [xofMatrixDistVia, ← MLWE_PKE_Scheme.sdistr_bind_eq, PRFInstance512.sdExp_bind]
+    rw [xofMatrixDistVia, ← CatCrypt.Prob.SDistr.monad_bind_eq, PRFInstance512.sdExp_bind]
     simp only [sdExp_pure]
     rw [tsum_elim_eq_sdExp]
     convert sdExp_uniform (α := Family k m) _ using 3

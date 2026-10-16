@@ -107,6 +107,10 @@ noncomputable instance instCryptoWordBitVec (n : Nat) : CryptoWord (BitVec n) wh
   wxor_cancel a b := by simp [BitVec.xor_assoc, BitVec.xor_self, BitVec.xor_zero]
   wxor_comm a b := by simp [BitVec.xor_comm]
 
+/-- For `BitVec n`, `wxor` is bitwise XOR. -/
+theorem wxor_eq_xor {n : ℕ} (a b : BitVec n) : CryptoWord.wxor a b = a ^^^ b := by
+  with_unfolding_all rfl
+
 /-! ## Derived Properties -/
 
 variable {W : Type} [CryptoWord W]

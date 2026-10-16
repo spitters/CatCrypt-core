@@ -113,10 +113,6 @@ noncomputable def toScheme :
 
 /-! ## Bridge lemmas between `PMF` and `SDistr` -/
 
-/-- Monadic bind on `SDistr` is `SDistr.bind`. -/
-theorem sdistr_bind_eq {α β : Type} (d : SDistr α) (f : α → SDistr β) :
-    (d >>= f) = SDistr.bind d f := rfl
-
 /-- `SDistr.bind` of a total distribution is `PMF.bind`. -/
 theorem sdistr_bind_map_some {α β : Type} (p : PMF α) (f : α → SDistr β) :
     SDistr.bind (p.map some) f = p.bind f := by
@@ -139,8 +135,8 @@ theorem advantage_pmfGame_eq_absDiff (p q : PMF Bool) :
 
 theorem keygen_eq : (toScheme P).keygen.map some = MLWE_PKE_Basic.kg P.toBasic := by
   have h := P.sampleKey_eq
-  simp only [sdistr_bind_eq] at h
-  simp only [MLWE_PKE_Basic.kg, sdistr_bind_eq, toScheme, PMF.map_bind, PMF.map_comp,
+  simp only [SDistr.monad_bind_eq] at h
+  simp only [MLWE_PKE_Basic.kg, SDistr.monad_bind_eq, toScheme, PMF.map_bind, PMF.map_comp,
     Function.comp_def]
   have hkg : ∀ A : P.Mat,
       SDistr.bind P.dshort_vec (fun s => SDistr.bind P.dshort_vec fun e =>
@@ -158,8 +154,8 @@ theorem encDist_eq (pk : MLWE_PKE_Basic.PK P.toBasic) (m : P.PT) :
     ((toScheme P).encDist pk m).map some = MLWE_PKE_Basic.enc P.toBasic pk m := by
   obtain ⟨A, t⟩ := pk
   have h := P.sampleShort_eq
-  simp only [sdistr_bind_eq] at h
-  simp only [MLWE_PKE_Basic.enc, sdistr_bind_eq, Scheme.encDist, toScheme, PMF.map_comp,
+  simp only [SDistr.monad_bind_eq] at h
+  simp only [MLWE_PKE_Basic.enc, SDistr.monad_bind_eq, Scheme.encDist, toScheme, PMF.map_comp,
     Function.comp_def]
   have henc :
       SDistr.bind P.dshort_vec (fun r => SDistr.bind P.dshort_vec2 fun e1 =>
@@ -191,7 +187,7 @@ theorem indcpaGame_eq
         let x ← (A.choose pk).map some
         let c ← MLWE_PKE_Basic.enc P.toBasic pk (if b then x.1 else x.2.1)
         (A.guess x.2.2 c).map some) : SDistr Bool) := by
-  simp only [sdistr_bind_eq, ← keygen_eq, ← encDist_eq, sdistr_bind_map_some, indcpaGame,
+  simp only [SDistr.monad_bind_eq, ← keygen_eq, ← encDist_eq, sdistr_bind_map_some, indcpaGame,
     PMF.map_bind]
 
 /-- The IND-CPA advantage of `toScheme P` is the absolute difference of the

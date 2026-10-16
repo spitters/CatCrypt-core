@@ -257,6 +257,39 @@ theorem prTrue_bind_mono {α : Type}
   | none => simp
   | some p => exact mul_le_mul_right (hk p.1 p.2) _
 
+/-- Additivity of `prTrue` through a shared prefix: if the continuation `k₁`
+    has, from every intermediate state, the `true`-probability of `k₂` plus that
+    of `k₃`, then so does `c >>= k₁` against `c >>= k₂` and `c >>= k₃`. -/
+theorem prTrue_bind_add_eq {α : Type} (c : SPComp α)
+    (k₁ k₂ k₃ : α → SPComp Bool) (h₀ : Heap)
+    (hk : ∀ a h', prTrue (k₁ a) h' = prTrue (k₂ a) h' + prTrue (k₃ a) h') :
+    prTrue (SPComp.bind c k₁) h₀
+      = prTrue (SPComp.bind c k₂) h₀ + prTrue (SPComp.bind c k₃) h₀ := by
+  rw [prTrue_bind_eq_weighted c k₁ h₀, prTrue_bind_eq_weighted c k₂ h₀,
+    prTrue_bind_eq_weighted c k₃ h₀, ← ENNReal.tsum_add]
+  refine tsum_congr fun p => ?_
+  rw [← mul_add]
+  congr 1
+  cases p with
+  | none => simp
+  | some pp => obtain ⟨a, h'⟩ := pp; exact hk a h'
+
+/-- If the continuation `k₁` is pointwise dominated by `k₂` plus `k₃`, so is
+    `c >>= k₁` by `c >>= k₂` plus `c >>= k₃`. -/
+theorem prTrue_bind_le_add {α : Type} (c : SPComp α)
+    (k₁ k₂ k₃ : α → SPComp Bool) (h₀ : Heap)
+    (hk : ∀ a h', prTrue (k₁ a) h' ≤ prTrue (k₂ a) h' + prTrue (k₃ a) h') :
+    prTrue (SPComp.bind c k₁) h₀
+      ≤ prTrue (SPComp.bind c k₂) h₀ + prTrue (SPComp.bind c k₃) h₀ := by
+  rw [prTrue_bind_eq_weighted c k₁ h₀, prTrue_bind_eq_weighted c k₂ h₀,
+    prTrue_bind_eq_weighted c k₃ h₀, ← ENNReal.tsum_add]
+  refine ENNReal.tsum_le_tsum fun p => ?_
+  rw [← mul_add]
+  gcongr
+  cases p with
+  | none => simp
+  | some pp => obtain ⟨a, h'⟩ := pp; exact hk a h'
+
 /-- Scaled monotonicity: if `prTrue(k₁ a) ≤ c * prTrue(k₂ a)` pointwise,
     then `prTrue(bind comp k₁) ≤ c * prTrue(bind comp k₂)`. -/
 theorem prTrue_bind_mono_const {α : Type} (c : ℝ≥0∞)
