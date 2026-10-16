@@ -28,7 +28,8 @@ This file defines UC security at Level 1 (information-theoretic): no complexity 
 
 * `mapSum_pure_left` — `mapSum pure g (.inl a) = pure (.inl a)`
 * `UCEmulates_of_sdist` — same-interface: `sdist ≤ ε → UCEmulates ε`
-* `UCEmulates_of_dummy` — dummy adversary sufficiency
+* `UCEmulates_of_dummy` — deprecated alias of `UCEmulates_of_sdist`; dummy-adversary
+  completeness is `dummy_completeness` in `CatCryptCore.Crypto.DummyAdversary`
 * `UCEmulates_trans` — transitivity (same-interface, via simulator chaining)
 
 ## UC vs sdist
@@ -176,20 +177,13 @@ theorem UCEmulates_of_sdist {out leak : Type*} (ε : ℝ≥0∞)
     UCEmulates ε₂ spec π F := by
   exact fun A => (h A).imp fun _ hS => le_trans hS hle
 
-/-- Dummy adversary sufficiency (same-interface case: `view = leak`).
-
-    If UC holds against the identity adversary, it holds against ALL adversaries.
-    The key idea: given adversary A, absorb it into the distinguisher. -/
-theorem UCEmulates_of_dummy {hon out leak : Type*} (ε : ℝ≥0∞)
-    (π F : hon → SPComp (out ⊕ leak))
-    (h : sdist π F ≤ ε) :
-    ∀ (view : Type*) (A : leak → SPComp view),
-      ∃ (S : leak → SPComp view),
-        sdist (fun a => SPComp.bind (π a) (mapSum SPComp.pure A))
-              (fun a => SPComp.bind (F a) (mapSum SPComp.pure S)) ≤ ε := by
-  intro view A
-  -- Take S = A (same adversary as simulator)
-  exact ⟨A, le_trans (sdist_comp_right π F (mapSum SPComp.pure A)) h⟩
+/-- Deprecated alias of `UCEmulates_of_sdist`. The former statement, an `sdist` bound
+    giving a simulator for every adversary in the same-interface case, is
+    `UCEmulates_of_sdist`; dummy-adversary completeness (emulation against the dummy
+    adversary implies emulation against every adversary and every view) is
+    `dummy_completeness` in `CatCryptCore.Crypto.DummyAdversary`. -/
+@[deprecated UCEmulates_of_sdist (since := "2026-10-16")]
+alias UCEmulates_of_dummy := UCEmulates_of_sdist
 
 /-- Reflexivity: any protocol UC-emulates itself perfectly (same-interface). -/
 theorem UCEmulates_refl {hon out leak view : Type*}

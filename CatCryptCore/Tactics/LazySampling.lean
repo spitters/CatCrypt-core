@@ -159,32 +159,6 @@ theorem lazyEval_refl
       eqPost :=
   rHoare_refl _
 
-/-- When the lookup always returns `none` on both sides, lazy evaluation
-    produces the same distribution as fresh sampling (followed by store).
-
-    This is the core theorem connecting lazy and eager sampling for a
-    single fresh query. Both sides:
-    1. Call lookup (which returns none)
-    2. Sample a fresh value
-    3. Store it
-    4. Return it
-
-    Since both sides execute the same code, they are trivially equivalent.
-
-    The more interesting case (proved below) is when we compare
-    lazy evaluation to plain sampling without the store step. -/
-theorem lazyEval_fresh_equiv
-    {K V : Type} [Fintype V] [Nonempty V]
-    (lookup : K → SPComp (Option V))
-    (store : K → V → SPComp Unit)
-    (k : K)
-    (_h_fresh : lookup k = SPComp.pure none) :
-    rHoare eqPre
-      (lazyEvalAbstract lookup store k)
-      (lazyEvalAbstract lookup store k)
-      eqPost :=
-  rHoare_refl _
-
 /-- For a single fresh query, lazy evaluation and plain sampling
     produce the same output distribution (though they may differ in
     heap effects due to the store operation).
@@ -194,7 +168,12 @@ theorem lazyEval_fresh_equiv
     `SPComp.sample V`.
 
     The postcondition captures: the values are equal and both heaps
-    have been updated consistently. -/
+    have been updated consistently.
+
+    `lazyEval_fresh_value_uniform` is the relational statement of a fresh query; it
+    replaces `lazyEval_fresh_equiv` (the reflexivity of `lazyEvalAbstract`, which
+    did not use the freshness hypothesis) and `lazyEval_fresh_pHoare` (a `pHoare`
+    triple with postcondition `True`), both removed. -/
 theorem lazyEval_fresh_value_uniform
     {K V : Type} [Fintype V] [Nonempty V]
     (lookup : K → SPComp (Option V))
@@ -400,24 +379,6 @@ theorem lazyEval_independent_keys
     exact ⟨rfl, rfl⟩
 
 /-! ## Unary Properties -/
-
-/-- Unary property: lazy evaluation on a fresh key produces a value
-    in the support of the uniform distribution.
-
-    Since lazy evaluation samples from `SPComp.sample V` when the key
-    is fresh, the output is uniformly distributed over V. -/
-theorem lazyEval_fresh_pHoare
-    {K V : Type} [Fintype V] [Nonempty V]
-    (lookup : K → SPComp (Option V))
-    (store : K → V → SPComp Unit)
-    (k : K)
-    (_h_fresh : lookup k = SPComp.pure none) :
-    pHoare
-      CatCrypt.Unary.truePre
-      (lazyEvalAbstract lookup store k)
-      (fun _ _ => True) := by
-  intro _ _ _ _ _
-  trivial
 
 /-- Unary property: lazy evaluation on a cached key returns exactly
     the cached value. -/
