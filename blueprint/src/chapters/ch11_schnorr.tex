@@ -40,9 +40,9 @@ solver.
 \begin{theorem}[Forking bound]
   \label{thm:schnorr-forking}
   \uses{thm:schnorr-soundness}
-  \lean{CatCrypt.Examples.Schnorr.schnorr_forking_bound}
+  \lean{CatCrypt.Crypto.ForkingLemma.fork_success_ge}
   \leanok
-  Instantiating the general forking lemma at a Schnorr forger $A$ bounds the
+  The general forking lemma, applied to a Schnorr forger $A$, bounds the
   probability of a successful fork below by
   $\mathrm{acc}(A)^2 - \mathrm{acc}(A)/p$, where $\mathrm{acc}(A)$ is $A$'s
   acceptance probability.

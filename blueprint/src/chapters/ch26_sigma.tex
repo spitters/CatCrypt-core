@@ -10,7 +10,7 @@ or a finite case split.
 \begin{theorem}[Completeness]
   \label{thm:sigma-complete}
   \uses{def:spcomp}
-  \lean{CatCrypt.Examples.SigmaProtocol.simpleSigma_complete}
+  \lean{CatCrypt.Examples.Sigma.simpleSigma_completeness}
   \leanok
   Honest execution with a valid witness always verifies.
 \end{theorem}
@@ -18,7 +18,7 @@ or a finite case split.
 \begin{theorem}[Special honest-verifier zero knowledge]
   \label{thm:sigma-shvzk}
   \uses{thm:sigma-complete}
-  \lean{CatCrypt.Examples.SigmaProtocol.simpleSigma_shvzk, CatCrypt.Examples.SigmaProtocol.simpleSigma_shvzk_zero_adv}
+  \lean{CatCrypt.Examples.Sigma.simpleSigma_shvzk, CatCrypt.Examples.Sigma.simpleSigma_shvzk_zero_adv}
   \leanok
   Real and simulated transcripts are identically distributed: the simulator, given
   the challenge, produces a transcript coupled to the real one through a single
@@ -28,7 +28,7 @@ or a finite case split.
 \begin{theorem}[Special soundness]
   \label{thm:sigma-sound}
   \uses{thm:sigma-complete}
-  \lean{CatCrypt.Examples.SigmaProtocol.simpleSigma_special_sound}
+  \lean{CatCrypt.Examples.Sigma.simpleSigma_special_sound}
   \leanok
   Two accepting transcripts sharing a commitment but differing in challenge yield
   the witness through an explicit extractor.
@@ -37,18 +37,18 @@ or a finite case split.
 \begin{theorem}[Commitment hiding and binding]
   \label{thm:sigma-commitment}
   \uses{thm:sigma-shvzk, thm:sigma-sound}
-  \lean{CatCrypt.Examples.SigmaProtocol.simpleSigma_hiding, CatCrypt.Examples.SigmaProtocol.simpleSigma_binding}
+  \lean{CatCrypt.Examples.Sigma.simpleSigma_shvzk_zero_adv, CatCrypt.Examples.Sigma.simpleSigma_binding}
   \leanok
-  The associated commitment is perfectly hiding (a direct instance of SHVZK's
-  one-time-pad coupling) and binding (a double opening yields two accepting
-  transcripts, hence the witness by special soundness).
+  The associated commitment is perfectly hiding, by the one-time-pad coupling of
+  SHVZK, and binding: a double opening yields two accepting transcripts, hence the
+  witness by special soundness.
 \end{theorem}
 
 \section{Stateful provers and the given-challenge formulation}
 
-A second module develops the same three properties with a prover that carries
-state from the first move to the third, together with conversions between the
-stateful and the stateless presentations. SHVZK is stated both for a sampled
+The same module states the three properties for a prover that carries state from
+the first move to the third, together with conversions between the stateful and
+the stateless presentations. SHVZK is stated both for a sampled
 challenge and for a challenge fixed in advance.
 
 \begin{definition}[$\Sigma$-protocol with prover state]

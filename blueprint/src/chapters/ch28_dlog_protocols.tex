@@ -107,7 +107,7 @@ built on the $\Sigma$-protocol interface of the $\Sigma$-protocol chapter.
 \begin{theorem}[Completeness, SHVZK and special soundness]
   \label{thm:chaum-pedersen}
   \uses{def:groupparam, thm:sigma-complete}
-  \lean{CatCryptCore.Examples.ChaumPedersen.chaumPedersenSigma, CatCryptCore.Examples.ChaumPedersen.chaumPedersen_complete, CatCryptCore.Examples.ChaumPedersen.chaumPedersen_SHVZK_visible, CatCryptCore.Examples.ChaumPedersen.chaumPedersen_special_soundness}
+  \lean{CatCrypt.Examples.ChaumPedersen.chaumPedersenSigma, CatCrypt.Examples.ChaumPedersen.chaumPedersen_complete, CatCrypt.Examples.ChaumPedersen.chaumPedersen_SHVZK_visible, CatCrypt.Examples.ChaumPedersen.chaumPedersen_special_soundness}
   \leanok
   Honest transcripts verify; for each challenge the real and simulated
   transcripts are equal in distribution; two accepting transcripts with one
@@ -117,7 +117,7 @@ built on the $\Sigma$-protocol interface of the $\Sigma$-protocol chapter.
 \begin{theorem}[UC security]
   \label{thm:chaum-pedersen-uc}
   \uses{thm:chaum-pedersen}
-  \lean{CatCryptCore.Examples.ChaumPedersen.chaumPedersen_uc_secure}
+  \lean{CatCrypt.Examples.ChaumPedersen.chaumPedersen_uc_secure}
   \leanok
   For a statement in the relation, the real protocol UC-emulates the ideal one
   with error $0$.
