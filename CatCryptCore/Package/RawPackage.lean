@@ -18,13 +18,22 @@ A raw package maps operation identifiers to their implementations.
 
 * `TypedFun` - A typed function implementation (input type, output type, implementation)
 * `RawPackage` - A collection of typed function implementations
-* `RawPackage.link` - Sequential composition (linking) — **shallow-layer no-op
-  stub** (returns its first argument unchanged, because `RawPackage` stores
-  oracle-free typed functions with nothing to substitute). Real oracle-substituting
-  linking lives in the deep embedding: `CatCrypt.Deep.Package.link`, proven correct
-  and associative by `runPkg_link` / `runPkg_link_assoc` in `NomAdvantage`.
 * `RawPackage.par` - Parallel composition
-* `RawPackage.id` - Identity package
+
+## Sequential composition and identity
+
+A `RawPackage` stores its operations as functions `S → SPComp T`, which make no
+imported call, so this layer has neither sequential composition (linking) nor an
+identity package that forwards its imports. Both are defined on the typed packages
+of the deep embedding (`CatCryptCore/Deep/Package.lean`), whose code contains oracle
+calls:
+* `CatCrypt.Deep.DeepPackage.link` resolves the oracle calls of the importing package
+  by the implementations of the exporting package (`RawCode.substOracle`);
+  `CatCrypt.Deep.NomPackage.link` is its nominal form. `runPkg_link` and
+  `runPkg_link_assoc` (`CatCryptCore/Crypto/NomAdvantage.lean`) state its evaluation
+  and associativity.
+* `CatCrypt.Deep.DeepPackage.id` forwards each operation of an interface as an oracle
+  call; `DeepPackage.link_id_right_code` gives the code of `link p (id p.imports)`.
 
 ## References
 
@@ -142,25 +151,6 @@ noncomputable def resolve (P : RawPackage) (id : ℕ) {S T : Type}
     else
       SPComp.fail
   | none => SPComp.fail
-
-/-- Sequential composition (linking): P₁ imports from P₂.
-
-    **WARNING: This is a stub that returns `P₁` unchanged.**
-    The shallow `RawPackage` representation stores typed functions
-    (`S → SPComp T`) that have no notion of oracle calls, so there
-    is nothing to substitute. This makes `link` a no-op.
-
-    **For real package linking, use the deep embedding layer:**
-    - `DeepPackage.link` in `CatCrypt.Deep.Package` performs actual
-      oracle substitution via `RawCode.substOracle`
-    - `runPkg_link` in `CatCrypt.Crypto.NomAdvantage` proves correctness
-    - `runPkg_link_assoc` proves associativity at the evaluation level -/
-noncomputable def link (P₁ _P₂ : RawPackage) : RawPackage :=
-  P₁
-
-/-- Identity package: implements an interface by just forwarding -/
--- Note: Full identity would need import capability
-noncomputable def idPkg (I : Interface) : RawPackage := empty
 
 theorem empty_ids : (∅ : RawPackage).ids = ∅ := Finset.image_empty _
 

@@ -16,8 +16,9 @@ syntactic `RawCode`. Beyond the six canonical constructors, it also reflects an
 `SPComp`-typed subterm whose head is *abstract* — a call to a primitive the game
 does not implement (`f a : SPComp β`), a locally-bound oracle, or an opaque
 constant — as an `embed` leaf. Because `RawCode.eval (embed c) = c` holds
-definitionally, the reified program round-trips, and `IsValid.embed`
-(`Deep/Package.lean`) supplies the validity proof. This is what makes reflective
+definitionally, the reified program round-trips, and `IsValid.embedUnchecked`
+(`Deep/Package.lean`) supplies a validity proof that does not check the heap
+accesses of the leaf. This is what makes reflective
 state-separating proofs expressible for compositional cryptography, where games
 routinely call an abstract adversary or primitive.
 

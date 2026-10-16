@@ -506,8 +506,8 @@ noncomputable def statistical_gap (_m : Word) (_t : Word) : ℝ≥0∞ :=
     - `forgery_diff_message_uniform`: different-message forgery is uniform
 
     The full chaining requires package composition (`link`) and the advantage
-    triangle inequality. The shallow `RawPackage` layer does not support
-    linking (see `RawPackage.link` WARNING). Use the deep embedding layer
+    triangle inequality. The shallow `RawPackage` layer has no
+    linking (see the module docstring of `Package/RawPackage.lean`). Use the deep embedding layer
     (`DeepPackage.link`, `runPkg_link`) for the complete proof. -/
 theorem security_based_on_prf
     (m m_check : Word)                 -- Honest and forgery messages
