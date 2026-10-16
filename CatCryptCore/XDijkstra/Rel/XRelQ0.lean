@@ -63,23 +63,23 @@ namespace CatCrypt.XDijkstra
 open scoped ENNReal
 open CatCrypt.Prob
 
-/-! ## 1. The graded relational triple over a `RelQ0` monad
+/-! ## 1. The graded relational triple over a graded relational lifting (`RelQ0Lift`)
 
 `XRelTripleQ0 ε R m₁ m₂` is the probabilistic relational Hoare judgment at
 grade/error `ε`: `m₁` and `m₂` are `ε`-approximately coupled on the support of
 `R`. It is `RelQ0.liftR`, and its sequencing rule is the `xrel_seq`/`xseq`
 analogue whose grade adds. -/
 
-/-- **The graded relational triple over a `RelQ0`.** `m₁`, `m₂` are coupled up to
+/-- **The graded relational triple over a `RelQ0Lift`.** `m₁`, `m₂` are coupled up to
 error `ε` on the support of `R` — the `ε`-graded relational lifting `T̂`, at `PMF`
 the qualitative `XRelatorPMF` coupling. -/
-def XRelTripleQ0 {T : Type → Type} [RelQ0 T] {α β : Type}
+def XRelTripleQ0 {T : Type → Type} [RelQ0Lift T] {α β : Type}
     (ε : ℝ≥0∞) (R : α → β → Prop) (m₁ : T α) (m₂ : T β) : Prop :=
   RelQ0.liftR ε R m₁ m₂
 
 /-- **Coupling `return`.** `R`-related points lift to the zero-error triple — the
 `RelQ0` `liftR_pure` law, the graded generalization of `Couples_pure`. -/
-theorem xrelQ0_pure {T : Type → Type} [RelQ0 T] {α β : Type}
+theorem xrelQ0_pure {T : Type → Type} [RelQ0Lift T] {α β : Type}
     {a : α} {b : β} {R : α → β → Prop} (h : R a b) :
     XRelTripleQ0 (T := T) 0 R (RelQ0.pure' a) (RelQ0.pure' b) :=
   RelQ0.liftR_pure h
@@ -89,7 +89,7 @@ prefixes and, at every `R`-related pair, a `δ`-triple on the continuations,
 obtain a triple on the sequenced programs at grade `ε + δ`. Delegates to
 `RelQ0.liftR_bind`. The output grade `ε + δ` is at once the grade-additive `xseq`
 (cost/error accumulation) and the pRHL coupling composition. -/
-theorem xrelQ0_seq {T : Type → Type} [RelQ0 T] {α β α' β' : Type}
+theorem xrelQ0_seq {T : Type → Type} [RelQ0Lift T] {α β α' β' : Type}
     {ε δ : ℝ≥0∞} {R : α → β → Prop} {S : α' → β' → Prop}
     {m₁ : T α} {m₂ : T β} {k₁ : α → T α'} {k₂ : β → T β'}
     (h : XRelTripleQ0 ε R m₁ m₂)
@@ -98,14 +98,14 @@ theorem xrelQ0_seq {T : Type → Type} [RelQ0 T] {α β α' β' : Type}
   RelQ0.liftR_bind h hk
 
 /-- **Grade monotonicity of the triple.** A larger error budget still holds. -/
-theorem xrelQ0_mono_eps {T : Type → Type} [RelQ0 T] {α β : Type}
+theorem xrelQ0_mono_eps {T : Type → Type} [RelQ0Lift T] {α β : Type}
     {ε ε' : ℝ≥0∞} {R : α → β → Prop} {m₁ : T α} {m₂ : T β}
     (hε : ε ≤ ε') (h : XRelTripleQ0 ε R m₁ m₂) : XRelTripleQ0 ε' R m₁ m₂ :=
   RelQ0.liftR_mono_eps hε h
 
 /-- **Relation weakening of the triple.** A coupling on `R` is a coupling on any
 weaker `S ⊇ R`, at the same grade. -/
-theorem xrelQ0_mono_rel {T : Type → Type} [RelQ0 T] {α β : Type}
+theorem xrelQ0_mono_rel {T : Type → Type} [RelQ0Lift T] {α β : Type}
     {ε : ℝ≥0∞} {R S : α → β → Prop} {m₁ : T α} {m₂ : T β}
     (hRS : ∀ a b, R a b → S a b) (h : XRelTripleQ0 ε R m₁ m₂) :
     XRelTripleQ0 ε S m₁ m₂ :=

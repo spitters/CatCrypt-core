@@ -41,7 +41,7 @@ prefix coupling at `R` and a continuation coupling at `S`, the bound pair is cou
 at `S`. This is the relational lifting *as a monad* (Maillard et al., "The Next 700
 Relational Program Logics") — the relational axis carrying the coupling relation, not
 just its grade (contrast the blind product `xprod`/`xseq`). -/
-theorem relational_axis_is_monad {T : Type → Type} [CatCrypt.RelQ0 T]
+theorem relational_axis_is_monad {T : Type → Type} [CatCrypt.RelQ0Lift T]
     {ε δ : ℝ≥0∞} {α β α' β' : Type}
     {R : α → β → Prop} {S : α' → β' → Prop}
     {m : RelPT (T := T) ε α β} {k₁ : α → T α'} {k₂ : β → T β'}
@@ -53,7 +53,7 @@ theorem relational_axis_is_monad {T : Type → Type} [CatCrypt.RelQ0 T]
 /-- **The relational monad adds grades.** The `relBind` of an `ε`-coupled prefix and
 a `δ`-coupled continuation lands at grade `ε + δ` in the type index — coupling error
 composes additively, in the object, alongside the relation `S`. -/
-theorem relational_grade_adds {T : Type → Type} [CatCrypt.RelQ0 T]
+theorem relational_grade_adds {T : Type → Type} [CatCrypt.RelQ0Lift T]
     {ε δ : ℝ≥0∞} {α β α' β' : Type}
     (m : RelPT (T := T) ε α β) (k₁ : α → T α') (k₂ : β → T β') (S : α' → β' → Prop) :
     RelSpec (relBind (δ := δ) m k₁ k₂) S

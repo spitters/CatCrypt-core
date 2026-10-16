@@ -13,7 +13,8 @@ public import CatCryptCore.Relational.Approx
 The Approxis reconstruction (`ApproxisRelational.lean`) fixes the effect to `SDistr`.
 This file abstracts the structure that reconstruction actually consumes — a monad with
 a **graded approximate relational lifting** and its four laws (pure, grade-additive
-bind, relation- and grade-monotonicity) — into a typeclass `RelQ0`. It is the first
+bind, relation- and grade-monotonicity) — into a typeclass `RelQ0Lift`, and extends it
+with a heap-indexed denotation and adequacy to the typeclass `RelQ0`. It is the first
 step of extending the reconstruction from the classical effect to every
 coupling-equipped Q₀-monad: `SDistr` is the classical instance here, `QComp` (quantum
 couplings, `Quantum/ApproxRelational.lean`) is the intended second.
@@ -41,19 +42,16 @@ theorem liftRApprox_bind_pure_heap {α β : Type} {ε : ℝ≥0∞} {R : α → 
       (q : β × CatCrypt.Core.Heap) => R p.1 q.1 ∧ p.2 = q.2) ⟨hab, rfl⟩))
   rwa [add_zero] at hb
 
-/-- A **relational Q₀-monad**: an effect `T` with monad operations, a stateful
-denotation `denote m h` as a sub-distribution over results and final heaps that sends
-`pure'` and `bind'` to the state-monad unit and bind over `SDistr`, and a graded
-approximate relational lifting `liftR ε R m₁ m₂` satisfying the coupling laws an
-approximate relational program logic needs.
+/-- A **graded relational lifting** on an effect `T`: monad operations `pure'`, `bind'`
+and a graded approximate relational lifting `liftR ε R m₁ m₂` satisfying the four
+coupling laws (pure at grade `0`, grade-additive bind, relation- and
+grade-monotonicity).
 
-The field `liftR_adequate` relates the lifting to the semantics: for every initial heap
-`h`, `liftR ε R m₁ m₂` gives an `ε`-approximate sub-coupling of `denote m₁ h` and
-`denote m₂ h` supported on pairs whose values are related by `R` and whose final heaps
-are equal (`liftRApprox`). A stateless effect denotes by pairing every outcome with the
-unchanged initial heap. With `denote_pure` the adequacy field excludes, for example,
-`liftR := True` (`RelQ0.not_liftR_zero_pure_empty`). -/
-class RelQ0 (T : Type → Type) where
+The class carries no semantics of `T`: `liftR := fun _ _ _ _ _ => True` satisfies all
+four laws, so an instance of `RelQ0Lift` alone says nothing about what programs compute.
+Results derived from the lifting laws hold over every instance; statements about the
+meaning of programs require `RelQ0`, which adds a denotation and adequacy. -/
+class RelQ0Lift (T : Type → Type) where
   pure' : {α : Type} → α → T α
   bind' : {α β : Type} → T α → (α → T β) → T β
   liftR : {α β : Type} → ℝ≥0∞ → (α → β → Prop) → T α → T β → Prop
@@ -67,6 +65,18 @@ class RelQ0 (T : Type → Type) where
     (∀ a b, R a b → S a b) → liftR ε R m₁ m₂ → liftR ε S m₁ m₂
   liftR_mono_eps : ∀ {α β : Type} {ε ε' : ℝ≥0∞} {R : α → β → Prop} {m₁ : T α} {m₂ : T β},
     ε ≤ ε' → liftR ε R m₁ m₂ → liftR ε' R m₁ m₂
+
+/-- A **relational Q₀-monad**: a graded relational lifting (`RelQ0Lift`) together with a
+stateful denotation `denote m h` as a sub-distribution over results and final heaps that
+sends `pure'` and `bind'` to the state-monad unit and bind over `SDistr`.
+
+The field `liftR_adequate` relates the lifting to the semantics: for every initial heap
+`h`, `liftR ε R m₁ m₂` gives an `ε`-approximate sub-coupling of `denote m₁ h` and
+`denote m₂ h` supported on pairs whose values are related by `R` and whose final heaps
+are equal (`liftRApprox`). A stateless effect denotes by pairing every outcome with the
+unchanged initial heap. With `denote_pure` the adequacy field excludes, for example,
+`liftR := True` (`RelQ0.not_liftR_zero_pure_empty`). -/
+class RelQ0 (T : Type → Type) extends RelQ0Lift T where
   /-- The denotation of a computation from an initial heap, as a sub-distribution over
   results and final heaps. -/
   denote : {α : Type} → T α → CatCrypt.Core.Heap → SDistr (α × CatCrypt.Core.Heap)
@@ -79,6 +89,12 @@ class RelQ0 (T : Type → Type) where
   liftR_adequate : ∀ {α β : Type} {ε : ℝ≥0∞} {R : α → β → Prop} {m₁ : T α} {m₂ : T β},
     liftR ε R m₁ m₂ → ∀ h : CatCrypt.Core.Heap,
       liftRApprox ε (fun p q => R p.1 q.1 ∧ p.2 = q.2) (denote m₁ h) (denote m₂ h)
+
+/- The lifting operations and laws of `RelQ0Lift` are also reachable under the `RelQ0`
+namespace (`RelQ0.liftR` is the constant `RelQ0Lift.liftR`). -/
+namespace RelQ0
+export RelQ0Lift (pure' bind' liftR liftR_pure liftR_bind liftR_mono_rel liftR_mono_eps)
+end RelQ0
 
 /-- The classical instance: `SDistr` with the sub-coupling lifting `liftRApprox`; the
 denotation pairs every outcome with the unchanged initial heap. -/
@@ -119,43 +135,43 @@ theorem RelQ0.not_liftR_zero_pure_empty {T : Type → Type} [RelQ0 T] {α β : T
 
 /-! ## Higher-order layer: arrow-type relational lifting
 
-The first-order judgment `RelQ0.liftR` relates values. The extension to *function*
+The first-order judgment `RelQ0Lift.liftR` relates values. The extension to *function*
 types — the arrow-type case the first-order judgment cannot express — is definable
-over any `RelQ0` and its compatibility rules are derivable from the four
-first-order laws, so it holds for every coupling-equipped Q₀-monad at once. -/
+over any `RelQ0Lift` and its compatibility rules are derivable from the four
+first-order laws, so it holds for every graded relational lifting at once. -/
 
 /-- Higher-order (arrow-type) relational lifting: Kleisli arrows `f, g` are related
 at `R ⇒ S` and grade `ε` when they send `R`-related arguments to `liftR ε S`-related
 results. -/
-def liftRArr {T : Type → Type} [RelQ0 T] {α α' β β' : Type}
+def liftRArr {T : Type → Type} [RelQ0Lift T] {α α' β β' : Type}
     (ε : ℝ≥0∞) (R : α → α' → Prop) (S : β → β' → Prop)
     (f : α → T β) (g : α' → T β') : Prop :=
-  ∀ a a', R a a' → RelQ0.liftR ε S (f a) (g a')
+  ∀ a a', R a a' → RelQ0Lift.liftR ε S (f a) (g a')
 
 /-- Arrow elimination (application): an `R ⇒ S`-related function pair, applied to
 `R`-related arguments, yields `liftR ε S`-related results. -/
-theorem liftRArr_app {T : Type → Type} [RelQ0 T] {α α' β β' : Type}
+theorem liftRArr_app {T : Type → Type} [RelQ0Lift T] {α α' β β' : Type}
     {ε : ℝ≥0∞} {R : α → α' → Prop} {S : β → β' → Prop}
     {f : α → T β} {g : α' → T β'} {a : α} {a' : α'}
-    (hfg : liftRArr ε R S f g) (ha : R a a') : RelQ0.liftR ε S (f a) (g a') :=
+    (hfg : liftRArr ε R S f g) (ha : R a a') : RelQ0Lift.liftR ε S (f a) (g a') :=
   hfg a a' ha
 
 /-- Kleisli composition of arrow-related pairs, grade-additive — the higher-order
-form of the first-order bind rule, over any coupling-equipped Q₀-monad. -/
-theorem liftRArr_kleisli {T : Type → Type} [RelQ0 T] {α α' β β' γ γ' : Type}
+form of the first-order bind rule, over any graded relational lifting. -/
+theorem liftRArr_kleisli {T : Type → Type} [RelQ0Lift T] {α α' β β' γ γ' : Type}
     {ε δ : ℝ≥0∞} {R : α → α' → Prop} {S : β → β' → Prop} {U : γ → γ' → Prop}
     {f : α → T β} {g : α' → T β'} {k : β → T γ} {k' : β' → T γ'}
     (hfg : liftRArr ε R S f g) (hkk' : liftRArr δ S U k k') :
-    liftRArr (ε + δ) R U (fun a => RelQ0.bind' (f a) k)
-      (fun a' => RelQ0.bind' (g a') k') :=
-  fun a a' ha => RelQ0.liftR_bind (hfg a a' ha) (fun b b' hb => hkk' b b' hb)
+    liftRArr (ε + δ) R U (fun a => RelQ0Lift.bind' (f a) k)
+      (fun a' => RelQ0Lift.bind' (g a') k') :=
+  fun a a' ha => RelQ0Lift.liftR_bind (hfg a a' ha) (fun b b' hb => hkk' b b' hb)
 
 /-- Grade monotonicity lifts to arrows. -/
-theorem liftRArr_mono_eps {T : Type → Type} [RelQ0 T] {α α' β β' : Type}
+theorem liftRArr_mono_eps {T : Type → Type} [RelQ0Lift T] {α α' β β' : Type}
     {ε ε' : ℝ≥0∞} {R : α → α' → Prop} {S : β → β' → Prop}
     {f : α → T β} {g : α' → T β'} (hε : ε ≤ ε') (h : liftRArr ε R S f g) :
     liftRArr ε' R S f g :=
-  fun a a' ha => RelQ0.liftR_mono_eps hε (h a a' ha)
+  fun a a' ha => RelQ0Lift.liftR_mono_eps hε (h a a' ha)
 
 /- The guarded (step-indexed) higher-order layer lives in `RelationalQ0Guarded.lean`,
 built on iris-lean's `SiProp` (the topos of trees) — the same step-indexed

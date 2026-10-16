@@ -78,7 +78,7 @@ namespace CatCrypt.XDijkstra
 open scoped ENNReal
 open CatCrypt CatCrypt.Prob
 
-variable {T : Type → Type} [RelQ0 T]
+variable {T : Type → Type} [RelQ0Lift T]
 
 /-! ## 1. The relational spec monad over pairs
 

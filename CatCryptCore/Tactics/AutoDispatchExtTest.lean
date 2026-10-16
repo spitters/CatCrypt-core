@@ -39,7 +39,7 @@ example {W : Type} {R : W → W → Prop} {k₁ k₂ : W → SDistr W}
 
 /-- A three-hop straight-line coupling whose hops are hypotheses (the shape of
 `XCombinedAutomation.relDemo3_via_relmvcgen_bang_hook`). -/
-example {T : Type → Type} [RelQ0 T] {α₀ β₀ α₁ β₁ α₂ β₂ : Type} {ε₁ ε₂ ε₃ : ℝ≥0∞}
+example {T : Type → Type} [RelQ0Lift T] {α₀ β₀ α₁ β₁ α₂ β₂ : Type} {ε₁ ε₂ ε₃ : ℝ≥0∞}
     {R₀ : α₀ → β₀ → Prop} {R₁ : α₁ → β₁ → Prop} {R₂ : α₂ → β₂ → Prop}
     {m₁ : T α₀} {m₂ : T β₀} {k₁ : α₀ → T α₁} {k₂ : β₀ → T β₁}
     {l₁ : α₁ → T α₂} {l₂ : β₁ → T β₂}

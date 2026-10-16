@@ -114,7 +114,7 @@ tactic fires, leaves the per-hop coupling leaves, and each is discharged from it
 hypothesis, which simultaneously pins the intermediate relation metavariable. -/
 
 section Demo
-variable {T : Type → Type} [RelQ0 T]
+variable {T : Type → Type} [RelQ0Lift T]
 variable {α₀ β₀ α₁ β₁ α₂ β₂ α₃ β₃ α₄ β₄ α₅ β₅ : Type}
 
 /-- **3-hop coupling composition by `relmvcgen`** (`RelSpecTriple`/`bind'` phrasing). This is

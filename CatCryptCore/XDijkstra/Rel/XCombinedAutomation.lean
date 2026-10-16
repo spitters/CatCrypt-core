@@ -284,7 +284,7 @@ The `!?` leaf-hook closes all three when they are hypotheses. This bounds the au
 auto-discharged. -/
 
 section StraightLine
-variable {T : Type → Type} [RelQ0 T]
+variable {T : Type → Type} [RelQ0Lift T]
 variable {α₀ β₀ α₁ β₁ α₂ β₂ : Type}
 
 /-- **3-hop coupling with `relmvcgen!?` — 0 residual goals.** The three per-hop couplings

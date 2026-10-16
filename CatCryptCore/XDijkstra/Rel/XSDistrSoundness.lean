@@ -155,7 +155,7 @@ predicate — the coupling is a relation between the two programs, not a forward
 postcondition, so `apply` ignores `Q`. That constancy is by design: the grade
 axis threads, the coupling `apply` does not compose per-operation. -/
 
-variable {T : Type → Type} [RelQ0 T]
+variable {T : Type → Type} [RelQ0Lift T]
 
 /-- **The coupling predicate transformer.** Grade `ε` (the coupling error); `apply`
 is the constant coupling predicate `XRelTripleQ0 ε R c c'`. Monotonicity is trivial
