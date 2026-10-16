@@ -661,4 +661,110 @@ theorem finality_updated_tip
 
 end Updated
 
+/-! ### A concrete instance: the hypotheses are satisfiable -/
+
+namespace Examples
+
+/-- The chain `[n, n - 1, …, 0]` has strictly decreasing entries. -/
+theorem line_pairwise_lt (n : ℕ) : (line n).Pairwise fun b b' => b' < b := by
+  induction n with
+  | zero => simp [line]
+  | succ n ih =>
+    simp only [line, List.pairwise_cons]
+    exact ⟨fun b hb => by have := mem_line.1 hb; omega, ih⟩
+
+/-- The blocks of `[n, …, 0]` of slot at most `s` are `[min n s, …, 0]`. -/
+theorem filter_line (s n : ℕ) : (line n).filter (fun b => decide (b ≤ s)) = line (min n s) := by
+  induction n with
+  | zero => simp [line]
+  | succ n ih =>
+    by_cases hn : n + 1 ≤ s
+    · rw [line, List.filter_cons_of_pos (by simpa using hn), ih,
+        Nat.min_eq_left (by omega), Nat.min_eq_left hn, line]
+    · rw [line, List.filter_cons_of_neg (by simpa using hn), ih,
+        Nat.min_eq_right (by omega), Nat.min_eq_right (by omega)]
+
+/-- One validator whose chain at phase `j` is `[j, …, 0]`: one block per slot, block `b` of
+slot `b`. -/
+def lineX : ChainTrace (Fin 1) ℕ where
+  honest _ := True
+  chain j _ := line j
+
+/-- Unit stake. -/
+def oneStake : Fin 1 → ℕ := fun _ => 1
+
+/-- The rounds take place at the slots `3 + 2 r`. -/
+def ρI (r : ℕ) : ℕ := 3 + r * (2 * 1)
+
+/-- The votes of round `r` of the schedule from the genesis checkpoint. -/
+noncomputable def votesI (r : ℕ) : Finset (Vote (Fin 1) ℕ) :=
+  roundVotes Finset.univ (roundExt lineTree lineX id 1 0 ρI) ∅ (genesisCheckpoint lineTree) r
+
+/-- The votes cast at phase `j`: the votes of the round held at `j`. -/
+noncomputable def castI (j : ℕ) : Finset (Vote (Fin 1) ℕ) :=
+  (Finset.range (j + 1)).biUnion fun r => if ρI r = j then votesI r else ∅
+
+/-- Every vote is received in the phase it is cast. -/
+noncomputable def seenI (t : ℕ) (_ : Fin 1) : Finset (Vote (Fin 1) ℕ) :=
+  (Finset.range (t + 1)).biUnion castI
+
+theorem lineX_slotChainHyp (hz : ℕ) : SlotChainHyp lineTree lineX id id 0 1 hz where
+  now_mono := monotone_id
+  inTree j _ _ _ := lineTrace_chainsInTree () j trivial
+  decreasing j _ _ _ := line_pairwise_lt j
+  genesis_mem j _ _ _ := mem_line.2 (Nat.zero_le j)
+  genesis_slot := rfl
+  commonPrefix := by
+    intro _ _ j j' s _ _ hjj _ hs
+    simp only [lineX, id] at hs ⊢
+    rw [filter_line, Nat.min_eq_right (by omega)]
+    exact line_suffix (by omega)
+  growth := by
+    intro _ j a _ _ ha
+    exact ⟨a + 1, mem_line.2 (by simp only [id] at ha; omega), by simp, by simp⟩
+
+theorem livenessEpoch_empty :
+    livenessEpoch (∅ : Finset (Vote (Fin 1) ℕ)) (genesisCheckpoint lineTree) = 1 := by
+  simp [livenessEpoch, genesisCheckpoint, lineTree]
+
+/-- **Non-vacuity.** All hypotheses of Δ-updatedness hold, for every horizon `hz`, for the
+chain `[j, …, 0]` with one block per slot and one honest validator of unit stake: epochs of
+`E = 1` slot, chain-growth window `σ = 1`, common prefix parameter `d = 0`, delay `Δ = 1`,
+`GST = 0`, empty history `pre`, start from the genesis checkpoint at slot `τ₀ = 3`, rounds at
+slots `3 + 2 r`. -/
+theorem updated_nonvacuous (hz : ℕ) :
+    UpdatedHyp lineTree oneStake lineX id id 1 1 0 1 0 hz Finset.univ 0 ∅
+      (genesisCheckpoint lineTree) 3 ρI castI seenI where
+  chain := lineX_slotChainHyp hz
+  epoch_pos := le_rfl
+  delay_pos := le_rfl
+  honest _ _ := trivial
+  mem_v₀ := Finset.mem_univ _
+  quorum := by
+    show 2 * stake oneStake Finset.univ ≤ 3 * stake oneStake Finset.univ
+    omega
+  pre_justified := Justified.genesis
+  pre_sources _ hx := absurd hx (Finset.notMem_empty _)
+  pre_unslashable := by
+    refine Finset.eq_empty_of_forall_notMem fun v hv => ?_
+    rcases mem_slashable.1 (Finset.mem_inter.1 hv).1 with ⟨x, hx, -⟩ | ⟨x, hx, -⟩ <;>
+      exact Finset.notMem_empty x hx
+  pre_onChain _ _ _ := by simp only [lineX]; decide
+  pre_cast _ hx := absurd hx (Finset.notMem_empty _)
+  start := by rw [livenessEpoch_empty]
+  gst := Nat.zero_le _
+  round_slot _ := rfl
+  round_cast r _ x hx := Finset.mem_biUnion.2
+    ⟨r, Finset.mem_range.2 (by simp only [ρI]; omega), by rw [if_pos rfl]; exact hx⟩
+  sync _ j t x _ hjt hx _ := Finset.mem_biUnion.2 ⟨j, Finset.mem_range.2 (by omega), hx⟩
+
+/-- On the instance, at every phase `t ≥ 4` the validator has received votes finalizing an
+epoch-boundary checkpoint `c` of its chain `[t, …, 0]` with `t ≤ c.epoch + 5`. -/
+theorem updated_instance {t : ℕ} (ht : 4 ≤ t) :
+    ∃ c : Checkpoint ℕ, Finalized lineTree oneStake (seenI t 0) c ∧
+      IsCheckpointOf id 1 (line t) c ∧ t ≤ c.epoch * 1 + (3 * 1 + 1 + 0 + 1) :=
+  finality_updated_start (updated_nonvacuous t) (by rw [livenessEpoch_empty]) trivial le_rfl ht
+
+end Examples
+
 end CatCryptCore.Consensus.Finality
