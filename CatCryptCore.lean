@@ -210,6 +210,7 @@ public import CatCryptCore.Crypto.UCMonad.LocalOpFunctorial
 public import CatCryptCore.Crypto.UCMonad.DiamondNormStates
 public import CatCryptCore.Crypto.UCMonad.DiamondNorm
 public import CatCryptCore.Crypto.UCMonad.DiamondDominates
+public import CatCryptCore.Crypto.UCMonad.CPCompUC
 public import CatCryptCore.Crypto.UCMonad.DiamondTensorStable
 public import CatCryptCore.Crypto.UCMonad.DiamondEmulation
 public import CatCryptCore.Crypto.UCMonad.QIndistDiamond
@@ -249,6 +250,7 @@ public import CatCryptCore.Quantum.QROM.CPRun
 public import CatCryptCore.Quantum.QROM.KEMGuessReduction
 public import CatCryptCore.Quantum.QROM.KEMOwcpaReduction
 public import CatCryptCore.Quantum.QROM.KEMQuantumGame
+public import CatCryptCore.Quantum.QROM.KEMGameCP
 public import CatCryptCore.Quantum.QROM.KWiseOracle
 public import CatCryptCore.Quantum.QROM.MeasuredQueryRun
 public import CatCryptCore.Quantum.QROM.MultiRound

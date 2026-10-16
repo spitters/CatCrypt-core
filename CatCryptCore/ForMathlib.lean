@@ -5,6 +5,7 @@ Authors: CatCrypt Contributors
 -/
 module
 
+public import CatCryptCore.ForMathlib.ENNRealAverage
 public import CatCryptCore.ForMathlib.GradeQuantale
 public import CatCryptCore.ForMathlib.GaloisRing
 public import CatCryptCore.ForMathlib.Matrix.Hermitian

@@ -6,6 +6,7 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Quantum.QROM.Rewinding
+public import CatCryptCore.ForMathlib.ENNRealAverage
 
 /-!
 # Fiat–Shamir for Σ-protocols in the quantum random-oracle model
@@ -178,31 +179,6 @@ theorem clsMeas_bool_eq_measProj (f : Fin d → Bool) :
   · rw [measProj_branch_true, ← h1]; rfl
 
 end Basis
-
-/-! ## Uniform averages in `ℝ≥0∞` -/
-
-section Avg
-
-/-- Jensen's inequality for the cube of a uniform average. -/
-theorem avg_pow_three_le {ι : Type} [Fintype ι] [Nonempty ι] (f : ι → ℝ≥0∞) :
-    ((Fintype.card ι : ℝ≥0∞)⁻¹ * ∑ i, f i) ^ 3 ≤ (Fintype.card ι : ℝ≥0∞)⁻¹ * ∑ i, f i ^ 3 := by
-  have hc0 : (Fintype.card ι : ℝ≥0∞) ≠ 0 := by exact_mod_cast Fintype.card_ne_zero
-  have hw : ∑ _i : ι, (Fintype.card ι : ℝ≥0∞)⁻¹ = 1 := by
-    rw [Finset.sum_const, Finset.card_univ, nsmul_eq_mul,
-      ENNReal.mul_inv_cancel hc0 (ENNReal.natCast_ne_top _)]
-  have h := ENNReal.rpow_arith_mean_le_arith_mean_rpow Finset.univ
-    (fun _ => (Fintype.card ι : ℝ≥0∞)⁻¹) f hw (p := 3) (by norm_num)
-  simp only [← Finset.mul_sum] at h
-  exact_mod_cast h
-
-/-- A uniform average of `f i + b` is the average of `f` plus `b`. -/
-theorem avg_add_const {ι : Type} [Fintype ι] [Nonempty ι] (f : ι → ℝ≥0∞) (b : ℝ≥0∞) :
-    (Fintype.card ι : ℝ≥0∞)⁻¹ * ∑ i, (f i + b) = (Fintype.card ι : ℝ≥0∞)⁻¹ * ∑ i, f i + b := by
-  have hc0 : (Fintype.card ι : ℝ≥0∞) ≠ 0 := by exact_mod_cast Fintype.card_ne_zero
-  rw [Finset.sum_add_distrib, mul_add, Finset.sum_const, Finset.card_univ, nsmul_eq_mul,
-    ← mul_assoc, ENNReal.inv_mul_cancel hc0 (ENNReal.natCast_ne_top _), one_mul]
-
-end Avg
 
 /-! ## The encoding of a Σ-protocol and its verifier -/
 
@@ -478,10 +454,10 @@ theorem fiatShamir_sigma_qrom {ι : Type} [Fintype ι] [Nonempty ι]
       (mul_comm _ _)
   calc (fsAdvantage S gen A / N2) ^ 3
       ≤ (cS * ∑ i, cH * ∑ H, pr i H) ^ 3 := by gcongr
-    _ ≤ cS * ∑ i, (cH * ∑ H, pr i H) ^ 3 := avg_pow_three_le _
+    _ ≤ cS * ∑ i, (cH * ∑ H, pr i H) ^ 3 := ENNReal.inv_card_mul_sum_pow_three_le _
     _ ≤ cS * ∑ i, cH * ∑ H, pr i H ^ 3 := by
         gcongr with i
-        exact avg_pow_three_le _
+        exact ENNReal.inv_card_mul_sum_pow_three_le _
     _ ≤ cS * ∑ i, cH * ∑ H, (prTrue_Q (QComp.qbind (sigmaRewind S (gen i) (A (gen i)) H)
           fun o => QComp.qpure (decide (rel (gen i) (S.witness (gen i) o))))
             (A (gen i)).init + (n : ℝ≥0∞)⁻¹) := by
@@ -489,7 +465,7 @@ theorem fiatShamir_sigma_qrom {ι : Type} [Fintype ι] [Nonempty ι]
         exact prTrue_fsInteractive_pow_three_le_rel S (gen i) (A (gen i)) H
     _ = relAdvantage rel gen (sigmaExtractor S A) + (n : ℝ≥0∞)⁻¹ := by
         rw [relAdvantage]
-        simp only [sigmaExtractor_success, cS, cH, avg_add_const]
+        simp only [sigmaExtractor_success, cS, cH, ENNReal.inv_card_mul_sum_add_const]
 
 end Reduction
 
