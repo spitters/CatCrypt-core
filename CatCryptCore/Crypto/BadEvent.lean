@@ -30,9 +30,14 @@ This file provides three layers of game-playing infrastructure:
 ### Fundamental Lemma
 * `IdenticalUntilBad` -- games agree unless bad occurs
 * `advantage_upto_bad` -- Advantage(G0, G1) <= Pr[bad]  (Shoup 2004, Lemma 1)
-* `advantage_upto_bad_A` -- adversary-parameterized version
+* `advantageA_le_of_identicalUntilBad` -- one adversary, bad event chosen for it
 * `UpToBad` -- bundled: identical-until-bad + bad probability bound
 * `uptobad_advantage` -- extract advantage bound from UpToBad
+* `eq_of_forall_identicalUntilBad` -- one bad event that serves every adversary
+  forces `G₀ = G₁` (the former `UpToBadA` hypothesis)
+* `UpToFlag`, `uptoflag_advantage` -- flagged games agreeing with flag `false`
+  and with flag probability `≤ ε` give `AdvantageA G₀ G₁ D ≤ ε` for every `D`
+* `sdist_le_of_uptoflag` -- the flagged bound for `sdist`
 
 ### Multi-Query Games
 * `MultiQueryGame` -- init/query/finalize structure
@@ -217,29 +222,119 @@ theorem advantage_upto_bad (G₀ G₁ bad : SPComp Bool)
   · simp [hA, add_comm]
   · simp [hB, add_comm]
 
-/-- Bad-event lemma with adversary: if two computations are identical
-    until bad for all adversaries, the adversary-parameterized advantage
-    is bounded by the bad-event probability.
+/-- Bad-event lemma for one adversary: if the composed games `G₀.bind A` and
+    `G₁.bind A` are identical until `bad`, then `AdvantageA G₀ G₁ A ≤ ε` for
+    every bound `ε` on the probability of `bad`. The bad event is chosen for
+    the given adversary; the universally quantified form is degenerate, see
+    `eq_of_forall_identicalUntilBad`.
 
-    **Hypotheses**: NoFail on G₀, G₁, and (per-input) on the adversary A.
-    These combine via `SPComp.bind_noFail` to give NoFail on the composed
-    games, which `advantage_upto_bad` requires.
-
-    **Proof strategy**: For any adversary `A`, instantiate `advantage_upto_bad`
-    on the composed games `G₀.bind A` and `G₁.bind A`. -/
-theorem advantage_upto_bad_A {α : Type} (G₀ G₁ : SPComp α)
-    (bad : SPComp Bool)
+    **Hypotheses**: NoFail on `G₀`, `G₁` and (per input) on `A`; they combine
+    via `SPComp.bind_noFail` to the NoFail of the composed games required by
+    `advantage_upto_bad`. -/
+theorem advantageA_le_of_identicalUntilBad {α : Type} (G₀ G₁ : SPComp α)
+    (A : α → SPComp Bool) (bad : SPComp Bool) (ε : ℝ≥0∞)
+    (h : IdenticalUntilBad (G₀.bind A) (G₁.bind A) bad)
     (hnf₀ : SPComp.NoFail G₀) (hnf₁ : SPComp.NoFail G₁)
-    (h : ∀ (A : α → SPComp Bool),
-      IdenticalUntilBad (G₀.bind A) (G₁.bind A) bad) :
-    ∀ (A : α → SPComp Bool),
-      (∀ a, SPComp.NoFail (A a)) →
-      AdvantageA G₀ G₁ A ≤ prTrue bad Heap.empty := by
-  intro A hnfA
-  exact advantage_upto_bad (G₀.bind A) (G₁.bind A) bad
+    (h_bad : prTrue bad Heap.empty ≤ ε) (hnfA : ∀ a, SPComp.NoFail (A a)) :
+    AdvantageA G₀ G₁ A ≤ ε :=
+  (advantage_upto_bad (G₀.bind A) (G₁.bind A) bad
     (CatCrypt.Crypto.Assumptions.SPComp.bind_noFail hnf₀ hnfA)
-    (CatCrypt.Crypto.Assumptions.SPComp.bind_noFail hnf₁ hnfA)
-    (h A)
+    (CatCrypt.Crypto.Assumptions.SPComp.bind_noFail hnf₁ hnfA) h).trans h_bad
+
+/-! ## One Bad Event for All Adversaries Forces Equal Games
+
+`IdenticalUntilBad` compares the two games pointwise in the final heap. If a
+single `bad` must serve every adversary, then for each output `(a₀, h₁)` the
+adversary that moves to the `n`-th marker heap exactly on `(a₀, h₁)` forces
+`bad` to put mass `G₀(a₀, h₁) - G₁(a₀, h₁)` on the `n`-th marker heap, for all
+`n`. Since `bad` has total mass at most one, this difference is zero. The
+hypothesis `∀ A, IdenticalUntilBad (G₀.bind A) (G₁.bind A) bad` therefore
+implies `G₀ ≤ G₁` pointwise, and `G₀ = G₁` when `G₀` never fails; the
+flagged formulation `UpToFlag` below replaces it. -/
+
+/-- The heap holding the single entry `n ↦ 0`; distinct for distinct `n`. -/
+noncomputable def markerHeap (n : ℕ) : Heap := ⟨Finmap.singleton n 0⟩
+
+theorem markerHeap_injective : Function.Injective markerHeap := by
+  intro m n h
+  have := congrArg (fun H : Heap => H.data.keys) h
+  simpa [markerHeap] using this
+
+open Classical in
+/-- The adversary that returns `true` and moves to `markerHeap n` on the
+    output `(a₀, h₁)`, and returns `false` with the heap unchanged otherwise. -/
+noncomputable def markerAdversary {α : Type} (a₀ : α) (h₁ : Heap) (n : ℕ) :
+    α → SPComp Bool :=
+  fun a h' => if a = a₀ ∧ h' = h₁ then SDistr.pure (true, markerHeap n)
+    else SDistr.pure (false, h')
+
+/-- The composed game `G.bind (markerAdversary a₀ h₁ n)` returns `true` in the
+    heap `markerHeap n` with the probability that `G` returns `(a₀, h₁)`. -/
+theorem bind_markerAdversary_apply {α : Type} (G : SPComp α) (h₀ : Heap) (a₀ : α)
+    (h₁ : Heap) (n : ℕ) :
+    (G.bind (markerAdversary a₀ h₁ n)) h₀ (some (true, markerHeap n)) =
+      (G h₀) (some (a₀, h₁)) := by
+  classical
+  simp only [SPComp.bind, SDistr.bind, PMF.bind_apply]
+  rw [tsum_eq_single (some (a₀, h₁))]
+  · simp [markerAdversary, SDistr.pure, PMF.pure_apply]
+  · rintro (_ | ⟨a, h'⟩) hne
+    · simp [SDistr.fail, PMF.pure_apply]
+    · have : ¬ (a = a₀ ∧ h' = h₁) := fun ⟨h1, h2⟩ => hne (by rw [h1, h2])
+      simp [markerAdversary, this, SDistr.pure, PMF.pure_apply]
+
+/-- If one bad event makes `G₀.bind A` and `G₁.bind A` identical until bad for
+    every adversary `A`, then `G₀` puts at most as much mass as `G₁` on every
+    output and final heap, from every initial heap. -/
+theorem le_of_forall_identicalUntilBad {α : Type} (G₀ G₁ : SPComp α) (bad : SPComp Bool)
+    (h : ∀ A : α → SPComp Bool, IdenticalUntilBad (G₀.bind A) (G₁.bind A) bad)
+    (h₀ : Heap) (a₀ : α) (h₁ : Heap) :
+    (G₀ h₀) (some (a₀, h₁)) ≤ (G₁ h₀) (some (a₀, h₁)) := by
+  set c := (G₀ h₀) (some (a₀, h₁)) - (G₁ h₀) (some (a₀, h₁))
+  have hc : ∀ n, c ≤ (bad h₀) (some (true, markerHeap n)) := fun n => by
+    have := (h (markerAdversary a₀ h₁ n)).agree_unless_bad h₀ true (markerHeap n)
+    rw [bind_markerAdversary_apply, bind_markerAdversary_apply] at this
+    exact tsub_le_iff_left.mpr this
+  have hsum : ∑' _ : ℕ, c ≤ 1 :=
+    calc ∑' _ : ℕ, c ≤ ∑' n : ℕ, (bad h₀) (some (true, markerHeap n)) :=
+          ENNReal.tsum_le_tsum hc
+      _ ≤ ∑' q, (bad h₀) q :=
+        ENNReal.tsum_comp_le_tsum_of_injective
+          (fun m n hmn => markerHeap_injective (by simpa using hmn)) _
+      _ = 1 := (bad h₀).tsum_coe
+  by_contra hlt
+  have hc0 : c ≠ 0 := by simpa [c, tsub_eq_zero_iff_le] using hlt
+  rw [ENNReal.tsum_const_eq_top_of_ne_zero hc0] at hsum
+  exact absurd hsum (by simp)
+
+/-- If one bad event makes `G₀.bind A` and `G₁.bind A` identical until bad for
+    every adversary `A`, and `G₀` never fails, then `G₀ = G₁`. This is the
+    `identical` field of the former `UpToBadA` structure, which is replaced by
+    `UpToFlag`. -/
+theorem eq_of_forall_identicalUntilBad {α : Type} (G₀ G₁ : SPComp α) (bad : SPComp Bool)
+    (h : ∀ A : α → SPComp Bool, IdenticalUntilBad (G₀.bind A) (G₁.bind A) bad)
+    (hnf₀ : SPComp.NoFail G₀) : G₀ = G₁ := by
+  funext h₀
+  have hle : ∀ o, (G₀ h₀) o ≤ (G₁ h₀) o := by
+    rintro (_ | ⟨a, h₁⟩)
+    · simp [hnf₀ h₀]
+    · exact le_of_forall_identicalUntilBad G₀ G₁ bad h h₀ a h₁
+  by_contra hne
+  obtain ⟨o, ho⟩ : ∃ o, (G₀ h₀) o ≠ (G₁ h₀) o := by
+    by_contra hall
+    simp only [not_exists, not_not] at hall
+    exact hne (PMF.ext hall)
+  have := ENNReal.tsum_lt_tsum (by simp [(G₀ h₀).tsum_coe]) hle (lt_of_le_of_ne (hle o) ho)
+  simp [PMF.tsum_coe] at this
+
+/-- Under the hypotheses of the former `UpToBadA`, every adversary has
+    advantage zero. -/
+theorem advantageA_eq_zero_of_forall_identicalUntilBad {α : Type} (G₀ G₁ : SPComp α)
+    (bad : SPComp Bool)
+    (h : ∀ A : α → SPComp Bool, IdenticalUntilBad (G₀.bind A) (G₁.bind A) bad)
+    (hnf₀ : SPComp.NoFail G₀) (A : α → SPComp Bool) :
+    AdvantageA G₀ G₁ A = 0 := by
+  simp [eq_of_forall_identicalUntilBad G₀ G₁ bad h hnf₀, AdvantageA, Advantage]
 
 /-! ## UpToBad: Bundled Bad-Event Technique
 
@@ -268,30 +363,6 @@ theorem uptobad_advantage (G₀ G₁ bad : SPComp Bool) (ε_bad : ℝ≥0∞)
     (h : UpToBad G₀ G₁ bad ε_bad) :
     Advantage G₀ G₁ ≤ ε_bad :=
   le_trans (advantage_upto_bad G₀ G₁ bad h.noFail_left h.noFail_right h.identical) h.pr_bad
-
-/-- Bundled UpToBad with adversary: for adversary-parameterized games. -/
-structure UpToBadA {α : Type} (G₀ G₁ : SPComp α) (bad : SPComp Bool)
-    (ε_bad : ℝ≥0∞) : Prop where
-  /-- The games are identical until bad for all adversaries -/
-  identical : ∀ (A : α → SPComp Bool),
-    IdenticalUntilBad (G₀.bind A) (G₁.bind A) bad
-  /-- G₀ never fails -/
-  noFail_left : SPComp.NoFail G₀
-  /-- G₁ never fails -/
-  noFail_right : SPComp.NoFail G₁
-  /-- The bad event probability is bounded -/
-  pr_bad : prTrue bad Heap.empty ≤ ε_bad
-
-/-- Extract the advantage bound from an `UpToBadA` witness, given a
-    NoFail-preserving adversary. -/
-theorem uptobadA_advantage {α : Type} (G₀ G₁ : SPComp α)
-    (bad : SPComp Bool) (ε_bad : ℝ≥0∞)
-    (h : UpToBadA G₀ G₁ bad ε_bad) :
-    ∀ A, (∀ a, SPComp.NoFail (A a)) → AdvantageA G₀ G₁ A ≤ ε_bad := by
-  intro A hnfA
-  exact le_trans
-    (advantage_upto_bad_A G₀ G₁ bad h.noFail_left h.noFail_right h.identical A hnfA)
-    h.pr_bad
 
 /-! ## Lifting to Arbitrary Distinguishers and to `sdist`
 
@@ -383,26 +454,183 @@ theorem advantageA_le_of_noFail_distinguishers {α : Type} {G₀ G₁ : SPComp �
   · obtain ⟨A, hA, hle⟩ := exists_noFail_tsub_le G₁ G₀ D Heap.empty
     exact hle.trans ((le_max_right _ _).trans (h A hA))
 
-/-- Fundamental lemma against every distinguisher: an `UpToBadA` witness bounds
-    the advantage of all distinguishers, including failing ones, by the
-    bad-event probability. -/
-theorem uptobadA_advantage_all {α : Type} (G₀ G₁ : SPComp α)
-    (bad : SPComp Bool) (ε_bad : ℝ≥0∞)
-    (h : UpToBadA G₀ G₁ bad ε_bad) (D : α → SPComp Bool) :
-    AdvantageA G₀ G₁ D ≤ ε_bad :=
-  advantageA_le_of_noFail_distinguishers (uptobadA_advantage G₀ G₁ bad ε_bad h) D
+/-! ## Flagged Games: the Fundamental Lemma for All Distinguishers
 
-/-- Fundamental lemma as a statistical-distance bound: for families of
-    heap-independent games that are identical until a bad event of probability
-    at most `ε_bad`, `sdist f g ≤ ε_bad`. `IsPure` is needed because `sdist`
-    ranges over all initial heaps while `UpToBadA` fixes the empty heap. -/
-theorem sdist_le_of_uptobadA {α β : Type} {f g : α → SPComp β}
-    (bad : α → SPComp Bool) (ε_bad : ℝ≥0∞)
+A flagged game `Gb : SPComp (α × Bool)` returns its output together with a
+flag recording whether the bad event occurred; the game itself is
+`SPComp.map Prod.fst Gb`. Two flagged games that put the same mass on every
+output and final heap with flag `false`, and whose flag probabilities are at
+most `ε`, have advantage at most `ε` against every distinguisher: the
+contributions with flag `false` coincide, and those with flag `true` are at
+most the flag probability. Unlike the pointwise `IdenticalUntilBad`, the
+hypotheses do not depend on the distinguisher. -/
+
+/-- Probability that the flagged game `G` ends with flag `true`, from `h₀`. -/
+noncomputable def prFlag {α : Type} (G : SPComp (α × Bool)) (h₀ : Heap) : ℝ≥0∞ :=
+  prTrue (SPComp.map Prod.snd G) h₀
+
+private theorem prTrue_spcomp_pure (b : Bool) (h : Heap) :
+    prTrue (SPComp.pure b) h = if b then 1 else 0 := by
+  unfold prTrue
+  rw [tsum_eq_single h]
+  · cases b <;> simp [SPComp.pure, SDistr.pure, PMF.pure_apply]
+  · intro h' hne; simp [SPComp.pure, SDistr.pure, PMF.pure_apply, hne]
+
+/-- One-sided flagged bound: if `G₀b` and `G₁b` put the same mass on every
+    output and final heap with flag `false` from `h₀`, then for every
+    distinguisher `D`, `Pr[map fst G₀b ; D] ≤ Pr[flag in G₀b] + Pr[map fst G₁b ; D]`
+    from `h₀`. -/
+theorem prTrue_map_fst_bind_le {α : Type} (G₀b G₁b : SPComp (α × Bool)) (h₀ : Heap)
+    (hagree : ∀ a h', (G₀b h₀) (some ((a, false), h')) = (G₁b h₀) (some ((a, false), h')))
+    (D : α → SPComp Bool) :
+    prTrue ((SPComp.map Prod.fst G₀b).bind D) h₀ ≤
+      prFlag G₀b h₀ + prTrue ((SPComp.map Prod.fst G₁b).bind D) h₀ := by
+  have hmap : ∀ G : SPComp (α × Bool), (SPComp.map Prod.fst G).bind D =
+      G.bind (fun x => D x.1) := fun G => by
+    simp only [SPComp.map, SPComp.bind_assoc, SPComp.pure_bind]
+  rw [hmap, hmap, prFlag, SPComp.map, prTrue_bind_eq_weighted, prTrue_bind_eq_weighted,
+    prTrue_bind_eq_weighted, ← ENNReal.tsum_add]
+  refine ENNReal.tsum_le_tsum fun o => ?_
+  rcases o with _ | ⟨⟨a, _ | _⟩, h'⟩
+  · simp
+  · simp only
+    rw [hagree a h']
+    exact le_add_self
+  · simp only [prTrue_spcomp_pure, if_true, mul_one]
+    exact le_add_right (mul_le_of_le_one_right zero_le (prTrue_le_one _ _))
+
+/-- Advantage bound from flagged games, unbundled: if `G₀ = map fst G₀b`,
+    `G₁ = map fst G₁b`, the flagged games agree from the empty heap on every
+    output and final heap with flag `false`, and both flag probabilities are at
+    most `ε`, then `AdvantageA G₀ G₁ D ≤ ε` for every distinguisher `D`,
+    failing or not. Replaces `advantage_upto_bad_A`, whose hypothesis forced
+    `G₀ = G₁` (`eq_of_forall_identicalUntilBad`). -/
+theorem advantageA_le_of_agree_until_flag {α : Type} (G₀ G₁ : SPComp α)
+    (G₀b G₁b : SPComp (α × Bool)) (ε : ℝ≥0∞)
+    (h₀ : G₀ = SPComp.map Prod.fst G₀b) (h₁ : G₁ = SPComp.map Prod.fst G₁b)
+    (hagree : ∀ a h', (G₀b Heap.empty) (some ((a, false), h')) =
+      (G₁b Heap.empty) (some ((a, false), h')))
+    (hflag₀ : prFlag G₀b Heap.empty ≤ ε) (hflag₁ : prFlag G₁b Heap.empty ≤ ε)
+    (D : α → SPComp Bool) :
+    AdvantageA G₀ G₁ D ≤ ε := by
+  subst h₀ h₁
+  simp only [AdvantageA, Advantage]
+  apply max_le <;> rw [tsub_le_iff_right]
+  · exact (prTrue_map_fst_bind_le G₀b G₁b _ hagree D).trans (by gcongr)
+  · exact (prTrue_map_fst_bind_le G₁b G₀b _ (fun a h' => (hagree a h').symm) D).trans
+      (by gcongr)
+
+/-- Bundled flagged up-to-bad step: `G₀` and `G₁` are the first components of
+    flagged games `G₀b` and `G₁b` that agree from the empty heap on every
+    output and final heap with flag `false`, and whose flag probabilities are at
+    most `ε`. Replaces `UpToBadA`, whose `identical` field forced `G₀ = G₁`. -/
+structure UpToFlag {α : Type} (G₀ G₁ : SPComp α) (G₀b G₁b : SPComp (α × Bool))
+    (ε : ℝ≥0∞) : Prop where
+  /-- `G₀` is the first component of `G₀b`. -/
+  left_eq : G₀ = SPComp.map Prod.fst G₀b
+  /-- `G₁` is the first component of `G₁b`. -/
+  right_eq : G₁ = SPComp.map Prod.fst G₁b
+  /-- The flagged games agree on every output and final heap with flag `false`. -/
+  agree : ∀ a h', (G₀b Heap.empty) (some ((a, false), h')) =
+    (G₁b Heap.empty) (some ((a, false), h'))
+  /-- The flag probability of `G₀b` is at most `ε`. -/
+  pr_flag_left : prFlag G₀b Heap.empty ≤ ε
+  /-- The flag probability of `G₁b` is at most `ε`. -/
+  pr_flag_right : prFlag G₁b Heap.empty ≤ ε
+
+/-- Advantage bound from an `UpToFlag` witness: `AdvantageA G₀ G₁ D ≤ ε` for
+    every distinguisher `D`, failing or not. Replaces `uptobadA_advantage` and
+    `uptobadA_advantage_all`. -/
+theorem uptoflag_advantage {α : Type} {G₀ G₁ : SPComp α} {G₀b G₁b : SPComp (α × Bool)}
+    {ε : ℝ≥0∞} (h : UpToFlag G₀ G₁ G₀b G₁b ε) (D : α → SPComp Bool) :
+    AdvantageA G₀ G₁ D ≤ ε :=
+  advantageA_le_of_agree_until_flag G₀ G₁ G₀b G₁b ε h.left_eq h.right_eq h.agree
+    h.pr_flag_left h.pr_flag_right D
+
+/-- Flagged fundamental lemma as a statistical-distance bound: for families of
+    heap-independent games with `UpToFlag (f a) (g a) (F a) (G a) ε` for all
+    `a`, `sdist f g ≤ ε`. `IsPure` is needed because `sdist` ranges over all
+    initial heaps while `UpToFlag` fixes the empty heap. Replaces
+    `sdist_le_of_uptobadA`. -/
+theorem sdist_le_of_uptoflag {α β : Type} {f g : α → SPComp β}
+    {F G : α → SPComp (β × Bool)} {ε : ℝ≥0∞}
     (hf : ∀ a, SPComp.IsPure (f a)) (hg : ∀ a, SPComp.IsPure (g a))
-    (h : ∀ a, UpToBadA (f a) (g a) (bad a) ε_bad) :
-    sdist f g ≤ ε_bad :=
-  sdist_of_isPure_advantageA hf hg fun a D =>
-    uptobadA_advantage_all (f a) (g a) (bad a) ε_bad (h a) D
+    (h : ∀ a, UpToFlag (f a) (g a) (F a) (G a) ε) :
+    sdist f g ≤ ε :=
+  sdist_of_isPure_advantageA hf hg fun a D => uptoflag_advantage (h a) D
+
+/-! ### A non-degenerate instance
+
+`G₀` returns a uniform bit; `G₁` samples a bit and returns `false`. They are
+the first components of the flagged games that sample a bit `f`, use it as
+the flag, and return `(f, f)` and `(false, f)` respectively. With flag `false`
+both return `false` with probability `1/2`; the flag probability is `1/2`. -/
+
+/-- Flagged game returning the sampled bit as output and as flag. -/
+noncomputable def flagDemo₀ : SPComp (Bool × Bool) :=
+  (SPComp.sample Bool).bind fun f => SPComp.pure (f, f)
+
+/-- Flagged game returning `false` as output and the sampled bit as flag. -/
+noncomputable def flagDemo₁ : SPComp (Bool × Bool) :=
+  (SPComp.sample Bool).bind fun f => SPComp.pure (false, f)
+
+private theorem sample_bool_bind_pure_apply {β : Type} [DecidableEq β] (k : Bool → β)
+    (h₀ : Heap) (x : β) (h' : Heap) :
+    ((SPComp.sample Bool).bind fun f => SPComp.pure (k f)) h₀ (some (x, h')) =
+      if h₀ = h' then 2⁻¹ * ((if k false = x then 1 else 0) + (if k true = x then 1 else 0))
+      else 0 := by
+  classical
+  simp only [SPComp.bind_def, SPComp.sample, SPComp.pure, SDistr.bind_assoc, SDistr.pure_bind]
+  simp only [SDistr.bind, PMF.bind_apply, tsum_fintype, Fintype.sum_option, Fintype.sum_bool,
+    SDistr.uniform_apply_none, SDistr.uniform_apply_some, SDistr.pure_apply_some]
+  split_ifs <;> simp_all [Prod.ext_iff]
+  ring
+
+private theorem sample_bool_apply (h₀ : Heap) (b : Bool) (h' : Heap) :
+    (SPComp.sample Bool) h₀ (some (b, h')) = if h₀ = h' then 2⁻¹ else 0 := by
+  rw [← SPComp.bind_pure (SPComp.sample Bool), sample_bool_bind_pure_apply]
+  cases b <;> simp
+
+/-- The game returning a uniform bit differs from the game that samples a bit
+    and returns `false`. -/
+theorem flagDemo_games_ne :
+    SPComp.sample Bool ≠ (SPComp.sample Bool).bind fun _ => SPComp.pure false := by
+  intro h
+  have := congrArg (fun G : SPComp Bool => G Heap.empty (some (true, Heap.empty))) h
+  simp [sample_bool_apply, SPComp.pure, SDistr.pure, PMF.pure_apply] at this
+
+/-- The flagged games `flagDemo₀` and `flagDemo₁` witness `UpToFlag` for the
+    games `SPComp.sample Bool` and `sample; return false` with `ε = 1/2`. -/
+theorem flagDemo_upToFlag :
+    UpToFlag (SPComp.sample Bool) ((SPComp.sample Bool).bind fun _ => SPComp.pure false)
+      flagDemo₀ flagDemo₁ 2⁻¹ where
+  left_eq := by
+    simp only [flagDemo₀, SPComp.map, SPComp.bind_assoc, SPComp.pure_bind]
+    exact (SPComp.bind_pure _).symm
+  right_eq := by
+    simp only [flagDemo₁, SPComp.map, SPComp.bind_assoc, SPComp.pure_bind]
+  agree a h' := by
+    simp only [flagDemo₀, flagDemo₁, sample_bool_bind_pure_apply]
+    cases a <;> simp
+  pr_flag_left := by
+    simp [prFlag, flagDemo₀, SPComp.map, SPComp.bind_assoc, SPComp.pure_bind, prTrue,
+      sample_bool_apply]
+  pr_flag_right := by
+    simp [prFlag, flagDemo₁, SPComp.map, SPComp.bind_assoc, SPComp.pure_bind, prTrue,
+      sample_bool_apply]
+
+/-- Non-degenerate instance of the flagged fundamental lemma: the games
+    `SPComp.sample Bool` and `sample; return false` differ, and every
+    distinguisher has advantage at most `1/2 < 1` between them, obtained from
+    `flagDemo_upToFlag` by `uptoflag_advantage`. -/
+theorem flagDemo_advantage :
+    SPComp.sample Bool ≠ ((SPComp.sample Bool).bind fun _ => SPComp.pure false) ∧
+      (2⁻¹ : ℝ≥0∞) < 1 ∧
+      ∀ D : Bool → SPComp Bool,
+        AdvantageA (SPComp.sample Bool) ((SPComp.sample Bool).bind fun _ => SPComp.pure false)
+          D ≤ 2⁻¹ :=
+  ⟨flagDemo_games_ne, ENNReal.inv_lt_one.mpr (by norm_num),
+    uptoflag_advantage flagDemo_upToFlag⟩
 
 /-! ## Corollary: Union Bound for Multiple Bad Events
 
@@ -1024,19 +1252,17 @@ equivalence:
 
 This pattern appears in PRF, MAC, and signature security proofs. -/
 
-/-- **Lazy-to-eager via bad event**: if a game using lazy sampling is
-    identical-until-bad to a game using eager sampling (where bad = collision),
-    then the advantage is bounded by the collision probability.
-
-    This combines `lazy_eager_equiv` with `advantage_upto_bad`. NoFail
-    hypotheses are required by the (now-proven) `advantage_upto_bad`. -/
-theorem lazy_eager_upto_bad (G_lazy G_eager : SPComp Bool) (bad : SPComp Bool)
+/-- Unbundled form of `uptobad_advantage`: if two non-failing Bool games are
+    identical until `bad` and `Pr[bad] ≤ ε`, then `Advantage G₀ G₁ ≤ ε`. This
+    is the step 3 of the pattern above; it does not use `lazy_eager_equiv`.
+    Formerly named `lazy_eager_upto_bad`. -/
+theorem advantage_le_of_identicalUntilBad (G₀ G₁ : SPComp Bool) (bad : SPComp Bool)
     (ε : ℝ≥0∞)
-    (h_iub : IdenticalUntilBad G_lazy G_eager bad)
-    (hnf_l : SPComp.NoFail G_lazy)
-    (hnf_e : SPComp.NoFail G_eager)
+    (h_iub : IdenticalUntilBad G₀ G₁ bad)
+    (hnf₀ : SPComp.NoFail G₀)
+    (hnf₁ : SPComp.NoFail G₁)
     (h_bad : prTrue bad Heap.empty ≤ ε) :
-    Advantage G_lazy G_eager ≤ ε :=
-  uptobad_advantage G_lazy G_eager bad ε ⟨h_iub, hnf_l, hnf_e, h_bad⟩
+    Advantage G₀ G₁ ≤ ε :=
+  uptobad_advantage G₀ G₁ bad ε ⟨h_iub, hnf₀, hnf₁, h_bad⟩
 
 end CatCrypt.Crypto.BadEvent
