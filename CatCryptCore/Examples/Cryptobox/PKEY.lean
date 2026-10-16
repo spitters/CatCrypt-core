@@ -125,7 +125,12 @@ noncomputable def PKEY (N : @NIKEScheme CT) (b : Bool)
       getsk := getskOracle,
       honpk := honpkOracle }
 
-/-- PKEY switching advantage. -/
+/-- **Degenerate: see findings 6 and 15 of the vacuity sweep; the adversary is an `SPComp`
+    program with unrestricted heap access and a `getsk` oracle, and there is no query
+    bound. The query-bounded game is `PKEYQ.pkeyQAdvantage` (module
+    `Cryptobox.PKEYQ`), bounded by `PKEYQ.pkeyQAdvantage_le`.**
+
+    PKEY switching advantage. -/
 noncomputable def pkeyAdvantage (N : @NIKEScheme CT)
     (A : PKEYOracles → SPComp Bool) : ℝ≥0∞ :=
   Advantage (PKEY N false A) (PKEY N true A)
@@ -237,7 +242,11 @@ Application of the Failure Event Lemma to bound the PKEY advantage.
 The bad event is `pkeyBadFinal`: some public key is both honest and corrupt
 in the final heap. -/
 
-/-- PKEY advantage bounded by collision probability via FEL.
+/-- **Degenerate: see finding 15 of the vacuity sweep; the up-to-bad agreement `h_agree`
+    carries the content of the hop and does not hold for adversaries that read the heap. The query-bounded
+    statement is `PKEYQ.pkeyQAdvantage_le`.**
+
+    PKEY advantage bounded by collision probability via FEL.
 
     This instantiates `advantage_le_prBad` from `FailureEvent.lean` with the
     PKEY-specific bad event (`pkeyBadFinal`).
@@ -265,7 +274,10 @@ theorem pkeyAdvantage_le_collision (N : @NIKEScheme CT) (B : PKEYOracles → SPC
       (fun _ h' => pkeyBadFinal h') :=
   Unary.advantage_le_prBad (PKEY N false B) (PKEY N true B) pkeyBadFinal h_agree hll
 
-/-- PKEY switching as a game hop: when the two PKEY games agree off the collision
+/-- **Degenerate: see finding 15 of the vacuity sweep; `h_agree` and the collision bound
+    `hcoll` are hypotheses. The query-bounded statement is `PKEYQ.pkeyQAdvantage_le`.**
+
+    PKEY switching as a game hop: when the two PKEY games agree off the collision
 event `pkeyBadFinal`, the collision-free game is lossless, and the probability of
 `pkeyBadFinal` in the collision-free game is at most `coll_bound`, the switching
 advantage is at most `coll_bound`. The bound on the collision probability is a
@@ -563,7 +575,10 @@ theorem collision_prob_multi_query_bound (q_gen q_csetpk : ℕ) :
 
 /-! ## Standalone PKEY sdist Building Block -/
 
-/-- Standalone PKEY sdist building block.
+/-- **Degenerate: see finding 7 of the vacuity sweep; the hypothesis 
+    `∀ A, pkeyAdvantage N A ≤ ε` ranges over adversaries without a query bound.**
+
+    Standalone PKEY sdist building block.
     Reusable by any construction that uses the PKEY game.
 
     Bridges per-adversary advantage bounds (`∀ A, pkeyAdvantage N A ≤ ε`)

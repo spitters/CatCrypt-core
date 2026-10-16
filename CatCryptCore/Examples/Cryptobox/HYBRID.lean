@@ -448,7 +448,10 @@ theorem aeStep_triangle (N : @NIKEScheme CT) (E : @NBSES CT) (I : @KeyInjection 
 
 Putting together the triangle inequality and per-step SAE reduction. -/
 
-/-- **AE hybrid bound**: the AE step advantage is bounded by the sum of
+/-- **Degenerate: see finding 6 of the vacuity sweep; the AE hop is the hypothesis
+    `h_oracle_align`.**
+
+    **AE hybrid bound**: the AE step advantage is bounded by the sum of
     SAE advantages of the per-session reduction adversaries.
 
     This is the main result of the hybrid argument:
@@ -497,7 +500,10 @@ theorem aeStep_bounded_by_sae (N : @NIKEScheme CT) (E : @NBSES CT) (I : @KeyInje
 An alternative formulation using `Finset.sum` instead of `List.map ... .sum`,
 which is sometimes more convenient for downstream use. -/
 
-/-- **AE hybrid bound (Finset version)**: the AE step advantage is bounded
+/-- **Degenerate: see finding 6 of the vacuity sweep; the AE hop is assumed as for
+    `aeStep_bounded_by_sae`.**
+
+    **AE hybrid bound (Finset version)**: the AE step advantage is bounded
     by the sum of per-session SAE advantages over all sessions.
 
     This takes the per-step bounds as hypotheses, matching the structure

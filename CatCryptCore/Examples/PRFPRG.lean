@@ -10,6 +10,7 @@ public import CatCryptCore.Invariant
 public import CatCryptCore.Crypto.Advantage
 public import CatCryptCore.Relational.Rules
 public import CatCryptCore.Examples.PRF
+public import CatCryptCore.Crypto.PRPPRFSwitching
 public import CatCryptCore.Tactics.Basic
 public import CatCryptCore.Prob.XorBij
 public import CatCryptCore.Tactics.AutoMetrics
@@ -32,13 +33,19 @@ This is the "counter mode" construction, which is widely used in practice.
 
 ## Security Reduction
 
-The security of G reduces to the security of F via a hybrid argument:
-- Real PRG: sample seed s, output (F(s, 0), F(s, 1))
-- Hybrid i: first i outputs random, remaining outputs from PRF
-- Ideal PRG: all outputs random
+The real PRG game evaluates `F` twice under one seed, so it is the real world of
+the adaptive PRF game with two queries (`CatCrypt.Crypto.PRPPRF.PRF_q_Advantage`),
+and the ideal PRG game is its random-function world. For every adversary `A`,
+`prg_advantage_eq_prf_q` states
 
-Each adjacent pair of hybrids differs by one PRF query, so we can
-use the PRF security to bound the distinguishing advantage.
+    `prg_advantage F A = PRF_q_Advantage F.f (prgOracleAdv A)`,
+
+where `prgOracleAdv A` queries the counters `zero` and `one` and runs `A`.
+
+The earlier statement `prg_decomp_security_bound` bounded the game
+`gen_hyb_decomp 0`, which uses independent seeds for the two counters, and not
+`gen_real`; it is replaced by `prg_advantage_eq_prf_q`. The hybrid lemmas below
+for single-query PRF games concern the games `gen_hyb` and `gen_hyb_decomp`.
 
 ## Structure (following Rocq PRFPRG.v)
 
@@ -46,7 +53,7 @@ use the PRF security to bound the distinguishing advantage.
 2. PRF interface: EVAL packages (real with key, ideal with table)
 3. PRG packages: GEN_real (using PRF), GEN_ideal (random)
 4. Hybrid packages for the reduction
-5. Security theorem: Advantage(PRG) ≤ q × Advantage(PRF)
+5. Security theorem: Advantage(PRG) = adaptive two-query PRF advantage (`prg_advantage_eq_prf_q`)
 
 ## Implementation Notes
 
@@ -679,46 +686,104 @@ However, the correlation structure differs:
 - gen_hyb 0: (F(s,0), F(s,1)) -- correlated (same s)
 - gen_hyb_decomp 0: (F(s1,0), F(s2,1)) -- independent (different seeds)
 
-The decomposed hybrid approach provides a SOUND security bound even though
-it analyzes a different (decorrelated) game. This is similar to how the
-Rocq SSProve proof uses a stateful PRF oracle to break the correlation.
-
-**Key insight**: The decomposed security bound `prg_decomp_security_bound` gives
-a valid upper bound on the PRF advantage needed to construct the PRG, even though
-the game analyzed (gen_hyb_decomp) differs from the original (gen_hyb).
+Bounds on the decomposed hybrids therefore say nothing about `gen_real`. The
+reduction for `gen_real` uses the adaptive PRF game, in which one key answers
+both queries (`prg_advantage_eq_prf_q` below), as the Rocq SSProve proof uses a
+stateful PRF oracle.
 -/
 
-/-- Alternative PRG security bound using decomposed hybrids.
+/-! ## The reduction to the adaptive PRF game
 
-    This avoids the correlation issue by using gen_hyb_decomp instead of gen_hyb.
-    The bound is: Adv(decomp 0, decomp 2) ≤ sum of PRF advantages.
+The real PRG game evaluates `F` twice under the *same* seed, so the single-query
+PRF game cannot bound it. The adaptive PRF game of
+`CatCrypt.Crypto.PRPPRF` (`PRF_q_Advantage`) answers both queries with one key
+in the real world and with a lazily sampled random function in the ideal world.
+The distinguisher `prgOracleAdv A` queries the counters `zero` and `one` and runs
+`A` on the two answers. The real PRF world is then `gen_real F` against `A`, and
+the random-function world is `gen_ideal` against `A`, because the two counters
+are distinct (`prg_advantage_eq_prf_q`).
+-/
 
-    Note: This is a bound for the decomposed game, not the original PRG. -/
-theorem prg_decomp_security_bound (F : PRFPRG_PRFDef) (A : PRGOutput → SPComp Bool) :
-    AdvantageA (gen_hyb_decomp F 0) (gen_hyb_decomp F 2) A ≤
-    prf_advantage F zero (wrapAdv_decomp0_snd F A) +
-    prf_advantage F one (wrapAdv_snd A) := by
-  -- Triangle inequality: Adv(decomp 0, decomp 2) ≤ Adv(decomp 0, decomp 1) + Adv(decomp 1, decomp 2)
-  have htri := advantage_triangle
-    ((gen_hyb_decomp F 0).bind A)
-    ((gen_hyb_decomp F 1).bind A)
-    ((gen_hyb_decomp F 2).bind A)
-  unfold AdvantageA
+/-- The output bit of a run of a Boolean computation: `b` for `some (b, h)`, and
+`false` for a failed run. -/
+def outBit : Option (Bool × Heap) → Bool
+  | some (b, _) => b
+  | none => false
 
-  calc Advantage ((gen_hyb_decomp F 0).bind A) ((gen_hyb_decomp F 2).bind A)
-      ≤ Advantage ((gen_hyb_decomp F 0).bind A) ((gen_hyb_decomp F 1).bind A) +
-        Advantage ((gen_hyb_decomp F 1).bind A) ((gen_hyb_decomp F 2).bind A) := htri
-    _ ≤ prf_advantage F zero (wrapAdv_decomp0_snd F A) +
-        Advantage ((gen_hyb_decomp F 1).bind A) ((gen_hyb_decomp F 2).bind A) := by
-        have h0 := decomp_hyb_adjacent_bound F 0 (by norm_num) A
-        simp only [ite_true] at h0
-        unfold AdvantageA at h0
-        sum_atoms_le
-    _ ≤ prf_advantage F zero (wrapAdv_decomp0_snd F A) +
-        prf_advantage F one (wrapAdv_snd A) := by
-        have h1 := decomp_hyb_adjacent_bound F 1 (by norm_num) A
-        unfold AdvantageA at h1
-        exact add_le_add le_rfl h1
+/-- The adaptive PRF distinguisher built from a PRG adversary `A`: query the
+oracle at `zero` and at `one`, run `A` on the two answers from the empty heap,
+and return its output bit. -/
+noncomputable def prgOracleAdv (A : PRGOutput → SPComp Bool) : OracleAdv Word Word Bool :=
+  OracleAdv.query zero fun y₀ => OracleAdv.query one fun y₁ =>
+    OracleAdv.rand (A (y₀, y₁) Heap.empty) fun o => OracleAdv.ret (outBit o)
+
+/-- The probability that `outBit` is `true` is the probability of a run ending
+with output `true`, summed over final heaps. -/
+theorem map_outBit_apply_true (p : PMF (Option (Bool × Heap))) :
+    (p.map outBit) true = ∑' h, p (some (true, h)) := by
+  rw [PMF.map_apply, SDistr.tsum_option_eq_add, ENNReal.tsum_prod', tsum_fintype,
+    Fintype.sum_bool]
+  simp [outBit]
+
+/-- Recording the output bit together with a final oracle state and projecting
+the state away is `map outBit`. -/
+theorem map_fst_bind_outBit {σ : Type} (p : PMF (Option (Bool × Heap))) (t : σ) :
+    (p.bind fun o => PMF.pure (outBit o, t)).map Prod.fst = p.map outBit := by
+  rw [PMF.map_bind]
+  simp only [PMF.pure_map]
+  exact PMF.bind_pure_comp _ _
+
+/-- `prTrue` of a heap-independent game is the probability of `true`. -/
+theorem prTrue_pmfGame (q : PMF Bool) (h₀ : Heap) :
+    prTrue (CatCrypt.Crypto.PRPPRF.pmfGame q) h₀ = q true := by
+  have h := CatCrypt.Crypto.PRPPRF.prTrue_pmfGame_map q id h₀
+  rw [PMF.map_id] at h
+  rw [h]
+  simp
+
+/-- The real adaptive PRF game against `prgOracleAdv A` accepts with the same
+probability as `gen_real F` against `A`. -/
+theorem prTrue_realGame_prgOracleAdv (F : PRFPRG_PRFDef) (A : PRGOutput → SPComp Bool) :
+    prTrue (CatCrypt.Crypto.PRPPRF.realGame F.f (prgOracleAdv A)) Heap.empty =
+      prTrue ((gen_real F).bind A) Heap.empty := by
+  rw [CatCrypt.Crypto.PRPPRF.realGame, prTrue_pmfGame]
+  simp only [gen_real, SPComp.monad_bind_eq, SPComp.bind_assoc, SPComp.pure_bind,
+    prTrue_bind_sample]
+  rw [PMF.bind_apply, tsum_fintype]
+  refine Finset.sum_congr rfl fun k _ => ?_
+  simp only [PMF.uniformOfFintype_apply, prgOracleAdv, OracleAdv.run_query, OracleAdv.run_rand,
+    OracleAdv.run_ret, CatCrypt.Crypto.PRPPRF.keyedOracle, PMF.pure_bind, map_fst_bind_outBit,
+    map_outBit_apply_true]
+  rfl
+
+/-- The run of `prgOracleAdv A` against the lazily sampled random function: two
+independent uniform answers, since the counters `zero` and `one` differ. -/
+theorem run_rfOracle_prgOracleAdv (A : PRGOutput → SPComp Bool) :
+    OracleAdv.run CatCrypt.Crypto.PRPPRF.rfOracle (prgOracleAdv A) [] =
+      (PMF.uniformOfFintype Word).bind fun y₀ => (PMF.uniformOfFintype Word).bind fun y₁ =>
+        PMF.bind (A (y₀, y₁) Heap.empty) fun o => PMF.pure (outBit o, [(one, y₁), (zero, y₀)]) := by
+  simp [prgOracleAdv, CatCrypt.Crypto.PRPPRF.rfOracle, List.lookup, zero, one, PMF.bind_map,
+    Function.comp_def]
+
+/-- The random-function adaptive PRF game against `prgOracleAdv A` accepts with
+the same probability as `gen_ideal` against `A`. -/
+theorem prTrue_rfGame_prgOracleAdv (A : PRGOutput → SPComp Bool) :
+    prTrue (CatCrypt.Crypto.PRPPRF.rfGame (prgOracleAdv A)) Heap.empty =
+      prTrue (gen_ideal.bind A) Heap.empty := by
+  rw [CatCrypt.Crypto.PRPPRF.rfGame, prTrue_pmfGame, run_rfOracle_prgOracleAdv]
+  simp only [↓map_fst_bind_outBit, PMF.map_bind]
+  simp only [gen_ideal, SPComp.monad_bind_eq, SPComp.bind_assoc, SPComp.pure_bind,
+    prTrue_bind_sample, PMF.bind_apply, tsum_fintype, PMF.uniformOfFintype_apply,
+    ← Finset.mul_sum, map_outBit_apply_true]
+  rfl
+
+/-- **The PRG advantage is an adaptive PRF advantage.** For every adversary `A`
+against the counter-mode generator `G(s) = (F(s, zero), F(s, one))`, the PRG
+advantage equals the adaptive (two-query) PRF advantage of `prgOracleAdv A`. -/
+theorem prg_advantage_eq_prf_q (F : PRFPRG_PRFDef) (A : PRGOutput → SPComp Bool) :
+    prg_advantage F A = CatCrypt.Crypto.PRPPRF.PRF_q_Advantage F.f (prgOracleAdv A) := by
+  simp only [prg_advantage, AdvantageA, CatCrypt.Crypto.PRPPRF.PRF_q_Advantage, Advantage,
+    prTrue_realGame_prgOracleAdv, prTrue_rfGame_prgOracleAdv]
 
 /-! ## Package Definitions -/
 
@@ -759,7 +824,8 @@ its security reduction to PRF security.
 9. `decomp_hyb0_eq_eval_real_wrap_fst`: Factorization for decomposed hybrid 0
 10. `decomp_hyb1_eq_eval_ideal_wrap_fst`: Factorization for decomposed hybrid 1
 11. `decomp_hyb_adjacent_bound`: Adjacent decomposed hybrids bounded by PRF advantage
-12. `prg_decomp_security_bound`: Security bound for decomposed hybrids
+12. `prg_advantage_eq_prf_q`: the PRG advantage of `A` equals the adaptive
+    two-query PRF advantage of `prgOracleAdv A`
 
 ### Decomposed Hybrid Approach
 
@@ -777,8 +843,9 @@ The XOR PRF-based PRG produces (s, !s) which is NOT perfectly indistinguishable
 from uniform (x, y) because the outputs are correlated. An adversary checking
 b1 XOR b2 can distinguish them with advantage 1/2.
 
-The security theorem shows a REDUCTION from PRG to PRF security.
-The decomposed hybrid approach provides a correct security bound.
+The security theorem `prg_advantage_eq_prf_q` is an exact reduction from PRG to
+adaptive PRF security. The decomposed hybrids concern a game with independent
+seeds and do not bound `gen_real`.
 
 ### References
 - [Rosulek, The Joy of Cryptography, Claim 6.3]

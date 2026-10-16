@@ -35,17 +35,17 @@ Chapter numbers follow the online edition of the book.
 | 1–2 | (same, by reflection) | `ReflectTacticDemo` | `demo_otp_nompkg_secure`, `demo_otp_uc` | The two package-level OTP results, each by one call of the reflective package tactic |
 | 3 | Secret sharing | `SecretSharing` | `shareXor_reconstruct`, `ss_perfect_privacy` | 2-out-of-2 XOR sharing; one share has advantage 0 |
 | 3 | Secret sharing | `ShamirSecretSharing` | `shamir_reconstruct`, `shamir_perfect_privacy` | Shamir `t`-out-of-`n` over `ZMod p`: Lagrange reconstruction from `t` shares; any `t − 1` shares have advantage 0 |
-| 5 | Pseudorandom generators | `PRG` | `bijPRG_perfect`, `triple_prg_bound_of_assumption` | Perfect security of a bijective generator (length-preserving); triple-from-double bound `2·ε` with hop hypotheses |
-| 6 | Pseudorandom functions | `PRF` | `bijPRF_perfect`, `cascade_prf_bound` | Perfect bijection-family PRF; cascade bound `2·ε + q(q−1)/2N` with hop hypotheses |
-| 6 | PRG from a PRF | `PRFPRG` | `prg_decomp_security_bound` | Over `Bool`, two counters: sum of two PRF advantages of explicit reductions, for the variant with independent seeds |
-| 7 | CPA security | `CPAFromPRF` | `bijCPA_perfect_indcpa`, `cpa_from_prf_bound` | `(r, F(k, r) ⊕ m)`: perfect for a bijection family; `≤ ε` under a PRF assumption with the PRF-swap hop as a hypothesis |
+| 5 | Pseudorandom generators | `PRG` | `bijPRG_perfect`, `triple_prg_bound` | Perfect security of a bijective generator (length-preserving); triple construction ≤ two PRG advantages of explicit reductions against the doubling generator |
+| 6 | Pseudorandom functions | `PRF` | `bijPRF_perfect`, `cascade_prf_bound` | Perfect bijection-family PRF; cascade `F k₂ (F k₁ x)` against `q` adaptive queries: two adaptive PRF advantages of explicit reductions plus `q(q−1)/2N` |
+| 6 | PRG from a PRF | `PRFPRG` | `prg_advantage_eq_prf_q` | Over `Bool`, two counters: the PRG advantage equals the adaptive two-query PRF advantage of an explicit reduction |
+| 7 | CPA security | `CPAFromPRF` | `bijCPA_perfect_indcpa`, `cpa_from_prf_reduction` | `(r, F(k, r) ⊕ m)`: perfect for a bijection family; for any `F`, ≤ two averages over `r` of PRF advantages of an explicit reduction |
 | 7 | Deterministic encryption | `DetCPA` | `det_enc_xor_insecure` | Deterministic XOR encryption: a distinguisher with advantage exactly 1 |
 | 7 | IND-CPA games | `INDCPA` | `perfect_indcpa_zero_advantage` | Standalone IND-CPA games; perfect security gives advantage 0 |
-| 8 | Block-cipher modes | `CTRMode` | `ctr_perfect_indcpa`, `ctr_indcpa_bound` | Single-block CTR: perfect for a bijection family; `≤ ε` under a PRF assumption, with the PRF-swap hop as a hypothesis |
-| 8 | Block-cipher modes | `CBCMode` | `cbc_perfect_indcpa`, `cbc_indcpa_bound` | Single-block CBC: perfect for a family bijective in key and input; `≤ 2·ε` for a real cipher under a PRF assumption, with the two swap hops as hypotheses |
+| 8 | Block-cipher modes | `CTRMode` | `ctr_perfect_indcpa`, `ctr_indcpa_bound` | Single-block CTR: perfect for a bijection family; ≤ two averages over the nonce of PRF advantages of the block cipher against an explicit reduction |
+| 8 | Block-cipher modes | `CBCMode` | `cbc_perfect_indcpa`, `cbc_indcpa_bound` | Single-block CBC: perfect for a family bijective in key and input; for an arbitrary block function, ≤ two averages over the IV of its PRF advantages against an explicit reduction |
 | 9 | Chosen-ciphertext attacks | `Crypto/SecurityDefs` | `INDCCA_Game`, `INDCCA_reduces_to_INDCPA` | IND-CCA game with a decryption oracle; IND-CCA ≤ IND-CPA + two decryption-oracle integrity gaps, for any scheme |
 | 10 | MACs | `MAC` | `bijMAC_euf_cma_adv_of_isQueryBound_zero`, `boolXorMAC_euf_cma_adv_of_isQueryBound_zero` | Bijection-family MAC: EUF-CMA advantage without tag queries exactly `1/\|Tag\|` |
-| 10 | MAC from a PRF | `PRFMAC` | `security_based_on_prf` | Over `Bool`: forgery on an unqueried message, two PRF advantages plus a statistical gap of 1/2 |
+| 10 | MAC from a PRF | `PRFMAC` | `mac_forgery_advantage_le_half` | Over `Bool`: forgery on an unqueried message has advantage at most 1/2 (single-sample, information-theoretic) |
 | 12 | Encrypt-then-MAC | `EncryptThenMAC` | `EtM_correct`, `boolEtM_perfect_indcpa` | Generic EtM combinator preserves correctness; perfect IND-CPA of the XOR instance |
 | 12 | Encrypt-then-MAC under CCA | `EtMCCA` | `boolEtM_indcca_reduces` | IND-CCA advantage of the XOR instance equals its MAC-integrity gaps (the IND-CPA term is 0) |
 | 12 | Universal hashing | `UniversalHash` | `boolPairwiseHash_is_universal`, `boolPairwiseHash_mac_security` | A 1/2-universal family over `Bool`; one-time forgery advantage ≤ 1/2 |
@@ -54,7 +54,7 @@ Chapter numbers follow the online edition of the book.
 | 15 | ElGamal | `ElGamal` | `elgamal_indcpa_le_ddh`, `elgamal_indcpa_eq_ddh` | Pairing-group formulation: IND-CPA ≤ two DDH advantages of explicit reductions; the distance from the real encryption of `m₀` to the ideal DDH world equals one DDH advantage |
 | 15 | ElGamal | `ElGamalDDH`, `CyclicGroupDDH` | `elgamal_correct`, `elgamal_indcpa_security` | Cyclic group with explicit exponents: IND-CPA ≤ two DDH advantages of explicit reductions |
 | 15 | ElGamal as UC | `ElGamalUCConcrete` | `elgamal_uc_concrete` | Concrete UC emulation bounded by the DDH advantages of the reductions |
-| 15 | Hashed ElGamal | `HashedElGamal` | `heg_indcpa_le_ddh`, `heg_perfect_hash_security` | Two DDH advantages, under a message-independence hypothesis on the ideal reduction; advantage 0 when the mask is uniform |
+| 15 | Hashed ElGamal | `HashedElGamal` | `heg_indcpa_le_ddh`, `heg_perfect_hash_security` | Two DDH advantages of explicit reductions when `H ∘ pow` maps uniform exponents to uniform bits; advantage 0 when the mask is uniform |
 | 15 | Hybrid encryption | `KEMDEM` | `pke_security`, `pke_security_of_perfectDEM`, `xorHybrid_advantage_le` | `Adv_PKE ≤ Adv_KEM + Adv_DEM + Adv_KEM` with three explicit reductions; the DEM term is `0` for a perfectly secure DEM |
 
 Chapter 4 (intractable computations) and Chapter 11 (hash functions) have no
@@ -98,8 +98,8 @@ fixed set of challenges. The modules above cover the following.
 
 | Ladder | Challenge | Module | Statement |
 |---|---|---|---|
-| Symmetric | PRF cascade | `PRF` | `cascade_prf_bound`: `2·ε + q(q−1)/2N`, all three hop bounds (including the switching hop) as hypotheses |
-| Symmetric | PRG triple | `PRG` | `triple_prg_bound_of_assumption`: `2·ε`, hop soundness as hypotheses |
+| Symmetric | PRF cascade | `PRF` | `cascade_prf_bound`: two adaptive PRF advantages of explicit reductions plus `q(q−1)/2N` (switching lemma), no hypotheses |
+| Symmetric | PRG triple | `PRG` | `triple_prg_bound`: two PRG advantages of explicit reductions, no hypotheses |
 | Symmetric | Encrypt-then-MAC | `EtMCCA` | `boolEtM_indcca_reduces`: IND-CCA reduced to MAC integrity |
 | Asymmetric | KEM-DEM | `KEMDEM` | `pke_security`: three explicit reductions, no hypotheses |
 | Protocol | Basic Hash | `BasicHash` | Perfect authentication and the unlinkability counterexample |

@@ -59,7 +59,7 @@ The security argument is the bijection-coupling technique, structured exactly as
 to coincide (`rHoare_bij_step`).
 
 Multi-block CBC (`n > 1`) is *not* perfectly secure — its security reduces to
-the pseudorandomness of the block cipher — and is deliberately out of scope.
+the pseudorandomness of the block cipher — and is not treated in this file.
 
 ## Main definitions
 
@@ -79,9 +79,12 @@ the pseudorandomness of the block cipher — and is deliberately out of scope.
   `INDCPA_Adv C.toEncScheme m₀ m₁ A = 0` for every adversary `A`.
 * `cbc_ideal_game_uniform` — the ideal CBC challenge is a message-independent
   uniform pair (proved with `bind_vcgen`); the uniform-IV masking step.
-* `cbc_indcpa_bound` — **computational IND-CPA bound** for a *real* block cipher:
-  `INDCPA_Adv (C.toRealScheme eval) m₀ m₁ A ≤ 2·H.ε`, reducing to the block
-  cipher's PRP/PRF advantage (`H : PRFAssumption`) via the real-or-random ladder.
+* `cbc_indcpa_bound` — **IND-CPA bound** for an arbitrary keyed block function
+  `eval`: for every adversary `A`,
+  `INDCPA_Adv (C.toRealScheme eval) m₀ m₁ A ≤
+    Σ_{m ∈ {m₀, m₁}} E_IV PRF_Adv (C.cipherPRF eval) (IV ⊕ m) (C.cbcRed IV A)`.
+  The earlier form took the two swap hops as hypotheses about an unrelated PRF
+  family `F`; this statement replaces it.
 * `boolCBC_perfect_indcpa` — the `Bool` instantiation `F(k, x) = k ⊕ x`,
   giving ciphertext `(IV, (IV ⊕ m) ⊕ k)`.
 
@@ -231,31 +234,21 @@ theorem cbc_perfect_indcpa (C : CBCBlockCipher) (m₀ m₁ : C.Block)
     INDCPA_Adv C.toEncScheme m₀ m₁ A = 0 := by
   grind [INDCPA_Adv_zero_of_rHoare, cbc_indcpa_coupling]
 
-/-! ## The computational reduction: CBC IND-CPA ≤ block-cipher PRP advantage
+/-! ## The reduction: CBC IND-CPA ≤ PRF advantages of the block function
 
 `cbc_perfect_indcpa` above is *perfect* (`ε = 0`) because the block cipher there
 is idealized — bijective in the key, so over a uniform key the cipher output is
-exactly uniform. A real block cipher is only a *pseudorandom permutation*: it
-merely looks uniform to a bounded distinguisher, with some advantage `ε`.
+exactly uniform. For an arbitrary keyed block function `eval`, single-block CBC
+is reduced to `eval` viewed as a PRF family (`cipherPRF eval`). The games are
 
-The **computational** bound follows. Single-block CBC over a real block
-cipher `eval` has IND-CPA advantage at most `2·ε`, where `ε` is the block
-cipher's PRP/PRF advantage (`PRFAssumption`). The reduction is the standard
-real-or-random ladder over four games
+    `real_true  —swap→  uniform  —swap→  real_false`,
 
-    `real_true  —swap→  ideal_true  —perfect→  ideal_false  —swap→  real_false`,
+where `uniform` outputs a uniform pair `(IV, c)`. At each fixed `IV`, the swap
+hop of world `b` is the single-query PRF game of `eval` at the input `IV ⊕ m_b`
+against the distinguisher `cbcRed IV A`, which runs `A` on `(IV, y)`. Averaging
+over `IV` gives, for every adversary `A` (`cbc_indcpa_bound`),
 
-composed by the advantage triangle inequality:
-
-| Hop | Transition | Bound |
-|-----|-----------|-------|
-| `real_true → ideal_true`   | replace `eval` by the ideal (bijective) cipher | `ε` (PRP/PRF assumption) |
-| `ideal_true → ideal_false` | uniform-IV masking makes the ideal challenge message-independent | `0` (perfect) |
-| `ideal_false → real_false` | replace the ideal cipher back by `eval` | `ε` (PRP/PRF assumption) |
-
-The two swap hops are the reduction to the block cipher's security (each bounded
-by the PRF advantage of a reduction adversary, then by the `PRFAssumption`); the
-middle hop is the perfect step, proved here via `bind_vcgen`.
+    `INDCPA_Adv ≤ Σ_{b} E_IV PRF_Adv (cipherPRF eval) (IV ⊕ m_b) (cbcRed IV A)`.
 -/
 
 /-- The **real** single-block CBC scheme over an arbitrary keyed block function
@@ -299,35 +292,87 @@ theorem cbc_ideal_game_uniform (C : CBCBlockCipher) (m₀ m₁ : C.Block) (b : B
   simp only [cbc_game_eq, cbc_ideal_inner]
   rfl
 
-/-- **Single-block CBC IND-CPA advantage is bounded by the block cipher's PRP/PRF
-advantage.**
+/-- The keyed block function `eval` of single-block CBC as a PRF family on
+blocks. -/
+def CBCBlockCipher.cipherPRF (C : CBCBlockCipher) (eval : C.Key → C.Block → C.Block) :
+    PRFScheme where
+  Key := C.Key
+  Input := C.Block
+  Output := C.Block
+  eval := eval
 
-For a real block cipher `eval`, the IND-CPA advantage of single-block CBC is at
-most `2·H.ε`, where `H : PRFAssumption F` is the block cipher's pseudorandomness
-assumption. The two swap hops `hswap0`/`hswap1` express the reduction: each is
-bounded by the PRF advantage of a reduction adversary (`PRF_Adv F xᵢ Aᵢ`), which
-the assumption bounds by `H.ε`. The middle (perfect) hop is
-`cbc_ideal_game_uniform`: the two ideal games coincide, so their advantage is
-`0`. The three are composed by the advantage triangle inequality. -/
+/-- The PRF distinguisher built from a CBC adversary `A` at initialization
+vector `iv`: on a block `y` it runs `A` on the ciphertext `(iv, y)`. -/
+def CBCBlockCipher.cbcRed (C : CBCBlockCipher) (iv : C.Block)
+    (A : C.Block × C.Block → SPComp Bool) : C.Block → SPComp Bool :=
+  fun y => A (iv, y)
+
+/-- The uniform-ciphertext game: a uniform pair `(IV, c)`. -/
+noncomputable def CBCBlockCipher.uniformGame (C : CBCBlockCipher) :
+    SPComp (C.Block × C.Block) :=
+  SPComp.bind (SPComp.sample C.Block) fun iv =>
+    SPComp.bind (SPComp.sample C.Block) fun c => SPComp.pure (iv, c)
+
+/-- Reordered form of the IND-CPA game of the real scheme: sample the `IV`
+first, then the key. -/
+theorem cbc_real_game_eq (C : CBCBlockCipher) (eval : C.Key → C.Block → C.Block)
+    (m₀ m₁ : C.Block) (b : Bool) :
+    INDCPA_Game (C.toRealScheme eval) m₀ m₁ b =
+      SPComp.bind (SPComp.sample C.Block) (fun iv =>
+        SPComp.bind (SPComp.sample C.Key) (fun k =>
+          SPComp.pure (iv, eval k (C.xorB iv (if b then m₀ else m₁))))) := by
+  funext h
+  simpa only [INDCPA_Game, CBCBlockCipher.toRealScheme, SPComp.monad_bind_eq] using
+    SPComp.swap_sample_sample C.Key C.Block _
+      (fun k iv => SPComp.pure (iv, eval k (C.xorB iv (if b then m₀ else m₁)))) h
+
+/-- At a fixed `IV`, the advantage between the keyed block `eval k (IV ⊕ m)` and
+a uniform block, both paired with `IV`, is the PRF advantage of `cbcRed IV A` at
+input `IV ⊕ m`. -/
+theorem cbc_slice_eq (C : CBCBlockCipher) (eval : C.Key → C.Block → C.Block)
+    (iv m : C.Block) (A : C.Block × C.Block → SPComp Bool) :
+    AdvantageA
+      (SPComp.bind (SPComp.sample C.Key) fun k => SPComp.pure (iv, eval k (C.xorB iv m)))
+      (SPComp.bind (SPComp.sample C.Block) fun c => SPComp.pure (iv, c)) A =
+      PRF_Adv (C.cipherPRF eval) (C.xorB iv m) (C.cbcRed iv A) := by
+  simp only [AdvantageA, PRF_Adv, PRF_Real, PRF_Ideal, CBCBlockCipher.cipherPRF,
+    CBCBlockCipher.cbcRed, ssprove_simpl]
+  rfl
+
+/-- **The swap hop of world `b`.** The advantage between the real IND-CPA game
+of world `b` and the uniform-ciphertext game is at most the average over `IV` of
+the PRF advantages of `cbcRed IV A` at input `IV ⊕ m_b`. -/
+theorem cbc_real_uniform_hop (C : CBCBlockCipher) (eval : C.Key → C.Block → C.Block)
+    (m₀ m₁ : C.Block) (A : C.Block × C.Block → SPComp Bool) (b : Bool) :
+    AdvantageA (INDCPA_Game (C.toRealScheme eval) m₀ m₁ b) C.uniformGame A ≤
+      ∑ iv : C.Block, (↑(Fintype.card C.Block) : ℝ≥0∞)⁻¹ *
+        PRF_Adv (C.cipherPRF eval) (C.xorB iv (if b then m₀ else m₁)) (C.cbcRed iv A) := by
+  rw [cbc_real_game_eq, CBCBlockCipher.uniformGame]
+  refine (CPAFromPRF.advantageA_sample_bind_le_sum _ _ _).trans_eq ?_
+  exact Finset.sum_congr rfl fun iv _ => congrArg _ (cbc_slice_eq C eval iv _ A)
+
+/-- **Single-block CBC IND-CPA bound.** For an arbitrary keyed block function
+`eval` and every adversary `A`, the IND-CPA advantage of single-block CBC over
+`eval` is at most the sum over the two challenge messages `m` of the average over
+`IV` of the PRF advantages of `cbcRed IV A` against `cipherPRF eval` at input
+`IV ⊕ m`. -/
 theorem cbc_indcpa_bound (C : CBCBlockCipher) (eval : C.Key → C.Block → C.Block)
-    (m₀ m₁ : C.Block) (A : C.toEncScheme.Ciphertext → SPComp Bool)
-    {F : PRFScheme} (H : PRFAssumption F)
-    (x₀ x₁ : F.Input) (A₀ A₁ : F.Output → SPComp Bool)
-    (hswap0 : AdvantageA (INDCPA_Game (C.toRealScheme eval) m₀ m₁ true)
-                (INDCPA_Game C.toEncScheme m₀ m₁ true) A ≤ PRF_Adv F x₀ A₀)
-    (hswap1 : AdvantageA (INDCPA_Game C.toEncScheme m₀ m₁ false)
-                (INDCPA_Game (C.toRealScheme eval) m₀ m₁ false) A ≤ PRF_Adv F x₁ A₁) :
-    INDCPA_Adv (C.toRealScheme eval) m₀ m₁ A ≤ 2 * H.ε := by
-  -- Reduce to the three hops via the advantage triangle inequality.
-  unfold INDCPA_Adv
-  rw [show (2 : ℝ≥0∞) * H.ε = H.ε + 0 + H.ε by ring]
-  adv_game_hop [INDCPA_Game C.toEncScheme m₀ m₁ true, INDCPA_Game C.toEncScheme m₀ m₁ false]
-  · -- swap hop `real_true → ideal_true`, bounded through the PRF assumption
-    exact hswap0.trans (H.bound x₀ A₀)
-  · -- perfect middle hop: both ideal games are the same uniform distribution
-    simp only [cbc_ideal_game_uniform, AdvantageA, Advantage_self, le_refl]
-  · -- swap hop `ideal_false → real_false`, bounded through the PRF assumption
-    exact hswap1.trans (H.bound x₁ A₁)
+    (m₀ m₁ : C.Block) (A : C.Block × C.Block → SPComp Bool) :
+    INDCPA_Adv (C.toRealScheme eval) m₀ m₁ A ≤
+      ∑ iv : C.Block, (↑(Fintype.card C.Block) : ℝ≥0∞)⁻¹ *
+          PRF_Adv (C.cipherPRF eval) (C.xorB iv m₀) (C.cbcRed iv A) +
+        ∑ iv : C.Block, (↑(Fintype.card C.Block) : ℝ≥0∞)⁻¹ *
+          PRF_Adv (C.cipherPRF eval) (C.xorB iv m₁) (C.cbcRed iv A) := by
+  unfold INDCPA_Adv AdvantageA
+  refine (advantage_triangle _ (C.uniformGame.bind A) _).trans (add_le_add ?_ ?_)
+  · have h := cbc_real_uniform_hop C eval m₀ m₁ A true
+    simp only [if_true] at h
+    exact h
+  · have h := cbc_real_uniform_hop C eval m₀ m₁ A false
+    simp only [Bool.false_eq_true, if_false] at h
+    unfold AdvantageA at h
+    rw [Advantage_sym]
+    exact h
 
 /-! ## Example: single-block CBC over `Bool`
 

@@ -48,6 +48,17 @@ This is further decomposed into:
 2. KEY structural: KEY(0) = KEY(1) when inputs are already random
 3. AE switching: replace real encryption with ideal encryption (hybrid argument)
 
+## Degenerate statements (finding 6 of the vacuity sweep)
+
+The PKAE, PKEY and NIKE games of this development give the adversary a `getsk`
+oracle on honest keys and unrestricted access to the heap, so every adversary
+that runs the scheme itself has advantage close to `1`. The bounds on
+`pkaeAdvantage` in this file are therefore marked degenerate in their
+docstrings. The repair (removing `getsk` from the adversary interface, a
+location-disjointness condition on adversaries, rebasing on `GPKAE`, and proofs
+of the NIKE and AE hops) is not carried out here. `nikeStep_eq_reduction`,
+whose hypothesis was its conclusion, is deleted.
+
 ## References
 
 * Dupressoir et al., "How Hard Can It Be?" (ASIACRYPT 2025)
@@ -193,7 +204,12 @@ theorem pkae_game_hopping (N : @NIKEScheme CT) (E : @NBSES CT) (I : @KeyInjectio
 
 /-! ## Main Security Theorem (Chain Version) -/
 
-/-- **Cryptobox security theorem (game-hopping chain version).**
+/-- **Degenerate: see finding 6 of the vacuity sweep; the bound concerns `pkaeAdvantage`,
+    in which the game lets the adversary call `getsk` on honest keys and read any heap
+    location (including `skStoreLoc`), so every adversary that runs the scheme itself wins
+    with advantage close to 1.**
+
+    **Cryptobox security theorem (game-hopping chain version).**
 
     The PKAE advantage is bounded by `2 * pkey_eps + middle_eps`, where:
     - `pkey_eps` bounds the PKEY advantage for both reduction adversaries
@@ -361,7 +377,12 @@ theorem middle_bounded_by_steps
 Combining the game-hopping chain with the middle step decomposition
 gives the full security bound. -/
 
-/-- **Full Cryptobox security bound with explicit game-hopping structure.**
+/-- **Degenerate: see finding 6 of the vacuity sweep; the bound concerns `pkaeAdvantage`,
+    in which the game lets the adversary call `getsk` on honest keys and read any heap
+    location (including `skStoreLoc`), so every adversary that runs the scheme itself wins
+    with advantage close to 1, and the NIKE and AE hops `h_nike`, `h_ae` are hypotheses.**
+
+    **Full Cryptobox security bound with explicit game-hopping structure.**
 
     Decomposes PKAE advantage into:
     - `2 * pkey_eps`: Two PKEY switching steps (collision bounds)
@@ -400,7 +421,10 @@ theorem cryptobox_security_full
 
 Specializations of the full security theorem for common scenarios. -/
 
-/-- When the PKEY collision bound is zero (e.g., infinite key space),
+/-- **Degenerate: see finding 6 of the vacuity sweep (corollary of
+    `cryptobox_security_full`).**
+
+    When the PKEY collision bound is zero (e.g., infinite key space),
     the PKAE advantage reduces to just NIKE + AE advantages. -/
 theorem cryptobox_security_no_collision
     (N : @NIKEScheme CT) (E : @NBSES CT) (I : @KeyInjection CT)
@@ -416,7 +440,10 @@ theorem cryptobox_security_no_collision
   simp only [mul_zero, zero_add] at this
   simp_all
 
-/-- When NIKE and AE are perfectly secure (e.g., information-theoretic),
+/-- **Degenerate: see finding 6 of the vacuity sweep (corollary of
+    `cryptobox_security_full`).**
+
+    When NIKE and AE are perfectly secure (e.g., information-theoretic),
     the PKAE advantage is bounded purely by the collision probability. -/
 theorem cryptobox_security_collision_only
     (N : @NIKEScheme CT) (E : @NBSES CT) (I : @KeyInjection CT)
@@ -680,28 +707,15 @@ theorem nikeStep_bounded (N : @NIKEScheme CT) (E : @NBSES CT)
     nikeStepAdvantage N E I A ≤ nike_eps + caching_gap :=
   h_cache.trans (add_le_add h_nike le_rfl)
 
-/-- When the caching gap is zero, the NIKE step advantage equals
-    the NIKE reduction advantage. This is the expected case because:
-    - `N.sharedkey` is deterministic → caching doesn't change return values
-    - Extra heap writes to `nikeKeysLoc`/`nikeHonestLoc` are invisible
-      to the adversary's PKEY oracle queries
-
-    The hypothesis `h_cache_zero` formalizes "the caching gap is zero",
-    meaning the NIKE game with `R_NIKE` exactly equals the direct games. -/
-theorem nikeStep_eq_reduction (N : @NIKEScheme CT) (E : @NBSES CT)
-    (I : @KeyInjection CT) (A : PKAEOracles → SPComp Bool)
-    (pkeyO : PKEYOracles)
-    (h_cache_zero : nikeStepAdvantage N E I A ≤
-      nikeReductionAdvantage N E I A pkeyO) :
-    nikeStepAdvantage N E I A ≤ nikeReductionAdvantage N E I A pkeyO :=
-  h_cache_zero
-
 /-! ## Full Security with NIKE Reduction
 
 Combining `cryptobox_security_full` with the NIKE reduction gives a
 version where the NIKE bound comes from a concrete reduction adversary. -/
 
-/-- **Cryptobox security with explicit NIKE reduction.**
+/-- **Degenerate: see finding 6 of the vacuity sweep; the bound concerns `pkaeAdvantage`,
+    and the NIKE hop is the hypothesis `h_cache`.**
+
+    **Cryptobox security with explicit NIKE reduction.**
 
     This combines the full game-hopping decomposition with the NIKE reduction
     adversary, making explicit that the NIKE step advantage is bounded by
@@ -729,7 +743,10 @@ theorem cryptobox_security_with_nike_reduction
     pkaeAdvantage N E I A ≤ 2 * pkey_eps + (nike_eps + caching_gap) + ae_eps := by
   grind [nikeStep_bounded, cryptobox_security_full]
 
-/-- **Simplified version when the caching gap is zero.**
+/-- **Degenerate: see finding 6 of the vacuity sweep; the bound concerns `pkaeAdvantage`,
+    and the NIKE hop is the hypothesis `h_cache`.**
+
+    **Simplified version when the caching gap is zero.**
 
     When `N.sharedkey` is deterministic and extra heap writes are provably
     invisible (the expected case), the caching gap vanishes and we get the
