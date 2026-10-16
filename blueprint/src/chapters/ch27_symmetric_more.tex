@@ -54,15 +54,14 @@ $\mathsf{Word} = \Bool$ with two counter values.
   $i$ replaces the first $i$ outputs by uniform words.
 \end{definition}
 
-\begin{theorem}[Hybrid bound]
+\begin{theorem}[PRG advantage as a two-query PRF advantage]
   \label{thm:prfprg-bound}
-  \uses{def:prfprg-decomp, thm:advantageA-triangle}
-  \lean{CatCrypt.Examples.PRFPRG.prg_decomp_security_bound}
+  \uses{def:prfprg-decomp}
+  \lean{CatCrypt.Examples.PRFPRG.prg_advantage_eq_prf_q}
   \leanok
-  The distance between the first and last decomposed hybrid is at most the sum of
-  two PRF advantages of explicit reduction adversaries. The bound concerns the
-  decomposed games, in which the two evaluations use independent seeds; it is not
-  a bound on the counter-mode generator with a single seed.
+  The PRG advantage of the counter-mode generator with a single seed equals the
+  adaptive two-query PRF advantage of an explicit reduction that queries the
+  counters $0$ and $1$ and runs the distinguisher on the two answers.
 \end{theorem}
 
 \begin{theorem}[The XOR instantiation]
@@ -92,11 +91,11 @@ other than the one queried.
 \begin{theorem}[Forgery bound]
   \label{thm:prfmac-bound}
   \uses{lem:prfmac-hops, thm:advantageA-triangle}
-  \lean{CatCrypt.Examples.PRFMAC.security_based_on_prf}
+  \lean{CatCrypt.Examples.PRFMAC.prfMAC_euf_cma_adv_le}
   \leanok
-  For a forgery on a message different from the queried one, the distance between
-  the real and ideal MAC games is at most two PRF advantages plus a statistical
-  gap of $1/2$, the guessing probability of a one-bit tag.
+  The adaptive EUF-CMA forgery advantage of every adversary is at most the PRF
+  advantage of the explicit reduction \texttt{prfMacRed} plus $1/|T|$, the
+  probability of guessing a tag.
 \end{theorem}
 
 \begin{theorem}[No perfect coupling on an unqueried message]
