@@ -356,6 +356,7 @@ public import CatCryptCore.Examples.PKE.MultiInstance
 public import CatCryptCore.Examples.Cryptobox.Scheme
 public import CatCryptCore.Examples.Cryptobox.KEY
 public import CatCryptCore.Examples.Cryptobox.PKEY
+public import CatCryptCore.Examples.Cryptobox.PKEYQ
 public import CatCryptCore.Examples.Cryptobox.SAE
 public import CatCryptCore.Examples.Cryptobox.NIKE
 public import CatCryptCore.Examples.Cryptobox.PKAE

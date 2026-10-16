@@ -127,7 +127,8 @@ noncomputable def PKEY (N : @NIKEScheme CT) (b : Bool)
 
 /-- **Degenerate: see findings 6 and 15 of the vacuity sweep; the adversary is an `SPComp`
     program with unrestricted heap access and a `getsk` oracle, and there is no query
-    bound.**
+    bound. The query-bounded game is `PKEYQ.pkeyQAdvantage` (module
+    `Cryptobox.PKEYQ`), bounded by `PKEYQ.pkeyQAdvantage_le`.**
 
     PKEY switching advantage. -/
 noncomputable def pkeyAdvantage (N : @NIKEScheme CT)
@@ -242,7 +243,8 @@ The bad event is `pkeyBadFinal`: some public key is both honest and corrupt
 in the final heap. -/
 
 /-- **Degenerate: see finding 15 of the vacuity sweep; the up-to-bad agreement `h_agree`
-    carries the content of the hop and does not hold for adversaries that read the heap.**
+    carries the content of the hop and does not hold for adversaries that read the heap. The query-bounded
+    statement is `PKEYQ.pkeyQAdvantage_le`.**
 
     PKEY advantage bounded by collision probability via FEL.
 
@@ -273,7 +275,7 @@ theorem pkeyAdvantage_le_collision (N : @NIKEScheme CT) (B : PKEYOracles → SPC
   Unary.advantage_le_prBad (PKEY N false B) (PKEY N true B) pkeyBadFinal h_agree hll
 
 /-- **Degenerate: see finding 15 of the vacuity sweep; `h_agree` and the collision bound
-    `hcoll` are hypotheses.**
+    `hcoll` are hypotheses. The query-bounded statement is `PKEYQ.pkeyQAdvantage_le`.**
 
     PKEY switching as a game hop: when the two PKEY games agree off the collision
 event `pkeyBadFinal`, the collision-free game is lossless, and the probability of
