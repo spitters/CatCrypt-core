@@ -394,6 +394,69 @@ theorem inv_step_gen (m : MSt Party Blk σT ET OT) (e : ET × GAct Party Blk) (s
       rw [hguardF _ hF]; rfl
     · simp [monNext, treeNext, hlenT]
 
+include hov hP hset hΔ hA in
+/-- The invariant is preserved by every activation. -/
+theorem inv_step (m : MSt Party Blk σT ET OT) (e : ET × GAct Party Blk) (s' : σT)
+    (hm : MInv c ST vwT P exT ov exF m) :
+    MInv c ST vwT P exT ov exF (monNext c ST vwT P exT ov exF out m e s'
+      (gpost c exT ov { m.1.1 with pend := e.2 } (treeOut c ST vwT P exT out m e s'))) :=
+  inv_step_gen out hov hP hset hΔ hA m e s' hm _ (gpost_cases c exT ov _ _)
+
+include hov hinit hP hset hΔ hA in
+/-- **The guard of `F_FinTree` never fails on the hybrid run**: under the hypotheses of
+`ffg_realizes`, for every environment the probability that the guard of `F_FinTree` fails on
+the trace of the `F_Tree`-hybrid world is `0`. -/
+theorem guardFail_eq_zero
+    (hout : ∀ s e, ∃ C : SPComp σT, ST.step s e = SPComp.bind C fun s' => SPComp.pure (s', out s'))
+    {ζ : Type} (Z : Env (Strat ζ (ET × GAct Party Blk) (TreeView Party Blk)) ζ) :
+    guardFail (ffgWorld c ST vwT P exT ov exF) (finF c ST vwT P exT ov exF).guard Z = 0 := by
+  unfold guardFail
+  refine prBad_eq_zero_of_invariant _ _ (MInv c ST vwT P exT ov exF)
+    (inv_init hinit hP hset hΔ hA) (fun m hm => hm.1) ?_ Z
+  intro m e K h hm hK
+  obtain ⟨C, hC⟩ := hout m.1.2.1 e.1
+  rw [monitor_step_eq out C m e hC, SPComp.bind_assoc]
+  refine prTrue_bind_eq_zero _ _ _ fun s' h' => ?_
+  rw [SPComp.pure_bind]
+  exact hK _ _ (inv_step out hov hP hset hΔ hA m e s' hm)
+
+include hST hov hinit hP hset hΔ hA in
+/-- **FFG in the `F_Tree`-hybrid world realizes `F_FinTree` perfectly (row C4b).**
+Let the tree simulator `ST` be lossless and output a function `out` of its new state from
+which the gadget reads the view of that state (`ov (out s) = vwT s`); let the guard of
+`F_Tree^P` hold on the empty trace; let every property of `P` read only rounds, trees and
+positions; let the guard of `F_Tree^P` imply that the pruned positions `cut` are settled; let
+`1 ≤ Δ`; and let the adversarial validators hold less than a third of the total stake,
+`3 * stake w (univ \ H) < W`. Then the FFG gadget running with the ideal world of `F_Tree^P`
+(`ffgWorld`) realizes the ideal world of `F_FinTree^P'` (`finF`, with
+`P' = finality-respecting positions :: P`, `Δ`-updatedness and the support guard `suppF`)
+with the simulator `ffgSim`: every environment has advantage `0`. -/
+theorem ffg_realizes
+    (hout : ∀ s e, ∃ C : SPComp σT, ST.step s e = SPComp.bind C fun s' => SPComp.pure (s', out s')) :
+    Realizes (ffgWorld c ST vwT P exT ov exF)
+      (ideal (finF c ST vwT P exT ov exF) (ffgSim c ST vwT P exT ov exF)) (fun _ _ => 0) := by
+  intro ζ Z
+  have hnf : ∀ s e, SPComp.NoFail ((ffgWorld c ST vwT P exT ov exF).step s e) :=
+    Hybrid.withSub_noFail _ _ (Hybrid.ideal_noFail _ _ hST)
+  exact (transparent_realizes_copy _ _ hnf ζ Z).trans_eq
+    (guardFail_eq_zero out hov hinit hP hset hΔ hA hout Z)
+
+include hST hov hinit hP hset hΔ hA in
+/-- **The realization as concrete UC emulation** (`UCConcrete.UCEmulatesCSim`) with the zero
+bound: with the environment strategy as honest input, the environment's final state as output,
+empty leakage and the identity simulator map, the view maps of the `F_Tree`-hybrid world and of
+the ideal world of `F_FinTree` are at distance `0` for every environment. -/
+theorem ffg_UCEmulatesCSim
+    (hout : ∀ s e, ∃ C : SPComp σT, ST.step s e = SPComp.bind C fun s' => SPComp.pure (s', out s'))
+    (ζ V : Type) :
+    UCEmulatesCSim ⟨Strat ζ (ET × GAct Party Blk) (TreeView Party Blk), ζ, Empty, Empty, V⟩
+      (fun s => SPComp.bind (view (ffgWorld c ST vwT P exT ov exF) s) fun z =>
+        SPComp.pure (Sum.inl z))
+      (fun s => SPComp.bind (view (ideal (finF c ST vwT P exT ov exF)
+        (ffgSim c ST vwT P exT ov exF)) s) fun z => SPComp.pure (Sum.inl z)) id
+      (fun _ _ => 0) :=
+  (ffg_realizes hST out hov hinit hP hset hΔ hA hout).toUCEmulatesCSim ζ V
+
 end Invariant
 
 end CatCryptCore.Consensus.UC.FFGGadget
