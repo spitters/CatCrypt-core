@@ -406,9 +406,9 @@ noncomputable def wrapMainNomPkg
        (fun _ => .bind a_vc.code
          (fun b => CatCrypt.Deep.RawCode.ofSPComp (D b))),
      CatCrypt.Deep.ValidCode.bind _ _
-       (CatCrypt.Deep.ValidCode.ofSPComp _ _) (fun _ =>
+       (CatCrypt.Deep.ValidCode.ofSPCompUnchecked _ _) (fun _ =>
        CatCrypt.Deep.ValidCode.bind _ _ a_vc.valid
-         (fun b => CatCrypt.Deep.ValidCode.ofSPComp _ _))⟩
+         (fun b => CatCrypt.Deep.ValidCode.ofSPCompUnchecked _ _))⟩
   { pkg := {
       locs := A.pkg.locs
       imports := A.pkg.imports
