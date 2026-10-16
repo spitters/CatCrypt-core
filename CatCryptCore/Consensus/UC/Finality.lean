@@ -459,4 +459,161 @@ theorem ffg_UCEmulatesCSim
 
 end Invariant
 
+/-! ## A concrete instance -/
+
+namespace Example
+
+open CatCryptCore.Consensus.Finality.Examples
+
+/-- The tree view at round `n`: one party whose tree and position are `[n, …, 0]`, and no final
+blocks of `F_Tree`. -/
+def lv (n : ℕ) : TreeView (Fin 1) ℕ := ⟨n, fun _ => line n, fun _ => line n, fun _ => []⟩
+
+/-- The tree simulator: its state is the round `n`; every activation moves to round `n + 1`
+and outputs the view of the new round. -/
+noncomputable def lineST : Sys ℕ Unit (TreeView (Fin 1) ℕ) where
+  init := 0
+  step n _ := SPComp.pure (n + 1, lv (n + 1))
+
+/-- The gadget parameters: the chain `lineTree`, one honest validator of stake `1`, slots equal
+to block numbers, epochs of one slot, voting on the full position, delivery bound `1`. -/
+def cfg : Cfg (Fin 1) ℕ := ⟨lineTree, fun _ => 1, Finset.univ, id, 1, fun v p => v.pos p, 1⟩
+
+/-- The tree property: common prefix `0`. -/
+def lineP : List (TreeTrace (Fin 1) ℕ → Prop) := [fun X => X.CommonPrefix 0]
+
+/-- **Non-vacuity of the hypotheses.** For the one-validator instance (`3 · 0 < W = 1`), every
+hypothesis of `ffg_realizes` holds, with `out = lv`, `ov = id`, `exT = exF = lv 0`. -/
+theorem instance_hyps :
+    (∀ s e, SPComp.NoFail (lineST.step s e)) ∧
+      (∀ s e, ∃ C : SPComp ℕ, lineST.step s e = SPComp.bind C fun s' => SPComp.pure (s', lv s')) ∧
+      (∀ s, id (lv s) = lv s) ∧
+      FTreeGuard cfg.T lineP
+        (traceOf lv (· ∈ cfg.H) lineST.init ([] : Trace ℕ Unit (TreeView (Fin 1) ℕ))) ∧
+      (∀ φ ∈ lineP, PosOnly φ) ∧ (∀ X, FTreeGuard cfg.T lineP X → Settled cfg.cut X) ∧
+      1 ≤ cfg.Δ ∧ 3 * stake cfg.w (Finset.univ \ cfg.H) < totalStake cfg.w := by
+  refine ⟨fun _ _ => SPComp.pure_noFail _, fun n _ => ⟨SPComp.pure (n + 1), by rw [SPComp.pure_bind]; rfl⟩,
+    fun _ => rfl, ?_, ?_, ?_, le_rfl, by decide⟩
+  · refine ⟨⟨?_, ?_, ?_, ?_⟩, ?_, ?_⟩
+    · intro p t t' _ _; simp [traceOf, stAt_nil]
+    · intro p t _; simp [traceOf, stAt_nil, lv]
+    · intro p t _; simp [TreeTrace.chains, traceOf, stAt_nil, lv, lineST, line]
+    · intro t t' _; simp [traceOf, stAt_nil]
+    · simp only [lineP, List.mem_singleton, forall_eq]
+      intro p q t t' _ _ _
+      simp only [TreeTrace.chains, traceOf, stAt_nil, List.drop_zero]
+      exact List.suffix_refl _
+    · rintro p q t t' b b' i j _ _ ⟨C, hC, -⟩
+      simp [TreeTrace.finChains, traceOf, stAt_nil, lv] at hC
+  · simp only [lineP, List.mem_singleton, forall_eq]
+    exact fun X f h => h
+  · intro X hX p q t t' hp hq h
+    exact hX.2.1 _ List.mem_cons_self p q t t' hp hq h
+
+/-- **The realization for the instance**: the FFG gadget over the one-party tree realizes
+`F_FinTree` with advantage `0` against every environment. -/
+theorem instance_realizes :
+    Realizes (ffgWorld cfg lineST lv lineP (lv 0) id (lv 0))
+      (ideal (finF cfg lineST lv lineP (lv 0) id (lv 0)) (ffgSim cfg lineST lv lineP (lv 0) id (lv 0)))
+      (fun _ _ => 0) := by
+  obtain ⟨hST, hout, hov, hinit, hP, hset, hΔ, hA⟩ := instance_hyps
+  exact ffg_realizes hST lv hov hinit hP hset hΔ hA hout
+
+/-- The honest vote from the genesis checkpoint `(0, 0)` to the checkpoint `(1, 1)`. -/
+def vx : Vote (Fin 1) ℕ := ⟨0, ⟨0, 0⟩, ⟨1, 1⟩⟩
+
+/-- A run of the gadget: at time `1` the view `[1, 0]` and the honest vote `vx`; at time `2`
+the view `[2, 1, 0]`, when `vx` is delivered; afterwards nothing changes. -/
+noncomputable def runG : ℕ → GCore (Fin 1) ℕ
+  | 0 => ginit (lv 0)
+  | 1 => gstep cfg (ginit (lv 0)) (.hvote vx) (lv 1)
+  | _ + 2 => gstep cfg (gstep cfg (ginit (lv 0)) (.hvote vx) (lv 1)) .idle (lv 2)
+
+theorem runG_view (t : ℕ) : (runG t).view = lv (min t 2) := by
+  rcases t with _ | _ | t
+  · rfl
+  · exact gstep_view _ _ _ _
+  · rw [show min (t + 2) 2 = 2 by omega]; exact gstep_view _ _ _ _
+
+theorem runG_run : Run cfg runG where
+  init_cast := rfl
+  init_seen _ := rfl
+  step t := by
+    rcases t with _ | _ | t
+    · exact Or.inr ⟨.hvote vx, lv 1, rfl⟩
+    · exact Or.inr ⟨.idle, lv 2, rfl⟩
+    · exact Or.inl rfl
+  rounds t t' h := by
+    show (runG t).view.round ≤ (runG t').view.round
+    rw [runG_view, runG_view]
+    simp only [lv]
+    omega
+  settled p q t t' _ _ h := by
+    show (runG t).view.pos p <:+ (runG t').view.pos q
+    rw [runG_view, runG_view]
+    exact line_suffix (min_le_min_right 2 h)
+
+theorem honestOK_vx : HonestOK cfg (lv 1) ∅ vx := by
+  refine ⟨Finset.mem_univ _, by decide, by decide, ?_⟩
+  simp [mem_slashable, DoubleVote, SurroundVote, vx]
+
+/-- The vote `vx` has been received at time `2`. -/
+theorem vx_mem_seen : vx ∈ (runG 2).seen 0 := by
+  have h1 : (vx, 1) ∈ (runG 1).cast := by
+    show (vx, 1) ∈ (act cfg { ginit (lv 0) with view := lv 1 } (.hvote vx)).cast
+    simp only [act]
+    split_ifs with h
+    · exact Finset.mem_insert_self _ _
+    · exact absurd (by simpa [GCore.votes, ginit] using honestOK_vx) h
+  show vx ∈ (gstep cfg (runG 1) .idle (lv 2)).seen 0
+  rw [gstep_seen]
+  exact Finset.mem_union_right _ (Finset.mem_image.2 ⟨(vx, 1), Finset.mem_filter.2 ⟨h1, le_rfl⟩, rfl⟩)
+
+/-- The genesis checkpoint is finalized by every vote set that contains `vx`. -/
+theorem finalized_genesis {S : Finset (Vote (Fin 1) ℕ)} (hx : vx ∈ S) :
+    Finalized cfg.T cfg.w S ⟨0, 0⟩ := by
+  refine ⟨Justified.genesis, ⟨1, 1⟩, rfl, by decide, Nat.zero_le 1, ?_⟩
+  have hv : voters S ⟨0, 0⟩ ⟨1, 1⟩ = Finset.univ :=
+    Finset.eq_univ_of_forall fun v => by
+      rw [Subsingleton.elim v 0]
+      exact mem_voters.2 hx
+  rw [hv]
+  decide
+
+/-- **Non-vacuity of the conclusion.** The run `runG` of the gadget of the instance satisfies
+the hypotheses of `finTreeGuard_of_run`, its reported trace satisfies the guard of
+`F_FinTree^P'`, and the genesis block is final for the honest party at time `2`. -/
+theorem run_finalizes :
+    Run cfg runG ∧ (posTT cfg runG).WellFormed cfg.T ∧ (∀ φ ∈ lineP, φ (posTT cfg runG)) ∧
+      FinTreeGuard cfg.T ((fun X => X.FinalityRespectingPos) :: lineP) cfg.Δ (suppF cfg)
+        (finTT cfg runG) ∧
+      ∃ i, (finTT cfg runG).finalized 2 0 0 i := by
+  obtain ⟨-, -, -, -, hP, -, hΔ, hA⟩ := instance_hyps
+  have hwf : (posTT cfg runG).WellFormed cfg.T := by
+    refine ⟨fun p t t' _ h => ?_, fun p t _ => ?_, fun p t _ => ?_, runG_run.rounds⟩
+    · show (runG t).view.tree p ⊆ (runG t').view.tree p
+      rw [runG_view, runG_view]
+      exact (line_suffix (min_le_min_right 2 h)).subset
+    · show (runG t).view.pos p ⊆ (runG t).view.tree p
+      rw [runG_view]
+      exact List.Subset.refl _
+    · show ((runG t).view.pos p).Pairwise fun b b' => lineTree.anc b' b
+      rw [runG_view]
+      exact lineTrace_chainsInTree () (min t 2) trivial
+  have hPG : ∀ φ ∈ lineP, φ (posTT cfg runG) := by
+    simp only [lineP, List.mem_singleton, forall_eq]
+    exact fun p q t t' hp hq h => runG_run.settled p q t t' hp hq h
+  refine ⟨runG_run, hwf, hPG, finTreeGuard_of_run runG_run hΔ hA hP hwf hPG, ?_⟩
+  have hfin := finalized_genesis vx_mem_seen
+  have hmem : 0 ∈ finList cfg ((runG 2).seen 0) :=
+    mem_finList (by decide) hfin fun b' hb' =>
+      congrArg Checkpoint.block (justified_epoch_zero hb'.1 rfl)
+  obtain ⟨s, l, hsl⟩ := List.append_of_mem hmem
+  refine ⟨l.length, l, ?_, rfl⟩
+  show 0 :: l <:+ finList cfg ((runG 2).seen 0)
+  rw [hsl]
+  exact List.suffix_append s _
+
+end Example
+
 end CatCryptCore.Consensus.UC.FFGGadget
