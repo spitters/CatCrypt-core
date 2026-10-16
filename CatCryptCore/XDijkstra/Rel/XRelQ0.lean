@@ -167,9 +167,34 @@ theorem Couples_mono_rel {R S : α → β → Prop} {μ : PMF α} {ν : PMF β}
   obtain ⟨κ, hκ⟩ := h
   exact ⟨κ, hκ.marg_fst, hκ.marg_snd, fun p hp => hRS p.1 p.2 (hκ.supp p hp)⟩
 
+/-- A coupling of `μ` and `ν` supported in `R` gives, after `PMF.map some`, an exact
+coupling of the sub-distributions `μ.map some` and `ν.map some` supported in `R`, hence a
+sub-coupling at every grade. -/
+theorem liftRApprox_map_some_of_couples {R : α → β → Prop} {μ : PMF α} {ν : PMF β}
+    (h : Couples μ ν R) (ε : ℝ≥0∞) :
+    CatCrypt.Prob.liftRApprox ε R (μ.map some) (ν.map some) := by
+  obtain ⟨κ, hκ⟩ := h
+  refine CatCrypt.Prob.liftRApprox_mono_eps (zero_le (a := ε))
+    (CatCrypt.Prob.liftRApprox_of_liftR ⟨⟨κ.map some, fun a => ?_, fun b => ?_⟩, ?_⟩)
+  · rw [← hκ.marg_fst]
+    unfold SDistr.bind SDistr.pure
+    rw [PMF.bind_map, PMF.map_comp, PMF.map]
+    rfl
+  · rw [← hκ.marg_snd]
+    unfold SDistr.bind SDistr.pure
+    rw [PMF.bind_map, PMF.map_comp, PMF.map]
+    rfl
+  · intro a b hab
+    have hmem : some (a, b) ∈ (κ.map some).support := hab
+    rw [PMF.support_map] at hmem
+    obtain ⟨p, hp, hpe⟩ := hmem
+    cases hpe
+    exact hκ.supp _ hp
+
 /-- **`PMF` as a graded relational `RelQ0` monad.** The lifting `liftR ε R` is the `XRelatorPMF`
 coupling `Couples · · R`, independent of `ε` (an exact coupling is a zero-error one). Its
-four laws are `Couples_pure`, `Couples_bind`, `Couples_mono_rel`, and grade weakening. This
+four laws are `Couples_pure`, `Couples_bind`, `Couples_mono_rel`, and grade weakening. The
+denotation is `PMF.map some`; adequacy is `liftRApprox_map_some_of_couples`. This
 exhibits the qualitative prototype as the `ε`-collapsed instance of the graded relational
 monad. -/
 noncomputable instance instRelQ0PMF : RelQ0 PMF where
@@ -180,6 +205,13 @@ noncomputable instance instRelQ0PMF : RelQ0 PMF where
   liftR_bind h hf := Couples_bind h hf
   liftR_mono_rel hRS h := Couples_mono_rel hRS h
   liftR_mono_eps _ h := h
+  denote μ := μ.map some
+  denote_pure a := PMF.pure_map some a
+  denote_bind μ k := by
+    unfold SDistr.bind
+    rw [PMF.map_bind, PMF.bind_map]
+    rfl
+  liftR_adequate h := liftRApprox_map_some_of_couples h _
 
 /-- **The `PMF` lifting is `XRelatorPMF`'s `Couples`**, at every grade: the graded
 relator collapses to the qualitative one. -/
