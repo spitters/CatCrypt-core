@@ -25,7 +25,7 @@ that `AutoSets` imports (`Core/Code`, `Crypto/Advantage`, the XDijkstra files), 
 ([`AutoBaseTest.lean`](AutoBaseTest.lean) prints its import closure). The other arms
 are registered beside the tactics they call: `AutoArms` (`hop_chain`, `sum_atoms_le`,
 `gcongr_unfold`, `gcongr`), `AutoSets` (`aesop` over `CatCryptRel`, `catcrypt_grind`,
-`ssprove_crypto`, `bound`), `AutoDispatch` (`bind_vcgen`) and `AutoDispatchExt` (the
+`ssprove_crypto`, `bound`), `AutoDispatch` (`bind_swap_nf`, `bind_vcgen`) and `AutoDispatchExt` (the
 XDijkstra and zero-advantage shapes and arms). A proof that uses every arm imports
 `CatCryptCore.Tactics.AutoDispatchExt`: it imports `AutoDispatch`, which imports
 `AutoBase`, `AutoSets` (which imports `AutoSetsDecl`) and `AutoMetrics` (which imports
@@ -78,6 +78,7 @@ suggestion keeps them.
 | Relational drivers | `prob_to_rHoare` | [`CryptoAuto.lean`](CryptoAuto.lean) | Reduces `∀ A, AdvantageA G₀ G₁ A = 0` to `rHoare eqPre G₀ G₁ eqPost` through `advantage_zero_of_rHoare` and closes the judgment with `ssprove_crypto`. |
 | Simulation | `ssprove_sim`, `ssprove_sim?`, `ssprove_sim_eq`, `ssprove_sim_auto`, `ssprove_sim_bij f`, `ssprove_rspec`, `ssprove_reorder` | [`Sim.lean`](Sim.lean) | Structural bisimulation after EasyCrypt's `sim`: normalise both programs, match the heads and apply the `@[rspec]` rule of the pair. `ssprove_sim?` suggests the script of the steps that fired; `ssprove_reorder` commutes mismatched heads. |
 | Simulation | `ssprove_try_bij f`, `ssprove_couple_bij f`, `ssprove_try_bij₂` | [`Sim.lean`](Sim.lean), [`TryBij2.lean`](TryBij2.lean) | Coupling of a uniform sample along a bijection; `ssprove_couple_bij` closes the continuation with `ssprove_sim_auto`; `ssprove_try_bij₂` couples the inner of two nested samples. |
+| Game equality | `bind_swap_nf [h, …]` | [`BindSwap.lean`](BindSwap.lean) | Closes an `SPComp` equality whose sides differ by the order of independent `IsPure` binds: normalises both sides, moves each head binding of one side to the front of the other (`isPure_bind_comm_left`/`_right`) and removes it; `IsPure` side conditions from the combinators, hypotheses, structure fields and the arguments. First arm of `catcrypt_auto` on game equalities. |
 | Game equality | `bind_vcgen`, `bind_vcgen using e` | [`BindVcgen.lean`](BindVcgen.lean) | Normalises and peels matching `SPComp.bind` layers until stuck; `using e` applies the change of variables `SPComp.sample_bind_equiv e` to a sample residual. |
 | Game equality | `bind_vcgen_sum` | [`BindVcgenSum.lean`](BindVcgenSum.lean) | `bind_vcgen` with the `mapSum` reassociations of `Sum`-typed views. |
 | Game equality | `bind_align` | [`BindAlign.lean`](BindAlign.lean) | Peels matching bind layers from both sides of an equality and leaves the pointwise residual. |
