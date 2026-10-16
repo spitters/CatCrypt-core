@@ -19,7 +19,8 @@ whose lemma is passed as an argument, monotonicity goals, goals behind `set`,
 heap disequalities under `some`, and the error on goals that stay open. The arms
 `hop_chain`, `sum_atoms_le` and `gcongr_unfold` are tested on a distance and a
 definition registered in this module, and a goal over an unregistered distance
-is shown to be of shape `other`.
+is shown to be of shape `other`. Equalities of advantages are closed by
+`advantage_eq_nf` from their two game equalities.
 -/
 
 set_option autoImplicit false
@@ -525,5 +526,25 @@ info: Try this:
 #guard_msgs (substring := true) in
 example (x y z : ℝ≥0∞) (h : x ≤ y + z) : x ≤ z + y := by
   catcrypt_auto?
+
+/-- Advantage equality: the games are exchanged by `Advantage_sym` and equal up to the
+order of independent bindings. -/
+example {α β : Type} (p : SPComp α) (q : SPComp β) (k : α → β → SPComp Bool)
+    (hp : SPComp.IsPure p) (G : SPComp Bool) :
+    Advantage (p.bind fun a => q.bind fun b => k a b) G =
+      Advantage G (q.bind fun b => p.bind fun a => k a b) := by
+  catcrypt_auto
+
+/-- Advantage equality with `AdvantageA` unfolded on one side. -/
+example {α β : Type} (p : SPComp α) (q : SPComp β) (A : α × β → SPComp Bool)
+    (hp : SPComp.IsPure p) (G : SPComp (α × β)) :
+    AdvantageA (p.bind fun a => q.bind fun b => SPComp.pure (a, b)) G A =
+      Advantage (q.bind fun b => p.bind fun a => A (a, b)) (G.bind A) := by
+  advantage_eq_nf
+
+/-- Advantage equality with an unused uniform sample removed (`lossless_sample`). -/
+example {α : Type} [Fintype α] [Nonempty α] (q : SPComp Bool) (G : SPComp Bool) :
+    Advantage ((SPComp.sample α).bind fun _ => q) G = Advantage q G := by
+  advantage_eq_nf
 
 end CatCrypt.Tactics.AutoDispatchTest

@@ -40,19 +40,42 @@ computation it does not depend on.
    `congrArg (SPComp.bind p)` and `funext`, and the alignment continues under the binder.
    The number of alignment steps over all branches is bounded by `maxSteps`.
 4. The leaves are closed by definitional equality at reducible and instance transparency.
+5. Removal of unused bindings, when the alignment fails: a binding whose variable the rest
+   of its chain does not mention is removed by a discard fact `SPComp.bind c (fun _ => r) =
+   r` or by `SPComp.isPure_bind_discard` (`c` is `IsPure` and of mass one from every heap),
+   and the alignment runs again.
+6. Chain facts, when this fails: a fact `∀ f, c₁ >>= fun p => c₂ >>= fun q => f p q (t p q)
+   = c₁ >>= fun p => c₂ >>= fun q => f p q (t' p q)` (such as the correctness of
+   Diffie–Hellman on honest key pairs) rewrites one side, in either direction: a binding
+   `p` of `c₁` and a later binding `q` of `c₂` are brought together by `hoist`, the
+   occurrences of `t p q` in the rest of the chain are abstracted, and the fact replaces
+   them by `t' p q`; the alignment runs on each rewritten goal, with at most
+   `maxFactDepth` rewrites on a branch and `maxFactTries` goals in all.
 
 The `IsPure` side conditions are proved from the combinators of `pure`, `sample`, `fail`
 and `SPComp.bind`, from the `IsPure` hypotheses of the local context (possibly
 universally quantified), from the `Prop`-valued fields of structure-typed hypotheses up
 to depth two (`deps.keygen_isPure` for `deps : Deps`), and from the terms given as
-arguments: `bind_swap_nf [h₁, …]`.
+arguments: `bind_swap_nf [h₁, …]`. The mass-one, discard and chain facts are collected
+from the same sources; mass-one side conditions are also proved by the lemmas of
+`CatCryptCore.Unary.Lossless` for `pure`, `sample` and `SPComp.bind` when that module is
+in the environment. An argument that is an equation of another form is applied by
+`simp only` to two leaves that are not definitionally equal; a permutation equation such
+as `dh a b = dh b a` is applied by ordered rewriting, so that both leaves, whose bound
+variables are shared, reach the same normal form.
 
 Two chains are equal up to such exchanges exactly when they denote the same trace of the
 partially commutative word whose letters are the bindings; moving an occurrence of the
 left head to the front of the right chain, with backtracking over repeated letters, decides
 equality of traces; the step bound makes the procedure fail on goals whose search exceeds
-it. The procedure does not reorder two bindings neither of which is `IsPure`, and does not
-remove an unused binding.
+it. The procedure does not reorder two bindings neither of which is `IsPure`.
+
+`advantage_eq_nf [h₁, …]` proves an equality of two advantages `Advantage X Y =
+Advantage X' Y'` (after unfolding the heads of the two sides, such as `AdvantageA` and
+`DDH_Advantage`) from the game equalities `X = X'` and `Y = Y'` (or `X = Y'` and
+`Y = X'`), each closed by unfolding the game definitions at its heads and
+`bind_swap_nf [h₁, …]`. It refers to `CatCrypt.Crypto.Advantage` by name and applies
+where that definition is in the environment.
 -/
 
 @[expose] public section
@@ -69,6 +92,34 @@ theorem isPure_bind_comm_right (c₁ : SPComp α) (c₂ : SPComp β)
     SPComp.bind c₁ (fun a => SPComp.bind c₂ (fun b => k a b)) =
     SPComp.bind c₂ (fun b => SPComp.bind c₁ (fun a => k a b)) :=
   (isPure_bind_comm_left c₂ c₁ (fun b a => k a b) hc₂).symm
+
+/-- A sub-distribution of mass one bound to a constant continuation is that
+continuation. -/
+private theorem sdistr_bind_const_of_mass_one {d : CatCrypt.Prob.SDistr α}
+    (hd : CatCrypt.Prob.SDistr.mass d = 1) (e : CatCrypt.Prob.SDistr β) :
+    d.bind (fun _ => e) = e := by
+  have hnone : d none = 0 :=
+    Classical.byContradiction fun hne =>
+      absurd hd (ne_of_lt (ENNReal.sub_lt_self (by norm_num) (by norm_num) hne))
+  have hsum : ∑' a : α, d (some a) = 1 := by
+    simpa only [CatCrypt.Prob.SDistr.tsum_option_eq_add, hnone, zero_add] using PMF.tsum_coe d
+  refine CatCrypt.Prob.SDistr.eq_of_some_eq fun b => ?_
+  simp only [CatCrypt.Prob.SDistr.bind, PMF.bind_apply,
+    CatCrypt.Prob.SDistr.tsum_option_eq_add, CatCrypt.Prob.SDistr.fail_apply_some, mul_zero,
+    zero_add, ENNReal.tsum_mul_right, hsum, one_mul]
+
+/-- An `IsPure` computation of mass one from every heap, bound to a continuation that does
+not use its result, can be dropped: `c >>= fun _ => k` equals `k`. The mass condition is
+`CatCrypt.Unary.isLossless c` unfolded. -/
+theorem isPure_bind_discard (c : SPComp α) (k : SPComp β) (hc : IsPure c)
+    (hl : ∀ h, CatCrypt.Prob.SDistr.mass (c h) = 1) :
+    SPComp.bind c (fun _ => k) = k := by
+  obtain ⟨d, hd⟩ := hc
+  funext h
+  have e : SPComp.bind c (fun _ => k) h = (c h).bind (fun _ => k h) := by
+    simp only [bind, hd h, CatCrypt.Prob.SDistr.bind_assoc, CatCrypt.Prob.SDistr.pure_bind]
+  rw [e]
+  exact sdistr_bind_const_of_mass_one (hl h) (k h)
 
 end CatCrypt.Core.SPComp
 
@@ -102,14 +153,89 @@ def binderName (k : Expr) : Name :=
   | .lam n .. => n
   | _ => `x
 
-/-- The type `ty`, after its universal quantifiers, is an application of `SPComp.IsPure`. -/
-def concludesIsPure (ty : Expr) : MetaM Bool :=
-  forallTelescopeReducing ty fun _ b => do
-    return (← instantiateMVars b).isAppOf ``CatCrypt.Core.SPComp.IsPure
+/-- The kinds of facts that `bind_swap_nf` uses. -/
+inductive FactKind where
+  /-- `SPComp.IsPure c`. -/
+  | isPure
+  /-- `SDistr.mass (c h) = 1` for every heap `h`, possibly stated as
+  `CatCrypt.Unary.isLossless c`. -/
+  | lossless
+  /-- `SPComp.bind c (fun _ => r) = r`. -/
+  | discard
+  /-- `c₁ >>= fun p => c₂ >>= fun q => f p q t = c₁ >>= fun p => c₂ >>= fun q => f p q t'`
+  for a universally quantified `f`. -/
+  | chain
+  /-- An equation of another form. -/
+  | equation
+  /-- Any other statement. -/
+  | other
+  deriving BEq, Inhabited
 
-/-- The projections of `term : ty`, for `ty` a structure, whose type concludes with
-`SPComp.IsPure`, through nested structure fields up to `depth`. -/
-partial def structPureFields (depth : Nat) (term ty : Expr) : MetaM (Array Expr) := do
+/-- `e` is the numeral `1`. -/
+def isOneLit (e : Expr) : Bool :=
+  e.isAppOfArity ``OfNat.ofNat 3 && (e.getArg! 1).rawNatLit? == some 1
+
+/-- `e` is `g a b t` for the local `g` among `xs`, `a` and `b` the loose bound variables
+`1` and `0`, and `t` a term that mentions one of them. -/
+def isChainLeaf (xs : Array Expr) (e : Expr) : Option Expr :=
+  let args := e.getAppArgs
+  if xs.contains e.getAppFn && args.size == 3 && args[0]! == .bvar 1 && args[1]! == .bvar 0
+      && args[2]!.hasLooseBVars then
+    some e.getAppFn
+  else none
+
+/-- The leaf `f p q t` of a two-binding chain `c₁ >>= fun p => c₂ >>= fun q => f p q t`,
+with `p` and `q` as the loose bound variables `1` and `0`. -/
+def chainLeaf? (e : Expr) : Option Expr := do
+  let (_, _, _, k₁) ← bindApp? e
+  let .lam _ _ b₁ _ := k₁ | none
+  let (_, _, _, k₂) ← bindApp? b₁
+  let .lam _ _ b₂ _ := k₂ | none
+  some b₂
+
+/-- The kind of a fact of type `ty`, read after its universal quantifiers. -/
+def factKind (ty : Expr) : MetaM FactKind :=
+  forallTelescopeReducing ty fun xs b => do
+    let b ← instantiateMVars b
+    if b.isAppOf ``CatCrypt.Core.SPComp.IsPure then return .isPure
+    let some (_, l, r) := b.eq? | return .other
+    if l.isAppOf ``CatCrypt.Prob.SDistr.mass && isOneLit r then return .lossless
+    if let some (_, _, _, .lam _ _ body _) := bindApp? l then
+      if !body.hasLooseBVars && body == r then return .discard
+    if let (some a, some b) := (chainLeaf? l, chainLeaf? r) then
+      if let (some f, some g) := (isChainLeaf xs a, isChainLeaf xs b) then
+        if f == g then return .chain
+    return .equation
+
+/-- The facts that `bind_swap_nf` uses, by kind. -/
+structure Facts where
+  /-- Proofs concluding `SPComp.IsPure c`. -/
+  isPure : Array Expr := #[]
+  /-- Proofs concluding `SDistr.mass (c h) = 1`. -/
+  lossless : Array Expr := #[]
+  /-- Proofs concluding `SPComp.bind c (fun _ => r) = r`. -/
+  discard : Array Expr := #[]
+  /-- Proofs of equalities of two-binding chains that differ in the last argument of a
+  universally quantified continuation. -/
+  chain : Array Expr := #[]
+  /-- Equations of other forms given as arguments, applied to the leaves. -/
+  equations : Array Expr := #[]
+
+/-- `fs` with the fact `t : ty` added under its kind; an equation of another form is added
+only when `explicit`. -/
+def Facts.add (fs : Facts) (t ty : Expr) (explicit : Bool := false) : MetaM Facts := do
+  return match ← factKind ty with
+    | .isPure => { fs with isPure := fs.isPure.push t }
+    | .lossless => { fs with lossless := fs.lossless.push t }
+    | .discard => { fs with discard := fs.discard.push t }
+    | .chain => { fs with chain := fs.chain.push t }
+    | .equation => if explicit then { fs with equations := fs.equations.push t } else fs
+    | .other => fs
+
+/-- The projections of `term : ty`, for `ty` a structure, whose type is a fact of a kind
+used by `bind_swap_nf` (`IsPure`, mass one, discard or two-binding chain), through nested
+structure fields up to `depth`. -/
+partial def structFactFields (depth : Nat) (term ty : Expr) : MetaM (Array (Expr × Expr)) := do
   if depth == 0 then return #[]
   let ty ← whnfR (← instantiateMVars ty)
   let some sName := ty.getAppFn.constName? | return #[]
@@ -119,28 +245,42 @@ partial def structPureFields (depth : Nat) (term ty : Expr) : MetaM (Array Expr)
   for f in getStructureFieldsFlattened env sName (includeSubobjectFields := false) do
     let some proj ← observing? (mkProjection term f) | continue
     let some fty ← observing? (inferType proj) | continue
-    if ← concludesIsPure fty then
-      out := out.push proj
-    else
-      out := out ++ (← structPureFields (depth - 1) proj fty)
+    let k ← factKind fty
+    if k != .other && k != .equation then
+      out := out.push (proj, fty)
+    else if !(← isProp fty) then
+      out := out ++ (← structFactFields (depth - 1) proj fty)
   return out
 
-/-- The `IsPure` facts available in the current context: the terms `extra` whose type
-concludes with `SPComp.IsPure`, the local hypotheses of such a type, and the fields of
-such a type of structure-typed local hypotheses (depth two). -/
-def collectFacts (extra : Array Expr) : MetaM (Array Expr) := do
-  let mut out := #[]
+/-- The facts available in the current context: the terms `extra`, the local hypotheses,
+and the fields of structure-typed local hypotheses (depth two), each of the kind
+`IsPure`, mass one, discard or two-binding chain. -/
+def collectFacts (extra : Array Expr) : MetaM Facts := do
+  let mut fs : Facts := {}
   for t in extra do
-    if ← concludesIsPure (← inferType t) then out := out.push t
+    fs ← fs.add t (← inferType t) (explicit := true)
   for h in ← getLocalHyps do
     let decl ← h.fvarId!.getDecl
     if decl.isImplementationDetail || decl.binderInfo.isInstImplicit then continue
     let ty ← instantiateMVars decl.type
-    if ← concludesIsPure ty then
-      out := out.push h
+    let k ← factKind ty
+    if k != .other && k != .equation then
+      fs ← fs.add h ty
     else if !(← isProp ty) then
-      out := out ++ (← structPureFields 2 h ty)
-  return out
+      for (p, pty) in ← structFactFields 2 h ty do
+        fs ← fs.add p pty
+  return fs
+
+/-- Run `x` and keep its state changes only when it returns `some`. -/
+def withoutModifyingState? {γ : Type} (x : MetaM (Option γ)) : MetaM (Option γ) := do
+  let s ← saveState
+  try
+    let r ← x
+    if r.isNone then s.restore
+    return r
+  catch _ =>
+    s.restore
+    return none
 
 /-- A proof of `SPComp.IsPure c` from the facts, the combinators of `pure`, `sample`,
 `fail` and `SPComp.bind`, or `none`. The recursion through `SPComp.bind` is bounded by
@@ -182,17 +322,65 @@ partial def provePure (facts : Array Expr) (c : Expr) (depth : Nat) :
     return some (← mkLambdaFVars #[x] h)
   let some hk := hk? | return none
   observing? (mkAppM ``CatCrypt.Core.SPComp.bind_isPure #[hp, hk])
-where
-  /-- Run `x` and keep its state changes only when it returns `some`. -/
-  withoutModifyingState? {γ : Type} (x : MetaM (Option γ)) : MetaM (Option γ) := do
-    let s ← saveState
-    try
-      let r ← x
-      if r.isNone then s.restore
-      return r
-    catch _ =>
-      s.restore
+
+/-- The proposition `∀ h, SDistr.mass (c h) = 1`. -/
+def losslessType (c : Expr) : MetaM Expr :=
+  withLocalDeclD `h (mkConst ``CatCrypt.Core.Heap) fun h => do
+    let m ← mkAppM ``CatCrypt.Prob.SDistr.mass #[mkApp c h]
+    mkForallFVars #[h] (← mkEq m (← mkNumeral (mkConst ``ENNReal) 1))
+
+/-- A proof of `∀ h, SDistr.mass (c h) = 1` from the mass-one facts, or, when the module
+`CatCryptCore.Unary.Lossless` is in the environment, from its lemmas for `pure`, `sample`
+and `SPComp.bind`; `none` otherwise. The recursion through `SPComp.bind` is bounded by
+`depth`. -/
+partial def proveLossless (facts : Array Expr) (c : Expr) (depth : Nat) :
+    MetaM (Option Expr) := do
+  let c ← chainView c
+  let ty ← losslessType c
+  for f in facts do
+    let r ← withoutModifyingState? do
+      forallTelescope ty fun hs gc => do
+        let (ms, _, concl) ← forallMetaTelescopeReducing (← inferType f)
+        if ← withReducibleAndInstances (isDefEq concl gc) then
+          let pf ← instantiateMVars (mkAppN f ms)
+          if pf.hasExprMVar then return none
+          return some (← mkLambdaFVars hs pf)
+        return none
+    if let some pf := r then return some pf
+  let env ← getEnv
+  if c.isAppOfArity ``CatCrypt.Core.SPComp.pure 2 &&
+      env.contains `CatCrypt.Unary.lossless_pure then
+    return ← observing? (mkAppOptM `CatCrypt.Unary.lossless_pure #[none, some c.appArg!])
+  if c.isAppOfArity ``CatCrypt.Core.SPComp.sample 3 &&
+      env.contains `CatCrypt.Unary.lossless_sample then
+    return ← observing? (mkAppOptM `CatCrypt.Unary.lossless_sample (c.getAppArgs.map some))
+  if depth == 0 || !env.contains `CatCrypt.Unary.lossless_bind then return none
+  let some (α, _, p, k) := bindApp? c | return none
+  let some hp ← proveLossless facts p (depth - 1) | return none
+  let hk? ← withLocalDeclD (binderName k) α fun x => do
+    let some h ← proveLossless facts (k.beta #[x]) (depth - 1) | return none
+    return some (← mkLambdaFVars #[x] h)
+  let some hk := hk? | return none
+  observing? (mkAppOptM `CatCrypt.Unary.lossless_bind #[none, none, some p, some k, some hp, some hk])
+
+/-- A proof of `SPComp.bind r (fun _ => body) = body`, for `r : SPComp α` and
+`body : SPComp β`, from a discard fact, or from `SPComp.isPure_bind_discard` with the
+`IsPure` and mass-one side conditions; `none` otherwise. -/
+def proveDiscard (fs : Facts) (α β r body : Expr) : MetaM (Option Expr) := do
+  let lhs := mkApp (← mkAppOptM ``CatCrypt.Core.SPComp.bind #[α, β, r]) (.lam `x α body .default)
+  let goal ← mkEq lhs body
+  for f in fs.discard do
+    let r? ← withoutModifyingState? do
+      let (ms, _, concl) ← forallMetaTelescopeReducing (← inferType f)
+      if ← withReducibleAndInstances (isDefEq concl goal) then
+        let pf ← instantiateMVars (mkAppN f ms)
+        if pf.hasExprMVar then return none
+        return some pf
       return none
+    if let some pf := r? then return some pf
+  let some hp ← provePure fs.isPure r 8 | return none
+  let some hl ← proveLossless fs.lossless r 8 | return none
+  observing? (mkAppM ``CatCrypt.Core.SPComp.isPure_bind_discard #[r, body, hp, hl])
 
 /-- Maximal depth of a binding moved to the front of a chain. -/
 def maxHoistDepth : Nat := 32
@@ -292,14 +480,25 @@ structure Hint where
   /-- Original position of the current left head. -/
   lhsIdx : Nat
 
+/-- Rewrite the target of `g` by `simp only` with the equations `eqs`; the new goal, or
+`none` when the goal is closed. -/
+def simpOnlyWith (g : MVarId) (eqs : Array Expr) : MetaM (Option MVarId) := g.withContext do
+  let mut thms : SimpTheorems := {}
+  for e in eqs do
+    thms ← thms.add (.other `bind_swap_nf) #[] e
+  let ctx ← Simp.mkContext (simpTheorems := #[thms]) (congrTheorems := ← getSimpCongrTheorems)
+  let (r?, _) ← simpTarget g ctx
+  return r?
+
 /-- Close the goal `g : lhs = rhs` by the alignment documented at `bind_swap_nf`. The
 partner of the left head in the right chain is first the binding that `hint` pairs with
 it, then the occurrences of its computation in order (at most `maxCandidates`), with
 backtracking when the alignment under the binder fails; when none succeeds, the head of
-the right chain is searched in the left chain. Every call consumes one unit of
-`budget`. -/
+the right chain is searched in the left chain. Two leaves (sides that are not binds) that
+are not definitionally equal are closed by `simp only` with the equations `eqs`. Every
+call consumes one unit of `budget`. -/
 partial def align (facts : Array Expr) (g : MVarId) (budget : IO.Ref Nat)
-    (hint : Option Hint) : MetaM Unit :=
+    (hint : Option Hint) (eqs : Array Expr := #[]) : MetaM Unit :=
   g.withContext do
   let ty ← instantiateMVars (← g.getType)
   let some (_, lhs, rhs) := ty.eq? |
@@ -312,6 +511,16 @@ partial def align (facts : Array Expr) (g : MVarId) (budget : IO.Ref Nat)
   budget.set (fuel - 1)
   let lhs ← chainView lhs
   let rhs ← chainView rhs
+  if !eqs.isEmpty && (bindApp? lhs).isNone && (bindApp? rhs).isNone then
+    let s ← saveState
+    try
+      match ← simpOnlyWith g eqs with
+      | none => return
+      | some g' =>
+        withReducible g'.refl
+        return
+    catch _ => pure ()
+    s.restore
   -- `step α p f k close`: assign `g` from `h : bind p f = bind p k` via `close h`
   let step (α β p f k : Expr) (close : Expr → MetaM Expr) (n : Name) (hint' : Option Hint) :
       MetaM Unit := do
@@ -322,7 +531,7 @@ partial def align (facts : Array Expr) (g : MVarId) (budget : IO.Ref Nat)
     let h ← mkCongrArg bindP (← mkFunExt m)
     g.assign (← mkExpectedTypeHint (← close h) ty)
     let (_, g') ← m.mvarId!.intro n
-    align facts g' budget hint'
+    align facts g' budget hint' eqs
   -- the hint after the left head is paired with the right binding at position `pos`
   let advance (pos : Nat) : Option Hint := hint.map fun h =>
     { h with rhsOrder := h.rhsOrder.eraseIdxIfInBounds pos, lhsIdx := h.lhsIdx + 1 }
@@ -371,22 +580,238 @@ partial def align (facts : Array Expr) (g : MVarId) (budget : IO.Ref Nat)
 backtracking search. -/
 def maxSteps : Nat := 256
 
+/-- The bind chain `e` with each binding whose variable the rest of the chain does not
+mention removed, when `proveDiscard` proves its removal: `none` when no binding is
+removed, else the new chain `e'` and a proof of `e = e'`. -/
+partial def dropUnused (fs : Facts) (e : Expr) (depth : Nat) :
+    MetaM (Option (Expr × Expr)) := do
+  let e ← chainView e
+  let some (α, β, r, k) := bindApp? e | return none
+  if depth ≥ maxHoistDepth then return none
+  let bindR ← mkAppOptM ``CatCrypt.Core.SPComp.bind #[α, β, r]
+  -- `(unused, k' or the body, proof of `k = k'` under the binder)`
+  let res? ← withLocalDeclD (binderName k) α fun x => do
+    let body ← chainView (k.beta #[x])
+    let sub ← dropUnused fs body (depth + 1)
+    let body' := (sub.map (·.1)).getD body
+    let pfLam? ← sub.mapM fun (_, pf) => mkLambdaFVars #[x] pf
+    if body'.containsFVar x.fvarId! then
+      if pfLam?.isNone then return none
+      return some (false, ← mkLambdaFVars #[x] body', pfLam?)
+    return some (true, body', pfLam?)
+  let some (unused, b, pfLam?) := res? | return none
+  let k' := if unused then Expr.lam (binderName k) α b .default else b
+  let e₁ := mkApp bindR k'
+  let pf₁ ← match pfLam? with
+    | some pfLam => do mkExpectedTypeHint (← mkCongrArg bindR (← mkFunExt pfLam)) (← mkEq e e₁)
+    | none => do mkExpectedTypeHint (← mkEqRefl e) (← mkEq e e₁)
+  if unused then
+    if let some pfD ← proveDiscard fs α β r b then
+      return some (b, ← mkEqTrans pf₁ pfD)
+  if pfLam?.isNone then return none
+  return some (e₁, pf₁)
+
+/-- `e` with each `match` on a variable of a structure type reduced by structure eta
+(`whnfCore`), so that the components appear as projections. -/
+def etaMatches (e : Expr) : MetaM Expr :=
+  Meta.transform e (post := fun e => do
+    if ← isMatcherApp e then
+      let e' ← whnfCore e
+      if e' != e then return .visit e'
+    return .continue)
+
+/-- Rewrite the bind chain `e` at its binding of position `pos` by the two-binding chain
+fact `fact` (from right to left when `rev`): when the binding at `pos` has the first
+computation `c₁` of the fact, the occurrence of index `skip` of its second computation `c₂`
+after it is moved next to it (`hoist`), the last argument `t p q` of the fact's
+continuation is abstracted in the rest of the chain, and the fact replaces it by `t' p q`.
+The result is the new chain and a proof of `e = e'`, or `none`. -/
+partial def factRewrite (fs : Facts) (fact : Expr) (rev : Bool) (e : Expr) (pos skip : Nat) :
+    MetaM (Option (Expr × Expr)) := do
+  let e ← chainView e
+  let some (α, β, r, k) := bindApp? e | return none
+  let bindR ← mkAppOptM ``CatCrypt.Core.SPComp.bind #[α, β, r]
+  if pos > 0 then
+    let res? ← withLocalDeclD (binderName k) α fun x => do
+      let some (b', pf) ← factRewrite fs fact rev (k.beta #[x]) (pos - 1) skip | return none
+      return some (← mkLambdaFVars #[x] b', ← mkLambdaFVars #[x] pf)
+    let some (k', pfLam) := res? | return none
+    let e' := mkApp bindR k'
+    let pf ← mkCongrArg bindR (← mkFunExt pfLam)
+    return some (e', ← mkExpectedTypeHint pf (← mkEq e e'))
+  withoutModifyingState? do
+    let (ms, _, concl) ← forallMetaTelescopeReducing (← inferType fact)
+    let some (_, l, rr) := concl.eq? | return none
+    let L := if rev then rr else l
+    let some (_, _, C₁, K₁) := bindApp? L | return none
+    unless ← withReducibleAndInstances (isDefEq C₁ r) do return none
+    let res? ← withLocalDeclD (binderName k) α fun x₁ => do
+      let some (_, _, C₂, K₂) := bindApp? (K₁.beta #[x₁]).headBeta | return none
+      let C₂ ← instantiateMVars C₂
+      let some (rest', pfH, _) ← hoist fs.isPure C₂ (k.beta #[x₁]) 0 skip none | return none
+      let some (α₂, _, _, k₂) := bindApp? rest' | return none
+      let ok ← withLocalDeclD (binderName k₂) α₂ fun x₂ => do
+        let inner ← instantiateMVars (K₂.beta #[x₂]).headBeta
+        let args := inner.getAppArgs
+        unless inner.getAppFn.isMVar && args.size == 3 && args[0]! == x₁ && args[1]! == x₂ do
+          return false
+        let t := args[2]!
+        if t.hasExprMVar then return false
+        let body ← etaMatches (k₂.beta #[x₂])
+        let bodyAbs ← kabstract body t
+        unless bodyAbs.hasLooseBVars do return false
+        let fLam ← withLocalDeclD `v (← inferType t) fun v =>
+          mkLambdaFVars #[x₁, x₂, v] (bodyAbs.instantiate1 v)
+        isDefEq inner.getAppFn fLam
+      unless ok do return none
+      return some (← mkLambdaFVars #[x₁] rest', ← mkLambdaFVars #[x₁] pfH)
+    let some (restLam, pfHLam) := res? | return none
+    let pfFact ← instantiateMVars (mkAppN fact ms)
+    if pfFact.hasExprMVar then return none
+    let pfFact ← if rev then mkEqSymm pfFact else pure pfFact
+    let some (_, _, rhsF) := (← inferType pfFact).eq? | return none
+    let e' ← Core.betaReduce (← instantiateMVars rhsF)
+    let mid := mkApp bindR restLam
+    let pf₁ ← mkExpectedTypeHint (← mkCongrArg bindR (← mkFunExt pfHLam)) (← mkEq e mid)
+    let pf ← mkEqTrans pf₁ (← mkExpectedTypeHint pfFact (← mkEq mid e'))
+    return some (e', pf)
+
+/-- From `g : lhs = rhs` and `pf : side = e'` for the left side (`left`) or the right side,
+the goal with that side replaced by `e'`; `g` is assigned. -/
+def rewriteSide (g : MVarId) (left : Bool) (e' pf : Expr) : MetaM MVarId := g.withContext do
+  let ty ← instantiateMVars (← g.getType)
+  let some (_, lhs, rhs) := ty.eq? | throwError "bind_swap_nf: the goal is not an equality"
+  if left then
+    let g' ← mkFreshExprSyntheticOpaqueMVar (← mkEq e' rhs)
+    g.assign (← mkExpectedTypeHint (← mkEqTrans pf g') ty)
+    return g'.mvarId!
+  else
+    let g' ← mkFreshExprSyntheticOpaqueMVar (← mkEq lhs e')
+    g.assign (← mkExpectedTypeHint (← mkEqTrans g' (← mkEqSymm pf)) ty)
+    return g'.mvarId!
+
+/-- Close `g : lhs = rhs` by `align` with the budget `maxSteps` and the pairing hint read
+from its two sides. -/
+def alignGoal (fs : Facts) (g : MVarId) : MetaM Unit := g.withContext do
+  let some (_, lhs, rhs) := (← instantiateMVars (← g.getType)).eq? |
+    throwError "bind_swap_nf: the goal is not an equality"
+  let σ ← varHint lhs rhs
+  let n ← withChain rhs #[] fun rv _ => return rv.size
+  align fs.isPure g (← IO.mkRef maxSteps)
+    (some { σ, rhsOrder := (List.range n).toArray, lhsIdx := 0 }) fs.equations
+
+/-- `alignGoal`, with the state restored and `false` returned when it fails. -/
+def tryAlign (fs : Facts) (g : MVarId) : MetaM Bool := do
+  let s ← saveState
+  try
+    alignGoal fs g
+    return true
+  catch _ =>
+    s.restore
+    return false
+
+/-- The goal `g` with the unused bindings of both sides removed by `dropUnused`, or `none`
+when no binding is removed. -/
+def dropGoal (fs : Facts) (g : MVarId) : MetaM (Option MVarId) := g.withContext do
+  let some (_, lhs, _) := (← instantiateMVars (← g.getType)).eq? | return none
+  let mut g' := g
+  let mut changed := false
+  if let some (l', pf) ← dropUnused fs lhs 0 then
+    g' ← rewriteSide g' true l' pf
+    changed := true
+  let some (_, _, rhs) := (← instantiateMVars (← g'.getType)).eq? | return none
+  if let some (r', pf) ← g'.withContext (dropUnused fs rhs 0) then
+    g' ← rewriteSide g' false r' pf
+    changed := true
+  return if changed then some g' else none
+
+/-- Maximal number of rewrites by chain facts on one branch of `factSearch`. -/
+def maxFactDepth : Nat := 2
+
+/-- Maximal number of goals tried by `factSearch` after a rewrite by a chain fact. -/
+def maxFactTries : Nat := 64
+
+/-- Close `g` by rewriting one side with a chain fact (`factRewrite`, every position,
+partner, fact and orientation) and `alignGoal`, up to `depth` rewrites on a branch and
+`tries` goals in all. -/
+partial def factSearch (fs : Facts) (g : MVarId) (depth : Nat) (tries : IO.Ref Nat) :
+    MetaM Bool := g.withContext do
+  if depth == 0 then return false
+  let some (_, lhs, rhs) := (← instantiateMVars (← g.getType)).eq? | return false
+  let mut cands : Array (Bool × Expr × Expr) := #[]
+  for left in [true, false] do
+    let e := if left then lhs else rhs
+    let n ← withChain e #[] fun v _ => return v.size
+    for fact in fs.chain do
+      for rev in [false, true] do
+        for pos in [0:n] do
+          for skip in [0:maxCandidates] do
+            let s ← saveState
+            let r? ← factRewrite fs fact rev e pos skip
+            match r? with
+            | some (e', pf) =>
+              let e' ← instantiateMVars e'
+              let pf ← instantiateMVars pf
+              s.restore
+              cands := cands.push (left, e', pf)
+            | none => s.restore
+  for (left, e', pf) in cands do
+    if (← tries.get) == 0 then return false
+    tries.modify (· - 1)
+    let s ← saveState
+    try
+      let g' ← rewriteSide g left e' pf
+      if ← tryAlign fs g' then return true
+      if ← factSearch fs g' (depth - 1) tries then return true
+      s.restore
+    catch _ =>
+      s.restore
+  return false
+
+/-- Close `g : lhs = rhs`: by `alignGoal`; failing that, after removing the unused bindings
+(`dropGoal`); failing that, by `factSearch` with the chain facts. The error is that of the
+first `alignGoal`. -/
+def closeGoal (fs : Facts) (g : MVarId) : MetaM Unit := do
+  let s ← saveState
+  let err ← try
+      alignGoal fs g
+      return
+    catch e => pure e
+  s.restore
+  let g' := (← dropGoal fs g).getD g
+  if g' != g then
+    if ← tryAlign fs g' then return
+  unless fs.chain.isEmpty do
+    if ← factSearch fs g' maxFactDepth (← IO.mkRef maxFactTries) then return
+  s.restore
+  throw err
+
 /-- `bind_swap_nf` proves an equality of two `SPComp` bind chains that are equal up to the
-order of independent bindings, each exchange involving an `IsPure` computation. Both sides
-are normalised by `simp only [SPComp.monad_bind_eq, SPComp.monad_pure_eq,
-SPComp.bind_assoc, SPComp.pure_bind]`; then the first binding of one side is moved to the
-front of the other by `SPComp.isPure_bind_comm_left`/`SPComp.isPure_bind_comm_right`
-and removed by congruence, until the two sides are definitionally equal at reducible and
-instance transparency; the module documentation describes the pairing hint and the
-backtracking. The `IsPure` side
-conditions are proved from the combinators of `pure`, `sample`, `fail` and
-`SPComp.bind`, the `IsPure` hypotheses of the context, the `IsPure` fields of
-structure-typed hypotheses, and the terms `hᵢ` of `bind_swap_nf [h₁, …]`. -/
+order of independent bindings, each exchange involving an `IsPure` computation, up to the
+removal of unused bindings, and up to rewrites by two-binding chain facts. The arguments
+`hᵢ` of `bind_swap_nf [h₁, …]` that are equations of another form are applied by
+`simp only [hᵢ, …]` to two leaves that are not definitionally equal (a permutation
+equation such as `dh a b = dh b a` by ordered rewriting). Both sides are normalised by
+`simp only
+[SPComp.monad_bind_eq, SPComp.monad_pure_eq, SPComp.bind_assoc, SPComp.pure_bind]`; then
+the first binding of one side is moved to the front of the other by
+`SPComp.isPure_bind_comm_left`/`SPComp.isPure_bind_comm_right` and removed by congruence,
+until the two sides are definitionally equal at reducible and instance transparency; the
+module documentation describes the pairing hint and the backtracking. When this fails,
+each binding whose variable is unused is removed by a discard fact
+(`SPComp.bind c (fun _ => r) = r`) or by `SPComp.isPure_bind_discard` (`c` is `IsPure`
+and of mass one), and the alignment is run again; when this fails, one side is rewritten
+by a two-binding chain fact (`∀ f, c₁ >>= fun p => c₂ >>= fun q => f p q (t p q) = c₁ >>=
+fun p => c₂ >>= fun q => f p q (t' p q)`, in either direction, at most `maxFactDepth`
+rewrites on a branch). The facts are the hypotheses of the context, the fields of
+structure-typed hypotheses (depth two) and the terms `hᵢ`; `IsPure` side conditions are
+also proved from the combinators of `pure`, `sample`, `fail` and `SPComp.bind`, and
+mass-one side conditions from the lemmas of `CatCryptCore.Unary.Lossless` when that
+module is imported. -/
 syntax (name := bindSwapNfStx) "bind_swap_nf" (" [" term,* "]")? : tactic
 
-@[tactic bindSwapNfStx] def evalBindSwapNf : Tactic := fun stx => do
-  let ts : Array Syntax :=
-    if stx[1].isNone then #[] else stx[1][1].getSepArgs
+/-- Close the main goal by `bind_swap_nf` with the argument terms `ts`. -/
+def runBindSwapNf (ts : Array Syntax) : TacticM Unit := do
   evalTactic (← `(tactic| try (set_option linter.unusedSimpArgs false in
     simp only [CatCrypt.Core.SPComp.monad_bind_eq, CatCrypt.Core.SPComp.monad_pure_eq,
       CatCrypt.Core.SPComp.bind_assoc, CatCrypt.Core.SPComp.pure_bind])))
@@ -394,13 +819,99 @@ syntax (name := bindSwapNfStx) "bind_swap_nf" (" [" term,* "]")? : tactic
   let g ← getMainGoal
   g.withContext do
     let extra ← ts.mapM fun t => Tactic.elabTerm t none
-    let facts ← collectFacts extra
-    let some (_, lhs, rhs) := (← instantiateMVars (← g.getType)).eq? |
-      throwError "bind_swap_nf: the goal is not an equality"
-    let σ ← varHint lhs rhs
-    let n ← withChain rhs #[] fun rv _ => return rv.size
-    align facts g (← IO.mkRef maxSteps)
-      (some { σ, rhsOrder := (List.range n).toArray, lhsIdx := 0 })
+    closeGoal (← collectFacts extra) g
   replaceMainGoal []
+
+@[tactic bindSwapNfStx] def evalBindSwapNf : Tactic := fun stx => do
+  let ts : Array Syntax :=
+    if stx[1].isNone then #[] else stx[1][1].getSepArgs
+  runBindSwapNf ts
+
+/-- `e` with its head unfolded (at most `fuel` times) until it is an application
+`CatCrypt.Crypto.Advantage X Y`; the pair `(X, Y)`, or `none`. -/
+partial def toAdvantage (e : Expr) (fuel : Nat := 4) : MetaM (Option (Expr × Expr)) := do
+  let e := (← instantiateMVars e).headBeta
+  if e.isAppOfArity `CatCrypt.Crypto.Advantage 2 then return some (e.appFn!.appArg!, e.appArg!)
+  if fuel == 0 then return none
+  let some e' ← unfoldDefinition? e | return none
+  toAdvantage e' (fuel - 1)
+
+/-- The definitions unfolded before `bind_swap_nf` in a game equality: the head constants
+of the two sides and of their arguments (two levels), when they are definitions that are
+not instances, projections, theorems or operations of `SPComp`. -/
+def gameHeads (ty : Expr) : MetaM (Array Name) := do
+  let some (_, lhs, rhs) := (← instantiateMVars ty).eq? | return #[]
+  let env ← getEnv
+  let mut out := #[]
+  let mut todo := #[(lhs, 0), (rhs, 0)]
+  while !todo.isEmpty do
+    let (e, d) := todo.back!
+    todo := todo.pop
+    if let some n := e.getAppFn.constName? then
+      if let some (.defnInfo _) := env.find? n then
+        unless out.contains n || n.getPrefix == `CatCrypt.Core.SPComp || isInstanceCore env n
+            || (← isProjectionFn n) do
+          out := out.push n
+    if d < 2 then
+      for a in e.getAppArgs do todo := todo.push (a, d + 1)
+  return out
+
+/-- Close a game equality `X = X'`: unfold the definitions `gameHeads` names, reduce the
+projections by `dsimp only`, and run `bind_swap_nf` with the argument terms `ts`. -/
+def closeGameEq (g : MVarId) (ts : Array Syntax) : TacticM Unit := do
+  setGoals [g]
+  let ns ← g.withContext do gameHeads (← g.getType)
+  for n in ns do
+    evalTactic (← `(tactic| try unfold $(mkIdent n):ident))
+  evalTactic (← `(tactic| try dsimp only))
+  if (← getGoals).isEmpty then return
+  runBindSwapNf ts
+  unless (← getGoals).isEmpty do throwError "advantage_eq_nf: a game equality remains"
+
+/-- `advantage_eq_nf [h₁, …]` proves an equality `a = b` of advantages, each side an
+application of `CatCrypt.Crypto.Advantage` up to the unfolding of its head (`AdvantageA G₀
+G₁ A`, `DDH_Advantage D B`, …): with `a = Advantage X Y` and `b = Advantage X' Y'`, it
+proves `X = X'` and `Y = Y'`, or `X = Y'` and `Y = X'` with `Advantage_sym`; each game
+equality is closed by unfolding the definitions at the heads of its sides and of their
+arguments and by `bind_swap_nf [h₁, …]`. -/
+syntax (name := advantageEqNfStx) "advantage_eq_nf" (" [" term,* "]")? : tactic
+
+@[tactic advantageEqNfStx] def evalAdvantageEqNf : Tactic := fun stx => do
+  let ts : Array Syntax :=
+    if stx[1].isNone then #[] else stx[1][1].getSepArgs
+  let g ← getMainGoal
+  let adv := `CatCrypt.Crypto.Advantage
+  unless (← getEnv).contains adv do
+    throwError "advantage_eq_nf: `CatCrypt.Crypto.Advantage` is not in the environment"
+  let (x, y, x', y') ← g.withContext do
+    let some (_, a, b) := (← instantiateMVars (← g.getType)).eq? |
+      throwError "advantage_eq_nf: the goal is not an equality"
+    let some (x, y) ← toAdvantage a |
+      throwError "advantage_eq_nf: the left side is not an advantage:{indentExpr a}"
+    let some (x', y') ← toAdvantage b |
+      throwError "advantage_eq_nf: the right side is not an advantage:{indentExpr b}"
+    return (x, y, x', y')
+  let mut err? : Option Exception := none
+  for swap in [false, true] do
+    let s ← saveState
+    try
+      let (h₁, h₂) ← g.withContext do
+        let (a, b) := if swap then (y', x') else (x', y')
+        let h₁ ← mkFreshExprSyntheticOpaqueMVar (← mkEq x a)
+        let h₂ ← mkFreshExprSyntheticOpaqueMVar (← mkEq y b)
+        let pf ← mkCongr (← mkCongrArg (mkConst adv) h₁) h₂
+        let pf ← if swap then
+            mkEqTrans pf (← mkAppM `CatCrypt.Crypto.Advantage_sym #[y', x'])
+          else pure pf
+        g.assign (← mkExpectedTypeHint pf (← g.getType))
+        return (h₁.mvarId!, h₂.mvarId!)
+      closeGameEq h₁ ts
+      closeGameEq h₂ ts
+      setGoals []
+      return
+    catch e =>
+      s.restore
+      err? := some e
+  if let some e := err? then throw e
 
 end CatCrypt.Tactic.BindSwap
