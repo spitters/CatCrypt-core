@@ -30,14 +30,19 @@ the matched-exponent co-CDH instance `(g₁ ^ᵍ x, g₂ ^ʰ x, u)`, runs the fo
 signing queries with `(g₁ ^ᵍ x) ^ᵍ r = (g₁ ^ᵍ r) ^ᵍ x` (`zpowZMod₁_zpowZMod₁` +
 `mul_comm`), i.e. the BLS signature on the message whose oracle hash is `g₁ ^ᵍ r`.
 The simulated signing oracle is identical to the real one, so the co-CDH game with
-`blsReduction F` equals the BLS forgery game (`blsForgeGame_eq_cocdh`), giving the
-bound `blsForgeAdvantage F ≤ ε` whenever co-CDH is `ε`-hard
-(`bls_forge_reduces_to_cocdh`).
+`blsReduction F` equals the BLS forgery game (`blsForgeGame_eq_cocdh`), so for every
+forger `F`
+
+    blsForgeAdvantage P F = BLSCoCDH_Advantage P (blsReduction P F)
+
+(`blsForgeAdvantage_eq_cocdh`). This per-forger equality replaces the former predicates
+`BLSCoCDHSecure ε` and `BLSForgeSecure ε` (`∀ A, … ≤ ε`) and the theorems
+`bls_forge_reduces_to_cocdh` and `bls_forge_secure_of_cocdh` stated through them.
 
 This is a Type-III BLS reduction: the secret exponent `x` is available in both
 source groups (`g₁ ^ᵍ x`, `g₂ ^ʰ x`), which is what lets the reduction sign. This
-matched-exponent form is the hardness assumption for the minimal-signature BLS
-scheme (`BLSCoCDHSecure`).
+matched-exponent form (`BLSCoCDH_Game`) is the hardness assumption for the
+minimal-signature BLS scheme.
 
 ## Modelling boundaries
 
@@ -45,7 +50,7 @@ scheme (`BLSCoCDHSecure`).
   is uniform in `G₁` and the signing oracle is keyed on the hash discrete log `r`.
 * The reduction is for a single random-oracle challenge message (selective ROM);
   the multi-query adaptive variant adds the usual `q_H` guessing factor.
-* `BLSCoCDHSecure` is the matched-exponent (Type-III) co-CDH assumption.
+* `BLSCoCDH_Advantage` is the advantage in the matched-exponent (Type-III) co-CDH game.
 
 ## References
 
@@ -126,10 +131,6 @@ noncomputable def BLSCoCDH_Game (A : BLSCoCDHAdversary P) : SPComp Bool := do
 noncomputable def BLSCoCDH_Advantage (A : BLSCoCDHAdversary P) : ℝ≥0∞ :=
   prTrue (BLSCoCDH_Game P A) Heap.empty
 
-/-- Matched-exponent co-CDH hardness assumption. -/
-def BLSCoCDHSecure (ε : ℝ≥0∞) : Prop :=
-  ∀ (A : BLSCoCDHAdversary P), BLSCoCDH_Advantage P A ≤ ε
-
 /-! ## The BLS forgery game and the reduction -/
 
 /-- A BLS forger in the random-oracle model.
@@ -158,10 +159,6 @@ noncomputable def blsForgeGame (F : BLSForger P) : SPComp Bool := do
 /-- BLS forgery advantage. -/
 noncomputable def blsForgeAdvantage (F : BLSForger P) : ℝ≥0∞ :=
   prTrue (blsForgeGame P F) Heap.empty
-
-/-- BLS existential unforgeability in the ROM: all forgers bounded by `ε`. -/
-def BLSForgeSecure (ε : ℝ≥0∞) : Prop :=
-  ∀ (F : BLSForger P), blsForgeAdvantage P F ≤ ε
 
 /-- **The reduction**: a BLS forger becomes a matched-exponent co-CDH solver.
 
@@ -201,18 +198,5 @@ theorem blsForgeAdvantage_eq_cocdh (F : BLSForger P) :
     blsForgeAdvantage P F = BLSCoCDH_Advantage P (blsReduction P F) := by
   unfold blsForgeAdvantage BLSCoCDH_Advantage
   rw [blsForgeGame_eq_cocdh]
-
-/-- **BLS EUF reduces to co-CDH**: if matched-exponent co-CDH is `ε`-hard, every
-    BLS forger has advantage at most `ε`. The conclusion bounds forgery using the
-    co-CDH hypothesis. -/
-theorem bls_forge_reduces_to_cocdh (ε : ℝ≥0∞) (h : BLSCoCDHSecure P ε)
-    (F : BLSForger P) : blsForgeAdvantage P F ≤ ε := by
-  rw [blsForgeAdvantage_eq_cocdh]; exact h _
-
-/-- **BLS is EUF-secure in the ROM under co-CDH.** If matched-exponent (Type-III)
-    co-CDH on `P` is `ε`-hard, every BLS forger has advantage at most `ε`. -/
-theorem bls_forge_secure_of_cocdh (ε : ℝ≥0∞) (h : BLSCoCDHSecure P ε) :
-    BLSForgeSecure P ε :=
-  fun F => bls_forge_reduces_to_cocdh P ε h F
 
 end CatCryptCore.Crypto.BLSSig

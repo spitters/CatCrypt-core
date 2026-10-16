@@ -54,13 +54,11 @@ The security proof uses a sequence of game hops:
 
 ## Main Result
 
-```
-Advantage(TAG) ≤ prf_epsilon_1 + statistical_gap + prf_epsilon_2
-```
-
-where:
-- `prf_epsilon_i` is the PRF advantage for adversary A ∘ TAG_EVAL_pkg_i
-- `statistical_gap` is the GUESS distinguishing probability (negligible)
+`mac_forgery_advantage_le_half`: for a forgery on an unqueried message, every
+distinguisher has advantage at most `1/2 = 1/|Word|` between the real and the
+ideal game. This is a single-sample, information-theoretic bound over `Bool`.
+It replaces `security_based_on_prf`, whose right-hand side added two copies of
+an unused PRF advantage `prf_epsilon A` to the constant `statistical_gap = 1/2`.
 
 ## References
 
@@ -353,7 +351,7 @@ against the PRF output) and the ideal game returns `false`. The identity
 distinguisher separates them with advantage `1/2`, so no equality coupling between
 the two games exists (`not_rHoare_macReal_macIdeal_of_ne`). The gap is the
 statistical term of the PRF-MAC bound: `1/2` over `Bool`, `1/2^n` over `{0,1}^n`.
-The security statement is therefore an advantage bound (`security_based_on_prf`).
+The security statement is therefore an advantage bound (`mac_forgery_advantage_le_half`).
 -/
 
 /-- The advantage in distinguishing real vs ideal MAC for forgery attempts.
@@ -452,89 +450,36 @@ theorem not_rHoare_macReal_macIdeal_of_ne (m m_check : Word) (t_guess : Word)
 
 /-! ## Security Statement
 
-The full security theorem would state:
-
-```
-Advantage_MAC(A) ≤ Advantage_PRF(A ∘ Wrapper₁) +
-                   Statistical_Gap(A) +
-                   Advantage_PRF(A ∘ Wrapper₂)
-```
-
-For our simplified Bool model:
-- The PRF advantage is 0 (XOR with random key is perfectly random)
-- The statistical gap is 1/2 for a single guess on Bool
-
-In a proper cryptographic setting with security parameter n:
-- Word = {0,1}^n (2^n elements)
-- Statistical gap = 1/2^n per query (negligible)
-- PRF advantage is negligible by assumption
+Over `Bool` with the XOR function, the only gap between the real and the ideal
+game on an unqueried message is the probability of guessing the tag of that
+message, which is `1/|Word| = 1/2`. The statement below is this single-sample,
+information-theoretic bound. It contains no PRF term: the game exposes one tag
+check to a fixed guess, and the reduction of an adaptive forger to the PRF game
+(Rosulek, Claim 10.4) is not formalized in this file.
 -/
 
-/-- The PRF epsilon: advantage in distinguishing PRF from random function.
-    For our XOR construction over Bool, this is 0. -/
-noncomputable def prf_epsilon (A : Word → SPComp Bool) : ℝ≥0∞ :=
-  AdvantageA (do let k ← SPComp.sample Word; TAG_real_gettag k)
-             (do let r ← SPComp.sample Word; SPComp.pure r) A
-
-/-- The statistical gap: advantage in the GUESS game.
-    For Bool, this represents the probability of a lucky guess. -/
-noncomputable def statistical_gap (_m : Word) (_t : Word) : ℝ≥0∞ :=
-  -- Pr[random key k : t = PRF(k, m)] = 1/2 for Bool
-  -- This bounds the forgery probability on unqueried messages
-  1 / 2
-
-/-- Main security theorem: MAC forgery advantage is bounded.
-
-    The advantage of any adversary A against the MAC scheme is bounded by
-    the sum of PRF advantages and the statistical gap:
-
-    ```
-    mac_forgery_advantage ≤ prf_epsilon₁ + statistical_gap + prf_epsilon₂
-    ```
-
-    For the Bool/XOR construction:
-    - PRF advantages are 0 (perfect PRF security)
-    - Statistical gap is 1/2 per query
-
-    In a proper crypto setting with security parameter n:
-    - Statistical gap is 1/2^n (negligible)
-    - PRF advantages are negligible by assumption
-
-    **Proof Status:** The individual game hop lemmas are proved:
-    - `prf_uniform`: PRF output is uniformly distributed (bijection coupling)
-    - `mac_same_message_coupling`: same-message case is perfectly coupled
-    - `forgery_diff_message_uniform`: different-message forgery is uniform
-
-    The full chaining requires package composition (`link`) and the advantage
-    triangle inequality. The shallow `RawPackage` layer does not support
-    linking (see `RawPackage.link` WARNING). Use the deep embedding layer
-    (`DeepPackage.link`, `runPkg_link`) for the complete proof. -/
-theorem security_based_on_prf
-    (m m_check : Word)                 -- Honest and forgery messages
-    (t_guess : Word)                   -- Forgery attempt tag
-    (hdiff : m_check ≠ m) :            -- Must be a different message
-    mac_forgery_advantage m m_check t_guess ≤
-      fun A => prf_epsilon A + statistical_gap m t_guess + prf_epsilon A := by
-  intro A
+/-- **Forgery on an unqueried message, statistical bound.** For a forgery
+attempt `(m_check, t_guess)` on a message `m_check ≠ m`, every distinguisher `A`
+separates the real from the ideal MAC game with advantage at most `1/2`
+(`= 1/|Word|`). The real game returns a uniform bit
+(`forgery_diff_message_uniform`), the ideal game returns `false`
+(`macIdeal_diff_eq_pure_false`), and a uniform bit is at distance `1/2` from a
+constant. -/
+theorem mac_forgery_advantage_le_half
+    (m m_check : Word) (t_guess : Word) (hdiff : m_check ≠ m) (A : Bool → SPComp Bool) :
+    mac_forgery_advantage m m_check t_guess A ≤ (2 : ℝ≥0∞)⁻¹ := by
   show AdvantageA (macReal m m_check t_guess) (macIdeal m m_check t_guess) A ≤ _
-  -- Key facts
-  have hideal : macIdeal m m_check t_guess = SPComp.pure false :=
-    macIdeal_diff_eq_pure_false m m_check t_guess hdiff
   have h0 : AdvantageA (macReal m m_check t_guess) (SPComp.sample Bool) A = 0 :=
     advantage_zero_of_rHoare _ _ (forgery_diff_message_uniform m m_check t_guess hdiff) A
   have h12 : AdvantageA (SPComp.sample Bool) (macIdeal m m_check t_guess) A ≤ (2 : ℝ≥0∞)⁻¹ := by
-    rw [show macIdeal m m_check t_guess = SPComp.pure false from hideal]
+    rw [macIdeal_diff_eq_pure_false m m_check t_guess hdiff]
     grind [advantage_sample_vs_pure_false]
-  -- Triangle inequality through sample Bool, then pad with prf_epsilon ≥ 0
   calc AdvantageA (macReal m m_check t_guess) (macIdeal m m_check t_guess) A
       ≤ AdvantageA (macReal m m_check t_guess) (SPComp.sample Bool) A +
         AdvantageA (SPComp.sample Bool) (macIdeal m m_check t_guess) A := by
           unfold AdvantageA; exact advantage_triangle _ _ _
     _ ≤ 0 + (2 : ℝ≥0∞)⁻¹ := add_le_add (le_of_eq h0) h12
     _ = (2 : ℝ≥0∞)⁻¹ := zero_add _
-    _ = statistical_gap m t_guess := by unfold statistical_gap; simp [one_div]
-    _ ≤ prf_epsilon A + statistical_gap m t_guess + prf_epsilon A :=
-        le_trans le_add_self le_self_add
 
 /-! ## Discussion
 

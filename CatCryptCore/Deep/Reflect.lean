@@ -53,7 +53,8 @@ subterm — a call to an abstract primitive `f a : SPComp β`, a locally-bound
 oracle `f : α → SPComp β`, or an opaque constant that does not delta-unfold to a
 constructor — is reflected as `RawCode.embed`, an opaque leaf holding the shallow
 subterm. Since `RawCode.eval (embed c) = c` definitionally, the reified program
-still round-trips, and `IsValid.embed` supplies its validity proof. The reifier
+still round-trips, and `IsValid.embedUnchecked` supplies its validity proof, which
+does not check the heap accesses of the leaf. The reifier
 never fails on an `SPComp`-typed term. (A structured `RawCode.oracleCall` image
 is also available for opaque heads that are intended to be linked later via
 `substOracle`; it is not the default because its `eval` is `SPComp.fail`, so it
@@ -181,8 +182,8 @@ partial def reifySPComp (e : Expr) : MetaM Expr := do
     -- (an abstract primitive `f a : SPComp β`, a locally-bound `f : α → SPComp β`,
     -- an opaque constant). Reflect it as an `embed` leaf carrying the shallow
     -- subterm verbatim. `RawCode.eval` sends `embed c` back to `c` definitionally,
-    -- so the reified program round-trips; `IsValid.embed` gives it an automatic
-    -- validity proof. The reifier therefore never fails on an `SPComp`-typed term.
+    -- so the reified program round-trips; `IsValid.embedUnchecked` gives it an
+    -- automatic validity proof that does not check its heap accesses. The reifier therefore never fails on an `SPComp`-typed term.
     let ty ← inferType e
     match ty.getAppFnArgs with
     | (``CatCrypt.Core.SPComp, #[β]) =>

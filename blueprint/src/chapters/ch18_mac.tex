@@ -15,21 +15,21 @@ information-theoretic best possible.
   $\mathrm{Key} \simeq \mathrm{Tag}$, inducing a MAC scheme.
 \end{definition}
 
-\begin{theorem}[Optimal forgery probability]
+\begin{theorem}[Forgery probability without tag queries]
   \label{thm:bijmac-forgery}
   \uses{def:bijmac}
-  \lean{CatCrypt.Examples.MAC.bijMAC_forgery_prob, CatCrypt.Examples.MAC.bijMAC_euf_cma_adv}
+  \lean{CatCrypt.Examples.MAC.bijMAC_forgery_filter, CatCrypt.Examples.MAC.bijMAC_euf_cma_adv_of_isQueryBound_zero}
   \leanok
-  A bijection MAC has single-query EUF-CMA forgery probability exactly
-  $1/|\mathrm{Tag}|$: a forged tag verifies under exactly one key, so a blind
-  forgery succeeds with probability $1/|\mathrm{Key}| = 1/|\mathrm{Tag}|$.
+  An EUF-CMA adversary that asks no tag query wins against a bijection MAC with
+  probability exactly $1/|\mathrm{Tag}|$: a fixed forgery verifies under exactly
+  one key.
 \end{theorem}
 
 \begin{corollary}[XOR MAC]
   \label{cor:xormac}
   \uses{thm:bijmac-forgery}
-  \lean{CatCrypt.Examples.MAC.boolXorMAC, CatCrypt.Examples.MAC.boolXorMAC_forgery_prob}
+  \lean{CatCrypt.Examples.MAC.boolXorMAC, CatCrypt.Examples.MAC.boolXorMAC_euf_cma_adv_of_isQueryBound_zero}
   \leanok
-  The XOR MAC $\mathsf{mac}(k, m) = k \oplus m$ attains the optimal one-bit forgery
-  probability $1/2$.
+  Against the XOR MAC $\mathsf{mac}(k, m) = k \oplus m$, an adversary without
+  tag queries forges with probability $1/2$.
 \end{corollary}

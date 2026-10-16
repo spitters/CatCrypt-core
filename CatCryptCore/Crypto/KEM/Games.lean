@@ -7,6 +7,8 @@ module
 
 public import CatCryptCore.Crypto.OracleSimulation
 public import CatCryptCore.Crypto.PRPPRFSwitching
+public import CatCryptCore.Tactics.AutoHopRegistry
+public meta import CatCryptCore.Tactics.AutoHopRegistry
 
 /-!
 # Key encapsulation: security games with public keys and decapsulation oracles
@@ -78,8 +80,9 @@ noncomputable def indcpaGame (A : PK → C → K → PMF Bool) (b : Bool) : PMF 
   S.keygen.bind fun ks => (S.encaps ks.1).bind fun x =>
     (PMF.uniformOfFintype K).bind fun k₁ => A ks.1 x.2 (if b then x.1 else k₁)
 
-/-- The IND-CPA advantage. -/
-noncomputable def indcpaAdvantage (A : PK → C → K → PMF Bool) : ℝ≥0∞ :=
+/-- The IND-CPA advantage: the `Advantage` between the games of the two challenge bits.
+Registered with `@[hop_metric]`, which unfolds it to that `Advantage`. -/
+@[hop_metric] noncomputable def indcpaAdvantage (A : PK → C → K → PMF Bool) : ℝ≥0∞ :=
   Advantage (pmfGame (indcpaGame S A true)) (pmfGame (indcpaGame S A false))
 
 /-- The decapsulation oracle for `sk`, answering `none` on the challenge `c*`. -/

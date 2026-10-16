@@ -272,6 +272,11 @@ theorem bind_isPure {c : SPComp α} {f : α → SPComp β}
   refine ⟨dc.bind (fun a => df a), fun h => ?_⟩
   simp_all [bind, hdc h, SDistr.bind_assoc, SDistr.pure_bind]
 
+/-- Bind preserves `IsPure`, stated for `>>=`. -/
+theorem bindOp_isPure {α β : Type} {c : SPComp α} {f : α → SPComp β}
+    (hc : IsPure c) (hf : ∀ a, IsPure (f a)) : IsPure (c >>= f) :=
+  bind_isPure hc hf
+
 /-- Two pure computations commute in bind (Fubini for SPComp).
 
     If `c₁` and `c₂` are both pure, then:

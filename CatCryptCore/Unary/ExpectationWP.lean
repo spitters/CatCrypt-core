@@ -359,6 +359,16 @@ theorem wpE_mono {α : Type} (c : SPComp α) {post post' : α → Heap → ℝ�
     wpE c post h ≤ wpE c post' h :=
   OrderedMonadAlgebra.wp_mono (m := SDistr) (c h) fun p => hpost p.1 p.2
 
+/-- `wpE` is additive in the postexpectation. -/
+theorem wpE_add {α : Type} (c : SPComp α) (p q : α → Heap → ℝ≥0∞) (h : Heap) :
+    wpE c (fun a h' => p a h' + q a h') h = wpE c p h + wpE c q h := by
+  simp_all [wpE_eq_tsum, mul_add, ENNReal.tsum_add]
+
+/-- `wpE` commutes with scalar multiplication of the postexpectation. -/
+theorem wpE_const_mul {α : Type} (c : SPComp α) (k : ℝ≥0∞) (p : α → Heap → ℝ≥0∞) (h : Heap) :
+    wpE c (fun a h' => k * p a h') h = k * wpE c p h := by
+  grind [wpE_eq_tsum, ENNReal.tsum_mul_left, tsum_congr]
+
 /-! ## Quantitative triples for `SPComp` -/
 
 /-- Heap-indexed quantitative Hoare triple: at every initial heap, the

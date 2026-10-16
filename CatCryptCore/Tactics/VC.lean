@@ -271,10 +271,11 @@ noncomputable def vcG₁ : SPComp Bool := do
   pure b
 
 /-- The NoFail side goals of `ssprove_upto` are closed by `ssprove_vc`
-(umbrella dispatch to `ssprove_nofail`). -/
+(umbrella dispatch to `ssprove_nofail`). The identical-until-bad hypothesis is
+for the given adversary `A`; one bad event for all adversaries would force
+`vcG₀ = vcG₁` (`eq_of_forall_identicalUntilBad`), which is false. -/
 example (bad : SPComp Bool) (ε : ℝ≥0∞) (A : Bool → SPComp Bool)
-    (h_iub : ∀ A : Bool → SPComp Bool,
-      IdenticalUntilBad (vcG₀.bind A) (vcG₁.bind A) bad)
+    (h_iub : IdenticalUntilBad (vcG₀.bind A) (vcG₁.bind A) bad)
     (hnfA : ∀ a, SPComp.NoFail (A a))
     (h_bad : prTrue bad Heap.empty ≤ ε) :
     AdvantageA vcG₀ vcG₁ A ≤ ε := by

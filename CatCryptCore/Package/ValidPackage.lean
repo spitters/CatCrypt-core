@@ -7,6 +7,7 @@ module
 
 public import CatCryptCore.Package.RawPackage
 public import CatCryptCore.Package.Locations
+public import CatCryptCore.Prob.Support
 
 /-!
 # Valid Packages
@@ -16,7 +17,7 @@ implement their interface and only access declared locations.
 
 ## Main definitions
 
-* `ValidCode` - A computation that only accesses locations in L and imports from I
+* `ValidCode` - A computation whose heap accesses are at locations in L
 * `ValidPackage` - A package that correctly implements interface E using imports from I
 * `fseparate` - Two packages have disjoint locations
 
@@ -41,24 +42,86 @@ structure LocAccess where
   /-- Locations that may be written -/
   writes : Locations
 
-/-- Code validity: only accesses locations in L and imports from I.
-    This is a predicate on computations asserting they respect the declared
-    locations and import interface.
+/-- Code validity: the code accesses the heap only at locations in `L`.
 
-    Note: A full implementation would require tracking access syntactically
-    or using a free monad representation. This uses a Prop-level assertion.
+    `frame`: overwriting a location `l ∉ L` with any value `v` before running the
+    code has the same effect as overwriting `l` with `v` in every final heap.
+    Hence neither the return value nor any final heap value at another location
+    depends on the value at `l`; in particular the code cannot copy the value at a
+    location outside `L` into a location inside `L`.
 
-    The `reads_in_L` condition says the return-value distribution is unchanged
-    when an out-of-scope location is overwritten — the code doesn't read it. -/
-class ValidCode (L : Locations) (I : Interface) (α : Type*) (c : SPComp α) : Prop where
-  /-- The code's return-value distribution does not depend on locations outside L -/
-  reads_in_L : ∀ l v h, l ∉ L →
+    `writes_in_L`: every final heap in the support has the initial value at each
+    location `l ∉ L`.
+
+    An `SPComp` is a function on heaps and has no syntax, so both conditions are
+    stated on the semantics. A `SPComp` has no imported calls, so the predicate has
+    no import interface. -/
+class ValidCode (L : Locations) (α : Type*) (c : SPComp α) : Prop where
+  /-- Running the code commutes with overwriting a location outside `L` -/
+  frame : ∀ l v h, l ∉ L →
+    c (Heap.set h l v) = (c h).bind (fun p => SDistr.pure (p.1, Heap.set p.2 l v))
+  /-- The code leaves every location outside `L` unchanged -/
+  writes_in_L : ∀ l h, l ∉ L → ∀ p, (c h) (some p) ≠ 0 → p.2.get l = h.get l
+
+namespace ValidCode
+
+variable {L : Locations}
+
+/-- The return-value distribution does not depend on locations outside `L`. -/
+theorem reads_in_L {α : Type*} {c : SPComp α} (hc : ValidCode L α c) (l : Location) (v : l.ty)
+    (h : Heap) (hl : l ∉ L) :
     (c h).bind (fun (a, _) => SDistr.pure a) =
-    (c (Heap.set h l v)).bind (fun (a, _) => SDistr.pure a)
-  /-- The code only writes to locations in L -/
-  writes_in_L : ∀ l h, l ∉ L →
-    (c h).bind (fun (a, h₁) => SDistr.pure (a, h₁.get l)) =
-    (c h).bind (fun (a, _) => SDistr.pure (a, h.get l))
+    (c (Heap.set h l v)).bind (fun (a, _) => SDistr.pure a) := by
+  rw [hc.frame l v h hl, SDistr.bind_assoc]
+  simp only [SDistr.pure_bind]
+
+instance pure {α : Type*} (a : α) : ValidCode L α (SPComp.pure a) where
+  frame l v h _ := by simp only [SPComp.pure, SDistr.pure_bind]
+  writes_in_L l h _ p hp := by
+    have := (SDistr.mem_support_pure_iff (a, h) p).1 hp
+    rw [← this]
+
+instance fail {α : Type*} : ValidCode L α SPComp.fail where
+  frame l v h _ := by simp only [SPComp.fail, SDistr.bind_fail]
+  writes_in_L l h _ p hp := absurd (SDistr.fail_apply_some p) hp
+
+instance sample (α : Type) [Fintype α] [Nonempty α] : ValidCode L α (SPComp.sample α) where
+  frame l v h _ := by
+    simp only [SPComp.sample, SDistr.bind_assoc, SDistr.pure_bind]
+  writes_in_L l h _ p hp := by
+    obtain ⟨a, _, hpa⟩ := SDistr.bind_support_witness hp
+    have := (SDistr.mem_support_pure_iff (a, h) p).1 hpa
+    rw [← this]
+
+theorem get (l₀ : Location) (h₀ : l₀ ∈ L) : ValidCode L l₀.ty (SPComp.get l₀) where
+  frame l v h hl := by
+    have hne : l.id ≠ l₀.id := fun e => hl (by rw [Locations.mem_iff, e]; exact h₀)
+    simp only [SPComp.get, SDistr.pure_bind, Heap.get_set_other _ _ _ _ hne]
+  writes_in_L l h _ p hp := by
+    have := (SDistr.mem_support_pure_iff (h.get l₀, h) p).1 hp
+    rw [← this]
+
+theorem set (l₀ : Location) (w : l₀.ty) (h₀ : l₀ ∈ L) : ValidCode L Unit (SPComp.set l₀ w) where
+  frame l v h hl := by
+    have hne : l.id ≠ l₀.id := fun e => hl (by rw [Locations.mem_iff, e]; exact h₀)
+    simp only [SPComp.set, SDistr.pure_bind, Heap.set_set_comm _ _ _ _ _ hne]
+  writes_in_L l h hl p hp := by
+    have hne : l₀.id ≠ l.id := fun e => hl (by rw [Locations.mem_iff, ← e]; exact h₀)
+    have := (SDistr.mem_support_pure_iff ((), h.set l₀ w) p).1 hp
+    rw [← this, Heap.get_set_other _ _ _ _ hne]
+
+instance bind {α β : Type*} (c : SPComp α) (f : α → SPComp β) [hc : ValidCode L α c]
+    [hf : ∀ a, ValidCode L β (f a)] : ValidCode L β (SPComp.bind c f) where
+  frame l v h hl := by
+    simp only [SPComp.bind, hc.frame l v h hl, SDistr.bind_assoc, SDistr.pure_bind]
+    congr 1
+    funext p
+    exact (hf p.1).frame l v p.2 hl
+  writes_in_L l h hl p hp := by
+    obtain ⟨q, hq, hpq⟩ := SDistr.bind_support_witness hp
+    rw [(hf q.1).writes_in_L l q.2 hl p hpq, hc.writes_in_L l h hl q hq]
+
+end ValidCode
 
 /-- A valid package correctly implements an export interface using an import interface.
     - L: the locations the package may access
@@ -71,7 +134,7 @@ structure ValidPackage (L : Locations) (I E : Interface) (P : RawPackage) : Prop
   exports_only : ∀ id S T, P.has id S T → E.has id S T
   /-- All implementations are valid code -/
   valid_impl : ∀ e ∈ P.entries, ∀ x : e.fun_.src,
-                 ValidCode L I e.fun_.tgt (e.fun_.impl x)
+                 ValidCode L e.fun_.tgt (e.fun_.impl x)
 
 /-- Two packages have separate (disjoint) locations -/
 def fseparate (L₁ L₂ : Locations) : Prop :=
@@ -82,14 +145,14 @@ namespace ValidPackage
 /-- Valid code for a smaller location set is valid for a larger one.
     This is mathematically sound: if code only accesses L₁, and L₁ ⊆ L₂,
     then the code trivially satisfies validity for L₂. -/
-theorem validCode_weaken {L₁ L₂ : Locations} {I₁ I₂ : Interface} {α : Type*} {c : SPComp α}
+theorem validCode_weaken {L₁ L₂ : Locations} {α : Type*} {c : SPComp α}
     (hL : L₁ ⊆ L₂)
-    (hv : ValidCode L₁ I₁ α c) :
-    ValidCode L₂ I₂ α c where
-  reads_in_L := fun l v h hl =>
+    (hv : ValidCode L₁ α c) :
+    ValidCode L₂ α c where
+  frame := fun l v h hl =>
     -- If l ∉ L₂ and L₁ ⊆ L₂, then l ∉ L₁
     have hl₁ : l ∉ L₁ := fun h => hl (hL h)
-    hv.reads_in_L l v h hl₁
+    hv.frame l v h hl₁
   writes_in_L := fun l h hl =>
     have hl₁ : l ∉ L₁ := fun h => hl (hL h)
     hv.writes_in_L l h hl₁

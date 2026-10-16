@@ -22,9 +22,10 @@ computation expressible in the shallow embedding (semantic domain).
 * `RawCode.ofSPComp` — embeds any `SPComp α` into `RawCode α`
 * `RawCode.ofSPComp_eval` — `eval ∘ ofSPComp = id` (right inverse of eval)
 * `RawCode.substOracle_ofSPComp` — `ofSPComp` code is invariant under oracle substitution
-* `ValidCode.ofSPComp` — `ofSPComp` code is valid for any location set
+* `ValidCode.ofSPCompUnchecked` — `ofSPComp` code is accepted for any location set,
+  without a check of its heap accesses
 * `RawCode.ofSPComp_evalWith` — `evalWith` on `ofSPComp` ignores the handler
-* `ValidCodeBundle.ofSPComp` — the bundled valid-code witness
+* `ValidCodeBundle.ofSPCompUnchecked` — the bundled witness, likewise unchecked
 
 **Rewinding warning**: because `embed` can represent *any* `SPComp` — including
 state-resetting operations like `heapReset` (which discards the current heap and
@@ -61,12 +62,12 @@ theorem RawCode.substOracle_ofSPComp {α : Type} (c : SPComp α)
     (env : ∀ (op : ℕ) (dom codom : Type), dom → RawCode codom) :
     (RawCode.ofSPComp c).substOracle env = RawCode.ofSPComp c := rfl
 
-/-- `ofSPComp` code is valid for any location set.
-    Since the embedded code's heap access pattern is opaque, the
-    `ValidCode.embed` constructor declares it valid for any location set. -/
-theorem ValidCode.ofSPComp {α : Type} (c : SPComp α) (L : LocSet) :
+/-- `ofSPComp c` is accepted by `ValidCode L` for every location set `L`, through
+    the constructor `ValidCode.embedUnchecked`; the heap accesses of `c` are not
+    checked against `L`. -/
+theorem ValidCode.ofSPCompUnchecked {α : Type} (c : SPComp α) (L : LocSet) :
     ValidCode L α (RawCode.ofSPComp c) :=
-  ValidCode.embed c
+  ValidCode.embedUnchecked c
 
 /-! ## Derived Results -/
 
@@ -91,9 +92,11 @@ theorem RawCode.ofSPComp_evalWith {α : Type} (c : SPComp α)
   rw [h2] at h1
   exact h1.symm
 
-/-- `ValidCodeBundle` from `ofSPComp`, for constructing `DeepPackage` implementations. -/
-noncomputable def ValidCodeBundle.ofSPComp {α : Type} (c : SPComp α) (L : LocSet) :
+/-- `ValidCodeBundle` from `ofSPComp`, for constructing `DeepPackage` implementations.
+    The heap accesses of `c` are not checked against `L`
+    (`ValidCode.ofSPCompUnchecked`). -/
+noncomputable def ValidCodeBundle.ofSPCompUnchecked {α : Type} (c : SPComp α) (L : LocSet) :
     ValidCodeBundle L α :=
-  ⟨RawCode.ofSPComp c, CatCrypt.Deep.ValidCode.ofSPComp c L⟩
+  ⟨RawCode.ofSPComp c, CatCrypt.Deep.ValidCode.ofSPCompUnchecked c L⟩
 
 end CatCrypt.Deep

@@ -15,7 +15,8 @@ This file defines packages for the deep embedding of CatCrypt computations.
 ## Main definitions
 
 * `DeepInterface` - Specifies operation signatures (id, domain, codomain)
-* `ValidCode` - Code that only uses declared locations
+* `ValidCode` - Code whose `get` and `put` use declared locations (`embed` leaves are
+  accepted without a check, constructor `ValidCode.embedUnchecked`)
 * `DeepPackage` - A package with location support and interface specifications
 * `DeepPackage.link` - Sequential composition of packages
 * `DeepPackage.par` - Parallel composition of packages
@@ -112,7 +113,10 @@ inductive ValidCode (L : LocSet) : (α : Type u) → RawCode α → Prop where
   | fail : ∀ {α : Type u}, ValidCode L α (@RawCode.fail α)
   | oracleCall : ∀ (op : ℕ) (dom codom : Type u) (x : dom),
       ValidCode L codom (RawCode.oracleCall op dom codom x)
-  | embed : ∀ {α : Type u} (c : Core.SPComp α), ValidCode L α (RawCode.embed c)
+  /-- An embedded shallow computation is accepted without any check: its heap
+      accesses are not inspected, so `ValidCode L` does not constrain the locations
+      used by an `embed` leaf. -/
+  | embedUnchecked : ∀ {α : Type u} (c : Core.SPComp α), ValidCode L α (RawCode.embed c)
 
 /-- Monotonicity: if code is valid for L and L ⊆ L', then code is valid for L'. -/
 theorem ValidCode.mono {L L' : LocSet} (h_sub : L ⊆ L')
@@ -127,7 +131,7 @@ theorem ValidCode.mono {L L' : LocSet} (h_sub : L ⊆ L')
   | put ℓ v hℓ => exact ValidCode.put ℓ v (h_sub hℓ)
   | fail => exact ValidCode.fail
   | oracleCall op dom codom x => exact ValidCode.oracleCall op dom codom x
-  | embed c => exact ValidCode.embed c
+  | embedUnchecked c => exact ValidCode.embedUnchecked c
 
 /-- A valid code bundle: code together with its validity proof.
     This is the structure used in packages. -/
@@ -187,13 +191,13 @@ instance IsValid.oracleCall {L : LocSet} (op : ℕ) (dom codom : Type u) (x : do
     IsValid L (RawCode.oracleCall op dom codom x) where
   proof := ValidCode.oracleCall op dom codom x
 
-/-- `embed c` is always valid: an embedded shallow computation reads no declared
-    location syntactically, so it is valid for every location set. This is the
-    missing companion to the other `IsValid` instances and is what lets a reified
-    opaque/abstract subterm carry an automatic validity proof. -/
-instance IsValid.embed {L : LocSet} {α : Type u} (c : Core.SPComp α) :
+/-- `embed c` is accepted for every location set without any check on the heap
+    accesses of `c` (constructor `ValidCode.embedUnchecked`). It gives a reified
+    opaque subterm an automatic validity proof that says nothing about the
+    locations the subterm uses. -/
+instance IsValid.embedUnchecked {L : LocSet} {α : Type u} (c : Core.SPComp α) :
     IsValid L (RawCode.embed c) where
-  proof := ValidCode.embed c
+  proof := ValidCode.embedUnchecked c
 
 /-- Convert an IsValid instance to a ValidCode proof. -/
 theorem IsValid.toValidCode {L : LocSet} {α : Type u} (c : RawCode α)
@@ -251,7 +255,7 @@ theorem substOracle_valid {L₁ L₂ : LocSet} {α : Type u} {c : RawCode α}
   | put ℓ v hℓ => exact ValidCode.put ℓ v (Finset.mem_union_left _ hℓ)
   | fail => exact ValidCode.fail
   | oracleCall op dom codom x => exact henv op dom codom x
-  | embed c => exact ValidCode.embed c
+  | embedUnchecked c => exact ValidCode.embedUnchecked c
 
 /-! ## Deep Packages -/
 

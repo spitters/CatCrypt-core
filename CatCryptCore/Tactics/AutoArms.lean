@@ -46,21 +46,6 @@ arms `hop_chain` and `sum_atoms_le` of the distance shape, `gcongr_unfold`, `gco
 
 @[expose] public section
 
-namespace CatCrypt.Crypto
-
-open CatCrypt.Core
-
-/-- `AdvantageA` is symmetric in its two games at a fixed adversary. It belongs
-beside `Advantage_sym` in `CatCryptCore.Crypto.Advantage` and is stated here so that
-the interface of that module, which has about 6,500 transitive importers, stays
-unchanged. -/
-theorem AdvantageA_sym {α : Type*} (G₀ G₁ : SPComp α) (A : α → SPComp Bool) :
-    AdvantageA G₀ G₁ A = AdvantageA G₁ G₀ A := by
-  simp only [AdvantageA]
-  exact Advantage_sym _ _
-
-end CatCrypt.Crypto
-
 meta section
 
 namespace CatCrypt.Tactics.AutoArms

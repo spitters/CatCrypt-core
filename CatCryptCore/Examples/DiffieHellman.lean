@@ -10,6 +10,8 @@ public import CatCryptCore.Crypto.Assumptions.DDH
 public import CatCryptCore.Crypto.PairingGroup
 public import CatCryptCore.Examples.ElGamal
 public import CatCryptCore.Tactics
+public import CatCryptCore.Tactics.AutoHopRegistry
+public meta import CatCryptCore.Tactics.AutoHopRegistry
 
 /-!
 # Diffie–Hellman Key Agreement: Key-Indistinguishability from DDH
@@ -62,8 +64,10 @@ DH key-agreement real/ideal experiments.
 * `ka_advantage_eq_ddh` — **the headline**: the DH key-indistinguishability
   advantage *equals* the DDH advantage of the reduction,
   `KA_Advantage P D = DDH_Advantage (elgamalDDH P) (dhReduction D)`.
-* `ka_secure_under_ddh` — DH key agreement is secure under DDH: if every DDH
-  adversary has advantage at most `ε`, so does every key distinguisher.
+
+The former corollary `ka_secure_under_ddh`, which assumed
+`∀ A, DDH_Advantage (elgamalDDH P) A ≤ ε`, is removed; `ka_advantage_eq_ddh` is the
+per-distinguisher statement it was derived from.
 
 ## References
 
@@ -111,8 +115,9 @@ noncomputable def KA_Game_Ideal (P : PairingGroup) (D : KA_Distinguisher P.G₁)
   D (P.g₁ ^ᵍ a, P.g₁ ^ᵍ b) k
 
 /-- Key-indistinguishability advantage: the ability to tell the real shared key
-    from a uniform one, given the transcript. -/
-noncomputable def KA_Advantage (P : PairingGroup) (D : KA_Distinguisher P.G₁) :
+    from a uniform one, given the transcript. Registered with `@[hop_metric]`: it
+    unfolds to an `Advantage` between the two experiments. -/
+@[hop_metric] noncomputable def KA_Advantage (P : PairingGroup) (D : KA_Distinguisher P.G₁) :
     ℝ≥0∞ :=
   Advantage (KA_Game_Real P D) (KA_Game_Ideal P D)
 
@@ -157,13 +162,5 @@ theorem ka_ideal_eq (D : KA_Distinguisher P.G₁) :
 theorem ka_advantage_eq_ddh (D : KA_Distinguisher P.G₁) :
     KA_Advantage P D = DDH_Advantage (elgamalDDH P) (dhReduction D) := by
   simp_all [KA_Advantage, DDH_Advantage, ka_real_eq, ka_ideal_eq]
-
-/-- **DH key agreement is secure under DDH.** If every DDH adversary over the group
-    has advantage at most `ε`, then every key-indistinguishability distinguisher
-    against the DH key exchange has advantage at most `ε`. -/
-theorem ka_secure_under_ddh (ε : ℝ≥0∞)
-    (h_ddh : ∀ A : DDH_Adversary P.G₁, DDH_Advantage (elgamalDDH P) A ≤ ε)
-    (D : KA_Distinguisher P.G₁) :
-    KA_Advantage P D ≤ ε := by simp_all [ka_advantage_eq_ddh]
 
 end CatCrypt.Examples.DiffieHellman

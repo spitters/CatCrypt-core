@@ -32,13 +32,13 @@ independent of the message, so the pad `E(k, nonce) ⊕ m` is uniform regardless
 of `m`. The two IND-CPA games (encrypting `m₀` vs. `m₁`) are perfectly
 indistinguishable: the IND-CPA advantage of *every* adversary is exactly `0`.
 
-## Scope
+## Single-block statement
 
-This file proves the **single-block** statement, which is the clean core-provable
-case (it coincides with CPA-from-PRF). Genuine multi-block CTR — encrypting
-`(m₁, …, mₙ)` as `(nonce, E(k, nonce+0) ⊕ m₁, …, E(k, nonce+n-1) ⊕ mₙ)` — needs a
-product-of-bijections (independent-keystream-block) argument not developed in
-core, and is deliberately out of scope here.
+This file proves the **single-block** statement, which coincides with
+CPA-from-PRF. Multi-block CTR — encrypting `(m₁, …, mₙ)` as
+`(nonce, E(k, nonce+0) ⊕ m₁, …, E(k, nonce+n-1) ⊕ mₙ)` — needs a
+product-of-bijections (independent-keystream-block) argument that is not
+developed in this file.
 
 ## Main definitions
 
@@ -55,6 +55,11 @@ core, and is deliberately out of scope here.
   `INDCPA_Adv C.toEncScheme m₀ m₁ A = 0` for every adversary `A`.
 * `boolCTR_perfect_indcpa` — the `Bool` instantiation with block cipher
   `E(k, n) = k ⊕ n`, i.e. `Enc(k, m) = (n, (k ⊕ n) ⊕ m)`.
+* `ctr_indcpa_bound` — the reduction to the block cipher `E` viewed as a PRF
+  family (`cipherPRF`): for every adversary `A`,
+  `INDCPA_Adv ≤ Σ_{m ∈ {m₀, m₁}} E_nonce PRF_Adv C.cipherPRF nonce (cpaReduction nonce m A)`.
+  The earlier form took the PRF-swap hop as a hypothesis about an unrelated PRF
+  family `F`; this statement replaces it.
 
 ## References
 
@@ -163,22 +168,16 @@ theorem boolCTR_perfect_indcpa (m₀ m₁ : boolCTR.toEncScheme.Plaintext)
     INDCPA_Adv boolCTR.toEncScheme m₀ m₁ A = 0 :=
   ctr_perfect_indcpa boolCTR m₀ m₁ A
 
-/-! ## The Computational IND-CPA Bound from the Block Cipher's PRF Security
+/-! ## The IND-CPA bound from the block cipher's PRF advantage
 
 The perfect result above models the block cipher in CTR mode as an *ideal cipher*
-(a bijection family), giving IND-CPA advantage exactly `0`. The **standard
-computational reduction** that a real block cipher would use bounds the CTR
-IND-CPA advantage by the block cipher's PRF advantage `ε_prf`, via the
-two-hop game walk
-
-| Hop | Transition | Bound |
-|-----|-----------|-------|
-| PRF-swap | real challenge game → `ctrIdealGame` (keystream `E(k,·)` → random function) | `ε_prf` (`PRFAssumption`) |
-| perfect  | `ctrIdealGame` → other challenge world (random pad is message-independent) | `0` |
-
-The perfect hop is an `SPComp` game equality proved by `bind_vcgen`; the
-PRF-swap hop is the reduction's soundness, taken as a hypothesis and discharged by
-the `PRFAssumption`. Composition is the advantage triangle inequality.
+(a bijection family), giving IND-CPA advantage exactly `0`. The reduction that
+holds for any keystream is the CPA-from-PRF reduction: single-block CTR is the
+scheme `toPRFEncScheme` with PRF family `cipherPRF` (`E(k, nonce)`), and
+`cpa_from_prf_reduction` bounds its IND-CPA advantage by the averaged PRF
+advantages of the distinguishers `cpaReduction nonce m A` (`ctr_indcpa_bound`).
+Both challenge games also equal the message-independent `ctrIdealGame`
+(`ctr_game_eq_ideal`), which is the perfect hop.
 -/
 
 /-- The message-independent **ideal CTR game**: output a fresh nonce and a fresh
@@ -215,37 +214,34 @@ theorem ctr_game_eq_ideal (C : CTRBlockScheme)
   refine congrArg _ ?_; funext r
   bind_vcgen using (C.padEquiv r (if b then m₀ else m₁))
 
-/-- **Single-block CTR mode: the computational IND-CPA bound.**
+/-- The block cipher of CTR mode as a PRF family: `E(k, nonce) = keystream nonce k`. -/
+def CTRBlockScheme.cipherPRF (C : CTRBlockScheme) : PRFScheme where
+  Key := C.Key
+  Input := C.Block
+  Output := C.Block
+  eval := fun k r => C.keystream r k
 
-The IND-CPA advantage of single-block CTR is at most the block cipher's PRF
-advantage `H.ε`. The proof is the advantage triangle inequality over the two hops:
+/-- Single-block CTR as a PRF-based encryption scheme over `cipherPRF`. -/
+def CTRBlockScheme.toPRFEncScheme (C : CTRBlockScheme) : PRFEncScheme where
+  F := C.cipherPRF
+  finInput := C.finBlock
+  neInput := C.neBlock
+  xorOut := C.xorBlock
+  xorOut_cancel := C.xorBlock_cancel
+  xorOut_cancel' := C.xorBlock_cancel'
 
-* the **PRF-swap hop** `AdvantageA (challenge true) (ctrIdealGame) A` is the
-  reduction's soundness (`hswap`): an IND-CPA distinguisher here *is* a PRF
-  distinguisher `Ared` on input `x`, so the hop is bounded by `PRF_Adv F x Ared`,
-  which `PRFAssumption H` caps at `H.ε`;
-* the **perfect hop** `AdvantageA (ctrIdealGame) (challenge false) A` is `0`, because
-  `ctr_game_eq_ideal` identifies `ctrIdealGame` with the `false` challenge world.
-
-Because `CTRBlockScheme` is the ideal-cipher (bijection-family) model, the PRF-swap
-hop is *itself* `0` here (see `ctr_perfect_indcpa`); the theorem states the reduction
-in the general form a real PRF instantiation uses. -/
+/-- **Single-block CTR IND-CPA bound.** For every adversary `A`, the IND-CPA
+advantage of single-block CTR is at most the sum over the two challenge messages
+`m` of the average over the nonce `r` of the PRF advantages of
+`cpaReduction r m A` against the block cipher `cipherPRF` at input `r`. -/
 theorem ctr_indcpa_bound (C : CTRBlockScheme)
-    {F : PRFScheme} (H : PRFAssumption F)
     (m₀ m₁ : C.toEncScheme.Plaintext)
-    (A : C.toEncScheme.Ciphertext → SPComp Bool)
-    (x : F.Input) (Ared : F.Output → SPComp Bool)
-    (hswap : AdvantageA (INDCPA_Game C.toEncScheme m₀ m₁ true) (ctrIdealGame C) A
-              ≤ PRF_Adv F x Ared) :
-    INDCPA_Adv C.toEncScheme m₀ m₁ A ≤ H.ε := by
-  calc AdvantageA (INDCPA_Game C.toEncScheme m₀ m₁ true)
-          (INDCPA_Game C.toEncScheme m₀ m₁ false) A
-      ≤ AdvantageA (INDCPA_Game C.toEncScheme m₀ m₁ true) (ctrIdealGame C) A
-        + AdvantageA (ctrIdealGame C) (INDCPA_Game C.toEncScheme m₀ m₁ false) A :=
-          advantageA_triangle _ _ _ _
-    _ ≤ PRF_Adv F x Ared + 0 :=
-        add_le_add hswap (by simp [ctr_game_eq_ideal C m₀ m₁ false, AdvantageA])
-    _ = PRF_Adv F x Ared := add_zero _
-    _ ≤ H.ε := H.bound x Ared
+    (A : C.toEncScheme.Ciphertext → SPComp Bool) :
+    INDCPA_Adv C.toEncScheme m₀ m₁ A ≤
+      ∑ r : C.Block, (↑(Fintype.card C.Block) : ℝ≥0∞)⁻¹ *
+          PRF_Adv C.cipherPRF r (C.toPRFEncScheme.cpaReduction r m₀ A) +
+        ∑ r : C.Block, (↑(Fintype.card C.Block) : ℝ≥0∞)⁻¹ *
+          PRF_Adv C.cipherPRF r (C.toPRFEncScheme.cpaReduction r m₁ A) :=
+  cpa_from_prf_reduction C.toPRFEncScheme m₀ m₁ A
 
 end CatCrypt.Examples.CTRMode

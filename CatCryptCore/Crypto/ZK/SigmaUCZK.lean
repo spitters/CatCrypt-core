@@ -44,9 +44,13 @@ Given a Σ-protocol `(commit, respond, simulate)`:
 * the UC-ZK simulator does not know `w`: it samples a challenge `e` and runs
   `simulate x e` to produce `(a, z)` backwards.
 
-SHVZK guarantees that the simulated transcript `(a, e, z)` is distributed exactly
-as a real one, so the two views coincide even though the simulator never uses the
-witness.
+SHVZK guarantees that, for `(x, w)` in the relation, the simulated transcript
+`(a, e, z)` is distributed exactly as a real one, so the two views coincide even
+though the simulator never uses the witness. On an input `(x, w)` outside the
+relation both the real protocol and the ideal functionality abort with the
+honest output `.inl ()`, so `SHVZK` is required for pairs in the relation only.
+`simpleSigma_SHVZK` shows that the XOR Σ-protocol of
+`CatCrypt.Examples.SigmaProtocol` satisfies it.
 
 ## Non-trivial simulator
 
@@ -93,23 +97,30 @@ structure Transcript where
 
 /-! ## Real Protocol -/
 
+open Classical in
 /-- Real ZK prover: on input `(x, w)` with `R(x, w)`, runs the honest protocol and
-    reveals the full transcript `(a, e, z)`. -/
+    reveals the full transcript `(a, e, z)`; on input `(x, w)` with `¬R(x, w)` it
+    aborts with the honest output `.inl ()`. -/
 noncomputable def sigma_real :
     sp.Statement × sp.Witness → SPComp (Unit ⊕ Transcript sp) :=
-  fun ⟨x, w⟩ => do
-    let a ← sp.commit x w
-    let e ← SPComp.sample sp.Challenge
-    let z ← sp.respond x w a e
-    SPComp.pure (.inr ⟨a, e, z⟩)
+  fun ⟨x, w⟩ =>
+    if sp.relation x w then do
+      let a ← sp.commit x w
+      let e ← SPComp.sample sp.Challenge
+      let z ← sp.respond x w a e
+      SPComp.pure (.inr ⟨a, e, z⟩)
+    else SPComp.pure (.inl ())
 
 /-! ## Ideal Functionality -/
 
-/-- Ideal ZK: reveals only the statement, neither the witness nor the transcript.
-    The simulator receives `x` and must produce a transcript without `w`. -/
+open Classical in
+/-- Ideal ZK: on input `(x, w)` with `R(x, w)`, reveals only the statement,
+    neither the witness nor the transcript; the simulator receives `x` and must
+    produce a transcript without `w`. On input `(x, w)` with `¬R(x, w)` it
+    aborts with the honest output `.inl ()`. -/
 noncomputable def sigma_ideal :
     sp.Statement × sp.Witness → SPComp (Unit ⊕ sp.Statement) :=
-  fun ⟨x, _w⟩ => SPComp.pure (.inr x)
+  fun ⟨x, w⟩ => if sp.relation x w then SPComp.pure (.inr x) else SPComp.pure (.inl ())
 
 /-! ## Non-Trivial Simulator -/
 
@@ -135,12 +146,12 @@ noncomputable def sigmaUCZKSpec (V : Type) : UCSpec :=
 
 /-! ## SHVZK Assumption -/
 
-/-- Special honest-verifier zero-knowledge: for every statement `x`, witness `w`,
-    and challenge `e`, the honestly generated `(a, z)` and the simulated `(a, z)`
-    have the same distribution. This is what makes the witness-free simulator
-    indistinguishable from the real prover. -/
+/-- Special honest-verifier zero-knowledge: for every statement `x`, witness `w`
+    with `R(x, w)`, and challenge `e`, the honestly generated `(a, z)` and the
+    simulated `(a, z)` have the same distribution. This is what makes the
+    witness-free simulator indistinguishable from the real prover. -/
 def SHVZK : Prop :=
-  ∀ (x : sp.Statement) (w : sp.Witness) (e : sp.Challenge),
+  ∀ (x : sp.Statement) (w : sp.Witness) (e : sp.Challenge), sp.relation x w →
     (do let a ← sp.commit x w
         let z ← sp.respond x w a e
         SPComp.pure (a, z)) =
@@ -179,6 +190,10 @@ theorem sigma_view_eq
     SPComp.bind (sigma_ideal sp (x, w))
       (mapSum SPComp.pure (sigma_uc_sim sp V A)) := by
   unfold sigma_real sigma_ideal sigma_uc_sim
+  by_cases hR : sp.relation x w
+  swap
+  · simp only [hR, if_false, SPComp.pure_bind, mapSum_inl]
+  simp only [hR, if_true]
   bind_vcgen_sum
   -- Commute the (pure) challenge sample past `commit` so both sides lead with
   -- `bind (sample Challenge) (fun e => …)`. This higher-order rewrite must be
@@ -189,7 +204,7 @@ theorem sigma_view_eq
     (SPComp.sample_isPure _)]
   bind_vcgen_sum
   rename_i e
-  have hshvzk_e := hshvzk x w e
+  have hshvzk_e := hshvzk x w e hR
   have key : ∀ (K : sp.Message → sp.Response → SPComp (Unit ⊕ V)),
       SPComp.bind (sp.commit x w) (fun a =>
         SPComp.bind (sp.respond x w a e) (fun z => K a z)) =
@@ -215,5 +230,24 @@ theorem sigma_uc_zk_secure
   show sdist _ _ = 0
   exact (congrArg (sdist · _) (funext fun ⟨x, w⟩ => sigma_view_eq sp hshvzk x w V A)).trans
     (sdist_self _)
+
+/-! ## Instance: the XOR Σ-protocol -/
+
+/-- The XOR Σ-protocol `simpleSigma` (relation `x = w`) satisfies `SHVZK`: for
+    `w = x`, the real pair `(a, a ⊕ x ⊕ e)` with uniform `a` and the simulated
+    pair `(z ⊕ x ⊕ e, z)` with uniform `z` correspond under the bijection
+    `a ↦ a ⊕ (x ⊕ e)`. -/
+theorem simpleSigma_SHVZK : SHVZK simpleSigma := by
+  rintro x w e rfl
+  simp only [simpleSigma, SPComp.monad_bind_eq, SPComp.pure_bind]
+  rw [← SPComp.sample_bind_equiv (CatCrypt.Prob.XorBij.boolXorBij (xor (x : Bool) (e : Bool)))]
+  refine congrArg _ (funext fun a => ?_)
+  simp only [CatCrypt.Prob.XorBij.boolXorBij, Equiv.coe_fn_mk]
+  cases a <;> cases (x : Bool) <;> cases (e : Bool) <;> rfl
+
+/-- The XOR Σ-protocol gives honest-verifier UC zero-knowledge at `ε = 0`. -/
+theorem simpleSigma_uc_zk (V : Type) :
+    UCEmulates 0 (sigmaUCZKSpec simpleSigma V) (sigma_real simpleSigma) (sigma_ideal simpleSigma) :=
+  sigma_uc_zk_secure simpleSigma simpleSigma_SHVZK V
 
 end CatCrypt.Crypto.ZK.SigmaUCZK

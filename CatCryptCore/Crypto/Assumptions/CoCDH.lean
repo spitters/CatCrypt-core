@@ -23,7 +23,11 @@ the pairing exists, but stated in the Type III setting.
 * `CoCDH_Adversary` — adversary that attempts to compute g₁^{ab}
 * `CoCDH_Game` — the co-CDH game
 * `CoCDH_Advantage` — probability of solving co-CDH
-* `CoCDHSecure` — co-CDH hardness assumption
+
+Security statements that rest on co-CDH bound a scheme advantage by `CoCDH_Advantage P (B A)`
+for a named reduction `B` (for BLS, `BLSSig.blsForgeAdvantage_eq_cocdh` with the
+matched-exponent variant). The former predicate
+`CoCDHSecure P ε := ∀ A, CoCDH_Advantage P A ≤ ε` had no users and is removed.
 
 ## Cross-Validation
 
@@ -77,9 +81,5 @@ noncomputable def CoCDH_Game (A : CoCDH_Adversary P) : SPComp Bool := do
 /-- co-CDH advantage: probability that the adversary computes g₁^{ab}. -/
 noncomputable def CoCDH_Advantage (A : CoCDH_Adversary P) : ℝ≥0∞ :=
   prTrue (CoCDH_Game P A) Heap.empty
-
-/-- co-CDH hardness: all adversaries have bounded advantage. -/
-def CoCDHSecure (ε : ℝ≥0∞) : Prop :=
-  ∀ (A : CoCDH_Adversary P), CoCDH_Advantage P A ≤ ε
 
 end CatCrypt.Crypto.Assumptions

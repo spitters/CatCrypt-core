@@ -20,13 +20,20 @@ construction from Chapter 12 of "The Joy of Cryptography".
 
 * `UHFamily` — universal hash family structure
 * `boolPairwiseHash` — pairwise-independent hash over Bool: H(k₁,k₂)(m) = (k₁∧m) ⊕ k₂
-* `uh_forge_real`, `uh_forge_ideal` — forgery games
+* `uh_forge_game`, `UH_Forgery_Prob` — one-time forgery game: the adversary
+  receives the tag of a message `m` and wins with a valid tag on a message
+  `m* ≠ m`
 * `IsUniversal` — universality property
 
 ## Main results
 
-* `boolHash_forge_advantage` — forgery advantage ≤ 1/2 for Bool hash
+* `boolHash_forge_prob_le` — one-time forgery probability ≤ 1/2 for the Bool hash
 * `boolPairwiseHash_is_universal` — Bool hash is 1/2-universal
+
+`uh_forge_game`, `UH_Forgery_Prob` and `boolHash_forge_prob_le` replace
+`uh_forge_real`, `uh_forge_ideal`, `UH_Forgery_Advantage`, `forge_prTrue_eq` and
+`boolHash_forge_advantage`, whose game fixed the forgery and gave the adversary
+no tag.
 
 ## References
 
@@ -69,31 +76,51 @@ noncomputable def boolPairwiseHash : UHFamily where
   hash := fun ⟨k₁, k₂⟩ m => xor (k₁ && m) k₂
   epsilon := (2 : ENNReal)⁻¹
 
-/-! ## Forgery Games -/
+/-! ## One-Time Forgery Game -/
 
-/-- Real forgery game: sample key, check if adversary's guess matches hash on new message. -/
-noncomputable def uh_forge_real (H : UHFamily) (_m m_star : H.MsgType)
-    (t_star : H.TagType) : SPComp Bool := do
-  let k ← SPComp.sample H.KeyType
-  SPComp.pure (t_star == H.hash k m_star)
+open Classical in
+/-- One-time forgery game: sample a key `k`, give the adversary the tag
+`hash k m` of the message `m`, and return whether its output `(m*, t*)`
+satisfies `m* ≠ m` and `t* = hash k m*`. -/
+noncomputable def uh_forge_game (H : UHFamily) (m : H.MsgType)
+    (A : H.TagType → SPComp (H.MsgType × H.TagType)) : SPComp Bool :=
+  SPComp.bind (SPComp.sample H.KeyType) fun k =>
+    SPComp.bind (A (H.hash k m)) fun f =>
+      SPComp.pure (decide (f.1 ≠ m) && f.2 == H.hash k f.1)
 
-/-- Ideal forgery game: forgery always fails. -/
-noncomputable def uh_forge_ideal : SPComp Bool := SPComp.pure false
+/-- One-time forgery probability of `A` after seeing the tag of `m`. -/
+noncomputable def UH_Forgery_Prob (H : UHFamily) (m : H.MsgType)
+    (A : H.TagType → SPComp (H.MsgType × H.TagType)) : ENNReal :=
+  prTrue (uh_forge_game H m A) Heap.empty
 
-/-- Forgery advantage. -/
-noncomputable def UH_Forgery_Advantage (H : UHFamily) (m m_star : H.MsgType)
-    (t_star : H.TagType) (A : Bool → SPComp Bool) : ENNReal :=
-  AdvantageA (uh_forge_real H m m_star t_star) uh_forge_ideal A
+/-! ## Events of a Computation -/
 
-/-! ## IsPure Proofs -/
+/-- `prTrue` of a computation followed by a Boolean test of its result is the
+mass of the results that pass the test. -/
+theorem prTrue_bind_pure_test {α : Type} (c : SPComp α) (P : α → Bool) (h₀ : Heap) :
+    prTrue (SPComp.bind c fun x => SPComp.pure (P x)) h₀ =
+      ∑' y : α × Heap, if P y.1 = true then c h₀ (some y) else 0 := by
+  unfold prTrue
+  simp only [SPComp.bind, SPComp.pure, SDistr.bind, PMF.bind_apply]
+  rw [ENNReal.tsum_comm, SDistr.tsum_option_eq_add]
+  simp only [SDistr.fail, SDistr.pure, PMF.pure_apply, Option.some.injEq, Prod.mk.injEq,
+    reduceCtorEq, if_false, mul_zero, tsum_zero, zero_add]
+  refine tsum_congr fun y => ?_
+  rw [ENNReal.tsum_mul_left]
+  cases hP : P y.1 <;> simp
 
-theorem uh_forge_real_isPure (H : UHFamily) (m m_star : H.MsgType)
-    (t_star : H.TagType) : SPComp.IsPure (uh_forge_real H m m_star t_star) := by
-  unfold uh_forge_real; simp only [SPComp.monad_bind_eq]
-  exact SPComp.bind_isPure (SPComp.sample_isPure _) (fun _ => SPComp.pure_isPure _)
-
-theorem uh_forge_ideal_isPure : SPComp.IsPure uh_forge_ideal :=
-  SPComp.pure_isPure _
+/-- Two disjoint tests of the result of one computation have total probability
+at most `1`. -/
+theorem prTrue_bind_pure_test_add_le {α : Type} (c : SPComp α) (P Q : α → Bool)
+    (hPQ : ∀ x, ¬ (P x = true ∧ Q x = true)) (h₀ : Heap) :
+    prTrue (SPComp.bind c fun x => SPComp.pure (P x)) h₀ +
+      prTrue (SPComp.bind c fun x => SPComp.pure (Q x)) h₀ ≤ 1 := by
+  rw [prTrue_bind_pure_test, prTrue_bind_pure_test, ← ENNReal.tsum_add]
+  have h := prTrue_le_one (SPComp.bind c fun x => SPComp.pure (P x || Q x)) h₀
+  rw [prTrue_bind_pure_test] at h
+  refine le_trans (le_of_eq (tsum_congr fun y => ?_)) h
+  have := hPQ y.1
+  cases hp : P y.1 <;> cases hq : Q y.1 <;> simp_all
 
 /-! ## Arithmetic Helpers -/
 
@@ -114,50 +141,42 @@ theorem four_inv_double (x : ENNReal) :
     (4 : ENNReal)⁻¹ * x + (4 : ENNReal)⁻¹ * x = (2 : ENNReal)⁻¹ * x := by
   rw [← add_mul, four_inv_add]
 
-/-! ## Core prTrue Equality -/
+/-! ## Main Security Theorem -/
 
-/-- For the Bool pairwise hash forgery game with m_star ≠ m,
-    the prTrue distribution equals that of uniform Bool sampling.
-
-    The proof expands the sums over Bool × Bool, computes the hash values,
-    and uses arithmetic to show the 4-element sum equals the 2-element sum. -/
-theorem forge_prTrue_eq (m m_star : Bool) (t_star : Bool)
-    (h_diff : m_star ≠ m) (A : Bool → SPComp Bool) (h₀ : Heap) :
-    prTrue ((uh_forge_real boolPairwiseHash m m_star t_star).bind A) h₀ =
-    prTrue ((SPComp.sample Bool).bind A) h₀ := by
-  unfold uh_forge_real boolPairwiseHash
-  simp only [SPComp.monad_bind_eq, SPComp.bind_assoc, SPComp.pure_bind]
-  rw [prTrue_bind_sample, prTrue_bind_sample]
+/-- **One-time forgery bound for the Bool pairwise hash.** After seeing the tag
+of `m`, any adversary outputs a valid tag on a message `m* ≠ m` with
+probability at most `1/2`. The four keys form two pairs with equal tag on `m`;
+within a pair the tags on `m* ≠ m` differ, so a fixed forgery is valid for at
+most one key of the pair. -/
+theorem boolHash_forge_prob_le (m : Bool) (A : Bool → SPComp (Bool × Bool)) :
+    UH_Forgery_Prob boolPairwiseHash m A ≤ (2 : ENNReal)⁻¹ := by
+  have pair : ∀ a b c d : ENNReal, a + c ≤ 1 → b + d ≤ 1 →
+      4⁻¹ * a + 4⁻¹ * b + (4⁻¹ * c + 4⁻¹ * d) ≤ (2 : ENNReal)⁻¹ := by
+    intro a b c d hac hbd
+    calc 4⁻¹ * a + 4⁻¹ * b + (4⁻¹ * c + 4⁻¹ * d)
+        = 4⁻¹ * (a + c) + 4⁻¹ * (b + d) := by ring
+      _ ≤ 4⁻¹ * 1 + 4⁻¹ * 1 := by gcongr
+      _ = (2 : ENNReal)⁻¹ := by rw [mul_one, four_inv_add]
+  unfold UH_Forgery_Prob uh_forge_game boolPairwiseHash
+  rw [prTrue_bind_sample]
   simp only [Fintype.card_prod, Fintype.card_bool]
   rw [Fintype.sum_prod_type]
   simp only [Fintype.sum_bool, show (2 * 2 : ℕ) = 4 from rfl, Nat.cast_ofNat]
-  cases m_star <;> cases t_star <;> (
-    simp only [Bool.false_and, Bool.true_and, xor_false_right, xor_true_right,
-               Bool.not_false, Bool.not_true,
-               show (false == false) = true from rfl,
-               show (false == true) = false from rfl,
-               show (true == false) = false from rfl,
-               show (true == true) = true from rfl]
-    simp only [← add_mul, four_inv_add, add_comm, add_left_comm]
-    try rw [← add_assoc, four_inv_double])
+  cases m <;> simp only [Bool.false_and, Bool.true_and, Bool.and_false, Bool.and_true,
+    Bool.xor_false, Bool.xor_true]
+  · exact pair _ _ _ _
+      (prTrue_bind_pure_test_add_le _ _ _ (fun f => by rcases f with ⟨_ | _, _ | _⟩ <;> simp) _)
+      (prTrue_bind_pure_test_add_le _ _ _ (fun f => by rcases f with ⟨_ | _, _ | _⟩ <;> simp) _)
+  · rw [add_comm (4⁻¹ * _) (4⁻¹ * prTrue ((A false).bind _) _)]
+    exact pair _ _ _ _
+      (prTrue_bind_pure_test_add_le _ _ _ (fun f => by rcases f with ⟨_ | _, _ | _⟩ <;> simp) _)
+      (prTrue_bind_pure_test_add_le _ _ _ (fun f => by rcases f with ⟨_ | _, _ | _⟩ <;> simp) _)
 
-/-! ## Main Security Theorem -/
-
-/-- For the Bool hash, forgery advantage ≤ 1/2.
-    Uses forge_prTrue_eq to show the advantage equals that of sample Bool vs pure false. -/
-theorem boolHash_forge_advantage (m m_star : Bool) (t_star : Bool)
-    (h_diff : m_star ≠ m) (A : Bool → SPComp Bool) :
-    UH_Forgery_Advantage boolPairwiseHash m m_star t_star A ≤ (2 : ENNReal)⁻¹ := by
-  unfold UH_Forgery_Advantage uh_forge_ideal AdvantageA Advantage
-  rw [forge_prTrue_eq m m_star t_star h_diff A]
-  exact advantage_sample_vs_pure_false A
-
-/-- Concrete instance: Bool hash MAC security bound. -/
-theorem boolPairwiseHash_mac_security (m m_star : Bool) (t_star : Bool)
-    (h_diff : m_star ≠ m) (A : Bool → SPComp Bool) :
-    UH_Forgery_Advantage boolPairwiseHash m m_star t_star A ≤
-    boolPairwiseHash.epsilon :=
-  boolHash_forge_advantage m m_star t_star h_diff A
+/-- Concrete instance: the one-time forgery probability of the Bool hash MAC is
+at most its collision bound `ε = 1/2`. -/
+theorem boolPairwiseHash_mac_security (m : Bool) (A : Bool → SPComp (Bool × Bool)) :
+    UH_Forgery_Prob boolPairwiseHash m A ≤ boolPairwiseHash.epsilon :=
+  boolHash_forge_prob_le m A
 
 /-! ## Collision Game and Universality -/
 

@@ -184,6 +184,12 @@ theorem advantage_zero_of_inv {α : Type*} (I : RPre) (G₀ G₁ : SPComp α)
 @[simp] theorem Advantage_self (G : SPComp Bool) : Advantage G G = 0 := by
   simp_all [Advantage, tsub_self, max_self]
 
+/-- `AdvantageA` is symmetric in its two games at a fixed adversary. -/
+theorem AdvantageA_sym {α : Type*} (G₀ G₁ : SPComp α) (A : α → SPComp Bool) :
+    AdvantageA G₀ G₁ A = AdvantageA G₁ G₀ A := by
+  simp only [AdvantageA]
+  exact Advantage_sym _ _
+
 /-! ## Utility Lemmas for Advantage Bounds -/
 
 /-- Helper: sample Bool bind equates to SDistr.uniform bind -/

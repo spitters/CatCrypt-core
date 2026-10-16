@@ -29,12 +29,3 @@ equality of advantages.
     \mathsf{Adv}^{\mathrm{KA}}(D) \;=\; \mathsf{Adv}^{\mathrm{DDH}}(R_D).
   \]
 \end{theorem}
-
-\begin{corollary}[Security under DDH]
-  \label{cor:ka-secure}
-  \uses{thm:ka-ddh}
-  \lean{CatCrypt.Examples.DiffieHellman.ka_secure_under_ddh}
-  \leanok
-  If DDH is $\varepsilon$-hard in the group, Diffie--Hellman key agreement has
-  advantage at most $\varepsilon$.
-\end{corollary}

@@ -37,11 +37,11 @@ bound; the XOR-DEM instantiation is perfectly secure.
   \]
 \end{theorem}
 
-\begin{theorem}[Perfect security of the XOR-DEM hybrid]
+\begin{theorem}[Hybrid encryption with a perfectly secure DEM]
   \label{thm:kemdem-perfect}
   \uses{thm:kemdem-bound}
-  \lean{CatCrypt.Examples.KEMDEM.pke_perfect_security, CatCrypt.Examples.KEMDEM.xorHybrid_advantage_zero}
+  \lean{CatCrypt.Examples.KEMDEM.pke_security_of_perfectDEM, CatCrypt.Examples.KEMDEM.xorHybrid_advantage_le}
   \leanok
-  A perfectly-secure KEM composed with the XOR one-time-pad DEM has advantage
-  exactly $0$.
+  With a perfectly secure DEM, such as the XOR one-time-pad DEM, the hybrid
+  advantage is at most the sum of the two KEM advantages.
 \end{theorem}

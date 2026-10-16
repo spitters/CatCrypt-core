@@ -18,14 +18,17 @@ public import CatCryptCore.Tactics.LazySampling
 public import CatCryptCore.Crypto.NomPkgBridge
 public import Mathlib.Algebra.BigOperators.Group.Finset.Basic
 public import CatCryptCore.Tactics.AutoDispatchCore
+public import CatCryptCore.ForMathlib.ENNRealNatCast
 
 /-!
 # Automation sets for game proofs
 
 Attribute registrations and closers for game-based proofs. Every attribute is
-applied in this module, so the modules that state the lemmas are unchanged; the
-module also states `>>=` forms of the bind combinators for `IsPure` and `NoFail`
-and two `ℝ≥0∞` coefficient facts.
+applied in this module, so the modules that state the lemmas are unchanged. The
+`>>=` forms of the bind combinators are stated beside the combinators
+(`SPComp.bindOp_isPure` in `CatCryptCore.Core.Code`, `SPComp.bindOp_noFail` and
+`SPComp.pureOp_noFail` in `CatCryptCore.Crypto.NomPkgBridge`), and the two `ℝ≥0∞`
+coefficient facts in `CatCryptCore.ForMathlib.ENNRealNatCast`.
 
 * The Aesop rule set `CatCryptRel` (declared in `CatCryptCore.Tactics.AutoSetsDecl`):
   the relational rules registered under `@[rspec]` in `CatCryptCore.Tactics.Sim`,
@@ -62,34 +65,6 @@ and two `ℝ≥0∞` coefficient facts.
 
 open CatCrypt.Core CatCrypt.Relational CatCrypt.Crypto CatCrypt.Unary
 open scoped ENNReal
-
-/-! ## Combinator and coefficient lemmas -/
-
-/-- Bind preserves `IsPure`, stated for `>>=`. -/
-theorem CatCrypt.Core.SPComp.bindOp_isPure {α β : Type} {c : SPComp α} {f : α → SPComp β}
-    (hc : SPComp.IsPure c) (hf : ∀ a, SPComp.IsPure (f a)) : SPComp.IsPure (c >>= f) :=
-  SPComp.bind_isPure hc hf
-
-/-- Bind preserves `NoFail`, stated for `>>=`. -/
-theorem CatCrypt.Crypto.SPComp.bindOp_noFail {α β : Type} {c : CatCrypt.Core.SPComp α}
-    {f : α → CatCrypt.Core.SPComp β} (hc : SPComp.NoFail c)
-    (hf : ∀ a, SPComp.NoFail (f a)) : SPComp.NoFail (c >>= f) :=
-  Assumptions.SPComp.bind_noFail hc hf
-
-/-- `pure a` never fails, stated for the monad's `pure`. -/
-theorem CatCrypt.Crypto.SPComp.pureOp_noFail {α : Type} (a : α) :
-    SPComp.NoFail (pure a : CatCrypt.Core.SPComp α) :=
-  SPComp.pure_noFail a
-
-/-- The cast `ℕ → ℝ≥0∞` is monotone. -/
-theorem CatCrypt.Crypto.natCast_le_natCast_of_le {m n : ℕ} (h : m ≤ n) :
-    (m : ℝ≥0∞) ≤ n := by
-  exact_mod_cast h
-
-/-- `ε ≤ n * ε` in `ℝ≥0∞` for `1 ≤ n`. -/
-theorem CatCrypt.Crypto.le_natCast_mul_of_one_le {n : ℕ} (hn : 1 ≤ n) (ε : ℝ≥0∞) :
-    ε ≤ (n : ℝ≥0∞) * ε :=
-  le_mul_of_one_le_left bot_le (by exact_mod_cast hn)
 
 /-! ## The Aesop rule set `CatCryptRel` -/
 

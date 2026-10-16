@@ -6,6 +6,7 @@ Authors: CatCrypt Contributors
 module
 
 public meta import CatCryptCore.Unary.ExpectationWP
+public meta import CatCryptCore.Unary.ExpectationVCGenCore
 public meta import CatCryptCore.Unary.Lossless
 public meta import CatCryptCore.Prob.Support
 public meta import CatCryptCore.Crypto.MonadCostModel
@@ -74,6 +75,7 @@ namespace CatCrypt.Unary
 
 open CatCrypt.Core CatCrypt.Prob
 open scoped ENNReal
+open Std.Internal.Do
 
 /-! ## Linearity of `wpE`
 
@@ -82,19 +84,10 @@ distributes over pointwise sums and scalar multiples of postexpectations,
 and is bounded by constants (with equality exactly for lossless programs —
 on a strict sub-distribution a constant postexpectation only collects the
 surviving mass). These are the laws that make additive cost accounting
-work. -/
+work. Additivity `wpE_add` and scalar multiplication `wpE_const_mul` are in
+`CatCryptCore.Unary.ExpectationWP`. -/
 
 variable {α β γ : Type}
-
-/-- `wpE` is additive in the postexpectation. -/
-theorem wpE_add (c : SPComp α) (p q : α → Heap → ℝ≥0∞) (h : Heap) :
-    wpE c (fun a h' => p a h' + q a h') h = wpE c p h + wpE c q h := by
-  simp_all [wpE_eq_tsum, mul_add, ENNReal.tsum_add]
-
-/-- `wpE` commutes with scalar multiplication of the postexpectation. -/
-theorem wpE_const_mul (c : SPComp α) (k : ℝ≥0∞) (p : α → Heap → ℝ≥0∞) (h : Heap) :
-    wpE c (fun a h' => k * p a h') h = k * wpE c p h := by
-  grind [wpE_eq_tsum, ENNReal.tsum_mul_left, tsum_congr]
 
 @[simp] theorem wpE_zero (c : SPComp α) (h : Heap) :
     wpE c (fun _ _ => (0 : ℝ≥0∞)) h = 0 := by
@@ -212,34 +205,28 @@ is lossless, `≤` unconditionally (on a strict sub-distribution the
 continuation's first-phase credit is weighted by the surviving mass). The
 `≤` direction is the one every upper bound consumes. -/
 
+set_option mvcgen.warning false in
 /-- **Tower law, bound form.** Expected cost of a sequence is at most the
     first phase's expected cost plus the `c`-average of the continuation's
     expected cost. -/
 theorem ecost_bind_le (c : CostComp α) (f : α → CostComp β) (h : Heap) :
     ecost (CostComp.bind c f) h
       ≤ ecost c h + wpE c (fun p h' => ecost (f p.1) h') h := by
-  unfold ecost CostComp.bind
-  rw [wpE_bind]
-  calc wpE c (fun p h' =>
-        wpE (SPComp.bind (f p.1) fun q => SPComp.pure (q.1, p.2 + q.2))
-          (fun r (_ : Heap) => (r.2 : ℝ≥0∞)) h') h
-      ≤ wpE c (fun p h' =>
-          (p.2 : ℝ≥0∞) + wpE (f p.1) (fun r (_ : Heap) => (r.2 : ℝ≥0∞)) h') h := by
-        refine wpE_mono c (fun p h' => ?_) h
-        rw [wpE_bind]
-        have heq : (fun (q : β × ℕ) (h'' : Heap) =>
-            wpE (SPComp.pure (q.1, p.2 + q.2)) (fun r (_ : Heap) => (r.2 : ℝ≥0∞)) h'')
-            = fun q _ => ((p.2 : ℝ≥0∞) + (q.2 : ℝ≥0∞)) := by
-          funext q h''
-          rw [wpE_pure]
-          push_cast
-          rfl
-        rw [heq, wpE_add]
-        exact add_le_add (wpE_const_le _ _ _) le_rfl
-    _ = wpE c (fun p _ => (p.2 : ℝ≥0∞)) h
-        + wpE c (fun p h' => wpE (f p.1) (fun r (_ : Heap) => (r.2 : ℝ≥0∞)) h') h :=
-        wpE_add c _ _ h
+  have hc : ∀ post : α × ℕ → Heap → ℝ≥0∞ᵒᵈ, Triple (SPCompU.lift c)
+      (fun h => OrderDual.toDual (wpE c (fun a h' => OrderDual.ofDual (post a h')) h))
+      post (OrderDual.toDual 0) := fun _ => SPCompU.spec_wpE c
+  have ht : Triple (SPCompU.lift (CostComp.bind c f))
+      (fun h => OrderDual.toDual (ecost c h + wpE c (fun p h' => ecost (f p.1) h') h))
+      (fun r _ => OrderDual.toDual (r.2 : ℝ≥0∞)) (OrderDual.toDual 0) := by
+    unfold CostComp.bind
+    vcgen [hc]
+    rename_i s
+    simp only [leanOrder_rel_dual_iff, OrderDual.ofDual_toDual, SPCompU.wp_eq, wpEF, zero_mul,
+      add_zero, wpE_bind, wpE_pure, Nat.cast_add, wpE_add, ecost]
+    exact add_le_add (wpE_mono c (fun p h' => wpE_const_le _ _ _) s) le_rfl
+  exact (SPCompU.triple_iff_wpE_le _ _ _).1 ht h
 
+set_option mvcgen.warning false in
 /-- **Tower law, exact form** for lossless continuations: expected cost of a
     sequence is the first phase's expected cost plus the `c`-average of the
     continuation's expected cost. -/
@@ -247,26 +234,21 @@ theorem ecost_bind (c : CostComp α) (f : α → CostComp β)
     (hf : ∀ a, isLossless (f a)) (h : Heap) :
     ecost (CostComp.bind c f) h
       = ecost c h + wpE c (fun p h' => ecost (f p.1) h') h := by
-  unfold ecost CostComp.bind
-  rw [wpE_bind]
-  calc wpE c (fun p h' =>
-        wpE (SPComp.bind (f p.1) fun q => SPComp.pure (q.1, p.2 + q.2))
-          (fun r (_ : Heap) => (r.2 : ℝ≥0∞)) h') h
-      = wpE c (fun p h' =>
-          (p.2 : ℝ≥0∞) + wpE (f p.1) (fun r (_ : Heap) => (r.2 : ℝ≥0∞)) h') h := by
-        refine wpE_congr c (fun p h' => ?_) h
-        rw [wpE_bind]
-        have heq : (fun (q : β × ℕ) (h'' : Heap) =>
-            wpE (SPComp.pure (q.1, p.2 + q.2)) (fun r (_ : Heap) => (r.2 : ℝ≥0∞)) h'')
-            = fun q _ => ((p.2 : ℝ≥0∞) + (q.2 : ℝ≥0∞)) := by
-          funext q h''
-          rw [wpE_pure]
-          push_cast
-          rfl
-        rw [heq, wpE_add, wpE_const_of_lossless (hf p.1)]
-    _ = wpE c (fun p _ => (p.2 : ℝ≥0∞)) h
-        + wpE c (fun p h' => wpE (f p.1) (fun r (_ : Heap) => (r.2 : ℝ≥0∞)) h') h :=
-        wpE_add c _ _ h
+  refine le_antisymm (ecost_bind_le c f h) ?_
+  have hc : ∀ (post : α × ℕ → Heap → ℝ≥0∞) (e : ℝ≥0∞),
+      Triple (Prog := SPComp (α × ℕ)) c (fun h => wpE c post h) post e :=
+    fun _ _ => spec_wpE_lower c
+  have ht : Triple (Prog := SPComp (β × ℕ)) (CostComp.bind c f)
+      (fun h => ecost c h + wpE c (fun p h' => ecost (f p.1) h') h)
+      (fun r _ => (r.2 : ℝ≥0∞)) Lean.Order.bot := by
+    unfold CostComp.bind
+    vcgen [hc]
+    rename_i s
+    simp only [leanOrder_rel_iff_le, wp_bot_eq_wpE, ecost]
+    rw [← wpE_add]
+    refine le_of_eq (wpE_congr c (fun p h' => ?_) s)
+    simp only [wpE_bind, wpE_pure, Nat.cast_add, wpE_add, wpE_const_of_lossless (hf p.1)]
+  exact (triple_iff_le_wpE _ _ _).1 ht h
 
 /-- Uniform-bound corollary of the tower law: `C₁`-bounded phase one plus
     `C₂`-bounded continuation gives a `C₁ + C₂` bound for the sequence. -/

@@ -108,7 +108,7 @@ example : (101 : ℕ) ≠ 103 := by
 
 /-! ## Hop chains -/
 
-/-- The three-hop chain of Examples/PRF.lean:187 (`cascade_prf_bound`), with the
+/-- A three-hop chain (the earlier hypothesis form of `cascade_prf_bound`), with the
 birthday term abstracted to `b`: the `hop_chain` arm through `G 1` and `G 2`. -/
 example {α : Type} (G : ℕ → SPComp α) (A : α → SPComp Bool) (ε_prf b : ℝ≥0∞)
     (h01 : AdvantageA (G 0) (G 1) A ≤ ε_prf) (h12 : AdvantageA (G 1) (G 2) A ≤ b)

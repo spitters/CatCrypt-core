@@ -28,10 +28,15 @@ namespace CatCrypt
 open scoped ENNReal
 open CatCrypt.Prob CatCrypt.Relational
 
-/-- A **relational Q₀-monad**: a probabilistic effect `T` with monad operations and a
-graded approximate relational lifting `liftR ε R m₁ m₂` — couple `m₁, m₂` up to error
-`ε` with support in `R` — satisfying the coupling laws an approximate relational
-program logic needs. -/
+/-- A **relational Q₀-monad**: a probabilistic effect `T` with monad operations, a
+denotation `denote` as sub-distributions that sends `pure'` and `bind'` to `SDistr.pure`
+and `SDistr.bind`, and a graded approximate relational lifting `liftR ε R m₁ m₂`
+satisfying the coupling laws an approximate relational program logic needs.
+
+The field `liftR_adequate` relates the lifting to the semantics: `liftR ε R m₁ m₂`
+gives an `ε`-approximate sub-coupling of `denote m₁` and `denote m₂` supported in `R`
+(`liftRApprox`). With `denote_pure` it excludes, for example, `liftR := True`
+(`RelQ0.not_liftR_zero_pure_empty`). -/
 class RelQ0 (T : Type → Type) where
   pure' : {α : Type} → α → T α
   bind' : {α β : Type} → T α → (α → T β) → T β
@@ -46,8 +51,17 @@ class RelQ0 (T : Type → Type) where
     (∀ a b, R a b → S a b) → liftR ε R m₁ m₂ → liftR ε S m₁ m₂
   liftR_mono_eps : ∀ {α β : Type} {ε ε' : ℝ≥0∞} {R : α → β → Prop} {m₁ : T α} {m₂ : T β},
     ε ≤ ε' → liftR ε R m₁ m₂ → liftR ε' R m₁ m₂
+  /-- The denotation of a computation as a sub-distribution. -/
+  denote : {α : Type} → T α → SDistr α
+  denote_pure : ∀ {α : Type} (a : α), denote (pure' a) = SDistr.pure a
+  denote_bind : ∀ {α β : Type} (m : T α) (k : α → T β),
+    denote (bind' m k) = (denote m).bind (fun a => denote (k a))
+  /-- Adequacy: the lifting gives a sub-coupling of the denotations, supported in `R`. -/
+  liftR_adequate : ∀ {α β : Type} {ε : ℝ≥0∞} {R : α → β → Prop} {m₁ : T α} {m₂ : T β},
+    liftR ε R m₁ m₂ → liftRApprox ε R (denote m₁) (denote m₂)
 
-/-- The classical instance: `SDistr` with the sub-coupling lifting `liftRApprox`. -/
+/-- The classical instance: `SDistr` with the sub-coupling lifting `liftRApprox` and the
+identity denotation. -/
 noncomputable instance instRelQ0SDistr : RelQ0 SDistr where
   pure' := SDistr.pure
   bind' := SDistr.bind
@@ -56,6 +70,30 @@ noncomputable instance instRelQ0SDistr : RelQ0 SDistr where
   liftR_bind h hf := liftRApprox_bind h hf
   liftR_mono_rel hRS h := liftRApprox_mono_rel hRS h
   liftR_mono_eps hε h := liftRApprox_mono_eps hε h
+  denote m := m
+  denote_pure _ := rfl
+  denote_bind _ _ := rfl
+  liftR_adequate h := h
+
+/-- In every `RelQ0`, two point masses are not related at grade `0` by the empty relation.
+In particular `liftR := fun _ _ _ _ _ => True` is not the lifting of any `RelQ0`. -/
+theorem RelQ0.not_liftR_zero_pure_empty {T : Type → Type} [RelQ0 T] {α β : Type}
+    (a : α) (b : β) :
+    ¬ RelQ0.liftR 0 (fun (_ : α) (_ : β) => False) (RelQ0.pure' (T := T) a)
+      (RelQ0.pure' (T := T) b) := by
+  intro h
+  have hA := RelQ0.liftR_adequate h
+  rw [RelQ0.denote_pure, RelQ0.denote_pure] at hA
+  obtain ⟨c, hc⟩ := hA
+  have hz : ∀ a' b', c.joint (some (a', b')) = 0 := fun a' b' => by
+    by_contra hne
+    exact hc a' b' hne
+  have hdef := c.left_deficit
+  simp only [hz, tsum_zero, tsub_zero] at hdef
+  have h1 : (∑' a', (SDistr.pure a : SDistr α) (some a')) = 1 :=
+    SDistr.tsum_some_eq_one_of_none_zero (SDistr.pure_apply_none a)
+  rw [h1] at hdef
+  exact one_ne_zero (le_antisymm hdef zero_le)
 
 /-! ## Higher-order layer: arrow-type relational lifting
 
