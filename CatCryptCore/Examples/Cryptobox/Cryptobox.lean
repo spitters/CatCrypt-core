@@ -73,6 +73,14 @@ The `cryptobox_security_full` theorem in `GameHopping.lean` improves on
 
 `GameHopping.lean` composes the full hop chain (`cryptobox_security_full`).
 
+## Degenerate statements (finding 6 of the vacuity sweep)
+
+In the game `PKAE` the adversary receives `getsk` on honest keys
+(`PKAEOracles.getsk`) and unrestricted access to the heap, so every adversary
+that runs the scheme itself has advantage close to `1` in `pkaeAdvantage`. The
+theorems of this file that bound `pkaeAdvantage` are marked degenerate in their
+docstrings, as is `R_GSAE`, which ignores its hybrid index.
+
 ## References
 
 * Dupressoir et al., "Bringing SSP to EasyCrypt — A Security Proof for
@@ -101,7 +109,10 @@ PKEY oracles plus encryption/decryption parameterized by `b : Bool`:
 - `b = true` (ideal): encryption returns random ciphertexts, decryption
   uses a log -/
 
-/-- Oracle interface for the PKAE game.
+/-- **Degenerate: see finding 6 of the vacuity sweep. The field `getsk` returns the secret
+    key of every honest public key to the adversary.**
+
+    Oracle interface for the PKAE game.
     Combines PKEY oracles with encryption/decryption. -/
 structure PKAEOracles where
   gen : Unit → SPComp CT.PK
@@ -182,7 +193,11 @@ noncomputable def PKAE (N : @NIKEScheme CT) (E : @NBSES CT) (I : @KeyInjection C
       enc := pkaeEncOracle N E I b pkeyO,
       dec := pkaeDecOracle N E I b pkeyO }
 
-/-- PKAE advantage: distinguishing real from ideal PKAE. This is the advantage that
+/-- **Degenerate: see finding 6 of the vacuity sweep; the game lets the adversary call
+    `getsk` on honest keys and read any heap location (including `skStoreLoc`), so every
+    adversary that runs the scheme itself wins with advantage close to 1.**
+
+    PKAE advantage: distinguishing real from ideal PKAE. This is the advantage that
     the Cryptobox hop chain bounds. The collision-checking variant with the narrower
     oracle record, `GPKAE` in module `PKAE`, has its own advantage
     `PKAEGame.gpkaeAdvantage`. -/
@@ -210,7 +225,10 @@ noncomputable def R_GNIKE (_N : @NIKEScheme CT) (E : @NBSES CT) (I : @KeyInjecti
         let k ← nikeO.sharedkey pk_s pk_r
         E.dec (I.encode k) c n }
 
-/-- SAE reduction at hybrid index `i`: wrap a PKAE adversary into one
+/-- **Degenerate: see finding 6 of the vacuity sweep; the reduction ignores its hybrid
+    index.**
+
+    SAE reduction at hybrid index `i`: wrap a PKAE adversary into one
     attacking the single-instance SAE game for session `i`.
     Routes session `i`'s encryption/decryption through the SAE oracle. -/
 noncomputable def R_GSAE (_E : @NBSES CT) (_I : @KeyInjection CT)
@@ -234,7 +252,10 @@ The `i`-th hybrid game uses ideal encryption for sessions `0, ..., i-1` and
 real encryption for sessions `i, ..., q-1`. -/
 
 set_option linter.unusedSectionVars false in
-/-- AE advantage bounded by sum of SAE advantages via hybrid argument.
+/-- **Degenerate: see finding 6 of the vacuity sweep; the hypothesis `hdecomp` is the
+    conclusion up to free variables that are not linked to any game.**
+
+    AE advantage bounded by sum of SAE advantages via hybrid argument.
 
     Takes a hybrid decomposition hypothesis `hdecomp` that decomposes the AE
     advantage into per-step contributions, and per-step bounds `hsteps`.
@@ -253,7 +274,10 @@ theorem ae_hybrid_bound (E : @NBSES CT) (I : @KeyInjection CT)
 
 /-! ## Main Security Theorem -/
 
-/-- **Cryptobox security theorem.**
+/-- **Degenerate: see finding 6 of the vacuity sweep; the hypothesis `hdecomp` bounds
+    `pkaeAdvantage` by free variables that are not linked to any game.**
+
+    **Cryptobox security theorem.**
 
     The PKAE advantage of any adversary `A` against the Cryptobox construction
     is bounded by the sum of:

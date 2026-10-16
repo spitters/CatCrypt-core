@@ -107,7 +107,10 @@ noncomputable def GNIKE (N : @NIKEScheme CT) (b : Bool)
 
 /-! ## NIKE Advantage -/
 
-/-- NIKE advantage: distinguishing real from ideal shared keys. -/
+/-- **Degenerate: see finding 6 of the vacuity sweep; the adversary receives `getsk` and
+    unrestricted heap access, so it can recompute `N.sharedkey` of honest keys.**
+
+    NIKE advantage: distinguishing real from ideal shared keys. -/
 noncomputable def nikeAdvantage (N : @NIKEScheme CT)
     (pkeyO : PKEYOracles)
     (A : PKEYOracles → NIKEOracles → SPComp Bool) : ℝ≥0∞ :=
