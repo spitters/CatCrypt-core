@@ -194,7 +194,8 @@ theorem liftRApprox_map_some_of_couples {R : α → β → Prop} {μ : PMF α} {
 /-- **`PMF` as a graded relational `RelQ0` monad.** The lifting `liftR ε R` is the `XRelatorPMF`
 coupling `Couples · · R`, independent of `ε` (an exact coupling is a zero-error one). Its
 four laws are `Couples_pure`, `Couples_bind`, `Couples_mono_rel`, and grade weakening. The
-denotation is `PMF.map some`; adequacy is `liftRApprox_map_some_of_couples`. This
+denotation is `PMF.map some` with every outcome paired with the unchanged initial heap;
+adequacy is `liftRApprox_map_some_of_couples` followed by `liftRApprox_bind_pure_heap`. This
 exhibits the qualitative prototype as the `ε`-collapsed instance of the graded relational
 monad. -/
 noncomputable instance instRelQ0PMF : RelQ0 PMF where
@@ -205,13 +206,21 @@ noncomputable instance instRelQ0PMF : RelQ0 PMF where
   liftR_bind h hf := Couples_bind h hf
   liftR_mono_rel hRS h := Couples_mono_rel hRS h
   liftR_mono_eps _ h := h
-  denote μ := μ.map some
-  denote_pure a := PMF.pure_map some a
-  denote_bind μ k := by
-    unfold SDistr.bind
-    rw [PMF.map_bind, PMF.bind_map]
-    rfl
-  liftR_adequate h := liftRApprox_map_some_of_couples h _
+  denote μ h := SDistr.bind (μ.map some) (fun a => SDistr.pure (a, h))
+  denote_pure a h := by
+    show SDistr.bind ((PMF.pure a).map some) _ = _
+    rw [PMF.pure_map]
+    exact SDistr.pure_bind a _
+  denote_bind μ k h := by
+    have hb : (((μ.bind k).map some : SDistr _)) =
+        SDistr.bind (μ.map some) (fun a => (k a).map some) := by
+      unfold SDistr.bind
+      rw [PMF.map_bind, PMF.bind_map]
+      rfl
+    show SDistr.bind ((μ.bind k).map some) _ = _
+    rw [hb]
+    simp only [SDistr.bind_assoc, SDistr.pure_bind]
+  liftR_adequate hm h := liftRApprox_bind_pure_heap (liftRApprox_map_some_of_couples hm _) h
 
 /-- **The `PMF` lifting is `XRelatorPMF`'s `Couples`**, at every grade: the graded
 relator collapses to the qualitative one. -/
