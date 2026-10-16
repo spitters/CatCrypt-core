@@ -7,6 +7,8 @@ module
 
 public import CatCryptCore.Crypto.OracleSimulation
 public import CatCryptCore.Crypto.PRPPRFSwitching
+public import CatCryptCore.Tactics.AutoHopRegistry
+public meta import CatCryptCore.Tactics.AutoHopRegistry
 
 /-!
 # Public-key encryption: schemes with explicit coins and their security games
@@ -224,8 +226,9 @@ noncomputable def indcpaGame (A : INDCPAAdversary PK M C) (b : Bool) : PMF Bool 
   P.keygen.bind fun ks => (A.choose ks.1).bind fun x =>
     (P.encDist ks.1 (if b then x.1 else x.2.1)).bind fun c => A.guess x.2.2 c
 
-/-- The IND-CPA advantage: the distance between the two challenge bits. -/
-noncomputable def indcpaAdvantage (A : INDCPAAdversary PK M C) : ℝ≥0∞ :=
+/-- The IND-CPA advantage: the distance between the two challenge bits. Registered with
+`@[hop_metric]`, which unfolds it to that `Advantage`. -/
+@[hop_metric] noncomputable def indcpaAdvantage (A : INDCPAAdversary PK M C) : ℝ≥0∞ :=
   Advantage (pmfGame (indcpaGame P A true)) (pmfGame (indcpaGame P A false))
 
 /-- The decryption oracle for `sk`. The state is the challenge ciphertext recorded

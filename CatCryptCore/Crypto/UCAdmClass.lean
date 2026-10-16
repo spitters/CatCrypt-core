@@ -6,6 +6,8 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Crypto.UCMonad
+public import CatCryptCore.Tactics.AutoHopRegistry
+public meta import CatCryptCore.Tactics.AutoHopRegistry
 
 /-!
 # Admissibility classes and computational distance
@@ -166,12 +168,12 @@ theorem ucCdist_self {α β : Type} (f : α → T β) :
   simp
 
 /-- Symmetry: `ucCdist f g = ucCdist g f`. -/
-theorem ucCdist_sym {α β : Type} (f g : α → T β) :
+@[hop_metric] theorem ucCdist_sym {α β : Type} (f g : α → T β) :
     ucCdist f g = ucCdist g f := by
   simp only [ucCdist, UCMonadCompDist.ucDistComp_comm f g]
 
 /-- Triangle inequality: `ucCdist f h ≤ ucCdist f g + ucCdist g h`. -/
-theorem ucCdist_triangle {α β : Type} (f g h : α → T β) :
+@[hop_metric] theorem ucCdist_triangle {α β : Type} (f g h : α → T β) :
     ucCdist f h ≤ ucCdist f g + ucCdist g h := by
   apply iSup₂_le
   intro D hD

@@ -10,6 +10,8 @@ public import CatCryptCore.Crypto.Assumptions.DDH
 public import CatCryptCore.Crypto.PairingGroup
 public import CatCryptCore.Examples.ElGamal
 public import CatCryptCore.Tactics
+public import CatCryptCore.Tactics.AutoHopRegistry
+public meta import CatCryptCore.Tactics.AutoHopRegistry
 
 /-!
 # Diffie–Hellman Key Agreement: Key-Indistinguishability from DDH
@@ -111,8 +113,9 @@ noncomputable def KA_Game_Ideal (P : PairingGroup) (D : KA_Distinguisher P.G₁)
   D (P.g₁ ^ᵍ a, P.g₁ ^ᵍ b) k
 
 /-- Key-indistinguishability advantage: the ability to tell the real shared key
-    from a uniform one, given the transcript. -/
-noncomputable def KA_Advantage (P : PairingGroup) (D : KA_Distinguisher P.G₁) :
+    from a uniform one, given the transcript. Registered with `@[hop_metric]`: it
+    unfolds to an `Advantage` between the two experiments. -/
+@[hop_metric] noncomputable def KA_Advantage (P : PairingGroup) (D : KA_Distinguisher P.G₁) :
     ℝ≥0∞ :=
   Advantage (KA_Game_Real P D) (KA_Game_Ideal P D)
 
