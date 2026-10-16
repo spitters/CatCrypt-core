@@ -223,4 +223,257 @@ theorem stable_slotCommonPrefix (sl : Blk → ℕ) (d : ℕ) :
 
 end Props
 
+/-! ## Phases of the PoS-NSB execution -/
+
+section Phase
+
+open PoSNSB Parameters BlockParameters Corruption Execution
+
+variable {Tx Hash Party AdvState : Type} [Parameters Party] [BlockParameters Tx Hash Party]
+  [Execution Tx Hash Party AdvState] [Corruption Party] [DecidableEq Party]
+
+theorem foldr_rcv_t_now (N : GlobalState Tx Hash Party AdvState) (ps : List Party) :
+    (ps.foldr party_rcv_step_world N).t_now = N.t_now := by
+  induction ps with
+  | nil => rfl
+  | cons p ps ih => rw [List.foldr_cons, rcv_t_now, ih]
+
+theorem foldr_bake_t_now (N : GlobalState Tx Hash Party AdvState) (ps : List Party) :
+    (ps.foldr party_bake_step_world N).t_now = N.t_now := by
+  induction ps with
+  | nil => rfl
+  | cons p ps ih => rw [List.foldr_cons, bake_t_now, ih]
+
+/-- A phase advances the slot by one exactly when it is a `NextRound` step. -/
+theorem phaseStep_t_now_eq (N : GlobalState Tx Hash Party AdvState) :
+    (phaseStep N).t_now = if N.progress = .Baked then N.t_now + 1 else N.t_now := by
+  unfold phaseStep
+  cases h : N.progress <;> simp [foldr_rcv_t_now, foldr_bake_t_now, inc_round, round_tick]
+
+/-- A phase that advances the slot ends in a `Ready` state. -/
+theorem phaseStep_ready (N : GlobalState Tx Hash Party AdvState)
+    (h : (phaseStep N).t_now ≠ N.t_now) : (phaseStep N).progress = .Ready := by
+  rw [phaseStep_t_now_eq] at h
+  unfold phaseStep
+  cases hp : N.progress <;> simp_all
+
+end Phase
+
+/-! ## The views of the PoS-NSB execution -/
+
+section Views
+
+open PoSNSB Parameters BlockParameters Corruption Execution
+
+variable {Tx Hash : Type} [DecidableEq Tx] [DecidableEq Hash] {np : ℕ} [Corruption (Fin np)]
+  {n Hz : ℕ} {Sch : SigScheme (Block Tx Hash (Fin np))}
+  (P : Protocol Tx Hash np n Hz) (A : Adversary Tx Hash np n Hz Sch) (Tree : TreeFamily P)
+
+/-- The slot after `j` phases of the real execution of the seed `ω`. -/
+def roundAt (ω : Seed Tx Hash np n Hz Sch) (j : ℕ) : ℕ :=
+  letI := ω.params P; letI := ω.bparams P; (sTrace P ω A false j).t_now
+
+/-- The positions after `j` phases of the real execution of the seed `ω`: the chain the local
+tree of party `p` selects at the previous slot (empty without a local state), and for the
+observer `none` the honest tree chain. -/
+def posAt (ω : Seed Tx Hash np n Hz Sch) (j : ℕ) : Option (Fin np) → List (Block Tx Hash (Fin np))
+  | none => letI := ω.params P; letI := ω.bparams P; letI := mkExec false P ω A
+      honest_tree_chain (Tree ω.κ ω.f) (sTrace P ω A false j)
+  | some p => letI := ω.params P; letI := ω.bparams P
+      ((sTrace P ω A false j).state_map p).elim [] fun l =>
+        l.tT.bestChain ((sTrace P ω A false j).t_now - 1) l.tree
+
+theorem posAt_some_of_eq (ω : Seed Tx Hash np n Hz Sch) (j : ℕ) (p : Fin np) :
+    letI := ω.params P; letI := ω.bparams P
+    ∀ l, (sTrace P ω A false j).state_map p = some l →
+      posAt P A Tree ω j (some p) = l.tT.bestChain ((sTrace P ω A false j).t_now - 1) l.tree := by
+  intro l hl
+  simp only [posAt, hl, Option.elim]
+
+theorem posAt_some_of_none (ω : Seed Tx Hash np n Hz Sch) (j : ℕ) (p : Fin np) :
+    letI := ω.params P; letI := ω.bparams P
+    (sTrace P ω A false j).state_map p = none → posAt P A Tree ω j (some p) = [] := by
+  intro hl
+  simp only [posAt, hl, Option.elim]
+
+/-- The view before the seed is drawn: round `0`, no blocks. -/
+def initView : TreeView (Option (Fin np)) (Block Tx Hash (Fin np)) :=
+  ⟨0, fun _ => [], fun _ => [], fun _ => []⟩
+
+/-- The view after `j` phases, reported as phase `min j K`: round the slot, positions
+`posAt`, trees the blocks that have been on the positions so far, no final blocks. -/
+def phaseView (K : ℕ) (ω : Seed Tx Hash np n Hz Sch) (j : ℕ) :
+    TreeView (Option (Fin np)) (Block Tx Hash (Fin np)) where
+  round := roundAt P A ω (min j K)
+  tree o := (List.range (min j K + 1)).flatMap fun i => posAt P A Tree ω i o
+  pos := posAt P A Tree ω (min j K)
+  fin _ := []
+
+/-- The view of a protocol state (optional seed, phase). -/
+def pView (K : ℕ) (s : Option (Seed Tx Hash np n Hz Sch) × ℕ) :
+    TreeView (Option (Fin np)) (Block Tx Hash (Fin np)) :=
+  s.1.elim initView fun ω => phaseView P A Tree K ω s.2
+
+/-- The honest parties of the tree trace: `some p` for `p` honest. The observer `none` is not
+honest. -/
+def honestP (o : Option (Fin np)) : Prop := ∃ p, o = some p ∧ CorruptionStatus p = .Honest
+
+variable (Tx Hash) in
+/-- The honest blocks. -/
+def hbB (b : Block Tx Hash (Fin np)) : Bool := decide (CorruptionStatus b.bid = .Honest)
+
+/-- The block tree of the guard: ancestry is the slot order, rooted at the genesis block. -/
+def slotTree : BlockTree (Block Tx Hash (Fin np)) :=
+  ⟨fun a b => a.sl ≤ b.sl, P.GB, fun _ => le_rfl, fun h h' => h.trans h'⟩
+
+/-- The trace properties of `F_Tree`: D2's chain growth (of the observer, rate `pH ν - ε`),
+chain quality and common prefix. -/
+def chainP (ν : PMF SlotKind) (d w : ℕ) (ε : ℝ) :
+    List (TreeTrace (Option (Fin np)) (Block Tx Hash (Fin np)) → Prop) :=
+  [SlotChainGrowth none (pH ν - ε) d, SlotChainQuality Block.sl (hbB Tx Hash) d w,
+    SlotCommonPrefix Block.sl d]
+
+theorem chainP_stable (ν : PMF SlotKind) (d w : ℕ) (ε : ℝ) :
+    ∀ φ ∈ chainP (Tx := Tx) (Hash := Hash) (np := np) ν d w ε, Stable φ := by
+  simp only [chainP, List.mem_cons, List.not_mem_nil, or_false]
+  rintro φ (rfl | rfl | rfl)
+  exacts [stable_slotChainGrowth _ _ _, stable_slotChainQuality _ _ _ _,
+    stable_slotCommonPrefix _ _]
+
+theorem roundAt_succ (ω : Seed Tx Hash np n Hz Sch) (j : ℕ) :
+    roundAt P A ω (j + 1) = letI := ω.params P; letI := ω.bparams P
+      if (sTrace P ω A false j).progress = .Baked then roundAt P A ω j + 1 else roundAt P A ω j := by
+  let _ := ω.params P; let _ := ω.bparams P; let _ := mkExec false P ω A
+  exact (congrArg GlobalState.t_now (runTrace_succ (AdvState := A.AdvState) j)).trans
+    (phaseStep_t_now_eq _)
+
+theorem roundAt_mono (ω : Seed Tx Hash np n Hz Sch) {j j' : ℕ} (h : j ≤ j') :
+    roundAt P A ω j ≤ roundAt P A ω j' := by
+  induction j', h using Nat.le_induction with
+  | base => exact le_rfl
+  | succ k _ ih => rw [roundAt_succ]; split_ifs <;> omega
+
+theorem ready_of_roundAt_lt (ω : Seed Tx Hash np n Hz Sch) (j : ℕ)
+    (h : roundAt P A ω j < roundAt P A ω (j + 1)) :
+    letI := ω.params P; letI := ω.bparams P; (sTrace P ω A false (j + 1)).progress = .Ready := by
+  let _ := ω.params P; let _ := ω.bparams P; let _ := mkExec false P ω A
+  have e := runTrace_succ (Tx := Tx) (Hash := Hash) (Party := Fin np) (AdvState := A.AdvState) j
+  show (runTrace A.AdvState (j + 1)).progress = .Ready
+  rw [e]
+  refine phaseStep_ready _ fun h' => ?_
+  have : roundAt P A ω (j + 1) = roundAt P A ω j := by
+    show (runTrace A.AdvState (j + 1)).t_now = (runTrace A.AdvState j).t_now
+    rw [e]; exact h'
+  omega
+
+/-- The tree trace of a run prefix of length `m` of the seed `ω`: the initial view at time
+`0`, and the view after `t - 1` phases at times `1 ≤ t ≤ m`. -/
+def XT (K : ℕ) (ω : Seed Tx Hash np n Hz Sch) (m : ℕ) :
+    TreeTrace (Option (Fin np)) (Block Tx Hash (Fin np)) :=
+  ⟨honestP, fun t => if t = 0 then initView else phaseView P A Tree K ω (min t m - 1)⟩
+
+/-- **The guard on good seeds.** If chain growth, chain quality and common prefix of D2 hold for
+the seed `ω`, the tree trace of every run prefix of positive length satisfies the guard of
+`F_Tree^P` with `P = chainP`: it is well formed, satisfies the three properties and the final
+blocks (there are none) agree. -/
+theorem guard_of_good (K : ℕ) (ν : PMF SlotKind) (d w : ℕ) (ε : ℝ)
+    (ω : Seed Tx Hash np n Hz Sch) (hG : Good P A Tree ν K d w ε ω) {m : ℕ} (hm : 1 ≤ m) :
+    FTreeGuard (slotTree P) (chainP ν d w ε) (XT P A Tree K ω m) := by
+  have hst : ∀ t, t ≠ 0 → (XT P A Tree K ω m).st t = phaseView P A Tree K ω (min t m - 1) :=
+    fun t ht => if_neg ht
+  have hst0 : (XT P A Tree K ω m).st 0 = initView := by simp [XT]
+  refine ⟨⟨?_, ?_, ?_, ?_⟩, ?_, ?_⟩
+  · -- trees grow
+    intro p t t' _ htt b hb
+    rcases Nat.eq_zero_or_pos t with rfl | ht
+    · simp [hst0, initView] at hb
+    · rw [hst t (by omega)] at hb
+      rw [hst t' (by omega)]
+      obtain ⟨i, hi, hb⟩ := List.mem_flatMap.1 hb
+      refine List.mem_flatMap.2 ⟨i, ?_, hb⟩
+      simp only [List.mem_range] at hi ⊢
+      omega
+  · -- positions in trees
+    intro p t _ b hb
+    rcases Nat.eq_zero_or_pos t with rfl | ht
+    · simp [hst0, initView] at hb
+    · rw [hst t (by omega)] at hb ⊢
+      exact List.mem_flatMap.2 ⟨_, List.mem_range.2 (Nat.lt_succ_self _), hb⟩
+  · -- positions are chains of the slot tree
+    rintro p t ⟨q, rfl, -⟩
+    rcases Nat.eq_zero_or_pos t with rfl | ht
+    · simp [TreeTrace.chains, hst0, initView]
+    · simp only [TreeTrace.chains, hst t (by omega), phaseView]
+      let _ := ω.params P; let _ := ω.bparams P
+      rcases hl : (sTrace P ω A false (min (min t m - 1) K)).state_map q with _ | l
+      · rw [posAt_some_of_none P A Tree ω _ q hl]; exact List.Pairwise.nil
+      · rw [posAt_some_of_eq P A Tree ω _ q l hl]
+        exact (l.tT.best_chain_valid _ _).2.2.imp fun h => le_of_lt h
+  · -- rounds do not decrease
+    intro t t' htt
+    rcases Nat.eq_zero_or_pos t with rfl | ht
+    · simp [hst0, initView]
+    · rw [hst t (by omega), hst t' (by omega)]
+      exact roundAt_mono P A ω (by omega)
+  · simp only [chainP, List.mem_cons, List.not_mem_nil, or_false]
+    rintro φ (rfl | rfl | rfl)
+    · -- chain growth
+      intro t₁ t₂ ht hnew hd w' hw'
+      obtain ⟨t₀, rfl, hlt⟩ := hnew
+      have e₁ := hst (t₀ + 1) (by omega)
+      have e₂ := hst t₂ (by omega)
+      rw [e₁, e₂] at hd hw'
+      rw [e₁] at hlt
+      rw [e₁, e₂]
+      have hready : letI := ω.params P; letI := ω.bparams P
+          (sTrace P ω A false (min (min (t₀ + 1) m - 1) K)).progress = .Ready := by
+        rcases Nat.eq_zero_or_pos t₀ with rfl | h0
+        · rw [show min (min (0 + 1) m - 1) K = 0 by omega]; rfl
+        · rw [hst t₀ (by omega)] at hlt
+          simp only [phaseView] at hlt
+          have h1 : min (min (t₀ + 1) m - 1) K = min (min t₀ m - 1) K + 1 := by
+            by_contra hc
+            rw [show min (min (t₀ + 1) m - 1) K = min (min t₀ m - 1) K by omega] at hlt
+            exact lt_irrefl _ hlt
+          rw [h1]
+          exact ready_of_roundAt_lt P A ω _ (h1 ▸ hlt)
+      exact hG.1 _ _ (by omega) (min_le_right _ _) hready hd w' hw'
+    · -- chain quality
+      rintro t _ ⟨q, rfl, hq⟩ bj bi c hfrag hsl
+      rcases Nat.eq_zero_or_pos t with rfl | ht
+      · obtain ⟨s₁, s₃, h⟩ := hfrag
+        simp [hst0, initView] at h
+      · rw [hst t (by omega)] at hfrag
+        simp only [phaseView] at hfrag
+        let _ := ω.params P; let _ := ω.bparams P
+        rcases hl : (sTrace P ω A false (min (min t m - 1) K)).state_map q with _ | l
+        · rw [posAt_some_of_none P A Tree ω _ q hl] at hfrag
+          obtain ⟨s₁, s₃, h⟩ := hfrag
+          simp at h
+        · rw [posAt_some_of_eq P A Tree ω _ q l hl] at hfrag
+          exact hG.2.1 _ (min_le_right _ _) q l hl (decide_eq_true hq) bj bi c hfrag hsl
+    · -- common prefix
+      rintro t₁ t₂ k _ _ ht hk ⟨q₁, rfl, hq₁⟩ ⟨q₂, rfl, hq₂⟩ hne
+      rcases Nat.eq_zero_or_pos t₁ with rfl | ht₁
+      · simp [hst0, initView]
+      · rw [hst t₁ (by omega)] at hk ⊢
+        rw [hst t₂ (by omega)] at hne ⊢
+        simp only [phaseView] at hk hne ⊢
+        let _ := ω.params P; let _ := ω.bparams P
+        rcases hl₂ : (sTrace P ω A false (min (min t₂ m - 1) K)).state_map q₂ with _ | l₂
+        · exact absurd (posAt_some_of_none P A Tree ω _ q₂ hl₂) hne
+        rcases hl₁ : (sTrace P ω A false (min (min t₁ m - 1) K)).state_map q₁ with _ | l₁
+        · rw [posAt_some_of_none P A Tree ω _ q₁ hl₁]; simp
+        rw [posAt_some_of_eq P A Tree ω _ q₁ l₁ hl₁, posAt_some_of_eq P A Tree ω _ q₂ l₂ hl₂]
+        exact hG.2.2 _ _ k (by omega) (min_le_right _ _) hk q₁ q₂ l₁ l₂
+          (decide_eq_true hq₁) (decide_eq_true hq₂) hl₁ hl₂
+  · -- agreement: there are no final blocks
+    intro p q t t' b b' i j _ _ hb _
+    obtain ⟨C, hC, -⟩ := hb
+    have hfin : ∀ t p, ((XT P A Tree K ω m).st t).fin p = [] := by
+      intro t p; by_cases ht : t = 0 <;> simp [XT, ht, initView, phaseView]
+    simp [TreeTrace.finChains, hfin] at hC
+
+end Views
+
 end CatCryptCore.Consensus.UC.Chain
