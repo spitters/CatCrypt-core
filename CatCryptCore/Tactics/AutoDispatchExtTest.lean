@@ -73,7 +73,7 @@ example {α : Type} (G : ℕ → SPComp α) (A : α → SPComp Bool) (q : ℕ) (
     AdvantageA (G 0) (G q) A ≤ ∑ i ∈ Finset.range q, ε i := by
   catcrypt_auto
 
-/-- The three-hop chain of Examples/PRF.lean:187 (`cascade_prf_bound`), with the
+/-- A three-hop chain (the earlier hypothesis form of `cascade_prf_bound`), with the
 birthday term abstracted to `b`: the arms of this module fail and the `hop_chain`
 arm of `AutoDispatch` closes the goal. -/
 example {α : Type} (G : ℕ → SPComp α) (A : α → SPComp Bool) (ε_prf b : ℝ≥0∞)
