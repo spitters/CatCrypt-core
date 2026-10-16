@@ -8,6 +8,7 @@ module
 public import CatCryptCore.Examples.Sigma
 public import CatCryptCore.Examples.GroupParam
 public import CatCryptCore.Crypto.UC
+public import CatCryptCore.Crypto.UCConcrete
 
 /-!
 # Chaum-Pedersen Protocol: Equality of Discrete Logarithms
@@ -40,7 +41,8 @@ to `g` and `h` respectively, without revealing the exponent.
 * `chaumPedersen_completeness` -- completeness (`Sigma.Completeness`)
 * `chaumPedersen_SHVZK_visible` -- special honest-verifier zero-knowledge (given challenge)
 * `chaumPedersen_special_soundness` -- special soundness (witness extraction)
-* `chaumPedersen_uc_secure` -- UC security at eps = 0
+* `chaumPedersen_uc_secure` -- concrete UC emulation with bound `0`, from
+  `PureGame` and `GameAdvBoundC` instances on the pairs of the relation
 
 ## References
 
@@ -440,21 +442,6 @@ noncomputable def cpSimVisible (stmt : CPStatement gp) :
     SPComp (CPVisibleTranscript gp) :=
   SPComp.map (projectTranscript gp) (simulatedTranscript (chaumPedersenSigma gp) stmt)
 
-/-- UC specification for visible Chaum-Pedersen transcripts. -/
-def cpSpec (V : Type) : UCSpec :=
-  ⟨CPStatement gp, Unit, CPVisibleTranscript gp,
-   CPVisibleTranscript gp, V⟩
-
-/-- Real Chaum-Pedersen protocol (visible output). -/
-noncomputable def cpReal (stmt : CPStatement gp) (w : CPWitness gp) :
-    SPComp (Unit ⊕ CPVisibleTranscript gp) :=
-  SPComp.map Sum.inr (cpRealVisible gp stmt w)
-
-/-- Ideal Chaum-Pedersen functionality (visible output). -/
-noncomputable def cpIdeal (stmt : CPStatement gp) :
-    SPComp (Unit ⊕ CPVisibleTranscript gp) :=
-  SPComp.map Sum.inr (cpSimVisible gp stmt)
-
 /-- The real and simulated visible transcript computations are equal.
 
     After projecting out the internal randomness `r`, the bijection
@@ -516,14 +503,60 @@ theorem cp_real_vis_eq_sim (stmt : CPStatement gp) (w : CPWitness gp)
   rw [step1]
   exact SDistr.uniform_bind_equiv_comp bij g_cont
 
-/-- The Chaum-Pedersen protocol is perfectly UC-secure: `UCEmulates 0`.
-    (composition plumbing) -/
-theorem chaumPedersen_uc_secure (V : Type) (stmt : CPStatement gp) (w : CPWitness gp)
-    (hrel : cpRelation gp stmt w) :
-    UCEmulates 0 (cpSpec gp V) (fun _ => cpReal gp stmt w) (fun _ => cpIdeal gp stmt) := by
-  apply UCEmulates_of_sdist
-  simp only [cpReal, cpIdeal, SPComp.map]
-  rw [cp_real_vis_eq_sim gp stmt w hrel]
-  exact le_of_eq (sdist_self _)
+/-! ## UC security by instances -/
+
+open CatCrypt.Crypto.UCDSL CatCrypt.Crypto.UCConcrete
+
+/-- Statement–witness pairs of the equality-of-discrete-logs relation: the honest
+inputs of the UC game. -/
+abbrev CPRelPair := {p : CPStatement gp × CPWitness gp // cpRelation gp p.1 p.2}
+
+/-- The real game on a pair of the relation: the visible honest transcript. -/
+noncomputable def cpRealGame : CPRelPair gp → SPComp (CPVisibleTranscript gp) :=
+  fun p => cpRealVisible gp p.1.1 p.1.2
+
+/-- The ideal game on a pair of the relation: the visible simulated transcript,
+computed from the statement only. -/
+noncomputable def cpIdealGame : CPRelPair gp → SPComp (CPVisibleTranscript gp) :=
+  fun p => cpSimVisible gp p.1.1
+
+/-- The simulated visible transcript does not read the heap. -/
+theorem cpSimVisible_isPure (stmt : CPStatement gp) : SPComp.IsPure (cpSimVisible gp stmt) := by
+  unfold cpSimVisible simulatedTranscript SPComp.map
+  simp only [chaumPedersenSigma, cpSimulate, SPComp.monad_bind_eq, SPComp.monad_pure_eq]
+  exact SPComp.bind_isPure
+    (SPComp.bind_isPure (SPComp.sample_isPure _) fun _ =>
+      SPComp.bind_isPure
+        (SPComp.bind_isPure (SPComp.sample_isPure _) fun _ => SPComp.pure_isPure _)
+        fun _ => SPComp.pure_isPure _)
+    fun _ => SPComp.pure_isPure _
+
+instance : PureGame (cpIdealGame gp) := ⟨fun p => cpSimVisible_isPure gp p.1.1⟩
+
+instance : PureGame (cpRealGame gp) :=
+  ⟨fun p => by
+    show SPComp.IsPure (cpRealVisible gp p.1.1 p.1.2)
+    rw [cp_real_vis_eq_sim gp p.1.1 p.1.2 p.2]
+    exact cpSimVisible_isPure gp p.1.1⟩
+
+/-- The game bound `0`: on every pair of the relation the real and ideal games are
+equal. -/
+instance cpGameAdvBoundC :
+    GameAdvBoundC (cpRealGame gp) (cpIdealGame gp)
+      (fun (_ : CPRelPair gp) (_ : CPVisibleTranscript gp → SPComp Bool) => (0 : ℝ≥0∞)) :=
+  ⟨fun p D => by
+    show Advantage _ _ ≤ 0
+    rw [show cpRealGame gp p = cpIdealGame gp p from cp_real_vis_eq_sim gp p.1.1 p.1.2 p.2,
+      Advantage_self]⟩
+
+/-- **The Chaum-Pedersen protocol is perfectly UC-secure.** For every adversary
+and environment supplying a pair of the relation, the real visible transcript and
+the transcript simulated from the statement give distinguishing advantage `0`. -/
+theorem chaumPedersen_uc_secure (V : Type) :
+    UCEmulatesCSim (UCSpec.ofGame (CPRelPair gp) (CPVisibleTranscript gp) V)
+      (UCProtocol.ofGame (cpRealGame gp)) (UCProtocol.ofGame (cpIdealGame gp)) id
+      (gameUCBound
+        (fun (_ : CPRelPair gp) (_ : CPVisibleTranscript gp → SPComp Bool) => (0 : ℝ≥0∞))) :=
+  UCFromGameC.uc
 
 end CatCrypt.Examples.ChaumPedersen

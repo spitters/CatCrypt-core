@@ -45,6 +45,8 @@ holds and `m*` was never signed.
 * `Sigma.SpecialSound`, `Sigma.PerfectHVZK`, `Sigma.CommitBound γ` — special
   soundness, perfect honest-verifier zero knowledge, and the bound `γ` on the
   probability of each commitment
+* `Sigma.Complete`, `Sigma.UniqueResp` — completeness of the honest transcript
+  and uniqueness of accepted responses
 * `Sigma.relGame B`, `Sigma.relAdvantage B` — the relation game: sample
   `(x, w) ← P.gen`; `B x` outputs `w'` and wins when `P.rel x w'`
 * `realStep`, `simStep` — the real and simulated oracles
@@ -150,6 +152,17 @@ probability at most `γ` under uniform prover randomness. -/
 def CommitBound (γ : ℝ≥0∞) : Prop :=
   ∀ x w, (x, w) ∈ P.gen.support → ∀ a,
     (PMF.uniformOfFintype P.Rand).toOuterMeasure {r | P.commit x w r = a} ≤ γ
+
+/-- **Completeness.** For a statement `x` with witness `w`, the honest
+transcript `(P.commit x w r, e, P.respond x w r e)` verifies for every prover
+randomness `r` and every challenge `e`. -/
+def Complete : Prop :=
+  ∀ x w, P.rel x w → ∀ r e, P.verify x (P.commit x w r) e (P.respond x w r e) = true
+
+/-- **Unique responses.** Two accepting transcripts with the same statement,
+commitment and challenge have the same response. -/
+def UniqueResp : Prop :=
+  ∀ x a e z z', P.verify x a e z = true → P.verify x a e z' = true → z = z'
 
 /-- The relation game: sample `(x, w) ← P.gen`, run `B` on `x`, and check that its
 output is a witness for `x`. -/

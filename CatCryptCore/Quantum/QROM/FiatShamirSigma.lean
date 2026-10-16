@@ -7,6 +7,7 @@ module
 
 public import CatCryptCore.Quantum.QROM.Rewinding
 public import CatCryptCore.ForMathlib.ENNRealAverage
+public import CatCryptCore.Crypto.FiatShamirROM.Game
 
 /-!
 # Fiat–Shamir for Σ-protocols in the quantum random-oracle model
@@ -39,6 +40,8 @@ relation is hard on the statement distribution, the right-hand side is small.
   classifications of the computational basis
 * `SigmaQEnc Stmt Wit rel Resp m n w` — the encoding of a Σ-protocol with unique
   responses and special soundness
+* `SigmaQEnc.ofSigma P hU hS com chal resp` — the encoding of a classical
+  `FiatShamirROM.Sigma` with unique responses and special soundness
 * `sigmaQV S st` — the verifier projectors of the statement `st`
 * `sigmaRespMeas S st x θ` — the measurement of the accept outcome and the
   response
@@ -278,6 +281,30 @@ theorem sigmaRespMeas_qbind_outAcc (S : SigmaQEnc Stmt Wit rel Resp m n w) (st :
       rw [if_neg h, if_neg h']
 
 end Verifier
+
+/-! ## The encoding of a classical Σ-protocol -/
+
+section OfSigma
+
+variable {m n w : ℕ}
+
+/-- The encoding of the classical Σ-protocol `P` with unique responses and special
+    soundness on the register `Fin (m * n * w)`: the commitment register value
+    `x : Fin m` decodes to `com x`, the challenge `θ : Fin n` to `chal θ` through a
+    bijection, and the work register value `k : Fin w` to the response `resp k`.
+    The relation is `P.rel`, the test is `P.verify` on the decoded transcript, and
+    the extractor is `P.extract` on the decoded transcripts. -/
+def SigmaQEnc.ofSigma (P : CatCrypt.Crypto.FiatShamirROM.Sigma) (hU : P.UniqueResp)
+    (hS : P.SpecialSound) (com : Fin m → P.Com) (chal : Fin n ≃ P.Ch) (resp : Fin w → P.Resp) :
+    SigmaQEnc P.Stmt P.Wit P.rel P.Resp m n w where
+  resp := resp
+  verify st x θ z := P.verify st (com x) (chal θ) z
+  extract st x θ z θ' z' := P.extract st (com x) (chal θ) z (chal θ') z'
+  unique_resp st x θ z z' h h' := hU st (com x) (chal θ) z z' h h'
+  special_sound st x θ z θ' z' h h' hne :=
+    hS st (com x) (chal θ) z (chal θ') z' h h' (chal.injective.ne hne)
+
+end OfSigma
 
 /-! ## The rewinding extractor and special soundness -/
 

@@ -167,6 +167,7 @@ public import CatCryptCore.Crypto.FiatShamirROM.Game
 public import CatCryptCore.Crypto.FiatShamirROM.Reduction
 public import CatCryptCore.Crypto.FiatShamirROM.Schnorr
 public import CatCryptCore.Crypto.FiatShamirROM.StatHVZK
+public import CatCryptCore.Crypto.FiatShamirROM.Bridge
 public import CatCryptCore.Crypto.PRPPRFSwitching
 public import CatCryptCore.Crypto.PRFAssumption
 public import CatCryptCore.Crypto.Assumptions.Catalog

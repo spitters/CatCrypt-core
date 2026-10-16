@@ -41,9 +41,9 @@ The honest prover samples `r`, sends `a = g₁ ^ᵍ r`, and answers `s = r + w·
   witness `w = (s₁ - s₂) / (c₁ - c₂)` with `g₁ ^ᵍ w = pk`. Pure group algebra, no
   probabilistic reasoning.
 * `schnorr_honest_accepts` — the honest transcript always verifies (completeness).
-* `SchnorrForger` / `schnorr_forking_bound` — a decomposed (Fiat–Shamir, single
-  random-oracle query) forger, and the direct instantiation of the core forking
-  lemma: fork success ≥ `acc² - acc/|ZMod p|`.
+* `SchnorrForger` — a decomposed (Fiat–Shamir, single random-oracle query)
+  forger as a `ForkableAdversary`, to which the core forking lemma
+  `fork_success_ge` applies: fork success ≥ `acc² - acc/|ZMod p|`.
 * `dlFromForking` / `dlFromForking_correct` — a discrete-log solver built from any
   forger via forking + special-soundness extraction, together with the guarantee
   that on a successful fork it returns the true discrete log.
@@ -198,17 +198,6 @@ noncomputable def SchnorrForger.toForkable (A : SchnorrForger P Msg S) :
 noncomputable def romAccept (pk : P.G₁) :
     (P.G₁ × ZMod P.p × ZMod P.p) → Bool :=
   fun t => schnorrVerify pk t.1 t.2.1 t.2.2
-
-/-- **Forking bound.** For any public key, the fork-success probability is at
-    least `acc² - acc / |ZMod p|` — a direct instantiation of the core forking
-    lemma `fork_success_ge`. Two successful runs share the commitment and (with
-    probability accounted for by the `- acc/|R|` term) use distinct challenges,
-    so special soundness extracts the discrete log. -/
-theorem schnorr_forking_bound (A : SchnorrForger P Msg S) (pk : P.G₁) :
-    forkSuccProb A.toForkable pk (romAccept pk) ≥
-      acceptProb A.toForkable pk (romAccept pk) ^ 2 -
-      acceptProb A.toForkable pk (romAccept pk) / Fintype.card (ZMod P.p) :=
-  fork_success_ge A.toForkable pk (romAccept pk)
 
 /-- A discrete-log solver built from a Schnorr forger: fork, and on success
     extract via special soundness; otherwise fall back to a random guess. -/

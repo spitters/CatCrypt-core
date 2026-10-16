@@ -24,7 +24,8 @@ Its relation game is the discrete-logarithm game over the group.
 
 ## Main results
 
-* `schnorrSigma_specialSound`, `schnorrSigma_perfectHVZK`, `schnorrSigma_commitBound`
+* `schnorrSigma_specialSound`, `schnorrSigma_perfectHVZK`, `schnorrSigma_commitBound`,
+  `schnorrSigma_complete`, `schnorrSigma_uniqueResp`
 * `relAdvantage_schnorrSigma` — the relation game of `schnorrSigma gp` is the
   discrete-logarithm game
 * `schnorr_fs_rom_eufcma` — for every adversary against the Fiat–Shamir game over
@@ -128,6 +129,19 @@ noncomputable def schnorrSigma : Sigma where
 theorem schnorrSigma_specialSound : (schnorrSigma gp).SpecialSound := by
   intro pk a e₁ z₁ e₂ z₂ hv₁ hv₂ hne
   exact gp.exp_extract_eq pk a e₁ e₂ z₁ z₂ (beq_iff_eq.mp hv₁) (beq_iff_eq.mp hv₂) hne
+
+/-- The honest Schnorr transcript `(g^r, e, r + e·w)` for `g^w = pk` verifies. -/
+theorem schnorrSigma_complete : (schnorrSigma gp).Complete := by
+  rintro (x : gp.G) (w : gp.Scalar) rfl (r : gp.Scalar) (e : gp.Scalar)
+  change (gp.exp (gp.scalarAdd r (gp.scalarMul e w)) ==
+    gp.groupMul (gp.exp r) (gp.groupExp (gp.exp w) e)) = true
+  rw [gp.groupExp_exp, gp.scalarMul_comm w e, gp.exp_add]
+  exact beq_iff_eq.mpr rfl
+
+/-- Two accepted Schnorr responses `g^z = g^z' = a · pk^e` are equal. -/
+theorem schnorrSigma_uniqueResp : (schnorrSigma gp).UniqueResp := by
+  intro x a e z z' h h'
+  exact gp.exp_inj _ _ ((beq_iff_eq.mp h).trans (beq_iff_eq.mp h').symm)
 
 omit gp in
 theorem map_uniformOfFintype_equiv' {α : Type} [Fintype α] [Nonempty α] (c : α ≃ α) :
