@@ -7,6 +7,7 @@ module
 
 public import CatCryptCore.Crypto.Assumptions.DL
 public import CatCryptCore.Crypto.ForkingLemma
+public import CatCryptCore.Examples.GroupParam
 public import CatCryptCore.Tactics
 
 /-!
@@ -35,6 +36,7 @@ The honest prover samples `r`, sends `a = g₁ ^ᵍ r`, and answers `s = r + w·
 
 ## Main results
 
+* `g₁GroupParam P` — the group `G₁` with exponents in `ZMod p` as a `GroupParam`.
 * `schnorrAccepts` — the acceptance relation of a transcript.
 * `schnorr_special_soundness` — **special soundness**: two accepting transcripts
   `(a, c₁, s₁)`, `(a, c₂, s₂)` sharing the commitment `a` with `c₁ ≠ c₂` yield the
@@ -107,6 +109,68 @@ theorem scalar_mul_inv_cancel (a : ZMod P.p) (ha : a ≠ 0) :
     a * a⁻¹ = 1 := by
   field_simp
 
+/-- The group `G₁` of the pairing group `P` with exponents in the field `ZMod p`
+    as a `GroupParam`: `exp s = g₁ ^ s`, `groupExp h s = h ^ s`, the group
+    operations of `G₁` and the field operations of `ZMod p`, with
+    `scalarDiv a b = a · b⁻¹`. -/
+noncomputable def g₁GroupParam (P : PairingGroup) : CatCrypt.Examples.GroupParam where
+  G := P.G₁
+  Scalar := ZMod P.p
+  neScalar := ⟨0⟩
+  generator := P.g₁
+  identity := 1
+  exp s := P.g₁ ^ᵍ s
+  groupExp h s := h ^ᵍ s
+  scalarAdd a b := a + b
+  scalarMul a b := a * b
+  scalarSub a b := a - b
+  scalarDiv a b := a * b⁻¹
+  scalarNeg a := -a
+  scalarZero := 0
+  groupMul a b := a * b
+  groupInv a := a⁻¹
+  scalarOne := 1
+  exp_add x y := zpowZMod₁_add_gen _ x y
+  exp_zero := by simp [zpowZMod₁]
+  div_mul_cancel x y hy := by field_simp
+  groupExp_generator _ := rfl
+  groupExp_exp w e := zpowZMod₁_zpowZMod₁ _ w e
+  groupExp_one h := zpowZMod₁_one h
+  groupExp_add h a b := zpowZMod₁_add_gen h a b
+  scalarSub_ne_zero _ _ hab := sub_ne_zero.mpr hab
+  groupMul_identity := mul_one
+  identity_groupMul := one_mul
+  groupMul_inv := mul_inv_cancel
+  inv_groupMul := inv_mul_cancel
+  groupMul_assoc := mul_assoc
+  groupExp_zero _ := by simp [zpowZMod₁]
+  scalarMul_one := mul_one
+  groupInv_groupExp h e := zpowZMod₁_neg_gen h e
+  scalarSub_eq := sub_eq_add_neg
+  scalarAdd_neg := add_neg_cancel
+  exp_surj h := by
+    obtain ⟨k, hk⟩ := P.g₁_generates h
+    refine ⟨(k : ZMod P.p), ?_⟩
+    rw [hk]
+    change P.g₁ ^ (((k : ZMod P.p).val : ℕ) : ℤ) = P.g₁ ^ k
+    rw [zpow_eq_zpow_iff_modEq, orderOf_g₁, ZMod.val_intCast]
+    exact Int.mod_modEq k P.p
+  exp_inj _ _ hxy := by
+    rw [← sub_eq_zero, ← zpowZMod₁_eq_one_iff, zpowZMod₁_sub, hxy, mul_inv_cancel]
+  scalarAdd_comm := add_comm
+  scalarAdd_assoc := add_assoc
+  scalarMul_add := mul_add
+  scalarAdd_mul := add_mul
+  scalarMul_comm := mul_comm
+  scalarAdd_zero := add_zero
+  scalarZero_add := zero_add
+  scalarNeg_add := neg_add_cancel
+  scalarNeg_zero := neg_zero
+  scalarNeg_add_distrib := neg_add
+  scalarMul_zero := mul_zero
+  scalarZero_mul := zero_mul
+  mul_div_cancel a b hb := by field_simp
+  scalarMul_assoc := mul_assoc
 /-! ## The Schnorr relation -/
 
 /-- A Schnorr transcript `(a, c, s)` for public key `pk` is *accepting* when

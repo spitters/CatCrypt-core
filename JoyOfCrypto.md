@@ -49,7 +49,7 @@ Chapter numbers follow the online edition of the book.
 | 12 | Encrypt-then-MAC | `EncryptThenMAC` | `EtM_correct`, `boolEtM_perfect_indcpa` | Generic EtM combinator preserves correctness; perfect IND-CPA of the XOR instance |
 | 12 | Encrypt-then-MAC under CCA | `EtMCCA` | `boolEtM_indcca_reduces` | IND-CCA advantage of the XOR instance equals its MAC-integrity gaps (the IND-CPA term is 0) |
 | 12 | Universal hashing | `UniversalHash` | `boolPairwiseHash_is_universal`, `boolPairwiseHash_mac_security` | A 1/2-universal family over `Bool`; one-time forgery advantage ≤ 1/2 |
-| 13 | Signatures | `Schnorr` | `schnorr_special_soundness`, `schnorr_forking_bound`, `dlFromForking_correct` | Schnorr: special soundness; fork success ≥ `acc² − acc/p` by the core forking lemma; extraction returns the discrete log |
+| 13 | Signatures | `Schnorr` | `schnorr_special_soundness`, `fork_success_ge`, `dlFromForking_correct` | Schnorr: special soundness; fork success ≥ `acc² − acc/p` by the core forking lemma; extraction returns the discrete log |
 | 14 | Diffie–Hellman | `DiffieHellman` | `ka_advantage_eq_ddh` | Key-indistinguishability advantage equals the DDH advantage of an explicit reduction |
 | 15 | ElGamal | `ElGamal` | `elgamal_indcpa_le_ddh`, `elgamal_indcpa_eq_ddh` | Pairing-group formulation: IND-CPA ≤ two DDH advantages of explicit reductions; the distance from the real encryption of `m₀` to the ideal DDH world equals one DDH advantage |
 | 15 | ElGamal | `ElGamalDDH`, `CyclicGroupDDH` | `elgamal_correct`, `elgamal_indcpa_security` | Cyclic group with explicit exponents: IND-CPA ≤ two DDH advantages of explicit reductions |
