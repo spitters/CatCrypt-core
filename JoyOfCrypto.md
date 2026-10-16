@@ -45,7 +45,7 @@ Chapter numbers follow the online edition of the book.
 | 8 | Block-cipher modes | `CBCMode` | `cbc_perfect_indcpa`, `cbc_indcpa_bound` | Single-block CBC: perfect for a family bijective in key and input; for an arbitrary block function, ≤ two averages over the IV of its PRF advantages against an explicit reduction |
 | 9 | Chosen-ciphertext attacks | `Crypto/SecurityDefs` | `INDCCA_Game`, `INDCCA_reduces_to_INDCPA` | IND-CCA game with a decryption oracle; IND-CCA ≤ IND-CPA + two decryption-oracle integrity gaps, for any scheme |
 | 10 | MACs | `MAC` | `bijMAC_forgery_prob`, `boolXorMAC_forgery_prob` | Bijection-family MAC: single-query forgery probability exactly `1/\|Tag\|` |
-| 10 | MAC from a PRF | `PRFMAC` | `security_based_on_prf` | Over `Bool`: forgery on an unqueried message, two PRF advantages plus a statistical gap of 1/2 |
+| 10 | MAC from a PRF | `PRFMAC` | `mac_forgery_advantage_le_half` | Over `Bool`: forgery on an unqueried message has advantage at most 1/2 (single-sample, information-theoretic) |
 | 12 | Encrypt-then-MAC | `EncryptThenMAC` | `EtM_correct`, `boolEtM_perfect_indcpa` | Generic EtM combinator preserves correctness; perfect IND-CPA of the XOR instance |
 | 12 | Encrypt-then-MAC under CCA | `EtMCCA` | `boolEtM_indcca_reduces` | IND-CCA advantage of the XOR instance equals its MAC-integrity gaps (the IND-CPA term is 0) |
 | 12 | Universal hashing | `UniversalHash` | `boolPairwiseHash_is_universal`, `boolPairwiseHash_mac_security` | A 1/2-universal family over `Bool`; one-time forgery advantage ≤ 1/2 |
