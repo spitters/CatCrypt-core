@@ -26,6 +26,8 @@ with the aborting transcripts part of the distance.
   pairs, challenges and tests
 * `Sigma.commitDist` — the largest probability of a commitment value, as a
   supremum over generated pairs
+* `Sigma.hvzkDistAt`, `Sigma.hvzkDistOn` — the HVZK distance at one generated
+  pair, and its part on the transcripts whose response satisfies an event
 
 ## Main results
 
@@ -37,6 +39,10 @@ with the aborting transcripts part of the distance.
   most `q` signing queries
 * `eufcmaAdvantage_le_simAdvantage_stat` — the EUF-CMA advantage is at most the
   simulated-game advantage plus `qS·δ + qS·(qH + 1 + qS)·γ`
+* `Sigma.hvzkDist_le_iSup_on_add_on` — the HVZK distance is at most the
+  supremum over generated pairs of its part on an event plus its part on the
+  complement; `Sigma.hvzkDistOn_eq_zero_of_eq` — the part on an event is `0`
+  when the honest and simulated transcripts in the event have equal probabilities
 -/
 
 @[expose] public section
@@ -316,5 +322,84 @@ theorem eufcmaAdvantage_le_simAdvantage_stat {δ : ℝ≥0∞} (hZK : P.StatHVZK
         rw [ENNReal.tsum_add, ENNReal.tsum_mul_right, PMF.tsum_coe, one_mul]
 
 end Stat
+
+/-! ## Distances at one generated pair -/
+
+namespace Sigma
+
+variable (P : Sigma)
+
+/-- The HVZK distance of `P` at the pair `(x, w)`: the supremum, over challenges
+and tests with values in `[0, 1]`, of the expectation of the test on the honest
+transcript minus its expectation on the simulated transcript. -/
+noncomputable def hvzkDistAt (x : P.Stmt) (w : P.Wit) : ℝ≥0∞ :=
+  ⨆ (e : P.Ch) (g : P.Com × P.Resp → ℝ≥0∞) (_ : ∀ y, g y ≤ 1),
+    (∑' r, PMF.uniformOfFintype P.Rand r * g (P.commit x w r, P.respond x w r e)) -
+      ∑' s, PMF.uniformOfFintype P.SimRand s * g (P.simulate x e s)
+
+/-- The HVZK distance of `P` at `(x, w)` on the transcripts whose response
+satisfies `E`: the supremum, over challenges and tests with values in `[0, 1]`,
+of the expectation of the test restricted to those transcripts on the honest
+side minus the same expectation on the simulated side. -/
+noncomputable def hvzkDistOn (E : P.Resp → Bool) (x : P.Stmt) (w : P.Wit) : ℝ≥0∞ :=
+  ⨆ (e : P.Ch) (g : P.Com × P.Resp → ℝ≥0∞) (_ : ∀ y, g y ≤ 1),
+    (∑' r, PMF.uniformOfFintype P.Rand r *
+        (if E (P.respond x w r e) then g (P.commit x w r, P.respond x w r e) else 0)) -
+      ∑' s, PMF.uniformOfFintype P.SimRand s *
+        (if E (P.simulate x e s).2 then g (P.simulate x e s) else 0)
+
+/-- **Splitting the HVZK distance by an event on the response.** The distance at
+`(x, w)` is at most the distance on the transcripts whose response satisfies `E`
+plus the distance on the others. -/
+theorem hvzkDistAt_le_on_add_on (E : P.Resp → Bool) (x : P.Stmt) (w : P.Wit) :
+    P.hvzkDistAt x w ≤ P.hvzkDistOn E x w + P.hvzkDistOn (fun z => !E z) x w := by
+  refine iSup_le fun e => iSup_le fun g => iSup_le fun hg => ?_
+  have hsplit : ∀ {β : Type} [Fintype β] [Nonempty β] (F : β → P.Com × P.Resp),
+      ∑' b, PMF.uniformOfFintype β b * g (F b) =
+        (∑' b, PMF.uniformOfFintype β b * (if E (F b).2 then g (F b) else 0)) +
+          ∑' b, PMF.uniformOfFintype β b * (if (!E (F b).2) then g (F b) else 0) := by
+    intro β _ _ F
+    rw [← ENNReal.tsum_add]
+    refine tsum_congr fun b => ?_
+    rw [← mul_add]
+    cases E (F b).2 <;> simp
+  rw [hsplit (fun r => (P.commit x w r, P.respond x w r e)), hsplit (P.simulate x e)]
+  refine add_tsub_add_le_tsub_add_tsub.trans (add_le_add ?_ ?_)
+  · exact le_iSup_of_le e <| le_iSup_of_le g <| le_iSup_of_le hg le_rfl
+  · exact le_iSup_of_le e <| le_iSup_of_le g <| le_iSup_of_le hg le_rfl
+
+/-- **Matching transcripts have distance zero.** If, for every challenge, every
+transcript whose response satisfies `E` has the same probability on the honest
+and the simulated side, the distance on those transcripts is `0`. -/
+theorem hvzkDistOn_eq_zero_of_eq (E : P.Resp → Bool) (x : P.Stmt) (w : P.Wit)
+    (h : ∀ e (t : P.Com × P.Resp), E t.2 = true →
+      (PMF.uniformOfFintype P.Rand).map (fun r => (P.commit x w r, P.respond x w r e)) t =
+        (PMF.uniformOfFintype P.SimRand).map (P.simulate x e) t) :
+    P.hvzkDistOn E x w = 0 := by
+  refine le_antisymm (iSup_le fun e => iSup_le fun g => iSup_le fun _ => ?_) zero_le
+  rw [tsub_le_iff_right, zero_add]
+  have key := tsum_map_mul' (PMF.uniformOfFintype P.Rand)
+    (fun r => (P.commit x w r, P.respond x w r e)) (fun t => if E t.2 then g t else 0)
+  have key' := tsum_map_mul' (PMF.uniformOfFintype P.SimRand) (P.simulate x e)
+    (fun t => if E t.2 then g t else 0)
+  simp only at key key'
+  rw [← key, ← key']
+  refine le_of_eq (tsum_congr fun t => ?_)
+  by_cases ht : E t.2 = true
+  · rw [h e t ht]
+  · simp [ht]
+
+/-- **The HVZK distance split by an event on the response.** `hvzkDist` is at
+most the supremum, over generated pairs, of the distance on the transcripts whose
+response satisfies `E` plus the distance on the others. -/
+theorem hvzkDist_le_iSup_on_add_on (E : P.Resp → Bool) :
+    P.hvzkDist ≤ ⨆ (x : P.Stmt) (w : P.Wit) (_ : (x, w) ∈ P.gen.support),
+      (P.hvzkDistOn E x w + P.hvzkDistOn (fun z => !E z) x w) := by
+  refine iSup_le fun x => iSup_le fun w => iSup_le fun hxw => ?_
+  change P.hvzkDistAt x w ≤ _
+  exact (P.hvzkDistAt_le_on_add_on E x w).trans
+    (le_iSup_of_le x <| le_iSup_of_le w <| le_iSup_of_le hxw le_rfl)
+
+end Sigma
 
 end CatCrypt.Crypto.FiatShamirROM
