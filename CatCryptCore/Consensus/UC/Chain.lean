@@ -476,4 +476,266 @@ theorem guard_of_good (K : ℕ) (ν : PMF SlotKind) (d w : ℕ) (ε : ℝ)
 
 end Views
 
+/-! ## The protocol in the clock-and-network hybrid model, and the simulator -/
+
+section Protocol
+
+open PoSNSB Parameters BlockParameters Corruption Execution ClockNet
+
+variable {Tx Hash : Type} [DecidableEq Tx] [DecidableEq Hash] [Fintype Tx] [Fintype Hash]
+  [Nonempty Hash] {np : ℕ} [Corruption (Fin np)] {n Hz : ℕ}
+  {Sch : SigScheme (Block Tx Hash (Fin np))}
+  (P : Protocol Tx Hash np n Hz) (A : Adversary Tx Hash np n Hz Sch) (Tree : TreeFamily P)
+
+/-- The single party of the clock: the scheduler of the phases. -/
+abbrev H₁ : Finset Unit := {()}
+
+/-- The clock request of the activation that runs phase `j + 1`: the end of the round is
+signalled exactly when phase `j` is followed by the next round. -/
+def clockReq (ω : Seed Tx Hash np n Hz Sch) (j : ℕ) : CNEv Unit Unit :=
+  letI := ω.params P; letI := ω.bparams P
+  if (sTrace P ω A false j).progress = .Baked then .inl ((), .signal) else .inl ((), .read)
+
+variable (Tx Hash np) in
+/-- The outputs to the environment: the clock round and the view. -/
+abbrev ChainOut := ℕ × TreeView (Option (Fin np)) (Block Tx Hash (Fin np))
+
+variable (Tx Hash np n Hz Sch) in
+/-- The states of the protocol: an optional seed and a phase counter. -/
+abbrev PSt := Option (Seed Tx Hash np n Hz Sch) × ℕ
+
+variable (Tx Hash np n Hz Sch) in
+/-- The states of the simulator: a protocol state and a state of the ideal clock and network. -/
+abbrev SimSt := PSt Tx Hash np n Hz Sch ×
+  (CNSt Unit Unit × Trace (CNSt Unit Unit) (CNEv Unit Unit) (CNOut Unit Unit) × Bool)
+
+variable (Tx Hash np n Hz Sch) in
+/-- The traces of the simulator. -/
+abbrev SimTr := Trace (SimSt Tx Hash np n Hz Sch) (Event Unit Unit) (ChainOut Tx Hash np)
+
+/-- **The PoS-NSB protocol as a hybrid protocol over the clock and the network.** The first
+activation samples the seed from `seedDist ν W n Hz Sch` and reads the clock; activation
+`j + 2` runs phase `j + 1` of the real execution with adversary `A` and sends the clock request
+`clockReq`. The output is the clock round and the view `pView` of the new state. -/
+noncomputable def chainHybrid (K : ℕ) (ν : PMF SlotKind) (W : ℕ) :
+    Hybrid (PSt Tx Hash np n Hz Sch) (Event Unit Unit) (ChainOut Tx Hash np)
+      (CNEv Unit Unit) (CNOut Unit Unit) where
+  init := (none, 0)
+  pre s _ := match s.1 with
+    | none => SPComp.bind (sampleFrom (ofPMF (seedDist ν W n Hz Sch))) fun ω =>
+        SPComp.pure ((some ω, 0), .inl ((), .read))
+    | some ω => SPComp.pure ((some ω, s.2 + 1), clockReq P A ω s.2)
+  post s o := SPComp.pure (s, (o.1, pView P A Tree K s))
+  pre_noFail s _ := by
+    rcases s with ⟨_ | ω, j⟩
+    · exact Assumptions.SPComp.bind_noFail (sampleFrom_ofPMF_noFail _) fun _ =>
+        SPComp.pure_noFail _
+    · exact SPComp.pure_noFail _
+  post_noFail _ _ := SPComp.pure_noFail _
+
+/-- The real world: the hybrid protocol with the reference implementation of the clock and
+the network (honest set `{()}`, delay bound `Δ`). -/
+noncomputable def chainReal (K : ℕ) (ν : PMF SlotKind) (W Δ : ℕ) :=
+  (chainHybrid P A Tree K ν W).withSub (clockNet (M := Unit) H₁ Δ).proto
+
+/-- **The simulator** for the adversary `A`: the copy simulator of C3, which runs the hybrid
+protocol with the ideal clock and network and proposes its states to `F_Tree`. -/
+noncomputable def chainSim (K : ℕ) (ν : PMF SlotKind) (W Δ : ℕ) :=
+  (chainHybrid P A Tree K ν W).withSub (ideal (clockNetF (M := Unit) H₁ Δ) (clockNet H₁ Δ).proto)
+
+/-- **The functionality** `F_Tree^P` over the states of the simulator, with the view of the
+protocol component, honest parties `honestP`, the slot tree, the properties `chainP`, and
+exploded output `(0, initView)`. -/
+noncomputable def chainF (K : ℕ) (ν : PMF SlotKind) (W Δ d w : ℕ) (ε : ℝ) :
+    TFunc (SimSt Tx Hash np n Hz Sch) (Event Unit Unit) (ChainOut Tx Hash np) :=
+  fTree (fun s => pView P A Tree K s.1) honestP (slotTree P) (chainP ν d w ε)
+    (chainSim P A Tree K ν W Δ).init ((0, initView) : ChainOut Tx Hash np)
+
+theorem chainSim_noFail (K : ℕ) (ν : PMF SlotKind) (W Δ : ℕ) :
+    ∀ s e, SPComp.NoFail ((chainSim P A Tree K ν W Δ).step s e) :=
+  Hybrid.withSub_noFail _ _ (Hybrid.ideal_noFail _ _ fun _ _ => SPComp.pure_noFail _)
+
+/-- A step of the simulator from a state with seed `ω` is deterministic and runs one phase. -/
+theorem chainSim_step_some (K : ℕ) (ν : PMF SlotKind) (W Δ : ℕ) (s : SimSt Tx Hash np n Hz Sch)
+    (ω : Seed Tx Hash np n Hz Sch)
+    (hs : s.1.1 = some ω) (e : Event Unit Unit) :
+    ∃ x, (chainSim P A Tree K ν W Δ).step s e = SPComp.pure x ∧ x.1.1 = (some ω, s.1.2 + 1) := by
+  obtain ⟨⟨o, j⟩, r⟩ := s
+  simp only at hs
+  subst hs
+  simp only [chainSim, Hybrid.withSub, chainHybrid, ideal, DetFunc.proto, SPComp.pure_bind]
+  exact ⟨_, rfl, rfl⟩
+
+/-- A step of the simulator from a state without seed samples the seed. -/
+theorem chainSim_step_none (K : ℕ) (ν : PMF SlotKind) (W Δ : ℕ) (s : SimSt Tx Hash np n Hz Sch)
+    (hs : s.1.1 = none)
+    (e : Event Unit Unit) :
+    ∃ x : Seed Tx Hash np n Hz Sch → SimSt Tx Hash np n Hz Sch × ChainOut Tx Hash np,
+      (chainSim P A Tree K ν W Δ).step s e =
+      SPComp.bind (sampleFrom (ofPMF (seedDist ν W n Hz Sch))) (fun ω => SPComp.pure (x ω)) ∧
+      ∀ ω, (x ω).1.1 = (some ω, 0) := by
+  obtain ⟨⟨o, j⟩, r⟩ := s
+  simp only at hs
+  subst hs
+  simp only [chainSim, Hybrid.withSub, chainHybrid, ideal, DetFunc.proto, SPComp.bind_assoc,
+    SPComp.pure_bind]
+  exact ⟨_, rfl, fun _ => rfl⟩
+
+/-- The run-prefix invariant: up to its length, the trace visits the state without seed and
+then the phases `0, 1, …` of the seed `ω`. -/
+def TrInv (K : ℕ) (ν : PMF SlotKind) (W Δ : ℕ) (ω : Seed Tx Hash np n Hz Sch)
+    (tr : SimTr Tx Hash np n Hz Sch) : Prop :=
+  ∀ t ≤ tr.length, (stAt (chainSim P A Tree K ν W Δ).init tr t).1 =
+    if t = 0 then (none, 0) else (some ω, t - 1)
+
+theorem trInv_nil (K : ℕ) (ν : PMF SlotKind) (W Δ : ℕ) (ω : Seed Tx Hash np n Hz Sch) :
+    TrInv P A Tree K ν W Δ ω [] := by
+  intro t ht
+  obtain rfl : t = 0 := by simpa using ht
+  rfl
+
+theorem trInv_snoc (K : ℕ) (ν : PMF SlotKind) (W Δ : ℕ) (ω : Seed Tx Hash np n Hz Sch)
+    {tr : SimTr Tx Hash np n Hz Sch} (h : TrInv P A Tree K ν W Δ ω tr)
+    (x : Event Unit Unit × ChainOut Tx Hash np × SimSt Tx Hash np n Hz Sch) (hx : x.2.2.1 = (some ω, tr.length)) :
+    TrInv P A Tree K ν W Δ ω (tr ++ [x]) := by
+  intro t ht
+  rw [FTree.Example.stAt_snoc]
+  simp only [List.length_append, List.length_singleton] at ht
+  split_ifs with h₁ h₂
+  · exact (h t h₁).trans (if_pos h₂)
+  · exact (h t h₁).trans (if_neg h₂)
+  · omega
+  · rw [hx]; congr 2; omega
+
+/-- On a good seed, the guard of `F_Tree` holds on every run prefix of positive length. -/
+theorem guard_true (K : ℕ) (ν : PMF SlotKind) (W Δ d w : ℕ) (ε : ℝ)
+    (ω : Seed Tx Hash np n Hz Sch) (hG : Good P A Tree ν K d w ε ω)
+    {tr : SimTr Tx Hash np n Hz Sch} (htr : TrInv P A Tree K ν W Δ ω tr) (hlen : 1 ≤ tr.length) :
+    (chainF P A Tree K ν W Δ d w ε).guard tr = true := by
+  rw [chainF, fTree_guard_iff]
+  have e : traceOf (fun s => pView P A Tree K s.1) honestP (chainSim P A Tree K ν W Δ).init tr =
+      XT P A Tree K ω tr.length := by
+    simp only [traceOf, XT, TreeTrace.mk.injEq, true_and]
+    funext t
+    rw [← stAt_min_length, htr _ (min_le_right _ _)]
+    by_cases ht : t = 0
+    · simp [ht, pView]
+    · rw [if_neg (by omega), if_neg ht]; rfl
+  rw [e]
+  exact guard_of_good P A Tree K ν d w ε ω hG hlen
+
+/-- The invariant of the monitored simulator: before the seed, the trace is empty and the flag
+unset; after it, the phase counter is the trace length minus one, the trace satisfies
+`TrInv`, and the flag is unset if the seed is good. -/
+def MInv (K : ℕ) (ν : PMF SlotKind) (W Δ d w : ℕ) (ε : ℝ)
+    (m : SimSt Tx Hash np n Hz Sch × SimTr Tx Hash np n Hz Sch × Bool) : Prop :=
+  (m.1.1.1 = none ∧ m.2.1 = [] ∧ m.2.2 = false) ∨
+    ∃ ω, m.1.1.1 = some ω ∧ m.1.1.2 + 1 = m.2.1.length ∧
+      TrInv P A Tree K ν W Δ ω m.2.1 ∧ (Good P A Tree ν K d w ε ω → m.2.2 = false)
+
+open Classical in
+/-- The potential: before the seed, the probability that the seed is bad; after it, `0` on a
+good seed and `1` on a bad one. -/
+noncomputable def pot (K : ℕ) (ν : PMF SlotKind) (W d w : ℕ) (ε : ℝ)
+    (m : SimSt Tx Hash np n Hz Sch) : ℝ≥0∞ :=
+  m.1.1.elim ((seedDist ν W n Hz Sch).toOuterMeasure {ω | ¬Good P A Tree ν K d w ε ω})
+    fun ω => if Good P A Tree ν K d w ε ω then 0 else 1
+
+/-- **Guard failure is bounded by the failure of the D2 properties.** For every environment,
+the guard of `F_Tree` fails on the run of the hybrid world with probability at most the
+probability under `seedDist` that chain growth, chain quality or common prefix of D2 fails. -/
+theorem guardFail_le (K : ℕ) (ν : PMF SlotKind) (W Δ d w : ℕ) (ε : ℝ) {ζ : Type}
+    (Z : Env (Strat ζ (Event Unit Unit) (ChainOut Tx Hash np)) ζ) :
+    guardFail (chainSim P A Tree K ν W Δ) (chainF P A Tree K ν W Δ d w ε).guard Z ≤
+      (seedDist ν W n Hz Sch).toOuterMeasure {ω | ¬Good P A Tree ν K d w ε ω} := by
+  classical
+  unfold guardFail
+  refine prBad_le_of_potential _ _ (MInv P A Tree K ν W Δ d w ε)
+    (fun m => pot P A Tree K ν W d w ε m.1) (Or.inl ⟨rfl, rfl, rfl⟩) ?_ ?_ Z
+  · rintro m (⟨-, -, hb⟩ | ⟨ω, hs, -, -, hb⟩) h
+    · simp [exploded, hb] at h
+    · by_cases hg : Good P A Tree ν K d w ε ω
+      · simp [exploded, hb hg] at h
+      · simp [pot, hs, hg]
+  · rintro ⟨s, tr, b⟩ e Kc h (⟨hs, htr, hb⟩ | ⟨ω, hs, hlen, htr, hb⟩) hK
+    · simp only at hs htr hb
+      subst htr hb
+      obtain ⟨x, hx, hx1⟩ := chainSim_step_none P A Tree K ν W Δ s hs e
+      simp only [monitor, hx, SPComp.bind_assoc, SPComp.pure_bind]
+      refine (prTrue_bind_sampleFrom_le _ _ h
+        (fun ω => if Good P A Tree ν K d w ε ω then 0 else 1) fun ω => ?_).trans
+        (tsum_mul_ite_eq _ _).le |>.trans (by simp [pot, hs])
+      have htr' : TrInv P A Tree K ν W Δ ω ([] ++ [(e, (x ω).2, (x ω).1)]) :=
+        trInv_snoc P A Tree K ν W Δ ω (trInv_nil P A Tree K ν W Δ ω) _ (hx1 ω)
+      refine (hK _ h (Or.inr ⟨ω, by simp [hx1], by simp [hx1], htr', fun hg => ?_⟩)).trans
+        (by simp [pot, hx1])
+      have hg' := guard_true P A Tree K ν W Δ d w ε ω hg htr' (by simp)
+      rw [List.nil_append] at hg'
+      simp [hg']
+    · simp only at hs hlen htr hb
+      obtain ⟨x, hx, hx1⟩ := chainSim_step_some P A Tree K ν W Δ s ω hs e
+      simp only [monitor, hx, SPComp.pure_bind]
+      by_cases hg : Good P A Tree ν K d w ε ω
+      · have htr' : TrInv P A Tree K ν W Δ ω (tr ++ [(e, x.2, x.1)]) :=
+          trInv_snoc P A Tree K ν W Δ ω htr _ (by rw [hx1, hlen])
+        refine (hK _ h (Or.inr ⟨ω, by simp [hx1], by simp [hx1, hlen], htr', fun _ => ?_⟩)).trans
+          (by simp [pot, hx1, hs, hg])
+        simp [hb hg, guard_true P A Tree K ν W Δ d w ε ω hg htr' (by simp)]
+      · exact (prTrue_le_one _ _).trans (by simp [pot, hs, hg])
+
+/-- **PoS-NSB realizes `F_Tree` in the clock-and-network hybrid model (row C4a).**
+Let the protocol `P` satisfy `ProtocolHyp`, the honest tree type `Tree` the longest-chain
+rule, the numbers and the lottery distribution `ν` the conditions of `pos_nsb_security`, and
+let the genesis block and the broadcast blocks of the first `K` phases be among the first `q`
+queries of the querier `next` to the random oracle (`hRO`). Then for every adversary `A`, the
+protocol running with the reference clock and network (`chainReal`) realizes the ideal world of
+`F_Tree^P` (`chainF`, with `P` = chain growth, chain quality, common prefix of D2) with the
+simulator `chainSim`: every environment has advantage at most
+`slotBound ν n d w ε + q (q - 1) / 2 / |Hash| + ∑ᵢ eufAdv (forger P A ν W K i)`. -/
+theorem chain_realizes (hP : ProtocolHyp P) (hTree : Tree.Longest)
+    (ν : PMF SlotKind) (W K d w : ℕ) (ε : ℝ) (Δ : ℕ)
+    (hd : 1 ≤ d) (hwd : w ≤ d) (hWn : W + d ≤ n) (hn : K + 2 ≤ n) (hHz : K + 1 ≤ Hz)
+    (hε : 0 ≤ ε) (hγ : 2 * pA ν ≤ pH ν) (hw : (w : ℝ) ≤ d * (pH ν - pA ν))
+    (h3 : (3 : ℝ) ≤ d * (pH ν - 2 * pA ν)) (q : ℕ)
+    (next : (Fin n → SlotKind) → (Fin np → Sch.PK × Sch.SK) →
+      Querier (BlockDom Tx Hash np Hz) Hash)
+    (hRO : ∀ ω : Seed Tx Hash np n Hz Sch, ∀ j ≤ K, letI := ω.params P; letI := ω.bparams P;
+      ∀ b ∈ block_hist_gb (sTrace P ω A false j), ∃ k < q,
+        query (next ω.κ ω.ks) ω.f k = encB Hz b) :
+    Realizes (chainReal P A Tree K ν W Δ)
+      (ideal (chainF P A Tree K ν W Δ d w ε) (chainSim P A Tree K ν W Δ))
+      (fun _ _ => slotBound ν n d w ε + ((q * (q - 1) / 2 : ℕ) : ℝ≥0∞) / Fintype.card Hash +
+        ∑ i : Fin np, eufAdv (forger P A ν W K i)) := by
+  intro ζ Z
+  have h := clockNet_hybrid_compose H₁ Δ (chainHybrid P A Tree K ν W) (chainSim P A Tree K ν W Δ)
+    (chainF P A Tree K ν W Δ d w ε) (chainSim_noFail P A Tree K ν W Δ) rfl
+    (fun _ _ _ => rfl) ζ Z
+  exact h.trans ((guardFail_le P A Tree K ν W Δ d w ε Z).trans
+    (pos_nsb_security P A Tree hP hTree ν W K d w ε hd hwd hWn hn hHz hε hγ hw h3 q next hRO))
+
+/-- **The realization as concrete UC emulation** (`UCConcrete.UCEmulatesCSim`): with the
+environment strategy as honest input, the environment's final state as output, empty leakage
+(the adversary acts inside the execution) and the identity simulator map, the real and the
+ideal view maps are at distance at most the D2 failure bound for every environment. -/
+theorem chain_UCEmulatesCSim (hP : ProtocolHyp P) (hTree : Tree.Longest)
+    (ν : PMF SlotKind) (W K d w : ℕ) (ε : ℝ) (Δ : ℕ)
+    (hd : 1 ≤ d) (hwd : w ≤ d) (hWn : W + d ≤ n) (hn : K + 2 ≤ n) (hHz : K + 1 ≤ Hz)
+    (hε : 0 ≤ ε) (hγ : 2 * pA ν ≤ pH ν) (hw : (w : ℝ) ≤ d * (pH ν - pA ν))
+    (h3 : (3 : ℝ) ≤ d * (pH ν - 2 * pA ν)) (q : ℕ)
+    (next : (Fin n → SlotKind) → (Fin np → Sch.PK × Sch.SK) →
+      Querier (BlockDom Tx Hash np Hz) Hash)
+    (hRO : ∀ ω : Seed Tx Hash np n Hz Sch, ∀ j ≤ K, letI := ω.params P; letI := ω.bparams P;
+      ∀ b ∈ block_hist_gb (sTrace P ω A false j), ∃ k < q,
+        query (next ω.κ ω.ks) ω.f k = encB Hz b) (ζ V : Type) :
+    UCEmulatesCSim ⟨Strat ζ (Event Unit Unit) (ChainOut Tx Hash np), ζ, Empty, Empty, V⟩
+      (fun s => SPComp.bind (view (chainReal P A Tree K ν W Δ) s) fun z => SPComp.pure (Sum.inl z))
+      (fun s => SPComp.bind (view (ideal (chainF P A Tree K ν W Δ d w ε)
+        (chainSim P A Tree K ν W Δ)) s) fun z => SPComp.pure (Sum.inl z)) id
+      (fun _ _ => slotBound ν n d w ε + ((q * (q - 1) / 2 : ℕ) : ℝ≥0∞) / Fintype.card Hash +
+        ∑ i : Fin np, eufAdv (forger P A ν W K i)) :=
+  (chain_realizes P A Tree hP hTree ν W K d w ε Δ hd hwd hWn hn hHz hε hγ hw h3 q next
+    hRO).toUCEmulatesCSim ζ V
+
+end Protocol
+
 end CatCryptCore.Consensus.UC.Chain
