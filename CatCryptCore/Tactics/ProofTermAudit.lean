@@ -314,52 +314,85 @@ def typeMentionsCatCrypt (n : Name) : MetaM Bool := do
   let some ci := env.find? n | return false
   return ci.type.getUsedConstants.any isCatCryptName
 
-/-- `isDefEq` under a heartbeat cap, with failures read as `false`. -/
-def isDefEqCapped (a b : Expr) : MetaM Bool := do
-  try
-    withTheReader Core.Context (fun c => { c with maxHeartbeats := 400000 * 1000 })
-      (isDefEq a b)
-  catch _ => return false
+/-- Run `k` under its own budget of `hb` thousand heartbeats (counted from the
+call, not from the start of the enclosing command); errors and heartbeat or
+other runtime exceptions yield `dflt`. -/
+def withCappedHeartbeats {α : Type} (dflt : α) (k : MetaM α) (hb : Nat := 400000) :
+    MetaM α :=
+  tryCatchRuntimeEx
+    (withTheReader Core.Context (fun c => { c with maxHeartbeats := hb * 1000 })
+      (withCurrHeartbeats k))
+    fun _ => return dflt
 
-/-- The Prop-valued fields of the structure-typed local `x` whose type is
-    definitionally `concl`; the first such field name. -/
-def projectionMatchingConcl (x : Expr) (concl : Expr) : MetaM (Option Name) := do
+/-- Budget, in thousands of heartbeats, of one definitional-equality check or one
+    type normalisation in the statement-level pass. -/
+def checkHeartbeats : Nat := 20000
+
+/-- `isDefEq` under the per-check budget: `none` when the budget is exhausted or
+    the check fails with an error, so that the caller can count it as not
+    decided. -/
+def isDefEqDecided (a b : Expr) : MetaM (Option Bool) :=
+  withCappedHeartbeats none (some <$> isDefEq a b) checkHeartbeats
+
+/-- The first Prop-valued field of the structure-typed local `x` whose type is
+    definitionally `concl`, and whether some check on the way was not decided. -/
+def projectionMatchingConcl (x : Expr) (concl : Expr) : MetaM (Option Name × Bool) := do
   let env ← getEnv
-  let xT ← whnfR (← inferType x)
-  let some sName := xT.getAppFn.constName? | return none
-  unless isStructure env sName do return none
+  let some xT ← withCappedHeartbeats none (some <$> (whnfR (← inferType x))) checkHeartbeats
+    | return (none, true)
+  let some sName := xT.getAppFn.constName? | return (none, false)
+  unless isStructure env sName do return (none, false)
+  let mut undecided := false
   for f in getStructureFieldsFlattened env sName (includeSubobjectFields := false) do
-    let hit ← try
+    let r ← try
         let p ← mkProjection x f
         let pT ← inferType p
-        if (← isProp pT) then isDefEqCapped pT concl else pure false
-      catch _ => pure false
-    if hit then return some f
-  return none
+        if (← isProp pT) then isDefEqDecided pT concl else pure (some false)
+      catch _ => pure (some false)
+    match r with
+    | some true => return (some f, undecided)
+    | some false => pure ()
+    | none => undecided := true
+  return (none, undecided)
+
+/-- Outcome of `statementFromBinders`: a witness, no witness (every check
+    decided), or not decided (a check or the whole pass exhausted its budget). -/
+inductive BinderVerdict where
+  | witness (w : String)
+  | noWitness
+  | undecided
+  deriving Inhabited, BEq
 
 /-- For a declaration of type `∀ xs, C` with `C : Prop`: a witness that `C` is
     definitionally the type of a hypothesis binder, or of a Prop-valued field of
     a structure-typed binder. `reducibleOnly` restricts unfolding to reducible
     definitions (the syntactic tier); otherwise definitions unfold, which is the
-    tier that sees through a named-`Prop` wrapper. -/
-def statementFromBinders (n : Name) (reducibleOnly : Bool) : MetaM (Option String) := do
+    tier that sees through a named-`Prop` wrapper. A declaration without binders
+    is skipped before the telescope is opened; each check runs under
+    `checkHeartbeats`, and a check that exhausts it makes the result
+    `undecided` unless another binder gives a witness. -/
+def statementFromBinders (n : Name) (reducibleOnly : Bool) : MetaM BinderVerdict := do
   let env ← getEnv
-  let some ci := env.find? n | return none
-  let run : MetaM (Option String) :=
+  let some ci := env.find? n | return .noWitness
+  if (piTelescopeSyntactic ci.type).1.isEmpty then return .noWitness
+  let run : MetaM BinderVerdict :=
     forallTelescope ci.type fun xs concl => do
-      unless (← isProp concl) do return none
+      unless (← isProp concl) do return .noWitness
+      let mut undecided := false
       for x in xs do
         let xT ← inferType x
         let xn ← x.fvarId!.getUserName
         if (← isProp xT) then
-          if ← isDefEqCapped xT concl then
-            return some s!"hypothesis {xn}"
-        else if let some f ← projectionMatchingConcl x concl then
-          return some s!"field {f} of {xn}"
-      return none
-  try
-    if reducibleOnly then withReducible run else run
-  catch _ => return none
+          match ← isDefEqDecided xT concl with
+          | some true => return .witness s!"hypothesis {xn}"
+          | some false => pure ()
+          | none => undecided := true
+        else
+          let (f?, u) ← projectionMatchingConcl x concl
+          if let some f := f? then return .witness s!"field {f} of {xn}"
+          if u then undecided := true
+      return if undecided then .undecided else .noWitness
+  withCappedHeartbeats .undecided (if reducibleOnly then withReducible run else run)
 
 /-- Unfold the head of `e` while it is a definition from a CatCrypt namespace
     whose value is a proposition, at most `fuel` times. -/
