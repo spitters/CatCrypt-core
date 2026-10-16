@@ -54,7 +54,7 @@ Chapter numbers follow the online edition of the book.
 | 15 | ElGamal | `ElGamal` | `elgamal_indcpa_le_ddh`, `elgamal_indcpa_eq_ddh` | Pairing-group formulation: IND-CPA ≤ two DDH advantages of explicit reductions; the distance from the real encryption of `m₀` to the ideal DDH world equals one DDH advantage |
 | 15 | ElGamal | `ElGamalDDH`, `CyclicGroupDDH` | `elgamal_correct`, `elgamal_indcpa_security` | Cyclic group with explicit exponents: IND-CPA ≤ two DDH advantages of explicit reductions |
 | 15 | ElGamal as UC | `ElGamalUCConcrete` | `elgamal_uc_concrete` | Concrete UC emulation bounded by the DDH advantages of the reductions |
-| 15 | Hashed ElGamal | `HashedElGamal` | `heg_indcpa_le_ddh`, `heg_perfect_hash_security` | Two DDH advantages, under a message-independence hypothesis on the ideal reduction; advantage 0 when the mask is uniform |
+| 15 | Hashed ElGamal | `HashedElGamal` | `heg_indcpa_le_ddh`, `heg_perfect_hash_security` | Two DDH advantages of explicit reductions when `H ∘ pow` maps uniform exponents to uniform bits; advantage 0 when the mask is uniform |
 | 15 | Hybrid encryption | `KEMDEM` | `pke_security`, `pke_perfect_security`, `xorHybrid_perfect_security` | `Adv_PKE ≤ Adv_KEM + Adv_DEM + Adv_KEM` with three explicit reductions; perfect when both components are |
 
 Chapter 4 (intractable computations) and Chapter 11 (hash functions) have no

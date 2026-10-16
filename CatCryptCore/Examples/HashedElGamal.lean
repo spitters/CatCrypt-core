@@ -28,7 +28,12 @@ where H : G → {0,1}^n is a hash function and ⊕ is XOR.
 
 ## Security
 
-Under DDH + ROM: `IND-CPA_Advantage ≤ DDH_Advantage`
+`heg_indcpa_le_ddh`: if `H ∘ pow` maps a uniform exponent to a uniform bit, then
+for every adversary the IND-CPA advantage is at most the sum of the DDH
+advantages of the two reductions `heg_ddh_reduction H m₀ A` and
+`heg_ddh_reduction H m₁ A`. The earlier form of this theorem assumed the
+message independence of the ideal DDH world (`h_ideal_indep`), which is the
+hash-uniformity hop itself; it is now proved (`heg_ddh_ideal_indep`).
 
 The reduction:
 - Given DDH challenge (g^a, g^b, z)
@@ -184,48 +189,61 @@ theorem heg_real_eq_ddh_real (H : G → Bool) (m : Bool)
     (heg_real H m).bind A = (DDH_real G).bind (heg_ddh_reduction H m A) := by
   grind [heg_real_bind_eq, ddh_real_bind_red_eq]
 
-/-- Hashed ElGamal IND-CPA advantage is bounded by DDH advantage.
+/-- The DDH reduction run on the ideal DDH triple, in sampled form: the mask is
+`H (g^c)` for an exponent `c` independent of the ciphertext component `g^b`. -/
+theorem ddh_ideal_bind_red_eq (H : G → Bool) (m : Bool)
+    (A : (G × Bool) → SPComp Bool) :
+    (DDH_ideal G).bind (heg_ddh_reduction H m A) =
+    SPComp.bind (SPComp.sample CG.Exp) (fun _a =>
+      SPComp.bind (SPComp.sample CG.Exp) (fun b =>
+        SPComp.bind (SPComp.bind (SPComp.sample CG.Exp) fun c => SPComp.pure (H (CG.pow c)))
+          (fun mask => A (CG.pow b, xor mask m)))) := by
+  unfold DDH_ideal heg_ddh_reduction
+  simp only [SPComp.monad_bind_eq, SPComp.monad_pure_eq, SPComp.bind_assoc, SPComp.pure_bind]
 
-    The hypothesis `h_ideal_indep` captures the key property that in the DDH
-    ideal world (where z = g^c for random c independent of a, b), the
-    distinguisher's view is independent of the encrypted message m.
+/-- **The ideal DDH world does not depend on the message.** If `H ∘ pow` maps a
+uniform exponent to a uniform bit, the DDH reduction run on the ideal DDH triple
+has the same distribution for the messages `m₀` and `m₁`: the mask `H (g^c)` is a
+uniform bit independent of `g^b`, and `mask ↦ mask ⊕ m` is a bijection of `Bool`. -/
+theorem heg_ddh_ideal_indep (H : G → Bool)
+    (hH : SPComp.bind (SPComp.sample CG.Exp) (fun c => SPComp.pure (H (CG.pow c))) =
+      SPComp.sample Bool)
+    (m₀ m₁ : Bool) (A : (G × Bool) → SPComp Bool) :
+    (DDH_ideal G).bind (heg_ddh_reduction H m₀ A) =
+      (DDH_ideal G).bind (heg_ddh_reduction H m₁ A) := by
+  have hmask : ∀ (gb : G) (m : Bool),
+      SPComp.bind (SPComp.sample Bool) (fun mask => A (gb, xor mask m)) =
+        SPComp.bind (SPComp.sample Bool) (fun mask => A (gb, mask)) := fun gb m =>
+    SPComp.sample_bind_equiv (CatCrypt.Prob.XorBij.boolXorBij m) (fun mask => A (gb, mask))
+  rw [ddh_ideal_bind_red_eq, ddh_ideal_bind_red_eq, hH]
+  simp only [hmask]
 
-    This holds when H is modeled as a random oracle: H(g^c) for random c
-    acts as a fresh random mask, making xor(H(g^c), m) independent of m.
-    It also holds for any hash function H such that H ∘ pow maps uniform
-    exponents to uniform bits (e.g., a universal hash function).
+/-- **Hashed ElGamal IND-CPA advantage is bounded by two DDH advantages.**
 
-    The proof follows the standard DDH reduction:
-    1. Real game = DDH_real ∘ reduction (program equality)
-    2. Triangle: |Adv(real m₀, real m₁)| ≤ DDH(red m₀) + |ideal m₀ vs ideal m₁| + DDH(red m₁)
-    3. Middle term = 0 by h_ideal_indep
-    4. Conclusion: ≤ DDH(red m₀) + DDH(red m₁) -/
-theorem heg_indcpa_le_ddh (H : G → Bool) (m₀ m₁ : Bool)
-    (A : (G × Bool) → SPComp Bool)
-    [DecidableEq G]
-    (h_ideal_indep : (DDH_ideal G).bind (heg_ddh_reduction H m₀ A) =
-                     (DDH_ideal G).bind (heg_ddh_reduction H m₁ A)) :
+If `H ∘ pow` maps a uniform exponent to a uniform bit (`hH`, an
+information-theoretic property of the hash), then for every adversary `A`
+
+    `Adv(heg_real m₀, heg_real m₁) A ≤ DDH_Advantage (red m₀ A) + DDH_Advantage (red m₁ A)`,
+
+where `red m A = heg_ddh_reduction H m A`. The real game is the real DDH world
+against the reduction (`heg_real_eq_ddh_real`); the two ideal DDH worlds
+coincide (`heg_ddh_ideal_indep`). -/
+theorem heg_indcpa_le_ddh (H : G → Bool)
+    (hH : SPComp.bind (SPComp.sample CG.Exp) (fun c => SPComp.pure (H (CG.pow c))) =
+      SPComp.sample Bool)
+    (m₀ m₁ : Bool) (A : (G × Bool) → SPComp Bool) :
     AdvantageA (heg_real H m₀) (heg_real H m₁) A ≤
     DDH_Advantage G (heg_ddh_reduction H m₀ A) +
     DDH_Advantage G (heg_ddh_reduction H m₁ A) := by
-  -- Step 1: Rewrite AdvantageA using program equality
   unfold AdvantageA
   rw [heg_real_eq_ddh_real H m₀ A, heg_real_eq_ddh_real H m₁ A]
-  -- Goal: Advantage (DDH_real.bind(red m₀)) (DDH_real.bind(red m₁))
-  --     ≤ DDH_Advantage(red m₀) + DDH_Advantage(red m₁)
-  -- Step 2: Triangle inequality through DDH_ideal.bind(red m₀)
   have htri := advantage_triangle
     ((DDH_real G).bind (heg_ddh_reduction H m₀ A))
     ((DDH_ideal G).bind (heg_ddh_reduction H m₀ A))
     ((DDH_real G).bind (heg_ddh_reduction H m₁ A))
-  -- Step 3: The second term collapses via h_ideal_indep + symmetry
-  have h_second : Advantage ((DDH_ideal G).bind (heg_ddh_reduction H m₀ A))
-                            ((DDH_real G).bind (heg_ddh_reduction H m₁ A)) =
-                  Advantage ((DDH_real G).bind (heg_ddh_reduction H m₁ A))
-                            ((DDH_ideal G).bind (heg_ddh_reduction H m₁ A)) := by
-    simp_all [Advantage_sym]
-  rw [h_second] at htri
-  bound
+  nth_rewrite 2 [heg_ddh_ideal_indep H hH m₀ m₁ A] at htri
+  rw [Advantage_sym ((DDH_ideal G).bind (heg_ddh_reduction H m₁ A))] at htri
+  exact htri
 
 /-! ## Perfect Security with Random Oracle
 
