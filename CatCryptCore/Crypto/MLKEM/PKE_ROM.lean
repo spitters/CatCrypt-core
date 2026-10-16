@@ -22,22 +22,16 @@ ML-KEM security proof. It ports the `PKE` and `PKE_ROM` theories from
 * `PKE_ROM_Scheme` — PKE scheme with random oracle access
 
 ### Security games
-* `PKE.CPA` — IND-CPA game (left-or-right)
+* `PKE.CPA` — IND-CPA game (left-or-right) for a two-stage adversary with state
+* `PKE.CPA_Adv` — `|Pr[CPA true] - Pr[CPA false]|`
 * `PKE.OW_CPA` — one-wayness under CPA
 * `PKE.OWL_CPA` — list-returning one-wayness
 * `PKE.Correctness_Adv` — adversarial correctness game
 
-### Adversary types
-* `PKE.CPA_ADV` — CPA adversary (choose + guess)
-* `PKE.OW_CPA_ADV` — OW-CPA adversary
-* `PKE.OWL_CPA_ADV` — OW-CPA list adversary
-* `PKE.CORR_ADV` — correctness adversary
-
 ### Reductions
-* `PKE.BOWp` — OW → correctness reduction
+* `PKE.BOWp` — the uniform-plaintext correctness adversary of `ow_perfect`
 
 ### Theorems
-* `PKE.pr_CPA_LR` — `|Pr[CPA_L] - Pr[CPA_R]| = 2|Pr[CPA] - 1/2|`
 * `PKE.ow_perfect` — OW with/without correctness gap
 
 ## References
@@ -94,35 +88,35 @@ noncomputable def eps_msg : ℝ≥0∞ :=
 
 /-! ## CPA Security -/
 
-/-- IND-CPA game (real-or-random, bit `b`).
+/-- IND-CPA game (left-or-right, bit `b`) for a two-stage adversary: `choose`
+receives the public key and returns two plaintexts and a state, `guess`
+receives the state and the challenge ciphertext.
 
-    EasyCrypt: `CPA(S, A).main()`. -/
-noncomputable def CPA (choose : S.PK → SDistr (S.PT × S.PT))
-    (guess : S.CT → SDistr Bool) (b : Bool) : SDistr Bool := do
+    EasyCrypt: `CPA(S, A).main()` with the challenge bit fixed to `b`. -/
+noncomputable def CPA {St : Type} (choose : S.PK → SDistr (S.PT × S.PT × St))
+    (guess : St → S.CT → SDistr Bool) (b : Bool) : SDistr Bool := do
   let (pk, _sk) ← S.kg
-  let (m0, m1) ← choose pk
+  let (m0, m1, st) ← choose pk
   let c ← S.enc pk (if b then m1 else m0)
-  guess c
+  guess st c
 
 /-- IND-CPA left game: encrypts m0. -/
-noncomputable def CPA_L (choose : S.PK → SDistr (S.PT × S.PT))
-    (guess : S.CT → SDistr Bool) : SDistr Bool :=
+noncomputable def CPA_L {St : Type} (choose : S.PK → SDistr (S.PT × S.PT × St))
+    (guess : St → S.CT → SDistr Bool) : SDistr Bool :=
   CPA S choose guess false
 
 /-- IND-CPA right game: encrypts m1. -/
-noncomputable def CPA_R (choose : S.PK → SDistr (S.PT × S.PT))
-    (guess : S.CT → SDistr Bool) : SDistr Bool :=
+noncomputable def CPA_R {St : Type} (choose : S.PK → SDistr (S.PT × S.PT × St))
+    (guess : St → S.CT → SDistr Bool) : SDistr Bool :=
   CPA S choose guess true
 
-/-- IND-CPA advantage: `|Pr[CPA(b=true)] - 1/2|`.
-
-    EasyCrypt measures this as `|Pr[CPA.main() : res] - 1/2|`. We use the
-    real-or-random formulation where the game samples `b ← {0,1}` internally. -/
-noncomputable def CPA_Adv (choose : S.PK → SDistr (S.PT × S.PT))
-    (guess : S.CT → SDistr Bool) : ℝ≥0∞ :=
+/-- IND-CPA advantage: `|Pr[CPA true] - Pr[CPA false]|`, the left-or-right
+distinguishing advantage. -/
+noncomputable def CPA_Adv {St : Type} (choose : S.PK → SDistr (S.PT × S.PT × St))
+    (guess : St → S.CT → SDistr Bool) : ℝ≥0∞ :=
   UCMonad.SDistrUC.absDiffD
     (UCMonad.SDistrUC.prTrueD (CPA S choose guess true))
-    (ENNReal.ofReal (1/2))
+    (UCMonad.SDistrUC.prTrueD (CPA S choose guess false))
 
 /-! ## One-Wayness under CPA -/
 
@@ -136,15 +130,19 @@ noncomputable def OW_CPA (find : S.PK → S.CT → SDistr (Option S.PT)) : SDist
   let m' ← find pk c
   SDistr.pure (m' == some m)
 
-/-- OW-CPA with perfect decryption (no correctness gap).
+/-- OW-CPA with the decryption check: the game returns whether the adversary's
+answer equals the decryption of the challenge ciphertext under the secret key.
+It differs from `OW_CPA` only when decryption of the challenge fails
+(`ow_perfect`).
 
     EasyCrypt: `OW_CPA(S, A).main_perfect()`. -/
 noncomputable def OW_CPA_perfect (find : S.PK → S.CT → SDistr (Option S.PT)) : SDistr Bool := do
-  let (pk, _sk) ← S.kg
+  let (pk, sk) ← S.kg
   let m ← SDistr.uniform S.PT
   let c ← S.enc pk m
   let m' ← find pk c
-  SDistr.pure (m' == some m)
+  let md ← S.dec sk c
+  SDistr.pure (m' == md)
 
 /-- OW-CPA list game: adversary returns a list of candidate plaintexts.
 
@@ -170,36 +168,110 @@ noncomputable def Correctness_Adv (find : S.PK → S.SK → SDistr S.PT) : SDist
 
 /-! ## Reductions -/
 
-/-- BOWp: OW → correctness reduction.
+/-- BOWp: the correctness adversary of `ow_perfect`, which returns a uniform
+plaintext. `Correctness_Adv S (BOWp S)` is the decryption-failure probability
+of an honestly encrypted uniform plaintext.
 
-    If OW_CPA adversary finds m' ≠ m, then (m', c) witnesses a decryption failure.
     EasyCrypt: `BOWp(S, A)`. -/
-noncomputable def BOWp (find : S.PK → S.CT → SDistr (Option S.PT)) :
-    S.PK → S.SK → SDistr S.PT := fun pk _sk => do
-  let m ← SDistr.uniform S.PT
-  let c ← S.enc pk m
-  let m' ← find pk c
-  match m' with
-  | some m'' => SDistr.pure m''
-  | none => SDistr.pure m  -- arbitrary choice on failure
+noncomputable def BOWp : S.PK → S.SK → SDistr S.PT := fun _pk _sk =>
+  SDistr.uniform S.PT
 
-/-- OW with perfect decryption differs from OW by at most correctness.
+/-- `bind` is subadditive in its continuation at a fixed outcome. -/
+theorem _root_.CatCrypt.Prob.SDistr.bind_apply_le_add {α β : Type} (d : SDistr α)
+    (f g h : α → SDistr β) (o : Option β) (hfgh : ∀ a, f a o ≤ g a o + h a o) :
+    (d.bind f) o ≤ (d.bind g) o + (d.bind h) o := by
+  simp only [SDistr.bind, PMF.bind_apply]
+  rw [← ENNReal.tsum_add]
+  refine ENNReal.tsum_le_tsum fun oa => ?_
+  cases oa with
+  | none => exact le_self_add
+  | some a => rw [← mul_add]; exact mul_le_mul_right (hfgh a) _
 
-    In fact, `OW_CPA` and `OW_CPA_perfect` are definitionally equal
-    (both bind `sk` but never use it), so their absDiff is 0.
+/-- Binding a sub-distribution before a computation that ignores the result
+does not increase the probability of a value. -/
+theorem _root_.CatCrypt.Prob.SDistr.bind_const_apply_some_le {α β : Type} (d : SDistr α)
+    (z : SDistr β) (b : β) :
+    (d.bind fun _ => z) (some b) ≤ z (some b) := by
+  simp only [SDistr.bind, PMF.bind_apply]
+  calc ∑' oa, d oa * (match oa with | some _ => z | none => SDistr.fail) (some b)
+      ≤ ∑' oa, d oa * z (some b) := ENNReal.tsum_le_tsum fun oa => by
+        cases oa with
+        | none => simp [SDistr.fail]
+        | some a => exact le_rfl
+    _ = z (some b) := by rw [ENNReal.tsum_mul_right, PMF.tsum_coe, one_mul]
+
+/-- Binding a lossless sub-distribution before a point mass leaves the point
+mass unchanged at every value. -/
+theorem _root_.CatCrypt.Prob.SDistr.bind_const_pure_apply_some {α β : Type} (d : SDistr α)
+    (hd : d none = 0) (x b : β) :
+    (d.bind fun _ => SDistr.pure x) (some b) = SDistr.pure x (some b) := by
+  simp only [SDistr.bind, PMF.bind_apply]
+  have h1 : ∑' a, d (some a) = 1 := by
+    have h := PMF.tsum_coe d
+    rwa [SDistr.tsum_option_eq_add, hd, zero_add] at h
+  rw [SDistr.tsum_option_eq_add, hd, zero_mul, zero_add]
+  dsimp only
+  rw [ENNReal.tsum_mul_right, h1, one_mul]
+
+/-- OW with and without the decryption check differ by at most the
+decryption-failure probability of an honestly encrypted uniform plaintext,
+for a scheme whose decryption never fails to terminate (`S.dec sk c none = 0`).
+The two games agree whenever the challenge ciphertext decrypts to the
+encrypted plaintext.
 
     EasyCrypt: `ow_perfect`. -/
-theorem ow_perfect (find : S.PK → S.CT → SDistr (Option S.PT)) :
+theorem ow_perfect (hdec : ∀ sk c, S.dec sk c none = 0)
+    (find : S.PK → S.CT → SDistr (Option S.PT)) :
     UCMonad.SDistrUC.absDiffD
       (UCMonad.SDistrUC.prTrueD (OW_CPA S find))
       (UCMonad.SDistrUC.prTrueD (OW_CPA_perfect S find)) ≤
-    UCMonad.SDistrUC.prTrueD (Correctness_Adv S (BOWp S find)) := by
-  -- OW_CPA and OW_CPA_perfect are the same game (sk is bound but unused in both)
-  have h : OW_CPA S find = OW_CPA_perfect S find := by
-    simp only [OW_CPA, OW_CPA_perfect]
-  rw [h]
-  simp only [UCMonad.SDistrUC.absDiffD, tsub_self, max_self]
-  exact zero_le
+    UCMonad.SDistrUC.prTrueD (Correctness_Adv S (BOWp S)) := by
+  -- The three tests at a decryption result `md`.
+  have hpt : ∀ (m : S.PT) (m' md : Option S.PT),
+      SDistr.pure (m' == some m) (some true) ≤
+        SDistr.pure (m' == md) (some true) + SDistr.pure (decide (md ≠ some m)) (some true) ∧
+      SDistr.pure (m' == md) (some true) ≤
+        SDistr.pure (m' == some m) (some true) + SDistr.pure (decide (md ≠ some m)) (some true) := by
+    intro m m' md
+    simp only [SDistr.pure_apply_some]
+    by_cases h : md = some m
+    · subst h; simp
+    · simp only [h, ne_eq, not_false_eq_true, decide_true, if_pos]
+      constructor <;> exact le_add_left (by split_ifs <;> simp)
+  -- The two inequalities after the challenge ciphertext `c` is fixed.
+  have hinner : ∀ (pk : S.PK) (sk : S.SK) (m : S.PT) (c : S.CT),
+      ((find pk c).bind fun m' => SDistr.pure (m' == some m)) (some true) ≤
+        ((find pk c).bind fun m' => (S.dec sk c).bind fun md => SDistr.pure (m' == md))
+          (some true) +
+        ((S.dec sk c).bind fun md => SDistr.pure (decide (md ≠ some m))) (some true) ∧
+      ((find pk c).bind fun m' => (S.dec sk c).bind fun md => SDistr.pure (m' == md))
+          (some true) ≤
+        ((find pk c).bind fun m' => SDistr.pure (m' == some m)) (some true) +
+        ((S.dec sk c).bind fun md => SDistr.pure (decide (md ≠ some m))) (some true) := by
+    intro pk sk m c
+    have hZ := SDistr.bind_const_apply_some_le (find pk c)
+      ((S.dec sk c).bind fun md => SDistr.pure (decide (md ≠ some m))) true
+    have hconst := fun x => SDistr.bind_const_pure_apply_some (S.dec sk c) (hdec sk c) x true
+    constructor
+    · refine (SDistr.bind_apply_le_add _ _ _ _ _ fun m' => ?_).trans (add_le_add le_rfl hZ)
+      rw [← hconst]
+      exact SDistr.bind_apply_le_add _ _ _ _ _ fun md => (hpt m m' md).1
+    · refine (SDistr.bind_apply_le_add _ _ _ _ _ fun m' => ?_).trans (add_le_add le_rfl hZ)
+      rw [← hconst]
+      exact SDistr.bind_apply_le_add _ _ _ _ _ fun md => (hpt m m' md).2
+  unfold UCMonad.SDistrUC.prTrueD UCMonad.SDistrUC.absDiffD OW_CPA OW_CPA_perfect
+    Correctness_Adv BOWp
+  refine max_le (tsub_le_iff_left.mpr ?_) (tsub_le_iff_left.mpr ?_)
+  · refine SDistr.bind_apply_le_add _ _ _ _ _ fun x => ?_
+    obtain ⟨pk, sk⟩ := x
+    refine SDistr.bind_apply_le_add _ _ _ _ _ fun m => ?_
+    refine SDistr.bind_apply_le_add _ _ _ _ _ fun c => ?_
+    exact (hinner pk sk m c).1
+  · refine SDistr.bind_apply_le_add _ _ _ _ _ fun x => ?_
+    obtain ⟨pk, sk⟩ := x
+    refine SDistr.bind_apply_le_add _ _ _ _ _ fun m => ?_
+    refine SDistr.bind_apply_le_add _ _ _ _ _ fun c => ?_
+    exact (hinner pk sk m c).2
 
 /-! ## ROM Variant -/
 

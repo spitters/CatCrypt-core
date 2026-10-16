@@ -44,7 +44,7 @@ Chapter numbers follow the online edition of the book.
 | 8 | Block-cipher modes | `CTRMode` | `ctr_perfect_indcpa`, `ctr_indcpa_bound` | Single-block CTR: perfect for a bijection family; `≤ ε` under a PRF assumption, with the PRF-swap hop as a hypothesis |
 | 8 | Block-cipher modes | `CBCMode` | `cbc_perfect_indcpa`, `cbc_indcpa_bound` | Single-block CBC: perfect for a family bijective in key and input; `≤ 2·ε` for a real cipher under a PRF assumption, with the two swap hops as hypotheses |
 | 9 | Chosen-ciphertext attacks | `Crypto/SecurityDefs` | `INDCCA_Game`, `INDCCA_reduces_to_INDCPA` | IND-CCA game with a decryption oracle; IND-CCA ≤ IND-CPA + two decryption-oracle integrity gaps, for any scheme |
-| 10 | MACs | `MAC` | `bijMAC_forgery_prob`, `boolXorMAC_forgery_prob` | Bijection-family MAC: single-query forgery probability exactly `1/\|Tag\|` |
+| 10 | MACs | `MAC` | `bijMAC_euf_cma_adv_of_isQueryBound_zero`, `boolXorMAC_euf_cma_adv_of_isQueryBound_zero` | Bijection-family MAC: EUF-CMA advantage without tag queries exactly `1/\|Tag\|` |
 | 10 | MAC from a PRF | `PRFMAC` | `security_based_on_prf` | Over `Bool`: forgery on an unqueried message, two PRF advantages plus a statistical gap of 1/2 |
 | 12 | Encrypt-then-MAC | `EncryptThenMAC` | `EtM_correct`, `boolEtM_perfect_indcpa` | Generic EtM combinator preserves correctness; perfect IND-CPA of the XOR instance |
 | 12 | Encrypt-then-MAC under CCA | `EtMCCA` | `boolEtM_indcca_reduces` | IND-CCA advantage of the XOR instance equals its MAC-integrity gaps (the IND-CPA term is 0) |
@@ -55,7 +55,7 @@ Chapter numbers follow the online edition of the book.
 | 15 | ElGamal | `ElGamalDDH`, `CyclicGroupDDH` | `elgamal_correct`, `elgamal_indcpa_security` | Cyclic group with explicit exponents: IND-CPA ≤ two DDH advantages of explicit reductions |
 | 15 | ElGamal as UC | `ElGamalUCConcrete` | `elgamal_uc_concrete` | Concrete UC emulation bounded by the DDH advantages of the reductions |
 | 15 | Hashed ElGamal | `HashedElGamal` | `heg_indcpa_le_ddh`, `heg_perfect_hash_security` | Two DDH advantages, under a message-independence hypothesis on the ideal reduction; advantage 0 when the mask is uniform |
-| 15 | Hybrid encryption | `KEMDEM` | `pke_security`, `pke_perfect_security`, `xorHybrid_perfect_security` | `Adv_PKE ≤ Adv_KEM + Adv_DEM + Adv_KEM` with three explicit reductions; perfect when both components are |
+| 15 | Hybrid encryption | `KEMDEM` | `pke_security`, `pke_security_of_perfectDEM`, `xorHybrid_advantage_le` | `Adv_PKE ≤ Adv_KEM + Adv_DEM + Adv_KEM` with three explicit reductions; the DEM term is `0` for a perfectly secure DEM |
 
 Chapter 4 (intractable computations) and Chapter 11 (hash functions) have no
 dedicated module. The hardness assumptions used above (DDH, CDH, DL, t-SDH, ODH, CR,

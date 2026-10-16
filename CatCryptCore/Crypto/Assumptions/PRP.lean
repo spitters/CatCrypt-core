@@ -6,6 +6,7 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Crypto.CryptoWord
+public import CatCryptCore.Crypto.PRPPRFSwitching
 
 /-!
 # PRP (Pseudorandom Permutation), SPRP, and PRP/PRF Switching
@@ -20,7 +21,8 @@ block cipher security. Used by CMAC, AES-GCM, and other constructions.
 * `PRP_Advantage` — PRF-distinguishing advantage of the block cipher
 
 ### Strong PRP (forward + inverse)
-* `SPRP_Adversary` — adversary with access to both `enc` and `dec` oracles
+* `SPRP_Adversary` — adaptive adversary with access to both `enc` and `dec` oracles
+* `sprpOracle` — lazily sampled random permutation with its inverse
 * `SPRP_Advantage` — strong PRP advantage
 
 ### PRF
@@ -119,35 +121,52 @@ noncomputable def PRF_Advantage (F : PRFDef W) (x : W)
 
 /-! ## Strong PRP (SPRP)
 
-The strong PRP game gives the adversary access to both the forward
-permutation `enc` and the inverse `dec`. This is needed by protocols
-that use block cipher decryption (e.g., CBC mode).
+The strong PRP game gives the adversary adaptive access to both the forward
+permutation `enc` and the inverse `dec`. In the ideal game both oracles answer
+from one lazily sampled random permutation: the table of answered pairs
+`(x, y)` is the oracle state, a fresh forward query samples `y` uniformly from
+the values not yet in the table, and a fresh inverse query samples `x`
+uniformly from the inputs not yet in the table.
 
 EasyCrypt: `StrongPRP.IND` in `PRP.eca`.
 SSProve (Rocq): `EVAL` game in `PRPCCA.v` with `lookup`/`invlookup`. -/
 
-/-- Strong PRP adversary: receives both forward and inverse oracles.
+/-- Strong PRP adversary: an adaptive oracle adversary whose query `.inl x`
+asks for `enc x` and whose query `.inr y` asks for `dec y`. -/
+abbrev SPRP_Adversary (W : Type) := OracleAdv (W ⊕ W) W Bool
 
-    The adversary can query `enc_oracle(x) = E(k, x)` and
-    `dec_oracle(y) = D(k, y)` and tries to distinguish from
-    a random permutation and its inverse. -/
-structure SPRP_Adversary (W : Type) where
-  /-- The adversary: receives forward and inverse oracles, outputs a bit. -/
-  run : (enc_oracle : W → SPComp W) → (dec_oracle : W → SPComp W) → SPComp Bool
+/-- The keyed forward and inverse oracles of `P` under the key `k`. -/
+noncomputable def sprpKeyedOracle (P : PRPDef W) (k : W) : Unit → W ⊕ W → PMF (W × Unit)
+  | _, .inl x => PMF.pure (P.enc k x, ())
+  | _, .inr y => PMF.pure (P.dec k y, ())
 
-/-- Strong PRP real game: adversary gets keyed `enc` and `dec`. -/
-noncomputable def SPRP_Real (P : PRPDef W) (A : SPRP_Adversary W) : SPComp Bool := do
-  let k ← SPComp.sample W
-  A.run (fun x => SPComp.pure (P.enc k x)) (fun y => SPComp.pure (P.dec k y))
+/-- The inputs recorded in a permutation table. -/
+def usedInputs (t : List (W × W)) : Finset W := (t.map Prod.fst).toFinset
 
-/-- Strong PRP ideal game: adversary gets independent random functions.
+/-- Lazily sampled random permutation with its inverse, with the table of pairs
+`(x, y)` as state. A forward query `x` returns the recorded `y` or samples `y`
+from `PRPPRF.freshDist` of the recorded outputs; an inverse query `y` returns
+the recorded `x` or samples `x` from `PRPPRF.freshDist` of the recorded inputs.
+Each fresh answer is recorded. -/
+noncomputable def sprpOracle (t : List (W × W)) : W ⊕ W → PMF (W × List (W × W))
+  | .inl x =>
+    match t.lookup x with
+    | some y => PMF.pure (y, t)
+    | none => (PRPPRF.freshDist (PRPPRF.usedAnswers t)).map fun y => (y, (x, y) :: t)
+  | .inr y =>
+    match (t.find? fun e => decide (e.2 = y)) with
+    | some e => PMF.pure (e.1, t)
+    | none => (PRPPRF.freshDist (usedInputs t)).map fun x => (x, (x, y) :: t)
 
-    In the true ideal game the oracles would be a random permutation
-    and its inverse (maintaining consistency). We approximate with
-    independent random functions; the difference is bounded by the
-    birthday term `PRP_PRF_SwitchingBound`. -/
+/-- Strong PRP real game: sample a key and run `A` against `enc k` and `dec k`. -/
+noncomputable def SPRP_Real (P : PRPDef W) (A : SPRP_Adversary W) : SPComp Bool :=
+  PRPPRF.pmfGame ((PMF.uniformOfFintype W).bind fun k =>
+    (OracleAdv.run (sprpKeyedOracle P k) A ()).map Prod.fst)
+
+/-- Strong PRP ideal game: run `A` against the lazily sampled random
+permutation and its inverse, from the empty table. -/
 noncomputable def SPRP_Ideal (A : SPRP_Adversary W) : SPComp Bool :=
-  A.run (fun _ => SPComp.sample W) (fun _ => SPComp.sample W)
+  PRPPRF.pmfGame ((OracleAdv.run sprpOracle A []).map Prod.fst)
 
 /-- Strong PRP advantage. -/
 noncomputable def SPRP_Advantage (P : PRPDef W) (A : SPRP_Adversary W) : ℝ≥0∞ :=

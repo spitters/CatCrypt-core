@@ -11,28 +11,30 @@ public import CatCryptCore.Examples.GroupParam
 public import CatCryptCore.Tactics.BindVcgenSum
 
 /-!
-# Pedersen Commitment: UC Security via a Trapdoor Equivocator
+# Pedersen Commitment: Commit Phase and Commit-and-Open Equivalence
 
-Pedersen commitment over an abstract discrete-log group, proved UC-secure at
-error `0` (perfect security) with a **non-trivial simulator**.
+Pedersen commitment over an abstract discrete-log group with a CRS trapdoor.
+Two statements, both at error `0` (perfect), for an honest committer against a
+corrupt receiver:
 
-## Scope: the equivocation direction only
+* `pedersen_uc_commit_phase` — the commit phase. The real world leaks the
+  commitment; the ideal functionality tells the simulator only that a
+  commitment was made, and the simulator samples a uniform commitment. This is
+  perfect hiding stated as a UC emulation.
+* `pedersen_uc_commit_open` — commit and open together. The real world leaks
+  the commitment and the opening randomness; the ideal functionality hands the
+  simulator a uniform commitment exponent `s`, sampled independently of `m`,
+  together with `m`, and the simulator opens `s` to `m` with the trapdoor
+  (equivocation). The simulator receives `m`, so this statement alone does not
+  express hiding; it states that equivocating a commitment made without `m`
+  reproduces the joint distribution of commitment and opening.
 
-This file proves the **equivocation** direction of UC commitment: an honest
-committer against a corrupt receiver. In that direction Pedersen is perfectly
-hiding, and the CRS trapdoor lets the simulator produce a commitment before it
-learns the message and open it consistently afterwards. The bound is exactly
-`ε = 0`.
+`pedersen_uc_commit_open` is the former `pedersen_uc_secure`; the commit-phase
+statement `pedersen_uc_commit_phase` is new.
 
-It does **not** cover the extraction direction (a corrupt committer, where the
-simulator must extract the committed message and the commitment must be
-binding). Perfectly-hiding Pedersen cannot provide that: hiding is
-information-theoretic, so a commitment carries no information the simulator
-could extract, and equivocation is the concrete witness that the same `C` opens
-to every message given the trapdoor. Realizing the full `F_commit`
-functionality — both directions — requires an *extractable* (equivalently,
-mixed / dual-mode) commitment, not a plain perfectly-hiding one. So the result
-here is one half of UC commitment, stated as such.
+Neither statement covers a corrupt committer (extraction and binding).
+Perfectly hiding Pedersen has no extractor: a commitment carries no
+information about the message.
 
 ## Modeling choice: reveal the exponent, not the group element
 
@@ -70,6 +72,11 @@ equivocation, retroactively opening a commitment produced without the message.
 
 ## Interface types
 
+Commit phase (`pedersenCommitSpec`):
+* `leak = Scalar` — the real world leaks the exponent `s = m + t·r`.
+* `sim_if = Unit` — the ideal tells the simulator that a commitment was made.
+
+Commit and open (`pedersenSpec`):
 * `leak = Scalar × Scalar` — the real world leaks the exponent `s = m + t·r` and
   the randomness `r`.
 * `sim_if = Scalar × Scalar` — the ideal hands the simulator the exponent `s` and
@@ -195,16 +202,13 @@ theorem pedersen_commit_output_depends_on_message (crs : PedersenCRS gp)
   have hc := congrArg (fun w => gp.groupMul w (gp.groupInv (gp.groupExp crs.h r))) h
   simpa only [gp.groupMul_assoc, gp.groupMul_inv, gp.groupMul_identity] using hc
 
-/-- **Pedersen commitment with a CRS trapdoor realizes the equivocation
-    direction of UC commitment at `ε = 0`** (perfect), with a non-trivial
-    simulator. This is the honest-committer / corrupt-receiver direction: given
-    `(s, m)` from the ideal, the simulator `pedersen_sim` equivocates by
-    computing `r = (s - m) / t` and passing `(s, r)` to the adversary.
-
-    Scope: this does not cover the corrupt-committer / extraction direction —
-    a perfectly-hiding commitment cannot be extractable, and full `F_commit`
-    needs an extractable (mixed / dual-mode) commitment. (genuine UC) -/
-theorem pedersen_uc_secure (crs : PedersenCRS gp)
+/-- **Commit and open: equivocation at `ε = 0`.** The ideal functionality
+    samples a commitment exponent `s` independently of `m` and hands `(s, m)` to
+    the simulator `pedersen_sim`, which opens `s` to `m` with the trapdoor,
+    `r = (s - m) / t`. The real and simulated views of commitment and opening
+    coincide. The simulator receives `m`, so this statement does not express
+    hiding; the commit phase alone is `pedersen_uc_commit_phase`. -/
+theorem pedersen_uc_commit_open (crs : PedersenCRS gp)
     (ht : crs.trapdoor ≠ gp.scalarZero) (V : Type) :
     UCEmulates 0 (pedersenSpec gp V) (pedersen_real gp crs) (pedersen_ideal gp crs) := by
   intro A
@@ -221,6 +225,61 @@ theorem pedersen_uc_secure (crs : PedersenCRS gp)
                 (mapSum SPComp.pure (pedersen_sim gp crs V A))) := by
           congr 1; funext a; exact h a
     _ ≤ 0 := le_of_eq (sdist_self _)
+
+/-! ## Commit phase -/
+
+/-- Commit phase of the real protocol: commit to `m` and reveal the exponent
+    `s = m + t · r` of the commitment `C = g ^ s`. -/
+noncomputable def pedersen_commit_real (crs : PedersenCRS gp) :
+    gp.Scalar → SPComp (Unit ⊕ gp.Scalar) :=
+  fun m => do
+    let r ← SPComp.sample gp.Scalar
+    SPComp.pure (.inr (gp.scalarAdd m (gp.scalarMul crs.trapdoor r)))
+
+/-- Commit phase of the ideal functionality: the simulator learns only that a
+    commitment was made. -/
+noncomputable def pedersen_commit_ideal (_crs : PedersenCRS gp) :
+    gp.Scalar → SPComp (Unit ⊕ Unit) :=
+  fun _m => SPComp.pure (.inr ())
+
+/-- Commit-phase simulator: hand the adversary a uniform commitment exponent. -/
+noncomputable def pedersen_commit_sim (view : Type) (A : gp.Scalar → SPComp view) :
+    Unit → SPComp view :=
+  fun _ => SPComp.bind (SPComp.sample gp.Scalar) A
+
+/-- UC spec of the commit phase: honest input is a message, the real world
+    leaks the commitment exponent, and the ideal world tells the simulator that
+    a commitment was made. -/
+noncomputable def pedersenCommitSpec (V : Type) : UCSpec :=
+  ⟨gp.Scalar, Unit, gp.Scalar, Unit, V⟩
+
+/-- The real and simulated views of the commit phase coincide pointwise: the
+    change of variables `r ↦ m + t · r` maps the uniform randomness to the
+    uniform commitment exponent. -/
+theorem pedersen_commit_view_eq (crs : PedersenCRS gp)
+    (ht : crs.trapdoor ≠ gp.scalarZero)
+    (m : gp.Scalar) (view : Type) (A : gp.Scalar → SPComp view) :
+    SPComp.bind (pedersen_commit_real gp crs m) (mapSum SPComp.pure A) =
+    SPComp.bind (pedersen_commit_ideal gp crs m)
+      (mapSum SPComp.pure (pedersen_commit_sim gp view A)) := by
+  unfold pedersen_commit_real pedersen_commit_ideal pedersen_commit_sim
+  simp only [SPComp.monad_bind_eq, SPComp.bind_assoc, SPComp.pure_bind, mapSum_inr, SPComp.map]
+  exact SPComp.sample_bind_equiv (affineEquiv gp crs ht m)
+    (fun s => SPComp.bind (A s) fun v => SPComp.pure (Sum.inr v))
+
+/-- **Commit phase at `ε = 0` (perfect hiding).** The commitment exponent
+    `m + t · r` of a uniform `r` is uniform for `t ≠ 0`, so the simulator
+    `pedersen_commit_sim`, which does not receive `m`, reproduces the
+    adversary's view of the commit phase. -/
+theorem pedersen_uc_commit_phase (crs : PedersenCRS gp)
+    (ht : crs.trapdoor ≠ gp.scalarZero) (V : Type) :
+    UCEmulates 0 (pedersenCommitSpec gp V)
+      (pedersen_commit_real gp crs) (pedersen_commit_ideal gp crs) := by
+  intro A
+  refine ⟨pedersen_commit_sim gp V A, le_of_eq ?_⟩
+  show sdist _ _ = 0
+  exact (congrArg (sdist · _) (funext fun m => pedersen_commit_view_eq gp crs ht m V A)).trans
+    (sdist_self _)
 
 /-! ## Nice-to-have: the extraction direction
 

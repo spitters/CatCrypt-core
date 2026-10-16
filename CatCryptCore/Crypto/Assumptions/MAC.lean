@@ -107,35 +107,27 @@ theorem MAC_Game_Ideal_isPure (A : MAC_Adversary W)
   apply SPComp.bind_isPure (SPComp.sample_isPure _); intro tag
   exact hA tag
 
-/-! ## Keyed MAC Games (KDM + Key Leakage)
+/-! ## Keyed MAC game (key-dependent messages)
 
-### Non-Standard Assumption
+`MAC_Keyed_Advantage` is the single-sample real-or-random game in which the
+message depends on the key via `msg : W → W`. The adversary sees the tag only.
+It is the MAC counterpart of `AEAD_Keyed_Advantage`
+(Black–Rogaway–Shrimpton, SAC 2003). -/
 
-`MAC_Keyed_Advantage` combines key-dependent messages (`msg : W → W`) with key
-leakage (outputs `(tag, key)` as a pair). Same KDM + leakage pattern as
-`AEAD_Keyed_Advantage`.
-
-### Literature
-
-Same as `AEAD_Keyed_Advantage`: Black-Rogaway-Shrimpton 2003, Applebaum et al.
-2014, Dodis et al. 2010.
-
-### Usage
-
-Used by SSH and Kerberos hybrid arguments. -/
-
-/-- MAC keyed real game: sample key, output (tag, key) pair. -/
-noncomputable def mac_keyed_real (D : MACDef W) (msg : W → W) : SPComp (W × W) :=
+/-- MAC keyed real game: sample a key and output the tag of the key-dependent
+message. -/
+noncomputable def mac_keyed_real (D : MACDef W) (msg : W → W) : SPComp W :=
   SPComp.bind (SPComp.sample W) (fun key =>
-    SPComp.pure (D.mac key (msg key), key))
+    SPComp.pure (D.mac key (msg key)))
 
-/-- MAC keyed ideal game: sample independent random pair. -/
-noncomputable def mac_keyed_ideal : SPComp (W × W) :=
-  SPComp.sample (W × W)
+/-- MAC keyed ideal game: a uniform tag. -/
+noncomputable def mac_keyed_ideal : SPComp W :=
+  SPComp.sample W
 
-/-- MAC keyed advantage. -/
+/-- Advantage in distinguishing the tag of a key-dependent message from a
+uniform tag. -/
 noncomputable def MAC_Keyed_Advantage (D : MACDef W) (msg : W → W)
-    (A : W × W → SPComp Bool) : ENNReal :=
+    (A : W → SPComp Bool) : ENNReal :=
   AdvantageA (mac_keyed_real D msg) mac_keyed_ideal A
 
 theorem mac_keyed_real_isPure (D : MACDef W) (msg : W → W) :

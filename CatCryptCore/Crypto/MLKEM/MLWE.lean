@@ -6,6 +6,7 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Crypto.MLKEM.PKE_ROM
+public import CatCryptCore.Crypto.PRPPRFSwitching
 
 /-!
 # Module Learning With Errors (MLWE) Assumption
@@ -201,31 +202,34 @@ structure PRF_Params where
   Input : Type
   /-- Output type -/
   Output : Type
+  [decInput : DecidableEq Input]
+  [decOutput : DecidableEq Output]
+  [finOutput : Fintype Output]
+  [neOutput : Nonempty Output]
   /-- Key distribution -/
   dkey : SDistr Key
-  /-- Uniform output distribution -/
-  dout : SDistr Output
   /-- The PRF function -/
   prf : Key → Input → Output
 
-/-- PRF IND game: PRF vs random function.
-    - `b = false` (real): oracle = PRF(k, ·)
-    - `b = true` (ideal): oracle = random function -/
+attribute [instance] PRF_Params.decInput PRF_Params.decOutput PRF_Params.finOutput
+  PRF_Params.neOutput
+
+/-- PRF IND game for an adaptive oracle adversary.
+    - `b = false` (real): the oracle is `prf k` for `k ← dkey`
+    - `b = true` (ideal): the oracle is a lazily sampled random function with
+      uniform values (`PRPPRF.rfOracle`): a repeated query receives the
+      recorded answer. -/
 noncomputable def PRF_IND_Game (P : PRF_Params)
-    (adv : (P.Input → SDistr P.Output) → SDistr Bool)
-    (b : Bool) : SDistr Bool := do
+    (adv : OracleAdv P.Input P.Output Bool) (b : Bool) : SDistr Bool :=
   if b then
-    -- Ideal: adversary gets access to a random function
-    -- (modeled abstractly — the actual RF uses state)
-    adv (fun _ => P.dout)
-  else do
-    -- Real: adversary gets PRF with random key
-    let k ← P.dkey
-    adv (fun x => SDistr.pure (P.prf k x))
+    (OracleAdv.run PRPPRF.rfOracle adv []).map fun x => some x.1
+  else
+    P.dkey.bind fun k =>
+      (OracleAdv.run (PRPPRF.keyedOracle P.prf k) adv ()).map fun x => some x.1
 
 /-- PRF advantage. -/
 noncomputable def PRF_advantage (P : PRF_Params)
-    (adv : (P.Input → SDistr P.Output) → SDistr Bool) : ℝ≥0∞ :=
+    (adv : OracleAdv P.Input P.Output Bool) : ℝ≥0∞ :=
   absDiff (prTrue (PRF_IND_Game P adv false)) (prTrue (PRF_IND_Game P adv true))
 
 end CatCrypt.Crypto.MLKEM

@@ -11,28 +11,17 @@ public import CatCryptCore.Prob.XorBij
 public import CatCryptCore.Tactics
 
 /-!
-# Bijection-Family MAC: Optimal Information-Theoretic Unforgeability
+# Bijection-Family MAC: Forgery Probability Without Tag Queries
 
-A message-authentication code built from a *bijection family* achieves the
-information-theoretically optimal forgery probability `1 / |Tag|`. Following
-Rosulek, The Joy of Cryptography, §9 (MACs).
+A message-authentication code built from a *bijection family*: for each message
+`m`, the map `k ↦ mac k m` is a bijection from keys to tags. Following Rosulek,
+The Joy of Cryptography, §9 (MACs).
 
-For each message `m`, if the map `k ↦ mac k m` is a bijection from keys to tags,
-then over a uniform key the tag `mac k m` is uniform on the tag space. A fixed
-forgery attempt `(m*, t*)` therefore verifies for *exactly one* key, so the
-single-query EUF-CMA game accepts the forgery with probability exactly
-`1 / |Tag|` — the smallest a forger can be forced below by an honest random tag,
-and the best any `|Tag|`-tag MAC can achieve against a blind guess.
-
-## Overview
-
-This mirrors the bijection-coupling examples (`CatCrypt.Examples.OTP`,
-`CatCrypt.Examples.PRF`). Where those collapse a *distinguishing* advantage to
-`0`, a MAC's forgery probability is not `0` (a forger may always guess a tag);
-the sharp statement is that it equals `1 / |Tag|`. The forgery probability is a
-`prTrue` of the real game, computed by `prTrue_sample_pure_bool`: it counts the
-keys under which the forgery verifies, divided by `|Key|`. The bijection makes
-that count exactly `1`, and `|Key| = |Tag|` since `bij m*` is an equivalence.
+Over a uniform key the tag `mac k m*` is uniform on the tag space, so a forgery
+`(m*, t*)` chosen without tag queries verifies with probability exactly
+`1 / |Tag|`. The result is stated for EUF-CMA adversaries with query bound `0`
+(`OracleAdv.IsQueryBound A 0`). A bijection family gives no bound after one
+tag query: for the XOR MAC, the tag `k ⊕ m` on one message determines the key.
 
 ## Main definitions
 
@@ -43,11 +32,15 @@ that count exactly `1`, and `|Key| = |Tag|` since `bij m*` is an equivalence.
 
 ## Main results
 
-* `bijMAC_forgery_prob` — the single-query EUF-CMA forgery probability of a
-  bijection-family MAC is exactly `1 / |Tag|`.
-* `bijMAC_euf_cma_adv` — the same, phrased through the core `EUF_CMA_Adv` game
-  with the identity (no-post-processing) forger.
-* `boolXorMAC_forgery_prob` — the `Bool` XOR MAC has forgery probability `1 / 2`.
+* `bijMAC_forgery_filter` — a fixed forgery verifies under exactly one key.
+* `bijMAC_euf_cma_adv_of_isQueryBound_zero` — an EUF-CMA adversary without tag
+  queries has advantage exactly `1 / |Tag|` against a bijection-family MAC.
+* `boolXorMAC_euf_cma_adv_of_isQueryBound_zero` — the same for the `Bool` XOR
+  MAC, with value `1 / 2`.
+
+These replace `bijMAC_forgery_prob`, `bijMAC_euf_cma_adv` and
+`boolXorMAC_forgery_prob`, which concerned a game whose forgery was a fixed
+parameter and whose adversary saw no tag.
 
 ## References
 
@@ -117,36 +110,56 @@ theorem bijMAC_forgery_filter (B : BijMACFamily) (m_star : B.Message) (t_star : 
   ext k
   grind
 
-/-- **Optimal forgery probability.** For a bijection-family MAC the single-query
-EUF-CMA game accepts a fixed forgery `(m*, t*)` with probability exactly
-`1 / |Tag|`.
-
-The real game samples a key `k` and returns `verify k m* t* = (t* == bij m* k)`;
-`prTrue_sample_pure_bool` turns this into `#{k | forgery verifies} / |Key|`. The
-forgery verifies for exactly one `k` (`bijMAC_forgery_filter`), and
-`|Key| = |Tag|` because `bij m*` is an equivalence. -/
-theorem bijMAC_forgery_prob (B : BijMACFamily) (m m_star : B.Message) (t_star : B.Tag) :
-    prTrue (EUF_CMA_Real B.toMACScheme m m_star t_star) Heap.empty
+/-- Over a uniform key, a fixed forgery `(m*, t*)` verifies with probability
+`1 / |Tag|`. -/
+theorem bijMAC_forgery_prob_key (B : BijMACFamily) (m_star : B.Message) (t_star : B.Tag) :
+    ∑' k : B.Key, (Fintype.card B.Key : ℝ≥0∞)⁻¹ *
+        (if B.toMACScheme.verify k m_star t_star = true then 1 else 0)
       = 1 / (Fintype.card B.Tag : ℝ≥0∞) := by
-  rw [show EUF_CMA_Real B.toMACScheme m m_star t_star
-        = SPComp.bind (SPComp.sample B.Key)
-            (fun k => SPComp.pure (B.toMACScheme.verify k m_star t_star)) from rfl,
-      prTrue_sample_pure_bool, bijMAC_forgery_filter, Fintype.card_congr (B.bij m_star)]
+  rw [tsum_fintype, ← Finset.mul_sum, Finset.sum_boole, bijMAC_forgery_filter,
+    Fintype.card_congr (B.bij m_star)]
   simp
 
-/-- **Forgery probability through the core `EUF_CMA_Adv` game.** With the identity
-forger (no post-processing of the verification bit), the bijection-family MAC's
-EUF-CMA advantage is exactly `1 / |Tag|`. -/
-theorem bijMAC_euf_cma_adv (B : BijMACFamily) (m m_star : B.Message) (t_star : B.Tag) :
-    EUF_CMA_Adv B.toMACScheme m m_star t_star SPComp.pure
-      = 1 / (Fintype.card B.Tag : ℝ≥0∞) := by
-  simp only [EUF_CMA_Adv, SPComp.monad_bind_eq, SPComp.bind_pure, bijMAC_forgery_prob]
+/-- **EUF-CMA without tag queries.** An EUF-CMA adversary that asks no tag
+query wins against a bijection-family MAC with probability exactly
+`1 / |Tag|`. Its forgery is distributed independently of the key, and each
+fixed forgery verifies under exactly one key (`bijMAC_forgery_filter`). -/
+theorem bijMAC_euf_cma_adv_of_isQueryBound_zero (B : BijMACFamily)
+    (A : EUF_CMA_Adversary B.toMACScheme) (hA : A.IsQueryBound 0) :
+    EUF_CMA_Adv B.toMACScheme A = 1 / (Fintype.card B.Tag : ℝ≥0∞) := by
+  unfold EUF_CMA_Adv EUF_CMA_Real
+  rw [PMF.bind_apply]
+  simp only [PMF.uniformOfFintype_apply]
+  induction A with
+  | ret r =>
+    simp only [OracleAdv.run_ret, PMF.pure_map, PMF.pure_apply, List.not_mem_nil,
+      not_false_eq_true, decide_true, Bool.and_true]
+    refine (tsum_congr fun k => ?_).trans (bijMAC_forgery_prob_key B r.1 r.2)
+    simp only [@eq_comm Bool true]
+    rfl
+  | rand p c ih =>
+    simp only [OracleAdv.run_rand, PMF.map_bind, PMF.bind_apply]
+    have key : ∀ X : B.toMACScheme.Key → _ → ℝ≥0∞,
+        (∀ i, ∑' k, (Fintype.card B.toMACScheme.Key : ℝ≥0∞)⁻¹ * X k i =
+          1 / (Fintype.card B.Tag : ℝ≥0∞)) →
+        ∑' k, (Fintype.card B.toMACScheme.Key : ℝ≥0∞)⁻¹ * ∑' i, p i * X k i =
+          1 / (Fintype.card B.Tag : ℝ≥0∞) := by
+      intro X hX
+      simp_rw [← ENNReal.tsum_mul_left]
+      rw [ENNReal.tsum_comm]
+      have hc : ∀ i, ∑' k, (Fintype.card B.toMACScheme.Key : ℝ≥0∞)⁻¹ * (p i * X k i) =
+          p i * (1 / (Fintype.card B.Tag : ℝ≥0∞)) := fun i => by
+        rw [← hX i, ← ENNReal.tsum_mul_left]
+        exact tsum_congr fun k => by ring
+      rw [tsum_congr hc, ENNReal.tsum_mul_right, PMF.tsum_coe, one_mul]
+    exact key _ fun i => ih i (hA i)
+  | query d k ih => exact hA.elim
 
 /-! ## Example: the XOR MAC over `Bool`
 
 `mac k m = k ⊕ m` is the bijection family `m ↦ boolXorBij m`; it is the MAC
-counterpart of the one-time pad and the XOR PRF, and attains the optimal 1-bit
-forgery probability `1 / 2`. -/
+counterpart of the one-time pad and the XOR PRF. Without tag queries a forger
+wins with probability `1 / 2`. -/
 
 /-- The XOR MAC over `Bool` as a bijection family: `bij m = boolXorBij m`. -/
 def boolXorMAC : BijMACFamily where
@@ -155,11 +168,12 @@ def boolXorMAC : BijMACFamily where
   Tag := Bool
   bij := boolXorBij
 
-/-- The `Bool` XOR MAC has forgery probability exactly `1 / 2`. -/
-theorem boolXorMAC_forgery_prob (m m_star t_star : Bool) :
-    prTrue (EUF_CMA_Real boolXorMAC.toMACScheme m m_star t_star) Heap.empty
-      = 1 / 2 := by
-  refine (bijMAC_forgery_prob boolXorMAC m m_star t_star).trans ?_
+/-- An EUF-CMA adversary without tag queries wins against the `Bool` XOR MAC
+with probability exactly `1 / 2`. -/
+theorem boolXorMAC_euf_cma_adv_of_isQueryBound_zero
+    (A : EUF_CMA_Adversary boolXorMAC.toMACScheme) (hA : A.IsQueryBound 0) :
+    EUF_CMA_Adv boolXorMAC.toMACScheme A = 1 / 2 := by
+  refine (bijMAC_euf_cma_adv_of_isQueryBound_zero boolXorMAC A hA).trans ?_
   simp [show Fintype.card boolXorMAC.Tag = 2 from rfl]
 
 end CatCrypt.Examples.MAC

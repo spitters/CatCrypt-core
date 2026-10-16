@@ -7,6 +7,7 @@ module
 
 public import CatCryptCore.Crypto.Advantage
 public import CatCryptCore.Crypto.Encryption
+public import CatCryptCore.Crypto.OracleAdversary
 
 /-!
 # Standard Security Definitions
@@ -27,7 +28,9 @@ provide reusable building blocks for security proofs.
 
 ### Authentication
 * `MACScheme` — Message authentication code
-* `EUF_CMA_Game` — Existential Unforgeability under Chosen Message Attack
+* `EUF_CMA_Real`, `EUF_CMA_Adv` — existential unforgeability under adaptive
+  chosen-message attack: the adversary queries a tagging oracle and wins with a
+  valid tag on a message it did not query
 
 ## Concrete instantiations
 
@@ -198,20 +201,28 @@ structure MACScheme where
 attribute [instance] MACScheme.finKey MACScheme.neKey MACScheme.finTag MACScheme.neTag
   MACScheme.decTag
 
-/-- EUF-CMA real game (simplified, single-query):
-    adversary receives a tag on message m and tries to forge on m*.
+/-- The tagging oracle of `M` under the key `k`, with the list of queried
+messages as state: a query `m` is answered `mac k m` and appended to the list. -/
+noncomputable def macTagOracle (M : MACScheme) (k : M.Key) (log : List M.Message)
+    (m : M.Message) : PMF (M.Tag × List M.Message) :=
+  PMF.pure (M.mac k m, m :: log)
 
-    Returns true if the adversary's forgery attempt verifies. -/
-noncomputable def EUF_CMA_Real (M : MACScheme) (m : M.Message) (m_star : M.Message)
-    (t_star : M.Tag) : SPComp Bool := do
-  let k ← SPComp.sample M.Key
-  let _t := M.mac k m  -- tag given to adversary
-  SPComp.pure (M.verify k m_star t_star)
+/-- EUF-CMA adversary: adaptive queries to the tagging oracle, then a forgery
+`(m*, t*)`. -/
+abbrev EUF_CMA_Adversary (M : MACScheme) := OracleAdv M.Message M.Tag (M.Message × M.Tag)
 
-/-- EUF-CMA advantage: probability of successful forgery. -/
-noncomputable def EUF_CMA_Adv (M : MACScheme) (m m_star : M.Message) (t_star : M.Tag)
-    (A : Bool → SPComp Bool) : ℝ≥0∞ :=
-  prTrue (EUF_CMA_Real M m m_star t_star >>= A) Heap.empty
+open Classical in
+/-- EUF-CMA game: sample a key `k`, run `A` against the tagging oracle under `k`
+from the empty query list, and return whether the forgery `(m*, t*)` verifies
+under `k` and `m*` was not queried. -/
+noncomputable def EUF_CMA_Real (M : MACScheme) (A : EUF_CMA_Adversary M) : PMF Bool :=
+  (PMF.uniformOfFintype M.Key).bind fun k =>
+    (OracleAdv.run (macTagOracle M k) A []).map fun r =>
+      M.verify k r.1.1 r.1.2 && decide (r.1.1 ∉ r.2)
+
+/-- EUF-CMA advantage: probability that the EUF-CMA game returns `true`. -/
+noncomputable def EUF_CMA_Adv (M : MACScheme) (A : EUF_CMA_Adversary M) : ℝ≥0∞ :=
+  EUF_CMA_Real M A true
 
 /-! ## Advantage Bounds -/
 

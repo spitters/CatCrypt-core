@@ -115,10 +115,9 @@ adversary, with no numeric bound assumed on it.
   \leanok
   GapDH strengthens CDH by granting the adversary a DDH decision oracle: it must
   still \emph{compute} $g^{ab}$ from $(g^a, g^b)$, even though it can \emph{check}
-  candidate triples. The advantage is the distinguishing distance between the DH
-  output and a fresh random value; the assumption states it is negligible. GapDH
-  is the standard assumption for X25519-based protocols (WireGuard, Noise), and
-  any DDH group is a fortiori a GapDH group.
+  candidate triples. The advantage is the probability that the adversary outputs
+  $g^{ab}$. GapDH is the standard assumption for X25519-based protocols
+  (WireGuard, Noise).
 \end{definition}
 
 \begin{definition}[$t$-Strong Diffie--Hellman advantage]
@@ -284,9 +283,10 @@ Taking $H$ to be the identity recovers DDH.
   \uses{def:advantage}
   \lean{CatCrypt.Crypto.Assumptions.SPRP_Advantage}
   \leanok
-  The strong-PRP game grants the adversary both the forward oracle $E(k, \cdot)$
-  and the inverse oracle $D(k, \cdot)$; the SPRP advantage is the distinguishing
-  distance from a pair of independent random functions.
+  The strong-PRP game grants an adaptive adversary both the forward oracle
+  $E(k, \cdot)$ and the inverse oracle $D(k, \cdot)$; the SPRP advantage is the
+  distinguishing distance from a lazily sampled random permutation and its
+  inverse, which answer from one table of input--output pairs.
 \end{definition}
 
 Modes that decrypt, such as CBC, need the inverse oracle and so this notion.
@@ -334,14 +334,18 @@ Modes that decrypt, such as CBC, need the inverse oracle and so this notion.
   ideal game, which returns a uniformly random ciphertext.
 \end{definition}
 
-\begin{definition}[AEAD IND-CCA2 advantage]
+\begin{definition}[AEAD authenticated-encryption advantage]
   \label{def:aead-cca}
   \uses{def:aead}
-  \lean{CatCrypt.Crypto.Assumptions.AEAD_CCA_Advantage}
+  \lean{CatCrypt.Crypto.Assumptions.AEAD_CCA_Advantage, CatCrypt.Crypto.Assumptions.AEAD_CPA_le_CCA}
   \leanok
-  The IND-CCA2 game equips the adversary with both an encryption oracle and a
-  decryption oracle; the advantage is the distinguishing distance between real
-  encryption-plus-decryption and (random encryption, reject-all decryption). This
-  combines confidentiality and ciphertext integrity, and implies the IND-CPA
-  notion above.
+  The game equips an adaptive adversary with an encryption oracle and a
+  decryption oracle. The advantage is the distinguishing distance between real
+  encryption and decryption under a uniform key and the ideal pair, in which
+  encryption is a lazily sampled random function of plaintext and associated
+  data, and decryption returns the plaintext recorded for a ciphertext produced
+  by the encryption oracle and rejects every other ciphertext. This combines
+  confidentiality and ciphertext integrity (deterministic authenticated
+  encryption); the single-sample notion above reduces to it with one encryption
+  query.
 \end{definition}
