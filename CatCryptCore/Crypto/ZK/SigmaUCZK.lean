@@ -7,7 +7,9 @@ module
 
 public import CatCryptCore.Crypto.UC
 public import CatCryptCore.Crypto.SDist
-public import CatCryptCore.Examples.SigmaProtocol
+public import CatCryptCore.Examples.Sigma
+public import CatCryptCore.Prob.XorBij
+public import CatCryptCore.Tactics
 public import CatCryptCore.Tactics.BindVcgenSum
 
 /-!
@@ -50,7 +52,7 @@ though the simulator never uses the witness. On an input `(x, w)` outside the
 relation both the real protocol and the ideal functionality abort with the
 honest output `.inl ()`, so `SHVZK` is required for pairs in the relation only.
 `simpleSigma_SHVZK` shows that the XOR Σ-protocol of
-`CatCrypt.Examples.SigmaProtocol` satisfies it.
+`CatCrypt.Examples.Sigma` satisfies it.
 
 ## Non-trivial simulator
 
@@ -77,7 +79,7 @@ zero-knowledge property.
 namespace CatCrypt.Crypto.ZK.SigmaUCZK
 
 open CatCrypt.Core CatCrypt.Prob CatCrypt.Crypto
-open CatCrypt.Examples.SigmaProtocol
+open CatCrypt.Examples.Sigma
 open scoped ENNReal
 
 set_option autoImplicit false
@@ -147,7 +149,7 @@ noncomputable def sigmaUCZKSpec (V : Type) : UCSpec :=
 /-! ## SHVZK Assumption -/
 
 /-- Special honest-verifier zero-knowledge: for every statement `x`, witness `w`
-    with `R(x, w)`, and challenge `e`, the honestly generated `(a, z)` and the
+    with `R(x, w)`, and challenge `e`, the pair `(a, z)` of an honest run and the
     simulated `(a, z)` have the same distribution. This is what makes the
     witness-free simulator indistinguishable from the real prover. -/
 def SHVZK : Prop :=

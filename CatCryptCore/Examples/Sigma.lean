@@ -11,6 +11,7 @@ public import CatCryptCore.Crypto.Advantage
 public import CatCryptCore.Relational.Rules
 public import CatCryptCore.Tactics.Basic
 public import CatCryptCore.Tactics.Sim
+public import CatCryptCore.Unary.Rules
 
 /-!
 # Sigma Protocol Example
@@ -41,7 +42,9 @@ A Sigma protocol is a three-move public-coin interactive proof system:
   trivial-state case and `SigmaProtocolS.toSigmaProtocol` for the stateless
   protocol whose first message carries the state.
 * `Completeness`, `SpecialSoundness`, `SHVZK`, `SHVZK_given` — the property
-  predicates.
+  predicates; `Completeness` quantifies over the support of the honest run.
+* `DoubleOpening`, `exists_witness_of_doubleOpening` — binding of the commitment
+  formed by the first message, from special soundness.
 
 ## Implementation
 
@@ -242,10 +245,29 @@ noncomputable def simulatedTranscriptGiven (sp : SigmaProtocol) (x : sp.Statemen
 
 /-! ## Completeness Property -/
 
-/-- Completeness: honest execution with valid witness always verifies -/
+/-- Completeness: for a statement `x` with witness `w` and every challenge `e`,
+    every transcript `(a, e, z)` in the support of the honest run — `a` from
+    `commit x w`, `z` from `respond x w a e` — verifies. -/
 def Completeness (sp : SigmaProtocol) : Prop :=
-  ∀ x w, sp.relation x w →
-    ∀ a e z, sp.verify x a e z = true
+  ∀ x w e, sp.relation x w →
+    CatCrypt.Unary.pHoare (fun _ => True) (realTranscriptGiven sp x w e)
+      (fun t _ => sp.verify x t.message e t.response = true)
+
+/-- Completeness from a pointwise check: if `verify` accepts `(a, e, z)` for
+    every `a` in the support of `commit x w` and every `z` in the support of
+    `respond x w a e`, the protocol is complete. -/
+theorem completeness_of_support (sp : SigmaProtocol)
+    (h : ∀ x w e, sp.relation x w →
+      CatCrypt.Unary.pHoare (fun _ => True) (sp.commit x w) (fun a _ =>
+        CatCrypt.Unary.pHoare (fun _ => True) (sp.respond x w a e)
+          (fun z _ => sp.verify x a e z = true))) :
+    Completeness sp := by
+  intro x w e hrel
+  unfold realTranscriptGiven
+  refine CatCrypt.Unary.pHoare_bind (h x w e hrel) fun a => ?_
+  intro h₀ hMid
+  exact CatCrypt.Unary.pHoare_bind (Mid := fun z _ => sp.verify x a e z = true) hMid
+    (fun _ => CatCrypt.Unary.pHoare_ret fun _ hz => hz) h₀ trivial
 
 /-! ## Special Soundness Property -/
 
@@ -377,17 +399,19 @@ theorem sigmaBij_snd (w a e : Bool) : (sigmaBij w (a, e)).2 = xor (xor a w) e :=
 
 /-! ## Completeness Proof for simpleSigma -/
 
-/-- Completeness for simpleSigma: honest executions always verify.
-
-    Note: The generic `Completeness` definition above is too strong as it
-    requires verify to succeed for ALL z values. The correct formulation
-    is that verify succeeds for z produced by the honest `respond` function.
-    This theorem captures the correct completeness property. -/
+/-- The honest response `a ⊕ w ⊕ e` of `simpleSigma` verifies for every
+    commitment `a` and challenge `e`. -/
 theorem simpleSigma_complete' (x w : Bool) (hrel : simpleSigma.relation x w)
     (a e : Bool) :
     let z := xor (xor a w) e
     simpleSigma.verify x a e z = true := by
   simp_all [simpleSigma]
+
+/-- Completeness for `simpleSigma`: every honest transcript verifies. -/
+theorem simpleSigma_completeness : Completeness simpleSigma := by
+  refine completeness_of_support _ fun x w e hrel => ?_
+  refine CatCrypt.Unary.pHoare_sample (α := Bool) fun _ a _ => ?_
+  exact CatCrypt.Unary.pHoare_ret fun _ _ => simpleSigma_complete' x w hrel a e
 
 /-! ## SHVZK Proof for simpleSigma -/
 
@@ -425,6 +449,16 @@ theorem simpleSigma_shvzk : SHVZK simpleSigma := by
   apply rHoare_same_step; intro e
   ssprove_couple_bij (xorTransformBij x e)
 
+/-- Perfect SHVZK for `simpleSigma` in advantage form: no distinguisher separates
+    the real from the simulated transcript at a given challenge. -/
+theorem simpleSigma_shvzk_zero_adv (x e : Bool) (A : Transcript simpleSigma → SPComp Bool) :
+    AdvantageA (realTranscriptGiven simpleSigma x x e)
+      (simulatedTranscriptGiven simpleSigma x e) A = 0 := by
+  refine advantage_zero_of_rHoare _ _ ?_ A
+  unfold realTranscriptGiven simulatedTranscriptGiven
+  simp only [simpleSigma, ssprove_simpl, SPComp.monad_pure_eq]
+  ssprove_couple_bij (xorTransformBij x e)
+
 /-! ## Special Soundness for simpleSigma -/
 
 /-- The extractor for simpleSigma: given two transcripts with same a, different e,
@@ -456,5 +490,55 @@ theorem simpleSigma_special_sound : SpecialSoundness simpleSigma := by
     beq_iff_eq.mp (by simpa [simpleSigma] using tt.accept1)
   simp only [simpleSigma, simpleSigmaExtractor, h1]
   cases x <;> cases tt.challenge1 <;> rfl
+
+/-! ## Binding of the Derived Commitment
+
+The first message of a Sigma protocol is a commitment to the challenge, with the
+response as opening (Damgård §5, SSProve `SigmaProtocol.v` § Commitments). Two
+accepting openings of one commitment under different challenges are the input
+to the special-soundness extractor. -/
+
+/-- Two openings of a single commitment under different challenges. -/
+structure DoubleOpening (sp : SigmaProtocol) (x : sp.Statement) where
+  /-- The shared commitment. -/
+  commitment : sp.Message
+  /-- First challenge. -/
+  challenge₁ : sp.Challenge
+  /-- First response. -/
+  response₁ : sp.Response
+  /-- Second challenge. -/
+  challenge₂ : sp.Challenge
+  /-- Second response. -/
+  response₂ : sp.Response
+  /-- Challenges differ. -/
+  diff : challenge₁ ≠ challenge₂
+  /-- First opening verifies. -/
+  verify₁ : sp.verify x commitment challenge₁ response₁ = true
+  /-- Second opening verifies. -/
+  verify₂ : sp.verify x commitment challenge₂ response₂ = true
+
+/-- A double opening as the input to the special-soundness extractor. -/
+def DoubleOpening.toTwoTranscripts {sp : SigmaProtocol} {x : sp.Statement}
+    (dop : DoubleOpening sp x) : TwoTranscripts sp x where
+  message := dop.commitment
+  challenge1 := dop.challenge₁
+  response1 := dop.response₁
+  challenge2 := dop.challenge₂
+  response2 := dop.response₂
+  accept1 := dop.verify₁
+  accept2 := dop.verify₂
+  diff := dop.diff
+
+/-- Witness extraction from a double opening: for a special-sound Sigma
+    protocol, two accepting openings of one commitment under different
+    challenges determine a witness for the statement. -/
+theorem exists_witness_of_doubleOpening (sp : SigmaProtocol) (hSS : SpecialSoundness sp)
+    (x : sp.Statement) (dop : DoubleOpening sp x) : ∃ w, sp.relation x w :=
+  ⟨_, hSS.choose_spec x dop.toTwoTranscripts⟩
+
+/-- Witness extraction from a double opening of the `simpleSigma` commitment. -/
+theorem simpleSigma_binding (x : Bool) (dop : DoubleOpening simpleSigma x) :
+    ∃ w, simpleSigma.relation x w :=
+  exists_witness_of_doubleOpening simpleSigma simpleSigma_special_sound x dop
 
 end CatCrypt.Examples.Sigma

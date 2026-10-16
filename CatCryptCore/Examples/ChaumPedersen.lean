@@ -5,7 +5,7 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import CatCryptCore.Examples.SigmaProtocol
+public import CatCryptCore.Examples.Sigma
 public import CatCryptCore.Examples.GroupParam
 public import CatCryptCore.Crypto.UC
 
@@ -36,7 +36,8 @@ to `g` and `h` respectively, without revealing the exponent.
 
 ## Security properties
 
-* `chaumPedersen_complete` -- completeness
+* `chaumPedersen_complete` -- the honest response verifies
+* `chaumPedersen_completeness` -- completeness (`Sigma.Completeness`)
 * `chaumPedersen_SHVZK_visible` -- special honest-verifier zero-knowledge (given challenge)
 * `chaumPedersen_special_soundness` -- special soundness (witness extraction)
 * `chaumPedersen_uc_secure` -- UC security at eps = 0
@@ -51,10 +52,10 @@ to `g` and `h` respectively, without revealing the exponent.
 
 set_option autoImplicit false
 
-namespace CatCryptCore.Examples.ChaumPedersen
+namespace CatCrypt.Examples.ChaumPedersen
 
 open CatCrypt.Core CatCrypt.Prob CatCrypt.Crypto
-open CatCrypt.Examples.SigmaProtocol
+open CatCrypt.Examples.Sigma
 open CatCrypt.Examples
 open CatCrypt.Relational
 open scoped ENNReal
@@ -187,6 +188,17 @@ theorem chaumPedersen_complete (stmt : CPStatement gp) (w : CPWitness gp)
     rw [hv, groupExp_add_gen]
     congr 1; rw [gp.scalarMul_comm]; exact (groupExp_groupExp_gen gp stmt.2.1 w e).symm
 
+/-- Completeness of the Chaum-Pedersen Sigma protocol: every transcript of an
+    honest run verifies. -/
+theorem chaumPedersen_completeness : Completeness (chaumPedersenSigma gp) := by
+  refine completeness_of_support _ fun stmt w e hrel => ?_
+  simp only [chaumPedersenSigma, cpCommit, cpRespond]
+  refine CatCrypt.Unary.pHoare_bind (Mid := fun _ _ => True)
+    (CatCrypt.Unary.pHoare_sample fun _ _ _ => trivial) fun r => ?_
+  refine CatCrypt.Unary.pHoare_ret fun _ _ => ?_
+  refine CatCrypt.Unary.pHoare_ret fun _ _ => ?_
+  exact chaumPedersen_complete gp stmt w hrel r e
+
 /-! ## Commitment recovery lemma -/
 
 /-- The key algebraic identity: `groupExp g r = groupMul (groupExp g z) (groupInv (groupExp u e))`
@@ -252,11 +264,11 @@ theorem chaumPedersen_SHVZK_visible :
     ∀ stmt w e, (chaumPedersenSigma gp).relation stmt w →
     rHoare
       (fun _ _ => True)
-      (realTranscript (chaumPedersenSigma gp) stmt w e)
-      (simulatedTranscript (chaumPedersenSigma gp) stmt e)
+      (realTranscriptGiven (chaumPedersenSigma gp) stmt w e)
+      (simulatedTranscriptGiven (chaumPedersenSigma gp) stmt e)
       (fun t₁ _ t₂ _ => cpVisibleTranscriptEq gp t₁ t₂) := by
   intro stmt w e hrel h₁ h₂ _
-  unfold realTranscript simulatedTranscript
+  unfold realTranscriptGiven simulatedTranscriptGiven
   simp only [chaumPedersenSigma, cpCommit, cpRespond, cpSimulate]
   simp only [SPComp.monad_bind_eq]
   ssprove_distr_simp
@@ -280,23 +292,23 @@ theorem chaumPedersen_SHVZK_visible :
 
 /-- Special soundness for Chaum-Pedersen. -/
 theorem chaumPedersen_special_soundness : SpecialSoundness (chaumPedersenSigma gp) := by
-  use fun stmt tt => cpExtractor gp stmt tt.message tt.challenge₁ tt.challenge₂
-                      tt.response₁ tt.response₂ |>.getD gp.scalarZero
+  use fun stmt tt => cpExtractor gp stmt tt.message tt.challenge1 tt.challenge2
+                      tt.response1 tt.response2 |>.getD gp.scalarZero
   intro stmt tt
   simp only [chaumPedersenSigma, cpRelation, cpExtractor]
-  have hne : tt.challenge₁ ≠ tt.challenge₂ := tt.diff
+  have hne : tt.challenge1 ≠ tt.challenge2 := tt.diff
   simp only [beq_eq_decide, decide_eq_true_eq]
 
-  set w := gp.scalarDiv (gp.scalarSub tt.response₁ tt.response₂)
-            (gp.scalarSub tt.challenge₁ tt.challenge₂)
-  set z1 : gp.Scalar := tt.response₁
-  set z2 : gp.Scalar := tt.response₂
-  set e1 : gp.Scalar := tt.challenge₁
-  set e2 : gp.Scalar := tt.challenge₂
+  set w := gp.scalarDiv (gp.scalarSub tt.response1 tt.response2)
+            (gp.scalarSub tt.challenge1 tt.challenge2)
+  set z1 : gp.Scalar := tt.response1
+  set z2 : gp.Scalar := tt.response2
+  set e1 : gp.Scalar := tt.challenge1
+  set e2 : gp.Scalar := tt.challenge2
 
   -- Extract accepting equations
-  have hacc1 := tt.accept₁
-  have hacc2 := tt.accept₂
+  have hacc1 := tt.accept1
+  have hacc2 := tt.accept2
   simp only [chaumPedersenSigma, cpVerify] at hacc1 hacc2
   have hacc1_split := Bool.and_eq_true_iff.mp hacc1
   have hacc2_split := Bool.and_eq_true_iff.mp hacc2
@@ -421,12 +433,12 @@ def projectTranscript (t : Transcript (chaumPedersenSigma gp)) : CPVisibleTransc
 /-- Real visible transcript computation. -/
 noncomputable def cpRealVisible (stmt : CPStatement gp) (w : CPWitness gp) :
     SPComp (CPVisibleTranscript gp) :=
-  SPComp.map (projectTranscript gp) (realTranscriptSampled (chaumPedersenSigma gp) stmt w)
+  SPComp.map (projectTranscript gp) (realTranscript (chaumPedersenSigma gp) stmt w)
 
 /-- Simulated visible transcript computation. -/
 noncomputable def cpSimVisible (stmt : CPStatement gp) :
     SPComp (CPVisibleTranscript gp) :=
-  SPComp.map (projectTranscript gp) (simulatedTranscriptSampled (chaumPedersenSigma gp) stmt)
+  SPComp.map (projectTranscript gp) (simulatedTranscript (chaumPedersenSigma gp) stmt)
 
 /-- UC specification for visible Chaum-Pedersen transcripts. -/
 def cpSpec (V : Type) : UCSpec :=
@@ -456,7 +468,7 @@ theorem cp_real_vis_eq_sim (stmt : CPStatement gp) (w : CPWitness gp)
   obtain ⟨hu, hv⟩ := hrel
   funext heap
   simp only [cpRealVisible, cpSimVisible, SPComp.map]
-  unfold realTranscriptSampled simulatedTranscriptSampled
+  unfold realTranscript simulatedTranscript
   simp only [chaumPedersenSigma, cpCommit, cpRespond, cpSimulate]
   simp only [SPComp.monad_bind_eq]
   ssprove_distr_simp
@@ -504,7 +516,8 @@ theorem cp_real_vis_eq_sim (stmt : CPStatement gp) (w : CPWitness gp)
   rw [step1]
   exact SDistr.uniform_bind_equiv_comp bij g_cont
 
-/-- The Chaum-Pedersen protocol is perfectly UC-secure: `UCEmulates 0`. -/
+/-- The Chaum-Pedersen protocol is perfectly UC-secure: `UCEmulates 0`.
+    (composition plumbing) -/
 theorem chaumPedersen_uc_secure (V : Type) (stmt : CPStatement gp) (w : CPWitness gp)
     (hrel : cpRelation gp stmt w) :
     UCEmulates 0 (cpSpec gp V) (fun _ => cpReal gp stmt w) (fun _ => cpIdeal gp stmt) := by
@@ -513,4 +526,4 @@ theorem chaumPedersen_uc_secure (V : Type) (stmt : CPStatement gp) (w : CPWitnes
   rw [cp_real_vis_eq_sim gp stmt w hrel]
   exact le_of_eq (sdist_self _)
 
-end CatCryptCore.Examples.ChaumPedersen
+end CatCrypt.Examples.ChaumPedersen
