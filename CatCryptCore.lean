@@ -373,6 +373,7 @@ public import CatCryptCore.Consensus.PoSNSB.Prob.Slots
 public import CatCryptCore.Consensus.PoSNSB.Prob.Protocol
 public import CatCryptCore.Consensus.PoSNSB.Prob.Reduction
 public import CatCryptCore.Consensus.PoSNSB.Prob
+public import CatCryptCore.Consensus.PoSNSB.ProbExamples
 public import CatCryptCore.Consensus.UC.FTree
 public import CatCryptCore.Consensus.UC.FinalityGadget
 public import CatCryptCore.Consensus.UC.Finality
