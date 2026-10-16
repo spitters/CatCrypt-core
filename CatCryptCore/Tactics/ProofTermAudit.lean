@@ -314,18 +314,24 @@ def typeMentionsCatCrypt (n : Name) : MetaM Bool := do
   let some ci := env.find? n | return false
   return ci.type.getUsedConstants.any isCatCryptName
 
+/-- Run `k` under its own heartbeat budget (counted from the call, not from the
+start of the enclosing command); errors and heartbeat or other runtime
+exceptions yield `dflt`. -/
+def withCappedHeartbeats {α : Type} (dflt : α) (k : MetaM α) : MetaM α :=
+  tryCatchRuntimeEx
+    (withTheReader Core.Context (fun c => { c with maxHeartbeats := 400000 * 1000 })
+      (withCurrHeartbeats k))
+    fun _ => return dflt
+
 /-- `isDefEq` under a heartbeat cap, with failures read as `false`. -/
-def isDefEqCapped (a b : Expr) : MetaM Bool := do
-  try
-    withTheReader Core.Context (fun c => { c with maxHeartbeats := 400000 * 1000 })
-      (isDefEq a b)
-  catch _ => return false
+def isDefEqCapped (a b : Expr) : MetaM Bool :=
+  withCappedHeartbeats false (isDefEq a b)
 
 /-- The Prop-valued fields of the structure-typed local `x` whose type is
     definitionally `concl`; the first such field name. -/
 def projectionMatchingConcl (x : Expr) (concl : Expr) : MetaM (Option Name) := do
   let env ← getEnv
-  let xT ← whnfR (← inferType x)
+  let some xT ← withCappedHeartbeats none (some <$> (whnfR (← inferType x))) | return none
   let some sName := xT.getAppFn.constName? | return none
   unless isStructure env sName do return none
   for f in getStructureFieldsFlattened env sName (includeSubobjectFields := false) do
@@ -357,9 +363,7 @@ def statementFromBinders (n : Name) (reducibleOnly : Bool) : MetaM (Option Strin
         else if let some f ← projectionMatchingConcl x concl then
           return some s!"field {f} of {xn}"
       return none
-  try
-    if reducibleOnly then withReducible run else run
-  catch _ => return none
+  withCappedHeartbeats none (if reducibleOnly then withReducible run else run)
 
 /-- Unfold the head of `e` while it is a definition from a CatCrypt namespace
     whose value is a proposition, at most `fuel` times. -/
