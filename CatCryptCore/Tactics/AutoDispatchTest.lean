@@ -494,4 +494,36 @@ example (n : ℕ) (h : n = 3) : n + 1 = 4 := by
   have _hn : n = m - 1 := by omega
   catcrypt_auto?
 
+/-! ## Commutation of independent binds and sums in any order -/
+
+/-- Abstract dependencies: a key generation with its `IsPure` field. -/
+structure SwapDeps (K : Type) where
+  /-- Key generation. -/
+  keygen : SPComp (K × K)
+  /-- Key generation does not touch the heap. -/
+  keygen_isPure : SPComp.IsPure keygen
+
+-- Two key generations and a sample exchanged around an adversary call.
+/--
+info: Try this:
+  [apply] bind_swap_nf
+-/
+#guard_msgs (substring := true) in
+example {K : Type} [Fintype K] [Nonempty K] (d : SwapDeps K) (adv : SPComp K)
+    (A : K → K → K → K → SPComp Bool) :
+    d.keygen.bind (fun ka => (SPComp.sample K).bind (fun s => adv.bind (fun x =>
+      d.keygen.bind (fun kb => A ka.2 kb.2 s x)))) =
+    adv.bind (fun x => d.keygen.bind (fun kb => (SPComp.sample K).bind (fun s =>
+      d.keygen.bind (fun ka => A ka.2 kb.2 s x)))) := by
+  catcrypt_auto?
+
+-- A hypothesis bounding an atom by a sum whose summands appear in another order.
+/--
+info: Try this:
+  [apply] sum_atoms_le
+-/
+#guard_msgs (substring := true) in
+example (x y z : ℝ≥0∞) (h : x ≤ y + z) : x ≤ z + y := by
+  catcrypt_auto?
+
 end CatCrypt.Tactics.AutoDispatchTest

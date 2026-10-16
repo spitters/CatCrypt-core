@@ -8,6 +8,7 @@ module
 public import CatCryptCore.Tactics.AutoBase
 public import CatCryptCore.Tactics.AutoSets
 public import CatCryptCore.Tactics.BindVcgen
+public import CatCryptCore.Tactics.BindSwap
 public import CatCryptCore.Tactics.Triangle
 public import CatCryptCore.Tactics.AutoMetrics
 
@@ -18,7 +19,8 @@ The dispatcher `catcrypt_auto` (`CatCryptCore.Tactics.AutoDispatchCore`) with th
 registrations of `CatCryptCore.Tactics.AutoBase`, `CatCryptCore.Tactics.AutoArms`
 (through `CatCryptCore.Tactics.AutoMetrics`, which also registers the distances `sdist`,
 `Advantage` and `AdvantageA` with `@[hop_metric]`) and `CatCryptCore.Tactics.AutoSets`,
-and the arm `bind_vcgen` registered here. The arms of the normalised stage, in order:
+and the arms `bind_swap_nf` (`CatCryptCore.Tactics.BindSwap`) and `bind_vcgen` registered
+here. The arms of the normalised stage, in order:
 
 | Shape | Arms, in order |
 |---|---|
@@ -28,11 +30,12 @@ and the arm `bind_vcgen` registered here. The arms of the normalised stage, in o
 | distance inequality | `hop_chain`; `sum_atoms_le`; `gcongr <;> catcrypt_grind`; `catcrypt_grind`; `bound` (a quarter of the budget; skipped when a `∀`-quantified inequality is in context) |
 | monotonicity | `gcongr_unfold`; `gcongr`; `gcongr <;> catcrypt_grind`; `sum_atoms_le` (on `≤`); `simp_all`; `grind` |
 | heap read | `grind [Heap.get_set_same, Heap.get_set_other]` |
-| game equality | `catcrypt_grind`; `bind_vcgen` |
+| game equality | `bind_swap_nf [p₁, …]`; `catcrypt_grind`; `bind_vcgen` |
 | other | `sum_atoms_le` (on `≤`); `simp_all`; `grind` |
 | premises | `solve_by_elim [p₁, …]` |
 -/
 
 public section
 
+catcrypt_auto_arm "SPComp equality" order 5 := "bind_swap_nf%GRIND"
 catcrypt_auto_arm "SPComp equality" order 20 := "bind_vcgen"

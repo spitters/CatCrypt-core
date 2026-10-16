@@ -285,6 +285,70 @@ def sumAtomsLe (g : MVarId) : TacticM Unit := g.withContext do
     throwError "sum_atoms_le: internal error: proof type mismatch"
   g.assign pf
 
+/-- The units of `ts` with one occurrence of each unit of `sub` removed (reducible
+definitional equality), or `none` when some unit of `sub` does not occur. -/
+def removeUnits (ts sub : Array Expr) : MetaM (Option (Array Expr)) := do
+  let mut rest := ts
+  for s in sub do
+    let mut idx : Option Nat := none
+    for i in [0:rest.size] do
+      if ← withReducible (isDefEq rest[i]! s) then
+        idx := some i
+        break
+    let some i := idx | return none
+    rest := rest.eraseIdxIfInBounds i
+  return some rest
+
+/-- The units of a weighted atom list: each atom repeated by its weight. -/
+def unitsOf (w : Array (Nat × Expr)) : Array Expr :=
+  w.foldl (fun acc (c, t) => acc ++ Array.replicate c t) #[]
+
+/-- Maximal number of hypotheses between sums applied in sequence by `sum_atoms_le`. -/
+def maxSumHypSteps : Nat := 3
+
+/-- Prove `S ≤ E` for the goal `g` by `sumAtomsLe`; when that fails, by a hypothesis
+`A ≤ B` of the local context whose sides are not both single atoms and whose atoms of `A`
+occur among those of `S`: with `S = A + R` (`ring1`) and `A + R ≤ B + R` (`add_le_add`),
+the goal `B + R ≤ E` is proved in the same way, using at most `steps` such hypotheses. -/
+partial def sumAtomsLeHyps (g : MVarId) (steps : Nat) : TacticM Unit := g.withContext do
+  try sumAtomsLe g
+  catch e =>
+    if steps == 0 then throw e
+    let ty ← whnfR (← instantiateMVars (← g.getType))
+    let some (lhs, rhs) := leSides? ty | throw e
+    let α ← inferType lhs
+    let lUnits := unitsOf (← weightedAtoms lhs)
+    for d in ← getLCtx do
+      if d.isImplementationDetail then continue
+      let t ← whnfR (← instantiateMVars d.type)
+      let some (a, b) := leSides? t | continue
+      unless ← isDefEq (← inferType a) α do continue
+      let aUnits := unitsOf (← weightedAtoms a)
+      let bUnits := unitsOf (← weightedAtoms b)
+      if aUnits.size ≤ 1 && bUnits.size ≤ 1 then continue
+      if aUnits.isEmpty || aUnits.size > maxUnits || bUnits.size > maxUnits then continue
+      let some rest ← removeUnits lUnits aUnits | continue
+      let s ← saveState
+      try
+        let (aR, bR, hStep) ← if rest.isEmpty then
+            pure (a, b, d.toExpr)
+          else do
+            let R ← mkSum rest
+            let aR ← mkAppM ``HAdd.hAdd #[a, R]
+            let bR ← mkAppM ``HAdd.hAdd #[b, R]
+            pure (aR, bR, ← mkAppM ``add_le_add #[d.toExpr, ← mkAppM ``le_refl #[R]])
+        let hS ← proveWith (← mkEq lhs aR) (← `(tactic| ring1))
+        let m ← mkFreshExprSyntheticOpaqueMVar (← mkAppM ``LE.le #[bR, rhs])
+        sumAtomsLeHyps m.mvarId! (steps - 1)
+        let pf ← mkAppM ``Eq.trans_le #[hS, ← mkAppM ``le_trans #[hStep, m]]
+        unless ← isDefEq (← inferType pf) (← g.getType) do
+          throwError "sum_atoms_le: internal error: proof type mismatch"
+        g.assign pf
+        return
+      catch _ =>
+        s.restore
+    throw e
+
 set_option hygiene false in
 /-- The normalisation that `sum_atoms_le` applies before its second reading of a goal:
 finite sums over `Finset.range (n + 1)` and `Finset.range 0` are expanded, and
@@ -294,16 +358,16 @@ def sumAtomsNorm : TacticM (TSyntax `tactic) :=
   `(tactic| simp only [Finset.sum_range_succ, Finset.sum_range_zero, Bool.false_eq_true,
     Bool.true_eq_false, ↓reduceIte])
 
-/-- Prove `S ≤ E` for the goal `g` by `sumAtomsLe`; when that fails, normalise the goal
-by `sumAtomsNorm` and read it again. The error of the first reading is reported when the
-normalisation does not change the goal. -/
+/-- Prove `S ≤ E` for the goal `g` by `sumAtomsLeHyps`; when that fails, normalise the
+goal by `sumAtomsNorm` and read it again. The error of the first reading is reported when
+the normalisation does not change the goal. -/
 def sumAtomsLeNorm (g : MVarId) : TacticM Unit := do
-  try sumAtomsLe g
+  try sumAtomsLeHyps g maxSumHypSteps
   catch e =>
     let gs ← try Tactic.run g (evalTactic (← sumAtomsNorm)) catch _ => throw e
     match gs with
     | [] => pure ()
-    | [g'] => sumAtomsLe g'
+    | [g'] => sumAtomsLeHyps g' maxSumHypSteps
     | _ => throw e
 
 /-- `sum_atoms_le` proves `S ≤ E` where `S` and `E` are sums of atoms with natural-number
@@ -319,11 +383,15 @@ semiring if and only if the weight of each atom on the left is at most its weigh
 right; the tactic decides this fragment. It also uses hypotheses `a ≤ b` of the local
 context between atoms: each left occurrence is matched (bipartite matching) to a distinct
 right occurrence of the same atom or of an atom bounding it by a hypothesis. Hypotheses
-are used as single steps, not chained transitively.
+between atoms are used as single steps, not chained transitively. A hypothesis `A ≤ B`
+whose sides are sums is applied to the left side when the atoms of `A` occur in `S`
+(with multiplicity, in any order and grouping): `S = A + R ≤ B + R`, and `B + R ≤ E` is
+read again; at most three such hypotheses are applied in sequence.
 
 The proof is `S = Σ aₖ` (`ring1`), `Σ aₖ ≤ Σ bₖ` (`add_le_add` of the matched steps),
-`Σ bₖ ≤ Σ bₖ + R` (`le_self_add`), `E = Σ bₖ + R` (`ring1`). It fails, naming the
-unmatched atom, when no matching exists. -/
+`Σ bₖ ≤ Σ bₖ + R` (`le_self_add`), `E = Σ bₖ + R` (`ring1`). Both sides are compared as
+multisets of atoms, so the order and grouping of the summands do not matter. It fails,
+naming the unmatched atom, when no matching exists. -/
 syntax (name := sumAtomsLeStx) "sum_atoms_le" : tactic
 
 @[tactic sumAtomsLeStx] def evalSumAtomsLe : Tactic := fun _ => do

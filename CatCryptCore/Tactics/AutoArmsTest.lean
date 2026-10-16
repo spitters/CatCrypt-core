@@ -135,6 +135,18 @@ example (k : ℕ) (f : ℕ → ℝ≥0∞) (h : ∑ i ∈ Finset.range k, f i �
 example : x + (if false = true then 1 else 0) ≤ x := by
   sum_atoms_le
 
+/-- A hypothesis bounding an atom by a sum, its summands in another order and grouping. -/
+example (h : x ≤ y + z) : w + x ≤ z + (w + y) := by sum_atoms_le
+
+/-- A hypothesis bounding a sum, its summands spread over the left side. -/
+example (h : x + y ≤ z) : y + (w + x) ≤ w + z := by sum_atoms_le
+
+/-- Two hypotheses between sums applied in sequence. -/
+example (v : ℝ≥0∞) (h₁ : x + y ≤ z) (h₂ : z + w ≤ v) : (w + y) + x ≤ v := by sum_atoms_le
+
+/-- A hypothesis between sums followed by a hypothesis between atoms. -/
+example (h : x ≤ y + z) (hz : z ≤ w) : x ≤ w + y := by sum_atoms_le
+
 end Atoms
 
 /-! ## Monotonicity -/
