@@ -8,6 +8,7 @@ module
 public import CatCryptCore.Examples.MAC
 public import CatCryptCore.Examples.PRF
 public import CatCryptCore.Prob.XorBij
+public import CatCryptCore.Crypto.PRPPRFSwitching
 
 /-!
 # MAC from PRF Construction
@@ -52,13 +53,17 @@ The security proof uses a sequence of game hops:
 8. **TAG_ideal** (Ideal MAC game):
    - GetTag stores (m, t) in set S, CheckTag checks membership
 
-## Main Result
+## Main Results
+
+`prfMAC_euf_cma_adv_le`: for a keyed function `F : K → D → T` and every
+adversary `A` of the adaptive EUF-CMA game with a tagging oracle, the forgery
+probability against the MAC `m ↦ F k m` is at most the adaptive PRF advantage
+of the reduction `prfMacRed A` against `F` plus `1/|T|`.
+`prf_euf_cma_adv_le` instantiates it at `prf` over `Bool`, with `1/2`.
 
 `mac_forgery_advantage_le_half`: for a forgery on an unqueried message, every
 distinguisher has advantage at most `1/2 = 1/|Word|` between the real and the
-ideal game. This is a single-sample, information-theoretic bound over `Bool`.
-It replaces `security_based_on_prf`, whose right-hand side added two copies of
-an unused PRF advantage `prf_epsilon A` to the constant `statistical_gap = 1/2`.
+ideal single-sample game. This is an information-theoretic bound over `Bool`.
 
 ## References
 
@@ -454,8 +459,8 @@ Over `Bool` with the XOR function, the only gap between the real and the ideal
 game on an unqueried message is the probability of guessing the tag of that
 message, which is `1/|Word| = 1/2`. The statement below is this single-sample,
 information-theoretic bound. It contains no PRF term: the game exposes one tag
-check to a fixed guess, and the reduction of an adaptive forger to the PRF game
-(Rosulek, Claim 10.4) is not formalized in this file.
+check to a fixed guess. The reduction of an adaptive forger to the PRF game
+(Rosulek, Claim 10.4) is `prfMAC_euf_cma_adv_le` below.
 -/
 
 /-- **Forgery on an unqueried message, statistical bound.** For a forgery
@@ -480,6 +485,150 @@ theorem mac_forgery_advantage_le_half
           unfold AdvantageA; exact advantage_triangle _ _ _
     _ ≤ 0 + (2 : ℝ≥0∞)⁻¹ := add_le_add (le_of_eq h0) h12
     _ = (2 : ℝ≥0∞)⁻¹ := zero_add _
+
+/-! ## Adaptive EUF-CMA security by reduction to the PRF
+
+For a keyed function `F : K → D → T`, the MAC `prfMACScheme F` tags `m` with
+`F k m`. A forger `A` in the adaptive EUF-CMA game (`EUF_CMA_Adv`) is turned
+into a PRF distinguisher `prfMacRed A`, which answers the tag queries of `A`
+with its own oracle and checks the forgery with one more oracle query.
+With the keyed oracle, the distinguisher outputs exactly the EUF-CMA outcome
+(`run_keyedOracle_prfMacRedAux`). With the lazily sampled random function, the
+forged message is fresh, its value is uniform, and the distinguisher outputs
+`true` with probability at most `1/|T|` (`run_rfOracle_prfMacRedAux_le`).
+-/
+
+section Reduction
+
+open CatCrypt.Crypto.PRPPRF CatCrypt.Crypto.SecurityDefs
+
+variable {K D T : Type} [Fintype K] [Nonempty K] [DecidableEq D]
+  [Fintype T] [Nonempty T] [DecidableEq T]
+
+/-- The MAC of a keyed function `F`: the tag of `m` under `k` is `F k m`, and a
+tag is verified by recomputation. -/
+abbrev prfMACScheme (F : K → D → T) : MACScheme where
+  Key := K
+  Message := D
+  Tag := T
+  mac := F
+
+/-- The PRF distinguisher run on a forger `A` that has queried the messages in
+`log`: tag queries are forwarded to the distinguisher's oracle and recorded; on
+the forgery `(m, t)` it returns `false` when `m` is in `log`, and otherwise
+queries `m` and returns whether the answer equals `t`. -/
+def prfMacRedAux : OracleAdv D T (D × T) → List D → OracleAdv D T Bool
+  | .ret r, log => if r.1 ∈ log then .ret false else .query r.1 fun t' => .ret (r.2 == t')
+  | .rand p k, log => .rand p fun b => prfMacRedAux (k b) log
+  | .query d k, log => .query d fun t' => prfMacRedAux (k t') (d :: log)
+
+/-- The PRF distinguisher built from an EUF-CMA forger `A`: it runs `A`,
+answers each tag query with its own oracle, and returns `true` iff the forgery
+is on an unqueried message and equals the oracle's answer on that message. -/
+def prfMacRed (A : OracleAdv D T (D × T)) : OracleAdv D T Bool :=
+  prfMacRedAux A []
+
+/-- A bind is bounded at `b` by a bound on every continuation from the support. -/
+private theorem bind_apply_le_of_support' {α β : Type} (p : PMF α) (f : α → PMF β)
+    (b : β) (c : ℝ≥0∞) (h : ∀ a ∈ p.support, f a b ≤ c) : p.bind f b ≤ c := by
+  rw [PMF.bind_apply]
+  calc ∑' a, p a * f a b ≤ ∑' a, p a * c := ENNReal.tsum_le_tsum fun a => by
+        by_cases ha : a ∈ p.support
+        · exact mul_le_mul_right (h a ha) _
+        · simp [(PMF.apply_eq_zero_iff p a).mpr ha]
+    _ = c := by rw [ENNReal.tsum_mul_right, PMF.tsum_coe, one_mul]
+
+/-- Against the keyed oracle `F k`, the distinguisher started with query list
+`log` outputs the EUF-CMA outcome of `A` against the tagging oracle under `k`
+started with `log`. -/
+theorem run_keyedOracle_prfMacRedAux (F : K → D → T) (k : K)
+    (A : OracleAdv D T (D × T)) (log : List D) :
+    (OracleAdv.run (keyedOracle F k) (prfMacRedAux A log) ()).map Prod.fst =
+      (OracleAdv.run (macTagOracle (prfMACScheme F) k) A log).map fun r =>
+        (r.1.2 == F k r.1.1) && decide (r.1.1 ∉ r.2) := by
+  induction A generalizing log with
+  | ret r =>
+    by_cases h : r.1 ∈ log
+    · simp [prfMacRedAux, h, PMF.pure_map]
+    · simp [prfMacRedAux, h, PMF.pure_map, keyedOracle]
+  | rand p c ih => simp only [prfMacRedAux, OracleAdv.run_rand, PMF.map_bind, ih]
+  | query d c ih =>
+    simp [prfMacRedAux, keyedOracle, macTagOracle, ih]
+
+/-- Against the lazily sampled random function, with every message outside
+`log` absent from the table `t`, the distinguisher outputs `true` with
+probability at most `1/|T|`. -/
+theorem run_rfOracle_prfMacRedAux_le (A : OracleAdv D T (D × T)) (log : List D)
+    (t : List (D × T)) (ht : ∀ d, d ∉ log → List.lookup d t = none) :
+    ((OracleAdv.run rfOracle (prfMacRedAux A log) t).map Prod.fst) true ≤
+      1 / (Fintype.card T : ℝ≥0∞) := by
+  induction A generalizing log t with
+  | ret r =>
+    by_cases h : r.1 ∈ log
+    · simp [prfMacRedAux, h, PMF.pure_map]
+    · have hrun : (OracleAdv.run rfOracle (prfMacRedAux (.ret r) log) t).map Prod.fst =
+          (PMF.uniformOfFintype T).map (fun a => r.2 == a) := by
+        simp [prfMacRedAux, h, rfOracle, ht r.1 h, PMF.map_bind, PMF.bind_map, PMF.pure_map,
+          Function.comp_def]
+        rfl
+      rw [hrun, PMF.map_apply, tsum_eq_single r.2]
+      · simp
+      · intro a ha
+        simp [Ne.symm ha]
+  | rand p c ih =>
+    simp only [prfMacRedAux, OracleAdv.run_rand, PMF.map_bind]
+    exact bind_apply_le_of_support' _ _ _ _ fun b _ => ih b log t ht
+  | query d c ih =>
+    simp only [prfMacRedAux, OracleAdv.run_query, PMF.map_bind]
+    refine bind_apply_le_of_support' _ _ _ _ fun x hx => ih x.1 (d :: log) x.2 ?_
+    intro d' hd'
+    simp only [List.mem_cons, not_or] at hd'
+    unfold rfOracle at hx
+    split at hx <;> simp at hx
+    · subst hx; exact ht d' hd'.2
+    · obtain ⟨a, rfl⟩ := hx
+      have hne : (d' == d) = false := by simpa using hd'.1
+      simp [List.lookup, hne, ht d' hd'.2]
+
+/-- **EUF-CMA security of the PRF MAC.** For every forger `A` in the adaptive
+EUF-CMA game, the forgery probability against `prfMACScheme F` is at most the
+adaptive PRF advantage of `prfMacRed A` against `F` plus `1/|T|`. -/
+theorem prfMAC_euf_cma_adv_le (F : K → D → T) (A : EUF_CMA_Adversary (prfMACScheme F)) :
+    EUF_CMA_Adv (prfMACScheme F) A ≤
+      PRF_q_Advantage F (prfMacRed A) + 1 / (Fintype.card T : ℝ≥0∞) := by
+  have hpmf : ∀ p : PMF Bool, prTrue (pmfGame p) Heap.empty = p true := fun p => by
+    have h := prTrue_pmfGame_map p id Heap.empty
+    rw [PMF.map_id] at h
+    rw [h, show {x : Bool | id x = true} = {true} from by ext x; simp,
+      PMF.toOuterMeasure_apply_singleton]
+  have hreal : prTrue (realGame F (prfMacRed A)) Heap.empty =
+      EUF_CMA_Adv (prfMACScheme F) A := by
+    rw [realGame, hpmf, EUF_CMA_Adv, EUF_CMA_Real]
+    congr 2
+    funext k
+    rw [prfMacRed, run_keyedOracle_prfMacRedAux]
+    congr 1
+    funext r
+    simp
+  have hideal : prTrue (rfGame (prfMacRed A)) Heap.empty ≤ 1 / (Fintype.card T : ℝ≥0∞) := by
+    rw [rfGame, hpmf]
+    exact run_rfOracle_prfMacRedAux_le A [] [] fun _ _ => rfl
+  rw [← hreal]
+  calc prTrue (realGame F (prfMacRed A)) Heap.empty
+      ≤ (prTrue (realGame F (prfMacRed A)) Heap.empty -
+            prTrue (rfGame (prfMacRed A)) Heap.empty)
+          + prTrue (rfGame (prfMacRed A)) Heap.empty := le_tsub_add
+    _ ≤ PRF_q_Advantage F (prfMacRed A) + 1 / (Fintype.card T : ℝ≥0∞) :=
+        add_le_add le_sup_left hideal
+
+/-- **EUF-CMA security of the PRF MAC over `Word`.** For `prf k m = k ⊕ m` on
+`Bool`, every adaptive forger `A` wins with probability at most the adaptive PRF
+advantage of `prfMacRed A` against `prf` plus `1/2`. -/
+theorem prf_euf_cma_adv_le (A : EUF_CMA_Adversary (prfMACScheme prf)) :
+    EUF_CMA_Adv (prfMACScheme prf) A ≤ PRF_q_Advantage prf (prfMacRed A) + 1 / 2 := by
+  simpa using prfMAC_euf_cma_adv_le prf A
+
+end Reduction
 
 /-! ## Discussion
 
