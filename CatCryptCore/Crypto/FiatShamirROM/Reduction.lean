@@ -88,7 +88,8 @@ variable {qH qS : ℕ}
 noncomputable def forkGame (A : Adversary P M qH qS) (x : P.Stmt) :
     PMF ((Forgery P M × (Tables P M × Bool)) ×
       Option ((Forgery P M × (Tables P M × Bool)) × P.Ch × P.Ch)) :=
-  forkRun (simStep x) hashCount (hitAt x) (withVerify (A.run x)) (Tables.empty, false)
+  forkRun (simStep (G := P.toProtocol M) x) hashCount (hitAt x) (withVerify x (A.run x))
+    (Protocol.Tables.empty, false)
 
 /-- **The relation reduction.** On the statement `x`, run the simulated EUF-CMA
 game as a forking run and output the extracted witness from the two forgeries and
@@ -100,12 +101,25 @@ noncomputable def extractReduction (A : Adversary P M qH qS) : P.Stmt → PMF P.
 
 section Transitions
 
-theorem simSignOut_hash (x : P.Stmt) (t : Tables P M) (b : Bool) (m : M) (e : P.Ch)
-    (s : P.SimRand) : (simSignOut x t b m e s).2.1.hash = t.hash := by
-  unfold simSignOut signOutOf
-  split_ifs
-  · split <;> rfl
-  · rfl
+theorem simSignOut_hash (x : P.Stmt) (t : Tables P M) (b : Bool) (m : M)
+    (e : Fin 1 → P.Ch) (s : P.SimRand) : (simSignOut x t b m e s).2.1.hash = t.hash :=
+  (programAll_tables t b _).1
+
+/-- The public entries programmed by a simulated signing attempt on `m` are on
+`m`. -/
+theorem simSignOut_prog (x : P.Stmt) (t : Tables P M) (b : Bool) (m : M) (e : Fin 1 → P.Ch)
+    (s : P.SimRand) (p : (P.Com × M) × P.Ch) (hp : p ∈ (simSignOut x t b m e s).2.1.prog) :
+    p ∈ t.prog ∨ p.1.2 = m := by
+  rcases (programAll_tables t b _).2.2.2.2 p hp with hp | hp
+  · exact Or.inl hp
+  · refine Or.inr ?_
+    change p ∈ (P.transcriptView m (e 0) (P.simulate x (e 0) s)).1 at hp
+    unfold Sigma.transcriptView at hp
+    split at hp
+    · rw [List.mem_singleton] at hp
+      subst hp
+      rfl
+    · simp at hp
 
 theorem simStep_plain (x₀ : P.Stmt) (s : Tables P M × Bool) (d : Query P M)
     (p : PMF (Answer P × (Tables P M × Bool))) (h : simStep x₀ s d = .plain p)
@@ -127,7 +141,7 @@ theorem simStep_plain (x₀ : P.Stmt) (s : Tables P M × Bool) (d : Query P M)
   | inr m =>
     simp only [simStep] at h
     cases h
-    obtain ⟨e, z, rfl⟩ := mem_support_sampleCh hx
+    obtain ⟨e, z, rfl⟩ := mem_support_sampleVec hx
     exact congrArg List.length (simSignOut_hash x₀ s.1 s.2 m e z)
 
 theorem simStep_fresh (x₀ : P.Stmt) (s : Tables P M × Bool) (d : Query P M)
@@ -176,22 +190,14 @@ theorem simStep_support (x₀ : P.Stmt) (s : Tables P M × Bool) (d : Query P M)
       exact ⟨List.prefix_append _ _, id, fun h => by simp at h, by simp⟩
   | inr m =>
     simp only [toOracle, simStep, Step.toPMF] at hx
-    obtain ⟨e, z, rfl⟩ := mem_support_sampleCh hx
+    obtain ⟨e, z, rfl⟩ := mem_support_sampleVec hx
     refine ⟨by rw [simSignOut_hash], ?_, fun _ => simSignOut_hash _ _ _ _ _ _,
       by rw [simSignOut_hash]; omega⟩
-    intro hinv
-    unfold simSignOut signOutOf
-    split_ifs
-    · split
-      · intro p hp
-        exact List.mem_append_left _ (hinv p hp)
-      · intro p hp
-        simp only [List.mem_append, List.mem_singleton] at hp
-        rcases hp with hp | rfl
-        · exact List.mem_append_left _ (hinv p hp)
-        · exact List.mem_append_right _ (List.mem_singleton_self _)
-    · intro p hp
-      exact List.mem_append_left _ (hinv p hp)
+    intro hinv p hp
+    change p.1.2 ∈ s.1.signed ++ [m]
+    rcases simSignOut_prog x₀ s.1 s.2 m e z p hp with hp | hp
+    · exact List.mem_append_left _ (hinv p hp)
+    · exact List.mem_append_right _ (List.mem_singleton.mpr hp)
 
 variable {α : Type}
 
@@ -272,12 +278,16 @@ theorem wins_iff_exists_hitAt (x : P.Stmt) (y : Forgery P M × (Tables P M × Bo
         exact hm (List.contains_iff_mem.mpr hmem)
     have hc : t.signed.contains m = false := Bool.eq_false_iff.mpr hm
     have hlk : t.lookup (a, m) = lookupIn t.hash (a, m) := by
-      unfold Tables.lookup
+      unfold Protocol.Tables.lookup
       rw [hprog]
       rfl
+    have hv : verifyVals t.lookup x m (a, z) 1 [] = (lookupIn t.hash (a, m)).map fun e => [e] := by
+      simp only [verifyVals, hlk]
+      cases lookupIn t.hash (a, m) <;> rfl
     unfold wins hitAt
     dsimp only
-    simp only [hc, hlk, Bool.not_false, Bool.true_and, Bool.and_eq_true, decide_eq_true_eq]
+    simp only [hc, Bool.not_false, Bool.true_and, Bool.and_eq_true, decide_eq_true_eq]
+    rw [hv]
     unfold lookupIn
     cases hf : findKey t.hash (a, m) with
     | none => simp
@@ -321,7 +331,7 @@ theorem rel_extractW_of_forkSucc (hSS : P.SpecialSound) (A : Adversary P M qH qS
   · simp only [forkSucc, h2, Bool.and_eq_true, decide_eq_true_eq] at hc
     obtain ⟨⟨h₁, h₂⟩, hne⟩ := hc
     obtain ⟨s₀, d₀, f, hf, hh, hp₁, hp₂⟩ :=
-      exists_fresh_of_mem_support_forkRun (simStep x) hashCount (hitAt x)
+      exists_fresh_of_mem_support_forkRun (simStep (G := P.toProtocol M) x) hashCount (hitAt x)
         (fun s t => s.1.hash <+: t.1.hash) (fun _ => List.prefix_refl _)
         (fun _ _ _ h h' => h.trans h') (fun s d y hy => (simStep_support x s d y hy).1)
         _ _ r y₂ e₁ e₂ hr h2
@@ -341,34 +351,35 @@ theorem rel_extractW_of_forkSucc (hSS : P.SpecialSound) (A : Adversary P M qH qS
 is won, `ε`, satisfies `ε²/(qH + 1) − ε/|Ch|` at most the probability that the
 reduction outputs a witness for `x`. -/
 theorem winProb_sq_div_sub_le (hSS : P.SpecialSound) (A : Adversary P M qH qS) (x : P.Stmt) :
-    (OracleAdv.run (toOracle (simStep x)) (withVerify (A.run x))
-          (Tables.empty, false)).toOuterMeasure {y | wins x y = true} ^ 2 /
+    (OracleAdv.run (toOracle (simStep (G := P.toProtocol M) x)) (withVerify x (A.run x))
+          (Protocol.Tables.empty, false)).toOuterMeasure {y | wins x y = true} ^ 2 /
         ((qH + 1 : ℕ) : ℝ≥0∞) -
-      (OracleAdv.run (toOracle (simStep x)) (withVerify (A.run x))
-          (Tables.empty, false)).toOuterMeasure {y | wins x y = true} /
+      (OracleAdv.run (toOracle (simStep (G := P.toProtocol M) x)) (withVerify x (A.run x))
+          (Protocol.Tables.empty, false)).toOuterMeasure {y | wins x y = true} /
         Fintype.card P.Ch ≤
       (forkGame A x).toOuterMeasure {r | P.rel x (extractW x r)} := by
-  have hB := isQueryBound₂_withVerify _ qH qS (A.isQueryBound x)
-  have hsum : ∑ c : Fin (qH + 1), accProb (simStep x) (hitAt x) c (withVerify (A.run x))
-      (Tables.empty, false) =
-      (OracleAdv.run (toOracle (simStep x)) (withVerify (A.run x))
-        (Tables.empty, false)).toOuterMeasure {y | wins x y = true} := by
+  have hB : IsQueryBound₂ (withVerify x (A.run x)) (qH + 1) qS :=
+    isQueryBound₂_withVerify x _ qH qS (A.isQueryBound x)
+  have hsum : ∑ c : Fin (qH + 1), accProb (simStep (G := P.toProtocol M) x) (hitAt x) c
+      (withVerify x (A.run x)) (Protocol.Tables.empty, false) =
+      (OracleAdv.run (toOracle (simStep (G := P.toProtocol M) x)) (withVerify x (A.run x))
+        (Protocol.Tables.empty, false)).toOuterMeasure {y | wins x y = true} := by
     refine sum_fin_toOuterMeasure_eq _ _ (hitAt x) (wins x) (hitAt_disj x) fun y hy => ?_
     obtain ⟨_, hinv, hlen⟩ := run_sim_support x _ _ _ hB _ y hy
-    rw [wins_iff_exists_hitAt x y (hinv (by simp [Tables.empty]))]
+    rw [wins_iff_exists_hitAt x y (hinv (by simp [Protocol.Tables.empty]))]
     constructor
     · rintro ⟨c, hc⟩
       have hlt := hitAt_lt x c y hc
-      simp only [hashCount, Tables.empty, List.length_nil, zero_add] at hlt hlen
+      simp only [hashCount, Protocol.Tables.empty, List.length_nil, zero_add] at hlt hlen
       exact ⟨⟨c, by omega⟩, hc⟩
     · rintro ⟨c, hc⟩
       exact ⟨c, hc⟩
-  have hBN := sum_accProb_sq_div_sub_le (simStep x) hashCount (hitAt x) (simStep_plain x)
-    (simStep_hashCount_fresh x) (hitAt_lt x) (hitAt_disj x) (qH + 1) (Nat.succ_pos _)
-    (withVerify (A.run x)) (Tables.empty, false) rfl
+  have hBN := sum_accProb_sq_div_sub_le (simStep (G := P.toProtocol M) x) hashCount (hitAt x)
+    (simStep_plain x) (simStep_hashCount_fresh x) (hitAt_lt x) (hitAt_disj x) (qH + 1) (Nat.succ_pos _)
+    (withVerify x (A.run x)) (Protocol.Tables.empty, false) rfl
   rw [hsum] at hBN
-  refine hBN.trans (sum_forkProb_le (simStep x) hashCount (hitAt x) (hitAt_disj x) (qH + 1)
-    _ _ (fun r => P.rel x (extractW x r)) fun r hr c hc => ?_)
+  refine hBN.trans (sum_forkProb_le (simStep (G := P.toProtocol M) x) hashCount (hitAt x)
+    (hitAt_disj x) (qH + 1) _ _ (fun r => P.rel x (extractW x r)) fun r hr c hc => ?_)
   exact rel_extractW_of_forkSucc hSS A x r hr c hc
 
 /-- The relation advantage of `extractReduction A` as an average over generated
