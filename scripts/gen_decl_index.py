@@ -27,7 +27,7 @@ GITHUB_BASE = "https://github.com/spitters/CatCrypt-core/blob/main"
 
 # Match public declarations (not indented = top-level, not private)
 DECL_RE = re.compile(
-    r'^(?:noncomputable\s+)?(?:protected\s+)?'
+    r'^(?:@\[[^\]\n]*\]\s*)*(?:noncomputable\s+)?(?:protected\s+)?'
     r'(theorem|def|lemma|class|structure|abbrev|instance|axiom|opaque)\s+'
     r'([A-Za-z_][\w.\']*)',
     re.MULTILINE

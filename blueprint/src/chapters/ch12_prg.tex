@@ -38,14 +38,13 @@ boundary: length extension is only computationally secure.
 \begin{theorem}[Triple-from-double bound]
   \label{thm:triple-prg}
   \uses{def:bijprg}
-  \lean{CatCrypt.Examples.PRG.triple_prg_uniform_bound}
+  \lean{CatCrypt.Examples.PRG.triple_prg_bound}
   \leanok
-  The \emph{computational} length-tripling result. Extending a
-  length-doubling generator $G$ to $G_3$ and composing the two hybrid hops through
-  the advantage triangle inequality gives
+  The \emph{computational} length-tripling result. For every adversary $A$ against
+  the triple construction $G_3$ built from a length-doubling generator $G$,
   \[
-    \mathsf{Adv}^{\mathrm{PRG}}(G_3) \;\le\; 2\,\varepsilon,
+    \mathsf{Adv}^{\mathrm{PRG}}_{G_3}(A) \;\le\;
+      \mathsf{Adv}^{\mathrm{PRG}}_{G}(R_1(A)) + \mathsf{Adv}^{\mathrm{PRG}}_{G}(R_2(A)),
   \]
-  where each hop is bounded by the $\mathrm{PRG}$-advantage $\varepsilon$ of the
-  base generator (a $\mathrm{PRGAssumption}$ hypothesis).
+  where $R_1$ and $R_2$ are explicit reductions to the base generator.
 \end{theorem}

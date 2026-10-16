@@ -36,17 +36,16 @@ each query reduces security to the one-time-pad argument at each drawn $r$.
 \begin{theorem}[Computational IND-CPA from a PRF]
   \label{thm:cpafromprf-bound}
   \uses{def:cpafromprf, thm:otp-perfect}
-  \lean{CatCrypt.Examples.CPAFromPRF.cpa_from_prf_bound}
+  \lean{CatCrypt.Examples.CPAFromPRF.cpa_from_prf_reduction}
   \leanok
-  Let $F$ satisfy the single-query PRF bound $\varepsilon$, and suppose the two
-  PRF-swap hops together have advantage at most $\mathsf{Adv}^{\mathrm{PRF}}(R)$ for a
-  distinguisher $R$. Then $\mathsf{Adv}^{\mathrm{IND\text{-}CPA}} \le \varepsilon$.
+  For every adversary $A$ and challenge messages $m_0, m_1$, the IND-CPA advantage
+  is at most the sum over the two messages of the average over $r$ of the PRF
+  advantages of the explicit distinguishers $R_{r,m}(A)$.
 \end{theorem}
 
 Replacing $F(k, \cdot)$ by a random function turns the scheme into a one-time pad,
 which is perfectly secure (Theorem~\ref{thm:otp-perfect}), so the triangle inequality
-for advantage composes the swap hop with the perfect hop. The swap hop enters as a
-hypothesis here; Theorem~\ref{thm:cpafromprf-reduction} discharges it.
+for advantage composes the swap hop with the perfect hop. 
 
 \begin{theorem}[Synthesized reduction]
   \label{thm:cpafromprf-reduction}

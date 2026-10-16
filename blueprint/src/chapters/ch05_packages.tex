@@ -79,18 +79,6 @@ layer.
 
 A shallow package is run through $\mathsf{resolve}$.
 
-\begin{definition}[Linking of raw packages is a stub]
-  \label{def:rawpackage-link}
-  \uses{def:rawpackage}
-  \lean{CatCrypt.Package.RawPackage.link}
-  \leanok
-  $\mathsf{link}\,P_1\,P_2 = P_1$ is a \emph{shallow-layer no-op stub}. Because
-  $\mathsf{RawPackage}$ stores oracle-free typed functions, there are no oracle
-  calls to substitute, so linking has nothing to do. Oracle-substituting
-  linking is defined in the deep embedding
-  (Definition~\ref{def:deeppackage-link}) and proved correct and associative by
-  Theorems~\ref{thm:runpkg-link} and~\ref{thm:runpkg-link-assoc}.
-\end{definition}
 
 \section{The Kleisli category of \texorpdfstring{$\mathsf{SPComp}$}{SPComp}}
 
