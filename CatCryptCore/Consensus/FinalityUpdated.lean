@@ -43,7 +43,7 @@ The length form of chain growth of F1 (`ChainTrace.ChainGrowth`) is not used: th
 epoch-boundary checkpoint of epoch `e` is defined by slots, and it is fixed once some block
 of the chain has a slot in `(e E, now - d]`, which is what `SlotChainGrowth` provides.
 
-## The honest voting schedule (`UpdatedHyp`)
+## The honest voting schedule (`VoteHyp`)
 
 From a vote history `pre`, cast up to the first round, and a checkpoint `j₀` justified in it,
 the honest validators `H` run rounds `r = 0, 1, …` at phases `ρ r` of slot
@@ -58,9 +58,10 @@ follow the voting rule of F2 (`HonestVotesOnChain`, proved in `roundVotes_onChai
 The extra hypothesis of `FFG.plausible_liveness` (every honest vote has its source at an epoch
 not above that of the justified checkpoint) is not a consequence of the execution model for
 the votes cast before the schedule starts: it is the hypothesis `pre_sources` of
-`UpdatedHyp`, together with `pre_unslashable` (no honest validator is slashable in `pre`) and
+`VoteHyp`, together with `pre_unslashable` (no honest validator is slashable in `pre`) and
 `pre_justified`. For the votes of the schedule it is proved (`schedule_spec`). With
-`pre = ∅` and `j₀` the genesis checkpoint the three hold trivially (`preHyp_empty`).
+`pre = ∅` and `j₀` the genesis checkpoint the three hold trivially, as in the instance
+`Examples.updated_nonvacuous`.
 
 Synchrony after `GST`: a vote cast at phase `j` is received by every honest party at every
 phase `t ≥ j` with `now t ≥ max (now j) GST + Δ`.
@@ -75,12 +76,14 @@ phase `t ≥ j` with `now t ≥ max (now j) GST + Δ`.
   slashable, and `e_r = e₀ + 2 r`.
 * `roundVotes_onChain`: the votes of every round within the horizon follow the voting rule of
   F2.
+* `UpdatedHyp`: `VoteHyp` together with `SlotChainHyp`.
 * `finality_updated`: Δ-updatedness. At every phase `t ≤ hz` with `now t ≥ τ₀ + Δ`, every
   honest party `p` has received votes finalizing a checkpoint `c` that is the epoch-boundary
   checkpoint of its epoch on the chain of `p` and satisfies
   `now t ≤ c.epoch * E + (τ₀ + 2 E + Δ - e₀ E)`.
 * `finality_updated_start`: with the earliest start `τ₀ = (e₀ + 1) E + σ + d` the lag is at
-  most `3 E + σ + d + Δ` slots.
+  most `3 E + σ + d + Δ` slots; `finality_updated_tip` states the bound for every block of the
+  chain, in particular its tip, when blocks have slots at most the current slot.
 * `Examples.updated_nonvacuous`: all hypotheses hold on a chain with one block per slot, one
   validator, `E = 1`, `σ = 1`, `d = 0`, `Δ = 1`, `GST = 0`.
 -/

@@ -243,4 +243,121 @@ theorem finality_updated_prob (hP : ProtocolHyp P) (hTree : Tree.Longest) (hGB :
 
 end Bound
 
+/-! ### Phases and slots -/
+
+section Phases
+
+variable {Tx Hash Party AdvState : Type} [Parameters Party] [BlockParameters Tx Hash Party]
+  [Execution Tx Hash Party AdvState] [Corruption Party] [DecidableEq Party]
+
+theorem phaseStep_progress_ne (N : GlobalState Tx Hash Party AdvState) :
+    (phaseStep N).progress ≠ N.progress := by
+  unfold phaseStep
+  cases h : N.progress <;> simp
+
+/-- Every phase advances the phase counter by one. -/
+theorem phase_phaseStep (N : GlobalState Tx Hash Party AdvState) :
+    phase (phaseStep N) = phase N + 1 := by
+  rcases step_phase (step_phaseStep N) with h | ⟨-, -, -, -, h⟩
+  · exact h
+  · exact absurd h (phaseStep_progress_ne N)
+
+theorem phase_runTrace (k : ℕ) :
+    phase (runTrace (Tx := Tx) (Hash := Hash) (Party := Party) AdvState k) = k + 3 := by
+  induction k with
+  | zero => simp [runTrace, phase, N0]
+  | succ k ih => rw [runTrace_succ, phase_phaseStep, ih]
+
+/-- Phase `3 s` of an execution is the start of slot `s + 1`. -/
+theorem runTrace_three_mul_t_now (s : ℕ) :
+    (runTrace (Tx := Tx) (Hash := Hash) (Party := Party) AdvState (3 * s)).t_now = s + 1 :=
+  (phase_ready (sl := s + 1) (by rw [phase_runTrace]; omega)).2
+
+end Phases
+
+section SeedPhases
+
+variable {Tx Hash : Type} [DecidableEq Tx] [DecidableEq Hash] {np : ℕ} [Corruption (Fin np)]
+  {n Hz : ℕ} {Sch : SigScheme (Block Tx Hash (Fin np))}
+  (P : Protocol Tx Hash np n Hz) (A : Adversary Tx Hash np n Hz Sch)
+
+/-- Phase `3 s` of the real execution of a seed has slot `s + 1`; in particular every slot
+`s + 1` is the slot of some phase, as required by `VoteHyp.round_slot`. -/
+theorem seedNow_three_mul (ω : Seed Tx Hash np n Hz Sch) (s : ℕ) :
+    seedNow P A ω (3 * s) = s + 1 := by
+  let _ := ω.params P; let _ := ω.bparams P; let _ := mkExec false P ω A
+  exact runTrace_three_mul_t_now (Tx := Tx) (Hash := Hash) (Party := Fin np)
+    (AdvState := A.AdvState) s
+
+end SeedPhases
+
+/-! ### The concrete instance of D2 -/
+
+namespace Instance
+
+open PoSNSB.Instance
+
+attribute [local instance] PoSNSB.Instance.corruption
+
+/-- The rounds of the schedule at the phases of slots `7 + 2 r`. -/
+def ρI (r : ℕ) : ℕ := 3 * (6 + r * (2 * 1))
+
+/-- **Non-vacuity of the hypotheses of `finality_updated_prob`.** For the instance of D2
+(`PoSNSB.Instance`: one honest party, all slots honest, horizon `K = 0`, `d = 3`, `w = 1`,
+`ε = 0`, `q = 1`), with `E = 1`, `σ = 2`, `Δ = 1`, `GST = 0`, unit stake, `H = univ`, no
+votes, the genesis checkpoint as `j₀`, `τ₀ = 7` and rounds at the phases `ρI r`, all
+hypotheses of `finality_updated_prob` hold. The horizon `K = 0` of the D2 instance precedes the
+first round, so the conclusion carries no information there. -/
+theorem prob_hyps :
+    ProtocolHyp P ∧ Tree.Longest ∧ P.GB.sl = 0 ∧
+      (∀ ω, Good P A Tree ν 0 3 1 0 ω →
+        (seedTrace P A 0 ω).SlotChainGrowth (seedNow P A ω) Block.sl 2 0) ∧
+      (∀ ω, VoteHyp (seedTree P ω) (fun _ => 1) (seedTrace P A 0 ω) (seedNow P A ω) Block.sl
+        1 2 3 1 0 0 Finset.univ 0 ∅ (genesisCheckpoint (seedTree P ω)) 7 ρI (fun _ => ∅)
+        (fun _ _ => ∅)) ∧
+      (∀ ω : Seed Unit Unit 1 4 1 Sch,
+        7 = (livenessEpoch (∅ : Finset (Vote (Fin 1) (Block Unit Unit (Fin 1))))
+          (genesisCheckpoint (seedTree P ω)) + 1) * 1 + 2 + 3) := by
+  obtain ⟨hP, hT, -⟩ := instance_hyps
+  have hlE : ∀ ω : Seed Unit Unit 1 4 1 Sch,
+      livenessEpoch (∅ : Finset (Vote (Fin 1) (Block Unit Unit (Fin 1))))
+        (genesisCheckpoint (seedTree P ω)) = 1 := fun _ => by
+    simp [livenessEpoch, genesisCheckpoint]
+  refine ⟨hP, hT, rfl, ?_, fun ω => ?_, fun ω => by rw [hlE]⟩
+  · intro ω _ p j a _ hj ha
+    obtain rfl : j = 0 := by omega
+    have : seedNow P A ω 0 = 1 := by simpa using seedNow_three_mul P A ω 0
+    omega
+  · have hρ : ∀ r, 0 < ρI r := fun r => by simp only [ρI]; omega
+    exact
+      { epoch_pos := le_rfl
+        delay_pos := le_rfl
+        honest := fun v _ => by
+          refine ⟨rfl, fun j hj => ?_⟩
+          obtain rfl : j = 0 := by omega
+          obtain rfl : v = 0 := Subsingleton.elim _ _
+          simp only [sTrace, runTrace, Function.iterate_zero, id, N0]
+          exact if_pos (List.mem_singleton_self _) ▸ rfl
+        mem_v₀ := Finset.mem_univ _
+        quorum := by
+          show 2 * stake (fun _ : Fin 1 => 1) Finset.univ ≤ 3 * stake (fun _ : Fin 1 => 1) _
+          omega
+        pre_justified := Justified.genesis
+        pre_sources := fun _ hx => absurd hx (Finset.notMem_empty _)
+        pre_unslashable := by
+          refine Finset.eq_empty_of_forall_notMem fun v hv => ?_
+          rcases mem_slashable.1 (Finset.mem_inter.1 hv).1 with ⟨x, hx, -⟩ | ⟨x, hx, -⟩ <;>
+            exact Finset.notMem_empty x hx
+        pre_onChain := fun h => absurd h (by have := hρ 0; omega)
+        pre_cast := fun _ hx => absurd hx (Finset.notMem_empty _)
+        start := by rw [hlE]
+        gst := Nat.zero_le _
+        round_slot := fun r => by
+          rw [ρI, seedNow_three_mul]
+          omega
+        round_cast := fun r h => absurd h (by have := hρ r; omega)
+        sync := fun _ _ _ x _ _ hx _ => absurd hx (Finset.notMem_empty _) }
+
+end Instance
+
 end CatCryptCore.Consensus.Finality
