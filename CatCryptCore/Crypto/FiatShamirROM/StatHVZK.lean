@@ -6,6 +6,7 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Crypto.FiatShamirROM.Game
+public import CatCryptCore.Crypto.OracleBadDraw
 public import CatCryptCore.Crypto.Constructions.ECBCPRFFlag
 
 /-!
@@ -50,6 +51,9 @@ attempt without its commitment; such a protocol is the instance
 * `Protocol.eufcmaAdvantage_le_simAdvantage_perKey` — the EUF-CMA advantage is at
   most the simulated-game advantage plus the expectation over generated pairs of
   `qS·δ(x, w) + qS·(qH + V + μ·qS)·Γ(x, w)`
+* `Protocol.eufcmaAdvantage_le_simAdvantage_cls` — the same with key classes, for
+  per-class hash-query bounds `q c` and class-wise key bounds, with the term
+  `Σ_c qS·(q c + Vc c + μc c·qS)·Γ(x, w) c`
 * `Protocol.eufcmaAdvantage_le_simAdvantage_dist`,
   `Protocol.eufcmaAdvantage_le_simAdvantage_stat` — the same with the distances
   `hvzkDistAt` and `keyDistAt`, and with constant bounds
@@ -602,6 +606,39 @@ theorem run_real_wins_le_stat {δ : ℝ≥0∞} (xw : G.Stmt × G.Wit) (hZK : G.
         rw [ENNReal.tsum_add]
     _ ≤ _ := add_le_add (run_real_le_sim xw hZK A h q hA s g hg hgr) le_rfl
 
+/-- **Signing-oracle simulation with key classes.** For a protocol with key classes
+`κ` whose generated pairs `(x, w)` have statistical HVZK distance `δ (x, w)` and
+class-wise key bound `Γ (x, w)`, and every adversary with at most `qH` hash and
+`qS` signing queries whose hash queries at points of class `c` are at most `q c` on
+every path, the EUF-CMA advantage is at most the advantage in the game whose
+signing oracle is simulated from the statement by programming the random oracle,
+plus the expectation over the generator of
+`qS·δ(x, w) + Σ_c qS·(q c + Vc c + μc c·qS)·Γ(x, w) c`. -/
+theorem Protocol.eufcmaAdvantage_le_simAdvantage_cls (κ : G.Classes)
+    {δ : G.Stmt × G.Wit → ℝ≥0∞} {Γ : G.Stmt × G.Wit → κ.ι → ℝ≥0∞}
+    (hZK : ∀ xw ∈ G.gen.support, G.StatHVZKAt xw.1 xw.2 (δ xw))
+    (hΓ : ∀ xw ∈ G.gen.support, G.KeyBoundClsAt κ xw.1 xw.2 (Γ xw)) {qH qS : ℕ}
+    (A : G.Adversary qH qS) (q : κ.ι → ℕ)
+    (hq : ∀ x c, (A.run x).IsQueryBoundBy (κ.hashCost c) (q c)) :
+    eufcmaAdvantage A ≤ simAdvantage A +
+      ∑' xw, G.gen xw * (qS * δ xw +
+        ∑ c, ((qS * (q c + κ.Vc c + κ.μc c * qS) : ℕ) : ℝ≥0∞) * Γ xw c) := by
+  unfold eufcmaAdvantage simAdvantage eufcmaGame simGame
+  rw [prTrue_gameDist, prTrue_gameDist, ← ENNReal.tsum_add]
+  refine ENNReal.tsum_le_tsum fun xw => ?_
+  rw [← mul_add]
+  by_cases hxw : xw ∈ G.gen.support
+  · have hB := isQueryBound₂_withVerify xw.1 _ qH qS (A.isQueryBound xw.1)
+    refine mul_le_mul_right ?_ _
+    refine (run_real_wins_le_stat xw (hZK xw hxw) _ (qH + G.V) qS hB _ _).trans ?_
+    rw [add_assoc]
+    refine add_le_add le_rfl (add_le_add le_rfl ?_)
+    refine (run_real_flag_le_cls κ xw (hΓ xw hxw) _ (qH + G.V) qS hB (fun c => q c + κ.Vc c)
+      (fun c => isQueryBoundBy_withVerify_cls κ c xw.1 _ _ (hq xw.1 c))
+      Protocol.Tables.empty rfl).trans (le_of_eq ?_)
+    simp [Protocol.Tables.empty, Protocol.Tables.keys, Protocol.Classes.count]
+  · simp [(PMF.apply_eq_zero_iff _ _).mpr hxw]
+
 /-- **Signing-oracle simulation with distances depending on the pair.** For a
 protocol whose generated pairs `(x, w)` have statistical HVZK distance `δ (x, w)`
 and key bound `Γ (x, w)`, and every adversary with at most `qH` hash and `qS`
@@ -615,20 +652,11 @@ theorem Protocol.eufcmaAdvantage_le_simAdvantage_perKey {δ Γ : G.Stmt × G.Wit
     (A : G.Adversary qH qS) :
     eufcmaAdvantage A ≤ simAdvantage A +
       ∑' xw, G.gen xw * (qS * δ xw + ((qS * (qH + G.V + G.μ * qS) : ℕ) : ℝ≥0∞) * Γ xw) := by
-  unfold eufcmaAdvantage simAdvantage eufcmaGame simGame
-  rw [prTrue_gameDist, prTrue_gameDist, ← ENNReal.tsum_add]
-  refine ENNReal.tsum_le_tsum fun xw => ?_
-  rw [← mul_add]
-  by_cases hxw : xw ∈ G.gen.support
-  · have hB := isQueryBound₂_withVerify xw.1 _ qH qS (A.isQueryBound xw.1)
-    refine mul_le_mul_right ?_ _
-    refine (run_real_wins_le_stat xw (hZK xw hxw) _ (qH + G.V) qS hB _ _).trans ?_
-    rw [add_assoc]
-    refine add_le_add le_rfl (add_le_add le_rfl ?_)
-    refine (run_real_flag_le xw (hΓ xw hxw) _ (qH + G.V) qS hB Protocol.Tables.empty rfl).trans
-      (le_of_eq ?_)
-    simp [Protocol.Tables.empty]
-  · simp [(PMF.apply_eq_zero_iff _ _).mpr hxw]
+  refine (Protocol.eufcmaAdvantage_le_simAdvantage_cls (Protocol.Classes.unit G)
+    (Γ := fun xw _ => Γ xw) hZK (fun xw hxw => (hΓ xw hxw).toCls _) A (fun _ => qH)
+    fun x _ => (A.isQueryBound x).isQueryBoundBy_left
+      (fun _ => by simp [Protocol.Classes.hashCost]) fun _ => rfl).trans (le_of_eq ?_)
+  simp
 
 /-- **Signing-oracle simulation at the distances of the pairs.** For every protocol
 and every adversary with at most `qH` hash and `qS` signing queries, the EUF-CMA

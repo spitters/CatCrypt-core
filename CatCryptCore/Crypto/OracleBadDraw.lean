@@ -32,6 +32,11 @@ by the oracle: the bound covers the final state of the run.
 * `OracleForking.IsQueryBound₂.isQueryBoundBy` — a bound of `h` queries of the left
   kind and `q` of the right kind is a cost bound `a·h + b·q` for the costs `a` and
   `b` per query of each kind
+* `OracleAdv.IsQueryBoundBy.of_cost_le` — a cost bound holds for every pointwise
+  smaller cost
+* `OracleForking.IsQueryBound₂.isQueryBoundBy_left` — a bound of `h` queries of the
+  left kind is a cost bound `h` for a cost at most `1` on the left kind and `0` on
+  the right kind
 -/
 
 @[expose] public section
@@ -109,6 +114,16 @@ theorem run_badDraw_le_of_isQueryBound {S : Type} (O : S → D → PMF (R × S))
   run_badDraw_le O bad (fun _ => 1) ε (fun s d h => by simpa using hstep s d h) A n
     hA.isQueryBoundBy_one s hs
 
+/-- A cost bound for a cost is a cost bound for every pointwise smaller cost. -/
+theorem IsQueryBoundBy.of_cost_le {cost cost' : D → ℕ} (hc : ∀ d, cost' d ≤ cost d)
+    {A : OracleAdv D R α} {n : ℕ} (hA : A.IsQueryBoundBy cost n) : A.IsQueryBoundBy cost' n := by
+  induction A generalizing n with
+  | ret a => trivial
+  | rand p k ih => exact fun b => ih b (hA b)
+  | query d k ih =>
+    obtain ⟨hle, hk⟩ := hA
+    exact ⟨(hc d).trans hle, fun r => (ih r (hk r)).mono (by have := hc d; omega)⟩
+
 end OracleAdv
 
 namespace OracleForking
@@ -138,6 +153,17 @@ theorem IsQueryBound₂.isQueryBoundBy {D₁ D₂ R α : Type} {A : OracleAdv (D
         refine ⟨by simp only [Sum.elim_inr]; nlinarith, fun r => ?_⟩
         simpa only [Sum.elim_inr, show a * h + b * (q + 1) - b = a * h + b * q by
           rw [Nat.mul_succ]; omega] using ih r (hA r)
+
+/-- A bound of `h` queries in `D₁` on every path is a cost bound `h` for every cost
+at most `1` on `D₁` and `0` on `D₂`. -/
+theorem IsQueryBound₂.isQueryBoundBy_left {D₁ D₂ R α : Type} {A : OracleAdv (D₁ ⊕ D₂) R α}
+    {h q : ℕ} (hA : IsQueryBound₂ A h q) {cost : D₁ ⊕ D₂ → ℕ} (hl : ∀ d, cost (.inl d) ≤ 1)
+    (hr : ∀ d, cost (.inr d) = 0) : A.IsQueryBoundBy cost h := by
+  have := (hA.isQueryBoundBy 1 0).of_cost_le (cost' := cost) fun d => by
+    cases d with
+    | inl d => simpa using hl d
+    | inr d => simp [hr d]
+  simpa using this
 
 end OracleForking
 

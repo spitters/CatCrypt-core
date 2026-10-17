@@ -6,6 +6,7 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Crypto.OracleForkingLemma
+public import CatCryptCore.Crypto.OracleSimulation
 
 /-!
 # EUF-CMA security of Fiat–Shamir signatures in the random-oracle model: the game
@@ -69,6 +70,12 @@ at the point `(P.commit x w r, m)`, public when the response is accepted.
 * `Protocol.StatHVZKAt x w δ`, `Protocol.KeyBoundAt x w Γ` — statistical HVZK on
   traces, and the bound `Γ` on guessing the points of the programmed and hidden
   entries of an attempt, at one pair
+* `Protocol.Classes` — key classes: a partition of the oracle points with the class
+  of each entry and of each verifier point; `Protocol.Classes.unit`, the counts
+  `μc`, `Vc` and the per-class query cost `hashCost`
+* `Protocol.KeyBoundClsAt κ x w Γ` — the key bound class by class, on the entries
+  charged by `Protocol.charged`: the hidden ones, and the programmed public ones on
+  attempts whose hidden points are undefined in the visible oracle
 * `Sigma` — a Σ-protocol with explicit randomness, generator, extractor and
   acceptance test, and `Sigma.toProtocol P M`
 * `Sigma.SpecialSound`, `Sigma.PerfectHVZK`, `Sigma.CommitBoundAt x w γ`,
@@ -85,6 +92,12 @@ at the point `(P.commit x w r, m)`, public when the response is accepted.
 * `run_real_flag_le` — for a pair `(x, w)` with key bound `Γ`, from tables with `L`
   entries and no hidden entry, a run with at most `h` hash and `q` signing queries
   sets the flag with probability at most `q·(L + h + μ·q)·Γ`
+* `run_real_flag_le_cls` — for a pair with class-wise key bound `Γ`, from tables
+  with `L_c` points of class `c` and no hidden entry, a run with at most `q` signing
+  queries and hash queries of cost at most `h_c` for each class `c` sets the flag
+  with probability at most `Σ_c q·(L_c + h_c + μc c·q)·Γ c`
+* `Protocol.KeyBoundAt.toCls` — a key bound is a class-wise key bound for every
+  partition
 
 ## References
 
@@ -449,6 +462,142 @@ def StatHVZKAt (x : G.Stmt) (w : G.Wit) (δ : ℝ≥0∞) : Prop :=
         g (G.trace x w m r (G.vals look x w m r e)) else 0) ≤
     ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e * ∑' s, PMF.uniformOfFintype G.SimRand s *
       g (G.simTrace look x m e s) + δ
+
+/-- **Key classes.** A partition of the oracle points into finitely many classes
+`ι` by `cls`, such that the point of entry `i` of every attempt is in the class
+`ecls i` and the `j`-th point the verifier reads is in the class `vcls j`. Points
+of different classes never coincide, so collisions are counted class by class. -/
+structure Classes : Type 1 where
+  /-- The classes. -/
+  ι : Type
+  [finι : Fintype ι]
+  [decι : DecidableEq ι]
+  /-- The class of a point. -/
+  cls : G.Key → ι
+  /-- The class of the point of entry `i`. -/
+  ecls : Fin G.μ → ι
+  /-- The point of entry `i` of every attempt is in the class `ecls i`. -/
+  key_cls : ∀ x w m r (v : Fin G.μ → G.Ch) (i : Fin G.μ), cls (G.key x w m r v i) = ecls i
+  /-- The class of the `j`-th point the verifier reads. -/
+  vcls : Fin G.V → ι
+  /-- The point the verifier reads after the values `vs` is in the class
+  `vcls vs.length`. -/
+  vkey_cls : ∀ x m σ (vs : List G.Ch) (h : vs.length < G.V),
+    cls (G.vkey x m σ vs) = vcls ⟨vs.length, h⟩
+
+attribute [instance] Classes.finι Classes.decι
+
+/-- Entry `i` of an attempt with the values `v` against `look` is charged in the
+class-wise key bound: it is programmed or hidden, and it is hidden or the hidden
+entries of the attempt are at points undefined in `look`. -/
+def charged (look : G.Key → Option G.Ch) (x : G.Stmt) (w : G.Wit) (m : G.Msg) (r : G.Rand)
+    (v : Fin G.μ → G.Ch) (i : Fin G.μ) : Bool :=
+  G.flagging x w m r v i && (!G.pub x w m r v i || G.hidFresh look x w m r v)
+
+/-- **Class-wise key bound at one pair.** For the pair `(x, w)`, every class `c`,
+every message, every oracle `look` and every randomized guesser `Q` on traces, the
+expected number of charged entries of class `c` of the attempt against `look` whose
+point the guess from `guessView` hits, over uniform values and uniform randomness,
+is at most `Γ c`. -/
+def KeyBoundClsAt (κ : G.Classes) (x : G.Stmt) (w : G.Wit) (Γ : κ.ι → ℝ≥0∞) : Prop :=
+  ∀ (c : κ.ι) (m : G.Msg) (look : G.Key → Option G.Ch) (Q : G.Trace → PMF G.Key),
+    ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e * ∑' r, PMF.uniformOfFintype G.Rand r *
+      ∑ i ∈ Finset.univ.filter (fun i => κ.ecls i = c),
+        (if G.charged look x w m r (G.vals look x w m r e) i then
+          Q (G.guessView look x w m r e i) (G.key x w m r (G.vals look x w m r e) i) else 0) ≤
+      Γ c
+
+namespace Classes
+
+/-- The partition into one class. -/
+@[reducible] def unit : G.Classes where
+  ι := Unit
+  cls _ := ()
+  ecls _ := ()
+  key_cls _ _ _ _ _ _ := rfl
+  vcls _ := ()
+  vkey_cls _ _ _ _ _ := rfl
+
+variable {G} (κ : G.Classes)
+
+/-- The number of entries of an attempt in the class `c`. -/
+def μc (c : κ.ι) : ℕ := (Finset.univ.filter fun i => κ.ecls i = c).card
+
+/-- The number of verifier points in the class `c`. -/
+def Vc (c : κ.ι) : ℕ := (Finset.univ.filter fun j => κ.vcls j = c).card
+
+/-- The cost of a query for the class `c`: one for a hash query at a point of
+class `c`, zero otherwise. -/
+def hashCost (c : κ.ι) : G.Query → ℕ :=
+  Sum.elim (fun k => if κ.cls k = c then 1 else 0) fun _ => 0
+
+/-- The number of points of class `c` in `l`. -/
+def count (l : List G.Key) (c : κ.ι) : ℕ := (l.filter fun k => κ.cls k = c).length
+
+theorem count_append (l l' : List G.Key) (c : κ.ι) :
+    κ.count (l ++ l') c = κ.count l c + κ.count l' c := by
+  simp [count]
+
+theorem count_le_of_sublist {l l' : List G.Key} (h : l.Sublist l') (c : κ.ι) :
+    κ.count l c ≤ κ.count l' c :=
+  (h.filter _).length_le
+
+theorem length_filter_finRange_eq_μc (c : κ.ι) :
+    ((List.finRange G.μ).filter fun i => κ.ecls i = c).length = κ.μc c := by
+  rw [μc, Fin.univ_def]
+  rfl
+
+/-- The points of class `c` among the entries of an attempt satisfying `p`. -/
+theorem count_entries (x : G.Stmt) (w : G.Wit) (m : G.Msg) (r : G.Rand) (v : Fin G.μ → G.Ch)
+    (p : Fin G.μ → Bool) (c : κ.ι) :
+    κ.count ((G.entries x w m r v p).map Prod.fst) c =
+      (((List.finRange G.μ).filter fun i => κ.ecls i = c).filter p).length := by
+  simp only [count, Protocol.entries, List.map_map, List.filter_map, List.length_map,
+    List.filter_filter]
+  congr 1
+  refine List.filter_congr fun i _ => ?_
+  simp [κ.key_cls, Bool.and_comm]
+
+/-- The evaluated public, programmed public and hidden entries of an attempt have
+`μc c` points of class `c` in all. -/
+theorem count_trace_entries (x : G.Stmt) (w : G.Wit) (m : G.Msg) (r : G.Rand)
+    (v : Fin G.μ → G.Ch) (c : κ.ι) :
+    κ.count ((G.evEntries x w m r v).map Prod.fst) c +
+      κ.count ((G.pubEntries x w m r v).map Prod.fst) c +
+      κ.count ((G.hidEntries x w m r v).map Prod.fst) c = κ.μc c := by
+  simp only [Protocol.evEntries, Protocol.pubEntries, Protocol.hidEntries, count_entries,
+    ← length_filter_finRange_eq_μc]
+  have h1 := List.length_eq_length_filter_add (G.pub x w m r v)
+    (l := (List.finRange G.μ).filter fun i => κ.ecls i = c)
+  have h2 := List.length_eq_length_filter_add G.ev
+    (l := ((List.finRange G.μ).filter fun i => κ.ecls i = c).filter (G.pub x w m r v))
+  simp only [List.filter_filter, Bool.and_assoc] at h1 h2 ⊢
+  omega
+
+@[simp] theorem unit_μc : (unit G).μc () = G.μ := by simp [μc, unit]
+
+@[simp] theorem unit_Vc : (unit G).Vc () = G.V := by simp [Vc, unit]
+
+@[simp] theorem unit_count (l : List G.Key) : (unit G).count l () = l.length := by
+  simp [count, unit]
+
+end Classes
+
+variable {G}
+
+/-- A key bound is a class-wise key bound with the same bound for every class. -/
+theorem KeyBoundAt.toCls {x : G.Stmt} {w : G.Wit} {Γ : ℝ≥0∞} (h : G.KeyBoundAt x w Γ)
+    (κ : G.Classes) : G.KeyBoundClsAt κ x w fun _ => Γ := by
+  intro c m look Q
+  refine le_trans ?_ (h m look Q)
+  refine ENNReal.tsum_le_tsum fun e => mul_le_mul_right
+    (ENNReal.tsum_le_tsum fun r => mul_le_mul_right ?_ _) _
+  refine (Finset.sum_le_sum fun i _ => ?_).trans
+    (Finset.sum_le_sum_of_subset (Finset.filter_subset _ _))
+  unfold charged
+  cases G.flagging x w m r (G.vals look x w m r e) i <;> simp only [Bool.false_and, Bool.true_and,
+    Bool.false_eq_true, if_false, if_true, le_refl]
+  split_ifs <;> simp
 
 end Protocol
 
@@ -1606,6 +1755,104 @@ theorem run_real_support_size (xw : G.Stmt × G.Wit) (A : OracleAdv G.Query G.An
         rw [Nat.mul_succ]
         omega
 
+/-- A hash entry at `key` adds `hashCost c (inl key)` points of class `c`. -/
+theorem count_hash_append (κ : G.Classes) (t : G.Tables) (key : G.Key) (e : G.Ch) (c : κ.ι) :
+    κ.count ({ t with hash := t.hash ++ [(key, e)] } : G.Tables).keys c =
+      κ.count t.keys c + κ.hashCost c (.inl key) := by
+  simp only [Protocol.Tables.keys, List.map_append, List.map_cons, List.map_nil, κ.count_append]
+  by_cases hc : κ.cls key = c
+  · simp [Protocol.Classes.count, Protocol.Classes.hashCost, hc]
+    omega
+  · simp [Protocol.Classes.count, Protocol.Classes.hashCost, hc]
+
+/-- A real signing attempt adds at most `μc c` points of class `c`. -/
+theorem realSignOut_count_le (κ : G.Classes) (x : G.Stmt) (w : G.Wit) (t : G.Tables)
+    (b : Bool) (m : G.Msg) (e : Fin G.μ → G.Ch) (r : G.Rand) (c : κ.ι) :
+    κ.count (realSignOut x w t b m e r).2.1.keys c ≤ κ.count t.keys c + κ.μc c := by
+  have h0 := κ.count_trace_entries x w m r (G.honestVals t.lookupAll x w m r e) c
+  have h1 := κ.count_le_of_sublist ((List.filter_sublist (p := fun p : G.Key × G.Ch =>
+    (t.lookup p.1).isNone) (l := G.evEntries x w m r (G.honestVals t.lookupAll x w m r e))).map
+    Prod.fst) c
+  have h2 := κ.count_le_of_sublist ((List.filter_sublist (p := fun p : G.Key × G.Ch =>
+    (t.lookupAll p.1).isNone) (l := G.pubEntries x w m r (G.honestVals t.lookupAll x w m r e))).map
+    Prod.fst) c
+  have h3 := κ.count_le_of_sublist ((List.filter_sublist (p := fun p : G.Key × G.Ch =>
+    (t.lookupAll p.1).isNone) (l := G.hidEntries x w m r (G.honestVals t.lookupAll x w m r e))).map
+    Prod.fst) c
+  simp only [realSignOut, hashAll, Protocol.Tables.keys, List.map_append, κ.count_append]
+  omega
+
+/-- Every real transition adds at most `hashCost c d` points of class `c` for a hash
+query and at most `μc c` for a signing query. -/
+theorem realStep_count_le (κ : G.Classes) (xw : G.Stmt × G.Wit) (s : G.Tables × Bool)
+    (d : G.Query) (o : G.Answer × (G.Tables × Bool))
+    (ho : o ∈ (toOracle (realStep xw) s d).support) (c : κ.ι) :
+    κ.count o.2.1.keys c ≤ κ.count s.1.keys c + κ.hashCost c d +
+      Sum.elim (fun _ => 0) (fun _ => κ.μc c) d := by
+  obtain ⟨t, b⟩ := s
+  cases d with
+  | inl k =>
+    simp only [toOracle, realStep, realHashStep] at ho
+    cases hl : t.lookup k with
+    | some e =>
+      simp only [hl, Step.toPMF, PMF.support_pure, Set.mem_singleton_iff] at ho
+      subst ho
+      exact Nat.le_add_right_of_le (Nat.le_add_right _ _)
+    | none =>
+      cases hr : lookupIn t.rej k with
+      | some e =>
+        simp only [hl, hr, Step.toPMF, PMF.support_pure, Set.mem_singleton_iff] at ho
+        subst ho
+        exact (count_hash_append κ t k e c).le
+      | none =>
+        simp only [hl, hr, Step.toPMF, PMF.support_map, Set.mem_image] at ho
+        obtain ⟨e, _, rfl⟩ := ho
+        exact (count_hash_append κ t k e c).le
+  | inr m =>
+    simp only [toOracle, realStep, Step.toPMF] at ho
+    obtain ⟨e, r, rfl⟩ := mem_support_sampleVec ho
+    simpa [Protocol.Classes.hashCost] using realSignOut_count_le κ _ _ _ _ _ _ _ c
+
+/-- Along a real run with at most `q` signing queries and hash queries of total
+cost at most `n` for the class `c`, the tables gain at most `n + μc c·q` points of
+class `c`. -/
+theorem run_real_support_size_cls (κ : G.Classes) (xw : G.Stmt × G.Wit)
+    (A : OracleAdv G.Query G.Answer α) (c : κ.ι) (h q n : ℕ) (hA : IsQueryBound₂ A h q)
+    (hn : A.IsQueryBoundBy (κ.hashCost c) n) (s : G.Tables × Bool) (y : α × (G.Tables × Bool))
+    (hy : y ∈ (OracleAdv.run (toOracle (realStep xw)) A s).support) :
+    κ.count y.2.1.keys c ≤ κ.count s.1.keys c + n + κ.μc c * q := by
+  induction A generalizing h q n s with
+  | ret a =>
+    rw [OracleAdv.run_ret, PMF.support_pure, Set.mem_singleton_iff] at hy
+    subst hy
+    show κ.count s.1.keys c ≤ _
+    omega
+  | rand p k ih =>
+    rw [OracleAdv.run_rand, PMF.mem_support_bind_iff] at hy
+    obtain ⟨b, _, hb⟩ := hy
+    exact ih b h q n (hA b) (hn b) s hb
+  | query d k ih =>
+    rw [OracleAdv.run_query, PMF.mem_support_bind_iff] at hy
+    obtain ⟨o, ho, hy⟩ := hy
+    have hs := realStep_count_le κ xw s d o ho c
+    obtain ⟨hn1, hn2⟩ := hn
+    cases d with
+    | inl key =>
+      cases h with
+      | zero => exact hA.elim
+      | succ h =>
+        have := ih o.1 h q _ (hA o.1) (hn2 o.1) o.2 hy
+        simp only [Sum.elim_inl] at hs
+        omega
+    | inr m =>
+      cases q with
+      | zero => exact hA.elim
+      | succ q =>
+        have := ih o.1 h q _ (hA o.1) (hn2 o.1) o.2 hy
+        simp only [Sum.elim_inr] at hs
+        rw [Nat.mul_succ]
+        omega
+
 end Grow
 
 /-! ## Hidden entries change the flag only where they are reached -/
@@ -2000,6 +2247,322 @@ theorem run_real_flag_le {Γ : ℝ≥0∞} (xw : G.Stmt × G.Wit) (hΓ : G.KeyBo
       | succ q =>
         exact flag_sign_step_le xw hΓ k h q hA t ht m fun c t' ht' => ih c h q (hA c) t' ht'
 
+/-! ### The collision bound class by class -/
+
+/-- The tables after an attempt with the trace `tr` gain at most the points of class
+`c` of the entries of `tr`. -/
+theorem count_traceTables_le (κ : G.Classes) (t : G.Tables) (m : G.Msg) (tr : G.Trace)
+    (c : κ.ι) :
+    κ.count (traceTables t m tr).keys c ≤
+      κ.count t.keys c + κ.count (tr.1.map Prod.fst) c + κ.count (tr.2.1.map Prod.fst) c := by
+  have := κ.count_le_of_sublist ((List.filter_sublist (p := fun p : G.Key × G.Ch =>
+    (t.lookup p.1).isNone) (l := tr.1)).map Prod.fst) c
+  simp only [traceTables, hashAll, Protocol.Tables.keys, List.map_append, κ.count_append] at this ⊢
+  omega
+
+theorem count_guessView_le (κ : G.Classes) (look : G.Key → Option G.Ch) (x : G.Stmt)
+    (w : G.Wit) (m : G.Msg) (r : G.Rand) (e : Fin G.μ → G.Ch) (i : Fin G.μ) (c : κ.ι) :
+    κ.count ((G.guessView look x w m r e i).1.map Prod.fst) c +
+      κ.count ((G.guessView look x w m r e i).2.1.map Prod.fst) c ≤ κ.μc c := by
+  unfold Protocol.guessView
+  split
+  · exact Nat.zero_le _
+  · have := κ.count_trace_entries x w m r (G.vals look x w m r e) c
+    simp only [Protocol.trace, Protocol.view]
+    omega
+
+/-- When a programmed or hidden entry of an attempt is at a point defined in `look`,
+so is a charged entry: the entry itself, or a hidden entry at a defined point. -/
+theorem exists_charged_of_flagging (look : G.Key → Option G.Ch) (x : G.Stmt) (w : G.Wit)
+    (m : G.Msg) (r : G.Rand) (v : Fin G.μ → G.Ch)
+    (h : ∃ i, G.flagging x w m r v i = true ∧ (look (G.key x w m r v i)).isSome) :
+    ∃ i, G.charged look x w m r v i = true ∧ (look (G.key x w m r v i)).isSome := by
+  obtain ⟨i, hf, hi⟩ := h
+  cases hc : G.charged look x w m r v i
+  · have hh : G.hidFresh look x w m r v = false := by
+      simp only [Protocol.charged, hf, Bool.true_and, Bool.or_eq_false_iff] at hc
+      exact hc.2
+    simp only [Protocol.hidFresh, List.all_eq_false, List.mem_finRange, true_and,
+      Bool.or_eq_true, not_or, Bool.not_eq_true, Option.isNone_eq_false_iff] at hh
+    obtain ⟨j, hj, hk⟩ := hh
+    refine ⟨j, ?_, by simpa using hk⟩
+    simp [Protocol.charged, Protocol.flagging, hj]
+  · exact ⟨i, hc, hi⟩
+
+/-- **Guessing the points of one class.** For a pair with class-wise key bound `Γ`
+and runs `R tr` indexed by traces whose final tables have at most `N` points of
+class `c` on the traces `guessView`, the expectation over the values and the
+randomness of the number of charged entries of class `c` whose point is defined at
+the end of `R (guessView …)` is at most `N·Γ c`. -/
+theorem tsum_guess_le_cls (κ : G.Classes) {Γ : κ.ι → ℝ≥0∞} (x : G.Stmt) (w : G.Wit)
+    (hΓ : G.KeyBoundClsAt κ x w Γ) (c : κ.ι) (m : G.Msg) (look : G.Key → Option G.Ch)
+    (R : G.Trace → PMF (α × (G.Tables × Bool))) (N : ℕ)
+    (hN : ∀ e r i, ∀ y ∈ (R (G.guessView look x w m r e i)).support,
+      κ.count y.2.1.keys c ≤ N) :
+    ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e * ∑' r, PMF.uniformOfFintype G.Rand r *
+      ∑ i ∈ Finset.univ.filter (fun i => κ.ecls i = c),
+        (if G.charged look x w m r (G.vals look x w m r e) i then
+          (R (G.guessView look x w m r e i)).toOuterMeasure
+            {y | G.key x w m r (G.vals look x w m r e) i ∈ y.2.1.keys} else 0) ≤ N * Γ c := by
+  rcases isEmpty_or_nonempty G.Key with hK | ⟨⟨k₀⟩⟩
+  · have : IsEmpty (Fin G.μ) := ⟨fun i => hK.false (G.key x w m (Classical.arbitrary _)
+      (Classical.arbitrary _) i)⟩
+    simp
+  -- the guess of the `j`-th point of class `c` of the final tables
+  let Q : ℕ → G.Trace → PMF G.Key := fun j tr =>
+    (R tr).map fun y => (y.2.1.keys.filter fun k => κ.cls k = c).getD j k₀
+  have h1 : ∀ e r, ∀ i ∈ Finset.univ.filter (fun i => κ.ecls i = c),
+      (if G.charged look x w m r (G.vals look x w m r e) i then
+        (R (G.guessView look x w m r e i)).toOuterMeasure
+          {y | G.key x w m r (G.vals look x w m r e) i ∈ y.2.1.keys} else 0) ≤
+      ∑ j ∈ Finset.range N, (if G.charged look x w m r (G.vals look x w m r e) i then
+        Q j (G.guessView look x w m r e i) (G.key x w m r (G.vals look x w m r e) i)
+        else 0) := fun e r i hi => by
+    split_ifs
+    · refine le_trans (MeasureTheory.measure_mono fun y hy => ?_)
+        (toOuterMeasure_mem_le_sum (R (G.guessView look x w m r e i))
+          (fun y => y.2.1.keys.filter fun k => κ.cls k = c) N k₀
+          (G.key x w m r (G.vals look x w m r e) i) (hN e r i))
+      refine List.mem_filter.mpr ⟨hy, ?_⟩
+      simpa [κ.key_cls] using (Finset.mem_filter.mp hi).2
+    · exact zero_le
+  calc _ ≤ ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e * ∑' r, PMF.uniformOfFintype G.Rand r *
+        ∑ j ∈ Finset.range N, ∑ i ∈ Finset.univ.filter (fun i => κ.ecls i = c),
+          (if G.charged look x w m r (G.vals look x w m r e) i then
+            Q j (G.guessView look x w m r e i) (G.key x w m r (G.vals look x w m r e) i)
+            else 0) := by
+        refine ENNReal.tsum_le_tsum fun e => mul_le_mul_right
+          (ENNReal.tsum_le_tsum fun r => mul_le_mul_right ?_ _) _
+        rw [Finset.sum_comm]
+        exact Finset.sum_le_sum fun i hi => h1 e r i hi
+    _ = ∑ j ∈ Finset.range N, ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e *
+          ∑' r, PMF.uniformOfFintype G.Rand r *
+            ∑ i ∈ Finset.univ.filter (fun i => κ.ecls i = c),
+            (if G.charged look x w m r (G.vals look x w m r e) i then
+              Q j (G.guessView look x w m r e i) (G.key x w m r (G.vals look x w m r e) i)
+              else 0) := tsum_mul_tsum_mul_finsetSum _ _ _ _
+    _ ≤ ∑ _j ∈ Finset.range N, Γ c := Finset.sum_le_sum fun j _ => hΓ c m look (Q j)
+    _ = N * Γ c := by rw [Finset.sum_const, Finset.card_range, nsmul_eq_mul]
+
+/-- The class-wise collision bound `Σ_c q·(L_c + n_c + μc c·q)·Γ c` from the tables
+`t`, with `L_c` the points of class `c` in `t`. -/
+noncomputable def flagBoundCls (κ : G.Classes) (Γ : κ.ι → ℝ≥0∞) (n : κ.ι → ℕ) (q : ℕ)
+    (t : G.Tables) : ℝ≥0∞ :=
+  ∑ c, ((q * (κ.count t.keys c + n c + κ.μc c * q) : ℕ) : ℝ≥0∞) * Γ c
+
+/-- One signing attempt in the induction of `run_real_flag_le_cls`: the probability
+that the rest of the run sets the flag is at most the bound for the tables after the
+attempt plus, for each charged entry, the probability that its point is defined at
+the end of the rest of the run from the trace `guessView`. -/
+theorem flag_sign_term_le_cls (κ : G.Classes) (xw : G.Stmt × G.Wit) {Γ : κ.ι → ℝ≥0∞}
+    (k : G.Answer → OracleAdv G.Query G.Answer α) (n : κ.ι → ℕ) (q : ℕ) (t : G.Tables)
+    (ht : t.rej = []) (m : G.Msg) (e : Fin G.μ → G.Ch) (r : G.Rand)
+    (ih : ∀ c (t' : G.Tables), t'.rej = [] →
+      (OracleAdv.run (toOracle (realStep xw)) (k c) (t', false)).toOuterMeasure
+        {y | y.2.2 = true} ≤ flagBoundCls κ Γ n q t') :
+    (OracleAdv.run (toOracle (realStep xw)) (k (realSignOut xw.1 xw.2 t false m e r).1)
+        (realSignOut xw.1 xw.2 t false m e r).2).toOuterMeasure {y | y.2.2 = true} ≤
+      ∑ c, ((q * (κ.count t.keys c + κ.μc c + n c + κ.μc c * q) : ℕ) : ℝ≥0∞) * Γ c +
+        ∑ i, (if G.charged t.lookup xw.1 xw.2 m r (G.vals t.lookup xw.1 xw.2 m r e) i then
+          (contRun xw k t m (G.guessView t.lookup xw.1 xw.2 m r e i)).toOuterMeasure
+            {y | G.key xw.1 xw.2 m r (G.vals t.lookup xw.1 xw.2 m r e) i ∈ y.2.1.keys}
+          else 0) := by
+  set v := G.vals t.lookup xw.1 xw.2 m r e with hv
+  by_cases hc : ∃ i, G.flagging xw.1 xw.2 m r v i = true ∧
+      (t.lookup (G.key xw.1 xw.2 m r v i)).isSome
+  · obtain ⟨i, hf, hi⟩ := exists_charged_of_flagging t.lookup xw.1 xw.2 m r v hc
+    refine (toOuterMeasure_le_one _ _).trans (le_trans ?_ le_add_self)
+    refine le_trans (le_of_eq ?_) (Finset.single_le_sum (f := fun i =>
+      if G.charged t.lookup xw.1 xw.2 m r v i then
+        (contRun xw k t m (G.guessView t.lookup xw.1 xw.2 m r e i)).toOuterMeasure
+          {y | G.key xw.1 xw.2 m r v i ∈ y.2.1.keys} else 0) (fun _ _ => zero_le)
+      (Finset.mem_univ i))
+    have hg : G.guessView t.lookup xw.1 xw.2 m r e i = ([], [], none) := by
+      simp only [Protocol.guessView, ← hv, hi, Bool.or_true, if_true]
+    simp only [hf, if_true, hg]
+    refine (run_real_keys_eq_one xw _ _ _ ?_ _ fun y hy => hy).symm
+    exact (le_traceTables t m _).keys_subset (Protocol.lookup_isSome_mem_keys hi)
+  simp only [not_exists, not_and, Bool.not_eq_true, Option.isSome_eq_false_iff,
+    Option.isNone_iff_eq_none] at hc
+  rw [realSignOut_of_fresh _ _ _ _ _ _ _
+    (fun i hf => (Protocol.lookupAll_of_rej_nil ht _).trans (hc i hf))
+    (fun i _ _ => by rw [ht]; exact lookupIn_nil _)]
+  set T₀ : G.Tables := traceTables t m (G.trace xw.1 xw.2 m r v)
+  have hT : ({ T₀ with rej := t.rej ++ G.hidEntries xw.1 xw.2 m r v } : G.Tables) =
+      T₀.addRejs (G.hidEntries xw.1 xw.2 m r v) := by
+    simp only [Protocol.Tables.addRejs, T₀, rej_traceTables, ht, List.nil_append,
+      List.append_nil]
+  rw [hT]
+  refine (run_real_addRejs_flag_le xw _ _ T₀ false).trans ?_
+  refine (MeasureTheory.measure_mono (fun y hy => hy)).trans
+    ((MeasureTheory.measure_union_le _ _).trans (add_le_add ?_ ?_))
+  · refine (ih _ T₀ ht).trans
+      (Finset.sum_le_sum fun c _ => mul_le_mul_of_nonneg_right ?_ zero_le)
+    have h1 : κ.count T₀.keys c ≤ κ.count t.keys c +
+        κ.count ((G.evEntries xw.1 xw.2 m r v).map Prod.fst) c +
+        κ.count ((G.pubEntries xw.1 xw.2 m r v).map Prod.fst) c :=
+      count_traceTables_le κ t m _ c
+    have h2 := κ.count_trace_entries xw.1 xw.2 m r v c
+    exact_mod_cast Nat.mul_le_mul_left _ (by omega)
+  · calc _ ≤ (contRun xw k t m (G.trace xw.1 xw.2 m r v)).toOuterMeasure
+            (⋃ i ∈ Finset.univ.filter (fun i => G.pub xw.1 xw.2 m r v i = false),
+              {y | G.key xw.1 xw.2 m r v i ∈ y.2.1.keys}) := by
+          refine MeasureTheory.measure_mono fun y hy => ?_
+          obtain ⟨p, hp, hk⟩ := hy
+          obtain ⟨i, hi, rfl⟩ := Protocol.mem_entries hp
+          simp only [Set.mem_iUnion, Finset.mem_filter, Finset.mem_univ, true_and]
+          exact ⟨i, by simpa using hi, hk⟩
+      _ ≤ ∑ i ∈ Finset.univ.filter (fun i => G.pub xw.1 xw.2 m r v i = false),
+            (contRun xw k t m (G.trace xw.1 xw.2 m r v)).toOuterMeasure
+              {y | G.key xw.1 xw.2 m r v i ∈ y.2.1.keys} :=
+          MeasureTheory.measure_biUnion_finset_le _ _
+      _ = ∑ i ∈ Finset.univ.filter (fun i => G.pub xw.1 xw.2 m r v i = false),
+            (if G.charged t.lookup xw.1 xw.2 m r v i then
+              (contRun xw k t m (G.guessView t.lookup xw.1 xw.2 m r e i)).toOuterMeasure
+                {y | G.key xw.1 xw.2 m r v i ∈ y.2.1.keys} else 0) := by
+          refine Finset.sum_congr rfl fun i hi => ?_
+          have hi' : G.pub xw.1 xw.2 m r v i = false := (Finset.mem_filter.mp hi).2
+          have hf : G.flagging xw.1 xw.2 m r v i = true := by simp [Protocol.flagging, hi']
+          have hch : G.charged t.lookup xw.1 xw.2 m r v i = true := by
+            simp [Protocol.charged, hf, hi']
+          have hg : G.guessView t.lookup xw.1 xw.2 m r e i = G.trace xw.1 xw.2 m r v := by
+            simp only [Protocol.guessView, ← hv, hi', hc i hf, Option.isSome_none,
+              Bool.or_false, Bool.false_eq_true, if_false]
+          rw [if_pos hch, hg]
+      _ ≤ _ := Finset.sum_le_sum_of_subset (Finset.filter_subset _ _)
+
+/-- A hash query in the induction of `run_real_flag_le_cls`. -/
+theorem flag_hash_step_le_cls (κ : G.Classes) (xw : G.Stmt × G.Wit) {Γ : κ.ι → ℝ≥0∞}
+    (k : G.Answer → OracleAdv G.Query G.Answer α) (n : κ.ι → ℕ) (q : ℕ) (t : G.Tables)
+    (ht : t.rej = []) (key : G.Key) (hn : ∀ c, κ.hashCost c (.inl key) ≤ n c)
+    (ih : ∀ c (t' : G.Tables), t'.rej = [] →
+      (OracleAdv.run (toOracle (realStep xw)) (k c) (t', false)).toOuterMeasure
+        {y | y.2.2 = true} ≤ flagBoundCls κ Γ (fun c => n c - κ.hashCost c (.inl key)) q t') :
+    (OracleAdv.run (toOracle (realStep xw)) (.query (.inl key) k) (t, false)).toOuterMeasure
+        {y | y.2.2 = true} ≤ flagBoundCls κ Γ n q t := by
+  rw [OracleAdv.run_query]
+  simp only [toOracle, realStep, realHashStep]
+  cases hl : t.lookup key with
+  | some e =>
+    simp only [Step.toPMF, PMF.pure_bind]
+    refine (ih _ t ht).trans
+      (Finset.sum_le_sum fun c _ => mul_le_mul_of_nonneg_right ?_ zero_le)
+    exact_mod_cast Nat.mul_le_mul_left _ (by dsimp only; omega)
+  | none =>
+    have hr : lookupIn t.rej key = none := by rw [ht]; exact lookupIn_nil key
+    simp only [hr, Step.toPMF, PMF.bind_map, Function.comp_def, PMF.toOuterMeasure_bind_apply]
+    calc ∑' e, PMF.uniformOfFintype G.Ch e * (OracleAdv.run (toOracle (realStep xw))
+          (k (.inl e)) ({ t with hash := t.hash ++ [(key, e)] }, false)).toOuterMeasure _
+        ≤ ∑' e, PMF.uniformOfFintype G.Ch e * flagBoundCls κ Γ n q t := by
+          refine ENNReal.tsum_le_tsum fun e => mul_le_mul_right ?_ _
+          refine (ih _ { t with hash := t.hash ++ [(key, e)] } ht).trans
+            (Finset.sum_le_sum fun c _ => mul_le_mul_of_nonneg_right ?_ zero_le)
+          have h1 := hn c
+          have h2 := count_hash_append κ t key e c
+          exact_mod_cast Nat.mul_le_mul_left _ (by dsimp only; omega)
+      _ = _ := by rw [ENNReal.tsum_mul_right, PMF.tsum_coe, one_mul]
+
+/-- The guess terms of a signing attempt in the induction of `run_real_flag_le_cls`:
+the expectation over the values and the randomness of the number of charged entries
+whose point is defined at the end of the rest of the run is at most
+`Σ_c (L_c + μc c + n_c + μc c·q)·Γ c`. -/
+theorem flag_guess_le_cls (κ : G.Classes) (xw : G.Stmt × G.Wit) {Γ : κ.ι → ℝ≥0∞}
+    (hΓ : G.KeyBoundClsAt κ xw.1 xw.2 Γ) (k : G.Answer → OracleAdv G.Query G.Answer α)
+    (h q : ℕ) (n : κ.ι → ℕ) (hk : ∀ r, IsQueryBound₂ (k r) h q)
+    (hn : ∀ c r, (k r).IsQueryBoundBy (κ.hashCost c) (n c)) (t : G.Tables) (m : G.Msg) :
+    ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e * ∑' r, PMF.uniformOfFintype G.Rand r *
+      ∑ i, (if G.charged t.lookup xw.1 xw.2 m r (G.vals t.lookup xw.1 xw.2 m r e) i then
+        (contRun xw k t m (G.guessView t.lookup xw.1 xw.2 m r e i)).toOuterMeasure
+          {y | G.key xw.1 xw.2 m r (G.vals t.lookup xw.1 xw.2 m r e) i ∈ y.2.1.keys}
+        else 0) ≤
+      ∑ c, ((κ.count t.keys c + κ.μc c + n c + κ.μc c * q : ℕ) : ℝ≥0∞) * Γ c := by
+  simp only [← Finset.sum_fiberwise Finset.univ κ.ecls]
+  rw [tsum_mul_tsum_mul_finsetSum]
+  refine Finset.sum_le_sum fun c _ => ?_
+  refine tsum_guess_le_cls κ xw.1 xw.2 hΓ c m t.lookup (contRun xw k t m) _ fun e r i y hy => ?_
+  have h1 := run_real_support_size_cls κ xw _ c h q (n c) (hk _) (hn c _) _ y hy
+  have h2 := count_guessView_le κ t.lookup xw.1 xw.2 m r e i c
+  have h3 := count_traceTables_le κ t m (G.guessView t.lookup xw.1 xw.2 m r e i) c
+  dsimp only at h1
+  omega
+
+/-- A signing query in the induction of `run_real_flag_le_cls`. -/
+theorem flag_sign_step_le_cls (κ : G.Classes) (xw : G.Stmt × G.Wit) {Γ : κ.ι → ℝ≥0∞}
+    (hΓ : G.KeyBoundClsAt κ xw.1 xw.2 Γ) (k : G.Answer → OracleAdv G.Query G.Answer α)
+    (h q : ℕ) (n : κ.ι → ℕ) (hk : ∀ r, IsQueryBound₂ (k r) h q)
+    (hn : ∀ c r, (k r).IsQueryBoundBy (κ.hashCost c) (n c)) (t : G.Tables) (ht : t.rej = [])
+    (m : G.Msg)
+    (ih : ∀ c (t' : G.Tables), t'.rej = [] →
+      (OracleAdv.run (toOracle (realStep xw)) (k c) (t', false)).toOuterMeasure
+        {y | y.2.2 = true} ≤ flagBoundCls κ Γ n q t') :
+    (OracleAdv.run (toOracle (realStep xw)) (.query (.inr m) k) (t, false)).toOuterMeasure
+        {y | y.2.2 = true} ≤ flagBoundCls κ Γ n (q + 1) t := by
+  set N : κ.ι → ℕ := fun c => κ.count t.keys c + κ.μc c + n c + κ.μc c * q with hN
+  set B : ℝ≥0∞ := ∑ c, ((q * N c : ℕ) : ℝ≥0∞) * Γ c with hB
+  -- the guess terms of the attempt with the values `e` and the randomness `r`
+  set S : (Fin G.μ → G.Ch) → G.Rand → ℝ≥0∞ := fun e r =>
+    ∑ i, (if G.charged t.lookup xw.1 xw.2 m r (G.vals t.lookup xw.1 xw.2 m r e) i then
+      (contRun xw k t m (G.guessView t.lookup xw.1 xw.2 m r e i)).toOuterMeasure
+        {y | G.key xw.1 xw.2 m r (G.vals t.lookup xw.1 xw.2 m r e) i ∈ y.2.1.keys}
+      else 0) with hS
+  have hterm := fun e r => flag_sign_term_le_cls κ xw k n q t ht m e r ih
+  have hsum : ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e *
+      ∑' r, PMF.uniformOfFintype G.Rand r * S e r ≤ ∑ c, (N c : ℝ≥0∞) * Γ c :=
+    flag_guess_le_cls κ xw hΓ k h q n hk hn t m
+  rw [OracleAdv.run_query]
+  simp only [toOracle, realStep, Step.toPMF, sampleVec_bind, PMF.toOuterMeasure_bind_apply]
+  calc _ ≤ ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e *
+        ∑' r, PMF.uniformOfFintype G.Rand r * (B + S e r) :=
+        ENNReal.tsum_le_tsum fun e => mul_le_mul_right
+          (ENNReal.tsum_le_tsum fun r => mul_le_mul_right (hterm e r) _) _
+    _ = B + ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e *
+          ∑' r, PMF.uniformOfFintype G.Rand r * S e r := by
+        simp only [mul_add, ENNReal.tsum_add, ENNReal.tsum_mul_right, PMF.tsum_coe, one_mul]
+    _ ≤ B + ∑ c, (N c : ℝ≥0∞) * Γ c := add_le_add_right hsum _
+    _ = _ := by
+        rw [hB, flagBoundCls, ← Finset.sum_add_distrib]
+        refine Finset.sum_congr rfl fun c _ => ?_
+        rw [hN]
+        push_cast
+        ring
+
+/-- **Class-wise collision bound.** For a pair `(x, w)` with class-wise key bound
+`Γ`, from tables with no hidden entry, with `L_c` points of class `c` and the flag
+cleared, a run of the real oracles asking at most `q` signing queries and hash
+queries of total cost at most `n c` for each class `c` sets the flag with
+probability at most `Σ_c q·(L_c + n c + μc c·q)·Γ c`. -/
+theorem run_real_flag_le_cls (κ : G.Classes) {Γ : κ.ι → ℝ≥0∞} (xw : G.Stmt × G.Wit)
+    (hΓ : G.KeyBoundClsAt κ xw.1 xw.2 Γ) (A : OracleAdv G.Query G.Answer α) (h q : ℕ)
+    (hA : IsQueryBound₂ A h q) (n : κ.ι → ℕ) (hn : ∀ c, A.IsQueryBoundBy (κ.hashCost c) (n c))
+    (t : G.Tables) (ht : t.rej = []) :
+    (OracleAdv.run (toOracle (realStep xw)) A (t, false)).toOuterMeasure {y | y.2.2 = true} ≤
+      ∑ c, ((q * (κ.count t.keys c + n c + κ.μc c * q) : ℕ) : ℝ≥0∞) * Γ c := by
+  induction A generalizing h q n t with
+  | ret a => simp [PMF.toOuterMeasure_pure_apply]
+  | rand p k ih =>
+    rw [OracleAdv.run_rand, PMF.toOuterMeasure_bind_apply]
+    calc ∑' b, p b * (OracleAdv.run (toOracle (realStep xw)) (k b) (t, false)).toOuterMeasure _
+        ≤ ∑' b, p b * flagBoundCls κ Γ n q t :=
+          ENNReal.tsum_le_tsum fun b =>
+            mul_le_mul_right (ih b h q (hA b) n (fun c => hn c b) t ht) _
+      _ = _ := by rw [ENNReal.tsum_mul_right, PMF.tsum_coe, one_mul, flagBoundCls]
+  | query d k ih =>
+    cases d with
+    | inl key =>
+      cases h with
+      | zero => exact hA.elim
+      | succ h =>
+        exact flag_hash_step_le_cls κ xw k n q t ht key (fun c => (hn c).1)
+          fun a t' ht' => ih a h q (hA a) _ (fun c => (hn c).2 a) t' ht'
+    | inr m =>
+      have hn' : ∀ c r, (k r).IsQueryBoundBy (κ.hashCost c) (n c) := fun c r => by
+        simpa [Protocol.Classes.hashCost] using (hn c).2 r
+      cases q with
+      | zero => exact hA.elim
+      | succ q =>
+        exact flag_sign_step_le_cls κ xw hΓ k h q n hA hn' t ht m
+          fun a t' ht' => ih a h q (hA a) n (fun c => hn' c a) t' ht'
+
 end Flag
 
 /-! ## The game as an average over generated pairs -/
@@ -2038,6 +2601,78 @@ theorem isQueryBound₂_withVerify (x : G.Stmt) (A : OracleAdv G.Query G.Answer 
       cases q with
       | zero => exact hA.elim
       | succ q => exact fun r => ih r h q (hA r)
+
+/-- The verifier points of class `c` from the `a`-th one on are the point `a`, when
+it is of class `c`, and those from the `(a + 1)`-th one on. -/
+theorem card_vcls_ge (κ : G.Classes) (c : κ.ι) (a : ℕ) (h : a < G.V) :
+    (Finset.univ.filter fun j : Fin G.V => a ≤ j.val ∧ κ.vcls j = c).card =
+      (Finset.univ.filter fun j : Fin G.V => a + 1 ≤ j.val ∧ κ.vcls j = c).card +
+        if κ.vcls ⟨a, h⟩ = c then 1 else 0 := by
+  have : (Finset.univ.filter fun j : Fin G.V => a ≤ j.val ∧ κ.vcls j = c) =
+      (Finset.univ.filter fun j : Fin G.V => a + 1 ≤ j.val ∧ κ.vcls j = c) ∪
+        (Finset.univ.filter fun j : Fin G.V => j = ⟨a, h⟩ ∧ κ.vcls j = c) := by
+    ext j
+    simp only [Finset.mem_filter, Finset.mem_univ, true_and, Finset.mem_union, Fin.ext_iff]
+    by_cases hj : κ.vcls j = c
+    · simp only [hj, and_true]
+      omega
+    · simp [hj]
+  rw [this, Finset.card_union_of_disjoint]
+  · congr 1
+    split_ifs with hc
+    · rw [Finset.card_eq_one]
+      refine ⟨⟨a, h⟩, ?_⟩
+      ext j
+      simp only [Finset.mem_filter, Finset.mem_univ, true_and, Finset.mem_singleton]
+      exact ⟨fun h => h.1, fun h => ⟨h, h ▸ hc⟩⟩
+    · rw [Finset.card_eq_zero, Finset.filter_eq_empty_iff]
+      rintro j - ⟨rfl, hj⟩
+      exact hc hj
+  · rw [Finset.disjoint_filter]
+    rintro j - ⟨h1, -⟩ ⟨rfl, -⟩
+    simp only at h1
+    omega
+
+/-- The verifier's remaining queries after the values `acc` cost at most the number
+of verifier points of class `c` from the `acc.length`-th one on. -/
+theorem isQueryBoundBy_verifyQueries_cls (κ : G.Classes) (c : κ.ι) (x : G.Stmt) (m : G.Msg)
+    (σ : G.Sig) (n : ℕ) (acc : List G.Ch) (hn : acc.length + n = G.V) :
+    (verifyQueries x m σ n acc).IsQueryBoundBy (κ.hashCost c)
+      (Finset.univ.filter fun j : Fin G.V => acc.length ≤ j.val ∧ κ.vcls j = c).card := by
+  induction n generalizing acc with
+  | zero => trivial
+  | succ n ih =>
+    have ha : acc.length < G.V := by omega
+    have hcost : κ.hashCost c (.inl (G.vkey x m σ acc)) =
+        if κ.vcls ⟨acc.length, ha⟩ = c then 1 else 0 := by
+      simp only [Protocol.Classes.hashCost, Sum.elim_inl, κ.vkey_cls x m σ acc ha]
+    rw [card_vcls_ge κ c acc.length ha]
+    refine ⟨by rw [hcost]; omega, fun a => ?_⟩
+    rw [hcost, Nat.add_sub_cancel]
+    cases a with
+    | inl e =>
+      have := ih (acc ++ [e]) (by simp only [List.length_append, List.length_singleton]; omega)
+      simpa only [List.length_append, List.length_singleton] using this
+    | inr _ => trivial
+
+/-- An adversary whose hash queries cost at most `n` for the class `c`, followed by
+the verifier's queries, costs at most `n + Vc c`. -/
+theorem isQueryBoundBy_withVerify_cls (κ : G.Classes) (c : κ.ι) (x : G.Stmt)
+    (A : OracleAdv G.Query G.Answer G.Forgery) (n : ℕ)
+    (hA : A.IsQueryBoundBy (κ.hashCost c) n) :
+    (withVerify x A).IsQueryBoundBy (κ.hashCost c) (n + κ.Vc c) := by
+  induction A generalizing n with
+  | ret y =>
+    obtain ⟨m, σ⟩ := y
+    refine (isQueryBoundBy_verifyQueries_cls κ c x m σ G.V [] (by simp)).mono ?_
+    simp only [List.length_nil, Nat.zero_le, true_and, Protocol.Classes.Vc]
+    omega
+  | rand p k ih => exact fun b => ih b n (hA b)
+  | query d k ih =>
+    refine ⟨hA.1.trans (Nat.le_add_right _ _), fun r => ?_⟩
+    have := ih r _ (hA.2 r)
+    rwa [show n + κ.Vc c - κ.hashCost c d = n - κ.hashCost c d + κ.Vc c by
+      have := hA.1; omega]
 
 /-- The advantage in a game built by `gameDist` as an average over generated
 pairs. -/
