@@ -857,6 +857,106 @@ theorem simTrace_of_simKey_none {x : G.Stmt} {m : G.Msg} {s : G.SimRand}
 
 end Protocol
 
+/-! ## The values of a simulated attempt -/
+
+namespace Protocol
+
+variable {G : Protocol} (look : G.Key → Option G.Ch) (x : G.Stmt) (m : G.Msg)
+  (s : G.SimRand)
+
+/-- The simulator queries no point for a programmed entry. -/
+theorem simKey_eq_none_of_ev_false (v : Fin G.μ → G.Ch) {i : Fin G.μ} (h : G.ev i = false) :
+    G.simKey x m s v i = none := by
+  cases hk : G.simKey x m s v i with
+  | none => rfl
+  | some k =>
+    have := G.simKey_ev x m s v i (by simp [hk])
+    simp [h] at this
+
+/-- A programmed entry of a simulated attempt takes its sampled value. -/
+theorem simVals_apply_of_ev_false (e : Fin G.μ → G.Ch) {i : Fin G.μ} (h : G.ev i = false) :
+    G.simVals look x m s e i = e i := by
+  change effVal _ _ e i = e i
+  rw [effVal, simKey_eq_none_of_ev_false x m s _ h]
+  rfl
+
+/-- The value of the entry `i` of a simulated attempt is the value of `look` at its
+simulator point when defined, and its sampled value otherwise. -/
+theorem simVals_apply (e : Fin G.μ → G.Ch) (i : Fin G.μ) :
+    G.simVals look x m s e i =
+      ((G.simKey x m s (G.simVals look x m s e) i).bind look).getD (e i) := by
+  change effVal _ _ e i = _
+  rw [effVal]
+  congr 2
+  refine G.simKey_causal x m s _ _ i fun j hj => ?_
+  by_cases hji : j < i
+  · simp only [hji, if_true]
+    rfl
+  · simp only [hji, if_false]
+    exact (simVals_apply_of_ev_false look x m s e (hj.resolve_left hji)).symm
+
+variable {look x m s}
+
+/-- Changing the sampled value of an evaluated entry `i` changes no value of a
+programmed entry or of an entry before `i`. -/
+theorem simVals_update_apply {i : Fin G.μ} (hi : G.ev i = true) (e : Fin G.μ → G.Ch)
+    (c : G.Ch) (j : Fin G.μ) (hj : j < i ∨ G.ev j = false) :
+    G.simVals look x m s (Function.update e i c) j = G.simVals look x m s e j := by
+  have hprog : ∀ j', G.ev j' = false →
+      G.simVals look x m s (Function.update e i c) j' = G.simVals look x m s e j' := by
+    intro j' hj'
+    have hne : j' ≠ i := by
+      rintro rfl
+      simp [hi] at hj'
+    rw [simVals_apply_of_ev_false look x m s _ hj', simVals_apply_of_ev_false look x m s _ hj',
+      Function.update_of_ne hne]
+  induction j using WellFoundedLT.induction with
+  | _ j ih =>
+    rcases hj with hj | hj
+    · rw [simVals_apply look x m s (Function.update e i c) j, simVals_apply look x m s e j,
+        Function.update_of_ne (ne_of_lt hj)]
+      congr 2
+      refine G.simKey_causal x m s _ _ j fun j' hj' => ?_
+      rcases hj' with hj' | hj'
+      · exact ih j' hj' (Or.inl (lt_trans hj' hj))
+      · exact hprog j' hj'
+    · exact hprog j hj
+
+/-- Changing the sampled value of an evaluated entry `i` changes neither the simulator
+point of an entry `j ≤ i` nor the evaluated entries before `i`. -/
+theorem simKey_update {i : Fin G.μ} (hi : G.ev i = true) (e : Fin G.μ → G.Ch) (c : G.Ch)
+    (j : Fin G.μ) (hj : j ≤ i) :
+    G.simKey x m s (G.simVals look x m s (Function.update e i c)) j =
+      G.simKey x m s (G.simVals look x m s e) j :=
+  G.simKey_causal x m s _ _ j fun j' hj' =>
+    simVals_update_apply hi e c j' (hj'.imp_left fun h => lt_of_lt_of_le h hj)
+
+end Protocol
+
+/-! ## Uniform functions on `Fin 1` -/
+
+/-- A uniform function on `Fin 1` read at `0` is uniform. -/
+theorem map_uniformOfFintype_fin_one {C : Type} [Fintype C] [Nonempty C] :
+    (PMF.uniformOfFintype (Fin 1 → C)).map (fun e => e 0) = PMF.uniformOfFintype C := by
+  classical
+  ext z
+  rw [PMF.map_apply, tsum_eq_single (fun _ => z)]
+  · simp [PMF.uniformOfFintype_apply]
+  · intro e he
+    rw [if_neg]
+    intro h
+    exact he (funext fun i => by rw [Subsingleton.elim i 0, h])
+
+/-- Sampling a uniform function on `Fin 1` is sampling its value at `0`. -/
+theorem bind_uniformOfFintype_fin_one {C β : Type} [Fintype C] [Nonempty C]
+    (f : (Fin 1 → C) → PMF β) :
+    (PMF.uniformOfFintype (Fin 1 → C)).bind f =
+      (PMF.uniformOfFintype C).bind fun c => f fun _ => c := by
+  conv_rhs => rw [← map_uniformOfFintype_fin_one]
+  rw [PMF.bind_map]
+  refine congrArg _ (funext fun e => congrArg f (funext fun i => ?_))
+  simp only [Subsingleton.elim i 0]
+
 /-! ## Entry lists -/
 
 section Lists

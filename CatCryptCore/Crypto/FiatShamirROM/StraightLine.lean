@@ -326,74 +326,8 @@ theorem sampleVec_or_le {G : Protocol} {β : Type} [Fintype β] [Nonempty β]
 
 namespace Protocol
 
-variable {G : Protocol} (look : G.Key → Option G.Ch) (x : G.Stmt) (m : G.Msg)
-  (s : G.SimRand)
-
-theorem simKey_eq_none_of_ev_false (v : Fin G.μ → G.Ch) {i : Fin G.μ} (h : G.ev i = false) :
-    G.simKey x m s v i = none := by
-  cases hk : G.simKey x m s v i with
-  | none => rfl
-  | some k =>
-    have := G.simKey_ev x m s v i (by simp [hk])
-    simp [h] at this
-
-/-- A programmed entry of a simulated attempt takes its sampled value. -/
-theorem simVals_apply_of_ev_false (e : Fin G.μ → G.Ch) {i : Fin G.μ} (h : G.ev i = false) :
-    G.simVals look x m s e i = e i := by
-  change effVal _ _ e i = e i
-  rw [effVal, simKey_eq_none_of_ev_false x m s _ h]
-  rfl
-
-/-- The value of the entry `i` of a simulated attempt is the value of `look` at its
-simulator point when defined, and its sampled value otherwise. -/
-theorem simVals_apply (e : Fin G.μ → G.Ch) (i : Fin G.μ) :
-    G.simVals look x m s e i =
-      ((G.simKey x m s (G.simVals look x m s e) i).bind look).getD (e i) := by
-  change effVal _ _ e i = _
-  rw [effVal]
-  congr 2
-  refine G.simKey_causal x m s _ _ i fun j hj => ?_
-  by_cases hji : j < i
-  · simp only [hji, if_true]
-    rfl
-  · simp only [hji, if_false]
-    exact (simVals_apply_of_ev_false look x m s e (hj.resolve_left hji)).symm
-
-variable {look x m s}
-
-/-- Changing the sampled value of an evaluated entry `i` changes no value of a
-programmed entry or of an entry before `i`. -/
-theorem simVals_update_apply {i : Fin G.μ} (hi : G.ev i = true) (e : Fin G.μ → G.Ch)
-    (c : G.Ch) (j : Fin G.μ) (hj : j < i ∨ G.ev j = false) :
-    G.simVals look x m s (Function.update e i c) j = G.simVals look x m s e j := by
-  have hprog : ∀ j', G.ev j' = false →
-      G.simVals look x m s (Function.update e i c) j' = G.simVals look x m s e j' := by
-    intro j' hj'
-    have hne : j' ≠ i := by
-      rintro rfl
-      simp [hi] at hj'
-    rw [simVals_apply_of_ev_false look x m s _ hj', simVals_apply_of_ev_false look x m s _ hj',
-      Function.update_of_ne hne]
-  induction j using WellFoundedLT.induction with
-  | _ j ih =>
-    rcases hj with hj | hj
-    · rw [simVals_apply look x m s (Function.update e i c) j, simVals_apply look x m s e j,
-        Function.update_of_ne (ne_of_lt hj)]
-      congr 2
-      refine G.simKey_causal x m s _ _ j fun j' hj' => ?_
-      rcases hj' with hj' | hj'
-      · exact ih j' hj' (Or.inl (lt_trans hj' hj))
-      · exact hprog j' hj'
-    · exact hprog j hj
-
-/-- Changing the sampled value of an evaluated entry `i` changes neither the simulator
-point of an entry `j ≤ i` nor the evaluated entries before `i`. -/
-theorem simKey_update {i : Fin G.μ} (hi : G.ev i = true) (e : Fin G.μ → G.Ch) (c : G.Ch)
-    (j : Fin G.μ) (hj : j ≤ i) :
-    G.simKey x m s (G.simVals look x m s (Function.update e i c)) j =
-      G.simKey x m s (G.simVals look x m s e) j :=
-  G.simKey_causal x m s _ _ j fun j' hj' =>
-    simVals_update_apply hi e c j' (hj'.imp_left fun h => lt_of_lt_of_le h hj)
+variable {G : Protocol} {look : G.Key → Option G.Ch} {x : G.Stmt} {m : G.Msg}
+  {s : G.SimRand}
 
 theorem simTraceBefore_update {i : Fin G.μ} (hi : G.ev i = true) (e : Fin G.μ → G.Ch)
     (c : G.Ch) :
