@@ -22,6 +22,7 @@ public import CatCryptCore.Core.Basic
 public import CatCryptCore.Core.Location
 public import CatCryptCore.Core.Heap
 public import CatCryptCore.Core.Code
+public import CatCryptCore.Core.CodeSequence
 public import CatCryptCore.Core.SPTree
 public import CatCryptCore.Core.StdDoBridge
 public import CatCryptCore.Core.GenHeap
