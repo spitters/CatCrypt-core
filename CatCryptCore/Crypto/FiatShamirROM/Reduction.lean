@@ -102,14 +102,16 @@ noncomputable def extractReduction (A : Adversary P M qH qS) : P.Stmt → PMF P.
 section Transitions
 
 theorem simSignOut_hash (x : P.Stmt) (t : Tables P M) (b : Bool) (m : M)
-    (e : Fin 1 → P.Ch) (s : P.SimRand) : (simSignOut x t b m e s).2.1.hash = t.hash :=
-  (programAll_tables t b _).1
+    (e : Fin 1 → P.Ch) (s : P.SimRand) : (simSignOut x t b m e s).2.1.hash = t.hash := by
+  rw [simSignOut_of_simKey_none fun _ _ => rfl]
+  exact (programAll_tables t b _).1
 
 /-- The public entries programmed by a simulated signing attempt on `m` are on
 `m`. -/
 theorem simSignOut_prog (x : P.Stmt) (t : Tables P M) (b : Bool) (m : M) (e : Fin 1 → P.Ch)
     (s : P.SimRand) (p : (P.Com × M) × P.Ch) (hp : p ∈ (simSignOut x t b m e s).2.1.prog) :
     p ∈ t.prog ∨ p.1.2 = m := by
+  rw [simSignOut_of_simKey_none fun _ _ => rfl] at hp
   rcases (programAll_tables t b _).2.2.2.2 p hp with hp | hp
   · exact Or.inl hp
   · refine Or.inr ?_

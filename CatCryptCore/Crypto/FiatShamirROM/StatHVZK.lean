@@ -13,12 +13,13 @@ public import CatCryptCore.Crypto.Constructions.ECBCPRFFlag
 
 The signing-oracle simulation hop of `FiatShamirROM.Game` for a protocol whose
 honest-verifier zero knowledge holds up to a statistical distance: at a pair
-`(x, w)`, for every message and all oracle values, every test on views with values
-in `[0, 1]` has expectation under the view of the honest attempt at most its
-expectation under the simulated view plus `δ`. The view of an attempt is its public
-entries and its answer, so a test does not read the hidden entries. The distances
-may depend on the pair; the bound on the EUF-CMA advantage is then an expectation
-over the generator.
+`(x, w)`, for every message and every visible oracle, every test on traces with
+values in `[0, 1]` has expectation under the trace of the honest attempt (on the
+attempts whose hidden points are undefined) at most its expectation under the
+simulated trace plus `δ`, both averaged over uniform oracle values. The trace of an
+attempt is its evaluated public entries, its programmed public entries and its
+answer, so a test does not read the hidden entries. The distances may depend on the
+pair; the bound on the EUF-CMA advantage is then an expectation over the generator.
 
 For a Σ-protocol the tests read the transcript `(a, z)` and do not read the
 commitment of a rejected transcript, because the signing oracle answers a rejected
@@ -27,7 +28,7 @@ attempt without its commitment; such a protocol is the instance
 
 ## Main definitions
 
-* `Protocol.StatHVZK δ`, `Protocol.KeyBound γ` — statistical HVZK and the key
+* `Protocol.StatHVZK δ`, `Protocol.KeyBound Γ` — statistical HVZK and the key
   bound at every generated pair
 * `Protocol.hvzkDistAt x w`, `Protocol.keyDistAt x w` — the least distance and the
   least key bound at one pair
@@ -48,7 +49,7 @@ attempt without its commitment; such a protocol is the instance
   most `q` signing queries
 * `Protocol.eufcmaAdvantage_le_simAdvantage_perKey` — the EUF-CMA advantage is at
   most the simulated-game advantage plus the expectation over generated pairs of
-  `qS·δ(x, w) + qS·μ·(qH + V + μ·qS)·γ(x, w)`
+  `qS·δ(x, w) + qS·(qH + V + μ·qS)·Γ(x, w)`
 * `Protocol.eufcmaAdvantage_le_simAdvantage_dist`,
   `Protocol.eufcmaAdvantage_le_simAdvantage_stat` — the same with the distances
   `hvzkDistAt` and `keyDistAt`, and with constant bounds
@@ -93,33 +94,39 @@ generated pair. -/
 def StatHVZK (δ : ℝ≥0∞) : Prop :=
   ∀ x w, (x, w) ∈ G.gen.support → G.StatHVZKAt x w δ
 
-/-- **Key bound** `γ` at every generated pair. -/
-def KeyBound (γ : ℝ≥0∞) : Prop :=
-  ∀ x w, (x, w) ∈ G.gen.support → G.KeyBoundAt x w γ
+/-- **Key bound** `Γ` at every generated pair. -/
+def KeyBound (Γ : ℝ≥0∞) : Prop :=
+  ∀ x w, (x, w) ∈ G.gen.support → G.KeyBoundAt x w Γ
 
 /-- The HVZK distance of `G` at the pair `(x, w)`: the supremum, over messages,
-oracle values and tests on views with values in `[0, 1]`, of the expectation of the
-test on the view of the attempt minus its expectation on the simulated view. -/
+visible oracles and tests on traces with values in `[0, 1]`, of the expectation of
+the test on the trace of the attempt (on the attempts whose hidden points are
+undefined) minus its expectation on the simulated trace, over uniform values. -/
 noncomputable def hvzkDistAt (x : G.Stmt) (w : G.Wit) : ℝ≥0∞ :=
-  ⨆ (m : G.Msg) (e : Fin G.μ → G.Ch) (g : G.View → ℝ≥0∞) (_ : ∀ y, g y ≤ 1),
-    (∑' r, PMF.uniformOfFintype G.Rand r * g (G.view x w m r e)) -
-      ∑' s, PMF.uniformOfFintype G.SimRand s * g (G.simulate x m e s)
+  ⨆ (m : G.Msg) (look : G.Key → Option G.Ch) (g : G.Trace → ℝ≥0∞) (_ : ∀ y, g y ≤ 1),
+    (∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e * ∑' r, PMF.uniformOfFintype G.Rand r *
+      (if G.hidFresh look x w m r (G.vals look x w m r e) then
+        g (G.trace x w m r (G.vals look x w m r e)) else 0)) -
+    ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e * ∑' s, PMF.uniformOfFintype G.SimRand s *
+      g (G.simTrace look x m e s)
 
 /-- The key distance of `G` at the pair `(x, w)`: the supremum, over messages,
-oracle values, entries and randomized guessers, of the probability that the guess
-from `guessView` is the point of the entry. -/
+visible oracles and randomized guessers on traces, of the expected number of
+programmed or hidden entries whose point the guess from `guessView` hits. -/
 noncomputable def keyDistAt (x : G.Stmt) (w : G.Wit) : ℝ≥0∞ :=
-  ⨆ (m : G.Msg) (e : Fin G.μ → G.Ch) (i : Fin G.μ) (Q : G.View → PMF G.Key),
-    ∑' r, PMF.uniformOfFintype G.Rand r * Q (G.guessView x w m r e i) (G.key x w m r e i)
+  ⨆ (m : G.Msg) (look : G.Key → Option G.Ch) (Q : G.Trace → PMF G.Key),
+    ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e * ∑' r, PMF.uniformOfFintype G.Rand r *
+      ∑ i, (if G.flagging x w m r (G.vals look x w m r e) i then
+        Q (G.guessView look x w m r e i) (G.key x w m r (G.vals look x w m r e) i) else 0)
 
 theorem statHVZKAt_hvzkDistAt (x : G.Stmt) (w : G.Wit) :
     G.StatHVZKAt x w (G.hvzkDistAt x w) := by
-  intro m e g hg
+  intro m look g hg
   rw [← tsub_le_iff_left]
-  exact le_iSup_of_le m <| le_iSup_of_le e <| le_iSup_of_le g <| le_iSup_of_le hg le_rfl
+  exact le_iSup_of_le m <| le_iSup_of_le look <| le_iSup_of_le g <| le_iSup_of_le hg le_rfl
 
 theorem keyBoundAt_keyDistAt (x : G.Stmt) (w : G.Wit) : G.KeyBoundAt x w (G.keyDistAt x w) :=
-  fun m e i Q => le_iSup_of_le m <| le_iSup_of_le e <| le_iSup_of_le i <| le_iSup_of_le Q le_rfl
+  fun m look Q => le_iSup_of_le m <| le_iSup_of_le look <| le_iSup_of_le Q le_rfl
 
 end Protocol
 
@@ -213,7 +220,7 @@ theorem view_toProtocol (x : P.Stmt) (w : P.Wit) (m : M) (r : P.Rand)
     (e : Fin 1 → P.Ch) :
     (P.toProtocol M).view x w m r e =
       P.transcriptView m (e 0) (P.commit x w r, P.respond x w r (e 0)) := by
-  unfold Protocol.view Protocol.pubEntries transcriptView
+  unfold Protocol.view Protocol.pubEntries Protocol.entries transcriptView
   cases h : P.accept (P.respond x w r (e 0)) <;>
     simp [toProtocol, h, List.finRange_succ, Fin.fin_one_eq_zero]
 
@@ -221,44 +228,86 @@ theorem simulate_toProtocol (x : P.Stmt) (m : M) (e : Fin 1 → P.Ch) (s : P.Sim
     (P.toProtocol M).simulate x m e s = P.transcriptView m (e 0) (P.simulate x (e 0) s) :=
   rfl
 
-theorem guessView_toProtocol (x : P.Stmt) (w : P.Wit) (m : M) (r : P.Rand)
-    (e : Fin 1 → P.Ch) (i : Fin 1) : (P.toProtocol M).guessView x w m r e i = ([], none) := by
+theorem vals_toProtocol (look : (P.toProtocol M).Key → Option P.Ch) (x : P.Stmt) (w : P.Wit)
+    (m : M) (r : P.Rand) (e : Fin 1 → P.Ch) : (P.toProtocol M).vals look x w m r e = e :=
+  Protocol.vals_of_ev_false (fun _ => rfl) look x w m r e
+
+theorem trace_toProtocol (x : P.Stmt) (w : P.Wit) (m : M) (r : P.Rand) (e : Fin 1 → P.Ch) :
+    (P.toProtocol M).trace x w m r e =
+      ([], P.transcriptView m (e 0) (P.commit x w r, P.respond x w r (e 0))) := by
+  rw [Protocol.trace, Protocol.evEntries_of_ev_false (fun _ => rfl), view_toProtocol]
+
+theorem simTrace_toProtocol (look : (P.toProtocol M).Key → Option P.Ch) (x : P.Stmt) (m : M)
+    (e : Fin 1 → P.Ch) (s : P.SimRand) :
+    (P.toProtocol M).simTrace look x m e s =
+      ([], P.transcriptView m (e 0) (P.simulate x (e 0) s)) :=
+  Protocol.simTrace_of_simKey_none (fun _ _ => rfl) look e
+
+theorem guessView_toProtocol (look : (P.toProtocol M).Key → Option P.Ch) (x : P.Stmt)
+    (w : P.Wit) (m : M) (r : P.Rand) (e : Fin 1 → P.Ch) (i : Fin 1) :
+    (P.toProtocol M).guessView look x w m r e i = ([], [], none) := by
   unfold Protocol.guessView
   split
   · rfl
   · next h =>
-    rw [view_toProtocol]
+    rw [vals_toProtocol, trace_toProtocol]
+    rw [vals_toProtocol] at h
     have h' : P.accept (P.respond x w r (e 0)) = false := by
-      simpa [toProtocol] using h
+      simp only [toProtocol, Bool.or_eq_true, not_or, Bool.not_eq_true] at h
+      exact h.1
     simp [transcriptView, h']
 
 /-- Statistical HVZK of `P` at a pair gives statistical HVZK of its protocol on
 messages `M` at that pair. -/
 theorem statHVZKAt_toProtocol {x : P.Stmt} {w : P.Wit} {δ : ℝ≥0∞} (h : P.StatHVZKAt x w δ) :
     (P.toProtocol M).StatHVZKAt x w δ := by
-  intro m e g hg
-  have hb : P.RejectBlind (fun az => g (P.transcriptView m (e 0) az)) := by
-    intro a a' z hz
-    simp [transcriptView, hz]
-  have := h (e 0) (fun az => g (P.transcriptView m (e 0) az)) (fun _ => hg _) hb
-  simp only [view_toProtocol]
-  exact this
+  intro m look g hg
+  simp only [vals_toProtocol, trace_toProtocol, simTrace_toProtocol]
+  have hstep : ∀ e : Fin 1 → P.Ch, ∑' r, PMF.uniformOfFintype P.Rand r *
+      (if (P.toProtocol M).hidFresh look x w m r e then
+        g ([], P.transcriptView m (e 0) (P.commit x w r, P.respond x w r (e 0))) else 0) ≤
+      ∑' s, PMF.uniformOfFintype P.SimRand s *
+        g ([], P.transcriptView m (e 0) (P.simulate x (e 0) s)) + δ := fun e => by
+    have hb : P.RejectBlind (fun az => g ([], P.transcriptView m (e 0) az)) := by
+      intro a a' z hz
+      simp [transcriptView, hz]
+    refine (ENNReal.tsum_le_tsum fun r => mul_le_mul_right ?_ _).trans
+      (h (e 0) (fun az => g ([], P.transcriptView m (e 0) az)) (fun _ => hg _) hb)
+    split_ifs
+    · exact le_rfl
+    · exact zero_le
+  calc _ ≤ ∑' e, PMF.uniformOfFintype (Fin 1 → P.Ch) e * (∑' s, PMF.uniformOfFintype P.SimRand s *
+          g ([], P.transcriptView m (e 0) (P.simulate x (e 0) s)) + δ) :=
+        ENNReal.tsum_le_tsum fun e => mul_le_mul_right (hstep e) _
+    _ = _ := by
+        simp only [mul_add]
+        rw [ENNReal.tsum_add, ENNReal.tsum_mul_right, PMF.tsum_coe, one_mul]
 
 /-- The commitment bound of `P` at a pair is a key bound of its protocol on
 messages `M` at that pair. -/
 theorem keyBoundAt_toProtocol {x : P.Stmt} {w : P.Wit} {γ : ℝ≥0∞} (h : P.CommitBoundAt x w γ) :
     (P.toProtocol M).KeyBoundAt x w γ := by
-  intro m e i Q
-  simp only [guessView_toProtocol]
-  set q := Q ([], none)
-  change ∑' r, PMF.uniformOfFintype P.Rand r * q (P.commit x w r, m) ≤ γ
-  rw [← tsum_map_mul' (PMF.uniformOfFintype P.Rand) (fun r => (P.commit x w r, m)) q]
-  calc ∑' y, ((PMF.uniformOfFintype P.Rand).map fun r => (P.commit x w r, m)) y * q y
-      ≤ ∑' y, γ * q y := by
-        refine ENNReal.tsum_le_tsum fun y => mul_le_mul_left ?_ _
-        rw [← PMF.toOuterMeasure_apply_singleton, PMF.toOuterMeasure_map_apply]
-        exact (MeasureTheory.measure_mono fun r hr => congrArg Prod.fst hr).trans (h y.1)
-    _ = γ := by rw [ENNReal.tsum_mul_left, PMF.tsum_coe, mul_one]
+  intro m look Q
+  simp only [guessView_toProtocol, vals_toProtocol, Fin.sum_univ_one]
+  set q := Q ([], [], none)
+  have hr : ∑' r, PMF.uniformOfFintype P.Rand r * q (P.commit x w r, m) ≤ γ := by
+    rw [← tsum_map_mul' (PMF.uniformOfFintype P.Rand) (fun r => (P.commit x w r, m)) q]
+    calc ∑' y, ((PMF.uniformOfFintype P.Rand).map fun r => (P.commit x w r, m)) y * q y
+        ≤ ∑' y, γ * q y := by
+          refine ENNReal.tsum_le_tsum fun y => mul_le_mul_left ?_ _
+          rw [← PMF.toOuterMeasure_apply_singleton, PMF.toOuterMeasure_map_apply]
+          exact (MeasureTheory.measure_mono fun r hr => congrArg Prod.fst hr).trans (h y.1)
+      _ = γ := by rw [ENNReal.tsum_mul_left, PMF.tsum_coe, mul_one]
+  calc _ ≤ ∑' e, PMF.uniformOfFintype (Fin 1 → P.Ch) e *
+        ∑' r, PMF.uniformOfFintype P.Rand r * q (P.commit x w r, m) := by
+        refine ENNReal.tsum_le_tsum fun e => mul_le_mul_right
+          (ENNReal.tsum_le_tsum fun r => mul_le_mul_right ?_ _) _
+        split_ifs
+        · exact le_rfl
+        · exact zero_le
+    _ ≤ ∑' e, PMF.uniformOfFintype (Fin 1 → P.Ch) e * γ :=
+        ENNReal.tsum_le_tsum fun e => mul_le_mul_right hr _
+    _ = γ := by rw [ENNReal.tsum_mul_right, PMF.tsum_coe, one_mul]
 
 end Sigma
 
@@ -285,42 +334,57 @@ def setRej {β : Type} (l : List (G.Key × G.Ch)) (y : β × (G.Tables × Bool))
 def RejInsensitive {β : Type} (g : β × (G.Tables × Bool) → ℝ≥0∞) : Prop :=
   ∀ y l, g (setRej l y) = g y
 
-/-- The test on views that one signing step induces from the test `F` on its
-outcomes: the test of the outcome of `programOut` with the flag cleared. -/
+/-- The test on traces that one signing step induces from the test `F` on its
+outcomes: the test of the outcome of `traceOut` with the flag cleared. -/
 def signTest (F : G.Answer × (G.Tables × Bool) → ℝ≥0∞) (t : G.Tables) (b : Bool)
-    (m : G.Msg) (v : G.View) : ℝ≥0∞ :=
-  offFlag F (programOut t b m v)
+    (m : G.Msg) (tr : G.Trace) : ℝ≥0∞ :=
+  offFlag F (traceOut t b m tr)
 
 theorem signTest_le_one (F : G.Answer × (G.Tables × Bool) → ℝ≥0∞) (hF : ∀ y, F y ≤ 1)
-    (t : G.Tables) (b : Bool) (m : G.Msg) (v : G.View) : signTest F t b m v ≤ 1 :=
+    (t : G.Tables) (b : Bool) (m : G.Msg) (tr : G.Trace) : signTest F t b m tr ≤ 1 :=
   (offFlag_le F _).trans (hF _)
 
-/-- The public entries of an attempt are at distinct points. -/
+/-- The programmed public entries of an attempt are at distinct points. -/
 theorem nodup_pubEntries (x : G.Stmt) (w : G.Wit) (m : G.Msg) (r : G.Rand)
-    (e : Fin G.μ → G.Ch) : ((G.pubEntries x w m r e).map Prod.fst).Nodup := by
-  simp only [Protocol.pubEntries, List.map_map]
-  exact ((List.nodup_finRange _).filter _).map fun i j h => G.key_inj x w m r e i j h
+    (v : Fin G.μ → G.Ch) : ((G.pubEntries x w m r v).map Prod.fst).Nodup := by
+  simp only [Protocol.pubEntries, Protocol.entries, List.map_map]
+  exact ((List.nodup_finRange _).filter _).map fun i j h => G.key_inj x w m r v i j h
 
-/-- On an outcome with the flag cleared, the real signing answer from `(e, r)` is
-bounded by the test of the view of the attempt. -/
+/-- The real signing answer from `(e, r)` with the flag cleared is bounded by the
+test of the trace of the attempt against the visible oracle when its hidden points
+are undefined there, and by `0` otherwise. -/
 theorem offFlag_realSignOut_le (F : G.Answer × (G.Tables × Bool) → ℝ≥0∞)
     (hF : RejInsensitive F) (x : G.Stmt) (w : G.Wit) (t : G.Tables) (b : Bool) (m : G.Msg)
     (e : Fin G.μ → G.Ch) (r : G.Rand) :
-    offFlag F (realSignOut x w t b m e r) ≤ signTest F t b m (G.view x w m r e) := by
-  by_cases hc : ∃ i, (t.lookupAll (G.key x w m r e i)).isSome
-  · simp [offFlag, realSignOut_flag_of_some x w t b m e r hc]
-  simp only [not_exists, Bool.not_eq_true, Option.isSome_eq_false_iff, Option.isNone_iff_eq_none]
-    at hc
-  rw [realSignOut_of_none x w t b m e r hc]
-  unfold signTest programOut
-  rw [show (G.view x w m r e).1 = G.pubEntries x w m r e from rfl,
-    programAll_of_fresh t b _ (fun p hp => ?_) (nodup_pubEntries x w m r e)]
-  · unfold offFlag
-    rw [← hF _ t.rej]
-    exact le_rfl
-  · simp only [Protocol.pubEntries, List.mem_map] at hp
-    obtain ⟨i, _, rfl⟩ := hp
-    exact Protocol.lookup_eq_none_of_lookupAll (hc i)
+    offFlag F (realSignOut x w t b m e r) ≤
+      if G.hidFresh t.lookup x w m r (G.vals t.lookup x w m r e) then
+        signTest F t b m (G.trace x w m r (G.vals t.lookup x w m r e)) else 0 := by
+  cases hfl : (realSignOut x w t b m e r).2.2
+  swap
+  · simp [offFlag, hfl]
+  obtain ⟨rfl, h1, h2⟩ := fresh_of_realSignOut x w t b m e r hfl
+  set v := G.vals t.lookup x w m r e with hv
+  have hfr : G.hidFresh t.lookup x w m r v = true := List.all_eq_true.mpr fun i _ => by
+    cases hp : G.pub x w m r v i
+    · have hf : G.flagging x w m r v i = true := by simp [Protocol.flagging, hp]
+      simp [Protocol.lookup_eq_none_of_lookupAll (h1 i hf)]
+    · simp
+  rw [if_pos hfr, realSignOut_of_fresh x w t false m e r h1 h2]
+  have hpe : ∀ p ∈ G.pubEntries x w m r v, (hashAll t (G.evEntries x w m r v)).lookup p.1 = none :=
+    fun p hp => by
+      obtain ⟨i, hi, rfl⟩ := Protocol.mem_entries hp
+      have hev : G.ev i = false := by
+        simp only [Bool.and_eq_true, Bool.not_eq_eq_eq_not, Bool.not_true] at hi
+        exact hi.1
+      rw [Protocol.lookup_hashAll_of_notMem _ _ (Protocol.key_notMem_evEntries hev)]
+      exact Protocol.lookup_eq_none_of_lookupAll (h1 i (by simp [Protocol.flagging, hev]))
+  unfold signTest traceOut programOut
+  rw [show (G.trace x w m r v).2.1 = G.pubEntries x w m r v from rfl,
+    show (G.trace x w m r v).1 = G.evEntries x w m r v from rfl,
+    programAll_of_fresh _ false _ hpe (nodup_pubEntries x w m r v)]
+  unfold offFlag
+  rw [← hF _ t.rej]
+  exact le_rfl
 
 /-- **One transition.** For a pair with statistical HVZK distance `δ` and a test
 `F` with values in `[0, 1]` that does not read the hidden entries, on the outcomes
@@ -348,23 +412,20 @@ theorem realStep_le_simStep {δ : ℝ≥0∞} (xw : G.Stmt × G.Wit) (hZK : G.St
   | inr m =>
     simp only [toOracle, realStep, simStep, Step.toPMF, sampleVec, tsum_bind_mul,
       tsum_map_mul', Sum.isRight_inr, if_true]
-    have hstep : ∀ e, ∑' r, PMF.uniformOfFintype G.Rand r *
-          offFlag F (realSignOut xw.1 xw.2 t b m e r) ≤
-        ∑' z, PMF.uniformOfFintype G.SimRand z * F (simSignOut xw.1 t b m e z) + δ := by
-      intro e
-      refine (ENNReal.tsum_le_tsum fun r =>
-        mul_le_mul_right (offFlag_realSignOut_le F hFr xw.1 xw.2 t b m e r) _).trans ?_
-      refine (hZK m e (signTest F t b m) (signTest_le_one F hF t b m)).trans ?_
-      gcongr with z
-      exact offFlag_le F _
     calc ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e * ∑' r, PMF.uniformOfFintype G.Rand r *
           offFlag F (realSignOut xw.1 xw.2 t b m e r)
-        ≤ ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e *
-            (∑' z, PMF.uniformOfFintype G.SimRand z * F (simSignOut xw.1 t b m e z) + δ) :=
-          ENNReal.tsum_le_tsum fun e => mul_le_mul_right (hstep e) _
-      _ = _ := by
-          simp only [mul_add]
-          rw [ENNReal.tsum_add, ENNReal.tsum_mul_right, PMF.tsum_coe, one_mul]
+        ≤ ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e * ∑' r, PMF.uniformOfFintype G.Rand r *
+            (if G.hidFresh t.lookup xw.1 xw.2 m r (G.vals t.lookup xw.1 xw.2 m r e) then
+              signTest F t b m (G.trace xw.1 xw.2 m r (G.vals t.lookup xw.1 xw.2 m r e))
+              else 0) :=
+          ENNReal.tsum_le_tsum fun e => mul_le_mul_right (ENNReal.tsum_le_tsum fun r =>
+            mul_le_mul_right (offFlag_realSignOut_le F hFr xw.1 xw.2 t b m e r) _) _
+      _ ≤ ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e * ∑' z,
+            PMF.uniformOfFintype G.SimRand z * signTest F t b m (G.simTrace t.lookup xw.1 m e z) +
+            δ := hZK m t.lookup (signTest F t b m) (signTest_le_one F hF t b m)
+      _ ≤ _ := by
+          gcongr with e z
+          exact offFlag_le F _
 
 variable {α : Type}
 
@@ -396,6 +457,16 @@ theorem programAll_setRej (l : List (G.Key × G.Ch)) (t : G.Tables) (b : Bool)
     | some _ => exact ih t true
     | none => exact ih { t with prog := t.prog ++ [p] } b
 
+/-- Answering a trace does not read the hidden entries and keeps them. -/
+theorem traceOut_setRej (l : List (G.Key × G.Ch)) (t : G.Tables) (b : Bool) (m : G.Msg)
+    (tr : G.Trace) :
+    traceOut { t with rej := l } b m tr =
+      Prod.map id (fun s' => ({ s'.1 with rej := l }, s'.2)) (traceOut t b m tr) := by
+  unfold traceOut programOut
+  rw [show hashAll { t with rej := l } tr.1 = { hashAll t tr.1 with rej := l } from rfl,
+    programAll_setRej]
+  rfl
+
 /-- A simulated transition does not read the hidden entries and keeps them. -/
 theorem simStep_setRej (x₀ : G.Stmt) (l : List (G.Key × G.Ch)) (s : G.Tables × Bool)
     (d : G.Query) :
@@ -412,7 +483,8 @@ theorem simStep_setRej (x₀ : G.Stmt) (l : List (G.Key × G.Ch)) (s : G.Tables 
   | inr m =>
     simp only [toOracle, simStep, Step.toPMF, sampleVec, PMF.map_bind, PMF.map_comp]
     refine congrArg _ (funext fun e => congrArg _ (funext fun z => ?_))
-    simp only [Function.comp_apply, simSignOut, programOut, programAll_setRej]
+    simp only [Function.comp_apply, simSignOut]
+    rw [traceOut_setRej l t]
     rfl
 
 /-- The expectation of a test under a simulated run does not depend on the hidden
@@ -532,18 +604,17 @@ theorem run_real_wins_le_stat {δ : ℝ≥0∞} (xw : G.Stmt × G.Wit) (hZK : G.
 
 /-- **Signing-oracle simulation with distances depending on the pair.** For a
 protocol whose generated pairs `(x, w)` have statistical HVZK distance `δ (x, w)`
-and key bound `γ (x, w)`, and every adversary with at most `qH` hash and `qS`
+and key bound `Γ (x, w)`, and every adversary with at most `qH` hash and `qS`
 signing queries, the EUF-CMA advantage is at most the advantage in the game whose
 signing oracle is simulated from the statement by programming the random oracle,
 plus the expectation over the generator of
-`qS·δ(x, w) + qS·μ·(qH + V + μ·qS)·γ(x, w)`. -/
-theorem Protocol.eufcmaAdvantage_le_simAdvantage_perKey {δ γ : G.Stmt × G.Wit → ℝ≥0∞}
+`qS·δ(x, w) + qS·(qH + V + μ·qS)·Γ(x, w)`. -/
+theorem Protocol.eufcmaAdvantage_le_simAdvantage_perKey {δ Γ : G.Stmt × G.Wit → ℝ≥0∞}
     (hZK : ∀ xw ∈ G.gen.support, G.StatHVZKAt xw.1 xw.2 (δ xw))
-    (hγ : ∀ xw ∈ G.gen.support, G.KeyBoundAt xw.1 xw.2 (γ xw)) {qH qS : ℕ}
+    (hΓ : ∀ xw ∈ G.gen.support, G.KeyBoundAt xw.1 xw.2 (Γ xw)) {qH qS : ℕ}
     (A : G.Adversary qH qS) :
     eufcmaAdvantage A ≤ simAdvantage A +
-      ∑' xw, G.gen xw * (qS * δ xw +
-        ((qS * G.μ * (qH + G.V + G.μ * qS) : ℕ) : ℝ≥0∞) * γ xw) := by
+      ∑' xw, G.gen xw * (qS * δ xw + ((qS * (qH + G.V + G.μ * qS) : ℕ) : ℝ≥0∞) * Γ xw) := by
   unfold eufcmaAdvantage simAdvantage eufcmaGame simGame
   rw [prTrue_gameDist, prTrue_gameDist, ← ENNReal.tsum_add]
   refine ENNReal.tsum_le_tsum fun xw => ?_
@@ -554,7 +625,7 @@ theorem Protocol.eufcmaAdvantage_le_simAdvantage_perKey {δ γ : G.Stmt × G.Wit
     refine (run_real_wins_le_stat xw (hZK xw hxw) _ (qH + G.V) qS hB _ _).trans ?_
     rw [add_assoc]
     refine add_le_add le_rfl (add_le_add le_rfl ?_)
-    refine (run_real_flag_le xw (hγ xw hxw) _ (qH + G.V) qS hB Protocol.Tables.empty rfl).trans
+    refine (run_real_flag_le xw (hΓ xw hxw) _ (qH + G.V) qS hB Protocol.Tables.empty rfl).trans
       (le_of_eq ?_)
     simp [Protocol.Tables.empty]
   · simp [(PMF.apply_eq_zero_iff _ _).mpr hxw]
@@ -562,27 +633,27 @@ theorem Protocol.eufcmaAdvantage_le_simAdvantage_perKey {δ γ : G.Stmt × G.Wit
 /-- **Signing-oracle simulation at the distances of the pairs.** For every protocol
 and every adversary with at most `qH` hash and `qS` signing queries, the EUF-CMA
 advantage is at most the simulated-game advantage plus the expectation over the
-generator of `qS·hvzkDistAt x w + qS·μ·(qH + V + μ·qS)·keyDistAt x w`. -/
+generator of `qS·hvzkDistAt x w + qS·(qH + V + μ·qS)·keyDistAt x w`. -/
 theorem Protocol.eufcmaAdvantage_le_simAdvantage_dist {qH qS : ℕ} (A : G.Adversary qH qS) :
     eufcmaAdvantage A ≤ simAdvantage A +
       ∑' xw, G.gen xw * (qS * G.hvzkDistAt xw.1 xw.2 +
-        ((qS * G.μ * (qH + G.V + G.μ * qS) : ℕ) : ℝ≥0∞) * G.keyDistAt xw.1 xw.2) :=
+        ((qS * (qH + G.V + G.μ * qS) : ℕ) : ℝ≥0∞) * G.keyDistAt xw.1 xw.2) :=
   Protocol.eufcmaAdvantage_le_simAdvantage_perKey (δ := fun xw => G.hvzkDistAt xw.1 xw.2)
-    (γ := fun xw => G.keyDistAt xw.1 xw.2)
+    (Γ := fun xw => G.keyDistAt xw.1 xw.2)
     (fun xw _ => G.statHVZKAt_hvzkDistAt xw.1 xw.2)
     (fun xw _ => G.keyBoundAt_keyDistAt xw.1 xw.2) A
 
 /-- **Signing-oracle simulation with statistical HVZK.** For a protocol with
-statistical HVZK distance `δ` and key bound `γ`, and every adversary with at most
+statistical HVZK distance `δ` and key bound `Γ`, and every adversary with at most
 `qH` hash and `qS` signing queries, the EUF-CMA advantage is at most the advantage
 in the game whose signing oracle is simulated from the statement by programming the
-random oracle, plus `qS·δ + qS·μ·(qH + V + μ·qS)·γ`. -/
+random oracle, plus `qS·δ + qS·(qH + V + μ·qS)·Γ`. -/
 theorem Protocol.eufcmaAdvantage_le_simAdvantage_stat {δ : ℝ≥0∞} (hZK : G.StatHVZK δ)
-    {γ : ℝ≥0∞} (hγ : G.KeyBound γ) {qH qS : ℕ} (A : G.Adversary qH qS) :
+    {Γ : ℝ≥0∞} (hΓ : G.KeyBound Γ) {qH qS : ℕ} (A : G.Adversary qH qS) :
     eufcmaAdvantage A ≤
-      simAdvantage A + (qS * δ + ((qS * G.μ * (qH + G.V + G.μ * qS) : ℕ) : ℝ≥0∞) * γ) := by
-  refine (Protocol.eufcmaAdvantage_le_simAdvantage_perKey (δ := fun _ => δ) (γ := fun _ => γ)
-    (fun xw hxw => hZK xw.1 xw.2 hxw) (fun xw hxw => hγ xw.1 xw.2 hxw) A).trans (le_of_eq ?_)
+      simAdvantage A + (qS * δ + ((qS * (qH + G.V + G.μ * qS) : ℕ) : ℝ≥0∞) * Γ) := by
+  refine (Protocol.eufcmaAdvantage_le_simAdvantage_perKey (δ := fun _ => δ) (Γ := fun _ => Γ)
+    (fun xw hxw => hZK xw.1 xw.2 hxw) (fun xw hxw => hΓ xw.1 xw.2 hxw) A).trans (le_of_eq ?_)
   rw [ENNReal.tsum_mul_right, PMF.tsum_coe, one_mul]
 
 end Stat
@@ -607,9 +678,9 @@ theorem eufcmaAdvantage_le_simAdvantage_perKey {δ γ : P.Stmt × P.Wit → ℝ�
     eufcmaAdvantage A ≤ simAdvantage A +
       ∑' xw, P.gen xw * (qS * δ xw + ((qS * (qH + 1 + qS) : ℕ) : ℝ≥0∞) * γ xw) := by
   have h := Protocol.eufcmaAdvantage_le_simAdvantage_perKey (G := P.toProtocol M) (δ := δ)
-    (γ := γ) (fun xw hxw => P.statHVZKAt_toProtocol (hZK xw hxw))
+    (Γ := γ) (fun xw hxw => P.statHVZKAt_toProtocol (hZK xw hxw))
     (fun xw hxw => P.keyBoundAt_toProtocol (hγ xw hxw)) A
-  simp only [mul_one, one_mul] at h
+  simp only [one_mul] at h
   exact h
 
 /-- **Signing-oracle simulation at the distances of the pairs.** For every

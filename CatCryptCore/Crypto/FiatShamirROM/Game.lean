@@ -18,11 +18,14 @@ pair `(x, w)` from the randomness `r` defines `G.μ` oracle entries: the entry `
 is at the point `G.key x w m r v i` with value `v i = H(G.key x w m r v i)`, and
 the point reads only the values `v j` with `j < i`. An entry is public
 (`G.pub x w m r v i`) when the answer reveals its point, and hidden otherwise; the
-answer is `G.sign x w m r v`, a signature or nothing. The simulator
-`G.simulate x m v s` computes the public entries and the answer from the statement
-and the values `v`. The verifier of a signature `σ` on `m` reads `H` at `G.V`
-points, the next one `G.vkey x m σ vs` from the values `vs` read so far, and
-decides with `G.verify x m σ vs`.
+answer is `G.sign x w m r v`, a signature or nothing. An entry is evaluated
+(`G.ev i`) when the signer answers it by an honest query to `H`, and programmed
+otherwise. The simulator knows only the statement: for an evaluated entry it queries
+`H` at the point `G.simKey x m s v i`, and `G.simulate x m v s` computes the
+programmed public entries and the answer from the values `v`, which are the oracle
+answers at the evaluated entries. The verifier of a signature `σ` on `m` reads `H`
+at `G.V` points, the next one `G.vkey x m σ vs` from the values `vs` read so far,
+and decides with `G.verify x m σ vs`.
 
 The EUF-CMA game samples `(x, w)` from the generator `G.gen` and runs an adaptive
 oracle adversary (`OracleAdv`) on `x` with hash queries `inl k` and signing queries
@@ -30,23 +33,26 @@ oracle adversary (`OracleAdv`) on `x` with hash queries `inl k` and signing quer
 (`OracleForking.IsQueryBound₂`). The challenger keeps the oracle state
 `G.Tables × Bool`:
 
-* `hash` — the random-oracle entries created by hash queries, in creation order;
-* `prog` — the public entries created by signing attempts;
+* `hash` — the random-oracle entries created by hash queries and by evaluated
+  public entries, in creation order;
+* `prog` — the programmed public entries created by signing attempts;
 * `signed` — the messages submitted to the signing oracle;
 * `rej` — the hidden entries created by signing attempts;
 * the flag — set when a query needs the oracle value at the point of a hidden
-  entry, or when a signing attempt needs the oracle value at a point already
-  defined.
+  entry only, or when a programmed or hidden entry of a signing attempt lands on a
+  point already defined.
 
 A hash query returns the recorded value of its point or samples a fresh uniform
 value and records it. The real signing oracle samples the values `e` and the
-randomness `r`; each entry takes the recorded value of its point when there is
-one (setting the flag) and its value in `e` otherwise; the new entries go to
-`prog` and `rej`. The simulated signing oracle knows only `x`: it samples `e` and
-`s`, and records the public entries of `G.simulate x m e s` in `prog`, setting the
-flag for an entry whose point is already defined. At the end the challenger reads
-the verifier's points for the forgery `(m*, σ*)`, and the adversary wins when the
-verifier accepts and `m*` was never signed.
+randomness `r`; an evaluated entry takes the recorded value of its point when there
+is one and its value in `e` otherwise, a programmed entry its value in `e`; the new
+evaluated public entries go to `hash`, the programmed public ones to `prog` and the
+hidden ones to `rej`. The simulated signing oracle knows only `x`: it samples `e`
+and `s`, answers the simulator's queries from the tables and `e`, records the fresh
+answers in `hash`, and records the public entries of `G.simulate x m u s` on those
+answers `u` in `prog`, setting the flag for an entry whose point is already defined.
+At the end the challenger reads the verifier's points for the forgery `(m*, σ*)`,
+and the adversary wins when the verifier accepts and `m*` was never signed.
 
 A Σ-protocol `P : Sigma` with explicit prover randomness, simulator randomness and
 an acceptance test on responses is the instance `P.toProtocol M` with one entry
@@ -54,11 +60,15 @@ at the point `(P.commit x w r, m)`, public when the response is accepted.
 
 ## Main definitions
 
+* `effVal`, `effVec` — the values of the entries of an attempt against oracles
 * `Protocol` — a multi-round public-coin protocol with its random-oracle entries
-* `Protocol.view`, `Protocol.guessView` — the view of an attempt (public entries and
-  answer), and the view from which the point of an entry is guessed
-* `Protocol.StatHVZKAt x w δ`, `Protocol.KeyBoundAt x w γ` — statistical HVZK on
-  views, and the bound `γ` on guessing the point of an entry, at one pair
+* `Protocol.vals`, `Protocol.trace`, `Protocol.simTrace` — the values of an attempt
+  against a visible oracle, its trace (evaluated public entries, programmed public
+  entries and answer), and the trace of the simulator
+* `Protocol.guessView` — the trace from which the point of an entry is guessed
+* `Protocol.StatHVZKAt x w δ`, `Protocol.KeyBoundAt x w Γ` — statistical HVZK on
+  traces, and the bound `Γ` on guessing the points of the programmed and hidden
+  entries of an attempt, at one pair
 * `Sigma` — a Σ-protocol with explicit randomness, generator, extractor and
   acceptance test, and `Sigma.toProtocol P M`
 * `Sigma.SpecialSound`, `Sigma.PerfectHVZK`, `Sigma.CommitBoundAt x w γ`,
@@ -72,9 +82,9 @@ at the point `(P.commit x w r, m)`, public when the response is accepted.
 
 * `run_real_addRejs_flag_le` — hidden entries change the flag of a real run only
   when the run reaches one of their points
-* `run_real_flag_le` — for a pair `(x, w)` with key bound `γ`, from tables with `L`
+* `run_real_flag_le` — for a pair `(x, w)` with key bound `Γ`, from tables with `L`
   entries and no hidden entry, a run with at most `h` hash and `q` signing queries
-  sets the flag with probability at most `q·μ·(L + h + μ·q)·γ`
+  sets the flag with probability at most `q·(L + h + μ·q)·Γ`
 
 ## References
 
@@ -199,6 +209,28 @@ noncomputable def relAdvantage (B : P.Stmt → PMF P.Wit) : ℝ≥0∞ :=
 
 end Sigma
 
+/-! ## The values of a signing attempt -/
+
+section Eff
+
+variable {μ : ℕ} {K C : Type}
+
+/-- The value of entry `i` of an attempt against the oracles `look`: the value of
+`look i` at its point when defined, and `e i` otherwise; the point reads the values
+of the entries before `i`. -/
+def effVal (look : Fin μ → K → Option C) (key : (Fin μ → C) → Fin μ → K) (e : Fin μ → C)
+    (i : Fin μ) : C :=
+  (look i (key (fun j => if j < i then effVal look key e j else e j) i)).getD (e i)
+termination_by i.val
+decreasing_by exact ‹j < i›
+
+/-- The values of the entries of an attempt against the oracles `look`. -/
+def effVec (look : Fin μ → K → Option C) (key : (Fin μ → C) → Fin μ → K) (e : Fin μ → C) :
+    Fin μ → C :=
+  fun i => effVal look key e i
+
+end Eff
+
 /-! ## Multi-round public-coin protocols -/
 
 /-- A public-coin protocol made non-interactive by a random oracle from `Key` to
@@ -206,9 +238,12 @@ uniform values `Ch`, presented by the oracle entries of a signing attempt. An
 attempt on the message `m` for the pair `(x, w)` with randomness `r` and oracle
 values `v` defines `μ` entries, the entry `i` at the point `key x w m r v i` with
 value `v i`; it is public when `pub x w m r v i` holds and hidden otherwise, and
-the answer of the attempt is `sign x w m r v`. The simulator gives the public
-entries and the answer from the statement and the values. The verifier of `σ` on
-`m` reads the oracle at `V` points, each from the values read before. -/
+the answer of the attempt is `sign x w m r v`. An entry `i` with `ev i` is
+evaluated (answered by an honest oracle query) and the others are programmed. The
+simulator queries the oracle at the points `simKey x m s v i` and gives the
+programmed public entries and the answer from the statement and the values. The
+verifier of `σ` on `m` reads the oracle at `V` points, each from the values read
+before. -/
 structure Protocol : Type 1 where
   /-- Statements (public keys). -/
   Stmt : Type
@@ -250,8 +285,25 @@ structure Protocol : Type 1 where
   pub : Stmt → Wit → Msg → Rand → (Fin μ → Ch) → Fin μ → Bool
   /-- The answer of an attempt: a signature, or nothing. -/
   sign : Stmt → Wit → Msg → Rand → (Fin μ → Ch) → Option Sig
-  /-- The simulator: the public entries and the answer from the values. -/
+  /-- The simulator: the programmed public entries and the answer from the values;
+  the value of an evaluated entry is the oracle answer at its simulator point. -/
   simulate : Stmt → Msg → (Fin μ → Ch) → SimRand → List (Key × Ch) × Option Sig
+  /-- Entry `i` is evaluated: the signer answers it by an honest query to the random
+  oracle. The other entries are programmed. Every entry is programmed by default. -/
+  ev : Fin μ → Bool := fun _ => false
+  /-- The point at which the simulator queries the random oracle for entry `i`, from
+  the statement, the message, the simulator randomness and the values `v`, or
+  nothing. Nothing by default. -/
+  simKey : Stmt → Msg → SimRand → (Fin μ → Ch) → Fin μ → Option Key :=
+    fun _ _ _ _ _ => none
+  /-- The simulator point of entry `i` reads only the values of the entries before
+  `i` and of the programmed entries. -/
+  simKey_causal : ∀ x m s (v v' : Fin μ → Ch) (i : Fin μ),
+    (∀ j, j < i ∨ ev j = false → v j = v' j) → simKey x m s v i = simKey x m s v' i := by
+    intros; rfl
+  /-- The simulator queries the random oracle only for evaluated entries. -/
+  simKey_ev : ∀ x m s (v : Fin μ → Ch) (i : Fin μ), (simKey x m s v i).isSome → ev i = true := by
+    intro _ _ _ _ _ h; simp at h
   /-- The number of oracle points the verifier reads. -/
   V : ℕ
   /-- The next point the verifier reads, from the values read before. -/
@@ -266,8 +318,11 @@ namespace Protocol
 
 variable (G : Protocol)
 
-/-- The view of an attempt: its public entries and its answer. -/
+/-- The view of an attempt: its programmed public entries and its answer. -/
 abbrev View := List (G.Key × G.Ch) × Option G.Sig
+
+/-- The trace of an attempt: its evaluated public entries and its view. -/
+abbrev Trace := List (G.Key × G.Ch) × G.View
 
 /-- A query: `inl k` asks the random oracle at `k`, `inr m` asks for a signature
 on `m`. -/
@@ -291,44 +346,109 @@ structure Tables where
   /-- Hidden entries created by signing attempts, oldest first. -/
   rej : List (G.Key × G.Ch)
 
-/-- The public entries of an attempt with the values `e`. -/
-def pubEntries (x : G.Stmt) (w : G.Wit) (m : G.Msg) (r : G.Rand) (e : Fin G.μ → G.Ch) :
+/-- The entries `i` of an attempt with the values `v` that satisfy `p`, in order. -/
+def entries (x : G.Stmt) (w : G.Wit) (m : G.Msg) (r : G.Rand) (v : Fin G.μ → G.Ch)
+    (p : Fin G.μ → Bool) : List (G.Key × G.Ch) :=
+  ((List.finRange G.μ).filter p).map fun i => (G.key x w m r v i, v i)
+
+/-- The programmed public entries of an attempt with the values `v`. -/
+def pubEntries (x : G.Stmt) (w : G.Wit) (m : G.Msg) (r : G.Rand) (v : Fin G.μ → G.Ch) :
     List (G.Key × G.Ch) :=
-  ((List.finRange G.μ).filter (G.pub x w m r e)).map fun i => (G.key x w m r e i, e i)
+  G.entries x w m r v fun i => !G.ev i && G.pub x w m r v i
 
-/-- The hidden entries of an attempt with the values `e`. -/
-def hidEntries (x : G.Stmt) (w : G.Wit) (m : G.Msg) (r : G.Rand) (e : Fin G.μ → G.Ch) :
+/-- The evaluated public entries of an attempt with the values `v`. -/
+def evEntries (x : G.Stmt) (w : G.Wit) (m : G.Msg) (r : G.Rand) (v : Fin G.μ → G.Ch) :
     List (G.Key × G.Ch) :=
-  ((List.finRange G.μ).filter fun i => !G.pub x w m r e i).map fun i => (G.key x w m r e i, e i)
+  G.entries x w m r v fun i => G.ev i && G.pub x w m r v i
 
-/-- The view of an attempt with the values `e`: its public entries and its answer. -/
-def view (x : G.Stmt) (w : G.Wit) (m : G.Msg) (r : G.Rand) (e : Fin G.μ → G.Ch) : G.View :=
-  (G.pubEntries x w m r e, G.sign x w m r e)
+/-- The hidden entries of an attempt with the values `v`. -/
+def hidEntries (x : G.Stmt) (w : G.Wit) (m : G.Msg) (r : G.Rand) (v : Fin G.μ → G.Ch) :
+    List (G.Key × G.Ch) :=
+  G.entries x w m r v fun i => !G.pub x w m r v i
 
-/-- The view that determines the guess of the point of entry `i`: the view of the
-attempt when the entry is hidden, and the empty view when it is public. -/
-def guessView (x : G.Stmt) (w : G.Wit) (m : G.Msg) (r : G.Rand) (e : Fin G.μ → G.Ch)
-    (i : Fin G.μ) : G.View :=
-  if G.pub x w m r e i then ([], none) else G.view x w m r e
+/-- The view of an attempt with the values `v`: its programmed public entries and
+its answer. -/
+def view (x : G.Stmt) (w : G.Wit) (m : G.Msg) (r : G.Rand) (v : Fin G.μ → G.Ch) : G.View :=
+  (G.pubEntries x w m r v, G.sign x w m r v)
 
-/-- **Key bound at one pair.** For the pair `(x, w)`, every message, all values `e`
-and every entry `i`, a guess of the point of the entry from `guessView` (the view of
-the attempt for a hidden entry, nothing for a public one) by any randomized guesser
-`Q` succeeds with probability at most `γ` over uniform randomness. -/
-def KeyBoundAt (x : G.Stmt) (w : G.Wit) (γ : ℝ≥0∞) : Prop :=
-  ∀ (m : G.Msg) (e : Fin G.μ → G.Ch) (i : Fin G.μ) (Q : G.View → PMF G.Key),
-    ∑' r, PMF.uniformOfFintype G.Rand r *
-      Q (G.guessView x w m r e i) (G.key x w m r e i) ≤ γ
+/-- The trace of an attempt with the values `v`: its evaluated public entries and
+its view. -/
+def trace (x : G.Stmt) (w : G.Wit) (m : G.Msg) (r : G.Rand) (v : Fin G.μ → G.Ch) : G.Trace :=
+  (G.evEntries x w m r v, G.view x w m r v)
+
+/-- Entry `i` of an attempt with the values `v` is programmed or hidden: such an
+entry sets the flag when its point is already defined. -/
+def flagging (x : G.Stmt) (w : G.Wit) (m : G.Msg) (r : G.Rand) (v : Fin G.μ → G.Ch)
+    (i : Fin G.μ) : Bool :=
+  !G.ev i || !G.pub x w m r v i
+
+/-- The values of an attempt against the oracle `look`: an evaluated entry takes
+the value of `look` at its point when defined and its value in `e` otherwise; a
+programmed entry takes its value in `e`. -/
+def vals (look : G.Key → Option G.Ch) (x : G.Stmt) (w : G.Wit) (m : G.Msg) (r : G.Rand)
+    (e : Fin G.μ → G.Ch) : Fin G.μ → G.Ch :=
+  effVec (fun i => if G.ev i then look else fun _ => none) (G.key x w m r) e
+
+/-- The values of an honest attempt against the oracle `look`: every entry takes the
+value of `look` at its point when defined and its value in `e` otherwise. -/
+def honestVals (look : G.Key → Option G.Ch) (x : G.Stmt) (w : G.Wit) (m : G.Msg)
+    (r : G.Rand) (e : Fin G.μ → G.Ch) : Fin G.μ → G.Ch :=
+  effVec (fun _ => look) (G.key x w m r) e
+
+/-- The hidden entries of an attempt with the values `v` are at points undefined in
+`look`. -/
+def hidFresh (look : G.Key → Option G.Ch) (x : G.Stmt) (w : G.Wit) (m : G.Msg) (r : G.Rand)
+    (v : Fin G.μ → G.Ch) : Bool :=
+  (List.finRange G.μ).all fun i => G.pub x w m r v i || (look (G.key x w m r v i)).isNone
+
+/-- The trace that determines the guess of the point of entry `i` of the attempt
+with the values against `look`: the trace of the attempt when the entry is hidden
+at a point undefined in `look`, and the empty trace otherwise. -/
+def guessView (look : G.Key → Option G.Ch) (x : G.Stmt) (w : G.Wit) (m : G.Msg) (r : G.Rand)
+    (e : Fin G.μ → G.Ch) (i : Fin G.μ) : G.Trace :=
+  if G.pub x w m r (G.vals look x w m r e) i ||
+      (look (G.key x w m r (G.vals look x w m r e) i)).isSome then ([], [], none)
+  else G.trace x w m r (G.vals look x w m r e)
+
+/-- The values of a simulated attempt against the oracle `look`: an entry with a
+simulator point takes the value of `look` there when defined, and its value in `e`
+otherwise. -/
+def simVals (look : G.Key → Option G.Ch) (x : G.Stmt) (m : G.Msg) (s : G.SimRand)
+    (e : Fin G.μ → G.Ch) : Fin G.μ → G.Ch :=
+  effVec (fun _ k => k.bind look) (G.simKey x m s) e
+
+/-- The trace of a simulated attempt against the oracle `look`: the entries at the
+simulator points with their values, and the output of `simulate` on those values. -/
+def simTrace (look : G.Key → Option G.Ch) (x : G.Stmt) (m : G.Msg) (e : Fin G.μ → G.Ch)
+    (s : G.SimRand) : G.Trace :=
+  ((List.finRange G.μ).filterMap fun i =>
+      (G.simKey x m s (G.simVals look x m s e) i).map fun k => (k, G.simVals look x m s e i),
+    G.simulate x m (G.simVals look x m s e) s)
+
+/-- **Key bound at one pair.** For the pair `(x, w)`, every message, every oracle
+`look` and every randomized guesser `Q` on traces, the expected number of
+programmed or hidden entries of the attempt against `look` whose point the guess
+from `guessView` hits, over uniform values and uniform randomness, is at most `Γ`. -/
+def KeyBoundAt (x : G.Stmt) (w : G.Wit) (Γ : ℝ≥0∞) : Prop :=
+  ∀ (m : G.Msg) (look : G.Key → Option G.Ch) (Q : G.Trace → PMF G.Key),
+    ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e * ∑' r, PMF.uniformOfFintype G.Rand r *
+      ∑ i, (if G.flagging x w m r (G.vals look x w m r e) i then
+        Q (G.guessView look x w m r e i) (G.key x w m r (G.vals look x w m r e) i) else 0) ≤ Γ
 
 /-- **Statistical honest-verifier zero knowledge at one pair** with distance `δ`.
-For the pair `(x, w)`, every message `m`, all values `e` and every test `g` with
-values in `[0, 1]` on views, the expectation of `g` on the view of the attempt
-under uniform randomness is at most its expectation on the simulator output under
-uniform simulator randomness, plus `δ`. -/
+For the pair `(x, w)`, every message `m`, every oracle `look` and every test `g`
+with values in `[0, 1]` on traces, the expectation of `g` on the trace of the
+attempt against `look`, restricted to the attempts whose hidden points are undefined
+in `look`, under uniform values and randomness, is at most its expectation on the
+simulated trace against `look` under uniform values and simulator randomness, plus
+`δ`. -/
 def StatHVZKAt (x : G.Stmt) (w : G.Wit) (δ : ℝ≥0∞) : Prop :=
-  ∀ (m : G.Msg) (e : Fin G.μ → G.Ch) (g : G.View → ℝ≥0∞), (∀ y, g y ≤ 1) →
-    ∑' r, PMF.uniformOfFintype G.Rand r * g (G.view x w m r e) ≤
-      ∑' s, PMF.uniformOfFintype G.SimRand s * g (G.simulate x m e s) + δ
+  ∀ (m : G.Msg) (look : G.Key → Option G.Ch) (g : G.Trace → ℝ≥0∞), (∀ y, g y ≤ 1) →
+    ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e * ∑' r, PMF.uniformOfFintype G.Rand r *
+      (if G.hidFresh look x w m r (G.vals look x w m r e) then
+        g (G.trace x w m r (G.vals look x w m r e)) else 0) ≤
+    ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e * ∑' s, PMF.uniformOfFintype G.SimRand s *
+      g (G.simTrace look x m e s) + δ
 
 end Protocol
 
@@ -444,28 +564,6 @@ end Protocol
 
 open Protocol
 
-/-! ## The values of a signing attempt -/
-
-section Eff
-
-variable {μ : ℕ} {K C : Type}
-
-/-- The value of entry `i` of an attempt against the oracle `look`: the recorded
-value at its point when there is one, and `e i` otherwise; the point reads the
-values of the entries before `i`. -/
-def effVal (look : K → Option C) (key : (Fin μ → C) → Fin μ → K) (e : Fin μ → C)
-    (i : Fin μ) : C :=
-  (look (key (fun j => if j < i then effVal look key e j else e j) i)).getD (e i)
-termination_by i.val
-decreasing_by exact ‹j < i›
-
-/-- The values of the entries of an attempt against the oracle `look`. -/
-def effVec (look : K → Option C) (key : (Fin μ → C) → Fin μ → K) (e : Fin μ → C) :
-    Fin μ → C :=
-  fun i => effVal look key e i
-
-end Eff
-
 /-! ## Oracles -/
 
 section Oracles
@@ -492,22 +590,36 @@ noncomputable def realHashStep (t : G.Tables) (b : Bool) (k : G.Key) :
     | some e => .plain (PMF.pure (.inl e, ({ t with hash := t.hash ++ [(k, e)] }, true)))
     | none => .fresh fun e => (.inl e, ({ t with hash := t.hash ++ [(k, e)] }, b))
 
+/-- The tables `t` with the entries of `l` at points undefined in `t` recorded in
+`hash`: the answers of honest oracle queries. -/
+def hashAll (t : G.Tables) (l : List (G.Key × G.Ch)) : G.Tables :=
+  { t with hash := t.hash ++ l.filter fun p => (t.lookup p.1).isNone }
+
+/-- The tables after a signing attempt on `m` with the trace `tr` from `t`: the
+fresh evaluated public entries recorded in `hash`, the programmed public entries in
+`prog`, and `m` in `signed`. -/
+def traceTables (t : G.Tables) (m : G.Msg) (tr : G.Trace) : G.Tables :=
+  { hashAll t tr.1 with prog := t.prog ++ tr.2.1, signed := t.signed ++ [m] }
+
 /-- The real signing oracle on `m` for the pair `(x, w)`, from the sampled values
-`e` and randomness `r`. Each entry takes the recorded value at its point when there
-is one and its value in `e` otherwise (`effVec`); the entries at undefined points
-are recorded, the public ones in `prog` and the hidden ones in `rej`; the flag is
-set when some point was defined. -/
+`e` and randomness `r`. Every entry takes the recorded value at its point when
+there is one and its value in `e` otherwise (`Protocol.honestVals`). The evaluated public entries at points without a value
+visible to the adversary are recorded in `hash`, the programmed public entries at
+undefined points in `prog`, and the hidden entries at undefined points in `rej`.
+The flag is set when a programmed or hidden entry lands on a defined point, or an
+evaluated public entry on the point of a hidden entry only. -/
 def realSignOut (x : G.Stmt) (w : G.Wit) (t : G.Tables) (b : Bool) (m : G.Msg)
     (e : Fin G.μ → G.Ch) (r : G.Rand) : G.Answer × (G.Tables × Bool) :=
-  let v := effVec t.lookupAll (G.key x w m r) e
-  let fresh := (List.finRange G.μ).filter fun i => (t.lookupAll (G.key x w m r v i)).isNone
+  let v := G.honestVals t.lookupAll x w m r e
   (.inr (G.sign x w m r v),
-    ({ t with
-        prog := t.prog ++ (fresh.filter (G.pub x w m r v)).map fun i => (G.key x w m r v i, v i)
+    ({ hashAll t (G.evEntries x w m r v) with
+        prog := t.prog ++ (G.pubEntries x w m r v).filter fun p => (t.lookupAll p.1).isNone
         signed := t.signed ++ [m]
-        rej := t.rej ++ (fresh.filter fun i => !G.pub x w m r v i).map
-          fun i => (G.key x w m r v i, v i) },
-      b || (List.finRange G.μ).any fun i => (t.lookupAll (G.key x w m r v i)).isSome))
+        rej := t.rej ++ (G.hidEntries x w m r v).filter fun p => (t.lookupAll p.1).isNone },
+      b || (List.finRange G.μ).any fun i =>
+        if G.flagging x w m r v i then (t.lookupAll (G.key x w m r v i)).isSome
+        else (t.lookup (G.key x w m r v i)).isNone &&
+          (lookupIn t.rej (G.key x w m r v i)).isSome))
 
 /-- Programming the entries `l` in order: an entry at a defined point sets the flag
 and is dropped, the others are recorded in `prog`. -/
@@ -524,12 +636,19 @@ def programOut (t : G.Tables) (b : Bool) (m : G.Msg) (v : G.View) :
     G.Answer × (G.Tables × Bool) :=
   (.inr v.2, ({ (programAll t b v.1).1 with signed := t.signed ++ [m] }, (programAll t b v.1).2))
 
+/-- The signing answer with the trace `tr` on `m`: the fresh evaluated entries of
+`tr` are recorded in `hash`, then its view is answered and programmed by
+`programOut`. -/
+def traceOut (t : G.Tables) (b : Bool) (m : G.Msg) (tr : G.Trace) :
+    G.Answer × (G.Tables × Bool) :=
+  programOut (hashAll t tr.1) b m tr.2
+
 /-- The simulated signing oracle on `m` for the statement `x`, from the sampled
-values `e` and simulator randomness `s`: the view `G.simulate x m e s` is answered
-and programmed by `programOut`. -/
+values `e` and simulator randomness `s`: the simulated trace against the visible
+oracle (`Protocol.simTrace`) is answered by `traceOut`. -/
 def simSignOut (x : G.Stmt) (t : G.Tables) (b : Bool) (m : G.Msg) (e : Fin G.μ → G.Ch)
     (s : G.SimRand) : G.Answer × (G.Tables × Bool) :=
-  programOut t b m (G.simulate x m e s)
+  traceOut t b m (G.simTrace t.lookup x m e s)
 
 variable (G) in
 /-- Uniform values for the entries of an attempt followed by an independent uniform
@@ -641,20 +760,29 @@ end Games
 
 section EffLemmas
 
-variable {μ : ℕ} {K C : Type} (look : K → Option C) (key : (Fin μ → C) → Fin μ → K)
-  (hk : ∀ (v v' : Fin μ → C) (i : Fin μ), (∀ j, j < i → v j = v' j) → key v i = key v' i)
+variable {μ : ℕ} {K C : Type} (look : Fin μ → K → Option C) (key : (Fin μ → C) → Fin μ → K)
+
+/-- When no oracle is defined at the points of the attempt, its values are `e`. -/
+theorem effVec_of_forall_none (e : Fin μ → C) (h : ∀ (v : Fin μ → C) i, look i (key v i) = none) :
+    effVec look key e = e := by
+  funext i
+  change effVal look key e i = e i
+  rw [effVal, h]
+  rfl
+
+variable (hk : ∀ (v v' : Fin μ → C) (i : Fin μ), (∀ j, j < i → v j = v' j) → key v i = key v' i)
   (e : Fin μ → C)
 
 include hk in
 theorem effVal_eq (i : Fin μ) :
-    effVal look key e i = (look (key (effVec look key e) i)).getD (e i) := by
+    effVal look key e i = (look i (key (effVec look key e) i)).getD (e i) := by
   rw [effVal]
   congr 2
   exact hk _ _ i fun j hj => by simp [hj, effVec]
 
 include hk in
 /-- The values of an attempt are the only solution of their defining equations. -/
-theorem effVec_unique (v : Fin μ → C) (hv : ∀ i, v i = (look (key v i)).getD (e i)) :
+theorem effVec_unique (v : Fin μ → C) (hv : ∀ i, v i = (look i (key v i)).getD (e i)) :
     v = effVec look key e := by
   have h : ∀ n, ∀ i : Fin μ, i.val < n → v i = effVec look key e i := by
     intro n
@@ -672,13 +800,13 @@ theorem effVec_unique (v : Fin μ → C) (hv : ∀ i, v i = (look (key v i)).get
 
 include hk in
 /-- When no point of the attempt with the values `e` is defined, its values are `e`. -/
-theorem effVec_of_none (h : ∀ i, look (key e i) = none) : effVec look key e = e :=
+theorem effVec_of_none (h : ∀ i, look i (key e i) = none) : effVec look key e = e :=
   (effVec_unique look key hk e e fun i => by rw [h i]; rfl).symm
 
 include hk in
 /-- When no point of the attempt is defined, its values are `e`, and no point of the
 attempt with the values `e` is defined. -/
-theorem effVec_eq_of_none (h : ∀ i, look (key (effVec look key e) i) = none) :
+theorem effVec_eq_of_none (h : ∀ i, look i (key (effVec look key e) i) = none) :
     effVec look key e = e := by
   funext i
   change effVal look key e i = e i
@@ -688,14 +816,46 @@ theorem effVec_eq_of_none (h : ∀ i, look (key (effVec look key e) i) = none) :
 include hk in
 /-- Two oracles that agree at the points of the attempt against the first give the
 same values. -/
-theorem effVec_congr (look' : K → Option C)
-    (h : ∀ i, look' (key (effVec look key e) i) = look (key (effVec look key e) i)) :
+theorem effVec_congr (look' : Fin μ → K → Option C)
+    (h : ∀ i, look' i (key (effVec look key e) i) = look i (key (effVec look key e) i)) :
     effVec look' key e = effVec look key e :=
   (effVec_unique look' key hk e _ fun i => by
     rw [h i]
     exact effVal_eq look key hk e i).symm
 
 end EffLemmas
+
+/-! ## Attempts without evaluated entries -/
+
+namespace Protocol
+
+variable {G : Protocol}
+
+/-- When every entry is programmed, the values of an attempt are the sampled ones. -/
+theorem vals_of_ev_false (hev : ∀ i, G.ev i = false) (look : G.Key → Option G.Ch)
+    (x : G.Stmt) (w : G.Wit) (m : G.Msg) (r : G.Rand) (e : Fin G.μ → G.Ch) :
+    G.vals look x w m r e = e :=
+  effVec_of_forall_none _ _ e fun _ i => by simp [hev i]
+
+/-- When every entry is programmed, an attempt has no evaluated public entry. -/
+theorem evEntries_of_ev_false (hev : ∀ i, G.ev i = false) (x : G.Stmt) (w : G.Wit)
+    (m : G.Msg) (r : G.Rand) (v : Fin G.μ → G.Ch) : G.evEntries x w m r v = [] := by
+  simp [evEntries, entries, hev]
+
+/-- When the simulator queries no point, its values are the sampled ones. -/
+theorem simVals_of_simKey_none {x : G.Stmt} {m : G.Msg} {s : G.SimRand}
+    (h : ∀ v i, G.simKey x m s v i = none) (look : G.Key → Option G.Ch) (e : Fin G.μ → G.Ch) :
+    G.simVals look x m s e = e :=
+  effVec_of_forall_none _ _ e fun v i => by simp [h v i]
+
+/-- When the simulator queries no point, its trace is the output of `simulate` on the
+sampled values. -/
+theorem simTrace_of_simKey_none {x : G.Stmt} {m : G.Msg} {s : G.SimRand}
+    (h : ∀ v i, G.simKey x m s v i = none) (look : G.Key → Option G.Ch) (e : Fin G.μ → G.Ch) :
+    G.simTrace look x m e s = ([], G.simulate x m e s) := by
+  simp [simTrace, simVals_of_simKey_none h, h]
+
+end Protocol
 
 /-! ## Entry lists -/
 
@@ -748,6 +908,15 @@ theorem lookupIn_append_singleton_of_ne (l : List (K × C)) (p : K × C) {k : K}
   | none =>
     have hne : decide (p.1 = k) = false := decide_eq_false fun h => hk h.symm
     simp [List.findIdx?_cons, hne]
+
+theorem lookupIn_append_of_notMem_right (l l' : List (K × C)) {k : K}
+    (hk : k ∉ l'.map Prod.fst) : lookupIn (l ++ l') k = lookupIn l k := by
+  induction l' generalizing l with
+  | nil => rw [List.append_nil]
+  | cons p l' ih =>
+    simp only [List.map_cons, List.mem_cons, not_or] at hk
+    rw [show l ++ p :: l' = (l ++ [p]) ++ l' by simp, ih _ hk.2,
+      lookupIn_append_singleton_of_ne _ _ hk.1]
 
 end Lists
 
@@ -830,7 +999,85 @@ theorem lookupAll_addRejs_of_notMem (l : List (G.Key × G.Ch)) (t : G.Tables) {k
   rw [show (t.addRejs l).rej = l ++ t.rej from rfl, lookupIn_append_of_notMem _ _ hk]
   rfl
 
+theorem lookupAll_of_rej_nil {t : G.Tables} (ht : t.rej = []) (k : G.Key) :
+    t.lookupAll k = t.lookup k := by
+  unfold Tables.lookupAll
+  rw [ht, lookupIn_nil]
+  cases t.lookup k <;> rfl
+
+theorem lookupAll_eq_lookup {t : G.Tables} {k : G.Key}
+    (h : (t.lookup k).isNone → lookupIn t.rej k = none) : t.lookupAll k = t.lookup k := by
+  unfold Tables.lookupAll
+  cases hl : t.lookup k with
+  | some _ => rfl
+  | none => rw [h (by rw [hl]; rfl)]; rfl
+
+theorem lookup_isSome_mem_keys {t : G.Tables} {k : G.Key} (h : (t.lookup k).isSome) :
+    k ∈ t.keys := by
+  have := lookup_isSome_mem h
+  simp only [Tables.keys, List.map_append, List.mem_append] at this ⊢
+  exact Or.inl this
+
+theorem lookup_hashAll_of_notMem (t : G.Tables) (l : List (G.Key × G.Ch)) {k : G.Key}
+    (hk : k ∉ l.map Prod.fst) : (hashAll t l).lookup k = t.lookup k := by
+  have hk' : k ∉ (l.filter fun p => (t.lookup p.1).isNone).map Prod.fst := fun h => hk <| by
+    obtain ⟨p, hp, rfl⟩ := List.mem_map.mp h
+    exact List.mem_map.mpr ⟨p, (List.mem_filter.mp hp).1, rfl⟩
+  change (lookupIn t.prog k).or
+      (lookupIn (t.hash ++ l.filter fun p => (t.lookup p.1).isNone) k) =
+    (lookupIn t.prog k).or (lookupIn t.hash k)
+  rw [lookupIn_append_of_notMem_right _ _ hk']
+
+theorem mem_entries {x : G.Stmt} {w : G.Wit} {m : G.Msg} {r : G.Rand} {v : Fin G.μ → G.Ch}
+    {p : Fin G.μ → Bool} {q : G.Key × G.Ch} (hq : q ∈ G.entries x w m r v p) :
+    ∃ i, p i = true ∧ q = (G.key x w m r v i, v i) := by
+  simp only [Protocol.entries, List.mem_map, List.mem_filter, List.mem_finRange, true_and] at hq
+  obtain ⟨i, hi, rfl⟩ := hq
+  exact ⟨i, hi, rfl⟩
+
+theorem mem_entries_of {x : G.Stmt} {w : G.Wit} {m : G.Msg} {r : G.Rand} {v : Fin G.μ → G.Ch}
+    {p : Fin G.μ → Bool} {i : Fin G.μ} (hi : p i = true) :
+    (G.key x w m r v i, v i) ∈ G.entries x w m r v p :=
+  List.mem_map.mpr ⟨i, List.mem_filter.mpr ⟨List.mem_finRange i, hi⟩, rfl⟩
+
+/-- The evaluated public, programmed public and hidden entries of an attempt are
+`μ` entries in all. -/
+theorem length_entries (x : G.Stmt) (w : G.Wit) (m : G.Msg) (r : G.Rand)
+    (v : Fin G.μ → G.Ch) :
+    (G.evEntries x w m r v).length + (G.pubEntries x w m r v).length +
+      (G.hidEntries x w m r v).length = G.μ := by
+  simp only [Protocol.evEntries, Protocol.pubEntries, Protocol.hidEntries, Protocol.entries,
+    List.length_map]
+  have h1 := List.length_eq_length_filter_add (G.pub x w m r v) (l := List.finRange G.μ)
+  have h2 := List.length_eq_length_filter_add G.ev
+    (l := (List.finRange G.μ).filter (G.pub x w m r v))
+  simp only [List.filter_filter, List.length_finRange] at h1 h2
+  omega
+
+/-- The point of a programmed entry is not the point of an evaluated public entry. -/
+theorem key_notMem_evEntries {x : G.Stmt} {w : G.Wit} {m : G.Msg} {r : G.Rand}
+    {v : Fin G.μ → G.Ch} {i : Fin G.μ} (hi : G.ev i = false) :
+    G.key x w m r v i ∉ (G.evEntries x w m r v).map Prod.fst := by
+  intro h
+  obtain ⟨p, hp, hpk⟩ := List.mem_map.mp h
+  obtain ⟨j, hj, rfl⟩ := mem_entries hp
+  obtain rfl := G.key_inj x w m r v j i hpk
+  simp [hi] at hj
+
 end Protocol
+
+theorem le_traceTables (t : G.Tables) (m : G.Msg) (tr : G.Trace) : t.Le (traceTables t m tr) :=
+  ⟨List.prefix_append _ _, List.prefix_append _ _, List.prefix_refl _⟩
+
+theorem size_traceTables_le (t : G.Tables) (m : G.Msg) (tr : G.Trace) :
+    (traceTables t m tr).hash.length + (traceTables t m tr).prog.length ≤
+      t.hash.length + t.prog.length + tr.1.length + tr.2.1.length := by
+  simp only [traceTables, hashAll, List.length_append]
+  have := List.length_filter_le (fun p : G.Key × G.Ch => (t.lookup p.1).isNone) tr.1
+  omega
+
+theorem rej_traceTables (t : G.Tables) (m : G.Msg) (tr : G.Trace) :
+    (traceTables t m tr).rej = t.rej := rfl
 
 theorem sampleVec_bind {β γ δ : Type} [Fintype β] [Nonempty β]
     (F : (Fin G.μ → G.Ch) → β → γ) (g : γ → PMF δ) :
@@ -934,7 +1181,17 @@ theorem simStep_flag (x₀ : G.Stmt) (t : G.Tables) (d : G.Query)
   | inr m =>
     simp only [toOracle, simStep, Step.toPMF] at hx
     obtain ⟨e, s, rfl⟩ := mem_support_sampleVec hx
-    exact programAll_flag t _
+    exact programAll_flag _ _
+
+theorem hashAll_nil (t : G.Tables) : hashAll t [] = t := by
+  simp [hashAll]
+
+/-- When the simulator queries no point, a simulated signing attempt programs the
+output of `simulate` on the sampled values. -/
+theorem simSignOut_of_simKey_none {x₀ : G.Stmt} {m : G.Msg} {s : G.SimRand}
+    (h : ∀ v i, G.simKey x₀ m s v i = none) (t : G.Tables) (b : Bool) (e : Fin G.μ → G.Ch) :
+    simSignOut x₀ t b m e s = programOut t b m (G.simulate x₀ m e s) := by
+  simp only [simSignOut, traceOut, Protocol.simTrace_of_simKey_none h, hashAll_nil]
 
 end Transitions
 
@@ -945,78 +1202,154 @@ section RealSign
 variable {G : Protocol} (x : G.Stmt) (w : G.Wit) (t : G.Tables) (b : Bool) (m : G.Msg)
   (e : Fin G.μ → G.Ch) (r : G.Rand)
 
-/-- An attempt none of whose points is defined records its public and hidden
-entries and keeps the flag. -/
-theorem realSignOut_of_none (h : ∀ i, t.lookupAll (G.key x w m r e i) = none) :
-    realSignOut x w t b m e r = (.inr (G.sign x w m r e),
-      ({ t with
-          prog := t.prog ++ G.pubEntries x w m r e
-          signed := t.signed ++ [m]
-          rej := t.rej ++ G.hidEntries x w m r e }, b)) := by
-  have hv : effVec t.lookupAll (G.key x w m r) e = e :=
-    effVec_of_none _ _ (G.key_causal x w m r) e h
-  simp [realSignOut, hv, h, Protocol.pubEntries, Protocol.hidEntries]
+/-- An attempt whose programmed and hidden entries are at undefined points and whose
+evaluated public entries are not at the points of hidden entries only takes the
+values against the visible oracle, records its entries and keeps the flag. -/
+theorem realSignOut_of_fresh
+    (h1 : ∀ i, G.flagging x w m r (G.vals t.lookup x w m r e) i = true →
+      t.lookupAll (G.key x w m r (G.vals t.lookup x w m r e) i) = none)
+    (h2 : ∀ i, G.flagging x w m r (G.vals t.lookup x w m r e) i = false →
+      (t.lookup (G.key x w m r (G.vals t.lookup x w m r e) i)).isNone →
+        lookupIn t.rej (G.key x w m r (G.vals t.lookup x w m r e) i) = none) :
+    realSignOut x w t b m e r = (.inr (G.sign x w m r (G.vals t.lookup x w m r e)),
+      ({ traceTables t m (G.trace x w m r (G.vals t.lookup x w m r e)) with
+          rej := t.rej ++ G.hidEntries x w m r (G.vals t.lookup x w m r e) }, b)) := by
+  have hr : G.honestVals t.lookupAll x w m r e = G.vals t.lookup x w m r e := by
+    refine effVec_congr _ _ (G.key_causal x w m r) e _ fun i => ?_
+    change t.lookupAll (G.key x w m r (G.vals t.lookup x w m r e) i) =
+      (if G.ev i then t.lookup else fun _ => none) (G.key x w m r (G.vals t.lookup x w m r e) i)
+    cases hev : G.ev i
+    · exact h1 i (by simp [Protocol.flagging, hev])
+    · simp only [if_true]
+      cases hf : G.flagging x w m r (G.vals t.lookup x w m r e) i
+      · exact Protocol.lookupAll_eq_lookup (h2 i hf)
+      · rw [h1 i hf, Protocol.lookup_eq_none_of_lookupAll (h1 i hf)]
+  set v := G.vals t.lookup x w m r e
+  have hp : (G.pubEntries x w m r v).filter (fun p => (t.lookupAll p.1).isNone) =
+      G.pubEntries x w m r v := List.filter_eq_self.mpr fun p hp => by
+    obtain ⟨i, hi, rfl⟩ := Protocol.mem_entries hp
+    have hf : G.flagging x w m r v i = true := by
+      simp only [Bool.and_eq_true, Bool.not_eq_eq_eq_not, Bool.not_true] at hi
+      simp [Protocol.flagging, hi.1]
+    simp [h1 i hf]
+  have hh : (G.hidEntries x w m r v).filter (fun p => (t.lookupAll p.1).isNone) =
+      G.hidEntries x w m r v := List.filter_eq_self.mpr fun p hp => by
+    obtain ⟨i, hi, rfl⟩ := Protocol.mem_entries hp
+    have hf : G.flagging x w m r v i = true := by simp [Protocol.flagging, hi]
+    simp [h1 i hf]
+  have hany : ((List.finRange G.μ).any fun i =>
+      if G.flagging x w m r v i then (t.lookupAll (G.key x w m r v i)).isSome
+      else (t.lookup (G.key x w m r v i)).isNone &&
+        (lookupIn t.rej (G.key x w m r v i)).isSome) = false := by
+    refine List.any_eq_false.mpr fun i _ => ?_
+    cases hf : G.flagging x w m r v i
+    · simp only [Bool.false_eq_true, if_false, Bool.and_eq_true, not_and]
+      intro hn
+      simp [h2 i hf hn]
+    · simp [h1 i hf]
+  simp only [realSignOut, hr]
+  rw [hp, hh, hany, Bool.or_false]
+  rfl
 
-/-- An attempt one of whose points is defined sets the flag. -/
-theorem realSignOut_flag_of_some (h : ∃ i, (t.lookupAll (G.key x w m r e i)).isSome) :
-    (realSignOut x w t b m e r).2.2 = true := by
-  simp only [realSignOut, Bool.or_eq_true, List.any_eq_true, List.mem_finRange, true_and]
-  refine Or.inr (by_contra fun hn => ?_)
-  have hn' : ∀ i, t.lookupAll (G.key x w m r (effVec t.lookupAll (G.key x w m r) e) i) = none :=
-    fun i => Option.not_isSome_iff_eq_none.mp fun hs => hn ⟨i, hs⟩
-  have hv := effVec_eq_of_none _ _ (G.key_causal x w m r) e hn'
-  obtain ⟨i, hi⟩ := h
-  rw [hv] at hn'
-  rw [hn' i] at hi
-  exact Bool.false_ne_true hi
+/-- A real signing attempt that leaves the flag cleared starts with the flag cleared
+and satisfies the hypotheses of `realSignOut_of_fresh`. -/
+theorem fresh_of_realSignOut (h : (realSignOut x w t b m e r).2.2 = false) :
+    b = false ∧
+      (∀ i, G.flagging x w m r (G.vals t.lookup x w m r e) i = true →
+        t.lookupAll (G.key x w m r (G.vals t.lookup x w m r e) i) = none) ∧
+      (∀ i, G.flagging x w m r (G.vals t.lookup x w m r e) i = false →
+        (t.lookup (G.key x w m r (G.vals t.lookup x w m r e) i)).isNone →
+          lookupIn t.rej (G.key x w m r (G.vals t.lookup x w m r e) i) = none) := by
+  simp only [realSignOut, Bool.or_eq_false_iff, List.any_eq_false, List.mem_finRange,
+    true_implies] at h
+  obtain ⟨hb, h⟩ := h
+  set v := G.honestVals t.lookupAll x w m r e with hv
+  have c1 : ∀ i, G.flagging x w m r v i = true → t.lookupAll (G.key x w m r v i) = none :=
+    fun i hf => by
+      have := h i
+      rw [if_pos hf] at this
+      simpa using this
+  have c2 : ∀ i, G.flagging x w m r v i = false → (t.lookup (G.key x w m r v i)).isNone →
+      lookupIn t.rej (G.key x w m r v i) = none := fun i hf hn => by
+    have := h i
+    rw [if_neg (by simp [hf])] at this
+    simpa [hn] using this
+  have hr : G.vals t.lookup x w m r e = v := by
+    refine effVec_congr _ _ (G.key_causal x w m r) e _ fun i => ?_
+    change (if G.ev i then t.lookup else fun _ => none) (G.key x w m r v i) =
+      t.lookupAll (G.key x w m r v i)
+    cases hev : G.ev i
+    · exact (c1 i (by simp [Protocol.flagging, hev])).symm
+    · simp only [if_true]
+      cases hf : G.flagging x w m r v i
+      · exact (Protocol.lookupAll_eq_lookup (c2 i hf)).symm
+      · rw [c1 i hf, Protocol.lookup_eq_none_of_lookupAll (c1 i hf)]
+  rw [hr]
+  exact ⟨hb, c1, c2⟩
 
 /-- A real signing attempt extends the tables by at most `μ` entries. -/
 theorem realSignOut_support :
     t.Le (realSignOut x w t b m e r).2.1 ∧
       (realSignOut x w t b m e r).2.1.size ≤ t.size + G.μ := by
-  refine ⟨⟨List.prefix_append _ _, List.prefix_refl _, List.prefix_append _ _⟩, ?_⟩
-  simp only [realSignOut, Protocol.Tables.size, List.length_append, List.length_map]
-  set v := effVec t.lookupAll (G.key x w m r) e
-  set fr := (List.finRange G.μ).filter fun i => (t.lookupAll (G.key x w m r v i)).isNone
-  have h1 := List.length_eq_length_filter_add (G.pub x w m r v) (l := fr)
-  have h2 : fr.length ≤ G.μ := (List.length_filter_le _ _).trans (List.length_finRange).le
+  refine ⟨⟨List.prefix_append _ _, List.prefix_append _ _, List.prefix_append _ _⟩, ?_⟩
+  simp only [realSignOut, hashAll, Protocol.Tables.size, List.length_append]
+  set v := G.honestVals t.lookupAll x w m r e
+  have h0 := Protocol.length_entries x w m r v
+  have h1 := List.length_filter_le (fun p : G.Key × G.Ch => (t.lookup p.1).isNone)
+    (G.evEntries x w m r v)
+  have h2 := List.length_filter_le (fun p : G.Key × G.Ch => (t.lookupAll p.1).isNone)
+    (G.pubEntries x w m r v)
+  have h3 := List.length_filter_le (fun p : G.Key × G.Ch => (t.lookupAll p.1).isNone)
+    (G.hidEntries x w m r v)
   omega
 
 /-- Every point of a real signing attempt is defined after it. -/
 theorem realSignOut_key (i : Fin G.μ) :
-    G.key x w m r (effVec t.lookupAll (G.key x w m r) e) i ∈
+    G.key x w m r (G.honestVals t.lookupAll x w m r e) i ∈
       (realSignOut x w t b m e r).2.1.keys := by
-  set v := effVec t.lookupAll (G.key x w m r) e
+  set v := G.honestVals t.lookupAll x w m r e
   cases hl : t.lookupAll (G.key x w m r v i) with
   | some _ =>
     exact (realSignOut_support x w t b m e r).1.keys_subset
       (Protocol.lookupAll_isSome_mem (by rw [hl]; rfl))
   | none =>
     refine Protocol.Tables.mem_keys.mpr ⟨(G.key x w m r v i, v i), ?_, rfl⟩
-    have hf : i ∈ (List.finRange G.μ).filter fun i => (t.lookupAll (G.key x w m r v i)).isNone :=
-      List.mem_filter.mpr ⟨List.mem_finRange i, by simp [hl]⟩
     cases hp : G.pub x w m r v i
-    · refine Or.inr (Or.inr (List.mem_append_right _ (List.mem_map.mpr ⟨i, ?_, rfl⟩)))
-      exact List.mem_filter.mpr ⟨hf, by simpa using hp⟩
-    · refine Or.inl (List.mem_append_right _ (List.mem_map.mpr ⟨i, ?_, rfl⟩))
-      exact List.mem_filter.mpr ⟨hf, hp⟩
+    · refine Or.inr (Or.inr (List.mem_append_right _ (List.mem_filter.mpr
+        ⟨Protocol.mem_entries_of (by rw [Bool.not_eq_true']; exact hp), by simp [hl]⟩)))
+    · cases hev : G.ev i
+      · refine Or.inl (List.mem_append_right _ (List.mem_filter.mpr
+          ⟨Protocol.mem_entries_of (by simp only [hev, Bool.not_false, Bool.true_and]; exact hp),
+            by simp [hl]⟩))
+      · refine Or.inr (Or.inl (List.mem_append_right _ (List.mem_filter.mpr
+          ⟨Protocol.mem_entries_of (by simp only [hev, Bool.true_and]; exact hp), ?_⟩)))
+        simp [Protocol.lookup_eq_none_of_lookupAll hl]
 
 /-- A signing attempt none of whose points is among the entries `l` commutes with
 adding `l` to the hidden entries. -/
 theorem realSignOut_addRejs (l : List (G.Key × G.Ch))
-    (hk : ∀ i, G.key x w m r (effVec t.lookupAll (G.key x w m r) e) i ∉ l.map Prod.fst) :
+    (hk : ∀ i, G.key x w m r (G.honestVals t.lookupAll x w m r e) i ∉ l.map Prod.fst) :
     realSignOut x w (t.addRejs l) b m e r =
       Prod.map id (Prod.map (Protocol.Tables.addRejs l) id) (realSignOut x w t b m e r) := by
-  have hv : effVec (t.addRejs l).lookupAll (G.key x w m r) e =
-      effVec t.lookupAll (G.key x w m r) e :=
+  have hv : G.honestVals (t.addRejs l).lookupAll x w m r e =
+      G.honestVals t.lookupAll x w m r e :=
     effVec_congr _ _ (G.key_causal x w m r) e _ fun i =>
       Protocol.lookupAll_addRejs_of_notMem l t (hk i)
-  have hl : ∀ i, (t.addRejs l).lookupAll
-      (G.key x w m r (effVec t.lookupAll (G.key x w m r) e) i) =
-      t.lookupAll (G.key x w m r (effVec t.lookupAll (G.key x w m r) e) i) :=
+  set v := G.honestVals t.lookupAll x w m r e
+  have hl : ∀ i, (t.addRejs l).lookupAll (G.key x w m r v i) = t.lookupAll (G.key x w m r v i) :=
     fun i => Protocol.lookupAll_addRejs_of_notMem l t (hk i)
-  simp only [realSignOut, hv, hl]
-  simp [Protocol.Tables.addRejs]
+  have hr : ∀ i, lookupIn (t.addRejs l).rej (G.key x w m r v i) =
+      lookupIn t.rej (G.key x w m r v i) :=
+    fun i => lookupIn_append_of_notMem _ _ (hk i)
+  have hf : ∀ p : Fin G.μ → Bool,
+      (G.entries x w m r v p).filter (fun q => ((t.addRejs l).lookupAll q.1).isNone) =
+        (G.entries x w m r v p).filter (fun q => (t.lookupAll q.1).isNone) := fun p =>
+    List.filter_congr fun q hq => by
+      obtain ⟨i, _, rfl⟩ := Protocol.mem_entries hq
+      rw [hl i]
+  simp only [realSignOut, hv, hl, hr, Protocol.pubEntries, Protocol.hidEntries, hf]
+  simp only [Protocol.Tables.addRejs, hashAll, Prod.map, id, List.append_assoc]
+  rfl
 
 end RealSign
 
@@ -1209,7 +1542,7 @@ theorem run_real_addRejs_sign_le (xw : G.Stmt × G.Wit) (l : List (G.Key × G.Ch
     PMF.toOuterMeasure_bind_apply]
   refine ENNReal.tsum_le_tsum fun e => mul_le_mul_right
     (ENNReal.tsum_le_tsum fun r => mul_le_mul_right ?_ _) _
-  by_cases hc : ∃ i, G.key xw.1 xw.2 m r (effVec t.lookupAll (G.key xw.1 xw.2 m r) e) i ∈
+  by_cases hc : ∃ i, G.key xw.1 xw.2 m r (G.honestVals t.lookupAll xw.1 xw.2 m r e) i ∈
       l.map Prod.fst
   · obtain ⟨i, hi⟩ := hc
     obtain ⟨p, hp, hpk⟩ := List.mem_map.mp hi
@@ -1290,145 +1623,168 @@ theorem toOuterMeasure_mem_le_sum {β K : Type} (p : PMF β) (L : β → List K)
         refine Finset.sum_congr rfl fun j _ => ?_
         rw [← PMF.toOuterMeasure_map_apply, PMF.toOuterMeasure_apply_singleton]
 
-/-- **Guessing the point of an entry.** For a pair with key bound `γ` and runs `R v`
-indexed by views whose final tables have at most `N` points on the views
-`guessView`, the expectation over the randomness of the probability that the point
-of entry `i` is defined at the end of `R (guessView …)` is at most `N·γ`. -/
-theorem tsum_guess_le {γ : ℝ≥0∞} (x : G.Stmt) (w : G.Wit) (hγ : G.KeyBoundAt x w γ)
-    (m : G.Msg) (e : Fin G.μ → G.Ch) (i : Fin G.μ) (R : G.View → PMF (α × (G.Tables × Bool)))
-    (N : ℕ) (hN : ∀ r, ∀ y ∈ (R (G.guessView x w m r e i)).support, y.2.1.keys.length ≤ N) :
-    ∑' r, PMF.uniformOfFintype G.Rand r *
-        (R (G.guessView x w m r e i)).toOuterMeasure {y | G.key x w m r e i ∈ y.2.1.keys} ≤
-      N * γ := by
-  obtain ⟨k₀⟩ : Nonempty G.Key := ⟨G.key x w m (Classical.arbitrary G.Rand) e i⟩
+/-- A finite sum inside two weighted sums is the finite sum of the weighted sums. -/
+theorem tsum_mul_tsum_mul_finsetSum {β γ ι : Type} (p : β → ℝ≥0∞) (p' : γ → ℝ≥0∞)
+    (s : Finset ι) (F : ι → β → γ → ℝ≥0∞) :
+    ∑' b, p b * ∑' c, p' c * ∑ j ∈ s, F j b c = ∑ j ∈ s, ∑' b, p b * ∑' c, p' c * F j b c := by
+  have h1 : ∀ b, ∑' c, p' c * ∑ j ∈ s, F j b c = ∑ j ∈ s, ∑' c, p' c * F j b c := fun b => by
+    simp only [Finset.mul_sum]
+    exact Summable.tsum_finsetSum fun _ _ => ENNReal.summable
+  calc _ = ∑' b, ∑ j ∈ s, p b * ∑' c, p' c * F j b c :=
+        tsum_congr fun b => by rw [h1 b, Finset.mul_sum]
+    _ = _ := Summable.tsum_finsetSum fun _ _ => ENNReal.summable
+
+/-- **Guessing the points of an attempt.** For a pair with key bound `Γ` and runs
+`R tr` indexed by traces whose final tables have at most `N` points on the traces
+`guessView`, the expectation over the values and the randomness of the number of
+programmed or hidden entries whose point is defined at the end of
+`R (guessView …)` is at most `N·Γ`. -/
+theorem tsum_guess_le {Γ : ℝ≥0∞} (x : G.Stmt) (w : G.Wit) (hΓ : G.KeyBoundAt x w Γ)
+    (m : G.Msg) (look : G.Key → Option G.Ch) (R : G.Trace → PMF (α × (G.Tables × Bool)))
+    (N : ℕ) (hN : ∀ e r i, ∀ y ∈ (R (G.guessView look x w m r e i)).support,
+      y.2.1.keys.length ≤ N) :
+    ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e * ∑' r, PMF.uniformOfFintype G.Rand r *
+      ∑ i, (if G.flagging x w m r (G.vals look x w m r e) i then
+        (R (G.guessView look x w m r e i)).toOuterMeasure
+          {y | G.key x w m r (G.vals look x w m r e) i ∈ y.2.1.keys} else 0) ≤ N * Γ := by
+  rcases isEmpty_or_nonempty G.Key with hK | ⟨⟨k₀⟩⟩
+  · have : IsEmpty (Fin G.μ) := ⟨fun i => hK.false (G.key x w m (Classical.arbitrary _)
+      (Classical.arbitrary _) i)⟩
+    simp
   -- the guess of the `j`-th point of the final tables
-  let Q : ℕ → G.View → PMF G.Key := fun j v => (R v).map fun y => y.2.1.keys.getD j k₀
-  have h1 : ∀ r, (R (G.guessView x w m r e i)).toOuterMeasure
-      {y | G.key x w m r e i ∈ y.2.1.keys} ≤
-        ∑ j ∈ Finset.range N, Q j (G.guessView x w m r e i) (G.key x w m r e i) := fun r =>
-    toOuterMeasure_mem_le_sum (R (G.guessView x w m r e i)) (fun y => y.2.1.keys) N k₀
-      (G.key x w m r e i) (hN r)
-  have h2 : ∀ j ∈ Finset.range N, ∑' r, PMF.uniformOfFintype G.Rand r *
-      Q j (G.guessView x w m r e i) (G.key x w m r e i) ≤ γ := fun j _ => hγ m e i (Q j)
-  calc _ ≤ ∑' r, PMF.uniformOfFintype G.Rand r *
-          ∑ j ∈ Finset.range N, Q j (G.guessView x w m r e i) (G.key x w m r e i) :=
-        ENNReal.tsum_le_tsum fun r => mul_le_mul_right (h1 r) _
-    _ = ∑ j ∈ Finset.range N, ∑' r, PMF.uniformOfFintype G.Rand r *
-          Q j (G.guessView x w m r e i) (G.key x w m r e i) := by
-        simp only [Finset.mul_sum]
-        exact Summable.tsum_finsetSum fun _ _ => ENNReal.summable
-    _ ≤ ∑ _j ∈ Finset.range N, γ := Finset.sum_le_sum h2
-    _ = N * γ := by rw [Finset.sum_const, Finset.card_range, nsmul_eq_mul]
+  let Q : ℕ → G.Trace → PMF G.Key := fun j tr => (R tr).map fun y => y.2.1.keys.getD j k₀
+  have h1 : ∀ e r i, (if G.flagging x w m r (G.vals look x w m r e) i then
+      (R (G.guessView look x w m r e i)).toOuterMeasure
+        {y | G.key x w m r (G.vals look x w m r e) i ∈ y.2.1.keys} else 0) ≤
+      ∑ j ∈ Finset.range N, (if G.flagging x w m r (G.vals look x w m r e) i then
+        Q j (G.guessView look x w m r e i) (G.key x w m r (G.vals look x w m r e) i)
+        else 0) := fun e r i => by
+    split_ifs
+    · exact toOuterMeasure_mem_le_sum (R (G.guessView look x w m r e i)) (fun y => y.2.1.keys)
+        N k₀ (G.key x w m r (G.vals look x w m r e) i) (hN e r i)
+    · exact zero_le
+  calc _ ≤ ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e * ∑' r, PMF.uniformOfFintype G.Rand r *
+        ∑ j ∈ Finset.range N, ∑ i, (if G.flagging x w m r (G.vals look x w m r e) i then
+          Q j (G.guessView look x w m r e i) (G.key x w m r (G.vals look x w m r e) i)
+          else 0) := by
+        refine ENNReal.tsum_le_tsum fun e => mul_le_mul_right
+          (ENNReal.tsum_le_tsum fun r => mul_le_mul_right ?_ _) _
+        rw [Finset.sum_comm]
+        exact Finset.sum_le_sum fun i _ => h1 e r i
+    _ = ∑ j ∈ Finset.range N, ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e *
+          ∑' r, PMF.uniformOfFintype G.Rand r * ∑ i,
+            (if G.flagging x w m r (G.vals look x w m r e) i then
+              Q j (G.guessView look x w m r e i) (G.key x w m r (G.vals look x w m r e) i)
+              else 0) := tsum_mul_tsum_mul_finsetSum _ _ _ _
+    _ ≤ ∑ _j ∈ Finset.range N, Γ := Finset.sum_le_sum fun j _ => hΓ m look (Q j)
+    _ = N * Γ := by rw [Finset.sum_const, Finset.card_range, nsmul_eq_mul]
 
-/-- The rest of a real run after a signing attempt on `m` from `t` with the view
-`v`, the flag cleared and the hidden entries left out. -/
+/-- The rest of a real run after a signing attempt on `m` from `t` with the trace
+`tr`, the flag cleared and the hidden entries left out. -/
 noncomputable def contRun (xw : G.Stmt × G.Wit) (k : G.Answer → OracleAdv G.Query G.Answer α)
-    (t : G.Tables) (m : G.Msg) (v : G.View) : PMF (α × (G.Tables × Bool)) :=
-  OracleAdv.run (toOracle (realStep xw)) (k (.inr v.2))
-    ({ t with prog := t.prog ++ v.1, signed := t.signed ++ [m] }, false)
+    (t : G.Tables) (m : G.Msg) (tr : G.Trace) : PMF (α × (G.Tables × Bool)) :=
+  OracleAdv.run (toOracle (realStep xw)) (k (.inr tr.2.2)) (traceTables t m tr, false)
 
-theorem length_pubEntries_le (x : G.Stmt) (w : G.Wit) (m : G.Msg) (r : G.Rand)
-    (e : Fin G.μ → G.Ch) : (G.pubEntries x w m r e).length ≤ G.μ := by
-  simp only [Protocol.pubEntries, List.length_map]
-  exact (List.length_filter_le _ _).trans List.length_finRange.le
-
-theorem length_guessView_le (x : G.Stmt) (w : G.Wit) (m : G.Msg) (r : G.Rand)
-    (e : Fin G.μ → G.Ch) (i : Fin G.μ) : (G.guessView x w m r e i).1.length ≤ G.μ := by
+theorem length_guessView_le (look : G.Key → Option G.Ch) (x : G.Stmt) (w : G.Wit) (m : G.Msg)
+    (r : G.Rand) (e : Fin G.μ → G.Ch) (i : Fin G.μ) :
+    (G.guessView look x w m r e i).1.length + (G.guessView look x w m r e i).2.1.length ≤ G.μ := by
   unfold Protocol.guessView
   split
   · exact Nat.zero_le _
-  · exact length_pubEntries_le x w m r e
-
-/-- The hidden entries of an attempt are at the points of its entries that are not
-public. -/
-theorem mem_hidEntries {x : G.Stmt} {w : G.Wit} {m : G.Msg} {r : G.Rand}
-    {e : Fin G.μ → G.Ch} {p : G.Key × G.Ch} (hp : p ∈ G.hidEntries x w m r e) :
-    ∃ i, G.pub x w m r e i = false ∧ p.1 = G.key x w m r e i := by
-  simp only [Protocol.hidEntries, List.mem_map, List.mem_filter, List.mem_finRange, true_and,
-    Bool.not_eq_true'] at hp
-  obtain ⟨i, hi, rfl⟩ := hp
-  exact ⟨i, hi, rfl⟩
+  · have := Protocol.length_entries x w m r (G.vals look x w m r e)
+    simp only [Protocol.trace, Protocol.view]
+    omega
 
 /-- One signing attempt in the induction of `run_real_flag_le`: the probability
 that the rest of the run sets the flag is at most the bound for the tables after the
-attempt plus, for each entry, the probability that its point is defined at the end
-of the rest of the run from the view `guessView`. -/
-theorem flag_sign_term_le (xw : G.Stmt × G.Wit) {γ : ℝ≥0∞}
+attempt plus, for each programmed or hidden entry, the probability that its point is
+defined at the end of the rest of the run from the trace `guessView`. -/
+theorem flag_sign_term_le (xw : G.Stmt × G.Wit) {Γ : ℝ≥0∞}
     (k : G.Answer → OracleAdv G.Query G.Answer α) (h q : ℕ) (t : G.Tables)
     (ht : t.rej = []) (m : G.Msg) (e : Fin G.μ → G.Ch) (r : G.Rand)
     (ih : ∀ c (t' : G.Tables), t'.rej = [] →
       (OracleAdv.run (toOracle (realStep xw)) (k c) (t', false)).toOuterMeasure
         {y | y.2.2 = true} ≤
-        ((q * G.μ * (t'.hash.length + t'.prog.length + h + G.μ * q) : ℕ) : ℝ≥0∞) * γ) :
+        ((q * (t'.hash.length + t'.prog.length + h + G.μ * q) : ℕ) : ℝ≥0∞) * Γ) :
     (OracleAdv.run (toOracle (realStep xw)) (k (realSignOut xw.1 xw.2 t false m e r).1)
         (realSignOut xw.1 xw.2 t false m e r).2).toOuterMeasure {y | y.2.2 = true} ≤
-      ((q * G.μ * (t.hash.length + t.prog.length + G.μ + h + G.μ * q) : ℕ) : ℝ≥0∞) * γ +
-        ∑ i, (contRun xw k t m (G.guessView xw.1 xw.2 m r e i)).toOuterMeasure
-          {y | G.key xw.1 xw.2 m r e i ∈ y.2.1.keys} := by
-  by_cases hc : ∃ i, (t.lookupAll (G.key xw.1 xw.2 m r e i)).isSome
-  · obtain ⟨i, hi⟩ := hc
+      ((q * (t.hash.length + t.prog.length + G.μ + h + G.μ * q) : ℕ) : ℝ≥0∞) * Γ +
+        ∑ i, (if G.flagging xw.1 xw.2 m r (G.vals t.lookup xw.1 xw.2 m r e) i then
+          (contRun xw k t m (G.guessView t.lookup xw.1 xw.2 m r e i)).toOuterMeasure
+            {y | G.key xw.1 xw.2 m r (G.vals t.lookup xw.1 xw.2 m r e) i ∈ y.2.1.keys}
+          else 0) := by
+  set v := G.vals t.lookup xw.1 xw.2 m r e with hv
+  by_cases hc : ∃ i, G.flagging xw.1 xw.2 m r v i = true ∧
+      (t.lookup (G.key xw.1 xw.2 m r v i)).isSome
+  · obtain ⟨i, hf, hi⟩ := hc
     refine (toOuterMeasure_le_one _ _).trans (le_trans ?_ le_add_self)
-    refine le_trans (le_of_eq ?_) (Finset.single_le_sum (fun _ _ => zero_le)
+    refine le_trans (le_of_eq ?_) (Finset.single_le_sum (f := fun i =>
+      if G.flagging xw.1 xw.2 m r v i then
+        (contRun xw k t m (G.guessView t.lookup xw.1 xw.2 m r e i)).toOuterMeasure
+          {y | G.key xw.1 xw.2 m r v i ∈ y.2.1.keys} else 0) (fun _ _ => zero_le)
       (Finset.mem_univ i))
+    have hg : G.guessView t.lookup xw.1 xw.2 m r e i = ([], [], none) := by
+      simp only [Protocol.guessView, ← hv, hi, Bool.or_true, if_true]
+    simp only [hf, if_true, hg]
     refine (run_real_keys_eq_one xw _ _ _ ?_ _ fun y hy => hy).symm
-    exact (show t.Le { t with prog := t.prog ++ _, signed := t.signed ++ [m] } from
-      ⟨List.prefix_append _ _, List.prefix_refl _, List.prefix_refl _⟩).keys_subset
-      (Protocol.lookupAll_isSome_mem hi)
-  simp only [not_exists, Bool.not_eq_true, Option.isSome_eq_false_iff, Option.isNone_iff_eq_none]
-    at hc
-  rw [realSignOut_of_none _ _ _ _ _ _ _ hc]
-  obtain ⟨hash, prog, signed, rej⟩ := t
-  dsimp only at ht
-  subst ht
-  set T₀ : G.Tables := ⟨hash, prog ++ G.pubEntries xw.1 xw.2 m r e, signed ++ [m], []⟩
-  have hT : ({ (⟨hash, prog, signed, []⟩ : G.Tables) with
-      prog := prog ++ G.pubEntries xw.1 xw.2 m r e
-      signed := signed ++ [m]
-      rej := [] ++ G.hidEntries xw.1 xw.2 m r e } : G.Tables) =
-      T₀.addRejs (G.hidEntries xw.1 xw.2 m r e) := by
-    simp [T₀, Protocol.Tables.addRejs]
+    exact (le_traceTables t m _).keys_subset (Protocol.lookup_isSome_mem_keys hi)
+  simp only [not_exists, not_and, Bool.not_eq_true, Option.isSome_eq_false_iff,
+    Option.isNone_iff_eq_none] at hc
+  rw [realSignOut_of_fresh _ _ _ _ _ _ _
+    (fun i hf => (Protocol.lookupAll_of_rej_nil ht _).trans (hc i hf))
+    (fun i _ _ => by rw [ht]; exact lookupIn_nil _)]
+  set T₀ : G.Tables := traceTables t m (G.trace xw.1 xw.2 m r v)
+  have hT : ({ T₀ with rej := t.rej ++ G.hidEntries xw.1 xw.2 m r v } : G.Tables) =
+      T₀.addRejs (G.hidEntries xw.1 xw.2 m r v) := by
+    simp only [Protocol.Tables.addRejs, T₀, rej_traceTables, ht, List.nil_append,
+      List.append_nil]
   rw [hT]
   refine (run_real_addRejs_flag_le xw _ _ T₀ false).trans ?_
   refine (MeasureTheory.measure_mono (fun y hy => hy)).trans
     ((MeasureTheory.measure_union_le _ _).trans (add_le_add ?_ ?_))
-  · refine (ih _ T₀ rfl).trans (mul_le_mul_of_nonneg_right ?_ zero_le)
-    have := length_pubEntries_le xw.1 xw.2 m r e
-    simp only [T₀, List.length_append]
+  · refine (ih _ T₀ ht).trans (mul_le_mul_of_nonneg_right ?_ zero_le)
+    have h1 : T₀.hash.length + T₀.prog.length ≤ t.hash.length + t.prog.length +
+        (G.trace xw.1 xw.2 m r v).1.length + (G.trace xw.1 xw.2 m r v).2.1.length :=
+      size_traceTables_le t m (G.trace xw.1 xw.2 m r v)
+    have h2 := Protocol.length_entries xw.1 xw.2 m r v
+    simp only [Protocol.trace, Protocol.view] at h1
     exact_mod_cast Nat.mul_le_mul_left _ (by omega)
-  · calc _ ≤ (OracleAdv.run (toOracle (realStep xw)) (k (.inr (G.sign xw.1 xw.2 m r e)))
-            (T₀, false)).toOuterMeasure (⋃ i ∈ Finset.univ.filter
-              (fun i => G.pub xw.1 xw.2 m r e i = false),
-              {y | G.key xw.1 xw.2 m r e i ∈ y.2.1.keys}) := by
+  · calc _ ≤ (contRun xw k t m (G.trace xw.1 xw.2 m r v)).toOuterMeasure
+            (⋃ i ∈ Finset.univ.filter (fun i => G.pub xw.1 xw.2 m r v i = false),
+              {y | G.key xw.1 xw.2 m r v i ∈ y.2.1.keys}) := by
           refine MeasureTheory.measure_mono fun y hy => ?_
           obtain ⟨p, hp, hk⟩ := hy
-          obtain ⟨i, hi, hpk⟩ := mem_hidEntries hp
+          obtain ⟨i, hi, rfl⟩ := Protocol.mem_entries hp
           simp only [Set.mem_iUnion, Finset.mem_filter, Finset.mem_univ, true_and]
-          exact ⟨i, hi, hpk ▸ hk⟩
-      _ ≤ ∑ i ∈ Finset.univ.filter (fun i => G.pub xw.1 xw.2 m r e i = false),
-            (OracleAdv.run (toOracle (realStep xw)) (k (.inr (G.sign xw.1 xw.2 m r e)))
-              (T₀, false)).toOuterMeasure {y | G.key xw.1 xw.2 m r e i ∈ y.2.1.keys} :=
+          exact ⟨i, by simpa using hi, hk⟩
+      _ ≤ ∑ i ∈ Finset.univ.filter (fun i => G.pub xw.1 xw.2 m r v i = false),
+            (contRun xw k t m (G.trace xw.1 xw.2 m r v)).toOuterMeasure
+              {y | G.key xw.1 xw.2 m r v i ∈ y.2.1.keys} :=
           MeasureTheory.measure_biUnion_finset_le _ _
-      _ = ∑ i ∈ Finset.univ.filter (fun i => G.pub xw.1 xw.2 m r e i = false),
-            (contRun xw k ⟨hash, prog, signed, []⟩ m
-              (G.guessView xw.1 xw.2 m r e i)).toOuterMeasure
-              {y | G.key xw.1 xw.2 m r e i ∈ y.2.1.keys} := by
+      _ = ∑ i ∈ Finset.univ.filter (fun i => G.pub xw.1 xw.2 m r v i = false),
+            (if G.flagging xw.1 xw.2 m r v i then
+              (contRun xw k t m (G.guessView t.lookup xw.1 xw.2 m r e i)).toOuterMeasure
+                {y | G.key xw.1 xw.2 m r v i ∈ y.2.1.keys} else 0) := by
           refine Finset.sum_congr rfl fun i hi => ?_
-          have hi' : G.pub xw.1 xw.2 m r e i = false := (Finset.mem_filter.mp hi).2
-          simp only [contRun, Protocol.guessView, hi', Protocol.view]
-          rfl
+          have hi' : G.pub xw.1 xw.2 m r v i = false := (Finset.mem_filter.mp hi).2
+          have hf : G.flagging xw.1 xw.2 m r v i = true := by simp [Protocol.flagging, hi']
+          have hg : G.guessView t.lookup xw.1 xw.2 m r e i = G.trace xw.1 xw.2 m r v := by
+            simp only [Protocol.guessView, ← hv, hi', hc i hf, Option.isSome_none,
+              Bool.or_false, Bool.false_eq_true, if_false]
+          rw [if_pos hf, hg]
       _ ≤ _ := Finset.sum_le_sum_of_subset (Finset.filter_subset _ _)
 
 /-- A hash query in the induction of `run_real_flag_le`. -/
-theorem flag_hash_step_le (xw : G.Stmt × G.Wit) {γ : ℝ≥0∞}
+theorem flag_hash_step_le (xw : G.Stmt × G.Wit) {Γ : ℝ≥0∞}
     (k : G.Answer → OracleAdv G.Query G.Answer α) (h q : ℕ) (t : G.Tables)
     (ht : t.rej = []) (key : G.Key)
     (ih : ∀ c (t' : G.Tables), t'.rej = [] →
       (OracleAdv.run (toOracle (realStep xw)) (k c) (t', false)).toOuterMeasure
         {y | y.2.2 = true} ≤
-        ((q * G.μ * (t'.hash.length + t'.prog.length + h + G.μ * q) : ℕ) : ℝ≥0∞) * γ) :
+        ((q * (t'.hash.length + t'.prog.length + h + G.μ * q) : ℕ) : ℝ≥0∞) * Γ) :
     (OracleAdv.run (toOracle (realStep xw)) (.query (.inl key) k) (t, false)).toOuterMeasure
         {y | y.2.2 = true} ≤
-      ((q * G.μ * (t.hash.length + t.prog.length + (h + 1) + G.μ * q) : ℕ) : ℝ≥0∞) * γ := by
+      ((q * (t.hash.length + t.prog.length + (h + 1) + G.μ * q) : ℕ) : ℝ≥0∞) * Γ := by
   rw [OracleAdv.run_query]
   simp only [toOracle, realStep, realHashStep]
   cases hl : t.lookup key with
@@ -1442,8 +1798,8 @@ theorem flag_hash_step_le (xw : G.Stmt × G.Wit) {γ : ℝ≥0∞}
     calc ∑' e, PMF.uniformOfFintype G.Ch e * (OracleAdv.run (toOracle (realStep xw))
           (k (.inl e)) ({ t with hash := t.hash ++ [(key, e)] }, false)).toOuterMeasure _
         ≤ ∑' e, PMF.uniformOfFintype G.Ch e *
-          (((q * G.μ * (t.hash.length + t.prog.length + (h + 1) + G.μ * q) : ℕ) :
-            ℝ≥0∞) * γ) := by
+          (((q * (t.hash.length + t.prog.length + (h + 1) + G.μ * q) : ℕ) :
+            ℝ≥0∞) * Γ) := by
           refine ENNReal.tsum_le_tsum fun e => mul_le_mul_right ?_ _
           refine (ih _ { t with hash := t.hash ++ [(key, e)] } ht).trans (le_of_eq ?_)
           simp only [List.length_append, List.length_singleton]
@@ -1452,83 +1808,84 @@ theorem flag_hash_step_le (xw : G.Stmt × G.Wit) {γ : ℝ≥0∞}
       _ = _ := by rw [ENNReal.tsum_mul_right, PMF.tsum_coe, one_mul]
 
 /-- The guess terms of a signing attempt in the induction of `run_real_flag_le`:
-for each entry, the expectation over the randomness of the probability that its
-point is defined at the end of the rest of the run is at most
-`(L + μ + h + μ·q)·γ`. -/
-theorem flag_guess_le (xw : G.Stmt × G.Wit) {γ : ℝ≥0∞} (hγ : G.KeyBoundAt xw.1 xw.2 γ)
+the expectation over the values and the randomness of the number of programmed or
+hidden entries whose point is defined at the end of the rest of the run is at most
+`(L + μ + h + μ·q)·Γ`. -/
+theorem flag_guess_le (xw : G.Stmt × G.Wit) {Γ : ℝ≥0∞} (hΓ : G.KeyBoundAt xw.1 xw.2 Γ)
     (k : G.Answer → OracleAdv G.Query G.Answer α) (h q : ℕ)
-    (hk : ∀ r, IsQueryBound₂ (k r) h q) (t : G.Tables) (ht : t.rej = []) (m : G.Msg)
-    (e : Fin G.μ → G.Ch) (i : Fin G.μ) :
-    ∑' r, PMF.uniformOfFintype G.Rand r *
-        (contRun xw k t m (G.guessView xw.1 xw.2 m r e i)).toOuterMeasure
-          {y | G.key xw.1 xw.2 m r e i ∈ y.2.1.keys} ≤
-      ((t.hash.length + t.prog.length + G.μ + h + G.μ * q : ℕ) : ℝ≥0∞) * γ := by
-  refine tsum_guess_le xw.1 xw.2 hγ m e i (contRun xw k t m) _ fun r y hy => ?_
+    (hk : ∀ r, IsQueryBound₂ (k r) h q) (t : G.Tables) (ht : t.rej = []) (m : G.Msg) :
+    ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e * ∑' r, PMF.uniformOfFintype G.Rand r *
+      ∑ i, (if G.flagging xw.1 xw.2 m r (G.vals t.lookup xw.1 xw.2 m r e) i then
+        (contRun xw k t m (G.guessView t.lookup xw.1 xw.2 m r e i)).toOuterMeasure
+          {y | G.key xw.1 xw.2 m r (G.vals t.lookup xw.1 xw.2 m r e) i ∈ y.2.1.keys}
+        else 0) ≤
+      ((t.hash.length + t.prog.length + G.μ + h + G.μ * q : ℕ) : ℝ≥0∞) * Γ := by
+  refine tsum_guess_le xw.1 xw.2 hΓ m t.lookup (contRun xw k t m) _ fun e r i y hy => ?_
   rw [Protocol.Tables.length_keys]
   have h1 := run_real_support_size xw _ h q (hk _) _ y hy
-  have h2 := length_guessView_le xw.1 xw.2 m r e i
-  simp only [Protocol.Tables.size, List.length_append, ht, List.length_nil] at h1 ⊢
+  have h2 := length_guessView_le t.lookup xw.1 xw.2 m r e i
+  have h3 := size_traceTables_le t m (G.guessView t.lookup xw.1 xw.2 m r e i)
+  simp only [Protocol.Tables.size, rej_traceTables, ht, List.length_nil] at h1 h3 ⊢
   omega
 
 /-- A signing query in the induction of `run_real_flag_le`. -/
-theorem flag_sign_step_le (xw : G.Stmt × G.Wit) {γ : ℝ≥0∞} (hγ : G.KeyBoundAt xw.1 xw.2 γ)
+theorem flag_sign_step_le (xw : G.Stmt × G.Wit) {Γ : ℝ≥0∞} (hΓ : G.KeyBoundAt xw.1 xw.2 Γ)
     (k : G.Answer → OracleAdv G.Query G.Answer α) (h q : ℕ)
     (hk : ∀ r, IsQueryBound₂ (k r) h q) (t : G.Tables) (ht : t.rej = []) (m : G.Msg)
     (ih : ∀ c (t' : G.Tables), t'.rej = [] →
       (OracleAdv.run (toOracle (realStep xw)) (k c) (t', false)).toOuterMeasure
         {y | y.2.2 = true} ≤
-        ((q * G.μ * (t'.hash.length + t'.prog.length + h + G.μ * q) : ℕ) : ℝ≥0∞) * γ) :
+        ((q * (t'.hash.length + t'.prog.length + h + G.μ * q) : ℕ) : ℝ≥0∞) * Γ) :
     (OracleAdv.run (toOracle (realStep xw)) (.query (.inr m) k) (t, false)).toOuterMeasure
         {y | y.2.2 = true} ≤
-      (((q + 1) * G.μ * (t.hash.length + t.prog.length + h + G.μ * (q + 1)) : ℕ) :
-        ℝ≥0∞) * γ := by
+      (((q + 1) * (t.hash.length + t.prog.length + h + G.μ * (q + 1)) : ℕ) : ℝ≥0∞) * Γ := by
   set L := t.hash.length + t.prog.length with hL
   set N := L + G.μ + h + G.μ * q with hN
-  set B : ℝ≥0∞ := ((q * G.μ * N : ℕ) : ℝ≥0∞) * γ with hB
+  set B : ℝ≥0∞ := ((q * N : ℕ) : ℝ≥0∞) * Γ with hB
+  -- the guess terms of the attempt with the values `e` and the randomness `r`
+  set S : (Fin G.μ → G.Ch) → G.Rand → ℝ≥0∞ := fun e r =>
+    ∑ i, (if G.flagging xw.1 xw.2 m r (G.vals t.lookup xw.1 xw.2 m r e) i then
+      (contRun xw k t m (G.guessView t.lookup xw.1 xw.2 m r e i)).toOuterMeasure
+        {y | G.key xw.1 xw.2 m r (G.vals t.lookup xw.1 xw.2 m r e) i ∈ y.2.1.keys}
+      else 0) with hS
   have hterm := fun e r => flag_sign_term_le xw k h q t ht m e r ih
-  have hsum := flag_guess_le xw hγ k h q hk t ht m
+  have hsum : ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e *
+      ∑' r, PMF.uniformOfFintype G.Rand r * S e r ≤ (N : ℝ≥0∞) * Γ := by
+    have := flag_guess_le xw hΓ k h q hk t ht m
+    rw [hS, hN, hL]
+    exact_mod_cast this
   rw [OracleAdv.run_query]
   simp only [toOracle, realStep, Step.toPMF, sampleVec_bind, PMF.toOuterMeasure_bind_apply]
   calc _ ≤ ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e *
-        ∑' r, PMF.uniformOfFintype G.Rand r * (B + ∑ i,
-          (contRun xw k t m (G.guessView xw.1 xw.2 m r e i)).toOuterMeasure
-            {y | G.key xw.1 xw.2 m r e i ∈ y.2.1.keys}) :=
+        ∑' r, PMF.uniformOfFintype G.Rand r * (B + S e r) :=
         ENNReal.tsum_le_tsum fun e => mul_le_mul_right
-          (ENNReal.tsum_le_tsum fun r => mul_le_mul_right (by
-            refine (hterm e r).trans (add_le_add_left (mul_le_mul_of_nonneg_right ?_ zero_le) _)
-            exact_mod_cast le_of_eq (by rw [hN])) _) _
-    _ ≤ ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e * (B + G.μ * (N * γ)) := by
-        refine ENNReal.tsum_le_tsum fun e => mul_le_mul_right ?_ _
-        simp only [mul_add, Finset.mul_sum]
-        rw [ENNReal.tsum_add, ENNReal.tsum_mul_right, PMF.tsum_coe, one_mul,
-          Summable.tsum_finsetSum fun _ _ => ENNReal.summable]
-        refine add_le_add_right ((Finset.sum_le_sum fun i _ => hsum e i).trans
-          (le_of_eq ?_)) _
-        simp [hN, hL]
-    _ = B + G.μ * (N * γ) := by rw [ENNReal.tsum_mul_right, PMF.tsum_coe, one_mul]
-    _ = ((q * G.μ * N + G.μ * N : ℕ) : ℝ≥0∞) * γ := by
-        rw [hB]; push_cast; ring
+          (ENNReal.tsum_le_tsum fun r => mul_le_mul_right ((hterm e r).trans (le_of_eq (by
+            rw [hB, hN, hL, hS]))) _) _
+    _ = B + ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e *
+          ∑' r, PMF.uniformOfFintype G.Rand r * S e r := by
+        simp only [mul_add, ENNReal.tsum_add, ENNReal.tsum_mul_right, PMF.tsum_coe, one_mul]
+    _ ≤ B + N * Γ := add_le_add_right hsum _
     _ = _ := by
-        congr 2
-        rw [hN, hL]
+        rw [hB, hN, hL]
+        push_cast
         ring
 
-/-- **Collision bound.** For a pair `(x, w)` with key bound `γ`, from tables with no
+/-- **Collision bound.** For a pair `(x, w)` with key bound `Γ`, from tables with no
 hidden entry, with `L` entries and the flag cleared, a run of the real oracles
 asking at most `h` hash and `q` signing queries sets the flag with probability at
-most `q·μ·(L + h + μ·q)·γ`. -/
-theorem run_real_flag_le {γ : ℝ≥0∞} (xw : G.Stmt × G.Wit) (hγ : G.KeyBoundAt xw.1 xw.2 γ)
+most `q·(L + h + μ·q)·Γ`. -/
+theorem run_real_flag_le {Γ : ℝ≥0∞} (xw : G.Stmt × G.Wit) (hΓ : G.KeyBoundAt xw.1 xw.2 Γ)
     (A : OracleAdv G.Query G.Answer α) (h q : ℕ) (hA : IsQueryBound₂ A h q)
     (t : G.Tables) (ht : t.rej = []) :
     (OracleAdv.run (toOracle (realStep xw)) A (t, false)).toOuterMeasure {y | y.2.2 = true} ≤
-      ((q * G.μ * (t.hash.length + t.prog.length + h + G.μ * q) : ℕ) : ℝ≥0∞) * γ := by
+      ((q * (t.hash.length + t.prog.length + h + G.μ * q) : ℕ) : ℝ≥0∞) * Γ := by
   induction A generalizing h q t with
   | ret a => simp [PMF.toOuterMeasure_pure_apply]
   | rand p k ih =>
     rw [OracleAdv.run_rand, PMF.toOuterMeasure_bind_apply]
     calc ∑' b, p b * (OracleAdv.run (toOracle (realStep xw)) (k b) (t, false)).toOuterMeasure _
         ≤ ∑' b, p b *
-            (((q * G.μ * (t.hash.length + t.prog.length + h + G.μ * q) : ℕ) : ℝ≥0∞) * γ) :=
+            (((q * (t.hash.length + t.prog.length + h + G.μ * q) : ℕ) : ℝ≥0∞) * Γ) :=
           ENNReal.tsum_le_tsum fun b => mul_le_mul_right (ih b h q (hA b) t ht) _
       _ = _ := by rw [ENNReal.tsum_mul_right, PMF.tsum_coe, one_mul]
   | query d k ih =>
@@ -1541,7 +1898,7 @@ theorem run_real_flag_le {γ : ℝ≥0∞} (xw : G.Stmt × G.Wit) (hγ : G.KeyBo
       cases q with
       | zero => exact hA.elim
       | succ q =>
-        exact flag_sign_step_le xw hγ k h q hA t ht m fun c t' ht' => ih c h q (hA c) t' ht'
+        exact flag_sign_step_le xw hΓ k h q hA t ht m fun c t' ht' => ih c h q (hA c) t' ht'
 
 end Flag
 
