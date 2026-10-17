@@ -658,6 +658,19 @@ theorem eq_of_some_eq {d₁ d₂ : SDistr α}
       exact ne_top_of_le_ne_top (by norm_num : (1 : ENNReal) ≠ ⊤) hle
     rwa [ENNReal.add_left_inj hne_top] at heq
 
+/-- A sub-distribution of mass one bound to a constant continuation is that
+continuation. -/
+theorem bind_const_mass_one {d : SDistr α} (hd : mass d = 1) (e : SDistr β) :
+    d.bind (fun _ => e) = e := by
+  have hnone : d none = 0 :=
+    Classical.byContradiction fun hne =>
+      absurd hd (ne_of_lt (ENNReal.sub_lt_self (by norm_num) (by norm_num) hne))
+  have hsum : ∑' a : α, d (some a) = 1 := by
+    simpa only [tsum_option_eq_add, hnone, zero_add] using PMF.tsum_coe d
+  refine eq_of_some_eq fun b => ?_
+  simp only [bind, PMF.bind_apply, tsum_option_eq_add, fail_apply_some, mul_zero, zero_add,
+    ENNReal.tsum_mul_right, hsum, one_mul]
+
 end SDistr
 
 end CatCrypt.Prob

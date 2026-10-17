@@ -221,32 +221,6 @@ theorem SDistr.mass_one_implies_none_zero {d : SDistr α} (h : SDistr.mass d = 1
 theorem SDistr.monad_bind_eq {α β : Type} (d : SDistr α) (f : α → SDistr β) :
     (d >>= f) = d.bind f := rfl
 
-/-- Binding with a constant (when mass = 1) -/
-theorem SDistr.bind_const_mass_one {d : SDistr α} {e : SDistr β}
-    (h : SDistr.mass d = 1) : d.bind (fun _ => e) = e := by
-  have hd_none := SDistr.mass_one_implies_none_zero h
-  -- d.bind (fun _ => e) = e when d is a proper distribution (d none = 0)
-  apply SDistr.eq_of_some_eq
-  intro b
-  simp only [SDistr.bind, PMF.bind_apply]
-  -- Goal: ∑' a, d a * (match a with some _ => e | none => fail) (some b) = e (some b)
-  -- Split the sum: none term + some terms
-  rw [SDistr.tsum_option_eq_add]
-  -- none term: d none * fail (some b) = 0 * 0 = 0
-  simp only [SDistr.fail_apply_some, mul_zero, zero_add]
-  -- some terms: ∑' a, d (some a) * e (some b) = e (some b)
-  -- Use commutativity then factor out e (some b) using tsum_mul_left
-  have hsum_eq : ∑' a : α, d (some a) * e (some b) = ∑' a : α, e (some b) * d (some a) := by
-    apply tsum_congr; intro a; ring
-  rw [hsum_eq, ENNReal.tsum_mul_left]
-  -- Need ∑' a, d (some a) = 1
-  have hsum : ∑' a : α, d (some a) = 1 := by
-    have htotal := PMF.tsum_coe d
-    rw [SDistr.tsum_option_eq_add] at htotal
-    rw [hd_none, zero_add] at htotal
-    exact htotal
-  rw [hsum, mul_one]
-
 /-- Product coupling: independent sampling.
     Requires both distributions to have mass 1 (i.e., no failure probability).
     For sub-distributions with mass < 1, the product joint has marginals

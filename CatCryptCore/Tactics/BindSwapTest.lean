@@ -18,7 +18,9 @@ an `IsPure` fact given as an argument, and two exchanges of computations neither
 is `IsPure`, which the procedure does not perform. The removal of an unused binding by an
 `IsPure` and mass-one computation and by a discard field, rewrites by a two-binding chain
 fact (a field, or an argument) on adjacent and on separated key pairs, and a permutation
-equation applied to the leaves.
+equation applied to the leaves. Definitions with an implicit type parameter and instance
+arguments given as arguments and unfolded by name, and a sample of a product type aligned
+with the samples of its components.
 -/
 
 set_option autoImplicit false
@@ -150,5 +152,34 @@ example {K : Type} (p q : SPComp K) (f : K → K → K) (hf : ∀ a b, f a b = f
       q.bind (fun b => p.bind (fun a => A (f b a))) := by
   fail_if_success bind_swap_nf
   bind_swap_nf [hf]
+
+/-- A game over a word type `W` given by an implicit parameter and instance arguments. -/
+noncomputable def tReal {W : Type} [Fintype W] [Nonempty W] (p : SPComp W)
+    (A : W → W → SPComp Bool) : SPComp Bool :=
+  p.bind fun a => (SPComp.sample W).bind fun b => A a b
+
+/-- The game `tReal` with its two bindings exchanged. -/
+noncomputable def tSwap {W : Type} [Fintype W] [Nonempty W] (p : SPComp W)
+    (A : W → W → SPComp Bool) : SPComp Bool :=
+  (SPComp.sample W).bind fun b => p.bind fun a => A a b
+
+/-- Definitions given as arguments are unfolded by name, without `(W := W)`. -/
+example {W : Type} [Fintype W] [Nonempty W] (p : SPComp W) (A : W → W → SPComp Bool) :
+    tReal p A = tSwap p A := by
+  fail_if_success bind_swap_nf
+  bind_swap_nf [tReal, tSwap]
+
+/-- A sample of a product type equals the samples of its components. -/
+example {W : Type} [Fintype W] [Nonempty W] (A : W → W → SPComp Bool) :
+    ((SPComp.sample (W × W)).bind fun ab => A ab.1 ab.2) =
+      (SPComp.sample W).bind fun a => (SPComp.sample W).bind fun b => A a b := by
+  bind_swap_nf
+
+/-- A sample of a product type with a pair pattern equals the samples of its components
+bound in the other order. -/
+example {W : Type} [Fintype W] [Nonempty W] (A : W → W → SPComp Bool) :
+    (do let ⟨a, b⟩ ← SPComp.sample (W × W); A a b : SPComp Bool) =
+      (SPComp.sample W).bind fun b => (SPComp.sample W).bind fun a => A a b := by
+  bind_swap_nf
 
 end CatCrypt.Tactic.BindSwapTest

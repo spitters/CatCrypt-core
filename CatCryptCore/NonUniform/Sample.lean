@@ -119,26 +119,17 @@ theorem isLossless_sampleFrom (d : SDistr α) (hd : SDistr.mass d = 1) :
 
 /-! ## Discarding a lossless sample -/
 
-/-- Binding a total distribution to a constant continuation is that constant.
-    Generalizes `SDistr.uniform_bind_const` from uniform to arbitrary mass-one
-    distributions. -/
-theorem bind_const_of_mass_one {d : SDistr α} (hd : SDistr.mass d = 1)
-    (e : SDistr β) : d.bind (fun _ => e) = e := by
-  have hnone : d none = 0 :=
-    Classical.byContradiction fun hne =>
-      absurd hd (ne_of_lt (ENNReal.sub_lt_self (by norm_num) (by norm_num) hne))
-  have hsum : ∑' a : α, d (some a) = 1 := by
-    simpa only [SDistr.tsum_option_eq_add, hnone, zero_add] using PMF.tsum_coe d
-  refine SDistr.eq_of_some_eq fun b => ?_
-  simp only [SDistr.bind, PMF.bind_apply, SDistr.tsum_option_eq_add, SDistr.fail_apply_some,
-    mul_zero, zero_add, ENNReal.tsum_mul_right, hsum, one_mul]
+/-- Binding a total distribution to a constant continuation is that constant
+(`SDistr.bind_const_mass_one`, which generalizes `SDistr.uniform_bind_const` from uniform
+to arbitrary mass-one distributions). -/
+alias bind_const_of_mass_one := SDistr.bind_const_mass_one
 
 /-- A lossless sample whose result is unused can be dropped.
     Generalizes `dead_sample` from uniform to arbitrary mass-one distributions. -/
 theorem dead_sampleFrom {d : SDistr α} (hd : SDistr.mass d = 1) (k : SPComp β) :
     SPComp.bind (sampleFrom d) (fun _ => k) = k :=
   funext fun h =>
-    (sampleFrom_bind_apply d _ h).trans (bind_const_of_mass_one hd (k h))
+    (sampleFrom_bind_apply d _ h).trans (SDistr.bind_const_mass_one hd (k h))
 
 /-! ## Total distributions from `PMF` -/
 

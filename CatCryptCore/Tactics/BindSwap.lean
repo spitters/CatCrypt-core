@@ -51,6 +51,17 @@ computation it does not depend on.
    occurrences of `t p q` in the rest of the chain are abstracted, and the fact replaces
    them by `t' p q`; the alignment runs on each rewritten goal, with at most
    `maxFactDepth` rewrites on a branch and `maxFactTries` goals in all.
+7. Product samples, when this fails: each uniform sample `SPComp.sample (A × B)` is
+   replaced by the samples of `A` and `B` followed by the pair (`SPComp.sample_prod_eq`),
+   both sides are normalised again and steps 3 to 6 run on the result, so that a sample of
+   a product on one side aligns with the samples of the components on the other.
+
+An argument `t` of `bind_swap_nf [t, …]` that is an identifier naming a global definition
+is a definition to unfold: it is unfolded by name in the goal before step 1, and none of
+its implicit or instance arguments is elaborated (a game `G {W : Type} [Fintype W] …` is
+given as `G`, not `G (W := W)`). An identifier naming a global theorem is the constant
+with its arguments universally quantified. Another term is elaborated; when it is not a
+proof and its head is a definition, that definition is unfolded.
 
 The `IsPure` side conditions are proved from the combinators of `pure`, `sample`, `fail`
 and `SPComp.bind`, from the `IsPure` hypotheses of the local context (possibly
@@ -73,8 +84,8 @@ it. The procedure does not reorder two bindings neither of which is `IsPure`.
 `advantage_eq_nf [h₁, …]` proves an equality of two advantages `Advantage X Y =
 Advantage X' Y'` (after unfolding the heads of the two sides, such as `AdvantageA` and
 `DDH_Advantage`) from the game equalities `X = X'` and `Y = Y'` (or `X = Y'` and
-`Y = X'`), each closed by unfolding the game definitions at its heads and
-`bind_swap_nf [h₁, …]`. It refers to `CatCrypt.Crypto.Advantage` by name and applies
+`Y = X'`), each closed by unfolding the game definitions at its heads and the definitions
+among the arguments, and `bind_swap_nf [h₁, …]`. It refers to `CatCrypt.Crypto.Advantage` by name and applies
 where that definition is in the environment.
 -/
 
@@ -93,21 +104,6 @@ theorem isPure_bind_comm_right (c₁ : SPComp α) (c₂ : SPComp β)
     SPComp.bind c₂ (fun b => SPComp.bind c₁ (fun a => k a b)) :=
   (isPure_bind_comm_left c₂ c₁ (fun b a => k a b) hc₂).symm
 
-/-- A sub-distribution of mass one bound to a constant continuation is that
-continuation. -/
-private theorem sdistr_bind_const_of_mass_one {d : CatCrypt.Prob.SDistr α}
-    (hd : CatCrypt.Prob.SDistr.mass d = 1) (e : CatCrypt.Prob.SDistr β) :
-    d.bind (fun _ => e) = e := by
-  have hnone : d none = 0 :=
-    Classical.byContradiction fun hne =>
-      absurd hd (ne_of_lt (ENNReal.sub_lt_self (by norm_num) (by norm_num) hne))
-  have hsum : ∑' a : α, d (some a) = 1 := by
-    simpa only [CatCrypt.Prob.SDistr.tsum_option_eq_add, hnone, zero_add] using PMF.tsum_coe d
-  refine CatCrypt.Prob.SDistr.eq_of_some_eq fun b => ?_
-  simp only [CatCrypt.Prob.SDistr.bind, PMF.bind_apply,
-    CatCrypt.Prob.SDistr.tsum_option_eq_add, CatCrypt.Prob.SDistr.fail_apply_some, mul_zero,
-    zero_add, ENNReal.tsum_mul_right, hsum, one_mul]
-
 /-- An `IsPure` computation of mass one from every heap, bound to a continuation that does
 not use its result, can be dropped: `c >>= fun _ => k` equals `k`. The mass condition is
 `CatCrypt.Unary.isLossless c` unfolded. -/
@@ -119,7 +115,7 @@ theorem isPure_bind_discard (c : SPComp α) (k : SPComp β) (hc : IsPure c)
   have e : SPComp.bind c (fun _ => k) h = (c h).bind (fun _ => k h) := by
     simp only [bind, hd h, CatCrypt.Prob.SDistr.bind_assoc, CatCrypt.Prob.SDistr.pure_bind]
   rw [e]
-  exact sdistr_bind_const_of_mass_one (hl h) (k h)
+  exact CatCrypt.Prob.SDistr.bind_const_mass_one (hl h) (k h)
 
 end CatCrypt.Core.SPComp
 
@@ -771,7 +767,7 @@ partial def factSearch (fs : Facts) (g : MVarId) (depth : Nat) (tries : IO.Ref N
 /-- Close `g : lhs = rhs`: by `alignGoal`; failing that, after removing the unused bindings
 (`dropGoal`); failing that, by `factSearch` with the chain facts. The error is that of the
 first `alignGoal`. -/
-def closeGoal (fs : Facts) (g : MVarId) : MetaM Unit := do
+def closeGoalCore (fs : Facts) (g : MVarId) : MetaM Unit := do
   let s ← saveState
   let err ← try
       alignGoal fs g
@@ -784,6 +780,45 @@ def closeGoal (fs : Facts) (g : MVarId) : MetaM Unit := do
   unless fs.chain.isEmpty do
     if ← factSearch fs g' maxFactDepth (← IO.mkRef maxFactTries) then return
   s.restore
+  throw err
+
+/-- `e` contains a uniform sample `SPComp.sample (A × B)` of a product type. -/
+def hasProdSample (e : Expr) : Bool :=
+  (e.find? fun x => x.isAppOfArity ``CatCrypt.Core.SPComp.sample 3 &&
+    (x.getArg! 0).isAppOfArity ``Prod 2).isSome
+
+/-- Rewrite the target of `g` by `simp only [SPComp.sample_prod_eq, SPComp.bind_assoc,
+SPComp.pure_bind]`: each uniform sample of a product type becomes the two samples of its
+components followed by the pair, and the pair is passed to the continuation. The new
+goal, or `none` when the goal is closed. -/
+def splitProdSamples (g : MVarId) : MetaM (Option MVarId) := g.withContext do
+  let mut thms : SimpTheorems := {}
+  for n in [``CatCrypt.Core.SPComp.sample_prod_eq, ``CatCrypt.Core.SPComp.bind_assoc,
+      ``CatCrypt.Core.SPComp.pure_bind] do
+    thms ← thms.addConst n
+  let ctx ← Simp.mkContext (simpTheorems := #[thms]) (congrTheorems := ← getSimpCongrTheorems)
+  let (r?, _) ← simpTarget g ctx
+  return r?
+
+/-- Close `g : lhs = rhs` by `closeGoalCore`; failing that, when the goal samples from a
+product type, by `closeGoalCore` after each such sample is replaced by the samples of its
+components (`splitProdSamples`), so that a product sample on one side aligns with the
+samples of the components on the other. The error is that of the first `closeGoalCore`. -/
+def closeGoal (fs : Facts) (g : MVarId) : MetaM Unit := do
+  let s ← saveState
+  let err ← try
+      closeGoalCore fs g
+      return
+    catch e => pure e
+  s.restore
+  if hasProdSample (← instantiateMVars (← g.getType)) then
+    try
+      match ← splitProdSamples g with
+      | none => return
+      | some g' =>
+        closeGoalCore fs g'
+        return
+    catch _ => s.restore
   throw err
 
 /-- `bind_swap_nf` proves an equality of two `SPComp` bind chains that are equal up to the
@@ -807,20 +842,72 @@ rewrites on a branch). The facts are the hypotheses of the context, the fields o
 structure-typed hypotheses (depth two) and the terms `hᵢ`; `IsPure` side conditions are
 also proved from the combinators of `pure`, `sample`, `fail` and `SPComp.bind`, and
 mass-one side conditions from the lemmas of `CatCryptCore.Unary.Lossless` when that
-module is imported. -/
+module is imported. When all of this fails, each uniform sample of a product type is
+replaced by the samples of its components (`SPComp.sample_prod_eq`) and the procedure runs
+again. An argument that names a definition (an identifier, or a term that is not a proof
+whose head is a definition) is unfolded in the goal first, with no implicit or instance
+argument elaborated. -/
 syntax (name := bindSwapNfStx) "bind_swap_nf" (" [" term,* "]")? : tactic
 
-/-- Close the main goal by `bind_swap_nf` with the argument terms `ts`. -/
-def runBindSwapNf (ts : Array Syntax) : TacticM Unit := do
+/-- The global constant that the identifier `t` names, when `t` is an identifier whose
+first component is not a local hypothesis and which resolves to a definition or a
+theorem. -/
+def argConst? (t : Syntax) : TacticM (Option Name) := do
+  unless t.isIdent do return none
+  if ((← getLCtx).findFromUserName? t.getId.getRoot).isSome then return none
+  let some n ← (try some <$> realizeGlobalConstNoOverloadWithInfo t catch _ => pure none) |
+    return none
+  match ← getConstInfo n with
+  | .defnInfo _ | .thmInfo _ => return some n
+  | _ => return none
+
+/-- The arguments `ts` of `bind_swap_nf [t₁, …]` and `advantage_eq_nf [t₁, …]`, read in
+the context of the main goal: the definitions to unfold and the facts. An identifier that
+names a global theorem is the constant, with all its arguments universally quantified,
+and an identifier that names a global definition is a definition to unfold, so that no
+implicit or instance argument of either is elaborated without the goal. Another term is
+elaborated; it is a definition to unfold when it is not a proof and its head is a
+definition, and a fact otherwise. -/
+def elabArgs (ts : Array Syntax) : TacticM (Array Name × Array Expr) := do
+  let mut ns : Array Name := #[]
+  let mut es : Array Expr := #[]
+  for t in ts do
+    if let some n ← argConst? t then
+      let c ← mkConstWithFreshMVarLevels n
+      if ← isProp (← inferType c) then es := es.push c
+      else ns := ns.push n
+      continue
+    let e ← Tactic.elabTerm t none
+    if !(← isProp (← inferType e)) then
+      if let some n := e.getAppFn.constName? then
+        if let .defnInfo _ ← getConstInfo n then
+          ns := ns.push n
+          continue
+    es := es.push e
+  return (ns, es)
+
+/-- Unfold each definition of `ns` in the main goal, where it occurs. -/
+def unfoldNames (ns : Array Name) : TacticM Unit := do
+  for n in ns do
+    evalTactic (← `(tactic| try unfold $(mkIdent n):ident))
+
+/-- Close the main goal by `bind_swap_nf` after unfolding the definitions `ns`, with the
+facts `es`. -/
+def runBindSwapNfWith (ns : Array Name) (es : Array Expr) : TacticM Unit := do
+  unfoldNames ns
   evalTactic (← `(tactic| try (set_option linter.unusedSimpArgs false in
     simp only [CatCrypt.Core.SPComp.monad_bind_eq, CatCrypt.Core.SPComp.monad_pure_eq,
       CatCrypt.Core.SPComp.bind_assoc, CatCrypt.Core.SPComp.pure_bind])))
   if (← getGoals).isEmpty then return
   let g ← getMainGoal
   g.withContext do
-    let extra ← ts.mapM fun t => Tactic.elabTerm t none
-    closeGoal (← collectFacts extra) g
+    closeGoal (← collectFacts es) g
   replaceMainGoal []
+
+/-- Close the main goal by `bind_swap_nf` with the argument terms `ts` (`elabArgs`). -/
+def runBindSwapNf (ts : Array Syntax) : TacticM Unit := do
+  let (ns, es) ← withMainContext (elabArgs ts)
+  runBindSwapNfWith ns es
 
 @[tactic bindSwapNfStx] def evalBindSwapNf : Tactic := fun stx => do
   let ts : Array Syntax :=
@@ -856,16 +943,17 @@ def gameHeads (ty : Expr) : MetaM (Array Name) := do
       for a in e.getAppArgs do todo := todo.push (a, d + 1)
   return out
 
-/-- Close a game equality `X = X'`: unfold the definitions `gameHeads` names, reduce the
-projections by `dsimp only`, and run `bind_swap_nf` with the argument terms `ts`. -/
+/-- Close a game equality `X = X'`: unfold the definitions `gameHeads` names and the
+definitions among the argument terms `ts` (`elabArgs`), reduce the projections by
+`dsimp only`, and run `bind_swap_nf` with the facts among `ts`. -/
 def closeGameEq (g : MVarId) (ts : Array Syntax) : TacticM Unit := do
   setGoals [g]
-  let ns ← g.withContext do gameHeads (← g.getType)
-  for n in ns do
-    evalTactic (← `(tactic| try unfold $(mkIdent n):ident))
+  let heads ← g.withContext do gameHeads (← g.getType)
+  let (ns, es) ← withMainContext (elabArgs ts)
+  unfoldNames (ns.foldl (fun acc n => if acc.contains n then acc else acc.push n) heads)
   evalTactic (← `(tactic| try dsimp only))
   if (← getGoals).isEmpty then return
-  runBindSwapNf ts
+  runBindSwapNfWith #[] es
   unless (← getGoals).isEmpty do throwError "advantage_eq_nf: a game equality remains"
 
 /-- `advantage_eq_nf [h₁, …]` proves an equality `a = b` of advantages, each side an
@@ -873,7 +961,9 @@ application of `CatCrypt.Crypto.Advantage` up to the unfolding of its head (`Adv
 G₁ A`, `DDH_Advantage D B`, …): with `a = Advantage X Y` and `b = Advantage X' Y'`, it
 proves `X = X'` and `Y = Y'`, or `X = Y'` and `Y = X'` with `Advantage_sym`; each game
 equality is closed by unfolding the definitions at the heads of its sides and of their
-arguments and by `bind_swap_nf [h₁, …]`. -/
+arguments and the definitions named among the arguments `hᵢ` (unfolded by name, with no
+implicit or instance argument elaborated), and by `bind_swap_nf` with the other
+arguments. -/
 syntax (name := advantageEqNfStx) "advantage_eq_nf" (" [" term,* "]")? : tactic
 
 @[tactic advantageEqNfStx] def evalAdvantageEqNf : Tactic := fun stx => do

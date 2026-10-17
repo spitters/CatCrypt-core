@@ -20,7 +20,8 @@ heap disequalities under `some`, and the error on goals that stay open. The arms
 `hop_chain`, `sum_atoms_le` and `gcongr_unfold` are tested on a distance and a
 definition registered in this module, and a goal over an unregistered distance
 is shown to be of shape `other`. Equalities of advantages are closed by
-`advantage_eq_nf` from their two game equalities.
+`advantage_eq_nf` from their two game equalities, including games built from definitions
+with an implicit type parameter and instance arguments, given by name as arguments.
 -/
 
 set_option autoImplicit false
@@ -546,5 +547,24 @@ example {α β : Type} (p : SPComp α) (q : SPComp β) (A : α × β → SPComp 
 example {α : Type} [Fintype α] [Nonempty α] (q : SPComp Bool) (G : SPComp Bool) :
     Advantage ((SPComp.sample α).bind fun _ => q) G = Advantage q G := by
   advantage_eq_nf
+
+/-- A game over a word type `W` given by an implicit parameter and instance arguments. -/
+noncomputable def advReal {W : Type} [Fintype W] [Nonempty W] (p : SPComp W)
+    (A : W → W → SPComp Bool) : SPComp Bool :=
+  p.bind fun a => (SPComp.sample W).bind fun b => A a b
+
+/-- The game `advReal` with its two bindings exchanged. -/
+noncomputable def advSwap {W : Type} [Fintype W] [Nonempty W] (p : SPComp W)
+    (A : W → W → SPComp Bool) : SPComp Bool :=
+  (SPComp.sample W).bind fun b => p.bind fun a => A a b
+
+/-- Advantage equality whose games use `advReal` and `advSwap` under a binder: the
+definitions given as arguments are unfolded by name, without `(W := W)`. -/
+example {W : Type} [Fintype W] [Nonempty W] (p q : SPComp W) (A : W → W → W → SPComp Bool)
+    (G : SPComp Bool) :
+    Advantage (q.bind fun x => advReal p (A x)) G =
+      Advantage G (q.bind fun x => advSwap p (A x)) := by
+  fail_if_success advantage_eq_nf
+  advantage_eq_nf [advReal, advSwap]
 
 end CatCrypt.Tactics.AutoDispatchTest
