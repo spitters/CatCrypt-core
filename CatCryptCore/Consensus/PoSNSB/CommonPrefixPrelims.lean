@@ -44,8 +44,8 @@ other honest block has the position of an honest block of a super slot
   and `bp` the two agree (`cfb_valid_chain'`, the Coq lemma of the same name). The Coq lemmas
   about the recursion (`perm_cfb`, `undup_cfb`, `cfb_mem`, `cfb_non_empty_subset`,
   `cfb_valid_subset`, `cfb_map_iota`) are replaced by `cfb_valid_chain'`, `pos_eq` and
-  `pos_of_mem_chain`. The Coq lemma `cfb_gb` (`cfb GenesisBlock bp = [GenesisBlock]`) uses the
-  axiom `GenesisWin`; `cfb_gb_length_le` states the bound on the length that the proofs need.
+  `pos_of_mem_chain`. The Coq lemma `cfb_gb` (`cfb GenesisBlock bp = [GenesisBlock]`) uses
+  the Coq axiom `GenesisWin`; `cfb_gb_length_le` states the bound on the length that the proofs need.
 * The suffix order `⪯` is `List.IsSuffix` (`<:+`).
 * The Coq lemmas `one_super_block`, `super_slots_blocks` and `unique_sb_pos` count the super
   blocks of the history. The common-prefix proof in `CommonPrefix.lean` instead maps every
