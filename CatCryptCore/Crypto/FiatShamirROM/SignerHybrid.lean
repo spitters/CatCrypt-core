@@ -44,6 +44,13 @@ commitments.
   answer of `D`
 * `hybDist D D' k A` — the distinguisher that answers the signing queries before the
   `k`-th from `D'`, the `k`-th from the challenge and the later ones from `D`
+* `winsOrFlag`, `attGameBy P D A`, `attAdvantageBy P D A`, `hybDistBy P D D' k A` — the
+  game, its advantage and the hybrid distinguisher with the outcome decided by a
+  predicate `P`; `winsOrFlag` holds when the forgery wins or the flag is set
+* `Protocol.ProgBoundClsAt`, `Protocol.AttClassesAt`, `Protocol.AttKeyBoundClsAt` —
+  for key classes `κ`, the class-wise programmed-key bound on the attempts with fresh
+  hidden entries, the classes of the entries of a sampler, and the class-wise
+  hidden-key bound of a sampler
 
 ## Main results
 
@@ -55,6 +62,10 @@ commitments.
 * `Protocol.att_le_sim` — the advantage at a sampler with HVZK distance `δ` and
   hidden-key bound `Γ_H` is at most the simulated-game advantage plus the
   expectation over generated pairs of `qS·δ(x, w) + qS·Q·Γ_H(x, w)`
+* `Protocol.eufcma_le_wit_cls`, `Protocol.attAdvantage_hybrid_by`,
+  `Protocol.att_le_sim_cls` — the three steps with key classes and per-class query
+  bounds `q c`: the terms are `Σ_c qS·(q c + Vc c + μc c·qS)·Γ c`, and the game at a
+  sampler is decided by `winsOrFlag`
 -/
 
 @[expose] public section
@@ -224,6 +235,53 @@ noncomputable def attAdvantage (D : G.Sampler) {qH qS : ℕ} (A : G.Adversary qH
 
 theorem attStep_inl (D : G.Sampler) (xw : G.Stmt × G.Wit) (s : G.Tables × Bool) (k : G.Key) :
     toOracle (attStep D xw) s (.inl k) = toOracle (realStep xw) s (.inl k) := rfl
+
+/-- The forgery wins or the flag is set. -/
+def winsOrFlag (x : G.Stmt) (y : G.Forgery × (G.Tables × Bool)) : Bool :=
+  wins x y || y.2.2
+
+/-- The distribution of the EUF-CMA experiment against the oracle family `O` whose
+outcome is decided by the predicate `P`. -/
+noncomputable def gameDistBy (P : G.Stmt → G.Forgery × (G.Tables × Bool) → Bool)
+    (O : G.Stmt × G.Wit → G.Tables × Bool → G.Query → Step G.Answer (G.Tables × Bool) G.Ch)
+    {qH qS : ℕ} (A : G.Adversary qH qS) : PMF Bool :=
+  G.gen.bind fun xw =>
+    (OracleAdv.run (toOracle (O xw)) (withVerify xw.1 (A.run xw.1))
+      (Protocol.Tables.empty, false)).map (P xw.1)
+
+/-- The game at the sampler `D` whose outcome is decided by the predicate `P`. -/
+noncomputable def attGameBy (P : G.Stmt → G.Forgery × (G.Tables × Bool) → Bool)
+    (D : G.Sampler) {qH qS : ℕ} (A : G.Adversary qH qS) : SPComp Bool :=
+  PRPPRF.pmfGame (gameDistBy P (attStep D) A)
+
+/-- The advantage in the game at the sampler `D` whose outcome is decided by `P`. -/
+noncomputable def attAdvantageBy (P : G.Stmt → G.Forgery × (G.Tables × Bool) → Bool)
+    (D : G.Sampler) {qH qS : ℕ} (A : G.Adversary qH qS) : ℝ≥0∞ :=
+  prTrue (attGameBy P D A) Heap.empty
+
+/-- The advantage in a game built by `gameDistBy` as an average over generated
+pairs. -/
+theorem prTrue_gameDistBy (P : G.Stmt → G.Forgery × (G.Tables × Bool) → Bool)
+    (O : G.Stmt × G.Wit → G.Tables × Bool → G.Query → Step G.Answer (G.Tables × Bool) G.Ch)
+    {qH qS : ℕ} (A : G.Adversary qH qS) :
+    prTrue (PRPPRF.pmfGame (gameDistBy P O A)) Heap.empty =
+      ∑' xw, G.gen xw *
+        (OracleAdv.run (toOracle (O xw)) (withVerify xw.1 (A.run xw.1))
+          (Protocol.Tables.empty, false)).toOuterMeasure {y | P xw.1 y = true} := by
+  rw [prTrue_pmfGame]
+  simp only [gameDistBy, PMF.toOuterMeasure_bind_apply, PMF.toOuterMeasure_map_apply]
+  rfl
+
+/-- The advantage in the game at a sampler is at most the probability that the forgery
+wins or the flag is set. -/
+theorem attAdvantage_le_attAdvantageBy (D : G.Sampler) {qH qS : ℕ} (A : G.Adversary qH qS) :
+    attAdvantage D A ≤ attAdvantageBy winsOrFlag D A := by
+  unfold attAdvantage attAdvantageBy attGame attGameBy
+  rw [prTrue_gameDist, prTrue_gameDistBy]
+  refine ENNReal.tsum_le_tsum fun xw => mul_le_mul_right
+    (MeasureTheory.measure_mono fun y hy => ?_) _
+  simp only [Set.mem_ofPred_eq, winsOrFlag] at hy ⊢
+  simp [hy]
 
 end AttGame
 
@@ -555,6 +613,12 @@ noncomputable def hybDist (D D' : G.Sampler) (k : ℕ) {qH qS : ℕ} (A : G.Adve
     OracleAdv (G.Msg × (G.Tables × Bool)) (G.Answer × (G.Tables × Bool)) Bool :=
   hybRun D D' k xw (wins xw.1) 0 (withVerify xw.1 (A.run xw.1)) (Protocol.Tables.empty, false)
 
+/-- The `k`-th hybrid distinguisher whose output is decided by the predicate `P`. -/
+noncomputable def hybDistBy (P : G.Stmt → G.Forgery × (G.Tables × Bool) → Bool)
+    (D D' : G.Sampler) (k : ℕ) {qH qS : ℕ} (A : G.Adversary qH qS) (xw : G.Stmt × G.Wit) :
+    OracleAdv (G.Msg × (G.Tables × Bool)) (G.Answer × (G.Tables × Bool)) Bool :=
+  hybRun D D' k xw (P xw.1) 0 (withVerify xw.1 (A.run xw.1)) (Protocol.Tables.empty, false)
+
 /-- The distinguisher `hybRun` from the signing query `j` asks at most one query, and
 none after the `k`-th signing query. -/
 theorem isQueryBound_hybRun (D D' : G.Sampler) (k : ℕ) (xw : G.Stmt × G.Wit) {α β : Type}
@@ -579,14 +643,21 @@ theorem isQueryBound_hybRun (D D' : G.Sampler) (k : ℕ) (xw : G.Stmt × G.Wit) 
         refine (ih o.1 (j + 1) o.2).mono ?_
         split_ifs <;> omega
 
+/-- The `k`-th hybrid distinguisher with the predicate `P` asks the challenge oracle at
+most once. -/
+theorem isQueryBound_hybDistBy (P : G.Stmt → G.Forgery × (G.Tables × Bool) → Bool)
+    (D D' : G.Sampler) (k : ℕ) {qH qS : ℕ} (A : G.Adversary qH qS)
+    (xw : G.Stmt × G.Wit) : (hybDistBy P D D' k A xw).IsQueryBound 1 := by
+  have := isQueryBound_hybRun D D' k xw (P xw.1) (withVerify xw.1 (A.run xw.1)) 0
+    (Protocol.Tables.empty, false)
+  unfold hybDistBy
+  simpa using this
+
 /-- **One query.** The `k`-th hybrid distinguisher asks the challenge oracle at most
 once. -/
 theorem isQueryBound_hybDist (D D' : G.Sampler) (k : ℕ) {qH qS : ℕ} (A : G.Adversary qH qS)
-    (xw : G.Stmt × G.Wit) : (hybDist D D' k A xw).IsQueryBound 1 := by
-  have := isQueryBound_hybRun D D' k xw (wins xw.1) (withVerify xw.1 (A.run xw.1)) 0
-    (Protocol.Tables.empty, false)
-  unfold hybDist
-  simpa using this
+    (xw : G.Stmt × G.Wit) : (hybDist D D' k A xw).IsQueryBound 1 :=
+  isQueryBound_hybDistBy wins D D' k A xw
 
 /-- A hash query keeps the signed messages. -/
 theorem realStep_signed_inl (xw : G.Stmt × G.Wit) (s : G.Tables × Bool) (k : G.Key)
@@ -657,36 +728,57 @@ noncomputable def hybGame (D D' : G.Sampler) (n : ℕ) {qH qS : ℕ} (A : G.Adve
     SPComp Bool :=
   PRPPRF.pmfGame (gameDist (fun xw => hybStep (fun j => if j < n then D' else D) xw) A)
 
+/-- The game whose outcome is decided by `P` in which the signing query `j` uses `D'`
+for `j < n` and `D` otherwise. -/
+noncomputable def hybGameBy (P : G.Stmt → G.Forgery × (G.Tables × Bool) → Bool)
+    (D D' : G.Sampler) (n : ℕ) {qH qS : ℕ} (A : G.Adversary qH qS) : SPComp Bool :=
+  PRPPRF.pmfGame (gameDistBy P (fun xw => hybStep (fun j => if j < n then D' else D) xw) A)
+
 theorem hybStep_const (D : G.Sampler) (xw : G.Stmt × G.Wit) :
     hybStep (fun _ => D) xw = attStep D xw := by
   funext s d
   cases d <;> rfl
 
-/-- The challenge game of the `k`-th distinguisher at `C` is the game whose signing
-query `j` uses `D'` for `j < k`, `C` for `j = k` and `D` for `j > k`. -/
-theorem chalGame_hybDist (D D' C : G.Sampler) (k : ℕ) {qH qS : ℕ} (A : G.Adversary qH qS) :
-    chalGame C (hybDist D D' k A) = PRPPRF.pmfGame (gameDist (fun xw =>
+/-- The challenge game of the `k`-th distinguisher with the predicate `P` at `C` is the
+game decided by `P` whose signing query `j` uses `D'` for `j < k`, `C` for `j = k` and
+`D` for `j > k`. -/
+theorem chalGame_hybDistBy (P : G.Stmt → G.Forgery × (G.Tables × Bool) → Bool)
+    (D D' C : G.Sampler) (k : ℕ) {qH qS : ℕ} (A : G.Adversary qH qS) :
+    chalGame C (hybDistBy P D D' k A) = PRPPRF.pmfGame (gameDistBy P (fun xw =>
       hybStep (fun n => if n < k then D' else if n = k then C else D) xw) A) := by
-  unfold chalGame gameDist hybDist
+  unfold chalGame gameDistBy hybDistBy
   congr 1
   refine congrArg _ (funext fun xw => ?_)
   rw [run_hybRun D D' C k xw _ _ 0 _ rfl, PMF.map_comp]
   rfl
 
-theorem chalGame_hybDist_left (D D' : G.Sampler) (k : ℕ) {qH qS : ℕ} (A : G.Adversary qH qS) :
-    chalGame D (hybDist D D' k A) = hybGame D D' k A := by
-  rw [chalGame_hybDist]
-  unfold hybGame
+/-- The challenge game of the `k`-th distinguisher at `C` is the game whose signing
+query `j` uses `D'` for `j < k`, `C` for `j = k` and `D` for `j > k`. -/
+theorem chalGame_hybDist (D D' C : G.Sampler) (k : ℕ) {qH qS : ℕ} (A : G.Adversary qH qS) :
+    chalGame C (hybDist D D' k A) = PRPPRF.pmfGame (gameDist (fun xw =>
+      hybStep (fun n => if n < k then D' else if n = k then C else D) xw) A) :=
+  chalGame_hybDistBy wins D D' C k A
+
+theorem chalGame_hybDistBy_left (P : G.Stmt → G.Forgery × (G.Tables × Bool) → Bool)
+    (D D' : G.Sampler) (k : ℕ) {qH qS : ℕ} (A : G.Adversary qH qS) :
+    chalGame D (hybDistBy P D D' k A) = hybGameBy P D D' k A := by
+  rw [chalGame_hybDistBy]
+  unfold hybGameBy
   congr 2
   funext xw
   congr 1
   funext n
   split_ifs <;> rfl
 
-theorem chalGame_hybDist_right (D D' : G.Sampler) (k : ℕ) {qH qS : ℕ}
-    (A : G.Adversary qH qS) : chalGame D' (hybDist D D' k A) = hybGame D D' (k + 1) A := by
-  rw [chalGame_hybDist]
-  unfold hybGame
+theorem chalGame_hybDist_left (D D' : G.Sampler) (k : ℕ) {qH qS : ℕ} (A : G.Adversary qH qS) :
+    chalGame D (hybDist D D' k A) = hybGame D D' k A :=
+  chalGame_hybDistBy_left wins D D' k A
+
+theorem chalGame_hybDistBy_right (P : G.Stmt → G.Forgery × (G.Tables × Bool) → Bool)
+    (D D' : G.Sampler) (k : ℕ) {qH qS : ℕ} (A : G.Adversary qH qS) :
+    chalGame D' (hybDistBy P D D' k A) = hybGameBy P D D' (k + 1) A := by
+  rw [chalGame_hybDistBy]
+  unfold hybGameBy
   congr 2
   funext xw
   congr 1
@@ -696,6 +788,10 @@ theorem chalGame_hybDist_right (D D' : G.Sampler) (k : ℕ) {qH qS : ℕ}
   · by_cases h2 : n = k
     · rw [if_neg h1, if_pos h2, if_pos (by omega)]
     · rw [if_neg h1, if_neg h2, if_neg (by omega)]
+
+theorem chalGame_hybDist_right (D D' : G.Sampler) (k : ℕ) {qH qS : ℕ}
+    (A : G.Adversary qH qS) : chalGame D' (hybDist D D' k A) = hybGame D D' (k + 1) A :=
+  chalGame_hybDistBy_right wins D D' k A
 
 /-- With at most `q` signing queries left from a state with `L` signed messages and
 `L + q ≤ n`, the oracle whose signing query `j` uses `D'` for `j < n` gives the run
@@ -733,6 +829,31 @@ theorem run_hybStep_of_le (D D' : G.Sampler) (xw : G.Stmt × G.Wit) {α : Type}
         rw [attSign_signed D' xw s m o ho, List.length_append, List.length_singleton]
         omega
 
+/-- **Hybrid over the signing queries, for a predicate.** For a predicate `P` on the
+outcomes, samplers `D` and `D'` and every adversary with at most `qH` hash and `qS`
+signing queries, the distance between the advantages in the games at `D` and at `D'`
+decided by `P` is at most the sum over `k < qS` of the advantages of the distinguisher
+`hybDistBy P D D' k A` between the challenge oracles of `D` and `D'`. -/
+theorem Protocol.attAdvantage_hybrid_by (P : G.Stmt → G.Forgery × (G.Tables × Bool) → Bool)
+    (D D' : G.Sampler) {qH qS : ℕ} (A : G.Adversary qH qS) :
+    Advantage (attGameBy P D A) (attGameBy P D' A) ≤
+      ∑ k ∈ Finset.range qS, Advantage (chalGame D (hybDistBy P D D' k A))
+        (chalGame D' (hybDistBy P D D' k A)) := by
+  have h0 : hybGameBy P D D' 0 A = attGameBy P D A := by
+    unfold hybGameBy attGameBy
+    simp only [Nat.not_lt_zero, if_false]
+    simp only [hybStep_const]
+  have hq : hybGameBy P D D' qS A = attGameBy P D' A := by
+    unfold hybGameBy attGameBy gameDistBy
+    congr 2
+    funext xw
+    rw [run_hybStep_of_le D D' xw _ (qH + G.V) qS qS
+      (isQueryBound₂_withVerify xw.1 _ qH qS (A.isQueryBound xw.1)) _ (by simp [Protocol.Tables.empty])]
+  rw [← h0, ← hq]
+  refine (HybridArgument.advantage_hybrid_dep_bool (fun n => hybGameBy P D D' n A) qS).trans
+    (le_of_eq (Finset.sum_congr rfl fun k _ => ?_))
+  rw [chalGame_hybDistBy_left, chalGame_hybDistBy_right]
+
 /-- **Hybrid over the signing queries.** For samplers `D` and `D'` and every adversary
 with at most `qH` hash and `qS` signing queries, the distance between the advantages
 in the games at `D` and at `D'` is at most the sum over `k < qS` of the advantages of
@@ -740,21 +861,8 @@ the distinguisher `hybDist D D' k A` between the challenge oracles of `D` and `D
 theorem Protocol.attAdvantage_hybrid (D D' : G.Sampler) {qH qS : ℕ} (A : G.Adversary qH qS) :
     Advantage (attGame D A) (attGame D' A) ≤
       ∑ k ∈ Finset.range qS, Advantage (chalGame D (hybDist D D' k A))
-        (chalGame D' (hybDist D D' k A)) := by
-  have h0 : hybGame D D' 0 A = attGame D A := by
-    unfold hybGame attGame
-    simp only [Nat.not_lt_zero, if_false]
-    simp only [hybStep_const]
-  have hq : hybGame D D' qS A = attGame D' A := by
-    unfold hybGame attGame gameDist
-    congr 2
-    funext xw
-    rw [run_hybStep_of_le D D' xw _ (qH + G.V) qS qS
-      (isQueryBound₂_withVerify xw.1 _ qH qS (A.isQueryBound xw.1)) _ (by simp [Protocol.Tables.empty])]
-  rw [← h0, ← hq]
-  refine (HybridArgument.advantage_hybrid_dep_bool (fun n => hybGame D D' n A) qS).trans
-    (le_of_eq (Finset.sum_congr rfl fun k _ => ?_))
-  rw [chalGame_hybDist_left, chalGame_hybDist_right]
+        (chalGame D' (hybDist D D' k A)) :=
+  Protocol.attAdvantage_hybrid_by wins D D' A
 
 end Hybrid
 
@@ -1802,5 +1910,872 @@ theorem Protocol.att_le_sim (D : G.Sampler) {δ Γ : G.Stmt × G.Wit → ℝ≥0
   · simp [(PMF.apply_eq_zero_iff _ _).mpr hxw]
 
 end AttSim
+
+/-! ## Key classes: the bounds -/
+
+namespace Protocol
+
+variable (G : Protocol)
+
+/-- **Class-wise programmed-key bound at one pair.** For the pair `(x, w)`, every
+class `c`, every message, every oracle `look` and every point `k`, the expected
+number of programmed public entries of class `c` of the real attempt against `look`
+at the point `k`, counted on the attempts whose hidden entries are at points
+undefined in `look`, over uniform values and uniform randomness, is at most `Γ c`. -/
+def ProgBoundClsAt (κ : G.Classes) (x : G.Stmt) (w : G.Wit) (Γ : κ.ι → ℝ≥0∞) : Prop :=
+  ∀ (c : κ.ι) (m : G.Msg) (look : G.Key → Option G.Ch) (k : G.Key),
+    ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e * ∑' r, PMF.uniformOfFintype G.Rand r *
+      ∑ i ∈ Finset.univ.filter (fun i => κ.ecls i = c),
+        (if G.ev i = false ∧ G.pub x w m r (G.vals look x w m r e) i = true ∧
+            G.hidFresh look x w m r (G.vals look x w m r e) = true ∧
+            G.key x w m r (G.vals look x w m r e) i = k then 1 else 0) ≤ Γ c
+
+/-- The entries of the attempts of the sampler `D` at the pair `xw` are in their
+classes: the point of entry `i` is in the class `ecls i`. -/
+def AttClassesAt (κ : G.Classes) (D : G.Sampler) (xw : G.Stmt × G.Wit) : Prop :=
+  ∀ (m : G.Msg) (e : Fin G.μ → G.Ch), ∀ a ∈ (D xw m e).support,
+    ∀ (v : Fin G.μ → G.Ch) (i : Fin G.μ), κ.cls (a.key v i) = κ.ecls i
+
+/-- **Class-wise hidden-key bound of a sampler at one pair.** For the pair `xw`,
+every class `c`, every message, every oracle `look` and every randomized guesser `Q`
+on traces, the expected number of hidden entries of class `c` of an attempt from
+`D xw m e` against `look` whose point the guess from `guessView` hits, under uniform
+values `e`, is at most `Γ c`. -/
+def AttKeyBoundClsAt (κ : G.Classes) (D : G.Sampler) (xw : G.Stmt × G.Wit)
+    (Γ : κ.ι → ℝ≥0∞) : Prop :=
+  ∀ (c : κ.ι) (m : G.Msg) (look : G.Key → Option G.Ch) (Q : G.Trace → PMF G.Key),
+    ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e * ∑' a, D xw m e a *
+      ∑ i ∈ Finset.univ.filter (fun i => κ.ecls i = c),
+        (if a.pub (a.vals look e) i then 0 else
+          Q (a.guessView look e i) (a.key (a.vals look e) i)) ≤ Γ c
+
+variable {G}
+
+/-- The class-wise key bound bounds the class-wise guess of the points of programmed
+public entries. -/
+theorem KeyBoundClsAt.progBoundClsAt {κ : G.Classes} {x : G.Stmt} {w : G.Wit}
+    {Γ : κ.ι → ℝ≥0∞} (h : G.KeyBoundClsAt κ x w Γ) : G.ProgBoundClsAt κ x w Γ := by
+  intro c m look k
+  refine le_trans ?_ (h c m look fun _ => PMF.pure k)
+  refine ENNReal.tsum_le_tsum fun e => mul_le_mul_right
+    (ENNReal.tsum_le_tsum fun r => mul_le_mul_right (Finset.sum_le_sum fun i _ => ?_) _) _
+  by_cases hi : G.ev i = false ∧ G.pub x w m r (G.vals look x w m r e) i = true ∧
+      G.hidFresh look x w m r (G.vals look x w m r e) = true ∧
+      G.key x w m r (G.vals look x w m r e) i = k
+  · rw [if_pos hi, if_pos (by simp [Protocol.charged, Protocol.flagging, hi.1, hi.2.2.1]),
+      hi.2.2.2, PMF.pure_apply, if_pos rfl]
+  · rw [if_neg hi]
+    exact zero_le
+
+/-- A programmed-key bound is a class-wise programmed-key bound with the same bound
+for every class. -/
+theorem ProgBoundAt.toCls {x : G.Stmt} {w : G.Wit} {Γ : ℝ≥0∞} (h : G.ProgBoundAt x w Γ)
+    (κ : G.Classes) : G.ProgBoundClsAt κ x w fun _ => Γ := by
+  intro c m look k
+  refine le_trans ?_ (h m look k)
+  refine ENNReal.tsum_le_tsum fun e => mul_le_mul_right
+    (ENNReal.tsum_le_tsum fun r => mul_le_mul_right ?_ _) _
+  refine (Finset.sum_le_sum fun i _ => ?_).trans
+    (Finset.sum_le_sum_of_subset (Finset.filter_subset _ _))
+  split_ifs with h1 h2 <;> first | exact le_rfl | exact zero_le | exact absurd ⟨h1.1, h1.2.2.2⟩ h2
+
+/-- The entries of the witness sampler are in their classes. -/
+theorem Classes.attClassesAt_wit (κ : G.Classes) (xw : G.Stmt × G.Wit) :
+    G.AttClassesAt κ G.witSampler xw := by
+  intro m e a ha v i
+  simp only [witSampler, PMF.support_map, Set.mem_image] at ha
+  obtain ⟨r, -, rfl⟩ := ha
+  exact κ.key_cls _ _ _ _ _ _
+
+/-- The class-wise key bound of the protocol at a pair bounds the class-wise
+hidden-key guess of the witness sampler. -/
+theorem KeyBoundClsAt.attKeyBoundClsAt_wit {κ : G.Classes} {x : G.Stmt} {w : G.Wit}
+    {Γ : κ.ι → ℝ≥0∞} (h : G.KeyBoundClsAt κ x w Γ) :
+    G.AttKeyBoundClsAt κ G.witSampler (x, w) Γ := by
+  intro c m look Q
+  simp only [witSampler, tsum_map_mul']
+  refine le_trans ?_ (h c m look Q)
+  refine ENNReal.tsum_le_tsum fun e => mul_le_mul_right
+    (ENNReal.tsum_le_tsum fun r => mul_le_mul_right (Finset.sum_le_sum fun i _ => ?_) _) _
+  rw [witAttempt_pub, witAttempt_vals, witAttempt_key, witAttempt_guessView]
+  cases hp : G.pub x w m r (G.vals look x w m r e) i
+  · simp [Protocol.charged, Protocol.flagging, hp]
+  · simp
+
+/-- A hidden-key bound of a sampler is a class-wise hidden-key bound with the same
+bound for every class. -/
+theorem AttKeyBoundAt.toCls {D : G.Sampler} {xw : G.Stmt × G.Wit} {Γ : ℝ≥0∞}
+    (h : G.AttKeyBoundAt D xw Γ) (κ : G.Classes) : G.AttKeyBoundClsAt κ D xw fun _ => Γ := by
+  intro c m look Q
+  refine le_trans ?_ (h m look Q)
+  refine ENNReal.tsum_le_tsum fun e => mul_le_mul_right
+    (ENNReal.tsum_le_tsum fun a => mul_le_mul_right
+      (Finset.sum_le_sum_of_subset (Finset.filter_subset _ _)) _) _
+
+end Protocol
+
+section ClsWit
+
+variable {G : Protocol} {α : Type}
+
+/-- A programmed entry of the real attempt with the values `e` and the randomness `r`
+from the tables `t` lands on a defined point, and the hidden entries are at
+undefined points. -/
+def progCollFresh (x : G.Stmt) (w : G.Wit) (t : G.Tables) (m : G.Msg) (e : Fin G.μ → G.Ch)
+    (r : G.Rand) : Bool :=
+  G.hidFresh t.lookupAll x w m r (G.vals t.lookupAll x w m r e) && progColl x w t m e r
+
+/-- A programmed entry of a real attempt with fresh hidden entries lands on a defined
+point of the tables `t` with probability at most `Σ_c L_c·Γ c`, with `L_c` the
+points of class `c` in `t`. -/
+theorem tsum_progCollFresh_le (κ : G.Classes) (x : G.Stmt) (w : G.Wit) {Γ : κ.ι → ℝ≥0∞}
+    (hP : G.ProgBoundClsAt κ x w Γ) (t : G.Tables) (m : G.Msg) :
+    ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e * ∑' r, PMF.uniformOfFintype G.Rand r *
+      (if progCollFresh x w t m e r = true then 1 else 0) ≤
+        ∑ c, (κ.count t.keys c : ℝ≥0∞) * Γ c := by
+  -- the programmed public entries of class `c` at the `j`-th defined point of class `c`
+  let F : κ.ι → ℕ → (Fin G.μ → G.Ch) → G.Rand → ℝ≥0∞ := fun c j e r =>
+    ∑ i ∈ Finset.univ.filter (fun i => κ.ecls i = c),
+      (if G.ev i = false ∧ G.pub x w m r (G.vals t.lookupAll x w m r e) i = true ∧
+          G.hidFresh t.lookupAll x w m r (G.vals t.lookupAll x w m r e) = true ∧
+          some (G.key x w m r (G.vals t.lookupAll x w m r e) i) =
+            (t.keys.filter fun k => κ.cls k = c)[j]? then 1 else 0)
+  have h1 : ∀ e r, (if progCollFresh x w t m e r = true then (1 : ℝ≥0∞) else 0) ≤
+      ∑ c, ∑ j ∈ Finset.range (κ.count t.keys c), F c j e r := fun e r => by
+    split_ifs with hc
+    · simp only [progCollFresh, Bool.and_eq_true] at hc
+      obtain ⟨hf, hc⟩ := hc
+      obtain ⟨i, -, hi⟩ := List.any_eq_true.mp hc
+      simp only [Bool.and_eq_true, Bool.not_eq_eq_eq_not, Bool.not_true] at hi
+      set v := G.vals t.lookupAll x w m r e
+      have hp : G.pub x w m r v i = true := by
+        have := List.all_eq_true.mp hf i (List.mem_finRange i)
+        cases hpi : G.pub x w m r v i
+        · simp only [hpi, Bool.false_or] at this
+          rw [Option.isNone_iff_eq_none] at this
+          rw [this] at hi
+          exact absurd hi (by simp)
+        · rfl
+      have hmem : G.key x w m r v i ∈ t.keys.filter fun k => κ.cls k = κ.ecls i :=
+        List.mem_filter.mpr ⟨Protocol.lookupAll_isSome_mem hi.2, by simp [κ.key_cls]⟩
+      obtain ⟨j, hjk⟩ := List.mem_iff_getElem?.mp hmem
+      have hjN : j < κ.count t.keys (κ.ecls i) := (List.getElem?_eq_some_iff.mp hjk).1
+      refine le_trans ?_ (Finset.single_le_sum (f := fun c =>
+        ∑ j ∈ Finset.range (κ.count t.keys c), F c j e r) (fun _ _ => zero_le)
+        (Finset.mem_univ (κ.ecls i)))
+      refine le_trans ?_ (Finset.single_le_sum (f := fun j => F (κ.ecls i) j e r)
+        (fun _ _ => zero_le) (Finset.mem_range.mpr hjN))
+      refine le_trans ?_ (Finset.single_le_sum (f := fun i' => (if G.ev i' = false ∧
+        G.pub x w m r v i' = true ∧ G.hidFresh t.lookupAll x w m r v = true ∧
+        some (G.key x w m r v i') = (t.keys.filter fun k => κ.cls k = κ.ecls i)[j]?
+          then (1 : ℝ≥0∞) else 0)) (fun _ _ => zero_le)
+        (Finset.mem_filter.mpr ⟨Finset.mem_univ i, rfl⟩))
+      rw [if_pos ⟨hi.1, hp, hf, hjk.symm⟩]
+    · exact zero_le
+  have h2 : ∀ c j, ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e *
+      ∑' r, PMF.uniformOfFintype G.Rand r * F c j e r ≤ Γ c := fun c j => by
+    cases hj : (t.keys.filter fun k => κ.cls k = c)[j]? with
+    | none => simp only [F, hj, reduceCtorEq, and_false, if_false, Finset.sum_const_zero,
+        mul_zero, tsum_zero, zero_le]
+    | some k =>
+      refine le_of_eq_of_le ?_ (hP c m t.lookupAll k)
+      simp only [F, hj, Option.some.injEq]
+  calc _ ≤ ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e * ∑' r,
+        PMF.uniformOfFintype G.Rand r * ∑ c, ∑ j ∈ Finset.range (κ.count t.keys c), F c j e r :=
+        ENNReal.tsum_le_tsum fun e => mul_le_mul_right
+          (ENNReal.tsum_le_tsum fun r => mul_le_mul_right (h1 e r) _) _
+    _ = ∑ c, ∑ j ∈ Finset.range (κ.count t.keys c), ∑' e,
+          PMF.uniformOfFintype (Fin G.μ → G.Ch) e *
+            ∑' r, PMF.uniformOfFintype G.Rand r * F c j e r := by
+        rw [tsum_mul_tsum_mul_finsetSum _ _ _
+          (fun c e r => ∑ j ∈ Finset.range (κ.count t.keys c), F c j e r)]
+        exact Finset.sum_congr rfl fun c _ => tsum_mul_tsum_mul_finsetSum _ _ _ _
+    _ ≤ ∑ c, ∑ _j ∈ Finset.range (κ.count t.keys c), Γ c :=
+        Finset.sum_le_sum fun c _ => Finset.sum_le_sum fun j _ => h2 c j
+    _ = _ := by simp only [Finset.sum_const, Finset.card_range, nsmul_eq_mul]
+
+/-- A real signing attempt with a hidden entry at a defined point of `t` sets the flag
+of the signing answer of its attempt with the programmed entries programmed. -/
+theorem attSignOut_wit_flag (x : G.Stmt) (w : G.Wit) (t : G.Tables) (b : Bool) (m : G.Msg)
+    (e : Fin G.μ → G.Ch) (r : G.Rand)
+    (h : G.hidFresh t.lookupAll x w m r (G.vals t.lookupAll x w m r e) = false) :
+    (attSignOut t b m e (G.witAttempt x w m r)).2.2 = true := by
+  set v := G.vals t.lookupAll x w m r e with hv
+  simp only [Protocol.hidFresh, List.all_eq_false, List.mem_finRange, true_and,
+    Bool.or_eq_true, not_or, Bool.not_eq_true, Option.isNone_eq_false_iff] at h
+  obtain ⟨j, hj, hk⟩ := h
+  simp only [attSignOut, Bool.or_eq_true, List.any_eq_true, List.mem_finRange, true_and]
+  refine Or.inr ⟨j, ?_⟩
+  simp only [Protocol.witAttempt_vals, Protocol.witAttempt_pub, Protocol.witAttempt_key, ← hv, hj]
+  simpa using hk
+
+/-- A run of the game at a sampler started with the flag set gives a test that is at
+least `1` on the outcomes with the flag set an expectation at least `1`. -/
+theorem one_le_tsum_run_att_flag (D : G.Sampler) (xw : G.Stmt × G.Wit)
+    (A : OracleAdv G.Query G.Answer α) (s : G.Tables × Bool) (hs : s.2 = true)
+    (g : α × (G.Tables × Bool) → ℝ≥0∞) (hg : ∀ y, y.2.2 = true → 1 ≤ g y) :
+    1 ≤ ∑' y, OracleAdv.run (toOracle (attStep D xw)) A s y * g y := by
+  calc (1 : ℝ≥0∞) = ∑' y, OracleAdv.run (toOracle (attStep D xw)) A s y * 1 := by
+        rw [ENNReal.tsum_mul_right, PMF.tsum_coe, one_mul]
+    _ ≤ _ := ENNReal.tsum_le_tsum fun y => by
+        by_cases hy : OracleAdv.run (toOracle (attStep D xw)) A s y = 0
+        · simp [hy]
+        · exact mul_le_mul_right (hg y (run_att_support_flag D xw A s y
+            ((PMF.mem_support_iff _ _).mpr hy) hs)) _
+
+/-- One real signing step against the signing step of the witness sampler, class by
+class: for a test `Y` of the outcome bounded by `1` and above by `Y'` plus `C` on the
+outcomes of the witness sampler, with `Y'` at least `1` on the outcomes with the flag
+set. -/
+theorem realSign_le_witSign_cls (κ : G.Classes) (xw : G.Stmt × G.Wit) {Γ : κ.ι → ℝ≥0∞}
+    (hP : G.ProgBoundClsAt κ xw.1 xw.2 Γ) (s : G.Tables × Bool) (m : G.Msg)
+    (Y Y' : G.Answer × (G.Tables × Bool) → ℝ≥0∞) (C : ℝ≥0∞) (hY1 : ∀ o, Y o ≤ 1)
+    (hY' : ∀ o, o.2.2 = true → 1 ≤ Y' o)
+    (hY : ∀ e r, Y (realSignOut xw.1 xw.2 s.1 s.2 m e r) ≤
+      Y' (realSignOut xw.1 xw.2 s.1 s.2 m e r) + C) :
+    ∑' o, toOracle (realStep xw) s (.inr m) o * Y o ≤
+      ∑' o, toOracle (attStep G.witSampler xw) s (.inr m) o * Y' o +
+        (C + ∑ c, (κ.count s.1.keys c : ℝ≥0∞) * Γ c) := by
+  obtain ⟨t, b⟩ := s
+  simp only [toOracle, realStep, attStep, attSign, Protocol.witSampler, Step.toPMF, sampleVec,
+    tsum_bind_mul, tsum_map_mul']
+  have hpt : ∀ e r, Y (realSignOut xw.1 xw.2 t b m e r) ≤
+      Y' (attSignOut t b m e (G.witAttempt xw.1 xw.2 m r)) + C +
+        (if progCollFresh xw.1 xw.2 t m e r = true then 1 else 0) := fun e r => by
+    by_cases hc : progCollFresh xw.1 xw.2 t m e r = true
+    · rw [if_pos hc]
+      exact (hY1 _).trans le_add_self
+    rw [if_neg hc, add_zero]
+    by_cases hp : progColl xw.1 xw.2 t m e r = true
+    · have hf : G.hidFresh t.lookupAll xw.1 xw.2 m r (G.vals t.lookupAll xw.1 xw.2 m r e) =
+          false := by
+        simpa [progCollFresh, hp] using hc
+      exact (hY1 _).trans ((hY' _ (attSignOut_wit_flag xw.1 xw.2 t b m e r hf)).trans
+        le_self_add)
+    · rw [← realSignOut_eq_attSignOut xw.1 xw.2 t b m e r fun i hi => ?_]
+      · exact hY e r
+      · simp only [progColl, List.any_eq_true, List.mem_finRange, true_and, Bool.and_eq_true,
+          Bool.not_eq_eq_eq_not, Bool.not_true, not_exists, not_and] at hp
+        simpa using hp i hi
+  calc _ ≤ ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e * ∑' r,
+        PMF.uniformOfFintype G.Rand r * (Y' (attSignOut t b m e (G.witAttempt xw.1 xw.2 m r)) +
+          C + (if progCollFresh xw.1 xw.2 t m e r = true then 1 else 0)) :=
+        ENNReal.tsum_le_tsum fun e => mul_le_mul_right
+          (ENNReal.tsum_le_tsum fun r => mul_le_mul_right (hpt e r) _) _
+    _ = ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e * ∑' r,
+          PMF.uniformOfFintype G.Rand r * Y' (attSignOut t b m e (G.witAttempt xw.1 xw.2 m r)) +
+        C + ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e * ∑' r,
+          PMF.uniformOfFintype G.Rand r *
+            (if progCollFresh xw.1 xw.2 t m e r = true then 1 else 0) := by
+        simp only [mul_add, ENNReal.tsum_add, ENNReal.tsum_mul_right, PMF.tsum_coe, one_mul]
+    _ ≤ _ := by
+        rw [add_assoc]
+        exact add_le_add le_rfl (add_le_add le_rfl (tsum_progCollFresh_le κ xw.1 xw.2 hP t m))
+
+/-- **Programmed entries programmed, for runs, class by class.** For a pair with
+class-wise programmed-key bound `Γ` and a run with at most `q` signing queries and
+hash queries of total cost at most `n c` for each class `c`, from tables with `L_c`
+points of class `c`, a test `g` with values in `[0, 1]` of the real run is at most
+the test `g' ≥ g` of the run with the signing oracle of the witness sampler plus
+`Σ_c q·(L_c + n c + μc c·q)·Γ c`, when `g'` is at least `1` on the outcomes with the
+flag set. -/
+theorem run_real_le_wit_cls (κ : G.Classes) (xw : G.Stmt × G.Wit) {Γ : κ.ι → ℝ≥0∞}
+    (hP : G.ProgBoundClsAt κ xw.1 xw.2 Γ) (A : OracleAdv G.Query G.Answer α) (h q : ℕ)
+    (hA : IsQueryBound₂ A h q) (n : κ.ι → ℕ) (hn : ∀ c, A.IsQueryBoundBy (κ.hashCost c) (n c))
+    (s : G.Tables × Bool) (g g' : α × (G.Tables × Bool) → ℝ≥0∞) (hg : ∀ y, g y ≤ 1)
+    (hgg : ∀ y, g y ≤ g' y) (hg' : ∀ y, y.2.2 = true → 1 ≤ g' y) :
+    ∑' y, OracleAdv.run (toOracle (realStep xw)) A s y * g y ≤
+      ∑' y, OracleAdv.run (toOracle (attStep G.witSampler xw)) A s y * g' y +
+        flagBoundCls κ Γ n q s.1 := by
+  induction A generalizing h q n s with
+  | ret a =>
+    simp only [OracleAdv.run_ret, tsum_pure_mul]
+    exact (hgg _).trans le_self_add
+  | rand p k ih =>
+    simp only [OracleAdv.run_rand, tsum_bind_mul]
+    calc _ ≤ ∑' c, p c * (∑' y, OracleAdv.run (toOracle (attStep G.witSampler xw)) (k c) s y *
+            g' y + flagBoundCls κ Γ n q s.1) :=
+          ENNReal.tsum_le_tsum fun c => mul_le_mul_right
+            (ih c h q (hA c) n (fun c' => hn c' c) s) _
+      _ = _ := by
+          simp only [mul_add]
+          rw [ENNReal.tsum_add, ENNReal.tsum_mul_right, PMF.tsum_coe, one_mul]
+  | query d k ih =>
+    simp only [OracleAdv.run_query, tsum_bind_mul]
+    have hY1 : ∀ o : G.Answer × (G.Tables × Bool),
+        ∑' y, OracleAdv.run (toOracle (realStep xw)) (k o.1) o.2 y * g y ≤ 1 := fun o =>
+      (ENNReal.tsum_le_tsum fun y => mul_le_of_le_one_right' (hg y)).trans
+        (le_of_eq (PMF.tsum_coe _))
+    cases d with
+    | inl key =>
+      cases h with
+      | zero => exact hA.elim
+      | succ h =>
+        rw [attStep_inl]
+        refine tsum_mul_le_tsum_mul_add _ _ _ _ fun o ho =>
+          (ih o.1 h q (hA o.1) _ (fun c => (hn c).2 o.1) o.2).trans
+            (add_le_add le_rfl (Finset.sum_le_sum fun c _ =>
+              mul_le_mul_of_nonneg_right ?_ zero_le))
+        have hs := realStep_count_le κ xw s (.inl key) o ho c
+        have h1 := (hn c).1
+        simp only [Sum.elim_inl] at hs
+        exact_mod_cast Nat.mul_le_mul_left _ (by dsimp only; omega)
+    | inr m =>
+      have hn' : ∀ c r, (k r).IsQueryBoundBy (κ.hashCost c) (n c) := fun c r => by
+        simpa [Protocol.Classes.hashCost] using (hn c).2 r
+      cases q with
+      | zero => exact hA.elim
+      | succ q =>
+        refine (realSign_le_witSign_cls κ xw hP s m _
+          (fun o => ∑' y, OracleAdv.run (toOracle (attStep G.witSampler xw)) (k o.1) o.2 y *
+            g' y)
+          (∑ c, ((q * (κ.count s.1.keys c + κ.μc c + n c + κ.μc c * q) : ℕ) : ℝ≥0∞) * Γ c)
+          hY1 (fun o ho => one_le_tsum_run_att_flag _ xw _ o.2 ho g' hg')
+          fun e r => ?_).trans ?_
+        · refine (ih _ h q (hA _) n (fun c => hn' c _) _).trans
+            (add_le_add le_rfl (Finset.sum_le_sum fun c _ =>
+              mul_le_mul_of_nonneg_right ?_ zero_le))
+          have hs := realSignOut_count_le κ xw.1 xw.2 s.1 s.2 m e r c
+          exact_mod_cast Nat.mul_le_mul_left _ (by omega)
+        · refine add_le_add le_rfl ?_
+          rw [flagBoundCls, ← Finset.sum_add_distrib]
+          refine Finset.sum_le_sum fun c _ => ?_
+          rw [← add_mul]
+          refine mul_le_mul_of_nonneg_right ?_ zero_le
+          have : q * (κ.count s.1.keys c + κ.μc c + n c + κ.μc c * q) + κ.count s.1.keys c ≤
+              (q + 1) * (κ.count s.1.keys c + n c + κ.μc c * (q + 1)) := by
+            simp only [Nat.mul_add, Nat.add_mul, Nat.mul_one, Nat.one_mul]
+            nlinarith
+          exact_mod_cast this
+
+/-- **Programmed entries programmed, class by class.** For a protocol with key
+classes `κ` whose generated pairs `(x, w)` have class-wise programmed-key bound
+`Γ (x, w)`, and every adversary with at most `qH` hash and `qS` signing queries whose
+hash queries at points of class `c` are at most `q c` on every path, the EUF-CMA
+advantage is at most the probability that the forgery wins or the flag is set in the
+game at the witness sampler, plus the expectation over the generator of
+`Σ_c qS·(q c + Vc c + μc c·qS)·Γ(x, w) c`. -/
+theorem Protocol.eufcma_le_wit_cls (κ : G.Classes) {Γ : G.Stmt × G.Wit → κ.ι → ℝ≥0∞}
+    (hP : ∀ xw ∈ G.gen.support, G.ProgBoundClsAt κ xw.1 xw.2 (Γ xw)) {qH qS : ℕ}
+    (A : G.Adversary qH qS) (q : κ.ι → ℕ)
+    (hq : ∀ x c, (A.run x).IsQueryBoundBy (κ.hashCost c) (q c)) :
+    eufcmaAdvantage A ≤ attAdvantageBy winsOrFlag G.witSampler A +
+      ∑' xw, G.gen xw * ∑ c, ((qS * (q c + κ.Vc c + κ.μc c * qS) : ℕ) : ℝ≥0∞) * Γ xw c := by
+  unfold eufcmaAdvantage attAdvantageBy eufcmaGame attGameBy
+  rw [prTrue_gameDist, prTrue_gameDistBy, ← ENNReal.tsum_add]
+  refine ENNReal.tsum_le_tsum fun xw => ?_
+  rw [← mul_add]
+  by_cases hxw : xw ∈ G.gen.support
+  · refine mul_le_mul_right ?_ _
+    have hB := isQueryBound₂_withVerify xw.1 _ qH qS (A.isQueryBound xw.1)
+    rw [toOuterMeasure_eq_tsum_ite, toOuterMeasure_eq_tsum_ite]
+    refine (run_real_le_wit_cls κ xw (hP xw hxw) _ (qH + G.V) qS hB (fun c => q c + κ.Vc c)
+      (fun c => isQueryBoundBy_withVerify_cls κ c xw.1 _ _ (hq xw.1 c))
+      (Protocol.Tables.empty, false) _ (fun y => if winsOrFlag xw.1 y = true then 1 else 0)
+      (fun y => by split_ifs <;> simp) (fun y => ?_)
+      (fun y hy => ?_)).trans (le_of_eq ?_)
+    · by_cases hw : wins xw.1 y = true
+      · simp [winsOrFlag, hw]
+      · simp [hw]
+    · simp [winsOrFlag, hy]
+    · simp [flagBoundCls, Protocol.Tables.empty, Protocol.Tables.keys, Protocol.Classes.count]
+  · simp [(PMF.apply_eq_zero_iff _ _).mpr hxw]
+
+end ClsWit
+
+section ClsAtt
+
+variable {G : Protocol} {α : Type} (D : G.Sampler) (xw : G.Stmt × G.Wit)
+
+/-- Programming entries appends a sublist of them to the public entries. -/
+theorem programAll_prog_eq (t : G.Tables) (b : Bool) (l : List (G.Key × G.Ch)) :
+    ∃ l', l'.Sublist l ∧ (programAll t b l).1.prog = t.prog ++ l' := by
+  induction l generalizing t b with
+  | nil => exact ⟨[], List.Sublist.slnil, by simp [programAll]⟩
+  | cons p l ih =>
+    unfold programAll
+    split
+    · obtain ⟨l', hl', he⟩ := ih t true
+      exact ⟨l', List.Sublist.cons p hl', he⟩
+    · obtain ⟨l', hl', he⟩ := ih { t with prog := t.prog ++ [p] } b
+      exact ⟨p :: l', List.Sublist.cons_cons p hl', by rw [he]; simp⟩
+
+/-- The tables after `traceOut` with the trace `tr` gain at most the points of class
+`c` of the entries of `tr`. -/
+theorem count_traceOut_le (κ : G.Classes) (t : G.Tables) (b : Bool) (m : G.Msg) (tr : G.Trace)
+    (c : κ.ι) :
+    κ.count (traceOut t b m tr).2.1.keys c ≤
+      κ.count t.keys c + κ.count (tr.1.map Prod.fst) c + κ.count (tr.2.1.map Prod.fst) c := by
+  obtain ⟨l', hl', he⟩ := programAll_prog_eq (hashAll t tr.1) b tr.2.1
+  obtain ⟨h1, -, h3, -, -⟩ := programAll_tables (hashAll t tr.1) b tr.2.1
+  have hs := κ.count_le_of_sublist (hl'.map Prod.fst) c
+  have hf := κ.count_le_of_sublist ((List.filter_sublist (p := fun p : G.Key × G.Ch =>
+    (t.lookup p.1).isNone) (l := tr.1)).map Prod.fst) c
+  change κ.count (((programAll (hashAll t tr.1) b tr.2.1).1.prog ++
+    (programAll (hashAll t tr.1) b tr.2.1).1.hash ++
+    (programAll (hashAll t tr.1) b tr.2.1).1.rej).map Prod.fst) c ≤ _
+  rw [he, h1, h3]
+  simp only [hashAll, Protocol.Tables.keys, List.map_append, κ.count_append] at hs hf ⊢
+  omega
+
+/-- The points of class `c` among the entries of an attempt in its classes satisfying
+`p`. -/
+theorem Protocol.Attempt.count_entries (κ : G.Classes) {a : G.Attempt}
+    (hκ : ∀ v i, κ.cls (a.key v i) = κ.ecls i) (v : Fin G.μ → G.Ch) (p : Fin G.μ → Bool)
+    (c : κ.ι) :
+    κ.count ((a.entries v p).map Prod.fst) c =
+      (((List.finRange G.μ).filter fun i => κ.ecls i = c).filter p).length := by
+  simp only [Protocol.Classes.count, Protocol.Attempt.entries, List.map_map, List.filter_map,
+    List.length_map, List.filter_filter]
+  congr 1
+  refine List.filter_congr fun i _ => ?_
+  simp [hκ, Bool.and_comm]
+
+/-- The evaluated public, programmed public and hidden entries of an attempt in its
+classes have `μc c` points of class `c` in all. -/
+theorem Protocol.Attempt.count_trace_entries (κ : G.Classes) {a : G.Attempt}
+    (hκ : ∀ v i, κ.cls (a.key v i) = κ.ecls i) (v : Fin G.μ → G.Ch) (c : κ.ι) :
+    κ.count ((a.evEntries v).map Prod.fst) c + κ.count ((a.pubEntries v).map Prod.fst) c +
+      κ.count ((a.hidEntries v).map Prod.fst) c = κ.μc c := by
+  simp only [Protocol.Attempt.evEntries, Protocol.Attempt.pubEntries,
+    Protocol.Attempt.hidEntries, Protocol.Attempt.count_entries κ hκ,
+    ← κ.length_filter_finRange_eq_μc]
+  have h1 := List.length_eq_length_filter_add (a.pub v)
+    (l := (List.finRange G.μ).filter fun i => κ.ecls i = c)
+  have h2 := List.length_eq_length_filter_add G.ev
+    (l := ((List.finRange G.μ).filter fun i => κ.ecls i = c).filter (a.pub v))
+  simp only [List.filter_filter, Bool.and_assoc] at h1 h2 ⊢
+  omega
+
+/-- The signing answer of an attempt in its classes adds at most `μc c` points of
+class `c`. -/
+theorem attSignOut_count_le (κ : G.Classes) (t : G.Tables) (b : Bool) (m : G.Msg)
+    (e : Fin G.μ → G.Ch) {a : G.Attempt} (hκ : ∀ v i, κ.cls (a.key v i) = κ.ecls i)
+    (c : κ.ι) :
+    κ.count (attSignOut t b m e a).2.1.keys c ≤ κ.count t.keys c + κ.μc c := by
+  set v := a.vals t.lookupAll e with hv
+  have h0 := Protocol.Attempt.count_trace_entries κ hκ v c
+  have h1 : κ.count (traceOut t b m (a.trace v)).2.1.keys c ≤ κ.count t.keys c +
+      κ.count ((a.evEntries v).map Prod.fst) c + κ.count ((a.pubEntries v).map Prod.fst) c :=
+    count_traceOut_le κ t b m (a.trace v) c
+  have h3 := κ.count_le_of_sublist ((List.filter_sublist (p := fun p : G.Key × G.Ch =>
+    (t.lookupAll p.1).isNone) (l := a.hidEntries v)).map Prod.fst) c
+  have hk : (attSignOut t b m e a).2.1.keys = (traceOut t b m (a.trace v)).2.1.keys ++
+      ((a.hidEntries v).filter fun p => (t.lookupAll p.1).isNone).map Prod.fst := by
+    simp only [attSignOut, ← hv, Protocol.Tables.keys, rej_traceOut, List.map_append,
+      List.append_assoc]
+  rw [hk, κ.count_append]
+  omega
+
+theorem exists_mem_support_attSign {s : G.Tables × Bool} {m : G.Msg}
+    {o : G.Answer × (G.Tables × Bool)} (ho : o ∈ (attSign D xw s m).support) :
+    ∃ e, ∃ a ∈ (D xw m e).support, o = attSignOut s.1 s.2 m e a := by
+  simp only [attSign, PMF.mem_support_bind_iff, PMF.support_map, Set.mem_image] at ho
+  obtain ⟨e, _, a, ha, rfl⟩ := ho
+  exact ⟨e, a, ha, rfl⟩
+
+/-- Every transition of the game at a sampler whose attempts are in their classes adds
+at most `hashCost c d` points of class `c` for a hash query and at most `μc c` for a
+signing query. -/
+theorem attStep_count_le (κ : G.Classes) (hκ : G.AttClassesAt κ D xw) (s : G.Tables × Bool)
+    (d : G.Query) (o : G.Answer × (G.Tables × Bool))
+    (ho : o ∈ (toOracle (attStep D xw) s d).support) (c : κ.ι) :
+    κ.count o.2.1.keys c ≤ κ.count s.1.keys c + κ.hashCost c d +
+      Sum.elim (fun _ => 0) (fun _ => κ.μc c) d := by
+  cases d with
+  | inl k => exact realStep_count_le κ xw s (.inl k) o ho c
+  | inr m =>
+    obtain ⟨e, a, ha, rfl⟩ := exists_mem_support_attSign D xw ho
+    simpa [Protocol.Classes.hashCost] using attSignOut_count_le κ s.1 s.2 m e (hκ m e a ha) c
+
+/-- Along a run of the game at a sampler whose attempts are in their classes, with at
+most `q` signing queries and hash queries of total cost at most `n` for the class `c`,
+the tables gain at most `n + μc c·q` points of class `c`. -/
+theorem run_att_support_size_cls (κ : G.Classes) (hκ : G.AttClassesAt κ D xw)
+    (A : OracleAdv G.Query G.Answer α) (c : κ.ι) (h q n : ℕ) (hA : IsQueryBound₂ A h q)
+    (hn : A.IsQueryBoundBy (κ.hashCost c) n) (s : G.Tables × Bool) (y : α × (G.Tables × Bool))
+    (hy : y ∈ (OracleAdv.run (toOracle (attStep D xw)) A s).support) :
+    κ.count y.2.1.keys c ≤ κ.count s.1.keys c + n + κ.μc c * q := by
+  induction A generalizing h q n s with
+  | ret a =>
+    rw [OracleAdv.run_ret, PMF.support_pure, Set.mem_singleton_iff] at hy
+    subst hy
+    show κ.count s.1.keys c ≤ _
+    omega
+  | rand p k ih =>
+    rw [OracleAdv.run_rand, PMF.mem_support_bind_iff] at hy
+    obtain ⟨b, _, hb⟩ := hy
+    exact ih b h q n (hA b) (hn b) s hb
+  | query d k ih =>
+    rw [OracleAdv.run_query, PMF.mem_support_bind_iff] at hy
+    obtain ⟨o, ho, hy⟩ := hy
+    have hs := attStep_count_le D xw κ hκ s d o ho c
+    obtain ⟨hn1, hn2⟩ := hn
+    cases d with
+    | inl key =>
+      cases h with
+      | zero => exact hA.elim
+      | succ h =>
+        have := ih o.1 h q _ (hA o.1) (hn2 o.1) o.2 hy
+        simp only [Sum.elim_inl] at hs
+        omega
+    | inr m =>
+      cases q with
+      | zero => exact hA.elim
+      | succ q =>
+        have := ih o.1 h q _ (hA o.1) (hn2 o.1) o.2 hy
+        simp only [Sum.elim_inr] at hs
+        rw [Nat.mul_succ]
+        omega
+
+theorem Protocol.Attempt.count_guessView_le (κ : G.Classes) {a : G.Attempt}
+    (hκ : ∀ v i, κ.cls (a.key v i) = κ.ecls i) (look : G.Key → Option G.Ch)
+    (e : Fin G.μ → G.Ch) (i : Fin G.μ) (c : κ.ι) :
+    κ.count ((a.guessView look e i).1.map Prod.fst) c +
+      κ.count ((a.guessView look e i).2.1.map Prod.fst) c ≤ κ.μc c := by
+  unfold Protocol.Attempt.guessView
+  split
+  · exact Nat.zero_le _
+  · have := Protocol.Attempt.count_trace_entries κ hκ (a.vals look e) c
+    simp only [Protocol.Attempt.trace]
+    omega
+
+/-- **Guessing the hidden points of one class of an attempt.** For a sampler whose
+attempts are in their classes with class-wise hidden-key bound `Γ`, and runs `R tr`
+indexed by traces whose final tables have at most `N` points of class `c` on the
+traces `guessView` of the attempts of the sampler, the expectation over the values
+and the attempts of the number of hidden entries of class `c` whose point is defined
+at the end of `R (guessView …)` is at most `N·Γ c`. -/
+theorem tsum_att_guess_le_cls (κ : G.Classes) {Γ : κ.ι → ℝ≥0∞} (hκ : G.AttClassesAt κ D xw)
+    (hΓ : G.AttKeyBoundClsAt κ D xw Γ) (c : κ.ι) (m : G.Msg) (look : G.Key → Option G.Ch)
+    (R : G.Trace → PMF (α × (G.Tables × Bool))) (N : ℕ)
+    (hN : ∀ e, ∀ a ∈ (D xw m e).support, ∀ i, ∀ y ∈ (R (a.guessView look e i)).support,
+      κ.count y.2.1.keys c ≤ N) :
+    ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e * ∑' a, D xw m e a *
+      ∑ i ∈ Finset.univ.filter (fun i => κ.ecls i = c), (if a.pub (a.vals look e) i then 0 else
+        (R (a.guessView look e i)).toOuterMeasure
+          {y | a.key (a.vals look e) i ∈ y.2.1.keys}) ≤ N * Γ c := by
+  rcases isEmpty_or_nonempty G.Key with hK | ⟨⟨k₀⟩⟩
+  · refine le_trans (le_of_eq (ENNReal.tsum_eq_zero.mpr fun e => mul_eq_zero_of_right _
+      (ENNReal.tsum_eq_zero.mpr fun a => mul_eq_zero_of_right _ ?_))) zero_le
+    have : IsEmpty (Fin G.μ) := ⟨fun i => hK.false (a.key (fun _ => Classical.arbitrary _) i)⟩
+    simp
+  -- the guess of the `j`-th point of class `c` of the final tables
+  let Q : ℕ → G.Trace → PMF G.Key := fun j tr =>
+    (R tr).map fun y => (y.2.1.keys.filter fun k => κ.cls k = c).getD j k₀
+  have h1 : ∀ e, ∀ a ∈ (D xw m e).support, ∀ i ∈ Finset.univ.filter (fun i => κ.ecls i = c),
+      (if a.pub (a.vals look e) i then 0 else
+        (R (a.guessView look e i)).toOuterMeasure {y | a.key (a.vals look e) i ∈ y.2.1.keys}) ≤
+      ∑ j ∈ Finset.range N, (if a.pub (a.vals look e) i then 0 else
+        Q j (a.guessView look e i) (a.key (a.vals look e) i)) := fun e a ha i hi => by
+    split_ifs
+    · exact zero_le
+    · refine le_trans (MeasureTheory.measure_mono fun y hy => ?_)
+        (toOuterMeasure_mem_le_sum (R (a.guessView look e i))
+          (fun y => y.2.1.keys.filter fun k => κ.cls k = c) N k₀
+          (a.key (a.vals look e) i) (hN e a ha i))
+      refine List.mem_filter.mpr ⟨hy, ?_⟩
+      simpa [hκ m e a ha] using (Finset.mem_filter.mp hi).2
+  calc _ ≤ ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e * ∑' a, D xw m e a *
+        ∑ j ∈ Finset.range N, ∑ i ∈ Finset.univ.filter (fun i => κ.ecls i = c),
+          (if a.pub (a.vals look e) i then 0 else
+            Q j (a.guessView look e i) (a.key (a.vals look e) i)) := by
+        refine ENNReal.tsum_le_tsum fun e => mul_le_mul_right
+          (ENNReal.tsum_le_tsum fun a => ?_) _
+        by_cases ha : D xw m e a = 0
+        · simp [ha]
+        refine mul_le_mul_right ?_ _
+        rw [Finset.sum_comm]
+        exact Finset.sum_le_sum fun i hi => h1 e a ((PMF.mem_support_iff _ _).mpr ha) i hi
+    _ = ∑ j ∈ Finset.range N, ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e *
+          ∑' a, D xw m e a * ∑ i ∈ Finset.univ.filter (fun i => κ.ecls i = c),
+            (if a.pub (a.vals look e) i then 0 else
+              Q j (a.guessView look e i) (a.key (a.vals look e) i)) :=
+        tsum_mul_tsum_dep_finsetSum _ (fun e a => D xw m e a) _ _
+    _ ≤ ∑ _j ∈ Finset.range N, Γ c := Finset.sum_le_sum fun j _ => hΓ c m look (Q j)
+    _ = N * Γ c := by rw [Finset.sum_const, Finset.card_range, nsmul_eq_mul]
+
+/-- One signing attempt in the induction of `run_att_flag_le_cls`. -/
+theorem att_flag_sign_term_le_cls (κ : G.Classes) {Γ : κ.ι → ℝ≥0∞}
+    (k : G.Answer → OracleAdv G.Query G.Answer α) (n : κ.ι → ℕ) (q : ℕ) (t : G.Tables)
+    (ht : t.rej = []) (m : G.Msg) (e : Fin G.μ → G.Ch) {a : G.Attempt}
+    (hκ : ∀ v i, κ.cls (a.key v i) = κ.ecls i)
+    (ih : ∀ c (t' : G.Tables), t'.rej = [] →
+      (OracleAdv.run (toOracle (attStep D xw)) (k c) (t', false)).toOuterMeasure
+        {y | y.2.2 = true} ≤ flagBoundCls κ Γ n q t') :
+    (OracleAdv.run (toOracle (attStep D xw)) (k (attSignOut t false m e a).1)
+        (attSignOut t false m e a).2).toOuterMeasure {y | y.2.2 = true} ≤
+      ∑ c, ((q * (κ.count t.keys c + κ.μc c + n c + κ.μc c * q) : ℕ) : ℝ≥0∞) * Γ c +
+        ∑ i, (if a.pub (a.vals t.lookup e) i then 0 else
+          (attContRun D xw k t m (a.guessView t.lookup e i)).toOuterMeasure
+            {y | a.key (a.vals t.lookup e) i ∈ y.2.1.keys}) := by
+  set v := a.vals t.lookup e with hv
+  by_cases hc : ∃ i, a.pub v i = false ∧ (t.lookup (a.key v i)).isSome
+  · obtain ⟨i, hf, hi⟩ := hc
+    refine (toOuterMeasure_le_one _ _).trans (le_trans ?_ le_add_self)
+    refine le_trans (le_of_eq ?_) (Finset.single_le_sum (f := fun i =>
+      if a.pub v i then 0 else
+        (attContRun D xw k t m (a.guessView t.lookup e i)).toOuterMeasure
+          {y | a.key v i ∈ y.2.1.keys}) (fun _ _ => zero_le) (Finset.mem_univ i))
+    have hg : a.guessView t.lookup e i = ([], [], none) := by
+      simp only [Protocol.Attempt.guessView, ← hv, hi, Bool.or_true, if_true]
+    simp only [hf, Bool.false_eq_true, if_false, hg]
+    refine (run_att_keys_eq_one D xw _ _ _ ?_ _ fun y hy => hy).symm
+    exact (le_traceOut t false m _).keys_subset (Protocol.lookup_isSome_mem_keys hi)
+  simp only [not_exists, not_and, Bool.not_eq_true, Option.isSome_eq_false_iff,
+    Option.isNone_iff_eq_none] at hc
+  rw [attSignOut_of_fresh t false m e a
+    (fun i hf => (Protocol.lookupAll_of_rej_nil ht _).trans (hc i hf))
+    (fun i _ _ _ => by rw [ht]; exact lookupIn_nil _)]
+  set T₀ : G.Tables := (traceOut t false m (a.trace v)).2.1
+  have hT : ({ T₀ with rej := t.rej ++ a.hidEntries v } : G.Tables) =
+      T₀.addRejs (a.hidEntries v) := by
+    simp only [Protocol.Tables.addRejs, T₀, rej_traceOut, ht, List.nil_append,
+      List.append_nil]
+  rw [hT]
+  refine (run_att_addRejs_flag_le D xw _ _ T₀ false).trans ?_
+  refine (MeasureTheory.measure_mono (fun y hy => hy)).trans
+    ((MeasureTheory.measure_union_le _ _).trans (add_le_add ?_ ?_))
+  · refine (ih _ T₀ (by rw [rej_traceOut, ht])).trans
+      (Finset.sum_le_sum fun c _ => mul_le_mul_of_nonneg_right ?_ zero_le)
+    have h1 : κ.count T₀.keys c ≤ κ.count t.keys c +
+        κ.count ((a.evEntries v).map Prod.fst) c +
+        κ.count ((a.pubEntries v).map Prod.fst) c :=
+      count_traceOut_le κ t false m (a.trace v) c
+    have h2 := Protocol.Attempt.count_trace_entries κ hκ v c
+    exact_mod_cast Nat.mul_le_mul_left _ (by omega)
+  · calc _ ≤ (attContRun D xw k t m (a.trace v)).toOuterMeasure
+            (⋃ i ∈ Finset.univ.filter (fun i => a.pub v i = false),
+              {y | a.key v i ∈ y.2.1.keys}) := by
+          refine MeasureTheory.measure_mono fun y hy => ?_
+          obtain ⟨p, hp, hk⟩ := hy
+          obtain ⟨i, hi, rfl⟩ := Protocol.Attempt.mem_entries hp
+          simp only [Set.mem_iUnion, Finset.mem_filter, Finset.mem_univ, true_and]
+          exact ⟨i, by simpa using hi, hk⟩
+      _ ≤ ∑ i ∈ Finset.univ.filter (fun i => a.pub v i = false),
+            (attContRun D xw k t m (a.trace v)).toOuterMeasure
+              {y | a.key v i ∈ y.2.1.keys} :=
+          MeasureTheory.measure_biUnion_finset_le _ _
+      _ = ∑ i ∈ Finset.univ.filter (fun i => a.pub v i = false),
+            (if a.pub v i then 0 else
+              (attContRun D xw k t m (a.guessView t.lookup e i)).toOuterMeasure
+                {y | a.key v i ∈ y.2.1.keys}) := by
+          refine Finset.sum_congr rfl fun i hi => ?_
+          have hi' : a.pub v i = false := (Finset.mem_filter.mp hi).2
+          have hg : a.guessView t.lookup e i = a.trace v := by
+            simp only [Protocol.Attempt.guessView, ← hv, hi', hc i hi', Option.isSome_none,
+              Bool.or_false, Bool.false_eq_true, if_false]
+          rw [hi', hg]
+          rfl
+      _ ≤ _ := Finset.sum_le_sum_of_subset (Finset.filter_subset _ _)
+
+/-- A hash query in the induction of `run_att_flag_le_cls`. -/
+theorem att_flag_hash_step_le_cls (κ : G.Classes) {Γ : κ.ι → ℝ≥0∞}
+    (k : G.Answer → OracleAdv G.Query G.Answer α) (n : κ.ι → ℕ) (q : ℕ) (t : G.Tables)
+    (ht : t.rej = []) (key : G.Key) (hn : ∀ c, κ.hashCost c (.inl key) ≤ n c)
+    (ih : ∀ c (t' : G.Tables), t'.rej = [] →
+      (OracleAdv.run (toOracle (attStep D xw)) (k c) (t', false)).toOuterMeasure
+        {y | y.2.2 = true} ≤ flagBoundCls κ Γ (fun c => n c - κ.hashCost c (.inl key)) q t') :
+    (OracleAdv.run (toOracle (attStep D xw)) (.query (.inl key) k) (t, false)).toOuterMeasure
+        {y | y.2.2 = true} ≤ flagBoundCls κ Γ n q t := by
+  rw [OracleAdv.run_query]
+  simp only [toOracle, attStep, realHashStep]
+  cases hl : t.lookup key with
+  | some e =>
+    simp only [Step.toPMF, PMF.pure_bind]
+    refine (ih _ t ht).trans
+      (Finset.sum_le_sum fun c _ => mul_le_mul_of_nonneg_right ?_ zero_le)
+    exact_mod_cast Nat.mul_le_mul_left _ (by dsimp only; omega)
+  | none =>
+    have hr : lookupIn t.rej key = none := by rw [ht]; exact lookupIn_nil key
+    simp only [hr, Step.toPMF, PMF.bind_map, Function.comp_def, PMF.toOuterMeasure_bind_apply]
+    calc ∑' e, PMF.uniformOfFintype G.Ch e * (OracleAdv.run (toOracle (attStep D xw))
+          (k (.inl e)) ({ t with hash := t.hash ++ [(key, e)] }, false)).toOuterMeasure _
+        ≤ ∑' e, PMF.uniformOfFintype G.Ch e * flagBoundCls κ Γ n q t := by
+          refine ENNReal.tsum_le_tsum fun e => mul_le_mul_right ?_ _
+          refine (ih _ { t with hash := t.hash ++ [(key, e)] } ht).trans
+            (Finset.sum_le_sum fun c _ => mul_le_mul_of_nonneg_right ?_ zero_le)
+          have h1 := hn c
+          have h2 := count_hash_append κ t key e c
+          exact_mod_cast Nat.mul_le_mul_left _ (by dsimp only; omega)
+      _ = _ := by rw [ENNReal.tsum_mul_right, PMF.tsum_coe, one_mul]
+
+/-- The guess terms of a signing attempt in the induction of `run_att_flag_le_cls`:
+the expectation over the values and the attempts of the number of hidden entries whose
+point is defined at the end of the rest of the run is at most
+`Σ_c (L_c + μc c + n_c + μc c·q)·Γ c`. -/
+theorem att_flag_guess_le_cls (κ : G.Classes) {Γ : κ.ι → ℝ≥0∞} (hκ : G.AttClassesAt κ D xw)
+    (hΓ : G.AttKeyBoundClsAt κ D xw Γ) (k : G.Answer → OracleAdv G.Query G.Answer α)
+    (h q : ℕ) (n : κ.ι → ℕ) (hk : ∀ r, IsQueryBound₂ (k r) h q)
+    (hn : ∀ c r, (k r).IsQueryBoundBy (κ.hashCost c) (n c)) (t : G.Tables) (m : G.Msg) :
+    ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e * ∑' a, D xw m e a *
+      ∑ i, (if a.pub (a.vals t.lookup e) i then 0 else
+        (attContRun D xw k t m (a.guessView t.lookup e i)).toOuterMeasure
+          {y | a.key (a.vals t.lookup e) i ∈ y.2.1.keys}) ≤
+      ∑ c, ((κ.count t.keys c + κ.μc c + n c + κ.μc c * q : ℕ) : ℝ≥0∞) * Γ c := by
+  simp only [← Finset.sum_fiberwise Finset.univ κ.ecls]
+  rw [tsum_mul_tsum_dep_finsetSum]
+  refine Finset.sum_le_sum fun c _ => ?_
+  refine tsum_att_guess_le_cls D xw κ hκ hΓ c m t.lookup (attContRun D xw k t m) _
+    fun e a ha i y hy => ?_
+  have h1 := run_att_support_size_cls D xw κ hκ _ c h q (n c) (hk _) (hn c _) _ y hy
+  have h2 := Protocol.Attempt.count_guessView_le κ (hκ m e a ha) t.lookup e i c
+  have h3 := count_traceOut_le κ t false m (a.guessView t.lookup e i) c
+  dsimp only at h1
+  omega
+
+/-- A signing query in the induction of `run_att_flag_le_cls`. -/
+theorem att_flag_sign_step_le_cls (κ : G.Classes) {Γ : κ.ι → ℝ≥0∞}
+    (hκ : G.AttClassesAt κ D xw) (hΓ : G.AttKeyBoundClsAt κ D xw Γ)
+    (k : G.Answer → OracleAdv G.Query G.Answer α) (h q : ℕ) (n : κ.ι → ℕ)
+    (hk : ∀ r, IsQueryBound₂ (k r) h q)
+    (hn : ∀ c r, (k r).IsQueryBoundBy (κ.hashCost c) (n c)) (t : G.Tables) (ht : t.rej = [])
+    (m : G.Msg)
+    (ih : ∀ c (t' : G.Tables), t'.rej = [] →
+      (OracleAdv.run (toOracle (attStep D xw)) (k c) (t', false)).toOuterMeasure
+        {y | y.2.2 = true} ≤ flagBoundCls κ Γ n q t') :
+    (OracleAdv.run (toOracle (attStep D xw)) (.query (.inr m) k) (t, false)).toOuterMeasure
+        {y | y.2.2 = true} ≤ flagBoundCls κ Γ n (q + 1) t := by
+  set N : κ.ι → ℕ := fun c => κ.count t.keys c + κ.μc c + n c + κ.μc c * q with hN
+  set B : ℝ≥0∞ := ∑ c, ((q * N c : ℕ) : ℝ≥0∞) * Γ c with hB
+  -- the guess terms of the attempt `a` with the values `e`
+  set S : (Fin G.μ → G.Ch) → G.Attempt → ℝ≥0∞ := fun e a =>
+    ∑ i, (if a.pub (a.vals t.lookup e) i then 0 else
+      (attContRun D xw k t m (a.guessView t.lookup e i)).toOuterMeasure
+        {y | a.key (a.vals t.lookup e) i ∈ y.2.1.keys}) with hS
+  have hterm : ∀ e a, a ∈ (D xw m e).support →
+      (OracleAdv.run (toOracle (attStep D xw)) (k (attSignOut t false m e a).1)
+        (attSignOut t false m e a).2).toOuterMeasure {y | y.2.2 = true} ≤ B + S e a :=
+    fun e a ha => att_flag_sign_term_le_cls D xw κ k n q t ht m e (hκ m e a ha) ih
+  have hsum : ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e *
+      ∑' a, D xw m e a * S e a ≤ ∑ c, (N c : ℝ≥0∞) * Γ c :=
+    att_flag_guess_le_cls D xw κ hκ hΓ k h q n hk hn t m
+  rw [OracleAdv.run_query]
+  simp only [toOracle, attStep, Step.toPMF, attSign_bind, PMF.toOuterMeasure_bind_apply]
+  calc _ ≤ ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e *
+        ∑' a, D xw m e a * (B + S e a) :=
+        ENNReal.tsum_le_tsum fun e => mul_le_mul_right
+          (ENNReal.tsum_le_tsum fun a => by
+            by_cases ha : D xw m e a = 0
+            · simp [ha]
+            · exact mul_le_mul_right (hterm e a ((PMF.mem_support_iff _ _).mpr ha)) _) _
+    _ = B + ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e *
+          ∑' a, D xw m e a * S e a := by
+        simp only [mul_add, ENNReal.tsum_add, ENNReal.tsum_mul_right, PMF.tsum_coe, one_mul]
+    _ ≤ B + ∑ c, (N c : ℝ≥0∞) * Γ c := add_le_add_right hsum _
+    _ = _ := by
+        rw [hB, flagBoundCls, ← Finset.sum_add_distrib]
+        refine Finset.sum_congr rfl fun c _ => ?_
+        rw [hN]
+        push_cast
+        ring
+
+/-- **Class-wise collision bound at a sampler.** For a sampler whose attempts are in
+their classes with class-wise hidden-key bound `Γ` at the pair, from tables with no
+hidden entry, with `L_c` points of class `c` and the flag cleared, a run of the game
+at the sampler asking at most `q` signing queries and hash queries of total cost at
+most `n c` for each class `c` sets the flag with probability at most
+`Σ_c q·(L_c + n c + μc c·q)·Γ c`. -/
+theorem run_att_flag_le_cls (κ : G.Classes) {Γ : κ.ι → ℝ≥0∞} (hκ : G.AttClassesAt κ D xw)
+    (hΓ : G.AttKeyBoundClsAt κ D xw Γ) (A : OracleAdv G.Query G.Answer α) (h q : ℕ)
+    (hA : IsQueryBound₂ A h q) (n : κ.ι → ℕ) (hn : ∀ c, A.IsQueryBoundBy (κ.hashCost c) (n c))
+    (t : G.Tables) (ht : t.rej = []) :
+    (OracleAdv.run (toOracle (attStep D xw)) A (t, false)).toOuterMeasure {y | y.2.2 = true} ≤
+      flagBoundCls κ Γ n q t := by
+  induction A generalizing h q n t with
+  | ret a => simp [PMF.toOuterMeasure_pure_apply]
+  | rand p k ih =>
+    rw [OracleAdv.run_rand, PMF.toOuterMeasure_bind_apply]
+    calc ∑' b, p b * (OracleAdv.run (toOracle (attStep D xw)) (k b) (t, false)).toOuterMeasure _
+        ≤ ∑' b, p b * flagBoundCls κ Γ n q t :=
+          ENNReal.tsum_le_tsum fun b =>
+            mul_le_mul_right (ih b h q (hA b) n (fun c => hn c b) t ht) _
+      _ = _ := by rw [ENNReal.tsum_mul_right, PMF.tsum_coe, one_mul]
+  | query d k ih =>
+    cases d with
+    | inl key =>
+      cases h with
+      | zero => exact hA.elim
+      | succ h =>
+        exact att_flag_hash_step_le_cls D xw κ k n q t ht key (fun c => (hn c).1)
+          fun a t' ht' => ih a h q (hA a) _ (fun c => (hn c).2 a) t' ht'
+    | inr m =>
+      have hn' : ∀ c r, (k r).IsQueryBoundBy (κ.hashCost c) (n c) := fun c r => by
+        simpa [Protocol.Classes.hashCost] using (hn c).2 r
+      cases q with
+      | zero => exact hA.elim
+      | succ q =>
+        exact att_flag_sign_step_le_cls D xw κ hκ hΓ k h q n hA hn' t ht m
+          fun a t' ht' => ih a h q (hA a) n (fun c => hn' c a) t' ht'
+
+/-- The forgery wins or the flag is set in the game at a sampler with probability at
+most winning in the simulated run, plus `q·δ`, plus the probability that the run at
+the sampler sets the flag. -/
+theorem run_att_winsOrFlag_le_stat {δ : ℝ≥0∞} (hZK : G.AttHVZKAt D xw δ)
+    (A : OracleAdv G.Query G.Answer G.Forgery) (h q : ℕ) (hA : IsQueryBound₂ A h q)
+    (s : G.Tables × Bool) (x : G.Stmt) :
+    (OracleAdv.run (toOracle (attStep D xw)) A s).toOuterMeasure
+        {y | winsOrFlag x y = true} ≤
+      (OracleAdv.run (toOracle (simStep xw.1)) A s).toOuterMeasure {y | wins x y = true} +
+        q * δ +
+      (OracleAdv.run (toOracle (attStep D xw)) A s).toOuterMeasure {y | y.2.2 = true} := by
+  set g : G.Forgery × (G.Tables × Bool) → ℝ≥0∞ := fun y => if wins x y = true then 1 else 0
+  have hg : ∀ y, g y ≤ 1 := fun y => by simp only [g]; split_ifs <;> simp
+  have hgr : RejInsensitive g := fun _ _ => rfl
+  have hgf : FlagInsensitive g := fun _ _ => rfl
+  rw [toOuterMeasure_eq_tsum_ite, toOuterMeasure_eq_tsum_ite, toOuterMeasure_eq_tsum_ite]
+  calc _ ≤ ∑' y, OracleAdv.run (toOracle (attStep D xw)) A s y *
+          (offFlag g y + if y.2.2 = true then 1 else 0) := by
+        refine ENNReal.tsum_le_tsum fun y => mul_le_mul_right ?_ _
+        by_cases hf : y.2.2 = true <;> by_cases hw : wins x y = true <;>
+          simp [offFlag, g, winsOrFlag, hf, hw]
+    _ = ∑' y, OracleAdv.run (toOracle (attStep D xw)) A s y * offFlag g y +
+          ∑' y, OracleAdv.run (toOracle (attStep D xw)) A s y *
+            (if y.2.2 = true then 1 else 0) := by
+        simp only [mul_add]
+        rw [ENNReal.tsum_add]
+    _ ≤ _ := add_le_add (run_att_le_sim D xw hZK A h q hA s g hg hgr hgf) le_rfl
+
+end ClsAtt
+
+section ClsSim
+
+variable {G : Protocol}
+
+/-- **Signing-oracle simulation at a sampler, class by class.** For a protocol with
+key classes `κ` and a sampler whose generated pairs `xw` have statistical HVZK
+distance `δ xw`, attempts in their classes and class-wise hidden-key bound `Γ xw`,
+and every adversary with at most `qH` hash and `qS` signing queries whose hash
+queries at points of class `c` are at most `q c` on every path, the probability that
+the forgery wins or the flag is set in the game at the sampler is at most the
+simulated-game advantage plus the expectation over the generator of
+`qS·δ(x, w) + Σ_c qS·(q c + Vc c + μc c·qS)·Γ(x, w) c`. -/
+theorem Protocol.att_le_sim_cls (κ : G.Classes) (D : G.Sampler) {δ : G.Stmt × G.Wit → ℝ≥0∞}
+    {Γ : G.Stmt × G.Wit → κ.ι → ℝ≥0∞}
+    (hZK : ∀ xw ∈ G.gen.support, G.AttHVZKAt D xw (δ xw))
+    (hκ : ∀ xw ∈ G.gen.support, G.AttClassesAt κ D xw)
+    (hΓ : ∀ xw ∈ G.gen.support, G.AttKeyBoundClsAt κ D xw (Γ xw)) {qH qS : ℕ}
+    (A : G.Adversary qH qS) (q : κ.ι → ℕ)
+    (hq : ∀ x c, (A.run x).IsQueryBoundBy (κ.hashCost c) (q c)) :
+    attAdvantageBy winsOrFlag D A ≤ simAdvantage A +
+      ∑' xw, G.gen xw * (qS * δ xw +
+        ∑ c, ((qS * (q c + κ.Vc c + κ.μc c * qS) : ℕ) : ℝ≥0∞) * Γ xw c) := by
+  unfold attAdvantageBy simAdvantage attGameBy simGame
+  rw [prTrue_gameDistBy, prTrue_gameDist, ← ENNReal.tsum_add]
+  refine ENNReal.tsum_le_tsum fun xw => ?_
+  rw [← mul_add]
+  by_cases hxw : xw ∈ G.gen.support
+  · have hB := isQueryBound₂_withVerify xw.1 _ qH qS (A.isQueryBound xw.1)
+    refine mul_le_mul_right ?_ _
+    refine (run_att_winsOrFlag_le_stat D xw (hZK xw hxw) _ (qH + G.V) qS hB _ _).trans ?_
+    rw [add_assoc]
+    refine add_le_add le_rfl (add_le_add le_rfl ?_)
+    refine (run_att_flag_le_cls D xw κ (hκ xw hxw) (hΓ xw hxw) _ (qH + G.V) qS hB
+      (fun c => q c + κ.Vc c) (fun c => isQueryBoundBy_withVerify_cls κ c xw.1 _ _ (hq xw.1 c))
+      Protocol.Tables.empty rfl).trans (le_of_eq ?_)
+    simp [flagBoundCls, Protocol.Tables.empty, Protocol.Tables.keys, Protocol.Classes.count]
+  · simp [(PMF.apply_eq_zero_iff _ _).mpr hxw]
+
+end ClsSim
 
 end CatCrypt.Crypto.FiatShamirROM
