@@ -44,6 +44,16 @@ query costs (`OracleAdv.run_badDraw_le_sum`).
 * `fiatShamir_rom_eufcma_slCls` — the EUF-CMA bound of straight-line extraction
   with class-wise extraction and signing-hop terms
 * `slReductionCls_toCls` — the class-wise reduction of `E.toCls` is `slReduction E`
+* `fiatShamir_rom_eufcma_sl` — for a log extractor `E` and every adversary with at
+  most `qH` hash and `qS` signing queries, the EUF-CMA advantage is at most the
+  relation advantage of `slReduction E A`, plus `(qH + V + μ·qS)·ε`, plus the
+  signing-hop terms of `Protocol.eufcmaAdvantage_le_simAdvantage_perKey`; it is
+  `fiatShamir_rom_eufcma_slCls` at `E.toCls` and the partition into one class
+* `sim_wins_le_sl`, `simAdvantage_le_sl` — the per-statement and simulated-game
+  bounds for a log extractor, from their class-wise forms
+* `fiatShamir_rom_eufcma_sl_cls`, `fiatShamir_rom_eufcma_sl_stat` — the bound of
+  `fiatShamir_rom_eufcma_sl` with class-wise signing-hop terms, and with constant
+  HVZK distance and key bound
 -/
 
 @[expose] public section
@@ -454,5 +464,139 @@ theorem fiatShamir_rom_eufcma_slCls (E : G.LogExtractorCls rel N κ ε εS) {qH 
     (add_le_add (simAdvantage_le_slCls E hN hlen A q hq) le_rfl)
 
 end Bound
+
+/-! ## The bound for a log extractor -/
+
+section PerKey
+
+variable {G : Protocol} {rel : G.Stmt → G.Wit → Prop} {N : ℕ} {ε : ℝ≥0∞}
+
+/-- The evaluated entries of an attempt in the single class are the evaluated
+entries. -/
+@[simp] theorem Protocol.Classes.unit_μe :
+    (Protocol.Classes.unit G).μe () = (Finset.univ.filter fun i => G.ev i = true).card := by
+  simp [Protocol.Classes.μe]
+
+/-- The extraction terms of `E.toCls` for the single class are `(qH + V + μ·qS)·ε`. -/
+theorem Protocol.LogExtractor.toCls_flagBound_eq (qH qS : ℕ) :
+    ∑ c, ((qH + (Protocol.Classes.unit G).Vc c + (Protocol.Classes.unit G).μe c * qS : ℕ) :
+        ℝ≥0∞) * ε + qS * ((Finset.univ.filter fun i => G.ev i = false).card * ε) =
+      ((qH + G.V + G.μ * qS : ℕ) : ℝ≥0∞) * ε := by
+  have hcard := Finset.card_filter_add_card_filter_not (s := Finset.univ)
+    (fun i : Fin G.μ => G.ev i = true)
+  simp only [Bool.not_eq_true, Finset.card_univ, Fintype.card_fin] at hcard
+  rw [Fintype.sum_unique, Protocol.Classes.unit_Vc, Protocol.Classes.unit_μe, ← mul_assoc,
+    ← add_mul]
+  congr 1
+  rw [show G.μ * qS = (Finset.univ.filter fun i => G.ev i = true).card * qS +
+    (Finset.univ.filter fun i => G.ev i = false).card * qS by rw [← add_mul, hcard]]
+  push_cast
+  ring
+
+/-- An adversary with at most `qH` hash queries asks at most `qH` hash queries in
+the single class. -/
+theorem Protocol.Adversary.isQueryBoundBy_hashCost_unit {qH qS : ℕ} (A : G.Adversary qH qS)
+    (x : G.Stmt) (c : (Protocol.Classes.unit G).ι) :
+    (A.run x).IsQueryBoundBy ((Protocol.Classes.unit G).hashCost c) qH :=
+  (A.isQueryBound x).isQueryBoundBy_left (fun _ => by simp [Protocol.Classes.hashCost])
+    fun _ => rfl
+
+/-- At one statement, winning the simulated game has probability at most the
+probability that the extractor finds a witness from the instrumented run, plus
+`(qH + V + μ·qS)·ε`. -/
+theorem sim_wins_le_sl (E : G.LogExtractor rel N ε) {qH qS : ℕ}
+    (hN : qH + G.V + G.μ * qS ≤ N)
+    (hlen : ∀ look x m e s, (G.simTrace look x m e s).1.length +
+      (G.simTrace look x m e s).2.1.length ≤ G.μ)
+    (A : G.Adversary qH qS) (x : G.Stmt) :
+    (OracleAdv.run (toOracle (simStep x)) (withVerify x (A.run x))
+        (Protocol.Tables.empty, false)).toOuterMeasure {y | wins x y = true} ≤
+      (slReduction E A x).toOuterMeasure {w | rel x w} +
+        ((qH + G.V + G.μ * qS : ℕ) : ℝ≥0∞) * ε := by
+  have h := sim_wins_le_slCls E.toCls hN hlen A (fun _ => qH) A.isQueryBoundBy_hashCost_unit x
+  rwa [slReductionCls_toCls, Protocol.LogExtractor.toCls_flagBound_eq] at h
+
+/-- The simulated-game advantage of an adversary with at most `qH` hash and `qS`
+signing queries is at most the relation advantage of `slReduction E A` plus
+`(qH + V + μ·qS)·ε`. -/
+theorem simAdvantage_le_sl (E : G.LogExtractor rel N ε) {qH qS : ℕ}
+    (hN : qH + G.V + G.μ * qS ≤ N)
+    (hlen : ∀ look x m e s, (G.simTrace look x m e s).1.length +
+      (G.simTrace look x m e s).2.1.length ≤ G.μ)
+    (A : G.Adversary qH qS) :
+    simAdvantage A ≤ G.relAdvantage rel (slReduction E A) +
+      ((qH + G.V + G.μ * qS : ℕ) : ℝ≥0∞) * ε := by
+  have h := simAdvantage_le_slCls E.toCls hN hlen A (fun _ => qH) A.isQueryBoundBy_hashCost_unit
+  rwa [slReductionCls_toCls, Protocol.LogExtractor.toCls_flagBound_eq] at h
+
+/-- **EUF-CMA security of Fiat–Shamir signatures by straight-line extraction.** For
+a protocol `G` whose simulated traces have at most `μ` evaluated and programmed
+entries, generated pairs with statistical HVZK distance `δ (x, w)` and key bound
+`γ (x, w)`, a log extractor `E` for `rel` on tables with at most `N ≥ qH + V + μ·qS`
+entries with bad-answer probability `ε`, and every adversary `A` with at most `qH`
+hash and `qS` signing queries,
+
+`eufcmaAdvantage A ≤ relAdvantage (slReduction E A) + (qH + V + μ·qS)·ε
+  + E_{(x,w) ← gen}[qS·δ(x, w) + qS·(qH + V + μ·qS)·γ(x, w)]`,
+
+where `slReduction E A` runs the instrumented simulated game once and applies the
+extractor to the final tables and the forgery. -/
+theorem fiatShamir_rom_eufcma_sl (E : G.LogExtractor rel N ε) {qH qS : ℕ}
+    (hN : qH + G.V + G.μ * qS ≤ N)
+    (hlen : ∀ look x m e s, (G.simTrace look x m e s).1.length +
+      (G.simTrace look x m e s).2.1.length ≤ G.μ)
+    {δ γ : G.Stmt × G.Wit → ℝ≥0∞}
+    (hZK : ∀ xw ∈ G.gen.support, G.StatHVZKAt xw.1 xw.2 (δ xw))
+    (hγ : ∀ xw ∈ G.gen.support, G.KeyBoundAt xw.1 xw.2 (γ xw)) (A : G.Adversary qH qS) :
+    eufcmaAdvantage A ≤ G.relAdvantage rel (slReduction E A) +
+      ((qH + G.V + G.μ * qS : ℕ) : ℝ≥0∞) * ε +
+      ∑' xw, G.gen xw * (qS * δ xw +
+        ((qS * (qH + G.V + G.μ * qS) : ℕ) : ℝ≥0∞) * γ xw) :=
+  (Protocol.eufcmaAdvantage_le_simAdvantage_perKey hZK hγ A).trans
+    (add_le_add (simAdvantage_le_sl E hN hlen A) le_rfl)
+
+/-- **Straight-line extraction with key classes.** For a protocol `G` with key
+classes `κ` whose simulated traces have at most `μ` evaluated and programmed
+entries, generated pairs with statistical HVZK distance `δ (x, w)` and class-wise
+key bound `Γ (x, w)`, a log extractor `E` for `rel` on tables with at most
+`N ≥ qH + V + μ·qS` entries with bad-answer probability `ε`, and every adversary `A`
+with at most `qH` hash and `qS` signing queries whose hash queries at points of
+class `c` are at most `q c` on every path,
+
+`eufcmaAdvantage A ≤ relAdvantage (slReduction E A) + (qH + V + μ·qS)·ε
+  + E_{(x,w) ← gen}[qS·δ(x, w) + Σ_c qS·(q c + Vc c + μc c·qS)·Γ(x, w) c]`. -/
+theorem fiatShamir_rom_eufcma_sl_cls (E : G.LogExtractor rel N ε) (κ : G.Classes)
+    {qH qS : ℕ} (hN : qH + G.V + G.μ * qS ≤ N)
+    (hlen : ∀ look x m e s, (G.simTrace look x m e s).1.length +
+      (G.simTrace look x m e s).2.1.length ≤ G.μ)
+    {δ : G.Stmt × G.Wit → ℝ≥0∞} {Γ : G.Stmt × G.Wit → κ.ι → ℝ≥0∞}
+    (hZK : ∀ xw ∈ G.gen.support, G.StatHVZKAt xw.1 xw.2 (δ xw))
+    (hΓ : ∀ xw ∈ G.gen.support, G.KeyBoundClsAt κ xw.1 xw.2 (Γ xw))
+    (A : G.Adversary qH qS) (q : κ.ι → ℕ)
+    (hq : ∀ x c, (A.run x).IsQueryBoundBy (κ.hashCost c) (q c)) :
+    eufcmaAdvantage A ≤ G.relAdvantage rel (slReduction E A) +
+      ((qH + G.V + G.μ * qS : ℕ) : ℝ≥0∞) * ε +
+      ∑' xw, G.gen xw * (qS * δ xw +
+        ∑ c, ((qS * (q c + κ.Vc c + κ.μc c * qS) : ℕ) : ℝ≥0∞) * Γ xw c) :=
+  (Protocol.eufcmaAdvantage_le_simAdvantage_cls κ hZK hΓ A q hq).trans
+    (add_le_add (simAdvantage_le_sl E hN hlen A) le_rfl)
+
+/-- **Straight-line extraction with statistical HVZK.** With HVZK distance `δ` and
+key bound `γ` at every generated pair, the bound of `fiatShamir_rom_eufcma_sl` is
+`relAdvantage (slReduction E A) + (qH + V + μ·qS)·ε + qS·δ + qS·(qH + V + μ·qS)·γ`. -/
+theorem fiatShamir_rom_eufcma_sl_stat (E : G.LogExtractor rel N ε) {qH qS : ℕ}
+    (hN : qH + G.V + G.μ * qS ≤ N)
+    (hlen : ∀ look x m e s, (G.simTrace look x m e s).1.length +
+      (G.simTrace look x m e s).2.1.length ≤ G.μ)
+    {δ : ℝ≥0∞} (hZK : G.StatHVZK δ) {γ : ℝ≥0∞} (hγ : G.KeyBound γ)
+    (A : G.Adversary qH qS) :
+    eufcmaAdvantage A ≤ G.relAdvantage rel (slReduction E A) +
+      ((qH + G.V + G.μ * qS : ℕ) : ℝ≥0∞) * ε +
+      (qS * δ + ((qS * (qH + G.V + G.μ * qS) : ℕ) : ℝ≥0∞) * γ) := by
+  refine (fiatShamir_rom_eufcma_sl E hN hlen (δ := fun _ => δ) (γ := fun _ => γ)
+    (fun xw hxw => hZK xw.1 xw.2 hxw) (fun xw hxw => hγ xw.1 xw.2 hxw) A).trans (le_of_eq ?_)
+  rw [ENNReal.tsum_mul_right, PMF.tsum_coe, one_mul]
+
+end PerKey
 
 end CatCrypt.Crypto.FiatShamirROM
