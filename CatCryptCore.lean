@@ -157,6 +157,7 @@ public import CatCryptCore.Crypto.NomPkgBridge
 public import CatCryptCore.Crypto.EasyCryptBridge
 public import CatCryptCore.Crypto.BadEvent
 public import CatCryptCore.Crypto.ForkingLemma
+public import CatCryptCore.Crypto.VerifierPair
 public import CatCryptCore.Crypto.GameReject
 public import CatCryptCore.Crypto.GeneralForkingLemma
 public import CatCryptCore.Crypto.TreeForkingLemma
