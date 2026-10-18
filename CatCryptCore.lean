@@ -400,6 +400,7 @@ public import CatCryptCore.Consensus.PoSNSB.Prob
 public import CatCryptCore.Consensus.PoSNSB.Prob.Time
 public import CatCryptCore.Consensus.PoSNSB.Prob.ROM
 public import CatCryptCore.Consensus.PoSNSB.Prob.Uniform
+public import CatCryptCore.Consensus.PoSNSB.Prob.Erasure
 public import CatCryptCore.Consensus.PoSNSB.ProbExamples
 public import CatCryptCore.Consensus.UC.FTree
 public import CatCryptCore.Consensus.UC.FinalityGadget
