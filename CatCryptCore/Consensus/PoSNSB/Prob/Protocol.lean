@@ -40,7 +40,7 @@ whose probability is bounded in `CatCryptCore/Consensus/PoSNSB/Prob/Reduction.le
 * `reach_runTrace`, `runTrace_reach`: the states of the trace are reachable, and later states are
   reachable from earlier ones.
 * `forging_free_ideal`: every state of the ideal execution is forging free.
-* `runTrace_ideal_eq` (identical until forgery): if no adversary call of the real execution
+* `sTrace_ideal_eq` (identical until forgery): if no adversary call of the real execution
   outputs an accepted honest block outside the history (`Forged`), the real and the ideal
   traces coincide.
 * `slots_le_t_now`: every broadcast block of the real execution has a slot at most the current
