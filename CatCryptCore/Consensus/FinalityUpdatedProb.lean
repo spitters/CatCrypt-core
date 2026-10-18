@@ -67,6 +67,16 @@ Assumed explicitly in `finality_updated_prob`:
   condition.
 * `finality_updated_prob`: Δ-updatedness with lag `3 E + σ + d + Δ` fails with probability at
   most the failure bound of `pos_nsb_security`.
+* `seedTrace_honest_of_init`: an honest initial party has a local state at every phase.
+* `seed_genesis_checkpoint`: the genesis checkpoint is the epoch-`0` boundary checkpoint of
+  every honest chain.
+* `finality_updated_prob_genesis`: the same bound when the finality layer starts at genesis
+  (no earlier votes, the genesis checkpoint, the honest initial parties `honestInit P`, rounds
+  at the phases `genesisRound E σ d r`); the hypotheses on the history before the start are
+  derived, and the remaining vote-layer hypotheses are the stake quorum, an honest initial
+  party, honest casting of the schedule, delivery within `Δ` after `GST ≤ 2 E + σ + d`,
+  `1 ≤ E` and `1 ≤ Δ`. Δ-updatedness with lag `3 E + σ + d + Δ` holds from slot
+  `2 E + σ + d + Δ`.
 * `Instance.prob_hyps`: the hypotheses of `finality_updated_prob` hold for the concrete
   instance `PoSNSB.Instance` (horizon `K = 0`).
 -/
@@ -260,6 +270,38 @@ theorem seed_slotTip {K d σ : ℕ} {ω : Seed Tx Hash np n Hz Sch} (hTip : TipG
   obtain ⟨b, hb, -, hbt⟩ := hTip j hj p l hl hp.1
   exact ⟨b, by simpa [seedTrace, seedChain, hl] using hb, by simp only [seedNow]; omega⟩
 
+/-- An honest initial party is honest in `seedTrace P A K ω`: by `reachable_inv` it has a local
+state at every phase. -/
+theorem seedTrace_honest_of_init {K : ℕ} {ω : Seed Tx Hash np n Hz Sch} {p : Fin np}
+    (hp : p ∈ P.IP) (hh : is_honest p = true) : (seedTrace P A K ω).honest p := by
+  refine ⟨hh, fun j _ => ?_⟩
+  let _ := ω.params P; let _ := ω.bparams P; let _ := mkExec false P ω A
+  exact ((reachable_inv (reach_runTrace (Tx := Tx) (Hash := Hash) (Party := Fin np)
+    (AdvState := A.AdvState) j)).state_init p).2 hp
+
+/-- If the genesis block has slot `0`, the genesis checkpoint is the epoch-boundary checkpoint
+of epoch `0` on the chain of every honest party at every phase up to `K`: the chain ends in
+genesis and every other block of it has a larger slot. -/
+theorem seed_genesis_checkpoint (hGB : P.GB.sl = 0) {K j : ℕ} {ω : Seed Tx Hash np n Hz Sch}
+    {p : Fin np} (hp : (seedTrace P A K ω).honest p) (hj : j ≤ K) (E : ℕ) :
+    IsCheckpointOf Block.sl E (seedChain P A ω j p) (genesisCheckpoint (seedTree P ω)) := by
+  let _ := ω.params P; let _ := ω.bparams P
+  have hval := seedChain_valid hp hj
+  obtain ⟨s, hs⟩ := valid_chain_suffix_gb hval
+  have hdec : List.Pairwise lt_slots (s ++ [P.GB]) := hs ▸ hval.2.2
+  rw [List.pairwise_append] at hdec
+  have hsn : s.find? (fun b => decide (b.sl ≤ 0 * E)) = none := by
+    rw [List.find?_eq_none]
+    intro x hx
+    have := hdec.2.2 x hx P.GB (List.mem_singleton_self _)
+    simp only [decide_eq_true_eq]
+    change P.GB.sl < x.sl at this
+    omega
+  change (seedChain P A ω j p).find? (fun b => decide (b.sl ≤ 0 * E)) = some P.GB
+  rw [← hs, List.find?_append, hsn, Option.none_or]
+  simp
+  exact ⟨hGB, rfl⟩
+
 end Seed
 
 /-! ### The probability bound -/
@@ -375,6 +417,99 @@ theorem seedNow_three_mul (ω : Seed Tx Hash np n Hz Sch) (s : ℕ) :
     (AdvState := A.AdvState) s
 
 end SeedPhases
+
+/-! ### The finality layer started at genesis -/
+
+section Genesis
+
+variable {Tx Hash : Type} [DecidableEq Tx] [DecidableEq Hash] [Fintype Tx] [Fintype Hash]
+  [Nonempty Hash] {np : ℕ} [Corruption (Fin np)] {n Hz : ℕ}
+  {Sch : SigScheme (Block Tx Hash (Fin np))}
+
+/-- The honest initial parties of `P`: the validators of the vote layer started at genesis. -/
+def honestInit (P : Protocol Tx Hash np n Hz) : Finset (Fin np) :=
+  (P.IP.filter fun p => is_honest p).toFinset
+
+/-- The phase of round `r` of the vote layer started at genesis: the phase of slot
+`2 E + σ + d + r (2 E)`. -/
+def genesisRound (E σ d r : ℕ) : ℕ := 3 * (2 * E + σ + d + r * (2 * E) - 1)
+
+variable (P : Protocol Tx Hash np n Hz) (A : Adversary Tx Hash np n Hz Sch) (Tree : TreeFamily P)
+
+/-- **Δ-updatedness of FFG over PoS-NSB from genesis, with high probability.** Let the
+hypotheses of `PoSNSB.pos_nsb_security` hold for the keyed hash family `H`, let the genesis
+block have slot `0`, `w ≥ 4` and `σ ≥ d + 2`. Let the finality layer start at genesis: no
+votes before the start, the genesis checkpoint as the last justified checkpoint, the honest
+initial parties `honestInit P` as the honest validators, and the rounds at the phases
+`genesisRound E σ d r` of the slots `2 E + σ + d + r (2 E)`. Assume that the honest validators
+hold two thirds of the stake (`quorum`), that some honest initial party `v₀` exists, that
+honest validators cast the votes of the schedule (`round_cast`), that every vote cast is
+received by every honest party within `Δ` slots after `GST` (`sync`), `GST ≤ 2 E + σ + d`,
+`1 ≤ E` and `1 ≤ Δ`. Then the probability that Δ-updatedness with lag `3 E + σ + d + Δ`
+fails, from the phase of slot `2 E + σ + d + Δ` up to phase `K`, is at most
+`slotBound (kindLaw μ) n d w ε + crAdv (collFinder P A H μ W K) + ∑ᵢ eufAdv (forger P A H μ W K i)`. -/
+theorem finality_updated_prob_genesis (hP : ProtocolHyp P) (hTree : Tree.Longest)
+    (hGB : P.GB.sl = 0)
+    (H : HashFam (BlockDom Tx Hash np Hz) Hash)
+    (μ : PMF (Option (Fin np))) (W K d w : ℕ) (ε : ℝ)
+    (hwd : w ≤ d) (hWn : W + d ≤ n) (hn : K + 2 ≤ n) (hHz : K + 1 ≤ Hz)
+    (hε : 0 ≤ ε) (hγ : 2 * pA (kindLaw μ) ≤ pH (kindLaw μ))
+    (hw : (w : ℝ) ≤ d * (pH (kindLaw μ) - pA (kindLaw μ)))
+    (h3 : (3 : ℝ) ≤ d * (pH (kindLaw μ) - 2 * pA (kindLaw μ)))
+    (wst : Fin np → ℕ) (E σ Δ GST : ℕ) (v₀ : Fin np)
+    (cast : Seed Tx Hash np n Hz Sch → ℕ → Finset (Vote (Fin np) (Block Tx Hash (Fin np))))
+    (seen : Seed Tx Hash np n Hz Sch → ℕ → Fin np →
+      Finset (Vote (Fin np) (Block Tx Hash (Fin np))))
+    (hw4 : 4 ≤ w) (hσd : d + 2 ≤ σ) (hE : 1 ≤ E) (hΔ : 1 ≤ Δ) (hGST : GST ≤ 2 * E + σ + d)
+    (hv₀ : v₀ ∈ P.IP ∧ is_honest v₀ = true)
+    (quorum : 2 * totalStake wst ≤ 3 * stake wst (honestInit P))
+    (round_cast : ∀ ω r, genesisRound E σ d r ≤ K →
+      roundVotes (honestInit P)
+          (roundExt (seedTree P ω) (seedTrace P A K ω) Block.sl E v₀ (genesisRound E σ d)) ∅
+          (genesisCheckpoint (seedTree P ω)) r ⊆
+        cast ω (genesisRound E σ d r))
+    (sync : ∀ ω p j t x, (seedTrace P A K ω).honest p → j ≤ t → x ∈ cast ω j →
+      max (seedNow P A ω j) GST + Δ ≤ seedNow P A ω t → x ∈ seen ω t p) :
+    (seedDist H μ P.h0 W n Sch).toOuterMeasure {ω | ¬DeltaUpdated (seedTree P ω) wst
+        (seedTrace P A K ω) (seedNow P A ω) Block.sl E K (2 * E + σ + d + Δ)
+        (3 * E + σ + d + Δ) (seen ω)} ≤
+      slotBound (kindLaw μ) n d w ε + crAdv (collFinder P A H μ W K) +
+        ∑ i : Fin np, eufAdv (forger P A H μ W K i) := by
+  have hlE : ∀ ω : Seed Tx Hash np n Hz Sch,
+      livenessEpoch (∅ : Finset (Vote (Fin np) (Block Tx Hash (Fin np))))
+        (genesisCheckpoint (seedTree P ω)) = 1 := fun _ => by
+    simp [livenessEpoch, genesisCheckpoint]
+  have hmem : ∀ {v}, v ∈ honestInit P → v ∈ P.IP ∧ is_honest v = true := fun hv => by
+    simpa [honestInit] using hv
+  refine finality_updated_prob P A Tree hP hTree hGB H μ W K d w ε hwd hWn hn hHz hε hγ hw h3
+    wst E σ Δ GST (fun _ => honestInit P) (fun _ => v₀) (fun _ => ∅)
+    (fun ω => genesisCheckpoint (seedTree P ω)) (fun _ => 2 * E + σ + d)
+    (fun _ => genesisRound E σ d) cast seen hw4 hσd (fun ω => ?_) (fun ω => ?_)
+  · exact
+      { epoch_pos := hE
+        delay_pos := hΔ
+        honest := fun v hv => seedTrace_honest_of_init (hmem hv).1 (hmem hv).2
+        mem_v₀ := by simpa [honestInit] using hv₀
+        quorum := quorum
+        pre_justified := Justified.genesis
+        pre_sources := fun _ hx => absurd hx (Finset.notMem_empty _)
+        pre_unslashable := by
+          refine Finset.eq_empty_of_forall_notMem fun v hv => ?_
+          rcases mem_slashable.1 (Finset.mem_inter.1 hv).1 with ⟨x, hx, -⟩ | ⟨x, hx, -⟩ <;>
+            exact Finset.notMem_empty x hx
+        pre_onChain := fun h0 v hv =>
+          seed_genesis_checkpoint hGB (seedTrace_honest_of_init (hmem hv).1 (hmem hv).2) h0 E
+        pre_cast := fun _ hx => absurd hx (Finset.notMem_empty _)
+        start := (hlE ω).symm ▸ le_rfl
+        gst := hGST
+        round_slot := fun r => by
+          rw [genesisRound, seedNow_three_mul]
+          omega
+        round_cast := round_cast ω
+        sync := sync ω }
+  · rw [hlE]
+
+end Genesis
 
 /-! ### The concrete instance `PoSNSB.Instance` -/
 
