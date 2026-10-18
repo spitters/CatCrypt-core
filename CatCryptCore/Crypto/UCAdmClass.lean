@@ -58,20 +58,26 @@ namespace UCMonad
 
 /-! ## Section 1: Admissibility Class -/
 
-/-- An admissibility class on a monad: a predicate on Kleisli arrows
-    closed under monad operations. Models "poly-time" or any complexity class.
+/-- An admissibility class on a monad: a predicate on Kleisli arrows closed under the
+    monad operations and under precomposition with functions. The admissible arrows form a
+    wide subcategory of the Kleisli category Kl(T).
 
-    This is the categorical abstraction of a "reasonable complexity class":
-    admissible arrows form a wide subcategory of the Kleisli category Kl(T).
-    In the ICC perspective (Bellantoni-Cook, BLL, Soft Affine Logic), this
-    corresponds to cut-closure of the bounded fragment.
+    The closure laws take as their model the closure under composition (cut) of the
+    bounded fragments of implicit computational complexity (Bellantoni-Cook, BLL, soft
+    affine logic). By `adm_pure` and `adm_precomp` every class contains every pure test
+    `pure ∘ p`, whatever the function `p`, so a class bounds the effectful operations of an
+    arrow and leaves its pure computation free. The classes on `SPComp` (`spTreeQueryAdm`,
+    `spTreeSizeAdm`, the shape class of `CTAdmClass.lean`) bound queries, nodes and shape.
+    Computational security is stated per adversary with explicit reductions
+    (`CatCryptCore/Crypto/ConcreteSecurity.md`).
 
     Axioms:
-    - `adm_pure`: identity morphisms are admissible (O(1) is poly-time)
-    - `adm_bind`: composition preserves admissibility (poly ∘ poly = poly)
-    - `adm_mapSum`: coproduct structure preserved (case analysis preserves complexity) -/
+    - `adm_pure`: identity morphisms are admissible
+    - `adm_bind`: Kleisli composition preserves admissibility
+    - `adm_mapSum`: the coproduct of admissible arrows is admissible
+    - `adm_precomp`: precomposition with a function preserves admissibility -/
 class UCAdmClass (T : Type → Type) [Monad T] [UCMonadBase T] where
-  /-- Predicate marking "admissible" (e.g., poly-time) Kleisli arrows. -/
+  /-- Predicate marking the admissible Kleisli arrows. -/
   adm : {α β : Type} → (α → T β) → Prop
   /-- `pure` is always admissible. -/
   adm_pure {α : Type} : adm (pure : α → T α)
