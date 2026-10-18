@@ -440,7 +440,7 @@ positions; let the guard of `F_Tree^P` imply that the pruned positions `cut` are
 `1 ≤ Δ`; and let the adversarial validators hold less than a third of the total stake,
 `3 * stake w (univ \ H) < W`. Then the FFG gadget running with the ideal world of `F_Tree^P`
 (`ffgWorld`) realizes the ideal world of `F_FinTree^P'` (`finF`, with
-`P' = finality-respecting positions :: FinalOnHonestPos :: P`, `Δ`-updatedness and the
+`P' = finality-respecting positions :: FinalOnHonestPos :: P`, propagation within `Δ` rounds and the
 support guard `suppF`)
 with the simulator `ffgSim`: every environment has advantage `0`. -/
 theorem ffg_realizes

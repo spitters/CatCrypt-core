@@ -43,11 +43,12 @@ common prefix by slots (`PoSNSB.CPGood`, which is exactly `ChainTrace.SlotCommon
 Assumed explicitly in `finality_updated_prob`:
 
 * `hGB : P.GB.sl = 0`: the genesis block has slot `0` (`ProtocolHyp` gives `≤ 1`);
-* `hgrowth`: on every seed with `Good`, chain growth in slot form
-  (`ChainTrace.SlotChainGrowth` with window `σ`) holds up to phase `K`. `pos_nsb_security` bounds
-  chain growth for the length of the honest tree chain (`PoSNSB.CGGood`); that every window of
-  `σ` slots contains a block of every honest chain is not among the properties of
-  `PoSNSB.Good`;
+* `hw4 : 4 ≤ w`, `hσd : d ≤ σ` and `htip`: on every seed with `Good`, the tip condition
+  (`ChainTrace.SlotTip` with window `σ`) holds up to phase `K`: the chain of every honest party
+  has a block in the last `σ` slots. Chain growth in slot form (`ChainTrace.SlotChainGrowth`
+  with window `σ`) is derived from it and from chain quality `PoSNSB.CQGood`
+  (`seed_slotChainGrowth`): an empty window of `σ ≥ d` slots would give a fragment of two
+  blocks spanning more than `d + 1` slots, which has fewer than `w - 1 ≥ 3` honest blocks;
 * `hvote`: on every seed, the vote layer (votes cast and received, the honest schedule, and
   the history before it) satisfies `VoteHyp`. PoS-NSB carries no FFG votes, so the vote layer
   is an additional component of the execution, given as functions of the seed.
@@ -59,6 +60,8 @@ Assumed explicitly in `finality_updated_prob`:
   predecessor hashes.
 * `seed_slotChainHyp`: on the event `CPGood`, given slot chain growth and `P.GB.sl = 0`, the
   traces of PoS-NSB satisfy `SlotChainHyp` up to phase `K`.
+* `seed_slotChainGrowth`: slot chain growth from `CQGood`, `w ≥ 4`, `σ ≥ d` and the tip
+  condition.
 * `finality_updated_prob`: Δ-updatedness with lag `3 E + σ + d + Δ` fails with probability at
   most the failure bound of `pos_nsb_security`.
 * `Instance.prob_hyps`: the hypotheses of `finality_updated_prob` hold for the concrete
@@ -99,6 +102,42 @@ theorem properly_linked_pairwise :
     · exact (List.rel_of_pairwise_cons ih hx).trans step
 
 end Linked
+
+/-! ### Gaps in chains with decreasing slots -/
+
+/-- In a list whose `f`-values strictly decrease, if some element has `f`-value above `a` and
+some element has `f`-value at most `a`, then two adjacent elements `x, y` cross `a`:
+`a < f x` and `f y ≤ a`. -/
+theorem exists_adjacent_cross {α : Type*} (f : α → ℕ) (a : ℕ) :
+    ∀ {L : List α}, L.Pairwise (fun x y => f y < f x) → (∃ x ∈ L, a < f x) →
+      (∃ y ∈ L, f y ≤ a) → ∃ s₁ s₃ x y, s₁ ++ [x, y] ++ s₃ = L ∧ a < f x ∧ f y ≤ a
+  | [], _, ⟨_, hx, _⟩, _ => absurd hx List.not_mem_nil
+  | [b], _, ⟨x, hx, hax⟩, ⟨y, hy, hya⟩ => by
+    rw [List.mem_singleton] at hx hy
+    subst hx hy
+    omega
+  | b :: c :: rest, hP, ⟨x, hx, hax⟩, ⟨y, hy, hya⟩ => by
+    have hb : a < f b := by
+      rcases List.mem_cons.1 hx with rfl | hx'
+      · exact hax
+      · have := List.rel_of_pairwise_cons hP hx'
+        omega
+    by_cases hc : f c ≤ a
+    · exact ⟨[], rest, b, c, rfl, hb, hc⟩
+    · have hy' : y ∈ c :: rest := by
+        rcases List.mem_cons.1 hy with rfl | hy'
+        · omega
+        · exact hy'
+      obtain ⟨s₁, s₃, x', y', h, h1, h2⟩ :=
+        exists_adjacent_cross f a (List.pairwise_cons.1 hP).2
+          ⟨c, List.mem_cons_self, by omega⟩ ⟨y, hy', hya⟩
+      exact ⟨b :: s₁, s₃, x', y', by rw [← h]; rfl, h1, h2⟩
+
+/-- The tip condition with window `σ`, up to phase `hz`: for honest `p` and phases `j ≤ hz`,
+the chain of `p` at `j` contains a block of slot above `now j - σ`. -/
+def ChainTrace.SlotTip {Party Blk : Type*} (X : ChainTrace Party Blk) (now : ℕ → ℕ)
+    (slot : Blk → ℕ) (σ hz : ℕ) : Prop :=
+  ∀ p j, X.honest p → j ≤ hz → ∃ b ∈ X.chain j p, now j < slot b + σ
 
 /-! ### The execution of a seed -/
 
@@ -175,6 +214,38 @@ theorem seed_slotChainHyp (hGB : P.GB.sl = 0) {K d σ : ℕ} {ω : Seed Tx Hash 
     exact hCP j j' s hjj hj' hs p q l1 l2 hp.1 hq.1 hl1 hl2
   growth := hgrowth
 
+/-- **Slot chain growth from chain quality.** On a seed with chain quality `CQGood` with
+window `d` and quality `w ≥ 4`, if the genesis block has slot `0`, `d ≤ σ`, and the tip
+condition with window `σ` holds, then chain growth in slot form with window `σ` holds up to
+phase `K`: a window of `σ ≥ d` slots without a block of the chain would make two adjacent
+blocks of the chain a fragment spanning more than `d + 1` slots with at most `2 < w - 1`
+honest blocks. -/
+theorem seed_slotChainGrowth (hGB : P.GB.sl = 0) {K d w σ : ℕ} {ω : Seed Tx Hash np n Hz Sch}
+    (hCQ : CQGood P A K d w ω) (hw : 4 ≤ w) (hσ : d ≤ σ)
+    (htip : (seedTrace P A K ω).SlotTip (seedNow P A ω) Block.sl σ K) :
+    (seedTrace P A K ω).SlotChainGrowth (seedNow P A ω) Block.sl σ K := by
+  intro p j a hp hj ha
+  let _ := ω.params P; let _ := ω.bparams P
+  obtain ⟨b, hb, hbt⟩ := htip p j hp hj
+  have hval := seedChain_valid hp hj
+  have hgen : P.GB ∈ seedChain P A ω j p :=
+    (valid_chain_suffix_gb hval).subset (List.mem_singleton_self _)
+  by_contra hno
+  have hno' : ∀ z ∈ seedChain P A ω j p, a < z.sl → a + σ < z.sl := fun z hz h1 => by
+    by_contra h2
+    exact hno ⟨z, hz, h1, by omega⟩
+  obtain ⟨s₁, s₃, x, y, hL, hx, hy⟩ := exists_adjacent_cross Block.sl a hval.2.2
+    ⟨b, hb, by omega⟩ ⟨P.GB, hgen, by omega⟩
+  have hx' := hno' x (by rw [← hL]; simp) hx
+  obtain ⟨l, hl⟩ := Option.isSome_iff_exists.1 (hp.2 j hj)
+  have hfrag : PoSNSB.fragment ([x] ++ [] ++ [y])
+      (l.tT.bestChain ((sTrace P ω A false j).t_now - 1) l.tree) :=
+    ⟨s₁, s₃, by simpa [seedChain, hl] using hL⟩
+  have hq := hCQ j hj p l hl hp.1 x y [] hfrag (by omega)
+  have h2 : (honest_blocks ([x] ++ [] ++ [y])).length ≤ 2 :=
+    (List.length_filter_le _ _).trans (by simp)
+  omega
+
 end Seed
 
 /-! ### The probability bound -/
@@ -198,8 +269,10 @@ def DeltaUpdated {V B : Type*} [Fintype V] [DecidableEq V] [DecidableEq B] (T : 
 variable (P : Protocol Tx Hash np n Hz) (A : Adversary Tx Hash np n Hz Sch) (Tree : TreeFamily P)
 
 /-- **Δ-updatedness of FFG over PoS-NSB, with high probability.** Let the hypotheses of
-`PoSNSB.pos_nsb_security` hold, let the genesis block have slot `0`, let chain growth in slot
-form with window `σ` hold on every seed with `Good` (`hgrowth`), and let the vote layer of every
+`PoSNSB.pos_nsb_security` hold, let the genesis block have slot `0`, let the quality be
+`w ≥ 4` and the window `σ ≥ d`, let the tip condition with window `σ` hold on every seed with
+`Good` (`htip`; chain growth in slot form then follows from `CQGood` by
+`seed_slotChainGrowth`), and let the vote layer of every
 seed satisfy `VoteHyp` with the earliest start `τ₀ ω = (e₀ + 1) E + σ + d` (`hvote`, `hτ₀`).
 Then the probability that Δ-updatedness with lag `3 E + σ + d + Δ` fails, from the phase of
 slot `τ₀ ω + Δ` up to phase `K`, is at most
@@ -222,8 +295,9 @@ theorem finality_updated_prob (hP : ProtocolHyp P) (hTree : Tree.Longest) (hGB :
     (cast : Seed Tx Hash np n Hz Sch → ℕ → Finset (Vote (Fin np) (Block Tx Hash (Fin np))))
     (seen : Seed Tx Hash np n Hz Sch → ℕ → Fin np →
       Finset (Vote (Fin np) (Block Tx Hash (Fin np))))
-    (hgrowth : ∀ ω, Good P A Tree ν K d w ε ω →
-      (seedTrace P A K ω).SlotChainGrowth (seedNow P A ω) Block.sl σ K)
+    (hw4 : 4 ≤ w) (hσd : d ≤ σ)
+    (htip : ∀ ω, Good P A Tree ν K d w ε ω →
+      (seedTrace P A K ω).SlotTip (seedNow P A ω) Block.sl σ K)
     (hvote : ∀ ω, VoteHyp (seedTree P ω) wst (seedTrace P A K ω) (seedNow P A ω) Block.sl E σ d
       Δ GST K (H ω) (v₀ ω) (pre ω) (j₀ ω) (τ₀ ω) (ρ ω) (cast ω) (seen ω))
     (hτ₀ : ∀ ω, τ₀ ω = (livenessEpoch (pre ω) (j₀ ω) + 1) * E + σ + d) :
@@ -237,8 +311,8 @@ theorem finality_updated_prob (hP : ProtocolHyp P) (hTree : Tree.Longest) (hGB :
       {ω | ¬Good P A Tree ν K d w ε ω} := by
     intro ω hω hG
     exact hω fun p t hp ht hτ =>
-      finality_updated_start ⟨hvote ω, seed_slotChainHyp hGB hG.2.2 (hgrowth ω hG)⟩ (hτ₀ ω)
-        hp ht hτ
+      finality_updated_start ⟨hvote ω, seed_slotChainHyp hGB hG.2.2
+        (seed_slotChainGrowth hGB hG.2.1 hw4 hσd (htip ω hG))⟩ (hτ₀ ω) hp ht hτ
   exact (MeasureTheory.OuterMeasure.mono _ hsub).trans
     (pos_nsb_security P A Tree hP hTree ν W K d w ε hd hwd hWn hn hHz hε hγ hw h3 q next hRO)
 
@@ -300,35 +374,40 @@ open PoSNSB.Instance
 
 attribute [local instance] PoSNSB.Instance.corruption
 
-/-- The rounds of the schedule at the phases of slots `7 + 2 r`. -/
-def ρI (r : ℕ) : ℕ := 3 * (6 + r * (2 * 1))
+/-- The rounds of the schedule at the phases of slots `10 + 2 r`. -/
+def ρI (r : ℕ) : ℕ := 3 * (9 + r * (2 * 1))
 
 /-- **Non-vacuity of the hypotheses of `finality_updated_prob`.** For the instance `PoSNSB.Instance`
-(`PoSNSB.Instance`: one honest party, all slots honest, horizon `K = 0`, `d = 3`, `w = 1`,
-`ε = 0`, `q = 1`), with `E = 1`, `σ = 2`, `Δ = 1`, `GST = 0`, unit stake, `H = univ`, no
-votes, the genesis checkpoint as `j₀`, `τ₀ = 7` and rounds at the phases `ρI r`, all
-hypotheses of `finality_updated_prob` hold. The horizon `K = 0` of the instance precedes the
+(`PoSNSB.Instance`: one honest party, all slots honest, horizon `K = 0`, `d = 4`, `w = 4`,
+`ε = 0`, `q = 1`), with `E = 1`, `σ = 4`, `Δ = 1`, `GST = 0`, unit stake, `H = univ`, no
+votes, the genesis checkpoint as `j₀`, `τ₀ = 10` and rounds at the phases `ρI r`, the
+hypotheses `ProtocolHyp`, `Tree.Longest`, `P.GB.sl = 0`, the tip condition, `VoteHyp` and the
+start `τ₀` of `finality_updated_prob` hold. The horizon `K = 0` of the instance precedes the
 first round, so the conclusion carries no information there. -/
 theorem prob_hyps :
     ProtocolHyp P ∧ Tree.Longest ∧ P.GB.sl = 0 ∧
-      (∀ ω, Good P A Tree ν 0 3 1 0 ω →
-        (seedTrace P A 0 ω).SlotChainGrowth (seedNow P A ω) Block.sl 2 0) ∧
+      (∀ ω, Good P A Tree ν 0 4 4 0 ω →
+        (seedTrace P A 0 ω).SlotTip (seedNow P A ω) Block.sl 4 0) ∧
       (∀ ω, VoteHyp (seedTree P ω) (fun _ => 1) (seedTrace P A 0 ω) (seedNow P A ω) Block.sl
-        1 2 3 1 0 0 Finset.univ 0 ∅ (genesisCheckpoint (seedTree P ω)) 7 ρI (fun _ => ∅)
+        1 4 4 1 0 0 Finset.univ 0 ∅ (genesisCheckpoint (seedTree P ω)) 10 ρI (fun _ => ∅)
         (fun _ _ => ∅)) ∧
       (∀ ω : Seed Unit Unit 1 4 1 Sch,
-        7 = (livenessEpoch (∅ : Finset (Vote (Fin 1) (Block Unit Unit (Fin 1))))
-          (genesisCheckpoint (seedTree P ω)) + 1) * 1 + 2 + 3) := by
+        10 = (livenessEpoch (∅ : Finset (Vote (Fin 1) (Block Unit Unit (Fin 1))))
+          (genesisCheckpoint (seedTree P ω)) + 1) * 1 + 4 + 4) := by
   obtain ⟨hP, hT, -⟩ := instance_hyps
   have hlE : ∀ ω : Seed Unit Unit 1 4 1 Sch,
       livenessEpoch (∅ : Finset (Vote (Fin 1) (Block Unit Unit (Fin 1))))
         (genesisCheckpoint (seedTree P ω)) = 1 := fun _ => by
     simp [livenessEpoch, genesisCheckpoint]
   refine ⟨hP, hT, rfl, ?_, fun ω => ?_, fun ω => by rw [hlE]⟩
-  · intro ω _ p j a _ hj ha
+  · intro ω _ p j hp hj
     obtain rfl : j = 0 := by omega
     have : seedNow P A ω 0 = 1 := by simpa using seedNow_three_mul P A ω 0
-    omega
+    let _ := ω.params P; let _ := ω.bparams P
+    refine ⟨P.GB, (valid_chain_suffix_gb (seedChain_valid hp le_rfl)).subset
+      (List.mem_singleton_self _), ?_⟩
+    rw [this]
+    simp [P]
   · have hρ : ∀ r, 0 < ρI r := fun r => by simp only [ρI]; omega
     exact
       { epoch_pos := le_rfl

@@ -44,15 +44,17 @@ For a window of length `d`, the bad events are:
 
 * `interval_tail`: for a score `s : SlotKind → [0, 1]` with `s honest = 1`, the probability
   that the scores of an interval `[a, b)` sum to at most `(b - a) E[s] - Δ` is at most
-  `exp (-2 Δ² / n)`, by the Chernoff-Hoeffding bound `hoeffding_piFin_lower`.
+  `exp (-2 Δ² / (b - a))`, by Hoeffding's inequality for the `b - a` coordinates of the
+  interval (Mathlib's `HasSubgaussianMGF.measure_sum_ge_le_of_iIndepFun`).
+* `prob_interval_dev_le`: for deviations `Δ = (b - a) c - r` that grow with the interval, the
+  probability that some interval of at least `d` slots deviates is at most
+  `(n + 1)² exp (-2 (d c - r)² / d)`; the tail of an interval of `L ≥ d` slots is at most that of
+  one of `d` slots (`exp_tail_le`).
 * `prob_CGBad_le`, `prob_CQBad_le`, `prob_CPBad_le`: each bad event has probability at most
   `(n + 1)²` times such a tail (union bound over the intervals).
 * `prob_slotBad_le`: the union of the three bad events has probability at most `slotBound`.
 * `honest_advantage_of_not_CQBad`, `super_of_kind`, `lucky_of_kind`, `adv_of_winner`: the
   slot conditions of the deterministic theorems follow from the complements of the bad events.
-
-The tail bound uses all `n` coordinates of the product distribution for an interval of
-length `b - a`, which gives the exponent `-2 Δ² / n` instead of `-2 Δ² / (b - a)`.
 -/
 
 set_option autoImplicit false
@@ -268,18 +270,18 @@ private theorem expect_pure (k : SlotKind) (s : SlotKind → ℝ) :
 
 /-- **Tail bound for one interval.** For a score `s` with values in `[0, 1]` and `s honest = 1`,
 and an interval `[a, b)` with `b ≤ n`, the probability that the scores of the slots in
-`[a, b)` sum to at most `(b - a) E_ν[s] - Δ` is at most `exp (-2 Δ² / n)`.
-Proved from `hoeffding_piFin_lower`. -/
+`[a, b)` sum to at most `(b - a) E_ν[s] - Δ` is at most `exp (-2 Δ² / (b - a))`.
+Proved from Hoeffding's inequality `HasSubgaussianMGF.measure_sum_ge_le_of_iIndepFun` for the
+`b - a` coordinates of the interval, each `1/4`-sub-Gaussian by Hoeffding's lemma. -/
 theorem interval_tail (ν : PMF SlotKind) (W n : ℕ) (s : SlotKind → ℝ)
     (hs : ∀ k, s k ∈ Set.Icc (0 : ℝ) 1) (hsH : s .honest = 1) {a b : ℕ} (hb : b ≤ n)
     {Δ : ℝ} (hΔ : 0 ≤ Δ) :
     (kindDist ν W n).toOuterMeasure {κ | (∑ i : Fin n,
         (if a ≤ (i : ℕ) ∧ (i : ℕ) < b then s (κ i) else 0)) + Δ ≤
           ((b - a : ℕ) : ℝ) * expect ν s}
-      ≤ ENNReal.ofReal (Real.exp (-2 * Δ ^ 2 / n)) := by
-  rcases Nat.eq_zero_or_pos n with rfl | hn
-  · simp only [Nat.cast_zero, div_zero, Real.exp_zero, ENNReal.ofReal_one]
-    exact toOuterMeasure_le_one _ _
+      ≤ ENNReal.ofReal (Real.exp (-2 * Δ ^ 2 / ((b - a : ℕ) : ℝ))) := by
+  let : MeasurableSpace SlotKind := ⊤
+  have : DiscreteMeasurableSpace SlotKind := ⟨fun _ => trivial⟩
   have hμ : expect ν s ≤ 1 := by
     simp only [expect]
     calc ∑ a, (ν a).toReal * s a ≤ ∑ a, (ν a).toReal * 1 :=
@@ -289,32 +291,44 @@ theorem interval_tail (ν : PMF SlotKind) (W n : ℕ) (s : SlotKind → ℝ)
           have h := ν.tsum_coe
           rw [tsum_fintype] at h
           rw [← ENNReal.toReal_sum (fun k _ => PMF.apply_ne_top _ _), h, ENNReal.toReal_one]
-  set f : Fin n → SlotKind → ℝ := fun i x => if a ≤ (i : ℕ) ∧ (i : ℕ) < b then s x else 0
-  have hf : ∀ i x, f i x ∈ Set.Icc (0 : ℝ) 1 := by
-    intro i x; simp only [f]; split_ifs
-    · exact hs x
-    · exact ⟨le_rfl, zero_le_one⟩
-  have hE : ((b - a : ℕ) : ℝ) * expect ν s ≤ ∑ i, expect (slotDist ν W i) (f i) := by
-    have h1 : ∀ i : Fin n, (if a ≤ (i : ℕ) ∧ (i : ℕ) < b then expect ν s else 0) ≤
-        expect (slotDist ν W i) (f i) := by
-      intro i
-      simp only [f, expect_ite]
-      split_ifs
-      · simp only [slotDist]; split_ifs
-        · exact le_rfl
-        · rw [expect_pure, hsH]; exact hμ
+  set S : Finset (Fin n) := Finset.univ.filter fun i : Fin n => a ≤ (i : ℕ) ∧ (i : ℕ) < b
+  set p := slotDist ν W (n := n)
+  set X : Fin n → SlotKind → ℝ := fun i x => expect (p i) s - s x
+  have hX : ∀ i, ProbabilityTheory.HasSubgaussianMGF (fun v : Fin n → SlotKind => X i (v i))
+      ((‖(0 : ℝ) - (-1)‖₊ / 2) ^ 2) (PMF.piFin p).toMeasure := fun i => by
+    have h := ProbabilityTheory.hasSubgaussianMGF_of_mem_Icc (μ := (PMF.piFin p).toMeasure)
+      (X := fun v : Fin n → SlotKind => -s (v i)) (a := -1) (b := 0)
+      (measurable_of_countable _).aemeasurable
+      (MeasureTheory.ae_of_all _ fun v => ⟨by linarith [(hs (v i)).2], by linarith [(hs (v i)).1]⟩)
+    rw [PMF.integral_comp_eval_piFin p (fun x => -s x)] at h
+    refine h.congr (MeasureTheory.ae_of_all _ fun v => ?_)
+    simp only [X, expect, mul_neg, Finset.sum_neg_distrib]
+    ring
+  have h := ProbabilityTheory.HasSubgaussianMGF.measure_sum_ge_le_of_iIndepFun
+    (PMF.iIndepFun_piFin p X) (s := S) (fun i _ => hX i) hΔ
+  have hE : ((b - a : ℕ) : ℝ) * expect ν s ≤ ∑ i ∈ S, expect (p i) s := by
+    have h1 : ∀ i ∈ S, expect ν s ≤ expect (p i) s := by
+      intro i _
+      simp only [p, slotDist]; split_ifs
       · exact le_rfl
-    refine le_trans (le_of_eq ?_) (Finset.sum_le_sum fun i _ => h1 i)
-    rw [Finset.sum_ite, Finset.sum_const_zero, add_zero, Finset.sum_const, nsmul_eq_mul,
-      card_interval a b hb]
-  have h := hoeffding_piFin_lower (slotDist ν W) f hf (t := Δ / n) (div_nonneg hΔ (by positivity))
-  refine le_trans (MeasureTheory.OuterMeasure.mono _ ?_) (h.trans (le_of_eq ?_))
+      · rw [expect_pure, hsH]; exact hμ
+    refine le_trans (le_of_eq ?_) (Finset.sum_le_sum h1)
+    rw [Finset.sum_const, nsmul_eq_mul, card_interval a b hb]
+  have hsum : ∀ κ : Fin n → SlotKind, (∑ i : Fin n,
+      (if a ≤ (i : ℕ) ∧ (i : ℕ) < b then s (κ i) else 0)) = ∑ i ∈ S, s (κ i) := fun κ => by
+    rw [Finset.sum_filter]
+  rw [← PMF.toMeasure_apply_eq_toOuterMeasure, ← MeasureTheory.ofReal_measureReal]
+  refine ENNReal.ofReal_le_ofReal (le_trans (MeasureTheory.measureReal_mono ?_) (h.trans ?_))
   · intro κ hκ
     simp only [Set.mem_ofPred_eq] at hκ ⊢
-    rw [mul_div_cancel₀ _ (by positivity : (n : ℝ) ≠ 0)]
+    rw [hsum] at hκ
+    simp only [X, Finset.sum_sub_distrib]
     linarith
-  · congr 2
-    field_simp
+  · refine le_of_eq (congrArg Real.exp ?_)
+    simp only [Finset.sum_const, nsmul_eq_mul, NNReal.coe_mul, NNReal.coe_natCast]
+    norm_num
+    rw [show S.card = b - a from card_interval a b hb]
+    ring
 
 /-! ## Union bound over the intervals -/
 
@@ -372,76 +386,120 @@ private theorem score_mem (α β γ : ℝ) (hH : α + γ ∈ Set.Icc (0 : ℝ) 1
     score α β γ k ∈ Set.Icc (0 : ℝ) 1 := by
   cases k <;> simpa [score] using ‹_›
 
+/-- The Hoeffding tail of an interval of `L ≥ d` slots is at most that of an interval of `d`
+slots, for deviations `L c - r` with `0 ≤ c` and `0 ≤ r ≤ d c`:
+`exp (-2 (L c - r)² / L) ≤ exp (-2 (d c - r)² / d)`. -/
+theorem exp_tail_le {c r : ℝ} (hc : 0 ≤ c) (hr : 0 ≤ r) {d L : ℕ} (hrd : r ≤ d * c)
+    (hdL : d ≤ L) :
+    Real.exp (-2 * ((L : ℝ) * c - r) ^ 2 / L) ≤ Real.exp (-2 * ((d : ℝ) * c - r) ^ 2 / d) := by
+  rcases Nat.eq_zero_or_pos d with rfl | hd
+  · simp only [Nat.cast_zero, div_zero, Real.exp_zero, Real.exp_le_one_iff]
+    exact div_nonpos_of_nonpos_of_nonneg (by nlinarith [sq_nonneg ((L : ℝ) * c - r)])
+      (Nat.cast_nonneg _)
+  · refine Real.exp_le_exp.2 ?_
+    have hd' : (0 : ℝ) < d := by exact_mod_cast hd
+    have hL' : (d : ℝ) ≤ L := by exact_mod_cast hdL
+    have hL0 : (0 : ℝ) < L := lt_of_lt_of_le hd' hL'
+    rw [div_le_div_iff₀ hL0 hd']
+    have hy : 0 ≤ (d : ℝ) * c - r := by linarith
+    nlinarith [mul_nonneg (mul_nonneg (sub_nonneg.2 hL') hd'.le) (mul_nonneg hy hc),
+      mul_nonneg (mul_nonneg (sub_nonneg.2 hL') hy) hr,
+      mul_nonneg (mul_nonneg (sq_nonneg ((L : ℝ) - d)) hd'.le) (sq_nonneg c)]
+
+/-- **Union bound for deviations growing with the interval.** For a score `s` with values in
+`[0, 1]` and `s honest = 1`, and `0 ≤ c`, `0 ≤ r ≤ d c`, the probability that some interval
+`[a, b)` with `a + d ≤ b ≤ n` has scores summing to at most `(b - a) E_ν[s] - ((b - a) c - r)`
+is at most `(n + 1)² exp (-2 (d c - r)² / d)`. -/
+theorem prob_interval_dev_le (ν : PMF SlotKind) (W n d : ℕ) (s : SlotKind → ℝ)
+    (hs : ∀ k, s k ∈ Set.Icc (0 : ℝ) 1) (hsH : s .honest = 1) {c r : ℝ} (hc : 0 ≤ c)
+    (hr : 0 ≤ r) (hrd : r ≤ d * c) :
+    (kindDist ν W n).toOuterMeasure {κ | ∃ a b, b ≤ n ∧ a + d ≤ b ∧
+        (∑ i : Fin n, (if a ≤ (i : ℕ) ∧ (i : ℕ) < b then s (κ i) else 0)) +
+          (((b - a : ℕ) : ℝ) * c - r) ≤ ((b - a : ℕ) : ℝ) * expect ν s} ≤
+      ((n + 1) ^ 2 : ℕ) * ENNReal.ofReal (Real.exp (-2 * ((d : ℝ) * c - r) ^ 2 / d)) := by
+  refine le_trans (MeasureTheory.OuterMeasure.mono _ ?_) (prob_exists_interval_le _
+    (fun a b => {κ | a + d ≤ b ∧
+      (∑ i : Fin n, (if a ≤ (i : ℕ) ∧ (i : ℕ) < b then s (κ i) else 0)) +
+        (((b - a : ℕ) : ℝ) * c - r) ≤ ((b - a : ℕ) : ℝ) * expect ν s}) _ fun a b _ hb => ?_)
+  · rintro κ ⟨a, b, hb, hab, h⟩
+    exact ⟨a, b, by omega, hb, hab, h⟩
+  · by_cases hab : a + d ≤ b
+    · have hdL : d ≤ b - a := by omega
+      have hΔ : 0 ≤ ((b - a : ℕ) : ℝ) * c - r := by
+        have : (d : ℝ) * c ≤ ((b - a : ℕ) : ℝ) * c :=
+          mul_le_mul_of_nonneg_right (by exact_mod_cast hdL) hc
+        linarith
+      exact le_trans (MeasureTheory.OuterMeasure.mono _ fun κ hκ => hκ.2)
+        ((interval_tail ν W n s hs hsH hb hΔ).trans
+          (ENNReal.ofReal_le_ofReal (exp_tail_le hc hr hrd hdL)))
+    · simp [hab]
+
 /-- **Chain-growth condition.** For `ε ≥ 0`, the lottery violates the chain-growth condition
-with probability at most `(n + 1)² exp (-2 (ε d)² / n)`. -/
+with probability at most `(n + 1)² exp (-2 (ε d)² / d)`. -/
 theorem prob_CGBad_le (ν : PMF SlotKind) (W n d : ℕ) {ε : ℝ} (hε : 0 ≤ ε) :
     (kindDist ν W n).toOuterMeasure {κ | CGBad ν n d ε κ} ≤
-      ((n + 1) ^ 2 : ℕ) * ENNReal.ofReal (Real.exp (-2 * (ε * d) ^ 2 / n)) := by
+      ((n + 1) ^ 2 : ℕ) * ENNReal.ofReal (Real.exp (-2 * (ε * d) ^ 2 / d)) := by
   have hs := score_mem 1 0 0 (by norm_num) (by norm_num) (by norm_num)
-  refine le_trans (MeasureTheory.OuterMeasure.mono _ ?_) (prob_exists_interval_le _ _ _
-    fun a b _ hb => interval_tail (a := a) ν W n (score 1 0 0) hs (by simp [score]) hb
-      (Δ := ε * d) (by positivity))
+  rw [show (ε * d) ^ 2 = ((d : ℝ) * ε - 0) ^ 2 by ring]
+  refine le_trans (MeasureTheory.OuterMeasure.mono _ ?_) (prob_interval_dev_le ν W n d
+    (score 1 0 0) hs (by simp [score]) hε le_rfl (by positivity))
   rintro κ ⟨a, b, hb, hab, hbad⟩
-  refine ⟨a, b, by omega, hb, ?_⟩
-  simp only [Set.mem_ofPred_eq]
+  refine ⟨a, b, hb, hab, ?_⟩
   rw [sum_score κ 1 0 0 a b hb, expect_score]
-  have hm : (d : ℝ) ≤ ((b - a : ℕ) : ℝ) := by exact_mod_cast (by omega : d ≤ b - a)
-  have := mul_le_mul_of_nonneg_left hm hε
   simp only [pH] at hbad
   nlinarith
 
 /-- **Chain-quality condition.** If `pA ≤ pH` and `w ≤ d (pH - pA)`, the lottery violates the
 chain-quality condition with probability at most
-`(n + 1)² exp (-2 ((d (pH - pA) - w) / 2)² / n)`. -/
+`(n + 1)² exp (-2 ((d (pH - pA) - w) / 2)² / d)`. -/
 theorem prob_CQBad_le (ν : PMF SlotKind) (W n d w : ℕ) (hδ : pA ν ≤ pH ν)
     (hw : (w : ℝ) ≤ d * (pH ν - pA ν)) :
     (kindDist ν W n).toOuterMeasure {κ | CQBad n d w κ} ≤
       ((n + 1) ^ 2 : ℕ) * ENNReal.ofReal
-        (Real.exp (-2 * ((d * (pH ν - pA ν) - w) / 2) ^ 2 / n)) := by
+        (Real.exp (-2 * ((d * (pH ν - pA ν) - w) / 2) ^ 2 / d)) := by
   have hs := score_mem (1 / 2) (-1 / 2) (1 / 2) (by norm_num) (by norm_num) (by norm_num)
-  refine le_trans (MeasureTheory.OuterMeasure.mono _ ?_) (prob_exists_interval_le _ _ _
-    fun a b _ hb => interval_tail (a := a) ν W n (score (1 / 2) (-1 / 2) (1 / 2)) hs
-      (by simp [score]; norm_num) hb (Δ := (d * (pH ν - pA ν) - w) / 2) (by linarith))
+  rw [show ((d * (pH ν - pA ν) - w) / 2) ^ 2 = ((d : ℝ) * ((pH ν - pA ν) / 2) - w / 2) ^ 2 by
+    ring]
+  refine le_trans (MeasureTheory.OuterMeasure.mono _ ?_) (prob_interval_dev_le ν W n d
+    (score (1 / 2) (-1 / 2) (1 / 2)) hs (by simp [score]; norm_num) (by linarith)
+    (by positivity) (by linarith))
   rintro κ ⟨a, b, hb, hab, hbad⟩
-  refine ⟨a, b, by omega, hb, ?_⟩
-  simp only [Set.mem_ofPred_eq]
+  refine ⟨a, b, hb, hab, ?_⟩
   rw [sum_score κ _ _ _ a b hb, expect_score]
-  have hm : (d : ℝ) ≤ ((b - a : ℕ) : ℝ) := by exact_mod_cast (by omega : d ≤ b - a)
   have hbad' : (cnt κ .honest a b : ℝ) + 1 ≤ cnt κ .adversarial a b + w := by
     exact_mod_cast hbad
-  have := mul_le_mul_of_nonneg_right hm (by linarith : (0 : ℝ) ≤ pH ν - pA ν)
   simp only [pH, pA] at *
   nlinarith
 
 /-- **Common-prefix condition.** If `2 pA ≤ pH` and `3 ≤ d (pH - 2 pA)`, the lottery violates
 the common-prefix condition with probability at most
-`(n + 1)² exp (-2 ((d (pH - 2 pA) - 3) / 3)² / n)`. -/
+`(n + 1)² exp (-2 ((d (pH - 2 pA) - 3) / 3)² / d)`. -/
 theorem prob_CPBad_le (ν : PMF SlotKind) (W n d : ℕ) (hγ : 2 * pA ν ≤ pH ν)
     (h3 : (3 : ℝ) ≤ d * (pH ν - 2 * pA ν)) :
     (kindDist ν W n).toOuterMeasure {κ | CPBad n d κ} ≤
       ((n + 1) ^ 2 : ℕ) * ENNReal.ofReal
-        (Real.exp (-2 * ((d * (pH ν - 2 * pA ν) - 3) / 3) ^ 2 / n)) := by
+        (Real.exp (-2 * ((d * (pH ν - 2 * pA ν) - 3) / 3) ^ 2 / d)) := by
   have hs := score_mem (1 / 3) (-2 / 3) (2 / 3) (by norm_num) (by norm_num) (by norm_num)
-  refine le_trans (MeasureTheory.OuterMeasure.mono _ ?_) (prob_exists_interval_le _ _ _
-    fun a b _ hb => interval_tail (a := a) ν W n (score (1 / 3) (-2 / 3) (2 / 3)) hs
-      (by simp [score]; norm_num) hb (Δ := (d * (pH ν - 2 * pA ν) - 3) / 3) (by linarith))
+  rw [show ((d * (pH ν - 2 * pA ν) - 3) / 3) ^ 2 = ((d : ℝ) * ((pH ν - 2 * pA ν) / 3) - 1) ^ 2 by
+    ring]
+  refine le_trans (MeasureTheory.OuterMeasure.mono _ ?_) (prob_interval_dev_le ν W n d
+    (score (1 / 3) (-2 / 3) (2 / 3)) hs (by simp [score]; norm_num) (by linarith)
+    zero_le_one (by linarith))
   rintro κ ⟨a, b, hb, hab, hbad⟩
-  refine ⟨a, b, by omega, hb, ?_⟩
-  simp only [Set.mem_ofPred_eq]
+  refine ⟨a, b, hb, hab, ?_⟩
   rw [sum_score κ _ _ _ a b hb, expect_score]
-  have hm : (d : ℝ) ≤ ((b - a : ℕ) : ℝ) := by exact_mod_cast (by omega : d ≤ b - a)
   have hbad' : (cnt κ .honest a b : ℝ) + 1 ≤ 2 * cnt κ .adversarial a b + 3 := by
     exact_mod_cast hbad
-  have := mul_le_mul_of_nonneg_right hm (by linarith : (0 : ℝ) ≤ pH ν - 2 * pA ν)
   simp only [pH, pA] at *
   nlinarith
 
 /-- The bound on the probability that the lottery violates one of the three slot
-conditions. -/
+conditions: three Hoeffding tails for intervals of `d` slots, each multiplied by the number
+`(n + 1)²` of intervals. -/
 noncomputable def slotBound (ν : PMF SlotKind) (n d w : ℕ) (ε : ℝ) : ℝ≥0∞ :=
-  ((n + 1) ^ 2 : ℕ) * ENNReal.ofReal (Real.exp (-2 * (ε * d) ^ 2 / n)) +
-  ((n + 1) ^ 2 : ℕ) * ENNReal.ofReal (Real.exp (-2 * ((d * (pH ν - pA ν) - w) / 2) ^ 2 / n)) +
-  ((n + 1) ^ 2 : ℕ) * ENNReal.ofReal (Real.exp (-2 * ((d * (pH ν - 2 * pA ν) - 3) / 3) ^ 2 / n))
+  ((n + 1) ^ 2 : ℕ) * ENNReal.ofReal (Real.exp (-2 * (ε * d) ^ 2 / d)) +
+  ((n + 1) ^ 2 : ℕ) * ENNReal.ofReal (Real.exp (-2 * ((d * (pH ν - pA ν) - w) / 2) ^ 2 / d)) +
+  ((n + 1) ^ 2 : ℕ) * ENNReal.ofReal (Real.exp (-2 * ((d * (pH ν - 2 * pA ν) - 3) / 3) ^ 2 / d))
 
 /-- The event that the lottery violates one of the slot conditions. -/
 def SlotBad (ν : PMF SlotKind) (n d w : ℕ) (ε : ℝ) (κ : Fin n → SlotKind) : Prop :=

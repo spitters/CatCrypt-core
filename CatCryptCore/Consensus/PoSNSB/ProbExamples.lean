@@ -414,20 +414,20 @@ theorem pA_ν : pA ν = 1 / 8 := by
 /-- **The slot bound of the instance.** For `n = 2000` slots, windows of `d = 1000` slots,
 `w = 10` and `ε = 1/4`, the slot conditions fail with probability at most `1/16`. -/
 theorem slotBound_le : slotBound ν 2000 1000 10 (1 / 4) ≤ ENNReal.ofReal (1 / 16) := by
-  have e1 : Real.exp (-2 * (1 / 4 * ((1000 : ℕ) : ℝ)) ^ 2 / ((2000 : ℕ) : ℝ)) ≤
-      ((2 : ℝ) ^ 62)⁻¹ := by
-    rw [show -2 * (1 / 4 * ((1000 : ℕ) : ℝ)) ^ 2 / ((2000 : ℕ) : ℝ) = -(125 / 2) by norm_num]
-    exact exp_neg_le_inv_pow 62 (by norm_num)
+  have e1 : Real.exp (-2 * (1 / 4 * ((1000 : ℕ) : ℝ)) ^ 2 / ((1000 : ℕ) : ℝ)) ≤
+      ((2 : ℝ) ^ 124)⁻¹ := by
+    rw [show -2 * (1 / 4 * ((1000 : ℕ) : ℝ)) ^ 2 / ((1000 : ℕ) : ℝ) = -125 by norm_num]
+    exact exp_neg_le_inv_pow 124 (by norm_num)
   have e2 : Real.exp (-2 * ((((1000 : ℕ) : ℝ) * (3 / 4 - 1 / 8) - ((10 : ℕ) : ℝ)) / 2) ^ 2 /
-      ((2000 : ℕ) : ℝ)) ≤ ((2 : ℝ) ^ 94)⁻¹ := by
+      ((1000 : ℕ) : ℝ)) ≤ ((2 : ℝ) ^ 188)⁻¹ := by
     rw [show -2 * ((((1000 : ℕ) : ℝ) * (3 / 4 - 1 / 8) - ((10 : ℕ) : ℝ)) / 2) ^ 2 /
-      ((2000 : ℕ) : ℝ) = -(15129 / 160) by norm_num]
-    exact exp_neg_le_inv_pow 94 (by norm_num)
+      ((1000 : ℕ) : ℝ) = -(15129 / 80) by norm_num]
+    exact exp_neg_le_inv_pow 188 (by norm_num)
   have e3 : Real.exp (-2 * ((((1000 : ℕ) : ℝ) * (3 / 4 - 2 * (1 / 8)) - 3) / 3) ^ 2 /
-      ((2000 : ℕ) : ℝ)) ≤ ((2 : ℝ) ^ 27)⁻¹ := by
+      ((1000 : ℕ) : ℝ)) ≤ ((2 : ℝ) ^ 54)⁻¹ := by
     rw [show -2 * ((((1000 : ℕ) : ℝ) * (3 / 4 - 2 * (1 / 8)) - 3) / 3) ^ 2 /
-      ((2000 : ℕ) : ℝ) = -(247009 / 9000) by norm_num]
-    exact exp_neg_le_inv_pow 27 (by norm_num)
+      ((1000 : ℕ) : ℝ) = -(247009 / 4500) by norm_num]
+    exact exp_neg_le_inv_pow 54 (by norm_num)
   simp only [slotBound, pH_ν, pA_ν]
   rw [← ENNReal.ofReal_natCast, ← ENNReal.ofReal_mul (by positivity),
     ← ENNReal.ofReal_mul (by positivity), ← ENNReal.ofReal_mul (by positivity),
@@ -435,9 +435,9 @@ theorem slotBound_le : slotBound ν 2000 1000 10 (1 / 4) ≤ ENNReal.ofReal (1 /
     ← ENNReal.ofReal_add (by positivity) (by positivity)]
   refine ENNReal.ofReal_le_ofReal ?_
   have hN : (0 : ℝ) ≤ (((2000 + 1) ^ 2 : ℕ) : ℝ) := by positivity
-  calc _ ≤ (((2000 + 1) ^ 2 : ℕ) : ℝ) * ((2 : ℝ) ^ 62)⁻¹ +
-        (((2000 + 1) ^ 2 : ℕ) : ℝ) * ((2 : ℝ) ^ 94)⁻¹ +
-        (((2000 + 1) ^ 2 : ℕ) : ℝ) * ((2 : ℝ) ^ 27)⁻¹ := by gcongr
+  calc _ ≤ (((2000 + 1) ^ 2 : ℕ) : ℝ) * ((2 : ℝ) ^ 124)⁻¹ +
+        (((2000 + 1) ^ 2 : ℕ) : ℝ) * ((2 : ℝ) ^ 188)⁻¹ +
+        (((2000 + 1) ^ 2 : ℕ) : ℝ) * ((2 : ℝ) ^ 54)⁻¹ := by gcongr
     _ ≤ 1 / 16 := by norm_num
 
 /-- **The slot bound is below `1`.** -/

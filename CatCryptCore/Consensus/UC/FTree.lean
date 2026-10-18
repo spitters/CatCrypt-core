@@ -25,7 +25,7 @@ Kamp, Nielsen, Thomsen and Tschudi, *Enig* (ePrint 2022/201), §3:
   parties that are not on one chain (`TreeTrace.Agreement`) make the functionality
   explode.
 * `F_FinTree^P'` (`finTree`): the same tree, where the adversary declares blocks final
-  subject to the finality guards chain-forming, agreement, `Δ`-updated, and either
+  subject to the finality guards chain-forming, agreement, propagation within `Δ` rounds, and either
   `k`-support (`finTreeK`) or `v`-validity (`finTreeV`).
 
 ## Model
@@ -54,7 +54,7 @@ honest party stays on its position), `ChainForming` (`Finality.ChainForming`),
 `Agreement` (`Finality.Agreement`), and the depth predicate `Finality.kDeep` (for
 `finalized` with depth `0` and for `KSupport`).
 
-Defined in this file: `ChainGrowth` and `DeltaUpdated`, which measure time in rounds of
+Defined in this file: `ChainGrowth` and `DeltaPropagated`, which measure time in rounds of
 the view (`ChainTrace.ChainGrowth` measures it in steps of the trace, and a finite trace
 extended by its last state violates it), `KSupport` and `Validity` (the support guards of
 `F_FinTree`), and the well-formedness conditions `TreesGrow`, `PositionsInTrees`,
@@ -202,9 +202,11 @@ def ChainForming (T : BlockTree Blk) : Prop := Finality.ChainForming T X.chains 
 (`Finality.Agreement`). -/
 def Agreement (T : BlockTree Blk) : Prop := Finality.Agreement T X.chains X.finalized
 
-/-- `Δ`-updated: if `b` is final for honest `p` at `t`, then at every time `t'` at least
-`Δ` rounds later every honest `q` has a final block that `b` is an ancestor of. -/
-def DeltaUpdated (T : BlockTree Blk) (Δ : ℕ) : Prop :=
+/-- Propagation of final blocks within `Δ` rounds: if `b` is final for honest `p` at `t`,
+then at every time `t'` at least `Δ` rounds later every honest `q` has a final block that `b`
+is an ancestor of. This is a safety-style propagation guard; it is distinct from the
+liveness property `Finality.DeltaUpdated` (a finalized checkpoint close to the tip). -/
+def DeltaPropagated (T : BlockTree Blk) (Δ : ℕ) : Prop :=
   ∀ p q t t' b i, X.honest p → X.honest q → X.finalized t p b i →
     (X.st t).round + Δ ≤ (X.st t').round → ∃ b' j, X.finalized t' q b' j ∧ T.anc b b'
 
@@ -263,8 +265,8 @@ theorem stable_agreement (T : BlockTree Blk) :
     Stable (fun X : TreeTrace Party Blk => X.Agreement T) :=
   fun _ _ h p q _ _ b b' i j hp hq hb hb' => h p q _ _ b b' i j hp hq hb hb'
 
-theorem stable_deltaUpdated (T : BlockTree Blk) (Δ : ℕ) :
-    Stable (fun X : TreeTrace Party Blk => X.DeltaUpdated T Δ) :=
+theorem stable_deltaPropagated (T : BlockTree Blk) (Δ : ℕ) :
+    Stable (fun X : TreeTrace Party Blk => X.DeltaPropagated T Δ) :=
   fun _ _ h p q _ _ b i hp hq hb hr => h p q _ _ b i hp hq hb hr
 
 /-- A time `t₀ ≤ min t n` is not moved by truncation at `n`. -/
@@ -330,11 +332,11 @@ def FTreeGuard (T : BlockTree Blk) (P : List (TreeTrace Party Blk → Prop))
   X.WellFormed T ∧ (∀ φ ∈ P, φ X) ∧ X.Agreement T
 
 /-- The guard of `F_FinTree^P'`: well-formedness, every tree property of `P`,
-chain-forming, agreement, `Δ`-updated, and the support guard `supp`. -/
+chain-forming, agreement, propagation within `Δ` rounds, and the support guard `supp`. -/
 def FinTreeGuard (T : BlockTree Blk) (P : List (TreeTrace Party Blk → Prop)) (Δ : ℕ)
     (supp : TreeTrace Party Blk → Prop) (X : TreeTrace Party Blk) : Prop :=
   X.WellFormed T ∧ (∀ φ ∈ P, φ X) ∧ X.ChainForming T ∧ X.Agreement T ∧
-    X.DeltaUpdated T Δ ∧ supp X
+    X.DeltaPropagated T Δ ∧ supp X
 
 /-- `F_Tree^P` as a transparent functionality. -/
 noncomputable def fTree (vw : σ → TreeView Party Blk) (honest : Party → Prop)
@@ -376,7 +378,7 @@ theorem fTree_guard_iff (vw : σ → TreeView Party Blk) (honest : Party → Pro
   treeFunc_guard_iff _ _ _ _ _ _
 
 /-- The guard of `F_FinTree^P'` holds on `tr` iff its tree trace is well formed, satisfies
-every property of `P`, and is chain-forming, in agreement, `Δ`-updated and supported. -/
+every property of `P`, and is chain-forming, in agreement, propagates final blocks within `Δ` rounds and is supported. -/
 theorem finTree_guard_iff (vw : σ → TreeView Party Blk) (honest : Party → Prop)
     (T : BlockTree Blk) (P : List (TreeTrace Party Blk → Prop)) (Δ : ℕ)
     (supp : TreeTrace Party Blk → Prop) (s₀ : σ) (ex : O) (tr : Trace σ E O) :
@@ -439,7 +441,7 @@ theorem finTree_guard_prefix (vw : σ → TreeView Party Blk) (honest : Party �
     (finTree vw honest T P Δ supp s₀ ex).guard tr = true :=
   treeFunc_guard_prefix vw honest
     ((stable_wellFormed T).and ((stable_all hP).and ((stable_chainForming T).and
-      ((stable_agreement T).and ((stable_deltaUpdated T Δ).and hsupp))))) s₀ ex hpre h
+      ((stable_agreement T).and ((stable_deltaPropagated T Δ).and hsupp))))) s₀ ex hpre h
 
 end Func
 /-! ## The ideal world and realization by the copy simulator -/
@@ -498,7 +500,7 @@ theorem fTree_realizes (π : Sys σ E O) (vw : σ → TreeView Party Blk) (hones
 plumbing). For a
 lossless protocol `π` with view map `vw`, every environment has advantage at most the
 probability that the real tree trace violates well-formedness, `P`, chain-forming,
-agreement, `Δ`-updatedness or the support guard. -/
+agreement, propagation within `Δ` rounds or the support guard. -/
 theorem finTree_realizes (π : Sys σ E O) (vw : σ → TreeView Party Blk)
     (honest : Party → Prop) (T : BlockTree Blk) (P : List (TreeTrace Party Blk → Prop))
     (Δ : ℕ) (supp : TreeTrace Party Blk → Prop) (ex : O)
@@ -653,7 +655,7 @@ theorem lineTT_agreement : lineTT.Agreement lineTree :=
 theorem lineTT_chainForming : lineTT.ChainForming lineTree :=
   (kDeep_positionRespecting lineTrace_chainsInTree (lineTrace_commonPrefix 2)).chainForming
 
-theorem lineTT_deltaUpdated (Δ : ℕ) : lineTT.DeltaUpdated lineTree Δ := by
+theorem lineTT_deltaPropagated (Δ : ℕ) : lineTT.DeltaPropagated lineTree Δ := by
   rintro _ _ t t' b i _ _ ⟨C, hC, hl⟩ hr
   simp only [lineTT, lineView] at hr
   exact ⟨b, i, ⟨C, hC.trans (drop_two_line_suffix (by omega)), hl⟩, lineTree.anc_refl b⟩
@@ -674,13 +676,13 @@ theorem lineTT_fTreeGuard : FTreeGuard lineTree lineP lineTT :=
 /-- The guard of `F_FinTree^P'` with `2`-support holds on `lineTT`, for every `Δ`. -/
 theorem lineTT_finTreeGuardK (Δ : ℕ) :
     FinTreeGuard lineTree lineP Δ (fun X => X.KSupport 2) lineTT :=
-  ⟨lineTT_wellFormed, lineTT_P, lineTT_chainForming, lineTT_agreement, lineTT_deltaUpdated Δ,
+  ⟨lineTT_wellFormed, lineTT_P, lineTT_chainForming, lineTT_agreement, lineTT_deltaPropagated Δ,
     lineTT_kSupport⟩
 
 /-- The guard of `F_FinTree^P'` with `1`-validity holds on `lineTT`, for every `Δ`. -/
 theorem lineTT_finTreeGuardV (Δ : ℕ) :
     FinTreeGuard lineTree lineP Δ (fun X => X.Validity 1) lineTT :=
-  ⟨lineTT_wellFormed, lineTT_P, lineTT_chainForming, lineTT_agreement, lineTT_deltaUpdated Δ,
+  ⟨lineTT_wellFormed, lineTT_P, lineTT_chainForming, lineTT_agreement, lineTT_deltaPropagated Δ,
     lineTT_validity⟩
 
 /-- The state after `t` entries of a trace with one more entry. -/
@@ -759,7 +761,7 @@ theorem lineProto_finTree_adv (Δ : ℕ) :
   have hst : ∀ {supp : TreeTrace Unit ℕ → Prop}, Stable supp →
       Stable (FinTreeGuard lineTree lineP Δ supp) := fun hs =>
     (stable_wellFormed _).and ((stable_all lineP_stable).and ((stable_chainForming _).and
-      ((stable_agreement _).and ((stable_deltaUpdated _ Δ).and hs))))
+      ((stable_agreement _).and ((stable_deltaPropagated _ Δ).and hs))))
   exact ⟨lineTT_finTreeGuardK Δ, lineTT_finTreeGuardV Δ,
     fun _ Z => finTree_adv_eq_zero lineProto _ _ _ _ _ _ _ lineProto_noFail Z
       (line_guardFail (hst (stable_kSupport 2)) (lineTT_finTreeGuardK Δ) [] Z),

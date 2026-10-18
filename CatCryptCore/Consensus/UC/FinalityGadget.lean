@@ -73,8 +73,8 @@ first. `finView` is the view reported to `F_FinTree`: the tree view with these f
   not refer to the block tree `T`, so it is informative also when `T` relates every two
   blocks.
 * `Finality.finality_updated` is a liveness statement (a finalized checkpoint close
-  to the tip after `GST`); `F_FinTree` enforces only safety guards, and its `Δ`-updatedness
-  (`TreeTrace.DeltaUpdated`: a final block reaches every honest party within `Δ` rounds)
+  to the tip after `GST`); `F_FinTree` enforces only safety guards, and its propagation guard
+  (`TreeTrace.DeltaPropagated`: a final block reaches every honest party within `Δ` rounds)
   follows here from the synchronous delivery of votes and the monotonicity of finalization.
 -/
 
@@ -582,7 +582,7 @@ adversarial validators hold less than a third of the stake, `3 * stake w (univ \
 every run `G` of the gadget whose positions are well formed and satisfy every property of `P`,
 where each property of `P` reads only rounds, trees and positions, the tree trace reported by
 the gadget satisfies the guard of `F_FinTree^P'` with
-`P' = finality-respecting positions :: FinalOnHonestPos :: P`, `Δ`-updatedness, and the
+`P' = finality-respecting positions :: FinalOnHonestPos :: P`, propagation within `Δ` rounds, and the
 support guard `1`-validity together with stake validity for the adversarial stake. -/
 theorem finTreeGuard_of_run {c : Cfg Party Blk} {G : ℕ → GCore Party Blk} (h : Run c G)
     (hΔ : 1 ≤ c.Δ) (hA : 3 * stake c.w (Finset.univ \ c.H) < totalStake c.w)
@@ -613,7 +613,7 @@ theorem finTreeGuard_of_run {c : Cfg Party Blk} {G : ℕ → GCore Party Blk} (h
     rcases le_total e e' with hle | hle
     · exact Or.inl (h.anc_of_finalized hA h₁ h₂ hle)
     · exact Or.inr (h.anc_of_finalized hA h₂ h₁ hle)
-  · -- `Δ`-updatedness
+  · -- propagation within `Δ` rounds
     rintro p q t t' b i - - hb hr
     change (G t).view.round + c.Δ ≤ (G t').view.round at hr
     have htt : t ≤ t' := by

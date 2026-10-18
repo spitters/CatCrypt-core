@@ -57,7 +57,10 @@ phase `K`, the horizon of the bound of `pos_nsb_security`.
   at most the probability that `Good` fails under `seedDist`.
 * `chain_realizes` (headline): for every adversary `A`, the protocol running with the reference
   clock and network realizes `ideal (chainF …) (chainSim …)`, with bound the failure bound of
-  `pos_nsb_security`.
+  `pos_nsb_security`. It is `pos_nsb_security` in the form of a realization: the environment
+  gives no inputs, the adversary `A` is the same in both worlds and `chainF` depends on it
+  through `pView`, chain growth is that of the observer `none`, the views are constant after
+  phase `K`, and the network of the clock-and-network functionality is not used.
 * `chain_UCEmulatesCSim`: the same in the form `UCConcrete.UCEmulatesCSim`.
 * `Instance.instance_realizes`: the hypotheses hold for the one-party instance
   `PoSNSB.Instance`.
@@ -743,7 +746,16 @@ reference clock and network (`chainReal`) realizes the ideal world of `F_Tree^P`
 with `P` = chain growth, chain quality, common prefix of `pos_nsb_security` and the persistence
 of nonempty honest positions) with the copy simulator `chainSim`: every environment has
 advantage at most
-`slotBound ν n d w ε + q (q - 1) / 2 / |Hash| + ∑ᵢ eufAdv (forger P A ν W K i)`. -/
+`slotBound ν n d w ε + q (q - 1) / 2 / |Hash| + ∑ᵢ eufAdv (forger P A ν W K i)`.
+
+The statement is `pos_nsb_security` in the form of a realization. The environment gives no
+inputs: it only activates the protocol, whose steps ignore the event, and observes the clock
+round and the view. The adversary `A` acts inside the execution and is the same in both
+worlds: the simulator `chainSim` and the functionality `chainF` are parameterized by `A`, and
+`chainF` reads the view of a simulator state through `pView`, which runs the execution with
+`A`. Chain growth is the property of the observer party `none`, whose position is the honest
+tree chain; the views report phase `min j K`, so they are constant after phase `K`. The
+network of the clock-and-network functionality carries no message; only its clock is used. -/
 theorem chain_realizes (hP : ProtocolHyp P)
     (hIP : ∀ p : Fin np, CorruptionStatus p = .Honest → p ∈ P.IP) (hTree : Tree.Longest)
     (ν : PMF SlotKind) (W K d w : ℕ) (ε : ℝ) (Δ : ℕ)
