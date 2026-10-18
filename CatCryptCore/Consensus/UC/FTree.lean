@@ -57,8 +57,10 @@ honest party stays on its position), `ChainForming` (`Finality.ChainForming`),
 Defined in this file: `ChainGrowth` and `DeltaPropagated`, which measure time in rounds of
 the view (`ChainTrace.ChainGrowth` measures it in steps of the trace, and a finite trace
 extended by its last state violates it), `KSupport` and `Validity` (the support guards of
-`F_FinTree`), and the well-formedness conditions `TreesGrow`, `PositionsInTrees`,
-`RoundsMonotone`.
+`F_FinTree`), the well-formedness conditions `TreesGrow`, `PositionsInTrees`,
+`RoundsMonotone`, the clock condition `RoundStep`, and finality liveness `UpdatedWithin`
+(every honest party has a final block whose slot is at most `L` rounds behind the current
+round), a property that each prefix of the trace can check.
 
 Naming: `Finality.PositionRespecting` (finality-respecting *positions* in the sense of
 finalization indices) is a different property; Enig's finality-respecting positions (a
@@ -222,6 +224,18 @@ def Validity (v : ℕ) : Prop :=
   ∀ p t b i, X.honest p → X.finalized t p b i →
     ∃ S : Finset Party, v ≤ S.card ∧ ∀ q ∈ S, X.honest q ∧ ∃ t₀ ≤ t, b ∈ (X.st t₀).pos q
 
+/-! ### Clock and finality liveness -/
+
+/-- The round advances by at most `1` per step. -/
+def RoundStep : Prop :=
+  ∀ t, (X.st (t + 1)).round ≤ (X.st t).round + 1
+
+/-- Finality liveness from round `τ` with lag `L`: at every time whose round is at least `τ`,
+every honest party has a final block whose slot (by `sl`) is at most `L` rounds behind the
+current round. -/
+def UpdatedWithin (sl : Blk → ℕ) (τ L : ℕ) : Prop :=
+  ∀ p t, X.honest p → τ ≤ (X.st t).round → ∃ b ∈ (X.st t).fin p, (X.st t).round ≤ sl b + L
+
 end TreeTrace
 
 /-! ## Stability under truncation -/
@@ -288,6 +302,19 @@ theorem stable_validity (v : ℕ) :
   refine ⟨S, hS, fun q hqS => ⟨(hq q hqS).1, ?_⟩⟩
   obtain ⟨t₀, h₀, hm⟩ := (hq q hqS).2
   exact ⟨t₀, h₀.trans (min_le_left _ _), by simpa [TreeTrace.clamp, min_eq_of_le_min h₀] using hm⟩
+
+theorem stable_roundStep : Stable (fun X : TreeTrace Party Blk => X.RoundStep) := by
+  intro X n h t
+  change (X.st (min (t + 1) n)).round ≤ (X.st (min t n)).round + 1
+  rcases Nat.lt_or_ge t n with ht | ht
+  · rw [min_eq_left (show t + 1 ≤ n by omega), min_eq_left ht.le]
+    exact h t
+  · rw [min_eq_right (show n ≤ t + 1 by omega), min_eq_right ht]
+    omega
+
+theorem stable_updatedWithin (sl : Blk → ℕ) (τ L : ℕ) :
+    Stable (fun X : TreeTrace Party Blk => X.UpdatedWithin sl τ L) :=
+  fun _ n h p t hp hτ => h p (min t n) hp hτ
 
 /-- Conjunctions of stable properties are stable. -/
 theorem Stable.and {φ ψ : TreeTrace Party Blk → Prop} (hφ : Stable φ) (hψ : Stable ψ) :

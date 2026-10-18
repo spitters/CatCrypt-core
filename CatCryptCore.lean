@@ -395,6 +395,7 @@ public import CatCryptCore.Consensus.PoSNSB.Prob
 public import CatCryptCore.Consensus.PoSNSB.ProbExamples
 public import CatCryptCore.Consensus.UC.FTree
 public import CatCryptCore.Consensus.UC.FinalityGadget
+public import CatCryptCore.Consensus.UC.FinalityLive
 public import CatCryptCore.Consensus.UC.Finality
 public import CatCryptCore.Consensus.UC.Chain
 public import CatCryptCore.Consensus.UC.Stack
