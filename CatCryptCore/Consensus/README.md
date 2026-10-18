@@ -4,19 +4,22 @@
 Nakamoto-style proof-of-stake longest chain. It proves accountable safety of FFG for a
 fixed and for a changing validator set. It ports the Coq development PoS-NSB of Thomsen
 and Spitters [TS21]: chain growth, chain quality and common prefix for every execution
-whose lottery satisfies slot conditions. It bounds the probability that these properties
-fail for a random stake-weighted lottery, a random oracle and a signature scheme, with
-forging reduced to EUF-CMA by explicit adversaries. It proves that FFG over
+whose lottery satisfies slot conditions, to which it adds an honest block near the tip of
+every honest chain. It bounds the probability that these properties fail for a random
+stake-weighted lottery, a keyed hash family and a signature scheme, for every adversary. As
+in [TS21], Remarks 1 and 2, the hash function enters through the collision-resistance
+advantage of an explicit collision finder and the signature scheme through the EUF-CMA
+advantages of explicit forgers, both built from the adversary. It proves that FFG over
 this chain is chain-forming, in agreement, v-valid and Δ-updated, the last with high
 probability. Finally it composes the two layers in the universally composable style of
 Afgjort [DMM+20] and Enig [KNTT22]: PoS-NSB realizes the tree functionality `F_Tree` in
 the clock-and-network hybrid model, FFG in the `F_Tree`-hybrid model realizes the finality
 functionality `F_FinTree` with advantage `0` when the adversarial stake is below one
 third, and the stacked protocol realizes `F_FinTree` with the failure bound of the chain
-layer. The numeric terms of every bound are information-theoretic (a Chernoff-Hoeffding
-tail on the lottery and a birthday bound on the random oracle); the signature scheme
-enters through the EUF-CMA advantages of explicit forgers. The namespace is
-`CatCryptCore.Consensus`.
+layer. The numeric terms are information-theoretic: the Chernoff-Hoeffding tail on the
+lottery and, for a random-function hash whose broadcast blocks lie among the first `q`
+queries of an adaptive querier, the birthday bound `q (q - 1) / 2 / |Hash|` on the
+collision term. The namespace is `CatCryptCore.Consensus`.
 
 ## Accountable safety of Casper FFG
 
@@ -54,6 +57,7 @@ discharges them.
 | Chain growth: between two states, the honest tree chain grows by at least the number of slots in between with an honest leader; the same for the chains of two honest parties. | [`chain_growth_gen`](PoSNSB/ChainGrowth.lean), [`chain_growth`](PoSNSB/ChainGrowth.lean), [`chain_growth_parties`](PoSNSB/ChainGrowth.lean) |
 | Chain quality: if in every long enough interval the slots with an honest leader outnumber those with an adversarial leader by `w`, every fragment of an honest party's chain contains at least `w - 1` honest blocks. | [`chain_quality_gen`](PoSNSB/ChainQuality.lean), [`chain_quality`](PoSNSB/ChainQuality.lean) |
 | Timed common prefix: the blocks of slot at most `k` of an honest chain form a suffix of every later honest chain, unless for some `t₁ ≤ k` and some later slot `t₂` the super slots (one honest leader) in `[t₁ + 1, t₂ - 1)` are at most twice the adversarial slots in `[t₁ + 1, t₂ + 1)`. | [`timed_common_prefix_gen`](PoSNSB/CommonPrefix.lean), [`timed_common_prefix`](PoSNSB/CommonPrefix.lean) |
+| An honest block near the tip: if in every interval of at least `d` slots the slots with an honest leader outnumber those with an adversarial leader by `w ≥ 2`, the chain of an honest party at slot `t` contains an honest block `b` with `t < sl b + d + 2`. The proof is the second case of the Coq chain-quality proof, applied to the whole chain split at its newest honest block; the statement is not in the Coq development. | [`honest_tip_gen`](PoSNSB/ChainQualityTip.lean), [`honest_tip`](PoSNSB/ChainQualityTip.lean) |
 
 ## Probability layer
 
@@ -62,11 +66,14 @@ discharges them.
 | Hoeffding tail for an interval: the scores of the slots of `[a, b)` sum to at most `(b - a) E[s] - Δ` with probability at most `exp (-2 Δ² / (b - a))`. | [`interval_tail`](PoSNSB/Prob/Slots.lean) |
 | A lottery electing each slot leader independently violates the slot conditions of chain growth, chain quality and common prefix with probability at most `slotBound`, a union bound of such tails over the intervals. | [`prob_slotBad_le`](PoSNSB/Prob/Slots.lean) |
 | Stake-weighted leader election per slot: a slot has a leader with probability `φ`, and it is honest (adversarial) with probability `φ` times the honest (corrupt) stake fraction. | [`kindLaw_stakeElect_honest`](PoSNSB/Prob/Slots.lean), [`kindLaw_stakeElect_adversarial`](PoSNSB/Prob/Slots.lean) |
-| A random oracle queried adaptively has a collision among its first `q` queries with probability at most `q (q - 1) / 2 / \|Hash\|`. | [`prob_ROCollision_le`](PoSNSB/Prob/Hash.lean) |
+| The hash function of the seed is drawn from a keyed hash family `H`, a finite key space with a hash function under each key; the random oracle is the family whose keys are all functions. The collision-resistance advantage of an adversary against `H` is the probability that, given a uniformly random key, it outputs two distinct points with the same hash. | [`HashFam`](PoSNSB/Prob/Hash.lean), [`HashFam.randomFun`](PoSNSB/Prob/Hash.lean), [`CRAdversary`](PoSNSB/Prob/Collision.lean), [`crAdv`](PoSNSB/Prob/Collision.lean) |
 | The real execution with signed blocks coincides with the ideal execution, which is forging free by construction, until the adversary forges. | [`sTrace_ideal_eq`](PoSNSB/Prob/Protocol.lean), [`forging_free_ideal`](PoSNSB/Prob/Protocol.lean) |
-| Forging reduces to EUF-CMA: for every adversary `A` and party `i` the explicit forger `forger A i` gives `Pr[forge] ≤ ∑ᵢ eufAdv (forger A i)`. | [`forger`](PoSNSB/Prob/Reduction.lean), [`prob_forge_le`](PoSNSB/Prob/Reduction.lean) |
-| Security of PoS-NSB: for every adversary, chain growth, chain quality and common prefix hold for the first `K` phases except with probability at most `slotBound + q (q - 1) / 2 / \|Hash\| + ∑ᵢ eufAdv (forger A i)`. | [`pos_nsb_security`](PoSNSB/Prob.lean) |
-| One honest party elected on the first `1000` of `2000` slots with active-slot probability `3/4`: `slotBound ≤ 1/16`, and with `\|Hash\| = 4 ^ (K + 5)` the total bound is below `1`. | [`LotteryInstance.slotBound_le`](PoSNSB/ProbExamples.lean), [`LotteryInstance.instance_security`](PoSNSB/ProbExamples.lean), [`LotteryInstance.instance_bound_lt_one`](PoSNSB/ProbExamples.lean) |
+| Forging reduces to EUF-CMA ([TS21], Remark 2): for every adversary `A`, every keyed hash family `H` and every party `i`, the explicit forger `forger P A H μ W K i` gives `Pr[forge] ≤ ∑ᵢ eufAdv (forger P A H μ W K i)`. | [`forger`](PoSNSB/Prob/Reduction.lean), [`prob_forge_le`](PoSNSB/Prob/Reduction.lean) |
+| Collisions reduce to collision resistance ([TS21], Remark 1): for every adversary `A`, the explicit collision finder `collFinder P A H μ W K` samples the lottery and the key pairs, runs the first `K` phases of the real execution with the hash function under its key and outputs two colliding blocks; a collision among the genesis block and the broadcast blocks of the first `K` phases has probability at most `crAdv (collFinder P A H μ W K)`. | [`collFinder`](PoSNSB/Prob/Collision.lean), [`prob_collision_le`](PoSNSB/Prob/Collision.lean) |
+| A random oracle queried adaptively has a collision among its first `q` queries with probability at most `q (q - 1) / 2 / \|Hash\|`; hence for the random-function family, if the genesis block and the broadcast blocks of the first `K` phases lie among the first `q` queries of an adaptive querier, the collision finder has advantage at most this birthday bound. | [`prob_ROCollision_le`](PoSNSB/Prob/Hash.lean), [`crAdv_randomFun_le_of_queries`](PoSNSB/Prob/Collision.lean) |
+| Security of PoS-NSB: for every adversary `A` and every keyed hash family `H`, chain growth, chain quality, common prefix and an honest block within `d + 2` slots of the current slot on the chain of every honest party hold for the first `K` phases except with probability at most `slotBound + crAdv (collFinder P A H μ W K) + ∑ᵢ eufAdv (forger P A H μ W K i)`. The adversary carries no hypothesis; the tip property follows from the slot condition of common prefix. | [`tip_of_not_bad`](PoSNSB/Prob.lean), [`pos_nsb_security`](PoSNSB/Prob.lean) |
+| Without corrupt parties, the genesis block and the broadcast blocks lie among the first `(1 + \|Tx\| np) ^ (Hz + 1)` queries of a querier enumerating the candidate blocks, so the collision finder against the random oracle has advantage at most the birthday bound in that number, and the forgers have advantage `0`. | [`crAdv_collFinder_of_honest`](PoSNSB/ProbExamples.lean), [`eufAdv_forger_of_honest`](PoSNSB/ProbExamples.lean) |
+| One honest party elected on the first `1000` of `2000` slots with active-slot probability `3/4` and the random oracle on `M` hash values: `slotBound ≤ 1/16`, the collision term is at most `q (q - 1) / 2 / M` with `q = 2 ^ (K + 2)`, the forging term is `0`, and with `M = 4 ^ (K + 5)` the total bound is below `1`. | [`LotteryInstance.slotBound_le`](PoSNSB/ProbExamples.lean), [`LotteryInstance.crAdv_collFinder_le`](PoSNSB/ProbExamples.lean), [`LotteryInstance.instance_security`](PoSNSB/ProbExamples.lean), [`LotteryInstance.instance_bound_lt_one`](PoSNSB/ProbExamples.lean) |
 
 ## Finality layer
 
@@ -80,7 +87,8 @@ traces; the conclusions are the finality properties of Afgjort [DMM+20] and Enig
 | FFG over a chain: if the slashable validators hold less than one third of the stake, the checkpoints finalized by all parties respect epochs, form a chain and agree. | [`ffg_positionRespecting`](Finality.lean), [`ffg_chainForming`](Finality.lean), [`ffg_agreement`](Finality.lean) |
 | v-validity: a finalized checkpoint is an epoch-boundary checkpoint of the selected chains of honest validators of stake at least `(2/3 - β) W`, with `β` the adversarial share; with unslashable honest validators and `β < 1/3`, the honestly finalized checkpoints form a chain. | [`ffg_vValidity`](FinalityValidity.lean), [`ffg_vValidity_share`](FinalityValidity.lean), [`ffg_honestFinalized_chain_of_share`](FinalityValidity.lean), [`ffg_finalityValidity`](FinalityValidity.lean) |
 | Δ-updatedness: after the global stabilization time, with honest validators holding two thirds of the stake and following the voting schedule, every honest party holds a finalized epoch-boundary checkpoint of its chain at most `3 E + σ + d + Δ` slots behind the current slot. | [`finality_updated`](FinalityUpdated.lean), [`finality_updated_start`](FinalityUpdated.lean), [`finality_updated_tip`](FinalityUpdated.lean) |
-| On the real PoS-NSB execution, with the honest voting schedule and the tip condition as hypotheses on every seed, Δ-updatedness fails with probability at most the failure bound of `pos_nsb_security`. | [`finality_updated_prob`](FinalityUpdatedProb.lean) |
+| On the real PoS-NSB execution with a keyed hash family, with the vote layer (two thirds of the stake honest, the honest voting schedule, delivery within `Δ` after the global stabilization time) as a hypothesis on every seed, `w ≥ 4` and `σ ≥ d + 2`, Δ-updatedness with lag `3 E + σ + d + Δ` fails with probability at most the failure bound of `pos_nsb_security`. The tip condition and chain growth in slot form are derived on the event of `pos_nsb_security`. | [`finality_updated_prob`](FinalityUpdatedProb.lean), [`seed_slotTip`](FinalityUpdatedProb.lean), [`seed_slotChainGrowth`](FinalityUpdatedProb.lean) |
+| The same for a finality layer started at genesis (no earlier votes, the genesis checkpoint justified, the honest initial parties as the honest validators, a round every `2 E` slots from slot `2 E + σ + d`): Δ-updatedness from slot `2 E + σ + d + Δ` fails with probability at most the same bound. Besides the protocol and numeric hypotheses of `finality_updated_prob`, the vote layer is assumed only to satisfy: the honest initial parties hold two thirds of the stake and cast the votes of the schedule, one of them exists, every vote cast reaches every honest party within `Δ` slots after the global stabilization time, and this time is at most `2 E + σ + d`. | [`finality_updated_prob_genesis`](FinalityUpdatedProb.lean) |
 | Concrete traces satisfy every hypothesis of these theorems and finalize a block. | [`Examples.ffg_nonvacuous`](FinalityExamples.lean), [`Examples.ffgValidity_nonvacuous_adversary`](FinalityValidity.lean), [`Examples.updated_nonvacuous`](FinalityUpdated.lean) |
 
 ## Universally composable stack
@@ -102,11 +110,11 @@ static.
 | Statement | Lean |
 |---|---|
 | The functionalities `F_Tree` and `F_FinTree` of Enig; their guards are safety properties; the copy simulator realizes each with advantage at most the probability that the real trace violates the guard. | [`fTree`](UC/FTree.lean), [`finTree`](UC/FTree.lean), [`fTree_guard_prefix`](UC/FTree.lean), [`fTree_realizes`](UC/FTree.lean), [`finTree_realizes`](UC/FTree.lean) |
-| PoS-NSB with signed blocks, run over the clock-and-network functionality, realizes `F_Tree` with chain growth, chain quality and common prefix as trace properties, for every adversary, with advantage at most the failure bound of `pos_nsb_security`. | [`chain_realizes`](UC/Chain.lean), [`chain_UCEmulatesCSim`](UC/Chain.lean) |
+| PoS-NSB with signed blocks, run over the clock-and-network functionality, realizes `F_Tree` with chain growth, chain quality and common prefix as trace properties, for every adversary and every keyed hash family, with advantage at most the failure bound of `pos_nsb_security`. | [`chain_realizes`](UC/Chain.lean), [`chain_UCEmulatesCSim`](UC/Chain.lean) |
 | The FFG gadget on tree positions: with `1 ≤ Δ` and adversarial stake below one third, its reported trace satisfies the guard of `F_FinTree` (chain-forming, agreement, propagation within `Δ` rounds, `1`-validity with stake validity), and a block final for an honest party lies on every later honest position. | [`finTreeGuard_of_run`](UC/FinalityGadget.lean), [`Run.validity`](UC/FinalityGadget.lean), [`FinalOnHonestPos.agree`](UC/FinalityGadget.lean) |
 | FFG in the `F_Tree`-hybrid model realizes `F_FinTree` with advantage `0` when the adversarial validators hold less than one third of the stake. | [`ffg_realizes`](UC/Finality.lean), [`ffg_UCEmulatesCSim`](UC/Finality.lean) |
 | The stack: FFG over PoS-NSB realizes `F_FinTree` with the bound of `chain_realizes`. | [`stack_realizes`](UC/Stack.lean), [`stack_UCEmulatesCSim`](UC/Stack.lean) |
-| At the lottery parameters above, the stack realizes `F_FinTree` with bound `slotBound + q (q - 1) / 2 / M`, which is below `1` for `M = 4 ^ (K + 5)`. | [`LotteryInstance.instance_realizes`](UC/StackExamples.lean), [`LotteryInstance.instance_realizes_lt_one`](UC/StackExamples.lean) |
+| At the lottery parameters above, with the random oracle on `M` hash values, the stack realizes `F_FinTree` with bound `slotBound + q (q - 1) / 2 / M` for `q = 2 ^ (K + 2)`, which is below `1` for `M = 4 ^ (K + 5)`. | [`LotteryInstance.instance_realizes`](UC/StackExamples.lean), [`LotteryInstance.instance_realizes_lt_one`](UC/StackExamples.lean) |
 
 ## Relation to Ethereum
 
