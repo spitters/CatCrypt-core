@@ -376,6 +376,7 @@ public import CatCryptCore.Consensus.PoSNSB.TreeChain
 public import CatCryptCore.Consensus.PoSNSB.ChainGrowth
 public import CatCryptCore.Consensus.PoSNSB.ChainQualityPrelims
 public import CatCryptCore.Consensus.PoSNSB.ChainQuality
+public import CatCryptCore.Consensus.PoSNSB.ChainQualityTip
 public import CatCryptCore.Consensus.PoSNSB.CommonPrefixPrelims
 public import CatCryptCore.Consensus.PoSNSB.CommonPrefix
 public import CatCryptCore.Consensus.PoSNSB.Prob.Hash
