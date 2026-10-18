@@ -196,6 +196,7 @@ public import CatCryptCore.Crypto.BLSSig.Security
 
 -- Fujisaki–Okamoto transforms, FIPS 203 KEM, total variation
 public import CatCryptCore.Crypto.OracleSimulation
+public import CatCryptCore.Crypto.OracleEval
 public import CatCryptCore.Crypto.TV
 public import CatCryptCore.Crypto.Constructions.ECBCPRFFlag
 public import CatCryptCore.Crypto.PKE.Games
@@ -397,6 +398,8 @@ public import CatCryptCore.Consensus.PoSNSB.Prob.Reduction
 public import CatCryptCore.Consensus.PoSNSB.Prob.Collision
 public import CatCryptCore.Consensus.PoSNSB.Prob
 public import CatCryptCore.Consensus.PoSNSB.Prob.Time
+public import CatCryptCore.Consensus.PoSNSB.Prob.ROM
+public import CatCryptCore.Consensus.PoSNSB.Prob.Uniform
 public import CatCryptCore.Consensus.PoSNSB.ProbExamples
 public import CatCryptCore.Consensus.UC.FTree
 public import CatCryptCore.Consensus.UC.FinalityGadget
