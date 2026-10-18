@@ -21,7 +21,9 @@ pseudometric and abstract atoms. The second part restates goal shapes of existin
 proofs over `sdist`, `Advantage` and `AdvantageA`, registered in
 `CatCryptCore.Tactics.AutoMetrics`, as regression tests. The third part tests the
 distances registered with `@[hop_metric]` at their definition sites: `UCMonad.ucCdist`,
-`KA_Advantage` and the KEM and PKE `indcpaAdvantage`.
+`KA_Advantage` and the KEM and PKE `indcpaAdvantage`. The last part tests `hop_chain!`
+on a bound defined as a sum and on endpoints that agree after unfolding, and
+`bool_cases`.
 -/
 
 set_option autoImplicit false
@@ -245,5 +247,55 @@ example {PK SK M C R : Type} [Fintype R] [Nonempty R] (P : PKE.Games.Scheme PK S
     (h₂ : Advantage (PRPPRF.pmfGame (PKE.Games.indcpaGame P A false)) G ≤ e₂) :
     PKE.Games.indcpaAdvantage P A ≤ e₁ + e₂ := by
   hop_chain
+
+/-! ## `hop_chain!` -/
+
+/-- A bound defined as the sum of the hop bounds. -/
+noncomputable def twoHopBound (ε : ℝ≥0∞) : ℝ≥0∞ := ε + ε
+
+/-- The residual `ε + ε ≤ twoHopBound ε` is closed after unfolding `twoHopBound`. -/
+example (G₀ G₁ G₂ : SPComp Bool) (ε : ℝ≥0∞) (h₁ : Advantage G₀ G₁ ≤ ε)
+    (h₂ : Advantage G₁ G₂ ≤ ε) : Advantage G₀ G₂ ≤ twoHopBound ε := by
+  fail_if_success hop_chain
+  hop_chain!
+
+/-- A game definition that is its argument. -/
+def sameGame (G : SPComp Bool) : SPComp Bool := G
+
+/-- The endpoints `sameGame G₁` and `G₁` of two hops agree after unfolding `sameGame`. -/
+example (G₀ G₁ G₂ : SPComp Bool) (ε : ℝ≥0∞) (h₁ : Advantage G₀ (sameGame G₁) ≤ ε)
+    (h₂ : Advantage G₁ G₂ ≤ ε) : Advantage G₀ G₂ ≤ 2 * ε := by
+  fail_if_success hop_chain
+  hop_chain!
+
+/-- A residual that does not hold stays open. -/
+example (G₀ G₁ G₂ : SPComp Bool) (ε : ℝ≥0∞) (h₁ : Advantage G₀ G₁ ≤ ε)
+    (h₂ : Advantage G₁ G₂ ≤ ε) : True := by
+  fail_if_success have _ : Advantage G₀ G₂ ≤ ε := by hop_chain!
+  trivial
+
+/-! ## `bool_cases` -/
+
+/-- A Boolean variable of the goal. -/
+example (b : Bool) (f : Bool → ℕ) (h : f true = 1) (h' : f false = 1) : f b = 1 := by
+  bool_cases <;> simp_all
+
+/-- The condition of an `if`. -/
+example (x y : ℕ) : (if x = y then 1 else 1) = 1 := by
+  bool_cases <;> simp_all
+
+/-- A goal that holds by `rfl` after the split. -/
+example (b : Bool) : (b && true) = b := by
+  bool_cases <;> rfl
+
+/-- Five Boolean variables: three rounds split `a`, `b` and `c`, leaving eight goals. -/
+example (a b c d e : Bool) : (a && b && c && d && e) = (e && d && c && b && a) := by
+  bool_cases
+  all_goals (cases d <;> cases e <;> rfl)
+
+/-- Without a Boolean variable, `decide` or `if` in the goal, `bool_cases` fails. -/
+example (n : ℕ) : n + 0 = n := by
+  fail_if_success bool_cases
+  rfl
 
 end CatCrypt.Tactics.AutoArmsTest

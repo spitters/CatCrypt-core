@@ -17,7 +17,7 @@ public import CatCryptCore.Tactics.AutoDispatchCore
 /-!
 # Hop chains over registered pseudometrics, sums of atoms, and monotonicity
 
-This module provides three procedures.
+This module provides five procedures.
 
 * `hop_chain [facts]` proves `d x y ≤ e` for a distance `d` registered with the
   attribute `@[hop_metric]`. It collects hop facts `d u v ≤ b` (and `d u v = b`) from the
@@ -33,6 +33,11 @@ This module provides three procedures.
 * `gcongr_unfold [defs]` introduces the binders of a goal that unfolds to a universally
   quantified relation (for example `Monotone f`), unfolds the listed definitions, and runs
   `gcongr` with a fixed discharger.
+* `hop_chain! [facts]` is `hop_chain` with hop endpoints identified up to definitional
+  equality at default transparency and the head definitions of the bound unfolded when
+  the residual inequality is not closed.
+* `bool_cases` splits the goal, in at most three rounds, by `cases` on local Boolean
+  variables and `by_cases` on the propositions of `decide` and `if` subterms.
 
 The attribute `@[hop_metric]` and the distance views are in
 `CatCryptCore.Tactics.AutoHopRegistry`. No distance is built into the procedures; the
@@ -40,8 +45,10 @@ registrations of `Advantage`, `AdvantageA` and `sdist` are in
 `CatCryptCore.Tactics.AutoMetrics`.
 
 The module registers with `catcrypt_auto` (`CatCryptCore.Tactics.AutoDispatchCore`) the
-arms `hop_chain` and `sum_atoms_le` of the distance shape, `gcongr_unfold`, `gcongr` and
-`sum_atoms_le` of the monotonicity shape, and `sum_atoms_le` of the shape `other`.
+arms `hop_chain`, `hop_chain!` and `sum_atoms_le` of the distance shape, `gcongr_unfold`,
+`gcongr` and `sum_atoms_le` of the monotonicity shape, and `sum_atoms_le` and
+`bool_cases` followed on each case by `rfl`, `decide` or `simp_all` of the shapes `other`
+and `SPComp equality`.
 -/
 
 @[expose] public section
@@ -102,21 +109,28 @@ def reverseHop? (goal : DView) (hop : Hop) : MetaM (Option Hop) := do
                     pf := ← mkAppM ``Eq.trans_le #[p, hop.pf] }
   return none
 
-/-- The index of `e` among `nodes` up to reducible definitional equality. -/
-def nodeIdx (nodes : Array Expr) (e : Expr) : MetaM (Option Nat) := do
+/-- The index of `e` among `nodes` up to reducible definitional equality; when `deep` is
+set and there is none, the index of the first node definitionally equal to `e` at
+default transparency. -/
+def nodeIdx (nodes : Array Expr) (e : Expr) (deep : Bool := false) : MetaM (Option Nat) := do
   for k in [0:nodes.size] do
     if ← withReducible (isDefEq nodes[k]! e) then return some k
+  if deep then
+    for k in [0:nodes.size] do
+      if ← isDefEq nodes[k]! e then return some k
   return none
 
-/-- Breadth-first search for a path of hops from `src` to `dst`. -/
-def findPath (hops : Array Hop) (src dst : Expr) : MetaM (Option (Array Hop)) := do
+/-- Breadth-first search for a path of hops from `src` to `dst`; endpoints are identified
+by `nodeIdx` with `deep`. -/
+def findPath (hops : Array Hop) (src dst : Expr) (deep : Bool := false) :
+    MetaM (Option (Array Hop)) := do
   let mut nodes : Array Expr := #[src, dst]
   let mut edges : Array (Nat × Nat × Hop) := #[]
   for hop in hops do
-    let a ← match ← nodeIdx nodes hop.src with
+    let a ← match ← nodeIdx nodes hop.src deep with
       | some a => pure a
       | none => do nodes := nodes.push hop.src; pure (nodes.size - 1)
-    let b ← match ← nodeIdx nodes hop.dst with
+    let b ← match ← nodeIdx nodes hop.dst deep with
       | some b => pure b
       | none => do nodes := nodes.push hop.dst; pure (nodes.size - 1)
     edges := edges.push (a, b, hop)
@@ -401,9 +415,40 @@ syntax (name := sumAtomsLeStx) "sum_atoms_le" : tactic
 
 /-! ## Hop chains -/
 
-/-- The core of `hop_chain`: prove the main goal from the elaborated argument proofs
-`extra` and the hypotheses of the local context. -/
-def hopChainCore (extra : Array Expr) : TacticM Unit := do
+/-- `n` is a definition that `unfoldBoundHead?` unfolds: a definition with a value, not
+recursive, not an instance, a projection or a matcher, not a `@[hop_metric]` head, and
+not from the Lean core, Mathlib, Batteries, Aesop or Qq. -/
+def unfoldsBound (n : Name) : MetaM Bool := do
+  let env ← getEnv
+  let some (.defnInfo _) := env.find? n | return false
+  if isInstanceCore env n || env.isProjectionFn n || isMatcherCore env n then return false
+  if ← isRecursiveDefinition n then return false
+  if (← hopEntries).any (·.head == n) then return false
+  if let some idx := env.getModuleIdxFor? n then
+    let root := (env.header.moduleNames[idx.toNat]!).getRoot
+    if [`Init, `Std, `Lean, `Lake, `Mathlib, `Batteries, `Aesop, `Qq].contains root then
+      return false
+  return true
+
+/-- `e` with its head definition unfolded, at most four times, while the head is a
+definition that `unfoldsBound` accepts; `none` when no unfolding applies. -/
+def unfoldBoundHead? (e : Expr) : MetaM (Option Expr) := do
+  let mut cur := e
+  let mut changed := false
+  for _ in [0:4] do
+    let some n := cur.getAppFn.constName? | break
+    unless ← unfoldsBound n do break
+    let some e' ← unfoldDefinition? cur | break
+    cur := e'.headBeta
+    changed := true
+  return if changed then some cur else none
+
+/-- The core of `hop_chain` and `hop_chain!`: prove the main goal from the elaborated
+argument proofs `extra` and the hypotheses of the local context. With `deep`
+(`hop_chain!`), hop endpoints are identified up to definitional equality at default
+transparency, and a residual inequality that `sum_atoms_le` does not close is read again
+with the head definitions of its right side unfolded (`unfoldBoundHead?`). -/
+def hopChainCore (extra : Array Expr) (deep : Bool := false) : TacticM Unit := do
   let g ← getMainGoal
   g.withContext do
   let ty ← whnfR (← instantiateMVars (← g.getType))
@@ -423,7 +468,7 @@ def hopChainCore (extra : Array Expr) : TacticM Unit := do
     if let some hop ← hopOf? gv c then
       hops := hops.push hop
       if let some rev ← reverseHop? gv hop then hops := hops.push rev
-  let some path ← findPath hops src dst |
+  let some path ← findPath hops src dst deep |
     throwError "hop_chain: no chain of hop facts over `{gv.entry.head}` connects{indentExpr src}\
       \nto{indentExpr dst}\nhop facts found: {← hops.mapM fun h => inferType h.pf}"
   if path.isEmpty then
@@ -452,10 +497,18 @@ def hopChainCore (extra : Array Expr) : TacticM Unit := do
   unless ← isDefEq (← inferType pf) (← g.getType) do
     throwError "hop_chain: internal error: proof type mismatch"
   g.assign pf
-  try sumAtomsLeNorm res.mvarId!
-  catch e =>
+  let residualError (e : Exception) : TacticM Unit :=
     throwError "hop_chain: the hops compose to{indentExpr bound}\nbut the residual \
       inequality is not closed: {e.toMessageData}"
+  let saved ← saveState
+  try sumAtomsLeNorm res.mvarId!
+  catch e =>
+    unless deep do residualError e
+    let some rhs' ← unfoldBoundHead? rhs | residualError e
+    saved.restore
+    let res' ← res.mvarId!.replaceTargetDefEq (← mkAppM ``LE.le #[bound, rhs'])
+    try sumAtomsLeNorm res'
+    catch e' => residualError e'
   replaceMainGoal []
 
 /-- `hop_chain [h₁, …, hₙ]` proves `d x y ≤ e` for a distance `d` registered with
@@ -480,6 +533,22 @@ syntax (name := hopChainStx) "hop_chain" (" [" term,* "]")? : tactic
       throwError "hop_chain: the argument `{t}` is quantified; pass an instance of it"
     return e
   hopChainCore extra
+
+/-- `hop_chain! [h₁, …, hₙ]` is `hop_chain [h₁, …, hₙ]` with two unfoldings: a hop
+endpoint is identified with another endpoint, or with an endpoint of the goal, when the
+two are definitionally equal at default transparency (game definitions that agree after
+unfolding), and when the residual `b₁ + (b₂ + …) ≤ e` is not closed, `e` is read again
+with its head definitions unfolded (a bound defined as a sum of the hop bounds). -/
+syntax (name := hopChainBangStx) "hop_chain!" (" [" term,* "]")? : tactic
+
+@[tactic hopChainBangStx] def evalHopChainBang : Tactic := fun stx => do
+  let ts : Array Term := stx[1][1].getSepArgs.map (⟨·⟩)
+  let extra ← withMainContext <| ts.mapM fun (t : Term) => do
+    let e ← Term.withoutErrToSorry (elabTerm t none)
+    if (← whnfR (← inferType e)).isForall then
+      throwError "hop_chain!: the argument `{t}` is quantified; pass an instance of it"
+    return e
+  hopChainCore extra (deep := true)
 
 /-! ## Monotonicity -/
 
@@ -529,6 +598,87 @@ syntax (name := gcongrUnfoldStx) "gcongr_unfold" (" [" ident,* "]")? : tactic
     throwError "gcongr_unfold: goals remain after `gcongr`: {gs.map (·.name)}\
       {← gs.mapM fun g => do return indentExpr (← g.getType)}"
 
+/-! ## Boolean case splits -/
+
+/-- A case split of `bool_cases`. -/
+inductive BoolSplit where
+  /-- `cases` on the local Boolean variable. -/
+  | var (x : FVarId)
+  /-- `by_cases` on the proposition. -/
+  | prop (p : Expr)
+
+/-- The propositions `p` of the subterms `decide p` and of the conditions of `if` and
+dependent `if` in `e` that have no loose bound variables and no metavariables. -/
+def splitProps (e : Expr) : Array Expr :=
+  let rec go (e : Expr) (acc : Array Expr) : Array Expr :=
+    let acc := match e.getAppFn.constName?, e.getAppNumArgs with
+      | some ``Decidable.decide, 2 => acc.push (e.getArg! 0)
+      | some ``ite, 5 => acc.push (e.getArg! 1)
+      | some ``dite, 5 => acc.push (e.getArg! 1)
+      | _, _ => acc
+    match e with
+    | .app f a => go a (go f acc)
+    | .lam _ t b _ | .forallE _ t b _ => go b (go t acc)
+    | .letE _ t v b _ => go b (go v (go t acc))
+    | .mdata _ b | .proj _ _ b => go b acc
+    | _ => acc
+  (go e #[]).filter fun p => !p.hasLooseBVars && !p.hasMVar
+
+/-- The first case split of `bool_cases` on the goal `g`: a local Boolean variable that
+occurs in the goal, then one that occurs in a hypothesis, then a proposition of
+`splitProps` of the goal of which neither it nor its negation is a hypothesis. -/
+def boolSplit? (g : MVarId) : MetaM (Option BoolSplit) := g.withContext do
+  let t ← instantiateMVars (← g.getType)
+  let mut vars : Array LocalDecl := #[]
+  for d in ← getLCtx do
+    if d.isImplementationDetail || d.isLet then continue
+    if (← whnfR (← instantiateMVars d.type)).isConstOf ``Bool then vars := vars.push d
+  for d in vars do
+    if t.containsFVar d.fvarId then return some (.var d.fvarId)
+  for d in vars do
+    for h in ← getLCtx do
+      if h.isImplementationDetail then continue
+      if (← instantiateMVars h.type).containsFVar d.fvarId then return some (.var d.fvarId)
+  for p in splitProps t do
+    let known ← (← getLCtx).anyM fun h => do
+      if h.isImplementationDetail then return false
+      let ty ← instantiateMVars h.type
+      return ty == p || ty == mkNot p
+    unless known do return some (.prop p)
+  return none
+
+/-- Split the goal `g` once by `boolSplit?`; `none` when there is no split. -/
+def boolSplitOnce (g : MVarId) : MetaM (Option (List MVarId)) := do
+  match ← boolSplit? g with
+  | none => return none
+  | some (.var x) => return some ((← g.cases x).toList.map (·.mvarId))
+  | some (.prop p) =>
+    let (a, b) ← g.byCases p
+    return some [a.mvarId, b.mvarId]
+
+/-- The number of rounds of `bool_cases`: it leaves at most `2 ^ maxBoolSplits`
+goals. -/
+def maxBoolSplits : Nat := 3
+
+/-- `bool_cases` splits the main goal in at most three rounds; in each round every goal
+is split once by `boolSplit?`: by `cases` on a local Boolean variable that occurs in
+the goal or in a hypothesis, or else by `by_cases` on the proposition `p` of a subterm
+`decide p` or of the condition of an `if` of the goal. It leaves at most eight goals,
+and fails when the main goal has no such split. -/
+syntax (name := boolCasesStx) "bool_cases" : tactic
+
+@[tactic boolCasesStx] def evalBoolCases : Tactic := fun _ => do
+  let g ← getMainGoal
+  let some first ← boolSplitOnce g |
+    throwError "bool_cases: the goal has no Boolean variable, `decide` or `if` to split on"
+  let mut goals := first
+  for _ in [1:maxBoolSplits] do
+    let mut next : List MVarId := []
+    for h in goals do
+      next := next ++ ((← boolSplitOnce h).getD [h])
+    goals := next
+  replaceMainGoal goals
+
 end CatCrypt.Tactics.AutoArms
 
 end
@@ -536,8 +686,12 @@ end
 /-! ## Arms of `catcrypt_auto` -/
 
 catcrypt_auto_arm "distance inequality" order 10 := "hop_chain%HOP"
+catcrypt_auto_arm "distance inequality" order 11 := "hop_chain!%HOP"
 catcrypt_auto_arm "distance inequality" order 20 := "sum_atoms_le"
 catcrypt_auto_arm "monotonicity inequality" order 10 := "gcongr_unfold%DEFS"
 catcrypt_auto_arm "monotonicity inequality" order 20 := "gcongr"
 catcrypt_auto_arm "monotonicity inequality" order 40 le_only := "sum_atoms_le"
 catcrypt_auto_arm "other" order 10 le_only := "sum_atoms_le"
+catcrypt_auto_arm "other" order 25 := "(bool_cases <;> first | rfl | decide | %SIMP_ALL)"
+catcrypt_auto_arm "SPComp equality" order 25 :=
+  "(bool_cases <;> first | rfl | decide | %SIMP_ALL)"

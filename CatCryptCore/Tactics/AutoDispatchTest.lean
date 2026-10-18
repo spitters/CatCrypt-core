@@ -21,7 +21,9 @@ heap disequalities under `some`, and the error on goals that stay open. The arms
 definition registered in this module, and a goal over an unregistered distance
 is shown to be of shape `other`. Equalities of advantages are closed by
 `advantage_eq_nf` from their two game equalities, including games built from definitions
-with an implicit type parameter and instance arguments, given by name as arguments.
+with an implicit type parameter and instance arguments, given by name as arguments. A
+goal with a Boolean variable is closed by the arm `bool_cases`, and a shape whose arms
+run until interrupted shows the per-arm and total wall-clock budgets.
 -/
 
 set_option autoImplicit false
@@ -559,5 +561,65 @@ example {W : Type} [Fintype W] [Nonempty W] (p q : SPComp W) (A : W → W → W 
       Advantage G (q.bind fun x => advSwap p (A x)) := by
   fail_if_success advantage_eq_nf
   advantage_eq_nf [advReal, advSwap]
+
+/-! ## Boolean case splits -/
+
+-- A Boolean variable on which `simp_all` does not split: the arm `bool_cases`.
+/--
+info: Try this:
+  [apply] (bool_cases <;>
+-/
+#guard_msgs (substring := true) in
+example (b : Bool) (f : Bool → ℕ) (h : f true = 1) (h' : f false = 1) : f b = 1 := by
+  catcrypt_auto?
+
+/-! ## Wall-clock budgets -/
+
+public section
+
+/-- A goal of the shape `slow test goal`. -/
+def SlowGoal (n : ℕ) : Prop := n = n
+
+/-- `auto_test_spin` runs until it is interrupted; it checks for an interrupt every
+millisecond and spends no heartbeats. -/
+elab "auto_test_spin" : tactic => do
+  while true do
+    Lean.Core.checkSystem "auto_test_spin"
+    IO.sleep 1
+
+catcrypt_auto_shape "slow test goal" direct priority 200 :=
+  app CatCrypt.Tactics.AutoDispatchTest.SlowGoal
+catcrypt_auto_arm "slow test goal" order 10 := "auto_test_spin"
+catcrypt_auto_arm "slow test goal" order 20 := "auto_test_spin"
+catcrypt_auto_arm "slow test goal" order 30 := "auto_test_spin"
+
+end
+
+-- Each arm of the shape `slow test goal` runs until its time budget of 200 ms, and the
+-- third until the total budget of 500 ms is spent; the dispatch then stops with the error
+-- naming the shape, without running the later stages.
+/--
+error: catcrypt_auto: goal shape other; every arm failed (budget 20000 heartbeats and 200 ms each):
+on the goal as stated: goal shape slow test goal; every arm failed:
+  auto_test_spin: exceeded the time budget of 200 ms
+  auto_test_spin: exceeded the time budget of 200 ms
+-/
+#guard_msgs (substring := true) in
+set_option catcrypt_auto.maxMillis 200 in
+set_option catcrypt_auto.totalMillis 500 in
+example : SlowGoal 3 := by
+  catcrypt_auto
+
+-- Without a total budget the arms of the direct stage time out one by one and the
+-- normalised stage closes the goal.
+/--
+info: Try this:
+  [apply] (unfold CatCrypt.Tactics.AutoDispatchTest.SlowGoal; simp_all)
+-/
+#guard_msgs (substring := true) in
+set_option catcrypt_auto.maxMillis 200 in
+set_option catcrypt_auto.totalMillis 0 in
+example : SlowGoal 3 := by
+  catcrypt_auto?
 
 end CatCrypt.Tactics.AutoDispatchTest

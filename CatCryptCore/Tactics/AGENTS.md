@@ -61,6 +61,8 @@ suggestion keeps them.
 | Dispatch | `catcrypt_auto_shape`, `catcrypt_auto_arm`, `catcrypt_auto_norm` | [`AutoDispatchCore.lean`](AutoDispatchCore.lean) | Register a shape (a matcher on head constants given by `Name`, a stage and a priority), an arm (tactic text with argument placeholders, an order, constants it needs) or a normalisation step. Registrations of imported modules are merged. |
 | Dispatch | `#import_closure_roots M` | [`AutoDispatchCore.lean`](AutoDispatchCore.lean) | Prints the root packages of the import closure of the module `M` and its modules outside `Init`, `Std` and `Lean`. |
 | Distances | `hop_chain`, `hop_chain [h₁, …]` | [`AutoArms.lean`](AutoArms.lean) | Proves `d x y ≤ e` for a distance `d` registered with `@[hop_metric]`: a breadth-first path of hop facts `d u v ≤ b` (or `= b`) from `x` to `y` among the unquantified hypotheses and the arguments, each usable backwards when a symmetry lemma is registered, composed by the triangle lemma; the residual sum goes to `sum_atoms_le`. |
+| Distances | `hop_chain!`, `hop_chain! [h₁, …]` | [`AutoArms.lean`](AutoArms.lean) | `hop_chain` with hop endpoints identified up to definitional equality at default transparency (games that agree after unfolding), and the head definitions of the bound `e` unfolded when the residual is not closed (a bound defined as the sum of the hop bounds). |
+| Case splits | `bool_cases` | [`AutoArms.lean`](AutoArms.lean) | Splits the goal in at most three rounds (at most eight goals) by `cases` on local Boolean variables of the goal or a hypothesis, else `by_cases` on the proposition of a `decide` or `if` subterm; fails when there is none. |
 | Distances | `@[hop_metric]` | [`AutoHopRegistry.lean`](AutoHopRegistry.lean) (imports only `Lean`); standard registrations in [`AutoMetrics.lean`](AutoMetrics.lean) | Registers a triangle lemma, a symmetry lemma, an equation `D … = d …` or a definition to unfold. `AutoMetrics` registers `sdist`, `Advantage` and `AdvantageA`; an advantage- or probability-valued definition of a proof becomes a distance by `@[hop_metric]` on it. |
 | Distances | `sum_atoms_le` | [`AutoArms.lean`](AutoArms.lean) | Decides `Σ aᵢ ≤ Σ bⱼ` for ℕ-weighted sums of atoms in a canonically ordered semiring (`ℝ≥0∞`), matching each left atom to a right atom equal to it or bounding it by a hypothesis `a ≤ b`. |
 | Monotonicity | `gcongr_unfold`, `gcongr_unfold [d₁, …]` | [`AutoArms.lean`](AutoArms.lean) | Introduces the binders of `Monotone f`-like goals, unfolds `dᵢ`, runs `gcongr` and closes the side goals by `assumption`, `positivity` or `norm_num`. |
@@ -128,11 +130,11 @@ stage. The table gives the arms in order, with the module registering each.
 | extended triple (direct) | mentions `XTriple`, `XPT` or `XRelTriple` | `xmvcgen!`, then `omega`, `le_rfl`, `assumption`, `simp_all` or `grind` on each residual | `AutoDispatchExt` |
 | side condition | `SPComp.IsPure _`, `SPComp.NoFail _` | `aesop` over `CatCryptRel`; `solve_by_elim` over the `IsPure` combinators; the same over the `NoFail` combinators | `AutoSets`; `AutoBase` |
 | relational | `rHoare _ _ _ _` | `aesop` over `CatCryptRel`; `ssprove_crypto`; `ssprove_crypto_grind` | `AutoSets` |
-| distance inequality | `_ ≤ _` over `ℝ≥0∞` or `ℝ` whose left side is a registered distance (after unfolding `@[hop_metric]` definitions, else after `whnfR`) or a sum with one as summand, or that mentions a registered head, `prTrue` or `prEvent` | `hop_chain`; `sum_atoms_le`; `gcongr <;> catcrypt_grind`; `catcrypt_grind`; `bound` (a quarter of the budget; skipped when a `∀`-quantified inequality is in context) | `AutoArms`; `AutoSets` |
+| distance inequality | `_ ≤ _` over `ℝ≥0∞` or `ℝ` whose left side is a registered distance (after unfolding `@[hop_metric]` definitions, else after `whnfR`) or a sum with one as summand, or that mentions a registered head, `prTrue` or `prEvent` | `hop_chain`; `hop_chain!`; `sum_atoms_le`; `gcongr <;> catcrypt_grind`; `catcrypt_grind`; `bound` (a quarter of the budget; skipped when a `∀`-quantified inequality is in context) | `AutoArms`; `AutoSets` |
 | monotonicity | `f a₁ … aₙ ≤ f b₁ … bₙ` or `<`, the same head on both sides; `Monotone f`, `Antitone f`, `StrictMono f`, `StrictAnti f` | `gcongr_unfold`; `gcongr`; `gcongr <;> catcrypt_grind`; `sum_atoms_le` (on `≤`); `simp_all`; `grind` | `AutoArms`; `AutoSets`; `AutoBase` |
 | heap read | `Heap.get (Heap.set _ _ _) _ = _`, either side; `=`, `≠` or `¬ _ = _` mentioning `Heap.set` | `grind [Heap.get_set_same, Heap.get_set_other]` | `AutoBase` |
-| game equality | `_ = _` over `SPComp _` | `catcrypt_grind`; `bind_vcgen` | `AutoSets`; `AutoDispatch` |
-| other | anything else | `sum_atoms_le` (on `≤`); `simp_all`; `grind` | `AutoArms`; `AutoBase` |
+| game equality | `_ = _` over `SPComp _` | `catcrypt_grind`; `bool_cases` then `rfl`, `decide` or `simp_all` on each case; `bind_vcgen` | `AutoSets`; `AutoArms`; `AutoDispatch` |
+| other | anything else | `sum_atoms_le` (on `≤`); `simp_all`; `bool_cases` then `rfl`, `decide` or `simp_all` on each case; `grind` | `AutoArms`; `AutoBase` |
 | premises | (premise stage) | `solve_by_elim [p₁, …]` with the premises of `AutoPremises` | `AutoBase` |
 
 The shapes are matched by constant `Name`, so `AutoBase` registers them without
@@ -185,7 +187,13 @@ arm, so a `<;>` branch reports its first error. Each arm runs under
 `maxHeartbeats`), counted from its start. An arm that fails, leaves a goal open
 or exhausts its budget is undone and the next arm runs; the exhausted budget is
 a runtime exception, which `try` and `first` do not catch and `catcrypt_auto`
-does.
+does. Each arm also runs under `catcrypt_auto.maxMillis` milliseconds (default 5000),
+and the whole run under `catcrypt_auto.totalMillis` (default 30000; `0` disables either
+budget): a watcher sets the cancellation token of `Core.Context` at the deadline, the
+interrupt is caught as the failure "exceeded the time budget of N ms", and once the
+total budget is spent the remaining arms are not run. The steps between arms run under
+the heartbeat budget of one arm and the time left. An arm's error is reported through
+`elideMessage`, which drops goals and trace children before formatting.
 
 ## Adding automation
 
