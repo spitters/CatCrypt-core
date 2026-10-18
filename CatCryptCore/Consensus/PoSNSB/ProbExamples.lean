@@ -28,21 +28,22 @@ each candidate from its own transcript before it queries the children of that ca
 * `query_candQuerier`: the `k`-th query of `candQuerier` is the `k`-th candidate.
 * `hRO_candQuerier`: without corrupt parties, the genesis block and the broadcast blocks of the
   first `K` phases are among the first `(1 + |Tx| np) ^ (Hz + 1)` queries of `candQuerier`.
-* `crAdv_collFinder_of_honest`: without corrupt parties, the collision finder `collFinder`
-  against the random oracle has advantage at most the birthday bound `q (q - 1) / 2 / |Hash|`
-  with `q = (1 + |Tx| np) ^ (Hz + 1)`.
-* `eufAdv_forger_of_honest`: without corrupt parties, the forgers have advantage `0`.
+* `collFinder_advantage_of_honest`: without corrupt parties, the collision finder
+  `collFinder` against the random function has advantage at most the birthday bound
+  `q (q - 1) / 2 / |Hash|` with `q = (1 + |Tx| np) ^ (Hz + 1)`.
+* `forger_advantage_of_honest`: without corrupt parties, the forgers have EUF-CMA advantage
+  `0`.
 
 ## The family of instances
 
 `LotteryInstance` has one honest party, the longest-chain tree type, `Hash = Fin M`, the
-random oracle `H` as hash family, and slot
+random function `H` with the identity codec as hash family, and slot
 leaders drawn on the first `1000` of `2000` slots from the stake-weighted election
 `μ = stakeElect` with unit stake and active-slot probability `3/4`, so that the slot kinds
 `ν = kindLaw μ` have `pH = 3/4` and `pA = 0`. With `d = 1000`, `w = 10` and `ε = 1/4`:
 
 * `slotBound_le`, `slotBound_lt_one`: `slotBound ν 2000 1000 10 (1/4) ≤ 1/16 < 1`;
-* `crAdv_collFinder_le`: the collision term is at most `q (q - 1) / 2 / M` with
+* `collFinder_advantage_le`: the collision term is at most `q (q - 1) / 2 / M` with
   `q = 2 ^ (K + 2)`;
 * `instance_security`: for every `K` with `K + 2 ≤ 2000`, every signature scheme and every
   adversary, chain growth, chain quality, common prefix and the honest tip hold for the first
@@ -61,6 +62,7 @@ set_option linter.unusedSectionVars false
 namespace CatCryptCore.Consensus.PoSNSB
 
 open Parameters BlockParameters Corruption Execution
+open CatCrypt.Crypto CatCrypt.Crypto.Signatures CatCrypt.Crypto.Assumptions
 open scoped ENNReal
 
 /-! ## Candidate blocks -/
@@ -231,9 +233,9 @@ end Querier
 section Honest
 
 variable {Tx Hash : Type} [DecidableEq Tx] [DecidableEq Hash] [Fintype Tx] [Fintype Hash]
-  {np : ℕ} [Corruption (Fin np)] {n Hz : ℕ} {Sch : SigScheme (Block Tx Hash (Fin np))}
-  (P : Protocol Tx Hash np n Hz) (ω : Seed Tx Hash np n Hz Sch)
-  (A : Adversary Tx Hash np n Hz Sch)
+  {np : ℕ} [Corruption (Fin np)] {n Hz : ℕ} {PK SK Sig : Type}
+  (P : Protocol Tx Hash np n Hz) (Sch : PSigScheme (Block Tx Hash (Fin np)) PK SK Sig)
+  [Sch.Deterministic] (ω : Seed Tx Hash np n Hz PK SK) (A : Adversary Tx Hash np n Hz PK Sig)
 
 /-- The head of a valid chain is the genesis block or has a larger slot. -/
 theorem headD_gb_or {Party : Type} [Parameters Party] [BlockParameters Tx Hash Party]
@@ -250,15 +252,15 @@ theorem headD_gb_or {Party : Type} [Parameters Party] [BlockParameters Tx Hash P
 /-- The invariant of an execution without corrupt parties: `HistInv`, and every broadcast
 block of slot `s` is a candidate of the slots up to `s`. -/
 def CandInv (M : GS P ω A) : Prop :=
-  letI := ω.params P; letI := ω.bparams P; letI := mkExec false P ω A
+  letI := ω.params P; letI := ω.bparams P
   HistInv M ∧ ∀ m ∈ M.history,
     get_block m ∈ cands P.GB (fun b => ω.f (encB Hz b)) (get_block m).sl
 
-variable {P ω A}
+variable {P Sch ω A}
 
 theorem sBake_cand (hcor : ∀ p : Fin np, is_corrupt p = false) (p : Fin np) (M : GS P ω A)
-    (hM : CandInv P ω A M) : CandInv P ω A (sBake P ω A false p M) := by
-  let _ := ω.params P; let _ := ω.bparams P; let _ := mkExec false P ω A
+    (hM : CandInv P ω A M) : CandInv P ω A (sBake Sch P ω A false p M) := by
+  let _ := ω.params P; let _ := ω.bparams P; let _ := mkExec Sch false P ω A
   refine ⟨hM.1.bake p, fun m hm => ?_⟩
   simp only [sBake] at hm
   rcases (bake_history M p m).1 hm with hm | ⟨l, hl, ⟨_, hm⟩ | ⟨hc, _⟩⟩
@@ -290,8 +292,8 @@ theorem sBake_cand (hcor : ∀ p : Fin np, is_corrupt p = false) (p : Fin np) (M
   · exact absurd hc (by rw [hcor]; decide)
 
 theorem sRcv_cand (hcor : ∀ p : Fin np, is_corrupt p = false) (p : Fin np) (M : GS P ω A)
-    (hM : CandInv P ω A M) : CandInv P ω A (sRcv P ω A false p M) := by
-  let _ := ω.params P; let _ := ω.bparams P; let _ := mkExec false P ω A
+    (hM : CandInv P ω A M) : CandInv P ω A (sRcv Sch P ω A false p M) := by
+  let _ := ω.params P; let _ := ω.bparams P; let _ := mkExec Sch false P ω A
   refine ⟨hM.1.rcv p, fun m hm => ?_⟩
   simp only [sRcv] at hm
   rcases (rcv_history M p m).1 hm with hm | ⟨_, hc, _⟩
@@ -309,26 +311,26 @@ theorem foldr_cand (g : Fin np → GS P ω A → GS P ω A)
 parties, every broadcast block of slot `s` is a candidate of the slots up to `s`. -/
 theorem sTrace_cands (hcor : ∀ p : Fin np, is_corrupt p = false) (k : ℕ) :
     letI := ω.params P; letI := ω.bparams P
-    ∀ m ∈ (sTrace P ω A false k).history,
+    ∀ m ∈ (sTrace Sch P ω A false k).history,
       get_block m ∈ cands P.GB (fun b => ω.f (encB Hz b)) (get_block m).sl := by
   induction k with
   | zero => intro m hm; simp [sTrace, runTrace, N0] at hm
   | succ k ih =>
-    let _ := ω.params P; let _ := ω.bparams P; let _ := mkExec false P ω A
-    have hI : CandInv P ω A (sTrace P ω A false k) :=
+    let _ := ω.params P; let _ := ω.bparams P; let _ := mkExec Sch false P ω A
+    have hI : CandInv P ω A (sTrace Sch P ω A false k) :=
       ⟨reachable_hist_inv (reach_runTrace (Tx := Tx) (Hash := Hash) (Party := Fin np)
         (AdvState := A.AdvState) k), ih⟩
     rw [sTrace_succ, sPhase_def]
-    cases (sTrace P ω A false k).progress with
-    | Ready => exact (foldr_cand _ (sRcv_cand hcor) _ hI (sTrace P ω A false k).exec_order).2
+    cases (sTrace Sch P ω A false k).progress with
+    | Ready => exact (foldr_cand _ (sRcv_cand hcor) _ hI (sTrace Sch P ω A false k).exec_order).2
     | Delivered =>
-      exact (foldr_cand _ (sBake_cand hcor) _ hI (sTrace P ω A false k).exec_order).2
+      exact (foldr_cand _ (sBake_cand hcor) _ hI (sTrace Sch P ω A false k).exec_order).2
     | Baked =>
       intro m hm
       simp only [inc_round, round_tick] at hm
       exact ih m hm
 
-variable (P A)
+variable (P Sch A)
 
 /-- **The random-oracle hypothesis without corrupt parties.** For a protocol without corrupt
 parties, the genesis block and the broadcast blocks of the first `K` phases of the real
@@ -336,11 +338,11 @@ execution are among the first `(1 + |Tx| np) ^ (Hz + 1)` queries of the candidat
 for every seed. -/
 theorem hRO_candQuerier (hcor : ∀ p : Fin np, is_corrupt p = false) (K : ℕ)
     (hHz : K + 1 ≤ Hz) :
-    ∀ ω : Seed Tx Hash np n Hz Sch, ∀ j ≤ K, letI := ω.params P; letI := ω.bparams P;
-      ∀ b ∈ block_hist_gb (sTrace P ω A false j),
+    ∀ ω : Seed Tx Hash np n Hz PK SK, ∀ j ≤ K, letI := ω.params P; letI := ω.bparams P;
+      ∀ b ∈ block_hist_gb (sTrace Sch P ω A false j),
         ∃ k < (1 + Fintype.card (Tx × Fin np)) ^ (Hz + 1),
           query ((fun _ _ => candQuerier P.GB Hz : (Fin n → SlotKind) →
-            (Fin np → Sch.PK × Sch.SK) → Querier (BlockDom Tx Hash np Hz) Hash) ω.κ ω.ks)
+            (Fin np → PK × SK) → Querier (BlockDom Tx Hash np Hz) Hash) ω.κ ω.ks)
             ω.f k = encB Hz b := by
   intro ω j hj
   let _ := ω.params P; let _ := ω.bparams P
@@ -351,46 +353,55 @@ theorem hRO_candQuerier (hcor : ∀ p : Fin np, is_corrupt p = false) (K : ℕ)
     · simp only [block_history] at hm
       obtain ⟨m, hm', rfl⟩ := List.mem_map.1 hm
       have h1 := sTrace_cands (P := P) (ω := ω) (A := A) hcor j m hm'
-      have h2 := sTrace_slots P ω A j m hm'
-      have h3 := sTrace_t_now P A ω false j
+      have h2 := sTrace_slots Sch P ω A j m hm'
+      have h3 := sTrace_t_now P Sch A ω false j
       exact cands_mono (by omega) h1
   obtain ⟨k, hk, rfl⟩ := List.mem_iff_getElem.1 hc
   exact ⟨k, by rwa [length_cands] at hk, query_candQuerier P.GB Hz ω.f k hk⟩
 
 /-- **The collision finder without corrupt parties.** For a protocol without corrupt parties
-and the random oracle `HashFam.randomFun`, the collision finder `collFinder` built from the
-adversary `A` has advantage at most the birthday bound `q (q - 1) / 2 / |Hash|` with
-`q = (1 + |Tx| np) ^ (Hz + 1)`, the number of candidate blocks (`hRO_candQuerier`). -/
-theorem crAdv_collFinder_of_honest [Nonempty Hash] (hcor : ∀ p : Fin np, is_corrupt p = false)
+and the random function `HashScheme.randomFun` with the identity codec, the collision finder
+`collFinder` built from the adversary `A` has advantage at most the birthday bound
+`q (q - 1) / 2 / |Hash|` with `q = (1 + |Tx| np) ^ (Hz + 1)`, the number of candidate blocks
+(`hRO_candQuerier`). -/
+theorem collFinder_advantage_of_honest [Nonempty Hash]
+    (hcor : ∀ p : Fin np, is_corrupt p = false)
     (μ : PMF (Option (Fin np))) (W K : ℕ) (hHz : K + 1 ≤ Hz) :
-    crAdv (collFinder P A (HashFam.randomFun (BlockDom Tx Hash np Hz) Hash) μ W K) ≤
+    CR_Search_Advantage (HashScheme.randomFun (BlockDom Tx Hash np Hz) Hash)
+        (collFinder Sch P A (HashScheme.randomFun (BlockDom Tx Hash np Hz) Hash)
+          (HashScheme.Codec.id _) μ W K) ≤
       (((1 + Fintype.card (Tx × Fin np)) ^ (Hz + 1) *
         ((1 + Fintype.card (Tx × Fin np)) ^ (Hz + 1) - 1) / 2 : ℕ) : ℝ≥0∞) /
         Fintype.card Hash :=
-  crAdv_randomFun_le_of_queries P A μ W K _ (fun _ _ => candQuerier P.GB Hz)
-    (hRO_candQuerier P A hcor K hHz)
+  collFinder_advantage_randomFun_le Sch P A μ W K _ (fun _ _ => candQuerier P.GB Hz)
+    (hRO_candQuerier P Sch A hcor K hHz)
 
 /-- Without corrupt parties, the adversary is never called. -/
 theorem not_mem_traceCalls (hcor : ∀ p : Fin np, is_corrupt p = false)
-    (ω : Seed Tx Hash np n Hz Sch) (K : ℕ) (c : CallInput Tx Hash np A.AdvState) :
-    c ∉ traceCalls P ω A K := by
+    (ω : Seed Tx Hash np n Hz PK SK) (K : ℕ) (c : CallInput Tx Hash np A.AdvState) :
+    c ∉ traceCalls Sch P ω A K := by
   simp only [traceCalls, List.mem_flatMap, not_exists, not_and]
   intro k _
   unfold phaseCalls
   split <;> simp [stepCalls, hcor]
 
 /-- **No forgery without corrupt parties.** For a protocol without corrupt parties and every
-keyed hash family `H`, the forgers `forger P A H μ W K i` have EUF-CMA advantage `0`. -/
-theorem eufAdv_forger_of_honest
-    (hcor : ∀ p : Fin np, is_corrupt p = false) (H : HashFam (BlockDom Tx Hash np Hz) Hash)
-    (μ : PMF (Option (Fin np))) (W K : ℕ) (i : Fin np) :
-    eufAdv (forger P A H μ W K i) = 0 := by
-  rw [eufAdv_eq, PMF.toOuterMeasure_apply_eq_zero_iff, Set.disjoint_left]
-  rintro ⟨⟨pk, sk⟩, ω⟩ - hw
-  have hs := (run_simTrace P A i pk ω sk K).1 fun c hc =>
-    absurd hc (not_mem_traceCalls P A hcor _ K c)
-  have hw' : eufWins (forger P A H μ W K i) (pk, sk) ω = true := hw
-  simp [eufWins, forger, forgerProg, OracleProg.run_bind, hs.1, OracleProg.run] at hw'
+keyed hash family `H` with codec `cd`, the forgers `toEUFAdversary (forger Sch P A H cd μ W K i)`
+have EUF-CMA advantage `0` against `Sch`. -/
+theorem forger_advantage_of_honest
+    (hcor : ∀ p : Fin np, is_corrupt p = false) (H : HashScheme)
+    (cd : H.Codec (BlockDom Tx Hash np Hz) Hash) (μ : PMF (Option (Fin np))) (W K : ℕ)
+    (i : Fin np) :
+    eufcmaAdvantage Sch.toSigScheme (toEUFAdversary (forger Sch P A H cd μ W K i)) = 0 := by
+  rw [eufcmaAdvantage_toEUFAdversary, eufDist, PMF.apply_eq_zero_iff, PMF.mem_support_bind_iff]
+  rintro ⟨kr, -, hkr⟩
+  rw [PMF.support_map] at hkr
+  obtain ⟨x, hx, hwin⟩ := hkr
+  simp only [forger, OracleAdv.run_rand, PMF.mem_support_bind_iff] at hx
+  obtain ⟨ω, -, hx⟩ := hx
+  have hl := forgerProg_loses Sch P A i (Sch.keygen kr).1 ω (Sch.keygen kr).2 K
+    (fun c hc => absurd hc (not_mem_traceCalls P Sch A hcor _ K c)) x hx
+  exact Bool.false_ne_true (hl.symm.trans hwin)
 
 end Honest
 
@@ -518,40 +529,46 @@ theorem tree_longest : (Tree M Hz).Longest := fun L f =>
   letI : BlockParameters Unit (Fin M) (Fin 1) := ⟨GB M, fun b => f (encB Hz b)⟩
   longestTree_longest (gb_valid M Hz L f) rfl
 
-/-- The random oracle on the blocks of the instance. -/
-noncomputable abbrev H : HashFam (BlockDom Unit (Fin M) 1 Hz) (Fin M) :=
-  HashFam.randomFun (BlockDom Unit (Fin M) 1 Hz) (Fin M)
+/-- The random function on the blocks of the instance. -/
+noncomputable abbrev H : HashScheme := HashScheme.randomFun (BlockDom Unit (Fin M) 1 Hz) (Fin M)
 
-/-- **The collision term of the family.** For every adversary, the collision finder of the
-instance with `Hz = K + 1` against the random oracle `H` has advantage at most
-`q (q - 1) / 2 / M` with `q = 2 ^ (K + 2)`. -/
-theorem crAdv_collFinder_le (K : ℕ) (Sch : SigScheme (Block Unit (Fin M) (Fin 1)))
-    (A : Adversary Unit (Fin M) 1 2000 (K + 1) Sch) :
-    crAdv (collFinder (P M (K + 1)) A (H M (K + 1)) μ 1000 K) ≤
+/-- The identity codec of `H`. -/
+noncomputable abbrev cd : (H M Hz).Codec (BlockDom Unit (Fin M) 1 Hz) (Fin M) :=
+  HashScheme.Codec.id (H M Hz)
+
+/-- **The collision term of the family.** For every signature scheme and every adversary, the
+collision finder of the instance with `Hz = K + 1` against the random function `H` has
+advantage at most `q (q - 1) / 2 / M` with `q = 2 ^ (K + 2)`. -/
+theorem collFinder_advantage_le (K : ℕ) {PK SK Sig : Type}
+    (Sch : PSigScheme (Block Unit (Fin M) (Fin 1)) PK SK Sig) [Sch.Deterministic]
+    (A : Adversary Unit (Fin M) 1 2000 (K + 1) PK Sig) :
+    CR_Search_Advantage (H M (K + 1))
+        (collFinder Sch (P M (K + 1)) A (H M (K + 1)) (cd M (K + 1)) μ 1000 K) ≤
       ((2 ^ (K + 2) * (2 ^ (K + 2) - 1) / 2 : ℕ) : ℝ≥0∞) / M := by
-  have h := crAdv_collFinder_of_honest (P M (K + 1)) A hcor μ 1000 K le_rfl
+  have h := collFinder_advantage_of_honest (P M (K + 1)) Sch A hcor μ 1000 K le_rfl
   have hq : (1 + Fintype.card (Unit × Fin 1)) ^ (K + 1 + 1) = 2 ^ (K + 2) := by simp
   rwa [hq, Fintype.card_fin] at h
 
 /-- **The family of instances of the security theorem.** For every phase count `K` with
-`K + 2 ≤ 2000`, every signature scheme and every adversary, with `W = 1000`, `d = 1000`,
-`w = 10`, `ε = 1/4`, `Hz = K + 1` and the random oracle `H`, chain growth, chain quality,
-common prefix and the honest tip hold for the first `K` phases except with probability at most
-`slotBound ν 2000 1000 10 (1/4) + q (q - 1) / 2 / M` with `q = 2 ^ (K + 2)`. -/
-theorem instance_security (K : ℕ) (hK : K + 2 ≤ 2000)
-    (Sch : SigScheme (Block Unit (Fin M) (Fin 1)))
-    (A : Adversary Unit (Fin M) 1 2000 (K + 1) Sch) :
-    (seedDist (H M (K + 1)) μ (P M (K + 1)).h0 1000 2000 Sch).toOuterMeasure
-        {ω | ¬Good (P M (K + 1)) A (Tree M (K + 1)) ν K 1000 10 (1 / 4) ω} ≤
+`K + 2 ≤ 2000`, every deterministic signature scheme and every adversary, with `W = 1000`,
+`d = 1000`, `w = 10`, `ε = 1/4`, `Hz = K + 1` and the random function `H`, chain growth, chain
+quality, common prefix and the honest tip hold for the first `K` phases except with
+probability at most `slotBound ν 2000 1000 10 (1/4) + q (q - 1) / 2 / M` with
+`q = 2 ^ (K + 2)`. -/
+theorem instance_security (K : ℕ) (hK : K + 2 ≤ 2000) {PK SK Sig : Type}
+    (Sch : PSigScheme (Block Unit (Fin M) (Fin 1)) PK SK Sig) [Sch.Deterministic]
+    (A : Adversary Unit (Fin M) 1 2000 (K + 1) PK Sig) :
+    (seedDist Sch (H M (K + 1)) (cd M (K + 1)) μ (P M (K + 1)).h0 1000 2000).toOuterMeasure
+        {ω | ¬Good (P M (K + 1)) Sch A (Tree M (K + 1)) ν K 1000 10 (1 / 4) ω} ≤
       slotBound ν 2000 1000 10 (1 / 4) +
         ((2 ^ (K + 2) * (2 ^ (K + 2) - 1) / 2 : ℕ) : ℝ≥0∞) / M := by
-  have h := pos_nsb_security (P M (K + 1)) A (Tree M (K + 1)) (protocolHyp M (K + 1))
-    (tree_longest M (K + 1)) (H M (K + 1)) μ 1000 K 1000 10 (1 / 4) (by norm_num)
+  have h := pos_nsb_security (P M (K + 1)) Sch A (Tree M (K + 1)) (protocolHyp M (K + 1))
+    (tree_longest M (K + 1)) (H M (K + 1)) (cd M (K + 1)) μ 1000 K 1000 10 (1 / 4) (by norm_num)
     (by norm_num) hK le_rfl (by norm_num) (by rw [pH_ν, pA_ν]; norm_num)
     (by rw [pH_ν, pA_ν]; norm_num) (by rw [pH_ν, pA_ν]; norm_num)
-  rw [Finset.sum_eq_zero fun i _ =>
-    eufAdv_forger_of_honest (P M (K + 1)) A hcor (H M (K + 1)) μ 1000 K i, add_zero] at h
-  exact h.trans (add_le_add_right (crAdv_collFinder_le M K Sch A) _)
+  rw [posFail, Finset.sum_eq_zero fun i _ => forger_advantage_of_honest (P M (K + 1)) Sch A hcor
+    (H M (K + 1)) (cd M (K + 1)) μ 1000 K i, add_zero] at h
+  exact h.trans (add_le_add_right (collFinder_advantage_le M K Sch A) _)
 
 /-- **The bound of the family is below `1`.** With `M = 4 ^ (K + 5)` hash values, the failure
 bound of `instance_security` is below `1`. -/
@@ -588,6 +605,7 @@ open CatCrypt.Core CatCrypt.Prob CatCrypt.Crypto CatCrypt.Crypto.UCConcrete
 open CatCrypt.Crypto.UCTransparent CatCrypt.NonUniform
 open CatCryptCore.Consensus.UC.FTree
 open PoSNSB PoSNSB.LotteryInstance Corruption
+open CatCrypt.Crypto.Signatures CatCrypt.Crypto.Assumptions
 open scoped ENNReal
 
 attribute [local instance] PoSNSB.Instance.corruption
@@ -595,28 +613,29 @@ attribute [local instance] PoSNSB.Instance.corruption
 /-- **Instances with a random lottery** (composition plumbing). For the protocols
 `PoSNSB.LotteryInstance.P` (one honest party elected by `μ`, slot kinds with `pH = 3/4` and
 `pA = 0` on the first `1000` of `2000` slots, `Hash = Fin M`), every phase
-count `K` with `K + 2 ≤ 2000`, every signature scheme, every adversary and every delay bound
-`Δ`, with `W = 1000`, `d = 1000`, `w = 10`, `ε = 1/4` and the random oracle `H`, every
-hypothesis of `chain_realizes` holds, so the protocol realizes `F_Tree` with bound
+count `K` with `K + 2 ≤ 2000`, every deterministic signature scheme, every adversary and every
+delay bound `Δ`, with `W = 1000`, `d = 1000`, `w = 10`, `ε = 1/4` and the random function `H`,
+every hypothesis of `chain_realizes` holds, so the protocol realizes `F_Tree` with bound
 `slotBound ν 2000 1000 10 (1/4) + q (q - 1) / 2 / M` with `q = 2 ^ (K + 2)`
-(`PoSNSB.LotteryInstance.crAdv_collFinder_le`); the bound is below `1` for `M = 4 ^ (K + 5)`
-(`PoSNSB.LotteryInstance.instance_bound_lt_one`). -/
-theorem instance_realizes (M : ℕ) [NeZero M] (K : ℕ) (hK : K + 2 ≤ 2000)
-    (Sch : SigScheme (Block Unit (Fin M) (Fin 1)))
-    (A : Adversary Unit (Fin M) 1 2000 (K + 1) Sch) (Δ : ℕ) :
-    Realizes (chainReal (P M (K + 1)) A (Tree M (K + 1)) (H M (K + 1)) K μ 1000 Δ)
+(`PoSNSB.LotteryInstance.collFinder_advantage_le`); the bound is below `1` for
+`M = 4 ^ (K + 5)` (`PoSNSB.LotteryInstance.instance_bound_lt_one`). -/
+theorem instance_realizes (M : ℕ) [NeZero M] (K : ℕ) (hK : K + 2 ≤ 2000) {PK SK Sig : Type}
+    (Sch : PSigScheme (Block Unit (Fin M) (Fin 1)) PK SK Sig) [Sch.Deterministic]
+    (A : Adversary Unit (Fin M) 1 2000 (K + 1) PK Sig) (Δ : ℕ) :
+    Realizes
+      (chainReal (P M (K + 1)) Sch A (Tree M (K + 1)) (H M (K + 1)) (cd M (K + 1)) K μ 1000 Δ)
       (ideal (chainF (P M (K + 1)) Δ ν 1000 10 (1 / 4))
-        (chainSim (P M (K + 1)) A (Tree M (K + 1)) (H M (K + 1)) K μ 1000 Δ))
+        (chainSim (P M (K + 1)) Sch A (Tree M (K + 1)) (H M (K + 1)) (cd M (K + 1)) K μ 1000 Δ))
       (fun _ _ => slotBound ν 2000 1000 10 (1 / 4) +
         ((2 ^ (K + 2) * (2 ^ (K + 2) - 1) / 2 : ℕ) : ℝ≥0∞) / M) := by
-  have h := chain_realizes (P M (K + 1)) A (Tree M (K + 1)) (H M (K + 1)) (protocolHyp M (K + 1))
-    (tree_longest M (K + 1)) μ 1000 K 1000 10
+  have h := chain_realizes (P M (K + 1)) Sch A (Tree M (K + 1)) (H M (K + 1)) (cd M (K + 1))
+    (protocolHyp M (K + 1)) (tree_longest M (K + 1)) μ 1000 K 1000 10
     (1 / 4) Δ (by norm_num) (by norm_num) hK le_rfl (by norm_num)
     (by rw [pH_ν, pA_ν]; norm_num) (by rw [pH_ν, pA_ν]; norm_num)
     (by rw [pH_ν, pA_ν]; norm_num)
-  simp only [Finset.sum_eq_zero fun i _ =>
-      eufAdv_forger_of_honest (P M (K + 1)) A hcor (H M (K + 1)) μ 1000 K i, add_zero] at h
+  simp only [posFail, Finset.sum_eq_zero fun i _ => forger_advantage_of_honest (P M (K + 1)) Sch
+      A hcor (H M (K + 1)) (cd M (K + 1)) μ 1000 K i, add_zero] at h
   intro ζ Z
-  exact (h ζ Z).trans (add_le_add_right (crAdv_collFinder_le M K Sch A) _)
+  exact (h ζ Z).trans (add_le_add_right (collFinder_advantage_le M K Sch A) _)
 
 end CatCryptCore.Consensus.UC.Chain.LotteryInstance

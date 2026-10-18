@@ -6,6 +6,7 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Consensus.PoSNSB.Prob.Hash
+public import CatCryptCore.Crypto.Signatures.EUFCMAPMF
 
 /-!
 # PoS-NSB with signed blocks: real and ideal executions
@@ -13,19 +14,20 @@ public import CatCryptCore.Consensus.PoSNSB.Prob.Hash
 The PoS-NSB model leaves the adversary functions `AdversarialBake` and `AdversarialRcv`
 unconstrained, and the theorems of the port assume `forging_free`: the adversary sends no honest
 block that was not broadcast before. This file builds the executions from a signature scheme,
-a random lottery, a random oracle and an adversary, so that forging freedom becomes an event
+a random lottery, a hash function and an adversary, so that forging freedom becomes an event
 whose probability is bounded in `CatCryptCore/Consensus/PoSNSB/Prob/Reduction.lean`.
 
 ## The signed protocol
 
-* A signature scheme `SigScheme Msg` has key generation `keygen : PMF (PK × SK)`, deterministic
-  signing and verification. Its messages are the blocks.
+* The signature scheme is a `PSigScheme` on blocks (`CatCryptCore/Crypto/Signatures/EUFCMAPMF.lean`)
+  with deterministic signing (`PSigScheme.Deterministic`): key generation from uniform coins,
+  the signing function `dsign` and verification.
 * The random seed (`Seed`) consists of the string of slot leaders `L` (the lottery, with slot
-  kinds `Seed.κ`), the random oracle `f : BlockDom → Hash` (the hash of a block `b` is
+  kinds `Seed.κ`), the hash function `f : BlockDom → Hash` (the hash of a block `b` is
   `f (encB b)`) and a key pair for every party.
 * An adversary (`Adversary`) is a pair of functions in the style of `AdversarialBake` and
   `AdversarialRcv` that additionally receive the public information (the leader string, the
-  random oracle and the verification keys) and the signatures of the honest blocks of the
+  hash function and the verification keys) and the signatures of the honest blocks of the
   history (`sigTable`), and that output signed messages.
 * The network accepts an adversarial message when its block has a slot at most the current
   slot and is baked by a corrupt party or carries a valid signature of its baker (`sigOK`). This
@@ -57,6 +59,7 @@ namespace CatCryptCore.Consensus.PoSNSB
 universe u v
 
 open Parameters BlockParameters Corruption Execution
+open CatCrypt.Crypto.Signatures
 
 /-! ## Executions following the phases -/
 
@@ -144,23 +147,6 @@ theorem foldr_congr_calls {α : Type u} {β : Type v} (g g' : α → β → β) 
     rw [List.foldr_cons, List.foldr_cons, ih fun c hc => h c (List.mem_cons_of_mem _ hc)]
     exact h (p, ps.foldr g N) (by simp [foldrCalls])
 
-/-! ## Signature schemes -/
-
-/-- A signature scheme with deterministic signing on messages of type `Msg`. -/
-structure SigScheme (Msg : Type) where
-  /-- Verification keys. -/
-  PK : Type
-  /-- Signing keys. -/
-  SK : Type
-  /-- Signatures. -/
-  Sig : Type
-  /-- Key generation. -/
-  keygen : PMF (PK × SK)
-  /-- Signing. -/
-  sign : SK → Msg → Sig
-  /-- Verification. -/
-  verify : PK → Msg → Sig → Bool
-
 /-! ## The signed protocol -/
 
 deriving instance DecidableEq for Block
@@ -205,38 +191,38 @@ structure Protocol (Tx Hash : Type) (np n Hz : ℕ) where
   /-- The transactions of honest blocks. -/
   txSel : Slot → Fin np → Tx
 
-/-- The random seed of an execution: the leaders of the first `n` slots, the random oracle,
+/-- The random seed of an execution: the leaders of the first `n` slots, the hash function,
 and a key pair for every party. -/
-structure Seed (Tx Hash : Type) (np n Hz : ℕ) (Sch : SigScheme (Block Tx Hash (Fin np))) where
+structure Seed (Tx Hash : Type) (np n Hz : ℕ) (PK SK : Type) where
   /-- The slot leaders. -/
   L : Fin n → Option (Fin np)
-  /-- The random oracle. -/
+  /-- The hash function. -/
   f : BlockDom Tx Hash np Hz → Hash
   /-- The key pairs. -/
-  ks : Fin np → Sch.PK × Sch.SK
+  ks : Fin np → PK × SK
 
-variable {Sch : SigScheme (Block Tx Hash (Fin np))}
+variable {PK SK Sig : Type}
 
 /-- The slot kinds of a seed: the kinds of its leaders. -/
-abbrev Seed.κ (ω : Seed Tx Hash np n Hz Sch) : Fin n → SlotKind := kinds ω.L
+abbrev Seed.κ (ω : Seed Tx Hash np n Hz PK SK) : Fin n → SlotKind := kinds ω.L
 
 /-- The lottery of a seed. -/
-abbrev Seed.params (P : Protocol Tx Hash np n Hz) (ω : Seed Tx Hash np n Hz Sch) :
+abbrev Seed.params (P : Protocol Tx Hash np n Hz) (ω : Seed Tx Hash np n Hz PK SK) :
     Parameters (Fin np) :=
   leaderParams P.IP P.h0 ω.L
 
 /-- The genesis block and the hash function `b ↦ f (encB b)` of a seed. -/
-abbrev Seed.bparams (P : Protocol Tx Hash np n Hz) (ω : Seed Tx Hash np n Hz Sch) :
+abbrev Seed.bparams (P : Protocol Tx Hash np n Hz) (ω : Seed Tx Hash np n Hz PK SK) :
     BlockParameters Tx Hash (Fin np) :=
   ⟨P.GB, fun b => ω.f (encB Hz b)⟩
 
-/-- The public information of a seed: the leader string, the random oracle and the
+/-- The public information of a seed: the leader string, the hash function and the
 verification keys. -/
-abbrev PubInfo (Tx Hash : Type) (np n Hz : ℕ) (Sch : SigScheme (Block Tx Hash (Fin np))) :=
-  (Fin n → Option (Fin np)) × (BlockDom Tx Hash np Hz → Hash) × (Fin np → Sch.PK)
+abbrev PubInfo (Tx Hash : Type) (np n Hz : ℕ) (PK : Type) :=
+  (Fin n → Option (Fin np)) × (BlockDom Tx Hash np Hz → Hash) × (Fin np → PK)
 
 /-- The public information of a seed. -/
-def Seed.pub (ω : Seed Tx Hash np n Hz Sch) : PubInfo Tx Hash np n Hz Sch :=
+def Seed.pub (ω : Seed Tx Hash np n Hz PK SK) : PubInfo Tx Hash np n Hz PK :=
   (ω.L, ω.f, fun j => (ω.ks j).1)
 
 /-- The output of the adversary: signed messages with their delays. -/
@@ -246,42 +232,44 @@ abbrev AdvOut (Tx Hash : Type) (np : ℕ) (Sig : Type) :=
 /-- An adversary against the signed protocol. Besides the inputs of the PoS-NSB adversary
 functions, it receives the public information and the signatures of the honest blocks of the
 history, and it outputs signed messages. -/
-structure Adversary (Tx Hash : Type) (np n Hz : ℕ) (Sch : SigScheme (Block Tx Hash (Fin np))) where
+structure Adversary (Tx Hash : Type) (np n Hz : ℕ) (PK Sig : Type) where
   /-- The state of the adversary. -/
   AdvState : Type
   /-- The initial state. -/
   st0 : AdvState
   /-- The action when a corrupt party bakes. -/
-  bake : PubInfo Tx Hash np n Hz Sch → Slot → History Tx Hash (Fin np) →
-    List (Block Tx Hash (Fin np) × Sch.Sig) → MessagePool Tx Hash (Fin np) → AdvState →
-      AdvOut Tx Hash np Sch.Sig × AdvState
+  bake : PubInfo Tx Hash np n Hz PK → Slot → History Tx Hash (Fin np) →
+    List (Block Tx Hash (Fin np) × Sig) → MessagePool Tx Hash (Fin np) → AdvState →
+      AdvOut Tx Hash np Sig × AdvState
   /-- The action when a corrupt party receives messages. -/
-  rcv : PubInfo Tx Hash np n Hz Sch → Messages Tx Hash (Fin np) → Slot →
-    History Tx Hash (Fin np) → List (Block Tx Hash (Fin np) × Sch.Sig) →
-      MessagePool Tx Hash (Fin np) → AdvState → AdvOut Tx Hash np Sch.Sig × AdvState
+  rcv : PubInfo Tx Hash np n Hz PK → Messages Tx Hash (Fin np) → Slot →
+    History Tx Hash (Fin np) → List (Block Tx Hash (Fin np) × Sig) →
+      MessagePool Tx Hash (Fin np) → AdvState → AdvOut Tx Hash np Sig × AdvState
+
+variable (Sch : PSigScheme (Block Tx Hash (Fin np)) PK SK Sig) [hS : Sch.Deterministic]
 
 /-- The signatures of the honest blocks of a history under the signing keys `ks`. -/
-def sigTable (ks : Fin np → Sch.PK × Sch.SK) (hist : History Tx Hash (Fin np)) :
-    List (Block Tx Hash (Fin np) × Sch.Sig) :=
-  ((hist.map get_block).filter honest_block).map fun b => (b, Sch.sign (ks b.bid).2 b)
+def sigTable (ks : Fin np → PK × SK) (hist : History Tx Hash (Fin np)) :
+    List (Block Tx Hash (Fin np) × Sig) :=
+  ((hist.map get_block).filter honest_block).map fun b => (b, hS.dsign (ks b.bid).2 b)
 
 /-- The network accepts an adversarial message at slot `sl` when its block has a slot at most
 `sl` and is baked by a corrupt party or carries a valid signature of its baker. -/
-def sigOK (pks : Fin np → Sch.PK) (sl : Slot)
-    (x : (Message Tx Hash (Fin np) × Sch.Sig) × DelayMap (Fin np)) : Bool :=
+def sigOK (pks : Fin np → PK) (sl : Slot)
+    (x : (Message Tx Hash (Fin np) × Sig) × DelayMap (Fin np)) : Bool :=
   decide ((get_block x.1.1).sl ≤ sl) &&
     (is_corrupt (get_block x.1.1).bid || Sch.verify (pks (get_block x.1.1).bid) (get_block x.1.1) x.1.2)
 
 /-- The block of an adversarial message is corrupt or already in the history. -/
 def histOK (hist : History Tx Hash (Fin np))
-    (x : (Message Tx Hash (Fin np) × Sch.Sig) × DelayMap (Fin np)) : Bool :=
+    (x : (Message Tx Hash (Fin np) × Sig) × DelayMap (Fin np)) : Bool :=
   is_corrupt (get_block x.1.1).bid || decide (get_block x.1.1 ∈ hist.map get_block)
 
 /-- The messages the network accepts: those passing `sigOK`, and in the ideal execution also
 `histOK`, without their signatures. -/
-def outFilter (ideal : Bool) (pks : Fin np → Sch.PK) (sl : Slot) (hist : History Tx Hash (Fin np))
-    (out : AdvOut Tx Hash np Sch.Sig) : List (Message Tx Hash (Fin np) × DelayMap (Fin np)) :=
-  (out.filter fun x => sigOK pks sl x && (!ideal || histOK hist x)).map fun x => (x.1.1, x.2)
+def outFilter (ideal : Bool) (pks : Fin np → PK) (sl : Slot) (hist : History Tx Hash (Fin np))
+    (out : AdvOut Tx Hash np Sig) : List (Message Tx Hash (Fin np) × DelayMap (Fin np)) :=
+  (out.filter fun x => sigOK Sch pks sl x && (!ideal || histOK hist x)).map fun x => (x.1.1, x.2)
 
 /-- The inputs of one adversary call: the delivered messages (`none` for a baking call), the
 slot, the history, the message buffer and the adversarial state. -/
@@ -299,57 +287,61 @@ structure CallInput (Tx Hash : Type) (np : ℕ) (AdvState : Type) where
 
 /-- The output of the adversary on a call, given the signatures `sigTable ks` of the honest
 blocks of the history. -/
-def advRaw (ω : Seed Tx Hash np n Hz Sch) (A : Adversary Tx Hash np n Hz Sch)
-    (c : CallInput Tx Hash np A.AdvState) : AdvOut Tx Hash np Sch.Sig × A.AdvState :=
+def advRaw (ω : Seed Tx Hash np n Hz PK SK) (A : Adversary Tx Hash np n Hz PK Sig)
+    (c : CallInput Tx Hash np A.AdvState) : AdvOut Tx Hash np Sig × A.AdvState :=
   match c.msgs with
-  | none => A.bake ω.pub c.sl c.hist (sigTable ω.ks c.hist) c.mb c.st
-  | some ms => A.rcv ω.pub ms c.sl c.hist (sigTable ω.ks c.hist) c.mb c.st
+  | none => A.bake ω.pub c.sl c.hist (sigTable Sch ω.ks c.hist) c.mb c.st
+  | some ms => A.rcv ω.pub ms c.sl c.hist (sigTable Sch ω.ks c.hist) c.mb c.st
 
 /-- The execution parameters of the real (`ideal = false`) or the ideal (`ideal = true`)
-execution for the seed `ω` and the adversary `A`. -/
-@[instance_reducible] def mkExec (ideal : Bool) (P : Protocol Tx Hash np n Hz) (ω : Seed Tx Hash np n Hz Sch)
-    (A : Adversary Tx Hash np n Hz Sch) :
+execution for the signature scheme `Sch`, the seed `ω` and the adversary `A`. -/
+@[instance_reducible] def mkExec (ideal : Bool) (P : Protocol Tx Hash np n Hz)
+    (ω : Seed Tx Hash np n Hz PK SK) (A : Adversary Tx Hash np n Hz PK Sig) :
     @Execution Tx Hash (Fin np) A.AdvState (ω.params P) (ω.bparams P) :=
   letI := ω.params P; letI := ω.bparams P
   { AdvState0 := A.st0
     TreeTypeMap := P.trees ω.L ω.f
     AdversarialBake := fun sl hist mb st =>
-      let r := advRaw ω A ⟨none, sl, hist, mb, st⟩
-      (outFilter ideal (fun j => (ω.ks j).1) sl hist r.1, r.2)
+      let r := advRaw Sch ω A ⟨none, sl, hist, mb, st⟩
+      (outFilter Sch ideal (fun j => (ω.ks j).1) sl hist r.1, r.2)
     AdversarialRcv := fun ms sl hist mb st =>
-      let r := advRaw ω A ⟨some ms, sl, hist, mb, st⟩
-      (outFilter ideal (fun j => (ω.ks j).1) sl hist r.1, r.2)
+      let r := advRaw Sch ω A ⟨some ms, sl, hist, mb, st⟩
+      (outFilter Sch ideal (fun j => (ω.ks j).1) sl hist r.1, r.2)
     TxSelection := P.txSel }
 
-theorem mkExec_bake (ideal : Bool) (P : Protocol Tx Hash np n Hz) (ω : Seed Tx Hash np n Hz Sch)
-    (A : Adversary Tx Hash np n Hz Sch) (sl : Slot) (hist : History Tx Hash (Fin np))
-    (mb : MessagePool Tx Hash (Fin np)) (st : A.AdvState) :
-    (mkExec ideal P ω A).AdversarialBake sl hist mb st =
-      (outFilter ideal (fun j => (ω.ks j).1) sl hist (advRaw ω A ⟨none, sl, hist, mb, st⟩).1,
-        (advRaw ω A ⟨none, sl, hist, mb, st⟩).2) := rfl
-
-theorem mkExec_rcv (ideal : Bool) (P : Protocol Tx Hash np n Hz) (ω : Seed Tx Hash np n Hz Sch)
-    (A : Adversary Tx Hash np n Hz Sch) (ms : Messages Tx Hash (Fin np)) (sl : Slot)
+theorem mkExec_bake (ideal : Bool) (P : Protocol Tx Hash np n Hz)
+    (ω : Seed Tx Hash np n Hz PK SK) (A : Adversary Tx Hash np n Hz PK Sig) (sl : Slot)
     (hist : History Tx Hash (Fin np)) (mb : MessagePool Tx Hash (Fin np)) (st : A.AdvState) :
-    (mkExec ideal P ω A).AdversarialRcv ms sl hist mb st =
-      (outFilter ideal (fun j => (ω.ks j).1) sl hist (advRaw ω A ⟨some ms, sl, hist, mb, st⟩).1,
-        (advRaw ω A ⟨some ms, sl, hist, mb, st⟩).2) := rfl
+    (mkExec Sch ideal P ω A).AdversarialBake sl hist mb st =
+      (outFilter Sch ideal (fun j => (ω.ks j).1) sl hist
+        (advRaw Sch ω A ⟨none, sl, hist, mb, st⟩).1,
+        (advRaw Sch ω A ⟨none, sl, hist, mb, st⟩).2) := rfl
+
+theorem mkExec_rcv (ideal : Bool) (P : Protocol Tx Hash np n Hz)
+    (ω : Seed Tx Hash np n Hz PK SK) (A : Adversary Tx Hash np n Hz PK Sig)
+    (ms : Messages Tx Hash (Fin np)) (sl : Slot)
+    (hist : History Tx Hash (Fin np)) (mb : MessagePool Tx Hash (Fin np)) (st : A.AdvState) :
+    (mkExec Sch ideal P ω A).AdversarialRcv ms sl hist mb st =
+      (outFilter Sch ideal (fun j => (ω.ks j).1) sl hist
+        (advRaw Sch ω A ⟨some ms, sl, hist, mb, st⟩).1,
+        (advRaw Sch ω A ⟨some ms, sl, hist, mb, st⟩).2) := rfl
 
 /-- An adversary call outputs an accepted honest block that is not in the history. -/
-def Forged (ω : Seed Tx Hash np n Hz Sch) (A : Adversary Tx Hash np n Hz Sch)
+def Forged (ω : Seed Tx Hash np n Hz PK SK) (A : Adversary Tx Hash np n Hz PK Sig)
     (c : CallInput Tx Hash np A.AdvState) : Prop :=
-  ∃ x ∈ (advRaw ω A c).1, sigOK (fun j => (ω.ks j).1) c.sl x = true ∧ histOK c.hist x = false
+  ∃ x ∈ (advRaw Sch ω A c).1, sigOK Sch (fun j => (ω.ks j).1) c.sl x = true ∧
+    histOK c.hist x = false
 
 /-- Without a forgery, the real and the ideal network accept the same messages. -/
-theorem outFilter_eq_of_not_forged {ω : Seed Tx Hash np n Hz Sch}
-    {A : Adversary Tx Hash np n Hz Sch} {c : CallInput Tx Hash np A.AdvState}
-    (h : ¬Forged ω A c) :
-    outFilter true (fun j => (ω.ks j).1) c.sl c.hist (advRaw ω A c).1 =
-      outFilter false (fun j => (ω.ks j).1) c.sl c.hist (advRaw ω A c).1 := by
+theorem outFilter_eq_of_not_forged {ω : Seed Tx Hash np n Hz PK SK}
+    {A : Adversary Tx Hash np n Hz PK Sig} {c : CallInput Tx Hash np A.AdvState}
+    (h : ¬Forged Sch ω A c) :
+    outFilter Sch true (fun j => (ω.ks j).1) c.sl c.hist (advRaw Sch ω A c).1 =
+      outFilter Sch false (fun j => (ω.ks j).1) c.sl c.hist (advRaw Sch ω A c).1 := by
   unfold outFilter
   congr 1
   refine List.filter_congr fun x hx => ?_
-  by_cases h1 : sigOK (fun j => (ω.ks j).1) c.sl x = true
+  by_cases h1 : sigOK Sch (fun j => (ω.ks j).1) c.sl x = true
   · have h2 : histOK c.hist x = true := by
       by_contra h2
       exact h ⟨x, hx, h1, by simpa using h2⟩
@@ -358,7 +350,8 @@ theorem outFilter_eq_of_not_forged {ω : Seed Tx Hash np n Hz Sch}
 
 section Exec
 
-variable (P : Protocol Tx Hash np n Hz) (ω : Seed Tx Hash np n Hz Sch) (A : Adversary Tx Hash np n Hz Sch)
+variable (P : Protocol Tx Hash np n Hz) (ω : Seed Tx Hash np n Hz PK SK)
+  (A : Adversary Tx Hash np n Hz PK Sig)
 
 /-- The state type of the executions of `ω` and `A`. -/
 abbrev GS := @GlobalState Tx Hash (Fin np) A.AdvState (ω.params P) (ω.bparams P)
@@ -377,22 +370,22 @@ def rcvCall (p : Fin np) (M : GS P ω A) : CallInput Tx Hash np A.AdvState :=
 
 /-- A receiving step of a party in the real (`ideal = false`) or the ideal execution. -/
 def sRcv (ideal : Bool) (p : Fin np) (M : GS P ω A) : GS P ω A :=
-  letI := ω.params P; letI := ω.bparams P; letI := mkExec ideal P ω A
+  letI := ω.params P; letI := ω.bparams P; letI := mkExec Sch ideal P ω A
   party_rcv_step_world p M
 
 /-- A baking step of a party in the real (`ideal = false`) or the ideal execution. -/
 def sBake (ideal : Bool) (p : Fin np) (M : GS P ω A) : GS P ω A :=
-  letI := ω.params P; letI := ω.bparams P; letI := mkExec ideal P ω A
+  letI := ω.params P; letI := ω.bparams P; letI := mkExec Sch ideal P ω A
   party_bake_step_world p M
 
 /-- One phase of the real (`ideal = false`) or the ideal execution. -/
 def sPhase (ideal : Bool) (M : GS P ω A) : GS P ω A :=
-  letI := ω.params P; letI := ω.bparams P; letI := mkExec ideal P ω A
+  letI := ω.params P; letI := ω.bparams P; letI := mkExec Sch ideal P ω A
   phaseStep M
 
 /-- The trace of the real (`ideal = false`) or the ideal execution. -/
 def sTrace (ideal : Bool) (k : ℕ) : GS P ω A :=
-  letI := ω.params P; letI := ω.bparams P; letI := mkExec ideal P ω A
+  letI := ω.params P; letI := ω.bparams P; letI := mkExec Sch ideal P ω A
   runTrace A.AdvState k
 
 /-- The adversary call of a party step at a state, if there is one: the party is corrupt and
@@ -406,21 +399,21 @@ def stepCalls (bake : Bool) (c : Fin np × GS P ω A) : List (CallInput Tx Hash 
 def phaseCalls (N : GS P ω A) : List (CallInput Tx Hash np A.AdvState) :=
   letI := ω.params P; letI := ω.bparams P
   match N.progress with
-  | .Ready => (foldrCalls (sRcv P ω A false) N N.exec_order).flatMap (stepCalls P ω A false)
-  | .Delivered => (foldrCalls (sBake P ω A false) N N.exec_order).flatMap (stepCalls P ω A true)
+  | .Ready => (foldrCalls (sRcv Sch P ω A false) N N.exec_order).flatMap (stepCalls P ω A false)
+  | .Delivered => (foldrCalls (sBake Sch P ω A false) N N.exec_order).flatMap (stepCalls P ω A true)
   | .Baked => []
 
 /-- The adversary calls of the first `K` phases of the real execution. -/
 def traceCalls (K : ℕ) : List (CallInput Tx Hash np A.AdvState) :=
-  (List.range K).flatMap fun k => phaseCalls P ω A (sTrace P ω A false k)
+  (List.range K).flatMap fun k => phaseCalls Sch P ω A (sTrace Sch P ω A false k)
 
 /-- **The forging event.** Some adversary call in the first `K` phases of the real execution
 outputs an accepted honest block that is not in the history. -/
-def Forge (K : ℕ) : Prop := ∃ c ∈ traceCalls P ω A K, Forged ω A c
+def Forge (K : ℕ) : Prop := ∃ c ∈ traceCalls Sch P ω A K, Forged Sch ω A c
 
 theorem sRcv_eq (p : Fin np) (M : GS P ω A)
-    (h : ∀ c ∈ stepCalls P ω A false (p, M), ¬Forged ω A c) :
-    sRcv P ω A true p M = sRcv P ω A false p M := by
+    (h : ∀ c ∈ stepCalls P ω A false (p, M), ¬Forged Sch ω A c) :
+    sRcv Sch P ω A true p M = sRcv Sch P ω A false p M := by
   let _ := ω.params P; let _ := ω.bparams P
   unfold sRcv party_rcv_step_world
   unfold stepCalls at h
@@ -428,13 +421,13 @@ theorem sRcv_eq (p : Fin np) (M : GS P ω A)
   | none => rfl
   | some l =>
     by_cases hc : is_corrupt p
-    · have h' := outFilter_eq_of_not_forged (h (rcvCall P ω A p M) (by simp [hs, hc]))
+    · have h' := outFilter_eq_of_not_forged Sch (h (rcvCall P ω A p M) (by simp [hs, hc]))
       simp only [hc, Bool.not_true, Bool.false_eq_true, if_false]
       have e : ∀ ms sl hist mb st, (ms, sl, hist, mb, st) = ((fetch_msgs p M).1,
           (fetch_msgs p M).2.t_now, (fetch_msgs p M).2.history, (fetch_msgs p M).2.msg_buff,
           (fetch_msgs p M).2.adv_state) →
-          (mkExec true P ω A).AdversarialRcv ms sl hist mb st =
-            (mkExec false P ω A).AdversarialRcv ms sl hist mb st := by
+          (mkExec Sch true P ω A).AdversarialRcv ms sl hist mb st =
+            (mkExec Sch false P ω A).AdversarialRcv ms sl hist mb st := by
         intro ms sl hist mb st he
         simp only [Prod.mk.injEq] at he
         obtain ⟨rfl, rfl, rfl, rfl, rfl⟩ := he
@@ -445,8 +438,8 @@ theorem sRcv_eq (p : Fin np) (M : GS P ω A)
       rfl
 
 theorem sBake_eq (p : Fin np) (M : GS P ω A)
-    (h : ∀ c ∈ stepCalls P ω A true (p, M), ¬Forged ω A c) :
-    sBake P ω A true p M = sBake P ω A false p M := by
+    (h : ∀ c ∈ stepCalls P ω A true (p, M), ¬Forged Sch ω A c) :
+    sBake Sch P ω A true p M = sBake Sch P ω A false p M := by
   let _ := ω.params P; let _ := ω.bparams P
   unfold sBake party_bake_step_world
   unfold stepCalls at h
@@ -454,10 +447,10 @@ theorem sBake_eq (p : Fin np) (M : GS P ω A)
   | none => rfl
   | some l =>
     by_cases hc : is_corrupt p
-    · have h' := outFilter_eq_of_not_forged (h (bakeCall P ω A M) (by simp [hs, hc]))
+    · have h' := outFilter_eq_of_not_forged Sch (h (bakeCall P ω A M) (by simp [hs, hc]))
       simp only [hc, Bool.not_true, Bool.false_eq_true, if_false]
-      have e : (mkExec true P ω A).AdversarialBake M.t_now M.history M.msg_buff M.adv_state =
-          (mkExec false P ω A).AdversarialBake M.t_now M.history M.msg_buff M.adv_state := by
+      have e : (mkExec Sch true P ω A).AdversarialBake M.t_now M.history M.msg_buff M.adv_state =
+          (mkExec Sch false P ω A).AdversarialBake M.t_now M.history M.msg_buff M.adv_state := by
         rw [mkExec_bake, mkExec_bake]
         exact congrArg (·, _) h'
       rw [e]
@@ -465,15 +458,15 @@ theorem sBake_eq (p : Fin np) (M : GS P ω A)
       rfl
 
 theorem sPhase_def (ideal : Bool) (N : GS P ω A) :
-    sPhase P ω A ideal N = (letI := ω.params P; letI := ω.bparams P
+    sPhase Sch P ω A ideal N = (letI := ω.params P; letI := ω.bparams P
       match N.progress with
-      | .Ready => { N.exec_order.foldr (sRcv P ω A ideal) N with progress := .Delivered }
-      | .Delivered => { N.exec_order.foldr (sBake P ω A ideal) N with progress := .Baked }
+      | .Ready => { N.exec_order.foldr (sRcv Sch P ω A ideal) N with progress := .Delivered }
+      | .Delivered => { N.exec_order.foldr (sBake Sch P ω A ideal) N with progress := .Baked }
       | .Baked => { inc_round (round_tick N) with progress := .Ready }) := rfl
 
 /-- Without a forgery in a phase, the real and the ideal phase coincide. -/
-theorem sPhase_eq (N : GS P ω A) (h : ∀ c ∈ phaseCalls P ω A N, ¬Forged ω A c) :
-    sPhase P ω A true N = sPhase P ω A false N := by
+theorem sPhase_eq (N : GS P ω A) (h : ∀ c ∈ phaseCalls Sch P ω A N, ¬Forged Sch ω A c) :
+    sPhase Sch P ω A true N = sPhase Sch P ω A false N := by
   let _ := ω.params P; let _ := ω.bparams P
   rw [sPhase_def, sPhase_def]
   unfold phaseCalls at h
@@ -481,36 +474,36 @@ theorem sPhase_eq (N : GS P ω A) (h : ∀ c ∈ phaseCalls P ω A N, ¬Forged �
   | Ready =>
     rw [hp] at h
     dsimp only at h ⊢
-    rw [foldr_congr_calls (sRcv P ω A false) (sRcv P ω A true) N N.exec_order
-      fun c hc => sRcv_eq P ω A c.1 c.2 fun c' hc' => h c' (List.mem_flatMap.2 ⟨c, hc, hc'⟩)]
+    rw [foldr_congr_calls (sRcv Sch P ω A false) (sRcv Sch P ω A true) N N.exec_order
+      fun c hc => sRcv_eq Sch P ω A c.1 c.2 fun c' hc' => h c' (List.mem_flatMap.2 ⟨c, hc, hc'⟩)]
   | Delivered =>
     rw [hp] at h
     dsimp only at h ⊢
-    rw [foldr_congr_calls (sBake P ω A false) (sBake P ω A true) N N.exec_order
-      fun c hc => sBake_eq P ω A c.1 c.2 fun c' hc' => h c' (List.mem_flatMap.2 ⟨c, hc, hc'⟩)]
+    rw [foldr_congr_calls (sBake Sch P ω A false) (sBake Sch P ω A true) N N.exec_order
+      fun c hc => sBake_eq Sch P ω A c.1 c.2 fun c' hc' => h c' (List.mem_flatMap.2 ⟨c, hc, hc'⟩)]
   | Baked => rfl
 
 theorem sTrace_succ (ideal : Bool) (k : ℕ) :
-    sTrace P ω A ideal (k + 1) = sPhase P ω A ideal (sTrace P ω A ideal k) :=
-  letI := ω.params P; letI := ω.bparams P; letI := mkExec ideal P ω A
+    sTrace Sch P ω A ideal (k + 1) = sPhase Sch P ω A ideal (sTrace Sch P ω A ideal k) :=
+  letI := ω.params P; letI := ω.bparams P; letI := mkExec Sch ideal P ω A
   runTrace_succ k
 
 /-- **Identical until forgery.** If no adversary call of the first `K` phases of the real
 execution is a forgery, the real and the ideal traces coincide up to phase `K`. -/
-theorem sTrace_ideal_eq {K : ℕ} (h : ¬Forge P ω A K) :
-    ∀ k ≤ K, sTrace P ω A true k = sTrace P ω A false k := by
+theorem sTrace_ideal_eq {K : ℕ} (h : ¬Forge Sch P ω A K) :
+    ∀ k ≤ K, sTrace Sch P ω A true k = sTrace Sch P ω A false k := by
   intro k hk
   induction k with
   | zero => rfl
   | succ k ih =>
     rw [sTrace_succ, sTrace_succ, ih (by omega)]
-    refine sPhase_eq P ω A _ fun c hc hf => h ⟨c, ?_, hf⟩
+    refine sPhase_eq Sch P ω A _ fun c hc hf => h ⟨c, ?_, hf⟩
     exact List.mem_flatMap.2 ⟨k, List.mem_range.2 (by omega), hc⟩
 
 /-- The blocks accepted by the network have a slot at most the current slot. -/
-theorem outFilter_sl {ideal : Bool} {pks : Fin np → Sch.PK} {sl : Slot}
-    {hist : History Tx Hash (Fin np)} {out : AdvOut Tx Hash np Sch.Sig}
-    {m : Message Tx Hash (Fin np)} (hm : m ∈ (outFilter ideal pks sl hist out).map Prod.fst) :
+theorem outFilter_sl {ideal : Bool} {pks : Fin np → PK} {sl : Slot}
+    {hist : History Tx Hash (Fin np)} {out : AdvOut Tx Hash np Sig}
+    {m : Message Tx Hash (Fin np)} (hm : m ∈ (outFilter Sch ideal pks sl hist out).map Prod.fst) :
     (get_block m).sl ≤ sl := by
   simp only [outFilter, List.map_map, List.mem_map, List.mem_filter, Function.comp_apply] at hm
   obtain ⟨x, ⟨_, hx⟩, rfl⟩ := hm
@@ -518,9 +511,9 @@ theorem outFilter_sl {ideal : Bool} {pks : Fin np → Sch.PK} {sl : Slot}
   exact hx.1.1
 
 /-- The honest blocks accepted by the ideal network are in the history. -/
-theorem outFilter_ideal_hist {pks : Fin np → Sch.PK} {sl : Slot}
-    {hist : History Tx Hash (Fin np)} {out : AdvOut Tx Hash np Sch.Sig} :
-    honest_subset ((outFilter true pks sl hist out).map fun mp => get_block mp.1)
+theorem outFilter_ideal_hist {pks : Fin np → PK} {sl : Slot}
+    {hist : History Tx Hash (Fin np)} {out : AdvOut Tx Hash np Sig} :
+    honest_subset ((outFilter Sch true pks sl hist out).map fun mp => get_block mp.1)
       (hist.map get_block) := by
   intro b hb hh
   simp only [outFilter, List.map_map, List.mem_map, List.mem_filter, Function.comp_apply] at hb
@@ -536,12 +529,12 @@ theorem outFilter_ideal_hist {pks : Fin np → Sch.PK} {sl : Slot}
 /-- **The ideal execution is forging free**: in every state, the adversary of the ideal
 execution sends no honest block outside the history. -/
 theorem forging_free_ideal (N : GS P ω A) :
-    letI := ω.params P; letI := ω.bparams P; letI := mkExec true P ω A
+    letI := ω.params P; letI := ω.bparams P; letI := mkExec Sch true P ω A
     forging_free N := by
-  let _ := ω.params P; let _ := ω.bparams P; let _ := mkExec true P ω A
+  let _ := ω.params P; let _ := ω.bparams P; let _ := mkExec Sch true P ω A
   refine ⟨fun N1 _ p => ?_, fun N1 _ => ?_⟩
-  · rw [mkExec_rcv]; exact outFilter_ideal_hist
-  · rw [mkExec_bake]; exact outFilter_ideal_hist
+  · rw [mkExec_rcv]; exact outFilter_ideal_hist Sch
+  · rw [mkExec_bake]; exact outFilter_ideal_hist Sch
 
 /-- The blocks of the history have slots at most the current slot. -/
 def SlotsBounded (M : GS P ω A) : Prop :=
@@ -549,19 +542,19 @@ def SlotsBounded (M : GS P ω A) : Prop :=
   ∀ m ∈ M.history, (get_block m).sl ≤ M.t_now
 
 theorem sRcv_slots (p : Fin np) (M : GS P ω A) (h : SlotsBounded P ω A M) :
-    SlotsBounded P ω A (sRcv P ω A false p M) := by
-  let _ := ω.params P; let _ := ω.bparams P; let _ := mkExec false P ω A
+    SlotsBounded P ω A (sRcv Sch P ω A false p M) := by
+  let _ := ω.params P; let _ := ω.bparams P; let _ := mkExec Sch false P ω A
   intro m hm
   simp only [sRcv] at hm ⊢
   rw [rcv_t_now]
   rcases (rcv_history M p m).1 hm with hm | ⟨_, _, hm⟩
   · exact h m hm
   · rw [mkExec_rcv] at hm
-    exact outFilter_sl hm
+    exact outFilter_sl Sch hm
 
 theorem sBake_slots (p : Fin np) (M : GS P ω A) (h : SlotsBounded P ω A M) :
-    SlotsBounded P ω A (sBake P ω A false p M) := by
-  let _ := ω.params P; let _ := ω.bparams P; let _ := mkExec false P ω A
+    SlotsBounded P ω A (sBake Sch P ω A false p M) := by
+  let _ := ω.params P; let _ := ω.bparams P; let _ := mkExec Sch false P ω A
   intro m hm
   simp only [sBake] at hm ⊢
   rw [bake_t_now]
@@ -572,7 +565,7 @@ theorem sBake_slots (p : Fin np) (M : GS P ω A) (h : SlotsBounded P ω A M) :
     · simp only [List.mem_singleton] at hm; subst hm; rfl
     · simp at hm
   · rw [mkExec_bake] at hm
-    exact outFilter_sl hm
+    exact outFilter_sl Sch hm
 
 theorem foldr_slots (g : Fin np → GS P ω A → GS P ω A)
     (hg : ∀ p M, SlotsBounded P ω A M → SlotsBounded P ω A (g p M)) (M : GS P ω A)
@@ -583,18 +576,18 @@ theorem foldr_slots (g : Fin np → GS P ω A → GS P ω A)
 
 /-- **Slots of broadcast blocks.** In the real execution, every broadcast block has a slot at
 most the current slot. -/
-theorem sTrace_slots (k : ℕ) : SlotsBounded P ω A (sTrace P ω A false k) := by
+theorem sTrace_slots (k : ℕ) : SlotsBounded P ω A (sTrace Sch P ω A false k) := by
   induction k with
   | zero => intro m hm; simp [sTrace, runTrace, N0] at hm
   | succ k ih =>
     rw [sTrace_succ, sPhase_def]
     let _ := ω.params P; let _ := ω.bparams P
-    cases (sTrace P ω A false k).progress with
+    cases (sTrace Sch P ω A false k).progress with
     | Ready =>
-      have := foldr_slots P ω A _ (sRcv_slots P ω A) _ ih (sTrace P ω A false k).exec_order
+      have := foldr_slots P ω A _ (sRcv_slots Sch P ω A) _ ih (sTrace Sch P ω A false k).exec_order
       exact this
     | Delivered =>
-      have := foldr_slots P ω A _ (sBake_slots P ω A) _ ih (sTrace P ω A false k).exec_order
+      have := foldr_slots P ω A _ (sBake_slots Sch P ω A) _ ih (sTrace Sch P ω A false k).exec_order
       exact this
     | Baked =>
       intro m hm

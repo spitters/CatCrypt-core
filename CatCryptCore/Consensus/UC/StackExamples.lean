@@ -38,6 +38,7 @@ open CatCrypt.Crypto.UCTransparent CatCrypt.NonUniform
 open CatCryptCore.Consensus.UC.FTree CatCryptCore.Consensus.UC.Chain
 open CatCryptCore.Consensus.UC.FFGGadget
 open PoSNSB PoSNSB.LotteryInstance Corruption
+open CatCrypt.Crypto.Signatures CatCrypt.Crypto.Assumptions
 open scoped ENNReal
 
 attribute [local instance] PoSNSB.Instance.corruption
@@ -63,46 +64,48 @@ exploded output `exF`, with `W = 1000`, `d = 1000`, `w = 10`, `ε = 1/4`, the ra
 `H` and the gadget parameters `cfg`, every hypothesis of `stack_realizes` holds, so FFG over
 PoS-NSB realizes `F_FinTree` with bound
 `slotBound ν 2000 1000 10 (1/4) + q (q - 1) / 2 / M` with `q = 2 ^ (K + 2)`, the collision
-term bounded by `PoSNSB.LotteryInstance.crAdv_collFinder_le`. -/
-theorem instance_realizes (K : ℕ) (hK : K + 2 ≤ 2000)
-    (Sch : SigScheme (Block Unit (Fin M) (Fin 1)))
-    (A : Adversary Unit (Fin M) 1 2000 (K + 1) Sch) (Δ : ℕ)
+term bounded by `PoSNSB.LotteryInstance.collFinder_advantage_le`. -/
+theorem instance_realizes (K : ℕ) (hK : K + 2 ≤ 2000) {PK SK Sig : Type}
+    (Sch : PSigScheme (Block Unit (Fin M) (Fin 1)) PK SK Sig) [Sch.Deterministic]
+    (A : Adversary Unit (Fin M) 1 2000 (K + 1) PK Sig) (Δ : ℕ)
     (exF : TreeView (Option (Fin 1)) (Block Unit (Fin M) (Fin 1))) :
-    Realizes (stackReal (P M (K + 1)) A (Tree M (K + 1)) (H M (K + 1)) (cfg M (K + 1)) K μ 1000
-        Δ exF)
-      (ideal (stackF (P M (K + 1)) A (Tree M (K + 1)) (H M (K + 1)) μ 1000 K 1000 10 (1 / 4) Δ
-          (cfg M (K + 1)) exF)
-        (stackSim (P M (K + 1)) A (Tree M (K + 1)) (H M (K + 1)) μ 1000 K 1000 10 (1 / 4) Δ
-          (cfg M (K + 1)) exF))
+    Realizes (stackReal (P M (K + 1)) Sch A (Tree M (K + 1)) (H M (K + 1)) (cd M (K + 1))
+        (cfg M (K + 1)) K μ 1000 Δ exF)
+      (ideal (stackF (P M (K + 1)) Sch A (Tree M (K + 1)) (H M (K + 1)) (cd M (K + 1)) μ 1000 K
+          1000 10 (1 / 4) Δ (cfg M (K + 1)) exF)
+        (stackSim (P M (K + 1)) Sch A (Tree M (K + 1)) (H M (K + 1)) (cd M (K + 1)) μ 1000 K
+          1000 10 (1 / 4) Δ (cfg M (K + 1)) exF))
       (fun _ _ => slotBound ν 2000 1000 10 (1 / 4) +
         ((2 ^ (K + 2) * (2 ^ (K + 2) - 1) / 2 : ℕ) : ℝ≥0∞) / M) := by
-  have h := stack_realizes (P M (K + 1)) A (Tree M (K + 1)) (H M (K + 1)) μ 1000 K 1000 10
-    (1 / 4) Δ (cfg M (K + 1)) exF (protocolHyp M (K + 1)) (tree_longest M (K + 1))
+  have h := stack_realizes (P M (K + 1)) Sch A (Tree M (K + 1)) (H M (K + 1)) (cd M (K + 1)) μ
+    1000 K 1000 10 (1 / 4) Δ (cfg M (K + 1)) exF (protocolHyp M (K + 1)) (tree_longest M (K + 1))
     (by norm_num) (by norm_num) hK le_rfl (by norm_num)
     (by rw [pH_ν, pA_ν]; norm_num) (by rw [pH_ν, pA_ν]; norm_num)
     (by rw [pH_ν, pA_ν]; norm_num) rfl (cfg_honest M (K + 1)) rfl le_rfl
     (show 3 * FFG.stake (fun o : Option (Fin 1) => o.elim 0 fun _ => 1)
         (Finset.univ \ {some 0}) < FFG.totalStake fun o : Option (Fin 1) => o.elim 0 fun _ => 1
       by decide)
-  simp only [Finset.sum_eq_zero fun i _ =>
-      eufAdv_forger_of_honest (P M (K + 1)) A hcor (H M (K + 1)) μ 1000 K i, add_zero] at h
+  simp only [posFail, Finset.sum_eq_zero fun i _ => forger_advantage_of_honest (P M (K + 1)) Sch
+      A hcor (H M (K + 1)) (cd M (K + 1)) μ 1000 K i, add_zero] at h
   intro ζ Z
-  exact (h ζ Z).trans (add_le_add_right (crAdv_collFinder_le M K Sch A) _)
+  exact (h ζ Z).trans (add_le_add_right (collFinder_advantage_le M K Sch A) _)
 
 /-- **A bound below `1`** (composition plumbing). With `M = 4 ^ (K + 5)` hash values, the
 realization of `instance_realizes` holds with a bound `ε_K < 1`. -/
-theorem instance_realizes_lt_one (K : ℕ) (hK : K + 2 ≤ 2000)
-    (Sch : SigScheme (Block Unit (Fin (4 ^ (K + 5))) (Fin 1)))
-    (A : Adversary Unit (Fin (4 ^ (K + 5))) 1 2000 (K + 1) Sch) (Δ : ℕ)
+theorem instance_realizes_lt_one (K : ℕ) (hK : K + 2 ≤ 2000) {PK SK Sig : Type}
+    (Sch : PSigScheme (Block Unit (Fin (4 ^ (K + 5))) (Fin 1)) PK SK Sig) [Sch.Deterministic]
+    (A : Adversary Unit (Fin (4 ^ (K + 5))) 1 2000 (K + 1) PK Sig) (Δ : ℕ)
     (exF : TreeView (Option (Fin 1)) (Block Unit (Fin (4 ^ (K + 5))) (Fin 1))) :
     ∃ ε : ℝ≥0∞, ε < 1 ∧
-      Realizes (stackReal (P (4 ^ (K + 5)) (K + 1)) A (Tree (4 ^ (K + 5)) (K + 1))
-          (H (4 ^ (K + 5)) (K + 1)) (cfg (4 ^ (K + 5)) (K + 1)) K μ 1000 Δ exF)
-        (ideal (stackF (P (4 ^ (K + 5)) (K + 1)) A (Tree (4 ^ (K + 5)) (K + 1))
-            (H (4 ^ (K + 5)) (K + 1)) μ 1000 K 1000 10 (1 / 4) Δ (cfg (4 ^ (K + 5)) (K + 1)) exF)
-          (stackSim (P (4 ^ (K + 5)) (K + 1)) A (Tree (4 ^ (K + 5)) (K + 1))
-            (H (4 ^ (K + 5)) (K + 1)) μ 1000 K 1000 10 (1 / 4) Δ (cfg (4 ^ (K + 5)) (K + 1))
-            exF))
+      Realizes (stackReal (P (4 ^ (K + 5)) (K + 1)) Sch A (Tree (4 ^ (K + 5)) (K + 1))
+          (H (4 ^ (K + 5)) (K + 1)) (cd (4 ^ (K + 5)) (K + 1)) (cfg (4 ^ (K + 5)) (K + 1)) K μ
+          1000 Δ exF)
+        (ideal (stackF (P (4 ^ (K + 5)) (K + 1)) Sch A (Tree (4 ^ (K + 5)) (K + 1))
+            (H (4 ^ (K + 5)) (K + 1)) (cd (4 ^ (K + 5)) (K + 1)) μ 1000 K 1000 10 (1 / 4) Δ
+            (cfg (4 ^ (K + 5)) (K + 1)) exF)
+          (stackSim (P (4 ^ (K + 5)) (K + 1)) Sch A (Tree (4 ^ (K + 5)) (K + 1))
+            (H (4 ^ (K + 5)) (K + 1)) (cd (4 ^ (K + 5)) (K + 1)) μ 1000 K 1000 10 (1 / 4) Δ
+            (cfg (4 ^ (K + 5)) (K + 1)) exF))
         (fun _ _ => ε) :=
   ⟨_, instance_bound_lt_one K, instance_realizes (4 ^ (K + 5)) K hK Sch A Δ exF⟩
 

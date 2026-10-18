@@ -17,8 +17,9 @@ set_option linter.unusedSectionVars false
 
 The Casper FFG gadget of `CatCryptCore.Consensus.UC.Finality`, run over the PoS-NSB protocol of
 `CatCryptCore.Consensus.UC.Chain` in place of the ideal tree functionality `F_Tree`, realizes
-the finality functionality `F_FinTree` with the advantage bound of `chain_realizes`:
-`slotBound (kindLaw μ) n d w ε + crAdv (collFinder P A H μ W K) + ∑ᵢ eufAdv (forger P A H μ W K i)`.
+the finality functionality `F_FinTree` with the advantage bound `posFail P Sch A H cd μ W K d w ε`
+of `chain_realizes`: the slot bound plus `CR_Search_Advantage H (collFinder …)` plus the
+EUF-CMA advantages `eufcmaAdvantage Sch.toSigScheme (toEUFAdversary (forger … i))`.
 
 ## The stacked protocol
 
@@ -86,6 +87,7 @@ open CatCrypt.Crypto.UCTransparent CatCrypt.NonUniform
 open CatCryptCore.Consensus.UC.FTree CatCryptCore.Consensus.Finality FFG
 open CatCryptCore.Consensus.UC.Chain CatCryptCore.Consensus.UC.FFGGadget
 open PoSNSB Parameters BlockParameters Corruption Execution ClockNet
+open CatCrypt.Crypto.Signatures CatCrypt.Crypto.Assumptions
 open scoped ENNReal
 
 /-! ## Settled pruned positions -/
@@ -123,11 +125,11 @@ end Settled
 
 section Stack
 
-variable {Tx Hash : Type} [DecidableEq Tx] [DecidableEq Hash] [Fintype Tx] [Fintype Hash]
-  [Nonempty Hash] {np : ℕ} [Corruption (Fin np)] {n Hz : ℕ}
-  {Sch : SigScheme (Block Tx Hash (Fin np))}
-  (P : Protocol Tx Hash np n Hz) (A : Adversary Tx Hash np n Hz Sch) (Tree : TreeFamily P)
-  (H : HashFam (BlockDom Tx Hash np Hz) Hash)
+variable {Tx Hash : Type} [DecidableEq Tx] [DecidableEq Hash] {np : ℕ} [Corruption (Fin np)]
+  {n Hz : ℕ} {PK SK Sig : Type}
+  (P : Protocol Tx Hash np n Hz) (Sch : PSigScheme (Block Tx Hash (Fin np)) PK SK Sig)
+  [Sch.Deterministic] (A : Adversary Tx Hash np n Hz PK Sig) (Tree : TreeFamily P)
+  (H : HashScheme) (cd : H.Codec (BlockDom Tx Hash np Hz) Hash)
 
 variable (Tx Hash np) in
 /-- The exploded output of `chainF`: round `0` and the initial view. -/
@@ -136,7 +138,7 @@ def exC : ChainOut Tx Hash np := (0, initView)
 /-- The output of the PoS-NSB simulator as a function of its new state: the round of the last
 output of the ideal clock and network (`0` once it has exploded or before its first output),
 and the view stored in the protocol component. -/
-def chainOut (s : SimSt Tx Hash np n Hz Sch) : ChainOut Tx Hash np :=
+def chainOut (s : SimSt Tx Hash np n Hz PK SK) : ChainOut Tx Hash np :=
   (if s.2.2.2 then 0 else ((s.2.2.1.getLast?).map fun x => x.2.1.1).getD 0, stView s)
 
 /-- **The stacked gadget**: the FFG gadget `ffgHybrid` over the interface of `chainReal`,
@@ -149,21 +151,21 @@ noncomputable def stackHybrid (c : Cfg (Option (Fin np)) (Block Tx Hash (Fin np)
       (Event Unit Unit × GAct (Option (Fin np)) (Block Tx Hash (Fin np)))
       (TreeView (Option (Fin np)) (Block Tx Hash (Fin np)))
       (Event Unit Unit) (ChainOut Tx Hash np) :=
-  ffgHybrid c (exC Tx Hash np) Prod.snd exF (stView (chainSim P A Tree H K μ W Δ).init)
+  ffgHybrid c (exC Tx Hash np) Prod.snd exF (stView (chainSim P Sch A Tree H cd K μ W Δ).init)
 
 /-- **The stacked protocol**: the FFG gadget running with the real PoS-NSB protocol, which
 runs with the reference clock and network. -/
 noncomputable def stackReal (c : Cfg (Option (Fin np)) (Block Tx Hash (Fin np))) (K : ℕ)
     (μ : PMF (Option (Fin np))) (W Δ : ℕ)
     (exF : TreeView (Option (Fin np)) (Block Tx Hash (Fin np))) :=
-  (stackHybrid P A Tree H c K μ W Δ exF).withSub (chainReal P A Tree H K μ W Δ)
+  (stackHybrid P Sch A Tree H cd c K μ W Δ exF).withSub (chainReal P Sch A Tree H cd K μ W Δ)
 
 /-- The tree functionality of the gadget over the PoS-NSB simulator is `chainF`, when the block
 tree of the gadget is the slot tree and its honest validators are the honest parties of `chainF`. -/
 theorem treeF_eq_chainF (c : Cfg (Option (Fin np)) (Block Tx Hash (Fin np))) (K : ℕ)
     (μ : PMF (Option (Fin np))) (W Δ d w : ℕ) (ε : ℝ) (hT : c.T = slotTree P)
     (hH : ∀ o, o ∈ c.H ↔ honestP o) :
-    treeF c (chainSim P A Tree H K μ W Δ) stView (chainP (kindLaw μ) d w ε) (exC Tx Hash np) =
+    treeF c (chainSim P Sch A Tree H cd K μ W Δ) stView (chainP (kindLaw μ) d w ε) (exC Tx Hash np) =
       chainF P Δ (kindLaw μ) d w ε := by
   have h : (fun o => o ∈ c.H) = honestP := funext fun o => propext (hH o)
   unfold treeF chainF
@@ -172,10 +174,10 @@ theorem treeF_eq_chainF (c : Cfg (Option (Fin np)) (Block Tx Hash (Fin np))) (K 
 
 /-- Every step of the PoS-NSB simulator outputs `chainOut` of its new state. -/
 theorem chainSim_step_out (K : ℕ) (μ : PMF (Option (Fin np))) (W Δ : ℕ)
-    (s : SimSt Tx Hash np n Hz Sch) (e : Event Unit Unit) :
-    ∃ C : SPComp (SimSt Tx Hash np n Hz Sch), (chainSim P A Tree H K μ W Δ).step s e =
+    (s : SimSt Tx Hash np n Hz PK SK) (e : Event Unit Unit) :
+    ∃ C : SPComp (SimSt Tx Hash np n Hz PK SK), (chainSim P Sch A Tree H cd K μ W Δ).step s e =
       SPComp.bind C fun s' => SPComp.pure (s', chainOut s') := by
-  refine ⟨SPComp.bind ((chainHybrid P A Tree H K μ W).pre s.1 e) fun a =>
+  refine ⟨SPComp.bind ((chainHybrid P Sch A Tree H cd K μ W).pre s.1 e) fun a =>
     SPComp.bind ((clockNet (M := Unit) H₁ Δ).proto.step s.2.1 a.2) fun q =>
       SPComp.pure (a.1, q.1, s.2.2.1 ++ [(a.2, q.2, q.1)],
         s.2.2.2 || !(clockNetF (M := Unit) H₁ Δ).guard (s.2.2.1 ++ [(a.2, q.2, q.1)])), ?_⟩
@@ -190,8 +192,8 @@ theorem chainP_guard_init (K : ℕ) (μ : PMF (Option (Fin np))) (W Δ d w : ℕ
     (ν : PMF SlotKind) (T : BlockTree (Block Tx Hash (Fin np)))
     (honest : Option (Fin np) → Prop) :
     FTreeGuard T (chainP ν d w ε) (traceOf stView honest
-      (chainSim P A Tree H K μ W Δ).init
-      ([] : Trace (SimSt Tx Hash np n Hz Sch) (Event Unit Unit) (ChainOut Tx Hash np))) := by
+      (chainSim P Sch A Tree H cd K μ W Δ).init
+      ([] : Trace (SimSt Tx Hash np n Hz PK SK) (Event Unit Unit) (ChainOut Tx Hash np))) := by
   refine ⟨⟨?_, ?_, ?_, ?_⟩, ?_, ?_⟩ <;>
     simp [traceOf, stAt_nil, stView, chainSim, chainHybrid, Hybrid.withSub, initView, chainP,
       TreeTrace.TreesGrow, TreeTrace.PositionsInTrees, TreeTrace.chains, ChainTrace.ChainsInTree,
@@ -199,7 +201,7 @@ theorem chainP_guard_init (K : ℕ) (μ : PMF (Option (Fin np))) (W Δ d w : ℕ
       TreeTrace.finChains, kDeep, SlotChainGrowth, NewRound, SlotChainQuality, SlotCommonPrefix,
       PoSNSB.fragment, PosNonemptyPersists]
 
-omit [DecidableEq Tx] [DecidableEq Hash] [Fintype Tx] [Fintype Hash] [Nonempty Hash] in
+omit [DecidableEq Tx] [DecidableEq Hash] in
 /-- **The guard of `chainF` settles the pruned positions**: every tree trace that satisfies
 the guard of `F_Tree^P` with `P = chainP` has settled pruned positions `slotCut Block.sl d`. -/
 theorem settled_of_chainGuard (ν : PMF SlotKind) (d w : ℕ) (ε : ℝ)
@@ -214,16 +216,16 @@ variable (μ : PMF (Option (Fin np))) (W K d w : ℕ) (ε : ℝ) (Δ : ℕ)
 
 /-- The finality functionality of the stack: `finF` over the PoS-NSB simulator. -/
 noncomputable abbrev stackF :=
-  finF c (chainSim P A Tree H K μ W Δ) stView (chainP (kindLaw μ) d w ε) (exC Tx Hash np)
-    Prod.snd exF
+  finF c (chainSim P Sch A Tree H cd K μ W Δ) stView (chainP (kindLaw μ) d w ε)
+    (exC Tx Hash np) Prod.snd exF
 
 /-- The simulator of the stack: `ffgSim` over the PoS-NSB simulator. -/
 noncomputable abbrev stackSim :=
-  ffgSim c (chainSim P A Tree H K μ W Δ) stView (chainP (kindLaw μ) d w ε) (exC Tx Hash np)
-    Prod.snd exF
+  ffgSim c (chainSim P Sch A Tree H cd K μ W Δ) stView (chainP (kindLaw μ) d w ε)
+    (exC Tx Hash np) Prod.snd exF
 
 /-- **FFG over PoS-NSB realizes `F_FinTree`** (composition plumbing). Let the hypotheses of
-`chain_realizes` hold for `P`, `Tree`, `H`, `μ`, `W`, `K`, `d`, `w`, `ε`; let the
+`chain_realizes` hold for `P`, `Sch`, `Tree`, `H`, `cd`, `μ`, `W`, `K`, `d`, `w`, `ε`; let the
 gadget parameters `c` use the slot tree
 (`hT`), have as honest validators the honest parties of `chainF` (`hH`), and vote on the
 pruned positions `slotCut Block.sl d` (`hcut`); let `1 ≤ c.Δ`; and let the adversarial
@@ -231,8 +233,9 @@ validators hold less than a third of the total stake. Then for every adversary `
 gadget running with the real PoS-NSB protocol, the reference clock and the reference network
 (`stackReal`) realizes the ideal world of `F_FinTree^P'` (`stackF`, with
 `P' = finality-respecting positions :: FinalOnHonestPos :: chainP`) with the simulator
-`stackSim`: every environment has advantage at most
-`slotBound (kindLaw μ) n d w ε + crAdv (collFinder P A H μ W K) + ∑ᵢ eufAdv (forger P A H μ W K i)`. -/
+`stackSim`: every environment has advantage at most `posFail P Sch A H cd μ W K d w ε`, the
+slot bound plus the collision-resistance advantage against `H` of the explicit collision finder
+and the EUF-CMA advantages against `Sch` of the explicit forgers built from `A`. -/
 theorem stack_realizes (hP : ProtocolHyp P) (hTree : Tree.Longest)
     (hwd : w ≤ d) (hWn : W + d ≤ n) (hn : K + 2 ≤ n) (hHz : K + 1 ≤ Hz)
     (hε : 0 ≤ ε) (hγ : 2 * pA (kindLaw μ) ≤ pH (kindLaw μ))
@@ -241,20 +244,20 @@ theorem stack_realizes (hP : ProtocolHyp P) (hTree : Tree.Longest)
     (hT : c.T = slotTree P) (hH : ∀ o, o ∈ c.H ↔ honestP o)
     (hcut : c.cut = slotCut Block.sl d) (hΔ : 1 ≤ c.Δ)
     (hA : 3 * stake c.w (Finset.univ \ c.H) < totalStake c.w) :
-    Realizes (stackReal P A Tree H c K μ W Δ exF)
-      (ideal (stackF P A Tree H μ W K d w ε Δ c exF) (stackSim P A Tree H μ W K d w ε Δ c exF))
-      (fun _ _ => slotBound (kindLaw μ) n d w ε + crAdv (collFinder P A H μ W K) +
-        ∑ i : Fin np, eufAdv (forger P A H μ W K i)) := by
-  have hF := treeF_eq_chainF P A Tree H c K μ W Δ d w ε hT hH
-  have h₂ := chain_realizes P A Tree H hP hTree μ W K d w ε Δ hwd hWn hn hHz hε hγ hw h3
+    Realizes (stackReal P Sch A Tree H cd c K μ W Δ exF)
+      (ideal (stackF P Sch A Tree H cd μ W K d w ε Δ c exF)
+        (stackSim P Sch A Tree H cd μ W K d w ε Δ c exF))
+      (fun _ _ => posFail P Sch A H cd μ W K d w ε) := by
+  have hF := treeF_eq_chainF P Sch A Tree H cd c K μ W Δ d w ε hT hH
+  have h₂ := chain_realizes P Sch A Tree H cd hP hTree μ W K d w ε Δ hwd hWn hn hHz hε hγ hw h3
   rw [← hF] at h₂
   have hset : ∀ X, FTreeGuard c.T (chainP (kindLaw μ) d w ε) X → Settled c.cut X :=
     fun X hX => by rw [hcut]; exact settled_of_chainGuard (kindLaw μ) d w ε c.T X hX
-  have h₁ := ffg_realizes (chainSim_noFail P A Tree H K μ W Δ) chainOut
-    (fun _ => rfl) (chainP_guard_init P A Tree H K μ W Δ d w ε (kindLaw μ) _ _)
+  have h₁ := ffg_realizes (chainSim_noFail P Sch A Tree H cd K μ W Δ) chainOut
+    (fun _ => rfl) (chainP_guard_init P Sch A Tree H cd K μ W Δ d w ε (kindLaw μ) _ _)
     (by simp only [chainP, List.mem_cons, List.not_mem_nil, or_false]
         rintro φ (rfl | rfl | rfl | rfl) <;> exact fun X f h => h)
-    hset hΔ hA (chainSim_step_out P A Tree H K μ W Δ) (ov := Prod.snd) (exF := exF)
+    hset hΔ hA (chainSim_step_out P Sch A Tree H cd K μ W Δ) (ov := Prod.snd) (exF := exF)
     (exT := exC Tx Hash np) (vwT := stView)
   intro ζ Z
   exact ((Hybrid.realizes_compose _ _ _ _ _ _ h₁ h₂) ζ Z).trans_eq (add_zero _)
@@ -274,13 +277,13 @@ theorem stack_UCEmulatesCSim (hP : ProtocolHyp P) (hTree : Tree.Longest)
     (hA : 3 * stake c.w (Finset.univ \ c.H) < totalStake c.w) (ζ V : Type) :
     UCEmulatesCSim ⟨Strat ζ (Event Unit Unit × GAct (Option (Fin np)) (Block Tx Hash (Fin np)))
         (TreeView (Option (Fin np)) (Block Tx Hash (Fin np))), ζ, Empty, Empty, V⟩
-      (fun s => SPComp.bind (view (stackReal P A Tree H c K μ W Δ exF) s) fun z =>
+      (fun s => SPComp.bind (view (stackReal P Sch A Tree H cd c K μ W Δ exF) s) fun z =>
         SPComp.pure (Sum.inl z))
-      (fun s => SPComp.bind (view (ideal (stackF P A Tree H μ W K d w ε Δ c exF)
-        (stackSim P A Tree H μ W K d w ε Δ c exF)) s) fun z => SPComp.pure (Sum.inl z)) id
-      (fun _ _ => slotBound (kindLaw μ) n d w ε + crAdv (collFinder P A H μ W K) +
-        ∑ i : Fin np, eufAdv (forger P A H μ W K i)) :=
-  (stack_realizes P A Tree H μ W K d w ε Δ c exF hP hTree hwd hWn hn hHz hε hγ hw h3
+      (fun s => SPComp.bind (view (ideal (stackF P Sch A Tree H cd μ W K d w ε Δ c exF)
+        (stackSim P Sch A Tree H cd μ W K d w ε Δ c exF)) s) fun z =>
+          SPComp.pure (Sum.inl z)) id
+      (fun _ _ => posFail P Sch A H cd μ W K d w ε) :=
+  (stack_realizes P Sch A Tree H cd μ W K d w ε Δ c exF hP hTree hwd hWn hn hHz hε hγ hw h3
     hT hH hcut hΔ hA).toUCEmulatesCSim ζ V
 
 end Stack
@@ -307,22 +310,23 @@ theorem cfg_honest (o : Option (Fin 1)) : o ∈ cfg.H ↔ honestP o := by
 
 /-- **Non-vacuity of the hypotheses** (composition plumbing). For the one-party instance of
 `Chain.Instance.instance_realizes` (`W = 1`, `K = 0`, `d = 3`, `w = 1`, `ε = 0`, the random
-oracle `H`, delay bound `2`) and the gadget parameters `cfg` (one honest validator holding the
-whole stake, voting on `slotCut Block.sl 3`), every hypothesis of `stack_realizes` holds, so
-FFG over PoS-NSB realizes `F_FinTree` with bound
-`slotBound ν 4 3 1 0 + 0 / 1 + eufAdv (forger P A H μ 1 0 0)`, the collision term bounded by
-`Chain.Instance.crAdv_collFinder_le`. -/
+function `H` with the identity codec `cd`, delay bound `2`) and the gadget parameters `cfg`
+(one honest validator holding the whole stake, voting on `slotCut Block.sl 3`), every
+hypothesis of `stack_realizes` holds, so FFG over PoS-NSB realizes `F_FinTree` with bound
+`slotBound ν 4 3 1 0 + 0 / 1 + ∑ᵢ eufcmaAdvantage …`, the collision term bounded by
+`Chain.Instance.collFinder_advantage_le`. -/
 theorem instance_realizes :
-    Realizes (stackReal P A Tree H cfg 0 μ 1 2 initView)
-      (ideal (stackF P A Tree H μ 1 0 3 1 0 2 cfg initView)
-        (stackSim P A Tree H μ 1 0 3 1 0 2 cfg initView))
+    Realizes (stackReal P Sch A Tree H cd cfg 0 μ 1 2 initView)
+      (ideal (stackF P Sch A Tree H cd μ 1 0 3 1 0 2 cfg initView)
+        (stackSim P Sch A Tree H cd μ 1 0 3 1 0 2 cfg initView))
       (fun _ _ => slotBound ν 4 3 1 0 + ((1 * (1 - 1) / 2 : ℕ) : ℝ≥0∞) / Fintype.card Unit +
-        ∑ i : Fin 1, eufAdv (forger P A H μ 1 0 i)) := by
+        ∑ i : Fin 1,
+          eufcmaAdvantage Sch.toSigScheme (toEUFAdversary (forger Sch P A H cd μ 1 0 i))) := by
   obtain ⟨hP, hT, hwd, hWn, hn, hHz, hε, hγ, hw, h3⟩ := instance_hyps
   intro ζ Z
-  exact (stack_realizes P A Tree H μ 1 0 3 1 0 2 cfg initView hP hT hwd hWn hn hHz hε hγ hw h3
-    rfl cfg_honest rfl le_rfl (by decide) ζ Z).trans
-    (add_le_add_left (add_le_add_right Chain.Instance.crAdv_collFinder_le _) _)
+  exact (stack_realizes P Sch A Tree H cd μ 1 0 3 1 0 2 cfg initView hP hT hwd hWn hn hHz hε hγ
+    hw h3 rfl cfg_honest rfl le_rfl (by decide) ζ Z).trans
+    (add_le_add_left (add_le_add_right Chain.Instance.collFinder_advantage_le _) _)
 
 /-! ### A run of the gadget of the instance that finalizes a block of slot `1` -/
 

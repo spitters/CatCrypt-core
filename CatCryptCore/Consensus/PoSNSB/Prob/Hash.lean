@@ -27,8 +27,8 @@ function of the transcript of the previous queries and their answers. Its `k`-th
   the first `q` queries have the same answer is at most `q (q - 1) / 2 / N`, obtained from
   `CatCrypt.Prob.BirthdayBound.birthday_bound_sum_nat`.
 
-A keyed hash family (`HashFam D R`) has a finite nonempty key space and a hash function under
-each key; the random oracle is the family `HashFam.randomFun D R` whose keys are the functions.
+The uniform key of the keyed family `HashScheme.randomFun D R` of
+`CatCryptCore/Crypto/Assumptions/CR.lean` is a draw from `uniformFun D R`.
 -/
 
 set_option autoImplicit false
@@ -265,29 +265,5 @@ theorem prob_ROCollision_le [Nonempty R] (next : Querier D R) (q : ℕ) :
     _ _).trans ?_
   exact CatCrypt.Prob.BirthdayBound.birthday_bound_sum_nat q (Fintype.card R) _
     fun k _ => prob_freshCollision_le next k
-
-/-! ## Keyed hash families -/
-
-/-- A keyed hash family from `D` to `R`: a finite nonempty key space and the hash function
-under each key. -/
-structure HashFam (D R : Type) where
-  /-- The key space. -/
-  Key : Type
-  /-- The key space is finite. -/
-  [instFintypeKey : Fintype Key]
-  /-- The key space is nonempty. -/
-  [instNonemptyKey : Nonempty Key]
-  /-- The hash function under a key. -/
-  hash : Key → D → R
-
-attribute [instance] HashFam.instFintypeKey HashFam.instNonemptyKey
-
-/-- The random oracle as a keyed hash family: the keys are the functions from `D` to `R`, and
-the hash function under the key `f` is `f`. A uniformly random key is a draw from
-`uniformFun D R`. -/
-abbrev HashFam.randomFun (D R : Type) [Fintype D] [DecidableEq D] [Fintype R] [Nonempty R] :
-    HashFam D R where
-  Key := D → R
-  hash := id
 
 end CatCryptCore.Consensus.PoSNSB
