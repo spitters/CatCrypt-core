@@ -212,6 +212,7 @@ public import CatCryptCore.Quantum.Stinespring
 -- Quantum distinguishing distance, diamond norm, classical lifts, quantum relational Hoare logic
 public import CatCryptCore.Quantum.QRHL
 public import CatCryptCore.Quantum.ClassicalEmbed
+public import CatCryptCore.Quantum.ClassicalEmbedGame
 public import CatCryptCore.Quantum.ClassicalLift
 public import CatCryptCore.Quantum.ClassicalDiamondLift
 public import CatCryptCore.Crypto.UCMonad.QuantumUC
