@@ -12,9 +12,10 @@ public import CatCryptCore.Consensus.PoSNSB.Prob.Protocol
 
 This file defines the existential unforgeability game under chosen-message attacks (EUF-CMA) of
 a signature scheme and, for every adversary `A` against the signed protocol of
-`CatCryptCore/Consensus/PoSNSB/Prob/Protocol.lean` and every party `i`, an explicit adversary
-`forger A i` against EUF-CMA. The forger receives the verification key of the game and a
-signing oracle, samples the lottery, the random oracle and the key pairs of the other parties
+`CatCryptCore/Consensus/PoSNSB/Prob/Protocol.lean`, every keyed hash family `H` and every party
+`i`, an explicit adversary `forger A H i` against EUF-CMA. The forger receives the verification
+key of the game and a signing oracle, samples the lottery, the hash key and the key pairs of the
+other parties
 itself, runs the real execution with the key of the game for party `i`, obtains the signatures
 of the honest blocks of party `i` from the signing oracle, and outputs the first accepted block
 of party `i` that the adversary sends outside the history.
@@ -25,23 +26,18 @@ of party `i` that the adversary sends outside the history.
   program against a signing function and returns its result and the list of queried messages.
 * `EUFAdversary`, `eufGame`, `eufAdv`: the EUF-CMA game and the advantage. The adversary wins
   when it outputs a message with a valid signature that it did not query.
-* `seedDist`: the distribution of the random seed, `ForgeBy`: the adversary of the real
-  execution forges a block of party `i`.
-* `forger A i`: the reduction.
-* `seedDistH H`, `forgerH`: the seed distribution and the reduction for a keyed hash family
-  `H` (`HashFam`), the key drawn uniformly and the random oracle replaced by the hash function
-  under the key.
+* `seedDist H`: the distribution of the random seed for a keyed hash family `H` (`HashFam`),
+  the key drawn uniformly and the hash function of the seed the hash function under the key;
+  `ForgeBy`: the adversary of the real execution forges a block of party `i`.
+* `forger A H i`: the reduction.
 
 ## Main results
 
 * `forger_wins`: if the adversary forges a block of party `i` in the real execution for the
   seed `ω` with the key pair `kp` for party `i`, the forger wins the EUF-CMA game with key pair
   `kp` and coins `ω`.
-* `prob_forgeBy_le`: `Pr[ForgeBy i] ≤ eufAdv (forger A i)`.
-* `prob_forge_le`: `Pr[Forge] ≤ ∑ᵢ eufAdv (forger A i)`.
-* `seedDist_eq_seedDistH`: `seedDist` is `seedDistH` for the random oracle
-  `HashFam.randomFun`.
-* `prob_forgeBy_leH`, `prob_forge_leH`: the same bounds over `seedDistH H` with `forgerH`.
+* `prob_forgeBy_le`: `Pr[ForgeBy i] ≤ eufAdv (forger A H i)`.
+* `prob_forge_le`: `Pr[Forge] ≤ ∑ᵢ eufAdv (forger A H i)`.
 -/
 
 set_option autoImplicit false
@@ -675,44 +671,51 @@ noncomputable def keyDist (Sch : SigScheme (Block Tx Hash (Fin np))) :
     PMF (Fin np → Sch.PK × Sch.SK) :=
   PMF.piFin fun _ => Sch.keygen
 
-/-- The distribution of the random seed: the slot leaders (`leaderDist μ h0 W n`), a uniformly
-random oracle, and independent key pairs, all independent. -/
-noncomputable def seedDist (μ : PMF (Option (Fin np))) (h0 : Fin np) (W n Hz : ℕ)
-    (Sch : SigScheme (Block Tx Hash (Fin np))) : PMF (Seed Tx Hash np n Hz Sch) :=
-  (leaderDist μ h0 W n).bind fun L => (uniformFun (BlockDom Tx Hash np Hz) Hash).bind fun f =>
-    (keyDist Sch).bind fun ks => PMF.pure ⟨L, f, ks⟩
+/-- The distribution of the random seed for the keyed hash family `H`: the slot leaders
+(`leaderDist μ h0 W n`), a uniformly random key `k` with the hash function `H.hash k`, and
+independent key pairs, all independent. For `H = HashFam.randomFun`, the hash function is a
+uniformly random oracle. -/
+noncomputable def seedDist (H : HashFam (BlockDom Tx Hash np Hz) Hash) (μ : PMF (Option (Fin np)))
+    (h0 : Fin np) (W n : ℕ) (Sch : SigScheme (Block Tx Hash (Fin np))) :
+    PMF (Seed Tx Hash np n Hz Sch) :=
+  (leaderDist μ h0 W n).bind fun L => (PMF.uniformOfFintype H.Key).bind fun k =>
+    (keyDist Sch).bind fun ks => PMF.pure ⟨L, H.hash k, ks⟩
 
-theorem seedDist_withKey (μ : PMF (Option (Fin np))) (h0 : Fin np) (W : ℕ) (i : Fin np) :
-    (seedDist μ h0 W n Hz Sch).bind
+theorem seedDist_withKey (H : HashFam (BlockDom Tx Hash np Hz) Hash)
+    (μ : PMF (Option (Fin np))) (h0 : Fin np) (W : ℕ) (i : Fin np) :
+    (seedDist H μ h0 W n Sch).bind
         (fun ω => Sch.keygen.bind fun kp => PMF.pure (ω.withKey i kp)) =
-      seedDist μ h0 W n Hz Sch := by
+      seedDist H μ h0 W n Sch := by
   simp only [seedDist, PMF.bind_bind, PMF.pure_bind]
-  congr 1; funext L; congr 1; funext f
+  congr 1; funext L; congr 1; funext k
   conv_rhs => rw [keyDist, ← piFin_update Sch.keygen i, ← keyDist]
   simp only [PMF.bind_bind, PMF.pure_bind]
 
 variable (P : Protocol Tx Hash np n Hz) (A : Adversary Tx Hash np n Hz Sch)
 
 /-- **The reduction.** The EUF-CMA adversary obtained from the adversary `A` against the signed
-protocol and the party `i`: its coins are a seed drawn from `seedDist`, and it runs
-`forgerProg`, which simulates the first `K` phases of the real execution with the verification
-key of the game for party `i` and outputs the first forgery of party `i`. -/
-noncomputable def forger (μ : PMF (Option (Fin np))) (W K : ℕ) (i : Fin np) :
-    EUFAdversary Sch where
+protocol, the keyed hash family `H` and the party `i`: its coins are a seed drawn from
+`seedDist H`, and it runs `forgerProg`, which simulates the first `K` phases of the real
+execution with the verification key of the game for party `i` and outputs the first forgery of
+party `i`. -/
+noncomputable def forger (H : HashFam (BlockDom Tx Hash np Hz) Hash) (μ : PMF (Option (Fin np)))
+    (W K : ℕ) (i : Fin np) : EUFAdversary Sch where
   Coins := Seed Tx Hash np n Hz Sch
-  coins := seedDist μ P.h0 W n Hz Sch
+  coins := seedDist H μ P.h0 W n Sch
   forge := fun pk ω => forgerProg P A i pk ω K
 
-/-- **Forging a block of party `i` (part 3).** The probability that the adversary `A` forges a
-block of party `i` in the first `K` phases of the real execution is at most the EUF-CMA
-advantage of the explicit adversary `forger P A μ W K i`. -/
-theorem prob_forgeBy_le (μ : PMF (Option (Fin np))) (W K : ℕ) (i : Fin np) :
-    (seedDist μ P.h0 W n Hz Sch).toOuterMeasure {ω | ForgeBy P ω A K i} ≤
-      eufAdv (forger P A μ W K i) := by
+/-- **Forging a block of party `i` (part 3).** Over the seed distribution `seedDist H`, the
+probability that the adversary `A` forges a block of party `i` in the first `K` phases of the
+real execution is at most the EUF-CMA advantage of the explicit adversary
+`forger P A H μ W K i`. -/
+theorem prob_forgeBy_le (H : HashFam (BlockDom Tx Hash np Hz) Hash) (μ : PMF (Option (Fin np)))
+    (W K : ℕ) (i : Fin np) :
+    (seedDist H μ P.h0 W n Sch).toOuterMeasure {ω | ForgeBy P ω A K i} ≤
+      eufAdv (forger P A H μ W K i) := by
   rw [eufAdv_eq]
-  have hmap : (eufInputs (forger P A μ W K i)).map (fun x => x.2.withKey i x.1) =
-      seedDist μ P.h0 W n Hz Sch := by
-    rw [← seedDist_withKey μ P.h0 W i (Sch := Sch) (Hz := Hz)]
+  have hmap : (eufInputs (forger P A H μ W K i)).map (fun x => x.2.withKey i x.1) =
+      seedDist H μ P.h0 W n Sch := by
+    rw [← seedDist_withKey H μ P.h0 W i]
     simp only [eufInputs, forger, PMF.map_bind, PMF.pure_map]
     exact PMF.bind_comm _ _ _
   rw [← hmap, PMF.toOuterMeasure_map_apply]
@@ -723,91 +726,13 @@ theorem prob_forgeBy_le (μ : PMF (Option (Fin np))) (W K : ℕ) (i : Fin np) :
   rw [h1]
   simpa [h2] using h3
 
-/-- **Forging an honest block.** The probability that the adversary forges an honest block in the
-first `K` phases of the real execution is at most the sum over the parties `i` of the EUF-CMA
-advantages of the forgers `forger P A μ W K i`. -/
-theorem prob_forge_le (μ : PMF (Option (Fin np))) (W K : ℕ) :
-    (seedDist μ P.h0 W n Hz Sch).toOuterMeasure {ω | Forge P ω A K} ≤
-      ∑ i : Fin np, eufAdv (forger P A μ W K i) := by
-  have hsub : {ω | Forge P ω A K} ⊆ ⋃ i ∈ (Finset.univ : Finset (Fin np)),
-      {ω | ForgeBy P ω A K i} := by
-    intro ω hω
-    obtain ⟨i, hi⟩ := forge_iff_exists P ω A K hω
-    simp only [Set.mem_iUnion]
-    exact ⟨i, Finset.mem_univ _, hi⟩
-  refine (MeasureTheory.OuterMeasure.mono _ hsub).trans ?_
-  refine (MeasureTheory.measure_biUnion_finset_le
-    (μ := (seedDist μ P.h0 W n Hz Sch).toOuterMeasure) _ _).trans ?_
-  exact Finset.sum_le_sum fun i _ => prob_forgeBy_le P A μ W K i
-
-/-! ## Keyed hash families -/
-
-/-- The distribution of the random seed for the keyed hash family `H`: the slot leaders
-(`leaderDist μ h0 W n`), a uniformly random key `k` with the hash function `H.hash k`, and
-independent key pairs, all independent. -/
-noncomputable def seedDistH (H : HashFam (BlockDom Tx Hash np Hz) Hash) (μ : PMF (Option (Fin np)))
-    (h0 : Fin np) (W n : ℕ) (Sch : SigScheme (Block Tx Hash (Fin np))) :
-    PMF (Seed Tx Hash np n Hz Sch) :=
-  (leaderDist μ h0 W n).bind fun L => (PMF.uniformOfFintype H.Key).bind fun k =>
-    (keyDist Sch).bind fun ks => PMF.pure ⟨L, H.hash k, ks⟩
-
-/-- The seed distribution `seedDist` with a uniformly random oracle is `seedDistH` for the
-hash family `HashFam.randomFun`. -/
-theorem seedDist_eq_seedDistH (μ : PMF (Option (Fin np))) (h0 : Fin np) (W : ℕ) :
-    seedDist μ h0 W n Hz Sch =
-      seedDistH (HashFam.randomFun (BlockDom Tx Hash np Hz) Hash) μ h0 W n Sch :=
-  rfl
-
-theorem seedDistH_withKey (H : HashFam (BlockDom Tx Hash np Hz) Hash)
-    (μ : PMF (Option (Fin np))) (h0 : Fin np) (W : ℕ) (i : Fin np) :
-    (seedDistH H μ h0 W n Sch).bind
-        (fun ω => Sch.keygen.bind fun kp => PMF.pure (ω.withKey i kp)) =
-      seedDistH H μ h0 W n Sch := by
-  simp only [seedDistH, PMF.bind_bind, PMF.pure_bind]
-  congr 1; funext L; congr 1; funext k
-  conv_rhs => rw [keyDist, ← piFin_update Sch.keygen i, ← keyDist]
-  simp only [PMF.bind_bind, PMF.pure_bind]
-
-/-- **The reduction for a keyed hash family.** The EUF-CMA adversary obtained from the adversary
-`A` against the signed protocol and the party `i`: its coins are a seed drawn from `seedDistH H`,
-and it runs `forgerProg`, which simulates the first `K` phases of the real execution with the
-verification key of the game for party `i` and outputs the first forgery of party `i`. -/
-noncomputable def forgerH (H : HashFam (BlockDom Tx Hash np Hz) Hash) (μ : PMF (Option (Fin np)))
-    (W K : ℕ) (i : Fin np) : EUFAdversary Sch where
-  Coins := Seed Tx Hash np n Hz Sch
-  coins := seedDistH H μ P.h0 W n Sch
-  forge := fun pk ω => forgerProg P A i pk ω K
-
-/-- **Forging a block of party `i` for a keyed hash family.** Over the seed distribution
-`seedDistH H`, the probability that the adversary `A` forges a block of party `i` in the first
-`K` phases of the real execution is at most the EUF-CMA advantage of the explicit adversary
-`forgerH P A H μ W K i`. -/
-theorem prob_forgeBy_leH (H : HashFam (BlockDom Tx Hash np Hz) Hash) (μ : PMF (Option (Fin np)))
-    (W K : ℕ) (i : Fin np) :
-    (seedDistH H μ P.h0 W n Sch).toOuterMeasure {ω | ForgeBy P ω A K i} ≤
-      eufAdv (forgerH P A H μ W K i) := by
-  rw [eufAdv_eq]
-  have hmap : (eufInputs (forgerH P A H μ W K i)).map (fun x => x.2.withKey i x.1) =
-      seedDistH H μ P.h0 W n Sch := by
-    rw [← seedDistH_withKey H μ P.h0 W i]
-    simp only [eufInputs, forgerH, PMF.map_bind, PMF.pure_map]
-    exact PMF.bind_comm _ _ _
-  rw [← hmap, PMF.toOuterMeasure_map_apply]
-  refine MeasureTheory.OuterMeasure.mono _ fun x hx => ?_
-  simp only [Set.mem_preimage, Set.mem_ofPred_eq] at hx ⊢
-  obtain ⟨m, σ, h1, h2, h3⟩ := forger_wins P A i x.1.1 x.2 x.1.2 K hx
-  simp only [eufWins, forgerH]
-  rw [h1]
-  simpa [h2] using h3
-
-/-- **Forging an honest block for a keyed hash family.** Over the seed distribution
-`seedDistH H`, the probability that the adversary forges an honest block in the first `K` phases
-of the real execution is at most the sum over the parties `i` of the EUF-CMA advantages of the
-forgers `forgerH P A H μ W K i`. -/
-theorem prob_forge_leH (H : HashFam (BlockDom Tx Hash np Hz) Hash) (μ : PMF (Option (Fin np)))
+/-- **Forging an honest block.** Over the seed distribution `seedDist H`, the probability that
+the adversary forges an honest block in the first `K` phases of the real execution is at most the
+sum over the parties `i` of the EUF-CMA advantages of the forgers `forger P A H μ W K i`. -/
+theorem prob_forge_le (H : HashFam (BlockDom Tx Hash np Hz) Hash) (μ : PMF (Option (Fin np)))
     (W K : ℕ) :
-    (seedDistH H μ P.h0 W n Sch).toOuterMeasure {ω | Forge P ω A K} ≤
-      ∑ i : Fin np, eufAdv (forgerH P A H μ W K i) := by
+    (seedDist H μ P.h0 W n Sch).toOuterMeasure {ω | Forge P ω A K} ≤
+      ∑ i : Fin np, eufAdv (forger P A H μ W K i) := by
   have hsub : {ω | Forge P ω A K} ⊆ ⋃ i ∈ (Finset.univ : Finset (Fin np)),
       {ω | ForgeBy P ω A K i} := by
     intro ω hω
@@ -816,8 +741,8 @@ theorem prob_forge_leH (H : HashFam (BlockDom Tx Hash np Hz) Hash) (μ : PMF (Op
     exact ⟨i, Finset.mem_univ _, hi⟩
   refine (MeasureTheory.OuterMeasure.mono _ hsub).trans ?_
   refine (MeasureTheory.measure_biUnion_finset_le
-    (μ := (seedDistH H μ P.h0 W n Sch).toOuterMeasure) _ _).trans ?_
-  exact Finset.sum_le_sum fun i _ => prob_forgeBy_leH P A H μ W K i
+    (μ := (seedDist H μ P.h0 W n Sch).toOuterMeasure) _ _).trans ?_
+  exact Finset.sum_le_sum fun i _ => prob_forgeBy_le P A H μ W K i
 
 end Prob
 

@@ -5,28 +5,31 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import CatCryptCore.Consensus.PoSNSB.Prob.Reduction
+public import CatCryptCore.Consensus.PoSNSB.Prob.Collision
+public import CatCryptCore.Consensus.PoSNSB.ChainQualityTip
 
 /-!
 # PoS-NSB: chain growth, chain quality and common prefix with high probability
 
-The PoS-NSB port proves chain growth (`chain_growth_gen`), chain quality (`chain_quality_gen`)
-and common prefix (`timed_common_prefix_gen`) for every execution whose lottery satisfies slot
-conditions, under the hypotheses that the adversary forges no honest block (`forging_free`) and
-that the broadcast blocks have distinct hashes (`collision_free`). This file combines
+The PoS-NSB port proves chain growth (`chain_growth_gen`), chain quality (`chain_quality_gen`),
+common prefix (`timed_common_prefix_gen`) and an honest block near the tip (`honest_tip_gen`)
+for every execution whose lottery satisfies slot conditions, under the hypotheses that the
+adversary forges no honest block (`forging_free`) and that the broadcast blocks have distinct
+hashes (`collision_free`). For a keyed hash family `H`, this file combines
 
 1. `prob_slotBad_le` (`Prob/Slots.lean`): the random lottery, which elects the leader of each
    slot independently from `μ`, violates the slot conditions with probability at most
    `slotBound (kindLaw μ)`, a sum of Chernoff-Hoeffding tails over the intervals;
-2. `prob_ROCollision_le` (`Prob/Hash.lean`): the random oracle has a collision among the first
-   `q` queries with probability at most the birthday bound `q (q - 1) / 2 / |Hash|`;
+2. `prob_collision_le` (`Prob/Collision.lean`): some state of the first `K` phases is not
+   collision free with probability at most `crAdv (collFinder P A H μ W K)`, the
+   collision-resistance advantage of an explicit adversary against `H`;
 3. `prob_forge_le` (`Prob/Reduction.lean`): the adversary forges an honest block with
-   probability at most `∑ᵢ eufAdv (forger P A μ W K i)`, the EUF-CMA advantages of explicit
+   probability at most `∑ᵢ eufAdv (forger P A H μ W K i)`, the EUF-CMA advantages of explicit
    adversaries against the signature scheme,
 
-into the statement that chain growth, chain quality and common prefix hold for the first `K`
-phases of the real execution except with probability at most the sum of the three terms
-(`pos_nsb_security`).
+into the statement that chain growth, chain quality, common prefix and the honest tip hold for
+the first `K` phases of the real execution except with probability at most the sum of the three
+terms (`pos_nsb_security`).
 
 ## Hypotheses
 
@@ -34,16 +37,20 @@ phases of the real execution except with probability at most the sum of the thre
   leader `P.h0` is honest (`LeaderHyp`), every tree type follows the longest-chain rule, and the
   genesis block is honest, of slot at most `1`.
 * `hTree`: the tree type `Tree` of the honest tree chain follows the longest-chain rule.
-* Numbers: `1 ≤ d`, `w ≤ d`, `W + d ≤ n` (the slots from `W` on are honest padding),
-  `K + 2 ≤ n` and `K + 1 ≤ Hz` (the first `K` phases stay within slot `K + 1`), and the
-  conditions on the slot-kind distribution `kindLaw μ` of `prob_slotBad_le`.
-* `hRO` (random-oracle model): for every seed, the genesis block and the broadcast blocks of the
-  first `K` phases of the real execution are among the first `q` queries of the querier
-  `next ω.κ ω.ks` to the random oracle `ω.f`.
+* Numbers: `w ≤ d`, `W + d ≤ n` (the slots from `W` on are honest padding), `K + 2 ≤ n` and
+  `K + 1 ≤ Hz` (the first `K` phases stay within slot `K + 1`), and the conditions on the
+  slot-kind distribution `kindLaw μ` of `prob_slotBad_le`, which give `3 ≤ d`.
+
+The adversary carries no hypothesis. The hash function enters through the collision-resistance
+advantage of the explicit finder `collFinder P A H μ W K` (Thomsen and Spitters, CSF 2021,
+Remark 1); for the random oracle `HashFam.randomFun`, `crAdv_randomFun_le_of_queries` bounds it
+by the birthday bound.
 
 ## Main results
 
-* `good_of_not_bad`: the deterministic step: outside the bad events the three properties hold.
+* `tip_of_not_bad`: outside the common-prefix bad event, the chain of every honest party
+  contains an honest block within `d + 2` slots of the current slot.
+* `good_of_not_bad`: the deterministic step: outside the bad events the four properties hold.
 * `pos_nsb_security`: the probability bound.
 * `instance_hyps`: a concrete instance (one honest party, no adversarial slots, a trivial
   signature scheme and adversary) satisfying all hypotheses.
@@ -133,9 +140,20 @@ def CPGood (ω : Seed Tx Hash np n Hz Sch) : Prop :=
       prune_time k (l1.tT.bestChain ((sTrace P ω A false j1).t_now - 1) l1.tree) <:+
         l2.tT.bestChain ((sTrace P ω A false j2).t_now - 1) l2.tree
 
-/-- The three properties. -/
+/-- **An honest block near the tip** for the first `K` phases of the real execution: the chain
+of every honest party contains an honest block `b` with `t < sl b + d + 2`, where `t` is the
+current slot. -/
+def TipGood (ω : Seed Tx Hash np n Hz Sch) : Prop :=
+  letI := ω.params P; letI := ω.bparams P
+  ∀ j ≤ K, ∀ (p : Fin np) (l : LocalState Tx Hash (Fin np)),
+    (sTrace P ω A false j).state_map p = some l → is_honest p = true →
+    ∃ b ∈ l.tT.bestChain ((sTrace P ω A false j).t_now - 1) l.tree, honest_block b = true ∧
+      (sTrace P ω A false j).t_now < b.sl + d + 2
+
+/-- The four properties: chain growth, chain quality, common prefix and an honest block near
+the tip. -/
 def Good (ω : Seed Tx Hash np n Hz Sch) : Prop :=
-  CGGood P A Tree ν K d ε ω ∧ CQGood P A K d w ω ∧ CPGood P A K d ω
+  CGGood P A Tree ν K d ε ω ∧ CQGood P A K d w ω ∧ CPGood P A K d ω ∧ TipGood P A K d ω
 
 theorem sTrace_t_now (ω : Seed Tx Hash np n Hz Sch) (ideal : Bool) (j : ℕ) :
     (letI := ω.params P; letI := ω.bparams P; (sTrace P ω A ideal j).t_now) ≤ j + 1 := by
@@ -218,51 +236,50 @@ theorem cp_of_not_bad (hP : ProtocolHyp P) (ω : Seed Tx Hash np n Hz Sch) (hn :
     rw [adv_count ω.κ _ _ (by simp only [sTrace] at h3 ht2; omega)] at h4
     omega
 
-/-- **Collision freedom from the random oracle.** If the genesis block and the broadcast
-blocks of the first `K` phases of the real execution are among the first `q` queries of a
-querier to `ω.f`, and these queries have no collision, the hash function `b ↦ ω.f (encB b)` is
-injective on the genesis block and the broadcast blocks of every state of the first `K`
-phases. -/
-theorem cf_of_not_collision (hP : ProtocolHyp P) (ω : Seed Tx Hash np n Hz Sch)
-    (hHz : K + 1 ≤ Hz) (q : ℕ) (next : Querier (BlockDom Tx Hash np Hz) Hash)
-    (hq : ∀ j ≤ K, letI := ω.params P; letI := ω.bparams P;
-      ∀ b ∈ block_hist_gb (sTrace P ω A false j), ∃ k < q, query next ω.f k = encB Hz b)
-    (hcol : ¬ROCollision next q ω.f) :
-    ∀ j ≤ K, letI := ω.params P; letI := ω.bparams P; collision_free (sTrace P ω A false j) := by
-  let _ := ω.params P; let _ := ω.bparams P
-  intro j hj b hb b' hb' hh
-  have hsl : ∀ b'' ∈ block_hist_gb (sTrace P ω A false j), b''.sl ≤ Hz := by
-    intro b'' hb''
-    rcases List.mem_cons.1 hb'' with rfl | hm
-    · have := hP.genesis_slot; simp only [GenesisBlock]; omega
-    · simp only [block_history] at hm
-      obtain ⟨m, hm', rfl⟩ := List.mem_map.1 hm
-      have := sTrace_slots P ω A j m hm'
-      have := sTrace_t_now P A ω false j
-      omega
-  obtain ⟨k, hk, hqk⟩ := hq j hj b hb
-  obtain ⟨k', hk', hqk'⟩ := hq j hj b' hb'
-  refine encB_inj (hsl b hb) (hsl b' hb') ?_
-  by_contra hne
-  exact hcol ⟨k, hk, k', hk', by rw [hqk, hqk']; exact hne, by rw [hqk, hqk']; exact hh⟩
+/-- Outside the common-prefix bad event, every interval of at least `d` slots within the first
+`n` slots has at least `3` more honest than adversarial slots. -/
+theorem not_CQBad_three_of_not_CPBad {d : ℕ} {κ : Fin n → SlotKind} (h : ¬CPBad n d κ) :
+    ¬CQBad n d 3 κ :=
+  fun ⟨a, b, hb, hab, hlt⟩ => h ⟨a, b, hb, hab, by omega⟩
+
+/-- **An honest block near the tip from the slot condition**, in the absence of forgeries and
+collisions. -/
+theorem tip_of_not_bad (hP : ProtocolHyp P) (ω : Seed Tx Hash np n Hz Sch) {W : ℕ}
+    (hpad : PaddedFrom W ω.κ) (hWn : W + d ≤ n) (hd3 : 3 ≤ d)
+    (hCP : ¬CPBad n d ω.κ) (hforge : ¬Forge P ω A K)
+    (hcf : ∀ j ≤ K, letI := ω.params P; letI := ω.bparams P;
+      collision_free (sTrace P ω A false j)) :
+    TipGood P A K d ω := by
+  let _ := ω.params P; let _ := ω.bparams P; let _ := mkExec true P ω A
+  intro j hj p l hl hh
+  have heq := sTrace_ideal_eq P ω A hforge j hj
+  rw [← heq] at hl ⊢
+  have hcf' := hcf j hj
+  rw [← heq] at hcf'
+  exact honest_tip_gen hP.nodup (fun p => hP.longest _ _ p) hP.genesis_honest (honestKind ω.κ)
+    (lucky_of_kind ω.L hP.nodup hP.leader) (advKind ω.κ) (adv_of_winner ω.L hP.leader)
+    (reach_runTrace j) (forging_free_ideal P ω A _) hcf' hl hh (by norm_num)
+    (honest_advantage_of_not_CQBad hpad hWn (by omega) le_rfl hd3
+      (not_CQBad_three_of_not_CPBad hCP))
 
 /-- **The deterministic step.** Outside the bad events (slot conditions violated, a string not
-padded with honest slots, a random-oracle collision, a forgery), chain growth, chain quality
-and common prefix hold for the first `K` phases of the real execution. -/
+padded with honest slots, a state of the first `K` phases that is not collision free, a
+forgery), chain growth, chain quality, common prefix and the honest tip hold for the first `K`
+phases of the real execution. -/
 theorem good_of_not_bad (hP : ProtocolHyp P)
     (hTree : Tree.Longest)
-    (ω : Seed Tx Hash np n Hz Sch) {W : ℕ} (hd : 1 ≤ d) (hwd : w ≤ d) (hWn : W + d ≤ n)
-    (hn : K + 2 ≤ n) (hHz : K + 1 ≤ Hz) (q : ℕ) (next : Querier (BlockDom Tx Hash np Hz) Hash)
-    (hq : ∀ j ≤ K, letI := ω.params P; letI := ω.bparams P;
-      ∀ b ∈ block_hist_gb (sTrace P ω A false j), ∃ k < q, query next ω.f k = encB Hz b)
+    (ω : Seed Tx Hash np n Hz Sch) {W : ℕ} (hd3 : 3 ≤ d) (hwd : w ≤ d) (hWn : W + d ≤ n)
+    (hn : K + 2 ≤ n)
     (hslot : ¬SlotBad ν n d w ε ω.κ) (hpad : PaddedFrom W ω.κ)
-    (hcol : ¬ROCollision next q ω.f) (hforge : ¬Forge P ω A K) :
+    (hcf : ∀ j ≤ K, letI := ω.params P; letI := ω.bparams P;
+      collision_free (sTrace P ω A false j))
+    (hforge : ¬Forge P ω A K) :
     Good P A Tree ν K d w ε ω := by
   simp only [SlotBad, not_or] at hslot
-  have hcf := cf_of_not_collision P A K hP ω hHz q next hq hcol
   exact ⟨cg_of_not_bad P A Tree ν K d ε hP hTree ω hn hslot.1,
-    cq_of_not_bad P A K d w hP ω hpad hWn hd hwd hslot.2.1 hforge hcf,
-    cp_of_not_bad P A K d hP ω hn hd hslot.2.2 hforge hcf⟩
+    cq_of_not_bad P A K d w hP ω hpad hWn (by omega) hwd hslot.2.1 hforge hcf,
+    cp_of_not_bad P A K d hP ω hn (by omega) hslot.2.2 hforge hcf,
+    tip_of_not_bad P A K d hP ω hpad hWn hd3 hslot.2.2 hforge hcf⟩
 
 end Combine
 
@@ -282,13 +299,13 @@ variable {Tx Hash : Type} [DecidableEq Tx] [DecidableEq Hash] [Fintype Tx] [Fint
   [Nonempty Hash] {np : ℕ} [Corruption (Fin np)] {n Hz : ℕ}
   {Sch : SigScheme (Block Tx Hash (Fin np))}
 
-/-- An event on the slot kinds has the same probability under `seedDist μ h0` as under
+/-- An event on the slot kinds has the same probability under `seedDist H μ h0` as under
 `kindDist (kindLaw μ)`, for an honest padding leader `h0`. -/
-theorem seedDist_kind (μ : PMF (Option (Fin np))) {h0 : Fin np} (hh0 : is_honest h0 = true)
-    (W : ℕ) (E : Set (Fin n → SlotKind)) :
-    (seedDist μ h0 W n Hz Sch).toOuterMeasure {ω | ω.κ ∈ E} =
+theorem seedDist_kind (H : HashFam (BlockDom Tx Hash np Hz) Hash) (μ : PMF (Option (Fin np)))
+    {h0 : Fin np} (hh0 : is_honest h0 = true) (W : ℕ) (E : Set (Fin n → SlotKind)) :
+    (seedDist H μ h0 W n Sch).toOuterMeasure {ω | ω.κ ∈ E} =
       (kindDist (kindLaw μ) W n).toOuterMeasure E := by
-  have : (seedDist μ h0 W n Hz Sch).map Seed.κ = kindDist (kindLaw μ) W n := by
+  have : (seedDist H μ h0 W n Sch).map Seed.κ = kindDist (kindLaw μ) W n := by
     rw [← leaderDist_map_kinds μ hh0 W n]
     simp only [seedDist, PMF.map_bind, PMF.pure_map, Seed.κ, PMF.bind_const]
     rfl
@@ -308,63 +325,58 @@ theorem kindDist_padded (ν : PMF SlotKind) (W : ℕ) :
   by_contra h
   exact this (if_neg h)
 
-/-- **Collisions (part 2).** For a querier that depends on the slot kinds and the keys, the
-probability of a collision among its first `q` queries to the random oracle of the seed is at
-most the birthday bound `q (q - 1) / 2 / |Hash|`. -/
-theorem seedDist_ROCollision_le (μ : PMF (Option (Fin np))) (h0 : Fin np) (W q : ℕ)
-    (next : (Fin n → SlotKind) → (Fin np → Sch.PK × Sch.SK) → Querier (BlockDom Tx Hash np Hz) Hash) :
-    (seedDist μ h0 W n Hz Sch).toOuterMeasure {ω | ROCollision (next ω.κ ω.ks) q ω.f} ≤
-      ((q * (q - 1) / 2 : ℕ) : ℝ≥0∞) / Fintype.card Hash := by
-  refine PMF.toOuterMeasure_bind_le _ _ _ _ fun L => ?_
-  rw [PMF.bind_comm]
-  refine PMF.toOuterMeasure_bind_le _ _ _ _ fun ks => ?_
-  have : ((uniformFun (BlockDom Tx Hash np Hz) Hash).bind fun f =>
-      PMF.pure (⟨L, f, ks⟩ : Seed Tx Hash np n Hz Sch)) =
-      (uniformFun (BlockDom Tx Hash np Hz) Hash).map fun f => ⟨L, f, ks⟩ := rfl
-  rw [this, PMF.toOuterMeasure_map_apply]
-  exact prob_ROCollision_le (next (kinds L) ks) q
+/-- The common-prefix condition `3 ≤ d (pH - 2 pA)` forces `3 ≤ d`. -/
+theorem three_le_of_cp (ν : PMF SlotKind) {d : ℕ} (h3 : (3 : ℝ) ≤ d * (pH ν - 2 * pA ν)) :
+    3 ≤ d := by
+  have hpH : pH ν ≤ 1 := ENNReal.toReal_le_of_le_ofReal zero_le_one
+    (by rw [ENNReal.ofReal_one]; exact PMF.coe_le_one ν _)
+  have hpA : 0 ≤ pA ν := ENNReal.toReal_nonneg
+  have hd : (0 : ℝ) ≤ d := Nat.cast_nonneg d
+  have : (3 : ℝ) ≤ d := by nlinarith
+  exact_mod_cast this
 
 variable (P : Protocol Tx Hash np n Hz) (A : Adversary Tx Hash np n Hz Sch) (Tree : TreeFamily P)
 
 /-- **Security of PoS-NSB with signed blocks.** Let the slot leaders of the first `W` slots be
 elected independently from `μ` (for the stake-weighted election `stakeElect`, a slot is honest
-with probability `φ` times the honest stake fraction, `kindLaw_stakeElect_honest`). Under the
-hypotheses on the protocol, the slot-kind distribution `kindLaw μ` and the numbers, and the
-random-oracle hypothesis `hRO`, chain growth, chain quality and common prefix hold for the first
-`K` phases of the real execution except with probability at most
-`slotBound (kindLaw μ) n d w ε + q (q - 1) / 2 / |Hash| + ∑ᵢ eufAdv (forger P A μ W K i)`:
-the Chernoff-Hoeffding bound on the slot conditions, the birthday bound, and the EUF-CMA
-advantages of the explicit forgers. -/
+with probability `φ` times the honest stake fraction, `kindLaw_stakeElect_honest`), and let the
+hash function be drawn from the keyed family `H`. Under the hypotheses on the protocol, the
+slot-kind distribution `kindLaw μ` and the numbers, chain growth, chain quality, common prefix
+and the honest tip hold for the first `K` phases of the real execution except with probability
+at most
+`slotBound (kindLaw μ) n d w ε + crAdv (collFinder P A H μ W K) + ∑ᵢ eufAdv (forger P A H μ W K i)`:
+the Chernoff-Hoeffding bound on the slot conditions, the collision-resistance advantage of the
+explicit collision finder, and the EUF-CMA advantages of the explicit forgers. -/
 theorem pos_nsb_security (hP : ProtocolHyp P)
-    (hTree : Tree.Longest)
+    (hTree : Tree.Longest) (H : HashFam (BlockDom Tx Hash np Hz) Hash)
     (μ : PMF (Option (Fin np))) (W K d w : ℕ) (ε : ℝ)
-    (hd : 1 ≤ d) (hwd : w ≤ d) (hWn : W + d ≤ n) (hn : K + 2 ≤ n) (hHz : K + 1 ≤ Hz)
+    (hwd : w ≤ d) (hWn : W + d ≤ n) (hn : K + 2 ≤ n) (hHz : K + 1 ≤ Hz)
     (hε : 0 ≤ ε) (hγ : 2 * pA (kindLaw μ) ≤ pH (kindLaw μ))
     (hw : (w : ℝ) ≤ d * (pH (kindLaw μ) - pA (kindLaw μ)))
-    (h3 : (3 : ℝ) ≤ d * (pH (kindLaw μ) - 2 * pA (kindLaw μ))) (q : ℕ)
-    (next : (Fin n → SlotKind) → (Fin np → Sch.PK × Sch.SK) → Querier (BlockDom Tx Hash np Hz) Hash)
-    (hRO : ∀ ω : Seed Tx Hash np n Hz Sch, ∀ j ≤ K, letI := ω.params P; letI := ω.bparams P;
-      ∀ b ∈ block_hist_gb (sTrace P ω A false j), ∃ k < q, query (next ω.κ ω.ks) ω.f k = encB Hz b) :
-    (seedDist μ P.h0 W n Hz Sch).toOuterMeasure {ω | ¬Good P A Tree (kindLaw μ) K d w ε ω} ≤
-      slotBound (kindLaw μ) n d w ε + ((q * (q - 1) / 2 : ℕ) : ℝ≥0∞) / Fintype.card Hash +
-        ∑ i : Fin np, eufAdv (forger P A μ W K i) := by
+    (h3 : (3 : ℝ) ≤ d * (pH (kindLaw μ) - 2 * pA (kindLaw μ))) :
+    (seedDist H μ P.h0 W n Sch).toOuterMeasure {ω | ¬Good P A Tree (kindLaw μ) K d w ε ω} ≤
+      slotBound (kindLaw μ) n d w ε + crAdv (collFinder P A H μ W K) +
+        ∑ i : Fin np, eufAdv (forger P A H μ W K i) := by
+  have hd3 := three_le_of_cp (kindLaw μ) h3
   have hsub : {ω | ¬Good P A Tree (kindLaw μ) K d w ε ω} ⊆
       (({ω | ω.κ ∈ {κ | SlotBad (kindLaw μ) n d w ε κ}} ∪
         {ω | ω.κ ∈ {κ | ¬PaddedFrom W κ}}) ∪
-        {ω : Seed Tx Hash np n Hz Sch | ROCollision (next ω.κ ω.ks) q ω.f}) ∪
+        {ω : Seed Tx Hash np n Hz Sch | ∃ j ≤ K, letI := ω.params P; letI := ω.bparams P;
+          ¬collision_free (sTrace P ω A false j)}) ∪
         {ω | Forge P ω A K} := by
     intro ω hω
     by_contra hc
-    simp only [Set.mem_union, Set.mem_ofPred_eq, not_or, not_not] at hc
-    exact hω (good_of_not_bad P A Tree (kindLaw μ) K d w ε hP hTree ω hd hwd hWn hn hHz q
-      (next ω.κ ω.ks) (hRO ω) hc.1.1.1 hc.1.1.2 hc.1.2 hc.2)
+    simp only [Set.mem_union, Set.mem_ofPred_eq, not_or] at hc
+    obtain ⟨⟨⟨hslot, hpad⟩, hcol⟩, hforge⟩ := hc
+    exact hω (good_of_not_bad P A Tree (kindLaw μ) K d w ε hP hTree ω hd3 hwd hWn hn hslot
+      (not_not.1 hpad) (fun j hj => by_contra fun h => hcol ⟨j, hj, h⟩) hforge)
   refine (MeasureTheory.OuterMeasure.mono _ hsub).trans ?_
-  refine (MeasureTheory.measure_union_le _ _).trans (add_le_add ?_ (prob_forge_le P A μ W K))
+  refine (MeasureTheory.measure_union_le _ _).trans (add_le_add ?_ (prob_forge_le P A H μ W K))
   refine (MeasureTheory.measure_union_le _ _).trans
-    (add_le_add ?_ (seedDist_ROCollision_le μ P.h0 W q next))
+    (add_le_add ?_ (prob_collision_le P A H μ W K hHz hP.genesis_slot))
   refine (MeasureTheory.measure_union_le _ _).trans ?_
-  rw [seedDist_kind μ hP.leader.h0_honest, seedDist_kind μ hP.leader.h0_honest, kindDist_padded,
-    add_zero]
+  rw [seedDist_kind H μ hP.leader.h0_honest, seedDist_kind H μ hP.leader.h0_honest,
+    kindDist_padded, add_zero]
   exact prob_slotBad_le (kindLaw μ) W n d w hε hγ hw h3
 
 end Bound
@@ -492,9 +504,9 @@ noncomputable def μ : PMF (Option (Fin 1)) := PMF.pure (some 0)
 /-- The slot kinds of the election `μ`: every slot is honest. -/
 noncomputable def ν : PMF SlotKind := kindLaw μ
 
-/-- The querier that asks for the hash of the genesis block. -/
-def next : (Fin 4 → SlotKind) → (Fin 1 → Sch.PK × Sch.SK) → Querier (BlockDom Unit Unit 1 1) Unit :=
-  fun _ _ _ => encB 1 GB
+/-- The random oracle on the blocks of the instance. -/
+noncomputable abbrev H : HashFam (BlockDom Unit Unit 1 1) Unit :=
+  HashFam.randomFun (BlockDom Unit Unit 1 1) Unit
 
 theorem ν_eq : ν = PMF.pure .honest := by
   simp only [ν, kindLaw, μ, PMF.pure_map]
@@ -505,15 +517,13 @@ theorem pH_ν : pH ν = 1 := by simp [pH, ν_eq]
 theorem pA_ν : pA ν = 0 := by simp [pA, ν_eq]
 
 /-- **Non-vacuity.** The hypotheses of `pos_nsb_security` hold for the instance with
-`W = 1`, `K = 0`, `d = 3`, `w = 1`, `ε = 0` and `q = 1`. -/
+`W = 1`, `K = 0`, `d = 3`, `w = 1` and `ε = 0`. -/
 theorem instance_hyps :
-    ProtocolHyp P ∧ Tree.Longest ∧ 1 ≤ 3 ∧ 1 ≤ 3 ∧ 1 + 3 ≤ 4 ∧ 0 + 2 ≤ 4 ∧ 0 + 1 ≤ 1 ∧
+    ProtocolHyp P ∧ Tree.Longest ∧ 1 ≤ 3 ∧ 1 + 3 ≤ 4 ∧ 0 + 2 ≤ 4 ∧ 0 + 1 ≤ 1 ∧
       (0 : ℝ) ≤ 0 ∧ 2 * pA ν ≤ pH ν ∧ ((1 : ℕ) : ℝ) ≤ (3 : ℕ) * (pH ν - pA ν) ∧
-      (3 : ℝ) ≤ (3 : ℕ) * (pH ν - 2 * pA ν) ∧
-      ∀ ω : Seed Unit Unit 1 4 1 Sch, ∀ j ≤ 0, letI := ω.params P; letI := ω.bparams P;
-        ∀ b ∈ block_hist_gb (sTrace P ω A false j), ∃ k < 1, query (next ω.κ ω.ks) ω.f k = encB 1 b := by
+      (3 : ℝ) ≤ (3 : ℕ) * (pH ν - 2 * pA ν) := by
   have hcor : ∀ p : Fin 1, is_corrupt p = false := fun _ => rfl
-  refine ⟨⟨by simp [P], ⟨fun p _ => by simp [P, Fin.fin_one_eq_zero p], rfl⟩,
+  exact ⟨⟨by simp [P], ⟨fun p _ => by simp [P, Fin.fin_one_eq_zero p], rfl⟩,
     fun L f _ =>
       letI := leaderParams [0] 0 L
       letI : BlockParameters Unit Unit (Fin 1) := ⟨GB, fun b => f (encB 1 b)⟩
@@ -521,24 +531,19 @@ theorem instance_hyps :
     fun L f =>
       letI := leaderParams [0] 0 L
       letI : BlockParameters Unit Unit (Fin 1) := ⟨GB, fun b => f (encB 1 b)⟩
-      longestTree_longest (gb_valid L f) rfl, by norm_num, by norm_num, by norm_num, by norm_num,
+      longestTree_longest (gb_valid L f) rfl, by norm_num, by norm_num, by norm_num,
     by norm_num, le_rfl, by rw [pH_ν, pA_ν]; norm_num, by rw [pH_ν, pA_ν]; norm_num,
-    by rw [pH_ν, pA_ν]; norm_num, ?_⟩
-  intro ω j hj b hb
-  obtain rfl : j = 0 := by omega
-  simp only [sTrace, runTrace, Function.iterate_zero, id, block_hist_gb, block_history, N0,
-    List.map_nil, List.mem_singleton] at hb
-  subst hb
-  exact ⟨0, by norm_num, rfl⟩
+    by rw [pH_ν, pA_ν]; norm_num⟩
 
-/-- **The instance of the security theorem.** For the instance, chain growth, chain quality and
-common prefix fail with probability at most `slotBound ν 4 3 1 0 + 0 / 1 + eufAdv (forger P A μ 1 0 0)`. -/
+/-- **The instance of the security theorem.** For the instance with the random oracle `H`,
+chain growth, chain quality, common prefix and the honest tip fail with probability at most
+`slotBound ν 4 3 1 0 + crAdv (collFinder P A H μ 1 0) + eufAdv (forger P A H μ 1 0 0)`. -/
 theorem instance_security :
-    (seedDist μ P.h0 1 4 1 Sch).toOuterMeasure {ω | ¬Good P A Tree ν 0 3 1 0 ω} ≤
-      slotBound ν 4 3 1 0 + ((1 * (1 - 1) / 2 : ℕ) : ℝ≥0∞) / Fintype.card Unit +
-        ∑ i : Fin 1, eufAdv (forger P A μ 1 0 i) := by
-  obtain ⟨hP, hT, hd, hwd, hWn, hn, hHz, hε, hγ, hw, h3, hRO⟩ := instance_hyps
-  exact pos_nsb_security P A Tree hP hT μ 1 0 3 1 0 hd hwd hWn hn hHz hε hγ hw h3 1 next hRO
+    (seedDist H μ P.h0 1 4 Sch).toOuterMeasure {ω | ¬Good P A Tree ν 0 3 1 0 ω} ≤
+      slotBound ν 4 3 1 0 + crAdv (collFinder P A H μ 1 0) +
+        ∑ i : Fin 1, eufAdv (forger P A H μ 1 0 i) := by
+  obtain ⟨hP, hT, hwd, hWn, hn, hHz, hε, hγ, hw, h3⟩ := instance_hyps
+  exact pos_nsb_security P A Tree hP hT H μ 1 0 3 1 0 hwd hWn hn hHz hε hγ hw h3
 
 end Instance
 

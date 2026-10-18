@@ -32,7 +32,7 @@ over `PMF` with the coins of the adversary drawn independently of the key.
 
 ## Main results
 
-* `seedDistH_eq_map`: the seed distribution `seedDistH H` is the image of the inputs of the
+* `seedDist_eq_map`: the seed distribution `seedDist H` is the image of the inputs of the
   collision-resistance game of the finder.
 * `collFinder_wins`: a collision among the broadcast blocks of some state of the first `K`
   phases makes the finder win.
@@ -162,13 +162,13 @@ noncomputable def collFinder (H : HashFam (BlockDom Tx Hash np Hz) Hash)
     | some (b, b') => (encB Hz b, encB Hz b')
     | none => (encB Hz P.GB, encB Hz P.GB)
 
-/-- The seed distribution `seedDistH H` is the image of the inputs of the collision-resistance
+/-- The seed distribution `seedDist H` is the image of the inputs of the collision-resistance
 game of the finder under `(k, (L, ks)) ↦ ⟨L, H.hash k, ks⟩`. -/
-theorem seedDistH_eq_map (H : HashFam (BlockDom Tx Hash np Hz) Hash)
+theorem seedDist_eq_map (H : HashFam (BlockDom Tx Hash np Hz) Hash)
     (μ : PMF (Option (Fin np))) (W K : ℕ) :
-    seedDistH H μ P.h0 W n Sch = (crInputs (collFinder P A H μ W K)).map
+    seedDist H μ P.h0 W n Sch = (crInputs (collFinder P A H μ W K)).map
       fun x => (⟨x.2.1, H.hash x.1, x.2.2⟩ : Seed Tx Hash np n Hz Sch) := by
-  simp only [crInputs, collFinder, seedDistH, PMF.map_bind, PMF.pure_map, PMF.bind_bind,
+  simp only [crInputs, collFinder, seedDist, PMF.map_bind, PMF.pure_map, PMF.bind_bind,
     PMF.pure_bind]
   exact PMF.bind_comm _ _ _
 
@@ -217,16 +217,16 @@ theorem collFinder_wins (H : HashFam (BlockDom Tx Hash np Hz) Hash) (μ : PMF (O
     simp only [crWins, hfind]
     exact ⟨fun he => hne (encB_inj (hsl b hb) (hsl b' hb') he), hh⟩
 
-/-- **Hash collisions.** Over the seed distribution `seedDistH H`, the probability that some
+/-- **Hash collisions.** Over the seed distribution `seedDist H`, the probability that some
 state of the first `K` phases of the real execution is not collision free is at most the
 collision-resistance advantage of the explicit adversary `collFinder P A H μ W K`. -/
 theorem prob_collision_le (H : HashFam (BlockDom Tx Hash np Hz) Hash)
     (μ : PMF (Option (Fin np))) (W K : ℕ) (hHz : K + 1 ≤ Hz) (hGB : P.GB.sl ≤ 1) :
-    (seedDistH H μ P.h0 W n Sch).toOuterMeasure
+    (seedDist H μ P.h0 W n Sch).toOuterMeasure
         {ω | ∃ j ≤ K, letI := ω.params P; letI := ω.bparams P;
           ¬collision_free (sTrace P ω A false j)} ≤
       crAdv (collFinder P A H μ W K) := by
-  rw [seedDistH_eq_map P A H μ W K, PMF.toOuterMeasure_map_apply, crAdv]
+  rw [seedDist_eq_map P A H μ W K, PMF.toOuterMeasure_map_apply, crAdv]
   refine MeasureTheory.OuterMeasure.mono _ fun x hx => ?_
   obtain ⟨j, hj, hcf⟩ := hx
   exact collFinder_wins P A H μ W K hHz hGB x.1 x.2 j hj hcf
