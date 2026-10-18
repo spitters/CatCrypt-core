@@ -65,11 +65,23 @@ the premises of the premise stage; an arm with it is left out when there are non
 
 Each arm runs under its own heartbeat budget, counted from its start:
 `catcrypt_auto.maxHeartbeats` heartbeats (default 20000, in the unit of `maxHeartbeats`),
-divided by the arm's `budget_div`, with error recovery off. An arm that fails, leaves a
-goal open, logs an error, assigns the goal a term containing `sorry`, or exceeds its
-budget (a runtime exception, caught) is undone with its messages, and the next arm runs.
-When every arm fails, the error names the shape and each arm with the first line of its
-error.
+divided by the arm's `budget_div`, with error recovery off. Each arm also runs under a
+wall-clock budget of `catcrypt_auto.maxMillis` milliseconds (default 5000), cut to the
+time left of the total budget `catcrypt_auto.totalMillis` (default 30000) of the whole
+dispatch. An arm that fails, leaves a goal open, logs an error, assigns the goal a term
+containing `sorry`, or exceeds either budget (a runtime exception or an interrupt,
+caught) is undone with its messages, and the next arm runs. The steps between arms (the
+shape matchers, the normalisation and unfolding steps, the premise ranking) run under
+the heartbeat budget of one arm and the time left of the total budget; a step that
+exceeds them is undone and treated as having found nothing. Once the total budget is
+spent no further arm runs. When every arm fails, the error names the shape and each arm
+with the first line of its error, formatted without the goals and traces that the arm's
+error carries (`elideMessage`).
+
+The wall-clock budgets use the cancellation token of `Core.Context`: a watcher task sets
+a token of the dispatcher at the deadline or when the enclosing token is set, and
+`Core.checkInterrupted` (called by `checkSystem`, `whnf`, `isDefEq`, `inferType` and the
+kernel) stops the computation. An interrupt from the enclosing token is passed on.
 
 `catcrypt_auto?` behaves as `catcrypt_auto` and adds a "Try this" suggestion with the
 closing arm and its arguments, preceded by the normalisation and `unfold` steps that
@@ -91,6 +103,107 @@ register_option catcrypt_auto.maxHeartbeats : Nat := {
   defValue := 20000
   descr := "heartbeat budget of each arm of `catcrypt_auto`, in the unit of `maxHeartbeats`"
 }
+
+register_option catcrypt_auto.maxMillis : Nat := {
+  defValue := 5000
+  descr := "wall-clock budget of each arm of `catcrypt_auto`, in milliseconds (0: none)"
+}
+
+register_option catcrypt_auto.totalMillis : Nat := {
+  defValue := 30000
+  descr := "wall-clock budget of a whole run of `catcrypt_auto`, in milliseconds (0: none)"
+}
+
+/-! ## Wall-clock budgets -/
+
+/-- `x`, with every exception of `x`, including an interrupt, passed to `h`. -/
+def catchAllCore {α : Type} (x : CoreM α) (h : Exception → CoreM α) : CoreM α :=
+  fun ctx s => (x ctx s).tryCatch (fun e => h e ctx s)
+
+/-- `catchAllCore` lifted to `TacticM`. -/
+def catchAll {α : Type} (x : TacticM α) (h : Exception → TacticM α) : TacticM α :=
+  controlAt CoreM fun run => catchAllCore (run x) (fun e => run (h e))
+
+/-- The tag of the error of `withMillis` at the deadline. -/
+def timeoutTag : Name := `catcrypt_auto.timeout
+
+/-- `ex` is the error of `withMillis` at the deadline. -/
+def isTimeout (ex : Exception) : Bool :=
+  match ex with
+  | .error _ (.tagged n _) => n == timeoutTag
+  | _ => false
+
+/-- The watcher of `withMillis`: sets `tk` at the time `deadline` (of `IO.monoMsNow`) or
+when `outer?` is set, polling every 5 ms, and returns without setting it once `stop` is
+set. -/
+partial def watchDeadline (tk stop : IO.CancelToken) (outer? : Option IO.CancelToken)
+    (deadline : Nat) : IO Unit := do
+  if ← stop.isSet then return
+  let outerSet ← match outer? with
+    | some o => o.isSet
+    | none => pure false
+  if outerSet || (← IO.monoMsNow) ≥ deadline then
+    tk.set
+    return
+  IO.sleep 5
+  watchDeadline tk stop outer? deadline
+
+/-- Run `x` under a wall-clock budget of `ms` milliseconds, or without one when `ms` is
+`0`: `x` runs with a fresh cancellation token that `watchDeadline` sets after `ms`
+milliseconds or when the enclosing token is set. An interrupt of `x` by the deadline
+becomes the error "exceeded the time budget of `ms` ms" (tagged `timeoutTag`); an
+interrupt by the enclosing token is rethrown. -/
+def withMillis {α : Type} (ms : Nat) (x : TacticM α) : TacticM α := do
+  if ms == 0 then return ← x
+  let outer? := (← readThe Core.Context).cancelTk?
+  let tk ← IO.CancelToken.new
+  let stop ← IO.CancelToken.new
+  let deadline := (← IO.monoMsNow) + ms
+  let _ ← IO.asTask (prio := .dedicated) (watchDeadline tk stop outer? deadline)
+  catchAll
+    (do
+      let a ← withTheReader Core.Context (fun c => { c with cancelTk? := some tk }) x
+      stop.set
+      pure a)
+    fun ex => do
+      stop.set
+      if ex.isInterrupt then
+        if let some o := outer? then
+          if ← o.isSet then throw ex
+        throw <| .error (← getRef) <| .tagged timeoutTag m!"exceeded the time budget of {ms} ms"
+      throw ex
+
+/-- The budgets of a run of `catcrypt_auto`. A budget of `0` milliseconds is no
+wall-clock budget. -/
+structure Budget where
+  /-- Heartbeats of each arm, in the unit of `maxHeartbeats`. -/
+  hb : Nat
+  /-- Milliseconds of each arm. -/
+  ms : Nat
+  /-- Milliseconds of the whole run. -/
+  totalMs : Nat
+  /-- The end of the run, in the time of `IO.monoMsNow`. -/
+  deadline : Nat
+
+/-- The total budget of `b` is spent. -/
+def Budget.spent (b : Budget) : IO Bool := do
+  return b.totalMs != 0 && (← IO.monoMsNow) ≥ b.deadline
+
+/-- The wall-clock budget of a step: the milliseconds left of the total budget, cut to
+the budget of an arm when `arm` is set; `0` when neither budget is set. -/
+def Budget.slice (b : Budget) (arm : Bool) : IO Nat := do
+  let now ← IO.monoMsNow
+  let left := if b.totalMs == 0 then 0 else max 1 (b.deadline - now)
+  let own := if arm then b.ms else 0
+  return if own == 0 then left else if left == 0 then own else min own left
+
+/-- The budgets of the options `catcrypt_auto.maxMillis` and `catcrypt_auto.totalMillis`
+with `hb` heartbeats per arm, the total budget starting now. -/
+def Budget.ofOptions (hb : Nat) : CoreM Budget := do
+  let opts ← getOptions
+  let totalMs := catcrypt_auto.totalMillis.get opts
+  return { hb, ms := catcrypt_auto.maxMillis.get opts, totalMs,
+           deadline := (← IO.monoMsNow) + totalMs }
 
 /-! ## The registry -/
 
@@ -560,21 +673,47 @@ def arms (sh : String) (g : MVarId) (c : ArgClasses) (hb : Nat) (withTerms : Boo
     if let some arm ← mkArm a g c hb simpAll then out := out.push arm
   return out
 
+/-- `m` with each goal replaced by `⋯`, the children of each trace node dropped, each
+widget replaced by its text, and the text and expression leaves after the first `n`
+replaced by `⋯`. -/
+partial def elideMessageAux : MessageData → StateM Nat MessageData
+  | .ofGoal _ => return .ofFormat "⋯"
+  | .trace d msg _ => return .trace d (← elideMessageAux msg) #[]
+  | m@(.ofFormatWithInfos _) | m@(.ofLazy ..) => do
+    let k ← get
+    if k == 0 then return .ofFormat "⋯"
+    set (k - 1)
+    return m
+  | .ofWidget _ alt => elideMessageAux alt
+  | .withContext c d => return .withContext c (← elideMessageAux d)
+  | .withNamingContext c d => return .withNamingContext c (← elideMessageAux d)
+  | .nest n d => return .nest n (← elideMessageAux d)
+  | .group d => return .group (← elideMessageAux d)
+  | .compose a b => return .compose (← elideMessageAux a) (← elideMessageAux b)
+  | .tagged n d => return .tagged n (← elideMessageAux d)
+  | .ofOriginatingSyntax s d => return .ofOriginatingSyntax s (← elideMessageAux d)
+
+/-- The error `m` of an arm as `elideMessageAux` leaves it with 40 leaves: the part that
+the one-line report of the arm shows, without formatting the goals and traces that a
+failing tactic attaches to its error. -/
+def elideMessage (m : MessageData) : MessageData :=
+  (elideMessageAux m).run' 40
+
 /-- Run `x` under a budget of `hb` heartbeats (in the unit of `maxHeartbeats`)
-counted from its start, with error recovery off. The run is accepted only when
-`x` logs no error (a nested `by` block reports its unsolved goals by logging an
-error and admitting them) and the goals it starts on are assigned terms without
-`sorry`. A rejected run, a failure, an exceeded heartbeat budget or another
-runtime exception restores the state, including the message log, and returns the
-error on one line, cut at 160 characters. -/
-def budgeted (hb : Nat) (x : TacticM Unit) : TacticM (Except String Unit) := do
+counted from its start and of `ms` milliseconds (none when `ms` is `0`), with error
+recovery off. The run is accepted only when `x` logs no error (a nested `by` block
+reports its unsolved goals by logging an error and admitting them) and the goals it
+starts on are assigned terms without `sorry`. A rejected run, a failure, an exceeded
+budget or another runtime exception restores the state, including the message log,
+and returns the error (by `elideMessage`) on one line, cut at 160 characters. -/
+def budgeted (hb ms : Nat) (x : TacticM Unit) : TacticM (Except String Unit) := do
   let saved ← Tactic.saveState
   let goals ← getGoals
   let log ← Core.getMessageLog
   tryCatchRuntimeEx
     (withTheReader Core.Context (fun c => { c with maxHeartbeats := hb * 1000 }) do
       modifyThe Core.State fun s => { s with messages := {} }
-      withCurrHeartbeats (Term.withoutErrToSorry (withoutRecover x))
+      withCurrHeartbeats (withMillis ms (Term.withoutErrToSorry (withoutRecover x)))
       let new ← Core.getMessageLog
       if let some m := new.toList.find? (·.severity == .error) then
         throwError m!"logged the error: {m.data}"
@@ -585,18 +724,36 @@ def budgeted (hb : Nat) (x : TacticM Unit) : TacticM (Except String Unit) := do
       return .ok ())
     fun ex => do
       saved.restore
-      let msg ← ex.toMessageData.toString
+      let msg ← (elideMessage ex.toMessageData).toString
       let line := " ".intercalate ((msg.splitOn "\n").map (·.trimAscii.toString))
       return .error (line.take 160).toString
 
-/-- Run the tactic text `s` on the main goal under the budget `hb`; keep the
+/-- Run `x`, a step between arms, under the heartbeat budget of one arm of `b` and the
+time left of its total budget; return `dflt` with the state restored when the total
+budget is spent, or when `x` exceeds a budget or throws another runtime exception. The
+heartbeats of `x` are counted from its start, so the heartbeats of earlier arms do not
+count against it. -/
+def bounded {α : Type} (b : Budget) (dflt : α) (x : TacticM α) : TacticM α := do
+  if ← b.spent then return dflt
+  let ms ← b.slice false
+  let saved ← Tactic.saveState
+  tryCatchRuntimeEx
+    (withTheReader Core.Context (fun c => { c with maxHeartbeats := b.hb * 1000 }) do
+      withCurrHeartbeats (withMillis ms x))
+    fun ex => do
+      unless ex.isRuntime || isTimeout ex do throw ex
+      saved.restore
+      return dflt
+
+/-- Run the tactic text `s` on the main goal under the budgets `b`; keep the
 result and return `true` when it leaves exactly one goal of a different type,
 restore the state and return `false` otherwise. -/
-def stepChanges (s : String) (hb : Nat) : TacticM Bool := do
+def stepChanges (s : String) (b : Budget) : TacticM Bool := do
+  if ← b.spent then return false
   let before ← instantiateMVars (← (← getMainGoal).getType)
   let saved ← Tactic.saveState
   let some stx ← (try some <$> parseTactic s catch _ => pure none) | return false
-  let .ok () ← budgeted hb (evalTactic stx) | return false
+  let .ok () ← budgeted b.hb (← b.slice true) (evalTactic stx) | return false
   match ← getGoals with
   | [g] =>
     if (← instantiateMVars (← g.getType)) == before then
@@ -610,35 +767,36 @@ def stepChanges (s : String) (hb : Nat) : TacticM Bool := do
 /-- Apply the registered normalisation steps whose trigger matches the main goal and
 whose constants are in the environment, in registration order, keeping those that
 change the goal; returns their texts. -/
-def normalise (hb : Nat) : TacticM (Array String) := do
+def normalise (b : Budget) : TacticM (Array String) := do
   let mut done := #[]
   for n in (← registry).norms do
     let env ← getEnv
     unless n.needs.all env.contains do continue
     let t ← instantiateMVars (← (← getMainGoal).getType)
-    unless ← n.trigger.eval t do continue
-    if ← stepChanges n.text hb then done := done.push n.text
+    unless ← bounded b false (n.trigger.eval t) do continue
+    if ← stepChanges n.text b then done := done.push n.text
   return done
 
 /-- Unfold the definitions `ds` in the main goal, one `unfold` step each, keeping
 the steps that change the goal; returns their texts joined by `; `, or `none`
 when no step changes the goal. -/
-def unfoldStep (ds : Array Name) (hb : Nat) : TacticM (Option String) := do
+def unfoldStep (ds : Array Name) (b : Budget) : TacticM (Option String) := do
   let mut done : Array String := #[]
   for d in ds do
     if d.hasMacroScopes then continue
     let s := s!"unfold {privateToUserName d}"
-    if ← stepChanges s hb then done := done.push s
+    if ← stepChanges s b then done := done.push s
   if done.isEmpty then return none
   return some ("; ".intercalate done.toList)
 
-/-- Run the arms of the shape `sh` on the main goal. Returns the closing arm, or the
-failure (or reason for skipping) of each arm. -/
-def runArms (sh : String) (c : ArgClasses) (hb : Nat) (withTerms : Bool) :
+/-- Run the arms of the shape `sh` on the main goal under the budgets `b`. Returns the
+closing arm, or the failure (or reason for skipping) of each arm. Once the total budget
+is spent the remaining arms are not run, and one line says so. -/
+def runArms (sh : String) (c : ArgClasses) (b : Budget) (withTerms : Bool) :
     TacticM (Except (Array MessageData) Arm) := do
   let g ← getMainGoal
   let mut tried : Array MessageData := #[]
-  for arm in ← arms sh g c hb withTerms do
+  for arm in ← bounded b #[] (arms sh g c b.hb withTerms) do
     let label : MessageData := match arm.tac with
       | some t => m!"{t}"
       | none => m!"{arm.txt}"
@@ -646,8 +804,12 @@ def runArms (sh : String) (c : ArgClasses) (hb : Nat) (withTerms : Bool) :
       tried := tried.push m!"\n  {label}: {why}"
       continue
     let some tac := arm.tac | continue
+    if ← b.spent then
+      tried := tried.push m!"\n  {label} and the arms after it: not run, the total time \
+        budget of {b.totalMs} ms is spent"
+      break
     let s ← Tactic.saveState
-    let r ← budgeted arm.budget do
+    let r ← budgeted arm.budget (← b.slice true) do
       evalTactic tac
       unless (← getGoals).isEmpty do throwError "goals remain open"
     match r with
@@ -660,27 +822,27 @@ def runArms (sh : String) (c : ArgClasses) (hb : Nat) (withTerms : Bool) :
 /-- One pass of the normalised stage on the main goal: read its shape and run the
 `"*"` arms and the arms of that shape. Returns the closing arm, or the shape with the
 failure of each arm. -/
-def pass (c : ArgClasses) (hb : Nat) : TacticM (Except (String × Array MessageData) Arm) := do
+def pass (c : ArgClasses) (b : Budget) : TacticM (Except (String × Array MessageData) Arm) := do
   let g ← getMainGoal
-  let sh ← g.withContext do shape (← g.getType)
-  match ← runArms sh c hb true with
+  let sh ← bounded b "other" (g.withContext do shape (← g.getType))
+  match ← runArms sh c b true with
   | .ok arm => return .ok arm
   | .error tried => return .error (sh, tried)
 
 /-- Step 2 of `runWith` on the main goal: the normalisation steps, then the unfolding
 of a head definition of a goal of shape `other`, at most four times, each followed by
 the normalisation steps. Returns the texts of the steps that changed the goal. -/
-def prepare (hb : Nat) : TacticM (Array String) := do
-  let mut steps : Array String := ← normalise hb
+def prepare (b : Budget) : TacticM (Array String) := do
+  let mut steps : Array String := ← normalise b
   for _ in [0:4] do
     let g ← getMainGoal
     let t ← g.getType
-    let n? ← g.withContext (headToUnfold? t)
+    let n? ← bounded b none (g.withContext (headToUnfold? t))
     let some n := n? | break
-    let s? ← unfoldStep #[n] hb
+    let s? ← unfoldStep #[n] b
     let some s := s? | break
     steps := steps.push s
-    steps := steps ++ (← normalise hb)
+    steps := steps ++ (← normalise b)
   return steps
 
 /-- Set the goals to `rest` and return the closing arm, preceded by the steps
@@ -705,61 +867,65 @@ def stagePremises : TacticM (Array String) := do
   return (ps.filter fun p => p.source == .fileDecl || p.source == .hypField).map (·.display)
 
 /-- Close the main goal by the procedure of the module docstring, with the arguments
-`ts`, each step and arm under a budget of `hb` heartbeats. Returns the closing arm,
-preceded by the normalisation and unfolding steps that changed the goal. -/
-def runWith (hb : Nat) (ts : Array Term) : TacticM (TSyntax `tactic) := do
+`ts`, each step and arm under the budgets `b`. Returns the closing arm, preceded by the
+normalisation and unfolding steps that changed the goal. -/
+def runWith (b : Budget) (ts : Array Term) : TacticM (TSyntax `tactic) := do
   let goal ← getMainGoal
   let rest := (← getGoals).drop 1
   let start ← Tactic.saveState
   setGoals [goal]
-  let c ← classifyArgs goal ts
+  let c ← bounded b {} (classifyArgs goal ts)
   -- 1. the direct stage
   let mut pre : MessageData := m!""
   let t0 := (← instantiateMVars (← goal.getType)).cleanupAnnotations
-  if let some s ← goal.withContext (firstShape .direct t0) then
-    match ← runArms s.name c hb false with
+  if let some s ← bounded b none (goal.withContext (firstShape .direct t0)) then
+    match ← runArms s.name c b false with
     | .ok arm => return ← finishWith rest #[] arm
     | .error tried =>
       pre := m!"\non the goal as stated: goal shape {s.name}; every arm failed:\
         {MessageData.joinSep tried.toList ""}"
   -- 2. and 3. normalisation and the shape's arms
-  let steps ← prepare hb
+  let steps ← prepare b
   let prepared ← Tactic.saveState
-  match ← pass c hb with
+  match ← pass c b with
   | .ok arm => finishWith rest steps arm
   | .error (sh, tried) =>
     -- 4. the unfolding pass
     let g ← getMainGoal
-    let ds ← g.withContext do
+    let ds ← bounded b #[] <| g.withContext do
       let t ← instantiateMVars (← g.getType)
       let heads ← unfoldHeads t
       pure (heads ++ c.defs.filter fun d => mentionsConst [d] t && !heads.contains d)
     let mut second : MessageData := m!""
-    if let some u ← unfoldStep ds hb then
-      let steps2 := (steps.push u) ++ (← normalise hb)
-      match ← pass c hb with
+    if let some u ← unfoldStep ds b then
+      let steps2 := (steps.push u) ++ (← normalise b)
+      match ← pass c b with
       | .ok arm => return ← finishWith rest steps2 arm
       | .error (sh2, tried2) =>
         second := m!"\nafter `{u}`: goal shape {sh2}; every arm failed:\
           {MessageData.joinSep tried2.toList ""}"
     -- 5. the premise stage
     prepared.restore
-    let ps ← stagePremises
+    let ps ← bounded b #[] stagePremises
     let mut third : MessageData := m!""
     unless ps.isEmpty do
-      match ← runArms "premises" { premises := ps } hb false with
+      match ← runArms "premises" { premises := ps } b false with
       | .ok arm => return ← finishWith rest steps arm
       | .error tried3 =>
         unless tried3.isEmpty do
           third := m!"\nwith the premises of the current file and the local hypotheses:\
             {MessageData.joinSep tried3.toList ""}"
     start.restore
+    let spent : MessageData :=
+      if ← b.spent then m!"\nthe total time budget of {b.totalMs} ms is spent" else m!""
     throwError m!"catcrypt_auto: goal shape {sh}; every arm failed \
-      (budget {hb} heartbeats each):{MessageData.joinSep tried.toList ""}{second}{third}{pre}"
+      (budget {b.hb} heartbeats and {b.ms} ms each):\
+      {MessageData.joinSep tried.toList ""}{second}{third}{pre}{spent}"
 
-/-- `runWith` under the budget `catcrypt_auto.maxHeartbeats`. -/
+/-- `runWith` under the budgets of the options `catcrypt_auto.maxHeartbeats`,
+`catcrypt_auto.maxMillis` and `catcrypt_auto.totalMillis`. -/
 def run (ts : Array Term) : TacticM (TSyntax `tactic) := do
-  runWith (catcrypt_auto.maxHeartbeats.get (← getOptions)) ts
+  runWith (← Budget.ofOptions (catcrypt_auto.maxHeartbeats.get (← getOptions))) ts
 
 /-- `catcrypt_auto` closes the main goal by the arms registered for its shape (see
 the module docstring), each under the heartbeat budget `catcrypt_auto.maxHeartbeats`
