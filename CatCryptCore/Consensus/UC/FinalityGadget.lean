@@ -7,6 +7,7 @@ module
 
 public import CatCryptCore.Consensus.UC.FTree
 public import CatCryptCore.Consensus.FinalityValidity
+public import CatCryptCore.Consensus.FinalityUpdated
 
 @[expose] public section
 set_option autoImplicit false
@@ -24,16 +25,21 @@ file contains no probability: it is the information-theoretic core of the realiz
 The validators are the parties of the tree (`Party`, a `Fintype`), with stake `w`; the honest
 validators are the set `H`, the others are adversarial. A gadget state (`GCore`) consists of
 the current tree view (round, trees and positions of the parties), the cast votes together
-with the round in which each was cast, and the votes each party has received. One gadget step
-(`gstep`) takes the new tree view and one action (`GAct`):
+with the round in which each was cast, the votes each party has received, and the state of
+the honest voting schedule. One gadget step (`gstep`) takes the new tree view and one action
+(`GAct`). It first performs the honest round of the schedule when it is due (`hround`): at
+the first view of round `start + r (2 E)`, the honest validators `H` cast the votes
+`FFG.livenessVotes` of round `r` of `Finality.schedule`, whose checkpoints are the
+epoch-boundary blocks of the pruned position `cut v v₀` of the validator `v₀`; each vote is
+cast only if both of its checkpoints are epoch-boundary checkpoints (`IsCheckpointOf`) of the
+pruned position `cut v x.validator` of its validator and the votes of the round do not make it
+slashable (slashing protection) (`HonestOK`). Then it performs the action:
 
-* `hvote x`: the honest validator `x.validator` casts `x` if both checkpoints of `x` are
-  epoch-boundary checkpoints (`IsCheckpointOf`) of its pruned position `cut v x.validator` and
-  `x` does not make it slashable (slashing protection) (`HonestOK`);
 * `avote x`: an adversarial validator casts an arbitrary vote;
 * `deliver p x`: the adversary delivers a cast vote early to `p`;
 
-and then delivers every vote cast at least `Δ` rounds ago to every party (synchrony).
+and then delivers every vote cast at least `Δ` rounds ago to every party (synchrony). The
+environment supplies no honest votes.
 
 Party `p` regards as final the blocks of the checkpoints that are finalized (`FFG.Finalized`)
 by the votes it has received; its list of final blocks (`finList`) lists them by epoch, newest
@@ -41,15 +47,17 @@ first. `finView` is the view reported to `F_FinTree`: the tree view with these f
 
 ## Main results
 
-* `Run`: the hypotheses on a sequence of gadget states: empty start, gadget steps or
+* `Run`: the hypotheses on a sequence of gadget states: empty start (no votes, schedule at
+  round `0` from the genesis checkpoint), gadget steps or
   stuttering between consecutive times, monotone rounds, and `Settled`: the pruned position
   of an honest party at `t` is a suffix of the position of every honest party at every later
   time (for `cut v p = (v.pos p).drop k` this is common prefix `k`).
 * `FinalOnHonestPos`, `FinalOnHonestPos.agree`: a block final for an honest party lies on the
   position of every honest party at every later time; hence any two blocks final for honest
   parties lie on one honest position.
-* `Run.honest_unslashable`, `Run.honest_onChain`, `Run.seen_subset`, `Run.overdue_seen`: the
-  invariants of the gadget (slashing protection, voting on the pruned position, synchrony).
+* `Run.honest_unslashable`, `Run.honest_onChain`, `Run.seen_subset`, `Run.overdue_seen`,
+  `Run.honest_mem_sch`: the invariants of the gadget (slashing protection, voting on the
+  pruned position, synchrony, honest votes from the schedule).
 * `Run.anc_of_finalized`, `Run.finalized_unique`: accountable safety
   (`FFG.anc_of_kFinalized_of_justified`, `FFG.slashable_of_justified_same_epoch`) applied to the
   cast votes when `3 * stake w (univ \ H) < W`.
@@ -72,8 +80,9 @@ first. `finView` is the view reported to `F_FinTree`: the tree view with these f
 * `FinalOnHonestPos` states agreement of final blocks through the honest positions; it does
   not refer to the block tree `T`, so it is informative also when `T` relates every two
   blocks.
-* `Finality.finality_updated` is a liveness statement (a finalized checkpoint close
-  to the tip after `GST`); `F_FinTree` enforces only safety guards, and its propagation guard
+* The honest votes are cast by the gadget itself, following the schedule of
+  `Finality.finality_updated`; the liveness of the gadget (`TreeTrace.UpdatedWithin`) is
+  proved in `CatCryptCore.Consensus.UC.FinalityLive`. The propagation guard of `F_FinTree`
   (`TreeTrace.DeltaPropagated`: a final block reaches every honest party within `Δ` rounds)
   follows here from the synchronous delivery of votes and the monotonicity of finalization.
 -/
@@ -150,16 +159,15 @@ end Props
 
 /-! ## Gadget states and steps -/
 
-/-- The actions of one gadget step: nothing, an honest vote, an adversarial vote, or the early
-delivery of a vote to a party. -/
+/-- The actions of one gadget step: nothing, an adversarial vote, or the early delivery of a
+vote to a party. -/
 inductive GAct (Party Blk : Type) where
   | idle
-  | hvote (x : Vote Party Blk)
   | avote (x : Vote Party Blk)
   | deliver (p : Party) (x : Vote Party Blk)
 
-/-- A gadget state: the tree view, the cast votes with their rounds, and the votes received
-by each party. -/
+/-- A gadget state: the tree view, the cast votes with their rounds, the votes received by
+each party, and the state of the honest schedule. -/
 structure GCore (Party Blk : Type) where
   /-- The current tree view (the final lists of this view are not used). -/
   view : TreeView Party Blk
@@ -167,9 +175,15 @@ structure GCore (Party Blk : Type) where
   cast : Finset (Vote Party Blk × ℕ)
   /-- The votes received by each party. -/
   seen : Party → Finset (Vote Party Blk)
+  /-- The number of rounds of the honest schedule performed. -/
+  nr : ℕ
+  /-- The state of the honest schedule (`Finality.schedule`): the votes of the rounds
+  performed and the checkpoint from which the next round starts. -/
+  sch : Finset (Vote Party Blk) × Checkpoint Blk
 
 /-- The parameters of the gadget: block tree, stake, honest validators, slots, epoch length,
-pruning of positions and delivery bound. -/
+pruning of positions, delivery bound, the round of the first honest round of the schedule,
+and the validator whose pruned position supplies the checkpoints of the schedule. -/
 structure Cfg (Party Blk : Type) where
   /-- The block tree. -/
   T : BlockTree Blk
@@ -185,14 +199,20 @@ structure Cfg (Party Blk : Type) where
   cut : TreeView Party Blk → Party → List Blk
   /-- The delivery bound in rounds. -/
   Δ : ℕ
+  /-- The round of the first honest round of the schedule. -/
+  start : ℕ
+  /-- The validator whose pruned position supplies the checkpoints of the schedule. -/
+  v₀ : Party
 
 variable {Party Blk : Type} [Fintype Party] [DecidableEq Party] [DecidableEq Blk]
 
 /-- The cast votes without rounds. -/
 def GCore.votes (g : GCore Party Blk) : Finset (Vote Party Blk) := g.cast.image Prod.fst
 
-/-- The initial gadget state with tree view `v₀`: no votes. -/
-def ginit (v₀ : TreeView Party Blk) : GCore Party Blk := ⟨v₀, ∅, fun _ => ∅⟩
+/-- The initial gadget state with tree view `v`: no votes, and the honest schedule at round
+`0` from the genesis checkpoint. -/
+def ginit (c : Cfg Party Blk) (v : TreeView Party Blk) : GCore Party Blk :=
+  ⟨v, ∅, fun _ => ∅, 0, (∅, genesisCheckpoint c.T)⟩
 
 /-- The honest voting rule: `x.validator` is honest, both checkpoints of `x` are
 epoch-boundary checkpoints of its pruned position in the view `v`, and casting `x` after `S`
@@ -203,13 +223,40 @@ def HonestOK (c : Cfg Party Blk) (v : TreeView Party Blk) (S : Finset (Vote Part
     IsCheckpointOf c.slot c.E (c.cut v x.validator) x.target ∧
     x.validator ∉ slashable (insert x S)
 
+/-- The descendant function of the honest schedule in the view `v`: the epoch-boundary blocks
+of the pruned position of `c.v₀` (`Finality.extendTo`, `Finality.boundaryBlock`). -/
+noncomputable def schedExt (c : Cfg Party Blk) (v : TreeView Party Blk) : Blk → ℕ → Blk :=
+  extendTo c.T (boundaryBlock c.slot c.E c.T.genesis (c.cut v c.v₀))
+
+/-- The votes of the next round of the honest schedule of `g` in the view of `g`
+(`FFG.livenessVotes`). -/
+noncomputable def schedVotes (c : Cfg Party Blk) (g : GCore Party Blk) :
+    Finset (Vote Party Blk) :=
+  livenessVotes c.H (schedExt c g.view) g.sch.1 g.sch.2
+
+open Classical in
+/-- The votes of the next round of the schedule that the honest validators cast: those that
+satisfy the honest voting rule after the cast votes and the votes of the round. -/
+noncomputable def honestCast (c : Cfg Party Blk) (g : GCore Party Blk) :
+    Finset (Vote Party Blk) :=
+  (schedVotes c g).filter (HonestOK c g.view (g.votes ∪ schedVotes c g))
+
+/-- **The honest round**: if the view of `g` has reached round `c.start + g.nr (2 E)`, the
+honest validators cast `honestCast c g` in the current round and the schedule advances by one
+round (`Finality.schedule_succ`). -/
+noncomputable def hround (c : Cfg Party Blk) (g : GCore Party Blk) : GCore Party Blk :=
+  if c.start + g.nr * (2 * c.E) ≤ g.view.round then
+    { g with
+      cast := g.cast ∪ (honestCast c g).image fun x => (x, g.view.round)
+      nr := g.nr + 1
+      sch := (g.sch.1 ∪ schedVotes c g, livenessTarget (schedExt c g.view) g.sch.1 g.sch.2) }
+  else g
+
 open Classical in
 /-- One action on the gadget state `g` (whose view is already the new one). -/
 noncomputable def act (c : Cfg Party Blk) (g : GCore Party Blk) :
     GAct Party Blk → GCore Party Blk
   | .idle => g
-  | .hvote x =>
-    if HonestOK c g.view g.votes x then { g with cast := insert (x, g.view.round) g.cast } else g
   | .avote x => if x.validator ∉ c.H then { g with cast := insert (x, g.view.round) g.cast } else g
   | .deliver p x =>
     if x ∈ g.votes then { g with seen := fun q => if q = p then insert x (g.seen q) else g.seen q }
@@ -219,34 +266,31 @@ noncomputable def act (c : Cfg Party Blk) (g : GCore Party Blk) :
 def overdue (Δ r : ℕ) (C : Finset (Vote Party Blk × ℕ)) : Finset (Vote Party Blk) :=
   (C.filter fun y => y.2 + Δ ≤ r).image Prod.fst
 
-/-- **The gadget step**: adopt the tree view `v`, perform the action `a`, and deliver every
-vote cast at least `Δ` rounds ago to every party. -/
+/-- **The gadget step**: adopt the tree view `v`, perform the honest round if it is due
+(`hround`) and the action `a`, and deliver every vote cast at least `Δ` rounds ago to every
+party. -/
 noncomputable def gstep (c : Cfg Party Blk) (g : GCore Party Blk) (a : GAct Party Blk)
     (v : TreeView Party Blk) : GCore Party Blk :=
-  let g₁ := act c { g with view := v } a
+  let g₁ := act c (hround c { g with view := v }) a
   { g₁ with seen := fun q => g₁.seen q ∪ overdue c.Δ v.round g₁.cast }
 
+omit [Fintype Party] in
 theorem act_spec (c : Cfg Party Blk) (g : GCore Party Blk) (a : GAct Party Blk) :
-    (act c g a).view = g.view ∧
+    (act c g a).view = g.view ∧ (act c g a).nr = g.nr ∧ (act c g a).sch = g.sch ∧
       ((act c g a).cast = g.cast ∨ ∃ x, (act c g a).cast = insert (x, g.view.round) g.cast ∧
-        (HonestOK c g.view g.votes x ∨ x.validator ∉ c.H)) ∧
+        x.validator ∉ c.H) ∧
       ∀ q, (act c g a).seen q ⊆ g.seen q ∪ g.votes := by
   cases a with
-  | idle => exact ⟨rfl, Or.inl rfl, fun _ => Finset.subset_union_left⟩
-  | hvote x =>
-    dsimp only [act]
-    split_ifs with hx
-    · exact ⟨rfl, Or.inr ⟨x, rfl, Or.inl hx⟩, fun _ => Finset.subset_union_left⟩
-    · exact ⟨rfl, Or.inl rfl, fun _ => Finset.subset_union_left⟩
+  | idle => exact ⟨rfl, rfl, rfl, Or.inl rfl, fun _ => Finset.subset_union_left⟩
   | avote x =>
     dsimp only [act]
     split_ifs with hx
-    · exact ⟨rfl, Or.inl rfl, fun _ => Finset.subset_union_left⟩
-    · exact ⟨rfl, Or.inr ⟨x, rfl, Or.inr hx⟩, fun _ => Finset.subset_union_left⟩
+    · exact ⟨rfl, rfl, rfl, Or.inl rfl, fun _ => Finset.subset_union_left⟩
+    · exact ⟨rfl, rfl, rfl, Or.inr ⟨x, rfl, hx⟩, fun _ => Finset.subset_union_left⟩
   | deliver p x =>
     dsimp only [act]
     split_ifs with hx
-    · refine ⟨rfl, Or.inl rfl, fun q => ?_⟩
+    · refine ⟨rfl, rfl, rfl, Or.inl rfl, fun q => ?_⟩
       dsimp only
       split_ifs
       · intro y hy
@@ -254,19 +298,180 @@ theorem act_spec (c : Cfg Party Blk) (g : GCore Party Blk) (a : GAct Party Blk) 
         · exact Finset.mem_union_right _ hx
         · exact Finset.mem_union_left _ hy
       · exact Finset.subset_union_left
-    · exact ⟨rfl, Or.inl rfl, fun _ => Finset.subset_union_left⟩
+    · exact ⟨rfl, rfl, rfl, Or.inl rfl, fun _ => Finset.subset_union_left⟩
+
+/-- The two outcomes of the honest round: nothing happens since the round is not due, or the
+votes `honestCast` are cast and the schedule advances. -/
+theorem hround_spec (c : Cfg Party Blk) (g : GCore Party Blk) :
+    (hround c g).view = g.view ∧ (hround c g).seen = g.seen ∧
+      (((hround c g).cast = g.cast ∧ (hround c g).nr = g.nr ∧ (hround c g).sch = g.sch ∧
+          g.view.round < c.start + g.nr * (2 * c.E)) ∨
+        (c.start + g.nr * (2 * c.E) ≤ g.view.round ∧
+          (hround c g).cast = g.cast ∪ (honestCast c g).image (fun x => (x, g.view.round)) ∧
+          (hround c g).nr = g.nr + 1 ∧
+          (hround c g).sch =
+            (g.sch.1 ∪ schedVotes c g, livenessTarget (schedExt c g.view) g.sch.1 g.sch.2))) := by
+  unfold hround
+  split_ifs with h
+  · exact ⟨rfl, rfl, Or.inr ⟨h, rfl, rfl, rfl⟩⟩
+  · exact ⟨rfl, rfl, Or.inl ⟨rfl, rfl, rfl, by omega⟩⟩
+
+theorem mem_honestCast {c : Cfg Party Blk} {g : GCore Party Blk} {x : Vote Party Blk}
+    (hx : x ∈ honestCast c g) :
+    x ∈ schedVotes c g ∧ HonestOK c g.view (g.votes ∪ schedVotes c g) x := by
+  classical
+  unfold honestCast at hx
+  exact Finset.mem_filter.1 hx
+
+/-- The cast votes after the honest round: the earlier ones, together with `honestCast` if
+the round is due. -/
+theorem hround_votes (c : Cfg Party Blk) (g : GCore Party Blk) :
+    (hround c g).votes = g.votes ∨ (hround c g).votes = g.votes ∪ honestCast c g := by
+  rcases (hround_spec c g).2.2 with ⟨hc, -⟩ | ⟨-, hc, -⟩
+  · left; unfold GCore.votes; rw [hc]
+  · right; unfold GCore.votes
+    rw [hc, Finset.image_union, Finset.image_image]
+    simp [Function.comp_def]
 
 theorem gstep_view (c : Cfg Party Blk) (g : GCore Party Blk) (a : GAct Party Blk)
     (v : TreeView Party Blk) : (gstep c g a v).view = v :=
-  (act_spec c { g with view := v } a).1
+  (act_spec c _ a).1.trans (hround_spec c { g with view := v }).1
 
 theorem gstep_cast (c : Cfg Party Blk) (g : GCore Party Blk) (a : GAct Party Blk)
-    (v : TreeView Party Blk) : (gstep c g a v).cast = (act c { g with view := v } a).cast := rfl
+    (v : TreeView Party Blk) :
+    (gstep c g a v).cast = (act c (hround c { g with view := v }) a).cast := rfl
 
 theorem gstep_seen (c : Cfg Party Blk) (g : GCore Party Blk) (a : GAct Party Blk)
     (v : TreeView Party Blk) (q : Party) :
-    (gstep c g a v).seen q = (act c { g with view := v } a).seen q ∪
-      overdue c.Δ v.round (act c { g with view := v } a).cast := rfl
+    (gstep c g a v).seen q = (act c (hround c { g with view := v }) a).seen q ∪
+      overdue c.Δ v.round (act c (hround c { g with view := v }) a).cast := rfl
+
+theorem gstep_nr (c : Cfg Party Blk) (g : GCore Party Blk) (a : GAct Party Blk)
+    (v : TreeView Party Blk) : (gstep c g a v).nr = (hround c { g with view := v }).nr :=
+  (act_spec c _ a).2.1
+
+theorem gstep_sch (c : Cfg Party Blk) (g : GCore Party Blk) (a : GAct Party Blk)
+    (v : TreeView Party Blk) : (gstep c g a v).sch = (hround c { g with view := v }).sch :=
+  (act_spec c _ a).2.2.1
+
+/-- The cast votes after a gadget step: those after the honest round, and possibly one
+adversarial vote. -/
+theorem gstep_votes (c : Cfg Party Blk) (g : GCore Party Blk) (a : GAct Party Blk)
+    (v : TreeView Party Blk) :
+    (gstep c g a v).votes = (hround c { g with view := v }).votes ∨
+      ∃ x, (gstep c g a v).votes = insert x (hround c { g with view := v }).votes ∧
+        x.validator ∉ c.H := by
+  unfold GCore.votes
+  rw [gstep_cast]
+  rcases (act_spec c (hround c { g with view := v }) a).2.2.2.1 with hc | ⟨x, hc, hx⟩
+  · exact Or.inl (by rw [hc])
+  · exact Or.inr ⟨x, by rw [hc, Finset.image_insert], hx⟩
+
+/-- A gadget step keeps the cast votes, and every vote it casts carries the new round. -/
+theorem gstep_cast_spec (c : Cfg Party Blk) (g : GCore Party Blk) (a : GAct Party Blk)
+    (v : TreeView Party Blk) :
+    g.cast ⊆ (gstep c g a v).cast ∧ ∀ y ∈ (gstep c g a v).cast, y ∈ g.cast ∨ y.2 = v.round := by
+  have hh : g.cast ⊆ (hround c { g with view := v }).cast ∧
+      ∀ y ∈ (hround c { g with view := v }).cast, y ∈ g.cast ∨ y.2 = v.round := by
+    rcases (hround_spec c { g with view := v }).2.2 with ⟨hc, -⟩ | ⟨-, hc, -⟩
+    · rw [hc]; exact ⟨subset_rfl, fun y hy => Or.inl hy⟩
+    · rw [hc]
+      refine ⟨Finset.subset_union_left, fun y hy => ?_⟩
+      rcases Finset.mem_union.1 hy with hy | hy
+      · exact Or.inl hy
+      · obtain ⟨x, -, rfl⟩ := Finset.mem_image.1 hy
+        exact Or.inr rfl
+  rw [gstep_cast]
+  have hv := (hround_spec c { g with view := v }).1
+  rcases (act_spec c (hround c { g with view := v }) a).2.2.2.1 with hc | ⟨x, hc, -⟩
+  · rw [hc]; exact hh
+  · rw [hc]
+    refine ⟨hh.1.trans (Finset.subset_insert _ _), fun y hy => ?_⟩
+    rcases Finset.mem_insert.1 hy with rfl | hy
+    · exact Or.inr (by rw [hv])
+    · exact hh.2 y hy
+
+/-- Every party has received, after a gadget step, only what it had received before and cast
+votes. -/
+theorem gstep_seen_subset (c : Cfg Party Blk) (g : GCore Party Blk) (a : GAct Party Blk)
+    (v : TreeView Party Blk) (q : Party) :
+    (gstep c g a v).seen q ⊆ g.seen q ∪ (gstep c g a v).votes := by
+  intro x hx
+  rw [gstep_seen, Finset.mem_union] at hx
+  have hsub : (hround c { g with view := v }).votes ⊆ (gstep c g a v).votes := by
+    rcases gstep_votes c g a v with h | ⟨y, h, -⟩
+    · rw [h]
+    · rw [h]; exact Finset.subset_insert _ _
+  rcases hx with hx | hx
+  · have := (act_spec c (hround c { g with view := v }) a).2.2.2.2 q hx
+    rw [(hround_spec c { g with view := v }).2.1, Finset.mem_union] at this
+    rcases this with h | h
+    · exact Finset.mem_union_left _ h
+    · exact Finset.mem_union_right _ (hsub h)
+  · obtain ⟨y, hy, rfl⟩ := Finset.mem_image.1 hx
+    exact Finset.mem_union_right _ (Finset.mem_image_of_mem _ (Finset.mem_filter.1 hy).1)
+
+/-- An honest vote cast by a gadget step is a vote of the honest round in the new view, and
+the schedule then contains the votes of that round. -/
+theorem gstep_honest {c : Cfg Party Blk} {g : GCore Party Blk} {a : GAct Party Blk}
+    {v : TreeView Party Blk} {x : Vote Party Blk} (hx : x ∈ (gstep c g a v).votes)
+    (hxH : x.validator ∈ c.H) :
+    x ∈ g.votes ∨ (x ∈ honestCast c { g with view := v } ∧
+      (gstep c g a v).sch.1 = g.sch.1 ∪ schedVotes c { g with view := v }) := by
+  have hx' : x ∈ (hround c { g with view := v }).votes := by
+    rcases gstep_votes c g a v with h | ⟨y, h, hy⟩
+    · rwa [h] at hx
+    · rw [h] at hx
+      rcases Finset.mem_insert.1 hx with rfl | hx
+      · exact absurd hxH hy
+      · exact hx
+  rw [gstep_sch]
+  rcases (hround_spec c { g with view := v }).2.2 with ⟨hc, -⟩ | ⟨-, hc, -, hs⟩
+  · left
+    unfold GCore.votes at hx' ⊢
+    rw [hc] at hx'
+    exact hx'
+  · unfold GCore.votes at hx'
+    rw [hc, Finset.image_union, Finset.mem_union] at hx'
+    rcases hx' with hx' | hx'
+    · exact Or.inl hx'
+    · refine Or.inr ⟨?_, by rw [hs]⟩
+      obtain ⟨y, hy, rfl⟩ := Finset.mem_image.1 hx'
+      obtain ⟨z, hz, rfl⟩ := Finset.mem_image.1 hy
+      exact hz
+
+/-- The votes of the schedule only grow. -/
+theorem gstep_sch_mono (c : Cfg Party Blk) (g : GCore Party Blk) (a : GAct Party Blk)
+    (v : TreeView Party Blk) : g.sch.1 ⊆ (gstep c g a v).sch.1 := by
+  rw [gstep_sch]
+  rcases (hround_spec c { g with view := v }).2.2 with ⟨-, -, hs, -⟩ | ⟨-, -, -, hs⟩
+  · rw [hs]
+  · rw [hs]; exact Finset.subset_union_left
+
+/-- Whether `v` is slashable depends only on the votes of `v`. -/
+theorem mem_slashable_of_validator {S S' : Finset (Vote Party Blk)} {v : Party}
+    (h : ∀ x ∈ S, x.validator = v → x ∈ S') (hv : v ∈ slashable S) : v ∈ slashable S' := by
+  rw [mem_slashable] at hv ⊢
+  rcases hv with ⟨x, hx, y, hy, h₁, h₂, h₃, h₄⟩ | ⟨x, hx, y, hy, h₁, h₂, h₃, h₄, h₅⟩
+  · exact Or.inl ⟨x, h x hx h₁, y, h y hy h₂, h₁, h₂, h₃, h₄⟩
+  · exact Or.inr ⟨x, h x hx h₁, y, h y hy h₂, h₁, h₂, h₃, h₄, h₅⟩
+
+/-- Slashing protection of the honest round: the votes `honestCast` make no validator
+slashable that was not slashable before. -/
+theorem not_mem_slashable_honestCast {c : Cfg Party Blk} {g : GCore Party Blk} {v : Party}
+    (hv : v ∉ slashable g.votes) : v ∉ slashable (g.votes ∪ honestCast c g) := by
+  intro hs
+  by_cases hB : ∃ x ∈ honestCast c g, x.validator = v
+  · obtain ⟨x, hx, rfl⟩ := hB
+    refine (mem_honestCast hx).2.2.2.2 (mem_slashable_of_validator (fun y hy _ => ?_) hs)
+    refine Finset.mem_insert_of_mem ?_
+    rcases Finset.mem_union.1 hy with hy | hy
+    · exact Finset.mem_union_left _ hy
+    · exact Finset.mem_union_right _ (mem_honestCast hy).1
+  · refine hv (mem_slashable_of_validator (fun y hy hyv => ?_) hs)
+    rcases Finset.mem_union.1 hy with hy | hy
+    · exact hy
+    · exact absurd ⟨y, hy, hyv⟩ hB
 
 /-- A vote of another validator does not make `v` slashable. -/
 theorem not_mem_slashable_insert {S : Finset (Vote Party Blk)} {x : Vote Party Blk} {v : Party}
@@ -366,12 +571,15 @@ noncomputable def finTT (c : Cfg Party Blk) (G : ℕ → GCore Party Blk) : Tree
 theorem finTT_eq (c : Cfg Party Blk) (G : ℕ → GCore Party Blk) :
     finTT c G = withFin (posTT c G) (fun t p => finList c ((G t).seen p)) := rfl
 
-/-- A run of the gadget: no votes at time `0`; between consecutive times either nothing
+/-- A run of the gadget: no votes at time `0` and the schedule at round `0` from the genesis
+checkpoint; between consecutive times either nothing
 changes or one gadget step is taken; the rounds of the views do not decrease; and the pruned
 positions are settled. -/
 structure Run (c : Cfg Party Blk) (G : ℕ → GCore Party Blk) : Prop where
   init_cast : (G 0).cast = ∅
   init_seen : ∀ p, (G 0).seen p = ∅
+  init_nr : (G 0).nr = 0
+  init_sch : (G 0).sch = (∅, genesisCheckpoint c.T)
   step : ∀ t, G (t + 1) = G t ∨ ∃ a v, G (t + 1) = gstep c (G t) a v
   rounds : (posTT c G).RoundsMonotone
   settled : Settled c.cut (posTT c G)
@@ -384,10 +592,7 @@ include h
 theorem cast_succ (t : ℕ) : (G t).cast ⊆ (G (t + 1)).cast := by
   rcases h.step t with e | ⟨a, v, e⟩
   · rw [e]
-  · rw [e, gstep_cast]
-    rcases (act_spec c { G t with view := v } a).2.1 with hc | ⟨x, hc, -⟩
-    · rw [hc]
-    · rw [hc]; exact Finset.subset_insert _ _
+  · rw [e]; exact (gstep_cast_spec c (G t) a v).1
 
 /-- The cast votes only grow. -/
 theorem cast_mono {t t' : ℕ} (htt : t ≤ t') : (G t).cast ⊆ (G t').cast := by
@@ -411,13 +616,9 @@ theorem cast_round (t : ℕ) : ∀ y ∈ (G t).cast, y.2 ≤ (G t).view.round :=
     · rw [e] at hr ⊢; exact ih
     · rw [e, gstep_view] at hr ⊢
       intro y hy
-      rw [gstep_cast] at hy
-      rcases (act_spec c { G t with view := v } a).2.1 with hc | ⟨x, hc, -⟩
-      · rw [hc] at hy; exact (ih y hy).trans hr
-      · rw [hc] at hy
-        rcases Finset.mem_insert.1 hy with rfl | hy
-        · exact le_rfl
-        · exact (ih y hy).trans hr
+      rcases (gstep_cast_spec c (G t) a v).2 y hy with hy | hy
+      · exact (ih y hy).trans hr
+      · exact hy.le
 
 /-- Every party has received only cast votes. -/
 theorem seen_subset (t : ℕ) : ∀ p, (G t).seen p ⊆ (G t).votes := by
@@ -429,13 +630,9 @@ theorem seen_subset (t : ℕ) : ∀ p, (G t).seen p ⊆ (G t).votes := by
     · rw [e]; exact ih
     · rw [e] at hv ⊢
       intro p x hx
-      rw [gstep_seen, Finset.mem_union] at hx
-      rcases hx with hx | hx
-      · rcases Finset.mem_union.1 ((act_spec c { G t with view := v } a).2.2 p hx) with hx | hx
-        · exact hv (ih p hx)
-        · exact hv hx
-      · obtain ⟨y, hy, rfl⟩ := Finset.mem_image.1 hx
-        exact Finset.mem_image_of_mem _ (Finset.mem_filter.1 hy).1
+      rcases Finset.mem_union.1 (gstep_seen_subset c (G t) a v p hx) with hx | hx
+      · exact hv (ih p hx)
+      · exact hx
 
 /-- Synchrony: a vote cast at least `Δ` rounds ago has been received by every party. -/
 theorem overdue_seen (t : ℕ) :
@@ -459,16 +656,13 @@ theorem honest_unslashable (t : ℕ) : ∀ v ∈ c.H, v ∉ slashable (G t).vote
     · rw [e]; exact ih
     · rw [e]
       intro v hv
-      unfold GCore.votes
-      rw [gstep_cast]
-      rcases (act_spec c { G t with view := v' } a).2.1 with hc | ⟨x, hc, hx⟩
-      · rw [hc]; exact ih v hv
-      · rw [hc, Finset.image_insert]
-        rcases hx with hx | hx
-        · by_cases hxv : x.validator = v
-          · subst hxv; exact hx.2.2.2
-          · exact not_mem_slashable_insert (ih v hv) hxv
-        · exact not_mem_slashable_insert (ih v hv) fun h' => hx (h' ▸ hv)
+      have hh : v ∉ slashable (hround c { G t with view := v' }).votes := by
+        rcases hround_votes c { G t with view := v' } with hc | hc <;> rw [hc]
+        · exact ih v hv
+        · exact not_mem_slashable_honestCast (ih v hv)
+      rcases gstep_votes c (G t) a v' with hc | ⟨x, hc, hx⟩
+      · rw [hc]; exact hh
+      · rw [hc]; exact not_mem_slashable_insert hh fun h' => hx (h' ▸ hv)
 
 /-- Honest validators vote on their pruned positions: every honest vote cast by time `t` has
 epoch-boundary checkpoints of the pruned position of its validator at some time `t₀ ≤ t`. -/
@@ -483,23 +677,29 @@ theorem honest_onChain (t : ℕ) : ∀ x ∈ (G t).votes, x.validator ∈ c.H �
     · rw [e] at hx
       obtain ⟨t₀, ht₀, h₁⟩ := ih x hx hxH
       exact ⟨t₀, ht₀.trans (Nat.le_succ t), h₁⟩
-    · have hx' := hx
-      rw [e] at hx'
-      unfold GCore.votes at hx'
-      rw [gstep_cast] at hx'
-      rcases (act_spec c { G t with view := v } a).2.1 with hc | ⟨y, hc, hy⟩
-      · rw [hc] at hx'
-        obtain ⟨t₀, ht₀, h₁⟩ := ih x hx' hxH
+    · rw [e] at hx
+      rcases gstep_honest hx hxH with hx | ⟨hx, -⟩
+      · obtain ⟨t₀, ht₀, h₁⟩ := ih x hx hxH
         exact ⟨t₀, ht₀.trans (Nat.le_succ t), h₁⟩
-      · rw [hc, Finset.image_insert] at hx'
-        rcases Finset.mem_insert.1 hx' with rfl | hx'
-        · rcases hy with hy | hy
-          · refine ⟨t + 1, le_rfl, ?_⟩
-            rw [e, gstep_view]
-            exact ⟨hy.2.1, hy.2.2.1⟩
-          · exact absurd hxH hy
-        · obtain ⟨t₀, ht₀, h₁⟩ := ih x hx' hxH
-          exact ⟨t₀, ht₀.trans (Nat.le_succ t), h₁⟩
+      · have hok := (mem_honestCast hx).2
+        refine ⟨t + 1, le_rfl, ?_⟩
+        rw [e, gstep_view]
+        exact ⟨hok.2.1, hok.2.2.1⟩
+
+/-- The honest votes come from the schedule: every honest vote cast by time `t` is a vote of
+the schedule state of time `t`. -/
+theorem honest_mem_sch (t : ℕ) : ∀ x ∈ (G t).votes, x.validator ∈ c.H → x ∈ (G t).sch.1 := by
+  induction t with
+  | zero => simp [GCore.votes, h.init_cast]
+  | succ t ih =>
+    intro x hx hxH
+    rcases h.step t with e | ⟨a, v, e⟩
+    · rw [e] at hx ⊢; exact ih x hx hxH
+    · rw [e] at hx ⊢
+      rcases gstep_honest hx hxH with hx | ⟨hx, hs⟩
+      · exact gstep_sch_mono c (G t) a v (ih x hx hxH)
+      · rw [hs]
+        exact Finset.mem_union_right _ (mem_honestCast hx).1
 
 /-- A block final for party `p` at time `t` is finalized by the cast votes at some epoch. -/
 theorem finalized_of_final {t : ℕ} {p : Party} {b : Blk} {i : ℕ}

@@ -19,8 +19,9 @@ The hypotheses of `UC.Stack.stack_realizes` hold for the protocols
 kinds with `pH = 3/4` and `pA = 0` on the first `1000` of `2000` slots, `Hash = Fin M`) with
 `W = 1000`, `d = 1000`, `w = 10`, `ε = 1/4`, and the gadget parameters `cfg`: the slot tree,
 stake `1` for the party `some 0` and `0` for the observer `none`, the honest validator
-`some 0`, epochs of one slot, the pruned positions `slotCut Block.sl 1000` and delivery bound
-`1`.
+`some 0`, epochs of one slot, the pruned positions `slotCut Block.sl 1000`, delivery bound
+`1` and the schedule from round `2004`. Since `K + 2 ≤ 2000`, every round of the run is below
+`2005`, the round from which `F_FinTree` requires finality liveness.
 
 ## Main results
 
@@ -47,10 +48,11 @@ variable (M : ℕ) [NeZero M] (Hz : ℕ)
 
 /-- The gadget parameters: the slot tree of `P M Hz`, stake `1` for the party `some 0` and `0`
 for the observer `none`, the honest validator `some 0`, slots of blocks, epochs of one slot,
-the pruned positions `slotCut Block.sl 1000`, delivery bound `1`. -/
+the pruned positions `slotCut Block.sl 1000`, delivery bound `1`, and the schedule from round
+`2004 = 2 E + (1000 + 2) + 1000` read off the position of `some 0`. -/
 noncomputable def cfg : Cfg (Option (Fin 1)) (Block Unit (Fin M) (Fin 1)) :=
   ⟨slotTree (P M Hz), fun o => o.elim 0 fun _ => 1, {some 0}, Block.sl, 1,
-    slotCut Block.sl 1000, 1⟩
+    slotCut Block.sl 1000, 1, 2004, some 0⟩
 
 theorem cfg_honest (o : Option (Fin 1)) : o ∈ (cfg M Hz).H ↔ honestP o := by
   rcases o with _ | p
@@ -81,7 +83,8 @@ theorem instance_realizes (K : ℕ) (hK : K + 2 ≤ 2000) {PK SK Sig : Type}
     1000 K 1000 10 (1 / 4) Δ (cfg M (K + 1)) exF (protocolHyp M (K + 1)) (tree_longest M (K + 1))
     (by norm_num) (by norm_num) hK le_rfl (by norm_num)
     (by rw [pH_ν, pA_ν]; norm_num) (by rw [pH_ν, pA_ν]; norm_num)
-    (by rw [pH_ν, pA_ν]; norm_num) rfl (cfg_honest M (K + 1)) rfl le_rfl
+    (by rw [pH_ν, pA_ν]; norm_num) rfl (Or.inr (by norm_num)) rfl rfl (cfg_honest M (K + 1)) rfl
+    le_rfl le_rfl (by simp [cfg]) rfl
     (show 3 * FFG.stake (fun o : Option (Fin 1) => o.elim 0 fun _ => 1)
         (Finset.univ \ {some 0}) < FFG.totalStake fun o : Option (Fin 1) => o.elim 0 fun _ => 1
       by decide)

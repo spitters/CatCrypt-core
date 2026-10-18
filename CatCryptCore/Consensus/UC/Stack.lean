@@ -44,7 +44,9 @@ The gadget votes on the pruned positions `slotCut Block.sl d`: the blocks of a p
 least `d` slots older than the round. The guard of `chainF` implies that these pruned
 positions are settled (`settled_of_chainGuard`): the common prefix property of `chainP`
 compares them with every later nonempty honest position, and the persistence of nonempty
-honest positions in `chainP` makes every later honest position nonempty.
+honest positions in `chainP` makes every later honest position nonempty. The liveness
+property `LiveTrace` of `chainP` is the hypothesis `LiveHyp` of `ffg_realizes` with
+chain-growth window `d + 2`, when the gadget uses the slots of blocks (`hsl`).
 
 ## Main results
 
@@ -54,17 +56,19 @@ honest positions in `chainP` makes every later honest position nonempty.
 * `chainSim_step_out`: every step of `chainSim` outputs a function `chainOut` of its new state.
 * `chainP_guard_init`: the guard of `F_Tree` holds on the empty trace of `chainSim`.
 * `stack_realizes` (headline): under the hypotheses of `chain_realizes` and of `ffg_realizes`,
-  with `hT`, `hH` and the pruning `c.cut = slotCut Block.sl d`, `stackReal` realizes
-  `ideal (finF …) (ffgSim …)`, with bound the bound of `chain_realizes`. The guard of `finF`
-  contains `FinalOnHonestPos`: a block final for an honest party lies on every later honest
-  position, so any two final blocks lie on one chain selected by an honest party
-  (`FinalOnHonestPos.agree`).
+  with `hT`, `hsl`, `hH`, the pruning `c.cut = slotCut Block.sl d` and the schedule start
+  `c.start = 2 E + (d + 2) + d`, `stackReal` realizes `ideal (finF …) (ffgSim …)`, with bound
+  the bound of `chain_realizes`. The guard of `finF` contains finality liveness
+  (`TreeTrace.UpdatedWithin` from round `2 E + 2 d + 2 + Δ` with lag
+  `3 E + 3 d + 4 + Δ - 1`, from `chainP` through `Run.updatedWithin`) and `FinalOnHonestPos`:
+  a block final for an honest party lies on every later honest position, so any two final
+  blocks lie on one chain selected by an honest party (`FinalOnHonestPos.agree`).
 * `stack_UCEmulatesCSim`: the same in the form `UCConcrete.UCEmulatesCSim`.
 * `Instance.instance_realizes`: every hypothesis holds for the one-party instance
   `PoSNSB.Instance` with one honest validator.
-* `Instance.run_finalizes`: a run of the gadget of the instance over views admitted by the
-  guard of `chainF` finalizes the block of slot `1`, and its reported trace satisfies the guard
-  of `finF`.
+* `Instance.run_finalizes`: in a run of the gadget of the instance over views admitted by the
+  guard of `chainF`, the reported trace satisfies the guard of `finF`, and from round `11` on
+  the honest party has a final block at most `16` rounds behind the round.
 
 ## Modelling choices
 
@@ -165,7 +169,7 @@ tree of the gadget is the slot tree and its honest validators are the honest par
 theorem treeF_eq_chainF (c : Cfg (Option (Fin np)) (Block Tx Hash (Fin np))) (K : ℕ)
     (μ : PMF (Option (Fin np))) (W Δ d w : ℕ) (ε : ℝ) (hT : c.T = slotTree P)
     (hH : ∀ o, o ∈ c.H ↔ honestP o) :
-    treeF c (chainSim P Sch A Tree H cd K μ W Δ) stView (chainP (kindLaw μ) d w ε) (exC Tx Hash np) =
+    treeF c (chainSim P Sch A Tree H cd K μ W Δ) stView (chainP P (kindLaw μ) d w ε) (exC Tx Hash np) =
       chainF P Δ (kindLaw μ) d w ε := by
   have h : (fun o => o ∈ c.H) = honestP := funext fun o => propext (hH o)
   unfold treeF chainF
@@ -187,19 +191,54 @@ theorem chainSim_step_out (K : ℕ) (μ : PMF (Option (Fin np))) (W Δ : ℕ)
   split_ifs <;> rfl
 
 /-- The guard of `F_Tree` holds on the empty trace of the PoS-NSB simulator, for every block
-tree and every honesty predicate: the initial view has round `0` and no blocks. -/
+tree and every honesty predicate, when the genesis block has slot `0`: the initial view has
+round `0` and the genesis block as every position. -/
 theorem chainP_guard_init (K : ℕ) (μ : PMF (Option (Fin np))) (W Δ d w : ℕ) (ε : ℝ)
     (ν : PMF SlotKind) (T : BlockTree (Block Tx Hash (Fin np)))
-    (honest : Option (Fin np) → Prop) :
-    FTreeGuard T (chainP ν d w ε) (traceOf stView honest
+    (honest : Option (Fin np) → Prop) (hGB : P.GB.sl = 0) :
+    FTreeGuard T (chainP P ν d w ε) (traceOf stView honest
       (chainSim P Sch A Tree H cd K μ W Δ).init
       ([] : Trace (SimSt Tx Hash np n Hz PK SK) (Event Unit Unit) (ChainOut Tx Hash np))) := by
-  refine ⟨⟨?_, ?_, ?_, ?_⟩, ?_, ?_⟩ <;>
-    simp [traceOf, stAt_nil, stView, chainSim, chainHybrid, Hybrid.withSub, initView, chainP,
-      TreeTrace.TreesGrow, TreeTrace.PositionsInTrees, TreeTrace.chains, ChainTrace.ChainsInTree,
-      TreeTrace.RoundsMonotone, TreeTrace.Agreement, Finality.Agreement, TreeTrace.finalized,
-      TreeTrace.finChains, kDeep, SlotChainGrowth, NewRound, SlotChainQuality, SlotCommonPrefix,
-      PoSNSB.fragment, PosNonemptyPersists]
+  have hst : ∀ t, ((traceOf stView honest (chainSim P Sch A Tree H cd K μ W Δ).init
+      ([] : Trace (SimSt Tx Hash np n Hz PK SK) (Event Unit Unit) (ChainOut Tx Hash np))).st t) =
+      startView P := fun t => by simp [traceOf, stAt_nil, stView, chainSim, chainHybrid,
+        Hybrid.withSub]
+  refine ⟨⟨?_, ?_, ?_, ?_⟩, ?_, ?_⟩
+  · intro p t t' _ _; rw [hst, hst]; exact List.Subset.refl _
+  · intro p t _; rw [hst]; exact List.Subset.refl _
+  · intro p t _
+    simp [TreeTrace.chains, hst, startView]
+  · intro t t' _; rw [hst, hst]
+  · simp only [chainP, List.mem_cons, List.not_mem_nil, or_false]
+    rintro φ (rfl | rfl | rfl | rfl | rfl)
+    · rintro t₁ t₂ _ ⟨t₀, rfl, hlt⟩
+      rw [hst, hst] at hlt
+      exact absurd hlt (lt_irrefl _)
+    · intro t p _ bj bi c hfrag _
+      rw [hst] at hfrag
+      obtain ⟨s₁, s₃, h⟩ := hfrag
+      have := congrArg List.length h
+      simp [startView] at this
+      omega
+    · intro t₁ t₂ k p₁ p₂ _ _ _ _ _
+      rw [hst, hst]
+      show [P.GB].filter (fun b => decide (b.sl ≤ k)) <:+ [P.GB]
+      by_cases h : P.GB.sl ≤ k
+      · rw [List.filter_cons_of_pos (by simpa using h), List.filter_nil]
+      · rw [List.filter_cons_of_neg (by simpa using h), List.filter_nil]
+        exact List.nil_suffix
+    · intro p q t t' _ _ _ _
+      rw [hst]; simp [startView]
+    · exact
+        { growth := fun p t a _ ha => by rw [hst] at ha; simp [startView] at ha
+          decreasing := fun p t _ => by rw [hst]; exact List.pairwise_singleton _ _
+          genesis_mem := fun p t _ => by rw [hst]; exact List.mem_singleton_self _
+          genesis_slot := hGB
+          inTree := fun p t _ => by simp [TreeTrace.chains, hst, startView]
+          round_zero := by rw [hst]; rfl
+          round_step := fun t => by rw [hst, hst]; simp [startView] }
+  · rintro p q t t' b b' i j _ _ ⟨C, hC, -⟩
+    simp [TreeTrace.finChains, hst, startView] at hC
 
 omit [DecidableEq Tx] [DecidableEq Hash] in
 /-- **The guard of `chainF` settles the pruned positions**: every tree trace that satisfies
@@ -207,42 +246,48 @@ the guard of `F_Tree^P` with `P = chainP` has settled pruned positions `slotCut 
 theorem settled_of_chainGuard (ν : PMF SlotKind) (d w : ℕ) (ε : ℝ)
     (T : BlockTree (Block Tx Hash (Fin np)))
     (X : TreeTrace (Option (Fin np)) (Block Tx Hash (Fin np)))
-    (hX : FTreeGuard T (chainP ν d w ε) X) : Settled (slotCut Block.sl d) X :=
+    (hX : FTreeGuard T (chainP P ν d w ε) X) : Settled (slotCut Block.sl d) X :=
   settled_slotCut (hX.2.1 _ (by simp [chainP])) (hX.2.1 _ (by simp [chainP]))
 
 variable (μ : PMF (Option (Fin np))) (W K d w : ℕ) (ε : ℝ) (Δ : ℕ)
   (c : Cfg (Option (Fin np)) (Block Tx Hash (Fin np)))
   (exF : TreeView (Option (Fin np)) (Block Tx Hash (Fin np)))
 
-/-- The finality functionality of the stack: `finF` over the PoS-NSB simulator. -/
+/-- The finality functionality of the stack: `finF` over the PoS-NSB simulator, with
+chain-growth window `d + 2` and pruning depth `d`. -/
 noncomputable abbrev stackF :=
-  finF c (chainSim P Sch A Tree H cd K μ W Δ) stView (chainP (kindLaw μ) d w ε)
-    (exC Tx Hash np) Prod.snd exF
+  finF c (chainSim P Sch A Tree H cd K μ W Δ) stView (chainP P (kindLaw μ) d w ε)
+    (exC Tx Hash np) Prod.snd exF (d + 2) d
 
 /-- The simulator of the stack: `ffgSim` over the PoS-NSB simulator. -/
 noncomputable abbrev stackSim :=
-  ffgSim c (chainSim P Sch A Tree H cd K μ W Δ) stView (chainP (kindLaw μ) d w ε)
+  ffgSim c (chainSim P Sch A Tree H cd K μ W Δ) stView (chainP P (kindLaw μ) d w ε)
     (exC Tx Hash np) Prod.snd exF
 
 /-- **FFG over PoS-NSB realizes `F_FinTree`** (composition plumbing). Let the hypotheses of
-`chain_realizes` hold for `P`, `Sch`, `Tree`, `H`, `cd`, `μ`, `W`, `K`, `d`, `w`, `ε`; let the
-gadget parameters `c` use the slot tree
-(`hT`), have as honest validators the honest parties of `chainF` (`hH`), and vote on the
-pruned positions `slotCut Block.sl d` (`hcut`); let `1 ≤ c.Δ`; and let the adversarial
-validators hold less than a third of the total stake. Then for every adversary `A`, the FFG
-gadget running with the real PoS-NSB protocol, the reference clock and the reference network
-(`stackReal`) realizes the ideal world of `F_FinTree^P'` (`stackF`, with
-`P' = finality-respecting positions :: FinalOnHonestPos :: chainP`) with the simulator
-`stackSim`: every environment has advantage at most `posFail P Sch A H cd μ W K d w ε`, the
-slot bound plus the collision-resistance advantage against `H` of the explicit collision finder
-and the EUF-CMA advantages against `Sch` of the explicit forgers built from `A`. -/
+`chain_realizes` hold for `P`, `Sch`, `Tree`, `H`, `cd`, `μ`, `W`, `K`, `d`, `w`, `ε`, with
+`P.GB.sl = 0` and `4 ≤ w` unless `K + 1 < d + 2`; let the gadget parameters `c` use the slot
+tree (`hT`) and the slots of blocks (`hsl`), have as honest validators the honest parties of
+`chainF` (`hH`), and vote on the pruned positions `slotCut Block.sl d` (`hcut`); let
+`1 ≤ c.Δ`, `1 ≤ c.E`, `c.v₀ ∈ c.H`, and let the schedule start at round
+`c.start = 2 E + (d + 2) + d`; and let the adversarial validators hold less than a third of the
+total stake. Then for every adversary `A`, the FFG gadget running with the real PoS-NSB
+protocol, the reference clock and the reference network (`stackReal`) realizes the ideal world
+of `F_FinTree^P'` (`stackF`, with `P' = finP c chainP (d + 2) d`: finality liveness from round
+`2 E + 2 d + 2 + Δ` with lag `3 E + 3 d + 4 + Δ - 1`, finality-respecting positions,
+`FinalOnHonestPos` and `chainP`) with the simulator `stackSim`: every environment has
+advantage at most `posFail P Sch A H cd μ W K d w ε`, the slot bound plus the
+collision-resistance advantage against `H` of the explicit collision finder and the EUF-CMA
+advantages against `Sch` of the explicit forgers built from `A`. -/
 theorem stack_realizes (hP : ProtocolHyp P) (hTree : Tree.Longest)
     (hwd : w ≤ d) (hWn : W + d ≤ n) (hn : K + 2 ≤ n) (hHz : K + 1 ≤ Hz)
     (hε : 0 ≤ ε) (hγ : 2 * pA (kindLaw μ) ≤ pH (kindLaw μ))
     (hw : (w : ℝ) ≤ d * (pH (kindLaw μ) - pA (kindLaw μ)))
     (h3 : (3 : ℝ) ≤ d * (pH (kindLaw μ) - 2 * pA (kindLaw μ)))
-    (hT : c.T = slotTree P) (hH : ∀ o, o ∈ c.H ↔ honestP o)
-    (hcut : c.cut = slotCut Block.sl d) (hΔ : 1 ≤ c.Δ)
+    (hGB : P.GB.sl = 0) (hw4 : K + 1 < d + 2 ∨ 4 ≤ w)
+    (hT : c.T = slotTree P) (hsl : c.slot = Block.sl) (hH : ∀ o, o ∈ c.H ↔ honestP o)
+    (hcut : c.cut = slotCut Block.sl d) (hΔ : 1 ≤ c.Δ) (hE : 1 ≤ c.E) (hv₀ : c.v₀ ∈ c.H)
+    (hstart : c.start = 2 * c.E + (d + 2) + d)
     (hA : 3 * stake c.w (Finset.univ \ c.H) < totalStake c.w) :
     Realizes (stackReal P Sch A Tree H cd c K μ W Δ exF)
       (ideal (stackF P Sch A Tree H cd μ W K d w ε Δ c exF)
@@ -250,15 +295,29 @@ theorem stack_realizes (hP : ProtocolHyp P) (hTree : Tree.Longest)
       (fun _ _ => posFail P Sch A H cd μ W K d w ε) := by
   have hF := treeF_eq_chainF P Sch A Tree H cd c K μ W Δ d w ε hT hH
   have h₂ := chain_realizes P Sch A Tree H cd hP hTree μ W K d w ε Δ hwd hWn hn hHz hε hγ hw h3
+    hGB hw4
   rw [← hF] at h₂
-  have hset : ∀ X, FTreeGuard c.T (chainP (kindLaw μ) d w ε) X → Settled c.cut X :=
-    fun X hX => by rw [hcut]; exact settled_of_chainGuard (kindLaw μ) d w ε c.T X hX
+  have hset : ∀ X, FTreeGuard c.T (chainP P (kindLaw μ) d w ε) X → Settled c.cut X :=
+    fun X hX => by rw [hcut]; exact settled_of_chainGuard P (kindLaw μ) d w ε c.T X hX
+  have hLive : ∀ X, FTreeGuard c.T (chainP P (kindLaw μ) d w ε) X → LiveHyp c (d + 2) X :=
+    fun X hX => by
+      have h := hX.2.1 (fun X => X.LiveTrace (slotTree P) Block.sl (d + 2)) (by simp [chainP])
+      show X.LiveTrace c.T c.slot (d + 2)
+      rw [hT, hsl]
+      exact h
+  have hcut' : ∀ v p, c.cut v p = (v.pos p).filter fun b => decide (c.slot b + d ≤ v.round) :=
+    fun v p => by rw [hcut, hsl]; rfl
   have h₁ := ffg_realizes (chainSim_noFail P Sch A Tree H cd K μ W Δ) chainOut
-    (fun _ => rfl) (chainP_guard_init P Sch A Tree H cd K μ W Δ d w ε (kindLaw μ) _ _)
+    (fun _ => rfl) (chainP_guard_init P Sch A Tree H cd K μ W Δ d w ε (kindLaw μ) _ _ hGB)
     (by simp only [chainP, List.mem_cons, List.not_mem_nil, or_false]
-        rintro φ (rfl | rfl | rfl | rfl) <;> exact fun X f h => h)
-    hset hΔ hA (chainSim_step_out P Sch A Tree H cd K μ W Δ) (ov := Prod.snd) (exF := exF)
-    (exT := exC Tx Hash np) (vwT := stView)
+        rintro φ (rfl | rfl | rfl | rfl | rfl)
+        · exact fun X f h => h
+        · exact fun X f h => h
+        · exact fun X f h => h
+        · exact fun X f h => h
+        · exact posOnly_liveTrace _ _ _)
+    hset hΔ hA hLive hcut' hE hv₀ hstart (chainSim_step_out P Sch A Tree H cd K μ W Δ)
+    (ov := Prod.snd) (exF := exF) (exT := exC Tx Hash np) (vwT := stView)
   intro ζ Z
   exact ((Hybrid.realizes_compose _ _ _ _ _ _ h₁ h₂) ζ Z).trans_eq (add_zero _)
 
@@ -272,8 +331,10 @@ theorem stack_UCEmulatesCSim (hP : ProtocolHyp P) (hTree : Tree.Longest)
     (hε : 0 ≤ ε) (hγ : 2 * pA (kindLaw μ) ≤ pH (kindLaw μ))
     (hw : (w : ℝ) ≤ d * (pH (kindLaw μ) - pA (kindLaw μ)))
     (h3 : (3 : ℝ) ≤ d * (pH (kindLaw μ) - 2 * pA (kindLaw μ)))
-    (hT : c.T = slotTree P) (hH : ∀ o, o ∈ c.H ↔ honestP o)
-    (hcut : c.cut = slotCut Block.sl d) (hΔ : 1 ≤ c.Δ)
+    (hGB : P.GB.sl = 0) (hw4 : K + 1 < d + 2 ∨ 4 ≤ w)
+    (hT : c.T = slotTree P) (hsl : c.slot = Block.sl) (hH : ∀ o, o ∈ c.H ↔ honestP o)
+    (hcut : c.cut = slotCut Block.sl d) (hΔ : 1 ≤ c.Δ) (hE : 1 ≤ c.E) (hv₀ : c.v₀ ∈ c.H)
+    (hstart : c.start = 2 * c.E + (d + 2) + d)
     (hA : 3 * stake c.w (Finset.univ \ c.H) < totalStake c.w) (ζ V : Type) :
     UCEmulatesCSim ⟨Strat ζ (Event Unit Unit × GAct (Option (Fin np)) (Block Tx Hash (Fin np)))
         (TreeView (Option (Fin np)) (Block Tx Hash (Fin np))), ζ, Empty, Empty, V⟩
@@ -284,7 +345,7 @@ theorem stack_UCEmulatesCSim (hP : ProtocolHyp P) (hTree : Tree.Longest)
           SPComp.pure (Sum.inl z)) id
       (fun _ _ => posFail P Sch A H cd μ W K d w ε) :=
   (stack_realizes P Sch A Tree H cd μ W K d w ε Δ c exF hP hTree hwd hWn hn hHz hε hγ hw h3
-    hT hH hcut hΔ hA).toUCEmulatesCSim ζ V
+    hGB hw4 hT hsl hH hcut hΔ hE hv₀ hstart hA).toUCEmulatesCSim ζ V
 
 end Stack
 
@@ -298,9 +359,11 @@ attribute [local instance] PoSNSB.Instance.corruption
 
 /-- The gadget parameters of the instance: the slot tree, stake `1` for the party `some 0` and
 `0` for the observer `none`, the honest validator `some 0`, slots of blocks, epochs of one slot,
-the pruned positions `slotCut Block.sl 3`, delivery bound `1`. -/
+the pruned positions `slotCut Block.sl 3`, delivery bound `1`, and the schedule from round
+`10 = 2 E + (3 + 2) + 3` read off the position of `some 0`. -/
 noncomputable def cfg : Cfg (Option (Fin 1)) (Block Unit Unit (Fin 1)) :=
-  ⟨slotTree P, fun o => o.elim 0 fun _ => 1, {some 0}, Block.sl, 1, slotCut Block.sl 3, 1⟩
+  ⟨slotTree P, fun o => o.elim 0 fun _ => 1, {some 0}, Block.sl, 1, slotCut Block.sl 3, 1, 10,
+    some 0⟩
 
 theorem cfg_honest (o : Option (Fin 1)) : o ∈ cfg.H ↔ honestP o := by
   rcases o with _ | p
@@ -325,7 +388,8 @@ theorem instance_realizes :
   obtain ⟨hP, hT, hwd, hWn, hn, hHz, hε, hγ, hw, h3⟩ := instance_hyps
   intro ζ Z
   exact (stack_realizes P Sch A Tree H cd μ 1 0 3 1 0 2 cfg initView hP hT hwd hWn hn hHz hε hγ
-    hw h3 rfl cfg_honest rfl le_rfl (by decide) ζ Z).trans
+    hw h3 rfl (Or.inl (by norm_num)) rfl rfl cfg_honest rfl le_rfl le_rfl (by simp [cfg]) rfl
+    (by decide) ζ Z).trans
     (add_le_add_left (add_le_add_right Chain.Instance.collFinder_advantage_le _) _)
 
 /-! ### A run of the gadget of the instance that finalizes a block of slot `1` -/
@@ -359,11 +423,24 @@ theorem mem_bline {n : ℕ} {b : Block Unit Unit (Fin 1)} (h : b ∈ bline n) : 
     · exact le_rfl
     · exact (ih h).trans (Nat.le_succ n)
 
-theorem bline_pairwise (n : ℕ) : (bline n).Pairwise fun b b' => b'.sl ≤ b.sl := by
+theorem bline_pairwise_lt (n : ℕ) : (bline n).Pairwise fun b b' => b'.sl < b.sl := by
   induction n with
   | zero => exact List.pairwise_singleton _ _
   | succ n ih =>
-    exact List.pairwise_cons.2 ⟨fun b hb => (mem_bline hb).trans (Nat.le_succ n), ih⟩
+    exact List.pairwise_cons.2 ⟨fun b hb => Nat.lt_succ_of_le (mem_bline hb), ih⟩
+
+theorem bline_pairwise (n : ℕ) : (bline n).Pairwise fun b b' => b'.sl ≤ b.sl :=
+  (bline_pairwise_lt n).imp le_of_lt
+
+theorem bk_mem_bline {k n : ℕ} (h : k ≤ n) : bk k ∈ bline n := by
+  induction n with
+  | zero => obtain rfl : k = 0 := by omega
+            exact List.mem_singleton_self _
+  | succ n ih =>
+    rcases Nat.lt_or_ge k (n + 1) with hk | hk
+    · exact List.mem_cons_of_mem _ (ih (by omega))
+    · obtain rfl : k = n + 1 := by omega
+      exact List.mem_cons_self
 
 theorem filter_bline (k n : ℕ) :
     (bline n).filter (fun b => decide (b.sl ≤ k)) = bline (min k n) := by
@@ -382,11 +459,12 @@ def sv (r : ℕ) : TreeView (Option (Fin 1)) (Block Unit Unit (Fin 1)) :=
   ⟨r, fun _ => bline r, fun _ => bline r, fun _ => []⟩
 
 /-- **The views are admitted by `F_Tree`.** Every tree trace whose view at `t` is `sv (f t)`
-for a monotone `f` satisfies the guard of `chainF` for the instance (`d = 3`, `w = 1`,
-`ε = 0`). -/
+for a monotone `f` with `f 0 = 0` that advances by at most `1` per step satisfies the guard of
+`chainF` for the instance (`d = 3`, `w = 1`, `ε = 0`). -/
 theorem guard_sv (X : TreeTrace (Option (Fin 1)) (Block Unit Unit (Fin 1))) (f : ℕ → ℕ)
-    (hf : Monotone f) (hX : ∀ t, X.st t = sv (f t)) :
-    FTreeGuard (slotTree P) (chainP ν 3 1 0) X := by
+    (hf : Monotone f) (hf0 : f 0 = 0) (hf1 : ∀ t, f (t + 1) ≤ f t + 1)
+    (hX : ∀ t, X.st t = sv (f t)) :
+    FTreeGuard (slotTree P) (chainP P ν 3 1 0) X := by
   refine ⟨⟨?_, ?_, ?_, ?_⟩, ?_, ?_⟩
   · intro p t t' _ h
     rw [hX, hX]
@@ -402,7 +480,7 @@ theorem guard_sv (X : TreeTrace (Option (Fin 1)) (Block Unit Unit (Fin 1))) (f :
     rw [hX, hX]
     exact hf h
   · simp only [chainP, List.mem_cons, List.not_mem_nil, or_false]
-    rintro φ (rfl | rfl | rfl | rfl)
+    rintro φ (rfl | rfl | rfl | rfl | rfl)
     · intro t₁ t₂ _ _ hd w' hw'
       rw [hX, hX] at hd hw' ⊢
       simp only [sv, length_bline] at hd hw' ⊢
@@ -419,145 +497,88 @@ theorem guard_sv (X : TreeTrace (Option (Fin 1)) (Block Unit Unit (Fin 1))) (f :
     · intro _ q _ t' _ _ _ _
       rw [hX]
       exact bline_ne_nil _
+    · exact
+        { growth := fun p t a _ ha => by
+            rw [hX] at ha ⊢
+            exact ⟨bk (a + 1), bk_mem_bline (by simp only [sv] at ha; omega),
+              Nat.lt_succ_self a, by simp [bk]⟩
+          decreasing := fun p t _ => by rw [hX]; exact bline_pairwise_lt _
+          genesis_mem := fun p t _ => by rw [hX]; exact bk_mem_bline (Nat.zero_le _)
+          genesis_slot := rfl
+          inTree := fun p t _ => by
+            show ((X.st t).pos p).Pairwise fun b b' => b'.sl ≤ b.sl
+            rw [hX]
+            exact bline_pairwise _
+          round_zero := by rw [hX, hf0]; rfl
+          round_step := fun t => by rw [hX, hX]; exact hf1 t }
   · rintro p q t t' b b' i j _ _ ⟨C, hC, -⟩
     simp [TreeTrace.finChains, hX, sv] at hC
 
-/-- The honest vote from the genesis checkpoint to the checkpoint `(bk 1, 1)`. -/
-def x₁ : Vote (Option (Fin 1)) (Block Unit Unit (Fin 1)) := ⟨some 0, ⟨bk 0, 0⟩, ⟨bk 1, 1⟩⟩
-
-/-- The honest vote from the checkpoint `(bk 1, 1)` to the checkpoint `(bk 2, 2)`. -/
-def x₂ : Vote (Option (Fin 1)) (Block Unit Unit (Fin 1)) := ⟨some 0, ⟨bk 1, 1⟩, ⟨bk 2, 2⟩⟩
-
-/-- The gadget state after the vote `x₁` at round `4`. -/
-noncomputable def g₁ : GCore (Option (Fin 1)) (Block Unit Unit (Fin 1)) :=
-  gstep cfg (ginit (sv 0)) (.hvote x₁) (sv 4)
-
-/-- The gadget state after the vote `x₂` at round `5`. -/
-noncomputable def g₂ : GCore (Option (Fin 1)) (Block Unit Unit (Fin 1)) :=
-  gstep cfg g₁ (.hvote x₂) (sv 5)
-
-/-- A run of the gadget of the instance: the views of rounds `0`, `4`, `5`, `6`; the honest
-votes `x₁` at round `4` and `x₂` at round `5`; afterwards nothing changes. -/
+/-- A run of the gadget of the instance without adversarial actions: at time `t` the view of
+round `t`; the gadget casts the honest schedule from round `10` on. -/
 noncomputable def runS : ℕ → GCore (Option (Fin 1)) (Block Unit Unit (Fin 1))
-  | 0 => ginit (sv 0)
-  | 1 => g₁
-  | 2 => g₂
-  | _ + 3 => gstep cfg g₂ .idle (sv 6)
+  | 0 => ginit cfg (sv 0)
+  | t + 1 => gstep cfg (runS t) .idle (sv (t + 1))
 
-/-- The rounds of the run. -/
-def rd : ℕ → ℕ
-  | 0 => 0
-  | 1 => 4
-  | 2 => 5
-  | _ + 3 => 6
+theorem runS_view (t : ℕ) : (runS t).view = sv t := by
+  cases t with
+  | zero => rfl
+  | succ t => exact gstep_view _ _ _ _
 
-theorem rd_mono : Monotone rd := by
-  intro a b h
-  rcases a with _ | _ | _ | a <;> rcases b with _ | _ | _ | b <;> simp [rd] <;> omega
-
-theorem runS_view (t : ℕ) : (runS t).view = sv (rd t) := by
-  rcases t with _ | _ | _ | t
-  · rfl
-  · exact gstep_view _ _ _ _
-  · exact gstep_view _ _ _ _
-  · exact gstep_view _ _ _ _
-
-theorem guard_runS : FTreeGuard (slotTree P) (chainP ν 3 1 0) (posTT cfg runS) :=
-  guard_sv _ rd rd_mono runS_view
+theorem guard_runS : FTreeGuard (slotTree P) (chainP P ν 3 1 0) (posTT cfg runS) :=
+  guard_sv _ id monotone_id rfl (fun _ => le_rfl) runS_view
 
 theorem runS_run : Run cfg runS where
   init_cast := rfl
   init_seen _ := rfl
-  step t := by
-    rcases t with _ | _ | _ | t
-    · exact Or.inr ⟨.hvote x₁, sv 4, rfl⟩
-    · exact Or.inr ⟨.hvote x₂, sv 5, rfl⟩
-    · exact Or.inr ⟨.idle, sv 6, rfl⟩
-    · exact Or.inl rfl
+  init_nr := rfl
+  init_sch := rfl
+  step t := Or.inr ⟨.idle, sv (t + 1), rfl⟩
   rounds := guard_runS.1.2.2.2
-  settled := settled_of_chainGuard ν 3 1 0 _ _ guard_runS
+  settled := settled_of_chainGuard P ν 3 1 0 _ _ guard_runS
 
-theorem honestOK_x₁ : HonestOK cfg (sv 4) ∅ x₁ := by
-  refine ⟨by simp [cfg, x₁], by decide, by decide, ?_⟩
-  simp [mem_slashable, DoubleVote, SurroundVote, x₁]
+theorem runS_live : LiveHyp cfg 5 (posTT cfg runS) :=
+  guard_runS.2.1 (fun X => X.LiveTrace (slotTree P) Block.sl (3 + 2)) (by simp [chainP])
 
-theorem honestOK_x₂ : HonestOK cfg (sv 5) {x₁} x₂ := by
-  refine ⟨by simp [cfg, x₂], by decide, by decide, ?_⟩
-  simp [mem_slashable, DoubleVote, SurroundVote, x₁, x₂]
-
-theorem x₁_mem_cast : (x₁, 4) ∈ g₁.cast := by
-  show (x₁, 4) ∈ (act cfg { ginit (sv 0) with view := sv 4 } (.hvote x₁)).cast
-  simp only [act]
-  split_ifs with h
-  · exact Finset.mem_insert_self _ _
-  · exact absurd (by simpa [GCore.votes, ginit] using honestOK_x₁) h
-
-theorem x₂_mem_cast : (x₂, 5) ∈ g₂.cast := by
-  have hv : g₁.votes = {x₁} := by
-    show (act cfg { ginit (sv 0) with view := sv 4 } (.hvote x₁)).cast.image Prod.fst = {x₁}
-    simp only [act]
-    rw [if_pos (by simpa [GCore.votes, ginit] using honestOK_x₁)]
-    simp [ginit]
-  show (x₂, 5) ∈ (act cfg { g₁ with view := sv 5 } (.hvote x₂)).cast
-  simp only [act]
-  split_ifs with h
-  · exact Finset.mem_insert_self _ _
-  · exact absurd (show HonestOK cfg (sv 5) g₁.votes x₂ by rw [hv]; exact honestOK_x₂) h
-
-/-- Both votes have been received by the honest party at time `3`. -/
-theorem mem_seen {x : Vote (Option (Fin 1)) (Block Unit Unit (Fin 1))} {r : ℕ}
-    (hx : (x, r) ∈ g₂.cast) (hr : r + 1 ≤ 6) : x ∈ (runS 3).seen (some 0) := by
-  show x ∈ (gstep cfg g₂ .idle (sv 6)).seen (some 0)
-  rw [gstep_seen]
-  exact Finset.mem_union_right _ (Finset.mem_image.2 ⟨(x, r), Finset.mem_filter.2 ⟨hx, hr⟩, rfl⟩)
-
-theorem totalStake_cfg : totalStake cfg.w = 1 := rfl
-
-/-- A vote set containing a vote of `some 0` for `s → t` has a supermajority link `s → t`, when
-the epochs increase and the slots do not decrease. -/
-theorem link_of_mem {S : Finset (Vote (Option (Fin 1)) (Block Unit Unit (Fin 1)))}
-    {s t : Checkpoint (Block Unit Unit (Fin 1))} (hx : (⟨some 0, s, t⟩ : Vote _ _) ∈ S)
-    (he : s.epoch < t.epoch) (hs : s.block.sl ≤ t.block.sl) :
-    SupermajorityLink cfg.T cfg.w S s t := by
-  refine ⟨he, hs, ?_⟩
-  have hv : some 0 ∈ voters S s t := mem_voters.2 hx
-  have := Finset.single_le_sum (f := cfg.w) (fun _ _ => Nat.zero_le _) hv
-  rw [totalStake_cfg]
-  change 1 ≤ stake cfg.w (voters S s t) at this
-  omega
-
-/-- **Non-vacuity of the conclusion.** The run `runS` of the gadget of the instance has views
-admitted by the guard of `chainF`, its reported trace satisfies the guard of `F_FinTree^P'`
-of the stack, and the block `bk 1` of slot `1`, distinct from the genesis block, is final for
-the honest party at time `3`. -/
+/-- **Non-vacuity of the conclusion.** The run `runS` of the gadget of the instance, in which
+the gadget casts the honest votes itself, has views admitted by the guard of `chainF`; its
+reported trace satisfies the guard of `F_FinTree^P'` of the stack, including finality liveness:
+from time `11` on the honest party has a final block at most `16` rounds behind the round,
+and at time `17` a final block distinct from the genesis block. -/
 theorem run_finalizes :
-    Run cfg runS ∧ FTreeGuard (slotTree P) (chainP ν 3 1 0) (posTT cfg runS) ∧
-      FinTreeGuard cfg.T ((fun X => X.FinalityRespectingPos) :: FinalOnHonestPos ::
-        chainP ν 3 1 0) cfg.Δ (suppF cfg) (finTT cfg runS) ∧
-      bk 1 ≠ P.GB ∧ ∃ i, (finTT cfg runS).finalized 3 (some 0) (bk 1) i := by
+    Run cfg runS ∧ FTreeGuard (slotTree P) (chainP P ν 3 1 0) (posTT cfg runS) ∧
+      FinTreeGuard cfg.T (finP cfg (chainP P ν 3 1 0) 5 3) cfg.Δ (suppF cfg) (finTT cfg runS) ∧
+      (∀ t, 11 ≤ t → ∃ b ∈ ((finTT cfg runS).st t).fin (some 0), t ≤ b.sl + 16) ∧
+      ∃ b ∈ ((finTT cfg runS).st 17).fin (some 0), b ≠ P.GB := by
   have hA : 3 * stake cfg.w (Finset.univ \ cfg.H) < totalStake cfg.w := by decide
-  have hP : ∀ φ ∈ chainP (Tx := Unit) (Hash := Unit) (np := 1) ν 3 1 0, PosOnly φ := by
+  have hP : ∀ φ ∈ chainP P ν 3 1 0, PosOnly φ := by
     simp only [chainP, List.mem_cons, List.not_mem_nil, or_false]
-    rintro φ (rfl | rfl | rfl | rfl) <;> exact fun X f h => h
-  refine ⟨runS_run, guard_runS, finTreeGuard_of_run runS_run le_rfl hA hP guard_runS.1
-    guard_runS.2.1, by decide, ?_⟩
-  set S := (runS 3).seen (some 0)
-  have h₁ : x₁ ∈ S := mem_seen (runS_run.cast_mono (t := 1) (t' := 2) (by omega) x₁_mem_cast)
-    (by omega)
-  have h₂ : x₂ ∈ S := mem_seen x₂_mem_cast (by omega)
-  have hJ : Justified cfg.T cfg.w S ⟨bk 1, 1⟩ :=
-    Justified.link Justified.genesis (link_of_mem h₁ (by decide) (by decide))
-  have hfin : Finalized cfg.T cfg.w S ⟨bk 1, 1⟩ :=
-    ⟨hJ, ⟨bk 2, 2⟩, rfl, link_of_mem h₂ (by decide) (by decide)⟩
-  have hmem : bk 1 ∈ finList cfg S :=
-    mem_finList (by decide) hfin fun b' hb' =>
-      runS_run.finalized_unique hA (Finalized.mono (runS_run.seen_subset 3 _) hfin)
-        (Finalized.mono (runS_run.seen_subset 3 _) hb')
-  obtain ⟨s, l, hsl⟩ := List.append_of_mem hmem
-  refine ⟨l.length, l, ?_, rfl⟩
-  show bk 1 :: l <:+ finList cfg S
-  rw [hsl]
-  exact List.suffix_append s _
+    rintro φ (rfl | rfl | rfl | rfl | rfl)
+    · exact fun X f h => h
+    · exact fun X f h => h
+    · exact fun X f h => h
+    · exact fun X f h => h
+    · exact posOnly_liveTrace _ _ _
+  have hU := runS_run.updatedWithin hA le_rfl le_rfl runS_live (d := 3) (fun _ _ => rfl)
+    (by simp [cfg]) rfl
+  obtain ⟨hwf, hPs, hrest⟩ := finTreeGuard_of_run runS_run le_rfl hA hP guard_runS.1
+    guard_runS.2.1
+  have hlag : ∀ t, 11 ≤ t → ∃ b ∈ ((finTT cfg runS).st t).fin (some 0), t ≤ b.sl + 16 := by
+    intro t ht
+    obtain ⟨b, hb, hle⟩ := hU (some 0) t (by simp [finTT, cfg]) (by
+      change _ ≤ (runS t).view.round
+      rw [runS_view]
+      exact ht)
+    refine ⟨b, hb, ?_⟩
+    change (runS t).view.round ≤ b.sl + (3 * 1 + 2 * 5 + 3 + 1 - 1) at hle
+    rw [runS_view] at hle
+    exact hle
+  refine ⟨runS_run, guard_runS, ⟨hwf, List.forall_mem_cons.2 ⟨hU, hPs⟩, hrest⟩, hlag, ?_⟩
+  obtain ⟨b, hb, hle⟩ := hlag 17 (by norm_num)
+  refine ⟨b, hb, fun h => ?_⟩
+  rw [h] at hle
+  change 17 ≤ 0 + 16 at hle
+  omega
 
 end Instance
 

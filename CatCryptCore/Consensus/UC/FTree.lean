@@ -236,6 +236,25 @@ current round. -/
 def UpdatedWithin (sl : Blk → ℕ) (τ L : ℕ) : Prop :=
   ∀ p t, X.honest p → τ ≤ (X.st t).round → ∃ b ∈ (X.st t).fin p, (X.st t).round ≤ sl b + L
 
+/-- The positions on which finality liveness rests, with block tree `T`, slots `sl` and
+chain-growth window `σ`:
+
+* `growth`: every window `(a, a + σ]` of slots with `a + σ` at most the current round contains
+  the slot of a block of every honest position;
+* `decreasing`: slots decrease strictly along honest positions;
+* `genesis_mem`, `genesis_slot`: the genesis block, of slot `0`, is on every honest position;
+* `inTree`: honest positions are chains of the block tree;
+* `round_zero`, `round_step`: the round starts at `0` and advances by at most `1` per step. -/
+structure LiveTrace (T : BlockTree Blk) (sl : Blk → ℕ) (σ : ℕ) : Prop where
+  growth : ∀ p t a, X.honest p → a + σ ≤ (X.st t).round →
+    ∃ b ∈ (X.st t).pos p, a < sl b ∧ sl b ≤ a + σ
+  decreasing : ∀ p t, X.honest p → ((X.st t).pos p).Pairwise fun b b' => sl b' < sl b
+  genesis_mem : ∀ p t, X.honest p → T.genesis ∈ (X.st t).pos p
+  genesis_slot : sl T.genesis = 0
+  inTree : X.chains.ChainsInTree T
+  round_zero : (X.st 0).round = 0
+  round_step : X.RoundStep
+
 end TreeTrace
 
 /-! ## Stability under truncation -/
@@ -315,6 +334,18 @@ theorem stable_roundStep : Stable (fun X : TreeTrace Party Blk => X.RoundStep) :
 theorem stable_updatedWithin (sl : Blk → ℕ) (τ L : ℕ) :
     Stable (fun X : TreeTrace Party Blk => X.UpdatedWithin sl τ L) :=
   fun _ n h p t hp hτ => h p (min t n) hp hτ
+
+theorem stable_liveTrace (T : BlockTree Blk) (sl : Blk → ℕ) (σ : ℕ) :
+    Stable (fun X : TreeTrace Party Blk => X.LiveTrace T sl σ) := fun X n h =>
+  { growth := fun p t a hp ha => h.growth p (min t n) a hp ha
+    decreasing := fun p t hp => h.decreasing p (min t n) hp
+    genesis_mem := fun p t hp => h.genesis_mem p (min t n) hp
+    genesis_slot := h.genesis_slot
+    inTree := fun p t hp => h.inTree p (min t n) hp
+    round_zero := by
+      change (X.st (min 0 n)).round = 0
+      rw [Nat.zero_min]; exact h.round_zero
+    round_step := stable_roundStep X n h.round_step }
 
 /-- Conjunctions of stable properties are stable. -/
 theorem Stable.and {φ ψ : TreeTrace Party Blk → Prop} (hφ : Stable φ) (hψ : Stable ψ) :
