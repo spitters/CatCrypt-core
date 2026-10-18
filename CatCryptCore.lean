@@ -173,6 +173,7 @@ public import CatCryptCore.Crypto.FiatShamirROM.SignerHybrid
 public import CatCryptCore.Crypto.FiatShamirROM.StraightLine
 public import CatCryptCore.Crypto.FiatShamirROM.StraightLineCls
 public import CatCryptCore.Crypto.FiatShamirROM.StatHVZK
+public import CatCryptCore.Crypto.FiatShamirROM.ProgFlag
 public import CatCryptCore.Crypto.FiatShamirROM.Bridge
 public import CatCryptCore.Crypto.PRPPRFSwitching
 public import CatCryptCore.Crypto.PRFAssumption
