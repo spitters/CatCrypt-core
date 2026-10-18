@@ -367,6 +367,7 @@ public import CatCryptCore.Crypto.OT.DualModeOT
 -- Transparent functionalities, hybrid composition, the clock and the network
 public import CatCryptCore.Crypto.UCTransparent
 public import CatCryptCore.Crypto.UCTransparentHybrid
+public import CatCryptCore.Crypto.UCTransparentAdv
 public import CatCryptCore.Crypto.UCTransparentExample
 public import CatCryptCore.Crypto.UCClockNetworkDet
 public import CatCryptCore.Crypto.UCClockNetwork
@@ -402,6 +403,7 @@ public import CatCryptCore.Consensus.PoSNSB.Prob.Time
 public import CatCryptCore.Consensus.PoSNSB.Prob.ROM
 public import CatCryptCore.Consensus.PoSNSB.Prob.Uniform
 public import CatCryptCore.Consensus.PoSNSB.Prob.Erasure
+public import CatCryptCore.Consensus.PoSNSB.Prob.Script
 public import CatCryptCore.Consensus.PoSNSB.ProbExamples
 public import CatCryptCore.Consensus.UC.FTree
 public import CatCryptCore.Consensus.UC.FinalityGadget
