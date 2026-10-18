@@ -39,7 +39,9 @@ with at most `N` defined points.
 * `chalOracleP`, `chalGameP`, `hybDistByP P D D' k A` — the challenge oracle with the
   programmed flag of a sampler, the game of a distinguisher against it, and the `k`-th
   hybrid distinguisher, which answers the signing queries before the `k`-th from `D'`,
-  the `k`-th from the challenge oracle and the later ones from `D`
+  the `k`-th from the challenge oracle and the later ones from `D`; these and the hybrid
+  results below are the instances at the signing step `attSignP` of the hybrid of a
+  signing step (`chalOracleOf`, `hybRunOf`, `Protocol.advantage_attGameByOf_hybrid`)
 
 ## Main results
 
@@ -992,21 +994,20 @@ variable {G : Protocol}
 pair `xw`: on a message and a state it gives the signing answer of `attSignP D xw`. -/
 noncomputable def chalOracleP (D : G.Sampler) (xw : G.Stmt × G.Wit) :
     Unit → G.Msg × (G.Tables × Bool) → PMF ((G.Answer × (G.Tables × Bool)) × Unit) :=
-  fun _ q => (attSignP D xw q.2 q.1).map fun o => (o, ())
+  chalOracleOf attSignP D xw
 
 /-- The game of a distinguisher `B` against the challenge oracle with the programmed
 flag of the sampler `D`: `B` receives a generated pair and outputs a bit. -/
 noncomputable def chalGameP (D : G.Sampler)
     (B : G.Stmt × G.Wit → OracleAdv (G.Msg × (G.Tables × Bool)) (G.Answer × (G.Tables × Bool))
       Bool) : SPComp Bool :=
-  PRPPRF.pmfGame (G.gen.bind fun xw => (OracleAdv.run (chalOracleP D xw) (B xw) ()).map Prod.fst)
+  chalGameOf attSignP D B
 
 /-- The oracle with the programmed flag whose signing query from a state with `n`
 signed messages uses the sampler `Ds n`. -/
 noncomputable def hybStepP (Ds : ℕ → G.Sampler) (xw : G.Stmt × G.Wit) (s : G.Tables × Bool) :
-    G.Query → Step G.Answer (G.Tables × Bool) G.Ch
-  | .inl k => realHashStep s.1 s.2 k
-  | .inr m => .plain (attSignP (Ds s.1.signed.length) xw s m)
+    G.Query → Step G.Answer (G.Tables × Bool) G.Ch :=
+  hybStepOf attSignP Ds xw s
 
 /-- The run of an adversary with the oracle of the game with the programmed flag in
 which the signing query `j` (from `0`) uses the sampler `D'` for `j < k`, the challenge
@@ -1016,15 +1017,8 @@ far, and `f` maps the output and final state. -/
 noncomputable def hybRunP (D D' : G.Sampler) (k : ℕ) (xw : G.Stmt × G.Wit) {α β : Type}
     (f : α × (G.Tables × Bool) → β) :
     ℕ → OracleAdv G.Query G.Answer α → G.Tables × Bool →
-      OracleAdv (G.Msg × (G.Tables × Bool)) (G.Answer × (G.Tables × Bool)) β
-  | _, .ret a, s => .ret (f (a, s))
-  | j, .rand p c, s => .rand p fun b => hybRunP D D' k xw f j (c b) s
-  | j, .query (.inl key) c, s =>
-    .rand (toOracle (realStep xw) s (.inl key)) fun o => hybRunP D D' k xw f j (c o.1) o.2
-  | j, .query (.inr m) c, s =>
-    if j = k then .query (m, s) fun o => hybRunP D D' k xw f (j + 1) (c o.1) o.2
-    else .rand (attSignP (if j < k then D' else D) xw s m) fun o =>
-      hybRunP D D' k xw f (j + 1) (c o.1) o.2
+      OracleAdv (G.Msg × (G.Tables × Bool)) (G.Answer × (G.Tables × Bool)) β :=
+  hybRunOf attSignP D D' k xw f
 
 /-- **The `k`-th hybrid distinguisher with the programmed flag.** On the pair `(x, w)`
 it runs the adversary `A` with the verifier's queries, answers the signing queries
@@ -1034,41 +1028,22 @@ outcome. -/
 noncomputable def hybDistByP (P : G.Stmt → G.Forgery × (G.Tables × Bool) → Bool)
     (D D' : G.Sampler) (k : ℕ) {qH qS : ℕ} (A : G.Adversary qH qS) (xw : G.Stmt × G.Wit) :
     OracleAdv (G.Msg × (G.Tables × Bool)) (G.Answer × (G.Tables × Bool)) Bool :=
-  hybRunP D D' k xw (P xw.1) 0 (withVerify xw.1 (A.run xw.1)) (Protocol.Tables.empty, false)
+  hybDistByOf attSignP P D D' k A xw
 
 /-- The distinguisher `hybRunP` from the signing query `j` asks at most one query, and
 none after the `k`-th signing query. -/
 theorem isQueryBound_hybRunP (D D' : G.Sampler) (k : ℕ) (xw : G.Stmt × G.Wit) {α β : Type}
     (f : α × (G.Tables × Bool) → β) (A : OracleAdv G.Query G.Answer α) (j : ℕ)
     (s : G.Tables × Bool) :
-    (hybRunP D D' k xw f j A s).IsQueryBound (if j ≤ k then 1 else 0) := by
-  induction A generalizing j s with
-  | ret a => trivial
-  | rand p c ih => exact fun b => ih b j s
-  | query d c ih =>
-    cases d with
-    | inl key => exact fun o => ih o.1 j o.2
-    | inr m =>
-      by_cases hj : j = k
-      · subst hj
-        simp only [hybRunP, if_true, le_refl]
-        intro o
-        have := ih o.1 (j + 1) o.2
-        simpa using this
-      · simp only [hybRunP, hj, if_false]
-        intro o
-        refine (ih o.1 (j + 1) o.2).mono ?_
-        split_ifs <;> omega
+    (hybRunP D D' k xw f j A s).IsQueryBound (if j ≤ k then 1 else 0) :=
+  isQueryBound_hybRunOf attSignP D D' k xw f A j s
 
 /-- The `k`-th hybrid distinguisher with the programmed flag asks the challenge oracle
 at most once. -/
 theorem isQueryBound_hybDistByP (P : G.Stmt → G.Forgery × (G.Tables × Bool) → Bool)
     (D D' : G.Sampler) (k : ℕ) {qH qS : ℕ} (A : G.Adversary qH qS)
-    (xw : G.Stmt × G.Wit) : (hybDistByP P D D' k A xw).IsQueryBound 1 := by
-  have := isQueryBound_hybRunP D D' k xw (P xw.1) (withVerify xw.1 (A.run xw.1)) 0
-    (Protocol.Tables.empty, false)
-  unfold hybDistByP
-  simpa using this
+    (xw : G.Stmt × G.Wit) : (hybDistByP P D D' k A xw).IsQueryBound 1 :=
+  isQueryBound_hybDistByOf attSignP P D D' k A xw
 
 /-- A signing answer with the programmed flag records its message as signed. -/
 theorem attSignP_signed (D : G.Sampler) (xw : G.Stmt × G.Wit) (s : G.Tables × Bool)
@@ -1078,6 +1053,24 @@ theorem attSignP_signed (D : G.Sampler) (xw : G.Stmt × G.Wit) (s : G.Tables × 
   obtain ⟨e, _, a, _, rfl⟩ := ho
   rfl
 
+/-- The signing oracle with the programmed flag records its messages as signed. -/
+theorem attSignP_recordsSigned : Protocol.SignStep.RecordsSigned (G := G) attSignP :=
+  attSignP_signed
+
+/-- The oracle of the game with the signing step `attSignP` is the oracle of the game
+with the programmed flag at the sampler. -/
+theorem attStepOf_attSignP (D : G.Sampler) : attStepOf attSignP D = attStepP D := by
+  funext xw s d
+  cases d <;> rfl
+
+/-- The game with the signing step `attSignP` is the game with the programmed flag at
+the sampler. -/
+theorem attGameByOf_attSignP (P : G.Stmt → G.Forgery × (G.Tables × Bool) → Bool)
+    (D : G.Sampler) {qH qS : ℕ} (A : G.Adversary qH qS) :
+    attGameByOf attSignP P D A = attGameByP P D A := by
+  unfold attGameByOf attGameByP
+  rw [attStepOf_attSignP]
+
 /-- The run of `hybRunP` against the challenge oracle of `C` is the run of the oracle
 with the programmed flag whose signing query `j` uses `D'` for `j < k`, `C` for `j = k`
 and `D` for `j > k`. -/
@@ -1086,40 +1079,14 @@ theorem run_hybRunP (D D' C : G.Sampler) (k : ℕ) (xw : G.Stmt × G.Wit) {α β
     (s : G.Tables × Bool) (hj : s.1.signed.length = j) :
     OracleAdv.run (chalOracleP C xw) (hybRunP D D' k xw f j A s) () =
       (OracleAdv.run (toOracle (hybStepP (fun n => if n < k then D' else if n = k then C
-        else D) xw)) A s).map fun y => (f y, ()) := by
-  induction A generalizing j s with
-  | ret a => simp [hybRunP, PMF.pure_map]
-  | rand p c ih => simp only [hybRunP, OracleAdv.run_rand, PMF.map_bind, ih _ j s hj]
-  | query d c ih =>
-    cases d with
-    | inl key =>
-      simp only [hybRunP, OracleAdv.run_rand, OracleAdv.run_query, PMF.map_bind]
-      refine PMF.bind_congr_support _ _ _ fun o ho => ih o.1 j o.2 ?_
-      rw [realStep_signed_inl xw s key o ho, hj]
-    | inr m =>
-      simp only [OracleAdv.run_query, PMF.map_bind]
-      have hc : ∀ o ∈ (attSignP (if j < k then D' else if j = k then C else D) xw s m).support,
-          OracleAdv.run (chalOracleP C xw) (hybRunP D D' k xw f (j + 1) (c o.1) o.2) () =
-            (OracleAdv.run (toOracle (hybStepP (fun n => if n < k then D' else if n = k then C
-              else D) xw)) (c o.1) o.2).map fun y => (f y, ()) := fun o ho => ih o.1 (j + 1) o.2
-        (by rw [attSignP_signed _ xw s m o ho, List.length_append, hj, List.length_singleton])
-      have hs : toOracle (hybStepP (fun n => if n < k then D' else if n = k then C else D) xw)
-          s (.inr m) = attSignP (if j < k then D' else if j = k then C else D) xw s m := by
-        simp only [toOracle, hybStepP, Step.toPMF, hj]
-      rw [hs]
-      by_cases hjk : j = k
-      · subst hjk
-        simp only [hybRunP, if_true, OracleAdv.run_query, chalOracleP, PMF.bind_map,
-          lt_irrefl, if_false] at hc ⊢
-        exact PMF.bind_congr_support _ _ _ hc
-      · simp only [hybRunP, hjk, if_false, OracleAdv.run_rand] at hc ⊢
-        exact PMF.bind_congr_support _ _ _ hc
+        else D) xw)) A s).map fun y => (f y, ()) :=
+  run_hybRunOf attSignP_recordsSigned D D' C k xw f A j s hj
 
 /-- The game with the programmed flag whose outcome is decided by `P` in which the
 signing query `j` uses `D'` for `j < n` and `D` otherwise. -/
 noncomputable def hybGameByP (P : G.Stmt → G.Forgery × (G.Tables × Bool) → Bool)
     (D D' : G.Sampler) (n : ℕ) {qH qS : ℕ} (A : G.Adversary qH qS) : SPComp Bool :=
-  PRPPRF.pmfGame (gameDistBy P (fun xw => hybStepP (fun j => if j < n then D' else D) xw) A)
+  hybGameByOf attSignP P D D' n A
 
 theorem hybStepP_const (D : G.Sampler) (xw : G.Stmt × G.Wit) :
     hybStepP (fun _ => D) xw = attStepP D xw := by
@@ -1132,38 +1099,18 @@ and `D` for `j > k`. -/
 theorem chalGameP_hybDistByP (P : G.Stmt → G.Forgery × (G.Tables × Bool) → Bool)
     (D D' C : G.Sampler) (k : ℕ) {qH qS : ℕ} (A : G.Adversary qH qS) :
     chalGameP C (hybDistByP P D D' k A) = PRPPRF.pmfGame (gameDistBy P (fun xw =>
-      hybStepP (fun n => if n < k then D' else if n = k then C else D) xw) A) := by
-  unfold chalGameP gameDistBy hybDistByP
-  congr 1
-  refine congrArg _ (funext fun xw => ?_)
-  rw [run_hybRunP D D' C k xw _ _ 0 _ rfl, PMF.map_comp]
-  rfl
+      hybStepP (fun n => if n < k then D' else if n = k then C else D) xw) A) :=
+  chalGameOf_hybDistByOf attSignP_recordsSigned P D D' C k A
 
 theorem chalGameP_hybDistByP_left (P : G.Stmt → G.Forgery × (G.Tables × Bool) → Bool)
     (D D' : G.Sampler) (k : ℕ) {qH qS : ℕ} (A : G.Adversary qH qS) :
-    chalGameP D (hybDistByP P D D' k A) = hybGameByP P D D' k A := by
-  rw [chalGameP_hybDistByP]
-  unfold hybGameByP
-  congr 2
-  funext xw
-  congr 1
-  funext n
-  split_ifs <;> rfl
+    chalGameP D (hybDistByP P D D' k A) = hybGameByP P D D' k A :=
+  chalGameOf_hybDistByOf_left attSignP_recordsSigned P D D' k A
 
 theorem chalGameP_hybDistByP_right (P : G.Stmt → G.Forgery × (G.Tables × Bool) → Bool)
     (D D' : G.Sampler) (k : ℕ) {qH qS : ℕ} (A : G.Adversary qH qS) :
-    chalGameP D' (hybDistByP P D D' k A) = hybGameByP P D D' (k + 1) A := by
-  rw [chalGameP_hybDistByP]
-  unfold hybGameByP
-  congr 2
-  funext xw
-  congr 1
-  funext n
-  by_cases h1 : n < k
-  · rw [if_pos h1, if_pos (by omega)]
-  · by_cases h2 : n = k
-    · rw [if_neg h1, if_pos h2, if_pos (by omega)]
-    · rw [if_neg h1, if_neg h2, if_neg (by omega)]
+    chalGameP D' (hybDistByP P D D' k A) = hybGameByP P D D' (k + 1) A :=
+  chalGameOf_hybDistByOf_right attSignP_recordsSigned P D D' k A
 
 /-- With at most `q` signing queries left from a state with `L` signed messages and
 `L + q ≤ n`, the oracle with the programmed flag whose signing query `j` uses `D'` for
@@ -1173,33 +1120,8 @@ theorem run_hybStepP_of_le (D D' : G.Sampler) (xw : G.Stmt × G.Wit) {α : Type}
     (s : G.Tables × Bool) (hs : s.1.signed.length + q ≤ n) :
     OracleAdv.run (toOracle (hybStepP (fun j => if j < n then D' else D) xw)) A s =
       OracleAdv.run (toOracle (attStepP D' xw)) A s := by
-  induction A generalizing h q s with
-  | ret a => rfl
-  | rand p c ih => simp only [OracleAdv.run_rand, fun b => ih b h q (hA b) s hs]
-  | query d c ih =>
-    cases d with
-    | inl key =>
-      cases h with
-      | zero => exact hA.elim
-      | succ h =>
-        simp only [OracleAdv.run_query]
-        refine PMF.bind_congr_support _ _ _ fun o ho => ih o.1 h q (hA o.1) o.2 ?_
-        rw [realStep_signed_inl xw s key o ho]
-        exact hs
-    | inr m =>
-      cases q with
-      | zero => exact hA.elim
-      | succ q =>
-        have hst : toOracle (hybStepP (fun j => if j < n then D' else D) xw) s (.inr m) =
-            toOracle (attStepP D' xw) s (.inr m) := by
-          simp only [toOracle, hybStepP, attStepP, Step.toPMF]
-          rw [if_pos (by omega)]
-        simp only [OracleAdv.run_query]
-        rw [hst]
-        refine PMF.bind_congr_support _ _ _ fun o ho => ih o.1 h q (hA o.1) o.2 ?_
-        rw [show toOracle (attStepP D' xw) s (.inr m) = attSignP D' xw s m from rfl] at ho
-        rw [attSignP_signed D' xw s m o ho, List.length_append, List.length_singleton]
-        omega
+  rw [← attStepOf_attSignP]
+  exact run_hybStepOf_of_le attSignP_recordsSigned D D' xw A h q n hA s hs
 
 /-- **Hybrid over the signing queries with the programmed flag, as a distance.** For a
 predicate `P`, samplers `D` and `D'` and every adversary with at most `qH` hash and
@@ -1213,21 +1135,8 @@ theorem Protocol.advantage_attGameByP_hybrid
     Advantage (attGameByP P D A) (attGameByP P D' A) ≤
       ∑ k ∈ Finset.range qS, Advantage (chalGameP D (hybDistByP P D D' k A))
         (chalGameP D' (hybDistByP P D D' k A)) := by
-  have h0 : hybGameByP P D D' 0 A = attGameByP P D A := by
-    unfold hybGameByP attGameByP
-    simp only [Nat.not_lt_zero, if_false]
-    simp only [hybStepP_const]
-  have hq : hybGameByP P D D' qS A = attGameByP P D' A := by
-    unfold hybGameByP attGameByP gameDistBy
-    congr 2
-    funext xw
-    rw [run_hybStepP_of_le D D' xw _ (qH + G.V) qS qS
-      (isQueryBound₂_withVerify xw.1 _ qH qS (A.isQueryBound xw.1)) _
-      (by simp [Protocol.Tables.empty])]
-  rw [← h0, ← hq]
-  refine (HybridArgument.advantage_hybrid_dep_bool (fun n => hybGameByP P D D' n A) qS).trans
-    (le_of_eq (Finset.sum_congr rfl fun k _ => ?_))
-  rw [chalGameP_hybDistByP_left, chalGameP_hybDistByP_right]
+  rw [← attGameByOf_attSignP, ← attGameByOf_attSignP]
+  exact Protocol.advantage_attGameByOf_hybrid attSignP_recordsSigned P D D' A
 
 /-- **Hybrid over the signing queries with the programmed flag.** For a predicate `P`,
 samplers `D₀` and `D₁` and every adversary with at most `qH` hash and `qS` signing
