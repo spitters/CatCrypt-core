@@ -220,7 +220,7 @@ parties. -/
 def simPks : Fin np → Sch.PK := fun j => if j = i then pk else (ω.ks j).1
 
 /-- The public information of the simulation. -/
-def simPub : PubInfo Tx Hash np n Hz Sch := (ω.κ, ω.f, simPks i pk ω)
+def simPub : PubInfo Tx Hash np n Hz Sch := (ω.L, ω.f, simPks i pk ω)
 
 /-- The signature of a block in the simulation: from the signing oracle for party `i`, with
 the keys of `ω` for the other parties. -/
@@ -669,18 +669,19 @@ noncomputable def keyDist (Sch : SigScheme (Block Tx Hash (Fin np))) :
     PMF (Fin np → Sch.PK × Sch.SK) :=
   PMF.piFin fun _ => Sch.keygen
 
-/-- The distribution of the random seed: the slot kinds (`kindDist ν W n`), a uniformly random
-oracle, and independent key pairs, all independent. -/
-noncomputable def seedDist (ν : PMF SlotKind) (W n Hz : ℕ)
+/-- The distribution of the random seed: the slot leaders (`leaderDist μ h0 W n`), a uniformly
+random oracle, and independent key pairs, all independent. -/
+noncomputable def seedDist (μ : PMF (Option (Fin np))) (h0 : Fin np) (W n Hz : ℕ)
     (Sch : SigScheme (Block Tx Hash (Fin np))) : PMF (Seed Tx Hash np n Hz Sch) :=
-  (kindDist ν W n).bind fun κ => (uniformFun (BlockDom Tx Hash np Hz) Hash).bind fun f =>
-    (keyDist Sch).bind fun ks => PMF.pure ⟨κ, f, ks⟩
+  (leaderDist μ h0 W n).bind fun L => (uniformFun (BlockDom Tx Hash np Hz) Hash).bind fun f =>
+    (keyDist Sch).bind fun ks => PMF.pure ⟨L, f, ks⟩
 
-theorem seedDist_withKey (ν : PMF SlotKind) (W : ℕ) (i : Fin np) :
-    (seedDist ν W n Hz Sch).bind (fun ω => Sch.keygen.bind fun kp => PMF.pure (ω.withKey i kp)) =
-      seedDist ν W n Hz Sch := by
+theorem seedDist_withKey (μ : PMF (Option (Fin np))) (h0 : Fin np) (W : ℕ) (i : Fin np) :
+    (seedDist μ h0 W n Hz Sch).bind
+        (fun ω => Sch.keygen.bind fun kp => PMF.pure (ω.withKey i kp)) =
+      seedDist μ h0 W n Hz Sch := by
   simp only [seedDist, PMF.bind_bind, PMF.pure_bind]
-  congr 1; funext κ; congr 1; funext f
+  congr 1; funext L; congr 1; funext f
   conv_rhs => rw [keyDist, ← piFin_update Sch.keygen i, ← keyDist]
   simp only [PMF.bind_bind, PMF.pure_bind]
 
@@ -690,21 +691,22 @@ variable (P : Protocol Tx Hash np n Hz) (A : Adversary Tx Hash np n Hz Sch)
 protocol and the party `i`: its coins are a seed drawn from `seedDist`, and it runs
 `forgerProg`, which simulates the first `K` phases of the real execution with the verification
 key of the game for party `i` and outputs the first forgery of party `i`. -/
-noncomputable def forger (ν : PMF SlotKind) (W K : ℕ) (i : Fin np) : EUFAdversary Sch where
+noncomputable def forger (μ : PMF (Option (Fin np))) (W K : ℕ) (i : Fin np) :
+    EUFAdversary Sch where
   Coins := Seed Tx Hash np n Hz Sch
-  coins := seedDist ν W n Hz Sch
+  coins := seedDist μ P.h0 W n Hz Sch
   forge := fun pk ω => forgerProg P A i pk ω K
 
 /-- **Forging a block of party `i` (part 3).** The probability that the adversary `A` forges a
 block of party `i` in the first `K` phases of the real execution is at most the EUF-CMA
-advantage of the explicit adversary `forger P A ν W K i`. -/
-theorem prob_forgeBy_le (ν : PMF SlotKind) (W K : ℕ) (i : Fin np) :
-    (seedDist ν W n Hz Sch).toOuterMeasure {ω | ForgeBy P ω A K i} ≤
-      eufAdv (forger P A ν W K i) := by
+advantage of the explicit adversary `forger P A μ W K i`. -/
+theorem prob_forgeBy_le (μ : PMF (Option (Fin np))) (W K : ℕ) (i : Fin np) :
+    (seedDist μ P.h0 W n Hz Sch).toOuterMeasure {ω | ForgeBy P ω A K i} ≤
+      eufAdv (forger P A μ W K i) := by
   rw [eufAdv_eq]
-  have hmap : (eufInputs (forger P A ν W K i)).map (fun x => x.2.withKey i x.1) =
-      seedDist ν W n Hz Sch := by
-    rw [← seedDist_withKey ν W i (Sch := Sch) (Hz := Hz)]
+  have hmap : (eufInputs (forger P A μ W K i)).map (fun x => x.2.withKey i x.1) =
+      seedDist μ P.h0 W n Hz Sch := by
+    rw [← seedDist_withKey μ P.h0 W i (Sch := Sch) (Hz := Hz)]
     simp only [eufInputs, forger, PMF.map_bind, PMF.pure_map]
     exact PMF.bind_comm _ _ _
   rw [← hmap, PMF.toOuterMeasure_map_apply]
@@ -717,10 +719,10 @@ theorem prob_forgeBy_le (ν : PMF SlotKind) (W K : ℕ) (i : Fin np) :
 
 /-- **Forging an honest block.** The probability that the adversary forges an honest block in the
 first `K` phases of the real execution is at most the sum over the parties `i` of the EUF-CMA
-advantages of the forgers `forger P A ν W K i`. -/
-theorem prob_forge_le (ν : PMF SlotKind) (W K : ℕ) :
-    (seedDist ν W n Hz Sch).toOuterMeasure {ω | Forge P ω A K} ≤
-      ∑ i : Fin np, eufAdv (forger P A ν W K i) := by
+advantages of the forgers `forger P A μ W K i`. -/
+theorem prob_forge_le (μ : PMF (Option (Fin np))) (W K : ℕ) :
+    (seedDist μ P.h0 W n Hz Sch).toOuterMeasure {ω | Forge P ω A K} ≤
+      ∑ i : Fin np, eufAdv (forger P A μ W K i) := by
   have hsub : {ω | Forge P ω A K} ⊆ ⋃ i ∈ (Finset.univ : Finset (Fin np)),
       {ω | ForgeBy P ω A K i} := by
     intro ω hω
@@ -728,9 +730,9 @@ theorem prob_forge_le (ν : PMF SlotKind) (W K : ℕ) :
     simp only [Set.mem_iUnion]
     exact ⟨i, Finset.mem_univ _, hi⟩
   refine (MeasureTheory.OuterMeasure.mono _ hsub).trans ?_
-  refine (MeasureTheory.measure_biUnion_finset_le (μ := (seedDist ν W n Hz Sch).toOuterMeasure)
-    _ _).trans ?_
-  exact Finset.sum_le_sum fun i _ => prob_forgeBy_le P A ν W K i
+  refine (MeasureTheory.measure_biUnion_finset_le
+    (μ := (seedDist μ P.h0 W n Hz Sch).toOuterMeasure) _ _).trans ?_
+  exact Finset.sum_le_sum fun i _ => prob_forgeBy_le P A μ W K i
 
 end Prob
 

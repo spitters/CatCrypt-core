@@ -20,11 +20,11 @@ whose probability is bounded in `CatCryptCore/Consensus/PoSNSB/Prob/Reduction.le
 
 * A signature scheme `SigScheme Msg` has key generation `keygen : PMF (PK × SK)`, deterministic
   signing and verification. Its messages are the blocks.
-* The random seed (`Seed`) consists of the string of slot kinds `κ` (the lottery), the random
-  oracle `f : BlockDom → Hash` (the hash of a block `b` is `f (encB b)`) and a key pair for every
-  party.
+* The random seed (`Seed`) consists of the string of slot leaders `L` (the lottery, with slot
+  kinds `Seed.κ`), the random oracle `f : BlockDom → Hash` (the hash of a block `b` is
+  `f (encB b)`) and a key pair for every party.
 * An adversary (`Adversary`) is a pair of functions in the style of `AdversarialBake` and
-  `AdversarialRcv` that additionally receive the public information (the lottery string, the
+  `AdversarialRcv` that additionally receive the public information (the leader string, the
   random oracle and the verification keys) and the signatures of the honest blocks of the
   history (`sigTable`), and that output signed messages.
 * The network accepts an adversarial message when its block has a slot at most the current
@@ -189,27 +189,27 @@ theorem encB_inj {Hz : ℕ} {b b' : Block Tx Hash (Fin np)} (h : b.sl ≤ Hz) (h
 
 variable {n Hz : ℕ}
 
-/-- The fixed parameters of the protocol: the initial parties, the lottery map, the genesis
-block, the tree type of each party for every string of slot kinds and every random oracle, and
-the selection of transactions. -/
+/-- The fixed parameters of the protocol: the initial parties, the leader of the genesis slot
+and of the padding slots, the genesis block, the tree type of each party for every leader
+string and every random oracle, and the selection of transactions. -/
 structure Protocol (Tx Hash : Type) (np n Hz : ℕ) where
   /-- The initial parties. -/
   IP : List (Fin np)
-  /-- The lottery map from slot kinds to leaders. -/
-  lot : SlotKind → Fin np → Bool
+  /-- The leader of the genesis slot and of the slots from `n` on. -/
+  h0 : Fin np
   /-- The genesis block. -/
   GB : Block Tx Hash (Fin np)
   /-- The tree type of each party. -/
-  trees : (κ : Fin n → SlotKind) → (f : BlockDom Tx Hash np Hz → Hash) → Fin np →
-    @TreeType Tx Hash (Fin np) (lotteryParams IP lot κ) ⟨GB, fun b => f (encB Hz b)⟩
+  trees : (L : Fin n → Option (Fin np)) → (f : BlockDom Tx Hash np Hz → Hash) → Fin np →
+    @TreeType Tx Hash (Fin np) (leaderParams IP h0 L) ⟨GB, fun b => f (encB Hz b)⟩
   /-- The transactions of honest blocks. -/
   txSel : Slot → Fin np → Tx
 
-/-- The random seed of an execution: the slot kinds of the first `n` slots, the random oracle,
+/-- The random seed of an execution: the leaders of the first `n` slots, the random oracle,
 and a key pair for every party. -/
 structure Seed (Tx Hash : Type) (np n Hz : ℕ) (Sch : SigScheme (Block Tx Hash (Fin np))) where
-  /-- The slot kinds. -/
-  κ : Fin n → SlotKind
+  /-- The slot leaders. -/
+  L : Fin n → Option (Fin np)
   /-- The random oracle. -/
   f : BlockDom Tx Hash np Hz → Hash
   /-- The key pairs. -/
@@ -217,24 +217,27 @@ structure Seed (Tx Hash : Type) (np n Hz : ℕ) (Sch : SigScheme (Block Tx Hash 
 
 variable {Sch : SigScheme (Block Tx Hash (Fin np))}
 
+/-- The slot kinds of a seed: the kinds of its leaders. -/
+abbrev Seed.κ (ω : Seed Tx Hash np n Hz Sch) : Fin n → SlotKind := kinds ω.L
+
 /-- The lottery of a seed. -/
 abbrev Seed.params (P : Protocol Tx Hash np n Hz) (ω : Seed Tx Hash np n Hz Sch) :
     Parameters (Fin np) :=
-  lotteryParams P.IP P.lot ω.κ
+  leaderParams P.IP P.h0 ω.L
 
 /-- The genesis block and the hash function `b ↦ f (encB b)` of a seed. -/
 abbrev Seed.bparams (P : Protocol Tx Hash np n Hz) (ω : Seed Tx Hash np n Hz Sch) :
     BlockParameters Tx Hash (Fin np) :=
   ⟨P.GB, fun b => ω.f (encB Hz b)⟩
 
-/-- The public information of a seed: the lottery string, the random oracle and the
+/-- The public information of a seed: the leader string, the random oracle and the
 verification keys. -/
 abbrev PubInfo (Tx Hash : Type) (np n Hz : ℕ) (Sch : SigScheme (Block Tx Hash (Fin np))) :=
-  (Fin n → SlotKind) × (BlockDom Tx Hash np Hz → Hash) × (Fin np → Sch.PK)
+  (Fin n → Option (Fin np)) × (BlockDom Tx Hash np Hz → Hash) × (Fin np → Sch.PK)
 
 /-- The public information of a seed. -/
 def Seed.pub (ω : Seed Tx Hash np n Hz Sch) : PubInfo Tx Hash np n Hz Sch :=
-  (ω.κ, ω.f, fun j => (ω.ks j).1)
+  (ω.L, ω.f, fun j => (ω.ks j).1)
 
 /-- The output of the adversary: signed messages with their delays. -/
 abbrev AdvOut (Tx Hash : Type) (np : ℕ) (Sig : Type) :=
@@ -309,7 +312,7 @@ execution for the seed `ω` and the adversary `A`. -/
     @Execution Tx Hash (Fin np) A.AdvState (ω.params P) (ω.bparams P) :=
   letI := ω.params P; letI := ω.bparams P
   { AdvState0 := A.st0
-    TreeTypeMap := P.trees ω.κ ω.f
+    TreeTypeMap := P.trees ω.L ω.f
     AdversarialBake := fun sl hist mb st =>
       let r := advRaw ω A ⟨none, sl, hist, mb, st⟩
       (outFilter ideal (fun j => (ω.ks j).1) sl hist r.1, r.2)

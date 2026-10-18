@@ -32,9 +32,10 @@ each candidate from its own transcript before it queries the children of that ca
 
 ## The family of instances
 
-`LotteryInstance` has one honest party leading the honest slots, the longest-chain tree type,
-`Hash = Fin M`, and slot kinds drawn from `ν` with `pH = 3/4`, `pA = 1/8` on the first
-`1000` of `2000` slots. With `d = 1000`, `w = 10` and `ε = 1/4`:
+`LotteryInstance` has one honest party, the longest-chain tree type, `Hash = Fin M`, and slot
+leaders drawn on the first `1000` of `2000` slots from the stake-weighted election
+`μ = stakeElect` with unit stake and active-slot probability `3/4`, so that the slot kinds
+`ν = kindLaw μ` have `pH = 3/4` and `pA = 0`. With `d = 1000`, `w = 10` and `ε = 1/4`:
 
 * `slotBound_le`, `slotBound_lt_one`: `slotBound ν 2000 1000 10 (1/4) ≤ 1/16 < 1`;
 * `instance_security`: for every `K` with `K + 2 ≤ 2000`, every signature scheme and every
@@ -360,15 +361,16 @@ theorem not_mem_traceCalls (hcor : ∀ p : Fin np, is_corrupt p = false)
   split <;> simp [stepCalls, hcor]
 
 /-- **No forgery without corrupt parties.** For a protocol without corrupt parties, the
-forgers `forger P A ν W K i` have EUF-CMA advantage `0`. -/
+forgers `forger P A μ W K i` have EUF-CMA advantage `0`. -/
 theorem eufAdv_forger_of_honest [Nonempty Hash]
-    (hcor : ∀ p : Fin np, is_corrupt p = false) (ν : PMF SlotKind) (W K : ℕ) (i : Fin np) :
-    eufAdv (forger P A ν W K i) = 0 := by
+    (hcor : ∀ p : Fin np, is_corrupt p = false) (μ : PMF (Option (Fin np))) (W K : ℕ)
+    (i : Fin np) :
+    eufAdv (forger P A μ W K i) = 0 := by
   rw [eufAdv_eq, PMF.toOuterMeasure_apply_eq_zero_iff, Set.disjoint_left]
   rintro ⟨⟨pk, sk⟩, ω⟩ - hw
   have hs := (run_simTrace P A i pk ω sk K).1 fun c hc =>
     absurd hc (not_mem_traceCalls P A hcor _ K c)
-  have hw' : eufWins (forger P A ν W K i) (pk, sk) ω = true := hw
+  have hw' : eufWins (forger P A μ W K i) (pk, sk) ω = true := hw
   simp [eufWins, forger, forgerProg, OracleProg.run_bind, hs.1, OracleProg.run] at hw'
 
 end Honest
@@ -389,27 +391,33 @@ namespace LotteryInstance
 
 attribute [local instance] Instance.corruption
 
-/-- The slot-kind distribution: honest with probability `3/4`, adversarial with probability
-`1/8`, empty with probability `1/8`. -/
-noncomputable def ν : PMF SlotKind :=
-  PMF.ofFintype (fun k => match k with
-    | .honest => 6 / 8
-    | .adversarial => 1 / 8
-    | .empty => 1 / 8) (by
-      rw [show (Finset.univ : Finset SlotKind) = {.honest, .adversarial, .empty} from rfl]
-      simp only [Finset.mem_insert, Finset.mem_singleton, reduceCtorEq, or_self,
-        not_false_eq_true, Finset.sum_insert, Finset.sum_singleton]
-      rw [ENNReal.div_add_div_same, ENNReal.div_add_div_same]
-      norm_num
-      exact ENNReal.div_self (by norm_num) (by norm_num))
+theorem stake_pos : 0 < stakeOf (fun _ : Fin 1 => 1) Finset.univ := by decide
+
+/-- The leader election: the stake-weighted election `stakeElect` with unit stake and a
+leader in a slot with probability `3/4`. -/
+noncomputable def μ : PMF (Option (Fin 1)) :=
+  stakeElect (fun _ => 1) stake_pos (3 / 4)
+    (ENNReal.div_le_of_le_mul (by rw [one_mul]; exact_mod_cast (by norm_num : (3 : ℕ) ≤ 4)))
+
+/-- The slot-kind distribution of the election: honest with probability `3/4`, empty with
+probability `1/4`. -/
+noncomputable abbrev ν : PMF SlotKind := kindLaw μ
 
 theorem pH_ν : pH ν = 3 / 4 := by
-  simp only [pH, ν, PMF.ofFintype_apply, ENNReal.toReal_div]
+  rw [pH, ν, μ, kindLaw_stakeElect_honest]
+  have h1 : stakeOf (fun _ : Fin 1 => 1) (Finset.univ.filter fun p => is_honest p = true) = 1 := by
+    decide
+  have h2 : stakeOf (fun _ : Fin 1 => 1) Finset.univ = 1 := by decide
+  rw [h1, h2]
+  simp only [Nat.cast_one, mul_one, div_one, ENNReal.toReal_div]
   norm_num
 
-theorem pA_ν : pA ν = 1 / 8 := by
-  simp only [pA, ν, PMF.ofFintype_apply, ENNReal.toReal_div]
-  norm_num
+theorem pA_ν : pA ν = 0 := by
+  rw [pA, ν, μ, kindLaw_stakeElect_adversarial]
+  have h1 : stakeOf (fun _ : Fin 1 => 1) (Finset.univ.filter fun p => is_honest p = false) = 0 := by
+    decide
+  rw [h1]
+  simp
 
 /-- **The slot bound of the instance.** For `n = 2000` slots, windows of `d = 1000` slots,
 `w = 10` and `ε = 1/4`, the slot conditions fail with probability at most `1/16`. -/
@@ -418,15 +426,15 @@ theorem slotBound_le : slotBound ν 2000 1000 10 (1 / 4) ≤ ENNReal.ofReal (1 /
       ((2 : ℝ) ^ 124)⁻¹ := by
     rw [show -2 * (1 / 4 * ((1000 : ℕ) : ℝ)) ^ 2 / ((1000 : ℕ) : ℝ) = -125 by norm_num]
     exact exp_neg_le_inv_pow 124 (by norm_num)
-  have e2 : Real.exp (-2 * ((((1000 : ℕ) : ℝ) * (3 / 4 - 1 / 8) - ((10 : ℕ) : ℝ)) / 2) ^ 2 /
+  have e2 : Real.exp (-2 * ((((1000 : ℕ) : ℝ) * (3 / 4 - 0) - ((10 : ℕ) : ℝ)) / 2) ^ 2 /
       ((1000 : ℕ) : ℝ)) ≤ ((2 : ℝ) ^ 188)⁻¹ := by
-    rw [show -2 * ((((1000 : ℕ) : ℝ) * (3 / 4 - 1 / 8) - ((10 : ℕ) : ℝ)) / 2) ^ 2 /
-      ((1000 : ℕ) : ℝ) = -(15129 / 80) by norm_num]
+    rw [show -2 * ((((1000 : ℕ) : ℝ) * (3 / 4 - 0) - ((10 : ℕ) : ℝ)) / 2) ^ 2 /
+      ((1000 : ℕ) : ℝ) = -(1369 / 5) by norm_num]
     exact exp_neg_le_inv_pow 188 (by norm_num)
-  have e3 : Real.exp (-2 * ((((1000 : ℕ) : ℝ) * (3 / 4 - 2 * (1 / 8)) - 3) / 3) ^ 2 /
+  have e3 : Real.exp (-2 * ((((1000 : ℕ) : ℝ) * (3 / 4 - 2 * 0) - 3) / 3) ^ 2 /
       ((1000 : ℕ) : ℝ)) ≤ ((2 : ℝ) ^ 54)⁻¹ := by
-    rw [show -2 * ((((1000 : ℕ) : ℝ) * (3 / 4 - 2 * (1 / 8)) - 3) / 3) ^ 2 /
-      ((1000 : ℕ) : ℝ) = -(247009 / 4500) by norm_num]
+    rw [show -2 * ((((1000 : ℕ) : ℝ) * (3 / 4 - 2 * 0) - 3) / 3) ^ 2 /
+      ((1000 : ℕ) : ℝ) = -(62001 / 500) by norm_num]
     exact exp_neg_le_inv_pow 54 (by norm_num)
   simp only [slotBound, pH_ν, pA_ν]
   rw [← ENNReal.ofReal_natCast, ← ENNReal.ofReal_mul (by positivity),
@@ -449,11 +457,8 @@ variable (M : ℕ) [NeZero M] (Hz : ℕ)
 /-- The genesis block: slot `0`, predecessor hash `0`, baked by the single party. -/
 def GB : Block Unit (Fin M) (Fin 1) := ⟨0, (), 0, 0⟩
 
-/-- The single party leads exactly the honest slots. -/
-def lot : SlotKind → Fin 1 → Bool := fun k _ => decide (k = .honest)
-
-theorem gb_valid (κ : Fin 2000 → SlotKind) (f : BlockDom Unit (Fin M) 1 Hz → Fin M) :
-    letI := lotteryParams [0] lot κ
+theorem gb_valid (L : Fin 2000 → Option (Fin 1)) (f : BlockDom Unit (Fin M) 1 Hz → Fin M) :
+    letI := leaderParams [0] 0 L
     letI : BlockParameters Unit (Fin M) (Fin 1) := ⟨GB M, fun b => f (encB Hz b)⟩
     valid_chain [(GenesisBlock : Block Unit (Fin M) (Fin 1))] := by
   refine ⟨?_, rfl, List.pairwise_singleton _ _⟩
@@ -462,37 +467,37 @@ theorem gb_valid (κ : Fin 2000 → SlotKind) (f : BlockDom Unit (Fin M) 1 Hz �
   subst hb
   rfl
 
-/-- The protocol: one honest party leading the honest slots, the longest-chain tree type,
-`2000` slots of lottery and the random oracle on blocks of slots at most `Hz`. -/
+/-- The protocol: one honest party, elected by `μ`, the longest-chain tree type, `2000` slots
+of lottery and the random oracle on blocks of slots at most `Hz`. -/
 noncomputable def P : Protocol Unit (Fin M) 1 2000 Hz where
   IP := [0]
-  lot := lot
+  h0 := 0
   GB := GB M
-  trees κ f _ :=
-    letI := lotteryParams [0] lot κ
+  trees L f _ :=
+    letI := leaderParams [0] 0 L
     letI : BlockParameters Unit (Fin M) (Fin 1) := ⟨GB M, fun b => f (encB Hz b)⟩
-    longestTree (gb_valid M Hz κ f) rfl
+    longestTree (gb_valid M Hz L f) rfl
   txSel _ _ := ()
 
 /-- The honest tree chain is selected by the longest-chain tree type. -/
-noncomputable def Tree : TreeFamily (P M Hz) := fun κ f =>
-  letI := lotteryParams [0] lot κ
+noncomputable def Tree : TreeFamily (P M Hz) := fun L f =>
+  letI := leaderParams [0] 0 L
   letI : BlockParameters Unit (Fin M) (Fin 1) := ⟨GB M, fun b => f (encB Hz b)⟩
-  longestTree (gb_valid M Hz κ f) rfl
+  longestTree (gb_valid M Hz L f) rfl
 
 theorem hcor : ∀ p : Fin 1, is_corrupt p = false := fun _ => rfl
 
 theorem protocolHyp : ProtocolHyp (P M Hz) :=
-  ⟨by simp [P], ⟨rfl, fun _ p _ hc => absurd hc (by rw [hcor]; decide)⟩,
-    fun κ f _ =>
-      letI := lotteryParams [0] lot κ
+  ⟨by simp [P], ⟨fun p _ => by simp [P, Fin.fin_one_eq_zero p], rfl⟩,
+    fun L f _ =>
+      letI := leaderParams [0] 0 L
       letI : BlockParameters Unit (Fin M) (Fin 1) := ⟨GB M, fun b => f (encB Hz b)⟩
-      longestTree_longest (gb_valid M Hz κ f) rfl, rfl, Nat.zero_le _⟩
+      longestTree_longest (gb_valid M Hz L f) rfl, rfl, Nat.zero_le _⟩
 
-theorem tree_longest : (Tree M Hz).Longest := fun κ f =>
-  letI := lotteryParams [0] lot κ
+theorem tree_longest : (Tree M Hz).Longest := fun L f =>
+  letI := leaderParams [0] 0 L
   letI : BlockParameters Unit (Fin M) (Fin 1) := ⟨GB M, fun b => f (encB Hz b)⟩
-  longestTree_longest (gb_valid M Hz κ f) rfl
+  longestTree_longest (gb_valid M Hz L f) rfl
 
 /-- **The family of instances of the security theorem.** For every phase count `K` with
 `K + 2 ≤ 2000`, every signature scheme and every adversary, with `W = 1000`, `d = 1000`,
@@ -502,18 +507,18 @@ common prefix hold for the first `K` phases except with probability at most
 theorem instance_security (K : ℕ) (hK : K + 2 ≤ 2000)
     (Sch : SigScheme (Block Unit (Fin M) (Fin 1)))
     (A : Adversary Unit (Fin M) 1 2000 (K + 1) Sch) :
-    (seedDist ν 1000 2000 (K + 1) Sch).toOuterMeasure
+    (seedDist μ (P M (K + 1)).h0 1000 2000 (K + 1) Sch).toOuterMeasure
         {ω | ¬Good (P M (K + 1)) A (Tree M (K + 1)) ν K 1000 10 (1 / 4) ω} ≤
       slotBound ν 2000 1000 10 (1 / 4) +
         ((2 ^ (K + 2) * (2 ^ (K + 2) - 1) / 2 : ℕ) : ℝ≥0∞) / M := by
   have h := pos_nsb_security (P M (K + 1)) A (Tree M (K + 1)) (protocolHyp M (K + 1))
-    (tree_longest M (K + 1)) ν 1000 K 1000 10 (1 / 4) (by norm_num) (by norm_num)
+    (tree_longest M (K + 1)) μ 1000 K 1000 10 (1 / 4) (by norm_num) (by norm_num)
     (by norm_num) hK le_rfl (by norm_num) (by rw [pH_ν, pA_ν]; norm_num)
     (by rw [pH_ν, pA_ν]; norm_num) (by rw [pH_ν, pA_ν]; norm_num) _
     (fun _ _ => candQuerier (GB M) (K + 1))
     (hRO_candQuerier (P M (K + 1)) A hcor K le_rfl)
   have hq : (1 + Fintype.card (Unit × Fin 1)) ^ (K + 1 + 1) = 2 ^ (K + 2) := by simp
-  rw [Finset.sum_eq_zero fun i _ => eufAdv_forger_of_honest (P M (K + 1)) A hcor ν 1000 K i,
+  rw [Finset.sum_eq_zero fun i _ => eufAdv_forger_of_honest (P M (K + 1)) A hcor μ 1000 K i,
     add_zero, hq, Fintype.card_fin] at h
   exact h
 
@@ -557,8 +562,8 @@ open scoped ENNReal
 attribute [local instance] PoSNSB.Instance.corruption
 
 /-- **Instances with a random lottery** (composition plumbing). For the protocols
-`PoSNSB.LotteryInstance.P` (one honest party leading the honest slots, slot kinds drawn with
-`pH = 3/4` and `pA = 1/8` on the first `1000` of `2000` slots, `Hash = Fin M`), every phase
+`PoSNSB.LotteryInstance.P` (one honest party elected by `μ`, slot kinds with `pH = 3/4` and
+`pA = 0` on the first `1000` of `2000` slots, `Hash = Fin M`), every phase
 count `K` with `K + 2 ≤ 2000`, every signature scheme, every adversary and every delay bound
 `Δ`, with `W = 1000`, `d = 1000`, `w = 10`, `ε = 1/4` and the candidate querier, every
 hypothesis of `chain_realizes` holds, so the protocol realizes `F_Tree` with bound
@@ -567,20 +572,20 @@ below `1` for `M = 4 ^ (K + 5)` (`PoSNSB.LotteryInstance.instance_bound_lt_one`)
 theorem instance_realizes (M : ℕ) [NeZero M] (K : ℕ) (hK : K + 2 ≤ 2000)
     (Sch : SigScheme (Block Unit (Fin M) (Fin 1)))
     (A : Adversary Unit (Fin M) 1 2000 (K + 1) Sch) (Δ : ℕ) :
-    Realizes (chainReal (P M (K + 1)) A (Tree M (K + 1)) K ν 1000 Δ)
-      (ideal (chainF (P M (K + 1)) A (Tree M (K + 1)) K ν 1000 Δ 1000 10 (1 / 4))
-        (chainSim (P M (K + 1)) A (Tree M (K + 1)) K ν 1000 Δ))
+    Realizes (chainReal (P M (K + 1)) A (Tree M (K + 1)) K μ 1000 Δ)
+      (ideal (chainF (P M (K + 1)) Δ ν 1000 10 (1 / 4))
+        (chainSim (P M (K + 1)) A (Tree M (K + 1)) K μ 1000 Δ))
       (fun _ _ => slotBound ν 2000 1000 10 (1 / 4) +
         ((2 ^ (K + 2) * (2 ^ (K + 2) - 1) / 2 : ℕ) : ℝ≥0∞) / M) := by
   have h := chain_realizes (P M (K + 1)) A (Tree M (K + 1)) (protocolHyp M (K + 1))
-    (fun p _ => by simp [P, Fin.fin_one_eq_zero p]) (tree_longest M (K + 1)) ν 1000 K 1000 10
+    (tree_longest M (K + 1)) μ 1000 K 1000 10
     (1 / 4) Δ (by norm_num) (by norm_num) (by norm_num) hK le_rfl (by norm_num)
     (by rw [pH_ν, pA_ν]; norm_num) (by rw [pH_ν, pA_ν]; norm_num)
     (by rw [pH_ν, pA_ν]; norm_num) _ (fun _ _ => candQuerier (GB M) (K + 1))
     (hRO_candQuerier (P M (K + 1)) A hcor K le_rfl)
   have hq : (1 + Fintype.card (Unit × Fin 1)) ^ (K + 1 + 1) = 2 ^ (K + 2) := by simp
   simp only [Finset.sum_eq_zero fun i _ =>
-      eufAdv_forger_of_honest (P M (K + 1)) A hcor ν 1000 K i, add_zero, hq,
+      eufAdv_forger_of_honest (P M (K + 1)) A hcor μ 1000 K i, add_zero, hq,
     Fintype.card_fin] at h
   exact h
 

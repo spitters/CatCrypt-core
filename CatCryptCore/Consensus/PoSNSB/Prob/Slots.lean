@@ -20,17 +20,20 @@ the probability that a random lottery violates these conditions.
 
 ## The random lottery
 
-Each slot `0, …, W - 1` is independently of one of three kinds (`SlotKind`): it has an honest
-leader, an adversarial leader, or no leader, drawn from a fixed distribution
-`ν : PMF SlotKind` with `pH = ν honest` and `pA = ν adversarial`. The slots `W, …, n - 1` and
-all later slots are honest (`slotDist`, `kindAt`). The executions considered in
-`CatCryptCore/Consensus/PoSNSB/Prob.lean` end before slot `W`, so the later slots only serve
-to state the condition of `chain_quality_gen`, which quantifies over all intervals of slots.
-A lottery map `lot : SlotKind → Party → Bool` turns the string of kinds into the lottery
-`Winner p sl = lot (kindAt κ sl) p` for `sl ≠ 0` (`lotteryParams`); the genesis slot `0` is led
-as an honest slot, so that the genesis block can be a correct block for every string. The hypotheses `LotteryHyp` say that
-an honest slot has exactly one honest initial leader and that a corrupt party leads only
-adversarial slots.
+Each slot `0, …, W - 1` independently elects a leader `L sl : Option Party` (`none`: no
+leader) from a distribution `μ : PMF (Option Party)`; the slots `W, …, n - 1` and all later
+slots are led by a fixed honest party `h0` (`leaderSlotDist`, `leaderDist`, `leaderAt`). The
+executions considered in `CatCryptCore/Consensus/PoSNSB/Prob.lean` end before slot `W`, so the
+later slots only serve to state the condition of `chain_quality_gen`, which quantifies over all
+intervals of slots. The lottery of a leader string is `Winner p sl = (leaderAt h0 L sl = some p)`
+for `sl ≠ 0`, and `h0` leads the genesis slot `0` (`leaderParams`). The kind of a slot
+(`SlotKind`: honest, adversarial or empty, `kindOf`) is that of its leader; the kinds of a
+random leader string are independent with distribution `kindLaw μ`
+(`leaderDist_map_kinds`), and `pH = kindLaw μ honest`, `pA = kindLaw μ adversarial`. In the
+stake-weighted election `stakeElect st φ` a slot has a leader with probability `φ`, which is the
+party `p` with probability proportional to its stake `st p`, so that `pH` is `φ` times the
+honest stake fraction (`kindLaw_stakeElect_honest`). The hypotheses `LeaderHyp` say that every
+honest party is an initial party and that `h0` is honest.
 
 ## The slot conditions
 
@@ -55,6 +58,11 @@ For a window of length `d`, the bad events are:
 * `prob_slotBad_le`: the union of the three bad events has probability at most `slotBound`.
 * `honest_advantage_of_not_CQBad`, `super_of_kind`, `lucky_of_kind`, `adv_of_winner`: the
   slot conditions of the deterministic theorems follow from the complements of the bad events.
+* `leaderDist_map_kinds`: the slot kinds of a random leader string are distributed as
+  `kindDist (kindLaw μ) W n`.
+* `kindLaw_stakeElect_honest`, `kindLaw_stakeElect_adversarial`: under the stake-weighted
+  election, a slot is honest (adversarial) with probability `φ` times the honest (corrupt) stake
+  fraction.
 -/
 
 set_option autoImplicit false
@@ -87,19 +95,6 @@ def kindAt {n : ℕ} (κ : Fin n → SlotKind) (sl : ℕ) : SlotKind :=
 theorem kindAt_fin {n : ℕ} (κ : Fin n → SlotKind) (i : Fin n) : kindAt κ i = κ i := by
   simp [kindAt]
 
-/-- The lottery read off a string of slot kinds: party `p` leads slot `sl ≠ 0` when
-`lot (kindAt κ sl) p`; the genesis slot `0` is led as an honest slot. -/
-abbrev lotteryParams {Party : Type} (IP : List Party) (lot : SlotKind → Party → Bool) {n : ℕ}
-    (κ : Fin n → SlotKind) : Parameters Party :=
-  ⟨IP, fun p sl => if sl = 0 then lot .honest p else lot (kindAt κ sl) p⟩
-
-/-- Hypotheses on a lottery map: an honest slot has exactly one honest leader among the
-initial parties, and a corrupt party leads only adversarial slots. -/
-structure LotteryHyp {Party : Type} [Corruption Party] (IP : List Party)
-    (lot : SlotKind → Party → Bool) : Prop where
-  honest_one : IP.countP (fun p => lot .honest p && is_honest p) = 1
-  corrupt_adv : ∀ k p, lot k p = true → is_corrupt p = true → k = .adversarial
-
 /-- The slots of honest kind. -/
 def honestKind {n : ℕ} (κ : Fin n → SlotKind) (sl : ℕ) : Bool := decide (kindAt κ sl = .honest)
 
@@ -109,34 +104,103 @@ def advKind {n : ℕ} (κ : Fin n → SlotKind) (sl : ℕ) : Bool :=
 
 section Lottery
 
-variable {Party : Type} [Corruption Party] [DecidableEq Party] {IP : List Party}
-  {lot : SlotKind → Party → Bool}
-  {n : ℕ} (κ : Fin n → SlotKind)
+variable {Party : Type} [Corruption Party] [DecidableEq Party]
 
-/-- A slot of honest kind is a super slot of the lottery `lotteryParams IP lot κ`. -/
-theorem super_of_kind (hL : LotteryHyp IP lot) (sl : ℕ) (h : honestKind κ sl = true) :
-    letI := lotteryParams IP lot κ
+/-- The kind of a slot with leader `o`: empty without a leader, honest with an honest leader,
+adversarial with a corrupt leader. -/
+def kindOf : Option Party → SlotKind
+  | none => .empty
+  | some p => if is_honest p then .honest else .adversarial
+
+/-- The leader of slot `sl` under the leader string `L`: `L sl` for `sl < n`, the party `h0`
+from `n` on. -/
+def leaderAt {n : ℕ} (h0 : Party) (L : Fin n → Option Party) (sl : ℕ) : Option Party :=
+  if h : sl < n then L ⟨sl, h⟩ else some h0
+
+/-- The string of slot kinds of a leader string. -/
+def kinds {n : ℕ} (L : Fin n → Option Party) : Fin n → SlotKind := fun i => kindOf (L i)
+
+/-- The lottery of a leader string: party `p` leads slot `sl ≠ 0` when it is the leader
+`leaderAt h0 L sl`; the genesis slot `0` is led by `h0`. -/
+abbrev leaderParams (IP : List Party) (h0 : Party) {n : ℕ} (L : Fin n → Option Party) :
+    Parameters Party :=
+  ⟨IP, fun p sl => if sl = 0 then decide (p = h0) else decide (leaderAt h0 L sl = some p)⟩
+
+/-- Hypotheses on the initial parties and the padding leader: every honest party is an
+initial party, and the padding leader `h0` is honest. -/
+structure LeaderHyp (IP : List Party) (h0 : Party) : Prop where
+  honest_mem : ∀ p, is_honest p = true → p ∈ IP
+  h0_honest : is_honest h0 = true
+
+theorem is_honest_of_not_corrupt {p : Party} (h : is_corrupt p = false) : is_honest p = true := by
+  simp only [is_corrupt, is_honest, decide_eq_false_iff_not, decide_eq_true_eq] at h ⊢
+  cases hc : CorruptionStatus p
+  · rfl
+  · exact absurd hc h
+
+theorem not_honest_of_corrupt {p : Party} (h : is_corrupt p = true) : is_honest p = false := by
+  simp only [is_corrupt, is_honest, decide_eq_true_eq, decide_eq_false_iff_not] at h ⊢
+  rw [h]
+  decide
+
+/-- The kind of a slot is that of its leader. -/
+theorem kindAt_kinds {n : ℕ} {h0 : Party} (hh0 : is_honest h0 = true) (L : Fin n → Option Party)
+    (sl : ℕ) : kindAt (kinds L) sl = kindOf (leaderAt h0 L sl) := by
+  unfold kindAt leaderAt kinds
+  split_ifs
+  · rfl
+  · simp [kindOf, hh0]
+
+variable {IP : List Party} {h0 : Party} {n : ℕ} (L : Fin n → Option Party)
+
+theorem countP_leader (hnd : IP.Nodup) {p : Party} (hp : p ∈ IP) (hh : is_honest p = true) :
+    IP.countP (fun q => decide (q = p) && is_honest q) = 1 := by
+  rw [show (fun q => decide (q = p) && is_honest q) = fun q => q == p by
+    funext q; by_cases hq : q = p <;> simp [hq, hh]]
+  rw [← List.count_eq_countP]
+  exact List.count_eq_one_of_mem hnd hp
+
+/-- A slot of honest kind is a super slot of the lottery `leaderParams IP h0 L`. -/
+theorem super_of_kind (hnd : IP.Nodup) (hL : LeaderHyp IP h0) (sl : ℕ)
+    (h : honestKind (kinds L) sl = true) :
+    letI := leaderParams IP h0 L
     super_slot (Party := Party) sl = true := by
-  simp only [honestKind, decide_eq_true_eq] at h
-  simp only [super_slot, Parameters.Winner, Parameters.InitParties, h, ite_self, decide_eq_true_eq]
-  exact hL.honest_one
+  simp only [honestKind, decide_eq_true_eq, kindAt_kinds hL.h0_honest] at h
+  simp only [super_slot, Parameters.Winner, Parameters.InitParties, decide_eq_true_eq]
+  by_cases h0s : sl = 0
+  · simp only [h0s, if_true]
+    exact countP_leader hnd (hL.honest_mem h0 hL.h0_honest) hL.h0_honest
+  · simp only [h0s, if_false]
+    rcases hl : leaderAt h0 L sl with _ | p
+    · rw [hl] at h; simp [kindOf] at h
+    · rw [hl] at h
+      have hh : is_honest p = true := by
+        by_contra hc; simp [kindOf, hc] at h
+      rw [show (fun q => decide (some p = some q) && is_honest q) =
+        fun q => decide (q = p) && is_honest q by funext q; simp [eq_comm]]
+      exact countP_leader hnd (hL.honest_mem p hh) hh
 
 /-- A slot of honest kind has an honest initial leader. -/
-theorem lucky_of_kind (hL : LotteryHyp IP lot) (sl : ℕ) (h : honestKind κ sl = true) :
-    letI := lotteryParams IP lot κ
+theorem lucky_of_kind (hnd : IP.Nodup) (hL : LeaderHyp IP h0) (sl : ℕ)
+    (h : honestKind (kinds L) sl = true) :
+    letI := leaderParams IP h0 L
     lucky_slot (Party := Party) sl = true :=
-  letI := lotteryParams IP lot κ
-  super_slot_lucky (super_of_kind κ hL sl h)
+  letI := leaderParams IP h0 L
+  super_slot_lucky (super_of_kind L hnd hL sl h)
 
 /-- A slot led by a corrupt party is of adversarial kind. -/
-theorem adv_of_winner (hL : LotteryHyp IP lot) (p : Party) (sl : ℕ)
-    (hw : (lotteryParams IP lot κ).Winner p sl = true) (hc : is_corrupt p = true) :
-    advKind κ sl = true := by
-  simp only [advKind, decide_eq_true_eq]
+theorem adv_of_winner (hL : LeaderHyp IP h0) (p : Party) (sl : ℕ)
+    (hw : (leaderParams IP h0 L).Winner p sl = true) (hc : is_corrupt p = true) :
+    advKind (kinds L) sl = true := by
+  have hp := not_honest_of_corrupt hc
+  simp only [advKind, decide_eq_true_eq, kindAt_kinds hL.h0_honest]
   simp only [Parameters.Winner] at hw
   split_ifs at hw
-  · exact absurd (hL.corrupt_adv _ p hw hc) (by decide)
-  · exact hL.corrupt_adv _ p hw hc
+  · have : p = h0 := of_decide_eq_true hw
+    subst this
+    rw [hL.h0_honest] at hp; exact absurd hp (by decide)
+  · rw [of_decide_eq_true hw]
+    simp [kindOf, hp]
 
 end Lottery
 
@@ -255,6 +319,131 @@ noncomputable def slotDist (ν : PMF SlotKind) (W : ℕ) {n : ℕ} (i : Fin n) :
 `slotDist ν W`. -/
 noncomputable def kindDist (ν : PMF SlotKind) (W n : ℕ) : PMF (Fin n → SlotKind) :=
   PMF.piFin (slotDist ν W)
+
+/-- Independent draws mapped coordinatewise are independent draws of the mapped
+distributions. -/
+theorem piFin_map {α β : Type} (g : α → β) :
+    ∀ {m : ℕ} (p : Fin m → PMF α),
+      (PMF.piFin p).map (fun v i => g (v i)) = PMF.piFin fun i => (p i).map g
+  | 0, p => by
+    simp only [PMF.piFin, PMF.pure_map]
+    congr 1
+    funext i
+    exact i.elim0
+  | m + 1, p => by
+    simp only [PMF.piFin, PMF.map_bind, PMF.pure_map, PMF.bind_map]
+    have ih := piFin_map g (Fin.tail p)
+    rw [show (Fin.tail fun i => (p i).map g) = fun i => (Fin.tail p i).map g from rfl, ← ih]
+    congr 1
+    funext a
+    simp only [PMF.bind_map, Function.comp_def]
+    congr 1
+    funext v
+    congr 1
+    funext i
+    refine Fin.cases ?_ (fun j => ?_) i <;> simp
+
+section Leaders
+
+variable {Party : Type} [Corruption Party] [DecidableEq Party]
+
+/-- The distribution of the leader of slot `i`: `μ` for `i < W`, the party `h0` from `W` on. -/
+noncomputable def leaderSlotDist (μ : PMF (Option Party)) (h0 : Party) (W : ℕ) {n : ℕ}
+    (i : Fin n) : PMF (Option Party) :=
+  if (i : ℕ) < W then μ else PMF.pure (some h0)
+
+/-- The distribution of the leader string of the first `n` slots: independent draws from
+`leaderSlotDist μ h0 W`. -/
+noncomputable def leaderDist (μ : PMF (Option Party)) (h0 : Party) (W n : ℕ) :
+    PMF (Fin n → Option Party) :=
+  PMF.piFin (leaderSlotDist μ h0 W)
+
+/-- The distribution of the kind of a slot whose leader is drawn from `μ`. -/
+noncomputable def kindLaw (μ : PMF (Option Party)) : PMF SlotKind := μ.map kindOf
+
+/-- **Slot kinds of a random leader string.** For an honest padding leader `h0`, the slot
+kinds of a leader string drawn from `leaderDist μ h0 W n` are distributed as
+`kindDist (kindLaw μ) W n`. -/
+theorem leaderDist_map_kinds (μ : PMF (Option Party)) {h0 : Party} (hh0 : is_honest h0 = true)
+    (W n : ℕ) : (leaderDist μ h0 W n).map kinds = kindDist (kindLaw μ) W n := by
+  rw [leaderDist, show (kinds : (Fin n → Option Party) → Fin n → SlotKind) =
+    fun v i => kindOf (v i) from rfl, piFin_map, kindDist]
+  congr 1
+  funext i
+  simp only [leaderSlotDist, slotDist, kindLaw]
+  split_ifs
+  · rfl
+  · simp [PMF.pure_map, kindOf, hh0]
+
+end Leaders
+
+section Stake
+
+variable {Party : Type} [Fintype Party] [Corruption Party] [DecidableEq Party]
+
+/-- The total stake of the parties of `S` under the stake distribution `st`. -/
+def stakeOf (st : Party → ℕ) (S : Finset Party) : ℕ := ∑ p ∈ S, st p
+
+/-- The masses of the stake-weighted election. -/
+noncomputable def stakeMass (st : Party → ℕ) (φ : ℝ≥0∞) : Option Party → ℝ≥0∞
+  | none => 1 - φ
+  | some p => φ * st p / (stakeOf st Finset.univ : ℝ≥0∞)
+
+theorem sum_stakeMass (st : Party → ℕ) (hst : 0 < stakeOf st Finset.univ) {φ : ℝ≥0∞}
+    (hφ : φ ≤ 1) : ∑ o, stakeMass st φ o = 1 := by
+  rw [Fintype.sum_option]
+  simp only [stakeMass]
+  have hT : (stakeOf st Finset.univ : ℝ≥0∞) ≠ 0 := by exact_mod_cast hst.ne'
+  simp_rw [div_eq_mul_inv, mul_assoc, ← Finset.mul_sum, ← Finset.sum_mul, ← Nat.cast_sum,
+    show (∑ i, st i) = stakeOf st Finset.univ from rfl,
+    ENNReal.mul_inv_cancel hT (ENNReal.natCast_ne_top _), mul_one, tsub_add_cancel_of_le hφ]
+
+/-- **The stake-weighted election of one leader per slot.** A slot has a leader with
+probability `φ`, and the leader is the party `p` with probability proportional to its stake
+`st p`. -/
+noncomputable def stakeElect (st : Party → ℕ) (hst : 0 < stakeOf st Finset.univ) (φ : ℝ≥0∞)
+    (hφ : φ ≤ 1) : PMF (Option Party) :=
+  PMF.ofFintype (stakeMass st φ) (sum_stakeMass st hst hφ)
+
+theorem kindLaw_apply (μ : PMF (Option Party)) (k : SlotKind) :
+    kindLaw μ k = ∑ o, if kindOf o = k then μ o else 0 := by
+  rw [kindLaw, PMF.map_apply, tsum_fintype]
+  refine Finset.sum_congr rfl fun o _ => ?_
+  by_cases h : kindOf o = k
+  · simp [h]
+  · simp [h, Ne.symm h]
+
+/-- **The honest-slot probability of the stake-weighted election** is `φ` times the honest
+stake fraction. -/
+theorem kindLaw_stakeElect_honest (st : Party → ℕ) (hst : 0 < stakeOf st Finset.univ)
+    {φ : ℝ≥0∞} (hφ : φ ≤ 1) :
+    kindLaw (stakeElect st hst φ hφ) .honest =
+      φ * stakeOf st (Finset.univ.filter fun p => is_honest p = true) /
+        (stakeOf st Finset.univ : ℝ≥0∞) := by
+  rw [kindLaw_apply, Fintype.sum_option]
+  simp only [kindOf, stakeElect, PMF.ofFintype_apply, stakeMass, reduceCtorEq, if_false,
+    zero_add]
+  simp_rw [stakeOf, Nat.cast_sum, div_eq_mul_inv, Finset.mul_sum, Finset.sum_mul,
+    Finset.sum_filter]
+  refine Finset.sum_congr rfl fun p _ => ?_
+  by_cases hp : is_honest p = true <;> simp [hp]
+
+/-- **The adversarial-slot probability of the stake-weighted election** is `φ` times the
+corrupt stake fraction. -/
+theorem kindLaw_stakeElect_adversarial (st : Party → ℕ) (hst : 0 < stakeOf st Finset.univ)
+    {φ : ℝ≥0∞} (hφ : φ ≤ 1) :
+    kindLaw (stakeElect st hst φ hφ) .adversarial =
+      φ * stakeOf st (Finset.univ.filter fun p => is_honest p = false) /
+        (stakeOf st Finset.univ : ℝ≥0∞) := by
+  rw [kindLaw_apply, Fintype.sum_option]
+  simp only [kindOf, stakeElect, PMF.ofFintype_apply, stakeMass, reduceCtorEq, if_false,
+    zero_add]
+  simp_rw [stakeOf, Nat.cast_sum, div_eq_mul_inv, Finset.mul_sum, Finset.sum_mul,
+    Finset.sum_filter]
+  refine Finset.sum_congr rfl fun p _ => ?_
+  by_cases hp : is_honest p = true <;> simp [hp]
+
+end Stake
 
 private theorem expect_ite (p : PMF SlotKind) (c : Prop) [Decidable c] (s : SlotKind → ℝ) :
     expect p (fun x => if c then s x else 0) = if c then expect p s else 0 := by

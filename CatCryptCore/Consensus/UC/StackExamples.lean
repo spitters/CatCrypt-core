@@ -15,8 +15,8 @@ set_option autoImplicit false
 # The stack at the lottery parameters
 
 The hypotheses of `UC.Stack.stack_realizes` hold for the protocols
-`PoSNSB.LotteryInstance.P` (one honest party leading the honest slots, slot kinds drawn with
-`pH = 3/4` and `pA = 1/8` on the first `1000` of `2000` slots, `Hash = Fin M`) with
+`PoSNSB.LotteryInstance.P` (one honest party elected by the stake-weighted election `μ`, slot
+kinds with `pH = 3/4` and `pA = 0` on the first `1000` of `2000` slots, `Hash = Fin M`) with
 `W = 1000`, `d = 1000`, `w = 10`, `ε = 1/4`, and the gadget parameters `cfg`: the slot tree,
 stake `1` for the party `some 0` and `0` for the observer `none`, the honest validator
 `some 0`, epochs of one slot, the pruned positions `slotCut Block.sl 1000` and delivery bound
@@ -67,16 +67,15 @@ theorem instance_realizes (K : ℕ) (hK : K + 2 ≤ 2000)
     (Sch : SigScheme (Block Unit (Fin M) (Fin 1)))
     (A : Adversary Unit (Fin M) 1 2000 (K + 1) Sch) (Δ : ℕ)
     (exF : TreeView (Option (Fin 1)) (Block Unit (Fin M) (Fin 1))) :
-    Realizes (stackReal (P M (K + 1)) A (Tree M (K + 1)) (cfg M (K + 1)) K ν 1000 Δ exF)
-      (ideal (stackF (P M (K + 1)) A (Tree M (K + 1)) ν 1000 K 1000 10 (1 / 4) Δ
+    Realizes (stackReal (P M (K + 1)) A (Tree M (K + 1)) (cfg M (K + 1)) K μ 1000 Δ exF)
+      (ideal (stackF (P M (K + 1)) A (Tree M (K + 1)) μ 1000 K 1000 10 (1 / 4) Δ
           (cfg M (K + 1)) exF)
-        (stackSim (P M (K + 1)) A (Tree M (K + 1)) ν 1000 K 1000 10 (1 / 4) Δ
+        (stackSim (P M (K + 1)) A (Tree M (K + 1)) μ 1000 K 1000 10 (1 / 4) Δ
           (cfg M (K + 1)) exF))
       (fun _ _ => slotBound ν 2000 1000 10 (1 / 4) +
         ((2 ^ (K + 2) * (2 ^ (K + 2) - 1) / 2 : ℕ) : ℝ≥0∞) / M) := by
-  have h := stack_realizes (P M (K + 1)) A (Tree M (K + 1)) ν 1000 K 1000 10 (1 / 4) Δ
-    (cfg M (K + 1)) exF (protocolHyp M (K + 1))
-    (fun p _ => by simp [P, Fin.fin_one_eq_zero p]) (tree_longest M (K + 1)) (by norm_num)
+  have h := stack_realizes (P M (K + 1)) A (Tree M (K + 1)) μ 1000 K 1000 10 (1 / 4) Δ
+    (cfg M (K + 1)) exF (protocolHyp M (K + 1)) (tree_longest M (K + 1)) (by norm_num)
     (by norm_num) (by norm_num) hK le_rfl (by norm_num)
     (by rw [pH_ν, pA_ν]; norm_num) (by rw [pH_ν, pA_ν]; norm_num)
     (by rw [pH_ν, pA_ν]; norm_num) _ (fun _ _ => candQuerier (GB M) (K + 1))
@@ -86,7 +85,7 @@ theorem instance_realizes (K : ℕ) (hK : K + 2 ≤ 2000)
       by decide)
   have hq : (1 + Fintype.card (Unit × Fin 1)) ^ (K + 1 + 1) = 2 ^ (K + 2) := by simp
   simp only [Finset.sum_eq_zero fun i _ =>
-      eufAdv_forger_of_honest (P M (K + 1)) A hcor ν 1000 K i, add_zero, hq,
+      eufAdv_forger_of_honest (P M (K + 1)) A hcor μ 1000 K i, add_zero, hq,
     Fintype.card_fin] at h
   exact h
 
@@ -98,10 +97,10 @@ theorem instance_realizes_lt_one (K : ℕ) (hK : K + 2 ≤ 2000)
     (exF : TreeView (Option (Fin 1)) (Block Unit (Fin (4 ^ (K + 5))) (Fin 1))) :
     ∃ ε : ℝ≥0∞, ε < 1 ∧
       Realizes (stackReal (P (4 ^ (K + 5)) (K + 1)) A (Tree (4 ^ (K + 5)) (K + 1))
-          (cfg (4 ^ (K + 5)) (K + 1)) K ν 1000 Δ exF)
-        (ideal (stackF (P (4 ^ (K + 5)) (K + 1)) A (Tree (4 ^ (K + 5)) (K + 1)) ν 1000 K 1000
+          (cfg (4 ^ (K + 5)) (K + 1)) K μ 1000 Δ exF)
+        (ideal (stackF (P (4 ^ (K + 5)) (K + 1)) A (Tree (4 ^ (K + 5)) (K + 1)) μ 1000 K 1000
             10 (1 / 4) Δ (cfg (4 ^ (K + 5)) (K + 1)) exF)
-          (stackSim (P (4 ^ (K + 5)) (K + 1)) A (Tree (4 ^ (K + 5)) (K + 1)) ν 1000 K 1000 10
+          (stackSim (P (4 ^ (K + 5)) (K + 1)) A (Tree (4 ^ (K + 5)) (K + 1)) μ 1000 K 1000 10
             (1 / 4) Δ (cfg (4 ^ (K + 5)) (K + 1)) exF))
         (fun _ _ => ε) :=
   ⟨_, instance_bound_lt_one K, instance_realizes (4 ^ (K + 5)) K hK Sch A Δ exF⟩

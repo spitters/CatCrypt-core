@@ -15,10 +15,10 @@ This file runs the finality layer of `CatCryptCore.Consensus.FinalityUpdated` on
 execution of PoS-NSB (`CatCryptCore.Consensus.PoSNSB.Prob`) and bounds the probability that
 Δ-updatedness fails by the failure bound of `PoSNSB.pos_nsb_security`:
 
-  `slotBound ν n d w ε + q (q - 1) / 2 / |Hash| + ∑ᵢ eufAdv (forger P A ν W K i)`,
+  `slotBound (kindLaw μ) n d w ε + q (q - 1) / 2 / |Hash| + ∑ᵢ eufAdv (forger P A μ W K i)`,
 
 the Chernoff-Hoeffding bound on the slot conditions, the birthday bound of the random oracle,
-and the EUF-CMA advantages of the explicit forgers `forger P A ν W K i` built from the
+and the EUF-CMA advantages of the explicit forgers `forger P A μ W K i` built from the
 adversary `A`. The only numeric terms are the two information-theoretic ones; the signature
 scheme enters through `eufAdv` of explicit adversaries.
 
@@ -276,12 +276,13 @@ variable (P : Protocol Tx Hash np n Hz) (A : Adversary Tx Hash np n Hz Sch) (Tre
 seed satisfy `VoteHyp` with the earliest start `τ₀ ω = (e₀ + 1) E + σ + d` (`hvote`, `hτ₀`).
 Then the probability that Δ-updatedness with lag `3 E + σ + d + Δ` fails, from the phase of
 slot `τ₀ ω + Δ` up to phase `K`, is at most
-`slotBound ν n d w ε + q (q - 1) / 2 / |Hash| + ∑ᵢ eufAdv (forger P A ν W K i)`. -/
+`slotBound (kindLaw μ) n d w ε + q (q - 1) / 2 / |Hash| + ∑ᵢ eufAdv (forger P A μ W K i)`. -/
 theorem finality_updated_prob (hP : ProtocolHyp P) (hTree : Tree.Longest) (hGB : P.GB.sl = 0)
-    (ν : PMF SlotKind) (W K d w : ℕ) (ε : ℝ)
+    (μ : PMF (Option (Fin np))) (W K d w : ℕ) (ε : ℝ)
     (hd : 1 ≤ d) (hwd : w ≤ d) (hWn : W + d ≤ n) (hn : K + 2 ≤ n) (hHz : K + 1 ≤ Hz)
-    (hε : 0 ≤ ε) (hγ : 2 * pA ν ≤ pH ν) (hw : (w : ℝ) ≤ d * (pH ν - pA ν))
-    (h3 : (3 : ℝ) ≤ d * (pH ν - 2 * pA ν)) (q : ℕ)
+    (hε : 0 ≤ ε) (hγ : 2 * pA (kindLaw μ) ≤ pH (kindLaw μ))
+    (hw : (w : ℝ) ≤ d * (pH (kindLaw μ) - pA (kindLaw μ)))
+    (h3 : (3 : ℝ) ≤ d * (pH (kindLaw μ) - 2 * pA (kindLaw μ))) (q : ℕ)
     (next : (Fin n → SlotKind) → (Fin np → Sch.PK × Sch.SK) →
       Querier (BlockDom Tx Hash np Hz) Hash)
     (hRO : ∀ ω : Seed Tx Hash np n Hz Sch, ∀ j ≤ K, letI := ω.params P; letI := ω.bparams P;
@@ -296,25 +297,25 @@ theorem finality_updated_prob (hP : ProtocolHyp P) (hTree : Tree.Longest) (hGB :
     (seen : Seed Tx Hash np n Hz Sch → ℕ → Fin np →
       Finset (Vote (Fin np) (Block Tx Hash (Fin np))))
     (hw4 : 4 ≤ w) (hσd : d ≤ σ)
-    (htip : ∀ ω, Good P A Tree ν K d w ε ω →
+    (htip : ∀ ω, Good P A Tree (kindLaw μ) K d w ε ω →
       (seedTrace P A K ω).SlotTip (seedNow P A ω) Block.sl σ K)
     (hvote : ∀ ω, VoteHyp (seedTree P ω) wst (seedTrace P A K ω) (seedNow P A ω) Block.sl E σ d
       Δ GST K (H ω) (v₀ ω) (pre ω) (j₀ ω) (τ₀ ω) (ρ ω) (cast ω) (seen ω))
     (hτ₀ : ∀ ω, τ₀ ω = (livenessEpoch (pre ω) (j₀ ω) + 1) * E + σ + d) :
-    (seedDist ν W n Hz Sch).toOuterMeasure {ω | ¬DeltaUpdated (seedTree P ω) wst
+    (seedDist μ P.h0 W n Hz Sch).toOuterMeasure {ω | ¬DeltaUpdated (seedTree P ω) wst
         (seedTrace P A K ω) (seedNow P A ω) Block.sl E K (τ₀ ω + Δ) (3 * E + σ + d + Δ)
         (seen ω)} ≤
-      slotBound ν n d w ε + ((q * (q - 1) / 2 : ℕ) : ℝ≥0∞) / Fintype.card Hash +
-        ∑ i : Fin np, eufAdv (forger P A ν W K i) := by
+      slotBound (kindLaw μ) n d w ε + ((q * (q - 1) / 2 : ℕ) : ℝ≥0∞) / Fintype.card Hash +
+        ∑ i : Fin np, eufAdv (forger P A μ W K i) := by
   have hsub : {ω | ¬DeltaUpdated (seedTree P ω) wst (seedTrace P A K ω) (seedNow P A ω)
       Block.sl E K (τ₀ ω + Δ) (3 * E + σ + d + Δ) (seen ω)} ⊆
-      {ω | ¬Good P A Tree ν K d w ε ω} := by
+      {ω | ¬Good P A Tree (kindLaw μ) K d w ε ω} := by
     intro ω hω hG
     exact hω fun p t hp ht hτ =>
       finality_updated_start ⟨hvote ω, seed_slotChainHyp hGB hG.2.2
         (seed_slotChainGrowth hGB hG.2.1 hw4 hσd (htip ω hG))⟩ (hτ₀ ω) hp ht hτ
   exact (MeasureTheory.OuterMeasure.mono _ hsub).trans
-    (pos_nsb_security P A Tree hP hTree ν W K d w ε hd hwd hWn hn hHz hε hγ hw h3 q next hRO)
+    (pos_nsb_security P A Tree hP hTree μ W K d w ε hd hwd hWn hn hHz hε hγ hw h3 q next hRO)
 
 end Bound
 
