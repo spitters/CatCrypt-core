@@ -37,6 +37,8 @@ reduction that keeps its own tables and forwards some queries to its challenger.
 * `OracleAdv.isQueryBound_simulate` — a simulated adversary asks at most the total
   cost of its original queries, when the program answering `d` asks at most
   `cost d` queries
+* `OracleAdv.isQueryBoundBy_mapQuery` — renaming queries preserves a cost bound
+  when no renamed query costs more than the original
 -/
 
 @[expose] public section
@@ -190,6 +192,17 @@ theorem isQueryBoundBy_simulate {S : Type} (impl : S → D → OracleAdv D' R' (
     obtain ⟨hle, hk⟩ := hA
     have h := isQueryBoundBy_bind (himpl s d) (fun x => ih x.1 (hk x.1) x.2)
     rwa [Nat.add_sub_cancel' hle] at h
+
+/-- Renaming queries along `c` preserves a cost bound when each renamed query costs
+at most the original one. -/
+theorem isQueryBoundBy_mapQuery (c : D → D') {cost : D → ℕ} {cost' : D' → ℕ}
+    (hc : ∀ d, cost' (c d) ≤ cost d) {A : OracleAdv D R α} {n : ℕ}
+    (hA : A.IsQueryBoundBy cost n) : (mapQuery c A).IsQueryBoundBy cost' n := by
+  induction A generalizing n with
+  | ret a => trivial
+  | rand p k ih => exact fun b => ih b (hA b)
+  | query d k ih =>
+    exact ⟨(hc d).trans hA.1, fun r => (ih r (hA.2 r)).mono (by have := hc d; omega)⟩
 
 end OracleAdv
 

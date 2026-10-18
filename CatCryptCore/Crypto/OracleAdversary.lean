@@ -24,10 +24,14 @@ queries. An adversary runs against a stateful oracle
 * `OracleAdv.IsQueryBound A q` — every path of `A` asks at most `q` queries
 * `OracleAdv.run O A s` — joint distribution of the output and the final
   oracle state when `A` runs against `O` from state `s`
+* `OracleAdv.mapQuery c A` — the adversary `A` with each query `d` asked as `c d`
 
 ## Main results
 
 * `OracleAdv.IsQueryBound.mono` — query bounds are monotone
+* `OracleAdv.run_mapQuery`, `OracleAdv.isQueryBound_mapQuery` — a renamed
+  adversary runs against the oracle precomposed with the renaming and keeps its
+  query bound
 * `OracleAdv.run_map_state` — an oracle state map that commutes with one
   oracle call commutes with a whole run
 * `OracleAdv.run_map_fst_of_isQueryBound_zero` — an adversary without queries
@@ -99,6 +103,34 @@ variable {S S' : Type}
 
 @[simp] theorem run_query (O : S → D → PMF (R × S)) (d : D) (k : R → OracleAdv D R α)
     (s : S) : run O (query d k) s = (O s d).bind fun x => run O (k x.1) x.2 := rfl
+
+/-! ## Renaming queries -/
+
+/-- The adversary `A` with each query `d` asked as `c d`. -/
+def mapQuery {D₀ : Type} (c : D → D₀) : OracleAdv D R α → OracleAdv D₀ R α
+  | ret a => ret a
+  | rand p k => rand p fun b => mapQuery c (k b)
+  | query d k => query (c d) fun r => mapQuery c (k r)
+
+/-- Running `mapQuery c A` against `O` is running `A` against `O` precomposed with `c`. -/
+theorem run_mapQuery {D₀ : Type} (O : S → D₀ → PMF (R × S)) (c : D → D₀)
+    (A : OracleAdv D R α) (s : S) :
+    run O (mapQuery c A) s = run (fun s d => O s (c d)) A s := by
+  induction A generalizing s with
+  | ret a => rfl
+  | rand p k ih => simp only [mapQuery, run_rand, ih]
+  | query d k ih => simp only [mapQuery, run_query, ih]
+
+/-- Renaming queries preserves query bounds. -/
+theorem isQueryBound_mapQuery {D₀ : Type} (c : D → D₀) {A : OracleAdv D R α} {q : ℕ}
+    (hA : A.IsQueryBound q) : (mapQuery c A).IsQueryBound q := by
+  induction A generalizing q with
+  | ret a => trivial
+  | rand p k ih => exact fun b => ih b (hA b)
+  | query d k ih =>
+    cases q with
+    | zero => exact hA.elim
+    | succ q => exact fun r => ih r (hA r)
 
 /-- A map `f` of oracle states that commutes with every oracle call commutes
 with every run. -/
