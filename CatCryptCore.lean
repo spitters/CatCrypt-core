@@ -182,6 +182,7 @@ public import CatCryptCore.Crypto.FiatShamirROM.KeyRecoveryFlag
 public import CatCryptCore.Crypto.FiatShamirROM.Bridge
 public import CatCryptCore.Crypto.PRPPRFSwitching
 public import CatCryptCore.Crypto.PRFAssumption
+public import CatCryptCore.Crypto.PrTrueCover
 public import CatCryptCore.Crypto.Assumptions.Catalog
 public import CatCryptCore.Crypto.Assumptions.DLGroupParam
 public import CatCryptCore.Crypto.Assumptions.CRCoins
