@@ -57,8 +57,10 @@ coefficient facts in `CatCryptCore.ForMathlib.ENNRealNatCast`.
   `CatCryptRel` on side conditions and relational judgments, `ssprove_crypto` and
   `ssprove_crypto_grind` on relational judgments, `catcrypt_grind` on distance
   inequalities and `SPComp` equalities, `gcongr <;> catcrypt_grind` on distance and
-  monotonicity inequalities, `bound` on distance inequalities, and `apply t` with
-  `assumption` or `catcrypt_grind` on the premises for each term argument `t`.
+  monotonicity inequalities, `bound` on distance inequalities, `apply t` with
+  `assumption` or `catcrypt_grind` on the premises for each term argument `t`, and
+  `grind +suggestions` with the `CatCryptGrind` set after the `grind` arms of each
+  shape.
 -/
 
 @[expose] public section
@@ -163,3 +165,21 @@ catcrypt_auto_arm "distance inequality" order 50 skip_forall_ineq budget_div 4 :
 catcrypt_auto_arm "monotonicity inequality" order 30 := "(gcongr <;> catcrypt_grind%GRIND)"
 
 catcrypt_auto_arm "SPComp equality" order 10 := "catcrypt_grind%GRIND"
+
+/-! The arms below run `grind +suggestions` with the `CatCryptGrind` set active: `grind`
+with the premises of the default library-suggestion selector added, which ranks the
+theorems of every imported module. Each runs after the `catcrypt_grind` and `grind`
+arms of its shape, under the per-arm budget `catcrypt_auto.maxHeartbeats` (default
+20000). `simp? +suggestions` and `simp_all? +suggestions` are not arms. -/
+
+catcrypt_auto_arm "IsPure/NoFail side condition" order 95 :=
+  "(open CatCryptGrind in grind +suggestions%GRIND)"
+catcrypt_auto_arm "distance inequality" order 45 :=
+  "(open CatCryptGrind in grind +suggestions%GRIND)"
+catcrypt_auto_arm "monotonicity inequality" order 65 :=
+  "(open CatCryptGrind in grind +suggestions%GRIND)"
+catcrypt_auto_arm "SPComp equality" order 15 :=
+  "(open CatCryptGrind in grind +suggestions%GRIND)"
+catcrypt_auto_arm "advantage equality" order 90 :=
+  "(open CatCryptGrind in grind +suggestions%GRIND)"
+catcrypt_auto_arm "other" order 40 := "(open CatCryptGrind in grind +suggestions%GRIND)"

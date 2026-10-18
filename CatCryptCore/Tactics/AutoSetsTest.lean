@@ -94,6 +94,20 @@ example {α : Type} (G : ℕ → SPComp α) (A : α → SPComp Bool) (n : ℕ) (
 example (G : SPComp Bool) (h : Heap) (x : ℝ≥0∞) : prTrue G h * x ≤ 1 * x := by
   bound
 
+/-! ## The `grind +suggestions` arm of `catcrypt_auto` -/
+
+/-- Scaled monotonicity of the success probability under a common prefix, the statement of
+`ForkingLemma.prTrue_bind_mono_const`. `catcrypt_grind`, `simp_all`, `bound` and `aesop`
+over `CatCryptRel` fail; the `grind +suggestions` arm closes it from that lemma. -/
+example {α : Type} (c : ℝ≥0∞) (comp : SPComp α) (k₁ k₂ : α → SPComp Bool) (h₀ : Heap)
+    (h : ∀ a h', prTrue (k₁ a) h' ≤ c * prTrue (k₂ a) h') :
+    prTrue (comp.bind k₁) h₀ ≤ c * prTrue (comp.bind k₂) h₀ := by
+  fail_if_success catcrypt_grind
+  fail_if_success simp_all
+  fail_if_success bound
+  fail_if_success aesop (rule_sets := [CatCryptRel]) (config := { terminal := true })
+  catcrypt_auto
+
 /-! ## `ssprove_crypto_grind` -/
 
 /-- Pure-prefix relational goal. -/

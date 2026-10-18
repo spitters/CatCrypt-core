@@ -177,12 +177,8 @@ theorem sdistHop_of {G₀ G₁ : Unit → SPComp Bool} {ε : ℝ≥0∞} (h : Sd
     sdist G₀ G₁ ≤ ε :=
   h.bound
 
--- The leaves of KEMTLS/Reduction.lean:161 without their hop lemmas: every arm
--- fails with an error naming the shape.
-/--
-error: catcrypt_auto: goal shape distance inequality; every arm failed
--/
-#guard_msgs (substring := true) in
+-- The leaves of KEMTLS/Reduction.lean:161 without their hop lemmas as arguments:
+-- the `grind +suggestions` arm finds the hop lemma `sdistHop_of` of this file.
 example (R H₁ H₂ I : Unit → SPComp Bool) (e₁ e₂ e₃ : ℝ≥0∞) (h₁ : SdistHopAsm R H₁ e₁)
     (h₂ : SdistHopAsm H₁ H₂ e₂) (h₃ : SdistHopAsm H₂ I e₃) :
     sdist R H₁ + (sdist H₁ H₂ + sdist H₂ I) ≤ e₁ + (e₂ + e₃) := by
@@ -194,12 +190,9 @@ example (R H₁ H₂ I : Unit → SPComp Bool) (e₁ e₂ e₃ : ℝ≥0∞) (h�
     sdist R H₁ + (sdist H₁ H₂ + sdist H₂ I) ≤ e₁ + (e₂ + e₃) := by
   catcrypt_auto? [sdistHop_of h₁, sdistHop_of h₂, sdistHop_of h₃]
 
--- The leaf of OEKE/Reduction.lean:201 without its hop lemma: `bound` is skipped
--- because `_h_q` is a `∀`-quantified inequality, and the error names the shape.
-/--
-error: catcrypt_auto: goal shape distance inequality; every arm failed
--/
-#guard_msgs (substring := true) in
+-- The leaf of OEKE/Reduction.lean:201 without its hop lemma as argument: `bound` is
+-- skipped because `_h_q` is a `∀`-quantified inequality; the `grind +suggestions`
+-- arm finds `advHop_of` of this file.
 example {α : Type} (R H I : SPComp α) (e : ℝ≥0∞) (A : α → SPComp Bool)
     (hd : AdvHopAsm R H A e) (_h_q : ∀ n : ℕ, (n : ℝ≥0∞) * 0 ≤ e) :
     AdvantageA R H A + AdvantageA H I A ≤ e + AdvantageA H I A := by
