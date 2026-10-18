@@ -55,23 +55,6 @@ plus the class-wise extraction terms with the marker draws added.
 
 set_option autoImplicit false
 
-namespace CatCrypt.Crypto.OracleAdv
-
-variable {D R α : Type}
-
-/-- A cost bound scales with the cost. -/
-theorem IsQueryBoundBy.mul_left {c : D → ℕ} {A : OracleAdv D R α} {n : ℕ}
-    (h : A.IsQueryBoundBy c n) (a : ℕ) : A.IsQueryBoundBy (fun d => a * c d) (a * n) := by
-  induction A generalizing n with
-  | ret x => trivial
-  | rand p k ih => exact fun b => ih b (h b)
-  | query d k ih =>
-    refine ⟨Nat.mul_le_mul_left a h.1, fun r => ?_⟩
-    rw [← Nat.mul_sub]
-    exact ih r (h.2 r)
-
-end CatCrypt.Crypto.OracleAdv
-
 namespace CatCrypt.Crypto.FiatShamirROM
 
 open CatCrypt.Core CatCrypt.Prob CatCrypt.Crypto

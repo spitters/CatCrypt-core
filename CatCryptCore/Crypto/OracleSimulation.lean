@@ -154,6 +154,17 @@ theorem IsQueryBoundBy.mono {c : D → ℕ} {A : OracleAdv D R α} {a b : ℕ}
   | rand p k ih => exact fun x => ih x (h x) hab
   | query d k ih => exact ⟨h.1.trans hab, fun r => ih r (h.2 r) (by omega)⟩
 
+/-- A cost bound scales with the cost. -/
+theorem IsQueryBoundBy.mul_left {c : D → ℕ} {A : OracleAdv D R α} {n : ℕ}
+    (h : A.IsQueryBoundBy c n) (a : ℕ) : A.IsQueryBoundBy (fun d => a * c d) (a * n) := by
+  induction A generalizing n with
+  | ret x => trivial
+  | rand p k ih => exact fun b => ih b (h b)
+  | query d k ih =>
+    refine ⟨Nat.mul_le_mul_left a h.1, fun r => ?_⟩
+    rw [← Nat.mul_sub]
+    exact ih r (h.2 r)
+
 theorem isQueryBoundBy_bind {c : D → ℕ} {A : OracleAdv D R α} {f : α → OracleAdv D R β}
     {a b : ℕ} (hA : A.IsQueryBoundBy c a) (hf : ∀ x, (f x).IsQueryBoundBy c b) :
     (A.bind f).IsQueryBoundBy c (a + b) := by
