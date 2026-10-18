@@ -46,13 +46,14 @@ SLH-DSA.
   `Pre_Advantage h A ≤ CR_Search_Advantage h (preToCR h A) + |Output| / |Input|`
   (KL Prop. 8.4)
 
-The hash was previously an unkeyed function `Input → Output`. For a compressing unkeyed
-function a constant adversary outputs a fixed collision, so the former classes
-`CRSearchSecure h ε`, `TCRSecure h ε`, `PreSecure h ε` (`∀ A, … ≤ ε`) could hold only for
-`ε ≥ 1`, and `CRImpliesPre` had the conclusion of `CRSecure_implies_PreSecure` as its only
-field. These classes and the theorems `CRSecure_implies_TCRSecure` and
-`CRSecure_implies_PreSecure` are removed; `tcr_eq_cr` and `pre_le_cr` replace the
-theorems.
+### Codecs and the random function
+* `HashScheme.Codec` — injective encodings of a domain `D` into the inputs and of the
+  outputs into a range `R`; a collision of `hashOn` is a collision of the scheme
+* `HashScheme.randomFun` — the keyed family whose keys are the functions `D → R`
+
+The hash is keyed: for a compressing unkeyed function a constant adversary outputs a fixed
+collision, so a bound `∀ A, … ≤ ε` holds only for `ε ≥ 1`. The reductions `tcr_eq_cr` and
+`pre_le_cr` relate the advantages per adversary.
 
 ## Cross-Validation
 
@@ -131,6 +132,52 @@ noncomputable def CR_Search_Game (h : HashScheme) (A : CR_Search_Adversary h) :
 noncomputable def CR_Search_Advantage (h : HashScheme) (A : CR_Search_Adversary h) :
     ℝ≥0∞ :=
   prTrue (CR_Search_Game h A) Heap.empty
+
+/-! ## Codecs and the random function -/
+
+/-- Injective encodings of a domain `D` into the inputs of `H` and of the outputs of `H`
+into a range `R`. -/
+structure HashScheme.Codec (H : HashScheme) (D R : Type) where
+  /-- Encoding of the domain into the inputs. -/
+  inp : D ↪ H.Input
+  /-- Encoding of the outputs into the range. -/
+  out : H.Output ↪ R
+
+namespace HashScheme.Codec
+
+variable {H : HashScheme} {D R : Type}
+
+/-- The hash under key `k` on the domain `D` with values in `R`. -/
+def hashOn (c : H.Codec D R) (k : H.Key) (d : D) : R :=
+  c.out (H.hash k (c.inp d))
+
+/-- `d₁, d₂` are distinct elements of `D` with the same `hashOn` value under `k`. -/
+def collision (c : H.Codec D R) (k : H.Key) (d₁ d₂ : D) : Prop :=
+  c.hashOn k d₁ = c.hashOn k d₂ ∧ d₁ ≠ d₂
+
+/-- A collision of `hashOn` is the collision of the encoded inputs under `H`. -/
+theorem collision_iff (c : H.Codec D R) (k : H.Key) (d₁ d₂ : D) :
+    c.collision k d₁ d₂ ↔
+      H.hash k (c.inp d₁) = H.hash k (c.inp d₂) ∧ c.inp d₁ ≠ c.inp d₂ := by
+  simp only [collision, hashOn, c.out.injective.eq_iff, ne_eq, c.inp.injective.eq_iff]
+
+/-- The identity codec on the inputs and outputs of `H`. -/
+def id (H : HashScheme) : H.Codec H.Input H.Output :=
+  ⟨Function.Embedding.refl _, Function.Embedding.refl _⟩
+
+@[simp] theorem hashOn_id (k : H.Key) (x : H.Input) :
+    (Codec.id H).hashOn k x = H.hash k x := rfl
+
+end HashScheme.Codec
+
+/-- The random function as a keyed hash family: the keys are the functions `D → R`, and
+the hash under the key `f` is `f`. A uniform key is a uniformly random function. -/
+abbrev HashScheme.randomFun (D R : Type) [Fintype D] [DecidableEq D] [Fintype R]
+    [Nonempty R] [DecidableEq R] : HashScheme where
+  Key := D → R
+  Input := D
+  Output := R
+  hash f d := f d
 
 /-! ## Distinguishing-Style Collision Resistance
 
