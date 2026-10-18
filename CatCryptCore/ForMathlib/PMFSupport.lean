@@ -20,6 +20,9 @@ Mathlib candidates about `PMF.bind`, `PMF.map` and `PMF.support`.
 * `PMF.map_uniformOfFintype_apply` — the image of the uniform distribution under
   `c` puts weight `|c⁻¹(a)| / |R|` on `a`; it belongs in
   `Mathlib/Probability/Distributions/Uniform.lean`.
+* `PMF.toOuterMeasure_bind_le_add` — an event after `p.bind f` has probability at most
+  `p(B) + a` when every outcome outside `B` gives it probability at most `a`; it belongs
+  in `Mathlib/Probability/ProbabilityMassFunction/Monad.lean`.
 -/
 
 @[expose] public section
@@ -53,5 +56,23 @@ theorem map_uniformOfFintype_apply {R A : Type*} [Fintype R] [Nonempty R] [Decid
   congr 3
   ext r
   simp [eq_comm]
+
+/-- An event after a bind has probability at most the probability of `B` plus `a`,
+when every outcome outside `B` gives it probability at most `a`. -/
+theorem toOuterMeasure_bind_le_add {β γ : Type} (p : PMF β) (f : β → PMF γ) (B : Set β)
+    (S : Set γ) (a : ℝ≥0∞) (h : ∀ y ∉ B, (f y).toOuterMeasure S ≤ a) :
+    (p.bind f).toOuterMeasure S ≤ p.toOuterMeasure B + a := by
+  rw [PMF.toOuterMeasure_bind_apply, PMF.toOuterMeasure_apply]
+  calc ∑' y, p y * (f y).toOuterMeasure S ≤ ∑' y, (B.indicator p y + p y * a) := by
+        refine ENNReal.tsum_le_tsum fun y => ?_
+        by_cases hy : y ∈ B
+        · rw [Set.indicator_of_mem hy]
+          refine (mul_le_of_le_one_right' ?_).trans le_self_add
+          exact (MeasureTheory.measure_mono (Set.subset_univ _)).trans_eq
+            ((PMF.toOuterMeasure_apply_eq_one_iff _ _).mpr (Set.subset_univ _))
+        · rw [Set.indicator_of_notMem hy, zero_add]
+          gcongr
+          exact h y hy
+    _ = _ := by rw [ENNReal.tsum_add, ENNReal.tsum_mul_right, PMF.tsum_coe, one_mul]
 
 end PMF
