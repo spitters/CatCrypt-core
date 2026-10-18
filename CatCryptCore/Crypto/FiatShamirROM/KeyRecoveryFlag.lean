@@ -31,6 +31,14 @@ key bound is used on the oracles satisfying `B`; a predicate `Bt` on tables that
 implies `B` and is inherited by smaller tables adds the probability that the final
 tables fail `Bt`, and the IV multiplicity bound instantiates it.
 
+The EUF-CMA bound with key recovery chains the game with the programmed flag at the
+witness sampler, the hybrid over the signing queries to the sampler `D`, the coupling
+with the exempt game, the statistical hop to the simulated game for the test that the
+forgery wins or the recovery succeeds, and the flag bound of the exempt game. A
+successful recovery in the simulated game is a relation attack by the explicit
+reduction `recReduction ρ dflt A`, which runs the adversary against the simulated
+oracle and applies the recovery to the visible entries of the final tables.
+
 ## Main definitions
 
 * `ivCnt κ c₀ ivOf t` — the counts per IV of the programmed and hidden entries of
@@ -42,6 +50,8 @@ tables fail `Bt`, and the IV multiplicity bound instantiates it.
   on one of given points of marked classes with probability at most `εev`
 * `Protocol.AllHiddenR ρ D xw` — every hidden entry of the sampler is of a marked class
 * `RejMarked ρ t` — every hidden entry of the tables `t` is of a marked class
+* `recReduction ρ dflt A` — the relation adversary that runs `A` with the verifier's
+  queries against the simulated oracle and recovers a witness from the visible entries
 
 ## Main results
 
@@ -56,6 +66,17 @@ tables fail `Bt`, and the IV multiplicity bound instantiates it.
   tables fail `Bt`
 * `run_attPR_flag_le_cls_ivMult` — the same bound from the empty tables with the
   multiplicity bound `C(qS, K + 1)·p^K` in place of the last term
+* `Protocol.sim_recTest_le_relAdvantage` — a successful recovery in the simulated game
+  is bounded by the relation advantage of `recReduction ρ dflt A`
+* `run_attPR_recR_le_sim`, `Protocol.attAdvantageByPR_recR_le_sim` — the exempt game
+  decided by a winning forgery, the flag or a successful recovery against the simulated
+  game, the recovery, `qS·δ` and the flag bound
+* `Protocol.eufcma_le_simPRB_cls` — the EUF-CMA advantage is at most the simulated-game
+  advantage plus the relation advantage of `recReduction ρ dflt A` plus the expectation
+  of `qS·δ + Σ_c qS·(q c + Vc c + μc c·qS)·Γ c + qS·εev` and the probability that the
+  final tables fail `Bt`, plus the hybrid advantages
+* `Protocol.eufcma_le_simPRB_cls_ivMult` — the same bound with `C(qS, K + 1)·p^K` in
+  place of the last expected term
 -/
 
 @[expose] public section
@@ -880,5 +901,246 @@ theorem run_attPR_flag_le_cls_ivMult {V : Type} [DecidableEq V] [Fintype V]
       (ivCnt_empty κ c₀ ivOf)))
 
 end RecFlag
+
+/-! ## The EUF-CMA bound with key recovery -/
+
+section RecHead
+
+variable {G : Protocol} {κ : G.Classes} {rel : G.Stmt → G.Wit → Prop}
+
+/-- **The key-recovery reduction.** On the statement `x` it runs the adversary `A`
+followed by the verifier's queries against the simulated oracle from the empty tables,
+and returns the witness that the recovery `ρ` gives from the visible entries of the
+final tables, or `dflt x` when the recovery gives none. -/
+noncomputable def recReduction (ρ : G.Recovery κ rel) (dflt : G.Stmt → G.Wit) {qH qS : ℕ}
+    (A : G.Adversary qH qS) (x : G.Stmt) : PMF G.Wit :=
+  (OracleAdv.run (toOracle (simStep x)) (withVerify x (A.run x))
+    (Protocol.Tables.empty, false)).map fun y =>
+      (ρ.recover x (y.2.1.prog ++ y.2.1.hash)).getD (dflt x)
+
+/-- **Recovery in the simulated game is a relation attack.** The expectation over the
+generator of the probability that the recovery succeeds on the visible entries of the
+final tables of the simulated run is at most the relation advantage of the reduction
+`recReduction ρ dflt A`. -/
+theorem Protocol.sim_recTest_le_relAdvantage (ρ : G.Recovery κ rel) (dflt : G.Stmt → G.Wit)
+    {qH qS : ℕ} (A : G.Adversary qH qS) :
+    ∑' xw, G.gen xw * (OracleAdv.run (toOracle (simStep xw.1)) (withVerify xw.1 (A.run xw.1))
+      (Protocol.Tables.empty, false)).toOuterMeasure {y | recTest ρ xw.1 y.2.1 = true} ≤
+      G.relAdvantage rel (recReduction ρ dflt A) := by
+  rw [Protocol.relAdvantage_eq_tsum]
+  refine ENNReal.tsum_le_tsum fun xw => mul_le_mul_right ?_ _
+  unfold recReduction
+  rw [PMF.toOuterMeasure_map_apply]
+  refine MeasureTheory.measure_mono fun y hy => ?_
+  simp only [Set.mem_ofPred_eq, Set.mem_preimage, recTest, Option.isSome_iff_exists] at hy ⊢
+  obtain ⟨w, hw⟩ := hy
+  rw [hw, Option.getD_some]
+  exact ρ.sound _ _ _ hw
+
+variable (ρ : G.Recovery κ rel) {D : G.Sampler} {xw : G.Stmt × G.Wit}
+
+/-- **The exempt game against the simulated game, for runs.** For a recovery complete at
+the sampler, whose hidden entries are of marked classes, with statistical HVZK distance
+`δ`, the class-wise key bound `Γ` with marked classes over the oracles satisfying `B`
+and the landing bound `εev` against oracles with at most `N` defined points, and a
+predicate `Bt` on tables, implying `B` of their oracle and inherited by smaller tables:
+a run of the exempt game from the empty tables asking at most `h` hash and `q` signing
+queries, with hash queries of total cost at most `n c` for each class `c`, and with
+`h + μ·q ≤ N`, ends with a winning forgery, the flag set or a successful recovery with
+probability at most the probability of a winning forgery in the simulated run, plus
+the probability of a successful recovery in the simulated run, plus `q·δ`, plus
+`Σ_c q·(n c + μc c·q)·Γ c + q·εev` and the probability that the final tables of the
+exempt run fail `Bt`. -/
+theorem run_attPR_recR_le_sim (hrec : ρ.CompleteAt D xw) {δ : ℝ≥0∞}
+    (hZK : G.AttHVZKAt D xw δ) {Γ : κ.ι → ℝ≥0∞} {B : (G.Key → Option G.Ch) → Prop}
+    {εev : ℝ≥0∞} (hκ : G.AttClassesAt κ D xw) (hR : G.AllHiddenR ρ D xw) (N : ℕ)
+    (hΓ : G.AttKeyBoundClsAtNRB ρ N D xw Γ B) (hev : G.AttEvLandAt ρ D xw N εev)
+    (Bt : G.Tables → Prop) (hBt : ∀ t, Bt t → B t.lookupAll)
+    (hBmono : ∀ t t' : G.Tables, t.Le t' → Bt t' → Bt t)
+    (A : OracleAdv G.Query G.Answer G.Forgery) (h q : ℕ) (hA : IsQueryBound₂ A h q)
+    (n : κ.ι → ℕ) (hn : ∀ c, A.IsQueryBoundBy (κ.hashCost c) (n c)) (hN : h + G.μ * q ≤ N) :
+    (OracleAdv.run (toOracle (attStepPR ρ D xw)) A (Protocol.Tables.empty, false)).toOuterMeasure
+        {y | (winsOrFlag xw.1 y || recTest ρ xw.1 y.2.1) = true} ≤
+      (OracleAdv.run (toOracle (simStep xw.1)) A (Protocol.Tables.empty, false)).toOuterMeasure
+          {y | wins xw.1 y = true} +
+        (OracleAdv.run (toOracle (simStep xw.1)) A (Protocol.Tables.empty, false)).toOuterMeasure
+          {y | recTest ρ xw.1 y.2.1 = true} + q * δ +
+        (flagBoundCls κ Γ n q Protocol.Tables.empty + q * εev +
+          (OracleAdv.run (toOracle (attStepPR ρ D xw)) A
+            (Protocol.Tables.empty, false)).toOuterMeasure {y | ¬ Bt y.2.1}) := by
+  set R := OracleAdv.run (toOracle (attStepPR ρ D xw)) A (Protocol.Tables.empty, false)
+  set S := OracleAdv.run (toOracle (simStep xw.1)) A (Protocol.Tables.empty, false)
+  set g : G.Forgery × (G.Tables × Bool) → ℝ≥0∞ :=
+    fun y => if (wins xw.1 y || recTest ρ xw.1 y.2.1) = true then 1 else 0 with hgdef
+  have hg : ∀ y, g y ≤ 1 := fun y => by simp only [g]; split_ifs <;> simp
+  have hgr : RejInsensitive g := fun _ _ => rfl
+  have hgf : FlagInsensitive g := fun _ _ => rfl
+  have hgs : ∀ y, recTest ρ xw.1 y.2.1 = true → g y = 1 := fun y hy => by simp [g, hy]
+  have hA' : R.toOuterMeasure {y | (winsOrFlag xw.1 y || recTest ρ xw.1 y.2.1) = true} ≤
+      ∑' y, R y * offFlag g y + R.toOuterMeasure {y | y.2.2 = true} := by
+    rw [toOuterMeasure_eq_tsum_ite, toOuterMeasure_eq_tsum_ite, ← ENNReal.tsum_add]
+    refine ENNReal.tsum_le_tsum fun y => ?_
+    rw [← mul_add]
+    refine mul_le_mul_right ?_ _
+    by_cases hf : y.2.2 = true
+    · rw [if_pos hf]
+      split_ifs <;> simp
+    · have hf' : y.2.2 = false := by simpa using hf
+      rw [show offFlag g y = g y from if_neg hf, if_neg hf, add_zero]
+      simp only [g, winsOrFlag, hf', Bool.or_false, Bool.or_eq_true]
+      exact le_rfl
+  have hC : ∑' y, S y * g y ≤ S.toOuterMeasure {y | wins xw.1 y = true} +
+      S.toOuterMeasure {y | recTest ρ xw.1 y.2.1 = true} := by
+    rw [toOuterMeasure_eq_tsum_ite, toOuterMeasure_eq_tsum_ite, ← ENNReal.tsum_add]
+    refine ENNReal.tsum_le_tsum fun y => ?_
+    rw [← mul_add]
+    refine mul_le_mul_right ?_ _
+    by_cases hw : wins xw.1 y = true <;> by_cases hr : recTest ρ xw.1 y.2.1 = true <;>
+      simp [g, hw, hr]
+  calc _ ≤ ∑' y, R y * offFlag g y + R.toOuterMeasure {y | y.2.2 = true} := hA'
+    _ ≤ ∑' y, S y * g y + q * δ + R.toOuterMeasure {y | y.2.2 = true} :=
+        add_le_add (run_attPR_le_sim ρ hrec hZK A h q hA _ (recInv_empty ρ xw.1) g hg hgr hgf
+          hgs) le_rfl
+    _ ≤ _ := add_le_add (add_le_add hC le_rfl)
+        (run_attPR_flag_le_cls ρ D xw hκ hR N hΓ hev Bt hBt hBmono A h q hA n hn _
+          (fun p hp => by simp [Protocol.Tables.empty] at hp)
+          (by simpa [Protocol.Tables.size, Protocol.Tables.empty] using hN))
+
+/-- **The exempt game against the simulated game and the relation game.** For a
+recovery `ρ`, complete at the sampler `D` and with the hidden entries of `D` of marked
+classes at every generated pair `xw`, a sampler with statistical HVZK distance `δ xw`,
+attempts in their classes, the class-wise key bound `Γ xw` with marked classes over the
+oracles satisfying `B xw` and the landing bound `εev xw` against oracles with at most
+`qH + V + μ·qS` defined points, a predicate `Bt xw` on tables implying `B xw` of their
+oracle and inherited by smaller tables, and every adversary with at most `qH` hash and
+`qS` signing queries whose hash queries at points of class `c` are at most `q c` on
+every path: the advantage that the forgery wins, the flag is set or the recovery
+succeeds in the exempt game is at most the simulated-game advantage plus the relation
+advantage of `recReduction ρ dflt A` plus the expectation over the generator of
+`qS·δ(x, w) + Σ_c qS·(q c + Vc c + μc c·qS)·Γ(x, w) c + qS·εev(x, w)` and the
+probability that the final tables of the exempt run fail `Bt (x, w)`. -/
+theorem Protocol.attAdvantageByPR_recR_le_sim (D : G.Sampler) (dflt : G.Stmt → G.Wit)
+    {qH qS : ℕ} {δ : G.Stmt × G.Wit → ℝ≥0∞} {Γ : G.Stmt × G.Wit → κ.ι → ℝ≥0∞}
+    {B : G.Stmt × G.Wit → (G.Key → Option G.Ch) → Prop} {εev : G.Stmt × G.Wit → ℝ≥0∞}
+    (hrec : ∀ xw ∈ G.gen.support, ρ.CompleteAt D xw)
+    (hZK : ∀ xw ∈ G.gen.support, G.AttHVZKAt D xw (δ xw))
+    (hκ : ∀ xw ∈ G.gen.support, G.AttClassesAt κ D xw)
+    (hR : ∀ xw ∈ G.gen.support, G.AllHiddenR ρ D xw)
+    (hΓ : ∀ xw ∈ G.gen.support,
+      G.AttKeyBoundClsAtNRB ρ (qH + G.V + G.μ * qS) D xw (Γ xw) (B xw))
+    (hev : ∀ xw ∈ G.gen.support, G.AttEvLandAt ρ D xw (qH + G.V + G.μ * qS) (εev xw))
+    (Bt : G.Stmt × G.Wit → G.Tables → Prop) (hBt : ∀ xw t, Bt xw t → B xw t.lookupAll)
+    (hBmono : ∀ xw (t t' : G.Tables), t.Le t' → Bt xw t' → Bt xw t)
+    (A : G.Adversary qH qS) (q : κ.ι → ℕ)
+    (hq : ∀ x c, (A.run x).IsQueryBoundBy (κ.hashCost c) (q c)) :
+    attAdvantageByPR (fun x y => winsOrFlag x y || recTest ρ x y.2.1) ρ D A ≤
+      simAdvantage A + G.relAdvantage rel (recReduction ρ dflt A) +
+      ∑' xw, G.gen xw * (qS * δ xw +
+        ∑ c, ((qS * (q c + κ.Vc c + κ.μc c * qS) : ℕ) : ℝ≥0∞) * Γ xw c + qS * εev xw +
+        (OracleAdv.run (toOracle (attStepPR ρ D xw)) (withVerify xw.1 (A.run xw.1))
+          (Protocol.Tables.empty, false)).toOuterMeasure {y | ¬ Bt xw y.2.1}) := by
+  unfold attAdvantageByPR attGameByPR simAdvantage simGame
+  rw [prTrue_gameDistBy, prTrue_gameDist]
+  refine le_trans ?_ (add_le_add (add_le_add le_rfl (Protocol.sim_recTest_le_relAdvantage ρ dflt A))
+    le_rfl)
+  rw [← ENNReal.tsum_add, ← ENNReal.tsum_add]
+  refine ENNReal.tsum_le_tsum fun xw => ?_
+  rw [← mul_add, ← mul_add]
+  by_cases hxw : xw ∈ G.gen.support
+  · have hB := isQueryBound₂_withVerify xw.1 _ qH qS (A.isQueryBound xw.1)
+    refine mul_le_mul_right ?_ _
+    refine (run_attPR_recR_le_sim ρ (hrec xw hxw) (hZK xw hxw) (hκ xw hxw) (hR xw hxw) _
+      (hΓ xw hxw) (hev xw hxw) (Bt xw) (hBt xw) (hBmono xw) _ (qH + G.V) qS hB
+      (fun c => q c + κ.Vc c) (fun c => isQueryBoundBy_withVerify_cls κ c xw.1 _ _ (hq xw.1 c))
+      le_rfl).trans (le_of_eq ?_)
+    simp only [flagBoundCls, Protocol.Tables.empty, Protocol.Tables.keys,
+      Protocol.Classes.count]
+    simp
+    ring
+  · simp [(PMF.apply_eq_zero_iff _ _).mpr hxw]
+
+/-- **EUF-CMA through the programmed flag, the hybrid, the exempt game, the simulation
+and key recovery, class by class.** For a recovery `ρ`, complete at the sampler `D` and
+with the hidden entries of `D` of marked classes at every generated pair `xw`, a
+sampler with statistical HVZK distance `δ xw`, attempts in their classes, the
+class-wise key bound `Γ xw` with marked classes over the oracles satisfying `B xw` and
+the landing bound `εev xw` against oracles with at most `qH + V + μ·qS` defined points,
+a predicate `Bt xw` on tables implying `B xw` of their oracle and inherited by smaller
+tables, and every adversary with at most `qH` hash and `qS` signing queries whose hash
+queries at points of class `c` are at most `q c` on every path: the EUF-CMA advantage
+is at most the simulated-game advantage plus the relation advantage of the reduction
+`recReduction ρ dflt A` plus the expectation over the generator of
+`qS·δ(x, w) + Σ_c qS·(q c + Vc c + μc c·qS)·Γ(x, w) c + qS·εev(x, w)` and the
+probability that the final tables of the exempt run fail `Bt (x, w)`, plus the sum
+over `k < qS` of the advantages of the hybrid distinguishers
+`hybDistByP winsOrFlag G.witSampler D k A` between the challenge oracles with the
+programmed flag of the witness sampler and of `D`. -/
+theorem Protocol.eufcma_le_simPRB_cls (D : G.Sampler) (dflt : G.Stmt → G.Wit)
+    {qH qS : ℕ} {δ : G.Stmt × G.Wit → ℝ≥0∞} {Γ : G.Stmt × G.Wit → κ.ι → ℝ≥0∞}
+    {B : G.Stmt × G.Wit → (G.Key → Option G.Ch) → Prop} {εev : G.Stmt × G.Wit → ℝ≥0∞}
+    (hrec : ∀ xw ∈ G.gen.support, ρ.CompleteAt D xw)
+    (hZK : ∀ xw ∈ G.gen.support, G.AttHVZKAt D xw (δ xw))
+    (hκ : ∀ xw ∈ G.gen.support, G.AttClassesAt κ D xw)
+    (hR : ∀ xw ∈ G.gen.support, G.AllHiddenR ρ D xw)
+    (hΓ : ∀ xw ∈ G.gen.support,
+      G.AttKeyBoundClsAtNRB ρ (qH + G.V + G.μ * qS) D xw (Γ xw) (B xw))
+    (hev : ∀ xw ∈ G.gen.support, G.AttEvLandAt ρ D xw (qH + G.V + G.μ * qS) (εev xw))
+    (Bt : G.Stmt × G.Wit → G.Tables → Prop) (hBt : ∀ xw t, Bt xw t → B xw t.lookupAll)
+    (hBmono : ∀ xw (t t' : G.Tables), t.Le t' → Bt xw t' → Bt xw t)
+    (A : G.Adversary qH qS) (q : κ.ι → ℕ)
+    (hq : ∀ x c, (A.run x).IsQueryBoundBy (κ.hashCost c) (q c)) :
+    eufcmaAdvantage A ≤
+      simAdvantage A + G.relAdvantage rel (recReduction ρ dflt A) +
+      ∑' xw, G.gen xw * (qS * δ xw +
+        ∑ c, ((qS * (q c + κ.Vc c + κ.μc c * qS) : ℕ) : ℝ≥0∞) * Γ xw c + qS * εev xw +
+        (OracleAdv.run (toOracle (attStepPR ρ D xw)) (withVerify xw.1 (A.run xw.1))
+          (Protocol.Tables.empty, false)).toOuterMeasure {y | ¬ Bt xw y.2.1}) +
+      ∑ k ∈ Finset.range qS, Advantage (chalGameP G.witSampler (hybDistByP winsOrFlag
+          G.witSampler D k A)) (chalGameP D (hybDistByP winsOrFlag G.witSampler D k A)) :=
+  (Protocol.eufcma_le_witP A).trans
+    ((Protocol.attAdvantage_hybrid_byP winsOrFlag G.witSampler D A).trans
+      (add_le_add ((Protocol.attAdvantageByP_le_recR ρ D hrec A).trans
+        (Protocol.attAdvantageByPR_recR_le_sim ρ D dflt hrec hZK hκ hR hΓ hev Bt hBt hBmono A
+          q hq)) le_rfl))
+
+/-- **EUF-CMA with key recovery and bounded IV multiplicity, class by class.** The bound
+of `Protocol.eufcma_le_simPRB_cls` for a sampler whose attempts have at most one entry
+of class `c₀` and fresh IVs with point probability `p` at every generated pair, where
+`B xw` holds on the oracle of every table with at most `K` IV points per IV: the
+probability that the final tables fail the multiplicity bound is replaced by
+`C(qS, K + 1)·p^K`. -/
+theorem Protocol.eufcma_le_simPRB_cls_ivMult {V : Type} [DecidableEq V] [Fintype V]
+    (D : G.Sampler) (dflt : G.Stmt → G.Wit) {qH qS : ℕ} {δ : G.Stmt × G.Wit → ℝ≥0∞}
+    {Γ : G.Stmt × G.Wit → κ.ι → ℝ≥0∞} {B : G.Stmt × G.Wit → (G.Key → Option G.Ch) → Prop}
+    {εev : G.Stmt × G.Wit → ℝ≥0∞} {p : ℝ≥0∞} {c₀ : κ.ι} {ivOf : G.Key → V}
+    (hrec : ∀ xw ∈ G.gen.support, ρ.CompleteAt D xw)
+    (hZK : ∀ xw ∈ G.gen.support, G.AttHVZKAt D xw (δ xw))
+    (hκ : ∀ xw ∈ G.gen.support, G.AttClassesAt κ D xw)
+    (hR : ∀ xw ∈ G.gen.support, G.AllHiddenR ρ D xw)
+    (hΓ : ∀ xw ∈ G.gen.support,
+      G.AttKeyBoundClsAtNRB ρ (qH + G.V + G.μ * qS) D xw (Γ xw) (B xw))
+    (hev : ∀ xw ∈ G.gen.support, G.AttEvLandAt ρ D xw (qH + G.V + G.μ * qS) (εev xw))
+    (hμ : κ.μc c₀ ≤ 1) (hp : ∀ xw ∈ G.gen.support, G.AttIvFreshAt κ c₀ ivOf D xw p) (K : ℕ)
+    (hB : ∀ xw (t : G.Tables), OracleAdv.MultB K (ivCnt κ c₀ ivOf t) → B xw t.lookupAll)
+    (A : G.Adversary qH qS) (q : κ.ι → ℕ)
+    (hq : ∀ x c, (A.run x).IsQueryBoundBy (κ.hashCost c) (q c)) :
+    eufcmaAdvantage A ≤
+      simAdvantage A + G.relAdvantage rel (recReduction ρ dflt A) +
+      ∑' xw, G.gen xw * (qS * δ xw +
+        ∑ c, ((qS * (q c + κ.Vc c + κ.μc c * qS) : ℕ) : ℝ≥0∞) * Γ xw c + qS * εev xw +
+        qS.choose (K + 1) * p ^ K) +
+      ∑ k ∈ Finset.range qS, Advantage (chalGameP G.witSampler (hybDistByP winsOrFlag
+          G.witSampler D k A)) (chalGameP D (hybDistByP winsOrFlag G.witSampler D k A)) := by
+  refine (Protocol.eufcma_le_simPRB_cls ρ D dflt hrec hZK hκ hR hΓ hev
+    (fun _ t => OracleAdv.MultB K (ivCnt κ c₀ ivOf t)) hB
+    (fun _ _ _ hle h v => (ivCnt_le_of_le κ c₀ ivOf hle v).trans (h v)) A q hq).trans ?_
+  refine add_le_add (add_le_add le_rfl (ENNReal.tsum_le_tsum fun xw => ?_)) le_rfl
+  by_cases hxw : xw ∈ G.gen.support
+  · refine mul_le_mul_right (add_le_add le_rfl ?_) _
+    exact run_attPR_not_ivMult_le ρ (hκ xw hxw) hμ (hp xw hxw) K _ (qH + G.V) qS
+      (isQueryBound₂_withVerify xw.1 _ qH qS (A.isQueryBound xw.1)) _ (ivCnt_empty κ c₀ ivOf)
+  · simp [(PMF.apply_eq_zero_iff _ _).mpr hxw]
+
+end RecHead
 
 end CatCrypt.Crypto.FiatShamirROM
