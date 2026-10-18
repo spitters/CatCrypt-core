@@ -84,12 +84,16 @@ theorem prTrue_sample_Bool : prTrue (SPComp.sample Bool) Heap.empty = 2⁻¹ := 
   rw [SPComp.bind_pure] at h
   simp [h, prTrue_pure]
 
+instance : Lossless coinProto := ⟨coinProto_noFail⟩
+
 /-- `coinProto` realizes the ideal world of `coinFunc` with the copy
-    simulator, with bound the guard-failure probability (composition
-    plumbing). -/
+    simulator, with bound the guard-failure probability. -/
 theorem coin_realizes :
-    Realizes coinProto (ideal coinFunc coinProto) (fun _ Z => guardFail coinProto coinGuard Z) :=
-  transparent_realizes_copy coinProto coinFunc coinProto_noFail
+    RealizesBound coinProto (ideal coinFunc coinProto)
+      (fun _ Z => guardFail coinProto coinGuard Z) :=
+  haveI : GuardFailBound coinProto coinFunc.guard (fun _ Z => guardFail coinProto coinGuard Z) :=
+    guardFailBound_self
+  inferInstance
 
 /-- Under `probeEnv` the guard fails on the real trace with probability `1/2`. -/
 theorem coin_guardFail : guardFail coinProto coinGuard probeEnv = 2⁻¹ := by

@@ -71,6 +71,10 @@ is perfect up to the event that the guard fails on the real trace.
   hypothesis by construction.
 * `Realizes.toUCEmulatesCSim` — a realization gives `UCEmulatesCSim` for the
   spec whose honest input is the environment strategy.
+* `realizesBound_of_guardFail`, `ucFromRealizes_of_bound` — the class route:
+  `RealizesBound R I bound` is found by instance search from `Lossless`,
+  `GuardSim` and `GuardFailBound`, and gives `UCFromRealizes`, whose
+  emulation statement `ucEmulatesCSim_of_UCFromRealizes` extracts.
 
 The hybrid composition theorem is in
 `CatCryptCore.Crypto.UCTransparentHybrid`, the non-vacuity instance in
@@ -601,5 +605,90 @@ theorem Realizes.toUCEmulatesCSim {R : Sys τ E O} {I : Sys υ E O}
       (fun A Z => bound ζ (Env.postcomp (fun z => SPComp.pure (Sum.inl z))
         (Env.postcomp (mapSum SPComp.pure A) Z))) :=
   UCEmulatesCSim_of_DistC ((h ζ).comp_right fun z => SPComp.pure (Sum.inl z))
+
+/-! ## Class route -/
+
+/-- Realization of `I` by `R` with bound `bound`. The bound is an explicit index, fixed by the
+    goal. -/
+class RealizesBound (R : Sys τ E O) (I : Sys υ E O)
+    (bound : (ζ : Type) → Env (Strat ζ E O) ζ → ℝ≥0∞) : Prop where
+  realizes : Realizes R I bound
+
+/-- A `RealizesBound` proof applies as the underlying `Realizes` statement. -/
+instance {R : Sys τ E O} {I : Sys υ E O} {bound : (ζ : Type) → Env (Strat ζ E O) ζ → ℝ≥0∞} :
+    CoeFun (RealizesBound R I bound) (fun _ => Realizes R I bound) :=
+  ⟨fun h => h.realizes⟩
+
+/-- Concrete UC emulation of `I` by `R` in the form of `Realizes.toUCEmulatesCSim`, for the
+    environment state type `ζ` and the view type `V`. -/
+class UCFromRealizes (R : Sys τ E O) (I : Sys υ E O) (ζ V : Type)
+    (bound : (ζ : Type) → Env (Strat ζ E O) ζ → ℝ≥0∞) : Prop where
+  uc : UCEmulatesCSim ⟨Strat ζ E O, ζ, Empty, Empty, V⟩
+    (fun s => SPComp.bind (view R s) fun z => SPComp.pure (Sum.inl z))
+    (fun s => SPComp.bind (view I s) fun z => SPComp.pure (Sum.inl z)) id
+    (fun A Z => bound ζ (Env.postcomp (fun z => SPComp.pure (Sum.inl z))
+      (Env.postcomp (mapSum SPComp.pure A) Z)))
+
+/-- A realization bound gives concrete UC emulation (composition plumbing). -/
+instance ucFromRealizes_of_bound {R : Sys τ E O} {I : Sys υ E O} {ζ V : Type}
+    {bound : (ζ : Type) → Env (Strat ζ E O) ζ → ℝ≥0∞} [h : RealizesBound R I bound] :
+    UCFromRealizes R I ζ V bound :=
+  ⟨h.realizes.toUCEmulatesCSim ζ V⟩
+
+/-- The concrete UC emulation of a `UCFromRealizes` instance, with explicit arguments. -/
+theorem ucEmulatesCSim_of_UCFromRealizes (R : Sys τ E O) (I : Sys υ E O) (ζ V : Type)
+    (bound : (ζ : Type) → Env (Strat ζ E O) ζ → ℝ≥0∞) [h : UCFromRealizes R I ζ V bound] :
+    UCEmulatesCSim ⟨Strat ζ E O, ζ, Empty, Empty, V⟩
+      (fun s => SPComp.bind (view R s) fun z => SPComp.pure (Sum.inl z))
+      (fun s => SPComp.bind (view I s) fun z => SPComp.pure (Sum.inl z)) id
+      (fun A Z => bound ζ (Env.postcomp (fun z => SPComp.pure (Sum.inl z))
+        (Env.postcomp (mapSum SPComp.pure A) Z))) :=
+  h.uc
+
+/-- The system `S` is lossless: none of its steps fails. -/
+class Lossless (S : Sys τ E O) : Prop where
+  noFail : ∀ t e, SPComp.NoFail (S.step t e)
+
+/-- The simulator `S` starts in the initial state of the protocol `π` and agrees with `π` on
+    every transition whose extended trace satisfies the guard of `F` (the hypotheses `hinit`
+    and `hsim` of `transparent_realizes`). -/
+class GuardSim (π S : Sys σ E O) (F : TFunc σ E O) : Prop where
+  init : S.init = π.init
+  sim : ∀ s (tr : Trace σ E O) e,
+    SPComp.bind (π.step s e) (fun p => if F.guard (tr ++ [(e, p.2, p.1)])
+      then SPComp.pure p else SPComp.fail) =
+    SPComp.bind (S.step s e) (fun p => if F.guard (tr ++ [(e, p.2, p.1)])
+      then SPComp.pure p else SPComp.fail)
+
+/-- The copy simulator agrees with the protocol. -/
+instance guardSim_copy {π : Sys σ E O} {F : TFunc σ E O} : GuardSim π π F :=
+  ⟨rfl, fun _ _ _ => rfl⟩
+
+/-- The probability that the guard `G` fails on the real trace of `π` is at most `bound`
+    for every environment. The bound is an explicit index. -/
+class GuardFailBound (π : Sys σ E O) (G : Trace σ E O → Bool)
+    (bound : (ζ : Type) → Env (Strat ζ E O) ζ → ℝ≥0∞) : Prop where
+  le : ∀ (ζ : Type) (Z : Env (Strat ζ E O) ζ), guardFail π G Z ≤ bound ζ Z
+
+/-- The guard-failure probability bounds itself. -/
+instance (priority := low) guardFailBound_self {π : Sys σ E O} {G : Trace σ E O → Bool} :
+    GuardFailBound π G (fun _ Z => guardFail π G Z) :=
+  ⟨fun _ _ => le_rfl⟩
+
+/-- `transparent_realizes` on the class route (composition plumbing): lossless protocol and
+    simulator, agreement on guarded transitions, and a bound on the guard-failure
+    probability. -/
+instance realizesBound_of_guardFail {π S : Sys σ E O} {F : TFunc σ E O}
+    {bound : (ζ : Type) → Env (Strat ζ E O) ζ → ℝ≥0∞}
+    [hπ : Lossless π] [hS : Lossless S] [hsim : GuardSim π S F]
+    [hb : GuardFailBound π F.guard bound] : RealizesBound π (ideal F S) bound :=
+  ⟨fun ζ Z => (transparent_realizes π F S hsim.init hπ.noFail hS.noFail hsim.sim ζ Z).trans
+    (hb.le ζ Z)⟩
+
+example (π : Sys σ E O) (F : TFunc σ E O) [Lossless π] :
+    RealizesBound π (ideal F π) (fun _ Z => guardFail π F.guard Z) := inferInstance
+
+example (π : Sys σ E O) (F : TFunc σ E O) [Lossless π] (ζ V : Type) :
+    UCFromRealizes π (ideal F π) ζ V (fun _ Z => guardFail π F.guard Z) := inferInstance
 
 end CatCrypt.Crypto.UCTransparent

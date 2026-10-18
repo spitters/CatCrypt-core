@@ -45,9 +45,9 @@ function.
 
 ## Main results
 
-* `clock_realizes`, `network_realizes`, `clockNet_realizes` — each reference
-  implementation realizes the ideal world of its transparent functionality
-  with the copy simulator, with bound `0`.
+* `clock_realizes`, `network_realizes`, `clockNet_realizes` — instances:
+  each reference implementation realizes the ideal world of its transparent
+  functionality with the copy simulator, with bound `0`.
 * `clock_advance_requires_signals`, `clockNet_advance_requires_signals` —
   from a state with empty signalled set, a run that changes the round
   contains a signal of every honest party; `cnStep_advance_resets` — every
@@ -592,28 +592,28 @@ def networkF (Δ : ℕ) : TFunc (NetSt Pty M) (NetEv Pty M) (List (Msg Pty M)) :
 def clockNetF (H : Finset Pty) (Δ : ℕ) : TFunc (CNSt Pty M) (CNEv Pty M) (CNOut Pty M) :=
   (clockNet H Δ).toTFunc (0, [])
 
-/-- **The clock is transparent** (composition plumbing). Its reference implementation realizes the
-    ideal world of `clockF H` with the copy simulator, with bound `0`. -/
-theorem clock_realizes (H : Finset Pty) :
-    Realizes (clock H).proto (ideal (clockF H) (clock H).proto) (fun _ _ => 0) :=
-  DetFunc.realizes_proto _ _
+/-- **The clock is transparent.** Its reference implementation realizes the ideal world of
+    `clockF H` with the copy simulator, with bound `0` (`DetFunc.realizesBound_proto` at the
+    head `clockF`). -/
+instance clock_realizes (H : Finset Pty) :
+    RealizesBound (clock H).proto (ideal (clockF H) (clock H).proto) (fun _ _ => 0) :=
+  DetFunc.realizesBound_proto _ _
 
-/-- **The network is transparent** (composition plumbing). Its reference implementation realizes
-    the ideal world of `networkF Δ` with the copy simulator, with bound
-    `0`. -/
-theorem network_realizes (Δ : ℕ) :
-    Realizes (network (Pty := Pty) (M := M) Δ).proto (ideal (networkF Δ) (network Δ).proto)
+/-- **The network is transparent.** Its reference implementation realizes the ideal world of
+    `networkF Δ` with the copy simulator, with bound `0` (`DetFunc.realizesBound_proto` at the
+    head `networkF`). -/
+instance network_realizes (Δ : ℕ) :
+    RealizesBound (network (Pty := Pty) (M := M) Δ).proto (ideal (networkF Δ) (network Δ).proto)
       (fun _ _ => 0) :=
-  DetFunc.realizes_proto _ _
+  DetFunc.realizesBound_proto _ _
 
-/-- **The clock-and-network functionality is transparent** (composition
-    plumbing). Its reference
-    implementation realizes the ideal world of `clockNetF H Δ` with the copy
-    simulator, with bound `0`. -/
-theorem clockNet_realizes (H : Finset Pty) (Δ : ℕ) :
-    Realizes (clockNet (M := M) H Δ).proto (ideal (clockNetF H Δ) (clockNet H Δ).proto)
+/-- **The clock-and-network functionality is transparent.** Its reference implementation
+    realizes the ideal world of `clockNetF H Δ` with the copy simulator, with bound `0`
+    (`DetFunc.realizesBound_proto` at the head `clockNetF`). -/
+instance clockNet_realizes (H : Finset Pty) (Δ : ℕ) :
+    RealizesBound (clockNet (M := M) H Δ).proto (ideal (clockNetF H Δ) (clockNet H Δ).proto)
       (fun _ _ => 0) :=
-  DetFunc.realizes_proto _ _
+  DetFunc.realizesBound_proto _ _
 
 /-- **Δ-bounded delivery on accepted traces.** Let `tr` be a trace accepted
     by the guard of `clockNetF H Δ` whose events are `pre`, a send of `m`
@@ -750,8 +750,7 @@ noncomputable def trueF :
       (CNOut (Fin 2) Unit) × Bool) (CNEv (Fin 2) Unit) (CNOut (Fin 2) Unit) :=
   ⟨hybridWorld₂.init, fun _ => true, (0, [])⟩
 
-/-- **Non-vacuity of the composition theorem** (composition plumbing). All
-    hypotheses of
+/-- **Non-vacuity of the composition theorem.** All hypotheses of
     `clockNet_hybrid_compose` hold for `passthrough` with the copy simulator,
     and the resulting bound is `0`: `passthrough` running with the reference
     clock and network realizes `ideal trueF hybridWorld₂` exactly. -/

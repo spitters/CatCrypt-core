@@ -63,7 +63,9 @@ chain-growth window `d + 2`, when the gadget uses the slots of blocks (`hsl`).
   `3 E + 3 d + 4 + Δ - 1`, from `chainP` through `Run.updatedWithin`) and `FinalOnHonestPos`:
   a block final for an honest party lies on every later honest position, so any two final
   blocks lie on one chain selected by an honest party (`FinalOnHonestPos.agree`).
-* `stack_UCEmulatesCSim`: the same in the form `UCConcrete.UCEmulatesCSim`.
+  The statement is a `RealizesBound` (`RealizesBound.compose` of the two layers, then
+  `RealizesBound.mono` for the bound `posFail … + 0`), so the form
+  `UCConcrete.UCEmulatesCSim` follows through `UCFromRealizes`.
 * `Instance.instance_realizes`: every hypothesis holds for the one-party instance
   `PoSNSB.Instance` with one honest validator.
 * `Instance.run_finalizes`: in a run of the gadget of the instance over views admitted by the
@@ -72,13 +74,13 @@ chain-growth window `d + 2`, when the gadget uses the slots of blocks (`hsl`).
 
 ## Modelling choices
 
-* The composition is `Hybrid.realizes_compose` of `CatCryptCore.Crypto.UCTransparentHybrid`
-  with the gadget as hybrid protocol, the real PoS-NSB protocol as the substituted system and
-  the ideal world of `chainF` as the system it realizes. The bound of the gadget layer is `0`,
-  so the bound of the stack is the bound of `chain_realizes`.
+* The composition is `RealizesBound.compose` (from `Hybrid.realizes_compose` of
+  `CatCryptCore.Crypto.UCTransparentHybrid`) with the gadget as hybrid protocol, the real
+  PoS-NSB protocol as the substituted system and the ideal world of `chainF` as the system it
+  realizes. The bound of the gadget layer is `0`, so the bound of the stack is the bound of
+  `chain_realizes`.
 * The simulator is `ffgSim`, the gadget running with the ideal world of `chainF` and the
-  PoS-NSB simulator `chainSim`. It is the copy simulator of the composed hybrid world, so the
-  theorem carries the tag of composition plumbing.
+  PoS-NSB simulator `chainSim`. It is the copy simulator of the composed hybrid world.
 * The block tree of the guards is the slot order (`slotTree`), so `Agreement` of `F_FinTree`
   holds for every two blocks. Agreement of final blocks is carried by `FinalOnHonestPos`,
   which refers to the honest positions, the chains of the hash-linked trees of the parties.
@@ -163,6 +165,12 @@ noncomputable def stackReal (c : Cfg (Option (Fin np)) (Block Tx Hash (Fin np)))
     (μ : PMF (Option (Fin np))) (W Δ : ℕ)
     (exF : TreeView (Option (Fin np)) (Block Tx Hash (Fin np))) :=
   (stackHybrid P Sch A Tree H cd c K μ W Δ exF).withSub (chainReal P Sch A Tree H cd K μ W Δ)
+
+instance (c : Cfg (Option (Fin np)) (Block Tx Hash (Fin np))) (K : ℕ)
+    (μ : PMF (Option (Fin np))) (W Δ : ℕ)
+    (exF : TreeView (Option (Fin np)) (Block Tx Hash (Fin np))) :
+    Lossless (stackReal P Sch A Tree H cd c K μ W Δ exF) :=
+  Hybrid.lossless_withSub _ _
 
 /-- The tree functionality of the gadget over the PoS-NSB simulator is `chainF`, when the block
 tree of the gadget is the slot tree and its honest validators are the honest parties of `chainF`. -/
@@ -264,7 +272,7 @@ noncomputable abbrev stackSim :=
   ffgSim c (chainSim P Sch A Tree H cd K μ W Δ) stView (chainP P (kindLaw μ) d w ε)
     (exC Tx Hash np) Prod.snd exF
 
-/-- **FFG over PoS-NSB realizes `F_FinTree`** (composition plumbing). Let the hypotheses of
+/-- **FFG over PoS-NSB realizes `F_FinTree`.** Let the hypotheses of
 `chain_realizes` hold for `P`, `Sch`, `Tree`, `H`, `cd`, `μ`, `W`, `K`, `d`, `w`, `ε`, with
 `P.GB.sl = 0` and `4 ≤ w` unless `K + 1 < d + 2`; let the gadget parameters `c` use the slot
 tree (`hT`) and the slots of blocks (`hsl`), have as honest validators the honest parties of
@@ -289,7 +297,7 @@ theorem stack_realizes (hP : ProtocolHyp P) (hTree : Tree.Longest)
     (hcut : c.cut = slotCut Block.sl d) (hΔ : 1 ≤ c.Δ) (hE : 1 ≤ c.E) (hv₀ : c.v₀ ∈ c.H)
     (hstart : c.start = 2 * c.E + (d + 2) + d)
     (hA : 3 * stake c.w (Finset.univ \ c.H) < totalStake c.w) :
-    Realizes (stackReal P Sch A Tree H cd c K μ W Δ exF)
+    RealizesBound (stackReal P Sch A Tree H cd c K μ W Δ exF)
       (ideal (stackF P Sch A Tree H cd μ W K d w ε Δ c exF)
         (stackSim P Sch A Tree H cd μ W K d w ε Δ c exF))
       (fun _ _ => posFail P Sch A H cd μ W K d w ε) := by
@@ -318,15 +326,14 @@ theorem stack_realizes (hP : ProtocolHyp P) (hTree : Tree.Longest)
         · exact posOnly_liveTrace _ _ _)
     hset hΔ hA hLive hcut' hE hv₀ hstart (chainSim_step_out P Sch A Tree H cd K μ W Δ)
     (ov := Prod.snd) (exF := exF) (exT := exC Tx Hash np) (vwT := stView)
-  intro ζ Z
-  exact ((Hybrid.realizes_compose _ _ _ _ _ _ h₁ h₂) ζ Z).trans_eq (add_zero _)
+  exact (RealizesBound.compose _ h₁ h₂).mono fun _ _ => (add_zero _).le
 
-/-- **The stack as concrete UC emulation** (`UCConcrete.UCEmulatesCSim`) (composition
-plumbing): under the hypotheses of `stack_realizes`, with the environment strategy as honest
-input, the environment's final state as output, empty leakage and the identity simulator map,
-the view maps of `stackReal` and of the ideal world of `stackF` are at distance at most the
-bound of `chain_realizes` for every environment. -/
-theorem stack_UCEmulatesCSim (hP : ProtocolHyp P) (hTree : Tree.Longest)
+/-- The stack as concrete UC emulation (`UCConcrete.UCEmulatesCSim`) through
+`UCFromRealizes`: under the hypotheses of `stack_realizes`, with the environment strategy as
+honest input, the environment's final state as output, empty leakage and the identity
+simulator map, the view maps of `stackReal` and of the ideal world of `stackF` are at distance
+at most the bound of `chain_realizes` for every environment. -/
+example (hP : ProtocolHyp P) (hTree : Tree.Longest)
     (hwd : w ≤ d) (hWn : W + d ≤ n) (hn : K + 2 ≤ n) (hHz : K + 1 ≤ Hz)
     (hε : 0 ≤ ε) (hγ : 2 * pA (kindLaw μ) ≤ pH (kindLaw μ))
     (hw : (w : ℝ) ≤ d * (pH (kindLaw μ) - pA (kindLaw μ)))
@@ -344,8 +351,9 @@ theorem stack_UCEmulatesCSim (hP : ProtocolHyp P) (hTree : Tree.Longest)
         (stackSim P Sch A Tree H cd μ W K d w ε Δ c exF)) s) fun z =>
           SPComp.pure (Sum.inl z)) id
       (fun _ _ => posFail P Sch A H cd μ W K d w ε) :=
-  (stack_realizes P Sch A Tree H cd μ W K d w ε Δ c exF hP hTree hwd hWn hn hHz hε hγ hw h3
-    hGB hw4 hT hsl hH hcut hΔ hE hv₀ hstart hA).toUCEmulatesCSim ζ V
+  haveI := stack_realizes P Sch A Tree H cd μ W K d w ε Δ c exF hP hTree hwd hWn hn hHz hε hγ
+    hw h3 hGB hw4 hT hsl hH hcut hΔ hE hv₀ hstart hA
+  ucEmulatesCSim_of_UCFromRealizes _ _ ζ V fun _ _ => posFail P Sch A H cd μ W K d w ε
 
 end Stack
 
@@ -371,7 +379,7 @@ theorem cfg_honest (o : Option (Fin 1)) : o ∈ cfg.H ↔ honestP o := by
   · simp [cfg, honestP, Fin.fin_one_eq_zero p]
     rfl
 
-/-- **Non-vacuity of the hypotheses** (composition plumbing). For the one-party instance of
+/-- **Non-vacuity of the hypotheses.** For the one-party instance of
 `Chain.Instance.instance_realizes` (`W = 1`, `K = 0`, `d = 3`, `w = 1`, `ε = 0`, the random
 function `H` with the identity codec `cd`, delay bound `2`) and the gadget parameters `cfg`
 (one honest validator holding the whole stake, voting on `slotCut Block.sl 3`), every

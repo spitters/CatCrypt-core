@@ -71,7 +71,8 @@ phase `K`, the horizon of the bound of `pos_nsb_security`.
   and `chainF` reads them (`stView`), so `chainF` depends on neither `A` nor `Tree`, chain growth
   is that of the observer `none`, the views are constant after phase `K`, and the network of the
   clock-and-network functionality is not used.
-* `chain_UCEmulatesCSim`: the same in the form `UCConcrete.UCEmulatesCSim`.
+  The statement is a `RealizesBound`, so the form `UCConcrete.UCEmulatesCSim` follows
+  through `UCTransparent.UCFromRealizes` (`ucEmulatesCSim_of_UCFromRealizes`).
 * `Instance.instance_realizes`: the hypotheses hold for the one-party instance
   `PoSNSB.Instance` with the random function, and the collision term is at most `0`
   (`Instance.collFinder_advantage_le`).
@@ -699,7 +700,7 @@ the network (honest set `{()}`, delay bound `Δ`). -/
 noncomputable def chainReal (K : ℕ) (μ : PMF (Option (Fin np))) (W Δ : ℕ) :=
   (chainHybrid P Sch A Tree H cd K μ W).withSub (clockNet (M := Unit) H₁ Δ).proto
 
-/-- **The simulator** for the adversary `A`: the copy simulator of `fTree_realizes`, which
+/-- **The simulator** for the adversary `A`: the copy simulator of `F_Tree`, which
 runs the hybrid protocol with the ideal clock and network and proposes its states, which
 carry their views, to `F_Tree`. -/
 noncomputable def chainSim (K : ℕ) (μ : PMF (Option (Fin np))) (W Δ : ℕ) :=
@@ -729,6 +730,14 @@ theorem chainSim_init (K : ℕ) (μ : PMF (Option (Fin np))) (W Δ : ℕ) :
 theorem chainSim_noFail (K : ℕ) (μ : PMF (Option (Fin np))) (W Δ : ℕ) :
     ∀ s e, SPComp.NoFail ((chainSim P Sch A Tree H cd K μ W Δ).step s e) :=
   Hybrid.withSub_noFail _ _ (Hybrid.ideal_noFail _ _ fun _ _ => SPComp.pure_noFail _)
+
+instance (K : ℕ) (μ : PMF (Option (Fin np))) (W Δ : ℕ) :
+    Lossless (chainSim P Sch A Tree H cd K μ W Δ) :=
+  ⟨chainSim_noFail P Sch A Tree H cd K μ W Δ⟩
+
+instance (K : ℕ) (μ : PMF (Option (Fin np))) (W Δ : ℕ) :
+    Lossless (chainReal P Sch A Tree H cd K μ W Δ) :=
+  Hybrid.lossless_withSub _ _
 
 /-- A step of the simulator from a state with seed `ω` is deterministic and runs one phase. -/
 theorem chainSim_step_some (K : ℕ) (μ : PMF (Option (Fin np))) (W Δ : ℕ)
@@ -876,8 +885,7 @@ theorem honest_mem_IP (hP : ProtocolHyp P) :
     ∀ p : Fin np, CorruptionStatus p = .Honest → p ∈ P.IP :=
   fun p hp => hP.leader.honest_mem p (by simp [is_honest, hp])
 
-/-- **PoS-NSB realizes `F_Tree` in the clock-and-network hybrid model** (composition
-plumbing). Let the protocol `P` satisfy `ProtocolHyp`, the honest tree type `Tree` the
+/-- **PoS-NSB realizes `F_Tree` in the clock-and-network hybrid model.** Let the protocol `P` satisfy `ProtocolHyp`, the honest tree type `Tree` the
 longest-chain rule, and the numbers and the leader election `μ` the conditions of
 `pos_nsb_security`, let the hash function be `cd.hashOn k` for a uniform key `k` of the keyed
 family `H`, and let the blocks be signed with the deterministic signature scheme `Sch`. Then
@@ -908,10 +916,10 @@ theorem chain_realizes (hP : ProtocolHyp P) (hTree : Tree.Longest)
     (h3 : (3 : ℝ) ≤ d * (pH (kindLaw μ) - 2 * pA (kindLaw μ)))
     (hGB : P.GB.sl = 0 := by rfl)
     (hw4 : K + 1 < d + 2 ∨ 4 ≤ w := by first | exact Or.inr (by norm_num) | exact Or.inl (by omega)) :
-    Realizes (chainReal P Sch A Tree H cd K μ W Δ)
+    RealizesBound (chainReal P Sch A Tree H cd K μ W Δ)
       (ideal (chainF P Δ (kindLaw μ) d w ε) (chainSim P Sch A Tree H cd K μ W Δ))
       (fun _ _ => posFail P Sch A H cd μ W K d w ε) := by
-  intro ζ Z
+  refine ⟨fun ζ Z => ?_⟩
   have h := clockNet_hybrid_compose H₁ Δ (chainHybrid P Sch A Tree H cd K μ W)
     (chainSim P Sch A Tree H cd K μ W Δ)
     (chainF P Δ (kindLaw μ) d w ε) (chainSim_noFail P Sch A Tree H cd K μ W Δ) rfl
@@ -920,12 +928,12 @@ theorem chain_realizes (hP : ProtocolHyp P) (hTree : Tree.Longest)
     Z).trans
     (pos_nsb_security P Sch A Tree hP hTree H cd μ W K d w ε hwd hWn hn hHz hε hγ hw h3))
 
-/-- **The realization as concrete UC emulation** (`UCConcrete.UCEmulatesCSim`) (composition
-plumbing): with the environment strategy as honest input, the environment's final state as
-output, empty leakage (the adversary acts inside the execution) and the identity simulator
+/-- The realization as concrete UC emulation (`UCConcrete.UCEmulatesCSim`) through
+`UCFromRealizes`: with the environment strategy as honest input, the environment's final state
+as output, empty leakage (the adversary acts inside the execution) and the identity simulator
 map, the real and the ideal view maps are at distance at most the failure bound of
 `pos_nsb_security` for every environment. -/
-theorem chain_UCEmulatesCSim (hP : ProtocolHyp P) (hTree : Tree.Longest)
+example (hP : ProtocolHyp P) (hTree : Tree.Longest)
     (μ : PMF (Option (Fin np))) (W K d w : ℕ) (ε : ℝ) (Δ : ℕ)
     (hwd : w ≤ d) (hWn : W + d ≤ n) (hn : K + 2 ≤ n) (hHz : K + 1 ≤ Hz)
     (hε : 0 ≤ ε) (hγ : 2 * pA (kindLaw μ) ≤ pH (kindLaw μ))
@@ -939,8 +947,9 @@ theorem chain_UCEmulatesCSim (hP : ProtocolHyp P) (hTree : Tree.Longest)
       (fun s => SPComp.bind (view (ideal (chainF P Δ (kindLaw μ) d w ε)
         (chainSim P Sch A Tree H cd K μ W Δ)) s) fun z => SPComp.pure (Sum.inl z)) id
       (fun _ _ => posFail P Sch A H cd μ W K d w ε) :=
-  (chain_realizes P Sch A Tree H cd hP hTree μ W K d w ε Δ hwd hWn hn hHz hε hγ hw
-    h3 hGB hw4).toUCEmulatesCSim ζ V
+  haveI := chain_realizes P Sch A Tree H cd hP hTree μ W K d w ε Δ hwd hWn hn hHz hε hγ hw
+    h3 hGB hw4
+  ucEmulatesCSim_of_UCFromRealizes _ _ ζ V fun _ _ => posFail P Sch A H cd μ W K d w ε
 
 end Protocol
 
@@ -966,7 +975,7 @@ theorem collFinder_advantage_le :
     subst hb
     exact ⟨0, by norm_num, rfl⟩
 
-/-- **Non-vacuity** (composition plumbing). For the one-party instance `PoSNSB.Instance` (one
+/-- **Non-vacuity.** For the one-party instance `PoSNSB.Instance` (one
 honest party leading every slot, the longest-chain tree type, a trivial signature scheme, the
 adversary that sends nothing, slot kinds `ν = kindLaw μ` concentrated on honest slots), with
 `W = 1`, `K = 0`, `d = 3`, `w = 1`, `ε = 0`, the random function `H` with the identity codec

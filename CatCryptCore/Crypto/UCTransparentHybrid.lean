@@ -179,6 +179,40 @@ theorem ideal_noFail {σ' E' O' : Type} (F : TFunc σ' E' O') (S : Sys σ' E' O'
   simp only [ideal]
   exact Assumptions.SPComp.bind_noFail (hS _ _) fun _ => SPComp.pure_noFail _
 
+/-- `π.withSub X` is lossless when `X` is. -/
+instance lossless_withSub (π : Hybrid σ E O EG OG) (X : Sys τ EG OG) [hX : Lossless X] :
+    Lossless (π.withSub X) :=
+  ⟨withSub_noFail π X hX.noFail⟩
+
+/-- `ideal F S` is lossless when `S` is. -/
+instance lossless_ideal {σ' E' O' : Type} (F : TFunc σ' E' O') (S : Sys σ' E' O')
+    [hS : Lossless S] : Lossless (ideal F S) :=
+  ⟨ideal_noFail F S hS.noFail⟩
+
+/-- `realizes_compose` on the class route (composition plumbing). It is a theorem and not an
+    instance: the middle system `Y` does not occur in the conclusion, and the summed bound
+    does not match a bound index fixed by a goal. -/
+theorem _root_.CatCrypt.Crypto.UCTransparent.RealizesBound.compose {υ' : Type}
+    (π : Hybrid σ E O EG OG) {X : Sys τ EG OG} {Y : Sys υ EG OG} {I : Sys υ' E O}
+    {b₁ : (ζ : Type) → Env (Strat ζ E O) ζ → ℝ≥0∞}
+    {b₂ : (ζ : Type) → Env (Strat ζ EG OG) ζ → ℝ≥0∞}
+    (h₁ : RealizesBound (π.withSub Y) I b₁) (h₂ : RealizesBound X Y b₂) :
+    RealizesBound (π.withSub X) I (fun ζ Z => b₂ (ζ × σ) (π.reduceEnv Z) + b₁ ζ Z) :=
+  ⟨realizes_compose π X Y I b₁ b₂ h₁.realizes h₂.realizes⟩
+
+end Hybrid
+
+/-- A realization bound holds for every larger bound. It is a theorem and not an instance:
+    the larger bound is not determined by the smaller one. -/
+theorem RealizesBound.mono {τ υ E O : Type} {R : Sys τ E O} {I : Sys υ E O}
+    {b b' : (ζ : Type) → Env (Strat ζ E O) ζ → ℝ≥0∞} (h : RealizesBound R I b)
+    (hb : ∀ ζ Z, b ζ Z ≤ b' ζ Z) : RealizesBound R I b' :=
+  ⟨fun ζ Z => (h.realizes ζ Z).trans (hb ζ Z)⟩
+
+namespace Hybrid
+
+variable {σ τ υ ζ E O EG OG : Type}
+
 /-- **Transparent hybrid composition** (composition plumbing). Let `G` be a transparent
     functionality realized by the lossless protocol `ρ` through the lossless
     simulator `S_G`, and let `F` be a transparent functionality over the

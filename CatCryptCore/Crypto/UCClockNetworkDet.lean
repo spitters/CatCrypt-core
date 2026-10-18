@@ -28,8 +28,8 @@ implementation `D.proto` is the system that applies `D.step`.
 * `DetFunc.guardFail_proto` — the guard never fails on the run of the
   reference implementation: `guardFail D.proto (D.toTFunc x).guard Z = 0`
   for every environment `Z`.
-* `DetFunc.realizes_proto` — `D.proto` realizes `ideal (D.toTFunc x) D.proto`
-  with bound `0`.
+* `DetFunc.realizesBound_proto` — the instance: `D.proto` realizes
+  `ideal (D.toTFunc x) D.proto` with bound `0`.
 * `DetFunc.hybrid_compose` — `Hybrid.transparent_compose` with `D` as the
   subroutine: the subroutine term of the bound vanishes.
 * `guardFail_true` — the always-true guard never fails.
@@ -222,16 +222,17 @@ theorem guardFail_proto (D : DetFunc σ E O) (x : O) {ζ : Type} (Z : Env (Strat
     simp [legal_append, hl]
   exact ⟨by simp [hl'], hl', endState_append _ _ _⟩
 
-/-- **Transparency of a deterministic functionality** (composition plumbing). The reference
-    implementation of `D` realizes the ideal world of `toTFunc D x` with the
-    copy simulator, with bound `0`. -/
-theorem realizes_proto (D : DetFunc σ E O) (x : O) :
-    Realizes D.proto (ideal (D.toTFunc x) D.proto) (fun _ _ => 0) := by
-  intro ζ Z
-  have h := transparent_realizes_copy D.proto (D.toTFunc x)
-    (fun _ _ => SPComp.pure_noFail _) ζ Z
-  beta_reduce at h
-  rwa [guardFail_proto] at h
+/-- The reference implementation of a deterministic functionality is lossless. -/
+instance lossless_proto (D : DetFunc σ E O) : Lossless D.proto :=
+  ⟨fun _ _ => SPComp.pure_noFail _⟩
+
+/-- **Transparency of a deterministic functionality.** The reference implementation of `D`
+    realizes the ideal world of `toTFunc D x` with the copy simulator, with bound `0`. -/
+instance realizesBound_proto (D : DetFunc σ E O) (x : O) :
+    RealizesBound D.proto (ideal (D.toTFunc x) D.proto) (fun _ _ => 0) :=
+  haveI : GuardFailBound D.proto (D.toTFunc x).guard (fun _ _ => 0) :=
+    ⟨fun _ Z => (guardFail_proto D x Z).le⟩
+  inferInstance
 
 /-- **Hybrid composition with a deterministic functionality** (composition
     plumbing). Let `π` be a

@@ -60,7 +60,7 @@ theorem cfg_honest (o : Option (Fin 1)) : o ∈ (cfg M Hz).H ↔ honestP o := by
   · simp [cfg, honestP, Fin.fin_one_eq_zero p]
     rfl
 
-/-- **The stack at the lottery parameters** (composition plumbing). For every phase count `K`
+/-- **The stack at the lottery parameters.** For every phase count `K`
 with `K + 2 ≤ 2000`, every signature scheme, every adversary, every delay bound `Δ` and every
 exploded output `exF`, with `W = 1000`, `d = 1000`, `w = 10`, `ε = 1/4`, the random oracle
 `H` and the gadget parameters `cfg`, every hypothesis of `stack_realizes` holds, so FFG over
@@ -93,7 +93,7 @@ theorem instance_realizes (K : ℕ) (hK : K + 2 ≤ 2000) {PK SK Sig : Type}
   intro ζ Z
   exact (h ζ Z).trans (add_le_add_right (collFinder_advantage_le M K Sch A) _)
 
-/-- **A bound below `1`** (composition plumbing). With `M = 4 ^ (K + 5)` hash values, the
+/-- **A bound below `1`.** With `M = 4 ^ (K + 5)` hash values, the
 realization of `instance_realizes` holds with a bound `ε_K < 1`. -/
 theorem instance_realizes_lt_one (K : ℕ) (hK : K + 2 ≤ 2000) {PK SK Sig : Type}
     (Sch : PSigScheme (Block Unit (Fin (4 ^ (K + 5))) (Fin 1)) PK SK Sig) [Sch.Deterministic]

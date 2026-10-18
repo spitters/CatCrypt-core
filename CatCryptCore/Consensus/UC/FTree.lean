@@ -77,11 +77,12 @@ party's position extends its final blocks) is `Finality.FinalityRespecting`.
 * `ideal_step_live`, `ideal_step_exploded` — one step of the ideal world: before
   explosion it outputs the simulator's output iff the extended trace satisfies the
   guard, and the designated exploded output otherwise.
-* `fTree_realizes`, `finTree_realizes` — the copy simulator, which runs the protocol and
-  copies its tree, position and final blocks into the functionality, realizes `F_Tree^P`
-  and `F_FinTree^P'` with advantage at most the probability that the real trace violates
-  the guard (instances of `transparent_realizes_copy`, the up-to-bad lemma
-  `adv_le_prBad` on the monitored run).
+* The copy simulator, which runs the protocol and copies its tree, position and final
+  blocks into the functionality, realizes `F_Tree^P` and `F_FinTree^P'` with advantage at
+  most the probability that the real trace violates the guard: for a lossless protocol
+  `π`, `RealizesBound π (ideal F π) (fun _ Z => guardFail π F.guard Z)` is found by
+  instance search (`UCTransparent.realizesBound_of_guardFail` with `guardSim_copy`, from
+  the up-to-bad lemma `adv_le_prBad` on the monitored run).
 * `fTree_adv_eq_zero`, `finTree_adv_eq_zero` — the realization is perfect for every
   environment under which the real trace satisfies the guard almost surely.
 * `prBad_eq_zero_of_invariant` — an invariant of the reachable states that excludes the
@@ -529,54 +530,20 @@ theorem ideal_step_exploded (F : TFunc σ E O) (S : Sys σ E O) (s : σ) (tr : T
       SPComp.pure ((p.1, tr ++ [(e, p.2, p.1)], true), F.exploded) := by
   simp [ideal]
 
-/-- **Realization of a tree functionality** (composition plumbing). For a lossless protocol
-`π`, the copy
-simulator (`π` itself, whose state is mapped by `vw` to the tree, positions and final
-blocks of the functionality) realizes `treeFunc vw honest G π.init ex`: every environment
-distinguishes the real world from the ideal world with advantage at most the probability
-that the real trace violates `G`. Instance of `transparent_realizes_copy`. -/
-theorem treeFunc_realizes (π : Sys σ E O) (vw : σ → TreeView Party Blk)
-    (honest : Party → Prop) (G : TreeTrace Party Blk → Prop) (ex : O)
-    (hπ : ∀ s e, SPComp.NoFail (π.step s e)) :
-    Realizes π (ideal (treeFunc vw honest G π.init ex) π)
-      (fun _ Z => guardFail π (treeFunc vw honest G π.init ex).guard Z) :=
-  transparent_realizes_copy π _ hπ
-
-/-- **`F_Tree^P` is realized by the copy simulator up to guard failure** (composition
-plumbing). For a lossless
-protocol `π` with view map `vw`, every environment has advantage at most the probability
-that the real tree trace is not well formed, violates a property of `P`, or has final
-blocks of honest parties off one chain. -/
-theorem fTree_realizes (π : Sys σ E O) (vw : σ → TreeView Party Blk) (honest : Party → Prop)
-    (T : BlockTree Blk) (P : List (TreeTrace Party Blk → Prop)) (ex : O)
-    (hπ : ∀ s e, SPComp.NoFail (π.step s e)) :
-    Realizes π (ideal (fTree vw honest T P π.init ex) π)
-      (fun _ Z => guardFail π (fTree vw honest T P π.init ex).guard Z) :=
-  treeFunc_realizes π vw honest _ ex hπ
-
-/-- **`F_FinTree^P'` is realized by the copy simulator up to guard failure** (composition
-plumbing). For a
-lossless protocol `π` with view map `vw`, every environment has advantage at most the
-probability that the real tree trace violates well-formedness, `P`, chain-forming,
-agreement, propagation within `Δ` rounds or the support guard. -/
-theorem finTree_realizes (π : Sys σ E O) (vw : σ → TreeView Party Blk)
-    (honest : Party → Prop) (T : BlockTree Blk) (P : List (TreeTrace Party Blk → Prop))
-    (Δ : ℕ) (supp : TreeTrace Party Blk → Prop) (ex : O)
-    (hπ : ∀ s e, SPComp.NoFail (π.step s e)) :
-    Realizes π (ideal (finTree vw honest T P Δ supp π.init ex) π)
-      (fun _ Z => guardFail π (finTree vw honest T P Δ supp π.init ex).guard Z) :=
-  treeFunc_realizes π vw honest _ ex hπ
-
-/-- Perfect realization (composition plumbing): an environment under which the real trace
-satisfies the guard of `treeFunc` with probability `1` has advantage `0`. -/
+/-- Perfect realization: for a lossless protocol `π`, an environment under which the real
+trace satisfies the guard of `treeFunc` with probability `1` has advantage `0` between `π`
+and the ideal world with the copy simulator (`realizesBound_of_guardFail`). -/
 theorem treeFunc_adv_eq_zero (π : Sys σ E O) (vw : σ → TreeView Party Blk)
     (honest : Party → Prop) (G : TreeTrace Party Blk → Prop) (ex : O)
     (hπ : ∀ s e, SPComp.NoFail (π.step s e)) (Z : Env (Strat ζ E O) ζ)
     (hZ : guardFail π (treeFunc vw honest G π.init ex).guard Z = 0) :
     adv π (ideal (treeFunc vw honest G π.init ex) π) Z = 0 :=
-  le_antisymm ((treeFunc_realizes π vw honest G ex hπ ζ Z).trans_eq hZ) zero_le
+  haveI : Lossless π := ⟨hπ⟩
+  le_antisymm (((inferInstance : RealizesBound π (ideal (treeFunc vw honest G π.init ex) π)
+    (fun _ Z => guardFail π (treeFunc vw honest G π.init ex).guard Z)).realizes ζ Z).trans_eq
+      hZ) zero_le
 
-/-- Perfect realization of `F_Tree^P` (composition plumbing) under every environment for
+/-- Perfect realization of `F_Tree^P` under every environment for
 which the real trace satisfies the guard with probability `1`. -/
 theorem fTree_adv_eq_zero (π : Sys σ E O) (vw : σ → TreeView Party Blk)
     (honest : Party → Prop) (T : BlockTree Blk) (P : List (TreeTrace Party Blk → Prop))
@@ -585,7 +552,7 @@ theorem fTree_adv_eq_zero (π : Sys σ E O) (vw : σ → TreeView Party Blk)
     adv π (ideal (fTree vw honest T P π.init ex) π) Z = 0 :=
   treeFunc_adv_eq_zero π vw honest _ ex hπ Z hZ
 
-/-- Perfect realization of `F_FinTree^P'` (composition plumbing) under every environment
+/-- Perfect realization of `F_FinTree^P'` under every environment
 for which the real trace satisfies the guard with probability `1`. -/
 theorem finTree_adv_eq_zero (π : Sys σ E O) (vw : σ → TreeView Party Blk)
     (honest : Party → Prop) (T : BlockTree Blk) (P : List (TreeTrace Party Blk → Prop))
@@ -788,7 +755,7 @@ theorem line_guardFail {ζ : Type} {G : TreeTrace Unit ℕ → Prop} (hG : Stabl
       (tr ++ [(e, line (tr.length + 1), tr.length + 1)]) = true := hg
   simp [hg']
 
-/-- **Non-vacuity of `F_Tree^P`.** `lineProto` satisfies the hypothesis of `fTree_realizes`
+/-- **Non-vacuity of `F_Tree^P`.** `lineProto` satisfies the hypothesis of `fTree_adv_eq_zero`
 (losslessness), block `3` is final at height `3` at time `5` of `lineTT`, the guard of
 `F_Tree^P` with common prefix, chain growth, chain quality and finality-respecting
 positions holds on `lineTT`, and the copy simulator realizes `F_Tree^P` perfectly: every
