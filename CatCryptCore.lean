@@ -383,6 +383,7 @@ public import CatCryptCore.Consensus.PoSNSB.Prob.Hash
 public import CatCryptCore.Consensus.PoSNSB.Prob.Slots
 public import CatCryptCore.Consensus.PoSNSB.Prob.Protocol
 public import CatCryptCore.Consensus.PoSNSB.Prob.Reduction
+public import CatCryptCore.Consensus.PoSNSB.Prob.Collision
 public import CatCryptCore.Consensus.PoSNSB.Prob
 public import CatCryptCore.Consensus.PoSNSB.ProbExamples
 public import CatCryptCore.Consensus.UC.FTree
