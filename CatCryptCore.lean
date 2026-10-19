@@ -194,6 +194,7 @@ public import CatCryptCore.Crypto.PrTrueCover
 public import CatCryptCore.Crypto.Assumptions.Catalog
 public import CatCryptCore.Crypto.Assumptions.DLGroupParam
 public import CatCryptCore.Crypto.Assumptions.CRCoins
+public import CatCryptCore.Crypto.Assumptions.LWE
 public import CatCryptCore.Crypto.Signatures.Scheme
 public import CatCryptCore.Crypto.Signatures.EUFCMA
 public import CatCryptCore.Crypto.Signatures.EUFCMAPMF
@@ -207,6 +208,7 @@ public import CatCryptCore.Crypto.TV
 public import CatCryptCore.Crypto.Constructions.ECBCPRFFlag
 public import CatCryptCore.Crypto.PKE.Games
 public import CatCryptCore.Crypto.PKE.FOTransformT
+public import CatCryptCore.Crypto.PKE.LWEPKE
 public import CatCryptCore.Crypto.KEM.Games
 public import CatCryptCore.Crypto.KEM.FOTransformU
 public import CatCryptCore.Crypto.KEM.FOTransformTimed
