@@ -39,6 +39,8 @@ the list.
   against `S.toSigScheme` is `eufDist S B true`
 * `run_query_signOracle_det` — against a deterministic scheme, a signing query on `m`
   answers `dsign sk m`
+* `liftPMF_bind_liftPMF`, `liftPMF_pure`, `liftPMF_bind_pure`, `sample_eq_liftPMF` —
+  `liftPMF` commutes with bind and pure, and uniform sampling is its lift
 -/
 
 @[expose] public section
@@ -80,6 +82,36 @@ theorem liftPMF_bind_apply {α β : Type} (p : PMF α) (f : α → SPComp β) (h
     SPComp.bind (liftPMF p) f h = p.bind fun a => f a h := by
   unfold SPComp.bind liftPMF
   exact sdistr_bind_map_some p (fun a => (a, h)) _
+
+/-- A lifted distribution followed by lifted continuations is the lift of the bind. -/
+theorem liftPMF_bind_liftPMF {α β : Type} (p : PMF α) (f : α → PMF β) :
+    SPComp.bind (liftPMF p) (fun a => liftPMF (f a)) = liftPMF (p.bind f) := by
+  funext h
+  rw [liftPMF_bind_apply]
+  unfold liftPMF
+  rw [PMF.map_bind]
+
+/-- `SPComp.pure` is the lift of a point mass. -/
+theorem liftPMF_pure {α : Type} (a : α) :
+    (SPComp.pure a : SPComp α) = liftPMF (PMF.pure a) := by
+  funext h
+  simp [liftPMF, SPComp.pure, SDistr.pure, PMF.pure_map]
+
+/-- A lifted distribution followed by a pure continuation is the lift of the image. -/
+theorem liftPMF_bind_pure {α β : Type} (p : PMF α) (f : α → β) :
+    SPComp.bind (liftPMF p) (fun a => SPComp.pure (f a)) = liftPMF (p.map f) := by
+  simp only [liftPMF_pure, liftPMF_bind_liftPMF]
+  rfl
+
+/-- Uniform sampling is the lift of the uniform distribution. -/
+theorem sample_eq_liftPMF (α : Type) [Fintype α] [Nonempty α] :
+    SPComp.sample α = liftPMF (PMF.uniformOfFintype α) := by
+  funext h
+  unfold SPComp.sample SDistr.uniform liftPMF
+  rw [sdistr_bind_map_some]
+  unfold SDistr.pure
+  rw [← PMF.bind_pure_comp]
+  rfl
 
 variable {Msg PK SK Sig : Type}
 
