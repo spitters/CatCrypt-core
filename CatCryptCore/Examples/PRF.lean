@@ -624,9 +624,14 @@ theorem bijPRF_adv_zero_via_vcgen (B : BijPRFFamily) (x : B.Input)
     PRF_Adv B.toPRFScheme x A = 0 := by
   simp_all [PRF_Adv, AdvantageA, bijPRF_game_eq, Advantage_self]
 
-/-- A bijection-family base function satisfies the `PRFAssumption` with `ε = 0`,
-witnessed by the `bind_vcgen` proof `bijPRF_adv_zero_via_vcgen`. -/
-noncomputable def bijPRF_assumption (B : BijPRFFamily) : PRFAssumption B.toPRFScheme :=
-  PRFAssumption.of_perfect B.toPRFScheme (bijPRF_adv_zero_via_vcgen B)
+/-- For a bijection-family PRF over a finite input space, the PRF advantage of
+any family of distinguishers `D`, averaged over a uniform input, is `0`
+(`PRFAssumption.of_perfect` applied to `bijPRF_adv_zero_via_vcgen`). -/
+theorem bijPRF_assumption (B : BijPRFFamily) [Fintype B.Input]
+    (D : B.Input → B.Output → SPComp Bool) :
+    ∑ r : B.Input, (↑(Fintype.card B.Input) : ENNReal)⁻¹ *
+      PRF_Adv B.toPRFScheme r (D r) = 0 :=
+  @PRFAssumption.of_perfect B.toPRFScheme (inferInstanceAs (Fintype B.Input))
+    (bijPRF_adv_zero_via_vcgen B) D
 
 end CatCrypt.Examples.PRF

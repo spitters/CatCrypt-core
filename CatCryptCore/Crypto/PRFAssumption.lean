@@ -8,28 +8,23 @@ module
 public import CatCryptCore.Crypto.SecurityDefs
 
 /-!
-# Keyed PRF Security Assumption
+# Keyed PRF Security: the Perfect Case
 
-A `PRFAssumption F` packages the standard cryptographic hypothesis that a keyed
-function family `F` is a secure pseudorandom function: there is an advantage
-bound `ε` such that *every* single-query adversary distinguishes the keyed
-evaluation `F(k, ·)` (with a uniform key) from a fresh uniform output with
-advantage at most `ε`.
+PRF security of a keyed function family `F` is stated per adversary: a
+reduction `B` built from a protocol adversary contributes the term
+`PRF_Adv F x (B A)` (`SecurityDefs.PRF_Adv`) to the protocol's bound, and no
+uniform bound over all adversaries is assumed. A protocol that samples the PRF
+input uniformly contributes the averaged term
+`∑ r, |Input|⁻¹ * PRF_Adv F r (B r)` (`CatCrypt.Examples.CPAFromPRF`).
 
-This is the reusable "PRF is ε-secure" assumption structure that reductions take
-as a hypothesis. It is parameterized over the abstract `PRFScheme` of
-`SecurityDefs`, so it composes with `PRF_Real` / `PRF_Ideal` / `PRF_Adv`.
-
-## Main definitions
-
-* `PRFAssumption F` — the record `⟨ε, bound⟩` asserting `PRF_Adv F x A ≤ ε`
-  for all inputs `x` and adversaries `A`.
-* `PRFAssumption.advantage_bound` — the packaged advantage bound.
+This module records the information-theoretic case: for a perfect PRF (every
+single-query distinguisher has advantage `0`, e.g. a bijection family), that
+averaged term is `0` for every family of distinguishers.
 
 ## Main results
 
-* `PRFAssumption.of_perfect` — a perfectly secure PRF (`PRF_Adv = 0`) satisfies
-  the assumption with `ε = 0`.
+* `PRFAssumption.of_perfect` — for a perfect PRF, the averaged PRF advantage of
+  every family of distinguishers is `0` (a statistical fact).
 
 ## References
 
@@ -44,27 +39,14 @@ namespace CatCrypt.Crypto
 open CatCrypt.Core CatCrypt.Crypto.SecurityDefs
 open scoped ENNReal
 
-/-- The keyed **PRF security assumption**: `F` is an ε-secure pseudorandom
-    function. The field `bound` witnesses that no single-query adversary beats
-    advantage `ε` at distinguishing `PRF_Real F x` from `PRF_Ideal F`. -/
-structure PRFAssumption (F : PRFScheme) where
-  /-- The PRF advantage bound `ε`. -/
-  ε : ℝ≥0∞
-  /-- Every single-query adversary has PRF advantage at most `ε`. -/
-  bound : ∀ (x : F.Input) (A : F.Output → SPComp Bool), PRF_Adv F x A ≤ ε
-
-/-- The packaged advantage bound of a PRF assumption. -/
-theorem PRFAssumption.advantage_bound {F : PRFScheme} (H : PRFAssumption F)
-    (x : F.Input) (A : F.Output → SPComp Bool) :
-    PRF_Adv F x A ≤ H.ε :=
-  H.bound x A
-
-/-- A perfectly secure PRF (every adversary has advantage exactly `0`) satisfies
-    the PRF assumption with `ε = 0`. -/
-def PRFAssumption.of_perfect (F : PRFScheme)
-    (h : ∀ (x : F.Input) (A : F.Output → SPComp Bool), PRF_Adv F x A = 0) :
-    PRFAssumption F where
-  ε := 0
-  bound := fun x A => (h x A).le
+/-- **Perfect PRFs (statistical).** If every single-query distinguisher has PRF
+    advantage `0` against `F`, then for every family of distinguishers `B`
+    indexed by the PRF input, the PRF advantage averaged over a uniform input is
+    `0`. -/
+theorem PRFAssumption.of_perfect (F : PRFScheme) [Fintype F.Input]
+    (h : ∀ (x : F.Input) (A : F.Output → SPComp Bool), PRF_Adv F x A = 0)
+    (B : F.Input → F.Output → SPComp Bool) :
+    ∑ r : F.Input, (↑(Fintype.card F.Input) : ℝ≥0∞)⁻¹ * PRF_Adv F r (B r) = 0 := by
+  simp [h]
 
 end CatCrypt.Crypto
