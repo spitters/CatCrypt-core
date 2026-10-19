@@ -27,9 +27,17 @@ the hidden entries stay in the tables of the exempt game and its hash queries ne
 the flag. A signing query sets it only when a charged entry lands on a defined point,
 charged by the class-wise key bound with marked classes, or when an evaluated public
 entry lands on a hidden point, charged by the landing bound `Protocol.AttEvLandAt`. The
-key bound is used on the oracles satisfying `B`; a predicate `Bt` on tables that
-implies `B` and is inherited by smaller tables adds the probability that the final
-tables fail `Bt`, and the IV multiplicity bound instantiates it.
+key bound and the landing bound are used on the oracles satisfying `B`; a predicate `Bt`
+on tables that implies `B` and is inherited by smaller tables adds the probability that
+the final tables fail `Bt`, and the IV multiplicity bound instantiates it.
+
+The counts `entCnt κ c₀ π t v` are the numbers of distinct entries of class `c₀` among
+all entries of the tables `t` whose projection under `π` is `v`. Every query of the
+exempt game adds at most one such entry: a hash query at a fresh point of class `c₀`
+with a uniform value, and a signing query with the entry of class `c₀` of its attempt
+when that entry is programmed or at an undefined point. A run with at most `h` hash and
+`q` signing queries therefore ends with more than `K` entries sharing a projection with
+probability at most `C(h + q, K + 1)·p^K`, which instantiates `Bt` as well.
 
 The EUF-CMA bound with key recovery chains the game with the programmed flag at the
 witness sampler, the hybrid over the signing queries to the sampler `D`, the coupling
@@ -46,8 +54,14 @@ oracle and applies the recovery to the visible entries of the final tables.
 * `Protocol.AttIvFreshAt κ c₀ ivOf D xw p` — the sampler draws an IV point with a
   given IV with probability at most `p`, against every oracle
 * `signCost` — the query cost `1` on signing queries and `0` on hash queries
-* `Protocol.AttEvLandAt ρ D xw N εev` — an evaluated public entry of an attempt lands
-  on one of given points of marked classes with probability at most `εev`
+* `entCnt κ c₀ π t` — the counts per projection of the distinct entries of class `c₀`
+  in the tables `t`
+* `Protocol.AttEntFreshAt κ c₀ π D xw p` — the sampler draws an entry of class `c₀`,
+  programmed or at an undefined point, with a given projection with probability at most
+  `p`, against every oracle
+* `Protocol.AttEvLandAt ρ D xw N εev B` — an evaluated public entry of an attempt lands
+  on one of given points of marked classes with probability at most `εev`, against the
+  oracles satisfying `B`
 * `Protocol.AllHiddenR ρ D xw` — every hidden entry of the sampler is of a marked class
 * `RejMarked ρ t` — every hidden entry of the tables `t` is of a marked class
 * `recReduction ρ dflt A` — the relation adversary that runs `A` with the verifier's
@@ -61,6 +75,13 @@ oracle and applies the recovery to the visible entries of the final tables.
 * `run_attPR_not_ivMult_le`, `run_attP_not_ivMult_le` — a run with at most `qS`
   signing queries ends with more than `K` IV points sharing an IV with probability at
   most `C(qS, K + 1)·p^K`
+* `entCnt_attSignOut` — a signing answer keeps the counts `entCnt` or adds one entry
+* `card_le_entCnt` — points of class `c₀` defined in the tables with a given projection
+  are at most `entCnt` many
+* `freshMult_attStepPR_entCnt`, `run_attPR_not_entMult_le` — the exempt game satisfies
+  `OracleAdv.FreshMult` for the counts `entCnt` with cost `1` per query, and a run with
+  at most `h` hash and `q` signing queries ends with more than `K` entries sharing a
+  projection with probability at most `C(h + q, K + 1)·p^K`
 * `run_attPR_flag_le_cls` — a run of the exempt game sets the flag with probability at
   most `Σ_c q·(L_c + n c + μc c·q)·Γ c + q·εev` plus the probability that its final
   tables fail `Bt`
@@ -77,6 +98,9 @@ oracle and applies the recovery to the visible entries of the final tables.
   final tables fail `Bt`, plus the hybrid advantages
 * `Protocol.eufcma_le_simPRB_cls_ivMult` — the same bound with `C(qS, K + 1)·p^K` in
   place of the last expected term
+* `Protocol.eufcma_le_simPRB_cls_entMult` — the same bound with
+  `C(qH + V + qS, K + 1)·p^K` in place of the last expected term, for the multiplicity
+  of entry values
 -/
 
 @[expose] public section
@@ -414,6 +438,390 @@ theorem ivCnt_le_of_le (κ : G.Classes) (c₀ : κ.ι) (ivOf : G.Key → V) {t t
 
 end IvMult
 
+/-! ## Multiplicity of the values of the entries of a class -/
+
+section EntMult
+
+variable {G : Protocol} {V : Type} [DecidableEq V]
+
+/-- The counts per value `v` of the entries of class `c₀` in the set `S` whose
+projection under `π` is `v`. -/
+def setCnt (κ : G.Classes) (c₀ : κ.ι) (π : G.Key × G.Ch → V)
+    (S : Finset (G.Key × G.Ch)) : V → ℕ :=
+  fun v => (S.filter fun p => κ.cls p.1 = c₀ ∧ π p = v).card
+
+/-- The counts per value `v` of the distinct entries of class `c₀` among the
+programmed, hash and hidden entries of the tables `t` whose projection under `π` is
+`v`. An entry recorded twice, in `hash` and in `rej`, counts once. -/
+def entCnt (κ : G.Classes) (c₀ : κ.ι) (π : G.Key × G.Ch → V) (t : G.Tables) : V → ℕ :=
+  setCnt κ c₀ π (t.prog ++ t.hash ++ t.rej).toFinset
+
+/-- **Fresh entry values of a sampler.** For every message, every oracle `look` and
+every value `v`, an attempt from `D xw m e` under uniform values `e` has an entry `i`
+of class `c₀` against `look`, programmed or at a point undefined in `look`, with
+projection `π (k, e i) = v` at its point `k` with probability at most `p`. -/
+def Protocol.AttEntFreshAt (κ : G.Classes) (c₀ : κ.ι) (π : G.Key × G.Ch → V)
+    (D : G.Sampler) (xw : G.Stmt × G.Wit) (p : ℝ≥0∞) : Prop :=
+  ∀ (m : G.Msg) (look : G.Key → Option G.Ch) (v : V),
+    ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e * ∑' a, D xw m e a *
+      (if (List.finRange G.μ).any (fun i => decide (κ.cls (a.key (a.vals look e) i) = c₀) &&
+          (!G.ev i || (look (a.key (a.vals look e) i)).isNone) &&
+          decide (π (a.key (a.vals look e) i, e i) = v)) then 1 else 0) ≤ p
+
+/-- The value of an entry of an attempt that is programmed or at a point undefined in
+`look` is its value in `e`. -/
+theorem Protocol.Attempt.vals_eq_of_fresh (a : G.Attempt) (look : G.Key → Option G.Ch)
+    (e : Fin G.μ → G.Ch) (i : Fin G.μ)
+    (h : (!G.ev i || (look (a.key (a.vals look e) i)).isNone) = true) :
+    a.vals look e i = e i := by
+  cases hi : G.ev i
+  · change effVal _ a.key e i = _
+    rw [effVal_eq _ a.key a.key_causal e i, if_neg (by simp [hi])]
+    rfl
+  · rw [a.vals_of_ev look e i hi]
+    simp only [hi, Bool.not_true, Bool.false_or, Option.isNone_iff_eq_none] at h
+    rw [h, Option.getD_none]
+
+/-- **Adding a set of entries with at most one entry of class `c₀`.** The counts of
+`A ∪ N` are the counts of `A`, or the counts of `A` with one point added at the
+projection of an entry of class `c₀` of `N` outside `A`. -/
+theorem setCnt_union (κ : G.Classes) (c₀ : κ.ι) (π : G.Key × G.Ch → V)
+    (A N : Finset (G.Key × G.Ch))
+    (hN : ∀ y ∈ N, ∀ z ∈ N, κ.cls y.1 = c₀ → κ.cls z.1 = c₀ → y = z) :
+    setCnt κ c₀ π (A ∪ N) = setCnt κ c₀ π A ∨
+      ∃ x ∈ N, κ.cls x.1 = c₀ ∧ x ∉ A ∧
+        setCnt κ c₀ π (A ∪ N) = OracleAdv.addCnt (setCnt κ c₀ π A) (π x) := by
+  by_cases h : ∃ x ∈ N, κ.cls x.1 = c₀ ∧ x ∉ A
+  · obtain ⟨x, hxN, hxc, hxA⟩ := h
+    refine Or.inr ⟨x, hxN, hxc, hxA, funext fun v => ?_⟩
+    by_cases hv : π x = v
+    · subst hv
+      have hf : (A ∪ N).filter (fun p => κ.cls p.1 = c₀ ∧ π p = π x) =
+          insert x (A.filter fun p => κ.cls p.1 = c₀ ∧ π p = π x) := by
+        ext y
+        simp only [Finset.mem_filter, Finset.mem_union, Finset.mem_insert]
+        constructor
+        · rintro ⟨hy | hy, hc, hπ⟩
+          · exact Or.inr ⟨hy, hc, hπ⟩
+          · exact Or.inl (hN y hy x hxN hc hxc)
+        · rintro (rfl | ⟨hy, hc, hπ⟩)
+          · exact ⟨Or.inr hxN, hxc, rfl⟩
+          · exact ⟨Or.inl hy, hc, hπ⟩
+      simp only [setCnt, hf, OracleAdv.addCnt, Function.update_self]
+      rw [Finset.card_insert_of_notMem (by simp [hxA])]
+    · have hf : (A ∪ N).filter (fun p => κ.cls p.1 = c₀ ∧ π p = v) =
+          A.filter fun p => κ.cls p.1 = c₀ ∧ π p = v := by
+        ext y
+        simp only [Finset.mem_filter, Finset.mem_union]
+        constructor
+        · rintro ⟨hy | hy, hc, hπ⟩
+          · exact ⟨hy, hc, hπ⟩
+          · obtain rfl := hN y hy x hxN hc hxc
+            exact absurd hπ hv
+        · rintro ⟨hy, hc, hπ⟩
+          exact ⟨Or.inl hy, hc, hπ⟩
+      simp only [setCnt, hf, OracleAdv.addCnt, Function.update_of_ne (Ne.symm hv)]
+  · refine Or.inl (funext fun v => ?_)
+    simp only [setCnt]
+    congr 1
+    ext y
+    simp only [Finset.mem_filter, Finset.mem_union]
+    constructor
+    · rintro ⟨hy | hy, hc, hπ⟩
+      · exact ⟨hy, hc, hπ⟩
+      · refine ⟨?_, hc, hπ⟩
+        by_contra hyA
+        exact h ⟨y, hy, hc, hyA⟩
+    · rintro ⟨hy, hc, hπ⟩
+      exact ⟨Or.inl hy, hc, hπ⟩
+
+/-- The empty tables have no entry. -/
+theorem entCnt_empty (κ : G.Classes) (c₀ : κ.ι) (π : G.Key × G.Ch → V) :
+    entCnt κ c₀ π (Protocol.Tables.empty : G.Tables) = 0 := by
+  funext v
+  simp [entCnt, setCnt, Protocol.Tables.empty]
+
+/-- The counts `entCnt` grow along extensions of the tables. -/
+theorem entCnt_le_of_le (κ : G.Classes) (c₀ : κ.ι) (π : G.Key × G.Ch → V) {t t' : G.Tables}
+    (h : t.Le t') (v : V) : entCnt κ c₀ π t v ≤ entCnt κ c₀ π t' v := by
+  unfold entCnt setCnt
+  refine Finset.card_le_card (Finset.filter_subset_filter
+    (fun p : G.Key × G.Ch => κ.cls p.1 = c₀ ∧ π p = v) fun x hx => ?_)
+  simp only [List.mem_toFinset, List.mem_append] at hx ⊢
+  rcases hx with (hx | hx) | hx
+  · exact Or.inl (Or.inl (h.1.subset hx))
+  · exact Or.inl (Or.inr (h.2.1.subset hx))
+  · exact Or.inr (h.2.2.subset hx)
+
+/-- **Points of class `c₀` with a given projection.** A finite set `S` of points of
+class `c₀`, each defined in the tables `t` with a value whose projection with the
+point under `π` is `v`, has at most `entCnt κ c₀ π t v` elements. -/
+theorem card_le_entCnt (κ : G.Classes) (c₀ : κ.ι) (π : G.Key × G.Ch → V) (t : G.Tables)
+    (v : V) (S : Finset G.Key)
+    (hS : ∀ k ∈ S, κ.cls k = c₀ ∧ ∃ c, t.lookupAll k = some c ∧ π (k, c) = v) :
+    S.card ≤ entCnt κ c₀ π t v := by
+  unfold entCnt setCnt
+  refine Finset.card_le_card_of_surjOn Prod.fst fun k hk => ?_
+  obtain ⟨hc, c, hl, hπ⟩ := hS k hk
+  refine ⟨(k, c), ?_, rfl⟩
+  have hmem : (k, c) ∈ t.prog ++ t.hash ++ t.rej := by
+    unfold Protocol.Tables.lookupAll at hl
+    cases hl' : t.lookup k with
+    | some c' =>
+      rw [hl', Option.some_or] at hl
+      cases hl
+      exact List.mem_append_left _ (Protocol.mem_of_lookup_eq_some hl')
+    | none =>
+      rw [hl', Option.none_or] at hl
+      exact List.mem_append_right _ (mem_of_lookupIn_eq_some hl)
+  exact Finset.mem_filter.mpr ⟨List.mem_toFinset.mpr hmem, hc, hπ⟩
+
+/-- A hash entry `(k, c)` added to the tables keeps the counts `entCnt` or, for a
+point `k` of class `c₀`, adds one point at `π (k, c)`; it keeps the counts when the
+entry is already recorded. -/
+theorem entCnt_hash_append (κ : G.Classes) (c₀ : κ.ι) (π : G.Key × G.Ch → V) (t : G.Tables)
+    (k : G.Key) (c : G.Ch) :
+    entCnt κ c₀ π { t with hash := t.hash ++ [(k, c)] } = entCnt κ c₀ π t ∨
+      ((k, c) ∉ t.prog ++ t.hash ++ t.rej ∧ κ.cls k = c₀ ∧
+        entCnt κ c₀ π { t with hash := t.hash ++ [(k, c)] } =
+          OracleAdv.addCnt (entCnt κ c₀ π t) (π (k, c))) := by
+  have hset : (t.prog ++ (t.hash ++ [(k, c)]) ++ t.rej).toFinset =
+      (t.prog ++ t.hash ++ t.rej).toFinset ∪ {(k, c)} := by
+    simp only [List.toFinset_append, List.toFinset_cons, List.toFinset_nil,
+      LawfulSingleton.insert_empty_eq]
+    ac_rfl
+  rcases setCnt_union κ c₀ π (t.prog ++ t.hash ++ t.rej).toFinset {(k, c)}
+    (fun y hy z hz _ _ => (Finset.mem_singleton.mp hy).trans (Finset.mem_singleton.mp hz).symm)
+    with h | ⟨x, hx, hxc, hxA, h⟩
+  · exact Or.inl (by unfold entCnt; rw [hset, h])
+  · obtain rfl := Finset.mem_singleton.mp hx
+    exact Or.inr ⟨fun hm => hxA (List.mem_toFinset.mpr hm), hxc, by unfold entCnt; rw [hset, h]⟩
+
+/-- **A signing answer adds at most one entry of class `c₀`.** For an attempt with at
+most one entry of class `c₀`, the signing answer keeps the counts `entCnt` or adds one
+point at the projection `π (k, e i)` of an entry `i` of class `c₀` at the point `k`,
+programmed or at a point undefined in the tables. -/
+theorem entCnt_attSignOut (κ : G.Classes) (c₀ : κ.ι) (π : G.Key × G.Ch → V) (t : G.Tables)
+    (b : Bool) (m : G.Msg) (e : Fin G.μ → G.Ch) (a : G.Attempt)
+    (hone : ∀ i j, κ.cls (a.key (a.vals t.lookupAll e) i) = c₀ →
+      κ.cls (a.key (a.vals t.lookupAll e) j) = c₀ → i = j) :
+    entCnt κ c₀ π (attSignOut t b m e a).2.1 = entCnt κ c₀ π t ∨
+      ∃ i, κ.cls (a.key (a.vals t.lookupAll e) i) = c₀ ∧
+        (!G.ev i || (t.lookupAll (a.key (a.vals t.lookupAll e) i)).isNone) = true ∧
+        entCnt κ c₀ π (attSignOut t b m e a).2.1 =
+          OracleAdv.addCnt (entCnt κ c₀ π t) (π (a.key (a.vals t.lookupAll e) i, e i)) := by
+  set w := a.vals t.lookupAll e with hw
+  obtain ⟨P, hP, hprog⟩ := programAll_prog_eq (hashAll t (a.trace w).1) b (a.trace w).2.1
+  set Hs := (a.evEntries w).filter fun p => (t.lookup p.1).isNone with hHs
+  set H := (a.hidEntries w).filter fun p => (t.lookupAll p.1).isNone with hH
+  set A := (t.prog ++ t.hash ++ t.rej).toFinset with hA
+  have hset : ((attSignOut t b m e a).2.1.prog ++ (attSignOut t b m e a).2.1.hash ++
+      (attSignOut t b m e a).2.1.rej).toFinset = A ∪ (P ++ Hs ++ H).toFinset := by
+    have h1 : (attSignOut t b m e a).2.1.prog = t.prog ++ P := hprog
+    have h2 : (attSignOut t b m e a).2.1.hash = t.hash ++ Hs :=
+      (programAll_tables (hashAll t (a.trace w).1) b (a.trace w).2.1).1
+    have h3 : (attSignOut t b m e a).2.1.rej = t.rej ++ H := rfl
+    rw [h1, h2, h3]
+    simp only [hA, List.toFinset_append]
+    ac_rfl
+  have hentry : ∀ x ∈ P ++ Hs ++ H, ∃ i, x = (a.key w i, w i) ∧
+      (x ∉ A → (!G.ev i || (t.lookupAll (a.key w i)).isNone) = true) := by
+    intro x hx
+    rcases List.mem_append.mp hx with hx | hx
+    · rcases List.mem_append.mp hx with hx | hx
+      · obtain ⟨i, hi, rfl⟩ := Protocol.Attempt.mem_entries (hP.subset hx)
+        refine ⟨i, rfl, fun _ => ?_⟩
+        simp only [Bool.and_eq_true, Bool.not_eq_true'] at hi
+        simp [hi.1]
+      · obtain ⟨hx, hlk⟩ := List.mem_filter.mp hx
+        obtain ⟨i, hi, rfl⟩ := Protocol.Attempt.mem_entries hx
+        refine ⟨i, rfl, fun hxA => ?_⟩
+        simp only [Bool.and_eq_true] at hi
+        simp only [hi.1, Bool.not_true, Bool.false_or]
+        cases hl : t.lookupAll (a.key w i) with
+        | none => rfl
+        | some c =>
+          exfalso
+          have hl0 : t.lookup (a.key w i) = none := by simpa using hlk
+          have hr : lookupIn t.rej (a.key w i) = some c := by
+            simpa [Protocol.Tables.lookupAll, hl0] using hl
+          have hv : w i = c := by
+            rw [hw, a.vals_of_ev t.lookupAll e i hi.1, ← hw, hl, Option.getD_some]
+          refine hxA (List.mem_toFinset.mpr (List.mem_append_right _ ?_))
+          rw [hv]
+          exact mem_of_lookupIn_eq_some hr
+    · obtain ⟨hx, hlk⟩ := List.mem_filter.mp hx
+      obtain ⟨i, -, rfl⟩ := Protocol.Attempt.mem_entries hx
+      exact ⟨i, rfl, fun _ => Bool.or_eq_true_iff.mpr (Or.inr hlk)⟩
+  have hsub : ∀ y ∈ (P ++ Hs ++ H).toFinset, ∀ z ∈ (P ++ Hs ++ H).toFinset,
+      κ.cls y.1 = c₀ → κ.cls z.1 = c₀ → y = z := by
+    intro y hy z hz hyc hzc
+    obtain ⟨i, rfl, -⟩ := hentry y (List.mem_toFinset.mp hy)
+    obtain ⟨j, rfl, -⟩ := hentry z (List.mem_toFinset.mp hz)
+    obtain rfl := hone i j hyc hzc
+    rfl
+  unfold entCnt
+  rw [hset]
+  rcases setCnt_union κ c₀ π A _ hsub with h | ⟨x, hx, hxc, hxA, h⟩
+  · exact Or.inl h
+  · obtain ⟨i, rfl, hg⟩ := hentry x (List.mem_toFinset.mp hx)
+    refine Or.inr ⟨i, hxc, hg hxA, ?_⟩
+    rw [h, ← a.vals_eq_of_fresh t.lookupAll e i (hg hxA)]
+
+/-- **The point probability of a signing oracle for entry values.** A signing oracle
+drawing uniform values `e` and an attempt from `D xw m e`, whose answers have the
+tables of `attSignOut`, adds a point at the value `v` with probability at most `p` for
+a sampler with fresh entry values. -/
+theorem sign_entPoint_le {κ : G.Classes} {c₀ : κ.ι} {π : G.Key × G.Ch → V} {D : G.Sampler}
+    {xw : G.Stmt × G.Wit} {p : ℝ≥0∞} (hκ : G.AttClassesAt κ D xw) (hμ : κ.μc c₀ ≤ 1)
+    (hp : G.AttEntFreshAt κ c₀ π D xw p) (s : G.Tables × Bool) (m : G.Msg) (v : V)
+    (f : (Fin G.μ → G.Ch) → G.Attempt → G.Answer × (G.Tables × Bool))
+    (hf : ∀ e a, (f e a).2.1 = (attSignOut s.1 s.2 m e a).2.1) :
+    ((PMF.uniformOfFintype (Fin G.μ → G.Ch)).bind fun e => (D xw m e).map (f e)).toOuterMeasure
+      {x | entCnt κ c₀ π x.2.1 = OracleAdv.addCnt (entCnt κ c₀ π s.1) v} ≤ p := by
+  rw [PMF.toOuterMeasure_bind_apply]
+  refine le_trans (ENNReal.tsum_le_tsum fun e => mul_le_mul_right ?_ _) (hp m s.1.lookupAll v)
+  rw [PMF.toOuterMeasure_map_apply, PMF.toOuterMeasure_apply]
+  refine ENNReal.tsum_le_tsum fun a => ?_
+  by_cases hE : a ∈ f e ⁻¹' {x | entCnt κ c₀ π x.2.1 = OracleAdv.addCnt (entCnt κ c₀ π s.1) v}
+  · rw [Set.indicator_of_mem hE]
+    by_cases ha : D xw m e a = 0
+    · simp [ha]
+    have hcnt : entCnt κ c₀ π (attSignOut s.1 s.2 m e a).2.1 =
+        OracleAdv.addCnt (entCnt κ c₀ π s.1) v := by
+      rw [← hf]
+      exact hE
+    rcases entCnt_attSignOut κ c₀ π s.1 s.2 m e a
+        (hκ.eq_of_cls hμ ((PMF.mem_support_iff _ _).mpr ha) _) with h | ⟨i, hi, hg, h⟩
+    · exact absurd (h.symm.trans hcnt) (OracleAdv.addCnt_ne _ _).symm
+    · have hv := addCnt_inj (h.symm.trans hcnt)
+      have hany : (List.finRange G.μ).any (fun i =>
+          decide (κ.cls (a.key (a.vals s.1.lookupAll e) i) = c₀) &&
+            (!G.ev i || (s.1.lookupAll (a.key (a.vals s.1.lookupAll e) i)).isNone) &&
+            decide (π (a.key (a.vals s.1.lookupAll e) i, e i) = v)) = true :=
+        List.any_eq_true.mpr ⟨i, List.mem_finRange i, by simp [hi, hg, hv]⟩
+      rw [if_pos hany, mul_one]
+  · rw [Set.indicator_of_notMem hE]
+    exact zero_le
+
+/-- **The point probability of a hash query of the exempt game for entry values.** When
+a uniform value `c` at a point `k` of class `c₀` has projection `π (k, c) = v` with
+probability at most `p`, a hash query adds a point at the value `v` with probability at
+most `p`. -/
+theorem hash_entPoint_le {κ : G.Classes} {rel : G.Stmt → G.Wit → Prop} {c₀ : κ.ι}
+    {π : G.Key × G.Ch → V} {p : ℝ≥0∞} (ρ : G.Recovery κ rel) (D : G.Sampler)
+    (xw : G.Stmt × G.Wit)
+    (hpH : ∀ k, κ.cls k = c₀ → ∀ v,
+      (PMF.uniformOfFintype G.Ch).toOuterMeasure {c | π (k, c) = v} ≤ p)
+    (s : G.Tables × Bool) (k : G.Key) (v : V) :
+    (toOracle (attStepPR ρ D xw) s (.inl k)).toOuterMeasure
+      {x | entCnt κ c₀ π x.2.1 = OracleAdv.addCnt (entCnt κ c₀ π s.1) v} ≤ p := by
+  obtain ⟨t, b⟩ := s
+  simp only [toOracle, attStepPR, realHashStepR]
+  cases hl : t.lookup k with
+  | some c =>
+    simp only [Step.toPMF, PMF.toOuterMeasure_pure_apply, Set.mem_ofPred_eq]
+    rw [if_neg fun h => OracleAdv.addCnt_ne _ _ h.symm]
+    exact zero_le
+  | none =>
+    cases hr : lookupIn t.rej k with
+    | some c =>
+      simp only [Step.toPMF, PMF.toOuterMeasure_pure_apply, Set.mem_ofPred_eq]
+      rw [if_neg]
+      · exact zero_le
+      intro h
+      rcases entCnt_hash_append κ c₀ π t k c with h' | ⟨hm, -, -⟩
+      · exact OracleAdv.addCnt_ne _ _ (h.symm.trans h')
+      · exact hm (List.mem_append_right _ (mem_of_lookupIn_eq_some hr))
+    | none =>
+      simp only [Step.toPMF, PMF.toOuterMeasure_map_apply]
+      by_cases hc : κ.cls k = c₀
+      · refine le_trans (MeasureTheory.measure_mono fun c hc' => ?_) (hpH k hc v)
+        simp only [Set.mem_preimage, Set.mem_ofPred_eq] at hc' ⊢
+        rcases entCnt_hash_append κ c₀ π t k c with h | ⟨-, -, h⟩
+        · exact absurd (h.symm.trans hc') (OracleAdv.addCnt_ne _ _).symm
+        · exact addCnt_inj (h.symm.trans hc')
+      · refine le_of_eq_of_le ((PMF.toOuterMeasure_apply_eq_zero_iff _ _).mpr
+          (Set.disjoint_left.mpr fun c _ hc' => ?_)) zero_le
+        simp only [Set.mem_preimage, Set.mem_ofPred_eq] at hc'
+        rcases entCnt_hash_append κ c₀ π t k c with h | ⟨-, h, -⟩
+        · exact OracleAdv.addCnt_ne _ _ (hc'.symm.trans h)
+        · exact hc h
+
+variable {κ : G.Classes} {c₀ : κ.ι} {π : G.Key × G.Ch → V} {D : G.Sampler}
+  {xw : G.Stmt × G.Wit} {p : ℝ≥0∞}
+
+/-- **Fresh entry values in the exempt game.** For a sampler whose attempts are in
+their classes, with at most one entry of class `c₀` and fresh entry values, and uniform
+hash answers at points of class `c₀` with point probability `p`, each query of the
+exempt game adds at most one point to the counts `entCnt`, at a given value with
+probability at most `p`. -/
+theorem freshMult_attStepPR_entCnt {rel : G.Stmt → G.Wit → Prop} (ρ : G.Recovery κ rel)
+    (hκ : G.AttClassesAt κ D xw) (hμ : κ.μc c₀ ≤ 1) (hp : G.AttEntFreshAt κ c₀ π D xw p)
+    (hpH : ∀ k, κ.cls k = c₀ → ∀ v,
+      (PMF.uniformOfFintype G.Ch).toOuterMeasure {c | π (k, c) = v} ≤ p) :
+    OracleAdv.FreshMult (toOracle (attStepPR ρ D xw)) (fun _ => 1)
+      (fun s => entCnt κ c₀ π s.1) p where
+  supp s d x hx := by
+    cases d with
+    | inl k =>
+      obtain ⟨t, b⟩ := s
+      simp only [toOracle, attStepPR, realHashStepR] at hx
+      cases hl : t.lookup k with
+      | some c =>
+        simp only [hl, Step.toPMF, PMF.support_pure, Set.mem_singleton_iff] at hx
+        subst hx
+        exact Or.inl rfl
+      | none =>
+        cases hr : lookupIn t.rej k with
+        | some c =>
+          simp only [hl, hr, Step.toPMF, PMF.support_pure, Set.mem_singleton_iff] at hx
+          subst hx
+          rcases entCnt_hash_append κ c₀ π t k c with h | ⟨hm, -, -⟩
+          · exact Or.inl h
+          · exact absurd (List.mem_append_right _ (mem_of_lookupIn_eq_some hr)) hm
+        | none =>
+          simp only [hl, hr, Step.toPMF, PMF.support_map, Set.mem_image] at hx
+          obtain ⟨c, _, rfl⟩ := hx
+          rcases entCnt_hash_append κ c₀ π t k c with h | ⟨-, -, h⟩
+          · exact Or.inl h
+          · exact Or.inr ⟨le_rfl, _, h⟩
+    | inr m =>
+      simp only [toOracle, attStepPR, Step.toPMF, attSignPR, PMF.mem_support_bind_iff,
+        PMF.support_map, Set.mem_image] at hx
+      obtain ⟨e, _, a, ha, rfl⟩ := hx
+      rcases entCnt_attSignOut κ c₀ π s.1 s.2 m e a (hκ.eq_of_cls hμ ha _) with
+        h | ⟨i, -, -, h⟩
+      · exact Or.inl h
+      · exact Or.inr ⟨le_rfl, _, h⟩
+  point s d v := by
+    cases d with
+    | inl k => exact hash_entPoint_le ρ D xw hpH s k v
+    | inr m => exact sign_entPoint_le hκ hμ hp s m v _ fun _ _ => rfl
+
+/-- **Multiplicity of the entry values in the exempt game.** For a sampler whose
+attempts are in their classes, with at most one entry of class `c₀` and fresh entry
+values, and uniform hash answers at points of class `c₀`, with point probability `p`,
+a run of the exempt game asking at most `h` hash and `q` signing queries, from tables
+with no entry of class `c₀`, ends with more than `K` entries of class `c₀` sharing a
+projection with probability at most `C(h + q, K + 1)·p^K`. -/
+theorem run_attPR_not_entMult_le [Fintype V] {α : Type} {rel : G.Stmt → G.Wit → Prop}
+    (ρ : G.Recovery κ rel) (hκ : G.AttClassesAt κ D xw) (hμ : κ.μc c₀ ≤ 1)
+    (hp : G.AttEntFreshAt κ c₀ π D xw p)
+    (hpH : ∀ k, κ.cls k = c₀ → ∀ v,
+      (PMF.uniformOfFintype G.Ch).toOuterMeasure {c | π (k, c) = v} ≤ p)
+    (K : ℕ) (A : OracleAdv G.Query G.Answer α) (h q : ℕ) (hA : IsQueryBound₂ A h q)
+    (s : G.Tables × Bool) (hs : entCnt κ c₀ π s.1 = 0) :
+    (OracleAdv.run (toOracle (attStepPR ρ D xw)) A s).toOuterMeasure
+        {y | ¬ OracleAdv.MultB K (entCnt κ c₀ π y.2.1)} ≤ (h + q).choose (K + 1) * p ^ K :=
+  OracleAdv.run_not_multB_le (freshMult_attStepPR_entCnt ρ hκ hμ hp hpH) K A (h + q)
+    (by
+      have h1 := (hA.isQueryBoundBy 1 1).of_cost_le (cost' := fun _ => 1)
+        (fun d => by cases d <;> exact le_rfl)
+      simpa using h1) s hs
+
+end EntMult
+
 /-! ## The flag of the exempt game -/
 
 section RecFlag
@@ -432,14 +840,14 @@ theorem lookupIn_isSome_of_mem {K C : Type} [DecidableEq K] {l : List (K × C)} 
       rw [List.map_cons, List.mem_cons] at h
       exact ih (h.resolve_left hk)
 
-/-- **Evaluated public entries landing on hidden points, for a sampler.** For every
-message, every oracle `look` defined on at most `N` points and every list `hs` of
-points of marked classes defined in `look`, an attempt from `D xw m e` under uniform
-values `e` has an evaluated public entry against `look` at a point of `hs` with
-probability at most `εev`. -/
+/-- **Evaluated public entries landing on hidden points, for a sampler, over the oracles
+satisfying `B`.** For every message, every oracle `look` satisfying `B` and defined on
+at most `N` points and every list `hs` of points of marked classes defined in `look`,
+an attempt from `D xw m e` under uniform values `e` has an evaluated public entry
+against `look` at a point of `hs` with probability at most `εev`. -/
 def Protocol.AttEvLandAt (ρ : G.Recovery κ rel) (D : G.Sampler) (xw : G.Stmt × G.Wit)
-    (N : ℕ) (εev : ℝ≥0∞) : Prop :=
-  ∀ (m : G.Msg) (look : G.Key → Option G.Ch),
+    (N : ℕ) (εev : ℝ≥0∞) (B : (G.Key → Option G.Ch) → Prop) : Prop :=
+  ∀ (m : G.Msg) (look : G.Key → Option G.Ch), B look →
     (∃ ks : List G.Key, ks.length ≤ N ∧ ∀ k, (look k).isSome → k ∈ ks) →
     ∀ hs : List G.Key, (∀ k ∈ hs, ρ.R (κ.cls k) = true ∧ (look k).isSome = true) →
     ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e * ∑' a, D xw m e a *
@@ -709,7 +1117,7 @@ theorem attPR_flag_sign_term_le {Γ : κ.ι → ℝ≥0∞} {εev : ℝ≥0∞} 
 /-- A signing query in the induction of `run_attPR_flagB_le_cls`. -/
 theorem attPR_flag_sign_step_le {Γ : κ.ι → ℝ≥0∞} {B : (G.Key → Option G.Ch) → Prop}
     {εev : ℝ≥0∞} (hκ : G.AttClassesAt κ D xw) (hR : G.AllHiddenR ρ D xw) (N : ℕ)
-    (hΓ : G.AttKeyBoundClsAtNRB ρ N D xw Γ B) (hev : G.AttEvLandAt ρ D xw N εev)
+    (hΓ : G.AttKeyBoundClsAtNRB ρ N D xw Γ B) (hev : G.AttEvLandAt ρ D xw N εev B)
     (Bt : G.Tables → Prop) (hBt : ∀ t, Bt t → B t.lookupAll)
     (hBmono : ∀ t t' : G.Tables, t.Le t' → Bt t' → Bt t)
     (k : G.Answer → OracleAdv G.Query G.Answer α) (h q : ℕ) (n : κ.ι → ℕ) (t : G.Tables)
@@ -756,7 +1164,7 @@ theorem attPR_flag_sign_step_le {Γ : κ.ι → ℝ≥0∞} {B : (G.Key → Opti
       ∑ c, (κ.count t.keys c : ℝ≥0∞) * Γ c :=
     tsum_attPR_hit_le_cls ρ D xw hκ hΓ m t (hBt t hB) (by omega)
   have hsumEv : ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e * ∑' a, D xw m e a * Ev e a ≤
-      εev := hev m t.lookupAll hlookN _ hhs
+      εev := hev m t.lookupAll (hBt t hB) hlookN _ hhs
   rw [OracleAdv.run_query]
   simp only [toOracle, attStepPR, Step.toPMF, attSignPR, PMF.bind_bind, PMF.bind_map,
     Function.comp_def, PMF.toOuterMeasure_bind_apply]
@@ -796,7 +1204,7 @@ theorem attPR_flag_sign_step_le {Γ : κ.ι → ℝ≥0∞} {B : (G.Key → Opti
 /-- **The flag of the exempt game on the tables satisfying `Bt`.** For a sampler whose
 attempts are in their classes, whose hidden entries are of marked classes, with the
 class-wise key bound `Γ` with marked classes over the oracles satisfying `B` and the
-landing bound `εev` against oracles with at most `N` defined points, and a predicate
+landing bound `εev` over the oracles satisfying `B` with at most `N` defined points, and a predicate
 `Bt` on tables, implying `B` of their oracle and inherited by smaller tables: from
 tables whose hidden entries are of marked classes, with the flag cleared, a run of the
 exempt game asking at most `h` hash and `q` signing queries, with hash queries of total
@@ -805,7 +1213,7 @@ flag set and tables satisfying `Bt` with probability at most
 `Σ_c q·(L_c + n c + μc c·q)·Γ c + q·εev`. -/
 theorem run_attPR_flagB_le_cls {Γ : κ.ι → ℝ≥0∞} {B : (G.Key → Option G.Ch) → Prop}
     {εev : ℝ≥0∞} (hκ : G.AttClassesAt κ D xw) (hR : G.AllHiddenR ρ D xw) (N : ℕ)
-    (hΓ : G.AttKeyBoundClsAtNRB ρ N D xw Γ B) (hev : G.AttEvLandAt ρ D xw N εev)
+    (hΓ : G.AttKeyBoundClsAtNRB ρ N D xw Γ B) (hev : G.AttEvLandAt ρ D xw N εev B)
     (Bt : G.Tables → Prop) (hBt : ∀ t, Bt t → B t.lookupAll)
     (hBmono : ∀ t t' : G.Tables, t.Le t' → Bt t' → Bt t)
     (A : OracleAdv G.Query G.Answer α) (h q : ℕ) (hA : IsQueryBound₂ A h q) (n : κ.ι → ℕ)
@@ -843,8 +1251,8 @@ theorem run_attPR_flagB_le_cls {Γ : κ.ι → ℝ≥0∞} {B : (G.Key → Optio
 /-- **Class-wise flag bound of the exempt game.** For a sampler whose attempts are in
 their classes, whose hidden entries are of marked classes, with the class-wise key
 bound `Γ` with marked classes over the oracles satisfying `B` and the landing bound
-`εev` against oracles with at most `N` defined points, and a predicate `Bt` on tables,
-implying `B` of their oracle and inherited by smaller tables: from tables whose hidden
+`εev` over the oracles satisfying `B` with at most `N` defined points, and a predicate
+`Bt` on tables, implying `B` of their oracle and inherited by smaller tables: from tables whose hidden
 entries are of marked classes, with `L_c` points of class `c` and the flag cleared, a
 run of the exempt game asking at most `h` hash and `q` signing queries, with hash
 queries of total cost at most `n c` for each class `c`, and with `|t| + h + μ·q ≤ N`,
@@ -852,7 +1260,7 @@ sets the flag with probability at most `Σ_c q·(L_c + n c + μc c·q)·Γ c + q
 the probability that its final tables fail `Bt`. -/
 theorem run_attPR_flag_le_cls {Γ : κ.ι → ℝ≥0∞} {B : (G.Key → Option G.Ch) → Prop}
     {εev : ℝ≥0∞} (hκ : G.AttClassesAt κ D xw) (hR : G.AllHiddenR ρ D xw) (N : ℕ)
-    (hΓ : G.AttKeyBoundClsAtNRB ρ N D xw Γ B) (hev : G.AttEvLandAt ρ D xw N εev)
+    (hΓ : G.AttKeyBoundClsAtNRB ρ N D xw Γ B) (hev : G.AttEvLandAt ρ D xw N εev B)
     (Bt : G.Tables → Prop) (hBt : ∀ t, Bt t → B t.lookupAll)
     (hBmono : ∀ t t' : G.Tables, t.Le t' → Bt t' → Bt t)
     (A : OracleAdv G.Query G.Answer α) (h q : ℕ) (hA : IsQueryBound₂ A h q) (n : κ.ι → ℕ)
@@ -875,7 +1283,7 @@ theorem run_attPR_flag_le_cls {Γ : κ.ι → ℝ≥0∞} {B : (G.Key → Option
 sampler whose attempts are in their classes, with at most one entry of class `c₀` and
 fresh IVs with point probability `p`, whose hidden entries are of marked classes, with
 the class-wise key bound `Γ` with marked classes over the oracles satisfying `B` and
-the landing bound `εev` against oracles with at most `N` defined points, where `B`
+the landing bound `εev` over the oracles satisfying `B` with at most `N` defined points, where `B`
 holds on the oracle of every table with at most `K` IV points per IV: a run of the
 exempt game from the empty tables asking at most `qH` hash and `qS` signing queries,
 with hash queries of total cost at most `n c` for each class `c`, and with
@@ -884,7 +1292,7 @@ with hash queries of total cost at most `n c` for each class `c`, and with
 theorem run_attPR_flag_le_cls_ivMult {V : Type} [DecidableEq V] [Fintype V]
     {Γ : κ.ι → ℝ≥0∞} {B : (G.Key → Option G.Ch) → Prop} {εev p : ℝ≥0∞} {c₀ : κ.ι}
     {ivOf : G.Key → V} (hκ : G.AttClassesAt κ D xw) (hR : G.AllHiddenR ρ D xw) (N : ℕ)
-    (hΓ : G.AttKeyBoundClsAtNRB ρ N D xw Γ B) (hev : G.AttEvLandAt ρ D xw N εev)
+    (hΓ : G.AttKeyBoundClsAtNRB ρ N D xw Γ B) (hev : G.AttEvLandAt ρ D xw N εev B)
     (hμ : κ.μc c₀ ≤ 1) (hp : G.AttIvFreshAt κ c₀ ivOf D xw p) (K : ℕ)
     (hB : ∀ t : G.Tables, OracleAdv.MultB K (ivCnt κ c₀ ivOf t) → B t.lookupAll)
     (A : OracleAdv G.Query G.Answer α) (qH qS : ℕ) (hA : IsQueryBound₂ A qH qS)
@@ -942,7 +1350,7 @@ variable (ρ : G.Recovery κ rel) {D : G.Sampler} {xw : G.Stmt × G.Wit}
 /-- **The exempt game against the simulated game, for runs.** For a recovery complete at
 the sampler, whose hidden entries are of marked classes, with statistical HVZK distance
 `δ`, the class-wise key bound `Γ` with marked classes over the oracles satisfying `B`
-and the landing bound `εev` against oracles with at most `N` defined points, and a
+and the landing bound `εev` over the oracles satisfying `B` with at most `N` defined points, and a
 predicate `Bt` on tables, implying `B` of their oracle and inherited by smaller tables:
 a run of the exempt game from the empty tables asking at most `h` hash and `q` signing
 queries, with hash queries of total cost at most `n c` for each class `c`, and with
@@ -954,7 +1362,7 @@ exempt run fail `Bt`. -/
 theorem run_attPR_recR_le_sim (hrec : ρ.CompleteAt D xw) {δ : ℝ≥0∞}
     (hZK : G.AttHVZKAt D xw δ) {Γ : κ.ι → ℝ≥0∞} {B : (G.Key → Option G.Ch) → Prop}
     {εev : ℝ≥0∞} (hκ : G.AttClassesAt κ D xw) (hR : G.AllHiddenR ρ D xw) (N : ℕ)
-    (hΓ : G.AttKeyBoundClsAtNRB ρ N D xw Γ B) (hev : G.AttEvLandAt ρ D xw N εev)
+    (hΓ : G.AttKeyBoundClsAtNRB ρ N D xw Γ B) (hev : G.AttEvLandAt ρ D xw N εev B)
     (Bt : G.Tables → Prop) (hBt : ∀ t, Bt t → B t.lookupAll)
     (hBmono : ∀ t t' : G.Tables, t.Le t' → Bt t' → Bt t)
     (A : OracleAdv G.Query G.Answer G.Forgery) (h q : ℕ) (hA : IsQueryBound₂ A h q)
@@ -1010,8 +1418,8 @@ theorem run_attPR_recR_le_sim (hrec : ρ.CompleteAt D xw) {δ : ℝ≥0∞}
 recovery `ρ`, complete at the sampler `D` and with the hidden entries of `D` of marked
 classes at every generated pair `xw`, a sampler with statistical HVZK distance `δ xw`,
 attempts in their classes, the class-wise key bound `Γ xw` with marked classes over the
-oracles satisfying `B xw` and the landing bound `εev xw` against oracles with at most
-`qH + V + μ·qS` defined points, a predicate `Bt xw` on tables implying `B xw` of their
+oracles satisfying `B xw` and the landing bound `εev xw` over the oracles satisfying
+`B xw` with at most `qH + V + μ·qS` defined points, a predicate `Bt xw` on tables implying `B xw` of their
 oracle and inherited by smaller tables, and every adversary with at most `qH` hash and
 `qS` signing queries whose hash queries at points of class `c` are at most `q c` on
 every path: the advantage that the forgery wins, the flag is set or the recovery
@@ -1028,7 +1436,8 @@ theorem Protocol.attAdvantageByPR_recR_le_sim (D : G.Sampler) (dflt : G.Stmt →
     (hR : ∀ xw ∈ G.gen.support, G.AllHiddenR ρ D xw)
     (hΓ : ∀ xw ∈ G.gen.support,
       G.AttKeyBoundClsAtNRB ρ (qH + G.V + G.μ * qS) D xw (Γ xw) (B xw))
-    (hev : ∀ xw ∈ G.gen.support, G.AttEvLandAt ρ D xw (qH + G.V + G.μ * qS) (εev xw))
+    (hev : ∀ xw ∈ G.gen.support,
+      G.AttEvLandAt ρ D xw (qH + G.V + G.μ * qS) (εev xw) (B xw))
     (Bt : G.Stmt × G.Wit → G.Tables → Prop) (hBt : ∀ xw t, Bt xw t → B xw t.lookupAll)
     (hBmono : ∀ xw (t t' : G.Tables), t.Le t' → Bt xw t' → Bt xw t)
     (A : G.Adversary qH qS) (q : κ.ι → ℕ)
@@ -1064,8 +1473,8 @@ and key recovery, class by class.** For a recovery `ρ`, complete at the sampler
 with the hidden entries of `D` of marked classes at every generated pair `xw`, a
 sampler with statistical HVZK distance `δ xw`, attempts in their classes, the
 class-wise key bound `Γ xw` with marked classes over the oracles satisfying `B xw` and
-the landing bound `εev xw` against oracles with at most `qH + V + μ·qS` defined points,
-a predicate `Bt xw` on tables implying `B xw` of their oracle and inherited by smaller
+the landing bound `εev xw` over the oracles satisfying `B xw` with at most
+`qH + V + μ·qS` defined points, a predicate `Bt xw` on tables implying `B xw` of their oracle and inherited by smaller
 tables, and every adversary with at most `qH` hash and `qS` signing queries whose hash
 queries at points of class `c` are at most `q c` on every path: the EUF-CMA advantage
 is at most the simulated-game advantage plus the relation advantage of the reduction
@@ -1084,7 +1493,8 @@ theorem Protocol.eufcma_le_simPRB_cls (D : G.Sampler) (dflt : G.Stmt → G.Wit)
     (hR : ∀ xw ∈ G.gen.support, G.AllHiddenR ρ D xw)
     (hΓ : ∀ xw ∈ G.gen.support,
       G.AttKeyBoundClsAtNRB ρ (qH + G.V + G.μ * qS) D xw (Γ xw) (B xw))
-    (hev : ∀ xw ∈ G.gen.support, G.AttEvLandAt ρ D xw (qH + G.V + G.μ * qS) (εev xw))
+    (hev : ∀ xw ∈ G.gen.support,
+      G.AttEvLandAt ρ D xw (qH + G.V + G.μ * qS) (εev xw) (B xw))
     (Bt : G.Stmt × G.Wit → G.Tables → Prop) (hBt : ∀ xw t, Bt xw t → B xw t.lookupAll)
     (hBmono : ∀ xw (t t' : G.Tables), t.Le t' → Bt xw t' → Bt xw t)
     (A : G.Adversary qH qS) (q : κ.ι → ℕ)
@@ -1119,7 +1529,8 @@ theorem Protocol.eufcma_le_simPRB_cls_ivMult {V : Type} [DecidableEq V] [Fintype
     (hR : ∀ xw ∈ G.gen.support, G.AllHiddenR ρ D xw)
     (hΓ : ∀ xw ∈ G.gen.support,
       G.AttKeyBoundClsAtNRB ρ (qH + G.V + G.μ * qS) D xw (Γ xw) (B xw))
-    (hev : ∀ xw ∈ G.gen.support, G.AttEvLandAt ρ D xw (qH + G.V + G.μ * qS) (εev xw))
+    (hev : ∀ xw ∈ G.gen.support,
+      G.AttEvLandAt ρ D xw (qH + G.V + G.μ * qS) (εev xw) (B xw))
     (hμ : κ.μc c₀ ≤ 1) (hp : ∀ xw ∈ G.gen.support, G.AttIvFreshAt κ c₀ ivOf D xw p) (K : ℕ)
     (hB : ∀ xw (t : G.Tables), OracleAdv.MultB K (ivCnt κ c₀ ivOf t) → B xw t.lookupAll)
     (A : G.Adversary qH qS) (q : κ.ι → ℕ)
@@ -1139,6 +1550,48 @@ theorem Protocol.eufcma_le_simPRB_cls_ivMult {V : Type} [DecidableEq V] [Fintype
   · refine mul_le_mul_right (add_le_add le_rfl ?_) _
     exact run_attPR_not_ivMult_le ρ (hκ xw hxw) hμ (hp xw hxw) K _ (qH + G.V) qS
       (isQueryBound₂_withVerify xw.1 _ qH qS (A.isQueryBound xw.1)) _ (ivCnt_empty κ c₀ ivOf)
+  · simp [(PMF.apply_eq_zero_iff _ _).mpr hxw]
+
+/-- **EUF-CMA with key recovery and bounded multiplicity of entry values, class by
+class.** The bound of `Protocol.eufcma_le_simPRB_cls` for a sampler whose attempts have
+at most one entry of class `c₀` and fresh entry values under the projection `π` with
+point probability `p` at every generated pair, with uniform hash answers at points of
+class `c₀` of point probability `p`, where `B xw` holds on the oracle of every table
+with at most `K` entries of class `c₀` per projection: the probability that the final
+tables fail the multiplicity bound is replaced by `C(qH + V + qS, K + 1)·p^K`. -/
+theorem Protocol.eufcma_le_simPRB_cls_entMult {V : Type} [DecidableEq V] [Fintype V]
+    (D : G.Sampler) (dflt : G.Stmt → G.Wit) {qH qS : ℕ} {δ : G.Stmt × G.Wit → ℝ≥0∞}
+    {Γ : G.Stmt × G.Wit → κ.ι → ℝ≥0∞} {B : G.Stmt × G.Wit → (G.Key → Option G.Ch) → Prop}
+    {εev : G.Stmt × G.Wit → ℝ≥0∞} {p : ℝ≥0∞} {c₀ : κ.ι} {π : G.Key × G.Ch → V}
+    (hrec : ∀ xw ∈ G.gen.support, ρ.CompleteAt D xw)
+    (hZK : ∀ xw ∈ G.gen.support, G.AttHVZKAt D xw (δ xw))
+    (hκ : ∀ xw ∈ G.gen.support, G.AttClassesAt κ D xw)
+    (hR : ∀ xw ∈ G.gen.support, G.AllHiddenR ρ D xw)
+    (hΓ : ∀ xw ∈ G.gen.support,
+      G.AttKeyBoundClsAtNRB ρ (qH + G.V + G.μ * qS) D xw (Γ xw) (B xw))
+    (hev : ∀ xw ∈ G.gen.support,
+      G.AttEvLandAt ρ D xw (qH + G.V + G.μ * qS) (εev xw) (B xw))
+    (hμ : κ.μc c₀ ≤ 1) (hp : ∀ xw ∈ G.gen.support, G.AttEntFreshAt κ c₀ π D xw p)
+    (hpH : ∀ k, κ.cls k = c₀ → ∀ v,
+      (PMF.uniformOfFintype G.Ch).toOuterMeasure {c | π (k, c) = v} ≤ p) (K : ℕ)
+    (hB : ∀ xw (t : G.Tables), OracleAdv.MultB K (entCnt κ c₀ π t) → B xw t.lookupAll)
+    (A : G.Adversary qH qS) (q : κ.ι → ℕ)
+    (hq : ∀ x c, (A.run x).IsQueryBoundBy (κ.hashCost c) (q c)) :
+    eufcmaAdvantage A ≤
+      simAdvantage A + G.relAdvantage rel (recReduction ρ dflt A) +
+      ∑' xw, G.gen xw * (qS * δ xw +
+        ∑ c, ((qS * (q c + κ.Vc c + κ.μc c * qS) : ℕ) : ℝ≥0∞) * Γ xw c + qS * εev xw +
+        (qH + G.V + qS).choose (K + 1) * p ^ K) +
+      ∑ k ∈ Finset.range qS, Advantage (chalGameP G.witSampler (hybDistByP winsOrFlag
+          G.witSampler D k A)) (chalGameP D (hybDistByP winsOrFlag G.witSampler D k A)) := by
+  refine (Protocol.eufcma_le_simPRB_cls ρ D dflt hrec hZK hκ hR hΓ hev
+    (fun _ t => OracleAdv.MultB K (entCnt κ c₀ π t)) hB
+    (fun _ _ _ hle h v => (entCnt_le_of_le κ c₀ π hle v).trans (h v)) A q hq).trans ?_
+  refine add_le_add (add_le_add le_rfl (ENNReal.tsum_le_tsum fun xw => ?_)) le_rfl
+  by_cases hxw : xw ∈ G.gen.support
+  · refine mul_le_mul_right (add_le_add le_rfl ?_) _
+    exact run_attPR_not_entMult_le ρ (hκ xw hxw) hμ (hp xw hxw) hpH K _ (qH + G.V) qS
+      (isQueryBound₂_withVerify xw.1 _ qH qS (A.isQueryBound xw.1)) _ (entCnt_empty κ c₀ π)
   · simp [(PMF.apply_eq_zero_iff _ _).mpr hxw]
 
 end RecHead
