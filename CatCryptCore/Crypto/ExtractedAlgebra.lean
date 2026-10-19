@@ -35,18 +35,19 @@ under the interpretation reduces by `simp` to the typed computation.
 * `Codec.finVec` — `Fin (256 ^ n)` as `Vector UInt8 n`
 * `Codec.fintypeArray`, `Codec.fintypeVec` — any finite type into either carrier
 * `Codec.fintypeEntry` — a finite type as one `Array Int` entry
+* `Codec.fintypeInt` — a finite type as one `Int`
 * `AlgVal G S R K` — the decoded values; `AlgVal.codec` — the tagged codec
 * `AlgInterp G S R K` — generator, exponentiation, `embed`/`proj` and the value codec;
-  its operations `mul`, `add`, `sub`, `pow`, `generator`, `expAdd`, `expMul`, `hash1`,
-  `hash2`, `const`
+  its operations `mul`, `add`, `sub`, `pow`, `generator`, `inv`, `div` (group inverse and
+  division), `expAdd`, `expMul`, `expNeg`, `expSub`, `expInv`, `hash1`, `hash2`, `const`
 
 ## Main results
 
 * `Codec.enc_injective` — an encoding is injective
 * `AlgInterp.val_enc` — decoding an encoded value returns it
 * `AlgInterp.mul_grp_grp`, `mul_ring_grp`, `pow_grp`, `pow_ring`, `add_ring_grp`,
-  `sub_ring_ring`, `expAdd_exp`, `expMul_exp`, `hash1_enc`, `hash2_enc` and the other
-  operation lemmas
+  `sub_ring_ring`, `inv_grp`, `div_grp_grp`, `expAdd_exp`, `expMul_exp`, `expNeg_exp`,
+  `expSub_exp`, `expInv_exp`, `hash1_enc`, `hash2_enc` and the other operation lemmas
 -/
 
 @[expose] public section
@@ -155,6 +156,13 @@ noncomputable def fintypeEntry (α : Type) [Fintype α] [DecidableEq α] : Codec
   dec v := match v.toList with
     | [i] => (fintypeNat α).dec i.toNat
     | _ => none
+  dec_enc a := by simp
+
+/-- A finite type as one `Int`, its index in `Fintype.equivFin`; decoding rejects negative
+    integers and indices outside the range. -/
+noncomputable def fintypeInt (α : Type) [Fintype α] [DecidableEq α] : Codec α Int where
+  enc a := ((fintypeNat α).enc a : Int)
+  dec i := if 0 ≤ i then (fintypeNat α).dec i.toNat else none
   dec_enc a := by simp
 
 /-- A finite type of at most `256 ^ n` elements in `Vector UInt8 n`. -/
@@ -290,6 +298,27 @@ def expAdd [One G] [Zero S] [Add S] (a b : Array Int) : Array Int :=
 def expMul [One G] [Zero S] [Mul S] (a b : Array Int) : Array Int :=
   I.enc (.exp ((I.val a).toS * (I.val b).toS))
 
+/-- Group inversion of the group element of the argument. -/
+def inv [One G] [Inv G] (a : Array Int) : Array Int :=
+  I.enc (.grp (I.toG (I.val a))⁻¹)
+
+/-- Group division of the group elements of the arguments (ring elements enter the group
+    through `proj`). -/
+def div [One G] [Div G] (a b : Array Int) : Array Int :=
+  I.enc (.grp (I.toG (I.val a) / I.toG (I.val b)))
+
+/-- Exponent negation. -/
+def expNeg [One G] [Zero S] [Neg S] (a : Array Int) : Array Int :=
+  I.enc (.exp (-(I.val a).toS))
+
+/-- Exponent subtraction. -/
+def expSub [One G] [Zero S] [Sub S] (a b : Array Int) : Array Int :=
+  I.enc (.exp ((I.val a).toS - (I.val b).toS))
+
+/-- Exponent inversion. -/
+def expInv [One G] [Zero S] [Inv S] (a : Array Int) : Array Int :=
+  I.enc (.exp ((I.val a).toS)⁻¹)
+
 /-- A one-input hash interpreted by a function on decoded values. -/
 def hash1 [One G] (h : AlgVal G S R K → AlgVal G S R K) (a : Array Int) : Array Int :=
   I.enc (h (I.val a))
@@ -358,6 +387,18 @@ end Add
     I.sub (I.enc (.ring r)) (I.enc (.ring t)) = I.enc (.ring (r - t)) := by
   simp [sub]
 
+@[simp] theorem inv_grp [Inv G] (x : G) :
+    I.inv (I.enc (.grp x)) = I.enc (.grp x⁻¹) := by
+  simp [inv]
+
+@[simp] theorem inv_ring [Inv G] (r : R) :
+    I.inv (I.enc (.ring r)) = I.enc (.grp (I.proj r)⁻¹) := by
+  simp [inv]
+
+@[simp] theorem div_grp_grp [Div G] (x y : G) :
+    I.div (I.enc (.grp x)) (I.enc (.grp y)) = I.enc (.grp (x / y)) := by
+  simp [div]
+
 variable [Zero S]
 
 @[simp] theorem pow_grp (x : G) (s : S) :
@@ -375,6 +416,18 @@ variable [Zero S]
 @[simp] theorem expMul_exp [Mul S] (s t : S) :
     I.expMul (I.enc (.exp s)) (I.enc (.exp t)) = I.enc (.exp (s * t)) := by
   simp [expMul]
+
+@[simp] theorem expNeg_exp [Neg S] (s : S) :
+    I.expNeg (I.enc (.exp s)) = I.enc (.exp (-s)) := by
+  simp [expNeg]
+
+@[simp] theorem expSub_exp [Sub S] (s t : S) :
+    I.expSub (I.enc (.exp s)) (I.enc (.exp t)) = I.enc (.exp (s - t)) := by
+  simp [expSub]
+
+@[simp] theorem expInv_exp [Inv S] (s : S) :
+    I.expInv (I.enc (.exp s)) = I.enc (.exp s⁻¹) := by
+  simp [expInv]
 
 end Ops
 
