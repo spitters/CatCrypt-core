@@ -419,6 +419,7 @@ public import CatCryptCore.Consensus.UC.Chain
 public import CatCryptCore.Consensus.UC.ChainEnv
 public import CatCryptCore.Consensus.UC.ChainEnvRealize
 public import CatCryptCore.Consensus.UC.StackEnv
+public import CatCryptCore.Consensus.UC.ChainEnvROM
 public import CatCryptCore.Consensus.UC.Stack
 public import CatCryptCore.Consensus.UC.StackExamples
 
