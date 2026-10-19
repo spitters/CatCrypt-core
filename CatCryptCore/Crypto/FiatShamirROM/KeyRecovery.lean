@@ -18,8 +18,9 @@ the point of one of its hidden entries of a marked class are visible
 
 The game `attStepPR ρ D` has the tables and answers of the game with the programmed
 flag `attStepP D`; its flag is not set when a hash query or a programmed entry lands
-on a hidden point of a marked class, and it is set when an evaluated public entry lands
-on a hidden point of any class. Each exempt event records
+on a hidden point of a marked class, nor when an evaluated public entry lands on a
+hidden point of a marked class while the hidden entries of the attempt against the
+visible entries are at undefined points. Each exempt event records
 the touched point in the visible tables, so a run of `attStepP D` that sets the flag
 sets it in `attStepPR ρ D` or ends with visible tables on which the recovery succeeds
 (`recTest`).
@@ -37,6 +38,8 @@ sets it in `attStepPR ρ D` or ends with visible tables on which the recovery su
 * `Protocol.AttKeyBoundClsAtNRB ρ κ N D xw Γ B` — the class-wise key bound of a sampler
   over the oracles satisfying `B`, with the entries of marked classes at undefined
   points left out of the charge
+* `Protocol.AttPubCausalAt D xw` — the public marks of the attempts of a sampler read
+  only the values of earlier and of programmed entries
 
 ## Main results
 
@@ -51,9 +54,13 @@ sets it in `attStepPR ρ D` or ends with visible tables on which the recovery su
 * `Protocol.attAdvantageByP_le_recR` — the same bound for the advantages
 * `Protocol.AttKeyBoundClsAtN.toRB` — the class-wise key bound of a sampler is its
   bound with marked classes and a lookup predicate
-* `run_attPR_le_sim` — for a test that is `1` whenever the recovery succeeds, the test
-  of a run of the exempt game on the outcomes with the flag cleared is at most the test
-  of the simulated run plus `q·δ`
+* `recReady_traceOut_of_land` — for causal public marks, an evaluated public entry that
+  lands on a hidden point without setting the flag of the exempt game is an evaluated
+  public entry of the attempt against the visible entries, so the recovery is ready on
+  the tables of its trace
+* `run_attPR_le_sim` — for a sampler with causal public marks and a test that is `1`
+  whenever the recovery succeeds, the test of a run of the exempt game on the outcomes
+  with the flag cleared is at most the test of the simulated run plus `q·δ`
 -/
 
 @[expose] public section
@@ -119,15 +126,18 @@ def recTest (ρ : G.Recovery κ rel) (x : G.Stmt) (t : G.Tables) : Bool :=
   (ρ.recover x (t.prog ++ t.hash)).isSome
 
 /-- The flag of a signing attempt `a` with the values `e` against `t` in the exempt
-game: a hidden entry lands on a defined point, an evaluated public entry lands on a
-hidden point, or a programmed entry lands on a defined point other than a hidden point
-of a marked class. -/
+game: a hidden entry lands on a defined point; an evaluated public entry lands on a
+hidden point of an unmarked class, or on a hidden point while a hidden entry of the
+attempt against the visible entries lands on a visible point; or a programmed entry
+lands on a defined point other than a hidden point of a marked class. -/
 def attFlagR (ρ : G.Recovery κ rel) (t : G.Tables) (e : Fin G.μ → G.Ch) (a : G.Attempt) :
     Bool :=
   ((List.finRange G.μ).any fun i =>
     if a.pub (a.vals t.lookupAll e) i then
       G.ev i && (t.lookup (a.key (a.vals t.lookupAll e) i)).isNone &&
-        (lookupIn t.rej (a.key (a.vals t.lookupAll e) i)).isSome
+        (lookupIn t.rej (a.key (a.vals t.lookupAll e) i)).isSome &&
+        (!ρ.R (κ.cls (a.key (a.vals t.lookupAll e) i)) ||
+          !a.hidFresh t.lookup (a.vals t.lookup e))
     else (t.lookupAll (a.key (a.vals t.lookupAll e) i)).isSome) ||
   (List.finRange G.μ).any fun i =>
     !G.ev i && (t.lookupAll (a.key (a.vals t.lookupAll e) i)).isSome &&
@@ -193,12 +203,32 @@ theorem attStepPR_none (D : G.Sampler) :
       funext a
       simp only [attSignOutPR, attSignOutP, attSignOut, attFlagR, Protocol.Attempt.progHit,
         Protocol.Recovery.hidR, Protocol.Recovery.none, Bool.not_false, Bool.and_true,
-        Bool.false_and, Bool.or_assoc]
+        Bool.false_and, Bool.or_assoc, Bool.true_or]
     simp only [attStepPR, attStepP, attSignPR, attSignP, h]
 
 end RecGame
 
 /-! ## Visible entries of the tables -/
+
+/-- Two oracles that agree at the points of the entries before `j` of an attempt against
+the first give the same values before `j`. -/
+theorem effVec_congr_lt {μ : ℕ} {K C : Type} (look look' : Fin μ → K → Option C)
+    (key : (Fin μ → C) → Fin μ → K)
+    (hk : ∀ (v v' : Fin μ → C) (i : Fin μ), (∀ j, j < i → v j = v' j) → key v i = key v' i)
+    (e : Fin μ → C) (j : Fin μ)
+    (h : ∀ i, i < j → look' i (key (effVec look key e) i) = look i (key (effVec look key e) i)) :
+    ∀ i, i < j → effVec look' key e i = effVec look key e i := by
+  have H : ∀ n, ∀ i : Fin μ, i.val < n → i < j → effVec look' key e i = effVec look key e i := by
+    intro n
+    induction n with
+    | zero => exact fun i hi => absurd hi (Nat.not_lt_zero _)
+    | succ n ih =>
+      intro i hi hij
+      change effVal look' key e i = effVal look key e i
+      have hkey : key (effVec look' key e) i = key (effVec look key e) i :=
+        hk _ _ i fun j' hj' => ih j' (by have : j'.val < i.val := hj'; omega) (lt_trans hj' hij)
+      rw [effVal_eq look' key hk e i, effVal_eq look key hk e i, hkey, h i hij]
+  exact fun i hij => H _ i i.isLt hij
 
 section Visible
 
@@ -237,6 +267,20 @@ theorem Protocol.Attempt.vals_of_ev (a : G.Attempt) (look : G.Key → Option G.C
   change effVal _ a.key e i = _
   rw [effVal_eq _ a.key a.key_causal e i, if_pos hi]
   rfl
+
+/-- The value of an entry of an attempt that is programmed or at a point undefined in
+`look` is its value in `e`. -/
+theorem Protocol.Attempt.vals_eq_of_fresh (a : G.Attempt) (look : G.Key → Option G.Ch)
+    (e : Fin G.μ → G.Ch) (i : Fin G.μ)
+    (h : (!G.ev i || (look (a.key (a.vals look e) i)).isNone) = true) :
+    a.vals look e i = e i := by
+  cases hi : G.ev i
+  · change effVal _ a.key e i = _
+    rw [effVal_eq _ a.key a.key_causal e i, if_neg (by simp [hi])]
+    rfl
+  · rw [a.vals_of_ev look e i hi]
+    simp only [hi, Bool.not_true, Bool.false_or, Option.isNone_iff_eq_none] at h
+    rw [h, Option.getD_none]
 
 theorem Protocol.Attempt.nodup_entries (a : G.Attempt) (v : Fin G.μ → G.Ch)
     (p : Fin G.μ → Bool) : ((a.entries v p).map Prod.fst).Nodup := by
@@ -409,8 +453,20 @@ theorem recInv_attSignOut (hrec : ρ.CompleteAt D xw) {m : G.Msg} {e : Fin G.μ 
       · exact absurd h (by simp)
       · exact h.mono ρ xw.1 hvis
     · have h1i := h1 i
-      rw [hi] at h1i
-      exact absurd h1i (by simp)
+      cases hpi : a.pub v i
+      · simp only [hpi, Bool.false_eq_true, if_false] at hi h1i
+        rw [hi] at h1i
+        exact absurd h1i (by simp)
+      · simp only [hpi, if_true, Bool.and_eq_true] at hi
+        obtain ⟨⟨hev, hnone⟩, hrej⟩ := hi
+        have hR : ρ.R (κ.cls (a.key v i)) = true := by
+          cases hc : ρ.R (κ.cls (a.key v i))
+          · simp [hpi, hev, hnone, hrej, hc] at h1i
+          · rfl
+        obtain ⟨c, hc⟩ := Option.isSome_iff_exists.mp hrej
+        exact recReady_of_touch ρ xw.1 hI (mem_of_lookupIn_eq_some hc) hR hvis
+          (hpubmem _ (List.mem_append_left _
+            (Protocol.Attempt.mem_entries_of (by simp [hev, hpi])))) rfl
     · simp only [Protocol.Attempt.progHit, ← hv, List.any_eq_true, List.mem_finRange,
         true_and, Bool.and_eq_true, Bool.not_eq_true'] at hi
       obtain ⟨i, hev, hsome⟩ := hi
@@ -595,6 +651,14 @@ def AttKeyBoundClsAtNRB {κ : G.Classes} {rel : G.Stmt → G.Wit → Prop} (ρ :
             (!ρ.R (κ.ecls i) || (look (a.key (a.vals look e) i)).isSome) then
           Q (a.guessView look e i) (a.key (a.vals look e) i) else 0) ≤ Γ c
 
+/-- **Causal public marks of a sampler at one pair.** For every attempt of `D xw m e`, the
+public mark of entry `i` reads only the values of the entries before `i` and of the
+programmed entries. -/
+def AttPubCausalAt (D : G.Sampler) (xw : G.Stmt × G.Wit) : Prop :=
+  ∀ (m : G.Msg) (e : Fin G.μ → G.Ch), ∀ a ∈ (D xw m e).support,
+    ∀ (v v' : Fin G.μ → G.Ch) (i : Fin G.μ),
+      (∀ j, j < i ∨ G.ev j = false → v j = v' j) → a.pub v i = a.pub v' i
+
 variable {G}
 
 /-- The class-wise key bound of a sampler is its bound with marked classes over the
@@ -744,29 +808,123 @@ theorem recInv_attStepPR (hrec : ρ.CompleteAt D xw) {t : G.Tables}
     obtain ⟨e, _, a, ha, rfl⟩ := ho
     exact ⟨fun h' => absurd h' (by simp), fun _ => (recInv_attSignOut ρ hrec ha hI).2 hf⟩
 
-/-- An attempt which leaves the flag of the exempt game cleared leaves the flag of
-`attSignOut` cleared. -/
-theorem attSignOut_flag_of_attFlagR {a : G.Attempt} {t : G.Tables} {m : G.Msg}
-    {e : Fin G.μ → G.Ch} (h : attFlagR ρ t e a = false) :
-    (attSignOut t false m e a).2.2 = false := by
-  simp only [attFlagR, Bool.or_eq_false_iff] at h
-  simpa only [attSignOut, Bool.false_or] using h.1
+/-- **An exempt landing makes the recovery ready on the visible run.** For a sampler
+with causal public marks, from tables satisfying the invariant, an attempt that sets the
+flag of `attSignOut` and not the flag of the exempt game has its hidden entries against
+the visible entries at undefined points, and the recovery is ready on the tables of the
+answer of its trace against the visible entries. -/
+theorem recReady_traceOut_of_land (hpc : G.AttPubCausalAt D xw) {m : G.Msg}
+    {e : Fin G.μ → G.Ch} {a : G.Attempt} (ha : a ∈ (D xw m e).support) {t : G.Tables}
+    (hI : RecInv ρ xw.1 t false false) (hf : attFlagR ρ t e a = false)
+    (hl : (attSignOut t false m e a).2.2 = true) :
+    a.hidFresh t.lookup (a.vals t.lookup e) = true ∧
+      RecReady ρ xw.1 (traceOut t false m (a.trace (a.vals t.lookup e))).2.1 := by
+  set v := a.vals t.lookupAll e with hv
+  set w := a.vals t.lookup e with hw
+  simp only [attFlagR, ← hv, ← hw, Bool.or_eq_false_iff, List.any_eq_false, List.mem_finRange,
+    true_implies] at hf
+  obtain ⟨h1, -⟩ := hf
+  simp only [attSignOut, ← hv, Bool.false_or, List.any_eq_true, List.mem_finRange,
+    true_and] at hl
+  set S := Finset.univ.filter fun i => a.pub v i = true ∧ G.ev i = true ∧
+    (t.lookup (a.key v i)).isNone = true ∧ (lookupIn t.rej (a.key v i)).isSome = true with hSdef
+  have hS : S.Nonempty := by
+    obtain ⟨i, hi⟩ := hl
+    refine ⟨i, Finset.mem_filter.mpr ⟨Finset.mem_univ _, ?_⟩⟩
+    have h1i := h1 i
+    cases hpi : a.pub v i
+    · simp only [hpi, Bool.false_eq_true, if_false] at hi h1i
+      rw [hi] at h1i
+      exact absurd h1i (by simp)
+    · simp only [hpi, if_true, Bool.and_eq_true] at hi
+      exact ⟨rfl, hi.1.1, hi.1.2, hi.2⟩
+  set j := S.min' hS with hj
+  have hjS : j ∈ S := S.min'_mem hS
+  obtain ⟨hpj, hevj, hnj, hrj⟩ := (Finset.mem_filter.mp hjS).2
+  have hmin : ∀ i, i < j → ¬ (a.pub v i = true ∧ G.ev i = true ∧
+      (t.lookup (a.key v i)).isNone = true ∧ (lookupIn t.rej (a.key v i)).isSome = true) :=
+    fun i hij hi => absurd (S.min'_le i (Finset.mem_filter.mpr ⟨Finset.mem_univ _, hi⟩))
+      (not_le.mpr hij)
+  -- the runs against the visible and against all entries agree below `j`
+  have hagree : ∀ i, i < j → w i = v i := by
+    refine effVec_congr_lt _ _ a.key a.key_causal e j fun i hij => ?_
+    change (if G.ev i then t.lookup else fun _ => none) (a.key v i) =
+      (if G.ev i then t.lookupAll else fun _ => none) (a.key v i)
+    cases hev : G.ev i
+    · rfl
+    · simp only [if_true]
+      refine (Protocol.lookupAll_eq_lookup fun hn => ?_).symm
+      cases hr : lookupIn t.rej (a.key v i) with
+      | none => rfl
+      | some c =>
+        exfalso
+        cases hpi : a.pub v i
+        · have h1i := h1 i
+          simp only [hpi, Bool.false_eq_true, if_false] at h1i
+          have : (t.lookupAll (a.key v i)).isSome = true := by
+            simp [Protocol.Tables.lookupAll, Option.isNone_iff_eq_none.mp hn, hr]
+          rw [this] at h1i
+          exact absurd h1i (by simp)
+        · exact hmin i hij ⟨hpi, hev, hn, by simp [hr]⟩
+  have hkj : a.key w j = a.key v j := a.key_causal w v j hagree
+  have hpw : a.pub w j = a.pub v j := hpc m e a ha w v j fun i hi => by
+    rcases hi with hi | hi
+    · exact hagree i hi
+    · rw [hw, a.vals_eq_of_fresh _ e i (by simp [hi]), hv,
+        a.vals_eq_of_fresh _ e i (by simp [hi])]
+  have hwj : w j = e j := by
+    rw [hw, a.vals_eq_of_fresh _ e j (by rw [← hw, hkj]; simp [Option.isNone_iff_eq_none.mp hnj])]
+  have h1j := h1 j
+  simp only [hpj, hevj, hnj, hrj, if_true, Bool.true_and] at h1j
+  have hR : ρ.R (κ.cls (a.key v j)) = true := by
+    cases hc : ρ.R (κ.cls (a.key v j))
+    · exact absurd (by simp [hc]) h1j
+    · rfl
+  have hfr : a.hidFresh t.lookup w = true := by
+    cases hc : a.hidFresh t.lookup w
+    · exact absurd (by simp [hc]) h1j
+    · rfl
+  refine ⟨hfr, ?_⟩
+  obtain ⟨c, hc⟩ := Option.isSome_iff_exists.mp hrj
+  have hL := le_traceOut t false m (a.trace w)
+  refine recReady_of_touch ρ xw.1 hI (p := (a.key v j, c)) (mem_of_lookupIn_eq_some hc) hR
+    (fun q hq => ?_) (q := (a.key w j, w j)) ?_ hkj
+  · rcases List.mem_append.mp hq with hq | hq
+    · exact List.mem_append_left _ (hL.1.subset hq)
+    · exact List.mem_append_right _ (hL.2.1.subset hq)
+  · refine List.mem_append_right _ ?_
+    change _ ∈ (programAll (hashAll t (a.evEntries w)) false (a.pubEntries w)).1.hash
+    rw [(programAll_tables _ _ _).1]
+    exact List.mem_append_right _ (List.mem_filter.mpr
+      ⟨Protocol.Attempt.mem_entries_of (by simp [hevj, hpw, hpj]), by simp [hkj, hnj]⟩)
 
-/-- On the outcomes with the flag cleared, the signing answer of the exempt game is the
-signing answer of the attempt. -/
-theorem offFlag_attSignOutPR_le {m : G.Msg} {e : Fin G.μ → G.Ch} {a : G.Attempt}
-    (F : G.Answer × (G.Tables × Bool) → ℝ≥0∞) (t : G.Tables) (b : Bool) :
-    offFlag F (attSignOutPR ρ t b m e a) ≤ offFlag F (attSignOut t b m e a) := by
-  cases b with
-  | true => simp [offFlag, attSignOutPR]
+/-- **The signing answer of the exempt game on the outcomes with the flag cleared.** For
+a sampler with causal public marks, from tables satisfying the invariant and for a test
+`F` with values in `[0, 1]` that reads neither the hidden entries nor the flag and is `1`
+on tables on which the recovery is ready, the test of the signing answer of an attempt
+with the flag cleared is at most the test of the answer of its trace against the
+visible entries when its hidden points are undefined there, and `0` otherwise. -/
+theorem offFlag_attSignOutPR_le_land (hpc : G.AttPubCausalAt D xw) {m : G.Msg}
+    {e : Fin G.μ → G.Ch} {a : G.Attempt} (ha : a ∈ (D xw m e).support) {t : G.Tables}
+    (hI : RecInv ρ xw.1 t false false) (F : G.Answer × (G.Tables × Bool) → ℝ≥0∞)
+    (hF : ∀ y, F y ≤ 1) (hFr : RejInsensitive F) (hFf : FlagInsensitive F)
+    (hFs : ∀ y, RecReady ρ xw.1 y.2.1 → F y = 1) :
+    offFlag F (attSignOutPR ρ t false m e a) ≤
+      if a.hidFresh t.lookup (a.vals t.lookup e) then
+        F (traceOut t false m (a.trace (a.vals t.lookup e))) else 0 := by
+  cases hf : attFlagR ρ t e a with
+  | true => simp [offFlag, attSignOutPR, hf]
   | false =>
-    cases hf : attFlagR ρ t e a with
-    | true => simp [offFlag, attSignOutPR, hf]
+    cases hl : (attSignOut t false m e a).2.2 with
     | false =>
-      have h0 := attSignOut_flag_of_attFlagR ρ (m := m) hf
       have heq : attSignOutPR ρ t false m e a = attSignOut t false m e a :=
-        Prod.ext rfl (Prod.ext rfl (by rw [h0]; simp [attSignOutPR, hf]))
+        Prod.ext rfl (Prod.ext rfl (by rw [hl]; simp [attSignOutPR, hf]))
       rw [heq]
+      exact offFlag_attSignOut_le F hFr hFf t false m e a
+    | true =>
+      obtain ⟨hfr, hrd⟩ := recReady_traceOut_of_land ρ hpc ha hI hf hl
+      rw [if_pos hfr, hFs _ hrd]
+      exact (offFlag_le F _).trans (hF _)
 
 /-- **A hash query of the exempt game.** From tables satisfying the invariant and for a
 test `F` with values in `[0, 1]` that is `1` on tables on which the recovery is ready,
@@ -800,13 +958,16 @@ theorem realHashStepR_le_hashStep {t : G.Tables} (hI : RecInv ρ xw.1 t false fa
     | none => exact ENNReal.tsum_le_tsum fun o => mul_le_mul_right (offFlag_le F o) _
 
 /-- **A signing query of the exempt game.** For a sampler with statistical HVZK
-distance `δ` at the pair and a test `F` with values in `[0, 1]` that reads neither the
-hidden entries nor the flag, on the outcomes with the flag cleared a test of a signing
-query of the exempt game is at most the same test of the simulated signing query plus
-`δ`. -/
-theorem attSignPR_le_simSign {δ : ℝ≥0∞} (hZK : G.AttHVZKAt D xw δ) (t : G.Tables)
+distance `δ` and causal public marks at the pair, from tables satisfying the invariant
+and for a test `F` with values in `[0, 1]` that reads neither the hidden entries nor the
+flag and is `1` on tables on which the recovery is ready, on the outcomes with the flag
+cleared a test of a signing query of the exempt game is at most the same test of the
+simulated signing query plus `δ`. -/
+theorem attSignPR_le_simSign {δ : ℝ≥0∞} (hZK : G.AttHVZKAt D xw δ)
+    (hpc : G.AttPubCausalAt D xw) {t : G.Tables} (hI : RecInv ρ xw.1 t false false)
     (m : G.Msg) (F : G.Answer × (G.Tables × Bool) → ℝ≥0∞) (hF : ∀ y, F y ≤ 1)
-    (hFr : RejInsensitive F) (hFf : FlagInsensitive F) :
+    (hFr : RejInsensitive F) (hFf : FlagInsensitive F)
+    (hFs : ∀ y, RecReady ρ xw.1 y.2.1 → F y = 1) :
     ∑' o, attSignPR ρ D xw (t, false) m o * offFlag F o ≤
       ∑' o, sampleVec G (simSignOut xw.1 t false m) o * F o + δ := by
   simp only [attSignPR, sampleVec, tsum_bind_mul, tsum_map_mul']
@@ -816,18 +977,21 @@ theorem attSignPR_le_simSign {δ : ℝ≥0∞} (hZK : G.AttHVZKAt D xw δ) (t : 
           (if a.hidFresh t.lookup (a.vals t.lookup e) then
             F (traceOut t false m (a.trace (a.vals t.lookup e))) else 0) :=
         ENNReal.tsum_le_tsum fun e => mul_le_mul_right
-          (ENNReal.tsum_le_tsum fun a => mul_le_mul_right
-            ((offFlag_attSignOutPR_le ρ F t false).trans
-              (offFlag_attSignOut_le F hFr hFf t false m e a)) _) _
+          (ENNReal.tsum_le_tsum fun a => by
+            by_cases ha : D xw m e a = 0
+            · simp [ha]
+            · exact mul_le_mul_right (offFlag_attSignOutPR_le_land ρ hpc
+                ((PMF.mem_support_iff _ _).mpr ha) hI F hF hFr hFf hFs) _) _
     _ ≤ _ := hZK m t.lookup (fun tr => F (traceOut t false m tr)) fun _ => hF _
 
 /-- **One transition of the exempt game.** For a sampler with statistical HVZK
-distance `δ` at the pair, from tables satisfying the invariant and a test `F` with
-values in `[0, 1]` that reads neither the hidden entries nor the flag and is `1` on
-tables on which the recovery is ready, on the outcomes with the flag cleared a test of
-one transition of the exempt game is at most the same test of one simulated transition,
-plus `δ` for a signing query. -/
+distance `δ` and causal public marks at the pair, from tables satisfying the invariant
+and a test `F` with values in `[0, 1]` that reads neither the hidden entries nor the
+flag and is `1` on tables on which the recovery is ready, on the outcomes with the flag
+cleared a test of one transition of the exempt game is at most the same test of one
+simulated transition, plus `δ` for a signing query. -/
 theorem attStepPR_le_simStep {δ : ℝ≥0∞} (hZK : G.AttHVZKAt D xw δ)
+    (hpc : G.AttPubCausalAt D xw)
     {t : G.Tables} (hI : RecInv ρ xw.1 t false false) (d : G.Query)
     (F : G.Answer × (G.Tables × Bool) → ℝ≥0∞) (hF : ∀ y, F y ≤ 1) (hFr : RejInsensitive F)
     (hFf : FlagInsensitive F) (hFs : ∀ y, RecReady ρ xw.1 y.2.1 → F y = 1) :
@@ -835,17 +999,18 @@ theorem attStepPR_le_simStep {δ : ℝ≥0∞} (hZK : G.AttHVZKAt D xw δ)
       ∑' o, toOracle (simStep xw.1) (t, false) d o * F o + (if d.isRight then δ else 0) := by
   cases d with
   | inl k => exact le_add_right (realHashStepR_le_hashStep ρ hI k F hF hFs)
-  | inr m => exact attSignPR_le_simSign ρ hZK t m F hF hFr hFf
+  | inr m => exact attSignPR_le_simSign ρ hZK hpc hI m F hF hFr hFf hFs
 
 /-- **Statistical hop for runs of the exempt game.** For a recovery complete at the
-sampler with statistical HVZK distance `δ` at the pair, a run with at most `h` hash
-and `q` signing queries from tables satisfying the invariant, and a test `g` with
-values in `[0, 1]`
+sampler with statistical HVZK distance `δ` and causal public marks at the pair, a run
+with at most `h` hash and `q` signing queries from tables satisfying the invariant, and
+a test `g` with values in `[0, 1]`
 that reads neither the hidden entries nor the flag and is `1` whenever the recovery
 succeeds on the visible entries, the test on the outcomes with the flag cleared is at
 most the test on the simulated run plus `q·δ`. -/
 theorem run_attPR_le_sim (hrec : ρ.CompleteAt D xw) {δ : ℝ≥0∞}
-    (hZK : G.AttHVZKAt D xw δ) (A : OracleAdv G.Query G.Answer α) (h q : ℕ)
+    (hZK : G.AttHVZKAt D xw δ) (hpc : G.AttPubCausalAt D xw)
+    (A : OracleAdv G.Query G.Answer α) (h q : ℕ)
     (hA : IsQueryBound₂ A h q) (t : G.Tables) (hI : RecInv ρ xw.1 t false false)
     (g : α × (G.Tables × Bool) → ℝ≥0∞) (hg : ∀ y, g y ≤ 1) (hgr : RejInsensitive g)
     (hgf : FlagInsensitive g) (hgs : ∀ y, recTest ρ xw.1 y.2.1 = true → g y = 1) :
@@ -901,7 +1066,7 @@ theorem run_attPR_le_sim (hrec : ρ.CompleteAt D xw) {δ : ℝ≥0∞}
           rw [ENNReal.tsum_add, ENNReal.tsum_mul_right, PMF.tsum_coe, one_mul]
       _ ≤ ∑' o, toOracle (simStep xw.1) (t, false) d o * Y o +
             (if d.isRight then δ else 0) + q' * δ :=
-          add_le_add (attStepPR_le_simStep ρ hZK hI d Y hY1 hYr hYf hYs) le_rfl
+          add_le_add (attStepPR_le_simStep ρ hZK hpc hI d Y hY1 hYr hYf hYs) le_rfl
       _ = _ := by rw [add_assoc, ← hq', ite_add_mul_eq]
 
 end RecSim
