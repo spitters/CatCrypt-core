@@ -17,8 +17,9 @@ pinned by `example`s. The shapes are a DDH-style reduction (a uniform sample, gr
 operations given as a binder, one adversary call), a reduction with two adversary calls and a
 second adversary, a reduction with `match` and `if`, a reduction reading and writing a
 location, and a reduction that calls a top-level `def` written in `do`-notation, with the
-adversary named explicitly. The last test pins the refusal of an unpriced computation, a
-field of a structure.
+adversary named explicitly. Two tests have primitives: fields of a structure binder and a
+method of a local instance, as computation primitives and as data functions. The last test
+pins the refusal of an unpriced computation, a field of a structure bound in the body.
 -/
 
 @[expose] public section
@@ -124,23 +125,79 @@ example (post A : Bool → SPTree Bool) (w : Bool) :
       postRed (fun x => (post x).compile) (fun x => (A x).compile) w :=
   postRed.compile_tree post A w
 
-/-! ## Refusal of an unpriced computation -/
+/-! ## Primitives: fields of a structure and methods of a local instance -/
+
+/-- Primitives given as a structure: a key generation, a data function and a tagging
+computation. -/
+structure Deps (K M C : Type) where
+  keygen : SPComp K
+  enc : K → M → C
+  mac : K → C → SPComp Bool
+
+/-- A class with a data method. -/
+class Wrap (K C : Type) where
+  wrap : K → C → C
+
+/-- Generate a key, encrypt and wrap `m`, call the adversary on the ciphertext, and tag it;
+the fields `D.keygen` and `D.mac` are computation primitives, `D.enc` and the method `Wrap.wrap`
+are data functions. -/
+noncomputable def depRed {K M C : Type} [Wrap K C] (D : Deps K M C) (m : M)
+    (A : C → SPComp Bool) : SPComp Bool := do
+  let k ← D.keygen
+  let c := Wrap.wrap k (D.enc k m)
+  let b ← A c
+  if b then D.mac k c else
+    match b with
+    | true => D.mac k (D.enc k m)
+    | false => return false
+
+derive_reduction depRed
+
+example {K M C : Type} [Wrap K C] (D : Deps K M C) (m : M) (A : C → SPTree Bool)
+    (keygen : SPTree K) (mac : K → C → SPTree Bool) (h_keygen : keygen.compile = D.keygen)
+    (h_mac : ∀ k c, (mac k c).compile = D.mac k c) :
+    (depRed.tree D m A Wrap.wrap D.enc keygen mac).compile =
+      depRed D m (fun x => (A x).compile) :=
+  depRed.compile_tree D m A keygen mac h_keygen h_mac
+
+example {K M C : Type} [Wrap K C] (D : Deps K M C) (m : M) (A : C → SPTree.Timed Bool)
+    (ACost : C → ℕ) (wrap : K → C → C) (wrapCost : K → C → ℕ) (enc : K → M → C)
+    (encCost : K → M → ℕ) (keygen : SPTree.Timed K) (mac : K → C → SPTree.Timed Bool)
+    (macCost : K → C → ℕ) :
+    (depRed.tree.timed D m A ACost wrap wrapCost enc encCost keygen mac macCost).2.erase =
+      depRed.tree D m (fun x => (A x).erase) wrap enc keygen.erase
+        (fun k c => (mac k c).erase) :=
+  depRed.tree.erase_timed D m A ACost wrap wrapCost enc encCost keygen mac macCost
 
 /-- An adversary given as a structure. -/
 structure GuessAdv where
   guess : Bool → SPComp Bool
 
-/-- A reduction calling a field of a structure, which is not an adversary binder. -/
+/-- A reduction calling a field of a structure binder: the field is a computation primitive. -/
 noncomputable def fieldRed (A : GuessAdv) (b : Bool) : SPComp Bool := A.guess b
+
+derive_reduction fieldRed
+
+example (A : GuessAdv) (b : Bool) (guess : Bool → SPTree Bool)
+    (h : ∀ a, (guess a).compile = A.guess a) :
+    (fieldRed.tree A b guess).compile = fieldRed A b :=
+  fieldRed.compile_tree A b guess h
+
+/-! ## Refusal of an unpriced computation -/
+
+/-- A reduction calling a field of a structure returned by the adversary. -/
+noncomputable def boundFieldRed (A : Bool → SPComp GuessAdv) : SPComp Bool := do
+  let g ← A true
+  g.guess false
 
 /--
 error: derive_reduction: unpriced computation: the subterm
-  A.guess b
+  x.guess false
 unfolds to
-  A.1 b
-which is not built from `pure`, `bind`, `sample`, `get`, `set`, `fail`, `if`, `match` or a call of an adversary
+  x.1 false
+which is not built from `pure`, `bind`, `sample`, `get`, `set`, `fail`, `if`, `match`, a call of an adversary or a call of a primitive
 -/
 #guard_msgs in
-derive_reduction fieldRed
+derive_reduction boundFieldRed
 
 end CatCrypt.Tactics.DeriveReductionTest
