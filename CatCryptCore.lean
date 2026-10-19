@@ -167,6 +167,7 @@ public import CatCryptCore.Crypto.MultiQueryPRF
 public import CatCryptCore.Crypto.OracleAdversary
 public import CatCryptCore.Crypto.OracleAdversaryTimed
 public import CatCryptCore.Crypto.OracleUpTo
+public import CatCryptCore.Crypto.OracleAdversaryRelabelTimed
 public import CatCryptCore.Crypto.OracleForkingLemma
 public import CatCryptCore.Crypto.OracleBadDraw
 public import CatCryptCore.Crypto.FiatShamirROM.EagerMarker
@@ -204,6 +205,7 @@ public import CatCryptCore.Crypto.PKE.Games
 public import CatCryptCore.Crypto.PKE.FOTransformT
 public import CatCryptCore.Crypto.KEM.Games
 public import CatCryptCore.Crypto.KEM.FOTransformU
+public import CatCryptCore.Crypto.KEM.FOTransformTimed
 public import CatCryptCore.Crypto.KEM.FOTransform
 public import CatCryptCore.Crypto.KEM.FIPS203KEM
 public import CatCryptCore.Crypto.KEM.FIPS203Security
