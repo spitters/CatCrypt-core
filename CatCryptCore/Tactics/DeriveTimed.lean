@@ -6,6 +6,7 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Crypto.OracleAdversaryTimed
+public import CatCryptCore.Core.SPTreeTimedOps
 public import Lean
 
 /-!
@@ -18,6 +19,22 @@ defines its costed form `R.timed`, whose result is a step-prefixed tree
 binders and dropping the cost companions. The theorem is proved by unfolding both sides and
 rewriting with the erasure lemmas of `CatCryptCore.Crypto.OracleAdversaryTimed`, by
 functional induction on `R.timed` when `R` is recursive, and is checked by the kernel.
+
+## Tree kinds
+
+The translation is driven by a table of tree kinds (`treeKinds`). An entry gives the tree type
+and its costed type, their erasure and step prefix, the nodes and combinators with their costed
+forms and the role of each argument (`ArgRole`), and the lemmas that prove the erasure theorems.
+The table has two entries:
+
+* oracle trees `OracleAdv D R α`, costed by `OracleAdv.Timed D R α`
+  (`CatCryptCore.Crypto.OracleAdversaryTimed`);
+* syntactic computation trees `SPTree α`, costed by `SPTree.Timed α`
+  (`CatCryptCore.Core.SPTreeTimed`, `CatCryptCore.Core.SPTreeTimedOps`): the nodes `ret`,
+  `sample`, `get`, `set` and `fail`, and the combinators `SPTree.bind` and `SPTree.map`.
+
+Below, "tree" means a tree of a kind in the table, and the rules for oracle trees apply to
+every kind.
 
 ## Binders
 
@@ -49,9 +66,14 @@ Costs follow call-by-value evaluation:
 * a `rand` or `query` node costs its registered unit (`OracleAdv.Timed.TimeBound`); the
   distribution of a `rand` node is priced by the rules above, with the uniform and point
   distributions free, since sampling is included in the node's unit;
+* a `sample`, `get` or `set` node of a computation tree costs its registered unit
+  (`SPTree.Timed.time`), and the location and the value of a `get` or `set` node are priced by
+  the rules above;
 * `OracleAdv.bind`, `OracleAdv.simulate` and `OracleAdv.mapQuery` are translated to
   `OracleAdv.Timed.bind`, `OracleAdv.Timed.simulate` and `OracleAdv.Timed.mapQuery`, with the
-  cost of the renaming `ren d` of a `mapQuery` charged per query;
+  cost of the renaming `ren d` of a `mapQuery` charged per query; `SPTree.bind` and
+  `SPTree.map` are translated to `SPTree.Timed.bind` and `SPTree.Timed.map`, with the cost of
+  the function of a `map` charged per leaf;
 * a `let` is substituted into its body, so its value is priced at each use.
 
 A registered primitive `f` has a cost `f.timedCost`, a definition taking the arguments of
@@ -79,6 +101,7 @@ Isabelle's `time_fun` command.
 * `derive_timed R`, `derive_timed (suffix := s) R` — define `R.timed` (or `R.s`) and
   `R.erase_timed` (or `R.erase_s`)
 * `timed_cost f := e` — register the cost `e` of the primitive `f`
+* `treeKinds` — the table of tree kinds
 -/
 
 public section
@@ -187,45 +210,174 @@ def add (a b : Expr) : Expr :=
 /-- The sum of the costs `cs`. -/
 def sum (cs : Array Expr) : Expr := cs.foldl add (natE 0)
 
-/-- Whether `t` is an oracle-tree type `OracleAdv D R α`. -/
-def oracleArgs? (t : Expr) : MetaM (Option (Expr × Expr × Expr)) := do
+/-- How an argument of a node or a combinator of a tree kind is translated. The roles of a
+node or a combinator apply to the trailing arguments of its constant; the leading arguments
+are the parameters of the tree type. -/
+inductive ArgRole where
+  /-- Kept, at no cost. -/
+  | keep
+  /-- Kept, with its cost charged. -/
+  | data
+  /-- A continuation with `n` binders: replaced by its step cost and its costed tree, both
+  abstracted over the binders. -/
+  | cont (n : Nat)
+  /-- A tree: replaced by its costed tree, with its step cost charged in front. -/
+  | tree
+  /-- A function of `n` arguments into trees: replaced by a function into step-prefixed costed
+  trees. -/
+  | pairFn (n : Nat)
+  /-- A data function of `n` arguments: kept and followed by its cost per call, `extra` plus the
+  cost of evaluating it. -/
+  | perCall (extra n : Nat)
+  deriving Inhabited, BEq, Repr
+
+/-- A node of a tree kind: the constructor `src` and the costed constructor `tgt`, which takes
+the parameters of the costed tree type and the translated trailing arguments. -/
+structure Node where
+  src : Name
+  tgt : Name
+  roles : Array ArgRole
+  deriving Inhabited
+
+/-- A combinator of a tree kind: the constant `src` and its costed form `tgt`, which takes the
+translated trailing arguments and returns a step-prefixed costed tree when `pair` holds and a
+costed tree otherwise. -/
+structure Comb where
+  src : Name
+  tgt : Name
+  roles : Array ArgRole
+  pair : Bool
+  deriving Inhabited
+
+/-- A kind of tree: the tree type `tree` with `nParams` parameters, its costed tree type `timed`
+with the same parameters, the erasure `erase` and the step prefix `delay` of the costed type,
+its nodes, its combinators, and the lemmas that prove the erasure theorems. -/
+structure TreeKind where
+  noun : String
+  tree : Name
+  nParams : Nat
+  timed : Name
+  erase : Name
+  delay : Name
+  nodes : Array Node
+  combinators : Array Comb
+  eraseLemmas : Array Name
+  deriving Inhabited
+
+/-- Oracle trees `OracleAdv D R α`: `ret`, `rand` and `query` nodes, and the combinators
+`bind`, `simulate` and `mapQuery`. -/
+def oracleKind : TreeKind where
+  noun := "oracle tree"
+  tree := ``CatCrypt.Crypto.OracleAdv
+  nParams := 3
+  timed := ``CatCrypt.Crypto.OracleAdv.Timed
+  erase := ``CatCrypt.Crypto.OracleAdv.Timed.erase
+  delay := ``CatCrypt.Crypto.OracleAdv.Timed.delay
+  nodes := #[
+    ⟨``CatCrypt.Crypto.OracleAdv.ret, ``CatCrypt.Crypto.OracleAdv.Timed.ret, #[.data]⟩,
+    ⟨``CatCrypt.Crypto.OracleAdv.rand, ``CatCrypt.Crypto.OracleAdv.Timed.rand,
+      #[.data, .cont 1]⟩,
+    ⟨``CatCrypt.Crypto.OracleAdv.query, ``CatCrypt.Crypto.OracleAdv.Timed.query,
+      #[.data, .cont 1]⟩]
+  combinators := #[
+    ⟨``CatCrypt.Crypto.OracleAdv.bind, ``CatCrypt.Crypto.OracleAdv.Timed.bind,
+      #[.tree, .pairFn 1], true⟩,
+    ⟨``CatCrypt.Crypto.OracleAdv.simulate, ``CatCrypt.Crypto.OracleAdv.Timed.simulate,
+      #[.pairFn 2, .tree, .data], true⟩,
+    ⟨``CatCrypt.Crypto.OracleAdv.mapQuery, ``CatCrypt.Crypto.OracleAdv.Timed.mapQuery,
+      #[.perCall 1 1, .tree], false⟩]
+  eraseLemmas := #[``CatCrypt.Crypto.OracleAdv.Timed.erase,
+    ``CatCrypt.Crypto.OracleAdv.Timed.delay, ``CatCrypt.Crypto.OracleAdv.Timed.erase_bind,
+    ``CatCrypt.Crypto.OracleAdv.Timed.erase_simulate,
+    ``CatCrypt.Crypto.OracleAdv.Timed.erase_mapQuery,
+    ``CatCrypt.Crypto.OracleAdv.Timed.erase_snd_ite,
+    ``CatCrypt.Crypto.OracleAdv.Timed.erase_snd_dite]
+
+/-- Syntactic computation trees `SPTree α`: `ret`, `sample`, `get`, `set` and `fail` nodes, and
+the combinators `SPTree.bind` and `SPTree.map`. -/
+def spTreeKind : TreeKind where
+  noun := "computation tree"
+  tree := ``CatCrypt.Core.SPTree
+  nParams := 1
+  timed := ``CatCrypt.Core.SPTree.Timed
+  erase := ``CatCrypt.Core.SPTree.Timed.erase
+  delay := ``CatCrypt.Core.SPTree.Timed.delay
+  nodes := #[
+    ⟨``CatCrypt.Core.SPTree.ret, ``CatCrypt.Core.SPTree.Timed.ret, #[.data]⟩,
+    ⟨``CatCrypt.Core.SPTree.sample, ``CatCrypt.Core.SPTree.Timed.sample,
+      #[.keep, .keep, .keep, .cont 1]⟩,
+    ⟨``CatCrypt.Core.SPTree.get, ``CatCrypt.Core.SPTree.Timed.get, #[.data, .cont 1]⟩,
+    ⟨``CatCrypt.Core.SPTree.set, ``CatCrypt.Core.SPTree.Timed.set, #[.data, .data, .cont 0]⟩,
+    ⟨``CatCrypt.Core.SPTree.fail, ``CatCrypt.Core.SPTree.Timed.fail, #[]⟩]
+  combinators := #[
+    ⟨``CatCrypt.Core.SPTree.bind, ``CatCrypt.Core.SPTree.Timed.bind, #[.tree, .pairFn 1], true⟩,
+    ⟨``CatCrypt.Core.SPTree.map, ``CatCrypt.Core.SPTree.Timed.map, #[.perCall 0 1, .tree],
+      true⟩]
+  eraseLemmas := #[``CatCrypt.Core.SPTree.Timed.erase_ret,
+    ``CatCrypt.Core.SPTree.Timed.erase_sample, ``CatCrypt.Core.SPTree.Timed.erase_get,
+    ``CatCrypt.Core.SPTree.Timed.erase_set, ``CatCrypt.Core.SPTree.Timed.erase_fail,
+    ``CatCrypt.Core.SPTree.Timed.delay, ``CatCrypt.Core.SPTree.Timed.erase_bind,
+    ``CatCrypt.Core.SPTree.Timed.erase_map, ``CatCrypt.Core.SPTree.Timed.erase_snd_ite,
+    ``CatCrypt.Core.SPTree.Timed.erase_snd_dite]
+
+/-- The table of tree kinds. -/
+def treeKinds : Array TreeKind := #[oracleKind, spTreeKind]
+
+/-- A tree type: its kind and its parameters. -/
+structure TreeTy where
+  kind : TreeKind
+  params : Array Expr
+  deriving Inhabited
+
+/-- Whether `t` is the tree type of a kind in the table. -/
+def treeTy? (t : Expr) : MetaM (Option TreeTy) := do
   let t ← whnfR (← instantiateMVars t)
-  if t.isAppOfArity ``CatCrypt.Crypto.OracleAdv 3 then
-    return some (t.getArg! 0, t.getArg! 1, t.getArg! 2)
+  for k in treeKinds do
+    if t.isAppOfArity k.tree k.nParams then return some ⟨k, t.getAppArgs⟩
   return none
 
-/-- The costed tree type `OracleAdv.Timed D R α`. -/
-def timedType (D R α : Expr) : Expr := mkApp3 (mkConst ``CatCrypt.Crypto.OracleAdv.Timed) D R α
+namespace TreeTy
 
-/-- The step-prefixed tree type `ℕ × OracleAdv.Timed D R α`. -/
-def pairType (D R α : Expr) : Expr :=
-  mkApp2 (mkConst ``Prod [Level.zero, Level.one]) (mkConst ``Nat) (timedType D R α)
+/-- The costed tree type. -/
+def timedType (T : TreeTy) : Expr := mkAppN (mkConst T.kind.timed) T.params
+
+/-- The step-prefixed tree type `ℕ × T.timedType`. -/
+def pairType (T : TreeTy) : Expr :=
+  mkApp2 (mkConst ``Prod [Level.zero, Level.one]) (mkConst ``Nat) T.timedType
 
 /-- The pair `(c, t)` of a step cost and a costed tree. -/
-def mkPair (D R α c t : Expr) : Expr :=
-  mkApp4 (mkConst ``Prod.mk [Level.zero, Level.one]) (mkConst ``Nat) (timedType D R α) c t
+def mkPair (T : TreeTy) (c t : Expr) : Expr :=
+  mkApp4 (mkConst ``Prod.mk [Level.zero, Level.one]) (mkConst ``Nat) T.timedType c t
+
+/-- Whether `p` is an application of the step prefix `delay`. -/
+def isDelay (T : TreeTy) (p : Expr) : Bool := p.isAppOfArity T.kind.delay (T.kind.nParams + 2)
 
 /-- The step cost of a step-prefixed tree, reduced on a literal pair and on `delay`. -/
-partial def fstOf (D R α p : Expr) : Expr :=
+partial def fstOf (T : TreeTy) (p : Expr) : Expr :=
   if p.isAppOfArity ``Prod.mk 4 then p.getArg! 2
-  else if p.isAppOfArity ``CatCrypt.Crypto.OracleAdv.Timed.delay 5 then
-    add (p.getArg! 3) (fstOf D R α (p.getArg! 4))
-  else mkApp3 (mkConst ``Prod.fst [Level.zero, Level.one]) (mkConst ``Nat) (timedType D R α) p
+  else if T.isDelay p then
+    add (p.getArg! T.kind.nParams) (T.fstOf (p.getArg! (T.kind.nParams + 1)))
+  else mkApp3 (mkConst ``Prod.fst [Level.zero, Level.one]) (mkConst ``Nat) T.timedType p
 
 /-- The costed tree of a step-prefixed tree, reduced on a literal pair and on `delay`. -/
-partial def sndOf (D R α p : Expr) : Expr :=
+partial def sndOf (T : TreeTy) (p : Expr) : Expr :=
   if p.isAppOfArity ``Prod.mk 4 then p.getArg! 3
-  else if p.isAppOfArity ``CatCrypt.Crypto.OracleAdv.Timed.delay 5 then sndOf D R α (p.getArg! 4)
-  else mkApp3 (mkConst ``Prod.snd [Level.zero, Level.one]) (mkConst ``Nat) (timedType D R α) p
+  else if T.isDelay p then T.sndOf (p.getArg! (T.kind.nParams + 1))
+  else mkApp3 (mkConst ``Prod.snd [Level.zero, Level.one]) (mkConst ``Nat) T.timedType p
 
 /-- The step cost `c` in front of the step-prefixed tree `p`. -/
-def delayE (D R α c p : Expr) : Expr :=
+def delayE (T : TreeTy) (c p : Expr) : Expr :=
   if natVal? c == some 0 then p
-  else if p.isAppOfArity ``Prod.mk 4 then mkPair D R α (add c (p.getArg! 2)) (p.getArg! 3)
-  else if p.isAppOfArity ``CatCrypt.Crypto.OracleAdv.Timed.delay 5 then
-    mkApp5 (mkConst ``CatCrypt.Crypto.OracleAdv.Timed.delay) D R α (add c (p.getArg! 3))
-      (p.getArg! 4)
-  else mkApp5 (mkConst ``CatCrypt.Crypto.OracleAdv.Timed.delay) D R α c p
+  else if p.isAppOfArity ``Prod.mk 4 then T.mkPair (add c (p.getArg! 2)) (p.getArg! 3)
+  else if T.isDelay p then
+    mkAppN (mkConst T.kind.delay)
+      (T.params ++ #[add c (p.getArg! T.kind.nParams), p.getArg! (T.kind.nParams + 1)])
+  else mkAppN (mkConst T.kind.delay) (T.params ++ #[c, p])
+
+/-- The erasure of the costed tree `v`. -/
+def eraseE (T : TreeTy) (v : Expr) : Expr := mkAppN (mkConst T.kind.erase) (T.params.push v)
+
+end TreeTy
 
 /-- The kind of a binder of type `t`. -/
 def classify (t : Expr) : MetaM Kind := do
@@ -233,7 +385,7 @@ def classify (t : Expr) : MetaM Kind := do
   if ← isTypeFormerType t then return .static
   if (← isClass? t).isSome then return .static
   forallTelescope (← whnfR t) fun ys b => do
-    if (← oracleArgs? b).isSome then
+    if (← treeTy? b).isSome then
       return if ys.isEmpty then .tree else .treeFn
     if ys.isEmpty then return .data
     return .fn
@@ -253,20 +405,20 @@ def companionType (t : Expr) : MetaM Expr := do
 /-- The costed type of a binder of type `t` and kind `k`. -/
 def costedType (t : Expr) : MetaM Expr := do
   forallTelescope (← whnfR t) fun ys b => do
-    let some (D, R, α) ← oracleArgs? b | throwError "derive_timed: `{b}` is not an oracle tree"
-    mkForallFVars ys (timedType D R α)
+    let some T ← treeTy? b | throwError "derive_timed: `{b}` is not a tree of a registered kind"
+    mkForallFVars ys T.timedType
 
 /-- The erasure of the costed value `v` of a local of type `t` and kind `k`. -/
 def erasure (k : Kind) (t v : Expr) : MetaM Expr := do
   match k with
   | .tree =>
-    let some (D, R, α) ← oracleArgs? t | throwError "derive_timed: `{t}` is not an oracle tree"
-    return mkApp4 (mkConst ``CatCrypt.Crypto.OracleAdv.Timed.erase) D R α v
+    let some T ← treeTy? t | throwError "derive_timed: `{t}` is not a tree of a registered kind"
+    return T.eraseE v
   | .treeFn =>
     forallTelescope (← whnfR t) fun ys b => do
-      let some (D, R, α) ← oracleArgs? b | throwError "derive_timed: `{b}` is not an oracle tree"
-      mkLambdaFVars ys (mkApp4 (mkConst ``CatCrypt.Crypto.OracleAdv.Timed.erase) D R α
-        (mkAppN v ys))
+      let some T ← treeTy? b
+        | throwError "derive_timed: `{b}` is not a tree of a registered kind"
+      mkLambdaFVars ys (T.eraseE (mkAppN v ys))
   | _ => return v
 
 /-- Fail with the reason a derivation does not go through. -/
@@ -321,6 +473,12 @@ def argKinds (f : Expr) (args : Array Expr) : MetaM (Array (Kind × Expr)) := do
     out := out.push (← classify bt, bt)
     ty := body.instantiate1 a
   return out
+
+/-- The trailing arguments of `e` to which `roles` apply. -/
+def trailing (e : Expr) (args : Array Expr) (roles : Array ArgRole) : MetaM (Array Expr) := do
+  unless roles.size ≤ args.size do
+    fail m!"`{e}` is applied to fewer arguments than its translation takes"
+  return args.extract (args.size - roles.size) args.size
 
 mutual
 
@@ -502,9 +660,9 @@ partial def mapMatch (ctx : Ctx) (e resultType : Expr)
   let mut trDiscrs : Array (Expr × LocalInfo) := #[]
   let mut cost := natE 0
   for d in app.discrs do
-    if (← oracleArgs? (← inferType d)).isSome then
-      fail m!"a recursion over an oracle tree: a match on the oracle tree `{d}`; register a \
-        costed form written by hand"
+    if let some Td ← treeTy? (← inferType d) then
+      fail m!"a recursion over an {Td.kind.noun}: a match on the {Td.kind.noun} `{d}`; register \
+        a costed form written by hand"
     match d.consumeMData with
     | .fvar id =>
       match ctx.locals.get? id with
@@ -557,14 +715,14 @@ partial def costMatch (ctx : Ctx) (e : Expr) : TermElabM Expr := do
 with the translated locals erased. -/
 partial def tr (ctx : Ctx) (e : Expr) : TermElabM Expr := do
   let e := e.consumeMData.headBeta
-  let some (D, R, α) ← oracleArgs? (← inferType e)
-    | fail m!"`{e}` is not an oracle tree"
+  let some T ← treeTy? (← inferType e)
+    | fail m!"`{e}` is not a tree of a registered kind"
   match e with
   | .letE _ _ v b _ => tr ctx (b.instantiate1 v)
   | .fvar id =>
     match ctx.locals.get? id with
-    | some { kind := .tree, value, .. } => return mkPair D R α (natE 0) value
-    | _ => fail m!"a function bound in data: the oracle tree `{e}` has no costed form"
+    | some { kind := .tree, value, .. } => return T.mkPair (natE 0) value
+    | _ => fail m!"a function bound in data: the {T.kind.noun} `{e}` has no costed form"
   | .app .. | .const .. =>
     let f := e.getAppFn
     let args := e.getAppArgs
@@ -572,72 +730,104 @@ partial def tr (ctx : Ctx) (e : Expr) : TermElabM Expr := do
     | .fvar id =>
       match ctx.locals.get? id with
       | some { kind := .treeFn, value, companion? := some c } =>
-        return mkPair D R α (add (natE 1) (add (mkAppN c args) (← argsCost ctx args)))
+        return T.mkPair (add (natE 1) (add (mkAppN c args) (← argsCost ctx args)))
           (mkAppN value args)
       | _ => fail m!"a function bound in data: the local `{f}` in `{e}` has no costed form"
-    | .const c _ => trConst ctx e c args D R α
-    | _ => fail m!"the oracle tree `{e}` is not headed by a constant or a local"
-  | _ => fail m!"the oracle tree `{e}` is not supported"
+    | .const c _ => trConst ctx e c args T
+    | _ => fail m!"the {T.kind.noun} `{e}` is not headed by a constant or a local"
+  | _ => fail m!"the {T.kind.noun} `{e}` is not supported"
 
-/-- The translation of an oracle tree headed by the constant `c`. -/
-partial def trConst (ctx : Ctx) (e : Expr) (c : Name) (args : Array Expr) (D R α : Expr) :
+/-- The translation of a continuation `a` with `n` binders: its step cost and its costed tree,
+both abstracted over the binders. -/
+partial def trCont (ctx : Ctx) (a : Expr) (n : Nat) : TermElabM (Expr × Expr) := do
+  if n == 0 then
+    let some Ta ← treeTy? (← inferType a) | fail m!"`{a}` is not a tree of a registered kind"
+    let p ← tr ctx a
+    return (Ta.fstOf p, Ta.sndOf p)
+  withEta a n fun ys b => do
+    let some Tb ← treeTy? (← inferType b) | fail m!"`{b}` is not a tree of a registered kind"
+    let p ← tr ctx b
+    return (← mkLambdaFVars ys (Tb.fstOf p), ← mkLambdaFVars ys (Tb.sndOf p))
+
+/-- The translation of a node: the costed constructor applied to the translated arguments, with
+the costs of the data arguments as its step cost. The continuations are translated first. -/
+partial def trNode (ctx : Ctx) (e : Expr) (nd : Node) (args : Array Expr) (T : TreeTy) :
+    TermElabM Expr := do
+  let xs ← trailing e args nd.roles
+  let mut conts : Array (Option (Expr × Expr)) := Array.replicate xs.size none
+  for h : i in [0:xs.size] do
+    if let .cont m := nd.roles[i]! then
+      conts := conts.set! i (some (← trCont ctx xs[i] m))
+  let mut outs := #[]
+  let mut cost := natE 0
+  for h : i in [0:xs.size] do
+    match nd.roles[i]!, conts[i]! with
+    | .cont _, some (cs, ks) => outs := outs.push cs |>.push ks
+    | .data, _ =>
+      outs := outs.push xs[i]
+      cost := add cost (← costOf ctx xs[i])
+    | _, _ => outs := outs.push xs[i]
+  let node ← mkAppM' (mkAppN (mkConst nd.tgt) T.params) outs
+  return T.mkPair cost node
+
+/-- The translation of a combinator: its costed form applied to the translated arguments, with
+the step costs of the tree arguments and the costs of the data arguments in front. The tree
+arguments are translated first. -/
+partial def trComb (ctx : Ctx) (e : Expr) (cb : Comb) (args : Array Expr) (T : TreeTy) :
+    TermElabM Expr := do
+  let xs ← trailing e args cb.roles
+  let mut trees : Array Expr := Array.replicate xs.size (natE 0)
+  let mut treeCost := natE 0
+  for h : i in [0:xs.size] do
+    if cb.roles[i]! == .tree then
+      let some Ta ← treeTy? (← inferType xs[i]) | fail m!"`{e}` has an unexpected type"
+      let p ← tr ctx xs[i]
+      trees := trees.set! i (Ta.sndOf p)
+      treeCost := add treeCost (Ta.fstOf p)
+  let mut outs := #[]
+  let mut dataCost := natE 0
+  for h : i in [0:xs.size] do
+    let a := xs[i]
+    match cb.roles[i]! with
+    | .tree => outs := outs.push trees[i]!
+    | .pairFn m => outs := outs.push (← withEta a m fun ys b => do mkLambdaFVars ys (← tr ctx b))
+    | .perCall extra m =>
+      let t ← withEta a m fun ys b => do mkLambdaFVars ys (add (natE extra) (← costOf ctx b))
+      outs := outs.push a |>.push t
+    | .data =>
+      outs := outs.push a
+      dataCost := add dataCost (← costOf ctx a)
+    | .keep | .cont _ => outs := outs.push a
+  let r ← mkAppM cb.tgt outs
+  let r := if cb.pair then r else T.mkPair (natE 0) r
+  return T.delayE (add treeCost dataCost) r
+
+/-- The translation of a tree headed by the constant `c`. -/
+partial def trConst (ctx : Ctx) (e : Expr) (c : Name) (args : Array Expr) (T : TreeTy) :
     TermElabM Expr := do
   let n := args.size
-  if c == ``CatCrypt.Crypto.OracleAdv.ret then
-    let a := args[n - 1]!
-    return mkPair D R α (← costOf ctx a)
-      (mkApp4 (mkConst ``CatCrypt.Crypto.OracleAdv.Timed.ret) D R α a)
-  if c == ``CatCrypt.Crypto.OracleAdv.rand || c == ``CatCrypt.Crypto.OracleAdv.query then
-    let x := args[n - 2]!
-    let (cs, ks) ← withEta args[n - 1]! 1 fun ys b => do
-      let p ← tr ctx b
-      return (← mkLambdaFVars ys (fstOf D R α p), ← mkLambdaFVars ys (sndOf D R α p))
-    let ctor := if c == ``CatCrypt.Crypto.OracleAdv.rand then
-      ``CatCrypt.Crypto.OracleAdv.Timed.rand else ``CatCrypt.Crypto.OracleAdv.Timed.query
-    let node ← mkAppM ctor #[x, cs, ks]
-    return mkPair D R α (← costOf ctx x) node
-  if c == ``CatCrypt.Crypto.OracleAdv.bind then
-    let p ← tr ctx args[n - 2]!
-    let g ← withEta args[n - 1]! 1 fun ys b => do mkLambdaFVars ys (← tr ctx b)
-    let some (D₀, R₀, α₀) ← oracleArgs? (← inferType args[n - 2]!)
-      | fail m!"`{e}` has an unexpected type"
-    let b ← mkAppM ``CatCrypt.Crypto.OracleAdv.Timed.bind #[sndOf D₀ R₀ α₀ p, g]
-    return delayE D R α (fstOf D₀ R₀ α₀ p) b
-  if c == ``CatCrypt.Crypto.OracleAdv.simulate then
-    let impl := args[n - 3]!
-    let A := args[n - 2]!
-    let s := args[n - 1]!
-    let some (D₀, R₀, α₀) ← oracleArgs? (← inferType A) | fail m!"`{e}` has an unexpected type"
-    let p ← tr ctx A
-    let impl' ← withEta impl 2 fun ys b => do mkLambdaFVars ys (← tr ctx b)
-    let sim ← mkAppM ``CatCrypt.Crypto.OracleAdv.Timed.simulate #[impl', sndOf D₀ R₀ α₀ p, s]
-    return delayE D R α (add (fstOf D₀ R₀ α₀ p) (← costOf ctx s)) sim
-  if c == ``CatCrypt.Crypto.OracleAdv.mapQuery then
-    let ren := args[n - 2]!
-    let A := args[n - 1]!
-    let some (D₀, R₀, α₀) ← oracleArgs? (← inferType A) | fail m!"`{e}` has an unexpected type"
-    let p ← tr ctx A
-    let t ← withEta ren 1 fun ys b => do mkLambdaFVars ys (add (natE 1) (← costOf ctx b))
-    let m ← mkAppM ``CatCrypt.Crypto.OracleAdv.Timed.mapQuery #[ren, t, sndOf D₀ R₀ α₀ p]
-    return mkPair D R α (fstOf D₀ R₀ α₀ p) m
+  if let some nd := T.kind.nodes.find? (·.src == c) then
+    return ← trNode ctx e nd args T
+  if let some cb := T.kind.combinators.find? (·.src == c) then
+    return ← trComb ctx e cb args T
   if c == ``ite && n == 5 then
     let pt ← tr ctx args[3]!
     let pe ← tr ctx args[4]!
-    let i := mkApp5 (mkConst ``ite [Level.succ Level.one]) (pairType D R α) args[1]! args[2]! pt pe
-    return delayE D R α (add (natE 1) (← propCost ctx args[1]!)) i
+    let i := mkApp5 (mkConst ``ite [Level.succ Level.one]) T.pairType args[1]! args[2]! pt pe
+    return T.delayE (add (natE 1) (← propCost ctx args[1]!)) i
   if c == ``dite && n == 5 then
     let pt ← withEta args[3]! 1 fun hs b => do mkLambdaFVars hs (← tr ctx b)
     let pe ← withEta args[4]! 1 fun hs b => do mkLambdaFVars hs (← tr ctx b)
-    let i := mkApp5 (mkConst ``dite [Level.succ Level.one]) (pairType D R α) args[1]! args[2]! pt pe
-    return delayE D R α (add (natE 1) (← propCost ctx args[1]!)) i
+    let i := mkApp5 (mkConst ``dite [Level.succ Level.one]) T.pairType args[1]! args[2]! pt pe
+    return T.delayE (add (natE 1) (← propCost ctx args[1]!)) i
   if ← isMatcher c then
-    let (e', cd) ← mapMatch ctx e (pairType D R α) tr
-    return delayE D R α (add (natE 1) cd) e'
+    let (e', cd) ← mapMatch ctx e T.pairType tr
+    return T.delayE (add (natE 1) cd) e'
   -- A call of a reduction.
   let target ← match ctx.self? with
     | some (self, rec) => if self == c then pure rec else ensureTimed ctx c e.getAppFn
     | none => ensureTimed ctx c e.getAppFn
-  callTimed ctx e target args D R α
+  callTimed ctx e target args T
 
 /-- The costed form of the reduction `c` at the universe levels of `f`: registered, or
 derived now. -/
@@ -655,7 +845,7 @@ partial def ensureTimed (ctx : Ctx) (c : Name) (f : Expr) : TermElabM Expr := do
 
 /-- A call of the reduction whose costed form is `target`: one plus the step cost of the
 costed call plus the costs of the arguments. -/
-partial def callTimed (ctx : Ctx) (e target : Expr) (args : Array Expr) (D R α : Expr) :
+partial def callTimed (ctx : Ctx) (e target : Expr) (args : Array Expr) (T : TreeTy) :
     TermElabM Expr := do
   let kinds ← argKinds e.getAppFn args
   let mut out := #[]
@@ -670,10 +860,11 @@ partial def callTimed (ctx : Ctx) (e target : Expr) (args : Array Expr) (D R α 
       out := out.push a |>.push (← companionOf ctx a)
       cost := add cost (← costOf ctx a)
     | .tree =>
-      let some (D₀, R₀, α₀) ← oracleArgs? (← inferType a) | fail m!"`{a}` is not an oracle tree"
+      let some Ta ← treeTy? (← inferType a)
+        | fail m!"`{a}` is not a tree of a registered kind"
       let p ← tr ctx a
-      out := out.push (sndOf D₀ R₀ α₀ p)
-      cost := add cost (fstOf D₀ R₀ α₀ p)
+      out := out.push (Ta.sndOf p)
+      cost := add cost (Ta.fstOf p)
     | .treeFn =>
       match a.consumeMData with
       | .fvar id =>
@@ -684,11 +875,12 @@ partial def callTimed (ctx : Ctx) (e target : Expr) (args : Array Expr) (D R α 
       | _ =>
         let arity ← forallTelescope (← whnfR (← inferType a)) fun ys _ => pure ys.size
         let (v, c) ← withEta a arity fun ys b => do
-          let some (D₀, R₀, α₀) ← oracleArgs? (← inferType b) | fail m!"`{b}` is not an oracle tree"
+          let some Tb ← treeTy? (← inferType b)
+            | fail m!"`{b}` is not a tree of a registered kind"
           let p ← tr ctx b
-          return (← mkLambdaFVars ys (sndOf D₀ R₀ α₀ p), ← mkLambdaFVars ys (fstOf D₀ R₀ α₀ p))
+          return (← mkLambdaFVars ys (Tb.sndOf p), ← mkLambdaFVars ys (Tb.fstOf p))
         out := out.push v |>.push c
-  return delayE D R α (add (natE 1) cost) (mkAppN target out)
+  return T.delayE (add (natE 1) cost) (mkAppN target out)
 
 /-- Derive and add the costed form `c.timed` and the erasure theorem `c.erase_timed` of the
 reduction `c`. -/
@@ -711,10 +903,10 @@ partial def deriveTimed (ctx : Ctx) (c : Name) : TermElabM Unit := do
     forallTelescope (← instantiateForall type xs) fun ys _ =>
       mkLambdaFVars (xs ++ ys) (mkAppN b ys).headBeta
   let (tType, tValue, eType, nBinders) ← lambdaTelescope value fun xs b => do
-    let some (D, R, α) ← oracleArgs? (← inferType b)
-      | fail m!"the result of `{c}` is not an oracle tree"
+    let some T ← treeTy? (← inferType b)
+      | fail m!"the result of `{c}` is not a tree of a registered kind"
     withBinders ctx xs fun ctx bs args => do
-      let tType ← mkForallFVars bs (pairType D R α)
+      let tType ← mkForallFVars bs T.pairType
       withLocalDeclD `rec tType fun recF => do
         let ctx := { ctx with self? := some (c, recF) }
         let p ← tr ctx b
@@ -725,8 +917,7 @@ partial def deriveTimed (ctx : Ctx) (c : Name) : TermElabM Unit := do
           if tValue.containsFVar x.fvarId! && !(bs.contains x) then
             fail m!"the binder `{x}` of `{c}` occurs in a type of the costed form"
         let call := mkAppN (mkConst timedName levels) bs
-        let lhs := mkApp4 (mkConst ``CatCrypt.Crypto.OracleAdv.Timed.erase) D R α
-          (sndOf D R α call)
+        let lhs := T.eraseE (T.sndOf call)
         let rhs := mkAppN (mkConst c levels) args
         let eType ← mkForallFVars bs (← mkEq lhs rhs)
         let explicit ← bs.mapM fun b => return (← b.fvarId!.getBinderInfo).isExplicit
@@ -734,12 +925,10 @@ partial def deriveTimed (ctx : Ctx) (c : Name) : TermElabM Unit := do
   addTimedDef timedName info.levelParams tType tValue
   -- The erasure theorem.
   let callees := collectTimed (← getEnv) ctx.suffix tValue timedName
-  let simpLemmas : Array Name := #[timedName, c,
-    ``CatCrypt.Crypto.OracleAdv.Timed.erase, ``CatCrypt.Crypto.OracleAdv.Timed.delay,
-    ``CatCrypt.Crypto.OracleAdv.Timed.erase_bind, ``CatCrypt.Crypto.OracleAdv.Timed.erase_simulate,
-    ``CatCrypt.Crypto.OracleAdv.Timed.erase_mapQuery,
-    ``CatCrypt.Crypto.OracleAdv.Timed.erase_snd_ite,
-    ``CatCrypt.Crypto.OracleAdv.Timed.erase_snd_dite] ++ callees
+  -- The erasure lemmas of the tree kinds whose costed trees occur in the costed form.
+  let used := tType.getUsedConstants ++ tValue.getUsedConstants
+  let kindLemmas := (treeKinds.filter fun k => used.contains k.timed).flatMap (·.eraseLemmas)
+  let simpLemmas : Array Name := #[timedName, c] ++ kindLemmas ++ callees
   let ids : Array (TSyntax `ident) := (Array.range nBinders.size).map fun i =>
     mkIdent (Name.mkSimple s!"x{i}")
   let explicitIds := (ids.zip nBinders).filterMap fun (i, e) => if e then some i else none

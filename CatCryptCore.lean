@@ -25,6 +25,7 @@ public import CatCryptCore.Core.Code
 public import CatCryptCore.Core.CodeSequence
 public import CatCryptCore.Core.SPTree
 public import CatCryptCore.Core.SPTreeTimed
+public import CatCryptCore.Core.SPTreeTimedOps
 public import CatCryptCore.Core.StdDoBridge
 public import CatCryptCore.Core.GenHeap
 public import CatCryptCore.Core.GenHeapRandomOracle

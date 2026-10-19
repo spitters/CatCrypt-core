@@ -6,6 +6,7 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Tactics.DeriveTimed
+import CatCryptCore.Core.SPTree
 
 /-!
 # Tests for `derive_timed`
@@ -17,7 +18,10 @@ RSA-KEM (a renaming of queries, a simulation by a lazily sampled table). For eac
 defines the costed form and proves the erasure theorem, whose statement is pinned by an
 `example`. `blocks.timeBound_timed` bounds the time of the derived costed form of the block
 recursion by `ms.length * (a + s + 7) + t + 2`, the shape `ms.length * (1 + c)` of the
-hand-instrumented bound. The last test pins the refusal of a recursive data function without a
+hand-instrumented bound. The computation-tree tests derive costed forms of `SPTree`-valued
+definitions over the `sample`, `get` and `set` nodes, `SPTree.map` and `SPTree.bind`, a
+recursion over `ℕ`, and a tree argument with a continuation, whose derived time is bounded by
+`runThen.stepTime_timed_le`. The last test pins the refusal of a recursive data function without a
 registered cost.
 -/
 
@@ -166,6 +170,72 @@ derive_timed lazyRed
 example {K : Type} [Nonempty K] (A : OracleAdv.Timed ℕ K Bool) :
     (lazyRed.timed A).2.erase = lazyRed A.erase :=
   lazyRed.erase_timed A
+
+/-! ## Computation trees -/
+
+open CatCrypt.Core
+
+/-- One uniform sample over `Fin (2 ^ n)`, then `true`. -/
+noncomputable def wideSample (n : ℕ) : SPTree Bool :=
+  .sample (Fin (2 ^ n)) inferInstance ⟨⟨0, Nat.two_pow_pos n⟩⟩ fun _ => .ret true
+
+derive_timed wideSample
+
+example (n : ℕ) : (wideSample.timed n).2.erase = wideSample n := wideSample.erase_timed n
+
+/-- Read the location `l`, write `upd` of the value back, and return the old value. -/
+def readUpdate (l : Location) (upd : l.ty → l.ty) : SPTree l.ty :=
+  .get l fun v => .set l (upd v) (.ret v)
+
+derive_timed readUpdate
+
+example (l : Location) (upd : l.ty → l.ty) (updCost : l.ty → ℕ) :
+    (readUpdate.timed l upd updCost).2.erase = readUpdate l upd :=
+  readUpdate.erase_timed l upd updCost
+
+/-- A uniform sample of `β`, mapped by `f` and continued with `k`. -/
+noncomputable def sampleMapBind {β γ δ : Type} [Fintype β] [Nonempty β] (f : β → γ)
+    (k : γ → SPTree δ) : SPTree δ :=
+  ((SPTree.sample β inferInstance inferInstance fun b => .ret b).map f).bind k
+
+derive_timed sampleMapBind
+
+example {β γ δ : Type} [Fintype β] [Nonempty β] (f : β → γ) (fCost : β → ℕ)
+    (k : γ → SPTree.Timed δ) (kCost : γ → ℕ) :
+    (sampleMapBind.timed f fCost k kCost).2.erase =
+      sampleMapBind f fun c => (k c).erase :=
+  sampleMapBind.erase_timed f fCost k kCost
+
+/-- `n` uniform samples of `β`, as a list. -/
+noncomputable def samples (β : Type) [Fintype β] [Nonempty β] : ℕ → SPTree (List β)
+  | 0 => .ret []
+  | n + 1 => .sample β inferInstance inferInstance fun b => (samples β n).map (b :: ·)
+
+derive_timed samples
+
+example (β : Type) [Fintype β] [Nonempty β] (n : ℕ) :
+    (samples.timed β n).2.erase = samples β n :=
+  samples.erase_timed β n
+
+/-- The tree `A` followed by `k` on its result. -/
+def runThen {α β : Type} (A : SPTree α) (k : α → SPTree β) : SPTree β := A.bind k
+
+derive_timed runThen
+
+example {α β : Type} (A : SPTree.Timed α) (k : α → SPTree.Timed β) (kCost : α → ℕ) :
+    (runThen.timed A k kCost).2.erase = runThen A.erase fun a => (k a).erase :=
+  runThen.erase_timed A k kCost
+
+/-- With the costs of computing `k a` bounded by `c` and the times of the trees `k a` by `t`,
+the derived costed form of `runThen` has time at most the time of `A` plus `1 + c + t`. -/
+theorem runThen.stepTime_timed_le {α β : Type} (A : SPTree.Timed α) (k : α → SPTree.Timed β)
+    (kCost : α → ℕ) {c t : ℕ} (hc : ∀ a, kCost a ≤ c) (hk : ∀ a, (k a).time ≤ t) :
+    SPTree.Timed.stepTime (runThen.timed A k kCost) ≤ A.time + (1 + c + t) := by
+  refine SPTree.Timed.stepTime_bind_le A _ _ fun a => ?_
+  have := hc a
+  have := hk a
+  simp only [SPTree.Timed.stepTime]
+  omega
 
 /-! ## A refusal -/
 
