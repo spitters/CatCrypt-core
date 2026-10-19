@@ -573,23 +573,34 @@ theorem collision_prob_multi_query_bound (q_gen q_csetpk : ℕ) :
   rw [hLHS, hcast, ← h2A, Nat.cast_mul, Nat.cast_ofNat,
     ENNReal.mul_div_mul_left _ _ (by norm_num) (by norm_num)]
 
-/-! ## Standalone PKEY sdist Building Block -/
+/-! ## PKEY Distinguishing Advantage per Distinguisher -/
 
-/-- **Degenerate: see finding 7 of the vacuity sweep; the hypothesis 
-    `∀ A, pkeyAdvantage N A ≤ ε` ranges over adversaries without a query bound.**
+/-- The PKEY adversary absorbing a distinguisher: it sets the heap to `h₀`, runs `A`
+    against the PKEY oracles and passes the result to the distinguisher `D`. -/
+noncomputable def pkeyDistAdv (A : PKEYOracles → SPComp Bool) (D : Bool → SPComp Bool)
+    (h₀ : Heap) : PKEYOracles → SPComp Bool :=
+  fun O => SPComp.bind (SPComp.initHeap h₀) (fun _ => SPComp.bind (A O) D)
 
-    Standalone PKEY sdist building block.
-    Reusable by any construction that uses the PKEY game.
-
-    Bridges per-adversary advantage bounds (`∀ A, pkeyAdvantage N A ≤ ε`)
-    to categorical sdist (`sdist (PKEY N false) (PKEY N true) ≤ ε`),
-    giving access to PPLs, composition, and tensor bounds. -/
-theorem pkey_sdist (N : @NIKEScheme CT) (ε : ℝ≥0∞)
-    (h : ∀ A, pkeyAdvantage N A ≤ ε) :
-    sdist (PKEY N false) (PKEY N true) ≤ ε :=
-  sdist_oracleGame_le
-    (fun A => PKEY_eq_with_oracles N false A)
-    (fun A => PKEY_eq_with_oracles N true A)
-    h
+/-- Per-distinguisher form of the PKEY distance: for every adversary `A`, distinguisher
+    `D` and initial heap `h₀`, the distinguishing advantage of `D` between `PKEY N false A`
+    and `PKEY N true A` started at `h₀` equals the PKEY switching advantage of the explicit
+    adversary `pkeyDistAdv A D h₀`. Each summand of `sdist (PKEY N false) (PKEY N true)` is
+    therefore a `pkeyAdvantage` of a constructed adversary. -/
+theorem pkey_absDiff_eq_pkeyAdvantage (N : @NIKEScheme CT) (A : PKEYOracles → SPComp Bool)
+    (D : Bool → SPComp Bool) (h₀ : Heap) :
+    absDiff (prTrue (SPComp.bind (PKEY N false A) D) h₀)
+        (prTrue (SPComp.bind (PKEY N true A) D) h₀) =
+      pkeyAdvantage N (pkeyDistAdv A D h₀) := by
+  have hb : ∀ b, prTrue (SPComp.bind (PKEY N b A) D) h₀ =
+      prTrue (PKEY N b (pkeyDistAdv A D h₀)) Heap.empty := by
+    intro b
+    simp only [prTrue]
+    congr 1
+    funext h
+    cases b <;>
+      exact congrArg (· (some (true, h)))
+        (SPComp.initHeap_bind h₀ (SPComp.bind (A _) D) Heap.empty).symm
+  rw [hb false, hb true]
+  rfl
 
 end CatCrypt.Examples.Cryptobox
