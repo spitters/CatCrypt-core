@@ -39,9 +39,23 @@ transactions are `txOf dt log` and the adversary is `F.at (scriptOfD x₀ log)`.
 * `finalLog`, `collFinderE` — the log at the end of the run of an environment against
   `chainSimω ω`, and the collision finder that runs the environment from its heap on the seed of
   the challenge key and searches for a collision in the execution of the final log.
+* `SimEq`, `simTraceFrom` — the specification of a simulated computation of the forger as an
+  equality of runs against the signing oracle, and the simulation of the phases from a state.
+* `simLoop`, `forgerE` — the forger of an environment: it runs the kernel of the environment
+  from its heap against the protocol simulated with the challenge key for party `i`, stops at
+  the first forgery of party `i`, and simulates the remaining phases of the final log.
+* `posFailE` — the failure bound against an environment.
 
 ## Main results
 
+* `callIdx_of_mem_phaseCalls`, `forgeBy_append_iff` — the calls of phase `k` belong to phase
+  `k`, so the forgeries of the first `j` phases of a log ignore what is appended to it.
+* `simLoop_spec` — the probability of a forgery of party `i` on the final log of the run is at
+  most the winning probability of the forger's loop.
+* `prob_forgeE_le`, `prob_collisionE_le`, `prob_slotE_le` — the three terms of `posFailE`.
+* `pos_nsb_securityE` — the failure probability against an environment is at most `posFailE`;
+  `pos_nsb_security_of_env` recovers `pos_nsb_security` at the environment without activations,
+  and `forger_eq_env`, `forger_adv_eq_env` identify `forger` with the zero-round `forgerE`.
 * `chainSimω_step_pure` — the steps of `chainSimω ω` are deterministic.
 * `run_chainSimE` — the run against `chainSimE` is the average over the seed of the runs against
   `chainSimω ω`.
@@ -51,6 +65,376 @@ transactions are `txOf dt log` and the adversary is `F.at (scriptOfD x₀ log)`.
   advantage of `collFinderE` for the constant family of `A`, the transaction selection of the
   protocol and an environment without activations.
 -/
+
+namespace CatCryptCore.Consensus.PoSNSB
+
+open Parameters BlockParameters Corruption Execution
+open CatCrypt.Crypto CatCrypt.Crypto.Signatures CatCrypt.Crypto.Assumptions
+
+/-! ## Simulated phases as equalities of runs -/
+
+section SimEq
+
+variable {Tx Hash : Type} [DecidableEq Tx] [DecidableEq Hash] {np : ℕ} [Corruption (Fin np)]
+  {n Hz : ℕ} {PK SK Sig : Type}
+  (Sch : PSigScheme (Block Tx Hash (Fin np)) PK SK Sig) [hS : Sch.Deterministic]
+  (P : Protocol Tx Hash np n Hz) (A : Adversary Tx Hash np n Hz PK Sig) (i : Fin np)
+  (pk : PK) (ω : Seed Tx Hash np n Hz PK SK) (sk : SK)
+
+/-- The specification of a simulated computation `prog` with a continuation as an equality of
+runs, from the state `Nin`, that should compute the real state `Nout` through the adversary calls
+`calls`. Run `prog k` against the signing oracle of `sk` from a list of queries whose blocks lie in
+the history of `Nin`. If no call forges a block of party `i`, the run is the run of `k Nout` from
+a list of queries whose blocks lie in the history of `Nout`; otherwise the run returns a block
+with a valid signature under `pk` that is neither in the history of `Nin` nor queried. -/
+def SimEq (prog : (GS P ω A → FProg Tx Hash np Sig) → FProg Tx Hash np Sig)
+    (calls : List (CallInput Tx Hash np A.AdvState)) (Nin Nout : GS P ω A) : Prop :=
+  ∀ (k : GS P ω A → FProg Tx Hash np Sig) (l : List (Block Tx Hash (Fin np) × Sig)),
+    (∀ b ∈ l.map Prod.fst, b ∈ hb P A Nin) →
+      ((∀ c ∈ calls, ¬ForgedBy Sch (ω.withKey i (pk, sk)) A i c) →
+          ∃ l' : List (Block Tx Hash (Fin np) × Sig), (∀ b ∈ l'.map Prod.fst, b ∈ hb P A Nout) ∧
+            OracleAdv.run (signOracle Sch sk) (prog k) l =
+              OracleAdv.run (signOracle Sch sk) (k Nout) l') ∧
+      ((∃ c ∈ calls, ForgedBy Sch (ω.withKey i (pk, sk)) A i c) →
+          ∃ (fg : Block Tx Hash (Fin np) × Sig) (l' : List (Block Tx Hash (Fin np) × Sig)),
+            OracleAdv.run (signOracle Sch sk) (prog k) l = PMF.pure (fg, l') ∧
+            Sch.verify pk fg.1 fg.2 = true ∧ fg.1 ∉ hb P A Nin ∧ fg.1 ∉ l'.map Prod.fst)
+
+theorem SimEq.congr_calls
+    {prog : (GS P ω A → FProg Tx Hash np Sig) → FProg Tx Hash np Sig}
+    {calls calls' : List (CallInput Tx Hash np A.AdvState)}
+    {Nin Nout : GS P ω A} (h : SimEq Sch P A i pk ω sk prog calls Nin Nout)
+    (hc : ∀ c, c ∈ calls ↔ c ∈ calls') : SimEq Sch P A i pk ω sk prog calls' Nin Nout :=
+  fun k l hl => ⟨fun hcl => (h k l hl).1 fun c hc' => hcl c ((hc c).1 hc'),
+    fun ⟨c, hc', hf⟩ => (h k l hl).2 ⟨c, (hc c).2 hc', hf⟩⟩
+
+/-- Sequential composition of simulated computations: `prog1` continued by `prog2` on the
+state it reaches. -/
+theorem SimEq.bind
+    {prog1 : (GS P ω A → FProg Tx Hash np Sig) → FProg Tx Hash np Sig}
+    {prog2 : GS P ω A → (GS P ω A → FProg Tx Hash np Sig) → FProg Tx Hash np Sig}
+    {calls1 calls2 : List (CallInput Tx Hash np A.AdvState)} {N0 N1 N2 : GS P ω A}
+    (h1 : SimEq Sch P A i pk ω sk prog1 calls1 N0 N1)
+    (h2 : SimEq Sch P A i pk ω sk (prog2 N1) calls2 N1 N2)
+    (hm01 : ∀ b ∈ hb P A N0, b ∈ hb P A N1) :
+    SimEq Sch P A i pk ω sk (fun k => prog1 fun M => prog2 M k) (calls1 ++ calls2) N0 N2 := by
+  intro k l hl
+  have hx1 := h1 (fun M => prog2 M k) l hl
+  by_cases hf1 : ∃ c ∈ calls1, ForgedBy Sch (ω.withKey i (pk, sk)) A i c
+  · refine ⟨fun hcl => ?_, fun _ => hx1.2 hf1⟩
+    obtain ⟨c, hc, hc'⟩ := hf1
+    exact absurd hc' (hcl c (List.mem_append_left _ hc))
+  · have hf1' : ∀ c ∈ calls1, ¬ForgedBy Sch (ω.withKey i (pk, sk)) A i c :=
+      fun c hc hc' => hf1 ⟨c, hc, hc'⟩
+    obtain ⟨l', hl', hx'⟩ := hx1.1 hf1'
+    have hx2 := h2 k l' hl'
+    refine ⟨fun hcl => ?_, fun hf => ?_⟩
+    · obtain ⟨l'', hl'', he⟩ := hx2.1 fun c hc => hcl c (List.mem_append_right _ hc)
+      exact ⟨l'', hl'', hx'.trans he⟩
+    · have hf2 : ∃ c ∈ calls2, ForgedBy Sch (ω.withKey i (pk, sk)) A i c := by
+        obtain ⟨c, hc, hc'⟩ := hf
+        rcases List.mem_append.1 hc with hc | hc
+        · exact absurd hc' (hf1' c hc)
+        · exact ⟨c, hc, hc'⟩
+      obtain ⟨fg, l'', he, hv, hn1, hnl⟩ := hx2.2 hf2
+      exact ⟨fg, l'', hx'.trans he, hv, fun h => hn1 (hm01 _ h), hnl⟩
+
+/-- A bound by the winning probability through a simulated computation: a probability at most
+`1` that is at most the winning probability of the continuation `k Nout`, from every list of
+queries whose blocks lie in the history of `Nout` when no call forges, is at most the winning
+probability of `prog k`. -/
+theorem SimEq.le_run
+    {prog : (GS P ω A → FProg Tx Hash np Sig) → FProg Tx Hash np Sig}
+    {calls : List (CallInput Tx Hash np A.AdvState)} {Nin Nout : GS P ω A}
+    (hs : SimEq Sch P A i pk ω sk prog calls Nin Nout) (k : GS P ω A → FProg Tx Hash np Sig)
+    (l : List (Block Tx Hash (Fin np) × Sig)) (hl : ∀ b ∈ l.map Prod.fst, b ∈ hb P A Nin)
+    {x : ENNReal} (hx : x ≤ 1)
+    (hk : ∀ l' : List (Block Tx Hash (Fin np) × Sig),
+      (∀ b ∈ l'.map Prod.fst, b ∈ hb P A Nout) →
+      (∀ c ∈ calls, ¬ForgedBy Sch (ω.withKey i (pk, sk)) A i c) →
+      x ≤ ((OracleAdv.run (signOracle Sch sk) (k Nout) l').map
+        fun y => Sch.verify pk y.1.1 y.1.2 && !(y.2.map Prod.fst).contains y.1.1) true) :
+    x ≤ ((OracleAdv.run (signOracle Sch sk) (prog k) l).map
+      fun y => Sch.verify pk y.1.1 y.1.2 && !(y.2.map Prod.fst).contains y.1.1) true := by
+  by_cases hF : ∃ c ∈ calls, ForgedBy Sch (ω.withKey i (pk, sk)) A i c
+  · obtain ⟨fg, l', hrun, hv, -, hnl⟩ := (hs k l hl).2 hF
+    have hw : (Sch.verify pk fg.1 fg.2 && !(l'.map Prod.fst).contains fg.1) = true := by
+      simpa [hv] using hnl
+    rw [hrun, PMF.pure_map, hw, PMF.pure_apply, if_pos rfl]
+    exact hx
+  · have hF' : ∀ c ∈ calls, ¬ForgedBy Sch (ω.withKey i (pk, sk)) A i c :=
+      fun c hc hc' => hF ⟨c, hc, hc'⟩
+    obtain ⟨l', hl', hrun⟩ := (hs k l hl).1 hF'
+    rw [hrun]
+    exact hk l' hl' hF'
+
+theorem simEq_simStep (bake : Bool) (p : Fin np) (M : GS P ω A) :
+    SimEq Sch P A i pk ω sk (simStep Sch P A i pk ω bake p M)
+      (stepCalls P (ω.withKey i (pk, sk)) A bake (p, M)) M
+      (sStep Sch P A (ω.withKey i (pk, sk)) bake p M) := by
+  let _ := ω.params P; let _ := ω.bparams P
+  have hhist : (stepCall P A ω bake p M).hist = M.history := by
+    cases bake <;> rfl
+  intro k l hl
+  cases h : ((M.state_map p).isSome && is_corrupt p)
+  · have hcalls : stepCalls P (ω.withKey i (pk, sk)) A bake (p, M) = [] := by
+      simp only [stepCalls]
+      split_ifs with hh
+      · exact absurd (h.symm.trans hh) (by decide)
+      · rfl
+    rw [hcalls]
+    refine ⟨fun _ => ⟨l, fun b hb' => hb_sStep Sch P A (ω.withKey i (pk, sk)) bake p M b (hl b hb'),
+      ?_⟩, ?_⟩
+    · simp only [simStep, h, Bool.false_eq_true, if_false]
+      rw [← sStep_noncall Sch P A i pk ω sk bake p M h]
+    · rintro ⟨c, hc, _⟩; simp at hc
+  · have hcalls : stepCalls P (ω.withKey i (pk, sk)) A bake (p, M) =
+        [stepCall P A ω bake p M] := by
+      cases bake <;>
+      · simp only [stepCalls, stepCall, Bool.false_eq_true, if_false, if_true]
+        split_ifs with hh
+        · rfl
+        · exact absurd h hh
+    rw [hcalls]
+    obtain ⟨log, hr, hlog⟩ := run_simAdv Sch A i pk ω sk (stepCall P A ω bake p M) l
+    have hl' : ∀ b ∈ l.map Prod.fst, b ∈ (stepCall P A ω bake p M).hist.map get_block := by
+      rw [hhist]; exact hl
+    by_cases hF : ForgedBy Sch (ω.withKey i (pk, sk)) A i (stepCall P A ω bake p M)
+    · have hF' := hF
+      rw [ForgedBy, ← simPks_eq i pk ω sk] at hF'
+      obtain ⟨m, σ, hfs⟩ := findForgery_isSome Sch hF'
+      obtain ⟨hv, hm⟩ := findForgery_some Sch hfs
+      refine ⟨fun hcl => absurd hF (hcl _ (List.mem_singleton_self _)),
+        fun _ => ⟨(m, σ), l ++ log, ?_, ?_, ?_, ?_⟩⟩
+      · simp only [simStep, h, if_true, OracleAdv.run_bind, hr, PMF.pure_bind, hfs,
+          OracleAdv.run_ret]
+      · simpa [simPks] using hv
+      · simpa [hb, hhist] using hm
+      · intro hm'
+        simp only [List.map_append, List.mem_append] at hm'
+        rcases hm' with hm' | hm'
+        · exact hm (hl' m hm')
+        · exact hm (hlog m hm')
+    · have hfn : findForgery Sch i (simPks i pk ω) (stepCall P A ω bake p M)
+          (advRaw Sch (ω.withKey i (pk, sk)) A (stepCall P A ω bake p M)).1 = none := by
+        refine findForgery_eq_none Sch ?_
+        rw [simPks_eq i pk ω sk]
+        exact hF
+      refine ⟨fun _ => ⟨l ++ log, ?_, ?_⟩,
+        fun ⟨c, hc, hc'⟩ => absurd (List.mem_singleton.1 hc ▸ hc') hF⟩
+      · intro b hb'
+        refine hb_sStep Sch P A (ω.withKey i (pk, sk)) bake p M b ?_
+        simp only [List.map_append, List.mem_append] at hb'
+        rcases hb' with hb' | hb'
+        · exact hl b hb'
+        · simpa [hb, hhist] using hlog b hb'
+      · simp only [simStep, h, if_true, OracleAdv.run_bind, hr, PMF.pure_bind, hfn]
+        rw [← corruptStep_eq Sch P A i pk ω sk bake p M h]
+
+theorem simEq_simFold (bake : Bool) (N : GS P ω A) (l : List (Fin np)) :
+    SimEq Sch P A i pk ω sk (simFold Sch P A i pk ω bake N l)
+      ((foldrCalls (sStep Sch P A (ω.withKey i (pk, sk)) bake) N l).flatMap
+        (stepCalls P (ω.withKey i (pk, sk)) A bake)) N
+      (l.foldr (sStep Sch P A (ω.withKey i (pk, sk)) bake) N) := by
+  induction l with
+  | nil =>
+    intro k lg hl
+    refine ⟨fun _ => ⟨lg, hl, rfl⟩, ?_⟩
+    rintro ⟨c, hc, _⟩; simp [foldrCalls] at hc
+  | cons p ps ih =>
+    have h := SimEq.bind Sch P A i pk ω sk (prog2 := fun M => simStep Sch P A i pk ω bake p M) ih
+      (simEq_simStep Sch P A i pk ω sk bake p
+        (ps.foldr (sStep Sch P A (ω.withKey i (pk, sk)) bake) N))
+      (hb_foldr Sch P A (ω.withKey i (pk, sk)) bake N ps)
+    refine SimEq.congr_calls Sch P A i pk ω sk h fun c => ?_
+    simp only [foldrCalls, List.flatMap_cons, List.mem_append]
+    exact or_comm
+
+theorem simEq_simPhase (N : GS P ω A) :
+    SimEq Sch P A i pk ω sk (simPhase Sch P A i pk ω N)
+      (phaseCalls Sch P (ω.withKey i (pk, sk)) A N) N
+      (sPhase Sch P (ω.withKey i (pk, sk)) A false N) := by
+  let _ := ω.params P; let _ := ω.bparams P
+  rw [sPhase_def]
+  unfold simPhase phaseCalls
+  cases hp : N.progress with
+  | Ready =>
+    dsimp only
+    intro k lg hl
+    exact simEq_simFold Sch P A i pk ω sk false N N.exec_order _ lg hl
+  | Delivered =>
+    dsimp only
+    intro k lg hl
+    exact simEq_simFold Sch P A i pk ω sk true N N.exec_order _ lg hl
+  | Baked =>
+    dsimp only
+    intro k lg hl
+    refine ⟨fun _ => ⟨lg, hl, rfl⟩, ?_⟩
+    rintro ⟨c, hc, _⟩; simp at hc
+
+/-- `m` phases in the simulation from the state `N`, continued by `k` on the state after them. -/
+def simTraceFrom : ℕ → GS P ω A → (GS P ω A → FProg Tx Hash np Sig) → FProg Tx Hash np Sig
+  | 0, N, k => k N
+  | m + 1, N, k => simPhase Sch P A i pk ω N fun M => simTraceFrom m M k
+
+theorem simTraceFrom_succ' (m : ℕ) (N : GS P ω A) (k : GS P ω A → FProg Tx Hash np Sig) :
+    simTraceFrom Sch P A i pk ω (m + 1) N k =
+      simTraceFrom Sch P A i pk ω m N fun M => simPhase Sch P A i pk ω M k := by
+  induction m generalizing N with
+  | zero => rfl
+  | succ m ih =>
+    change simPhase Sch P A i pk ω N (fun M => simTraceFrom Sch P A i pk ω (m + 1) M k) = _
+    simp only [ih]
+    rfl
+
+/-- The first `j` phases in the simulation are the `j` phases from the initial state. -/
+theorem simTrace_eq_from (j : ℕ) (k : GS P ω A → FProg Tx Hash np Sig) :
+    simTrace Sch P A i pk ω j k =
+      simTraceFrom Sch P A i pk ω j (sTrace Sch P ω A false 0) k := by
+  induction j generalizing k with
+  | zero => rfl
+  | succ j ih =>
+    change simTrace Sch P A i pk ω j (fun M => simPhase Sch P A i pk ω M k) = _
+    rw [ih, simTraceFrom_succ']
+
+theorem simEq_simTraceFrom (j m : ℕ) :
+    SimEq Sch P A i pk ω sk
+      (simTraceFrom Sch P A i pk ω m (sTrace Sch P (ω.withKey i (pk, sk)) A false j))
+      ((List.range' j m).flatMap fun k =>
+        phaseCalls Sch P (ω.withKey i (pk, sk)) A (sTrace Sch P (ω.withKey i (pk, sk)) A false k))
+      (sTrace Sch P (ω.withKey i (pk, sk)) A false j)
+      (sTrace Sch P (ω.withKey i (pk, sk)) A false (j + m)) := by
+  induction m generalizing j with
+  | zero =>
+    intro k l hl
+    refine ⟨fun _ => ⟨l, hl, rfl⟩, ?_⟩
+    rintro ⟨c, hc, _⟩; simp at hc
+  | succ m ih =>
+    have h1 := simEq_simPhase Sch P A i pk ω sk (sTrace Sch P (ω.withKey i (pk, sk)) A false j)
+    rw [← sTrace_succ] at h1
+    have h := SimEq.bind Sch P A i pk ω sk (prog2 := simTraceFrom Sch P A i pk ω m) h1 (ih (j + 1))
+      (fun b hb' => by
+        rw [sTrace_succ]
+        exact hb_sPhase Sch P A (ω.withKey i (pk, sk)) _ b hb')
+    rw [show j + 1 + m = j + (m + 1) by omega] at h
+    refine SimEq.congr_calls Sch P A i pk ω sk h fun c => ?_
+    simp only [List.range'_succ, List.flatMap_cons, List.mem_append]
+
+/-- The adversary calls of the first `a + m` phases are those of the first `a` phases followed
+by those of the phases `a, …, a + m - 1`. -/
+theorem traceCalls_add (a m : ℕ) :
+    traceCalls Sch P ω A (a + m) = traceCalls Sch P ω A a ++
+      (List.range' a m).flatMap fun k => phaseCalls Sch P ω A (sTrace Sch P ω A false k) := by
+  induction m with
+  | zero => simp
+  | succ m ih =>
+    rw [← Nat.add_assoc, traceCalls_succ, ih, List.range'_concat, List.flatMap_append,
+      List.append_assoc]
+    simp
+
+end SimEq
+
+/-! ## The phase of an adversary call -/
+
+section CallIdx
+
+variable {Tx Hash : Type} [DecidableEq Tx] [DecidableEq Hash] {np : ℕ} [Corruption (Fin np)]
+  {n Hz : ℕ} {PK SK Sig : Type}
+  (Sch : PSigScheme (Block Tx Hash (Fin np)) PK SK Sig) [hS : Sch.Deterministic]
+
+/-- The states at which a fold applies its steps satisfy every invariant of the steps. -/
+theorem mem_foldrCalls_inv {α β : Type*} (g : α → β → β) (I : β → Prop)
+    (hI : ∀ a b, I b → I (g a b)) (N : β) (hN : I N) :
+    ∀ (l : List α), ∀ x ∈ foldrCalls g N l, I x.2 := by
+  have hf : ∀ l : List α, I (l.foldr g N) := by
+    intro l
+    induction l with
+    | nil => exact hN
+    | cons a l ih => exact hI _ _ ih
+  intro l
+  induction l with
+  | nil => simp [foldrCalls]
+  | cons a l ih =>
+    intro x hx
+    simp only [foldrCalls, List.mem_cons] at hx
+    rcases hx with rfl | hx
+    · exact hf l
+    · exact ih x hx
+
+/-- **The calls of phase `k` belong to phase `k`.** Every adversary call of phase `k` of the
+real execution has the phase `callIdx c = k`. -/
+theorem callIdx_of_mem_phaseCalls (P : Protocol Tx Hash np n Hz) (ω : Seed Tx Hash np n Hz PK SK)
+    (A : Adversary Tx Hash np n Hz PK Sig) (k : ℕ) :
+    ∀ c ∈ phaseCalls Sch P ω A (sTrace Sch P ω A false k), callIdx c = k := by
+  let _ := ω.params P; let _ := ω.bparams P
+  obtain ⟨hT, hp⟩ := sTrace_clock Sch P ω A false k
+  set N := sTrace Sch P ω A false k with hN
+  intro c hc
+  unfold phaseCalls at hc
+  unfold progOf at hp
+  by_cases h0 : k % 3 = 0
+  · rw [if_pos h0] at hp
+    rw [hp] at hc
+    obtain ⟨x, hx, hcx⟩ := List.mem_flatMap.1 hc
+    have ht : x.2.t_now = N.t_now := mem_foldrCalls_inv _ (fun M => M.t_now = N.t_now)
+      (fun p M hM => (sRcv_t_now Sch P ω A false p M).trans hM) N rfl _ x hx
+    unfold stepCalls at hcx
+    by_cases hh : ((x.2.state_map x.1).isSome && is_corrupt x.1) = true
+    · simp only [hh, if_true, Bool.false_eq_true, if_false, List.mem_singleton] at hcx
+      subst hcx
+      have hf : (fetch_msgs x.1 x.2).2.t_now = x.2.t_now := by
+        simp [fetch_msgs, rmv_zero_msgs]
+      simp only [callIdx, rcvCall, Option.isSome_some, if_true, hf, ht, hT]
+      omega
+    · simp [hh] at hcx
+  · by_cases h1 : k % 3 = 1
+    · rw [if_neg h0, if_pos h1] at hp
+      rw [hp] at hc
+      obtain ⟨x, hx, hcx⟩ := List.mem_flatMap.1 hc
+      have ht : x.2.t_now = N.t_now := mem_foldrCalls_inv _ (fun M => M.t_now = N.t_now)
+        (fun p M hM => (sBake_t_now Sch P ω A false p M).trans hM) N rfl _ x hx
+      unfold stepCalls at hcx
+      by_cases hh : ((x.2.state_map x.1).isSome && is_corrupt x.1) = true
+      · simp only [hh, if_true, List.mem_singleton] at hcx
+        subst hcx
+        simp only [callIdx, bakeCall, Option.isSome_none, Bool.false_eq_true, if_false, ht, hT]
+        omega
+      · simp [hh] at hcx
+    · rw [if_neg h0, if_neg h1] at hp
+      rw [hp] at hc
+      simp at hc
+
+variable (P : Protocol Tx Hash np n Hz) (ω : Seed Tx Hash np n Hz PK SK)
+  {X S : Type} (F : AdvFamily X S Tx Hash np n Hz PK Sig)
+
+/-- **Causality of the forgeries.** For a log with at least `j` phase entries, the forgeries of
+party `i` on the adversary calls of the first `j` phases of the execution of an extension of the
+log are those of the execution of the log. -/
+theorem forgeBy_append_iff (i : Fin np) (x₀ : X) (d : Slot → Fin np → Tx) {j : ℕ}
+    {log : List (LogEvOf X Tx Hash np Hz)} (hj : j ≤ (steps log).length)
+    (l : List (LogEvOf X Tx Hash np Hz)) :
+    (∃ c ∈ traceCalls Sch (P.withTx (txOf d (log ++ l))) ω (F.at (scriptOfD x₀ (log ++ l))) j,
+        ForgedBy Sch ω (F.at (scriptOfD x₀ (log ++ l))) i c) ↔
+      ∃ c ∈ traceCalls Sch (P.withTx (txOf d log)) ω (F.at (scriptOfD x₀ log)) j,
+        ForgedBy Sch ω (F.at (scriptOfD x₀ log)) i c := by
+  have hσ : ∀ k < j, scriptOfD x₀ (log ++ l) k = scriptOfD x₀ log k :=
+    fun k hk => scriptOfD_append x₀ (by omega) l
+  have ht : ∀ sl p, 3 * (sl - 1) + 1 < j → txOf d (log ++ l) sl p = txOf d log sl p :=
+    fun sl p hsl => txOf_append d (by omega) l p
+  rw [traceCalls_congr_of_agree Sch P ω F j (txOf d (log ++ l)) (txOf d log)
+    (scriptOfD x₀ (log ++ l)) (scriptOfD x₀ log) hσ ht]
+  refine exists_congr fun c => and_congr_right fun hc => ?_
+  have hci : callIdx c < j := by
+    unfold traceCalls at hc
+    obtain ⟨k, hk, hck⟩ := List.mem_flatMap.1 hc
+    rw [callIdx_of_mem_phaseCalls Sch (P.withTx (txOf d log)) ω (F.at (scriptOfD x₀ log)) k c hck]
+    exact List.mem_range.1 hk
+  unfold ForgedBy
+  rw [advRaw_at_congr Sch ω F c (hσ _ hci)]
+
+end CallIdx
+
+end CatCryptCore.Consensus.PoSNSB
 
 namespace CatCryptCore.Consensus.UC.ChainEnv
 
@@ -303,6 +687,752 @@ theorem collFinder_adv_eq_env (A : Adversary Tx Hash np n Hz PK Sig) (μ : PMF (
   rw [prTrue_bind_atHeap, SPComp.pure_bind]
   simp only [ForkingLemma.prTrue_pure_bool]
   rfl
+
+/-! ## The steps of the ideal clock and network -/
+
+/-- The states of the ideal clock and network. -/
+abbrev CNS := CNSt Unit Unit × Trace (CNSt Unit Unit) (CNEv Unit Unit) (CNOut Unit Unit) × Bool
+
+theorem cnStep_pure (Δ : ℕ) (q : CNS) (r : CNEv Unit Unit) :
+    ∃ y, (ideal (clockNetF (M := Unit) H₁ Δ) (clockNet H₁ Δ).proto).step q r = SPComp.pure y := by
+  simp only [ideal, DetFunc.proto, SPComp.pure_bind]
+  exact ⟨_, rfl⟩
+
+/-- The next state and the output of the ideal clock and network on the request `r`. -/
+noncomputable def cnNext (Δ : ℕ) (q : CNS) (r : CNEv Unit Unit) : CNS × CNOut Unit Unit :=
+  Classical.choose (cnStep_pure Δ q r)
+
+theorem cnStep_eq (Δ : ℕ) (q : CNS) (r : CNEv Unit Unit) :
+    (ideal (clockNetF (M := Unit) H₁ Δ) (clockNet H₁ Δ).proto).step q r =
+      SPComp.pure (cnNext Δ q r) :=
+  Classical.choose_spec (cnStep_pure Δ q r)
+
+/-- The clock request of the input `e` after `j` phase entries: a phase entry signals the end of
+the round after a baking phase (`progOf`); the other inputs read the clock. -/
+def reqJ (j : ℕ) : EnvEv Tx Hash np Hz X → CNEv Unit Unit
+  | .inr (.step _) => if progOf j = .Baked then .inl ((), .signal) else .inl ((), .read)
+  | _ => .inl ((), .read)
+
+/-- The clock request depends only on the number of phase entries. -/
+theorem reqOf_eq (ω : Seed Tx Hash np n Hz PK SK) (s : PStE Tx Hash np n Hz PK SK X)
+    (e : EnvEv Tx Hash np Hz X) : reqOf P Sch F x₀ dt ω s e = reqJ s.2.2.1 e := by
+  rcases e with e | (x | d)
+  · rfl
+  · simp only [reqOf, reqJ, clockReq, (sTrace_clock Sch _ ω _ false s.2.2.1).2]
+  · rfl
+
+/-- **The step for a fixed seed.** A step of `chainSimω ω` stores `pstNext` for the seed of the
+state (`ω` for a state without seed) and the next state of the clock and network on the request
+`reqJ`, and outputs the clock round, the view and the leakage of the new state. -/
+theorem chainSimω_step_eq (K Δ : ℕ) (ω : Seed Tx Hash np n Hz PK SK)
+    (s : SimStE Tx Hash np n Hz PK SK X) (e : EnvEv Tx Hash np Hz X) :
+    (chainSimω P Sch F x₀ dt Tree K Δ ω).step s e = SPComp.pure
+      ((pstNext P Sch F x₀ dt Tree K (s.1.1.getD ω) s.1 e,
+          (cnNext Δ s.2 (reqJ s.1.2.2.1 e)).1),
+        (((cnNext Δ s.2 (reqJ s.1.2.2.1 e)).2.1,
+            (pstNext P Sch F x₀ dt Tree K (s.1.1.getD ω) s.1 e).2.2.2.1),
+          (pstNext P Sch F x₀ dt Tree K (s.1.1.getD ω) s.1 e).2.2.2.2)) := by
+  obtain ⟨⟨o, r⟩, q⟩ := s
+  cases o <;>
+  · simp only [chainSimω, Hybrid.withSub, chainHybridE, seedOf, SPComp.pure_bind, reqOf_eq,
+      cnStep_eq, Option.getD_none, Option.getD_some]
+
+/-- The leakage of a seed does not involve the key pairs. -/
+theorem leakOf_withKey (ω : Seed Tx Hash np n Hz PK SK) (i : Fin np) (kp : PK × SK)
+    (e : EnvEv Tx Hash np Hz X) : leakOf (ω.withKey i kp) e = leakOf ω e := by
+  rcases e with e | (x | d) <;> rfl
+
+/-! ## The views computed from the states -/
+
+/-- The positions at a state of the execution of the seed `ω`: the chain the local tree of party
+`p` selects at the previous slot, and for the observer `none` the honest tree chain. -/
+def posOf (ω : Seed Tx Hash np n Hz PK SK)
+    (N : @GlobalState Tx Hash (Fin np) S (ω.params P) (ω.bparams P)) :
+    Option (Fin np) → List (Block Tx Hash (Fin np))
+  | none => letI := ω.params P; letI := ω.bparams P; honest_tree_chain (Tree ω.L ω.f) N
+  | some p => letI := ω.params P; letI := ω.bparams P
+      (N.state_map p).elim [] fun l => l.tT.bestChain (N.t_now - 1) l.tree
+
+/-- The view after a phase that reaches the state `N`, from the view `v` of the previous phase:
+the slot of `N`, the trees of `v` extended by the positions at `N`, and the positions at `N`. -/
+def vNext (ω : Seed Tx Hash np n Hz PK SK) (v : TreeView (Option (Fin np)) (Block Tx Hash (Fin np)))
+    (N : @GlobalState Tx Hash (Fin np) S (ω.params P) (ω.bparams P)) :
+    TreeView (Option (Fin np)) (Block Tx Hash (Fin np)) where
+  round := letI := ω.params P; letI := ω.bparams P; N.t_now
+  tree o := v.tree o ++ posOf P Tree ω N o
+  pos := posOf P Tree ω N
+  fin _ := []
+
+/-- The view `vNext` does not involve the key pairs of the seed. -/
+theorem vNext_withKey (ω : Seed Tx Hash np n Hz PK SK) (i : Fin np) (kp : PK × SK)
+    (v : TreeView (Option (Fin np)) (Block Tx Hash (Fin np)))
+    (N : @GlobalState Tx Hash (Fin np) S (ω.params P) (ω.bparams P)) :
+    vNext P Tree (ω.withKey i kp) v N = vNext P Tree ω v N := rfl
+
+theorem posAt_eq_posOf (t : Slot → Fin np → Tx) (σ : ℕ → X) (ω : Seed Tx Hash np n Hz PK SK)
+    (j : ℕ) (o : Option (Fin np)) :
+    posAt (P.withTx t) Sch (F.at σ) Tree ω j o =
+      posOf P Tree ω (sTrace Sch (P.withTx t) ω (F.at σ) false j) o := by
+  cases o <;> rfl
+
+/-- The view after `j` phases of a log with at least `j` phase entries ignores what is appended
+to the log. -/
+theorem viewE_append (K : ℕ) (ω : Seed Tx Hash np n Hz PK SK) {j : ℕ}
+    {log : List (LogEvOf X Tx Hash np Hz)} (hj : j ≤ (steps log).length)
+    (l : List (LogEvOf X Tx Hash np Hz)) :
+    viewE P Sch F x₀ dt Tree K ω (log ++ l) j = viewE P Sch F x₀ dt Tree K ω log j := by
+  have h := sTrace_append_of_le Sch P ω F false x₀ dt hj l
+  have hp : ∀ k ≤ j, ∀ o, posAt (P.withTx (txOf dt (log ++ l))) Sch
+      (F.at (scriptOfD x₀ (log ++ l))) Tree ω k o =
+        posAt (P.withTx (txOf dt log)) Sch (F.at (scriptOfD x₀ log)) Tree ω k o := by
+    intro k hk o
+    rw [posAt_eq_posOf, posAt_eq_posOf, h k hk]
+  unfold viewE phaseView
+  congr 1
+  · unfold roundAt
+    rw [h _ (min_le_left _ _)]
+  · funext o
+    exact List.flatMap_congr fun k hk => hp k (by have := List.mem_range.1 hk; omega) o
+  · funext o
+    exact hp _ (min_le_left _ _) o
+
+/-- Before phase `K`, the view of the next phase of an extended log is `vNext` of the view of the
+log and the state of the next phase. -/
+theorem viewE_succ (K : ℕ) (ω : Seed Tx Hash np n Hz PK SK) {j : ℕ} (hjK : j < K)
+    {log : List (LogEvOf X Tx Hash np Hz)} (hj : j ≤ (steps log).length)
+    (l : List (LogEvOf X Tx Hash np Hz)) :
+    viewE P Sch F x₀ dt Tree K ω (log ++ l) (j + 1) =
+      vNext P Tree ω (viewE P Sch F x₀ dt Tree K ω log j)
+        (sTrace Sch (P.withTx (txOf dt (log ++ l))) ω (F.at (scriptOfD x₀ (log ++ l))) false
+          (j + 1)) := by
+  rw [← viewE_append P Sch F x₀ dt Tree K ω hj l]
+  unfold viewE
+  rw [phaseView_succ (P.withTx (txOf dt (log ++ l))) Sch (F.at (scriptOfD x₀ (log ++ l))) Tree K
+    ω hjK]
+  rfl
+
+/-- From phase `K` on, the view of an extended log does not change. -/
+theorem viewE_succ_of_le (K : ℕ) (ω : Seed Tx Hash np n Hz PK SK) {j : ℕ} (hKj : K ≤ j)
+    {log : List (LogEvOf X Tx Hash np Hz)} (hj : j ≤ (steps log).length)
+    (l : List (LogEvOf X Tx Hash np Hz)) :
+    viewE P Sch F x₀ dt Tree K ω (log ++ l) (j + 1) = viewE P Sch F x₀ dt Tree K ω log j := by
+  rw [← viewE_append P Sch F x₀ dt Tree K ω hj l]
+  unfold viewE
+  rw [phaseView_succ_of_le (P.withTx (txOf dt (log ++ l))) Sch (F.at (scriptOfD x₀ (log ++ l)))
+    Tree K ω hKj]
+
+/-- The view of the initial phase is `vNext` of the empty view and the initial state. -/
+theorem viewE_zero (K : ℕ) (ω : Seed Tx Hash np n Hz PK SK)
+    (log : List (LogEvOf X Tx Hash np Hz)) :
+    viewE P Sch F x₀ dt Tree K ω log 0 =
+      vNext P Tree ω initView
+        (sTrace Sch (P.withTx (txOf dt log)) ω (F.at (scriptOfD x₀ log)) false 0) := by
+  unfold viewE phaseView vNext
+  simp only [Nat.zero_min, zero_add, List.range_one, List.flatMap_singleton, posAt_eq_posOf]
+  rfl
+
+/-! ## The forger of an environment -/
+
+/-- The losing output of a forger: query the genesis block and output it with its signature. -/
+def loseProg : FProg Tx Hash np Sig := .query P.GB fun σ => .ret (P.GB, σ)
+
+/-- The forger's simulation of the input `e` after the log `log` with `j` phase entries, the
+view `v` and the state `N`, continued by `k` on the next view and state: a phase entry before
+phase `K` simulates the next phase of the extended log with key `pk` for party `i` and stops with
+the first forgery of party `i`; the other inputs keep the view and the state. -/
+def simEv (K : ℕ) (i : Fin np) (pk : PK) (ω : Seed Tx Hash np n Hz PK SK)
+    (log : List (LogEvOf X Tx Hash np Hz)) (j : ℕ)
+    (v : TreeView (Option (Fin np)) (Block Tx Hash (Fin np)))
+    (N : @GlobalState Tx Hash (Fin np) S (ω.params P) (ω.bparams P)) (e : EnvEv Tx Hash np Hz X)
+    (k : TreeView (Option (Fin np)) (Block Tx Hash (Fin np)) →
+      @GlobalState Tx Hash (Fin np) S (ω.params P) (ω.bparams P) → FProg Tx Hash np Sig) :
+    FProg Tx Hash np Sig :=
+  match e with
+  | .inr (.step x) =>
+    if j < K then
+      simPhase Sch (P.withTx (txOf dt (log ++ [.inr (.step x)])))
+        (F.at (scriptOfD x₀ (log ++ [.inr (.step x)]))) i pk ω N fun N' => k (vNext P Tree ω v N') N'
+    else k v N
+  | _ => k v N
+
+theorem phaseNext_of_stepOf_none (j : ℕ) (e : EnvEv Tx Hash np Hz X) (he : stepOf e = none) :
+    phaseNext j e = j := by
+  rcases e with e | (x | d)
+  · rfl
+  · simp [stepOf] at he
+  · rfl
+
+/-- An input that is not a phase entry keeps the view and the state. -/
+theorem simEv_of_stepOf_none {K : ℕ} {i : Fin np} {pk : PK} {ω : Seed Tx Hash np n Hz PK SK}
+    {log : List (LogEvOf X Tx Hash np Hz)} {j : ℕ}
+    {v : TreeView (Option (Fin np)) (Block Tx Hash (Fin np))}
+    {N : @GlobalState Tx Hash (Fin np) S (ω.params P) (ω.bparams P)} (e : EnvEv Tx Hash np Hz X)
+    {k : TreeView (Option (Fin np)) (Block Tx Hash (Fin np)) →
+      @GlobalState Tx Hash (Fin np) S (ω.params P) (ω.bparams P) → FProg Tx Hash np Sig}
+    (he : stepOf e = none) : simEv P Sch F x₀ dt Tree K i pk ω log j v N e k = k v N := by
+  rcases e with e | (x | d)
+  · rfl
+  · simp [stepOf] at he
+  · rfl
+
+/-- **The forger's loop.** With `m` activations left, from the state `z` of the kernel of the
+environment `Z` at the heap `h`, the log `log` with `j` phase entries, the view `v`, the state `q`
+of the clock and network and the simulated state `N`: draw the next input `e` of `Z`, simulate it
+(`simEv`), give `Z` the output of the protocol, and continue. After the last activation it
+simulates the remaining phases up to `K` of the final log and loses unless it found a forgery. -/
+noncomputable def simLoop (K Δ : ℕ) (i : Fin np) (pk : PK) (ω : Seed Tx Hash np n Hz PK SK)
+    {ζ : Type} (Z : Strat ζ (EnvEv Tx Hash np Hz X) (EnvOut Tx Hash np)) :
+    ℕ → ζ → Heap → List (LogEvOf X Tx Hash np Hz) → ℕ →
+      TreeView (Option (Fin np)) (Block Tx Hash (Fin np)) → CNS →
+      @GlobalState Tx Hash (Fin np) S (ω.params P) (ω.bparams P) → FProg Tx Hash np Sig
+  | 0, _, _, log, j, _, _, N =>
+    simTraceFrom Sch (P.withTx (txOf dt log)) (F.at (scriptOfD x₀ log)) i pk ω (K - j) N
+      fun _ => loseProg P
+  | m + 1, z, h, log, j, v, q, N =>
+    .rand (Z.next z h) fun o => match o with
+      | none => loseProg P
+      | some ((z₁, e), h₁) =>
+        simEv P Sch F x₀ dt Tree K i pk ω log j v N e fun v' N' =>
+          .rand (Z.obs z₁ (((cnNext Δ q (reqJ j e)).2.1, v'), leakOf ω e) h₁) fun o' =>
+            match o' with
+            | none => loseProg P
+            | some (z₂, h₂) =>
+              simLoop K Δ i pk ω Z m z₂ h₂ (log ++ [e]) (phaseNext j e) v'
+                (cnNext Δ q (reqJ j e)).1 N'
+
+/-- **The forger of an environment.** The EUF-CMA adversary obtained from the environment `Z`
+and the party `i`: on the verification key `pk` it draws a seed from `seedDist Sch H cd` and runs
+the kernel of `Z` from its heap against the protocol simulated with key `pk` for party `i`
+(`simLoop`), and outputs the first forgery of party `i`. -/
+noncomputable def forgerE (μ : PMF (Option (Fin np))) (W K Δ : ℕ) {ζ : Type}
+    (Z : Env (Strat ζ (EnvEv Tx Hash np Hz X) (EnvOut Tx Hash np)) ζ) (i : Fin np) (pk : PK) :
+    FProg Tx Hash np Sig :=
+  .rand (seedDist Sch H cd μ P.h0 W n) fun ω =>
+    simLoop P Sch F x₀ dt Tree K Δ i pk ω Z.input Z.input.rounds Z.input.init Z.heap [] 0
+      (vNext P Tree ω initView (sTrace Sch (P.withTx (txOf dt ([] : List (LogEvOf X Tx Hash np Hz))))
+        ω (F.at (scriptOfD x₀ ([] : List (LogEvOf X Tx Hash np Hz)))) false 0))
+      (ideal (clockNetF (M := Unit) H₁ Δ) (clockNet H₁ Δ).proto).init
+      (sTrace Sch (P.withTx (txOf dt ([] : List (LogEvOf X Tx Hash np Hz)))) ω
+        (F.at (scriptOfD x₀ ([] : List (LogEvOf X Tx Hash np Hz)))) false 0)
+
+/-! ## The forger simulates the run of the environment -/
+
+/-- A bind after `c` accepts from the heap `h` with at most the probability that an oracle
+adversary that samples from `c h` produces an accepted output, when every continuation of the
+bind is dominated by the corresponding continuation of the adversary. -/
+theorem prTrue_bind_le_run_rand {α D R β σO : Type} (c : SPComp α) (Kr : α → SPComp Bool)
+    (h : Heap) (O : σO → D → PMF (R × σO)) (kont : Option (α × Heap) → OracleAdv D R β)
+    (l : σO) (w : β × σO → Bool)
+    (hk : ∀ a h', prTrue (Kr a) h' ≤ ((OracleAdv.run O (kont (some (a, h'))) l).map w) true) :
+    prTrue (SPComp.bind c Kr) h ≤ ((OracleAdv.run O (.rand (c h) kont) l).map w) true := by
+  rw [prTrue_bind_eq_weighted, OracleAdv.run_rand, PMF.map_bind, PMF.bind_apply]
+  refine ENNReal.tsum_le_tsum fun o => ?_
+  rcases o with _ | ⟨a, h'⟩
+  · simp
+  · gcongr
+    exact hk a h'
+
+/-- The invariant of the forger along a run against `chainSimω ω`: the log has `j` phase
+entries, `v` is the view of the log after `j` phases, `N` is the state of its execution after
+`min j K` phases, the blocks of the signing queries `l` lie in the history of `N`, and no
+adversary call of these phases forges a block of party `i`. -/
+def SimInv (K : ℕ) (i : Fin np) (ω : Seed Tx Hash np n Hz PK SK)
+    (log : List (LogEvOf X Tx Hash np Hz)) (j : ℕ)
+    (v : TreeView (Option (Fin np)) (Block Tx Hash (Fin np)))
+    (N : @GlobalState Tx Hash (Fin np) S (ω.params P) (ω.bparams P))
+    (l : List (Block Tx Hash (Fin np) × Sig)) : Prop :=
+  j = (steps log).length ∧ v = viewE P Sch F x₀ dt Tree K ω log j ∧
+    N = sTrace Sch (P.withTx (txOf dt log)) ω (F.at (scriptOfD x₀ log)) false (min j K) ∧
+    (∀ b ∈ l.map Prod.fst, b ∈ hb (P.withTx (txOf dt log)) (F.at (scriptOfD x₀ log)) (ω := ω) N) ∧
+    ¬∃ c ∈ traceCalls Sch (P.withTx (txOf dt log)) ω (F.at (scriptOfD x₀ log)) (min j K),
+      ForgedBy Sch ω (F.at (scriptOfD x₀ log)) i c
+
+open Classical in
+/-- The forging event of party `i` on the final log of a state: an adversary call of the first
+`K` phases of the execution of the log forges a block of party `i`. -/
+noncomputable def forgeEv (K : ℕ) (i : Fin np) (ω : Seed Tx Hash np n Hz PK SK)
+    (t : SimStE Tx Hash np n Hz PK SK X) : Bool :=
+  decide (ForgeBy Sch (P.withTx (txOf dt t.1.2.1)) ω (F.at (scriptOfD x₀ t.1.2.1)) K i)
+
+/-- The non-step inputs keep the invariant on the extended log. -/
+theorem simInv_append (K : ℕ) (i : Fin np) (ω : Seed Tx Hash np n Hz PK SK)
+    {log : List (LogEvOf X Tx Hash np Hz)} {j : ℕ}
+    {v : TreeView (Option (Fin np)) (Block Tx Hash (Fin np))}
+    {N : @GlobalState Tx Hash (Fin np) S (ω.params P) (ω.bparams P)}
+    {l : List (Block Tx Hash (Fin np) × Sig)} (hI : SimInv P Sch F x₀ dt Tree K i ω log j v N l)
+    (e : EnvEv Tx Hash np Hz X) (he : stepOf e = none) :
+    SimInv P Sch F x₀ dt Tree K i ω (log ++ [e]) j v N l := by
+  obtain ⟨hjl, hv, hN, hl, hnf⟩ := hI
+  have hmj : min j K ≤ (steps log).length := by omega
+  refine ⟨?_, ?_, ?_, hl, ?_⟩
+  · simp [hjl, steps, he]
+  · rw [hv, viewE_append P Sch F x₀ dt Tree K ω hjl.le]
+  · rw [hN, sTrace_append_of_le Sch P ω F false x₀ dt hmj [e] _ le_rfl]
+  · rwa [forgeBy_append_iff Sch P ω F i x₀ dt hmj]
+
+/-- From phase `K` on, a phase entry keeps the view and the state. -/
+theorem simInv_step_of_le (K : ℕ) (i : Fin np) (ω : Seed Tx Hash np n Hz PK SK)
+    {log : List (LogEvOf X Tx Hash np Hz)} {j : ℕ}
+    {v : TreeView (Option (Fin np)) (Block Tx Hash (Fin np))}
+    {N : @GlobalState Tx Hash (Fin np) S (ω.params P) (ω.bparams P)}
+    {l : List (Block Tx Hash (Fin np) × Sig)} (hI : SimInv P Sch F x₀ dt Tree K i ω log j v N l)
+    (x : X) (hKj : K ≤ j) :
+    SimInv P Sch F x₀ dt Tree K i ω (log ++ [.inr (.step x)]) (j + 1) v N l := by
+  obtain ⟨hjl, hv, hN, hl, hnf⟩ := hI
+  have hm : min (j + 1) K = min j K := by omega
+  have hmj : min j K ≤ (steps log).length := by omega
+  refine ⟨?_, ?_, ?_, hl, ?_⟩
+  · simp [hjl, steps, stepOf]
+  · rw [hv, viewE_succ_of_le P Sch F x₀ dt Tree K ω hKj hjl.le]
+  · rw [hm, hN, sTrace_append_of_le Sch P ω F false x₀ dt hmj _ _ le_rfl]
+  · rwa [hm, forgeBy_append_iff Sch P ω F i x₀ dt hmj]
+
+/-- Before phase `K`, a phase entry whose phase forges no block of party `i` moves the view and
+the state to the next phase. -/
+theorem simInv_step_of_lt (K : ℕ) (i : Fin np) (ω : Seed Tx Hash np n Hz PK SK)
+    {log : List (LogEvOf X Tx Hash np Hz)} {j : ℕ}
+    {v : TreeView (Option (Fin np)) (Block Tx Hash (Fin np))}
+    {N : @GlobalState Tx Hash (Fin np) S (ω.params P) (ω.bparams P)}
+    {l : List (Block Tx Hash (Fin np) × Sig)} (hI : SimInv P Sch F x₀ dt Tree K i ω log j v N l)
+    (x : X) (hjK : j < K)
+    (hF : ¬∃ c ∈ phaseCalls Sch (P.withTx (txOf dt (log ++ [.inr (.step x)]))) ω
+        (F.at (scriptOfD x₀ (log ++ [(.inr (.step x) : LogEvOf X Tx Hash np Hz)]))) N,
+      ForgedBy Sch ω (F.at (scriptOfD x₀ (log ++ [.inr (.step x)]))) i c)
+    (l' : List (Block Tx Hash (Fin np) × Sig))
+    (hl' : ∀ b ∈ l'.map Prod.fst, b ∈ hb (P.withTx (txOf dt (log ++ [.inr (.step x)])))
+      (F.at (scriptOfD x₀ (log ++ [.inr (.step x)]))) (ω := ω)
+        (sPhase Sch (P.withTx (txOf dt (log ++ [.inr (.step x)]))) ω
+          (F.at (scriptOfD x₀ (log ++ [.inr (.step x)]))) false N)) :
+    SimInv P Sch F x₀ dt Tree K i ω (log ++ [.inr (.step x)]) (j + 1)
+      (vNext P Tree ω v (sPhase Sch (P.withTx (txOf dt (log ++ [.inr (.step x)]))) ω
+        (F.at (scriptOfD x₀ (log ++ [.inr (.step x)]))) false N))
+      (sPhase Sch (P.withTx (txOf dt (log ++ [.inr (.step x)]))) ω
+        (F.at (scriptOfD x₀ (log ++ [.inr (.step x)]))) false N) l' := by
+  obtain ⟨hjl, hv, hN, hl, hnf⟩ := hI
+  rw [min_eq_left hjK.le] at hN hnf
+  have hm : min (j + 1) K = j + 1 := min_eq_left hjK
+  have hsnoc := sTrace_snoc_step Sch P ω F false x₀ dt hjl.le [.inr (.step x)]
+  have happ := sTrace_append_of_le Sch P ω F false x₀ dt hjl.le [.inr (.step x)] j le_rfl
+  refine ⟨?_, ?_, ?_, hl', ?_⟩
+  · simp [hjl, steps, stepOf]
+  · rw [viewE_succ P Sch F x₀ dt Tree K ω hjK hjl.le, hsnoc, hv, hN]
+  · rw [hm, hsnoc, hN]
+  · rw [hm, traceCalls_succ]
+    rintro ⟨c, hc, hfc⟩
+    rcases List.mem_append.1 hc with hc | hc
+    · exact hnf ((forgeBy_append_iff Sch P ω F i x₀ dt hjl.le _).1 ⟨c, hc, hfc⟩)
+    · rw [happ, ← hN] at hc
+      exact hF ⟨c, hc, hfc⟩
+
+/-- **The forger simulates the run.** Let `t` be a state of `chainSimω` for the seed `ω` with the
+key pair `(pk, sk)` for party `i`, whose seed is unset or this seed, and let the forger's view,
+state and signing queries satisfy the invariant `SimInv` for the log of `t`. Then the
+probability that the final log of the remaining `m` activations of the environment `Z` from `t`
+contains a forgery of party `i` is at most the probability that the forger's loop, run against
+the signing oracle of `sk`, outputs a message with a valid signature under `pk` that it did not
+query. -/
+theorem simLoop_spec (K Δ : ℕ) (i : Fin np) (pk : PK) (sk : SK) (ω : Seed Tx Hash np n Hz PK SK)
+    {ζ : Type} (Z : Strat ζ (EnvEv Tx Hash np Hz X) (EnvOut Tx Hash np)) :
+    ∀ (m : ℕ) (z : ζ) (h : Heap) (t : SimStE Tx Hash np n Hz PK SK X) (b : Bool)
+      (v : TreeView (Option (Fin np)) (Block Tx Hash (Fin np)))
+      (N : @GlobalState Tx Hash (Fin np) S (ω.params P) (ω.bparams P))
+      (l : List (Block Tx Hash (Fin np) × Sig)),
+      t.1.1.getD (ω.withKey i (pk, sk)) = ω.withKey i (pk, sk) →
+      SimInv P Sch F x₀ dt Tree K i (ω.withKey i (pk, sk)) t.1.2.1 t.1.2.2.1 v N l →
+      prTrue (SPComp.bind (loop (chainSimω P Sch F x₀ dt Tree K Δ (ω.withKey i (pk, sk)))
+          (fun _ => false) Z m (z, t, b)) fun c =>
+            SPComp.pure (forgeEv P Sch F x₀ dt K i (ω.withKey i (pk, sk)) c.2.1)) h ≤
+        ((OracleAdv.run (signOracle Sch sk)
+            (simLoop P Sch F x₀ dt Tree K Δ i pk ω Z m z h t.1.2.1 t.1.2.2.1 v t.2 N) l).map
+          fun x => Sch.verify pk x.1.1 x.1.2 && !(x.2.map Prod.fst).contains x.1.1) true := by
+  intro m
+  induction m with
+  | zero =>
+    intro z h t b v N l _ hI
+    obtain ⟨hjl, -, hN, hl, hnf⟩ := hI
+    simp only [loop, SPComp.pure_bind, prTrue_pure]
+    by_cases hF : forgeEv P Sch F x₀ dt K i (ω.withKey i (pk, sk)) t = true
+    · rw [if_pos hF]
+      have hF' : ForgeBy Sch (P.withTx (txOf dt t.1.2.1)) (ω.withKey i (pk, sk))
+          (F.at (scriptOfD x₀ t.1.2.1)) K i := by
+        simpa [forgeEv] using hF
+      unfold ForgeBy at hF'
+      have hcalls := traceCalls_add Sch (P.withTx (txOf dt t.1.2.1))
+        (F.at (scriptOfD x₀ t.1.2.1)) (ω.withKey i (pk, sk)) (min t.1.2.2.1 K) (K - t.1.2.2.1)
+      rw [show min t.1.2.2.1 K + (K - t.1.2.2.1) = K by omega] at hcalls
+      rw [hcalls] at hF'
+      obtain ⟨c, hc, hfc⟩ := hF'
+      have hc2 : c ∈ (List.range' (min t.1.2.2.1 K) (K - t.1.2.2.1)).flatMap fun k =>
+          phaseCalls Sch (P.withTx (txOf dt t.1.2.1)) (ω.withKey i (pk, sk))
+            (F.at (scriptOfD x₀ t.1.2.1))
+            (sTrace Sch (P.withTx (txOf dt t.1.2.1)) (ω.withKey i (pk, sk))
+              (F.at (scriptOfD x₀ t.1.2.1)) false k) := by
+        rcases List.mem_append.1 hc with hc | hc
+        · exact absurd ⟨c, hc, hfc⟩ hnf
+        · exact hc
+      subst hN
+      obtain ⟨fg, l', hrun, hv, -, hnl⟩ :=
+        (simEq_simTraceFrom Sch (P.withTx (txOf dt t.1.2.1)) (F.at (scriptOfD x₀ t.1.2.1)) i pk ω
+          sk (min t.1.2.2.1 K) (K - t.1.2.2.1) (fun _ => loseProg P) l hl).2 ⟨c, hc2, hfc⟩
+      simp only [simLoop]
+      rw [hrun]
+      have hw : (Sch.verify pk fg.1 fg.2 && !(l'.map Prod.fst).contains fg.1) = true := by
+        simpa [hv] using hnl
+      rw [PMF.pure_map, hw, PMF.pure_apply, if_pos rfl]
+    · rw [if_neg hF]
+      exact bot_le
+  | succ m ih =>
+    intro z h t b v N l hseed hI
+    simp only [loop, SPComp.bind_assoc, simLoop]
+    refine prTrue_bind_le_run_rand _ _ _ _ _ _ _ fun a h₁ => ?_
+    obtain ⟨z₁, e⟩ := a
+    dsimp only
+    rw [chainSimω_step_eq, SPComp.pure_bind]
+    simp only [hseed, pstNext, leakOf_withKey]
+    have hcont : ∀ (v' : TreeView (Option (Fin np)) (Block Tx Hash (Fin np)))
+        (N' : @GlobalState Tx Hash (Fin np) S (ω.params P) (ω.bparams P))
+        (l' : List (Block Tx Hash (Fin np) × Sig)),
+        SimInv P Sch F x₀ dt Tree K i (ω.withKey i (pk, sk)) (t.1.2.1 ++ [e])
+          (phaseNext t.1.2.2.1 e) v' N' l' →
+        prTrue (SPComp.bind (Z.obs z₁ (((cnNext Δ t.2 (reqJ t.1.2.2.1 e)).2.1, v'), leakOf ω e))
+          fun z' => SPComp.bind (loop (chainSimω P Sch F x₀ dt Tree K Δ (ω.withKey i (pk, sk)))
+            (fun _ => false) Z m (z', ((some (ω.withKey i (pk, sk)), t.1.2.1 ++ [e],
+              phaseNext t.1.2.2.1 e, v', leakOf ω e), (cnNext Δ t.2 (reqJ t.1.2.2.1 e)).1),
+              b || false)) fun c =>
+            SPComp.pure (forgeEv P Sch F x₀ dt K i (ω.withKey i (pk, sk)) c.2.1)) h₁ ≤
+        ((OracleAdv.run (signOracle Sch sk)
+            (.rand (Z.obs z₁ (((cnNext Δ t.2 (reqJ t.1.2.2.1 e)).2.1, v'), leakOf ω e) h₁)
+              fun o' => match o' with
+                | none => loseProg P
+                | some (z₂, h₂) =>
+                  simLoop P Sch F x₀ dt Tree K Δ i pk ω Z m z₂ h₂ (t.1.2.1 ++ [e])
+                    (phaseNext t.1.2.2.1 e) v' (cnNext Δ t.2 (reqJ t.1.2.2.1 e)).1 N') l').map
+          fun x => Sch.verify pk x.1.1 x.1.2 && !(x.2.map Prod.fst).contains x.1.1) true :=
+      fun v' N' l' hI' => prTrue_bind_le_run_rand _ _ _ _ _ _ _ fun z₂ h₂ =>
+        ih z₂ h₂ _ _ v' N' l' rfl hI'
+    rcases e with tx | (x | d)
+    · have hI' := simInv_append P Sch F x₀ dt Tree K i (ω.withKey i (pk, sk)) hI (.inl tx) rfl
+      rw [phaseNext_of_stepOf_none _ (.inl tx) rfl] at hcont ⊢
+      rw [← hI'.2.1, simEv_of_stepOf_none P Sch F x₀ dt Tree (.inl tx) rfl]
+      exact hcont v N l hI'
+    · dsimp only [phaseNext] at hcont ⊢
+      by_cases hjK : t.1.2.2.1 < K
+      · simp only [simEv, if_pos hjK]
+        have hs := simEq_simPhase Sch (P.withTx (txOf dt (t.1.2.1 ++ [.inr (.step x)])))
+          (F.at (scriptOfD x₀ (t.1.2.1 ++ [.inr (.step x)]))) i pk ω sk N
+        refine hs.le_run _ _ _ _ _ _ _ _ l hI.2.2.2.1 (prTrue_le_one _ _) fun l' hl' hF => ?_
+        have hI' := simInv_step_of_lt P Sch F x₀ dt Tree K i (ω.withKey i (pk, sk)) hI x hjK
+          (fun ⟨c, hc, hfc⟩ => hF c hc hfc) l' hl'
+        rw [vNext_withKey] at hI'
+        rw [← hI'.2.1]
+        have hc := hcont _ _ _ hI'
+        exact hc
+      · simp only [simEv, if_neg hjK]
+        have hI' := simInv_step_of_le P Sch F x₀ dt Tree K i (ω.withKey i (pk, sk)) hI x
+          (not_lt.1 hjK)
+        rw [← hI'.2.1]
+        exact hcont v N l hI'
+    · have hI' := simInv_append P Sch F x₀ dt Tree K i (ω.withKey i (pk, sk)) hI (.inr (.hash d))
+        rfl
+      rw [phaseNext_of_stepOf_none _ (.inr (.hash d)) rfl] at hcont ⊢
+      rw [← hI'.2.1, simEv_of_stepOf_none P Sch F x₀ dt Tree (.inr (.hash d)) rfl]
+      exact hcont v N l hI'
+
+/-- The average of `f` over a bind is the average over the first draw of the averages over the
+second. -/
+theorem tsum_bind_mul {α β : Type} (p : PMF α) (g : α → PMF β) (f : β → ℝ≥0∞) :
+    ∑' b, (p.bind g) b * f b = ∑' a, p a * ∑' b, g a b * f b := by
+  simp only [PMF.bind_apply]
+  calc ∑' b, (∑' a, p a * g a b) * f b = ∑' b, ∑' a, p a * g a b * f b := by
+        simp_rw [ENNReal.tsum_mul_right]
+    _ = ∑' a, ∑' b, p a * g a b * f b := ENNReal.tsum_comm
+    _ = ∑' a, p a * ∑' b, g a b * f b := by simp_rw [mul_assoc, ENNReal.tsum_mul_left]
+
+/-- **Forging a block of party `i` against an environment.** Over the seed distribution
+`seedDist Sch H cd`, the probability that the final log of the run of the environment `Z`
+against `chainSimω` contains a forgery of party `i` is at most the EUF-CMA advantage of the
+explicit adversary `toEUFAdversary (forgerE … Z i)` against `Sch`. -/
+theorem prob_forgeE_le (μ : PMF (Option (Fin np))) (W K Δ : ℕ) {ζ : Type}
+    (Z : Env (Strat ζ (EnvEv Tx Hash np Hz X) (EnvOut Tx Hash np)) ζ) (i : Fin np) :
+    ∑' ω, seedDist Sch H cd μ P.h0 W n ω *
+        prFinal (chainSimω P Sch F x₀ dt Tree K Δ ω) (forgeEv P Sch F x₀ dt K i ω) Z ≤
+      eufcmaAdvantage Sch.toSigScheme
+        (toEUFAdversary (forgerE P Sch F x₀ dt Tree H cd μ W K Δ Z i)) := by
+  have hseed := seedDist_withKey (n := n) Sch H cd μ P.h0 W i
+  rw [PMF.bind_comm, PSigScheme.keyDist, PMF.bind_map] at hseed
+  rw [eufcmaAdvantage_toEUFAdversary, eufDist, PMF.bind_apply]
+  conv_lhs => rw [← hseed]
+  rw [tsum_bind_mul]
+  refine ENNReal.tsum_le_tsum fun kr => ?_
+  gcongr
+  simp only [Function.comp_apply, forgerE, OracleAdv.run_rand, PMF.map_bind]
+  rw [tsum_bind_mul, PMF.bind_apply]
+  refine ENNReal.tsum_le_tsum fun ω => ?_
+  gcongr
+  rw [tsum_eq_single (ω.withKey i (Sch.keygen kr)) fun b hb => by simp [PMF.pure_apply, hb],
+    PMF.pure_apply, if_pos rfl, one_mul]
+  unfold prFinal run
+  exact simLoop_spec P Sch F x₀ dt Tree K Δ i (Sch.keygen kr).1 (Sch.keygen kr).2 ω Z.input
+    Z.input.rounds Z.input.init Z.heap _ false _ _ [] rfl
+    ⟨rfl, (viewE_zero P Sch F x₀ dt Tree K _ []).symm, rfl, by simp,
+      by simp [chainSimω, Hybrid.withSub, chainHybridE, traceCalls]⟩
+
+/-- **The fixed-adversary forger is the zero-round instance.** The forger
+`forger Sch P A H cd μ W K i` of the adversary `A` is the forger `forgerE` of an environment
+without activations, for the constant family of `A` and the transaction selection `P.txSel`. -/
+theorem forger_eq_env (A : Adversary Tx Hash np n Hz PK Sig) (μ : PMF (Option (Fin np)))
+    (W K Δ : ℕ) {ζ : Type}
+    (Z : Env (Strat ζ (EnvEv Tx Hash np Hz X) (EnvOut Tx Hash np)) ζ) (hZ : Z.input.rounds = 0)
+    (i : Fin np) :
+    forger Sch P A H cd μ W K i =
+      forgerE P Sch (AdvFamily.const A) x₀ P.txSel Tree H cd μ W K Δ Z i := by
+  funext pk
+  unfold forger forgerE
+  congr 1
+  funext ω
+  rw [hZ, forgerProg, simTrace_eq_from]
+  rfl
+
+/-- The forger `forger` of a fixed adversary has the advantage of the forger `forgerE` of an
+environment without activations. -/
+theorem forger_adv_eq_env (A : Adversary Tx Hash np n Hz PK Sig) (μ : PMF (Option (Fin np)))
+    (W K Δ : ℕ) {ζ : Type}
+    (Z : Env (Strat ζ (EnvEv Tx Hash np Hz X) (EnvOut Tx Hash np)) ζ) (hZ : Z.input.rounds = 0)
+    (i : Fin np) :
+    eufcmaAdvantage Sch.toSigScheme (toEUFAdversary (forger Sch P A H cd μ W K i)) =
+      eufcmaAdvantage Sch.toSigScheme (toEUFAdversary
+        (forgerE P Sch (AdvFamily.const A) x₀ P.txSel Tree H cd μ W K Δ Z i)) := by
+  rw [forger_eq_env P Sch x₀ Tree H cd A μ W K Δ Z hZ i]
+
+/-! ## The failure bound against an environment -/
+
+/-- A property of the final state that implies one of finitely many properties has at most the
+sum of their probabilities. -/
+theorem prFinal_le_sum {τ E O ζ ι : Type} [Fintype ι] (S' : Sys τ E O) (q : τ → Bool)
+    (r : ι → τ → Bool) (h : ∀ t, q t = true → ∃ k, r k t = true) (Z : Env (Strat ζ E O) ζ) :
+    prFinal S' q Z ≤ ∑ k, prFinal S' (r k) Z := by
+  unfold prFinal
+  simp only [prTrue_bind_eq_weighted]
+  rw [← Summable.tsum_finsetSum fun _ _ => ENNReal.summable]
+  refine ENNReal.tsum_le_tsum fun p => ?_
+  rw [← Finset.mul_sum]
+  gcongr
+  rcases p with _ | ⟨c, h'⟩
+  · simp
+  · dsimp only
+    simp only [prTrue_pure]
+    by_cases hq : q c.2.1 = true
+    · obtain ⟨k, hk⟩ := h _ hq
+      rw [if_pos hq]
+      refine le_trans ?_ (Finset.single_le_sum (f := fun j => if r j c.2.1 = true then (1 : ℝ≥0∞)
+        else 0) (fun _ _ => bot_le) (Finset.mem_univ k))
+      simp [hk]
+    · rw [if_neg hq]
+      exact bot_le
+
+/-- A property of the final state that is constant has probability at most its indicator. -/
+theorem prFinal_const_le {τ E O ζ : Type} (S' : Sys τ E O) (c : Bool) (Z : Env (Strat ζ E O) ζ) :
+    prFinal S' (fun _ => c) Z ≤ if c then 1 else 0 := by
+  cases c
+  · simpa using prFinal_le_sum S' (fun _ => false) (ι := Empty) (fun e => e.elim) (by simp) Z
+  · exact prTrue_le_one _ _
+
+open Classical in
+/-- The collision event on the final log of a state: some state of the first `K` phases of the
+execution of the log is not collision free. -/
+noncomputable def collEv (K : ℕ) (ω : Seed Tx Hash np n Hz PK SK)
+    (t : SimStE Tx Hash np n Hz PK SK X) : Bool :=
+  decide (∃ j ≤ K, letI := ω.params P; letI := ω.bparams P
+    ¬collision_free (sTrace Sch { P with txSel := txOf dt t.1.2.1 } ω
+      (F.at (scriptOfD x₀ t.1.2.1)) false j))
+
+/-- **Hash collisions against an environment.** Over the seed distribution `seedDist Sch H cd`,
+the probability that the final log of the run of the environment `Z` against `chainSimω` has a
+state of its first `K` phases that is not collision free is at most the collision-resistance
+advantage of the explicit adversary `collFinderE … Z`. -/
+theorem prob_collisionE_le (μ : PMF (Option (Fin np))) (W K Δ : ℕ) (hHz : K + 1 ≤ Hz)
+    (hGB : P.GB.sl ≤ 1) {ζ : Type}
+    (Z : Env (Strat ζ (EnvEv Tx Hash np Hz X) (EnvOut Tx Hash np)) ζ) :
+    ∑' ω, seedDist Sch H cd μ P.h0 W n ω *
+        prFinal (chainSimω P Sch F x₀ dt Tree K Δ ω) (collEv P Sch F x₀ dt K ω) Z ≤
+      CR_Search_Advantage H (collFinderE P Sch F x₀ dt Tree H cd μ W K Δ Z) := by
+  refine le_trans (le_of_eq ?_) (prob_collisionG_le Sch P H cd μ W K hHz hGB
+    (fun ω => SPComp.atHeap Z.heap (finalLog P Sch F x₀ dt Tree K Δ ω Z.input)) (txOf dt)
+    (fun log => F.at (scriptOfD x₀ log)))
+  rw [prTrue_bind_sampleFrom]
+  refine tsum_congr fun ω => ?_
+  rw [ofPMF_apply_some, prTrue_bind_atHeap]
+  congr 1
+  unfold prFinal finalLog SPComp.map
+  rw [SPComp.bind_assoc]
+  simp only [SPComp.pure_bind]
+  rfl
+
+open Classical in
+/-- **The slot conditions against an environment.** The slot conditions depend on the seed only:
+over the seed distribution, the probability that they fail or that the leader string is not
+padded with honest slots, at the end of the run of any environment, is at most `slotBound`. -/
+theorem prob_slotE_le (hh0 : is_honest P.h0 = true) (μ : PMF (Option (Fin np))) (W K Δ d w : ℕ)
+    (ε : ℝ) (hε : 0 ≤ ε) (hγ : 2 * pA (kindLaw μ) ≤ pH (kindLaw μ))
+    (hw : (w : ℝ) ≤ d * (pH (kindLaw μ) - pA (kindLaw μ)))
+    (h3 : (3 : ℝ) ≤ d * (pH (kindLaw μ) - 2 * pA (kindLaw μ))) {ζ : Type}
+    (Z : Env (Strat ζ (EnvEv Tx Hash np Hz X) (EnvOut Tx Hash np)) ζ) :
+    ∑' ω, seedDist Sch H cd μ P.h0 W n ω *
+        prFinal (chainSimω P Sch F x₀ dt Tree K Δ ω)
+          (fun _ => decide (SlotBad (kindLaw μ) n d w ε ω.κ ∨ ¬PaddedFrom W ω.κ)) Z ≤
+      slotBound (kindLaw μ) n d w ε := by
+  calc _ ≤ ∑' ω, seedDist Sch H cd μ P.h0 W n ω *
+        (if decide (SlotBad (kindLaw μ) n d w ε ω.κ ∨ ¬PaddedFrom W ω.κ) then 1 else 0) :=
+        ENNReal.tsum_le_tsum fun ω => by gcongr; exact prFinal_const_le _ _ _
+    _ = (seedDist Sch H cd μ P.h0 W n).toOuterMeasure
+          {ω | ω.κ ∈ {κ | SlotBad (kindLaw μ) n d w ε κ} ∪ {κ | ¬PaddedFrom W κ}} := by
+        rw [PMF.toOuterMeasure_apply]
+        refine tsum_congr fun ω => ?_
+        by_cases h : SlotBad (kindLaw μ) n d w ε ω.κ ∨ ¬PaddedFrom W ω.κ
+        · simp [h, Set.indicator]
+        · simp [h, Set.indicator]
+    _ ≤ _ := by
+        rw [seedDist_kind Sch H cd μ hh0]
+        refine (MeasureTheory.measure_union_le _ _).trans ?_
+        rw [kindDist_padded, add_zero]
+        exact prob_slotBad_le (kindLaw μ) W n d w hε hγ hw h3
+
+/-- **The deterministic step for a log.** Outside the bad events, the property `GoodE` holds
+for the execution of the seed `ω` and the log `log`. -/
+theorem goodE_of_not_bad (hP : ProtocolHyp P) (hTree : Tree.Longest) (ν : PMF SlotKind)
+    (K d w : ℕ) (ε : ℝ) (ω : Seed Tx Hash np n Hz PK SK) (log : List (LogEvOf X Tx Hash np Hz))
+    {W : ℕ} (hd3 : 3 ≤ d) (hwd : w ≤ d) (hWn : W + d ≤ n) (hn : K + 2 ≤ n)
+    (hslot : ¬SlotBad ν n d w ε ω.κ) (hpad : PaddedFrom W ω.κ)
+    (hcf : ∀ j ≤ K, letI := ω.params P; letI := ω.bparams P;
+      collision_free (sTrace Sch (P.withTx (txOf dt log)) ω (F.at (scriptOfD x₀ log)) false j))
+    (hforge : ¬Forge Sch (P.withTx (txOf dt log)) ω (F.at (scriptOfD x₀ log)) K) :
+    GoodE P Sch F x₀ dt Tree ν K d w ε ω log :=
+  good_of_not_bad (P.withTx (txOf dt log)) Sch (F.at (scriptOfD x₀ log)) Tree ν K d w ε
+    (hP.withTx _) hTree ω hd3 hwd hWn hn hslot hpad hcf hforge
+
+/-- **The failure bound of PoS-NSB against an environment**: the Chernoff-Hoeffding bound
+`slotBound` on the slot conditions, the collision-resistance advantage of the explicit collision
+finder `collFinderE … Z`, and the sum over the parties `i` of the EUF-CMA advantages of the
+explicit forgers `toEUFAdversary (forgerE … Z i)`. -/
+noncomputable def posFailE (μ : PMF (Option (Fin np))) (W K Δ d w : ℕ) (ε : ℝ) {ζ : Type}
+    (Z : Env (Strat ζ (EnvEv Tx Hash np Hz X) (EnvOut Tx Hash np)) ζ) : ℝ≥0∞ :=
+  slotBound (kindLaw μ) n d w ε +
+    CR_Search_Advantage H (collFinderE P Sch F x₀ dt Tree H cd μ W K Δ Z) +
+    ∑ i : Fin np, eufcmaAdvantage Sch.toSigScheme
+      (toEUFAdversary (forgerE P Sch F x₀ dt Tree H cd μ W K Δ Z i))
+
+open Classical in
+/-- **Security of PoS-NSB against an environment.** Let the environment `Z` drive the protocol
+for seeds drawn from `seedDist Sch H cd`. Under the hypotheses of `pos_nsb_security`, the
+probability that chain growth, chain quality, common prefix or the honest tip fails for the
+first `K` phases of the execution of the final log of the run of `Z` against `chainSimω` is at
+most `posFailE … Z`: `slotBound (kindLaw μ) n d w ε + CR_Search_Advantage H (collFinderE … Z) +
+∑ᵢ eufcmaAdvantage Sch.toSigScheme (toEUFAdversary (forgerE … Z i))`. -/
+theorem pos_nsb_securityE (hP : ProtocolHyp P) (hTree : Tree.Longest)
+    (μ : PMF (Option (Fin np))) (W K Δ d w : ℕ) (ε : ℝ)
+    (hwd : w ≤ d) (hWn : W + d ≤ n) (hn : K + 2 ≤ n) (hHz : K + 1 ≤ Hz)
+    (hε : 0 ≤ ε) (hγ : 2 * pA (kindLaw μ) ≤ pH (kindLaw μ))
+    (hw : (w : ℝ) ≤ d * (pH (kindLaw μ) - pA (kindLaw μ)))
+    (h3 : (3 : ℝ) ≤ d * (pH (kindLaw μ) - 2 * pA (kindLaw μ))) {ζ : Type}
+    (Z : Env (Strat ζ (EnvEv Tx Hash np Hz X) (EnvOut Tx Hash np)) ζ) :
+    ∑' ω, seedDist Sch H cd μ P.h0 W n ω *
+        prFinal (chainSimω P Sch F x₀ dt Tree K Δ ω)
+          (fun t => decide (¬GoodE P Sch F x₀ dt Tree (kindLaw μ) K d w ε ω t.1.2.1)) Z ≤
+      posFailE P Sch F x₀ dt Tree H cd μ W K Δ d w ε Z := by
+  have hd3 := three_le_of_cp (kindLaw μ) h3
+  have hpt : ∀ ω : Seed Tx Hash np n Hz PK SK,
+      prFinal (chainSimω P Sch F x₀ dt Tree K Δ ω)
+          (fun t => decide (¬GoodE P Sch F x₀ dt Tree (kindLaw μ) K d w ε ω t.1.2.1)) Z ≤
+        prFinal (chainSimω P Sch F x₀ dt Tree K Δ ω)
+            (fun _ => decide (SlotBad (kindLaw μ) n d w ε ω.κ ∨ ¬PaddedFrom W ω.κ)) Z +
+          (prFinal (chainSimω P Sch F x₀ dt Tree K Δ ω) (collEv P Sch F x₀ dt K ω) Z +
+            ∑ i : Fin np,
+              prFinal (chainSimω P Sch F x₀ dt Tree K Δ ω) (forgeEv P Sch F x₀ dt K i ω) Z) := by
+    intro ω
+    refine (prFinal_le_sum _ _ (fun k : Option (Option (Fin np)) => match k with
+      | none => fun _ => decide (SlotBad (kindLaw μ) n d w ε ω.κ ∨ ¬PaddedFrom W ω.κ)
+      | some none => collEv P Sch F x₀ dt K ω
+      | some (some i) => forgeEv P Sch F x₀ dt K i ω) ?_ Z).trans (le_of_eq ?_)
+    · intro t ht
+      by_contra hno
+      simp only [not_exists, Bool.not_eq_true] at hno
+      have h0 := hno none
+      have h1 := hno (some none)
+      simp only [decide_eq_false_iff_not, not_or, not_not] at h0
+      simp only [collEv, decide_eq_false_iff_not, not_exists, not_and, not_not] at h1
+      refine of_decide_eq_true ht (goodE_of_not_bad P Sch F x₀ dt Tree hP hTree (kindLaw μ) K d w ε
+        ω t.1.2.1 hd3 hwd hWn hn h0.1 h0.2 h1 fun hF => ?_)
+      obtain ⟨i, hi⟩ := forge_iff_exists Sch _ ω _ K hF
+      have h2 := hno (some (some i))
+      simp only [forgeEv, decide_eq_false_iff_not] at h2
+      exact h2 hi
+    · simp only [Fintype.sum_option]
+  calc _ ≤ ∑' ω, seedDist Sch H cd μ P.h0 W n ω *
+        (prFinal (chainSimω P Sch F x₀ dt Tree K Δ ω)
+            (fun _ => decide (SlotBad (kindLaw μ) n d w ε ω.κ ∨ ¬PaddedFrom W ω.κ)) Z +
+          (prFinal (chainSimω P Sch F x₀ dt Tree K Δ ω) (collEv P Sch F x₀ dt K ω) Z +
+            ∑ i : Fin np,
+              prFinal (chainSimω P Sch F x₀ dt Tree K Δ ω) (forgeEv P Sch F x₀ dt K i ω) Z)) :=
+        ENNReal.tsum_le_tsum fun ω => by gcongr; exact hpt ω
+    _ = ∑' ω, seedDist Sch H cd μ P.h0 W n ω *
+          prFinal (chainSimω P Sch F x₀ dt Tree K Δ ω)
+            (fun _ => decide (SlotBad (kindLaw μ) n d w ε ω.κ ∨ ¬PaddedFrom W ω.κ)) Z +
+        (∑' ω, seedDist Sch H cd μ P.h0 W n ω *
+            prFinal (chainSimω P Sch F x₀ dt Tree K Δ ω) (collEv P Sch F x₀ dt K ω) Z +
+          ∑ i : Fin np, ∑' ω, seedDist Sch H cd μ P.h0 W n ω *
+            prFinal (chainSimω P Sch F x₀ dt Tree K Δ ω) (forgeEv P Sch F x₀ dt K i ω) Z) := by
+        simp_rw [mul_add, Finset.mul_sum]
+        rw [ENNReal.tsum_add, ENNReal.tsum_add,
+          Summable.tsum_finsetSum fun _ _ => ENNReal.summable]
+    _ ≤ _ := by
+        unfold posFailE
+        rw [add_assoc]
+        exact add_le_add
+          (prob_slotE_le P Sch F x₀ dt Tree H cd hP.leader.h0_honest μ W K Δ d w ε hε hγ hw h3 Z)
+          (add_le_add (prob_collisionE_le P Sch F x₀ dt Tree H cd μ W K Δ hHz hP.genesis_slot Z)
+            (Finset.sum_le_sum fun i _ => prob_forgeE_le P Sch F x₀ dt Tree H cd μ W K Δ Z i))
+
+/-- The environment without activations, from the empty heap. -/
+noncomputable def envNoRounds (x : X) :
+    Env (Strat Unit (EnvEv Tx Hash np Hz X) (EnvOut Tx Hash np)) Unit where
+  input :=
+    { rounds := 0
+      init := ()
+      next := fun _ => SPComp.pure ((), .inr (.step x))
+      obs := fun _ _ => SPComp.pure ()
+      next_noFail := fun _ => SPComp.pure_noFail _
+      obs_noFail := fun _ _ => SPComp.pure_noFail _ }
+  heap := Heap.empty
+  dist := fun _ => SPComp.pure true
+
+open Classical in
+/-- **The fixed-adversary bound is the zero-round instance.** `pos_nsb_security` for the
+adversary `A` follows from `pos_nsb_securityE` for the constant family of `A`, the transaction
+selection `P.txSel` and the environment without activations. -/
+theorem pos_nsb_security_of_env (A : Adversary Tx Hash np n Hz PK Sig) (hP : ProtocolHyp P)
+    (hTree : Tree.Longest) (μ : PMF (Option (Fin np))) (W K d w : ℕ) (ε : ℝ)
+    (hwd : w ≤ d) (hWn : W + d ≤ n) (hn : K + 2 ≤ n) (hHz : K + 1 ≤ Hz)
+    (hε : 0 ≤ ε) (hγ : 2 * pA (kindLaw μ) ≤ pH (kindLaw μ))
+    (hw : (w : ℝ) ≤ d * (pH (kindLaw μ) - pA (kindLaw μ)))
+    (h3 : (3 : ℝ) ≤ d * (pH (kindLaw μ) - 2 * pA (kindLaw μ))) :
+    (seedDist Sch H cd μ P.h0 W n).toOuterMeasure
+        {ω | ¬Good P Sch A Tree (kindLaw μ) K d w ε ω} ≤
+      posFail P Sch A H cd μ W K d w ε := by
+  have h := pos_nsb_securityE P Sch (AdvFamily.const A) () P.txSel Tree H cd hP hTree μ W K 0 d w
+    ε hwd hWn hn hHz hε hγ hw h3 (envNoRounds ())
+  unfold posFailE at h
+  rw [← collFinder_adv_eq_env P Sch () Tree H cd A μ W K 0 (envNoRounds ()) rfl] at h
+  simp only [← forger_adv_eq_env P Sch () Tree H cd A μ W K 0 (envNoRounds ()) rfl] at h
+  refine le_trans (le_of_eq ?_) h
+  rw [PMF.toOuterMeasure_apply]
+  refine tsum_congr fun ω => ?_
+  have hg : GoodE P Sch (AdvFamily.const A) () P.txSel Tree (kindLaw μ) K d w ε ω [] ↔
+      Good P Sch A Tree (kindLaw μ) K d w ε ω := Iff.rfl
+  by_cases hG : Good P Sch A Tree (kindLaw μ) K d w ε ω
+  · simp [Set.indicator, hG, hg, prFinal, run, envNoRounds, loop, prTrue_pure, chainSimω,
+      Hybrid.withSub, chainHybridE]
+  · simp [Set.indicator, hG, hg, prFinal, run, envNoRounds, loop, prTrue_pure, chainSimω,
+      Hybrid.withSub, chainHybridE]
 
 end Protocol
 
