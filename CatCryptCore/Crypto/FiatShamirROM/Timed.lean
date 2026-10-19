@@ -10,6 +10,7 @@ public import CatCryptCore.Crypto.FiatShamirROM.StraightLineMk
 public import CatCryptCore.Crypto.FiatShamirROM.KeyRecoveryFlag
 public import CatCryptCore.Crypto.FiatShamirROM.ProgFlag
 public import CatCryptCore.Crypto.FiatShamirROM.Reduction
+public import CatCryptCore.Crypto.Signatures.EUFCMAPMF
 
 /-!
 # Running time of the Fiat–Shamir ROM reductions
@@ -104,6 +105,11 @@ fresh values at the markers) is one distribution, sampled at one `rand` node.
   time `M` on forked and `M + B` on unforked results;
   `OracleForking.forkRun.timeBound_timed` — time at most `2 * (T + n)`
 * `extractReduction.run_erase_timed`, `extractReduction.timeBound_timed`
+* `OracleAdv.run_map_fst_empty_eq` — over the empty interface, the output distribution of
+  a run is independent of the oracle and its state
+* `TimedInverter`, `TimedTwoStage` — a costed inverter and a costed two-stage reduction
+  over the empty interface; `TimedInverter.of_erase`, `TimedTwoStage.of_erase` derive them
+  from an erasure equation of the costed tree and its time bound
 -/
 
 @[expose] public section
@@ -214,6 +220,16 @@ theorem OracleAdv.run_bind_map_fst_empty {U β γ : Type} (O' : U → Empty → 
   induction A with
   | ret b => simp [OracleAdv.bind, PMF.pure_map]
   | rand p k ih => simp only [OracleAdv.bind, OracleAdv.run_rand, PMF.map_bind, PMF.bind_bind, ih]
+  | query d k _ => exact d.elim
+
+/-- Over the empty interface, the output distribution of a run depends neither on the oracle
+nor on its initial state. -/
+theorem OracleAdv.run_map_fst_empty_eq {U V β : Type} (O' : U → Empty → PMF (Empty × U))
+    (O'' : V → Empty → PMF (Empty × V)) (A : OracleAdv Empty Empty β) (u : U) (v : V) :
+    (OracleAdv.run O' A u).map Prod.fst = (OracleAdv.run O'' A v).map Prod.fst := by
+  induction A with
+  | ret b => simp [PMF.pure_map]
+  | rand p k ih => simp only [OracleAdv.run_rand, PMF.map_bind, ih]
   | query d k _ => exact d.elim
 
 /-! ## The costed forking run -/
@@ -977,6 +993,74 @@ theorem extractReduction.timeBound_timed {qH qS : ℕ} (A : Adversary P M qH qS)
     (by have := hw.1; omega)
 
 end Rewinding
+
+/-! ## Costed reductions over the empty interface -/
+
+section Costed
+
+/-- **A costed inverter.** `B'` is a costed form of the inverter `B` of time `n`: under any
+oracle, the erased costed tree on `x` has the output distribution `B x`, and the step cost
+followed by the tree has time at most `n` on every `x`. -/
+def TimedInverter {X W : Type} (B' : X → ℕ × OracleAdv.Timed Empty Empty W) (B : X → PMF W)
+    (n : ℕ) : Prop :=
+  (∀ x {U : Type} (O' : U → Empty → PMF (Empty × U)) (u : U),
+      (OracleAdv.run O' (B' x).2.erase u).map Prod.fst = B x) ∧
+    ∀ x, OracleAdv.Timed.StepTimeBound (B' x) n
+
+/-- A costed form whose erasure is the oracle tree `A x`, where the run of `A x` has the
+output distribution `B x`, is a costed inverter for `B`. -/
+theorem TimedInverter.of_erase {X W : Type} {B' : X → ℕ × OracleAdv.Timed Empty Empty W}
+    {A : X → OracleAdv Empty Empty W} {B : X → PMF W} {n : ℕ}
+    (he : ∀ x, (B' x).2.erase = A x)
+    (hA : ∀ x, (OracleAdv.run (fun (_ : Unit) (d : Empty) => d.elim) (A x) ()).map Prod.fst =
+      B x)
+    (ht : ∀ x, OracleAdv.Timed.StepTimeBound (B' x) n) : TimedInverter B' B n :=
+  ⟨fun x _ O' u => by rw [he, OracleAdv.run_map_fst_empty_eq O' _ (A x) u (), hA], ht⟩
+
+/-- **A costed two-stage reduction.** The costed first stage `choose'` and second stage
+`guess'` are costed forms of the two stages `choose` and `guess` of a tweak-adaptive
+reduction, of time `n`: the erased first stage, with the time budget dropped from its
+state and lifted by `Signatures.liftPMF`, is `choose`; the erased second stage on a state
+and a challenge, lifted, is `guess` on the state without the budget and the challenge; the
+first stage followed by the second on any challenge `f z` has time at most `n`. -/
+def TimedTwoStage {Tw St Ch : Type} (choose' : ℕ × OracleAdv.Timed Empty Empty (Tw × (St × ℕ)))
+    (guess' : St × ℕ → Ch → ℕ × OracleAdv.Timed Empty Empty Bool)
+    (choose : SPComp (Tw × St)) (guess : St → Ch → SPComp Bool) (n : ℕ) : Prop :=
+  (∀ {U : Type} (O' : U → Empty → PMF (Empty × U)) (u : U),
+      Signatures.liftPMF ((OracleAdv.run O' choose'.2.erase u).map
+        fun z => (z.1.1, z.1.2.1)) = choose) ∧
+    (∀ s c {U : Type} (O' : U → Empty → PMF (Empty × U)) (u : U),
+      Signatures.liftPMF ((OracleAdv.run O' (guess' s c).2.erase u).map Prod.fst) =
+        guess s.1 c) ∧
+    ∀ f : Tw × (St × ℕ) → Ch,
+      OracleAdv.Timed.StepTimeBound (OracleAdv.Timed.stepBind choose' fun z => guess' z.2 (f z))
+        n
+
+/-- Costed stages whose erasures are the oracle trees `C` and `G s c`, where the lifted
+runs of `C` (budget dropped) and of `G s c` are `choose` and `guess s.1 c`, form a costed
+two-stage reduction for `choose` and `guess`. -/
+theorem TimedTwoStage.of_erase {Tw St Ch : Type}
+    {choose' : ℕ × OracleAdv.Timed Empty Empty (Tw × (St × ℕ))}
+    {guess' : St × ℕ → Ch → ℕ × OracleAdv.Timed Empty Empty Bool}
+    {C : OracleAdv Empty Empty (Tw × (St × ℕ))} {G : St × ℕ → Ch → OracleAdv Empty Empty Bool}
+    {choose : SPComp (Tw × St)} {guess : St → Ch → SPComp Bool} {n : ℕ}
+    (hCe : choose'.2.erase = C) (hGe : ∀ s c, (guess' s c).2.erase = G s c)
+    (hC : Signatures.liftPMF
+      (((OracleAdv.run (fun (_ : Unit) (d : Empty) => d.elim) C ()).map Prod.fst).map
+        fun z => (z.1, z.2.1)) = choose)
+    (hG : ∀ s c, Signatures.liftPMF
+      ((OracleAdv.run (fun (_ : Unit) (d : Empty) => d.elim) (G s c) ()).map Prod.fst) =
+        guess s.1 c)
+    (ht : ∀ f : Tw × (St × ℕ) → Ch,
+      OracleAdv.Timed.StepTimeBound (OracleAdv.Timed.stepBind choose' fun z => guess' z.2 (f z))
+        n) :
+    TimedTwoStage choose' guess' choose guess n := by
+  refine ⟨fun O' u => ?_, fun s c _ O' u => ?_, ht⟩
+  · rw [← hC, hCe, ← OracleAdv.run_map_fst_empty_eq O' _ C u (), PMF.map_comp]
+    rfl
+  · rw [← hG, hGe, OracleAdv.run_map_fst_empty_eq O' _ (G s c) u ()]
+
+end Costed
 
 end FiatShamirROM
 
