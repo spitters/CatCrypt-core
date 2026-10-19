@@ -43,6 +43,9 @@ Remark 1). Its advantage is `CR_Search_Advantage H (collFinder …)`, the search
 * `collFinder_advantage_randomFun_le`: for the random function `HashScheme.randomFun` and the
   identity codec, if the broadcast blocks are among the first `q` queries of a querier, the
   advantage of the finder is at most the birthday bound `q (q - 1) / 2 / |Hash|`.
+* `collFind_zero_fst_eq`, `collFinderG_zero_advantage_eq_zero`: at zero phases the finder
+  outputs two equal inputs, so `collFinderG … 0 …` has advantage `0` for every computation `G`,
+  every transaction selection and every adversary.
 -/
 
 set_option autoImplicit false
@@ -332,5 +335,49 @@ theorem collFinder_advantage_randomFun_le [Fintype Tx] [Fintype Hash] [Nonempty 
   exact prob_ROCollision_le (next (kinds c.1) c.2) q
 
 end Finder
+
+/-! ## The collision finder at zero phases -/
+
+section CollZero
+
+open CatCrypt.Core
+
+variable {Tx Hash : Type} [DecidableEq Tx] [DecidableEq Hash] {np : ℕ} [Corruption (Fin np)]
+  {n Hz : ℕ} {PK SK Sig : Type}
+  (P : Protocol Tx Hash np n Hz) (Sch : PSigScheme (Block Tx Hash (Fin np)) PK SK Sig)
+  [Sch.Deterministic]
+
+/-- At zero phases the finder outputs two equal inputs: the genesis block is the only block of
+the initial state. -/
+theorem collFind_zero_fst_eq (A : Adversary Tx Hash np n Hz PK Sig) (H : HashScheme)
+    (cd : H.Codec (BlockDom Tx Hash np Hz) Hash) (k : H.Key)
+    (c : (Fin n → Option (Fin np)) × (Fin np → PK × SK)) :
+    (collFind Sch P A H cd 0 k c).1 = (collFind Sch P A H cd 0 k c).2 := by
+  unfold collFind
+  cases hp : collPair Sch P A (⟨c.1, cd.hashOn k, c.2⟩ : Seed Tx Hash np n Hz PK SK) 0 with
+  | none => rfl
+  | some bb =>
+    obtain ⟨b, b'⟩ := bb
+    obtain ⟨hb, hb', hne, -⟩ := findColl_some hp
+    simp only [sTrace, runTrace, Function.iterate_zero, id, block_hist_gb, block_history, N0,
+      List.map_nil, List.mem_singleton] at hb hb'
+    exact absurd (hb.trans hb'.symm) hne
+
+/-- **The collision finder at zero phases has advantage `0`**, for every computation `G` of a
+value from the seed, every transaction selection and every adversary. -/
+theorem collFinderG_zero_advantage_eq_zero {X : Type} (H : HashScheme)
+    (cd : H.Codec (BlockDom Tx Hash np Hz) Hash) (μ : PMF (Option (Fin np))) (W : ℕ)
+    (G : Seed Tx Hash np n Hz PK SK → SPComp X) (tx : X → Slot → Fin np → Tx)
+    (adv : X → Adversary Tx Hash np n Hz PK Sig) :
+    CR_Search_Advantage H (collFinderG Sch P H cd μ W 0 G tx adv) = 0 := by
+  unfold CR_Search_Advantage CR_Search_Game collFinderG
+  simp only [SPComp.monad_bind_eq, SPComp.bind_assoc, SPComp.pure_bind]
+  refine Signatures.prTrue_bind_eq_zero _ _ _ fun k _ =>
+    Signatures.prTrue_bind_eq_zero _ _ _ fun c _ =>
+      Signatures.prTrue_bind_eq_zero _ _ _ fun x h => ?_
+  rw [collFind_zero_fst_eq]
+  simp [ForkingLemma.prTrue_pure_bool]
+
+end CollZero
 
 end CatCryptCore.Consensus.PoSNSB

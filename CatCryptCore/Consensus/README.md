@@ -118,6 +118,21 @@ static.
 | The stack: FFG over PoS-NSB realizes `F_FinTree`, whose properties include Δ-updatedness from round `2 E + 2 d + 2 + Δ` with lag `3 E + 3 d + 4 + Δ - 1`, with the bound of `chain_realizes`; concrete UC emulation with the same bound follows by instance search. | [`stack_realizes`](UC/Stack.lean), [`RealizesBound.compose`](../Crypto/UCTransparentHybrid.lean), [`ucEmulatesCSim_of_UCFromRealizes`](../Crypto/UCTransparent.lean) |
 | At the lottery parameters above, with the random function on `M` hash values and every deterministic signature scheme, the stack realizes `F_FinTree` with bound `slotBound + q (q - 1) / 2 / M` for `q = 2 ^ (K + 2)`, which is below `1` for `M = 4 ^ (K + 5)`. | [`LotteryInstance.instance_realizes`](UC/StackExamples.lean), [`LotteryInstance.instance_realizes_lt_one`](UC/StackExamples.lean) |
 
+In the protocols above the execution is that of a fixed adversary. In the protocols driven
+by an environment, the environment supplies the inputs: honest transactions, phase entries
+that select the next adversary of a family by an index, so that the adversary reacts
+adaptively to what the environment has seen, and hash queries. The execution is recomputed
+from the seed and the log of these inputs, and the bounds are stated per environment, with
+both reductions running the environment from its heap.
+
+| Statement | Lean |
+|---|---|
+| For every environment `Z`, chain growth, chain quality, common prefix or the honest tip fails on the execution of the final log of the run of `Z` with probability at most `posFailE Z`: the slot bound, plus the collision-resistance advantage of the explicit collision finder `collFinderE Z`, plus the sum over the parties `i` of the EUF-CMA advantages of the explicit forgers `forgerE Z i`. | [`pos_nsb_securityE`](UC/ChainEnv.lean), [`posFailE`](UC/ChainEnv.lean), [`collFinderE`](UC/ChainEnv.lean), [`forgerE`](UC/ChainEnv.lean) |
+| The chain driven by an environment realizes the tree functionality, with bound `posFailE Z` for every environment `Z`. | [`chain_realizesE`](UC/ChainEnvRealize.lean) |
+| The stack of FFG over the chain driven by an environment realizes `F_FinTree`; the bound against an environment `Z` is `posFailE Z'` at the environment `Z'` of the chain layer obtained by running `Z` with the gadget. | [`stack_realizesE`](UC/StackEnv.lean) |
+| In the one-party instance the collision term is `0` for every environment, since the finder at zero phases reads only the genesis block. | [`Instance.instance_realizesE`](UC/StackEnv.lean), [`collFinderG_zero_advantage_eq_zero`](PoSNSB/Prob/Collision.lean) |
+| At an environment without activations, for the constant family of an adversary and the transaction selection of the protocol, the bounds are those of the fixed adversary. | [`pos_nsb_security_of_env`](UC/ChainEnv.lean), [`stack_boundE_of_rounds_eq_zero`](UC/StackEnv.lean) |
+
 ## Relation to Ethereum
 
 The FFG part corresponds to Gasper [BHK+20]: justification and `k`-finalization by

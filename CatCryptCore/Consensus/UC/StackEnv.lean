@@ -42,8 +42,9 @@ gadget with `chainRealE` as its subroutine.
   `ffg_realizes`, `stackRealE` realizes `ideal (stackFE …) (stackSimE …)` with bound
   `posFailE … ((stackHybridE …).reduceEnv Z)` for every environment `Z`.
 * `Instance.instance_realizesE`: every hypothesis holds for the one-party instance, and the
-  collision term is `0` for every environment (`collFinderE_advantage_eq_zero`): with `K = 0`
-  the finder reads only the genesis block.
+  collision term is `0` for every environment (`collFinderG_zero_advantage_eq_zero` of
+  `CatCryptCore.Consensus.PoSNSB.Prob.Collision`): with `K = 0` the finder reads only the
+  genesis block.
 * `stack_boundE_of_rounds_eq_zero`: for the constant family of an adversary `A`, the
   transaction selection `P.txSel` and an environment without activations, the bound of
   `stack_realizesE` is the bound `posFail` of `stack_realizes`.
@@ -254,47 +255,6 @@ theorem stack_boundE_of_rounds_eq_zero (A : Adversary Tx Hash np n Hz PK Sig) {�
   simp only [← forger_adv_eq_env P Sch x₀ Tree H cd A μ W K Δ Z' hZ']
 
 end StackE
-
-/-! ## The collision finder at zero phases -/
-
-section CollZero
-
-variable {Tx Hash : Type} [DecidableEq Tx] [DecidableEq Hash] {np : ℕ} [Corruption (Fin np)]
-  {n Hz : ℕ} {PK SK Sig : Type}
-  (P : Protocol Tx Hash np n Hz) (Sch : PSigScheme (Block Tx Hash (Fin np)) PK SK Sig)
-  [Sch.Deterministic]
-
-/-- At zero phases the finder outputs two equal inputs: the genesis block is the only block of
-the initial state. -/
-theorem collFind_zero_fst_eq (A : Adversary Tx Hash np n Hz PK Sig) (H : HashScheme)
-    (cd : H.Codec (BlockDom Tx Hash np Hz) Hash) (k : H.Key)
-    (c : (Fin n → Option (Fin np)) × (Fin np → PK × SK)) :
-    (collFind Sch P A H cd 0 k c).1 = (collFind Sch P A H cd 0 k c).2 := by
-  unfold collFind
-  cases hp : collPair Sch P A (⟨c.1, cd.hashOn k, c.2⟩ : Seed Tx Hash np n Hz PK SK) 0 with
-  | none => rfl
-  | some bb =>
-    obtain ⟨b, b'⟩ := bb
-    obtain ⟨hb, hb', hne, -⟩ := findColl_some hp
-    simp only [sTrace, runTrace, Function.iterate_zero, id, block_hist_gb, block_history, N0,
-      List.map_nil, List.mem_singleton] at hb hb'
-    exact absurd (hb.trans hb'.symm) hne
-
-/-- **The collision finder at zero phases has advantage `0`**, for every computation `G` of a
-value from the seed, every transaction selection and every adversary. -/
-theorem collFinderG_zero_advantage_eq_zero {X : Type} (H : HashScheme)
-    (cd : H.Codec (BlockDom Tx Hash np Hz) Hash) (μ : PMF (Option (Fin np))) (W : ℕ)
-    (G : Seed Tx Hash np n Hz PK SK → SPComp X) (tx : X → Slot → Fin np → Tx)
-    (adv : X → Adversary Tx Hash np n Hz PK Sig) :
-    CR_Search_Advantage H (collFinderG Sch P H cd μ W 0 G tx adv) = 0 := by
-  unfold CR_Search_Advantage CR_Search_Game collFinderG
-  simp only [SPComp.monad_bind_eq, SPComp.bind_assoc, SPComp.pure_bind]
-  refine FTree.prTrue_bind_eq_zero _ _ _ fun k _ => FTree.prTrue_bind_eq_zero _ _ _ fun c _ =>
-    FTree.prTrue_bind_eq_zero _ _ _ fun x h => ?_
-  rw [collFind_zero_fst_eq]
-  simp [ForkingLemma.prTrue_pure_bool]
-
-end CollZero
 
 /-! ## The one-party instance -/
 
