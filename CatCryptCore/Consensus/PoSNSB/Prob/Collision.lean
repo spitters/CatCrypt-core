@@ -26,6 +26,8 @@ Remark 1). Its advantage is `CR_Search_Advantage H (collFinder …)`, the search
 
 * `findColl h l`: the first pair of distinct elements of `l` with equal images under `h`.
 * `collCoins`, `collFind`, `collFinder Sch P A H cd μ W K`: the reduction.
+* `collFinderG Sch P H cd μ W K G tx adv`: the reduction for a computation `G` of a value `x`
+  from the seed, with the transactions `tx x` and the adversary `adv x`.
 
 ## Main results
 
@@ -35,6 +37,9 @@ Remark 1). Its advantage is `CR_Search_Advantage H (collFinder …)`, the search
   phases makes the output of the finder a collision.
 * `prob_collision_le`: the probability that some state of the first `K` phases is not
   collision free is at most `CR_Search_Advantage H (collFinder Sch P A H cd μ W K)`.
+* `prob_collisionG_le`: the same bound for the transactions and the adversary computed by `G`
+  from the seed, against `collFinderG`.
+* `sampleFrom_ofPMF_bind`, `sampleFrom_ofPMF_map`: sampling from a bound or mapped `PMF`.
 * `collFinder_advantage_randomFun_le`: for the random function `HashScheme.randomFun` and the
   identity codec, if the broadcast blocks are among the first `q` queries of a querier, the
   advantage of the finder is at most the birthday bound `q (q - 1) / 2 / |Hash|`.
@@ -208,6 +213,80 @@ theorem prob_collision_le (H : HashScheme) (cd : H.Codec (BlockDom Tx Hash np Hz
   refine MeasureTheory.OuterMeasure.mono _ fun c hc => ?_
   obtain ⟨j, hj, hcf⟩ := hc
   exact collFind_wins Sch P A H cd K hHz hGB k c j hj hcf
+
+open CatCrypt.Core CatCrypt.NonUniform
+
+omit [DecidableEq Tx] [DecidableEq Hash] [Corruption (Fin np)] in
+/-- Sampling from a bound `PMF` is sampling the first value and then from its continuation. -/
+theorem sampleFrom_ofPMF_bind {α β : Type} (p : PMF α) (f : α → PMF β) :
+    sampleFrom (ofPMF (p.bind f)) =
+      SPComp.bind (sampleFrom (ofPMF p)) fun a => sampleFrom (ofPMF (f a)) := by
+  rw [sampleFrom_bind_sampleFrom]
+  congr 1
+  simp only [ofPMF, CatCrypt.Prob.SDistr.bind, PMF.map_bind, PMF.bind_map, Function.comp_def]
+
+omit [DecidableEq Tx] [DecidableEq Hash] [Corruption (Fin np)] in
+/-- Sampling from the image of a `PMF` is sampling from the `PMF` and returning the image. -/
+theorem sampleFrom_ofPMF_map {α β : Type} (p : PMF α) (g : α → β) :
+    sampleFrom (ofPMF (p.map g)) =
+      SPComp.bind (sampleFrom (ofPMF p)) fun a => SPComp.pure (g a) := by
+  show sampleFrom (ofPMF (p.bind (PMF.pure ∘ g))) = _
+  rw [sampleFrom_ofPMF_bind]
+  congr 1; funext a
+  rw [← sampleFrom_pure]
+  congr 1
+  simp [ofPMF, CatCrypt.Prob.SDistr.pure, PMF.pure_map]
+
+/-- **The generalised reduction.** For a computation `G` of a value `x` from the seed, the
+transactions `tx x` and the adversary `adv x`: draw coins `c` from `collCoins Sch P μ W`, run `G`
+on the seed `⟨c.1, cd.hashOn k, c.2⟩` of the key `k`, and output
+`collFind` for the protocol with the transactions `tx x` and the adversary `adv x`. -/
+noncomputable def collFinderG {X : Type} (H : HashScheme)
+    (cd : H.Codec (BlockDom Tx Hash np Hz) Hash) (μ : PMF (Option (Fin np))) (W K : ℕ)
+    (G : Seed Tx Hash np n Hz PK SK → SPComp X) (tx : X → Slot → Fin np → Tx)
+    (adv : X → Adversary Tx Hash np n Hz PK Sig) : CR_Search_Adversary H :=
+  fun k => SPComp.bind (sampleFrom (ofPMF (collCoins Sch P μ W))) fun c =>
+    SPComp.bind (G ⟨c.1, cd.hashOn k, c.2⟩) fun x =>
+      SPComp.pure (collFind Sch { P with txSel := tx x } (adv x) H cd K k c)
+
+open Classical in
+/-- **Hash collisions of a computation of the adversary.** Over the seed distribution
+`seedDist Sch H cd` and the value `x` that `G` computes from the seed, from the empty heap, the
+probability that some state of the first `K` phases of the real execution with the transactions
+`tx x` and the adversary `adv x` is not collision free is at most the collision-resistance
+advantage of the explicit adversary `collFinderG Sch P H cd μ W K G tx adv`. -/
+theorem prob_collisionG_le {X : Type} (H : HashScheme)
+    (cd : H.Codec (BlockDom Tx Hash np Hz) Hash) (μ : PMF (Option (Fin np))) (W K : ℕ)
+    (hHz : K + 1 ≤ Hz) (hGB : P.GB.sl ≤ 1) (G : Seed Tx Hash np n Hz PK SK → SPComp X)
+    (tx : X → Slot → Fin np → Tx) (adv : X → Adversary Tx Hash np n Hz PK Sig) :
+    prTrue (SPComp.bind (sampleFrom (ofPMF (seedDist Sch H cd μ P.h0 W n))) fun ω =>
+      SPComp.bind (G ω) fun x => SPComp.pure (decide (∃ j ≤ K,
+        letI := ω.params P; letI := ω.bparams P
+        ¬collision_free (sTrace Sch { P with txSel := tx x } ω (adv x) false j)))) Heap.empty ≤
+      CR_Search_Advantage H (collFinderG Sch P H cd μ W K G tx adv) := by
+  rw [seedDist_eq_map Sch P H cd μ W, sampleFrom_ofPMF_bind]
+  simp_rw [sampleFrom_ofPMF_map]
+  unfold CR_Search_Advantage CR_Search_Game collFinderG
+  rw [show SPComp.sample H.Key = sampleFrom (ofPMF (PMF.uniformOfFintype H.Key)) from rfl]
+  simp only [SPComp.monad_bind_eq, SPComp.bind_assoc, SPComp.pure_bind]
+  rw [prTrue_bind_sampleFrom, prTrue_bind_sampleFrom]
+  refine ENNReal.tsum_le_tsum fun k => ?_
+  gcongr
+  rw [prTrue_bind_sampleFrom, prTrue_bind_sampleFrom]
+  refine ENNReal.tsum_le_tsum fun c => ?_
+  gcongr
+  refine ForkingLemma.prTrue_bind_mono _ _ _ _ fun x h' => ?_
+  by_cases hb : ∃ j ≤ K, letI := (⟨c.1, cd.hashOn k, c.2⟩ : Seed Tx Hash np n Hz PK SK).params P
+      letI := (⟨c.1, cd.hashOn k, c.2⟩ : Seed Tx Hash np n Hz PK SK).bparams P
+      ¬collision_free (sTrace Sch { P with txSel := tx x }
+        (⟨c.1, cd.hashOn k, c.2⟩ : Seed Tx Hash np n Hz PK SK) (adv x) false j)
+  · obtain ⟨j, hj, hcf⟩ := hb
+    have hw := collFind_wins Sch { P with txSel := tx x } (adv x) H cd K hHz hGB k c j hj hcf
+    simp only [coinsCollision] at hw
+    rw [hw]
+    exact (prTrue_le_one _ _).trans (by simp [ForkingLemma.prTrue_pure_bool])
+  · simp only [hb, decide_false, ForkingLemma.prTrue_pure_bool]
+    simp
 
 /-- **The finder against the random function.** For the keyed family
 `HashScheme.randomFun` with the identity codec, if the genesis block and the broadcast blocks

@@ -29,6 +29,9 @@ of the system into the leakage `Lk'` shown to the environment (`out`).
   against the adversary interface of the unattached system.
 * `Sys.sampleFirst c S` — the system that samples `x` from `c` in its first step and then runs
   `S x`.
+* `prFinal S q Z` — the probability that the final state of the run of `Z` against `S`
+  satisfies `q`.
+* `SPComp.atHeap h c` — the computation `c` run from the heap `h`.
 
 ## Main results
 
@@ -41,6 +44,11 @@ of the system into the leakage `Lk'` shown to the environment (`out`).
   `realizesBound_attach` is the class-route instance.
 * `run_sampleFirst`, `view_sampleFirst` — the run against `Sys.sampleFirst c S` is the average
   over `x ← c` of the runs against `S x`, for a heap-independent `c`.
+* `run_bind_firstSample`, `prFinal_firstSample` — a system whose first step samples `x` from a
+  heap-independent `c` and then steps as `T x`, and which steps as every `T x` afterwards, runs
+  as the average over `x ← c` of the runs against `T x`.
+* `prTrue_bind_atHeap` — a bind after `SPComp.atHeap h c` accepts with the probability of the
+  bind after `c` from `h`.
 * `prBad_le_of_monotone` — when no step leaves the bad states, the probability of the bad flag
   is at most the probability that the final state is bad.
 -/
@@ -235,6 +243,88 @@ theorem view_sampleFirst (c : SPComp β) (S : β → Sys τ E O) (hc : SPComp.Is
   simp only [view, SPComp.map, SPComp.bind_assoc, SPComp.pure_bind]
 
 end SampleFirst
+
+/-! ## A first-step sample in a family of systems -/
+
+section FirstSample
+
+variable {β E O : Type}
+
+/-- **Averaging over a first-step sample of a family.** Let the first step of `S` sample `x`
+from a heap-independent `c` and then take the first step of `T x` (`hfirst`), let `S` and
+every `T x` have the same initial state, agree on the states outside `fresh` (`hstep`), and let
+the steps of `T x` lead outside `fresh` (`hout`). For an environment that activates the system
+at least once, the run against `S` is the average over `x ← c` of the runs against `T x`. -/
+theorem run_bind_firstSample (c : SPComp β) (S : Sys τ E O) (T : β → Sys τ E O)
+    (fresh bad : τ → Bool) (hc : SPComp.IsPure c) (hinit : ∀ x, (T x).init = S.init)
+    (hfirst : ∀ e, S.step S.init e = SPComp.bind c fun x => (T x).step S.init e)
+    (hstep : ∀ x t e, fresh t = false → S.step t e = (T x).step t e)
+    (hout : ∀ x t e, SPComp.bind ((T x).step t e) (goodK fresh) = (T x).step t e)
+    (Z : Strat ζ E O) (hZ : 0 < Z.rounds) :
+    run S bad Z = SPComp.bind c fun x => run (T x) bad Z := by
+  have hloop : ∀ x n z t b, fresh t = false →
+      loop S bad Z n (z, t, b) = loop (T x) bad Z n (z, t, b) := by
+    intro x n
+    induction n with
+    | zero => intros; rfl
+    | succ n ih =>
+      intro z t b ht
+      simp only [loop]
+      congr 1; funext a
+      rw [hstep x t a.2 ht, ← hout x t a.2, SPComp.bind_assoc, SPComp.bind_assoc]
+      congr 1; funext p
+      unfold goodK
+      by_cases hp : fresh p.1
+      · simp [hp, SPComp.fail_bind]
+      · simp only [hp, Bool.false_eq_true, if_false, SPComp.pure_bind]
+        congr 1; funext z'
+        exact ih _ _ _ (by simpa using hp)
+  obtain ⟨n, hn⟩ : ∃ n, Z.rounds = n + 1 := ⟨Z.rounds - 1, by omega⟩
+  unfold run
+  simp only [hinit, hn, loop]
+  rw [SPComp.isPure_bind_comm_left c (Z.next Z.init) _ hc]
+  congr 1; funext a
+  rw [hfirst, SPComp.bind_assoc]
+  congr 1; funext x
+  rw [← hout x S.init a.2, SPComp.bind_assoc, SPComp.bind_assoc]
+  congr 1; funext p
+  unfold goodK
+  by_cases hp : fresh p.1
+  · simp [hp, SPComp.fail_bind]
+  · simp only [hp, Bool.false_eq_true, if_false, SPComp.pure_bind]
+    congr 1; funext z'
+    exact hloop x n _ _ _ (by simpa using hp)
+
+/-- The probability that the final state of the run of `Z` against `S` satisfies `q`, from the
+initial heap of `Z`. -/
+noncomputable def prFinal (S : Sys τ E O) (q : τ → Bool) (Z : Env (Strat ζ E O) ζ) : ℝ≥0∞ :=
+  prTrue (SPComp.bind (run S (fun _ => false) Z.input) fun c => SPComp.pure (q c.2.1)) Z.heap
+
+/-- Under the hypotheses of `run_bind_firstSample`, the probability of a property of the final
+state of the run against `S` is the probability over `x ← c` and the run against `T x`. -/
+theorem prFinal_firstSample (c : SPComp β) (S : Sys τ E O) (T : β → Sys τ E O)
+    (fresh : τ → Bool) (q : τ → Bool) (hc : SPComp.IsPure c) (hinit : ∀ x, (T x).init = S.init)
+    (hfirst : ∀ e, S.step S.init e = SPComp.bind c fun x => (T x).step S.init e)
+    (hstep : ∀ x t e, fresh t = false → S.step t e = (T x).step t e)
+    (hout : ∀ x t e, SPComp.bind ((T x).step t e) (goodK fresh) = (T x).step t e)
+    (Z : Env (Strat ζ E O) ζ) (hZ : 0 < Z.input.rounds) :
+    prFinal S q Z = prTrue (SPComp.bind c fun x =>
+      SPComp.bind (run (T x) (fun _ => false) Z.input) fun cf => SPComp.pure (q cf.2.1)) Z.heap := by
+  unfold prFinal
+  rw [run_bind_firstSample c S T fresh _ hc hinit hfirst hstep hout Z.input hZ, SPComp.bind_assoc]
+
+end FirstSample
+
+/-! ## Computations run from a fixed heap -/
+
+/-- The computation `c` run from the heap `h`, whatever the heap it is started from. -/
+def _root_.CatCrypt.Core.SPComp.atHeap {α : Type} (h : Heap) (c : SPComp α) : SPComp α :=
+  fun _ => c h
+
+/-- A bind after `c` run from the heap `h` accepts, from any heap, with the probability that the
+bind after `c` accepts from `h`. -/
+theorem prTrue_bind_atHeap {α : Type} (h h' : Heap) (c : SPComp α) (k : α → SPComp Bool) :
+    prTrue (SPComp.bind (SPComp.atHeap h c) k) h' = prTrue (SPComp.bind c k) h := rfl
 
 /-! ## Bad flags of monotone bad predicates -/
 
