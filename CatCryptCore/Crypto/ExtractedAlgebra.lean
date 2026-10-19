@@ -34,6 +34,7 @@ under the interpretation reduces by `simp` to the typed computation.
 * `Codec.vecArray` — `Vector UInt8 n` as an `Array Int` of byte values
 * `Codec.finVec` — `Fin (256 ^ n)` as `Vector UInt8 n`
 * `Codec.fintypeArray`, `Codec.fintypeVec` — any finite type into either carrier
+* `Codec.fintypeEntry` — a finite type as one `Array Int` entry
 * `AlgVal G S R K` — the decoded values; `AlgVal.codec` — the tagged codec
 * `AlgInterp G S R K` — generator, exponentiation, `embed`/`proj` and the value codec;
   its operations `mul`, `add`, `sub`, `pow`, `generator`, `expAdd`, `expMul`, `hash1`,
@@ -147,6 +148,14 @@ def finVec (n : ℕ) : Codec (Fin (256 ^ n)) (Vector UInt8 n) :=
 /-- A finite type in `Array Int`. -/
 noncomputable def fintypeArray (α : Type) [Fintype α] [DecidableEq α] : Codec α (Array Int) :=
   (fintypeNat α).comp nat
+
+/-- A finite type as one `Array Int` entry, its index in `Fintype.equivFin`. -/
+noncomputable def fintypeEntry (α : Type) [Fintype α] [DecidableEq α] : Codec α (Array Int) where
+  enc a := #[((fintypeNat α).enc a : Int)]
+  dec v := match v.toList with
+    | [i] => (fintypeNat α).dec i.toNat
+    | _ => none
+  dec_enc a := by simp
 
 /-- A finite type of at most `256 ^ n` elements in `Vector UInt8 n`. -/
 noncomputable def fintypeVec {α : Type} [Fintype α] [DecidableEq α] {n : ℕ}
