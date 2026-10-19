@@ -237,6 +237,7 @@ public import CatCryptCore.Quantum.ClassicalEmbedGame
 public import CatCryptCore.Quantum.ClassicalLift
 public import CatCryptCore.Quantum.ClassicalDiamondLift
 public import CatCryptCore.Quantum.BehavioralLift
+public import CatCryptCore.Quantum.BehavioralLiftGames
 public import CatCryptCore.Crypto.UCMonad.QuantumUC
 public import CatCryptCore.Crypto.UCMonad.LocalOpFunctorial
 public import CatCryptCore.Crypto.UCMonad.DiamondNormStates
