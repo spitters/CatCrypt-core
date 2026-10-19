@@ -269,8 +269,10 @@ def xladderStep (a24 : F) (xP : F × F) (acc : (F × F) × (F × F)) (b : Bool) 
   if b then (xdadd R₀ R₁ xP, xdbl a24 R₁)
        else (xdbl a24 R₀, xdadd R₀ R₁ xP)
 
-/-- Run the field-level ladder over a list of bits (MSB first) starting
-    from projective `(1, 0)` (infinity) and `xP` (the base point). -/
+/-- Run the field-level ladder over a list of bits, least significant bit
+    first (the convention of `bitsToNat`), starting from projective `(1, 0)`
+    (infinity) and `xP` (the base point). The head of the list is the last bit
+    processed, so the ladder consumes the bits from the most significant down. -/
 def xladderFold (a24 : F) (xP : F × F) : List Bool → (F × F) × (F × F)
   | []      => ((1, 0), xP)
   | b :: bs => xladderStep a24 xP (xladderFold a24 xP bs) b
