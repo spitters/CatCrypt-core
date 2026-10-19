@@ -535,6 +535,42 @@ theorem kemRedTree.timeBound_timed (side : PMF (T × Z)) (ctx : PK → C → T �
   have := hAc pk c tz.1
   exact (stepTimeBound_delay w).mono (by omega)
 
+/-- The costed form of `kemRed`: the costed run `kemRedTree.timed` at the encryption and decryption
+of the AEAD `D`. -/
+noncomputable def kemRed.timed [SampleableType W] (side : PMF (T × Z)) (ctx : PK → C → T → Z → X)
+    (ctxCost : PK → C → T → Z → ℕ) (F : SS → X → W) (FCost : SS → X → ℕ) (D : AEADDef W Ct)
+    (encCost : W → W → W → ℕ) (decCost : W → Ct → W → ℕ)
+    (A : PK → C → T → OracleAdv.Timed (AEAD_CCA_Query W Ct) (AEAD_CCA_Answer W Ct) Bool)
+    (ACost : PK → C → T → ℕ) (pk : PK) (c : C) (k : SS) :
+    ℕ × OracleAdv.Timed C (Option SS) Bool :=
+  kemRedTree.timed side ctx ctxCost F FCost D.encrypt encCost D.decrypt decCost A ACost pk c k
+
+/-- The costed form of `kemRed` erases to the run of `kemRed` at the erased adversary. -/
+theorem kemRed.erase_timed [SampleableType W] (side : PMF (T × Z)) (ctx : PK → C → T → Z → X)
+    (ctxCost : PK → C → T → Z → ℕ) (F : SS → X → W) (FCost : SS → X → ℕ) (D : AEADDef W Ct)
+    (encCost : W → W → W → ℕ) (decCost : W → Ct → W → ℕ)
+    (A : PK → C → T → OracleAdv.Timed (AEAD_CCA_Query W Ct) (AEAD_CCA_Answer W Ct) Bool)
+    (ACost : PK → C → T → ℕ) (pk : PK) (c : C) (k : SS) :
+    (kemRed.timed side ctx ctxCost F FCost D encCost decCost A ACost pk c k).2.erase =
+      (kemRed side ctx F D (fun pk c t => (A pk c t).erase)).run pk c k :=
+  kemRedTree.erase_timed ..
+
+/-- **Time of `kemRed`**, the bound of `kemRedTree.timeBound_timed` at the AEAD `D`. -/
+theorem kemRed.timeBound_timed [SampleableType W] (side : PMF (T × Z))
+    (ctx : PK → C → T → Z → X) (ctxCost : PK → C → T → Z → ℕ) (F : SS → X → W)
+    (FCost : SS → X → ℕ) (D : AEADDef W Ct) (encCost : W → W → W → ℕ)
+    (decCost : W → Ct → W → ℕ)
+    (A : PK → C → T → OracleAdv.Timed (AEAD_CCA_Query W Ct) (AEAD_CCA_Answer W Ct) Bool)
+    (ACost : PK → C → T → ℕ) {te td f x a Tm q : ℕ}
+    (he : ∀ k pt ad, encCost k pt ad ≤ te) (hd : ∀ k ct ad, decCost k ct ad ≤ td)
+    (hF : ∀ k y, FCost k y ≤ f) (hctx : ∀ pk c t z, ctxCost pk c t z ≤ x)
+    (hAc : ∀ pk c t, ACost pk c t ≤ a) (hA : ∀ pk c t, (A pk c t).TimeBound Tm)
+    (hq : ∀ pk c t, (A pk c t).erase.IsQueryBound q) (pk : PK) (c : C) (k : SS) :
+    StepTimeBound (kemRed.timed side ctx ctxCost F FCost D encCost decCost A ACost pk c k)
+      (5 + f + x + a + (Tm + q * (3 + te + td))) :=
+  kemRedTree.timeBound_timed side ctx ctxCost F FCost D.encrypt encCost D.decrypt decCost A ACost
+    he hd hF hctx hAc hA hq pk c k
+
 /-- **Time of the PRF reduction.** Under the bounds of `kemRedTree.timeBound_timed` and
 encapsulation of cost at most `e`, the costed PRF reduction has time at most
 `8 + e + x + a + T + q * (3 + te + td)`: three samples, one query, the encapsulation, the
