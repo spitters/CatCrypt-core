@@ -47,6 +47,11 @@ invariant make the result agree with the hash function.
   at most `K` phases are among the logged queries
 * `isQueryBound_hashProg` — the hash program asks at most `1 + K * (|IP| * (qc + m + 1))`
   queries for an oracle adversary with `Bounded qc m`
+* `collFinder_advantage_oracle_le` — for an oracle adversary with `Bounded qc m`, the collision
+  finder against the random function has advantage at most `qT (qT - 1) / 2 / |Hash|` with
+  `qT = 1 + K * (|IP| * (qc + m + 1))`
+* `pos_nsb_security_rom` — `pos_nsb_security` for an oracle adversary against the random
+  function, with this bound as the collision term
 -/
 
 set_option autoImplicit false
@@ -706,5 +711,109 @@ theorem encB_mem_hashProg (hA : A.toAdversary.OutputBound m) (f : BlockDom Tx Ha
 end Eval
 
 end HashProg
+
+/-! ### The collision term in the random-oracle model -/
+
+section ROMBound
+
+open CatCrypt.Crypto.Assumptions
+open scoped ENNReal
+
+variable {Tx Hash : Type} [DecidableEq Tx] [DecidableEq Hash] {np : ℕ} [Corruption (Fin np)]
+  {n Hz : ℕ} {PK SK Sig : Type}
+  (Sch : PSigScheme (Block Tx Hash (Fin np)) PK SK Sig) [Sch.Deterministic]
+  (IP : List (Fin np)) (h0 : Fin np) (GB : Block Tx Hash (Fin np))
+  (U : (L : Fin n → Option (Fin np)) → Fin np →
+    @UTreeType Tx Hash (Fin np) (leaderParams IP h0 L) GB)
+  (txSel : Slot → Fin np → Tx) (A : OAdversary Tx Hash np n Hz PK Sig) {qc m : ℕ}
+
+/-- **The collision term for an oracle adversary.** For a protocol with uniform tree types and
+an oracle adversary `A` whose calls ask at most `qc` queries and output at most `m` messages,
+the collision finder of the first `K` phases of the execution of `A.toAdversary` against the
+random function `HashScheme.randomFun` with the identity codec has collision-search advantage
+at most the birthday bound `qT (qT - 1) / 2 / |Hash|` with `qT = 1 + K (|IP| (qc + m + 1))`,
+the query bound of the hash program `hashProg`. -/
+theorem collFinder_advantage_oracle_le [Fintype Tx] [Fintype Hash] [Nonempty Hash]
+    (hA : A.Bounded qc m) (μ : PMF (Option (Fin np))) (W K : ℕ) :
+    CR_Search_Advantage (HashScheme.randomFun (BlockDom Tx Hash np Hz) Hash)
+        (collFinder Sch (Protocol.ofUniform (Hz := Hz) IP h0 GB U txSel) A.toAdversary
+          (HashScheme.randomFun (BlockDom Tx Hash np Hz) Hash) (HashScheme.Codec.id _) μ W K) ≤
+      (((1 + K * (IP.length * (qc + m + 1))) * (1 + K * (IP.length * (qc + m + 1)) - 1) / 2 :
+        ℕ) : ℝ≥0∞) / Fintype.card Hash := by
+  set qT := 1 + K * (IP.length * (qc + m + 1))
+  let next : (Fin n → Option (Fin np)) → (Fin np → PK × SK) →
+      Querier (BlockDom Tx Hash np Hz) Hash := fun L ks =>
+    (hashProg Sch IP h0 GB U txSel L ks A m K).toQuerier (encB Hz GB)
+  have hwin : ∀ (f : BlockDom Tx Hash np Hz → Hash)
+      (c : (Fin n → Option (Fin np)) × (Fin np → PK × SK)),
+      coinsCollision (collFind Sch (Protocol.ofUniform (Hz := Hz) IP h0 GB U txSel) A.toAdversary
+        (HashScheme.randomFun (BlockDom Tx Hash np Hz) Hash) (HashScheme.Codec.id _) K) f c =
+          true → ROCollision (next c.1 c.2) qT f := by
+    intro f c hc
+    have hRO : ∀ b ∈ (letI := leaderParams IP h0 c.1
+        letI : BlockParameters Tx Hash (Fin np) := ⟨GB, fun b => f (encB Hz b)⟩
+        block_hist_gb (sTrace Sch (Protocol.ofUniform (Hz := Hz) IP h0 GB U txSel)
+          (uSeed c.1 c.2 f) A.toAdversary false K)),
+        ∃ k < qT, query (next c.1 c.2) f k = encB Hz b := by
+      intro b hb
+      have hm := encB_mem_hashProg Sch IP h0 GB U txSel c.1 c.2 A m hA.2 f (le_refl K) b hb
+      obtain ⟨k, hk, hkb⟩ := List.mem_iff_getElem.1 hm
+      refine ⟨k, lt_of_lt_of_le hk (OracleAdv.length_evalOn_le_of_isQueryBound f
+        (isQueryBound_hashProg Sch IP h0 GB U txSel c.1 c.2 A m hA K)), ?_⟩
+      rw [OracleAdv.query_toQuerier _ _ f k hk, hkb]
+    simp only [coinsCollision, decide_eq_true_eq] at hc
+    obtain ⟨hh, hne⟩ := hc
+    cases hp : collPair Sch (Protocol.ofUniform (Hz := Hz) IP h0 GB U txSel) A.toAdversary
+        (⟨c.1, (HashScheme.Codec.id
+          (HashScheme.randomFun (BlockDom Tx Hash np Hz) Hash)).hashOn f, c.2⟩ :
+            Seed Tx Hash np n Hz PK SK) K with
+    | none =>
+      simp only [collFind, hp] at hne
+      exact absurd rfl hne
+    | some bb =>
+      obtain ⟨b, b'⟩ := bb
+      obtain ⟨hb, hb', -, -⟩ := findColl_some hp
+      simp only [collFind, hp] at hne hh
+      obtain ⟨a, ha, hqa⟩ := hRO b hb
+      obtain ⟨a', ha', hqa'⟩ := hRO b' hb'
+      exact ⟨a, ha, a', ha', by rw [hqa, hqa']; exact hne, by rw [hqa, hqa']; exact hh⟩
+  rw [collFinder, CR_Search_Advantage_ofCoins]
+  refine bind_map_apply_le _ _ _ _ fun c => ?_
+  rw [← PMF.toOuterMeasure_apply_singleton, PMF.toOuterMeasure_map_apply]
+  refine (MeasureTheory.OuterMeasure.mono _ fun f hf => hwin f c hf).trans ?_
+  exact prob_ROCollision_le (next c.1 c.2) qT
+
+/-- **Security of PoS-NSB in the random-oracle model.** For a protocol with uniform tree types,
+an oracle adversary `A` whose calls ask at most `qc` queries and output at most `m` messages,
+the random function `HashScheme.randomFun` with the identity codec and the hypotheses of
+`pos_nsb_security`, chain growth, chain quality, common prefix and the honest tip hold for the
+first `K` phases of the real execution of `A.toAdversary` except with probability at most
+`slotBound (kindLaw μ) n d w ε + qT (qT - 1) / 2 / |Hash| +
+∑ᵢ eufcmaAdvantage Sch.toSigScheme (toEUFAdversary (forger … i))` with
+`qT = 1 + K (|IP| (qc + m + 1))`. -/
+theorem pos_nsb_security_rom [Fintype Tx] [Fintype Hash] [Nonempty Hash]
+    (hA : A.Bounded qc m) (Tree : TreeFamily (Protocol.ofUniform (Hz := Hz) IP h0 GB U txSel))
+    (hP : ProtocolHyp (Protocol.ofUniform (Hz := Hz) IP h0 GB U txSel)) (hTree : Tree.Longest)
+    (μ : PMF (Option (Fin np))) (W K d w : ℕ) (ε : ℝ)
+    (hwd : w ≤ d) (hWn : W + d ≤ n) (hn : K + 2 ≤ n) (hHz : K + 1 ≤ Hz)
+    (hε : 0 ≤ ε) (hγ : 2 * pA (kindLaw μ) ≤ pH (kindLaw μ))
+    (hw : (w : ℝ) ≤ d * (pH (kindLaw μ) - pA (kindLaw μ)))
+    (h3 : (3 : ℝ) ≤ d * (pH (kindLaw μ) - 2 * pA (kindLaw μ))) :
+    (seedDist Sch (HashScheme.randomFun (BlockDom Tx Hash np Hz) Hash) (HashScheme.Codec.id _) μ
+        h0 W n).toOuterMeasure
+        {ω | ¬Good (Protocol.ofUniform (Hz := Hz) IP h0 GB U txSel) Sch A.toAdversary Tree
+          (kindLaw μ) K d w ε ω} ≤
+      slotBound (kindLaw μ) n d w ε +
+        (((1 + K * (IP.length * (qc + m + 1))) * (1 + K * (IP.length * (qc + m + 1)) - 1) / 2 :
+          ℕ) : ℝ≥0∞) / Fintype.card Hash +
+        ∑ i : Fin np, eufcmaAdvantage Sch.toSigScheme
+          (toEUFAdversary (forger Sch (Protocol.ofUniform (Hz := Hz) IP h0 GB U txSel)
+            A.toAdversary (HashScheme.randomFun (BlockDom Tx Hash np Hz) Hash)
+            (HashScheme.Codec.id _) μ W K i)) :=
+  (pos_nsb_security _ Sch A.toAdversary Tree hP hTree _ _ μ W K d w ε hwd hWn hn hHz hε hγ hw
+    h3).trans (add_le_add_left (add_le_add_right
+      (collFinder_advantage_oracle_le Sch IP h0 GB U txSel A hA μ W K) _) _)
+
+end ROMBound
 
 end CatCryptCore.Consensus.PoSNSB
