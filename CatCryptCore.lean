@@ -157,6 +157,7 @@ public import CatCryptCore.Crypto.NomAdvantage
 public import CatCryptCore.Crypto.EvalComplete
 public import CatCryptCore.Crypto.ExtractedAlgebra
 public import CatCryptCore.Crypto.ExtractedOracle
+public import CatCryptCore.Crypto.ExtractedPairing
 public import CatCryptCore.Crypto.NomPkgBridge
 public import CatCryptCore.Crypto.EasyCryptBridge
 public import CatCryptCore.Crypto.BadEvent
