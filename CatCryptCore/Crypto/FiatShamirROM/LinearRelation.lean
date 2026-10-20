@@ -30,7 +30,8 @@ the extractor is `(z₁ − z₂)/(c₁ − c₂)` per scalar.
 * `GroupParam.scalarCommRing` — the commutative ring of the scalars of `gp`
 * `GroupParam.dlog` — the discrete logarithm to the generator
 * `LinearEquation`, `LinearRelation` — linear relations, with `map`, `image`,
-  `Holds`, `ValidateInstance` and `simCommit`
+  `Holds`, `IndexValid`, `column`, `simCommit` and `ValidateInstance`, the predicates of
+  draft-03 §3.5 for a relation whose element `0` is the generator
 * `LinearRelation.and` — AND composition by concatenation
 * `linearSigma` — the Σ-protocol for a family of linear relations
 * `linearBatchVerify`, `linearCompactVerify` — the verifiers of the batchable proofs
@@ -45,8 +46,10 @@ the extractor is `(z₁ − z₂)/(c₁ − c₂)` per scalar.
 * `linearSigma_complete`, `linearSigma_specialSound`, `linearSigma_perfectHVZK` (for a
   generator supported on the relation), `linearSigma_uniqueResp` (for injective maps)
 * `LinearRelation.map_and`, `LinearRelation.image_and`, `LinearRelation.holds_and_iff`,
-  `LinearRelation.validateInstance_and`, `LinearRelation.map_and_injective` — the map,
-  image, witnesses, validity and injectivity of an AND composition are those of its parts
+  `LinearRelation.indexValid_and`, `LinearRelation.map_and_injective` — the map, image,
+  witnesses, index ranges and injectivity of an AND composition are those of its parts
+* `LinearRelation.validateInstance_and` — the AND composition of valid relations is valid
+  when the generator of the second occurs in one of its equations
 * `linearSigma_verify_iff` — a transcript verifies exactly when its commitment is
   the one recomputed by the simulator
 * `linearSigma_compactVerify_iff`, `linearSigma_batchVerify_iff` — the compact
@@ -203,12 +206,48 @@ instance (w : Fin n → gp.Scalar) : Decidable (x.Holds w) :=
 
 /-- Every index of the relation is in range: image and element indices below the
 number of elements, scalar indices below `n`. -/
-def ValidateInstance : Prop :=
+def IndexValid : Prop :=
   ∀ i, (x.equations i).lhs < x.elements.length ∧
     ∀ t ∈ (x.equations i).terms, t.1 < n ∧ t.2 < x.elements.length
 
-instance : Decidable x.ValidateInstance := by
-  unfold ValidateInstance; infer_instance
+instance : Decidable x.IndexValid := by
+  unfold IndexValid; infer_instance
+
+/-- The entry of column `j` of the matrix of the linear map in row `i`: the product of
+the elements `elem k` over the terms `(j, k)` of equation `i`. -/
+def column (j : ℕ) (i : Fin m) : gp.G :=
+  (((x.equations i).terms.filter fun t => t.1 == j).map fun t => x.elem t.2).foldr
+    gp.groupMul gp.identity
+
+/-- The predicates of `ValidateInstance` of draft-irtf-cfrg-sigma-protocols-03 §3.5 for a
+relation whose element `0` is the generator, in the order of the draft's checks: there is
+an equation (check 1); every equation has a term (check 2); the indices are in range
+(check 4); every element other than the generator occurs in an equation (check 5); every
+scalar index below `n` occurs in a term (check 6); element `0` is the generator
+(check 7); no element (check 8), no image entry (check 9) and no column of the matrix of
+the linear map (check 10) is the identity. Check 3 bounds the counts of an encoding by
+`2^32 − 1` and has no counterpart here. -/
+structure ValidateInstance : Prop where
+  equations_pos : 0 < m
+  terms_ne_nil : ∀ i, (x.equations i).terms ≠ []
+  indexValid : x.IndexValid
+  element_used : ∀ k < x.elements.length, k ≠ 0 →
+    ∃ i, (x.equations i).lhs = k ∨ ∃ t ∈ (x.equations i).terms, t.2 = k
+  scalar_used : ∀ j < n, ∃ i, ∃ t ∈ (x.equations i).terms, t.1 = j
+  head_generator : x.elements.head? = some gp.generator
+  elements_ne_identity : ∀ g ∈ x.elements, g ≠ gp.identity
+  image_ne_identity : ∀ i, x.image i ≠ gp.identity
+  column_ne_identity : ∀ j < n, ∃ i, x.column j i ≠ gp.identity
+
+instance : Decidable x.ValidateInstance :=
+  decidable_of_iff (0 < m ∧ (∀ i, (x.equations i).terms ≠ []) ∧ x.IndexValid ∧
+      (∀ k < x.elements.length, k ≠ 0 →
+        ∃ i, (x.equations i).lhs = k ∨ ∃ t ∈ (x.equations i).terms, t.2 = k) ∧
+      (∀ j < n, ∃ i, ∃ t ∈ (x.equations i).terms, t.1 = j) ∧
+      x.elements.head? = some gp.generator ∧ (∀ g ∈ x.elements, g ≠ gp.identity) ∧
+      (∀ i, x.image i ≠ gp.identity) ∧ (∀ j < n, ∃ i, x.column j i ≠ gp.identity))
+    ⟨fun ⟨a, b, c, d, e, f, g, h, k⟩ => ⟨a, b, c, d, e, f, g, h, k⟩,
+      fun ⟨a, b, c, d, e, f, g, h, k⟩ => ⟨a, b, c, d, e, f, g, h, k⟩⟩
 
 /-- The commitment for which `(a, c, z)` verifies: `map z · image^(−c)`. -/
 def simCommit (c : gp.Scalar) (z : Fin n → gp.Scalar) : Fin m → gp.G := fun i =>
@@ -479,7 +518,7 @@ variable {x₁ x₂}
 
 /-- The map of an AND composition on concatenated witnesses is the concatenation of
 the maps. -/
-theorem map_and (h₁ : x₁.ValidateInstance) (w₁ : Fin n₁ → gp.Scalar)
+theorem map_and (h₁ : x₁.IndexValid) (w₁ : Fin n₁ → gp.Scalar)
     (w₂ : Fin n₂ → gp.Scalar) :
     (x₁.and x₂).map (Fin.append w₁ w₂) = Fin.append (x₁.map w₁) (x₂.map w₂) := by
   funext i
@@ -495,7 +534,7 @@ theorem map_and (h₁ : x₁.ValidateInstance) (w₁ : Fin n₁ → gp.Scalar)
     simp only [Function.comp_apply, elem_and_right, vecGet_append_right]
 
 /-- The image of an AND composition is the concatenation of the images. -/
-theorem image_and (h₁ : x₁.ValidateInstance) :
+theorem image_and (h₁ : x₁.IndexValid) :
     (x₁.and x₂).image = Fin.append x₁.image x₂.image := by
   funext i
   refine Fin.addCases (fun i => ?_) (fun i => ?_) i
@@ -506,7 +545,7 @@ theorem image_and (h₁ : x₁.ValidateInstance) :
 
 /-- A concatenated witness is a witness for an AND composition exactly when its
 parts are witnesses for the parts. -/
-theorem holds_and_iff (h₁ : x₁.ValidateInstance) (w₁ : Fin n₁ → gp.Scalar)
+theorem holds_and_iff (h₁ : x₁.IndexValid) (w₁ : Fin n₁ → gp.Scalar)
     (w₂ : Fin n₂ → gp.Scalar) :
     (x₁.and x₂).Holds (Fin.append w₁ w₂) ↔ x₁.Holds w₁ ∧ x₂.Holds w₂ := by
   unfold Holds
@@ -514,9 +553,9 @@ theorem holds_and_iff (h₁ : x₁.ValidateInstance) (w₁ : Fin n₁ → gp.Sca
   exact ⟨fun h => ⟨funext fun i => by simpa using congrFun h (Fin.castAdd _ i),
     funext fun i => by simpa using congrFun h (Fin.natAdd _ i)⟩, fun h => by rw [h.1, h.2]⟩
 
-/-- The AND composition of valid relations is valid. -/
-theorem validateInstance_and (h₁ : x₁.ValidateInstance) (h₂ : x₂.ValidateInstance) :
-    (x₁.and x₂).ValidateInstance := by
+/-- The AND composition of relations whose indices are in range has its indices in
+range. -/
+theorem indexValid_and (h₁ : x₁.IndexValid) (h₂ : x₂.IndexValid) : (x₁.and x₂).IndexValid := by
   have hlen : (x₁.and x₂).elements.length = x₁.elements.length + x₂.elements.length :=
     List.length_append
   intro i
@@ -534,8 +573,87 @@ theorem validateInstance_and (h₁ : x₁.ValidateInstance) (h₂ : x₂.Validat
     obtain ⟨a, b⟩ := ht t' ht'
     exact ⟨by omega, by omega⟩
 
+/-- A column entry of an AND composition in a row of `x₁` is the entry of `x₁`. -/
+theorem column_and_left (h₁ : x₁.IndexValid) (j : ℕ) (i : Fin m₁) :
+    (x₁.and x₂).column j (Fin.castAdd m₂ i) = x₁.column j i := by
+  simp only [column, equations_and_left]
+  congr 1
+  refine List.map_congr_left fun t ht => ?_
+  exact elem_and_left x₁ x₂ _ ((h₁ i).2 t (List.mem_of_mem_filter ht)).2
+
+/-- A column entry of an AND composition in column `j + n₁` and a row of `x₂` is the
+entry of `x₂` in column `j`. -/
+theorem column_and_right (j : ℕ) (i : Fin m₂) :
+    (x₁.and x₂).column (j + n₁) (Fin.natAdd m₁ i) = x₂.column j i := by
+  simp only [column, equations_and_right, LinearEquation.shift, List.filter_map, List.map_map]
+  congr 1
+  simp only [Function.comp_def, elem_and_right]
+  congr 1
+  exact List.filter_congr fun t _ => by simp
+
+/-- The AND composition of valid relations is valid when the generator of `x₂`, its
+element `0`, occurs in an equation of `x₂`. -/
+theorem validateInstance_and (h₁ : x₁.ValidateInstance) (h₂ : x₂.ValidateInstance)
+    (h₂g : ∃ i, (x₂.equations i).lhs = 0 ∨ ∃ t ∈ (x₂.equations i).terms, t.2 = 0) :
+    (x₁.and x₂).ValidateInstance where
+  equations_pos := by have := h₁.equations_pos; omega
+  terms_ne_nil i := by
+    refine Fin.addCases (fun i => ?_) (fun i => ?_) i
+    · rw [equations_and_left]; exact h₁.terms_ne_nil i
+    · rw [equations_and_right]
+      simpa [LinearEquation.shift] using h₂.terms_ne_nil i
+  indexValid := indexValid_and h₁.indexValid h₂.indexValid
+  element_used k hk hk0 := by
+    simp only [and, List.length_append] at hk
+    by_cases hk1 : k < x₁.elements.length
+    · obtain ⟨i, hi⟩ := h₁.element_used k hk1 hk0
+      exact ⟨Fin.castAdd m₂ i, by rw [equations_and_left]; exact hi⟩
+    · obtain ⟨k', rfl⟩ : ∃ k', k = k' + x₁.elements.length := ⟨k - x₁.elements.length, by omega⟩
+      obtain ⟨i, hi⟩ : ∃ i, (x₂.equations i).lhs = k' ∨ ∃ t ∈ (x₂.equations i).terms, t.2 = k' := by
+        by_cases hk' : k' = 0
+        · exact hk' ▸ h₂g
+        · exact h₂.element_used k' (by omega) hk'
+      refine ⟨Fin.natAdd m₁ i, ?_⟩
+      rw [equations_and_right]
+      simp only [LinearEquation.shift, List.mem_map]
+      rcases hi with hi | ⟨t, ht, hte⟩
+      · exact Or.inl (by omega)
+      · exact Or.inr ⟨_, ⟨t, ht, rfl⟩, by simp [hte]⟩
+  scalar_used j hj := by
+    by_cases hj1 : j < n₁
+    · obtain ⟨i, hi⟩ := h₁.scalar_used j hj1
+      exact ⟨Fin.castAdd m₂ i, by rw [equations_and_left]; exact hi⟩
+    · obtain ⟨i, t, ht, hte⟩ := h₂.scalar_used (j - n₁) (by omega)
+      refine ⟨Fin.natAdd m₁ i, ?_⟩
+      rw [equations_and_right]
+      simp only [LinearEquation.shift, List.mem_map]
+      exact ⟨_, ⟨t, ht, rfl⟩, by simp only; omega⟩
+  head_generator := by
+    have h := h₁.head_generator
+    cases hx : x₁.elements with
+    | nil => simp [hx] at h
+    | cons a l => simp_all [and]
+  elements_ne_identity g hg := by
+    simp only [and, List.mem_append] at hg
+    rcases hg with hg | hg
+    exacts [h₁.elements_ne_identity g hg, h₂.elements_ne_identity g hg]
+  image_ne_identity i := by
+    rw [image_and h₁.indexValid]
+    refine Fin.addCases (fun i => ?_) (fun i => ?_) i
+    · rw [Fin.append_left]; exact h₁.image_ne_identity i
+    · rw [Fin.append_right]; exact h₂.image_ne_identity i
+  column_ne_identity j hj := by
+    by_cases hj1 : j < n₁
+    · obtain ⟨i, hi⟩ := h₁.column_ne_identity j hj1
+      exact ⟨Fin.castAdd m₂ i, by rw [column_and_left h₁.indexValid]; exact hi⟩
+    · obtain ⟨i, hi⟩ := h₂.column_ne_identity (j - n₁) (by omega)
+      refine ⟨Fin.natAdd m₁ i, ?_⟩
+      have e : j = (j - n₁) + n₁ := by omega
+      rw [e, column_and_right]
+      exact hi
+
 /-- The map of an AND composition of relations with injective maps is injective. -/
-theorem map_and_injective (h₁ : x₁.ValidateInstance) (hi₁ : Function.Injective x₁.map)
+theorem map_and_injective (h₁ : x₁.IndexValid) (hi₁ : Function.Injective x₁.map)
     (hi₂ : Function.Injective x₂.map) : Function.Injective (x₁.and x₂).map := by
   intro w w' h
   have hw := Fin.append_castAdd_natAdd (f := w)
