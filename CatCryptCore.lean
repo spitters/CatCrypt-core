@@ -211,6 +211,9 @@ public import CatCryptCore.Crypto.PKE.Games
 public import CatCryptCore.Crypto.PKE.FOTransformT
 public import CatCryptCore.Crypto.PKE.LWEPKE
 public import CatCryptCore.Crypto.AKE.KeySchedule
+public import CatCryptCore.Crypto.Messaging.FSPRG
+public import CatCryptCore.Crypto.Messaging.CKA
+public import CatCryptCore.Crypto.Messaging.FSAEAD
 public import CatCryptCore.Crypto.KEM.Games
 public import CatCryptCore.Crypto.KEM.FOTransformU
 public import CatCryptCore.Crypto.KEM.FOTransformTimed
