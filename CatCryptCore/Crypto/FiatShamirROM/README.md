@@ -10,7 +10,7 @@ The constructions of the CFRG drafts
 and [draft-irtf-cfrg-fiat-shamir-03](https://datatracker.ietf.org/doc/draft-irtf-cfrg-fiat-shamir/)
 are proved here; the comparison with the drafts and the extracted implementation of the crate
 `sigma-proofs` are described in the
-[SigmaProtocol README of the CatCrypt repository](https://github.com/spitters/CatCrypt/blob/master/CatCrypt/Crypto/SigmaProtocol/README.md).
+[SigmaProtocol README](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/Crypto/SigmaProtocol/README.md).
 
 ## What is proved
 
