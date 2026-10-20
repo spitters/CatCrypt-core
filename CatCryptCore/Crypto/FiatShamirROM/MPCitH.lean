@@ -6,8 +6,10 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Crypto.FiatShamirROM.StraightLineCls
+public import CatCryptCore.Crypto.FiatShamirROM.Verification
 public import CatCryptCore.Crypto.UCConcrete
 public import CatCryptCore.Crypto.NomPkgBridge
+public import CatCryptCore.ForMathlib.PMFUniform
 
 /-!
 # MPC-in-the-head signatures in the random-oracle model
@@ -79,8 +81,9 @@ that cannot be answered, a uniform challenge vector is bad with probability at m
 * `Params.eufcma_le_raw` — `fiatShamir_rom_eufcma_slCls` instantiated
 * `Params.eufcma_le` — for every forger `A`,
   `eufcmaAdvantage A ≤ owfAdvantage F (inverter A) + statTerm qH qS`
-* `advantageA_eufcmaGame_le` — a distinguisher on the verification games has advantage
-  at most the EUF-CMA advantage
+
+A distinguisher on the verification games has advantage at most the EUF-CMA advantage
+(`FiatShamirROM.advantageA_eufcmaGame_le`, in `FiatShamirROM/Verification.lean`).
 
 ## References
 
@@ -105,212 +108,10 @@ open scoped ENNReal
 
 /-! ## Uniform distributions on products and function spaces -/
 
-section Uniform
-
-variable {A B : Type} [Fintype A] [Nonempty A] [Fintype B] [Nonempty B]
-
-omit [Fintype A] [Nonempty A] [Fintype B] [Nonempty B] in
-/-- An expectation over `p` of a function of `f` is the expectation over `p.map f`. -/
-theorem tsum_mul_comp_eq_map (p : PMF A) (f : A → B) (g : B → ℝ≥0∞) :
-    ∑' a, p a * g (f a) = ∑' b, (p.map f) b * g b := by
-  simp only [PMF.map_apply, ← ENNReal.tsum_mul_right]
-  rw [ENNReal.tsum_comm]
-  refine tsum_congr fun a => ?_
-  rw [tsum_eq_single (f a) (fun b hb => by simp [hb])]
-  simp
-
-/-- The uniform distribution on `A × B` samples the components independently. -/
-theorem uniform_prod_eq_bind :
-    PMF.uniformOfFintype (A × B) =
-      (PMF.uniformOfFintype A).bind fun a => (PMF.uniformOfFintype B).map (Prod.mk a) := by
-  ext ⟨a, b⟩
-  rw [PMF.bind_apply, tsum_eq_single a]
-  · rw [PMF.map_apply, tsum_eq_single b]
-    · simp [PMF.uniformOfFintype_apply, Fintype.card_prod, ENNReal.mul_inv]
-    · intro b' hb'; simp [Ne.symm hb']
-  · intro a' ha'
-    simp [PMF.map_apply, Ne.symm ha']
-
-/-- Mapping the first component of a uniform pair by maps with equal image
-distributions gives equal distributions. -/
-theorem map_uniform_prod_fst_congr {A' C S : Type} [Fintype A'] [Nonempty A'] [Fintype S]
-    [Nonempty S] {f : A → C} {g : A' → C}
-    (h : (PMF.uniformOfFintype A).map f = (PMF.uniformOfFintype A').map g) :
-    (PMF.uniformOfFintype (A × S)).map (fun ρ => (f ρ.1, ρ.2)) =
-      (PMF.uniformOfFintype (A' × S)).map (fun ρ => (g ρ.1, ρ.2)) := by
-  rw [uniform_prod_eq_bind, uniform_prod_eq_bind, PMF.map_bind, PMF.map_bind]
-  simp only [PMF.map_comp, Function.comp_def]
-  have hf : ((PMF.uniformOfFintype A).bind fun a =>
-      (PMF.uniformOfFintype S).map fun s => (f a, s)) =
-      ((PMF.uniformOfFintype A).map f).bind fun c =>
-        (PMF.uniformOfFintype S).map fun s => (c, s) := by
-    rw [PMF.bind_map]; rfl
-  have hg : ((PMF.uniformOfFintype A').bind fun a =>
-      (PMF.uniformOfFintype S).map fun s => (g a, s)) =
-      ((PMF.uniformOfFintype A').map g).bind fun c =>
-        (PMF.uniformOfFintype S).map fun s => (c, s) := by
-    rw [PMF.bind_map]; rfl
-  rw [hf, hg, h]
-
-omit [Fintype A] [Nonempty A] [Fintype B] [Nonempty B] in
-/-- An expectation over `p.bind f` is the expectation over `p` of the expectations
-over `f a`. -/
-theorem tsum_bind_mul (p : PMF A) (f : A → PMF B) (g : B → ℝ≥0∞) :
-    ∑' b, (p.bind f) b * g b = ∑' a, p a * ∑' b, f a b * g b := by
-  simp only [PMF.bind_apply, ← ENNReal.tsum_mul_right, ← ENNReal.tsum_mul_left, mul_assoc]
-  exact ENNReal.tsum_comm
-
-omit [Fintype B] [Nonempty B] in
-/-- The image distribution of a uniform map at a point is the number of its
-preimages over the size of the domain. -/
-theorem map_uniform_apply [DecidableEq B] (f : A → B) (b : B) :
-    ((PMF.uniformOfFintype A).map f) b =
-      ((Finset.univ.filter fun a => f a = b).card : ℝ≥0∞) * (Fintype.card A : ℝ≥0∞)⁻¹ := by
-  rw [PMF.map_apply, tsum_fintype]
-  simp only [PMF.uniformOfFintype_apply]
-  rw [← Finset.sum_filter, Finset.sum_const, nsmul_eq_mul]
-  congr 3
-  ext a
-  simp only [Finset.mem_filter, Finset.mem_univ, true_and]
-  exact eq_comm
-
-/-- The image distribution of a uniform function under a pointwise map is the product
-of the image distributions of its coordinates. -/
-theorem map_uniform_pi_apply {ι C : Type} [Fintype ι] [DecidableEq ι] [DecidableEq C]
-    (f : ι → A → C) (o : ι → C) :
-    ((PMF.uniformOfFintype (ι → A)).map fun r i => f i (r i)) o =
-      ∏ i, ((PMF.uniformOfFintype A).map (f i)) (o i) := by
-  rw [map_uniform_apply]
-  simp only [map_uniform_apply]
-  have hcard : (Finset.univ.filter fun r : ι → A => (fun i => f i (r i)) = o) =
-      Fintype.piFinset fun i => Finset.univ.filter fun a => f i a = o i := by
-    ext r
-    simp [funext_iff]
-  rw [hcard, Fintype.card_piFinset, Fintype.card_fun, Finset.prod_mul_distrib]
-  push_cast
-  congr 1
-  rw [Finset.prod_const, Finset.card_univ, ENNReal.inv_pow]
-
-/-- Mapping a uniform function pointwise by maps with equal image distributions gives
-equal distributions. -/
-theorem map_uniform_pi_congr {ι A' C : Type} [Fintype ι] [DecidableEq ι] [DecidableEq C]
-    [Fintype A'] [Nonempty A'] (f : ι → A → C) (g : ι → A' → C)
-    (h : ∀ i, (PMF.uniformOfFintype A).map (f i) = (PMF.uniformOfFintype A').map (g i)) :
-    ((PMF.uniformOfFintype (ι → A)).map fun r i => f i (r i)) =
-      ((PMF.uniformOfFintype (ι → A')).map fun r i => g i (r i)) := by
-  ext o
-  rw [map_uniform_pi_apply, map_uniform_pi_apply]
-  simp only [h]
-
-omit [Fintype A] [Nonempty A] [Fintype B] [Nonempty B] in
-/-- A guess from a distribution `q` hits the image of `p` under `f` with probability at
-most the largest probability of a value of `f`. -/
-theorem tsum_map_guess_le (p : PMF A) (f : A → B) (q : PMF B) {ε : ℝ≥0∞}
-    (h : ∀ b, p.toOuterMeasure {a | f a = b} ≤ ε) :
-    ∑' a, p a * q (f a) ≤ ε := by
-  rw [tsum_mul_comp_eq_map]
-  calc ∑' b, (p.map f) b * q b ≤ ∑' b, ε * q b := by
-        refine ENNReal.tsum_le_tsum fun b => ?_
-        gcongr
-        rw [PMF.map_apply]
-        refine le_of_eq_of_le ?_ (h b)
-        rw [PMF.toOuterMeasure_apply]
-        refine tsum_congr fun a => ?_
-        by_cases hab : f a = b
-        · simp [hab, Set.indicator]
-        · simp only [Set.indicator, Set.mem_ofPred_eq, hab, if_false]
-          simp only [ite_eq_right_iff]
-          intro h; exact absurd h.symm hab
-    _ = ε := by rw [ENNReal.tsum_mul_left, PMF.tsum_coe, mul_one]
-
-/-- The first component of a uniform pair lies in `S` with the uniform probability of
-`S`. -/
-theorem uniform_prod_fst_apply (S : Set A) :
-    (PMF.uniformOfFintype (A × B)).toOuterMeasure {c | c.1 ∈ S} =
-      (PMF.uniformOfFintype A).toOuterMeasure S := by
-  have : (PMF.uniformOfFintype (A × B)).map Prod.fst = PMF.uniformOfFintype A := by
-    rw [uniform_prod_eq_bind, PMF.map_bind]
-    simp only [PMF.map_comp, Function.comp_def]
-    conv_lhs => arg 2; ext a; exact PMF.map_const (PMF.uniformOfFintype B) a
-    exact PMF.bind_pure _
-  rw [← this, PMF.toOuterMeasure_map_apply]
-  rfl
-
-/-- The second component of a uniform pair lies in `S` with the uniform probability of
-`S`. -/
-theorem uniform_prod_snd_apply (S : Set B) :
-    (PMF.uniformOfFintype (A × B)).toOuterMeasure {c | c.2 ∈ S} =
-      (PMF.uniformOfFintype B).toOuterMeasure S := by
-  have : (PMF.uniformOfFintype (A × B)).map Prod.snd = PMF.uniformOfFintype B := by
-    rw [uniform_prod_eq_bind, PMF.map_bind]
-    simp only [PMF.map_comp, Function.comp_def]
-    exact ((PMF.uniformOfFintype A).bind_const _).trans (PMF.map_id _)
-  rw [← this, PMF.toOuterMeasure_map_apply]
-  rfl
-
-/-- A uniform value lies in a list `l` with probability at most `|l| / |A|`. -/
-theorem uniform_mem_list_le [DecidableEq A] (l : List A) :
-    (PMF.uniformOfFintype A).toOuterMeasure {a | a ∈ l} ≤
-      (l.length : ℝ≥0∞) * (Fintype.card A : ℝ≥0∞)⁻¹ := by
-  rw [PMF.toOuterMeasure_uniformOfFintype_apply, div_eq_mul_inv]
-  gcongr
-  have : Fintype.card {a | a ∈ l} = l.toFinset.card := by
-    rw [← Set.toFinset_card]; congr 1; ext a; simp
-  rw [this]
-  exact_mod_cast List.toFinset_card_le l
-
-/-- A uniform vector of `T` hidden parties among `K + 1` lies in a box whose sides miss a
-party each with probability at most `(K/(K + 1))^T`. -/
-theorem uniform_box_le (T K : ℕ) (S : Fin T → Finset (Fin (K + 1)))
-    (hS : ∀ j, S j ≠ Finset.univ) :
-    (PMF.uniformOfFintype (Fin T → Fin (K + 1))).toOuterMeasure {f | ∀ j, f j ∈ S j} ≤
-      (K : ℝ≥0∞) ^ T / ((K : ℝ≥0∞) + 1) ^ T := by
-  classical
-  rw [PMF.toOuterMeasure_uniformOfFintype_apply]
-  have hcard : Fintype.card {f : Fin T → Fin (K + 1) | ∀ j, f j ∈ S j} = ∏ j, (S j).card := by
-    rw [← Fintype.card_piFinset]
-    rw [← Set.toFinset_card]; congr 1; ext f; simp [Fintype.mem_piFinset]
-  rw [hcard, Fintype.card_fun, Fintype.card_fin, Fintype.card_fin]
-  gcongr
-  · push_cast
-    calc (∏ j, ((S j).card : ℝ≥0∞)) ≤ ∏ _j : Fin T, (K : ℝ≥0∞) := by
-          gcongr with j
-          have hlt : (S j).card < K + 1 := by
-            have := Finset.card_lt_card (Finset.ssubset_univ_iff.mpr (hS j))
-            simpa using this
-          exact_mod_cast Nat.lt_succ_iff.mp hlt
-      _ = (K : ℝ≥0∞) ^ T := by simp
-  · push_cast; rfl
-
-omit [Fintype A] [Nonempty A] in
-/-- The image of `p` under `some` gives `some a` the mass of `a`. -/
-theorem map_some_apply (p : PMF A) (a : A) : (p.map some) (some a) = p a := by
-  rw [PMF.map_apply, tsum_eq_single a (fun b hb => by simp [Ne.symm hb])]
-  simp
-
-omit [Fintype A] [Nonempty A] [Fintype B] [Nonempty B] in
-/-- An event `d x y` that implies the event `e x y` on the support of `p`, under two
-families of distributions that agree on the support of `p`, has at most its
-probability. -/
-theorem bind_map_true_le (p : PMF A) (f g : A → PMF B) (d e : A → B → Bool)
-    (h : ∀ x ∈ p.support, f x = g x ∧ ∀ y, d x y = true → e x y = true) :
-    (p.bind fun x => (f x).map (d x)) true ≤ (p.bind fun x => (g x).map (e x)) true := by
-  rw [PMF.bind_apply, PMF.bind_apply]
-  refine ENNReal.tsum_le_tsum fun x => ?_
-  by_cases hx : x ∈ p.support
-  · obtain ⟨hfg, hde⟩ := h x hx
-    rw [hfg]
-    gcongr
-    rw [PMF.map_apply, PMF.map_apply]
-    refine ENNReal.tsum_le_tsum fun y => ?_
-    by_cases hy : d x y = true
-    · simp [hy, hde y hy]
-    · simp only [Bool.not_eq_true] at hy
-      simp [hy]
-  · rw [PMF.apply_eq_zero_iff _ _ |>.mpr hx]
-    simp
-
-end Uniform
+export PMF (uniform_prod_eq_bind map_some_apply bind_map_true_le)
+open PMF (tsum_mul_comp_eq_map map_uniform_prod_fst_congr tsum_bind_mul map_uniform_apply
+  map_uniform_pi_apply map_uniform_pi_congr tsum_map_guess_le uniform_prod_fst_apply
+  uniform_prod_snd_apply uniform_mem_list_le uniform_box_le)
 
 /-! ## MPC decompositions with all-but-one opening -/
 
@@ -1453,19 +1254,6 @@ theorem inv_of_reach {N : ℕ} {x : P.D.Y} {s : SLState (P.protocol M)}
 
 /-! ## Soundness of the extractor -/
 
-theorem lookupIn_mem {Kt C : Type} [DecidableEq Kt] {l : List (Kt × C)} {k : Kt} {c : C}
-    (h : lookupIn l k = some c) : (k, c) ∈ l := by
-  unfold lookupIn findKey at h
-  cases hf : l.findIdx? (fun p => decide (p.1 = k)) with
-  | none => simp [hf] at h
-  | some i =>
-    obtain ⟨hi, hp, _⟩ := List.findIdx?_eq_some_iff_getElem.mp hf
-    simp only [hf, Option.bind_some, List.getElem?_eq_getElem hi, Option.map_some,
-      Option.some.injEq] at h
-    simp only [decide_eq_true_eq] at hp
-    rw [← hp, ← h]
-    exact List.getElem_mem hi
-
 theorem mem_ents_of_lookup {t : (P.protocol M).Tables} {k : P.Key M} {c : P.Ch}
     (h : t.lookup k = some c) : (k, c) ∈ P.ents M t := by
   unfold Protocol.Tables.lookup at h
@@ -1478,24 +1266,6 @@ theorem mem_ents_of_lookup {t : (P.protocol M).Tables} {k : P.Key M} {c : P.Ch}
   | none =>
     rw [hp, Option.none_or] at h
     exact Or.inl (lookupIn_mem h)
-
-/-- The values read by the verifier: `n` of them after `acc`, each the value of `look` at
-the verifier's point after the values before it. -/
-theorem verifyVals_spec {G : Protocol} (look : G.Key → Option G.Ch) (x : G.Stmt) (m : G.Msg)
-    (σ : G.Sig) : ∀ (n : ℕ) (acc vs : List G.Ch), verifyVals look x m σ n acc = some vs →
-      ∃ rest, vs = acc ++ rest ∧ rest.length = n ∧
-        ∀ k (hk : k < rest.length), look (G.vkey x m σ (acc ++ rest.take k)) = some rest[k]
-  | 0, acc, vs, h => ⟨[], by simpa [verifyVals] using h.symm, rfl, fun k hk => by simp at hk⟩
-  | n + 1, acc, vs, h => by
-    simp only [verifyVals, Option.bind_eq_some_iff] at h
-    obtain ⟨e, he, hrest⟩ := h
-    obtain ⟨rest, rfl, hlen, hlook⟩ := verifyVals_spec look x m σ n (acc ++ [e]) vs hrest
-    refine ⟨e :: rest, by simp, by simp [hlen], fun k hk => ?_⟩
-    cases k with
-    | zero => simpa using he
-    | succ k =>
-      have := hlook k (by simp at hk; omega)
-      simpa [List.take_succ_cons] using this
 
 open Classical in
 /-- The preimage reconstructed from consistent committed views of all parties of some
@@ -1771,16 +1541,6 @@ section Games
 
 open CatCrypt.Crypto.UCConcrete
 
-/-- A game given by a distribution on `Bool` does not read or write the heap. -/
-theorem pmfGame_isPure (p : PMF Bool) : SPComp.IsPure (PRPPRF.pmfGame p) := by
-  refine ⟨p.map some, fun h => ?_⟩
-  simp only [PRPPRF.pmfGame, SDistr.bind, PMF.bind_map, Function.comp_def, SDistr.pure]
-  rw [PMF.map]; rfl
-
-/-- A game given by a distribution on `Bool` never fails. -/
-theorem pmfGame_noFail (p : PMF Bool) : SPComp.NoFail (PRPPRF.pmfGame p) := fun _ => by
-  simp [PRPPRF.pmfGame, PMF.map_apply]
-
 /-- The real verification game of the forger `A` of a Fiat–Shamir protocol: its EUF-CMA
 game in the random-oracle model. -/
 noncomputable def forgeReal {G : Protocol} {qH qS : ℕ} (A : G.Adversary qH qS) :
@@ -1794,26 +1554,11 @@ noncomputable def forgeIdeal : Unit → SPComp Bool :=
 /-- The real verification game is heap-independent. -/
 instance forgeReal_pureGame {G : Protocol} {qH qS : ℕ} (A : G.Adversary qH qS) :
     PureGame (forgeReal A) :=
-  ⟨fun _ => pmfGame_isPure _⟩
+  ⟨fun _ => PRPPRF.pmfGame_isPure _⟩
 
 /-- The ideal verification game is heap-independent. -/
 instance forgeIdeal_pureGame : PureGame forgeIdeal :=
   ⟨fun _ => SPComp.pure_isPure false⟩
-
-/-- A distinguisher on the EUF-CMA game of a Fiat–Shamir protocol against the game that
-always rejects has advantage at most the EUF-CMA advantage. -/
-theorem advantageA_eufcmaGame_le {G : Protocol} {qH qS : ℕ} (A : G.Adversary qH qS)
-    (D : Bool → SPComp Bool) :
-    AdvantageA (eufcmaGame A) (SPComp.pure false) D ≤ eufcmaAdvantage A := by
-  refine (absDiff_bind_le_advantage (pmfGame_isPure _) (SPComp.pure_isPure false)
-    (pmfGame_noFail _) (SPComp.pure_noFail false) D Heap.empty).trans ?_
-  have h0 : prTrue (SPComp.pure false) Heap.empty = 0 := by
-    unfold prTrue SPComp.pure SDistr.pure
-    simp
-  unfold Advantage
-  rw [h0]
-  simp [eufcmaAdvantage]
-  exact le_rfl
 
 end Games
 

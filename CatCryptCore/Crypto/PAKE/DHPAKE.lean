@@ -11,6 +11,7 @@ public import CatCryptCore.Crypto.OracleBadDraw
 public import CatCryptCore.Crypto.ExtractedOracle
 public import CatCryptCore.Crypto.Signatures.EUFCMAPMF
 public import CatCryptCore.Crypto.FiatShamirROM.Timed
+public import CatCryptCore.Crypto.ROProgramming
 
 /-!
 # Diffie–Hellman PAKE in the random-oracle model: the generic bound
@@ -39,7 +40,7 @@ whatever the password, so the bit is guessed with probability `1/2` and a guess 
 password with probability at most `qS/|Pw|`. The probability of the query is at most
 `qH` times the success probability of the reduction, which embeds a CDH challenge
 `(g^a, g^b)` as the unmasked messages and returns the last component of a uniformly
-chosen query.
+chosen query. The cost of programming the honest point is `ROProgramming.run_update_le`.
 
 ## Main definitions
 
@@ -51,8 +52,6 @@ chosen query.
 
 ## Main results
 
-* `run_update_le` — programming one point of the lazily sampled oracle costs at most the
-  probability of querying it
 * `dhpake_success_le` — the generic bound
 * `cdhReduction.run_erase_timed`, `cdhReduction.timeBound_timed` — the costed reduction
   erases to `cdhReduction` and runs in time `T + (tH + 1) · qH + tOut + 4`
@@ -74,149 +73,9 @@ namespace CatCrypt.Crypto.PAKE.DH
 open CatCrypt.Core CatCrypt.Prob CatCrypt.Crypto CatCrypt.Crypto.Assumptions
 open CatCrypt.Crypto.Signatures (liftPMF liftPMF_bind_apply prTrue_liftPMF)
 open scoped ENNReal
-
-/-! ## Programming one point of the lazily sampled oracle -/
-
-section Programmed
-
-variable {X Y : Type} [DecidableEq X] [Fintype Y] [Nonempty Y]
-
-/-- The lazily sampled random oracle with the point `s` programmed to the value `y`. -/
-noncomputable def progOracle (s : X) (y : Y) (T : X → Option Y) (d : X) :
-    PMF (Y × (X → Option Y)) :=
-  if d = s then PMF.pure (y, T) else roOracle T d
-
-/-- Recording the programmed point in the table turns one call of `progOracle s y` into
-    one call of the lazily sampled oracle. -/
-theorem progOracle_map_update (s : X) (y : Y) (T : X → Option Y) (d : X) :
-    (progOracle s y T d).map (Prod.map id fun T => Function.update T s (some y)) =
-      roOracle (Function.update T s (some y)) d := by
-  unfold progOracle
-  split_ifs with hd
-  · subst hd
-    simp [roOracle, PMF.pure_map]
-  · have hT : Function.update T s (some y) d = T d := Function.update_of_ne hd _ _
-    unfold roOracle
-    rw [hT]
-    rcases T d with _ | h
-    · simp only [PMF.map_comp]
-      congr 1
-      funext h
-      simp [Function.update_comm hd]
-    · simp [PMF.pure_map]
-
-/-- The probability that a run of `A` against the lazily sampled oracle from the empty
-    table queries the point `s`. -/
-noncomputable def queryProb {α : Type} (s : X) (A : OracleAdv X Y α) : ℝ≥0∞ :=
-  (OracleAdv.run (OracleAdv.flagOn (· = s) roOracle) A (emptyTable, false)).toOuterMeasure
-    {z | z.2.2 = true}
-
-theorem map_apply_eq_toOuterMeasure {α σ : Type} (p : PMF (α × σ)) (f : α → Bool) :
-    (p.map fun z => f z.1) true = p.toOuterMeasure {z | z.1 ∈ {a | f a = true}} := by
-  rw [← PMF.toOuterMeasure_apply_singleton, PMF.toOuterMeasure_map_apply]
-  rfl
-
-/-- **Programming one point costs at most the probability of querying it.** A run against
-    the oracle whose table holds `s ↦ y` gives every output event at most its probability
-    against the empty table plus the probability of querying `s`. -/
-theorem run_update_le {α : Type} (s : X) (y : Y) (A : OracleAdv X Y α) (f : α → Bool) :
-    ((OracleAdv.run roOracle A (Function.update emptyTable s (some y))).map fun z => f z.1)
-        true ≤
-      ((OracleAdv.run roOracle A emptyTable).map fun z => f z.1) true + queryProb s A := by
-  have hagree : ∀ (T : X → Option Y) d, ¬ (d = s) → progOracle s y T d = roOracle T d :=
-    fun T d hd => if_neg hd
-  have hmap := OracleAdv.run_map_state (progOracle s y) roOracle
-    (fun T => Function.update T s (some y)) (progOracle_map_update s y) A emptyTable
-  rw [map_apply_eq_toOuterMeasure, map_apply_eq_toOuterMeasure, ← hmap,
-    PMF.toOuterMeasure_map_apply]
-  have h := OracleAdv.run_toOuterMeasure_le_add_flagOn (· = s) _ _ hagree A emptyTable
-    {a | f a = true}
-  exact h
-
-/-- The query probability through the query log. -/
-theorem queryProb_eq_log {α : Type} (s : X) (A : OracleAdv X Y α) :
-    queryProb s A = ∑' z, OracleAdv.run (OracleAdv.withLog roOracle) A (emptyTable, []) z *
-      (if ∃ d ∈ z.2.2, d = s then 1 else 0) := by
-  classical
-  unfold queryProb
-  rw [OracleAdv.run_flagOn_eq_withLog, PMF.toOuterMeasure_map_apply, PMF.toOuterMeasure_apply]
-  refine tsum_congr fun z => ?_
-  by_cases h : ∃ d ∈ z.2.2, d = s <;> simp [Set.indicator]
-
-end Programmed
-
-/-! ## Guessing a query and averaging -/
-
-/-- `max q 1` is positive, so a uniform index below it is well defined. -/
-instance maxOneNeZero (q : ℕ) : NeZero (max q 1) := ⟨by omega⟩
-
-/-- A uniform position among `max q 1` hits the first occurrence of `s` in a list of at
-    most `q` entries with probability `1/q`. -/
-theorem indicator_le_mul_guess {X : Type} [DecidableEq X] {q : ℕ} (l : List X) (s dflt : X)
-    (hl : l.length ≤ q) (f : X → Bool) (hf : f s = true) :
-    (if ∃ d ∈ l, d = s then (1 : ℝ≥0∞) else 0) ≤
-      q * ((PMF.uniformOfFintype (Fin (max q 1))).map
-        fun i : Fin (max q 1) => f (l.getD (i : ℕ) dflt)) true := by
-  split_ifs with h
-  · obtain ⟨d, hd, rfl⟩ := h
-    obtain ⟨j, hj, hjd⟩ := List.getElem_of_mem hd
-    have hq : max q 1 = q := by omega
-    have hjq : j < max q 1 := by omega
-    have hterm : (PMF.uniformOfFintype (Fin (max q 1))) ⟨j, hjq⟩ ≤
-        ((PMF.uniformOfFintype (Fin (max q 1))).map
-          fun i : Fin (max q 1) => f (l.getD (i : ℕ) dflt)) true := by
-      rw [PMF.map_apply]
-      refine le_trans (le_of_eq ?_) (ENNReal.le_tsum ⟨j, hjq⟩)
-      simp [List.getElem?_eq_getElem hj, hjd, hf]
-    calc (1 : ℝ≥0∞) = q * (q : ℝ≥0∞)⁻¹ :=
-          (ENNReal.mul_inv_cancel (by exact_mod_cast (show q ≠ 0 by omega))
-            (ENNReal.natCast_ne_top q)).symm
-      _ ≤ _ := by
-          gcongr
-          refine le_trans (le_of_eq ?_) hterm
-          simp [PMF.uniformOfFintype_apply, hq]
-  · positivity
-
-theorem bind_apply_le_add_tsum {X β : Type} (μ : PMF X) (f g : X → PMF β) (h : X → ℝ≥0∞)
-    (b : β) (hfg : ∀ x, f x b ≤ g x b + h x) :
-    (μ.bind f) b ≤ (μ.bind g) b + ∑' x, μ x * h x := by
-  rw [PMF.bind_apply, PMF.bind_apply, ← ENNReal.tsum_add]
-  exact ENNReal.tsum_le_tsum fun x => by rw [← mul_add]; gcongr; exact hfg x
-
-theorem tsum_le_mul_bind_apply {X β : Type} (μ : PMF X) (h : X → ℝ≥0∞) (g : X → PMF β)
-    (c : ℝ≥0∞) (b : β) (hg : ∀ x, μ x ≠ 0 → h x ≤ c * g x b) :
-    ∑' x, μ x * h x ≤ c * (μ.bind g) b := by
-  rw [PMF.bind_apply, ← ENNReal.tsum_mul_left]
-  refine ENNReal.tsum_le_tsum fun x => ?_
-  by_cases hx : μ x = 0
-  · simp [hx]
-  · rw [mul_left_comm]
-    gcongr
-    exact hg x hx
-
-/-- A bind whose continuations all give `b` probability at most `C` gives it probability
-    at most `C`. -/
-theorem bind_apply_le_of_le {X β : Type} (μ : PMF X) (f : X → PMF β) (b : β) (C : ℝ≥0∞)
-    (hf : ∀ x, f x b ≤ C) : (μ.bind f) b ≤ C := by
-  rw [PMF.bind_apply]
-  calc ∑' x, μ x * f x b ≤ ∑' x, μ x * C := ENNReal.tsum_le_tsum fun x => by gcongr; exact hf x
-    _ = C := by rw [ENNReal.tsum_mul_right, PMF.tsum_coe, one_mul]
-
-/-- The image of a uniform distribution under an equivalence is uniform. -/
-theorem uniformOfFintype_map_equiv {α β : Type} [Fintype α] [Nonempty α] [Fintype β]
-    [Nonempty β] (e : α ≃ β) : (PMF.uniformOfFintype α).map e = PMF.uniformOfFintype β := by
-  classical
-  ext b
-  rw [PMF.map_apply, tsum_eq_single (e.symm b) fun a ha => by
-    rw [if_neg]; rintro rfl; exact ha (e.symm_apply_apply a).symm]
-  simp [PMF.uniformOfFintype_apply, Fintype.card_congr e]
-
-/-- A probability mass function lifted to a computation is heap-independent. -/
-theorem liftPMF_isPure {α : Type} (p : PMF α) : SPComp.IsPure (liftPMF p) := by
-  refine ⟨p.map some, fun h => ?_⟩
-  simp only [liftPMF, SDistr.bind, SDistr.pure, PMF.bind_map]
-  rw [← PMF.bind_pure_comp]
-  rfl
+open CatCrypt.Crypto.ROProgramming
+open PMF (indicator_le_mul_guess bind_apply_le_add_tsum tsum_le_mul_bind_apply
+  bind_apply_le_of_le uniformOfFintype_map_equiv)
 
 /-! ## The protocol and the game -/
 
