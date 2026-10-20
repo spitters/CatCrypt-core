@@ -174,7 +174,7 @@ example {α : Type} (G₀ G₁ : SPComp α) (A : α → SPComp Bool)
 structure SdistHopAsm (G₀ G₁ : Unit → SPComp Bool) (ε : ℝ≥0∞) : Prop where
   bound : sdist G₀ G₁ ≤ ε
 
-/-- The hop lemma of `SdistHopAsm` (`kemtls_hop1` and its siblings). -/
+/-- The hop lemma of `SdistHopAsm`. -/
 theorem sdistHop_of {G₀ G₁ : Unit → SPComp Bool} {ε : ℝ≥0∞} (h : SdistHopAsm G₀ G₁ ε) :
     sdist G₀ G₁ ≤ ε :=
   h.bound

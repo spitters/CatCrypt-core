@@ -167,7 +167,7 @@ example (c : ℝ≥0∞) : Monotone (scaled c) := by
 
 /-! ## Regression: goal shapes of existing proofs -/
 
-/-- The `sdist` chain of `kemtls_advantage_bound` (KEMTLS/Reduction.lean). -/
+/-- A three-hop `sdist` chain. -/
 example {α β : Type} (R H₁ H₂ I : α → SPComp β) (ε₁ ε₂ ε₃ : ℝ≥0∞)
     (h₁ : sdist R H₁ ≤ ε₁) (h₂ : sdist H₁ H₂ ≤ ε₂) (h₃ : sdist H₂ I ≤ ε₃) :
     sdist R I ≤ ε₁ + ε₂ + ε₃ := by
