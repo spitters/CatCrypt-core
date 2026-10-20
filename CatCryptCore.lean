@@ -219,6 +219,7 @@ public import CatCryptCore.Crypto.Messaging.DoubleRatchet
 public import CatCryptCore.Crypto.PAKE.DHPAKE
 public import CatCryptCore.Crypto.Signatures.Threshold
 public import CatCryptCore.Crypto.FiatShamirROM.MPCitH
+public import CatCryptCore.Crypto.Anon.Signalling
 public import CatCryptCore.Crypto.KEM.Games
 public import CatCryptCore.Crypto.KEM.FOTransformU
 public import CatCryptCore.Crypto.KEM.FOTransformTimed
