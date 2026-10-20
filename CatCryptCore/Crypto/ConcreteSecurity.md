@@ -22,8 +22,9 @@ advantage of the cascade against an oracle adversary `A` with `A.IsQueryBound q`
 advantages of `cascadeRedInner F A` and `cascadeRedOuter A` plus `q(q−1)/2 / |D|`.
 
 A Lean adversary is an arbitrary function, and the theorem holds for every one. Its content for
-an efficient `A` comes from two further facts: `Bᵢ A` is efficient when `A` is (§2), and the
-assumption on the primitive bounds `Adv_primᵢ` at efficient adversaries. The assumption stays
+an efficient `A` comes from two further facts: the time theorem of `Bᵢ` bounds the running time
+of `Bᵢ A` by that of `A` (§2), and the assumption on the primitive bounds `Adv_primᵢ` at
+efficient adversaries. The assumption stays
 outside the theorem. Two forms are excluded. A hypothesis `∀ A, Adv_prim(A) ≤ ε` on a
 computational game, under any name (a class, a structure field, an assumed reduction `∃ B`),
 fails for every primitive when `A` ranges over unbounded functions, since exhaustive search
@@ -52,9 +53,8 @@ time(Bᵢ A) ≤ k · time(A) + q · t + c
 where `q` is the number of oracle queries of `A`, `t` the cost of answering one, `k` the number
 of runs of `A` inside `Bᵢ` (one for a black-box reduction, more under rewinding) and `c` the
 remaining work of `Bᵢ`. EasyCrypt proves statements of this form in the cost logic of
-[BBGKS21], with the adversary an abstract module whose cost is a parameter. CatCrypt certifies
-them by the following construction, applied reduction by reduction, starting with the
-reductions written as oracle trees.
+[BBGKS21], with the adversary an abstract module whose cost is a parameter. In CatCrypt a
+reduction `R` is certified by a costed form and two theorems checked by the kernel.
 
 1. Costed mirrors. The oracle trees `OracleAdv` ([OracleAdversary.lean](OracleAdversary.lean))
    and the syntax trees `SPTree` ([SPTree.lean](../Core/SPTree.lean)) have mirrors
@@ -70,22 +70,86 @@ reductions written as oracle trees.
 2. The adversary as a costed witness. A time theorem quantifies over costed adversaries whose
    erasure is `A` and whose time is at most `T`, as §1 quantifies over `A` with
    `A.IsQueryBound q`.
-3. The reduction instrumented. Each reduction `B` has a costed version with two kernel-checked
-   theorems: the erasure equation (the costed `B` applied to a costed `A` erases to `B A`) and
-   the time theorem `k · T + q · t + c`.
-4. Derived costs. The step costs are derived from the reduction's code by the rules of
-   call-by-value evaluation: a call costs one plus the callee's cost at its arguments; `if` and
-   `match` cost one plus the branch taken; constructors, literals, projections and variables
-   are free. Isabelle's `time_fun` [HOL] and Hopwood's `assert_efficient` for Lean [Hop26]
-   derive costs in this way; the latter prices a function-typed parameter such as the
-   adversary through a cost argument of its own. Primitives take registered costs: word and
-   field operations, table lookups, and one unit per sampling node, as in `SPTree.queryCost`.
+3. The certificate. The costed form `R.timed` takes costed adversaries in place of the
+   adversaries of `R` and returns a costed tree preceded by a step cost. The erasure theorem
+   `R.erase_timed` states `(R.timed A').2.erase = R A'.erase`; its variant `R.run_erase_timed`
+   states that the erased costed form has the output distribution of `R` under every oracle.
+   The time theorem `R.timeBound_timed` bounds the time of the costed form by
+   `k · T + q · t + c` when `A'` has time at most `T` and its erasure at most `q` queries.
 
-The kernel checks the erasure equation, so an error in a derived cost can misstate a running
-time but cannot change the reduction whose advantage §1 bounds. The trusted base of a time
-theorem is the rule set and the registered primitive costs, listed with the theorem. For a
-family of reductions indexed by the security parameter, polynomial time theorems supply the
-running-time conjunct of the asymptotic statements of §1, which bound advantages.
+Five certified reductions and their time theorems:
+
+| Time theorem | Reduction | Time at most | Costed form |
+|---|---|---|---|
+| [`hashRed.timeBound_timed`](HashThenRF.lean) | hash-then-PRF to the PRF | `1 + T + q · (2 + t₀)` | `derive_timed` |
+| [`iknpCRRed.timeBound_timed`](OTExtension/IKNP.lean) | IKNP OT extension to the correlation-robust hash | `T₁ + Ts + ts + T + a + tv + 3` | `derive_reduction` |
+| [`ckaDDHRed.timeBound_timed`](Messaging/CKA.lean) | Diffie–Hellman CKA to DDH | `T + a + tv + 4` | `derive_reduction` |
+| [`cdhReduction.timeBound_timed`](PAKE/DHPAKE.lean) | Diffie–Hellman PAKE to CDH | `T + (tH + 1) · qH + tOut + 3` | by hand |
+| [`mkRed.timeBound_timed`](https://github.com/spitters/CatCrypt/blob/master/CatCrypt/Crypto/Constructions/SIVMRAENonce.lean) | nonce-based SIV to the multi-key PRF of the cipher | `1 + T + q · (1 + s + ℓ · (1 + s))` | by hand |
+
+Here `T` is the time of the adversary, `q` and `qH` its numbers of queries and `a` the cost of a
+call to it. The IKNP reduction runs the two parts of the adversary, of times `T₁` and `T`, and a
+simulator of the base-OT view of time `Ts` and call cost `ts`. The costs of primitives are `t₀`
+for the hash, `tH` for answering a hash query, `tv` for the view map, which computes the group
+elements of the CKA transcript, and `s` for the step after each query to the cipher; `ℓ` bounds
+the number of blocks of a message. `mkRed.timeBound_timed` is in the CatCrypt repository, the
+other four in this one.
+
+`derive_timed R` ([DeriveTimed.lean](../Tactics/DeriveTimed.lean)) defines `R.timed` and proves
+`R.erase_timed` for a reduction whose result is an oracle tree or an `SPTree`. A binder that is
+a tree, or a function into trees, becomes its costed mirror, and each function-typed binder,
+adversary or primitive, is followed by a cost companion `fCost`, the cost of evaluating it at
+its arguments. The step costs are derived from the reduction's code by the rules of
+call-by-value evaluation: a call costs one plus the callee's cost at its arguments; `if` and
+`match` cost one plus the branch taken; constructors, literals, projections and variables are
+free; `rand`, `query`, `sample`, `get` and `set` nodes cost one unit, as in `SPTree.queryCost`.
+These are the rules of Isabelle's `time_fun` [HOL] and of [Hop26]. A primitive without a body
+to price takes the cost registered for it with `timed_cost f := e`.
+
+`derive_reduction R` ([DeriveReduction.lean](../Tactics/DeriveReduction.lean)) takes a reduction
+into `SPComp`, written in `do`-notation or with the constructors of `SPComp`. It reflects the
+body into a tree `R.tree`, in which each adversary and each primitive (a field of a scheme
+structure or a method of a class, such as `D.keygen` or `kit.enc`) is a binder, proves the
+compile equation `R.compile_tree`, `(R.tree …).compile = R …`, by a term the kernel checks, and
+runs `derive_timed R.tree`. At 2026-10-20 it derives the costed forms of 79 of the 112
+reductions of its evaluation set.
+
+A derived step cost follows from the code of the reduction by these rules. A costed form written
+by hand carries step costs chosen by its author, which the kernel checks only through the
+erasure theorem: that theorem determines the reduction and leaves the step costs unconstrained.
+
+Scheme primitives and the adversary enter as cost parameters, as abstract modules do in the
+cost logic of [BBGKS21]: the hash of `hashRed` through its cost companion, bounded by `t₀`; the
+group exponentiations of `ckaDDHRed` through the cost of the view map, bounded by `tv`; the
+adversary through its time `T`. An extractor chosen by `Classical.choose` has no code to price,
+and its cost is a parameter: `logExtractor.timeBound_timed`
+([FiatShamirROM/MPCitH.lean](FiatShamirROM/MPCitH.lean)) gives the extractor of the MPC-in-the-head
+signature time `tExt`.
+
+The kernel checks the erasure theorem, so an error in a step cost can misstate a running time
+but cannot change the reduction whose advantage §1 bounds. The trusted base of a derived time
+theorem is the rule set of `derive_timed` and the costs registered with `timed_cost`. The
+asymptotic statements of §1 bound advantages; for a family of reductions indexed by the
+security parameter, the time theorem at each index bounds the running time.
+
+Three checks in the continuous integration of the CatCrypt repository read the Lean sources,
+without loading Lean, and keep counts that may fall and never rise.
+
+- Reductions without a certificate. A definition named as a reduction, inverter or extractor
+  whose type is a computation or an adversary is certified when the sources of the two
+  repositories hold its costed form, its erasure theorem and a time theorem, or its tree, its
+  compile equation and a time theorem for the costed tree. At 2026-10-20 the CatCrypt
+  repository has 22 certified and 358 uncertified reductions and CatCrypt-core 44 and 51.
+- Reductions with exponential code. A reduction that draws a whole random function
+  (`PMF.uniformOfFintype (X → Y)`) or computes the measurement distribution of a quantum
+  adversary's state runs in time exponential in the bit length of `X` or of the adversary's
+  register. The count over the CatCrypt repository is 0. A reduction that needs a random
+  function samples it lazily, a fresh value for each new query, and its proof uses a lemma
+  equating the lazy and the eager table: by `mkRed_run_eq`, against every oracle the output of
+  `mkRed` is the output of the adversary with each query answered under hash keys drawn eagerly
+  as a uniform function on the nonces.
+- Hand-written costed forms. The costed forms `R.timed` defined by hand, counted across the two
+  repositories, number 110 at 2026-10-20.
 
 ## 3. What the complexity measures are for
 
@@ -132,6 +196,20 @@ The derived costs of §2 are an automatic cost analysis: a cost function compute
 of a program under call-by-value evaluation, as `time_fun` derives a time function from a
 function's equations and Forster and Kunze [FK19] certify time bounds of extracted
 call-by-value λ-terms. The cost is derived program by program; a bound on it is a theorem.
+
+Hopwood's `assert_efficient` [Hop26] derives a cost function from the elaborated body of a
+computable Lean definition, with a cost argument for each function-typed parameter, so that the
+cost of a reduction is symbolic in the cost of the adversary; bounds on it are ordinary
+theorems. `derive_timed` applies the same call-by-value rules and follows the instrumented
+translation of [Hop26], which pairs a function with a costed version of it; the derived step
+costs sit inside a costed form whose erasure theorem the kernel checks. `assert_efficient`
+rejects a `noncomputable` definition before deriving a cost, and most reductions of §1 are
+`noncomputable` functions into `SPComp`, whose values are distributions; `derive_reduction`
+reflects such a reduction into an `SPTree` and derives the costs of the tree. `derive_cost f`
+([DeriveCost.lean](../Tactics/DeriveCost.lean)) defines the cost of a computable data function
+`f`, recursive or not, from the body that Lean keeps for the equation lemmas of `f`, the body
+that [Hop26] prices, and `derive_timed` and `derive_reduction` price each call of `f` by that
+cost.
 
 Implicit computational complexity in the type-theoretic sense characterises a complexity class
 by a restriction of the language: safe recursion [BC92], bounded linear logic [GSS92], light

@@ -117,6 +117,7 @@ public import CatCryptCore.Nominal
 public import CatCryptCore.Tactics
 public import CatCryptCore.Tactics.BindVcgenSum
 public import CatCryptCore.Tactics.VC
+public import CatCryptCore.Tactics.StdCosts
 
 -- Crypto foundation
 public import CatCryptCore.Crypto.Game

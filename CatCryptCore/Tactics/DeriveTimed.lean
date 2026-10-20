@@ -50,6 +50,12 @@ A binder of `R` is translated by its type:
 * any other function `f : X → Y` is kept and followed by its cost companion `fCost : X → ℕ`,
   the cost of evaluating `f x`.
 
+A function-typed field `m` of a local structure or instance `s` (a class method on a local
+instance, or a field of a scheme structure) without a registered cost `m.timedCost`, applied
+in the body, is a primitive of the scheme: its cost companion `mCost : X → ℕ`, the cost of
+evaluating `s.m x`, is a further binder after the binders of `R`, one for each field and
+structure that the derivation prices. A recursive call of `R` passes the same structures.
+
 ## Cost rules
 
 Costs follow call-by-value evaluation:
@@ -62,7 +68,8 @@ Costs follow call-by-value evaluation:
 * `if` and `match` cost one, plus the costs of the condition or the discriminants, plus the
   cost of the branch taken;
 * constructors, literals, numerals, casts, projections and variables cost nothing beyond
-  their arguments, and a closure costs nothing to build;
+  their arguments (the parameters of a constructor's inductive type are not among them), and
+  a closure costs nothing to build;
 * a `rand` or `query` node costs its registered unit (`OracleAdv.Timed.TimeBound`); the
   distribution of a `rand` node is priced by the rules above, with the uniform and point
   distributions free, since sampling is included in the node's unit;
@@ -85,9 +92,12 @@ convention above.
 
 Calls of reductions without a costed form are derived on demand. A derivation fails, with
 the reason, on a function stored in data (a local function without a cost companion), a
-class method on a local instance without a registered cost, a recursive or opaque data
-function without a registered cost, a `match` whose motive depends on its discriminants,
-and a recursion over an oracle-tree argument.
+class method on a local instance that is reached only by unfolding and has no registered
+cost, a recursive or opaque data function without a registered cost (`derive_cost` of
+`CatCryptCore.Tactics.DeriveCost` derives one), a `match` whose motive depends on its
+discriminants, a recursion over an oracle-tree argument, a recursive call that changes a
+structure whose fields have cost companions, and a call of a reduction whose costed form
+takes such companions.
 
 ## Attribution
 
@@ -155,14 +165,16 @@ structure LocalInfo where
   deriving Inhabited
 
 /-- The context of a translation: the translated locals, the reduction being derived with
-the local that stands for its costed form, the suffix of costed forms, and the unfolding
-depth of data functions. -/
+the local that stands for its costed form, the suffix of costed forms, the unfolding
+depth of data functions, and the fields of local structures and instances, each applied to its
+parameters and its structure, with their cost companions. -/
 structure Ctx where
   locals : FVarIdMap LocalInfo := {}
   self? : Option (Name × Expr) := none
   suffix : Name := `timed
   depth : Nat := 0
   visiting : NameSet := {}
+  fields : Array (Expr × Expr) := #[]
 
 /-- The maximal nesting of unfolded data definitions. -/
 def maxDepth : Nat := 8
@@ -480,6 +492,49 @@ def trailing (e : Expr) (args : Array Expr) (roles : Array ArgRole) : MetaM (Arr
     fail m!"`{e}` is applied to fewer arguments than its translation takes"
   return args.extract (args.size - roles.size) args.size
 
+/-- The applied fields in `e` of local structures and instances without a registered cost:
+each a projection applied to its parameters and a local, and to further arguments, without
+loose bound variables. -/
+partial def fieldPrefixes (e : Expr) : MetaM (Array Expr) := do
+  let rec go (e : Expr) (acc : Array Expr) : MetaM (Array Expr) := do
+    match e with
+    | .app .. =>
+      let f := e.getAppFn
+      let args := e.getAppArgs
+      let mut acc := acc
+      if let .const m _ := f then
+        if let some info ← getProjectionFnInfo? m then
+          if h : info.numParams + 1 < args.size then
+            let p := mkAppN f (args.extract 0 (info.numParams + 1))
+            if args[info.numParams].consumeMData.isFVar && !p.hasLooseBVars &&
+                !(← getEnv).contains (m ++ `timedCost) && !acc.contains p then
+              acc := acc.push p
+      acc ← go f acc
+      for a in args do acc ← go a acc
+      return acc
+    | .lam _ t b _ | .forallE _ t b _ => go b (← go t acc)
+    | .letE _ t v b _ => go b (← go v (← go t acc))
+    | .mdata _ b => go b acc
+    | .proj _ _ s => go s acc
+    | _ => return acc
+  go e #[]
+
+/-- Bind a cost companion for each applied field of `ps` and continue with the pairs of the
+field and its companion. -/
+def withFieldCosts {β : Type} (ps : Array Expr) (k : Array (Expr × Expr) → TermElabM β) :
+    TermElabM β :=
+  go 0 #[]
+where
+  go (i : Nat) (acc : Array (Expr × Expr)) : TermElabM β := do
+    if h : i < ps.size then
+      let p := ps[i]
+      let n := match p.getAppFn with
+        | .const m _ => m.updatePrefix .anonymous |>.appendAfter "Cost"
+        | _ => `fieldCost
+      withLocalDeclD n (← companionType (← inferType p)) fun cc =>
+        go (i + 1) (acc.push (p, cc))
+    else k acc
+
 mutual
 
 /-- The cost of evaluating the data term `e`. -/
@@ -558,7 +613,10 @@ partial def costConst (ctx : Ctx) (e : Expr) (c : Name) (args : Array Expr) :
     TermElabM Expr := do
   let env ← getEnv
   let f := e.getAppFn
-  if freeConstants.contains c || env.isConstructor c then
+  if let some (.ctorInfo ci) := env.find? c then
+    -- The parameters of the inductive type are not arguments of the call.
+    return ← argsCost ctx (args.extract ci.numParams args.size)
+  if freeConstants.contains c then
     return ← argsCost ctx args
   -- A partial application is a closure.
   let arity ← forallTelescope (← inferType f) fun ys _ => pure ys.size
@@ -588,6 +646,16 @@ partial def costConst (ctx : Ctx) (e : Expr) (c : Name) (args : Array Expr) :
     return ← costMatch ctx e
   -- A structure projection.
   if let some info ← getProjectionFnInfo? c then
+    -- A field of a local structure or instance with a cost companion.
+    if args.size > info.numParams + 1 then
+      let p := mkAppN f (args.extract 0 (info.numParams + 1))
+      if let some (_, cc) := ctx.fields.find? (·.1 == p) then
+        let rest := args.extract (info.numParams + 1) args.size
+        let arity ← forallTelescope (← whnfR (← inferType cc)) fun ys _ => pure ys.size
+        unless rest.size == arity do
+          fail m!"the field `{c}` is applied to {rest.size} arguments in `{e}`, and its cost \
+            companion takes {arity}"
+        return add (natE 1) (add (mkAppN cc rest) (← argsCost ctx rest))
     if info.fromClass then
       let inst := args[info.numParams]!
       if inst.consumeMData.isFVar then
@@ -880,6 +948,10 @@ partial def callTimed (ctx : Ctx) (e target : Expr) (args : Array Expr) (T : Tre
           let p ← tr ctx b
           return (← mkLambdaFVars ys (Tb.sndOf p), ← mkLambdaFVars ys (Tb.fstOf p))
         out := out.push v |>.push c
+  let arity ← forallTelescope (← inferType target) fun ys _ => pure ys.size
+  unless out.size == arity do
+    fail m!"the costed form of the callee `{e.getAppFn}` takes the costs of fields of local \
+      structures or instances; register its costed form at the call"
   return T.delayE (add (natE 1) cost) (mkAppN target out)
 
 /-- Derive and add the costed form `c.timed` and the erasure theorem `c.erase_timed` of the
@@ -905,14 +977,38 @@ partial def deriveTimed (ctx : Ctx) (c : Name) : TermElabM Unit := do
   let (tType, tValue, eType, nBinders) ← lambdaTelescope value fun xs b => do
     let some T ← treeTy? (← inferType b)
       | fail m!"the result of `{c}` is not a tree of a registered kind"
+    let cands ← fieldPrefixes b
     withBinders ctx xs fun ctx bs args => do
-      let tType ← mkForallFVars bs T.pairType
-      withLocalDeclD `rec tType fun recF => do
-        let ctx := { ctx with self? := some (c, recF) }
-        let p ← tr ctx b
-        let p := p.replaceFVar recF (mkConst timedName levels)
-        let tValue ← mkLambdaFVars bs p
-        if tValue.containsFVar recF.fvarId! then fail m!"internal: the recursive call escaped"
+      withFieldCosts cands fun fcs => do
+        -- The costed form with the cost companions of the fields `fs` after the binders `bs`;
+        -- a recursive call passes the same companions.
+        let build (fs : Array (Expr × Expr)) : TermElabM (Expr × Expr × Expr) := do
+          let recType ← mkForallFVars bs T.pairType
+          withLocalDeclD `rec recType fun recF => do
+            let ctx := { ctx with self? := some (c, recF), fields := fs }
+            let p ← tr ctx b
+            let cs := fs.map (·.2)
+            let p ← if cs.isEmpty then pure (p.replaceFVar recF (mkConst timedName levels))
+              else
+                let self ← mkLambdaFVars bs (mkAppN (mkConst timedName levels) (bs ++ cs))
+                Core.betaReduce (p.replaceFVar recF self)
+            if p.containsFVar recF.fvarId! then fail m!"internal: the recursive call escaped"
+            return (← mkForallFVars (bs ++ cs) T.pairType, ← mkLambdaFVars (bs ++ cs) p, p)
+        -- Only the fields priced by the translation receive a cost companion.
+        let used ← if fcs.isEmpty then pure #[] else do
+          let (_, _, v) ← build fcs
+          pure (fcs.filter fun (_, cc) => v.containsFVar cc.fvarId!)
+        if recursive && !used.isEmpty then
+          let fixed := (List.range xs.size).filter fun i =>
+            used.any fun (p, _) => p.containsFVar xs[i]!.fvarId!
+          let need := fixed.foldl (fun m i => max m (i + 1)) 0
+          let bad := b.find? fun s => s.isAppOf c && s.getAppNumArgs ≥ need &&
+            fixed.any fun i => s.getArg! i != xs[i]!
+          if let some s := bad then
+            fail m!"the recursive call `{s}` changes a structure or instance whose applied \
+              fields are priced by cost companions"
+        let (tType, tValue, _) ← build used
+        let bs := bs ++ used.map (·.2)
         for x in xs do
           if tValue.containsFVar x.fvarId! && !(bs.contains x) then
             fail m!"the binder `{x}` of `{c}` occurs in a type of the costed form"
