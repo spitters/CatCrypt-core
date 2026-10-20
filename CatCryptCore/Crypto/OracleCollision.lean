@@ -28,6 +28,8 @@ queried points.
   and to `g` elsewhere
 * `OracleAdv.tableGame t A l` — the run of `A` from the log `l` against a uniform extension of
   the table `t`
+* `OracleAdv.ofQuerier next t n` — the adversary without coins asking `n` queries, each chosen
+  by `next` from the transcript of queries and answers so far
 
 ## Main results
 
@@ -67,6 +69,26 @@ def tableExt (t : D → Option R) (g : D → R) : D → R :=
 under `f`. -/
 def TableCollision (t : D → Option R) (f : D → R) (L : List D) : Prop :=
   ∃ x, ((t x).isSome ∨ x ∈ L) ∧ ∃ y, ((t y).isSome ∨ y ∈ L) ∧ x ≠ y ∧ f x = f y
+
+/-- The adversary without coins asking `n` queries from the transcript `t`, each query chosen
+by `next` from the transcript of the previous queries and their answers. -/
+def ofQuerier (next : List (D × R) → D) : List (D × R) → ℕ → OracleAdv D R Unit
+  | _, 0 => ret ()
+  | t, n + 1 => query (next t) fun r => ofQuerier next (t ++ [(next t, r)]) n
+
+/-- The adversary `ofQuerier next t n` has no `rand` node. -/
+theorem ofQuerier_noRand (next : List (D × R) → D) (t : List (D × R)) (n : ℕ) :
+    (ofQuerier next t n).NoRand := by
+  induction n generalizing t with
+  | zero => trivial
+  | succ n ih => exact fun r => ih _
+
+/-- The adversary `ofQuerier next t n` asks at most `n` queries on every path. -/
+theorem ofQuerier_isQueryBound (next : List (D × R) → D) (t : List (D × R)) (n : ℕ) :
+    (ofQuerier next t n).IsQueryBound n := by
+  induction n generalizing t with
+  | zero => trivial
+  | succ n ih => exact fun r => ih _
 
 section Game
 
