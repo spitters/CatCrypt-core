@@ -225,6 +225,7 @@ public import CatCryptCore.Crypto.OTExtension.IKNP
 public import CatCryptCore.Crypto.PRPPRFPmfGame
 public import CatCryptCore.Crypto.FiatShamirROM.Verification
 public import CatCryptCore.Crypto.ROProgramming
+public import CatCryptCore.Crypto.Messaging.KEMCKA
 public import CatCryptCore.Crypto.KEM.Games
 public import CatCryptCore.Crypto.KEM.FOTransformU
 public import CatCryptCore.Crypto.KEM.FOTransformTimed
