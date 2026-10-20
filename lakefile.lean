@@ -31,6 +31,11 @@ lean_lib CatCryptCore where
 require nominalLean from git
   "https://github.com/spitters/nominal-lean" @ "lean-upgrade-4.33"
 
+-- hax-lean: the runtime and typed AST of haxpipeT extractions (`HaxLean.Runtime`), which the
+-- extraction bridges and the fold lemmas of `CatCryptCore.Hax.FoldRange` read.
+require «hax-lean» from git
+  "https://github.com/spitters/hax-lean.git" @ "908a6ec67aae1356f5785944ca1caf8e1e9b4b10"
+
 -- mathlib LAST so its proofwidgets/aesop versions win on conflicts;
 -- this is required for `lake exe cache get` to find oleans.
 require mathlib from git
