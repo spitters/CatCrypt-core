@@ -7,6 +7,7 @@ module
 
 public import CatCryptCore.Crypto.FiatShamirROM.Reduction
 public import CatCryptCore.Crypto.Assumptions.DLGroupParam
+public import CatCryptCore.Crypto.FiatShamirROM.LinearRelation
 
 /-!
 # Schnorr signatures as an instance of the generic Fiat–Shamir theorem
@@ -24,8 +25,11 @@ Its relation game is the discrete-logarithm game over the group.
 
 ## Main results
 
-* `schnorrSigma_specialSound`, `schnorrSigma_perfectHVZK`, `schnorrSigma_commitBound`,
-  `schnorrSigma_complete`, `schnorrSigma_uniqueResp`
+* `schnorrSigma_verify_eq` — the Schnorr verifier is the verifier of the linear
+  Σ-protocol `dlogSigma gp` on constant vectors
+* `schnorrSigma_specialSound`, `schnorrSigma_complete`, `schnorrSigma_uniqueResp` —
+  from the properties of `dlogSigma gp`
+* `schnorrSigma_perfectHVZK`, `schnorrSigma_commitBound`
 * `relAdvantage_schnorrSigma` — the relation game of `schnorrSigma gp` is the
   discrete-logarithm game
 * `schnorr_fs_rom_eufcma` — for every adversary against the Fiat–Shamir game over
@@ -126,22 +130,31 @@ noncomputable def schnorrSigma : Sigma where
   simulate x e z := (gp.groupMul (gp.exp z) (gp.groupInv (gp.groupExp x e)), z)
   extract _ _ e z e' z' := gp.scalarDiv (gp.scalarSub z z') (gp.scalarSub e e')
 
+/-- The Schnorr verifier is the verifier of the linear Σ-protocol `dlogSigma gp` on
+constant vectors. -/
+theorem schnorrSigma_verify_eq (pk a : gp.G) (e z : gp.Scalar) :
+    (schnorrSigma gp).verify pk a e z = (dlogSigma gp).verify pk (fun _ => a) e (fun _ => z) := by
+  rw [Bool.eq_iff_iff, dlogSigma_verify_iff]
+  exact beq_iff_eq
+
 theorem schnorrSigma_specialSound : (schnorrSigma gp).SpecialSound := by
-  intro pk a e₁ z₁ e₂ z₂ hv₁ hv₂ hne
-  exact gp.exp_extract_eq pk a e₁ e₂ z₁ z₂ (beq_iff_eq.mp hv₁) (beq_iff_eq.mp hv₂) hne
+  intro (pk : gp.G) (a : gp.G) (e₁ : gp.Scalar) (z₁ : gp.Scalar) (e₂ : gp.Scalar)
+    (z₂ : gp.Scalar) hv₁ hv₂ hne
+  rw [schnorrSigma_verify_eq] at hv₁ hv₂
+  exact (dlogRelation_holds_iff _ _).mp (dlogSigma_specialSound gp pk _ e₁ _ e₂ _ hv₁ hv₂ hne)
 
 /-- The honest Schnorr transcript `(g^r, e, r + e·w)` for `g^w = pk` verifies. -/
 theorem schnorrSigma_complete : (schnorrSigma gp).Complete := by
-  rintro (x : gp.G) (w : gp.Scalar) rfl (r : gp.Scalar) (e : gp.Scalar)
-  change (gp.exp (gp.scalarAdd r (gp.scalarMul e w)) ==
-    gp.groupMul (gp.exp r) (gp.groupExp (gp.exp w) e)) = true
-  rw [gp.groupExp_exp, gp.scalarMul_comm w e, gp.exp_add]
-  exact beq_iff_eq.mpr rfl
+  intro (pk : gp.G) (w : gp.Scalar) hw (r : gp.Scalar) (e : gp.Scalar)
+  change (schnorrSigma gp).verify pk (gp.exp r) e (gp.scalarAdd r (gp.scalarMul e w)) = true
+  rw [schnorrSigma_verify_eq, ← dlogRelation_map pk (fun _ => r)]
+  exact dlogSigma_complete gp pk (fun _ => w) ((dlogRelation_holds_iff _ _).mpr hw) (fun _ => r) e
 
 /-- Two accepted Schnorr responses `g^z = g^z' = a · pk^e` are equal. -/
 theorem schnorrSigma_uniqueResp : (schnorrSigma gp).UniqueResp := by
-  intro x a e z z' h h'
-  exact gp.exp_inj _ _ ((beq_iff_eq.mp h).trans (beq_iff_eq.mp h').symm)
+  intro (pk : gp.G) (a : gp.G) (e : gp.Scalar) (z : gp.Scalar) (z' : gp.Scalar) h h'
+  rw [schnorrSigma_verify_eq] at h h'
+  exact congrFun (dlogSigma_uniqueResp gp pk _ e _ _ h h') 0
 
 omit gp in
 theorem map_uniformOfFintype_equiv' {α : Type} [Fintype α] [Nonempty α] (c : α ≃ α) :
