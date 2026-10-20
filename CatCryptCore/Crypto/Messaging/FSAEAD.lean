@@ -255,4 +255,31 @@ theorem fsaeadRedOf.tree.timeBound_timed {j r : ℕ}
   have := hA (view vc vk c, s); have := hAc (view vc vk c, s); have := hv vc vk c
   omega
 
+/-- The costed form of `fsaeadRed D msgs j r`: the costed tree of `fsaeadRedOf` at the view
+`fsaeadView D msgs j r` of cost `viewCost`. -/
+noncomputable def fsaeadRed.timed (D : AEADDef W C) (msgs : List (W × W)) (j r : ℕ)
+    (viewCost : (Fin j → C) → (Fin r → W) → C → ℕ) (A : List C × St → SPTree.Timed Bool)
+    (ACost : List C × St → ℕ) (c : C) : ℕ × SPTree.Timed Bool :=
+  fsaeadRedOf.tree.timed (fsaeadView D msgs j r) viewCost A ACost c
+
+/-- The costed form of `fsaeadRed` erases and compiles to `fsaeadRed` at the erased
+adversary. -/
+theorem fsaeadRed.erase_timed (D : AEADDef W C) (msgs : List (W × W)) (j r : ℕ)
+    (viewCost : (Fin j → C) → (Fin r → W) → C → ℕ) (A : List C × St → SPTree.Timed Bool)
+    (ACost : List C × St → ℕ) (c : C) :
+    (fsaeadRed.timed D msgs j r viewCost A ACost c).2.erase.compile =
+      fsaeadRed D msgs j r (fun x => (A x).erase.compile) c := by
+  rw [fsaeadRed.timed, fsaeadRedOf.tree.erase_timed, fsaeadRedOf.compile_tree]
+  rfl
+
+/-- **Time of `fsaeadRed`**, the bound of `fsaeadRedOf.tree.timeBound_timed` at the view
+`fsaeadView D msgs j r` of cost at most `tv`. -/
+theorem fsaeadRed.timeBound_timed (D : AEADDef W C) (msgs : List (W × W)) (j r : ℕ)
+    (viewCost : (Fin j → C) → (Fin r → W) → C → ℕ) (A : List C × St → SPTree.Timed Bool)
+    (ACost : List C × St → ℕ) {T a tv : ℕ} (hA : ∀ x, (A x).time ≤ T)
+    (hAc : ∀ x, ACost x ≤ a) (hv : ∀ vc vk c, viewCost vc vk c ≤ tv) (c : C) :
+    SPTree.Timed.stepTime (fsaeadRed.timed D msgs j r viewCost A ACost c) ≤
+      T + a + tv + 5 :=
+  fsaeadRedOf.tree.timeBound_timed _ viewCost A ACost hA hAc hv c
+
 end CatCrypt.Crypto.Messaging

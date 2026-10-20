@@ -405,4 +405,32 @@ theorem ckaDDHRedOf.tree.timeBound_timed {E T' V : Type} [Fintype E] [Nonempty E
   have := hA (view u w t); have := hAc (view u w t); have := hv u w t
   omega
 
+/-- The costed form of `ckaDDHRed k m`: the costed tree of `ckaDDHRedOf` at the view
+`ckaDDHView k m` of cost `viewCost`. -/
+noncomputable def ckaDDHRed.timed {G : Type} [CG : CyclicGroup G] (k m : ℕ)
+    (viewCost : (Fin k → CG.Exp) → (Fin m → CG.Exp) → G × G × G → ℕ)
+    (A : CKAView G G → SPTree.Timed Bool) (ACost : CKAView G G → ℕ) (t : G × G × G) :
+    ℕ × SPTree.Timed Bool :=
+  ckaDDHRedOf.tree.timed (ckaDDHView k m) viewCost A ACost t
+
+/-- The costed form of `ckaDDHRed` erases and compiles to `ckaDDHRed` at the erased
+adversary. -/
+theorem ckaDDHRed.erase_timed {G : Type} [CG : CyclicGroup G] (k m : ℕ)
+    (viewCost : (Fin k → CG.Exp) → (Fin m → CG.Exp) → G × G × G → ℕ)
+    (A : CKAView G G → SPTree.Timed Bool) (ACost : CKAView G G → ℕ) (t : G × G × G) :
+    (ckaDDHRed.timed k m viewCost A ACost t).2.erase.compile =
+      ckaDDHRed k m (fun x => (A x).erase.compile) t := by
+  rw [ckaDDHRed.timed, ckaDDHRedOf.tree.erase_timed, ckaDDHRedOf.compile_tree]
+  rfl
+
+/-- **Time of `ckaDDHRed`**, the bound of `ckaDDHRedOf.tree.timeBound_timed` at the view
+`ckaDDHView k m` of cost at most `tv`. -/
+theorem ckaDDHRed.timeBound_timed {G : Type} [CG : CyclicGroup G] (k m : ℕ)
+    (viewCost : (Fin k → CG.Exp) → (Fin m → CG.Exp) → G × G × G → ℕ)
+    (A : CKAView G G → SPTree.Timed Bool) (ACost : CKAView G G → ℕ) {T a tv : ℕ}
+    (hA : ∀ x, (A x).time ≤ T) (hAc : ∀ x, ACost x ≤ a) (hv : ∀ u w t, viewCost u w t ≤ tv)
+    (t : G × G × G) :
+    SPTree.Timed.stepTime (ckaDDHRed.timed k m viewCost A ACost t) ≤ T + a + tv + 4 :=
+  ckaDDHRedOf.tree.timeBound_timed _ viewCost A ACost hA hAc hv t
+
 end CatCrypt.Crypto.Messaging

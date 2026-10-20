@@ -229,4 +229,32 @@ theorem fsprgRedOf.tree.timeBound_timed {i : ℕ}
       have := hA (view b y); have := hAc (view b y); have := hv b y; omega
   omega
 
+/-- The costed form of `fsprgRed G n i`: the costed tree of `fsprgRedOf` at the view
+`fsprgView G n i` of cost `viewCost`. -/
+noncomputable def fsprgRed.timed (G : PRGDef St (Out × St)) (n i : ℕ)
+    (viewCost : (Fin i → Out) → Out × St → ℕ) (A : List Out × St → SPTree.Timed Bool)
+    (ACost : List Out × St → ℕ) (y : Out × St) : ℕ × SPTree.Timed Bool :=
+  fsprgRedOf.tree.timed (fsprgView G n i) viewCost A ACost y
+
+omit [Fintype St] [Nonempty St] in
+/-- The costed form of `fsprgRed` erases and compiles to `fsprgRed` at the erased
+adversary. -/
+theorem fsprgRed.erase_timed (G : PRGDef St (Out × St)) (n i : ℕ)
+    (viewCost : (Fin i → Out) → Out × St → ℕ) (A : List Out × St → SPTree.Timed Bool)
+    (ACost : List Out × St → ℕ) (y : Out × St) :
+    (fsprgRed.timed G n i viewCost A ACost y).2.erase.compile =
+      fsprgRed G n i (fun x => (A x).erase.compile) y := by
+  rw [fsprgRed.timed, fsprgRedOf.tree.erase_timed, fsprgRedOf.compile_tree]
+  rfl
+
+omit [Fintype St] [Nonempty St] in
+/-- **Time of `fsprgRed`**, the bound of `fsprgRedOf.tree.timeBound_timed` at the view
+`fsprgView G n i` of cost at most `tv`. -/
+theorem fsprgRed.timeBound_timed (G : PRGDef St (Out × St)) (n i : ℕ)
+    (viewCost : (Fin i → Out) → Out × St → ℕ) (A : List Out × St → SPTree.Timed Bool)
+    (ACost : List Out × St → ℕ) {T a tv : ℕ} (hA : ∀ x, (A x).time ≤ T)
+    (hAc : ∀ x, ACost x ≤ a) (hv : ∀ v y, viewCost v y ≤ tv) (y : Out × St) :
+    SPTree.Timed.stepTime (fsprgRed.timed G n i viewCost A ACost y) ≤ T + a + tv + 3 :=
+  fsprgRedOf.tree.timeBound_timed _ viewCost A ACost hA hAc hv y
+
 end CatCrypt.Crypto.Messaging
