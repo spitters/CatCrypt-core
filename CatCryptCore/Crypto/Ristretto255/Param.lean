@@ -82,7 +82,7 @@ noncomputable def RistrettoParam : GroupParam where
   exp_add x y := by ring
   exp_zero := by simp
   div_mul_cancel x y hy := by
-    haveI : Fact (Nat.Prime curve25519_l) := ⟨curve25519_l_prime⟩
+    have : Fact (Nat.Prime curve25519_l) := ⟨curve25519_l_prime⟩
     field_simp
   groupExp_generator x := by rfl
   groupExp_exp w e := by ring
@@ -118,7 +118,7 @@ noncomputable def RistrettoParam : GroupParam where
   scalarMul_zero a := by simp
   scalarZero_mul a := by simp
   mul_div_cancel a b hb := by
-    haveI : Fact (Nat.Prime curve25519_l) := ⟨curve25519_l_prime⟩
+    have : Fact (Nat.Prime curve25519_l) := ⟨curve25519_l_prime⟩
     field_simp
   scalarMul_assoc a b c := by ring
 
