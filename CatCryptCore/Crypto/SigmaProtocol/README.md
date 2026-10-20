@@ -63,15 +63,31 @@ its hax extraction is [`SigmaProofs_haxpipe`](https://github.com/spitters/CatCry
   proofs and on proofs with appended bytes.
 - The [test vectors of draft-03 Appendix A](https://github.com/spitters/CatCrypt/blob/master/sigma-proofs-hax/tests/draft_vectors.rs) (P-256
   and BLS12-381, both proof formats, valid and adversarial) run through the extracted core.
+- Each linear combination is one call of the group trait's multi-scalar multiplication, `msm`
+  (constant time in the scalars, for the prover) or `msm_vartime` (for public scalars: verifier,
+  simulator, statement image); ristretto255 implements both by curve25519-dalek's Straus method.
+  The extraction interprets both as the product of the bases raised to the scalars, and the
+  theorems above are stated about the extracted code that makes these calls.
+- Fixed-shape Schnorr and DLEQ functions over 64-bit limb arrays and status words
+  ([`fixed.rs`](https://github.com/spitters/CatCrypt/blob/master/sigma-proofs-hax/src/fixed.rs)) are written in the domain of the CatCrypt
+  compiler's front. Their Σ-protocols are `linearSigma` on the discrete-logarithm and DLEQ
+  relations ([`fixedSchnorrSigma_eq`](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/Crypto/SigmaProtocol/FixedShape.lean),
+  [`fixedDleqSigma_eq`](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/Crypto/SigmaProtocol/FixedShape.lean)), so the security theorems above hold for
+  them; on the instance the generic core builds for the same equations, the generic verifier and
+  the fixed one agree ([`extSigma_verify_eq_fixedSchnorr`](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/Crypto/SigmaProtocol/FixedShape.lean)).
+- The statements that Signal's zkgroup and usernames prove with libsignal's `poksho` are linear
+  relations over ristretto255
+  ([`PokshoStatement.toRelation_holds_witness_iff`](https://github.com/spitters/CatCrypt/blob/master/CatCrypt/Crypto/Signal/Zkgroup/PokshoStatements.lean)), with
+  the security theorems of `linearSigma`; a
+  [test](https://github.com/spitters/CatCrypt/blob/master/sigma-proofs-hax/tests/poksho_statements.rs) runs the six statements through
+  poksho and the fork on the same values.
 
 The Rust code these theorems are about is the code that runs: the fork compiles with rustc,
 with curve25519-dalek supplying the ristretto255 arithmetic behind the group trait, and produces
-the same outputs as the reference crate. The extraction serves two of the three roles of a hax
-extraction described in the
-[hax-lean README](https://github.com/spitters/hax-lean/blob/master/README.md#three-roles-of-a-cryptographic-spec):
-it anchors the security proof (role 2), and the crate's tests check it against the draft's
-vectors and the reference crate (role 3). Role 1, compilation by the CatCrypt compiler, is not
-applied to this crate.
+the same outputs as the reference crate. The extraction anchors the security proof (role 2 of
+the
+[hax-lean README](https://github.com/spitters/hax-lean/blob/master/README.md#three-roles-of-a-cryptographic-spec)),
+and the crate's tests check it against the draft's vectors and the reference crate (role 3).
 
 ### Σ-protocols beyond the drafts
 

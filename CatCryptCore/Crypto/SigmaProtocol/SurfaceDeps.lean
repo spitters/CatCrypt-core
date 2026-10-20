@@ -272,11 +272,22 @@ structure GroupEncoding (gp : GroupParam) where
 
 variable {gp : GroupParam} (E : GroupEncoding gp)
 
+/-- The multi-scalar multiplication of `gp` on encoded vectors: the encoding of the product
+of `(decG bases[i]) ^ (decS scalars[i])` over `i < scalars.size`, accumulated from the
+identity in index order. -/
+def groupMsm (scalars bases : Array (Array Int)) : Array Int :=
+  Hax.foldRange 0 (Hax.array_len scalars) (E.encG gp.identity) fun i acc =>
+    E.encG (gp.groupMul (E.decG acc)
+      (gp.groupExp (E.decG (Hax.index bases i)) (E.decS (Hax.index scalars i))))
+
 /-- The `SigmaProofsDeps` instance of a group with encodings: each operation decodes its
 arguments, applies the operation of `gp` and encodes the result; `group_mul s p` is the
-power `p ^ s`, and the comparisons compare decoded values. -/
+power `p ^ s`, `msm` and `msm_vartime` are both `groupMsm`, and the comparisons compare
+decoded values. -/
 @[instance_reducible]
 def groupSigmaProofsDeps : SigmaProofs.SigmaProofsDeps where
+  msm := groupMsm E
+  msm_vartime := groupMsm E
   identity := E.encG gp.identity
   group_mul s p := E.encG (gp.groupExp (E.decG p) (E.decS s))
   group_add a b := E.encG (gp.groupMul (E.decG a) (E.decG b))
@@ -341,6 +352,13 @@ variable (a b : Array Int)
 @[simp] theorem groupSigmaProofsDeps_scalar_eq :
     @SigmaProofs.SigmaProofsDeps.scalar_eq (groupSigmaProofsDeps E) a b =
       decide (E.decS a = E.decS b) := rfl
+
+@[simp] theorem groupSigmaProofsDeps_msm (sc bs : Array (Array Int)) :
+    @SigmaProofs.SigmaProofsDeps.msm (groupSigmaProofsDeps E) sc bs = groupMsm E sc bs := rfl
+
+@[simp] theorem groupSigmaProofsDeps_msm_vartime (sc bs : Array (Array Int)) :
+    @SigmaProofs.SigmaProofsDeps.msm_vartime (groupSigmaProofsDeps E) sc bs =
+      groupMsm E sc bs := rfl
 
 end Ops
 
@@ -446,6 +464,72 @@ theorem foldRange_encG_exp (N : ℕ) (step : Int → Array Int → Array Int) (f
       rw [ha, show (i + 1).toNat = i.toNat + 1 by omega, Finset.sum_range_succ, h])
   simpa using key
 
+/-- The scalar `∑ k, decS sc[k] · dlog (decG bs[k])` over the indices of `sc`: the discrete
+logarithm of the multi-scalar multiplication of `sc` and `bs`. -/
+noncomputable def dotVal (sc bs : Array (Array Int)) : gp.Scalar :=
+  ∑ k ∈ Finset.range sc.size,
+    E.decS (Hax.index sc (k : Int)) * gp.dlog (E.decG (Hax.index bs (k : Int)))
+
+theorem dotVal_push (sc bs : Array (Array Int)) (x y : Array Int) (h : sc.size = bs.size) :
+    dotVal E (sc.push x) (bs.push y) = dotVal E sc bs + E.decS x * gp.dlog (E.decG y) := by
+  unfold dotVal
+  rw [Array.size_push, Finset.sum_range_succ]
+  congr 1
+  · refine Finset.sum_congr rfl fun k hk => ?_
+    have hk := Finset.mem_range.mp hk
+    rw [Hax.index_natCast _ _ (by simp; omega), Hax.index_natCast _ _ (by simp; omega),
+      Hax.index_natCast _ _ hk, Hax.index_natCast _ _ (by omega)]
+    simp [Array.getElem_push, hk, show k < bs.size by omega]
+  · rw [Hax.index_natCast _ _ (by simp), Hax.index_natCast _ _ (by simp [h])]
+    simp [Array.getElem_push, h]
+
+/-- The extracted multi-scalar multiplication is the encoded power of the generator to
+`dotVal`. -/
+theorem msm_eq (sc bs : Array (Array Int)) :
+    @SigmaProofs.msm (groupSigmaProofsDeps E) sc bs = E.encG (gp.exp (dotVal E sc bs)) := by
+  rw [groupSigmaProofsDeps_msm]
+  unfold groupMsm dotVal
+  simp only [Hax.array_len]
+  apply foldRange_encG_exp
+  · exact congrArg E.encG gp.exp_zero.symm
+  · intro k _ s
+    simp only [E.decG_encG]
+    rw [GroupParam.groupMul_eq_exp, GroupParam.dlog_exp, GroupParam.groupExp_eq_exp]
+    simp only [GroupParam.scalarMul_eq_mul, GroupParam.scalarAdd_eq_add, mul_comm,
+      GroupParam.dlog_exp]
+
+/-- The extracted variable-time multi-scalar multiplication is the encoded power of the
+generator to `dotVal`. -/
+theorem msm_vartime_eq (sc bs : Array (Array Int)) :
+    @SigmaProofs.msm_vartime (groupSigmaProofsDeps E) sc bs =
+      E.encG (gp.exp (dotVal E sc bs)) :=
+  msm_eq E sc bs
+
+/-- A loop that gathers a scalar vector and a base vector of equal lengths, and whose step
+`k` adds `f k` to their `dotVal`, ends with vectors of equal lengths whose `dotVal` is the
+sum of the `f k`. -/
+theorem foldRange_gather_dot (N : ℕ)
+    (step : Int → Array (Array Int) × Array (Array Int) → Array (Array Int) × Array (Array Int))
+    (f : ℕ → gp.Scalar)
+    (hs : ∀ k : ℕ, k < N → ∀ s b : Array (Array Int), s.size = b.size →
+      (step k (s, b)).1.size = (step k (s, b)).2.size ∧
+        dotVal E (step k (s, b)).1 (step k (s, b)).2 = dotVal E s b + f k) :
+    (Hax.foldRange 0 (N : Int) (#[], #[]) step).1.size =
+        (Hax.foldRange 0 (N : Int) (#[], #[]) step).2.size ∧
+      dotVal E (Hax.foldRange 0 (N : Int) (#[], #[]) step).1
+          (Hax.foldRange 0 (N : Int) (#[], #[]) step).2 = ∑ k ∈ Finset.range N, f k := by
+  have key := Hax.foldRange_induct
+    (P := fun (i : Int) (p : Array (Array Int) × Array (Array Int)) =>
+      p.1.size = p.2.size ∧ dotVal E p.1 p.2 = ∑ k ∈ Finset.range i.toNat, f k)
+    (lo := 0) (hi := (N : Int)) (f := step) (init := (#[], #[]))
+    (by omega) (by simp [dotVal]) (by
+      rintro i ⟨s, b⟩ h0 hi ⟨hsz, hd⟩
+      have h := hs i.toNat (by omega) s b hsz
+      rw [Int.toNat_of_nonneg h0] at h
+      refine ⟨h.1, ?_⟩
+      rw [h.2, hd, show (i + 1).toNat = i.toNat + 1 by omega, Finset.sum_range_succ])
+  simpa using key
+
 /-! ### Decoding an extracted instance
 
 An extracted `Instance` is a tuple `(elements, equations, image, num_scalars)`. Its
@@ -542,6 +626,38 @@ theorem decodeRel_validate_iff (n m : ℕ) (inst : SigmaProofs.Instance_T) :
 
 /-! ### The extracted map -/
 
+/-- The evaluation pairs of row `i` on an encoded scalar vector are a scalar vector and a
+base vector of equal lengths whose `dotVal` is the discrete logarithm of row `i` of the
+decoded map, when the scalar indices of the row are in range. -/
+theorem Instance_evaluation_pairs_dot (n : ℕ) (inst : SigmaProofs.Instance_T)
+    (w : Fin n → gp.Scalar) (i : ℕ)
+    (hv : ∀ k : ℕ, k < (Hax.index inst.2.1 (i : Int)).2.size →
+      uidx (Hax.index (Hax.index inst.2.1 (i : Int)).2 (k : Int)).1 < n) :
+    (@SigmaProofs.Instance_evaluation_pairs (groupSigmaProofsDeps E) inst (i : Int)
+        (encVec E w)).1.size =
+      (@SigmaProofs.Instance_evaluation_pairs (groupSigmaProofsDeps E) inst (i : Int)
+        (encVec E w)).2.size ∧
+    dotVal E (@SigmaProofs.Instance_evaluation_pairs (groupSigmaProofsDeps E) inst (i : Int)
+        (encVec E w)).1
+      (@SigmaProofs.Instance_evaluation_pairs (groupSigmaProofsDeps E) inst (i : Int)
+        (encVec E w)).2 =
+      ∑ k ∈ Finset.range (Hax.index inst.2.1 (i : Int)).2.size,
+        gp.scalarMul (gp.dlog (termElem E inst i k))
+          (vecGet w (uidx (Hax.index (Hax.index inst.2.1 (i : Int)).2 (k : Int)).1)) := by
+  unfold SigmaProofs.Instance_evaluation_pairs
+  simp only [SigmaProofs.«.equations», SigmaProofs.«Equation.terms», SigmaProofs.«.elements»,
+    Hax.array_len]
+  apply foldRange_gather_dot
+  intro k hk s b hsb
+  simp only [Hax.push]
+  refine ⟨by simp [hsb], ?_⟩
+  rw [dotVal_push E _ _ _ _ hsb, encVec, index_castVal_ofFn _ _ (hv k hk)]
+  simp only [groupSigmaProofsDeps_scalar_mul, E.decS_encS, termElem, vecGet, dif_pos (hv k hk)]
+  congr 1
+  rw [GroupParam.groupExp_eq_exp, GroupParam.dlog_exp]
+  simp only [GroupParam.scalarMul_eq_mul]
+  ring
+
 /-- Row `i` of the extracted linear map on an encoded scalar vector is the encoding of
 row `i` of the map of the decoded relation, when the scalar indices of the row are in
 range. -/
@@ -566,22 +682,12 @@ theorem Instance_map_row_eq (n m : ℕ) (inst : SigmaProofs.Instance_T) (w : Fin
       rfl
   rw [hlin]
   unfold SigmaProofs.Instance_map_row
-  simp only [SigmaProofs.«.equations», SigmaProofs.«Equation.terms», SigmaProofs.«.elements»,
-    Hax.array_len]
-  apply foldRange_encG_exp
-  · rw [groupSigmaProofsDeps_identity]
-    exact congrArg E.encG gp.exp_zero.symm
-  · intro k hk s
-    rw [encVec, index_castVal_ofFn _ _ (hv k hk)]
-    simp only [groupSigmaProofsDeps_group_add, groupSigmaProofsDeps_group_mul,
-      groupSigmaProofsDeps_scalar_mul, E.decS_encS, E.decG_encG, termElem, vecGet,
-      dif_pos (hv k hk)]
-    congr 1
-    rw [GroupParam.groupMul_eq_exp, GroupParam.groupExp_eq_exp, GroupParam.dlog_exp,
-      GroupParam.groupExp_eq_exp, GroupParam.dlog_exp, GroupParam.dlog_exp,
-      GroupParam.exp_inj_iff]
-    simp only [GroupParam.scalarMul_eq_mul, GroupParam.scalarAdd_eq_add]
-    ring
+  have hd := (Instance_evaluation_pairs_dot E n inst w i hv).2
+  generalize @SigmaProofs.Instance_evaluation_pairs (groupSigmaProofsDeps E) inst (i : Int)
+    (encVec E w) = p at hd ⊢
+  obtain ⟨v, b⟩ := p
+  dsimp only at hd ⊢
+  rw [msm_eq, Hax.deref, Hax.deref, hd]
 
 /-- An extracted instance with `n` scalars and `m` equations whose decoded relation has
 its indices in range. -/
@@ -657,16 +763,30 @@ theorem Instance_simulate_commitment_eq {n m : ℕ} {inst : SigmaProofs.Instance
   simp only [SigmaProofs.«Instance.num_scalars», SigmaProofs.«.equations»,
     SigmaProofs.«Instance.image», Hax.bne, Hax.array_len, h.1, h.2.1, size_encVec,
     beq_self_eq_true, Bool.not_true, Bool.false_eq_true, if_false,
-    groupSigmaProofsDeps_scalar_neg, groupSigmaProofsDeps_group_mul,
-    groupSigmaProofsDeps_group_add]
+    groupSigmaProofsDeps_scalar_neg]
   rw [foldRange_push_ofFn]
   unfold encCom
   congr 2
   funext j
-  rw [Instance_map_row_eq E n m inst z j j.isLt
-    ((decodeRel_validate_iff E n m inst).mp h.2.2 j j.isLt)]
-  simp only [E.decS_encS, E.decG_encG, LinearRelation.simCommit, decodeRel_image,
-    gp.groupInv_groupExp]
+  have hv := (decodeRel_validate_iff E n m inst).mp h.2.2 j j.isLt
+  have hsz := (Instance_evaluation_pairs_dot E n inst z j hv).1
+  have hrow := Instance_map_row_eq E n m inst z j j.isLt hv
+  unfold SigmaProofs.Instance_map_row at hrow
+  generalize @SigmaProofs.Instance_evaluation_pairs (groupSigmaProofsDeps E) inst
+    ((j : ℕ) : Int) (encVec E z) = p at hsz hrow ⊢
+  obtain ⟨v, b⟩ := p
+  dsimp only at hsz hrow ⊢
+  rw [msm_eq, Hax.deref, Hax.deref] at hrow
+  have hmap := congrArg E.decG hrow
+  rw [E.decG_encG, E.decG_encG] at hmap
+  rw [msm_vartime_eq, Hax.deref, Hax.deref]
+  simp only [Hax.push]
+  rw [dotVal_push E _ _ _ _ hsz]
+  simp only [E.decS_encS, LinearRelation.simCommit, decodeRel_image, gp.groupInv_groupExp]
+  rw [show (decodeRel E n m inst).map z j = gp.exp (dotVal E v b) from hmap.symm,
+    GroupParam.groupExp_eq_exp, GroupParam.groupMul_eq_exp, GroupParam.dlog_exp,
+    GroupParam.dlog_exp]
+  simp only [GroupParam.scalarMul_eq_mul, GroupParam.scalarAdd_eq_add, mul_comm]
 
 /-- The extracted simulated response is the simulator randomness. -/
 theorem Instance_simulate_response_eq {n m : ℕ} {inst : SigmaProofs.Instance_T}
@@ -736,6 +856,50 @@ theorem foldr_groupMul_eq_exp (l : List gp.G) :
     rw [List.foldr_cons, ih, GroupParam.groupMul_eq_exp, GroupParam.dlog_exp]
     rfl
 
+/-- The extracted image entry of an equation is the encoded power of the generator to the
+sum of `decS coefficient · dlog els[e]` over its image terms `(e, coefficient)`. -/
+theorem image_entry_dot (els : Array (Array Int))
+    (eq : (Array (Int × Array Int)) × (Array (Int × Int × Array Int))) :
+    @SigmaProofs.image_entry (groupSigmaProofsDeps E) els eq =
+      E.encG (gp.exp (∑ k ∈ Finset.range eq.1.size,
+        E.decS (Hax.index eq.1 (k : Int)).2 *
+          gp.dlog (E.decG (Hax.index els
+            (Hax.castVal_w Hax.usizeBits (Hax.index eq.1 (k : Int)).1))))) := by
+  unfold SigmaProofs.image_entry
+  simp only [SigmaProofs.«Equation.image», Hax.array_len]
+  rw [msm_vartime_eq, Hax.deref, Hax.deref]
+  congr 2
+  refine (foldRange_gather_dot E _ _ _ fun k _ s b hsb => ?_).2
+  simp only [Hax.push]
+  exact ⟨by simp [hsb], dotVal_push E _ _ _ _ hsb⟩
+
+/-- The decoded extracted column entry of an equation for the scalar index `q` is `exp` of
+the sum of `decS coefficient · dlog els[e]` over its terms `(q, e, coefficient)`. -/
+theorem column_entry_dot (els : Array (Array Int))
+    (eq : (Array (Int × Array Int)) × (Array (Int × Int × Array Int))) (q : Int) :
+    @SigmaProofs.column_entry (groupSigmaProofsDeps E) els eq q =
+      E.encG (gp.exp (∑ k ∈ Finset.range eq.2.size,
+        if (Hax.index eq.2 (k : Int)).1 = q then
+          E.decS (Hax.index eq.2 (k : Int)).2.2 *
+            gp.dlog (E.decG (Hax.index els
+              (Hax.castVal_w Hax.usizeBits (Hax.index eq.2 (k : Int)).2.1)))
+        else 0)) := by
+  unfold SigmaProofs.column_entry
+  simp only [Hax.array_len]
+  rw [msm_vartime_eq, Hax.deref, Hax.deref]
+  congr 2
+  refine (foldRange_gather_dot E _ _ _ fun k _ s b hsb => ?_).2
+  by_cases hq : (Hax.index eq.2 (k : Int)).1 = q
+  · have hb : Hax.beq (Hax.index (SigmaProofs.«Equation.terms» eq) (k : Int)).1 q = true := by
+      simp [SigmaProofs.«Equation.terms», Hax.beq, hq]
+    rw [if_pos hb, if_pos hq]
+    simp only [Hax.push]
+    exact ⟨by simp [hsb], dotVal_push E _ _ _ _ hsb⟩
+  · have hb : ¬ Hax.beq (Hax.index (SigmaProofs.«Equation.terms» eq) (k : Int)).1 q = true := by
+      simp [SigmaProofs.«Equation.terms», Hax.beq, hq]
+    rw [if_neg hb, if_neg hq]
+    exact ⟨hsb, by simp⟩
+
 /-- The extracted `compute_image` is the array of the encoded images `imageComb`. -/
 theorem compute_image_eq (els : Array (Array Int))
     (eqs : Array ((Array (Int × Array Int)) × (Array (Int × Int × Array Int)))) :
@@ -751,15 +915,11 @@ theorem compute_image_eq (els : Array (Array Int))
       ((List.range N).map g).sum = ∑ k ∈ Finset.range N, g k := by
     intro N g
     simp only [Finset.sum, Finset.range_val, Multiset.range, Multiset.map_coe, Multiset.sum_coe]
-  rw [hsum]
-  apply foldRange_encG_exp
-  · rw [groupSigmaProofsDeps_identity]
-    exact congrArg E.encG gp.exp_zero.symm
-  · intro k hk s
-    simp only [groupSigmaProofsDeps_group_add, groupSigmaProofsDeps_group_mul, E.decG_encG,
-      Function.comp_apply]
-    rw [GroupParam.groupMul_eq_exp, GroupParam.dlog_exp]
-    rfl
+  rw [hsum, image_entry_dot]
+  congr 2
+  refine Finset.sum_congr rfl fun k _ => ?_
+  rw [Function.comp_apply, GroupParam.groupExp_eq_exp, GroupParam.dlog_exp,
+    GroupParam.scalarMul_eq_mul, mul_comm]
 
 /-- An instance built by the extracted `Instance_new` from the statement elements `els` and
 the equations `eqs` has the equations `eqs`, and the image of its decoded relation is the
@@ -1652,9 +1812,8 @@ theorem image_entry_decG (els : Array (Array Int))
     (h1 : eq.1.size = 1) (hc : E.decS (Hax.index eq.1 0).2 = gp.scalarOne) :
     E.decG (@SigmaProofs.image_entry (groupSigmaProofsDeps E) els eq) =
       E.decG (Hax.index els (Hax.castVal_w Hax.usizeBits (Hax.index eq.1 0).1)) := by
-  unfold SigmaProofs.image_entry
-  simp only [SigmaProofs.«Equation.image», Hax.array_len, h1, Nat.cast_one, foldRange_one]
-  simp [E.decG_encG, hc, gp.groupExp_one, gp.identity_groupMul]
+  rw [image_entry_dot, E.decG_encG, h1, Finset.sum_range_one, Nat.cast_zero, hc]
+  exact (congrArg gp.exp (one_mul _)).trans (gp.exp_dlog _)
 
 /-- The decoded column entry of an equation whose terms have coefficient one is `exp` of
 the sum of the discrete logarithms of the elements of its terms of scalar index `q`. -/
@@ -1665,16 +1824,12 @@ theorem column_entry_decG (els : Array (Array Int))
       gp.exp (∑ k ∈ Finset.range eq.2.size, if (Hax.index eq.2 (k : Int)).1 = q then
         gp.dlog (E.decG (Hax.index els
           (Hax.castVal_w Hax.usizeBits (Hax.index eq.2 (k : Int)).2.1))) else 0) := by
-  unfold SigmaProofs.column_entry
-  simp only [SigmaProofs.«Equation.terms», Hax.array_len]
-  rw [foldRange_encG_exp E _ _ _ _ (by
-    rw [groupSigmaProofsDeps_identity]; exact congrArg E.encG gp.exp_zero.symm)]
-  · exact E.decG_encG _
-  · intro k hk s
-    by_cases hq : (Hax.index eq.2 (k : Int)).1 = q <;>
-      simp [hq, Hax.beq, E.decG_encG, hc k hk, gp.groupExp_one, GroupParam.groupMul_eq_exp,
-        GroupParam.dlog_exp]
-    rfl
+  rw [column_entry_dot, E.decG_encG]
+  refine congrArg gp.exp (Finset.sum_congr rfl fun k hk => ?_)
+  split_ifs
+  · rw [hc k (Finset.mem_range.mp hk)]
+    exact one_mul _
+  · rfl
 
 /-- An element of `layoutRel` in range is the decoded entry of `els`. -/
 theorem layoutRel_elem (n m : ℕ) (els : Array (Array Int))

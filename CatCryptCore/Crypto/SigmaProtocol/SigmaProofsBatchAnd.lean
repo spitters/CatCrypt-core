@@ -162,25 +162,6 @@ attribute [local instance] GroupParam.scalarCommRing
 
 variable {gp : GroupParam} (E : GroupEncoding gp)
 
-/-- The scalar `∑ k, decS sc[k] · dlog (decG bs[k])` over the indices of `sc`: the discrete
-logarithm of the multi-scalar multiplication of `sc` and `bs`. -/
-noncomputable def dotVal (sc bs : Array (Array Int)) : gp.Scalar :=
-  ∑ k ∈ Finset.range sc.size,
-    E.decS (Hax.index sc (k : Int)) * gp.dlog (E.decG (Hax.index bs (k : Int)))
-
-theorem dotVal_push (sc bs : Array (Array Int)) (x y : Array Int) (h : sc.size = bs.size) :
-    dotVal E (sc.push x) (bs.push y) = dotVal E sc bs + E.decS x * gp.dlog (E.decG y) := by
-  unfold dotVal
-  rw [Array.size_push, Finset.sum_range_succ]
-  congr 1
-  · refine Finset.sum_congr rfl fun k hk => ?_
-    have hk := Finset.mem_range.mp hk
-    rw [Hax.index_natCast _ _ (by simp; omega), Hax.index_natCast _ _ (by simp; omega),
-      Hax.index_natCast _ _ hk, Hax.index_natCast _ _ (by omega)]
-    simp [Array.getElem_push, hk, show k < bs.size by omega]
-  · rw [Hax.index_natCast _ _ (by simp), Hax.index_natCast _ _ (by simp [h])]
-    simp [Array.getElem_push, h]
-
 theorem dotVal_update (sc bs : Array (Array Int)) (e : ℕ) (x : Array Int) (he : e < sc.size) :
     dotVal E (Hax.array_update sc (e : Int) x) bs =
       dotVal E sc bs + (E.decS x - E.decS (Hax.index sc (e : Int))) *
@@ -208,21 +189,6 @@ theorem dotVal_zero (N : ℕ) (bs : Array (Array Int)) :
   refine Finset.sum_eq_zero fun k hk => ?_
   rw [Array.size_ofFn, Finset.mem_range] at hk
   rw [index_ofFn _ _ hk, E.decS_encS, GroupParam.scalarZero_eq_zero, zero_mul]
-
-/-- The extracted multi-scalar multiplication is the encoded power of the generator to
-`dotVal`. -/
-theorem msm_eq (sc bs : Array (Array Int)) :
-    @SigmaProofs.msm (groupSigmaProofsDeps E) sc bs = E.encG (gp.exp (dotVal E sc bs)) := by
-  unfold SigmaProofs.msm dotVal
-  simp only [Hax.array_len]
-  apply foldRange_encG_exp
-  · rw [groupSigmaProofsDeps_identity]
-    exact congrArg E.encG gp.exp_zero.symm
-  · intro k _ s
-    simp only [groupSigmaProofsDeps_group_add, groupSigmaProofsDeps_group_mul, E.decG_encG]
-    rw [GroupParam.groupMul_eq_exp, GroupParam.dlog_exp, GroupParam.groupExp_eq_exp]
-    simp only [GroupParam.scalarMul_eq_mul, GroupParam.scalarAdd_eq_add, mul_comm,
-      GroupParam.dlog_exp]
 
 /-- The discrete logarithm of the image of an equation over the elements `els`: the sum of
 `dlog els[e] · coefficient` over its image terms `(e, coefficient)`. -/
@@ -402,7 +368,7 @@ theorem verifier_with_randomness_ok_iff_sum {n m : ℕ} (inst : SigmaProofs.Inst
         E.decS (Hax.index R.1 (t : Int)) * gp.dlog (E.decG (Hax.index inst.1 (t : Int))) =
           dotVal E R.1 inst.1 := by
       rw [dotVal, hR1]
-    rw [msm_eq, groupSigmaProofsDeps_group_eq, groupSigmaProofsDeps_identity, E.decG_encG,
+    rw [msm_vartime_eq, groupSigmaProofsDeps_group_eq, groupSigmaProofsDeps_identity, E.decG_encG,
       E.decG_encG, decide_eq_true_iff, ← gp.exp_zero, GroupParam.exp_inj_iff, hS3, hR6,
       Int.toNat_natCast, hsum, hR5, ← Finset.sum_add_distrib]
     simp only [ha, true_and, GroupParam.scalarZero_eq_zero]
