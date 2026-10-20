@@ -34,6 +34,8 @@ queries that oracle at arbitrary byte strings and receives the raw bytes.
   uniform bytes conditioned on their decoding
 * `dsRawStep`, `dsRawKsAdvantage` — the knowledge-soundness game against the raw oracle
 * `dsRawImpl`, `dsRawRed` — the simulation of the raw oracle and the reduction
+* `dsRawImpl.timed`, `dsRawRed.timed` — their costed forms, with step cost `tS` per
+  simulated query
 * `dsZkProtocol`, `DSRawZKDistinguisher`, `dsRawZkReal`, `dsRawZkSim` — the
   zero-knowledge game against the raw oracle
 
@@ -45,6 +47,8 @@ queries that oracle at arbitrary byte strings and receives the raw bytes.
 * `dsRawKsAdvantage_le` — `dsRawKsAdvantage A ≤ ksAdvantage (dsRawRed A) + (qH + 1)·β`
 * `dsRawKsExtractProb_ge` — with `ε = dsRawKsAdvantage A − (qH + 1)·β`,
   `ε·(ε/(qH + 1) − 1/|Ch|) ≤ ksExtractProb (dsRawRed A)`
+* `dsRawRed.erase_timed`, `dsRawRed.timeBound_timed` — the costed reduction erases to
+  `dsRawRed` and, with `A'` of time `T`, has time at most `T + qH·(tS + 2)`
 * `dsRawZkReal_le_zkSim` — `dsRawZkReal D ≤ dsRawZkSim D + qP·δ + qP·(qH + qP)·γ`
 -/
 
@@ -370,6 +374,81 @@ theorem dsRawKsExtractProb_ge (hSS : P.SpecialSound) (hX : PrefixFree Dp.encX)
     tsub_le_iff_right.mpr (dsRawKsAdvantage_le Dp hX hA hβ A hAq)
   refine le_trans ?_ (ksExtractProb_ge hSS (dsRawRed Dp A hAq))
   gcongr
+
+/-! ### The costed reduction -/
+
+/-- The costed simulation of the raw oracle: `dsRawImpl` with the step cost `tS` of the
+table lookup, the decoding of the absorbed string and the table update in front, and
+zero step costs on its continuations. -/
+noncomputable def dsRawImpl.timed (tS : ℕ) (T : List (Bytes × (Fin Dp.L → UInt8)))
+    (s : Bytes) :
+    ℕ × OracleAdv.Timed (P.NizkInput SessionId) P.Ch
+      ((Fin Dp.L → UInt8) × List (Bytes × (Fin Dp.L → UInt8))) :=
+  (tS, match lookupIn T s with
+    | some b => .ret (b, T)
+    | none =>
+      match Dp.unabsorb s with
+      | some k => .query k (fun _ => 0) fun c =>
+          .rand (Dp.condB c) (fun _ => 0) fun b => .ret (b, T ++ [(s, b)])
+      | none => .rand (PMF.uniformOfFintype _) (fun _ => 0) fun b => .ret (b, T ++ [(s, b)]))
+
+omit [DecidableEq P.Stmt] in
+theorem dsRawImpl.erase_timed (tS : ℕ) (T : List (Bytes × (Fin Dp.L → UInt8))) (s : Bytes) :
+    (dsRawImpl.timed Dp tS T s).2.erase = dsRawImpl Dp T s := by
+  simp only [dsRawImpl.timed, dsRawImpl]
+  cases lookupIn T s with
+  | some b => rfl
+  | none => cases Dp.unabsorb s <;> rfl
+
+omit [DecidableEq P.Stmt] in
+/-- Each simulated query takes time at most `tS + 2`: the step cost and at most one query
+and one sampling node. -/
+theorem dsRawImpl.timeBound_timed (tS : ℕ) (T : List (Bytes × (Fin Dp.L → UInt8)))
+    (s : Bytes) : OracleAdv.Timed.StepTimeBound (dsRawImpl.timed Dp tS T s) (tS + 2) := by
+  refine ⟨Nat.le_add_right _ _, ?_⟩
+  simp only [dsRawImpl.timed, Nat.add_sub_cancel_left]
+  cases lookupIn T s with
+  | some b => trivial
+  | none => cases Dp.unabsorb s <;> simp [OracleAdv.Timed.TimeBound]
+
+/-- The costed reduction to knowledge soundness: the costed adversary `A'` against the raw
+oracle, simulated by `dsRawImpl.timed` from the empty table, with the table dropped. -/
+noncomputable def dsRawRed.timed (tS : ℕ)
+    (A' : OracleAdv.Timed Bytes (Fin Dp.L → UInt8) (SessionId × P.Stmt × P.NizkProof)) :
+    ℕ × OracleAdv.Timed (P.NizkInput SessionId) P.Ch (SessionId × P.Stmt × P.NizkProof) :=
+  OracleAdv.Timed.delay (OracleAdv.Timed.simulate (dsRawImpl.timed Dp tS) A' []).1
+    ((OracleAdv.Timed.simulate (dsRawImpl.timed Dp tS) A' []).2.bind fun x => (0, .ret x.1))
+
+omit [DecidableEq P.Stmt] in
+/-- Erasing the costs of `dsRawRed.timed` gives the reduction `dsRawRed`. -/
+theorem dsRawRed.erase_timed (tS : ℕ) {qH : ℕ}
+    (A : OracleAdv Bytes (Fin Dp.L → UInt8) (SessionId × P.Stmt × P.NizkProof))
+    (hA : A.IsQueryBound qH)
+    (A' : OracleAdv.Timed Bytes (Fin Dp.L → UInt8) (SessionId × P.Stmt × P.NizkProof))
+    (hA' : A'.erase = A) :
+    (dsRawRed.timed Dp tS A').2.erase = (dsRawRed Dp A hA).run := by
+  subst hA'
+  rw [dsRawRed.timed, OracleAdv.Timed.delay, OracleAdv.Timed.erase_bind,
+    OracleAdv.Timed.erase_simulate]
+  simp only [dsRawImpl.erase_timed]
+  rfl
+
+omit [DecidableEq P.Stmt] in
+/-- **Time of the reduction.** With `A'` of time `T` and at most `qH` queries, the costed
+reduction has time at most `T + qH * (tS + 2)`, where `tS` is the step cost of one
+simulated query. -/
+theorem dsRawRed.timeBound_timed (tS : ℕ) {qH : ℕ}
+    (A : OracleAdv Bytes (Fin Dp.L → UInt8) (SessionId × P.Stmt × P.NizkProof))
+    (hA : A.IsQueryBound qH)
+    {A' : OracleAdv.Timed Bytes (Fin Dp.L → UInt8) (SessionId × P.Stmt × P.NizkProof)}
+    (hA' : A'.erase = A) {T : ℕ} (hT : A'.TimeBound T) :
+    OracleAdv.Timed.StepTimeBound (dsRawRed.timed Dp tS A') (T + qH * (tS + 2)) := by
+  have hq : A'.erase.IsQueryBound qH := hA' ▸ hA
+  have hs := OracleAdv.Timed.timeBound_simulate (dsRawImpl.timed Dp tS)
+    (dsRawImpl.timeBound_timed Dp tS) hT hq []
+  have hb := OracleAdv.Timed.timeBound_bind (n := 0) hs.2
+    (f := fun x => (0, OracleAdv.Timed.ret x.1)) fun _ => ⟨le_rfl, trivial⟩
+  exact (OracleAdv.Timed.stepTimeBound_delay hb).mono (by have := hs.1; omega)
 
 end Knowledge
 
