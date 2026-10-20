@@ -6,6 +6,8 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Crypto.FiatShamirROM.StraightLineCls
+public import CatCryptCore.Crypto.FiatShamirROM.Timed
+public import CatCryptCore.Core.SPTreeTimedOps
 public import CatCryptCore.Crypto.FiatShamirROM.Verification
 public import CatCryptCore.Crypto.UCConcrete
 public import CatCryptCore.Crypto.NomPkgBridge
@@ -67,6 +69,8 @@ that cannot be answered, a uniform challenge vector is bad with probability at m
   log extractor
 * `Params.inverter` — the inverter: one run of the instrumented simulated game and the
   extractor
+* `Params.logExtractor.timed`, `Params.inverter.timed` — the costed extractor (one step of
+  cost `tExt`) and the costed inverter (the costed verified run of `FiatShamirROM/Timed.lean`)
 * `Params.statTerm` — the statistical terms of the bound
 * `forgeReal`, `forgeIdeal` — the verification games of a forger of a Fiat–Shamir
   protocol: its EUF-CMA game, and the game that rejects every forgery
@@ -81,6 +85,11 @@ that cannot be answered, a uniform challenge vector is bad with probability at m
 * `Params.eufcma_le_raw` — `fiatShamir_rom_eufcma_slCls` instantiated
 * `Params.eufcma_le` — for every forger `A`,
   `eufcmaAdvantage A ≤ owfAdvantage F (inverter A) + statTerm qH qS`
+* `Params.logExtractor.erase_timed`, `Params.inverter.run_erase_timed` — the costed forms
+  erase to the extractor and the inverter
+* `Params.logExtractor.timeBound_timed`, `Params.inverter.timeBound_timed` — their times:
+  `tExt`, and `T + (tV + V(tV + 1)) + ((tH + 1)(qH + V) + (tS + 1)qS) + tOut` for a
+  costed forger of time `T`
 
 A distinguisher on the verification games has advantage at most the EUF-CMA advantage
 (`FiatShamirROM.advantageA_eufcmaGame_le`, in `FiatShamirROM/Verification.lean`).
@@ -1379,6 +1388,26 @@ noncomputable def logExtractor (hS : P.D.Sound) (hK : 0 < P.D.K) (N : ℕ) :
   simBad_le x t m ht := P.simBad_le M hK x t m ht
   sound x s f hr hf _ hw := P.ext_sound M hS x s f hr hf hw
 
+/-- The costed extractor of `logExtractor`: the extraction `P.ext M x t f` as one step of
+cost `tExt`. -/
+noncomputable def logExtractor.timed (tExt : ℕ) (x : P.D.Y) (t : (P.protocol M).Tables)
+    (f : (P.protocol M).Forgery) : ℕ × SPTree.Timed P.D.X :=
+  (tExt, .ret (P.ext M x t f))
+
+/-- The costed extractor erases and compiles to the extractor of `logExtractor`. -/
+theorem logExtractor.erase_timed (hS : P.D.Sound) (hK : 0 < P.D.K) (N tExt : ℕ) (x : P.D.Y)
+    (t : (P.protocol M).Tables) (f : (P.protocol M).Forgery) :
+    (logExtractor.timed P M tExt x t f).2.erase.compile =
+      SPComp.pure ((P.logExtractor M hS hK N).ext x t f) := by
+  rw [logExtractor.timed, SPTree.Timed.erase_ret, SPTree.compile_ret]
+  rfl
+
+/-- **Time of the costed extractor**: `tExt`. -/
+theorem logExtractor.timeBound_timed (tExt : ℕ) (x : P.D.Y) (t : (P.protocol M).Tables)
+    (f : (P.protocol M).Forgery) :
+    SPTree.Timed.stepTime (logExtractor.timed P M tExt x t f) = tExt := by
+  rw [logExtractor.timed, SPTree.Timed.stepTime, SPTree.Timed.time_ret, Nat.add_zero]
+
 /-- The simulated traces have at most `T(K + 1) + 1` entries. -/
 theorem simTrace_length_le (look : P.Key M → Option P.Ch) (x : P.D.Y) (m : M)
     (e : Fin (P.T * (P.D.K + 1) + 1) → P.Ch) (s : P.SimRand) :
@@ -1447,6 +1476,44 @@ noncomputable def inverter {qH qS : ℕ} (A : (P.protocol M).Adversary qH qS) :
 theorem inverter_eq (hS : P.D.Sound) (hK : 0 < P.D.K) {qH qS : ℕ}
     (A : (P.protocol M).Adversary qH qS) :
     P.inverter M A = slReductionCls (P.logExtractor M hS hK (P.tableBound qH qS)) A := rfl
+
+/-- The costed inverter on the statement `x`: the costed verified run of `A' x` in the
+instrumented simulated game, at step cost `tH` per hash and `tS` per signing query and `tV`
+per verifier step, followed by the extraction at cost `tOut`. -/
+noncomputable def inverter.timed (qH qS tV tH tS tOut : ℕ)
+    (A' : P.D.Y → OracleAdv.Timed (P.protocol M).Query (P.protocol M).Answer
+      (P.protocol M).Forgery) (x : P.D.Y) : ℕ × OracleAdv.Timed Empty Empty P.D.X :=
+  timedRun tV tOut (toOracle (slStep (P.tableBound qH qS) (P.Bad M) x))
+    (Sum.elim (fun _ => tH) fun _ => tS) ((Protocol.Tables.empty, false), false)
+    (fun y => P.ext M x y.2.1.1 y.1) x (A' x)
+
+/-- Under any oracle, the costed inverter has the output distribution of `inverter A`. -/
+theorem inverter.run_erase_timed {qH qS : ℕ} (A : (P.protocol M).Adversary qH qS)
+    (A' : P.D.Y → OracleAdv.Timed (P.protocol M).Query (P.protocol M).Answer
+      (P.protocol M).Forgery)
+    (hA : ∀ x, (A' x).erase = A.run x) (tV tH tS tOut : ℕ) {U : Type}
+    (O' : U → Empty → PMF (Empty × U)) (u : U) (x : P.D.Y) :
+    (OracleAdv.run O' (inverter.timed P M qH qS tV tH tS tOut A' x).2.erase u).map
+      Prod.fst = P.inverter M A x := by
+  rw [inverter.timed, timedRun.run_erase, hA]
+  rfl
+
+/-- **Time of the costed inverter.** With `A'` of time `T`, the costed inverter has time
+at most `T + (tV + V * (tV + 1)) + ((tH + 1) * (qH + V) + (tS + 1) * qS) + tOut`. -/
+theorem inverter.timeBound_timed {qH qS : ℕ} (A : (P.protocol M).Adversary qH qS)
+    {A' : P.D.Y → OracleAdv.Timed (P.protocol M).Query (P.protocol M).Answer
+      (P.protocol M).Forgery}
+    (hA : ∀ x, (A' x).erase = A.run x) (tV tH tS tOut : ℕ) {T : ℕ}
+    (hT : ∀ x, (A' x).TimeBound T) (x : P.D.Y) :
+    OracleAdv.Timed.StepTimeBound (inverter.timed P M qH qS tV tH tS tOut A' x)
+      (T + (tV + (P.protocol M).V * (tV + 1)) +
+        ((tH + 1) * (qH + (P.protocol M).V) + (tS + 1) * qS) + tOut) := by
+  have hq : IsQueryBound₂ (A' x).erase qH qS := by
+    rw [hA]; exact A.isQueryBound x
+  exact timedRun.timeBound (G := P.protocol M) tV tOut
+    (toOracle (slStep (P.tableBound qH qS) (P.Bad M) x)) (Sum.elim (fun _ => tH) fun _ => tS)
+    ((Protocol.Tables.empty, false), false) (fun y => P.ext M x y.2.1.1 y.1) x
+    (tH := tH) (tS := tS) (fun _ => le_rfl) (hT x) hq
 
 /-- The statistical terms of the bound for `qH` hash and `qS` signing queries, with
 `N = tableBound qH qS`, `ε_C = (T(K + 1) + 1)·N/|Dig|`, `ε_H = (K/(K + 1))^T`,
