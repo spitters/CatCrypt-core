@@ -129,7 +129,7 @@ lemma factorization_dvd_orderOf
   -- So d.factorization q < k.
   have hj_lt : d.factorization q < k := by
     by_contra h
-    push_neg at h
+    push Not at h
     apply hkj
     exact (Nat.Prime.pow_dvd_iff_le_factorization hq hd_ne_zero).mpr h
   -- Now show d ∣ N/q via factorization.
@@ -173,7 +173,7 @@ theorem pocklington (n : ℕ) (hn : 2 ≤ n) (cert : PocklingtonCert n) : Nat.Pr
   have hn1_pos : 0 < n - 1 := by omega
   have hn1_ne : n - 1 ≠ 0 := Nat.pos_iff_ne_zero.mp hn1_pos
   have hp_prime : Nat.Prime p := Nat.minFac_prime hn_ne_one
-  haveI : Fact (Nat.Prime p) := ⟨hp_prime⟩
+  have : Fact (Nat.Prime p) := ⟨hp_prime⟩
   have hp_dvd_n : p ∣ n := Nat.minFac_dvd n
   have hp_pos : 0 < p := hp_prime.pos
   -- Claim: F ∣ p - 1.
@@ -605,7 +605,7 @@ theorem pocklington_fast (c : RawCertFast) (hn : 2 ≤ c.n)
     exact hpow
   · -- (a^((n-1)/q) - 1) is a unit, from gcd-coprime.
     rw [hqEq]
-    haveI : NeZero c.n := ⟨by omega⟩
+    have : NeZero c.n := ⟨by omega⟩
     rw [← ZMod.natCast_zmod_val ((w.a : ZMod c.n) ^ ((c.n - 1) / w.q) - 1),
         ZMod.isUnit_iff_coprime]
     exact hgcd
