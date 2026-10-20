@@ -215,6 +215,7 @@ public import CatCryptCore.Crypto.AKE.KeySchedule
 public import CatCryptCore.Crypto.Messaging.FSPRG
 public import CatCryptCore.Crypto.Messaging.CKA
 public import CatCryptCore.Crypto.Messaging.FSAEAD
+public import CatCryptCore.Crypto.Messaging.DoubleRatchet
 public import CatCryptCore.Crypto.KEM.Games
 public import CatCryptCore.Crypto.KEM.FOTransformU
 public import CatCryptCore.Crypto.KEM.FOTransformTimed
