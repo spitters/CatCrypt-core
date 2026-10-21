@@ -121,6 +121,20 @@ terms (`Tm.rename`, `Tm.weaken`, defined in `Syntax`; `Tm.interp_rename`, `Tm.ev
 `Semantics`). Its relation to the other classes is in
 `CatCryptCore/Crypto/Complexity.md`, section "Time over the deep language D".
 
+## Relation to hax-lean's typed IR
+
+The typed IR `TExpr` of hax-lean, the input of the CatCrypt compiler's front, embeds into D
+on the fragment the front accepts: literals, variables, `let`, sequencing, pairs and their
+projections, conditionals, binary operations implemented by D primitives, assignments, and
+counted loops `forFold` whose state is the set of names the compiler carries through the
+loop. The embedding preserves meaning against the control-flow semantics `Hax.denote'`, and
+the cost in D of the embedded term is at most the number of evaluation steps of the source
+under that semantics (factor 1, constant 0), with loop tests and increments charged at
+their bit length. The module is `CatCrypt.Complexity.TExprToD` in the CatCrypt development
+repository, where the compiler's loop analysis is available. This is a simulation between
+two concrete measures, of the kind Forster, Kunze and Roth prove between L and Turing
+machines.
+
 ## Design
 
 Terms are intrinsically typed and scoped (`Tm : List Ty → Ty → Type`). A function value is a
