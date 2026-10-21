@@ -23,6 +23,8 @@ Lean definitions reflected into D by `reflect_d`, each with its denotation theor
 * a parameter function and an adversary `BitVec 8 → SPComp Bool` in the context;
 * reads and writes of a location;
 * the distinguisher `exD` of `CatCryptCore.Crypto.QueryBoundedUC`;
+* arithmetic, comparisons and casts on `ZMod 7` and `Fin 5`, the cost of a product of
+  residues, and a sampled residue with a failure branch;
 * the refusals of a recursive definition, of a type without representation and of a constant
   outside the fragment.
 -/
@@ -200,6 +202,55 @@ example (x : Unit ⊕ Bool) (O : CTree.Oracle) :
 example (x : Unit ⊕ Bool) :
     CatCrypt.Crypto.QueryBoundedUC.exD.d.cost (Env.nil.cons (τ := .sum .unit .bool) x) = 1 := by
   cases x <;> rfl
+
+/-! ## Residues and failure -/
+
+/-- An affine map on `ZMod 7`. -/
+def zAffine (x y : ZMod 7) : ZMod 7 := 3 * x + y - 1
+
+reflect_d zAffine
+
+example (x y : ZMod 7) :
+    zAffine.d.den ((Env.nil.cons (τ := .fin 6) x).cons (τ := .fin 6) y) =
+      .ret (zAffine x y) :=
+  zAffine.d_den x y
+
+/-- A product of residues. -/
+def zMul (x y : ZMod 7) : ZMod 7 := x * y
+
+reflect_d zMul
+
+/-- The product costs the square of the bit length of the modulus, plus one. -/
+example (x y : ZMod 7) :
+    zMul.d.cost ((Env.nil.cons (τ := .fin 6) x).cons (τ := .fin 6) y) =
+      (6 + 1).size * (6 + 1).size + 1 := rfl
+
+/-- Comparisons and the representative on `Fin 5`. -/
+def finCmp (x y : Fin 5) : ℕ := if x = y ∨ x < y then x.val else y.val
+
+reflect_d finCmp
+
+example (x y : Fin 5) :
+    finCmp.d.den ((Env.nil.cons (τ := .fin 4) x).cons (τ := .fin 4) y) = .ret (finCmp x y) :=
+  finCmp.d_den x y
+
+/-- The cast of a natural number into `ZMod 7`, and its representative. -/
+def zCast (k : ℕ) : ℕ := ((k : ZMod 7) + 1).val
+
+reflect_d zCast
+
+example (k : ℕ) : zCast.d.den (Env.nil.cons (τ := .nat) k) = .ret (zCast k) :=
+  zCast.d_den k
+
+/-- A sampled residue squared, with failure at zero. -/
+noncomputable def zSampleSq : SPComp (ZMod 7) := do
+  let x ← SPComp.sample (ZMod 7)
+  if x = 0 then SPComp.fail else pure (x * x)
+
+reflect_d zSampleSq
+
+example (O : CTree.Oracle) : zSampleSq.d.denote O Env.nil = zSampleSq :=
+  zSampleSq.d_den O
 
 /-! ## Refusals -/
 

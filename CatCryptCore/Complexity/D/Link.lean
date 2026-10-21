@@ -38,7 +38,8 @@ costed form of the call. Its time is at most `n` when `OT.time = 0`
 
 `TimedSim R K n x t` relates a costed tree `x` to a D tree `t`: the effect nodes agree in order
 (a sample over `γ` matched with a sample over `f.den` through `e : γ ≃ f.den`, `get` and `set`
-at `f.loc i` matched at location `i` of type `f`), the leaves are related by `R`, and on every
+at `f.loc i` matched at location `i` of type `f`, `fail` with `fail`), the leaves are related
+by `R`, and on every
 path the steps of `t` (ticks and nodes) are at most `n` plus `K` times the charges of `x` along
 the path (its step costs and nodes). The index `n` is an additive allowance. It gives
 `t.cost ≤ n + K * stepTime x` (`TimedSim.cost_le`) and, for the graph of an encoding,
@@ -63,7 +64,7 @@ the allowance or, with `K ≥ 1`, by a step cost of the continuation (`TimedSim.
 * `TimedSim.cost_le`, `TimedSim.run`
 * `TimedSim.bind`, `TimedSim.map`, `TimedSim.delay`, `TimedSim.delay_tick`, `TimedSim.ite`,
   `TimedSim.cond`, `TimedSim.mono`
-* node rules `TimedSim.ret`, `TimedSim.sample`, `TimedSim.get`, `TimedSim.set`
+* node rules `TimedSim.ret`, `TimedSim.sample`, `TimedSim.get`, `TimedSim.set`, `TimedSim.fail`
 -/
 
 @[expose] public section
@@ -114,6 +115,7 @@ noncomputable def toTimed (OT : CostedOracle O) : CTree α → ℕ × SPTree.Tim
   | set n f v k => (0, .set (f.loc n) v (toTimed OT k).1 (toTimed OT k).2)
   | query d r x k => SPTree.Timed.delay (OT.tree d r x).1
       ((OT.tree d r x).2.bind fun y => toTimed OT (k y))
+  | fail => (0, .fail)
 
 /-- The time of the costed tree is at most `1 + OT.time` times the cost of the D tree. -/
 theorem stepTime_toTimed_le (OT : CostedOracle O) (t : CTree α) :
@@ -159,6 +161,7 @@ theorem stepTime_toTimed_le (OT : CostedOracle O) (t : CTree α) :
     simp only [SPTree.Timed.stepTime] at ho
     rw [toTimed, SPTree.Timed.stepTime_delay, cost, Nat.mul_add]
     omega
+  | fail => exact Nat.zero_le _
 
 /-- The erasure of the costed tree compiles to the denotation of the D tree. -/
 theorem compile_erase_toTimed (OT : CostedOracle O) (t : CTree α) :
@@ -174,6 +177,7 @@ theorem compile_erase_toTimed (OT : CostedOracle O) (t : CTree α) :
     simp only [toTimed, SPTree.Timed.delay, run]
     rw [SPTree.Timed.erase_bind, SPTree.compile_bind, OT.compile_eq]
     exact congrArg _ (funext ih)
+  | fail => rfl
 
 end CTree
 
@@ -237,6 +241,8 @@ inductive TimedSimTree {α β : Type} (R : α → β → Prop) (K : ℕ) :
   | set {n : ℕ} (i : ℕ) (f : FTy) (v : f.den) {c : ℕ} {A : SPTree.Timed α} {t : CTree β}
       (m : ℕ) : TimedSimTree R K m A t → 1 + m ≤ n + K + K * c →
       TimedSimTree R K n (.set (f.loc i) v c A) (.set i f v t)
+  /-- Failure in both trees. -/
+  | fail {n : ℕ} : TimedSimTree R K n .fail .fail
 
 /-- `TimedSim R K n x t`: the relation `TimedSimTree` between the tree of the step-prefixed
 costed tree `x` and the D tree `t`, with the step cost in front of `x` charged at `K`. -/
@@ -256,6 +262,7 @@ theorem mono {n n' : ℕ} {A : SPTree.Timed α} {t : CTree β} (h : TimedSimTree
   | sample f e m h hm => exact .sample f e m h fun b => (hm b).trans (by omega)
   | get i f m h hm => exact .get i f m h fun x => (hm x).trans (by omega)
   | set i f v m h hm => exact .set i f v m h (hm.trans (by omega))
+  | fail => exact .fail
 
 theorem cost_le {n : ℕ} {A : SPTree.Timed α} {t : CTree β} (h : TimedSimTree R K n A t) :
     t.cost ≤ n + K * A.time := by
@@ -304,6 +311,7 @@ theorem cost_le {n : ℕ} {A : SPTree.Timed α} {t : CTree β} (h : TimedSimTree
     change 1 + t.cost ≤ n + K * (1 + (c + A.time))
     rw [Nat.mul_add, Nat.mul_add]
     omega
+  | fail => exact Nat.zero_le _
 
 theorem run {enc : α → β} {n : ℕ} {A : SPTree.Timed α} {t : CTree β}
     (h : TimedSimTree (fun a v => v = enc a) K n A t) (O : CTree.Oracle) :
@@ -328,6 +336,9 @@ theorem run {enc : α → β} {n : ℕ} {A : SPTree.Timed α} {t : CTree β}
   | @set n i f v c A t mb _ _ ih =>
     exact (congrArg _ (funext fun _ => ih)).trans (SPComp.bind_assoc
       (SPComp.set (f.loc i) v) (fun _ => A.erase.compile) _).symm
+  | fail =>
+    rw [SPTree.Timed.erase_fail]
+    exact (SPComp.fail_bind _).symm
 
 theorem bind {S : γ → δ → Prop} {f : α → ℕ × SPTree.Timed γ} {g : β → CTree δ} {m : ℕ}
     (hf : ∀ a v, R a v → TimedSimTree S K (m + K * (f a).1) (f a).2 (.tick (g v)))
@@ -351,6 +362,7 @@ theorem bind {S : γ → δ → Prop} {f : α → ℕ × SPTree.Timed γ} {g : �
     refine .set i f' v (mb + m + K * (SPTree.Timed.bind _ f).1) ih ?_
     rw [Nat.mul_add]
     omega
+  | fail => exact .fail
 
 end TimedSimTree
 
@@ -451,6 +463,10 @@ theorem set (hK : 1 ≤ K) (i : ℕ) (f : FTy) (v : f.den) {c : ℕ} {A : SPTree
     {t : CTree β} (h : TimedSim R K n (c, A) t) :
     TimedSim R K n (0, .set (f.loc i) v c A) (.set i f v t) :=
   TimedSimTree.set i f v (n + K * c) h (by simp only [Nat.mul_zero]; omega)
+
+/-- Failure in both trees, after any step cost. -/
+theorem fail {c : ℕ} : TimedSim R K n (c, (.fail : SPTree.Timed α)) (.fail : CTree β) :=
+  TimedSimTree.fail
 
 end TimedSim
 

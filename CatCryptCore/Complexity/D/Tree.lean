@@ -19,8 +19,10 @@ again a value that a tree can return.
 
 ## Main definitions
 
-* `FTy`: the finite ground types (unit, booleans, `w`-bit words) over which the effects range.
-* `CTree`: the trees, with `CTree.bind` (substitution at the leaves).
+* `FTy`: the finite ground types (unit, booleans, `w`-bit words, residues `Fin (n + 1)`) over
+  which the effects range.
+* `CTree`: the trees, with a `fail` node of cost `0` meaning `SPComp.fail`, and `CTree.bind`
+  (substitution at the leaves).
 * `CTree.cost`: worst-case step count: one per `tick` and one per effect node, the maximum over
   the branches of `sample`, `get` and `query` (the convention of `SPTree.queryCost`).
 * `CTree.erase`: the tree with its `tick` nodes removed.
@@ -60,6 +62,8 @@ inductive FTy : Type where
   | bool
   /-- Words of `w` bits. -/
   | word (w : ℕ)
+  /-- The residues modulo `n + 1`, `Fin (n + 1)`, which is `ZMod (n + 1)` by definition. -/
+  | fin (n : ℕ)
   deriving DecidableEq
 
 /-- The Lean type of a finite ground type. -/
@@ -67,17 +71,20 @@ def FTy.den : FTy → Type
   | .unit => Unit
   | .bool => Bool
   | .word w => BitVec w
+  | .fin n => Fin (n + 1)
 
 instance FTy.instFintype : (f : FTy) → Fintype f.den
   | .unit => inferInstanceAs (Fintype Unit)
   | .bool => inferInstanceAs (Fintype Bool)
   | .word w => Fintype.ofEquiv (Fin (2 ^ w))
       ⟨BitVec.ofFin, BitVec.toFin, fun _ => rfl, fun _ => rfl⟩
+  | .fin n => inferInstanceAs (Fintype (Fin (n + 1)))
 
 instance FTy.instInhabited : (f : FTy) → Inhabited f.den
   | .unit => inferInstanceAs (Inhabited Unit)
   | .bool => inferInstanceAs (Inhabited Bool)
   | .word w => inferInstanceAs (Inhabited (BitVec w))
+  | .fin n => inferInstanceAs (Inhabited (Fin (n + 1)))
 
 instance FTy.instNonempty (f : FTy) : Nonempty f.den := ⟨default⟩
 
@@ -100,6 +107,8 @@ inductive CTree (α : Type) : Type where
   | set (n : ℕ) (f : FTy) (v : f.den) (k : CTree α) : CTree α
   /-- Query the oracle at `x` (input type `d`, output type `r`) and continue with `k`. -/
   | query (d r : FTy) (x : d.den) (k : r.den → CTree α) : CTree α
+  /-- Failure: no result, at no cost. -/
+  | fail : CTree α
 
 namespace CTree
 
@@ -113,6 +122,7 @@ def bind : CTree α → (α → CTree β) → CTree β
   | get n f k, g => get n f fun x => (k x).bind g
   | set n f v k, g => set n f v (k.bind g)
   | query d r x k, g => query d r x fun y => (k y).bind g
+  | fail, _ => fail
 
 /-- Worst-case step count: one per `tick` and per effect node, the maximum over the
 branches. -/
@@ -123,6 +133,7 @@ def cost : CTree α → ℕ
   | get _ _ k => 1 + Finset.univ.sup fun x => (k x).cost
   | set _ _ _ k => 1 + k.cost
   | query _ _ _ k => 1 + Finset.univ.sup fun y => (k y).cost
+  | fail => 0
 
 /-- The tree without its `tick` nodes. -/
 def erase : CTree α → CTree α
@@ -132,6 +143,7 @@ def erase : CTree α → CTree α
   | get n f k => get n f fun x => (k x).erase
   | set n f v k => set n f v k.erase
   | query d r x k => query d r x fun y => (k y).erase
+  | fail => fail
 
 /-- An implementation of the oracle: a stateful probabilistic computation per input. -/
 abbrev Oracle : Type := (d r : FTy) → d.den → SPComp r.den
@@ -144,6 +156,7 @@ noncomputable def run (O : Oracle) : CTree α → SPComp α
   | get n f k => SPComp.bind (SPComp.get (f.loc n)) fun x => (k x).run O
   | set n f v k => SPComp.bind (SPComp.set (f.loc n) v) fun _ => k.run O
   | query d r x k => SPComp.bind (O d r x) fun y => (k y).run O
+  | fail => SPComp.fail
 
 /-- `P` holds at every leaf of the tree. -/
 def AllRet (P : α → Prop) : CTree α → Prop
@@ -153,6 +166,7 @@ def AllRet (P : α → Prop) : CTree α → Prop
   | get _ _ k => ∀ x, (k x).AllRet P
   | set _ _ _ k => k.AllRet P
   | query _ _ _ k => ∀ y, (k y).AllRet P
+  | fail => True
 
 @[simp] theorem bind_ret (a : α) (g : α → CTree β) : (ret a).bind g = g a := rfl
 
@@ -162,6 +176,12 @@ def AllRet (P : α → Prop) : CTree α → Prop
 @[simp] theorem cost_ret (a : α) : (ret a).cost = 0 := rfl
 
 @[simp] theorem cost_tick (t : CTree α) : (tick t).cost = 1 + t.cost := rfl
+
+@[simp] theorem bind_fail (g : α → CTree β) : (fail : CTree α).bind g = fail := rfl
+
+@[simp] theorem cost_fail : (fail : CTree α).cost = 0 := rfl
+
+@[simp] theorem run_fail (O : Oracle) : (fail : CTree α).run O = SPComp.fail := rfl
 
 /-! ## Monad laws -/
 
@@ -206,6 +226,7 @@ theorem cost_bind_le (t : CTree α) (g : α → CTree β) (B : ℕ)
     simp only [bind, cost, AllRet] at h ⊢
     have := sup_le_sup_add _ _ B fun x => ih x (h x)
     omega
+  | fail => simp only [bind, cost]; omega
 
 /-- A sample node followed by `g` costs one plus the maximum over the branches. -/
 theorem cost_bind_sample (f : FTy) (k : f.den → CTree α) (g : α → CTree β) :
@@ -230,6 +251,7 @@ theorem run_erase (O : Oracle) (t : CTree α) : t.erase.run O = t.run O := by
   | get n f k ih => simp only [erase, run]; exact congrArg _ (funext ih)
   | set n f v k ih => simp only [erase, run]; exact congrArg _ (funext fun _ => ih)
   | query d r x k ih => simp only [erase, run]; exact congrArg _ (funext ih)
+  | fail => rfl
 
 theorem run_bind (O : Oracle) (t : CTree α) (g : α → CTree β) :
     (t.bind g).run O = SPComp.bind (t.run O) fun a => (g a).run O := by
@@ -244,6 +266,7 @@ theorem run_bind (O : Oracle) (t : CTree α) (g : α → CTree β) :
     simp only [bind, run]; rw [SPComp.bind_assoc]; exact congrArg _ (funext fun _ => ih)
   | query d r x k ih =>
     simp only [bind, run]; rw [SPComp.bind_assoc]; exact congrArg _ (funext ih)
+  | fail => exact (SPComp.fail_bind _).symm
 
 /-! ## Relational lifting -/
 
@@ -260,6 +283,7 @@ inductive Rel {α β : Type} (R : α → β → Prop) : CTree α → CTree β �
       Rel R k k' → Rel R (set n f v k) (set n f v k')
   | query (d r : FTy) (x : d.den) {k : r.den → CTree α} {k' : r.den → CTree β} :
       (∀ y, Rel R (k y) (k' y)) → Rel R (query d r x k) (query d r x k')
+  | fail : Rel R fail fail
 
 theorem Rel.bind {α' β' : Type} {R : α → β → Prop} {S : α' → β' → Prop}
     {t : CTree α} {m : CTree β} (h : Rel R t m) {g : α → CTree α'} {g' : β → CTree β'}
@@ -271,6 +295,7 @@ theorem Rel.bind {α' β' : Type} {R : α → β → Prop} {S : α' → β' → 
   | get n f _ ih => exact .get n f ih
   | set n f v _ ih => exact .set n f v ih
   | query d r x _ ih => exact .query d r x ih
+  | fail => exact .fail
 
 theorem Rel.mono {R S : α → β → Prop} (hRS : ∀ a b, R a b → S a b) {t : CTree α}
     {m : CTree β} (h : Rel R t m) : Rel S t m := by
@@ -281,6 +306,7 @@ theorem Rel.mono {R S : α → β → Prop} (hRS : ∀ a b, R a b → S a b) {t 
   | get n f _ ih => exact .get n f ih
   | set n f v _ ih => exact .set n f v ih
   | query d r x _ ih => exact .query d r x ih
+  | fail => exact .fail
 
 /-- Trees related by equality agree after erasing the ticks of the left one. -/
 theorem Rel.erase_eq {t m : CTree α} (h : Rel (· = ·) t m) : t.erase = m := by
@@ -291,6 +317,7 @@ theorem Rel.erase_eq {t m : CTree α} (h : Rel (· = ·) t m) : t.erase = m := b
   | get n f _ ih => exact congrArg (CTree.get n f) (funext ih)
   | set n f v _ ih => exact congrArg (CTree.set n f v) ih
   | query d r x _ ih => exact congrArg (CTree.query d r x) (funext ih)
+  | fail => rfl
 
 end CTree
 

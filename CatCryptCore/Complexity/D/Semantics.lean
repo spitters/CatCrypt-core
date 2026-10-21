@@ -18,7 +18,8 @@ each evaluation step. Its two instances are:
   application of a function value, a `letE`, a `seq`, every iteration of `foldl` and `iter`),
   and at every branch (`case`, `ite`, `lcase`); a primitive operation `p` at the argument `v`
   places `p.cost v` ticks (`stepN`), logarithmic cost on `ℕ` and one tick on `Bool` and
-  words; variables, literals, constructors, projections and closures are free. With the unit
+  words, and in the bit length of the modulus on `Fin (n + 1)`; variables, literals,
+  constructors, projections, closures and `fail` are free. With the unit
   cost of the effect nodes this is the convention of L (Forster–Kunze) and of `derive_timed`,
   with `letE` priced as the β-redex `(λx. b) e`. The cost of a term is therefore determined
   by its evaluation (`CatCryptCore.Complexity.D.Cost`).
@@ -118,6 +119,7 @@ def Tm.interp {Γ : List Ty} {τ : Ty} : Tm Γ τ → Env Γ → CTree (Val τ)
   | .get n f, _ => .get n f .ret
   | .set n f x, ρ => (Tm.interp x ρ).bind fun v => .set n f v (.ret (() : Unit))
   | .query d r x, ρ => (Tm.interp x ρ).bind fun v => .query d r v .ret
+  | .fail, _ => .fail
 
 end Interp
 
@@ -331,6 +333,7 @@ theorem interp_rel {Γ : List Ty} {τ : Ty} (t : Tm Γ τ) :
       change u = v at huv
       subst huv
       exact .query d r u fun _ => .ret rfl
+  | fail => intro ρ δ h; exact .fail
 
 /-- Adequacy at first-order types: the evaluator with its ticks erased is the denotation. -/
 theorem eval_erase {Γ : List Ty} {τ : Ty} (t : Tm Γ τ) (hτ : τ.FO) (hΓ : ∀ σ ∈ Γ, σ.FO)

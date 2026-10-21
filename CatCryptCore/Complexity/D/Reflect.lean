@@ -36,17 +36,21 @@ construct of D, assembled by the command and checked by the kernel.
 
 ## The fragment
 
-Types: `ℕ`, `Bool`, `Unit`, `BitVec w` for a numeral `w`, products, sums and lists of these;
+Types: `ℕ`, `Bool`, `Unit`, `BitVec w` for a numeral `w`, `Fin m` and `ZMod m` for a modulus
+`m` that is a positive numeral or of the form `n + 1`, products, sums and lists of these;
 `Option α` as `α`'s sum with `Unit`, at the parameters, the result and the scrutinees of
 matches; functions as parameters, `let`-bound values and arguments of λ-terms.
 
 Terms: variables, `fun`, application, `let`, numerals and the literals `true`, `false`, `()`
 and `BitVec.ofNat w n`; the operations `+ - * / %` on `ℕ`, `+ - * &&& ||| ^^^ ~~~ <<< >>>` on
-words, `&&`, `||`, `!`, `^^` on `Bool`, `BitVec.ofNat`, `BitVec.toNat`, `BitVec.setWidth`;
-`decide` of `=`, `≠`, `<`, `≤`, `∧`, `∨`, `¬` over these; pairs and projections; `Sum.inl`,
+words, `+ - *` and numerals on `Fin m` and `ZMod m`, `&&`, `||`, `!`, `^^` on `Bool`,
+`BitVec.ofNat`, `BitVec.toNat`, `BitVec.setWidth`, `Fin.val`, `ZMod.val` and the cast of a
+natural number into `Fin m` or `ZMod m`; `decide` of `=`, `≠`, `<`, `≤`, `∧`, `∨`, `¬` over
+these (`=`, `≠` and `<` on residues); pairs and projections; `Sum.inl`,
 `Sum.inr`, `some`, `none`, `[]`, `::`, `id`; `if`, `bif`, `Option.elim`, `Sum.elim` and
 matches on `Bool`, `Option`, `Sum`, `List` (non-recursive, as `lcase`) and pairs; `List.foldl`
-as `foldl` and `Nat.iterate` as `iter`; in `SPComp`, `pure`, `bind` (and `do`), `SPComp.sample` of a finite ground type,
+as `foldl` and `Nat.iterate` as `iter`; in `SPComp`, `pure`, `bind` (and `do`), `SPComp.fail`,
+`SPComp.sample` of a finite ground type,
 `SPComp.get` and `SPComp.set` at a location `FTy.loc f n`, and the application of a parameter.
 A constant outside the Lean, Std and Mathlib libraries is unfolded. Any other construct is
 refused with a message naming it.
@@ -265,6 +269,14 @@ theorem wordNe {w : ℕ} {x : Tm Γ (.prod (.word w) (.word w))} {m n : BitVec w
   show CTree.ret (!decide (m = n)) = CTree.ret (decide (m ≠ n))
   rw [decide_not]
 
+theorem finNe {k : ℕ} {x : Tm Γ (.prod (.fin k) (.fin k))} {m n : Fin (k + 1)}
+    (h : Den x ρ ((m, n) : Fin (k + 1) × Fin (k + 1))) :
+    Den (.prim .bnot (.prim (.finEq k) x)) ρ (decide (m ≠ n)) := by
+  have h' := Den.prim Prim.bnot (Den.prim (Prim.finEq k) h)
+  refine h'.trans ?_
+  show CTree.ret (!decide (m = n)) = CTree.ret (decide (m ≠ n))
+  rw [decide_not]
+
 theorem decAnd {x y : Tm Γ .bool} {P Q : Prop} [Decidable P] [Decidable Q]
     (hx : Den x ρ (decide P)) (hy : Den y ρ (decide Q)) :
     Den (.prim .band (.pair x y)) ρ (decide (P ∧ Q)) := by
@@ -325,6 +337,8 @@ theorem sample (f : FTy) (ρ : Env Γ) [i : Fintype f.den] [j : Nonempty f.den] 
   intro O
   show SPComp.bind (@SPComp.sample f.den (FTy.instFintype f) _) (fun x => SPComp.pure x) = _
   rw [SPComp.bind_pure, Subsingleton.elim (FTy.instFintype f) i]
+
+theorem fail {τ : Ty} (ρ : Env Γ) : DenM (Tm.fail : Tm Γ τ) ρ SPComp.fail := fun _ => rfl
 
 theorem get (n : ℕ) (f : FTy) (ρ : Env Γ) : DenM (.get n f) ρ (SPComp.get (f.loc n)) := by
   intro O
@@ -487,8 +501,30 @@ def numKind (T : Expr) : MetaM (Option (Option Expr)) := do
   if T.isAppOfArity ``BitVec 1 then return some (some T.appArg!)
   return none
 
+/-- The predecessor `n` of a modulus `m = n + 1`, given as `n + 1`, `Nat.succ n` or a positive
+numeral. -/
+def modPred (m : Expr) : MetaM Expr := do
+  let m := m.consumeMData
+  if m.hasFVar then throwError "reflect_d: the modulus `{m}` depends on a variable"
+  if m.isAppOfArity ``HAdd.hAdd 6 then
+    if (← evalNat m.appArg!) == some 1 then return m.appFn!.appArg!
+  if m.isAppOfArity ``Nat.succ 1 then return m.appArg!
+  match ← evalNat m with
+  | some (v + 1) => return mkNatLit v
+  | _ => throwError "reflect_d: the modulus `{m}` is not a positive numeral or `n + 1`"
+
+/-- For `Fin m` or `ZMod m` with `m = n + 1`, the predecessor `n`: the type is
+`FTy.den (.fin n)`. -/
+def finMod? (T : Expr) : MetaM (Option Expr) := do
+  let T := T.consumeMData
+  if T.isAppOfArity `ZMod 1 then return some (← modPred T.appArg!)
+  let T ← whnf T
+  if T.isAppOfArity ``Fin 1 then return some (← modPred T.appArg!)
+  return none
+
 /-- The finite ground type of `T`. -/
 def ftyOf (T : Expr) : MetaM Expr := do
+  if let some n ← finMod? T then return mkApp (mkConst ``FTy.fin) n
   let T ← whnf T
   if T.isConstOf ``Bool then return mkConst ``FTy.bool
   if T.isConstOf ``PUnit then return mkConst ``FTy.unit
@@ -496,12 +532,13 @@ def ftyOf (T : Expr) : MetaM Expr := do
     let w := T.appArg!
     if w.hasFVar then throwError "reflect_d: the width of `{T}` depends on a variable"
     return mkApp (mkConst ``FTy.word) w
-  throwError "reflect_d: `{T}` is not a finite ground type (Bool, Unit, BitVec w)"
+  throwError "reflect_d: `{T}` is not a finite ground type (Bool, Unit, BitVec w, Fin m, ZMod m)"
 
 /-- The D type of a source type; the flag marks `Option`, represented by `optEnc`. -/
 partial def tyOf (T : Expr) : MetaM (Expr × Bool) := do
   if let some γ ← spcompArg? T then
     throwError "reflect_d: the computation type `SPComp {γ}` occurs inside a data type"
+  if let some n ← finMod? T then return (tyBase (mkApp (mkConst ``FTy.fin) n), false)
   let T ← whnf T
   match T with
   | .forallE _ a b _ =>
@@ -791,12 +828,22 @@ partial def goDecide (ctx : Ctx) (P : Expr) : M Res := do
     if (← whnf (ctx.subst T)).isConstOf ``Bool && args[2]!.consumeMData.isConstOf ``Bool.true then
       let r ← goP ctx args[1]!
       return ← fin r.tm (← ifPf (mkAppM ``Den.decBool #[r.pf]))
+    if let some n ← finMod? (ctx.subst T) then
+      let (pty, ptm, ppf) ← pairR (← goP ctx args[1]!) (← goP ctx args[2]!)
+      let p := mkApp (mkConst ``Prim.finEq) n
+      let tm := mkAppN (mkConst ``Tm.prim) #[Γ, pty, tyBool, p, ptm]
+      return ← fin tm (← ifPf (mkAppM ``Den.prim #[p, ppf]))
     let some k ← numKind (ctx.subst T) | fail m!"the equality `{P}` at a type without a primitive"
     let (pty, ptm, ppf) ← pairR (← goP ctx args[1]!) (← goP ctx args[2]!)
     let p := match k with | none => mkConst ``Prim.natEq | some w => mkApp (mkConst ``Prim.weq) w
     let tm := mkAppN (mkConst ``Tm.prim) #[Γ, pty, tyBool, p, ptm]
     fin tm (← ifPf (mkAppM ``Den.prim #[p, ppf]))
   | some ``Ne, 3 =>
+    if let some n ← finMod? (ctx.subst args[0]!) then
+      let (pty, ptm, ppf) ← pairR (← goP ctx args[1]!) (← goP ctx args[2]!)
+      let tm := mkAppN (mkConst ``Tm.prim) #[Γ, tyBool, tyBool, mkConst ``Prim.bnot,
+        mkAppN (mkConst ``Tm.prim) #[Γ, pty, tyBool, mkApp (mkConst ``Prim.finEq) n, ptm]]
+      return ← fin tm (← ifPf (mkAppM ``Den.finNe #[ppf]))
     let some k ← numKind (ctx.subst args[0]!) | fail m!"the disequality `{P}`"
     let (pty, ptm, ppf) ← pairR (← goP ctx args[1]!) (← goP ctx args[2]!)
     let p := match k with | none => mkConst ``Prim.natEq | some w => mkApp (mkConst ``Prim.weq) w
@@ -804,6 +851,11 @@ partial def goDecide (ctx : Ctx) (P : Expr) : M Res := do
       mkAppN (mkConst ``Tm.prim) #[Γ, pty, tyBool, p, ptm]]
     fin tm (← ifPf (mkAppM (if k.isNone then ``Den.natNe else ``Den.wordNe) #[ppf]))
   | some ``LT.lt, 4 =>
+    if let some n ← finMod? (ctx.subst args[0]!) then
+      let (pty, ptm, ppf) ← pairR (← goP ctx args[2]!) (← goP ctx args[3]!)
+      let p := mkApp (mkConst ``Prim.finLt) n
+      let tm := mkAppN (mkConst ``Tm.prim) #[Γ, pty, tyBool, p, ptm]
+      return ← fin tm (← ifPf (mkAppM ``Den.prim #[p, ppf]))
     let some none ← numKind (ctx.subst args[0]!) | fail m!"the comparison `{P}` (only on ℕ)"
     let (pty, ptm, ppf) ← pairR (← goP ctx args[2]!) (← goP ctx args[3]!)
     let tm := mkAppN (mkConst ``Tm.prim) #[Γ, pty, tyBool, mkConst ``Prim.natLt, ptm]
@@ -846,6 +898,14 @@ partial def goPrim (ctx : Ctx) (e p inTy outTy : Expr) (xs : Array Expr) : M Res
 /-- A binary arithmetic operation of source type `T`. -/
 partial def goArith (ctx : Ctx) (e T : Expr) (nat : Option Name) (word : Option Name)
     (a b : Expr) : M Res := do
+  if let some n ← finMod? (ctx.subst T) then
+    let p ← match nat with
+      | some ``Prim.natAdd => pure ``Prim.finAdd
+      | some ``Prim.natSub => pure ``Prim.finSub
+      | some ``Prim.natMul => pure ``Prim.finMul
+      | _ => fail m!"the operation `{e}` at type `{T}`"
+    let ty := tyBase (mkApp (mkConst ``FTy.fin) n)
+    return ← goPrim ctx e (mkApp (mkConst p) n) (tyC `prod #[ty, ty]) ty #[a, b]
   let some k ← numKind (ctx.subst T) | fail m!"the operation `{e}` at type `{T}`"
   match k, nat, word with
   | none, some n, _ =>
@@ -863,6 +923,8 @@ partial def goConst (ctx : Ctx) (e : Expr) (c : Name) (args : Array Expr) : M Re
       (← ifPf (mkAppM ``Den.lit #[f, e, ctx.rho]))
   match c, args.size with
   | ``OfNat.ofNat, 3 =>
+    if let some n ← finMod? (ctx.subst args[0]!) then
+      return ← lit (mkApp (mkConst ``FTy.fin) n)
     match ← numKind (ctx.subst args[0]!) with
     | some none =>
       finish ctx e (mkApp2 (mkConst ``Tm.natLit) Γ e) tyNat
@@ -903,6 +965,18 @@ partial def goConst (ctx : Ctx) (e : Expr) (c : Name) (args : Array Expr) : M Re
     let w := args[0]!; let v := args[1]!
     if v.hasFVar then fail m!"the width of `{e}` depends on a variable"
     goPrim ctx e (mkApp2 (mkConst ``Prim.wcast) w v) (tyWord w) (tyWord v) #[args[2]!]
+  | ``Fin.val, 2 =>
+    let n ← modPred (ctx.subst args[0]!)
+    goPrim ctx e (mkApp (mkConst ``Prim.finToNat) n) (tyBase (mkApp (mkConst ``FTy.fin) n))
+      tyNat #[args[1]!]
+  | `ZMod.val, 2 =>
+    let n ← modPred (ctx.subst args[0]!)
+    goPrim ctx e (mkApp (mkConst ``Prim.finToNat) n) (tyBase (mkApp (mkConst ``FTy.fin) n))
+      tyNat #[args[1]!]
+  | ``Nat.cast, 3 =>
+    let some n ← finMod? (ctx.subst args[0]!) | fail m!"the cast `{e}`"
+    goPrim ctx e (mkApp (mkConst ``Prim.finOfNat) n) tyNat
+      (tyBase (mkApp (mkConst ``FTy.fin) n)) #[args[2]!]
   | ``Decidable.decide, 2 =>
     let r ← goDecide ctx args[0]!
     finish ctx e r.tm tyBool r.pf
@@ -1173,6 +1247,10 @@ partial def goM (ctx : Ctx) (e : Expr) : M Res := do
       let tm := mkApp2 (mkConst ``Tm.sample) Γ f
       finishM ctx e tm (tyBase f) (← ifPf (mkAppOptM ``DenM.sample
         #[none, f, ctx.rho, ctx.subst args[1]!, ctx.subst args[2]!]))
+    | ``SPComp.fail, 1 =>
+      let (τ, _) ← tyOf (ctx.subst args[0]!)
+      finishM ctx e (mkApp2 (mkConst ``Tm.fail) Γ τ) τ
+        (← ifPf (mkAppOptM ``DenM.fail #[none, τ, ctx.rho]))
     | ``SPComp.get, 1 =>
       let (n, f) ← location (ctx.subst args[0]!)
       finishM ctx e (mkApp3 (mkConst ``Tm.get) Γ n f) (tyBase f)

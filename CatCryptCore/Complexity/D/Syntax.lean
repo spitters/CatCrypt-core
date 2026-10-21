@@ -28,7 +28,7 @@ Terms `Tm Γ τ` are intrinsically typed and scoped: `Γ : List Ty` is the conte
 and `seq`; literals `natLit` and `lit` (ground values of type `FTy`); primitive operations
 `prim` (`Prim`); pairs with `fst`, `snd`; sums with `inl`, `inr` and `case`; `ite`; lists with
 `nil`, `cons` and the constructor match `lcase`; the recursion schemes `foldl` (over a list)
-and `iter` (over `ℕ`); the effects `sample`, `get`, `set` and `query`. An effect is an
+and `iter` (over `ℕ`); the effects `sample`, `get`, `set`, `query` and `fail`. An effect is an
 expression in call-by-value style (Moggi's λc): `letE (sample f) b` samples and continues with
 the D-term `b`, which is the continuation of the effect.
 
@@ -110,6 +110,8 @@ abbrev unit : Ty := base .unit
 abbrev bool : Ty := base .bool
 /-- Words of `w` bits. -/
 abbrev word (w : ℕ) : Ty := base (.word w)
+/-- The residues modulo `n + 1`. -/
+abbrev fin (n : ℕ) : Ty := base (.fin n)
 
 /-- First-order types: no function type occurs. -/
 def FO : Ty → Prop
@@ -159,8 +161,8 @@ def Env.cons {Γ : List Ty} {τ : Ty} (v : Val τ) (ρ : Env Γ) : Env (τ :: Γ
 
 /-! ## Primitive operations -/
 
-/-- The primitive operations on `ℕ`, `Bool` and fixed-width words. Binary operations take a
-pair. -/
+/-- The primitive operations on `ℕ`, `Bool`, fixed-width words and the residues
+`Fin (n + 1)`. Binary operations take a pair. -/
 inductive Prim : Ty → Ty → Type where
   | natAdd : Prim (.prod .nat .nat) .nat
   | natSub : Prim (.prod .nat .nat) .nat
@@ -187,6 +189,13 @@ inductive Prim : Ty → Ty → Type where
   | wofNat (w : ℕ) : Prim .nat (.word w)
   | wtoNat (w : ℕ) : Prim (.word w) .nat
   | wcast (w v : ℕ) : Prim (.word w) (.word v)
+  | finAdd (n : ℕ) : Prim (.prod (.fin n) (.fin n)) (.fin n)
+  | finSub (n : ℕ) : Prim (.prod (.fin n) (.fin n)) (.fin n)
+  | finMul (n : ℕ) : Prim (.prod (.fin n) (.fin n)) (.fin n)
+  | finEq (n : ℕ) : Prim (.prod (.fin n) (.fin n)) .bool
+  | finLt (n : ℕ) : Prim (.prod (.fin n) (.fin n)) .bool
+  | finOfNat (n : ℕ) : Prim .nat (.fin n)
+  | finToNat (n : ℕ) : Prim (.fin n) .nat
 
 /-- The function computed by a primitive operation. -/
 def Prim.apply {a b : Ty} : Prim a b → Val a → Val b
@@ -215,6 +224,13 @@ def Prim.apply {a b : Ty} : Prim a b → Val a → Val b
   | .wofNat w => fun (x : ℕ) => BitVec.ofNat w x
   | .wtoNat w => fun (x : BitVec w) => x.toNat
   | .wcast w v => fun (x : BitVec w) => x.setWidth v
+  | .finAdd n => fun (x : Fin (n + 1) × Fin (n + 1)) => x.1 + x.2
+  | .finSub n => fun (x : Fin (n + 1) × Fin (n + 1)) => x.1 - x.2
+  | .finMul n => fun (x : Fin (n + 1) × Fin (n + 1)) => x.1 * x.2
+  | .finEq n => fun (x : Fin (n + 1) × Fin (n + 1)) => (decide (x.1 = x.2) : Bool)
+  | .finLt n => fun (x : Fin (n + 1) × Fin (n + 1)) => (decide (x.1 < x.2) : Bool)
+  | .finOfNat n => fun (x : ℕ) => (⟨x % (n + 1), Nat.mod_lt _ (Nat.succ_pos n)⟩ : Fin (n + 1))
+  | .finToNat n => fun (x : Fin (n + 1)) => x.val
 
 /-- The cost of a primitive operation at an argument, in evaluation steps. On `ℕ` it is
 logarithmic in the bit lengths `Nat.size` of the arguments: addition, subtraction and the
@@ -223,7 +239,11 @@ comparisons cost `max (size x) (size y) + 1`, multiplication, division and remai
 step, the word-RAM convention for a fixed word width. The shifts `wshl` and `wshr` cost one
 step although their amount is a natural number: an amount of at least `w` gives the zero word,
 so only amounts below the word width are meaningful. `wofNat` costs one step: it reads the
-low `w` bits of its argument. -/
+low `w` bits of its argument. The operations on the residues `Fin (n + 1)` cost in the bit
+length `s = Nat.size (n + 1)` of the modulus, since the modulus may grow with a security
+parameter: addition, subtraction and the comparisons `s + 1`, multiplication `s * s + 1`,
+reduction of a natural number `x` (`finOfNat`) `size x * s + 1`; reading the representative
+(`finToNat`) costs one step. -/
 def Prim.cost {a b : Ty} : Prim a b → Val a → ℕ
   | .natAdd => fun (x : ℕ × ℕ) => max x.1.size x.2.size + 1
   | .natSub => fun (x : ℕ × ℕ) => max x.1.size x.2.size + 1
@@ -250,6 +270,13 @@ def Prim.cost {a b : Ty} : Prim a b → Val a → ℕ
   | .wofNat _ => fun _ => 1
   | .wtoNat _ => fun _ => 1
   | .wcast _ _ => fun _ => 1
+  | .finAdd n => fun _ => (n + 1).size + 1
+  | .finSub n => fun _ => (n + 1).size + 1
+  | .finMul n => fun _ => (n + 1).size * (n + 1).size + 1
+  | .finEq n => fun _ => (n + 1).size + 1
+  | .finLt n => fun _ => (n + 1).size + 1
+  | .finOfNat n => fun (x : ℕ) => x.size * (n + 1).size + 1
+  | .finToNat _ => fun _ => 1
 
 theorem Prim.fo {a b : Ty} (p : Prim a b) : a.FO ∧ b.FO := by
   cases p <;> simp [Ty.FO]
@@ -285,6 +312,7 @@ inductive Tm : List Ty → Ty → Type where
   | get {Γ : List Ty} (n : ℕ) (f : FTy) : Tm Γ (.base f)
   | set {Γ : List Ty} (n : ℕ) (f : FTy) : Tm Γ (.base f) → Tm Γ .unit
   | query {Γ : List Ty} (d r : FTy) : Tm Γ (.base d) → Tm Γ (.base r)
+  | fail {Γ : List Ty} {τ : Ty} : Tm Γ τ
 
 namespace Tm
 
@@ -337,6 +365,7 @@ def Tm.rename {Γ Δ : List Ty} {τ : Ty} : Tm Γ τ → Ren Γ Δ → Tm Δ τ
   | .get n f, _ => .get n f
   | .set n f x, r => .set n f (x.rename r)
   | .query d r' x, r => .query d r' (x.rename r)
+  | .fail, _ => .fail
 
 /-- A closed term in any context. -/
 def Tm.weaken {Γ : List Ty} {τ : Ty} (t : Tm [] τ) : Tm Γ τ :=

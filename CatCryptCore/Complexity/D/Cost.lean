@@ -157,6 +157,23 @@ theorem cost_letE_sample {b : Ty} (f : FTy) (body : Tm (.base f :: Γ) b) (ρ : 
     (letE (sample f) body).cost ρ =
       1 + Finset.univ.sup fun x : f.den => 1 + body.cost (ρ.cons x) := rfl
 
+/-- Unfolding lemma of `Tm.eval` at `fail`: the failure node. -/
+theorem eval_fail {τ : Ty} (ρ : Env Γ) : (Tm.fail : Tm Γ τ).eval ρ = .fail := rfl
+
+/-- Unfolding lemma of `Tm.cost` at `fail`: failure costs nothing. -/
+theorem cost_fail {τ : Ty} (ρ : Env Γ) : (Tm.fail : Tm Γ τ).cost ρ = 0 := rfl
+
+/-- Unfolding lemma of `Tm.denote` at `fail`: failure means `SPComp.fail`. -/
+theorem denote_fail {τ : Ty} (O : CTree.Oracle) (ρ : Env Γ) :
+    (Tm.fail : Tm Γ τ).denote O ρ = CatCrypt.Core.SPComp.fail := rfl
+
+/-- A multiplication of residues at a value costs `size (n + 1) * size (n + 1) + 1`, in the
+bit length of the modulus. -/
+theorem cost_finMul {n : ℕ} (x : Tm Γ (.prod (.fin n) (.fin n))) (ρ : Env Γ)
+    (v : Val (.prod (.fin n) (.fin n))) (hx : x.eval ρ = .ret v) :
+    (prim (.finMul n) x).cost ρ = (n + 1).size * (n + 1).size + 1 :=
+  cost_prim _ x ρ v hx
+
 /-- A `seq` costs both terms and one step. -/
 theorem cost_seq_le {a b : Ty} (e : Tm Γ a) (body : Tm Γ b) (ρ : Env Γ) :
     (seq e body).cost ρ ≤ e.cost ρ + (1 + body.cost ρ) :=
