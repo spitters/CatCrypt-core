@@ -42,8 +42,15 @@ at `f.loc i` matched at location `i` of type `f`, `fail` with `fail`), the leave
 by `R`, and on every
 path the steps of `t` (ticks and nodes) are at most `n` plus `K` times the charges of `x` along
 the path (its step costs and nodes). The index `n` is an additive allowance. It gives
-`t.cost ≤ n + K * stepTime x` (`TimedSim.cost_le`) and, for the graph of an encoding,
-`t.run O` as the encoded compilation of `x` (`TimedSim.run`).
+`t.cost ≤ n + K * stepTime x` (`TimedSim.cost_le`) and, for the graph of an encoding and a
+query-free `t`, `t.run O` as the encoded compilation of `x` (`TimedSim.run`). A `query` node is
+matched with a branching of the costed tree over the answers (`TimedSim.query`), since the cost
+of a D tree is the maximum over all answers of the oracle.
+
+`CTree.costTree t` is the costed tree with the nodes and costs of `t`, a query as a branching
+over its answers; its time is at most the cost of `t` (`CTree.stepTime_costTree_le`) and it
+simulates `t` at factor `1` (`CTree.timedSim_costTree`). For a realizer it gives a costed
+adversary of time at most the realizer's time (`TimeRealizer.stepTime_costTree_le`).
 
 The relation is closed under the costed combinators. A bind of D charges a β-step at each
 junction (`t.bind fun v => .tick (g v)`) that the costed bind does not; `TimedSim.bind` takes
@@ -53,8 +60,8 @@ the allowance or, with `K ≥ 1`, by a step cost of the continuation (`TimedSim.
 ## Main definitions
 
 * `CostedOracle`, `CTree.Oracle.zero`, `CostedOracle.zero`
-* `CTree.toTimed`, `TimeRealizer.toTimed`
-* `TimedSimTree`, `TimedSim`
+* `CTree.toTimed`, `TimeRealizer.toTimed`, `CTree.costTree`, `TimeRealizer.costTree`
+* `TimedSimTree`, `TimedSim`, `CTree.QueryFree`
 
 ## Main results
 
@@ -64,7 +71,9 @@ the allowance or, with `K ≥ 1`, by a step cost of the continuation (`TimedSim.
 * `TimedSim.cost_le`, `TimedSim.run`
 * `TimedSim.bind`, `TimedSim.map`, `TimedSim.delay`, `TimedSim.delay_tick`, `TimedSim.ite`,
   `TimedSim.cond`, `TimedSim.mono`
-* node rules `TimedSim.ret`, `TimedSim.sample`, `TimedSim.get`, `TimedSim.set`, `TimedSim.fail`
+* node rules `TimedSim.ret`, `TimedSim.sample`, `TimedSim.get`, `TimedSim.set`, `TimedSim.fail`,
+  `TimedSim.query`
+* `CTree.stepTime_costTree_le`, `CTree.timedSim_costTree`, `TimeRealizer.stepTime_costTree_le`
 -/
 
 @[expose] public section
@@ -243,6 +252,24 @@ inductive TimedSimTree {α β : Type} (R : α → β → Prop) (K : ℕ) :
       TimedSimTree R K n (.set (f.loc i) v c A) (.set i f v t)
   /-- Failure in both trees. -/
   | fail {n : ℕ} : TimedSimTree R K n .fail .fail
+  /-- A query, priced as a branching over the answers: the costed tree branches over the
+  answer type as a sample. The relation then bounds costs only (`TimedSimTree.cost_le`); the
+  meaning (`TimedSimTree.run`) is for query-free trees. -/
+  | query {n : ℕ} (d r : FTy) (x : d.den) {c : r.den → ℕ} {k : r.den → SPTree.Timed α}
+      {k' : r.den → CTree β} (m : r.den → ℕ) : (∀ y, TimedSimTree R K (m y) (k y) (k' y)) →
+      (∀ y, 1 + m y ≤ n + K + K * c y) →
+      TimedSimTree R K n (.sample r.den (FTy.instFintype r) (FTy.instNonempty r) c k)
+        (.query d r x k')
+
+/-- A D tree without `query` nodes. -/
+def CTree.QueryFree {α : Type} : CTree α → Prop
+  | .ret _ => True
+  | .tick t => t.QueryFree
+  | .sample _ k => ∀ x, (k x).QueryFree
+  | .get _ _ k => ∀ x, (k x).QueryFree
+  | .set _ _ _ k => k.QueryFree
+  | .query _ _ _ _ => False
+  | .fail => True
 
 /-- `TimedSim R K n x t`: the relation `TimedSimTree` between the tree of the step-prefixed
 costed tree `x` and the D tree `t`, with the step cost in front of `x` charged at `K`. -/
@@ -263,6 +290,7 @@ theorem mono {n n' : ℕ} {A : SPTree.Timed α} {t : CTree β} (h : TimedSimTree
   | get i f m h hm => exact .get i f m h fun x => (hm x).trans (by omega)
   | set i f v m h hm => exact .set i f v m h (hm.trans (by omega))
   | fail => exact .fail
+  | query d r x m h hm => exact .query d r x m h fun y => (hm y).trans (by omega)
 
 theorem cost_le {n : ℕ} {A : SPTree.Timed α} {t : CTree β} (h : TimedSimTree R K n A t) :
     t.cost ≤ n + K * A.time := by
@@ -312,16 +340,33 @@ theorem cost_le {n : ℕ} {A : SPTree.Timed α} {t : CTree β} (h : TimedSimTree
     rw [Nat.mul_add, Nat.mul_add]
     omega
   | fail => exact Nat.zero_le _
+  | @query n d r x c k k' mb _ hmb ih =>
+    have hle : ∀ y : r.den, c y + (k y).time ≤ Finset.univ.sup fun y => c y + (k y).time :=
+      fun y => Finset.le_sup (f := fun y => c y + (k y).time) (Finset.mem_univ y)
+    change 1 + (Finset.univ.sup fun y : r.den => (k' y).cost) ≤
+      n + K * (1 + Finset.univ.sup fun y : r.den => c y + (k y).time)
+    generalize (Finset.univ.sup fun y : r.den => c y + (k y).time) = S at hle ⊢
+    have key : ∀ y, 1 + (k' y).cost ≤ n + K * (1 + S) := by
+      intro y
+      have h1 := ih y
+      have h2 := hmb y
+      have h3 := Nat.mul_le_mul_left K (hle y)
+      rw [Nat.mul_add] at h3 ⊢
+      omega
+    have hs : (Finset.univ.sup fun y => (k' y).cost) ≤ n + K * (1 + S) - 1 :=
+      Finset.sup_le fun y _ => by have := key y; omega
+    have := key default
+    omega
 
 theorem run {enc : α → β} {n : ℕ} {A : SPTree.Timed α} {t : CTree β}
-    (h : TimedSimTree (fun a v => v = enc a) K n A t) (O : CTree.Oracle) :
+    (h : TimedSimTree (fun a v => v = enc a) K n A t) (hq : t.QueryFree) (O : CTree.Oracle) :
     t.run O = SPComp.bind A.erase.compile fun a => SPComp.pure (enc a) := by
   induction h with
   | ret hR =>
     subst hR
     rw [SPTree.Timed.erase_ret, SPTree.compile, SPComp.pure_bind]
     rfl
-  | tick _ _ ih => exact ih
+  | tick _ _ ih => exact ih hq
   | @sample n γ finγ neγ c k f e k' mb _ _ ih =>
     let _ := finγ
     let _ := neγ
@@ -329,16 +374,17 @@ theorem run {enc : α → β} {n : ℕ} {A : SPTree.Timed α} {t : CTree β}
       (fun b => (k b).erase.compile) _).symm
     show SPComp.bind (SPComp.sample f.den) (fun x => (k' x).run O) = _
     rw [← SPComp.sample_bind_equiv e]
-    exact congrArg _ (funext ih)
+    exact congrArg _ (funext fun b => ih b (hq (e b)))
   | @get n i f c k k' mb _ _ ih =>
-    exact (congrArg _ (funext ih)).trans (SPComp.bind_assoc (SPComp.get (f.loc i))
-      (fun x => (k x).erase.compile) _).symm
+    exact (congrArg _ (funext fun x => ih x (hq x))).trans (SPComp.bind_assoc
+      (SPComp.get (f.loc i)) (fun x => (k x).erase.compile) _).symm
   | @set n i f v c A t mb _ _ ih =>
-    exact (congrArg _ (funext fun _ => ih)).trans (SPComp.bind_assoc
+    exact (congrArg _ (funext fun _ => ih hq)).trans (SPComp.bind_assoc
       (SPComp.set (f.loc i) v) (fun _ => A.erase.compile) _).symm
   | fail =>
     rw [SPTree.Timed.erase_fail]
     exact (SPComp.fail_bind _).symm
+  | query => exact hq.elim
 
 theorem bind {S : γ → δ → Prop} {f : α → ℕ × SPTree.Timed γ} {g : β → CTree δ} {m : ℕ}
     (hf : ∀ a v, R a v → TimedSimTree S K (m + K * (f a).1) (f a).2 (.tick (g v)))
@@ -363,6 +409,11 @@ theorem bind {S : γ → δ → Prop} {f : α → ℕ × SPTree.Timed γ} {g : �
     rw [Nat.mul_add]
     omega
   | fail => exact .fail
+  | query d r x mb _ hmb ih =>
+    refine .query d r x (fun y => mb y + m + K * (SPTree.Timed.bind _ f).1) ih fun y => ?_
+    have := hmb y
+    rw [Nat.mul_add]
+    omega
 
 end TimedSimTree
 
@@ -385,9 +436,9 @@ theorem cost_le {x : ℕ × SPTree.Timed α} {t : CTree β} (h : TimedSim R K n 
 /-- Related through the graph of `enc`, the D tree means the encoded compilation of the
 costed tree. -/
 theorem run {enc : α → β} {x : ℕ × SPTree.Timed α} {t : CTree β}
-    (h : TimedSim (fun a v => v = enc a) K n x t) (O : CTree.Oracle) :
+    (h : TimedSim (fun a v => v = enc a) K n x t) (hq : t.QueryFree) (O : CTree.Oracle) :
     t.run O = SPComp.bind x.2.erase.compile fun a => SPComp.pure (enc a) :=
-  TimedSimTree.run h O
+  TimedSimTree.run h hq O
 
 /-- A costed bind and a D bind with a β-step at each junction: the continuations are related
 with the ticked D continuation, at the allowance `m`. -/
@@ -468,6 +519,116 @@ theorem set (hK : 1 ≤ K) (i : ℕ) (f : FTy) (v : f.den) {c : ℕ} {A : SPTree
 theorem fail {c : ℕ} : TimedSim R K n (c, (.fail : SPTree.Timed α)) (.fail : CTree β) :=
   TimedSimTree.fail
 
+/-- A query node against a branching over the answers, with `K ≥ 1` paying for the node. -/
+theorem query (hK : 1 ≤ K) (d r : FTy) (x : d.den) {c : r.den → ℕ}
+    {k : r.den → SPTree.Timed α} {k' : r.den → CTree β}
+    (h : ∀ y, TimedSim R K n (c y, k y) (k' y)) :
+    TimedSim R K n (0, .sample r.den (FTy.instFintype r) (FTy.instNonempty r) c k)
+      (.query d r x k') :=
+  TimedSimTree.query d r x (fun y => n + K * c y) h fun _ => by
+    simp only [Nat.mul_zero]; omega
+
 end TimedSim
+
+/-! ## The costed tree of a D tree
+
+`CTree.costTree t` has the nodes of `t`, a `query` node as a branching over the answers, and the
+ticks in front of a node as the step cost of its edge. Its time is the cost of `t`, and `t` is
+simulated by it at factor `1`. Unlike `CTree.toTimed`, it does not fix an answer of the oracle:
+the cost of a D tree is the maximum over all answers, and the costed tree has the same maximum. -/
+
+namespace CTree
+
+variable {α : Type}
+
+/-- The costed tree with the nodes and costs of the D tree, a query branching over its
+answers. -/
+noncomputable def costTree : CTree α → ℕ × SPTree.Timed α
+  | ret a => (0, .ret a)
+  | tick t => SPTree.Timed.delay 1 (costTree t)
+  | sample f k => (0, .sample f.den (FTy.instFintype f) (FTy.instNonempty f)
+      (fun x => (costTree (k x)).1) fun x => (costTree (k x)).2)
+  | get n f k => (0, .get (f.loc n) (fun x => (costTree (k x)).1)
+      fun x => (costTree (k x)).2)
+  | set n f v k => (0, .set (f.loc n) v (costTree k).1 (costTree k).2)
+  | query _ r _ k => (0, .sample r.den (FTy.instFintype r) (FTy.instNonempty r)
+      (fun y => (costTree (k y)).1) fun y => (costTree (k y)).2)
+  | fail => (0, .fail)
+
+/-- The time of the costed tree is at most the cost of the D tree. -/
+theorem stepTime_costTree_le (t : CTree α) : SPTree.Timed.stepTime t.costTree ≤ t.cost := by
+  induction t with
+  | ret a => exact Nat.zero_le _
+  | tick t ih =>
+    rw [costTree, SPTree.Timed.stepTime_delay, cost_tick]
+    omega
+  | sample f k ih =>
+    have hs : (Finset.univ.sup fun x : f.den =>
+          (costTree (k x)).1 + (costTree (k x)).2.time) ≤
+        Finset.univ.sup fun x : f.den => (k x).cost :=
+      Finset.sup_le fun x _ => (ih x).trans
+        (Finset.le_sup (f := fun x => (k x).cost) (Finset.mem_univ x))
+    change 0 + (1 + Finset.univ.sup fun x : f.den =>
+        (costTree (k x)).1 + (costTree (k x)).2.time) ≤
+      1 + Finset.univ.sup fun x : f.den => (k x).cost
+    omega
+  | get n f k ih =>
+    have hs : (Finset.univ.sup fun x : (f.loc n).ty =>
+          (costTree (k x)).1 + (costTree (k x)).2.time) ≤
+        Finset.univ.sup fun x : f.den => (k x).cost :=
+      Finset.sup_le fun x _ => (ih x).trans
+        (Finset.le_sup (f := fun x : f.den => (k x).cost) (Finset.mem_univ x))
+    change 0 + (1 + Finset.univ.sup fun x : (f.loc n).ty =>
+        (costTree (k x)).1 + (costTree (k x)).2.time) ≤
+      1 + Finset.univ.sup fun x : f.den => (k x).cost
+    omega
+  | set n f v k ih =>
+    change (costTree k).1 + (costTree k).2.time ≤ k.cost at ih
+    change 0 + (1 + ((costTree k).1 + (costTree k).2.time)) ≤ 1 + k.cost
+    omega
+  | query d r x k ih =>
+    have hs : (Finset.univ.sup fun y : r.den =>
+          (costTree (k y)).1 + (costTree (k y)).2.time) ≤
+        Finset.univ.sup fun y : r.den => (k y).cost :=
+      Finset.sup_le fun y _ => (ih y).trans
+        (Finset.le_sup (f := fun y => (k y).cost) (Finset.mem_univ y))
+    change 0 + (1 + Finset.univ.sup fun y : r.den =>
+        (costTree (k y)).1 + (costTree (k y)).2.time) ≤
+      1 + Finset.univ.sup fun y : r.den => (k y).cost
+    omega
+  | fail => exact Nat.zero_le _
+
+/-- A D tree is simulated by its costed tree at factor `1` with no allowance. -/
+theorem timedSim_costTree (t : CTree α) : TimedSim (· = ·) 1 0 t.costTree t := by
+  induction t with
+  | ret a => exact TimedSim.ret rfl
+  | tick t ih => exact TimedSim.delay_tick le_rfl ih
+  | sample f k ih => exact TimedSim.sample le_rfl f (Equiv.refl _) ih
+  | get n f k ih => exact TimedSim.get le_rfl n f ih
+  | set n f v k ih => exact TimedSim.set le_rfl n f v ih
+  | query d r x k ih => exact TimedSim.query le_rfl d r x ih
+  | fail => exact TimedSim.fail
+
+end CTree
+
+namespace TimeRealizer
+
+variable {O : CTree.Oracle} {a b : Ty} {n : ℕ} {f : Val a → SPComp (Val b)}
+
+/-- The costed adversary of a realizer with every oracle answer: at the input `x`, the
+evaluation of the term and the β-step of the call in front of the costed tree of the call. -/
+noncomputable def costTree (r : TimeRealizer O n f) (x : Val a) : ℕ × SPTree.Timed (Val b) :=
+  SPTree.Timed.delay (r.evalCost + 1) (r.closure x).costTree
+
+/-- The costed adversary of a realizer at time `n` has time at most `n`. -/
+theorem stepTime_costTree_le (r : TimeRealizer O n f) (x : Val a) :
+    SPTree.Timed.stepTime (r.costTree x) ≤ n := by
+  rw [costTree, SPTree.Timed.stepTime_delay]
+  have h1 := CTree.stepTime_costTree_le (r.closure x)
+  have h2 := r.call_le x
+  have h3 := r.time_le
+  omega
+
+end TimeRealizer
 
 end CatCrypt.Complexity.D

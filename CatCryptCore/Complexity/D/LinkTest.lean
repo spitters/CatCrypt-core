@@ -58,7 +58,10 @@ example : coin.cost ≤ 0 + 1 * SPTree.Timed.stepTime coinTimed :=
 /-- The meaning of the simulation: `coin` denotes the compilation of the costed coin. -/
 example (O : CTree.Oracle) :
     coin.run O = SPComp.bind coinTimed.2.erase.compile fun a => SPComp.pure a :=
-  coin_sim.run O
+  coin_sim.run (fun _ => trivial) O
+
+/-- `coin` is simulated by its costed tree at factor `1`. -/
+example : TimedSim (· = ·) 1 0 coin.costTree coin := CTree.timedSim_costTree coin
 
 /-- A map of the coin by negation at no step cost; the β-step of the D bind is paid by the
 allowance `1`. -/
