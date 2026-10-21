@@ -18,8 +18,13 @@ operations given as a binder, one adversary call), a reduction with two adversar
 second adversary, a reduction with `match` and `if`, a reduction reading and writing a
 location, and a reduction that calls a top-level `def` written in `do`-notation, with the
 adversary named explicitly. Two tests have primitives: fields of a structure binder and a
-method of a local instance, as computation primitives and as data functions. The last test
-pins the refusal of an unpriced computation, a field of a structure bound in the body.
+method of a local instance, as computation primitives and as data functions. Three tests have
+structure-valued results: two reductions between two-stage distinguishers with computation
+fields (the shapes of the pair-hybrid reductions of the Signal ratchet chain), with their erasure
+theorem pinned and the time of each stage bounded, and a reduction between two-stage oracle
+adversaries with a type field, two tree fields and a proof field (the shape of the ECH
+reduction). The last test pins the refusal of an unpriced computation, a field of a structure
+bound in the body.
 -/
 
 @[expose] public section
@@ -255,6 +260,116 @@ derive_reduction unusedB (adv := A)
 example {W : Type} (B : W → SPComp W) (A : W → SPTree Bool) (x : W) :
     (unusedB.tree A x).compile = unusedB B (fun y => (A y).compile) x :=
   unusedB.compile_tree B A x
+
+/-! ## Structure-valued reductions -/
+
+/-- A two-stage distinguisher: a first stage drawing a state and an input, a second stage
+guessing from the state and an output. -/
+structure TwoStageDist (σ α β : Type) where
+  pre : SPComp (σ × α)
+  guess : σ → β → SPComp Bool
+
+derive_timed_structure TwoStageDist
+
+/-- The distinguisher against the first of two samplers: its second stage draws the second
+component with `d`. -/
+noncomputable def fstRed {σ β γ : Type} (d : Unit → SPComp γ)
+    (B : TwoStageDist σ Unit (β × γ)) : TwoStageDist σ Unit β where
+  pre := B.pre
+  guess := fun st r => SPComp.bind (d ()) fun q => B.guess st (r, q)
+
+derive_reduction fstRed
+
+/-- The distinguisher against the second of two samplers: its first stage draws the first
+component with `c` and keeps it in the state. -/
+noncomputable def sndRed {σ β γ : Type} (c : Unit → SPComp β)
+    (B : TwoStageDist σ Unit (β × γ)) : TwoStageDist (σ × β) Unit γ where
+  pre := SPComp.bind B.pre fun p => SPComp.bind (c ()) fun r => SPComp.pure ((p.1, r), ())
+  guess := fun st q => B.guess st.1 (st.2, q)
+
+derive_reduction sndRed
+
+example {σ β γ : Type} (B : TwoStageDist σ Unit (β × γ)) (d : Unit → SPTree.Timed γ)
+    (dCost : Unit → ℕ) (pre : SPTree.Timed (σ × Unit)) (guess : σ → β × γ → SPTree.Timed Bool)
+    (guessCost : σ → β × γ → ℕ) (hp : pre.erase.compile = B.pre)
+    (hg : ∀ s y, (guess s y).erase.compile = B.guess s y) :
+    (fstRed.timed d dCost B pre guess guessCost).Erases (fstRed (fun u => (d u).erase.compile) B) :=
+  fstRed.erase_timed B d dCost pre guess guessCost hp hg
+
+/-- The second stage of `fstRed`: one call of `d`, then one call of the second stage of `B`. -/
+theorem fstRed.timeBound_timed {σ β γ : Type} (d : Unit → SPTree.Timed γ) (dCost : Unit → ℕ)
+    (B : TwoStageDist σ Unit (β × γ)) (pre : SPTree.Timed (σ × Unit))
+    (guess : σ → β × γ → SPTree.Timed Bool) (guessCost : σ → β × γ → ℕ) {Td ad T a : ℕ}
+    (hd : (d ()).time ≤ Td) (hdc : dCost () ≤ ad) (hg : ∀ s y, (guess s y).time ≤ T)
+    (hgc : ∀ s y, guessCost s y ≤ a) :
+    (fstRed.timed d dCost B pre guess guessCost).TimeBound pre.time (ad + Td + a + T + 2) := by
+  refine ⟨?_, fun st r => ?_⟩
+  · simp [fstRed.timed, fstRed.pre.tree.timed, SPTree.Timed.stepTime]
+  · show SPTree.Timed.stepTime (fstRed.guess.tree.timed d dCost B pre guess guessCost st r) ≤
+      ad + Td + a + T + 2
+    simp only [fstRed.guess.tree.timed, SPTree.Timed.stepTime_delay]
+    have := SPTree.Timed.stepTime_bind_le (d ())
+      (fun x => (1 + guessCost st (r, x), guess st (r, x))) (a + T + 1) fun x => by
+        simp only [SPTree.Timed.stepTime]; have := hg st (r, x); have := hgc st (r, x); omega
+    omega
+
+/-- The first stage of `sndRed`: the first stage of `B`, then one call of `c`. -/
+theorem sndRed.timeBound_timed {σ β γ : Type} (c : Unit → SPTree.Timed β) (cCost : Unit → ℕ)
+    (B : TwoStageDist σ Unit (β × γ)) (pre : SPTree.Timed (σ × Unit))
+    (guess : σ → β × γ → SPTree.Timed Bool) (guessCost : σ → β × γ → ℕ) {Tc ac T a : ℕ}
+    (hc : (c ()).time ≤ Tc) (hcc : cCost () ≤ ac) (hg : ∀ s y, (guess s y).time ≤ T)
+    (hgc : ∀ s y, guessCost s y ≤ a) :
+    (sndRed.timed c cCost B pre guess guessCost).TimeBound (pre.time + ac + Tc + 1)
+      (a + T + 1) := by
+  refine ⟨?_, fun st q => ?_⟩
+  · show SPTree.Timed.stepTime (sndRed.pre.tree.timed c cCost B pre guess guessCost) ≤
+      pre.time + ac + Tc + 1
+    simp only [sndRed.pre.tree.timed]
+    have := SPTree.Timed.stepTime_bind_le pre
+      (fun x => SPTree.Timed.delay (1 + cCost ())
+        ((c ()).bind fun r => (0, SPTree.Timed.ret ((x.1, r), ())))) (ac + Tc + 1) fun x => by
+        rw [SPTree.Timed.stepTime_delay]
+        have := SPTree.Timed.stepTime_bind_le (c ())
+          (fun r => (0, SPTree.Timed.ret ((x.1, r), ()))) 0 fun r => by
+            simp [SPTree.Timed.stepTime, SPTree.Timed.time_ret]
+        omega
+    omega
+  · show SPTree.Timed.stepTime (sndRed.guess.tree.timed c cCost B pre guess guessCost st q) ≤
+      a + T + 1
+    simp only [sndRed.guess.tree.timed, SPTree.Timed.stepTime]
+    have := hg st.1 (st.2, q); have := hgc st.1 (st.2, q); omega
+
+/-- A two-stage oracle adversary: a state type, two tree fields and a proof field about the
+first stage. -/
+structure OracleTwoStage (W : Type) : Type 1 where
+  St : Type
+  choose : W → CatCrypt.Crypto.OracleAdv W W (W × St)
+  guess : St → W → CatCrypt.Crypto.OracleAdv W W Bool
+  bound : ∀ w, choose w = choose w
+
+derive_timed_structure OracleTwoStage
+
+/-- The first stage of `encRed`: run `choose` and encode the first component. -/
+def chooseEnc {W St : Type} (enc : W → W) (choose : W → CatCrypt.Crypto.OracleAdv W W (W × St))
+    (w : W) : CatCrypt.Crypto.OracleAdv W W (W × St) :=
+  (choose w).bind fun x => .ret (enc x.1, x.2)
+
+/-- A reduction between two-stage oracle adversaries, in the shape of the ECH reduction: the
+same state type, the first stage followed by an encoding, and the same second stage. -/
+def encRed {W : Type} (enc : W → W) (A : OracleTwoStage W) : OracleTwoStage W where
+  St := A.St
+  choose := chooseEnc enc A.choose
+  guess := A.guess
+  bound _ := rfl
+
+derive_reduction encRed
+
+example {W : Type} (enc : W → W) (A : OracleTwoStage W) (encCost : W → ℕ)
+    (choose : W → CatCrypt.Crypto.OracleAdv.Timed W W (W × A.St)) (chooseCost : W → ℕ)
+    (guess : A.St → W → CatCrypt.Crypto.OracleAdv.Timed W W Bool) (guessCost : A.St → W → ℕ)
+    (hc : ∀ w, (choose w).erase = A.choose w) (hg : ∀ s w, (guess s w).erase = A.guess s w) :
+    (encRed.timed enc encCost A choose chooseCost guess guessCost).Erases (encRed enc A) :=
+  encRed.erase_timed enc A encCost choose chooseCost guess guessCost hc hg
 
 /-! ## Refusal of an unpriced computation -/
 

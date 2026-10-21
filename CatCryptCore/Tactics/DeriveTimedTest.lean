@@ -27,10 +27,13 @@ recursion over `ℕ`, and a tree argument with a continuation, whose derived tim
 a named function type, a `let` and a discarded argument priced once, a recursive data callee
 whose cost is derived on demand, a nested field reached through a helper, and a sum over
 `Fin n`, a derived cost that takes the cost companion of a field and its call from a
-reduction, two projections of one call priced once, and the costed mirrors of a two-stage
-adversary structure (a type field, a proof field, two tree fields) and of a structure with
-computation fields. The last tests pin the refusals of a recursive callee whose cost needs a class method
-on a local instance priced and of an opaque constant.
+reduction, two projections of one call priced once, the costed mirrors of a two-stage
+adversary structure (a type field, a proof field, two tree fields), of a structure with
+computation fields (one without arguments, whose cost companion is a number) and of a
+two-stage oracle adversary whose proof field bounds a tree field, and a field of a computed
+structure `(kit.aead iv).enc` priced by a companion indexed by the nonce. The last tests pin
+the pricing of a class method on a local instance by a companion and the refusal of an
+opaque constant.
 -/
 
 @[expose] public section
@@ -401,9 +404,9 @@ example {W : Type} (A' : TwoStage.Timed W) (A : TwoStage W) :
     A'.Erases A ↔ ∃ inh : Nonempty A'.St, A = ⟨A'.St, inh, fun w => (A'.choose w).erase,
       fun s w => (A'.guess s w).erase⟩ := Iff.rfl
 
-example {W : Type} (A' : TwoStage.Timed W) (T a T' a' : ℕ) :
-    A'.TimeBound T a T' a' ↔ (∀ w, (A'.choose w).time ≤ T) ∧ (∀ w, A'.chooseCost w ≤ a) ∧
-      (∀ s w, (A'.guess s w).time ≤ T') ∧ ∀ s w, A'.guessCost s w ≤ a' := Iff.rfl
+example {W : Type} (A' : TwoStage.Timed W) (T T' : ℕ) :
+    A'.TimeBound T T' ↔ (∀ w, SPTree.Timed.stepTime (A'.chooseCost w, A'.choose w) ≤ T) ∧
+      ∀ s w, SPTree.Timed.stepTime (A'.guessCost s w, A'.guess s w) ≤ T' := Iff.rfl
 
 /-- An adversary with computation fields. -/
 structure CompAdv (W : Type) where
@@ -414,6 +417,48 @@ derive_timed_structure CompAdv
 
 example {W : Type} (A' : CompAdv.Timed W) (A : CompAdv W) :
     A'.Erases A ↔ A = ⟨fun w => (A'.run w).erase.compile, A'.init.erase.compile⟩ := Iff.rfl
+
+/-- A computation field without arguments has a cost companion that is a number. -/
+example {W : Type} (A' : CompAdv.Timed W) (T T' : ℕ) :
+    A'.TimeBound T T' ↔ (∀ w, SPTree.Timed.stepTime (A'.runCost w, A'.run w) ≤ T) ∧
+      SPTree.Timed.stepTime (A'.initCost, A'.init) ≤ T' := Iff.rfl
+
+/-- A two-stage oracle adversary whose proof field bounds a tree field. -/
+structure BoundedStage (W : Type) : Type 1 where
+  St : Type
+  choose : W → OracleAdv W W (W × St)
+  guess : St → W → OracleAdv W W Bool
+  bound : ∀ w, (choose w).IsQueryBoundBy (fun _ => 1) 1
+
+derive_timed_structure BoundedStage
+
+example {W : Type} (A' : BoundedStage.Timed W) (A : BoundedStage W) :
+    A'.Erases A ↔ ∃ bound : ∀ w, (A'.choose w).erase.IsQueryBoundBy (fun _ => 1) 1,
+      A = ⟨A'.St, fun w => (A'.choose w).erase, fun s w => (A'.guess s w).erase, bound⟩ :=
+  Iff.rfl
+
+/-! ## Fields of a computed structure -/
+
+/-- An AEAD: encryption under a key. -/
+structure AeadT (W : Type) where
+  enc : W → W → W
+
+/-- A kit computing an AEAD from a nonce. -/
+structure AeadKit (W : Type) where
+  aead : W → AeadT W
+
+/-- A field of the computed structure `kit.aead iv`. -/
+def aeadRed {D R W : Type} (kit : AeadKit W) (iv k m : W) : OracleAdv D R W :=
+  .ret ((kit.aead iv).enc k m)
+
+derive_timed aeadRed
+
+/-- The field `enc` of `kit.aead iv` is priced by a companion indexed by the nonce, the key and
+the message; computing `kit.aead iv` is priced by the companion of `aead`. -/
+example {D R W : Type} (kit : AeadKit W) (iv k m : W) (aeadCost : W → ℕ)
+    (aead_encCost : W → W → W → ℕ) :
+    (aeadRed.timed (D := D) (R := R) kit iv k m aeadCost aead_encCost).1 =
+      1 + (aead_encCost iv k m + (1 + aeadCost iv)) := rfl
 
 /-! ## Class methods on a local instance -/
 

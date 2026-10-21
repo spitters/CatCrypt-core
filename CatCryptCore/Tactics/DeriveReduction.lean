@@ -7,6 +7,7 @@ module
 
 public import CatCryptCore.Core.SPTree
 public import CatCryptCore.Tactics.DeriveTimed
+public import CatCryptCore.Tactics.DeriveTimedStructure
 
 /-!
 # Computation trees of `SPComp` reductions
@@ -104,6 +105,30 @@ Any other subterm of type `SPComp α`, after unfolding, is an unpriced computati
 a structure bound inside the body, a recursive definition, an opaque constant. The command
 fails on it and names the subterm.
 
+## Structure-valued reductions
+
+A reduction `B : … → S qs` whose result is a structure with a costed mirror `S.Timed`
+(`derive_timed_structure S`, `CatCryptCore.Tactics.DeriveTimedStructure`) is derived field by
+field. Its body is brought to a constructor application of `S` by `whnf`. A field that is a
+proposition is dropped; a type or data field is kept with its value. A computation field
+`f : Y₁ → … → Yₙ → SPComp β` is reflected as above into the tree `B.f.tree`, with
+`B.f.compile_tree : (B.f.tree …).compile = (B …).f ys`; a tree field
+`f : Y₁ → … → Yₙ → T` of a kind of `CatCrypt.Tactics.DeriveTimed.treeKinds` is kept as the
+tree `B.f.tree`. A field of a binder whose type is a tree or a function into trees
+(`A.choose : PK → OracleAdv D R α`) is a tree primitive: a binder of the type of the field.
+All fields share one first pass, so the trees `B.f.tree` take the same binders and
+primitives. `derive_timed` derives `B.f.tree.timed`, and
+
+* `B.timed : … → S.Timed qs` is the mirror whose field `f` is `fun ys => (B.f.tree.timed … ys).2`
+  and whose companion `fCost` is `fun ys => (B.f.tree.timed … ys).1`;
+* `B.erase_timed : … → S.Timed.Erases (B.timed …) (B …)` holds under the hypotheses
+  `∀ ys, (p ys).erase.compile = F ys` for each costed computation primitive `p` of a field `F`
+  and `∀ ys, (p ys).erase = F ys` for each costed tree primitive, with the data primitives at
+  their fields and each adversary at the compilation of the erasure of its costed form.
+
+A field `(B …).f` that is projected in a compile equation is reduced by `normalize`, which
+reduces a projection of a term that `whnf` brings to a constructor application.
+
 ## Trees and `RawCode`
 
 The reflection targets `SPTree` directly, not `RawCode` followed by a conversion: `SPTree` is
@@ -122,7 +147,8 @@ continuation), `if` by `SPTree.compile_ite_eq` and `SPTree.compile_dite_eq`, a `
 ## Main definitions
 
 * `derive_reduction B`, `derive_reduction B (adv := A₁ … Aₖ)` — define `B.tree`, prove
-  `B.compile_tree`, and run `derive_timed B.tree`
+  `B.compile_tree`, and run `derive_timed B.tree`; for a structure-valued `B`, define
+  `B.f.tree` for each tree and computation field, `B.timed`, and prove `B.erase_timed`
 
 ## Main results
 
@@ -256,6 +282,13 @@ partial def normalize (e : Expr) : MetaM Expr := do
     match ← unfoldDefinition? e with
     | some e' => normalize e'.headBeta
     | none => return e
+  | .proj _ i s =>
+    -- A field of a structure that reduces to a constructor application: the field's value.
+    let s' ← whnf s
+    if let some cv ← isConstructorApp? s' then
+      if let some v := s'.getAppArgs[cv.numParams + i]? then
+        return ← normalize (mkAppN v e.getAppArgs).headBeta
+    return e
   | _ => return e
 
 /-- `normalize`, with each `let` at the head substituted into its body. -/
@@ -274,11 +307,15 @@ structure Adv where
 from binders, or a binder that is not an adversary), either a data function (`data`) or a
 computation `key y₁ … yₙ : SPComp β` with `n = arity`; with the binder `fv` that replaces it in
 the tree and, for a computation, the hypothesis `hyp?` stating
-`∀ ys, (fv ys).compile = key ys`. -/
+`∀ ys, (fv ys).compile = key ys`. A tree primitive (`tree`) is a field of a binder of the type
+of a tree of a kind of `CatCrypt.Tactics.DeriveTimed.treeKinds` or of a function into such
+trees (`A.choose : PK → OracleAdv D R α`), recorded with arity `0`; its binder has the type of
+the field. -/
 structure Prim where
   key : Expr
   arity : Nat
   data : Bool
+  tree : Bool := false
   fv : Expr := default
   hyp? : Option Expr := none
   deriving Inhabited
@@ -334,12 +371,13 @@ def fieldKey? (top : Array FVarId) (e : Expr) : MetaM (Option (Expr × Array Exp
   | _ => return none
 
 /-- Whether `t` is the type of a data function: a function type whose codomain is not a
-computation, a type, a proposition or a class. -/
+computation, a tree of a registered kind, a type, a proposition or a class. -/
 def isDataFnType (t : Expr) : MetaM Bool := do
   if ← isTypeFormerType t then return false
   forallTelescope (← whnfR t) fun ys b => do
     if ys.isEmpty then return false
     if (← spCompArg? b).isSome then return false
+    if (← CatCrypt.Tactics.DeriveTimed.treeTy? b).isSome then return false
     if ← isProp b then return false
     if (← isClass? b).isSome then return false
     return true
@@ -436,6 +474,24 @@ def abstractData (ctx : RCtx) (e : Expr) : MetaM Expr := do
       return .continue
     | none =>
       match ← findPrim? ctx.prims F 0 true with
+      | some p => return .continue (mkAppN p.fv args)
+      | none => return .continue)
+
+/-- Replace each tree-valued field of `e` (a field of a binder whose type is a tree or a
+function into trees, `A.choose`) by its binder (second pass), or record it as a tree primitive
+(first pass). -/
+def abstractTree (ctx : RCtx) (e : Expr) : MetaM Expr := do
+  Meta.transform e (pre := fun x => do
+    let some (F, args) ← fieldKey? ctx.top x | return .continue
+    let isTree ← forallTelescope (← whnfR (← inferType F)) fun _ b => do
+      return (← CatCrypt.Tactics.DeriveTimed.treeTy? b).isSome
+    unless isTree do return .continue
+    match ctx.found? with
+    | some r =>
+      recordPrim r { key := F, arity := 0, data := false, tree := true }
+      return .continue
+    | none =>
+      match ctx.prims.find? fun p => p.tree && p.key == F with
       | some p => return .continue (mkAppN p.fv args)
       | none => return .continue)
 
@@ -761,7 +817,7 @@ partial def withPrims {γ : Type} (found : Array Prim) (i : Nat) (used : Array N
     let n ← primName p.key used
     let used := used.push n
     let ty ← inferType p.key
-    if p.data then
+    if p.data || p.tree then
       withLocalDeclD n ty fun f => withPrims found (i + 1) used (ps.push { p with fv := f }) k
     else
       let tt ← forallBoundedTelescope ty p.arity fun ys b => do
@@ -774,6 +830,339 @@ partial def withPrims {γ : Type} (found : Array Prim) (i : Nat) (used : Array N
         withLocalDeclD (n.appendBefore "h_") ht fun hp =>
           withPrims found (i + 1) used (ps.push { p with fv := f, hyp? := some hp }) k
   else k ps
+
+/-- `funext` over the locals `ys`: from `pf : lhs = rhs` under `ys`, a proof of
+`(fun ys => lhs) = (fun ys => rhs)`; `pf` itself when `ys` is empty. -/
+partial def mkFunExtN (ys : Array Expr) (pf : Expr) : MetaM Expr := do
+  if ys.isEmpty then return pf
+  let inner ← mkFunExtN (ys.extract 1 ys.size) pf
+  mkFunExt (← mkLambdaFVars #[ys[0]!] inner)
+
+/-- A field of a structure-valued reduction: its name, its kind, its value in the body, the
+binders `ys` of a tree or computation field, the field's body at `ys`, and its result type. -/
+structure SField where
+  name : Name
+  kind : CatCrypt.Tactics.DeriveTimedStructure.FieldKind
+  value : Expr
+  ys : Array Expr := #[]
+  body : Expr := default
+  deriving Inhabited
+
+/-- The arguments of an equation `rhs` under the existential quantifiers of `e`, continued in
+`k` with the locals standing for the quantified variables. -/
+partial def withExistsBody {γ : Type} (e : Expr) (k : Array Expr → Expr → TermElabM γ)
+    (acc : Array Expr := #[]) : TermElabM γ := do
+  if e.isAppOfArity ``Exists 2 then
+    match e.appArg! with
+    | .lam n t b _ => withLocalDeclD n t fun h => withExistsBody (b.instantiate1 h) k (acc.push h)
+    | _ => fail m!"internal: an existential quantifier over a non-lambda"
+  else k acc e
+
+/-- Define `c.timed` from the costed forms `c.f.tree.timed` of the fields, and prove
+`c.erase_timed`. `xs` are the binders of `c`, `bsOrig` the same with each adversary replaced by
+its tree-valued binder, `kept` those the trees take, and `ps` the primitives. -/
+partial def assembleStruct (c : Name) (levels : List Level) (levelParams : List Name) (S : Name)
+    (lvlsS : List Level) (qs : Array Expr) (mirrorFields : Array Name) (fields : Array SField)
+    (xs bsOrig : Array Expr) (advs : Array Adv)
+    (kept : Array Expr) (ps : Array Prim) : TermElabM Unit := do
+  let env ← getEnv
+  let timedS := S ++ `Timed
+  let dps := ps.filter (·.data)
+  let pps := ps.filter fun p => !p.data
+  let cps := pps.filter fun p => !p.tree
+  let tBs := kept ++ dps.map (·.fv) ++ pps.map (·.fv)
+  CatCrypt.Tactics.DeriveTimed.withBinders {} tBs fun tctx bs _ => do
+  let costed (fv : Expr) : TermElabM Expr := do
+    let some info := tctx.locals.get? fv.fvarId! | fail m!"internal: `{fv}` has no costed form"
+    return info.value
+  -- The costed form.
+  let mut mvals : Array Expr := #[]
+  for fd in fields do
+    match fd.kind with
+    | .prop => pure ()
+    | .type | .data =>
+      for x in xs do
+        if fd.value.containsFVar x.fvarId! && !bs.contains x then
+          fail m!"the field `{fd.name}` of the result mentions `{x}`, which the costed form \
+            does not take"
+      mvals := mvals.push fd.value
+    | _ =>
+      let tc := Lean.mkConst (c ++ fd.name ++ `tree ++ `timed) levels
+      let ar ← forallTelescope (← inferType tc) fun zs _ => pure zs.size
+      unless ar == bs.size + fd.ys.size do
+        fail m!"the costed form of the field `{fd.name}` takes {ar} arguments, and \
+          {bs.size + fd.ys.size} are its binders and those of the field"
+      let call := mkAppN tc (bs ++ fd.ys)
+      mvals := mvals.push (← mkLambdaFVars fd.ys (← mkAppM ``Prod.snd #[call]))
+      if mirrorFields.contains (fd.name.appendAfter "Cost") then
+        mvals := mvals.push (← mkLambdaFVars fd.ys (← mkAppM ``Prod.fst #[call]))
+  let mirrorCtor := (getStructureCtor env timedS).name
+  let resT := mkAppN (mkConst timedS lvlsS) qs
+  let timedName := c ++ `timed
+  CatCrypt.Tactics.DeriveTimed.addTimedDef timedName levelParams (← mkForallFVars bs resT)
+    (← mkLambdaFVars bs (mkAppN (mkConst mirrorCtor lvlsS) (qs ++ mvals)))
+  -- The erasure theorem: the data primitives at their fields, the tree and computation
+  -- primitives with hypotheses relating their costed binders to their fields.
+  let bsInst := bs.map fun b => match dps.find? (·.fv == b) with
+    | some p => p.key
+    | none => b
+  let erase (fv : Expr) (compile : Bool) : TermElabM Expr := do
+    let v ← costed fv
+    forallTelescope (← whnfR (← inferType fv)) fun ys bt => do
+      let some T ← CatCrypt.Tactics.DeriveTimed.treeTy? bt | fail m!"internal: `{fv}`"
+      let e := T.eraseE (mkAppN v ys)
+      let e ← if compile then mkAppM ``CatCrypt.Core.SPTree.compile #[e] else pure e
+      mkLambdaFVars ys e
+  let argsC ← xs.mapM fun x => do
+    match advs.find? (·.orig == x.fvarId!) with
+    | some a => erase a.tree true
+    | none => pure x
+  let mut hypDecls : Array (Name × (Array Expr → TermElabM Expr)) := #[]
+  for p in pps do
+    let v ← costed p.fv
+    let t ← forallTelescope (← whnfR (← inferType p.fv)) fun ys _ => do
+      let some T ← CatCrypt.Tactics.DeriveTimed.treeTy? (← inferType (mkAppN p.fv ys)) |
+        fail m!"internal: `{p.fv}`"
+      let lhs := T.eraseE (mkAppN v ys)
+      let lhs ← if p.tree then pure lhs else mkAppM ``CatCrypt.Core.SPTree.compile #[lhs]
+      mkForallFVars ys (← mkEq lhs (mkAppN p.key ys))
+    let n := (← p.fv.fvarId!.getUserName).eraseMacroScopes.appendBefore "h_"
+    hypDecls := hypDecls.push (n, fun _ => pure t)
+  withLocalDeclsD hypDecls fun hs => do
+  let lhsA := mkAppN (mkConst timedName levels) bsInst
+  let rhsA := mkAppN (mkConst c levels) argsC
+  let goalTy := mkAppN (mkConst (timedS ++ `Erases) lvlsS) (qs ++ #[lhsA, rhsA])
+  let mv ← mkFreshExprSyntheticOpaqueMVar goalTy
+  let some unfolded ← unfoldDefinition? goalTy | fail m!"internal: `{timedS ++ `Erases}`"
+  let mut g ← mv.mvarId!.replaceTargetDefEq unfolded.headBeta
+  -- The erased fields of the costed form, as the equation of the erasure relation states them.
+  let mkArgs ← withExistsBody (← g.getType) fun dummies e => do
+    let some (_, _, r) := e.eq? | fail m!"internal: the erasure relation is not an equation"
+    let as := r.getAppArgs.extract qs.size r.getAppNumArgs
+    return as.map fun a => if dummies.any (a.containsFVar ·.fvarId!) then none else some a
+  for fd in fields do
+    unless fd.kind matches .tree _ | .comp _ do continue
+    let some j := fields.findIdx? (·.name == fd.name) | fail m!"internal: `{fd.name}`"
+    let some (some W) := mkArgs[j]? | fail m!"internal: the erased field `{fd.name}`"
+    let treeName := c ++ fd.name ++ `tree
+    let rhsY := mkAppN (← mkProjection rhsA fd.name) fd.ys
+    let h1 := mkAppN (mkConst (treeName ++ `erase_timed) levels) (bsInst ++ fd.ys)
+    let pf ← match fd.kind with
+      | .comp _ =>
+        let some α ← spCompArg? (← inferType fd.body) | fail m!"internal: `{fd.name}`"
+        let h1c ← mkCongrArg (mkApp (mkConst ``CatCrypt.Core.SPTree.compile) α) h1
+        let compArgs ← bsOrig.mapM fun b => do
+          match advs.find? (·.tree == b) with
+          | some _ => erase b false
+          | none => pure b
+        let cArgs ← cps.mapM fun p => erase p.fv false
+        let cHyps := (pps.zip hs).filterMap fun (p, h) => if p.tree then none else some h
+        let h2 := mkAppN (mkConst (c ++ fd.name ++ `compile_tree) levels)
+          (compArgs ++ cArgs ++ cHyps ++ fd.ys)
+        mkEqTrans h1c h2
+      | _ =>
+        -- The erased tree primitives are replaced by their fields, one after the other.
+        let mut erArgs ← tBs.mapM fun b => do
+          if let some p := dps.find? (·.fv == b) then return p.key
+          if (advs.find? (·.tree == b)).isSome || (pps.find? (·.fv == b)).isSome then
+            return ← erase b false
+          return b
+        let mut E := h1
+        for p in pps, h in hs do
+          unless p.tree do continue
+          let some k := tBs.idxOf? p.fv | fail m!"internal: `{p.fv}`"
+          let fe ← forallTelescope (← inferType h) fun zs _ => mkFunExtN zs (mkAppN h zs)
+          let motive ← withLocalDeclD `z (← inferType p.fv) fun z => do
+            mkLambdaFVars #[z] (mkAppN (mkConst treeName levels) (erArgs.set! k z ++ fd.ys))
+          E ← mkEqTrans E (← mkCongrArg motive fe)
+          let some (_, _, r) := (← inferType fe).eq? | fail m!"internal: `{p.fv}`"
+          erArgs := erArgs.set! k r
+        pure E
+    let e ← mkExpectedTypeHint (← mkFunExtN fd.ys pf) (← mkEq W (← mkLambdaFVars fd.ys rhsY))
+    let r ← g.rewrite (← g.getType) e
+    unless r.mvarIds.isEmpty do fail m!"internal: rewriting the field `{fd.name}`"
+    g ← g.replaceTargetEq r.eNew r.eqProof
+  for fd in fields do
+    if fd.kind matches .prop then
+      g ← g.existsIntro (← mkProjection rhsA fd.name)
+  g.refl
+  let pf ← instantiateMVars mv
+  if pf.hasSorry || pf.hasExprMVar then fail m!"the erasure theorem `{c ++ `erase_timed}` is not proved"
+  let newBs := bs.filter fun b => !tBs.contains b
+  let eBs := xs.filter (fun x => (advs.find? (·.orig == x.fvarId!)).isNone) ++ newBs ++ hs
+  addDecl (Declaration.thmDecl
+    { name := c ++ `erase_timed, levelParams,
+      type := ← mkForallFVars eBs goalTy, value := ← mkLambdaFVars eBs pf })
+
+/-- Derive the costed form of the reduction `c` with the value `value`, whose result is a
+structure `S qs` with a costed mirror `S.Timed`: for each computation field `f` the tree
+`c.f.tree` and `c.f.compile_tree`, for each tree field `f` the tree `c.f.tree`, the costed forms
+`c.f.tree.timed` (by `derive_timed`), the costed form `c.timed : … → S.Timed qs`, and
+`c.erase_timed : … → S.Timed.Erases (c.timed …) (c …)`. -/
+partial def deriveStructReduction (c : Name) (advNames : Array Name) (unfold : Bool)
+    (value : Expr) (levelParams : List Name) : TermElabM Unit := do
+  let levels := levelParams.map mkLevelParam
+  lambdaTelescope value fun xs b => do
+    let env ← getEnv
+    let rt ← whnf (← inferType b)
+    let .const S lvlsS := rt.getAppFn
+      | fail m!"the result of `{c}` is neither a computation `SPComp α` nor a structure"
+    let some sinfo := getStructureInfo? env S
+      | fail m!"the result of `{c}` is neither a computation `SPComp α` nor a structure"
+    let qs := rt.getAppArgs
+    let timedS := S ++ `Timed
+    let some mirrorInfo := getStructureInfo? env timedS
+      | fail m!"the result of `{c}` is the structure `{S}`, which has no costed mirror; \
+          `derive_timed_structure {S}` defines it"
+    let mirrorFields := mirrorInfo.fieldNames
+    let bv ← whnf b
+    let some cv ← isConstructorApp? bv
+      | fail m!"the body of `{c}` does not reduce to a constructor application of `{S}`"
+    let vals := bv.getAppArgs.extract cv.numParams bv.getAppNumArgs
+    unless vals.size == sinfo.fieldNames.size do
+      fail m!"the body of `{c}` is a partial constructor application of `{S}`"
+    -- The fields with their kinds.
+    let mut ty ← instantiateForall (← inferType (mkConst cv.name lvlsS)) qs
+    let mut fields : Array SField := #[]
+    for f in sinfo.fieldNames, v in vals do
+      let .forallE _ d body _ ← whnf ty | fail m!"internal: the constructor of `{S}`"
+      fields := fields.push
+        { name := f, kind := ← CatCrypt.Tactics.DeriveTimedStructure.fieldKind d, value := v }
+      ty := body.instantiate1 v
+    -- The binders of each tree and computation field, and its body.
+    let rec withFieldBodies (i : Nat) (acc : Array SField) (k : Array SField → TermElabM Unit) :
+        TermElabM Unit := do
+      if h : i < fields.size then
+        let fd := fields[i]
+        match fd.kind with
+        | .tree n | .comp n =>
+          forallBoundedTelescope (← whnfR (← inferType fd.value)) n fun ys _ => do
+            unless ys.size == n do fail m!"internal: the field `{fd.name}`"
+            withFieldBodies (i + 1) (acc.push { fd with ys, body := (mkAppN fd.value ys).headBeta })
+              k
+        | _ => withFieldBodies (i + 1) (acc.push fd) k
+      else k acc
+    withFieldBodies 0 #[] fun fields => do
+    -- The adversary binders.
+    let mut isAdv : Array (Option Nat) := #[]
+    for x in xs do
+      let n := (← x.fvarId!.getUserName).eraseMacroScopes
+      let t ← inferType x
+      let ar ← forallTelescope (← whnfR t) fun ys body => do
+        return if (← spCompArg? body).isSome then some ys.size else none
+      let named := if advNames.isEmpty then true else advNames.contains n
+      isAdv := isAdv.push (if named then ar else none)
+    let rec go (i : Nat) (bs : Array Expr) (advs : Array Adv) (args : Array Expr) :
+        TermElabM Unit := do
+      if h : i < xs.size then
+        let x := xs[i]
+        match isAdv[i]! with
+        | none => go (i + 1) (bs.push x) advs (args.push x)
+        | some ar =>
+          let t ← inferType x
+          let tt ← forallTelescope (← whnfR t) fun ys body => do
+            let some β ← spCompArg? body | fail m!"internal: `{t}`"
+            mkForallFVars ys (treeTy β)
+          withLocalDecl (← x.fvarId!.getUserName) (← x.fvarId!.getBinderInfo) tt fun a' => do
+            let arg ← forallTelescope (← whnfR t) fun ys body => do
+              let some β ← spCompArg? body | fail m!"internal: `{t}`"
+              mkLambdaFVars ys (mkCompile β (mkAppN a' ys))
+            go (i + 1) (bs.push a') (advs.push ⟨x.fvarId!, a', ar⟩) (args.push arg)
+      else
+        let top := (xs.zip isAdv).filterMap fun (x, a) => if a.isNone then some x.fvarId! else none
+        -- First pass over all fields: collect the primitives.
+        let r ← IO.mkRef (#[] : Array Prim)
+        for fd in fields do
+          let ctx₁ : RCtx :=
+            { advs, base := c ++ fd.name ++ `tree, top, found? := some r, unfold }
+          match fd.kind with
+          | .comp _ => discard <| abstractData ctx₁ (← instantiateMVars (← reify ctx₁ fd.body))
+          | .tree _ => discard <| abstractData ctx₁ (← abstractTree ctx₁ fd.body)
+          | _ => pure ()
+        let found ← r.get
+        let used ← xs.mapM fun x => return (← x.fvarId!.getUserName).eraseMacroScopes
+        withPrims found 0 used #[] fun ps => do
+        -- Second pass: the tree of each field over the binders of the primitives.
+        let mut trees : Array (Option Expr) := #[]
+        for fd in fields do
+          let ctx : RCtx := { advs, base := c ++ fd.name ++ `tree, top, prims := ps, unfold }
+          match fd.kind with
+          | .comp _ => trees := trees.push (some (← abstractData ctx
+              (← instantiateMVars (← reify ctx fd.body))))
+          | .tree _ => trees := trees.push (some (← abstractData ctx (← abstractTree ctx fd.body)))
+          | _ => trees := trees.push none
+        for t in trees do
+          if let some t := t then
+            for a in advs do
+              if t.containsFVar a.orig then
+                fail m!"the adversary `{mkFVar a.orig}` occurs outside a call position in\
+                  {indentExpr t}"
+        let dps := ps.filter (·.data)
+        let tps := ps.filter (·.tree)
+        let cps := ps.filter fun p => !p.data && !p.tree
+        let dFvs := dps.map (·.fv)
+        let tFvs := tps.map (·.fv)
+        let cFvs := cps.map (·.fv)
+        let pFvs := (ps.filter fun p => !p.data).map (·.fv)
+        let hyps := cps.filterMap (·.hyp?)
+        -- The kept binders: as for a computation-valued reduction, with the parameters of the
+        -- result, the type and data fields and the binders of the fields.
+        let mut needed : FVarIdSet := {}
+        for bnd in bs do
+          let bt ← inferType bnd
+          let isFn ← if (← isProp bt) || (← isTypeFormerType bt) || (← isClass? bt).isSome then
+              pure false
+            else pure (← whnfR bt).isForall
+          unless isFn do needed := needed.insert bnd.fvarId!
+        let mut roots : Array Expr := qs ++ (← (dFvs ++ pFvs).mapM fun v => inferType v)
+        for fd in fields, t in trees do
+          if let some t := t then
+            roots := roots.push t
+            for y in fd.ys do roots := roots.push (← inferType y)
+            roots := roots.push (← inferType fd.body)
+          else if !(fd.kind matches .prop) then roots := roots.push fd.value
+        for x in roots do
+          needed := (collectFVars {} (← instantiateMVars x)).fvarIds.foldl (·.insert ·) needed
+        for bnd in bs.reverse do
+          if needed.contains bnd.fvarId! then
+            needed := (collectFVars {} (← instantiateMVars (← inferType bnd))).fvarIds.foldl
+              (·.insert ·) needed
+        let kept := bs.filter fun bnd => needed.contains bnd.fvarId!
+        let tBs := kept ++ dFvs ++ pFvs
+        let tKeys := tps.map (·.key)
+        let rhsC := mkAppN (mkConst c levels) args
+        -- The tree of each field, and the compile equation of each computation field.
+        for fd in fields, t in trees do
+          let some t := t | continue
+          let treeName := c ++ fd.name ++ `tree
+          let ft ← inferType t
+          CatCrypt.Tactics.DeriveTimed.addTimedDef treeName levelParams
+            (← mkForallFVars (tBs ++ fd.ys) ft)
+            (← mkLambdaFVars (tBs ++ fd.ys) t)
+          if fd.kind matches .comp _ then
+            let some α ← spCompArg? (← inferType fd.body) | fail m!"internal: `{fd.name}`"
+            let rhs := mkAppN (← mkProjection rhsC fd.name) fd.ys
+            let tI := (t.replaceFVars dFvs (dps.map (·.key))).replaceFVars tFvs tKeys
+            let goalTy ← mkEq (mkCompile α tI) rhs
+            let mv ← mkFreshExprSyntheticOpaqueMVar goalTy
+            prove (cFvs.zip hyps) mv.mvarId!
+            let pf ← instantiateMVars mv
+            if pf.hasSorry || pf.hasExprMVar then
+              fail m!"the compile equation of the field `{fd.name}` is not proved"
+            let lhs := mkCompile α (mkAppN (mkConst treeName levels)
+              (kept ++ dps.map (·.key) ++ (ps.filter fun p => !p.data).map (fun p =>
+                if p.tree then p.key else p.fv) ++ fd.ys))
+            let eBs := bs ++ cFvs ++ hyps ++ fd.ys
+            addDecl (Declaration.thmDecl
+              { name := c ++ fd.name ++ `compile_tree, levelParams,
+                type := ← mkForallFVars eBs (← mkEq lhs rhs),
+                value := ← mkLambdaFVars eBs pf })
+        -- The costed forms of the trees.
+        for fd in fields, t in trees do
+          if t.isSome then
+            CatCrypt.Tactics.DeriveTimed.deriveTimed {} (c ++ fd.name ++ `tree)
+        assembleStruct c levels levelParams S lvlsS qs mirrorFields fields xs bs advs kept ps
+    go 0 #[] #[] #[]
 
 /-- Define `c.tree`, prove `c.compile_tree`, and run `derive_timed c.tree`. The adversaries
 are the binders named in `advNames`, or every binder whose type ends in `SPComp` when it is
@@ -793,6 +1182,10 @@ partial def deriveReduction (c : Name) (advNames : Array Name) (unfold : Bool :=
   let value ← lambdaTelescope d.value fun xs b => do
     CatCrypt.Tactics.DeriveTimed.withTypeBinders (← instantiateForall d.type xs) fun ys _ =>
       mkLambdaFVars (xs ++ ys) (mkAppN b ys).headBeta
+  -- A structure-valued reduction: field by field.
+  if ← lambdaTelescope value fun _ b => do return (← spCompArg? (← inferType b)).isNone then
+    if env.contains (c ++ `timed) then fail m!"`{c ++ `timed}` already exists"
+    return ← deriveStructReduction c advNames unfold value info.levelParams
   let (tType, tValue, eType, eValue) ← lambdaTelescope value fun xs b => do
     let some α ← spCompArg? (← inferType b)
       | fail m!"the result of `{c}` is not a computation `SPComp α`"

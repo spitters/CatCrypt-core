@@ -109,7 +109,10 @@ helper. A call `b` of which two projections `b.1`, `b.2` occur among the argumen
 unfolded definition is evaluated once and shared. A field of a structure binder (`kit.hash`)
 has one cost companion, whether it is applied in the body, inside an unfolded helper or inside
 a recursive helper whose cost `derive_cost` derives; that cost takes the companions of the fields
-it applies, and each call passes them.
+it applies, and each call passes them. A field of a computed structure, `(kit.aead iv).enc k m`,
+is priced as the computation of the structure `kit.aead iv` by these rules, plus one, plus a cost
+companion `aead_encCost iv k m` indexed by the arguments that compute the structure and the
+arguments of the field.
 These are the rules of Isabelle's `time_fun` [HOL] and of [Hop26]. A primitive without a body
 to price takes the cost registered for it with `timed_cost f := e`.
 
@@ -120,6 +123,18 @@ structure or a method of a class, such as `D.keygen` or `kit.enc`) is a binder, 
 compile equation `R.compile_tree`, `(R.tree …).compile = R …`, by a term the kernel checks, and
 runs `derive_timed R.tree`. At 2026-10-20 it derives the costed forms of 79 of the 112
 reductions of its evaluation set.
+
+A multi-stage adversary is a structure whose fields are its stages (trees or computations), a
+state type and proof fields such as query bounds. `derive_timed_structure S`
+([DeriveTimedStructure.lean](../Tactics/DeriveTimedStructure.lean)) defines its costed mirror
+`S.Timed`: proof fields dropped, each stage a costed stage followed by its cost companion; the
+erasure relation `S.Timed.Erases`, under which proof fields are stated about the erased stages;
+and `S.Timed.TimeBound`, one bound per stage on the cost of computing the stage plus its run.
+The stages run separately, so their bounds are not added. A reduction whose result is such a
+structure is derived by `derive_reduction` field by field: `R.timed : … → S.Timed …` and
+`R.erase_timed : … → (R.timed …).Erases (R …)`. A stage of a structure binder
+(`A.choose`, `B.guess`) is a primitive of the reduction with a costed binder and a hypothesis
+relating its erasure to the field.
 
 A derived step cost follows from the code of the reduction by these rules. A costed form written
 by hand carries step costs chosen by its author, which the kernel checks only through the

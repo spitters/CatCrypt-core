@@ -110,10 +110,16 @@ cost of `f`. A reduction whose costed form is written by hand (a recursion over 
 tree, for instance) is registered by defining `R.timed` and `R.erase_timed` in the binder
 convention above.
 
+A field `m` of a computed structure `g b₁ … bₖ`, where `g` is a field path (`kit.aead`) or a
+local function with a cost companion, applied as `(g b₁ … bₖ).m x₁ … xₙ`, is priced as the
+structure `g b₁ … bₖ` by the rules above, plus one, plus its cost companion
+`g_mCost b₁ … bₖ x₁ … xₙ` (`aead_encCost iv k m`), a further binder after the binders of `R`
+indexed by the arguments that compute the structure, plus the costs of the `xᵢ`.
+
 Calls of reductions without a costed form are derived on demand. A derivation fails, with
 the reason, on a function stored in data (a local function without a cost companion), a
-field of a structure that is not a field path (a field of a computed structure
-`(kit.aead k).enc`), an opaque data function without a registered cost, a recursive data
+field of a structure that is neither a field path nor a field of a computed structure as
+above, an opaque data function without a registered cost, a recursive data
 function whose cost `derive_cost` does not derive (a class method on a local instance in its
 body needs `derive_cost (unit := …)`), a `match` whose motive depends on its
 discriminants, a recursion over an oracle-tree argument, a recursive call that changes a
@@ -655,6 +661,23 @@ partial def fieldPrefixes (e : Expr) : MetaM (Array Expr) := do
     | _ => return acc
   go e #[]
 
+/-- The name of the cost companion of the field key `p`: `fCost` for a field `S.f ps s`, and
+`g_fCost` for a field of a computed structure `fun xs => S.f ps (g xs)`. -/
+def fieldCostName (p : Expr) : MetaM Name := do
+  let last (e : Expr) : MetaM (Option String) := do
+    match e.getAppFn with
+    | .const m _ => return some (m.updatePrefix .anonymous).toString
+    | .fvar id => return some (← id.getUserName).eraseMacroScopes.toString
+    | _ => return none
+  if p.isLambda then
+    return ← lambdaTelescope p fun _ b => do
+      let some fl ← last b | return `fieldCost
+      let some gl ← last b.appArg! | return Name.mkSimple (fl ++ "Cost")
+      return Name.mkSimple (gl ++ "_" ++ fl ++ "Cost")
+  match ← last p with
+  | some fl => return Name.mkSimple (fl ++ "Cost")
+  | none => return `fieldCost
+
 /-- Bind a cost companion for each applied field of `ps` and continue with the pairs of the
 field and its companion. -/
 def withFieldCosts {β : Type} (ps : Array Expr) (k : Array (Expr × Expr) → TermElabM β) :
@@ -664,9 +687,7 @@ where
   go (i : Nat) (acc : Array (Expr × Expr)) : TermElabM β := do
     if h : i < ps.size then
       let p := ps[i]
-      let n := match p.getAppFn with
-        | .const m _ => m.updatePrefix .anonymous |>.appendAfter "Cost"
-        | _ => `fieldCost
+      let n ← fieldCostName p
       withLocalDeclD n (← companionType (← inferType p)) fun cc =>
         go (i + 1) (acc.push (p, cc))
     else k acc
@@ -709,6 +730,37 @@ partial def isFieldPath (ctx : Ctx) (s : Expr) : MetaM Bool := do
     let some info ← getProjectionFnInfo? m | return false
     unless s'.getAppNumArgs == info.numParams + 1 do return false
     isFieldPath ctx s'.appArg!
+
+/-- The key of a field `S.f ps (g b₁ … bₘ) …` of a computed structure, applied to the arguments
+`args` of the projection `f` with `np` parameters: the structure is computed by a field path `g`
+of a binder (`kit.aead`) or a local function with a cost companion, applied to data `bᵢ`. The
+key is `fun x₁ … xₘ => S.f ps (g x₁ … xₘ)`, returned with `b₁ … bₘ`. -/
+def computedFieldKey? (ctx : Ctx) (f : Expr) (np : Nat) (args : Array Expr) :
+    MetaM (Option (Expr × Array Expr)) := do
+  let some s := args[np]? | return none
+  let s := s.consumeMData
+  let ps := args.extract 0 np
+  if ps.any (·.hasLooseBVars) then return none
+  let sargs := s.getAppArgs
+  let some (gp, bs) ← (match s.getAppFn with
+      | g@(.fvar id) => do
+        match ctx.locals.get? id with
+        | some { kind := .fn, companion? := some _, .. } => pure (some (g, sargs))
+        | _ => pure none
+      | g@(.const m _) => do
+        let some gi ← getProjectionFnInfo? m | pure none
+        if gi.fromClass then pure none
+        else if h : gi.numParams + 1 < sargs.size then
+          let gp := mkAppN g (sargs.extract 0 (gi.numParams + 1))
+          if !gp.hasLooseBVars && (← isFieldPath ctx sargs[gi.numParams]) then
+            pure (some (gp, sargs.extract (gi.numParams + 1) sargs.size))
+          else pure none
+        else pure none
+      | _ => pure none : MetaM (Option (Expr × Array Expr))) | return none
+  if bs.isEmpty then return none
+  forallBoundedTelescope (← whnfR (← inferType gp)) bs.size fun xs _ => do
+    unless xs.size == bs.size do return none
+    return some (← mkLambdaFVars xs (mkAppN f (ps.push (mkAppN gp xs))), bs)
 
 mutual
 
@@ -821,7 +873,7 @@ partial def costConst (ctx : Ctx) (e : Expr) (c : Name) (args : Array Expr) :
         if let some (_, cc) := ctx.fields.find? (·.1 == p) then
           fieldArgs := fieldArgs.push cc
         else if let some r := ctx.fieldRec? then
-          if !p.hasLooseBVars && (← isFieldPath ctx p.appArg!) then
+          if !p.hasLooseBVars && (p.isLambda || (← isFieldPath ctx p.appArg!)) then
             unless (← r.get).contains p do r.modify (·.push p)
           return add (natE 1) (← argsCost ctx args)
         else
@@ -863,6 +915,17 @@ partial def costConst (ctx : Ctx) (e : Expr) (c : Name) (args : Array Expr) :
         if !p.hasLooseBVars && (← isFieldPath ctx args[info.numParams]!) then
           unless (← r.get).contains p do r.modify (·.push p)
           return add (natE 1) (← argsCost ctx rest)
+      -- A field of a computed structure `g b₁ … bₘ`: the structure is priced by the rules
+      -- above, the field by a companion indexed by `b₁ … bₘ` and the arguments of the field.
+      if !info.fromClass then
+        if let some (key, bs) ← computedFieldKey? ctx f info.numParams args then
+          let s := args[info.numParams]!
+          if let some (_, cc) := ctx.fields.find? (·.1 == key) then
+            return add (natE 1) (add (mkAppN cc (bs ++ rest))
+              (add (← costOf ctx s) (← argsCost ctx rest)))
+          if let some r := ctx.fieldRec? then
+            unless (← r.get).contains key do r.modify (·.push key)
+            return add (natE 1) (add (← costOf ctx s) (← argsCost ctx rest))
     if info.fromClass then
       let inst := args[info.numParams]!
       if inst.consumeMData.isFVar then
