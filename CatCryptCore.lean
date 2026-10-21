@@ -74,6 +74,7 @@ public import CatCryptCore.XDijkstra.GradedDo
 public import CatCryptCore.XDijkstra.XCostMonad
 public import CatCryptCore.XDijkstra.XCostMonadModel
 public import CatCryptCore.XDijkstra.XTimedMonad
+public import CatCryptCore.Complexity.D.Cost
 public import CatCryptCore.XDijkstra.XErrMonad
 public import CatCryptCore.XDijkstra.XAdvantageHybrid
 public import CatCryptCore.XDijkstra.Rel.XRelMvcgenControl

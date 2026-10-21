@@ -1,0 +1,263 @@
+/-
+Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
+Released under MIT license as described in the file LICENSE.
+Authors: CatCrypt Contributors
+-/
+module
+
+public import CatCryptCore.Complexity.D.Tree
+
+/-!
+# Syntax of the deep language D
+
+D is a typed call-by-value λ-calculus with ground data, recursion schemes and the effects of
+`SPComp`. Its cost model is that of the weak call-by-value λ-calculus L of Forster and Kunze
+(Forster, Kunze, *A certifying extraction with time bounds from Coq to call-by-value
+λ-calculus*, ITP 2019; Forster, Kunze, Roth, *The weak call-by-value λ-calculus is reasonable
+for both time and space*, POPL 2020): time is the number of β-steps, extended here with
+primitive operations of unit cost on `ℕ`, `Bool` and fixed-width words (the word-RAM
+convention) and with effect nodes of unit cost (`SPTree.queryCost`). The evaluator and the
+cost semantics are in `CatCryptCore.Complexity.D.Semantics` and
+`CatCryptCore.Complexity.D.Cost`.
+
+## Terms
+
+Terms `Tm Γ τ` are intrinsically typed and scoped: `Γ : List Ty` is the context, a variable
+`Var Γ τ` is a de Bruijn index into it. The constructors are variables, `lam`, `app`, `letE`
+and `seq`; literals `natLit` and `lit` (ground values of type `FTy`); primitive operations
+`prim` (`Prim`); pairs with `fst`, `snd`; sums with `inl`, `inr` and `case`; `ite`; lists with
+`nil`, `cons` and the constructor match `lcase`; the recursion schemes `foldl` (over a list)
+and `iter` (over `ℕ`); the effects `sample`, `get`, `set` and `query`. An effect is an
+expression in call-by-value style (Moggi's λc): `letE (sample f) b` samples and continues with
+the D-term `b`, which is the continuation of the effect.
+
+## Recursion
+
+D has no general fixed point. Recursion is structural, through `foldl` and `iter`, so that
+every term denotes a total function and the evaluator is defined by structural recursion on
+the term without fuel. For the reflection of Lean definitions (G3b) this means that a
+definition by structural recursion on `List` or `ℕ` is reflected through `foldl`, `iter` or
+`lcase`; a definition by well-founded recursion is reflected only after a bound on its
+recursion depth is supplied, as an `iter` whose state carries a sum type for termination.
+
+## The `TExpr` fragment
+
+The constructs of hax-lean's typed IR `TExpr` map to D as follows (the structural embedding is
+row G3d):
+
+* `lit`: `natLit` or `lit` (`bool`, and `uintLit`/`sintLit`/`int` at the word width given by
+  the type annotation); `unitVal`: `lit .unit ()`;
+* `var name`: `var` at the de Bruijn index of `name`;
+* `letBind name val body`: `letE val body`; `seq e1 e2`: `seq e1 e2`;
+* `lam params body`: nested `lam` (over a tuple of the parameters when uncurried);
+* `app f args`: `app` of the function's variable (or `prim` for a registered operation) to the
+  tuple of the arguments;
+* `tuple elems`: nested `pair`; `proj e i`: a chain of `fst`/`snd`;
+* `ifThenElse c t e`: `ite`;
+* `match_ scrut arms` on `ImpPat`: `wildcard` and `varPat` by `letE`; `tuplePat` by
+  projections; `somePat`/`nonePat` and `okPat`/`errPat` by `case` on `sum unit a` and
+  `sum a e`; `litPat` by `ite` on an equality `prim`; `ctorPat` by `case` on the sum of the
+  constructors' products;
+* the functionalized loops `forFold`, `forFoldRev` (and their `Return` forms) by `foldl` over
+  the range or `iter` over its length; `whileFold` by `iter` with a bound on the number of
+  iterations; `cfBreak`, `cfContinue`, `earlyReturn` and `questionMark` by a `sum`-typed loop
+  state (`ControlFlow` and `Result` as sums);
+* `ann e` and `namedProj` by the translation of `e`; `borrow`, `deref`, `assign` and the
+  imperative loops do not occur after functionalization.
+
+## Main definitions
+
+* `Ty`, `Val`: the types and their values; a function value is a Lean function
+  `Val a → CTree (Val b)` into costed trees.
+* `Var`, `Env`: variables and environments.
+* `Prim`, `Prim.apply`: the primitive operations.
+* `Tm`: the terms; `Tm.compose`: precomposition of function terms.
+-/
+
+@[expose] public section
+
+set_option autoImplicit false
+
+namespace CatCrypt.Complexity.D
+
+/-! ## Types and values -/
+
+/-- The types of D. -/
+inductive Ty : Type where
+  /-- A finite ground type. -/
+  | base (f : FTy)
+  /-- The natural numbers. -/
+  | nat
+  /-- Products. -/
+  | prod (a b : Ty)
+  /-- Sums. -/
+  | sum (a b : Ty)
+  /-- Call-by-value functions, effectful. -/
+  | arr (a b : Ty)
+  /-- Lists. -/
+  | list (a : Ty)
+  deriving DecidableEq
+
+namespace Ty
+
+/-- The unit type. -/
+abbrev unit : Ty := base .unit
+/-- The booleans. -/
+abbrev bool : Ty := base .bool
+/-- Words of `w` bits. -/
+abbrev word (w : ℕ) : Ty := base (.word w)
+
+/-- First-order types: no function type occurs. -/
+def FO : Ty → Prop
+  | base _ => True
+  | nat => True
+  | prod a b => a.FO ∧ b.FO
+  | sum a b => a.FO ∧ b.FO
+  | arr _ _ => False
+  | list a => a.FO
+
+end Ty
+
+/-- The values of a type. A function value is a Lean function into costed trees; the
+evaluator produces such functions only from `lam`, so their costs are those of the bodies. -/
+def Val : Ty → Type
+  | .base f => f.den
+  | .nat => ℕ
+  | .prod a b => Val a × Val b
+  | .sum a b => Val a ⊕ Val b
+  | .arr a b => Val a → CTree (Val b)
+  | .list a => List (Val a)
+
+/-! ## Variables and environments -/
+
+/-- De Bruijn variables: `Var Γ τ` is a position of `τ` in `Γ`. -/
+inductive Var : List Ty → Ty → Type where
+  /-- The innermost variable. -/
+  | here {Γ : List Ty} {τ : Ty} : Var (τ :: Γ) τ
+  /-- A variable under one more binder. -/
+  | there {Γ : List Ty} {σ τ : Ty} : Var Γ τ → Var (σ :: Γ) τ
+
+theorem Var.mem {Γ : List Ty} {τ : Ty} : Var Γ τ → τ ∈ Γ
+  | .here => List.mem_cons_self
+  | .there x => List.mem_cons_of_mem _ x.mem
+
+/-- Environments: a value for every variable of the context. -/
+def Env (Γ : List Ty) : Type := (τ : Ty) → Var Γ τ → Val τ
+
+/-- The empty environment. -/
+def Env.nil : Env [] := fun _ x => nomatch x
+
+/-- Extend an environment by a value for the innermost variable. -/
+def Env.cons {Γ : List Ty} {τ : Ty} (v : Val τ) (ρ : Env Γ) : Env (τ :: Γ) :=
+  fun _ x => match x with
+    | .here => v
+    | .there y => ρ _ y
+
+/-! ## Primitive operations -/
+
+/-- The primitive operations, each of unit cost. Binary operations take a pair. -/
+inductive Prim : Ty → Ty → Type where
+  | natAdd : Prim (.prod .nat .nat) .nat
+  | natSub : Prim (.prod .nat .nat) .nat
+  | natMul : Prim (.prod .nat .nat) .nat
+  | natDiv : Prim (.prod .nat .nat) .nat
+  | natMod : Prim (.prod .nat .nat) .nat
+  | natEq : Prim (.prod .nat .nat) .bool
+  | natLt : Prim (.prod .nat .nat) .bool
+  | bnot : Prim .bool .bool
+  | band : Prim (.prod .bool .bool) .bool
+  | bor : Prim (.prod .bool .bool) .bool
+  | bxor : Prim (.prod .bool .bool) .bool
+  | wadd (w : ℕ) : Prim (.prod (.word w) (.word w)) (.word w)
+  | wsub (w : ℕ) : Prim (.prod (.word w) (.word w)) (.word w)
+  | wmul (w : ℕ) : Prim (.prod (.word w) (.word w)) (.word w)
+  | wand (w : ℕ) : Prim (.prod (.word w) (.word w)) (.word w)
+  | wor (w : ℕ) : Prim (.prod (.word w) (.word w)) (.word w)
+  | wxor (w : ℕ) : Prim (.prod (.word w) (.word w)) (.word w)
+  | wnot (w : ℕ) : Prim (.word w) (.word w)
+  | wshl (w : ℕ) : Prim (.prod (.word w) .nat) (.word w)
+  | wshr (w : ℕ) : Prim (.prod (.word w) .nat) (.word w)
+  | weq (w : ℕ) : Prim (.prod (.word w) (.word w)) .bool
+  | wult (w : ℕ) : Prim (.prod (.word w) (.word w)) .bool
+  | wofNat (w : ℕ) : Prim .nat (.word w)
+  | wtoNat (w : ℕ) : Prim (.word w) .nat
+  | wcast (w v : ℕ) : Prim (.word w) (.word v)
+
+/-- The function computed by a primitive operation. -/
+def Prim.apply {a b : Ty} : Prim a b → Val a → Val b
+  | .natAdd => fun (x : ℕ × ℕ) => x.1 + x.2
+  | .natSub => fun (x : ℕ × ℕ) => x.1 - x.2
+  | .natMul => fun (x : ℕ × ℕ) => x.1 * x.2
+  | .natDiv => fun (x : ℕ × ℕ) => x.1 / x.2
+  | .natMod => fun (x : ℕ × ℕ) => x.1 % x.2
+  | .natEq => fun (x : ℕ × ℕ) => (decide (x.1 = x.2) : Bool)
+  | .natLt => fun (x : ℕ × ℕ) => (decide (x.1 < x.2) : Bool)
+  | .bnot => fun (x : Bool) => !x
+  | .band => fun (x : Bool × Bool) => x.1 && x.2
+  | .bor => fun (x : Bool × Bool) => x.1 || x.2
+  | .bxor => fun (x : Bool × Bool) => x.1 ^^ x.2
+  | .wadd w => fun (x : BitVec w × BitVec w) => x.1 + x.2
+  | .wsub w => fun (x : BitVec w × BitVec w) => x.1 - x.2
+  | .wmul w => fun (x : BitVec w × BitVec w) => x.1 * x.2
+  | .wand w => fun (x : BitVec w × BitVec w) => x.1 &&& x.2
+  | .wor w => fun (x : BitVec w × BitVec w) => x.1 ||| x.2
+  | .wxor w => fun (x : BitVec w × BitVec w) => x.1 ^^^ x.2
+  | .wnot w => fun (x : BitVec w) => x.not
+  | .wshl w => fun (x : BitVec w × ℕ) => x.1 <<< x.2
+  | .wshr w => fun (x : BitVec w × ℕ) => x.1 >>> x.2
+  | .weq w => fun (x : BitVec w × BitVec w) => (decide (x.1 = x.2) : Bool)
+  | .wult w => fun (x : BitVec w × BitVec w) => BitVec.ult x.1 x.2
+  | .wofNat w => fun (x : ℕ) => BitVec.ofNat w x
+  | .wtoNat w => fun (x : BitVec w) => x.toNat
+  | .wcast w v => fun (x : BitVec w) => x.setWidth v
+
+theorem Prim.fo {a b : Ty} (p : Prim a b) : a.FO ∧ b.FO := by
+  cases p <;> simp [Ty.FO]
+
+/-! ## Terms -/
+
+/-- Intrinsically typed and scoped terms of D. -/
+inductive Tm : List Ty → Ty → Type where
+  | var {Γ : List Ty} {τ : Ty} : Var Γ τ → Tm Γ τ
+  | lam {Γ : List Ty} {a b : Ty} : Tm (a :: Γ) b → Tm Γ (.arr a b)
+  | app {Γ : List Ty} {a b : Ty} : Tm Γ (.arr a b) → Tm Γ a → Tm Γ b
+  | letE {Γ : List Ty} {a b : Ty} : Tm Γ a → Tm (a :: Γ) b → Tm Γ b
+  | seq {Γ : List Ty} {a b : Ty} : Tm Γ a → Tm Γ b → Tm Γ b
+  | natLit {Γ : List Ty} (n : ℕ) : Tm Γ .nat
+  | lit {Γ : List Ty} (f : FTy) (v : f.den) : Tm Γ (.base f)
+  | prim {Γ : List Ty} {a b : Ty} (p : Prim a b) : Tm Γ a → Tm Γ b
+  | pair {Γ : List Ty} {a b : Ty} : Tm Γ a → Tm Γ b → Tm Γ (.prod a b)
+  | fst {Γ : List Ty} {a b : Ty} : Tm Γ (.prod a b) → Tm Γ a
+  | snd {Γ : List Ty} {a b : Ty} : Tm Γ (.prod a b) → Tm Γ b
+  | inl {Γ : List Ty} {a b : Ty} : Tm Γ a → Tm Γ (.sum a b)
+  | inr {Γ : List Ty} {a b : Ty} : Tm Γ b → Tm Γ (.sum a b)
+  | case {Γ : List Ty} {a b c : Ty} :
+      Tm Γ (.sum a b) → Tm (a :: Γ) c → Tm (b :: Γ) c → Tm Γ c
+  | ite {Γ : List Ty} {c : Ty} : Tm Γ .bool → Tm Γ c → Tm Γ c → Tm Γ c
+  | nil {Γ : List Ty} {a : Ty} : Tm Γ (.list a)
+  | cons {Γ : List Ty} {a : Ty} : Tm Γ a → Tm Γ (.list a) → Tm Γ (.list a)
+  | lcase {Γ : List Ty} {a c : Ty} :
+      Tm Γ (.list a) → Tm Γ c → Tm (a :: .list a :: Γ) c → Tm Γ c
+  | foldl {Γ : List Ty} {a c : Ty} :
+      Tm Γ (.arr (.prod c a) c) → Tm Γ c → Tm Γ (.list a) → Tm Γ c
+  | iter {Γ : List Ty} {c : Ty} : Tm Γ .nat → Tm Γ (.arr c c) → Tm Γ c → Tm Γ c
+  | sample {Γ : List Ty} (f : FTy) : Tm Γ (.base f)
+  | get {Γ : List Ty} (n : ℕ) (f : FTy) : Tm Γ (.base f)
+  | set {Γ : List Ty} (n : ℕ) (f : FTy) : Tm Γ (.base f) → Tm Γ .unit
+  | query {Γ : List Ty} (d r : FTy) : Tm Γ (.base d) → Tm Γ (.base r)
+
+namespace Tm
+
+/-- The composition combinator `λg. λf. λx. g (f x)`. -/
+def composeT {Γ : List Ty} {a b c : Ty} :
+    Tm Γ (.arr (.arr b c) (.arr (.arr a b) (.arr a c))) :=
+  lam (lam (lam (app (var (.there (.there .here))) (app (var (.there .here)) (var .here)))))
+
+/-- Precomposition of the function term `g` by the function term `f`. -/
+def compose {Γ : List Ty} {a b c : Ty} (g : Tm Γ (.arr b c)) (f : Tm Γ (.arr a b)) :
+    Tm Γ (.arr a c) :=
+  app (app composeT g) f
+
+end Tm
+
+end CatCrypt.Complexity.D
