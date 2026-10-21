@@ -508,6 +508,7 @@ public import CatCryptCore.Examples.CTRMode
 public import CatCryptCore.Examples.CBCMode
 public import CatCryptCore.Examples.DiffieHellman
 public import CatCryptCore.Examples.CyclicGroupDDH
+public import CatCryptCore.Examples.CyclicGroupModule
 public import CatCryptCore.Examples.HashedElGamal
 public import CatCryptCore.Examples.ChaumPedersen
 public import CatCryptCore.Examples.UniversalHash
