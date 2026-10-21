@@ -37,6 +37,11 @@ at function types. `Tm.interp_rel` is the fundamental lemma: in related environm
 evaluator and the denotation give related trees. At first-order types `ValRel` is equality,
 so the evaluator with its ticks erased is the denotation (`Tm.eval_erase`), and both have the
 same meaning in `SPComp` (`Tm.run_eval`).
+
+## Renaming
+
+The interpreter commutes with renaming (`Tm.interp_rename`), and a weakened closed term
+evaluates as the closed term (`Tm.eval_weaken`).
 -/
 
 @[expose] public section
@@ -340,5 +345,37 @@ theorem run_eval {Γ : List Ty} {τ : Ty} (O : CTree.Oracle) (t : Tm Γ τ) (hτ
   rfl
 
 end Tm
+
+/-! ## Renaming -/
+
+section Rename
+
+variable (tk : ∀ {α : Type}, CTree α → CTree α)
+
+/-- The interpreter commutes with renaming. -/
+theorem Tm.interp_rename {Γ : List Ty} {τ : Ty} (t : Tm Γ τ) :
+    ∀ {Δ : List Ty} (r : Ren Γ Δ) (ρ : Env Δ),
+      (t.rename r).interp tk ρ = t.interp tk (ρ.comp r) := by
+  induction t
+  case lcase xs n c ihxs ihn ihc =>
+    intro Δ r ρ
+    simp only [Tm.rename, Tm.interp, ihxs, ihn, ihc]
+    congr 1
+    funext l
+    congr 2
+    funext x l'
+    exact congrArg _ (Env.comp_lift_lift (σ' := .list _) ρ r l' x)
+  all_goals (intro Δ r ρ; simp only [Tm.rename, Tm.interp, *, Env.comp_lift] <;> rfl)
+
+end Rename
+
+/-- A weakened closed term evaluates as the closed term. -/
+theorem Tm.eval_weaken {Γ : List Ty} {τ : Ty} (t : Tm [] τ) (ρ : Env Γ) :
+    (t.weaken : Tm Γ τ).eval ρ = t.eval Env.nil := by
+  unfold Tm.weaken Tm.eval
+  refine (Tm.interp_rename CTree.tick t _ ρ).trans ?_
+  congr 1
+  funext _ x
+  nomatch x
 
 end CatCrypt.Complexity.D

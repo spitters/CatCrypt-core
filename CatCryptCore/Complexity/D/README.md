@@ -116,8 +116,9 @@ not admissible at any constant time. `ucCdistTime` is the computational distance
 distinguishers admissible at time `t`, a pseudometric with the composition bounds that these
 laws give. In the query, size and shape classes a pure test is free, and step time on `SPComp`
 equals query cost; the time class charges the range test of a generator at about the number of
-seeds times the cost of the generator. The module also defines renaming and weakening of terms
-(`Tm.rename`, `Tm.weaken`, `Tm.interp_rename`). Its relation to the other classes is in
+seeds times the cost of the generator. Its coproduct realizer uses renaming and weakening of
+terms (`Tm.rename`, `Tm.weaken`, defined in `Syntax`; `Tm.interp_rename`, `Tm.eval_weaken`, in
+`Semantics`). Its relation to the other classes is in
 `CatCryptCore/Crypto/Complexity.md`, section "Time over the deep language D".
 
 ## Design

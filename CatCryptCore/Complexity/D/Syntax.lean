@@ -74,6 +74,8 @@ row G3d):
 * `Prim`, `Prim.apply`, `Prim.cost`: the primitive operations, their functions and their
   costs.
 * `Tm`: the terms; `Tm.compose`: precomposition of function terms.
+* `Ren`, `Ren.lift`, `Tm.rename`, `Tm.weaken`: renamings of variables, renaming of a term,
+  and a closed term in any context; `Env.comp`: an environment read through a renaming.
 -/
 
 @[expose] public section
@@ -297,5 +299,60 @@ def compose {Γ : List Ty} {a b c : Ty} (g : Tm Γ (.arr b c)) (f : Tm Γ (.arr 
   app (app composeT g) f
 
 end Tm
+
+/-! ## Renaming and weakening -/
+
+/-- Renamings from `Γ` to `Δ`: a variable of `Δ` for every variable of `Γ`. -/
+def Ren (Γ Δ : List Ty) : Type := (τ : Ty) → Var Γ τ → Var Δ τ
+
+/-- A renaming under one more binder. -/
+def Ren.lift {Γ Δ : List Ty} {σ : Ty} (r : Ren Γ Δ) : Ren (σ :: Γ) (σ :: Δ) :=
+  fun _ x => match x with
+    | .here => .here
+    | .there y => .there (r _ y)
+
+/-- Renaming of the variables of a term. -/
+def Tm.rename {Γ Δ : List Ty} {τ : Ty} : Tm Γ τ → Ren Γ Δ → Tm Δ τ
+  | .var x, r => .var (r _ x)
+  | .lam b, r => .lam (b.rename r.lift)
+  | .app f x, r => .app (f.rename r) (x.rename r)
+  | .letE e b, r => .letE (e.rename r) (b.rename r.lift)
+  | .seq e b, r => .seq (e.rename r) (b.rename r)
+  | .natLit n, _ => .natLit n
+  | .lit f v, _ => .lit f v
+  | .prim p x, r => .prim p (x.rename r)
+  | .pair x y, r => .pair (x.rename r) (y.rename r)
+  | .fst p, r => .fst (p.rename r)
+  | .snd p, r => .snd (p.rename r)
+  | .inl x, r => .inl (x.rename r)
+  | .inr x, r => .inr (x.rename r)
+  | .case s l rt, r => .case (s.rename r) (l.rename r.lift) (rt.rename r.lift)
+  | .ite c t e, r => .ite (c.rename r) (t.rename r) (e.rename r)
+  | .nil, _ => .nil
+  | .cons x xs, r => .cons (x.rename r) (xs.rename r)
+  | .lcase xs n c, r => .lcase (xs.rename r) (n.rename r) (c.rename r.lift.lift)
+  | .foldl f i xs, r => .foldl (f.rename r) (i.rename r) (xs.rename r)
+  | .iter n f i, r => .iter (n.rename r) (f.rename r) (i.rename r)
+  | .sample f, _ => .sample f
+  | .get n f, _ => .get n f
+  | .set n f x, r => .set n f (x.rename r)
+  | .query d r' x, r => .query d r' (x.rename r)
+
+/-- A closed term in any context. -/
+def Tm.weaken {Γ : List Ty} {τ : Ty} (t : Tm [] τ) : Tm Γ τ :=
+  t.rename fun _ x => nomatch x
+
+/-- An environment read through a renaming. -/
+def Env.comp {Γ Δ : List Ty} (ρ : Env Δ) (r : Ren Γ Δ) : Env Γ := fun _ x => ρ _ (r _ x)
+
+theorem Env.comp_lift {Γ Δ : List Ty} {σ : Ty} (ρ : Env Δ) (r : Ren Γ Δ) (v : Val σ) :
+    (ρ.cons v).comp r.lift = (ρ.comp r).cons v := by
+  funext τ x
+  cases x <;> rfl
+
+theorem Env.comp_lift_lift {Γ Δ : List Ty} {σ σ' : Ty} (ρ : Env Δ) (r : Ren Γ Δ)
+    (u : Val σ') (v : Val σ) : ((ρ.cons u).cons v).comp r.lift.lift = ((ρ.comp r).cons u).cons v := by
+  funext τ x
+  rcases x with _ | (_ | _) <;> rfl
 
 end CatCrypt.Complexity.D

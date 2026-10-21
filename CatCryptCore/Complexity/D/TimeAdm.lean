@@ -93,7 +93,6 @@ range test.
 * `TimeRealizer`: a closed D-term realizing an arrow at time `n`.
 * `Tm.applyEval`: the application of a closed function term to an input.
 * `TimeAdm`: time-`n` admissibility of a Kleisli arrow on `SPComp`.
-* `Ren`, `Tm.rename`, `Tm.weaken`: renaming of variables, and a closed term in any context.
 * `Tm.sumMap`: the coproduct of two closed function terms.
 * `ucCdistTime`: the time-bounded computational distance.
 
@@ -102,8 +101,6 @@ range test.
 * `TimeRealizer.apply_cost_le`, `TimeRealizer.apply_run`, `TimeRealizer.run_den`: the
   application costs at most `n` and means `f`, through the evaluator and through the
   denotation `Tm.den`.
-* `Tm.interp_rename`, `Tm.eval_weaken`: the interpreter commutes with renaming; a weakened
-  closed term evaluates as the closed term.
 * The graded laws and the properties of `ucCdistTime` listed above.
 
 ## References
@@ -312,91 +309,6 @@ theorem timeAdm_precomp {O : CTree.Oracle} {p n : ℕ} {φ : Val a → Val b}
   exact e ▸ timeAdm_bind hφ hg
 
 end Compose
-
-/-! ## Renaming and weakening -/
-
-/-- Renamings from `Γ` to `Δ`: a variable of `Δ` for every variable of `Γ`. -/
-def Ren (Γ Δ : List Ty) : Type := (τ : Ty) → Var Γ τ → Var Δ τ
-
-/-- A renaming under one more binder. -/
-def Ren.lift {Γ Δ : List Ty} {σ : Ty} (r : Ren Γ Δ) : Ren (σ :: Γ) (σ :: Δ) :=
-  fun _ x => match x with
-    | .here => .here
-    | .there y => .there (r _ y)
-
-/-- Renaming of the variables of a term. -/
-def Tm.rename {Γ Δ : List Ty} {τ : Ty} : Tm Γ τ → Ren Γ Δ → Tm Δ τ
-  | .var x, r => .var (r _ x)
-  | .lam b, r => .lam (b.rename r.lift)
-  | .app f x, r => .app (f.rename r) (x.rename r)
-  | .letE e b, r => .letE (e.rename r) (b.rename r.lift)
-  | .seq e b, r => .seq (e.rename r) (b.rename r)
-  | .natLit n, _ => .natLit n
-  | .lit f v, _ => .lit f v
-  | .prim p x, r => .prim p (x.rename r)
-  | .pair x y, r => .pair (x.rename r) (y.rename r)
-  | .fst p, r => .fst (p.rename r)
-  | .snd p, r => .snd (p.rename r)
-  | .inl x, r => .inl (x.rename r)
-  | .inr x, r => .inr (x.rename r)
-  | .case s l rt, r => .case (s.rename r) (l.rename r.lift) (rt.rename r.lift)
-  | .ite c t e, r => .ite (c.rename r) (t.rename r) (e.rename r)
-  | .nil, _ => .nil
-  | .cons x xs, r => .cons (x.rename r) (xs.rename r)
-  | .lcase xs n c, r => .lcase (xs.rename r) (n.rename r) (c.rename r.lift.lift)
-  | .foldl f i xs, r => .foldl (f.rename r) (i.rename r) (xs.rename r)
-  | .iter n f i, r => .iter (n.rename r) (f.rename r) (i.rename r)
-  | .sample f, _ => .sample f
-  | .get n f, _ => .get n f
-  | .set n f x, r => .set n f (x.rename r)
-  | .query d r' x, r => .query d r' (x.rename r)
-
-/-- A closed term in any context. -/
-def Tm.weaken {Γ : List Ty} {τ : Ty} (t : Tm [] τ) : Tm Γ τ :=
-  t.rename fun _ x => nomatch x
-
-/-- An environment read through a renaming. -/
-def Env.comp {Γ Δ : List Ty} (ρ : Env Δ) (r : Ren Γ Δ) : Env Γ := fun _ x => ρ _ (r _ x)
-
-theorem Env.comp_lift {Γ Δ : List Ty} {σ : Ty} (ρ : Env Δ) (r : Ren Γ Δ) (v : Val σ) :
-    (ρ.cons v).comp r.lift = (ρ.comp r).cons v := by
-  funext τ x
-  cases x <;> rfl
-
-theorem Env.comp_lift_lift {Γ Δ : List Ty} {σ σ' : Ty} (ρ : Env Δ) (r : Ren Γ Δ)
-    (u : Val σ') (v : Val σ) : ((ρ.cons u).cons v).comp r.lift.lift = ((ρ.comp r).cons u).cons v := by
-  funext τ x
-  rcases x with _ | (_ | _) <;> rfl
-
-section Rename
-
-variable (tk : ∀ {α : Type}, CTree α → CTree α)
-
-/-- The interpreter commutes with renaming. -/
-theorem Tm.interp_rename {Γ : List Ty} {τ : Ty} (t : Tm Γ τ) :
-    ∀ {Δ : List Ty} (r : Ren Γ Δ) (ρ : Env Δ),
-      (t.rename r).interp tk ρ = t.interp tk (ρ.comp r) := by
-  induction t
-  case lcase xs n c ihxs ihn ihc =>
-    intro Δ r ρ
-    simp only [Tm.rename, Tm.interp, ihxs, ihn, ihc]
-    congr 1
-    funext l
-    congr 2
-    funext x l'
-    exact congrArg _ (Env.comp_lift_lift (σ' := .list _) ρ r l' x)
-  all_goals (intro Δ r ρ; simp only [Tm.rename, Tm.interp, *, Env.comp_lift] <;> rfl)
-
-end Rename
-
-/-- A weakened closed term evaluates as the closed term. -/
-theorem Tm.eval_weaken {Γ : List Ty} {τ : Ty} (t : Tm [] τ) (ρ : Env Γ) :
-    (t.weaken : Tm Γ τ).eval ρ = t.eval Env.nil := by
-  unfold Tm.weaken Tm.eval
-  refine (Tm.interp_rename CTree.tick t _ ρ).trans ?_
-  congr 1
-  funext _ x
-  nomatch x
 
 /-! ## Coproducts -/
 
