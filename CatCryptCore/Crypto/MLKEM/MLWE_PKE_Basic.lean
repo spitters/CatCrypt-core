@@ -143,6 +143,8 @@ noncomputable def dec (sk : SK P) (c : CT P) : SDistr (Option P.PT) := do
 
     EasyCrypt: `PKE.CPA(MLWE_PKE_BASIC, A).main()`.
     The adversary `choose` picks two messages, `guess` distinguishes. -/
+@[deprecated "use MLWE_PKE_Stateful.CPA_Game_st, the two-stage game with state \
+  (MLWE_PKE_Stateful.CPA_Game_eq_CPA_Game_st)" (since := "2026-10-21")]
 noncomputable def CPA_Game
     (choose : PK P → SDistr (P.PT × P.PT))
     (guess : CT P → SDistr Bool) (b : Bool) : SDistr Bool := do
@@ -151,9 +153,12 @@ noncomputable def CPA_Game
   let c ← enc P pk (if b then m1 else m0)
   guess c
 
+set_option linter.deprecated false in
 /-- IND-CPA advantage against an adversary whose guess stage receives neither
     the public key nor a state. Superseded by `MLWE_PKE_Stateful.CPA_Adv_st`
     (`MLWE_PKE_Stateful.CPA_Adv_eq_CPA_Adv_st`). -/
+@[deprecated "use MLWE_PKE_Stateful.CPA_Adv_st, the advantage in the two-stage game with \
+  state (MLWE_PKE_Stateful.CPA_Adv_eq_CPA_Adv_st)" (since := "2026-10-21")]
 noncomputable def CPA_Adv
     (choose : PK P → SDistr (P.PT × P.PT))
     (guess : CT P → SDistr Bool) : ℝ≥0∞ :=
@@ -292,6 +297,7 @@ lemma absDiff_chain₄ (a b c d e : ℝ≥0∞) :
 
 /-! ## Game-Hopping Lemmas -/
 
+set_option linter.deprecated false in
 /-- Hop 1, left: CPA game with bit `b` = MLWE(B1 b) with real samples.
 
     Both sides unfold to: `do A ← duni_mat; s ← dshort; e ← dshort;
@@ -391,6 +397,7 @@ theorem basic2_independent (choose : PK P → SDistr (P.PT × P.PT))
     CPA_BASIC2 P choose guess b = CPA_BASIC2 P choose guess false := by
   simp only [CPA_BASIC2]
 
+set_option linter.deprecated false in
 /-- Main theorem: CPA advantage bounded by two MLWE + two extended MLWE advantages.
 
     The proof chains four game hops via the triangle inequality:
@@ -409,6 +416,8 @@ theorem basic2_independent (choose : PK P → SDistr (P.PT × P.PT))
     two-stage adversary with state.
 
     EasyCrypt: `main_theorem`. -/
+@[deprecated "use MLWE_PKE_Stateful.main_theorem_st, the bound for a two-stage adversary \
+  with state; MLWE_PKE_Stateful.main_theorem_of_st restates this bound" (since := "2026-10-21")]
 theorem main_theorem (choose : PK P → SDistr (P.PT × P.PT))
     (guess : CT P → SDistr Bool) :
     CPA_Adv P choose guess ≤
