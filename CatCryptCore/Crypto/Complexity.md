@@ -82,6 +82,39 @@ to the cost classes above.
   charged, whatever the cost of computing the function; a time class that charges it carries the
   step cost of the function in the index of `TimedM`, as `SPTree.Timed.map f fc` does.
 
+## Time over the deep language D
+
+[`Complexity/D/TimeAdm`](../Complexity/D/TimeAdm.lean) defines a time class in which the pure
+computation of an arrow is charged. Time is the step count of the deep call-by-value language D
+([`Complexity/D`](../Complexity/D/README.md)), whose cost model is that of the weak call-by-value
+λ-calculus L of Forster and Kunze (ITP 2019; with Roth, POPL 2020).
+
+- `TimeAdm O n f` holds when a closed D-term `t : Tm [] (a ⇒ b)`, `a` and `b` first-order,
+  evaluates without effects to a closure whose application to every input costs at most `n`
+  steps and means `f` in `SPComp` (`TimeRealizer`; `TimeRealizer.run_den` relates it to the
+  denotation `Tm.den`). The realizer is a closed term: a function value of D is a Lean
+  function, and quantifying over values would admit functions of cost zero. The bound is a
+  constant, the convention of concrete security, so that the laws compose without bounds on
+  output sizes.
+- The laws of `UCAdmClass` hold in graded form: `pure` at time `1` (`timeAdm_pure`), bind at
+  the sum of the times plus `3` (`timeAdm_bind`, through `Tm.compose`), the coproduct at the
+  maximum plus `2` (`timeAdm_mapSum`), and precomposition by a function that a closed D-term
+  computes at time `p` at `p + n + 3` (`timeAdm_precomp`). Precomposition by an arbitrary Lean
+  function is not admissible at any constant time; the module docstring gives the argument
+  for the parity of the bit length on `ℕ`. The class is therefore a graded family of
+  predicates and not a `UCAdmClass` instance.
+- `ucCdistTime O t` is `ucCdist` over the distinguishers admissible at time `t`: a pseudometric
+  bounded by `sdist` and monotone in `t`; pre-composition does not increase it, and
+  post-composition with an arrow admissible at time `s` and the coproduct move the time to
+  `s + t + 3` and `t + 4` (`ucCdistTime_comp_right`, `ucCdistTime_mapSum_le`).
+- The query, size and shape classes admit every pure test `pure ∘ p`, and the step-time cost
+  of `XTimedMonad` equals query cost (`spTreeTimeCost_eq_spTreeQueryCost`), since the pure
+  computation of a tree carries no cost of its own. In the D class the range test of a
+  generator `G : S → Y` is charged: a term computing it from `G` enumerates the seeds at time
+  about `|S| · cost(G)`, so below that time it is admissible only through a cheaper inverse of
+  `G`. This is the separation that item 3 lacks for the other classes; the module docstring
+  states it as an argument, not as a formal lower bound.
+
 ## Relation to the literature
 
 - Security definitions parametrised by an admissibility predicate with an additive cost model

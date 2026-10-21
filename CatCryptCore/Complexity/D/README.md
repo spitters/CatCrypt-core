@@ -58,6 +58,7 @@ time measures of Forster, Kunze and Roth, is not proved here.
 | `Semantics` | the interpreter `Tm.interp`, the evaluator `Tm.eval` (a tick at every step), the denotation `Tm.den` / `Tm.denote`, the logical relation `ValRel` and the adequacy theorems |
 | `Cost` | `Tm.cost` and its compositionality lemmas |
 | `Examples` | a list sum by `foldl`, a function applied twice, a sampler |
+| `TimeAdm` | time admissibility of `SPComp` arrows by closed D-terms, its graded laws, the time-bounded distance `ucCdistTime` |
 
 ## What is proved
 
@@ -80,6 +81,23 @@ time measures of Forster, Kunze and Roth, is not proved here.
   application (`foldT_cost_le`, `iterT_cost_le`).
 * Precomposition of function terms adds the costs (`Tm.cost_compose_le`,
   `Tm.allRet_compose`, `Tm.cost_app_compose_le`).
+
+## Time admissibility
+
+The module `TimeAdm` charges the time of a distinguisher in the cost model of Forster and
+Kunze cited above. A Kleisli arrow `f : Val a → SPComp (Val b)` on first-order types is
+admissible at time `n` (`TimeAdm`) when a closed D-term evaluates to a closure whose
+application to every input costs at most `n` steps and means `f`. The laws of `UCAdmClass`
+hold in graded form: `pure` at time 1, bind at the sum of the times plus 3, the coproduct at
+the maximum of the times plus 2, and precomposition only by a function that a closed D-term
+computes, at the sum of the two times plus 3; precomposition by an arbitrary Lean function is
+not admissible at any constant time. `ucCdistTime` is the computational distance over the
+distinguishers admissible at time `t`, a pseudometric with the composition bounds that these
+laws give. In the query, size and shape classes a pure test is free, and step time on `SPComp`
+equals query cost; the time class charges the range test of a generator at about the number of
+seeds times the cost of the generator. The module also defines renaming and weakening of terms
+(`Tm.rename`, `Tm.weaken`, `Tm.interp_rename`). Its relation to the other classes is in
+`CatCryptCore/Crypto/Complexity.md`, section "Time over the deep language D".
 
 ## Design
 
