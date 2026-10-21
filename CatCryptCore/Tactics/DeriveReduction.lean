@@ -31,8 +31,11 @@ with `do`-notation or the constructors `SPComp.pure`, `SPComp.bind`, `SPComp.sam
 
 ## Unfolding
 
-The body of `B` is the value of its declaration, eta-expanded to all binders of its type.
-A subterm of type `SPComp α` is brought to a head by `whnfR` (which also substitutes `let`s);
+The body of `B` is the value of its declaration, eta-expanded to all binders of its type,
+which is reduced through type definitions (a reduction of declared type `DDH_Adversary W`
+takes the three binders of `W → W → W → SPComp Bool`). A `let` of first-order data stays a
+`let` of the tree, so that `derive_timed` prices its value once; any other `let` is
+substituted. A subterm of type `SPComp α` is brought to a head by `whnfR` without `zeta`;
 a monad operation of the `Monad SPComp` instance (`>>=`, `pure`, `<$>`, `*>`, `<*`, `<*>`) is
 projected through the instance at `.instances` transparency; any other definition, including
 a top-level `def` written in `do`-notation and a sub-reduction called by `B`, is
@@ -210,9 +213,10 @@ def spCompArg? (t : Expr) : MetaM (Option Expr) := do
   if t.isAppOfArity ``CatCrypt.Core.SPComp 1 then return some t.appArg! else return none
 
 /-- Bring the computation `e` to a head: a constructor of `SPComp`, `ite`, `dite`, a matcher,
-`SPTree.compile` or a local, or a stuck term. -/
+`SPTree.compile`, a local or a `let`, or a stuck term. -/
 partial def normalize (e : Expr) : MetaM Expr := do
-  let e ← whnfR (← instantiateMVars e)
+  let e ← withConfig (fun c => { c with zeta := false }) <| whnfR (← instantiateMVars e)
+  if e.isLet then return e
   match e.getAppFn with
   | .const c _ =>
     if normalizeStops.contains c then return e
@@ -225,6 +229,11 @@ partial def normalize (e : Expr) : MetaM Expr := do
     | some e' => normalize e'.headBeta
     | none => return e
   | _ => return e
+
+/-- `normalize`, with each `let` at the head substituted into its body. -/
+partial def normalizeZeta (e : Expr) : MetaM Expr := do
+  let e ← normalize e
+  if let .letE _ _ v b _ := e then normalizeZeta (b.instantiate1 v) else return e
 
 /-- An adversary: the original binder, the tree-valued binder replacing it, and its arity. -/
 structure Adv where
@@ -441,6 +450,15 @@ partial def reify (ctx : RCtx) (e : Expr) : TermElabM Expr := do
   let some α ← spCompArg? (← inferType e)
     | fail m!"`{e}` is not a computation `SPComp α`"
   let e ← normalize e
+  if let .letE n t v b _ := e then
+    if ← CatCrypt.Tactics.DeriveTimed.keepsLet t v then
+      -- The first pass records the primitives of the value at the `let`, where a substituted
+      -- value would have recorded them at its first use.
+      if ctx.found?.isSome then discard <| abstractData ctx v
+      return ← withLocalDeclD n t fun x => do
+        let body ← instantiateMVars (← reify ctx (b.instantiate1 x))
+        return .letE n t v (body.abstract #[x]) false
+    return ← reify ctx (b.instantiate1 v)
   let args := e.getAppArgs
   match e.getAppFn with
   | .fvar id =>
@@ -576,7 +594,7 @@ maps the binder of each computation primitive to its hypothesis. -/
 partial def prove (hs : Array (Expr × Expr)) (g : MVarId) : TermElabM Unit := g.withContext do
   let (α, t, r) ← goalSides g
   let t ← treeHead t
-  let r ← normalize r.headBeta
+  let r ← normalizeZeta r.headBeta
   let g ← g.replaceTargetDefEq (← mkEq (mkCompile α t) r)
   let targs := t.getAppArgs
   let rargs := r.getAppArgs
@@ -696,7 +714,7 @@ partial def deriveReduction (c : Name) (advNames : Array Name) (unfold : Bool :=
   let levels := info.levelParams.map mkLevelParam
   -- Eta-expand to all binders of the type.
   let value ← lambdaTelescope d.value fun xs b => do
-    forallTelescope (← instantiateForall d.type xs) fun ys _ =>
+    CatCrypt.Tactics.DeriveTimed.withTypeBinders (← instantiateForall d.type xs) fun ys _ =>
       mkLambdaFVars (xs ++ ys) (mkAppN b ys).headBeta
   let (tType, tValue, eType, eValue) ← lambdaTelescope value fun xs b => do
     let some α ← spCompArg? (← inferType b)

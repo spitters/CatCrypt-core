@@ -6,6 +6,7 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Tactics.DeriveTimed
+public import CatCryptCore.Tactics.StdCosts
 import CatCryptCore.Core.SPTree
 
 /-!
@@ -21,8 +22,11 @@ recursion by `ms.length * (a + s + 7) + t + 2`, the shape `ms.length * (1 + c)` 
 hand-instrumented bound. The computation-tree tests derive costed forms of `SPTree`-valued
 definitions over the `sample`, `get` and `set` nodes, `SPTree.map` and `SPTree.bind`, a
 recursion over `ℕ`, and a tree argument with a continuation, whose derived time is bounded by
-`runThen.stepTime_timed_le`. The last test pins the refusal of a recursive data function without a
-registered cost.
+`runThen.stepTime_timed_le`. Further tests pin a point-free reduction whose binders come from
+a named function type, a `let` and a discarded argument priced once, a recursive data callee
+whose cost is derived on demand, a nested field reached through a helper, and a sum over
+`Fin n`. The last tests pin the refusals of a recursive callee whose cost needs a class method
+on a local instance priced and of an opaque constant.
 -/
 
 @[expose] public section
@@ -237,19 +241,129 @@ theorem runThen.stepTime_timed_le {α β : Type} (A : SPTree.Timed α) (k : α �
   simp only [SPTree.Timed.stepTime]
   omega
 
-/-! ## A refusal -/
+/-! ## A point-free reduction of a named function type -/
 
-/-- `lazyAnswer` over the library function `List.lookup`, which has no registered cost. -/
-def lazyAnswerList {K : Type} (tbl : List (ℕ × K)) (q : ℕ) : OracleAdv ℕ K (K × List (ℕ × K)) :=
-  match tbl.lookup q with
-  | some k => .ret (k, tbl)
-  | none => .query q fun k => .ret (k, (q, k) :: tbl)
+/-- An adversary type under a name. -/
+abbrev Adv2 (D R : Type) := ℕ → ℕ → OracleAdv D R Bool
+
+/-- One query at `c (i + j)`. -/
+def pfBase {D R : Type} (c : ℕ → D) : Adv2 D R := fun i j => .query (c (i + j)) fun _ => .ret true
+
+/-- `pfBase`, point-free: its binders `i j` come from the type `Adv2 D R`. -/
+def pfRed {D R : Type} (c : ℕ → D) : Adv2 D R := pfBase c
+
+derive_timed pfRed
+
+example {D R : Type} (c : ℕ → D) (cCost : ℕ → ℕ) (i j : ℕ) :
+    (pfRed.timed (R := R) c cCost i j).2.erase = pfRed c i j :=
+  pfRed.erase_timed c cCost i j
+
+/-! ## Sharing: a `let` and an argument are priced once -/
+
+/-- `f x` bound once and used three times. -/
+def letRed {D R : Type} (f : ℕ → ℕ) (c : ℕ → D) (x : ℕ) : OracleAdv D R ℕ :=
+  let y := f x
+  .query (c (y + y)) fun _ => .ret y
+
+derive_timed letRed
+
+example {D R : Type} (f : ℕ → ℕ) (fCost : ℕ → ℕ) (c : ℕ → D) (cCost : ℕ → ℕ) (x : ℕ) :
+    (letRed.timed (R := R) f fCost c cCost x).1 = 1 + fCost x + (1 + (cCost (f x + f x) + 1)) :=
+  rfl
+
+/-- The first argument; the second is discarded. -/
+def discard (a _b : ℕ) : ℕ := a
+
+/-- A call whose discarded argument `f x` is still evaluated. -/
+def discRed {D R : Type} (f : ℕ → ℕ) (x : ℕ) : OracleAdv D R ℕ := .ret (discard x (f x))
+
+derive_timed discRed
+
+example {D R : Type} (f : ℕ → ℕ) (fCost : ℕ → ℕ) (x : ℕ) :
+    (discRed.timed (D := D) (R := R) f fCost x).1 = 2 + fCost x :=
+  rfl
+
+/-! ## A recursive data callee without a registered cost -/
+
+/-- A recursion over `ℕ`. -/
+def countDown : ℕ → ℕ
+  | 0 => 0
+  | n + 1 => countDown n
+
+/-- A call of `countDown`, whose cost `countDown.timedCost` is derived on demand. -/
+def recRed {D R : Type} (n : ℕ) : OracleAdv D R ℕ := .ret (countDown n)
+
+derive_timed recRed
+
+example {D R : Type} (n : ℕ) :
+    (recRed.timed (D := D) (R := R) n).1 = 1 + countDown.timedCost n :=
+  rfl
+
+/-! ## Field paths -/
+
+/-- A structure with one primitive. -/
+structure Inner where
+  f : ℕ → ℕ
+
+/-- A kit holding an `Inner`. -/
+structure Kit where
+  inner : Inner
+
+/-- The nested field `k.inner.f`, reached through a helper. -/
+def useKit (k : Kit) (x : ℕ) : ℕ := k.inner.f x
+
+/-- A call of the helper. -/
+def kitRed {D R : Type} (k : Kit) (x : ℕ) : OracleAdv D R ℕ := .ret (useKit k x)
+
+derive_timed kitRed
+
+example {D R : Type} (k : Kit) (x : ℕ) (fCost : ℕ → ℕ) :
+    (kitRed.timed (D := D) (R := R) k x fCost).2.erase = kitRed k x :=
+  kitRed.erase_timed k x fCost
+
+/-! ## A sum over `Fin n` -/
+
+/-- `∑ i : Fin n, f i` as the answer. -/
+def sumRed {D R : Type} (n : ℕ) (f : Fin n → ℕ) : OracleAdv D R ℕ :=
+  .ret (∑ i : Fin n, f i)
+
+derive_timed sumRed
+
+example {D R : Type} (n : ℕ) (f : Fin n → ℕ) (fCost : Fin n → ℕ) :
+    (sumRed.timed (D := D) (R := R) n f fCost).2.erase = sumRed n f :=
+  sumRed.erase_timed n f fCost
+
+/-! ## Refusals -/
+
+/-- Membership by `BEq.beq` on a local instance. -/
+def memB {α : Type} [BEq α] (a : α) : List α → Bool
+  | [] => false
+  | b :: l => a == b || memB a l
+
+/-- A call of `memB`, whose cost needs `BEq.beq` priced. -/
+def memRed {D R α : Type} [BEq α] (a : α) (l : List α) : OracleAdv D R Bool := .ret (memB a l)
 
 /--
-error: derive_timed: needs a registered primitive: `List.lookup` is recursive and has no
-registered cost `List.lookup.timedCost`
+error: derive_timed: needs a registered primitive: `CatCrypt.Tactics.DeriveTimedTest.memB` is
+recursive and has no registered cost `CatCrypt.Tactics.DeriveTimedTest.memB.timedCost`, and
+`derive_cost CatCrypt.Tactics.DeriveTimedTest.memB` fails:
+  derive_timed: needs a registered primitive: the class method `BEq.beq` on the local instance
+  `inst✝` has no registered cost `BEq.beq.timedCost`
 -/
 #guard_msgs (whitespace := lax) in
-derive_timed lazyAnswerList
+derive_timed memRed
+
+/-- An opaque constant. -/
+opaque opq : ℕ → ℕ
+
+/-- A call of the opaque constant. -/
+def opqRed {D R : Type} (n : ℕ) : OracleAdv D R ℕ := .ret (opq n)
+
+/--
+error: derive_timed: needs a registered primitive: `CatCrypt.Tactics.DeriveTimedTest.opq` has
+no definition to price and no registered cost `CatCrypt.Tactics.DeriveTimedTest.opq.timedCost`
+-/
+#guard_msgs (whitespace := lax) in
+derive_timed opqRed
 
 end CatCrypt.Tactics.DeriveTimedTest

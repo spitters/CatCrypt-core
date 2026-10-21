@@ -101,7 +101,11 @@ adversary or primitive, is followed by a cost companion `fCost`, the cost of eva
 its arguments. The step costs are derived from the reduction's code by the rules of
 call-by-value evaluation: a call costs one plus the callee's cost at its arguments; `if` and
 `match` cost one plus the branch taken; constructors, literals, projections and variables are
-free; `rand`, `query`, `sample`, `get` and `set` nodes cost one unit, as in `SPTree.queryCost`.
+free; a `let` of the reduction's body is priced once, and so is an argument of a definition the
+tool unfolds, whether the bound variable is used once, several times or not at all; `rand`,
+`query`, `sample`, `get` and `set` nodes cost one unit, as in `SPTree.queryCost`. A value computed
+inside a helper whose cost is registered or derived separately is priced at each call of the
+helper.
 These are the rules of Isabelle's `time_fun` [HOL] and of [Hop26]. A primitive without a body
 to price takes the cost registered for it with `timed_cost f := e`.
 
