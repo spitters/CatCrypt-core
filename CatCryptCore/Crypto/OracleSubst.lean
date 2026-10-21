@@ -28,6 +28,9 @@ dropped from the output.
 * `OracleAdv.subst_bind` — substitution commutes with sequencing
 * `OracleAdv.isQueryBound_subst` — `q` queries, each replaced by a program of at most `c`
   queries, give at most `q * c` queries
+* `OracleAdv.isQueryBound_subst_of_isQueryBoundBy`, `OracleAdv.isQueryBoundBy_subst` — a
+  cost bound `n` of `A`, each query `d` replaced by a program with at most `cost d` queries
+  (of target cost at most `cost d`), gives at most `n` queries (target cost at most `n`)
 -/
 
 @[expose] public section
@@ -94,6 +97,34 @@ theorem isQueryBound_subst {impl : D → OracleAdv D' R' R} {c : ℕ}
     | succ q =>
       rw [subst_query, Nat.succ_mul, Nat.add_comm]
       exact isQueryBound_bind (himpl d) fun r => ih r (hA r)
+
+/-- An adversary of cost at most `n`, each query `d` replaced by a program with at most
+`cost d` queries, gives an adversary with at most `n` queries. -/
+theorem isQueryBound_subst_of_isQueryBoundBy {impl : D → OracleAdv D' R' R} (cost : D → ℕ)
+    (himpl : ∀ d, (impl d).IsQueryBound (cost d)) {A : OracleAdv D R α} {n : ℕ}
+    (hA : A.IsQueryBoundBy cost n) : (subst impl A).IsQueryBound n := by
+  induction A generalizing n with
+  | ret a => trivial
+  | rand p k ih => exact fun b => ih b (hA b)
+  | query d k ih =>
+    obtain ⟨hle, hk⟩ := hA
+    rw [subst_query]
+    have h := isQueryBound_bind (himpl d) fun r => ih r (hk r)
+    rwa [Nat.add_sub_cancel' hle] at h
+
+/-- An adversary of cost at most `n`, each query `d` replaced by a program of target cost
+at most `cost d`, gives an adversary of target cost at most `n`. -/
+theorem isQueryBoundBy_subst {impl : D → OracleAdv D' R' R} (cost : D → ℕ) (cost' : D' → ℕ)
+    (himpl : ∀ d, (impl d).IsQueryBoundBy cost' (cost d)) {A : OracleAdv D R α} {n : ℕ}
+    (hA : A.IsQueryBoundBy cost n) : (subst impl A).IsQueryBoundBy cost' n := by
+  induction A generalizing n with
+  | ret a => trivial
+  | rand p k ih => exact fun b => ih b (hA b)
+  | query d k ih =>
+    obtain ⟨hle, hk⟩ := hA
+    rw [subst_query]
+    have h := isQueryBoundBy_bind (himpl d) fun r => ih r (hk r)
+    rwa [Nat.add_sub_cancel' hle] at h
 
 end OracleAdv
 
