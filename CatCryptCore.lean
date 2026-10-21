@@ -395,6 +395,7 @@ public import CatCryptCore.Crypto.MLKEM.CollisionSpreadIdeal
 public import CatCryptCore.Examples.GroupParam
 public import CatCryptCore.Crypto.Commitment.PedersenUC
 public import CatCryptCore.Crypto.ZK.SigmaUCZK
+public import CatCryptCore.Crypto.ZK.LinearSigmaUC
 public import CatCryptCore.Crypto.OT.DualModeOT
 
 -- Transparent functionalities, hybrid composition, the clock and the network

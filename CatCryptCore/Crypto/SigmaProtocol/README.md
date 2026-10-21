@@ -1,7 +1,7 @@
 # SigmaProtocol: Σ-protocols, Fiat-Shamir and the CFRG drafts
 
 `CatCryptCore/Crypto/SigmaProtocol/` holds the bridge from the hax extraction of the crate
-`sigma-proofs-hax` to the Σ-protocol and Fiat-Shamir theorems of
+[`sigma-proofs-hax`](https://github.com/spitters/sigma-proofs-hax) to the Σ-protocol and Fiat-Shamir theorems of
 [FiatShamirROM](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/Crypto/FiatShamirROM/README.md).
 
 ## Σ-protocols for linear relations and the CFRG drafts
@@ -34,7 +34,7 @@ extraction, aborts) and its quantum random-oracle variants are proved in the
 
 ### The extracted implementation
 
-The crate `sigma-proofs-hax` is a fork of `sigma-proofs` 0.4.1 rewritten in the subset of Rust
+The crate [`sigma-proofs-hax`](https://github.com/spitters/sigma-proofs-hax) is a fork of `sigma-proofs` 0.4.1 rewritten in the subset of Rust
 that hax extracts (nonces as inputs, index loops, functions returning updated values, group
 operations through one trait), with the instance representation and validation of draft-03 §3;
 its hax extraction is [`SigmaProofs_haxpipe`](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/Crypto/SigmaProtocol/Extraction/SigmaProofs_haxpipe.lean).
@@ -57,11 +57,11 @@ its hax extraction is [`SigmaProofs_haxpipe`](https://github.com/spitters/CatCry
   combining scalar ([`batch_accept_prob_le`](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/Crypto/SigmaProtocol/SigmaProofsBatchAnd.lean)). The extracted AND of two
   instances is `linearSigma` of the concatenated relation
   ([`extAndSigma_eq`](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/Crypto/SigmaProtocol/SigmaProofsBatchAnd.lean)), so it is complete, special sound and HVZK.
-- A [differential test](https://github.com/spitters/CatCrypt/blob/master/sigma-proofs-hax/tests/differential.rs) compares the fork with the
+- A [differential test](https://github.com/spitters/sigma-proofs-hax/blob/main/tests/differential.rs) compares the fork with the
   unmodified crate: identical encodings, commitments, responses, simulated transcripts and proof
   strings, and the same accept/reject result on correctly generated, tampered and truncated
   proofs and on proofs with appended bytes.
-- The [test vectors of draft-03 Appendix A](https://github.com/spitters/CatCrypt/blob/master/sigma-proofs-hax/tests/draft_vectors.rs) (P-256
+- The [test vectors of draft-03 Appendix A](https://github.com/spitters/sigma-proofs-hax/blob/main/tests/draft_vectors.rs) (P-256
   and BLS12-381, both proof formats, valid and adversarial) run through the extracted core.
 - Each linear combination is one call of the group trait's multi-scalar multiplication, `msm`
   (constant time in the scalars, for the prover) or `msm_vartime` (for public scalars: verifier,
@@ -69,18 +69,12 @@ its hax extraction is [`SigmaProofs_haxpipe`](https://github.com/spitters/CatCry
   The extraction interprets both as the product of the bases raised to the scalars, and the
   theorems above are stated about the extracted code that makes these calls.
 - Fixed-shape Schnorr and DLEQ functions over 64-bit limb arrays and status words
-  ([`fixed.rs`](https://github.com/spitters/CatCrypt/blob/master/sigma-proofs-hax/src/fixed.rs)) are written in the domain of the CatCrypt
+  ([`fixed.rs`](https://github.com/spitters/sigma-proofs-hax/blob/main/src/fixed.rs)) are written in the domain of the CatCrypt
   compiler's front. Their Σ-protocols are `linearSigma` on the discrete-logarithm and DLEQ
   relations ([`fixedSchnorrSigma_eq`](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/Crypto/SigmaProtocol/FixedShape.lean),
   [`fixedDleqSigma_eq`](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/Crypto/SigmaProtocol/FixedShape.lean)), so the security theorems above hold for
   them; on the instance the generic core builds for the same equations, the generic verifier and
   the fixed one agree ([`extSigma_verify_eq_fixedSchnorr`](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/Crypto/SigmaProtocol/FixedShape.lean)).
-- The statements that Signal's zkgroup and usernames prove with libsignal's `poksho` are linear
-  relations over ristretto255
-  ([`PokshoStatement.toRelation_holds_witness_iff`](https://github.com/spitters/CatCrypt/blob/master/CatCrypt/Crypto/Signal/Zkgroup/PokshoStatements.lean)), with
-  the security theorems of `linearSigma`; a
-  [test](https://github.com/spitters/CatCrypt/blob/master/sigma-proofs-hax/tests/poksho_statements.rs) runs the six statements through
-  poksho and the fork on the same values.
 
 The Rust code these theorems are about is the code that runs: the fork compiles with rustc,
 with curve25519-dalek supplying the ristretto255 arithmetic behind the group trait, and produces
@@ -96,14 +90,8 @@ composition. CatCrypt also proves:
 
 - OR composition (Cramer–Damgård–Schoenmakers) over any finite challenge group, which the drafts
   leave out ([`sigmaOR_shvzk_given`](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/Examples/SigmaCompositions.lean)).
-- Fiat–Shamir with aborts for lattice signatures: ML-DSA-65 as a Σ-protocol with statistical
-  HVZK and a concrete random-oracle EUF-CMA bound
-  ([`mldsa65_rom_eufcma_security_pow2`](https://github.com/spitters/CatCrypt/blob/master/CatCrypt/Crypto/MLDSA/Spec/CommitEntropy.lean)).
 - MPC-in-the-head proofs with all-but-one opening and their Fiat–Shamir signatures
-  ([`Params.eufcma_le`](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/Crypto/FiatShamirROM/MPCitH.lean)), instantiated for MQOM
-  ([`mqom_eufcma_reduction`](https://github.com/spitters/CatCrypt/blob/master/CatCrypt/Crypto/MQOM/Reduction.lean)), SDitH
-  ([`sdith_eufcma_reduction`](https://github.com/spitters/CatCrypt/blob/master/CatCrypt/Crypto/SDitH/Reduction.lean)) and Picnic's ZKB++
-  ([`eufcma_le`](https://github.com/spitters/CatCrypt/blob/master/CatCrypt/Crypto/Picnic/ZKBpp.lean)).
+  ([`Params.eufcma_le`](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/Crypto/FiatShamirROM/MPCitH.lean)).
 - Fiat–Shamir in the quantum random-oracle model for Σ-protocols with unique responses
   ([`fiatShamir_sigma_qrom`](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/Quantum/QROM/FiatShamirSigma.lean)).
 
@@ -134,5 +122,9 @@ composition. CatCrypt also proves:
   emulation of the ideal functionality at distance 0. The challenge is drawn by the protocol, so
   the verifier is honest and public-coin, and the theorem is the zero-knowledge direction;
   knowledge soundness of the non-interactive proof is [`ksExtractProb_ge`](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/Crypto/FiatShamirROM/NIZK.lean).
+- Linear relations ([`linearSigma_uc_zk_secure`](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/Crypto/ZK/LinearSigmaUC.lean)): the
+  Σ-protocol of every linear relation has special HVZK at every pair of the relation, for every
+  statement generator, so the theorem applies to it with no hypothesis; this covers the extracted
+  core of `sigma-proofs-hax` through `extSigma_eq`.
 
 The Reduction, Security and FullSecurity files of this directory re-export these results.
