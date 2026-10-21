@@ -85,15 +85,14 @@ Five certified reductions and their time theorems:
 | [`iknpCRRed.timeBound_timed`](OTExtension/IKNP.lean) | IKNP OT extension to the correlation-robust hash | `T₁ + Ts + ts + T + a + tv + 3` | `derive_reduction` |
 | [`ckaDDHRed.timeBound_timed`](Messaging/CKA.lean) | Diffie–Hellman CKA to DDH | `T + a + tv + 4` | `derive_reduction` |
 | [`cdhReduction.timeBound_timed`](PAKE/DHPAKE.lean) | Diffie–Hellman PAKE to CDH | `T + (tH + 1) · qH + tOut + 3` | by hand |
-| [`mkRed.timeBound_timed`](https://github.com/spitters/CatCrypt/blob/master/CatCrypt/Crypto/Constructions/SIVMRAENonce.lean) | nonce-based SIV to the multi-key PRF of the cipher | `1 + T + q · (1 + s + ℓ · (1 + s))` | by hand |
+| [`mkHybRed.timeBound_timed`](MultiKeyPRF.lean) | multi-key PRF to the PRF, hybrid `j` over the keys | `T + q · c` | by hand |
 
 Here `T` is the time of the adversary, `q` and `qH` its numbers of queries and `a` the cost of a
 call to it. The IKNP reduction runs the two parts of the adversary, of times `T₁` and `T`, and a
 simulator of the base-OT view of time `Ts` and call cost `ts`. The costs of primitives are `t₀`
 for the hash, `tH` for answering a hash query, `tv` for the view map, which computes the group
-elements of the CKA transcript, and `s` for the step after each query to the cipher; `ℓ` bounds
-the number of blocks of a message. `mkRed.timeBound_timed` is in the CatCrypt repository, the
-other four in this one.
+elements of the CKA transcript, and `c` for the bookkeeping of each query of the multi-key
+reduction (the rank of its index, the table lookup and the state update).
 
 `derive_timed R` ([DeriveTimed.lean](../Tactics/DeriveTimed.lean)) defines `R.timed` and proves
 `R.erase_timed` for a reduction whose result is an oracle tree or an `SPTree`. A binder that is
@@ -145,9 +144,10 @@ without loading Lean, and keep counts that may fall and never rise.
   adversary's state runs in time exponential in the bit length of `X` or of the adversary's
   register. The count over the CatCrypt repository is 0. A reduction that needs a random
   function samples it lazily, a fresh value for each new query, and its proof uses a lemma
-  equating the lazy and the eager table: by `mkRed_run_eq`, against every oracle the output of
-  `mkRed` is the output of the adversary with each query answered under hash keys drawn eagerly
-  as a uniform function on the nonces.
+  equating the lazy and the eager table: in [EagerLazyRF.lean](EagerLazyRF.lean),
+  `SIVNonce.uniform_bind_run_simOracle_keyed` equates eager and lazy sampling behind a
+  simulation, and `SIVNonce.lazyRF.timeBound_timed` bounds the time of the lazy sampler by the
+  time of the adversary.
 - Hand-written costed forms. The costed forms `R.timed` defined by hand, counted across the two
   repositories, number 110 at 2026-10-20.
 
