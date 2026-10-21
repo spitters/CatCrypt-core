@@ -885,6 +885,36 @@ partial def assembleStruct (c : Name) (levels : List Level) (levelParams : List 
   let costed (fv : Expr) : TermElabM Expr := do
     let some info := tctx.locals.get? fv.fvarId! | fail m!"internal: `{fv}` has no costed form"
     return info.value
+  -- The field paths whose cost companions the costed forms of the fields take
+  -- (`c.f.tree.timed.fieldPaths`), one companion binder of `c.timed` per path.
+  let mut allPaths : Array Expr := #[]
+  let mut fieldPaths : Array (Name × Array Expr) := #[]
+  for fd in fields do
+    unless fd.kind matches .tree _ | .comp _ do continue
+    let fpName := c ++ fd.name ++ `tree ++ `timed ++ `fieldPaths
+    unless env.contains fpName do continue
+    let some fp ← unfoldDefinition? (mkAppN (Lean.mkConst fpName levels) (tBs ++ fd.ys))
+      | fail m!"internal: `{fpName}` does not unfold"
+    let mut tup := fp.headBeta
+    let mut paths := #[]
+    while tup.isAppOfArity ``PProd.mk 4 do
+      let p := tup.getArg! 2
+      for y in fd.ys do
+        if p.containsFVar y.fvarId! then
+          fail m!"the costed form of the field `{fd.name}` takes the cost of the field `{p}`, \
+            which depends on the arguments of the field"
+      paths := paths.push p
+      unless allPaths.contains p do allPaths := allPaths.push p
+      tup := (tup.getArg! 3).headBeta
+    fieldPaths := fieldPaths.push (fd.name, paths)
+  let compDecls ← allPaths.mapM fun p => do
+    return (← CatCrypt.Tactics.DeriveTimed.fieldCostName p,
+      fun _ => do CatCrypt.Tactics.DeriveTimed.companionType (← inferType p))
+  withLocalDeclsD compDecls fun comps => do
+  let compsOf (n : Name) : Array Expr :=
+    match fieldPaths.find? (·.1 == n) with
+    | some (_, ps) => ps.filterMap fun p => (allPaths.idxOf? p).map (comps[·]!)
+    | none => #[]
   -- The costed form.
   let mut mvals : Array Expr := #[]
   for fd in fields do
@@ -899,18 +929,21 @@ partial def assembleStruct (c : Name) (levels : List Level) (levelParams : List 
     | _ =>
       let tc := Lean.mkConst (c ++ fd.name ++ `tree ++ `timed) levels
       let ar ← forallTelescope (← inferType tc) fun zs _ => pure zs.size
-      unless ar == bs.size + fd.ys.size do
+      let fcs := compsOf fd.name
+      unless ar == bs.size + fd.ys.size + fcs.size do
         fail m!"the costed form of the field `{fd.name}` takes {ar} arguments, and \
-          {bs.size + fd.ys.size} are its binders and those of the field"
-      let call := mkAppN tc (bs ++ fd.ys)
+          {bs.size + fd.ys.size + fcs.size} are its binders, those of the field and its field \
+          costs"
+      let call := mkAppN tc (bs ++ fd.ys ++ fcs)
       mvals := mvals.push (← mkLambdaFVars fd.ys (← mkAppM ``Prod.snd #[call]))
       if mirrorFields.contains (fd.name.appendAfter "Cost") then
         mvals := mvals.push (← mkLambdaFVars fd.ys (← mkAppM ``Prod.fst #[call]))
   let mirrorCtor := (getStructureCtor env timedS).name
   let resT := mkAppN (mkConst timedS lvlsS) qs
   let timedName := c ++ `timed
-  CatCrypt.Tactics.DeriveTimed.addTimedDef timedName levelParams (← mkForallFVars bs resT)
-    (← mkLambdaFVars bs (mkAppN (mkConst mirrorCtor lvlsS) (qs ++ mvals)))
+  CatCrypt.Tactics.DeriveTimed.addTimedDef timedName levelParams
+    (← mkForallFVars (bs ++ comps) resT)
+    (← mkLambdaFVars (bs ++ comps) (mkAppN (mkConst mirrorCtor lvlsS) (qs ++ mvals)))
   -- The erasure theorem: the data primitives at their fields, the tree and computation
   -- primitives with hypotheses relating their costed binders to their fields.
   let bsInst := bs.map fun b => match dps.find? (·.fv == b) with
@@ -939,7 +972,7 @@ partial def assembleStruct (c : Name) (levels : List Level) (levelParams : List 
     let n := (← p.fv.fvarId!.getUserName).eraseMacroScopes.appendBefore "h_"
     hypDecls := hypDecls.push (n, fun _ => pure t)
   withLocalDeclsD hypDecls fun hs => do
-  let lhsA := mkAppN (mkConst timedName levels) bsInst
+  let lhsA := mkAppN (mkConst timedName levels) (bsInst ++ comps)
   let rhsA := mkAppN (mkConst c levels) argsC
   let goalTy := mkAppN (mkConst (timedS ++ `Erases) lvlsS) (qs ++ #[lhsA, rhsA])
   let mv ← mkFreshExprSyntheticOpaqueMVar goalTy
@@ -956,7 +989,8 @@ partial def assembleStruct (c : Name) (levels : List Level) (levelParams : List 
     let some (some W) := mkArgs[j]? | fail m!"internal: the erased field `{fd.name}`"
     let treeName := c ++ fd.name ++ `tree
     let rhsY := mkAppN (← mkProjection rhsA fd.name) fd.ys
-    let h1 := mkAppN (mkConst (treeName ++ `erase_timed) levels) (bsInst ++ fd.ys)
+    let h1 := mkAppN (mkConst (treeName ++ `erase_timed) levels)
+      (bsInst ++ fd.ys ++ compsOf fd.name)
     let pf ← match fd.kind with
       | .comp _ =>
         let some α ← spCompArg? (← inferType fd.body) | fail m!"internal: `{fd.name}`"
@@ -999,7 +1033,8 @@ partial def assembleStruct (c : Name) (levels : List Level) (levelParams : List 
   let pf ← instantiateMVars mv
   if pf.hasSorry || pf.hasExprMVar then fail m!"the erasure theorem `{c ++ `erase_timed}` is not proved"
   let newBs := bs.filter fun b => !tBs.contains b
-  let eBs := xs.filter (fun x => (advs.find? (·.orig == x.fvarId!)).isNone) ++ newBs ++ hs
+  let eBs := xs.filter (fun x => (advs.find? (·.orig == x.fvarId!)).isNone) ++ newBs ++ comps ++
+    hs
   addDecl (Declaration.thmDecl
     { name := c ++ `erase_timed, levelParams,
       type := ← mkForallFVars eBs goalTy, value := ← mkLambdaFVars eBs pf })

@@ -388,4 +388,32 @@ which is not built from `pure`, `bind`, `sample`, `get`, `set`, `fail`, `if`, `m
 #guard_msgs in
 derive_reduction boundFieldRed
 
+/-! ## A field of a structure-valued reduction calling a program with a field companion -/
+
+/-- A one-stage oracle adversary. -/
+structure O6Adv2 where
+  /-- The stage. -/
+  run : ℕ → CatCrypt.Crypto.OracleAdv ℕ ℕ Bool
+
+derive_timed_structure O6Adv2
+
+/-- A kit with a data field. -/
+structure O6Kit2 where
+  /-- A decryption function. -/
+  dec : ℕ → ℕ
+
+/-- A program whose costed form takes the cost companion of `K.dec`. -/
+noncomputable def o6Prog2 (K : O6Kit2) (n : ℕ) : CatCrypt.Crypto.OracleAdv ℕ ℕ Bool :=
+  .ret (K.dec n == 0)
+
+/-- A structure-valued reduction whose field calls `o6Prog2` (the shape of the HPKE
+`kemReduction`): `o6SRed2.timed` takes the companion `decCost` of the field's costed form. -/
+noncomputable def o6SRed2 (K : O6Kit2) : O6Adv2 :=
+  ⟨fun n => (CatCrypt.Crypto.OracleAdv.ret n).bind (o6Prog2 K)⟩
+
+derive_reduction o6SRed2
+
+example (K : O6Kit2) (decCost : ℕ → ℕ) : (o6SRed2.timed K decCost).Erases (o6SRed2 K) :=
+  o6SRed2.erase_timed K decCost
+
 end CatCrypt.Tactics.DeriveReductionTest
