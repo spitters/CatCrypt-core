@@ -133,20 +133,6 @@ theorem UCEmulates_of_game_sdist {hon leak V : Type} {ε : ℝ≥0∞}
       (UCProtocol.ofGame G_real) (UCProtocol.ofGame G_ideal) := by
   exact UCEmulates_of_sdist _ _ _ (le_trans (sdist_comp_right _ _ _) h)
 
-/-- Variant of `UCEmulates_of_isPure_advantage` using `AdvantageA`.
-
-    Takes advantage bounds in the form `AdvantageA (G_real x) (G_ideal x) D ≤ ε`
-    that appears directly in most security definitions. -/
-theorem UCEmulates_of_isPure_advantageA {hon leak V : Type} {ε : ℝ≥0∞}
-    {G_real G_ideal : hon → SPComp leak}
-    (hPure_r : ∀ x, SPComp.IsPure (G_real x))
-    (hPure_i : ∀ x, SPComp.IsPure (G_ideal x))
-    (hAdv : ∀ x (D : leak → SPComp Bool), AdvantageA (G_real x) (G_ideal x) D ≤ ε) :
-    UCEmulates ε (UCSpec.ofGame hon leak V)
-      (UCProtocol.ofGame G_real) (UCProtocol.ofGame G_ideal) := by
-  exact UCEmulates_of_sdist _ _ _ (le_trans (sdist_comp_right _ _ _)
-    (sdist_isPure_le hPure_r hPure_i fun D x => hAdv x D))
-
 /-! ## Component C: Game-Hop Chaining -/
 
 /-- 2-step game hop (covers HKDF_UC pattern).

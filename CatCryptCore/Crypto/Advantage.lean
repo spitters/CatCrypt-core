@@ -32,7 +32,7 @@ noncomputable def prTrue (G : SPComp Bool) (h₀ : Heap) : ℝ≥0∞ :=
     **Scope: the initial heap is fixed to `Heap.empty`.** This is the empty-heap
     distinguishing probability, *not* the supremum over all initial heaps; the
     stronger all-heap notion is `SDist.sdist`. The two are reconciled by the
-    bridge lemmas `sdist_isPure_le` / `sdist_oracleGame_le` (`SDist.lean`), which
+    bridge lemma `sdist_isPure_le` (`SDist.lean`), which
     bound this empty-heap advantage by the all-heap statistical distance. Use
     `Advantage` for empty-heap game hops; reach for `sdist` when the adversary
     may choose the starting state. -/

@@ -32,7 +32,7 @@ state-resetting operations like `heapReset` (which discards the current heap and
 replaces it with a saved snapshot) — it enables rewinding adversaries. This is
 what makes the `nomPkg_absorb` construction go through, but it is **unsound in
 quantum UC** due to no-cloning. For quantum-safe results, use the `IsPure + NoFail`
-path (`sdist_of_deepNomAdvantage`), which does not depend on these definitions.
+path (`sdist_le_of_advantage_bool`), which does not depend on these definitions.
 -/
 
 @[expose] public section

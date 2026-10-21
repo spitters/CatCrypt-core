@@ -476,19 +476,10 @@ theorem sdist_of_isPure_absDiff {α β : Type*} {f g : α → SPComp β} {ε : �
     sdist f g ≤ ε :=
   sdist_isPure_le hf hg (fun D a => hAdv a D)
 
-/-! ## Oracle-Game sdist Bridge
+/-! ## Initial-heap replacement
 
-For oracle-based games where the game just passes an oracle record to the
-adversary (`G b A = A (oracles_b)`), we can compute `sdist` from `Advantage`.
-
-The key observations:
-1. **D-absorption**: For Bool-valued output, any post-distinguisher D can be
-   absorbed into the adversary: `A(o) >>= D = A'(o)` where `A' o = A o >>= D`.
-2. **Heap absorption**: The adversary controls the heap via `initHeap`.
-   For any initial heap `h₀`, define `A'(o) = initHeap h₀ >> A(o)`.
-   Then `G b A' at Heap.empty = G b A at h₀`.
-
-Together these show: `sdist G_real G_ideal = ⨆_A Advantage(G_real A, G_ideal A)`. -/
+`SPComp.initHeap h₀` discards the current heap and continues from `h₀`; a
+computation prefixed by it runs as if started at `h₀`. -/
 
 /-- Replace the current heap with `h₀`, discarding the old heap.
     `(initHeap h₀ >> c) h = c h₀` for any `h`. -/
@@ -499,55 +490,6 @@ noncomputable def SPComp.initHeap (h₀ : Heap) : SPComp Unit :=
 theorem SPComp.initHeap_bind {α : Type*} (h₀ : Heap) (c : SPComp α) (h : Heap) :
     SPComp.bind (SPComp.initHeap h₀) (fun _ => c) h = c h₀ := by
   simp_all [SPComp.bind, SPComp.initHeap, SDistr.pure_bind]
-
-/-- For games of the form `G A = A record` (game is pure function application),
-    `sdist` equals the supremum of `Advantage` over all adversaries.
-
-    This bridges oracle-game security (`∀ A, Advantage ≤ ε`) to the categorical
-    `sdist` framework, giving access to PPLs, composition, and tensor bounds.
-
-    The hypotheses state that `G_real` and `G_ideal` are pure application:
-    `G_real A h = A real_oracles h` and `G_ideal A h = A ideal_oracles h`. -/
-theorem sdist_oracleGame_le {OracleIf : Type*}
-    {G_real G_ideal : (OracleIf → SPComp Bool) → SPComp Bool}
-    {or_real or_ideal : OracleIf}
-    (hR : ∀ A, G_real A = A or_real)
-    (hI : ∀ A, G_ideal A = A or_ideal)
-    {ε : ℝ≥0∞}
-    (hAdv : ∀ A, Advantage (G_real A) (G_ideal A) ≤ ε) :
-    sdist G_real G_ideal ≤ ε := by
-  apply iSup_le; intro D; apply iSup_le; intro A; apply iSup_le; intro h₀
-  -- Step 1: Absorb D into the adversary
-  -- Define A' o = A o >>= D. Then G_real A >>= D = G_real A' (since G applies A to oracles)
-  let A' : OracleIf → SPComp Bool := fun o => SPComp.bind (A o) D
-  have hD_real : SPComp.bind (G_real A) D = G_real A' := by
-    rw [hR A, hR A']
-  have hD_ideal : SPComp.bind (G_ideal A) D = G_ideal A' := by
-    rw [hI A, hI A']
-  -- Step 2: Absorb h₀ into the adversary
-  -- Define A'' o = initHeap h₀ >> A' o. Then G_real A'' at empty = G_real A' at h₀
-  let A'' : OracleIf → SPComp Bool := fun o =>
-    SPComp.bind (SPComp.initHeap h₀) (fun _ => A' o)
-  have hH_real : G_real A'' Heap.empty = G_real A' h₀ := by
-    rw [hR A'', hR A']
-    exact SPComp.initHeap_bind h₀ (A' or_real) Heap.empty
-  have hH_ideal : G_ideal A'' Heap.empty = G_ideal A' h₀ := by
-    rw [hI A'', hI A']
-    exact SPComp.initHeap_bind h₀ (A' or_ideal) Heap.empty
-  -- Step 3: Combine — prTrue at h₀ with D = prTrue at empty for A''
-  have eq_real : prTrue (SPComp.bind (G_real A) D) h₀ =
-      prTrue (G_real A'') Heap.empty := by
-    simp only [prTrue]; congr 1; funext h
-    show (SPComp.bind (G_real A) D) h₀ _ = G_real A'' Heap.empty _
-    rw [hD_real, hH_real]
-  have eq_ideal : prTrue (SPComp.bind (G_ideal A) D) h₀ =
-      prTrue (G_ideal A'') Heap.empty := by
-    simp only [prTrue]; congr 1; funext h
-    show (SPComp.bind (G_ideal A) D) h₀ _ = G_ideal A'' Heap.empty _
-    rw [hD_ideal, hH_ideal]
-  rw [eq_real, eq_ideal]
-  -- Step 4: Apply the advantage bound for A''
-  exact hAdv A''
 
 /-! ## PseudoEMetricSpace Instance
 

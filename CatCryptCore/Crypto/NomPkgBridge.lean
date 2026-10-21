@@ -13,14 +13,14 @@ public import CatCryptCore.Crypto.UC
 /-!
 # NomPkg Bridge: Game-Based Security → sdist
 
-This file bridges game-based security (`∀ A, Advantage ≤ ε`) to the categorical
-`sdist` framework, enabling composition via post-processing lemmas.
+This file bounds the statistical distance of two families of Bool-valued
+IsPure+NoFail computations by their empty-heap advantage at each input, and
+gives the absorption of post-processing into a deep nominal adversary.
 
 ## Main results
 
 * `SPComp.NoFail` — computation never produces failure
 * `sdist_le_of_advantage_bool` — sdist for Bool-valued IsPure+NoFail SPComps from Advantage
-* `sdist_of_deepNomAdvantage` — bridge for deep nominal packages
 * `nomPkg_absorb` — general absorption of post-processing into the adversary
 
 ## Key insight
@@ -322,34 +322,6 @@ theorem sdist_le_of_advantage_bool {α : Type*} {f g : α → SPComp Bool} {ε :
     (absDiff_bind_le_advantage (hf_pure a) (hg_pure a) (hf_nf a) (hg_nf a) D _)
     (hAdv a)
 
-/-! ## NomPkg Bridge -/
-
-universe u_np in
-/-- Bridge for deep nominal packages: game-based security implies sdist bound.
-
-    Given `∀ A : NomPkg, DeepNomAdvantage G G' A ≤ ε`, this yields
-    `sdist (fun A => runPkg(link A G)) (fun A => runPkg(link A G')) ≤ ε`.
-
-    Requires IsPure+NoFail for the linked computations.
-    Universe parameters are pinned to avoid auto-binding divergence. -/
-theorem sdist_of_deepNomAdvantage
-    {G G' : CatCrypt.Deep.NomPackage} {ε : ℝ≥0∞}
-    (hPure_r : ∀ (A : CatCrypt.Deep.NomPackage),
-      SPComp.IsPure (runPkg (CatCrypt.Deep.DeepPackage.link A.pkg G.pkg)))
-    (hPure_i : ∀ (A : CatCrypt.Deep.NomPackage),
-      SPComp.IsPure (runPkg (CatCrypt.Deep.DeepPackage.link A.pkg G'.pkg)))
-    (hNF_r : ∀ (A : CatCrypt.Deep.NomPackage),
-      SPComp.NoFail (runPkg (CatCrypt.Deep.DeepPackage.link A.pkg G.pkg)))
-    (hNF_i : ∀ (A : CatCrypt.Deep.NomPackage),
-      SPComp.NoFail (runPkg (CatCrypt.Deep.DeepPackage.link A.pkg G'.pkg)))
-    (hAdv : ∀ (A : CatCrypt.Deep.NomPackage),
-      DeepNomAdvantage G G' A ≤ ε) :
-    sdist (fun (A : CatCrypt.Deep.NomPackage) =>
-             runPkg (CatCrypt.Deep.DeepPackage.link A.pkg G.pkg))
-          (fun (A : CatCrypt.Deep.NomPackage) =>
-             runPkg (CatCrypt.Deep.DeepPackage.link A.pkg G'.pkg)) ≤ ε :=
-  sdist_le_of_advantage_bool hPure_r hPure_i hNF_r hNF_i (fun A => hAdv A)
-
 /-! ## General Absorption Bridge -/
 
 /-- General absorption bridge: if for every (D, a, h₀) triple there exists
@@ -515,16 +487,5 @@ theorem nomPkg_absorb
     simp only [runPkg, h_link_real, h_link_ideal, dite_false]
     simp only [Advantage, absDiff_self]
     exact zero_le
-
-/-! ## Automation Tactic -/
-
-/-- Tactic: bridge game-based advantage to sdist bound for NomPkg games. -/
-macro "sdist_from_deep" : tactic =>
-  `(tactic| (apply sdist_of_deepNomAdvantage <;> assumption))
-
-/-- Tactic: bridge a deep nominal advantage bound to a `UCEmulates` goal, via
-    `UCEmulates_of_sdist` then `sdist_from_deep`. -/
-macro "uc_from_deep" : tactic =>
-  `(tactic| (apply UCEmulates_of_sdist; sdist_from_deep))
 
 end CatCrypt.Crypto

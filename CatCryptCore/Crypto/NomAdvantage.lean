@@ -602,8 +602,7 @@ theorem DeepNomAdvantage_par
 `NomPkgSecure G G' ε` says that for all adversaries A, the advantage of
 distinguishing G from G' (via deep linking) is bounded by `ε A`.
 
-This is the analogue of `GameUCEmulates` (UC.lean) for the deep package model
-where adversaries are `NomPackage` rather than oracle-to-SPComp functions.
+The adversaries are `NomPackage`s linked against the game.
 
 The bound is **adversary-dependent**: `ε : NomPackage → ℝ≥0∞`. This is essential
 for concrete security (time/query complexity bounds). For composition, the
@@ -614,7 +613,6 @@ adversary-dependent bounds add pointwise.
 | Notion | Adversary | Composable | Axioms |
 |--------|-----------|------------|--------|
 | `NomPkgSecure` | NomPkg | via triangle | 0 |
-| `GameUCEmulates` | OracleIf → SPComp Bool | via triangle | 0 |
 | sdist ≤ ε | (absorbed) | full PPL | 0 |
 | `UCEmulates` | (∀A ∃S) | full UC | 0 |
 
