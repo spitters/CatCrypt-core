@@ -1981,7 +1981,9 @@ partial def ensureTimed (ctx : Ctx) (c : Name) (f : Expr) : TermElabM Expr := do
     if ctx.visiting.contains c then
       fail m!"`{c}` is reached again while its costed form is derived (mutual recursion)"
     try
-      deriveTimed { ctx with visiting := ctx.visiting.insert c } c
+      -- The callee is derived in its own context: the locals, fields, substitutions and the
+      -- plain interface of the caller are not the callee's.
+      deriveTimed { suffix := ctx.suffix, visiting := ctx.visiting.insert c } c
     catch ex =>
       throwError m!"derive_timed: while deriving the costed form of the callee `{c}`:\n\
         {ex.toMessageData}"
