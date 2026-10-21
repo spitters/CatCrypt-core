@@ -11,10 +11,10 @@ public import CatCryptCore.Complexity.D.Semantics
 # Cost semantics of the deep language D
 
 The cost of a term `t` in an environment `ρ` is `Tm.cost t ρ`, the worst-case step count
-`CTree.cost` of its evaluation `Tm.eval t ρ`: one unit per β-step, branch and primitive
-operation (the ticks of the evaluator) and one unit per effect node, the maximum over the
-branches of `sample`, `get` and `query`. It is determined by the evaluator, not supplied with
-the term.
+`CTree.cost` of its evaluation `Tm.eval t ρ`: one unit per β-step and branch, `p.cost v` units
+for a primitive operation `p` at the argument `v` (logarithmic in the bit lengths on `ℕ`,
+`Prim.cost`), and one unit per effect node, the maximum over the branches of `sample`, `get`
+and `query`. It is determined by the evaluator, not supplied with the term.
 
 ## Main results
 
@@ -22,6 +22,8 @@ the term.
   β-step and the body.
 * `Tm.cost_letE_le`, `Tm.cost_letE_ret`: a `letE` costs its bound term once, one β-step and
   the body; the variable costs nothing at its uses (`Tm.cost_var`).
+* `Tm.cost_prim`, `Tm.cost_prim_le`: a primitive operation costs its argument and `Prim.cost`
+  of the argument's value.
 * `Tm.cost_letE_sample`: a sample followed by a continuation costs one plus the maximum over
   the sampled values.
 * `foldT_cost_le`, `iterT_cost_le`: a recursion scheme costs at most the number of iterations
@@ -40,6 +42,13 @@ set_option autoImplicit false
 namespace CatCrypt.Complexity.D
 
 open CTree
+
+/-- `n` ticks cost `n`. -/
+@[simp] theorem cost_stepN_tick {α : Type} (n : ℕ) (t : CTree α) :
+    (stepN CTree.tick n t).cost = n + t.cost := by
+  induction n with
+  | zero => simp [stepN]
+  | succ n ih => simp only [stepN, CTree.cost_tick, ih]; omega
 
 /-! ## Recursion schemes -/
 
@@ -110,6 +119,23 @@ theorem cost_app_lam {a b : Ty} (body : Tm (a :: Γ) b) (x : Tm Γ a) (ρ : Env 
     (hx : x.eval ρ = .ret v) : (app (lam body) x).cost ρ = 1 + body.cost (ρ.cons v) := by
   simp only [cost, eval_app, hx]
   rfl
+
+theorem eval_prim {a b : Ty} (p : Prim a b) (x : Tm Γ a) (ρ : Env Γ) :
+    (prim p x).eval ρ =
+      (x.eval ρ).bind fun v => stepN CTree.tick (p.cost v) (.ret (p.apply v)) := rfl
+
+/-- A primitive operation at a value costs `Prim.cost` of the value. -/
+theorem cost_prim {a b : Ty} (p : Prim a b) (x : Tm Γ a) (ρ : Env Γ) (v : Val a)
+    (hx : x.eval ρ = .ret v) : (prim p x).cost ρ = p.cost v := by
+  simp only [cost, eval_prim, hx, CTree.bind_ret, cost_stepN_tick, CTree.cost_ret,
+    Nat.add_zero]
+
+/-- A primitive operation costs its argument and a bound on `Prim.cost` at its values. -/
+theorem cost_prim_le {a b : Ty} (p : Prim a b) (x : Tm Γ a) (ρ : Env Γ) (B : ℕ)
+    (h : (x.eval ρ).AllRet fun v => p.cost v ≤ B) : (prim p x).cost ρ ≤ x.cost ρ + B := by
+  rw [cost, eval_prim]
+  refine CTree.cost_bind_le _ _ _ (h.mono fun v hv => ?_)
+  simpa using hv
 
 /-- A `letE` costs its bound term once, one β-step and the body. -/
 theorem cost_letE_le {a b : Ty} (e : Tm Γ a) (body : Tm (a :: Γ) b) (ρ : Env Γ) (B : ℕ)

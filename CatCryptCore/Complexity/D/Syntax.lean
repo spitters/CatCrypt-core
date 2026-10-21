@@ -15,8 +15,9 @@ D is a typed call-by-value λ-calculus with ground data, recursion schemes and t
 (Forster, Kunze, *A certifying extraction with time bounds from Coq to call-by-value
 λ-calculus*, ITP 2019; Forster, Kunze, Roth, *The weak call-by-value λ-calculus is reasonable
 for both time and space*, POPL 2020): time is the number of β-steps, extended here with
-primitive operations of unit cost on `ℕ`, `Bool` and fixed-width words (the word-RAM
-convention) and with effect nodes of unit cost (`SPTree.queryCost`). The evaluator and the
+primitive operations and with effect nodes of unit cost (`SPTree.queryCost`). A primitive
+operation costs `Prim.cost`: on `ℕ`, its cost in the bit lengths `Nat.size` of its arguments
+(logarithmic cost); on `Bool` and fixed-width words, one step. The evaluator and the
 cost semantics are in `CatCryptCore.Complexity.D.Semantics` and
 `CatCryptCore.Complexity.D.Cost`.
 
@@ -70,7 +71,8 @@ row G3d):
 * `Ty`, `Val`: the types and their values; a function value is a Lean function
   `Val a → CTree (Val b)` into costed trees.
 * `Var`, `Env`: variables and environments.
-* `Prim`, `Prim.apply`: the primitive operations.
+* `Prim`, `Prim.apply`, `Prim.cost`: the primitive operations, their functions and their
+  costs.
 * `Tm`: the terms; `Tm.compose`: precomposition of function terms.
 -/
 
@@ -155,7 +157,8 @@ def Env.cons {Γ : List Ty} {τ : Ty} (v : Val τ) (ρ : Env Γ) : Env (τ :: Γ
 
 /-! ## Primitive operations -/
 
-/-- The primitive operations, each of unit cost. Binary operations take a pair. -/
+/-- The primitive operations on `ℕ`, `Bool` and fixed-width words. Binary operations take a
+pair. -/
 inductive Prim : Ty → Ty → Type where
   | natAdd : Prim (.prod .nat .nat) .nat
   | natSub : Prim (.prod .nat .nat) .nat
@@ -210,6 +213,41 @@ def Prim.apply {a b : Ty} : Prim a b → Val a → Val b
   | .wofNat w => fun (x : ℕ) => BitVec.ofNat w x
   | .wtoNat w => fun (x : BitVec w) => x.toNat
   | .wcast w v => fun (x : BitVec w) => x.setWidth v
+
+/-- The cost of a primitive operation at an argument, in evaluation steps. On `ℕ` it is
+logarithmic in the bit lengths `Nat.size` of the arguments: addition, subtraction and the
+comparisons cost `max (size x) (size y) + 1`, multiplication, division and remainder cost
+`size x * size y + 1` (schoolbook). The operations on `Bool` and on `w`-bit words cost one
+step, the word-RAM convention for a fixed word width. The shifts `wshl` and `wshr` cost one
+step although their amount is a natural number: an amount of at least `w` gives the zero word,
+so only amounts below the word width are meaningful. `wofNat` costs one step: it reads the
+low `w` bits of its argument. -/
+def Prim.cost {a b : Ty} : Prim a b → Val a → ℕ
+  | .natAdd => fun (x : ℕ × ℕ) => max x.1.size x.2.size + 1
+  | .natSub => fun (x : ℕ × ℕ) => max x.1.size x.2.size + 1
+  | .natMul => fun (x : ℕ × ℕ) => x.1.size * x.2.size + 1
+  | .natDiv => fun (x : ℕ × ℕ) => x.1.size * x.2.size + 1
+  | .natMod => fun (x : ℕ × ℕ) => x.1.size * x.2.size + 1
+  | .natEq => fun (x : ℕ × ℕ) => max x.1.size x.2.size + 1
+  | .natLt => fun (x : ℕ × ℕ) => max x.1.size x.2.size + 1
+  | .bnot => fun _ => 1
+  | .band => fun _ => 1
+  | .bor => fun _ => 1
+  | .bxor => fun _ => 1
+  | .wadd _ => fun _ => 1
+  | .wsub _ => fun _ => 1
+  | .wmul _ => fun _ => 1
+  | .wand _ => fun _ => 1
+  | .wor _ => fun _ => 1
+  | .wxor _ => fun _ => 1
+  | .wnot _ => fun _ => 1
+  | .wshl _ => fun _ => 1
+  | .wshr _ => fun _ => 1
+  | .weq _ => fun _ => 1
+  | .wult _ => fun _ => 1
+  | .wofNat _ => fun _ => 1
+  | .wtoNat _ => fun _ => 1
+  | .wcast _ _ => fun _ => 1
 
 theorem Prim.fo {a b : Ty} (p : Prim a b) : a.FO ∧ b.FO := by
   cases p <;> simp [Ty.FO]

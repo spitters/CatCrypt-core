@@ -16,11 +16,12 @@ each evaluation step. Its two instances are:
 
 * `Tm.eval`, with `tk = CTree.tick`: the evaluator. A tick is placed at every β-step (an
   application of a function value, a `letE`, a `seq`, every iteration of `foldl` and `iter`),
-  at every branch (`case`, `ite`, `lcase`) and at every primitive operation; variables,
-  literals, constructors, projections and closures are free. With the unit cost of the effect
-  nodes this is the convention of L (Forster–Kunze) and of `derive_timed`, with `letE` priced
-  as the β-redex `(λx. b) e`. The cost of a term is therefore determined by its evaluation
-  (`CatCryptCore.Complexity.D.Cost`).
+  and at every branch (`case`, `ite`, `lcase`); a primitive operation `p` at the argument `v`
+  places `p.cost v` ticks (`stepN`), logarithmic cost on `ℕ` and one tick on `Bool` and
+  words; variables, literals, constructors, projections and closures are free. With the unit
+  cost of the effect nodes this is the convention of L (Forster–Kunze) and of `derive_timed`,
+  with `letE` priced as the β-redex `(λx. b) e`. The cost of a term is therefore determined
+  by its evaluation (`CatCryptCore.Complexity.D.Cost`).
 * `Tm.den`, with `tk = id`: the denotation, a tick-free tree; `Tm.denote O t ρ`, its meaning
   in `SPComp` with the oracle answered by `O`, is what a term is compared with when it is
   compared with an ordinary Lean definition.
@@ -62,6 +63,11 @@ def iterT {c : Ty} (g : Val (.arr c c)) : Val c → ℕ → CTree (Val c)
   | acc, 0 => .ret acc
   | acc, n + 1 => (tk (g acc)).bind fun acc' => iterT g acc' n
 
+/-- `n` step nodes in front of a tree. -/
+def stepN {α : Type} : ℕ → CTree α → CTree α
+  | 0, t => t
+  | n + 1, t => tk (stepN n t)
+
 /-- Case analysis on a list. -/
 def listCase {α β : Type} (l : List α) (n : β) (c : α → List α → β) : β :=
   match l with
@@ -77,7 +83,7 @@ def Tm.interp {Γ : List Ty} {τ : Ty} : Tm Γ τ → Env Γ → CTree (Val τ)
   | .seq e b, ρ => (Tm.interp e ρ).bind fun _ => tk (Tm.interp b ρ)
   | .natLit n, _ => .ret n
   | .lit _ v, _ => .ret v
-  | .prim p x, ρ => (Tm.interp x ρ).bind fun v => tk (.ret (p.apply v))
+  | .prim p x, ρ => (Tm.interp x ρ).bind fun v => stepN tk (p.cost v) (.ret (p.apply v))
   | .pair x y, ρ => (Tm.interp x ρ).bind fun u => (Tm.interp y ρ).bind fun v => .ret (u, v)
   | .fst (a := a) (b := b) p, ρ => (Tm.interp p ρ).bind fun (v : Val a × Val b) => .ret v.1
   | .snd (a := a) (b := b) p, ρ => (Tm.interp p ρ).bind fun (v : Val a × Val b) => .ret v.2
@@ -184,6 +190,26 @@ theorem Prim.rel {a b : Ty} (p : Prim a b) {u v : Val a} (h : ValRel a u v) :
   rw [ValRel.iff_eq_of_FO a p.fo.1] at h
   rw [ValRel.iff_eq_of_FO b p.fo.2, h]
 
+/-- Without step nodes, `stepN` is the identity. -/
+theorem stepN_id {α : Type} (n : ℕ) (t : CTree α) : stepN (fun t => t) n t = t := by
+  induction n with
+  | zero => rfl
+  | succ n ih => exact ih
+
+/-- Ticks in front of the left tree preserve the relation. -/
+theorem stepN_tick_rel {α β : Type} {R : α → β → Prop} {t : CTree α} {m : CTree β}
+    (h : CTree.Rel R t m) (n : ℕ) : CTree.Rel R (stepN CTree.tick n t) m := by
+  induction n with
+  | zero => exact h
+  | succ n ih => exact .tick ih
+
+/-- Ticks in front of a tree commute with a bind. -/
+theorem stepN_tick_bind {α β : Type} (n : ℕ) (t : CTree α) (g : α → CTree β) :
+    (stepN CTree.tick n t).bind g = stepN CTree.tick n (t.bind g) := by
+  induction n with
+  | zero => rfl
+  | succ n ih => exact congrArg CTree.tick ih
+
 theorem foldT_rel {a c : Ty} {g g' : Val (.arr (.prod c a) c)} (hg : ValRel _ g g')
     {l l' : List (Val a)} (hl : List.Forall₂ (ValRel a) l l') :
     ∀ {acc acc' : Val c}, ValRel c acc acc' →
@@ -246,7 +272,11 @@ theorem interp_rel {Γ : List Ty} {τ : Ty} (t : Tm Γ τ) :
   | seq e b ihe ihb => intro ρ δ h; exact (ihe h).bind fun _ _ _ => .tick (ihb h)
   | natLit n => intro ρ δ h; exact .ret rfl
   | lit f v => intro ρ δ h; exact .ret rfl
-  | prim p x ih => intro ρ δ h; exact (ih h).bind fun u v huv => .tick (.ret (p.rel huv))
+  | prim p x ih =>
+    intro ρ δ h
+    refine (ih h).bind fun u v huv => ?_
+    rw [stepN_id]
+    exact stepN_tick_rel (.ret (p.rel huv)) _
   | pair x y ihx ihy =>
     intro ρ δ h
     exact (ihx h).bind fun u u' hu => (ihy h).bind fun v v' hv => .ret ⟨hu, hv⟩

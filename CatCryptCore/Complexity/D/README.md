@@ -13,10 +13,41 @@ The cost model follows the weak call-by-value λ-calculus L of Forster and Kunze
   time and space*. POPL 2020, PACMPL 4. doi:10.1145/3371095
 
 In L, time is the number of β-steps, and the second paper shows that this measure is
-polynomially related to Turing-machine time. D counts β-steps in the same way and adds three
-kinds of unit-cost step: primitive operations on `ℕ`, `Bool` and fixed-width words (the
-word-RAM convention), branches, and effect nodes (`sample`, `get`, `set`, `query`, as in
-`SPTree.queryCost`).
+polynomially related to Turing-machine time. D counts β-steps in the same way and adds
+branches and effect nodes (`sample`, `get`, `set`, `query`, as in `SPTree.queryCost`) at one
+step each, and primitive operations at the cost `Prim.cost`.
+
+## Cost of primitive operations
+
+Operations on `Bool` and on fixed-width words cost one step (the word-RAM convention for a
+fixed word width). Operations on `ℕ` are charged by the bit length `Nat.size` of their
+arguments (logarithmic cost):
+
+| Operation | Cost |
+| --- | --- |
+| `natAdd`, `natSub`, `natEq`, `natLt` | `max (size x) (size y) + 1` |
+| `natMul`, `natDiv`, `natMod` | `size x * size y + 1` (schoolbook) |
+| `Bool` and word operations | `1` |
+
+The shifts `wshl` and `wshr` take a natural-number amount and cost one step: an amount of at
+least the word width gives the zero word, so only amounts below the word width are
+meaningful. The evaluator places `p.cost v` ticks for a primitive operation `p` at the
+argument `v`, so `CTree.cost` remains the number of ticks and effect nodes.
+
+Unit cost on unbounded integers is too strong a model. A unit-cost RAM with multiplication
+decides in polynomial time every problem in PSPACE:
+
+* J. Hartmanis, J. Simon. *On the power of multiplication in random access machines*. 15th
+  Annual Symposium on Switching and Automata Theory (SWAT 1974), IEEE, 13–23.
+
+Under the logarithmic cost criterion, where an operation costs the bit lengths of its
+operands, RAM time and Turing-machine time are polynomially related:
+
+* S. A. Cook, R. A. Reckhow. *Time bounded random access machines*. JCSS 7(4), 1973, 354–375.
+
+D charges `ℕ` operations under this criterion. That a primitive step of D is simulated in L by
+a number of β-steps polynomial in its cost, which would place D's cost among the reasonable
+time measures of Forster, Kunze and Roth, is not proved here.
 
 ## Modules
 
@@ -39,7 +70,12 @@ word-RAM convention), branches, and effect nodes (`sample`, `get`, `set`, `query
   (`CTree.cost_bind_sample`, `Tm.cost_letE_sample`).
 * An application costs the function, the argument, one β-step and the body
   (`Tm.cost_app_le`, `Tm.cost_app_lam`); a `letE` costs its bound term once
-  (`Tm.cost_letE_le`, `Tm.cost_letE_ret`); variables cost nothing (`Tm.cost_var`).
+  (`Tm.cost_letE_le`, `Tm.cost_letE_ret`); variables cost nothing (`Tm.cost_var`); a
+  primitive operation costs its argument and `Prim.cost` at the argument's value
+  (`Tm.cost_prim`, `Tm.cost_prim_le`).
+* The sum of a list `l` by `foldl` costs at most `length l * (size (sum l) + 2)`
+  (`Examples.sumBody_cost_le`); on words, a function applied twice to the successor costs
+  exactly six steps (`Examples.twice_succW_cost`).
 * `foldl` and `iter` cost at most the number of iterations times one plus the cost of one
   application (`foldT_cost_le`, `iterT_cost_le`).
 * Precomposition of function terms adds the costs (`Tm.cost_compose_le`,
