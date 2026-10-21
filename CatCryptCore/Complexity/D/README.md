@@ -60,6 +60,27 @@ time measures of Forster, Kunze and Roth, is not proved here.
 | `Examples` | a list sum by `foldl`, a function applied twice, a sampler |
 | `TimeAdm` | time admissibility of `SPComp` arrows by closed D-terms, its graded laws, the time-bounded distance `ucCdistTime` |
 
+## Reflection of Lean definitions
+
+The command `reflect_d f` (module `Reflect`, tests in `ReflectTest`) is a certifying extraction
+of a Lean definition `f` into D, after Forster and Kunze (ITP 2019), who extract Coq functions
+to L with MetaCoq and certify each extraction by a generated correctness relation. It defines
+the D-term `f.d : Tm Γ τ`, whose context `Γ` holds the parameters of `f`, and proves the
+denotation theorem `f.d_den`: `f.d.den ρ = .ret (f x₁ … xₙ)` when `f` returns data, and
+`f.d.denote O ρ = f x₁ … xₙ` for every oracle `O` when `f` returns `SPComp α`. The certificate
+is a derivation of the judgements `Den` and `DenM`, one lemma per construct, assembled by the
+command and checked by the kernel; the cost of `f.d` is then `Tm.cost`, so a bound on it is a
+time bound for `f` in D's model. A parameter `A : α → β` or an adversary `A : α → SPComp β` is
+a D function value with the hypothesis that it computes `A`; an `Option` value is represented
+as a sum with `Unit` (`optEnc`). The fragment is: `ℕ`, `Bool`, `Unit`, `BitVec w` for a numeral
+`w`, products, sums and lists; λ-terms, application, `let`, literals, the operations of `Prim`
+and the decisions of `=`, `≠`, `<`, `≤`, `∧`, `∨`, `¬`; pairs and projections; `if`, `bif` and
+matches on `Bool`, `Option`, `Sum`, pairs and lists (non-recursive, as `lcase`); `List.foldl`
+as `foldl` and `Nat.iterate` as `iter`; `pure`, `bind`, `SPComp.sample` of a finite ground
+type, `SPComp.get` and `SPComp.set` at a location `FTy.loc f n`. A constant outside the Lean,
+Std and Mathlib libraries is unfolded; a recursive definition, a type without representation
+and any other constant are refused with a message naming them.
+
 ## What is proved
 
 * The evaluator and the denotation give related trees in related environments
