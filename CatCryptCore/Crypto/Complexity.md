@@ -52,6 +52,36 @@ bounded class.
    functions and emulation with a negligible bound, transitive and stable under
    polynomially many hybrids.
 
+## Step time as a grading
+
+[`XTimedMonad`](../XDijkstra/XTimedMonad.lean) connects the step-time trees of `derive_timed`
+and `derive_reduction` (`SPTree.Timed`, `SPTree.Timed.stepTime`) to the graded program logic and
+to the cost classes above.
+
+- `TimedM n α` is the type of step-prefixed trees `(c, t) : ℕ × SPTree.Timed α` with
+  `stepTime (c, t) ≤ n`. It is a lawful graded monad over `(ℕ, +, 0)` (`GradedMonad`,
+  `LawfulGradedMonad`): return is the leaf at index `0`, bind is the costed bind
+  `SPTree.Timed.bind` at the sum of the indices, and `TimedM.relax` moves along `≤`. Programs are
+  written as `gdo` blocks.
+- The observation `timeWP` at the shape `.graded ℕ .pure` has grade `n` and weakest precondition
+  "the postcondition holds at every leaf". Its lemmas are in the `xspec` set, so `xmvcgen!`
+  reduces the time bound of a `gdo` block to an inequality between numbers; `TimedM.sound` turns
+  a triple and a grade bound into a bound on `stepTime`. `XTimedMonadTest` proves the time bound
+  of the costed distinguisher `ckaPubRedOf.tree.timed` (`KEMCKA`) this way.
+- `TimedM` is graded as `CostM σ n` is (`XCostMonad`): `CostM` bounds the tick count of a
+  deterministic state program on every run, `TimedM` the worst-case time of a tree over its
+  branches. `TickM` (`XCostMonadModel`) is a monad on `Type → Type`; the step-prefixed trees live
+  in `Type 1`, so their unbounded counterpart is not a `MonadCostModel` instance.
+- The step-time cost of an `SPComp` arrow, `spTreeTimeCost`, is the least time of a step-prefixed
+  tree family whose erasure compiles to the arrow, and `spTreeTimeCost_le_iff` identifies the
+  arrows of cost at most `n` with the erasures of the arrows into `TimedM n`. The infimum may take
+  zero step costs, and the query cost of an erased tree is at most its time, so
+  `spTreeTimeCost = spTreeQueryCost`. The cost model `timeCostModel` is the query-cost instance
+  (`timeCostModel_eq`) and satisfies all four laws: zero on `pure`, subadditive under bind,
+  coproduct at most the maximum, and `cost_precomp`. Precomposition with a Lean function is not
+  charged, whatever the cost of computing the function; a time class that charges it carries the
+  step cost of the function in the index of `TimedM`, as `SPTree.Timed.map f fc` does.
+
 ## Relation to the literature
 
 - Security definitions parametrised by an admissibility predicate with an additive cost model
