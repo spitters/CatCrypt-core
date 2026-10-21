@@ -28,6 +28,10 @@ For parameters `x₁ … xₙ`, the environment is `ρ = Env.nil.cons v₁ … .
 `∀ v, g v = .ret (A v)`; a parameter `A : α → SPComp β` (an adversary) by `g` with the
 hypothesis `∀ v, (g v).run O = A v` at the oracle `O` of the theorem, and a parameter
 `A : α → SPTree β` (a tree primitive or adversary) with `∀ v, (g v).run O = (A v).compile`.
+A curried parameter `A : α₁ → … → αₙ → β` is a D function on the right-nested tuple of its
+arguments, applied when all `n` arguments are present (a partial application is refused); a
+computation parameter without arguments (`SPComp β`, `SPTree β`) is a D function on `unit`,
+applied to `()`. A parameter the body does not mention is a binder of the theorems only.
 The theorem states
 
 * `f.d.den ρ = .ret (f x₁ … xₙ)` when `f` returns data (`.ret (optEnc (f …))` for `Option`);
@@ -720,10 +724,12 @@ open Lean Elab Meta Command CatCrypt.Core
 
 /-- How a function-typed value is applied: a closure of a λ-term of the source, with the index
 of its context and whether its body is in `SPComp`, or a parameter `g` with its hypothesis
-`h` for the denotation theorem and `hc` for the cost theorem. -/
+`h` for the denotation theorem and `hc` for the cost theorem, applied to the tuple of its
+`arity` arguments (`arity = 0`: applied to `()`; `arity ≥ 2`: a curried source function,
+uncurried in D). -/
 inductive Fn where
   | clo (lam : Expr) (ctxId : Nat) (eff : Bool)
-  | param (g h hc : Expr) (eff : Bool)
+  | param (g h hc : Expr) (eff : Bool) (arity : Nat)
   deriving Inhabited
 
 /-- A source variable: its de Bruijn level in D, the projections applied to it, the D type of
@@ -1062,10 +1068,7 @@ partial def goP (ctx : Ctx) (e : Expr) : M Res := do
     | .const c _ => goConst ctx e c args
     | .fvar _ | .lam .. | .letE .. | .mdata .. =>
       if args.isEmpty then fail m!"the term `{e}`"
-      let mut r ← goP ctx fn
-      for a in args do
-        r ← applyP ctx r a
-      return r
+      applyAll ctx e fn args false
     | _ => fail m!"the term `{e}`"
 
 /-- A λ-term: a closure. -/
@@ -1086,10 +1089,62 @@ partial def goLam (ctx : Ctx) (e : Expr) : M Res := do
   let pf ← ifPf (mkAppM ``Den.lam #[rb.tm, ctx.rho])
   finish ctx e tm (tyC `arr #[a, rb.ty]) pf (some (.clo e id eff))
 
+/-- The translation of the arguments `args` of a parameter as one D argument: `()` for none,
+the argument for one, the right-nested tuple for several. -/
+partial def argsRes (ctx : Ctx) (args : Array Expr) : M Res := do
+  let Γ := ctx.gamma
+  if args.isEmpty then
+    let u := Lean.mkConst ``PUnit.unit [Level.one]
+    let f := mkConst ``FTy.unit
+    return { tm := mkApp3 (mkConst ``Tm.lit) Γ f u, ty := tyUnit,
+             pf := ← ifPf (mkAppM ``Den.lit #[f, u, ctx.rho]), val := u, dv := u,
+             cpf := ← costPf #[] fun _ => mkAppM ``CEq.lit #[f, u, ctx.rho] }
+  let mut acc ← goP ctx args.back!
+  for i in (List.range (args.size - 1)).reverse do
+    let r ← goP ctx args[i]!
+    let synth ← synMode
+    acc := { tm := mkAppN (mkConst ``Tm.pair) #[Γ, r.ty, acc.ty, r.tm, acc.tm],
+             ty := tyC `prod #[r.ty, acc.ty],
+             pf := ← ifPf (mkAppM ``Den.pair #[r.pf, acc.pf]),
+             val := ← if synth then pure default else mkAppM ``Prod.mk #[r.val, acc.val],
+             dv := ← if synth then pure default else mkAppM ``Prod.mk #[r.dv, acc.dv],
+             cpf := ← costPf #[r.cpf, acc.cpf] fun ys => mkAppM ``CEq.pair ys }
+  return acc
+
+/-- The application of the function `fn` to `args`: a parameter of arity `n` takes its `n`
+arguments at once, as a tuple (`()` for `n = 0`); in an `SPComp` or `SPTree` position
+(`eff`) the last application is a computation. -/
+partial def applyAll (ctx : Ctx) (e fn : Expr) (args : Array Expr) (eff : Bool) : M Res := do
+  let mut r ← goP ctx fn
+  let mut i := 0
+  let mut done := false
+  for _ in [0:args.size + 1] do
+    if done then break
+    let n := match r.fn with
+      | some (.param _ _ _ _ n) => n
+      | _ => 1
+    if i + n > args.size then
+      if i == args.size then break
+      fail m!"the partial application `{e}` of a parameter"
+    let srcs := args.extract i (i + n)
+    let ra ← if n == 1 then goP ctx args[i]! else argsRes ctx srcs
+    let last := i + n == args.size
+    r ← if last && eff then applyMR ctx r ra srcs else applyPR ctx r ra srcs
+    i := i + n
+    if last then
+      done := true
+  if eff && !done then fail m!"the computation `{e}`"
+  if i != args.size then fail m!"the application `{e}`"
+  return r
+
 /-- Apply a translated function to a source argument, in a pure position. -/
 partial def applyP (ctx : Ctx) (rf : Res) (arg : Expr) : M Res := do
+  applyPR ctx rf (← goP ctx arg) #[arg]
+
+/-- Apply a translated function to the translated argument `ra` of the source arguments
+`srcs`, in a pure position. -/
+partial def applyPR (ctx : Ctx) (rf : Res) (ra : Res) (srcs : Array Expr) : M Res := do
   let some (a, b) := tyArgs2 `arr rf.ty | fail m!"an application of a non-function"
-  let ra ← goP ctx arg
   let tm := mkAppN (mkConst ``Tm.app) #[ctx.gamma, a, b, rf.tm, ra.tm]
   if ← synMode then return { tm, ty := b, pf := mkConst ``True.intro, val := default,
                              dv := default }
@@ -1103,9 +1158,10 @@ partial def applyP (ctx : Ctx) (rf : Res) (arg : Expr) : M Res := do
     let rb ← goP c0' (body.instantiate1 (mkFVar y))
     let pf ← mkAppM ``Den.app #[rf.pf, ra.pf, rb.pf]
     return { tm, ty := b, pf, val := rb.val, dv := rb.dv, fn := rb.fn }
-  | some (.param _ h hc false) =>
+  | some (.param _ h hc false n) =>
+    unless n == srcs.size do fail m!"the partial application of the parameter `{rf.val}`"
     let pf ← mkAppM ``Den.app #[rf.pf, ra.pf, mkApp h ra.dv]
-    let val := mkApp rf.val ra.val
+    let val := if n == 1 then mkApp rf.val ra.val else mkAppN rf.val (srcs.map ctx.subst)
     let cpf ← costPf #[rf.cpf, ra.cpf] fun ys => mkAppM ``CEq.app #[ys[0]!, ys[1]!, mkApp hc ra.dv]
     return { tm, ty := b, pf := ← mkExpectedTypeHint pf (denE ctx.gamma b tm ctx.rho val),
              val, dv := val, cpf }
@@ -1113,8 +1169,12 @@ partial def applyP (ctx : Ctx) (rf : Res) (arg : Expr) : M Res := do
 
 /-- Apply a translated function to a source argument, in an `SPComp` position. -/
 partial def applyM (ctx : Ctx) (rf : Res) (arg : Expr) : M Res := do
+  applyMR ctx rf (← goP ctx arg) #[arg]
+
+/-- Apply a translated function to the translated argument `ra` of the source arguments
+`srcs`, in an `SPComp` position. -/
+partial def applyMR (ctx : Ctx) (rf : Res) (ra : Res) (srcs : Array Expr) : M Res := do
   let some (a, b) := tyArgs2 `arr rf.ty | fail m!"an application of a non-function"
-  let ra ← goP ctx arg
   let tm := mkAppN (mkConst ``Tm.app) #[ctx.gamma, a, b, rf.tm, ra.tm]
   if ← synMode then return { tm, ty := b, pf := mkConst ``True.intro, val := default,
                              dv := default }
@@ -1128,9 +1188,10 @@ partial def applyM (ctx : Ctx) (rf : Res) (arg : Expr) : M Res := do
     let rb ← goM c0' (body.instantiate1 (mkFVar y))
     let pf ← denMApp ctx ``DenM.app #[rf.pf, ra.pf, rb.pf]
     return { tm, ty := b, pf, val := rb.val, dv := rb.dv }
-  | some (.param _ h hc true) =>
+  | some (.param _ h hc true n) =>
+    unless n == srcs.size do fail m!"the partial application of the parameter `{rf.val}`"
     let pf ← denMApp ctx ``DenM.app #[rf.pf, ra.pf, mkApp h ra.dv]
-    let val0 := mkApp rf.val ra.val
+    let val0 := if n == 1 then mkApp rf.val ra.val else mkAppN rf.val (srcs.map ctx.subst)
     let val ← if (← treeArg? (← inferType val0)).isSome then mkAppM ``SPTree.compile #[val0]
       else pure val0
     let cpf ← costPf #[rf.cpf, ra.cpf] fun ys => mkAppM ``CLe.app #[ys[0]!, ys[1]!, mkApp hc ra.dv]
@@ -1676,11 +1737,7 @@ partial def goM (ctx : Ctx) (e : Expr) : M Res := do
       if (← isMatcher c) || (← unfoldable c) then goM ctx (← deltaApp c e)
       else fail m!"the computation `{e}` (head `{c}`)"
   | .fvar _ | .lam .. =>
-    if args.isEmpty then fail m!"the computation `{e}`"
-    let mut r ← goP ctx fn
-    for a in args.pop do
-      r ← applyP ctx r a
-    let rm ← applyM ctx r args.back!
+    let rm ← applyAll ctx e fn args true
     if ← synMode then return rm
     finishM ctx e rm.tm rm.ty rm.pf rm.cpf
   | _ => fail m!"the computation `{e}`"
@@ -1826,11 +1883,7 @@ partial def goT (ctx : Ctx) (e : Expr) : M Res := do
       if (← isMatcher c) || (← unfoldable c) then goT ctx (← deltaApp c e)
       else fail m!"the tree `{e}` (head `{c}`)"
   | .fvar _ | .lam .. =>
-    if args.isEmpty then fail m!"the tree `{e}`"
-    let mut r ← goP ctx fn
-    for a in args.pop do
-      r ← applyP ctx r a
-    let rm ← applyM ctx r args.back!
+    let rm ← applyAll ctx e fn args true
     if ← synMode then return rm
     finishT ctx e rm.tm rm.ty rm.pf rm.cpf
   | _ => fail m!"the tree `{e}`"
@@ -1849,6 +1902,33 @@ partial def location (l : Expr) : M (Expr × Expr) := do
 
 end
 
+/-- The D type of the tuple of arguments of types `τs`: `unit` for none, the right-nested
+product otherwise. -/
+def tupleTy : List Expr → Expr
+  | [] => tyUnit
+  | [τ] => τ
+  | τ :: τs => tyC `prod #[τ, tupleTy τs]
+
+/-- The components of a value `v` of `tupleTy τs`. -/
+def tupleProjs : List Expr → Expr → Array Expr
+  | [], _ => #[]
+  | [_], v => #[v]
+  | τ :: τs, v =>
+    let r := tupleTy τs
+    #[mkApp3 (mkConst ``Prod.fst [Level.zero, Level.zero]) (valE τ) (valE r) v] ++
+      tupleProjs τs (mkApp3 (mkConst ``Prod.snd [Level.zero, Level.zero]) (valE τ) (valE r) v)
+
+/-- The arguments and the final codomain of a curried function type; a computation type
+(`SPComp`, `SPTree`) is a codomain. -/
+partial def funShape (T : Expr) : MetaM (Array Expr × Expr) := do
+  if (← spcompArg? T).isSome || (← treeArg? T).isSome then return (#[], T)
+  match ← whnf T with
+  | .forallE _ a b _ =>
+    if b.hasLooseBVars then throwError "reflect_d: the dependent function type `{T}`"
+    let (ds, c) ← funShape b
+    return (#[a] ++ ds, c)
+  | _ => return (#[], T)
+
 /-- The parameters of the reflected definition: the static parameters (a type parameter,
 represented by a finite ground type `f` as `FTy.den f`, and a parameter occurring in a later
 type), the cost parameters of the function parameters, the binders of the denotation and of the
@@ -1862,6 +1942,8 @@ structure Params where
   entries : List Entry := []
   tys : List Expr := []
   rho : Expr
+  /-- For each binder, whether the body or a later binder type mentions it. -/
+  used : Array Bool := #[]
 
 /-- Reflect the definition `c`: define `c.d`, prove `c.d_den` and, when every construct is in
 the costed fragment, `c.d_cost`. -/
@@ -1895,26 +1977,40 @@ def reflect (c : Name) : Term.TermElabM Unit := do
         withLocalDeclD n T fun s => do
           let ps' := { ps with statics := ps.statics.push s, args := ps.args.push s }
           params fuel (b.instantiate1 s) ps' k
+      else if !(ps.used.getD ps.args.size true) then
+        withLocalDeclD n T fun x =>
+          params fuel (b.instantiate1 x)
+            { ps with dBinders := ps.dBinders.push x, cBinders := ps.cBinders.push x,
+                      args := ps.args.push x } k
       else
         withLocalDeclD n T fun x => do
           let i := ps.tys.length
-          let (τ, isOpt) ← tyOf T
           let gam := gammaE ps.tys
-          if let some (a, bt) := tyArgs2 `arr τ then
-            let Tw ← whnf T
-            let .forallE _ _ cod _ := Tw | throwError "reflect_d: the parameter `{x}`"
-            let tree := (← treeArg? cod).isSome
-            let eff := (← spcompArg? cod).isSome || tree
+          let (doms, cod) ← funShape T
+          let tree := (← treeArg? cod).isSome
+          let eff := (← spcompArg? cod).isSome || tree
+          let fnParam := !doms.isEmpty || eff
+          let dτs ← if fnParam then doms.mapM fun d => return (← tyOf d).1 else pure #[]
+          let (τ, isOpt) ← if fnParam then do
+              let a := tupleTy dτs.toList
+              let some γ ← (do if let some γ ← spcompArg? cod then return some γ
+                                else treeArg? cod) | pure (tyC `arr #[a, (← tyOf cod).1], false)
+              pure (tyC `arr #[a, (← tyOf γ).1], false)
+            else tyOf T
+          if let some (a, bt) := (if fnParam then tyArgs2 `arr τ else none) then
+            let nArgs := doms.size
+            let srcApp (v : Expr) : Expr := mkAppN x (tupleProjs dτs.toList v)
+            let _ := a
             withLocalDeclD `g (valE τ) fun g => do
               let hT ← withLocalDeclD `v (valE a) fun v => do
                 if eff then
-                  let rhs ← if tree then mkAppM ``SPTree.compile #[mkApp x v]
-                    else pure (mkApp x v)
+                  let rhs ← if tree then mkAppM ``SPTree.compile #[srcApp v]
+                    else pure (srcApp v)
                   mkForallFVars #[v] (← mkEq (mkApp3 (mkConst ``CTree.run) (valE bt) O
                     (mkApp g v)) rhs)
                 else
                   mkForallFVars #[v] (← mkEq (mkApp g v) (mkApp2 (mkConst ``CTree.ret)
-                    (valE bt) (mkApp x v)))
+                    (valE bt) (srcApp v)))
               let csT ← if eff then pure (mkConst ``Nat)
                 else mkArrow (valE a) (mkConst ``Nat)
               withLocalDeclD (n.appendAfter "Cost") csT fun cs => do
@@ -1925,10 +2021,11 @@ def reflect (c : Name) : Term.TermElabM Unit := do
                   else
                     mkForallFVars #[v] (← mkEq (mkApp g v) (← mkAppM ``stepN
                       #[mkConst ``CTree.tick, mkApp cs v,
-                        mkApp2 (mkConst ``CTree.ret) (valE bt) (mkApp x v)]))
+                        mkApp2 (mkConst ``CTree.ret) (valE bt) (srcApp v)]))
                 withLocalDeclD `hA hT fun hA => withLocalDeclD `hC hcT fun hC => do
                   let en : Entry := { fvar := x.fvarId!, level := i, path := [], baseTy := τ,
-                                      val := x, dval := g, fn := some (.param g hA hC eff) }
+                                      val := x, dval := g,
+                                      fn := some (.param g hA hC eff nArgs) }
                   params fuel (b.instantiate1 x)
                     { ps with costStatics := ps.costStatics.push cs,
                               dBinders := ps.dBinders ++ #[x, g, hA],
@@ -1945,7 +2042,16 @@ def reflect (c : Name) : Term.TermElabM Unit := do
                         args := ps.args.push x, entries := en :: ps.entries,
                         tys := τ :: ps.tys,
                         rho := mkAppN (mkConst ``Env.cons) #[gam, τ, v, ps.rho] } k
-    params 1024 info.type { rho := mkConst ``Env.nil } fun ps bodyT => do
+    let used ← lambdaTelescope info.value fun xs body => do
+      let mut us : Array Bool := #[]
+      for h : j in [0:xs.size] do
+        let fv := xs[j].fvarId!
+        let mut u := body.containsFVar fv
+        for k in [j+1:xs.size] do
+          if (← inferType xs[k]!).containsFVar fv then u := true
+        us := us.push u
+      return us
+    params 1024 info.type { rho := mkConst ``Env.nil, used } fun ps bodyT => do
       let body := info.value.beta ps.args
       let ctx : Ctx := { entries := ps.entries, tys := ps.tys, rho := ps.rho, oracle := O }
       let tree := (← treeArg? bodyT).isSome
