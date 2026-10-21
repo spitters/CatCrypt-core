@@ -33,7 +33,9 @@ A time reduction (`TimeReduction`) maps the arrows of one game to those of anoth
 an arrow admissible at time `t` to one admissible at time `time t`. Precomposition and
 postcomposition by an arrow admissible at time `s` are time reductions with
 `time t = s + t + 3` (`TimeReduction.pre`, `TimeReduction.post`), and time reductions
-compose (`TimeReduction.comp`).
+compose (`TimeReduction.comp`). An open D-term with the adversary as a free variable, whose cost
+is at most `time k` when each call of the adversary costs at most `k`, is a time reduction of
+time `t + 2 + time t` (`TimeReduction.ofOpen`).
 
 The transfer theorem `polyTime_transfer` takes a concrete reduction: for every adversary `A`
 and every `n`, `AdvP n A ≤ Σ_{i < k n} AdvQ n (B n i A) + ε n`, each `B n i` a time reduction
@@ -254,6 +256,37 @@ def comp {a b c d e f : Ty} (R₂ : TimeReduction O c d e f) (R₁ : TimeReducti
   red A := R₂.red (R₁.red A)
   time t := R₂.time (R₁.time t)
   adm t A hA := R₂.adm _ _ (R₁.adm t A hA)
+
+/-- A time reduction from an open D-term: `body` has the adversary as its outer variable and the
+input as its inner one, its cost is at most `time k` when every call of the adversary costs at
+most `k`, and its evaluation means `red A` when the adversary variable means `A`. The realizer of
+`red A` is `letE r.term (lam body)` for a realizer `r` of `A`: its evaluation takes the steps of
+`r.term` and one β-step, and its calls cost at most `time t`, so the reduced time is
+`t + 2 + time t`. -/
+noncomputable def ofOpen (O : CTree.Oracle) {a b c d : Ty}
+    (hc : c.FO) (hd : d.FO) (body : Tm [c, .arr a b] d)
+    (red : (Val a → SPComp (Val b)) → Val c → SPComp (Val d))
+    (time : ℕ → ℕ) (htime : Monotone time)
+    (hcost : ∀ (g : Val (.arr a b)) (k : ℕ), (∀ v, (g v).cost ≤ k) →
+      ∀ u, body.cost ((Env.nil.cons g).cons u) ≤ time k)
+    (hden : ∀ (A : Val a → SPComp (Val b)) (g : Val (.arr a b)), (∀ v, (g v).run O = A v) →
+      ∀ u, (body.eval ((Env.nil.cons g).cons u)).run O = red A u) :
+    TimeReduction O a b c d where
+  red := red
+  time t := t + 2 + time t
+  adm t A hA := ⟨hc, hd, hA.2.2.elim fun r => ⟨{
+    term := .letE r.term (.lam body)
+    evalCost := r.evalCost + 1
+    callCost := time t
+    closure := fun u => body.eval ((Env.nil.cons r.closure).cons u)
+    evals := by
+      show (Tm.letE r.term (.lam body)).eval Env.nil = _
+      rw [Tm.eval_letE, show r.term.eval Env.nil = _ from r.evals, stepN_tick_bind, stepN_add]
+      rfl
+    call_le := fun u =>
+      (hcost r.closure r.callCost r.call_le u).trans (htime (by have := r.time_le; omega))
+    time_le := by have := r.time_le; omega
+    run_eq := hden A r.closure r.run_eq }⟩⟩
 
 end TimeReduction
 
@@ -477,6 +510,35 @@ theorem addTwo_asymSecure (O : CTree.Oracle) {α : ℕ → Type}
     exact (spcomp_distComp_bind_right _ _ _ _).le
   · exact ⟨fun n => n + 10, isPolyBound_id.add (isPolyBound_const 10),
       fun n i t => by simp [TimeReduction.pre]; omega⟩
+
+/-- Post-processing by the reflected `addTwo` as a time reduction from an open term: the body
+calls the adversary on the input and applies `addTwo.d` to the result. -/
+noncomputable example (O : CTree.Oracle) :
+    TimeReduction O (.word 8) (.word 8) (.word 8) (.word 8) :=
+  TimeReduction.ofOpen O trivial trivial
+    (.app (Tm.weaken (.lam addTwo.d)) (.app (.var (.there .here)) (.var .here)))
+    (fun A u => SPComp.bind (A u) addTwoArrow) (fun k => k + 4)
+    (fun _ _ h => Nat.add_le_add_right h 4)
+    (fun g k hg u => by
+      change ((CTree.tick (g u)).bind
+        fun v => CTree.tick (addTwo.d.eval (Env.nil.cons v))).cost ≤ k + 4
+      have h1 := CTree.cost_bind_le (CTree.tick (g u))
+        (fun v => CTree.tick (addTwo.d.eval (Env.nil.cons v))) 3
+        (CTree.AllRet.of_forall (fun _ => le_of_eq rfl) _)
+      have h2 := hg u
+      rw [CTree.cost_tick] at h1
+      omega)
+    (fun A g hg u => by
+      change CTree.run O ((CTree.tick (g u)).bind
+        fun v => CTree.tick (addTwo.d.eval (Env.nil.cons v))) = _
+      rw [CTree.run_bind]
+      change SPComp.bind ((g u).run O) _ = _
+      rw [hg]
+      refine congrArg _ (funext fun v => ?_)
+      change (addTwo.d.eval (Env.nil.cons v)).run O = _
+      rw [Tm.run_eval O addTwo.d trivial (by simp [Ty.FO])]
+      simp only [Tm.denote, addTwo.d_den v]
+      rfl)
 
 end Instance
 
