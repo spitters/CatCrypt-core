@@ -53,6 +53,22 @@ four stages of `FAEST/Timed` (`h3Choose`, `hopPre.timeBound_stepBind`, `cvChoose
 `P + (A.bind f).1 + (A.bind f).2.time ≤ B` after a pair `(y.1, y.2)` whose continuation was
 not bounded), `tagRed` (`OracleAdv.Timed.simulate`, a step cost not reduced), `ff1Reduction`
 and `emImpl` (recursive costed definitions, `feistelAdv.timed`, `Sponge.walk.timed`).
+
+A third uniform sample of 24, measured after the rules for nested prefix binds, conditionals
+in costs, registered costs, combinator time theorems and the heartbeat budget, without further
+change: 20 measurable (four theorems of `HPKE/Timed` under edit), 12 closed. Open:
+`hopPre.timeBound_tweak` (a staged composition), `walk` (recursive), `nkRed4` and `nkRed5` (a
+`whnf` timeout at 400000 heartbeats outside the budgeted steps), `dlReduction` (`delay` before
+`forkRun.timedK`: the rule `stb_delay` does not unify), `IKNPInstance.receiverRed` (a time
+bound of another form, `TimeBound t c n`), `faestH5RecReduction` (the step cost of
+`runOracle`) and `forger` (the step cost of a recursive `forgerProg.timed`).
+
+With the same procedure, the first two samples close 13 of 20 (new: `edhoc_ddh_red_0_1`,
+`GDH_Red_Step4`, `liftP`) and 11 of 23 (with `hybGuess` and `faestGgmOwfReduction`
+measurable; new: `hybGuess`). Open in them besides the shapes above: `wgKsReduction1`,
+`cycRed1`, `cycRed2`, `cycRed3` (a leaf in which `y.1` and `y.2.time` of one pair are summands
+followed by further summands, so that `time_snd_fst` does not apply), `nkRed1` (the `whnf`
+timeout).
 -/
 
 set_option autoImplicit false
@@ -118,6 +134,42 @@ example : type_of% @CatCrypt.Crypto.Anon.Signalling.crRedTree.timeBound_timed :=
 
 /-- The statement of `OracleAdv.Timed.timeBound_bind`. -/
 example : type_of% @CatCrypt.Crypto.OracleAdv.Timed.timeBound_bind := by
+  time_bound
+
+/-- A costed prefix bind nested in the step cost of a pair: `(C + (D + y.1), y.2)` with
+`y = keygen.bind f`. -/
+example {W : Type} (keygen : SPTree.Timed W) (A : W → SPTree.Timed Bool) {T : ℕ}
+    (hA : ∀ o, (A o).time ≤ T) :
+    SPTree.Timed.stepTime (2 + (3 + (keygen.bind fun k => (1, A k)).1),
+      (keygen.bind fun k => (1, A k)).2) ≤ keygen.time + T + 6 := by
+  time_bound
+
+/-- An `if` in the step cost: the leaf is split on the condition. -/
+example (A : SPTree.Timed Bool) (b : Bool) (f g : ℕ) {T : ℕ} (hA : A.time ≤ T)
+    (hf : f ≤ 4) (hg : g ≤ 4) :
+    SPTree.Timed.stepTime ((if b then f else g) + 1, A) ≤ T + 5 := by
+  time_bound
+
+/-- A registered cost, read through its `_eq` lemma. -/
+def double.timedCost (n : ℕ) : ℕ := 2 * n + 1
+
+/-- The unfolding lemma of `double.timedCost` (a test of the cost-lemma lookup). -/
+theorem double.timedCost_eq (n : ℕ) : double.timedCost n = 2 * n + 1 := rfl
+
+example (A : SPTree.Timed Bool) {T : ℕ} (hA : A.time ≤ T) (n : ℕ) (hn : n ≤ 3) :
+    SPTree.Timed.stepTime (double.timedCost n, A) ≤ T + 7 := by
+  time_bound
+
+/-- A simulation below a definition: `timeBound_simulate` with its handler bound from a
+hypothesis and its query bound from the time bound of the adversary. -/
+noncomputable def simWrap {D R D' R' S α : Type} (impl : S → D → ℕ × OracleAdv.Timed D' R' (R × S))
+    (A : OracleAdv.Timed D R α) (s : S) : ℕ × OracleAdv.Timed D' R' (α × S) :=
+  OracleAdv.Timed.simulate impl A s
+
+example {D R D' R' S α : Type} (impl : S → D → ℕ × OracleAdv.Timed D' R' (R × S)) {t T : ℕ}
+    (himpl : ∀ s d, OracleAdv.Timed.StepTimeBound (impl s d) t) (A : OracleAdv.Timed D R α)
+    (hA : A.TimeBound T) (s : S) :
+    OracleAdv.Timed.StepTimeBound (simWrap impl A s) (T + T * t) := by
   time_bound
 
 end CatCrypt.Tactics.AutoTimeTest
