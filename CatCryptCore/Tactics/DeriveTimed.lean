@@ -83,6 +83,13 @@ Costs follow call-by-value evaluation:
   cost of the renaming `ren d` of a `mapQuery` charged per query; `SPTree.bind` and
   `SPTree.map` are translated to `SPTree.Timed.bind` and `SPTree.Timed.map`, with the cost of
   the function of a `map` charged per leaf;
+* a match on an oracle-tree binder `A` of `R` (a definition by structural recursion over the
+  adversary, a handler of its nodes) is translated to the case analysis
+  `OracleAdv.Timed.casesOn` of its costed tree `A'`, at cost one: the continuation `k` of a
+  `rand` or `query` node stands for the continuation of the costed node, with the node's step
+  cost as its cost companion, so a recursive call on `k x` is a recursive call on the costed
+  tree and `R.timed` is defined by structural recursion on `A'`; its time follows from
+  `OracleAdv.Timed.timeBound_fold`;
 * a `let` of first-order data is priced once: `let x := v; b` costs the cost of `v` plus the
   cost of `b`, in which `x` costs nothing; in a tree the `let` stays around the costed tree and
   the cost of `v` is charged in front; a `let` of a type, a proof, a function or a tree is
@@ -106,9 +113,8 @@ the option `derive_timed.maxDepth` (default 16) nested definitions.
 A registered primitive `f` has a cost `f.timedCost`, a definition taking the arguments of
 `f`, each function-typed argument followed by its cost companion, and returning `ℕ`; the
 command `timed_cost f := e` defines it. A registered cost is a trusted statement about the
-cost of `f`. A reduction whose costed form is written by hand (a recursion over an oracle
-tree, for instance) is registered by defining `R.timed` and `R.erase_timed` in the binder
-convention above.
+cost of `f`. A reduction whose costed form is written by hand is registered by defining
+`R.timed` and `R.erase_timed` in the binder convention above.
 
 A field `m` of a computed structure `g b₁ … bₖ`, where `g` is a field path (`kit.aead`) or a
 local function with a cost companion, applied as `(g b₁ … bₖ).m x₁ … xₙ`, is priced as the
@@ -122,7 +128,7 @@ field of a structure that is neither a field path nor a field of a computed stru
 above, an opaque data function without a registered cost, a recursive data
 function whose cost `derive_cost` does not derive (a class method on a local instance in its
 body needs `derive_cost (unit := …)`), a `match` whose motive depends on its
-discriminants, a recursion over an oracle-tree argument, a recursive call that changes a
+discriminants, a match on an oracle tree that is not a binder, a recursive call that changes a
 structure whose fields have cost companions, and a call of a reduction whose costed form
 takes such companions.
 
@@ -139,6 +145,11 @@ Isabelle's `time_fun` command.
   `R.erase_timed` (or `R.erase_s`)
 * `timed_cost f := e` — register the cost `e` of the primitive `f`
 * `treeKinds` — the table of tree kinds
+
+## Main results
+
+* `OracleAdv.Timed.timeBound_fold` — the time of a handler of the nodes of a costed tree:
+  overhead `h` per unit of the tree's time and `r` at a leaf give time `(1 + h) * T + r`
 -/
 
 public section
@@ -159,6 +170,44 @@ theorem erase_snd_dite (c : Prop) [Decidable c] (x : c → ℕ × Timed D R α)
     (y : ¬c → ℕ × Timed D R α) :
     (if h : c then x h else y h).2.erase = if h : c then (x h).2.erase else (y h).2.erase := by
   split <;> rfl
+
+/-- **Time of a handler.** Let `H` interpret a costed tree from a state, with overhead at most
+`h` per unit of the tree: at a `rand` or `query` node whose continuation has step cost `c`,
+`H` takes time `M` whenever every continuation `k b` takes time `M - (1 + h) * (1 + c b)`
+from every state; at a leaf it takes time `r`. Then an adversary of time `T` is handled in
+time `(1 + h) * T + r`. A costed form that `derive_timed` derives by recursion over an oracle
+tree is such an `H`, and `OracleAdv.Timed.simulate` and `subst` are its stateful and stateless
+cases with the cost of each query in the handler (`timeBound_simulate`). -/
+theorem timeBound_fold {S D' R' β : Type} (H : Timed D R α → S → ℕ × Timed D' R' β)
+    {h r : ℕ} (hret : ∀ a s, StepTimeBound (H (ret a) s) r)
+    (hrand : ∀ {γ : Type} (p : PMF γ) (c : γ → ℕ) (k : γ → Timed D R α) (s : S) (M : ℕ),
+      1 + h ≤ M → (∀ b, (1 + h) * (1 + c b) ≤ M) →
+      (∀ b s', StepTimeBound (H (k b) s') (M - (1 + h) * (1 + c b))) →
+      StepTimeBound (H (rand p c k) s) M)
+    (hquery : ∀ (d : D) (c : R → ℕ) (k : R → Timed D R α) (s : S) (M : ℕ),
+      1 + h ≤ M → (∀ b, (1 + h) * (1 + c b) ≤ M) →
+      (∀ b s', StepTimeBound (H (k b) s') (M - (1 + h) * (1 + c b))) →
+      StepTimeBound (H (query d c k) s) M)
+    {A : Timed D R α} {T : ℕ} (hA : A.TimeBound T) (s : S) :
+    StepTimeBound (H A s) ((1 + h) * T + r) := by
+  induction A generalizing T s with
+  | ret a => exact (hret a s).mono (Nat.le_add_left r _)
+  | rand p c k ih =>
+    refine hrand p c k s _ ?_ (fun b => ?_) (fun b s' => (ih b (hA.2 b).2 s').mono ?_)
+    · exact (Nat.le_mul_of_pos_right _ hA.1).trans (Nat.le_add_right _ _)
+    · have := (hA.2 b).1; have := hA.1
+      exact (Nat.mul_le_mul_left _ (by omega)).trans (Nat.le_add_right _ _)
+    · have e : (1 + h) * T = (1 + h) * (1 + c b) + (1 + h) * (T - 1 - c b) := by
+        rw [← Nat.mul_add]; congr 1; have := (hA.2 b).1; have := hA.1; omega
+      omega
+  | query d c k ih =>
+    refine hquery d c k s _ ?_ (fun b => ?_) (fun b s' => (ih b (hA.2 b).2 s').mono ?_)
+    · exact (Nat.le_mul_of_pos_right _ hA.1).trans (Nat.le_add_right _ _)
+    · have := (hA.2 b).1; have := hA.1
+      exact (Nat.mul_le_mul_left _ (by omega)).trans (Nat.le_add_right _ _)
+    · have e : (1 + h) * T = (1 + h) * (1 + c b) + (1 + h) * (T - 1 - c b) := by
+        rw [← Nat.mul_add]; congr 1; have := (hA.2 b).1; have := hA.1; omega
+      omega
 
 end CatCrypt.Crypto.OracleAdv.Timed
 
@@ -390,6 +439,9 @@ def treeTy? (t : Expr) : MetaM (Option TreeTy) := do
 
 namespace TreeTy
 
+/-- The tree type. -/
+def type (T : TreeTy) : Expr := mkAppN (mkConst T.kind.tree) T.params
+
 /-- The costed tree type. -/
 def timedType (T : TreeTy) : Expr := mkAppN (mkConst T.kind.timed) T.params
 
@@ -574,6 +626,15 @@ def erasure (k : Kind) (t v : Expr) : MetaM Expr := do
         | throwError "derive_timed: `{b}` is not a tree of a registered kind"
       mkLambdaFVars ys (T.eraseE (mkAppN v ys))
   | _ => return v
+
+/-- The costed tree of the tree binder `e`, when `e` is one. -/
+def treeLocal? (ctx : Ctx) (e : Expr) : Option Expr :=
+  match e.consumeMData with
+  | .fvar id =>
+    match ctx.locals.get? id with
+    | some { kind := .tree, value, .. } => some value
+    | _ => none
+  | _ => none
 
 /-- Fail with the reason a derivation does not go through. -/
 def fail {β : Type} (what : MessageData) : MetaM β :=
@@ -1176,13 +1237,64 @@ partial def trConst (ctx : Ctx) (e : Expr) (c : Name) (args : Array Expr) (T : T
     let i := mkApp5 (mkConst ``dite [Level.succ Level.one]) T.pairType args[1]! args[2]! pt pe
     return T.delayE (add (natE 1) (← propCost ctx args[1]!)) i
   if ← isMatcher c then
+    -- A match on an oracle-tree binder is translated as its case analysis.
+    if let some app ← matchMatcherApp? e then
+      if app.discrs.any fun d => (treeLocal? ctx d).isSome then
+        let some e' ← delta? e | fail m!"the match `{e}` does not unfold"
+        return ← tr ctx (← Core.betaReduce e')
     let (e', cd) ← mapMatch ctx e T.pairType tr
     return T.delayE (add (natE 1) cd) e'
+  if c == ``CatCrypt.Crypto.OracleAdv.casesOn then
+    return ← trTreeCases ctx e args T
   -- A call of a reduction.
   let target ← match ctx.self? with
     | some (self, rec) => if self == c then pure rec else ensureTimed ctx c e.getAppFn
     | none => ensureTimed ctx c e.getAppFn
   callTimed ctx e target args T
+
+/-- The case analysis `OracleAdv.casesOn A ret rand query` of an oracle-tree binder `A` with
+costed form `A'`, translated as the case analysis `OracleAdv.Timed.casesOn A'` of the costed
+tree (a handler of the nodes of `A`, `T.Timed` having the constructors of `T`): the
+continuation `k` of a `rand` or `query` node of `A` stands for the continuation `k'` of the
+costed node, with the node's step cost `c` as its cost companion. The case analysis costs one.
+A recursive call on `k x` is a recursive call on `k' x`, so a reduction defined by structural
+recursion on `A` gets a costed form defined by structural recursion on `A'`. -/
+partial def trTreeCases (ctx : Ctx) (e : Expr) (args : Array Expr) (T : TreeTy) :
+    TermElabM Expr := do
+  unless args.size == 8 do
+    fail m!"the case analysis `{e}` has a motive that depends on further arguments"
+  let major := args[4]!
+  let some A' := treeLocal? ctx major
+    | fail m!"a case analysis of the oracle tree `{major}`, which is not a binder"
+  let some Tm ← treeTy? (← inferType major) | fail m!"`{major}` is not an oracle tree"
+  let motive ← withLocalDeclD `x Tm.timedType fun x => mkLambdaFVars #[x] T.pairType
+  let cases := mkAppN (mkConst ``CatCrypt.Crypto.OracleAdv.Timed.casesOn [← getLevel T.pairType])
+    (Tm.params ++ #[motive, A'])
+  let minorTys ← forallBoundedTelescope (← inferType cases) (some 3) fun ms _ =>
+    ms.mapM fun m => inferType m
+  unless minorTys.size == 3 do fail m!"internal: unexpected type of `{cases}`"
+  -- The `ret` alternative.
+  let altRet ← withEta args[5]! 1 fun ys b => do
+    mkLambdaFVars ys (T.delayE (natE 1) (← tr ctx b))
+  -- A node alternative: the target fields end with the step cost `c` and the continuation
+  -- `k'`; the source alternative takes the fields before `c` and the continuation `k`.
+  let node (minor : Expr) (ty : Expr) : TermElabM Expr :=
+    forallTelescope ty fun fs _ => do
+      let c := fs[fs.size - 2]!
+      let k' := fs[fs.size - 1]!
+      let kTy ← forallTelescope (← inferType k') fun ys _ => mkForallFVars ys Tm.type
+      withLocalDeclD `k kTy fun k => do
+        let srcFields := (fs.extract 0 (fs.size - 2)).push k
+        let b ← Core.betaReduce (mkAppN minor srcFields)
+        let ctx' := { ctx with locals := ctx.locals.insert k.fvarId! ⟨.treeFn, k', some c⟩ }
+        let p ← tr ctx' b
+        let p := p.replaceFVar k (← erasure .treeFn kTy k')
+        mkLambdaFVars fs (T.delayE (natE 1) p)
+  let altRand ← node args[6]! minorTys[1]!
+  let altQuery ← node args[7]! minorTys[2]!
+  -- The unit of the case analysis is charged in each alternative, so that the case analysis
+  -- heads the costed form and Lean derives its equations.
+  return mkAppN cases #[altRet, altRand, altQuery]
 
 /-- The costed form of the reduction `c` at the universe levels of `f`: registered, or
 derived now. -/
@@ -1321,7 +1433,11 @@ partial def deriveTimed (ctx : Ctx) (c : Name) : TermElabM Unit := do
   -- The erasure lemmas of the tree kinds whose costed trees occur in the costed form.
   let used := tType.getUsedConstants ++ tValue.getUsedConstants
   let kindLemmas := (treeKinds.filter fun k => used.contains k.timed).flatMap (·.eraseLemmas)
-  let simpLemmas : Array Name := #[timedName, c] ++ kindLemmas ++ callees
+  -- A costed form by recursion over an oracle tree has a case analysis as its only equation,
+  -- which `fun_induction` unfolds; as a simp lemma it would loop.
+  let treeRec := tValue.getUsedConstants.contains ``CatCrypt.Crypto.OracleAdv.Timed.casesOn
+  let simpLemmas : Array Name :=
+    (if treeRec then #[c] else #[timedName, c]) ++ kindLemmas ++ callees
   let ids : Array (TSyntax `ident) := (Array.range nBinders.size).map fun i =>
     mkIdent (Name.mkSimple s!"x{i}")
   let explicitIds := (ids.zip nBinders).filterMap fun (i, e) => if e then some i else none

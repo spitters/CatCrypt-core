@@ -113,6 +113,17 @@ it applies, and each call passes them. A field of a computed structure, `(kit.ae
 is priced as the computation of the structure `kit.aead iv` by these rules, plus one, plus a cost
 companion `aead_encCost iv k m` indexed by the arguments that compute the structure and the
 arguments of the field.
+A reduction defined by structural recursion over its adversary, a handler of the adversary's
+nodes such as `prfMacRedAux` and `mapAns`, gets a costed form by the same recursion over the
+costed mirror: the continuation of a node of the adversary stands for the continuation of the
+costed node, with the node's step cost as its cost companion, and the case analysis of a node
+costs one. Its time follows from `OracleAdv.Timed.timeBound_fold`: when the handler's overhead
+is at most `h` per unit of the adversary's time and `r` at a leaf, a handled adversary of time
+`T` takes time `(1 + h) · T + r`. `OracleAdv.simulate` and `OracleAdv.subst` are the stateful
+and stateless handlers whose overhead is the cost of answering a query, and `timeBound_simulate`
+is their time law; the PRF-to-MAC reduction and the inner cascade reduction take time
+`4 · T + 6` and `(6 + e) · T + 3`, with `e` a bound on the cost of the keyed function
+([PRFMACTimed.lean](../Examples/PRFMACTimed.lean), [PRFTimed.lean](../Examples/PRFTimed.lean)).
 These are the rules of Isabelle's `time_fun` [HOL] and of [Hop26]. A primitive without a body
 to price takes the cost registered for it with `timed_cost f := e`.
 

@@ -31,7 +31,10 @@ reduction, two projections of one call priced once, the costed mirrors of a two-
 adversary structure (a type field, a proof field, two tree fields), of a structure with
 computation fields (one without arguments, whose cost companion is a number) and of a
 two-stage oracle adversary whose proof field bounds a tree field, and a field of a computed
-structure `(kit.aead iv).enc` priced by a companion indexed by the nonce. The last tests pin
+structure `(kit.aead iv).enc` priced by a companion indexed by the nonce. A recursion over the
+adversary (`logRed`, the shape of the PRF-to-MAC reduction) is derived as a recursion over its
+costed tree, and `logRed.timeBound_timed` bounds its time through
+`OracleAdv.Timed.timeBound_fold`. The last tests pin
 the pricing of a class method on a local instance by a companion and the refusal of an
 opaque constant.
 -/
@@ -479,6 +482,49 @@ example {D R α : Type} [BEq α] (a : α) (l : List α) (beqCost : α → α →
 example {D R α : Type} [BEq α] (a : α) (l : List α) (beqCost : α → α → ℕ) :
     (memRed.timed (D := D) (R := R) a l beqCost).1 = 1 + memB.timedCost a l beqCost := by
   simp only [memRed.timed]
+
+/-! ## A recursion over the adversary -/
+
+/-- The shape of the PRF-to-MAC reduction: run a forger, forward its queries and record them in
+`log`, then check its forgery `(m, t)` by one query when `m` is not in `log`. -/
+def logRed {D T : Type} [DecidableEq D] [BEq T] :
+    OracleAdv D T (D × T) → List D → OracleAdv D T Bool
+  | .ret r, log => if r.1 ∈ log then .ret false else .query r.1 fun t' => .ret (r.2 == t')
+  | .rand p k, log => .rand p fun b => logRed (k b) log
+  | .query d k, log => .query d fun t' => logRed (k t') (d :: log)
+
+derive_timed logRed
+
+example {D T : Type} [DecidableEq D] [BEq T] (A : OracleAdv.Timed D T (D × T)) (log : List D)
+    (beqCost : T → T → ℕ) : (logRed.timed A log beqCost).2.erase = logRed A.erase log :=
+  logRed.erase_timed A log beqCost
+
+/-- The derived costed form of a recursion over the adversary is a handler of its nodes: a
+forger of time `n` gives time `4 * n + 4 + e` when a comparison of tags costs at most `e`. -/
+theorem logRed.timeBound_timed {D T : Type} [DecidableEq D] [BEq T] (beqCost : T → T → ℕ)
+    {e : ℕ} (he : ∀ x y, beqCost x y ≤ e) {A : OracleAdv.Timed D T (D × T)} {n : ℕ}
+    (hA : A.TimeBound n) (log : List D) :
+    OracleAdv.Timed.StepTimeBound (logRed.timed A log beqCost) ((1 + 3) * n + (4 + e)) := by
+  refine OracleAdv.Timed.timeBound_fold (fun A s => logRed.timed A s beqCost) ?_ ?_ ?_ hA log
+  · intro a s
+    simp only [logRed.timed, OracleAdv.Timed.delay]
+    split <;> simp_all [OracleAdv.Timed.StepTimeBound, OracleAdv.Timed.TimeBound]
+    · omega
+    · exact ⟨by omega, by omega, fun y => by have := he a.2 y; omega⟩
+  · intro γ p c k s M hM0 hM hk
+    rw [logRed.timed]
+    simp only [OracleAdv.Timed.StepTimeBound, OracleAdv.Timed.TimeBound]
+    refine ⟨by omega, by omega, fun b => ?_⟩
+    have h1 := hM b
+    have h2 := hk b s
+    exact ⟨by have := h2.1; omega, h2.2.mono (by omega)⟩
+  · intro d c k s M hM0 hM hk
+    rw [logRed.timed]
+    simp only [OracleAdv.Timed.StepTimeBound, OracleAdv.Timed.TimeBound]
+    refine ⟨by omega, by omega, fun b => ?_⟩
+    have h1 := hM b
+    have h2 := hk b (d :: s)
+    exact ⟨by have := h2.1; omega, h2.2.mono (by omega)⟩
 
 /-! ## Refusals -/
 

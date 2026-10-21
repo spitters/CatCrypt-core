@@ -467,7 +467,9 @@ public import CatCryptCore.Examples.OneTimePad
 public import CatCryptCore.Examples.ReflectTacticDemo
 public import CatCryptCore.Examples.OT
 public import CatCryptCore.Examples.PRF
+public import CatCryptCore.Examples.PRFTimed
 public import CatCryptCore.Examples.PRFMAC
+public import CatCryptCore.Examples.PRFMACTimed
 public import CatCryptCore.Examples.PRFPRG
 public import CatCryptCore.Examples.PRG
 public import CatCryptCore.Examples.Sigma
