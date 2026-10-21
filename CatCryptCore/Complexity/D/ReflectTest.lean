@@ -89,12 +89,12 @@ reflect_d xorSampleL
 
 example (O : CTree.Oracle) (k : BitVec 8) :
     xorSampleL.d.denote O (Env.nil.cons (τ := .word 8) k) = xorSampleL k :=
-  xorSampleL.d_den k O
+  xorSampleL.d_den O k
 
-example (k : BitVec 8) : xorSampleL.d.cost (Env.nil.cons (τ := .word 8) k) = 3 := by
-  have h : xorSampleL.d.cost (Env.nil.cons (τ := .word 8) k) =
-      (Examples.xorSample k).cost Env.nil := rfl
-  exact h.trans (Examples.xorSample_cost k)
+/-- The emitted cost theorem: a sample, its β-step and one word operation. -/
+example (k : BitVec 8) : xorSampleL.d.cost (Env.nil.cons (τ := .word 8) k) ≤ 3 :=
+  (xorSampleL.d_cost k).trans
+    (Nat.add_le_add_left (Nat.add_le_add_left (Finset.sup_le fun _ _ => le_refl 1) 1) 1)
 
 /-! ## Matches, conditions and recursion schemes -/
 
@@ -174,10 +174,24 @@ noncomputable def advRun (A : BitVec 8 → SPComp Bool) (k : BitVec 8) : SPComp 
 reflect_d advRun
 
 example (A : BitVec 8 → SPComp Bool) (g : Val (.arr (.word 8) .bool))
-    (hA : ∀ v O, (g v).run O = A v) (k : BitVec 8) (O : CTree.Oracle) :
+    (O : CTree.Oracle) (hA : ∀ v, (g v).run O = A v) (k : BitVec 8) :
     advRun.d.denote O ((Env.nil.cons (τ := .arr (.word 8) .bool) g).cons (τ := .word 8) k) =
       advRun A k :=
-  advRun.d_den A g hA k O
+  advRun.d_den O A g hA k
+
+/-- The emitted cost theorem: an adversary call of cost at most `a` costs at most `a` plus the
+sample, the word operation, the bind steps and the negation. -/
+example (A : BitVec 8 → SPComp Bool) (a : ℕ) (g : Val (.arr (.word 8) .bool))
+    (hC : ∀ v, (g v).cost ≤ a) (k : BitVec 8) :
+    advRun.d.cost ((Env.nil.cons (τ := .arr (.word 8) .bool) g).cons (τ := .word 8) k) ≤
+      a + 6 :=
+  by
+  refine (advRun.d_cost a A g hC k).trans (le_trans (Nat.add_le_add_left (Nat.add_le_add_left
+    (Finset.sup_le (a := a + 4) fun v _ => ?_) 1) 1) (by omega))
+  refine le_trans (Nat.add_le_add_left (Nat.add_le_add_left
+    (Finset.sup_le (a := 1) fun _ _ => ?_) 1) _) ?_
+  · simp only [Prim.cost]; omega
+  · simp only [Prim.cost]; omega
 
 /-! ## State -/
 
@@ -196,7 +210,7 @@ reflect_d CatCrypt.Crypto.QueryBoundedUC.exD
 example (x : Unit ⊕ Bool) (O : CTree.Oracle) :
     CatCrypt.Crypto.QueryBoundedUC.exD.d.denote O (Env.nil.cons (τ := .sum .unit .bool) x) =
       CatCrypt.Crypto.QueryBoundedUC.exD x :=
-  CatCrypt.Crypto.QueryBoundedUC.exD.d_den x O
+  CatCrypt.Crypto.QueryBoundedUC.exD.d_den O x
 
 /-- `exD` costs one branch. -/
 example (x : Unit ⊕ Bool) :
@@ -220,10 +234,13 @@ def zMul (x y : ZMod 7) : ZMod 7 := x * y
 
 reflect_d zMul
 
-/-- The product costs the square of the bit length of the modulus, plus one. -/
+/-- The product costs the square of the bit length of the modulus, plus one (the emitted
+cost theorem). -/
 example (x y : ZMod 7) :
     zMul.d.cost ((Env.nil.cons (τ := .fin 6) x).cons (τ := .fin 6) y) =
-      (6 + 1).size * (6 + 1).size + 1 := rfl
+      (6 + 1).size * (6 + 1).size + 1 := by
+  rw [zMul.d_cost x y]
+  rfl
 
 /-- Comparisons and the representative on `Fin 5`. -/
 def finCmp (x y : Fin 5) : ℕ := if x = y ∨ x < y then x.val else y.val
@@ -251,6 +268,75 @@ reflect_d zSampleSq
 
 example (O : CTree.Oracle) : zSampleSq.d.denote O Env.nil = zSampleSq :=
   zSampleSq.d_den O
+
+/-! ## Reductions over computation trees
+
+Two trees of the shape `derive_reduction` builds: the type parameters are represented by finite
+ground types (`FTy.den MF`), the primitives are function parameters, the adversary a
+tree-valued parameter. `reflect_d` proves that the D-term means the compilation of the tree at
+the oracle `O` of the adversary's hypothesis, and bounds its cost by the cost parameters of the
+primitives and of the adversary. -/
+
+/-- Sample a key of a generic type and call the adversary on its image under a primitive. -/
+def sampleCall (M : Type) [Fintype M] [Nonempty M] (F : M → M) (A : M → SPTree Bool) :
+    SPTree Bool :=
+  SPTree.sample M inferInstance inferInstance fun k => A (F k)
+
+reflect_d sampleCall
+
+example (MF : FTy) (O : CTree.Oracle) (F : MF.den → MF.den) (gF : Val (.arr (.base MF) (.base MF)))
+    (hF : ∀ v, gF v = .ret (F v)) (A : MF.den → SPTree Bool) (gA : Val (.arr (.base MF) .bool))
+    (hA : ∀ v, (gA v).run O = (A v).compile) :
+    (sampleCall.d MF).denote O ((Env.nil.cons (τ := .arr (.base MF) (.base MF)) gF).cons
+      (τ := .arr (.base MF) .bool) gA) = (sampleCall MF.den F A).compile :=
+  sampleCall.d_den MF O F gF hF A gA hA
+
+/-- The cost theorem: the sample, the primitive at the key (cost `FCost`), the adversary call
+(cost at most `ACost`) and four steps. -/
+example (MF : FTy) (FCost : MF.den → ℕ) (ACost : ℕ) (F : MF.den → MF.den)
+    (gF : Val (.arr (.base MF) (.base MF)))
+    (hF : ∀ v, gF v = stepN CTree.tick (FCost v) (.ret (F v))) (A : MF.den → SPTree Bool)
+    (gA : Val (.arr (.base MF) .bool)) (hA : ∀ v, (gA v).cost ≤ ACost) (f : ℕ)
+    (hf : ∀ v, FCost v ≤ f) :
+    (sampleCall.d MF).cost ((Env.nil.cons (τ := .arr (.base MF) (.base MF)) gF).cons
+      (τ := .arr (.base MF) .bool) gA) ≤ f + ACost + 4 := by
+  refine (sampleCall.d_cost MF FCost ACost F gF hF A gA hA).trans (le_trans
+    (Nat.add_le_add_left (Nat.add_le_add_left
+      (Finset.sup_le (a := f + ACost + 2) fun x _ => ?_) 1) 1) (by omega))
+  have := hf x
+  omega
+
+/-- Run a key generator, then the adversary on the key and a sampled residue plus one. -/
+def keygenBind (n : ℕ) (K : Type) [Fintype K] [Nonempty K] (gen : Unit → SPTree K)
+    (A : K × Fin (n + 1) → SPTree Bool) : SPTree Bool :=
+  (gen ()).bind fun pk =>
+    SPTree.sample (Fin (n + 1)) inferInstance inferInstance fun r => A (pk, r + 1)
+
+reflect_d keygenBind
+
+example (n : ℕ) (KF : FTy) (O : CTree.Oracle) (gen : Unit → SPTree KF.den)
+    (gG : Val (.arr .unit (.base KF))) (hG : ∀ v, (gG v).run O = (gen v).compile)
+    (A : KF.den × Fin (n + 1) → SPTree Bool) (gA : Val (.arr (.prod (.base KF) (.fin n)) .bool))
+    (hA : ∀ v, (gA v).run O = (A v).compile) :
+    (keygenBind.d n KF).denote O ((Env.nil.cons (τ := .arr .unit (.base KF)) gG).cons
+      (τ := .arr (.prod (.base KF) (.fin n)) .bool) gA) = (keygenBind n KF.den gen A).compile :=
+  keygenBind.d_den n KF O gen gG hG A gA hA
+
+/-- The cost theorem of the keygen-bind reduction. -/
+example (n : ℕ) (KF : FTy) (GCost ACost : ℕ) (gen : Unit → SPTree KF.den)
+    (gG : Val (.arr .unit (.base KF))) (hG : ∀ v, (gG v).cost ≤ GCost)
+    (A : KF.den × Fin (n + 1) → SPTree Bool) (gA : Val (.arr (.prod (.base KF) (.fin n)) .bool))
+    (hA : ∀ v, (gA v).cost ≤ ACost) :
+    (keygenBind.d n KF).cost ((Env.nil.cons (τ := .arr .unit (.base KF)) gG).cons
+      (τ := .arr (.prod (.base KF) (.fin n)) .bool) gA) ≤
+      GCost + ACost + (n + 1).size + 6 := by
+  refine (keygenBind.d_cost n KF GCost ACost gen gG hG A gA hA).trans (le_trans
+    (Nat.add_le_add_left (Nat.add_le_add_left
+      (Finset.sup_le (a := (n + 1).size + ACost + 4) fun v _ => ?_) 1) _) ?_)
+  · refine le_trans (Nat.add_le_add_left (Nat.add_le_add_left
+      (Finset.sup_le (a := (n + 1).size + ACost + 2) fun _ _ => ?_) 1) 1) (by omega)
+    simp only [Prim.cost]; omega
+  · omega
 
 /-! ## Refusals -/
 
