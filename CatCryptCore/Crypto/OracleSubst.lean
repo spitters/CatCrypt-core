@@ -25,6 +25,7 @@ dropped from the output.
   of `subst` on the constructors
 * `OracleAdv.run_subst` — running `subst impl A` against `O` is running `A` against the
   oracle that runs `impl d` against `O`
+* `OracleAdv.subst_bind` — substitution commutes with sequencing
 * `OracleAdv.isQueryBound_subst` — `q` queries, each replaced by a program of at most `c`
   queries, give at most `q * c` queries
 -/
@@ -68,6 +69,16 @@ theorem run_subst {S : Type} (O : S → D' → PMF (R' × S)) (impl : D → Orac
   | ret a => simp only [subst_ret, run_ret]
   | rand p k ih => simp only [subst_rand, run_rand, ih]
   | query d k ih => simp only [subst_query, run_bind, run_query, ih]
+
+/-- Substituting programs for the queries of `A.bind f` substitutes them in `A` and in
+each continuation. -/
+theorem subst_bind {β : Type} (impl : D → OracleAdv D' R' R) (A : OracleAdv D R α)
+    (f : α → OracleAdv D R β) :
+    subst impl (A.bind f) = (subst impl A).bind fun a => subst impl (f a) := by
+  induction A with
+  | ret a => rfl
+  | rand p k ih => simp only [bind, subst_rand, ih]
+  | query d k ih => simp only [bind, subst_query, ih, bind_assoc]
 
 /-- An adversary with at most `q` queries, each replaced by a program with at most `c`
 queries, gives an adversary with at most `q * c` queries. -/

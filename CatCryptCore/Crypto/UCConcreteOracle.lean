@@ -40,7 +40,6 @@ simulator, which the distinguisher cannot query.
 
 ## Main results
 
-* `OracleAdv.subst_bind` — substitution commutes with sequencing.
 * `ROGame.exp_post`, `ROGame.exp_ofGame` — the experiment of a post-composed and of a
   wrapped game.
 * `UCEmulatesROSim_of_advantage` — a per-distinguisher game bound gives concrete UC
@@ -53,22 +52,6 @@ simulator, which the distinguisher cannot query.
 set_option autoImplicit false
 
 namespace CatCrypt.Crypto
-
-namespace OracleAdv
-
-variable {D R D' R' α β : Type}
-
-/-- Substituting programs for the queries of `A.bind f` substitutes them in `A` and in
-each continuation. -/
-theorem subst_bind (impl : D → OracleAdv D' R' R) (A : OracleAdv D R α)
-    (f : α → OracleAdv D R β) :
-    subst impl (A.bind f) = (subst impl A).bind fun a => subst impl (f a) := by
-  induction A with
-  | ret a => rfl
-  | rand p k ih => simp only [bind, subst_rand, ih]
-  | query d k ih => simp only [bind, subst_query, ih, bind_assoc]
-
-end OracleAdv
 
 namespace UCConcreteOracle
 

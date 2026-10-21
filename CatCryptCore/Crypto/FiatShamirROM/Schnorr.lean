@@ -213,7 +213,7 @@ theorem relAdvantage_schnorrSigma (B : gp.G → PMF gp.Scalar) :
       SPComp.sample, SPComp.pure, dlOfWitness, SDistr.bind, SDistr.uniform, SDistr.pure]
     simp only [PMF.bind_bind, Function.comp_def, PMF.pure_bind, ← PMF.bind_pure_comp]
   unfold Sigma.relAdvantage Sigma.relGame GroupParam.DL_Advantage
-  rw [hgame, OracleForking.prTrue_pmfGame, OracleForking.prTrue_pmfGame]
+  rw [hgame, prTrue_liftPMF_toOuterMeasure, prTrue_liftPMF_toOuterMeasure]
   simp only [schnorrSigma, PMF.bind_map, Function.comp_def, PMF.toOuterMeasure_bind_apply,
     PMF.toOuterMeasure_map_apply]
   refine tsum_congr fun w => ?_

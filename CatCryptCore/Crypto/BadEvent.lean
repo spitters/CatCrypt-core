@@ -1018,12 +1018,6 @@ noncomputable def sequential_sample {R : Type} [Fintype R] [Nonempty R] :
     let rs ← sequential_sample n
     SPComp.pure (r :: rs)
 
-/-- Binding `sample R` with a constant continuation reduces to the constant. -/
-theorem spcomp_sample_bind_const {α β : Type} [Fintype α] [Nonempty α]
-    (c : SPComp β) :
-    SPComp.bind (SPComp.sample α) (fun (_ : α) => c) = c := by
-  simp
-
 /-- The lazy direction of `lazy_eager_equiv`: `lazy_process` with a table
     that has `none` at every queried point (and `Nodup` queries) reduces
     to a sequential iid R-uniform sampling of `queries.length` values. -/
@@ -1096,7 +1090,7 @@ theorem sample_fin_ofFn_eq_sequential {R : Type} [Fintype R] [Nonempty R] :
   | 0 => by
     show SPComp.bind (SPComp.sample (Fin 0 → R))
           (fun _ => SPComp.pure []) = sequential_sample 0
-    rw [spcomp_sample_bind_const]
+    rw [CatCrypt.Relational.dead_sample]
     rfl
   | n + 1 => by
     show SPComp.bind (SPComp.sample (Fin (n+1) → R))

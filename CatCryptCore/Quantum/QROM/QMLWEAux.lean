@@ -286,7 +286,7 @@ theorem cpaExp_absDiff_le (hv : ∀ pk i c, v pk i c ≤ 1) :
         (sdExp (mlweSample P.toBasic true)
           (encExp (mapCiphertext (MLWE_PKE_Scheme.toScheme P) f g) msgs v false)) := by
   have h := CompressedPKE.indcpaAdvantage_mapCiphertext_le_mlwe P f g (bernAdv msgs v hv)
-  rw [indcpaAdvantage, MLWE_PKE_Scheme.advantage_pmfGame_eq_absDiff, indcpaGame_bernAdv,
+  rw [indcpaAdvantage, MLWE_PKE_Scheme.advantage_liftPMF_eq_absDiff, indcpaGame_bernAdv,
     indcpaGame_bernAdv] at h
   refine h.trans_eq ?_
   simp only [MLWE.advantage, MLWE_PKE_Basic.MLWE_Ext_advantage, mlweGame_eq, extGame_eq,

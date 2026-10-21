@@ -882,18 +882,12 @@ theorem corrErr_eq :
   refine tsum_congr fun r => ?_
   by_cases h : P.dec ks.2 (P.enc ks.1 m r) = some m <;> simp [Set.indicator, h, failInd]
 
-omit [Fintype M] [Nonempty M] [DecidableEq M] [DecidableEq C] [Fintype R] [Nonempty R] in
-theorem prTrue_pmfGame_eq (p : PMF Bool) :
-    prTrue (liftPMF p) Heap.empty = p.toOuterMeasure {b | b = true} := by
-  have h := prTrue_liftPMF_map p id Heap.empty
-  rwa [PMF.map_id] at h
-
 omit [DecidableEq C] in
 theorem owcpaAdvantage_eq (A : PK → C → PMF M) :
     owcpaAdvantage P A = ∑' ks, P.keygen ks * ∑' m, PMF.uniformOfFintype M m *
       ∑' r, PMF.uniformOfFintype R r *
         (A ks.1 (P.enc ks.1 m r)).toOuterMeasure {m' | P.dec ks.2 (P.enc ks.1 m r) = some m'} := by
-  rw [owcpaAdvantage, prTrue_pmfGame_eq, owcpaGame]
+  rw [owcpaAdvantage, prTrue_liftPMF_toOuterMeasure, owcpaGame]
   simp only [PMF.toOuterMeasure_bind_apply, Scheme.encDist, PMF.bind_map, Function.comp_def,
     PMF.toOuterMeasure_map_apply]
   refine tsum_congr fun ks => congrArg _ (tsum_congr fun m => congrArg _
@@ -1004,7 +998,7 @@ theorem tTransform_owpca_of_total {qG qP : ℕ} (B : ROMOWPCAAdversary PK M C M 
     romOWPCAAdvantage (tTransform P) B ≤
       owcpaAdvantage P (tReductionC P B) + ((n + 1 : ℕ) : ℝ≥0∞) * P.corrWorst +
         P.corrErr + ((n + 1 : ℕ) : ℝ≥0∞) * owcpaAdvantage P (tReductionD P B n) := by
-  rw [romOWPCAAdvantage, prTrue_pmfGame_eq, romOWPCAGame_eq, PMF.toOuterMeasure_bind_apply]
+  rw [romOWPCAAdvantage, prTrue_liftPMF_toOuterMeasure, romOWPCAGame_eq, PMF.toOuterMeasure_bind_apply]
   simp only [PMF.toOuterMeasure_bind_apply]
   calc _ ≤ ∑' ks, P.keygen ks * ∑' m, PMF.uniformOfFintype M m * ∑' r, PMF.uniformOfFintype R r *
           ((tReductionC P B ks.1 (P.enc ks.1 m r)).toOuterMeasure

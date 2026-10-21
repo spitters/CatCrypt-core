@@ -2696,7 +2696,7 @@ theorem prTrue_gameDist (O : G.Stmt × G.Wit → G.Tables × Bool → G.Query �
       ∑' xw, G.gen xw *
         (OracleAdv.run (toOracle (O xw)) (withVerify xw.1 (A.run xw.1))
           (Protocol.Tables.empty, false)).toOuterMeasure {y | wins xw.1 y = true} := by
-  rw [prTrue_pmfGame]
+  rw [prTrue_liftPMF_toOuterMeasure]
   simp only [gameDist, PMF.toOuterMeasure_bind_apply, PMF.toOuterMeasure_map_apply]
   rfl
 

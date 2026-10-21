@@ -391,7 +391,7 @@ theorem relAdvantage_extractReduction (A : Adversary P M qH qS) :
       ∑' xw, P.gen xw *
         (forkGame A xw.1).toOuterMeasure {r | P.rel xw.1 (extractW xw.1 r)} := by
   unfold Sigma.relAdvantage Sigma.relGame
-  rw [prTrue_pmfGame]
+  rw [prTrue_liftPMF_toOuterMeasure]
   simp only [PMF.toOuterMeasure_bind_apply, extractReduction, PMF.map_comp,
     PMF.toOuterMeasure_map_apply]
   refine tsum_congr fun xw => ?_
@@ -431,7 +431,7 @@ theorem fiatShamir_rom_eufcma (hSS : P.SpecialSound) (hZK : P.PerfectHVZK) {γ :
       P.relAdvantage (extractReduction A) := by
   have hε1 : simAdvantage A ≤ 1 := by
     unfold simAdvantage simGame
-    rw [prTrue_pmfGame]
+    rw [prTrue_liftPMF_toOuterMeasure]
     exact toOuterMeasure_le_one _ _
   exact (mul_div_tsub_le_sq_div_tsub
     (tsub_le_iff_right.mpr (eufcmaAdvantage_le_simAdvantage hZK hγ A))

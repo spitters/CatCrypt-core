@@ -178,14 +178,14 @@ theorem prTrue_rfGame_bind [DecidableEq D] [Fintype Rg] [Nonempty Rg] (R : Oracl
     (g : X → PMF Bool) :
     prTrue (rfGame (R.bind fun a => .rand (g a) .ret)) Heap.empty =
       ∑' x, rfD R x * g x true := by
-  rw [rfGame, Assumptions.prTrue_pmfGame, run_bind_rand_map_fst, PMF.bind_apply]
+  rw [rfGame, prTrue_liftPMF, run_bind_rand_map_fst, PMF.bind_apply]
   rfl
 
 theorem prTrue_rpGame_bind [DecidableEq D] [DecidableEq Rg] [Fintype Rg] [Nonempty Rg]
     (R : OracleAdv D Rg X) (g : X → PMF Bool) :
     prTrue (rpGame (R.bind fun a => .rand (g a) .ret)) Heap.empty =
       ∑' x, rpD R x * g x true := by
-  rw [rpGame, Assumptions.prTrue_pmfGame, run_bind_rand_map_fst, PMF.bind_apply]
+  rw [rpGame, prTrue_liftPMF, run_bind_rand_map_fst, PMF.bind_apply]
   rfl
 
 variable {K : Type} [Fintype K] [Nonempty K]
@@ -198,7 +198,7 @@ def prfRealD (F : K → D → Rg) (R : OracleAdv D Rg X) : PMF X :=
 theorem prTrue_realGame_bind (F : K → D → Rg) (R : OracleAdv D Rg X) (g : X → PMF Bool) :
     prTrue (realGame F (R.bind fun a => .rand (g a) .ret)) Heap.empty =
       ∑' x, prfRealD F R x * g x true := by
-  rw [realGame, Assumptions.prTrue_pmfGame]
+  rw [realGame, prTrue_liftPMF]
   simp only [run_bind_rand_map_fst, ← PMF.bind_bind]
   rw [PMF.bind_apply]
   rfl

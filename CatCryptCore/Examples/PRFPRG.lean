@@ -733,20 +733,12 @@ theorem map_fst_bind_outBit {σ : Type} (p : PMF (Option (Bool × Heap))) (t : �
   simp only [PMF.pure_map]
   exact PMF.bind_pure_comp _ _
 
-/-- `prTrue` of a heap-independent game is the probability of `true`. -/
-theorem prTrue_pmfGame (q : PMF Bool) (h₀ : Heap) :
-    prTrue (CatCrypt.Crypto.liftPMF q) h₀ = q true := by
-  have h := CatCrypt.Crypto.PRPPRF.prTrue_liftPMF_map q id h₀
-  rw [PMF.map_id] at h
-  rw [h]
-  simp
-
 /-- The real adaptive PRF game against `prgOracleAdv A` accepts with the same
 probability as `gen_real F` against `A`. -/
 theorem prTrue_realGame_prgOracleAdv (F : PRFPRG_PRFDef) (A : PRGOutput → SPComp Bool) :
     prTrue (CatCrypt.Crypto.PRPPRF.realGame F.f (prgOracleAdv A)) Heap.empty =
       prTrue ((gen_real F).bind A) Heap.empty := by
-  rw [CatCrypt.Crypto.PRPPRF.realGame, prTrue_pmfGame]
+  rw [CatCrypt.Crypto.PRPPRF.realGame, CatCrypt.Crypto.prTrue_liftPMF]
   simp only [gen_real, SPComp.monad_bind_eq, SPComp.bind_assoc, SPComp.pure_bind,
     prTrue_bind_sample]
   rw [PMF.bind_apply, tsum_fintype]
@@ -770,7 +762,7 @@ the same probability as `gen_ideal` against `A`. -/
 theorem prTrue_rfGame_prgOracleAdv (A : PRGOutput → SPComp Bool) :
     prTrue (CatCrypt.Crypto.PRPPRF.rfGame (prgOracleAdv A)) Heap.empty =
       prTrue (gen_ideal.bind A) Heap.empty := by
-  rw [CatCrypt.Crypto.PRPPRF.rfGame, prTrue_pmfGame, run_rfOracle_prgOracleAdv]
+  rw [CatCrypt.Crypto.PRPPRF.rfGame, CatCrypt.Crypto.prTrue_liftPMF, run_rfOracle_prgOracleAdv]
   simp only [↓map_fst_bind_outBit, PMF.map_bind]
   simp only [gen_ideal, SPComp.monad_bind_eq, SPComp.bind_assoc, SPComp.pure_bind,
     prTrue_bind_sample, PMF.bind_apply, tsum_fintype, PMF.uniformOfFintype_apply,

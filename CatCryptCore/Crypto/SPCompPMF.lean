@@ -26,7 +26,8 @@ its output bit when run from the empty heap.
   `liftPMF` commutes with bind and pure, and uniform sampling is its lift
 * `liftPMF_isPure`, `liftPMF_noFail` — `liftPMF p` does not read or write the heap and
   never fails
-* `prTrue_liftPMF` — `liftPMF p` outputs `true` with probability `p true`
+* `prTrue_liftPMF`, `prTrue_liftPMF_toOuterMeasure` — `liftPMF p` outputs `true` with
+  probability `p true`; `prTrue_sample_bind_liftPMF` — the same after a uniform sample
 * `outBool_apply_true`, `prTrue_liftPMF_bind` — the output bit of a distinguisher, and a
   distinguisher run on a sample of `p`
 -/
@@ -108,6 +109,21 @@ theorem prTrue_liftPMF (p : PMF Bool) (h₀ : Heap) : prTrue (liftPMF p) h₀ = 
     simp [Ne.symm hb])]
   rw [tsum_eq_single h₀ (fun h hh => by simp [hh])]
   simp
+
+/-- A lifted distribution on `Bool` outputs `true` with the probability of the event
+`{b | b = true}`. -/
+theorem prTrue_liftPMF_toOuterMeasure (p : PMF Bool) (h₀ : Heap) :
+    prTrue (liftPMF p) h₀ = p.toOuterMeasure {b | b = true} := by
+  rw [prTrue_liftPMF, show {b : Bool | b = true} = {true} from Set.ext fun _ => Iff.rfl,
+    PMF.toOuterMeasure_apply_singleton]
+
+/-- A uniform sample followed by lifted distributions outputs `true` with the probability
+of `true` under the bind of the uniform distribution. -/
+theorem prTrue_sample_bind_liftPMF {α : Type} [Fintype α] [Nonempty α]
+    (f : α → PMF Bool) (h₀ : Heap) :
+    prTrue (SPComp.bind (SPComp.sample α) fun a => liftPMF (f a)) h₀ =
+      ((PMF.uniformOfFintype α).bind f) true := by
+  rw [sample_eq_liftPMF, liftPMF_bind_liftPMF, prTrue_liftPMF]
 
 /-! ## The output bit of a distinguisher -/
 

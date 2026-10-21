@@ -391,13 +391,6 @@ theorem foGame_eq (P : Scheme PK SK M C R) {qRO qD : ℕ}
   simp only [PMF.bind_map, PMF.bind_bind, Function.comp_def] at hbind
   exact hbind.symm
 
-omit [Fintype R] [Nonempty R] [Fintype M] [Nonempty M] [DecidableEq M] [DecidableEq C]
-  [Fintype K] [Nonempty K] in
-theorem prTrue_pmfGame_true (p : PMF Bool) : prTrue (liftPMF p) Heap.empty = p true := by
-  have h := prTrue_liftPMF_map p id Heap.empty
-  rw [PMF.map_id] at h
-  rw [h, PMF.toOuterMeasure_apply, tsum_eq_single true fun b hb => by simp [Set.indicator, hb]]
-  simp [Set.indicator]
 
 omit [Fintype R] [Nonempty R] [Fintype M] [Nonempty M] [DecidableEq M] [DecidableEq C]
   [Fintype K] [Nonempty K] in
@@ -405,7 +398,7 @@ omit [Fintype R] [Nonempty R] [Fintype M] [Nonempty M] [DecidableEq M] [Decidabl
 theorem advantage_bind_le {ι : Type} (w : PMF ι) (g₁ g₀ : ι → PMF Bool) :
     Advantage (liftPMF (w.bind g₁)) (liftPMF (w.bind g₀)) ≤
       ∑' i, w i * Advantage (liftPMF (g₁ i)) (liftPMF (g₀ i)) := by
-  simp only [Advantage, prTrue_pmfGame_true, PMF.bind_apply]
+  simp only [Advantage, prTrue_liftPMF, PMF.bind_apply]
   have key : ∀ (a b : ι → ℝ≥0∞), ∑' i, w i * a i - ∑' i, w i * b i ≤
       ∑' i, w i * ((a i - b i) ⊔ (b i - a i)) := by
     intro a b
@@ -670,7 +663,7 @@ theorem owpca_eq (P : Scheme PK SK M C R) {qRO qD : ℕ}
     (B : ROM2INDCCAAdversary PK K C M R (M × C) K qRO qD) :
     romOWPCAAdvantage (tTransform P) (uRedROM B) =
       ∑' f, PMF.uniformOfFintype (M → R) f * owpcaAdvantage (fixedT P f) (uReduction (absorb f B)) := by
-  simp only [romOWPCAAdvantage, owpcaAdvantage, PKE.FOTransformT.prTrue_pmfGame_eq,
+  simp only [romOWPCAAdvantage, owpcaAdvantage, prTrue_liftPMF_toOuterMeasure,
     romOWPCAGame_uRedROM, owpcaGame_fixedT]
   rw [← PMF.toOuterMeasure_bind_apply, PMF.bind_comm (PMF.uniformOfFintype (M → R)) P.keygen]
   refine congrArg (fun p : PMF Bool => p.toOuterMeasure _) (congrArg _ (funext fun ks => ?_))

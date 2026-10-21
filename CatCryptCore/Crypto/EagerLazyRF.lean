@@ -36,8 +36,6 @@ inside a program (`lazyRF`) or behind a simulation of the queries (`simOracle`).
   uniform key is the lazy random-function game
 * `SIV.run_map_fst_eq_of_map_state` — the output of a run is invariant under a map of oracle
   states commuting with every oracle call
-* `SIV.run_simulate_fst` — the output of a simulated adversary is the output of the
-  adversary against the composite oracle
 * `SIVNonce.run_lazyRF` — running `lazyRF X t` against any oracle is running `X` against the
   lazy random function from `t`
 * `SIVNonce.uniform_bind_run_simOracle_keyed` — eager and lazy sampling behind a simulation
@@ -204,17 +202,6 @@ theorem run_map_fst_eq_of_map_state (O : S → D → PMF (R × S)) (O' : S' → 
     (A : OracleAdv D R α) (s : S) :
     (OracleAdv.run O A s).map Prod.fst = (OracleAdv.run O' A (f s)).map Prod.fst := by
   rw [← OracleAdv.run_map_state O O' f hO A s, PMF.map_comp]
-  rfl
-
-/-- The output of the simulated adversary, with the simulator state dropped, is the output
-of `A` against the composite oracle. -/
-theorem run_simulate_fst (impl : S → D → OracleAdv D' R' (R × S))
-    (O' : S' → D' → PMF (R' × S')) (A : OracleAdv D R α) (s : S) (u : S') :
-    (OracleAdv.run O' ((CatCrypt.Crypto.OracleAdv.simulate impl A s).bind
-        fun x => .ret x.1) u).map Prod.fst =
-      (OracleAdv.run (CatCrypt.Crypto.OracleAdv.simOracle impl O') A (s, u)).map Prod.fst := by
-  rw [OracleAdv.run_bind, CatCrypt.Crypto.OracleAdv.run_simulate]
-  simp [PMF.map_bind, PMF.bind_map, Function.comp_def, PMF.pure_map]
   rfl
 
 end RunLemmas

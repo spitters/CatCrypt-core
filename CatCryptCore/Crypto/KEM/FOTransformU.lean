@@ -991,12 +991,6 @@ theorem uReduction_prob {qH qD : ℕ} (B : ROMINDCCAAdversary PK K C (M × C) K 
   by_cases h : P.pco sk (y.2.1.found.getD (Classical.arbitrary M)) c = true <;>
     simp [Set.indicator, h]
 
-omit [Fintype R] [Nonempty R] [Fintype M] [Nonempty M] [DecidableEq M] [DecidableEq C]
-  [Fintype K] [Nonempty K] in
-theorem prTrue_pmfGame_eq (p : PMF Bool) :
-    prTrue (liftPMF p) Heap.empty = p.toOuterMeasure {b | b = true} := by
-  have h := prTrue_liftPMF_map p id Heap.empty
-  rwa [PMF.map_id] at h
 
 theorem owpcaAdvantage_uReduction {qH qD : ℕ} (B : ROMINDCCAAdversary PK K C (M × C) K qH qD) :
     owpcaAdvantage P (uReduction B) =
@@ -1005,7 +999,7 @@ theorem owpcaAdvantage_uReduction {qH qD : ℕ} (B : ROMINDCCAAdversary PK K C (
           (OracleAdv.run (OracleAdv.simOracle (simImpl (P.enc ks.1 m r) k) (pcoOracle P ks.2))
             (B.run ks.1 (P.enc ks.1 m r) k) (SimState.init, ())).toOuterMeasure
               {y | P.pco ks.2 (y.2.1.found.getD (Classical.arbitrary M)) (P.enc ks.1 m r) = true} := by
-  rw [owpcaAdvantage, prTrue_pmfGame_eq, owpcaGame]
+  rw [owpcaAdvantage, prTrue_liftPMF_toOuterMeasure, owpcaGame]
   simp only [PMF.toOuterMeasure_bind_apply, Scheme.encDist, PMF.bind_map, Function.comp_def]
   refine tsum_congr fun ks => congrArg _ (tsum_congr fun m => congrArg _
     (tsum_congr fun r => congrArg _ ?_))

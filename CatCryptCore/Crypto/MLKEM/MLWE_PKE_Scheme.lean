@@ -48,7 +48,7 @@ product of short distributions.
   `MLWE_PKE_Basic`
 * `indcpaGame_eq` — the IND-CPA game of `toScheme P` is the sub-distribution IND-CPA
   game of `MLWE_PKE_Basic` with a stateful adversary
-* `advantage_pmfGame_eq_absDiff`, `indcpaAdvantage_eq_absDiff` — the IND-CPA
+* `advantage_liftPMF_eq_absDiff`, `indcpaAdvantage_eq_absDiff` — the IND-CPA
   advantage is the absolute difference of the two `true`-probabilities
 -/
 
@@ -60,7 +60,6 @@ namespace CatCrypt.Crypto.MLKEM.MLWE_PKE_Scheme
 
 open CatCrypt.Core CatCrypt.Prob
 open CatCrypt.Crypto.PKE.Games
-open CatCrypt.Crypto.KEM.FOTransform (prTrue_pmfGame_true)
 open scoped ENNReal
 
 /-- `MLWE_PKE_Basic.Params` with a seed type and a deterministic sampler for the
@@ -125,9 +124,9 @@ theorem prTrue_map_some (p : PMF Bool) : prTrue (p.map some) = p true := by
 
 /-- `Advantage` between two heap-independent games is the absolute difference of
 their `true`-probabilities. -/
-theorem advantage_pmfGame_eq_absDiff (p q : PMF Bool) :
+theorem advantage_liftPMF_eq_absDiff (p q : PMF Bool) :
     Advantage (liftPMF p) (liftPMF q) = absDiff (p true) (q true) := by
-  simp only [Advantage, prTrue_pmfGame_true]
+  simp only [Advantage, prTrue_liftPMF]
   rfl
 
 /-! ## The algorithms of `toScheme P` are those of `MLWE_PKE_Basic` -/
@@ -204,6 +203,6 @@ theorem indcpaAdvantage_eq_absDiff_prTrue
     indcpaAdvantage (toScheme P) A =
       absDiff (prTrue ((indcpaGame (toScheme P) A true).map some))
         (prTrue ((indcpaGame (toScheme P) A false).map some)) := by
-  rw [indcpaAdvantage, advantage_pmfGame_eq_absDiff, prTrue_map_some, prTrue_map_some]
+  rw [indcpaAdvantage, advantage_liftPMF_eq_absDiff, prTrue_map_some, prTrue_map_some]
 
 end CatCrypt.Crypto.MLKEM.MLWE_PKE_Scheme

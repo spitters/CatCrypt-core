@@ -280,7 +280,7 @@ theorem prTrue_gameDistBy (P : G.Stmt → G.Forgery × (G.Tables × Bool) → Bo
       ∑' xw, G.gen xw *
         (OracleAdv.run (toOracle (O xw)) (withVerify xw.1 (A.run xw.1))
           (Protocol.Tables.empty, false)).toOuterMeasure {y | P xw.1 y = true} := by
-  rw [prTrue_pmfGame]
+  rw [prTrue_liftPMF_toOuterMeasure]
   simp only [gameDistBy, PMF.toOuterMeasure_bind_apply, PMF.toOuterMeasure_map_apply]
   rfl
 

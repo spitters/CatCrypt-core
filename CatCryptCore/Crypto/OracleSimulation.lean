@@ -33,10 +33,11 @@ reduction that keeps its own tables and forwards some queries to its challenger.
   then the second
 * `OracleAdv.run_simulate` — running a simulated adversary against `O'` is running
   the original adversary against the composite oracle that runs `impl` against
-  `O'`
+  `O'`; `OracleAdv.run_simulate_fst` — the same with the simulator state dropped
 * `OracleAdv.isQueryBound_simulate` — a simulated adversary asks at most the total
   cost of its original queries, when the program answering `d` asks at most
-  `cost d` queries
+  `cost d` queries; `OracleAdv.isQueryBound_simulate_mul` — `q` queries answered by
+  programs of at most `c` queries give at most `q * c` queries
 * `OracleAdv.isQueryBoundBy_mapQuery` — renaming queries preserves a cost bound
   when no renamed query costs more than the original
 -/
@@ -127,6 +128,16 @@ theorem run_simulate {S U : Type} (impl : S → D → OracleAdv D' R' (R × S))
     refine congrArg _ (funext fun x => ?_)
     exact ih x.1.1 x.1.2 x.2
 
+/-- The output of the simulated adversary, with the simulator state dropped, is the output
+of `A` against the composite oracle. -/
+theorem run_simulate_fst {S U : Type} (impl : S → D → OracleAdv D' R' (R × S))
+    (O' : U → D' → PMF (R' × U)) (A : OracleAdv D R α) (s : S) (u : U) :
+    (run O' ((simulate impl A s).bind fun x => ret x.1) u).map Prod.fst =
+      (run (simOracle impl O') A (s, u)).map Prod.fst := by
+  rw [run_bind, run_simulate]
+  simp [PMF.map_bind, PMF.bind_map, Function.comp_def, PMF.pure_map]
+  rfl
+
 /-- `IsQueryBoundBy cost A n`: on every path of `A` the sum of `cost d` over the
 queries `d` is at most `n`. -/
 def IsQueryBoundBy (cost : D → ℕ) : OracleAdv D R α → ℕ → Prop
@@ -189,6 +200,21 @@ theorem isQueryBound_simulate {S : Type} (impl : S → D → OracleAdv D' R' (R 
     obtain ⟨hle, hk⟩ := hA
     have h := isQueryBound_bind (himpl s d) (fun x => ih x.1 (hk x.1) x.2)
     rwa [Nat.add_sub_cancel' hle] at h
+
+/-- An adversary with at most `q` queries, each answered by a program with at most `c`
+queries, gives a simulated adversary with at most `q * c` queries. -/
+theorem isQueryBound_simulate_mul {S : Type} {impl : S → D → OracleAdv D' R' (R × S)} {c : ℕ}
+    (himpl : ∀ s d, (impl s d).IsQueryBound c) {A : OracleAdv D R α} {q : ℕ}
+    (hA : A.IsQueryBound q) (s : S) : (simulate impl A s).IsQueryBound (q * c) := by
+  induction A generalizing q s with
+  | ret a => trivial
+  | rand p k ih => exact fun b => ih b (hA b) s
+  | query d k ih =>
+    cases q with
+    | zero => exact hA.elim
+    | succ q =>
+      rw [Nat.succ_mul, Nat.add_comm]
+      exact isQueryBound_bind (himpl s d) fun x => ih x.1 (hA x.1) x.2
 
 /-- A simulated adversary has target cost at most the source cost of the original
 adversary, when the program answering `d` has target cost at most `cost d`. -/

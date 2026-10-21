@@ -437,7 +437,7 @@ theorem Protocol.relAdvantage_eq_tsum (B : G.Stmt → PMF G.Wit) :
     G.relAdvantage rel B = ∑' xw, G.gen xw * (B xw.1).toOuterMeasure {w | rel xw.1 w} := by
   classical
   unfold Protocol.relAdvantage Protocol.relGame
-  rw [prTrue_pmfGame]
+  rw [prTrue_liftPMF_toOuterMeasure]
   simp only [PMF.toOuterMeasure_bind_apply, PMF.toOuterMeasure_map_apply]
   refine tsum_congr fun xw => ?_
   congr 2

@@ -419,7 +419,7 @@ theorem realGame_mkHybRed_eq (F : K → D → R) (A : OracleAdv (N × D) R Bool)
     realGame F (mkHybRed F A j) = hybGame F A j := by
   unfold realGame hybGame mkHybRed
   congr 1
-  simp only [Constructions.SIV.run_simulate_fst]
+  simp only [OracleAdv.run_simulate_fst]
   have h : ∀ k, (OracleAdv.run (OracleAdv.simOracle (hybImpl F j) (keyedOracle F k)) A
       (hybInit, ())).map Prod.fst =
       (OracleAdv.run (hybOracle F j) A (setKey j (some k) hybInit)).map Prod.fst := fun k =>
@@ -435,7 +435,7 @@ theorem rfGame_mkHybRed_eq [DecidableEq R] (F : K → D → R) (A : OracleAdv (N
     (j : ℕ) : rfGame (mkHybRed F A j) = hybGame F A (j + 1) := by
   unfold rfGame hybGame mkHybRed
   congr 1
-  rw [Constructions.SIV.run_simulate_fst,
+  rw [OracleAdv.run_simulate_fst,
     Constructions.SIV.run_map_fst_eq_of_map_state _ (hybOracle F (j + 1))
       (fun p => (p.1.1, Function.update p.1.2.1 j p.2, p.1.2.2))
       (fun p q => simOracle_rf_hybImpl F j p.1 p.2 q) A (hybInit, [])]

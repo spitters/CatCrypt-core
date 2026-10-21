@@ -2093,7 +2093,7 @@ theorem owpcaAdvantage_redFix {qRO qD : ℕ}
               {y | (fixedT P f).pco (ks.1, ks.2) (y.2.1.found.getD (Classical.arbitrary M))
                 (cOf P f ks.1 m) = true} := by
   have hU : (PMF.uniformOfFintype Unit) = PMF.pure () := by ext u; simp
-  rw [owpcaAdvantage, PKE.FOTransformT.prTrue_pmfGame_eq, owpcaGame,
+  rw [owpcaAdvantage, prTrue_liftPMF_toOuterMeasure, owpcaGame,
     show (fixedT P f).keygen = P.keygen.map (fun ks => (ks.1, (ks.1, ks.2))) from rfl]
   simp only [Scheme.encDist, PMF.bind_map, Function.comp_def, hU, PMF.pure_bind,
     PMF.toOuterMeasure_bind_apply]
@@ -2327,7 +2327,7 @@ theorem owpca_eq_redROM {qRO qD : ℕ}
     romOWPCAAdvantage (PKE.FOTransformT.tTransform P) (redROM P hpk B) =
       ∑' f, PMF.uniformOfFintype (M → R) f *
         owpcaAdvantage (fixedT P f) (redFix P hpk f B) := by
-  simp only [romOWPCAAdvantage, owpcaAdvantage, PKE.FOTransformT.prTrue_pmfGame_eq,
+  simp only [romOWPCAAdvantage, owpcaAdvantage, prTrue_liftPMF_toOuterMeasure,
     romOWPCAGame_redROM, owpcaGame_fixedT_redFix]
   rw [← PMF.toOuterMeasure_bind_apply, PMF.bind_comm (PMF.uniformOfFintype (M → R)) P.keygen]
   refine congrArg (fun p : PMF Bool => p.toOuterMeasure _) (congrArg _ (funext fun ks => ?_))

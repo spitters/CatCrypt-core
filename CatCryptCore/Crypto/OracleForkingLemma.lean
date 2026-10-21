@@ -510,13 +510,6 @@ def IsQueryBound₂ {D₁ D₂ R α : Type} : OracleAdv (D₁ ⊕ D₂) R α →
 
 /-! ## Probability bounds -/
 
-/-- The game that samples its output bit from `p` succeeds with probability
-`p true`, written as the measure of `{b | b = true}`. -/
-theorem prTrue_pmfGame (p : PMF Bool) :
-    prTrue (liftPMF p) CatCrypt.Core.Heap.empty = p.toOuterMeasure {b | b = true} := by
-  have h := PRPPRF.prTrue_liftPMF_map p id CatCrypt.Core.Heap.empty
-  rwa [PMF.map_id] at h
-
 /-- For events `E c` indexed by `c < Q` that are pairwise disjoint and whose union
 is `W` on the support, the probabilities of the `E c` sum to that of `W`. -/
 theorem sum_fin_toOuterMeasure_eq {β : Type} (p : PMF β) (Q : ℕ) (E : ℕ → β → Bool)
