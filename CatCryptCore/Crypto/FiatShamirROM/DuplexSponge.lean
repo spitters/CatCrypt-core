@@ -7,6 +7,7 @@ module
 
 public import CatCryptCore.ForMathlib.PMFMod
 public import CatCryptCore.ForMathlib.PMFUniform
+public import CatCryptCore.ForMathlib.PMFOption
 public import CatCryptCore.Crypto.MLKEM.XOFMatrix
 
 /-!
@@ -299,10 +300,6 @@ theorem one_sub_mul_uniform_le_decodeUintDist (M L : ℕ) [NeZero M] (r : Fin M)
   rw [decodeUintDist_eq]
   exact PMF.one_sub_mul_uniform_le_map_mod (256 ^ L) M r
 
-theorem map_some_apply_some {α : Type} (p : PMF α) (a : α) : (p.map some) (some a) = p a := by
-  rw [PMF.map_apply, tsum_eq_single a fun b hb => by simp [Ne.symm hb]]
-  simp
-
 /-- **The bias of `DecodeUint`.** The statistical distance of `LE2IP mod M` on `L`
 uniform bytes from the uniform distribution on `[0, M)` is at most `M / 256^L`. -/
 theorem tvDist_decodeUintDist_le (M L : ℕ) [NeZero M] :
@@ -311,7 +308,7 @@ theorem tvDist_decodeUintDist_le (M L : ℕ) [NeZero M] :
   refine iSup₂_le fun f hf => ?_
   have hmin : ∀ a, (1 - (M : ℝ≥0∞) / (256 ^ L : ℕ)) * SDistr.uniform (Fin M) (some a) ≤
       (decodeUintDist M L).map some (some a) := fun a => by
-    rw [SDistr.uniform, map_some_apply_some, map_some_apply_some]
+    rw [SDistr.uniform, PMF.map_some_apply_some, PMF.map_some_apply_some]
     exact one_sub_mul_uniform_le_decodeUintDist M L a
   have h := MLKEM.XOFMatrix.tsum_le_add_of_minorant ((decodeUintDist M L).map some)
     (SDistr.uniform (Fin M)) _ (MLKEM.XOFMatrix.minorant_option _ _ hmin) f hf
@@ -373,7 +370,7 @@ theorem tvDist_decodeFieldDist_le (M L m : ℕ) [NeZero M] :
   have hmin : ∀ a, (1 - (m : ℝ≥0∞) * ((M : ℝ≥0∞) / (256 ^ L : ℕ))) *
       SDistr.uniform (Fin m → Fin M) (some a) ≤ (decodeFieldDist M L m).map some (some a) :=
     fun a => by
-      rw [SDistr.uniform, map_some_apply_some, map_some_apply_some]
+      rw [SDistr.uniform, PMF.map_some_apply_some, PMF.map_some_apply_some]
       exact one_sub_mul_uniform_le_decodeFieldDist M L m a
   have h := MLKEM.XOFMatrix.tsum_le_add_of_minorant ((decodeFieldDist M L m).map some)
     (SDistr.uniform (Fin m → Fin M)) _ (MLKEM.XOFMatrix.minorant_option _ _ hmin) f hf

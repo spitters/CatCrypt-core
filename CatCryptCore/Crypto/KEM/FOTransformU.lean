@@ -934,12 +934,7 @@ end Simulation
 
 section Summation
 
-omit [Fintype R] [Nonempty R] [Fintype M] [Nonempty M] [DecidableEq M] [DecidableEq C]
-  [Fintype K] [Nonempty K] in
-theorem tsum_bind_mul {α β : Type} (p : PMF α) (f : α → PMF β) (F : β → ℝ≥0∞) :
-    ∑' x, (p.bind f) x * F x = ∑' a, p a * ∑' x, f a x * F x := by
-  simp only [PMF.bind_apply, ← ENNReal.tsum_mul_right, ← ENNReal.tsum_mul_left, mul_assoc]
-  exact ENNReal.tsum_comm
+export PMF (tsum_bind_mul)
 
 omit [Fintype R] [Nonempty R] [Fintype M] [Nonempty M] [DecidableEq M] [DecidableEq C]
   [Fintype K] [Nonempty K] in

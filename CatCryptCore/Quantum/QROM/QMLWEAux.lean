@@ -8,6 +8,7 @@ module
 public import CatCryptCore.Quantum.QROM.QIndcpaAux
 public import CatCryptCore.Crypto.MLKEM.CompressedPKE
 public import CatCryptCore.NonUniform.Bernoulli
+public import CatCryptCore.ForMathlib.PMFOption
 
 /-!
 # Module-LWE against quantum distinguishers with oracle access
@@ -213,12 +214,6 @@ theorem indcpaGame_bernAdv [Fintype PK] [Fintype SK] [Fintype R] [Nonempty R]
     PMF.uniformOfFintype_apply, Function.comp_apply, coinPMF_true,
     coe_toNNReal_of_le_one hv, cpaExp, encExp]
 
-omit [Fintype ι] [Nonempty ι] in
-/-- A total distribution read as a sub-distribution has the same weight at
-`some a`. -/
-theorem map_some_apply_some {α : Type} (p : PMF α) (a : α) : p.map some (some a) = p a :=
-  CatCrypt.NonUniform.ofPMF_apply_some p a
-
 end Transfer
 
 section TransferMLWE
@@ -253,7 +248,7 @@ theorem prTrue_B1_st_bernAdv (hv : ∀ pk i c, v pk i c ≤ 1) (b : Bool) (A : P
     ← MLWE_PKE_Scheme.encDist_eq, CatCrypt.Prob.SDistr.monad_bind_eq,
     MLWE_PKE_Scheme.sdistr_bind_map_some, prTrue, cpaReduction, bernAdv, Scheme.encDist,
     PMF.bind_map, PMF.bind_apply, tsum_fintype, PMF.uniformOfFintype_apply, Function.comp_apply,
-    map_some_apply_some, coinPMF_true, coe_toNNReal_of_le_one hv, encExp, mapCiphertext]
+    PMF.map_some_apply_some, coinPMF_true, coe_toNNReal_of_le_one hv, encExp, mapCiphertext]
 
 /-- The `true`-probability of the second-hop extended module-LWE reduction of
 `bernAdv` at `(A, t, u, v')` is `extView` there. -/
@@ -266,7 +261,8 @@ theorem prTrue_B2_ext_st_bernAdv (hv : ∀ pk i c, v pk i c ≤ 1) (b : Bool) (A
     CatCrypt.Prob.SDistr.monad_bind_eq, MLWE_PKE_Scheme.sdistr_bind_map_some, prTrue,
     cpaReduction,
     bernAdv, PMF.bind_map, PMF.bind_apply, tsum_fintype, PMF.uniformOfFintype_apply,
-    Function.comp_apply, map_some_apply_some, coinPMF_true, coe_toNNReal_of_le_one hv, extView]
+    Function.comp_apply, PMF.map_some_apply_some, coinPMF_true, coe_toNNReal_of_le_one hv,
+    extView]
 
 /-- The numeric transfer: for every `[0, 1]`-valued function `v` of the public key,
 the coins and the challenge ciphertext, the distance between the expectations of

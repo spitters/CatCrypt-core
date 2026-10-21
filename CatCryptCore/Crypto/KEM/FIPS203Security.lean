@@ -1933,24 +1933,13 @@ theorem run_oSplit_eq_keyed {α : Type} (f : M → R) (sk : SK) (pk : PK) (z : Z
 
 omit [Fintype M] [Nonempty M] [Fintype Z] [Nonempty Z] [Nonempty R] [Nonempty K] [DecidableEq C]
   [DecidableEq M] [DecidableEq Hash] [DecidableEq Z] [Fintype R] [Fintype K] in
-/-- The image of a uniform distribution under an equivalence is uniform. -/
-theorem uniformOfFintype_map_equiv {α β : Type} [Fintype α] [Nonempty α] [Fintype β] [Nonempty β]
-    (e : α ≃ β) : (PMF.uniformOfFintype α).map e = PMF.uniformOfFintype β := by
-  classical
-  ext b
-  rw [PMF.map_apply, tsum_eq_single (e.symm b) fun a ha => by
-    rw [if_neg]; rintro rfl; exact ha (e.symm_apply_apply a).symm]
-  simp [PMF.uniformOfFintype_apply, Fintype.card_congr e]
-
-omit [Fintype M] [Nonempty M] [Fintype Z] [Nonempty Z] [Nonempty R] [Nonempty K] [DecidableEq C]
-  [DecidableEq M] [DecidableEq Hash] [DecidableEq Z] [Fintype R] [Fintype K] in
 /-- A uniform function into a product is a pair of independent uniform functions. -/
 theorem uniform_arrow_prod {α β γ : Type} [Fintype α] [DecidableEq α] [Fintype β] [Nonempty β]
     [Fintype γ] [Nonempty γ] :
     PMF.uniformOfFintype (α → β × γ) =
       (PMF.uniformOfFintype (α → β)).bind fun g =>
         (PMF.uniformOfFintype (α → γ)).map fun f => fun a => (g a, f a) := by
-  rw [← uniformOfFintype_map_equiv (β := α → β × γ)
+  rw [← PMF.uniformOfFintype_map_equiv (β := α → β × γ)
       ⟨fun p a => (p.1 a, p.2 a), fun h => (fun a => (h a).1, fun a => (h a).2),
         fun _ => rfl, fun _ => rfl⟩,
     uniformOfFintype_prod, PMF.map_bind]

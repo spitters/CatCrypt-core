@@ -222,6 +222,7 @@ public import CatCryptCore.Crypto.PAKE.DHPAKE
 public import CatCryptCore.Crypto.Signatures.Threshold
 public import CatCryptCore.Crypto.FiatShamirROM.MPCitH
 public import CatCryptCore.Crypto.Anon.Signalling
+public import CatCryptCore.Crypto.Anon.SignallingUC
 public import CatCryptCore.Crypto.OT.Games
 public import CatCryptCore.Crypto.OTExtension.IKNP
 public import CatCryptCore.Crypto.PRPPRFPmfGame

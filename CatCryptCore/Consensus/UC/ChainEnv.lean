@@ -8,6 +8,7 @@ module
 public import CatCryptCore.Consensus.UC.Chain
 public import CatCryptCore.Consensus.PoSNSB.Prob.Script
 public import CatCryptCore.Crypto.UCTransparentAdv
+public import CatCryptCore.ForMathlib.PMFUniform
 
 @[expose] public section
 set_option autoImplicit false
@@ -881,16 +882,6 @@ theorem simLoop_spec (K Δ : ℕ) (i : Fin np) (pk : PK) (sk : SK) (ω : Seed Tx
       rw [← hI'.2.1, simEv_of_stepOf_none P Sch F x₀ dt Tree (.inr (.hash d)) rfl]
       exact hcont v N l hI'
 
-/-- The average of `f` over a bind is the average over the first draw of the averages over the
-second. -/
-theorem tsum_bind_mul {α β : Type} (p : PMF α) (g : α → PMF β) (f : β → ℝ≥0∞) :
-    ∑' b, (p.bind g) b * f b = ∑' a, p a * ∑' b, g a b * f b := by
-  simp only [PMF.bind_apply]
-  calc ∑' b, (∑' a, p a * g a b) * f b = ∑' b, ∑' a, p a * g a b * f b := by
-        simp_rw [ENNReal.tsum_mul_right]
-    _ = ∑' a, ∑' b, p a * g a b * f b := ENNReal.tsum_comm
-    _ = ∑' a, p a * ∑' b, g a b * f b := by simp_rw [mul_assoc, ENNReal.tsum_mul_left]
-
 /-- **Forging a block of party `i` against an environment.** Over the seed distribution
 `seedDist Sch H cd`, the probability that the final log of the run of the environment `Z`
 against `chainSimω` contains a forgery of party `i` is at most the EUF-CMA advantage of the
@@ -905,11 +896,11 @@ theorem prob_forgeE_le (μ : PMF (Option (Fin np))) (W K Δ : ℕ) {ζ : Type}
   rw [PMF.bind_comm, PSigScheme.keyDist, PMF.bind_map] at hseed
   rw [eufcmaAdvantage_toEUFAdversary, eufDist, PMF.bind_apply]
   conv_lhs => rw [← hseed]
-  rw [tsum_bind_mul]
+  rw [PMF.tsum_bind_mul]
   refine ENNReal.tsum_le_tsum fun kr => ?_
   gcongr
   simp only [Function.comp_apply, forgerE, OracleAdv.run_rand, PMF.map_bind]
-  rw [tsum_bind_mul, PMF.bind_apply]
+  rw [PMF.tsum_bind_mul, PMF.bind_apply]
   refine ENNReal.tsum_le_tsum fun ω => ?_
   gcongr
   rw [tsum_eq_single (ω.withKey i (Sch.keygen kr)) fun b hb => by simp [PMF.pure_apply, hb],

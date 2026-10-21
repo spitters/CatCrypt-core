@@ -32,6 +32,9 @@ an outcome of a bind.
   bounds on the probability of an outcome of a bind
 * `PMF.uniformOfFintype_map_equiv` — the image of a uniform distribution under an
   equivalence is uniform
+* `PMF.map_uniform_fst`, `PMF.map_uniform_prod_map`, `PMF.map_uniform_pi_of_map`,
+  `PMF.map_uniform_comp_injective` — images of uniform pairs and uniform functions that
+  are uniform
 
 They belong in `Mathlib/Probability/ProbabilityMassFunction/Monad.lean` and
 `Mathlib/Probability/Distributions/Uniform.lean`.
@@ -322,5 +325,58 @@ theorem uniformOfFintype_map_equiv {α β : Type} [Fintype α] [Nonempty α] [Fi
   rw [PMF.map_apply, tsum_eq_single (e.symm b) fun a ha => by
     rw [if_neg]; rintro rfl; exact ha (e.symm_apply_apply a).symm]
   simp [PMF.uniformOfFintype_apply, Fintype.card_congr e]
+
+section UniformImage
+
+variable {A B : Type} [Fintype A] [Nonempty A] [Fintype B] [Nonempty B]
+
+/-- The first component of a uniform pair is uniform. -/
+theorem map_uniform_fst :
+    (PMF.uniformOfFintype (A × B)).map Prod.fst = PMF.uniformOfFintype A := by
+  have h : ∀ a : A, PMF.map (fun _ : B => a) (PMF.uniformOfFintype B) = PMF.pure a :=
+    fun a => PMF.map_const _ _
+  rw [uniform_prod_eq_bind, PMF.map_bind]
+  simp [PMF.map_comp, Function.comp_def, h]
+
+/-- Maps taking uniform distributions to uniform distributions take a uniform pair to a
+uniform pair. -/
+theorem map_uniform_prod_map {C E : Type} [Fintype C] [Nonempty C] [Fintype E] [Nonempty E]
+    {f : A → C} {g : B → E}
+    (hf : (PMF.uniformOfFintype A).map f = PMF.uniformOfFintype C)
+    (hg : (PMF.uniformOfFintype B).map g = PMF.uniformOfFintype E) :
+    (PMF.uniformOfFintype (A × B)).map (Prod.map f g) = PMF.uniformOfFintype (C × E) := by
+  rw [uniform_prod_eq_bind, uniform_prod_eq_bind, PMF.map_bind, ← hf, PMF.bind_map]
+  refine congrArg _ (funext fun a => ?_)
+  rw [← hg, PMF.map_comp, Function.comp_apply, PMF.map_comp]
+  rfl
+
+/-- A map taking the uniform distribution to the uniform distribution, applied pointwise,
+takes a uniform function to a uniform function. -/
+theorem map_uniform_pi_of_map {ι C : Type} [Fintype ι] [DecidableEq ι] [DecidableEq C]
+    [Fintype C] [Nonempty C] {f : A → C}
+    (hf : (PMF.uniformOfFintype A).map f = PMF.uniformOfFintype C) :
+    (PMF.uniformOfFintype (ι → A)).map (fun r i => f (r i)) = PMF.uniformOfFintype (ι → C) := by
+  rw [map_uniform_pi_congr (ι := ι) (fun _ => f) (fun _ => (id : C → C))
+    (fun _ => by rw [hf, PMF.map_id])]
+  exact PMF.map_id _
+
+end UniformImage
+
+/-- A uniform function on `D` composed with an injective `enc : I → D` is a uniform function
+on `I`. -/
+theorem map_uniform_comp_injective {D I R : Type} [Fintype D] [DecidableEq D] [Fintype I]
+    [DecidableEq I] [Fintype R] [Nonempty R] {enc : I → D} (henc : Function.Injective enc) :
+    (PMF.uniformOfFintype (D → R)).map (fun f => f ∘ enc) = PMF.uniformOfFintype (I → R) := by
+  classical
+  let E : (D → R) ≃ (I → R) × ({d // d ∉ Set.range enc} → R) :=
+    ((Equiv.sumCompl (fun d => d ∈ Set.range enc)).symm.arrowCongr (Equiv.refl R)).trans
+      ((Equiv.sumArrowEquivProdArrow _ _ R).trans
+        (Equiv.prodCongr ((Equiv.ofInjective enc henc).symm.arrowCongr (Equiv.refl R))
+          (Equiv.refl _)))
+  have h1 : (PMF.uniformOfFintype (D → R)).map (fun f => f ∘ enc) =
+      ((PMF.uniformOfFintype (D → R)).map E).map Prod.fst := by
+    rw [PMF.map_comp]
+    congr 1
+  rw [h1, uniformOfFintype_map_equiv E, map_uniform_fst]
 
 end PMF

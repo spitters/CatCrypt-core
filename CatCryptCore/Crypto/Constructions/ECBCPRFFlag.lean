@@ -6,6 +6,7 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Crypto.PRPPRFSwitching
+public import CatCryptCore.ForMathlib.PMFUniform
 
 /-!
 # Flagged outcomes, oracle-run supports and uniform resampling
@@ -155,13 +156,8 @@ theorem tsum_pure_mul {β : Type} (y : β) (g : β → ℝ≥0∞) :
   rw [tsum_eq_single y fun b hb => by simp [PMF.pure_apply, hb]]
   simp
 
-theorem tsum_bind_mul {β γ : Type} (p : PMF β) (k : β → PMF γ) (g : γ → ℝ≥0∞) :
-    ∑' x, (p.bind k) x * g x = ∑' b, p b * ∑' x, k b x * g x := by
-  simp only [PMF.bind_apply, ← ENNReal.tsum_mul_left, ← ENNReal.tsum_mul_right]
-  rw [ENNReal.tsum_comm]
-  refine tsum_congr fun b => tsum_congr fun x => ?_
-  ring
-
 end Flag
+
+export PMF (tsum_bind_mul)
 
 end CatCrypt.Crypto.Constructions.ECBCPRF
