@@ -115,6 +115,43 @@ computation of an arrow is charged. Time is the step count of the deep call-by-v
   `G`. This is the separation that item 3 lacks for the other classes; the module docstring
   states it as an argument, not as a formal lower bound.
 
+## Asymptotic security over D
+
+[`Complexity/D/Asymptotic`](../Complexity/D/Asymptotic.lean) derives asymptotic statements from
+concrete ones over the time class of D, with the negligible functions of `ConcreteReductions`.
+Every asymptotic predicate quantifies over families realized by closed D-terms within a
+polynomial time bound, never over all `SPComp` arrows, so none is the unsatisfiable hypothesis
+`∀ A, Adv A ≤ ε`.
+
+- A family `A : ∀ n, Val (a n) → SPComp (Val (b n))` is polynomial-time (`PolyTimeFam O A`) when
+  `TimeAdm O (p n) (A n)` for a `p` with `p n ≤ c * (n + 1) ^ d` (`IsPolyBound`). The class
+  contains `pure` and is closed under Kleisli composition and precomposition by a
+  polynomial-time family (`polyTimeFam_pure`, `PolyTimeFam.bind`, `PolyTimeFam.precomp`).
+- A `TimeReduction` maps arrows admissible at time `t` to arrows admissible at time `time t`;
+  pre- and postcomposition by an arrow admissible at time `s` are time reductions of time
+  `s + t + 3`, and time reductions compose.
+- Transfer (`polyTime_transfer`): from a concrete bound
+  `AdvP n A ≤ Σ_{i < k n} AdvQ n (B n i A) + ε n` for every `A`, with the time of each `B n i`
+  at most `Q (n + t)` for one polynomially bounded `Q`, every polynomial-time family `A` has
+  polynomial-time reduced families, uniformly in `i`. Corollary (`asymSecure_of_reduction`):
+  for `k` polynomially bounded and positive and `ε` negligible, `AsymSecure O AdvQ` (every
+  polynomial-time family has negligible advantage) gives `AsymSecure O AdvP`.
+- The computational UC level (`UCTimeNegl O f g`): `ucCdistTime O (p n) (f n) (g n)` is
+  negligible in `n` for every polynomially bounded `p`. It is reflexive, symmetric and
+  transitive, follows from a negligible statistical distance, and is preserved by
+  pre-composition and by post-composition with a polynomial-time family. At first-order types
+  it is equivalent to `AsymSecure` of the distinguishing game (`ucTimeNegl_iff_asymSecure`): the
+  supremum over the distinguishers at each `n` is negligible exactly when each polynomial-time
+  family of distinguishers has negligible advantage.
+- Instance (`addTwo_asymSecure`): `addTwo` on bytes is reflected by `reflect_d` and admissible at
+  time `3` (`TimeRealizer.ofBody` builds a realizer from a reflected body); post-processing two
+  families by it reduces, through `spcomp_distComp_bind_right`, to their distinguishing game,
+  and the corollary gives asymptotic indistinguishability of the post-processed families.
+
+The time reductions of this module are stated in the cost model of D. The time certificates of
+`derive_timed` and `derive_reduction` bound the time of a reduction in another cost semantics,
+and no theorem of the module turns such a certificate into a `TimeReduction`.
+
 ## Relation to the literature
 
 - Security definitions parametrised by an admissibility predicate with an additive cost model

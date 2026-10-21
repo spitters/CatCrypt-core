@@ -77,6 +77,7 @@ public import CatCryptCore.XDijkstra.XTimedMonad
 public import CatCryptCore.Complexity.D.Cost
 public import CatCryptCore.Complexity.D.TimeAdm
 public import CatCryptCore.Complexity.D.Reflect
+public import CatCryptCore.Complexity.D.Asymptotic
 public import CatCryptCore.XDijkstra.XErrMonad
 public import CatCryptCore.XDijkstra.XAdvantageHybrid
 public import CatCryptCore.XDijkstra.Rel.XRelMvcgenControl

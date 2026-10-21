@@ -121,6 +121,16 @@ terms (`Tm.rename`, `Tm.weaken`, defined in `Syntax`; `Tm.interp_rename`, `Tm.ev
 `Semantics`). Its relation to the other classes is in
 `CatCryptCore/Crypto/Complexity.md`, section "Time over the deep language D".
 
+The module `Asymptotic` grades this class by a security parameter. A family of arrows is
+polynomial-time (`PolyTimeFam`) when its member at `n` is admissible at time `p n` for a
+polynomially bounded `p`; asymptotic security (`AsymSecure`) and asymptotic computational
+indistinguishability (`UCTimeNegl`, `ucCdistTime` negligible at every polynomial time) quantify
+over these families only. The transfer theorem `polyTime_transfer` and its corollary
+`asymSecure_of_reduction` take a concrete reduction through time reductions of polynomially
+bounded time and derive asymptotic security; `TimeRealizer.ofBody` turns the term of a
+`reflect_d` extraction into a realizer, used in the instance `addTwo_asymSecure`. Details:
+`CatCryptCore/Crypto/Complexity.md`, section "Asymptotic security over D".
+
 ## Relation to hax-lean's typed IR
 
 The typed IR `TExpr` of hax-lean, the input of the CatCrypt compiler's front, embeds into D
