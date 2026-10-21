@@ -35,8 +35,11 @@ structure `(kit.aead iv).enc` priced by a companion indexed by the nonce. A recu
 adversary (`logRed`, the shape of the PRF-to-MAC reduction) is derived as a recursion over its
 costed tree, and `logRed.timeBound_timed` bounds its time through
 `OracleAdv.Timed.timeBound_fold`. The last tests pin
-the pricing of a class method on a local instance by a companion and the refusal of an
-opaque constant.
+the pricing of a class method on a local instance by a companion (and of an algebraic
+operation on a local instance at one unit) and the refusal of an
+opaque constant. The costed-closure tests derive a state table updated by `Function.update`
+and its simulation, closures in results, a closure result consumed by a continuation, the
+shape of the multi-key PRF hybrid reduction and a closure in a computation-tree result.
 -/
 
 @[expose] public section
@@ -483,6 +486,30 @@ example {D R α : Type} [BEq α] (a : α) (l : List α) (beqCost : α → α →
     (memRed.timed (D := D) (R := R) a l beqCost).1 = 1 + memB.timedCost a l beqCost := by
   simp only [memRed.timed]
 
+/-- Methods of an abstract group (a local instance): one unit each. -/
+noncomputable def o6Grp {G : Type} [AddCommGroup G] (g h : G) (n : ℕ) : OracleAdv ℕ ℕ G :=
+  .ret (g + h - n • g)
+
+derive_timed o6Grp
+
+example {G : Type} [AddCommGroup G] (g h : G) (n : ℕ) : (o6Grp.timed g h n).1 = 3 := rfl
+
+/-- A primitive interface of a protocol, given as a class (the `Dependencies` classes). -/
+class O6Deps (W : Type) where
+  /-- An encryption primitive. -/
+  aead_enc : W → W → W
+
+/-- A primitive of the interface keeps its cost companion; the group operation costs one
+unit. -/
+noncomputable def o6DepsRed {W : Type} [O6Deps W] [AddCommGroup W] (k m : W) :
+    OracleAdv ℕ ℕ W :=
+  .ret (O6Deps.aead_enc k m + k)
+
+derive_timed o6DepsRed
+
+example {W : Type} [O6Deps W] [AddCommGroup W] (k m : W) (aead_encCost : W → W → ℕ) :
+    (o6DepsRed.timed k m aead_encCost).1 = 2 + aead_encCost k m := rfl
+
 /-! ## A recursion over the adversary -/
 
 /-- The shape of the PRF-to-MAC reduction: run a forger, forward its queries and record them in
@@ -540,5 +567,278 @@ no definition to price and no registered cost `CatCrypt.Tactics.DeriveTimedTest.
 -/
 #guard_msgs (whitespace := lax) in
 derive_timed opqRed
+
+/-! ## Costed closures
+
+A state holding a function, updated by `Function.update` (`o6Impl`), its simulation
+(`o6Red`, through `OracleAdv.Timed.simulateHat`), closures in a result built from a function
+binder, a sampled function and an `if` (`o6Clo`), a closure result consumed by a continuation
+(`o6Use`, through `o6Clo.erase_timed_bind`), the shape of `MultiKeyPRF.hybImpl` and
+`mkHybRed` (tables and keys stored as functions of a rank, `o6Hyb`, `o6HybRed`), and a closure
+in the result of a computation tree (`o6Sp`). -/
+
+/-- A query answered from a table stored as a function, which it updates. -/
+noncomputable def o6Impl (s : List ℕ × (ℕ → ℕ)) (q : ℕ) :
+    OracleAdv ℕ ℕ (ℕ × (List ℕ × (ℕ → ℕ))) :=
+  .ret (s.2 q, (q :: s.1, Function.update s.2 q (s.2 q + 1)))
+
+derive_timed o6Impl
+
+example (s : List ℕ × (ℕ → ℕ) × (ℕ → ℕ)) (q : ℕ) :
+    (((o6Impl.timed s q).2.erase.bind fun y => OracleAdv.ret (y.1, y.2.1, y.2.2.1)) =
+      o6Impl (s.1, s.2.1) q) := o6Impl.erase_timed s q
+
+/-- The simulation of `o6Impl` from an all-zero table. -/
+noncomputable def o6Red (A : OracleAdv ℕ ℕ Bool) : OracleAdv ℕ ℕ Bool :=
+  (OracleAdv.simulate o6Impl A ([], fun _ => 0)).bind fun x => .ret x.1
+
+derive_timed o6Red
+
+example (A : OracleAdv.Timed ℕ ℕ Bool) : (o6Red.timed A).2.erase = o6Red A.erase :=
+  o6Red.erase_timed A
+
+/-- Closures in a result: one built from a function binder and a sampled function, one whose
+values are an `if` between a pair holding a closure and a pair holding the binder. -/
+noncomputable def o6Clo (ctxs : Fin 4 → ℕ) (h : Fin 4) :
+    OracleAdv ℕ ℕ ((Fin 4 → ℕ) × (Fin 4 → ℕ × (Fin 4 → ℕ))) :=
+  .rand (PMF.uniformOfFintype (Fin 4 → Fin 3)) fun f =>
+    .ret (fun i => ctxs i + (f i : ℕ),
+      fun i => if i = h then (ctxs i, fun j => (f j : ℕ)) else (0, ctxs))
+
+derive_timed o6Clo
+
+example (ctxs ctxsCost : Fin 4 → ℕ) (h : Fin 4) :
+    ((o6Clo.timed ctxs ctxsCost h).2.erase.bind fun y =>
+      OracleAdv.ret (y.1.1, fun a => ((y.2.1 a).1, (y.2.1 a).2.1))) = o6Clo ctxs h :=
+  o6Clo.erase_timed ctxs ctxsCost h
+
+/-- A closure result applied by the continuation. -/
+noncomputable def o6Use (ctxs : Fin 4 → ℕ) (h : Fin 4) : OracleAdv ℕ ℕ ℕ :=
+  (o6Clo ctxs h).bind fun r => .ret (r.1 h + (r.2 h).1)
+
+derive_timed o6Use
+
+example (ctxs ctxsCost : Fin 4 → ℕ) (h : Fin 4) :
+    (o6Use.timed ctxs ctxsCost h).2.erase = o6Use ctxs h := o6Use.erase_timed ctxs ctxsCost h
+
+/-- The shape of `MultiKeyPRF.hybImpl`: tables and keys stored as functions of a rank. -/
+noncomputable def o6Hyb (F : ℕ → ℕ → Fin 3) (j : ℕ)
+    (s : List ℕ × (ℕ → List (ℕ × Fin 3)) × (ℕ → Option ℕ)) (q : ℕ × ℕ) :
+    OracleAdv ℕ (Fin 3) (Fin 3 × (List ℕ × (ℕ → List (ℕ × Fin 3)) × (ℕ → Option ℕ))) :=
+  if s.1.length < j then
+    match List.lookup q.2 (s.2.1 q.1) with
+    | some v => .ret (v, (q.1 :: s.1, s.2.1, s.2.2))
+    | none => .rand (PMF.uniformOfFintype (Fin 3)) fun v =>
+        .ret (v, (q.1 :: s.1, Function.update s.2.1 q.1 ((q.2, v) :: s.2.1 q.1), s.2.2))
+  else if s.1.length = j then
+    .query q.2 fun v => .ret (v, (q.1 :: s.1, s.2.1, s.2.2))
+  else
+    match s.2.2 q.1 with
+    | some k => .ret (F k q.2, (q.1 :: s.1, s.2.1, s.2.2))
+    | none => .rand (PMF.uniformOfFintype (Fin 3)) fun k =>
+        .ret (F k q.2, (q.1 :: s.1, s.2.1, Function.update s.2.2 q.1 (some (k : ℕ))))
+
+/-- The shape of `MultiKeyPRF.mkHybRed`. -/
+noncomputable def o6HybRed (F : ℕ → ℕ → Fin 3) (A : OracleAdv (ℕ × ℕ) (Fin 3) Bool)
+    (j : ℕ) : OracleAdv ℕ (Fin 3) Bool :=
+  (OracleAdv.simulate (o6Hyb F j) A ([], fun _ => [], fun _ => none)).bind fun x => .ret x.1
+
+derive_timed o6HybRed
+
+example (F : ℕ → ℕ → Fin 3) (FCost : ℕ → ℕ → ℕ) (A : OracleAdv.Timed (ℕ × ℕ) (Fin 3) Bool)
+    (j : ℕ) : (o6HybRed.timed F FCost A j).2.erase = o6HybRed F A.erase j :=
+  o6HybRed.erase_timed F FCost A j
+
+open CatCrypt.Core in
+/-- A closure in the result of a computation tree. -/
+noncomputable def o6Sp (h : Fin 4) : SPTree ((Fin 4 → ℕ) × ℕ) :=
+  .ret (fun i => if i = h then 1 else 0, 3)
+
+derive_timed o6Sp
+
+example (h : Fin 4) :
+    ((o6Sp.timed h).2.erase.bind fun y => CatCrypt.Core.SPTree.ret (y.1.1, y.2)) = o6Sp h :=
+  o6Sp.erase_timed h
+
+/-! A tree binder whose results hold functions (the shapes of `copeRedChoose`,
+`iknpCRRedOf`): its results are lifted to costed closures of companion zero, and a tree
+argument holding costed closures is erased for a callee whose binder takes the plain type. -/
+
+open CatCrypt.Core in
+/-- A tree binder holding a function, whose result is passed on in a closure. -/
+noncomputable def o6Cope (c : SPTree ((Fin 2 → Bool) × ℕ)) :
+    SPTree ((Fin 2 → Fin 3 × Bool) × (Fin 2 → Bool)) :=
+  c.bind fun i => .sample (Fin 2 → Fin 3) inferInstance inferInstance fun t =>
+    .ret (fun j => (t j, i.1 j), i.1)
+
+derive_timed o6Cope
+
+example (c : CatCrypt.Core.SPTree.Timed ((Fin 2 → Bool) × ℕ)) :
+    ((o6Cope.timed c).2.erase.bind fun y => CatCrypt.Core.SPTree.ret (y.1.1, y.2.1)) =
+      o6Cope c.erase := o6Cope.erase_timed c
+
+open CatCrypt.Core in
+/-- A tree binder holding a function, applied by the continuation. -/
+noncomputable def o6Iknp (c : SPTree ((Fin 2 → Bool) × ℕ)) (g : Bool → SPTree Bool) :
+    SPTree Bool :=
+  c.bind fun i => g (i.1 0)
+
+derive_timed o6Iknp
+
+open CatCrypt.Core in
+/-- A call of `o6Iknp` on a tree whose results hold a closure. -/
+noncomputable def o6Pass (c : SPTree ((Fin 2 → Bool) × ℕ)) : SPTree Bool :=
+  o6Iknp (c.bind fun i => .ret (fun j => !i.1 j, i.2)) fun b => .ret b
+
+derive_timed o6Pass
+
+open CatCrypt.Core in
+/-- A partial application of a function parameter whose results hold functions (the shape of
+`iknpRedChooseOf`): a closure priced by the parameter's companion, its results tables. -/
+noncomputable def o6Bin
+    (bIn : (Fin 2 → Bool) → Bool → Fin 2 → (Fin 2 → Bool) × (Fin 2 → Bool))
+    (c : SPTree ((Fin 2 → Bool) × Bool)) :
+    SPTree ((Fin 2 → (Fin 2 → Bool) × (Fin 2 → Bool)) × Bool) :=
+  c.bind fun i => .ret (bIn i.1 i.2, i.2)
+
+derive_timed o6Bin
+
+open CatCrypt.Core in
+/-- Addition of an abstract group inside a closure (the shape of `copeRedChoose`): one unit,
+as a call of the abstract interface. -/
+noncomputable def o6Loc {G : Type} [AddCommGroup G] (g : G) (c : SPTree (Fin 2 → G)) :
+    SPTree (Fin 2 → G) :=
+  c.bind fun f => .ret (fun j => f j + g)
+
+derive_timed o6Loc
+
+open CatCrypt.Core in
+/-- Arithmetic modulo `p` inside a closure: one unit per operation. -/
+noncomputable def o6Zm (p : ℕ) (a : ZMod p) : SPTree (Fin 2 → ZMod p) :=
+  .ret (fun _ => a * a + a)
+
+derive_timed o6Zm
+
+/-- The closure of `o6Zm` has companion `2`: a multiplication and an addition. -/
+example (p : ℕ) (a : ZMod p) :
+    o6Zm.timed p a = (0, CatCrypt.Core.SPTree.Timed.ret (fun _ => a * a + a, fun _ => 2)) :=
+  rfl
+
+/-- A constant without arguments (the shape of the EDHOC labels `Label.mac_2`), priced by
+unfolding. -/
+def o6Lbl : ℕ := 3
+
+open CatCrypt.Core in
+/-- A call with a constant argument: derived without a panic of the unit-operation tests. -/
+noncomputable def o6Nullary (A : ℕ → SPTree Bool) : SPTree Bool := A (o6Lbl + 1)
+
+derive_timed o6Nullary
+
+example (A : ℕ → CatCrypt.Core.SPTree.Timed Bool) (ACost : ℕ → ℕ) :
+    o6Nullary.timed A ACost = (1 + (ACost (o6Lbl + 1) + 2), A (o6Lbl + 1)) := rfl
+
+/-- A two-stage adversary whose stages exchange a function (the shape of the base-OT
+adversaries of IKNP). -/
+structure O6Adv (S : Type) where
+  /-- The first stage. -/
+  choose : CatCrypt.Core.SPTree ((Fin 2 → Bool) × S)
+  /-- The second stage, on the state of the first. -/
+  guess : (Fin 2 → Bool) × S → CatCrypt.Core.SPTree Bool
+
+/-- A structure-valued reduction, whose field trees below have the plain interface that the
+costed mirror of `O6Adv` takes. -/
+noncomputable def o6SRed (A : O6Adv ℕ) : O6Adv ℕ := A
+
+open CatCrypt.Core in
+/-- The tree of the first field: a result holding a function, erased to the plain type. -/
+noncomputable def o6SRed.choose.tree (c : SPTree ((Fin 2 → Bool) × ℕ)) :
+    SPTree ((Fin 2 → Bool) × ℕ) :=
+  c.bind fun i => .ret (fun j => !i.1 j, i.2)
+
+open CatCrypt.Core in
+/-- The tree of the second field: a binder holding a function, taken plain. -/
+noncomputable def o6SRed.guess.tree (g : (Fin 2 → Bool) × ℕ → SPTree Bool)
+    (st : (Fin 2 → Bool) × ℕ) : SPTree Bool :=
+  g (fun j => st.1 j, st.2)
+
+derive_timed o6SRed.choose.tree
+
+derive_timed o6SRed.guess.tree
+
+example (c : CatCrypt.Core.SPTree.Timed ((Fin 2 → Bool) × ℕ)) :
+    (o6SRed.choose.tree.timed c).2.erase = o6SRed.choose.tree c.erase :=
+  o6SRed.choose.tree.erase_timed c
+
+example (g : (Fin 2 → Bool) × ℕ → CatCrypt.Core.SPTree.Timed Bool)
+    (gCost : (Fin 2 → Bool) × ℕ → ℕ) (st : (Fin 2 → Bool) × ℕ) :
+    (o6SRed.guess.tree.timed g gCost st).2.erase = o6SRed.guess.tree (fun a => (g a).erase) st :=
+  o6SRed.guess.tree.erase_timed g gCost st
+
+/-! ## Function discriminants, applied lets, tree-valued fields, distributions, words -/
+
+/-- A function passed to a match (`Option.bind` matches on its function argument): the field
+that binds it is priced by the function's companion (the shape of the HPKE `redProg`). -/
+noncomputable def o6Bind (q : ℕ) (a : Bool ⊕ Option ℕ) : OracleAdv ℕ ℕ (Option ℕ) :=
+  .ret (Sum.elim (fun _ => none) (fun ko => ko.bind fun k => some (k + q)) a)
+
+derive_timed o6Bind
+
+/-- A `let`-bound function applied as an oracle tree (the shape of `kemReduction`), zeta- and
+beta-reduced before its translation. -/
+noncomputable def o6LetApp (x : Bool) : OracleAdv ℕ ℕ ℕ :=
+  (have chal := (none : Option ℕ); fun y => match y with
+    | true => .ret (chal.getD 0)
+    | false => .ret 1) x
+
+derive_timed o6LetApp
+
+example (x : Bool) : (o6LetApp.timed x).2.erase = o6LetApp x := o6LetApp.erase_timed x
+
+/-- A scheme with oracle-tree programs. -/
+structure O6RS where
+  /-- Encapsulation. -/
+  encaps : ℕ → OracleAdv ℕ ℕ ℕ
+  /-- Decapsulation. -/
+  decaps : ℕ → ℕ → OracleAdv ℕ ℕ (Option ℕ)
+
+/-- A structure holding the scheme. -/
+structure O6Outer where
+  /-- The scheme. -/
+  kem : O6RS
+
+/-- Tree-valued fields of a field path (the shape of the HPKE `ctxtReduction` on
+`S.kem.encaps`): primitives priced by their cost companions, their trees at unit cost per
+node. -/
+noncomputable def o6TreeField (S : O6Outer) (pk : ℕ) : OracleAdv ℕ ℕ (Option ℕ) :=
+  (S.kem.encaps pk).bind fun k => S.kem.decaps pk k
+
+derive_timed o6TreeField
+
+example (S : O6Outer) (pk : ℕ) (encapsCost : ℕ → ℕ) (decapsCost : ℕ → ℕ → ℕ) :
+    o6TreeField.timed S pk encapsCost decapsCost =
+      OracleAdv.Timed.delay (1 + encapsCost pk)
+        ((OracleAdv.Timed.ofAdv (S.kem.encaps pk)).bind fun k =>
+          (1 + decapsCost pk k, OracleAdv.Timed.ofAdv (S.kem.decaps pk k))) := rfl
+
+/-- A distribution (the shape of `schedReduction`): refused, without a cost structure. -/
+noncomputable def o6Pmf (n : ℕ) : PMF ℕ := PMF.pure n
+
+/--
+error: derive_timed: no cost structure: `CatCrypt.Tactics.DeriveTimedTest.o6Pmf` is valued in
+`PMF`, a distribution without a program; write it as an oracle tree or a computation tree
+(`SPComp`) to derive its time
+-/
+#guard_msgs (whitespace := lax) in
+derive_timed o6Pmf
+
+/-- Word operations on `UInt64`, `BitVec 8` and `Fin 5` and a comparison, one unit each. -/
+noncomputable def o6Words (a b : UInt64) (x : BitVec 8) (i j : Fin 5) :
+    OracleAdv ℕ ℕ (UInt64 × BitVec 8 × Fin 5 × Bool) :=
+  .ret (a + (b ^^^ a), x &&& x, i + j, decide (i < j))
+
+derive_timed o6Words
+
+example (a b : UInt64) (x : BitVec 8) (i j : Fin 5) :
+    (o6Words.timed a b x i j).1 = 5 := rfl
 
 end CatCrypt.Tactics.DeriveTimedTest

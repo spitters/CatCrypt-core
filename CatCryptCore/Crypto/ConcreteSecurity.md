@@ -113,6 +113,19 @@ it applies, and each call passes them. A field of a computed structure, `(kit.ae
 is priced as the computation of the structure `kit.aead iv` by these rules, plus one, plus a cost
 companion `aead_encCost iv k m` indexed by the arguments that compute the structure and the
 arguments of the field.
+A function value inside data, a table of a simulation state, a function in a result or a
+closure received from a tree, is carried as a costed closure `(X → Y) × (X → ℕ)`, the function
+with its cost companion (the writer translation of function types, the first-order case of the
+typed measures of Forster and Kunze). Building a closure is free and its companion is the cost
+of its body; a partial application evaluates its arguments when it is built; applying a costed
+closure costs one plus its companion at the argument; a sampled function is a table, applied at
+unit cost. `Function.update f a v` is priced from its definition, with companion
+`fun x => 2 + (if x = a then 0 else 1 + fCost x)`, so the companion of a table records the
+updates that built it. A simulation whose state holds functions is translated to
+`OracleAdv.Timed.simulateHat`, whose state carries the companions from query to query; its
+erasure theorem `erase_simulateHat_bind` needs only the erasure theorem of the handler. A
+reduction whose result holds functions has the erasure theorem
+`(R.timed xs').2.erase.bind (fun y => ret (ε y)) = R xs`, `ε` keeping the functions.
 A reduction defined by structural recursion over its adversary, a handler of the adversary's
 nodes such as `prfMacRedAux` and `mapAns`, gets a costed form by the same recursion over the
 costed mirror: the continuation of a node of the adversary stands for the continuation of the

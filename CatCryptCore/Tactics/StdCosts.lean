@@ -286,7 +286,8 @@ end
 /-! ## Finite sums and enumerations
 
 Registered costs: enumerating `Finset.univ` costs one unit per element of the type and
-enumerating `Finset.range n` costs `n` units; a sum or a product over `s` costs, beyond the
+enumerating `Finset.range n` costs `n` units; removing an element from `s` costs `s.card`
+units, one comparison per element; a sum or a product over `s` costs, beyond the
 call and the enumeration of `s`, one unit and the cost of the summand per element. The cost of
 a sum is that of a fold over any list enumerating `s` (`Finset.sum.timedCost_eq_list`), so it
 is well defined on the quotient. -/
@@ -294,6 +295,8 @@ is well defined on the quotient. -/
 timed_cost Finset.univ := fun (α : Type _) [Fintype α] => Fintype.card α
 
 timed_cost Finset.range := fun (n : ℕ) => n
+
+timed_cost Finset.erase := fun (α : Type _) [DecidableEq α] (s : Finset α) (_a : α) => s.card
 
 timed_cost Finset.sum := fun (α β : Type _) [AddCommMonoid β] (s : Finset α) (_f : α → β)
   (fCost : α → ℕ) => ∑ i ∈ s, (1 + fCost i)

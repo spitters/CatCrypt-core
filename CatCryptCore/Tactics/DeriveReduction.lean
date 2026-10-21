@@ -74,8 +74,12 @@ proved by case splitting, and rewrites with that theorem under the binders of th
 ## Primitives
 
 A primitive is a field `S.f ps s` of a structure or class `s` built from binders of `B` that
-are not adversaries (`D.keygen`, `kit.enc`, `P.dh.keygen`, a method of a local instance), or a
-binder of `B` that is not an adversary. A primitive is a computation primitive when it is
+are not adversaries (`D.keygen`, `kit.enc`, `P.dh.keygen`, a computation method of a local
+instance), or a binder of `B` that is not an adversary; a method of an algebraic operation
+class or of `CryptoWord` on a local instance is not a primitive (`derive_timed` prices it at
+one unit, as a call of the abstract interface), while a method of another class on a local
+instance (a primitive interface of a protocol) is. A primitive is a computation primitive when
+it is
 called as a computation `F y₁ … yₙ : SPComp β`, and a data function when it has a function
 type whose codomain is not a computation, a type, a proposition or a class. Each primitive
 becomes a binder of `B.tree`, after the binders of `B`: a data function `F : X → Y` the binder
@@ -468,6 +472,12 @@ def abstractData (ctx : RCtx) (e : Expr) : MetaM Expr := do
           if let some x' ← unfoldDefinition? x then return .visit x'.headBeta
       return .continue
     unless ← isDataFnType (← inferType F) do return .continue
+    -- A method of an algebraic operation class (or of `CryptoWord`) is one call of an
+    -- abstract interface, priced at one unit by `derive_timed`: not a primitive.
+    if let .const fc _ := F.getAppFn then
+      if let some finfo := (← getEnv).getProjectionFnInfo? fc then
+        if finfo.fromClass && CatCrypt.Tactics.DeriveTimed.isUnitMethod fc then
+          return .continue
     match ctx.found? with
     | some r =>
       recordPrim r { key := F, arity := 0, data := true }

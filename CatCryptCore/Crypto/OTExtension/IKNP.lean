@@ -297,6 +297,21 @@ derive_reduction iknpGuessOf (adv := g)
 
 derive_reduction iknpCRRedOf (adv := c g)
 
+/-- The costed state of the base-OT reductions: the state `IKNPRedState` with each function
+a costed closure, the function and its cost companion. -/
+abbrev IKNPRedStateC (κ m : ℕ) (M S : Type) :=
+  S × ((Fin m → M × M) × (Fin m → ℕ)) × ((Fin m → Bool) × (Fin m → ℕ)) ×
+    ((Fin m → Fin κ → Bool) × (Fin m → Fin κ → ℕ)) × (Fin κ → Bool) × (Fin κ → ℕ)
+
+/-- The erasure of a costed state: its functions. -/
+def IKNPRedStateC.erase (st : IKNPRedStateC κ m M S) : IKNPRedState κ m M S :=
+  (st.1, st.2.1.1, st.2.2.1.1, st.2.2.2.1.1, st.2.2.2.2.1)
+
+/-- A state as a costed state: each function a table of companion zero. -/
+def IKNPRedState.toC (st : IKNPRedState κ m M S) : IKNPRedStateC κ m M S :=
+  (st.1, (st.2.1, fun _ => 0), (st.2.2.1, fun _ => 0), (st.2.2.2.1, fun _ _ => 0),
+    st.2.2.2.2, fun _ => 0)
+
 /-- **Time of the input choice of the base-OT reductions**: the time of the costed input
 choice `c` plus the two sample nodes drawing `T` and `s`. -/
 theorem iknpRedChooseOf.tree.timeBound_timed
@@ -304,9 +319,14 @@ theorem iknpRedChooseOf.tree.timeBound_timed
     (bInCost : (Fin m → Fin κ → Bool) → (Fin m → Bool) → Fin κ → ℕ)
     (c : SPTree.Timed ((Fin m → M × M) × (Fin m → Bool) × S)) :
     SPTree.Timed.stepTime (iknpRedChooseOf.tree.timed bIn bInCost c) ≤ c.time + 2 := by
-  refine SPTree.Timed.stepTime_bind_le c _ 2 fun x => ?_
-  simp [SPTree.Timed.stepTime, SPTree.Timed.time_sample, SPTree.Timed.time_ret,
-    Finset.sup_const]
+  rw [iknpRedChooseOf.tree.timed, SPTree.Timed.stepTime_delay]
+  refine (Nat.add_le_add_left (SPTree.Timed.stepTime_bind_le _ _ 2 fun x => ?_) _).trans ?_
+  · simp [SPTree.Timed.stepTime, SPTree.Timed.time_sample, SPTree.Timed.time_ret,
+      Finset.sup_const]
+  · rw [← Nat.add_assoc]
+    refine Nat.add_le_add_right ((SPTree.Timed.stepTime_bind_le c _ 0 fun _ => ?_).trans
+      (Nat.le_of_eq (Nat.add_zero _))) 2
+    simp [SPTree.Timed.stepTime, SPTree.Timed.time_ret]
 
 /-- **Time of the distinguisher of the base-OT reductions**: with `g` of time at most `T`
 and call cost at most `a`, and the view map of cost at most `tf`, the costed distinguisher
@@ -315,11 +335,13 @@ theorem iknpGuessOf.tree.timeBound_timed {E V O : Type}
     (fin : IKNPRedState κ m M S → E → V × O) (finCost : IKNPRedState κ m M S → E → ℕ)
     (g : S → V × O → SPTree.Timed Bool) (gCost : S → V × O → ℕ) {T a tf : ℕ}
     (hg : ∀ s y, (g s y).time ≤ T) (hgc : ∀ s y, gCost s y ≤ a)
-    (hf : ∀ st e, finCost st e ≤ tf) (st : IKNPRedState κ m M S) (e : E) :
+    (hf : ∀ st e, finCost st e ≤ tf) (st : IKNPRedStateC κ m M S) (e : E) :
     SPTree.Timed.stepTime (iknpGuessOf.tree.timed fin finCost g gCost st e) ≤
       T + a + tf + 2 := by
   simp only [SPTree.Timed.stepTime, iknpGuessOf.tree.timed]
-  have := hg st.1 (fin st e); have := hgc st.1 (fin st e); have := hf st e
+  have := hg st.1 (fin st.erase e); have := hgc st.1 (fin st.erase e)
+  have := hf st.erase e
+  simp only [IKNPRedStateC.erase] at *
   omega
 
 /-- **Time of the correlation-robust hash reduction**: with the costed input choice `c`,
@@ -335,46 +357,53 @@ theorem iknpCRRedOf.tree.timeBound_timed {V O : Type}
       VSB → ℕ)
     (c : SPTree.Timed ((Fin m → M × M) × (Fin m → Bool) × S))
     (g : S → V × O → SPTree.Timed Bool) (gCost : S → V × O → ℕ)
-    (th : (Fin m → Fin κ → Bool) × (Fin m → M)) (fstCost : Fin m → Fin κ → ℕ)
+    (th : ((Fin m → Fin κ → Bool) × (Fin m → Fin κ → ℕ)) × (Fin m → M) × (Fin m → ℕ))
+    (fstCost : Fin m → Fin κ → ℕ)
     (simT : (Fin κ → (Fin m → Bool) × (Fin m → Bool)) → SPTree.Timed VSB)
     (simTCost : (Fin κ → (Fin m → Bool) × (Fin m → Bool)) → ℕ) {Ts ts T a tv : ℕ}
     (hs : ∀ p, (simT p).time ≤ Ts) (hsc : ∀ p, simTCost p ≤ ts)
     (hg : ∀ s y, (g s y).time ≤ T) (hgc : ∀ s y, gCost s y ≤ a)
     (hv : ∀ i t v, viewCost i t v ≤ tv) :
     SPTree.Timed.stepTime (iknpCRRedOf.tree.timed bIn bInCost view viewCost
-      c g gCost th th.1 fstCost simT simTCost) ≤ c.time + Ts + ts + T + a + tv + 3 := by
-  simp only [iknpCRRedOf.tree.timed]
-  refine (SPTree.Timed.stepTime_bind_le c _ (Ts + ts + T + a + tv + 3) fun x => ?_).trans
-    (by omega)
-  rw [SPTree.Timed.stepTime_delay]
-  have hb := SPTree.Timed.stepTime_bind_le (simT (bIn th.1 x.2.1))
-    (fun y => (1 + (gCost x.2.2 (view x th y) + (1 + viewCost x th y)), g x.2.2 (view x th y)))
-    (T + a + tv + 2) fun y => by
-      simp only [SPTree.Timed.stepTime]
-      have := hg x.2.2 (view x th y); have := hgc x.2.2 (view x th y); have := hv x th y
+      c g gCost th th.1.1 fstCost simT simTCost) ≤ c.time + Ts + ts + T + a + tv + 3 := by
+  rw [iknpCRRedOf.tree.timed, SPTree.Timed.stepTime_delay]
+  refine (Nat.add_le_add_left (SPTree.Timed.stepTime_bind_le _ _ (Ts + ts + T + a + tv + 3)
+    fun x => ?_) _).trans ?_
+  · rw [SPTree.Timed.stepTime_delay]
+    refine (Nat.add_le_add_left (SPTree.Timed.stepTime_bind_le _ _ (T + a + tv + 2)
+      fun y => ?_) _).trans ?_
+    · simp only [SPTree.Timed.stepTime]
+      have := hg x.2.2 (view (x.1.1, x.2.1.1, x.2.2) (th.1.1, th.2.1) y)
+      have := hgc x.2.2 (view (x.1.1, x.2.1.1, x.2.2) (th.1.1, th.2.1) y)
+      have := hv (x.1.1, x.2.1.1, x.2.2) (th.1.1, th.2.1) y
       omega
-  have := hs (bIn th.1 x.2.1); have := hsc (bIn th.1 x.2.1)
-  omega
-
-/-- The costed input choice at `iknpBaseIn` erases and compiles to `iknpRedChoose` at the
-erased input choice. -/
-theorem iknpRedChoose.erase_timed
-    (bInCost : (Fin m → Fin κ → Bool) → (Fin m → Bool) → Fin κ → ℕ)
-    (c : SPTree.Timed ((Fin m → M × M) × (Fin m → Bool) × S)) :
-    (iknpRedChooseOf.tree.timed iknpBaseIn bInCost c).2.erase.compile =
-      iknpRedChoose c.erase.compile := by
-  rw [iknpRedChooseOf.tree.erase_timed, iknpRedChooseOf.compile_tree]
-  rfl
+    · have := hs (bIn th.1.1 (x.1.1, x.2.1.1, x.2.2).2.1)
+      have := hsc (bIn th.1.1 (x.1.1, x.2.1.1, x.2.2).2.1)
+      omega
+  · rw [← Nat.add_assoc]
+    refine le_trans (Nat.add_le_add_right ((SPTree.Timed.stepTime_bind_le c _ 0 fun _ => ?_).trans
+      (Nat.le_of_eq (Nat.add_zero _))) _) (Nat.le_of_eq (by omega))
+    simp [SPTree.Timed.stepTime, SPTree.Timed.time_ret]
 
 /-- The costed input choice of the base-OT reductions: `iknpRedChooseOf.tree.timed` at the
 column pairs `iknpBaseIn`, with cost `bInCost` for the column-pair map, on the costed input
-choice `c`. -/
+choice `c`; its results carry costed closures. -/
 noncomputable def iknpRedChoose.timed
     (bInCost : (Fin m → Fin κ → Bool) → (Fin m → Bool) → Fin κ → ℕ)
-    (c : SPTree.Timed ((Fin m → M × M) × (Fin m → Bool) × S)) :
-    ℕ × SPTree.Timed
-      ((Fin κ → (Fin m → Bool) × (Fin m → Bool)) × (Fin κ → Bool) × IKNPRedState κ m M S) :=
+    (c : SPTree.Timed ((Fin m → M × M) × (Fin m → Bool) × S)) :=
   iknpRedChooseOf.tree.timed iknpBaseIn bInCost c
+
+/-- The costed input choice at `iknpBaseIn`, with its costed closures erased, erases and
+compiles to `iknpRedChoose` at the erased input choice. -/
+theorem iknpRedChoose.erase_timed
+    (bInCost : (Fin m → Fin κ → Bool) → (Fin m → Bool) → Fin κ → ℕ)
+    (c : SPTree.Timed ((Fin m → M × M) × (Fin m → Bool) × S)) :
+    ((iknpRedChoose.timed bInCost c).2.erase.bind fun y =>
+        SPTree.ret (fun a => ((y.1.1 a).1.1, (y.1.1 a).2.1), y.2.1.1, y.2.2.1, y.2.2.2.1.1,
+          y.2.2.2.2.1.1, y.2.2.2.2.2.1.1, y.2.2.2.2.2.2.1)).compile =
+      iknpRedChoose c.erase.compile := by
+  rw [iknpRedChoose.timed, iknpRedChooseOf.tree.erase_timed, iknpRedChooseOf.compile_tree]
+  rfl
 
 /-- **Time of the costed input choice**: the time of the costed input choice `c` plus the
 two sample nodes drawing `T` and `s`. -/
@@ -393,10 +422,10 @@ variable [AddCommGroup M]
 theorem iknpSenderGuess.erase_timed (H : Fin m → (Fin κ → Bool) → M)
     (finCost : IKNPRedState κ m M S → VRB × (Fin κ → Fin m → Bool) → ℕ)
     (g : S → IKNPSenderView κ m VRB × (Fin m → M) → SPTree.Timed Bool)
-    (gCost : S → IKNPSenderView κ m VRB × (Fin m → M) → ℕ) (st : IKNPRedState κ m M S)
+    (gCost : S → IKNPSenderView κ m VRB × (Fin m → M) → ℕ) (st : IKNPRedStateC κ m M S)
     (e : VRB × (Fin κ → Fin m → Bool)) :
     (iknpGuessOf.tree.timed (iknpSenderFinish H) finCost g gCost st e).2.erase.compile =
-      iknpSenderGuess H (fun s y => (g s y).erase.compile) st e := by
+      iknpSenderGuess H (fun s y => (g s y).erase.compile) st.erase e := by
   rw [iknpGuessOf.tree.erase_timed, iknpGuessOf.compile_tree]
   rfl
 
@@ -405,10 +434,10 @@ theorem iknpSenderGuess.erase_timed (H : Fin m → (Fin κ → Bool) → M)
 theorem iknpReceiverGuess.erase_timed (H : Fin m → (Fin κ → Bool) → M)
     (finCost : IKNPRedState κ m M S → VSB × (Fin κ → Fin m → Bool) → ℕ)
     (g : S → IKNPReceiverView κ m M VSB × (Fin m → M) → SPTree.Timed Bool)
-    (gCost : S → IKNPReceiverView κ m M VSB × (Fin m → M) → ℕ) (st : IKNPRedState κ m M S)
+    (gCost : S → IKNPReceiverView κ m M VSB × (Fin m → M) → ℕ) (st : IKNPRedStateC κ m M S)
     (e : VSB × (Fin κ → Fin m → Bool)) :
     (iknpGuessOf.tree.timed (iknpReceiverFinish H) finCost g gCost st e).2.erase.compile =
-      iknpReceiverGuess H (fun s y => (g s y).erase.compile) st e := by
+      iknpReceiverGuess H (fun s y => (g s y).erase.compile) st.erase e := by
   rw [iknpGuessOf.tree.erase_timed, iknpGuessOf.compile_tree]
   rfl
 
@@ -428,7 +457,8 @@ theorem iknpCRRed.erase_timed (H : Fin m → (Fin κ → Bool) → M)
     (simTCost : (Fin κ → (Fin m → Bool) × (Fin m → Bool)) → ℕ)
     (hsim : ∀ p, (simT p).erase.compile = simSB p) :
     (iknpCRRedOf.tree.timed iknpBaseIn bInCost (iknpCRView H) viewCost c g
-      gCost th th.1 fstCost simT simTCost).2.erase.compile =
+      gCost ((th.1, fun _ _ => 0), (th.2, fun _ => 0)) th.1 fstCost simT
+      simTCost).2.erase.compile =
       iknpCRRed simSB H c.erase.compile (fun s y => (g s y).erase.compile) th := by
   rw [iknpCRRedOf.tree.erase_timed, iknpCRRedOf.compile_tree _ _ _ _ _ _ _ hsim]
   rfl
@@ -441,10 +471,7 @@ noncomputable def iknpSenderRed.timed (H : Fin m → (Fin κ → Bool) → M)
     (finCost : IKNPRedState κ m M S → VRB × (Fin κ → Fin m → Bool) → ℕ)
     (c : SPTree.Timed ((Fin m → M × M) × (Fin m → Bool) × S))
     (g : S → IKNPSenderView κ m VRB × (Fin m → M) → SPTree.Timed Bool)
-    (gCost : S → IKNPSenderView κ m VRB × (Fin m → M) → ℕ) :
-    (ℕ × SPTree.Timed
-      ((Fin κ → (Fin m → Bool) × (Fin m → Bool)) × (Fin κ → Bool) × IKNPRedState κ m M S)) ×
-      (IKNPRedState κ m M S → VRB × (Fin κ → Fin m → Bool) → ℕ × SPTree.Timed Bool) :=
+    (gCost : S → IKNPSenderView κ m VRB × (Fin m → M) → ℕ) :=
   (iknpRedChoose.timed bInCost c, iknpGuessOf.tree.timed (iknpSenderFinish H) finCost g gCost)
 
 /-- The costed sender-privacy reduction erases and compiles to `iknpSenderRed H` at the
@@ -455,12 +482,14 @@ theorem iknpSenderRed.erase_timed (H : Fin m → (Fin κ → Bool) → M)
     (c : SPTree.Timed ((Fin m → M × M) × (Fin m → Bool) × S))
     (g : S → IKNPSenderView κ m VRB × (Fin m → M) → SPTree.Timed Bool)
     (gCost : S → IKNPSenderView κ m VRB × (Fin m → M) → ℕ) :
-    (⟨(iknpSenderRed.timed H bInCost finCost c g gCost).1.2.erase.compile,
-      fun st e => ((iknpSenderRed.timed H bInCost finCost c g gCost).2 st e).2.erase.compile⟩ :
+    (⟨((iknpSenderRed.timed H bInCost finCost c g gCost).1.2.erase.bind fun y =>
+        SPTree.ret (fun a => ((y.1.1 a).1.1, (y.1.1 a).2.1), y.2.1.1, y.2.2.1, y.2.2.2.1.1,
+          y.2.2.2.2.1.1, y.2.2.2.2.2.1.1, y.2.2.2.2.2.2.1)).compile,
+      fun st e => ((iknpSenderRed.timed H bInCost finCost c g gCost).2 st.toC
+        e).2.erase.compile⟩ :
         OTAdversary κ (Fin m → Bool) VRB (IKNPRedState κ m M S)) =
       iknpSenderRed H ⟨c.erase.compile, fun s y => (g s y).erase.compile⟩ := by
-  simp only [iknpSenderRed.timed, iknpSenderRed, iknpRedChoose.timed,
-    iknpRedChoose.erase_timed]
+  simp only [iknpSenderRed.timed, iknpSenderRed, iknpRedChoose.erase_timed]
   congr 1
 
 /-- **Time of the costed sender-privacy reduction**: the costed input choice has time at
@@ -488,10 +517,7 @@ noncomputable def iknpReceiverRed.timed (H : Fin m → (Fin κ → Bool) → M)
     (finCost : IKNPRedState κ m M S → VSB × (Fin κ → Fin m → Bool) → ℕ)
     (c : SPTree.Timed ((Fin m → M × M) × (Fin m → Bool) × S))
     (g : S → IKNPReceiverView κ m M VSB × (Fin m → M) → SPTree.Timed Bool)
-    (gCost : S → IKNPReceiverView κ m M VSB × (Fin m → M) → ℕ) :
-    (ℕ × SPTree.Timed
-      ((Fin κ → (Fin m → Bool) × (Fin m → Bool)) × (Fin κ → Bool) × IKNPRedState κ m M S)) ×
-      (IKNPRedState κ m M S → VSB × (Fin κ → Fin m → Bool) → ℕ × SPTree.Timed Bool) :=
+    (gCost : S → IKNPReceiverView κ m M VSB × (Fin m → M) → ℕ) :=
   (iknpRedChoose.timed bInCost c,
     iknpGuessOf.tree.timed (iknpReceiverFinish H) finCost g gCost)
 
@@ -503,13 +529,14 @@ theorem iknpReceiverRed.erase_timed (H : Fin m → (Fin κ → Bool) → M)
     (c : SPTree.Timed ((Fin m → M × M) × (Fin m → Bool) × S))
     (g : S → IKNPReceiverView κ m M VSB × (Fin m → M) → SPTree.Timed Bool)
     (gCost : S → IKNPReceiverView κ m M VSB × (Fin m → M) → ℕ) :
-    (⟨(iknpReceiverRed.timed H bInCost finCost c g gCost).1.2.erase.compile,
+    (⟨((iknpReceiverRed.timed H bInCost finCost c g gCost).1.2.erase.bind fun y =>
+        SPTree.ret (fun a => ((y.1.1 a).1.1, (y.1.1 a).2.1), y.2.1.1, y.2.2.1, y.2.2.2.1.1,
+          y.2.2.2.2.1.1, y.2.2.2.2.2.1.1, y.2.2.2.2.2.2.1)).compile,
       fun st e =>
-        ((iknpReceiverRed.timed H bInCost finCost c g gCost).2 st e).2.erase.compile⟩ :
+        ((iknpReceiverRed.timed H bInCost finCost c g gCost).2 st.toC e).2.erase.compile⟩ :
         OTAdversary κ (Fin m → Bool) VSB (IKNPRedState κ m M S)) =
       iknpReceiverRed H ⟨c.erase.compile, fun s y => (g s y).erase.compile⟩ := by
-  simp only [iknpReceiverRed.timed, iknpReceiverRed, iknpRedChoose.timed,
-    iknpRedChoose.erase_timed]
+  simp only [iknpReceiverRed.timed, iknpReceiverRed, iknpRedChoose.erase_timed]
   congr 1
 
 /-- **Time of the costed receiver-privacy reduction**: the costed input choice has time at
@@ -545,7 +572,7 @@ noncomputable def iknpCRRed.timed (H : Fin m → (Fin κ → Bool) → M)
     (simTCost : (Fin κ → (Fin m → Bool) × (Fin m → Bool)) → ℕ)
     (th : (Fin m → Fin κ → Bool) × (Fin m → M)) : ℕ × SPTree.Timed Bool :=
   iknpCRRedOf.tree.timed iknpBaseIn bInCost (iknpCRView H) viewCost c g
-    gCost th th.1 fstCost simT simTCost
+    gCost ((th.1, fun _ _ => 0), (th.2, fun _ => 0)) th.1 fstCost simT simTCost
 
 /-- **Time of the costed correlation-robust hash reduction**: with the costed simulator of
 time at most `Ts` and call cost at most `ts`, `g` of time at most `T` and call cost at most
@@ -566,7 +593,7 @@ theorem iknpCRRed.timeBound_timed (H : Fin m → (Fin κ → Bool) → M)
     SPTree.Timed.stepTime (iknpCRRed.timed H bInCost viewCost c g gCost
       fstCost simT simTCost th) ≤ c.time + Ts + ts + T + a + tv + 3 :=
   iknpCRRedOf.tree.timeBound_timed iknpBaseIn bInCost (iknpCRView H) viewCost
-    c g gCost th fstCost simT simTCost hs hsc hg hgc hv
+    c g gCost ((th.1, fun _ _ => 0), (th.2, fun _ => 0)) fstCost simT simTCost hs hsc hg hgc hv
 
 end CostedReductions
 
