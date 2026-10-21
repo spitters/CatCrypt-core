@@ -597,6 +597,27 @@ derive_timed o6Red
 example (A : OracleAdv.Timed ℕ ℕ Bool) : (o6Red.timed A).2.erase = o6Red A.erase :=
   o6Red.erase_timed A
 
+/-- The time of the simulation of `o6Impl` by the state invariant that the table's companion
+is at most `3 i` after `i` queries: query `i` costs at most `4 + 6 i`
+(`OracleAdv.Timed.timeBound_simulateHat_inv`). -/
+example {A : OracleAdv.Timed ℕ ℕ Bool} {T q : ℕ} (hA : A.TimeBound T)
+    (hq : A.erase.IsQueryBound q) :
+    OracleAdv.Timed.StepTimeBound
+      (OracleAdv.Timed.simulateHat (fun y : List ℕ × (ℕ → ℕ) × (ℕ → ℕ) => (y.1, y.2.1))
+        (fun y : List ℕ × (ℕ → ℕ) => (y.1, y.2, fun _ => 0))
+        (fun s q => OracleAdv.Timed.delay 1 (o6Impl.timed s q)) A ([], fun _ => 0, fun _ => 0))
+      (T + ∑ j ∈ Finset.range q, (4 + 6 * (0 + j))) := by
+  refine OracleAdv.Timed.timeBound_simulateHat_inv _ _ _
+    (fun i s => ∀ x, s.2.2 x ≤ 3 * i) (fun i => 4 + 6 * i) (fun i s d hs => ?_) hA hq 0 _
+    (fun _ => Nat.zero_le _)
+  have h := hs d
+  refine ⟨⟨?_, trivial⟩, fun x => ?_⟩
+  · simp only [o6Impl.timed, OracleAdv.Timed.delay]; omega
+  · dsimp only
+    split
+    · omega
+    · have := hs x; omega
+
 /-- Closures in a result: one built from a function binder and a sampled function, one whose
 values are an `if` between a pair holding a closure and a pair holding the binder. -/
 noncomputable def o6Clo (ctxs : Fin 4 → ℕ) (h : Fin 4) :
@@ -840,5 +861,23 @@ derive_timed o6Words
 
 example (a b : UInt64) (x : BitVec 8) (i j : Fin 5) :
     (o6Words.timed a b x i j).1 = 5 := rfl
+
+/-- A scheme with a data field. -/
+structure O6Kit where
+  /-- A decryption function. -/
+  dec : ℕ → ℕ
+
+/-- A program whose costed form takes the cost companion of the field `S.dec`. -/
+noncomputable def o6Prog (S : O6Kit) (d : ℕ) : OracleAdv ℕ ℕ ℕ := .ret (S.dec d)
+
+/-- A partial application of `o6Prog` as a handler (the shape of the HPKE `redRun` with
+`redProg`): the call passes the caller's companion for `S.dec` (`o6Prog.timed.fieldPaths`). -/
+noncomputable def o6Run (S : O6Kit) (A : OracleAdv ℕ ℕ ℕ) : OracleAdv ℕ ℕ ℕ := A.bind (o6Prog S)
+
+derive_timed o6Run
+
+example (S : O6Kit) (A : OracleAdv.Timed ℕ ℕ ℕ) (decCost : ℕ → ℕ) :
+    o6Run.timed S A decCost =
+      A.bind fun d => OracleAdv.Timed.delay 1 (o6Prog.timed S d decCost) := rfl
 
 end CatCrypt.Tactics.DeriveTimedTest

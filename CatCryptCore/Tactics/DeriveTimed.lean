@@ -90,7 +90,9 @@ A function-typed field `m` of a field path `s` (a binder of `R`, or a field of a
 derivation unfolds, is a primitive of the scheme: its cost companion `mCost : X → ℕ`, the cost
 of evaluating `s.m x`, is a further binder after the binders of `R`, one for each field and
 path that the derivation prices. The fields are found by a first pass of the translation. A
-recursive call of `R` passes the same structures.
+recursive call of `R` passes the same structures. The paths are recorded as the definition
+`R.timed.fieldPaths`, a function of the binders of `R`; a caller of `R` (also through a
+partial application, eta-expanded) passes its companions for the paths at its arguments.
 
 ## Cost rules
 
@@ -206,6 +208,8 @@ Isabelle's `time_fun` command.
   costed closures
 * `OracleAdv.Timed.bind_hat`, `SPTree.Timed.bind_hat` — sequencing after a tree whose result
   holds costed closures
+* `OracleAdv.Timed.timeBound_simulateHat_inv` — the time of a costed simulation under a state
+  invariant indexed by the number of queries: `T + ∑_{j < q} t (i + j)`
 -/
 
 public section
@@ -329,6 +333,76 @@ theorem bind_hat {α' β : Type} (ε : α' → α) (ι : α → α') (t : Oracle
   subst h
   rw [OracleAdv.bind_assoc]
   exact congrArg t.bind (funext hk)
+
+/-- `AllRet P A`: every leaf `ret a` of the costed tree `A` satisfies `P a`. -/
+@[expose] def AllRet (P : α → Prop) : Timed D R α → Prop
+  | ret a => P a
+  | rand _ _ k => ∀ b, AllRet P (k b)
+  | query _ _ k => ∀ r, AllRet P (k r)
+
+/-- Times add under sequencing when the continuation is bounded on the leaves of the tree
+only (`timeBound_bind`, with the continuation's bound required where `P` holds). -/
+theorem timeBound_bind_of_allRet {β : Type} {P : α → Prop} {A : Timed D R α}
+    {f : α → ℕ × Timed D R β} {m n : ℕ} (hA : A.TimeBound m) (hP : AllRet P A)
+    (hf : ∀ a, P a → StepTimeBound (f a) n) : StepTimeBound (A.bind f) (m + n) := by
+  induction A generalizing m with
+  | ret a => exact (hf a hP).mono (Nat.le_add_left n m)
+  | rand p c k ih =>
+    have h1 := hA.1
+    simp only [bind, stepTimeBound_zero, timeBound_rand_iff]
+    refine ⟨by omega, fun b => ?_⟩
+    have h2 := (hA.2 b).1
+    exact (stepTimeBound_delay (c := c b) (ih b (hA.2 b).2 (hP b))).mono (by omega)
+  | query d c k ih =>
+    have h1 := hA.1
+    simp only [bind, stepTimeBound_zero, timeBound_query_iff]
+    refine ⟨by omega, fun r => ?_⟩
+    have h2 := (hA.2 r).1
+    exact (stepTimeBound_delay (c := c r) (ih r (hA.2 r).2 (hP r))).mono (by omega)
+
+/-- **Simulation time with a state invariant.** Let `Inv i` hold of the states reached
+after `i` queries: a program of `impl` from a state with `Inv i` has time at most `t i` and
+returns states with `Inv (i + 1)`. Then an adversary of time `T` with at most `q` queries,
+simulated from a state with `Inv i`, has time at most `T + ∑_{j < q} t (i + j)`. A handler
+whose state carries a table of costed closures, whose companions grow by a bounded amount per
+query, has a per-query time `t j` that grows with `j`, which a single uniform bound
+(`timeBound_simulate`) does not state. -/
+theorem timeBound_simulateHat_inv {D' R' S Ŝ : Type} (ε : Ŝ → S) (ι : S → Ŝ)
+    (impl : Ŝ → D → ℕ × Timed D' R' (R × Ŝ)) (Inv : ℕ → Ŝ → Prop) (t : ℕ → ℕ)
+    (himpl : ∀ i s d, Inv i s →
+      StepTimeBound (impl s d) (t i) ∧ AllRet (fun y => Inv (i + 1) y.2) (impl s d).2)
+    {A : Timed D R α} {T q : ℕ} (hA : A.TimeBound T) (hq : A.erase.IsQueryBound q)
+    (i : ℕ) (s : Ŝ) (hs : Inv i s) :
+    StepTimeBound (simulateHat ε ι impl A s) (T + ∑ j ∈ Finset.range q, t (i + j)) := by
+  unfold simulateHat
+  induction A generalizing T q i s with
+  | ret a => exact ⟨Nat.zero_le _, trivial⟩
+  | rand p c k ih =>
+    have h1 := hA.1
+    simp only [simulate, stepTimeBound_zero, timeBound_rand_iff]
+    refine ⟨by omega, fun b => ?_⟩
+    have h2 := (hA.2 b).1
+    exact (stepTimeBound_delay (c := c b) (ih b (hA.2 b).2 (hq b) i s hs)).mono (by omega)
+  | query d c k ih =>
+    cases q with
+    | zero => exact (hq : False).elim
+    | succ q =>
+      have hsum : ∑ j ∈ Finset.range (q + 1), t (i + j) =
+          ∑ j ∈ Finset.range q, t (i + 1 + j) + t i := by
+        rw [Finset.sum_range_succ']
+        simp only [Nat.add_zero]
+        congr 1
+        exact Finset.sum_congr rfl fun j _ => by rw [Nat.add_assoc, Nat.add_comm 1 j]
+      rw [hsum]
+      have hk : ∀ x : R × Ŝ, Inv (i + 1) x.2 →
+          StepTimeBound (delay (c x.1) (simulate impl (k x.1) x.2))
+            (T - 1 + ∑ j ∈ Finset.range q, t (i + 1 + j)) := fun x hx =>
+        (stepTimeBound_delay (ih x.1 (hA.2 x.1).2 (hq x.1) (i + 1) x.2 hx)).mono
+          (by have := (hA.2 x.1).1; omega)
+      have hi := himpl i s d hs
+      have h := stepTimeBound_delay (c := (impl s d).1)
+        (timeBound_bind_of_allRet hi.1.2 hi.2 hk)
+      exact h.mono (by have := hi.1.1; have := hA.1; omega)
 
 end CatCrypt.Crypto.OracleAdv.Timed
 
@@ -1957,6 +2031,29 @@ partial def callTimed (ctx : Ctx) (e target : Expr) (args : Array Expr) (T : Tre
           return (← mkLambdaFVars ys (raw.sndOf p), ← mkLambdaFVars ys (raw.fstOf p))
         out := out.push v |>.push c
   let arity ← forallTelescope (← inferType target) fun ys _ => pure ys.size
+  -- The costed form of the callee takes the cost companions of field paths of its binders
+  -- (`R.timed.fieldPaths`): the caller passes its companions for the same paths at the
+  -- arguments of the call.
+  if out.size < arity then
+    if let .const tname tlvls := target then
+      let fpName := tname ++ `fieldPaths
+      if (← getEnv).contains fpName then
+        let some fp ← unfoldDefinition? (mkAppN (mkConst fpName tlvls) args)
+          | fail m!"internal: `{fpName}` does not unfold"
+        let mut tup := fp.headBeta
+        let mut paths := #[]
+        while tup.isAppOfArity ``PProd.mk 4 do
+          paths := paths.push (tup.getArg! 2)
+          tup := (tup.getArg! 3).headBeta
+        for p in paths do
+          if let some (_, cc) := ctx.fields.find? (·.1 == p) then
+            out := out.push cc
+          else if let some r := ctx.fieldRec? then
+            unless (← r.get).contains p do r.modify (·.push p)
+            out := out.push (← mkFreshExprMVar (← companionType (← inferType p)))
+          else
+            fail m!"the costed form of the callee `{e.getAppFn}` takes the cost of the field \
+              `{p}`, which is not a field of a binder of the caller"
   unless out.size == arity do
     fail m!"the costed form of the callee `{e.getAppFn}` takes the costs of fields of local \
       structures or instances; register its costed form at the call"
@@ -2014,7 +2111,7 @@ partial def deriveTimed (ctx : Ctx) (c : Name) : TermElabM Unit := do
     if ← xs.anyM fun x => do return (← hatTy? (← inferType x)).isSome then return true
     let some rawT ← treeTy? (← inferType b) | return false
     return (← hatTy? rawT.result).isSome
-  let (tType, tValue, eType, nBinders, hatted) ← lambdaTelescope value fun xs b => do
+  let (tType, tValue, eType, nBinders, hatted, fp?) ← lambdaTelescope value fun xs b => do
     let some T ← treeTyH? (← inferType b)
       | fail m!"the result of `{c}` is not a tree of a registered kind"
     let some rawT ← treeTy? (← inferType b) | fail m!"internal: the result of `{c}`"
@@ -2087,8 +2184,17 @@ partial def deriveTimed (ctx : Ctx) (c : Name) : TermElabM Unit := do
         let rhs := mkAppN (mkConst c levels) args
         let eType ← mkForallFVars bs (← mkEq lhs rhs)
         let explicit ← bs.mapM fun b => return (← b.fvarId!.getBinderInfo).isExplicit
-        return (tType, tValue, eType, explicit, hatted)
+        -- The field paths whose cost companions the costed form takes, as a function of the
+        -- binders of `c`: a caller passes its companions for them (`callTimed`).
+        let fp? ← if used.isEmpty then pure none else do
+          let mut tup : Expr := mkConst ``PUnit.unit [Level.one]
+          for (p, _) in used.reverse do
+            tup ← mkAppM ``PProd.mk #[p, tup]
+          pure (some (← mkLambdaFVars xs tup))
+        return (tType, tValue, eType, explicit, hatted, fp?)
   addTimedDef timedName info.levelParams tType tValue
+  if let some fp := fp? then
+    addTimedDef (timedName ++ `fieldPaths) info.levelParams (← inferType fp) fp
   -- The erasure theorem.
   let callees := collectTimed (← getEnv) ctx.suffix tValue timedName
   -- The erasure lemmas of the tree kinds whose costed trees occur in the costed form.
