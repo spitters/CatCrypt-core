@@ -280,14 +280,20 @@ def groupMsm (scalars bases : Array (Array Int)) : Array Int :=
     E.encG (gp.groupMul (E.decG acc)
       (gp.groupExp (E.decG (Hax.index bases i)) (E.decS (Hax.index scalars i))))
 
+/-- The row-wise multi-scalar multiplication: entry `j` is `groupMsm` of the scalars and
+bases of row `j`. -/
+def groupMsmRows (rows : Array (Array (Array Int) × Array (Array Int))) : Array (Array Int) :=
+  rows.map fun r => groupMsm E r.1 r.2
+
 /-- The `SigmaProofsDeps` instance of a group with encodings: each operation decodes its
 arguments, applies the operation of `gp` and encodes the result; `group_mul s p` is the
-power `p ^ s`, `msm` and `msm_vartime` are both `groupMsm`, and the comparisons compare
-decoded values. -/
+power `p ^ s`, `msm` and `msm_vartime` are both `groupMsm`, `msm_rows_vartime` is
+`groupMsmRows`, and the comparisons compare decoded values. -/
 @[instance_reducible]
 def groupSigmaProofsDeps : SigmaProofs.SigmaProofsDeps where
   msm := groupMsm E
   msm_vartime := groupMsm E
+  msm_rows_vartime := groupMsmRows E
   identity := E.encG gp.identity
   group_mul s p := E.encG (gp.groupExp (E.decG p) (E.decS s))
   group_add a b := E.encG (gp.groupMul (E.decG a) (E.decG b))
@@ -359,6 +365,19 @@ variable (a b : Array Int)
 @[simp] theorem groupSigmaProofsDeps_msm_vartime (sc bs : Array (Array Int)) :
     @SigmaProofs.SigmaProofsDeps.msm_vartime (groupSigmaProofsDeps E) sc bs =
       groupMsm E sc bs := rfl
+
+@[simp] theorem groupSigmaProofsDeps_msm_rows_vartime
+    (rows : Array (Array (Array Int) × Array (Array Int))) :
+    @SigmaProofs.SigmaProofsDeps.msm_rows_vartime (groupSigmaProofsDeps E) rows =
+      groupMsmRows E rows := rfl
+
+/-- The row-wise multi-scalar multiplication of an array of rows given by `f` is the array
+of the `msm_vartime` of each row. -/
+theorem msm_rows_vartime_ofFn {N : ℕ} (f : Fin N → Array (Array Int) × Array (Array Int)) :
+    @SigmaProofs.SigmaProofsDeps.msm_rows_vartime (groupSigmaProofsDeps E) (Array.ofFn f) =
+      Array.ofFn fun j =>
+        @SigmaProofs.SigmaProofsDeps.msm_vartime (groupSigmaProofsDeps E) (f j).1 (f j).2 := by
+  simp [groupMsmRows, Array.map_ofFn, Function.comp_def]
 
 end Ops
 
@@ -764,7 +783,7 @@ theorem Instance_simulate_commitment_eq {n m : ℕ} {inst : SigmaProofs.Instance
     SigmaProofs.«Instance.image», Hax.bne, Hax.array_len, h.1, h.2.1, size_encVec,
     beq_self_eq_true, Bool.not_true, Bool.false_eq_true, if_false,
     groupSigmaProofsDeps_scalar_neg]
-  rw [foldRange_push_ofFn]
+  rw [foldRange_push_ofFn, Hax.deref, msm_rows_vartime_ofFn]
   unfold encCom
   congr 2
   funext j
@@ -779,7 +798,7 @@ theorem Instance_simulate_commitment_eq {n m : ℕ} {inst : SigmaProofs.Instance
   rw [msm_eq, Hax.deref, Hax.deref] at hrow
   have hmap := congrArg E.decG hrow
   rw [E.decG_encG, E.decG_encG] at hmap
-  rw [msm_vartime_eq, Hax.deref, Hax.deref]
+  rw [msm_vartime_eq]
   simp only [Hax.push]
   rw [dotVal_push E _ _ _ _ hsz]
   simp only [E.decS_encS, LinearRelation.simCommit, decodeRel_image, gp.groupInv_groupExp]
