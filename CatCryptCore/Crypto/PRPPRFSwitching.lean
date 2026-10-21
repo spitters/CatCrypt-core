@@ -7,6 +7,7 @@ module
 
 public import CatCryptCore.Crypto.OracleAdversary
 public import CatCryptCore.Crypto.SwitchingLemma
+public import CatCryptCore.Crypto.SPCompPMF
 
 /-!
 # Adaptive PRF and PRP games and the PRP/PRF switching lemma
@@ -270,10 +271,6 @@ theorem run_rfFlagOracle_flag_le (A : OracleAdv D R α) (n : ℕ) (hA : A.IsQuer
 
 /-! ## Games -/
 
-/-- The heap-independent game returning a sample of `p` and leaving the heap
-unchanged. -/
-noncomputable def pmfGame (p : PMF Bool) : SPComp Bool := fun h => p.map fun b => some (b, h)
-
 /-- The keyed oracle `F k` with no state. -/
 noncomputable def keyedOracle {K : Type} (F : K → D → R) (k : K) : Unit → D → PMF (R × Unit) :=
   fun _ d => PMF.pure (F k d, ())
@@ -282,17 +279,17 @@ variable {K : Type} [Fintype K] [Nonempty K]
 
 /-- Real game: sample a key once, then run `A` against `F k`. -/
 noncomputable def realGame (F : K → D → R) (A : OracleAdv D R Bool) : SPComp Bool :=
-  pmfGame ((PMF.uniformOfFintype K).bind fun k =>
+  liftPMF ((PMF.uniformOfFintype K).bind fun k =>
     (OracleAdv.run (keyedOracle F k) A ()).map Prod.fst)
 
 /-- Ideal PRF game: run `A` against the lazily sampled random function. -/
 noncomputable def rfGame (A : OracleAdv D R Bool) : SPComp Bool :=
-  pmfGame ((OracleAdv.run rfOracle A []).map Prod.fst)
+  liftPMF ((OracleAdv.run rfOracle A []).map Prod.fst)
 
 /-- Ideal PRP game: run `A` against the lazily sampled random injection
 (sampling without replacement). -/
 noncomputable def rpGame (A : OracleAdv D R Bool) : SPComp Bool :=
-  pmfGame ((OracleAdv.run rpOracle A []).map Prod.fst)
+  liftPMF ((OracleAdv.run rpOracle A []).map Prod.fst)
 
 /-- Adaptive PRF advantage of `A` against the keyed function `F`. -/
 noncomputable def PRF_q_Advantage (F : K → D → R) (A : OracleAdv D R Bool) : ℝ≥0∞ :=
@@ -338,10 +335,10 @@ theorem tsum_ite_map_some {β γ : Type} (p : PMF β) (f : β → γ) (P : γ �
   simp [Set.indicator]
 
 omit [DecidableEq D] [DecidableEq R] [Fintype R] [Nonempty R] in
-theorem prTrue_pmfGame_map {β : Type} (p : PMF β) (g : β → Bool) (h₀ : Heap) :
-    prTrue (pmfGame (p.map g)) h₀ = p.toOuterMeasure {x | g x = true} := by
+theorem prTrue_liftPMF_map {β : Type} (p : PMF β) (g : β → Bool) (h₀ : Heap) :
+    prTrue (liftPMF (p.map g)) h₀ = p.toOuterMeasure {x | g x = true} := by
   rw [prTrue_eq_prEventComp]
-  unfold prEventComp prEvent pmfGame
+  unfold prEventComp prEvent liftPMF
   simp only [PMF.map_comp, Function.comp_def]
   convert tsum_ite_map_some p (fun x => (g x, h₀)) (fun y => y.1 = true)
 
@@ -368,13 +365,13 @@ theorem prEventComp_flagGame (O : List (D × R) × Bool → D → PMF (R × (Lis
 theorem rfGame_eq (A : OracleAdv D R Bool) :
     prTrue (rfGame A) Heap.empty = prTrue (flagGame rfFlagOracle A) Heap.empty := by
   rw [prTrue_flagGame, rfGame, ← OracleAdv.run_map_state rfFlagOracle rfOracle Prod.fst
-    rfFlagOracle_map A ([], false), PMF.map_comp, prTrue_pmfGame_map]
+    rfFlagOracle_map A ([], false), PMF.map_comp, prTrue_liftPMF_map]
   rfl
 
 theorem rpGame_eq (A : OracleAdv D R Bool) :
     prTrue (rpGame A) Heap.empty = prTrue (flagGame rpFlagOracle A) Heap.empty := by
   rw [prTrue_flagGame, rpGame, ← OracleAdv.run_map_state rpFlagOracle rpOracle Prod.fst
-    rpFlagOracle_map A ([], false), PMF.map_comp, prTrue_pmfGame_map]
+    rpFlagOracle_map A ([], false), PMF.map_comp, prTrue_liftPMF_map]
   rfl
 
 omit [DecidableEq D] [DecidableEq R] [Fintype R] [Nonempty R] in
@@ -429,7 +426,7 @@ omit [DecidableEq D] [DecidableEq R] [Fintype R] [Nonempty R] in
 the same output distribution. -/
 theorem realGame_eq_of_isQueryBound_zero {S : Type} (F : K → D → R)
     (O : S → D → PMF (R × S)) (s : S) {A : OracleAdv D R Bool} (hA : A.IsQueryBound 0) :
-    realGame F A = pmfGame ((OracleAdv.run O A s).map Prod.fst) := by
+    realGame F A = liftPMF ((OracleAdv.run O A s).map Prod.fst) := by
   unfold realGame
   simp only [OracleAdv.run_map_fst_of_isQueryBound_zero _ O hA () s, PMF.bind_const]
 

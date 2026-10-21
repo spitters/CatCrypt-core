@@ -169,7 +169,7 @@ namespace Decomp
 key distribution, run `B` on `D.F x`, and check that its output is a preimage of
 `D.F x`. -/
 noncomputable def owfGame (D : Decomp) [DecidableEq D.Y] (B : D.Y → PMF D.X) : SPComp Bool :=
-  PRPPRF.pmfGame (D.gen.bind fun x => (B (D.F x)).map fun x' => decide (D.F x' = D.F x))
+  liftPMF (D.gen.bind fun x => (B (D.F x)).map fun x' => decide (D.F x' = D.F x))
 
 /-- The one-wayness advantage of the inverter `B` against `D.F`. -/
 noncomputable def owfAdvantage (D : Decomp) [DecidableEq D.Y] (B : D.Y → PMF D.X) : ℝ≥0∞ :=
@@ -1271,10 +1271,10 @@ theorem mem_ents_of_lookup {t : (P.protocol M).Tables} {k : P.Key M} {c : P.Ch}
   | some c' =>
     rw [hp] at h
     simp only [Option.some_or, Option.some.injEq] at h
-    exact Or.inr (h ▸ lookupIn_mem hp)
+    exact Or.inr (h ▸ mem_of_lookupIn_eq_some hp)
   | none =>
     rw [hp, Option.none_or] at h
-    exact Or.inl (lookupIn_mem h)
+    exact Or.inl (mem_of_lookupIn_eq_some h)
 
 open Classical in
 /-- The preimage reconstructed from consistent committed views of all parties of some
@@ -1347,11 +1347,11 @@ theorem ext_sound (hS : P.D.Sound) {N : ℕ} (x : P.D.Y) (s : SLState (P.protoco
       unfold Protocol.Tables.lookup at hcl
       cases hp : lookupIn s.1.1.prog (Sum.inr (x, m, Cm)) with
       | some c' =>
-        have := hI.2.2 _ _ _ _ (lookupIn_mem hp)
+        have := hI.2.2 _ _ _ _ (mem_of_lookupIn_eq_some hp)
         simp [this] at hsig
       | none =>
         rw [hp, Option.none_or] at hcl
-        exact lookupIn_mem hcl
+        exact mem_of_lookupIn_eq_some hcl
     have hgood : ∀ j, P.Good M s.1.1 x Cm j (σ.1 j) := by
       intro j
       refine ⟨fun i => ((σ.2 j).1 i).2, fun i => ?_, hchk j⟩
@@ -1621,7 +1621,7 @@ noncomputable def forgeIdeal : Unit → SPComp Bool :=
 /-- The real verification game is heap-independent. -/
 instance forgeReal_pureGame {G : Protocol} {qH qS : ℕ} (A : G.Adversary qH qS) :
     PureGame (forgeReal A) :=
-  ⟨fun _ => PRPPRF.pmfGame_isPure _⟩
+  ⟨fun _ => liftPMF_isPure _⟩
 
 /-- The ideal verification game is heap-independent. -/
 instance forgeIdeal_pureGame : PureGame forgeIdeal :=

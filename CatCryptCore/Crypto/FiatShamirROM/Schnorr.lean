@@ -205,11 +205,11 @@ noncomputable def dlOfWitness (B : gp.G → PMF gp.Scalar) : gp.G → SPComp gp.
 /-- The relation game of `schnorrSigma gp` is the discrete-logarithm game. -/
 theorem relAdvantage_schnorrSigma (B : gp.G → PMF gp.Scalar) :
     (schnorrSigma gp).relAdvantage B = gp.DL_Advantage (dlOfWitness gp B) := by
-  have hgame : gp.dlGame (dlOfWitness gp B) = PRPPRF.pmfGame
+  have hgame : gp.dlGame (dlOfWitness gp B) = liftPMF
       ((PMF.uniformOfFintype gp.Scalar).bind fun w =>
         (B (gp.exp w)).map fun w' => gp.exp w' == gp.exp w) := by
     funext h
-    simp only [GroupParam.dlGame, PRPPRF.pmfGame, SPComp.monad_bind_eq, SPComp.bind,
+    simp only [GroupParam.dlGame, liftPMF, SPComp.monad_bind_eq, SPComp.bind,
       SPComp.sample, SPComp.pure, dlOfWitness, SDistr.bind, SDistr.uniform, SDistr.pure]
     simp only [PMF.bind_bind, Function.comp_def, PMF.pure_bind, ← PMF.bind_pure_comp]
   unfold Sigma.relAdvantage Sigma.relGame GroupParam.DL_Advantage

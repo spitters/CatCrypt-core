@@ -147,7 +147,7 @@ noncomputable def owcpaGame (A : PK → C → PMF M) : PMF Bool :=
 
 /-- The OW-CPA advantage. -/
 noncomputable def owcpaAdvantage (A : PK → C → PMF M) : ℝ≥0∞ :=
-  prTrue (pmfGame (owcpaGame P A)) Heap.empty
+  prTrue (liftPMF (owcpaGame P A)) Heap.empty
 
 /-- The plaintext-checking oracle for the secret key `sk`, without state. -/
 noncomputable def pcoOracle (sk : SK) (_ : Unit) (q : M × C) : PMF (Bool × Unit) :=
@@ -169,7 +169,7 @@ noncomputable def owpcaGame {q : ℕ} (A : OWPCAAdversary PK M C q) : PMF Bool :
 
 /-- The OW-PCA advantage. -/
 noncomputable def owpcaAdvantage {q : ℕ} (A : OWPCAAdversary PK M C q) : ℝ≥0∞ :=
-  prTrue (pmfGame (owpcaGame P A)) Heap.empty
+  prTrue (liftPMF (owpcaGame P A)) Heap.empty
 
 /-- The plaintext-checking and ciphertext-validity oracles for `sk` and the
 challenge ciphertext `c*`; the validity oracle answers `false` on `c*`. -/
@@ -199,7 +199,7 @@ noncomputable def owpcvaGame [DecidableEq C] {qP qV : ℕ} (A : OWPCVAAdversary 
 /-- The OW-PCVA advantage. -/
 noncomputable def owpcvaAdvantage [DecidableEq C] {qP qV : ℕ}
     (A : OWPCVAAdversary PK M C qP qV) : ℝ≥0∞ :=
-  prTrue (pmfGame (owpcvaGame P A)) Heap.empty
+  prTrue (liftPMF (owpcvaGame P A)) Heap.empty
 
 end OW
 
@@ -229,7 +229,7 @@ noncomputable def indcpaGame (A : INDCPAAdversary PK M C) (b : Bool) : PMF Bool 
 /-- The IND-CPA advantage: the distance between the two challenge bits. Registered with
 `@[hop_metric]`, which unfolds it to that `Advantage`. -/
 @[hop_metric] noncomputable def indcpaAdvantage (A : INDCPAAdversary PK M C) : ℝ≥0∞ :=
-  Advantage (pmfGame (indcpaGame P A true)) (pmfGame (indcpaGame P A false))
+  Advantage (liftPMF (indcpaGame P A true)) (liftPMF (indcpaGame P A false))
 
 /-- The decryption oracle for `sk`. The state is the challenge ciphertext recorded
 by the challenger (`none` before the challenge); the oracle answers `none` on it. -/
@@ -263,7 +263,7 @@ noncomputable def indccaGame [DecidableEq C] {q₁ q₂ : ℕ} (A : INDCCAAdvers
 /-- The IND-CCA advantage. -/
 noncomputable def indccaAdvantage [DecidableEq C] {q₁ q₂ : ℕ}
     (A : INDCCAAdversary PK M C q₁ q₂) : ℝ≥0∞ :=
-  Advantage (pmfGame (indccaGame P A true)) (pmfGame (indccaGame P A false))
+  Advantage (liftPMF (indccaGame P A true)) (liftPMF (indccaGame P A false))
 
 end IND
 
@@ -288,9 +288,9 @@ with the pco-based winning condition). For every OW-CPA adversary `A`,
 theorem owcpa_le_indcpa (A : PK → C → PMF M) :
     owcpaAdvantage P A ≤ indcpaAdvantage P (owToIndcpa A) + (Fintype.card M : ℝ≥0∞)⁻¹ +
       P.corrErr := by
-  have hpr : ∀ p : PMF Bool, prTrue (pmfGame p) Heap.empty = p.toOuterMeasure {b | b = true} := by
+  have hpr : ∀ p : PMF Bool, prTrue (liftPMF p) Heap.empty = p.toOuterMeasure {b | b = true} := by
     intro p
-    have h := prTrue_pmfGame_map p id Heap.empty
+    have h := prTrue_liftPMF_map p id Heap.empty
     rwa [PMF.map_id] at h
   have hconst : ∀ (c : ℝ≥0∞), ∑' m : M, PMF.uniformOfFintype M m * c = c := fun c => by
     rw [ENNReal.tsum_mul_right, PMF.tsum_coe, one_mul]
@@ -424,7 +424,7 @@ noncomputable def romOWPCAGame (S : ROMScheme PK SK M C D H) {qG qP : ℕ}
 /-- The OW-PCA advantage in the random-oracle model. -/
 noncomputable def romOWPCAAdvantage (S : ROMScheme PK SK M C D H) {qG qP : ℕ}
     (B : ROMOWPCAAdversary PK M C D H qG qP) : ℝ≥0∞ :=
-  prTrue (pmfGame (romOWPCAGame S B)) Heap.empty
+  prTrue (liftPMF (romOWPCAGame S B)) Heap.empty
 
 end ROM
 

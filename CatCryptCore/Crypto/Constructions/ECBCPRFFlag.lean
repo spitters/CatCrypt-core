@@ -158,6 +158,4 @@ theorem tsum_pure_mul {β : Type} (y : β) (g : β → ℝ≥0∞) :
 
 end Flag
 
-export PMF (tsum_bind_mul)
-
 end CatCrypt.Crypto.Constructions.ECBCPRF

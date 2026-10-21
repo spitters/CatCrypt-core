@@ -1020,17 +1020,17 @@ theorem TimedInverter.of_erase {X W : Type} {B' : X → ℕ × OracleAdv.Timed E
 /-- **A costed two-stage reduction.** The costed first stage `choose'` and second stage
 `guess'` are costed forms of the two stages `choose` and `guess` of a tweak-adaptive
 reduction, of time `n`: the erased first stage, with the time budget dropped from its
-state and lifted by `Signatures.liftPMF`, is `choose`; the erased second stage on a state
+state and lifted by `liftPMF`, is `choose`; the erased second stage on a state
 and a challenge, lifted, is `guess` on the state without the budget and the challenge; the
 first stage followed by the second on any challenge `f z` has time at most `n`. -/
 def TimedTwoStage {Tw St Ch : Type} (choose' : ℕ × OracleAdv.Timed Empty Empty (Tw × (St × ℕ)))
     (guess' : St × ℕ → Ch → ℕ × OracleAdv.Timed Empty Empty Bool)
     (choose : SPComp (Tw × St)) (guess : St → Ch → SPComp Bool) (n : ℕ) : Prop :=
   (∀ {U : Type} (O' : U → Empty → PMF (Empty × U)) (u : U),
-      Signatures.liftPMF ((OracleAdv.run O' choose'.2.erase u).map
+      liftPMF ((OracleAdv.run O' choose'.2.erase u).map
         fun z => (z.1.1, z.1.2.1)) = choose) ∧
     (∀ s c {U : Type} (O' : U → Empty → PMF (Empty × U)) (u : U),
-      Signatures.liftPMF ((OracleAdv.run O' (guess' s c).2.erase u).map Prod.fst) =
+      liftPMF ((OracleAdv.run O' (guess' s c).2.erase u).map Prod.fst) =
         guess s.1 c) ∧
     ∀ f : Tw × (St × ℕ) → Ch,
       OracleAdv.Timed.StepTimeBound (OracleAdv.Timed.stepBind choose' fun z => guess' z.2 (f z))
@@ -1045,10 +1045,10 @@ theorem TimedTwoStage.of_erase {Tw St Ch : Type}
     {C : OracleAdv Empty Empty (Tw × (St × ℕ))} {G : St × ℕ → Ch → OracleAdv Empty Empty Bool}
     {choose : SPComp (Tw × St)} {guess : St → Ch → SPComp Bool} {n : ℕ}
     (hCe : choose'.2.erase = C) (hGe : ∀ s c, (guess' s c).2.erase = G s c)
-    (hC : Signatures.liftPMF
+    (hC : liftPMF
       (((OracleAdv.run (fun (_ : Unit) (d : Empty) => d.elim) C ()).map Prod.fst).map
         fun z => (z.1, z.2.1)) = choose)
-    (hG : ∀ s c, Signatures.liftPMF
+    (hG : ∀ s c, liftPMF
       ((OracleAdv.run (fun (_ : Unit) (d : Empty) => d.elim) (G s c) ()).map Prod.fst) =
         guess s.1 c)
     (ht : ∀ f : Tw × (St × ℕ) → Ch,

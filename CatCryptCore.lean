@@ -191,6 +191,7 @@ public import CatCryptCore.Crypto.FiatShamirROM.KeyRecoveryMult
 public import CatCryptCore.Crypto.FiatShamirROM.KeyRecoveryFlag
 public import CatCryptCore.Crypto.FiatShamirROM.Timed
 public import CatCryptCore.Crypto.FiatShamirROM.Bridge
+public import CatCryptCore.Crypto.SPCompPMF
 public import CatCryptCore.Crypto.PRPPRFSwitching
 public import CatCryptCore.Crypto.PRFAssumption
 public import CatCryptCore.Crypto.PrTrueCover

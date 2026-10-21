@@ -366,7 +366,7 @@ theorem romINDCCAAdvantage_le_flag {qH qD : ℕ} (B : ROMINDCCAAdversary PK K C 
     grind [OracleAdv.run_apply_flag_false_eq, oFlag_apply_true_false, oFlag_apply_false_eq]
   unfold romINDCCAAdvantage
   rw [h₁, h₂]
-  simp only [Advantage, prTrue_pmfGame_map]
+  simp only [Advantage, prTrue_liftPMF_map]
   refine max_le (tsub_le_iff_left.mpr ?_) (tsub_le_iff_left.mpr ?_)
   · rw [toOuterMeasure_flag_eq _ _ h]
     simpa only [Set.mem_singleton_iff] using toOuterMeasure_le_add_flag _ _ h {true}
@@ -934,7 +934,7 @@ end Simulation
 
 section Summation
 
-export PMF (tsum_bind_mul)
+open PMF (tsum_bind_mul)
 
 omit [Fintype R] [Nonempty R] [Fintype M] [Nonempty M] [DecidableEq M] [DecidableEq C]
   [Fintype K] [Nonempty K] in
@@ -994,8 +994,8 @@ theorem uReduction_prob {qH qD : ℕ} (B : ROMINDCCAAdversary PK K C (M × C) K 
 omit [Fintype R] [Nonempty R] [Fintype M] [Nonempty M] [DecidableEq M] [DecidableEq C]
   [Fintype K] [Nonempty K] in
 theorem prTrue_pmfGame_eq (p : PMF Bool) :
-    prTrue (pmfGame p) Heap.empty = p.toOuterMeasure {b | b = true} := by
-  have h := prTrue_pmfGame_map p id Heap.empty
+    prTrue (liftPMF p) Heap.empty = p.toOuterMeasure {b | b = true} := by
+  have h := prTrue_liftPMF_map p id Heap.empty
   rwa [PMF.map_id] at h
 
 theorem owpcaAdvantage_uReduction {qH qD : ℕ} (B : ROMINDCCAAdversary PK K C (M × C) K qH qD) :

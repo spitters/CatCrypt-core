@@ -71,7 +71,6 @@ set_option autoImplicit false
 namespace CatCrypt.Crypto.PAKE.DH
 
 open CatCrypt.Core CatCrypt.Prob CatCrypt.Crypto CatCrypt.Crypto.Assumptions
-open CatCrypt.Crypto.Signatures (liftPMF liftPMF_bind_apply prTrue_liftPMF)
 open scoped ENNReal
 open CatCrypt.Crypto.ROProgramming
 open PMF (indicator_le_mul_guess bind_apply_le_add_tsum tsum_le_mul_bind_apply

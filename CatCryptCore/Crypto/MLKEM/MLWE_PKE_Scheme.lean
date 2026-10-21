@@ -60,7 +60,6 @@ namespace CatCrypt.Crypto.MLKEM.MLWE_PKE_Scheme
 
 open CatCrypt.Core CatCrypt.Prob
 open CatCrypt.Crypto.PKE.Games
-open CatCrypt.Crypto.PRPPRF (pmfGame)
 open CatCrypt.Crypto.KEM.FOTransform (prTrue_pmfGame_true)
 open scoped ENNReal
 
@@ -127,7 +126,7 @@ theorem prTrue_map_some (p : PMF Bool) : prTrue (p.map some) = p true := by
 /-- `Advantage` between two heap-independent games is the absolute difference of
 their `true`-probabilities. -/
 theorem advantage_pmfGame_eq_absDiff (p q : PMF Bool) :
-    Advantage (pmfGame p) (pmfGame q) = absDiff (p true) (q true) := by
+    Advantage (liftPMF p) (liftPMF q) = absDiff (p true) (q true) := by
   simp only [Advantage, prTrue_pmfGame_true]
   rfl
 
@@ -195,8 +194,8 @@ theorem indcpaGame_eq
 theorem indcpaAdvantage_eq_absDiff
     (A : INDCPAAdversary (MLWE_PKE_Basic.PK P.toBasic) P.PT (MLWE_PKE_Basic.CT P.toBasic)) :
     indcpaAdvantage (toScheme P) A =
-      absDiff (CatCrypt.Crypto.prTrue (pmfGame (indcpaGame (toScheme P) A true)) Heap.empty)
-        (CatCrypt.Crypto.prTrue (pmfGame (indcpaGame (toScheme P) A false)) Heap.empty) := rfl
+      absDiff (CatCrypt.Crypto.prTrue (liftPMF (indcpaGame (toScheme P) A true)) Heap.empty)
+        (CatCrypt.Crypto.prTrue (liftPMF (indcpaGame (toScheme P) A false)) Heap.empty) := rfl
 
 /-- The IND-CPA advantage of `toScheme P` in the vocabulary of `MLWE_PKE_Basic`: the
 absolute difference of the `true`-probabilities of the sub-distribution games. -/

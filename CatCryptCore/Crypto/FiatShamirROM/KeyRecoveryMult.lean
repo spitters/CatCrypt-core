@@ -52,7 +52,8 @@ set_option autoImplicit false
 
 namespace CatCrypt.Crypto.OracleAdv
 
-open CatCrypt.Crypto.Constructions.ECBCPRF (tsum_bind_mul tsum_pure_mul)
+open CatCrypt.Crypto.Constructions.ECBCPRF (tsum_pure_mul)
+open PMF (tsum_bind_mul)
 open scoped ENNReal
 
 variable {D R α : Type}

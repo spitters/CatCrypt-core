@@ -83,7 +83,7 @@ noncomputable def indcpaGame (A : PK → C → K → PMF Bool) (b : Bool) : PMF 
 /-- The IND-CPA advantage: the `Advantage` between the games of the two challenge bits.
 Registered with `@[hop_metric]`, which unfolds it to that `Advantage`. -/
 @[hop_metric] noncomputable def indcpaAdvantage (A : PK → C → K → PMF Bool) : ℝ≥0∞ :=
-  Advantage (pmfGame (indcpaGame S A true)) (pmfGame (indcpaGame S A false))
+  Advantage (liftPMF (indcpaGame S A true)) (liftPMF (indcpaGame S A false))
 
 /-- The decapsulation oracle for `sk`, answering `none` on the challenge `c*`. -/
 noncomputable def decapsOracle [DecidableEq C] (sk : SK) (cstar : C) (_ : Unit) (c : C) :
@@ -109,7 +109,7 @@ noncomputable def indccaGame [DecidableEq C] {q : ℕ} (A : INDCCAAdversary PK K
 /-- The IND-CCA advantage. -/
 noncomputable def indccaAdvantage [DecidableEq C] {q : ℕ} (A : INDCCAAdversary PK K C q) :
     ℝ≥0∞ :=
-  Advantage (pmfGame (indccaGame S A true)) (pmfGame (indccaGame S A false))
+  Advantage (liftPMF (indccaGame S A true)) (liftPMF (indccaGame S A false))
 
 end Standard
 
@@ -166,7 +166,7 @@ noncomputable def romINDCCAGame (S : ROMScheme PK SK K C D H) {qH qD : ℕ}
 /-- The IND-CCA advantage in the random-oracle model. -/
 noncomputable def romINDCCAAdvantage (S : ROMScheme PK SK K C D H) {qH qD : ℕ}
     (A : ROMINDCCAAdversary PK K C D H qH qD) : ℝ≥0∞ :=
-  Advantage (pmfGame (romINDCCAGame S A true)) (pmfGame (romINDCCAGame S A false))
+  Advantage (liftPMF (romINDCCAGame S A true)) (liftPMF (romINDCCAGame S A false))
 
 end ROM
 
@@ -233,7 +233,7 @@ noncomputable def rom2INDCCAGame (S : ROM2Scheme PK SK K C DG HG DH HH) {qRO qD 
 /-- The IND-CCA advantage with two random oracles. -/
 noncomputable def rom2INDCCAAdvantage (S : ROM2Scheme PK SK K C DG HG DH HH) {qRO qD : ℕ}
     (A : ROM2INDCCAAdversary PK K C DG HG DH HH qRO qD) : ℝ≥0∞ :=
-  Advantage (pmfGame (rom2INDCCAGame S A true)) (pmfGame (rom2INDCCAGame S A false))
+  Advantage (liftPMF (rom2INDCCAGame S A true)) (liftPMF (rom2INDCCAGame S A false))
 
 end ROM2
 

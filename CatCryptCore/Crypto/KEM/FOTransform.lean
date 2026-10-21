@@ -393,8 +393,8 @@ theorem foGame_eq (P : Scheme PK SK M C R) {qRO qD : ℕ}
 
 omit [Fintype R] [Nonempty R] [Fintype M] [Nonempty M] [DecidableEq M] [DecidableEq C]
   [Fintype K] [Nonempty K] in
-theorem prTrue_pmfGame_true (p : PMF Bool) : prTrue (pmfGame p) Heap.empty = p true := by
-  have h := prTrue_pmfGame_map p id Heap.empty
+theorem prTrue_pmfGame_true (p : PMF Bool) : prTrue (liftPMF p) Heap.empty = p true := by
+  have h := prTrue_liftPMF_map p id Heap.empty
   rw [PMF.map_id] at h
   rw [h, PMF.toOuterMeasure_apply, tsum_eq_single true fun b hb => by simp [Set.indicator, hb]]
   simp [Set.indicator]
@@ -403,8 +403,8 @@ omit [Fintype R] [Nonempty R] [Fintype M] [Nonempty M] [DecidableEq M] [Decidabl
   [Fintype K] [Nonempty K] in
 /-- The advantage between two mixtures is at most the mixture of the advantages. -/
 theorem advantage_bind_le {ι : Type} (w : PMF ι) (g₁ g₀ : ι → PMF Bool) :
-    Advantage (pmfGame (w.bind g₁)) (pmfGame (w.bind g₀)) ≤
-      ∑' i, w i * Advantage (pmfGame (g₁ i)) (pmfGame (g₀ i)) := by
+    Advantage (liftPMF (w.bind g₁)) (liftPMF (w.bind g₀)) ≤
+      ∑' i, w i * Advantage (liftPMF (g₁ i)) (liftPMF (g₀ i)) := by
   simp only [Advantage, prTrue_pmfGame_true, PMF.bind_apply]
   have key : ∀ (a b : ι → ℝ≥0∞), ∑' i, w i * a i - ∑' i, w i * b i ≤
       ∑' i, w i * ((a i - b i) ⊔ (b i - a i)) := by

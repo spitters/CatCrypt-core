@@ -71,7 +71,8 @@ namespace CatCrypt.Crypto.FiatShamirROM
 
 open CatCrypt.Core CatCrypt.Prob CatCrypt.Crypto
 open CatCrypt.Crypto.OracleForking
-open CatCrypt.Crypto.Constructions.ECBCPRF (tsum_bind_mul tsum_pure_mul)
+open CatCrypt.Crypto.Constructions.ECBCPRF (tsum_pure_mul)
+open PMF (tsum_bind_mul)
 open scoped ENNReal
 
 /-! ## Recoveries -/
@@ -179,7 +180,7 @@ noncomputable def attStepPR (ρ : G.Recovery κ rel) (D : G.Sampler) (xw : G.Stm
 /-- The exempt game of `ρ` at the sampler `D` whose outcome is decided by `P`. -/
 noncomputable def attGameByPR (P : G.Stmt → G.Forgery × (G.Tables × Bool) → Bool)
     (ρ : G.Recovery κ rel) (D : G.Sampler) {qH qS : ℕ} (A : G.Adversary qH qS) : SPComp Bool :=
-  PRPPRF.pmfGame (gameDistBy P (attStepPR ρ D) A)
+  liftPMF (gameDistBy P (attStepPR ρ D) A)
 
 /-- The advantage in the exempt game of `ρ` at the sampler `D` whose outcome is decided
 by `P`. -/
@@ -233,19 +234,6 @@ theorem effVec_congr_lt {μ : ℕ} {K C : Type} (look look' : Fin μ → K → O
 section Visible
 
 variable {G : Protocol}
-
-theorem mem_of_lookupIn_eq_some {K C : Type} [DecidableEq K] {l : List (K × C)} {k : K}
-    {c : C} (h : lookupIn l k = some c) : (k, c) ∈ l := by
-  unfold lookupIn findKey at h
-  cases hf : l.findIdx? (fun p => decide (p.1 = k)) with
-  | none => simp [hf] at h
-  | some i =>
-    obtain ⟨hi, hp, _⟩ := List.findIdx?_eq_some_iff_getElem.mp hf
-    simp only [hf, Option.bind_some, List.getElem?_eq_getElem hi, Option.map_some,
-      Option.some.injEq] at h
-    simp only [decide_eq_true_eq] at hp
-    rw [← hp, ← h]
-    exact List.getElem_mem hi
 
 theorem Protocol.mem_of_lookup_eq_some {t : G.Tables} {k : G.Key} {c : G.Ch}
     (h : t.lookup k = some c) : (k, c) ∈ t.prog ++ t.hash := by

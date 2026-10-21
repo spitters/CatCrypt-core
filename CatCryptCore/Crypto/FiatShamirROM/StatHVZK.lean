@@ -78,7 +78,8 @@ namespace CatCrypt.Crypto.FiatShamirROM
 
 open CatCrypt.Core CatCrypt.Prob CatCrypt.Crypto
 open CatCrypt.Crypto.OracleForking
-open CatCrypt.Crypto.Constructions.ECBCPRF (tsum_bind_mul tsum_pure_mul)
+open CatCrypt.Crypto.Constructions.ECBCPRF (tsum_pure_mul)
+open PMF (tsum_bind_mul)
 open scoped ENNReal
 
 /-- Expectation of `g` under the image of `p` by `f`. -/

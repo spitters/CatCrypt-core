@@ -75,7 +75,8 @@ namespace CatCrypt.Crypto.HashThenRF
 
 open CatCrypt.Core CatCrypt.Prob CatCrypt.Crypto CatCrypt.Crypto.PRPPRF
 open CatCrypt.Crypto.Constructions.ECBCPRF (toOuterMeasure_le_add_flag toOuterMeasure_flag_eq
-  run_support_rel tsum_pure_mul tsum_bind_mul)
+  run_support_rel tsum_pure_mul)
+open PMF (tsum_bind_mul)
 open CatCrypt.Crypto.OracleAdv (QueryCollision)
 open scoped ENNReal
 
@@ -328,7 +329,7 @@ at most the expected probability, over the final table of the ideal run, that `c
 two distinct recorded queries to the same point. -/
 theorem advantage_compose_le {F : Type} [Fintype F] [Nonempty F] (c : F → M → B)
     (A : OracleAdv M R Bool) :
-    Advantage (pmfGame ((PMF.uniformOfFintype F).bind fun φ =>
+    Advantage (liftPMF ((PMF.uniformOfFintype F).bind fun φ =>
         (OracleAdv.run (fun t d => rfOracle t (c φ d)) A []).map Prod.fst)) (rfGame A) ≤
       ∑' x, OracleAdv.run rfOracle A [] x *
         (PMF.uniformOfFintype F).toOuterMeasure
@@ -356,10 +357,10 @@ theorem advantage_compose_le {F : Type} [Fintype F] [Nonempty F] (c : F → M �
     change _ = OracleAdv.run _ A [] at h
     rw [← h, PMF.map_comp]
     rfl
-  have hL : prTrue (pmfGame (u.bind fun φ =>
+  have hL : prTrue (liftPMF (u.bind fun φ =>
       (OracleAdv.run (fun t d => rfOracle t (c φ d)) A []).map Prod.fst)) Heap.empty =
       ∑' φ, u φ * (p₁ φ).toOuterMeasure {x | x.1 ∈ ({true} : Set Bool)} := by
-    simp only [hreal, ← PMF.map_bind, prTrue_pmfGame_map, PMF.toOuterMeasure_bind_apply]
+    simp only [hreal, ← PMF.map_bind, prTrue_liftPMF_map, PMF.toOuterMeasure_bind_apply]
     rfl
   have hR : prTrue (rfGame A) Heap.empty =
       ∑' φ, u φ * (p₂ φ).toOuterMeasure {x | x.1 ∈ ({true} : Set Bool)} := by
@@ -371,7 +372,7 @@ theorem advantage_compose_le {F : Type} [Fintype F] [Nonempty F] (c : F → M �
       exact this.symm
     simp only [h1, ENNReal.tsum_mul_right, PMF.tsum_coe, one_mul]
     unfold rfGame
-    simp_all [prTrue_pmfGame_map]
+    simp_all [prTrue_liftPMF_map]
   set e := ∑' φ, u φ * (p₂ φ).toOuterMeasure {x | x.2.2 = true} with he
   have hle₁ : ∑' φ, u φ * (p₁ φ).toOuterMeasure {x | x.1 ∈ ({true} : Set Bool)} ≤
       ∑' φ, u φ * (p₂ φ).toOuterMeasure {x | x.1 ∈ ({true} : Set Bool)} + e := by
@@ -466,7 +467,7 @@ variable {K M B R : Type} [Fintype K] [Nonempty K] [DecidableEq M] [DecidableEq 
 
 /-- The lazy random function on `B` queried at `H k m` for a uniform key `k`, against `A`. -/
 noncomputable def hashRFGame (H : K → M → B) (A : OracleAdv M R Bool) : SPComp Bool :=
-  pmfGame ((PMF.uniformOfFintype K).bind fun k =>
+  liftPMF ((PMF.uniformOfFintype K).bind fun k =>
     (OracleAdv.run rfOracle (OracleAdv.mapQuery (H k) A) []).map Prod.fst)
 
 /-- The advantage of `A` in distinguishing the hashed random function from the lazy random

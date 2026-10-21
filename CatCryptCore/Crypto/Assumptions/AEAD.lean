@@ -192,13 +192,13 @@ noncomputable def aeadIdealOracle :
 `aeadRealOracle D key`. -/
 noncomputable def AEAD_CCA_Game_Real (D : AEADDef W C)
     (A : AEAD_CCA_Adversary W C) : SPComp Bool :=
-  PRPPRF.pmfGame ((PMF.uniformOfFintype W).bind fun key =>
+  liftPMF ((PMF.uniformOfFintype W).bind fun key =>
     (OracleAdv.run (aeadRealOracle D key) A ()).map Prod.fst)
 
 /-- Ideal authenticated-encryption game: run `A` against `aeadIdealOracle`
 from the empty log. -/
 noncomputable def AEAD_CCA_Game_Ideal (A : AEAD_CCA_Adversary W C) : SPComp Bool :=
-  PRPPRF.pmfGame ((OracleAdv.run aeadIdealOracle A []).map Prod.fst)
+  liftPMF ((OracleAdv.run aeadIdealOracle A []).map Prod.fst)
 
 /-- Advantage of `A` in distinguishing the real encryption and decryption
 oracles of `D` from the ideal ones. -/
@@ -217,8 +217,8 @@ noncomputable def AEAD_CPA_to_CCA (pt ad : W) (A : C → PMF Bool) :
     | .inr _ => .ret false
 
 /-- `prTrue` of a heap-independent game is the probability of `true`. -/
-theorem prTrue_pmfGame (p : PMF Bool) (h₀ : Heap) : prTrue (PRPPRF.pmfGame p) h₀ = p true := by
-  have h := PRPPRF.prTrue_pmfGame_map p id h₀
+theorem prTrue_pmfGame (p : PMF Bool) (h₀ : Heap) : prTrue (liftPMF p) h₀ = p true := by
+  have h := PRPPRF.prTrue_liftPMF_map p id h₀
   rw [PMF.map_id] at h
   rw [h, show {x : Bool | id x = true} = {true} from by ext x; simp,
     PMF.toOuterMeasure_apply_singleton]
@@ -226,7 +226,7 @@ theorem prTrue_pmfGame (p : PMF Bool) (h₀ : Heap) : prTrue (PRPPRF.pmfGame p) 
 /-- `prTrue` of a uniform sample followed by a heap-independent game. -/
 theorem prTrue_sample_bind_pmfGame {α : Type} [Fintype α] [Nonempty α]
     (f : α → PMF Bool) (h₀ : Heap) :
-    prTrue (SPComp.bind (SPComp.sample α) fun a => PRPPRF.pmfGame (f a)) h₀ =
+    prTrue (SPComp.bind (SPComp.sample α) fun a => liftPMF (f a)) h₀ =
       ((PMF.uniformOfFintype α).bind f) true := by
   rw [prTrue_bind_sample, PMF.bind_apply, tsum_fintype]
   simp only [prTrue_pmfGame, PMF.uniformOfFintype_apply]
@@ -236,17 +236,17 @@ For a single-sample adversary given by the distribution `A ct` of its guess,
 the single-sample advantage equals the advantage of `AEAD_CPA_to_CCA pt ad A`
 in the authenticated-encryption game. -/
 theorem AEAD_CPA_le_CCA (D : AEADDef W C) (pt ad : W) (A : C → PMF Bool) :
-    AEAD_Advantage D pt ad (fun ct => PRPPRF.pmfGame (A ct)) ≤
+    AEAD_Advantage D pt ad (fun ct => liftPMF (A ct)) ≤
     AEAD_CCA_Advantage D (AEAD_CPA_to_CCA pt ad A) := by
   refine le_of_eq ?_
-  have hreal : prTrue (AEAD_Game_Real D pt ad fun ct => PRPPRF.pmfGame (A ct)) Heap.empty =
+  have hreal : prTrue (AEAD_Game_Real D pt ad fun ct => liftPMF (A ct)) Heap.empty =
       prTrue (AEAD_CCA_Game_Real D (AEAD_CPA_to_CCA pt ad A)) Heap.empty := by
     rw [AEAD_CCA_Game_Real, prTrue_pmfGame]
     refine (prTrue_sample_bind_pmfGame (fun key => A (D.encrypt key pt ad)) _).trans ?_
     congr 2
     funext key
     simp [AEAD_CPA_to_CCA, aeadRealOracle, PMF.map_bind, PMF.pure_map, PMF.bind_pure]
-  have hideal : prTrue (AEAD_Game_Ideal fun ct => PRPPRF.pmfGame (A ct)) Heap.empty =
+  have hideal : prTrue (AEAD_Game_Ideal fun ct => liftPMF (A ct)) Heap.empty =
       prTrue (AEAD_CCA_Game_Ideal (W := W) (AEAD_CPA_to_CCA pt ad A)) Heap.empty := by
     rw [AEAD_CCA_Game_Ideal, prTrue_pmfGame]
     refine (prTrue_sample_bind_pmfGame A _).trans ?_

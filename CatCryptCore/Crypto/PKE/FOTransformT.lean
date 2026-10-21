@@ -884,8 +884,8 @@ theorem corrErr_eq :
 
 omit [Fintype M] [Nonempty M] [DecidableEq M] [DecidableEq C] [Fintype R] [Nonempty R] in
 theorem prTrue_pmfGame_eq (p : PMF Bool) :
-    prTrue (pmfGame p) Heap.empty = p.toOuterMeasure {b | b = true} := by
-  have h := prTrue_pmfGame_map p id Heap.empty
+    prTrue (liftPMF p) Heap.empty = p.toOuterMeasure {b | b = true} := by
+  have h := prTrue_liftPMF_map p id Heap.empty
   rwa [PMF.map_id] at h
 
 omit [DecidableEq C] in

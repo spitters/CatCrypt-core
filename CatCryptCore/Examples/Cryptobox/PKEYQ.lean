@@ -139,7 +139,7 @@ def IsPKEYBound {R α : Type} : OracleAdv (PKEYQuery PK) R α → ℕ → ℕ �
 with the flag cleared and return its output bit. -/
 noncomputable def pkeyGame (kg : PMF (PK × SK)) (b : Bool)
     (A : OracleAdv (PKEYQuery PK) (PK × Bool) Bool) : SPComp Bool :=
-  pmfGame ((OracleAdv.run (pkeyOracle kg b) A (PKEYState.init, false)).map Prod.fst)
+  liftPMF ((OracleAdv.run (pkeyOracle kg b) A (PKEYState.init, false)).map Prod.fst)
 
 /-- The PKEY advantage of the oracle adversary `A`. -/
 noncomputable def pkeyQAdvantage (kg : PMF (PK × SK))
@@ -286,7 +286,7 @@ omit [Fintype PK] [Nonempty PK] in
 theorem prTrue_pkeyFlagGame (kg : PMF (PK × SK)) (b : Bool)
     (A : OracleAdv (PKEYQuery PK) (PK × Bool) Bool) :
     prTrue (pkeyFlagGame kg b A) Heap.empty = prTrue (pkeyGame kg b A) Heap.empty := by
-  rw [pkeyGame, prTrue_pmfGame_map, prTrue_eq_prEventComp]
+  rw [pkeyGame, prTrue_liftPMF_map, prTrue_eq_prEventComp]
   unfold prEventComp prEvent pkeyFlagGame
   convert tsum_ite_map_some _ (fun x : Bool × (PKEYState PK SK × Bool) =>
     (x.1, Heap.empty.set flagLoc x.2.2)) (fun y => y.1 = true)

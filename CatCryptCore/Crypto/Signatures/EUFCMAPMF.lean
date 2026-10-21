@@ -7,6 +7,7 @@ module
 
 public import CatCryptCore.Crypto.Signatures.EUFCMA
 public import CatCryptCore.Crypto.OracleAdversary
+public import CatCryptCore.Crypto.SPCompPMF
 
 /-!
 # The EUF-CMA game for signature schemes given by probability mass functions
@@ -28,7 +29,6 @@ the list.
   distribution-valued signing
 * `PSigScheme.keyDist` — the key distribution, key generation applied to uniform coins
 * `PSigScheme.Deterministic` — signing is a point mass at a signing function `dsign`
-* `liftPMF` — a probability mass function as a heap-independent computation
 * `OracleAdv.toProg` — an adaptive oracle adversary as an oracle program
 * `signOracle` — the logging signing oracle on lists
 * `eufDist` — the output distribution of the EUF-CMA game
@@ -39,8 +39,6 @@ the list.
   against `S.toSigScheme` is `eufDist S B true`
 * `run_query_signOracle_det` — against a deterministic scheme, a signing query on `m`
   answers `dsign sk m`
-* `liftPMF_bind_liftPMF`, `liftPMF_pure`, `liftPMF_bind_pure`, `sample_eq_liftPMF` —
-  `liftPMF` commutes with bind and pure, and uniform sampling is its lift
 -/
 
 @[expose] public section
@@ -67,51 +65,6 @@ structure PSigScheme (Msg PK SK Sig : Type) : Type 1 where
   verify : PK → Msg → Sig → Bool
 
 attribute [instance] PSigScheme.finKR PSigScheme.neKR
-
-/-- A probability mass function as a computation that leaves the heap unchanged. -/
-noncomputable def liftPMF {α : Type} (p : PMF α) : SPComp α :=
-  fun h => p.map fun a => some (a, h)
-
-theorem sdistr_bind_map_some {α β γ : Type} (p : PMF α) (g : α → β) (F : β → SDistr γ) :
-    SDistr.bind (p.map fun a => some (g a)) F = p.bind fun a => F (g a) := by
-  unfold SDistr.bind
-  rw [PMF.bind_map]
-  rfl
-
-theorem liftPMF_bind_apply {α β : Type} (p : PMF α) (f : α → SPComp β) (h : Heap) :
-    SPComp.bind (liftPMF p) f h = p.bind fun a => f a h := by
-  unfold SPComp.bind liftPMF
-  exact sdistr_bind_map_some p (fun a => (a, h)) _
-
-/-- A lifted distribution followed by lifted continuations is the lift of the bind. -/
-theorem liftPMF_bind_liftPMF {α β : Type} (p : PMF α) (f : α → PMF β) :
-    SPComp.bind (liftPMF p) (fun a => liftPMF (f a)) = liftPMF (p.bind f) := by
-  funext h
-  rw [liftPMF_bind_apply]
-  unfold liftPMF
-  rw [PMF.map_bind]
-
-/-- `SPComp.pure` is the lift of a point mass. -/
-theorem liftPMF_pure {α : Type} (a : α) :
-    (SPComp.pure a : SPComp α) = liftPMF (PMF.pure a) := by
-  funext h
-  simp [liftPMF, SPComp.pure, SDistr.pure, PMF.pure_map]
-
-/-- A lifted distribution followed by a pure continuation is the lift of the image. -/
-theorem liftPMF_bind_pure {α β : Type} (p : PMF α) (f : α → β) :
-    SPComp.bind (liftPMF p) (fun a => SPComp.pure (f a)) = liftPMF (p.map f) := by
-  simp only [liftPMF_pure, liftPMF_bind_liftPMF]
-  rfl
-
-/-- Uniform sampling is the lift of the uniform distribution. -/
-theorem sample_eq_liftPMF (α : Type) [Fintype α] [Nonempty α] :
-    SPComp.sample α = liftPMF (PMF.uniformOfFintype α) := by
-  funext h
-  unfold SPComp.sample SDistr.uniform liftPMF
-  rw [sdistr_bind_map_some]
-  unfold SDistr.pure
-  rw [← PMF.bind_pure_comp]
-  rfl
 
 variable {Msg PK SK Sig : Type}
 
@@ -229,15 +182,6 @@ noncomputable def eufDist [DecidableEq Msg] (S : PSigScheme Msg PK SK Sig)
     (OracleAdv.run (signOracle S (S.keygen kr).2) (B (S.keygen kr).1) []).map fun x =>
       S.verify (S.keygen kr).1 x.1.1 x.1.2 && !(x.2.map Prod.fst).contains x.1.1
 
-theorem prTrue_liftPMF (p : PMF Bool) (h₀ : Heap) : prTrue (liftPMF p) h₀ = p true := by
-  unfold prTrue liftPMF
-  simp only [PMF.map_apply]
-  rw [ENNReal.tsum_comm]
-  rw [tsum_eq_single true (fun b hb => by
-    refine ENNReal.tsum_eq_zero.mpr fun h => ?_
-    simp [Ne.symm hb])]
-  rw [tsum_eq_single h₀ (fun h hh => by simp [hh])]
-  simp
 
 /-- **EUF-CMA advantage of an adaptive oracle adversary.** The EUF-CMA advantage
 of `toEUFAdversary B` against `S.toSigScheme` is the probability of `true` in

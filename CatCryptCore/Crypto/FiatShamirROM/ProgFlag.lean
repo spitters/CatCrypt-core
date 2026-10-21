@@ -71,7 +71,8 @@ namespace CatCrypt.Crypto.FiatShamirROM
 
 open CatCrypt.Core CatCrypt.Prob CatCrypt.Crypto
 open CatCrypt.Crypto.OracleForking
-open CatCrypt.Crypto.Constructions.ECBCPRF (tsum_bind_mul tsum_pure_mul)
+open CatCrypt.Crypto.Constructions.ECBCPRF (tsum_pure_mul)
+open PMF (tsum_bind_mul)
 open scoped ENNReal
 
 /-! ## Programmed hits and charged entries of an attempt -/
@@ -127,7 +128,7 @@ noncomputable def attStepP (D : G.Sampler) (xw : G.Stmt × G.Wit) (s : G.Tables 
 the predicate `P`. -/
 noncomputable def attGameByP (P : G.Stmt → G.Forgery × (G.Tables × Bool) → Bool)
     (D : G.Sampler) {qH qS : ℕ} (A : G.Adversary qH qS) : SPComp Bool :=
-  PRPPRF.pmfGame (gameDistBy P (attStepP D) A)
+  liftPMF (gameDistBy P (attStepP D) A)
 
 /-- The advantage in the game with the programmed flag at the sampler `D` whose
 outcome is decided by `P`. -/
@@ -1098,7 +1099,7 @@ the game decided by `P` whose signing query `j` uses `D'` for `j < k`, `C` for `
 and `D` for `j > k`. -/
 theorem chalGameP_hybDistByP (P : G.Stmt → G.Forgery × (G.Tables × Bool) → Bool)
     (D D' C : G.Sampler) (k : ℕ) {qH qS : ℕ} (A : G.Adversary qH qS) :
-    chalGameP C (hybDistByP P D D' k A) = PRPPRF.pmfGame (gameDistBy P (fun xw =>
+    chalGameP C (hybDistByP P D D' k A) = liftPMF (gameDistBy P (fun xw =>
       hybStepP (fun n => if n < k then D' else if n = k then C else D) xw) A) :=
   chalGameOf_hybDistByOf attSignP_recordsSigned P D D' C k A
 

@@ -190,7 +190,7 @@ open Classical in
 that its output is a witness for `x`. -/
 noncomputable def relGame (rel : G.Stmt → G.Wit → Prop) (B : G.Stmt → PMF G.Wit) :
     SPComp Bool :=
-  PRPPRF.pmfGame (G.gen.bind fun xw => (B xw.1).map fun w' => decide (rel xw.1 w'))
+  liftPMF (G.gen.bind fun xw => (B xw.1).map fun w' => decide (rel xw.1 w'))
 
 /-- The advantage in the relation game for `rel`. -/
 noncomputable def relAdvantage (rel : G.Stmt → G.Wit → Prop) (B : G.Stmt → PMF G.Wit) :

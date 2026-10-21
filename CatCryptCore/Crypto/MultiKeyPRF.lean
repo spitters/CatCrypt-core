@@ -285,7 +285,7 @@ noncomputable def hybOracle (F : K → D → R) (j : ℕ) (s : HybState N D R K)
 /-- The hybrid game `j`. -/
 noncomputable def hybGame (F : K → D → R) (A : OracleAdv (N × D) R Bool) (j : ℕ) :
     SPComp Bool :=
-  pmfGame ((OracleAdv.run (hybOracle F j) A hybInit).map Prod.fst)
+  liftPMF ((OracleAdv.run (hybOracle F j) A hybInit).map Prod.fst)
 
 /-- One query of `mkHybRed F A j` from the hybrid state `s`: a query `(n, d)` at an index of
 rank below `j` is answered from the table of that rank, a new point drawing a uniform value;

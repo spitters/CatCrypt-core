@@ -213,7 +213,7 @@ noncomputable def anonIdeal (S : Scheme H K E N M Pf Root Path PK SK Sig)
 noncomputable def anonAdvantage (S : Scheme H K E N M Pf Root Path PK SK Sig)
     (choose : H.Key → PMF (Choice N E M))
     (guess : H.Key → Choice N E M → Root → N → Pf → PMF Bool) : ℝ≥0∞ :=
-  Advantage (pmfGame (anonReal S choose guess)) (pmfGame (anonIdeal S choose guess))
+  Advantage (liftPMF (anonReal S choose guess)) (liftPMF (anonIdeal S choose guess))
 
 /-- The statistical zero-knowledge error: the statistical distance between the honest proof
 and the simulated proof, over the true statements of signals with their witnesses. -/
@@ -238,15 +238,14 @@ omit [Fintype N] [Nonempty N] in
 /-- **Zero-knowledge hop.** Simulating the proof changes the probability of `true` by at most
 the statistical zero-knowledge error. -/
 theorem advantage_real_hyb_le :
-    Advantage (pmfGame (anonReal S choose guess)) (pmfGame (anonHyb S choose guess)) ≤
+    Advantage (liftPMF (anonReal S choose guess)) (liftPMF (anonHyb S choose guess)) ≤
       zkError S := by
   have e : ∀ (f : K × H.Key × Choice N E M → PMF Pf),
-      pmfGame ((anonPre choose).bind fun t => (f t).bind (anonCont S guess t)) =
+      liftPMF ((anonPre choose).bind fun t => (f t).bind (anonCont S guess t)) =
         SPComp.bind (liftPMF (anonPre choose)) fun t =>
           SPComp.bind (liftPMF (f t)) fun π => liftPMF (anonCont S guess t π) := by
     intro f
     simp only [liftPMF_bind_liftPMF]
-    rfl
   change absDiff _ _ ≤ _
   rw [anonReal, anonHyb, e, e]
   refine absDiff_prTrue_bind_le _ _ _ _ _ (fun t h' => ?_) (fun t h' => ?_)
@@ -259,7 +258,7 @@ theorem advantage_real_hyb_le :
 omit [Fintype N] [Nonempty N] in
 /-- The real PRF game of `prfRed` is the game with a simulated proof. -/
 theorem prfReal_eq [DecidableEq E] :
-    realGame S.prf (prfRed S.groupRoot S.sim choose guess) = pmfGame (anonHyb S choose guess) := by
+    realGame S.prf (prfRed S.groupRoot S.sim choose guess) = liftPMF (anonHyb S choose guess) := by
   unfold realGame anonHyb anonPre
   congr 1
   simp [prfRed, Scheme.groupRoot, keyedOracle, PMF.map_bind, PMF.bind_map, PMF.pure_map, Function.comp_def]
@@ -268,7 +267,7 @@ theorem prfReal_eq [DecidableEq E] :
 omit [Fintype K] [Nonempty K] in
 /-- The random-function game of `prfRed` is the ideal game. -/
 theorem prfIdeal_eq [DecidableEq E] [DecidableEq N] :
-    rfGame (prfRed S.groupRoot S.sim choose guess) = pmfGame (anonIdeal S choose guess) := by
+    rfGame (prfRed S.groupRoot S.sim choose guess) = liftPMF (anonIdeal S choose guess) := by
   unfold rfGame anonIdeal
   congr 1
   simp [prfRed, Scheme.groupRoot, rfOracle, PMF.map_bind, PMF.bind_map, PMF.pure_map, Function.comp_def]

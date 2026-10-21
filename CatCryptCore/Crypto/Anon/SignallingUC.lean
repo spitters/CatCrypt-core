@@ -22,14 +22,12 @@ zero-knowledge error plus the PRF advantage of `prfRed` (instance `anonUCGameAdv
 
 ## Main definitions
 
-* `outBool` — the output bit of a Boolean computation run from the empty heap
 * `AnonView`, `guessOf` — the adversary's view and the guess stage of a distinguisher
 * `anonViewReal`, `anonViewIdeal`, `anonUCReal`, `anonUCIdeal` — the game pair
 * `anonUCBound` — the bound of `anonAdvantage_le` at `guessOf D`
 
 ## Main results
 
-* `prTrue_liftPMF_bind` — a lifted distribution followed by a distinguisher
 * `anonUC_advantage_eq` — the pair's advantage is `anonAdvantage` at `guessOf D`
 * `anonUCGameAdvBoundC` — the concrete game bound of the pair
 -/
@@ -42,45 +40,8 @@ namespace CatCrypt.Crypto.Anon.Signalling
 
 open CatCrypt.Core CatCrypt.Prob CatCrypt.Crypto CatCrypt.Crypto.Assumptions
 open CatCrypt.Crypto.PRPPRF CatCrypt.Crypto.Signatures
-open CatCrypt.Crypto.ROProgramming (liftPMF_isPure)
 open CatCrypt.Crypto.UCConcrete CatCrypt.Crypto.UCDSL
 open scoped ENNReal
-
-/-! ## The output bit of a distinguisher -/
-
-/-- The output bit of `Dist a` run from the empty heap, `false` on failure. -/
-noncomputable def outBool {α : Type} (Dist : α → SPComp Bool) (a : α) : PMF Bool :=
-  (Dist a Heap.empty).map fun r => match r with | some (b, _) => b | none => false
-
-theorem outBool_apply_true {α : Type} (Dist : α → SPComp Bool) (a : α) :
-    outBool Dist a true = prTrue (Dist a) Heap.empty := by
-  unfold outBool prTrue
-  rw [PMF.map_apply]
-  have hsupp : Function.support (fun r : Option (Bool × Heap) =>
-      if true = (match r with | some (b, _) => b | none => false) then (Dist a Heap.empty) r
-      else 0) ⊆ Set.range (fun h : Heap => some (true, h)) := by
-    intro r hr
-    rcases r with _ | ⟨b, h⟩
-    · simp_all
-    · cases b
-      · simp_all
-      · simp_all
-  symm
-  convert (Function.Injective.tsum_eq (fun h₁ h₂ e => by simpa using e) hsupp) using 1
-  · simp
-  · simp_all
-
-/-- A lifted distribution followed by a distinguisher, from the empty heap, outputs `true`
-with the probability that the output bit of the distinguisher on a sample is `true`. -/
-theorem prTrue_liftPMF_bind {α : Type} (p : PMF α) (Dist : α → SPComp Bool) :
-    prTrue ((liftPMF p).bind Dist) Heap.empty = (p.bind (outBool Dist)) true := by
-  rw [prTrue_bind_eq_weighted, PMF.bind_apply]
-  simp only [liftPMF, PMF.map_apply]
-  simp_rw [← ENNReal.tsum_mul_right]
-  rw [ENNReal.tsum_comm]
-  refine tsum_congr fun a => ?_
-  rw [tsum_eq_single (some (a, Heap.empty)) fun o ho => by simp [ho]]
-  simp [outBool_apply_true]
 
 /-! ## Anonymity as a game pair -/
 
@@ -139,7 +100,7 @@ theorem anonUC_advantage_eq (S : Scheme H K E N M Pf Root Path PK SK Sig)
     (choose : H.Key → PMF (Choice N E M)) (D : AnonView H E N M Pf Root → SPComp Bool) :
     AdvantageA (anonUCReal S choose) (anonUCIdeal S choose) D =
       anonAdvantage S choose (guessOf D) := by
-  have hg : ∀ p : PMF Bool, prTrue (pmfGame p) Heap.empty = p true :=
+  have hg : ∀ p : PMF Bool, prTrue (liftPMF p) Heap.empty = p true :=
     fun p => prTrue_liftPMF p Heap.empty
   unfold AdvantageA anonAdvantage Advantage anonUCReal anonUCIdeal
   simp only [prTrue_liftPMF_bind, hg]

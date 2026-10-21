@@ -666,7 +666,7 @@ theorem advantage_le_flag {qRO qD : ℕ}
     grind [OracleAdv.run_apply_flag_false_eq, oFlag_apply_true_false, oFlag_apply_false_eq]
   unfold rom2INDCCAAdvantage
   rw [h₁, h₂]
-  simp only [Advantage, prTrue_pmfGame_map]
+  simp only [Advantage, prTrue_liftPMF_map]
   refine max_le (tsub_le_iff_left.mpr ?_) (tsub_le_iff_left.mpr ?_)
   · rw [toOuterMeasure_flag_eq _ _ h]
     simpa only [Set.mem_singleton_iff] using toOuterMeasure_le_add_flag _ _ h {true}

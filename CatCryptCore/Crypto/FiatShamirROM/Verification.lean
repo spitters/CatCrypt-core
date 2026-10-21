@@ -16,7 +16,6 @@ Fiat–Shamir protocol, and its EUF-CMA game as a distinguishing game.
 
 ## Main results
 
-* `lookupIn_mem` — a value found by `lookupIn` is an entry of the list
 * `verifyVals_spec` — the values read by the verifier, each at the verifier's point after
   the values before it
 * `advantageA_eufcmaGame_le` — a distinguisher on the EUF-CMA game against the game that
@@ -31,20 +30,6 @@ namespace CatCrypt.Crypto.FiatShamirROM
 
 open CatCrypt.Core CatCrypt.Prob CatCrypt.Crypto
 open scoped ENNReal
-
-/-- A value found by `lookupIn l k` is an entry `(k, c)` of `l`. -/
-theorem lookupIn_mem {Kt C : Type} [DecidableEq Kt] {l : List (Kt × C)} {k : Kt} {c : C}
-    (h : lookupIn l k = some c) : (k, c) ∈ l := by
-  unfold lookupIn findKey at h
-  cases hf : l.findIdx? (fun p => decide (p.1 = k)) with
-  | none => simp [hf] at h
-  | some i =>
-    obtain ⟨hi, hp, _⟩ := List.findIdx?_eq_some_iff_getElem.mp hf
-    simp only [hf, Option.bind_some, List.getElem?_eq_getElem hi, Option.map_some,
-      Option.some.injEq] at h
-    simp only [decide_eq_true_eq] at hp
-    rw [← hp, ← h]
-    exact List.getElem_mem hi
 
 /-- The values read by the verifier: `n` of them after `acc`, each the value of `look` at
 the verifier's point after the values before it. -/
@@ -69,8 +54,8 @@ always rejects has advantage at most the EUF-CMA advantage. -/
 theorem advantageA_eufcmaGame_le {G : Protocol} {qH qS : ℕ} (A : G.Adversary qH qS)
     (D : Bool → SPComp Bool) :
     AdvantageA (eufcmaGame A) (SPComp.pure false) D ≤ eufcmaAdvantage A := by
-  refine (absDiff_bind_le_advantage (PRPPRF.pmfGame_isPure _) (SPComp.pure_isPure false)
-    (PRPPRF.pmfGame_noFail _) (SPComp.pure_noFail false) D Heap.empty).trans ?_
+  refine (absDiff_bind_le_advantage (liftPMF_isPure _) (SPComp.pure_isPure false)
+    (liftPMF_noFail _) (SPComp.pure_noFail false) D Heap.empty).trans ?_
   have h0 : prTrue (SPComp.pure false) Heap.empty = 0 := by
     unfold prTrue SPComp.pure SDistr.pure
     simp

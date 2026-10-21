@@ -87,7 +87,8 @@ namespace CatCrypt.Crypto.FiatShamirROM
 
 open CatCrypt.Core CatCrypt.Prob CatCrypt.Crypto
 open CatCrypt.Crypto.OracleForking
-open CatCrypt.Crypto.Constructions.ECBCPRF (tsum_bind_mul tsum_pure_mul)
+open CatCrypt.Crypto.Constructions.ECBCPRF (tsum_pure_mul)
+open PMF (tsum_bind_mul)
 open scoped ENNReal
 
 /-! ## Attempts and samplers -/
@@ -238,7 +239,7 @@ noncomputable def attStep (D : G.Sampler) (xw : G.Stmt × G.Wit) (s : G.Tables �
 
 /-- The EUF-CMA game with the signing oracle of the sampler `D`. -/
 noncomputable def attGame (D : G.Sampler) {qH qS : ℕ} (A : G.Adversary qH qS) : SPComp Bool :=
-  PRPPRF.pmfGame (gameDist (attStep D) A)
+  liftPMF (gameDist (attStep D) A)
 
 /-- The advantage in the game with the signing oracle of the sampler `D`. -/
 noncomputable def attAdvantage (D : G.Sampler) {qH qS : ℕ} (A : G.Adversary qH qS) : ℝ≥0∞ :=
@@ -263,7 +264,7 @@ noncomputable def gameDistBy (P : G.Stmt → G.Forgery × (G.Tables × Bool) →
 /-- The game at the sampler `D` whose outcome is decided by the predicate `P`. -/
 noncomputable def attGameBy (P : G.Stmt → G.Forgery × (G.Tables × Bool) → Bool)
     (D : G.Sampler) {qH qS : ℕ} (A : G.Adversary qH qS) : SPComp Bool :=
-  PRPPRF.pmfGame (gameDistBy P (attStep D) A)
+  liftPMF (gameDistBy P (attStep D) A)
 
 /-- The advantage in the game at the sampler `D` whose outcome is decided by `P`. -/
 noncomputable def attAdvantageBy (P : G.Stmt → G.Forgery × (G.Tables × Bool) → Bool)
@@ -275,7 +276,7 @@ pairs. -/
 theorem prTrue_gameDistBy (P : G.Stmt → G.Forgery × (G.Tables × Bool) → Bool)
     (O : G.Stmt × G.Wit → G.Tables × Bool → G.Query → Step G.Answer (G.Tables × Bool) G.Ch)
     {qH qS : ℕ} (A : G.Adversary qH qS) :
-    prTrue (PRPPRF.pmfGame (gameDistBy P O A)) Heap.empty =
+    prTrue (liftPMF (gameDistBy P O A)) Heap.empty =
       ∑' xw, G.gen xw *
         (OracleAdv.run (toOracle (O xw)) (withVerify xw.1 (A.run xw.1))
           (Protocol.Tables.empty, false)).toOuterMeasure {y | P xw.1 y = true} := by
@@ -600,7 +601,7 @@ the predicate `P`. -/
 noncomputable def attGameByOf (sgn : G.SignStep)
     (P : G.Stmt → G.Forgery × (G.Tables × Bool) → Bool) (D : G.Sampler) {qH qS : ℕ}
     (A : G.Adversary qH qS) : SPComp Bool :=
-  PRPPRF.pmfGame (gameDistBy P (attStepOf sgn D) A)
+  liftPMF (gameDistBy P (attStepOf sgn D) A)
 
 /-- The one-query challenge oracle of the signing step `sgn` at the sampler `D` for the
 pair `xw`: on a message and a state it gives the signing answer of `sgn D xw`. -/
@@ -613,7 +614,7 @@ noncomputable def chalOracleOf (sgn : G.SignStep) (D : G.Sampler) (xw : G.Stmt �
 noncomputable def chalGameOf (sgn : G.SignStep) (D : G.Sampler)
     (B : G.Stmt × G.Wit → OracleAdv (G.Msg × (G.Tables × Bool)) (G.Answer × (G.Tables × Bool))
       Bool) : SPComp Bool :=
-  PRPPRF.pmfGame (G.gen.bind fun xw =>
+  liftPMF (G.gen.bind fun xw =>
     (OracleAdv.run (chalOracleOf sgn D xw) (B xw) ()).map Prod.fst)
 
 /-- The oracle whose signing query from a state with `n` signed messages is the signing
@@ -656,7 +657,7 @@ signing query `j` uses `D'` for `j < n` and `D` otherwise. -/
 noncomputable def hybGameByOf (sgn : G.SignStep)
     (P : G.Stmt → G.Forgery × (G.Tables × Bool) → Bool) (D D' : G.Sampler) (n : ℕ)
     {qH qS : ℕ} (A : G.Adversary qH qS) : SPComp Bool :=
-  PRPPRF.pmfGame (gameDistBy P (fun xw => hybStepOf sgn (fun j => if j < n then D' else D) xw) A)
+  liftPMF (gameDistBy P (fun xw => hybStepOf sgn (fun j => if j < n then D' else D) xw) A)
 
 /-- The distinguisher `hybRunOf` from the signing query `j` asks at most one query, and
 none after the `k`-th signing query. -/
@@ -767,7 +768,7 @@ query `j` uses `D'` for `j < k`, `C` for `j = k` and `D` for `j > k`. -/
 theorem chalGameOf_hybDistByOf (hsgn : sgn.RecordsSigned)
     (P : G.Stmt → G.Forgery × (G.Tables × Bool) → Bool) (D D' C : G.Sampler) (k : ℕ)
     {qH qS : ℕ} (A : G.Adversary qH qS) :
-    chalGameOf sgn C (hybDistByOf sgn P D D' k A) = PRPPRF.pmfGame (gameDistBy P (fun xw =>
+    chalGameOf sgn C (hybDistByOf sgn P D D' k A) = liftPMF (gameDistBy P (fun xw =>
       hybStepOf sgn (fun n => if n < k then D' else if n = k then C else D) xw) A) := by
   unfold chalGameOf gameDistBy hybDistByOf
   congr 1
@@ -886,7 +887,7 @@ noncomputable def chalOracle (D : G.Sampler) (xw : G.Stmt × G.Wit) :
 noncomputable def chalGame (D : G.Sampler)
     (B : G.Stmt × G.Wit → OracleAdv (G.Msg × (G.Tables × Bool)) (G.Answer × (G.Tables × Bool))
       Bool) : SPComp Bool :=
-  PRPPRF.pmfGame (G.gen.bind fun xw => (OracleAdv.run (chalOracle D xw) (B xw) ()).map Prod.fst)
+  liftPMF (G.gen.bind fun xw => (OracleAdv.run (chalOracle D xw) (B xw) ()).map Prod.fst)
 
 /-- The oracle whose signing query from a state with `n` signed messages uses the
 sampler `Ds n`. -/
@@ -979,7 +980,7 @@ theorem run_hybRun (D D' C : G.Sampler) (k : ℕ) (xw : G.Stmt × G.Wit) {α β 
 /-- The game in which the signing query `j` uses `D'` for `j < n` and `D` otherwise. -/
 noncomputable def hybGame (D D' : G.Sampler) (n : ℕ) {qH qS : ℕ} (A : G.Adversary qH qS) :
     SPComp Bool :=
-  PRPPRF.pmfGame (gameDist (fun xw => hybStep (fun j => if j < n then D' else D) xw) A)
+  liftPMF (gameDist (fun xw => hybStep (fun j => if j < n then D' else D) xw) A)
 
 /-- The game whose outcome is decided by `P` in which the signing query `j` uses `D'`
 for `j < n` and `D` otherwise. -/
@@ -997,14 +998,14 @@ game decided by `P` whose signing query `j` uses `D'` for `j < k`, `C` for `j = 
 `D` for `j > k`. -/
 theorem chalGame_hybDistBy (P : G.Stmt → G.Forgery × (G.Tables × Bool) → Bool)
     (D D' C : G.Sampler) (k : ℕ) {qH qS : ℕ} (A : G.Adversary qH qS) :
-    chalGame C (hybDistBy P D D' k A) = PRPPRF.pmfGame (gameDistBy P (fun xw =>
+    chalGame C (hybDistBy P D D' k A) = liftPMF (gameDistBy P (fun xw =>
       hybStep (fun n => if n < k then D' else if n = k then C else D) xw) A) :=
   chalGameOf_hybDistByOf attSign_recordsSigned P D D' C k A
 
 /-- The challenge game of the `k`-th distinguisher at `C` is the game whose signing
 query `j` uses `D'` for `j < k`, `C` for `j = k` and `D` for `j > k`. -/
 theorem chalGame_hybDist (D D' C : G.Sampler) (k : ℕ) {qH qS : ℕ} (A : G.Adversary qH qS) :
-    chalGame C (hybDist D D' k A) = PRPPRF.pmfGame (gameDist (fun xw =>
+    chalGame C (hybDist D D' k A) = liftPMF (gameDist (fun xw =>
       hybStep (fun n => if n < k then D' else if n = k then C else D) xw) A) :=
   chalGame_hybDistBy wins D D' C k A
 

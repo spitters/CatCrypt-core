@@ -596,8 +596,8 @@ adaptive PRF advantage of `prfMacRed A` against `F` plus `1/|T|`. -/
 theorem prfMAC_euf_cma_adv_le (F : K → D → T) (A : EUF_CMA_Adversary (prfMACScheme F)) :
     EUF_CMA_Adv (prfMACScheme F) A ≤
       PRF_q_Advantage F (prfMacRed A) + 1 / (Fintype.card T : ℝ≥0∞) := by
-  have hpmf : ∀ p : PMF Bool, prTrue (pmfGame p) Heap.empty = p true := fun p => by
-    have h := prTrue_pmfGame_map p id Heap.empty
+  have hpmf : ∀ p : PMF Bool, prTrue (liftPMF p) Heap.empty = p true := fun p => by
+    have h := prTrue_liftPMF_map p id Heap.empty
     rw [PMF.map_id] at h
     rw [h, show {x : Bool | id x = true} = {true} from by ext x; simp,
       PMF.toOuterMeasure_apply_singleton]

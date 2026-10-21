@@ -508,7 +508,7 @@ theorem avg_kg512_eK_pair
   rw [← tsum_fintype (L := SummationFilter.unconditional _)]
   change _ = ∑' ks, ((PMF.uniformOfFintype mlkem512Params.Mat).bind fun A =>
     (PMF.uniformOfFintype mlkem512Params.KeySeed).map fun ks => kg512 A ks) ks * g' ks
-  rw [KEM.FOTransformU.tsum_bind_mul]
+  rw [PMF.tsum_bind_mul]
   simp only [KEM.FOTransformU.tsum_map_mul, PMF.uniformOfFintype_apply]
   unfold avg
   rw [tsum_fintype (L := SummationFilter.unconditional _)]

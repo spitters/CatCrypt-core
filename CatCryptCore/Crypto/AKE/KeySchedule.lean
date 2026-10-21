@@ -173,7 +173,7 @@ noncomputable def channelIdeal (S : Scheme PK SK SS C) (side : PMF (T × Z))
 noncomputable def channelAdvantage (S : Scheme PK SK SS C) (side : PMF (T × Z))
     (ctx : PK → C → T → Z → X) (F : SS → X → W) (D : AEADDef W Ct)
     (A : PK → C → T → AEAD_CCA_Adversary W Ct) : ℝ≥0∞ :=
-  Advantage (pmfGame (channelReal S side ctx F D A)) (pmfGame (channelIdeal S side A))
+  Advantage (liftPMF (channelReal S side ctx F D A)) (liftPMF (channelIdeal S side A))
 
 end Games
 
@@ -306,8 +306,8 @@ theorem channelAdvantage_le :
     AEAD_CCA_Advantage realGame rfGame AEAD_CCA_Game_Real AEAD_CCA_Game_Ideal
   rw [indccaGame_true_eq, indccaGame_false_eq, prfReal_eq, prfIdeal_eq, aeadReal_eq,
     aeadIdeal_eq]
-  calc _ ≤ _ := advantage_triangle _ (pmfGame (hybKey S side ctx F D A)) _
-    _ ≤ _ := add_le_add_right (advantage_triangle _ (pmfGame (hybTraffic S side D A)) _) _
+  calc _ ≤ _ := advantage_triangle _ (liftPMF (hybKey S side ctx F D A)) _
+    _ ≤ _ := add_le_add_right (advantage_triangle _ (liftPMF (hybTraffic S side D A)) _) _
     _ = _ := (add_assoc _ _ _).symm
 
 omit [DecidableEq X] in
@@ -361,7 +361,7 @@ noncomputable def hybridIdeal (S₁ : Scheme PK₁ SK₁ SS₁ C₁) (S₂ : Sch
 noncomputable def hybridAdvantage (S₁ : Scheme PK₁ SK₁ SS₁ C₁) (S₂ : Scheme PK₂ SK₂ SS₂ C₂)
     (G : SS₁ → SS₂ → W) (D : AEADDef W Ct)
     (A : PK₁ × C₁ → PK₂ × C₂ → AEAD_CCA_Adversary W Ct) : ℝ≥0∞ :=
-  Advantage (pmfGame (hybridReal S₁ S₂ G D A)) (pmfGame (hybridIdeal S₁ S₂ A))
+  Advantage (liftPMF (hybridReal S₁ S₂ G D A)) (liftPMF (hybridIdeal S₁ S₂ A))
 
 /-- The hybrid adversary as a channel adversary against the first KEM. -/
 def hybAdvLeft (A : PK₁ × C₁ → PK₂ × C₂ → AEAD_CCA_Adversary W Ct) :

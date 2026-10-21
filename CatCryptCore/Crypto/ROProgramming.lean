@@ -29,7 +29,6 @@ plus the probability `queryProb s A` that the run queries `s`.
 * `run_update_le` — programming one point costs at most the probability of querying it
 * `run_update_fst_le` — the same for the output bit, in both directions
 * `queryProb_eq_log` — the query probability through the query log
-* `liftPMF_isPure` — a distribution lifted to a computation is heap-independent
 -/
 
 @[expose] public section
@@ -39,7 +38,6 @@ set_option autoImplicit false
 namespace CatCrypt.Crypto.ROProgramming
 
 open CatCrypt.Core CatCrypt.Prob CatCrypt.Crypto
-open CatCrypt.Crypto.Signatures (liftPMF)
 open scoped ENNReal
 
 section Programmed
@@ -142,12 +140,5 @@ theorem queryProb_eq_log {α : Type} (s : X) (A : OracleAdv X Y α) :
   by_cases h : ∃ d ∈ z.2.2, d = s <;> simp [Set.indicator]
 
 end Programmed
-
-/-- A probability mass function lifted to a computation is heap-independent. -/
-theorem liftPMF_isPure {α : Type} (p : PMF α) : SPComp.IsPure (liftPMF p) := by
-  refine ⟨p.map some, fun h => ?_⟩
-  simp only [liftPMF, SDistr.bind, SDistr.pure, PMF.bind_map]
-  rw [← PMF.bind_pure_comp]
-  rfl
 
 end CatCrypt.Crypto.ROProgramming

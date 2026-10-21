@@ -234,8 +234,8 @@ example (P : PairingGroup)
 intermediate game. -/
 example {PK SK K C : Type} [Fintype K] [Nonempty K] (S : KEM.Games.Scheme PK SK K C)
     (A : PK → C → K → PMF Bool) (G : SPComp Bool) (e₁ e₂ : ℝ≥0∞)
-    (h₁ : Advantage (PRPPRF.pmfGame (KEM.Games.indcpaGame S A true)) G ≤ e₁)
-    (h₂ : Advantage G (PRPPRF.pmfGame (KEM.Games.indcpaGame S A false)) ≤ e₂) :
+    (h₁ : Advantage (liftPMF (KEM.Games.indcpaGame S A true)) G ≤ e₁)
+    (h₂ : Advantage G (liftPMF (KEM.Games.indcpaGame S A false)) ≤ e₂) :
     KEM.Games.indcpaAdvantage S A ≤ e₁ + e₂ := by
   hop_chain
 
@@ -243,8 +243,8 @@ example {PK SK K C : Type} [Fintype K] [Nonempty K] (S : KEM.Games.Scheme PK SK 
 intermediate game, the second hop used backwards. -/
 example {PK SK M C R : Type} [Fintype R] [Nonempty R] (P : PKE.Games.Scheme PK SK M C R)
     (A : PKE.Games.INDCPAAdversary PK M C) (G : SPComp Bool) (e₁ e₂ : ℝ≥0∞)
-    (h₁ : Advantage (PRPPRF.pmfGame (PKE.Games.indcpaGame P A true)) G ≤ e₁)
-    (h₂ : Advantage (PRPPRF.pmfGame (PKE.Games.indcpaGame P A false)) G ≤ e₂) :
+    (h₁ : Advantage (liftPMF (PKE.Games.indcpaGame P A true)) G ≤ e₁)
+    (h₂ : Advantage (liftPMF (PKE.Games.indcpaGame P A false)) G ≤ e₂) :
     PKE.Games.indcpaAdvantage P A ≤ e₁ + e₂ := by
   hop_chain
 

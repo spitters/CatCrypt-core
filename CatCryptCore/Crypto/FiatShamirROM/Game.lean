@@ -214,7 +214,7 @@ def UniqueResp : Prop :=
 /-- The relation game: sample `(x, w) ← P.gen`, run `B` on `x`, and check that its
 output is a witness for `x`. -/
 noncomputable def relGame (B : P.Stmt → PMF P.Wit) : SPComp Bool :=
-  PRPPRF.pmfGame (P.gen.bind fun xw => (B xw.1).map fun w' => decide (P.rel xw.1 w'))
+  liftPMF (P.gen.bind fun xw => (B xw.1).map fun w' => decide (P.rel xw.1 w'))
 
 /-- The advantage in the relation game. -/
 noncomputable def relAdvantage (B : P.Stmt → PMF P.Wit) : ℝ≥0∞ :=
@@ -889,7 +889,7 @@ noncomputable def gameDist (O : G.Stmt × G.Wit → G.Tables × Bool → G.Query
 
 /-- The EUF-CMA game in the random-oracle model. -/
 noncomputable def eufcmaGame {qH qS : ℕ} (A : G.Adversary qH qS) : SPComp Bool :=
-  PRPPRF.pmfGame (gameDist realStep A)
+  liftPMF (gameDist realStep A)
 
 /-- The EUF-CMA advantage in the random-oracle model. -/
 noncomputable def eufcmaAdvantage {qH qS : ℕ} (A : G.Adversary qH qS) : ℝ≥0∞ :=
@@ -897,7 +897,7 @@ noncomputable def eufcmaAdvantage {qH qS : ℕ} (A : G.Adversary qH qS) : ℝ≥
 
 /-- The EUF-CMA game with the simulated signing oracle. -/
 noncomputable def simGame {qH qS : ℕ} (A : G.Adversary qH qS) : SPComp Bool :=
-  PRPPRF.pmfGame (gameDist (fun xw => simStep xw.1) A)
+  liftPMF (gameDist (fun xw => simStep xw.1) A)
 
 /-- The advantage in the simulated game. -/
 noncomputable def simAdvantage {qH qS : ℕ} (A : G.Adversary qH qS) : ℝ≥0∞ :=
@@ -1121,6 +1121,20 @@ theorem lookupIn_isSome_mem {l : List (K × C)} {k : K} (h : (lookupIn l k).isSo
     obtain ⟨hi, hp, _⟩ := List.findIdx?_eq_some_iff_getElem.mp hf
     simp only [decide_eq_true_eq] at hp
     exact List.mem_map.mpr ⟨l[i], List.getElem_mem hi, hp⟩
+
+/-- A value found by `lookupIn l k` is an entry `(k, c)` of `l`. -/
+theorem mem_of_lookupIn_eq_some {l : List (K × C)} {k : K} {c : C}
+    (h : lookupIn l k = some c) : (k, c) ∈ l := by
+  unfold lookupIn findKey at h
+  cases hf : l.findIdx? (fun p => decide (p.1 = k)) with
+  | none => simp [hf] at h
+  | some i =>
+    obtain ⟨hi, hp, _⟩ := List.findIdx?_eq_some_iff_getElem.mp hf
+    simp only [hf, Option.bind_some, List.getElem?_eq_getElem hi, Option.map_some,
+      Option.some.injEq] at h
+    simp only [decide_eq_true_eq] at hp
+    rw [← hp, ← h]
+    exact List.getElem_mem hi
 
 theorem lookupIn_nil (k : K) : lookupIn ([] : List (K × C)) k = none := by
   simp [lookupIn, findKey]
@@ -2678,7 +2692,7 @@ theorem isQueryBoundBy_withVerify_cls (κ : G.Classes) (c : κ.ι) (x : G.Stmt)
 pairs. -/
 theorem prTrue_gameDist (O : G.Stmt × G.Wit → G.Tables × Bool → G.Query →
     Step G.Answer (G.Tables × Bool) G.Ch) {qH qS : ℕ} (A : G.Adversary qH qS) :
-    prTrue (PRPPRF.pmfGame (gameDist O A)) Heap.empty =
+    prTrue (liftPMF (gameDist O A)) Heap.empty =
       ∑' xw, G.gen xw *
         (OracleAdv.run (toOracle (O xw)) (withVerify xw.1 (A.run xw.1))
           (Protocol.Tables.empty, false)).toOuterMeasure {y | wins xw.1 y = true} := by

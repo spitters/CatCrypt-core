@@ -49,7 +49,8 @@ open Finset
 open scoped ENNReal
 open CatCrypt.Quantum.QROM (collProb collWeight)
 open CatCrypt.Crypto.MLKEM.PRFOracle (avg avg_mono avg_const avg_add avg_comm avg_fst)
-open CatCrypt.Crypto.KEM.FOTransformU (tsum_bind_mul tsum_map_mul)
+open CatCrypt.Crypto.KEM.FOTransformU (tsum_map_mul)
+open PMF (tsum_bind_mul)
 open CatCrypt.Crypto.MLKEM.Spec.Coeffs
 open CatCrypt.Crypto.MLKEM.MLKEM512Instance
 open CompressedPKE (MLKEM512CT mlkem512CompressedScheme mapCiphertext)

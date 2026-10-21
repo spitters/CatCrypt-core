@@ -735,8 +735,8 @@ theorem map_fst_bind_outBit {σ : Type} (p : PMF (Option (Bool × Heap))) (t : �
 
 /-- `prTrue` of a heap-independent game is the probability of `true`. -/
 theorem prTrue_pmfGame (q : PMF Bool) (h₀ : Heap) :
-    prTrue (CatCrypt.Crypto.PRPPRF.pmfGame q) h₀ = q true := by
-  have h := CatCrypt.Crypto.PRPPRF.prTrue_pmfGame_map q id h₀
+    prTrue (CatCrypt.Crypto.liftPMF q) h₀ = q true := by
+  have h := CatCrypt.Crypto.PRPPRF.prTrue_liftPMF_map q id h₀
   rw [PMF.map_id] at h
   rw [h]
   simp
