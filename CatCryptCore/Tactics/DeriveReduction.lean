@@ -39,7 +39,11 @@ substituted. A subterm of type `SPComp α` is brought to a head by `whnfR` witho
 a monad operation of the `Monad SPComp` instance (`>>=`, `pure`, `<$>`, `*>`, `<*`, `<*>`) is
 projected through the instance at `.instances` transparency; any other definition, including
 a top-level `def` written in `do`-notation and a sub-reduction called by `B`, is
-delta-unfolded and retried. Unfolding stops at the six `SPComp` constructors, at `ite`,
+delta-unfolded and retried. A non-recursive definition is unfolded with its non-atomic
+first-order data arguments bound by `let`s around its body, so that an argument is priced once
+however often the body uses it, and a call `b` of which two projections `b.1`, `b.2` occur among
+the arguments is bound once by a `let` (`unfoldShared?`). Unfolding stops at the six `SPComp`
+constructors, at `ite`,
 `dite` and matchers, at a local, and at a projection of a local. The traversal is that of `reifySPComp`
 (`CatCryptCore.Deep.Reflect`), with these additional stops so that `if` and `match` stay
 syntax.
@@ -87,7 +91,11 @@ companion `pCost : Y₁ → … → ℕ` (none for `n = 0`): the costs of the pr
 of `B.tree.timed`, and a time bound on it is stated under bounds on these parameters.
 
 The primitives are found by a first reflection pass, which records them; the second pass
-reflects over their binders. When the derivation fails, the command derives again with the
+reflects over their binders. In the second pass, a data definition applied to a structure binder
+whose body (through further such definitions) applies a data-function primitive is unfolded, so
+that the field has one binder and one cost companion in the costed form. A function binder of
+`B` that the tree does not mention is not a binder of `B.tree`. When the derivation fails, the
+command derives again with the
 data definitions applied to a structure binder or a local instance (`kit.expandPair p`, a
 helper `f kit x`) unfolded in the tree, so that the fields and methods used in their bodies
 become data-function primitives; the error of the first derivation is reported when both fail.
@@ -212,8 +220,27 @@ def spCompArg? (t : Expr) : MetaM (Option Expr) := do
   let t ← whnfR (← instantiateMVars t)
   if t.isAppOfArity ``CatCrypt.Core.SPComp 1 then return some t.appArg! else return none
 
+/-- Whether `c` is defined by structural or well-founded recursion. -/
+def isRecursive (env : Environment) (c : Name) : Bool :=
+  (Structural.eqnInfoExt.find? env c).isSome || (WF.eqnInfoExt.find? env c).isSome
+
+/-- The definition `c` applied to `args` unfolded with each argument priced once, by
+`CatCrypt.Tactics.DeriveTimed.bindArgsShared`: the non-atomic first-order data arguments are
+bound by `let`s, and a call `b` whose projections `b.1`, `b.2` occur in two places among the
+arguments is bound once. `none` when `c` is not a non-recursive definition. -/
+def unfoldShared? (e : Expr) : MetaM (Option Expr) := do
+  let .const c lvls := e.getAppFn | return none
+  let env ← getEnv
+  let some (.defnInfo dv) := env.find? c | return none
+  if isRecursive env c then return none
+  unless lvls.length == dv.levelParams.length do return none
+  unless dv.value.isLambda do return none
+  let v := dv.value.instantiateLevelParams dv.levelParams lvls
+  some <$> CatCrypt.Tactics.DeriveTimed.bindArgsShared v e.getAppArgs
+
 /-- Bring the computation `e` to a head: a constructor of `SPComp`, `ite`, `dite`, a matcher,
-`SPTree.compile`, a local or a `let`, or a stuck term. -/
+`SPTree.compile`, a local or a `let`, or a stuck term. A definition is unfolded by
+`unfoldShared?`, so that its arguments stay `let`s priced once. -/
 partial def normalize (e : Expr) : MetaM Expr := do
   let e ← withConfig (fun c => { c with zeta := false }) <| whnfR (← instantiateMVars e)
   if e.isLet then return e
@@ -225,6 +252,7 @@ partial def normalize (e : Expr) : MetaM Expr := do
       let e' ← withTransparency .instances (whnf e)
       if e' == e then return e
       return ← normalize e'
+    if let some e' ← unfoldShared? e then return ← normalize e'
     match ← unfoldDefinition? e with
     | some e' => normalize e'.headBeta
     | none => return e
@@ -343,14 +371,63 @@ def unfoldsData (top : Array FVarId) (x : Expr) : MetaM Bool := do
   if ← isProp t then return false
   return true
 
+/-- The maximal applications of a constant among the subterms of `e`: an application `f a b`
+is listed once, without its partial applications `f a`. -/
+def constApps (e : Expr) : Array Expr := Id.run do
+  let mut acc := #[]
+  let mut todo := #[e]
+  while h : todo.size > 0 do
+    let s := todo.back
+    todo := todo.pop
+    match s with
+    | .app .. =>
+      let f := s.getAppFn
+      if f.isConst then acc := acc.push s else todo := todo.push f
+      todo := todo ++ s.getAppArgs
+    | .lam _ t b _ | .forallE _ t b _ => todo := todo.push t |>.push b
+    | .letE _ t v b _ => todo := todo.push t |>.push v |>.push b
+    | .mdata _ b | .proj _ _ b => todo := todo.push b
+    | _ => pure ()
+  return acc
+
+/-- Whether the data term `x`, unfolded through data definitions applied to a structure binder
+(at most `fuel` deep), applies one of the data-function primitives `keys`. The table `neg`
+records, for an application already searched without success, the largest fuel of that
+search; an application is not searched again with that fuel or less. -/
+partial def mentionsKey (top : Array FVarId) (keys : Array Expr)
+    (neg : IO.Ref (Std.HashMap Expr Nat)) (x : Expr) (fuel : Nat) : MetaM Bool := do
+  let apps := constApps x
+  if apps.any fun s => keys.any fun k => s == k || (s.isApp && s.getAppFn == k.getAppFn &&
+      s.getAppNumArgs > k.getAppNumArgs &&
+      mkAppN s.getAppFn (s.getAppArgs.extract 0 k.getAppNumArgs) == k) then
+    return true
+  if fuel == 0 then return false
+  for s in apps do
+    if let some f := (← neg.get)[s]? then
+      if fuel - 1 ≤ f then continue
+    if ← unfoldsData top s then
+      if let some s' ← unfoldDefinition? s then
+        if ← mentionsKey top keys neg s'.headBeta (fuel - 1) then return true
+    neg.modify (·.insert s (fuel - 1))
+  return false
+
 /-- Replace each data-function field of `e` by its binder (second pass), or record it (first
-pass). With `ctx.unfold`, a data definition applied to a structure binder is unfolded first,
-so that the fields used in its body are found. -/
-def abstractData (ctx : RCtx) (e : Expr) : MetaM Expr :=
+pass). A data definition applied to a structure binder is unfolded first, by `unfoldShared?`,
+when its body applies a data-function primitive found by the first pass (so that the field has
+one binder and one cost companion), and with `ctx.unfold` always, so that the fields used in
+its body are found. The search `mentionsKey` runs only when there are such primitives. -/
+def abstractData (ctx : RCtx) (e : Expr) : MetaM Expr := do
+  let keys := (ctx.prims.filter (·.data)).map (·.key)
+  let neg ← IO.mkRef ({} : Std.HashMap Expr Nat)
   Meta.transform e (pre := fun x => do
     let some (F, args) ← fieldKey? ctx.top x | do
-      if ctx.unfold && (← unfoldsData ctx.top x) then
-        if let some x' ← unfoldDefinition? x then return .visit x'.headBeta
+      if ← unfoldsData ctx.top x then
+        let unfold ← if ctx.unfold then pure true
+          else if keys.isEmpty then pure false
+          else mentionsKey ctx.top keys neg x 8
+        if unfold then
+          if let some x' ← unfoldShared? x then return .visit x'
+          if let some x' ← unfoldDefinition? x then return .visit x'.headBeta
       return .continue
     unless ← isDataFnType (← inferType F) do return .continue
     match ctx.found? with
@@ -779,7 +856,24 @@ partial def deriveReduction (c : Name) (advNames : Array Name) (unfold : Bool :=
         let dKeys := dps.map (·.key)
         let cFvs := cps.map (·.fv)
         let hyps := cps.filterMap (·.hyp?)
-        let tBs := bs ++ dFvs ++ cFvs
+        -- The function binders of the reduction that the tree, its type and the types of the
+        -- primitive binders do not mention are not binders of the tree, so that the costed form
+        -- has no cost companion for them; every other binder is kept.
+        let mut needed : FVarIdSet := {}
+        for bnd in bs do
+          let bt ← inferType bnd
+          let isFn ← if (← isProp bt) || (← isTypeFormerType bt) || (← isClass? bt).isSome then
+              pure false
+            else pure (← whnfR bt).isForall
+          unless isFn do needed := needed.insert bnd.fvarId!
+        for x in #[tree, α] ++ (← (dFvs ++ cFvs).mapM fun v => inferType v) do
+          needed := (collectFVars {} (← instantiateMVars x)).fvarIds.foldl (·.insert ·) needed
+        for bnd in bs.reverse do
+          if needed.contains bnd.fvarId! then
+            needed := (collectFVars {} (← instantiateMVars (← inferType bnd))).fvarIds.foldl
+              (·.insert ·) needed
+        let kept := bs.filter fun bnd => needed.contains bnd.fvarId!
+        let tBs := kept ++ dFvs ++ cFvs
         let tType ← mkForallFVars tBs (treeTy α)
         let tValue ← mkLambdaFVars tBs tree
         let rhs := mkAppN (mkConst c levels) args
@@ -789,7 +883,7 @@ partial def deriveReduction (c : Name) (advNames : Array Name) (unfold : Bool :=
         let pf ← instantiateMVars mv
         if pf.hasSorry then fail m!"the compile equation is not proved"
         if pf.hasExprMVar then fail m!"the compile equation is not proved"
-        let lhs := mkCompile α (mkAppN (mkConst treeName levels) (bs ++ dKeys ++ cFvs))
+        let lhs := mkCompile α (mkAppN (mkConst treeName levels) (kept ++ dKeys ++ cFvs))
         let eBs := bs ++ cFvs ++ hyps
         let eType ← mkForallFVars eBs (← mkEq lhs rhs)
         let eValue ← mkLambdaFVars eBs pf

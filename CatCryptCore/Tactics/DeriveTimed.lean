@@ -95,7 +95,13 @@ reduction whose declared type is an adversary type `W → W → W → SPComp Boo
 takes the three binders of that type.
 
 A recursive data function without a registered cost is priced by its cost derived on demand
-with `derive_cost` (`deriveCostCore`), by its own recursion.
+with `derive_cost` (`deriveCostCore`), by its own recursion. A derived cost takes, after the
+arguments, the cost companions of the field paths of its binders that its body applies
+(`kit.hash`); a call passes the caller's companions for the same paths at the call's arguments.
+
+A call `b` of which two projections `b.1`, `b.2` occur among the arguments of an unfolded
+definition is bound by one `let` and priced once (`bindArgsShared`). Unfolding is bounded by
+the option `derive_timed.maxDepth` (default 16) nested definitions.
 
 A registered primitive `f` has a cost `f.timedCost`, a definition taking the arguments of
 `f`, each function-typed argument followed by its cost companion, and returning `ℕ`; the
@@ -197,8 +203,15 @@ structure Ctx where
   fieldRec? : Option (IO.Ref (Array Expr)) := none
   selfCost? : Option (Name × Expr) := none
 
-/-- The maximal nesting of unfolded data definitions. -/
-def maxDepth : Nat := 8
+/-- The maximal nesting of unfolded data definitions (option `derive_timed.maxDepth`). -/
+register_option derive_timed.maxDepth : Nat := {
+  defValue := 16
+  descr := "the maximal nesting of data definitions that derive_timed, derive_cost and \
+    derive_reduction unfold to price a call"
+}
+
+/-- The maximal nesting of unfolded data definitions: the option `derive_timed.maxDepth`. -/
+def maxDepth : CoreM Nat := return derive_timed.maxDepth.get (← getOptions)
 
 /-- Constants that cost nothing beyond their arguments. -/
 def freeConstants : Array Name :=
@@ -478,6 +491,61 @@ partial def bindArgs (v : Expr) (args : Array Expr) (i : Nat) : MetaM Expr := do
     | _ => return mkAppN v (args.extract i args.size)
   else return v
 
+/-- The base `b` of a projection `b.1`, `b.2` of a pair. -/
+def pairProjBase? (e : Expr) : Option Expr :=
+  match e with
+  | .proj ``Prod _ b => some b
+  | _ =>
+    if e.isAppOfArity ``Prod.fst 3 || e.isAppOfArity ``Prod.snd 3 then some e.appArg!
+    else none
+
+/-- The calls `b` of which at least two projections `b.1`, `b.2` occur in `args`: applications
+of a constant without loose bound variables whose type is a pair of first-order data. -/
+def sharedPairBases (args : Array Expr) : MetaM (Array Expr) := do
+  let mut seen : Array Expr := #[]
+  let mut shared : Array Expr := #[]
+  for a in args do
+    let bs : Array Expr := Id.run do
+      let mut acc := #[]
+      let mut todo := #[a]
+      while h : todo.size > 0 do
+        let s := todo.back
+        todo := todo.pop
+        if let some b := pairProjBase? s then acc := acc.push b
+        match s with
+        | .app f x => todo := todo.push f |>.push x
+        | .lam _ t b _ | .forallE _ t b _ => todo := todo.push t |>.push b
+        | .letE _ t v b _ => todo := todo.push t |>.push v |>.push b
+        | .mdata _ b | .proj _ _ b => todo := todo.push b
+        | _ => pure ()
+      return acc
+    for b in bs do
+      unless b.isApp && b.getAppFn.isConst && !b.hasLooseBVars do continue
+      if seen.contains b then
+        unless shared.contains b do shared := shared.push b
+      else seen := seen.push b
+  shared.filterM fun b => do
+    let t ← whnfR (← inferType b)
+    unless t.isAppOfArity ``Prod 2 do return false
+    for c in t.getAppArgs do
+      if (← whnfR c).isForall then return false
+    keepsLet t b
+
+/-- The body of the definition value `v` applied to `args`, as `bindArgs` gives it, with each
+call `b` of which two projections `b.1`, `b.2` occur among the arguments bound once by a `let`
+around it. -/
+def bindArgsShared (v : Expr) (args : Array Expr) : MetaM Expr := do
+  let bases ← sharedPairBases args
+  let rec go (i : Nat) (args : Array Expr) : MetaM Expr := do
+    if h : i < bases.size then
+      let b := bases[i]
+      withLetDecl (Name.mkSimple s!"shared{i}") (← inferType b) b fun r => do
+        let args := args.map fun a => a.replace fun s => if s == b then some r else none
+        mkLetFVars #[r] (← go (i + 1) args)
+    else
+      return (← bindArgs v args 0).headBeta
+  go 0 args
+
 /-- The cost companion type `X → ℕ` of a function of type `X → Y`. -/
 def companionType (t : Expr) : MetaM Expr := do
   forallTelescope (← whnfR t) fun ys _ => mkForallFVars ys (mkConst ``Nat)
@@ -744,7 +812,25 @@ partial def costConst (ctx : Ctx) (e : Expr) (c : Name) (args : Array Expr) :
   if env.contains reg then
     let regArgs ← costArgs ctx f args
     let regE ← mkAppOptM reg (regArgs.map some)
-    return add (natE 1) (add regE (← argsCost ctx args))
+    -- A derived cost that takes the cost companions of field paths of `c`'s binders: the
+    -- caller passes its companions for the same paths at the arguments of the call.
+    let extra ← forallTelescope (← inferType regE) fun ys _ => pure ys.size
+    let mut fieldArgs := #[]
+    if extra > 0 then
+      for p in ← calleeFieldPaths c f.constLevels! args do
+        if let some (_, cc) := ctx.fields.find? (·.1 == p) then
+          fieldArgs := fieldArgs.push cc
+        else if let some r := ctx.fieldRec? then
+          if !p.hasLooseBVars && (← isFieldPath ctx p.appArg!) then
+            unless (← r.get).contains p do r.modify (·.push p)
+          return add (natE 1) (← argsCost ctx args)
+        else
+          fail m!"the cost `{reg}` takes the cost of the field `{p}`, which is not a field of a \
+            binder of the reduction"
+      unless fieldArgs.size == extra do
+        fail m!"the cost `{reg}` takes {extra} field costs at `{e}`, and {fieldArgs.size} were \
+          found"
+    return add (natE 1) (add (mkAppN regE fieldArgs) (← argsCost ctx args))
   if natUnitOps.contains c && args.size > 0 && (args[0]!).isConstOf ``Nat then
     return add (natE 1) (← argsCost ctx args)
   if c == ``Decidable.decide && args.size == 2 then
@@ -784,7 +870,8 @@ partial def costConst (ctx : Ctx) (e : Expr) (c : Name) (args : Array Expr) :
           `{inst}` has no registered cost `{reg}`"
       let some e' ← unfoldProjInst? e
         | fail m!"needs a registered primitive: the class method `{c}` does not unfold"
-      if ctx.depth ≥ maxDepth then fail m!"needs a registered primitive: `{c}` unfolds too deep"
+      if ctx.depth ≥ (← maxDepth) then
+        fail m!"needs a registered primitive: `{c}` unfolds too deep"
       return ← costOf { ctx with depth := ctx.depth + 1 } e'
     if args.size > info.numParams + 1 then
       fail m!"a function bound in data: the field `{c}` is applied in `{e}`"
@@ -803,14 +890,15 @@ partial def costConst (ctx : Ctx) (e : Expr) (c : Name) (args : Array Expr) :
   let .defnInfo dv := info
     | fail m!"needs a registered primitive: `{c}` has no definition to price and no registered \
         cost `{reg}`"
-  if ctx.depth ≥ maxDepth then
-    fail m!"needs a registered primitive: `{c}` unfolds deeper than {maxDepth} definitions"
+  let depthLimit ← maxDepth
+  if ctx.depth ≥ depthLimit then
+    fail m!"needs a registered primitive: `{c}` unfolds deeper than {depthLimit} definitions \
+      (option `derive_timed.maxDepth`)"
   -- The arguments are bound by `let`s around the body, so that each is priced once.
   let lvls := f.constLevels!
   unless lvls.length == dv.levelParams.length do
     fail m!"needs a registered primitive: `{c}` does not unfold"
-  let e' ← bindArgs (dv.value.instantiateLevelParams dv.levelParams lvls) args 0
-  let e' := e'.headBeta
+  let e' ← bindArgsShared (dv.value.instantiateLevelParams dv.levelParams lvls) args
   if (e'.find? fun s => s.isConstOf ``WellFounded.fix || s.isAppOf ``Nat.rec
       || s.isAppOf ``List.rec).isSome then
     fail m!"needs a registered primitive: `{c}` unfolds to a recursor"
@@ -1260,32 +1348,79 @@ partial def deriveCostCore (units : Array Name) (c : Name) : TermElabM Unit := d
   let some info := env.find? c | throwError "derive_cost: unknown constant `{c}`"
   let costName := c ++ `timedCost
   if env.contains costName then throwError "derive_cost: `{costName}` already exists"
-  let body ← match Structural.eqnInfoExt.find? env c, WF.eqnInfoExt.find? env c, info with
-    | some i, _, _ => pure i.value
-    | _, some i, _ => pure i.value
-    | _, _, .defnInfo d => pure d.value
-    | _, _, _ => throwError "derive_cost: `{c}` has no definition to price"
   let levels := info.levelParams.map mkLevelParam
-  -- Eta-expand to all binders of the type, through type definitions.
-  let value ← lambdaTelescope body fun xs b => do
-    withTypeBinders (← instantiateForall info.type xs) fun ys _ =>
-      mkLambdaFVars (xs ++ ys) (mkAppN b ys).headBeta
+  let value ← costValue c info
   let (cType, cValue) ← lambdaTelescope value fun xs b => do
     if (← treeTy? (← inferType b)).isSome then
       throwError "derive_cost: the result of `{c}` is a tree; use `derive_timed`"
     for x in xs do
       if (← classify (← inferType x)) matches .tree | .treeFn then
         throwError "derive_cost: the binder `{x}` of `{c}` is a tree; use `derive_timed`"
-    withBinders {} xs fun ctx bs _ => do
-      let cType ← mkForallFVars bs (mkConst ``Nat)
-      let ps ← unitPrefixes units b
-      withLocalDeclD `rec cType fun recF => do
-        let cost ← costWithUnits { ctx with selfCost? := some (c, recF) } ps b
-        let cost ← instantiateMVars cost
-        if cost.hasMVar then throwError "derive_cost: the cost of `{c}` has unassigned universes"
-        let cost := cost.replaceFVar recF (mkConst costName levels)
-        return (cType, ← mkLambdaFVars bs cost)
+    let paths ← recordFieldPaths units c xs b
+    withBinders { top := xs.map (·.fvarId!) } xs fun ctx bs _ => do
+      withFieldCosts paths fun fcs => do
+        let cs := fcs.map (·.2)
+        -- A recursive call passes the structures whose fields have cost companions unchanged.
+        if !cs.isEmpty && ((Structural.eqnInfoExt.find? env c).isSome ||
+            (WF.eqnInfoExt.find? env c).isSome) then
+          let fixed := (List.range xs.size).filter fun i =>
+            paths.any fun p => p.containsFVar xs[i]!.fvarId!
+          let need := fixed.foldl (fun m i => max m (i + 1)) 0
+          let bad := b.find? fun s => s.isAppOf c && s.getAppNumArgs ≥ need &&
+            fixed.any fun i => s.getArg! i != xs[i]!
+          if let some s := bad then
+            throwError "derive_cost: the recursive call `{s}` changes a structure whose applied \
+              fields are priced by cost companions"
+        let cType ← mkForallFVars (bs ++ cs) (mkConst ``Nat)
+        let ps ← unitPrefixes units b
+        withLocalDeclD `rec (← mkForallFVars bs (mkConst ``Nat)) fun recF => do
+          let cost ← costWithUnits { ctx with selfCost? := some (c, recF), fields := fcs } ps b
+          let cost ← instantiateMVars cost
+          if cost.hasMVar then
+            throwError "derive_cost: the cost of `{c}` has unassigned universes"
+          let self ← mkLambdaFVars bs (mkAppN (mkConst costName levels) (bs ++ cs))
+          let cost ← Core.betaReduce (cost.replaceFVar recF self)
+          return (cType, ← mkLambdaFVars (bs ++ cs) cost)
   addTimedDef costName info.levelParams cType cValue
+
+/-- The value of the data function `c` that `derive_cost` prices: the body of its equation
+lemmas, eta-expanded to all binders of its type through type definitions. -/
+partial def costValue (c : Name) (info : ConstantInfo) : TermElabM Expr := do
+  let env ← getEnv
+  let body ← match Structural.eqnInfoExt.find? env c, WF.eqnInfoExt.find? env c, info with
+    | some i, _, _ => pure i.value
+    | _, some i, _ => pure i.value
+    | _, _, .defnInfo d => pure d.value
+    | _, _, _ => throwError "derive_cost: `{c}` has no definition to price"
+  lambdaTelescope body fun xs b => do
+    withTypeBinders (← instantiateForall info.type xs) fun ys _ =>
+      mkLambdaFVars (xs ++ ys) (mkAppN b ys).headBeta
+
+/-- The field paths of the binders `xs` of the data function `c` with body `b` that its cost
+prices, in the order in which a pricing pass reaches them: the fields whose cost companions
+the derived cost `c.timedCost` takes after its binders. -/
+partial def recordFieldPaths (units : Array Name) (c : Name) (xs : Array Expr) (b : Expr) :
+    TermElabM (Array Expr) := do
+  withBinders { top := xs.map (·.fvarId!) } xs fun ctx bs _ => do
+    let r ← IO.mkRef (#[] : Array Expr)
+    let ps ← unitPrefixes units b
+    withLocalDeclD `rec (← mkForallFVars bs (mkConst ``Nat)) fun recF => do
+      try discard <| costWithUnits { ctx with selfCost? := some (c, recF), fieldRec? := some r } ps b
+      catch _ => pure ()
+    r.get
+
+/-- The field paths whose cost companions the derived cost of the data function `c` takes,
+instantiated at the arguments `args` of a call of `c` at the universe levels `lvls`. -/
+partial def calleeFieldPaths (c : Name) (lvls : List Level) (args : Array Expr) :
+    TermElabM (Array Expr) := do
+  let some info := (← getEnv).find? c | return #[]
+  let value := (← costValue c info).instantiateLevelParams info.levelParams lvls
+  lambdaTelescope value fun xs b => do
+    unless xs.size == args.size do
+      fail m!"the cost of `{c}` takes the costs of fields, and `{c}` is applied to \
+        {args.size} of its {xs.size} arguments"
+    let ps ← recordFieldPaths #[] c xs b
+    return ps.map (·.replaceFVars xs args)
 
 end
 

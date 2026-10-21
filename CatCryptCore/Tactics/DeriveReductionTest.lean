@@ -183,6 +183,79 @@ example (A : GuessAdv) (b : Bool) (guess : Bool → SPTree Bool)
     (fieldRed.tree A b guess).compile = fieldRed A b :=
   fieldRed.compile_tree A b guess h
 
+/-! ## Primitives used directly and through helpers; arguments of helpers priced once -/
+
+/-- A kit with a key generation, a data function and a pair-valued data function. -/
+structure Kit (W : Type) where
+  keygen : SPComp W
+  f : W → W → W
+  pair : W → W × W
+
+/-- A data helper that applies `kit.f`. -/
+noncomputable def helperF {W : Type} (kit : Kit W) (x : W) : W := kit.f x x
+
+/-- `kit.f` applied directly and inside `helperF`: one binder `f` with one cost companion. -/
+noncomputable def oneComp {W : Type} (kit : Kit W) (A : W → SPComp Bool) : SPComp Bool := do
+  let k ← kit.keygen
+  A (kit.f k (helperF kit k))
+
+derive_reduction oneComp (adv := A)
+
+example {W : Type} (kit : Kit W) (A : W → SPTree.Timed Bool) (ACost : W → ℕ) (f : W → W → W)
+    (fCost : W → W → ℕ) (keygen : SPTree.Timed W) :
+    (oneComp.tree.timed kit A ACost f fCost keygen).2.erase =
+      oneComp.tree kit (fun x => (A x).erase) f keygen.erase :=
+  oneComp.tree.erase_timed kit A ACost f fCost keygen
+
+/-- A computation helper that uses its argument `x` twice. -/
+noncomputable def twice {W : Type} (A : W → SPComp Bool) (x : W) : SPComp Bool :=
+  SPComp.bind (A x) fun _ => A x
+
+/-- The argument `kit.f k k` of `twice` is priced once. -/
+noncomputable def letArg {W : Type} (kit : Kit W) (A : W → SPComp Bool) : SPComp Bool := do
+  let k ← kit.keygen
+  twice A (kit.f k k)
+
+derive_reduction letArg (adv := A)
+
+example {W : Type} (kit : Kit W) (A : W → SPTree.Timed Bool) (ACost : W → ℕ) (f : W → W → W)
+    (fCost : W → W → ℕ) (keygen : SPTree.Timed W) :
+    letArg.tree.timed kit A ACost f fCost keygen =
+      keygen.bind fun x =>
+        (1 + fCost x x + (1 + ACost (f x x) +
+          ((A (f x x)).bind fun _ => (1 + ACost (f x x), A (f x x))).1),
+          have y := f x x
+          ((A y).bind fun _ => (1 + ACost y, A y)).2) := rfl
+
+/-- A computation helper that uses its first data argument. -/
+noncomputable def usePair {W : Type} (A : W → SPComp Bool) (a _b : W) : SPComp Bool := A a
+
+/-- The projections `(kit.pair k).1` and `(kit.pair k).2` share one evaluation of
+`kit.pair k`. -/
+noncomputable def pairArg {W : Type} (kit : Kit W) (A : W → SPComp Bool) : SPComp Bool := do
+  let k ← kit.keygen
+  usePair A (kit.pair k).1 (kit.pair k).2
+
+derive_reduction pairArg (adv := A)
+
+example {W : Type} (kit : Kit W) (A : W → SPTree.Timed Bool) (ACost : W → ℕ)
+    (pair : W → W × W) (pairCost : W → ℕ) (keygen : SPTree.Timed W) :
+    pairArg.tree.timed kit A ACost pair pairCost keygen =
+      keygen.bind fun x =>
+        (1 + pairCost x + (1 + ACost (pair x).1),
+          have p := pair x
+          A p.1) := rfl
+
+/-- A function binder `B` that the body does not use is not a binder of the tree. -/
+noncomputable def unusedB {W : Type} (_B : W → SPComp W) (A : W → SPComp Bool) (x : W) :
+    SPComp Bool := A x
+
+derive_reduction unusedB (adv := A)
+
+example {W : Type} (B : W → SPComp W) (A : W → SPTree Bool) (x : W) :
+    (unusedB.tree A x).compile = unusedB B (fun y => (A y).compile) x :=
+  unusedB.compile_tree B A x
+
 /-! ## Refusal of an unpriced computation -/
 
 /-- A reduction calling a field of a structure returned by the adversary. -/

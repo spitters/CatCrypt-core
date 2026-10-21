@@ -33,7 +33,8 @@ the node above the leaf; the costed map charges the cost of the function at each
 ## Main results
 
 * `SPTree.Timed.erase_bind`, `SPTree.Timed.erase_map` — erasure gives the uncosted combinator
-* `SPTree.Timed.stepTime_bind_le`, `SPTree.Timed.stepTime_map_le` — times add
+* `SPTree.Timed.stepTime_bind_le`, `SPTree.Timed.stepTime_map_le`,
+  `SPTree.Timed.prefix_bind_le` — times add
 * `SPTree.Timed.erase_snd_ite`, `SPTree.Timed.erase_snd_dite` — erasure commutes with `if`
 -/
 
@@ -171,6 +172,15 @@ the function. -/
 theorem stepTime_map_le (f : α → β) (fc : α → ℕ) (A : SPTree.Timed α) (t : ℕ)
     (hf : ∀ a, fc a ≤ t) : stepTime (A.map f fc) ≤ A.time + t :=
   stepTime_bind_le A _ t fun a => by simpa [stepTime, time] using hf a
+
+/-- A step cost `C` in front of a costed bind: its time is at most `C`, the time of the tree
+and a bound on the times of the continuation. -/
+theorem prefix_bind_le (C : ℕ) (k : SPTree.Timed α) (f : α → ℕ × SPTree.Timed β) (B : ℕ)
+    (h : ∀ s, stepTime (f s) ≤ B) :
+    C + (k.bind f).1 + (k.bind f).2.time ≤ C + (k.time + B) := by
+  have := stepTime_bind_le k f B h
+  simp only [stepTime] at this
+  omega
 
 /-- Erasure of a step-prefixed tree commutes with `if`. -/
 theorem erase_snd_ite (c : Prop) [Decidable c] (x y : ℕ × SPTree.Timed α) :

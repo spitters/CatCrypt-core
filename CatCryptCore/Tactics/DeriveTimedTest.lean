@@ -7,6 +7,7 @@ module
 
 public import CatCryptCore.Tactics.DeriveTimed
 public import CatCryptCore.Tactics.StdCosts
+public import CatCryptCore.Tactics.DeriveTimedStructure
 import CatCryptCore.Core.SPTree
 
 /-!
@@ -25,7 +26,10 @@ recursion over `ℕ`, and a tree argument with a continuation, whose derived tim
 `runThen.stepTime_timed_le`. Further tests pin a point-free reduction whose binders come from
 a named function type, a `let` and a discarded argument priced once, a recursive data callee
 whose cost is derived on demand, a nested field reached through a helper, and a sum over
-`Fin n`. The last tests pin the refusals of a recursive callee whose cost needs a class method
+`Fin n`, a derived cost that takes the cost companion of a field and its call from a
+reduction, two projections of one call priced once, and the costed mirrors of a two-stage
+adversary structure (a type field, a proof field, two tree fields) and of a structure with
+computation fields. The last tests pin the refusals of a recursive callee whose cost needs a class method
 on a local instance priced and of an opaque constant.
 -/
 
@@ -333,25 +337,105 @@ example {D R : Type} (n : ℕ) (f : Fin n → ℕ) (fCost : Fin n → ℕ) :
     (sumRed.timed (D := D) (R := R) n f fCost).2.erase = sumRed n f :=
   sumRed.erase_timed n f fCost
 
-/-! ## Refusals -/
+/-! ## Field companions of a derived cost; shared projections -/
+
+/-- A kit with a hash and a constant. -/
+structure HKit (W : Type) where
+  hash : W → W → W
+  zero : W
+
+/-- Hash a list with the field `kit.hash`. -/
+def hashList {W : Type} (kit : HKit W) : List W → W
+  | [] => kit.zero
+  | x :: xs => kit.hash x (hashList kit xs)
+
+derive_cost hashList
+
+/-- The derived cost takes the cost companion of the field `kit.hash` after the arguments. -/
+noncomputable example {W : Type} (kit : HKit W) (xs : List W) (hashCost : W → W → ℕ) : ℕ :=
+  hashList.timedCost kit xs hashCost
+
+/-- A reduction that calls the adversary on the hash of a concatenation: the call of
+`hashList` passes the companion `hashCost` of the reduction. -/
+noncomputable def hashRed {W : Type} (kit : HKit W) (A : W → SPTree Bool) (xs : List W) :
+    SPTree Bool := A (hashList kit (xs ++ xs))
+
+derive_timed hashRed
+
+example {W : Type} (kit : HKit W) (A : W → SPTree.Timed Bool) (ACost : W → ℕ) (xs : List W)
+    (hashCost : W → W → ℕ) :
+    hashRed.timed kit A ACost xs hashCost =
+      (1 + (ACost (hashList kit (xs ++ xs)) +
+        (1 + (hashList.timedCost kit (xs ++ xs) hashCost + (1 + List.append.timedCost xs xs)))),
+        A (hashList kit (xs ++ xs))) := rfl
+
+/-- A pair computed with the hash. -/
+def pairOf {W : Type} (kit : HKit W) (x : W) : W × W := (kit.hash x x, kit.zero)
+
+/-- The first of two values. -/
+def firstOf {W : Type} (a _b : W) : W := a
+
+/-- The projections of `pairOf kit x` share one evaluation: `hashCost x x` is charged once. -/
+noncomputable def pairRed {W : Type} (kit : HKit W) (A : W → SPTree Bool) (x : W) :
+    SPTree Bool := A (firstOf (pairOf kit x).1 (pairOf kit x).2)
+
+derive_timed pairRed
+
+example {W : Type} (kit : HKit W) (A : W → SPTree.Timed Bool) (ACost : W → ℕ) (x : W)
+    (hashCost : W → W → ℕ) :
+    (pairRed.timed kit A ACost x hashCost).1 =
+      1 + (ACost (firstOf (pairOf kit x).1 (pairOf kit x).2) + (3 + hashCost x x)) := rfl
+
+/-! ## Costed mirrors of structures -/
+
+/-- A two-stage adversary: a state type, a proof field and two tree fields. -/
+structure TwoStage (W : Type) where
+  St : Type
+  inh : Nonempty St
+  choose : W → SPTree (St × W)
+  guess : St → W → SPTree Bool
+
+derive_timed_structure TwoStage
+
+example {W : Type} (A' : TwoStage.Timed W) (A : TwoStage W) :
+    A'.Erases A ↔ ∃ inh : Nonempty A'.St, A = ⟨A'.St, inh, fun w => (A'.choose w).erase,
+      fun s w => (A'.guess s w).erase⟩ := Iff.rfl
+
+example {W : Type} (A' : TwoStage.Timed W) (T a T' a' : ℕ) :
+    A'.TimeBound T a T' a' ↔ (∀ w, (A'.choose w).time ≤ T) ∧ (∀ w, A'.chooseCost w ≤ a) ∧
+      (∀ s w, (A'.guess s w).time ≤ T') ∧ ∀ s w, A'.guessCost s w ≤ a' := Iff.rfl
+
+/-- An adversary with computation fields. -/
+structure CompAdv (W : Type) where
+  run : W → SPComp Bool
+  init : SPComp W
+
+derive_timed_structure CompAdv
+
+example {W : Type} (A' : CompAdv.Timed W) (A : CompAdv W) :
+    A'.Erases A ↔ A = ⟨fun w => (A'.run w).erase.compile, A'.init.erase.compile⟩ := Iff.rfl
+
+/-! ## Class methods on a local instance -/
 
 /-- Membership by `BEq.beq` on a local instance. -/
 def memB {α : Type} [BEq α] (a : α) : List α → Bool
   | [] => false
   | b :: l => a == b || memB a l
 
-/-- A call of `memB`, whose cost needs `BEq.beq` priced. -/
+/-- A call of `memB`: `BEq.beq` on the local instance is priced by the companion `beqCost`. -/
 def memRed {D R α : Type} [BEq α] (a : α) (l : List α) : OracleAdv D R Bool := .ret (memB a l)
 
-/--
-error: derive_timed: needs a registered primitive: `CatCrypt.Tactics.DeriveTimedTest.memB` is
-recursive and has no registered cost `CatCrypt.Tactics.DeriveTimedTest.memB.timedCost`, and
-`derive_cost CatCrypt.Tactics.DeriveTimedTest.memB` fails:
-  derive_timed: needs a registered primitive: the class method `BEq.beq` on the local instance
-  `inst✝` has no registered cost `BEq.beq.timedCost`
--/
-#guard_msgs (whitespace := lax) in
 derive_timed memRed
+
+example {D R α : Type} [BEq α] (a : α) (l : List α) (beqCost : α → α → ℕ) :
+    (memRed.timed (D := D) (R := R) a l beqCost).2.erase = memRed a l :=
+  memRed.erase_timed a l beqCost
+
+example {D R α : Type} [BEq α] (a : α) (l : List α) (beqCost : α → α → ℕ) :
+    (memRed.timed (D := D) (R := R) a l beqCost).1 = 1 + memB.timedCost a l beqCost := by
+  simp only [memRed.timed]
+
+/-! ## Refusals -/
 
 /-- An opaque constant. -/
 opaque opq : ℕ → ℕ

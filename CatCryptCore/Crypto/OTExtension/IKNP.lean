@@ -333,8 +333,6 @@ theorem iknpCRRedOf.tree.timeBound_timed {V O : Type}
       VSB → V × O)
     (viewCost : (Fin m → M × M) × (Fin m → Bool) × S → (Fin m → Fin κ → Bool) × (Fin m → M) →
       VSB → ℕ)
-    (simSB : (Fin κ → (Fin m → Bool) × (Fin m → Bool)) → SPComp VSB)
-    (simSBCost : (Fin κ → (Fin m → Bool) × (Fin m → Bool)) → ℕ)
     (c : SPTree.Timed ((Fin m → M × M) × (Fin m → Bool) × S))
     (g : S → V × O → SPTree.Timed Bool) (gCost : S → V × O → ℕ)
     (th : (Fin m → Fin κ → Bool) × (Fin m → M)) (fstCost : Fin m → Fin κ → ℕ)
@@ -343,7 +341,7 @@ theorem iknpCRRedOf.tree.timeBound_timed {V O : Type}
     (hs : ∀ p, (simT p).time ≤ Ts) (hsc : ∀ p, simTCost p ≤ ts)
     (hg : ∀ s y, (g s y).time ≤ T) (hgc : ∀ s y, gCost s y ≤ a)
     (hv : ∀ i t v, viewCost i t v ≤ tv) :
-    SPTree.Timed.stepTime (iknpCRRedOf.tree.timed bIn bInCost view viewCost simSB simSBCost
+    SPTree.Timed.stepTime (iknpCRRedOf.tree.timed bIn bInCost view viewCost
       c g gCost th th.1 fstCost simT simTCost) ≤ c.time + Ts + ts + T + a + tv + 3 := by
   simp only [iknpCRRedOf.tree.timed]
   refine (SPTree.Timed.stepTime_bind_le c _ (Ts + ts + T + a + tv + 3) fun x => ?_).trans
@@ -422,7 +420,6 @@ theorem iknpCRRed.erase_timed (H : Fin m → (Fin κ → Bool) → M)
     (viewCost : (Fin m → M × M) × (Fin m → Bool) × S → (Fin m → Fin κ → Bool) × (Fin m → M) →
       VSB → ℕ)
     (simSB : (Fin κ → (Fin m → Bool) × (Fin m → Bool)) → SPComp VSB)
-    (simSBCost : (Fin κ → (Fin m → Bool) × (Fin m → Bool)) → ℕ)
     (c : SPTree.Timed ((Fin m → M × M) × (Fin m → Bool) × S))
     (g : S → IKNPReceiverView κ m M VSB × (Fin m → M) → SPTree.Timed Bool)
     (gCost : S → IKNPReceiverView κ m M VSB × (Fin m → M) → ℕ)
@@ -430,7 +427,7 @@ theorem iknpCRRed.erase_timed (H : Fin m → (Fin κ → Bool) → M)
     (simT : (Fin κ → (Fin m → Bool) × (Fin m → Bool)) → SPTree.Timed VSB)
     (simTCost : (Fin κ → (Fin m → Bool) × (Fin m → Bool)) → ℕ)
     (hsim : ∀ p, (simT p).erase.compile = simSB p) :
-    (iknpCRRedOf.tree.timed iknpBaseIn bInCost (iknpCRView H) viewCost simSB simSBCost c g
+    (iknpCRRedOf.tree.timed iknpBaseIn bInCost (iknpCRView H) viewCost c g
       gCost th th.1 fstCost simT simTCost).2.erase.compile =
       iknpCRRed simSB H c.erase.compile (fun s y => (g s y).erase.compile) th := by
   rw [iknpCRRedOf.tree.erase_timed, iknpCRRedOf.compile_tree _ _ _ _ _ _ _ hsim]
@@ -541,15 +538,13 @@ noncomputable def iknpCRRed.timed (H : Fin m → (Fin κ → Bool) → M)
     (bInCost : (Fin m → Fin κ → Bool) → (Fin m → Bool) → Fin κ → ℕ)
     (viewCost : (Fin m → M × M) × (Fin m → Bool) × S → (Fin m → Fin κ → Bool) × (Fin m → M) →
       VSB → ℕ)
-    (simSB : (Fin κ → (Fin m → Bool) × (Fin m → Bool)) → SPComp VSB)
-    (simSBCost : (Fin κ → (Fin m → Bool) × (Fin m → Bool)) → ℕ)
     (c : SPTree.Timed ((Fin m → M × M) × (Fin m → Bool) × S))
     (g : S → IKNPReceiverView κ m M VSB × (Fin m → M) → SPTree.Timed Bool)
     (gCost : S → IKNPReceiverView κ m M VSB × (Fin m → M) → ℕ) (fstCost : Fin m → Fin κ → ℕ)
     (simT : (Fin κ → (Fin m → Bool) × (Fin m → Bool)) → SPTree.Timed VSB)
     (simTCost : (Fin κ → (Fin m → Bool) × (Fin m → Bool)) → ℕ)
     (th : (Fin m → Fin κ → Bool) × (Fin m → M)) : ℕ × SPTree.Timed Bool :=
-  iknpCRRedOf.tree.timed iknpBaseIn bInCost (iknpCRView H) viewCost simSB simSBCost c g
+  iknpCRRedOf.tree.timed iknpBaseIn bInCost (iknpCRView H) viewCost c g
     gCost th th.1 fstCost simT simTCost
 
 /-- **Time of the costed correlation-robust hash reduction**: with the costed simulator of
@@ -560,8 +555,6 @@ theorem iknpCRRed.timeBound_timed (H : Fin m → (Fin κ → Bool) → M)
     (bInCost : (Fin m → Fin κ → Bool) → (Fin m → Bool) → Fin κ → ℕ)
     (viewCost : (Fin m → M × M) × (Fin m → Bool) × S → (Fin m → Fin κ → Bool) × (Fin m → M) →
       VSB → ℕ)
-    (simSB : (Fin κ → (Fin m → Bool) × (Fin m → Bool)) → SPComp VSB)
-    (simSBCost : (Fin κ → (Fin m → Bool) × (Fin m → Bool)) → ℕ)
     (c : SPTree.Timed ((Fin m → M × M) × (Fin m → Bool) × S))
     (g : S → IKNPReceiverView κ m M VSB × (Fin m → M) → SPTree.Timed Bool)
     (gCost : S → IKNPReceiverView κ m M VSB × (Fin m → M) → ℕ) (fstCost : Fin m → Fin κ → ℕ)
@@ -570,9 +563,9 @@ theorem iknpCRRed.timeBound_timed (H : Fin m → (Fin κ → Bool) → M)
     (hs : ∀ p, (simT p).time ≤ Ts) (hsc : ∀ p, simTCost p ≤ ts)
     (hg : ∀ s y, (g s y).time ≤ T) (hgc : ∀ s y, gCost s y ≤ a)
     (hv : ∀ i t v, viewCost i t v ≤ tv) (th : (Fin m → Fin κ → Bool) × (Fin m → M)) :
-    SPTree.Timed.stepTime (iknpCRRed.timed H bInCost viewCost simSB simSBCost c g gCost
+    SPTree.Timed.stepTime (iknpCRRed.timed H bInCost viewCost c g gCost
       fstCost simT simTCost th) ≤ c.time + Ts + ts + T + a + tv + 3 :=
-  iknpCRRedOf.tree.timeBound_timed iknpBaseIn bInCost (iknpCRView H) viewCost simSB simSBCost
+  iknpCRRedOf.tree.timeBound_timed iknpBaseIn bInCost (iknpCRView H) viewCost
     c g gCost th fstCost simT simTCost hs hsc hg hgc hv
 
 end CostedReductions

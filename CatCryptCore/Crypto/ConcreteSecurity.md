@@ -105,7 +105,11 @@ free; a `let` of the reduction's body is priced once, and so is an argument of a
 tool unfolds, whether the bound variable is used once, several times or not at all; `rand`,
 `query`, `sample`, `get` and `set` nodes cost one unit, as in `SPTree.queryCost`. A value computed
 inside a helper whose cost is registered or derived separately is priced at each call of the
-helper.
+helper. A call `b` of which two projections `b.1`, `b.2` occur among the arguments of an
+unfolded definition is evaluated once and shared. A field of a structure binder (`kit.hash`)
+has one cost companion, whether it is applied in the body, inside an unfolded helper or inside
+a recursive helper whose cost `derive_cost` derives; that cost takes the companions of the fields
+it applies, and each call passes them.
 These are the rules of Isabelle's `time_fun` [HOL] and of [Hop26]. A primitive without a body
 to price takes the cost registered for it with `timed_cost f := e`.
 
