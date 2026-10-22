@@ -526,6 +526,7 @@ public import CatCryptCore.Crypto.BLSSig.SecurityTimed
 public import CatCryptCore.Crypto.Commitment.PedersenUCTimed
 public import CatCryptCore.Crypto.GeneralForkingLemmaTimed
 public import CatCryptCore.Crypto.OT.DualModeOTTimed
+public import CatCryptCore.Crypto.OT.GamesTimed
 public import CatCryptCore.Crypto.OTExtension.IKNPTimed
 public import CatCryptCore.Crypto.ZK.SigmaUCZKTimed
 public import CatCryptCore.Examples.CBCModeTimed
