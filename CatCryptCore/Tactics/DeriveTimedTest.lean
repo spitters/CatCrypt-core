@@ -40,6 +40,9 @@ operation on a local instance at one unit) and the refusal of an
 opaque constant. The costed-closure tests derive a state table updated by `Function.update`
 and its simulation, closures in results, a closure result consumed by a continuation, the
 shape of the multi-key PRF hybrid reduction and a closure in a computation-tree result.
+The final tests pin lets priced once (a `let` under the first binder, a `have` of a
+constructor, a let-bound structure value, a let of a field path), a well-founded recursion
+through `if`, and the refusal of an operation on a quotient without a registered cost.
 -/
 
 @[expose] public section
@@ -981,5 +984,103 @@ example (P : {w : W // w = default}) (A : KIAdv P) (A' : KIAdv.Timed P) : Prop :
   KIAdv.Timed.Erases A' A
 
 end AnonymousInstance
+
+/-! ## Lets priced once -/
+
+section LetPricedOnce
+
+open CatCrypt.Core
+
+/-- A `let` under the first binder: the definition applied to both binders is a `let` applied
+to an argument. -/
+noncomputable def tLetFn (g : ℕ → ℕ) : ℕ → SPTree ℕ :=
+  let y := g 0
+  fun n => SPTree.ret (y + y + n)
+
+derive_timed tLetFn
+
+/-- The `let` is priced once: `g 0` costs `1 + gCost 0`, the two additions two units. -/
+example (g gCost : ℕ → ℕ) (n : ℕ) : (tLetFn.timed g gCost n).1 = 1 + gCost 0 + 2 := rfl
+
+/-- A `have` of a constructor under the first binder (the shape of a reduction that fixes an
+absent challenge). -/
+noncomputable def tHaveNone (g : Option ℕ → ℕ) : ℕ → SPTree ℕ :=
+  have chal : Option ℕ := none
+  fun x => SPTree.ret (g chal + x)
+
+derive_timed tHaveNone
+
+example (g gCost : Option ℕ → ℕ) (n : ℕ) : (tHaveNone.timed g gCost n).1 = 2 + gCost none :=
+  rfl
+
+/-- A structure of two functions. -/
+structure TKit where
+  f : ℕ → ℕ
+  g : ℕ → ℕ
+
+/-- A `let` of a structure value whose two fields are applied. -/
+noncomputable def tKitUse (h : ℕ → ℕ) (n : ℕ) : SPTree ℕ :=
+  let k : TKit := ⟨fun x => h (x + n), fun x => h x⟩
+  SPTree.ret (k.f 1 + k.g 2)
+
+derive_timed tKitUse
+
+/-- The structure is built once; each field applied costs a call of its value. -/
+example (h hCost : ℕ → ℕ) (n : ℕ) :
+    (tKitUse.timed h hCost n).1 = 1 + (1 + (hCost (1 + n) + 1) + (1 + hCost 2)) := rfl
+
+/-- A structure holding a structure of two functions. -/
+structure TOuter where
+  inner : TKit
+
+/-- A `let` of a field path of a binder, whose fields are applied: the path is substituted,
+and each field is priced by its cost companion. -/
+noncomputable def tPathLet (o : TOuter) (n : ℕ) : SPTree ℕ :=
+  let k := o.inner
+  SPTree.ret (k.f n + k.g n)
+
+derive_timed tPathLet
+
+example (o : TOuter) (n : ℕ) (fCost gCost : ℕ → ℕ) :
+    (tPathLet.timed o n fCost gCost).1 = 1 + (1 + fCost n + (1 + gCost n)) := rfl
+
+end LetPricedOnce
+
+/-! ## Well-founded recursion -/
+
+section WellFounded
+
+open CatCrypt.Core
+
+/-- A recursion by well-founded recursion through `if`. -/
+noncomputable def tHalveT (step : ℕ → SPTree Unit) (n : ℕ) : SPTree Unit :=
+  if h : n = 0 then SPTree.ret () else SPTree.bind (step n) fun _ => tHalveT step (n / 2)
+termination_by n
+decreasing_by omega
+
+derive_timed tHalveT
+
+end WellFounded
+
+/-! ## Quotient operations without a registered cost -/
+
+section QuotientRefusal
+
+open CatCrypt.Core
+
+/-- The cardinality of a finite set, an operation on a quotient without a registered cost. -/
+noncomputable def tCardT (s : Finset ℕ) : SPTree ℕ :=
+  SPTree.ret s.card
+
+/--
+error: derive_timed: needs a registered primitive: `Finset.card` is an operation on a quotient
+type (`Finset`, `Multiset`) without a registered cost `Finset.card.timedCost`; the costs of
+`Finset.sum`, `Finset.prod`, `Finset.univ`, `Finset.range` and `Finset.erase` are registered in
+`CatCryptCore.Tactics.StdCosts`, which the module must import
+-/
+#guard_msgs (whitespace := lax) in
+derive_timed tCardT
+
+end QuotientRefusal
 
 end CatCrypt.Tactics.DeriveTimedTest

@@ -23,8 +23,10 @@ structure-valued results: two reductions between two-stage distinguishers with c
 fields (the shapes of the pair-hybrid reductions of the Signal ratchet chain), with their erasure
 theorem pinned and the time of each stage bounded, and a reduction between two-stage oracle
 adversaries with a type field, two tree fields and a proof field (the shape of the ECH
-reduction). The last test pins the refusal of an unpriced computation, a field of a structure
-bound in the body.
+reduction). A test pins the refusal of an unpriced computation, a field of a structure
+bound in the body. The last tests derive environment reductions whose environment binder has
+computation fields (also named as the adversary), a recursion whose state argument changes, a
+well-founded recursion through `if`, and a sum over `Fin 3`.
 -/
 
 @[expose] public section
@@ -517,5 +519,94 @@ error: derive_reduction: the carrier `X` is in a universe other than `Type`; com
 derive_reduction univRed
 
 end Universe
+
+/-! ## Environments with computation fields -/
+
+section EnvironmentBinders
+
+/-- An environment: an input, a heap and a distinguisher. -/
+structure TEnv (α β : Type) where
+  input : α
+  heap : Heap
+  dist : β → SPComp Bool
+
+/-- An environment whose input is a computation. -/
+noncomputable def tEnvRed {γ : Type} (Z : TEnv (γ → SPComp Bool) Bool) (x : γ) :
+    SPComp Bool :=
+  SPComp.bind (Z.input x) Z.dist
+
+derive_reduction tEnvRed
+
+/-- The environment `Z` with the distinguisher `k` in front. -/
+noncomputable def TEnv.post {α β γ : Type} (k : β → SPComp γ) (Z : TEnv α γ) : TEnv α β :=
+  ⟨Z.input, Z.heap, fun b => SPComp.bind (k b) Z.dist⟩
+
+/-- An environment reduction through `TEnv.post` and a state component: the structure value
+`TEnv.post …` is a `let` of the unfolded `tEnvRed`, whose fields reduce to the fields of `Z`. -/
+noncomputable def tEnvRed2 {γ : Type} (Z : TEnv ((γ → SPComp Bool) × Unit) Bool) (x : γ) :
+    SPComp Bool :=
+  tEnvRed (TEnv.post (fun b => SPComp.pure b) ⟨Z.input.1, Z.heap, fun y => Z.dist y⟩) x
+
+derive_reduction tEnvRed2
+
+/-- `tEnvRed2` with the environment named as the adversary. -/
+noncomputable def tEnvRed3 {γ : Type} (Z : TEnv ((γ → SPComp Bool) × Unit) Bool) (x : γ) :
+    SPComp Bool :=
+  tEnvRed (TEnv.post (fun b => SPComp.pure b) ⟨Z.input.1, Z.heap, fun y => Z.dist y⟩) x
+
+derive_reduction tEnvRed3 (adv := Z)
+
+/-- The costed form of `tEnvRed3` takes a costed binder and a cost companion for each
+computation field of the environment. -/
+example {γ : Type} (Z : TEnv ((γ → SPComp Bool) × Unit) Bool) (x : γ)
+    (input : γ → SPTree.Timed Bool) (inputCost : γ → ℕ)
+    (dist : Bool → SPTree.Timed Bool) (distCost : Bool → ℕ) :
+    ∃ p : ℕ × SPTree.Timed Bool, p = tEnvRed3.tree.timed Z x input inputCost dist distCost :=
+  ⟨_, rfl⟩
+
+end EnvironmentBinders
+
+/-! ## Recursions whose arguments change, and well-founded recursion -/
+
+section ChangingRecursion
+
+/-- A loop threading a state through `f`. -/
+noncomputable def tMapLoop {T U A : Type} (s : List T) (a : A) (f : T → A → SPComp (U × A)) :
+    SPComp (List U × A) :=
+  match s with
+  | [] => SPComp.pure ([], a)
+  | t :: s' => SPComp.bind (f t a) fun ua =>
+      SPComp.bind (tMapLoop s' ua.2 f) fun r => SPComp.pure (ua.1 :: r.1, r.2)
+
+derive_reduction tMapLoop
+
+/-- A caller of the loop. -/
+noncomputable def tLoopCaller (F : ℕ → SPComp ℕ) (s : List ℕ) : SPComp (List ℕ × ℕ) :=
+  tMapLoop s 0 (fun t a => SPComp.bind (F (t + a)) fun y => SPComp.pure (y, a + 1))
+
+derive_reduction tLoopCaller
+
+/-- A well-founded recursion. -/
+noncomputable def tHalve (F : ℕ → SPComp Unit) (n : ℕ) : SPComp Unit :=
+  if h : n = 0 then SPComp.pure () else SPComp.bind (F n) fun _ => tHalve F (n / 2)
+termination_by n
+decreasing_by omega
+
+derive_reduction tHalve
+
+end ChangingRecursion
+
+/-! ## A sum over a finite type -/
+
+section FinsetSum
+
+/-- A sum over `Fin 3` of a received vector weighted by a data function, priced by the
+registered costs of `Finset.sum` and `Finset.univ`. -/
+noncomputable def tSumRed (F : ℕ → SPComp (Fin 3 → ℕ)) (g : Fin 3 → ℕ) : SPComp ℕ :=
+  SPComp.bind (F 0) fun u => SPComp.pure (∑ i, g i * u i)
+
+derive_reduction tSumRed
+
+end FinsetSum
 
 end CatCrypt.Tactics.DeriveReductionTest

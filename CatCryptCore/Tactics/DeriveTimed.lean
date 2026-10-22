@@ -108,7 +108,8 @@ Costs follow call-by-value evaluation:
   arithmetic, bitwise or comparison operation on a fixed-width word (`BitVec n`, `UInt8` to
   `UInt64`, `Fin n`), costs one plus its arguments;
 * a function passed as a discriminant of a match (`Option.bind o f`) is priced, where the
-  match binds it, by its companion; a `let` applied to arguments is zeta- and beta-reduced;
+  match binds it, by its companion; a `let` applied to arguments has the application pushed
+  into its body, `(let x := v; f) a ⇝ let x := v; f a`, so that `v` is priced once;
 * a tree-valued field of a field path (`S.kem.encaps pk`, a program of a scheme) is a
   primitive: its tree runs at the unit cost of its nodes (`OracleAdv.Timed.ofAdv`) and its
   computation is priced by a cost companion indexed by the field's arguments;
@@ -148,14 +149,21 @@ Costs follow call-by-value evaluation:
   `OracleAdv.Timed.timeBound_fold`;
 * a `let` of first-order data is priced once: `let x := v; b` costs the cost of `v` plus the
   cost of `b`, in which `x` costs nothing; in a tree the `let` stays around the costed tree and
-  the cost of `v` is charged in front; a `let` of a type, a proof, a function or a tree is
-  substituted into its body;
+  the cost of `v` is charged in front; a `let` of a structure value stays a `let`, and a
+  field applied through it is priced as a field of a structure that reduces to a constructor;
+  a `let` of a type, a proof, a function, a tree or a field path of a local (`kit.hkdf`,
+  which costs nothing) is substituted into its body;
 * an unfolded definition binds its arguments in the same way, so that each argument is priced
   once per call, whether its parameter is used once, several times or not at all.
 
 The binders of `R` are those of its type, which is reduced through type definitions: a
 reduction whose declared type is an adversary type `W → W → W → SPComp Bool` under a name
 takes the three binders of that type.
+
+The erasure theorem of a definition by well-founded recursion is proved by functional induction
+on its costed form, with the definition unfolded once by `unfold` (its unconditional equation
+loops as a simp lemma) and the induction hypotheses, conditional on the hypothesis of the
+case of an `if`, discharged by `assumption`.
 
 The erasure theorem of a recursion whose result holds functions (`SPTree (Fin n → X)`) is
 proved by induction with each induction hypothesis
@@ -191,7 +199,10 @@ the reason, on a function stored in data that is not a costed closure as above (
 function without a cost companion, a function in a list or an option, a closure returned by
 a recursive function), a
 field of a structure that is neither a field path nor a field of a computed structure as
-above, an opaque data function without a registered cost, a recursive data
+above, an opaque data function without a registered cost, an operation on a quotient type
+(`Finset`, `Multiset`, `Quot`) without a registered cost (the costs of `Finset.sum`,
+`Finset.prod`, `Finset.univ`, `Finset.range` and `Finset.erase` are registered in
+`CatCryptCore.Tactics.StdCosts`), a recursive data
 function whose cost `derive_cost` does not derive (a class method on a local instance in its
 body needs `derive_cost (unit := …)`), a `match` whose motive depends on its
 discriminants, a match on an oracle tree that is not a binder, a recursive call that changes a
@@ -559,6 +570,10 @@ def freeConstants : Array Name :=
     ``Eq.rec, ``Eq.ndrec, ``Eq.mp, ``Eq.mpr, ``cast, ``Subtype.val, ``Fin.val,
     ``PMF.uniformOfFintype, ``PMF.pure, ``Classical.arbitrary, ``Inhabited.default,
     ``Fin.elim0, ``False.elim, ``absurd, ``Empty.elim, ``PEmpty.elim]
+
+/-- The namespaces of the operations on quotient types (`Finset`, `Multiset`, `Quot`,
+`Quotient`), which are priced by a registered cost and never unfolded. -/
+def quotientLibs : Array Name := #[`Finset, `Multiset, `Quot, `Quotient]
 
 /-- Operations of unit cost on `ℕ`: a call costs one. -/
 def natUnitOps : Array Name :=
@@ -933,13 +948,28 @@ def isDataExpr (e : Expr) : MetaM Bool := do
 def isSPCompType (t : Expr) : MetaM Bool := do
   return (← whnfR t).isAppOfArity `CatCrypt.Core.SPComp 1
 
+/-- Whether `v` is a projection path of a local: a local, or a structure projection of a
+projection path (`kit.hkdf`, `Z.input.1`). -/
+partial def isLocalProjPath (v : Expr) : MetaM Bool := do
+  match v.consumeMData with
+  | .fvar _ => return true
+  | .proj _ _ s => isLocalProjPath s
+  | v' =>
+    let .const m _ := v'.getAppFn | return false
+    let some info ← getProjectionFnInfo? m | return false
+    unless v'.getAppNumArgs == info.numParams + 1 do return false
+    isLocalProjPath v'.appArg!
+
 /-- Whether `let x : t := v` is kept as a `let`, so that the cost of `v` is charged once: `v`
-is first-order data that is not a variable, a literal, a constant or a closure. Any other
-`let` is substituted into its body. -/
+is first-order data that is not a variable, a literal, a constant, a closure or a projection
+path of a local. Any other `let` is substituted into its body. -/
 def keepsLet (t v : Expr) : MetaM Bool := do
   match v.consumeMData with
   | .fvar _ | .lit _ | .const .. | .lam .. | .sort _ | .forallE .. => return false
   | _ => pure ()
+  -- A field path of a local (`kit.hkdf`) costs nothing: substituted, so that the fields
+  -- applied through it are fields of a field path.
+  if ← isLocalProjPath v then return false
   if ← isProp t then return false
   if ← isTypeFormerType t then return false
   if (← isClass? t).isSome then return false
@@ -948,6 +978,18 @@ def keepsLet (t v : Expr) : MetaM Bool := do
   if (← whnfR t).isForall then return false
   if (← hatTy? t).isSome then return false
   return true
+
+/-- A `let` applied to arguments with the application pushed into its body,
+`(let x := v; f) a ⇝ let x := v; f a` (beta-reduced, through nested `let`s), so that the
+`let` is priced once by the rule for `let`. Any other term is returned unchanged. -/
+partial def pushLetApp (e : Expr) : Expr :=
+  let args := e.getAppArgs
+  if args.isEmpty then e else
+  match e.getAppFn.consumeMData with
+  | .letE n t v b nd =>
+    let args' := args.map (·.liftLooseBVars 0 1)
+    .letE n t v (pushLetApp (mkAppN b args').headBeta) nd
+  | _ => e
 
 /-- The binders of the type `t`, which is reduced at default transparency before each binder,
 up to a computation type `SPComp α`, a tree type or a type that is not a function type: `k`
@@ -1331,12 +1373,7 @@ mutual
 
 /-- The cost of evaluating the data term `e`. -/
 partial def costOf (ctx : Ctx) (e : Expr) : TermElabM Expr := do
-  let e := e.consumeMData.headBeta
-  -- A `let` applied to arguments, `(let x := v; f) a`: zeta- and beta-reduced, so that `v` is
-  -- priced at each use.
-  if let .letE _ _ v b _ := e.getAppFn.consumeMData then
-    unless e.getAppArgs.isEmpty do
-      return ← costOf ctx (mkAppN (b.instantiate1 v) e.getAppArgs).headBeta
+  let e := pushLetApp e.consumeMData.headBeta
   unless ← isDataExpr e do return natE 0
   match e with
   | .fvar _ | .lit _ | .lam .. | .forallE .. | .sort _ => return natE 0
@@ -1455,7 +1492,7 @@ the cost of its body; a partial application of a constant evaluates its argument
 built; a pair, an `if` and a call of a definition are translated componentwise, by branch and
 by unfolding. -/
 partial def tv (ctx : Ctx) (e : Expr) : TermElabM (Expr × Expr) := do
-  let e := e.consumeMData.headBeta
+  let e := pushLetApp e.consumeMData.headBeta
   let t ← inferType e
   let some ht ← hatTy? t | return (← costOf ctx e, e)
   if let some v ← hatOf? ctx e then return (← costOf ctx e, v)
@@ -1718,6 +1755,13 @@ partial def costConst (ctx : Ctx) (e : Expr) (c : Name) (args : Array Expr) :
             (← costOf { ctx with depth := ctx.depth + 1 } (mkAppN v rest).headBeta)
       fail m!"a function bound in data: the field `{c}` is applied in `{e}`"
     return ← argsCost ctx args
+  -- An operation on finite sets or multisets is defined through a quotient, whose internals
+  -- have no cost: it is priced by its registered cost (`CatCryptCore.Tactics.StdCosts`).
+  if quotientLibs.contains c.getRoot then
+    fail m!"needs a registered primitive: `{c}` is an operation on a quotient type (`Finset`, \
+      `Multiset`) without a registered cost `{reg}`; the costs of `Finset.sum`, `Finset.prod`, \
+      `Finset.univ`, `Finset.range` and `Finset.erase` are registered in \
+      `CatCryptCore.Tactics.StdCosts`, which the module must import"
   -- A definition, unfolded.
   let some info := env.find? c | fail m!"unknown constant `{c}`"
   if (Structural.eqnInfoExt.find? env c).isSome || (WF.eqnInfoExt.find? env c).isSome then
@@ -1853,12 +1897,7 @@ partial def costMatch (ctx : Ctx) (e : Expr) : TermElabM Expr := do
 /-- The translation of the oracle tree `e`: a step-prefixed costed tree whose erasure is `e`
 with the translated locals erased. -/
 partial def tr (ctx : Ctx) (e : Expr) : TermElabM Expr := do
-  let e := e.consumeMData.headBeta
-  -- A `let` applied to arguments, `(let x := v; f) a`: zeta- and beta-reduced, so that `v` is
-  -- priced at each use.
-  if let .letE _ _ v b _ := e.getAppFn.consumeMData then
-    unless e.getAppArgs.isEmpty do
-      return ← tr ctx (mkAppN (b.instantiate1 v) e.getAppArgs).headBeta
+  let e := pushLetApp e.consumeMData.headBeta
   let some T ← treeTyH? (← inferType e)
     | fail m!"`{e}` is not a tree of a registered kind"
   match e with
@@ -2351,8 +2390,14 @@ partial def deriveTimed (ctx : Ctx) (c : Name) : TermElabM Unit := do
         callees.any (fun n => n.toString.endsWith "_bind") then
       (treeKinds.filter fun k => used.contains k.timed).flatMap (·.hatLemmas)
     else #[]
+  -- A definition by well-founded recursion has an unconditional equation, which loops as a
+  -- simp lemma: it is unfolded once by `unfold`, and `fun_induction` unfolds its costed form.
+  let envNow ← getEnv
+  let wf (n : Name) : Bool := (WF.eqnInfoExt.find? envNow n).isSome
+  let wfC := wf c
   let simpLemmas : Array Name :=
-    (if treeRec then #[c] else #[timedName, c]) ++ kindLemmas ++ hatLemmas ++ callees
+    ((if treeRec then #[c] else #[timedName, c]).filter (!wf ·)) ++ kindLemmas ++ hatLemmas ++
+      callees
   let ids : Array (TSyntax `ident) := (Array.range nBinders.size).map fun i =>
     mkIdent (Name.mkSimple s!"x{i}")
   let explicitIds := (ids.zip nBinders).filterMap fun (i, e) => if e then some i else none
@@ -2370,7 +2415,13 @@ partial def deriveTimed (ctx : Ctx) (c : Name) : TermElabM Unit := do
         (try rfl)))
   -- `intro` without names introduces one binder: a reduction without binders introduces none.
   let intros ← if ids.isEmpty then `(tactic| skip) else `(tactic| intro $ids*)
-  let tac ← if recursive then
+  let tac ← if recursive && wfC then
+      -- The induction hypotheses of a recursion through `if` are conditional on the case's
+      -- hypothesis, discharged by `assumption`.
+      `(tactic| ($intros; fun_induction $(mkIdent timedName):ident $explicitIds* <;>
+        (try unfold $(mkIdent c):ident) <;>
+        (try simp (disch := assumption) only [$lemmas,*, *]) <;> $close))
+    else if recursive then
       `(tactic| ($intros; fun_induction $(mkIdent timedName):ident $explicitIds* <;> $close))
     else if treeRec then
       `(tactic| ($intros; $close))

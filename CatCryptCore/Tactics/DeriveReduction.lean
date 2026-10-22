@@ -9,6 +9,7 @@ public import CatCryptCore.Core.SPTree
 public import CatCryptCore.Crypto.SDist
 public import CatCryptCore.Tactics.DeriveTimed
 public import CatCryptCore.Tactics.DeriveTimedStructure
+public import CatCryptCore.Tactics.StdCosts
 
 /-!
 # Computation trees of `SPComp` reductions
@@ -110,7 +111,16 @@ helper `f kit x`) unfolded in the tree, so that the fields and methods used in t
 become data-function primitives; the error of the first derivation is reported when both fail.
 
 A `let` whose value is a field path of the binders (`let 𝒮 := pcs.scheme`) is substituted,
-so that the fields applied through it are primitives. A match whose motive depends on its
+so that the fields applied through it are primitives. Any other `let` of first-order data stays
+a `let` whose local has its value, so that a field of a structure value applied through it
+(`let Z' := Env.postcomp k Z; … Z'.input x`) reduces to the field's value, and the primitives
+of that value (`Z.input`) are found.
+
+A binder whose type is a structure with computation fields (an environment `Z : Env α β` with
+`Z.input : X → SPComp Y` and `Z.dist : β → SPComp Bool`) is not an adversary: each computation
+field applied in the body is a computation primitive, a costed binder with a cost companion in
+the costed form and a hypothesis of the compile equation. Naming it in `(adv := Z)` is accepted
+and has the same meaning. A match whose motive depends on its
 discriminants (`fun n => SPComp (Fin n → X)`) has the motive `fun n => SPTree (Fin n → X)`.
 
 Any other subterm of type `SPComp α`, after unfolding, is an unpriced computation: a field of
@@ -125,7 +135,12 @@ that the equation compiler recurses on), whether `B` itself or a computation tha
 is reflected by the same recursion: `c.tree` is the reflection of the body of the equations of
 `c`, with each recursive call of `c` a call of `c.tree` and the matches kept in place, and
 `c.compile_tree` is proved by induction over `c.tree` (`fun_induction`), each case by the
-traversal below with the recursive calls closed by the induction hypotheses. The tree of `c`
+traversal below with the recursive calls closed by the induction hypotheses. A computation
+defined by well-founded recursion is reflected in the same way. A recursive call under a binder
+whose arguments change with the recursion (`mapLoop s' a' f` after `a'` is received) is closed
+by its induction hypothesis instantiated at the call's arguments; an `if` of the body of `c`
+decided by the hypothesis of the case is reduced to its branch (`dif_pos`, `dif_neg`,
+`if_pos`, `if_neg`). The tree of `c`
 takes all binders of `c`, followed by its data and computation primitives; a recursive call
 passes the primitives unchanged, so it must pass unchanged every binder that a primitive
 mentions. An adversary binder of `c` (a function into `SPComp`) is a tree binder of `c.tree`,
@@ -156,6 +171,9 @@ primitives. `derive_timed` derives `B.f.tree.timed`, and
   `∀ ys, (p ys).erase.compile = F ys` for each costed computation primitive `p` of a field `F`
   and `∀ ys, (p ys).erase = F ys` for each costed tree primitive, with the data primitives at
   their fields and each adversary at the compilation of the erasure of its costed form.
+
+The module imports the registered costs of `CatCryptCore.Tactics.StdCosts`, so that a sum or a
+product over a finite set in a reduction is priced by them (a quotient is never unfolded).
 
 A field `(B …).f` that is projected in a compile equation is reduced by `normalize`, which
 reduces a projection of a term that `whnf` brings to a constructor application.
@@ -725,7 +743,9 @@ partial def reify (ctx : RCtx) (e : Expr) : TermElabM Expr := do
       -- The first pass records the primitives of the value at the `let`, where a substituted
       -- value would have recorded them at its first use.
       if ctx.found?.isSome then discard <| abstractData ctx v
-      return ← withLocalDeclD n t fun x => do
+      -- The local is a `let` declaration, so that a field of a structure value applied through
+      -- it reduces to the field's value (`normalize`) and its computations are found.
+      return ← withLetDecl n t v fun x => do
         let body ← instantiateMVars (← reify ctx (b.instantiate1 x))
         return .letE n t v (body.abstract #[x]) false
     return ← reify ctx (b.instantiate1 v)
@@ -1102,16 +1122,23 @@ are the compilations `fun ys => (T ys).compile` of the trees `T` of the argument
 partial def proveRecLeaf (hs : Array (Expr × Expr)) (g : MVarId) (c : Name) (α t r : Expr) :
     TermElabM Unit := g.withContext do
   let lhs := mkCompile α t
-  -- An induction hypothesis.
+  -- An induction hypothesis, instantiated at the arguments of the call when it is quantified
+  -- (a recursive call under a binder, whose arguments that change in the recursion depend on
+  -- the bound variable).
   let mut pf? : Option Expr := none
   for d in ← getLCtx do
     if pf?.isSome then break
     if d.isImplementationDetail then continue
-    for e in ← CatCrypt.Tactics.DeriveTimed.conjEqns d.toExpr d.type do
+    let s ← saveState
+    let (ms, _, body) ← forallMetaTelescope (← instantiateMVars d.type)
+    for e in ← CatCrypt.Tactics.DeriveTimed.conjEqns (mkAppN d.toExpr ms) body do
       let some (_, l, _) := (← instantiateMVars (← inferType e)).eq? | continue
       if ← isDefEq l lhs then
-        pf? := some e
-        break
+        let e ← instantiateMVars e
+        unless e.hasExprMVar do
+          pf? := some e
+          break
+    if pf?.isNone then s.restore
   let pf ← match pf? with
     | some pf => pure pf
     | none =>
@@ -1574,6 +1601,28 @@ partial def replaceRecCalls (recF t : Expr) (extra : Array Expr) (e : Expr) : Ex
       some (mkAppN t (s.getAppArgs.map (replaceRecCalls recF t extra) ++ extra))
     else none
 
+/-- The branch of the `if` (or `if h :`) `e` that a local hypothesis decides, with the proof of
+`e = branch` by `if_pos`, `if_neg`, `dif_pos` or `dif_neg`; `none` when `e` is not an `if` or no
+local proves its condition or the negation of its condition. -/
+def decideIf? (e : Expr) : MetaM (Option (Expr × Expr)) := do
+  let dep := e.isAppOfArity ``dite 5
+  unless dep || e.isAppOfArity ``ite 5 do return none
+  let args := e.getAppArgs
+  let (α, c, inst, t, f) := (args[0]!, args[1]!, args[2]!, args[3]!, args[4]!)
+  for d in ← getLCtx do
+    if d.isImplementationDetail then continue
+    let ty ← instantiateMVars d.type
+    unless ← isProp ty do continue
+    let pos ← isDefEq ty c
+    let neg ← if pos then pure false else isDefEq ty (mkNot c)
+    unless pos || neg do continue
+    let thm := if dep then (if pos then ``dif_pos else ``dif_neg)
+      else (if pos then ``if_pos else ``if_neg)
+    let step ← mkAppOptM thm #[some c, some inst, some d.toExpr, some α, some t, some f]
+    let some (_, _, b) := (← inferType step).eq? | return none
+    return some (step, b.headBeta)
+  return none
+
 /-- The proof of the case `g : (c.tree targs).compile = c rargs` of the induction over
 `c.tree`: both calls unfolded once by their equations `eq_def`, and the bodies related by
 `prove`, whose recursive calls are closed by the induction hypotheses. -/
@@ -1599,6 +1648,13 @@ def proveRecCase (c : Name) (g : MVarId) : TermElabM Unit := g.withContext do
       match ← reduceMatcher? body with
       | ReduceMatcherResult.reduced b => body := b.headBeta
       | _ => break
+    -- An `if` of the body decided by a hypothesis of the case (the induction of a recursion
+    -- by `if`, well-founded or structural): the branch taken, by `dif_pos`, `dif_neg`,
+    -- `if_pos` or `if_neg`.
+    repeat
+      let some (step, b) ← decideIf? body | break
+      pf ← mkEqTrans pf step
+      body := b
     return (pf, body)
   -- The induction states each case with the tree unfolded; the computation is unfolded here.
   let (eT, bT) := (← mkEqRefl t, t)
@@ -1726,7 +1782,12 @@ partial def deriveReduction (c : Name) (advNames : Array Name) (unfold : Bool :=
         fail m!"`{c}` has no binder `{n}`"
     for x in xs, ar in isAdv do
       if advNames.contains (← x.fvarId!.getUserName).eraseMacroScopes && ar.isNone then
-        fail m!"the binder `{x}` is not a function into `SPComp`"
+        -- An adversary structure (an environment with computation fields): its fields are
+        -- computation primitives, each a costed binder with a cost companion.
+        let .const S _ := (← whnfR (← inferType x)).getAppFn
+          | fail m!"the binder `{x}` is not a function into `SPComp` or a structure"
+        unless isStructure env S && !isClass env S do
+          fail m!"the binder `{x}` is not a function into `SPComp` or a structure"
     -- Bind the tree-valued binders.
     let rec go (i : Nat) (bs : Array Expr) (advs : Array Adv) (args : Array Expr) :
         TermElabM (Expr × Expr × Expr × Expr) := do
@@ -1846,5 +1907,3 @@ def elabDeriveReduction : CommandElab := fun stx => do
         throw e
 
 end CatCrypt.Tactics.DeriveReduction
-
-end
