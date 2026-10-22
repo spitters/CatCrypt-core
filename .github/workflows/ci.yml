@@ -71,12 +71,3 @@ jobs:
             exit 1
           fi
 
-      - name: Guard — no native_decide
-        run: |
-          set -euo pipefail
-          found="$(git grep -n 'native_decide' -- 'CatCryptCore' || true)"
-          if [ -n "$found" ]; then
-            echo "::error::native_decide adds the ofReduceBool trust edge:"
-            echo "$found"
-            exit 1
-          fi

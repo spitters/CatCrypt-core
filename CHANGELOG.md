@@ -30,6 +30,10 @@
   (`XRelTripleQ0`), the coupling specification monad `RelPT` with the tactics
   `relmvcgen` and `relmvcgen_ctl`, and `XDijkstra/XAdvantageHybrid.lean` with the
   tactic `advmvcgen` for advantage bounds over a chain of games.
+- `native_decide` is accepted in core, as in the development repository; the
+  CI step that rejected it is removed. A proof that uses it depends on the
+  axiom `Lean.ofReduceBool`, which `#print axioms` lists. The first users are the
+  Pocklington primality certificates of `Crypto/Ristretto255/FinGroup.lean`.
 
 ## v0.2.0 — 2026-06-10
 
