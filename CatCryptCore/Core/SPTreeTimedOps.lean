@@ -38,6 +38,11 @@ the node above the leaf; the costed map charges the cost of the function at each
 * `SPTree.Timed.stepTime_load_bind_le`, `SPTree.Timed.stepTime_delay_bind_bind_le` — times of a
   heap reset before a bind and of two binds with the first step cost in front
 * `SPTree.Timed.erase_snd_ite`, `SPTree.Timed.erase_snd_dite` — erasure commutes with `if`
+* `SPTree.Timed.bind_ret_bind`, `SPTree.Timed.bind_ret_stepTime_le`,
+  `SPTree.Timed.bind_ret_time_le` — a bind whose continuation returns at zero cost fuses with
+  the next bind and costs nothing beyond its tree
+* `SPTree.Timed.sample_bind_time_le`, `SPTree.Timed.sample_sample_bind_le` — times of sample
+  nodes followed by binds
 -/
 
 namespace CatCrypt.Core
@@ -231,6 +236,67 @@ theorem erase_snd_dite (c : Prop) [Decidable c] (x : c → ℕ × SPTree.Timed �
     (y : ¬c → ℕ × SPTree.Timed α) :
     (if h : c then x h else y h).2.erase = if h : c then (x h).2.erase else (y h).2.erase := by
   split <;> rfl
+
+/-- A costed bind whose continuation returns at zero cost has step cost zero. -/
+theorem bind_ret_fst (A : SPTree.Timed α) (h : α → β) :
+    (A.bind fun y => (0, ret (h y))).1 = 0 := by
+  cases A <;> rfl
+
+/-- A costed bind whose continuation returns at zero cost, followed by a costed bind, is one
+costed bind. -/
+theorem bind_ret_bind {γ : Type} (A : SPTree.Timed α) (h : α → β)
+    (g : β → ℕ × SPTree.Timed γ) :
+    (A.bind fun y => (0, ret (h y))).2.bind g = A.bind fun y => g (h y) := by
+  induction A with
+  | ret a => rfl
+  | sample γ' finγ neγ c k ih => simp [SPTree.Timed.bind, ih, bind_ret_fst]
+  | get l c k ih => simp [SPTree.Timed.bind, ih, bind_ret_fst]
+  | set l v c t ih => simp [SPTree.Timed.bind, ih, bind_ret_fst]
+  | fail => rfl
+  | load h₀ c t ih => simp [SPTree.Timed.bind, ih, bind_ret_fst]
+
+/-- A costed bind whose continuation returns at zero cost runs within the time of its tree. -/
+theorem bind_ret_stepTime_le (Y : ℕ × SPTree.Timed α) (h : α → β) :
+    Y.1 + stepTime (Y.2.bind fun y => (0, ret (h y))) ≤ stepTime Y := by
+  have := stepTime_bind_le Y.2 (fun y => (0, ret (h y))) 0
+    fun _ => by simp [stepTime, time_ret]
+  simp only [stepTime] at this ⊢
+  omega
+
+/-- The tree of a costed bind whose continuation returns at zero cost runs within the time of
+the bound tree. -/
+theorem bind_ret_time_le (A : SPTree.Timed α) (h : α → β) :
+    (A.bind fun y => (0, ret (h y))).2.time ≤ A.time := by
+  have := bind_ret_stepTime_le (0, A) h
+  simp only [stepTime] at this
+  omega
+
+/-- A sample node whose branches run `A b` and then `F b`: with `c b ≤ e`, `A b` of time at
+most `E` and the continuations of time at most `K`, its time is at most `1 + (e + E + K)`. -/
+theorem sample_bind_time_le {γ : Type} (finγ : Fintype γ) (neγ : Nonempty γ) (c : γ → ℕ)
+    (A : γ → SPTree.Timed α) (F : γ → α → ℕ × SPTree.Timed β) {e E K : ℕ}
+    (hc : ∀ b, c b ≤ e) (hA : ∀ b, (A b).time ≤ E) (hF : ∀ b y, stepTime (F b y) ≤ K) :
+    (sample γ finγ neγ (fun b => c b + ((A b).bind (F b)).1)
+      fun b => ((A b).bind (F b)).2).time ≤ 1 + (e + E + K) := by
+  rw [time_sample]
+  refine Nat.add_le_add_left (Finset.sup_le fun b _ => ?_) 1
+  have h1 := stepTime_bind_le (A b) (F b) K (hF b)
+  have := hc b; have := hA b
+  simp only [stepTime] at h1
+  omega
+
+/-- Two free samples followed by a costed continuation `K`: with `K` of time at most `B` at
+every pair of samples, the time is at most `B + 2`. -/
+theorem sample_sample_bind_le {γ γ' : Type} (f : Fintype γ) (n : Nonempty γ)
+    (f' : Fintype γ') (n' : Nonempty γ') (h : γ → γ' → α) (K : α → ℕ × SPTree.Timed β)
+    {B : ℕ} (hK : ∀ b b', stepTime (K (h b b')) ≤ B) :
+    stepTime ((sample γ f n (fun _ => 0) fun b =>
+      sample γ' f' n' (fun _ => 0) fun b' => ret (h b b')).bind K) ≤ B + 2 := by
+  simp only [SPTree.Timed.bind, stepTime, time_sample, Nat.zero_add]
+  have : (Finset.univ.sup fun b => 1 + Finset.univ.sup fun b' =>
+      (K (h b b')).1 + (K (h b b')).2.time) ≤ 1 + B :=
+    Finset.sup_le fun b _ => Nat.add_le_add_left (Finset.sup_le fun b' _ => hK b b') 1
+  omega
 
 end SPTree.Timed
 

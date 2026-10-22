@@ -32,6 +32,7 @@ their definitions through `Array.toList`, so their costs are linear in the size.
   bounds in the length
 * `List.map.timedCost_le`, `List.foldl.timedCost_le`, `List.foldr.timedCost_le`,
   `List.zipWith.timedCost_le` — `(k + c) * l.length + 1` for function costs at most `k`
+* `List.flatten.timedCost_le` — `(2 w + 4) * L.length + 1` for lists of length at most `w`
 * `Fin.foldr.loop.timedCost_le` — the loop of `Fin.foldr` from index `i` costs at most
   `(k + 3) * i + 4` for step costs at most `k`
 * `Array.push.timedCost_le`, `Array.getD.timedCost_le`, `Array.get!Internal.timedCost_le` —
@@ -84,6 +85,7 @@ derive_cost List.zip
 derive_cost List.range.loop
 derive_cost List.range
 derive_cost Fin.foldr.loop
+derive_cost List.flatten
 
 section
 
@@ -154,6 +156,19 @@ theorem List.map.timedCost_le (f : α → β) (fCost : α → ℕ) {k : ℕ} (hf
   induction l with
   | nil => simp [List.map.timedCost]
   | cons a l ih => have := hf a; simp [List.map.timedCost, Nat.mul_succ]; omega
+
+/-- Flattening a list of lists, each of length at most `w`, costs at most `2 w + 4` units per
+list and one more. -/
+theorem List.flatten.timedCost_le (w : ℕ) (L : List (List α)) (hL : ∀ l ∈ L, l.length ≤ w) :
+    List.flatten.timedCost L ≤ (2 * w + 4) * L.length + 1 := by
+  induction L with
+  | nil => simp [List.flatten.timedCost]
+  | cons l L ih =>
+    rw [List.flatten.timedCost.eq_2, List.append.timedCost_eq]
+    have h1 := hL l (by simp)
+    have h2 := ih fun l' hl' => hL l' (by simp [hl'])
+    simp only [List.length_cons]
+    nlinarith
 
 /-- A left fold with a step of cost at most `k` costs at most `k + 3` per element and one
 more. -/

@@ -693,16 +693,19 @@ def leafOrFail (ctx : RCtx) (orig e α : Expr) : MetaM Expr := do
   | some t => return t
   | none => unpriced orig e
 
-/-- Whether `v` is a field path of the binders `top`: a binder of `top`, or a projection of a
-field path. -/
-partial def isTopPath (top : Array FVarId) (v : Expr) : Bool :=
+/-- Whether `v` is a field path of the binders `top`: a binder of `top`, or a structure
+projection, applied to exactly its parameters and the structure, of a field path. A function
+of a structure field applied to arguments (`deps.sha256 x`) is not a field path. -/
+partial def isTopPath (env : Environment) (top : Array FVarId) (v : Expr) : Bool :=
   match v.consumeMData with
   | .fvar id => top.contains id
-  | .proj _ _ s => isTopPath top s
+  | .proj _ _ s => isTopPath env top s
   | s =>
     match s.getAppFn with
-    | .const _ _ => s.getAppNumArgs > 0 && isTopPath top s.appArg! &&
-        s.getAppArgs.pop.all (fun a => !a.hasFVar || a.isFVar)
+    | .const c _ =>
+      match env.getProjectionFnInfo? c with
+      | some info => s.getAppNumArgs == info.numParams + 1 && isTopPath env top s.appArg!
+      | none => false
     | _ => false
 
 /-- The adversary positions of the binders `xs` of a computation: the arity of each binder
@@ -739,7 +742,7 @@ partial def reify (ctx : RCtx) (e : Expr) : TermElabM Expr := do
   if let .letE n t v b _ := e then
     -- A `let` of a field path of the binders (`let 𝒮 := pcs.scheme`) costs nothing to
     -- evaluate and is substituted, so that the fields applied through it are primitives.
-    if (← CatCrypt.Tactics.DeriveTimed.keepsLet t v) && !(isTopPath ctx.top v) then
+    if (← CatCrypt.Tactics.DeriveTimed.keepsLet t v) && !(isTopPath (← getEnv) ctx.top v) then
       -- The first pass records the primitives of the value at the `let`, where a substituted
       -- value would have recorded them at its first use.
       if ctx.found?.isSome then discard <| abstractData ctx v
