@@ -227,18 +227,6 @@ monoidal subcategory of the Kleisli category, and game hopping composes within i
   of security definitions and is the common bridge in protocol proofs.
 \end{theorem}
 
-\begin{theorem}[Statistical distance for oracle games]
-  \label{thm:sdist-oracleGame-le}
-  \uses{def:sdist, def:advantage}
-  \lean{CatCrypt.Crypto.sdist_oracleGame_le}
-  \leanok
-  Suppose $G_{\mathrm{real}}\,A = A\,o_{\mathrm{real}}$ and
-  $G_{\mathrm{ideal}}\,A = A\,o_{\mathrm{ideal}}$ hand the adversary an oracle record.
-  If $\mathsf{Adv}(G_{\mathrm{real}}\,A, G_{\mathrm{ideal}}\,A) \le \varepsilon$ for
-  every $A$, then $\mathsf{sdist}(G_{\mathrm{real}}, G_{\mathrm{ideal}}) \le \varepsilon$.
-  The distinguisher and the initial heap are both absorbed into the adversary.
-\end{theorem}
-
 \section{The hybrid argument}
 
 \begin{theorem}[Dependent hybrid bound]
