@@ -31,7 +31,8 @@ The table has two entries:
   (`CatCryptCore.Crypto.OracleAdversaryTimed`);
 * syntactic computation trees `SPTree α`, costed by `SPTree.Timed α`
   (`CatCryptCore.Core.SPTreeTimed`, `CatCryptCore.Core.SPTreeTimedOps`): the nodes `ret`,
-  `sample`, `get`, `set` and `fail`, and the combinators `SPTree.bind` and `SPTree.map`.
+  `sample`, `get`, `set`, `fail` and the heap reset `load`, and the combinators `SPTree.bind`
+  and `SPTree.map`.
 
 Below, "tree" means a tree of a kind in the table, and the rules for oracle trees apply to
 every kind.
@@ -731,8 +732,8 @@ def oracleKind : TreeKind where
     ``CatCrypt.Tactics.DeriveTimed.fst_ite, ``CatCrypt.Tactics.DeriveTimed.snd_ite,
     ``CatCrypt.Tactics.DeriveTimed.ite_prod_mk]
 
-/-- Syntactic computation trees `SPTree α`: `ret`, `sample`, `get`, `set` and `fail` nodes, and
-the combinators `SPTree.bind` and `SPTree.map`. -/
+/-- Syntactic computation trees `SPTree α`: `ret`, `sample`, `get`, `set`, `fail` and `load`
+nodes, and the combinators `SPTree.bind` and `SPTree.map`. -/
 def spTreeKind : TreeKind where
   noun := "computation tree"
   tree := ``CatCrypt.Core.SPTree
@@ -746,7 +747,8 @@ def spTreeKind : TreeKind where
       #[.keep, .keep, .keep, .cont 1]⟩,
     ⟨``CatCrypt.Core.SPTree.get, ``CatCrypt.Core.SPTree.Timed.get, #[.data, .cont 1]⟩,
     ⟨``CatCrypt.Core.SPTree.set, ``CatCrypt.Core.SPTree.Timed.set, #[.data, .data, .cont 0]⟩,
-    ⟨``CatCrypt.Core.SPTree.fail, ``CatCrypt.Core.SPTree.Timed.fail, #[]⟩]
+    ⟨``CatCrypt.Core.SPTree.fail, ``CatCrypt.Core.SPTree.Timed.fail, #[]⟩,
+    ⟨``CatCrypt.Core.SPTree.load, ``CatCrypt.Core.SPTree.Timed.load, #[.data, .cont 0]⟩]
   combinators := #[
     ⟨``CatCrypt.Core.SPTree.bind, ``CatCrypt.Core.SPTree.Timed.bind, #[.tree, .pairFn 1], true⟩,
     ⟨``CatCrypt.Core.SPTree.map, ``CatCrypt.Core.SPTree.Timed.map, #[.perCall 0 1, .tree],
@@ -754,6 +756,7 @@ def spTreeKind : TreeKind where
   eraseLemmas := #[``CatCrypt.Core.SPTree.Timed.erase_ret,
     ``CatCrypt.Core.SPTree.Timed.erase_sample, ``CatCrypt.Core.SPTree.Timed.erase_get,
     ``CatCrypt.Core.SPTree.Timed.erase_set, ``CatCrypt.Core.SPTree.Timed.erase_fail,
+    ``CatCrypt.Core.SPTree.Timed.erase_load,
     ``CatCrypt.Core.SPTree.Timed.delay, ``CatCrypt.Core.SPTree.Timed.erase_bind,
     ``CatCrypt.Core.SPTree.Timed.erase_map, ``CatCrypt.Core.SPTree.Timed.erase_snd_ite,
     ``CatCrypt.Core.SPTree.Timed.erase_snd_dite]

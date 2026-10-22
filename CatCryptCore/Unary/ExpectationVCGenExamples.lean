@@ -158,6 +158,7 @@ theorem ecost_compileCharged_le_queryCost_vcgen {α : Type} (s : SPTree α) (h :
       show _ ≤ ((1 + t.queryCost : ℕ) : ℝ≥0∞)
       push_cast; exact le_rfl
     exact (SPCompU.triple_iff_wpE_le _ _ _).1 ht h
+  | load h₀ t _ => exact ecost_compileCharged_le_queryCost (.load h₀ t) h
 
 set_option mvcgen.warning false in
 /-- `prBad_induction` by `vcgen` on `SPCompU`. `repeatStep` is structural recursion, not a

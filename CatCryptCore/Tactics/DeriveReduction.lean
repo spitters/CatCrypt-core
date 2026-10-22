@@ -6,6 +6,7 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Core.SPTree
+public import CatCryptCore.Crypto.SDist
 public import CatCryptCore.Tactics.DeriveTimed
 public import CatCryptCore.Tactics.DeriveTimedStructure
 
@@ -61,6 +62,9 @@ syntax.
 | `SPComp.bind (sample β) k`     | `SPTree.sample β _ _ (fun b => tree (k b))`             |
 | `SPComp.bind (get l) k`        | `SPTree.get l (fun v => tree (k v))`                    |
 | `SPComp.bind (set l v) k`      | `SPTree.set l v (tree (k ()))`                          |
+| `SPComp.initHeap h₀`           | `SPTree.load h₀ (.ret ())`                              |
+| `SPComp.bind (initHeap h₀) k`  | `SPTree.load h₀ (tree (k ()))`                          |
+| `fun _ => c h₀` (`fixHeap`)    | `SPTree.load h₀ (tree c)`                               |
 | `SPComp.bind c k`, other `c`   | `SPTree.bind (tree c) (fun x => tree (k x))`            |
 | `if`, `if h :`, `match`        | the same `if` or `match` over the trees of the branches |
 | `A x₁ … xₙ`, `A` an adversary  | `A' x₁ … xₙ`                                            |
@@ -184,6 +188,9 @@ continuation), `if` by `SPTree.compile_ite_eq` and `SPTree.compile_dite_eq`, a `
   `SPTree.compile` with the tree constructors and combinators
 * `SPTree.compile_sample_ret`, `SPTree.compile_get_ret`, `SPTree.compile_set_ret` — a node
   with the trivial continuation compiles to the bare operation
+* `SPTree.compile_load_eq`, `SPTree.compile_load_initHeap_eq`,
+  `SPTree.compile_load_initHeap_ret` — a heap reset compiles to `fun _ => c h₀` and to
+  `SPComp.initHeap h₀` followed by its continuation
 -/
 
 public section
@@ -229,6 +236,22 @@ theorem compile_set_ret {l : Location} {v : l.ty} :
   simp only [compile]
   exact SPComp.bind_pure _
 
+theorem compile_load_eq {h₀ : Heap} {t : SPTree α} {c : SPComp α} (h : t.compile = c) :
+    (SPTree.load h₀ t).compile = fun _ => c h₀ := by
+  rw [compile_load, h]
+
+theorem compile_load_initHeap_eq {h₀ : Heap} {t : SPTree α} {k₀ : Unit → SPComp α}
+    (h : t.compile = k₀ ()) :
+    (SPTree.load h₀ t).compile = SPComp.bind (CatCrypt.Crypto.SPComp.initHeap h₀) k₀ := by
+  funext h'
+  simp only [compile_load, h, SPComp.bind, CatCrypt.Crypto.SPComp.initHeap,
+    CatCrypt.Prob.SDistr.pure_bind]
+
+theorem compile_load_initHeap_ret {h₀ : Heap} :
+    (SPTree.load h₀ (.ret ())).compile = CatCrypt.Crypto.SPComp.initHeap h₀ := by
+  funext h'
+  simp only [compile_load, compile_ret, SPComp.pure, CatCrypt.Crypto.SPComp.initHeap]
+
 theorem compile_ite_eq {p : Prop} [Decidable p] {t e : SPTree α} {t₀ e₀ : SPComp α}
     (ht : t.compile = t₀) (he : e.compile = e₀) :
     (if p then t else e).compile = if p then t₀ else e₀ := by
@@ -259,10 +282,38 @@ def spCompCtors : Array Name :=
   #[``CatCrypt.Core.SPComp.pure, ``CatCrypt.Core.SPComp.bind, ``CatCrypt.Core.SPComp.sample,
     ``CatCrypt.Core.SPComp.get, ``CatCrypt.Core.SPComp.set, ``CatCrypt.Core.SPComp.fail]
 
-/-- The constants at which `normalize` stops: the constructors of `SPComp`, `ite`, `dite` and
-`SPTree.compile`. -/
+/-- The constants at which `normalize` stops: the constructors of `SPComp`, the heap reset
+`SPComp.initHeap`, `ite`, `dite` and `SPTree.compile`. -/
 def normalizeStops : Array Name :=
-  spCompCtors ++ #[``ite, ``dite, ``CatCrypt.Core.SPTree.compile]
+  spCompCtors ++ #[``CatCrypt.Crypto.SPComp.initHeap, ``ite, ``dite,
+    ``CatCrypt.Core.SPTree.compile]
+
+/-- The result type `α` of the unfolded computation type `Heap → SDistr (α × Heap)`, the type
+that a heap reset `fun _ => c h₀` (or a `let` around one) is inferred at. -/
+def unfoldedSpCompArg? (t : Expr) : MetaM (Option Expr) := do
+  let t ← whnfR (← instantiateMVars t)
+  let .forallE _ d b _ := t | return none
+  if b.hasLooseBVars then return none
+  unless ← isDefEq d (mkConst ``CatCrypt.Core.Heap) do return none
+  let p? : Option Expr :=
+    if b.isAppOfArity ``CatCrypt.Prob.SDistr 1 then some b.appArg!
+    else if b.isAppOfArity ``PMF 1 && b.appArg!.isAppOfArity ``Option 1 then
+      some b.appArg!.appArg!
+    else none
+  let some p := p? | return none
+  unless p.isAppOfArity ``Prod 2 do return none
+  return some (p.getArg! 0)
+
+/-- The heap reset `fun _ => c h₀`: the computation `c` and the heap `h₀`, when `e` is a
+lambda whose body applies a term `c` to a heap `h₀`, neither mentioning the bound heap. -/
+def heapReset? (e : Expr) : MetaM (Option (Expr × Expr)) := do
+  let .lam _ _ body _ := e | return none
+  unless body.isApp do return none
+  let c := body.appFn!
+  let h₀ := body.appArg!
+  if c.hasLooseBVars || h₀.hasLooseBVars then return none
+  unless ← isDefEq (← inferType h₀) (mkConst ``CatCrypt.Core.Heap) do return none
+  return some (c, h₀)
 
 /-- The monad operations projected through the `Monad SPComp` instance. -/
 def monadOps : Array Name :=
@@ -660,7 +711,11 @@ mutual
 /-- The computation tree of the computation `e : SPComp α`. -/
 partial def reify (ctx : RCtx) (e : Expr) : TermElabM Expr := do
   let orig := e
-  let some α ← spCompArg? (← inferType e)
+  -- A heap reset `fun _ => c h₀`, or a `let` around one, has the unfolded type
+  -- `Heap → SDistr (α × Heap)`.
+  let ty ← inferType e
+  let some α ← do
+      if let some α ← spCompArg? ty then pure (some α) else unfoldedSpCompArg? ty
     | fail m!"`{e}` is not a computation `SPComp α`"
   let e ← normalize e
   if let .letE n t v b _ := e then
@@ -674,6 +729,8 @@ partial def reify (ctx : RCtx) (e : Expr) : TermElabM Expr := do
         let body ← instantiateMVars (← reify ctx (b.instantiate1 x))
         return .letE n t v (body.abstract #[x]) false
     return ← reify ctx (b.instantiate1 v)
+  if let some (c, h₀) ← heapReset? e then
+    return mkApp3 (mkConst ``CatCrypt.Core.SPTree.load) α h₀ (← reify ctx c)
   let args := e.getAppArgs
   match e.getAppFn with
   | .fvar id =>
@@ -697,6 +754,10 @@ partial def reify (ctx : RCtx) (e : Expr) : TermElabM Expr := do
     if c == ``CatCrypt.Core.SPComp.set && args.size == 2 then
       let unit : Expr := mkConst ``Unit
       return mkApp4 (mkConst ``CatCrypt.Core.SPTree.set) unit args[0]! args[1]!
+        (mkRet unit (mkConst ``Unit.unit))
+    if c == ``CatCrypt.Crypto.SPComp.initHeap && args.size == 1 then
+      let unit : Expr := mkConst ``Unit
+      return mkApp3 (mkConst ``CatCrypt.Core.SPTree.load) unit args[0]!
         (mkRet unit (mkConst ``Unit.unit))
     if c == ``CatCrypt.Core.SPComp.bind && args.size == 4 then
       return ← reifyBind ctx args[0]! args[1]! args[2]! args[3]!
@@ -803,6 +864,8 @@ partial def reifyBind (ctx : RCtx) (α β c k : Expr) : TermElabM Expr := do
   if c'.isAppOfArity ``CatCrypt.Core.SPComp.set 2 then
     return mkApp4 (mkConst ``CatCrypt.Core.SPTree.set) β cargs[0]! cargs[1]!
       (← cont (mkConst ``Unit.unit))
+  if c'.isAppOfArity ``CatCrypt.Crypto.SPComp.initHeap 1 then
+    return mkApp3 (mkConst ``CatCrypt.Core.SPTree.load) β cargs[0]! (← cont (mkConst ``Unit.unit))
   let s ← reify ctx c
   let k' ← withLocalDeclD `x α fun x => do mkLambdaFVars #[x] (← cont x)
   return mkApp4 (mkConst ``CatCrypt.Core.SPTree.bind) α β s k'
@@ -904,8 +967,8 @@ def close (g : MVarId) (pf : Expr) : MetaM Unit := do
 /-- The constants at which `treeHead` stops. -/
 def treeStops : Array Name :=
   #[``CatCrypt.Core.SPTree.ret, ``CatCrypt.Core.SPTree.sample, ``CatCrypt.Core.SPTree.get,
-    ``CatCrypt.Core.SPTree.set, ``CatCrypt.Core.SPTree.fail, ``CatCrypt.Core.SPTree.bind, ``ite,
-    ``dite]
+    ``CatCrypt.Core.SPTree.set, ``CatCrypt.Core.SPTree.fail, ``CatCrypt.Core.SPTree.load,
+    ``CatCrypt.Core.SPTree.bind, ``ite, ``dite]
 
 /-- Bring the tree `t` to a head: a constructor of `SPTree`, `SPTree.bind`, `ite`, `dite`, a
 matcher or a local; the auxiliary definitions of matches are unfolded. -/
@@ -980,6 +1043,18 @@ partial def prove (hs : Array (Expr × Expr)) (g : MVarId) : TermElabM Unit := g
         let h ← sub (← mkEq (mkCompile a s) (mkApp k₀ (mkConst ``Unit.unit)).headBeta) 0
         return ← close g (mkAppN (core `compile_set_eq) #[a, l, v, s, k₀, h])
       return ← close g (mkAppN (core `compile_set_ret) #[l, v])
+    if c == ``CatCrypt.Core.SPTree.load && targs.size == 3 then
+      let (a, h₀, s) := (targs[0]!, targs[1]!, targs[2]!)
+      if r.isAppOfArity ``CatCrypt.Core.SPComp.bind 4 then
+        let k₀ := rargs[3]!
+        let h ← sub (← mkEq (mkCompile a s) (mkApp k₀ (mkConst ``Unit.unit)).headBeta) 0
+        return ← close g (mkAppN (core `compile_load_initHeap_eq) #[a, h₀, s, k₀, h])
+      if r.isAppOfArity ``CatCrypt.Crypto.SPComp.initHeap 1 then
+        return ← close g (mkAppN (core `compile_load_initHeap_ret) #[h₀])
+      let some (c₀, _) ← heapReset? r
+        | fail m!"internal: the tree{indentExpr t}\nis not matched by{indentExpr r}"
+      let h ← sub (← mkEq (mkCompile a s) c₀) 0
+      return ← close g (mkAppN (core `compile_load_eq) #[a, h₀, s, c₀, h])
     if c == ``ite && targs.size == 5 then
       unless r.isAppOfArity ``ite 5 do
         fail m!"internal: the tree{indentExpr t}\nis not matched by{indentExpr r}"

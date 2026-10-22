@@ -73,6 +73,7 @@ def size {α : Type} : SPTree α → ℕ
   | .get _l k => 1 + Finset.univ.sum (fun v => size (k v))
   | .set _ _ t => 1 + size t
   | .fail => 1
+  | .load _ t => 1 + size t
 
 @[simp] theorem size_ret {α : Type} (a : α) : (SPTree.ret a : SPTree α).size = 1 := rfl
 
@@ -104,6 +105,7 @@ theorem size_bind_mul {α β : Type} (s : SPTree α) (f : α → SPTree β) (bou
       _ ≤ (1 + Finset.univ.sum (fun v => (k v).size)) * (bound + 1) := by linarith
   | set l v t ih => simp only [SPTree.bind, size]; nlinarith [ih, Nat.zero_le bound]
   | fail => simp [SPTree.bind, size]
+  | load h₀ t ih => simp only [SPTree.bind, size]; nlinarith [ih, Nat.zero_le bound]
 
 /-! ## Section 0b: size ≠ query — the exponential tree-level gap
 

@@ -86,6 +86,7 @@ theorem bind_ret (t : SPTree.Timed α) : t.bind (fun a => (0, ret a)) = (0, t) :
   | get l c k ih => simp only [bind, ih, Nat.add_zero]
   | set l v c t ih => simp only [bind, ih, Nat.add_zero]
   | fail => rfl
+  | load h₀ c t ih => simp only [bind, ih, Nat.add_zero]
 
 /-- The costed bind after a costed bind, with the step cost of the inner result in front, is the
 costed bind of the composed continuation. -/
@@ -105,6 +106,9 @@ theorem bind_bind (t : SPTree.Timed α) (f : α → ℕ × SPTree.Timed β)
     simp only [delay] at ih
     simp only [bind, ← ih, delay, Nat.add_assoc, Nat.add_zero]
   | fail => rfl
+  | load h₀ c t ih =>
+    simp only [delay] at ih
+    simp only [bind, ← ih, delay, Nat.add_assoc, Nat.add_zero]
 
 /-! ## Leaves -/
 
@@ -115,6 +119,7 @@ def AllRet (Q : α → Prop) : SPTree.Timed α → Prop
   | get _ _ k => ∀ v, AllRet Q (k v)
   | set _ _ _ t => AllRet Q t
   | fail => True
+  | load _ _ t => AllRet Q t
 
 theorem allRet_mono {Q Q' : α → Prop} (h : ∀ a, Q a → Q' a) (t : SPTree.Timed α) :
     AllRet Q t → AllRet Q' t := by
@@ -124,6 +129,7 @@ theorem allRet_mono {Q Q' : α → Prop} (h : ∀ a, Q a → Q' a) (t : SPTree.T
   | get l c k ih => exact fun hk v => ih v (hk v)
   | set l v c t ih => exact ih
   | fail => exact id
+  | load h₀ c t ih => exact ih
 
 /-- Every leaf of a costed bind satisfies `Q` iff at every leaf `a` of the tree every leaf of
 the continuation at `a` satisfies `Q`. -/
@@ -135,6 +141,7 @@ theorem allRet_bind (Q : β → Prop) (t : SPTree.Timed α) (f : α → ℕ × S
   | get l c k ih => simp only [bind, AllRet, ih]
   | set l v c t ih => simp only [bind, AllRet, ih]
   | fail => simp only [bind, AllRet]
+  | load h₀ c t ih => simp only [bind, AllRet, ih]
 
 /-- The query cost of the erasure is at most the time. -/
 theorem queryCost_erase_le_time (t : SPTree.Timed α) : t.erase.queryCost ≤ t.time := by
@@ -153,6 +160,9 @@ theorem queryCost_erase_le_time (t : SPTree.Timed α) : t.erase.queryCost ≤ t.
     simp only [erase, SPTree.queryCost, time]
     omega
   | fail => simp only [erase, SPTree.queryCost, time, le_refl]
+  | load h₀ c t ih =>
+    simp only [erase, SPTree.queryCost, time]
+    omega
 
 end CatCrypt.Core.SPTree.Timed
 

@@ -149,6 +149,10 @@ noncomputable def getC (l : Location) : CostComp l.ty := lift (SPComp.get l) 1
 noncomputable def setC (l : Location) (v : l.ty) : CostComp Unit :=
   lift (SPComp.set l v) 1
 
+/-- Charged heap reset to `h₀`: one unit plus one per location of `h₀`. -/
+noncomputable def loadC (h₀ : Heap) : CostComp Unit :=
+  lift (fun _ => SDistr.pure ((), h₀)) (1 + h₀.data.keys.card)
+
 /-- Failure (collects no cost: the demonic-total modality drops the
     failing branch, matching `wpE`'s treatment of `none`). -/
 noncomputable def fail : CostComp α := SPComp.fail
@@ -304,6 +308,19 @@ theorem erase_bind_lift (c : SPComp α) (price : ℕ) (f : α → CostComp β) :
   funext a
   rw [SPComp.pure_bind]
 
+/-- Binding a charged heap reset, then erasing, is binding the uninstrumented heap reset
+    against the erased continuation. -/
+theorem erase_bind_loadC (h₀ : Heap) (f : Unit → CostComp β) :
+    (CostComp.bind (CostComp.loadC h₀) f).erase
+      = SPComp.bind (fun _ => SDistr.pure ((), h₀)) fun a => (f a).erase :=
+  erase_bind_lift (α := Unit) _ _ f
+
+/-- A charged heap reset has expected cost at most one plus the number of locations of
+    `h₀`. -/
+theorem ecost_loadC_le (h₀ h : Heap) :
+    ecost (CostComp.loadC h₀) h ≤ ((1 + h₀.data.keys.card : ℕ) : ℝ≥0∞) :=
+  ecost_lift_le _ _ h
+
 /-! ## Worst-case ⟹ expected: the `MonadCostModel` seam
 
 `SPTree.queryCost` (the structural worst-case operation count behind
@@ -322,6 +339,7 @@ noncomputable def compileCharged : SPTree α → CostComp α
   | .get l k => CostComp.bind (CostComp.getC l) fun v => compileCharged (k v)
   | .set l v t => CostComp.bind (CostComp.setC l v) fun _ => compileCharged t
   | .fail => CostComp.fail
+  | .load h₀ t => CostComp.bind (CostComp.loadC h₀) fun _ => compileCharged t
 
 /-- Erasing the charges recovers the standard compilation: the
     instrumentation is semantically invisible. -/
@@ -354,6 +372,9 @@ theorem compileCharged_erase (s : SPTree α) :
     funext u
     exact ih
   | fail => simp [compileCharged, SPTree.compile]
+  | load h₀ t ih =>
+    show (CostComp.bind (CostComp.loadC h₀) fun _ => compileCharged t).erase = _
+    rw [erase_bind_loadC, ih, SPTree.compile_load_eq_bind]
 
 /-- **Conservativity**: the expected cost of the charged compilation is
     bounded by the worst-case operation count `SPTree.queryCost`. -/
@@ -401,6 +422,14 @@ theorem ecost_compileCharged_le_queryCost (s : SPTree α) (h : Heap) :
     push_cast
     exact le_rfl
   | fail => simp [compileCharged]
+  | load h₀ t ih =>
+    have hbound : ecost (CostComp.bind (CostComp.loadC h₀) fun _ =>
+        compileCharged t) h ≤ ((1 + h₀.data.keys.card : ℕ) : ℝ≥0∞) + (t.queryCost : ℝ≥0∞) :=
+      ecost_bind_le_add (fun h' => ecost_loadC_le h₀ h') (fun _ h' => ih h') h
+    refine le_trans hbound ?_
+    show _ ≤ ((1 + h₀.data.keys.card + t.queryCost : ℕ) : ℝ≥0∞)
+    push_cast
+    exact le_rfl
 
 /-- **Worst-case admissibility ⟹ expected-cost instrumentation.** Any Kleisli
     arrow admissible for `UCMonad.spTreeQueryAdm` (the query-bounded

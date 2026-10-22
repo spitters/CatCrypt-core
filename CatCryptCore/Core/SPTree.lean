@@ -18,7 +18,8 @@ analysis by structural recursion.
 
 ## Main definitions
 
-* `SPTree` — syntactic computation tree (ret, sample, get, set, fail)
+* `SPTree` — syntactic computation tree (ret, sample, get, set, fail, and the heap reset
+  load)
 * `SPTree.compile` — denotational semantics (→ SPComp)
 * `SPTree.queryCost` — worst-case operation count (structural recursion)
 * `SPTree.bind` — monadic composition (substitution at leaves)
@@ -47,6 +48,8 @@ inductive SPTree : Type → Type 1 where
   | get {α : Type} : (l : Location) → (l.ty → SPTree α) → SPTree α
   | set {α : Type} : (l : Location) → l.ty → SPTree α → SPTree α
   | fail {α : Type} : SPTree α
+  /-- Replace the heap by `h₀` and continue with the subtree. -/
+  | load {α : Type} : Heap → SPTree α → SPTree α
 
 namespace SPTree
 
@@ -62,10 +65,12 @@ noncomputable def compile : SPTree α → SPComp α
   | .get l k => SPComp.bind (SPComp.get l) (fun v => (k v).compile)
   | .set l v t => SPComp.bind (SPComp.set l v) (fun _ => t.compile)
   | .fail => SPComp.fail
+  | .load h₀ t => fun _ => t.compile h₀
 
 /-! ## Query Cost -/
 
-/-- Worst-case operation count: counts sample + get + set operations.
+/-- Worst-case operation count: counts sample + get + set operations, and charges a heap
+    reset `load h₀` one unit plus one per location of `h₀`.
     Uses `Finset.univ.sup` for branching to take the maximum cost
     across all possible continuations. Structurally recursive. -/
 def queryCost : SPTree α → ℕ
@@ -76,6 +81,7 @@ def queryCost : SPTree α → ℕ
   | .get _l k => 1 + Finset.univ.sup (fun v => (k v).queryCost)
   | .set _ _ t => 1 + t.queryCost
   | .fail => 0
+  | .load h₀ t => 1 + h₀.data.keys.card + t.queryCost
 
 /-! ## Monadic Bind (Substitution at Leaves) -/
 
@@ -86,6 +92,7 @@ def bind : SPTree α → (α → SPTree β) → SPTree β
   | .get l k, f => .get l (fun v => (k v).bind f)
   | .set l v t, f => .set l v (t.bind f)
   | .fail, _ => .fail
+  | .load h₀ t, f => .load h₀ (t.bind f)
 
 /-! ## Simp Lemmas -/
 
@@ -107,6 +114,22 @@ def bind : SPTree α → (α → SPTree β) → SPTree β
 @[simp] theorem bind_fail (f : α → SPTree β) :
     (SPTree.fail : SPTree α).bind f = .fail := rfl
 
+/-- Unfolding lemma of `compile` at a heap reset. -/
+@[simp] theorem compile_load (h₀ : Heap) (t : SPTree α) :
+    (SPTree.load h₀ t).compile = fun _ => t.compile h₀ := rfl
+
+/-- Unfolding lemma of `queryCost` at a heap reset. -/
+@[simp] theorem queryCost_load (h₀ : Heap) (t : SPTree α) :
+    (SPTree.load h₀ t).queryCost = 1 + h₀.data.keys.card + t.queryCost := rfl
+
+/-- A heap reset compiles to the computation that discards the heap, stores `h₀` and
+    continues with the subtree. -/
+theorem compile_load_eq_bind (h₀ : Heap) (t : SPTree α) :
+    (SPTree.load h₀ t).compile =
+      SPComp.bind (fun _ => SDistr.pure ((), h₀)) fun _ => t.compile := by
+  funext h
+  simp only [compile, SPComp.bind, SDistr.pure_bind]
+
 /-! ## Compile-Bind Correctness -/
 
 /-- Compilation commutes with monadic bind. -/
@@ -123,6 +146,9 @@ theorem compile_bind (s : SPTree α) (f : α → SPTree β) :
   | fail =>
     simp only [bind, compile]
     exact (SPComp.fail_bind (fun a => (f a).compile)).symm
+  | load h₀ t ih =>
+    simp only [bind, compile, ih]
+    rfl
 
 /-! ## Query Cost Bound for Bind -/
 
@@ -157,6 +183,9 @@ theorem queryCost_bind (s : SPTree α) (f : α → SPTree β) (bound : ℕ)
     have := ih
     omega
   | fail => simp [bind, queryCost]
+  | load h₀ t ih =>
+    simp only [bind, queryCost]
+    omega
 
 /-! ## Monad Laws -/
 
@@ -170,6 +199,7 @@ theorem ret_bind (a : α) (f : α → SPTree β) :
   | get l k ih => simp only [bind]; congr_funext
   | set l v t ih => simp only [bind]; congr_funext
   | fail => rfl
+  | load h₀ t ih => simp only [bind]; congr_funext
 
 @[grind =] theorem bind_assoc (s : SPTree α) (f : α → SPTree β) (g : β → SPTree γ) :
     (s.bind f).bind g = s.bind (fun a => (f a).bind g) := by
@@ -179,6 +209,7 @@ theorem ret_bind (a : α) (f : α → SPTree β) :
   | get l k ih => simp only [bind]; congr_funext
   | set l v t ih => simp only [bind]; congr_funext
   | fail => rfl
+  | load h₀ t ih => simp only [bind]; congr_funext
 
 
 end SPTree

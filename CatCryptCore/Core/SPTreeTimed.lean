@@ -30,9 +30,10 @@ bound `ecost_compileCharged_le_queryCost` of `compileCharged`.
 
 ## Cost model
 
-The registered primitive costs are one unit per `sample`, `get` and `set` node (the
-`SPTree.queryCost` convention), none for `ret` and `fail`, and each step cost as written
-in the instrumented program.
+The registered primitive costs are one unit per `sample`, `get` and `set` node, one unit
+plus one per location of `h₀` for a heap reset `load h₀` (the `SPTree.queryCost`
+convention), none for `ret` and `fail`, and each step cost as written in the instrumented
+program.
 
 ## Main definitions
 
@@ -67,6 +68,8 @@ inductive SPTree.Timed (α : Type) : Type 1 where
   | set (l : Location) (v : l.ty) (c : ℕ) (t : SPTree.Timed α) : SPTree.Timed α
   /-- Failure. -/
   | fail : SPTree.Timed α
+  /-- Replace the heap by `h₀` and continue, at step cost `c`, with `t`. -/
+  | load (h₀ : Heap) (c : ℕ) (t : SPTree.Timed α) : SPTree.Timed α
 
 namespace SPTree.Timed
 
@@ -79,6 +82,7 @@ def erase : SPTree.Timed α → SPTree α
   | get l _ k => .get l fun v => erase (k v)
   | set l v _ t => .set l v (erase t)
   | fail => .fail
+  | load h₀ _ t => .load h₀ (erase t)
 
 /-- Worst-case time: one unit per operation plus the step costs, maximised over the
 branches. -/
@@ -90,6 +94,7 @@ def time : SPTree.Timed α → ℕ
   | get _ c k => 1 + Finset.univ.sup fun v => c v + time (k v)
   | set _ _ c t => 1 + (c + time t)
   | fail => 0
+  | load h₀ c t => 1 + h₀.data.keys.card + (c + time t)
 
 /-- The tree `s` with zero step costs. -/
 def ofTree : SPTree α → SPTree.Timed α
@@ -98,6 +103,7 @@ def ofTree : SPTree α → SPTree.Timed α
   | .get l k => get l (fun _ => 0) fun v => ofTree (k v)
   | .set l v t => set l v 0 (ofTree t)
   | .fail => fail
+  | .load h₀ t => load h₀ 0 (ofTree t)
 
 theorem erase_ofTree (s : SPTree α) : (ofTree s).erase = s := by
   induction s with
@@ -106,6 +112,7 @@ theorem erase_ofTree (s : SPTree α) : (ofTree s).erase = s := by
   | get l k ih => simp only [ofTree, erase, ih]
   | set l v t ih => simp only [ofTree, erase, ih]
   | fail => rfl
+  | load h₀ t ih => simp only [ofTree, erase, ih]
 
 theorem time_ofTree (s : SPTree α) : (ofTree s).time = s.queryCost := by
   induction s with
@@ -114,6 +121,7 @@ theorem time_ofTree (s : SPTree α) : (ofTree s).time = s.queryCost := by
   | get l k ih => simp only [ofTree, time, SPTree.queryCost, Nat.zero_add, ih]
   | set l v t ih => simp only [ofTree, time, SPTree.queryCost, Nat.zero_add, ih]
   | fail => rfl
+  | load h₀ t ih => simp only [ofTree, time, SPTree.queryCost, Nat.zero_add, ih]
 
 end SPTree.Timed
 
@@ -139,6 +147,8 @@ noncomputable def compileTimed : SPTree.Timed α → CostComp α
   | .set l v c t => CostComp.bind (CostComp.lift (SPComp.set l v) 1) fun _ =>
       CostComp.bind (CostComp.lift (SPComp.pure ()) c) fun _ => compileTimed t
   | .fail => CostComp.fail
+  | .load h₀ c t => CostComp.bind (CostComp.loadC h₀) fun _ =>
+      CostComp.bind (CostComp.lift (SPComp.pure ()) c) fun _ => compileTimed t
 
 /-- Erasing a step charge leaves the erased continuation. -/
 theorem erase_bind_step (n : ℕ) (f : Unit → CostComp β) :
@@ -159,6 +169,9 @@ theorem compileTimed_erase (s : SPTree.Timed α) : (compileTimed s).erase = s.er
     simp only [compileTimed, erase_bind_lift, SPComp.pure_bind, ih, SPTree.Timed.erase,
       SPTree.compile]
   | fail => simp only [compileTimed, erase_fail, SPTree.Timed.erase, SPTree.compile]
+  | load h₀ c t ih =>
+    simp only [compileTimed, SPTree.Timed.erase, erase_bind_loadC, erase_bind_lift,
+      SPComp.pure_bind, ih, SPTree.compile_load_eq_bind]
 
 /-- A step charge `n` followed by a continuation of expected cost at most `C` has expected
 cost at most `n + C`. -/
@@ -206,6 +219,15 @@ theorem ecost_compileTimed_le_time (s : SPTree.Timed α) (h : Heap) :
     push_cast
     exact le_rfl
   | fail => simp [compileTimed]
+  | load h₀ c t ih =>
+    rw [compileTimed]
+    refine le_trans (ecost_bind_le_add (C₁ := ((1 + h₀.data.keys.card : ℕ) : ℝ≥0∞))
+      (C₂ := (c : ℝ≥0∞) + (t.time : ℝ≥0∞))
+      (fun h' => ecost_loadC_le h₀ h')
+      (fun _ h' => ecost_bind_step_le (fun h'' => ih h'') h') h) ?_
+    simp only [SPTree.Timed.time]
+    push_cast
+    exact le_rfl
 
 /-- With zero step costs, the expected cost is at most the worst-case operation count. -/
 theorem ecost_compileTimed_ofTree_le (s : SPTree α) (h : Heap) :

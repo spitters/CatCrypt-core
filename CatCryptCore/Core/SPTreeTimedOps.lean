@@ -76,6 +76,10 @@ theorem erase_set (l : Location) (v : l.ty) (c : ℕ) (t : SPTree.Timed α) :
 theorem erase_fail : (fail : SPTree.Timed α).erase = .fail := by
   simp only [erase]
 
+theorem erase_load (h₀ : Heap) (c : ℕ) (t : SPTree.Timed α) :
+    (load h₀ c t).erase = .load h₀ t.erase := by
+  simp only [erase]
+
 theorem time_ret (a : α) : (ret a : SPTree.Timed α).time = 0 := by
   simp only [time]
 
@@ -96,6 +100,10 @@ theorem time_set (l : Location) (v : l.ty) (c : ℕ) (t : SPTree.Timed α) :
 theorem time_fail : (fail : SPTree.Timed α).time = 0 := by
   simp only [time]
 
+theorem time_load (h₀ : Heap) (c : ℕ) (t : SPTree.Timed α) :
+    (load h₀ c t).time = 1 + h₀.data.keys.card + (c + t.time) := by
+  simp only [time]
+
 /-- The step cost `c` in front of the step-prefixed tree `x`. -/
 def delay (c : ℕ) (x : ℕ × SPTree.Timed α) : ℕ × SPTree.Timed α := (c + x.1, x.2)
 
@@ -111,6 +119,7 @@ def bind : SPTree.Timed α → (α → ℕ × SPTree.Timed β) → ℕ × SPTree
   | get l c k, f => (0, get l (fun v => c v + (bind (k v) f).1) fun v => (bind (k v) f).2)
   | set l v c t, f => (0, set l v (c + (bind t f).1) (bind t f).2)
   | fail, _ => (0, fail)
+  | load h₀ c t, f => (0, load h₀ (c + (bind t f).1) (bind t f).2)
 
 /-- Costed map: `f` at a leaf `a` costs `fc a`. -/
 def map (f : α → β) (fc : α → ℕ) (A : SPTree.Timed α) : ℕ × SPTree.Timed β :=
@@ -124,6 +133,7 @@ theorem erase_bind (A : SPTree.Timed α) (f : α → ℕ × SPTree.Timed β) :
   | get l c k ih => simp only [bind, erase, SPTree.bind, ih]
   | set l v c t ih => simp only [bind, erase, SPTree.bind, ih]
   | fail => rfl
+  | load h₀ c t ih => simp only [bind, erase, SPTree.bind, ih]
 
 theorem erase_map (f : α → β) (fc : α → ℕ) (A : SPTree.Timed α) :
     (A.map f fc).2.erase = A.erase.map f := by
@@ -166,6 +176,9 @@ theorem stepTime_bind_le (A : SPTree.Timed α) (f : α → ℕ × SPTree.Timed �
     simp only [stepTime, bind, time] at ih ⊢
     omega
   | fail => simp [stepTime, bind, time]
+  | load h₀ c t ih =>
+    simp only [stepTime, bind, time] at ih ⊢
+    omega
 
 /-- The time of a costed map is at most the time of the tree plus a bound `t` on the cost of
 the function. -/

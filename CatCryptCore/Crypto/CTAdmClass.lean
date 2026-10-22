@@ -105,6 +105,8 @@ inductive SPShape : Type 1 where
   | get (l : Location) : (l.ty → SPShape) → SPShape
   | set (l : Location) : SPShape → SPShape
   | fail : SPShape
+  /-- A heap reset to a heap with `n` locations. -/
+  | load (n : ℕ) : SPShape → SPShape
 
 namespace SPShape
 
@@ -115,6 +117,7 @@ def bind : SPShape → SPShape → SPShape
   | .get l k, s => .get l (fun v => (k v).bind s)
   | .set l t, s => .set l (t.bind s)
   | .fail, _ => .fail
+  | .load n t, s => .load n (t.bind s)
 
 /-- Operation count at shape level. -/
 def queryCost : SPShape → ℕ
@@ -125,6 +128,7 @@ def queryCost : SPShape → ℕ
   | .get l k => 1 + Finset.univ.sup (fun v => (k v).queryCost)
   | .set _ t => 1 + t.queryCost
   | .fail => 0
+  | .load n t => 1 + n + t.queryCost
 
 @[grind =] theorem bind_ret (s : SPShape) : s.bind .ret = s := by
   induction s with
@@ -133,6 +137,7 @@ def queryCost : SPShape → ℕ
   | get l k ih => simp only [bind]; congr_funext
   | set l t ih => simp only [bind]; congr_funext
   | fail => rfl
+  | load n t ih => simp only [bind]; congr_funext
 
 @[grind =] theorem bind_assoc (s₁ s₂ s₃ : SPShape) :
     (s₁.bind s₂).bind s₃ = s₁.bind (s₂.bind s₃) := by
@@ -142,6 +147,7 @@ def queryCost : SPShape → ℕ
   | get l k ih => simp only [bind]; congr_funext
   | set l t ih => simp only [bind]; congr_funext
   | fail => rfl
+  | load n t ih => simp only [bind]; congr_funext
 
 end SPShape
 
@@ -156,6 +162,7 @@ def toShape : SPTree α → SPShape
   | .get l k => .get l (fun v => (k v).toShape)
   | .set l _ t => .set l t.toShape
   | .fail => .fail
+  | .load h₀ t => .load h₀.data.keys.card t.toShape
 
 /-- queryCost factors through toShape. -/
 theorem queryCost_eq_shape_queryCost (s : SPTree α) :
@@ -171,6 +178,8 @@ theorem queryCost_eq_shape_queryCost (s : SPTree α) :
   | set l v t ih =>
     simp only [SPTree.queryCost, toShape, SPShape.queryCost]; exact congr_arg _ ih
   | fail => rfl
+  | load h₀ t ih =>
+    simp only [SPTree.queryCost, toShape, SPShape.queryCost]; exact congr_arg _ ih
 
 /-- toShape commutes with bind when the continuation has constant shape. -/
 theorem toShape_bind (s : SPTree α) (f : α → SPTree β) (sf : SPShape)
@@ -187,6 +196,8 @@ theorem toShape_bind (s : SPTree α) (f : α → SPTree β) (sf : SPShape)
     simp only [SPTree.bind, toShape, SPShape.bind]; congr_funext
   | fail =>
     simp [SPTree.bind, toShape, SPShape.bind]
+  | load h₀ t ih =>
+    simp only [SPTree.bind, toShape, SPShape.bind]; congr_funext
 
 end CatCrypt.Core.SPTree
 
