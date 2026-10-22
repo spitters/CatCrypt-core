@@ -37,6 +37,9 @@ A proposition field may depend on any earlier field (a query bound on a tree fie
 erasure relation it is stated about the erased fields. A type, data, tree or computation field
 whose type depends on a proposition field or on a tree or computation field is refused.
 
+The mirror is elaborated from its printed source. A parameter with an inaccessible name (an
+anonymous instance binder of a `variable` command) is printed under an accessible name.
+
 ## Main definitions
 
 * `derive_timed_structure S` — define `S.Timed`, `S.Timed.Erases`, `S.Timed.TimeBound`
@@ -107,6 +110,32 @@ def erasedField (A' : Expr) (f : Name) (k : FieldKind) (t : Expr) : MetaM Expr :
         #[← mkAppM ``CatCrypt.Core.SPTree.Timed.erase #[mkAppN v ys]])
   | _ => return v
 
+/-- The type `t` with each of its first `n` binder names that is inaccessible (the anonymous
+instance binder `[SampleableType W]` of a `variable` command, named `inst✝`) replaced by an
+accessible name `instᵢ` distinct from the other binder names, so that a printed binder parses. -/
+def accessibleBinders (t : Expr) (n : Nat) : Expr :=
+  let names := collect t n #[]
+  go t 0 names
+where
+  collect (t : Expr) (n : Nat) (acc : Array Name) : Array Name :=
+    match n, t with
+    | n + 1, .forallE nm _ b _ => collect b n (acc.push nm)
+    | _, _ => acc
+  go (t : Expr) (i : Nat) (names : Array Name) : Expr :=
+    match t with
+    | .forallE nm d b bi =>
+      if i < names.size then
+        let nm' := if nm.hasMacroScopes || nm.isAnonymous then
+            let base := nm.eraseMacroScopes
+            let base := if base.isAnonymous then `inst else base
+            fresh (base.appendIndexAfter i) names
+          else nm
+        .forallE nm' d (go b (i + 1) names) bi
+      else t
+    | _ => t
+  fresh (c : Name) (names : Array Name) : Name :=
+    if names.contains c then c.appendAfter "'" else c
+
 /-- The constructor type of `S` after its parameters, the parameters, and the fields of `S` with
 their kinds, continued in `k`. -/
 def withCtor {β : Type} (S : Name)
@@ -117,7 +146,8 @@ def withCtor {β : Type} (S : Name)
   let some sinfo := getStructureInfo? env S
     | throwError "derive_timed_structure: `{S}` is not a structure"
   let ctor ← getConstInfoCtor iv.ctors[0]!
-  forallBoundedTelescope ctor.type iv.numParams fun ps rest => k ps rest sinfo.fieldNames
+  forallBoundedTelescope (accessibleBinders ctor.type iv.numParams) iv.numParams fun ps rest =>
+    k ps rest sinfo.fieldNames
 
 /-- The source text of the costed mirror `S.Timed` of the structure `S`. -/
 def mirrorText (S : Name) : TermElabM String :=

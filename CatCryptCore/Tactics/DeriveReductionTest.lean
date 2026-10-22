@@ -416,4 +416,106 @@ derive_reduction o6SRed2
 example (K : O6Kit2) (decCost : ℕ → ℕ) : (o6SRed2.timed K decCost).Erases (o6SRed2 K) :=
   o6SRed2.erase_timed K decCost
 
+/-! ## Recursive computations -/
+
+section RecursiveComputation
+
+/-- A kit with a computation and a data function. -/
+structure LoopKit (W : Type) where
+  /-- A computation. -/
+  step : W → SPComp W
+  /-- A data function. -/
+  mix : W → W → W
+
+/-- `kit.step` on each element of a list: a recursion over `List` with primitives. -/
+noncomputable def loopC {W : Type} (kit : LoopKit W) : List W → SPComp (List W)
+  | [] => SPComp.pure []
+  | x :: xs => (kit.step (kit.mix x x)).bind fun y =>
+      (loopC kit xs).bind fun ys => SPComp.pure (y :: ys)
+
+/-- A reduction calling the recursive computation `loopC`. -/
+noncomputable def loopRed {W : Type} (kit : LoopKit W) (A : List W → SPComp Bool)
+    (xs : List W) : SPComp Bool :=
+  (loopC kit xs).bind A
+
+derive_reduction loopRed
+
+/-- `n` runs of `node`: a recursion over `ℕ` with a computation argument, the shape of the
+recursion simulator `foldSimProof`. -/
+noncomputable def foldC {X : Type} (node : SPComp X) : ℕ → SPComp (List X)
+  | 0 => SPComp.pure []
+  | n + 1 => node.bind fun w => (foldC node n).bind fun rest => SPComp.pure (w :: rest)
+
+/-- Three uniform samples, then `A`. -/
+noncomputable def foldRed {X : Type} [Fintype X] [Nonempty X] (A : List X → SPComp Bool) :
+    SPComp Bool :=
+  (foldC (SPComp.sample X) 3).bind A
+
+derive_reduction foldRed
+
+/-- `n` runs of `node`, assembled coordinate by coordinate: a recursion whose result type
+depends on the counter, the shape of `tkNodeFold`. -/
+noncomputable def tupleC {X : Type} (node : SPComp X) : (n : ℕ) → SPComp (Fin n → X)
+  | 0 => SPComp.pure fun i => i.elim0
+  | n + 1 => node.bind fun w => (tupleC node n).bind fun rest => SPComp.pure (Fin.cons w rest)
+
+/-- Two runs of `node`, then `A`. -/
+noncomputable def tupleRed {X : Type} (node : SPComp X) (A : (Fin 2 → X) → SPComp Bool) :
+    SPComp Bool :=
+  (tupleC node 2).bind A
+
+derive_reduction tupleRed
+
+/-- A recursive reduction whose recursive call changes the adversary: the shape of the hop
+reduction of a chain of epochs. -/
+noncomputable def chainRed {X : Type} (node : SPComp X) :
+    ℕ → (List X → SPComp Bool) → SPComp Bool
+  | 0, D => D []
+  | n + 1, D => chainRed node n fun rest => node.bind fun w => D (w :: rest)
+
+derive_reduction chainRed
+
+end RecursiveComputation
+
+/-! ## A field applied through a `let` of a field path -/
+
+section LetFieldPath
+
+/-- A scheme with a computation field. -/
+structure PCS where
+  /-- Commit. -/
+  commit : ℕ → SPComp ℕ
+
+/-- A package holding a scheme. -/
+structure Pkg where
+  /-- The scheme. -/
+  scheme : PCS
+
+/-- A field of a `let`-bound field path of a binder. -/
+noncomputable def letRed (pkg : Pkg) (A : ℕ → SPComp Bool) : SPComp Bool :=
+  let 𝒮 := pkg.scheme
+  (𝒮.commit 0).bind A
+
+derive_reduction letRed
+
+end LetFieldPath
+
+/-! ## Carriers in another universe -/
+
+section Universe
+
+universe u
+
+/-- A reduction over a carrier in a universe other than `Type`. -/
+noncomputable def univRed {X : Type u} (node : SPComp X) (A : X → SPComp Bool) : SPComp Bool :=
+  node.bind A
+
+/--
+error: derive_reduction: the carrier `X` is in a universe other than `Type`; computation trees `SPTree` are over `Type`: derive the reduction at carriers in `Type`
+-/
+#guard_msgs in
+derive_reduction univRed
+
+end Universe
+
 end CatCrypt.Tactics.DeriveReductionTest

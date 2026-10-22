@@ -117,10 +117,16 @@ Costs follow call-by-value evaluation:
   as one call of the interface, and gets no cost companion; a method of any other class on a
   local instance (a primitive interface of a protocol) keeps its cost companion;
 * `if` and `match` cost one, plus the costs of the condition or the discriminants, plus the
-  cost of the branch taken;
+  cost of the branch taken; a match of a tree whose motive depends on its discriminants
+  (`SPTree (Fin n → X)` on `n`) has the costed tree type at each discriminant as its motive;
 * constructors, literals, numerals, casts, projections and variables cost nothing beyond
   their arguments (the parameters of a constructor's inductive type are not among them), and
   a closure costs nothing to build;
+* an elimination from an empty type (`Fin.elim0`, `False.elim`, `absurd`) is never evaluated
+  and costs nothing;
+* a function field applied to arguments, of a structure that reduces to a constructor
+  application (a constant structure `xorEnc`, or a `let` bound to one), costs the structure
+  plus the field's value at the arguments, priced as an unfolded definition;
 * a `rand` or `query` node costs its registered unit (`OracleAdv.Timed.TimeBound`); the
   distribution of a `rand` node is priced by the rules above, with the uniform and point
   distributions free, since sampling is included in the node's unit;
@@ -149,6 +155,11 @@ Costs follow call-by-value evaluation:
 The binders of `R` are those of its type, which is reduced through type definitions: a
 reduction whose declared type is an adversary type `W → W → W → SPComp Bool` under a name
 takes the three binders of that type.
+
+The erasure theorem of a recursion whose result holds functions (`SPTree (Fin n → X)`) is
+proved by induction with each induction hypothesis
+`(R.timed ys).2.erase.bind (fun y => ret (ε y)) = R ys` used from right to left
+(`rewriteRecHyps`), so that the recursive call becomes the erased costed call followed by `ε`.
 
 A recursive data function without a registered cost is priced by its cost derived on demand
 with `derive_cost` (`deriveCostCore`), by its own recursion. A derived cost takes, after the
@@ -210,6 +221,10 @@ Isabelle's `time_fun` command.
   holds costed closures
 * `OracleAdv.Timed.timeBound_simulateHat_inv` — the time of a costed simulation under a state
   invariant indexed by the number of queries: `T + ∑_{j < q} t (i + j)`
+* `OracleAdv.Timed.allRet_bind`, `OracleAdv.Timed.allRet_mono` — leaves of a sequencing, and
+  monotonicity of `AllRet`
+* `OracleAdv.Timed.allRet_simulateHat_inv` — the final state of a costed simulation satisfies
+  the state invariant at index `i + q`
 -/
 
 public section
@@ -288,7 +303,7 @@ theorem _root_.CatCrypt.Tactics.DeriveTimed.snd_ite {β γ : Type _} (c : Prop) 
 /-- The costed simulation of a handler whose state `Ŝ` carries costed closures: the
 simulation `simulate impl A s`, with the erasure `ε : Ŝ → S` of the state and a lift
 `ι : S → Ŝ` as parameters, which state its erasure theorem `erase_simulateHat_bind`. -/
-def simulateHat {D' R' S Ŝ : Type} (_ε : Ŝ → S) (_ι : S → Ŝ)
+@[expose] def simulateHat {D' R' S Ŝ : Type} (_ε : Ŝ → S) (_ι : S → Ŝ)
     (impl : Ŝ → D → ℕ × Timed D' R' (R × Ŝ)) (A : Timed D R α) (s : Ŝ) :
     ℕ × Timed D' R' (α × Ŝ) :=
   simulate impl A s
@@ -404,6 +419,51 @@ theorem timeBound_simulateHat_inv {D' R' S Ŝ : Type} (ε : Ŝ → S) (ι : S �
         (timeBound_bind_of_allRet hi.1.2 hi.2 hk)
       exact h.mono (by have := hi.1.1; have := hA.1; omega)
 
+/-- Every leaf of a sequencing satisfies `P` when every leaf `a` of the first tree satisfies
+`Q` and the continuation at such an `a` has all its leaves in `P`. -/
+theorem allRet_bind {β : Type} {Q : α → Prop} {P : β → Prop} {A : Timed D R α}
+    {f : α → ℕ × Timed D R β} (hA : AllRet Q A) (hf : ∀ a, Q a → AllRet P (f a).2) :
+    AllRet P (A.bind f).2 := by
+  induction A with
+  | ret a => exact hf a hA
+  | rand p c k ih => exact fun b => ih b (hA b)
+  | query d c k ih => exact fun r => ih r (hA r)
+
+/-- `AllRet` is monotone in its predicate. -/
+theorem allRet_mono {P Q : α → Prop} (hPQ : ∀ a, P a → Q a) {A : Timed D R α}
+    (h : AllRet P A) : AllRet Q A := by
+  induction A with
+  | ret a => exact hPQ a h
+  | rand p c k ih => exact fun b => ih b (h b)
+  | query d c k ih => exact fun r => ih r (h r)
+
+/-- **Final state of a simulation under a state invariant.** With `Inv` monotone in its
+index and every program of `impl` from a state with `Inv i` returning states with
+`Inv (i + 1)`, a simulation of an adversary with at most `q` queries from a state with
+`Inv i` returns states with `Inv (i + q)`. -/
+theorem allRet_simulateHat_inv {D' R' S Ŝ : Type} (ε : Ŝ → S) (ι : S → Ŝ)
+    (impl : Ŝ → D → ℕ × Timed D' R' (R × Ŝ)) (Inv : ℕ → Ŝ → Prop)
+    (himpl : ∀ i s d, Inv i s → AllRet (fun y => Inv (i + 1) y.2) (impl s d).2)
+    (hmono : ∀ i s, Inv i s → Inv (i + 1) s)
+    {A : Timed D R α} {q : ℕ} (hq : A.erase.IsQueryBound q) (i : ℕ) (s : Ŝ) (hs : Inv i s) :
+    AllRet (fun y => Inv (i + q) y.2) (simulateHat ε ι impl A s).2 := by
+  unfold simulateHat
+  induction A generalizing q i s with
+  | ret a =>
+    show Inv (i + q) s
+    clear hq
+    induction q with
+    | zero => exact hs
+    | succ q ih => exact hmono _ _ ih
+  | rand p c k ih => exact fun b => ih b (hq b) i s hs
+  | query d c k ih =>
+    cases q with
+    | zero => exact (hq : False).elim
+    | succ q =>
+      refine allRet_bind (himpl i s d hs) fun x hx => ?_
+      have h := ih x.1 (hq x.1) (i + 1) x.2 hx
+      rwa [show i + 1 + q = i + (q + 1) by omega] at h
+
 end CatCrypt.Crypto.OracleAdv.Timed
 
 namespace CatCrypt.Core.SPTree.Timed
@@ -487,14 +547,17 @@ register_option derive_timed.maxDepth : Nat := {
     derive_reduction unfold to price a call"
 }
 
-/-- The maximal nesting of unfolded data definitions: the option `derive_timed.maxDepth`. -/
-def maxDepth : CoreM Nat := return derive_timed.maxDepth.get (← getOptions)
+/-- The maximal nesting of unfolded data definitions: the option `derive_timed.maxDepth`, read
+by its name, so that a command of this module runs before the option's initializer has (the
+tests of the module). -/
+def maxDepth : CoreM Nat := return (← getOptions).get `derive_timed.maxDepth (16 : Nat)
 
 /-- Constants that cost nothing beyond their arguments. -/
 def freeConstants : Array Name :=
   #[``OfNat.ofNat, ``Nat.cast, ``NatCast.natCast, ``Int.cast, ``IntCast.intCast, ``id,
     ``Eq.rec, ``Eq.ndrec, ``Eq.mp, ``Eq.mpr, ``cast, ``Subtype.val, ``Fin.val,
-    ``PMF.uniformOfFintype, ``PMF.pure, ``Classical.arbitrary, ``Inhabited.default]
+    ``PMF.uniformOfFintype, ``PMF.pure, ``Classical.arbitrary, ``Inhabited.default,
+    ``Fin.elim0, ``False.elim, ``absurd, ``Empty.elim, ``PEmpty.elim]
 
 /-- Operations of unit cost on `ℕ`: a call costs one. -/
 def natUnitOps : Array Name :=
@@ -1225,6 +1288,42 @@ def computedFieldKey? (ctx : Ctx) (f : Expr) (np : Nat) (args : Array Expr) :
     unless xs.size == bs.size do return none
     return some (← mkLambdaFVars xs (mkAppN f (ps.push (mkAppN gp xs))), bs)
 
+/-- The equations among the conjuncts of the proof `pf` of `ty`. -/
+partial def conjEqns (pf ty : Expr) : MetaM (Array Expr) := do
+  -- At default transparency, so that a match of the hypothesis on a constructor reduces.
+  let ty ← whnf (← instantiateMVars ty)
+  if ty.isAppOfArity ``And 2 then
+    return (← conjEqns (mkApp3 (mkConst ``And.left) (ty.getArg! 0) (ty.getArg! 1) pf)
+        (ty.getArg! 0)) ++
+      (← conjEqns (mkApp3 (mkConst ``And.right) (ty.getArg! 0) (ty.getArg! 1) pf) (ty.getArg! 1))
+  if ty.isAppOfArity ``Eq 3 then return #[pf]
+  return #[]
+
+/-- Rewrite the goal `g` from right to left with each hypothesis (or conjunct of one) that is
+an equation whose right side is a call of `c`: the induction hypotheses of an erasure theorem
+`… = c ys`. -/
+def rewriteRecHyps (c : Name) (g : MVarId) : MetaM MVarId := g.withContext do
+  let mut g := g
+  let mut used : Array FVarId := #[]
+  for d in ← getLCtx do
+    if d.isImplementationDetail then continue
+    for pf in ← conjEqns d.toExpr d.type do
+      let some (ty, lhs, rhs) := (← instantiateMVars (← inferType pf)).eq? | continue
+      unless rhs.isAppOf c do continue
+      let gt ← instantiateMVars (← g.getType)
+      unless (gt.find? (· == rhs)).isSome do continue
+      -- The occurrences of `rhs` replaced by `lhs`, by congruence with the motive that
+      -- abstracts them.
+      let motive ← withLocalDeclD `z ty fun z => do
+        mkLambdaFVars #[z] (gt.replace fun s => if s == rhs then some z else none)
+      unless ← isTypeCorrect motive do continue
+      let gNew := (mkApp motive lhs).headBeta
+      g ← g.replaceTargetEq gNew (← mkEqSymm (← mkCongrArg motive pf))
+      used := used.push d.fvarId
+  -- A used hypothesis is cleared, so that a later `simp [*]` does not rewrite back.
+  for h in used do g ← g.tryClear h
+  return g
+
 mutual
 
 /-- The cost of evaluating the data term `e`. -/
@@ -1596,6 +1695,24 @@ partial def costConst (ctx : Ctx) (e : Expr) (c : Name) (args : Array Expr) :
         fail m!"needs a registered primitive: `{c}` unfolds too deep"
       return ← costOf { ctx with depth := ctx.depth + 1 } e'
     if args.size > info.numParams + 1 then
+      -- A field of a structure that reduces to a constructor application (a constant
+      -- structure, or a `let` bound to one): the structure is priced, and the field's value
+      -- applied to the arguments is priced as unfolded.
+      let s := args[info.numParams]!
+      let rest := args.extract (info.numParams + 1) args.size
+      let sv ← match s.consumeMData with
+        | .fvar id => do
+          match ← id.getValue? with
+          | some v => pure v
+          | none => pure s
+        | _ => pure s
+      let sw ← whnf sv
+      if let some cv ← isConstructorApp? sw then
+        if let some v := sw.getAppArgs[cv.numParams + info.i]? then
+          if ctx.depth ≥ (← maxDepth) then
+            fail m!"needs a registered primitive: `{c}` unfolds too deep"
+          return add (← costOf ctx s)
+            (← costOf { ctx with depth := ctx.depth + 1 } (mkAppN v rest).headBeta)
       fail m!"a function bound in data: the field `{c}` is applied in `{e}`"
     return ← argsCost ctx args
   -- A definition, unfolded.
@@ -1656,10 +1773,12 @@ partial def costCases (ctx : Ctx) (e : Expr) (c : Name) (args : Array Expr) :
 /-- The matcher application `e` with its discriminants and alternatives prepared for a
 translation with result type `resultType`: the translated discriminants replaced by their
 erasures, and each alternative translated by `alt` in the context in which its fields stand
-for the translated discriminants they bind. Returns the new application and the cost of the
-data discriminants. -/
+for the translated discriminants they bind. A motive whose body depends on the discriminants
+(a result type `SPTree (Fin n → X)` of a match on `n`) is translated by `motiveRes?` at its
+body. Returns the new application and the cost of the data discriminants. -/
 partial def mapMatch (ctx : Ctx) (e resultType : Expr)
-    (alt : Ctx → Expr → TermElabM Expr) : TermElabM (Expr × Expr) := do
+    (alt : Ctx → Expr → TermElabM Expr)
+    (motiveRes? : Option (Expr → TermElabM Expr) := none) : TermElabM (Expr × Expr) := do
   let some app ← matchMatcherApp? e | fail m!"`{e}` is not a matcher application"
   unless app.remaining.isEmpty do
     fail m!"the match `{e}` has a motive that depends on its discriminants"
@@ -1687,7 +1806,12 @@ partial def mapMatch (ctx : Ctx) (e resultType : Expr)
       let dt ← inferType d
       if (← isDataExpr d) && (← whnfR dt).isForall && (← treeTy? dt).isNone then
         trDiscrs := trDiscrs.push (dt, ⟨.fn, d, some (← companionOf ctx d)⟩)
-  let motive ← lambdaTelescope app.motive fun xs _ => mkLambdaFVars xs resultType
+  let motive ← lambdaTelescope app.motive fun xs body => do
+    if xs.any (fun x => body.containsFVar x.fvarId!) then
+      match motiveRes? with
+      | some f => mkLambdaFVars xs (← f body)
+      | none => fail m!"the match `{e}` has a motive that depends on its discriminants"
+    else mkLambdaFVars xs resultType
   let lvl ← getLevel resultType
   let levels := match app.uElimPos? with
     | some i => app.matcherLevels.set! i lvl
@@ -1720,7 +1844,7 @@ partial def mapMatch (ctx : Ctx) (e resultType : Expr)
 
 /-- The cost of a data-valued match: one, the discriminants, and the branch taken. -/
 partial def costMatch (ctx : Ctx) (e : Expr) : TermElabM Expr := do
-  let (e', cd) ← mapMatch ctx e (mkConst ``Nat) costOf
+  let (e', cd) ← mapMatch ctx e (mkConst ``Nat) costOf (some fun _ => pure (mkConst ``Nat))
   return add (natE 1) (add cd e')
 
 /-- The translation of the oracle tree `e`: a step-prefixed costed tree whose erasure is `e`
@@ -1904,7 +2028,16 @@ partial def trConst (ctx : Ctx) (e : Expr) (c : Name) (args : Array Expr) (T : T
       if app.discrs.any fun d => (treeLocal? ctx d).isSome then
         let some e' ← delta? e | fail m!"the match `{e}` does not unfold"
         return ← tr ctx (← Core.betaReduce e')
-    let (e', cd) ← mapMatch ctx e T.pairType tr
+    -- A dependent motive `fun n => SPTree (τ n)`: the costed tree type at each `n`, of the
+    -- interface of `T` (costed results or the plain one).
+    let hatted := match ← treeTyH? (← inferType e) with
+      | some Th => Th.pairType == T.pairType
+      | none => false
+    let motiveRes (body : Expr) : TermElabM Expr := do
+      let some Tb ← (if hatted then treeTyH? body else treeTy? body)
+        | fail m!"the match `{e}` has a motive whose body `{body}` is not a tree"
+      return Tb.pairType
+    let (e', cd) ← mapMatch ctx e T.pairType tr (some motiveRes)
     return T.delayE (add (natE 1) cd) e'
   if c == ``CatCrypt.Crypto.OracleAdv.casesOn then
     return ← trTreeCases ctx e args T
@@ -2126,8 +2259,11 @@ partial def deriveTimed (ctx : Ctx) (c : Name) : TermElabM Unit := do
     let reached ← withBinders ctx xs fun ctx bs _ => do
       let r ← IO.mkRef (#[] : Array Expr)
       withLocalDeclD `rec (← mkForallFVars bs T.pairType) fun recF => do
+        -- A failed first pass leaves no declarations behind: a callee whose costed form was
+        -- added before its erasure theorem failed is derived again, and fails, in the second.
+        let s ← saveState
         try discard <| tr { ctx with self? := some (c, recF), fieldRec? := some r } b
-        catch _ => pure ()
+        catch _ => s.restore
       r.get
     let cands := reached.foldl (fun acc p => if acc.contains p then acc else acc.push p) direct
     -- Methods of an abstract structure (a local instance) cost one unit: no companion.
@@ -2229,17 +2365,33 @@ partial def deriveTimed (ctx : Ctx) (c : Name) : TermElabM Unit := do
         (try (repeat' split)) <;>
         (try simp (disch := (intros; simp only [$lemmas,*])) only [$lemmas,*, *]) <;>
         (try rfl)))
+  -- `intro` without names introduces one binder: a reduction without binders introduces none.
+  let intros ← if ids.isEmpty then `(tactic| skip) else `(tactic| intro $ids*)
   let tac ← if recursive then
-      `(tactic| (intro $ids*; fun_induction $(mkIdent timedName):ident $explicitIds* <;> $close))
+      `(tactic| ($intros; fun_induction $(mkIdent timedName):ident $explicitIds* <;> $close))
     else if treeRec then
-      `(tactic| (intro $ids*; $close))
+      `(tactic| ($intros; $close))
     else
       -- A costed form whose body is a match on a binder has its equations split by case:
       -- `unfold` rewrites it at a variable.
-      `(tactic| (intro $ids*; (try unfold $(mkIdent timedName):ident); $close))
+      `(tactic| ($intros; (try unfold $(mkIdent timedName):ident); $close))
   let proof ← Term.withoutErrToSorry do
     let mv ← mkFreshExprMVar eType
-    let rem ← Tactic.run mv.mvarId! (Tactic.evalTactic tac)
+    let rem ← if recursive && hatted then do
+        -- A recursion whose result holds functions: the induction hypothesis
+        -- `(R.timed ys).2.erase.bind (fun y => ret (ε y)) = R ys` is used from right to left,
+        -- so that the recursive call of `R` becomes the erased costed call followed by `ε`,
+        -- which the continuation's lemmas (`bind_assoc`, `bind_ret`) absorb.
+        let gs ← Tactic.run mv.mvarId! (Tactic.evalTactic (← `(tactic|
+          ($intros; fun_induction $(mkIdent timedName):ident $explicitIds* <;>
+            (try unfold $(mkIdent c):ident) <;>
+            (try simp only [$lemmas,*]) <;> (try (repeat' split))))))
+        let mut rem := []
+        for g in gs do
+          let g ← rewriteRecHyps c g
+          rem := rem ++ (← Tactic.run g (Tactic.evalTactic close))
+        pure rem
+      else Tactic.run mv.mvarId! (Tactic.evalTactic tac)
     unless rem.isEmpty do
       fail m!"the erasure theorem `{eraseName}` is not closed by unfolding and the erasure \
         lemmas; goals left:{indentD (MessageData.joinSep (rem.map (.ofGoal ·)) "\n")}"

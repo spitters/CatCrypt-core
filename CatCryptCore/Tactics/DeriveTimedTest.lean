@@ -880,4 +880,106 @@ example (S : O6Kit) (A : OracleAdv.Timed ℕ ℕ ℕ) (decCost : ℕ → ℕ) :
     o6Run.timed S A decCost =
       A.bind fun d => OracleAdv.Timed.delay 1 (o6Prog.timed S d decCost) := rfl
 
+/-! ## Recursive callees with dependent results -/
+
+section RecursiveCallee
+
+open CatCrypt.Core
+
+/-- `n` runs of `node`, assembled coordinate by coordinate: a recursion over `ℕ` whose result
+type depends on the counter. -/
+noncomputable def foldT {X : Type} (node : SPTree X) : (n : ℕ) → SPTree (Fin n → X)
+  | 0 => .ret fun i => i.elim0
+  | n + 1 => node.bind fun w => (foldT node n).bind fun rest => .ret (Fin.cons w rest)
+
+/-- Three runs of `node`, then `A` on the results. -/
+noncomputable def foldUser {X : Type} (node : SPTree X) (A : (Fin 3 → X) → SPTree Bool) :
+    SPTree Bool :=
+  (foldT node 3).bind A
+
+derive_timed foldUser
+
+example {X : Type} (node : SPTree.Timed X) (n : ℕ) :
+    ((foldT.timed node n).2.erase.bind fun y => SPTree.ret y.1) = foldT node.erase n :=
+  foldT.erase_timed node n
+
+/-- The empty tuple: a tree without binders whose result holds a function. -/
+noncomputable def emptyTuple : SPTree (Fin 0 → Bool) := .ret fun i => i.elim0
+
+derive_timed emptyTuple
+
+/-- `step` on each element of a list: a recursion over `List`. -/
+noncomputable def mapLoopT {W : Type} (step : W → SPTree W) : List W → SPTree (List W)
+  | [] => .ret []
+  | x :: xs => (step x).bind fun y => (mapLoopT step xs).bind fun ys => .ret (y :: ys)
+
+/-- `mapLoopT` on `xs`, then `A`. -/
+noncomputable def mapUser {W : Type} (step : W → SPTree W) (A : List W → SPTree Bool)
+    (xs : List W) : SPTree Bool :=
+  (mapLoopT step xs).bind A
+
+derive_timed mapUser
+
+end RecursiveCallee
+
+/-! ## A field of a structure that reduces to a constructor, applied in a closure -/
+
+section FieldInClosure
+
+open CatCrypt.Core
+
+/-- A structure with one function field. -/
+structure EncD (W : Type) where
+  /-- Encryption. -/
+  enc : W → W → W
+
+/-- An instance of `EncD` built from a class method. -/
+def xorE (W : Type) [Add W] : EncD W where
+  enc k m := k + m
+
+/-- The field of a `let`-bound structure applied inside `List.zipWith`. -/
+noncomputable def epochRed {W : Type} [Add W] (msgs : List W) (A : List W × W → SPTree Bool)
+    (km : List W × W) : SPTree Bool :=
+  let E := xorE W
+  (SPTree.ret (List.zipWith (fun k m => E.enc k m) km.1 msgs, km.2)).bind A
+
+derive_timed epochRed
+
+/-- An instance of `EncD` that returns the key. -/
+def keyE (W : Type) : EncD W where
+  enc k _ := k
+
+/-- The field of a `let`-bound structure and of a constant structure applied in closures. -/
+noncomputable def encRed {W : Type} (A : W → SPTree Bool) (t : SPTree W) (x : W) :
+    SPTree Bool :=
+  let E := keyE W
+  ((t.map fun k => E.enc k x).map fun k => (keyE W).enc k k).bind A
+
+derive_timed encRed
+
+end FieldInClosure
+
+/-! ## The costed mirror of a structure with an anonymous instance parameter -/
+
+section AnonymousInstance
+
+open CatCrypt.Core
+
+variable {W : Type} [Inhabited W]
+
+/-- A structure with an anonymous instance parameter from a `variable` command: the shape of
+the key-indistinguishability adversary of X3DH. -/
+structure KIAdv (P : {w : W // w = default}) where
+  /-- The guess. -/
+  run : W → W → SPComp Bool
+  /-- A proof field. -/
+  run_ok : ∀ k t, run k t = run k t
+
+derive_timed_structure KIAdv
+
+example (P : {w : W // w = default}) (A : KIAdv P) (A' : KIAdv.Timed P) : Prop :=
+  KIAdv.Timed.Erases A' A
+
+end AnonymousInstance
+
 end CatCrypt.Tactics.DeriveTimedTest

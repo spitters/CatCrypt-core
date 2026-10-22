@@ -105,9 +105,32 @@ data definitions applied to a structure binder or a local instance (`kit.expandP
 helper `f kit x`) unfolded in the tree, so that the fields and methods used in their bodies
 become data-function primitives; the error of the first derivation is reported when both fail.
 
+A `let` whose value is a field path of the binders (`let 𝒮 := pcs.scheme`) is substituted,
+so that the fields applied through it are primitives. A match whose motive depends on its
+discriminants (`fun n => SPComp (Fin n → X)`) has the motive `fun n => SPTree (Fin n → X)`.
+
 Any other subterm of type `SPComp α`, after unfolding, is an unpriced computation: a field of
-a structure bound inside the body, a recursive definition, an opaque constant. The command
-fails on it and names the subterm.
+a structure bound inside the body, an opaque constant. The command fails on it and names the
+subterm. A binder that is a type in a universe other than `Type` is refused: `SPTree` is a
+tree over `Type`.
+
+## Recursive computations
+
+A computation `c` defined by structural recursion (over `List`, `ℕ`, or any inductive type
+that the equation compiler recurses on), whether `B` itself or a computation that `B` calls,
+is reflected by the same recursion: `c.tree` is the reflection of the body of the equations of
+`c`, with each recursive call of `c` a call of `c.tree` and the matches kept in place, and
+`c.compile_tree` is proved by induction over `c.tree` (`fun_induction`), each case by the
+traversal below with the recursive calls closed by the induction hypotheses. The tree of `c`
+takes all binders of `c`, followed by its data and computation primitives; a recursive call
+passes the primitives unchanged, so it must pass unchanged every binder that a primitive
+mentions. An adversary binder of `c` (a function into `SPComp`) is a tree binder of `c.tree`,
+and an adversary argument of a recursive call (a continuation that changes with the
+recursion) is reflected; a match on an adversary binds it in each alternative. A call
+`c args` in `B` is the call of `c.tree` (derived on demand) at the arguments, with the data
+primitives of `c` at the arguments and the binders of `B` for its computation primitives,
+which must be fields of binders of `B`; its compile equation is `c.compile_tree`, with the
+adversary arguments related by the traversal.
 
 ## Structure-valued reductions
 
@@ -269,15 +292,19 @@ def unfoldShared? (e : Expr) : MetaM (Option Expr) := do
   some <$> CatCrypt.Tactics.DeriveTimed.bindArgsShared v e.getAppArgs
 
 /-- Bring the computation `e` to a head: a constructor of `SPComp`, `ite`, `dite`, a matcher,
-`SPTree.compile`, a local or a `let`, or a stuck term. A definition is unfolded by
-`unfoldShared?`, so that its arguments stay `let`s priced once. -/
+`SPTree.compile`, a call of a recursive definition, a local or a `let`, or a stuck term. A
+definition is unfolded by `unfoldShared?`, so that its arguments stay `let`s priced once. -/
 partial def normalize (e : Expr) : MetaM Expr := do
-  let e ← withConfig (fun c => { c with zeta := false }) <| whnfR (← instantiateMVars e)
+  let e ← instantiateMVars e
+  if let .const c _ := e.getAppFn then
+    if isRecursive (← getEnv) c then return e
+  let e ← withConfig (fun c => { c with zeta := false }) <| whnfR e
   if e.isLet then return e
   match e.getAppFn with
   | .const c _ =>
     if normalizeStops.contains c then return e
     if ← isMatcher c then return e
+    if isRecursive (← getEnv) c then return e
     if monadOps.contains c then
       let e' ← withTransparency .instances (whnf e)
       if e' == e then return e
@@ -328,7 +355,10 @@ structure Prim where
 auxiliary definitions of the matches are named, the binders of the reduction that are not
 adversaries, either the reference collecting the primitives (`found?`, the first pass) or
 the bound primitives (`prims`, the second pass), and whether data definitions applied to a
-structure binder are unfolded (`unfold`). -/
+structure binder are unfolded (`unfold`). In the reflection of a recursive definition `c`,
+`self?` holds `c`, the local standing for its tree and the adversary positions of its binders,
+and matches stay in the tree (`hoist` false), so that its recursive calls stay in its body;
+`visiting` holds the recursive definitions whose trees are being derived. -/
 structure RCtx where
   advs : Array Adv
   base : Name
@@ -336,6 +366,12 @@ structure RCtx where
   found? : Option (IO.Ref (Array Prim)) := none
   prims : Array Prim := #[]
   unfold : Bool := false
+  self? : Option (Name × Expr × Array (Option Nat)) := none
+  hoist : Bool := true
+  visiting : NameSet := {}
+  /-- Derive the tree `c.tree` and `c.compile_tree` of a recursive computation `c`, with the
+  definitions being derived. -/
+  deriveRec : Name → NameSet → TermElabM Unit := fun _ _ => pure ()
 
 /-- The primitive of `ps` with key `F`, arity `arity` and kind `data`. -/
 def findPrim? (ps : Array Prim) (F : Expr) (arity : Nat) (data : Bool) :
@@ -547,6 +583,9 @@ def withBody {γ : Type} (k : Expr) (n : Nat) (cont : Array Expr → Expr → Te
 /-- `SPTree α`. -/
 def treeTy (α : Expr) : Expr := mkApp (mkConst ``CatCrypt.Core.SPTree) α
 
+/-- `SPTree.compile t : SPComp α`. -/
+def mkCompile (α t : Expr) : Expr := mkApp2 (mkConst ``CatCrypt.Core.SPTree.compile) α t
+
 /-- `SPTree.ret a : SPTree α`. -/
 def mkRet (α a : Expr) : Expr := mkApp2 (mkConst ``CatCrypt.Core.SPTree.ret) α a
 
@@ -585,6 +624,37 @@ def leafOrFail (ctx : RCtx) (orig e α : Expr) : MetaM Expr := do
   | some t => return t
   | none => unpriced orig e
 
+/-- Whether `v` is a field path of the binders `top`: a binder of `top`, or a projection of a
+field path. -/
+partial def isTopPath (top : Array FVarId) (v : Expr) : Bool :=
+  match v.consumeMData with
+  | .fvar id => top.contains id
+  | .proj _ _ s => isTopPath top s
+  | s =>
+    match s.getAppFn with
+    | .const _ _ => s.getAppNumArgs > 0 && isTopPath top s.appArg! &&
+        s.getAppArgs.pop.all (fun a => !a.hasFVar || a.isFVar)
+    | _ => false
+
+/-- The adversary positions of the binders `xs` of a computation: the arity of each binder
+whose type is a function into `SPComp` (among the binders named `advNames`, or all when it is
+empty). -/
+def advPositions (xs : Array Expr) (advNames : Array Name) : MetaM (Array (Option Nat)) := do
+  xs.mapM fun x => do
+    let n := (← x.fvarId!.getUserName).eraseMacroScopes
+    let ar ← forallTelescope (← whnfR (← inferType x)) fun ys body => do
+      return if (← spCompArg? body).isSome then some ys.size else none
+    return if advNames.isEmpty || advNames.contains n then ar else none
+
+/-- The binders of the computation `c`, as `deriveReduction` takes them: the binders of its
+value eta-expanded through the type definitions of its type, continued in `k`. -/
+def withCompBinders {γ : Type} (c : Name) (lvls : List Level)
+    (k : Array Expr → TermElabM γ) : TermElabM γ := do
+  let info ← getConstInfo c
+  let type := info.type.instantiateLevelParams info.levelParams lvls
+  forallTelescope type fun xs b => do
+    CatCrypt.Tactics.DeriveTimed.withTypeBinders b fun ys _ => k (xs ++ ys)
+
 mutual
 
 /-- The computation tree of the computation `e : SPComp α`. -/
@@ -594,7 +664,9 @@ partial def reify (ctx : RCtx) (e : Expr) : TermElabM Expr := do
     | fail m!"`{e}` is not a computation `SPComp α`"
   let e ← normalize e
   if let .letE n t v b _ := e then
-    if ← CatCrypt.Tactics.DeriveTimed.keepsLet t v then
+    -- A `let` of a field path of the binders (`let 𝒮 := pcs.scheme`) costs nothing to
+    -- evaluate and is substituted, so that the fields applied through it are primitives.
+    if (← CatCrypt.Tactics.DeriveTimed.keepsLet t v) && !(isTopPath ctx.top v) then
       -- The first pass records the primitives of the value at the `let`, where a substituted
       -- value would have recorded them at its first use.
       if ctx.found?.isSome then discard <| abstractData ctx v
@@ -637,8 +709,85 @@ partial def reify (ctx : RCtx) (e : Expr) : TermElabM Expr := do
       return mkApp5 (mkConst ``dite [Level.one.succ]) (treeTy α) args[1]! args[2]! t f
     if ← isMatcher c then
       return ← reifyMatch ctx e α
+    if isRecursive (← getEnv) c then
+      return ← reifyRecCall ctx e c args α
     leafOrFail ctx orig e α
   | _ => leafOrFail ctx orig e α
+
+/-- The tree `fun ys => tree (a ys)` of an adversary argument `a : Y₁ → … → Yₙ → SPComp β`. -/
+partial def reifyAdvArg (ctx : RCtx) (a : Expr) (n : Nat) : TermElabM Expr :=
+  withBody a n fun ys b => do mkLambdaFVars ys (← reify ctx b)
+
+/-- The tree of a call `c args` of a recursive computation `c`: the call of the local standing
+for the tree in the reflection of `c` itself, and otherwise the call of the tree `c.tree`
+(derived on demand) at the arguments, with each adversary argument reflected, followed by the
+data and computation primitives of `c` at the arguments: a data primitive is passed as its
+value (abstracted with the fields of the reduction), a computation primitive as the binder of
+the same primitive of the reduction. -/
+partial def reifyRecCall (ctx : RCtx) (e : Expr) (c : Name) (args : Array Expr) (α : Expr) :
+    TermElabM Expr := do
+  if let some (s, recF, advPos) := ctx.self? then
+    if s == c then
+      unless args.size == advPos.size do
+        fail m!"the recursive call{indentExpr e}\nis applied to {args.size} arguments, not \
+          {advPos.size}"
+      let args' ← (args.zip advPos).mapM fun (a, ar?) => do
+        match ar? with
+        | some n => reifyAdvArg ctx a n
+        | none => pure a
+      return mkAppN recF args'
+  let lvls := e.getAppFn.constLevels!
+  if ctx.visiting.contains c then
+    fail m!"`{c}` is reached again while its tree is derived (mutual recursion)"
+  unless (← getEnv).contains (c ++ `compile_tree) do
+    try ctx.deriveRec c (ctx.visiting.insert c)
+    catch ex =>
+      throwError m!"derive_reduction: while deriving the tree of the recursive computation \
+        `{c}`:\n{ex.toMessageData}"
+  let (nx, advPos) ← withCompBinders c lvls fun xs => do
+    return (xs.size, ← advPositions xs #[])
+  unless args.size == nx do
+    fail m!"the recursive computation `{c}` is applied to {args.size} arguments in{indentExpr e}\n\
+      and takes {nx}"
+  let args' ← (args.zip advPos).mapM fun (a, ar?) => do
+    match ar? with
+    | some n => reifyAdvArg ctx a n
+    | none => pure a
+  let thm := Lean.mkConst (c ++ `compile_tree) lvls
+  let ct ← instantiateForall (← inferType thm) args'
+  -- The data and computation primitives of `c` at the call.
+  let (dKeys, cKeys) ← forallTelescope ct fun zs body => do
+    let nc := zs.size / 2
+    let some (_, lhs, _) := body.eq? | fail m!"internal: `{c ++ `compile_tree}`"
+    let targs := lhs.appArg!.getAppArgs
+    let dKeys := targs.extract nx (targs.size - nc)
+    let cKeys ← (zs.extract nc zs.size).mapM fun h => do
+      forallTelescope (← inferType h) fun ys eq => do
+        let some (_, _, F) := eq.eq? | fail m!"internal: `{c ++ `compile_tree}`"
+        let Fargs := F.getAppArgs
+        return (mkAppN F.getAppFn (Fargs.extract 0 (Fargs.size - ys.size)), ys.size)
+    for k in dKeys ++ cKeys.map (·.1) do
+      if zs.any (k.containsFVar ·.fvarId!) then
+        fail m!"internal: a primitive of `{c}` depends on another primitive"
+    return (dKeys, cKeys)
+  match ctx.found? with
+  | some r =>
+    for a in args' ++ dKeys do discard <| abstractData ctx a
+    for (k, ar) in cKeys do
+      let isPrim := match k.getAppFn with
+        | .fvar id => ctx.top.contains id
+        | _ => true
+      unless isPrim && (k.getAppFn.isFVar || (← fieldKey? ctx.top k).isSome) do
+        fail m!"the computation `{k}` of the recursive computation `{c}` is not a field of a \
+          binder of the reduction"
+      recordPrim r { key := k, arity := ar, data := false }
+    return mkApp (mkConst ``CatCrypt.Core.SPTree.fail) α
+  | none =>
+    let cArgs ← cKeys.mapM fun (k, ar) => do
+      let some p ← findPrim? ctx.prims k ar false
+        | fail m!"internal: the computation `{k}` of `{c}` has no binder"
+      return p.fv
+    return mkAppN (Lean.mkConst (c ++ `tree) lvls) (args' ++ dKeys ++ cArgs)
 
 /-- The computation tree of `SPComp.bind c k`, with `c : SPComp α` and `k : α → SPComp β`. -/
 partial def reifyBind (ctx : RCtx) (α β c k : Expr) : TermElabM Expr := do
@@ -659,30 +808,71 @@ partial def reifyBind (ctx : RCtx) (α β c k : Expr) : TermElabM Expr := do
   return mkApp4 (mkConst ``CatCrypt.Core.SPTree.bind) α β s k'
 
 /-- The computation tree of the matcher application `e : SPComp α`: the same match, with
-motive `SPTree α` and the trees of the alternatives. -/
+motive `SPTree α` (`fun xs => SPTree (τ xs)` for a motive `fun xs => SPComp (τ xs)` that
+depends on the discriminants) and the trees of the alternatives. -/
 partial def reifyMatch (ctx : RCtx) (e α : Expr) : TermElabM Expr := do
   let some app ← matchMatcherApp? e | fail m!"`{e}` is not a matcher application"
   unless app.remaining.isEmpty do
     fail m!"the match{indentExpr e}\nis applied to further arguments"
-  let dependent ← lambdaTelescope app.motive fun xs b => pure (xs.any fun x => b.containsFVar x.fvarId!)
-  if dependent then fail m!"the match{indentExpr e}\nhas a motive that depends on its discriminants"
   let resTy := treeTy α
-  let motive ← lambdaTelescope app.motive fun xs _ => mkLambdaFVars xs resTy
+  let motive ← lambdaTelescope app.motive fun xs b => do
+    if xs.any fun x => b.containsFVar x.fvarId! then
+      let some τ ← spCompArg? b
+        | fail m!"the match{indentExpr e}\nhas a motive that depends on its discriminants"
+      mkLambdaFVars xs (treeTy τ)
+    else mkLambdaFVars xs resTy
   let lvl ← getLevel resTy
   let some i := app.uElimPos?
     | fail m!"the match{indentExpr e}\neliminates only into propositions"
   let levels := app.matcherLevels.set! i lvl
+  -- An adversary as a discriminant (a definition by pattern matching on its adversary
+  -- binder): the discriminant is the compilation `fun ys => (A' ys).compile` of its tree, and
+  -- the field of an alternative that binds it (the one field of its type) is the adversary.
+  let mut discrs := app.discrs
+  let mut advDiscrs : Array Adv := #[]
+  for d in app.discrs, k in [0:app.discrs.size] do
+    let .fvar id := d.consumeMData | continue
+    let some a := ctx.advs.find? (·.orig == id) | continue
+    let compiled ← forallTelescope (← whnfR (← inferType d)) fun ys body => do
+      let some β ← spCompArg? body | fail m!"internal: the adversary `{d}`"
+      mkLambdaFVars ys (mkCompile β (mkAppN a.tree ys))
+    discrs := discrs.set! k compiled
+    advDiscrs := advDiscrs.push a
   let matcherType ← instantiateForall
-    (← inferType (mkConst app.matcherName levels.toList)) (app.params ++ #[motive] ++ app.discrs)
+    (← inferType (mkConst app.matcherName levels.toList)) (app.params ++ #[motive] ++ discrs)
   let mut alts := #[]
   let mut ty := matcherType
+  let mut allBound := true
   for a in app.alts, n in app.altNumParams do
     let .forallE _ _ body _ ← whnf ty | fail m!"the match{indentExpr e}\nhas an unexpected type"
-    let a' ← withBody a n fun fs b => do mkLambdaFVars fs (← reify ctx b)
+    let (a', bound) ← withBody a n fun fs b => do
+      let mut b := b
+      let mut bound := true
+      for adv in advDiscrs do
+        let advTy ← inferType (mkFVar adv.orig)
+        let cands ← fs.filterM fun f => do isDefEq (← inferType f) advTy
+        if h : cands.size = 1 then b := b.replaceFVar cands[0] (mkFVar adv.orig)
+        else bound := false
+      return (← mkLambdaFVars fs (← reify ctx b), bound)
+    allBound := allBound && bound
     alts := alts.push a'
     ty := body.instantiate1 a'
+  -- In the reflection of a recursive definition, whose cases the induction unfolds, an
+  -- adversary discriminant that every alternative binds to the adversary is not used: it is
+  -- `fun ys => SPComp.fail`, which has no cost.
+  if allBound && ctx.self?.isSome then
+    for d in app.discrs, k in [0:app.discrs.size] do
+      let .fvar id := d.consumeMData | continue
+      unless ctx.advs.any (·.orig == id) do continue
+      let unused ← forallTelescope (← whnfR (← inferType d)) fun ys body => do
+        let some β ← spCompArg? body | fail m!"internal: the adversary `{d}`"
+        mkLambdaFVars ys (← mkAppOptM ``CatCrypt.Core.SPComp.fail #[some β])
+      discrs := discrs.set! k unused
   let m := mkAppN (mkConst app.matcherName levels.toList)
-    (app.params ++ #[motive] ++ app.discrs ++ alts)
+    (app.params ++ #[motive] ++ discrs ++ alts)
+  -- In the reflection of a recursive definition the match stays in the tree, with the
+  -- recursive calls in its alternatives.
+  unless ctx.hoist do return ← abstractData ctx m
   let env ← getEnv
   let mut i := 1
   while env.contains (ctx.base ++ Name.mkSimple s!"match_{i}") do i := i + 1
@@ -698,8 +888,6 @@ def goalSides (g : MVarId) : MetaM (Expr × Expr × Expr) := do
     fail m!"the goal is not a compile equation:{indentExpr ty}"
   return (lhs.getArg! 0, lhs.getArg! 1, rhs)
 
-/-- `SPTree.compile t : SPComp α`. -/
-def mkCompile (α t : Expr) : Expr := mkApp2 (mkConst ``CatCrypt.Core.SPTree.compile) α t
 
 /-- A goal `∀ ys, SPTree.compile (f ys) = k₀ ys` over the binders of the function `f`. -/
 def mkPointwise (f k₀ : Expr) (n : Nat) (α : Expr) : TermElabM Expr :=
@@ -722,15 +910,28 @@ def treeStops : Array Name :=
 /-- Bring the tree `t` to a head: a constructor of `SPTree`, `SPTree.bind`, `ite`, `dite`, a
 matcher or a local; the auxiliary definitions of matches are unfolded. -/
 partial def treeHead (t : Expr) : MetaM Expr := do
-  let t ← whnfR (← instantiateMVars t)
+  let t ← instantiateMVars t
+  if let .const c _ := t.getAppFn then
+    if isRecursive (← getEnv) c then return t
+  let t ← whnfR t
   match t.getAppFn with
   | .const c _ =>
     if treeStops.contains c then return t
     if ← isMatcher c then return t
+    if isRecursive (← getEnv) c then return t
     match ← unfoldDefinition? t with
     | some t' => treeHead t'.headBeta
     | none => return t
   | _ => return t
+
+/-- `funext` over the locals `ys`: from `pf : lhs = rhs` under `ys`, a proof of
+`(fun ys => lhs) = (fun ys => rhs)`; `pf` itself when `ys` is empty. -/
+partial def mkFunExtN (ys : Array Expr) (pf : Expr) : MetaM Expr := do
+  if ys.isEmpty then return pf
+  let inner ← mkFunExtN (ys.extract 1 ys.size) pf
+  mkFunExt (← mkLambdaFVars #[ys[0]!] inner)
+
+mutual
 
 /-- Prove the goal `SPTree.compile t = r`, where `t` is the tree of the computation `r`; `hs`
 maps the binder of each computation primitive to its hypothesis. -/
@@ -798,12 +999,98 @@ partial def prove (hs : Array (Expr × Expr)) (g : MVarId) : TermElabM Unit := g
       if gs.isEmpty then return
       for g' in gs do prove hs g'
       return
+    if let .str c' "tree" := c then
+      if isRecursive (← getEnv) c then
+        return ← proveRecLeaf hs g c' α t r
     g.refl
   | f@(.fvar _) =>
     match hs.find? (·.1 == f) with
     | some (_, h) => close g (mkAppN h targs)
-    | none => g.refl
+    | none =>
+      -- The hypothesis of the primitive among the locals (reintroduced by an induction).
+      for d in ← getLCtx do
+        if d.isImplementationDetail then continue
+        let pf := mkAppN d.toExpr targs
+        let ok ← try
+            let ty ← inferType pf
+            isDefEq ty (← g.getType)
+          catch _ => pure false
+        if ok then return ← close g pf
+      g.refl
   | _ => g.refl
+
+/-- Close the goal `g : (c.tree targs).compile = r` at a call of the tree of the recursive
+computation `c`: by an induction hypothesis among the locals whose tree is `c.tree targs`, or
+by `c.compile_tree` with its hypotheses on the primitives found among the locals. The
+equation's right side `c rargs'` differs from `r = c rargs` in the adversary arguments, which
+are the compilations `fun ys => (T ys).compile` of the trees `T` of the arguments of `r`. -/
+partial def proveRecLeaf (hs : Array (Expr × Expr)) (g : MVarId) (c : Name) (α t r : Expr) :
+    TermElabM Unit := g.withContext do
+  let lhs := mkCompile α t
+  -- An induction hypothesis.
+  let mut pf? : Option Expr := none
+  for d in ← getLCtx do
+    if pf?.isSome then break
+    if d.isImplementationDetail then continue
+    for e in ← CatCrypt.Tactics.DeriveTimed.conjEqns d.toExpr d.type do
+      let some (_, l, _) := (← instantiateMVars (← inferType e)).eq? | continue
+      if ← isDefEq l lhs then
+        pf? := some e
+        break
+  let pf ← match pf? with
+    | some pf => pure pf
+    | none =>
+      let thm ← mkConstWithFreshMVarLevels (c ++ `compile_tree)
+      let (ms, _, body) ← forallMetaTelescope (← inferType thm)
+      let some (_, l, _) := body.eq? | fail m!"internal: `{c ++ `compile_tree}`"
+      unless ← isDefEq l lhs do
+        fail m!"internal: `{c ++ `compile_tree}` does not apply to{indentExpr lhs}"
+      for m in ms do
+        if (← instantiateMVars m).isMVar then
+          let mty ← instantiateMVars (← inferType m)
+          let mut found := false
+          for d in ← getLCtx do
+            if d.isImplementationDetail then continue
+            if ← isDefEq d.type mty then
+              m.mvarId!.assign d.toExpr
+              found := true
+              break
+          unless found do
+            fail m!"the hypothesis{indentExpr mty}\nof `{c ++ `compile_tree}` is not among \
+              the hypotheses of the reduction"
+      instantiateMVars (mkAppN thm ms)
+  -- The right sides agree up to the adversary arguments.
+  let some (_, _, r') := (← instantiateMVars (← inferType pf)).eq?
+    | fail m!"internal: `{pf}` is not an equation"
+  let r ← instantiateMVars r
+  if ← isDefEq r' r then return ← close g pf
+  let fn := r'.getAppFn
+  let a' := r'.getAppArgs
+  let a := r.getAppArgs
+  unless a'.size == a.size && (← isDefEq fn r.getAppFn) do
+    fail m!"internal: the call{indentExpr r'}\ndoes not match{indentExpr r}"
+  let mut cur := a'
+  let mut proof := pf
+  for i in [0:a.size] do
+    if ← isDefEq cur[i]! a[i]! then continue
+    -- `fun ys => (T ys).compile = a[i]`, pointwise by the reflection proof.
+    let e ← lambdaTelescope cur[i]! fun ys b => do
+      unless b.isAppOfArity ``CatCrypt.Core.SPTree.compile 2 do
+        fail m!"internal: the argument{indentExpr cur[i]!}\nis not a compiled tree"
+      let ty ← mkForallFVars ys (← mkEq b (mkAppN a[i]! ys).headBeta)
+      let h ← mkFreshExprSyntheticOpaqueMVar ty
+      let (_, g') ← h.mvarId!.introNP ys.size
+      prove hs g'
+      let h ← instantiateMVars h
+      -- `(fun ys => (T ys).compile) = fun ys => a[i] ys`, and `a[i]` is its eta-expansion.
+      mkFunExtN ys (mkAppN h ys)
+    let motive ← withLocalDeclD `z (← inferType a[i]!) fun z => do
+      mkLambdaFVars #[z] (mkAppN fn (cur.set! i z))
+    proof ← mkEqTrans proof (← mkCongrArg motive e)
+    cur := cur.set! i a[i]!
+  close g proof
+
+end
 
 /-- A name for the binder of the primitive `key`: its field name, or the name of the binder
 it is, made distinct from `used`. -/
@@ -840,13 +1127,6 @@ partial def withPrims {γ : Type} (found : Array Prim) (i : Nat) (used : Array N
         withLocalDeclD (n.appendBefore "h_") ht fun hp =>
           withPrims found (i + 1) used (ps.push { p with fv := f, hyp? := some hp }) k
   else k ps
-
-/-- `funext` over the locals `ys`: from `pf : lhs = rhs` under `ys`, a proof of
-`(fun ys => lhs) = (fun ys => rhs)`; `pf` itself when `ys` is empty. -/
-partial def mkFunExtN (ys : Array Expr) (pf : Expr) : MetaM Expr := do
-  if ys.isEmpty then return pf
-  let inner ← mkFunExtN (ys.extract 1 ys.size) pf
-  mkFunExt (← mkLambdaFVars #[ys[0]!] inner)
 
 /-- A field of a structure-valued reduction: its name, its kind, its value in the body, the
 binders `ys` of a tree or computation field, the field's body at `ys`, and its result type. -/
@@ -1045,7 +1325,9 @@ structure `S qs` with a costed mirror `S.Timed`: for each computation field `f` 
 `c.f.tree.timed` (by `derive_timed`), the costed form `c.timed : … → S.Timed qs`, and
 `c.erase_timed : … → S.Timed.Erases (c.timed …) (c …)`. -/
 partial def deriveStructReduction (c : Name) (advNames : Array Name) (unfold : Bool)
-    (value : Expr) (levelParams : List Name) : TermElabM Unit := do
+    (value : Expr) (levelParams : List Name)
+    (deriveRec : Name → NameSet → TermElabM Unit := fun _ _ => pure ()) :
+    TermElabM Unit := do
   let levels := levelParams.map mkLevelParam
   lambdaTelescope value fun xs b => do
     let env ← getEnv
@@ -1119,7 +1401,7 @@ partial def deriveStructReduction (c : Name) (advNames : Array Name) (unfold : B
         let r ← IO.mkRef (#[] : Array Prim)
         for fd in fields do
           let ctx₁ : RCtx :=
-            { advs, base := c ++ fd.name ++ `tree, top, found? := some r, unfold }
+            { advs, base := c ++ fd.name ++ `tree, top, found? := some r, unfold, deriveRec }
           match fd.kind with
           | .comp _ => discard <| abstractData ctx₁ (← instantiateMVars (← reify ctx₁ fd.body))
           | .tree _ => discard <| abstractData ctx₁ (← abstractTree ctx₁ fd.body)
@@ -1130,7 +1412,8 @@ partial def deriveStructReduction (c : Name) (advNames : Array Name) (unfold : B
         -- Second pass: the tree of each field over the binders of the primitives.
         let mut trees : Array (Option Expr) := #[]
         for fd in fields do
-          let ctx : RCtx := { advs, base := c ++ fd.name ++ `tree, top, prims := ps, unfold }
+          let ctx : RCtx :=
+            { advs, base := c ++ fd.name ++ `tree, top, prims := ps, unfold, deriveRec }
           match fd.kind with
           | .comp _ => trees := trees.push (some (← abstractData ctx
               (← instantiateMVars (← reify ctx fd.body))))
@@ -1209,28 +1492,148 @@ partial def deriveStructReduction (c : Name) (advNames : Array Name) (unfold : B
         assembleStruct c levels levelParams S lvlsS qs mirrorFields fields xs bs advs kept ps
     go 0 #[] #[] #[]
 
+/-- Replace each call `recF as` of the local `recF` in `e` by `t as extra`. -/
+partial def replaceRecCalls (recF t : Expr) (extra : Array Expr) (e : Expr) : Expr :=
+  e.replace fun s =>
+    if s.getAppFn == recF then
+      some (mkAppN t (s.getAppArgs.map (replaceRecCalls recF t extra) ++ extra))
+    else none
+
+/-- The proof of the case `g : (c.tree targs).compile = c rargs` of the induction over
+`c.tree`: both calls unfolded once by their equations `eq_def`, and the bodies related by
+`prove`, whose recursive calls are closed by the induction hypotheses. -/
+def proveRecCase (c : Name) (g : MVarId) : TermElabM Unit := g.withContext do
+  let (α, t, r) ← goalSides g
+  let unfoldOnce (f : Name) (e : Expr) : TermElabM (Expr × Expr) := do
+    -- A side that the induction has already unfolded stays.
+    let .const n lvls := e.getAppFn | return (← mkEqRefl e, e)
+    unless n == f do return (← mkEqRefl e, e)
+    let some eqd ← getUnfoldEqnFor? n (nonRec := true)
+      | fail m!"internal: `{n}` has no unfolding equation"
+    let thm := Lean.mkConst eqd lvls
+    let k ← forallTelescope (← inferType thm) fun ys _ => pure ys.size
+    let args := e.getAppArgs
+    unless k ≤ args.size do fail m!"internal: `{e}` is a partial application"
+    let mut pf := mkAppN thm (args.extract 0 k)
+    for a in args.extract k args.size do
+      pf ← mkCongrFun pf a
+    let some (_, _, body) := (← inferType pf).eq? | fail m!"internal: `{eqd}`"
+    -- The match of the equation on the constructors of the case, reduced (definitionally).
+    let mut body := body.headBeta
+    repeat
+      match ← reduceMatcher? body with
+      | ReduceMatcherResult.reduced b => body := b.headBeta
+      | _ => break
+    return (pf, body)
+  -- The induction states each case with the tree unfolded; the computation is unfolded here.
+  let (eT, bT) := (← mkEqRefl t, t)
+  let (eR, bR) ← unfoldOnce c r
+  let g' ← mkFreshExprSyntheticOpaqueMVar (← mkEq (mkCompile α bT) bR)
+  let compileFn := mkApp (mkConst ``CatCrypt.Core.SPTree.compile) α
+  let pf ← mkEqTrans (← mkCongrArg compileFn eT) (← mkEqTrans g' (← mkEqSymm eR))
+  close g pf
+  prove #[] g'.mvarId!
+
+/-- The tree, its type and the compile equation of the recursive computation `c`, from the
+reflection `tree` of its body over the binders `bs` (each adversary replaced by its tree), in
+which the recursive calls are calls of the local `recF`. The tree `c.tree` is added: its
+recursive calls pass the primitives unchanged, so a recursive call must pass every binder that
+a primitive mentions unchanged. Its compile equation is proved by induction over `c.tree`
+(`fun_induction`), with the data primitives as variables equal to their fields. -/
+def recursiveTree (c : Name) (levels : List Level) (levelParams : List Name)
+    (xs bs args : Array Expr) (advs : Array Adv) (ps : Array Prim) (recF α tree : Expr) :
+    TermElabM (Expr × Expr × Expr × Expr) := do
+  let treeName := c ++ `tree
+  let dps := ps.filter (·.data)
+  let cps := ps.filter fun p => !p.data
+  let dFvs := dps.map (·.fv)
+  let dKeys := dps.map (·.key)
+  let cFvs := cps.map (·.fv)
+  let hyps := cps.filterMap (·.hyp?)
+  for a in advs do
+    if tree.containsFVar a.orig then
+      fail m!"the adversary `{mkFVar a.orig}` occurs outside a call position in{indentExpr tree}"
+  -- The binders mentioned by a primitive stay fixed in the recursive calls.
+  let keys := dKeys ++ cps.map (·.key)
+  let fixed := (List.range xs.size).filter fun i => keys.any (·.containsFVar xs[i]!.fvarId!)
+  if let some s := tree.find? fun s => s.getAppFn == recF && s.getAppNumArgs == bs.size &&
+      fixed.any fun i => s.getArg! i != bs[i]! then
+    fail m!"the recursive call{indentExpr s}\nchanges a binder whose fields are primitives"
+  let tBs := bs ++ dFvs ++ cFvs
+  let treeC := Lean.mkConst treeName levels
+  let tree' := replaceRecCalls recF treeC (dFvs ++ cFvs) tree
+  if tree'.containsFVar recF.fvarId! then fail m!"internal: a recursive call escaped"
+  let tType ← mkForallFVars tBs (treeTy α)
+  let tValue ← mkLambdaFVars tBs tree'
+  CatCrypt.Tactics.DeriveTimed.addTimedDef treeName levelParams tType tValue
+  let rhs := mkAppN (Lean.mkConst c levels) args
+  -- The compile equation with each data primitive a variable equal to its field.
+  let rec withEqs (i : Nat) (acc : Array Expr) (k : Array Expr → TermElabM Expr) :
+      TermElabM Expr := do
+    if h : i < dFvs.size then
+      withLocalDeclD (Name.mkSimple s!"hd{i}") (← mkEq dFvs[i] dKeys[i]!) fun hd =>
+        withEqs (i + 1) (acc.push hd) k
+    else k acc
+  let stmt ← withEqs 0 #[] fun deqs => do
+    mkForallFVars (tBs ++ deqs ++ hyps)
+      (← mkEq (mkCompile α (mkAppN treeC tBs)) rhs)
+  let n ← forallTelescope stmt fun ys _ => pure ys.size
+  let ids : Array (TSyntax `ident) := (Array.range n).map fun i => mkIdent (Name.mkSimple s!"x{i}")
+  let explicit ← forallTelescope stmt fun ys _ =>
+    (ys.extract 0 tBs.size).mapM fun y => return (← y.fvarId!.getBinderInfo).isExplicit
+  let argIds := ((ids.extract 0 tBs.size).zip explicit).filterMap fun (i, e) =>
+    if e then some i else none
+  let mv ← mkFreshExprSyntheticOpaqueMVar stmt
+  let gs ← Term.withoutErrToSorry <| Tactic.run mv.mvarId! (Tactic.evalTactic (← `(tactic|
+    (intro $ids*; fun_induction $(mkIdent treeName):ident $argIds* <;> (try subst_vars)))))
+  for g in gs do
+    proveRecCase c g
+  let sProof ← instantiateMVars mv
+  if sProof.hasSorry || sProof.hasExprMVar then fail m!"the compile equation is not proved"
+  let eValue ← mkLambdaFVars (bs ++ cFvs ++ hyps)
+    (mkAppN sProof (tBs.map (fun b => (dFvs.idxOf? b).map (dKeys[·]!) |>.getD b) ++
+      (← dKeys.mapM fun k => (mkEqRefl k : MetaM Expr)) ++ hyps))
+  let eType ← mkForallFVars (bs ++ cFvs ++ hyps)
+    (← mkEq (mkCompile α (mkAppN treeC (bs ++ dKeys ++ cFvs))) rhs)
+  return (tType, tValue, eType, eValue)
+
 /-- Define `c.tree`, prove `c.compile_tree`, and run `derive_timed c.tree`. The adversaries
 are the binders named in `advNames`, or every binder whose type ends in `SPComp` when it is
 empty; `unfold` is the unfolding of data definitions of `RCtx`. -/
-partial def deriveReduction (c : Name) (advNames : Array Name) (unfold : Bool := false) :
-    TermElabM Unit := do
+partial def deriveReduction (c : Name) (advNames : Array Name) (unfold : Bool := false)
+    (visiting : NameSet := {}) : TermElabM Unit := do
   let env ← getEnv
   let some info := env.find? c | fail m!"unknown constant `{c}`"
   let .defnInfo d := info | fail m!"`{c}` is not a definition"
-  if (Structural.eqnInfoExt.find? env c).isSome then fail m!"`{c}` is recursive"
-  if (WF.eqnInfoExt.find? env c).isSome then fail m!"`{c}` is recursive"
+  let recursive := isRecursive env c
   let treeName := c ++ `tree
   let thmName := c ++ `compile_tree
   if env.contains treeName then fail m!"`{treeName}` already exists"
   let levels := info.levelParams.map mkLevelParam
+  -- The body: the value of the definition, or for a recursive definition the body of its
+  -- equations, in which the recursive calls are calls of `c`.
+  let body := match Structural.eqnInfoExt.find? env c, WF.eqnInfoExt.find? env c with
+    | some i, _ => i.value
+    | _, some i => i.value
+    | _, _ => d.value
   -- Eta-expand to all binders of the type.
-  let value ← lambdaTelescope d.value fun xs b => do
+  let value ← lambdaTelescope body fun xs b => do
     CatCrypt.Tactics.DeriveTimed.withTypeBinders (← instantiateForall d.type xs) fun ys _ =>
       mkLambdaFVars (xs ++ ys) (mkAppN b ys).headBeta
+  -- A carrier in a universe other than `Type`: `SPTree` is a tree over `Type`.
+  lambdaTelescope value fun xs _ => do
+    for x in xs do
+      if let .sort u ← whnf (← inferType x) then
+        unless (← instantiateLevelMVars u).normalize == Level.one do
+          fail m!"the carrier `{x}` is in a universe other than `Type`; computation trees \
+            `SPTree` are over `Type`: derive the reduction at carriers in `Type`"
+  let deriveRec : Name → NameSet → TermElabM Unit := fun g vis =>
+    deriveReduction g #[] (visiting := vis)
   -- A structure-valued reduction: field by field.
   if ← lambdaTelescope value fun _ b => do return (← spCompArg? (← inferType b)).isNone then
+    if recursive then fail m!"`{c}` is recursive and its result is not a computation"
     if env.contains (c ++ `timed) then fail m!"`{c ++ `timed}` already exists"
-    return ← deriveStructReduction c advNames unfold value info.levelParams
+    return ← deriveStructReduction c advNames unfold value info.levelParams deriveRec
   let (tType, tValue, eType, eValue) ← lambdaTelescope value fun xs b => do
     let some α ← spCompArg? (← inferType b)
       | fail m!"the result of `{c}` is not a computation `SPComp α`"
@@ -1270,16 +1673,26 @@ partial def deriveReduction (c : Name) (advNames : Array Name) (unfold : Bool :=
             go (i + 1) (bs.push a') (advs.push ⟨x.fvarId!, a', ar⟩) (args.push arg)
       else
         let top := (xs.zip isAdv).filterMap fun (x, a) => if a.isNone then some x.fvarId! else none
+        -- A recursive definition: its recursive calls are calls of the local `recF`, which
+        -- stands for its tree over the same primitives.
+        withLocalDeclD `rec (← mkForallFVars bs (treeTy α)) fun recF => do
+        let selfInfo := if recursive then some (c, recF, isAdv) else none
+        let visiting := visiting.insert c
         -- First pass: collect the primitives.
         let r ← IO.mkRef (#[] : Array Prim)
-        let ctx₁ : RCtx := { advs, base := treeName, top, found? := some r, unfold }
+        let ctx₀ : RCtx := { advs, base := treeName, top, unfold, visiting, deriveRec }
+        let ctx₀ := { ctx₀ with hoist := !recursive }
+        let ctx₀ := { ctx₀ with self? := selfInfo }
+        let ctx₁ := { ctx₀ with found? := some r }
         discard <| abstractData ctx₁ (← instantiateMVars (← reify ctx₁ b))
         let found ← r.get
         let used ← xs.mapM fun x => return (← x.fvarId!.getUserName).eraseMacroScopes
         withPrims found 0 used #[] fun ps => do
         -- Second pass: the tree over the binders of the primitives.
-        let ctx : RCtx := { advs, base := treeName, top, prims := ps, unfold }
+        let ctx := { ctx₀ with prims := ps }
         let tree ← abstractData ctx (← instantiateMVars (← reify ctx b))
+        if recursive then
+          return ← recursiveTree c levels info.levelParams xs bs args advs ps recF α tree
         for a in advs do
           if tree.containsFVar a.orig then
             fail m!"the adversary `{mkFVar a.orig}` occurs outside a call position in{indentExpr tree}"
@@ -1327,7 +1740,8 @@ partial def deriveReduction (c : Name) (advNames : Array Name) (unfold : Bool :=
         let eValue ← mkLambdaFVars eBs pf
         return (tType, tValue, eType, eValue)
     go 0 #[] #[] #[]
-  CatCrypt.Tactics.DeriveTimed.addTimedDef treeName info.levelParams tType tValue
+  unless (← getEnv).contains treeName do
+    CatCrypt.Tactics.DeriveTimed.addTimedDef treeName info.levelParams tType tValue
   addDecl (Declaration.thmDecl
     { name := thmName, levelParams := info.levelParams, type := eType, value := eValue })
   CatCrypt.Tactics.DeriveTimed.deriveTimed {} treeName
