@@ -28,8 +28,8 @@ Negligibility is stated multiplicatively, `f λ * λ ^ c ≤ 1` for every `c` an
 
 ## Main results
 
-* `isNegligible_zero`, `isNegligible_add`, `isNegligible_mul_const`, `isNegligible_poly_mul` —
-  closure of negligible functions
+* `isNegligible_zero`, `isNegligible_add`, `isNegligible_mul_const`, `isNegligible_poly_mul`,
+  `isNegligible_of_le_eventually` — closure of negligible functions
 * `UCEmulatesNegl_trans` — transitivity of negligible emulation
 * `UCEmulatesNegl_of_perfect` — perfect emulation is negligible emulation
 * `UCEmulatesNegl_hybrid_bound` — a hybrid argument over polynomially many steps
@@ -135,6 +135,15 @@ theorem isNegligible_poly_mul {f : ℕ → ℝ≥0∞} (d : ℕ)
     _ = f n * ((n : ℝ≥0∞) ^ d * (n : ℝ≥0∞) ^ c) := by ring
     _ = f n * (n : ℝ≥0∞) ^ (c + d) := by rw [← pow_add]; ring
     _ ≤ 1 := hN n hn
+
+/-- A function eventually below a negligible function is negligible. -/
+theorem isNegligible_of_le_eventually {f g : ℕ → ℝ≥0∞} (hf : IsNegligible f)
+    (h : ∃ N, ∀ n, N ≤ n → g n ≤ f n) : IsNegligible g := by
+  obtain ⟨N, hN⟩ := h
+  intro c
+  obtain ⟨M, hM⟩ := hf c
+  refine ⟨max N M, fun n hn => ?_⟩
+  exact (mul_le_mul_left (hN n (le_of_max_le_left hn)) _).trans (hM n (le_of_max_le_right hn))
 
 /-! ## Parametric UC Emulation -/
 

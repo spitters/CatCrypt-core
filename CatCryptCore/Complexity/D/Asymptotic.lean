@@ -134,15 +134,6 @@ theorem IsPolyBound.comp {p q : ℕ → ℕ} (hp : IsPolyBound p) (hq : IsPolyBo
 
 /-! ## Negligible functions -/
 
-/-- A function eventually below a negligible function is negligible. -/
-theorem isNegligible_of_le_eventually {f g : ℕ → ℝ≥0∞} (hf : IsNegligible f)
-    (h : ∃ N, ∀ n, N ≤ n → g n ≤ f n) : IsNegligible g := by
-  obtain ⟨N, hN⟩ := h
-  intro c
-  obtain ⟨M, hM⟩ := hf c
-  refine ⟨max N M, fun n hn => ?_⟩
-  exact (mul_le_mul_left (hN n (le_of_max_le_left hn)) _).trans (hM n (le_of_max_le_right hn))
-
 /-- A polynomially bounded multiple of a negligible function is negligible. -/
 theorem isNegligible_polyBound_mul {k : ℕ → ℕ} {f : ℕ → ℝ≥0∞} (hk : IsPolyBound k)
     (hf : IsNegligible f) : IsNegligible fun n => (k n : ℝ≥0∞) * f n := by
@@ -159,25 +150,6 @@ theorem isNegligible_polyBound_mul {k : ℕ → ℕ} {f : ℕ → ℝ≥0∞} (h
   rw [← mul_assoc]
   gcongr
   exact_mod_cast hk
-
-/-! ## Realizers of reflected terms -/
-
-/-- The realizer `λx. body` of an arrow whose body costs at most `B` at every input and
-denotes the arrow. -/
-def TimeRealizer.ofBody (O : CTree.Oracle) {a b : Ty} (ha : a.FO) (hb : b.FO)
-    (body : Tm [a] b) (B : ℕ) (hcost : ∀ v, body.cost (Env.nil.cons v) ≤ B)
-    (f : Val a → SPComp (Val b)) (hden : ∀ x, body.denote O (Env.nil.cons x) = f x) :
-    TimeRealizer O (B + 1) f where
-  term := .lam body
-  evalCost := 0
-  callCost := B
-  closure := fun v => body.eval (Env.nil.cons v)
-  evals := rfl
-  call_le := hcost
-  time_le := by omega
-  run_eq := fun x => by
-    rw [Tm.run_eval O body hb (by simpa using ha)]
-    exact hden x
 
 /-! ## Polynomial-time families -/
 

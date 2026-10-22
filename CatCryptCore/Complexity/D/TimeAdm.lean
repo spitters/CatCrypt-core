@@ -101,6 +101,8 @@ range test.
 * `TimeRealizer.apply_cost_le`, `TimeRealizer.apply_run`, `TimeRealizer.run_den`: the
   application costs at most `n` and means `f`, through the evaluator and through the
   denotation `Tm.den`.
+* `TimeRealizer.ofBody`: the realizer `λx. body` at time `B + 1` of a body that costs at most
+  `B` and denotes the arrow.
 * The graded laws and the properties of `ucCdistTime` listed above.
 
 ## References
@@ -212,6 +214,23 @@ theorem run_den (r : TimeRealizer O n f) (ha : a.FO) (hb : b.FO) (x : Val a) :
 /-- A realizer at time `n` is one at every larger time. -/
 def relax (r : TimeRealizer O n f) {m : ℕ} (h : n ≤ m) : TimeRealizer O m f :=
   { r with time_le := le_trans r.time_le h }
+
+/-- The realizer `λx. body` of an arrow whose body costs at most `B` at every input and
+denotes the arrow. -/
+def ofBody (O : CTree.Oracle) {a b : Ty} (ha : a.FO) (hb : b.FO)
+    (body : Tm [a] b) (B : ℕ) (hcost : ∀ v, body.cost (Env.nil.cons v) ≤ B)
+    (f : Val a → SPComp (Val b)) (hden : ∀ x, body.denote O (Env.nil.cons x) = f x) :
+    TimeRealizer O (B + 1) f where
+  term := .lam body
+  evalCost := 0
+  callCost := B
+  closure := fun v => body.eval (Env.nil.cons v)
+  evals := rfl
+  call_le := hcost
+  time_le := by omega
+  run_eq := fun x => by
+    rw [Tm.run_eval O body hb (by simpa using ha)]
+    exact hden x
 
 end TimeRealizer
 
