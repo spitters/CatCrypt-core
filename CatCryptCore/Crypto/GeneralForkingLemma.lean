@@ -6,6 +6,7 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Crypto.ForkingLemma
+public import CatCryptCore.Relational.DeadSample
 
 
 @[expose] public section
@@ -111,13 +112,6 @@ noncomputable def swapAtEquiv [DecidableEq (Fin q)] (j : Fin q) :
 
 /-! ## Sample-Update Distribution Lemma -/
 
-theorem sample_bind_const' {β : Type} (c : SPComp β)
-    {α : Type} [Fintype α] [Nonempty α] :
-    SPComp.bind (SPComp.sample α) (fun (_ : α) => c) = c := by
-  funext h; simp only [SPComp.bind_def, SPComp.sample]
-  rw [SDistr.bind_assoc]; simp only [SDistr.pure_bind]
-  exact SDistr.uniform_bind_const (c h)
-
 /-- Sampling `f : Fin q → R` and `e : R` uniformly, then applying
     `Function.update f j e`, gives the same distribution as sampling
     `g : Fin q → R` uniformly. -/
@@ -163,7 +157,7 @@ theorem sample_update_eq_sample [Fintype R] [Nonempty R] [DecidableEq (Fin q)]
         rw [SPComp.bind_assoc]; congr 1; funext f
         rw [SPComp.bind_assoc]
         simp only [SPComp.pure_bind]
-        exact (sample_bind_const' (k f)).symm
+        exact (CatCrypt.Relational.dead_sample (k f)).symm
     rw [h1, ← SPComp.sample_prod_eq]
   rw [step1, step2, ← step3]
 

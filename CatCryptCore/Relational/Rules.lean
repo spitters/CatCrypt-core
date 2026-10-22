@@ -6,6 +6,7 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Crypto.Advantage
+public import CatCryptCore.Relational.DeadSample
 
 /-!
 # pRHL Proof Rules
@@ -616,45 +617,9 @@ They are used by contract tactics to simplify code before relational reasoning.
 /-! ## Dead Code Elimination Rules
 
 These rules eliminate unused computations from SPComp programs.
-They are used by the ProofFrog-inspired dead code elimination tactics.
+They are used by the ProofFrog-inspired dead code elimination tactics. The rule for a dead
+uniform sample, `dead_sample`, is in `CatCryptCore.Relational.DeadSample`.
 -/
-
-/-- Const sample: sampling and ignoring the result is equivalent to identity.
-
-    This lemma is used by dead_sample to eliminate unused samples.
--/
-theorem SDistr.bind_const_eq {α β : Type} [Fintype α] [Nonempty α] (d : SDistr β) :
-    (SDistr.uniform α).bind (fun _ => d) = d := by
-  -- SDistr.uniform α = PMF.map some (PMF.uniformOfFintype α)
-  -- SDistr.bind d f = PMF.bind d (fun oa => match oa with some a => f a | none => fail)
-  simp only [SDistr.bind, SDistr.uniform]
-  -- Use PMF.bind_map: (map f p).bind g = p.bind (g ∘ f)
-  rw [PMF.bind_map]
-  -- Now we have: (PMF.uniformOfFintype α).bind (fun a => match some a with ...)
-  -- The composition simplifies because some a always matches
-  conv_lhs =>
-    arg 2
-    ext a
-    simp only [Function.comp_apply]
-  -- Use PMF.bind_const
-  exact PMF.bind_const (PMF.uniformOfFintype α) d
-
-/-- Dead sample: if a sample result is not used, the sample can be eliminated.
-
-    `let _ ← sample α; k` = `k`
-
-    Note: This is sound because sampling from a uniform distribution and
-    discarding the result is equivalent to doing nothing (lossless sampling).
--/
-@[simp] theorem dead_sample {α β : Type} [Fintype α] [Nonempty α] (k : SPComp β) :
-    (SPComp.sample α).bind (fun _ => k) = k := by
-  funext h
-  simp only [SPComp.bind_def, SPComp.sample]
-  -- (SDistr.uniform α).bind (fun a => SDistr.pure (a, h)).bind (fun p => k p.2)
-  rw [SDistr.bind_assoc]
-  simp only [SDistr.pure_bind]
-  -- (SDistr.uniform α).bind (fun a => k h) = k h
-  simp_all [SDistr.bind_const_eq]
 
 /-- Dead get: if a get result is not used, the get can be eliminated.
 

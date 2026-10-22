@@ -36,6 +36,7 @@ public import CatCryptCore.NonUniform
 -- Relational logic (pRHL)
 public import CatCryptCore.Relational.Basic
 public import CatCryptCore.Relational.Judgment
+public import CatCryptCore.Relational.DeadSample
 public import CatCryptCore.Relational.Rules
 public import CatCryptCore.Relational.Sync
 public import CatCryptCore.Relational.Frame

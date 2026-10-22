@@ -35,6 +35,8 @@ the node above the leaf; the costed map charges the cost of the function at each
 * `SPTree.Timed.erase_bind`, `SPTree.Timed.erase_map` — erasure gives the uncosted combinator
 * `SPTree.Timed.stepTime_bind_le`, `SPTree.Timed.stepTime_map_le`,
   `SPTree.Timed.prefix_bind_le` — times add
+* `SPTree.Timed.stepTime_load_bind_le`, `SPTree.Timed.stepTime_delay_bind_bind_le` — times of a
+  heap reset before a bind and of two binds with the first step cost in front
 * `SPTree.Timed.erase_snd_ite`, `SPTree.Timed.erase_snd_dite` — erasure commutes with `if`
 -/
 
@@ -193,6 +195,30 @@ theorem prefix_bind_le (C : ℕ) (k : SPTree.Timed α) (f : α → ℕ × SPTree
     C + (k.bind f).1 + (k.bind f).2.time ≤ C + (k.time + B) := by
   have := stepTime_bind_le k f B h
   simp only [stepTime] at this
+  omega
+
+/-- A costed run from a reset heap of a prefix `P` followed by a continuation `k`, in the
+step-prefixed form of `derive_reduction`: its time is at most the reset (one unit per key and
+one more), the step costs `c₁` and `c₂`, a bound `B` on `P` and a bound `K` on every
+continuation. -/
+theorem stepTime_load_bind_le {γ : Type} (h₀ : Heap) (c₁ c₂ : ℕ) (P : ℕ × SPTree.Timed β)
+    (k : β → ℕ × SPTree.Timed γ) {B K : ℕ} (hP : stepTime P ≤ B)
+    (hk : ∀ x, stepTime (k x) ≤ K) :
+    stepTime ((0 : ℕ), load h₀ (c₁ + (c₂ + P.1) + (P.2.bind k).1) (P.2.bind k).2) ≤
+      h₀.data.keys.card + c₁ + c₂ + B + K + 1 := by
+  have := stepTime_bind_le P.2 k K hk
+  simp only [stepTime, time_load] at hP this ⊢
+  omega
+
+/-- A costed tree `X` followed by two costed binds, the step cost of the first moved in front:
+its time is at most the time of `X` and the bounds `F` and `G` of the two continuations. -/
+theorem stepTime_delay_bind_bind_le {γ : Type} (X : ℕ × SPTree.Timed α)
+    (f : α → ℕ × SPTree.Timed β) (k : β → ℕ × SPTree.Timed γ) (F G : ℕ)
+    (hf : ∀ v, stepTime (f v) ≤ F) (hk : ∀ v, stepTime (k v) ≤ G) :
+    stepTime (delay (X.1 + (X.2.bind f).1) ((X.2.bind f).2.bind k)) ≤ stepTime X + F + G := by
+  have h1 := stepTime_bind_le X.2 f F hf
+  have h2 := stepTime_bind_le (X.2.bind f).2 k G hk
+  simp only [stepTime, delay] at h1 h2 ⊢
   omega
 
 /-- Erasure of a step-prefixed tree commutes with `if`. -/

@@ -32,6 +32,8 @@ their definitions through `Array.toList`, so their costs are linear in the size.
   bounds in the length
 * `List.map.timedCost_le`, `List.foldl.timedCost_le`, `List.foldr.timedCost_le`,
   `List.zipWith.timedCost_le` — `(k + c) * l.length + 1` for function costs at most `k`
+* `Fin.foldr.loop.timedCost_le` — the loop of `Fin.foldr` from index `i` costs at most
+  `(k + 3) * i + 4` for step costs at most `k`
 * `Array.push.timedCost_le`, `Array.getD.timedCost_le`, `Array.get!Internal.timedCost_le` —
   linear bounds in the size
 * `Finset.sum.timedCost_eq_list`, `Finset.prod.timedCost_eq_list` — the registered cost of a
@@ -81,6 +83,7 @@ derive_cost List.zipWith
 derive_cost List.zip
 derive_cost List.range.loop
 derive_cost List.range
+derive_cost Fin.foldr.loop
 
 section
 
@@ -280,6 +283,19 @@ theorem List.range.timedCost_le (n : ℕ) :
     List.range.timedCost n ≤ 4 * n + 2 := by
   have := List.range.loop.timedCost_le n []
   simp only [List.range.timedCost]; omega
+
+/-- The loop of `Fin.foldr` (the fold behind `List.ofFn`) from index `i` costs at most `k + 3`
+units per remaining index and four more, for step costs at most `k`. -/
+theorem Fin.foldr.loop.timedCost_le (n : ℕ) (f : Fin n → α → α) (fCost : Fin n → α → ℕ)
+    {k : ℕ} (hf : ∀ i x, fCost i x ≤ k) (i : ℕ) (h : i ≤ n) (x : α) :
+    Fin.foldr.loop.timedCost n f fCost i h x ≤ (k + 3) * i + 4 := by
+  induction i generalizing x with
+  | zero => simp [Fin.foldr.loop.timedCost]
+  | succ i ih =>
+    simp only [Fin.foldr.loop.timedCost]
+    have := ih (by omega) (f ⟨i, h⟩ x)
+    have := hf ⟨i, h⟩ x
+    grind
 
 end
 
