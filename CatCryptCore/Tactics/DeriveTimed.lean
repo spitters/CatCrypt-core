@@ -50,10 +50,41 @@ A binder of `R` is translated by its type:
   `x`; it is erased by `fun x => (k x).erase`;
 * any other function `f : X → Y` is kept and followed by its cost companion `fCost : X → ℕ`,
   the cost of evaluating `f x`;
-* data holding functions (a pair with a function component, such as a simulation state with
-  a table `ℕ → List (D × R)`) becomes its costed value (`hatTy?`), in which each function
-  `X → Y` with a first-order domain is a costed closure `(X → Ŷ) × (X → ℕ)`: the function and
-  its cost companion; it is erased by `ε`, which keeps the functions (`epsE`).
+* data holding functions (a pair or a sum with a function component, such as a simulation
+  state with a table `ℕ → List (D × R)`) becomes its costed value (`hatTy?`), in which each
+  function `X → Y` with a first-order domain is a costed closure `(X → Ŷ) × (X → ℕ)`: the
+  function and its cost companion; it is erased by `ε`, which keeps the functions (`epsE`);
+* a structure holding functions is kept, and its function fields applied in the body are
+  field paths (below).
+
+## Functions stored in data and in state fields
+
+A function stored in data, in a component of a sum or in a field of a state structure carries
+its cost companion with it, as the costed closure of the function and its companion; the
+companion is built where the function is created and read where the function is applied
+(the convention of `OracleAdv.Timed.simulateHat` for a simulation state):
+
+* the costed type of a sum `A ⊕ B` is `Â ⊕ B̂`, erased and lifted componentwise by `Sum.map`;
+* a structure `S` whose fields are data of types independent of the other fields, one of
+  which holds functions, has as costed value its mirror (`mirrorStruct?`, `mirrorType`): the
+  tuple `ĥ₀ × (ĥ₁ × … × ĥₙ₋₁)` of the costed values of its fields; `ε` applies the constructor
+  to the erased components, `ι` lifts each field;
+* a constructor application `S.mk a₁ … aₙ` or `Sum.inl a` is translated componentwise; a
+  field `s.f` of such a structure is the component of the costed value of `s`, and a
+  function field applied, `s.f x`, costs one plus the companion of that component at `x`
+  (`costConst`); a `let` of a structure stays a `let`, and its costed value is that of its
+  value;
+* a field of a pattern of a match on a discriminant with a costed value (the block `a` of
+  `| .inl a`, a field of `| ⟨f, g⟩`) keeps its function and reads its companion from the
+  discriminant's costed value (`patternHats`, `refillE`): a component of a pair or a mirror,
+  or, under `Sum.inl`/`Sum.inr`, the component selected by `Sum.elim`;
+* the result of a call of a function binder holding functions (`st a : S`), a local without
+  a costed value, and a function under any other constructor (`Option`, `List`) hold tables
+  (`ι`), as the functions received from a tree do.
+
+A binder of the reduction whose type is such a structure keeps the convention of field paths
+(below), so that a scheme or a kit passed as a binder has the cost companions of its applied
+fields as further binders; a binder whose type is a sum holding functions is a costed value.
 
 ## Costed closures
 
@@ -196,9 +227,8 @@ unfold them. A reduction valued in `PMF` is refused: a distribution has no cost 
 
 Calls of reductions without a costed form are derived on demand. A derivation fails, with
 the reason, on a function stored in data that is not a costed closure as above (a local
-function without a cost companion, a function in a list or an option, a closure returned by
-a recursive function), a
-field of a structure that is neither a field path nor a field of a computed structure as
+function without a cost companion applied, a function in a list or an option, a closure returned by a recursive function), a field of a structure that is neither a field
+path, nor a field of a computed structure, nor a field of a structure with a mirror as
 above, an opaque data function without a registered cost, an operation on a quotient type
 (`Finset`, `Multiset`, `Quot`) without a registered cost (the costs of `Finset.sum`,
 `Finset.prod`, `Finset.univ`, `Finset.range` and `Finset.erase` are registered in
@@ -743,6 +773,7 @@ def oracleKind : TreeKind where
   hatLemmas := #[``CatCrypt.Crypto.OracleAdv.bind, ``CatCrypt.Crypto.OracleAdv.bind_assoc,
     ``CatCrypt.Crypto.OracleAdv.bind_ret,
     ``CatCrypt.Crypto.OracleAdv.Timed.erase_simulateHat_bind, ``Prod.mk.eta,
+    ``Sum.map_inl, ``Sum.map_inr,
     ``CatCrypt.Crypto.OracleAdv.Timed.bind_ret_eq,
     ``CatCrypt.Tactics.DeriveTimed.fst_ite, ``CatCrypt.Tactics.DeriveTimed.snd_ite,
     ``CatCrypt.Tactics.DeriveTimed.ite_prod_mk]
@@ -777,6 +808,7 @@ def spTreeKind : TreeKind where
     ``CatCrypt.Core.SPTree.Timed.erase_snd_dite]
   hatLemmas := #[``CatCrypt.Core.SPTree.bind, ``CatCrypt.Core.SPTree.bind_assoc,
     ``CatCrypt.Core.SPTree.bind_ret_val, ``CatCrypt.Core.SPTree.bind_ret, ``Prod.mk.eta,
+    ``Sum.map_inl, ``Sum.map_inr,
     ``CatCrypt.Tactics.DeriveTimed.fst_ite,
     ``CatCrypt.Tactics.DeriveTimed.snd_ite, ``CatCrypt.Tactics.DeriveTimed.ite_prod_mk]
 
@@ -845,11 +877,73 @@ def result (T : TreeTy) : Expr := T.params[T.params.size - 1]!
 
 end TreeTy
 
+/-- A structure whose costed value is a mirror: its name, constructor, universe levels and
+parameters at a type, the projections and the types of its fields. -/
+structure MirrorStruct where
+  struct : Name
+  ctor : Name
+  levels : List Level
+  params : Array Expr
+  projs : Array Name
+  fieldTypes : Array Expr
+
+/-- The structure `S ps` of the type `tw` (in weak head normal form), when its costed value is
+a mirror: a structure that is not a class nor `Prod`, with at least one field, whose fields
+are data of types that do not depend on the other fields. -/
+def mirrorStruct? (tw : Expr) : MetaM (Option MirrorStruct) := do
+  let .const S lvls := tw.getAppFn | return none
+  if S == ``Prod || S == ``Sum then return none
+  let env ← getEnv
+  unless isStructure env S do return none
+  if isClass env S then return none
+  let some (.inductInfo ii) := env.find? S | return none
+  unless ii.numIndices == 0 && tw.getAppNumArgs == ii.numParams do return none
+  let [ctor] := ii.ctors | return none
+  let fields := getStructureFields env S
+  if fields.isEmpty then return none
+  let some (.ctorInfo ci) := env.find? ctor | return none
+  let cty ← instantiateForall (ci.type.instantiateLevelParams ci.levelParams lvls)
+    tw.getAppArgs
+  forallTelescope cty fun fs _ => do
+    unless fs.size == fields.size do return none
+    let mut tys := #[]
+    for f in fs do
+      let ft ← inferType f
+      if ft.hasAnyFVar fun x => fs.any (·.fvarId! == x) then return none
+      if ← isProp ft then return none
+      if ← isTypeFormerType ft then return none
+      if (← isClass? ft).isSome then return none
+      tys := tys.push ft
+    return some { struct := S, ctor, levels := lvls, params := tw.getAppArgs,
+                  projs := fields.map (S ++ ·), fieldTypes := tys }
+
+/-- The mirror type `h₀ × (h₁ × … × hₙ₋₁)` of the costed field types `hs` (`h₀` for one
+field). -/
+def mirrorType (hs : Array Expr) : MetaM Expr := do
+  let some last := hs.back? | throwError "derive_timed: internal: a mirror of no field"
+  hs.pop.foldrM (fun h acc => mkAppM ``Prod #[h, acc]) last
+
+/-- The mirror tuple of the costed field values `vs`. -/
+def mirrorMk (vs : Array Expr) : MetaM Expr := do
+  let some last := vs.back? | throwError "derive_timed: internal: a mirror of no field"
+  vs.pop.foldrM (fun v acc => mkAppM ``Prod.mk #[v, acc]) last
+
+/-- The component `i` of the mirror tuple `v` of `n` fields, reduced on a literal tuple. -/
+def mirrorProj (n i : Nat) (v : Expr) : MetaM Expr := do
+  let proj (fst : Bool) (v : Expr) : MetaM Expr := do
+    if v.isAppOfArity ``Prod.mk 4 then return v.getArg! (if fst then 2 else 3)
+    mkAppM (if fst then ``Prod.fst else ``Prod.snd) #[v]
+  let mut cur := v
+  for _ in [0:i] do cur ← proj false cur
+  if i + 1 < n then proj true cur else return cur
+
 /-- The costed type of a type `t` of data holding functions: a function `X → Y` with a
 first-order domain becomes the costed closure `(X → Ŷ) × (X → ℕ)`, a pair the pair of the
 costed types of its components; `none` when `t` holds no such function, whose costed type is
-`t` itself. -/
-partial def hatTy? (t : Expr) : MetaM (Option Expr) := do
+`t` itself. With `mirror := false` a structure is not mirrored: the result is `none` for a
+type whose functions are all in fields of structures. -/
+partial def hatTy? (t : Expr) (seen : List Name := []) (mirror : Bool := true) :
+    MetaM (Option Expr) := do
   let t ← instantiateMVars t
   if ← isProp t then return none
   if ← isTypeFormerType t then return none
@@ -859,10 +953,22 @@ partial def hatTy? (t : Expr) : MetaM (Option Expr) := do
   if tw.isAppOfArity ``Prod 2 then
     let a := tw.getArg! 0
     let b := tw.getArg! 1
-    let ha ← hatTy? a
-    let hb ← hatTy? b
+    let ha ← hatTy? a seen mirror
+    let hb ← hatTy? b seen mirror
     if ha.isNone && hb.isNone then return none
     return some (← mkAppM ``Prod #[ha.getD a, hb.getD b])
+  if tw.isAppOfArity ``Sum 2 then
+    let a := tw.getArg! 0
+    let b := tw.getArg! 1
+    let ha ← hatTy? a seen mirror
+    let hb ← hatTy? b seen mirror
+    if ha.isNone && hb.isNone then return none
+    return some (← mkAppM ``Sum #[ha.getD a, hb.getD b])
+  if let some m ← mirrorStruct? tw then
+    if seen.contains m.struct || !mirror then return none
+    let hs ← m.fieldTypes.mapM (hatTy? · (m.struct :: seen))
+    if hs.all (·.isNone) then return none
+    return some (← mirrorType ((m.fieldTypes.zip hs).map fun (f, h) => h.getD f))
   unless tw.isForall do return none
   forallTelescope tw fun ys body => do
     if body.hasAnyFVar fun f => ys.any (·.fvarId! == f) then return none
@@ -882,6 +988,14 @@ partial def hatTy? (t : Expr) : MetaM (Option Expr) := do
     let cT ← mkForallFVars ys (mkConst ``Nat)
     return some (← mkAppM ``Prod #[fnT, cT])
 
+/-- `Sum.map` of `f` at the components of the sum `a ⊕ b` applied to `v`: with `f = epsE` from
+the costed sum to `a ⊕ b`, with `f = iotaE` from `a ⊕ b` to the costed sum. -/
+def sumMapE (a b v : Expr) (f : Expr → Expr → MetaM Expr) : MetaM Expr := do
+  let vt ← whnfR (← inferType v)
+  let side (i : Nat) (c : Expr) : MetaM Expr := do
+    withLocalDeclD `x (vt.getArg! i) fun x => do mkLambdaFVars #[x] (← f c x)
+  mkAppM ``Sum.map #[← side 0 a, ← side 1 b, v]
+
 /-- The erasure `ε v : t` of the costed value `v` of type `hatTy? t`: the function of each
 costed closure. -/
 partial def epsE (t v : Expr) : MetaM Expr := do
@@ -891,6 +1005,14 @@ partial def epsE (t v : Expr) : MetaM Expr := do
     let a ← epsE (tw.getArg! 0) (← mkAppM ``Prod.fst #[v])
     let b ← epsE (tw.getArg! 1) (← mkAppM ``Prod.snd #[v])
     return ← mkAppM ``Prod.mk #[a, b]
+  if tw.isAppOfArity ``Sum 2 then
+    return ← sumMapE (tw.getArg! 0) (tw.getArg! 1) v epsE
+  if let some m ← mirrorStruct? tw then
+    let n := m.fieldTypes.size
+    let mut fs := #[]
+    for i in [0:n] do
+      fs := fs.push (← epsE m.fieldTypes[i]! (← mirrorProj n i v))
+    return mkAppN (mkConst m.ctor m.levels) (m.params ++ fs)
   let f ← mkAppM ``Prod.fst #[v]
   forallTelescope tw fun ys body => do
     if (← hatTy? body).isNone then return f
@@ -905,6 +1027,14 @@ partial def iotaE (t v : Expr) : MetaM Expr := do
     let a ← iotaE (tw.getArg! 0) (← mkAppM ``Prod.fst #[v])
     let b ← iotaE (tw.getArg! 1) (← mkAppM ``Prod.snd #[v])
     return ← mkAppM ``Prod.mk #[a, b]
+  if tw.isAppOfArity ``Sum 2 then
+    return ← sumMapE (tw.getArg! 0) (tw.getArg! 1) v iotaE
+  if let some m ← mirrorStruct? tw then
+    let mut fs := #[]
+    for i in [0:m.fieldTypes.size] do
+      let pf := mkAppN (mkConst m.projs[i]! m.levels) (m.params.push v)
+      fs := fs.push (← iotaE m.fieldTypes[i]! pf)
+    return ← mirrorMk fs
   forallTelescope tw fun ys body => do
     let f ← mkLambdaFVars ys (← iotaE body (mkAppN v ys).headBeta)
     let c ← mkLambdaFVars ys (mkNatLit 0)
@@ -918,6 +1048,79 @@ def epsFun (t : Expr) : MetaM Expr := do
 /-- The lift function `fun y => ι y` of the type `t`. -/
 def iotaFun (t : Expr) : MetaM Expr := do
   withLocalDeclD `y t fun y => do mkLambdaFVars #[y] (← iotaE t y)
+
+/-- The costed value of `x : t` with its functions from `x` and their cost companions from the
+costed value `c : hatTy? t`; its erasure reduces to `x` by projections. A sum inside `t` is
+lifted by `ι`. -/
+partial def refillE (t x c : Expr) : MetaM Expr := do
+  let some _ ← hatTy? t | return x
+  let tw ← whnfR t
+  if tw.isAppOfArity ``Prod 2 then
+    let a ← refillE (tw.getArg! 0) (← mkAppM ``Prod.fst #[x]) (← mkAppM ``Prod.fst #[c])
+    let b ← refillE (tw.getArg! 1) (← mkAppM ``Prod.snd #[x]) (← mkAppM ``Prod.snd #[c])
+    return ← mkAppM ``Prod.mk #[a, b]
+  if tw.isAppOfArity ``Sum 2 then return ← iotaE t x
+  if let some m ← mirrorStruct? tw then
+    let n := m.fieldTypes.size
+    let mut fs := #[]
+    for i in [0:n] do
+      let pf := mkAppN (mkConst m.projs[i]! m.levels) (m.params.push x)
+      fs := fs.push (← refillE m.fieldTypes[i]! pf (← mirrorProj n i c))
+    return ← mirrorMk fs
+  let comp ← mkAppM ``Prod.snd #[c]
+  let fn ← mkAppM ``Prod.fst #[c]
+  let f ← forallTelescope tw fun ys body => do
+    if (← hatTy? body).isNone then return x
+    mkLambdaFVars ys (← refillE body (mkAppN x ys).headBeta (mkAppN fn ys).headBeta)
+  mkAppM ``Prod.mk #[f, comp]
+
+/-- The fields of the pattern `p` of a discriminant with costed value `v`, each with the
+costed value of its position in `v`: a field is the whole value, a component of a pair or of
+a structure with a mirror is the component, and the component of `Sum.inl`/`Sum.inr` is read
+by `Sum.elim`, with `ι` of the pattern in the other case. A field under any other constructor
+is not found. -/
+partial def patternHats (p v : Expr) : MetaM (Array (Expr × Expr)) := do
+  let p := p.consumeMData
+  if p.isFVar then return #[(p, v)]
+  let args := p.getAppArgs
+  let .const c _ := p.getAppFn | return #[]
+  if c == ``Prod.mk && args.size == 4 then
+    return (← patternHats args[2]! (← mkAppM ``Prod.fst #[v])) ++
+      (← patternHats args[3]! (← mkAppM ``Prod.snd #[v]))
+  if (c == ``Sum.inl || c == ``Sum.inr) && args.size == 3 then
+    let vt ← whnfR (← inferType v)
+    unless vt.isAppOfArity ``Sum 2 do return #[]
+    let left := c == ``Sum.inl
+    let pt := if left then args[0]! else args[1]!
+    let dflt ← iotaE pt args[2]!
+    let get ← withLocalDeclD `z (vt.getArg! (if left then 0 else 1)) fun z =>
+      mkLambdaFVars #[z] z
+    let other ← withLocalDeclD `z (vt.getArg! (if left then 1 else 0)) fun z =>
+      mkLambdaFVars #[z] dflt
+    let comp ← if left then mkAppM ``Sum.elim #[get, other, v]
+      else mkAppM ``Sum.elim #[other, get, v]
+    return ← patternHats args[2]! comp
+  let some m ← mirrorStruct? (← whnfR (← inferType p)) | return #[]
+  unless c == m.ctor && args.size == m.params.size + m.fieldTypes.size do return #[]
+  let mut out := #[]
+  for i in [0:m.fieldTypes.size] do
+    out := out ++ (← patternHats args[m.params.size + i]! (← mirrorProj m.fieldTypes.size i v))
+  return out
+
+/-- The patterns of the alternative `i` of the match `app`, one for each discriminant, over the
+fields `fs` of the alternative. -/
+def altPatterns (app : MatcherApp) (i : Nat) (fs : Array Expr) : MetaM (Option (Array Expr)) := do
+  let mty ← instantiateForall
+    (← inferType (mkConst app.matcherName app.matcherLevels.toList)) app.params
+  forallBoundedTelescope mty (some 1) fun _ rest => do
+    let rest ← instantiateForall rest app.discrs
+    forallBoundedTelescope rest (some app.alts.size) fun as _ => do
+      let some a := as[i]? | return none
+      forallBoundedTelescope (← inferType a) (some fs.size) fun gs body => do
+        unless gs.size == fs.size do return none
+        let pats := body.getAppArgs
+        unless pats.size == app.discrs.size do return none
+        return some (pats.map (·.replaceFVars gs fs))
 
 /-- The tree type of `t` with its result type replaced by its costed type (`hatTy?`). -/
 def treeTyH? (t : Expr) : MetaM (Option TreeTy) := do
@@ -933,7 +1136,12 @@ def classify (t : Expr) : MetaM Kind := do
   forallTelescope (← whnfR t) fun ys b => do
     if (← treeTy? b).isSome then
       return if ys.isEmpty then .tree else .treeFn
-    if ys.isEmpty then return if (← hatTy? b).isSome then .hat else .data
+    -- A structure binder keeps the convention of field paths: its function fields applied
+    -- are priced by cost companions after the binders. So does a binder whose functions are
+    -- all in fields of structures (a pair `R × W` of two structures).
+    if ys.isEmpty && (← mirrorStruct? b).isSome then return .data
+    if ys.isEmpty then
+      return if (← hatTy? b (mirror := false)).isSome then .hat else .data
     return .fn
 
 /-- Whether `e` is data: not a type, a proposition, a proof or an instance. -/
@@ -976,6 +1184,8 @@ def keepsLet (t v : Expr) : MetaM Bool := do
   if ← isSPCompType t then return false
   if (← treeTy? t).isSome then return false
   if (← whnfR t).isForall then return false
+  -- A structure value stays a `let`; its costed value is read through the `let` (`tv`).
+  if (← mirrorStruct? (← whnfR t)).isSome then return true
   if (← hatTy? t).isSome then return false
   return true
 
@@ -1524,7 +1734,8 @@ partial def closureHead? (ctx : Ctx) (e : Expr) :
 
 /-- The application of the costed closure `c` to `args`: its cost, one plus the companion
 at the arguments plus the costs of the arguments for each saturated application, and the
-costed value of the result. -/
+costed value of the result. A partial application (fewer arguments than the companion takes)
+costs its arguments and is the costed closure of the remaining arguments. -/
 partial def closureApp (ctx : Ctx) (c : Expr) (args : Array Expr) :
     TermElabM (Expr × Expr) := do
   let mut cur := c
@@ -1535,8 +1746,17 @@ partial def closureApp (ctx : Ctx) (c : Expr) (args : Array Expr) :
     unless ct.isAppOfArity ``Prod 2 do
       fail m!"the costed closure `{cur}` is applied to more arguments than it takes"
     let k ← forallTelescope (← whnfR (ct.getArg! 1)) fun ys _ => pure ys.size
-    unless k ≤ rest.size do
-      fail m!"a costed closure is applied to {rest.size} arguments in a partial application"
+    if rest.size < k then
+      -- A partial application: the costed closure of the remaining arguments, whose function
+      -- and companion are those of `cur` at the arguments given, evaluated when it is built.
+      let fn ← projE true cur
+      let cp ← projE false cur
+      let r ← forallBoundedTelescope (← whnfR (← inferType (mkAppN fn rest)))
+        (some (k - rest.size)) fun zs _ => do
+          let f ← mkLambdaFVars zs (mkAppN (mkAppN fn rest) zs).headBeta
+          let c ← mkLambdaFVars zs (mkAppN (mkAppN cp rest) zs).headBeta
+          mkAppM ``Prod.mk #[f, c]
+      return (add cost (← argsCost ctx rest), r)
     let now := rest.extract 0 k
     let comp := (mkAppN (← projE false cur) now).headBeta
     cost := add cost (add (natE 1) (add comp (← argsCost ctx now)))
@@ -1567,9 +1787,54 @@ partial def tv (ctx : Ctx) (e : Expr) : TermElabM (Expr × Expr) := do
     withEta e n fun ys b => do
       let (cb, vb) ← tv ctx b
       return (natE 0, ← mkAppM ``Prod.mk #[← mkLambdaFVars ys vb, ← mkLambdaFVars ys cb])
+  | .fvar id =>
+    -- A `let` of a structure: its costed value is that of the value, whose cost the `let`
+    -- charged. Any other local holding functions without a costed value is a table (`ι`).
+    if let some v ← id.getValue? then return (natE 0, (← tv ctx v).2)
+    return (natE 0, ← iotaE t e)
+  | .proj S i s =>
+    let some m ← mirrorStruct? (← whnfR (← inferType s))
+      | fail m!"a function bound in data: the projection `{e}` has no costed form"
+    unless m.struct == S do fail m!"internal: the projection `{e}`"
+    let (cs, vs) ← tv ctx s
+    return (cs, ← mirrorProj m.fieldTypes.size i vs)
   | .app .. | .const .. =>
     let f := e.getAppFn
     let args := e.getAppArgs
+    -- A sum holding functions: the costed value of the component.
+    if (f.isConstOf ``Sum.inl || f.isConstOf ``Sum.inr) && args.size == 3 then
+      let (ca, va) ← tv ctx args[2]!
+      let ha := (← hatTy? args[0]!).getD args[0]!
+      let hb := (← hatTy? args[1]!).getD args[1]!
+      let .const n lvls := f | fail m!"internal: `{e}`"
+      let lvls' ← [ha, hb].mapM fun x => (getDecLevel x : MetaM Level)
+      unless lvls.length == 2 do fail m!"internal: `{e}`"
+      return (ca, mkAppN (mkConst n lvls') #[ha, hb, va])
+    if let .const fc _ := f then
+      if let some m ← mirrorStruct? tw then
+        -- A structure holding functions built by its constructor: the mirror tuple of the
+        -- costed values of its fields.
+        if fc == m.ctor && args.size == m.params.size + m.fieldTypes.size then
+          let mut cs := #[]
+          let mut vs := #[]
+          for a in args.extract m.params.size args.size do
+            let (c, v) ← tv ctx a
+            cs := cs.push c
+            vs := vs.push v
+          return (sum cs, ← mirrorMk vs)
+      -- A field of a structure holding functions: the component of its costed value.
+      if let some info ← getProjectionFnInfo? fc then
+        if !info.fromClass && args.size == info.numParams + 1 then
+          let s := args[info.numParams]!
+          if let some m ← mirrorStruct? (← whnfR (← inferType s)) then
+            if let some i := m.projs.idxOf? fc then
+              let (cs, vs) ← tv ctx s
+              return (cs, ← mirrorProj m.fieldTypes.size i vs)
+    -- A call of a local function with a cost companion whose result holds functions: the
+    -- functions of the result are tables (`ι`).
+    if let .fvar id := f then
+      if let some { kind := .fn, companion? := some _, .. } := ctx.locals.get? id then
+        unless tw.isForall do return (← costOf ctx e, ← iotaE t e)
     if f.isConstOf ``Prod.mk && args.size == 4 then
       let (ca, va) ← tv ctx args[2]!
       let (cb, vb) ← tv ctx args[3]!
@@ -1817,6 +2082,14 @@ partial def costConst (ctx : Ctx) (e : Expr) (c : Name) (args : Array Expr) :
             fail m!"needs a registered primitive: `{c}` unfolds too deep"
           return add (← costOf ctx s)
             (← costOf { ctx with depth := ctx.depth + 1 } (mkAppN v rest).headBeta)
+      -- A function field of a structure holding functions: the costed closure of the field
+      -- in the costed value of the structure, applied.
+      if let some m ← mirrorStruct? (← whnfR (← inferType s)) then
+        if let some i := m.projs.idxOf? c then
+          if (← hatTy? m.fieldTypes[i]!).isSome then
+            let (cs, vs) ← tv ctx s
+            let comp ← mirrorProj m.fieldTypes.size i vs
+            return add cs (← closureApp ctx comp rest).1
       fail m!"a function bound in data: the field `{c}` is applied in `{e}`"
     return ← argsCost ctx args
   -- An operation on finite sets or multisets is defined through a quotient, whose internals
@@ -1946,6 +2219,19 @@ partial def mapMatch (ctx : Ctx) (e resultType : Expr)
             found := some info
         if let some info := found then
           ctx' := { ctx' with locals := ctx'.locals.insert fv.fvarId! info }
+      -- A field of a pattern of a discriminant with a costed value (a block in a sum, a
+      -- function field of a state): its costed value keeps the field's functions and reads
+      -- their cost companions from the discriminant's costed value.
+      if let some pats ← altPatterns app alts.size fs then
+        for d in app.discrs, p in pats do
+          let .fvar id := d.consumeMData | continue
+          let some { kind := .hat, value := v, .. } := ctx.locals.get? id | continue
+          for (fv, c) in ← patternHats p v do
+            unless fs.contains fv && (ctx'.locals.get? fv.fvarId!).isNone do continue
+            let ft ← inferType fv
+            if (← hatTy? ft).isNone then continue
+            ctx' := { ctx' with
+              locals := ctx'.locals.insert fv.fvarId! ⟨.hat, ← refillE ft fv c, none⟩ }
       mkLambdaFVars fs (← alt ctx' b)
     alts := alts.push a'
     ty := body.instantiate1 a'
@@ -2731,3 +3017,4 @@ def elabTimedCost : CommandElab := fun stx => do
 end CatCrypt.Tactics.DeriveTimed
 
 end
+
