@@ -86,6 +86,16 @@ A binder of the reduction whose type is such a structure keeps the convention of
 (below), so that a scheme or a kit passed as a binder has the cost companions of its applied
 fields as further binders; a binder whose type is a sum holding functions is a costed value.
 
+A field path whose value is used as data holding functions (the input `Z.input : Unit × S` of an
+environment binder `Z : Env (Unit × S) β`, with `S` a state structure with function fields,
+passed on as a state) is a data path: the shortest such prefix `p : t` of a path, below a
+binder without a costed value, has as costed value `refillE t p p̂` (`pathHat?`), whose
+functions are those of `p` and whose cost companions are read from a further binder
+`p̂ : hatTy? t` after the binders of `R` (named `inputHat`, recorded with the field paths), so
+that its erasure reduces to `p`. A path below it (`Z.input.2`) has the component of that costed
+value, and a function field applied below it (`Z.input.2.f x`) is the costed closure of the
+component, applied, in place of a field path with its own companion.
+
 ## Costed closures
 
 A function value inside data, in a state component, in the result of a tree or received from
@@ -340,6 +350,18 @@ theorem _root_.CatCrypt.Tactics.DeriveTimed.fst_ite {β γ : Type _} (c : Prop) 
 /-- The second component of an `if` between two pairs. -/
 theorem _root_.CatCrypt.Tactics.DeriveTimed.snd_ite {β γ : Type _} (c : Prop) [Decidable c]
     (p q : β × γ) : (if c then p else q).2 = if c then p.2 else q.2 := by
+  split <;> rfl
+
+/-- Erasure of a costed oracle tree commutes with an `if`. -/
+theorem _root_.CatCrypt.Tactics.DeriveTimed.erase_ite_oracle {D R α : Type} (c : Prop)
+    [Decidable c] (x y : Timed D R α) :
+    (if c then x else y).erase = if c then x.erase else y.erase := by
+  split <;> rfl
+
+/-- Erasure of a costed computation tree commutes with an `if`. -/
+theorem _root_.CatCrypt.Tactics.DeriveTimed.erase_ite_spTree {α : Type} (c : Prop)
+    [Decidable c] (x y : CatCrypt.Core.SPTree.Timed α) :
+    (if c then x else y).erase = if c then x.erase else y.erase := by
   split <;> rfl
 
 /-- The costed simulation of a handler whose state `Ŝ` carries costed closures: the
@@ -776,7 +798,7 @@ def oracleKind : TreeKind where
     ``Sum.map_inl, ``Sum.map_inr,
     ``CatCrypt.Crypto.OracleAdv.Timed.bind_ret_eq,
     ``CatCrypt.Tactics.DeriveTimed.fst_ite, ``CatCrypt.Tactics.DeriveTimed.snd_ite,
-    ``CatCrypt.Tactics.DeriveTimed.ite_prod_mk]
+    ``CatCrypt.Tactics.DeriveTimed.ite_prod_mk, ``CatCrypt.Tactics.DeriveTimed.erase_ite_oracle]
 
 /-- Syntactic computation trees `SPTree α`: `ret`, `sample`, `get`, `set`, `fail` and `load`
 nodes, and the combinators `SPTree.bind` and `SPTree.map`. -/
@@ -810,7 +832,8 @@ def spTreeKind : TreeKind where
     ``CatCrypt.Core.SPTree.bind_ret_val, ``CatCrypt.Core.SPTree.bind_ret, ``Prod.mk.eta,
     ``Sum.map_inl, ``Sum.map_inr,
     ``CatCrypt.Tactics.DeriveTimed.fst_ite,
-    ``CatCrypt.Tactics.DeriveTimed.snd_ite, ``CatCrypt.Tactics.DeriveTimed.ite_prod_mk]
+    ``CatCrypt.Tactics.DeriveTimed.snd_ite, ``CatCrypt.Tactics.DeriveTimed.ite_prod_mk,
+    ``CatCrypt.Tactics.DeriveTimed.erase_ite_spTree]
 
 /-- The table of tree kinds. -/
 def treeKinds : Array TreeKind := #[oracleKind, spTreeKind]
@@ -1513,12 +1536,40 @@ def fieldCostName (p : Expr) : MetaM Name := do
       let some fl ← last b | return `fieldCost
       let some gl ← last b.appArg! | return Name.mkSimple (fl ++ "Cost")
       return Name.mkSimple (gl ++ "_" ++ fl ++ "Cost")
+  if let .proj S i _ := p then
+    -- A data path: the costed value of the field, `inputHat` for `Z.input`.
+    if let some info := getStructureInfo? (← getEnv) S then
+      if let some fl := info.fieldNames[i]? then
+        return Name.mkSimple (fl.toString ++ "Hat")
+    return `fieldHat
   match ← last p with
   | some fl => return Name.mkSimple (fl ++ "Cost")
   | none => return `fieldCost
 
-/-- Bind a cost companion for each applied field of `ps` and continue with the pairs of the
-field and its companion. -/
+/-- Whether a value of type `t` is data holding functions that is not itself a function: its
+costed value (`hatTy?`) is a tuple that contains costed closures. -/
+def holdsFnData (t : Expr) : MetaM Bool := do
+  if (← whnfR t).isForall then return false
+  return (← hatTy? t).isSome
+
+/-- Whether the field path `p` is a data path: a primitive projection whose type holds
+functions and is not a function. -/
+def isDataPath (p : Expr) : MetaM Bool := do
+  unless p.isProj do return false
+  holdsFnData (← inferType p)
+
+/-- The type of the companion of the field path `p`: the costed type `hatTy? t` of a data path
+of type `t`, and the cost companion type `X → ℕ` of a function field of type `X → Y`. -/
+def pathCompanionType (p : Expr) : MetaM Expr := do
+  let t ← inferType p
+  if ← isDataPath p then
+    let some ht ← hatTy? t | fail m!"internal: `{t}` holds no function"
+    return ht
+  companionType t
+
+/-- Bind a companion for each field path of `ps` (`pathCompanionType`: a cost companion of an
+applied field, the costed value of a data path) and continue with the pairs of the path and
+its companion. -/
 def withFieldCosts {β : Type} (ps : Array Expr) (k : Array (Expr × Expr) → TermElabM β) :
     TermElabM β :=
   go 0 #[]
@@ -1527,7 +1578,7 @@ where
     if h : i < ps.size then
       let p := ps[i]
       let n ← fieldCostName p
-      withLocalDeclD n (← companionType (← inferType p)) fun cc =>
+      withLocalDeclD n (← pathCompanionType p) fun cc =>
         go (i + 1) (acc.push (p, cc))
     else k acc
 
@@ -1637,6 +1688,71 @@ def rewriteRecHyps (c : Name) (g : MVarId) : MetaM MVarId := g.withContext do
   for h in used do g ← g.tryClear h
   return g
 
+/-- The step of the projection `e = s.i` of the structure `S`, a primitive projection or a
+projection function (not a class method) applied to its parameters and to `s`: `(S, i, s)`. -/
+def projStep? (e : Expr) : MetaM (Option (Name × Nat × Expr)) := do
+  match e.consumeMData with
+  | .proj S i s => return some (S, i, s)
+  | e' =>
+    let .const m _ := e'.getAppFn | return none
+    let some info ← getProjectionFnInfo? m | return none
+    if info.fromClass then return none
+    unless e'.getAppNumArgs == info.numParams + 1 do return none
+    return some (m.getPrefix, info.i, e'.appArg!)
+
+/-- The projection path `e` with each step written as a primitive projection: the key of a
+data path in `Ctx.fields`. -/
+partial def canonPath (e : Expr) : MetaM Expr := do
+  match ← projStep? e with
+  | some (S, i, s) => return .proj S i (← canonPath s)
+  | none => return e.consumeMData
+
+/-- The start of the projection path `e`: the term whose projections it takes. -/
+partial def pathRoot (e : Expr) : MetaM Expr := do
+  match ← projStep? e with
+  | some (_, _, s) => pathRoot s
+  | none => return e.consumeMData
+
+/-- The component `i` of the costed value `v` of a structure `s` of the structure `S`: a
+component of a pair, or of the mirror tuple of a structure holding functions. -/
+def projHat? (S : Name) (i : Nat) (s v : Expr) : MetaM (Option Expr) := do
+  if S == ``Prod then
+    if v.isAppOfArity ``Prod.mk 4 then return some (v.getArg! (if i == 0 then 2 else 3))
+    return some (← mkAppM (if i == 0 then ``Prod.fst else ``Prod.snd) #[v])
+  let some m ← mirrorStruct? (← whnfR (← inferType s)) | return none
+  unless m.struct == S do return none
+  return some (← mirrorProj m.fieldTypes.size i v)
+
+/-- The costed value of the projection path `e` below a binder of the reduction that has no
+costed value of its own (a structure binder with the convention of field paths, such as an
+environment `Z`). The shortest prefix `p` of `e` that is data holding functions and not a
+function (the data path `Z.input` of `Z : Env (Unit × S) β`) has as costed value
+`refillE t p p̂`, whose functions are those of `p` and whose cost companions are read from the
+binder `p̂ : hatTy? t` after the binders of the reduction (`Ctx.fields`, keyed by
+`canonPath p`); the costed value of `e` is its component. With `record`, in the first pass, a
+data path without a binder is recorded (`fieldRec?`), with its functions as tables (`ι`). -/
+partial def pathHat? (ctx : Ctx) (e : Expr) (record : Bool) : MetaM (Option Expr) := do
+  let some (S, i, s) ← projStep? e | return none
+  let s := s.consumeMData
+  if !s.isFVar then
+    if let some sv ← pathHat? ctx s record then
+      return ← projHat? S i s sv
+  -- `s` is a path that holds no function in its prefixes: `e` is a data path when `s` starts
+  -- at a binder of the reduction without a costed value.
+  unless ← isFieldPath ctx s do return none
+  if let .fvar id ← pathRoot s then
+    if (ctx.locals.get? id).isSome then return none
+  let t ← inferType e
+  unless ← holdsFnData t do return none
+  let key ← canonPath e
+  if let some (_, cc) := ctx.fields.find? (·.1 == key) then
+    return some (← refillE t key cc)
+  if record then
+    if let some r := ctx.fieldRec? then
+      unless (← r.get).contains key do r.modify (·.push key)
+      return some (← iotaE t key)
+  return none
+
 mutual
 
 /-- The cost of evaluating the data term `e`. -/
@@ -1681,9 +1797,12 @@ partial def companionOf (ctx : Ctx) (a : Expr) : TermElabM Expr := do
 
 /-- The costed value of a path `e` into a costed value: a local of kind `hat` (its costed
 value), a local function with a cost companion (the costed closure of the two), a projection
-of a path, or an application of a costed closure whose result holds functions. -/
-partial def hatOf? (ctx : Ctx) (e : Expr) : TermElabM (Option Expr) := do
+of a path, an application of a costed closure whose result holds functions, or a projection
+path of a binder below a data path (`pathHat?`, which records the data path with `record`). -/
+partial def hatOf? (ctx : Ctx) (e : Expr) (record : Bool := false) :
+    TermElabM (Option Expr) := do
   let e := e.consumeMData
+  if let some v ← pathHat? ctx e record then return some v
   match e with
   | .fvar id =>
     match ctx.locals.get? id with
@@ -1773,7 +1892,7 @@ partial def tv (ctx : Ctx) (e : Expr) : TermElabM (Expr × Expr) := do
   let e := pushLetApp e.consumeMData.headBeta
   let t ← inferType e
   let some ht ← hatTy? t | return (← costOf ctx e, e)
-  if let some v ← hatOf? ctx e then return (← costOf ctx e, v)
+  if let some v ← hatOf? ctx e (record := true) then return (← costOf ctx e, v)
   let tw ← whnfR t
   match e with
   | .letE n lt v b _ =>
@@ -1793,6 +1912,10 @@ partial def tv (ctx : Ctx) (e : Expr) : TermElabM (Expr × Expr) := do
     if let some v ← id.getValue? then return (natE 0, (← tv ctx v).2)
     return (natE 0, ← iotaE t e)
   | .proj S i s =>
+    -- A component of a pair holding functions: the component of its costed value.
+    if S == ``Prod then
+      let (cs, vs) ← tv ctx s
+      return (cs, ← projE (i == 0) vs)
     let some m ← mirrorStruct? (← whnfR (← inferType s))
       | fail m!"a function bound in data: the projection `{e}` has no costed form"
     unless m.struct == S do fail m!"internal: the projection `{e}`"
@@ -2028,6 +2151,16 @@ partial def costConst (ctx : Ctx) (e : Expr) (c : Name) (args : Array Expr) :
     if args.size > info.numParams + 1 then
       let p := mkAppN f (args.extract 0 (info.numParams + 1))
       let rest := args.extract (info.numParams + 1) args.size
+      -- A function field of a structure below a data path with a binder (`Z.input.2.f x`):
+      -- the costed closure of the field in the costed value of the data path, applied.
+      if !info.fromClass then
+        let s := args[info.numParams]!
+        if let some sv ← pathHat? ctx s false then
+          if let some m ← mirrorStruct? (← whnfR (← inferType s)) then
+            if let some i := m.projs.idxOf? c then
+              if (← hatTy? m.fieldTypes[i]!).isSome then
+                let comp ← mirrorProj m.fieldTypes.size i sv
+                return add (← costOf ctx s) (← closureApp ctx comp rest).1
       if let some (_, cc) := ctx.fields.find? (·.1 == p) then
         let arity ← forallTelescope (← whnfR (← inferType cc)) fun ys _ => pure ys.size
         unless rest.size == arity do
@@ -2577,7 +2710,7 @@ partial def callTimed (ctx : Ctx) (e target : Expr) (args : Array Expr) (T : Tre
             out := out.push cc
           else if let some r := ctx.fieldRec? then
             unless (← r.get).contains p do r.modify (·.push p)
-            out := out.push (← mkFreshExprMVar (← companionType (← inferType p)))
+            out := out.push (← mkFreshExprMVar (← pathCompanionType p))
           else
             fail m!"the costed form of the callee `{e.getAppFn}` takes the cost of the field \
               `{p}`, which is not a field of a binder of the caller"
@@ -2638,7 +2771,8 @@ partial def deriveTimed (ctx : Ctx) (c : Name) : TermElabM Unit := do
     if ← xs.anyM fun x => do return (← hatTy? (← inferType x)).isSome then return true
     let some rawT ← treeTy? (← inferType b) | return false
     return (← hatTy? rawT.result).isSome
-  let (tType, tValue, eType, nBinders, hatted, fp?) ← lambdaTelescope value fun xs b => do
+  let (tType, tValue, eType, nBinders, hatted, dataHat, fp?) ←
+      lambdaTelescope value fun xs b => do
     let some T ← treeTyH? (← inferType b)
       | fail m!"the result of `{c}` is not a tree of a registered kind"
     let some rawT ← treeTy? (← inferType b) | fail m!"internal: the result of `{c}`"
@@ -2721,7 +2855,9 @@ partial def deriveTimed (ctx : Ctx) (c : Name) : TermElabM Unit := do
           for (p, _) in used.reverse do
             tup ← mkAppM ``PProd.mk #[p, tup]
           pure (some (← mkLambdaFVars xs tup))
-        return (tType, tValue, eType, explicit, hatted, fp?)
+        -- A data path with a costed value: its costed closures flow through the trees.
+        let dataHat ← used.anyM fun (p, _) => isDataPath p
+        return (tType, tValue, eType, explicit, hatted, dataHat, fp?)
   addTimedDef timedName info.levelParams tType tValue
   if let some fp := fp? then
     addTimedDef (timedName ++ `fieldPaths) info.levelParams (← inferType fp) fp
@@ -2736,7 +2872,7 @@ partial def deriveTimed (ctx : Ctx) (c : Name) : TermElabM Unit := do
   -- Costed closures in a result or in a simulation state: the lemmas that push `ε` to the
   -- leaves and the erasure of a simulation with a costed state.
   let hatLemmas : Array Name :=
-    if hatted || binderHat || plainHat || used.contains ``CatCrypt.Crypto.OracleAdv.Timed.simulateHat ||
+    if hatted || binderHat || plainHat || dataHat || used.contains ``CatCrypt.Crypto.OracleAdv.Timed.simulateHat ||
         callees.any (fun n => n.toString.endsWith "_bind") then
       (treeKinds.filter fun k => used.contains k.timed).flatMap (·.hatLemmas)
     else #[]

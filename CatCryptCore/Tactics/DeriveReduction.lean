@@ -47,7 +47,11 @@ first-order data arguments bound by `let`s around its body, so that an argument 
 however often the body uses it, and a call `b` of which two projections `b.1`, `b.2` occur among
 the arguments is bound once by a `let` (`unfoldShared?`). Unfolding stops at the six `SPComp`
 constructors, at `ite`,
-`dite` and matchers, at a local, and at a projection of a local. The traversal is that of `reifySPComp`
+`dite` and matchers, at a local, and at a projection of a local. A chain of `let`s applied to
+arguments (the unfolded body of a definition that returns a function after its `let`s,
+`opaquePost sid uid s r o`) has the arguments pushed under the `let`s,
+`(let x := v; fun y => b) a ↦ let x := v; b[a/y]` (`pushAppUnderLets`), so that the `let`s are
+those of the tree. The traversal is that of `reifySPComp`
 (`CatCryptCore.Deep.Reflect`), with these additional stops so that `if` and `match` stay
 syntax.
 
@@ -178,6 +182,19 @@ primitives. `derive_timed` derives `B.f.tree.timed`, and
   and `∀ ys, (p ys).erase = F ys` for each costed tree primitive, with the data primitives at
   their fields and each adversary at the compilation of the erasure of its costed form.
 
+An adversary called in a type or data field (a handler in the oracle program `run` of an
+`EUFCMAAdversary`) is a binder of `B.timed`, with its costed type and cost companion; the field
+of `B.timed` is the field of `B` with the adversary at the compilation of the erasure of its
+costed binder, the argument at which `B.erase_timed` states the erasure. A data field carries
+no cost in `S.Timed.TimeBound`.
+
+## Tree-valued reductions
+
+A reduction `B : … → Y₁ → … → Yₙ → T` whose result, after the leading binders `Y₁ … Yₙ` of its
+type, is a tree of a kind of `CatCrypt.Tactics.DeriveTimed.treeKinds`
+(`PK → OracleAdv D R α`) is itself a tree: `derive_reduction B` runs `derive_timed B`, which
+defines `B.timed` with the binders `Y₁ … Yₙ` and proves `B.erase_timed`.
+
 The module imports the registered costs of `CatCryptCore.Tactics.StdCosts`, so that a sum or a
 product over a finite set in a reduction is priced by them (a quotient is never unfolded).
 
@@ -203,7 +220,8 @@ continuation), `if` by `SPTree.compile_ite_eq` and `SPTree.compile_dite_eq`, a `
 
 * `derive_reduction B`, `derive_reduction B (adv := A₁ … Aₖ)` — define `B.tree`, prove
   `B.compile_tree`, and run `derive_timed B.tree`; for a structure-valued `B`, define
-  `B.f.tree` for each tree and computation field, `B.timed`, and prove `B.erase_timed`
+  `B.f.tree` for each tree and computation field, `B.timed`, and prove `B.erase_timed`; for a
+  tree-valued `B`, run `derive_timed B`
 
 ## Main results
 
@@ -366,15 +384,28 @@ def unfoldShared? (e : Expr) : MetaM (Option Expr) := do
   let v := dv.value.instantiateLevelParams dv.levelParams lvls
   some <$> CatCrypt.Tactics.DeriveTimed.bindArgsShared v e.getAppArgs
 
+/-- The application `f a₁ … aₙ` with the arguments pushed under the `let`s at the head of `f`:
+`(let x := v; b) a ↦ let x := v; b a`, and the head of the innermost body beta-reduced. The
+arguments are closed terms, so that no bound variable is captured. -/
+partial def pushAppUnderLets (f : Expr) (args : Array Expr) : Expr :=
+  match f with
+  | .letE n t v b nd => .letE n t v (pushAppUnderLets b args) nd
+  | .mdata _ b => pushAppUnderLets b args
+  | f => (mkAppN f args).headBeta
+
 /-- Bring the computation `e` to a head: a constructor of `SPComp`, `ite`, `dite`, a matcher,
 `SPTree.compile`, a call of a recursive definition, a local or a `let`, or a stuck term. A
-definition is unfolded by `unfoldShared?`, so that its arguments stay `let`s priced once. -/
+definition is unfolded by `unfoldShared?`, so that its arguments stay `let`s priced once. A
+`let` chain applied to arguments (the body of a definition that returns a function after its
+`let`s) is brought to a `let` by `pushAppUnderLets`. -/
 partial def normalize (e : Expr) : MetaM Expr := do
   let e ← instantiateMVars e
   if let .const c _ := e.getAppFn then
     if isRecursive (← getEnv) c then return e
   let e ← withConfig (fun c => { c with zeta := false }) <| whnfR e
   if e.isLet then return e
+  if e.getAppFn.consumeMData.isLet && !e.hasLooseBVars then
+    return ← normalize (pushAppUnderLets e.getAppFn e.getAppArgs)
   match e.getAppFn with
   | .const c _ =>
     if normalizeStops.contains c then return e
@@ -1332,17 +1363,31 @@ partial def assembleStruct (c : Name) (levels : List Level) (levelParams : List 
     match fieldPaths.find? (·.1 == n) with
     | some (_, ps) => ps.filterMap fun p => (allPaths.idxOf? p).map (comps[·]!)
     | none => #[]
+  -- The erasure of the costed binder of the tree binder `fv`, compiled when `compile`.
+  let erase (fv : Expr) (compile : Bool) : TermElabM Expr := do
+    let v ← costed fv
+    forallTelescope (← whnfR (← inferType fv)) fun ys bt => do
+      let some T ← CatCrypt.Tactics.DeriveTimed.treeTy? bt | fail m!"internal: `{fv}`"
+      let e := T.eraseE (mkAppN v ys)
+      let e ← if compile then mkAppM ``CatCrypt.Core.SPTree.compile #[e] else pure e
+      mkLambdaFVars ys e
+  -- An adversary called in a type or data field is the compilation of the erasure of its
+  -- costed binder, as in the erasure theorem.
+  let advFvs := advs.map (mkFVar ·.orig)
+  let advErased ← advs.mapM fun a => do
+    if kept.contains a.tree then erase a.tree true else pure (mkFVar a.orig)
   -- The costed form.
   let mut mvals : Array Expr := #[]
   for fd in fields do
     match fd.kind with
     | .prop => pure ()
     | .type | .data =>
+      let v ← Core.betaReduce (fd.value.replaceFVars advFvs advErased)
       for x in xs do
-        if fd.value.containsFVar x.fvarId! && !bs.contains x then
+        if v.containsFVar x.fvarId! && !bs.contains x then
           fail m!"the field `{fd.name}` of the result mentions `{x}`, which the costed form \
             does not take"
-      mvals := mvals.push fd.value
+      mvals := mvals.push v
     | _ =>
       let tc := Lean.mkConst (c ++ fd.name ++ `tree ++ `timed) levels
       let ar ← forallTelescope (← inferType tc) fun zs _ => pure zs.size
@@ -1366,13 +1411,6 @@ partial def assembleStruct (c : Name) (levels : List Level) (levelParams : List 
   let bsInst := bs.map fun b => match dps.find? (·.fv == b) with
     | some p => p.key
     | none => b
-  let erase (fv : Expr) (compile : Bool) : TermElabM Expr := do
-    let v ← costed fv
-    forallTelescope (← whnfR (← inferType fv)) fun ys bt => do
-      let some T ← CatCrypt.Tactics.DeriveTimed.treeTy? bt | fail m!"internal: `{fv}`"
-      let e := T.eraseE (mkAppN v ys)
-      let e ← if compile then mkAppM ``CatCrypt.Core.SPTree.compile #[e] else pure e
-      mkLambdaFVars ys e
   let argsC ← xs.mapM fun x => do
     match advs.find? (·.orig == x.fvarId!) with
     | some a => erase a.tree true
@@ -1585,7 +1623,12 @@ partial def deriveStructReduction (c : Name) (advNames : Array Name) (unfold : B
             roots := roots.push t
             for y in fd.ys do roots := roots.push (← inferType y)
             roots := roots.push (← inferType fd.body)
-          else if !(fd.kind matches .prop) then roots := roots.push fd.value
+          else if !(fd.kind matches .prop) then
+            roots := roots.push fd.value
+            -- An adversary called in a type or data field (a handler in an oracle program):
+            -- its tree-valued binder is a binder of the costed form.
+            for a in advs do
+              if fd.value.containsFVar a.orig then roots := roots.push a.tree
         for x in roots do
           needed := (collectFVars {} (← instantiateMVars x)).fvarIds.foldl (·.insert ·) needed
         for bnd in bs.reverse do
@@ -1795,6 +1838,13 @@ partial def deriveReduction (c : Name) (advNames : Array Name) (unfold : Bool :=
             `SPTree` are over `Type`: derive the reduction at carriers in `Type`"
   let deriveRec : Name → NameSet → TermElabM Unit := fun g vis =>
     deriveReduction g #[] (visiting := vis)
+  -- A tree-valued reduction (`PK → OracleAdv D R α`): the reduction is a tree of a registered
+  -- kind after its binders, with the leading binders of its result among them, and its costed
+  -- form is that of `derive_timed`.
+  if ← lambdaTelescope value fun _ b => do
+      return (← CatCrypt.Tactics.DeriveTimed.treeTy? (← inferType b)).isSome then
+    if env.contains (c ++ `timed) then fail m!"`{c ++ `timed}` already exists"
+    return ← CatCrypt.Tactics.DeriveTimed.deriveTimed {} c
   -- A structure-valued reduction: field by field.
   if ← lambdaTelescope value fun _ b => do return (← spCompArg? (← inferType b)).isNone then
     if recursive then fail m!"`{c}` is recursive and its result is not a computation"

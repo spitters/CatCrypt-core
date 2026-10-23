@@ -43,14 +43,20 @@ linked package keeps the bound `T` under `h₂` (`DeepPackage.timeBound_link`).
 
 A field `f : X₁ → ⋯ → Xₖ → QAdv m n w q` is mirrored as
 `f : X₁ → ⋯ → Xₖ → QAdv.Timed S q` with the cost companion `fCost : X₁ → ⋯ → Xₖ → ℕ` (the
-classical cost of computing the circuit from the arguments), the gate set `S` and a handler
-cost `h` becoming parameters of the mirror. Its erasure is `QAdv.Timed.Erases (A'.f ys)
-(A.f ys)` and its time bound is `A'.fCost ys + (A'.f ys).time h ≤ T_f` at every `ys`.
+classical cost of computing the circuit from the arguments), the gate set `S` becoming a
+parameter of the mirror and the handler cost `h` a parameter of `TimeBound`. Its erasure is
+`QAdv.Timed.Erases (A'.f ys) (A.f ys)` and its time bound is
+`A'.fCost ys + (A'.f ys).time h ≤ T_f` at every `ys`.
 
 A field `f : X₁ → ⋯ → Xₖ → DeepPackage` is kept as data, with a handler cost
 `h_f : ℕ → ℕ` as a parameter of `TimeBound`, whose conjunct is
 `DeepPackage.TimeBound (A'.f ys) h_f T_f` at every `ys`. A field of code type `RawCode β` is
 bounded by `RawCode.TimeLE h_f (A'.f ys) T_f`.
+
+`derive_timed_structure` recognises these kinds by name: a field whose result type has head
+`H` is of circuit kind when `H.handlerGateSet` exists (with `H.handlerMirror`,
+`H.handlerErases` and `H.handlerTime`), and of bounded kind when `H.handlerBound` exists. The
+registrations of `QAdv`, `DeepPackage` and `RawCode` are the last section of this file.
 
 ## Main definitions
 
@@ -60,6 +66,9 @@ bounded by `RawCode.TimeLE h_f (A'.f ys) T_f`.
 * `QAdv.Timed.absorb` — the costed form of `absorbOracle`
 * `RawCode.TimeLE h c n` — the time of package code under a handler cost
 * `DeepPackage.TimeBound p h T` — the time of every export of a package
+* `QAdv.handlerGateSet`, `QAdv.handlerMirror`, `QAdv.handlerErases`, `QAdv.handlerTime`,
+  `DeepPackage.handlerBound`, `RawCode.handlerBound` — the handler kinds read by
+  `derive_timed_structure`
 
 ## Main results
 
@@ -285,5 +294,45 @@ theorem DeepPackage.timeBound_link {p₁ p₂ : DeepPackage.{u}} {h h₂ : ℕ �
   by_cases hm : (op', dom', codom') ∈ p₂.exports.ops
   · rw [dif_pos hm]; exact hp₂ op' dom' codom' hm x'
   · rw [dif_neg hm]; exact .fail _
+
+end CatCrypt.Deep
+
+/-! ### Handler kinds for `derive_timed_structure` -/
+
+namespace CatCrypt.Quantum.QROM
+
+open CatCrypt.Complexity.HandlerCost
+
+/-- The gate set of the costed mirror of a circuit `QAdv m n w q`. -/
+@[reducible] def QAdv.handlerGateSet (m n w _q : ℕ) : Type 1 := GateSet (m * n * w)
+
+/-- The costed mirror of a circuit `QAdv m n w q` over the gate set `S`. -/
+@[reducible] def QAdv.handlerMirror (m n w q : ℕ) (S : QAdv.handlerGateSet m n w q) : Type :=
+  QAdv.Timed S q
+
+/-- The erasure of a costed circuit. -/
+@[reducible] def QAdv.handlerErases {m n w q : ℕ} {S : GateSet (m * n * w)}
+    (A' : QAdv.Timed S q) (A : QAdv m n w q) : Prop :=
+  A'.Erases A
+
+/-- The time of a run of a costed circuit under the handler cost `h` per oracle call. -/
+@[reducible] def QAdv.handlerTime {m n w q : ℕ} {S : GateSet (m * n * w)}
+    (A' : QAdv.Timed S q) (h : ℕ) : ℕ :=
+  A'.time h
+
+end CatCrypt.Quantum.QROM
+
+namespace CatCrypt.Deep
+
+universe u
+
+/-- The time bound of a package under the handler cost `h`. -/
+@[reducible] def DeepPackage.handlerBound (p : DeepPackage.{u}) (h : ℕ → ℕ) (T : ℕ) : Prop :=
+  p.TimeBound h T
+
+/-- The time bound of package code under the handler cost `h`. -/
+@[reducible] def RawCode.handlerBound {β : Type u} (c : RawCode β) (h : ℕ → ℕ) (T : ℕ) :
+    Prop :=
+  RawCode.TimeLE h c T
 
 end CatCrypt.Deep
