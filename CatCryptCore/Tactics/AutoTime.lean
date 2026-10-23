@@ -9,6 +9,7 @@ public import CatCryptCore.Core.SPTreeTimedOps
 public import CatCryptCore.Crypto.OracleAdversaryTimed
 public import CatCryptCore.Tactics.AutoDispatchCore
 public import Mathlib.Tactic.Linarith
+public import CatCryptCore.XDijkstra.XTimedMonad
 
 /-!
 # The time-bound procedure `time_bound`
@@ -40,8 +41,18 @@ traversed. Each node of the tree is consumed by one rule lemma of this module:
 * `bind A f` with `A` a node is pushed into the node; with `A` not a node, the time of `A` is
   added to `P` (`stepTime_bind_le`, `timeBound_bind`) and the continuation is bounded for
   every value;
+* when that continuation bound fails, it is bounded only at the values `A` can return
+  (`st_bind_inv`, from `stepTime_bind_le_of_allRet`): for each cost companion `π a : X → ℕ`
+  of the bound value that the continuation reads (a chain of pair projections of `a`) and each
+  local hypothesis `∀ x : X, h x ≤ c` on a companion binder `h`, the invariant
+  `∀ u, π a u ≤ c + N` with the least slack `N` of `invSlack` is proved at every leaf of `A`
+  by a traversal of its visible structure (`ar_*` rules, definitions unfolded, a tree without
+  visible leaves by `ar_any`, each leaf closed by `omega` after its `if`s and Boolean locals
+  are split); the invariants found are conjoined and assumed by the continuation;
+* a heap reset `load h c t` adds `1 + |keys h| + c` to `P`;
 * `if`, `if h :` and `match` are split, and a recursor or `casesOn` on a local variable is
-  split by `cases` on the variable;
+  split by `cases` on the variable; a tree with an `if b = true` on a Boolean local `b` below a
+  projection is split by `cases` on `b`; a tree `(delay c x).2` is read as `x.2`;
 * a definition is unfolded when its body is visible and it is not recursive.
 
 The target is brought to zeta-normal form (each `let` and `have` binder replaced by its value)
@@ -68,9 +79,14 @@ costs `x.1` are reduced (when `x` is a `delay` or its head definition unfolds to
 bounded by a source of `x`, and after the bounded atoms are added: for every subterm `f a` of
 the leaf and every local hypothesis `∀ x, f x ≤ b`, the instance `f a ≤ b[a/x]`; for every
 subtype value `↑m`, its invariant `m.property`; for every registered cost `f.timedCost a`, the
-instance of `f.timedCost_eq` or `f.timedCost_le` (premises by the context). When these fail
-and the leaf contains an `if` or a `match`, the leaf is split on its condition or scrutinee and
-each case is solved again.
+instance of `f.timedCost_eq` or `f.timedCost_le` (premises by the context). Projections of
+pairs, applied or not (`(a, b).2 x`), and beta redexes are reduced first. When these fail, a
+summand `t.time` of a tree that the rules consume (a second projection, a definition with a
+visible body) is read with the rest of the leaf as its path (`arith_time`); else, when the
+leaf contains an `if b = true` on a Boolean local `b`, the leaf is split by cases on `b`;
+else, when it contains an `if` or a `match`, it is split on its condition or scrutinee, and
+each case is solved again. A summand `y.1` on the path is sought as it stands before the step
+costs of the path are reduced.
 
 Every reduction to weak head normal form, unfolding and case split runs under its own
 heartbeat budget (`stepHeartbeats`); a step that exceeds it is not taken, and the subtree is
@@ -96,6 +112,103 @@ set_option autoImplicit false
 
 /-- Unfolding equations of costed definitions whose bodies `time_bound` does not see. -/
 register_simp_attr time_bound_simps
+
+/-! ## Time bounds of costed binds under a leaf invariant -/
+
+namespace CatCrypt.Core.SPTree.Timed
+
+variable {α β γ : Type}
+
+/-- A predicate that holds everywhere holds at every leaf. -/
+theorem allRet_of_forall {Q : α → Prop} (h : ∀ a, Q a) (t : SPTree.Timed α) : AllRet Q t :=
+  allRet_mono (Q := fun _ => True) (fun a _ => h a) t (by
+    induction t with
+    | ret a => exact trivial
+    | sample γ finγ neγ c k ih => exact ih
+    | get l c k ih => exact ih
+    | set l v c t ih => exact ih
+    | fail => exact trivial
+    | load h₀ c t ih => exact ih)
+
+/-- Two leaf invariants give their conjunction. -/
+theorem allRet_and {Q R : α → Prop} {t : SPTree.Timed α} (hQ : AllRet Q t)
+    (hR : AllRet R t) : AllRet (fun a => Q a ∧ R a) t := by
+  induction t with
+  | ret a => exact ⟨hQ, hR⟩
+  | sample γ finγ neγ c k ih => exact fun b => ih b (hQ b) (hR b)
+  | get l c k ih => exact fun v => ih v (hQ v) (hR v)
+  | set l v c t ih => exact ih hQ hR
+  | fail => exact trivial
+  | load h₀ c t ih => exact ih hQ hR
+
+/-- The leaves of a costed bind satisfy `Q` when, at every leaf `a` of the tree, the leaves of
+the continuation at `a` do. -/
+theorem allRet_bind_of {Q : β → Prop} {t : SPTree.Timed α} {f : α → ℕ × SPTree.Timed β}
+    (h : AllRet (fun a => AllRet Q (f a).2) t) : AllRet Q (t.bind f).2 :=
+  (allRet_bind Q t f).2 h
+
+/-- The time of a costed bind is at most the time of the tree plus a bound `T` on the
+continuation at the values satisfying a leaf invariant `Q` of the tree. -/
+theorem stepTime_bind_le_of_allRet {Q : α → Prop} (A : SPTree.Timed α)
+    (f : α → ℕ × SPTree.Timed β) (T : ℕ) (hA : AllRet Q A)
+    (hf : ∀ a, Q a → stepTime (f a) ≤ T) : stepTime (A.bind f) ≤ A.time + T := by
+  induction A with
+  | ret a => simpa [bind, time_ret] using hf a hA
+  | sample γ finγ neγ c k ih =>
+    let _ := finγ
+    simp only [stepTime, bind, time_sample, Nat.zero_add]
+    have hs : (Finset.univ.sup fun b => c b + (bind (k b) f).1 + (bind (k b) f).2.time) ≤
+        (Finset.univ.sup fun b => c b + (k b).time) + T :=
+      Finset.sup_le fun b _ => by
+        have h1 := ih b (hA b)
+        have h2 : c b + (k b).time ≤ Finset.univ.sup fun b => c b + (k b).time :=
+          Finset.le_sup (f := fun b => c b + (k b).time) (Finset.mem_univ b)
+        simp only [stepTime] at h1
+        omega
+    omega
+  | get l c k ih =>
+    simp only [stepTime, bind, time_get, Nat.zero_add]
+    have hs : (Finset.univ.sup fun v => c v + (bind (k v) f).1 + (bind (k v) f).2.time) ≤
+        (Finset.univ.sup fun v => c v + (k v).time) + T :=
+      Finset.sup_le fun v _ => by
+        have h1 := ih v (hA v)
+        have h2 : c v + (k v).time ≤ Finset.univ.sup fun v => c v + (k v).time :=
+          Finset.le_sup (f := fun v => c v + (k v).time) (Finset.mem_univ v)
+        simp only [stepTime] at h1
+        omega
+    omega
+  | set l v c t ih =>
+    have := ih hA
+    simp only [stepTime, bind, time_set] at this ⊢
+    omega
+  | fail => simp [stepTime, bind, time_fail]
+  | load h₀ c t ih =>
+    have := ih hA
+    simp only [stepTime, bind, time_load] at this ⊢
+    omega
+
+/-- A step cost `C` in front of a costed bind whose continuation is bounded at the values
+satisfying a leaf invariant of the tree. -/
+theorem prefix_bind_le_of_allRet {Q : α → Prop} (C : ℕ) (k : SPTree.Timed α)
+    (f : α → ℕ × SPTree.Timed β) (B : ℕ) (hk : AllRet Q k)
+    (h : ∀ s, Q s → stepTime (f s) ≤ B) :
+    C + (k.bind f).1 + (k.bind f).2.time ≤ C + (k.time + B) := by
+  have := stepTime_bind_le_of_allRet k f B hk h
+  simp only [stepTime] at this
+  omega
+
+/-- A costed run from a reset heap of a prefix `P` followed by a continuation `k` bounded at the
+values satisfying a leaf invariant of `P`, in the step-prefixed form of `derive_reduction`. -/
+theorem stepTime_load_bind_le_of_allRet {Q : β → Prop} (h₀ : Heap) (c₁ c₂ : ℕ)
+    (P : ℕ × SPTree.Timed β) (k : β → ℕ × SPTree.Timed γ) {B K : ℕ} (hP : stepTime P ≤ B)
+    (hQ : AllRet Q P.2) (hk : ∀ x, Q x → stepTime (k x) ≤ K) :
+    stepTime ((0 : ℕ), load h₀ (c₁ + (c₂ + P.1) + (P.2.bind k).1) (P.2.bind k).2) ≤
+      h₀.data.keys.card + c₁ + c₂ + B + K + 1 := by
+  have := stepTime_bind_le_of_allRet P.2 k K hQ hk
+  simp only [stepTime, time_load] at hP this ⊢
+  omega
+
+end CatCrypt.Core.SPTree.Timed
 
 namespace CatCrypt.Tactics.AutoTime
 
@@ -319,6 +432,70 @@ theorem time_dite {c : Prop} [Decidable c] {x : c → SPTree.Timed α} {y : ¬c 
 theorem time_of {t : SPTree.Timed α} {T : ℕ} (h : t.time ≤ T) (h0 : P + T ≤ B) :
     P + t.time ≤ B := by
   omega
+
+theorem time_load {h₀ : Heap} {c : ℕ} {t : SPTree.Timed α}
+    (h : P + 1 + h₀.data.keys.card + c + t.time ≤ B) :
+    P + (SPTree.Timed.load h₀ c t).time ≤ B := by
+  rw [SPTree.Timed.time_load]
+  omega
+
+/-- An arithmetic leaf read as a path `Q` followed by the time `T` of a tree. -/
+theorem arith_time (l Q T B : ℕ) (he : l = Q + T) (h : Q + T ≤ B) : l ≤ B := by
+  omega
+
+/-- A bind after a tree `A` that is not a node, with a leaf invariant `Q` of `A`: the
+continuation is bounded at the values satisfying `Q`. -/
+theorem st_bind_inv {Q : α → Prop} {A : SPTree.Timed α} {f : α → ℕ × SPTree.Timed β}
+    (hA : SPTree.Timed.AllRet Q A) (h0 : P + A.time ≤ B)
+    (h : ∀ a, Q a → P + A.time + SPTree.Timed.stepTime (f a) ≤ B) :
+    P + SPTree.Timed.stepTime (A.bind f) ≤ B := by
+  have := SPTree.Timed.stepTime_bind_le_of_allRet A f (B - P - A.time) hA fun a ha => by
+    have := h a ha
+    omega
+  omega
+
+/-! ### Rules for leaf invariants -/
+
+theorem ar_ret {Q : α → Prop} {a : α} (h : Q a) : SPTree.Timed.AllRet Q (.ret a) := h
+
+theorem ar_sample {Q : α → Prop} {γ : Type} {fγ : Fintype γ} {nγ : Nonempty γ} {c : γ → ℕ}
+    {k : γ → SPTree.Timed α} (h : ∀ b, SPTree.Timed.AllRet Q (k b)) :
+    SPTree.Timed.AllRet Q (.sample γ fγ nγ c k) := h
+
+theorem ar_get {Q : α → Prop} {l : Location} {c : l.ty → ℕ} {k : l.ty → SPTree.Timed α}
+    (h : ∀ v, SPTree.Timed.AllRet Q (k v)) : SPTree.Timed.AllRet Q (.get l c k) := h
+
+theorem ar_set {Q : α → Prop} {l : Location} {v : l.ty} {c : ℕ} {t : SPTree.Timed α}
+    (h : SPTree.Timed.AllRet Q t) : SPTree.Timed.AllRet Q (.set l v c t) := h
+
+theorem ar_load {Q : α → Prop} {h₀ : Heap} {c : ℕ} {t : SPTree.Timed α}
+    (h : SPTree.Timed.AllRet Q t) : SPTree.Timed.AllRet Q (.load h₀ c t) := h
+
+theorem ar_fail {Q : α → Prop} : SPTree.Timed.AllRet Q (.fail : SPTree.Timed α) := trivial
+
+theorem ar_ite {Q : α → Prop} {c : Prop} [Decidable c] {x y : SPTree.Timed α}
+    (hx : c → SPTree.Timed.AllRet Q x) (hy : ¬c → SPTree.Timed.AllRet Q y) :
+    SPTree.Timed.AllRet Q (if c then x else y) := by
+  by_cases hc : c
+  · simpa only [if_pos hc] using hx hc
+  · simpa only [if_neg hc] using hy hc
+
+theorem ar_dite {Q : α → Prop} {c : Prop} [Decidable c] {x : c → SPTree.Timed α}
+    {y : ¬c → SPTree.Timed α} (hx : ∀ h : c, SPTree.Timed.AllRet Q (x h))
+    (hy : ∀ h : ¬c, SPTree.Timed.AllRet Q (y h)) :
+    SPTree.Timed.AllRet Q (if h : c then x h else y h) := by
+  by_cases hc : c
+  · simpa only [dif_pos hc] using hx hc
+  · simpa only [dif_neg hc] using hy hc
+
+theorem ar_bind {Q : β → Prop} {A : SPTree.Timed α} {f : α → ℕ × SPTree.Timed β}
+    (h : SPTree.Timed.AllRet (fun a => SPTree.Timed.AllRet Q (f a).2) A) :
+    SPTree.Timed.AllRet Q (A.bind f).2 :=
+  SPTree.Timed.allRet_bind_of h
+
+/-- A tree whose leaves are not visible: the invariant at every value. -/
+theorem ar_any {Q : α → Prop} {t : SPTree.Timed α} (h : ∀ a, Q a) : SPTree.Timed.AllRet Q t :=
+  SPTree.Timed.allRet_of_forall h t
 
 end SPTree
 
@@ -696,7 +873,7 @@ def addBoundedAtoms (g : MVarId) : MetaM MVarId := g.withContext do
     let nargs := pat.getAppNumArgs
     let hasProp ← ms0.anyM fun m => do isProp (← inferType m)
     s0.restore
-    if hasProp || !(hd.isConst || hd.isFVar) then continue
+    if hasProp || !(hd.isConst || hd.isFVar || hd.isProj) then continue
     for s in subs do
       unless s.getAppNumArgs == nargs && s.getAppFn == hd do continue
       let s1 ← saveState
@@ -851,12 +1028,178 @@ def reduceStepCosts (g : MVarId) : MetaM MVarId := g.withContext do
   if tgt' == tgt then return g
   g.replaceTargetDefEq tgt'
 
+/-- The component `i` of the pair `y` when `y` is syntactically a pair. -/
+def pairComponent? (y : Expr) (i : Nat) : Option Expr :=
+  if y.isAppOfArity ``Prod.mk 4 then some (y.getArg! (2 + i)) else none
+
+/-- A projection of a pair, applied to arguments: `(a, b).1 xs` is `a xs`, `(a, b).2 xs` is
+`b xs`, beta-reduced. -/
+def reduceProjApp? (e : Expr) : Option Expr :=
+  let fn := e.getAppFn
+  let args := e.getAppArgs
+  match fn with
+  | .proj ``Prod i y => (pairComponent? y i).map fun c => (mkAppN c args).headBeta
+  | .const n _ =>
+    if (n == ``Prod.fst || n == ``Prod.snd) && args.size ≥ 3 then
+      let i := if n == ``Prod.fst then 0 else 1
+      (pairComponent? args[2]! i).map fun c => (mkAppN c args[3:]).headBeta
+    else none
+  | _ => none
+
+/-- The target with projections of pairs (applied or not) and beta redexes reduced. -/
+def reduceProjBeta (g : MVarId) : MetaM MVarId := g.withContext do
+  let tgt ← instantiateMVars (← g.getType)
+  let tgt' ← Meta.transform tgt (post := fun e => do
+    if e.isHeadBetaTarget then return .visit e.headBeta
+    if let some e' := reduceProjApp? e then return .visit e'
+    return .continue)
+  if tgt' == tgt then return g
+  g.replaceTargetDefEq tgt'
+
+/-- The tree `(delay c x).2` read as `x.2`, repeatedly. -/
+def sndThroughDelay (e : Expr) : MetaM Expr := do
+  let mut e := e
+  for _ in [0:8] do
+    let some y := sndOf? e | return e
+    unless y.isAppOfArity ``SPTree.Timed.delay 3 do return e
+    e ← whnfC (← mkAppM ``Prod.snd #[y.appArg!])
+  return e
+
+/-- The root of a chain of pair projections. -/
+partial def projRoot (e : Expr) : Expr :=
+  match fstOf? e with
+  | some y => projRoot y
+  | none => match sndOf? e with
+    | some y => projRoot y
+    | none => e
+
+/-- Case analysis on a Boolean local `b` that an `if b = true` of `x` tests, each case
+simplified by `↓reduceIte`; `none` when there is no such local. -/
+def boolCases? (g : MVarId) (x : Expr) : TacticM (Option (List MVarId)) := g.withContext do
+  let cand := (appsOf x #[]).findSome? fun e =>
+    if e.isAppOfArity ``ite 5 || e.isAppOfArity ``dite 5 then
+      let c := e.getArg! 1
+      if c.isAppOfArity ``Eq 3 && (c.getArg! 1).isFVar then some (c.getArg! 1) else none
+    else none
+  let some b := cand | return none
+  unless (← whnfR (← inferType b)).isConstOf ``Bool do return none
+  let s ← saveState
+  let some subs ← capped (g.cases b.fvarId!) | return none
+  let mut out : List MVarId := []
+  for sg in subs do
+    setGoals [sg.mvarId]
+    try
+      evalTactic (← `(tactic| simp only [Bool.false_eq_true, ↓reduceIte, ↓reduceDIte]))
+    catch _ => pure ()
+    out := out ++ (← getGoals)
+  if out.isEmpty && subs.isEmpty then
+    s.restore
+    return none
+  return some out
+
+/-- A leaf of an invariant: projections of pairs reduced, binders introduced, then `omega`
+with the bounded atoms of the context, else a case analysis on a Boolean local, an `if` or a
+`match`. -/
+partial def invLeaf (g : MVarId) (fuel : Nat) : TacticM Unit := g.withContext do
+  if fuel == 0 then throwError "time_bound: depth bound reached"
+  let g ← reduceProjBeta g
+  let tgt ← instantiateMVars (← g.getType)
+  if tgt.isForall then
+    let (_, g') ← g.intro1P
+    invLeaf g' (fuel - 1)
+    return
+  if tgt.isAppOfArity ``And 2 then
+    let some gs ← applyRule g ``And.intro | throwError "time_bound: no conjunction"
+    for g' in gs do invLeaf g' (fuel - 1)
+    return
+  let s ← saveState
+  try
+    let g1 ← addBoundedAtoms g
+    setGoals [g1]
+    evalTactic (← `(tactic| omega))
+    unless (← getUnsolvedGoals).isEmpty do throwError "time_bound: invariant leaf not closed"
+  catch e =>
+    s.restore
+    if let some gs ← boolCases? g tgt then
+      for g' in gs do invLeaf g' (fuel - 1)
+      return
+    let some (some gs) ← capped (splitTarget? g) | throw e
+    for g' in gs do invLeaf g' (fuel - 1)
+
+/-- The summands of a sum. -/
+partial def summands (e : Expr) (acc : Array Expr) : Array Expr :=
+  if e.isAppOfArity ``HAdd.hAdd 6 then summands (e.getArg! 5) (summands (e.getArg! 4) acc)
+  else acc.push e
+
+/-- An arithmetic leaf `l ≤ B` with a summand `t.time` of a tree that the rules can consume
+(a second projection or a definition with a visible body): the leaf read as the path `l`
+without the summand followed by `t.time` (`arith_time`). -/
+def timeAtom? (g : MVarId) : TacticM (Option MVarId) := g.withContext do
+  let tgt ← instantiateMVars (← g.getType)
+  let some (l, b) := natLe? tgt | return none
+  for s in summands l #[] do
+    unless s.isAppOfArity ``SPTree.Timed.time 2 do continue
+    let t := s.appArg!
+    unless (sndOf? t).isSome || (← unfoldTree? t).isSome do continue
+    let q := l.replace fun e => if e == s then some (mkNatLit 0) else none
+    let st ← saveState
+    try
+      let gs ← g.apply (mkApp4 (mkConst ``arith_time) l q s b)
+      let [he, h] := gs | throwError "time_bound: arith_time"
+      setGoals [he]
+      evalTactic (← `(tactic| omega))
+      unless (← getUnsolvedGoals).isEmpty do throwError "time_bound: arith_time"
+      return some h
+    catch _ => st.restore
+  return none
+
+/-- The slack ladder of an inferred companion bound `e u ≤ c + N`. -/
+def invSlack : List Nat := [0, 1, 2, 3, 4, 6, 8, 12, 16]
+
+/-- Candidate leaf invariants of a bind `A.bind f` over values of type `α`: for every
+companion `π a : X → ℕ` that the continuation `f a` reads (a chain of pair projections of the
+bound value `a`) and every local hypothesis `∀ x : X, h x ≤ c`, the predicates
+`fun a => ∀ u, π a u ≤ c + N` for `N` in `invSlack`, one list per companion and hypothesis. -/
+def invCandidates (α f : Expr) : MetaM (Array (Array Expr)) := do
+  withLocalDeclD `a α fun a => do
+    let body ← zetaAll (← instantiateMVars (mkApp f a).headBeta)
+    let mut paths : Array (Expr × Expr) := #[]
+    for s in appsOf body #[] do
+      unless (fstOf? s).isSome || (sndOf? s).isSome do continue
+      unless projRoot s == a do continue
+      if paths.any (·.1 == s) then continue
+      let ty ← whnfR (← inferType s)
+      let .forallE _ X cod _ := ty | continue
+      if cod.hasLooseBVars then continue
+      unless (← whnfR cod).isConstOf ``Nat do continue
+      paths := paths.push (s, X)
+    let mut out := #[]
+    for (p, X) in paths do
+      for ld in (← getLCtx) do
+        if ld.isImplementationDetail || ld.fvarId == a.fvarId! then continue
+        let ty ← instantiateMVars ld.type
+        let .forallE _ X' b _ := ty | continue
+        let some (l, r) := natLe? b | continue
+        if r.hasLooseBVars then continue
+        unless l.hasLooseBVars && l.getAppFn.isFVar do continue
+        unless ← isDefEq X X' do continue
+        let mut ladder := #[]
+        for n in invSlack do
+          let q ← withLocalDeclD `u X fun u => do
+            let bound ← mkAppM ``HAdd.hAdd #[r, mkNatLit n]
+            mkForallFVars #[u] (← mkAppM ``LE.le #[(mkApp p u).headBeta, bound])
+          ladder := ladder.push (← mkLambdaFVars #[a] q)
+        out := out.push ladder
+    return out
+
 mutual
 
 /-- An arithmetic leaf: the step costs of pairs are reduced, each remaining step cost `x.1` of a
 costed tree is bounded by a source of `x`, and `closeArithCore` closes the goal. -/
 partial def closeArith (g : MVarId) (env : Bool) (fuel : Nat) : TacticM Unit := do
-  let g ← reduceStepCosts g
+  let s0 ← saveState
+  let g0 := g
+  let g ← reduceStepCosts (← reduceProjBeta g)
   let mut g := g
   let tgt ← g.withContext do instantiateMVars (← g.getType)
   let mut seen : Array Expr := #[]
@@ -886,6 +1229,19 @@ partial def closeArith (g : MVarId) (env : Bool) (fuel : Nat) : TacticM Unit := 
     closeArithCore gc
   catch e =>
     s.restore
+    -- the time of a tree that the rules consume, with the rest of the leaf as its path (on
+    -- the leaf before its step costs are reduced, so that `fstSummand` finds them)
+    let s1 ← saveState
+    s0.restore
+    if let some g' ← timeAtom? g0 then
+      solve g' env (fuel - 1)
+      return
+    s1.restore
+    -- an `if b = true` on a Boolean local: case analysis on `b`
+    let tgtc ← gc.withContext do instantiateMVars (← gc.getType)
+    if let some gs ← boolCases? gc tgtc then
+      for g' in gs do solve g' env (fuel - 1)
+      return
     -- an `if` or `match` in the leaf: split on its condition or scrutinee
     let some (some gs) ← capped (splitTarget? gc) | throw e
     for g' in gs do solve g' env (fuel - 1)
@@ -1052,7 +1408,7 @@ partial def stepCase (g : MVarId) (x : Expr) (env : Bool) (fuel : Nat) : TacticM
   else if x'.isAppOfArity ``dite 5 then rule g ``st_dite env fuel
   else if x'.isAppOfArity ``SPTree.Timed.bind 4 then
     let a := x'.getArg! 2
-    let a' ← whnfC a
+    let a' ← sndThroughDelay (← whnfC a)
     let a' := (← unfoldTree? a').getD a'
     let node : Option Name :=
       if a'.isAppOf ``SPTree.Timed.ret then some ``st_bind_ret
@@ -1071,9 +1427,105 @@ partial def stepCase (g : MVarId) (x : Expr) (env : Bool) (fuel : Nat) : TacticM
             let s ← saveState
             if ← fstSummand (← replaceIn g a b) y ``st_snd_bind_fst env fuel then return
             s.restore
-      rule g ``st_bind env fuel
+      let s ← saveState
+      try
+        rule g ``st_bind env fuel
+      catch e =>
+        s.restore
+        -- the continuation bounded at the values satisfying an inferred leaf invariant
+        if ← bindInv g x' env fuel then return
+        throw e
   else if ← splitMatch g x' env fuel then return
+  else if let some gs ← boolCases? g x' then
+    for g' in gs do solve g' env (fuel - 1)
   else leaf g .step x' env fuel
+
+/-- `AllRet Q t` by the rules `ar_*` on the visible structure of `t` (a definition unfolded, a
+tree without visible leaves by `ar_any`); a leaf goal `Q a` by `solve`. -/
+partial def arSolve (g : MVarId) (env : Bool) (fuel : Nat) : TacticM Unit := g.withContext do
+  if fuel == 0 then throwError "time_bound: depth bound reached"
+  let tgt0 ← instantiateMVars (← g.getType)
+  let tgt ← Core.betaReduce tgt0
+  let g ← if tgt == tgt0 then pure g else g.replaceTargetDefEq tgt
+  if tgt.isForall then
+    let (_, g') ← g.intro1P
+    arSolve g' env (fuel - 1)
+    return
+  unless tgt.isAppOfArity ``SPTree.Timed.AllRet 3 do
+    invLeaf g fuel
+    return
+  let t := tgt.appArg!
+  let mut t1 ← sndThroughDelay (← whnfC t)
+  if let some y := sndOf? t1 then
+    if let some y' ← unfoldTree? y then
+      t1 ← sndThroughDelay (← whnfC (← mkAppM ``Prod.snd #[y']))
+  else if let some t2 ← unfoldTree? t1 then
+    t1 := t2
+  let g ← replaceIn g t t1
+  let n? : Option Name :=
+    if t1.isAppOf ``SPTree.Timed.ret then some ``ar_ret
+    else if t1.isAppOf ``SPTree.Timed.sample then some ``ar_sample
+    else if t1.isAppOf ``SPTree.Timed.get then some ``ar_get
+    else if t1.isAppOf ``SPTree.Timed.set then some ``ar_set
+    else if t1.isAppOf ``SPTree.Timed.load then some ``ar_load
+    else if t1.isAppOf ``SPTree.Timed.fail then some ``ar_fail
+    else if t1.isAppOfArity ``ite 5 then some ``ar_ite
+    else if t1.isAppOfArity ``dite 5 then some ``ar_dite
+    else match sndOf? t1 with
+      | some b => if b.isAppOfArity ``SPTree.Timed.bind 4 then some ``ar_bind else none
+      | none => none
+  if let some n := n? then
+    let some gs ← applyRule g n | throwError "time_bound: rule {n} does not apply"
+    for g' in gs do arSolve g' env (fuel - 1)
+    return
+  if (← matchMatcherApp? t1).isSome then
+    let some (some gs) ← capped (splitTarget? g) | throwError "time_bound: match not split"
+    for g' in gs do arSolve g' env (fuel - 1)
+    return
+  let some gs ← applyRule g ``ar_any | throwError "time_bound: no leaf invariant"
+  for g' in gs do arSolve g' env (fuel - 1)
+
+/-- A bind `A.bind f` whose continuation is not bounded at every value: for each companion
+that `f` reads and each hypothesis bounding a companion of its type (`invCandidates`), the
+least slack of the ladder at which `arSolve` proves the leaf invariant of `A`; the invariants
+found are conjoined and `st_bind_inv` applied. -/
+partial def bindInv (g : MVarId) (x : Expr) (env : Bool) (fuel : Nat) : TacticM Bool :=
+    g.withContext do
+  let α := x.getArg! 0
+  let A := x.getArg! 2
+  let f := x.getArg! 3
+  let cands ← invCandidates α f
+  if cands.isEmpty then return false
+  let mut proofs : Array Expr := #[]
+  for ladder in cands do
+    for q in ladder do
+      let s ← saveState
+      let m ← mkFreshExprMVar (← mkAppM ``SPTree.Timed.AllRet #[q, A])
+      try
+        arSolve m.mvarId! env (fuel - 1)
+        proofs := proofs.push (← instantiateMVars m)
+        break
+      catch _ => s.restore
+  if proofs.isEmpty then return false
+  let mut pf := proofs[0]!
+  for p in proofs[1:] do
+    pf ← mkAppM ``SPTree.Timed.allRet_and #[pf, p]
+  let s ← saveState
+  try
+    let some gs ← applyRule g ``st_bind_inv [pf] | return false
+    let some hk := gs.getLast? | return false
+    for g' in gs.dropLast do solve g' env (fuel - 1)
+    let (_, g1) ← hk.intro1P
+    let (hq, g2) ← g1.intro1P
+    let g3 ← g2.withContext do
+      let ty ← instantiateMVars (← hq.getType)
+      g2.replaceLocalDeclDefEq hq (← Core.betaReduce ty)
+    let g4 ← g3.casesAnd
+    solve g4 env (fuel - 1)
+    return true
+  catch _ =>
+    s.restore
+    return false
 
 /-- `P + t ≤ B` where `t` is the tree `y.2` or a bind after it, with the summand `y.1` in `P`
 (up to reducible defeq): the rule `lem` (`time_snd_fst`, `st_snd_bind_fst`) reads the two
@@ -1081,24 +1533,26 @@ together, with `P` less the summand as its first free argument. -/
 partial def fstSummand (g : MVarId) (y : Expr) (lem : Name) (env : Bool) (fuel : Nat) :
     TacticM Bool := g.withContext do
   let s0 ← saveState
-  let g ← reduceStepCosts g
-  let tgt ← instantiateMVars (← g.getType)
-  let some (l, _) := natLe? tgt | s0.restore; return false
-  unless l.isAppOfArity ``HAdd.hAdd 6 do s0.restore; return false
-  let p := l.getArg! 4
-  let fsts := (appsOf p #[]).filter fun t => (fstOf? t).isSome
-  for o in fsts do
-    let s ← saveState
-    if ← withReducible (isDefEq (fstOf? o).get! y) then
-      let y1 := withFstArg o y
-      let p' := p.replace fun t => if t == o then some y1 else none
-      let q := p.replace fun t => if t == o then some (mkNatLit 0) else none
-      let g' ← replaceIn g p p'
-      try
-        if ← applyAndSolve g' lem [q] env fuel then return true
-      catch _ => pure ()
-    s.restore
-  s0.restore
+  -- the summand `y.1` as it stands on the path, else after the step costs are reduced
+  for reduce in [false, true] do
+    let g ← if reduce then reduceStepCosts g else pure g
+    let tgt ← instantiateMVars (← g.getType)
+    let some (l, _) := natLe? tgt | s0.restore; return false
+    unless l.isAppOfArity ``HAdd.hAdd 6 do s0.restore; return false
+    let p := l.getArg! 4
+    let fsts := (appsOf p #[]).filter fun t => (fstOf? t).isSome
+    for o in fsts do
+      let s ← saveState
+      if ← withReducible (isDefEq (fstOf? o).get! y) then
+        let y1 := withFstArg o y
+        let p' := p.replace fun t => if t == o then some y1 else none
+        let q := p.replace fun t => if t == o then some (mkNatLit 0) else none
+        let g' ← replaceIn g p p'
+        try
+          if ← applyAndSolve g' lem [q] env fuel then return true
+        catch _ => pure ()
+      s.restore
+    s0.restore
   return false
 
 /-- `P + t.time ≤ B`. -/
@@ -1113,6 +1567,7 @@ partial def treeCase (g : MVarId) (t : Expr) (env : Bool) (fuel : Nat) : TacticM
   else if t'.isAppOf ``SPTree.Timed.get then rule g ``time_get env fuel
   else if t'.isAppOf ``SPTree.Timed.set then rule g ``time_set env fuel
   else if t'.isAppOf ``SPTree.Timed.fail then rule g ``time_fail env fuel
+  else if t'.isAppOf ``SPTree.Timed.load then rule g ``time_load env fuel
   else if t'.isAppOfArity ``ite 5 then rule g ``time_ite env fuel
   else if t'.isAppOfArity ``dite 5 then rule g ``time_dite env fuel
   else if let some y := sndOf? t' then
@@ -1226,3 +1681,4 @@ catcrypt_auto_shape "time bound" direct priority 120 :=
 catcrypt_auto_arm "time bound" order 10 := "time_bound"
 
 end
+
