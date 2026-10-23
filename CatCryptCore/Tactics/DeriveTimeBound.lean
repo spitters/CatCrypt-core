@@ -24,14 +24,24 @@ costed tree `R.tree.timed` that `derive_timed` (or `derive_reduction R`) defined
   tree plus the bound of its continuation, a branch `if` charged with the maximum of its
   branches, normalised to a sum of atoms with natural coefficients.
 
+A bound that mentions a value bound inside the tree (a sampled value, a value read from the
+heap, the result of a bind, a matched value) is admitted when the value occurs only inside
+registered costs `f.timedCost a` whose closed form does not mention it: each such cost is
+replaced by the right side of `f.timedCost_eq` at `a`, or by the bound of `f.timedCost_le` at
+`a` (premises closed from the hypotheses of the theorem), whichever exists and is free of the
+value (`rewriteCosts`). Since every operation of a bound is monotone, the replaced bound bounds
+the original one, and `time_bound` uses the same lemmas at its arithmetic leaves.
+
 The theorem is proved by `time_bound`, under its own heartbeat budget (`proofHeartbeats`).
-When the bound cannot be computed (a cost that depends on a sampled value through a term other
-than a companion, a recursive definition) or `time_bound` does not close the goal, nothing is
+When the bound cannot be computed (a cost that depends on a bound value through a term other
+than a companion with such a closed form, a recursive definition) or `time_bound` does not
+close the goal, nothing is
 declared and the command fails with the reason. The command is written once per reduction,
 in place of a hand-stated theorem of the same name.
 
 ## Main definitions
 
+* `rewriteCosts` — the registered costs that mention a bound value, replaced by closed forms
 * `emitTimeBound` — the procedure; it returns the reason when the theorem is not proved
 * `derive_time_bound R.tree` — the command
 -/
@@ -83,11 +93,46 @@ def mkMulN (a b : Expr) : Expr :=
 /-- `max a b` over `ℕ`. -/
 def mkMaxN (a b : Expr) : MetaM Expr := mkAppM ``Max.max #[a, b]
 
-/-- The fresh variable `b : γ` in `k`, which must not occur in the result. -/
+/-- The closed form of the registered cost `s = f.timedCost a` that does not mention `b`: the
+right side of `f.timedCost_eq` at `a`, or the bound of `f.timedCost_le` at `a`, with the
+propositional premises closed from the context by `closeByContext`. -/
+def costClosedForm? (b : FVarId) (s : Expr) : MetaM (Option Expr) := do
+  let some n := s.getAppFn.constName? | return none
+  for c in ← CatCrypt.Tactics.AutoTime.costLemmas n do
+    let st ← saveState
+    let (ms, _, body) ← forallMetaTelescopeReducing (← inferType c)
+    let side? := if body.isAppOfArity ``Eq 3 then some (body.getArg! 1, body.getArg! 2)
+      else CatCrypt.Tactics.AutoTime.natLe? body
+    let some (l, r) := side? | st.restore; continue
+    if ← isDefEq l s then
+      let ok ← ms.allM fun m => do
+        let mid := m.mvarId!
+        if ← mid.isAssigned then return true
+        unless ← isProp (← mid.getType) do return true
+        CatCrypt.Tactics.AutoTime.closeByContext mid
+      let r ← instantiateMVars r
+      if ok && !r.hasExprMVar && !r.containsFVar b then return some r
+    st.restore
+  return none
+
+/-- `e` with every registered cost `f.timedCost a` that mentions `b` replaced by its closed
+form free of `b` (`costClosedForm?`), where one exists. -/
+def rewriteCosts (b : FVarId) (e : Expr) : MetaM Expr :=
+  Meta.transform e (pre := fun s => do
+    unless s.containsFVar b do return .done s
+    let some n := s.getAppFn.constName? | return .continue
+    unless n.lastComponentAsString == "timedCost" do return .continue
+    match ← costClosedForm? b s with
+    | some r => return .done r
+    | none => return .continue)
+
+/-- The fresh variable `b : γ` in `k`, which must not occur in the result after the registered
+costs that mention it are replaced by their closed forms (`rewriteCosts`). -/
 def withFresh (γ : Expr) (k : Expr → MetaM Expr) : MetaM Expr :=
   withLocalDeclD `b γ fun b => do
     let r ← k b
     let r ← instantiateMVars r
+    let r ← if r.containsFVar b.fvarId! then rewriteCosts b.fvarId! r else pure r
     if r.containsFVar b.fvarId! then
       throwError "the bound depends on a bound value{indentExpr r}"
     return r
@@ -130,6 +175,7 @@ partial def boundCost (bs : Bounds) (e : Expr) : MetaM Expr := do
     for alt in m.alts, n in m.altNumParams do
       let b ← lambdaBoundedTelescope alt n fun ys body => do
         let r ← instantiateMVars (← boundCost bs body)
+        let r ← ys.foldlM (init := r) fun r y => rewriteCosts y.fvarId! r
         if ys.any fun y => r.containsFVar y.fvarId! then
           throwError "the bound depends on a matched value{indentExpr r}"
         return r
