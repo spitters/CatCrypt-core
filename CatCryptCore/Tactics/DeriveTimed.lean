@@ -1991,9 +1991,22 @@ partial def tv (ctx : Ctx) (e : Expr) : TermElabM (Expr × Expr) := do
           of a constant or a local function"
       let comp ← partialAppCompanion ctx e tw f args 0 #[] #[]
       return (cargs, ← mkAppM ``Prod.mk #[val, comp])
+    let env ← getEnv
+    -- A match whose matcher is compiled to a recursor (a definition by cases unfolds to its
+    -- matcher): the match of the costed values of the branches, priced as a data-valued match.
+    -- A matcher compiled to `if`s on decidable equalities is unfolded below.
+    if let some app ← matchMatcherApp? e then
+      let byRec := match env.find? app.matcherName with
+        | some (.defnInfo mi) => (mi.value.find? fun s => match s with
+            | .const n _ => isCasesOnRecursor env n || isRecCore env n
+            | _ => false).isSome
+        | _ => false
+      if byRec then
+        let (v, _) ← mapMatch ctx e ht (fun ctx b => return (← tv ctx b).2)
+          (some fun _ => pure ht)
+        return (← costMatch ctx e, v)
     let .const c lvls := f | fail m!"a function bound in data: the value `{e}` of type `{t}` \
       has no costed form"
-    let env ← getEnv
     let some (.defnInfo dv) := env.find? c | fail m!"a function bound in data: the value `{e}` \
       of type `{t}` is not a definition to unfold"
     if (Structural.eqnInfoExt.find? env c).isSome || (WF.eqnInfoExt.find? env c).isSome then
@@ -2943,6 +2956,19 @@ partial def deriveTimed (ctx : Ctx) (c : Name) : TermElabM Unit := do
       -- A costed form whose body is a match on a binder has its equations split by case:
       -- `unfold` rewrites it at a variable.
       `(tactic| ($intros; (try unfold $(mkIdent timedName):ident); $close))
+  -- An `if` in a continuation between costed values whose erasure the other side reads through
+  -- functions applied to the `if` (`(if a then s.corrupt u else s).isCorrupted u`): the
+  -- projections are pushed through the `if` (`fst_ite`, `snd_ite`) before any
+  -- case split, both sides are decomposed by congruence under the binders of the continuations
+  -- (`congr!`), and the `if`s, now on variables, are split by their conditions.
+  let iteNames := #[``fst_ite, ``snd_ite].filter (!hatLemmas.contains ·)
+  let iteLemmas : Array (TSyntax `Lean.Parser.Tactic.simpLemma) ←
+    iteNames.mapM fun n => `(Lean.Parser.Tactic.simpLemma| $(mkIdent n):ident)
+  let allIte := lemmas ++ iteLemmas
+  let closeIte ← `(tactic| ((try simp only [$allIte,*, *]) <;> (try congr!) <;>
+    (try split_ifs) <;> (try rfl)))
+  let tacIte? : Option (TSyntax `tactic) ← if recursive || treeRec then pure none else
+    some <$> `(tactic| ($intros; (try unfold $(mkIdent timedName):ident); $closeIte))
   let proof ← Term.withoutErrToSorry do
     let mv ← mkFreshExprMVar eType
     let rem ← if recursive && hatted then do
@@ -2963,6 +2989,12 @@ partial def deriveTimed (ctx : Ctx) (c : Name) : TermElabM Unit := do
     let rem ← match closeMatch? with
       | some closeMatch => rem.flatMapM fun g => Tactic.run g (Tactic.evalTactic closeMatch)
       | none => pure rem
+    let (mv, rem) ← match rem, tacIte? with
+      | _ :: _, some tacIte => do
+        let mv' ← mkFreshExprMVar eType
+        let rem' ← Tactic.run mv'.mvarId! (Tactic.evalTactic tacIte)
+        pure (if rem'.isEmpty then (mv', rem') else (mv, rem))
+      | _, _ => pure (mv, rem)
     unless rem.isEmpty do
       fail m!"the erasure theorem `{eraseName}` is not closed by unfolding and the erasure \
         lemmas; goals left:{indentD (MessageData.joinSep (rem.map (.ofGoal ·)) "\n")}"
