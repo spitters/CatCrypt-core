@@ -1125,6 +1125,64 @@ def erasure (k : Kind) (t v : Expr) : MetaM Expr := do
   | .hat => epsE t v
   | _ => return v
 
+/-- The erasure lemma of the tree kind `k` for the matcher `M` (`erase_snd_ite` for a
+`match`): for every instance of the parameters, discriminants and alternatives,
+`(M ps (fun _ => ℕ × k.timed ts) ds alts).2.erase = M ps (fun _ => k.tree ts) ds
+  (fun fs => (alts fs).2.erase)`,
+proved by case analysis on the discriminants. Its name is `M.erase_snd_<kind>`; it is added
+once per matcher and kind. Returns `none` when `M` does not eliminate into an arbitrary
+universe or the case analysis does not close the equation. -/
+def matchEraseLemma (k : TreeKind) (M : Name) : TermElabM (Option Name) := do
+  let name := M ++ Name.mkSimple ("erase_snd_" ++ k.noun.replace " " "_")
+  if (← getEnv).contains name then return some name
+  let some mi ← getMatcherInfo? M | return none
+  let some uPos := mi.uElimPos? | return none
+  let cinfo ← getConstInfo M
+  let lps := cinfo.levelParams
+  let stmt? ← forallTelescope (← inferType (mkConst k.tree)) fun tps _ => do
+    let T1 ← mkAppM ``Prod #[mkConst ``Nat, mkAppN (mkConst k.timed) tps]
+    let T2 := mkAppN (mkConst k.tree) tps
+    let lvls := lps.map mkLevelParam
+    let M1 := Lean.mkConst M (lvls.set uPos (← getLevel T1))
+    let M2 := Lean.mkConst M (lvls.set uPos (← getLevel T2))
+    let ty1 ← inferType M1
+    forallBoundedTelescope ty1 mi.numParams fun ps rest => do
+      let .forallE _ motTy _ _ := rest | return none
+      let mot1 ← forallTelescope motTy fun xs _ => mkLambdaFVars xs T1
+      let mot2 ← forallTelescope motTy fun xs _ => mkLambdaFVars xs T2
+      let rest1 ← instantiateForall ty1 (ps.push mot1)
+      forallBoundedTelescope rest1 mi.numDiscrs fun ds rest2 => do
+        forallBoundedTelescope rest2 mi.numAlts fun alts _ => do
+          let erase (v : Expr) : MetaM Expr := do
+            return mkAppN (mkConst k.erase) (tps.push (← mkAppM ``Prod.snd #[v]))
+          let lhs ← erase (mkAppN M1 (ps ++ #[mot1] ++ ds ++ alts))
+          let alts2 ← alts.mapM fun a => do
+            forallTelescope (← inferType a) fun fs _ => do
+              mkLambdaFVars fs (← erase (mkAppN a fs))
+          let rhs := mkAppN M2 (ps ++ #[mot2] ++ ds ++ alts2)
+          let eq ← mkEq lhs rhs
+          return some (← Core.betaReduce (← mkForallFVars (tps ++ ps ++ ds ++ alts) eq))
+  let some stmt := stmt? | return none
+  let s ← saveState
+  try
+    let mv ← mkFreshExprMVar stmt
+    let gs ← Tactic.run mv.mvarId! (Tactic.evalTactic (← `(tactic|
+      (intros; split <;> (try rfl) <;> (split <;> first | rfl | (exfalso; simp_all))))))
+    unless gs.isEmpty do
+      s.restore
+      return none
+    let proof ← instantiateMVars mv
+    if proof.hasSorry || proof.hasMVar then
+      s.restore
+      return none
+    let thm : TheoremVal :=
+      { name := name, levelParams := lps.eraseIdx uPos, type := stmt, value := proof }
+    addDecl (Declaration.thmDecl thm)
+    return some name
+  catch _ =>
+    s.restore
+    return none
+
 /-- The costed tree of the tree binder `e`, when `e` is one. -/
 def treeLocal? (ctx : Ctx) (e : Expr) : Option Expr :=
   match e.consumeMData with
@@ -1600,9 +1658,15 @@ partial def costApp (ctx : Ctx) (e : Expr) : TermElabM Expr := do
     | some { kind := .fn, companion? := some c, .. } =>
       let arity ← forallTelescope (← whnfR (← inferType c)) fun ys _ => pure ys.size
       if args.size < arity then argsCost ctx args
-      else if args.size == arity then
-        return add (natE 1) (add (mkAppN c args) (← argsCost ctx args))
-      else fail m!"the local function `{f}` is applied to more arguments than its companion takes"
+      else
+        let now := args.extract 0 arity
+        let call := add (natE 1) (add (mkAppN c now) (← argsCost ctx now))
+        if args.size == arity then return call
+        -- A result that is a function under a non-reducible name (`SPComp α`, a function of
+        -- the heap): the result is a table, and its application to the remaining arguments
+        -- costs one plus their costs.
+        let rest := args.extract arity args.size
+        return add call (add (natE 1) (← argsCost ctx rest))
     | some _ => fail m!"the oracle tree `{f}` occurs in a data position in `{e}`"
     | none =>
       if args.isEmpty then return natE 0
@@ -2395,9 +2459,15 @@ partial def deriveTimed (ctx : Ctx) (c : Name) : TermElabM Unit := do
   let envNow ← getEnv
   let wf (n : Name) : Bool := (WF.eqnInfoExt.find? envNow n).isSome
   let wfC := wf c
+  -- A `match` in a tree position under a binder (a continuation `fun o => match o with …`),
+  -- where `split` does not reach: the erasure lemma of its matcher.
+  let mut matchLemmas : Array Name := #[]
+  for m in tValue.getUsedConstants.filter (isMatcherCore envNow ·) do
+    for k in treeKinds.filter fun k => used.contains k.timed do
+      if let some n ← matchEraseLemma k m then matchLemmas := matchLemmas.push n
   let simpLemmas : Array Name :=
     ((if treeRec then #[c] else #[timedName, c]).filter (!wf ·)) ++ kindLemmas ++ hatLemmas ++
-      callees
+      matchLemmas ++ callees
   let ids : Array (TSyntax `ident) := (Array.range nBinders.size).map fun i =>
     mkIdent (Name.mkSimple s!"x{i}")
   let explicitIds := (ids.zip nBinders).filterMap fun (i, e) => if e then some i else none
@@ -2640,9 +2710,8 @@ syntax (name := deriveTimedCmd) "derive_timed " ("(" &"suffix" " := " ident ") "
 
 @[command_elab deriveTimedCmd]
 def elabDeriveTimed : CommandElab := fun stx => do
-  let suffix := match stx[1].getOptional? with
-    | some s => s[3].getId
-    | none => `timed
+  -- The optional group `(suffix := s)` is a node of five children when present.
+  let suffix := if stx[1].getNumArgs == 5 then stx[1][3].getId else `timed
   let id := stx[2]
   liftTermElabM do
     let c ← realizeGlobalConstNoOverloadWithInfo id
