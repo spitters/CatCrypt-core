@@ -358,6 +358,11 @@ theorem _root_.CatCrypt.Tactics.DeriveTimed.erase_ite_oracle {D R α : Type} (c 
     (if c then x else y).erase = if c then x.erase else y.erase := by
   split <;> rfl
 
+/-- The recursor of `Bool` at a constant motive is the `if` on its major premise. -/
+theorem _root_.CatCrypt.Tactics.DeriveTimed.boolRec_eq_ite {α : Sort _} (f t : α) (b : Bool) :
+    Bool.rec (motive := fun _ => α) f t b = if b = true then t else f := by
+  cases b <;> rfl
+
 /-- Erasure of a costed computation tree commutes with an `if`. -/
 theorem _root_.CatCrypt.Tactics.DeriveTimed.erase_ite_spTree {α : Type} (c : Prop)
     [Decidable c] (x y : CatCrypt.Core.SPTree.Timed α) :
@@ -603,6 +608,9 @@ structure Ctx where
   plain type (`ε`). The tree of a field of a structure-valued reduction has this interface, the
   one its costed mirror takes. -/
   plain : Bool := false
+  /-- The data definitions unfolded in the costed value whose body is a match: unfolded by the
+  erasure theorem, so that the hypotheses of its case split rewrite their discriminants. -/
+  unfolded? : Option (IO.Ref (Array Name)) := none
 
 /-- The maximal nesting of unfolded data definitions (option `derive_timed.maxDepth`). -/
 register_option derive_timed.maxDepth : Nat := {
@@ -1174,6 +1182,19 @@ def isDataExpr (e : Expr) : MetaM Bool := do
   if ← isProp t then return false
   if (← isClass? t).isSome then return false
   return true
+
+/-- The recursor of `Bool` at a constant motive applied to its two minor premises and its
+major premise, `Bool.rec f t b`, as the `if` on the major premise `if b = true then t else f`
+(`boolRec_eq_ite`); `none` for any other expression. -/
+def boolRecIte? (e : Expr) : MetaM (Option Expr) := do
+  unless e.isAppOfArity ``Bool.rec 4 do return none
+  let args := e.getAppArgs
+  let .lam _ _ body _ := args[0]! | return none
+  if body.hasLooseBVars then return none
+  let some u := e.getAppFn.constLevels!.head? | return none
+  let c ← mkEq args[3]! (mkConst ``Bool.true)
+  let inst := mkApp2 (mkConst ``instDecidableEqBool) args[3]! (mkConst ``Bool.true)
+  return some (mkApp5 (mkConst ``ite [u]) body c inst args[2]! args[1]!)
 
 /-- Whether `t` is a computation type `SPComp α`. -/
 def isSPCompType (t : Expr) : MetaM Bool := do
@@ -1962,6 +1983,7 @@ partial def tv (ctx : Ctx) (e : Expr) : TermElabM (Expr × Expr) := do
       let (ca, va) ← tv ctx args[2]!
       let (cb, vb) ← tv ctx args[3]!
       return (add ca cb, ← mkAppM ``Prod.mk #[va, vb])
+    if let some e' ← boolRecIte? e then return ← tv ctx e'
     if f.isConstOf ``ite && args.size == 5 then
       let (ca, va) ← tv ctx args[3]!
       let (cb, vb) ← tv ctx args[4]!
@@ -1992,13 +2014,15 @@ partial def tv (ctx : Ctx) (e : Expr) : TermElabM (Expr × Expr) := do
       let comp ← partialAppCompanion ctx e tw f args 0 #[] #[]
       return (cargs, ← mkAppM ``Prod.mk #[val, comp])
     let env ← getEnv
-    -- A match whose matcher is compiled to a recursor (a definition by cases unfolds to its
-    -- matcher): the match of the costed values of the branches, priced as a data-valued match.
-    -- A matcher compiled to `if`s on decidable equalities is unfolded below.
+    -- A match whose matcher is compiled to a recursor, a `casesOn` or a sparse `casesOn` (a
+    -- match with a wildcard arm, whose catch-all alternative is one branch shared by the
+    -- constructors it covers; a definition by cases unfolds to its matcher): the match of the
+    -- costed values of the branches, priced as a data-valued match. A matcher compiled to `if`s
+    -- on decidable equalities is unfolded below.
     if let some app ← matchMatcherApp? e then
       let byRec := match env.find? app.matcherName with
         | some (.defnInfo mi) => (mi.value.find? fun s => match s with
-            | .const n _ => isCasesOnRecursor env n || isRecCore env n
+            | .const n _ => isCasesOnLike env n || isRecCore env n
             | _ => false).isSome
         | _ => false
       if byRec then
@@ -2015,6 +2039,11 @@ partial def tv (ctx : Ctx) (e : Expr) : TermElabM (Expr × Expr) := do
       fail m!"needs a registered primitive: `{c}` unfolds too deep"
     unless lvls.length == dv.levelParams.length do fail m!"`{c}` does not unfold"
     let e' ← bindArgsShared (dv.value.instantiateLevelParams dv.levelParams lvls) args
+    if let some r := ctx.unfolded? then
+      unless isMatcherCore env c do
+        let headed ← lambdaTelescope dv.value fun _ b =>
+          pure (isMatcherCore env b.getAppFn.constName)
+        if headed then r.modify fun a => if a.contains c then a else a.push c
     let (cb, vb) ← tv { ctx with depth := ctx.depth + 1 } e'
     let callCost := if ← isReducible c then natE 0 else natE 1
     return (add callCost cb, vb)
@@ -2142,6 +2171,7 @@ partial def costConst (ctx : Ctx) (e : Expr) (c : Name) (args : Array Expr) :
   -- `Decidable.decide` below.
   if c == ``Decidable.decide && args.size == 2 then
     return add (natE 1) (← propCost ctx args[0]!)
+  if let some e' ← boolRecIte? e then return ← costOf ctx e'
   if c == ``ite && args.size == 5 then
     return add (natE 1) (add (← propCost ctx args[1]!)
       (mkApp5 (mkConst ``ite [Level.one]) (mkConst ``Nat) args[1]! args[2]!
@@ -2550,6 +2580,7 @@ partial def trConst (ctx : Ctx) (e : Expr) (c : Name) (args : Array Expr) (T : T
     return ← trNode ctx e nd args T
   if let some cb := T.kind.combinators.find? (·.src == c) then
     return ← trComb ctx e cb args T
+  if let some e' ← boolRecIte? e then return ← tr ctx e'
   if c == ``ite && n == 5 then
     let pt ← tr ctx args[3]!
     let pe ← tr ctx args[4]!
@@ -2778,7 +2809,8 @@ partial def deriveTimed (ctx : Ctx) (c : Name) : TermElabM Unit := do
       | none => pure false
     | _ => pure false
   let plain ← if ctx.plain then pure true else fieldTree
-  let ctx := { ctx with plain }
+  let unfoldedRef ← IO.mkRef (#[] : Array Name)
+  let ctx := { ctx with plain, unfolded? := some unfoldedRef }
   -- A plain interface around data holding functions: the erasure lemmas of costed closures.
   let plainHat ← if !plain then pure false else lambdaTelescope value fun xs b => do
     if ← xs.anyM fun x => do return (← hatTy? (← inferType x)).isSome then return true
@@ -2900,9 +2932,11 @@ partial def deriveTimed (ctx : Ctx) (c : Name) : TermElabM Unit := do
   for m in tValue.getUsedConstants.filter (isMatcherCore envNow ·) do
     for k in treeKinds.filter fun k => used.contains k.timed do
       if let some n ← matchEraseLemma k m then matchLemmas := matchLemmas.push n
+  let unfoldedDefs := (← unfoldedRef.get).filter (fun n => n != c)
   let simpLemmas : Array Name :=
     ((if treeRec then #[c] else #[timedName, c]).filter (!wf ·)) ++ kindLemmas ++ hatLemmas ++
-      matchLemmas ++ callees
+      matchLemmas ++ callees ++ unfoldedDefs ++
+      (if used.contains ``ite then #[``CatCrypt.Tactics.DeriveTimed.boolRec_eq_ite] else #[])
   let ids : Array (TSyntax `ident) := (Array.range nBinders.size).map fun i =>
     mkIdent (Name.mkSimple s!"x{i}")
   let explicitIds := (ids.zip nBinders).filterMap fun (i, e) => if e then some i else none
@@ -3210,4 +3244,3 @@ def elabTimedCost : CommandElab := fun stx => do
 end CatCrypt.Tactics.DeriveTimed
 
 end
-
