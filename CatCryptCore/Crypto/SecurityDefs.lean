@@ -35,7 +35,7 @@ provide reusable building blocks for security proofs.
 ## Concrete instantiations
 
 These abstract definitions are instantiated in the example files:
-* `CatCrypt.Examples.INDCPA` — IND-CPA for `EncScheme`
+* `CatCryptCore.Examples.INDCPA` — IND-CPA for `EncScheme`
 * `CatCrypt.Examples.INDCCA` — IND-CCA for `EncScheme`
 * `CatCrypt.Examples.PRF` — PRF security for Bool-based PRF
 * `CatCrypt.Examples.MAC` — MAC security for Bool-based MAC

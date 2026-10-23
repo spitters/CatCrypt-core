@@ -41,6 +41,8 @@ their definitions through `Array.toList`, so their costs are linear in the size.
   sum or product over `s` is that of a fold over `s.toList`
 * `Finset.sum.timedCost_le`, `Finset.prod.timedCost_le` — `(k + 1) * s.card` for summand costs
   at most `k`; `Finset.univ.timedCost_fin` — enumerating `Fin n` costs `n`
+* `Finset.empty.timedCost_eq`, `Multiset.cons.timedCost_eq` — the empty set and adding an
+  element to a multiset cost one unit
 
 The panics `panicWithPosWithDecl` and `panicWithPos` (the failing branch of `l[i]!`) are
 registered at cost zero beyond the call: the message they build is a diagnostic, not part of
@@ -317,8 +319,9 @@ end
 /-! ## Finite sums and enumerations
 
 Registered costs: enumerating `Finset.univ` costs one unit per element of the type and
-enumerating `Finset.range n` costs `n` units; removing an element from `s` costs `s.card`
-units, one comparison per element; a sum or a product over `s` costs, beyond the
+enumerating `Finset.range n` costs `n` units; the empty set and adding an element to a
+multiset (`Multiset.cons`, the step of a `Finset` literal) cost one unit; removing an element
+from `s` costs `s.card` units, one comparison per element; a sum or a product over `s` costs, beyond the
 call and the enumeration of `s`, one unit and the cost of the summand per element. The cost of
 a sum is that of a fold over any list enumerating `s` (`Finset.sum.timedCost_eq_list`), so it
 is well defined on the quotient. -/
@@ -326,6 +329,10 @@ is well defined on the quotient. -/
 timed_cost Finset.univ := fun (α : Type _) [Fintype α] => Fintype.card α
 
 timed_cost Finset.range := fun (n : ℕ) => n
+
+timed_cost Finset.empty := fun (_ : Type _) => 1
+
+timed_cost Multiset.cons := fun (α : Type _) (_a : α) (_s : Multiset α) => 1
 
 timed_cost Finset.erase := fun (α : Type _) [DecidableEq α] (s : Finset α) (_a : α) => s.card
 
@@ -366,6 +373,15 @@ theorem Finset.prod.timedCost_le [CommMonoid β] (s : Finset α) (f : α → β)
   simp only [Finset.prod.timedCost]
   exact (Finset.sum_le_sum fun i _ => (by have := hf i; omega : 1 + fCost i ≤ k + 1)).trans
     (by simp [mul_comm])
+
+/-- The empty set costs one unit. -/
+theorem Finset.empty.timedCost_eq (α : Type*) : Finset.empty.timedCost α = 1 := by
+  simp [Finset.empty.timedCost]
+
+/-- Adding an element to a multiset costs one unit. -/
+theorem Multiset.cons.timedCost_eq (α : Type*) (a : α) (s : Multiset α) :
+    Multiset.cons.timedCost α a s = 1 := by
+  simp [Multiset.cons.timedCost]
 
 /-- Enumerating `Fin n` costs `n` units. -/
 theorem Finset.univ.timedCost_fin (n : ℕ) : Finset.univ.timedCost (Fin n) = n := by

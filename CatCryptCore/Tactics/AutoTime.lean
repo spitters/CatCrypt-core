@@ -28,6 +28,12 @@ traversed. Each node of the tree is consumed by one rule lemma of this module:
   `c`; a tree `y.2` on a path whose cost `P` has the summand `y.1` is read as `y`, the summand
   removed from `P` (`time_snd_fst`: a costed prefix bind `C + (D + y.1) + y.2.time` nested in
   the arithmetic of a `delay`); `map` is read as `bind`;
+* a bind `y.2.bind k` after the tree of a costed bind `y = A.bind g`, on a path whose cost `P`
+  has the summand `y.1`, is read as the bind of `A` into the continuations `g s` followed by
+  `k`, the summand removed from `P` (`st_snd_bind_fst`, from the equation
+  `stepTime_fst_bind_bind`): the form `delay (C + y.1) (y.2.bind k)` of a value bound by `have`
+  before a costed bind, at the root or in a branch of a sample node; the step costs of pairs on
+  `P` are reduced before `y.1` is sought;
 * a node `sample`, `get`, `set`, `rand`, `query` adds its unit and its step cost and leaves one
   goal for every branch (`∀ b`), so that a maximum over a finite support becomes a universal
   statement;
@@ -37,6 +43,11 @@ traversed. Each node of the tree is consumed by one rule lemma of this module:
 * `if`, `if h :` and `match` are split, and a recursor or `casesOn` on a local variable is
   split by `cases` on the variable;
 * a definition is unfolded when its body is visible and it is not recursive.
+
+The target is brought to zeta-normal form (each `let` and `have` binder replaced by its value)
+before the first rule, and so is the body of each unfolded definition. A step cost and a tree
+that name one pair, one through `have` binders and one with their values inlined, are then the
+same term, and the rules above match them syntactically.
 
 A subtree that no rule consumes is bounded by a source: a local hypothesis whose conclusion
 bounds it (`∀ x, (A x).time ≤ T`, `∀ x, (A x).TimeBound T`), or, below the definition named in
@@ -241,6 +252,49 @@ theorem time_snd_fst {Q : ℕ} {y : ℕ × SPTree.Timed α} (he : P = Q + y.1)
     (h : Q + SPTree.Timed.stepTime y ≤ B) : P + y.2.time ≤ B := by
   subst he
   simp only [SPTree.Timed.stepTime] at h
+  omega
+
+/-- The step cost of a costed bind `A.bind g` in front of a bind after its tree: the time of
+the bind of `A` into the continuations `g s` followed by `k`. -/
+theorem stepTime_fst_bind_bind {γ : Type} (A : SPTree.Timed γ) (g : γ → ℕ × SPTree.Timed α)
+    (k : α → ℕ × SPTree.Timed β) :
+    (A.bind g).1 + SPTree.Timed.stepTime ((A.bind g).2.bind k) =
+      SPTree.Timed.stepTime (A.bind fun s => SPTree.Timed.delay (g s).1 ((g s).2.bind k)) := by
+  induction A with
+  | ret a => simp only [SPTree.Timed.bind, SPTree.Timed.stepTime, SPTree.Timed.delay]; omega
+  | sample γ' finγ neγ c k' ih =>
+    let _ := finγ
+    simp only [SPTree.Timed.bind, SPTree.Timed.stepTime, SPTree.Timed.time_sample,
+      Nat.zero_add]
+    congr 2
+    funext b
+    have := ih b
+    simp only [SPTree.Timed.stepTime] at this
+    omega
+  | get l c k' ih =>
+    simp only [SPTree.Timed.bind, SPTree.Timed.stepTime, SPTree.Timed.time_get, Nat.zero_add]
+    congr 2
+    funext v
+    have := ih v
+    simp only [SPTree.Timed.stepTime] at this
+    omega
+  | set l v c t ih =>
+    simp only [SPTree.Timed.bind, SPTree.Timed.stepTime, SPTree.Timed.time_set] at ih ⊢
+    omega
+  | fail => simp only [SPTree.Timed.bind, SPTree.Timed.stepTime, SPTree.Timed.time_fail]
+  | load h₀ c t ih =>
+    simp only [SPTree.Timed.bind, SPTree.Timed.stepTime, SPTree.Timed.time_load] at ih ⊢
+    omega
+
+/-- A bind after the tree `y.2` of a costed bind `y = A.bind g` on a path whose cost `P` has the
+summand `y.1`: the two are the bind of `A` into the continuations `g s` followed by `k`. -/
+theorem st_snd_bind_fst {γ : Type} {Q : ℕ} {A : SPTree.Timed γ} {g : γ → ℕ × SPTree.Timed α}
+    {k : α → ℕ × SPTree.Timed β} (he : P = Q + (A.bind g).1)
+    (h : Q + SPTree.Timed.stepTime
+      (A.bind fun s => SPTree.Timed.delay (g s).1 ((g s).2.bind k)) ≤ B) :
+    P + SPTree.Timed.stepTime ((A.bind g).2.bind k) ≤ B := by
+  subst he
+  rw [← stepTime_fst_bind_bind] at h
   omega
 
 theorem time_snd {x : ℕ × SPTree.Timed α} (h : P + SPTree.Timed.stepTime x ≤ B) :
@@ -508,14 +562,20 @@ def capped {α : Type} (x : MetaM α) : MetaM (Option α) := do
 def whnfC (e : Expr) : MetaM Expr := do
   return (← capped (whnfR e)).getD e
 
-/-- The tree `e` with its head definition unfolded, then reduced by `whnfR`, under the budget
-of `capped`. -/
+/-- `e` with every `let` and `have` binder replaced by its value (zeta-normal form). -/
+def zetaAll (e : Expr) : CoreM Expr :=
+  Core.transform e (pre := fun e => match e with
+    | .letE _ _ v b _ => return .visit (b.instantiate1 v)
+    | _ => return .continue)
+
+/-- The tree `e` with its head definition unfolded, then reduced by `whnfR` and brought to
+zeta-normal form, under the budget of `capped`. -/
 def unfoldTree? (e : Expr) : MetaM (Option Expr) := do
   let some n := e.getAppFn.constName? | return none
   unless ← unfoldableDef n do return none
   let r ← capped do
     let some e' ← withDefault (unfoldDefinition? e) | return none
-    return some (← whnfR e'.headBeta)
+    return some (← zetaAll (← whnfR e'.headBeta))
   return r.join
 
 /-- The local variable that an application of a recursor or `casesOn` analyses, when it is
@@ -539,6 +599,13 @@ def replaceIn (g : MVarId) (x x' : Expr) : MetaM MVarId := do
   if x == x' then return g
   let t ← instantiateMVars (← g.getType)
   g.replaceTargetDefEq (t.replace fun e => if e == x then some x' else none)
+
+/-- The goal `g` with its target in zeta-normal form. -/
+def zetaTarget (g : MVarId) : MetaM MVarId := do
+  let t ← instantiateMVars (← g.getType)
+  let t' ← zetaAll t
+  if t' == t then return g
+  g.replaceTargetDefEq t'
 
 /-- Apply the rule lemma `n` to `g`: its conclusion is unified with the target at reducible
 transparency, each term of `hints` is assigned to the first unassigned argument whose type it
@@ -996,17 +1063,28 @@ partial def stepCase (g : MVarId) (x : Expr) (env : Bool) (fuel : Nat) : TacticM
       else none
     match node with
     | some n => rule (← replaceIn g a a') n env fuel
-    | none => rule g ``st_bind env fuel
+    | none =>
+      -- a bind after the tree `y.2` of a costed bind `y`, with `y.1` on the path
+      for b in [a, a'] do
+        if let some y := sndOf? b then
+          if y.isAppOfArity ``SPTree.Timed.bind 4 then
+            let s ← saveState
+            if ← fstSummand (← replaceIn g a b) y ``st_snd_bind_fst env fuel then return
+            s.restore
+      rule g ``st_bind env fuel
   else if ← splitMatch g x' env fuel then return
   else leaf g .step x' env fuel
 
-/-- `P + y.2.time ≤ B` with the summand `y.1` in `P` (up to reducible defeq): the two are
-read as `stepTime y` (`time_snd_fst`). -/
-partial def sndWithFst (g : MVarId) (y : Expr) (env : Bool) (fuel : Nat) :
+/-- `P + t ≤ B` where `t` is the tree `y.2` or a bind after it, with the summand `y.1` in `P`
+(up to reducible defeq): the rule `lem` (`time_snd_fst`, `st_snd_bind_fst`) reads the two
+together, with `P` less the summand as its first free argument. -/
+partial def fstSummand (g : MVarId) (y : Expr) (lem : Name) (env : Bool) (fuel : Nat) :
     TacticM Bool := g.withContext do
+  let s0 ← saveState
+  let g ← reduceStepCosts g
   let tgt ← instantiateMVars (← g.getType)
-  let some (l, _) := natLe? tgt | return false
-  unless l.isAppOfArity ``HAdd.hAdd 6 do return false
+  let some (l, _) := natLe? tgt | s0.restore; return false
+  unless l.isAppOfArity ``HAdd.hAdd 6 do s0.restore; return false
   let p := l.getArg! 4
   let fsts := (appsOf p #[]).filter fun t => (fstOf? t).isSome
   for o in fsts do
@@ -1017,9 +1095,10 @@ partial def sndWithFst (g : MVarId) (y : Expr) (env : Bool) (fuel : Nat) :
       let q := p.replace fun t => if t == o then some (mkNatLit 0) else none
       let g' ← replaceIn g p p'
       try
-        if ← applyAndSolve g' ``time_snd_fst [q] env fuel then return true
+        if ← applyAndSolve g' lem [q] env fuel then return true
       catch _ => pure ()
     s.restore
+  s0.restore
   return false
 
 /-- `P + t.time ≤ B`. -/
@@ -1037,7 +1116,7 @@ partial def treeCase (g : MVarId) (t : Expr) (env : Bool) (fuel : Nat) : TacticM
   else if t'.isAppOfArity ``ite 5 then rule g ``time_ite env fuel
   else if t'.isAppOfArity ``dite 5 then rule g ``time_dite env fuel
   else if let some y := sndOf? t' then
-    if ← sndWithFst g y env fuel then return
+    if ← fstSummand g y ``time_snd_fst env fuel then return
     rule g ``time_snd env fuel
   else if ← splitMatch g t' env fuel then return
   else leaf g .time t' env fuel
@@ -1130,7 +1209,7 @@ syntax (name := timeBoundStx) "time_bound" : tactic
 @[tactic timeBoundStx] def evalTimeBound : Tactic := fun _ => do
   let g ← getMainGoal
   let rest := (← getGoals).tail
-  solve g false maxDepth
+  solve (← zetaTarget g) false maxDepth
   setGoals rest
 
 end

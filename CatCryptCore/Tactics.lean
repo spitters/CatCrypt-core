@@ -34,7 +34,6 @@ public import CatCryptCore.Tactics.BindAlign
 public import CatCryptCore.Tactics.BindVcgen
 public import CatCryptCore.Tactics.FieldClear
 public import CatCryptCore.Tactics.EnvSearch
-public import CatCryptCore.Tactics.ProofTermAudit
 public import CatCryptCore.Tactics.UpToBad
 
 /-!

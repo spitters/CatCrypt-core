@@ -122,6 +122,7 @@ public import CatCryptCore.Nominal
 
 -- Tactics
 public import CatCryptCore.Tactics
+public import CatCryptCore.Tactics.ProofTermAudit
 public import CatCryptCore.Tactics.BindVcgenSum
 public import CatCryptCore.Tactics.VC
 public import CatCryptCore.Tactics.StdCosts

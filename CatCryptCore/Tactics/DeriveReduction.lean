@@ -128,6 +128,12 @@ a structure bound inside the body, an opaque constant. The command fails on it a
 subterm. A binder that is a type in a universe other than `Type` is refused: `SPTree` is a
 tree over `Type`.
 
+A field path of the binders that occurs in the type of a binder or of the result, after the
+reducible definitions are unfolded (`P.relation` in the subtype
+`Groth16Rel P := {xw // P.relation xw.1 xw.2 = true}` of a binder `xw`), is not abstracted: it
+stays a projection of its structure binder, so that the binder's type is that of the tree's
+binder.
+
 ## Recursive computations
 
 A computation `c` defined by structural recursion (over `List`, `ℕ`, or any inductive type
@@ -438,6 +444,9 @@ structure RCtx where
   self? : Option (Name × Expr × Array (Option Nat)) := none
   hoist : Bool := true
   visiting : NameSet := {}
+  /-- The types of the binders and of the result, with their reducible definitions unfolded:
+  a field path occurring in one of them is not abstracted. -/
+  typePos : Array Expr := #[]
   /-- Derive the tree `c.tree` and `c.compile_tree` of a recursive computation `c`, with the
   definitions being derived. -/
   deriveRec : Name → NameSet → TermElabM Unit := fun _ _ => pure ()
@@ -558,6 +567,15 @@ partial def mentionsKey (top : Array FVarId) (keys : Array Expr)
     neg.modify (·.insert s (fuel - 1))
   return false
 
+/-- The primitive projection `.proj S i s` of a projection-function application
+`S.f ps s`, the form a field takes in an unfolded definition; `F` itself otherwise. -/
+def projForm (env : Environment) (F : Expr) : Expr := Id.run do
+  let .const c _ := F.getAppFn | return F
+  let some info := env.getProjectionFnInfo? c | return F
+  let some s := F.getAppArgs[info.numParams]? | return F
+  unless F.getAppNumArgs == info.numParams + 1 do return F
+  return .proj info.ctorName.getPrefix info.i s
+
 /-- Replace each data-function field of `e` by its binder (second pass), or record it (first
 pass). A data definition applied to a structure binder is unfolded first, by `unfoldShared?`,
 when its body applies a data-function primitive found by the first pass (so that the field has
@@ -583,6 +601,11 @@ def abstractData (ctx : RCtx) (e : Expr) : MetaM Expr := do
       if let some finfo := (← getEnv).getProjectionFnInfo? fc then
         if finfo.fromClass && CatCrypt.Tactics.DeriveTimed.isUnitMethod fc then
           return .continue
+    -- A field path in the type of a binder or of the result (`P.relation` in
+    -- `{xw // P.relation xw.1 xw.2 = true}`) stays a projection of its structure binder.
+    let Fp := projForm (← getEnv) F
+    if ctx.typePos.any fun t => (t.find? fun s => s == F || s == Fp).isSome then
+      return .continue
     match ctx.found? with
     | some r =>
       recordPrim r { key := F, arity := 0, data := true }
@@ -692,6 +715,15 @@ def leafOrFail (ctx : RCtx) (orig e α : Expr) : MetaM Expr := do
   match ← primLeaf? ctx e α with
   | some t => return t
   | none => unpriced orig e
+
+/-- The types of the binders `xs` and the type `α`, with their reducible definitions unfolded
+(`Groth16Rel P` to `{xw // P.relation xw.1 xw.2 = true}`): the type positions in which a field
+path of the binders stays a projection. -/
+def typePositions (xs : Array Expr) (α : Expr) : MetaM (Array Expr) := do
+  let env ← getEnv
+  let red (n : Name) : Bool := getReducibilityStatusCore env n == .reducible
+  let tys := (← xs.mapM inferType).push α
+  tys.mapM fun t => do deltaExpand (← instantiateMVars t) red
 
 /-- Whether `v` is a field path of the binders `top`: a binder of `top`, or a structure
 projection, applied to exactly its parameters and the structure, of a field path. A function
@@ -1819,7 +1851,8 @@ partial def deriveReduction (c : Name) (advNames : Array Name) (unfold : Bool :=
         let visiting := visiting.insert c
         -- First pass: collect the primitives.
         let r ← IO.mkRef (#[] : Array Prim)
-        let ctx₀ : RCtx := { advs, base := treeName, top, unfold, visiting, deriveRec }
+        let typePos ← typePositions xs α
+        let ctx₀ : RCtx := { advs, base := treeName, top, unfold, visiting, deriveRec, typePos }
         let ctx₀ := { ctx₀ with hoist := !recursive }
         let ctx₀ := { ctx₀ with self? := selfInfo }
         let ctx₁ := { ctx₀ with found? := some r }
