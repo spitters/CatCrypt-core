@@ -2761,7 +2761,9 @@ partial def deriveTimed (ctx : Ctx) (c : Name) : TermElabM Unit := do
     simpLemmas.mapM fun n => `(Lean.Parser.Tactic.simpLemma| $(mkIdent n):ident)
   -- The side conditions of `erase_simulateHat_bind` are equations under binders, discharged
   -- by the same lemmas.
-  let close ← if hatLemmas.isEmpty then
+  let mkClose (lemmas : Array (TSyntax `Lean.Parser.Tactic.simpLemma)) :
+      TermElabM (TSyntax `tactic) :=
+    if hatLemmas.isEmpty then
       `(tactic| ((try simp only [$lemmas,*, *]) <;> (try (repeat' split)) <;>
         (try simp only [$lemmas,*, *]) <;> (try rfl)))
     else
@@ -2769,6 +2771,26 @@ partial def deriveTimed (ctx : Ctx) (c : Name) : TermElabM Unit := do
         (try (repeat' split)) <;>
         (try simp (disch := (intros; simp only [$lemmas,*])) only [$lemmas,*, *]) <;>
         (try rfl)))
+  let close ← mkClose lemmas
+  -- A callee whose body is a match (an auxiliary definition `B.tree.match_i` of
+  -- `derive_reduction`) called at a discriminant built from a constructor, where its erasure
+  -- theorem does not close the goal: the callee and its costed form are unfolded, the
+  -- discriminants are reduced by the lemmas of `Sum.map` and `Sum.elim` at a constructor, and
+  -- `simp` reduces both matches at the constructor. In a `module` file `rfl` does not unfold the
+  -- matcher of an imported definition, so that the two matches are not reduced by `rfl` alone.
+  let mut matchDefs : Array Name := #[]
+  for n in tValue.getUsedConstants do
+    let .str p s := n | continue
+    unless n != timedName && s == ctx.suffix.toString && !matchDefs.contains p do continue
+    let some (.defnInfo dv) := envNow.find? p | continue
+    let headed ← lambdaTelescope dv.value fun _ b =>
+      pure (isMatcherCore envNow b.getAppFn.constName)
+    if headed then matchDefs := matchDefs ++ #[p, n]
+  let closeMatch? ← if matchDefs.isEmpty then pure none else do
+    let extra := matchDefs ++ #[``Sum.map_inl, ``Sum.map_inr, ``Sum.elim_inl, ``Sum.elim_inr]
+    let more : Array (TSyntax `Lean.Parser.Tactic.simpLemma) ←
+      extra.mapM fun n => `(Lean.Parser.Tactic.simpLemma| $(mkIdent n):ident)
+    pure (some (← mkClose (lemmas ++ more)))
   -- `intro` without names introduces one binder: a reduction without binders introduces none.
   let intros ← if ids.isEmpty then `(tactic| skip) else `(tactic| intro $ids*)
   let tac ← if recursive && wfC then
@@ -2802,6 +2824,9 @@ partial def deriveTimed (ctx : Ctx) (c : Name) : TermElabM Unit := do
           rem := rem ++ (← Tactic.run g (Tactic.evalTactic close))
         pure rem
       else Tactic.run mv.mvarId! (Tactic.evalTactic tac)
+    let rem ← match closeMatch? with
+      | some closeMatch => rem.flatMapM fun g => Tactic.run g (Tactic.evalTactic closeMatch)
+      | none => pure rem
     unless rem.isEmpty do
       fail m!"the erasure theorem `{eraseName}` is not closed by unfolding and the erasure \
         lemmas; goals left:{indentD (MessageData.joinSep (rem.map (.ofGoal ·)) "\n")}"
