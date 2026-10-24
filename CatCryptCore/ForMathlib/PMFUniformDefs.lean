@@ -11,7 +11,7 @@ public import Mathlib.Probability.ProbabilityMassFunction.Constructions
 # Uniform probability mass functions on finsets, fintypes and multisets
 
 The probability mass functions `PMF.uniformFinset`, `PMF.uniformFintype` and
-`PMF.ofMultiset'''`, with their evaluation, support and measure lemmas. Mathlib #42909
+`PMF.ofMultiset''''`, with their evaluation, support and measure lemmas. Mathlib #42909
 moved the constructions `uniformFinset`, `uniformFintype` and `ofMultiset` to
 `MeasureTheory.Measure`; this file defines their `PMF` forms under these names.
 
@@ -19,7 +19,7 @@ moved the constructions `uniformFinset`, `uniformFintype` and `ofMultiset` to
 
 * `PMF.uniformFinset s hs` — the uniform distribution on a nonempty finset `s`
 * `PMF.uniformFintype α` — the uniform distribution on a nonempty fintype `α`
-* `PMF.ofMultiset''' s hs` — the distribution sending `a` to the fraction of the elements
+* `PMF.ofMultiset'''' s hs` — the distribution sending `a` to the fraction of the elements
   of the nonzero multiset `s` equal to `a`
 -/
 
