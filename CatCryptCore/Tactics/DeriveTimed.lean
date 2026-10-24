@@ -2979,10 +2979,12 @@ partial def deriveTimed (ctx : Ctx) (c : Name) : TermElabM Unit := do
   let lemmas : Array (TSyntax `Lean.Parser.Tactic.simpLemma) ←
     simpLemmas.mapM fun n => `(Lean.Parser.Tactic.simpLemma| $(mkIdent n):ident)
   -- The side conditions of `erase_simulateHat_bind` are equations under binders, discharged
-  -- by the same lemmas.
-  let mkClose (lemmas : Array (TSyntax `Lean.Parser.Tactic.simpLemma)) :
+  -- by the same lemmas. `simp` with a discharger traverses a shared costed value once per
+  -- occurrence, so a non-recursive costed form is closed first without the discharger (then by
+  -- the `if` closer below), and with it only when goals remain.
+  let mkClose (lemmas : Array (TSyntax `Lean.Parser.Tactic.simpLemma)) (disch : Bool) :
       TermElabM (TSyntax `tactic) :=
-    if hatLemmas.isEmpty then
+    if hatLemmas.isEmpty || !disch then
       `(tactic| ((try simp only [$lemmas,*, *]) <;> (try (repeat' split)) <;>
         (try simp only [$lemmas,*, *]) <;> (try rfl)))
     else
@@ -2990,7 +2992,8 @@ partial def deriveTimed (ctx : Ctx) (c : Name) : TermElabM Unit := do
         (try (repeat' split)) <;>
         (try simp (disch := (intros; simp only [$lemmas,*])) only [$lemmas,*, *]) <;>
         (try rfl)))
-  let close ← mkClose lemmas
+  let close ← mkClose lemmas recursive
+  let closeDisch ← mkClose lemmas true
   -- A callee whose body is a match (an auxiliary definition `B.tree.match_i` of
   -- `derive_reduction`) called at a discriminant built from a constructor, where its erasure
   -- theorem does not close the goal: the callee and its costed form are unfolded, the
@@ -3009,7 +3012,7 @@ partial def deriveTimed (ctx : Ctx) (c : Name) : TermElabM Unit := do
     let extra := matchDefs ++ #[``Sum.map_inl, ``Sum.map_inr, ``Sum.elim_inl, ``Sum.elim_inr]
     let more : Array (TSyntax `Lean.Parser.Tactic.simpLemma) ←
       extra.mapM fun n => `(Lean.Parser.Tactic.simpLemma| $(mkIdent n):ident)
-    pure (some (← mkClose (lemmas ++ more)))
+    pure (some (← mkClose (lemmas ++ more) true))
   -- `intro` without names introduces one binder: a reduction without binders introduces none.
   let intros ← if ids.isEmpty then `(tactic| skip) else `(tactic| intro $ids*)
   let tac ← if recursive && wfC then
@@ -3039,6 +3042,10 @@ partial def deriveTimed (ctx : Ctx) (c : Name) : TermElabM Unit := do
     (try split_ifs) <;> (try rfl)))
   let tacIte? : Option (TSyntax `tactic) ← if recursive || treeRec then pure none else
     some <$> `(tactic| ($intros; (try unfold $(mkIdent timedName):ident); $closeIte))
+  -- The closer with the discharger, for a non-recursive costed form left open by the others.
+  let tacDisch? : Option (TSyntax `tactic) ← if recursive || hatLemmas.isEmpty then pure none
+    else if treeRec then some <$> `(tactic| ($intros; $closeDisch))
+    else some <$> `(tactic| ($intros; (try unfold $(mkIdent timedName):ident); $closeDisch))
   let proof ← Term.withoutErrToSorry do
     let mv ← mkFreshExprMVar eType
     let rem ← if recursive && hatted then do
@@ -3063,6 +3070,15 @@ partial def deriveTimed (ctx : Ctx) (c : Name) : TermElabM Unit := do
       | _ :: _, some tacIte => do
         let mv' ← mkFreshExprMVar eType
         let rem' ← Tactic.run mv'.mvarId! (Tactic.evalTactic tacIte)
+        pure (if rem'.isEmpty then (mv', rem') else (mv, rem))
+      | _, _ => pure (mv, rem)
+    let (mv, rem) ← match rem, tacDisch? with
+      | _ :: _, some tacDisch => do
+        let mv' ← mkFreshExprMVar eType
+        let rem' ← Tactic.run mv'.mvarId! (Tactic.evalTactic tacDisch)
+        let rem' ← match closeMatch? with
+          | some closeMatch => rem'.flatMapM fun g => Tactic.run g (Tactic.evalTactic closeMatch)
+          | none => pure rem'
         pure (if rem'.isEmpty then (mv', rem') else (mv, rem))
       | _, _ => pure (mv, rem)
     unless rem.isEmpty do
