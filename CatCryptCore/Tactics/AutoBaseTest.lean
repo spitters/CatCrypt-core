@@ -35,13 +35,12 @@ info: import closure of CatCryptCore.Tactics.AutoBase: roots [CatCryptCore,
 #guard_msgs in
 #import_closure_roots CatCryptCore.Tactics.AutoBase
 
--- A `do` block of a sample and a `pure` is pure: the `solve_by_elim` arm over the
--- `IsPure` combinators, after the `>>=` normalisation.
+-- A `do` block of a sample and a `pure` is pure: the `CatCryptRel` arm, whose rules
+-- `Core.Code` registers, after the `>>=` normalisation.
 /--
 info: Try this:
   [apply] (simp only [CatCrypt.Core.SPComp.monad_bind_eq];
-    solve_by_elim only [*, CatCrypt.Core.SPComp.bind_isPure, CatCrypt.Core.SPComp.pure_isPure,
-      CatCrypt.Core.SPComp.sample_isPure, CatCrypt.Core.SPComp.fail_isPure])
+    aesop  (rule_sets := [CatCryptRel])  (config := { terminal := true }))
 -/
 #guard_msgs in
 example : SPComp.IsPure (do let a ← SPComp.sample Bool; pure (!a) : SPComp Bool) := by

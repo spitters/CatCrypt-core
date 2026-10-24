@@ -6,11 +6,26 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Relational.Judgment
+public import CatCryptCore.Tactics.AutoArms
+public import CatCryptCore.Tactics.BindSwap
+public import CatCryptCore.Tactics.BindVcgen
 
 /-!
 # Cryptographic Advantage
 
 This file defines the advantage of an adversary in distinguishing games.
+
+## Automation
+
+The module imports the arms of `catcrypt_auto` over game equalities and distances
+(`CatCryptCore.Tactics.AutoArms`, `CatCryptCore.Tactics.BindSwap`,
+`CatCryptCore.Tactics.BindVcgen`) and registers:
+
+* `advantage_triangle` and `Advantage_sym` with `@[hop_metric]`, so that `hop_chain`
+  composes chains over `Advantage`;
+* `prTrue_le_one` with `@[bound]`;
+* `Advantage_sym`, `Advantage_self` and the unfolding of `AdvantageA` in the scoped
+  `grind` set of namespace `CatCryptGrind`.
 -/
 
 @[expose] public section
@@ -400,3 +415,16 @@ theorem advantageA_isPure_bind {α β : Type*}
   · exact tsub_le_iff_right.mpr (by rw [add_comm]; exact weighted_bound _ _ hgf)
 
 end CatCrypt.Crypto
+
+/-! ## Registrations of `hop_chain`, `bound` and `CatCryptGrind` -/
+
+attribute [hop_metric] CatCrypt.Crypto.advantage_triangle CatCrypt.Crypto.Advantage_sym
+
+attribute [bound] CatCrypt.Crypto.prTrue_le_one
+
+namespace CatCryptGrind
+
+attribute [scoped grind =] CatCrypt.Crypto.Advantage_sym CatCrypt.Crypto.Advantage_self
+  CatCrypt.Crypto.AdvantageA
+
+end CatCryptGrind

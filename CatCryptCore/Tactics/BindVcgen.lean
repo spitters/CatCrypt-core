@@ -50,7 +50,7 @@ clause mirrors `rvcstep using`: the caller hands in the change-of-variables
 
 The loop `repeat (first | rfl | spcomp_normalize | bind_step)` runs these to a
 fixpoint, closing goals that are pure reassociation / `pure`-elimination /
-matching-prefix peeling, and otherwise reducing to the genuine residual.
+matching-prefix peeling, and otherwise reducing the goal to the residual equality.
 
 The crux step is **caller-supplied**, because it needs data the loop cannot
 synthesize:
@@ -60,6 +60,10 @@ synthesize:
   (targeting the RHS only, via `refine Eq.trans ?_ (…)`, which pins the change
   to the right-hand `sample`), then peels again, leaving the pointwise
   `f a = g (e a)` obligation (discharged from `e.left_inv`).
+
+The module registers `bind_vcgen` with `catcrypt_auto`
+(`CatCryptCore.Tactics.AutoDispatchCore`) as the arm of order 20 of the shape
+`SPComp equality`.
 -/
 
 public section
@@ -89,7 +93,7 @@ macro_rules
 
     `bind_vcgen` repeatedly normalizes (`spcomp_normalize`) and peels matching
     `SPComp.bind` layers (`bind_step`) until it is stuck — closing the goal
-    outright when the two bind-chains coincide, or leaving the genuine residual
+    outright when the two bind-chains coincide, or leaving the residual
     (a leaf equality / a `sample`-change-of-variables) for the caller.
 
     `bind_vcgen using e` additionally applies the change-of-variables
@@ -109,3 +113,9 @@ macro_rules
       (repeat (first | rfl | spcomp_normalize | bind_step)))
 
 end CatCrypt.Tactic
+
+end
+
+/-! ## Arm of `catcrypt_auto` -/
+
+catcrypt_auto_arm "SPComp equality" order 20 := "bind_vcgen"

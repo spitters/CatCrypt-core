@@ -28,6 +28,9 @@ and directly reuses the existing `prTrue` infrastructure.
 * `sdist_wkR_le`, `sdist_wkL_le` — tensor doesn't increase distance
 * `sdist_comp_add` — composition of ε-close morphisms
 
+`sdist_triangle` and `sdist_sym` are registered with `@[hop_metric]`, so that `hop_chain`
+composes chains over `sdist`.
+
 ## Sub-SMC structure
 
 The composition bound `sdist_comp_add` and the tensor bound `sdist_mapSum_le` (in `RC.lean`)
@@ -526,3 +529,5 @@ noncomputable instance {α β : Type*} : PseudoEMetricSpace (KlMorph α β) wher
   edist_triangle f g h := sdist_triangle f.run g.run h.run
 
 end CatCrypt.Crypto
+
+attribute [hop_metric] CatCrypt.Crypto.sdist_triangle CatCrypt.Crypto.sdist_sym

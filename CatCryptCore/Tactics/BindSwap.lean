@@ -87,6 +87,10 @@ Advantage X' Y'` (after unfolding the heads of the two sides, such as `Advantage
 `Y = X'`), each closed by unfolding the game definitions at its heads and the definitions
 among the arguments, and `bind_swap_nf [h₁, …]`. It refers to `CatCrypt.Crypto.Advantage` by name and applies
 where that definition is in the environment.
+
+The module registers with `catcrypt_auto` (`CatCryptCore.Tactics.AutoDispatchCore`) the arm
+`advantage_eq_nf` of the shape `advantage equality` and the arm `bind_swap_nf` of the shape
+`SPComp equality`, both at order 5.
 -/
 
 @[expose] public section
@@ -1005,3 +1009,10 @@ syntax (name := advantageEqNfStx) "advantage_eq_nf" (" [" term,* "]")? : tactic
   if let some e := err? then throw e
 
 end CatCrypt.Tactic.BindSwap
+
+end
+
+/-! ## Arms of `catcrypt_auto` -/
+
+catcrypt_auto_arm "advantage equality" order 5 := "advantage_eq_nf%GRIND"
+catcrypt_auto_arm "SPComp equality" order 5 := "bind_swap_nf%GRIND"

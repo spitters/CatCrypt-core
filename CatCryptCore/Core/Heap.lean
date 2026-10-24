@@ -8,6 +8,7 @@ module
 public import CatCryptCore.Core.Location
 public import Mathlib.Data.Finmap
 public import Mathlib.Data.Fintype.EquivFin
+public import CatCryptCore.Tactics.AutoBase
 
 /-!
 # Heap Model
@@ -29,6 +30,11 @@ This is the Lean 4 analogue of Rocq SSProve's `{fmap nat → nat}`.
 * `get_set_other`: Setting at one location doesn't affect other locations
 * `set_set_same`: Double write contracts to a single write
 * `set_set_comm`: Writes to different locations commute
+
+## Automation
+
+`get_set_same` and `get_set_other` are in the scoped `grind` set of namespace
+`CatCryptGrind`, which `catcrypt_grind` (`CatCryptCore.Tactics.AutoBase`) activates.
 -/
 
 @[expose] public section
@@ -136,3 +142,9 @@ theorem get_empty (l : Location) : empty.get l = default := by
 end Heap
 
 end CatCrypt.Core
+
+namespace CatCryptGrind
+
+attribute [scoped grind =] CatCrypt.Core.Heap.get_set_same CatCrypt.Core.Heap.get_set_other
+
+end CatCryptGrind

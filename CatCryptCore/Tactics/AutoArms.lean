@@ -9,7 +9,6 @@ public import Mathlib.Tactic.GCongr
 public import Mathlib.Tactic.Positivity
 public import Mathlib.Tactic.NormNum
 public import Mathlib.Tactic.Ring
-public import CatCryptCore.Tactics.Triangle
 public import CatCryptCore.Tactics.AutoHopRegistry
 public meta import CatCryptCore.Tactics.AutoHopRegistry
 public import CatCryptCore.Tactics.AutoDispatchCore
@@ -41,8 +40,9 @@ This module provides five procedures.
 
 The attribute `@[hop_metric]` and the distance views are in
 `CatCryptCore.Tactics.AutoHopRegistry`. No distance is built into the procedures; the
-registrations of `Advantage`, `AdvantageA` and `sdist` are in
-`CatCryptCore.Tactics.AutoMetrics`.
+registrations of `Advantage`, `sdist` and `AdvantageA` are beside their triangle lemmas,
+in `CatCryptCore.Crypto.Advantage`, `CatCryptCore.Crypto.SDist` and
+`CatCryptCore.Tactics.Triangle`.
 
 The module registers with `catcrypt_auto` (`CatCryptCore.Tactics.AutoDispatchCore`) the
 arms `hop_chain`, `hop_chain!` and `sum_atoms_le` of the distance shape, `gcongr_unfold`,

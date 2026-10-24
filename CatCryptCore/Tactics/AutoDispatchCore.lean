@@ -789,9 +789,52 @@ def unfoldStep (ds : Array Name) (b : Budget) : TacticM (Option String) := do
   if done.isEmpty then return none
   return some ("; ".intercalate done.toList)
 
+/-- The kernel's check of the term assigned to the goal `g`, where `env₀` is the
+environment in which the arm started: `none` when the kernel type-checks the term, abstracted
+over the local context of `g`, at the type of `g` abstracted the same way, and the value
+of each theorem or definition that the term reaches and `env₀` does not contain (the
+auxiliary theorems of the arm, whose own kernel check runs after the tactic) at its
+stated type; the kernel's error otherwise. The check is left out (the result is `none`)
+when the abstracted term or type still has metavariables or free variables, which the
+kernel does not check. -/
+def kernelReject? (env₀ : Environment) (g : MVarId) : MetaM (Option MessageData) :=
+    g.withContext do
+  let xs := (← getLCtx).foldl (init := #[]) fun xs d =>
+    if d.isAuxDecl then xs else xs.push d.toExpr
+  let e ← instantiateMVars (← mkLambdaFVars (usedLetOnly := false) xs
+    (← instantiateMVars (mkMVar g)))
+  let t ← instantiateMVars (← mkForallFVars (usedLetOnly := false) xs (← g.getType))
+  if e.hasMVar || t.hasMVar || e.hasFVar || t.hasFVar then return none
+  let env ← getEnv
+  let opts ← getOptions
+  let checkAt (v ty : Expr) : Option MessageData :=
+    match Kernel.check env {} v with
+    | .error ex => some (ex.toMessageData opts)
+    | .ok ty' => match Kernel.isDefEq env {} ty' ty with
+      | .ok true => none
+      | .ok false => some m!"the type of the term is not its stated type"
+      | .error ex => some (ex.toMessageData opts)
+  if let some m := checkAt e t then return some m
+  let mut todo := e.getUsedConstants.filter (!env₀.contains ·)
+  let mut seen : NameSet := {}
+  while !todo.isEmpty do
+    let n := todo.back!
+    todo := todo.pop
+    if seen.contains n then continue
+    seen := seen.insert n
+    let vt? : Option (Expr × Expr) := match env.find? n with
+      | some (.thmInfo d) => some (d.value, d.type)
+      | some (.defnInfo d) => some (d.value, d.type)
+      | _ => none
+    let some (v, ty) := vt? | continue
+    if let some m := checkAt v ty then return some m!"{n}: {m}"
+    todo := todo ++ v.getUsedConstants.filter (!env₀.contains ·)
+  return none
+
 /-- Run the arms of the shape `sh` on the main goal under the budgets `b`. Returns the
-closing arm, or the failure (or reason for skipping) of each arm. Once the total budget
-is spent the remaining arms are not run, and one line says so. -/
+closing arm, or the failure (or reason for skipping) of each arm. An arm closes the
+goal only when the kernel accepts the proof term it assigns (`kernelReject?`). Once the
+total budget is spent the remaining arms are not run, and one line says so. -/
 def runArms (sh : String) (c : ArgClasses) (b : Budget) (withTerms : Bool) :
     TacticM (Except (Array MessageData) Arm) := do
   let g ← getMainGoal
@@ -813,7 +856,12 @@ def runArms (sh : String) (c : ArgClasses) (b : Budget) (withTerms : Bool) :
       evalTactic tac
       unless (← getGoals).isEmpty do throwError "goals remain open"
     match r with
-    | .ok () => return .ok arm
+    | .ok () =>
+      let some m ← kernelReject? s.term.meta.core.env g | return .ok arm
+      s.restore
+      let msg ← (elideMessage m).toString
+      let line := " ".intercalate ((msg.splitOn "\n").map (·.trimAscii.toString))
+      tried := tried.push m!"\n  {label}: the kernel rejects the proof term: {line.take 160}"
     | .error e =>
       s.restore
       tried := tried.push m!"\n  {label}: {e}"

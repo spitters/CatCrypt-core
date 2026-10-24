@@ -10,18 +10,19 @@ public import CatCryptCore.Tactics.AutoSets
 public import CatCryptCore.Tactics.BindVcgen
 public import CatCryptCore.Tactics.BindSwap
 public import CatCryptCore.Tactics.Triangle
-public import CatCryptCore.Tactics.AutoMetrics
+public import CatCryptCore.Crypto.SDist
 
 /-!
 # `catcrypt_auto` with the arms of the automation sets
 
 The dispatcher `catcrypt_auto` (`CatCryptCore.Tactics.AutoDispatchCore`) with the
-registrations of `CatCryptCore.Tactics.AutoBase`, `CatCryptCore.Tactics.AutoArms`
-(through `CatCryptCore.Tactics.AutoMetrics`, which also registers the distances `sdist`,
-`Advantage` and `AdvantageA` with `@[hop_metric]`) and `CatCryptCore.Tactics.AutoSets`,
-the shape `advantage equality` (an equality one of whose sides is an application of
-`AdvantageA` or `Advantage`) with the arm `advantage_eq_nf`, and the arms `bind_swap_nf`
-(`CatCryptCore.Tactics.BindSwap`) and `bind_vcgen` registered here. The arms of the
+registrations of the modules this module imports: the shapes and the Lean-core arms of
+`CatCryptCore.Tactics.AutoBase`, the arms of `CatCryptCore.Tactics.AutoArms`,
+`CatCryptCore.Tactics.BindSwap` (`advantage_eq_nf`, `bind_swap_nf`) and
+`CatCryptCore.Tactics.BindVcgen` (`bind_vcgen`), the distances `sdist`, `Advantage` and
+`AdvantageA` registered with `@[hop_metric]` in `CatCryptCore.Crypto.SDist`,
+`CatCryptCore.Crypto.Advantage` and `CatCryptCore.Tactics.Triangle`, and the sets and arms
+of `CatCryptCore.Tactics.AutoSets`. The module registers nothing. The arms of the
 normalised stage, in order:
 
 | Shape | Arms, in order |
@@ -38,12 +39,3 @@ normalised stage, in order:
 | premises | `solve_by_elim [p₁, …]` |
 -/
 
-public section
-
-catcrypt_auto_shape "advantage equality" priority 85 :=
-  any [arg Eq/3 at 1 (app CatCrypt.Crypto.AdvantageA), arg Eq/3 at 1 (app CatCrypt.Crypto.Advantage),
-    arg Eq/3 at 2 (app CatCrypt.Crypto.AdvantageA), arg Eq/3 at 2 (app CatCrypt.Crypto.Advantage)]
-
-catcrypt_auto_arm "advantage equality" order 5 := "advantage_eq_nf%GRIND"
-catcrypt_auto_arm "SPComp equality" order 5 := "bind_swap_nf%GRIND"
-catcrypt_auto_arm "SPComp equality" order 20 := "bind_vcgen"

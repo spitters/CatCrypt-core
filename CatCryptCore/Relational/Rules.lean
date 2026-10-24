@@ -12,6 +12,15 @@ public import CatCryptCore.Relational.DeadSample
 # pRHL Proof Rules
 
 This file contains the core proof rules for probabilistic relational Hoare logic.
+
+## Automation
+
+* In the Aesop rule set `CatCryptRel`: `rHoare_ret_same`, `rHoare_refl`,
+  `rHoare_sample_same` and `rHoare_fail` as unsafe `apply` rules at 70%; the
+  synchronised and one-sided state rules and `rHoare_ite`, `rHoare_if` at 50%;
+  `rHoare_false` as a safe `apply` rule.
+* In the scoped `grind` set of namespace `CatCryptGrind`: `rHoare_refl` and
+  `rHoare_sample_same`.
 -/
 
 @[expose] public section
@@ -837,3 +846,23 @@ theorem rHoare_foldM {Inv : α → α → RPre}
           (fun i hi => h_step (i + 1) (Nat.succ_lt_succ hi))
 
 end CatCrypt.Relational
+
+/-! ## Registrations in `CatCryptRel` and `CatCryptGrind` -/
+
+attribute [aesop unsafe 70% apply (rule_sets := [CatCryptRel])]
+  CatCrypt.Relational.rHoare_ret_same CatCrypt.Relational.rHoare_refl
+  CatCrypt.Relational.rHoare_sample_same CatCrypt.Relational.rHoare_fail
+
+attribute [aesop unsafe 50% apply (rule_sets := [CatCryptRel])]
+  CatCrypt.Relational.rHoare_get_sync CatCrypt.Relational.rHoare_set_sync
+  CatCrypt.Relational.rHoare_get_l CatCrypt.Relational.rHoare_get_r
+  CatCrypt.Relational.rHoare_put_l CatCrypt.Relational.rHoare_put_r
+  CatCrypt.Relational.rHoare_ite CatCrypt.Relational.rHoare_if
+
+add_aesop_rules safe apply CatCrypt.Relational.rHoare_false (rule_sets := [CatCryptRel])
+
+namespace CatCryptGrind
+
+attribute [scoped grind .] CatCrypt.Relational.rHoare_refl CatCrypt.Relational.rHoare_sample_same
+
+end CatCryptGrind

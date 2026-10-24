@@ -7,6 +7,7 @@ module
 
 public import CatCryptCore.Core.Heap
 public import CatCryptCore.Prob.SDistr
+public import CatCryptCore.Tactics.AutoSetsDecl
 
 /-!
 # Code Representation
@@ -23,6 +24,15 @@ We use the direct semantic model: `SPComp α = Heap → SDistr (α × Heap)`.
 * `SPComp.sample` - Sample from uniform distribution
 * `SPComp.fail` - Failed computation
 * `SPComp.assert` - Assertion (fail if false)
+
+## Automation
+
+* In the Aesop rule set `CatCryptRel` (`CatCryptCore.Tactics.AutoSetsDecl`): the `IsPure`
+  combinators `bind_isPure`, `bindOp_isPure`, `pure_isPure` and `sample_isPure` as safe
+  `apply` rules, and the monad laws `pure_bind`, `bind_pure`, `bind_assoc`, `fail_bind`,
+  `monad_bind_eq` and `monad_pure_eq` as normalisation `simp` rules.
+* In the scoped `grind` set of namespace `CatCryptGrind`: `pure_bind`, `bind_pure`,
+  `bind_assoc` and `fail_bind`.
 -/
 
 @[expose] public section
@@ -361,3 +371,21 @@ theorem liftSDistr_isPure {α : Type} (d : CatCrypt.Prob.SDistr α) :
   ⟨d, fun _ => rfl⟩
 
 end CatCrypt.Core
+
+/-! ## Registrations in `CatCryptRel` and `CatCryptGrind` -/
+
+attribute [aesop safe apply (rule_sets := [CatCryptRel])]
+  CatCrypt.Core.SPComp.bind_isPure CatCrypt.Core.SPComp.bindOp_isPure
+  CatCrypt.Core.SPComp.pure_isPure CatCrypt.Core.SPComp.sample_isPure
+
+attribute [aesop norm simp (rule_sets := [CatCryptRel])]
+  CatCrypt.Core.SPComp.pure_bind CatCrypt.Core.SPComp.bind_pure
+  CatCrypt.Core.SPComp.bind_assoc CatCrypt.Core.SPComp.fail_bind
+  CatCrypt.Core.SPComp.monad_bind_eq CatCrypt.Core.SPComp.monad_pure_eq
+
+namespace CatCryptGrind
+
+attribute [scoped grind =] CatCrypt.Core.SPComp.pure_bind CatCrypt.Core.SPComp.bind_pure
+  CatCrypt.Core.SPComp.bind_assoc CatCrypt.Core.SPComp.fail_bind
+
+end CatCryptGrind

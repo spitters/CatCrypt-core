@@ -8,23 +8,19 @@ module
 public import CatCryptCore.Tactics.AutoArms
 public import CatCryptCore.Crypto.SDist
 public import CatCryptCore.Crypto.Advantage
+public import CatCryptCore.Tactics.Triangle
 
 /-!
 # The standard distances of `hop_chain`
 
-Registers with `@[hop_metric]` (`CatCryptCore.Tactics.AutoArms`) the triangle and
-symmetry lemmas of the three distances of game proofs:
+Imports the modules that register with `@[hop_metric]`
+(`CatCryptCore.Tactics.AutoHopRegistry`) the triangle and symmetry lemmas of the three
+distances of game proofs, each beside its lemmas:
 
-* `sdist` (`sdist_triangle`, `sdist_sym`);
-* `Advantage` (`advantage_triangle`, `Advantage_sym`);
-* `AdvantageA` at a fixed adversary (`advantageA_triangle`, `AdvantageA_sym`).
+* `sdist` (`sdist_triangle`, `sdist_sym`) in `CatCryptCore.Crypto.SDist`;
+* `Advantage` (`advantage_triangle`, `Advantage_sym`) in `CatCryptCore.Crypto.Advantage`;
+* `AdvantageA` at a fixed adversary (`advantageA_triangle`, `AdvantageA_sym`) in
+  `CatCryptCore.Tactics.Triangle`.
 
-`catcrypt_auto` imports this module, so its `hop_chain` arm covers these distances.
+The module registers nothing.
 -/
-
-public section
-
-open CatCrypt.Crypto
-
-attribute [hop_metric] sdist_triangle sdist_sym advantage_triangle Advantage_sym
-  advantageA_triangle AdvantageA_sym

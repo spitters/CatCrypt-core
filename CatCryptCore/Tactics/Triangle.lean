@@ -18,6 +18,9 @@ This file provides the `ssprove_triangle` tactic for game-hopping proofs.
 * `Advantage_triangle_chain` - Triangle inequality for chains of games
 * `ssprove_triangle` - Tactic to introduce a triangle inequality bound
 
+`advantageA_triangle` and `AdvantageA_sym` are registered with `@[hop_metric]`, so that
+`hop_chain` composes chains over `AdvantageA` at a fixed adversary.
+
 ## Usage
 
 The tactic `ssprove_triangle G₀ [G₁, G₂, G₃] G₄` produces:
@@ -125,6 +128,8 @@ theorem advantageA_sum_cons {α : Type} (G₀ G₁ : SPComp α) (rest : List (SP
     AdvantageA G₀ G₁ A + advantageA_sum G₁ rest Gn A := rfl
 
 end CatCrypt.Crypto
+
+attribute [hop_metric] CatCrypt.Crypto.advantageA_triangle CatCrypt.Crypto.AdvantageA_sym
 
 namespace CatCrypt.Tactics
 
