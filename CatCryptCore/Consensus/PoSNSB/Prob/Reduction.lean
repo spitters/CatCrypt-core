@@ -209,7 +209,7 @@ theorem run_mapQ_simSign (bs : List (Block Tx Hash (Fin np)))
     by_cases h : b.bid = i
     · obtain ⟨log, hr, hlog⟩ := ih (l ++ [(b, hS.dsign sk b)])
       refine ⟨(b, hS.dsign sk b) :: log, ?_, ?_⟩
-      · simp only [mapQ, simSign, h, if_true, OracleAdv.run_bind, run_query_signOracle_det,
+      · simp only [mapQ, simSign, h, ite_true, OracleAdv.run_bind, run_query_signOracle_det,
           OracleAdv.run_ret, PMF.pure_bind, hr]
         simp [h]
       · intro b' hb'
@@ -219,7 +219,7 @@ theorem run_mapQ_simSign (bs : List (Block Tx Hash (Fin np)))
         · exact Or.inr (hlog b' hb')
     · obtain ⟨log, hr, hlog⟩ := ih l
       refine ⟨log, ?_, fun b' hb' => List.mem_cons_of_mem _ (hlog b' hb')⟩
-      simp only [mapQ, simSign, h, if_false, OracleAdv.bind_ret, OracleAdv.run_bind,
+      simp only [mapQ, simSign, h, ite_false, OracleAdv.bind_ret, OracleAdv.run_bind,
         OracleAdv.run_ret, PMF.pure_bind, hr]
       simp [h]
 
@@ -326,7 +326,7 @@ theorem sStep_noncall (bake : Bool) (p : Fin np) (M : GS P ω A)
     sStep Sch P A ω bake p M = sStep Sch P A (ω.withKey i (pk, sk)) bake p M := by
   let _ := ω.params P; let _ := ω.bparams P
   cases bake
-  · simp only [sStep, sRcv, Bool.false_eq_true, if_false]
+  · simp only [sStep, sRcv, Bool.false_eq_true, ite_false]
     unfold party_rcv_step_world
     cases hs : M.state_map p with
     | none => rfl
@@ -334,7 +334,7 @@ theorem sStep_noncall (bake : Bool) (p : Fin np) (M : GS P ω A)
       have hc : is_corrupt p = false := by simpa [hs] using h
       simp only [hc]
       rfl
-  · simp only [sStep, sBake, if_true]
+  · simp only [sStep, sBake, ite_true]
     unfold party_bake_step_world
     cases hs : M.state_map p with
     | none => rfl
@@ -353,16 +353,16 @@ theorem corruptStep_eq (bake : Bool) (p : Fin np) (M : GS P ω A)
   simp only [Bool.and_eq_true, Option.isSome_iff_exists] at h
   obtain ⟨⟨l, hl⟩, hc⟩ := h
   cases bake
-  · simp only [corruptStep, sStep, sRcv, stepCall, Bool.false_eq_true, if_false]
+  · simp only [corruptStep, sStep, sRcv, stepCall, Bool.false_eq_true, ite_false]
     unfold party_rcv_step_world
     rw [hl]
-    simp only [hc, Bool.not_true, Bool.false_eq_true, if_false]
+    simp only [hc, Bool.not_true, Bool.false_eq_true, ite_false]
     rw [mkExec_rcv, simPks_eq i pk ω sk]
     rfl
-  · simp only [corruptStep, sStep, sBake, stepCall, if_true]
+  · simp only [corruptStep, sStep, sBake, stepCall, ite_true]
     unfold party_bake_step_world
     rw [hl]
-    simp only [hc, Bool.not_true, Bool.false_eq_true, if_false]
+    simp only [hc, Bool.not_true, Bool.false_eq_true, ite_false]
     rw [mkExec_bake, simPks_eq i pk ω sk]
     rfl
 
@@ -410,7 +410,7 @@ theorem run_simStep (bake : Bool) (p : Fin np) (M : GS P ω A) :
       · exact absurd (h.symm.trans hh) (by decide)
       · rfl
     rw [hcalls]
-    simp only [simStep, h, Bool.false_eq_true, if_false] at hx
+    simp only [simStep, h, Bool.false_eq_true, ite_false] at hx
     refine ⟨fun _ => ⟨l, fun b hb' => hb_sStep Sch P A (ω.withKey i (pk, sk)) bake p M b (hl b hb'),
       ?_⟩, ?_⟩
     · rw [← sStep_noncall Sch P A i pk ω sk bake p M h]
@@ -419,13 +419,13 @@ theorem run_simStep (bake : Bool) (p : Fin np) (M : GS P ω A) :
   · have hcalls : stepCalls P (ω.withKey i (pk, sk)) A bake (p, M) =
         [stepCall P A ω bake p M] := by
       cases bake <;>
-      · simp only [stepCalls, stepCall, Bool.false_eq_true, if_false, if_true]
+      · simp only [stepCalls, stepCall, Bool.false_eq_true, ite_false, ite_true]
         split_ifs with hh
         · rfl
         · exact absurd h hh
     rw [hcalls]
     obtain ⟨log, hr, hlog⟩ := run_simAdv Sch A i pk ω sk (stepCall P A ω bake p M) l
-    simp only [simStep, h, if_true, OracleAdv.run_bind, hr, PMF.pure_bind] at hx
+    simp only [simStep, h, ite_true, OracleAdv.run_bind, hr, PMF.pure_bind] at hx
     have hl' : ∀ b ∈ l.map Prod.fst, b ∈ (stepCall P A ω bake p M).hist.map get_block := by
       rw [hhist]; exact hl
     by_cases hF : ForgedBy Sch (ω.withKey i (pk, sk)) A i (stepCall P A ω bake p M)
@@ -695,7 +695,7 @@ theorem SimEq.le_run
   · obtain ⟨fg, l', hrun, hv, -, hnl⟩ := (hs k l hl).2 hF
     have hw : (Sch.verify pk fg.1 fg.2 && !(l'.map Prod.fst).contains fg.1) = true := by
       simpa [hv] using hnl
-    rw [hrun, PMF.pure_map, hw, PMF.pure_apply, if_pos rfl]
+    rw [hrun, PMF.pure_map, hw, PMF.pure_apply, ite_eq_left rfl]
     exact hx
   · have hF' : ∀ c ∈ calls, ¬ForgedBy Sch (ω.withKey i (pk, sk)) A i c :=
       fun c hc hc' => hF ⟨c, hc, hc'⟩
@@ -720,13 +720,13 @@ theorem simEq_simStep (bake : Bool) (p : Fin np) (M : GS P ω A) :
     rw [hcalls]
     refine ⟨fun _ => ⟨l, fun b hb' => hb_sStep Sch P A (ω.withKey i (pk, sk)) bake p M b (hl b hb'),
       ?_⟩, ?_⟩
-    · simp only [simStep, h, Bool.false_eq_true, if_false]
+    · simp only [simStep, h, Bool.false_eq_true, ite_false]
       rw [← sStep_noncall Sch P A i pk ω sk bake p M h]
     · rintro ⟨c, hc, _⟩; simp at hc
   · have hcalls : stepCalls P (ω.withKey i (pk, sk)) A bake (p, M) =
         [stepCall P A ω bake p M] := by
       cases bake <;>
-      · simp only [stepCalls, stepCall, Bool.false_eq_true, if_false, if_true]
+      · simp only [stepCalls, stepCall, Bool.false_eq_true, ite_false, ite_true]
         split_ifs with hh
         · rfl
         · exact absurd h hh
@@ -741,7 +741,7 @@ theorem simEq_simStep (bake : Bool) (p : Fin np) (M : GS P ω A) :
       obtain ⟨hv, hm⟩ := findForgery_some Sch hfs
       refine ⟨fun hcl => absurd hF (hcl _ (List.mem_singleton_self _)),
         fun _ => ⟨(m, σ), l ++ log, ?_, ?_, ?_, ?_⟩⟩
-      · simp only [simStep, h, if_true, OracleAdv.run_bind, hr, PMF.pure_bind, hfs,
+      · simp only [simStep, h, ite_true, OracleAdv.run_bind, hr, PMF.pure_bind, hfs,
           OracleAdv.run_ret]
       · simpa [simPks] using hv
       · simpa [hb, hhist] using hm
@@ -763,7 +763,7 @@ theorem simEq_simStep (bake : Bool) (p : Fin np) (M : GS P ω A) :
         rcases hb' with hb' | hb'
         · exact hl b hb'
         · simpa [hb, hhist] using hlog b hb'
-      · simp only [simStep, h, if_true, OracleAdv.run_bind, hr, PMF.pure_bind, hfn]
+      · simp only [simStep, h, ite_true, OracleAdv.run_bind, hr, PMF.pure_bind, hfn]
         rw [← corruptStep_eq Sch P A i pk ω sk bake p M h]
 
 theorem simEq_simFold (bake : Bool) (N : GS P ω A) (l : List (Fin np)) :
@@ -916,7 +916,7 @@ For `H = HashScheme.randomFun` and the identity codec, the hash function is a un
 function. -/
 noncomputable def seedDist (H : HashScheme) (cd : H.Codec (BlockDom Tx Hash np Hz) Hash)
     (μ : PMF (Option (Fin np))) (h0 : Fin np) (W n : ℕ) : PMF (Seed Tx Hash np n Hz PK SK) :=
-  (leaderDist μ h0 W n).bind fun L => (PMF.uniformOfFintype H.Key).bind fun k =>
+  (leaderDist μ h0 W n).bind fun L => (PMF.uniformFintype H.Key).bind fun k =>
     (PMF.piFin fun _ => Sch.keyDist).bind fun ks => PMF.pure ⟨L, cd.hashOn k, ks⟩
 
 theorem seedDist_withKey (H : HashScheme) (cd : H.Codec (BlockDom Tx Hash np Hz) Hash)

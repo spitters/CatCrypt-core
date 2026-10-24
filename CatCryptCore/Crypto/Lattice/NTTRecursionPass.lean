@@ -117,7 +117,7 @@ theorem dft_even_odd_split {n : ℕ} (ω : R) (x : Fin (2 * n) → R) (k : Fin n
     rw [← Fin.sum_univ_eq_sum_range g (2 * n)]
     apply Finset.sum_congr rfl
     intro j _
-    simp only [hg, hcast, j.isLt, dif_pos]
+    simp only [hg, hcast, j.isLt, dite_eq_left]
   rw [hLHS, sum_range_two_mul g n]
   -- Even lane = E_k.
   have hEven : (∑ i ∈ range n, g (2 * i)) = dft n (ω ^ 2) (evenPart x) k := by
@@ -125,7 +125,7 @@ theorem dft_even_odd_split {n : ℕ} (ω : R) (x : Fin (2 * n) → R) (k : Fin n
     apply Finset.sum_congr rfl
     intro i _
     have hi : 2 * i.val < 2 * n := by omega
-    simp only [hg, evenPart, hi, dif_pos]
+    simp only [hg, evenPart, hi, dite_eq_left]
     rw [hkk, ← pow_mul]
     ring_nf
   -- Odd lane = ωᵏ · O_k.
@@ -135,7 +135,7 @@ theorem dft_even_odd_split {n : ℕ} (ω : R) (x : Fin (2 * n) → R) (k : Fin n
     apply Finset.sum_congr rfl
     intro i _
     have hi : 2 * i.val + 1 < 2 * n := by omega
-    simp only [hg, oddPart, hi, dif_pos]
+    simp only [hg, oddPart, hi, dite_eq_left]
     rw [hkk, ← pow_mul]
     ring_nf
   rw [hEven, hOdd, hkk]
@@ -164,7 +164,7 @@ theorem dft_upper_split {n : ℕ} (ω : R) (hω : ω ^ (2 * n) = 1)
     rw [← Fin.sum_univ_eq_sum_range g (2 * n)]
     apply Finset.sum_congr rfl
     intro j _
-    simp only [hg, j.isLt, dif_pos, hkk]
+    simp only [hg, j.isLt, dite_eq_left, hkk]
   rw [hLHS, sum_range_two_mul g n]
   -- Even lane: `ω^(2i·n) = (ω^(2n))ⁱ = 1`, so the even lane is again `E_k`.
   have hEven : (∑ i ∈ range n, g (2 * i)) = dft n (ω ^ 2) (evenPart x) k := by
@@ -172,7 +172,7 @@ theorem dft_upper_split {n : ℕ} (ω : R) (hω : ω ^ (2 * n) = 1)
     apply Finset.sum_congr rfl
     intro i _
     have hi : 2 * i.val < 2 * n := by omega
-    simp only [hg, evenPart, hi, dif_pos]
+    simp only [hg, evenPart, hi, dite_eq_left]
     have hpow : ω ^ (2 * i.val * (kk + n)) = (ω ^ 2) ^ (i.val * kk) := by
       have hexp : 2 * i.val * (kk + n) = 2 * (i.val * kk) + (2 * n) * i.val := by ring
       rw [hexp, pow_add, pow_mul ω 2, pow_mul ω (2 * n), hω, one_pow, mul_one]
@@ -184,7 +184,7 @@ theorem dft_upper_split {n : ℕ} (ω : R) (hω : ω ^ (2 * n) = 1)
     apply Finset.sum_congr rfl
     intro i _
     have hi : 2 * i.val + 1 < 2 * n := by omega
-    simp only [hg, oddPart, hi, dif_pos]
+    simp only [hg, oddPart, hi, dite_eq_left]
     have hpow : ω ^ ((2 * i.val + 1) * (kk + n))
         = ω ^ n * ω ^ kk * (ω ^ 2) ^ (i.val * kk) := by
       have hexp : (2 * i.val + 1) * (kk + n)

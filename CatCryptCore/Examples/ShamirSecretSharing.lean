@@ -193,7 +193,7 @@ noncomputable def PrivAdv (rp : Fin d → ZMod p) (s0 s1 : ZMod p)
     fixed while switching the secret from `s₀` to `s₁`. -/
 theorem priv_coupling (rp : Fin d → ZMod p) (hrp : ∀ j, rp j ≠ 0) (s0 s1 : ZMod p) :
     rHoare eqPre (PrivGame rp s0 s1 true) (PrivGame rp s0 s1 false) eqPost := by
-  simp only [PrivGame, Bool.false_eq_true, if_true, if_false]
+  simp only [PrivGame, Bool.false_eq_true, ite_true, ite_false]
   apply rHoare_bij_step (Equiv.addRight (transVec rp s0 s1))
   intro a
   apply rHoare_ret

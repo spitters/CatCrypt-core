@@ -5,7 +5,7 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import Mathlib.Probability.Distributions.Uniform
+public import CatCryptCore.ForMathlib.PMFUniformDefs
 
 /-!
 # Sub-distributions
@@ -68,7 +68,7 @@ noncomputable instance : Monad SDistr where
 
 /-- Uniform distribution over a finite nonempty type -/
 noncomputable def uniform (α : Type*) [Fintype α] [Nonempty α] : SDistr α :=
-  (PMF.uniformOfFintype α).map some
+  (PMF.uniformFintype α).map some
 
 /-! ## Measures and mass -/
 
@@ -128,7 +128,7 @@ theorem mem_support_pure_iff (a b : α) : b ∈ (pure a : SDistr α).support ↔
   constructor
   · intro h
     by_contra hne
-    rw [if_neg (fun heq => hne (Option.some.inj heq).symm)] at h
+    rw [ite_eq_right (fun heq => hne (Option.some.inj heq).symm)] at h
     exact h rfl
   · intro h
     simp only [h, ite_true, one_ne_zero, not_false_eq_true]
@@ -258,7 +258,7 @@ theorem uniform_apply_some [Fintype α] [Nonempty α] (a : α) :
     (uniform α) (some a) = (Fintype.card α : ℝ≥0∞)⁻¹ := by
   classical
   unfold uniform
-  simp only [PMF.map_apply, PMF.uniformOfFintype_apply]
+  simp only [PMF.map_apply, PMF.uniformFintype_apply]
   rw [tsum_eq_single a]
   · simp
   · intro a' ha'
@@ -309,7 +309,7 @@ theorem uniform_bind_bij [Fintype α] [Fintype β] [Nonempty α] [Nonempty β]
     -- Both sides have probability 1/|β| on (some b)
     -- RHS simplifies to 1/|β|
     conv_rhs => rw [tsum_eq_single b (by intro a hne; simp [hne.symm])]
-    simp only [↓reduceIte, PMF.uniformOfFintype_apply]
+    simp only [↓reduceIte, PMF.uniformFintype_apply]
     -- LHS: ∑' oa, (inner)(oa) * continuation(oa)(some b)
     -- We'll show this equals 1/|α| = 1/|β|
     -- Key insight: the only contributing term is when oa = some (f⁻¹ b)
@@ -370,13 +370,13 @@ theorem uniform_bind_equiv_comp [Fintype α] [Fintype β] [Nonempty α] [Nonempt
 theorem uniform_bind_const [Fintype α] [Nonempty α] (d : SDistr β) :
     (uniform α).bind (fun _ => d) = d := by
   -- Use the PMF monad laws directly:
-  -- uniform α = (PMF.uniformOfFintype α).map some
-  --           = (PMF.uniformOfFintype α).bind (fun a => PMF.pure (some a))
+  -- uniform α = (PMF.uniformFintype α).map some
+  --           = (PMF.uniformFintype α).bind (fun a => PMF.pure (some a))
   -- Then by bind_bind and pure_bind, the whole expression reduces to
-  -- (PMF.uniformOfFintype α).bind (fun _ => d) = d  [by bind_const]
+  -- (PMF.uniformFintype α).bind (fun _ => d) = d  [by bind_const]
   unfold uniform bind fail
 
-  -- Step 1: Rewrite (PMF.uniformOfFintype α).map some as a bind
+  -- Step 1: Rewrite (PMF.uniformFintype α).map some as a bind
   -- Using bind_pure_comp : bind p (pure ∘ f) = map f p
   -- So map f p = bind p (pure ∘ f)
   rw [← PMF.bind_pure_comp]
@@ -398,7 +398,7 @@ theorem uniform_bind_const [Fintype α] [Nonempty α] (d : SDistr β) :
     arg 2; ext a
     rw [hinner a]
 
-  -- Step 5: Now we have (PMF.uniformOfFintype α).bind (fun _ => d), which equals d by bind_const
+  -- Step 5: Now we have (PMF.uniformFintype α).bind (fun _ => d), which equals d by bind_const
   exact PMF.bind_const _ _
 
 /-- Helper for `bind_comm`: distributes a constant factor `c₁ * c₂` over a
@@ -570,7 +570,7 @@ theorem uniform_nested_eq_prod (A B : Type) [Fintype A] [Fintype B] [Nonempty A]
             have h : ¬(some (a₀, b₀) = some (a₀, b)) := by
               simp only [Option.some.injEq, Prod.mk.injEq, true_and]
               exact hb.symm
-            rw [if_neg h, mul_zero]
+            rw [ite_eq_right h, mul_zero]
       · intro oa hoa
         cases oa with
         | none => rw [uniform_apply_none, zero_mul]
@@ -589,7 +589,7 @@ theorem uniform_nested_eq_prod (A B : Type) [Fintype A] [Fintype B] [Nonempty A]
               simp only [Option.some.injEq, Prod.mk.injEq]
               intro ⟨ha, _⟩
               exact hoa' ha.symm
-            rw [if_neg h, mul_zero]
+            rw [ite_eq_right h, mul_zero]
 
     · -- RHS = 1/|A×B| = 1/(|A|*|B|)
       rw [uniform_apply_some, Fintype.card_prod, Nat.cast_mul, ENNReal.mul_inv (by simp) (by simp)]

@@ -320,7 +320,7 @@ theorem nttHalf_negaShift (x : Fin 128 → ZMod q_kem) (k : Fin 128) :
       = t * (x i.castSucc * t ^ (i.castSucc : Fin 128).val) := by
     intro i
     have h1 : negaShift x i.succ = x i.castSucc := by
-      simp only [negaShift, Fin.val_succ, Nat.succ_sub_one, if_pos (Nat.succ_pos i.val)]
+      simp only [negaShift, Fin.val_succ, Nat.succ_sub_one, ite_eq_left (Nat.succ_pos i.val)]
       rfl
     rw [h1, show ((i.succ : Fin 128)).val = ((i.castSucc : Fin 128)).val + 1 from rfl, pow_succ]
     ring
@@ -416,10 +416,10 @@ lemma root_pow_add (i j : Fin 256) :
   have hval : (j + i).val = (i.val + j.val) % 256 := by
     simp [Fin.add_def, Nat.add_comm]
   rcases lt_or_ge (i.val + j.val) 256 with h | h
-  · rw [hval, Nat.mod_eq_of_lt h, if_pos (by omega)]
+  · rw [hval, Nat.mod_eq_of_lt h, ite_eq_left (by omega)]
     ring
   · have hmod : (i.val + j.val) % 256 = i.val + j.val - 256 := by omega
-    rw [hval, hmod, if_neg (by omega)]
+    rw [hval, hmod, ite_eq_right (by omega)]
     have hsplit : i.val + j.val = 256 + (i.val + j.val - 256) := by omega
     conv_lhs => rw [hsplit]
     rw [pow_add, root_pow_256]
@@ -523,7 +523,7 @@ theorem negaShift_signedNegaConv (x y : Fin 128 → ZMod q_kem) (m : Fin 128) :
           (if u.val < m.val then x u * y (m - u - 1) else -(x u * y (m - u - 1))) := by
   simp only [negaShift]
   by_cases hm : 0 < m.val
-  · rw [if_pos hm]
+  · rw [ite_eq_left hm]
     have hidx : ∀ u : Fin 128,
         (⟨m.val - 1, by have := m.isLt; omega⟩ : Fin 128) - u = m - u - 1 := by
       intro u
@@ -535,10 +535,10 @@ theorem negaShift_signedNegaConv (x y : Fin 128 → ZMod q_kem) (m : Fin 128) :
     refine Finset.sum_congr rfl (fun u _ => ?_)
     rw [hidx u]
     by_cases h : u.val < m.val
-    · rw [if_pos (show u.val ≤ m.val - 1 by omega), if_pos h]
-    · rw [if_neg (show ¬ u.val ≤ m.val - 1 by omega), if_neg h]
+    · rw [ite_eq_left (show u.val ≤ m.val - 1 by omega), ite_eq_left h]
+    · rw [ite_eq_right (show ¬ u.val ≤ m.val - 1 by omega), ite_eq_right h]
   · have hm0 : m.val = 0 := by omega
-    rw [if_neg hm]
+    rw [ite_eq_right hm]
     have hidx : ∀ u : Fin 128, (Fin.last 127 : Fin 128) - u = m - u - 1 := by
       intro u
       apply Fin.ext
@@ -550,7 +550,7 @@ theorem negaShift_signedNegaConv (x y : Fin 128 → ZMod q_kem) (m : Fin 128) :
     refine Finset.sum_congr rfl (fun u _ => ?_)
     have hcond : u.val ≤ (Fin.last 127 : Fin 128).val := by
       have := u.isLt; rw [Fin.val_last]; omega
-    rw [if_pos hcond, hidx u, if_neg (show ¬ u.val < m.val by omega)]
+    rw [ite_eq_left hcond, hidx u, ite_eq_right (show ¬ u.val < m.val by omega)]
 
 /-- The even-index term of coefficient `2m` of the length-256 signed product. -/
 theorem term_even_even (a b : Fin 256 → ZMod q_kem) (m u : Fin 128) :
@@ -562,10 +562,10 @@ theorem term_even_even (a b : Fin 256 → ZMod q_kem) (m u : Fin 128) :
   rw [pairFst_sub_pairFst]
   have := u.isLt; have := m.isLt
   by_cases h : u.val ≤ m.val
-  · rw [if_pos (show (pairFst u).val ≤ (pairFst m).val by
-      simp only [pairFst_val]; omega), if_pos h]; rfl
-  · rw [if_neg (show ¬ (pairFst u).val ≤ (pairFst m).val by
-      simp only [pairFst_val]; omega), if_neg h]; rfl
+  · rw [ite_eq_left (show (pairFst u).val ≤ (pairFst m).val by
+      simp only [pairFst_val]; omega), ite_eq_left h]; rfl
+  · rw [ite_eq_right (show ¬ (pairFst u).val ≤ (pairFst m).val by
+      simp only [pairFst_val]; omega), ite_eq_right h]; rfl
 
 /-- The odd-index term of coefficient `2m` of the length-256 signed product. -/
 theorem term_even_odd (a b : Fin 256 → ZMod q_kem) (m u : Fin 128) :
@@ -577,10 +577,10 @@ theorem term_even_odd (a b : Fin 256 → ZMod q_kem) (m u : Fin 128) :
   rw [pairFst_sub_pairSnd]
   have := u.isLt; have := m.isLt
   by_cases h : u.val < m.val
-  · rw [if_pos (show (pairSnd u).val ≤ (pairFst m).val by
-      simp only [pairFst_val, pairSnd_val]; omega), if_pos h]; rfl
-  · rw [if_neg (show ¬ (pairSnd u).val ≤ (pairFst m).val by
-      simp only [pairFst_val, pairSnd_val]; omega), if_neg h]; rfl
+  · rw [ite_eq_left (show (pairSnd u).val ≤ (pairFst m).val by
+      simp only [pairFst_val, pairSnd_val]; omega), ite_eq_left h]; rfl
+  · rw [ite_eq_right (show ¬ (pairSnd u).val ≤ (pairFst m).val by
+      simp only [pairFst_val, pairSnd_val]; omega), ite_eq_right h]; rfl
 
 /-- The even-index term of coefficient `2m + 1` of the length-256 signed product. -/
 theorem term_odd_even (a b : Fin 256 → ZMod q_kem) (m u : Fin 128) :
@@ -592,10 +592,10 @@ theorem term_odd_even (a b : Fin 256 → ZMod q_kem) (m u : Fin 128) :
   rw [pairSnd_sub_pairFst]
   have := u.isLt; have := m.isLt
   by_cases h : u.val ≤ m.val
-  · rw [if_pos (show (pairFst u).val ≤ (pairSnd m).val by
-      simp only [pairFst_val, pairSnd_val]; omega), if_pos h]; rfl
-  · rw [if_neg (show ¬ (pairFst u).val ≤ (pairSnd m).val by
-      simp only [pairFst_val, pairSnd_val]; omega), if_neg h]; rfl
+  · rw [ite_eq_left (show (pairFst u).val ≤ (pairSnd m).val by
+      simp only [pairFst_val, pairSnd_val]; omega), ite_eq_left h]; rfl
+  · rw [ite_eq_right (show ¬ (pairFst u).val ≤ (pairSnd m).val by
+      simp only [pairFst_val, pairSnd_val]; omega), ite_eq_right h]; rfl
 
 /-- The odd-index term of coefficient `2m + 1` of the length-256 signed product. -/
 theorem term_odd_odd (a b : Fin 256 → ZMod q_kem) (m u : Fin 128) :
@@ -607,10 +607,10 @@ theorem term_odd_odd (a b : Fin 256 → ZMod q_kem) (m u : Fin 128) :
   rw [pairSnd_sub_pairSnd]
   have := u.isLt; have := m.isLt
   by_cases h : u.val ≤ m.val
-  · rw [if_pos (show (pairSnd u).val ≤ (pairSnd m).val by
-      simp only [pairSnd_val]; omega), if_pos h]; rfl
-  · rw [if_neg (show ¬ (pairSnd u).val ≤ (pairSnd m).val by
-      simp only [pairSnd_val]; omega), if_neg h]; rfl
+  · rw [ite_eq_left (show (pairSnd u).val ≤ (pairSnd m).val by
+      simp only [pairSnd_val]; omega), ite_eq_left h]; rfl
+  · rw [ite_eq_right (show ¬ (pairSnd u).val ≤ (pairSnd m).val by
+      simp only [pairSnd_val]; omega), ite_eq_right h]; rfl
 
 /-- The even half of the length-256 signed product: the even-index terms give
 `a_e ⋆ b_e` and the odd-index terms give the negacyclic shift of `a_o ⋆ b_o`. -/

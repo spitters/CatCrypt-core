@@ -7,18 +7,18 @@ module
 
 public import CatCryptCore.Unary.ExpectationWP
 public import Std.Tactic.Do
-public import Std.Internal.Do
+public import Std.WP
 
 @[expose] public section
 set_option autoImplicit false
 
 /-!
-# `Std.Internal.Do` weakest-precondition instances for `SPComp` at the expectation carrier
+# `Std.WP` weakest-precondition instances for `SPComp` at the expectation carrier
 
-Two instances of the toolchain's `Std.Internal.Do.WPMonad` class for `SPComp`, so that
+Two instances of the toolchain's `Std.WP.WPMonad` class for `SPComp`, so that
 the `vcgen` tactic decomposes quantitative goals about `SPComp` programs. The module
 imports only `CatCryptCore.Unary.ExpectationWP`, `Std.Tactic.Do` (the `vcgen` tactic)
-and `Std.Internal.Do` (the `WPMonad` class); two examples are in
+and `Std.WP` (the `WPMonad` class); two examples are in
 `CatCryptCore.Unary.ExpectationVCGen`.
 
 * Lower bounds: `WPMonad SPComp (Heap → ℝ≥0∞) ℝ≥0∞`. The transformer is the
@@ -148,7 +148,7 @@ theorem wpEF_sample (α : Type) [Fintype α] [Nonempty α] (post : α → Heap �
 
 /-! ## The lower-bound instance -/
 
-open Std.Internal.Do
+open Std.WP
 
 /-- The `WPMonad` instance of `SPComp` at the expectation carrier: the transformer is
 `wpEF`, ordered by `≤`. -/

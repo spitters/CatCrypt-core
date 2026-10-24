@@ -76,9 +76,9 @@ open Classical in
 decode to `c`, and uniform on all byte strings when none does. -/
 noncomputable def condB (c : P.Ch) : PMF (Fin Dp.L → UInt8) :=
   if h : ∃ b, Dp.decB b = c then
-    PMF.uniformOfFinset (Finset.univ.filter fun b => Dp.decB b = c)
+    PMF.uniformFinset (Finset.univ.filter fun b => Dp.decB b = c)
       (by obtain ⟨b, hb⟩ := h; exact ⟨b, by simp [hb]⟩)
-  else PMF.uniformOfFintype _
+  else PMF.uniformFintype _
 
 end DSParams
 
@@ -98,11 +98,11 @@ theorem absorbed_of_unabsorb {s : Bytes} {k : P.NizkInput SessionId}
 /-- The decoding of uniform bytes paired with the conditional sample is uniform bytes
 paired with their decoding. -/
 theorem bind_condB_pair :
-    ((PMF.uniformOfFintype (Fin Dp.L → UInt8)).map Dp.decB).bind
+    ((PMF.uniformFintype (Fin Dp.L → UInt8)).map Dp.decB).bind
         (fun c => (Dp.condB c).map fun b => (c, b)) =
-      (PMF.uniformOfFintype (Fin Dp.L → UInt8)).map fun b => (Dp.decB b, b) := by
+      (PMF.uniformFintype (Fin Dp.L → UInt8)).map fun b => (Dp.decB b, b) := by
   classical
-  set U := PMF.uniformOfFintype (Fin Dp.L → UInt8) with hU
+  set U := PMF.uniformFintype (Fin Dp.L → UInt8) with hU
   have hpair : ∀ c' c b, ((Dp.condB c').map fun b => (c', b)) (c, b) =
       if c' = c then Dp.condB c b else 0 := by
     intro c' c b
@@ -116,7 +116,7 @@ theorem bind_condB_pair :
       ((Finset.univ.filter fun b => Dp.decB b = c).card : ℝ≥0∞) * (Fintype.card (Fin Dp.L → UInt8) : ℝ≥0∞)⁻¹ := by
     intro c
     rw [PMF.map_apply, tsum_fintype]
-    simp [hU, PMF.uniformOfFintype_apply, Finset.sum_ite, eq_comm]
+    simp [hU, PMF.uniformFintype_apply, Finset.sum_ite, eq_comm]
   have hR : ∀ c b, (U.map fun b => (Dp.decB b, b)) (c, b) =
       if Dp.decB b = c then U b else 0 := by
     intro c b
@@ -127,19 +127,19 @@ theorem bind_condB_pair :
     · intro b' hb'
       simp [Ne.symm hb']
   ext ⟨c, b⟩
-  rw [PMF.bind_apply, tsum_eq_single c (fun c' hc' => by simp [hpair, hc']), hpair, if_pos rfl,
+  rw [PMF.bind_apply, tsum_eq_single c (fun c' hc' => by simp [hpair, hc']), hpair, ite_eq_left rfl,
     hR, hν]
   by_cases h : Dp.decB b = c
   · subst h
     have hmem : b ∈ Finset.univ.filter fun b' => Dp.decB b' = Dp.decB b := by simp
     have hne : ((Finset.univ.filter fun b' => Dp.decB b' = Dp.decB b).card : ℝ≥0∞) ≠ 0 := by
       exact_mod_cast Finset.card_ne_zero_of_mem hmem
-    rw [if_pos rfl, DSParams.condB, dif_pos ⟨b, rfl⟩, PMF.uniformOfFinset_apply, if_pos hmem,
-      hU, PMF.uniformOfFintype_apply, mul_comm, ← mul_assoc,
+    rw [ite_eq_left rfl, DSParams.condB, dite_eq_left ⟨b, rfl⟩, PMF.uniformFinset_apply, ite_eq_left hmem,
+      hU, PMF.uniformFintype_apply, mul_comm, ← mul_assoc,
       ENNReal.inv_mul_cancel hne (ENNReal.natCast_ne_top _), one_mul]
-  · rw [if_neg h]
+  · rw [ite_eq_right h]
     by_cases he : ∃ b', Dp.decB b' = c
-    · rw [DSParams.condB, dif_pos he, PMF.uniformOfFinset_apply, if_neg (by simp [h]), mul_zero]
+    · rw [DSParams.condB, dite_eq_left he, PMF.uniformFinset_apply, ite_eq_right (by simp [h]), mul_zero]
     · have h0 : (Finset.univ.filter fun b' => Dp.decB b' = c) = ∅ := by
         simpa [Finset.filter_eq_empty_iff] using he
       rw [h0, Finset.card_empty, Nat.cast_zero, zero_mul, zero_mul]
@@ -147,9 +147,9 @@ theorem bind_condB_pair :
 /-- **Conditional sampling.** Drawing a challenge from the decoding of uniform bytes and
 then bytes uniformly among those decoding to it is drawing uniform bytes. -/
 theorem bind_condB_map {γ : Type} (F : P.Ch → (Fin Dp.L → UInt8) → γ) :
-    ((PMF.uniformOfFintype (Fin Dp.L → UInt8)).map Dp.decB).bind
+    ((PMF.uniformFintype (Fin Dp.L → UInt8)).map Dp.decB).bind
         (fun c => (Dp.condB c).map (F c)) =
-      (PMF.uniformOfFintype (Fin Dp.L → UInt8)).map fun b => F (Dp.decB b) b := by
+      (PMF.uniformFintype (Fin Dp.L → UInt8)).map fun b => F (Dp.decB b) b := by
   have h := congrArg (PMF.map fun p : P.Ch × (Fin Dp.L → UInt8) => F p.1 p.2) (bind_condB_pair Dp)
   simpa only [PMF.map_bind, PMF.map_comp, Function.comp_def] using h
 
@@ -194,7 +194,7 @@ noncomputable def dsRawImpl (T : List (Bytes × (Fin Dp.L → UInt8))) (s : Byte
   | none =>
     match Dp.unabsorb s with
     | some k => .query k fun c => .rand (Dp.condB c) fun b => .ret (b, T ++ [(s, b)])
-    | none => .rand (PMF.uniformOfFintype _) fun b => .ret (b, T ++ [(s, b)])
+    | none => .rand (PMF.uniformFintype _) fun b => .ret (b, T ++ [(s, b)])
 
 omit [DecidableEq P.Stmt] in
 theorem isQueryBound_dsRawImpl (T : List (Bytes × (Fin Dp.L → UInt8))) (s : Bytes) :
@@ -256,7 +256,7 @@ theorem simOracle_dsRawImpl (hX : PrefixFree Dp.encX) (hA : PrefixFree Dp.encA)
     (T : List (Bytes × (Fin Dp.L → UInt8))) (s : Bytes) :
     (toOracle (dsRawStep Dp) T s).map (Prod.map id fun T => (T, dsDecTable Dp T)) =
       OracleAdv.simOracle (dsRawImpl Dp)
-        (toOracleWith ((PMF.uniformOfFintype (Fin Dp.L → UInt8)).map Dp.decB) ksStep)
+        (toOracleWith ((PMF.uniformFintype (Fin Dp.L → UInt8)).map Dp.decB) ksStep)
         (T, dsDecTable Dp T) s := by
   unfold OracleAdv.simOracle
   simp only [toOracle, dsRawStep, dsRawImpl]
@@ -269,10 +269,10 @@ theorem simOracle_dsRawImpl (hX : PrefixFree Dp.encX) (hA : PrefixFree Dp.encA)
     · have hs := absorbed_of_unabsorb Dp hk
       have hlk : lookupIn (dsDecTable Dp T) k = none := by
         rw [lookupIn_dsDecTable Dp hX hA, hs, hl, Option.map_none]
-      calc _ = (PMF.uniformOfFintype (Fin Dp.L → UInt8)).map
+      calc _ = (PMF.uniformFintype (Fin Dp.L → UInt8)).map
               (fun b => (b, (T ++ [(s, b)], dsDecTable Dp T ++ [(k, Dp.decB b)]))) := by
             simp [Step.toPMF, PMF.map_comp, Function.comp_def, dsDecTable_append, hk]
-        _ = ((PMF.uniformOfFintype (Fin Dp.L → UInt8)).map Dp.decB).bind (fun e =>
+        _ = ((PMF.uniformFintype (Fin Dp.L → UInt8)).map Dp.decB).bind (fun e =>
               (Dp.condB e).map fun b => (b, (T ++ [(s, b)], dsDecTable Dp T ++ [(k, e)]))) :=
             (bind_condB_map Dp (fun e b => (b, (T ++ [(s, b)], dsDecTable Dp T ++ [(k, e)])))).symm
         _ = _ := by
@@ -287,7 +287,7 @@ table of a raw table, is the raw oracle at its absorbed string with decoded answ
 theorem toOracleWith_ksStep_dsDecTable (hX : PrefixFree Dp.encX) (hA : PrefixFree Dp.encA)
     (T : List (Bytes × (Fin Dp.L → UInt8))) (k : P.NizkInput SessionId) :
     (toOracle (dsRawStep Dp) T (Dp.absorbed k)).map (Prod.map Dp.decB (dsDecTable Dp)) =
-      toOracleWith ((PMF.uniformOfFintype (Fin Dp.L → UInt8)).map Dp.decB) ksStep
+      toOracleWith ((PMF.uniformFintype (Fin Dp.L → UInt8)).map Dp.decB) ksStep
         (dsDecTable Dp T) k := by
   simp only [toOracle, toOracleWith, dsRawStep, ksStep, lookupIn_dsDecTable Dp hX hA]
   rcases lookupIn T (Dp.absorbed k) with _ | b
@@ -301,11 +301,11 @@ uniform bytes, is the raw game with its table replaced by its challenge table. -
 theorem run_dsRawRed (hX : PrefixFree Dp.encX) (hA : PrefixFree Dp.encA) {qH : ℕ}
     (A : OracleAdv Bytes (Fin Dp.L → UInt8) (SessionId × P.Stmt × P.NizkProof))
     (hAq : A.IsQueryBound qH) :
-    OracleAdv.run (toOracleWith ((PMF.uniformOfFintype (Fin Dp.L → UInt8)).map Dp.decB)
+    OracleAdv.run (toOracleWith ((PMF.uniformFintype (Fin Dp.L → UInt8)).map Dp.decB)
         ksStep) (ksWithVerify (dsRawRed Dp A hAq).run) [] =
       (OracleAdv.run (toOracle (dsRawStep Dp)) (dsRawWithVerify Dp A) []).map
         (Prod.map id (dsDecTable Dp)) := by
-  set ν := (PMF.uniformOfFintype (Fin Dp.L → UInt8)).map Dp.decB with hν
+  set ν := (PMF.uniformFintype (Fin Dp.L → UInt8)).map Dp.decB with hν
   have hsim := OracleAdv.run_map_state _ _ (fun T => (T, dsDecTable Dp T))
     (simOracle_dsRawImpl Dp hX hA) A []
   have hfin : ∀ (y : SessionId × P.Stmt × P.NizkProof) (T : List (Bytes × (Fin Dp.L → UInt8))),
@@ -332,12 +332,12 @@ and a decoding with the minorant `(1 − β)·uniform`, the advantage of an adve
 most `qH` raw-oracle queries is at most the knowledge-soundness advantage of the
 reduction plus `(qH + 1)·β`. -/
 theorem dsRawKsAdvantage_le (hX : PrefixFree Dp.encX) (hA : PrefixFree Dp.encA) {β : ℝ≥0∞}
-    (hβ : ∀ c, (1 - β) * PMF.uniformOfFintype P.Ch c ≤
-      (PMF.uniformOfFintype (Fin Dp.L → UInt8)).map Dp.decB c)
+    (hβ : ∀ c, (1 - β) * PMF.uniformFintype P.Ch c ≤
+      (PMF.uniformFintype (Fin Dp.L → UInt8)).map Dp.decB c)
     {qH : ℕ} (A : OracleAdv Bytes (Fin Dp.L → UInt8) (SessionId × P.Stmt × P.NizkProof))
     (hAq : A.IsQueryBound qH) :
     dsRawKsAdvantage Dp A ≤ ksAdvantage (dsRawRed Dp A hAq) + (qH + 1 : ℕ) * β := by
-  set ν := (PMF.uniformOfFintype (Fin Dp.L → UInt8)).map Dp.decB with hνdef
+  set ν := (PMF.uniformFintype (Fin Dp.L → UInt8)).map Dp.decB with hνdef
   have hpre : (Prod.map id (dsDecTable Dp)) ⁻¹' {y | ksAccepts y = true} =
       {y | dsKsAccepts Dp y = true} := by
     ext ⟨y, T⟩
@@ -348,7 +348,7 @@ theorem dsRawKsAdvantage_le (hX : PrefixFree Dp.encX) (hA : PrefixFree Dp.encA) 
       (ksWithVerify (dsRawRed Dp A hAq).run) []).toOuterMeasure {y | ksAccepts y = true} := by
     rw [run_dsRawRed Dp hX hA A hAq, PMF.toOuterMeasure_map_apply, hpre, dsRawKsAdvantage]
   have hν : ∀ g : P.Ch → ℝ≥0∞, (∀ c, g c ≤ 1) →
-      ∑' c, ν c * g c ≤ ∑' c, PMF.uniformOfFintype P.Ch c * g c + β := fun g hg =>
+      ∑' c, ν c * g c ≤ ∑' c, PMF.uniformFintype P.Ch c * g c + β := fun g hg =>
     (MLKEM.XOFMatrix.tsum_le_add_of_minorant ν _ β hβ g hg).1
   rw [e₁, ksAdvantage, toOuterMeasure_eq_tsum_ite, toOuterMeasure_eq_tsum_ite]
   exact run_toOracleWith_le ν hν ksStep (ksWithVerify (dsRawRed Dp A hAq).run) (qH + 1)
@@ -362,8 +362,8 @@ with `ε = dsRawKsAdvantage A − (qH + 1)·β`,
 `ε·(ε/(qH + 1) − 1/|Ch|) ≤ ksExtractProb (dsRawRed A)`. -/
 theorem dsRawKsExtractProb_ge (hSS : P.SpecialSound) (hX : PrefixFree Dp.encX)
     (hA : PrefixFree Dp.encA) {β : ℝ≥0∞}
-    (hβ : ∀ c, (1 - β) * PMF.uniformOfFintype P.Ch c ≤
-      (PMF.uniformOfFintype (Fin Dp.L → UInt8)).map Dp.decB c)
+    (hβ : ∀ c, (1 - β) * PMF.uniformFintype P.Ch c ≤
+      (PMF.uniformFintype (Fin Dp.L → UInt8)).map Dp.decB c)
     {qH : ℕ} (A : OracleAdv Bytes (Fin Dp.L → UInt8) (SessionId × P.Stmt × P.NizkProof))
     (hAq : A.IsQueryBound qH) :
     (dsRawKsAdvantage Dp A - (qH + 1 : ℕ) * β) *
@@ -390,7 +390,7 @@ noncomputable def dsRawImpl.timed (tS : ℕ) (T : List (Bytes × (Fin Dp.L → U
       match Dp.unabsorb s with
       | some k => .query k (fun _ => 0) fun c =>
           .rand (Dp.condB c) (fun _ => 0) fun b => .ret (b, T ++ [(s, b)])
-      | none => .rand (PMF.uniformOfFintype _) (fun _ => 0) fun b => .ret (b, T ++ [(s, b)]))
+      | none => .rand (PMF.uniformFintype _) (fun _ => 0) fun b => .ret (b, T ++ [(s, b)]))
 
 omit [DecidableEq P.Stmt] in
 theorem dsRawImpl.erase_timed (tS : ℕ) (T : List (Bytes × (Fin Dp.L → UInt8))) (s : Bytes) :
@@ -548,12 +548,12 @@ theorem statHVZKAt_dsZkProtocol {δ : ℝ≥0∞} (h : ∀ x w, P.rel x w → P.
     (dsZkProtocol Dp).StatHVZKAt () () δ := by
   intro q look g hg
   simp only [vals_dsZkProtocol, trace_dsZkProtocol, simTrace_dsZkProtocol]
-  have hstep : ∀ e : Fin 1 → Fin Dp.L → UInt8, ∑' r, PMF.uniformOfFintype P.Rand r *
+  have hstep : ∀ e : Fin 1 → Fin Dp.L → UInt8, ∑' r, PMF.uniformFintype P.Rand r *
       (if (dsZkProtocol Dp).hidFresh look () () q r e then
         g ([], dsZkView Dp q (e 0)
           (P.commit q.2.1.1 q.2.1.2 r, P.respond q.2.1.1 q.2.1.2 r (Dp.decB (e 0))))
         else 0) ≤
-      ∑' s, PMF.uniformOfFintype P.SimRand s *
+      ∑' s, PMF.uniformFintype P.SimRand s *
         g ([], dsZkView Dp q (e 0) (P.simulate q.2.1.1 (Dp.decB (e 0)) s)) + δ := fun e => by
     have hb : Dp.sigmaBytes.RejectBlind (fun az => g ([], dsZkView Dp q (e 0) az)) := by
       intro a a' z hz
@@ -565,8 +565,8 @@ theorem statHVZKAt_dsZkProtocol {δ : ℝ≥0∞} (h : ∀ x w, P.rel x w → P.
     split_ifs
     · exact le_rfl
     · exact zero_le
-  calc _ ≤ ∑' e, PMF.uniformOfFintype (Fin 1 → Fin Dp.L → UInt8) e *
-          (∑' s, PMF.uniformOfFintype P.SimRand s *
+  calc _ ≤ ∑' e, PMF.uniformFintype (Fin 1 → Fin Dp.L → UInt8) e *
+          (∑' s, PMF.uniformFintype P.SimRand s *
             g ([], dsZkView Dp q (e 0) (P.simulate q.2.1.1 (Dp.decB (e 0)) s)) + δ) :=
         ENNReal.tsum_le_tsum fun e => mul_le_mul_right (hstep e) _
     _ = _ := by
@@ -583,7 +583,7 @@ theorem keyBoundAt_dsZkProtocol (hX : PrefixFree Dp.encX) (hA : PrefixFree Dp.en
   set Qv := Q ([], [], none)
   set f : P.Rand → Bytes := fun r => Dp.absorbed (q.1, q.2.1.1, P.commit q.2.1.1 q.2.1.2 r)
     with hf
-  have hy : ∀ y, (PMF.uniformOfFintype P.Rand).toOuterMeasure (f ⁻¹' {y}) ≤ γ := by
+  have hy : ∀ y, (PMF.uniformFintype P.Rand).toOuterMeasure (f ⁻¹' {y}) ≤ γ := by
     intro y
     rcases hk : Dp.unabsorb y with _ | k
     · have he : f ⁻¹' {y} = ∅ := by
@@ -600,22 +600,22 @@ theorem keyBoundAt_dsZkProtocol (hX : PrefixFree Dp.encX) (hA : PrefixFree Dp.en
       rw [← hr', hf, unabsorb_absorbed Dp hX hA] at hk
       cases hk
       rfl
-  have hr : ∑' r, PMF.uniformOfFintype P.Rand r * Qv (f r) ≤ γ := by
-    rw [← tsum_map_mul' (PMF.uniformOfFintype P.Rand) f Qv]
-    calc ∑' y, ((PMF.uniformOfFintype P.Rand).map f) y * Qv y
+  have hr : ∑' r, PMF.uniformFintype P.Rand r * Qv (f r) ≤ γ := by
+    rw [← tsum_map_mul' (PMF.uniformFintype P.Rand) f Qv]
+    calc ∑' y, ((PMF.uniformFintype P.Rand).map f) y * Qv y
         ≤ ∑' y, γ * Qv y := by
           refine ENNReal.tsum_le_tsum fun y => mul_le_mul_left ?_ _
           rw [← PMF.toOuterMeasure_apply_singleton, PMF.toOuterMeasure_map_apply]
           exact hy y
       _ = γ := by rw [ENNReal.tsum_mul_left, PMF.tsum_coe, mul_one]
-  calc _ ≤ ∑' e, PMF.uniformOfFintype (Fin 1 → Fin Dp.L → UInt8) e *
-        ∑' r, PMF.uniformOfFintype P.Rand r * Qv (f r) := by
+  calc _ ≤ ∑' e, PMF.uniformFintype (Fin 1 → Fin Dp.L → UInt8) e *
+        ∑' r, PMF.uniformFintype P.Rand r * Qv (f r) := by
         refine ENNReal.tsum_le_tsum fun e => mul_le_mul_right
           (ENNReal.tsum_le_tsum fun r => mul_le_mul_right ?_ _) _
         split_ifs
         · exact le_rfl
         · exact zero_le
-    _ ≤ ∑' e, PMF.uniformOfFintype (Fin 1 → Fin Dp.L → UInt8) e * γ :=
+    _ ≤ ∑' e, PMF.uniformFintype (Fin 1 → Fin Dp.L → UInt8) e * γ :=
         ENNReal.tsum_le_tsum fun e => mul_le_mul_right hr _
     _ = γ := by rw [ENNReal.tsum_mul_right, PMF.tsum_coe, one_mul]
 

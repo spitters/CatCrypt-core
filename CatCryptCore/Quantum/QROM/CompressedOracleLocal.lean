@@ -130,14 +130,14 @@ theorem dbOp_update_single (x : Fin m) (c : Fin (n + 1)) :
       refine Finset.sum_eq_zero fun k _ => ?_
       split_ifs
       · simp only [Matrix.single_apply]
-        rw [if_neg]
+        rw [ite_eq_right]
         rintro ⟨rfl, rfl⟩
         exact hij rfl
       · rfl
     · by_cases hx : x' = x
       · subst hx
         simp only [Function.update_self, Matrix.single_apply]
-        rw [if_neg]
+        rw [ite_eq_right]
         rintro ⟨h1, h2⟩
         exact hx' (h1.symm.trans h2)
       · simp [hx, hx']
@@ -151,7 +151,7 @@ theorem dbOp_update_apply_ne_zero (x : Fin m) (Z : Matrix (Fin (n + 1)) (Fin (n 
   have := Finset.prod_ne_zero_iff.mp h x' (Finset.mem_univ _)
   rw [Function.update_of_ne hx', Pi.one_apply, Matrix.one_apply] at this
   by_contra hc
-  exact this (if_neg hc)
+  exact this (ite_eq_right hc)
 
 end DbOp
 
@@ -193,7 +193,7 @@ theorem projS_mul_oracleU_comm (S : Finset (Fin m)) (H : Fin m → Fin n) :
   · have hx : x' = x := congrArg Prod.fst hxy
     subst hx
     ring
-  · simp only [if_neg hxy]
+  · simp only [ite_eq_right hxy]
     ring
 
 /-- On the query input `x`, the oracle for `H` depends on `H` only through `H x`. -/
@@ -245,7 +245,7 @@ theorem stdDbU_mul_projS_kronecker (x : Fin m) :
   refine Finset.sum_congr rfl fun k _ => ?_
   rw [kronecker_mul_kronecker, Matrix.mul_one,
     Finset.sum_eq_single ((dbIndex m n).symm k x) (fun c _ hc => by
-      rw [if_neg (Ne.symm hc), kronecker_zero_right]) (by simp), if_pos rfl]
+      rw [ite_eq_right (Ne.symm hc), kronecker_zero_right]) (by simp), ite_eq_left rfl]
   congr 1
   exact oracleU_mul_projS_singleton_congr m n w _ _ x rfl
 
@@ -433,7 +433,7 @@ theorem weightBound_kronecker_one (X : Matrix (Fin d) (Fin d) ℂ) :
     rw [Matrix.one_apply] at hab
     by_cases h : a = b
     · subst h; omega
-    · exact absurd (if_neg h) hab
+    · exact absurd (ite_eq_right h) hab
 
 /-- A database operator that is the identity off the entry `x` adds at most one
     non-`⊥` entry. -/
@@ -516,7 +516,7 @@ theorem projLe_mul_of_weightBound {d : ℕ}
     projLe m n d s * (M * N) = M * N := by
   ext K L
   rw [Matrix.mul_apply, Finset.sum_eq_single K (fun J _ hJ => by
-    rw [projLe_apply, if_neg (Ne.symm hJ), zero_mul]) (by simp), projLe_apply, if_pos rfl]
+    rw [projLe_apply, ite_eq_right (Ne.symm hJ), zero_mul]) (by simp), projLe_apply, ite_eq_left rfl]
   split_ifs with hK
   · rw [one_mul]
   · rw [zero_mul]

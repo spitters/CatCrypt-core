@@ -352,11 +352,11 @@ theorem sRcv_emb (ideal : Bool) (f : BlockDom Tx Hash np Hz → Hash) (p : Fin n
   | some t =>
     simp only [Option.map_some]
     cases is_corrupt p
-    · simp only [Bool.not_false, if_true, honest_rcv, process_msgs, State.modify]
+    · simp only [Bool.not_false, ite_true, honest_rcv, process_msgs, State.modify]
       exact (congrArg (fun l => upd_local p l _)
         (foldr_process_msg IP h0 GB U txSel L f p _ t)).trans
         (emb_updTree IP h0 GB U txSel L ks A f p _ _)
-    · simp only [Bool.not_true, Bool.false_eq_true, if_false]
+    · simp only [Bool.not_true, Bool.false_eq_true, ite_false]
       rw [emb_t_now, emb_history, emb_msg_buff, emb_adv_state, emb_floodsAdv]
       rfl
 
@@ -378,24 +378,24 @@ theorem sBake_emb (ideal : Bool) (f : BlockDom Tx Hash np Hz → Hash) (p : Fin 
     simp only [Option.map_some]
     rw [emb_t_now]
     cases is_corrupt p
-    · simp only [Bool.not_false, if_true]
+    · simp only [Bool.not_false, ite_true]
       have hb := honest_bake_eq x.t_now (txSel x.t_now p)
         (⟨(Protocol.ofUniform (Hz := Hz) IP h0 GB U txSel).trees L f p, p, t⟩ :
           LocalState Tx Hash (Fin np))
       by_cases hw : Winner p x.t_now = true
-      · have e := hb.trans (if_pos hw)
-        simp only [if_pos hw]
+      · have e := hb.trans (ite_eq_left hw)
+        simp only [ite_eq_left hw]
         refine (congrArg₂ (fun ms l => flood_msgs ms (upd_local p l
           (emb IP h0 GB U txSel L ks A f x))) (congrArg Prod.fst e) (congrArg Prod.snd e)).trans ?_
         exact (congrArg (flood_msgs _) (emb_updTree IP h0 GB U txSel L ks A f p _ x)).trans
           (emb_floods IP h0 GB U txSel L ks A f _ _)
-      · have e := hb.trans (if_neg hw)
-        simp only [if_neg hw]
+      · have e := hb.trans (ite_eq_right hw)
+        simp only [ite_eq_right hw]
         refine (congrArg₂ (fun ms l => flood_msgs ms (upd_local p l
           (emb IP h0 GB U txSel L ks A f x))) (congrArg Prod.fst e) (congrArg Prod.snd e)).trans ?_
         exact (congrArg (flood_msgs _) (emb_updTree IP h0 GB U txSel L ks A f p t x)).trans
           (emb_floods IP h0 GB U txSel L ks A f _ _)
-    · simp only [Bool.not_true, Bool.false_eq_true, if_false]
+    · simp only [Bool.not_true, Bool.false_eq_true, ite_false]
       rw [emb_history, emb_msg_buff, emb_adv_state, emb_floodsAdv]
       rfl
 
@@ -444,10 +444,10 @@ theorem N0_eq_emb (ideal : Bool) (f : BlockDom Tx Hash np Hz → Hash) :
   refine ⟨?_, rfl, rfl⟩
   funext p
   by_cases hp : p ∈ IP
-  · rw [if_pos hp]
-    exact (if_pos hp).symm ▸ rfl
-  · rw [if_neg hp]
-    exact (if_neg hp).symm ▸ rfl
+  · rw [ite_eq_left hp]
+    exact (ite_eq_left hp).symm ▸ rfl
+  · rw [ite_eq_right hp]
+    exact (ite_eq_right hp).symm ▸ rfl
 
 /-- **Erasure of the hash function from the state.** The trace of the execution of a uniform
 protocol over the oracle `f` is the image under `emb f` of the hash-free trace. -/

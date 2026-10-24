@@ -258,7 +258,7 @@ theorem prTrue_bind_const_true {α : Type} (X : SPComp α) (hX : SPComp.NoFail X
   have hsum := (X h₀).tsum_coe
   rw [SDistr.tsum_option_eq_add, hX h₀, zero_add] at hsum
   rw [SDistr.tsum_option_eq_add]
-  simp only [mul_zero, zero_add, prTrue_pure, if_true, mul_one]
+  simp only [mul_zero, zero_add, prTrue_pure, ite_true, mul_one]
   exact hsum
 
 /-- `absDiff (a + x) (a + y) ≤ max x y`. -/
@@ -366,7 +366,7 @@ theorem restrictGood_loop_succ (S : Sys τ E O) (bad : τ → Bool) (Z : Strat �
   congr 1; funext a; congr 1; funext p
   unfold goodK
   by_cases hp : bad p.1
-  · simp only [hp, if_true, SPComp.fail_bind, Bool.false_or, hfl, bind_fail_right]
+  · simp only [hp, ite_true, SPComp.fail_bind, Bool.false_or, hfl, bind_fail_right]
   · simp [hp]
 
 /-- Two systems whose steps from every good state agree after transitions

@@ -80,7 +80,7 @@ noncomputable def slMarkTables (N : ℕ) (Bad : G.Stmt → G.Tables → G.Key �
   | t, β, i :: l =>
     match t.lookup (M.pt k t.lookup i) with
     | some _ => slMarkTables N Bad x M k t β l
-    | none => (PMF.uniformOfFintype G.Ch).bind fun v =>
+    | none => (PMF.uniformFintype G.Ch).bind fun v =>
       slMarkTables N Bad x M k { t with hash := t.hash ++ [(M.pt k t.lookup i, v)] }
         (β || (decide (t.size ≤ N) && Bad x t (M.pt k t.lookup i) v)) l
 
@@ -94,7 +94,7 @@ noncomputable def slMarkStep (N : ℕ) (M : Markers κ)
   match t.lookup k with
   | some e => .plain (PMF.pure (.inl e, ((t, b), β)))
   | none => .plain ((slMarkTables N Bad x M k t β (List.finRange M.nm)).bind fun tb =>
-      (PMF.uniformOfFintype G.Ch).map fun e =>
+      (PMF.uniformFintype G.Ch).map fun e =>
         (.inl e, (({ tb.1 with hash := tb.1.hash ++ [(k, e)] }, b),
           tb.2 || (decide (tb.1.size ≤ N) && Bad x tb.1 k e))))
 
@@ -175,7 +175,7 @@ structure LogExtractorMk (rel : G.Stmt → G.Wit → Prop) (N : ℕ) (κ : G.Cla
   /-- A uniform answer at a point of class `c` is bad with probability at most
   `ε c`. -/
   bad_le : ∀ x t k, t.size ≤ N →
-    (PMF.uniformOfFintype G.Ch).toOuterMeasure {e | Bad x t k e = true} ≤ ε (κ.cls k)
+    (PMF.uniformFintype G.Ch).toOuterMeasure {e | Bad x t k e = true} ≤ ε (κ.cls k)
   /-- The programmed entries of a simulated attempt from the tables `t` on uniform
   values and simulator randomness contain an entry that is bad given the tables after
   the evaluated entries with probability at most `εS`. -/
@@ -273,12 +273,12 @@ theorem slStepMk_map_fst (N : ℕ) (M : Markers κ)
     cases hd : M.des k with
     | false =>
       simp only [toOracle, slStepMk, simStepMk, slHashStep, markHashStep, hd, cond_false,
-        Bool.false_eq_true, if_false]
+        Bool.false_eq_true, ite_false]
       cases s.1.1.lookup k with
       | some e => simp [Step.toPMF, PMF.pure_map]
       | none => simp only [Step.toPMF, PMF.map_comp]; rfl
     | true =>
-      simp only [toOracle, slStepMk, simStepMk, slMarkStep, markHashStep, hd, cond_true, if_true]
+      simp only [toOracle, slStepMk, simStepMk, slMarkStep, markHashStep, hd, cond_true, ite_true]
       cases s.1.1.lookup k with
       | some e => simp [Step.toPMF, PMF.pure_map]
       | none =>
@@ -474,7 +474,7 @@ theorem slStepMk_flag_le (E : G.LogExtractorMk rel N κ M ε εS) (x : G.Stmt)
       simp only [slCostMk, slCostCls, slEpsCls, Protocol.Classes.hashCost, Sum.elim_inl,
         hk, cond_true, add_zero, Nat.cast_zero, zero_mul, zero_add, Nat.cast_add, Nat.cast_ite,
         Nat.cast_one, add_mul, ite_mul, one_mul, Finset.sum_add_distrib, Finset.sum_ite_eq,
-        Finset.mem_univ, if_true]
+        Finset.mem_univ, ite_true]
       rw [add_comm]
     rw [hrhs]
     simp only [toOracle, slStepMk, slMarkStep, hk, cond_true]

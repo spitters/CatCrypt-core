@@ -136,7 +136,7 @@ theorem preservesOutside_pure (a : α) : PreservesOutside (SPComp.pure a) ∅ :=
   simp only [SPComp.pure, SDistr.pure, PMF.pure_apply] at hne
   by_cases heq : some (a', h') = some (a, h)
   · simp only [Option.some.injEq, Prod.mk.injEq] at heq; rw [heq.2]
-  · exact absurd (if_neg heq) hne
+  · exact absurd (ite_eq_right heq) hne
 
 theorem preservesOutside_sample (α : Type) [Fintype α] [Nonempty α] :
     PreservesOutside (SPComp.sample α) ∅ := by
@@ -163,7 +163,7 @@ theorem preservesOutside_get (l : Location) : PreservesOutside (SPComp.get l) �
   simp only [SPComp.get_def, SDistr.pure, PMF.pure_apply] at hne
   by_cases heq : some (a, h') = some (h.get l, h)
   · simp only [Option.some.injEq, Prod.mk.injEq] at heq; rw [heq.2]
-  · exact absurd (if_neg heq) hne
+  · exact absurd (ite_eq_right heq) hne
 
 theorem preservesOutside_set (l : Location) (v : l.ty) :
     PreservesOutside (SPComp.set l v) {l.id} := by
@@ -174,7 +174,7 @@ theorem preservesOutside_set (l : Location) (v : l.ty) :
     rw [heq.2]
     have hne_id : id ≠ l.id := fun h => hnotin (Finset.mem_singleton.mpr h)
     exact Finmap.lookup_insert_of_ne _ hne_id
-  · exfalso; exact hne (if_neg heq)
+  · exfalso; exact hne (ite_eq_right heq)
 
 theorem preservesOutside_bind {c : SPComp α} {f : α → SPComp β}
     {L₁ L₂ : LocSet}

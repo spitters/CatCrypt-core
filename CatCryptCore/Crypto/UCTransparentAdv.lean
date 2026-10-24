@@ -276,7 +276,7 @@ theorem run_bind_firstSample (c : SPComp β) (S : Sys τ E O) (T : β → Sys τ
       unfold goodK
       by_cases hp : fresh p.1
       · simp [hp, SPComp.fail_bind]
-      · simp only [hp, Bool.false_eq_true, if_false, SPComp.pure_bind]
+      · simp only [hp, Bool.false_eq_true, ite_false, SPComp.pure_bind]
         congr 1; funext z'
         exact ih _ _ _ (by simpa using hp)
   obtain ⟨n, hn⟩ : ∃ n, Z.rounds = n + 1 := ⟨Z.rounds - 1, by omega⟩
@@ -291,7 +291,7 @@ theorem run_bind_firstSample (c : SPComp β) (S : Sys τ E O) (T : β → Sys τ
   unfold goodK
   by_cases hp : fresh p.1
   · simp [hp, SPComp.fail_bind]
-  · simp only [hp, Bool.false_eq_true, if_false, SPComp.pure_bind]
+  · simp only [hp, Bool.false_eq_true, ite_false, SPComp.pure_bind]
     congr 1; funext z'
     exact hloop x n _ _ _ (by simpa using hp)
 
@@ -369,8 +369,8 @@ theorem loop_inconsK (S : Sys τ E O) (bad : τ → Bool) (Z : Strat ζ E O)
               SPComp.bind (loop S bad Z n (z', p.1, true || bad p.1)) (inconsK bad) =
                 SPComp.fail := fun _ => ih _ (by simp [hp])
           simp only [hf, bind_fail_right]
-          simp only [goodK, hp, if_true, SPComp.fail_bind]
-        · simp only [goodK, hp, Bool.false_eq_true, if_false, SPComp.pure_bind]
+          simp only [goodK, hp, ite_true, SPComp.fail_bind]
+        · simp only [goodK, hp, Bool.false_eq_true, ite_false, SPComp.pure_bind]
       have key : ∀ a : ζ × E, SPComp.bind (S.step t a.2) (fun p =>
           SPComp.bind (Z.obs a.1 p.2) (fun z' =>
             SPComp.bind (loop S bad Z n (z', p.1, true || bad p.1)) (inconsK bad))) =

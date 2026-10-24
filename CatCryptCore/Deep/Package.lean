@@ -409,7 +409,7 @@ theorem par_impl_code_eq_left (p₁ p₂ : DeepPackage.{u}) (h_sep : sep p₁ p�
     (x : dom) :
     ((par p₁ p₂ h_sep).impl op dom codom h_par x).code =
     (p₁.impl op dom codom h₁ x).code := by
-  simp only [par, dif_pos h₁, ValidCodeBundle.mono]
+  simp only [par, dite_eq_left h₁, ValidCodeBundle.mono]
 
 /-- When the operation is NOT in p₁'s exports, par dispatches to p₂'s implementation. -/
 theorem par_impl_code_eq_right (p₁ p₂ : DeepPackage.{u}) (h_sep : sep p₁ p₂)
@@ -420,7 +420,7 @@ theorem par_impl_code_eq_right (p₁ p₂ : DeepPackage.{u}) (h_sep : sep p₁ p
     (x : dom) :
     ((par p₁ p₂ h_sep).impl op dom codom h_par x).code =
     (p₂.impl op dom codom h₂ x).code := by
-  simp only [par, dif_neg h₁, ValidCodeBundle.mono]
+  simp only [par, dite_eq_right h₁, ValidCodeBundle.mono]
 
 /-! ## Properties -/
 

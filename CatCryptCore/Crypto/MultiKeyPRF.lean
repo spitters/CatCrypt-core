@@ -232,7 +232,7 @@ theorem RankRel.extend {X : Type} {e : X} {seen : List N} {st : ℕ → X} {L : 
 
 theorem RankRel.apply {X : Type} {e : X} {seen : List N} {n : N} {st : ℕ → X} {L : N → X}
     (h : RankRel e (addIdx seen n) st L) : st (rank seen n) = L n := by
-  rw [h.2 n, if_pos (mem_addIdx seen n), rank]
+  rw [h.2 n, ite_eq_left (mem_addIdx seen n), rank]
 
 theorem RankRel.update {X : Type} {e : X} {seen : List N} {n : N} {st : ℕ → X} {L : N → X}
     (h : RankRel e (addIdx seen n) st L) (x : X) :
@@ -279,7 +279,7 @@ noncomputable def hybOracle (F : K → D → R) (j : ℕ) (s : HybState N D R K)
   else
     match s.2.2 (rank s.1 q.1) with
     | some k => PMF.pure (F k q.2, (addIdx s.1 q.1, s.2.1, s.2.2))
-    | none => (PMF.uniformOfFintype K).map fun k =>
+    | none => (PMF.uniformFintype K).map fun k =>
         (F k q.2, (addIdx s.1 q.1, s.2.1, Function.update s.2.2 (rank s.1 q.1) (some k)))
 
 /-- The hybrid game `j`. -/
@@ -296,7 +296,7 @@ noncomputable def hybImpl (F : K → D → R) (j : ℕ) (s : HybState N D R K) (
   if rank s.1 q.1 < j then
     match List.lookup q.2 (s.2.1 (rank s.1 q.1)) with
     | some v => .ret (v, (addIdx s.1 q.1, s.2.1, s.2.2))
-    | none => .rand (PMF.uniformOfFintype R) fun v =>
+    | none => .rand (PMF.uniformFintype R) fun v =>
         .ret (v, (addIdx s.1 q.1,
           Function.update s.2.1 (rank s.1 q.1) ((q.2, v) :: s.2.1 (rank s.1 q.1)), s.2.2))
   else if rank s.1 q.1 = j then
@@ -304,7 +304,7 @@ noncomputable def hybImpl (F : K → D → R) (j : ℕ) (s : HybState N D R K) (
   else
     match s.2.2 (rank s.1 q.1) with
     | some k => .ret (F k q.2, (addIdx s.1 q.1, s.2.1, s.2.2))
-    | none => .rand (PMF.uniformOfFintype K) fun k =>
+    | none => .rand (PMF.uniformFintype K) fun k =>
         .ret (F k q.2, (addIdx s.1 q.1, s.2.1, Function.update s.2.2 (rank s.1 q.1) (some k)))
 
 /-- **Reduction** to the PRF games of `F` at rank `j`: run `A`, answering each query by
@@ -339,7 +339,7 @@ theorem hybOracle_setKey (F : K → D → R) (j : ℕ) (v : Option K) (s : HybSt
 drawn when the rank is first queried. -/
 theorem uniform_bind_run_setKey (F : K → D → R) (j : ℕ) {α : Type}
     (A : OracleAdv (N × D) R α) (s : HybState N D R K) :
-    (PMF.uniformOfFintype K).bind (fun k =>
+    (PMF.uniformFintype K).bind (fun k =>
         (OracleAdv.run (hybOracle F j) A (setKey j (some k) s)).map Prod.fst) =
       (OracleAdv.run (hybOracle F j) A (setKey j none s)).map Prod.fst := by
   induction A generalizing s with
@@ -354,7 +354,7 @@ theorem uniform_bind_run_setKey (F : K → D → R) (j : ℕ) {α : Type}
           PMF.pure (F v q.2, setKey j (some v) (addIdx s.1 q.1, s.2.1, s.2.2)) := by
         intro v
         simp [hybOracle, setKey, hr]
-      have h2 : hybOracle F j (setKey j none s) q = (PMF.uniformOfFintype K).map
+      have h2 : hybOracle F j (setKey j none s) q = (PMF.uniformFintype K).map
           fun v => (F v q.2, setKey j (some v) (addIdx s.1 q.1, s.2.1, s.2.2)) := by
         simp [hybOracle, setKey, hr]
       simp only [OracleAdv.run_query, h1, h2, PMF.pure_bind, PMF.bind_map, PMF.map_bind]
@@ -396,7 +396,7 @@ theorem simOracle_rf_hybImpl [DecidableEq R] (F : K → D → R) (j : ℕ) (s : 
   dsimp only
   by_cases h1 : rank s.1 q.1 < j
   · have hne : rank s.1 q.1 ≠ j := by omega
-    rw [if_pos h1, if_pos (by omega), Function.update_of_ne hne]
+    rw [ite_eq_left h1, ite_eq_left (by omega), Function.update_of_ne hne]
     rcases hl : List.lookup q.2 (s.2.1 (rank s.1 q.1)) with _ | v
     · simp [rfOracle, hl, PMF.map_comp, Function.comp_def, hbp,
         Function.update_comm hne]
@@ -407,9 +407,9 @@ theorem simOracle_rf_hybImpl [DecidableEq R] (F : K → D → R) (j : ℕ) (s : 
       · subst hr; simp [Function.update_of_ne hne]
       · simp [Function.update_of_ne hr]
   · by_cases h2 : rank s.1 q.1 = j
-    · rw [if_neg h1, if_pos h2, if_pos (by omega), h2]
+    · rw [ite_eq_right h1, ite_eq_left h2, ite_eq_left (by omega), h2]
       simp [PMF.map_comp, Function.comp_def, hbp]
-    · rw [if_neg h1, if_neg h2, if_neg (by omega)]
+    · rw [ite_eq_right h1, ite_eq_right h2, ite_eq_right (by omega)]
       rcases hk : s.2.2 (rank s.1 q.1) with _ | k'
       · simp [PMF.map_comp, Function.comp_def, hbp]
       · simp [PMF.pure_map]
@@ -465,7 +465,7 @@ theorem realGame_mkPRF_eq_hybGame_zero [Fintype N] [DecidableEq K] (F : K → D 
     have hk := (h.extend n).apply
     dsimp only at hk
     rcases hl : List.lookup n tK with _ | k
-    · refine ⟨K, PMF.uniformOfFintype K, fun k => F k d,
+    · refine ⟨K, PMF.uniformFintype K, fun k => F k d,
         fun k => (addIdx s.1 n, s.2.1, Function.update s.2.2 (rank s.1 n) (some k)),
         fun k => ((), (n, k) :: tK), ?_, ?_, fun k => ?_⟩
       · simp [hybOracle, hk, hl]
@@ -506,7 +506,7 @@ theorem rfGame_eq_hybGame_of_indexBound [DecidableEq R] (F : K → D → R)
     have hk : ∀ d', List.lookup d' (s.2.1 (rank s.1 n)) = @List.lookup (N × D) R instBEqOfDecidableEq (n, d') T :=
       fun d' => congrFun (h.extend n).apply d'
     rcases hl : @List.lookup (N × D) R instBEqOfDecidableEq (n, d) T with _ | v
-    · refine ⟨R, PMF.uniformOfFintype R, id,
+    · refine ⟨R, PMF.uniformFintype R, id,
         fun v => (addIdx s.1 n,
           Function.update s.2.1 (rank s.1 n) ((d, v) :: s.2.1 (rank s.1 n)), s.2.2),
         fun v => ((n, d), v) :: T, ?_, ?_,

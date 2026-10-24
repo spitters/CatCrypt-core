@@ -567,7 +567,7 @@ theorem run_rfOracle_prfMacRedAux_le (A : OracleAdv D T (D × T)) (log : List D)
     by_cases h : r.1 ∈ log
     · simp [prfMacRedAux, h, PMF.pure_map]
     · have hrun : (OracleAdv.run rfOracle (prfMacRedAux (.ret r) log) t).map Prod.fst =
-          (PMF.uniformOfFintype T).map (fun a => r.2 == a) := by
+          (PMF.uniformFintype T).map (fun a => r.2 == a) := by
         simp [prfMacRedAux, h, rfOracle, ht r.1 h, PMF.map_bind, PMF.bind_map, PMF.pure_map,
           Function.comp_def]
         rfl

@@ -136,7 +136,7 @@ theorem wp_guardProg_iff {ε α : Type} {G : S → Prop} {f : S → Except ε α
   · by_cases hG : G σ
     · cases hf : f σ with
       | ok b =>
-        simp only [EStateM.run, guardProg, if_pos hG, hf]
+        simp only [EStateM.run, guardProg, ite_eq_left hG, hf]
         refine ⟨fun h => ⟨σ, rfl, hG, Or.inl ⟨b, hf, h⟩⟩, fun ⟨_, h, _, hp⟩ => ?_⟩
         cases h
         rw [hf] at hp
@@ -145,7 +145,7 @@ theorem wp_guardProg_iff {ε α : Type} {G : S → Prop} {f : S → Except ε α
           exact hp
         · cases hr
       | error r =>
-        simp only [EStateM.run, guardProg, if_pos hG, hf]
+        simp only [EStateM.run, guardProg, ite_eq_left hG, hf]
         refine ⟨fun h => ⟨σ, rfl, hG, Or.inr ⟨r, hf, h⟩⟩, fun ⟨_, h, _, hp⟩ => ?_⟩
         cases h
         rw [hf] at hp
@@ -153,7 +153,7 @@ theorem wp_guardProg_iff {ε α : Type} {G : S → Prop} {f : S → Except ε α
         · cases hb
         · cases hr
           exact hp
-    · simp only [EStateM.run, guardProg, if_neg hG]
+    · simp only [EStateM.run, guardProg, ite_eq_right hG]
       exact ⟨fun h => (hnone _ h).elim, fun ⟨_, h, hG', _⟩ => by cases h; exact (hG hG').elim⟩
   · simp only [EStateM.run, guardProg]
     exact ⟨fun h => (hnone _ h).elim, fun ⟨_, h, _⟩ => nomatch h⟩
@@ -363,7 +363,7 @@ theorem corresRel_iff_rrelPT (SR : σ → A → Prop) (P : A → Prop) (fa : A �
       obtain ⟨s', hT, hs'⟩ := h s a hs ‹_›
       exact ⟨(), s', hT, trivial, hs'⟩
     · cases hf
-  · obtain ⟨_, s', hT, -, hs'⟩ := h s a ((), fa a) hs (if_pos hP)
+  · obtain ⟨_, s', hT, -, hs'⟩ := h s a ((), fa a) hs (ite_eq_left hP)
     exact ⟨s', hT, hs'⟩
 
 /-- **The partial forward simulation is `GuardedRRelPT`.** From every `SR`-related
@@ -379,7 +379,7 @@ theorem corresRelP_iff_rrelPT (SR : σ → A → Prop) (P : A → Prop) (fa : A 
     · cases hf
       exact ⟨trivial, h s a hs ‹_› s' hT⟩
     · cases hf
-  · exact (h s a ((), fa a) hs (if_pos hP) () s' hT).2
+  · exact (h s a ((), fa a) hs (ite_eq_left hP) () s' hT).2
 
 /-- **The deterministic total forward simulation is `GuardedRRelPT`**, at the step
     relation `s' = run s` of a total function `run`. -/
@@ -403,9 +403,9 @@ theorem GuardedRRelPT.weaken {ε' : Type} {SR : σ → A → Prop} {P P' : A →
   beta_reduce at hwp ⊢
   rw [wp_optProg_apply] at hwp ⊢
   by_cases hP' : P' a
-  · rw [if_pos hP'] at hwp
-    rwa [if_pos (himp a hP')]
-  · rw [if_neg hP'] at hwp
+  · rw [ite_eq_left hP'] at hwp
+    rwa [ite_eq_left (himp a hP')]
+  · rw [ite_eq_right hP'] at hwp
     exact hwp.elim
 
 /-- **Sequencing.** Refinements of two guarded updates by `wpRel T₁` and `wpRel T₂`

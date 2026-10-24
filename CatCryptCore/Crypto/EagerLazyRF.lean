@@ -99,7 +99,7 @@ theorem run_tabOracle_update (f : D → R) (d : D) (y : R) (A : OracleAdv D R α
 uniform `f`, equal those of a run against the lazy random function. -/
 theorem uniform_bind_run_tabOracle [Fintype D] [DecidableEq R] [Fintype R] [Nonempty R]
     (A : OracleAdv D R α) (t : List (D × R)) :
-    (PMF.uniformOfFintype (D → R)).bind (fun f => OracleAdv.run (tabOracle f) A t) =
+    (PMF.uniformFintype (D → R)).bind (fun f => OracleAdv.run (tabOracle f) A t) =
       OracleAdv.run rfOracle A t := by
   induction A generalizing t with
   | ret a => simp
@@ -116,7 +116,7 @@ theorem uniform_bind_run_tabOracle [Fintype D] [DecidableEq R] [Fintype R] [None
       simp only [← ih]
       conv_lhs => rw [← uniform_bind_update d]
       rw [PMF.bind_bind]
-      rw [PMF.bind_comm (PMF.uniformOfFintype R)]
+      rw [PMF.bind_comm (PMF.uniformFintype R)]
       refine congrArg _ (funext fun f => ?_)
       simp only [PMF.bind_map, Function.comp_def, Function.update_self]
       refine congrArg _ (funext fun r => ?_)
@@ -166,7 +166,7 @@ uniform function `D → R` is distributed as the output of a run against the laz
 random function. -/
 theorem uniform_bind_run_keyed_map_fst [Fintype D] [DecidableEq R] [Fintype R] [Nonempty R]
     (A : OracleAdv D R α) :
-    (PMF.uniformOfFintype (D → R)).bind
+    (PMF.uniformFintype (D → R)).bind
         (fun f => (OracleAdv.run (keyedOracle (fun f d => f d) f) A ()).map Prod.fst) =
       (OracleAdv.run rfOracle A []).map Prod.fst := by
   rw [← uniform_bind_run_tabOracle A [], PMF.map_bind]
@@ -228,7 +228,7 @@ noncomputable def lazyRF : OracleAdv P V β → List (P × V) → OracleAdv D' R
   | .query p k, t =>
     match List.lookup p t with
     | some v => lazyRF (k v) t
-    | none => .rand (PMF.uniformOfFintype V) fun v => lazyRF (k v) ((p, v) :: t)
+    | none => .rand (PMF.uniformFintype V) fun v => lazyRF (k v) ((p, v) :: t)
 
 /-- Running `lazyRF X t` against any oracle is running `X` against the lazy random function
 `rfOracle` from the table `t`. -/
@@ -262,7 +262,7 @@ state `s` by queries to a function `P → V`. Averaged over a uniform function, 
 random function. -/
 theorem uniform_bind_run_simOracle_keyed [Fintype P] [DecidableEq V] {D R S α : Type}
     (impl : S → D → OracleAdv P V (R × S)) (A : OracleAdv D R α) (s : S) :
-    (PMF.uniformOfFintype (P → V)).bind (fun f =>
+    (PMF.uniformFintype (P → V)).bind (fun f =>
       (OracleAdv.run (CatCrypt.Crypto.OracleAdv.simOracle impl
         (keyedOracle (fun f p => f p) f)) A (s, ())).map Prod.fst) =
       (OracleAdv.run (CatCrypt.Crypto.OracleAdv.simOracle impl rfOracle) A (s, [])).map
@@ -326,7 +326,7 @@ noncomputable def lazyRF.timed :
   | .query p c k, t =>
     match List.lookup p t with
     | some v => OracleAdv.Timed.delay (c v) (lazyRF.timed (k v) t)
-    | none => (0, .rand (PMF.uniformOfFintype V)
+    | none => (0, .rand (PMF.uniformFintype V)
         (fun v => c v + (lazyRF.timed (k v) ((p, v) :: t)).1)
         fun v => (lazyRF.timed (k v) ((p, v) :: t)).2)
 

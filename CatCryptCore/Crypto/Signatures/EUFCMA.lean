@@ -257,7 +257,7 @@ theorem runWith_any_le (oracle : I → SPComp (O × List L)) (bad : L → Bool) 
     intro β c f h₁ δ hf
     calc _ ≤ δ * prTrue (SPComp.bind c fun _ => SPComp.pure true) h₁ :=
           ForkingLemma.prTrue_bind_mono_const δ c f _ h₁ fun b h => by
-            rw [ForkingLemma.prTrue_pure_bool, if_pos rfl, mul_one]; exact hf b h
+            rw [ForkingLemma.prTrue_pure_bool, ite_eq_left rfl, mul_one]; exact hf b h
       _ ≤ δ := mul_le_of_le_one_right' (prTrue_le_one _ _)
   induction p generalizing n h₀ with
   | pure a =>
@@ -273,7 +273,7 @@ theorem runWith_any_le (oracle : I → SPComp (O × List L)) (bad : L → Bool) 
           cases hb : ol.2.any bad
           · simp only [Bool.false_or, ForkingLemma.prTrue_pure_bool]
             simp
-          · simp only [Bool.true_or, ForkingLemma.prTrue_pure_bool, if_true]
+          · simp only [Bool.true_or, ForkingLemma.prTrue_pure_bool, ite_true]
             exact le_add_right (prTrue_le_one _ _)
       _ ≤ cost i * ε + (n - cost i : ℕ) * ε := by
           gcongr

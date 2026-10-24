@@ -500,10 +500,10 @@ theorem prOutMRGen_step [NeZero r] (hW : W * r = W') (p : Fin (k + 1) × Fin (q 
     (fun _ => rfl) rfl rfl H f
   · show DilatesQ _ (B.op p.1 p.2).toCP.toQComp
       (if (p.1, p.2) = p then _ else _ : KOp _ r).toCP.toQComp
-    rw [if_pos rfl]
+    rw [ite_eq_left rfl]
     exact KOp.dilatesQ_dil _ _
   · show LiftsQ _ (B.op j i).toCP.toQComp (if (j, i) = p then _ else _ : KOp _ r).toCP.toQComp
-    rw [if_neg h]
+    rw [ite_eq_right h]
     exact KOp.liftsQ_lift _ _
 
 theorem prOutMRGen_dilL [NeZero r] (g : ℕ → ℕ) (hg : ∀ t, g t * r = g (t + 1))

@@ -187,13 +187,13 @@ randomness have the same distribution as the simulator output on uniform
 simulator randomness. -/
 def PerfectHVZK : Prop :=
   ∀ x w, (x, w) ∈ P.gen.support → ∀ e,
-    (PMF.uniformOfFintype P.Rand).map (fun r => (P.commit x w r, P.respond x w r e)) =
-      (PMF.uniformOfFintype P.SimRand).map (P.simulate x e)
+    (PMF.uniformFintype P.Rand).map (fun r => (P.commit x w r, P.respond x w r e)) =
+      (PMF.uniformFintype P.SimRand).map (P.simulate x e)
 
 /-- **Commitment bound at one pair.** For the pair `(x, w)`, each commitment value
 has probability at most `γ` under uniform prover randomness. -/
 def CommitBoundAt (x : P.Stmt) (w : P.Wit) (γ : ℝ≥0∞) : Prop :=
-  ∀ a, (PMF.uniformOfFintype P.Rand).toOuterMeasure {r | P.commit x w r = a} ≤ γ
+  ∀ a, (PMF.uniformFintype P.Rand).toOuterMeasure {r | P.commit x w r = a} ≤ γ
 
 /-- **Commitment bound.** For every generated pair, each commitment value has
 probability at most `γ` under uniform prover randomness. -/
@@ -444,7 +444,7 @@ programmed or hidden entries of the attempt against `look` whose point the guess
 from `guessView` hits, over uniform values and uniform randomness, is at most `Γ`. -/
 def KeyBoundAt (x : G.Stmt) (w : G.Wit) (Γ : ℝ≥0∞) : Prop :=
   ∀ (m : G.Msg) (look : G.Key → Option G.Ch) (Q : G.Trace → PMF G.Key),
-    ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e * ∑' r, PMF.uniformOfFintype G.Rand r *
+    ∑' e, PMF.uniformFintype (Fin G.μ → G.Ch) e * ∑' r, PMF.uniformFintype G.Rand r *
       ∑ i, (if G.flagging x w m r (G.vals look x w m r e) i then
         Q (G.guessView look x w m r e i) (G.key x w m r (G.vals look x w m r e) i) else 0) ≤ Γ
 
@@ -457,10 +457,10 @@ simulated trace against `look` under uniform values and simulator randomness, pl
 `δ`. -/
 def StatHVZKAt (x : G.Stmt) (w : G.Wit) (δ : ℝ≥0∞) : Prop :=
   ∀ (m : G.Msg) (look : G.Key → Option G.Ch) (g : G.Trace → ℝ≥0∞), (∀ y, g y ≤ 1) →
-    ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e * ∑' r, PMF.uniformOfFintype G.Rand r *
+    ∑' e, PMF.uniformFintype (Fin G.μ → G.Ch) e * ∑' r, PMF.uniformFintype G.Rand r *
       (if G.hidFresh look x w m r (G.vals look x w m r e) then
         g (G.trace x w m r (G.vals look x w m r e)) else 0) ≤
-    ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e * ∑' s, PMF.uniformOfFintype G.SimRand s *
+    ∑' e, PMF.uniformFintype (Fin G.μ → G.Ch) e * ∑' s, PMF.uniformFintype G.SimRand s *
       g (G.simTrace look x m e s) + δ
 
 /-- **Key classes.** A partition of the oracle points into finitely many classes
@@ -501,7 +501,7 @@ point the guess from `guessView` hits, over uniform values and uniform randomnes
 is at most `Γ c`. -/
 def KeyBoundClsAt (κ : G.Classes) (x : G.Stmt) (w : G.Wit) (Γ : κ.ι → ℝ≥0∞) : Prop :=
   ∀ (c : κ.ι) (m : G.Msg) (look : G.Key → Option G.Ch) (Q : G.Trace → PMF G.Key),
-    ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e * ∑' r, PMF.uniformOfFintype G.Rand r *
+    ∑' e, PMF.uniformFintype (Fin G.μ → G.Ch) e * ∑' r, PMF.uniformFintype G.Rand r *
       ∑ i ∈ Finset.univ.filter (fun i => κ.ecls i = c),
         (if G.charged look x w m r (G.vals look x w m r e) i then
           Q (G.guessView look x w m r e i) (G.key x w m r (G.vals look x w m r e) i) else 0) ≤
@@ -596,7 +596,7 @@ theorem KeyBoundAt.toCls {x : G.Stmt} {w : G.Wit} {Γ : ℝ≥0∞} (h : G.KeyBo
     (Finset.sum_le_sum_of_subset (Finset.filter_subset _ _))
   unfold charged
   cases G.flagging x w m r (G.vals look x w m r e) i <;> simp only [Bool.false_and, Bool.true_and,
-    Bool.false_eq_true, if_false, if_true, le_refl]
+    Bool.false_eq_true, ite_false, ite_true, le_refl]
   split_ifs <;> simp
 
 end Protocol
@@ -804,8 +804,8 @@ variable (G) in
 value of `β`, mapped by `F`. -/
 noncomputable def sampleVec {β γ : Type} [Fintype β] [Nonempty β]
     (F : (Fin G.μ → G.Ch) → β → γ) : PMF γ :=
-  (PMF.uniformOfFintype (Fin G.μ → G.Ch)).bind fun e =>
-    (PMF.uniformOfFintype β).map fun y => F e y
+  (PMF.uniformFintype (Fin G.μ → G.Ch)).bind fun e =>
+    (PMF.uniformFintype β).map fun y => F e y
 
 /-- The real oracle for the pair `(x, w)`. -/
 noncomputable def realStep (xw : G.Stmt × G.Wit) (s : G.Tables × Bool) :
@@ -1039,9 +1039,9 @@ theorem simVals_apply (e : Fin G.μ → G.Ch) (i : Fin G.μ) :
   congr 2
   refine G.simKey_causal x m s _ _ i fun j hj => ?_
   by_cases hji : j < i
-  · simp only [hji, if_true]
+  · simp only [hji, ite_true]
     rfl
-  · simp only [hji, if_false]
+  · simp only [hji, ite_false]
     exact (simVals_apply_of_ev_false look x m s e (hj.resolve_left hji)).symm
 
 variable {look x m s}
@@ -1085,23 +1085,23 @@ end Protocol
 /-! ## Uniform functions on `Fin 1` -/
 
 /-- A uniform function on `Fin 1` read at `0` is uniform. -/
-theorem map_uniformOfFintype_fin_one {C : Type} [Fintype C] [Nonempty C] :
-    (PMF.uniformOfFintype (Fin 1 → C)).map (fun e => e 0) = PMF.uniformOfFintype C := by
+theorem map_uniformFintype_fin_one {C : Type} [Fintype C] [Nonempty C] :
+    (PMF.uniformFintype (Fin 1 → C)).map (fun e => e 0) = PMF.uniformFintype C := by
   classical
   ext z
   rw [PMF.map_apply, tsum_eq_single (fun _ => z)]
-  · simp [PMF.uniformOfFintype_apply]
+  · simp [PMF.uniformFintype_apply]
   · intro e he
-    rw [if_neg]
+    rw [ite_eq_right]
     intro h
     exact he (funext fun i => by rw [Subsingleton.elim i 0, h])
 
 /-- Sampling a uniform function on `Fin 1` is sampling its value at `0`. -/
-theorem bind_uniformOfFintype_fin_one {C β : Type} [Fintype C] [Nonempty C]
+theorem bind_uniformFintype_fin_one {C β : Type} [Fintype C] [Nonempty C]
     (f : (Fin 1 → C) → PMF β) :
-    (PMF.uniformOfFintype (Fin 1 → C)).bind f =
-      (PMF.uniformOfFintype C).bind fun c => f fun _ => c := by
-  conv_rhs => rw [← map_uniformOfFintype_fin_one]
+    (PMF.uniformFintype (Fin 1 → C)).bind f =
+      (PMF.uniformFintype C).bind fun c => f fun _ => c := by
+  conv_rhs => rw [← map_uniformFintype_fin_one]
   rw [PMF.bind_map]
   refine congrArg _ (funext fun e => congrArg f (funext fun i => ?_))
   simp only [Subsingleton.elim i 0]
@@ -1344,8 +1344,8 @@ theorem rej_traceTables (t : G.Tables) (m : G.Msg) (tr : G.Trace) :
 
 theorem sampleVec_bind {β γ δ : Type} [Fintype β] [Nonempty β]
     (F : (Fin G.μ → G.Ch) → β → γ) (g : γ → PMF δ) :
-    (sampleVec G F).bind g = (PMF.uniformOfFintype (Fin G.μ → G.Ch)).bind fun e =>
-      (PMF.uniformOfFintype β).bind fun y => g (F e y) := by
+    (sampleVec G F).bind g = (PMF.uniformFintype (Fin G.μ → G.Ch)).bind fun e =>
+      (PMF.uniformFintype β).bind fun y => g (F e y) := by
   simp only [sampleVec, PMF.bind_bind, PMF.bind_map, Function.comp_def]
 
 theorem mem_support_sampleVec {β γ : Type} [Fintype β] [Nonempty β]
@@ -1483,7 +1483,7 @@ theorem realSignOut_of_fresh
       (if G.ev i then t.lookup else fun _ => none) (G.key x w m r (G.vals t.lookup x w m r e) i)
     cases hev : G.ev i
     · exact h1 i (by simp [Protocol.flagging, hev])
-    · simp only [if_true]
+    · simp only [ite_true]
       cases hf : G.flagging x w m r (G.vals t.lookup x w m r e) i
       · exact Protocol.lookupAll_eq_lookup (h2 i hf)
       · rw [h1 i hf, Protocol.lookup_eq_none_of_lookupAll (h1 i hf)]
@@ -1506,7 +1506,7 @@ theorem realSignOut_of_fresh
         (lookupIn t.rej (G.key x w m r v i)).isSome) = false := by
     refine List.any_eq_false.mpr fun i _ => ?_
     cases hf : G.flagging x w m r v i
-    · simp only [Bool.false_eq_true, if_false, Bool.and_eq_true, not_and]
+    · simp only [Bool.false_eq_true, ite_false, Bool.and_eq_true, not_and]
       intro hn
       simp [h2 i hf hn]
     · simp [h1 i hf]
@@ -1530,12 +1530,12 @@ theorem fresh_of_realSignOut (h : (realSignOut x w t b m e r).2.2 = false) :
   have c1 : ∀ i, G.flagging x w m r v i = true → t.lookupAll (G.key x w m r v i) = none :=
     fun i hf => by
       have := h i
-      rw [if_pos hf] at this
+      rw [ite_eq_left hf] at this
       simpa using this
   have c2 : ∀ i, G.flagging x w m r v i = false → (t.lookup (G.key x w m r v i)).isNone →
       lookupIn t.rej (G.key x w m r v i) = none := fun i hf hn => by
     have := h i
-    rw [if_neg (by simp [hf])] at this
+    rw [ite_eq_right (by simp [hf])] at this
     simpa [hn] using this
   have hr : G.vals t.lookup x w m r e = v := by
     refine effVec_congr _ _ (G.key_causal x w m r) e _ fun i => ?_
@@ -1543,7 +1543,7 @@ theorem fresh_of_realSignOut (h : (realSignOut x w t b m e r).2.2 = false) :
       t.lookupAll (G.key x w m r v i)
     cases hev : G.ev i
     · exact (c1 i (by simp [Protocol.flagging, hev])).symm
-    · simp only [if_true]
+    · simp only [ite_true]
       cases hf : G.flagging x w m r v i
       · exact (Protocol.lookupAll_eq_lookup (c2 i hf)).symm
       · rw [c1 i hf, Protocol.lookup_eq_none_of_lookupAll (c1 i hf)]
@@ -2004,7 +2004,7 @@ theorem tsum_guess_le {Γ : ℝ≥0∞} (x : G.Stmt) (w : G.Wit) (hΓ : G.KeyBou
     (m : G.Msg) (look : G.Key → Option G.Ch) (R : G.Trace → PMF (α × (G.Tables × Bool)))
     (N : ℕ) (hN : ∀ e r i, ∀ y ∈ (R (G.guessView look x w m r e i)).support,
       y.2.1.keys.length ≤ N) :
-    ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e * ∑' r, PMF.uniformOfFintype G.Rand r *
+    ∑' e, PMF.uniformFintype (Fin G.μ → G.Ch) e * ∑' r, PMF.uniformFintype G.Rand r *
       ∑ i, (if G.flagging x w m r (G.vals look x w m r e) i then
         (R (G.guessView look x w m r e i)).toOuterMeasure
           {y | G.key x w m r (G.vals look x w m r e) i ∈ y.2.1.keys} else 0) ≤ N * Γ := by
@@ -2024,7 +2024,7 @@ theorem tsum_guess_le {Γ : ℝ≥0∞} (x : G.Stmt) (w : G.Wit) (hΓ : G.KeyBou
     · exact toOuterMeasure_mem_le_sum (R (G.guessView look x w m r e i)) (fun y => y.2.1.keys)
         N k₀ (G.key x w m r (G.vals look x w m r e) i) (hN e r i)
     · exact zero_le
-  calc _ ≤ ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e * ∑' r, PMF.uniformOfFintype G.Rand r *
+  calc _ ≤ ∑' e, PMF.uniformFintype (Fin G.μ → G.Ch) e * ∑' r, PMF.uniformFintype G.Rand r *
         ∑ j ∈ Finset.range N, ∑ i, (if G.flagging x w m r (G.vals look x w m r e) i then
           Q j (G.guessView look x w m r e i) (G.key x w m r (G.vals look x w m r e) i)
           else 0) := by
@@ -2032,8 +2032,8 @@ theorem tsum_guess_le {Γ : ℝ≥0∞} (x : G.Stmt) (w : G.Wit) (hΓ : G.KeyBou
           (ENNReal.tsum_le_tsum fun r => mul_le_mul_right ?_ _) _
         rw [Finset.sum_comm]
         exact Finset.sum_le_sum fun i _ => h1 e r i
-    _ = ∑ j ∈ Finset.range N, ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e *
-          ∑' r, PMF.uniformOfFintype G.Rand r * ∑ i,
+    _ = ∑ j ∈ Finset.range N, ∑' e, PMF.uniformFintype (Fin G.μ → G.Ch) e *
+          ∑' r, PMF.uniformFintype G.Rand r * ∑ i,
             (if G.flagging x w m r (G.vals look x w m r e) i then
               Q j (G.guessView look x w m r e i) (G.key x w m r (G.vals look x w m r e) i)
               else 0) := tsum_mul_tsum_mul_finsetSum _ _ _ _
@@ -2085,8 +2085,8 @@ theorem flag_sign_term_le (xw : G.Stmt × G.Wit) {Γ : ℝ≥0∞}
           {y | G.key xw.1 xw.2 m r v i ∈ y.2.1.keys} else 0) (fun _ _ => zero_le)
       (Finset.mem_univ i))
     have hg : G.guessView t.lookup xw.1 xw.2 m r e i = ([], [], none) := by
-      simp only [Protocol.guessView, ← hv, hi, Bool.or_true, if_true]
-    simp only [hf, if_true, hg]
+      simp only [Protocol.guessView, ← hv, hi, Bool.or_true, ite_true]
+    simp only [hf, ite_true, hg]
     refine (run_real_keys_eq_one xw _ _ _ ?_ _ fun y hy => hy).symm
     exact (le_traceTables t m _).keys_subset (Protocol.lookup_isSome_mem_keys hi)
   simp only [not_exists, not_and, Bool.not_eq_true, Option.isSome_eq_false_iff,
@@ -2131,8 +2131,8 @@ theorem flag_sign_term_le (xw : G.Stmt × G.Wit) {Γ : ℝ≥0∞}
           have hf : G.flagging xw.1 xw.2 m r v i = true := by simp [Protocol.flagging, hi']
           have hg : G.guessView t.lookup xw.1 xw.2 m r e i = G.trace xw.1 xw.2 m r v := by
             simp only [Protocol.guessView, ← hv, hi', hc i hf, Option.isSome_none,
-              Bool.or_false, Bool.false_eq_true, if_false]
-          rw [if_pos hf, hg]
+              Bool.or_false, Bool.false_eq_true, ite_false]
+          rw [ite_eq_left hf, hg]
       _ ≤ _ := Finset.sum_le_sum_of_subset (Finset.filter_subset _ _)
 
 /-- A hash query in the induction of `run_real_flag_le`. -/
@@ -2156,9 +2156,9 @@ theorem flag_hash_step_le (xw : G.Stmt × G.Wit) {Γ : ℝ≥0∞}
   | none =>
     have hr : lookupIn t.rej key = none := by rw [ht]; exact lookupIn_nil key
     simp only [hr, Step.toPMF, PMF.bind_map, Function.comp_def, PMF.toOuterMeasure_bind_apply]
-    calc ∑' e, PMF.uniformOfFintype G.Ch e * (OracleAdv.run (toOracle (realStep xw))
+    calc ∑' e, PMF.uniformFintype G.Ch e * (OracleAdv.run (toOracle (realStep xw))
           (k (.inl e)) ({ t with hash := t.hash ++ [(key, e)] }, false)).toOuterMeasure _
-        ≤ ∑' e, PMF.uniformOfFintype G.Ch e *
+        ≤ ∑' e, PMF.uniformFintype G.Ch e *
           (((q * (t.hash.length + t.prog.length + (h + 1) + G.μ * q) : ℕ) :
             ℝ≥0∞) * Γ) := by
           refine ENNReal.tsum_le_tsum fun e => mul_le_mul_right ?_ _
@@ -2175,7 +2175,7 @@ hidden entries whose point is defined at the end of the rest of the run is at mo
 theorem flag_guess_le (xw : G.Stmt × G.Wit) {Γ : ℝ≥0∞} (hΓ : G.KeyBoundAt xw.1 xw.2 Γ)
     (k : G.Answer → OracleAdv G.Query G.Answer α) (h q : ℕ)
     (hk : ∀ r, IsQueryBound₂ (k r) h q) (t : G.Tables) (ht : t.rej = []) (m : G.Msg) :
-    ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e * ∑' r, PMF.uniformOfFintype G.Rand r *
+    ∑' e, PMF.uniformFintype (Fin G.μ → G.Ch) e * ∑' r, PMF.uniformFintype G.Rand r *
       ∑ i, (if G.flagging xw.1 xw.2 m r (G.vals t.lookup xw.1 xw.2 m r e) i then
         (contRun xw k t m (G.guessView t.lookup xw.1 xw.2 m r e i)).toOuterMeasure
           {y | G.key xw.1 xw.2 m r (G.vals t.lookup xw.1 xw.2 m r e) i ∈ y.2.1.keys}
@@ -2210,20 +2210,20 @@ theorem flag_sign_step_le (xw : G.Stmt × G.Wit) {Γ : ℝ≥0∞} (hΓ : G.KeyB
         {y | G.key xw.1 xw.2 m r (G.vals t.lookup xw.1 xw.2 m r e) i ∈ y.2.1.keys}
       else 0) with hS
   have hterm := fun e r => flag_sign_term_le xw k h q t ht m e r ih
-  have hsum : ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e *
-      ∑' r, PMF.uniformOfFintype G.Rand r * S e r ≤ (N : ℝ≥0∞) * Γ := by
+  have hsum : ∑' e, PMF.uniformFintype (Fin G.μ → G.Ch) e *
+      ∑' r, PMF.uniformFintype G.Rand r * S e r ≤ (N : ℝ≥0∞) * Γ := by
     have := flag_guess_le xw hΓ k h q hk t ht m
     rw [hS, hN, hL]
     exact_mod_cast this
   rw [OracleAdv.run_query]
   simp only [toOracle, realStep, Step.toPMF, sampleVec_bind, PMF.toOuterMeasure_bind_apply]
-  calc _ ≤ ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e *
-        ∑' r, PMF.uniformOfFintype G.Rand r * (B + S e r) :=
+  calc _ ≤ ∑' e, PMF.uniformFintype (Fin G.μ → G.Ch) e *
+        ∑' r, PMF.uniformFintype G.Rand r * (B + S e r) :=
         ENNReal.tsum_le_tsum fun e => mul_le_mul_right
           (ENNReal.tsum_le_tsum fun r => mul_le_mul_right ((hterm e r).trans (le_of_eq (by
             rw [hB, hN, hL, hS]))) _) _
-    _ = B + ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e *
-          ∑' r, PMF.uniformOfFintype G.Rand r * S e r := by
+    _ = B + ∑' e, PMF.uniformFintype (Fin G.μ → G.Ch) e *
+          ∑' r, PMF.uniformFintype G.Rand r * S e r := by
         simp only [mul_add, ENNReal.tsum_add, ENNReal.tsum_mul_right, PMF.tsum_coe, one_mul]
     _ ≤ B + N * Γ := add_le_add_right hsum _
     _ = _ := by
@@ -2313,7 +2313,7 @@ theorem tsum_guess_le_cls (κ : G.Classes) {Γ : κ.ι → ℝ≥0∞} (x : G.St
     (R : G.Trace → PMF (α × (G.Tables × Bool))) (N : ℕ)
     (hN : ∀ e r i, ∀ y ∈ (R (G.guessView look x w m r e i)).support,
       κ.count y.2.1.keys c ≤ N) :
-    ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e * ∑' r, PMF.uniformOfFintype G.Rand r *
+    ∑' e, PMF.uniformFintype (Fin G.μ → G.Ch) e * ∑' r, PMF.uniformFintype G.Rand r *
       ∑ i ∈ Finset.univ.filter (fun i => κ.ecls i = c),
         (if G.charged look x w m r (G.vals look x w m r e) i then
           (R (G.guessView look x w m r e i)).toOuterMeasure
@@ -2340,7 +2340,7 @@ theorem tsum_guess_le_cls (κ : G.Classes) {Γ : κ.ι → ℝ≥0∞} (x : G.St
       refine List.mem_filter.mpr ⟨hy, ?_⟩
       simpa [κ.key_cls] using (Finset.mem_filter.mp hi).2
     · exact zero_le
-  calc _ ≤ ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e * ∑' r, PMF.uniformOfFintype G.Rand r *
+  calc _ ≤ ∑' e, PMF.uniformFintype (Fin G.μ → G.Ch) e * ∑' r, PMF.uniformFintype G.Rand r *
         ∑ j ∈ Finset.range N, ∑ i ∈ Finset.univ.filter (fun i => κ.ecls i = c),
           (if G.charged look x w m r (G.vals look x w m r e) i then
             Q j (G.guessView look x w m r e i) (G.key x w m r (G.vals look x w m r e) i)
@@ -2349,8 +2349,8 @@ theorem tsum_guess_le_cls (κ : G.Classes) {Γ : κ.ι → ℝ≥0∞} (x : G.St
           (ENNReal.tsum_le_tsum fun r => mul_le_mul_right ?_ _) _
         rw [Finset.sum_comm]
         exact Finset.sum_le_sum fun i hi => h1 e r i hi
-    _ = ∑ j ∈ Finset.range N, ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e *
-          ∑' r, PMF.uniformOfFintype G.Rand r *
+    _ = ∑ j ∈ Finset.range N, ∑' e, PMF.uniformFintype (Fin G.μ → G.Ch) e *
+          ∑' r, PMF.uniformFintype G.Rand r *
             ∑ i ∈ Finset.univ.filter (fun i => κ.ecls i = c),
             (if G.charged look x w m r (G.vals look x w m r e) i then
               Q j (G.guessView look x w m r e i) (G.key x w m r (G.vals look x w m r e) i)
@@ -2392,8 +2392,8 @@ theorem flag_sign_term_le_cls (κ : G.Classes) (xw : G.Stmt × G.Wit) {Γ : κ.�
           {y | G.key xw.1 xw.2 m r v i ∈ y.2.1.keys} else 0) (fun _ _ => zero_le)
       (Finset.mem_univ i))
     have hg : G.guessView t.lookup xw.1 xw.2 m r e i = ([], [], none) := by
-      simp only [Protocol.guessView, ← hv, hi, Bool.or_true, if_true]
-    simp only [hf, if_true, hg]
+      simp only [Protocol.guessView, ← hv, hi, Bool.or_true, ite_true]
+    simp only [hf, ite_true, hg]
     refine (run_real_keys_eq_one xw _ _ _ ?_ _ fun y hy => hy).symm
     exact (le_traceTables t m _).keys_subset (Protocol.lookup_isSome_mem_keys hi)
   simp only [not_exists, not_and, Bool.not_eq_true, Option.isSome_eq_false_iff,
@@ -2441,8 +2441,8 @@ theorem flag_sign_term_le_cls (κ : G.Classes) (xw : G.Stmt × G.Wit) {Γ : κ.�
             simp [Protocol.charged, hf, hi']
           have hg : G.guessView t.lookup xw.1 xw.2 m r e i = G.trace xw.1 xw.2 m r v := by
             simp only [Protocol.guessView, ← hv, hi', hc i hf, Option.isSome_none,
-              Bool.or_false, Bool.false_eq_true, if_false]
-          rw [if_pos hch, hg]
+              Bool.or_false, Bool.false_eq_true, ite_false]
+          rw [ite_eq_left hch, hg]
       _ ≤ _ := Finset.sum_le_sum_of_subset (Finset.filter_subset _ _)
 
 /-- A hash query in the induction of `run_real_flag_le_cls`. -/
@@ -2465,9 +2465,9 @@ theorem flag_hash_step_le_cls (κ : G.Classes) (xw : G.Stmt × G.Wit) {Γ : κ.�
   | none =>
     have hr : lookupIn t.rej key = none := by rw [ht]; exact lookupIn_nil key
     simp only [hr, Step.toPMF, PMF.bind_map, Function.comp_def, PMF.toOuterMeasure_bind_apply]
-    calc ∑' e, PMF.uniformOfFintype G.Ch e * (OracleAdv.run (toOracle (realStep xw))
+    calc ∑' e, PMF.uniformFintype G.Ch e * (OracleAdv.run (toOracle (realStep xw))
           (k (.inl e)) ({ t with hash := t.hash ++ [(key, e)] }, false)).toOuterMeasure _
-        ≤ ∑' e, PMF.uniformOfFintype G.Ch e * flagBoundCls κ Γ n q t := by
+        ≤ ∑' e, PMF.uniformFintype G.Ch e * flagBoundCls κ Γ n q t := by
           refine ENNReal.tsum_le_tsum fun e => mul_le_mul_right ?_ _
           refine (ih _ { t with hash := t.hash ++ [(key, e)] } ht).trans
             (Finset.sum_le_sum fun c _ => mul_le_mul_of_nonneg_right ?_ zero_le)
@@ -2484,7 +2484,7 @@ theorem flag_guess_le_cls (κ : G.Classes) (xw : G.Stmt × G.Wit) {Γ : κ.ι �
     (hΓ : G.KeyBoundClsAt κ xw.1 xw.2 Γ) (k : G.Answer → OracleAdv G.Query G.Answer α)
     (h q : ℕ) (n : κ.ι → ℕ) (hk : ∀ r, IsQueryBound₂ (k r) h q)
     (hn : ∀ c r, (k r).IsQueryBoundBy (κ.hashCost c) (n c)) (t : G.Tables) (m : G.Msg) :
-    ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e * ∑' r, PMF.uniformOfFintype G.Rand r *
+    ∑' e, PMF.uniformFintype (Fin G.μ → G.Ch) e * ∑' r, PMF.uniformFintype G.Rand r *
       ∑ i, (if G.charged t.lookup xw.1 xw.2 m r (G.vals t.lookup xw.1 xw.2 m r e) i then
         (contRun xw k t m (G.guessView t.lookup xw.1 xw.2 m r e i)).toOuterMeasure
           {y | G.key xw.1 xw.2 m r (G.vals t.lookup xw.1 xw.2 m r e) i ∈ y.2.1.keys}
@@ -2520,17 +2520,17 @@ theorem flag_sign_step_le_cls (κ : G.Classes) (xw : G.Stmt × G.Wit) {Γ : κ.�
         {y | G.key xw.1 xw.2 m r (G.vals t.lookup xw.1 xw.2 m r e) i ∈ y.2.1.keys}
       else 0) with hS
   have hterm := fun e r => flag_sign_term_le_cls κ xw k n q t ht m e r ih
-  have hsum : ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e *
-      ∑' r, PMF.uniformOfFintype G.Rand r * S e r ≤ ∑ c, (N c : ℝ≥0∞) * Γ c :=
+  have hsum : ∑' e, PMF.uniformFintype (Fin G.μ → G.Ch) e *
+      ∑' r, PMF.uniformFintype G.Rand r * S e r ≤ ∑ c, (N c : ℝ≥0∞) * Γ c :=
     flag_guess_le_cls κ xw hΓ k h q n hk hn t m
   rw [OracleAdv.run_query]
   simp only [toOracle, realStep, Step.toPMF, sampleVec_bind, PMF.toOuterMeasure_bind_apply]
-  calc _ ≤ ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e *
-        ∑' r, PMF.uniformOfFintype G.Rand r * (B + S e r) :=
+  calc _ ≤ ∑' e, PMF.uniformFintype (Fin G.μ → G.Ch) e *
+        ∑' r, PMF.uniformFintype G.Rand r * (B + S e r) :=
         ENNReal.tsum_le_tsum fun e => mul_le_mul_right
           (ENNReal.tsum_le_tsum fun r => mul_le_mul_right (hterm e r) _) _
-    _ = B + ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e *
-          ∑' r, PMF.uniformOfFintype G.Rand r * S e r := by
+    _ = B + ∑' e, PMF.uniformFintype (Fin G.μ → G.Ch) e *
+          ∑' r, PMF.uniformFintype G.Rand r * S e r := by
         simp only [mul_add, ENNReal.tsum_add, ENNReal.tsum_mul_right, PMF.tsum_coe, one_mul]
     _ ≤ B + ∑ c, (N c : ℝ≥0∞) * Γ c := add_le_add_right hsum _
     _ = _ := by

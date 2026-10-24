@@ -230,7 +230,7 @@ theorem layerPot_multLayer_zero {S : Type} (cnt : S → V → ℕ) (p : ℝ≥0�
   | zero => simp [layerPot, multLayer, multW, hs]
   | succ j ih =>
     rw [layerPot, show multLayer (cnt s) (j + 1 + 1) = 0 by simp [multLayer, hs]]
-    simp only [ih, zero_add, multW, show ¬ j + 1 + 1 ≤ 1 by omega, if_false]
+    simp only [ih, zero_add, multW, show ¬ j + 1 + 1 ≤ 1 by omega, ite_false]
     rw [← Finset.sum_mul, ← Nat.cast_sum, sum_range_choose_succ, pow_succ]
     ring
 

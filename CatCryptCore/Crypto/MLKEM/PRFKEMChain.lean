@@ -223,8 +223,8 @@ theorem avg_equiv (e : α ≃ β) (f : β → ℝ≥0∞) : avg (fun x => f (e x
 /-- The expectation of `h` under the image of the uniform distribution by `g` is
 the average of `h ∘ g`. -/
 theorem sum_map_uniform [Nonempty α] [DecidableEq β] (g : α → β) (h : β → ℝ≥0∞) :
-    ∑ y, (PMF.map g (PMF.uniformOfFintype α)) y * h y = avg fun x => h (g x) := by
-  simp only [PMF.map_apply, tsum_fintype, PMF.uniformOfFintype_apply, Finset.sum_mul, avg]
+    ∑ y, (PMF.map g (PMF.uniformFintype α)) y * h y = avg fun x => h (g x) := by
+  simp only [PMF.map_apply, tsum_fintype, PMF.uniformFintype_apply, Finset.sum_mul, avg]
   rw [Finset.sum_comm]
   refine Finset.sum_congr rfl fun x _ => ?_
   simp [ite_mul]

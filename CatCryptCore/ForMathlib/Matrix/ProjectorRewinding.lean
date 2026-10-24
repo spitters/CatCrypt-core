@@ -112,7 +112,7 @@ theorem _root_.IsStarProjection.posSemidef {P : Matrix d d ℂ} (hP : IsStarProj
   exact this ▸ posSemidef_conjTranspose_mul_self P
 
 /-- For a Hermitian matrix `A`, `xᴴ (A y) = (A x)ᴴ y`. -/
-theorem IsHermitian.star_dotProduct_mulVec_comm {A : Matrix d d ℂ} (hA : A.IsHermitian)
+theorem IsHermitian.star_dotProduct_mulVec_eq {A : Matrix d d ℂ} (hA : A.IsHermitian)
     (x y : d → ℂ) : star x ⬝ᵥ (A *ᵥ y) = star (A *ᵥ x) ⬝ᵥ y := by
   rw [star_mulVec, hA.eq, dotProduct_mulVec]
 
@@ -155,9 +155,9 @@ theorem re_star_mulVec_dotProduct_mulVec_avg {P : Fin n → Matrix d d ℂ}
     (hP : ∀ θ, IsStarProjection (P θ)) (Φ : d → ℂ) :
     (star (((n : ℂ)⁻¹ • ∑ θ, P θ) *ᵥ Φ) ⬝ᵥ (((n : ℂ)⁻¹ • ∑ θ, P θ) *ᵥ Φ)).re =
       (n : ℝ)⁻¹ * ∑ θ, (star (P θ *ᵥ Φ) ⬝ᵥ (((n : ℂ)⁻¹ • ∑ θ, P θ) *ᵥ Φ)).re := by
-  rw [← (posSemidef_inv_natCast_smul_sum hP).isHermitian.star_dotProduct_mulVec_comm,
+  rw [← (posSemidef_inv_natCast_smul_sum hP).isHermitian.star_dotProduct_mulVec_eq,
     re_star_dotProduct_inv_natCast_smul_sum_mulVec]
-  simp only [((hP _).posSemidef.isHermitian.star_dotProduct_mulVec_comm Φ)]
+  simp only [((hP _).posSemidef.isHermitian.star_dotProduct_mulVec_eq Φ)]
 
 end Matrix
 

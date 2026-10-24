@@ -267,7 +267,7 @@ theorem anc_extendTo (T : BlockTree B) (f : ℕ → B) (b : B) (e : ℕ) :
 
 theorem extendTo_of_anc {T : BlockTree B} {f : ℕ → B} {b : B} {e : ℕ} (h : T.anc b (f e)) :
     extendTo T f b e = f e :=
-  if_pos h
+  ite_eq_left h
 
 end Extend
 
@@ -766,7 +766,7 @@ theorem updated_nonvacuous (hz : ℕ) :
   gst := Nat.zero_le _
   round_slot _ := rfl
   round_cast r _ x hx := Finset.mem_biUnion.2
-    ⟨r, Finset.mem_range.2 (by simp only [ρI]; omega), by rw [if_pos rfl]; exact hx⟩
+    ⟨r, Finset.mem_range.2 (by simp only [ρI]; omega), by rw [ite_eq_left rfl]; exact hx⟩
   sync _ j t x _ hjt hx _ := Finset.mem_biUnion.2 ⟨j, Finset.mem_range.2 (by omega), hx⟩
 
 /-- On the instance, at every phase `t ≥ 4` the validator has received votes finalizing an

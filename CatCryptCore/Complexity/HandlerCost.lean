@@ -292,8 +292,8 @@ theorem DeepPackage.timeBound_link {p₁ p₂ : DeepPackage.{u}} {h h₂ : ℕ �
   refine (h₁ op dom codom hmem x).substOracle _ fun op' dom' codom' x' => ?_
   dsimp only
   by_cases hm : (op', dom', codom') ∈ p₂.exports.ops
-  · rw [dif_pos hm]; exact hp₂ op' dom' codom' hm x'
-  · rw [dif_neg hm]; exact .fail _
+  · rw [dite_eq_left hm]; exact hp₂ op' dom' codom' hm x'
+  · rw [dite_eq_right hm]; exact .fail _
 
 end CatCrypt.Deep
 

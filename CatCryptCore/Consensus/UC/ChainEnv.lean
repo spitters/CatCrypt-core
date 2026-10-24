@@ -117,34 +117,34 @@ theorem callIdx_of_mem_phaseCalls (P : Protocol Tx Hash np n Hz) (ω : Seed Tx H
   unfold phaseCalls at hc
   unfold progOf at hp
   by_cases h0 : k % 3 = 0
-  · rw [if_pos h0] at hp
+  · rw [ite_eq_left h0] at hp
     rw [hp] at hc
     obtain ⟨x, hx, hcx⟩ := List.mem_flatMap.1 hc
     have ht : x.2.t_now = N.t_now := mem_foldrCalls_inv _ (fun M => M.t_now = N.t_now)
       (fun p M hM => (sRcv_t_now Sch P ω A false p M).trans hM) N rfl _ x hx
     unfold stepCalls at hcx
     by_cases hh : ((x.2.state_map x.1).isSome && is_corrupt x.1) = true
-    · simp only [hh, if_true, Bool.false_eq_true, if_false, List.mem_singleton] at hcx
+    · simp only [hh, ite_true, Bool.false_eq_true, ite_false, List.mem_singleton] at hcx
       subst hcx
       have hf : (fetch_msgs x.1 x.2).2.t_now = x.2.t_now := by
         simp [fetch_msgs, rmv_zero_msgs]
-      simp only [callIdx, rcvCall, Option.isSome_some, if_true, hf, ht, hT]
+      simp only [callIdx, rcvCall, Option.isSome_some, ite_true, hf, ht, hT]
       omega
     · simp [hh] at hcx
   · by_cases h1 : k % 3 = 1
-    · rw [if_neg h0, if_pos h1] at hp
+    · rw [ite_eq_right h0, ite_eq_left h1] at hp
       rw [hp] at hc
       obtain ⟨x, hx, hcx⟩ := List.mem_flatMap.1 hc
       have ht : x.2.t_now = N.t_now := mem_foldrCalls_inv _ (fun M => M.t_now = N.t_now)
         (fun p M hM => (sBake_t_now Sch P ω A false p M).trans hM) N rfl _ x hx
       unfold stepCalls at hcx
       by_cases hh : ((x.2.state_map x.1).isSome && is_corrupt x.1) = true
-      · simp only [hh, if_true, List.mem_singleton] at hcx
+      · simp only [hh, ite_true, List.mem_singleton] at hcx
         subst hcx
-        simp only [callIdx, bakeCall, Option.isSome_none, Bool.false_eq_true, if_false, ht, hT]
+        simp only [callIdx, bakeCall, Option.isSome_none, Bool.false_eq_true, ite_false, ht, hT]
         omega
       · simp [hh] at hcx
-    · rw [if_neg h0, if_neg h1] at hp
+    · rw [ite_eq_right h0, ite_eq_right h1] at hp
       rw [hp] at hc
       simp at hc
 
@@ -420,7 +420,7 @@ theorem collFinder_adv_eq_env (A : Adversary Tx Hash np n Hz PK Sig) (μ : PMF (
   unfold collFinderE collFinderG
   simp only [finalLog_of_rounds_eq_zero P Sch (AdvFamily.const A) x₀ P.txSel Tree K Δ _ Z.input hZ]
   unfold CR_Search_Advantage CR_Search_Game collFinder CR_Search_Adversary.ofCoins
-  rw [show SPComp.sample H.Key = sampleFrom (ofPMF (PMF.uniformOfFintype H.Key)) from rfl]
+  rw [show SPComp.sample H.Key = sampleFrom (ofPMF (PMF.uniformFintype H.Key)) from rfl]
   simp only [SPComp.monad_bind_eq, SPComp.bind_assoc, Function.comp_apply, SPComp.pure_bind]
   rw [prTrue_bind_sampleFrom, prTrue_bind_sampleFrom]
   refine tsum_congr fun k => ?_
@@ -796,7 +796,7 @@ theorem simLoop_spec (K Δ : ℕ) (i : Fin np) (pk : PK) (sk : SK) (ω : Seed Tx
     obtain ⟨hjl, -, hN, hl, hnf⟩ := hI
     simp only [loop, SPComp.pure_bind, prTrue_pure]
     by_cases hF : forgeEv P Sch F x₀ dt K i (ω.withKey i (pk, sk)) t = true
-    · rw [if_pos hF]
+    · rw [ite_eq_left hF]
       have hF' : ForgeBy Sch (P.withTx (txOf dt t.1.2.1)) (ω.withKey i (pk, sk))
           (F.at (scriptOfD x₀ t.1.2.1)) K i := by
         simpa [forgeEv] using hF
@@ -822,8 +822,8 @@ theorem simLoop_spec (K Δ : ℕ) (i : Fin np) (pk : PK) (sk : SK) (ω : Seed Tx
       rw [hrun]
       have hw : (Sch.verify pk fg.1 fg.2 && !(l'.map Prod.fst).contains fg.1) = true := by
         simpa [hv] using hnl
-      rw [PMF.pure_map, hw, PMF.pure_apply, if_pos rfl]
-    · rw [if_neg hF]
+      rw [PMF.pure_map, hw, PMF.pure_apply, ite_eq_left rfl]
+    · rw [ite_eq_right hF]
       exact bot_le
   | succ m ih =>
     intro z h t b v N l hseed hI
@@ -861,7 +861,7 @@ theorem simLoop_spec (K Δ : ℕ) (i : Fin np) (pk : PK) (sk : SK) (ω : Seed Tx
       exact hcont v N l hI'
     · dsimp only [phaseNext] at hcont ⊢
       by_cases hjK : t.1.2.2.1 < K
-      · simp only [simEv, if_pos hjK]
+      · simp only [simEv, ite_eq_left hjK]
         have hs := simEq_simPhase Sch (P.withTx (txOf dt (t.1.2.1 ++ [.inr (.step x)])))
           (F.at (scriptOfD x₀ (t.1.2.1 ++ [.inr (.step x)]))) i pk ω sk N
         refine hs.le_run _ _ _ _ _ _ _ _ l hI.2.2.2.1 (prTrue_le_one _ _) fun l' hl' hF => ?_
@@ -871,7 +871,7 @@ theorem simLoop_spec (K Δ : ℕ) (i : Fin np) (pk : PK) (sk : SK) (ω : Seed Tx
         rw [← hI'.2.1]
         have hc := hcont _ _ _ hI'
         exact hc
-      · simp only [simEv, if_neg hjK]
+      · simp only [simEv, ite_eq_right hjK]
         have hI' := simInv_step_of_le P Sch F x₀ dt Tree K i (ω.withKey i (pk, sk)) hI x
           (not_lt.1 hjK)
         rw [← hI'.2.1]
@@ -904,7 +904,7 @@ theorem prob_forgeE_le (μ : PMF (Option (Fin np))) (W K Δ : ℕ) {ζ : Type}
   refine ENNReal.tsum_le_tsum fun ω => ?_
   gcongr
   rw [tsum_eq_single (ω.withKey i (Sch.keygen kr)) fun b hb => by simp [PMF.pure_apply, hb],
-    PMF.pure_apply, if_pos rfl, one_mul]
+    PMF.pure_apply, ite_eq_left rfl, one_mul]
   unfold prFinal run
   exact simLoop_spec P Sch F x₀ dt Tree K Δ i (Sch.keygen kr).1 (Sch.keygen kr).2 ω Z.input
     Z.input.rounds Z.input.init Z.heap _ false _ _ [] rfl
@@ -957,11 +957,11 @@ theorem prFinal_le_sum {τ E O ζ ι : Type} [Fintype ι] (S' : Sys τ E O) (q :
     simp only [prTrue_pure]
     by_cases hq : q c.2.1 = true
     · obtain ⟨k, hk⟩ := h _ hq
-      rw [if_pos hq]
+      rw [ite_eq_left hq]
       refine le_trans ?_ (Finset.single_le_sum (f := fun j => if r j c.2.1 = true then (1 : ℝ≥0∞)
         else 0) (fun _ _ => bot_le) (Finset.mem_univ k))
       simp [hk]
-    · rw [if_neg hq]
+    · rw [ite_eq_right hq]
       exact bot_le
 
 /-- A property of the final state that is constant has probability at most its indicator. -/

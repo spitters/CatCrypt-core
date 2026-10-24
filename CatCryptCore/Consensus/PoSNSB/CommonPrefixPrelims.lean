@@ -84,8 +84,8 @@ theorem lcs_suffix (s1 s2 : List T) : lcs s1 s2 <:+ s1 ∧ lcs s1 s2 <:+ s2 := b
   | cons x xs ih =>
     unfold lcs
     by_cases h : x :: xs <:+ s2
-    · rw [dif_pos h]; exact ⟨List.suffix_refl _, h⟩
-    · rw [dif_neg h]; exact ⟨ih.1.trans (List.suffix_cons _ _), ih.2⟩
+    · rw [dite_eq_left h]; exact ⟨List.suffix_refl _, h⟩
+    · rw [dite_eq_right h]; exact ⟨ih.1.trans (List.suffix_cons _ _), ih.2⟩
 
 /-- Every common suffix of `s1` and `s2` is a suffix of `lcs s1 s2` (`lcsP`). -/
 theorem lcsP {s s1 s2 : List T} (h1 : s <:+ s1) (h2 : s <:+ s2) : s <:+ lcs s1 s2 := by
@@ -94,8 +94,8 @@ theorem lcsP {s s1 s2 : List T} (h1 : s <:+ s1) (h2 : s <:+ s2) : s <:+ lcs s1 s
   | cons x xs ih =>
     unfold lcs
     by_cases h : x :: xs <:+ s2
-    · rw [dif_pos h]; exact h1
-    · rw [dif_neg h]
+    · rw [dite_eq_left h]; exact h1
+    · rw [dite_eq_right h]
       rcases List.suffix_cons_iff.1 h1 with rfl | h1
       · exact absurd h2 h
       · exact ih h1
@@ -209,7 +209,7 @@ theorem cfb_valid_chain' {b : Block Tx Hash Party} {bp : List (Block Tx Hash Par
     (hv : valid_chain (b :: c)) (hs : ∀ x ∈ c, x ∈ GenesisBlock :: bp) : cfb b bp = b :: c := by
   have h : ∃ c, valid_chain (b :: c) ∧ ∀ x ∈ c, x ∈ GenesisBlock :: bp := ⟨c, hv, hs⟩
   unfold cfb
-  rw [dif_pos h]
+  rw [dite_eq_left h]
   congr 1
   exact eq_head_eq_chains_gen hinj _ _ b h.choose_spec.1 hv h.choose_spec.2 hs
 
@@ -327,7 +327,7 @@ theorem reachable_hb_inv (hu : (InitParties : List Party).Nodup)
           exact (List.nodup_cons.1 (List.nodup_append.1 hnd).2.1).1
         have hlqM : M.state_map q = some lq := (bakes_state_notin M hqs).symm.trans hlq
         have hown := bakes_own M (uniq_exec_order hu hM) hqo hhq hlqM
-        rw [honest_bake_eq, if_pos hw] at hown
+        rw [honest_bake_eq, ite_eq_left hw] at hown
         refine ⟨by simp [honest_new_block]; exact hM.time, q, _, _, hown, hhq,
           honest_new_block_valid hM.time hw, fun x hx => ?_⟩
         show x ∈ lq.tT.allBlocks (lq.tT.extendTree lq.tree _)
@@ -598,7 +598,7 @@ theorem super_block_exists (hu : (InitParties : List Party).Nodup)
   have hpk := hA.pk p lp hlp
   have hw : Winner lp.pk A.t_now = true := by rw [hpk, hAt]; exact hpw.1
   have hhist := bakes_own_history A (uniq_exec_order hu hA) hpo hpw.2 hlp
-  rw [honest_bake_eq, if_pos hw] at hhist
+  rw [honest_bake_eq, ite_eq_left hw] at hhist
   have hmem := hhist _ List.mem_cons_self
   have hBN' := history_monotone hBN
   refine ⟨honest_new_block (AdvState := AdvState) A.t_now p lp,

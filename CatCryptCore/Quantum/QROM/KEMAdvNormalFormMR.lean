@@ -109,12 +109,12 @@ theorem indE_mul_ancUnit (p : Fin E → Prop) [DecidablePred p] (u u' : Fin E) :
     indE p * ancUnit u u' = if p u then ancUnit u u' else 0 := by
   ext i j
   by_cases hp : p u
-  · rw [if_pos hp]
+  · rw [ite_eq_left hp]
     simp only [indE, Matrix.diagonal_mul, ancUnit, Matrix.of_apply]
     by_cases hi : i = u
     · subst hi; simp [hp]
     · simp [hi]
-  · rw [if_neg hp]
+  · rw [ite_eq_right hp]
     simp only [indE, Matrix.diagonal_mul, ancUnit, Matrix.of_apply, Matrix.zero_apply]
     by_cases hi : i = u
     · subst hi; simp [hp]
@@ -124,12 +124,12 @@ theorem ancUnit_mul_indE (p : Fin E → Prop) [DecidablePred p] (u u' : Fin E) :
     ancUnit u u' * indE p = if p u' then ancUnit u u' else 0 := by
   ext i j
   by_cases hp : p u'
-  · rw [if_pos hp]
+  · rw [ite_eq_left hp]
     simp only [indE, Matrix.mul_diagonal, ancUnit, Matrix.of_apply]
     by_cases hj : j = u'
     · subst hj; simp [hp]
     · simp [hj]
-  · rw [if_neg hp]
+  · rw [ite_eq_right hp]
     simp only [indE, Matrix.mul_diagonal, ancUnit, Matrix.of_apply, Matrix.zero_apply]
     by_cases hj : j = u'
     · subst hj; simp [hp]
@@ -176,7 +176,7 @@ theorem permUnitary_mul_indE_comm (π : Equiv.Perm (Fin E)) (p : Fin E → Prop)
   simp only [indE, Matrix.mul_diagonal, Matrix.diagonal_mul, permUnitary_apply]
   by_cases h : i = π j
   · subst h
-    simp only [if_true, hp j, one_mul, mul_one]
+    simp only [ite_true, hp j, one_mul, mul_one]
   · simp [h]
 
 theorem indE_mul_indE_comm (p p' : Fin E → Prop) [DecidablePred p] [DecidablePred p'] :
@@ -266,8 +266,8 @@ theorem ctrlE_mem (e : Fin (d * E) ≃ Fin D) (S : SlotData E c a K) (R : Classi
       kr e 1 (indE fun t => S.ansv t = z) := by
     intro z
     rw [Finset.sum_eq_single z]
-    · rw [if_pos rfl, ← star_eq_conjTranspose, Matrix.mem_unitaryGroup_iff.mp (R.ans z).prop]
-    · intro z' _ hz'; rw [if_neg (Ne.symm hz'), kr_zero_right]
+    · rw [ite_eq_left rfl, ← star_eq_conjTranspose, Matrix.mem_unitaryGroup_iff.mp (R.ans z).prop]
+    · intro z' _ hz'; rw [ite_eq_right (Ne.symm hz'), kr_zero_right]
     · intro h; exact absurd (Finset.mem_univ z) h
   simp only [h, ← kr_sum_right, sum_indE_eq, kr_one]
 
@@ -287,8 +287,8 @@ by the shift of the answer register. -/
 def slotRound (e : Fin (d * E) ≃ Fin D) (S : SlotData E c a K) : ClassicalRound D c a where
   P y := kr e 1 (indE fun t => S.recv t = y)
   P_conjTranspose y := by rw [kr_conjTranspose, conjTranspose_one, indE_conjTranspose]
-  P_mul_self y := by rw [kr_mul, one_mul, indE_mul_indE_eq, if_pos rfl]
-  P_orth y y' h := by rw [kr_mul, indE_mul_indE_eq, if_neg h, kr_zero_right]
+  P_mul_self y := by rw [kr_mul, one_mul, indE_mul_indE_eq, ite_eq_left rfl]
+  P_orth y y' h := by rw [kr_mul, indE_mul_indE_eq, ite_eq_right h, kr_zero_right]
   P_sum := by rw [← kr_sum_right, sum_indE_eq, kr_one]
   ans z := liftE e (S.ansShift z)
 
@@ -311,12 +311,12 @@ theorem conj_perm_indE_ancUnit (π : Equiv.Perm (Fin E)) (p : Fin E → Prop) [D
       if p u ∧ p u' then ancUnit (π u) (π u') else 0 := by
   rw [conjTranspose_mul, indE_conjTranspose, Matrix.mul_assoc _ (indE p), indE_mul_ancUnit]
   by_cases hu : p u
-  · rw [if_pos hu, ← Matrix.mul_assoc, Matrix.mul_assoc, Matrix.mul_assoc,
+  · rw [ite_eq_left hu, ← Matrix.mul_assoc, Matrix.mul_assoc, Matrix.mul_assoc,
       ← Matrix.mul_assoc (ancUnit u u'), ancUnit_mul_indE]
     by_cases hu' : p u'
-    · rw [if_pos hu', if_pos ⟨hu, hu'⟩, ← Matrix.mul_assoc, permUnitary_conj_ancUnit]
-    · rw [if_neg hu', if_neg fun h => hu' h.2, zero_mul, mul_zero]
-  · rw [if_neg hu, if_neg fun h => hu h.1, mul_zero, zero_mul]
+    · rw [ite_eq_left hu', ite_eq_left ⟨hu, hu'⟩, ← Matrix.mul_assoc, permUnitary_conj_ancUnit]
+    · rw [ite_eq_right hu', ite_eq_right fun h => hu' h.2, zero_mul, mul_zero]
+  · rw [ite_eq_right hu, ite_eq_right fun h => hu h.1, mul_zero, zero_mul]
 
 theorem roundU_slotRound_branch (e : Fin (d * E) ≃ Fin D) (S : SlotData E c a K)
     (f : Fin c → Fin a) (B : Fin c → Fin c → Matrix (Fin d) (Fin d) ℂ) (u : Fin c → Fin E)
@@ -334,11 +334,11 @@ theorem roundU_slotRound_branch (e : Fin (d * E) ≃ Fin D) (S : SlotData E c a 
   simp only [Finset.mul_sum, Finset.sum_mul, kr_conjTranspose, kr_mul, one_mul,
     conjTranspose_one, mul_one, conj_perm_indE_ancUnit, hu]
   rw [Finset.sum_eq_single z, Finset.sum_eq_single z]
-  · rw [if_pos ⟨rfl, rfl⟩]
-  · intro y' _ hy'; rw [if_neg fun h => hy' h.2, kr_zero_right]
+  · rw [ite_eq_left ⟨rfl, rfl⟩]
+  · intro y' _ hy'; rw [ite_eq_right fun h => hy' h.2, kr_zero_right]
   · intro h; exact absurd (Finset.mem_univ z) h
   · intro y _ hy
-    exact Finset.sum_eq_zero fun y' _ => by rw [if_neg fun h => hy h.1, kr_zero_right]
+    exact Finset.sum_eq_zero fun y' _ => by rw [ite_eq_right fun h => hy h.1, kr_zero_right]
   · intro h; exact absurd (Finset.mem_univ z) h
 
 theorem ctrlE_mul_kr_ancUnit (e : Fin (d * E) ≃ Fin D) (S : SlotData E c a K)
@@ -488,7 +488,7 @@ theorem trace_nfChain (e : Fin (d * E) ≃ Fin D) (S : SlotData E c a K) (O : QC
       (kr e σ (ancUnit t t))).trace = (X * (scChain O q₀ head).branch b σ).trace
     rw [scChain_backMul_branch, h0, liftsQ_scChain e O O' hO q₀ head b σ (ancUnit t t)]
     simp only [OneMemClass.coe_one, one_mul, conjTranspose_one, mul_one]
-    rw [kr_mul, one_mul, trace_kr, trace_ancUnit, if_pos rfl, mul_one]
+    rw [kr_mul, one_mul, trace_kr, trace_ancUnit, ite_eq_left rfl, mul_one]
   | k + 1, j₀, q₀, head, tail, R, Vs, Ws, hk, hV, hlast, hW, t, ht, X, σ, b => by
     rw [mrChainSC_succ_branch, mrChainSC_succ_branch]
     simp_rw [Finset.mul_sum, trace_sum]
@@ -642,7 +642,7 @@ def nfSlots : SlotData (nfX c a k * ancDim M n c) c a k where
     simp only [Equiv.symm_apply_apply] at ht
     obtain ⟨hr, han, hsl⟩ := ht
     simp only [Equiv.permCongr_apply, Equiv.symm_apply_apply, Equiv.prodCongr_apply,
-      Prod.map, Equiv.coe_refl, id, Equiv.coe_addRight, swapR, dif_pos hj,
+      Prod.map, Equiv.coe_refl, id, Equiv.coe_addRight, swapR, dite_eq_left hj,
       Function.Involutive.coe_toPerm, swapFun]
     refine ⟨(congrArg Prod.fst (hsl ⟨j, hj⟩ le_rfl)), (congrArg Prod.snd (hsl ⟨j, hj⟩ le_rfl)),
       fun i hi => ?_⟩
@@ -910,7 +910,7 @@ theorem nfMR_init_supported (e : Fin (m * n * W * E) ≃ Fin (m * n * W')) (S : 
   show kr e 1 (indE p) * kr e A.init.val (ancProj t₀) * kr e 1 (indE p) =
     kr e A.init.val (ancProj t₀)
   rw [kr_mul, kr_mul, Matrix.one_mul, Matrix.mul_one, ← ancUnit_self, indE_mul_ancUnit,
-    if_pos hp, ancUnit_mul_indE, if_pos hp]
+    ite_eq_left hp, ancUnit_mul_indE, ite_eq_left hp]
 
 end CleanSeg
 

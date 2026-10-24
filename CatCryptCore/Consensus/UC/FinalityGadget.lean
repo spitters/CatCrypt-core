@@ -543,7 +543,7 @@ theorem mem_finList {c : Cfg Party Blk} {S : Finset (Vote Party Blk)} {b : Blk} 
   · rw [List.mem_reverse, List.mem_range]
     exact epoch_lt_maxEp hW h
   · have hex : ∃ b, Finalized c.T c.w S ⟨b, e⟩ := ⟨b, h⟩
-    rw [finAt, dif_pos hex, huniq _ hex.choose_spec]
+    rw [finAt, dite_eq_left hex, huniq _ hex.choose_spec]
 
 /-- If finalized blocks are ordered by ancestry as by epoch, the final list is a chain: every
 block is an ancestor of the blocks before it. -/

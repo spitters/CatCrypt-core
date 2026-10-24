@@ -111,7 +111,7 @@ noncomputable def scale (d : SDistr α) : SDistr α :=
      rw [SDistr.tsum_option_eq_add]
      by_cases h : SDistr.mass d = 0
      · simp [h, apply_some_eq_zero_of_mass_eq_zero h]
-     · simp only [if_neg h, zero_add, div_eq_mul_inv, ENNReal.tsum_mul_right,
+     · simp only [ite_eq_right h, zero_add, div_eq_mul_inv, ENNReal.tsum_mul_right,
          ← mass_eq_tsum d]
        exact ENNReal.mul_inv_cancel h (mass_ne_top d))⟩
 
@@ -121,7 +121,7 @@ theorem scale_apply_some (d : SDistr α) (a : α) :
 
 /-- A rescaled sub-distribution of nonzero mass never fails. -/
 theorem scale_apply_none {d : SDistr α} (h : SDistr.mass d ≠ 0) : scale d none = 0 :=
-  if_neg h
+  ite_eq_right h
 
 /-- Rescaling a sub-distribution of nonzero mass gives mass one. -/
 theorem mass_scale {d : SDistr α} (h : SDistr.mass d ≠ 0) : SDistr.mass (scale d) = 1 := by
@@ -190,13 +190,13 @@ theorem condition_eq_pure (d : SDistr α) (P : α → Bool) (a : α)
     · exact absurd (hunique b hPb) hb
   have hden : (∑' b, if P b then d (some b) else 0) = d (some a) := by
     refine (tsum_eq_single a fun b hb => by simp [hfalse b hb]).trans ?_
-    rw [if_pos ha]
+    rw [ite_eq_left ha]
   refine SDistr.eq_of_some_eq fun b => ?_
   rw [condition_apply_some, hden, SDistr.pure_apply_some]
   by_cases hb : b = a
   · subst hb
-    rw [if_pos ha, if_pos rfl, ENNReal.div_self hd (PMF.apply_ne_top d _)]
-  · rw [if_neg (by simp [hfalse b hb]), if_neg (Ne.symm hb), ENNReal.zero_div]
+    rw [ite_eq_left ha, ite_eq_left rfl, ENNReal.div_self hd (PMF.apply_ne_top d _)]
+  · rw [ite_eq_right (by simp [hfalse b hb]), ite_eq_right (Ne.symm hb), ENNReal.zero_div]
 
 /-! ## Sampling from a conditional distribution -/
 

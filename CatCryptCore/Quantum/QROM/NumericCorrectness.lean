@@ -288,9 +288,9 @@ theorem absDiff_sum_ite_triangle_le (p : ι → Prop) [DecidablePred p]
     rw [hsplit RX X, hsplit RY Y, hX, hY, ← hsplit, ← hsplit]
     refine (houter _ _).trans (Finset.sum_le_sum fun i _ => ?_)
     by_cases hp : p i
-    · simp only [if_pos hp]
+    · simp only [ite_eq_left hp]
       exact mul_le_mul_right (hSH i hp) _
-    · simp only [if_neg hp]
+    · simp only [ite_eq_right hp]
       exact mul_le_mul_right (hXY i hp) _
   refine (absDiff_triangle _ (∑ i, w i * (if p i then RX i else X i)) _).trans ?_
   refine (add_le_add le_rfl (absDiff_triangle _ (∑ i, w i * (if p i then RY i else Y i))
@@ -550,9 +550,9 @@ theorem absDiff_prWinKEM'_prWinKEMHq_triangle_coinGood (A : KEMQAdv m₁ m₂ n 
     (restDelta P hpk eG eKR) ?_ ?_ ?_ ?_
   · refine Finset.sum_congr rfl fun r _ => ?_
     by_cases hg : CoinGood P r.1
-    · simp only [if_pos hg]
+    · simp only [ite_eq_left hg]
       rw [resampleAvg_winReal_eq_winSimJ P hpk eG eJ eKR eC eKa A b r hg]
-    · simp only [if_neg hg]
+    · simp only [ite_eq_right hg]
   · have h := sum_restWeight_mul_resampleAvg_winHJ_eq_winHq P hpk eG eJ eKR eC eKa A b
       (fun ks => if CoinGood P ks then 1 else 0)
     simp only [ite_mul, one_mul, zero_mul] at h
@@ -872,11 +872,11 @@ theorem absDiff_prWinKEM'_prWinKEMHq_le_of_lam (A : KEMQAdv m₁ m₂ n w q k c 
       by_cases hk : P.keygen r.1 = 0
       · simp [kemRestWeight, hk]
       · by_cases hg : CoinGood P r.1
-        · rw [if_pos hg]
+        · rw [ite_eq_left hg]
           gcongr
           exact absDiff_winReal_resample_le P hpk eG eJ eKR eC eKa A b r hg (lam r.1)
             (fun x _ => hlam _ _ hk x) w₀ hw Ans hseg hrounds hinit
-        · rw [if_neg hg, mul_zero]
+        · rw [ite_eq_right hg, mul_zero]
           exact zero_le
   have hM : ∑ r : KEMRest PK SK Z M K m₂ n, kemRestWeight P r *
       (if CoinGood P r.1 then restDelta P hpk eG eKR r else 1) ≤
@@ -886,9 +886,9 @@ theorem absDiff_prWinKEM'_prWinKEMHq_le_of_lam (A : KEMQAdv m₁ m₂ n w q k c 
       · simp [kemRestWeight, hk]
       · gcongr
         by_cases hg : CoinGood P r.1
-        · rw [if_pos hg, restDelta, ← div_eq_mul_inv]
+        · rw [ite_eq_left hg, restDelta, ← div_eq_mul_inv]
           exact hlam _ _ hk _
-        · rw [if_neg hg]
+        · rw [ite_eq_right hg]
           exact one_le_of_not_coinGood P hpk eG eKR hg (lam r.1) (hlam _ _ hk)
   have hR : ∑ r : KEMRest PK SK Z M K m₂ n, kemRestWeight P r *
       (if CoinGood P r.1 then
@@ -903,11 +903,11 @@ theorem absDiff_prWinKEM'_prWinKEMHq_le_of_lam (A : KEMQAdv m₁ m₂ n w q k c 
       by_cases hk : P.keygen r.1 = 0
       · simp [kemRestWeight, hk]
       · by_cases hg : CoinGood P r.1
-        · rw [if_pos hg]
+        · rw [ite_eq_left hg]
           gcongr
           exact absDiff_resample_winHq_le P hpk eG eJ eKR eC eKa A b r hg (lam r.1)
             (fun x _ => hlam _ _ hk x)
-        · rw [if_neg hg, mul_zero]
+        · rw [ite_eq_right hg, mul_zero]
           exact zero_le
   refine (add_le_add (add_le_add hL hM) hR).trans ?_
   rw [hΛ]

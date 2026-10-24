@@ -124,7 +124,7 @@ def witAttempt (x : G.Stmt) (w : G.Wit) (m : G.Msg) (r : G.Rand) : G.Attempt :=
 /-- The real signer with its programmed entries programmed: uniform randomness,
 independent of the values. -/
 noncomputable def witSampler : G.Sampler :=
-  fun xw m _ => (PMF.uniformOfFintype G.Rand).map (G.witAttempt xw.1 xw.2 m)
+  fun xw m _ => (PMF.uniformFintype G.Rand).map (G.witAttempt xw.1 xw.2 m)
 
 end Protocol
 
@@ -228,7 +228,7 @@ def attSignOut (t : G.Tables) (b : Bool) (m : G.Msg) (e : Fin G.μ → G.Ch)
 `s`: uniform values `e`, then an attempt from `D xw m e`. -/
 noncomputable def attSign (D : G.Sampler) (xw : G.Stmt × G.Wit) (s : G.Tables × Bool)
     (m : G.Msg) : PMF (G.Answer × (G.Tables × Bool)) :=
-  (PMF.uniformOfFintype (Fin G.μ → G.Ch)).bind fun e => (D xw m e).map (attSignOut s.1 s.2 m e)
+  (PMF.uniformFintype (Fin G.μ → G.Ch)).bind fun e => (D xw m e).map (attSignOut s.1 s.2 m e)
 
 /-- The oracle of the game at the sampler `D` for the pair `xw`: the hash queries of
 the real game and the signing oracle `attSign D xw`. -/
@@ -309,7 +309,7 @@ real attempt against `look` at the point `k`, over uniform values and uniform
 randomness, is at most `Γ`. -/
 def ProgBoundAt (x : G.Stmt) (w : G.Wit) (Γ : ℝ≥0∞) : Prop :=
   ∀ (m : G.Msg) (look : G.Key → Option G.Ch) (k : G.Key),
-    ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e * ∑' r, PMF.uniformOfFintype G.Rand r *
+    ∑' e, PMF.uniformFintype (Fin G.μ → G.Ch) e * ∑' r, PMF.uniformFintype G.Rand r *
       ∑ i, (if G.ev i = false ∧ G.key x w m r (G.vals look x w m r e) i = k then 1 else 0) ≤ Γ
 
 variable {G}
@@ -322,8 +322,8 @@ theorem KeyBoundAt.progBoundAt {x : G.Stmt} {w : G.Wit} {Γ : ℝ≥0∞} (h : G
   refine ENNReal.tsum_le_tsum fun e => mul_le_mul_right
     (ENNReal.tsum_le_tsum fun r => mul_le_mul_right (Finset.sum_le_sum fun i _ => ?_) _) _
   by_cases hi : G.ev i = false ∧ G.key x w m r (G.vals look x w m r e) i = k
-  · rw [if_pos hi, if_pos (by simp [Protocol.flagging, hi.1]), hi.2, PMF.pure_apply, if_pos rfl]
-  · rw [if_neg hi]
+  · rw [ite_eq_left hi, ite_eq_left (by simp [Protocol.flagging, hi.1]), hi.2, PMF.pure_apply, ite_eq_left rfl]
+  · rw [ite_eq_right hi]
     exact zero_le
 
 end Protocol
@@ -412,7 +412,7 @@ def progColl (x : G.Stmt) (w : G.Wit) (t : G.Tables) (m : G.Msg) (e : Fin G.μ �
 with probability at most `|t|·Γ`. -/
 theorem tsum_progColl_le (x : G.Stmt) (w : G.Wit) {Γ : ℝ≥0∞} (hP : G.ProgBoundAt x w Γ)
     (t : G.Tables) (m : G.Msg) :
-    ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e * ∑' r, PMF.uniformOfFintype G.Rand r *
+    ∑' e, PMF.uniformFintype (Fin G.μ → G.Ch) e * ∑' r, PMF.uniformFintype G.Rand r *
       (if progColl x w t m e r = true then 1 else 0) ≤ t.size * Γ := by
   set N := t.keys.length
   -- the programmed entries at the `j`-th defined point
@@ -431,19 +431,19 @@ theorem tsum_progColl_le (x : G.Stmt) (w : G.Wit) {Γ : ℝ≥0∞} (hP : G.Prog
       refine le_trans ?_ (Finset.single_le_sum (f := fun i => (if G.ev i = false ∧
         some (G.key x w m r (G.vals t.lookupAll x w m r e) i) = t.keys[j]? then (1 : ℝ≥0∞)
         else 0)) (fun _ _ => zero_le) (Finset.mem_univ i))
-      rw [if_pos ⟨hi.1, hjk.symm⟩]
+      rw [ite_eq_left ⟨hi.1, hjk.symm⟩]
     · exact zero_le
-  have h2 : ∀ j, ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e *
-      ∑' r, PMF.uniformOfFintype G.Rand r * F j e r ≤ Γ := fun j => by
+  have h2 : ∀ j, ∑' e, PMF.uniformFintype (Fin G.μ → G.Ch) e *
+      ∑' r, PMF.uniformFintype G.Rand r * F j e r ≤ Γ := fun j => by
     cases hj : t.keys[j]? with
     | none => simp [F, hj]
     | some k => simpa [F, hj] using hP m t.lookupAll k
-  calc _ ≤ ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e * ∑' r,
-        PMF.uniformOfFintype G.Rand r * ∑ j ∈ Finset.range N, F j e r :=
+  calc _ ≤ ∑' e, PMF.uniformFintype (Fin G.μ → G.Ch) e * ∑' r,
+        PMF.uniformFintype G.Rand r * ∑ j ∈ Finset.range N, F j e r :=
         ENNReal.tsum_le_tsum fun e => mul_le_mul_right
           (ENNReal.tsum_le_tsum fun r => mul_le_mul_right (h1 e r) _) _
-    _ = ∑ j ∈ Finset.range N, ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e *
-          ∑' r, PMF.uniformOfFintype G.Rand r * F j e r := tsum_mul_tsum_mul_finsetSum _ _ _ _
+    _ = ∑ j ∈ Finset.range N, ∑' e, PMF.uniformFintype (Fin G.μ → G.Ch) e *
+          ∑' r, PMF.uniformFintype G.Rand r * F j e r := tsum_mul_tsum_mul_finsetSum _ _ _ _
     _ ≤ ∑ _j ∈ Finset.range N, Γ := Finset.sum_le_sum fun j _ => h2 j
     _ = t.size * Γ := by
         rw [Finset.sum_const, Finset.card_range, nsmul_eq_mul,
@@ -468,22 +468,22 @@ theorem realSign_le_witSign (xw : G.Stmt × G.Wit) {Γ : ℝ≥0∞}
       Y' (attSignOut t b m e (G.witAttempt xw.1 xw.2 m r)) + C +
         (if progColl xw.1 xw.2 t m e r = true then 1 else 0) := fun e r => by
     by_cases hc : progColl xw.1 xw.2 t m e r = true
-    · rw [if_pos hc]
+    · rw [ite_eq_left hc]
       exact (hY1 _).trans le_add_self
-    · rw [if_neg hc, add_zero, ← realSignOut_eq_attSignOut xw.1 xw.2 t b m e r fun i hi => ?_]
+    · rw [ite_eq_right hc, add_zero, ← realSignOut_eq_attSignOut xw.1 xw.2 t b m e r fun i hi => ?_]
       · exact hY e r
       · simp only [progColl, List.any_eq_true, List.mem_finRange, true_and, Bool.and_eq_true,
           Bool.not_eq_eq_eq_not, Bool.not_true, not_exists, not_and] at hc
         simpa using hc i hi
-  calc _ ≤ ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e * ∑' r,
-        PMF.uniformOfFintype G.Rand r * (Y' (attSignOut t b m e (G.witAttempt xw.1 xw.2 m r)) +
+  calc _ ≤ ∑' e, PMF.uniformFintype (Fin G.μ → G.Ch) e * ∑' r,
+        PMF.uniformFintype G.Rand r * (Y' (attSignOut t b m e (G.witAttempt xw.1 xw.2 m r)) +
           C + (if progColl xw.1 xw.2 t m e r = true then 1 else 0)) :=
         ENNReal.tsum_le_tsum fun e => mul_le_mul_right
           (ENNReal.tsum_le_tsum fun r => mul_le_mul_right (hpt e r) _) _
-    _ = ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e * ∑' r,
-          PMF.uniformOfFintype G.Rand r * Y' (attSignOut t b m e (G.witAttempt xw.1 xw.2 m r)) +
-        C + ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e * ∑' r,
-          PMF.uniformOfFintype G.Rand r * (if progColl xw.1 xw.2 t m e r = true then 1 else 0) := by
+    _ = ∑' e, PMF.uniformFintype (Fin G.μ → G.Ch) e * ∑' r,
+          PMF.uniformFintype G.Rand r * Y' (attSignOut t b m e (G.witAttempt xw.1 xw.2 m r)) +
+        C + ∑' e, PMF.uniformFintype (Fin G.μ → G.Ch) e * ∑' r,
+          PMF.uniformFintype G.Rand r * (if progColl xw.1 xw.2 t m e r = true then 1 else 0) := by
         simp only [mul_add, ENNReal.tsum_add, ENNReal.tsum_mul_right, PMF.tsum_coe, one_mul]
     _ ≤ _ := by
         rw [add_assoc]
@@ -674,11 +674,11 @@ theorem isQueryBound_hybRunOf (sgn : G.SignStep) (D D' : G.Sampler) (k : ℕ)
     | inr m =>
       by_cases hj : j = k
       · subst hj
-        simp only [hybRunOf, if_true, le_refl]
+        simp only [hybRunOf, ite_true, le_refl]
         intro o
         have := ih o.1 (j + 1) o.2
         simpa using this
-      · simp only [hybRunOf, hj, if_false]
+      · simp only [hybRunOf, hj, ite_false]
         intro o
         refine (ih o.1 (j + 1) o.2).mono ?_
         split_ifs <;> omega
@@ -750,10 +750,10 @@ theorem run_hybRunOf (hsgn : sgn.RecordsSigned) (D D' C : G.Sampler) (k : ℕ)
       rw [hs]
       by_cases hjk : j = k
       · subst hjk
-        simp only [hybRunOf, if_true, OracleAdv.run_query, chalOracleOf, PMF.bind_map,
-          lt_irrefl, if_false] at hc ⊢
+        simp only [hybRunOf, ite_true, OracleAdv.run_query, chalOracleOf, PMF.bind_map,
+          lt_irrefl, ite_false] at hc ⊢
         exact PMF.bind_congr_support _ _ _ hc
-      · simp only [hybRunOf, hjk, if_false, OracleAdv.run_rand] at hc ⊢
+      · simp only [hybRunOf, hjk, ite_false, OracleAdv.run_rand] at hc ⊢
         exact PMF.bind_congr_support _ _ _ hc
 
 omit sgn in
@@ -799,10 +799,10 @@ theorem chalGameOf_hybDistByOf_right (hsgn : sgn.RecordsSigned)
   congr 1
   funext n
   by_cases h1 : n < k
-  · rw [if_pos h1, if_pos (by omega)]
+  · rw [ite_eq_left h1, ite_eq_left (by omega)]
   · by_cases h2 : n = k
-    · rw [if_neg h1, if_pos h2, if_pos (by omega)]
-    · rw [if_neg h1, if_neg h2, if_neg (by omega)]
+    · rw [ite_eq_right h1, ite_eq_left h2, ite_eq_left (by omega)]
+    · rw [ite_eq_right h1, ite_eq_right h2, ite_eq_right (by omega)]
 
 /-- For a signing step that records its messages, with at most `q` signing queries left
 from a state with `L` signed messages and `L + q ≤ n`, the oracle whose signing query
@@ -832,7 +832,7 @@ theorem run_hybStepOf_of_le (hsgn : sgn.RecordsSigned) (D D' : G.Sampler)
         have hst : toOracle (hybStepOf sgn (fun j => if j < n then D' else D) xw) s (.inr m) =
             toOracle (attStepOf sgn D' xw) s (.inr m) := by
           simp only [toOracle, hybStepOf, attStepOf, Step.toPMF]
-          rw [if_pos (by omega)]
+          rw [ite_eq_left (by omega)]
         simp only [OracleAdv.run_query]
         rw [hst]
         refine PMF.bind_congr_support _ _ _ fun o ho => ih o.1 h q (hA o.1) o.2 ?_
@@ -854,7 +854,7 @@ theorem Protocol.advantage_attGameByOf_hybrid (hsgn : sgn.RecordsSigned)
         (chalGameOf sgn D' (hybDistByOf sgn P D D' k A)) := by
   have h0 : hybGameByOf sgn P D D' 0 A = attGameByOf sgn P D A := by
     unfold hybGameByOf attGameByOf
-    simp only [Nat.not_lt_zero, if_false]
+    simp only [Nat.not_lt_zero, ite_false]
     simp only [hybStepOf_const]
   have hq : hybGameByOf sgn P D D' qS A = attGameByOf sgn P D' A := by
     unfold hybGameByOf attGameByOf gameDistBy
@@ -1077,9 +1077,9 @@ against `look`, restricted to the attempts whose hidden points are undefined in
 against `look` plus `δ`. -/
 def AttHVZKAt (D : G.Sampler) (xw : G.Stmt × G.Wit) (δ : ℝ≥0∞) : Prop :=
   ∀ (m : G.Msg) (look : G.Key → Option G.Ch) (g : G.Trace → ℝ≥0∞), (∀ y, g y ≤ 1) →
-    ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e * ∑' a, D xw m e a *
+    ∑' e, PMF.uniformFintype (Fin G.μ → G.Ch) e * ∑' a, D xw m e a *
       (if a.hidFresh look (a.vals look e) then g (a.trace (a.vals look e)) else 0) ≤
-    ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e * ∑' s, PMF.uniformOfFintype G.SimRand s *
+    ∑' e, PMF.uniformFintype (Fin G.μ → G.Ch) e * ∑' s, PMF.uniformFintype G.SimRand s *
       g (G.simTrace look xw.1 m e s) + δ
 
 /-- **Hidden-key bound of a sampler at one pair.** For the pair `xw`, every message,
@@ -1088,7 +1088,7 @@ of hidden entries of an attempt from `D xw m e` against `look` whose point the g
 from `guessView` hits, under uniform values `e`, is at most `Γ`. -/
 def AttKeyBoundAt (D : G.Sampler) (xw : G.Stmt × G.Wit) (Γ : ℝ≥0∞) : Prop :=
   ∀ (m : G.Msg) (look : G.Key → Option G.Ch) (Q : G.Trace → PMF G.Key),
-    ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e * ∑' a, D xw m e a *
+    ∑' e, PMF.uniformFintype (Fin G.μ → G.Ch) e * ∑' a, D xw m e a *
       ∑ i, (if a.pub (a.vals look e) i then 0 else
         Q (a.guessView look e i) (a.key (a.vals look e) i)) ≤ Γ
 
@@ -1144,7 +1144,7 @@ theorem attSignOut_of_fresh
       (if G.ev i then t.lookup else fun _ => none) (a.key (a.vals t.lookup e) i)
     cases hev : G.ev i
     · rfl
-    · simp only [if_true]
+    · simp only [ite_true]
       cases hp : a.pub (a.vals t.lookup e) i
       · rw [h1 i hp, Protocol.lookup_eq_none_of_lookupAll (h1 i hp)]
       · exact Protocol.lookupAll_eq_lookup (h2 i hp hev)
@@ -1164,7 +1164,7 @@ theorem attSignOut_of_fresh
     · simp [h1 i hp]
     · cases hev : G.ev i
       · simp
-      · simp only [if_true, Bool.true_and, Bool.and_eq_true, not_and]
+      · simp only [ite_true, Bool.true_and, Bool.and_eq_true, not_and]
         intro hn
         simp [h2 i hp hev hn]
   simp only [attSignOut, hv]
@@ -1185,12 +1185,12 @@ theorem fresh_of_attSignOut (h : (attSignOut t b m e a).2.2 = false) :
   set v := a.vals t.lookupAll e with hvd
   have c1 : ∀ i, a.pub v i = false → t.lookupAll (a.key v i) = none := fun i hp => by
     have := h i
-    rw [if_neg (by simp [hp])] at this
+    rw [ite_eq_right (by simp [hp])] at this
     simpa using this
   have c2 : ∀ i, a.pub v i = true → G.ev i = true → (t.lookup (a.key v i)).isNone →
       lookupIn t.rej (a.key v i) = none := fun i hp hev hn => by
     have := h i
-    rw [if_pos hp] at this
+    rw [ite_eq_left hp] at this
     simpa [hev, hn] using this
   have hr : a.vals t.lookup e = v := by
     refine effVec_congr _ _ a.key_causal e _ fun i => ?_
@@ -1198,7 +1198,7 @@ theorem fresh_of_attSignOut (h : (attSignOut t b m e a).2.2 = false) :
       (if G.ev i then t.lookupAll else fun _ => none) (a.key v i)
     cases hev : G.ev i
     · rfl
-    · simp only [if_true]
+    · simp only [ite_true]
       cases hp : a.pub v i
       · rw [c1 i hp, Protocol.lookup_eq_none_of_lookupAll (c1 i hp)]
       · exact (Protocol.lookupAll_eq_lookup (c2 i hp hev)).symm
@@ -1281,9 +1281,9 @@ theorem offFlag_attSignOut_le (F : G.Answer × (G.Tables × Bool) → ℝ≥0∞
     cases hp : a.pub (a.vals t.lookup e) i
     · simp [Protocol.lookup_eq_none_of_lookupAll (h1 i hp)]
     · simp
-  rw [if_pos hfr, attSignOut_of_fresh t false m e a h1 h2]
+  rw [ite_eq_left hfr, attSignOut_of_fresh t false m e a h1 h2]
   unfold offFlag
-  simp only [Bool.false_eq_true, if_false]
+  simp only [Bool.false_eq_true, ite_false]
   rw [show ((traceOut t false m (a.trace (a.vals t.lookup e))).1,
       ({ (traceOut t false m (a.trace (a.vals t.lookup e))).2.1 with
           rej := t.rej ++ a.hidEntries (a.vals t.lookup e) }, false)) =
@@ -1306,7 +1306,7 @@ theorem attStep_le_simStep (D : G.Sampler) {δ : ℝ≥0∞} (xw : G.Stmt × G.W
   obtain ⟨t, b⟩ := s
   cases d with
   | inl k =>
-    simp only [Sum.isRight_inl, Bool.false_eq_true, if_false, add_zero]
+    simp only [Sum.isRight_inl, Bool.false_eq_true, ite_false, add_zero]
     simp only [toOracle, attStep, simStep, realHashStep, hashStep]
     cases t.lookup k with
     | some e => exact ENNReal.tsum_le_tsum fun o => mul_le_mul_right (offFlag_le F o) _
@@ -1319,16 +1319,16 @@ theorem attStep_le_simStep (D : G.Sampler) {δ : ℝ≥0∞} (xw : G.Stmt × G.W
       | none => exact ENNReal.tsum_le_tsum fun o => mul_le_mul_right (offFlag_le F o) _
   | inr m =>
     simp only [toOracle, attStep, simStep, Step.toPMF, attSign, sampleVec, tsum_bind_mul,
-      tsum_map_mul', Sum.isRight_inr, if_true]
+      tsum_map_mul', Sum.isRight_inr, ite_true]
     cases b with
     | true =>
       refine le_trans (le_of_eq (ENNReal.tsum_eq_zero.mpr fun e => ?_)) zero_le
       exact mul_eq_zero_of_right _ (ENNReal.tsum_eq_zero.mpr fun a =>
-        mul_eq_zero_of_right _ (if_pos rfl))
+        mul_eq_zero_of_right _ (ite_eq_left rfl))
     | false =>
-      calc ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e * ∑' a, D xw m e a *
+      calc ∑' e, PMF.uniformFintype (Fin G.μ → G.Ch) e * ∑' a, D xw m e a *
             offFlag F (attSignOut t false m e a)
-          ≤ ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e * ∑' a, D xw m e a *
+          ≤ ∑' e, PMF.uniformFintype (Fin G.μ → G.Ch) e * ∑' a, D xw m e a *
               (if a.hidFresh t.lookup (a.vals t.lookup e) then
                 F (traceOut t false m (a.trace (a.vals t.lookup e))) else 0) :=
             ENNReal.tsum_le_tsum fun e => mul_le_mul_right (ENNReal.tsum_le_tsum fun a =>
@@ -1599,7 +1599,7 @@ variable {G : Protocol} {α : Type} (D : G.Sampler) (xw : G.Stmt × G.Wit)
 
 theorem attSign_bind {β : Type} (s : G.Tables × Bool) (m : G.Msg)
     (g : G.Answer × (G.Tables × Bool) → PMF β) :
-    (attSign D xw s m).bind g = (PMF.uniformOfFintype (Fin G.μ → G.Ch)).bind fun e =>
+    (attSign D xw s m).bind g = (PMF.uniformFintype (Fin G.μ → G.Ch)).bind fun e =>
       (D xw m e).bind fun a => g (attSignOut s.1 s.2 m e a) := by
   simp only [attSign, PMF.bind_bind, PMF.bind_map, Function.comp_def]
 
@@ -1778,7 +1778,7 @@ at the point `k`, counted on the attempts whose hidden entries are at points
 undefined in `look`, over uniform values and uniform randomness, is at most `Γ c`. -/
 def ProgBoundClsAt (κ : G.Classes) (x : G.Stmt) (w : G.Wit) (Γ : κ.ι → ℝ≥0∞) : Prop :=
   ∀ (c : κ.ι) (m : G.Msg) (look : G.Key → Option G.Ch) (k : G.Key),
-    ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e * ∑' r, PMF.uniformOfFintype G.Rand r *
+    ∑' e, PMF.uniformFintype (Fin G.μ → G.Ch) e * ∑' r, PMF.uniformFintype G.Rand r *
       ∑ i ∈ Finset.univ.filter (fun i => κ.ecls i = c),
         (if G.ev i = false ∧ G.pub x w m r (G.vals look x w m r e) i = true ∧
             G.hidFresh look x w m r (G.vals look x w m r e) = true ∧
@@ -1798,7 +1798,7 @@ values `e`, is at most `Γ c`. -/
 def AttKeyBoundClsAt (κ : G.Classes) (D : G.Sampler) (xw : G.Stmt × G.Wit)
     (Γ : κ.ι → ℝ≥0∞) : Prop :=
   ∀ (c : κ.ι) (m : G.Msg) (look : G.Key → Option G.Ch) (Q : G.Trace → PMF G.Key),
-    ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e * ∑' a, D xw m e a *
+    ∑' e, PMF.uniformFintype (Fin G.μ → G.Ch) e * ∑' a, D xw m e a *
       ∑ i ∈ Finset.univ.filter (fun i => κ.ecls i = c),
         (if a.pub (a.vals look e) i then 0 else
           Q (a.guessView look e i) (a.key (a.vals look e) i)) ≤ Γ c
@@ -1816,9 +1816,9 @@ theorem KeyBoundClsAt.progBoundClsAt {κ : G.Classes} {x : G.Stmt} {w : G.Wit}
   by_cases hi : G.ev i = false ∧ G.pub x w m r (G.vals look x w m r e) i = true ∧
       G.hidFresh look x w m r (G.vals look x w m r e) = true ∧
       G.key x w m r (G.vals look x w m r e) i = k
-  · rw [if_pos hi, if_pos (by simp [Protocol.charged, Protocol.flagging, hi.1, hi.2.2.1]),
-      hi.2.2.2, PMF.pure_apply, if_pos rfl]
-  · rw [if_neg hi]
+  · rw [ite_eq_left hi, ite_eq_left (by simp [Protocol.charged, Protocol.flagging, hi.1, hi.2.2.1]),
+      hi.2.2.2, PMF.pure_apply, ite_eq_left rfl]
+  · rw [ite_eq_right hi]
     exact zero_le
 
 /-- A programmed-key bound is a class-wise programmed-key bound with the same bound
@@ -1884,7 +1884,7 @@ point of the tables `t` with probability at most `Σ_c L_c·Γ c`, with `L_c` th
 points of class `c` in `t`. -/
 theorem tsum_progCollFresh_le (κ : G.Classes) (x : G.Stmt) (w : G.Wit) {Γ : κ.ι → ℝ≥0∞}
     (hP : G.ProgBoundClsAt κ x w Γ) (t : G.Tables) (m : G.Msg) :
-    ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e * ∑' r, PMF.uniformOfFintype G.Rand r *
+    ∑' e, PMF.uniformFintype (Fin G.μ → G.Ch) e * ∑' r, PMF.uniformFintype G.Rand r *
       (if progCollFresh x w t m e r = true then 1 else 0) ≤
         ∑ c, (κ.count t.keys c : ℝ≥0∞) * Γ c := by
   -- the programmed public entries of class `c` at the `j`-th defined point of class `c`
@@ -1924,23 +1924,23 @@ theorem tsum_progCollFresh_le (κ : G.Classes) (x : G.Stmt) (w : G.Wit) {Γ : κ
         some (G.key x w m r v i') = (t.keys.filter fun k => κ.cls k = κ.ecls i)[j]?
           then (1 : ℝ≥0∞) else 0)) (fun _ _ => zero_le)
         (Finset.mem_filter.mpr ⟨Finset.mem_univ i, rfl⟩))
-      rw [if_pos ⟨hi.1, hp, hf, hjk.symm⟩]
+      rw [ite_eq_left ⟨hi.1, hp, hf, hjk.symm⟩]
     · exact zero_le
-  have h2 : ∀ c j, ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e *
-      ∑' r, PMF.uniformOfFintype G.Rand r * F c j e r ≤ Γ c := fun c j => by
+  have h2 : ∀ c j, ∑' e, PMF.uniformFintype (Fin G.μ → G.Ch) e *
+      ∑' r, PMF.uniformFintype G.Rand r * F c j e r ≤ Γ c := fun c j => by
     cases hj : (t.keys.filter fun k => κ.cls k = c)[j]? with
-    | none => simp only [F, hj, reduceCtorEq, and_false, if_false, Finset.sum_const_zero,
+    | none => simp only [F, hj, reduceCtorEq, and_false, ite_false, Finset.sum_const_zero,
         mul_zero, tsum_zero, zero_le]
     | some k =>
       refine le_of_eq_of_le ?_ (hP c m t.lookupAll k)
       simp only [F, hj, Option.some.injEq]
-  calc _ ≤ ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e * ∑' r,
-        PMF.uniformOfFintype G.Rand r * ∑ c, ∑ j ∈ Finset.range (κ.count t.keys c), F c j e r :=
+  calc _ ≤ ∑' e, PMF.uniformFintype (Fin G.μ → G.Ch) e * ∑' r,
+        PMF.uniformFintype G.Rand r * ∑ c, ∑ j ∈ Finset.range (κ.count t.keys c), F c j e r :=
         ENNReal.tsum_le_tsum fun e => mul_le_mul_right
           (ENNReal.tsum_le_tsum fun r => mul_le_mul_right (h1 e r) _) _
     _ = ∑ c, ∑ j ∈ Finset.range (κ.count t.keys c), ∑' e,
-          PMF.uniformOfFintype (Fin G.μ → G.Ch) e *
-            ∑' r, PMF.uniformOfFintype G.Rand r * F c j e r := by
+          PMF.uniformFintype (Fin G.μ → G.Ch) e *
+            ∑' r, PMF.uniformFintype G.Rand r * F c j e r := by
         rw [tsum_mul_tsum_mul_finsetSum _ _ _
           (fun c e r => ∑ j ∈ Finset.range (κ.count t.keys c), F c j e r)]
         exact Finset.sum_congr rfl fun c _ => tsum_mul_tsum_mul_finsetSum _ _ _ _
@@ -1997,9 +1997,9 @@ theorem realSign_le_witSign_cls (κ : G.Classes) (xw : G.Stmt × G.Wit) {Γ : κ
       Y' (attSignOut t b m e (G.witAttempt xw.1 xw.2 m r)) + C +
         (if progCollFresh xw.1 xw.2 t m e r = true then 1 else 0) := fun e r => by
     by_cases hc : progCollFresh xw.1 xw.2 t m e r = true
-    · rw [if_pos hc]
+    · rw [ite_eq_left hc]
       exact (hY1 _).trans le_add_self
-    rw [if_neg hc, add_zero]
+    rw [ite_eq_right hc, add_zero]
     by_cases hp : progColl xw.1 xw.2 t m e r = true
     · have hf : G.hidFresh t.lookupAll xw.1 xw.2 m r (G.vals t.lookupAll xw.1 xw.2 m r e) =
           false := by
@@ -2011,15 +2011,15 @@ theorem realSign_le_witSign_cls (κ : G.Classes) (xw : G.Stmt × G.Wit) {Γ : κ
       · simp only [progColl, List.any_eq_true, List.mem_finRange, true_and, Bool.and_eq_true,
           Bool.not_eq_eq_eq_not, Bool.not_true, not_exists, not_and] at hp
         simpa using hp i hi
-  calc _ ≤ ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e * ∑' r,
-        PMF.uniformOfFintype G.Rand r * (Y' (attSignOut t b m e (G.witAttempt xw.1 xw.2 m r)) +
+  calc _ ≤ ∑' e, PMF.uniformFintype (Fin G.μ → G.Ch) e * ∑' r,
+        PMF.uniformFintype G.Rand r * (Y' (attSignOut t b m e (G.witAttempt xw.1 xw.2 m r)) +
           C + (if progCollFresh xw.1 xw.2 t m e r = true then 1 else 0)) :=
         ENNReal.tsum_le_tsum fun e => mul_le_mul_right
           (ENNReal.tsum_le_tsum fun r => mul_le_mul_right (hpt e r) _) _
-    _ = ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e * ∑' r,
-          PMF.uniformOfFintype G.Rand r * Y' (attSignOut t b m e (G.witAttempt xw.1 xw.2 m r)) +
-        C + ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e * ∑' r,
-          PMF.uniformOfFintype G.Rand r *
+    _ = ∑' e, PMF.uniformFintype (Fin G.μ → G.Ch) e * ∑' r,
+          PMF.uniformFintype G.Rand r * Y' (attSignOut t b m e (G.witAttempt xw.1 xw.2 m r)) +
+        C + ∑' e, PMF.uniformFintype (Fin G.μ → G.Ch) e * ∑' r,
+          PMF.uniformFintype G.Rand r *
             (if progCollFresh xw.1 xw.2 t m e r = true then 1 else 0) := by
         simp only [mul_add, ENNReal.tsum_add, ENNReal.tsum_mul_right, PMF.tsum_coe, one_mul]
     _ ≤ _ := by
@@ -2305,7 +2305,7 @@ theorem tsum_att_guess_le_cls (κ : G.Classes) {Γ : κ.ι → ℝ≥0∞} (hκ 
     (R : G.Trace → PMF (α × (G.Tables × Bool))) (N : ℕ)
     (hN : ∀ e, ∀ a ∈ (D xw m e).support, ∀ i, ∀ y ∈ (R (a.guessView look e i)).support,
       κ.count y.2.1.keys c ≤ N) :
-    ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e * ∑' a, D xw m e a *
+    ∑' e, PMF.uniformFintype (Fin G.μ → G.Ch) e * ∑' a, D xw m e a *
       ∑ i ∈ Finset.univ.filter (fun i => κ.ecls i = c), (if a.pub (a.vals look e) i then 0 else
         (R (a.guessView look e i)).toOuterMeasure
           {y | a.key (a.vals look e) i ∈ y.2.1.keys}) ≤ N * Γ c := by
@@ -2330,7 +2330,7 @@ theorem tsum_att_guess_le_cls (κ : G.Classes) {Γ : κ.ι → ℝ≥0∞} (hκ 
           (a.key (a.vals look e) i) (hN e a ha i))
       refine List.mem_filter.mpr ⟨hy, ?_⟩
       simpa [hκ m e a ha] using (Finset.mem_filter.mp hi).2
-  calc _ ≤ ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e * ∑' a, D xw m e a *
+  calc _ ≤ ∑' e, PMF.uniformFintype (Fin G.μ → G.Ch) e * ∑' a, D xw m e a *
         ∑ j ∈ Finset.range N, ∑ i ∈ Finset.univ.filter (fun i => κ.ecls i = c),
           (if a.pub (a.vals look e) i then 0 else
             Q j (a.guessView look e i) (a.key (a.vals look e) i)) := by
@@ -2341,7 +2341,7 @@ theorem tsum_att_guess_le_cls (κ : G.Classes) {Γ : κ.ι → ℝ≥0∞} (hκ 
         refine mul_le_mul_right ?_ _
         rw [Finset.sum_comm]
         exact Finset.sum_le_sum fun i hi => h1 e a ((PMF.mem_support_iff _ _).mpr ha) i hi
-    _ = ∑ j ∈ Finset.range N, ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e *
+    _ = ∑ j ∈ Finset.range N, ∑' e, PMF.uniformFintype (Fin G.μ → G.Ch) e *
           ∑' a, D xw m e a * ∑ i ∈ Finset.univ.filter (fun i => κ.ecls i = c),
             (if a.pub (a.vals look e) i then 0 else
               Q j (a.guessView look e i) (a.key (a.vals look e) i)) :=
@@ -2372,8 +2372,8 @@ theorem att_flag_sign_term_le_cls (κ : G.Classes) {Γ : κ.ι → ℝ≥0∞}
         (attContRun D xw k t m (a.guessView t.lookup e i)).toOuterMeasure
           {y | a.key v i ∈ y.2.1.keys}) (fun _ _ => zero_le) (Finset.mem_univ i))
     have hg : a.guessView t.lookup e i = ([], [], none) := by
-      simp only [Protocol.Attempt.guessView, ← hv, hi, Bool.or_true, if_true]
-    simp only [hf, Bool.false_eq_true, if_false, hg]
+      simp only [Protocol.Attempt.guessView, ← hv, hi, Bool.or_true, ite_true]
+    simp only [hf, Bool.false_eq_true, ite_false, hg]
     refine (run_att_keys_eq_one D xw _ _ _ ?_ _ fun y hy => hy).symm
     exact (le_traceOut t false m _).keys_subset (Protocol.lookup_isSome_mem_keys hi)
   simp only [not_exists, not_and, Bool.not_eq_true, Option.isSome_eq_false_iff,
@@ -2418,7 +2418,7 @@ theorem att_flag_sign_term_le_cls (κ : G.Classes) {Γ : κ.ι → ℝ≥0∞}
           have hi' : a.pub v i = false := (Finset.mem_filter.mp hi).2
           have hg : a.guessView t.lookup e i = a.trace v := by
             simp only [Protocol.Attempt.guessView, ← hv, hi', hc i hi', Option.isSome_none,
-              Bool.or_false, Bool.false_eq_true, if_false]
+              Bool.or_false, Bool.false_eq_true, ite_false]
           rw [hi', hg]
           rfl
       _ ≤ _ := Finset.sum_le_sum_of_subset (Finset.filter_subset _ _)
@@ -2443,9 +2443,9 @@ theorem att_flag_hash_step_le_cls (κ : G.Classes) {Γ : κ.ι → ℝ≥0∞}
   | none =>
     have hr : lookupIn t.rej key = none := by rw [ht]; exact lookupIn_nil key
     simp only [hr, Step.toPMF, PMF.bind_map, Function.comp_def, PMF.toOuterMeasure_bind_apply]
-    calc ∑' e, PMF.uniformOfFintype G.Ch e * (OracleAdv.run (toOracle (attStep D xw))
+    calc ∑' e, PMF.uniformFintype G.Ch e * (OracleAdv.run (toOracle (attStep D xw))
           (k (.inl e)) ({ t with hash := t.hash ++ [(key, e)] }, false)).toOuterMeasure _
-        ≤ ∑' e, PMF.uniformOfFintype G.Ch e * flagBoundCls κ Γ n q t := by
+        ≤ ∑' e, PMF.uniformFintype G.Ch e * flagBoundCls κ Γ n q t := by
           refine ENNReal.tsum_le_tsum fun e => mul_le_mul_right ?_ _
           refine (ih _ { t with hash := t.hash ++ [(key, e)] } ht).trans
             (Finset.sum_le_sum fun c _ => mul_le_mul_of_nonneg_right ?_ zero_le)
@@ -2462,7 +2462,7 @@ theorem att_flag_guess_le_cls (κ : G.Classes) {Γ : κ.ι → ℝ≥0∞} (hκ 
     (hΓ : G.AttKeyBoundClsAt κ D xw Γ) (k : G.Answer → OracleAdv G.Query G.Answer α)
     (h q : ℕ) (n : κ.ι → ℕ) (hk : ∀ r, IsQueryBound₂ (k r) h q)
     (hn : ∀ c r, (k r).IsQueryBoundBy (κ.hashCost c) (n c)) (t : G.Tables) (m : G.Msg) :
-    ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e * ∑' a, D xw m e a *
+    ∑' e, PMF.uniformFintype (Fin G.μ → G.Ch) e * ∑' a, D xw m e a *
       ∑ i, (if a.pub (a.vals t.lookup e) i then 0 else
         (attContRun D xw k t m (a.guessView t.lookup e i)).toOuterMeasure
           {y | a.key (a.vals t.lookup e) i ∈ y.2.1.keys}) ≤
@@ -2501,19 +2501,19 @@ theorem att_flag_sign_step_le_cls (κ : G.Classes) {Γ : κ.ι → ℝ≥0∞}
       (OracleAdv.run (toOracle (attStep D xw)) (k (attSignOut t false m e a).1)
         (attSignOut t false m e a).2).toOuterMeasure {y | y.2.2 = true} ≤ B + S e a :=
     fun e a ha => att_flag_sign_term_le_cls D xw κ k n q t ht m e (hκ m e a ha) ih
-  have hsum : ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e *
+  have hsum : ∑' e, PMF.uniformFintype (Fin G.μ → G.Ch) e *
       ∑' a, D xw m e a * S e a ≤ ∑ c, (N c : ℝ≥0∞) * Γ c :=
     att_flag_guess_le_cls D xw κ hκ hΓ k h q n hk hn t m
   rw [OracleAdv.run_query]
   simp only [toOracle, attStep, Step.toPMF, attSign_bind, PMF.toOuterMeasure_bind_apply]
-  calc _ ≤ ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e *
+  calc _ ≤ ∑' e, PMF.uniformFintype (Fin G.μ → G.Ch) e *
         ∑' a, D xw m e a * (B + S e a) :=
         ENNReal.tsum_le_tsum fun e => mul_le_mul_right
           (ENNReal.tsum_le_tsum fun a => by
             by_cases ha : D xw m e a = 0
             · simp [ha]
             · exact mul_le_mul_right (hterm e a ((PMF.mem_support_iff _ _).mpr ha)) _) _
-    _ = B + ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e *
+    _ = B + ∑' e, PMF.uniformFintype (Fin G.μ → G.Ch) e *
           ∑' a, D xw m e a * S e a := by
         simp only [mul_add, ENNReal.tsum_add, ENNReal.tsum_mul_right, PMF.tsum_coe, one_mul]
     _ ≤ B + ∑ c, (N c : ℝ≥0∞) * Γ c := add_le_add_right hsum _

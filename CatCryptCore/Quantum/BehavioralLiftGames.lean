@@ -193,7 +193,7 @@ variable {K : Type} [Fintype K] [Nonempty K]
 /-- The output distribution of the oracle adversary `R` run against `F k` under a uniform
 key `k`. -/
 def prfRealD (F : K → D → Rg) (R : OracleAdv D Rg X) : PMF X :=
-  (PMF.uniformOfFintype K).bind fun k => (OracleAdv.run (keyedOracle F k) R ()).map Prod.fst
+  (PMF.uniformFintype K).bind fun k => (OracleAdv.run (keyedOracle F k) R ()).map Prod.fst
 
 theorem prTrue_realGame_bind (F : K → D → Rg) (R : OracleAdv D Rg X) (g : X → PMF Bool) :
     prTrue (realGame F (R.bind fun a => .rand (g a) .ret)) Heap.empty =

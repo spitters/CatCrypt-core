@@ -581,7 +581,7 @@ theorem trace_kronecker_one_mul_localOp₁ (op : QComp d₁ α)
     Equiv.symm_apply_apply]
   -- Collapse δ sums
   simp only [mul_ite, mul_one, mul_zero, ite_mul, zero_mul,
-    Finset.sum_ite_eq, Finset.mem_univ, if_true,
+    Finset.sum_ite_eq, Finset.mem_univ, ite_true,
     Matrix.mul_apply]
 
 /-- Trace of `(E ⊗ₖ I) * ρ` decomposes into diagonal block traces. -/
@@ -609,7 +609,7 @@ theorem trace_kronecker_one_mul (E : Matrix (Fin d₁) (Fin d₁) ℂ)
   simp only [kronecker_apply, Matrix.one_apply, extractBlock, Matrix.of_apply,
     Equiv.symm_apply_apply,
     mul_ite, mul_one, mul_zero, ite_mul, zero_mul,
-    Finset.sum_ite_eq, Finset.mem_univ, if_true,
+    Finset.sum_ite_eq, Finset.mem_univ, ite_true,
     Matrix.mul_apply]
 
 /-! ## First-Register-Fixed Block Extraction

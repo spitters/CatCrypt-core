@@ -97,8 +97,8 @@ noncomputable def jQ (q : Z × C) : OracleAdv ((M × Hash) ⊕ (Z × C)) ((K × 
 noncomputable def fips203 (P : Scheme PK SK M C R) (hpk : PK → Hash) :
     ROM2Scheme PK (SK × PK × Z) K C (M × Hash) (K × R) (Z × C) K where
   keygen := P.keygen.bind fun ks =>
-    (PMF.uniformOfFintype Z).map fun z => (ks.1, (ks.2, ks.1, z))
-  encaps pk := .rand (PMF.uniformOfFintype M) fun m =>
+    (PMF.uniformFintype Z).map fun z => (ks.1, (ks.2, ks.1, z))
+  encaps pk := .rand (PMF.uniformFintype M) fun m =>
     (gQ (m, hpk pk)).bind fun kr => .ret (kr.1, P.enc pk m kr.2)
   decaps sk c := match P.dec sk.1 c with
     | none => (jQ (sk.2.2, c)).bind fun k => .ret (some k)
@@ -137,7 +137,7 @@ omit [Fintype M] [Nonempty M] [Fintype Z] [Nonempty Z] [Nonempty R] [DecidableEq
 theorem run_encaps_fixed (P : Scheme PK SK M C R) (hpk : PK → Hash) (g : M × Hash → K × R)
     (j : Z × C → K) (pk : PK) :
     OracleAdv.run (fixedRO2 g j) ((fips203 P hpk).encaps pk) () =
-      (PMF.uniformOfFintype M).map fun m =>
+      (PMF.uniformFintype M).map fun m =>
         (((g (m, hpk pk)).1, P.enc pk m (g (m, hpk pk)).2), ()) := by
   simp [fips203, OracleAdv.run_rand, OracleAdv.run_bind, PMF.map, PMF.pure_bind,
     Function.comp_def]
@@ -182,8 +182,8 @@ noncomputable def tKeyed (P : Scheme PK SK M C R) (f : PK → M → R) :
 noncomputable def uKeyed (Q : Scheme PK SK M C Unit) (kdf : PK → M → K) :
     KEM.Games.ROMScheme PK (SK × PK × Z) K C (Z × C) K where
   keygen := Q.keygen.bind fun ks =>
-    (PMF.uniformOfFintype Z).map fun z => (ks.1, (ks.2, ks.1, z))
-  encaps pk := .rand (PMF.uniformOfFintype M) fun m => .ret (kdf pk m, Q.enc pk m ())
+    (PMF.uniformFintype Z).map fun z => (ks.1, (ks.2, ks.1, z))
+  encaps pk := .rand (PMF.uniformFintype M) fun m => .ret (kdf pk m, Q.enc pk m ())
   decaps sk c := match Q.dec sk.1 c with
     | none => .query (sk.2.2, c) fun k => .ret (some k)
     | some m => .ret (some (kdf sk.2.1 m))

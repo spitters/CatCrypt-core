@@ -169,7 +169,7 @@ theorem avg_diag [DecidableEq α] [Nonempty α] :
       (Fintype.card α : ℝ≥0∞)⁻¹ := by
   rw [avg_prod]
   unfold avg
-  simp only [mul_ite, mul_one, mul_zero, Finset.sum_ite_eq, Finset.mem_univ, if_true]
+  simp only [mul_ite, mul_one, mul_zero, Finset.sum_ite_eq, Finset.mem_univ, ite_true]
   exact sum_inv_mul_const _
 
 end Avg
@@ -309,10 +309,10 @@ theorem absDiff_prfReal_prfHyb (hwt : ∑ ω, wt ω = 1) :
         calc _ ≤ avg fun sr : Sd × Sd => if sr.1 = sr.2 then (1 : ℝ≥0∞) else 0 := by
               refine avg_mono fun sr => ?_
               by_cases h : sr.1 = sr.2
-              · rw [if_pos h]
+              · rw [ite_eq_left h]
                 exact absDiff_le_one (avg_le_one fun _ => prfRun_le_one _ _ _ _ _ _ _)
                   (avg_le_one fun _ => prfRun_le_one _ _ _ _ _ _ _)
-              · rw [if_neg h, avg_setRows eD h
+              · rw [ite_eq_right h, avg_setRows eD h
                   (fun a b F => prfRun view D Or ω a b F), absDiff_self]
           _ = _ := avg_diag
     _ = _ := by rw [← Finset.sum_mul, hwt, one_mul]

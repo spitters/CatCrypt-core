@@ -259,7 +259,7 @@ theorem prEvent_pure {δ : Type*} (a : δ) (h : Heap) (bad : Heap → Prop) :
   · intro p hp
     have hz : (SDistr.pure (a, h) : SDistr (δ × Heap)) (some p) = 0 := by
       rw [SDistr.pure_apply_some]
-      exact if_neg (fun heq => hp heq.symm)
+      exact ite_eq_right (fun heq => hp heq.symm)
     simp_all
 
 /-- The bad-event probability of a pure computation from `h₀` is the indicator
@@ -291,8 +291,8 @@ theorem prEvent_bind_eq {β γ : Type*} (d : SDistr (β × Heap))
           (if E p.1 p.2 then d (some a) * (g a) (some p) else 0) := by
         apply tsum_congr; intro p; rw [SDistr_bind_apply_some]
         by_cases hE : E p.1 p.2
-        · simp only [hE, if_true]
-        · simp only [hE, if_false, tsum_zero]
+        · simp only [hE, ite_true]
+        · simp only [hE, ite_false, tsum_zero]
     _ = ∑' a : β × Heap, ∑' p : γ × Heap,
           (if E p.1 p.2 then d (some a) * (g a) (some p) else 0) := ENNReal.tsum_comm
     _ = ∑' a : β × Heap, d (some a) *
@@ -301,8 +301,8 @@ theorem prEvent_bind_eq {β γ : Type*} (d : SDistr (β × Heap))
         rw [← ENNReal.tsum_mul_left]
         apply tsum_congr; intro p
         by_cases hE : E p.1 p.2
-        · simp only [hE, if_true]
-        · simp only [hE, if_false, mul_zero]
+        · simp only [hE, ite_true]
+        · simp only [hE, ite_false, mul_zero]
 
 /-- Decomposition of the bad-event mass of a loop step: the bad mass of
     `m.bind (fun _ => step)` is the `m`-expectation of the bad mass of `step`
@@ -332,12 +332,12 @@ theorem prEventComp_bind_step_le
         (if ¬ bad p.2 then (m h₀) (some p) else 0) * ε := by
     intro p
     by_cases hb : bad p.2
-    · simp only [hb, if_true, not_true_eq_false, if_false, zero_mul, add_zero]
+    · simp only [hb, ite_true, not_true_eq_false, ite_false, zero_mul, add_zero]
       calc (m h₀) (some p) * prEvent (step p.2) (fun _ h' => bad h')
           ≤ (m h₀) (some p) * 1 :=
             mul_le_mul' le_rfl ((prEvent_le_mass _ _).trans (sdistr_mass_le_one _))
         _ = (m h₀) (some p) := by simp_all
-    · simp only [hb, if_false, not_false_eq_true, if_true, zero_add]
+    · simp only [hb, ite_false, not_false_eq_true, ite_true, zero_add]
       exact mul_le_mul' le_rfl (h_fresh p.2 hb)
   calc ∑' p : Unit × Heap,
           (m h₀) (some p) * prEvent (step p.2) (fun _ h' => bad h')

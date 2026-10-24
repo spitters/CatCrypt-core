@@ -188,9 +188,9 @@ open scoped ENNReal
 
 /-- The uniform distribution on a product is the product of the uniform
 distributions. -/
-theorem uniformOfFintype_prod {K : Type} [Fintype K] [Nonempty K] :
-    PMF.uniformOfFintype (K × K) =
-      (PMF.uniformOfFintype K).bind fun a => (PMF.uniformOfFintype K).map (a, ·) := by
+theorem uniformFintype_prod {K : Type} [Fintype K] [Nonempty K] :
+    PMF.uniformFintype (K × K) =
+      (PMF.uniformFintype K).bind fun a => (PMF.uniformFintype K).map (a, ·) := by
   ext ⟨a, b⟩
   rw [PMF.bind_apply, tsum_eq_single a]
   · rw [PMF.map_apply, tsum_eq_single b]
@@ -339,7 +339,7 @@ def cascade (F : K → D → D) : K × K → D → D := fun kk x => F kk.2 (F kk
 every answer `y` replaced by `F k₂ y`. -/
 noncomputable def cascadeRedInner (F : K → D → D) (A : OracleAdv D D Bool) :
     OracleAdv D D Bool :=
-  .rand (PMF.uniformOfFintype K) fun k₂ => mapAns (F k₂) A
+  .rand (PMF.uniformFintype K) fun k₂ => mapAns (F k₂) A
 
 /-- `simRP t A` runs `A` against a lazily sampled random injection `π` with
 table `t`, simulated inside the adversary, and replaces every query `x` of `A`
@@ -401,7 +401,7 @@ theorem isQueryBound_simRP {α : Type} {A : OracleAdv D D α} {q : ℕ} (hA : A.
 theorem not_mem_of_mem_support_freshDist {u : Finset D} (hu : uᶜ.Nonempty) {r : D}
     (hr : r ∈ (freshDist u).support) : r ∉ u := by
   unfold freshDist at hr
-  rw [dif_pos hu, PMF.support_uniformOfFinset] at hr
+  rw [dite_eq_left hu, PMF.support_uniformFinset] at hr
   simpa using hr
 
 /-- The joint lazy oracle for a random function composed with a random
@@ -412,7 +412,7 @@ noncomputable def rfrpOracle (u : List (D × D × D)) (x : D) : PMF (D × List (
   match List.lookup x u with
   | some r => PMF.pure (r.2, u)
   | none => (freshDist (usedAnswers (u.map fun e => (e.1, e.2.1)))).bind fun r₁ =>
-      (PMF.uniformOfFintype D).map fun r₂ => (r₂, (x, r₁, r₂) :: u)
+      (PMF.uniformFintype D).map fun r₂ => (r₂, (x, r₁, r₂) :: u)
 
 /-- Forgetting the middle components of the joint table gives the lazy random
 function. -/
@@ -425,7 +425,7 @@ theorem rfrpOracle_map_rf (u : List (D × D × D)) (x : D) :
   · simp only [Option.map_none, PMF.map_bind, PMF.map_comp]
     exact PMF.bind_const _
       (PMF.map (fun r => (r, (x, r) :: List.map (fun e => (e.1, e.2.2)) u))
-        (PMF.uniformOfFintype D))
+        (PMF.uniformFintype D))
   · simp [PMF.pure_map]
 
 /-- The invariant of the joint table: the queries and the images under the
@@ -520,7 +520,7 @@ theorem realGame_cascade_eq (F : K → D → D) (A : OracleAdv D D Bool) :
     realGame (cascade F) A = realGame F (cascadeRedInner F A) := by
   unfold realGame cascadeRedInner
   congr 1
-  rw [uniformOfFintype_prod, PMF.bind_bind]
+  rw [uniformFintype_prod, PMF.bind_bind]
   refine congrArg _ (funext fun k₁ => ?_)
   rw [OracleAdv.run_rand, PMF.bind_map, PMF.map_bind]
   refine congrArg _ (funext fun k₂ => ?_)

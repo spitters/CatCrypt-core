@@ -269,7 +269,7 @@ def decodeUint (M : ℕ) [NeZero M] (buf : Bytes) : Fin M :=
 
 /-- The distribution of `DecodeUint` on `L` uniform bytes. -/
 noncomputable def decodeUintDist (M L : ℕ) [NeZero M] : PMF (Fin M) :=
-  (PMF.uniformOfFintype (Fin L → UInt8)).map fun b => decodeUint M (List.ofFn b)
+  (PMF.uniformFintype (Fin L → UInt8)).map fun b => decodeUint M (List.ofFn b)
 
 /-- `L` bytes as an integer below `256^L`, little-endian. -/
 def bytesEquivFin (L : ℕ) : (Fin L → UInt8) ≃ Fin (256 ^ L) :=
@@ -285,17 +285,17 @@ theorem val_bytesEquivFin {L : ℕ} (b : Fin L → UInt8) :
 /-- `DecodeUint` on uniform bytes is the reduction modulo `M` of a uniform value below
 `256^L`. -/
 theorem decodeUintDist_eq (M L : ℕ) [NeZero M] :
-    decodeUintDist M L = (PMF.uniformOfFintype (Fin (256 ^ L))).map (Fin.modTo _ M) := by
+    decodeUintDist M L = (PMF.uniformFintype (Fin (256 ^ L))).map (Fin.modTo _ M) := by
   have h : (fun b => decodeUint M (List.ofFn b)) = Fin.modTo _ M ∘ bytesEquivFin L := by
     funext b
     ext
     simp [decodeUint, Fin.modTo, val_bytesEquivFin]
-  rw [decodeUintDist, h, ← PMF.map_comp, PMF.uniformOfFintype_map_equiv]
+  rw [decodeUintDist, h, ← PMF.map_comp, PMF.uniformFintype_map_equiv]
 
 /-- The minorant of `DecodeUint` on `L` uniform bytes: mass at least
 `(1 − M/256^L)·(1/M)` on every value. -/
 theorem one_sub_mul_uniform_le_decodeUintDist (M L : ℕ) [NeZero M] (r : Fin M) :
-    (1 - (M : ℝ≥0∞) / (256 ^ L : ℕ)) * PMF.uniformOfFintype (Fin M) r ≤ decodeUintDist M L r := by
+    (1 - (M : ℝ≥0∞) / (256 ^ L : ℕ)) * PMF.uniformFintype (Fin M) r ≤ decodeUintDist M L r := by
   have : NeZero (256 ^ L) := ⟨by positivity⟩
   rw [decodeUintDist_eq]
   exact PMF.one_sub_mul_uniform_le_map_mod (256 ^ L) M r
@@ -339,21 +339,21 @@ def decodeField (M : ℕ) [NeZero M] {m L : ℕ} (b : Fin m → Fin L → UInt8)
 
 /-- The distribution of `DecodeField` on `m` uniform chunks of `L` bytes. -/
 noncomputable def decodeFieldDist (M L m : ℕ) [NeZero M] : PMF (Fin m → Fin M) :=
-  (PMF.uniformOfFintype (Fin m → Fin L → UInt8)).map (decodeField M)
+  (PMF.uniformFintype (Fin m → Fin L → UInt8)).map (decodeField M)
 
 /-- The minorant of `DecodeField`: mass at least `(1 − m·M/256^L)` times the uniform
 mass on every value. -/
 theorem one_sub_mul_uniform_le_decodeFieldDist (M L m : ℕ) [NeZero M] (o : Fin m → Fin M) :
-    (1 - (m : ℝ≥0∞) * ((M : ℝ≥0∞) / (256 ^ L : ℕ))) * PMF.uniformOfFintype (Fin m → Fin M) o ≤
+    (1 - (m : ℝ≥0∞) * ((M : ℝ≥0∞) / (256 ^ L : ℕ))) * PMF.uniformFintype (Fin m → Fin M) o ≤
       decodeFieldDist M L m o := by
-  have hU : PMF.uniformOfFintype (Fin m → Fin M) o = ∏ i, PMF.uniformOfFintype (Fin M) (o i) := by
-    simp [PMF.uniformOfFintype_apply, Finset.prod_const, ENNReal.inv_pow]
-  calc (1 - (m : ℝ≥0∞) * ((M : ℝ≥0∞) / (256 ^ L : ℕ))) * PMF.uniformOfFintype (Fin m → Fin M) o
-      ≤ (1 - (M : ℝ≥0∞) / (256 ^ L : ℕ)) ^ m * ∏ i, PMF.uniformOfFintype (Fin M) (o i) := by
+  have hU : PMF.uniformFintype (Fin m → Fin M) o = ∏ i, PMF.uniformFintype (Fin M) (o i) := by
+    simp [PMF.uniformFintype_apply, Finset.prod_const, ENNReal.inv_pow]
+  calc (1 - (m : ℝ≥0∞) * ((M : ℝ≥0∞) / (256 ^ L : ℕ))) * PMF.uniformFintype (Fin m → Fin M) o
+      ≤ (1 - (M : ℝ≥0∞) / (256 ^ L : ℕ)) ^ m * ∏ i, PMF.uniformFintype (Fin M) (o i) := by
         rw [hU]
         gcongr
         exact ENNReal.one_sub_mul_le_pow _ m
-    _ = ∏ i, (1 - (M : ℝ≥0∞) / (256 ^ L : ℕ)) * PMF.uniformOfFintype (Fin M) (o i) := by
+    _ = ∏ i, (1 - (M : ℝ≥0∞) / (256 ^ L : ℕ)) * PMF.uniformFintype (Fin M) (o i) := by
         rw [Finset.prod_mul_distrib, Finset.prod_const, Finset.card_univ, Fintype.card_fin]
     _ ≤ ∏ i, decodeUintDist M L (o i) :=
         Finset.prod_le_prod' fun i _ => one_sub_mul_uniform_le_decodeUintDist M L (o i)

@@ -162,12 +162,12 @@ theorem correct_of_simple_correct
       -- We need to use the fact that the condition is false to simplify
       have hcond : ¬((some (result, h'')) = (some (decryptF k (encryptF k m), h))) :=
         fun h => heq2 (Option.some.inj h).symm
-      rw [if_neg hcond] at hresult
+      rw [ite_eq_right hcond] at hresult
       exact absurd rfl hresult
   · -- If not equal, probability is 0, contradiction
     have hcond : ¬((some (c, h')) = (some (encryptF k m, h))) :=
       fun h => heq (Option.some.inj h).symm
-    rw [if_neg hcond] at hc
+    rw [ite_eq_right hcond] at hc
     exact absurd rfl hc
 
 end EncScheme

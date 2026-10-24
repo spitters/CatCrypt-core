@@ -128,7 +128,7 @@ example {W : Type} (step : W → W → W) (stepCost : W → W → ℕ) (n : ℕ)
 /-- A uniform IV `s`, then the blocks of `M` against the counters `ctr s`. -/
 noncomputable def ivBlocks {D B N : Type} [Fintype N] [Nonempty N] (step : B → B → B)
     (ctr : N → ℕ → D) (M : List B) : OracleAdv D B (N × List B) :=
-  .rand (PMF.uniformOfFintype N) fun s => blocks (ctr s) step (fun cs => (s, cs)) 0 M
+  .rand (PMF.uniformFintype N) fun s => blocks (ctr s) step (fun cs => (s, cs)) 0 M
 
 derive_timed ivBlocks
 
@@ -625,7 +625,7 @@ example {A : OracleAdv.Timed ℕ ℕ Bool} {T q : ℕ} (hA : A.TimeBound T)
 values are an `if` between a pair holding a closure and a pair holding the binder. -/
 noncomputable def o6Clo (ctxs : Fin 4 → ℕ) (h : Fin 4) :
     OracleAdv ℕ ℕ ((Fin 4 → ℕ) × (Fin 4 → ℕ × (Fin 4 → ℕ))) :=
-  .rand (PMF.uniformOfFintype (Fin 4 → Fin 3)) fun f =>
+  .rand (PMF.uniformFintype (Fin 4 → Fin 3)) fun f =>
     .ret (fun i => ctxs i + (f i : ℕ),
       fun i => if i = h then (ctxs i, fun j => (f j : ℕ)) else (0, ctxs))
 
@@ -652,14 +652,14 @@ noncomputable def o6Hyb (F : ℕ → ℕ → Fin 3) (j : ℕ)
   if s.1.length < j then
     match List.lookup q.2 (s.2.1 q.1) with
     | some v => .ret (v, (q.1 :: s.1, s.2.1, s.2.2))
-    | none => .rand (PMF.uniformOfFintype (Fin 3)) fun v =>
+    | none => .rand (PMF.uniformFintype (Fin 3)) fun v =>
         .ret (v, (q.1 :: s.1, Function.update s.2.1 q.1 ((q.2, v) :: s.2.1 q.1), s.2.2))
   else if s.1.length = j then
     .query q.2 fun v => .ret (v, (q.1 :: s.1, s.2.1, s.2.2))
   else
     match s.2.2 q.1 with
     | some k => .ret (F k q.2, (q.1 :: s.1, s.2.1, s.2.2))
-    | none => .rand (PMF.uniformOfFintype (Fin 3)) fun k =>
+    | none => .rand (PMF.uniformFintype (Fin 3)) fun k =>
         .ret (F k q.2, (q.1 :: s.1, s.2.1, Function.update s.2.2 q.1 (some (k : ℕ))))
 
 /-- The shape of `MultiKeyPRF.mkHybRed`. -/

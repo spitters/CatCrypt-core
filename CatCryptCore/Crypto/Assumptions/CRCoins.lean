@@ -56,9 +56,9 @@ def coinsCollision (f : h.Key → C → h.Input × h.Input) (k : h.Key) (c : C) 
 `c ∼ ρ`, that `f k c` is a pair of distinct inputs with the same hash under `k`. -/
 theorem CR_Search_Advantage_ofCoins (ρ : PMF C) (f : h.Key → C → h.Input × h.Input) :
     CR_Search_Advantage h (CR_Search_Adversary.ofCoins ρ f) =
-      ((PMF.uniformOfFintype h.Key).bind fun k => ρ.map (coinsCollision f k)) true := by
+      ((PMF.uniformFintype h.Key).bind fun k => ρ.map (coinsCollision f k)) true := by
   unfold CR_Search_Advantage CR_Search_Game CR_Search_Adversary.ofCoins
-  rw [show SPComp.sample h.Key = sampleFrom (ofPMF (PMF.uniformOfFintype h.Key)) from rfl]
+  rw [show SPComp.sample h.Key = sampleFrom (ofPMF (PMF.uniformFintype h.Key)) from rfl]
   simp only [SPComp.monad_bind_eq, SPComp.bind_assoc, Function.comp_apply, SPComp.pure_bind]
   rw [prTrue_bind_sampleFrom, PMF.bind_apply]
   refine tsum_congr fun k => ?_
@@ -75,8 +75,8 @@ theorem CR_Search_Advantage_ofCoins_le (ρ : PMF C) (f : h.Key → C → h.Input
     (ε : ℝ≥0∞) (hε : ∀ k, ρ.map (coinsCollision f k) true ≤ ε) :
     CR_Search_Advantage h (CR_Search_Adversary.ofCoins ρ f) ≤ ε := by
   rw [CR_Search_Advantage_ofCoins, PMF.bind_apply]
-  calc ∑' k, PMF.uniformOfFintype h.Key k * ρ.map (coinsCollision f k) true
-      ≤ ∑' k, PMF.uniformOfFintype h.Key k * ε :=
+  calc ∑' k, PMF.uniformFintype h.Key k * ρ.map (coinsCollision f k) true
+      ≤ ∑' k, PMF.uniformFintype h.Key k * ε :=
         ENNReal.tsum_le_tsum fun k => by gcongr; exact hε k
     _ = ε := by rw [ENNReal.tsum_mul_right, PMF.tsum_coe, one_mul]
 

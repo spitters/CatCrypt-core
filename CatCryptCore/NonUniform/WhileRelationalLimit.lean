@@ -97,13 +97,13 @@ theorem loopJoint_succ_of_guard {guard₁ : Heap → Bool}
     (hg : guard₁ h₁ = true) (n : ℕ) (h₂ : Heap) :
     loopJoint guard₁ bj (n + 1) h₁ h₂
       = (bj h₁ h₂).bind fun pq => loopJoint guard₁ bj n pq.1.2 pq.2.2 := by
-  rw [loopJoint_succ, if_pos hg]
+  rw [loopJoint_succ, ite_eq_left hg]
 
 theorem loopJoint_succ_of_not_guard {guard₁ : Heap → Bool}
     (bj : Heap → Heap → SDistr ((Unit × Heap) × (Unit × Heap))) {h₁ : Heap}
     (hg : guard₁ h₁ = false) (n : ℕ) (h₂ : Heap) :
     loopJoint guard₁ bj (n + 1) h₁ h₂ = SDistr.pure (((), h₁), ((), h₂)) := by
-  rw [loopJoint_succ, if_neg (by simp [hg])]
+  rw [loopJoint_succ, ite_eq_right (by simp [hg])]
 
 /-! ## The family is non-decreasing in the budget -/
 

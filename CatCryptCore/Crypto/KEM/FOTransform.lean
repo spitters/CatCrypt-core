@@ -94,8 +94,8 @@ is `((pk, sk), s)` with `s` uniform in `M`. -/
 noncomputable def foNotBot (P : Scheme PK SK M C R) :
     ROM2Scheme PK ((PK × SK) × M) K C M R (M × C) K where
   keygen := P.keygen.bind fun ks =>
-    (PMF.uniformOfFintype M).map fun s => (ks.1, ((ks.1, ks.2), s))
-  encaps pk := .rand (PMF.uniformOfFintype M) fun m => (gQ m).bind fun r =>
+    (PMF.uniformFintype M).map fun s => (ks.1, ((ks.1, ks.2), s))
+  encaps pk := .rand (PMF.uniformFintype M) fun m => (gQ m).bind fun r =>
     (hQ (m, P.enc pk m r)).bind fun k => .ret (k, P.enc pk m r)
   decaps sk c := match P.dec sk.1.2 c with
     | none => (hQ (sk.2, c)).bind fun k => .ret (some k)
@@ -157,7 +157,7 @@ noncomputable def progH (TH : M × C → Option K) :
   | .inl m => .query m fun r => .ret (.inl r, TH)
   | .inr q => match TH q with
     | some k => .ret (.inr k, TH)
-    | none => .rand (PMF.uniformOfFintype K) fun k => .ret (.inr k, Function.update TH q (some k))
+    | none => .rand (PMF.uniformFintype K) fun k => .ret (.inr k, Function.update TH q (some k))
 
 omit [Fintype M] [Nonempty M] in
 theorem simOracle_progH (TH : M × C → Option K) (TG : M → Option R) (d : M ⊕ (M × C)) :
@@ -255,7 +255,7 @@ theorem step_eq (P : Scheme PK SK M C R) (f : M → R) (sk : PK × SK) (s : M) (
   · by_cases hc : c = cstar
     · subst hc
       simp [OracleAdv.simOracle, ccaImpl, absImpl, romCCAOracle, PMF.pure_map]
-    · simp only [OracleAdv.simOracle, ccaImpl, absImpl, hc, if_false, OracleAdv.run_query,
+    · simp only [OracleAdv.simOracle, ccaImpl, absImpl, hc, ite_false, OracleAdv.run_query,
         OracleAdv.run_ret, OracleAdv.run_bind, romCCAOracle, uNotBot, FOTransformU.decIdx,
         PMF.map_bind, PMF.pure_map]
       cases hd : P.dec sk.2 c with
@@ -266,12 +266,12 @@ theorem step_eq (P : Scheme PK SK M C R) (f : M → R) (sk : PK × SK) (s : M) (
         rfl
       | some m =>
         by_cases he : P.enc sk.1 m (f m) = c
-        · simp only [foNotBot, fixedT, hd, he, gQ, hQ, if_true, OracleAdv.run_bind,
+        · simp only [foNotBot, fixedT, hd, he, gQ, hQ, ite_true, OracleAdv.run_bind,
             OracleAdv.run_query, OracleAdv.run_ret, hfOracle_inl, hfOracle_inr, PMF.bind_map,
             Function.comp_def, PMF.pure_bind, Option.getD_some,
             Sum.elim_inl, id, PMF.bind_bind, Sum.elim_inr]
           rfl
-        · simp only [foNotBot, fixedT, hd, he, gQ, hQ, if_false, OracleAdv.run_bind,
+        · simp only [foNotBot, fixedT, hd, he, gQ, hQ, ite_false, OracleAdv.run_bind,
             OracleAdv.run_query, OracleAdv.run_ret, hfOracle_inl, hfOracle_inr, PMF.bind_map,
             Function.comp_def, PMF.pure_bind, Option.getD_none,
             Sum.elim_inl, id, PMF.bind_bind, Sum.elim_inr]
@@ -324,9 +324,9 @@ section Games
 unfolded. -/
 noncomputable def fixedGame (P : Scheme PK SK M C R) {qRO qD : ℕ}
     (B : ROM2INDCCAAdversary PK K C M R (M × C) K qRO qD) (b : Bool) (f : M → R) : PMF Bool :=
-  P.keygen.bind fun ks => (PMF.uniformOfFintype M).bind fun s =>
-    (PMF.uniformOfFintype M).bind fun m => (PMF.uniformOfFintype K).bind fun k₀ =>
-      (PMF.uniformOfFintype K).bind fun k₁ =>
+  P.keygen.bind fun ks => (PMF.uniformFintype M).bind fun s =>
+    (PMF.uniformFintype M).bind fun m => (PMF.uniformFintype K).bind fun k₀ =>
+      (PMF.uniformFintype K).bind fun k₁ =>
         (OracleAdv.run (romCCAOracle (uNotBot (fixedT P f)) ((ks.1, ks.2), s) (P.enc ks.1 m (f m)))
           ((absorb f B).run ks.1 (P.enc ks.1 m (f m)) (if b then k₀ else k₁))
           (Function.update emptyTable (m, P.enc ks.1 m (f m)) (some k₀))).map Prod.fst
@@ -342,10 +342,10 @@ theorem uGame_eq (P : Scheme PK SK M C R) {qRO qD : ℕ}
 
 theorem foGame_eq (P : Scheme PK SK M C R) {qRO qD : ℕ}
     (B : ROM2INDCCAAdversary PK K C M R (M × C) K qRO qD) (b : Bool) :
-    rom2INDCCAGame (foNotBot P) B b = (PMF.uniformOfFintype (M → R)).bind (fixedGame P B b) := by
+    rom2INDCCAGame (foNotBot P) B b = (PMF.uniformFintype (M → R)).bind (fixedGame P B b) := by
   have hk : (foNotBot (K := K) P).keygen = P.keygen.bind fun ks =>
-      (PMF.uniformOfFintype M).map fun s => (ks.1, ((ks.1, ks.2), s)) := rfl
-  have he : ∀ pk, (foNotBot (K := K) P).encaps pk = .rand (PMF.uniformOfFintype M) fun m =>
+      (PMF.uniformFintype M).map fun s => (ks.1, ((ks.1, ks.2), s)) := rfl
+  have he : ∀ pk, (foNotBot (K := K) P).encaps pk = .rand (PMF.uniformFintype M) fun m =>
       (gQ m).bind fun r => (hQ (m, P.enc pk m r)).bind fun k => .ret (k, P.enc pk m r) :=
     fun _ => rfl
   have hempty : ∀ (m : M), (emptyTable : M → Option R) m = none := fun _ => rfl
@@ -355,35 +355,35 @@ theorem foGame_eq (P : Scheme PK SK M C R) {qRO qD : ℕ}
     OracleAdv.run_bind, ro2Oracle, roOracle, hempty, hempty', PMF.pure_bind,
     Sum.elim_inl, Sum.elim_inr, id]
   simp only [run_rom2CCA_eq_fixed]
-  rw [show (PMF.uniformOfFintype (M → R)).bind (fixedGame P B b) =
-    (PMF.uniformOfFintype (M → R)).bind fun f => fixedGame P B b f from rfl]
+  rw [show (PMF.uniformFintype (M → R)).bind (fixedGame P B b) =
+    (PMF.uniformFintype (M → R)).bind fun f => fixedGame P B b f from rfl]
   simp only [fixedGame]
-  rw [PMF.bind_comm (PMF.uniformOfFintype (M → R)) P.keygen]
+  rw [PMF.bind_comm (PMF.uniformFintype (M → R)) P.keygen]
   refine congrArg _ (funext fun ks => ?_)
-  rw [PMF.bind_comm (PMF.uniformOfFintype (M → R)) (PMF.uniformOfFintype M)]
+  rw [PMF.bind_comm (PMF.uniformFintype (M → R)) (PMF.uniformFintype M)]
   refine congrArg _ (funext fun s => ?_)
-  rw [PMF.bind_comm (PMF.uniformOfFintype (M → R)) (PMF.uniformOfFintype M)]
+  rw [PMF.bind_comm (PMF.uniformFintype (M → R)) (PMF.uniformFintype M)]
   refine congrArg _ (funext fun m => ?_)
-  have hcomm : ∀ r : R, ((PMF.uniformOfFintype K).bind fun k₀ => (PMF.uniformOfFintype K).bind
+  have hcomm : ∀ r : R, ((PMF.uniformFintype K).bind fun k₀ => (PMF.uniformFintype K).bind
       fun k₁ => (extDist (Function.update (emptyTable : M → Option R) m (some r))).bind fun f =>
         (OracleAdv.run (romCCAOracle (uNotBot (fixedT P f)) ((ks.1, ks.2), s) (P.enc ks.1 m r))
           ((OracleAdv.simulate (absImpl f) (B.run ks.1 (P.enc ks.1 m r)
             (if b = true then k₀ else k₁)) ()).bind fun x => .ret x.1)
           (Function.update emptyTable (m, P.enc ks.1 m r) (some k₀))).map Prod.fst) =
       (extDist (Function.update (emptyTable : M → Option R) m (some r))).bind fun f =>
-        (PMF.uniformOfFintype K).bind fun k₀ => (PMF.uniformOfFintype K).bind fun k₁ =>
+        (PMF.uniformFintype K).bind fun k₀ => (PMF.uniformFintype K).bind fun k₁ =>
         (OracleAdv.run (romCCAOracle (uNotBot (fixedT P f)) ((ks.1, ks.2), s) (P.enc ks.1 m r))
           ((OracleAdv.simulate (absImpl f) (B.run ks.1 (P.enc ks.1 m r)
             (if b = true then k₀ else k₁)) ()).bind fun x => .ret x.1)
           (Function.update emptyTable (m, P.enc ks.1 m r) (some k₀))).map Prod.fst := by
     intro r
-    conv_lhs => arg 2; ext k₀; rw [PMF.bind_comm (PMF.uniformOfFintype K)]
-    rw [PMF.bind_comm (PMF.uniformOfFintype K)]
+    conv_lhs => arg 2; ext k₀; rw [PMF.bind_comm (PMF.uniformFintype K)]
+    rw [PMF.bind_comm (PMF.uniformFintype K)]
   simp only [hcomm]
   have hp := extDist_map_pair (emptyTable : M → Option R) m rfl
   rw [extDist_empty] at hp
   have hbind := congrArg (fun p => PMF.bind p fun x : R × (M → R) =>
-    (PMF.uniformOfFintype K).bind fun k₀ => (PMF.uniformOfFintype K).bind fun k₁ =>
+    (PMF.uniformFintype K).bind fun k₀ => (PMF.uniformFintype K).bind fun k₁ =>
       (OracleAdv.run (romCCAOracle (uNotBot (fixedT P x.2)) ((ks.1, ks.2), s) (P.enc ks.1 m x.1))
         ((OracleAdv.simulate (absImpl x.2) (B.run ks.1 (P.enc ks.1 m x.1)
           (if b = true then k₀ else k₁)) ()).bind fun y => .ret y.1)
@@ -412,7 +412,7 @@ theorem advantage_bind_le {ι : Type} (w : PMF ι) (g₁ g₀ : ι → PMF Bool)
 
 theorem foAdvantage_le (P : Scheme PK SK M C R) {qRO qD : ℕ}
     (B : ROM2INDCCAAdversary PK K C M R (M × C) K qRO qD) :
-    rom2INDCCAAdvantage (foNotBot P) B ≤ ∑' f, PMF.uniformOfFintype (M → R) f *
+    rom2INDCCAAdvantage (foNotBot P) B ≤ ∑' f, PMF.uniformFintype (M → R) f *
       romINDCCAAdvantage (uNotBot (fixedT P f)) (absorb f B) := by
   unfold rom2INDCCAAdvantage romINDCCAAdvantage
   simp only [foGame_eq, uGame_eq]
@@ -420,8 +420,8 @@ theorem foAdvantage_le (P : Scheme PK SK M C R) {qRO qD : ℕ}
 
 omit [Nonempty M] [DecidableEq C] [Fintype K] [Nonempty K] in
 theorem tsum_uniform_eval (m : M) (F : R → ℝ≥0∞) :
-    ∑' f, PMF.uniformOfFintype (M → R) f * F (f m) = ∑' r, PMF.uniformOfFintype R r * F r := by
-  have hmap : (PMF.uniformOfFintype (M → R)).map (fun f => f m) = PMF.uniformOfFintype R := by
+    ∑' f, PMF.uniformFintype (M → R) f * F (f m) = ∑' r, PMF.uniformFintype R r * F r := by
+  have hmap : (PMF.uniformFintype (M → R)).map (fun f => f m) = PMF.uniformFintype R := by
     conv_lhs => rw [← Constructions.ECBCPRF.uniform_bind_update (D := M) (R := R) m]
     simp only [PMF.map_bind, PMF.map_comp, Function.comp_def, Function.update_self]
     rw [show (fun x : R => x) = id from rfl, PMF.map_id]
@@ -434,7 +434,7 @@ theorem failProb_fixedT (P : Scheme PK SK M C R) (f : M → R) (pk : PK) (sk : S
       PKE.FOTransformT.failInd P sk m (P.enc pk m (f m)) := by
   rw [Scheme.failProb, PMF.toOuterMeasure_apply, tsum_eq_single () fun u hu => absurd rfl hu]
   simp only [fixedT, PKE.FOTransformT.failInd, Set.indicator, Set.mem_ofPred_eq,
-    PMF.uniformOfFintype_apply, Fintype.card_unit, Nat.cast_one, inv_one]
+    PMF.uniformFintype_apply, Fintype.card_unit, Nat.cast_one, inv_one]
   cases hd : P.dec sk (P.enc pk m (f m)) with
   | none => simp
   | some m₀ =>
@@ -443,9 +443,9 @@ theorem failProb_fixedT (P : Scheme PK SK M C R) (f : M → R) (pk : PK) (sk : S
     · by_cases he : P.enc pk m₀ (f m₀) = P.enc pk m (f m) <;> simp [he, hm]
 
 theorem corrErr_fixedT (P : Scheme PK SK M C R) :
-    ∑' f, PMF.uniformOfFintype (M → R) f * (fixedT P f).corrErr = P.corrErr := by
+    ∑' f, PMF.uniformFintype (M → R) f * (fixedT P f).corrErr = P.corrErr := by
   rw [PKE.FOTransformT.corrErr_eq]
-  have h : ∀ f, (fixedT P f).corrErr = ∑' ks, P.keygen ks * ∑' m, PMF.uniformOfFintype M m *
+  have h : ∀ f, (fixedT P f).corrErr = ∑' ks, P.keygen ks * ∑' m, PMF.uniformFintype M m *
       PKE.FOTransformT.failInd P ks.2 m (P.enc ks.1 m (f m)) := by
     intro f
     rw [PKE.Games.Scheme.corrErr, show (fixedT P f).keygen = P.keygen.map fun ks => (ks.1, (ks.1, ks.2))
@@ -526,7 +526,7 @@ theorem isQueryBoundBy_simImplFO (cost : M ⊕ (M × C) → ℕ) (hc₁ : ∀ m,
 /-- The run of the OW-PCA adversary against `T[P, G]` built from `B`. -/
 noncomputable def uRedRun {qRO qD : ℕ} (B : ROM2INDCCAAdversary PK K C M R (M × C) K qRO qD)
     (pk : PK) (c : C) : OracleAdv (M ⊕ (M × C)) (R ⊕ Bool) M :=
-  .rand (PMF.uniformOfFintype K) fun kstar =>
+  .rand (PMF.uniformFintype K) fun kstar =>
     (OracleAdv.simulate (simImplFO c kstar) (B.run pk c kstar) SimState.init).bind
       fun x => .ret (x.2.found.getD (Classical.arbitrary M))
 
@@ -631,17 +631,17 @@ omit [Fintype R] [Nonempty R] in
 theorem owpcaGame_fixedT (P : Scheme PK SK M C R) {qRO qD : ℕ}
     (B : ROM2INDCCAAdversary PK K C M R (M × C) K qRO qD) (f : M → R) :
     owpcaGame (fixedT P f) (uReduction (absorb f B)) = P.keygen.bind fun ks =>
-      (PMF.uniformOfFintype M).bind fun m => owpcaInner P B ks m f := by
+      (PMF.uniformFintype M).bind fun m => owpcaInner P B ks m f := by
   simp only [owpcaGame, Scheme.encDist, PMF.bind_map, Function.comp_def, owpcaInner]
   rw [show (fixedT P f).keygen = P.keygen.map fun ks => (ks.1, (ks.1, ks.2)) from rfl, PMF.bind_map]
-  have hU : PMF.uniformOfFintype Unit = PMF.pure () := by ext u; simp
+  have hU : PMF.uniformFintype Unit = PMF.pure () := by ext u; simp
   simp only [Function.comp_def, hU, PMF.pure_bind]
   rfl
 
 theorem romOWPCAGame_uRedROM (P : Scheme PK SK M C R) {qRO qD : ℕ}
     (B : ROM2INDCCAAdversary PK K C M R (M × C) K qRO qD) :
     romOWPCAGame (tTransform P) (uRedROM B) = P.keygen.bind fun ks =>
-      (PMF.uniformOfFintype M).bind fun m => (PMF.uniformOfFintype (M → R)).bind fun f =>
+      (PMF.uniformFintype M).bind fun m => (PMF.uniformFintype (M → R)).bind fun f =>
         owpcaInner P B ks m f := by
   rw [PKE.FOTransformT.romOWPCAGame_eq]
   refine congrArg _ (funext fun ks => congrArg _ (funext fun m => ?_))
@@ -662,10 +662,10 @@ theorem romOWPCAGame_uRedROM (P : Scheme PK SK M C R) {qRO qD : ℕ}
 theorem owpca_eq (P : Scheme PK SK M C R) {qRO qD : ℕ}
     (B : ROM2INDCCAAdversary PK K C M R (M × C) K qRO qD) :
     romOWPCAAdvantage (tTransform P) (uRedROM B) =
-      ∑' f, PMF.uniformOfFintype (M → R) f * owpcaAdvantage (fixedT P f) (uReduction (absorb f B)) := by
+      ∑' f, PMF.uniformFintype (M → R) f * owpcaAdvantage (fixedT P f) (uReduction (absorb f B)) := by
   simp only [romOWPCAAdvantage, owpcaAdvantage, prTrue_liftPMF_toOuterMeasure,
     romOWPCAGame_uRedROM, owpcaGame_fixedT]
-  rw [← PMF.toOuterMeasure_bind_apply, PMF.bind_comm (PMF.uniformOfFintype (M → R)) P.keygen]
+  rw [← PMF.toOuterMeasure_bind_apply, PMF.bind_comm (PMF.uniformFintype (M → R)) P.keygen]
   refine congrArg (fun p : PMF Bool => p.toOuterMeasure _) (congrArg _ (funext fun ks => ?_))
   exact (PMF.bind_comm _ _ _).symm
 
@@ -697,9 +697,9 @@ theorem foNotBot_indcca (P : Scheme PK SK M C R) {qRO qD : ℕ}
   have hB : ∀ pk c, ((uRedROM B).run pk c).IsQueryBoundBy (fun _ => 1) qRO :=
     isQueryBoundBy_uRedRun B _ (fun _ => le_rfl) (fun _ => le_rfl)
   calc rom2INDCCAAdvantage (foNotBot P) B
-      ≤ ∑' f, PMF.uniformOfFintype (M → R) f *
+      ≤ ∑' f, PMF.uniformFintype (M → R) f *
           romINDCCAAdvantage (uNotBot (fixedT P f)) (absorb f B) := foAdvantage_le P B
-    _ ≤ ∑' f, PMF.uniformOfFintype (M → R) f *
+    _ ≤ ∑' f, PMF.uniformFintype (M → R) f *
           (owpcaAdvantage (fixedT P f) (uReduction (absorb f B)) +
             (qRO : ℝ≥0∞) / Fintype.card M + (fixedT P f).corrErr) :=
         ENNReal.tsum_le_tsum fun f => mul_le_mul_right (uNotBot_indcca (fixedT P f) (absorb f B)) _

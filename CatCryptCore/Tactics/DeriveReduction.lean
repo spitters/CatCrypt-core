@@ -149,8 +149,8 @@ traversal below with the recursive calls closed by the induction hypotheses. A c
 defined by well-founded recursion is reflected in the same way. A recursive call under a binder
 whose arguments change with the recursion (`mapLoop s' a' f` after `a'` is received) is closed
 by its induction hypothesis instantiated at the call's arguments; an `if` of the body of `c`
-decided by the hypothesis of the case is reduced to its branch (`dif_pos`, `dif_neg`,
-`if_pos`, `if_neg`). The tree of `c`
+decided by the hypothesis of the case is reduced to its branch (`dite_eq_left`, `dite_eq_right`,
+`ite_eq_left`, `ite_eq_right`). The tree of `c`
 takes all binders of `c`, followed by its data and computation primitives; a recursive call
 passes the primitives unchanged, so it must pass unchanged every binder that a primitive
 mentions. An adversary binder of `c` (a function into `SPComp`) is a tree binder of `c.tree`,
@@ -1680,7 +1680,7 @@ partial def replaceRecCalls (recF t : Expr) (extra : Array Expr) (e : Expr) : Ex
     else none
 
 /-- The branch of the `if` (or `if h :`) `e` that a local hypothesis decides, with the proof of
-`e = branch` by `if_pos`, `if_neg`, `dif_pos` or `dif_neg`; `none` when `e` is not an `if` or no
+`e = branch` by `ite_eq_left`, `ite_eq_right`, `dite_eq_left` or `dite_eq_right`; `none` when `e` is not an `if` or no
 local proves its condition or the negation of its condition. -/
 def decideIf? (e : Expr) : MetaM (Option (Expr × Expr)) := do
   let dep := e.isAppOfArity ``dite 5
@@ -1694,8 +1694,8 @@ def decideIf? (e : Expr) : MetaM (Option (Expr × Expr)) := do
     let pos ← isDefEq ty c
     let neg ← if pos then pure false else isDefEq ty (mkNot c)
     unless pos || neg do continue
-    let thm := if dep then (if pos then ``dif_pos else ``dif_neg)
-      else (if pos then ``if_pos else ``if_neg)
+    let thm := if dep then (if pos then ``dite_eq_left else ``dite_eq_right)
+      else (if pos then ``ite_eq_left else ``ite_eq_right)
     let step ← mkAppOptM thm #[some c, some inst, some d.toExpr, some α, some t, some f]
     let some (_, _, b) := (← inferType step).eq? | return none
     return some (step, b.headBeta)
@@ -1727,8 +1727,8 @@ def proveRecCase (c : Name) (g : MVarId) : TermElabM Unit := g.withContext do
       | ReduceMatcherResult.reduced b => body := b.headBeta
       | _ => break
     -- An `if` of the body decided by a hypothesis of the case (the induction of a recursion
-    -- by `if`, well-founded or structural): the branch taken, by `dif_pos`, `dif_neg`,
-    -- `if_pos` or `if_neg`.
+    -- by `if`, well-founded or structural): the branch taken, by `dite_eq_left`, `dite_eq_right`,
+    -- `ite_eq_left` or `ite_eq_right`.
     repeat
       let some (step, b) ← decideIf? body | break
       pf ← mkEqTrans pf step

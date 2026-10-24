@@ -76,8 +76,8 @@ theorem prEvent_complement (d : SDistr (α × Heap)) (E : α → Heap → Prop)
     rw [← tsum_some_eq_mass, ← ENNReal.tsum_add]
     congr 1; funext p
     by_cases hE : E p.1 p.2
-    · rw [if_pos hE, if_neg (not_not.mpr hE), add_zero]
-    · rw [if_neg hE, if_pos hE, zero_add]
+    · rw [ite_eq_left hE, ite_eq_right (not_not.mpr hE), add_zero]
+    · rw [ite_eq_right hE, ite_eq_left hE, zero_add]
   rw [key, hmass]
 
 /-- Union bound: Pr[E₁ ∨ E₂] ≤ Pr[E₁] + Pr[E₂].
@@ -99,8 +99,8 @@ theorem prEvent_mono (d : SDistr (α × Heap))
   apply ENNReal.tsum_le_tsum
   intro p
   by_cases hE : E₁ p.1 p.2
-  · rw [if_pos hE, if_pos (h p.1 p.2 hE)]
-  · rw [if_neg hE]; exact zero_le
+  · rw [ite_eq_left hE, ite_eq_left (h p.1 p.2 hE)]
+  · rw [ite_eq_right hE]; exact zero_le
 
 /-- True event has probability equal to mass.
     Since every outcome satisfies True, the sum is over all outcomes. -/
@@ -109,7 +109,7 @@ theorem prEvent_true (d : SDistr (α × Heap)) :
   unfold prEvent
   rw [show (fun _ _ => True : α → Heap → Prop) = fun _ _ => True from rfl, ← tsum_some_eq_mass]
   congr 1; funext p
-  exact if_pos trivial
+  exact ite_eq_left trivial
 
 /-- False event has probability 0 -/
 theorem prEvent_false (d : SDistr (α × Heap)) :
@@ -130,9 +130,9 @@ theorem prEvent_of_pHoare {P : UPre} {c : SPComp α} {E : α → Heap → Prop}
   rw [← tsum_some_eq_mass]
   congr 1; funext p
   by_cases hE : E p.1 p.2
-  · rw [if_pos hE]
+  · rw [ite_eq_left hE]
   · -- If ¬E, then d(some p) must be 0 (by contrapositive of hph)
-    rw [if_neg hE]
+    rw [ite_eq_right hE]
     by_contra hne
     exact hE (hph h₀ hP p.1 p.2 (Ne.symm hne))
 
@@ -148,9 +148,9 @@ theorem prEvent_zero_of_pHoare_neg {P : UPre} {c : SPComp α} {E : α → Heap �
   intro p
   by_cases hE : E p.1 p.2
   · -- E holds, so the probability must be 0 (by hph, if prob ≠ 0 then ¬E)
-    rw [if_pos hE]
+    rw [ite_eq_left hE]
     by_contra hne
     exact hph h₀ hP p.1 p.2 hne hE
-  · rw [if_neg hE]
+  · rw [ite_eq_right hE]
 
 end CatCrypt.Unary

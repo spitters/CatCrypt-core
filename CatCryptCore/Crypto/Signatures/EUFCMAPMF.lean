@@ -71,13 +71,13 @@ variable {Msg PK SK Sig : Type}
 /-- The signature scheme with heap-independent algorithms defined by `S`. -/
 noncomputable def PSigScheme.toSigScheme (S : PSigScheme Msg PK SK Sig) :
     SigScheme Msg PK SK Sig where
-  keygen := liftPMF ((PMF.uniformOfFintype S.KR).map S.keygen)
+  keygen := liftPMF ((PMF.uniformFintype S.KR).map S.keygen)
   sign sk m := liftPMF (S.sign sk m)
   verify := S.verify
 
 /-- The key distribution of `S`: key generation applied to uniform coins. -/
 noncomputable def PSigScheme.keyDist (S : PSigScheme Msg PK SK Sig) : PMF (PK × SK) :=
-  (PMF.uniformOfFintype S.KR).map S.keygen
+  (PMF.uniformFintype S.KR).map S.keygen
 
 /-- The key generation of `S.toSigScheme` samples from `S.keyDist`. -/
 theorem PSigScheme.toSigScheme_keygen (S : PSigScheme Msg PK SK Sig) :
@@ -178,7 +178,7 @@ noncomputable def toEUFAdversary (B : PK → OracleAdv Msg Sig (Msg × Sig)) :
 /-- The output distribution of the EUF-CMA game for `S` and `B`. -/
 noncomputable def eufDist [DecidableEq Msg] (S : PSigScheme Msg PK SK Sig)
     (B : PK → OracleAdv Msg Sig (Msg × Sig)) : PMF Bool :=
-  (PMF.uniformOfFintype S.KR).bind fun kr =>
+  (PMF.uniformFintype S.KR).bind fun kr =>
     (OracleAdv.run (signOracle S (S.keygen kr).2) (B (S.keygen kr).1) []).map fun x =>
       S.verify (S.keygen kr).1 x.1.1 x.1.2 && !(x.2.map Prod.fst).contains x.1.1
 
@@ -192,7 +192,7 @@ theorem eufcmaAdvantage_toEUFAdversary [DecidableEq Msg] (S : PSigScheme Msg PK 
   have hgame : eufcmaGame S.toSigScheme (toEUFAdversary B) = liftPMF (eufDist S B) := by
     funext h
     unfold eufcmaGame
-    change SPComp.bind (liftPMF ((PMF.uniformOfFintype S.KR).map S.keygen)) _ h = _
+    change SPComp.bind (liftPMF ((PMF.uniformFintype S.KR).map S.keygen)) _ h = _
     rw [liftPMF_bind_apply, PMF.bind_map]
     change _ = (eufDist S B).map _
     unfold eufDist

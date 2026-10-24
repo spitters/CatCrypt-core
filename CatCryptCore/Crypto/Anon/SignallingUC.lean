@@ -71,8 +71,8 @@ noncomputable def anonViewReal (S : Scheme H K E N M Pf Root Path PK SK Sig)
 a simulated proof. -/
 noncomputable def anonViewIdeal (S : Scheme H K E N M Pf Root Path PK SK Sig)
     (choose : H.Key → PMF (Choice N E M)) : PMF (AnonView H E N M Pf Root) :=
-  (PMF.uniformOfFintype H.Key).bind fun hk => (choose hk).bind fun c =>
-    (PMF.uniformOfFintype N).bind fun cm => (PMF.uniformOfFintype N).bind fun nf =>
+  (PMF.uniformFintype H.Key).bind fun hk => (choose hk).bind fun c =>
+    (PMF.uniformFintype N).bind fun cm => (PMF.uniformFintype N).bind fun nf =>
       (S.sim (S.acc.root hk (c.group cm), c.scope, nf, c.msg)).map fun π =>
         (hk, c, S.acc.root hk (c.group cm), nf, π)
 

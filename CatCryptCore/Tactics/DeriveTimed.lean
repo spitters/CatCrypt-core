@@ -628,7 +628,7 @@ def maxDepth : CoreM Nat := return (← getOptions).get `derive_timed.maxDepth (
 def freeConstants : Array Name :=
   #[``OfNat.ofNat, ``Nat.cast, ``NatCast.natCast, ``Int.cast, ``IntCast.intCast, ``id,
     ``Eq.rec, ``Eq.ndrec, ``Eq.mp, ``Eq.mpr, ``cast, ``Subtype.val, ``Fin.val,
-    ``PMF.uniformOfFintype, ``PMF.pure, ``Classical.arbitrary, ``Inhabited.default,
+    ``PMF.uniformFintype, ``PMF.pure, ``Classical.arbitrary, ``Inhabited.default,
     ``Fin.elim0, ``False.elim, ``absurd, ``Empty.elim, ``PEmpty.elim]
 
 /-- The namespaces of the operations on quotient types (`Finset`, `Multiset`, `Quot`,

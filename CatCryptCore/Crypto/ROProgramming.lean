@@ -103,7 +103,7 @@ theorem run_update_le {α : Type} (s : X) (y : Y) (A : OracleAdv X Y α) (f : α
         true ≤
       ((OracleAdv.run roOracle A emptyTable).map fun z => f z.1) true + queryProb s A := by
   have hagree : ∀ (T : X → Option Y) d, ¬ (d = s) → progOracle s y T d = roOracle T d :=
-    fun T d hd => if_neg hd
+    fun T d hd => ite_eq_right hd
   have hmap := OracleAdv.run_map_state (progOracle s y) roOracle
     (fun T => Function.update T s (some y)) (progOracle_map_update s y) A emptyTable
   rw [map_apply_eq_toOuterMeasure, map_apply_eq_toOuterMeasure, ← hmap,
@@ -121,7 +121,7 @@ theorem run_update_fst_le (s : X) (y : Y) (A : OracleAdv X Y Bool) :
         ((OracleAdv.run roOracle A (Function.update emptyTable s (some y))).map Prod.fst) true +
           queryProb s A := by
   have hagree : ∀ (T : X → Option Y) d, ¬ (d = s) → progOracle s y T d = roOracle T d :=
-    fun T d hd => if_neg hd
+    fun T d hd => ite_eq_right hd
   rw [run_update_map_fst, map_fst_apply_eq, map_fst_apply_eq]
   refine ⟨OracleAdv.run_toOuterMeasure_le_add_flagOn (· = s) _ _ hagree A emptyTable {true}, ?_⟩
   unfold queryProb

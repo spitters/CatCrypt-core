@@ -101,7 +101,7 @@ theorem liftR_of_spanLift {R : α → β → Prop} {d₁ : SDistr α} {d₂ : SD
       exact hab (ENNReal.tsum_eq_zero.mpr hc)
     have hval : s.val = (a, b) := by
       by_contra hne
-      rw [SDistr.pure_apply_some, if_neg hne, mul_zero] at hs
+      rw [SDistr.pure_apply_some, ite_eq_right hne, mul_zero] at hs
       exact hs rfl
     have hR := s.property
     rw [hval] at hR
@@ -126,7 +126,7 @@ theorem spanLift_of_liftR {R : α → β → Prop} {d₁ : SDistr α} {d₂ : SD
       apply SDistr.bind_congr_support
       intro p hp0
       have hR : R p.1 p.2 := hc p.1 p.2 hp0
-      rw [dif_pos hR, SDistr.pure_bind]
+      rw [dite_eq_left hR, SDistr.pure_bind]
     rw [heq]
     exact SDistr.eq_of_some_eq c.left_marginal
   · rw [SDistr.bind_assoc]
@@ -137,7 +137,7 @@ theorem spanLift_of_liftR {R : α → β → Prop} {d₁ : SDistr α} {d₂ : SD
       apply SDistr.bind_congr_support
       intro p hp0
       have hR : R p.1 p.2 := hc p.1 p.2 hp0
-      rw [dif_pos hR, SDistr.pure_bind]
+      rw [dite_eq_left hR, SDistr.pure_bind]
     rw [heq]
     exact SDistr.eq_of_some_eq c.right_marginal
 

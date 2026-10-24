@@ -94,13 +94,13 @@ theorem simKeyAt_encOf {enc : M → Coin → C} {T : M → Key × Coin}
     (hinj : Function.Injective (encOf enc T)) (m : M) :
     simKeyAt enc T (encOf enc T m) = some (T m).1 := by
   have hex : ∃ m', encOf enc T m' = encOf enc T m := ⟨m, rfl⟩
-  rw [simKeyAt, dif_pos hex, hinj hex.choose_spec]
+  rw [simKeyAt, dite_eq_left hex, hinj hex.choose_spec]
 
 open scoped Classical in
 /-- Off the ciphertexts of the messages no key is stored. -/
 theorem simKeyAt_eq_none_of_not_mem_range {enc : M → Coin → C} {T : M → Key × Coin}
     {c : C} (hc : ¬ ∃ m, encOf enc T m = c) : simKeyAt enc T c = none := by
-  rw [simKeyAt, dif_neg hc]
+  rw [simKeyAt, dite_eq_right hc]
 
 variable [Fintype M] [DecidableEq M] [Fintype C] [DecidableEq C]
 variable [Fintype Key] [DecidableEq Key] [Fintype Coin] [DecidableEq Coin]
@@ -175,8 +175,8 @@ theorem decapsSim_eq_of_good (i : KEMInput PK SK Z M K m₁ m₂ n)
   funext x
   simp only [decapsSim, kemDecaps, decapsOracle]
   by_cases hx : eC.symm x = kemChal P hpk eG eKR i
-  · rw [if_pos hx, if_pos hx]
-  · rw [if_neg hx, if_neg hx,
+  · rw [ite_eq_left hx, ite_eq_left hx]
+  · rw [ite_eq_right hx, ite_eq_right hx,
       simKeyAt_eq_keyAt_of_good (P.enc i.1.1) (P.dec i.1.2) (kemTab hpk eG eKR i) h,
       keyAt_getD_eq_decapsFixed]
 
@@ -210,9 +210,9 @@ theorem hopD (A : KEMQAdv m₁ m₂ n w q k c a PK C K) (b : Bool) :
   refine le_trans (absDiff_mul_left_le _ _ _) ?_
   gcongr
   by_cases hg : ∀ m, m ∈ kemGood P hpk eG eKR i
-  · rw [if_pos hg, decapsSim_eq_of_good P hpk eG eJ eKR eC eKa i hg]
+  · rw [ite_eq_left hg, decapsSim_eq_of_good P hpk eG eJ eKR eC eKa i hg]
     exact le_of_eq (absDiff_self _)
-  · rw [if_neg hg]
+  · rw [ite_eq_right hg]
     exact absDiff_le_iff.mpr ⟨le_trans (prOutMR_le_one _ _ _) le_add_self,
       le_trans (prOutMR_le_one _ _ _) le_add_self⟩
 
@@ -234,10 +234,10 @@ theorem hopD_le_delta (A : KEMQAdv m₁ m₂ n w q k c a PK C K) (b : Bool) (δ 
         rw [← Finset.mul_sum]
         gcongr
         by_cases hg : ∀ m, m ∈ kemGood P hpk eG eKR i
-        · rw [if_pos hg]; exact zero_le
-        · rw [if_neg hg]
+        · rw [ite_eq_left hg]; exact zero_le
+        · rw [ite_eq_right hg]
           obtain ⟨m₀, hm₀⟩ := not_forall.mp hg
-          calc (1 : ℝ≥0∞) = (if m₀ ∈ kemGood P hpk eG eKR i then 0 else 1) := (if_neg hm₀).symm
+          calc (1 : ℝ≥0∞) = (if m₀ ∈ kemGood P hpk eG eKR i then 0 else 1) := (ite_eq_right hm₀).symm
             _ ≤ ∑ m : M, (if m ∈ kemGood P hpk eG eKR i then (0 : ℝ≥0∞) else 1) :=
                 Finset.single_le_sum
                   (f := fun m => if m ∈ kemGood P hpk eG eKR i then (0 : ℝ≥0∞) else 1)

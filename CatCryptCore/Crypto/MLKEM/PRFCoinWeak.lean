@@ -212,7 +212,7 @@ theorem collWeight_prfScheme (F : Fin m₃ → Fin n) :
           if enc (kg p.1 (eK (prfRow eD F p.2))).1 m (prfRow eD F r') =
               enc (kg p.1 (eK (prfRow eD F p.2))).1 m (prfRow eD F r) then (1 : ℝ≥0∞) else 0 := by
   rw [collWeight, tsum_fintype]
-  change ∑ ks, ((PMF.uniformOfFintype (Φ × Sd)).map fun p =>
+  change ∑ ks, ((PMF.uniformFintype (Φ × Sd)).map fun p =>
     PRFOracle.keygenPrf eD kg eK F p.1 p.2) ks * _ = _
   rw [sum_map_uniform]
   rfl
@@ -226,7 +226,7 @@ theorem collWeight_idealScheme :
         avg fun w : Nc → Fin n => avg fun w' : Nc → Fin n =>
           if enc (kg p.1 (eK p.2)).1 m w' = enc (kg p.1 (eK p.2)).1 m w then (1 : ℝ≥0∞) else 0 := by
   rw [collWeight, tsum_fintype]
-  change ∑ ks, ((PMF.uniformOfFintype (Φ × (Nc → Fin n))).map fun p => kg p.1 (eK p.2)) ks * _ = _
+  change ∑ ks, ((PMF.uniformFintype (Φ × (Nc → Fin n))).map fun p => kg p.1 (eK p.2)) ks * _ = _
   rw [sum_map_uniform]
   rfl
 
@@ -307,18 +307,18 @@ theorem avg_coll_rows_le (φ : Φ) (m : M) :
           else 0) := by
     intro F σ r r'
     by_cases hD : σ ≠ r ∧ σ ≠ r' ∧ r ≠ r'
-    · rw [if_pos hD]
+    · rw [ite_eq_left hD]
       exact le_add_self
-    · rw [if_neg hD, add_zero]
+    · rw [ite_eq_right hD, add_zero]
       refine le_trans (by split_ifs <;> simp) (?_ : (1 : ℝ≥0∞) ≤ _)
       simp only [not_and, not_not] at hD
       by_cases h1 : σ = r
-      · rw [if_pos h1]
+      · rw [ite_eq_left h1]
         exact le_add_right (le_add_right le_rfl)
       by_cases h2 : σ = r'
-      · rw [if_pos h2]
+      · rw [ite_eq_left h2]
         exact le_add_right (le_add_left le_rfl)
-      rw [if_pos (hD h1 h2)]
+      rw [ite_eq_left (hD h1 h2)]
       exact le_add_left le_rfl
   have hdiag : (avg fun σ : Sd => avg fun r : Sd => if σ = r then (1 : ℝ≥0∞) else 0) =
       (Fintype.card Sd : ℝ≥0∞)⁻¹ := by
@@ -334,9 +334,9 @@ theorem avg_coll_rows_le (φ : Φ) (m : M) :
         if enc (kg φ (eK v)).1 m w' = enc (kg φ (eK v)).1 m w then (1 : ℝ≥0∞) else 0 := by
     intro σ r r'
     by_cases hd : σ ≠ r ∧ σ ≠ r' ∧ r ≠ r'
-    · simp only [if_pos hd]
+    · simp only [ite_eq_left hd]
       exact (avg_rows_eq_ideal eD kg enc eK φ m hd.1 hd.2.1 hd.2.2).le
-    · simp only [if_neg hd, avg_const]
+    · simp only [ite_eq_right hd, avg_const]
       exact zero_le
   calc _ ≤ avg fun F : Fin m₃ → Fin n => avg fun σ : Sd => avg fun r : Sd => avg fun r' : Sd =>
         (if σ = r then (1 : ℝ≥0∞) else 0) + (if σ = r' then 1 else 0) + (if r = r' then 1 else 0) +

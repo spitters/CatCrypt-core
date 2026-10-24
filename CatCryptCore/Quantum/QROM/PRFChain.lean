@@ -233,9 +233,9 @@ theorem avg_le_bad_add (good : T → Prop) [DecidablePred good] (v B : T → ℝ
   rw [← avg_add]
   refine avg_mono fun F => ?_
   by_cases hF : good F
-  · rw [if_pos hF, zero_add]
+  · rw [ite_eq_left hF, zero_add]
     exact h F hF
-  · rw [if_neg hF]
+  · rw [ite_eq_right hF]
     exact (hv F).trans le_self_add
 
 end Average

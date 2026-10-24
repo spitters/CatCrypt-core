@@ -76,7 +76,7 @@ theorem prTrue_uniform_mem (S : Finset G) (h₀ : Heap) :
       · simp [SPComp.pure, SDistr.pure_apply_some]
       · intro h' hh'
         simp [SPComp.pure, SDistr.pure_apply_some, Prod.ext_iff, hh'.symm]
-    · simp only [hv, decide_false, if_false]
+    · simp only [hv, decide_false, ite_false]
       apply ENNReal.tsum_eq_zero.mpr
       intro h'
       simp [SPComp.pure, SDistr.pure_apply_some]
@@ -134,7 +134,7 @@ theorem gameOut_apply (shared : SPComp W) (F : W → Bool) (b : Bool) (h h' : He
     by_cases hFb : F w = b <;> simp [hFb]
   · intro hp hph
     simp only [SPComp.pure_def, SDistr.pure_apply_some, Prod.mk.injEq]
-    rw [if_neg (fun hc => hph hc.2), mul_zero]
+    rw [ite_eq_right (fun hc => hph hc.2), mul_zero]
 
 /-- **Up-to-bad for arbitrary outputs.** Two games with outputs `F₀`, `F₁` agreeing on every
     non-bad state (`badP w = false`) are identical-until-bad. `F₀`/`F₁` may read a value
@@ -150,7 +150,7 @@ theorem gameOut_iub_general (shared : SPComp W) (F₀ F₁ badP : W → Bool)
   rw [← mul_add]
   apply mul_le_mul' le_rfl
   by_cases hbad : badP w = true
-  · rw [if_pos hbad]
+  · rw [ite_eq_left hbad]
     exact le_trans (by split_ifs <;> simp) le_add_self
   · have hbf : badP w = false := by simpa using hbad
     have h0 : (if badP w = true then (1 : ℝ≥0∞) else 0) = 0 := by rw [hbf]; simp

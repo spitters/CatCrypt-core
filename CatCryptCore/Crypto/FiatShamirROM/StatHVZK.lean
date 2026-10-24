@@ -109,10 +109,10 @@ the test on the trace of the attempt (on the attempts whose hidden points are
 undefined) minus its expectation on the simulated trace, over uniform values. -/
 noncomputable def hvzkDistAt (x : G.Stmt) (w : G.Wit) : ℝ≥0∞ :=
   ⨆ (m : G.Msg) (look : G.Key → Option G.Ch) (g : G.Trace → ℝ≥0∞) (_ : ∀ y, g y ≤ 1),
-    (∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e * ∑' r, PMF.uniformOfFintype G.Rand r *
+    (∑' e, PMF.uniformFintype (Fin G.μ → G.Ch) e * ∑' r, PMF.uniformFintype G.Rand r *
       (if G.hidFresh look x w m r (G.vals look x w m r e) then
         g (G.trace x w m r (G.vals look x w m r e)) else 0)) -
-    ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e * ∑' s, PMF.uniformOfFintype G.SimRand s *
+    ∑' e, PMF.uniformFintype (Fin G.μ → G.Ch) e * ∑' s, PMF.uniformFintype G.SimRand s *
       g (G.simTrace look x m e s)
 
 /-- The key distance of `G` at the pair `(x, w)`: the supremum, over messages,
@@ -120,7 +120,7 @@ visible oracles and randomized guessers on traces, of the expected number of
 programmed or hidden entries whose point the guess from `guessView` hits. -/
 noncomputable def keyDistAt (x : G.Stmt) (w : G.Wit) : ℝ≥0∞ :=
   ⨆ (m : G.Msg) (look : G.Key → Option G.Ch) (Q : G.Trace → PMF G.Key),
-    ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e * ∑' r, PMF.uniformOfFintype G.Rand r *
+    ∑' e, PMF.uniformFintype (Fin G.μ → G.Ch) e * ∑' r, PMF.uniformFintype G.Rand r *
       ∑ i, (if G.flagging x w m r (G.vals look x w m r e) i then
         Q (G.guessView look x w m r e i) (G.key x w m r (G.vals look x w m r e) i) else 0)
 
@@ -154,8 +154,8 @@ prover randomness is at most its expectation on the simulator output under
 uniform simulator randomness, plus `δ`. -/
 def StatHVZKAt (x : P.Stmt) (w : P.Wit) (δ : ℝ≥0∞) : Prop :=
   ∀ e (g : P.Com × P.Resp → ℝ≥0∞), (∀ y, g y ≤ 1) → P.RejectBlind g →
-    ∑' r, PMF.uniformOfFintype P.Rand r * g (P.commit x w r, P.respond x w r e) ≤
-      ∑' s, PMF.uniformOfFintype P.SimRand s * g (P.simulate x e s) + δ
+    ∑' r, PMF.uniformFintype P.Rand r * g (P.commit x w r, P.respond x w r e) ≤
+      ∑' s, PMF.uniformFintype P.SimRand s * g (P.simulate x e s) + δ
 
 /-- **Statistical honest-verifier zero knowledge** with distance `δ` at every
 generated pair. -/
@@ -168,8 +168,8 @@ transcript, of the expectation of the test on the honest transcript minus its
 expectation on the simulated transcript. -/
 noncomputable def hvzkDistAt (x : P.Stmt) (w : P.Wit) : ℝ≥0∞ :=
   ⨆ (e : P.Ch) (g : P.Com × P.Resp → ℝ≥0∞) (_ : ∀ y, g y ≤ 1) (_ : P.RejectBlind g),
-    (∑' r, PMF.uniformOfFintype P.Rand r * g (P.commit x w r, P.respond x w r e)) -
-      ∑' s, PMF.uniformOfFintype P.SimRand s * g (P.simulate x e s)
+    (∑' r, PMF.uniformFintype P.Rand r * g (P.commit x w r, P.respond x w r e)) -
+      ∑' s, PMF.uniformFintype P.SimRand s * g (P.simulate x e s)
 
 /-- The HVZK distance of `P`: the supremum of `hvzkDistAt` over generated
 pairs. -/
@@ -190,13 +190,13 @@ theorem statHVZK_hvzkDist : P.StatHVZK P.hvzkDist := by
 /-- The commitment distance of `P` at the pair `(x, w)`: the largest probability
 of a commitment value under uniform prover randomness. -/
 noncomputable def commitDistAt (x : P.Stmt) (w : P.Wit) : ℝ≥0∞ :=
-  ⨆ (a : P.Com), (PMF.uniformOfFintype P.Rand).toOuterMeasure {r | P.commit x w r = a}
+  ⨆ (a : P.Com), (PMF.uniformFintype P.Rand).toOuterMeasure {r | P.commit x w r = a}
 
 /-- The commitment distance of `P`: the supremum of `commitDistAt` over generated
 pairs. -/
 noncomputable def commitDist : ℝ≥0∞ :=
   ⨆ (x : P.Stmt) (w : P.Wit) (_ : (x, w) ∈ P.gen.support) (a : P.Com),
-    (PMF.uniformOfFintype P.Rand).toOuterMeasure {r | P.commit x w r = a}
+    (PMF.uniformFintype P.Rand).toOuterMeasure {r | P.commit x w r = a}
 
 theorem commitBoundAt_commitDistAt (x : P.Stmt) (w : P.Wit) :
     P.CommitBoundAt x w (P.commitDistAt x w) := fun a => le_iSup_of_le a le_rfl
@@ -268,10 +268,10 @@ theorem statHVZKAt_toProtocol {x : P.Stmt} {w : P.Wit} {δ : ℝ≥0∞} (h : P.
     (P.toProtocol M).StatHVZKAt x w δ := by
   intro m look g hg
   simp only [vals_toProtocol, trace_toProtocol, simTrace_toProtocol]
-  have hstep : ∀ e : Fin 1 → P.Ch, ∑' r, PMF.uniformOfFintype P.Rand r *
+  have hstep : ∀ e : Fin 1 → P.Ch, ∑' r, PMF.uniformFintype P.Rand r *
       (if (P.toProtocol M).hidFresh look x w m r e then
         g ([], P.transcriptView m (e 0) (P.commit x w r, P.respond x w r (e 0))) else 0) ≤
-      ∑' s, PMF.uniformOfFintype P.SimRand s *
+      ∑' s, PMF.uniformFintype P.SimRand s *
         g ([], P.transcriptView m (e 0) (P.simulate x (e 0) s)) + δ := fun e => by
     have hb : P.RejectBlind (fun az => g ([], P.transcriptView m (e 0) az)) := by
       intro a a' z hz
@@ -281,7 +281,7 @@ theorem statHVZKAt_toProtocol {x : P.Stmt} {w : P.Wit} {δ : ℝ≥0∞} (h : P.
     split_ifs
     · exact le_rfl
     · exact zero_le
-  calc _ ≤ ∑' e, PMF.uniformOfFintype (Fin 1 → P.Ch) e * (∑' s, PMF.uniformOfFintype P.SimRand s *
+  calc _ ≤ ∑' e, PMF.uniformFintype (Fin 1 → P.Ch) e * (∑' s, PMF.uniformFintype P.SimRand s *
           g ([], P.transcriptView m (e 0) (P.simulate x (e 0) s)) + δ) :=
         ENNReal.tsum_le_tsum fun e => mul_le_mul_right (hstep e) _
     _ = _ := by
@@ -295,22 +295,22 @@ theorem keyBoundAt_toProtocol {x : P.Stmt} {w : P.Wit} {γ : ℝ≥0∞} (h : P.
   intro m look Q
   simp only [guessView_toProtocol, vals_toProtocol, Fin.sum_univ_one]
   set q := Q ([], [], none)
-  have hr : ∑' r, PMF.uniformOfFintype P.Rand r * q (P.commit x w r, m) ≤ γ := by
-    rw [← tsum_map_mul' (PMF.uniformOfFintype P.Rand) (fun r => (P.commit x w r, m)) q]
-    calc ∑' y, ((PMF.uniformOfFintype P.Rand).map fun r => (P.commit x w r, m)) y * q y
+  have hr : ∑' r, PMF.uniformFintype P.Rand r * q (P.commit x w r, m) ≤ γ := by
+    rw [← tsum_map_mul' (PMF.uniformFintype P.Rand) (fun r => (P.commit x w r, m)) q]
+    calc ∑' y, ((PMF.uniformFintype P.Rand).map fun r => (P.commit x w r, m)) y * q y
         ≤ ∑' y, γ * q y := by
           refine ENNReal.tsum_le_tsum fun y => mul_le_mul_left ?_ _
           rw [← PMF.toOuterMeasure_apply_singleton, PMF.toOuterMeasure_map_apply]
           exact (MeasureTheory.measure_mono fun r hr => congrArg Prod.fst hr).trans (h y.1)
       _ = γ := by rw [ENNReal.tsum_mul_left, PMF.tsum_coe, mul_one]
-  calc _ ≤ ∑' e, PMF.uniformOfFintype (Fin 1 → P.Ch) e *
-        ∑' r, PMF.uniformOfFintype P.Rand r * q (P.commit x w r, m) := by
+  calc _ ≤ ∑' e, PMF.uniformFintype (Fin 1 → P.Ch) e *
+        ∑' r, PMF.uniformFintype P.Rand r * q (P.commit x w r, m) := by
         refine ENNReal.tsum_le_tsum fun e => mul_le_mul_right
           (ENNReal.tsum_le_tsum fun r => mul_le_mul_right ?_ _) _
         split_ifs
         · exact le_rfl
         · exact zero_le
-    _ ≤ ∑' e, PMF.uniformOfFintype (Fin 1 → P.Ch) e * γ :=
+    _ ≤ ∑' e, PMF.uniformFintype (Fin 1 → P.Ch) e * γ :=
         ENNReal.tsum_le_tsum fun e => mul_le_mul_right hr _
     _ = γ := by rw [ENNReal.tsum_mul_right, PMF.tsum_coe, one_mul]
 
@@ -374,7 +374,7 @@ theorem offFlag_realSignOut_le (F : G.Answer × (G.Tables × Bool) → ℝ≥0�
     · have hf : G.flagging x w m r v i = true := by simp [Protocol.flagging, hp]
       simp [Protocol.lookup_eq_none_of_lookupAll (h1 i hf)]
     · simp
-  rw [if_pos hfr, realSignOut_of_fresh x w t false m e r h1 h2]
+  rw [ite_eq_left hfr, realSignOut_of_fresh x w t false m e r h1 h2]
   have hpe : ∀ p ∈ G.pubEntries x w m r v, (hashAll t (G.evEntries x w m r v)).lookup p.1 = none :=
     fun p hp => by
       obtain ⟨i, hi, rfl⟩ := Protocol.mem_entries hp
@@ -403,7 +403,7 @@ theorem realStep_le_simStep {δ : ℝ≥0∞} (xw : G.Stmt × G.Wit) (hZK : G.St
   obtain ⟨t, b⟩ := s
   cases d with
   | inl k =>
-    simp only [Sum.isRight_inl, Bool.false_eq_true, if_false, add_zero]
+    simp only [Sum.isRight_inl, Bool.false_eq_true, ite_false, add_zero]
     simp only [toOracle, realStep, simStep, realHashStep, hashStep]
     cases t.lookup k with
     | some e => exact ENNReal.tsum_le_tsum fun o => mul_le_mul_right (offFlag_le F o) _
@@ -416,17 +416,17 @@ theorem realStep_le_simStep {δ : ℝ≥0∞} (xw : G.Stmt × G.Wit) (hZK : G.St
       | none => exact ENNReal.tsum_le_tsum fun o => mul_le_mul_right (offFlag_le F o) _
   | inr m =>
     simp only [toOracle, realStep, simStep, Step.toPMF, sampleVec, tsum_bind_mul,
-      tsum_map_mul', Sum.isRight_inr, if_true]
-    calc ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e * ∑' r, PMF.uniformOfFintype G.Rand r *
+      tsum_map_mul', Sum.isRight_inr, ite_true]
+    calc ∑' e, PMF.uniformFintype (Fin G.μ → G.Ch) e * ∑' r, PMF.uniformFintype G.Rand r *
           offFlag F (realSignOut xw.1 xw.2 t b m e r)
-        ≤ ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e * ∑' r, PMF.uniformOfFintype G.Rand r *
+        ≤ ∑' e, PMF.uniformFintype (Fin G.μ → G.Ch) e * ∑' r, PMF.uniformFintype G.Rand r *
             (if G.hidFresh t.lookup xw.1 xw.2 m r (G.vals t.lookup xw.1 xw.2 m r e) then
               signTest F t b m (G.trace xw.1 xw.2 m r (G.vals t.lookup xw.1 xw.2 m r e))
               else 0) :=
           ENNReal.tsum_le_tsum fun e => mul_le_mul_right (ENNReal.tsum_le_tsum fun r =>
             mul_le_mul_right (offFlag_realSignOut_le F hFr xw.1 xw.2 t b m e r) _) _
-      _ ≤ ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e * ∑' z,
-            PMF.uniformOfFintype G.SimRand z * signTest F t b m (G.simTrace t.lookup xw.1 m e z) +
+      _ ≤ ∑' e, PMF.uniformFintype (Fin G.μ → G.Ch) e * ∑' z,
+            PMF.uniformFintype G.SimRand z * signTest F t b m (G.simTrace t.lookup xw.1 m e z) +
             δ := hZK m t.lookup (signTest F t b m) (signTest_le_one F hF t b m)
       _ ≤ _ := by
           gcongr with e z
@@ -764,9 +764,9 @@ the test restricted to those transcripts on the honest side minus the same
 expectation on the simulated side. -/
 noncomputable def hvzkDistOn (E : P.Resp → Bool) (x : P.Stmt) (w : P.Wit) : ℝ≥0∞ :=
   ⨆ (e : P.Ch) (g : P.Com × P.Resp → ℝ≥0∞) (_ : ∀ y, g y ≤ 1) (_ : P.RejectBlind g),
-    (∑' r, PMF.uniformOfFintype P.Rand r *
+    (∑' r, PMF.uniformFintype P.Rand r *
         (if E (P.respond x w r e) then g (P.commit x w r, P.respond x w r e) else 0)) -
-      ∑' s, PMF.uniformOfFintype P.SimRand s *
+      ∑' s, PMF.uniformFintype P.SimRand s *
         (if E (P.simulate x e s).2 then g (P.simulate x e s) else 0)
 
 /-- **Splitting the HVZK distance by an event on the response.** The distance at
@@ -776,9 +776,9 @@ theorem hvzkDistAt_le_on_add_on (E : P.Resp → Bool) (x : P.Stmt) (w : P.Wit) :
     P.hvzkDistAt x w ≤ P.hvzkDistOn E x w + P.hvzkDistOn (fun z => !E z) x w := by
   refine iSup_le fun e => iSup_le fun g => iSup_le fun hg => iSup_le fun hb => ?_
   have hsplit : ∀ {β : Type} [Fintype β] [Nonempty β] (F : β → P.Com × P.Resp),
-      ∑' b, PMF.uniformOfFintype β b * g (F b) =
-        (∑' b, PMF.uniformOfFintype β b * (if E (F b).2 then g (F b) else 0)) +
-          ∑' b, PMF.uniformOfFintype β b * (if (!E (F b).2) then g (F b) else 0) := by
+      ∑' b, PMF.uniformFintype β b * g (F b) =
+        (∑' b, PMF.uniformFintype β b * (if E (F b).2 then g (F b) else 0)) +
+          ∑' b, PMF.uniformFintype β b * (if (!E (F b).2) then g (F b) else 0) := by
     intro β _ _ F
     rw [← ENNReal.tsum_add]
     refine tsum_congr fun b => ?_
@@ -794,15 +794,15 @@ transcript whose response satisfies `E` has the same probability on the honest
 and the simulated side, the distance on those transcripts is `0`. -/
 theorem hvzkDistOn_eq_zero_of_eq (E : P.Resp → Bool) (x : P.Stmt) (w : P.Wit)
     (h : ∀ e (t : P.Com × P.Resp), E t.2 = true →
-      (PMF.uniformOfFintype P.Rand).map (fun r => (P.commit x w r, P.respond x w r e)) t =
-        (PMF.uniformOfFintype P.SimRand).map (P.simulate x e) t) :
+      (PMF.uniformFintype P.Rand).map (fun r => (P.commit x w r, P.respond x w r e)) t =
+        (PMF.uniformFintype P.SimRand).map (P.simulate x e) t) :
     P.hvzkDistOn E x w = 0 := by
   refine le_antisymm (iSup_le fun e => iSup_le fun g => iSup_le fun _ => iSup_le fun _ => ?_)
     zero_le
   rw [tsub_le_iff_right, zero_add]
-  have key := tsum_map_mul' (PMF.uniformOfFintype P.Rand)
+  have key := tsum_map_mul' (PMF.uniformFintype P.Rand)
     (fun r => (P.commit x w r, P.respond x w r e)) (fun t => if E t.2 then g t else 0)
-  have key' := tsum_map_mul' (PMF.uniformOfFintype P.SimRand) (P.simulate x e)
+  have key' := tsum_map_mul' (PMF.uniformFintype P.SimRand) (P.simulate x e)
     (fun t => if E t.2 then g t else 0)
   simp only at key key'
   rw [← key, ← key']
@@ -820,8 +820,8 @@ rejection, which is one minus the probability of acceptance on both sides. -/
 theorem hvzkDistOn_reject_eq_zero (x : P.Stmt) (w : P.Wit)
     (z₀ : P.Resp) (hz₀ : ∀ z, P.accept z = false → z = z₀)
     (h : ∀ e (t : P.Com × P.Resp), P.accept t.2 = true →
-      (PMF.uniformOfFintype P.Rand).map (fun r => (P.commit x w r, P.respond x w r e)) t =
-        (PMF.uniformOfFintype P.SimRand).map (P.simulate x e) t) :
+      (PMF.uniformFintype P.Rand).map (fun r => (P.commit x w r, P.respond x w r e)) t =
+        (PMF.uniformFintype P.SimRand).map (P.simulate x e) t) :
     P.hvzkDistOn (fun z => !P.accept z) x w = 0 := by
   refine le_antisymm (iSup_le fun e => iSup_le fun g => iSup_le fun _ => iSup_le fun hb => ?_)
     zero_le
@@ -833,13 +833,13 @@ theorem hvzkDistOn_reject_eq_zero (x : P.Stmt) (w : P.Wit)
     rintro ⟨a, z⟩
     cases hz : P.accept z
     · obtain rfl := hz₀ z hz
-      simp only [Bool.not_false, if_true, Bool.false_eq_true, if_false, mul_one]
+      simp only [Bool.not_false, ite_true, Bool.false_eq_true, ite_false, mul_one]
       exact hb a a₀ _ hz
     · simp
   -- the probability of acceptance under the image of `p` by `F`
   have hacc : ∀ {β : Type} [Fintype β] [Nonempty β] (F : β → P.Com × P.Resp),
-      ∑' b, PMF.uniformOfFintype β b * (if P.accept (F b).2 = true then 0 else 1) =
-        1 - ∑' t, ((PMF.uniformOfFintype β).map F) t *
+      ∑' b, PMF.uniformFintype β b * (if P.accept (F b).2 = true then 0 else 1) =
+        1 - ∑' t, ((PMF.uniformFintype β).map F) t *
           (if P.accept t.2 = true then 1 else 0) := by
     intro β _ _ F
     rw [tsum_map_mul']
@@ -847,13 +847,13 @@ theorem hvzkDistOn_reject_eq_zero (x : P.Stmt) (w : P.Wit)
     · exact (ENNReal.tsum_le_tsum fun b => mul_le_of_le_one_right' (by split_ifs <;> simp)).trans
         (le_of_eq (PMF.tsum_coe _))
     · rw [← ENNReal.tsum_add]
-      refine (tsum_congr fun b => ?_).trans (PMF.tsum_coe (PMF.uniformOfFintype β))
+      refine (tsum_congr fun b => ?_).trans (PMF.tsum_coe (PMF.uniformFintype β))
       rw [← mul_add]
       split_ifs <;> simp
-  have hA : ∑' t, ((PMF.uniformOfFintype P.Rand).map
+  have hA : ∑' t, ((PMF.uniformFintype P.Rand).map
         (fun r => (P.commit x w r, P.respond x w r e))) t *
         (if P.accept t.2 = true then 1 else 0) =
-      ∑' t, ((PMF.uniformOfFintype P.SimRand).map (P.simulate x e)) t *
+      ∑' t, ((PMF.uniformFintype P.SimRand).map (P.simulate x e)) t *
         (if P.accept t.2 = true then 1 else 0) := by
     refine tsum_congr fun t => ?_
     by_cases ht : P.accept t.2 = true
@@ -863,19 +863,19 @@ theorem hvzkDistOn_reject_eq_zero (x : P.Stmt) (w : P.Wit)
   have h2 := hacc (P.simulate x e)
   simp only at h1 h2
   refine le_of_eq ?_
-  calc (∑' r, PMF.uniformOfFintype P.Rand r * (if (!P.accept (P.respond x w r e)) = true then
+  calc (∑' r, PMF.uniformFintype P.Rand r * (if (!P.accept (P.respond x w r e)) = true then
           g (P.commit x w r, P.respond x w r e) else 0))
-      = c * ∑' r, PMF.uniformOfFintype P.Rand r *
+      = c * ∑' r, PMF.uniformFintype P.Rand r *
           (if P.accept (P.respond x w r e) = true then 0 else 1) := by
         rw [← ENNReal.tsum_mul_left]
-        exact tsum_congr fun r => (congrArg (PMF.uniformOfFintype P.Rand r * ·)
+        exact tsum_congr fun r => (congrArg (PMF.uniformFintype P.Rand r * ·)
           (hg (P.commit x w r, P.respond x w r e))).trans (mul_left_comm _ _ _)
-    _ = c * ∑' s, PMF.uniformOfFintype P.SimRand s *
+    _ = c * ∑' s, PMF.uniformFintype P.SimRand s *
           (if P.accept (P.simulate x e s).2 = true then 0 else 1) := by
         rw [h1, h2, hA]
     _ = _ := by
         rw [← ENNReal.tsum_mul_left]
-        exact tsum_congr fun s => ((congrArg (PMF.uniformOfFintype P.SimRand s * ·)
+        exact tsum_congr fun s => ((congrArg (PMF.uniformFintype P.SimRand s * ·)
           (hg (P.simulate x e s))).trans (mul_left_comm _ _ _)).symm
 
 /-- **The HVZK distance split by an event on the response.** `hvzkDist` is at

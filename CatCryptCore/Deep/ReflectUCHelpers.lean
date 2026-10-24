@@ -68,15 +68,15 @@ theorem push_inj {α : Type} (h : Heap) {d₀ d₁ : SDistr α}
     have hc := congrArg (fun p => p (some (a, h))) heq
     simp only [SDistr.bind, PMF.bind_apply] at hc
     rw [SDistr.tsum_option_eq_add, SDistr.tsum_option_eq_add] at hc
-    simp only [SDistr.pure, SDistr.fail, PMF.pure_apply, reduceCtorEq, if_false, mul_zero,
+    simp only [SDistr.pure, SDistr.fail, PMF.pure_apply, reduceCtorEq, ite_false, mul_zero,
       zero_add, mul_ite, mul_one] at hc
     have hsingle : ∀ (d : SDistr α),
         (∑' a_1, if some (a, h) = some (a_1, h) then d (some a_1) else 0) = d (some a) := by
       intro d
       rw [tsum_eq_single a (by
         intro b hb
-        rw [if_neg (fun he => hb (congrArg Prod.fst (Option.some.inj he)).symm)])]
-      rw [if_pos rfl]
+        rw [ite_eq_right (fun he => hb (congrArg Prod.fst (Option.some.inj he)).symm)])]
+      rw [ite_eq_left rfl]
     rw [hsingle d₀, hsingle d₁] at hc
     exact hc
 

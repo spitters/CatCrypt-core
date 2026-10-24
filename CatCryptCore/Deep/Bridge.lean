@@ -116,7 +116,7 @@ theorem evalOp_par_left (p₁ p₂ : DeepPackage.{u}) (h_sep : DeepPackage.sep p
     (DeepPackage.par p₁ p₂ h_sep).evalOp op dom codom
       (List.mem_append.mpr (Or.inl h₁)) x =
     p₁.evalOp op dom codom h₁ x := by
-  simp only [DeepPackage.evalOp, DeepPackage.par, dif_pos h₁]
+  simp only [DeepPackage.evalOp, DeepPackage.par, dite_eq_left h₁]
   rfl
 
 /-! ## Bridge Lemmas for Common Patterns -/

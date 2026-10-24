@@ -207,7 +207,7 @@ theorem bijCPA_indcpa_coupling (B : BijCPAScheme) (m₀ m₁ : B.Output) :
       (INDCPA_Game B.toEncScheme m₀ m₁ false)
       eqPost := by
   rw [bijCPA_game_eq B m₀ m₁ true, bijCPA_game_eq B m₀ m₁ false]
-  simp only [if_true, Bool.false_eq_true, if_false]
+  simp only [ite_true, Bool.false_eq_true, ite_false]
   ssprove_try_bij₂ (fun r => B.keyEquiv r m₀ m₁)
   congr 1
   -- `bij r (keyEquiv r m₀ m₁ k) = (bij r k ⊕ m₀) ⊕ m₁`, then cancel `⊕ m₁`.
@@ -422,7 +422,7 @@ theorem PRFEncScheme.otpGame_true_eq_false (P : PRFEncScheme) (m₀ m₁ : P.F.O
         = SPComp.bind (SPComp.sample P.F.Output) (fun u => SPComp.pure (r, u)) := by
     intro m r
     bind_vcgen using (P.xorEquiv m)
-  simp only [PRFEncScheme.otpGame, if_true, Bool.false_eq_true, if_false,
+  simp only [PRFEncScheme.otpGame, ite_true, Bool.false_eq_true, ite_false,
     SPComp.monad_bind_eq]
   refine congrArg (SPComp.bind (SPComp.sample P.F.Input)) (funext fun r => ?_)
   rw [key m₀ r, key m₁ r]
@@ -560,11 +560,11 @@ theorem cpa_from_prf_reduction (P : PRFEncScheme)
   unfold INDCPA_Adv
   adv_game_hop [P.otpGame m₀ m₁ true, P.otpGame m₀ m₁ false]
   · have h := P.indcpa_otp_hop_le_sum m₀ m₁ A true
-    simp only [if_true] at h
+    simp only [ite_true] at h
     exact h
   · exact le_of_eq (P.otp_advantage_zero m₀ m₁ A)
   · have h := P.indcpa_otp_hop_le_sum m₀ m₁ A false
-    simp only [Bool.false_eq_true, if_false] at h
+    simp only [Bool.false_eq_true, ite_false] at h
     unfold AdvantageA at h ⊢
     rw [Advantage_sym]
     exact h

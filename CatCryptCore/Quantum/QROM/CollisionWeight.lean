@@ -91,7 +91,7 @@ theorem collProb_le_of_isSpread (ε : ℝ≥0∞) (hε : P.IsSpread ε) {ks : PK
         refine le_trans (le_of_eq ?_) (hε ks hks m (P.enc ks.1 m r))
         rw [PMF.toOuterMeasure_apply, tsum_fintype]
         refine Finset.sum_congr rfl fun r' _ => ?_
-        simp [Set.indicator_apply, PMF.uniformOfFintype_apply]
+        simp [Set.indicator_apply, PMF.uniformFintype_apply]
     _ = ε := by rw [← Finset.sum_mul, sum_inv_card R, one_mul]
 
 /-- An `ε`-spread scheme has coin-collision weight at most `ε`. -/

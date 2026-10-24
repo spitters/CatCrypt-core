@@ -90,9 +90,9 @@ theorem mrPrefix_frontMul_branch (O : QComp d Bool) (f : Fin c → Fin a) (W : M
     rw [frontMul_castLE, scChain_frontMul, qbind_unit_branch, unitaryChannel_branch_apply]
   | k + 1, q₀, head, tail, R, j, b, ρ => by
     by_cases h : (j : ℕ) < q₀
-    · simp only [mrPrefix, dif_pos h]
+    · simp only [mrPrefix, dite_eq_left h]
       rw [frontMul_castLE, scChain_frontMul, qbind_unit_branch, unitaryChannel_branch_apply]
-    · simp only [mrPrefix, dif_neg h]
+    · simp only [mrPrefix, dite_eq_right h]
       rw [scChain_frontMul, QComp.qbind_assoc, qbind_unit_branch, unitaryChannel_branch_apply]
 
 /-- The cut multi-round chain after the head, at the branch level. -/
@@ -106,7 +106,7 @@ theorem mrPrefix_succ_branch (O : QComp d Bool) (f : Fin c → Fin a) (k q₀ : 
         (mrPrefix O f k q (tail 0) (Fin.tail tail) (Fin.tail R)
           ⟨j - q₀, flatQ_succ_sub_lt j.isLt h⟩).branch b₂
           ((roundU (R 0) f).branch () ((scChain O q₀ head).branch b₁ ρ)) else 0 := by
-  simp only [mrPrefix, dif_neg h, qbind_branch_apply, tsum_fintype, Fintype.sum_unique,
+  simp only [mrPrefix, dite_eq_right h, qbind_branch_apply, tsum_fintype, Fintype.sum_unique,
     qpure_branch_apply]
   refine Finset.sum_congr rfl fun b₁ _ => Finset.sum_congr rfl fun b₂ _ => ?_
   congr
@@ -134,7 +134,7 @@ theorem trace_nfPrefix_head (e : Fin (d * E) ≃ Fin D) (O : QComp d Bool) (O' :
     rw [backMul_of_lt V q₀ _ _ (by simp; omega)]
     rfl
   rw [hU, liftsQ_scChain e O O' hO j _ b σ (ancUnit t t), kr_mul, one_mul, trace_kr,
-    trace_ancUnit, if_pos rfl, mul_one]
+    trace_ancUnit, ite_eq_left rfl, mul_one]
 
 /-- **The cut multi-round chain in normal form.** On `σ ⊗ |t⟩⟨t|` with `t` good
 from `j₀`, the cut chain of the normal-form segments and `slotRound` agrees with
@@ -157,7 +157,7 @@ theorem trace_nfPrefix (e : Fin (d * E) ≃ Fin D) (S : SlotData E c a K) (O : Q
     trace_nfPrefix_head e O O' hO q₀ jj (by simpa [flatQ] using jj.isLt) (Vs 0) head t X σ b _
   | k + 1, j₀, q₀, head, tail, R, Vs, Ws, hk, hV, hW, t, ht, X, σ, b, jj => by
     by_cases hlt : (jj : ℕ) < q₀
-    · simp only [mrPrefix, dif_pos hlt]
+    · simp only [mrPrefix, dite_eq_left hlt]
       exact trace_nfPrefix_head e O O' hO q₀ jj hlt (Vs 0) head t X σ b _
     rw [mrPrefix_succ_branch _ _ _ _ _ _ _ _ hlt, mrPrefix_succ_branch _ _ _ _ _ _ _ _ hlt]
     simp_rw [Finset.mul_sum, trace_sum]

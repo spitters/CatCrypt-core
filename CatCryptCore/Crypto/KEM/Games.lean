@@ -78,7 +78,7 @@ variable [Fintype K] [Nonempty K] (S : Scheme PK SK K C)
 /-- The IND-CPA experiment in real-or-random form. -/
 noncomputable def indcpaGame (A : PK → C → K → PMF Bool) (b : Bool) : PMF Bool :=
   S.keygen.bind fun ks => (S.encaps ks.1).bind fun x =>
-    (PMF.uniformOfFintype K).bind fun k₁ => A ks.1 x.2 (if b then x.1 else k₁)
+    (PMF.uniformFintype K).bind fun k₁ => A ks.1 x.2 (if b then x.1 else k₁)
 
 /-- The IND-CPA advantage: the `Advantage` between the games of the two challenge bits.
 Registered with `@[hop_metric]`, which unfolds it to that `Advantage`. -/
@@ -102,7 +102,7 @@ structure INDCCAAdversary (q : ℕ) : Type 1 where
 noncomputable def indccaGame [DecidableEq C] {q : ℕ} (A : INDCCAAdversary PK K C q) (b : Bool) :
     PMF Bool :=
   S.keygen.bind fun ks => (S.encaps ks.1).bind fun x =>
-    (PMF.uniformOfFintype K).bind fun k₁ =>
+    (PMF.uniformFintype K).bind fun k₁ =>
       (OracleAdv.run (decapsOracle S ks.2 x.2) (A.run ks.1 x.2 (if b then x.1 else k₁)) ()).map
         Prod.fst
 
@@ -159,7 +159,7 @@ the adversary against `romCCAOracle` from the resulting table. -/
 noncomputable def romINDCCAGame (S : ROMScheme PK SK K C D H) {qH qD : ℕ}
     (A : ROMINDCCAAdversary PK K C D H qH qD) (b : Bool) : PMF Bool :=
   S.keygen.bind fun ks => (OracleAdv.run roOracle (S.encaps ks.1) emptyTable).bind fun x =>
-    (PMF.uniformOfFintype K).bind fun k₁ =>
+    (PMF.uniformFintype K).bind fun k₁ =>
       (OracleAdv.run (romCCAOracle S ks.2 x.1.2) (A.run ks.1 x.1.2 (if b then x.1.1 else k₁))
         x.2).map Prod.fst
 
@@ -226,7 +226,7 @@ noncomputable def rom2INDCCAGame (S : ROM2Scheme PK SK K C DG HG DH HH) {qRO qD 
     (A : ROM2INDCCAAdversary PK K C DG HG DH HH qRO qD) (b : Bool) : PMF Bool :=
   S.keygen.bind fun ks =>
     (OracleAdv.run ro2Oracle (S.encaps ks.1) (emptyTable, emptyTable)).bind fun x =>
-      (PMF.uniformOfFintype K).bind fun k₁ =>
+      (PMF.uniformFintype K).bind fun k₁ =>
         (OracleAdv.run (rom2CCAOracle S ks.2 x.1.2) (A.run ks.1 x.1.2 (if b then x.1.1 else k₁))
           x.2).map Prod.fst
 

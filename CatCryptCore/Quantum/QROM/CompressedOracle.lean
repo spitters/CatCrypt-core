@@ -242,10 +242,10 @@ theorem trace_runLift_blockU {t : ℕ} (V : Fin t → Matrix.unitaryGroup (Fin (
   refine Finset.sum_congr rfl fun k _ => ?_
   rw [Finset.mul_sum, trace_sum, Finset.sum_eq_single k]
   · rw [kronecker_mul_kronecker, kronecker_mul_kronecker, TensorProduct.trace_kronecker,
-      trace_single_mul_mul_single, if_pos rfl, mul_comm]
+      trace_single_mul_mul_single, ite_eq_left rfl, mul_comm]
   · intro j _ hj
     rw [kronecker_mul_kronecker, kronecker_mul_kronecker, TensorProduct.trace_kronecker,
-      trace_single_mul_mul_single, if_neg (Ne.symm hj), mul_zero]
+      trace_single_mul_mul_single, ite_eq_right (Ne.symm hj), mul_zero]
   · simp
 
 variable [NeZero n]
@@ -505,7 +505,7 @@ theorem entryUniform_mul_star (y : Fin (n + 1)) :
 
 theorem star_entryDiff_dotProduct [NeZero n] : star (entryDiff n) ⬝ᵥ entryDiff n = 2 := by
   simp only [dotProduct, Fin.sum_univ_castSucc, entryDiff, Pi.sub_apply, Pi.star_apply,
-    Pi.single_apply, Fin.castSucc_ne_last, if_false, if_true, entryUniform, Fin.val_castSucc,
+    Pi.single_apply, Fin.castSucc_ne_last, ite_false, ite_true, entryUniform, Fin.val_castSucc,
     Fin.is_lt, Fin.val_last, lt_irrefl]
   rw [zero_sub, sub_zero, star_neg, neg_mul_neg, star_one, one_mul, Complex.star_def,
     Complex.conj_ofReal, ← Complex.ofReal_mul, ← mul_inv, Real.mul_self_sqrt (Nat.cast_nonneg n),
@@ -565,13 +565,13 @@ theorem decompDB_mul_conjTranspose [NeZero n] : decompDB m n * (decompDB m n)ᴴ
   simp only [hD, Matrix.one_apply]
   by_cases h : i = j
   · subst h; simp
-  · rw [if_neg h]
+  · rw [ite_eq_right h]
     have : ∃ x, (dbIndex m n).symm i x ≠ (dbIndex m n).symm j x := by
       by_contra hc
       exact h ((dbIndex m n).symm.injective
         (funext fun x => not_not.mp fun hx => hc ⟨x, hx⟩))
     obtain ⟨x, hx⟩ := this
-    exact Finset.prod_eq_zero (Finset.mem_univ x) (if_neg hx)
+    exact Finset.prod_eq_zero (Finset.mem_univ x) (ite_eq_right hx)
 
 /-- Decompression of the database as a unitary. -/
 def decompDBU [NeZero n] : Matrix.unitaryGroup (Fin ((n + 1) ^ m)) ℂ :=
@@ -672,9 +672,9 @@ theorem prOutCmp_eq_avg_prOut (A : QAdv m n w q) :
       by_contra hc
       exact hD ⟨fun x => ⟨D x, not_not.mp fun hx => hc ⟨x, hx⟩⟩, funext fun x => Fin.ext rfl⟩
     obtain ⟨x, hx⟩ := this
-    rw [Finset.prod_eq_zero (Finset.mem_univ x) (if_neg hx), ENNReal.ofReal_zero, zero_mul]
+    rw [Finset.prod_eq_zero (Finset.mem_univ x) (ite_eq_right hx), ENNReal.ofReal_zero, zero_mul]
   · intro H
-    simp only [Fin.val_castSucc, Fin.is_lt, if_true, Finset.prod_const, Finset.card_univ,
+    simp only [Fin.val_castSucc, Fin.is_lt, ite_true, Finset.prod_const, Finset.card_univ,
       Fintype.card_fin]
     rw [show dbFun m n (dbIndex m n fun x => (H x).castSucc) = H from
       funext fun x => by simp [dbFun, truncEntry_castSucc]]

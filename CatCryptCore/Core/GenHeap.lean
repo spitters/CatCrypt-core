@@ -60,7 +60,7 @@ theorem gencode_injective (α : Type) [Countable α] : Function.Injective (genco
 theorem gencode_eq_encode {α : Type} [inst : Fintype α] :
     gencode α = Heap.encode (α := α) := by
   have hne : Nonempty (Fintype α) := ⟨inst⟩
-  rw [gencode, dif_pos hne, Subsingleton.elim hne.some inst]
+  rw [gencode, dite_eq_left hne, Subsingleton.elim hne.some inst]
   rfl
 
 /-- Partial inverse of `gencode`, returning `default` off its image. -/
@@ -69,7 +69,7 @@ noncomputable def gdecode (α : Type) [Countable α] [Inhabited α] (n : Nat) : 
 
 theorem gdecode_gencode {α : Type} [Countable α] [Inhabited α] (a : α) :
     gdecode α (gencode α a) = a := by
-  rw [gdecode, dif_pos (⟨a, rfl⟩ : ∃ b : α, gencode α b = gencode α a)]
+  rw [gdecode, dite_eq_left (⟨a, rfl⟩ : ∃ b : α, gencode α b = gencode α a)]
   exact gencode_injective α (Exists.choose_spec (⟨a, rfl⟩ : ∃ b : α, gencode α b = gencode α a))
 
 /-- On a finite type, `gdecode` is `Heap.decode`. -/
@@ -81,7 +81,7 @@ theorem gdecode_eq_decode {α : Type} [Fintype α] [Inhabited α] :
   by_cases hlt : n < Fintype.card α
   · have hmem : ∃ a : α, gencode α a = n :=
       ⟨(Fintype.equivFin α).symm ⟨n, hlt⟩, by rw [hval, Equiv.apply_symm_apply]⟩
-    rw [gdecode, dif_pos hmem, Heap.decode, dif_pos hlt]
+    rw [gdecode, dite_eq_left hmem, Heap.decode, dite_eq_left hlt]
     exact gencode_injective α (by rw [hmem.choose_spec, hval, Equiv.apply_symm_apply])
   · grind [gdecode, Heap.decode]
 

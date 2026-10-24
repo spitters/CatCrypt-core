@@ -131,14 +131,14 @@ theorem measureProj_branch_true {d : ℕ} (P : Projector d)
     (measureProj P).branch true ρ = P.val * ρ * P.val := by
   show (if true then P.val else 1 - P.val) * ρ *
     (if true then P.val else 1 - P.val)ᴴ = _
-  rw [if_pos rfl, P.self_adjoint]
+  rw [ite_eq_left rfl, P.self_adjoint]
 
 theorem measureProj_branch_false {d : ℕ} (P : Projector d)
     (ρ : Matrix (Fin d) (Fin d) ℂ) :
     (measureProj P).branch false ρ = (1 - P.val) * ρ * (1 - P.val) := by
   show (if false then P.val else 1 - P.val) * ρ *
     (if false then P.val else 1 - P.val)ᴴ = _
-  rw [if_neg Bool.false_ne_true, Matrix.conjTranspose_sub,
+  rw [ite_eq_right Bool.false_ne_true, Matrix.conjTranspose_sub,
     Matrix.conjTranspose_one, P.self_adjoint]
 
 /-- Each branch of the projective instrument is completely positive. -/

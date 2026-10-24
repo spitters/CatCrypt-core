@@ -30,7 +30,7 @@ namespace CatCrypt.Unary
 
 open CatCrypt.Core CatCrypt.Prob
 open scoped ENNReal
-open Std.Internal.Do
+open Std.WP
 
 set_option mvcgen.warning false in
 open CatCryptCore.Examples.DetCPA in
@@ -47,7 +47,8 @@ theorem same_msg_prTrue_vcgen (m : Bool) :
     vcgen
     all_goals simp only [leanOrder_rel_iff_le, tsum_bool, wp_eq_wpEF, wpEF_pure,
       Fintype.card_bool, beq_self_eq_true]
-    all_goals simp only [if_true, ← two_mul, Nat.cast_ofNat, mul_one]
+    all_goals simp only [ite_true, ← two_mul, Nat.cast_ofNat, mul_one]
+    all_goals simp only [binderNameHint, wpEF_pure, beq_self_eq_true, ite_true, ← two_mul, mul_one]
     all_goals rw [ENNReal.inv_mul_cancel] <;> simp
   simp_all [triple_iff_le_wpE]
 

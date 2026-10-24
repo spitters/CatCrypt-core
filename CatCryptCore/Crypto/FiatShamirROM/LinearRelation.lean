@@ -414,10 +414,10 @@ theorem linearSigma_perfectHVZK
         funext j
         simp only [GroupParam.scalarAdd_eq_add, GroupParam.scalarSub_eq_sub]
         ring }
-  change (PMF.uniformOfFintype (Fin n → gp.Scalar)).map
+  change (PMF.uniformFintype (Fin n → gp.Scalar)).map
       (fun r => ((toRel s).map r, fun j => gp.scalarAdd (r j) (gp.scalarMul c (w j)))) =
-    (PMF.uniformOfFintype (Fin n → gp.Scalar)).map (fun z => ((toRel s).simCommit c z, z))
-  conv_rhs => rw [← PMF.uniformOfFintype_map_equiv e, PMF.map_comp]
+    (PMF.uniformFintype (Fin n → gp.Scalar)).map (fun z => ((toRel s).simCommit c z, z))
+  conv_rhs => rw [← PMF.uniformFintype_map_equiv e, PMF.map_comp]
   congr 1
   funext r
   simp only [Function.comp_apply]
@@ -501,18 +501,18 @@ theorem elem_and_right (k : ℕ) : (x₁.and x₂).elem (k + x₁.elements.lengt
 
 theorem vecGet_append_left (w₁ : Fin n₁ → gp.Scalar) (w₂ : Fin n₂ → gp.Scalar) (j : ℕ)
     (hj : j < n₁) : vecGet (Fin.append w₁ w₂) j = vecGet w₁ j := by
-  simp only [vecGet, dif_pos hj, Nat.lt_add_right n₂ hj]
+  simp only [vecGet, dite_eq_left hj, Nat.lt_add_right n₂ hj]
   exact Fin.append_left w₁ w₂ ⟨j, hj⟩
 
 theorem vecGet_append_right (w₁ : Fin n₁ → gp.Scalar) (w₂ : Fin n₂ → gp.Scalar) (j : ℕ) :
     vecGet (Fin.append w₁ w₂) (j + n₁) = vecGet w₂ j := by
   unfold vecGet
   by_cases hj : j < n₂
-  · rw [dif_pos (by omega), dif_pos hj]
+  · rw [dite_eq_left (by omega), dite_eq_left hj]
     have e : (⟨j + n₁, by omega⟩ : Fin (n₁ + n₂)) = Fin.natAdd n₁ ⟨j, hj⟩ :=
       Fin.ext (Nat.add_comm _ _)
     rw [e, Fin.append_right]
-  · rw [dif_neg (by omega), dif_neg hj]
+  · rw [dite_eq_right (by omega), dite_eq_right hj]
 
 variable {x₁ x₂}
 
@@ -769,7 +769,7 @@ variable (gp)
 key generation. -/
 noncomputable def dlogSigma : Sigma :=
   linearSigma gp 1 1 (dlogRelation gp)
-    ((PMF.uniformOfFintype (Fin 1 → gp.Scalar)).map fun w => (gp.exp (w 0), w))
+    ((PMF.uniformFintype (Fin 1 → gp.Scalar)).map fun w => (gp.exp (w 0), w))
 
 theorem dlogSigma_complete : (dlogSigma gp).Complete := linearSigma_complete _ _
 

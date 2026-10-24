@@ -143,7 +143,7 @@ noncomputable def collFinder (H : HashScheme) (cd : H.Codec (BlockDom Tx Hash np
 the finder by `(L, ks) ↦ ⟨L, cd.hashOn k, ks⟩`. -/
 theorem seedDist_eq_map (H : HashScheme) (cd : H.Codec (BlockDom Tx Hash np Hz) Hash)
     (μ : PMF (Option (Fin np))) (W : ℕ) :
-    seedDist Sch H cd μ P.h0 W n = (PMF.uniformOfFintype H.Key).bind fun k =>
+    seedDist Sch H cd μ P.h0 W n = (PMF.uniformFintype H.Key).bind fun k =>
       (collCoins Sch P μ W).map fun c => (⟨c.1, cd.hashOn k, c.2⟩ : Seed Tx Hash np n Hz PK SK) := by
   simp only [collCoins, seedDist, PMF.map_bind, PMF.pure_map]
   exact PMF.bind_comm _ _ _
@@ -270,7 +270,7 @@ theorem prob_collisionG_le {X : Type} (H : HashScheme)
   rw [seedDist_eq_map Sch P H cd μ W, sampleFrom_ofPMF_bind]
   simp_rw [sampleFrom_ofPMF_map]
   unfold CR_Search_Advantage CR_Search_Game collFinderG
-  rw [show SPComp.sample H.Key = sampleFrom (ofPMF (PMF.uniformOfFintype H.Key)) from rfl]
+  rw [show SPComp.sample H.Key = sampleFrom (ofPMF (PMF.uniformFintype H.Key)) from rfl]
   simp only [SPComp.monad_bind_eq, SPComp.bind_assoc, SPComp.pure_bind]
   rw [prTrue_bind_sampleFrom, prTrue_bind_sampleFrom]
   refine ENNReal.tsum_le_tsum fun k => ?_

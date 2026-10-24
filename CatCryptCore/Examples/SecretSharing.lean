@@ -128,7 +128,7 @@ theorem ss_privacy_coupling (i s₀ s₁ : Bool) :
       (SS_Privacy_Game i s₀ s₁ true)
       (SS_Privacy_Game i s₀ s₁ false)
       eqPost := by
-  simp only [SS_Privacy_Game, if_true, Bool.false_eq_true, if_false,
+  simp only [SS_Privacy_Game, ite_true, Bool.false_eq_true, ite_false,
     SPComp.monad_bind_eq]
   ssprove_couple_bij (shareBij i s₀ s₁)
   cases i <;> cases s₀ <;> cases s₁ <;> simp [revealShare, shareBij, boolXorBij_apply]

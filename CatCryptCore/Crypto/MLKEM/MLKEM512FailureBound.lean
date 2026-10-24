@@ -94,7 +94,7 @@ theorem card_badVals_kemBad_div_le [Fintype K] [Nonempty K] (pk : PK) (sk : SK)
   have hn : n = Fintype.card K * Fintype.card R := by
     rw [← Fintype.card_prod, Fintype.card_congr eKR, Fintype.card_fin]
   have hfp : P.failProb pk sk m = (S.card : ℝ≥0∞) / (Fintype.card R : ℝ≥0∞) := by
-    rw [Scheme.failProb, PMF.toOuterMeasure_uniformOfFintype_apply]
+    rw [Scheme.failProb, PMF.toOuterMeasure_uniformFintype_apply]
     congr 2
     rw [Fintype.card_ofFinset]
     congr 1

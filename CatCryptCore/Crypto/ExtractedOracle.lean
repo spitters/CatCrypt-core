@@ -44,7 +44,7 @@ omit [Fintype M] in
 /-- The first query of the lazily sampled oracle samples a uniform answer and records it. -/
 theorem roOracle_emptyTable_eq (s : M) :
     roOracle (emptyTable : M → Option R) s =
-      (PMF.uniformOfFintype R).map fun y => (y, Function.update emptyTable s (some y)) := rfl
+      (PMF.uniformFintype R).map fun y => (y, Function.update emptyTable s (some y)) := rfl
 
 /-- **Lazy query, eager oracle.** Querying the lazily sampled oracle at `s` from the
     empty table and running `A` on the answer against the same oracle has the output
@@ -52,12 +52,12 @@ theorem roOracle_emptyTable_eq (s : M) :
 theorem roOracle_bind_run_eq_eager {β : Type} (s : M) (A : R → OracleAdv M R β) :
     (roOracle emptyTable s).bind
         (fun kt => (OracleAdv.run roOracle (A kt.1) kt.2).map Prod.fst) =
-      (PMF.uniformOfFintype (M → R)).bind fun f =>
+      (PMF.uniformFintype (M → R)).bind fun f =>
         (OracleAdv.run (keyedRO f) (A (f s)) ()).map Prod.fst := by
   rw [roOracle_emptyTable_eq, PMF.bind_map, ← extDist_empty]
   simp only [Function.comp_def, run_roOracle_map_fst_eq]
   have h := extDist_map_pair (emptyTable : M → Option R) s rfl
-  calc _ = ((PMF.uniformOfFintype R).bind fun r =>
+  calc _ = ((PMF.uniformFintype R).bind fun r =>
           (extDist (Function.update emptyTable s (some r))).map fun f => (r, f)).bind
             fun p => (OracleAdv.run (keyedRO p.2) (A p.1) ()).map Prod.fst := by
         simp only [PMF.bind_bind, PMF.bind_map, Function.comp_def]

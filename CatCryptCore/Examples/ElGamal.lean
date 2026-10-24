@@ -187,7 +187,7 @@ theorem elgamal_real₀_eq (m₀ m₁ : P.G₁) (A : (P.G₁ × P.G₁) → SPCo
     SPComp.bind (INDCPA_Game (elgamalEnc P) m₀ m₁ true) A =
       DDH_Game_Real (elgamalDDH P) (elgamalReduction m₀ A) := by
   simp only [INDCPA_Game, DDH_Game_Real, elgamalEnc, elgamalDDH, elgamalKeygen,
-    elgamalReduction, if_true, ssprove_simpl]
+    elgamalReduction, ite_true, ssprove_simpl]
   grind [elgamalEcdh_exp, zpowZMod₁_zpowZMod₁]
 
 /-- The real IND-CPA game encrypting `m₁` (the `false` branch) equals the real DDH
@@ -196,7 +196,7 @@ theorem elgamal_real₁_eq (m₀ m₁ : P.G₁) (A : (P.G₁ × P.G₁) → SPCo
     SPComp.bind (INDCPA_Game (elgamalEnc P) m₀ m₁ false) A =
       DDH_Game_Real (elgamalDDH P) (elgamalReduction m₁ A) := by
   simp only [INDCPA_Game, DDH_Game_Real, elgamalEnc, elgamalDDH, elgamalKeygen,
-    elgamalReduction, Bool.false_eq_true, if_false, ssprove_simpl]
+    elgamalReduction, Bool.false_eq_true, ite_false, ssprove_simpl]
   grind [elgamalEcdh_exp, zpowZMod₁_zpowZMod₁]
 
 /-- Absorbing the mask: for any first component `gb`, sampling the DDH mask `c` and

@@ -200,7 +200,7 @@ theorem rcv_history (p : Party) (m : Message Tx Hash Party) :
   | none => simp
   | some l =>
     by_cases hc : is_corrupt p
-    · simp only [hc, Bool.not_true, Bool.false_eq_true, if_false, flood_msgs_adv_history,
+    · simp only [hc, Bool.not_true, Bool.false_eq_true, ite_false, flood_msgs_adv_history,
         List.mem_append, Option.isSome_some, true_and]
       rw [or_comm]
       rfl
@@ -325,7 +325,7 @@ theorem bake_honest_history (p : Party)
     refine ⟨by rw [honest_not_corrupt, hc]; rfl, l, hl, ?_⟩
     rw [honest_bake_eq] at hm
     by_cases hw : Winner l.pk N.t_now = true
-    · simp only [hw, if_true, List.mem_singleton] at hm
+    · simp only [hw, ite_true, List.mem_singleton] at hm
       exact ⟨hw, by subst hm; rfl⟩
     · simp [hw] at hm
   · obtain ⟨mp, hmp, rfl⟩ := List.mem_map.1 hm
@@ -512,7 +512,7 @@ theorem HistInv.rcv {N : GlobalState Tx Hash Party AdvState} (hN : HistInv N) (p
   | none => exact hN
   | some l =>
     by_cases hc : is_corrupt p
-    · simp only [hc, Bool.not_true, Bool.false_eq_true, if_false]
+    · simp only [hc, Bool.not_true, Bool.false_eq_true, ite_false]
       refine ⟨fun mt hmt => ?_, fun q k hk b hb => ?_⟩
       · simp only [flood_msgs_adv_history, List.mem_append, List.mem_map]
         rcases (mem_flood_msgs_adv _ _ mt).1 hmt with hmt | ⟨mφ, hmφ, r, -, rfl⟩
@@ -523,7 +523,7 @@ theorem HistInv.rcv {N : GlobalState Tx Hash Party AdvState} (hN : HistInv N) (p
         refine mem_block_hist_gb_of (N := N) (fun m hm => ?_) b (hN.state q k hk b hb)
         simp only [flood_msgs_adv_history, List.mem_append]
         exact Or.inr hm
-    · simp only [hc, Bool.not_false, if_true]
+    · simp only [hc, Bool.not_false, ite_true]
       refine ⟨fun mt hmt => ?_, fun q k hk b hb => ?_⟩
       · simp only [upd_local, fetch_msgs, rmv_zero_msgs, List.mem_filter] at hmt ⊢
         exact hN.buff mt hmt.1
@@ -549,7 +549,7 @@ theorem HistInv.bake {N : GlobalState Tx Hash Party AdvState} (hN : HistInv N) (
   | none => exact hN
   | some l =>
     by_cases hc : is_corrupt p
-    · simp only [hc, Bool.not_true, Bool.false_eq_true, if_false]
+    · simp only [hc, Bool.not_true, Bool.false_eq_true, ite_false]
       refine ⟨fun mt hmt => ?_, fun q k hk b hb => ?_⟩
       · simp only [flood_msgs_adv_history, List.mem_append, List.mem_map]
         rcases (mem_flood_msgs_adv _ _ mt).1 hmt with hmt | ⟨mφ, hmφ, r, -, rfl⟩
@@ -559,7 +559,7 @@ theorem HistInv.bake {N : GlobalState Tx Hash Party AdvState} (hN : HistInv N) (
         refine mem_block_hist_gb_of (N := N) (fun m hm => ?_) b (hN.state q k hk b hb)
         simp only [flood_msgs_adv_history, List.mem_append]
         exact Or.inr hm
-    · simp only [hc, Bool.not_false, if_true]
+    · simp only [hc, Bool.not_false, ite_true]
       refine ⟨fun mt hmt => ?_, fun q k hk b hb => ?_⟩
       · rcases (mem_flood_msgs _ _ mt).1 hmt with hmt | ⟨m, hm, r, -, rfl⟩
         · simp only [upd_local] at hmt

@@ -557,7 +557,7 @@ theorem prob_hyps :
           obtain rfl : j = 0 := by omega
           obtain rfl : v = 0 := Subsingleton.elim _ _
           simp only [sTrace, runTrace, Function.iterate_zero, id, N0]
-          exact if_pos (List.mem_singleton_self _) ▸ rfl
+          exact ite_eq_left (List.mem_singleton_self _) ▸ rfl
         mem_v₀ := Finset.mem_univ _
         quorum := by
           show 2 * stake (fun _ : Fin 1 => 1) Finset.univ ≤ 3 * stake (fun _ : Fin 1 => 1) _

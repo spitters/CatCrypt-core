@@ -144,7 +144,7 @@ theorem clsMeas_qbind_qpure {α β : Type} [Fintype α] [DecidableEq α] [Fintyp
   by_cases hb : ∃ k₀, g (cls k₀) = b
   · obtain ⟨k₀, hk₀⟩ := hb
     rw [Finset.sum_eq_single (cls k₀)]
-    · rw [if_pos hk₀.symm]
+    · rw [ite_eq_left hk₀.symm]
       have e : (fun k => decide (cls k = cls k₀)) = fun k => decide (g (cls k) = b) := by
         funext k
         refine decide_eq_decide.mpr ⟨fun h => h ▸ hk₀, fun h => hU _ _ (h.trans hk₀.symm)⟩
@@ -263,8 +263,8 @@ theorem sigmaRespMeas_qbind_outAcc (S : SigmaQEnc Stmt Wit rel Resp m n w) (st :
       (if S.accK st x θ k then some (S.resp (wPart k)) else none)) = S.accK st x θ := by
     funext k
     by_cases h : S.accK st x θ k
-    · rw [if_pos h, h]; exact h
-    · rw [if_neg h, Bool.eq_false_iff.mpr h]; rfl
+    · rw [ite_eq_left h, h]; exact h
+    · rw [ite_eq_right h, Bool.eq_false_iff.mpr h]; rfl
   unfold sigmaRespMeas
   rw [clsMeas_qbind_qpure _ _ ?_, hg]
   · exact clsMeas_bool_eq_measProj _
@@ -275,10 +275,10 @@ theorem sigmaRespMeas_qbind_outAcc (S : SigmaQEnc Stmt Wit rel Resp m n w) (st :
     rw [e, e] at hkk'
     by_cases h : S.accK st x θ k
     · have h' : S.accK st x θ k' = true := hkk' ▸ h
-      rw [if_pos h, if_pos h']
+      rw [ite_eq_left h, ite_eq_left h']
       exact congrArg some (S.unique_resp st x θ _ _ h h')
     · have h' : ¬S.accK st x θ k' = true := hkk' ▸ h
-      rw [if_neg h, if_neg h']
+      rw [ite_eq_right h, ite_eq_right h']
 
 end Verifier
 

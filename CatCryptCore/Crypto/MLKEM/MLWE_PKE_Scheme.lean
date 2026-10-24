@@ -100,8 +100,8 @@ coins by `sampleShort`, and decryption is `m_decode (v - s·u)`. -/
 noncomputable def toScheme :
     Scheme (MLWE_PKE_Basic.PK P.toBasic) (MLWE_PKE_Basic.SK P.toBasic) P.PT
       (MLWE_PKE_Basic.CT P.toBasic) P.Seed where
-  keygen := (PMF.uniformOfFintype P.Mat).bind fun A =>
-    (PMF.uniformOfFintype P.KeySeed).map fun ks =>
+  keygen := (PMF.uniformFintype P.Mat).bind fun A =>
+    (PMF.uniformFintype P.KeySeed).map fun ks =>
       ((A, P.vec_add (P.mat_vec_mul A (P.sampleKey ks).1) (P.sampleKey ks).2), (P.sampleKey ks).1)
   enc pk m sd :=
     (P.vec_add (P.mat_vec_mul (P.mat_transpose pk.1) (P.sampleShort sd).1) (P.sampleShort sd).2.1,

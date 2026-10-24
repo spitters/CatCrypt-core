@@ -93,7 +93,7 @@ answer paired with `pk`. -/
 noncomputable def sigRedM (A : ℕ → OracleAdv ℕ Bool Bool) :
     ℕ → OracleAdv ℕ Bool (Bool × ℕ) :=
   fun pk =>
-    .rand (PMF.uniformOfFintype Bool) fun b =>
+    .rand (PMF.uniformFintype Bool) fun b =>
       OracleAdv.bind (OracleAdv.simulate implM (A (if b then pk else 0)) ())
         fun x => .ret (x.1, pk)
 

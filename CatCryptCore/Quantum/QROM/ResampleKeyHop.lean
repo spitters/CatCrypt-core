@@ -366,11 +366,11 @@ theorem sum_tableMass_not_sliceInj_le [NeZero n] [Nonempty K] (pk : PK) (sk : SK
     rw [Finset.sum_ite_eq]
     by_cases ht : bad t (G t) = true
     · have hm : G t ∈ badVals bad t := by simp [badVals, ht]
-      rw [if_pos hm]
+      rw [ite_eq_left hm]
       gcongr
       split_ifs <;> simp
     · have ht' : bad t (G t) = false := by simpa using ht
-      rw [if_pos (sliceInj_of_kemBad P hpk eG eKR pk sk t G hG ht')]
+      rw [ite_eq_left (sliceInj_of_kemBad P hpk eG eKR pk sk t G hG ht')]
       simp
   refine (Finset.sum_le_sum fun G _ => hpt G).trans (le_of_eq ?_)
   simp only [Finset.mul_sum]

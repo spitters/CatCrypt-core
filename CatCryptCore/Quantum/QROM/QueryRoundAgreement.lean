@@ -238,16 +238,16 @@ theorem roundChainU_conj_cleanLift (φ : Fin c → Fin n → Fin n → Fin a)
   ext i j
   simp only [Matrix.submatrix_apply, cleanLift, Matrix.of_apply]
   by_cases hi : IsClean m n w c i <;> by_cases hj : IsClean m n w c j
-  · rw [if_pos ⟨(isClean_roundPerm_symm_iff m n w c ν₁ ν₂ φ A H i).2 hi,
-      (isClean_roundPerm_symm_iff m n w c ν₁ ν₂ φ A H j).2 hj⟩, if_pos ⟨hi, hj⟩,
+  · rw [ite_eq_left ⟨(isClean_roundPerm_symm_iff m n w c ν₁ ν₂ φ A H i).2 hi,
+      (isClean_roundPerm_symm_iff m n w c ν₁ ν₂ φ A H j).2 hj⟩, ite_eq_left ⟨hi, hj⟩,
       cleanProj_roundPerm_symm m n w c ν₁ ν₂ φ A H hi,
       cleanProj_roundPerm_symm m n w c ν₁ ν₂ φ A H hj]
-  · rw [if_neg (fun h => hj ((isClean_roundPerm_symm_iff m n w c ν₁ ν₂ φ A H j).1 h.2)),
-      if_neg (fun h => hj h.2)]
-  · rw [if_neg (fun h => hi ((isClean_roundPerm_symm_iff m n w c ν₁ ν₂ φ A H i).1 h.1)),
-      if_neg (fun h => hi h.1)]
-  · rw [if_neg (fun h => hi ((isClean_roundPerm_symm_iff m n w c ν₁ ν₂ φ A H i).1 h.1)),
-      if_neg (fun h => hi h.1)]
+  · rw [ite_eq_right (fun h => hj ((isClean_roundPerm_symm_iff m n w c ν₁ ν₂ φ A H j).1 h.2)),
+      ite_eq_right (fun h => hj h.2)]
+  · rw [ite_eq_right (fun h => hi ((isClean_roundPerm_symm_iff m n w c ν₁ ν₂ φ A H i).1 h.1)),
+      ite_eq_right (fun h => hi h.1)]
+  · rw [ite_eq_right (fun h => hi ((isClean_roundPerm_symm_iff m n w c ν₁ ν₂ φ A H i).1 h.1)),
+      ite_eq_right (fun h => hi h.1)]
 
 /-! ## The answer family of a classical round -/
 
@@ -370,7 +370,7 @@ theorem roundChainU_mul_cleanRecProj (φ : Fin c → Fin n → Fin n → Fin a)
   simp only [Matrix.of_apply]
   by_cases hj : IsClean m n w c j ∧ cleanRec m n w c j = y
   · rw [roundPerm_apply_of_clean m n w c ν₁ ν₂ φ A H hj.1, hj.2]
-  · rw [if_neg hj]
+  · rw [ite_eq_right hj]
     split_ifs <;> rfl
 
 end CatCrypt.Quantum.QROM

@@ -227,14 +227,14 @@ variable {W Ct PK SK SS C T Z X : Type} [SampleableType W] [SampleableType Ct]
 noncomputable def hybKey (S : Scheme PK SK SS C) (side : PMF (T × Z))
     (ctx : PK → C → T → Z → X) (F : SS → X → W) (D : AEADDef W Ct)
     (A : PK → C → T → AEAD_CCA_Adversary W Ct) : PMF Bool :=
-  S.keygen.bind fun ks => (S.encaps ks.1).bind fun x => (PMF.uniformOfFintype SS).bind fun k =>
+  S.keygen.bind fun ks => (S.encaps ks.1).bind fun x => (PMF.uniformFintype SS).bind fun k =>
     side.bind fun tz => aeadRealRun D (F k (ctx ks.1 x.2 tz.1 tz.2)) (A ks.1 x.2 tz.1)
 
 /-- The channel with a uniform traffic key. -/
 noncomputable def hybTraffic (S : Scheme PK SK SS C) (side : PMF (T × Z)) (D : AEADDef W Ct)
     (A : PK → C → T → AEAD_CCA_Adversary W Ct) : PMF Bool :=
   S.keygen.bind fun ks => (S.encaps ks.1).bind fun x => side.bind fun tz =>
-    (PMF.uniformOfFintype W).bind fun tk => aeadRealRun D tk (A ks.1 x.2 tz.1)
+    (PMF.uniformFintype W).bind fun tk => aeadRealRun D tk (A ks.1 x.2 tz.1)
 
 variable (S : Scheme PK SK SS C) (side : PMF (T × Z)) (ctx : PK → C → T → Z → X)
   (F : SS → X → W) (D : AEADDef W Ct) (A : PK → C → T → AEAD_CCA_Adversary W Ct)
@@ -255,7 +255,7 @@ theorem indccaGame_false_eq :
 omit [SampleableType Ct] [DecidableEq C] [DecidableEq X] in
 /-- The real PRF game of `prfRed` is the channel with a uniform shared secret. -/
 theorem prfReal_eq :
-    ((PMF.uniformOfFintype SS).bind fun k =>
+    ((PMF.uniformFintype SS).bind fun k =>
       (OracleAdv.run (keyedOracle F k) (prfRed S.keygen S.encaps side ctx D.encrypt D.decrypt A)
         ()).map Prod.fst) = hybKey S side ctx F D A := by
   simp only [prfRed, hybKey, keyedOracle, OracleAdv.run_rand, OracleAdv.run_query,
@@ -274,7 +274,7 @@ theorem prfIdeal_eq :
 omit [SampleableType Ct] [Fintype SS] [Nonempty SS] [DecidableEq C] in
 /-- The real AEAD game of `aeadRed` is the channel with a uniform traffic key. -/
 theorem aeadReal_eq :
-    ((PMF.uniformOfFintype W).bind fun key =>
+    ((PMF.uniformFintype W).bind fun key =>
       (OracleAdv.run (aeadRealOracle D key) (aeadRed S.keygen S.encaps side A) ()).map
         Prod.fst) = hybTraffic S side D A := by
   simp only [aeadRed, hybTraffic, aeadRealRun, OracleAdv.run_rand, PMF.map_bind]

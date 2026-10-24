@@ -39,19 +39,19 @@ variable {D R : Type}
 
 /-- Resampling one coordinate of a uniform function leaves it uniform. -/
 theorem uniform_bind_update [DecidableEq D] [Fintype D] [Fintype R] [Nonempty R] (d : D) :
-    (PMF.uniformOfFintype (D → R)).bind
-        (fun f => (PMF.uniformOfFintype R).map (Function.update f d)) =
-      PMF.uniformOfFintype (D → R) := by
+    (PMF.uniformFintype (D → R)).bind
+        (fun f => (PMF.uniformFintype R).map (Function.update f d)) =
+      PMF.uniformFintype (D → R) := by
   classical
   ext g
-  simp only [PMF.bind_apply, PMF.map_apply, PMF.uniformOfFintype_apply, tsum_fintype]
+  simp only [PMF.bind_apply, PMF.map_apply, PMF.uniformFintype_apply, tsum_fintype]
   have hcount : ∀ f : D → R, (∑ r : R, if g = Function.update f d r then
       ((Fintype.card R : ℝ≥0∞))⁻¹ else 0) =
       if g = Function.update f d (g d) then ((Fintype.card R : ℝ≥0∞))⁻¹ else 0 := by
     intro f
     rw [Finset.sum_eq_single (g d)]
     · intro r _ hr
-      rw [if_neg]
+      rw [ite_eq_right]
       rintro rfl
       exact hr (by simp)
     · simp

@@ -221,7 +221,7 @@ theorem cbc_indcpa_coupling (C : CBCBlockCipher) (m₀ m₁ : C.Block) :
       (INDCPA_Game C.toEncScheme m₀ m₁ false)
       eqPost := by
   rw [cbc_game_eq C m₀ m₁ true, cbc_game_eq C m₀ m₁ false]
-  simp only [if_true, Bool.false_eq_true, if_false]
+  simp only [ite_true, Bool.false_eq_true, ite_false]
   ssprove_try_bij₂ (fun iv => C.keyEquiv iv m₀ m₁)
   -- `F(keyEquiv iv m₀ m₁ k, iv ⊕ m₁) = F(k, iv ⊕ m₀)`.
   simp [← C.coh, CBCBlockCipher.keyEquiv]
@@ -366,10 +366,10 @@ theorem cbc_indcpa_bound (C : CBCBlockCipher) (eval : C.Key → C.Block → C.Bl
   unfold INDCPA_Adv AdvantageA
   refine (advantage_triangle _ (C.uniformGame.bind A) _).trans (add_le_add ?_ ?_)
   · have h := cbc_real_uniform_hop C eval m₀ m₁ A true
-    simp only [if_true] at h
+    simp only [ite_true] at h
     exact h
   · have h := cbc_real_uniform_hop C eval m₀ m₁ A false
-    simp only [Bool.false_eq_true, if_false] at h
+    simp only [Bool.false_eq_true, ite_false] at h
     unfold AdvantageA at h
     rw [Advantage_sym]
     exact h

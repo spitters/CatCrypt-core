@@ -134,7 +134,7 @@ against `look` with the IV `v` with probability at most `p`. -/
 def Protocol.AttIvFreshAt (κ : G.Classes) (c₀ : κ.ι) (ivOf : G.Key → V) (D : G.Sampler)
     (xw : G.Stmt × G.Wit) (p : ℝ≥0∞) : Prop :=
   ∀ (m : G.Msg) (look : G.Key → Option G.Ch) (v : V),
-    ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e * ∑' a, D xw m e a *
+    ∑' e, PMF.uniformFintype (Fin G.μ → G.Ch) e * ∑' a, D xw m e a *
       (if (List.finRange G.μ).any (fun i => decide (κ.cls (a.key (a.vals look e) i) = c₀) &&
           decide (ivOf (a.key (a.vals look e) i) = v)) then 1 else 0) ≤ p
 
@@ -255,7 +255,7 @@ theorem sign_ivPoint_le {κ : G.Classes} {c₀ : κ.ι} {ivOf : G.Key → V} {D 
     (hp : G.AttIvFreshAt κ c₀ ivOf D xw p) (s : G.Tables × Bool) (m : G.Msg) (v : V)
     (f : (Fin G.μ → G.Ch) → G.Attempt → G.Answer × (G.Tables × Bool))
     (hf : ∀ e a, (f e a).2.1 = (attSignOut s.1 s.2 m e a).2.1) :
-    ((PMF.uniformOfFintype (Fin G.μ → G.Ch)).bind fun e => (D xw m e).map (f e)).toOuterMeasure
+    ((PMF.uniformFintype (Fin G.μ → G.Ch)).bind fun e => (D xw m e).map (f e)).toOuterMeasure
       {x | ivCnt κ c₀ ivOf x.2.1 = OracleAdv.addCnt (ivCnt κ c₀ ivOf s.1) v} ≤ p := by
   rw [PMF.toOuterMeasure_bind_apply]
   refine le_trans (ENNReal.tsum_le_tsum fun e => mul_le_mul_right ?_ _) (hp m s.1.lookupAll v)
@@ -277,7 +277,7 @@ theorem sign_ivPoint_le {κ : G.Classes} {c₀ : κ.ι} {ivOf : G.Key → V} {D 
           decide (κ.cls (a.key (a.vals s.1.lookupAll e) i) = c₀) &&
             decide (ivOf (a.key (a.vals s.1.lookupAll e) i) = v)) = true :=
         List.any_eq_true.mpr ⟨i, List.mem_finRange i, by simp [hi, hv]⟩
-      rw [if_pos hany, mul_one]
+      rw [ite_eq_left hany, mul_one]
   · rw [Set.indicator_of_notMem hE]
     exact zero_le
 
@@ -464,7 +464,7 @@ projection `π (k, e i) = v` at its point `k` with probability at most `p`. -/
 def Protocol.AttEntFreshAt (κ : G.Classes) (c₀ : κ.ι) (π : G.Key × G.Ch → V)
     (D : G.Sampler) (xw : G.Stmt × G.Wit) (p : ℝ≥0∞) : Prop :=
   ∀ (m : G.Msg) (look : G.Key → Option G.Ch) (v : V),
-    ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e * ∑' a, D xw m e a *
+    ∑' e, PMF.uniformFintype (Fin G.μ → G.Ch) e * ∑' a, D xw m e a *
       (if (List.finRange G.μ).any (fun i => decide (κ.cls (a.key (a.vals look e) i) = c₀) &&
           (!G.ev i || (look (a.key (a.vals look e) i)).isNone) &&
           decide (π (a.key (a.vals look e) i, e i) = v)) then 1 else 0) ≤ p
@@ -664,7 +664,7 @@ theorem sign_entPoint_le {κ : G.Classes} {c₀ : κ.ι} {π : G.Key × G.Ch →
     (hp : G.AttEntFreshAt κ c₀ π D xw p) (s : G.Tables × Bool) (m : G.Msg) (v : V)
     (f : (Fin G.μ → G.Ch) → G.Attempt → G.Answer × (G.Tables × Bool))
     (hf : ∀ e a, (f e a).2.1 = (attSignOut s.1 s.2 m e a).2.1) :
-    ((PMF.uniformOfFintype (Fin G.μ → G.Ch)).bind fun e => (D xw m e).map (f e)).toOuterMeasure
+    ((PMF.uniformFintype (Fin G.μ → G.Ch)).bind fun e => (D xw m e).map (f e)).toOuterMeasure
       {x | entCnt κ c₀ π x.2.1 = OracleAdv.addCnt (entCnt κ c₀ π s.1) v} ≤ p := by
   rw [PMF.toOuterMeasure_bind_apply]
   refine le_trans (ENNReal.tsum_le_tsum fun e => mul_le_mul_right ?_ _) (hp m s.1.lookupAll v)
@@ -687,7 +687,7 @@ theorem sign_entPoint_le {κ : G.Classes} {c₀ : κ.ι} {π : G.Key × G.Ch →
             (!G.ev i || (s.1.lookupAll (a.key (a.vals s.1.lookupAll e) i)).isNone) &&
             decide (π (a.key (a.vals s.1.lookupAll e) i, e i) = v)) = true :=
         List.any_eq_true.mpr ⟨i, List.mem_finRange i, by simp [hi, hg, hv]⟩
-      rw [if_pos hany, mul_one]
+      rw [ite_eq_left hany, mul_one]
   · rw [Set.indicator_of_notMem hE]
     exact zero_le
 
@@ -699,7 +699,7 @@ theorem hash_entPoint_le {κ : G.Classes} {rel : G.Stmt → G.Wit → Prop} {c�
     {π : G.Key × G.Ch → V} {p : ℝ≥0∞} (ρ : G.Recovery κ rel) (D : G.Sampler)
     (xw : G.Stmt × G.Wit)
     (hpH : ∀ k, κ.cls k = c₀ → ∀ v,
-      (PMF.uniformOfFintype G.Ch).toOuterMeasure {c | π (k, c) = v} ≤ p)
+      (PMF.uniformFintype G.Ch).toOuterMeasure {c | π (k, c) = v} ≤ p)
     (s : G.Tables × Bool) (k : G.Key) (v : V) :
     (toOracle (attStepPR ρ D xw) s (.inl k)).toOuterMeasure
       {x | entCnt κ c₀ π x.2.1 = OracleAdv.addCnt (entCnt κ c₀ π s.1) v} ≤ p := by
@@ -708,13 +708,13 @@ theorem hash_entPoint_le {κ : G.Classes} {rel : G.Stmt → G.Wit → Prop} {c�
   cases hl : t.lookup k with
   | some c =>
     simp only [Step.toPMF, PMF.toOuterMeasure_pure_apply, Set.mem_ofPred_eq]
-    rw [if_neg fun h => OracleAdv.addCnt_ne _ _ h.symm]
+    rw [ite_eq_right fun h => OracleAdv.addCnt_ne _ _ h.symm]
     exact zero_le
   | none =>
     cases hr : lookupIn t.rej k with
     | some c =>
       simp only [Step.toPMF, PMF.toOuterMeasure_pure_apply, Set.mem_ofPred_eq]
-      rw [if_neg]
+      rw [ite_eq_right]
       · exact zero_le
       intro h
       rcases entCnt_hash_append κ c₀ π t k c with h' | ⟨hm, -, -⟩
@@ -746,7 +746,7 @@ probability at most `p`. -/
 theorem freshMult_attStepPR_entCnt {rel : G.Stmt → G.Wit → Prop} (ρ : G.Recovery κ rel)
     (hκ : G.AttClassesAt κ D xw) (hμ : κ.μc c₀ ≤ 1) (hp : G.AttEntFreshAt κ c₀ π D xw p)
     (hpH : ∀ k, κ.cls k = c₀ → ∀ v,
-      (PMF.uniformOfFintype G.Ch).toOuterMeasure {c | π (k, c) = v} ≤ p) :
+      (PMF.uniformFintype G.Ch).toOuterMeasure {c | π (k, c) = v} ≤ p) :
     OracleAdv.FreshMult (toOracle (attStepPR ρ D xw)) (fun _ => 1)
       (fun s => entCnt κ c₀ π s.1) p where
   supp s d x hx := by
@@ -796,7 +796,7 @@ theorem run_attPR_not_entMult_le [Fintype V] {α : Type} {rel : G.Stmt → G.Wit
     (ρ : G.Recovery κ rel) (hκ : G.AttClassesAt κ D xw) (hμ : κ.μc c₀ ≤ 1)
     (hp : G.AttEntFreshAt κ c₀ π D xw p)
     (hpH : ∀ k, κ.cls k = c₀ → ∀ v,
-      (PMF.uniformOfFintype G.Ch).toOuterMeasure {c | π (k, c) = v} ≤ p)
+      (PMF.uniformFintype G.Ch).toOuterMeasure {c | π (k, c) = v} ≤ p)
     (K : ℕ) (A : OracleAdv G.Query G.Answer α) (h q : ℕ) (hA : IsQueryBound₂ A h q)
     (s : G.Tables × Bool) (hs : entCnt κ c₀ π s.1 = 0) :
     (OracleAdv.run (toOracle (attStepPR ρ D xw)) A s).toOuterMeasure
@@ -935,9 +935,9 @@ theorem attPR_flag_hash_step_le {Γ : κ.ι → ℝ≥0∞}
         (hmono _ fun c' => (count_hash_append κ t key c c').le)
     | none =>
       simp only [Step.toPMF, PMF.bind_map, Function.comp_def, PMF.toOuterMeasure_bind_apply]
-      calc ∑' e, PMF.uniformOfFintype G.Ch e * (OracleAdv.run (toOracle (attStepPR ρ D xw))
+      calc ∑' e, PMF.uniformFintype G.Ch e * (OracleAdv.run (toOracle (attStepPR ρ D xw))
             (k (.inl e)) ({ t with hash := t.hash ++ [(key, e)] }, false)).toOuterMeasure E
-          ≤ ∑' e, PMF.uniformOfFintype G.Ch e * flagBoundCls κ Γ n q t :=
+          ≤ ∑' e, PMF.uniformFintype G.Ch e * flagBoundCls κ Γ n q t :=
             ENNReal.tsum_le_tsum fun e => mul_le_mul_right
               ((ih _ { t with hash := t.hash ++ [(key, e)] } ht (by rw [hs]; omega)).trans
               (hmono _ fun c' => (count_hash_append κ t key e c').le)) _
@@ -954,7 +954,7 @@ theorem tsum_attPR_hit_class_le {Γ : κ.ι → ℝ≥0∞} {B : (G.Key → Opti
     {N : ℕ} (hκ : G.AttClassesAt κ D xw) (hΓ : G.AttKeyBoundClsAtNRB ρ N D xw Γ B)
     (m : G.Msg) (t : G.Tables) (look : G.Key → Option G.Ch) (hB : B look)
     (hlook : ∀ k, (look k).isSome → k ∈ t.keys) (htN : t.size ≤ N) (c : κ.ι) :
-    ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e * ∑' a, D xw m e a *
+    ∑' e, PMF.uniformFintype (Fin G.μ → G.Ch) e * ∑' a, D xw m e a *
       ∑ i ∈ Finset.univ.filter (fun i => κ.ecls i = c),
         (if a.charged look e i && (look (a.key (a.vals look e) i)).isSome then (1 : ℝ≥0∞)
           else 0) ≤
@@ -979,19 +979,19 @@ theorem tsum_attPR_hit_class_le {Γ : κ.ι → ℝ≥0∞} {B : (G.Key → Opti
           (!ρ.R (κ.ecls i) || (look (a.key (a.vals look e) i)).isSome)) = true := by
         simp only [Bool.and_eq_true, Bool.or_eq_true] at hch ⊢
         exact ⟨hch.1, Or.inr hch.2⟩
-      rw [if_pos hch]
-      simp only [hch', if_true]
+      rw [ite_eq_left hch]
+      simp only [hch', ite_true]
       have hmem : a.key (a.vals look e) i ∈ t.keys.filter fun k => κ.cls k = c := by
         simp only [Bool.and_eq_true] at hch
         refine List.mem_filter.mpr ⟨hlook _ hch.2, ?_⟩
         simpa [hκ m e a ha] using (Finset.mem_filter.mp hi).2
       calc (1 : ℝ≥0∞) = (PMF.pure ()).toOuterMeasure
             {y | a.key (a.vals look e) i ∈ (fun _ : Unit => t.keys.filter fun k => κ.cls k = c) y} := by
-            rw [PMF.toOuterMeasure_pure_apply, if_pos (show () ∈ _ from hmem)]
+            rw [PMF.toOuterMeasure_pure_apply, ite_eq_left (show () ∈ _ from hmem)]
         _ ≤ _ := toOuterMeasure_mem_le_sum _ _ L k₀ _ fun _ _ => le_rfl
-    · rw [if_neg hch]
+    · rw [ite_eq_right hch]
       exact zero_le
-  calc _ ≤ ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e * ∑' a, D xw m e a *
+  calc _ ≤ ∑' e, PMF.uniformFintype (Fin G.μ → G.Ch) e * ∑' a, D xw m e a *
         ∑ j ∈ Finset.range L, ∑ i ∈ Finset.univ.filter (fun i => κ.ecls i = c),
           (if a.charged look e i &&
               (!ρ.R (κ.ecls i) || (look (a.key (a.vals look e) i)).isSome) then
@@ -1003,7 +1003,7 @@ theorem tsum_attPR_hit_class_le {Γ : κ.ι → ℝ≥0∞} {B : (G.Key → Opti
         refine mul_le_mul_right ?_ _
         rw [Finset.sum_comm]
         exact Finset.sum_le_sum fun i hi => h1 e a ((PMF.mem_support_iff _ _).mpr ha) i hi
-    _ = ∑ j ∈ Finset.range L, ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e *
+    _ = ∑ j ∈ Finset.range L, ∑' e, PMF.uniformFintype (Fin G.μ → G.Ch) e *
           ∑' a, D xw m e a * ∑ i ∈ Finset.univ.filter (fun i => κ.ecls i = c),
             (if a.charged look e i &&
                 (!ρ.R (κ.ecls i) || (look (a.key (a.vals look e) i)).isSome) then
@@ -1022,7 +1022,7 @@ attempt against `t.lookupAll` at points defined in `t` is at most
 theorem tsum_attPR_hit_le_cls {Γ : κ.ι → ℝ≥0∞} {B : (G.Key → Option G.Ch) → Prop} {N : ℕ}
     (hκ : G.AttClassesAt κ D xw) (hΓ : G.AttKeyBoundClsAtNRB ρ N D xw Γ B) (m : G.Msg)
     (t : G.Tables) (hB : B t.lookupAll) (htN : t.size ≤ N) :
-    ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e * ∑' a, D xw m e a *
+    ∑' e, PMF.uniformFintype (Fin G.μ → G.Ch) e * ∑' a, D xw m e a *
       ∑ i, (if a.charged t.lookupAll e i &&
           (t.lookupAll (a.key (a.vals t.lookupAll e) i)).isSome then (1 : ℝ≥0∞) else 0) ≤
       ∑ c, (κ.count t.keys c : ℝ≥0∞) * Γ c := by
@@ -1042,7 +1042,7 @@ theorem tsum_attPR_notFresh_le_cls {Γ : κ.ι → ℝ≥0∞} {B : (G.Key → O
     {N : ℕ} (hκ : G.AttClassesAt κ D xw) (hR : G.AllHiddenR ρ D xw)
     (hΓ : G.AttKeyBoundClsAtNRB ρ N D xw Γ B) (m : G.Msg) (t : G.Tables) (hB : B t.lookup)
     (htN : t.size ≤ N) :
-    ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e * ∑' a, D xw m e a *
+    ∑' e, PMF.uniformFintype (Fin G.μ → G.Ch) e * ∑' a, D xw m e a *
       (if a.hidFresh t.lookup (a.vals t.lookup e) then 0 else (1 : ℝ≥0∞)) ≤
       ∑ c, (if ρ.R c then (κ.count t.keys c : ℝ≥0∞) * Γ c else 0) := by
   set look := t.lookup with hlook
@@ -1054,7 +1054,7 @@ theorem tsum_attPR_notFresh_le_cls {Γ : κ.ι → ℝ≥0∞} {B : (G.Key → O
       (if a.hidFresh look (a.vals look e) then 0 else (1 : ℝ≥0∞)) ≤ ∑ c, H c e a := by
     intro e a ha
     cases hf : a.hidFresh look (a.vals look e)
-    · simp only [Bool.false_eq_true, if_false]
+    · simp only [Bool.false_eq_true, ite_false]
       obtain ⟨i, -, hi⟩ := List.all_eq_false.mp hf
       simp only [Bool.or_eq_true, not_or, Bool.not_eq_true, Option.isNone_eq_false_iff] at hi
       obtain ⟨hp, hs⟩ := hi
@@ -1064,9 +1064,9 @@ theorem tsum_attPR_notFresh_le_cls {Γ : κ.ι → ℝ≥0∞} {B : (G.Key → O
       have hch : (a.charged look e i && (look (a.key (a.vals look e) i)).isSome) = true := by
         simp [Protocol.Attempt.charged, hp, hs]
       calc (1 : ℝ≥0∞) = if a.charged look e i && (look (a.key (a.vals look e) i)).isSome
-            then 1 else 0 := by rw [if_pos hch]
+            then 1 else 0 := by rw [ite_eq_left hch]
         _ ≤ H (κ.ecls i) e a := by
-            simp only [hH, hRi, if_true]
+            simp only [hH, hRi, ite_true]
             exact Finset.single_le_sum (f := fun i =>
               if a.charged look e i && (look (a.key (a.vals look e) i)).isSome then
                 (1 : ℝ≥0∞) else 0) (fun _ _ => zero_le) (Finset.mem_filter.mpr
@@ -1074,18 +1074,18 @@ theorem tsum_attPR_notFresh_le_cls {Γ : κ.ι → ℝ≥0∞} {B : (G.Key → O
         _ ≤ _ := Finset.single_le_sum (f := fun c => H c e a) (fun _ _ => zero_le)
             (Finset.mem_univ _)
     · simp
-  calc _ ≤ ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e * ∑' a, D xw m e a *
+  calc _ ≤ ∑' e, PMF.uniformFintype (Fin G.μ → G.Ch) e * ∑' a, D xw m e a *
         ∑ c, H c e a :=
         ENNReal.tsum_le_tsum fun e => mul_le_mul_right
           (ENNReal.tsum_le_tsum fun a => by
             by_cases ha : D xw m e a = 0
             · simp [ha]
             · exact mul_le_mul_right (hpt e a ((PMF.mem_support_iff _ _).mpr ha)) _) _
-    _ = ∑ c, ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e * ∑' a, D xw m e a * H c e a :=
+    _ = ∑ c, ∑' e, PMF.uniformFintype (Fin G.μ → G.Ch) e * ∑' a, D xw m e a * H c e a :=
         tsum_mul_tsum_dep_finsetSum _ (fun e a => D xw m e a) _ _
     _ ≤ _ := Finset.sum_le_sum fun c _ => by
         by_cases hc : ρ.R c = true
-        · simp only [hH, hc, if_true]
+        · simp only [hH, hc, ite_true]
           exact tsum_attPR_hit_class_le ρ D xw hκ hΓ m t _ hB
             (fun _ hk => Protocol.lookup_isSome_mem_keys hk) htN c
         · simp [hH, hc]
@@ -1136,9 +1136,9 @@ theorem attPR_flag_sign_term_le {Γ : κ.ι → ℝ≥0∞} (hR : G.AllHiddenR �
         true_and] at hf'
       rcases hf' with ⟨i, hi⟩ | ⟨i, hi⟩
       · cases hp : a.pub v i
-        · simp only [hp, Bool.false_eq_true, if_false] at hi
+        · simp only [hp, Bool.false_eq_true, ite_false] at hi
           exact absurd hi (by simp [hhid i hp])
-        · simp only [hp, if_true, Bool.and_eq_true, Bool.or_eq_true] at hi
+        · simp only [hp, ite_true, Bool.and_eq_true, Bool.or_eq_true] at hi
           obtain ⟨⟨-, hrej⟩, hlast⟩ := hi
           obtain ⟨c, hc⟩ := Option.isSome_iff_exists.mp hrej
           have hRk : ρ.R (κ.cls (a.key v i)) = true := ht _ (mem_of_lookupIn_eq_some hc)
@@ -1200,24 +1200,24 @@ theorem attPR_flag_sign_step_le {Γ : κ.ι → ℝ≥0∞} {B : (G.Key → Opti
         S e a + Ev e a + B0 :=
     fun e a ha => attPR_flag_sign_term_le ρ D xw hR Bt k n h q N t ht (by omega) m e ha
       (hκ m e a ha) ih
-  have hsumS : ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e * ∑' a, D xw m e a * S e a ≤
+  have hsumS : ∑' e, PMF.uniformFintype (Fin G.μ → G.Ch) e * ∑' a, D xw m e a * S e a ≤
       ∑ c, (κ.count t.keys c : ℝ≥0∞) * Γ c :=
     tsum_attPR_hit_le_cls ρ D xw hκ hΓ m t (hBt t hB) (by omega)
-  have hsumEv : ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e * ∑' a, D xw m e a * Ev e a ≤
+  have hsumEv : ∑' e, PMF.uniformFintype (Fin G.μ → G.Ch) e * ∑' a, D xw m e a * Ev e a ≤
       ∑ c, (if ρ.R c then (κ.count t.keys c : ℝ≥0∞) * Γ c else 0) :=
     tsum_attPR_notFresh_le_cls ρ D xw hκ hR hΓ m t (hBl t hB) (by omega)
   rw [OracleAdv.run_query]
   simp only [toOracle, attStepPR, Step.toPMF, attSignPR, PMF.bind_bind, PMF.bind_map,
     Function.comp_def, PMF.toOuterMeasure_bind_apply]
-  calc _ ≤ ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e *
+  calc _ ≤ ∑' e, PMF.uniformFintype (Fin G.μ → G.Ch) e *
         ∑' a, D xw m e a * (S e a + Ev e a + B0) :=
         ENNReal.tsum_le_tsum fun e => mul_le_mul_right
           (ENNReal.tsum_le_tsum fun a => by
             by_cases ha : D xw m e a = 0
             · simp [ha]
             · exact mul_le_mul_right (hterm e a ((PMF.mem_support_iff _ _).mpr ha)) _) _
-    _ = (∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e * ∑' a, D xw m e a * S e a) +
-          (∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e * ∑' a, D xw m e a * Ev e a) + B0 := by
+    _ = (∑' e, PMF.uniformFintype (Fin G.μ → G.Ch) e * ∑' a, D xw m e a * S e a) +
+          (∑' e, PMF.uniformFintype (Fin G.μ → G.Ch) e * ∑' a, D xw m e a * Ev e a) + B0 := by
         simp only [mul_add, ENNReal.tsum_add, ENNReal.tsum_mul_right, PMF.tsum_coe, one_mul]
     _ ≤ (∑ c, (κ.count t.keys c : ℝ≥0∞) * Γ c) +
           (∑ c, (if ρ.R c then (κ.count t.keys c : ℝ≥0∞) * Γ c else 0)) + B0 :=
@@ -1430,10 +1430,10 @@ theorem run_attPR_recR_le_sim (hrec : ρ.CompleteAt D xw) {δ : ℝ≥0∞}
     rw [← mul_add]
     refine mul_le_mul_right ?_ _
     by_cases hf : y.2.2 = true
-    · rw [if_pos hf]
+    · rw [ite_eq_left hf]
       split_ifs <;> simp
     · have hf' : y.2.2 = false := by simpa using hf
-      rw [show offFlag g y = g y from if_neg hf, if_neg hf, add_zero]
+      rw [show offFlag g y = g y from ite_eq_right hf, ite_eq_right hf, add_zero]
       simp only [g, winsOrFlag, hf', Bool.or_false, Bool.or_eq_true]
       exact le_rfl
   have hC : ∑' y, S y * g y ≤ S.toOuterMeasure {y | wins xw.1 y = true} +
@@ -1614,7 +1614,7 @@ theorem Protocol.eufcma_le_simPRB_cls_entMult {V : Type} [DecidableEq V] [Fintyp
       G.AttKeyBoundClsAtNRB ρ (qH + G.V + G.μ * qS) D xw (Γ xw) (B xw))
     (hμ : κ.μc c₀ ≤ 1) (hp : ∀ xw ∈ G.gen.support, G.AttEntFreshAt κ c₀ π D xw p)
     (hpH : ∀ k, κ.cls k = c₀ → ∀ v,
-      (PMF.uniformOfFintype G.Ch).toOuterMeasure {c | π (k, c) = v} ≤ p) (K : ℕ)
+      (PMF.uniformFintype G.Ch).toOuterMeasure {c | π (k, c) = v} ≤ p) (K : ℕ)
     (hB : ∀ xw (t : G.Tables), OracleAdv.MultB K (entCnt κ c₀ π t) → B xw t.lookupAll)
     (hBl : ∀ xw (t : G.Tables), OracleAdv.MultB K (entCnt κ c₀ π t) → B xw t.lookup)
     (A : G.Adversary qH qS) (q : κ.ι → ℕ)

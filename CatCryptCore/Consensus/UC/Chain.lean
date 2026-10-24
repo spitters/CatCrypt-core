@@ -170,7 +170,7 @@ theorem prBad_le_of_potential (S : Sys τ E O) (bad : τ → Bool) (Inv : τ →
     | succ n ih =>
       intro z t b h ht
       cases b
-      · simp only [loop, SPComp.bind_assoc, Bool.false_or, Bool.false_eq_true, if_false]
+      · simp only [loop, SPComp.bind_assoc, Bool.false_or, Bool.false_eq_true, ite_false]
         refine prTrue_bind_le_const _ _ _ _ fun a h₁ => hstep _ _ _ _ ht fun p h₂ hp => ?_
         refine prTrue_bind_le_const _ _ _ _ fun z' h₃ => (ih _ _ _ _ hp).trans ?_
         cases hb : bad p.1
@@ -460,7 +460,7 @@ theorem guard_of_good (K : ℕ) (ν : PMF SlotKind) (d w : ℕ) (ε : ℝ)
     (ω : Seed Tx Hash np n Hz PK SK) (hG : Good P Sch A Tree ν K d w ε ω) {m : ℕ} (hm : 1 ≤ m) :
     FTreeGuard (slotTree P) (chainP P ν d w ε) (XT P Sch A Tree K ω m) := by
   have hst : ∀ t, t ≠ 0 → (XT P Sch A Tree K ω m).st t = phaseView P Sch A Tree K ω (min t m - 1) :=
-    fun t ht => if_neg ht
+    fun t ht => ite_eq_right ht
   have hst0 : (XT P Sch A Tree K ω m).st 0 = startView P := by simp [XT]
   have hin : (XT P Sch A Tree K ω m).chains.ChainsInTree (slotTree P) := by
     rintro p t ⟨q, rfl, -⟩
@@ -787,8 +787,8 @@ theorem trInv_snoc (K : ℕ) (μ : PMF (Option (Fin np))) (W Δ : ℕ) (ω : See
   rw [FTree.Example.stAt_snoc]
   simp only [List.length_append, List.length_singleton] at ht
   split_ifs with h₁ h₂
-  · exact (h t h₁).trans (if_pos h₂)
-  · exact (h t h₁).trans (if_neg h₂)
+  · exact (h t h₁).trans (ite_eq_left h₂)
+  · exact (h t h₁).trans (ite_eq_right h₂)
   · omega
   · obtain rfl : t = tr.length + 1 := by omega
     rw [hx]
@@ -811,7 +811,7 @@ theorem guard_true (K : ℕ) (μ : PMF (Option (Fin np))) (W Δ d w : ℕ) (ε :
       htr _ (min_le_right _ _)]
     by_cases ht : t = 0
     · simp [ht]
-    · rw [if_neg (by omega), if_neg ht]
+    · rw [ite_eq_right (by omega), ite_eq_right ht]
   rw [e]
   exact guard_of_good P Sch A Tree K (kindLaw μ) d w ε hIP hGB hw4 ω hG hlen
 

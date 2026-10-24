@@ -288,17 +288,17 @@ theorem guard_trueE (K Δ : ℕ) (ν : PMF SlotKind) (d w : ℕ) (ε : ℝ)
   have hU : FTreeGuard (slotTree P) (chainP P ν d w ε) U :=
     guard_of_good P' Sch A' Tree K ν d w ε hIP hGB hw4 ω hG (by omega)
   have hLU : U.LiveTrace (slotTree P) Block.sl (d + 2) := hU.2.1 (fun X => X.LiveTrace (slotTree P) Block.sl (d + 2)) (by simp [chainP])
-  have hU0 : U.st 0 = startView P := by simp only [hUdef, XT, if_true]; rfl
+  have hU0 : U.st 0 = startView P := by simp only [hUdef, XT, ite_true]; rfl
   have hUs : ∀ j ≤ tr.length, U.st (j + 1) = phaseView P' Sch A' Tree K ω j := by
     intro j hj
-    simp only [hUdef, XT, Nat.add_one_ne_zero, if_false]
+    simp only [hUdef, XT, Nat.add_one_ne_zero, ite_false]
     congr 1
     omega
   have hj1 : (steps (log.take 1)).length ≤ 1 := by
     simpa [steps] using steps_take_succ_le log 0
   have hfs : ∀ t, t ≠ 0 → U.st (f t) = phaseView P' Sch A' Tree K ω (steps (log.take t)).length :=
     fun t ht => by
-      simp only [hfdef, if_neg ht]
+      simp only [hfdef, ite_eq_right ht]
       exact hUs _ ((steps_take_le log t).trans hl.le)
   have hmono : Monotone f := by
     intro a b hab
@@ -315,7 +315,7 @@ theorem guard_trueE (K Δ : ℕ) (ν : PMF SlotKind) (d w : ℕ) (ε : ℝ)
     by_cases ht : t = 0
     · subst ht
       simp [hfdef, hU0]
-    · rw [if_neg (by omega), hfs t ht]
+    · rw [ite_eq_right (by omega), hfs t ht]
       have htk : log.take (min t tr.length) = log.take t := by
         rw [← hl]
         rcases le_total t log.length with h | h
@@ -344,7 +344,7 @@ theorem guard_trueE (K Δ : ℕ) (ν : PMF SlotKind) (d w : ℕ) (ε : ℝ)
         phaseView_pos_none_of_lt P' Sch A' Tree K ω (by omega)]
   have hstep : ∀ t, t ≠ 0 → f t ≤ f (t + 1) ∧ f (t + 1) ≤ f t + 1 := by
     intro t ht
-    simp only [hfdef, if_neg ht, Nat.add_one_ne_zero, if_false]
+    simp only [hfdef, ite_eq_right ht, Nat.add_one_ne_zero, ite_false]
     exact ⟨Nat.add_le_add_right (steps_take_mono log (Nat.le_succ t)) 1,
       Nat.add_le_add_right (steps_take_succ_le log t) 1⟩
   rw [e]
@@ -396,12 +396,12 @@ theorem mInvE_step (K Δ : ℕ) (ν : PMF SlotKind) (d w : ℕ) (ε : ℝ) (ω :
     rw [FTree.Example.stAt_snoc]
     rcases Nat.lt_or_ge tr.length t with h | h
     · obtain rfl : t = tr.length + 1 := by omega
-      rw [if_neg (by omega), if_neg (by omega)]
+      rw [ite_eq_right (by omega), ite_eq_right (by omega)]
       have hk : (s.1.2.1 ++ [e]).take (tr.length + 1) = s.1.2.1 ++ [e] :=
         List.take_of_length_le (by simp [hlen])
       simp only [stViewE, hx1, pstNext, hk]
       rw [hj, steps_length_append_singleton]
-    · rw [if_pos h, htr t h, hx1]
+    · rw [ite_eq_left h, htr t h, hx1]
       simp only [pstNext]
       rw [List.take_append_of_le_length (by omega)]
   · intro hb'

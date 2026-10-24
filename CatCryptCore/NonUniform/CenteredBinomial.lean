@@ -57,7 +57,9 @@ variable {α β : Type*}
 theorem bind_apply_ne_zero {d : SDistr α} {f : α → SDistr β} {a : α} {b : β}
     (ha : d (some a) ≠ 0) (hb : (f a) (some b) ≠ 0) : (d.bind f) (some b) ≠ 0 := by
   have hterm : d (some a) * (f a) (some b) ≤ (d.bind f) (some b) := by
-    simpa only [SDistr.bind, PMF.bind_apply] using ENNReal.le_tsum (some a)
+    simp only [SDistr.bind, PMF.bind_apply]
+    exact ENNReal.le_tsum (f := fun o : Option α =>
+      d o * (match o with | some a => f a | none => SDistr.fail) (some b)) (some a)
   exact fun h0 => mul_ne_zero ha hb (le_zero_iff.mp (h0 ▸ hterm))
 
 /-! ## The distributions -/

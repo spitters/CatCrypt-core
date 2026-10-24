@@ -63,7 +63,7 @@ theorem prEvent_pure_indicator (a : α) (h₀ : Heap) (E : α → Heap → Prop)
   have hsingle : ∀ p : α × Heap, p ≠ (a, h₀) →
       (if E p.1 p.2 then (SDistr.pure (a, h₀) : SDistr (α × Heap)) (some p) else 0) = 0 :=
     fun p hp => by
-      rw [SDistr.pure_apply_some, if_neg (Ne.symm hp), ite_self]
+      rw [SDistr.pure_apply_some, ite_eq_right (Ne.symm hp), ite_self]
   rw [tsum_eq_single (a, h₀) hsingle]
   by_cases hE : E a h₀ <;> simp [hE, SDistr.pure_apply_some]
 
@@ -83,8 +83,8 @@ theorem prEvent_sampleFrom_bind (d : SDistr α) (k : α → SPComp β) (h₀ : H
       = ∑' p : β × Heap, ∑' a, d (some a) * (if E p.1 p.2 then (k a h₀) (some p) else 0) := by
         refine tsum_congr fun p => ?_
         by_cases hE : E p.1 p.2
-        · simpa only [if_pos hE] using sampleFrom_bind_apply_some d k h₀ p
-        · simp only [if_neg hE, mul_zero, tsum_zero]
+        · simpa only [ite_eq_left hE] using sampleFrom_bind_apply_some d k h₀ p
+        · simp only [ite_eq_right hE, mul_zero, tsum_zero]
     _ = ∑' a, ∑' p : β × Heap, d (some a) * (if E p.1 p.2 then (k a h₀) (some p) else 0) :=
         ENNReal.tsum_comm
     _ = ∑' a, d (some a) * ∑' p : β × Heap, (if E p.1 p.2 then (k a h₀) (some p) else 0) :=

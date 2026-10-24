@@ -459,7 +459,7 @@ theorem powMod_eq_pow_mod (m a k : ℕ) : powMod m a k = (a ^ k) % m := by
       rw [ih']
       have hmd : (n + 1) % 2 + 2 * ((n + 1) / 2) = n + 1 := Nat.mod_add_div (n + 1) 2
       by_cases h : (n + 1) % 2 = 1
-      · simp only [h, if_true]
+      · simp only [h, ite_true]
         rw [show a ^ ((n + 1) / 2) % m * (a ^ ((n + 1) / 2) % m) % m
               = a ^ ((n + 1) / 2) * a ^ ((n + 1) / 2) % m from by rw [← Nat.mul_mod]]
         rw [show a ^ ((n + 1) / 2) * a ^ ((n + 1) / 2) % m * a % m
@@ -468,7 +468,7 @@ theorem powMod_eq_pow_mod (m a k : ℕ) : powMod m a k = (a ^ k) % m := by
         congr 1
         rw [← pow_add, ← pow_succ]
         congr 1; omega
-      · simp only [h, if_false]
+      · simp only [h, ite_false]
         rw [show a ^ ((n + 1) / 2) % m * (a ^ ((n + 1) / 2) % m) % m
               = a ^ ((n + 1) / 2) * a ^ ((n + 1) / 2) % m from by rw [← Nat.mul_mod]]
         congr 1

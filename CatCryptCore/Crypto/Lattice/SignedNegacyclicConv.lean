@@ -78,7 +78,7 @@ lemma twist_pow_factor (hψ : IsPrimitiveRoot ψ (2 * n)) (i k : Fin n) :
   rw [Fin.val_sub]
   by_cases hik : i.val ≤ k.val
   · -- no wrap: (n - i + k) % n = k - i, exponents sum to k
-    rw [if_pos hik]
+    rw [ite_eq_left hik]
     have hlt : (n - i.val + k.val) % n = k.val - i.val := by
       rw [show n - i.val + k.val = (k.val - i.val) + 1 * n by omega,
         Nat.add_mul_mod_self_right]
@@ -87,7 +87,7 @@ lemma twist_pow_factor (hψ : IsPrimitiveRoot ψ (2 * n)) (i k : Fin n) :
     rw [show i.val + (k.val - i.val) = k.val by omega]
     rw [mul_inv_cancel₀ (pow_ne_zero _ hψ0)]
   · -- wrap: (n - i + k) % n = n - i + k (since < n), exponents sum to n + k
-    rw [if_neg hik]
+    rw [ite_eq_right hik]
     have hik' : k.val < i.val := Nat.lt_of_not_le hik
     have hlt : (n - i.val + k.val) % n = n - i.val + k.val := by
       apply Nat.mod_eq_of_lt; omega
@@ -110,7 +110,7 @@ theorem negaConv_eq_signed (hψ : IsPrimitiveRoot ψ (2 * n)) (x y : Fin n → R
         = (x i * y (k - i)) * (ψ ^ i.val * ψ ^ (k - i).val * (ψ⁻¹) ^ k.val) by ring]
   rw [twist_pow_factor hψ i k]
   by_cases hik : i.val ≤ k.val
-  · rw [if_pos hik, if_pos hik, mul_one]
-  · rw [if_neg hik, if_neg hik, mul_neg_one]
+  · rw [ite_eq_left hik, ite_eq_left hik, mul_one]
+  · rw [ite_eq_right hik, ite_eq_right hik, mul_neg_one]
 
 end CatCrypt.Crypto.Lattice.SignedNegacyclicConv

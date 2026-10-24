@@ -97,21 +97,21 @@ variable [Fintype D] [DecidableEq D] [Fintype R] [Nonempty R]
 /-- A uniform function `f : D → R`, the output of `A` against `f` and the list of the points
 `A` queries, in order. -/
 noncomputable def collisionGame (A : OracleAdv D R α) : PMF ((D → R) × α × List D) :=
-  (PMF.uniformOfFintype (D → R)).bind fun f => (run (logOracle f) A []).map fun r => (f, r)
+  (PMF.uniformFintype (D → R)).bind fun f => (run (logOracle f) A []).map fun r => (f, r)
 
 /-- The run of `A` from the log `l` against `tableExt t g` for a uniform `g`, together with
 the function `tableExt t g`. -/
 noncomputable def tableGame (t : D → Option R) (A : OracleAdv D R α) (l : List D) :
     PMF ((D → R) × α × List D) :=
-  (PMF.uniformOfFintype (D → R)).bind fun g =>
+  (PMF.uniformFintype (D → R)).bind fun g =>
     (run (logOracle (tableExt t g)) A l).map fun r => (tableExt t g, r)
 
 /-- A uniform function is a uniform function updated at `d` by an independent uniform
 value. -/
 theorem uniform_bind_eq_bind_update {β : Type} (d : D) (F : (D → R) → PMF β) :
-    (PMF.uniformOfFintype (D → R)).bind F =
-      (PMF.uniformOfFintype R).bind fun r =>
-        (PMF.uniformOfFintype (D → R)).bind fun g => F (Function.update g d r) := by
+    (PMF.uniformFintype (D → R)).bind F =
+      (PMF.uniformFintype R).bind fun r =>
+        (PMF.uniformFintype (D → R)).bind fun g => F (Function.update g d r) := by
   conv_lhs => rw [← Constructions.ECBCPRF.uniform_bind_update d]
   rw [PMF.bind_bind]
   simp only [PMF.bind_map]
@@ -137,7 +137,7 @@ theorem tableGame_collision_le (A : OracleAdv D R α) (q i : ℕ) (hA : A.IsQuer
   induction A generalizing q i t l with
   | ret a =>
     refine (toOuterMeasure_bind_le' _ _ _ 0 fun g => ?_).trans zero_le
-    rw [run_ret, PMF.pure_map, PMF.toOuterMeasure_pure_apply, if_neg]
+    rw [run_ret, PMF.pure_map, PMF.toOuterMeasure_pure_apply, ite_eq_right]
     rintro ⟨x, hx, y, hy, hxy, hf⟩
     have hx' : (t x).isSome := hx.elim id (hl x)
     have hy' : (t y).isSome := hy.elim id (hl y)
@@ -179,7 +179,7 @@ theorem tableGame_collision_le (A : OracleAdv D R α) (q i : ℕ) (hA : A.IsQuer
         · subst hx; simp [tableExt, ht', htd]
         · simp [tableExt, ht', Function.update_of_ne hx]
       have he : tableGame t (query d k) l =
-          (PMF.uniformOfFintype R).bind fun r => tableGame (t' r) (k r) (l ++ [d]) := by
+          (PMF.uniformFintype R).bind fun r => tableGame (t' r) (k r) (l ++ [d]) := by
         rw [tableGame, uniform_bind_eq_bind_update d]
         congr 1
         funext r
@@ -230,7 +230,7 @@ theorem tableGame_collision_le (A : OracleAdv D R α) (q i : ℕ) (hA : A.IsQuer
           · rw [hxd]; exact Finset.mem_insert_self _ _
           · refine Finset.mem_insert_of_mem ?_
             simpa [ht', Function.update_of_ne hxd] using hx
-      · rw [Finset.sum_range_succ', PMF.toOuterMeasure_uniformOfFintype_apply, add_comm]
+      · rw [Finset.sum_range_succ', PMF.toOuterMeasure_uniformFintype_apply, add_comm]
         have h1 : ∀ j, ((i + 1 + j : ℕ) : ℝ≥0∞) = ((i + (j + 1) : ℕ) : ℝ≥0∞) := fun j => by
           congr 1; omega
         simp only [h1]
@@ -260,9 +260,9 @@ points among the queries of `evalOn f A` have the same value is at most
 `q (q - 1) / 2 / |R|`. -/
 theorem prob_evalOn_collision_le (A : OracleAdv D R α) (hA₀ : A.NoRand) (q : ℕ)
     (hA : A.IsQueryBound q) :
-    (PMF.uniformOfFintype (D → R)).toOuterMeasure {f | QueryCollision f (evalOn f A).2} ≤
+    (PMF.uniformFintype (D → R)).toOuterMeasure {f | QueryCollision f (evalOn f A).2} ≤
       ((q * (q - 1) / 2 : ℕ) : ℝ≥0∞) / Fintype.card R := by
-  have hg : collisionGame A = (PMF.uniformOfFintype (D → R)).map
+  have hg : collisionGame A = (PMF.uniformFintype (D → R)).map
       fun f => (f, (evalOn f A).1, (evalOn f A).2) := by
     simp only [collisionGame, run_logOracle_eq_evalOn _ hA₀, PMF.pure_map, List.nil_append]
     rfl

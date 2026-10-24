@@ -164,7 +164,7 @@ theorem maskComm_hiding_coupling (m₀ m₁ : Bool) :
       (Hiding_Game MaskComm m₀ m₁ true)
       (Hiding_Game MaskComm m₀ m₁ false)
       eqPost := by
-  simp only [Hiding_Game, MaskComm, if_true, Bool.false_eq_true, if_false,
+  simp only [Hiding_Game, MaskComm, ite_true, Bool.false_eq_true, ite_false,
     SPComp.monad_bind_eq]
   ssprove_couple_bij (boolXorBij (xor m₀ m₁))
 

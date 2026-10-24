@@ -417,9 +417,9 @@ theorem ucTimeNegl_iff_asymSecure {α : ℕ → Type} {b : ℕ → Ty} (hb : ∀
       intro n
       by_cases hex : ∃ E : Val (b n) → SPComp (Val .bool), TimeAdm (b := .bool) O (p n) E ∧
           1 < spcomp_distComp (f n) (g n) E * (n : ℝ≥0∞) ^ c
-      · simp only [D, dif_pos hex]
+      · simp only [D, dite_eq_left hex]
         exact hex.choose_spec.1.mono (by omega)
-      · simp only [D, dif_neg hex]
+      · simp only [D, dite_eq_right hex]
         exact (timeAdm_const_true (hb n)).mono (by omega)
     obtain ⟨N, hN⟩ := h D ⟨fun n => p n + 1, hp.add (isPolyBound_const 1), hD⟩ c
     refine ⟨N, fun n hn => ?_⟩
@@ -432,7 +432,7 @@ theorem ucTimeNegl_iff_asymSecure {α : ℕ → Type} {b : ℕ → Ty} (hb : ∀
     have hex : ∃ E : Val (b n) → SPComp (Val .bool), TimeAdm (b := .bool) O (p n) E ∧
         1 < spcomp_distComp (f n) (g n) E * (n : ℝ≥0∞) ^ c := ⟨E, hE, not_le.mp hlt⟩
     have h1 := hN n hn
-    simp only [D, dif_pos hex] at h1
+    simp only [D, dite_eq_left hex] at h1
     exact absurd h1 (not_le.mpr hex.choose_spec.2)
 
 end UCLevel

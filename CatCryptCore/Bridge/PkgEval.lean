@@ -198,7 +198,7 @@ theorem evalImpl_link_id_left (p : DeepPackage) :
     -- = linkEnv p op dom codom x (by substOracle on oracleCall)
     simp only [RawCode.substOracle]
     -- The dite resolves positively since the operation is in p.exports.ops
-    exact congrArg RawCode.eval (dif_pos (List.get_mem _ _))
+    exact congrArg RawCode.eval (dite_eq_left (List.get_mem _ _))
 
 /-! ## Functoriality: Associativity -/
 
@@ -365,7 +365,7 @@ theorem toSemPkg_id_mem (I : DeepInterface)
     (toSemPkg (DeepPackage.id I)).resolve oracle op dom codom x =
     oracle op dom codom x := by
   dsimp only [toSemPkg, DeepPackage.id]
-  rw [dif_pos h]
+  rw [dite_eq_left h]
   rfl
 
 /-! ## Category Instance for DeepInterface

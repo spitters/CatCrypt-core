@@ -180,14 +180,14 @@ noncomputable def aeadIdealOracle :
   | log, .inl (pt, ad) =>
     match log.lookup (pt, ad) with
     | some ct => PMF.pure (.inl ct, log)
-    | none => (PMF.uniformOfFintype C).map fun ct => (.inl ct, ((pt, ad), ct) :: log)
+    | none => (PMF.uniformFintype C).map fun ct => (.inl ct, ((pt, ad), ct) :: log)
   | log, .inr (ct, ad) => PMF.pure (.inr (aeadLogDecrypt log ct ad), log)
 
 /-- Real authenticated-encryption game: sample a key, run `A` against
 `aeadRealOracle D key`. -/
 noncomputable def AEAD_CCA_Game_Real (D : AEADDef W C)
     (A : AEAD_CCA_Adversary W C) : SPComp Bool :=
-  liftPMF ((PMF.uniformOfFintype W).bind fun key =>
+  liftPMF ((PMF.uniformFintype W).bind fun key =>
     (OracleAdv.run (aeadRealOracle D key) A ()).map Prod.fst)
 
 /-- Ideal authenticated-encryption game: run `A` against `aeadIdealOracle`

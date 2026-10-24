@@ -8,7 +8,7 @@ module
 public import CatCryptCore.Nominal.Nominal
 public import CatCryptCore.Nominal.Fresh
 public import Mathlib.Data.Fintype.Basic
-public import Mathlib.Logic.Basic
+public import Mathlib.Basic.Logic.Basic
 
 
 @[expose] public section
@@ -209,7 +209,7 @@ theorem get_empty (ℓ : Location) : get empty ℓ = none := rfl
 /-- Getting from a heap after setting the same location returns the value -/
 theorem get_set_same (h : DeepHeap) (ℓ : Location) (v : ℓ.ty) :
     get (set h ℓ v) ℓ = some v := by
-  simp only [get, set, dif_pos, cast_eq]
+  simp only [get, set, dite_eq_left, cast_eq]
 
 /-- Getting from a heap after setting a different location returns the original value.
     Note: This now requires that the locations are different (either by name or by type). -/

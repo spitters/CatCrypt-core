@@ -167,10 +167,10 @@ theorem DeepPackage.BehavEquiv.link_congr_right
     by_cases hmem : (op', dom', codom') ∈ p₂.exports.ops
     · -- Operation is in both exports
       have hmem₃ : (op', dom', codom') ∈ p₃.exports.ops := hexports ▸ hmem
-      simp only [dif_pos hmem, dif_pos hmem₃]
+      simp only [dite_eq_left hmem, dite_eq_left hmem₃]
       exact h.impl_eq op' dom' codom' hmem hmem₃ x' oracle
     · -- Operation is in neither exports
-      simp only [dif_neg hmem, dif_neg (hexports ▸ hmem : (op', dom', codom') ∉ p₃.exports.ops)]
+      simp only [dite_eq_right hmem, dite_eq_right (hexports ▸ hmem : (op', dom', codom') ∉ p₃.exports.ops)]
 
 /-- **Left congruence for linking**: If `p₁` and `p₂` are behaviorally
     equivalent and have the same imports, then `p₁.link q` is behaviorally

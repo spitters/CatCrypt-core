@@ -57,7 +57,7 @@ theorem prTrue_bind_le_prTrue_win_add (c : SPComp σ) (k₁ k₂ : σ → SPComp
   refine ForkingLemma.prTrue_bind_le_add _ _ _ _ _ fun s h' => ?_
   cases hw : win s
   · rw [hagree s hw]; exact le_add_self
-  · rw [ForkingLemma.prTrue_pure_bool, if_pos rfl]; exact le_add_right (prTrue_le_one _ _)
+  · rw [ForkingLemma.prTrue_pure_bool, ite_eq_left rfl]; exact le_add_right (prTrue_le_one _ _)
 
 /-- Two continuations of a shared prefix that agree outside the win event
     differ in `true`-probability by at most the win probability. -/

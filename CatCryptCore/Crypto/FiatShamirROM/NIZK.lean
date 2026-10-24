@@ -576,11 +576,11 @@ theorem statHVZKAt_nizkProtocol {δ : ℝ≥0∞} (h : ∀ x w, P.rel x w → P.
     (P.nizkProtocol Sid).StatHVZKAt () () δ := by
   intro q look g hg
   simp only [vals_nizkProtocol, trace_nizkProtocol, simTrace_nizkProtocol]
-  have hstep : ∀ e : Fin 1 → P.Ch, ∑' r, PMF.uniformOfFintype P.Rand r *
+  have hstep : ∀ e : Fin 1 → P.Ch, ∑' r, PMF.uniformFintype P.Rand r *
       (if (P.nizkProtocol Sid).hidFresh look () () q r e then
         g ([], P.nizkView q (e 0) (P.commit q.2.1.1 q.2.1.2 r, P.respond q.2.1.1 q.2.1.2 r (e 0)))
         else 0) ≤
-      ∑' s, PMF.uniformOfFintype P.SimRand s *
+      ∑' s, PMF.uniformFintype P.SimRand s *
         g ([], P.nizkView q (e 0) (P.simulate q.2.1.1 (e 0) s)) + δ := fun e => by
     have hb : P.RejectBlind (fun az => g ([], P.nizkView q (e 0) az)) := by
       intro a a' z hz
@@ -590,8 +590,8 @@ theorem statHVZKAt_nizkProtocol {δ : ℝ≥0∞} (h : ∀ x w, P.rel x w → P.
     split_ifs
     · exact le_rfl
     · exact zero_le
-  calc _ ≤ ∑' e, PMF.uniformOfFintype (Fin 1 → P.Ch) e *
-          (∑' s, PMF.uniformOfFintype P.SimRand s *
+  calc _ ≤ ∑' e, PMF.uniformFintype (Fin 1 → P.Ch) e *
+          (∑' s, PMF.uniformFintype P.SimRand s *
             g ([], P.nizkView q (e 0) (P.simulate q.2.1.1 (e 0) s)) + δ) :=
         ENNReal.tsum_le_tsum fun e => mul_le_mul_right (hstep e) _
     _ = _ := by
@@ -605,11 +605,11 @@ theorem keyBoundAt_nizkProtocol {γ : ℝ≥0∞} (h : ∀ x w, P.rel x w → P.
   intro q look Q
   simp only [guessView_nizkProtocol, vals_nizkProtocol, Fin.sum_univ_one]
   set Qv := Q ([], [], none)
-  have hr : ∑' r, PMF.uniformOfFintype P.Rand r *
+  have hr : ∑' r, PMF.uniformFintype P.Rand r *
       Qv (q.1, q.2.1.1, P.commit q.2.1.1 q.2.1.2 r) ≤ γ := by
-    rw [← tsum_map_mul' (PMF.uniformOfFintype P.Rand)
+    rw [← tsum_map_mul' (PMF.uniformFintype P.Rand)
       (fun r => (q.1, q.2.1.1, P.commit q.2.1.1 q.2.1.2 r)) Qv]
-    calc ∑' y, ((PMF.uniformOfFintype P.Rand).map
+    calc ∑' y, ((PMF.uniformFintype P.Rand).map
             fun r => (q.1, q.2.1.1, P.commit q.2.1.1 q.2.1.2 r)) y * Qv y
         ≤ ∑' y, γ * Qv y := by
           refine ENNReal.tsum_le_tsum fun y => mul_le_mul_left ?_ _
@@ -617,14 +617,14 @@ theorem keyBoundAt_nizkProtocol {γ : ℝ≥0∞} (h : ∀ x w, P.rel x w → P.
           exact (MeasureTheory.measure_mono fun r hr => congrArg (fun k => k.2.2) hr).trans
             (h q.2.1.1 q.2.1.2 q.2.2 y.2.2)
       _ = γ := by rw [ENNReal.tsum_mul_left, PMF.tsum_coe, mul_one]
-  calc _ ≤ ∑' e, PMF.uniformOfFintype (Fin 1 → P.Ch) e *
-        ∑' r, PMF.uniformOfFintype P.Rand r * Qv (q.1, q.2.1.1, P.commit q.2.1.1 q.2.1.2 r) := by
+  calc _ ≤ ∑' e, PMF.uniformFintype (Fin 1 → P.Ch) e *
+        ∑' r, PMF.uniformFintype P.Rand r * Qv (q.1, q.2.1.1, P.commit q.2.1.1 q.2.1.2 r) := by
         refine ENNReal.tsum_le_tsum fun e => mul_le_mul_right
           (ENNReal.tsum_le_tsum fun r => mul_le_mul_right ?_ _) _
         split_ifs
         · exact le_rfl
         · exact zero_le
-    _ ≤ ∑' e, PMF.uniformOfFintype (Fin 1 → P.Ch) e * γ :=
+    _ ≤ ∑' e, PMF.uniformFintype (Fin 1 → P.Ch) e * γ :=
         ENNReal.tsum_le_tsum fun e => mul_le_mul_right hr _
     _ = γ := by rw [ENNReal.tsum_mul_right, PMF.tsum_coe, one_mul]
 

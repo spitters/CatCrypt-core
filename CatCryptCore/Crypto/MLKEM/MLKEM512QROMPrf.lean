@@ -305,9 +305,9 @@ theorem avg_corrErr_prfScheme_le :
           avg fun a : Nc → Fin n => avg fun b : Nc → Fin n => fl φ m a b := by
     intro φ σ m s
     by_cases hs : s = σ
-    · rw [if_pos hs]
+    · rw [ite_eq_left hs]
       exact (avg_le_one fun F => hfl1 _ _ _ _).trans le_self_add
-    · rw [if_neg hs, zero_add, ← avg_setRows eD (Ne.symm hs)
+    · rw [ite_eq_right hs, zero_add, ← avg_setRows eD (Ne.symm hs)
         (fun a b (_ : Fin m₃ → Fin n) => fl φ m a b)]
       simp only [avg_prod, avg_const, le_refl]
   have hmax : ∀ (φ : Φ) (a : Nc → Fin n),
@@ -506,10 +506,10 @@ theorem avg_kg512_eK_pair
   rw [avg_prod]
   simp only [fun A => PRFInstance512.pushesUniform_eK (fun ks => g' (kg512 A ks))]
   rw [← tsum_fintype (L := SummationFilter.unconditional _)]
-  change _ = ∑' ks, ((PMF.uniformOfFintype mlkem512Params.Mat).bind fun A =>
-    (PMF.uniformOfFintype mlkem512Params.KeySeed).map fun ks => kg512 A ks) ks * g' ks
+  change _ = ∑' ks, ((PMF.uniformFintype mlkem512Params.Mat).bind fun A =>
+    (PMF.uniformFintype mlkem512Params.KeySeed).map fun ks => kg512 A ks) ks * g' ks
   rw [PMF.tsum_bind_mul]
-  simp only [KEM.FOTransformU.tsum_map_mul, PMF.uniformOfFintype_apply]
+  simp only [KEM.FOTransformU.tsum_map_mul, PMF.uniformFintype_apply]
   unfold avg
   rw [tsum_fintype (L := SummationFilter.unconditional _)]
   simp only [tsum_fintype (L := SummationFilter.unconditional _)]

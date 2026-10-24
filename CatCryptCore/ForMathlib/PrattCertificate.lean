@@ -79,7 +79,7 @@ theorem powModGo_cast (m : ℕ) :
       rw [powModGo]
       by_cases h0 : e = 0
       · subst h0; simp
-      · simp only [h0, if_false]
+      · simp only [h0, ite_false]
         have hlt : e / 2 < 2 ^ fuel := by
           have : (2 : ℕ) ^ (fuel + 1) = 2 * 2 ^ fuel := by rw [pow_succ]; ring
           omega
@@ -90,7 +90,7 @@ theorem powModGo_cast (m : ℕ) :
         have hacc : (((if e % 2 = 1 then (acc * base) % m else acc) : ℕ) : ZMod m)
               = (acc : ZMod m) * (base : ZMod m) ^ (e % 2) := by
           by_cases h1 : e % 2 = 1
-          · simp only [h1, if_true]; rw [ZMod.natCast_mod]; push_cast; ring
+          · simp only [h1, ite_true]; rw [ZMod.natCast_mod]; push_cast; ring
           · have : e % 2 = 0 := by omega
             simp [this]
         rw [hacc, ← pow_mul, mul_assoc, ← pow_add]
@@ -108,7 +108,7 @@ theorem powModGo_lt (m : ℕ) (hm : 0 < m) :
       rw [powModGo]
       by_cases h0 : e = 0
       · simp [h0, h]
-      · simp only [h0, if_false]
+      · simp only [h0, ite_false]
         apply ih
         split
         · exact Nat.mod_lt _ hm
@@ -234,9 +234,9 @@ theorem stripFactor_spec (q : ℕ) :
     · obtain ⟨k, hk⟩ := ih (n / q)
       refine ⟨k + 1, ?_⟩
       simp only [Bool.and_eq_true, beq_iff_eq] at h
-      rw [stripFactor, if_pos (by simp_all), pow_succ, ← mul_assoc, ← hk]
+      rw [stripFactor, ite_eq_left (by simp_all), pow_succ, ← mul_assoc, ← hk]
       exact (Nat.div_mul_cancel (Nat.dvd_of_mod_eq_zero h.1.2)).symm
-    · exact ⟨0, by rw [stripFactor, if_neg h]; simp⟩
+    · exact ⟨0, by rw [stripFactor, ite_eq_right h]; simp⟩
 
 /-- `stripAll n qs` removes every power of every `q ∈ qs` from `n`. -/
 def stripAll (n : ℕ) : List ℕ → ℕ
@@ -281,10 +281,10 @@ theorem trialGo_spec (q : ℕ) :
     simp only [trialGo] at h
     by_cases h1 : q < d * d
     · exact absurd (lt_of_lt_of_le h1 (le_trans (Nat.mul_le_mul hdm hdm) hmq)) (lt_irrefl _)
-    · rw [if_neg h1] at h
+    · rw [ite_eq_right h1] at h
       by_cases h2 : q % d = 0
       · simp [h2] at h
-      · simp only [beq_iff_eq, h2, if_false] at h
+      · simp only [beq_iff_eq, h2, ite_false] at h
         rcases Nat.eq_or_lt_of_le hdm with rfl | hlt
         · exact fun hd => h2 (Nat.mod_eq_zero_of_dvd hd)
         · exact ih (d + 1) h m hlt hmq

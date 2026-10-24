@@ -429,7 +429,7 @@ theorem hyb1_eq_eval_real_wrap (F : PRFPRG_PRFDef) (A : PRGOutput → SPComp Boo
   -- Unfold definitions and simplify the if conditions
   unfold gen_hyb eval_real wrapAdv_snd
   -- Simplify the if conditions: 1 ≥ 2 is false, 1 = 1 is true
-  simp only [show (1 : ℕ) ≥ 2 ↔ False by decide, if_false, if_true]
+  simp only [show (1 : ℕ) ≥ 2 ↔ False by decide, ite_false, ite_true]
   simp only [SPComp.monad_bind_eq, SPComp.bind_def, SPComp.sample, SPComp.pure_def]
   -- Structure: (uniform.bind (a ↦ pure (a, h))).bind (x ↦ (uniform.bind (a ↦ pure (a, x.2))).bind (...))
   -- First simplify using: (uniform Word).bind (a ↦ pure (a, h)).bind f = (uniform Word).bind (a ↦ f (a, h))
@@ -465,7 +465,7 @@ theorem hyb2_eq_eval_ideal_wrap (A : PRGOutput → SPComp Bool) :
   -- Unfold definitions and simplify the if conditions
   unfold gen_hyb eval_ideal wrapAdv_snd
   -- Simplify the if condition: 2 ≥ 2 is true
-  simp only [show (2 : ℕ) ≥ 2 ↔ True by decide, if_true]
+  simp only [show (2 : ℕ) ≥ 2 ↔ True by decide, ite_true]
   simp only [SPComp.monad_bind_eq, SPComp.bind_def, SPComp.sample, SPComp.pure_def]
   -- First simplify using bind_assoc and pure_bind
   ssprove_distr_simp
@@ -587,7 +587,7 @@ theorem decomp_hyb0_eq_eval_real_wrap_fst (F : PRFPRG_PRFDef) (A : PRGOutput →
   funext h
   unfold gen_hyb_decomp eval_real wrapAdv_decomp0_snd
   -- Simplify the if conditions for i=0: 0 ≥ 2 is false, 0 = 1 is false
-  simp only [show (0 : ℕ) ≥ 2 ↔ False by decide, if_false,
+  simp only [show (0 : ℕ) ≥ 2 ↔ False by decide, ite_false,
              show (0 : ℕ) = 1 ↔ False by decide]
   simp only [SPComp.monad_bind_eq, SPComp.bind_def, SPComp.sample, SPComp.pure_def]
   ssprove_distr_simp
@@ -600,7 +600,7 @@ theorem decomp_hyb1_eq_eval_ideal_wrap_fst (F : PRFPRG_PRFDef) (A : PRGOutput �
   funext h
   unfold gen_hyb_decomp eval_ideal wrapAdv_decomp0_snd
   -- Simplify the if conditions for i=1: 1 ≥ 2 is false, 1 = 1 is true
-  simp only [show (1 : ℕ) ≥ 2 ↔ False by decide, if_false, if_true]
+  simp only [show (1 : ℕ) ≥ 2 ↔ False by decide, ite_false, ite_true]
   simp only [SPComp.monad_bind_eq, SPComp.bind_def, SPComp.sample, SPComp.pure_def]
   ssprove_distr_simp
   -- Both sides: x ← sample; s ← sample; A (x, F.f s one) h
@@ -743,7 +743,7 @@ theorem prTrue_realGame_prgOracleAdv (F : PRFPRG_PRFDef) (A : PRGOutput → SPCo
     prTrue_bind_sample]
   rw [PMF.bind_apply, tsum_fintype]
   refine Finset.sum_congr rfl fun k _ => ?_
-  simp only [PMF.uniformOfFintype_apply, prgOracleAdv, OracleAdv.run_query, OracleAdv.run_rand,
+  simp only [PMF.uniformFintype_apply, prgOracleAdv, OracleAdv.run_query, OracleAdv.run_rand,
     OracleAdv.run_ret, CatCrypt.Crypto.PRPPRF.keyedOracle, PMF.pure_bind, map_fst_bind_outBit,
     map_outBit_apply_true]
   rfl
@@ -752,7 +752,7 @@ theorem prTrue_realGame_prgOracleAdv (F : PRFPRG_PRFDef) (A : PRGOutput → SPCo
 independent uniform answers, since the counters `zero` and `one` differ. -/
 theorem run_rfOracle_prgOracleAdv (A : PRGOutput → SPComp Bool) :
     OracleAdv.run CatCrypt.Crypto.PRPPRF.rfOracle (prgOracleAdv A) [] =
-      (PMF.uniformOfFintype Word).bind fun y₀ => (PMF.uniformOfFintype Word).bind fun y₁ =>
+      (PMF.uniformFintype Word).bind fun y₀ => (PMF.uniformFintype Word).bind fun y₁ =>
         PMF.bind (A (y₀, y₁) Heap.empty) fun o => PMF.pure (outBit o, [(one, y₁), (zero, y₀)]) := by
   simp [prgOracleAdv, CatCrypt.Crypto.PRPPRF.rfOracle, List.lookup, zero, one, PMF.bind_map,
     Function.comp_def]
@@ -765,7 +765,7 @@ theorem prTrue_rfGame_prgOracleAdv (A : PRGOutput → SPComp Bool) :
   rw [CatCrypt.Crypto.PRPPRF.rfGame, CatCrypt.Crypto.prTrue_liftPMF, run_rfOracle_prgOracleAdv]
   simp only [↓map_fst_bind_outBit, PMF.map_bind]
   simp only [gen_ideal, SPComp.monad_bind_eq, SPComp.bind_assoc, SPComp.pure_bind,
-    prTrue_bind_sample, PMF.bind_apply, tsum_fintype, PMF.uniformOfFintype_apply,
+    prTrue_bind_sample, PMF.bind_apply, tsum_fintype, PMF.uniformFintype_apply,
     ← Finset.mul_sum, map_outBit_apply_true]
   rfl
 

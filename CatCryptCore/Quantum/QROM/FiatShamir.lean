@@ -355,7 +355,7 @@ theorem uniformQ_branch_apply (α : Type) [Fintype α] [Nonempty α] (a : α)
     (uniformQ α : QComp d α).branch a ρ = (((Fintype.card α : ℝ)⁻¹ : ℝ) : ℂ) • ρ := by
   show ((((CatCrypt.Prob.SDistr.uniform α) (some a)).toReal : ℝ) : ℂ) • ρ = _
   simp only [CatCrypt.Prob.SDistr.uniform, PMF.map_apply, Option.some.injEq,
-    PMF.uniformOfFintype_apply, tsum_fintype, Finset.sum_ite_eq, Finset.mem_univ, ↓reduceIte,
+    PMF.uniformFintype_apply, tsum_fintype, Finset.sum_ite_eq, Finset.mem_univ, ↓reduceIte,
     ENNReal.toReal_inv, ENNReal.toReal_natCast, Complex.ofReal_inv, Complex.ofReal_natCast]
 
 /-- The real trace of a branch of a bind over a finite type is the sum over the

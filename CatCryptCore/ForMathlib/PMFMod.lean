@@ -5,7 +5,7 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import Mathlib.Probability.Distributions.Uniform
+public import CatCryptCore.ForMathlib.PMFUniformDefs
 
 /-!
 # Reduction modulo `M` of a uniform value below `N`
@@ -102,16 +102,16 @@ namespace PMF
 uniform distribution on `Fin N` under reduction modulo `M` puts mass at least
 `(1 - M/N)·(1/M)` on every residue. -/
 theorem one_sub_mul_uniform_le_map_mod (N M : ℕ) [NeZero N] [NeZero M] (r : Fin M) :
-    (1 - (M : ℝ≥0∞) / N) * PMF.uniformOfFintype (Fin M) r ≤
-      (PMF.uniformOfFintype (Fin N)).map (Fin.modTo N M) r := by
-  have hcard : (PMF.uniformOfFintype (Fin N)).map (Fin.modTo N M) r =
+    (1 - (M : ℝ≥0∞) / N) * PMF.uniformFintype (Fin M) r ≤
+      (PMF.uniformFintype (Fin N)).map (Fin.modTo N M) r := by
+  have hcard : (PMF.uniformFintype (Fin N)).map (Fin.modTo N M) r =
       ((Finset.univ.filter fun x : Fin N => Fin.modTo N M x = r).card : ℝ≥0∞) *
         (N : ℝ≥0∞)⁻¹ := by
     rw [PMF.map_apply, tsum_fintype]
-    simp only [PMF.uniformOfFintype_apply, Fintype.card_fin]
+    simp only [PMF.uniformFintype_apply, Fintype.card_fin]
     rw [← Finset.sum_filter, Finset.sum_const, nsmul_eq_mul]
     simp only [eq_comm]
-  rw [hcard, PMF.uniformOfFintype_apply, Fintype.card_fin]
+  rw [hcard, PMF.uniformFintype_apply, Fintype.card_fin]
   refine (ENNReal.one_sub_div_mul_inv_le (c := N / M) (NeZero.pos N) (NeZero.pos M) ?_).trans ?_
   · exact (Nat.lt_div_mul_add (NeZero.pos M)).le
   · gcongr

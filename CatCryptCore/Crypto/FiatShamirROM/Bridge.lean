@@ -63,49 +63,49 @@ variable {R A B : Type} [Fintype R] [Nonempty R] [DecidableEq A]
 /-- The uniform distribution on the fibre `{r | c r = a}`, and the uniform
 distribution on `R` when the fibre is empty. -/
 noncomputable def fibreDist (c : R → A) (a : A) : PMF R :=
-  if h : (Finset.univ.filter fun r => c r = a).Nonempty then PMF.uniformOfFinset _ h
-  else PMF.uniformOfFintype R
+  if h : (Finset.univ.filter fun r => c r = a).Nonempty then PMF.uniformFinset _ h
+  else PMF.uniformFintype R
 
 /-- Sampling `c r` for uniform `r` and then a uniform element of the fibre over it
 is uniform sampling. -/
 theorem bind_fibreDist (c : R → A) :
-    ((PMF.uniformOfFintype R).map c).bind (fibreDist c) = PMF.uniformOfFintype R := by
+    ((PMF.uniformFintype R).map c).bind (fibreDist c) = PMF.uniformFintype R := by
   ext r
   rw [PMF.bind_apply, tsum_eq_single (c r)]
   · have hne : (Finset.univ.filter fun r' => c r' = c r).Nonempty := ⟨r, by simp⟩
-    rw [fibreDist, dif_pos hne,
-      PMF.uniformOfFinset_apply_of_mem hne (Finset.mem_filter.mpr ⟨Finset.mem_univ _, rfl⟩),
-      PMF.map_uniformOfFintype_apply, PMF.uniformOfFintype_apply]
+    rw [fibreDist, dite_eq_left hne,
+      PMF.uniformFinset_apply_of_mem hne (Finset.mem_filter.mpr ⟨Finset.mem_univ _, rfl⟩),
+      PMF.map_uniformFintype_apply, PMF.uniformFintype_apply]
     have h0 : ((Finset.univ.filter fun r' => c r' = c r).card : ℝ≥0∞) ≠ 0 := by
       exact_mod_cast hne.card_pos.ne'
     rw [div_eq_mul_inv, mul_comm _ (Fintype.card R : ℝ≥0∞)⁻¹, mul_assoc,
       ENNReal.mul_inv_cancel h0 (ENNReal.natCast_ne_top _), mul_one]
   · intro a ha
     by_cases hne : (Finset.univ.filter fun r' => c r' = a).Nonempty
-    · rw [fibreDist, dif_pos hne,
-        PMF.uniformOfFinset_apply_of_notMem hne (fun h => ha (Finset.mem_filter.mp h).2.symm),
+    · rw [fibreDist, dite_eq_left hne,
+        PMF.uniformFinset_apply_of_notMem hne (fun h => ha (Finset.mem_filter.mp h).2.symm),
         mul_zero]
-    · have h0 : ((PMF.uniformOfFintype R).map c) a = 0 := by
-        rw [PMF.map_uniformOfFintype_apply, Finset.not_nonempty_iff_eq_empty.mp hne]
+    · have h0 : ((PMF.uniformFintype R).map c) a = 0 := by
+        rw [PMF.map_uniformFintype_apply, Finset.not_nonempty_iff_eq_empty.mp hne]
         simp
       rw [h0, zero_mul]
 
 /-- On a value `a` in the image of `c`, every element in the support of
 `fibreDist c a` is mapped to `a`. -/
 theorem eq_of_mem_support_fibreDist (c : R → A) {a : A}
-    (ha : a ∈ ((PMF.uniformOfFintype R).map c).support) {r : R}
+    (ha : a ∈ ((PMF.uniformFintype R).map c).support) {r : R}
     (hr : r ∈ (fibreDist c a).support) : c r = a := by
   have hne : (Finset.univ.filter fun r' => c r' = a).Nonempty := by
     obtain ⟨r', -, hr'⟩ := (PMF.mem_support_map_iff _ _ _).mp ha
     exact ⟨r', by simp [hr']⟩
-  rw [fibreDist, dif_pos hne, PMF.mem_support_uniformOfFinset_iff] at hr
+  rw [fibreDist, dite_eq_left hne, PMF.mem_support_uniformFinset_iff] at hr
   exact (Finset.mem_filter.mp hr).2
 
 /-- The joint distribution of `(c r, g r)` for uniform `r` is the image `a` of a
 uniform `r` followed by `g` of a uniform element of the fibre over `a`. -/
 theorem map_pair_eq_bind_fibreDist (c : R → A) (g : R → B) :
-    (PMF.uniformOfFintype R).map (fun r => (c r, g r)) =
-      ((PMF.uniformOfFintype R).map c).bind
+    (PMF.uniformFintype R).map (fun r => (c r, g r)) =
+      ((PMF.uniformFintype R).map c).bind
         (fun a => ((fibreDist c a).map g).map fun z => (a, z)) := by
   conv_lhs => rw [← bind_fibreDist c]
   rw [PMF.map_bind]
@@ -166,10 +166,10 @@ noncomputable def toSigmaProtocolS : SigmaProtocolS where
   Response := P.Resp
   PState := P.Rand
   relation := P.rel
-  commit x w := liftSDistr ((PMF.uniformOfFintype P.Rand).map fun r => some (P.commit x w r, r))
+  commit x w := liftSDistr ((PMF.uniformFintype P.Rand).map fun r => some (P.commit x w r, r))
   respond x w r _ e := SPComp.pure (P.respond x w r e)
   verify := P.verify
-  simulate x e := liftSDistr ((PMF.uniformOfFintype P.SimRand).map fun s => some (P.simulate x e s))
+  simulate x e := liftSDistr ((PMF.uniformFintype P.SimRand).map fun s => some (P.simulate x e s))
 
 /-- The response distribution of `toSigmaProtocol P` on the commitment `a`: the
 response to `e` from a uniform element of the fibre of `P.commit x w` over `a`. -/
@@ -185,17 +185,17 @@ noncomputable def toSigmaProtocol : SigmaProtocol where
   Challenge := P.Ch
   Response := P.Resp
   relation := P.rel
-  commit x w := liftSDistr (((PMF.uniformOfFintype P.Rand).map (P.commit x w)).map some)
+  commit x w := liftSDistr (((PMF.uniformFintype P.Rand).map (P.commit x w)).map some)
   respond x w a e := liftSDistr ((P.respondDist x w a e).map some)
   verify := P.verify
-  simulate x e := liftSDistr (((PMF.uniformOfFintype P.SimRand).map (P.simulate x e)).map some)
+  simulate x e := liftSDistr (((PMF.uniformFintype P.SimRand).map (P.simulate x e)).map some)
 
 /-- The honest run of `toSigmaProtocol P` with challenge `e` is the
 heap-independent sampler of `(P.commit x w r, e, P.respond x w r e)` for uniform
 `r`. -/
 theorem realTranscriptGiven_toSigmaProtocol (x : P.Stmt) (w : P.Wit) (e : P.Ch) :
     realTranscriptGiven P.toSigmaProtocol x w e =
-      liftSDistr ((((PMF.uniformOfFintype P.Rand).map
+      liftSDistr ((((PMF.uniformFintype P.Rand).map
         (fun r => (P.commit x w r, P.respond x w r e))).map
           (fun p => (⟨p.1, e, p.2⟩ : Transcript P.toSigmaProtocol))).map some) := by
   rw [map_pair_eq_bind_fibreDist]
@@ -211,7 +211,7 @@ heap-independent sampler of `(a, e, z)` for `(a, z) = P.simulate x e s` and unif
 `s`. -/
 theorem simulatedTranscriptGiven_toSigmaProtocol (x : P.Stmt) (e : P.Ch) :
     simulatedTranscriptGiven P.toSigmaProtocol x e =
-      liftSDistr ((((PMF.uniformOfFintype P.SimRand).map (P.simulate x e)).map
+      liftSDistr ((((PMF.uniformFintype P.SimRand).map (P.simulate x e)).map
           (fun p => (⟨p.1, e, p.2⟩ : Transcript P.toSigmaProtocol))).map some) := by
   unfold simulatedTranscriptGiven
   simp only [SPComp.monad_bind_eq, SPComp.monad_pure_eq, toSigmaProtocol,

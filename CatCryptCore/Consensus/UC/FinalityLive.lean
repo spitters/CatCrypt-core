@@ -258,7 +258,7 @@ theorem liveRho_eq_roundTime (X : TreeTrace Party Blk) {d hz τ₀ : ℕ} (hτ�
     ⟨liveRho X d hz τ₀ E r, by omega⟩
   classical
   unfold roundTime
-  rw [dif_pos hex]
+  rw [dite_eq_left hex]
   have h1 := Nat.find_spec hex
   have h2 : Nat.find hex ≤ liveRho X d hz τ₀ E r := Nat.find_min' hex (by omega)
   refine le_antisymm ?_ h2
@@ -479,7 +479,7 @@ theorem Run.updatedWithin_of_schedule (h : Run c G)
     finality_updated_start hU (by rw [hEp]; ring) hp le_rfl hτ'
   change (Xp.chain t p).find? (fun x => decide (c.slot x ≤ e * c.E)) = some b at hck
   change Finalized c.T c.w (if t ≤ t then (G t).seen p else (G t).votes) ⟨b, e⟩ at hfin
-  rw [if_pos le_rfl] at hfin
+  rw [ite_eq_left le_rfl] at hfin
   have hfinV := Finalized.mono (h.seen_subset t p) hfin
   have hmem : b ∈ finList c ((G t).seen p) := mem_finList hW hfin fun b' hb' =>
     h.finalized_unique hA hfinV (Finalized.mono (h.seen_subset t p) hb')
@@ -543,7 +543,7 @@ theorem roundTime_eq {X : TreeTrace Party Blk} {R t : ℕ} (hle : R ≤ (X.st t)
   classical
   have hex : ∃ t, R ≤ (X.st t).round := ⟨t, hle⟩
   unfold roundTime
-  rw [dif_pos hex]
+  rw [dite_eq_left hex]
   refine le_antisymm (Nat.find_min' hex hle) ?_
   by_contra hc
   have := hlt _ (not_le.1 hc)
@@ -682,10 +682,10 @@ theorem Run.updatedWithin (h : Run c G)
   rw [← hTdef]
   have hex : ∃ t, c.start + r * (2 * c.E) ≤ ((posTT c G).st t).round := ⟨t, ht⟩
   have hTle : c.start + r * (2 * c.E) ≤ (G T).view.round := by
-    rw [hTdef]; unfold roundTime; rw [dif_pos hex]; exact Nat.find_spec hex
+    rw [hTdef]; unfold roundTime; rw [dite_eq_left hex]; exact Nat.find_spec hex
   have hTmin : ∀ t' < T, (G t').view.round < c.start + r * (2 * c.E) := by
     intro t' ht'
-    rw [hTdef] at ht'; unfold roundTime at ht'; rw [dif_pos hex] at ht'
+    rw [hTdef] at ht'; unfold roundTime at ht'; rw [dite_eq_left hex] at ht'
     exact not_le.1 (Nat.find_min hex ht')
   have hT0' : T ≠ 0 := by
     intro h0

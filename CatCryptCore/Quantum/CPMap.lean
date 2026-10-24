@@ -244,7 +244,6 @@ theorem trace_psd_mul_psd_nonneg
   have hA_spec : A = U * D * star U := by
     have hs := hA.isHermitian.spectral_theorem
     simp only [Unitary.conjStarAlgAut_apply] at hs; convert hs using 1
-    rfl
   rw [hA_spec]
   have htrace : (U * D * star U * B).trace = (D * (Uᴴ * B * U)).trace := by
     calc (U * D * star U * B).trace

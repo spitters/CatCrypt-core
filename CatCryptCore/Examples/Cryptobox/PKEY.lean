@@ -471,12 +471,12 @@ theorem genOracle_instr_agree (N : @NIKEScheme CT) :
     split
     · -- Collision case: both sides give 0 mass at non-bad outcomes
       -- Reduce if-conditions: b=false gives pure(), b=true gives fail
-      simp only [if_true, SPComp.bind_def, SPComp.set_def, SPComp.pure_def,
+      simp only [ite_true, SPComp.bind_def, SPComp.set_def, SPComp.pure_def,
         SPComp.get_def, SPComp.fail, SDistr.pure, SDistr.fail,
         SDistr.bind, PMF.pure_bind, PMF.pure_apply,
         reduceCtorEq, ite_false, Option.some.injEq, Prod.mk.injEq]
       -- Goal: if pk = pk_gen ∧ h' = h_final then 1 else 0 = 0
-      rw [if_neg]
+      rw [ite_eq_right]
       intro ⟨_, heq⟩
       simp_all [pkeyBadInstr]
     · -- No collision case: both b=false and b=true execute pure (), identical

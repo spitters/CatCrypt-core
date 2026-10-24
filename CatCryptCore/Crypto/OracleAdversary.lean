@@ -5,7 +5,7 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import Mathlib.Probability.Distributions.Uniform
+public import CatCryptCore.ForMathlib.PMFUniformDefs
 
 /-!
 # Adaptive oracle adversaries
