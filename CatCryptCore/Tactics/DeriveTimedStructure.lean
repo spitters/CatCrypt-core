@@ -57,13 +57,19 @@ when the environment holds one of the following families of declarations, read b
   cost `fHandler` and a bound `fTime` as parameters of `TimeBound`, is
   `∀ ys, H.handlerBound (A'.f ys) fHandler fTime`.
 
+A structure `H` that is itself a handler kind (`DeepPackage`, `QAdv`) has no costed mirror and
+is refused: a value of type `H` is priced by `H.handlerBound` or `H.handlerMirror`, wherever it
+occurs as a field or as the result of a reduction.
+
 The registered declarations are unfolded where they are applied, so the generated statements
 mention the definitions they stand for. A gate set, a handler cost and a bound appear in this
 order: the gate sets of the circuit fields after the parameters of `S`, and for each handler
 field its handler cost before its bound.
 
 The mirror is elaborated from its printed source. A parameter with an inaccessible name (an
-anonymous instance binder of a `variable` command) is printed under an accessible name.
+anonymous instance binder of a `variable` command) is printed under an accessible name. The
+mirror of a universe-polymorphic structure `S.{u₁, …, uₘ}` is declared as
+`S.Timed.{u₁, …, uₘ}`, with the universe levels of the constants in its field types printed.
 
 ## Main definitions
 
@@ -171,10 +177,11 @@ def mirrorType (t : Expr) (k : FieldKind) (gs : Expr := default) : MetaM Expr :=
       mkForallFVars ys (← regApp (H ++ `handlerMirror) (hh.args.push gs))
   | _ => return t
 
-/-- The source text of the type `t` in a declaration. -/
-def typeText (t : Expr) : MetaM String := do
+/-- The source text of the type `t` in a declaration, with the universe levels of constants
+when `univs` holds. -/
+def typeText (t : Expr) (univs : Bool := false) : MetaM String := do
   let fmt ← withOptions (fun o => o.setBool `pp.fullNames true |>.setBool `pp.funBinderTypes true
-    |>.setBool `pp.universes false) (ppExpr t)
+    |>.setBool `pp.universes univs) (ppExpr t)
   return fmt.pretty 100000
 
 /-- The mirrored value of the field `f` of kind `k` and type `t` of the costed structure `A'`:
@@ -261,9 +268,15 @@ def withCtorGS {β : Type} [Inhabited β] (S : Name)
     let gts ← gateSetTypes ps rest fields
     withLocalDeclsDND gts fun gss => k ps gss rest fields
 
-/-- The source text of the costed mirror `S.Timed` of the structure `S`. -/
+/-- The source text of the costed mirror `S.Timed` of the structure `S`. A universe-polymorphic
+`S` gives a mirror declared with the universe parameters of `S`, and the constants in its types
+are printed with their universe levels. -/
 def mirrorText (S : Name) : TermElabM String :=
   withCtorGS S fun ps gss rest fields => do
+    let lps := (← getConstInfo S).levelParams
+    let univs := !lps.isEmpty
+    let typeText (t : Expr) : MetaM String := typeText t univs
+    let univText := if univs then ".{" ++ ", ".intercalate (lps.map toString) ++ "}" else ""
     -- The binder kinds of the parameters are those of the type `S`, not of its constructor.
     let infos ← forallBoundedTelescope (← getConstInfo S).type ps.size fun qs _ =>
       qs.mapM fun q => q.fvarId!.getBinderInfo
@@ -301,7 +314,7 @@ def mirrorText (S : Name) : TermElabM String :=
           text := text ++ s!"\n  {f.appendAfter "Cost"} : {← typeText (← companionType d)}"
           gi := gi + 1
         | _ => text := text ++ s!"\n  {f} : {← typeText d}"
-      return s!"structure {`_root_ ++ S ++ `Timed}{binders} where{text}"
+      return s!"structure {`_root_ ++ S ++ `Timed}{univText}{binders} where{text}"
 
 /-- Define the erasure relation `S.Timed.Erases A' A`: some proofs of the proposition fields of
 `S` and some values of its circuit fields, each erasing the corresponding field of `A'`,
@@ -404,6 +417,11 @@ def defineTimeBound (S : Name) (lvls : List Level) (lps : List Name) : TermElabM
 /-- Define the costed mirror `S.Timed` of the structure `S`, its erasure relation
 `S.Timed.Erases` and its time bound `S.Timed.TimeBound`. -/
 def deriveTimedStructure (S : Name) : CommandElabM Unit := do
+  let env ← getEnv
+  for r in [`handlerBound, `handlerMirror] do
+    if env.contains (S ++ r) then
+      throwError "derive_timed_structure: `{S}` is a handler kind, priced by `{S ++ r}` \
+        wherever a value of it occurs; it has no costed mirror"
   let text ← liftTermElabM (mirrorText S)
   let stx ← match Parser.runParserCategory (← getEnv) `command text with
     | .ok stx => pure stx

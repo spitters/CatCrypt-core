@@ -35,6 +35,10 @@ their definitions through `Array.toList`, so their costs are linear in the size.
 * `List.flatten.timedCost_le` — `(2 w + 4) * L.length + 1` for lists of length at most `w`
 * `Fin.foldr.loop.timedCost_le` — the loop of `Fin.foldr` from index `i` costs at most
   `(k + 3) * i + 4` for step costs at most `k`
+* `Fin.foldl.timedCost_le`, `Fin.foldl.timedCost_const` — the fold over `Fin n` costs at most
+  `(k + 3) * n + 1` for step costs at most `k` (a registered cost defined by recursion in the
+  order of `Fin.foldl_succ`, so that it does not depend on the definition of `Fin.foldl`)
+* `Finset.toList.timedCost_eq` — enumerating `s` costs `s.card + 1`
 * `Array.push.timedCost_le`, `Array.getD.timedCost_le`, `Array.get!Internal.timedCost_le` —
   linear bounds in the size
 * `Finset.sum.timedCost_eq_list`, `Finset.prod.timedCost_eq_list` — the registered cost of a
@@ -393,3 +397,62 @@ derive_cost List.findIdx.go
 derive_cost List.findIdx
 derive_cost (unit := BEq.beq) List.idxOf
 derive_cost (unit := BEq.beq) List.elem
+
+timed_cost Finset.toList := fun (α : Type _) (s : Finset α) => s.card + 1
+
+/-- Enumerating `s` as a list costs one unit per element and one more. -/
+theorem Finset.toList.timedCost_eq {α : Type*} (s : Finset α) :
+    Finset.toList.timedCost α s = s.card + 1 := by
+  simp [Finset.toList.timedCost]
+
+/-- The registered cost of `Fin.foldl n f init`, with the cost companion `fCost` of the step
+`f`: three units and the step cost per index, in the order of `Fin.foldl_succ`, and one unit
+at the end. A registered cost is a trusted statement about the cost of `Fin.foldl`. -/
+noncomputable def Fin.foldl.timedCost (α : Sort _) :
+    (n : ℕ) → (α → Fin n → α) → (α → Fin n → ℕ) → α → ℕ
+  | 0, _, _, _ => 1
+  | n + 1, f, fCost, init =>
+    fCost init 0 + 3 +
+      Fin.foldl.timedCost α n (fun x i => f x i.succ) (fun x i => fCost x i.succ) (f init 0)
+
+section
+
+variable {α : Sort _}
+
+/-- The fold over `Fin 0` costs one unit. -/
+theorem Fin.foldl.timedCost_zero (f : α → Fin 0 → α) (fCost : α → Fin 0 → ℕ) (init : α) :
+    Fin.foldl.timedCost α 0 f fCost init = 1 := by
+  simp [Fin.foldl.timedCost]
+
+/-- The fold over `Fin (n + 1)` costs the step at index `0` and three units more than the fold
+of the shifted step over `Fin n` from `f init 0`. -/
+theorem Fin.foldl.timedCost_succ (n : ℕ) (f : α → Fin (n + 1) → α)
+    (fCost : α → Fin (n + 1) → ℕ) (init : α) :
+    Fin.foldl.timedCost α (n + 1) f fCost init =
+      fCost init 0 + 3 +
+        Fin.foldl.timedCost α n (fun x i => f x i.succ) (fun x i => fCost x i.succ)
+          (f init 0) := by
+  simp [Fin.foldl.timedCost]
+
+/-- A fold with step costs at most `k` costs at most `k + 3` units per index and one more. -/
+theorem Fin.foldl.timedCost_le (n : ℕ) (f : α → Fin n → α) (fCost : α → Fin n → ℕ) {k : ℕ}
+    (hf : ∀ x i, fCost x i ≤ k) (init : α) :
+    Fin.foldl.timedCost α n f fCost init ≤ (k + 3) * n + 1 := by
+  induction n generalizing init with
+  | zero => simp [Fin.foldl.timedCost]
+  | succ n ih =>
+    have h1 := hf init 0
+    have h2 := ih (fun x i => f x i.succ) (fun x i => fCost x i.succ)
+      (fun x i => hf x i.succ) (f init 0)
+    rw [Fin.foldl.timedCost_succ, Nat.mul_succ]; omega
+
+/-- A fold with a step of constant cost `c` costs `c + 3` units per index and one more. -/
+theorem Fin.foldl.timedCost_const (n : ℕ) (f : α → Fin n → α) (c : ℕ) (init : α) :
+    Fin.foldl.timedCost α n f (fun _ _ => c) init = (c + 3) * n + 1 := by
+  induction n generalizing init with
+  | zero => simp [Fin.foldl.timedCost]
+  | succ n ih =>
+    have h := ih (fun x i => f x i.succ) (f init 0)
+    rw [Fin.foldl.timedCost_succ, h, Nat.mul_succ]; omega
+
+end

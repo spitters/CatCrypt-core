@@ -611,10 +611,23 @@ def projForm (env : Environment) (F : Expr) : Expr := Id.run do
 pass). A data definition applied to a structure binder is unfolded first, by `unfoldShared?`,
 when its body applies a data-function primitive found by the first pass (so that the field has
 one binder and one cost companion), and with `ctx.unfold` always, so that the fields used in
-its body are found. The search `mentionsKey` runs only when there are such primitives. -/
-def abstractData (ctx : RCtx) (e : Expr) : MetaM Expr := do
+its body are found. The search `mentionsKey` runs only when there are such primitives. The
+parameters `ps` of a field `S.f ps s` of a binder are the arguments of the type of `s` and are
+kept as they are (`keepParams`): a field abstracted in them would give `S.f` a structure of
+another type than that of `s`. -/
+partial def abstractData (ctx : RCtx) (e : Expr) : MetaM Expr := do
   let keys := (ctx.prims.filter (·.data)).map (·.key)
   let neg ← IO.mkRef ({} : Std.HashMap Expr Nat)
+  -- The field application `x = S.f ps s a₁ … aₙ` with `s` and the `aᵢ` abstracted and the
+  -- parameters `ps` unchanged.
+  let keepParams (x : Expr) : MetaM TransformStep := do
+    let f := x.getAppFn
+    let .const fc _ := f | return .continue
+    let some info := (← getEnv).getProjectionFnInfo? fc | return .continue
+    let xs := x.getAppArgs
+    unless info.numParams < xs.size do return .continue
+    let rest ← (xs.extract info.numParams xs.size).mapM (abstractData ctx)
+    return .done (mkAppN f (xs.extract 0 info.numParams ++ rest))
   Meta.transform e (pre := fun x => do
     let some (F, args) ← fieldKey? ctx.top x | do
       if ← unfoldsData ctx.top x then
@@ -625,7 +638,7 @@ def abstractData (ctx : RCtx) (e : Expr) : MetaM Expr := do
           if let some x' ← unfoldShared? x then return .visit x'
           if let some x' ← unfoldDefinition? x then return .visit x'.headBeta
       return .continue
-    unless ← isDataFnType (← inferType F) do return .continue
+    unless ← isDataFnType (← inferType F) do return ← keepParams x
     -- A method of an algebraic operation class (or of `CryptoWord`) is one call of an
     -- abstract interface, priced at one unit by `derive_timed`: not a primitive.
     if let .const fc _ := F.getAppFn then
@@ -771,15 +784,29 @@ partial def isTopPath (env : Environment) (top : Array FVarId) (v : Expr) : Bool
       | none => false
     | _ => false
 
+/-- Whether the type of one of the binders `xs` mentions the binder `x`. A computation binder
+that the type of another binder depends on (`dsecret` in `hs : SPComp.IsPure dsecret` and in
+`A : CPA_Adversary (M.params W dsecret hs)`) is a parameter of the reduction, not an
+adversary. -/
+def typeDependsOn (xs : Array Expr) (x : Expr) : MetaM Bool :=
+  xs.anyM fun y => do
+    if y == x then return false
+    return (← instantiateMVars (← inferType y)).containsFVar x.fvarId!
+
+/-- Whether the binder `x` of the binders `xs` is taken as an adversary: one of the binders
+named `advNames`, or, when it is empty, a binder that the type of no other binder mentions. -/
+def isAdvBinder (xs : Array Expr) (advNames : Array Name) (x : Expr) : MetaM Bool := do
+  if advNames.isEmpty then return !(← typeDependsOn xs x)
+  return advNames.contains (← x.fvarId!.getUserName).eraseMacroScopes
+
 /-- The adversary positions of the binders `xs` of a computation: the arity of each binder
-whose type is a function into `SPComp` (among the binders named `advNames`, or all when it is
-empty). -/
+whose type is a function into `SPComp` (among the binders named `advNames`, or, when it is
+empty, among the binders that the type of no other binder mentions). -/
 def advPositions (xs : Array Expr) (advNames : Array Name) : MetaM (Array (Option Nat)) := do
   xs.mapM fun x => do
-    let n := (← x.fvarId!.getUserName).eraseMacroScopes
     let ar ← forallTelescope (← whnfR (← inferType x)) fun ys body => do
       return if (← spCompArg? body).isSome then some ys.size else none
-    return if advNames.isEmpty || advNames.contains n then ar else none
+    return if ← isAdvBinder xs advNames x then ar else none
 
 /-- The binders of the computation `c`, as `deriveReduction` takes them: the binders of its
 value eta-expanded through the type definitions of its type, continued in `k`. -/
@@ -1548,11 +1575,10 @@ partial def deriveStructReduction (c : Name) (advNames : Array Name) (unfold : B
     -- The adversary binders.
     let mut isAdv : Array (Option Nat) := #[]
     for x in xs do
-      let n := (← x.fvarId!.getUserName).eraseMacroScopes
       let t ← inferType x
       let ar ← forallTelescope (← whnfR t) fun ys body => do
         return if (← spCompArg? body).isSome then some ys.size else none
-      let named := if advNames.isEmpty then true else advNames.contains n
+      let named ← isAdvBinder xs advNames x
       isAdv := isAdv.push (if named then ar else none)
     let rec go (i : Nat) (bs : Array Expr) (advs : Array Adv) (args : Array Expr) :
         TermElabM Unit := do
@@ -1856,11 +1882,10 @@ partial def deriveReduction (c : Name) (advNames : Array Name) (unfold : Bool :=
     -- The adversary binders.
     let mut isAdv : Array (Option Nat) := #[]
     for x in xs do
-      let n := (← x.fvarId!.getUserName).eraseMacroScopes
       let t ← inferType x
       let ar ← forallTelescope (← whnfR t) fun ys body => do
         return if (← spCompArg? body).isSome then some ys.size else none
-      let named := if advNames.isEmpty then true else advNames.contains n
+      let named ← isAdvBinder xs advNames x
       isAdv := isAdv.push (if named then ar else none)
     for n in advNames do
       unless ← xs.anyM (fun x => return (← x.fvarId!.getUserName).eraseMacroScopes == n) do
