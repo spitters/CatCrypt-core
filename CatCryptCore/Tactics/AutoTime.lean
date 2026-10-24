@@ -10,7 +10,6 @@ public import CatCryptCore.Crypto.OracleAdversaryTimed
 public import CatCryptCore.Tactics.AutoDispatchCore
 public import Mathlib.Tactic.Linarith
 public import CatCryptCore.XDijkstra.XTimedMonad
-
 /-!
 # The time-bound procedure `time_bound`
 
@@ -55,10 +54,22 @@ traversed. Each node of the tree is consumed by one rule lemma of this module:
   projection is split by `cases` on `b`; a tree `(delay c x).2` is read as `x.2`;
 * a definition is unfolded when its body is visible and it is not recursive.
 
-The target is brought to zeta-normal form (each `let` and `have` binder replaced by its value)
-before the first rule, and so is the body of each unfolded definition. A step cost and a tree
-that name one pair, one through `have` binders and one with their values inlined, are then the
-same term, and the rules above match them syntactically.
+Before each rule, the `let` and `have` binders of the goal whose values do not depend on bound
+variables are taken out of the target (`liftLets`). A binder of a costed tree, a number, a
+proof or an atom is inlined. Any other binder (a state, a cost companion) becomes a let-bound
+local `x := v` of the context, the binder of the smallest value first; every binder of the same
+value and every occurrence of the value in the target are replaced by `x`. A step cost and a
+tree that bind the same values, one through `have` binders and one with some values inlined,
+then name the same locals, the rules above match them syntactically, and each value is read
+once. For each cost companion `π x : X → ℕ` (a chain of pair projections of `x`), the bound
+`∀ u, π x u ≤ B` is added to the context, with `B` read off the value (`ubLin`: sums, the
+componentwise maximum of the branches of an `if` or a `match`, the bounds of the companions of
+the locals bound before) and proved on the value by splitting its own case distinctions; later
+companions are bounded from these facts, never from the inlined values.
+
+At an arithmetic leaf, each summand that is an `if`, an `if h :` or a `match` is bounded on its
+own (`addCaseFacts`, the same bound and proof), so that linear arithmetic closes the leaf with
+these summands as atoms; the leaf is split on its case distinctions only when that fails.
 
 A subtree that no rule consumes is bounded by a source: a local hypothesis whose conclusion
 bounds it (`∀ x, (A x).time ≤ T`, `∀ x, (A x).TimeBound T`), or, below the definition named in
@@ -745,14 +756,15 @@ def zetaAll (e : Expr) : CoreM Expr :=
     | .letE _ _ v b _ => return .visit (b.instantiate1 v)
     | _ => return .continue)
 
-/-- The tree `e` with its head definition unfolded, then reduced by `whnfR` and brought to
-zeta-normal form, under the budget of `capped`. -/
+/-- The tree `e` with its head definition unfolded, then reduced by `whnfR`, under the budget
+of `capped`. Its inner `let` and `have` binders are kept; `liftLets` binds them in the
+context. -/
 def unfoldTree? (e : Expr) : MetaM (Option Expr) := do
   let some n := e.getAppFn.constName? | return none
   unless ← unfoldableDef n do return none
   let r ← capped do
     let some e' ← withDefault (unfoldDefinition? e) | return none
-    return some (← zetaAll (← whnfR e'.headBeta))
+    return some (← whnfR e'.headBeta)
   return r.join
 
 /-- The local variable that an application of a recursor or `casesOn` analyses, when it is
@@ -776,13 +788,6 @@ def replaceIn (g : MVarId) (x x' : Expr) : MetaM MVarId := do
   if x == x' then return g
   let t ← instantiateMVars (← g.getType)
   g.replaceTargetDefEq (t.replace fun e => if e == x then some x' else none)
-
-/-- The goal `g` with its target in zeta-normal form. -/
-def zetaTarget (g : MVarId) : MetaM MVarId := do
-  let t ← instantiateMVars (← g.getType)
-  let t' ← zetaAll t
-  if t' == t then return g
-  g.replaceTargetDefEq t'
 
 /-- Apply the rule lemma `n` to `g`: its conclusion is unified with the target at reducible
 transparency, each term of `hints` is assigned to the first unassigned argument whose type it
@@ -1126,6 +1131,315 @@ partial def invLeaf (g : MVarId) (fuel : Nat) : TacticM Unit := g.withContext do
     let some (some gs) ← capped (splitTarget? g) | throw e
     for g' in gs do invLeaf g' (fuel - 1)
 
+/-! ### Let-bound values -/
+
+/-- A linear bound over `ℕ`: a constant and atoms with their coefficients. -/
+abbrev LinB := Nat × Array (Expr × Nat)
+
+/-- The bound `a` with `k` times the atom `x` added. -/
+def LinB.addAtom (a : LinB) (x : Expr) (k : Nat) : LinB :=
+  match a.2.findIdx? (·.1 == x) with
+  | some i => (a.1, a.2.modify i fun (y, j) => (y, j + k))
+  | none => (a.1, a.2.push (x, k))
+
+/-- The sum of two bounds. -/
+def LinB.add (a b : LinB) : LinB :=
+  b.2.foldl (fun acc (x, k) => acc.addAtom x k) (a.1 + b.1, a.2)
+
+/-- The bound `a` multiplied by `k`. -/
+def LinB.scale (k : Nat) (a : LinB) : LinB :=
+  (k * a.1, a.2.map fun (x, j) => (x, k * j))
+
+/-- The componentwise maximum of two bounds, a bound of both over `ℕ`. -/
+def LinB.max (a b : LinB) : LinB :=
+  b.2.foldl (fun acc (x, k) => match acc.2.findIdx? (·.1 == x) with
+    | some i => (acc.1, acc.2.modify i fun (y, j) => (y, Nat.max j k))
+    | none => (acc.1, acc.2.push (x, k))) (Nat.max a.1 b.1, a.2)
+
+/-- The term `c + k₁ * x₁ + …` of a bound. -/
+def LinB.toExpr (a : LinB) : MetaM Expr :=
+  a.2.foldlM (init := mkNatLit a.1) fun acc (x, k) => do
+    let t ← if k == 1 then pure x else mkAppM ``HMul.hMul #[mkNatLit k, x]
+    mkAppM ``HAdd.hAdd #[acc, t]
+
+/-- The natural number of a numeral. -/
+def natNum? (e : Expr) : Option Nat :=
+  match e.rawNatLit? with
+  | some n => some n
+  | none => e.nat?
+
+/-- The linear form of a bound term: numerals, sums and products by numerals are read, every
+other subterm is an atom. -/
+partial def linOf (e : Expr) : LinB :=
+  if let some n := natNum? e then (n, #[])
+  else if e.isAppOfArity ``HAdd.hAdd 6 then (linOf (e.getArg! 4)).add (linOf (e.getArg! 5))
+  else if e.isAppOfArity ``HMul.hMul 6 then
+    match natNum? (e.getArg! 4) with
+    | some k => (linOf (e.getArg! 5)).scale k
+    | none => (0, #[(e, 1)])
+  else (0, #[(e, 1)])
+
+/-- The alternatives of a chain of pair projections applied to arguments: a projection of a
+pair is reduced, a projection of an `if` is taken in each branch. -/
+partial def projAlts (e : Expr) (fuel : Nat) : Array Expr := Id.run do
+  if fuel == 0 then return #[e]
+  let fn := e.getAppFn
+  let args := e.getAppArgs
+  let dec : Option (Nat × Expr × Array Expr × (Expr → Expr)) := match fn with
+    | .proj ``Prod i y => some (i, y, args, fun y' => mkAppN (.proj ``Prod i y') args)
+    | .const n _ =>
+      if (n == ``Prod.fst || n == ``Prod.snd) && args.size ≥ 3 then
+        let rest := args.extract 3 args.size
+        some (if n == ``Prod.fst then 0 else 1, args[2]!, rest,
+          fun y' => mkAppN (mkAppN fn (args.extract 0 2)) (#[y'] ++ rest))
+      else none
+    | _ => none
+  let some (i, y, rest, rebuild) := dec | return #[e]
+  let mut out := #[]
+  for y' in projAlts y (fuel - 1) do
+    let y' := y'.headBeta
+    if y'.isAppOfArity ``Prod.mk 4 then
+      out := out ++ projAlts (mkAppN (y'.getArg! (2 + i)) rest).headBeta (fuel - 1)
+    else if y'.isAppOfArity ``ite 5 then
+      out := out ++ projAlts (rebuild (y'.getArg! 3)) (fuel - 1) ++
+        projAlts (rebuild (y'.getArg! 4)) (fuel - 1)
+    else out := out.push (rebuild y')
+  return out
+
+/-- The bound `b[a/x]` of a local hypothesis `∀ x, l ≤ b` whose left side unifies with `e` at
+reducible transparency. -/
+def hypBound? (e : Expr) : MetaM (Option Expr) := do
+  for ld in (← getLCtx) do
+    if ld.isImplementationDetail then continue
+    let ty ← instantiateMVars ld.type
+    let s ← saveState
+    let (ms, _, body) ← forallMetaTelescopeReducing ty
+    let some (l, b) := natLe? body | s.restore; continue
+    if ← ms.anyM fun m => do isProp (← inferType m) then s.restore; continue
+    if ← withReducible (isDefEq l e) then
+      let b ← instantiateMVars b
+      s.restore
+      unless b.hasExprMVar do return some b
+    else s.restore
+  return none
+
+/-- A proposed linear bound of the natural number `e`: sums, products by numerals, `if`
+(the componentwise maximum of the branches), projections of pairs and of `if`s, and the
+bounds of local hypotheses `∀ x, l ≤ b` at the atoms. -/
+partial def ubLin (e : Expr) (fuel : Nat) : MetaM (Option LinB) := do
+  if fuel == 0 then return none
+  let e := e.headBeta
+  if let some n := natNum? e then return some (n, #[])
+  if e.isAppOfArity ``HAdd.hAdd 6 then
+    let some a ← ubLin (e.getArg! 4) (fuel - 1) | return none
+    let some b ← ubLin (e.getArg! 5) (fuel - 1) | return none
+    return some (a.add b)
+  if e.isAppOfArity ``HMul.hMul 6 then
+    if let some k := natNum? (e.getArg! 4) then
+      return (← ubLin (e.getArg! 5) (fuel - 1)).map (·.scale k)
+  -- an `if a = a` is its first branch
+  if (e.isAppOfArity ``ite 5 || e.isAppOfArity ``dite 5) then
+    let c := e.getArg! 1
+    if c.isAppOfArity ``Eq 3 && c.getArg! 1 == c.getArg! 2 then
+      let mut br := e.getArg! 3
+      if e.isAppOfArity ``dite 5 then
+        let u ← getLevel (c.getArg! 0)
+        br := mkApp br (mkApp2 (mkConst ``Eq.refl [u]) (c.getArg! 0) (c.getArg! 1))
+      return ← ubLin br (fuel - 1)
+  if e.isAppOfArity ``ite 5 then
+    let some a ← ubLin (e.getArg! 3) (fuel - 1) | return none
+    let some b ← ubLin (e.getArg! 4) (fuel - 1) | return none
+    return some (a.max b)
+  -- `dite` and `match`: the maximum over the alternatives, whose bounds do not depend on the
+  -- fields of the alternative
+  let alts? ← if e.isAppOfArity ``dite 5 then pure (some #[e.getArg! 3, e.getArg! 4])
+    else pure ((← matchMatcherApp? e).map (·.alts))
+  if let some alts := alts? then
+    let mut acc : Option LinB := none
+    for alt in alts do
+      let r ← lambdaTelescope alt fun xs b => do
+        let some l ← ubLin b (fuel - 1) | return none
+        if l.2.any fun (a, _) => xs.any fun x => a.containsFVar x.fvarId! then return none
+        return some l
+      let some l := r | return none
+      acc := some (match acc with | some m => m.max l | none => l)
+    return acc
+  let alts := projAlts e 16
+  unless alts.size == 1 && alts[0]! == e do
+    let mut acc : Option LinB := none
+    for a in alts do
+      let some l ← ubLin a (fuel - 1) | return none
+      acc := some (match acc with | some m => m.max l | none => l)
+    return acc
+  if let some b ← hypBound? e then return some (linOf b)
+  if e.isFVar && (← whnfR (← inferType e)).isConstOf ``Nat then return some (0, #[(e, 1)])
+  return none
+
+/-- The cost companions of a value `e` of type `ty`: the chains of pair projections of `e`
+whose type is `ℕ` (with `none`) or `X → ℕ` (with `some X`). -/
+partial def compPaths (e ty : Expr) (d : Nat) : MetaM (Array (Expr × Option Expr)) := do
+  if d == 0 then return #[]
+  let ty ← whnfR ty
+  if ty.isAppOfArity ``Prod 2 then
+    let a ← compPaths (← mkAppM ``Prod.fst #[e]) (ty.getArg! 0) (d - 1)
+    let b ← compPaths (← mkAppM ``Prod.snd #[e]) (ty.getArg! 1) (d - 1)
+    return a ++ b
+  if ty.isConstOf ``Nat then return #[(e, none)]
+  if let .forallE _ X cod _ := ty then
+    if !cod.hasLooseBVars && (← whnfR cod).isConstOf ``Nat then return #[(e, some X)]
+  return #[]
+
+/-- The statement `∀ u, p u ≤ B` (with `some X`, `u : X`) or `p ≤ B` (with `none`) for the
+companion `p` of a let-bound local whose value form is `pv`, with the bound `B` proposed by
+`ubLin` on `pv u`, independent of `u`. -/
+def companionBound? (p pv : Expr) (X? : Option Expr) : MetaM (Option Expr) := do
+  match X? with
+  | some X => withLocalDeclD `u X fun u => do
+    let some lin ← ubLin (mkApp pv u) 64 | return none
+    if lin.2.any (·.1.containsFVar u.fvarId!) then return none
+    let b ← lin.toExpr
+    return some (← mkForallFVars #[u] (← mkAppM ``LE.le #[mkApp p u, b]))
+  | none =>
+    let some lin ← ubLin pv 64 | return none
+    return some (← mkAppM ``LE.le #[p, ← lin.toExpr])
+
+/-- Bounds of the cost companions of the let-bound local `x := v`, added to the context: for
+each companion `π x` (`compPaths`), the statement of `companionBound?` on `π v`, proved by
+`invLeaf` on `π v u`, with the bounds of the locals bound before `x` in the context. A
+companion whose bound is not found or not proved gets no fact. -/
+def addLetFacts (g : MVarId) (x : FVarId) : TacticM MVarId := g.withContext do
+  let some v ← x.getValue? | return g
+  let xe := mkFVar x
+  let paths ← compPaths xe (← x.getType) 8
+  let mut g := g
+  for (p, X?) in paths do
+    let g0 := g
+    let r : Option MVarId ← g0.withContext do
+      let some stmt ← companionBound? p (p.replaceFVar xe v) X? | return none
+      let s ← saveState
+      let m ← mkFreshExprMVar stmt
+      try
+        let g1 ← m.mvarId!.replaceTargetDefEq (stmt.replaceFVar xe v)
+        invLeaf g1 32
+        let pf ← instantiateMVars m
+        let (_, g') ← (← g0.assert `hf stmt pf).intro1P
+        return some g'
+      catch _ =>
+        s.restore
+        return none
+    if let some g' := r then g := g'
+  return g
+
+/-- Whether a `let` of type `t` is inlined rather than bound: costed trees and step-prefixed
+trees (read structurally by the rules), natural numbers (read by `omega`) and proofs. -/
+def inlineType (t : Expr) : MetaM Bool := do
+  if (t.find? fun e => e.isConstOf ``SPTree.Timed || e.isConstOf ``OracleAdv.Timed).isSome then
+    return true
+  if (← whnfR t).isConstOf ``Nat then return true
+  isProp t
+
+/-- Whether a let-bound value is an atom, inlined rather than bound. -/
+def atomicVal (v : Expr) : Bool :=
+  v.isFVar || v.isConst || v.isLit || v.isSort || (natNum? v).isSome
+
+/-- The number of nodes of `e`, at most `cap`. -/
+partial def sizeCapped (e : Expr) (cap : Nat) : Nat :=
+  if cap == 0 then 0 else
+  match e with
+  | .app f a => let n := sizeCapped f (cap - 1); n + 1 + sizeCapped a (cap - 1 - min n (cap - 1))
+  | .lam _ t b _ | .forallE _ t b _ =>
+    let n := sizeCapped t (cap - 1); n + 1 + sizeCapped b (cap - 1 - min n (cap - 1))
+  | .letE _ t v b _ => sizeCapped t (cap - 1) + sizeCapped v (cap - 1) + sizeCapped b (cap - 1)
+  | .mdata _ b => sizeCapped b cap
+  | .proj _ _ b => 1 + sizeCapped b (cap - 1)
+  | _ => 1
+
+/-- The `let` and `have` nodes of `e` whose value and type have no loose bound variables. -/
+def closedLets (e : Expr) : MetaM (Array Expr) := do
+  let r ← IO.mkRef #[]
+  e.forEach' fun s => do
+    if let .letE _ t v _ _ := s then
+      if !t.hasLooseBVars && !v.hasLooseBVars then r.modify (·.push s)
+    return true
+  r.get
+
+/-- The goal `g` with the `let` and `have` binders of its target that do not depend on bound
+variables taken out of the target: a binder of a tree, a number, a proof or an atom is inlined;
+any other binder, the one with the smallest value first, becomes a let-bound local `x := v` of
+the context, every binder of the same value and every occurrence of the value in the target are
+replaced by `x`, and the bounds of the cost companions of `x` are added (`addLetFacts`). Each
+value is thus read once, and the companions of later values are bounded from those of earlier
+ones. -/
+partial def liftLets (g : MVarId) (fuel : Nat := 64) : TacticM MVarId := g.withContext do
+  if fuel == 0 then return g
+  let tgt ← instantiateMVars (← g.getType)
+  unless (tgt.find? Expr.isLet).isSome do return g
+  let lets ← closedLets tgt
+  if lets.isEmpty then return g
+  let mut inl : Array Expr := #[]
+  let mut best : Option (Expr × Nat) := none
+  for l in lets do
+    let .letE _ t v _ _ := l | continue
+    if atomicVal v || (← inlineType t) then
+      inl := inl.push l
+    else
+      let n := sizeCapped v 100000
+      if best.all (n < ·.2) then best := some (l, n)
+  if !inl.isEmpty then
+    let tgt' ← Core.transform tgt (pre := fun e => match e with
+      | .letE _ _ v b _ =>
+        return if inl.contains e then .visit (b.instantiate1 v) else .continue
+      | _ => return .continue)
+    return ← liftLets (← g.replaceTargetDefEq tgt') (fuel - 1)
+  let some (.letE n t v _ _, _) := best | return g
+  let g1 ← g.define n t v
+  let (x, g2) ← g1.intro1P
+  let g4 ← g2.withContext do
+    let xe := mkFVar x
+    let tgt2 ← instantiateMVars (← g2.getType)
+    let tgt3 ← Core.transform tgt2 (pre := fun e => do
+      if let .letE _ _ v' b _ := e then
+        if v' == v then return .visit (b.instantiate1 xe)
+      if e == v then return .done xe
+      return .continue)
+    let g3 ← g2.replaceTargetDefEq tgt3
+    addLetFacts g3 x
+  liftLets g4 (fuel - 1)
+
+/-- The summands of a sum, through products by numerals. -/
+partial def linAtoms (e : Expr) (acc : Array Expr) : Array Expr :=
+  if e.isAppOfArity ``HAdd.hAdd 6 then linAtoms (e.getArg! 5) (linAtoms (e.getArg! 4) acc)
+  else if e.isAppOfArity ``HMul.hMul 6 && (natNum? (e.getArg! 4)).isSome then
+    linAtoms (e.getArg! 5) acc
+  else acc.push e
+
+/-- Bounds of the case distinctions of an arithmetic leaf `l ≤ B`, added to the context: for
+each summand `t` of `l` that is an `if`, an `if h :` or a `match`, the statement `t ≤ U` with
+the bound `U` proposed by `ubLin` (the componentwise maximum of the bounds of the branches),
+proved by `invLeaf` on `t ≤ U` alone. The leaf is then closed by linear arithmetic over these
+summands as atoms, and its case distinctions are split one summand at a time, never all
+together. -/
+def addCaseFacts (g : MVarId) : TacticM MVarId := g.withContext do
+  let tgt ← instantiateMVars (← g.getType)
+  let some (l, _) := natLe? tgt | return g
+  let mut g := g
+  let mut seen : Array Expr := #[]
+  for t in linAtoms l #[] do
+    unless t.isAppOfArity ``ite 5 || t.isAppOfArity ``dite 5 ||
+      (← matchMatcherApp? t).isSome do continue
+    if t.hasLooseBVars || t.hasExprMVar || seen.contains t then continue
+    seen := seen.push t
+    let some lin ← ubLin t 64 | continue
+    let stmt ← mkAppM ``LE.le #[t, ← lin.toExpr]
+    let s ← saveState
+    let m ← mkFreshExprMVar stmt
+    try
+      invLeaf m.mvarId! 32
+      let (_, g') ← (← g.assert `hi stmt (← instantiateMVars m)).intro1P
+      g := g'
+    catch _ => s.restore
+  return g
+
 /-- The summands of a sum. -/
 partial def summands (e : Expr) (acc : Array Expr) : Array Expr :=
   if e.isAppOfArity ``HAdd.hAdd 6 then summands (e.getArg! 5) (summands (e.getArg! 4) acc)
@@ -1181,7 +1495,11 @@ def invCandidates (α f : Expr) : MetaM (Array (Array Expr)) := do
         let .forallE _ X' b _ := ty | continue
         let some (l, r) := natLe? b | continue
         if r.hasLooseBVars then continue
-        unless l.hasLooseBVars && l.getAppFn.isFVar do continue
+        unless l.hasLooseBVars do continue
+        -- a companion binder `h x`, or a companion `π h x` of a binder `h` that is not let-bound
+        let root := if l.isApp then projRoot l.appFn! else l
+        let rootOk ← if root.isFVar then do pure !(← root.fvarId!.isLetVar) else pure false
+        unless l.getAppFn.isFVar || rootOk do continue
         unless ← isDefEq X X' do continue
         let mut ladder := #[]
         for n in invSlack do
@@ -1199,7 +1517,7 @@ costed tree is bounded by a source of `x`, and `closeArithCore` closes the goal.
 partial def closeArith (g : MVarId) (env : Bool) (fuel : Nat) : TacticM Unit := do
   let s0 ← saveState
   let g0 := g
-  let g ← reduceStepCosts (← reduceProjBeta g)
+  let g ← liftLets (← reduceStepCosts (← reduceProjBeta g))
   let mut g := g
   let tgt ← g.withContext do instantiateMVars (← g.getType)
   let mut seen : Array Expr := #[]
@@ -1223,7 +1541,7 @@ partial def closeArith (g : MVarId) (env : Bool) (fuel : Nat) : TacticM Unit := 
         pure (some g')
       | none => pure none
     if let some g' := r then g := g'
-  let gc ← addCostFacts g
+  let gc ← addCaseFacts (← addCostFacts g)
   let s ← saveState
   try
     closeArithCore gc
@@ -1442,8 +1760,10 @@ partial def stepCase (g : MVarId) (x : Expr) (env : Bool) (fuel : Nat) : TacticM
 
 /-- `AllRet Q t` by the rules `ar_*` on the visible structure of `t` (a definition unfolded, a
 tree without visible leaves by `ar_any`); a leaf goal `Q a` by `solve`. -/
-partial def arSolve (g : MVarId) (env : Bool) (fuel : Nat) : TacticM Unit := g.withContext do
+partial def arSolve (g : MVarId) (env : Bool) (fuel : Nat) : TacticM Unit := do
   if fuel == 0 then throwError "time_bound: depth bound reached"
+  let g ← liftLets g
+  g.withContext do
   let tgt0 ← instantiateMVars (← g.getType)
   let tgt ← Core.betaReduce tgt0
   let g ← if tgt == tgt0 then pure g else g.replaceTargetDefEq tgt
@@ -1618,8 +1938,10 @@ partial def stbCase (g : MVarId) (x : Expr) (env : Bool) (fuel : Nat) : TacticM 
   else leaf g .stb x' env fuel
 
 /-- One goal of the procedure. -/
-partial def solve (g : MVarId) (env : Bool) (fuel : Nat) : TacticM Unit := g.withContext do
+partial def solve (g : MVarId) (env : Bool) (fuel : Nat) : TacticM Unit := do
   if fuel == 0 then throwError "time_bound: depth bound reached"
+  let g ← liftLets g
+  g.withContext do
   let tgt ← instantiateMVars (← g.getType)
   if tgt.isForall then
     let (_, g') ← g.intro1P
@@ -1664,7 +1986,7 @@ syntax (name := timeBoundStx) "time_bound" : tactic
 @[tactic timeBoundStx] def evalTimeBound : Tactic := fun _ => do
   let g ← getMainGoal
   let rest := (← getGoals).tail
-  solve (← zetaTarget g) false maxDepth
+  solve g false maxDepth
   setGoals rest
 
 end
@@ -1681,4 +2003,3 @@ catcrypt_auto_shape "time bound" direct priority 120 :=
 catcrypt_auto_arm "time bound" order 10 := "time_bound"
 
 end
-

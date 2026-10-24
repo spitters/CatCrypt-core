@@ -142,7 +142,7 @@ theorem List.getD.timedCost_le (l : List α) (i : ℕ) (d : α) :
     List.getD.timedCost l i d ≤ 2 * l.length + 4 := by
   have := List.get?Internal.timedCost_le l i
   simp only [List.getD.timedCost]
-  split <;> omega
+  omega
 
 /-- The lookup in an association list costs at most five units per entry and one more, with
 each key comparison at one unit. -/

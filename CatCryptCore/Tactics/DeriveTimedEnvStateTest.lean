@@ -97,7 +97,7 @@ theorem envRed.timeBound (handler : ℕ → SPTree.Timed ℕ) (handlerCost : ℕ
   refine key _ _ _ ?_ ?_ (fun x => ?_)
   · have := hh ((Z.input.2.pwdFile uid).getD 0)
     have := hp uid
-    split <;> omega
+    omega
   · time_bound
   · time_bound
 
@@ -122,5 +122,23 @@ example (handler : ℕ → SPTree.Timed ℕ) (handlerCost : ℕ → ℕ) (sid ui
     (envRedApp.timed handler handlerCost sid uid Z dist distCost o pwdFileCost).2.erase =
       envRedApp (fun x => (handler x).erase) sid uid Z (fun y => (dist y).erase) o :=
   envRedApp.erase_timed handler handlerCost sid uid Z dist distCost o pwdFileCost
+
+/-- The environment with the state component of its input and output dropped. -/
+noncomputable def dropSt {α β S : Type} (Z : Env (α × S) (β × S)) : Env α β :=
+  ⟨Z.input.1, Z.heap, fun y => Z.dist (y, Z.input.2)⟩
+
+/-- A `let` of an environment whose input is a function into `SPComp`, which has no costed
+form; the body reads only the heap of the environment. -/
+noncomputable def envRedFn (Z : Env ((ℕ → ℕ → ℕ → SPComp Bool) × Unit) (Bool × Unit))
+    (t : ℕ → ℕ → ℕ → SPTree Bool) (x y z : ℕ) : SPTree Bool :=
+  let Z' := Env.postcomp (fun b => SPComp.pure b) (dropSt Z)
+  .load Z'.heap (t x y z)
+
+derive_timed envRedFn
+
+example (Z : Env ((ℕ → ℕ → ℕ → SPComp Bool) × Unit) (Bool × Unit))
+    (t : ℕ → ℕ → ℕ → SPTree.Timed Bool) (tCost : ℕ → ℕ → ℕ → ℕ) (x y z : ℕ) :
+    (envRedFn.timed Z t tCost x y z).2.erase = envRedFn Z (fun a b c => (t a b c).erase) x y z :=
+  envRedFn.erase_timed Z t tCost x y z
 
 end CatCrypt.Tactics.DeriveTimedEnvStateTest

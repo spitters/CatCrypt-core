@@ -1774,6 +1774,24 @@ partial def pathHat? (ctx : Ctx) (e : Expr) (record : Bool) : MetaM (Option Expr
       return some (← iotaE t key)
   return none
 
+/-- The cost `if c then a else b`, which is `a` when the two branch costs are the same term. -/
+def iteNatE (c inst a b : Expr) : Expr :=
+  if a == b then a else mkApp5 (mkConst ``ite [Level.one]) (mkConst ``Nat) c inst a b
+
+/-- The common cost of the alternatives of the match `e`, when every alternative is a constant
+function of its pattern variables and all have the same value. -/
+def constAlts? (e : Expr) : MetaM (Option Expr) := do
+  let some app ← matchMatcherApp? e | return none
+  let mut v? : Option Expr := none
+  for alt in app.alts do
+    let b? ← lambdaTelescope alt fun xs b => pure <|
+      if b.hasAnyFVar (fun f => xs.any (·.fvarId! == f)) then none else some b
+    let some b := b? | return none
+    match v? with
+    | none => v? := some b
+    | some v => unless v == b do return none
+  return v?
+
 mutual
 
 /-- The cost of evaluating the data term `e`. -/
@@ -1989,7 +2007,7 @@ partial def tv (ctx : Ctx) (e : Expr) : TermElabM (Expr × Expr) := do
       let (cb, vb) ← tv ctx args[4]!
       let lvl ← getLevel ht
       return (add (natE 1) (add (← propCost ctx args[1]!)
-          (mkApp5 (mkConst ``ite [Level.one]) (mkConst ``Nat) args[1]! args[2]! ca cb)),
+          (iteNatE args[1]! args[2]! ca cb)),
         mkApp5 (mkConst ``ite [lvl]) ht args[1]! args[2]! va vb)
     if tw.isForall then
       -- A partial application of a constant or of a local function with a cost companion:
@@ -2174,8 +2192,7 @@ partial def costConst (ctx : Ctx) (e : Expr) (c : Name) (args : Array Expr) :
   if let some e' ← boolRecIte? e then return ← costOf ctx e'
   if c == ``ite && args.size == 5 then
     return add (natE 1) (add (← propCost ctx args[1]!)
-      (mkApp5 (mkConst ``ite [Level.one]) (mkConst ``Nat) args[1]! args[2]!
-        (← costOf ctx args[3]!) (← costOf ctx args[4]!)))
+      (iteNatE args[1]! args[2]! (← costOf ctx args[3]!) (← costOf ctx args[4]!)))
   if c == ``dite && args.size == 5 then
     let ct ← withEta args[3]! 1 fun hs b => do mkLambdaFVars hs (← costOf ctx b)
     let ce ← withEta args[4]! 1 fun hs b => do mkLambdaFVars hs (← costOf ctx b)
@@ -2418,7 +2435,7 @@ partial def mapMatch (ctx : Ctx) (e resultType : Expr)
 /-- The cost of a data-valued match: one, the discriminants, and the branch taken. -/
 partial def costMatch (ctx : Ctx) (e : Expr) : TermElabM Expr := do
   let (e', cd) ← mapMatch ctx e (mkConst ``Nat) costOf (some fun _ => pure (mkConst ``Nat))
-  return add (natE 1) (add cd e')
+  return add (natE 1) (add cd ((← constAlts? e').getD e'))
 
 /-- The translation of the oracle tree `e`: a step-prefixed costed tree whose erasure is `e`
 with the translated locals erased. -/
@@ -2429,6 +2446,25 @@ partial def tr (ctx : Ctx) (e : Expr) : TermElabM Expr := do
   match e with
   | .letE n t v b _ =>
     unless ← keepsLet t v do return ← tr ctx (b.instantiate1 v)
+    if let some ht ← hatTy? t then
+      -- A `let` of a value holding functions (a state structure): its costed value is bound by
+      -- a second `let` and shared by every use, in the step cost and in the costed tree. A
+      -- value without a costed form (a field that is a function into an untimed computation)
+      -- is priced by the rule below, which prices only the fields the body uses.
+      let s ← saveState
+      let recs ← ctx.fieldRec?.mapM (·.get)
+      let unf ← ctx.unfolded?.mapM (·.get)
+      let tvd? ← try some <$> tv ctx v catch _ => do
+        s.restore
+        if let (some r, some a) := (ctx.fieldRec?, recs) then r.set a
+        if let (some r, some a) := (ctx.unfolded?, unf) then r.set a
+        pure none
+      if let some (cv, vh) := tvd? then
+        return ← withLetDecl n t v fun x => withLetDecl (n.appendAfter "Hat") ht vh fun xh => do
+          let ctx' := { ctx with locals := ctx.locals.insert x.fvarId! ⟨.hat, xh, none⟩ }
+          let p ← tr ctx' (b.instantiate1 x)
+          return T.mkPair (add cv (← mkLetFVars #[x, xh] (T.fstOf p)))
+            (← mkLetFVars #[x, xh] (T.sndOf p))
     -- The value is priced once, in front; the costed tree keeps the `let`.
     let cv ← costOf ctx v
     withLetDecl n t v fun x => do
@@ -3244,3 +3280,4 @@ def elabTimedCost : CommandElab := fun stx => do
 end CatCrypt.Tactics.DeriveTimed
 
 end
+
