@@ -150,12 +150,12 @@ theorem iteLeakRed.timeBound (handler : ℕ → SPTree.Timed ℕ) (handlerCost :
     have := hh g
     have assoc : ∀ a b x y : ℕ, a + (b + x) + y = a + b + x + y := fun _ _ _ _ => by omega
     by_cases hg : g = 0
-    · simp only [if_pos hg, ↓reduceDIte, SPTree.Timed.stepTime]
+    · simp only [ite_eq_left hg, ↓reduceDIte, SPTree.Timed.stepTime]
       rw [assoc]
       refine (SPTree.Timed.prefix_bind_le _ _ _ (p + 5) fun k => ?_).trans ?_
       · simp only [SPTree.Timed.stepTime, SPTree.Timed.time_ret]; omega
       · omega
-    · simp only [if_neg hg, SPTree.Timed.stepTime]
+    · simp only [ite_eq_right hg, SPTree.Timed.stepTime]
       rw [assoc]
       refine (SPTree.Timed.prefix_bind_le _ _ _ (p + 5) fun k => ?_).trans ?_
       · simp only [SPTree.Timed.stepTime, SPTree.Timed.time_ret]; omega

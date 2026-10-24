@@ -477,16 +477,16 @@ theorem ar_ite {Q : α → Prop} {c : Prop} [Decidable c] {x y : SPTree.Timed α
     (hx : c → SPTree.Timed.AllRet Q x) (hy : ¬c → SPTree.Timed.AllRet Q y) :
     SPTree.Timed.AllRet Q (if c then x else y) := by
   by_cases hc : c
-  · simpa only [if_pos hc] using hx hc
-  · simpa only [if_neg hc] using hy hc
+  · simpa only [ite_eq_left hc] using hx hc
+  · simpa only [ite_eq_right hc] using hy hc
 
 theorem ar_dite {Q : α → Prop} {c : Prop} [Decidable c] {x : c → SPTree.Timed α}
     {y : ¬c → SPTree.Timed α} (hx : ∀ h : c, SPTree.Timed.AllRet Q (x h))
     (hy : ∀ h : ¬c, SPTree.Timed.AllRet Q (y h)) :
     SPTree.Timed.AllRet Q (if h : c then x h else y h) := by
   by_cases hc : c
-  · simpa only [dif_pos hc] using hx hc
-  · simpa only [dif_neg hc] using hy hc
+  · simpa only [dite_eq_left hc] using hx hc
+  · simpa only [dite_eq_right hc] using hy hc
 
 theorem ar_bind {Q : β → Prop} {A : SPTree.Timed α} {f : α → ℕ × SPTree.Timed β}
     (h : SPTree.Timed.AllRet (fun a => SPTree.Timed.AllRet Q (f a).2) A) :
