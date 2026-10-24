@@ -5,7 +5,7 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import Mathlib.Probability.Distributions.Uniform
+public import CatCryptCore.ForMathlib.PMFUniformDefs
 
 /-!
 # `PMF.bind` on the support and images of the uniform distribution
@@ -17,7 +17,7 @@ Mathlib candidates about `PMF.bind`, `PMF.map` and `PMF.support`.
 * `PMF.bind_congr_support` — two continuations that agree on the support of `p`
   give the same bind; it belongs in
   `Mathlib/Probability/ProbabilityMassFunction/Monad.lean`.
-* `PMF.map_uniformOfFintype_apply` — the image of the uniform distribution under
+* `PMF.map_uniformFintype_apply` — the image of the uniform distribution under
   `c` puts weight `|c⁻¹(a)| / |R|` on `a`; it belongs in
   `Mathlib/Probability/Distributions/Uniform.lean`.
 * `PMF.toOuterMeasure_bind_le_add` — an event after `p.bind f` has probability at most
@@ -45,12 +45,12 @@ theorem bind_congr_support {α β : Type*} (p : PMF α) (f g : α → PMF β)
 
 /-- The image of the uniform distribution under `c` puts weight
 `|c⁻¹(a)| / |R|` on `a`. -/
-theorem map_uniformOfFintype_apply {R A : Type*} [Fintype R] [Nonempty R] [DecidableEq A]
+theorem map_uniformFintype_apply {R A : Type*} [Fintype R] [Nonempty R] [DecidableEq A]
     (c : R → A) (a : A) :
-    ((PMF.uniformOfFintype R).map c) a =
+    ((PMF.uniformFintype R).map c) a =
       ((Finset.univ.filter fun r => c r = a).card : ℝ≥0∞) / Fintype.card R := by
   rw [PMF.map_apply, tsum_fintype]
-  simp only [PMF.uniformOfFintype_apply]
+  simp only [PMF.uniformFintype_apply]
   rw [Finset.sum_ite, Finset.sum_const_zero, add_zero, Finset.sum_const, nsmul_eq_mul,
     div_eq_mul_inv]
   congr 3

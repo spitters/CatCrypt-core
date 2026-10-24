@@ -65,7 +65,7 @@ theorem runPkg_ofCode {L : LocSet} (c : RawCode Bool) [IsValid L c] :
     CatCrypt.Crypto.runPkg (DeepPackage.ofCode (L := L) c) = c.eval := by
   have hmem : (0, Unit, Bool) ∈ (DeepPackage.ofCode (L := L) c).exports.ops :=
     List.mem_singleton.mpr rfl
-  simp only [CatCrypt.Crypto.runPkg, dif_pos hmem]
+  simp only [CatCrypt.Crypto.runPkg, dite_eq_left hmem]
   rfl
 
 /-- The stateless nominal package whose main procedure is implemented by `c`.

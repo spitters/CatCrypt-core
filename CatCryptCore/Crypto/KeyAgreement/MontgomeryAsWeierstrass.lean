@@ -158,7 +158,7 @@ def xProjW (A : F) : (montgomeryW A).toAffine.Point → F × F
 lemma montgomeryW_slope_double [DecidableEq F] (A x y : F) (hy : y ≠ -y) :
     (montgomeryW A).toAffine.slope x x y y = montyDoublingSlope A x y := by
   have hy' : y ≠ (montgomeryW A).toAffine.negY x y := by rwa [montgomeryW_negY]
-  rw [WeierstrassCurve.Affine.slope, if_pos rfl, if_neg hy']
+  rw [WeierstrassCurve.Affine.slope, ite_eq_left rfl, ite_eq_right hy']
   simp only [montgomeryW_negY, montgomeryW_a₁, montgomeryW_a₂, montgomeryW_a₄,
              montyDoublingSlope]
   ring_nf
@@ -251,7 +251,7 @@ theorem xdadd_affine_prod (A xp yp xq yq : F)
 /-- Mathlib's secant slope specialised to Montgomery with `x₁ ≠ x₂`. -/
 lemma montgomeryW_slope_secant [DecidableEq F] (A x₁ x₂ y₁ y₂ : F) (hx : x₁ ≠ x₂) :
     (montgomeryW A).toAffine.slope x₁ x₂ y₁ y₂ = (y₁ - y₂) / (x₁ - x₂) := by
-  simp only [WeierstrassCurve.Affine.slope, if_neg hx]
+  simp only [WeierstrassCurve.Affine.slope, ite_eq_right hx]
 
 /-- Mathlib's affine `addX` specialised to Montgomery. -/
 lemma montgomeryW_addX (A x₁ x₂ ℓ : F) :

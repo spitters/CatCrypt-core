@@ -252,8 +252,8 @@ theorem decapsSim_keySwap (i : KEMInput PK SK Z M K m₁ m₂ n) :
   funext x
   simp only [decapsSim, kemChal_keySwap, kemJ_keySwap, keySwap_fst, keySwap_seed]
   by_cases h : eC.symm x = kemChal P hpk eG eKR i
-  · rw [if_pos h, if_pos h]
-  · rw [if_neg h, if_neg h, simKeyAt_kemTab_keySwap P hpk eG eKR i _ h]
+  · rw [ite_eq_left h, ite_eq_left h]
+  · rw [ite_eq_right h, ite_eq_right h, simKeyAt_kemTab_keySwap P hpk eG eKR i _ h]
 
 end SwapDecaps
 

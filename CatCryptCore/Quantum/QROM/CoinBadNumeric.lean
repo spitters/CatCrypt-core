@@ -153,8 +153,8 @@ theorem prWinCoinW_indep (μ : KEMInput PK SK Z M K m₁ m₂ n → ℝ≥0∞)
     refine Finset.sum_congr rfl fun i _ => Finset.sum_congr rfl fun u _ =>
       Finset.sum_congr rfl fun Hq _ => Finset.sum_congr rfl fun T _ => ?_
     by_cases h : Bad i u
-    · rw [if_pos h, if_pos h, zero_add]
-    · rw [if_neg h, if_neg h, add_zero]
+    · rw [ite_eq_left h, ite_eq_left h, zero_add]
+    · rw [ite_eq_right h, ite_eq_right h, add_zero]
   have hX : (∑ i, ∑ u, ∑ Hq, ∑ T, if Bad i u then 0 else F true i u Hq T) =
       ∑ i, ∑ u, ∑ Hq, ∑ T, if Bad i u then 0 else F false i u Hq T := by
     have hc : ∀ f : KEMInput PK SK Z M K m₁ m₂ n → Fin n → (C → K) → ℝ≥0∞,
@@ -172,8 +172,8 @@ theorem prWinCoinW_indep (μ : KEMInput PK SK Z M K m₁ m₂ n → ℝ≥0∞)
       F false (kfSwap P hpk eG eKR p).1 u (kfSwap P hpk eG eKR p).2 T
     have hb : Bad (kfSwap P hpk eG eKR p).1 u ↔ Bad p.1 u := Iff.rfl
     by_cases h : Bad p.1 u
-    · rw [if_pos h, if_pos (hb.2 h)]
-    · rw [if_neg h, if_neg (fun h' => h (hb.1 h'))]
+    · rw [ite_eq_left h, ite_eq_left (hb.2 h)]
+    · rw [ite_eq_right h, ite_eq_right (fun h' => h (hb.1 h'))]
       have hH : ∀ y, (∃ m, encOf (P.enc p.1.1.1)
           (kemTab hpk eG eKR (coinUpd hpk eG (kfSwap P hpk eG eKR p).1 u)) m = y) →
           (kfSwap P hpk eG eKR p).2 y = p.2 y := by
@@ -189,7 +189,7 @@ theorem prWinCoinW_indep (μ : KEMInput PK SK Z M K m₁ m₂ n → ℝ≥0∞)
       have hc2 : kemChal P hpk eG eKR
           (p.1.1, p.1.2.1, p.1.2.2.1, p.2 (kemChal P hpk eG eKR p.1), p.1.2.2.2.2) =
           kemChal P hpk eG eKR p.1 := rfl
-      simp only [kfSwap, hc2, decapsHq_update_self, Bool.false_eq_true, if_false, if_true, hμ]
+      simp only [kfSwap, hc2, decapsHq_update_self, Bool.false_eq_true, ite_false, ite_true, hμ]
   have hY : ∀ b, (∑ i, ∑ u, ∑ Hq, ∑ T, if Bad i u then F b i u Hq T else 0) ≤
       coinBadW (Z := Z) (m₂ := m₂) P hpk eG eKR μ := by
     intro b
@@ -507,7 +507,7 @@ theorem sum_resWeightCoin_coll :
   refine congrArg _ ?_
   rw [collProb_eq_fin P eKR]
   by_cases hg : CoinGood P r.1
-  · simp only [if_pos hg]
+  · simp only [ite_eq_left hg]
     have hgood : ∀ x, ∃ y, restBad P hpk eG eKR r x y = false :=
       offPoint_good _ fun x _ => kemBad_good P hpk eG eKR hg x
     rw [← sum_tableMass_eval_fun _ hgood (eG (r.2.2.1, hpk r.1.1)) (fun v => by simp [restBad])
@@ -516,7 +516,7 @@ theorem sum_resWeightCoin_coll :
           else 0))]
     simp only [Finset.mul_sum, kemChal, kemG, kemJoin]
     rfl
-  · simp only [if_neg hg]
+  · simp only [ite_eq_right hg]
     rw [← sum_unif_eval_fun (eG (r.2.2.1, hpk r.1.1))
       (fun v => ∑ u : Fin n, (n : ℝ≥0∞)⁻¹ *
         (if P.enc r.1.1 r.2.2.1 (eKR.symm u).2 = P.enc r.1.1 r.2.2.1 (eKR.symm v).2 then 1
@@ -564,11 +564,11 @@ theorem coinBadW_resWeightCoin_le_coll (lam : PK × SK → ℝ≥0∞)
     · simp [kemRestWeight, hk]
     · gcongr
       by_cases hg : CoinGood P r.1
-      · simp only [if_pos hg]
+      · simp only [ite_eq_left hg]
         refine (sum_tableMass_not_sliceInj_le P hpk eG eKR r.1.1 r.1.2 _ hg).trans ?_
         rw [← div_eq_mul_inv]
         exact hlam _ _ hk _
-      · simp only [if_neg hg]
+      · simp only [ite_eq_right hg]
         exact (sum_unifG_le_one _ fun G => by split_ifs <;> simp).trans
           (one_le_of_not_coinGood P hpk eG eKR hg (lam r.1) (hlam _ _ hk))
   exact h1.trans (add_le_add h2 ((sum_resWeightCoin_coll P hpk eG eKR).le.trans hcoll))
@@ -644,11 +644,11 @@ theorem absDiff_prWinKEMHqCoin_le_of_lam_coll (A : KEMQAdv m₁ m₂ n w q k c a
     by_cases hk : P.keygen r.1 = 0
     · simp [kemRestWeight, hk]
     · by_cases hg : CoinGood P r.1
-      · simp only [if_pos hg]
+      · simp only [ite_eq_left hg]
         gcongr
         exact absDiff_winCoin_resample_le P hpk eG eJ eKR eC eKa A b r hg (lam r.1)
           (fun x _ => hlam _ _ hk x)
-      · simp only [if_neg hg, absDiff_self, mul_zero]
+      · simp only [ite_eq_right hg, absDiff_self, mul_zero]
         exact zero_le
   have hmid := (prWinCoinW_indep P hpk eG eJ eKR eC eKa (resWeightCoin P hpk eG eKR)
     (fun _ _ => rfl) A).trans (coinBadW_resWeightCoin_le_coll P hpk eG eKR lam hlam ε hcoll)

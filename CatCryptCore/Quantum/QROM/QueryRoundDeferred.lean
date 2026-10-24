@@ -81,8 +81,8 @@ theorem trace_kr_one_ancProj_mul_roundV (e : Fin (d * c) ≃ Fin d') (R : Classi
       (roundV e R f : Matrix (Fin d') (Fin d') ℂ)ᴴ)).trace = (R.P y * σ).trace := by
   rw [roundV_mul_kr_ancProj_zero, Finset.mul_sum, trace_sum, Finset.sum_eq_single y]
   · rw [Finset.mul_sum, trace_sum, Finset.sum_eq_single y]
-    · rw [kr_mul, Matrix.one_mul, trace_kr, ancProj_mul_ancUnit, if_pos rfl, trace_ancUnit,
-        if_pos rfl, mul_one]
+    · rw [kr_mul, Matrix.one_mul, trace_kr, ancProj_mul_ancUnit, ite_eq_left rfl, trace_ancUnit,
+        ite_eq_left rfl, mul_one]
       have hu : (R.ans (f y) : Matrix (Fin d) (Fin d) ℂ)ᴴ *
           (R.ans (f y) : Matrix (Fin d) (Fin d) ℂ) = 1 := by
         have := (R.ans (f y)).prop
@@ -93,13 +93,13 @@ theorem trace_kr_one_ancProj_mul_roundV (e : Fin (d * c) ≃ Fin d') (R : Classi
       rw [← Matrix.mul_assoc ((R.ans (f y) : Matrix (Fin d) (Fin d) ℂ)ᴴ), hu, Matrix.one_mul,
         ← Matrix.mul_assoc, R.P_mul_self]
     · intro y' _ hy'
-      rw [kr_mul, Matrix.one_mul, trace_kr, ancProj_mul_ancUnit, if_pos rfl, trace_ancUnit,
-        if_neg (Ne.symm hy'), mul_zero]
+      rw [kr_mul, Matrix.one_mul, trace_kr, ancProj_mul_ancUnit, ite_eq_left rfl, trace_ancUnit,
+        ite_eq_right (Ne.symm hy'), mul_zero]
     · intro h; exact absurd (Finset.mem_univ y) h
   · intro y₀ _ hy₀
     rw [Finset.mul_sum, trace_sum]
     refine Finset.sum_eq_zero fun y' _ => ?_
-    rw [kr_mul, Matrix.one_mul, trace_kr, ancProj_mul_ancUnit, if_neg (Ne.symm hy₀),
+    rw [kr_mul, Matrix.one_mul, trace_kr, ancProj_mul_ancUnit, ite_eq_right (Ne.symm hy₀),
       Matrix.trace_zero, mul_zero]
   · intro h; exact absurd (Finset.mem_univ y) h
 
@@ -112,7 +112,7 @@ theorem trace_P_eq_zero_of_roundV_kr_ancProj_zero (e : Fin (d * c) ≃ Fin d')
         (roundV e R f : Matrix (Fin d') (Fin d') ℂ)ᴴ = kr e τ (ancProj 0)) :
     (R.P y * σ).trace = 0 := by
   rw [← trace_kr_one_ancProj_mul_roundV e R f σ y, h, kr_mul, Matrix.one_mul, ancProj_mul_ancProj,
-    if_neg hy, kr_zero_right, Matrix.trace_zero]
+    ite_eq_right hy, kr_zero_right, Matrix.trace_zero]
 
 end Record
 
@@ -165,9 +165,9 @@ theorem roundV_mul_kr_cleanLift (φ : Fin c → Fin n → Fin n → Fin a)
   rw [kr_mul, Matrix.one_mul, ← hstep y]
   unfold roundC
   rw [Finset.sum_mul, Finset.sum_eq_single y]
-  · rw [kr_mul, ancProj_mul_ancUnit, if_pos rfl]
+  · rw [kr_mul, ancProj_mul_ancUnit, ite_eq_left rfl]
   · intro z _ hz
-    rw [kr_mul, ancProj_mul_ancUnit, if_neg hz, kr_zero_right]
+    rw [kr_mul, ancProj_mul_ancUnit, ite_eq_right hz, kr_zero_right]
   · intro h; exact absurd (Finset.mem_univ y) h
 
 /-- The deferred round of `permRound` returns its ancilla to `|0⟩⟨0|` on a

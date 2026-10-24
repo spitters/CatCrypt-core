@@ -939,8 +939,8 @@ theorem nttRestrict_pivot_eq_zero (T : Finset (Fin 128)) (x : Fin 2 × Fin 256 �
     intro ℓ hℓ
     have h1 := congrFun h0 (i, ⟨ℓ, hℓ⟩, false)
     have h2 := congrFun h0 (i, ⟨ℓ, hℓ⟩, true)
-    simp only [nttRestrict, AddMonoidHom.coe_mk, ZeroHom.coe_mk, Bool.false_eq_true, if_false,
-      if_true, Pi.zero_apply] at h1 h2
+    simp only [nttRestrict, AddMonoidHom.coe_mk, ZeroHom.coe_mk, Bool.false_eq_true, ite_false,
+      ite_true, Pi.zero_apply] at h1 h2
     exact Prod.ext h1 h2
   have hsupp' : ∀ q : Fin 256, 2 * T.card ≤ q.val → a q = 0 := by
     intro q hq
@@ -999,7 +999,7 @@ theorem subset_zeroPairs_iff (T : Finset (Fin 128)) (r r' : PrfVecBlock 3) :
       intro i
       have h1 := congrFun h (i, ⟨ℓ, hℓ⟩, false)
       have h2 := congrFun h (i, ⟨ℓ, hℓ⟩, true)
-      simp only [nttRestrict_flatVec, Bool.false_eq_true, if_false, if_true] at h1 h2
+      simp only [nttRestrict_flatVec, Bool.false_eq_true, ite_false, ite_true] at h1 h2
       rw [nttKem_sub, Pi.sub_apply, sub_eq_zero]
       exact Prod.ext h1 h2
     exact ⟨hi 0, hi 1⟩
@@ -1095,9 +1095,9 @@ theorem collision_le_indicators (pk : Mat × Vec) (m : Msg)
         (1 : ℝ≥0∞) else 0) ≤
       manyZeros sd sd' + windowHit pk.1 sd sd' := by
   by_cases h : mlkem512CompressedScheme.enc pk m sd = mlkem512CompressedScheme.enc pk m sd'
-  · rw [if_pos h]
+  · rw [ite_eq_left h]
     by_cases h40 : 40 ≤ (zeroPairs (sampleVec 3 sd.1 - sampleVec 3 sd'.1)).card
-    · have hz : manyZeros sd sd' = 1 := if_pos h40
+    · have hz : manyZeros sd sd' = 1 := ite_eq_left h40
       rw [hz]
       exact le_self_add
     · have hw : windowHit pk.1 sd sd' = 1 := by
@@ -1126,9 +1126,9 @@ theorem collision_le_indicators (pk : Mat × Vec) (m : Msg)
           have hre : ∀ x y z : ZMod q_kem, x + (y - x) + z = y + z := fun x y z => by ring
           rw [hre]
           exact hi.symm
-      have hz : manyZeros sd sd' = 0 := if_neg h40
+      have hz : manyZeros sd sd' = 0 := ite_eq_right h40
       rw [hw, hz, zero_add]
-  · rw [if_neg h]
+  · rw [ite_eq_right h]
     exact zero_le
 
 end CatCrypt.Crypto.MLKEM.CollisionSpread

@@ -129,7 +129,7 @@ theorem bijMAC_euf_cma_adv_of_isQueryBound_zero (B : BijMACFamily)
     EUF_CMA_Adv B.toMACScheme A = 1 / (Fintype.card B.Tag : ℝ≥0∞) := by
   unfold EUF_CMA_Adv EUF_CMA_Real
   rw [PMF.bind_apply]
-  simp only [PMF.uniformOfFintype_apply]
+  simp only [PMF.uniformFintype_apply]
   induction A with
   | ret r =>
     simp only [OracleAdv.run_ret, PMF.pure_map, PMF.pure_apply, List.not_mem_nil,

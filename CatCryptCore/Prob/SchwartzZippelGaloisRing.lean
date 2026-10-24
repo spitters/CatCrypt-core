@@ -87,7 +87,7 @@ theorem exists_C_pow_mul_residue (π : R →+* F) (t : R)
     · rw [mul_zero]; exact notMem_support_iff.mp hi
   refine ⟨s, g, hfg, ?_, ?_⟩
   · refine natDegree_le_iff_coeff_eq_zero.mpr fun N hN => ?_
-    rw [hgc, if_neg]
+    rw [hgc, ite_eq_right]
     exact notMem_support_iff.mpr (coeff_eq_zero_of_natDegree_lt hN)
   · intro h0
     have hπj : π (g.coeff j) = 0 := by rw [← coeff_map, h0, coeff_zero]

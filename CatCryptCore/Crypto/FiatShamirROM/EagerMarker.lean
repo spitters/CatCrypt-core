@@ -139,7 +139,7 @@ noncomputable def markTables (M : Markers κ) (k : G.Key) : G.Tables → List (F
   | t, i :: l =>
     match t.lookup (M.pt k t.lookup i) with
     | some _ => markTables M k t l
-    | none => (PMF.uniformOfFintype G.Ch).bind fun v =>
+    | none => (PMF.uniformFintype G.Ch).bind fun v =>
       markTables M k { t with hash := t.hash ++ [(M.pt k t.lookup i, v)] } l
 
 /-- A hash query of the marker game: `hashStep`, except that a fresh designated point
@@ -151,7 +151,7 @@ noncomputable def markHashStep (M : Markers κ) (t : G.Tables) (b : Bool) (k : G
   | none =>
     if M.des k then
       .plain ((markTables M k t (List.finRange M.nm)).bind fun t' =>
-        (PMF.uniformOfFintype G.Ch).map fun e =>
+        (PMF.uniformFintype G.Ch).map fun e =>
           (.inl e, ({ t' with hash := t'.hash ++ [(k, e)] }, b)))
     else .fresh fun e => (.inl e, ({ t with hash := t.hash ++ [(k, e)] }, b))
 
@@ -174,10 +174,10 @@ uniform. -/
 theorem uniform_bind_update_sel {ι C : Type} [Fintype ι] [DecidableEq ι] [Fintype C]
     [Nonempty C] (sel : (ι → C) → Option ι)
     (hsel : ∀ e i c, sel e = some i → sel (Function.update e i c) = some i) :
-    (PMF.uniformOfFintype (ι → C)).bind (fun e => (PMF.uniformOfFintype C).map fun c =>
+    (PMF.uniformFintype (ι → C)).bind (fun e => (PMF.uniformFintype C).map fun c =>
       match sel e with
       | none => e
-      | some i => Function.update e i c) = PMF.uniformOfFintype (ι → C) := by
+      | some i => Function.update e i c) = PMF.uniformFintype (ι → C) := by
   have hback : ∀ e i c, sel (Function.update e i c) = some i → sel e = some i := by
     intro e i c h
     have := hsel _ i (e i) h
@@ -188,11 +188,11 @@ theorem uniform_bind_update_sel {ι C : Type} [Fintype ι] [DecidableEq ι] [Fin
   | none =>
     rw [tsum_eq_single f]
     · simp only [PMF.map_apply, hf]
-      simp only [if_true, PMF.tsum_coe, mul_one]
+      simp only [ite_true, PMF.tsum_coe, mul_one]
     · intro e hne
       rw [PMF.map_apply, ENNReal.tsum_eq_zero.2, mul_zero]
       intro c
-      rw [if_neg]
+      rw [ite_eq_right]
       cases he : sel e with
       | none => exact hne.symm
       | some i =>
@@ -283,10 +283,10 @@ theorem run_eager_of_step (O : S → D → PMF (R × S)) (U : PMF V) (undef : S 
       (OracleAdv.run O B s').bind (fun y => fillAt U undef upd y) = OracleAdv.run O B s' := by
     intro B s' hs'
     rw [PMF.bind_congr_support _ _ PMF.pure fun y hy => by
-      rw [fillAt, run_defined O undef hpers B s' hs' y hy, if_neg (by simp)], PMF.bind_pure]
+      rw [fillAt, run_defined O undef hpers B s' hs' y hy, ite_eq_right (by simp)], PMF.bind_pure]
   induction A generalizing s with
   | ret a =>
-    simp only [OracleAdv.run_ret, PMF.pure_bind, fillAt, hs, if_true]
+    simp only [OracleAdv.run_ret, PMF.pure_bind, fillAt, hs, ite_true]
     rfl
   | rand p k ih =>
     simp only [OracleAdv.run_rand, PMF.bind_bind]
@@ -298,9 +298,9 @@ theorem run_eager_of_step (O : S → D → PMF (R × S)) (U : PMF V) (undef : S 
     refine PMF.bind_congr_support _ _ _ fun y _ => ?_
     unfold fillAt
     by_cases hy : undef y.2 = true
-    · rw [if_pos hy, PMF.bind_map]
+    · rw [ite_eq_left hy, PMF.bind_map]
       exact ih y.1 y.2 hy
-    · rw [if_neg hy, PMF.pure_bind]
+    · rw [ite_eq_right hy, PMF.pure_bind]
       exact (hdef _ _ (by simpa using hy)).symm
 
 end Eager
@@ -317,7 +317,7 @@ theorem lookupIn_cons (p : K × C) (l : List (K × C)) (k : K) :
   rw [List.findIdx?_cons]
   by_cases h : p.1 = k
   · simp [h]
-  · simp only [h, decide_false, if_false]
+  · simp only [h, decide_false, ite_false]
     cases l.findIdx? (fun p => decide (p.1 = k)) <;> simp
 
 theorem lookupIn_append (l l' : List (K × C)) (k : K) :
@@ -335,11 +335,11 @@ theorem lookupIn_filter (P : K → Bool) (l : List (K × C)) (k : K) :
   | cons p l ih =>
     rw [List.filter_cons]
     by_cases hp : P p.1
-    · rw [if_pos hp, lookupIn_cons, lookupIn_cons, ih]
+    · rw [ite_eq_left hp, lookupIn_cons, lookupIn_cons, ih]
       by_cases hk : p.1 = k
       · subst hk; simp [hp]
       · simp [hk]
-    · rw [if_neg hp, ih, lookupIn_cons]
+    · rw [ite_eq_right hp, ih, lookupIn_cons]
       by_cases hk : p.1 = k
       · subst hk; simp [hp]
       · simp [hk]
@@ -382,7 +382,7 @@ def aSignOut (x : G.Stmt) (L : G.Key → Option G.Ch) (sg : List G.Msg) (b : Boo
 noncomputable def aHash (σ : AState G) (k : G.Key) : PMF (G.Answer × AState G) :=
   match σ.1 k with
   | some e => PMF.pure (.inl e, σ)
-  | none => (PMF.uniformOfFintype G.Ch).map fun e =>
+  | none => (PMF.uniformFintype G.Ch).map fun e =>
     (.inl e, (Function.update σ.1 k (some e), σ.2))
 
 /-- The simulated oracle on lookups. -/
@@ -411,7 +411,7 @@ theorem lookup_hashAll (t : G.Tables) (l : List (G.Key × G.Ch)) :
   rw [hf]
   clear hf
   by_cases h : ((lookupIn t.prog k).or (lookupIn t.hash k)).isNone = true <;>
-    simp only [h, if_true] <;> cases h1 : lookupIn t.prog k <;> cases h2 : lookupIn t.hash k <;>
+    simp only [h, ite_true] <;> cases h1 : lookupIn t.prog k <;> cases h2 : lookupIn t.hash k <;>
     simp_all
 
 theorem lookup_snoc_hash (t : G.Tables) (k : G.Key) (e : G.Ch) (h : t.lookup k = none) :
@@ -480,7 +480,7 @@ noncomputable def aMark (M : Markers κ) (k : G.Key) : (G.Key → Option G.Ch) �
   | L, i :: l =>
     match L (M.pt k L i) with
     | some _ => aMark M k L l
-    | none => (PMF.uniformOfFintype G.Ch).bind fun v =>
+    | none => (PMF.uniformFintype G.Ch).bind fun v =>
       aMark M k (Function.update L (M.pt k L i) (some v)) l
 
 /-- A hash query of the marker game on lookups. -/
@@ -491,8 +491,8 @@ noncomputable def aHashMk (M : Markers κ) (σ : AState G) (k : G.Key) :
   | none =>
     if M.des k then
       (aMark M k σ.1 (List.finRange M.nm)).bind fun L =>
-        (PMF.uniformOfFintype G.Ch).map fun e => (.inl e, (Function.update L k (some e), σ.2))
-    else (PMF.uniformOfFintype G.Ch).map fun e => (.inl e, (Function.update σ.1 k (some e), σ.2))
+        (PMF.uniformFintype G.Ch).map fun e => (.inl e, (Function.update L k (some e), σ.2))
+    else (PMF.uniformFintype G.Ch).map fun e => (.inl e, (Function.update σ.1 k (some e), σ.2))
 
 /-- The marker game oracle on lookups. -/
 noncomputable def aStepMk (M : Markers κ) (x : G.Stmt) (σ : AState G) :
@@ -550,8 +550,8 @@ theorem simStepMk_abs (M : Markers κ) (x : G.Stmt) (s : G.Tables × Bool) (d : 
       rw [hs]
       dsimp only
       by_cases hd : M.des k = true
-      · simp only [hd, if_true, Step.toPMF, PMF.map_bind]
-        rw [PMF.bind_congr_support _ _ (fun t' => (PMF.uniformOfFintype G.Ch).map fun e =>
+      · simp only [hd, ite_true, Step.toPMF, PMF.map_bind]
+        rw [PMF.bind_congr_support _ _ (fun t' => (PMF.uniformFintype G.Ch).map fun e =>
             (.inl e, (Function.update t'.lookup k (some e), t'.signed, s.2))) fun t' ht' => by
           rw [PMF.map_comp]
           congr 1
@@ -559,15 +559,15 @@ theorem simStepMk_abs (M : Markers κ) (x : G.Stmt) (s : G.Tables × Bool) (d : 
           simp only [Function.comp, Prod.map, absT, id]
           rw [lookup_snoc_hash _ _ _ ((markTables_lookup_des M hd _ _ _ ht').trans h)]]
         have hm := markTables_abs M k (List.finRange M.nm) s.1
-        rw [show (fun t' : G.Tables => (PMF.uniformOfFintype G.Ch).map fun e =>
+        rw [show (fun t' : G.Tables => (PMF.uniformFintype G.Ch).map fun e =>
             ((.inl e, (Function.update t'.lookup k (some e), t'.signed, s.2)) :
               G.Answer × AState G)) =
-            (fun q : (G.Key → Option G.Ch) × List G.Msg => (PMF.uniformOfFintype G.Ch).map
+            (fun q : (G.Key → Option G.Ch) × List G.Msg => (PMF.uniformFintype G.Ch).map
               fun e => (.inl e, (Function.update q.1 k (some e), q.2, s.2))) ∘
               (fun t' : G.Tables => (t'.lookup, t'.signed)) from rfl,
           ← PMF.bind_map, hm, PMF.bind_map]
         rfl
-      · rw [if_neg hd, if_neg hd]
+      · rw [ite_eq_right hd, ite_eq_right hd]
         have := simStep_abs x s (.inl k)
         simp only [toOracle, simStep, hashStep, aStep, aHash, h, hs] at this
         exact this
@@ -589,8 +589,8 @@ theorem lookupIn_eq_some_of_forall {K C : Type} [DecidableEq K] (l : List (K × 
   | cons q l ih =>
     rw [lookupIn_cons]
     by_cases hq : q.1 = p
-    · rw [if_pos hq, h q List.mem_cons_self hq]
-    · rw [if_neg hq]
+    · rw [ite_eq_left hq, h q List.mem_cons_self hq]
+    · rw [ite_eq_right hq]
       refine ih (fun q' hq' => h q' (List.mem_cons_of_mem _ hq')) ?_
       simp only [List.map_cons, List.mem_cons] at hm
       exact hm.resolve_left (Ne.symm hq)
@@ -871,8 +871,8 @@ theorem aStep_eager (x : G.Stmt) (p : G.Key)
       G.simKey x m s v j = some p → i = j)
     (hprog : ∀ (look : G.Key → Option G.Ch) m e s, ∀ q ∈ (G.simTrace look x m e s).2.1, q.1 ≠ p)
     (σ : AState G) (hσ : undefP p σ = true) (d : G.Query) :
-    (PMF.uniformOfFintype G.Ch).bind (fun v => aStep x (updP p σ v) d) =
-      (aStep x σ d).bind (fillAt (PMF.uniformOfFintype G.Ch) (undefP p) (updP p)) := by
+    (PMF.uniformFintype G.Ch).bind (fun v => aStep x (updP p σ v) d) =
+      (aStep x σ d).bind (fillAt (PMF.uniformFintype G.Ch) (undefP p) (updP p)) := by
   obtain ⟨L, sg, b⟩ := σ
   have hL : L p = none := by simpa [undefP] using hσ
   rcases d with k | m
@@ -886,7 +886,7 @@ theorem aStep_eager (x : G.Stmt) (p : G.Key)
     · simp only [Function.update_of_ne hkp]
       cases hk : L k with
       | some e =>
-        simp only [PMF.pure_bind, fillAt, undefP, hL, Option.isNone_none, if_true]
+        simp only [PMF.pure_bind, fillAt, undefP, hL, Option.isNone_none, ite_true]
         rfl
       | none =>
         simp only [PMF.map, PMF.bind_bind, Function.comp, PMF.pure_bind]
@@ -894,7 +894,7 @@ theorem aStep_eager (x : G.Stmt) (p : G.Key)
         congr 1
         funext e
         simp only [fillAt, undefP, Function.update_of_ne (Ne.symm hkp), hL,
-          Option.isNone_none, if_true, updP, PMF.map]
+          Option.isNone_none, ite_true, updP, PMF.map]
         congr 1
         funext v
         simp only [Function.comp]
@@ -904,11 +904,11 @@ theorem aStep_eager (x : G.Stmt) (p : G.Key)
         selP L x m r p (Function.update e i c) = some i :=
       fun r e i c h => selP_update (hinj m r) e i c h
     have hper : ∀ r : G.SimRand,
-        (PMF.uniformOfFintype (Fin G.μ → G.Ch)).bind (fun e =>
-          (PMF.uniformOfFintype G.Ch).map fun v =>
+        (PMF.uniformFintype (Fin G.μ → G.Ch)).bind (fun e =>
+          (PMF.uniformFintype G.Ch).map fun v =>
             aSignOut x (Function.update L p (some v)) sg b m e r) =
-        (PMF.uniformOfFintype (Fin G.μ → G.Ch)).bind (fun e =>
-          fillAt (PMF.uniformOfFintype G.Ch) (undefP p) (updP p) (aSignOut x L sg b m e r)) := by
+        (PMF.uniformFintype (Fin G.μ → G.Ch)).bind (fun e =>
+          fillAt (PMF.uniformFintype G.Ch) (undefP p) (updP p) (aSignOut x L sg b m e r)) := by
       intro r
       conv_rhs => rw [← uniform_bind_update_sel _ (hsel r), PMF.bind_bind]
       congr 1
@@ -919,21 +919,21 @@ theorem aStep_eager (x : G.Stmt) (p : G.Key)
         have h2 := (aSignOut_of_selP_none (x := x) sg b (hprog L m e r) hL h
           (Classical.arbitrary G.Ch)).2
         simp only [Function.comp_def, PMF.bind_const, fillAt, undefP, h2, Option.isNone_none,
-          if_true]
+          ite_true]
         congr 1
         funext v
         rw [(aSignOut_of_selP_none (x := x) sg b (hprog L m e r) hL h v).1]
         rfl
       | some i =>
         simp only [Function.comp_def]
-        have hd : ∀ c, fillAt (PMF.uniformOfFintype G.Ch) (undefP p) (updP p)
+        have hd : ∀ c, fillAt (PMF.uniformFintype G.Ch) (undefP p) (updP p)
             (aSignOut x L sg b m (Function.update e i c) r) =
             PMF.pure (aSignOut x L sg b m (Function.update e i c) r) := by
           intro c
           have := aSignOut_defined_of_selP_some (x := x) (m := m) (hinj m r) sg b
             (hsel r e i c h)
           unfold fillAt
-          rw [if_neg (by rw [undefP, ← Option.not_isSome, this]; decide)]
+          rw [ite_eq_right (by rw [undefP, ← Option.not_isSome, this]; decide)]
         simp only [hd]
         rw [PMF.map]
         congr 1
@@ -941,28 +941,28 @@ theorem aStep_eager (x : G.Stmt) (p : G.Key)
         simp only [Function.comp]
         rw [aSignOut_of_selP_some (hinj m r) hL sg b h v]
     unfold sampleVec
-    calc _ = (PMF.uniformOfFintype (Fin G.μ → G.Ch)).bind (fun e =>
-          (PMF.uniformOfFintype G.Ch).bind fun v => (PMF.uniformOfFintype G.SimRand).map
+    calc _ = (PMF.uniformFintype (Fin G.μ → G.Ch)).bind (fun e =>
+          (PMF.uniformFintype G.Ch).bind fun v => (PMF.uniformFintype G.SimRand).map
             fun r => aSignOut x (Function.update L p (some v)) sg b m e r) := PMF.bind_comm _ _ _
-      _ = (PMF.uniformOfFintype (Fin G.μ → G.Ch)).bind (fun e =>
-          (PMF.uniformOfFintype G.SimRand).bind fun r => (PMF.uniformOfFintype G.Ch).map
+      _ = (PMF.uniformFintype (Fin G.μ → G.Ch)).bind (fun e =>
+          (PMF.uniformFintype G.SimRand).bind fun r => (PMF.uniformFintype G.Ch).map
             fun v => aSignOut x (Function.update L p (some v)) sg b m e r) := by
           congr 1
           funext e
           simp only [PMF.map]
           exact PMF.bind_comm _ _ _
-      _ = (PMF.uniformOfFintype G.SimRand).bind (fun r =>
-          (PMF.uniformOfFintype (Fin G.μ → G.Ch)).bind fun e => (PMF.uniformOfFintype G.Ch).map
+      _ = (PMF.uniformFintype G.SimRand).bind (fun r =>
+          (PMF.uniformFintype (Fin G.μ → G.Ch)).bind fun e => (PMF.uniformFintype G.Ch).map
             fun v => aSignOut x (Function.update L p (some v)) sg b m e r) := PMF.bind_comm _ _ _
-      _ = (PMF.uniformOfFintype G.SimRand).bind (fun r =>
-          (PMF.uniformOfFintype (Fin G.μ → G.Ch)).bind fun e =>
-            fillAt (PMF.uniformOfFintype G.Ch) (undefP p) (updP p) (aSignOut x L sg b m e r)) := by
+      _ = (PMF.uniformFintype G.SimRand).bind (fun r =>
+          (PMF.uniformFintype (Fin G.μ → G.Ch)).bind fun e =>
+            fillAt (PMF.uniformFintype G.Ch) (undefP p) (updP p) (aSignOut x L sg b m e r)) := by
           congr 1
           funext r
           exact hper r
-      _ = (PMF.uniformOfFintype (Fin G.μ → G.Ch)).bind (fun e =>
-          (PMF.uniformOfFintype G.SimRand).bind fun r =>
-            fillAt (PMF.uniformOfFintype G.Ch) (undefP p) (updP p) (aSignOut x L sg b m e r)) :=
+      _ = (PMF.uniformFintype (Fin G.μ → G.Ch)).bind (fun e =>
+          (PMF.uniformFintype G.SimRand).bind fun r =>
+            fillAt (PMF.uniformFintype G.Ch) (undefP p) (updP p) (aSignOut x L sg b m e r)) :=
           PMF.bind_comm _ _ _
       _ = _ := by
           simp only [PMF.bind_bind, PMF.bind_map]
@@ -1022,7 +1022,7 @@ theorem awins_le_eager (x : G.Stmt) (p : G.Key)
     (hprog : ∀ (look : G.Key → Option G.Ch) m e s, ∀ q ∈ (G.simTrace look x m e s).2.1, q.1 ≠ p)
     (B : OracleAdv G.Query G.Answer G.Forgery) (σ : AState G) (hσ : σ.1 p = none) :
     (OracleAdv.run (aStep x) B σ).toOuterMeasure {y | awins x y = true} ≤
-      ((PMF.uniformOfFintype G.Ch).bind fun v => OracleAdv.run (aStep x) B (updP p σ v)).toOuterMeasure
+      ((PMF.uniformFintype G.Ch).bind fun v => OracleAdv.run (aStep x) B (updP p σ v)).toOuterMeasure
         {y | awins x y = true} := by
   rw [run_eager_of_step (aStep x) _ (undefP p) (updP p)
     (fun σ d hσ y hy => aStep_defined x p σ d hσ y hy)
@@ -1030,10 +1030,10 @@ theorem awins_le_eager (x : G.Stmt) (p : G.Key)
   refine toOuterMeasure_le_bind _ _ _ fun y hy z hz => ?_
   unfold fillAt at hz
   by_cases hu : undefP p y.2 = true
-  · rw [if_pos hu] at hz
+  · rw [ite_eq_left hu] at hz
     obtain ⟨v, -, rfl⟩ := (PMF.mem_support_map_iff _ _ _).1 hz
     exact awins_updP x p y hy (by simpa [undefP] using hu) v
-  · rw [if_neg hu] at hz
+  · rw [ite_eq_right hu] at hz
     simp only [PMF.support_pure, Set.mem_singleton_iff] at hz
     rw [hz]; exact hy
 
@@ -1102,15 +1102,15 @@ theorem awins_le_mk (M : Markers κ) (x : G.Stmt) (B : OracleAdv G.Query G.Answe
     · obtain ⟨k₀, rfl, hk₀, hd⟩ := hdes
       obtain ⟨L, sg, b⟩ := σ
       change L k₀ = none at hk₀
-      simp only [aStep, aStepMk, aHash, aHashMk, hk₀, hd, if_true, PMF.bind_map, PMF.bind_bind]
-      calc _ ≤ ((PMF.uniformOfFintype G.Ch).bind fun e =>
+      simp only [aStep, aStepMk, aHash, aHashMk, hk₀, hd, ite_true, PMF.bind_map, PMF.bind_bind]
+      calc _ ≤ ((PMF.uniformFintype G.Ch).bind fun e =>
               (aMark M k₀ L (List.finRange M.nm)).bind fun L' =>
                 OracleAdv.run (aStep x) (k (.inl e)) (Function.update L' k₀ (some e), sg, b)).toOuterMeasure
                 {y | awins x y = true} :=
             toOuterMeasure_bind_le_bind _ _ _ _ fun e =>
               awins_le_aMark M x hd e (k (.inl e)) sg b _ L hk₀
         _ = ((aMark M k₀ L (List.finRange M.nm)).bind fun L' =>
-              (PMF.uniformOfFintype G.Ch).bind fun e =>
+              (PMF.uniformFintype G.Ch).bind fun e =>
                 OracleAdv.run (aStep x) (k (.inl e)) (Function.update L' k₀ (some e), sg, b)).toOuterMeasure
                 {y | awins x y = true} := by rw [PMF.bind_comm]
         _ ≤ _ := toOuterMeasure_bind_le_bind _ _ _ _ fun L' =>

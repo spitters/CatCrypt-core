@@ -19,7 +19,7 @@ set_option autoImplicit false
 attach an invariant to. This module writes each of them as a `forIn` loop over
 `List.range n` in `SPCompU` (equation lemmas `forIn_eq_repeatStep`, `forIn_retryStep_eq`)
 and proves `prBad_induction` and `ecost_retryN_le` again with `vcgen ... invariants`, which
-uses the `Spec.forIn_list` rule of `Std.Internal.Do`. The induction on the number of
+uses the `Spec.forIn_list` rule of `Std.WP`. The induction on the number of
 iterations is inside that rule; the proofs below contain no induction on `n`.
 
 The module imports `CatCryptCore.Unary.ExpectedCost` with `import all` because that module
@@ -36,7 +36,7 @@ does not expose the bodies of `ecost`, `CostComp.bind` and `retryN`.
 
 namespace CatCrypt.Unary
 
-open CatCrypt.Core CatCrypt.Prob Std.Internal.Do
+open CatCrypt.Core CatCrypt.Prob Std.WP
 open scoped ENNReal
 
 /-- The upper-bound weakest precondition of `pure`. -/
@@ -89,17 +89,17 @@ theorem prBad_induction_forIn_vcgen
       (fun h => OrderDual.toDual ((if bad h then 1 else 0) + q * ε))
       (fun _ h => OrderDual.toDual (if bad h then (1 : ℝ≥0∞) else 0)) (OrderDual.toDual 0) := by
     vcgen [hs] invariants
-    · fun c _ h => OrderDual.toDual ((if bad h then (1 : ℝ≥0∞) else 0) + c.suffix.length * ε)
+    · fun _ suff _ h => OrderDual.toDual ((if bad h then (1 : ℝ≥0∞) else 0) + suff.length * ε)
     case vc1 => simp_all
     case vc2 => simp_all
     case vc3 s =>
-      simp only [leanOrder_rel_dual_iff, OrderDual.ofDual_toDual, SPCompU.wp_pure,
-        List.length_cons, Nat.cast_add, Nat.cast_one]
+      simp only [leanOrder_rel_dual_iff, OrderDual.ofDual_toDual, binderNameHint,
+        SPCompU.wp_pure, List.length_cons, Nat.cast_add, Nat.cast_one]
       rw [wpE_add step (fun _ h' => if bad h' then 1 else 0) (fun _ _ => _)]
       have h1 : wpE step (fun _ h' => if bad h' then (1 : ℝ≥0∞) else 0) s
           ≤ (if bad s then 1 else 0) + ε := by
         by_cases hb : bad s
-        · simp only [hb, if_true]
+        · simp only [hb, ite_true]
           exact ((wpE_mono step (fun _ _ => by split_ifs <;> simp) s).trans
             (wpE_const_le step 1 s)).trans le_self_add
         · simp_all [wpE_indicator_eq_prEventComp, prEventComp]
@@ -161,21 +161,21 @@ theorem ecost_retryN_le_forIn_vcgen {β : Type} (body : CostComp (Option β)) {C
       (fun p _ => OrderDual.toDual (p.2 : ℝ≥0∞)) (OrderDual.toDual 0) := by
     unfold retryStepU
     vcgen [hb] invariants
-    · fun c acc _ => OrderDual.toDual
-        ((acc.2 : ℝ≥0∞) + C * ∑ i ∈ Finset.range c.suffix.length, q ^ i)
+    · fun _ suff acc _ => OrderDual.toDual
+        ((acc.2 : ℝ≥0∞) + C * ∑ i ∈ Finset.range suff.length, q ^ i)
     case vc1 => simp
     case vc2 => simp
-    case vc3 pref cur suff hxs b s =>
+    case vc3 pref cur suff hxs _ k s =>
       simp only [leanOrder_rel_dual_iff, OrderDual.ofDual_toDual, List.length_cons]
       set D := C * ∑ i ∈ Finset.range suff.length, q ^ i
       refine (wpE_mono body (post' := fun a _ =>
-        ((b.2 : ℝ≥0∞) + a.2) + D * (a.1.elim 1 fun _ => 0)) (fun a _ => ?_) s).trans ?_
+        ((k : ℝ≥0∞) + a.2) + D * (a.1.elim 1 fun _ => 0)) (fun a _ => ?_) s).trans ?_
       · rcases a with ⟨_ | x, m⟩ <;> simp [D]
-      calc _ = wpE body (fun _ _ => (b.2 : ℝ≥0∞)) s + ecost body s + D * failProb body s := by
-            rw [wpE_add body (fun a _ => (b.2 : ℝ≥0∞) + a.2) (fun a _ => D * a.1.elim 1 fun _ => 0),
-              wpE_add body (fun _ _ => (b.2 : ℝ≥0∞)) (fun a _ => (a.2 : ℝ≥0∞)), wpE_const_mul]
+      calc _ = wpE body (fun _ _ => (k : ℝ≥0∞)) s + ecost body s + D * failProb body s := by
+            rw [wpE_add body (fun a _ => (k : ℝ≥0∞) + a.2) (fun a _ => D * a.1.elim 1 fun _ => 0),
+              wpE_add body (fun _ _ => (k : ℝ≥0∞)) (fun a _ => (a.2 : ℝ≥0∞)), wpE_const_mul]
             rfl
-        _ ≤ b.2 + C + D * q :=
+        _ ≤ k + C + D * q :=
             add_le_add (add_le_add (wpE_const_le _ _ _) (hC s)) (mul_le_mul' le_rfl (hq s))
         _ = _ := by rw [geom_sum_succ]; ring
   have hfor : forIn (m := SPCompU) (List.range n) ((none : Option β), 0) (retryStepU body)

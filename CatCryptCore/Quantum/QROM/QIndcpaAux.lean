@@ -361,10 +361,10 @@ theorem qOwcpaAuxRun_le (B : QOwAuxAdv ι (m₁ + m₂) n W q k c a PK C K) (pk 
   · have hW : owWinSet (m₂ := m₂) P eG sk (P.enc pk m r) = msgSet (m₂ := m₂) eG m := by
       ext t
       simp [owWinSet, msgSet, hd, eq_comm]
-    rw [if_pos hd, add_zero]
+    rw [ite_eq_left hd, add_zero]
     unfold qOwcpaAuxRun
     rw [hW]
-  · rw [if_neg hd]
+  · rw [ite_eq_right hd]
     refine le_add_left ?_
     unfold qOwcpaAuxRun
     calc _ ≤ ∑ _x : ι, (Fintype.card ι : ℝ≥0∞)⁻¹ * 1 := by

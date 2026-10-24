@@ -165,7 +165,7 @@ theorem avg_prod_bad_le (B : V → V → Bool) (p : ℝ≥0∞)
         refine Finset.sum_le_sum fun v _ => Finset.prod_le_prod' fun s _ => ?_
         by_cases hs : s = σ
         · subst hs
-          simp only [if_true, hσ, if_false, mul_one]
+          simp only [ite_true, hσ, ite_false, mul_one]
           rw [avg_eq_inv_mul_sum]
           simp
         · by_cases hT : s ∈ T
@@ -250,9 +250,9 @@ theorem rowEquiv_apply (F : Fin m₃ → Fin nF) : rowEquiv eD F = prfRow eD F :
 true values is at most `k / |α|`. -/
 theorem toOuterMeasure_uniform_le {α : Type} [Fintype α] [Nonempty α] (P : α → Prop)
     [DecidablePred P] (k : ℕ) (h : (Finset.univ.filter P).card ≤ k) :
-    (PMF.uniformOfFintype α).toOuterMeasure {r | P r} ≤ (k : ℝ≥0∞) / Fintype.card α := by
+    (PMF.uniformFintype α).toOuterMeasure {r | P r} ≤ (k : ℝ≥0∞) / Fintype.card α := by
   classical
-  rw [PMF.toOuterMeasure_uniformOfFintype_apply]
+  rw [PMF.toOuterMeasure_uniformFintype_apply]
   gcongr
   rw [Fintype.card_ofFinset]
   exact_mod_cast h

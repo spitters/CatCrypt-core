@@ -212,7 +212,7 @@ theorem chainP_guard_init (K : ℕ) (μ : PMF (Option (Fin np))) (W Δ d w : ℕ
       startView P := fun t => by simp [traceOf, stAt_nil, stView, chainSim, chainHybrid,
         Hybrid.withSub]
   refine ⟨⟨?_, ?_, ?_, ?_⟩, ?_, ?_⟩
-  · intro p t t' _ _; rw [hst, hst]; exact List.Subset.refl _
+  · intro p t t' _ _; rw [hst, hst]
   · intro p t _; rw [hst]; exact List.Subset.refl _
   · intro p t _
     simp [TreeTrace.chains, hst, startView]
@@ -457,9 +457,9 @@ theorem filter_bline (k n : ℕ) :
   | succ n ih =>
     rw [bline, List.filter_cons, ih]
     by_cases h : n + 1 ≤ k
-    · rw [if_pos (by simpa [bk] using h), min_eq_right h, min_eq_right (by omega : n ≤ k)]
+    · rw [ite_eq_left (by simpa [bk] using h), min_eq_right h, min_eq_right (by omega : n ≤ k)]
       rfl
-    · rw [if_neg (by simpa [bk] using h), min_eq_left (by omega : k ≤ n + 1),
+    · rw [ite_eq_right (by simpa [bk] using h), min_eq_left (by omega : k ≤ n + 1),
         min_eq_left (by omega : k ≤ n)]
 
 /-- The view at round `r`: every party has tree and position `bline r`, and no final blocks. -/

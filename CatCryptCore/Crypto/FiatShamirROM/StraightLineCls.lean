@@ -150,7 +150,7 @@ structure LogExtractorCls (rel : G.Stmt → G.Wit → Prop) (N : ℕ) (κ : G.Cl
   /-- A uniform answer at a point of class `c` is bad with probability at most
   `ε c`. -/
   bad_le : ∀ x t k, t.size ≤ N →
-    (PMF.uniformOfFintype G.Ch).toOuterMeasure {e | Bad x t k e = true} ≤ ε (κ.cls k)
+    (PMF.uniformFintype G.Ch).toOuterMeasure {e | Bad x t k e = true} ≤ ε (κ.cls k)
   /-- The programmed entries of a simulated attempt from the tables `t` on uniform
   values and simulator randomness contain an entry that is bad given the tables after
   the evaluated entries with probability at most `εS`. -/
@@ -220,15 +220,15 @@ satisfies `slEvalBadAt` with probability at most `ε (ecls i)` when it is evalua
 and never otherwise. -/
 theorem slEvalBadAt_le_cls (E : G.LogExtractorCls rel N κ ε εS) (x : G.Stmt)
     (t : G.Tables) (m : G.Msg) (s : G.SimRand) (i : Fin G.μ) :
-    (PMF.uniformOfFintype (Fin G.μ → G.Ch)).toOuterMeasure
+    (PMF.uniformFintype (Fin G.μ → G.Ch)).toOuterMeasure
         {e | slEvalBadAt N E.Bad x t m e s i = true} ≤ if G.ev i then ε (κ.ecls i) else 0 := by
   cases hi : G.ev i with
   | false =>
-    simp only [Bool.false_eq_true, if_false, nonpos_iff_eq_zero]
+    simp only [Bool.false_eq_true, ite_false, nonpos_iff_eq_zero]
     refine MeasureTheory.measure_mono_null (fun e he => ?_) MeasureTheory.measure_empty
     simp [slEvalBadAt, Protocol.simKey_eq_none_of_ev_false x m s _ hi] at he
   | true =>
-    simp only [if_true]
+    simp only [ite_true]
     let B : Option G.Key × List (G.Key × G.Ch) → G.Ch → Bool := fun z c =>
       match z.1 with
       | some k => decide (κ.cls k = κ.ecls i) && ((t.lookup k).isNone &&
@@ -267,13 +267,13 @@ theorem slEvalBadAt_le_cls (E : G.LogExtractorCls rel N κ ε εS) (x : G.Stmt)
 one satisfying `slEvalBadAt` with probability at most `Σ_c μe c·ε c`. -/
 theorem slEvalBad_le_cls (E : G.LogExtractorCls rel N κ ε εS) (x : G.Stmt) (t : G.Tables)
     (m : G.Msg) (s : G.SimRand) :
-    (PMF.uniformOfFintype (Fin G.μ → G.Ch)).toOuterMeasure
+    (PMF.uniformFintype (Fin G.μ → G.Ch)).toOuterMeasure
         {e | (List.finRange G.μ).any (slEvalBadAt N E.Bad x t m e s) = true} ≤
       ∑ c, (κ.μe c : ℝ≥0∞) * ε c := by
-  calc _ ≤ (PMF.uniformOfFintype (Fin G.μ → G.Ch)).toOuterMeasure
+  calc _ ≤ (PMF.uniformFintype (Fin G.μ → G.Ch)).toOuterMeasure
           (⋃ i, {e | slEvalBadAt N E.Bad x t m e s i = true}) :=
         MeasureTheory.measure_mono fun e he => by simpa using he
-    _ ≤ ∑' i, (PMF.uniformOfFintype (Fin G.μ → G.Ch)).toOuterMeasure
+    _ ≤ ∑' i, (PMF.uniformFintype (Fin G.μ → G.Ch)).toOuterMeasure
           {e | slEvalBadAt N E.Bad x t m e s i = true} := MeasureTheory.measure_iUnion_le _
     _ ≤ ∑ i, if G.ev i then ε (κ.ecls i) else 0 := by
         rw [tsum_fintype]
@@ -314,7 +314,7 @@ theorem slStep_flag_le_cls (E : G.LogExtractorCls rel N κ ε εS) (x : G.Stmt)
   | inl k =>
     simp only [slCostCls, slEpsCls, Protocol.Classes.hashCost, Sum.elim_inl, add_zero,
       Nat.cast_zero, zero_mul, zero_add, Nat.cast_ite, Nat.cast_one, Nat.cast_zero, ite_mul,
-      one_mul, Finset.sum_ite_eq, Finset.mem_univ, if_true]
+      one_mul, Finset.sum_ite_eq, Finset.mem_univ, ite_true]
     simp only [toOracle, slStep, slHashStep]
     cases t.lookup k with
     | some e => simp [Step.toPMF, PMF.toOuterMeasure_pure_apply]

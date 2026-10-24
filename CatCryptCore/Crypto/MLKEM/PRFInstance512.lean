@@ -304,10 +304,10 @@ theorem avg_kg512_eK (g' : MLWE_PKE_Basic.PK mlkem512Params.toBasic → ℝ≥0�
   rw [avg_prod]
   simp only [fun A => pushesUniform_eK (fun ks => g' (kg512 A ks).1)]
   rw [← tsum_fintype (L := SummationFilter.unconditional _)]
-  change _ = ∑' ks, ((PMF.uniformOfFintype mlkem512Params.Mat).bind fun A =>
-    (PMF.uniformOfFintype mlkem512Params.KeySeed).map fun ks => kg512 A ks) ks * g' ks.1
+  change _ = ∑' ks, ((PMF.uniformFintype mlkem512Params.Mat).bind fun A =>
+    (PMF.uniformFintype mlkem512Params.KeySeed).map fun ks => kg512 A ks) ks * g' ks.1
   rw [PMF.tsum_bind_mul]
-  simp only [KEM.FOTransformU.tsum_map_mul, PMF.uniformOfFintype_apply]
+  simp only [KEM.FOTransformU.tsum_map_mul, PMF.uniformFintype_apply]
   unfold avg
   rw [tsum_fintype (L := SummationFilter.unconditional _)]
   simp only [tsum_fintype (L := SummationFilter.unconditional _)]

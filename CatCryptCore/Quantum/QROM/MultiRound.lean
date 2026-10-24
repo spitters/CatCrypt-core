@@ -132,7 +132,7 @@ theorem roundU_branch (R : ClassicalRound d c a) (f : Fin c → Fin a)
         ((R.ans (f y) : Matrix (Fin d) (Fin d) ℂ) * R.P y)ᴴ := by
   unfold roundU
   rw [qbind_branch_apply, tsum_fintype]
-  simp only [qpure_branch_apply, if_true, roundQ_branch]
+  simp only [qpure_branch_apply, ite_true, roundQ_branch]
 
 end Round
 
@@ -262,13 +262,13 @@ theorem ancShift_mul_conjTranspose_self [NeZero c] (y : Fin c) :
     intro j
     by_cases hj : j = i - y
     · subst hj
-      simp only [sub_add_cancel, if_true, one_mul]
+      simp only [sub_add_cancel, ite_true, one_mul]
       by_cases hik : i = k
       · subst hik; simp
       · simp [hik, Ne.symm hik]
     · have : i ≠ j + y := fun h => hj (by rw [h, add_sub_cancel_right])
       simp [this, hj]
-  simp only [this, Finset.sum_ite_eq', Finset.mem_univ, if_true]
+  simp only [this, Finset.sum_ite_eq', Finset.mem_univ, ite_true]
 
 theorem ancShift_mul_ancProj_zero_mul_conjTranspose [NeZero c] (y y' : Fin c) :
     ancShift y * ancProj 0 * (ancShift y')ᴴ = ancUnit y y' := by
@@ -282,10 +282,10 @@ theorem ancShift_mul_ancProj_zero_mul_conjTranspose [NeZero c] (y y' : Fin c) :
     intro j
     by_cases hj : j = 0
     · subst hj
-      simp only [zero_add, if_true, mul_one]
+      simp only [zero_add, ite_true, mul_one]
       by_cases hi : i = y <;> by_cases hk : k = y' <;> simp [hi, hk]
     · simp [hj]
-  simp only [this, Finset.sum_ite_eq', Finset.mem_univ, if_true]
+  simp only [this, Finset.sum_ite_eq', Finset.mem_univ, ite_true]
 
 theorem ancProj_mul_ancUnit (z y y' : Fin c) :
     ancProj z * ancUnit y y' = if z = y then ancUnit y y' else 0 := by
@@ -369,8 +369,8 @@ theorem roundC_mul_conjTranspose_self (e : Fin (d * c) ≃ Fin d') (R : Classica
       kr e 1 (ancProj z) := by
     intro z
     rw [Finset.sum_eq_single z]
-    · rw [if_pos rfl, hu]
-    · intro z' _ hz'; rw [if_neg (Ne.symm hz'), kr_zero_right]
+    · rw [ite_eq_left rfl, hu]
+    · intro z' _ hz'; rw [ite_eq_right (Ne.symm hz'), kr_zero_right]
     · intro h; exact absurd (Finset.mem_univ z) h
   simp only [h, ← kr_sum_right, sum_ancProj, kr_one]
 
@@ -439,9 +439,9 @@ theorem trace_kr_one_mul_sum (e : Fin (d * c) ≃ Fin d') (X : Matrix (Fin d) (F
   rw [Finset.mul_sum, trace_sum]
   refine Finset.sum_congr rfl fun y _ => ?_
   rw [Finset.mul_sum, trace_sum, Finset.sum_eq_single y]
-  · rw [kr_mul, one_mul, trace_kr, trace_ancUnit, if_pos rfl, mul_one]
+  · rw [kr_mul, one_mul, trace_kr, trace_ancUnit, ite_eq_left rfl, mul_one]
   · intro y' _ hy'
-    rw [kr_mul, one_mul, trace_kr, trace_ancUnit, if_neg (Ne.symm hy'), mul_zero]
+    rw [kr_mul, one_mul, trace_kr, trace_ancUnit, ite_eq_right (Ne.symm hy'), mul_zero]
   · intro h; exact absurd (Finset.mem_univ y) h
 
 end Deferred
@@ -1022,7 +1022,7 @@ theorem scChain_empty_branch_false (H : Fin m → Fin n) (q' : ℕ)
     (ρ : Matrix (Fin (m * n * w)) (Fin (m * n * w)) ℂ) :
     (scChain (scOracleQ m n w H ∅) q' U).branch false ρ =
       (oracleChain (oracleQ m n w H) q' U).branch () ρ := by
-  rw [scOracleQ_empty, scChain_qbind_pure_false, qbind_unit_branch, qpure_branch_apply, if_pos rfl]
+  rw [scOracleQ_empty, scChain_qbind_pure_false, qbind_unit_branch, qpure_branch_apply, ite_eq_left rfl]
 
 /-- At `S = ∅` the `false` branch of the multi-round semi-classical chain is the
     standard multi-round chain. -/
@@ -1033,7 +1033,7 @@ theorem mrChainSC_empty_branch_false (H : Fin m → Fin n) (f : Fin c → Fin a)
     (mrChainSC (scOracleQ m n w H ∅) f k q₀ head tail R).branch false ρ =
       (mrChain (oracleQ m n w H) f k q₀ head tail R).branch () ρ := by
   rw [scOracleQ_empty, mrChainSC_qbind_pure_false, qbind_unit_branch, qpure_branch_apply,
-    if_pos rfl]
+    ite_eq_left rfl]
 
 /-- The acceptance probability of a `QAdv`, through the `false` branch of the
     semi-classical chain at `S = ∅`. -/

@@ -231,7 +231,7 @@ theorem tsdh_of_root_eq (α : ZMod P.p) :
   by_cases hα : α = 0
   · subst hα; simp only [ite_true]
     rw [show (0 : ZMod P.p) + 1 = 1 from zero_add 1, zpowZMod₂_eq_pow, ZMod.val_one, pow_one]
-  · simp only [if_neg hα]
+  · simp only [ite_eq_right hα]
     rw [show α + (0 : ZMod P.p) = α from add_zero α, e_zpowZMod]
     rw [show (α⁻¹.val : ℤ) * (α.val : ℤ) = ((α⁻¹.val * α.val : ℕ) : ℤ) from by push_cast; ring]
     rw [zpow_natCast, eT_pow_mod, ← ZMod.val_mul, inv_mul_cancel₀ hα]
@@ -271,7 +271,7 @@ theorem KZG_knowledge_sound (A : AGMAdversary P t) :
       w_repr.Valid P t (srs₁ (P := P) α t) ∧
       verify_eval P (srs₂ (P := P) α) C_repr.element z y w_repr.element ∧ y ≠ φ.eval z
   · -- Winning case: LHS = 1
-    rw [prTrue_pure_bool, if_pos (decide_eq_true hwin)]
+    rw [prTrue_pure_bool, ite_eq_left (decide_eq_true hwin)]
     -- Goal: 1 ≤ (↑t + 1) * prTrue(sample >>= K) h_out
     obtain ⟨hC, hw, hvalid, heval⟩ := hwin
     obtain ⟨hδ_ne, hδ_root, hδ_deg⟩ :=
@@ -303,7 +303,7 @@ theorem KZG_knowledge_sound (A : AGMAdversary P t) :
             rw [show (0 : ZMod P.p) + (1 : ZMod P.p) = 1 from zero_add 1]
             rw [zpowZMod₂_eq_pow, ZMod.val_one, pow_one]
             simp
-          · simp only [if_neg hα0, SPComp.pure_bind, prTrue_pure_bool]
+          · simp only [ite_eq_right hα0, SPComp.pure_bind, prTrue_pure_bool]
             rw [show α + (0 : ZMod P.p) = α from add_zero α]
             have : P.e (P.g₁ ^ᵍ α⁻¹) (P.g₂ ^ʰ α) = P.e P.g₁ P.g₂ := by
               rw [e_zpowZMod]

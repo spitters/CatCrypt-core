@@ -287,8 +287,8 @@ theorem RRel.ite [WP M ps] [WP N ps'] {γ : AssnRel ps ps'}
     {t e : M α} {t' e' : N α'} (ht : RRel γ RE R t t') (he : RRel γ RE R e e') :
     RRel γ RE R (if b then t else e) (if b' then t' else e') := by
   by_cases h : b
-  · rw [if_pos h, if_pos (hb.mp h)]; exact ht
-  · rw [if_neg h, if_neg (mt hb.mpr h)]; exact he
+  · rw [ite_eq_left h, ite_eq_left (hb.mp h)]; exact ht
+  · rw [ite_eq_right h, ite_eq_right (mt hb.mpr h)]; exact he
 
 /-- `forIn` over `List.Forall₂`-related lists, with a body that maps related
     elements and related accumulators to `ForInStepRel`-related steps. -/

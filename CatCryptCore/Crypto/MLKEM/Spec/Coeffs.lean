@@ -143,7 +143,7 @@ theorem rqKem_roundtrip (cs : Fin 256 → ZMod q_kem) :
   simp_rw [Polynomial.coeff_monomial]
   rw [Finset.sum_eq_single ⟨i, hi⟩]
   · simp
-  · intro j _ hj; rw [if_neg (Fin.val_ne_of_ne hj)]
+  · intro j _ hj; rw [ite_eq_right (Fin.val_ne_of_ne hj)]
   · exact absurd (Finset.mem_univ _)
 
 /-- Reading the coefficients of a ring element and rebuilding it is the identity. -/
@@ -298,7 +298,7 @@ theorem pairs_roundtrip (t : Tq_kem) : pairsOfCoeffs (coeffsOfPairs t) = t := by
     apply Fin.ext; simp only [pairIndex, pairSnd]; omega
   have e0 : (pairFst j).val % 2 = 0 := by simp only [pairFst]; omega
   have e1 : ¬ ((pairSnd j).val % 2 = 0) := by simp only [pairSnd]; omega
-  simp only [pairsOfCoeffs, coeffsOfPairs, h0, h1, e0, e1, if_true, if_false]
+  simp only [pairsOfCoeffs, coeffsOfPairs, h0, h1, e0, e1, ite_true, ite_false]
 
 /-- `pairsOfCoeffs` is a bijection between the coefficient and NTT layouts. -/
 noncomputable def coeffsEquivPairs : (Fin 256 → ZMod q_kem) ≃ Tq_kem where

@@ -261,8 +261,8 @@ theorem permUnitary_comm_diagonal {ι : Type} [Fintype ι] [DecidableEq ι] (σ 
   ext i j
   simp only [Matrix.of_apply]
   by_cases hij : i = σ j
-  · rw [if_pos hij, if_pos hij, hij, h]
-  · rw [if_neg hij, if_neg hij]
+  · rw [ite_eq_left hij, ite_eq_left hij, hij, h]
+  · rw [ite_eq_right hij, ite_eq_right hij]
 
 /-- The oracle permutation leaves the parked slots of an index alone. -/
 theorem isClean_oraclePerm (H : Fin m → Fin n) (i : Fin (m * n * (w * ancDim m n c))) :
@@ -294,8 +294,8 @@ theorem oracleU_comm_cleanProjM (H : Fin m → Fin n) :
   rw [oracleU_eq_permUnitary, cleanProjM]
   refine permUnitary_comm_diagonal _ _ fun i => ?_
   by_cases hc : IsClean m n w c i
-  · rw [if_pos ((isClean_oraclePerm m n w c H i).2 hc), if_pos hc]
-  · rw [if_neg fun h => hc ((isClean_oraclePerm m n w c H i).1 h), if_neg hc]
+  · rw [ite_eq_left ((isClean_oraclePerm m n w c H i).2 hc), ite_eq_left hc]
+  · rw [ite_eq_right fun h => hc ((isClean_oraclePerm m n w c H i).1 h), ite_eq_right hc]
 
 /-- The unitary of the compiled query round commutes with the projector onto the
     clean slice. -/
@@ -306,8 +306,8 @@ theorem roundChainU_comm_cleanProjM (φ : Fin c → Fin n → Fin n → Fin a)
   rw [roundChainU, cleanProjM]
   refine permUnitary_comm_diagonal _ _ fun i => ?_
   by_cases hc : IsClean m n w c i
-  · rw [if_pos ((isClean_roundPerm m n w c ν₁ ν₂ φ A H i).2 hc), if_pos hc]
-  · rw [if_neg fun h => hc ((isClean_roundPerm m n w c ν₁ ν₂ φ A H i).1 h), if_neg hc]
+  · rw [ite_eq_left ((isClean_roundPerm m n w c ν₁ ν₂ φ A H i).2 hc), ite_eq_left hc]
+  · rw [ite_eq_right fun h => hc ((isClean_roundPerm m n w c ν₁ ν₂ φ A H i).1 h), ite_eq_right hc]
 
 /-- An answer permutation of the query and work registers leaves the parked
     slots of an index alone. -/
@@ -324,8 +324,8 @@ theorem permUnitary_parkLift_comm_cleanProjM (B : Equiv.Perm ((Fin m × Fin n) �
   rw [cleanProjM]
   refine permUnitary_comm_diagonal _ _ fun i => ?_
   by_cases hc : IsClean m n w c i
-  · rw [if_pos ((isClean_parkLift m n w c B i).2 hc), if_pos hc]
-  · rw [if_neg fun h => hc ((isClean_parkLift m n w c B i).1 h), if_neg hc]
+  · rw [ite_eq_left ((isClean_parkLift m n w c B i).2 hc), ite_eq_left hc]
+  · rw [ite_eq_right fun h => hc ((isClean_parkLift m n w c B i).1 h), ite_eq_right hc]
 
 /-- The projector onto the record-`y` indices commutes with the projector onto
     the clean slice. -/

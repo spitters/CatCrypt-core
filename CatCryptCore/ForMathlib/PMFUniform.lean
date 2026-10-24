@@ -5,7 +5,7 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import Mathlib.Probability.Distributions.Uniform
+public import CatCryptCore.ForMathlib.PMFUniformDefs
 
 /-!
 # Expectations under `PMF.bind` and `PMF.map`, and uniform distributions
@@ -30,7 +30,7 @@ an outcome of a bind.
   of an entry with probability `1/q`
 * `PMF.bind_apply_le_add_tsum`, `PMF.tsum_le_mul_bind_apply`, `PMF.bind_apply_le_of_le` —
   bounds on the probability of an outcome of a bind
-* `PMF.uniformOfFintype_map_equiv` — the image of a uniform distribution under an
+* `PMF.uniformFintype_map_equiv` — the image of a uniform distribution under an
   equivalence is uniform
 * `PMF.map_uniform_fst`, `PMF.map_uniform_prod_map`, `PMF.map_uniform_pi_of_map`,
   `PMF.map_uniform_comp_injective` — images of uniform pairs and uniform functions that
@@ -64,12 +64,12 @@ theorem tsum_mul_comp_eq_map (p : PMF A) (f : A → B) (g : B → ℝ≥0∞) :
 
 /-- The uniform distribution on `A × B` samples the components independently. -/
 theorem uniform_prod_eq_bind :
-    PMF.uniformOfFintype (A × B) =
-      (PMF.uniformOfFintype A).bind fun a => (PMF.uniformOfFintype B).map (Prod.mk a) := by
+    PMF.uniformFintype (A × B) =
+      (PMF.uniformFintype A).bind fun a => (PMF.uniformFintype B).map (Prod.mk a) := by
   ext ⟨a, b⟩
   rw [PMF.bind_apply, tsum_eq_single a]
   · rw [PMF.map_apply, tsum_eq_single b]
-    · simp [PMF.uniformOfFintype_apply, Fintype.card_prod, ENNReal.mul_inv]
+    · simp [PMF.uniformFintype_apply, Fintype.card_prod, ENNReal.mul_inv]
     · intro b' hb'; simp [Ne.symm hb']
   · intro a' ha'
     simp [PMF.map_apply, Ne.symm ha']
@@ -78,20 +78,20 @@ theorem uniform_prod_eq_bind :
 distributions gives equal distributions. -/
 theorem map_uniform_prod_fst_congr {A' C S : Type} [Fintype A'] [Nonempty A'] [Fintype S]
     [Nonempty S] {f : A → C} {g : A' → C}
-    (h : (PMF.uniformOfFintype A).map f = (PMF.uniformOfFintype A').map g) :
-    (PMF.uniformOfFintype (A × S)).map (fun ρ => (f ρ.1, ρ.2)) =
-      (PMF.uniformOfFintype (A' × S)).map (fun ρ => (g ρ.1, ρ.2)) := by
+    (h : (PMF.uniformFintype A).map f = (PMF.uniformFintype A').map g) :
+    (PMF.uniformFintype (A × S)).map (fun ρ => (f ρ.1, ρ.2)) =
+      (PMF.uniformFintype (A' × S)).map (fun ρ => (g ρ.1, ρ.2)) := by
   rw [uniform_prod_eq_bind, uniform_prod_eq_bind, PMF.map_bind, PMF.map_bind]
   simp only [PMF.map_comp, Function.comp_def]
-  have hf : ((PMF.uniformOfFintype A).bind fun a =>
-      (PMF.uniformOfFintype S).map fun s => (f a, s)) =
-      ((PMF.uniformOfFintype A).map f).bind fun c =>
-        (PMF.uniformOfFintype S).map fun s => (c, s) := by
+  have hf : ((PMF.uniformFintype A).bind fun a =>
+      (PMF.uniformFintype S).map fun s => (f a, s)) =
+      ((PMF.uniformFintype A).map f).bind fun c =>
+        (PMF.uniformFintype S).map fun s => (c, s) := by
     rw [PMF.bind_map]; rfl
-  have hg : ((PMF.uniformOfFintype A').bind fun a =>
-      (PMF.uniformOfFintype S).map fun s => (g a, s)) =
-      ((PMF.uniformOfFintype A').map g).bind fun c =>
-        (PMF.uniformOfFintype S).map fun s => (c, s) := by
+  have hg : ((PMF.uniformFintype A').bind fun a =>
+      (PMF.uniformFintype S).map fun s => (g a, s)) =
+      ((PMF.uniformFintype A').map g).bind fun c =>
+        (PMF.uniformFintype S).map fun s => (c, s) := by
     rw [PMF.bind_map]; rfl
   rw [hf, hg, h]
 
@@ -107,10 +107,10 @@ omit [Fintype B] [Nonempty B] in
 /-- The image distribution of a uniform map at a point is the number of its
 preimages over the size of the domain. -/
 theorem map_uniform_apply [DecidableEq B] (f : A → B) (b : B) :
-    ((PMF.uniformOfFintype A).map f) b =
+    ((PMF.uniformFintype A).map f) b =
       ((Finset.univ.filter fun a => f a = b).card : ℝ≥0∞) * (Fintype.card A : ℝ≥0∞)⁻¹ := by
   rw [PMF.map_apply, tsum_fintype]
-  simp only [PMF.uniformOfFintype_apply]
+  simp only [PMF.uniformFintype_apply]
   rw [← Finset.sum_filter, Finset.sum_const, nsmul_eq_mul]
   congr 3
   ext a
@@ -121,8 +121,8 @@ theorem map_uniform_apply [DecidableEq B] (f : A → B) (b : B) :
 of the image distributions of its coordinates. -/
 theorem map_uniform_pi_apply {ι C : Type} [Fintype ι] [DecidableEq ι] [DecidableEq C]
     (f : ι → A → C) (o : ι → C) :
-    ((PMF.uniformOfFintype (ι → A)).map fun r i => f i (r i)) o =
-      ∏ i, ((PMF.uniformOfFintype A).map (f i)) (o i) := by
+    ((PMF.uniformFintype (ι → A)).map fun r i => f i (r i)) o =
+      ∏ i, ((PMF.uniformFintype A).map (f i)) (o i) := by
   rw [map_uniform_apply]
   simp only [map_uniform_apply]
   have hcard : (Finset.univ.filter fun r : ι → A => (fun i => f i (r i)) = o) =
@@ -138,9 +138,9 @@ theorem map_uniform_pi_apply {ι C : Type} [Fintype ι] [DecidableEq ι] [Decida
 equal distributions. -/
 theorem map_uniform_pi_congr {ι A' C : Type} [Fintype ι] [DecidableEq ι] [DecidableEq C]
     [Fintype A'] [Nonempty A'] (f : ι → A → C) (g : ι → A' → C)
-    (h : ∀ i, (PMF.uniformOfFintype A).map (f i) = (PMF.uniformOfFintype A').map (g i)) :
-    ((PMF.uniformOfFintype (ι → A)).map fun r i => f i (r i)) =
-      ((PMF.uniformOfFintype (ι → A')).map fun r i => g i (r i)) := by
+    (h : ∀ i, (PMF.uniformFintype A).map (f i) = (PMF.uniformFintype A').map (g i)) :
+    ((PMF.uniformFintype (ι → A)).map fun r i => f i (r i)) =
+      ((PMF.uniformFintype (ι → A')).map fun r i => g i (r i)) := by
   ext o
   rw [map_uniform_pi_apply, map_uniform_pi_apply]
   simp only [h]
@@ -161,7 +161,7 @@ theorem tsum_map_guess_le (p : PMF A) (f : A → B) (q : PMF B) {ε : ℝ≥0∞
         refine tsum_congr fun a => ?_
         by_cases hab : f a = b
         · simp [hab, Set.indicator]
-        · simp only [Set.indicator, Set.mem_ofPred_eq, hab, if_false]
+        · simp only [Set.indicator, Set.mem_ofPred_eq, hab, ite_false]
           simp only [ite_eq_right_iff]
           intro h; exact absurd h.symm hab
     _ = ε := by rw [ENNReal.tsum_mul_left, PMF.tsum_coe, mul_one]
@@ -169,12 +169,12 @@ theorem tsum_map_guess_le (p : PMF A) (f : A → B) (q : PMF B) {ε : ℝ≥0∞
 /-- The first component of a uniform pair lies in `S` with the uniform probability of
 `S`. -/
 theorem uniform_prod_fst_apply (S : Set A) :
-    (PMF.uniformOfFintype (A × B)).toOuterMeasure {c | c.1 ∈ S} =
-      (PMF.uniformOfFintype A).toOuterMeasure S := by
-  have : (PMF.uniformOfFintype (A × B)).map Prod.fst = PMF.uniformOfFintype A := by
+    (PMF.uniformFintype (A × B)).toOuterMeasure {c | c.1 ∈ S} =
+      (PMF.uniformFintype A).toOuterMeasure S := by
+  have : (PMF.uniformFintype (A × B)).map Prod.fst = PMF.uniformFintype A := by
     rw [uniform_prod_eq_bind, PMF.map_bind]
     simp only [PMF.map_comp, Function.comp_def]
-    conv_lhs => arg 2; ext a; exact PMF.map_const (PMF.uniformOfFintype B) a
+    conv_lhs => arg 2; ext a; exact PMF.map_const (PMF.uniformFintype B) a
     exact PMF.bind_pure _
   rw [← this, PMF.toOuterMeasure_map_apply]
   rfl
@@ -182,20 +182,20 @@ theorem uniform_prod_fst_apply (S : Set A) :
 /-- The second component of a uniform pair lies in `S` with the uniform probability of
 `S`. -/
 theorem uniform_prod_snd_apply (S : Set B) :
-    (PMF.uniformOfFintype (A × B)).toOuterMeasure {c | c.2 ∈ S} =
-      (PMF.uniformOfFintype B).toOuterMeasure S := by
-  have : (PMF.uniformOfFintype (A × B)).map Prod.snd = PMF.uniformOfFintype B := by
+    (PMF.uniformFintype (A × B)).toOuterMeasure {c | c.2 ∈ S} =
+      (PMF.uniformFintype B).toOuterMeasure S := by
+  have : (PMF.uniformFintype (A × B)).map Prod.snd = PMF.uniformFintype B := by
     rw [uniform_prod_eq_bind, PMF.map_bind]
     simp only [PMF.map_comp, Function.comp_def]
-    exact ((PMF.uniformOfFintype A).bind_const _).trans (PMF.map_id _)
+    exact ((PMF.uniformFintype A).bind_const _).trans (PMF.map_id _)
   rw [← this, PMF.toOuterMeasure_map_apply]
   rfl
 
 /-- A uniform value lies in a list `l` with probability at most `|l| / |A|`. -/
 theorem uniform_mem_list_le [DecidableEq A] (l : List A) :
-    (PMF.uniformOfFintype A).toOuterMeasure {a | a ∈ l} ≤
+    (PMF.uniformFintype A).toOuterMeasure {a | a ∈ l} ≤
       (l.length : ℝ≥0∞) * (Fintype.card A : ℝ≥0∞)⁻¹ := by
-  rw [PMF.toOuterMeasure_uniformOfFintype_apply, div_eq_mul_inv]
+  rw [PMF.toOuterMeasure_uniformFintype_apply, div_eq_mul_inv]
   gcongr
   have : Fintype.card {a | a ∈ l} = l.toFinset.card := by
     rw [← Set.toFinset_card]; congr 1; ext a; simp
@@ -206,10 +206,10 @@ theorem uniform_mem_list_le [DecidableEq A] (l : List A) :
 value with probability at most `(K/(K + 1))^T`. -/
 theorem uniform_box_le (T K : ℕ) (S : Fin T → Finset (Fin (K + 1)))
     (hS : ∀ j, S j ≠ Finset.univ) :
-    (PMF.uniformOfFintype (Fin T → Fin (K + 1))).toOuterMeasure {f | ∀ j, f j ∈ S j} ≤
+    (PMF.uniformFintype (Fin T → Fin (K + 1))).toOuterMeasure {f | ∀ j, f j ∈ S j} ≤
       (K : ℝ≥0∞) ^ T / ((K : ℝ≥0∞) + 1) ^ T := by
   classical
-  rw [PMF.toOuterMeasure_uniformOfFintype_apply]
+  rw [PMF.toOuterMeasure_uniformFintype_apply]
   have hcard : Fintype.card {f : Fin T → Fin (K + 1) | ∀ j, f j ∈ S j} = ∏ j, (S j).card := by
     rw [← Fintype.card_piFinset]
     rw [← Set.toFinset_card]; congr 1; ext f; simp [Fintype.mem_piFinset]
@@ -266,15 +266,15 @@ uniform position satisfies `f` is at least `1` whenever `s ∈ l` and `f s`. -/
 theorem indicator_le_mul_guess {X : Type} [DecidableEq X] {q : ℕ} (l : List X) (s dflt : X)
     (hl : l.length ≤ q) (f : X → Bool) (hf : f s = true) :
     (if ∃ d ∈ l, d = s then (1 : ℝ≥0∞) else 0) ≤
-      q * ((PMF.uniformOfFintype (Fin (max q 1))).map
+      q * ((PMF.uniformFintype (Fin (max q 1))).map
         fun i : Fin (max q 1) => f (l.getD (i : ℕ) dflt)) true := by
   split_ifs with h
   · obtain ⟨d, hd, rfl⟩ := h
     obtain ⟨j, hj, hjd⟩ := List.getElem_of_mem hd
     have hq : max q 1 = q := by omega
     have hjq : j < max q 1 := by omega
-    have hterm : (PMF.uniformOfFintype (Fin (max q 1))) ⟨j, hjq⟩ ≤
-        ((PMF.uniformOfFintype (Fin (max q 1))).map
+    have hterm : (PMF.uniformFintype (Fin (max q 1))) ⟨j, hjq⟩ ≤
+        ((PMF.uniformFintype (Fin (max q 1))).map
           fun i : Fin (max q 1) => f (l.getD (i : ℕ) dflt)) true := by
       rw [PMF.map_apply]
       refine le_trans (le_of_eq ?_) (ENNReal.le_tsum ⟨j, hjq⟩)
@@ -285,7 +285,7 @@ theorem indicator_le_mul_guess {X : Type} [DecidableEq X] {q : ℕ} (l : List X)
       _ ≤ _ := by
           gcongr
           refine le_trans (le_of_eq ?_) hterm
-          simp [PMF.uniformOfFintype_apply, hq]
+          simp [PMF.uniformFintype_apply, hq]
   · positivity
 
 /-- A bind whose continuations `f x` give `b` probability at most that of `g x` plus
@@ -318,13 +318,13 @@ theorem bind_apply_le_of_le {X β : Type} (μ : PMF X) (f : X → PMF β) (b : �
     _ = C := by rw [ENNReal.tsum_mul_right, PMF.tsum_coe, one_mul]
 
 /-- The image of a uniform distribution under an equivalence is uniform. -/
-theorem uniformOfFintype_map_equiv {α β : Type} [Fintype α] [Nonempty α] [Fintype β]
-    [Nonempty β] (e : α ≃ β) : (PMF.uniformOfFintype α).map e = PMF.uniformOfFintype β := by
+theorem uniformFintype_map_equiv {α β : Type} [Fintype α] [Nonempty α] [Fintype β]
+    [Nonempty β] (e : α ≃ β) : (PMF.uniformFintype α).map e = PMF.uniformFintype β := by
   classical
   ext b
   rw [PMF.map_apply, tsum_eq_single (e.symm b) fun a ha => by
-    rw [if_neg]; rintro rfl; exact ha (e.symm_apply_apply a).symm]
-  simp [PMF.uniformOfFintype_apply, Fintype.card_congr e]
+    rw [ite_eq_right]; rintro rfl; exact ha (e.symm_apply_apply a).symm]
+  simp [PMF.uniformFintype_apply, Fintype.card_congr e]
 
 section UniformImage
 
@@ -332,8 +332,8 @@ variable {A B : Type} [Fintype A] [Nonempty A] [Fintype B] [Nonempty B]
 
 /-- The first component of a uniform pair is uniform. -/
 theorem map_uniform_fst :
-    (PMF.uniformOfFintype (A × B)).map Prod.fst = PMF.uniformOfFintype A := by
-  have h : ∀ a : A, PMF.map (fun _ : B => a) (PMF.uniformOfFintype B) = PMF.pure a :=
+    (PMF.uniformFintype (A × B)).map Prod.fst = PMF.uniformFintype A := by
+  have h : ∀ a : A, PMF.map (fun _ : B => a) (PMF.uniformFintype B) = PMF.pure a :=
     fun a => PMF.map_const _ _
   rw [uniform_prod_eq_bind, PMF.map_bind]
   simp [PMF.map_comp, Function.comp_def, h]
@@ -342,9 +342,9 @@ theorem map_uniform_fst :
 uniform pair. -/
 theorem map_uniform_prod_map {C E : Type} [Fintype C] [Nonempty C] [Fintype E] [Nonempty E]
     {f : A → C} {g : B → E}
-    (hf : (PMF.uniformOfFintype A).map f = PMF.uniformOfFintype C)
-    (hg : (PMF.uniformOfFintype B).map g = PMF.uniformOfFintype E) :
-    (PMF.uniformOfFintype (A × B)).map (Prod.map f g) = PMF.uniformOfFintype (C × E) := by
+    (hf : (PMF.uniformFintype A).map f = PMF.uniformFintype C)
+    (hg : (PMF.uniformFintype B).map g = PMF.uniformFintype E) :
+    (PMF.uniformFintype (A × B)).map (Prod.map f g) = PMF.uniformFintype (C × E) := by
   rw [uniform_prod_eq_bind, uniform_prod_eq_bind, PMF.map_bind, ← hf, PMF.bind_map]
   refine congrArg _ (funext fun a => ?_)
   rw [← hg, PMF.map_comp, Function.comp_apply, PMF.map_comp]
@@ -354,8 +354,8 @@ theorem map_uniform_prod_map {C E : Type} [Fintype C] [Nonempty C] [Fintype E] [
 takes a uniform function to a uniform function. -/
 theorem map_uniform_pi_of_map {ι C : Type} [Fintype ι] [DecidableEq ι] [DecidableEq C]
     [Fintype C] [Nonempty C] {f : A → C}
-    (hf : (PMF.uniformOfFintype A).map f = PMF.uniformOfFintype C) :
-    (PMF.uniformOfFintype (ι → A)).map (fun r i => f (r i)) = PMF.uniformOfFintype (ι → C) := by
+    (hf : (PMF.uniformFintype A).map f = PMF.uniformFintype C) :
+    (PMF.uniformFintype (ι → A)).map (fun r i => f (r i)) = PMF.uniformFintype (ι → C) := by
   rw [map_uniform_pi_congr (ι := ι) (fun _ => f) (fun _ => (id : C → C))
     (fun _ => by rw [hf, PMF.map_id])]
   exact PMF.map_id _
@@ -366,17 +366,17 @@ end UniformImage
 on `I`. -/
 theorem map_uniform_comp_injective {D I R : Type} [Fintype D] [DecidableEq D] [Fintype I]
     [DecidableEq I] [Fintype R] [Nonempty R] {enc : I → D} (henc : Function.Injective enc) :
-    (PMF.uniformOfFintype (D → R)).map (fun f => f ∘ enc) = PMF.uniformOfFintype (I → R) := by
+    (PMF.uniformFintype (D → R)).map (fun f => f ∘ enc) = PMF.uniformFintype (I → R) := by
   classical
   let E : (D → R) ≃ (I → R) × ({d // d ∉ Set.range enc} → R) :=
     ((Equiv.sumCompl (fun d => d ∈ Set.range enc)).symm.arrowCongr (Equiv.refl R)).trans
       ((Equiv.sumArrowEquivProdArrow _ _ R).trans
         (Equiv.prodCongr ((Equiv.ofInjective enc henc).symm.arrowCongr (Equiv.refl R))
           (Equiv.refl _)))
-  have h1 : (PMF.uniformOfFintype (D → R)).map (fun f => f ∘ enc) =
-      ((PMF.uniformOfFintype (D → R)).map E).map Prod.fst := by
+  have h1 : (PMF.uniformFintype (D → R)).map (fun f => f ∘ enc) =
+      ((PMF.uniformFintype (D → R)).map E).map Prod.fst := by
     rw [PMF.map_comp]
     congr 1
-  rw [h1, uniformOfFintype_map_equiv E, map_uniform_fst]
+  rw [h1, uniformFintype_map_equiv E, map_uniform_fst]
 
 end PMF

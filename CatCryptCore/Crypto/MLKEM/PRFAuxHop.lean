@@ -76,7 +76,7 @@ variable {Sd Nc PK SK M C KS R Φ : Type} {m₃ n : ℕ} [Fintype Φ] [Nonempty 
 `φ` and a seed `σ` uniformly and returns `keygenPrf eD kg eK F φ σ`; encryption
 with the coin `r` is `encPrf eD enc eE F`; decryption is `dec`. -/
 def prfScheme (F : Fin m₃ → Fin n) : Scheme PK SK M C Sd where
-  keygen := (PMF.uniformOfFintype (Φ × Sd)).map fun p => keygenPrf eD kg eK F p.1 p.2
+  keygen := (PMF.uniformFintype (Φ × Sd)).map fun p => keygenPrf eD kg eK F p.1 p.2
   enc := encPrf eD enc eE F
   dec := dec
 
@@ -144,8 +144,8 @@ theorem auxOracleF_local (pk : PK) (Hq : C → K) (G : Fin m₁ → Fin n) (J : 
       by_cases hs : kemSlice hpk eG pk y
       · have hr := h (eKR.symm (G y)).2 (by simp [auxRd, hs])
         simp only [auxOracleF, auxOracle, mergeOracle_castAdd, keyHop, coinCt, kemEncAt,
-          prfScheme, encPrf, if_pos hs, hr]
-      · simp only [auxOracleF, auxOracle, mergeOracle_castAdd, keyHop, if_neg hs]
+          prfScheme, encPrf, ite_eq_left hs, hr]
+      · simp only [auxOracleF, auxOracle, mergeOracle_castAdd, keyHop, ite_eq_right hs]
     | right y => simp only [auxOracleF, auxOracle, mergeOracle_castAdd, mergeOracle_natAdd]
   | right s =>
     have hr := congrFun (h (eD.symm s).1 (by simp [auxRd])) (eD.symm s).2

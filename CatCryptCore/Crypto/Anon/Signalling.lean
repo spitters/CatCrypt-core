@@ -178,7 +178,7 @@ variable [Fintype K] [Nonempty K] [Fintype N] [Nonempty N]
 /-- The secret, the hash key and the adversary's choice. -/
 noncomputable def anonPre (choose : H.Key → PMF (Choice N E M)) :
     PMF (K × H.Key × Choice N E M) :=
-  (PMF.uniformOfFintype K).bind fun k => (PMF.uniformOfFintype H.Key).bind fun hk =>
+  (PMF.uniformFintype K).bind fun k => (PMF.uniformFintype H.Key).bind fun hk =>
     (choose hk).map fun c => (k, hk, c)
 
 /-- The adversary's guess on the root, the nullifier and the proof `π` at `(k, hk, c)`. -/
@@ -204,8 +204,8 @@ proof; no identity secret. -/
 noncomputable def anonIdeal (S : Scheme H K E N M Pf Root Path PK SK Sig)
     (choose : H.Key → PMF (Choice N E M))
     (guess : H.Key → Choice N E M → Root → N → Pf → PMF Bool) : PMF Bool :=
-  (PMF.uniformOfFintype H.Key).bind fun hk => (choose hk).bind fun c =>
-    (PMF.uniformOfFintype N).bind fun cm => (PMF.uniformOfFintype N).bind fun nf =>
+  (PMF.uniformFintype H.Key).bind fun hk => (choose hk).bind fun c =>
+    (PMF.uniformFintype N).bind fun cm => (PMF.uniformFintype N).bind fun nf =>
       (S.sim (S.acc.root hk (c.group cm), c.scope, nf, c.msg)).bind fun π =>
         guess hk c (S.acc.root hk (c.group cm)) nf π
 
@@ -226,7 +226,7 @@ commitment and the nullifier, simulate the proof and return the guess. -/
 noncomputable def prfRed (groupRoot : H.Key → Choice N E M → N → Root) (sim : Root × E × N × M → PMF Pf)
     (choose : H.Key → PMF (Choice N E M))
     (guess : H.Key → Choice N E M → Root → N → Pf → PMF Bool) : OracleAdv (Option E) N Bool :=
-  .rand (PMF.uniformOfFintype H.Key) fun hk => .rand (choose hk) fun c =>
+  .rand (PMF.uniformFintype H.Key) fun hk => .rand (choose hk) fun c =>
     .query none fun cm => .query (some c.scope) fun nf =>
       .rand (sim (groupRoot hk c cm, c.scope, nf, c.msg)) fun π =>
         .rand (guess hk c (groupRoot hk c cm) nf π) fun b => .ret b
@@ -250,10 +250,14 @@ theorem advantage_real_hyb_le :
   rw [anonReal, anonHyb, e, e]
   refine absDiff_prTrue_bind_le _ _ _ _ _ (fun t h' => ?_) (fun t h' => ?_)
   · exact le_add_of_absDiff_le
-      (sdist_le_of_forall le_rfl (fun π => liftPMF (anonCont S guess t π)) t h')
+      (sdist_le_of_forall (f := fun t => liftPMF (S.prove (S.stmtOf t) (S.witOf t)))
+        (g := fun t => liftPMF (S.sim (S.stmtOf t))) le_rfl
+        (fun π => liftPMF (anonCont S guess t π)) t h')
   · refine le_add_of_absDiff_le ?_
     rw [absDiff_comm]
-    exact sdist_le_of_forall le_rfl (fun π => liftPMF (anonCont S guess t π)) t h'
+    exact sdist_le_of_forall (f := fun t => liftPMF (S.prove (S.stmtOf t) (S.witOf t)))
+      (g := fun t => liftPMF (S.sim (S.stmtOf t))) le_rfl
+      (fun π => liftPMF (anonCont S guess t π)) t h'
 
 omit [Fintype N] [Nonempty N] in
 /-- The real PRF game of `prfRed` is the game with a simulated proof. -/
@@ -300,7 +304,7 @@ and a path; it wins when both verify and the leaf is not a member. -/
 noncomputable def bindGame (S : Scheme H K E N M Pf Root Path PK SK Sig)
     (group : H.Key → PK → PMF (List N))
     (forge : H.Key → PK → List N → Sig → PMF (Root × Sig × N × Path)) : PMF Bool :=
-  (PMF.uniformOfFintype S.sig.KR).bind fun kr => (PMF.uniformOfFintype H.Key).bind fun hk =>
+  (PMF.uniformFintype S.sig.KR).bind fun kr => (PMF.uniformFintype H.Key).bind fun hk =>
     (group hk (S.sig.keygen kr).1).bind fun L =>
       (S.sig.sign (S.sig.keygen kr).2 (S.acc.root hk L)).bind fun σ =>
         (forge hk (S.sig.keygen kr).1 L σ).map fun o =>
@@ -318,7 +322,7 @@ for the signature on its root and output the adversary's root and signature. -/
 noncomputable def sigRed (root : H.Key → List N → Root) (group : H.Key → PK → PMF (List N))
     (forge : H.Key → PK → List N → Sig → PMF (Root × Sig × N × Path)) (pk : PK) :
     OracleAdv Root Sig (Root × Sig) :=
-  .rand (PMF.uniformOfFintype H.Key) fun hk => .rand (group hk pk) fun L =>
+  .rand (PMF.uniformFintype H.Key) fun hk => .rand (group hk pk) fun L =>
     .query (root hk L) fun σ => .rand (forge hk pk L σ) fun o => .ret (o.1, o.2.1)
 
 /-- The collision reduction on the hash key, as a tree with no queries: sample the authority's
@@ -330,7 +334,7 @@ noncomputable def crRedTree {KR : Type} [Fintype KR] [Nonempty KR] (keygen : KR 
     (group : H.Key → PK → PMF (List N))
     (forge : H.Key → PK → List N → Sig → PMF (Root × Sig × N × Path)) (hk : H.Key) :
     OracleAdv Unit Unit (H.Input × H.Input) :=
-  .rand (PMF.uniformOfFintype KR) fun kr => .rand (group hk (keygen kr).1) fun L =>
+  .rand (PMF.uniformFintype KR) fun kr => .rand (group hk (keygen kr).1) fun L =>
     .rand (sign (keygen kr).2 (root hk L)) fun σ =>
       .rand (forge hk (keygen kr).1 L σ) fun o => .ret (extract hk L o.2.2.1 o.2.2.2)
 
@@ -361,7 +365,7 @@ noncomputable def bindShape (S : Scheme H K E N M Pf Root Path PK SK Sig)
     (group : H.Key → PK → PMF (List N))
     (forge : H.Key → PK → List N → Sig → PMF (Root × Sig × N × Path))
     (ev : S.sig.KR → H.Key → List N → Root × Sig × N × Path → Bool) : PMF Bool :=
-  (PMF.uniformOfFintype S.sig.KR).bind fun kr => (PMF.uniformOfFintype H.Key).bind fun hk =>
+  (PMF.uniformFintype S.sig.KR).bind fun kr => (PMF.uniformFintype H.Key).bind fun hk =>
     (group hk (S.sig.keygen kr).1).bind fun L =>
       (S.sig.sign (S.sig.keygen kr).2 (S.acc.root hk L)).bind fun σ =>
         (forge hk (S.sig.keygen kr).1 L σ).map (ev kr hk L)
@@ -397,7 +401,7 @@ theorem cr_crRed_eq :
   simp only [SPComp.monad_bind_eq, sample_eq_liftPMF, liftPMF_bind_pure, liftPMF_bind_liftPMF,
     prTrue_liftPMF]
   unfold bindShape
-  rw [PMF.bind_comm (PMF.uniformOfFintype S.sig.KR)]
+  rw [PMF.bind_comm (PMF.uniformFintype S.sig.KR)]
   congr 2
   funext hk
   simp [runNoQuery, crRedTree, PMF.map_bind, PMF.pure_map]

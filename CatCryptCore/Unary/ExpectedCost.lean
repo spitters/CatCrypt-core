@@ -75,7 +75,7 @@ namespace CatCrypt.Unary
 
 open CatCrypt.Core CatCrypt.Prob
 open scoped ENNReal
-open Std.Internal.Do
+open Std.WP
 
 /-! ## Linearity of `wpE`
 

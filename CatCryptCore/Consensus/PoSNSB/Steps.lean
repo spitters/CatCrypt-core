@@ -252,7 +252,7 @@ theorem bake_state_map (p : Party) :
   | none => simp [← hl]
   | some l =>
     by_cases hc : is_corrupt p
-    · simp only [hc, Bool.not_true, if_true]
+    · simp only [hc, Bool.not_true, ite_true]
       simp [← hl]
     · simp [hc, upd_local]
 
@@ -268,7 +268,7 @@ theorem bake_buff (p : Party) : ∃ new : List (Message Tx Hash Party × DelayMa
       exact ⟨_, fun mt => mem_flood_msgs_adv N _ mt⟩
     · refine ⟨(honest_bake N.t_now (TxSelection (Hash := Hash) (AdvState := AdvState) N.t_now p)
         l).1.map (fun m => (m, delay1)), fun mt => ?_⟩
-      simp only [hc, Bool.not_false, if_true]
+      simp only [hc, Bool.not_false, ite_true]
       rw [mem_flood_msgs]
       simp [upd_local, delay1]
 
@@ -299,7 +299,7 @@ theorem rcv_state_map (p : Party) :
   | none => simp [← hl]
   | some l =>
     by_cases hc : is_corrupt p
-    · simp only [hc, Bool.not_true, if_true]
+    · simp only [hc, Bool.not_true, ite_true]
       simp [← hl, fetch_msgs, rmv_zero_msgs]
     · simp [hc, upd_local, fetch_msgs, rmv_zero_msgs, honest_rcv, process_msgs, State.modify]
 
@@ -316,12 +316,12 @@ theorem rcv_buff (p : Party) : ∃ new : List (Message Tx Hash Party × DelayMap
       refine ⟨(AdversarialRcv (fetch_msgs p N).1 (fetch_msgs p N).2.t_now
         (fetch_msgs p N).2.history (fetch_msgs p N).2.msg_buff (fetch_msgs p N).2.adv_state).1,
         fun mt => ?_⟩
-      simp only [Bool.false_eq_true, if_false]
+      simp only [Bool.false_eq_true, ite_false]
       rw [mem_flood_msgs_adv]
       simp only [fetch_msgs, rmv_zero_msgs, List.mem_filter, Option.isSome_some]
       by_cases h0 : mt.cd = 0 <;> simp [h0]
     · refine ⟨[], fun mt => ?_⟩
-      simp only [hc, Bool.not_false, if_true]
+      simp only [hc, Bool.not_false, ite_true]
       simp only [upd_local, fetch_msgs, rmv_zero_msgs, List.mem_filter, Option.isSome_some]
       by_cases h0 : mt.cd = 0 <;> simp [h0]
 
@@ -496,10 +496,10 @@ theorem bake_step_facts (p : Party) : StepFacts N (party_bake_step_world p N) :=
       | some l =>
         rw [hl] at h
         by_cases hc : is_corrupt q
-        · simp only [hc, if_true, Option.some.injEq] at h
+        · simp only [hc, ite_true, Option.some.injEq] at h
           subst h
           exact ⟨_, rfl, rfl, rfl, fun _ hb => hb⟩
-        · simp only [hc, Bool.false_eq_true, if_false, Option.some.injEq] at h
+        · simp only [hc, Bool.false_eq_true, ite_false, Option.some.injEq] at h
           subst h
           refine ⟨l, rfl, honest_bake_pk _ _ _, honest_bake_tT _ _ _, fun b hb => ?_⟩
           exact (honest_bake_blocks _ _ _ b).2 (List.mem_append_left _ hb)
@@ -538,10 +538,10 @@ theorem rcv_step_facts (p : Party) : StepFacts N (party_rcv_step_world p N) := b
       | some l =>
         rw [hl] at h
         by_cases hc : is_corrupt q
-        · simp only [hc, if_true, Option.some.injEq] at h
+        · simp only [hc, ite_true, Option.some.injEq] at h
           subst h
           exact ⟨_, rfl, rfl, rfl, fun _ hb => hb⟩
-        · simp only [hc, Bool.false_eq_true, if_false, Option.some.injEq] at h
+        · simp only [hc, Bool.false_eq_true, ite_false, Option.some.injEq] at h
           subst h
           obtain ⟨hpk, htT⟩ := foldr_process_msg_pk ((collect_zero_pairs q N).map
             MessageTuple.msg) l

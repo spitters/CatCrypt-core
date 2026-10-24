@@ -180,7 +180,7 @@ theorem go_update_getElem? (g : Int → α) :
   induction n with
   | zero =>
     intro i0 acc j
-    rw [if_neg (by omega)]; rfl
+    rw [ite_eq_right (by omega)]; rfl
   | succ n ih =>
     intro i0 acc j
     show (Hax.foldRange.go (fun i r => Hax.array_update r i (g i)) n ((i0 : Int) + 1)
@@ -196,14 +196,14 @@ theorem go_update_getElem? (g : Int → α) :
     rw [hset]
     rcases Nat.lt_trichotomy i0 j with h | h | h
     · by_cases hO : j < i0 + 1 + n ∧ j < acc.size
-      · rw [if_pos ⟨by omega, hO.1, hO.2⟩, if_pos ⟨by omega, by omega, hO.2⟩]
-      · rw [if_neg (by omega), if_neg (by omega), if_neg (by omega)]
+      · rw [ite_eq_left ⟨by omega, hO.1, hO.2⟩, ite_eq_left ⟨by omega, by omega, hO.2⟩]
+      · rw [ite_eq_right (by omega), ite_eq_right (by omega), ite_eq_right (by omega)]
     · subst h
-      rw [if_neg (by omega), if_pos rfl]
+      rw [ite_eq_right (by omega), ite_eq_left rfl]
       by_cases hs : i0 < acc.size
-      · rw [if_pos hs, if_pos ⟨le_refl _, by omega, hs⟩]
-      · rw [if_neg hs, if_neg (by omega), Array.getElem?_eq_none (by omega)]
-    · rw [if_neg (by omega), if_neg (by omega), if_neg (by omega)]
+      · rw [ite_eq_left hs, ite_eq_left ⟨le_refl _, by omega, hs⟩]
+      · rw [ite_eq_right hs, ite_eq_right (by omega), Array.getElem?_eq_none (by omega)]
+    · rw [ite_eq_right (by omega), ite_eq_right (by omega), ite_eq_right (by omega)]
 
 unseal Hax.foldRange in
 /-- The index-writing fold over `[0, hi)` preserves the accumulator size. -/
@@ -219,7 +219,7 @@ theorem getElem?_foldRange_update (g : Int → α) (hi : Int) (acc : Array α) (
     (Hax.foldRange 0 hi acc (fun i r => Hax.array_update r i (g i)))[j]?
       = some (g (j : Int)) := by
   have H := go_update_getElem? g (hi - 0).toNat 0 acc j
-  rw [if_pos ⟨Nat.zero_le _, by omega, hacc⟩] at H
+  rw [ite_eq_left ⟨Nat.zero_le _, by omega, hacc⟩] at H
   exact H
 
 /-- `Hax.index` of the index-writing fold over `[0, hi)` at an in-bounds position

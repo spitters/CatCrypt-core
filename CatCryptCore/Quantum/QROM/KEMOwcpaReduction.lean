@@ -150,8 +150,8 @@ theorem hopDJ (A : KEMQAdv m₁ m₂ n w q k c a PK C K) (b : Bool) :
   refine le_trans (absDiff_mul_left_le _ _ _) ?_
   gcongr
   by_cases hg : ∀ m, m ∈ kemGood P hpk eG eKR i
-  · rw [if_pos hg, winSimJ, decapsSim_eq_of_good P hpk eG eJ eKR eC eKa i hg, absDiff_self]
-  · rw [if_neg hg]
+  · rw [ite_eq_left hg, winSimJ, decapsSim_eq_of_good P hpk eG eJ eKR eC eKa i hg, absDiff_self]
+  · rw [ite_eq_right hg]
     have hK : ∑ T : C → Fin n, tabWeight n C *
         prOutMR (A.run i.1.1 (kemChal P hpk eG eKR i) (kemKey hpk eG eKR i b))
           (kemOracle' eJ i T) (kemDecaps P hpk eG eJ eKR eC eKa i) ≤ 1 :=
@@ -578,7 +578,7 @@ theorem decapsHq_oracleTabHK_iff (i : KEMInput PK SK Z M K m₁ m₂ n) (Hq : C 
         (eC (P.enc i.1.1 m (oracleTabHK P hpk eG eKR i Hq u m).2)) =
         eKa (oracleTabHK P hpk eG eKR i Hq u m).1 ↔
       m ≠ i.2.2.1 ∨ Hq (P.enc i.1.1 i.2.2.1 (eKR.symm u).2) = (eKR.symm u).1 := by
-  simp only [decapsHq, Equiv.symm_apply_apply, if_neg hne, EmbeddingLike.apply_eq_iff_eq]
+  simp only [decapsHq, Equiv.symm_apply_apply, ite_eq_right hne, EmbeddingLike.apply_eq_iff_eq]
   by_cases hm : m = i.2.2.1
   · subst hm
     have ht : oracleTabHK P hpk eG eKR i Hq u i.2.2.1 = eKR.symm u := by
@@ -591,7 +591,7 @@ theorem decapsHq_oracleTabHK_iff (i : KEMInput PK SK Z M K m₁ m₂ n) (Hq : C 
     have ht : oracleTabHK P hpk eG eKR i Hq u m =
         (Hq (P.enc i.1.1 m (eKR.symm (i.2.2.2.2.1 (eG (m, hpk i.1.1)))).2),
           (eKR.symm (i.2.2.2.2.1 (eG (m, hpk i.1.1)))).2) := by
-      simp only [oracleTabHK, Function.update_of_ne hpt, keyHop, if_pos hs,
+      simp only [oracleTabHK, Function.update_of_ne hpt, keyHop, ite_eq_left hs,
         Equiv.symm_symm, coinCt, kemEncAt, Equiv.symm_apply_apply]
     rw [ht]
     exact iff_of_true rfl (Or.inl hm)

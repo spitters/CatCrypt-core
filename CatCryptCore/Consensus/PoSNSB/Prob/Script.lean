@@ -283,26 +283,26 @@ theorem sTrace_clock (ideal : Bool) (k : ℕ) :
     rw [sTrace_succ, sPhase_def]
     unfold progOf at hp ⊢
     by_cases h0 : k % 3 = 0
-    · rw [if_pos h0] at hp
+    · rw [ite_eq_left h0] at hp
       rw [hp]
       refine ⟨?_, ?_⟩
       · dsimp only
         rw [foldr_t_now P ω A _ (sRcv_t_now Sch P ω A ideal), ht]; omega
-      · dsimp only; rw [if_neg (by omega), if_pos (by omega)]
+      · dsimp only; rw [ite_eq_right (by omega), ite_eq_left (by omega)]
     · by_cases h1 : k % 3 = 1
-      · rw [if_neg h0, if_pos h1] at hp
+      · rw [ite_eq_right h0, ite_eq_left h1] at hp
         rw [hp]
         refine ⟨?_, ?_⟩
         · dsimp only
           rw [foldr_t_now P ω A _ (sBake_t_now Sch P ω A ideal), ht]; omega
-        · dsimp only; rw [if_neg (by omega), if_neg (by omega)]
-      · rw [if_neg h0, if_neg h1] at hp
+        · dsimp only; rw [ite_eq_right (by omega), ite_eq_right (by omega)]
+      · rw [ite_eq_right h0, ite_eq_right h1] at hp
         rw [hp]
         refine ⟨?_, ?_⟩
         · dsimp only
           show (sTrace Sch P ω A ideal k).t_now + 1 = _
           rw [ht]; omega
-        · dsimp only; rw [if_pos (by omega)]
+        · dsimp only; rw [ite_eq_left (by omega)]
 
 end Clock
 
@@ -335,7 +335,7 @@ theorem sRcv_at_congr (ideal : Bool) (t t' : Slot → Fin np → Tx)
   | none => rfl
   | some l =>
     by_cases hc : is_corrupt p
-    · simp only [hc, Bool.not_true, Bool.false_eq_true, if_false]
+    · simp only [hc, Bool.not_true, Bool.false_eq_true, ite_false]
       have hf : (fetch_msgs p M).2.t_now = M.t_now := by
         simp [fetch_msgs, rmv_zero_msgs]
       rw [e _ _ _ _ _ (by rw [hf]; exact h)]
@@ -360,7 +360,7 @@ theorem sBake_at_congr (ideal : Bool) (t t' : Slot → Fin np → Tx)
   | none => rfl
   | some l =>
     by_cases hc : is_corrupt p
-    · simp only [hc, Bool.not_true, Bool.false_eq_true, if_false]
+    · simp only [hc, Bool.not_true, Bool.false_eq_true, ite_false]
       have e : (mkExec Sch ideal (P.withTx t) ω (F.at σ)).AdversarialBake M.t_now
           M.history M.msg_buff M.adv_state =
           (mkExec Sch ideal (P.withTx t') ω (F.at σ')).AdversarialBake M.t_now
@@ -394,7 +394,7 @@ theorem sTrace_congr_of_agree_at (ideal : Bool) (j : ℕ) (t t' : Slot → Fin n
     rw [sPhase_def, sPhase_def]
     unfold progOf at hp
     by_cases h0 : k % 3 = 0
-    · rw [if_pos h0] at hp
+    · rw [ite_eq_left h0] at hp
       rw [hp]
       dsimp only
       have hf : N.exec_order.foldr (sRcv Sch (P.withTx t) ω (F.at σ) ideal) N =
@@ -410,7 +410,7 @@ theorem sTrace_congr_of_agree_at (ideal : Bool) (j : ℕ) (t t' : Slot → Fin n
         · rfl
       rw [hf]
     · by_cases h1 : k % 3 = 1
-      · rw [if_neg h0, if_pos h1] at hp
+      · rw [ite_eq_right h0, ite_eq_left h1] at hp
         rw [hp]
         dsimp only
         have hf : N.exec_order.foldr (sBake Sch (P.withTx t) ω (F.at σ) ideal) N =
@@ -425,7 +425,7 @@ theorem sTrace_congr_of_agree_at (ideal : Bool) (j : ℕ) (t t' : Slot → Fin n
               (hσ _ (by rw [hM, hT]; omega)) (ht _ _ (by rw [hM, hT]; omega))
           · rfl
         rw [hf]
-      · rw [if_neg h0, if_neg h1] at hp
+      · rw [ite_eq_right h0, ite_eq_right h1] at hp
         rw [hp]
 
 /-- A receiving step at slot `sl` depends on the reactions only through the reaction of phase
@@ -708,7 +708,7 @@ theorem phaseCalls_congr_of_agree (j : ℕ) (t t' : Slot → Fin np → Tx)
   unfold phaseCalls
   unfold progOf at hp
   by_cases h0 : k % 3 = 0
-  · rw [if_pos h0] at hp
+  · rw [ite_eq_left h0] at hp
     rw [hp]
     dsimp only
     rw [foldrCalls_congr_of_inv _ _
@@ -718,7 +718,7 @@ theorem phaseCalls_congr_of_agree (j : ℕ) (t t' : Slot → Fin np → Tx)
         (hσ _ (by rw [hM, hT]; omega))) _ _ rfl]
     rfl
   · by_cases h1 : k % 3 = 1
-    · rw [if_neg h0, if_pos h1] at hp
+    · rw [ite_eq_right h0, ite_eq_left h1] at hp
       rw [hp]
       dsimp only
       rw [foldrCalls_congr_of_inv _ _
@@ -727,7 +727,7 @@ theorem phaseCalls_congr_of_agree (j : ℕ) (t t' : Slot → Fin np → Tx)
         (fun p M hM => sBake_at_congr Sch P ω F false t t' σ σ' p M
           (hσ _ (by rw [hM, hT]; omega)) (ht _ _ (by rw [hM, hT]; omega))) _ _ rfl]
       rfl
-    · rw [if_neg h0, if_neg h1] at hp
+    · rw [ite_eq_right h0, ite_eq_right h1] at hp
       rw [hp]
 
 /-- **Causality of the calls.** The adversary calls of the first `j` phases of the execution of

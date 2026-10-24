@@ -184,7 +184,7 @@ theorem bytes_to_limbs_spec {b : Array Int} (hb : IsBytes32 b) :
     simp (disch := (first | omega | (simp only [Hax.size_array_update_eq, hs]; omega))) only
       [index_update]
     interval_cases k <;> simp only [Nat.cast_ofNat, Nat.cast_zero, Nat.cast_one, Int.reduceEq,
-      if_true, if_false] <;>
+      ite_true, ite_false] <;>
       exact bytes_to_limbs_step hb hn (by omega) (by exact_mod_cast hv _ (by omega))
         (by first | omega | (simp only [Hax.add]; omega))
 
@@ -301,7 +301,7 @@ theorem shr_or_neg_eq (acc : Int) (h0 : 0 ≤ acc) (h : acc < 2 ^ 64) :
   by_cases hz : acc = 0
   · subst hz
     simp
-  · rw [if_neg (by exact_mod_cast hz), Nat.mod_eq_of_lt hn,
+  · rw [ite_eq_right (by exact_mod_cast hz), Nat.mod_eq_of_lt hn,
       Nat.mod_eq_of_lt (Nat.mod_lt _ (by norm_num)), Nat.mod_eq_of_lt (by omega : 2 ^ 64 - acc < 2 ^ 64)]
     have hlt : acc ||| (2 ^ 64 - acc) < 2 ^ 64 := Nat.or_lt_two_pow hn (by omega)
     have hl := Nat.left_le_or (n := acc) (m := 2 ^ 64 - acc)
@@ -341,8 +341,8 @@ theorem fixed_eq_eq (a b : Array Int) :
   simp only [show (4 : Int).toNat = 4 from rfl] at hiff
   by_cases hc : ∀ k : ℕ, k < 4 →
       Hax.mod2w 64 (Hax.index a (k : Int)) = Hax.mod2w 64 (Hax.index b (k : Int))
-  · rw [if_pos (hiff.mpr hc), if_pos hc]
-  · rw [if_neg (fun h => hc (hiff.mp h)), if_neg hc]
+  · rw [ite_eq_left (hiff.mpr hc), ite_eq_left hc]
+  · rw [ite_eq_right (fun h => hc (hiff.mp h)), ite_eq_right hc]
 
 theorem mod2w_index_bytes_to_limbs {b : Array Int} (hb : IsBytes32 b) (k : ℕ) (hk : k < 4) :
     Hax.mod2w 64 (Hax.index (SigmaProofs.fixed_bytes_to_limbs b) (k : Int)) =
@@ -359,8 +359,8 @@ theorem fixed_eq_bytes_to_limbs {a b : Array Int} (ha : IsBytes32 a) (hb : IsByt
   rw [fixed_eq_eq]
   by_cases hab : a = b
   · subst hab
-    rw [if_pos (fun k _ => rfl), if_pos rfl]
-  · rw [if_neg hab, if_neg]
+    rw [ite_eq_left (fun k _ => rfl), ite_eq_left rfl]
+  · rw [ite_eq_right hab, ite_eq_right]
     intro h
     apply hab
     have e : SigmaProofs.fixed_bytes_to_limbs a = SigmaProofs.fixed_bytes_to_limbs b :=
@@ -395,8 +395,8 @@ theorem fixed_pair_spec (x y : Array Int) :
       split_ifs <;> first
         | omega
         | (congr 1; omega)
-        | (rw [hv p hp (by omega), if_pos ‹_›])
-        | (rw [hv p hp (by omega), if_neg ‹_›]))
+        | (rw [hv p hp (by omega), ite_eq_left ‹_›])
+        | (rw [hv p hp (by omega), ite_eq_right ‹_›]))
   exact ⟨key.1, fun p hp => key.2 p hp (by simp; omega)⟩
 
 /-- The first half of a pair of four-limb arrays is the first array. -/
@@ -409,7 +409,7 @@ theorem fixed_first_pair {x : Array Int} (y : Array Int) (hx : x.size = 4) :
     fun k hk => ?_
   rw [Hax.index_foldRange_update _ 4 (Hax.repeat_ (0 : Int) 4) k (by omega)
     (by rw [Hax.size_repeat_]; exact hk), hp.2 k (by omega),
-    if_pos hk]
+    ite_eq_left hk]
 
 /-- The second half of a pair of four-limb arrays is the second array. -/
 theorem fixed_second_pair (x : Array Int) {y : Array Int} (hy : y.size = 4) :
@@ -423,7 +423,7 @@ theorem fixed_second_pair (x : Array Int) {y : Array Int} (hy : y.size = 4) :
     4 (Hax.repeat_ (0 : Int) 4) k (by omega) (by rw [Hax.size_repeat_]; exact hk)]
   simp only [Hax.add]
   rw [show (k : Int) + 4 = ((k + 4 : ℕ) : Int) by push_cast; rfl, hp.2 (k + 4) (by omega),
-    if_neg (by omega), Nat.add_sub_cancel]
+    ite_eq_right (by omega), Nat.add_sub_cancel]
 
 end Codec
 
@@ -486,8 +486,8 @@ theorem fixed_eq_limbsG (hE : BytesEncoding E) (x y : gp.G) :
       if x = y then 0 else 1 := by
   rw [limbsG, limbsG, fixed_eq_bytes_to_limbs (hE.2 x) (hE.2 y)]
   by_cases h : x = y
-  · rw [if_pos (congrArg E.encG h), if_pos h]
-  · rw [if_neg (fun e => h (by rw [← E.decG_encG x, e, E.decG_encG])), if_neg h]
+  · rw [ite_eq_left (congrArg E.encG h), ite_eq_left h]
+  · rw [ite_eq_right (fun e => h (by rw [← E.decG_encG x, e, E.decG_encG])), ite_eq_right h]
 
 /-- `fixed_eq` on the limbs of two scalars is `0` when they are equal and `1` otherwise. -/
 theorem fixed_eq_limbsS (hE : BytesEncoding E) (s t : gp.Scalar) :
@@ -495,8 +495,8 @@ theorem fixed_eq_limbsS (hE : BytesEncoding E) (s t : gp.Scalar) :
       if s = t then 0 else 1 := by
   rw [limbsS, limbsS, fixed_eq_bytes_to_limbs (hE.1 s) (hE.1 t)]
   by_cases h : s = t
-  · rw [if_pos (congrArg E.encS h), if_pos h]
-  · rw [if_neg (fun e => h (by rw [← E.decS_encS s, e, E.decS_encS])), if_neg h]
+  · rw [ite_eq_left (congrArg E.encS h), ite_eq_left h]
+  · rw [ite_eq_right (fun e => h (by rw [← E.decS_encS s, e, E.decS_encS])), ite_eq_right h]
 
 @[simp] theorem fixed_first_pairG (x y : gp.G) :
     @SigmaProofs.fixed_first (groupSigmaProofsDeps E) (pairG E x y) = limbsG E x :=
@@ -881,8 +881,8 @@ adversary with at most `qH` oracle queries satisfies, with
 `ε = dsKsAdvantage A − (qH + 1)·β`, `ε·(ε/(qH + 1) − 1/|Scalar|) ≤ ksExtractProb A`. -/
 theorem fixedSchnorrSigma_dsKsExtractProb_ge (hE : BytesEncoding E)
     (Dp : DSParams (fixedSchnorrSigma E gen)) (hX : PrefixFree Dp.encX) (hA : PrefixFree Dp.encA)
-    {β : ℝ≥0∞} (hβ : ∀ c, (1 - β) * PMF.uniformOfFintype gp.Scalar c ≤
-      (PMF.uniformOfFintype (Fin Dp.L → UInt8)).map Dp.decB c)
+    {β : ℝ≥0∞} (hβ : ∀ c, (1 - β) * PMF.uniformFintype gp.Scalar c ≤
+      (PMF.uniformFintype (Fin Dp.L → UInt8)).map Dp.decB c)
     {qH : ℕ} (A : KSAdversary (fixedSchnorrSigma E gen) SessionId qH) :
     (dsKsAdvantage Dp A - (qH + 1 : ℕ) * β) *
         ((dsKsAdvantage Dp A - (qH + 1 : ℕ) * β) / ((qH + 1 : ℕ) : ℝ≥0∞) -
@@ -952,8 +952,8 @@ adversary with at most `qH` oracle queries satisfies, with
 `ε = dsKsAdvantage A − (qH + 1)·β`, `ε·(ε/(qH + 1) − 1/|Scalar|) ≤ ksExtractProb A`. -/
 theorem fixedDleqSigma_dsKsExtractProb_ge (hE : BytesEncoding E)
     (Dp : DSParams (fixedDleqSigma E gen')) (hX : PrefixFree Dp.encX) (hA : PrefixFree Dp.encA)
-    {β : ℝ≥0∞} (hβ : ∀ c, (1 - β) * PMF.uniformOfFintype gp.Scalar c ≤
-      (PMF.uniformOfFintype (Fin Dp.L → UInt8)).map Dp.decB c)
+    {β : ℝ≥0∞} (hβ : ∀ c, (1 - β) * PMF.uniformFintype gp.Scalar c ≤
+      (PMF.uniformFintype (Fin Dp.L → UInt8)).map Dp.decB c)
     {qH : ℕ} (A : KSAdversary (fixedDleqSigma E gen') SessionId qH) :
     (dsKsAdvantage Dp A - (qH + 1 : ℕ) * β) *
         ((dsKsAdvantage Dp A - (qH + 1 : ℕ) * β) / ((qH + 1 : ℕ) : ℝ≥0∞) -

@@ -78,7 +78,7 @@ theorem idft_dft {ω : R} {n : ℕ} (hω : IsPrimitiveRoot ω n) (hn : (n : R) �
     ring
   rw [Finset.sum_congr rfl (fun l _ => hinner l)]
   simp only [mul_ite, mul_zero,
-    Finset.sum_ite_eq' Finset.univ k (fun l => x l * (n : R)), Finset.mem_univ, if_true]
+    Finset.sum_ite_eq' Finset.univ k (fun l => x l * (n : R)), Finset.mem_univ, ite_true]
   rw [mul_comm (x k) (n : R), ← mul_assoc, inv_mul_cancel₀ hn, one_mul]
 
 end CatCrypt.Crypto.Lattice.NTTFullInversionGeneric

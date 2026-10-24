@@ -283,7 +283,7 @@ theorem decapsSim_eq_of_good_off_chal (i : KEMInput PK SK Z M K m₁ m₂ n)
     decapsSim P hpk eG eJ eKR eC eKa i = kemDecaps P hpk eG eJ eKR eC eKa i := by
   funext x
   by_cases hc : eC.symm x = kemChal P hpk eG eKR i
-  · simp only [decapsSim, kemDecaps, decapsOracle, if_pos hc]
+  · simp only [decapsSim, kemDecaps, decapsOracle, ite_eq_left hc]
   · exact decapsSim_apply_eq_of_not_mem P hpk eG eJ eKR eC eKa i x fun hx =>
       hc (Finset.mem_singleton.1 (badCts_subset_kemChal P hpk eG eKR i h hx))
 

@@ -90,14 +90,14 @@ variable {K M B : Type} [Fintype K] [Nonempty K]
 key with probability at most `ε`. -/
 def IsAlmostUniversal (H : K → M → B) (ε : ℝ≥0∞) : Prop :=
   ∀ m₁ m₂ : M, m₁ ≠ m₂ →
-    (PMF.uniformOfFintype K).toOuterMeasure {k | H k m₁ = H k m₂} ≤ ε
+    (PMF.uniformFintype K).toOuterMeasure {k | H k m₁ = H k m₂} ≤ ε
 
 /-- `H` is `ε`-almost Δ-universal: for two distinct messages and every difference `δ`, the
 hashes under a uniform key differ by `δ` with probability at most `ε`. In a group of
 characteristic two (GHASH, POLYVAL) the difference is XOR. -/
 def IsAlmostDeltaUniversal [AddCommGroup B] (H : K → M → B) (ε : ℝ≥0∞) : Prop :=
   ∀ m₁ m₂ : M, m₁ ≠ m₂ → ∀ δ : B,
-    (PMF.uniformOfFintype K).toOuterMeasure {k | H k m₁ - H k m₂ = δ} ≤ ε
+    (PMF.uniformFintype K).toOuterMeasure {k | H k m₁ - H k m₂ = δ} ≤ ε
 
 /-- An `ε`-almost-Δ-universal family is `ε`-almost universal. -/
 theorem IsAlmostDeltaUniversal.isAlmostUniversal [AddCommGroup B] {H : K → M → B}
@@ -108,9 +108,9 @@ theorem IsAlmostDeltaUniversal.isAlmostUniversal [AddCommGroup B] {H : K → M �
 probability at most `|L| · ε`. -/
 theorem prob_exists_coll_le {H : K → M → B} {ε : ℝ≥0∞} (hH : IsAlmostUniversal H ε)
     (m : M) (L : List M) :
-    (PMF.uniformOfFintype K).toOuterMeasure {k | ∃ y ∈ L, m ≠ y ∧ H k m = H k y} ≤
+    (PMF.uniformFintype K).toOuterMeasure {k | ∃ y ∈ L, m ≠ y ∧ H k m = H k y} ≤
       L.length * ε := by
-  set μ := (PMF.uniformOfFintype K).toOuterMeasure
+  set μ := (PMF.uniformFintype K).toOuterMeasure
   induction L with
   | nil => simp
   | cons y L ih =>
@@ -136,9 +136,9 @@ theorem prob_exists_coll_le {H : K → M → B} {ε : ℝ≥0∞} (hH : IsAlmost
 of `n` messages have the same hash with probability at most `n(n-1)/2 · ε`. -/
 theorem prob_queryCollision_le {H : K → M → B} {ε : ℝ≥0∞} (hH : IsAlmostUniversal H ε)
     (L : List M) :
-    (PMF.uniformOfFintype K).toOuterMeasure {k | QueryCollision (H k) L} ≤
+    (PMF.uniformFintype K).toOuterMeasure {k | QueryCollision (H k) L} ≤
       ((L.length * (L.length - 1) / 2 : ℕ) : ℝ≥0∞) * ε := by
-  set μ := (PMF.uniformOfFintype K).toOuterMeasure
+  set μ := (PMF.uniformFintype K).toOuterMeasure
   rw [← Finset.sum_range_id]
   induction L with
   | nil => simp [QueryCollision]
@@ -219,7 +219,7 @@ noncomputable def realFlag (c : M → B) (s : List (M × R) × Bool) (d : M) :
     PMF (R × (List (M × R) × Bool)) :=
   match List.lookup (c d) (projC c s.1) with
   | some r => PMF.pure (r, (s.1, s.2 || !consistent c s.1 d))
-  | none => (PMF.uniformOfFintype R).map fun r =>
+  | none => (PMF.uniformFintype R).map fun r =>
       (r, ((d, r) :: s.1, s.2 || !consistent c s.1 d))
 
 /-- The random function on `M`, with a flag set when the query is not `consistent`. -/
@@ -227,7 +227,7 @@ noncomputable def idealFlag (c : M → B) (s : List (M × R) × Bool) (d : M) :
     PMF (R × (List (M × R) × Bool)) :=
   match List.lookup d s.1 with
   | some r => PMF.pure (r, (s.1, s.2 || !consistent c s.1 d))
-  | none => (PMF.uniformOfFintype R).map fun r =>
+  | none => (PMF.uniformFintype R).map fun r =>
       (r, ((d, r) :: s.1, s.2 || !consistent c s.1 d))
 
 theorem realFlag_map (c : M → B) (s : List (M × R) × Bool) (d : M) :
@@ -315,7 +315,7 @@ theorem idealFlag_support_rel (c : M → B) (A : OracleAdv M R α) (s : List (M 
       · simp_all
     | none =>
       rw [hl] at hx
-      simp only [PMF.support_map, PMF.support_uniformOfFintype, Set.top_eq_univ,
+      simp only [PMF.support_map, PMF.support_uniformFintype, Set.top_eq_univ,
         Set.image_univ, Set.mem_range] at hx
       obtain ⟨r, rfl⟩ := hx
       refine ⟨⟨[(d, r)], rfl⟩, fun h => ?_⟩
@@ -329,12 +329,12 @@ at most the expected probability, over the final table of the ideal run, that `c
 two distinct recorded queries to the same point. -/
 theorem advantage_compose_le {F : Type} [Fintype F] [Nonempty F] (c : F → M → B)
     (A : OracleAdv M R Bool) :
-    Advantage (liftPMF ((PMF.uniformOfFintype F).bind fun φ =>
+    Advantage (liftPMF ((PMF.uniformFintype F).bind fun φ =>
         (OracleAdv.run (fun t d => rfOracle t (c φ d)) A []).map Prod.fst)) (rfGame A) ≤
       ∑' x, OracleAdv.run rfOracle A [] x *
-        (PMF.uniformOfFintype F).toOuterMeasure
+        (PMF.uniformFintype F).toOuterMeasure
           {φ | QueryCollision (c φ) (x.2.map Prod.fst)} := by
-  set u := PMF.uniformOfFintype F
+  set u := PMF.uniformFintype F
   set p₁ : F → PMF (Bool × (List (M × R) × Bool)) := fun φ =>
     OracleAdv.run (realFlag (c φ)) A ([], false)
   set p₂ : F → PMF (Bool × (List (M × R) × Bool)) := fun φ =>
@@ -443,12 +443,12 @@ theorem tsum_run_rfOracle_le (h : List (M × R) → ℝ≥0∞) (Φ : ℕ → �
       rw [OracleAdv.run_query, hq, PMF.pure_bind]
       exact (ih r n (hA r) t).trans (hΦ (by omega))
     | none =>
-      have hq : rfOracle t d = (PMF.uniformOfFintype R).map fun r => (r, (d, r) :: t) := by
+      have hq : rfOracle t d = (PMF.uniformFintype R).map fun r => (r, (d, r) :: t) := by
         grind [rfOracle]
       rw [OracleAdv.run_query, hq, PMF.bind_map, tsum_bind_mul]
-      calc ∑' r, PMF.uniformOfFintype R r * ∑' x, OracleAdv.run rfOracle (k r) ((d, r) :: t) x *
+      calc ∑' r, PMF.uniformFintype R r * ∑' x, OracleAdv.run rfOracle (k r) ((d, r) :: t) x *
             h x.2
-          ≤ ∑' r, PMF.uniformOfFintype R r * Φ (t.length + (n + 1)) := by
+          ≤ ∑' r, PMF.uniformFintype R r * Φ (t.length + (n + 1)) := by
             refine ENNReal.tsum_le_tsum fun r => ?_
             gcongr
             refine (ih r n (hA r) _).trans (hΦ ?_)
@@ -467,7 +467,7 @@ variable {K M B R : Type} [Fintype K] [Nonempty K] [DecidableEq M] [DecidableEq 
 
 /-- The lazy random function on `B` queried at `H k m` for a uniform key `k`, against `A`. -/
 noncomputable def hashRFGame (H : K → M → B) (A : OracleAdv M R Bool) : SPComp Bool :=
-  liftPMF ((PMF.uniformOfFintype K).bind fun k =>
+  liftPMF ((PMF.uniformFintype K).bind fun k =>
     (OracleAdv.run rfOracle (OracleAdv.mapQuery (H k) A) []).map Prod.fst)
 
 /-- The advantage of `A` in distinguishing the hashed random function from the lazy random
@@ -488,7 +488,7 @@ theorem hashRF_advantage_le {H : K → M → B} {ε : ℝ≥0∞} (hH : IsAlmost
   unfold HashRF_Advantage hashRFGame
   simp only [OracleAdv.run_mapQuery]
   refine (advantage_compose_le H A).trans ((tsum_run_rfOracle_le
-    (fun T => (PMF.uniformOfFintype K).toOuterMeasure
+    (fun T => (PMF.uniformFintype K).toOuterMeasure
       {k | QueryCollision (H k) (T.map Prod.fst)}) _ hmono (fun T => ?_) A q hA []).trans_eq
     (by rw [List.length_nil, zero_add]))
   simpa using prob_queryCollision_le hH (T.map Prod.fst)
@@ -509,7 +509,7 @@ def hashPRF (F : K₁ → B → R) (H : K₂ → M → B) (k : K₁ × K₂) (m 
 of `A` at `H k₂ m`. -/
 noncomputable def hashRed (H : K₂ → M → B) {R : Type} (A : OracleAdv M R Bool) :
     OracleAdv B R Bool :=
-  .rand (PMF.uniformOfFintype K₂) fun k₂ => OracleAdv.mapQuery (H k₂) A
+  .rand (PMF.uniformFintype K₂) fun k₂ => OracleAdv.mapQuery (H k₂) A
 
 theorem isQueryBound_hashRed (H : K₂ → M → B) {A : OracleAdv M R Bool} {q : ℕ}
     (hA : A.IsQueryBound q) : (hashRed H A).IsQueryBound q :=

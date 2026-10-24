@@ -61,16 +61,16 @@ theorem piFin_apply : ∀ {n : ℕ} (p : Fin n → PMF α) (v : Fin n → α),
     classical
     rw [piFin, PMF.bind_apply, Fin.prod_univ_succ, tsum_eq_single (v 0)]
     · rw [PMF.bind_apply, tsum_eq_single (Fin.tail v), piFin_apply, PMF.pure_apply,
-        if_pos (Fin.cons_self_tail v).symm, mul_one]
+        ite_eq_left (Fin.cons_self_tail v).symm, mul_one]
       · rfl
       · intro w hw
-        rw [PMF.pure_apply, if_neg, mul_zero]
+        rw [PMF.pure_apply, ite_eq_right, mul_zero]
         intro h
         exact hw ((congrArg Fin.tail h).trans (Fin.tail_cons _ _)).symm
     · intro a ha
       rw [PMF.bind_apply, ENNReal.tsum_eq_zero.2, mul_zero]
       intro w
-      rw [PMF.pure_apply, if_neg, mul_zero]
+      rw [PMF.pure_apply, ite_eq_right, mul_zero]
       intro h
       exact ha ((congrFun h 0).trans (Fin.cons_zero _ _)).symm
 
@@ -119,7 +119,7 @@ end Measure
 parameter given as a real number. (`PMF.bernoulli` is deprecated in Mathlib.) -/
 noncomputable def coin (q : ℝ) (hq0 : 0 ≤ q) (hq1 : q ≤ 1) : PMF Bool :=
   PMF.ofFintype (fun b => ENNReal.ofReal (if b then q else 1 - q)) (by
-    rw [Fintype.sum_bool, if_pos rfl, if_neg Bool.false_ne_true,
+    rw [Fintype.sum_bool, ite_eq_left rfl, ite_eq_right Bool.false_ne_true,
       ← ENNReal.ofReal_add hq0 (sub_nonneg.2 hq1)]
     simp)
 

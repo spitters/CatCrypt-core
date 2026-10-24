@@ -199,8 +199,8 @@ def Sound : Prop :=
 of the opened parties on a uniform tape have the distribution of the simulated views for
 `F x` on a uniform simulator tape. -/
 def Private : Prop :=
-  ∀ x c, (PMF.uniformOfFintype D.Tape).map (fun t i => D.views x t (c.succAbove i)) =
-    (PMF.uniformOfFintype D.SimTape).map (D.sim (D.F x) c)
+  ∀ x c, (PMF.uniformFintype D.Tape).map (fun t i => D.views x t (c.succAbove i)) =
+    (PMF.uniformFintype D.SimTape).map (D.sim (D.F x) c)
 
 end Decomp
 
@@ -460,7 +460,7 @@ theorem vkey_honest (x : P.D.Y) (w : P.D.X) (m : M) (r : P.Rand)
       have hi : (List.take (P.T * P.D.K) (P.honestVals v))[P.oIdx j i]? =
           some (v (P.cIdx j ((P.chalOf v j).succAbove i))) := by
         rw [honestVals, List.take_left' (by simp), List.getElem?_ofFn,
-          dif_pos (P.oIdx_lt j i)]
+          dite_eq_left (P.oIdx_lt j i)]
         simp only [oIdx, Fin.eta, Equiv.symm_apply_apply]
       simp only [vmat, sigOf, Fin.insertNth_apply_succAbove, hi]
       rfl
@@ -544,8 +544,8 @@ theorem simTrace_eq (look : P.Key M → Option P.Ch) (x : P.D.Y) (m : M)
 /-- By perfect `K`-privacy, the opened data of an honest attempt on uniform randomness
 has the distribution of the simulated opened data on uniform simulator randomness. -/
 theorem open_dist (hP : P.D.Private) (w : P.D.X) (c : Fin P.T → Fin (P.D.K + 1)) :
-    (PMF.uniformOfFintype P.Rand).map (fun r => P.openOf (P.vfR w r) c) =
-      (PMF.uniformOfFintype P.SimRand).map
+    (PMF.uniformFintype P.Rand).map (fun r => P.openOf (P.vfR w r) c) =
+      (PMF.uniformFintype P.SimRand).map
         (fun s => P.openOf (P.vfS (P.D.F w) c s) c) := by
   let H : (Fin P.T → Fin P.D.K → P.D.View) × (Fin P.T × Fin (P.D.K + 1) → P.Salt) →
       Fin P.T → P.Opened :=
@@ -573,14 +573,14 @@ theorem statHVZKAt (hP : P.D.Private) (w : P.D.X) :
   rw [add_zero]
   refine ENNReal.tsum_le_tsum fun e => mul_le_mul' le_rfl ?_
   simp only [Protocol.vals_of_ev_false (G := P.protocol M) (fun _ => rfl)]
-  calc _ ≤ ∑' r, PMF.uniformOfFintype P.Rand r *
+  calc _ ≤ ∑' r, PMF.uniformFintype P.Rand r *
         g ((P.protocol M).trace (P.D.F w) w m r e) := by
         refine ENNReal.tsum_le_tsum fun r => mul_le_mul' le_rfl ?_
         split_ifs <;> simp
-    _ = ∑' r, PMF.uniformOfFintype P.Rand r *
+    _ = ∑' r, PMF.uniformFintype P.Rand r *
           g (P.traceOf M (P.D.F w) m e (P.openOf (P.vfR w r) (P.chalOf e))) := by
         simp only [trace_eq]
-    _ = ∑' s, PMF.uniformOfFintype P.SimRand s *
+    _ = ∑' s, PMF.uniformFintype P.SimRand s *
           g (P.traceOf M (P.D.F w) m e
             (P.openOf (P.vfS (P.D.F w) (P.chalOf e) s) (P.chalOf e))) := by
         rw [tsum_mul_comp_eq_map _ (fun r => P.openOf (P.vfR w r) (P.chalOf e))
@@ -613,18 +613,18 @@ theorem salt_guess_le {Kt : Type} (jp : Fin P.T × Fin (P.D.K + 1)) (q : P.Rand 
     (k : P.Rand → Kt) (hq : ∀ (r : P.Rand) s, q (r.1, Function.update r.2 jp s) = q r)
     (hk : ∀ (r : P.Rand) s s', k (r.1, Function.update r.2 jp s) =
       k (r.1, Function.update r.2 jp s') → s = s') :
-    ∑' r, PMF.uniformOfFintype P.Rand r * q r (k r) ≤ (Fintype.card P.Salt : ℝ≥0∞)⁻¹ := by
+    ∑' r, PMF.uniformFintype P.Rand r * q r (k r) ≤ (Fintype.card P.Salt : ℝ≥0∞)⁻¹ := by
   rw [uniform_prod_eq_bind, tsum_bind_mul]
-  calc _ ≤ ∑' τ, PMF.uniformOfFintype (Fin P.T → P.D.Tape) τ *
+  calc _ ≤ ∑' τ, PMF.uniformFintype (Fin P.T → P.D.Tape) τ *
         (Fintype.card P.Salt : ℝ≥0∞)⁻¹ := by
         refine ENNReal.tsum_le_tsum fun τ => mul_le_mul' le_rfl ?_
         rw [← tsum_mul_comp_eq_map, ← Constructions.ECBCPRF.uniform_bind_update jp,
           tsum_bind_mul]
-        calc _ ≤ ∑' σ, PMF.uniformOfFintype (Fin P.T × Fin (P.D.K + 1) → P.Salt) σ *
+        calc _ ≤ ∑' σ, PMF.uniformFintype (Fin P.T × Fin (P.D.K + 1) → P.Salt) σ *
               (Fintype.card P.Salt : ℝ≥0∞)⁻¹ := by
               refine ENNReal.tsum_le_tsum fun σ => mul_le_mul' le_rfl ?_
               rw [← tsum_mul_comp_eq_map]
-              simp only [PMF.uniformOfFintype_apply, ENNReal.tsum_mul_left]
+              simp only [PMF.uniformFintype_apply, ENNReal.tsum_mul_left]
               refine mul_le_of_le_one_right' ?_
               calc ∑' s, q (τ, Function.update σ jp s) (k (τ, Function.update σ jp s))
                   = ∑' s, q (τ, σ) (k (τ, Function.update σ jp s)) := by
@@ -654,7 +654,7 @@ probability at most `2/|Salt|`. -/
 theorem commit_guess_le (x : P.D.Y) (w : P.D.X) (m : M) (look : P.Key M → Option P.Ch)
     (Q : (P.protocol M).Trace → PMF (P.Key M)) (e : Fin (P.T * (P.D.K + 1) + 1) → P.Ch)
     (j : Fin P.T) (p : Fin (P.D.K + 1)) :
-    ∑' r, PMF.uniformOfFintype P.Rand r *
+    ∑' r, PMF.uniformFintype P.Rand r *
       Q ((P.protocol M).guessView look x w m r e (P.cIdx j p))
         ((P.protocol M).key x w m r e (P.cIdx j p)) ≤
       2 * (Fintype.card P.Salt : ℝ≥0∞)⁻¹ := by
@@ -668,20 +668,20 @@ theorem commit_guess_le (x : P.D.Y) (w : P.D.X) (m : M) (look : P.Key M → Opti
     (fun r => (P.protocol M).key x w m r e (P.cIdx j p)) (fun _ _ => rfl) hk
   simp only [Protocol.guessView, Protocol.vals_of_ev_false (G := P.protocol M) (fun _ => rfl)]
   by_cases hp : P.pubOf e (P.cIdx j p) = true
-  · simp only [hp, Bool.true_or, if_true]
+  · simp only [hp, Bool.true_or, ite_true]
     exact h0.trans (le_mul_of_one_le_left' (by norm_num))
   · have htr := P.salt_guess_le (j, p) (fun r => Q ((P.protocol M).trace x w m r e))
       (fun r => (P.protocol M).key x w m r e (P.cIdx j p)) ?_ hk
-    · calc _ ≤ ∑' r, PMF.uniformOfFintype P.Rand r *
+    · calc _ ≤ ∑' r, PMF.uniformFintype P.Rand r *
             (Q ([], [], none) ((P.protocol M).key x w m r e (P.cIdx j p)) +
               Q ((P.protocol M).trace x w m r e) ((P.protocol M).key x w m r e (P.cIdx j p))) := by
             refine ENNReal.tsum_le_tsum fun r => mul_le_mul' le_rfl ?_
             split_ifs
             · exact le_self_add
             · exact le_add_self
-        _ = ∑' r, PMF.uniformOfFintype P.Rand r *
+        _ = ∑' r, PMF.uniformFintype P.Rand r *
               Q ([], [], none) ((P.protocol M).key x w m r e (P.cIdx j p)) +
-            ∑' r, PMF.uniformOfFintype P.Rand r *
+            ∑' r, PMF.uniformFintype P.Rand r *
               Q ((P.protocol M).trace x w m r e) ((P.protocol M).key x w m r e (P.cIdx j p)) := by
             simp only [mul_add]; exact ENNReal.tsum_add
         _ ≤ _ := by rw [two_mul]; exact add_le_add h0 htr
@@ -722,7 +722,7 @@ theorem keyBoundClsAt (hT : 0 < P.T) (x : P.D.Y) (w : P.D.X) :
   change Bool at c
   cases c with
   | false =>
-    calc _ ≤ ∑' e, PMF.uniformOfFintype (Fin (P.T * (P.D.K + 1) + 1) → P.Ch) e *
+    calc _ ≤ ∑' e, PMF.uniformFintype (Fin (P.T * (P.D.K + 1) + 1) → P.Ch) e *
           P.gammaCls false := by
           refine ENNReal.tsum_le_tsum fun e => mul_le_mul' le_rfl ?_
           simp only [Protocol.vals_of_ev_false (G := P.protocol M) (fun _ => rfl)]
@@ -747,10 +747,10 @@ theorem keyBoundClsAt (hT : 0 < P.T) (x : P.D.Y) (w : P.D.X) :
       _ = _ := by rw [ENNReal.tsum_mul_right, PMF.tsum_coe, one_mul]
   | true =>
     simp only [Protocol.vals_of_ev_false (G := P.protocol M) (fun _ => rfl)]
-    calc _ ≤ ∑' e, PMF.uniformOfFintype (Fin (P.T * (P.D.K + 1) + 1) → P.Ch) e *
+    calc _ ≤ ∑' e, PMF.uniformFintype (Fin (P.T * (P.D.K + 1) + 1) → P.Ch) e *
           Q ([], [], none) (Sum.inr (x, m, P.digMat e)) := by
           refine ENNReal.tsum_le_tsum fun e => mul_le_mul' le_rfl ?_
-          calc _ ≤ ∑' r, PMF.uniformOfFintype P.Rand r *
+          calc _ ≤ ∑' r, PMF.uniformFintype P.Rand r *
                 Q ([], [], none) (Sum.inr (x, m, P.digMat e)) := by
                 refine ENNReal.tsum_le_tsum fun r => mul_le_mul' le_rfl ?_
                 rw [Finset.sum_eq_single_of_mem (Fin.last _) ?h1 ?h2]
@@ -767,7 +767,7 @@ theorem keyBoundClsAt (hT : 0 < P.T) (x : P.D.Y) (w : P.D.X) :
                 have hpub : P.pubOf e (Fin.last _) = true := by simp [pubOf]
                 have hkey : P.keyOf M x m (P.vfR w r) e (Fin.last _) =
                     Sum.inr (x, m, P.digMat e) := by simp [keyOf]
-                simp only [hpub, hkey, Bool.true_or, if_true]
+                simp only [hpub, hkey, Bool.true_or, ite_true]
                 split_ifs <;> simp
             _ = _ := by rw [ENNReal.tsum_mul_right, PMF.tsum_coe, one_mul]
       _ ≤ _ := by
@@ -776,7 +776,7 @@ theorem keyBoundClsAt (hT : 0 < P.T) (x : P.D.Y) (w : P.D.X) :
           let j0 : Fin P.T := ⟨0, hT⟩
           rcases k with k | ⟨y, m', C⟩
           · simp
-          · calc _ ≤ (PMF.uniformOfFintype (Fin (P.T * (P.D.K + 1) + 1) → P.Ch)).toOuterMeasure
+          · calc _ ≤ (PMF.uniformFintype (Fin (P.T * (P.D.K + 1) + 1) → P.Ch)).toOuterMeasure
                   {e | (fun c : P.Ch => decide (c.1 = C j0 0)) (e (P.cIdx j0 0)) = true} := by
                   refine MeasureTheory.measure_mono fun e he => ?_
                   simp only [Set.mem_ofPred_eq, Sum.inr.injEq, Prod.mk.injEq] at he
@@ -788,7 +788,7 @@ theorem keyBoundClsAt (hT : 0 < P.T) (x : P.D.Y) (w : P.D.X) :
                   have hset : {c : P.Ch | decide (c.1 = C j0 0) = true} =
                       {c : P.Ch | c.1 ∈ ({C j0 0} : Set P.Dig)} := by
                     ext c; simp
-                  rw [hset, uniform_prod_fst_apply, PMF.toOuterMeasure_uniformOfFintype_apply]
+                  rw [hset, uniform_prod_fst_apply, PMF.toOuterMeasure_uniformFintype_apply]
                   simp [gammaCls]
 
 /-! ## The straight-line extractor -/
@@ -896,7 +896,7 @@ theorem length_digs_le (t : (P.protocol M).Tables) :
         omega
 
 theorem digs_mem_le (t : (P.protocol M).Tables) {N : ℕ} (ht : t.size ≤ N) :
-    (PMF.uniformOfFintype P.Ch).toOuterMeasure {c | decide (c.1 ∈ P.digs M t) = true} ≤
+    (PMF.uniformFintype P.Ch).toOuterMeasure {c | decide (c.1 ∈ P.digs M t) = true} ≤
       P.epsCls N false := by
   have hset : {c : P.Ch | decide (c.1 ∈ P.digs M t) = true} =
       {c : P.Ch | c.1 ∈ {d | d ∈ P.digs M t}} := by
@@ -909,13 +909,13 @@ theorem digs_mem_le (t : (P.protocol M).Tables) {N : ℕ} (ht : t.size ≤ N) :
 
 theorem bad_inl_le (x : P.D.Y) (t : (P.protocol M).Tables) {N : ℕ} (ht : t.size ≤ N)
     (k : P.CKey) :
-    (PMF.uniformOfFintype P.Ch).toOuterMeasure {c | P.Bad M x t (.inl k) c = true} ≤
+    (PMF.uniformFintype P.Ch).toOuterMeasure {c | P.Bad M x t (.inl k) c = true} ≤
       P.epsCls N false :=
   P.digs_mem_le M t ht
 
 theorem bad_inr_le (hK : 0 < P.D.K) (x : P.D.Y) (t : (P.protocol M).Tables) (y : P.D.Y)
     (m' : M) (C : Fin P.T → Fin (P.D.K + 1) → P.Dig) :
-    (PMF.uniformOfFintype P.Ch).toOuterMeasure {c | P.Bad M x t (.inr (y, m', C)) c = true} ≤
+    (PMF.uniformFintype P.Ch).toOuterMeasure {c | P.Bad M x t (.inr (y, m', C)) c = true} ≤
       P.epsCls 0 true := by
   classical
   by_cases h : P.Uniq M t ∧ ¬ P.Ext M t y C
@@ -927,7 +927,7 @@ theorem bad_inr_le (hK : 0 < P.D.K) (x : P.D.Y) (t : (P.protocol M).Tables) (y :
       have : ch ∈ S j := hj ▸ Finset.mem_univ ch
       simp [S] at this
       exact hch this
-    calc _ ≤ (PMF.uniformOfFintype P.Ch).toOuterMeasure {c | c.2 ∈ {f | ∀ j, f j ∈ S j}} := by
+    calc _ ≤ (PMF.uniformFintype P.Ch).toOuterMeasure {c | c.2 ∈ {f | ∀ j, f j ∈ S j}} := by
           refine MeasureTheory.measure_mono fun c hc => ?_
           simp only [Bad, decide_eq_true_eq, Set.mem_ofPred_eq] at hc
           simp [S, hc.2.2]
@@ -952,14 +952,14 @@ theorem simBad_le (hK : 0 < P.D.K) (x : P.D.Y) (t : (P.protocol M).Tables) (m : 
       ((P.T * (P.D.K + 1) : ℕ) : ℝ≥0∞) * P.epsCls N false + P.epsCls N true := by
   refine sampleVec_le_of_forall _ fun s => ?_
   simp only [simTrace_eq, traceOf, hashAll_nil (G := P.protocol M)]
-  calc _ ≤ (PMF.uniformOfFintype (Fin (P.T * (P.D.K + 1) + 1) → P.Ch)).toOuterMeasure
+  calc _ ≤ (PMF.uniformFintype (Fin (P.T * (P.D.K + 1) + 1) → P.Ch)).toOuterMeasure
         (⋃ i, {e | P.Bad M x t (P.keyOf M x m (P.vfO (P.chalOf e)
           (P.openOf (P.vfS x (P.chalOf e) s) (P.chalOf e))) e i) (e i) = true}) := by
         refine MeasureTheory.measure_mono fun e he => ?_
         simp only [Set.mem_ofPred_eq, List.any_eq_true, List.mem_map, List.mem_filter] at he
         obtain ⟨_, ⟨i, _, rfl⟩, h⟩ := he
         exact Set.mem_iUnion.mpr ⟨i, h⟩
-    _ ≤ ∑ i, (PMF.uniformOfFintype (Fin (P.T * (P.D.K + 1) + 1) → P.Ch)).toOuterMeasure
+    _ ≤ ∑ i, (PMF.uniformFintype (Fin (P.T * (P.D.K + 1) + 1) → P.Ch)).toOuterMeasure
         {e | P.Bad M x t (P.keyOf M x m (P.vfO (P.chalOf e)
           (P.openOf (P.vfS x (P.chalOf e) s) (P.chalOf e))) e i) (e i) = true} :=
         MeasureTheory.measure_iUnion_fintype_le _ _
@@ -1288,7 +1288,7 @@ theorem extFrom_spec (hS : P.D.Sound) {t : (P.protocol M).Tables} {y : P.D.Y}
     {C : Fin P.T → Fin (P.D.K + 1) → P.Dig} (h : P.Ext M t y C) :
     P.D.F (P.extFrom M t y C) = y := by
   unfold extFrom
-  rw [dif_pos h]
+  rw [dite_eq_left h]
   exact hS y _ (Classical.choose_spec (Classical.choose_spec h)).2
 
 /-- **The straight-line extractor.** It reads the verifier's values of the forgery from the
@@ -1306,7 +1306,7 @@ theorem vkey_open {y : P.D.Y} {m : M} {σ : P.Sig} {vs : List P.Ch} (j : Fin P.T
     P.vkey M y m σ vs = .inl (j, (σ.1 j).succAbove i, ((σ.2 j).1 i).1, ((σ.2 j).1 i).2) := by
   unfold vkey
   have hlt : vs.length < P.T * P.D.K := h ▸ P.oIdx_lt j i
-  rw [dif_pos hlt]
+  rw [dite_eq_left hlt]
   have hji : finProdFinEquiv.symm (⟨vs.length, hlt⟩ : Fin (P.T * P.D.K)) = (j, i) := by
     rw [Equiv.symm_apply_eq]; exact Fin.ext h
   rw [hji]
@@ -1315,7 +1315,7 @@ omit [DecidableEq M] in
 theorem vkey_chal {y : P.D.Y} {m : M} {σ : P.Sig} {vs : List P.Ch}
     (h : vs.length = P.T * P.D.K) : P.vkey M y m σ vs = .inr (y, m, P.vmat σ vs) := by
   unfold vkey
-  rw [dif_neg (by omega)]
+  rw [dite_eq_right (by omega)]
 
 /-- **Soundness of the extractor.** At a reachable state without the extraction flag, a
 winning forgery gives a preimage of the statement. -/

@@ -39,7 +39,7 @@ tables, the `J`-prefix hop and the per-draw bound.
 
 * `tKeyed_enc_eq_fixedT`, `tKeyed_dec_eq_fixedT` — on a key pair `(pk, sk)`,
   `tKeyed P f` is `fixedT P (f pk)`
-* `uniformOfFintype_prod` — a uniform pair is a pair of independent uniform draws
+* `uniformFintype_prod` — a uniform pair is a pair of independent uniform draws
 * `tsum_uniform_mem_log_le` — averaged over a uniform `z`, a run whose queries carry
   at most `n` keys logs `z` with probability at most `n / |Z|`
 * `advantage_le_flag` — the IND-CCA advantage against `fips203 P hpk` is at most the
@@ -102,7 +102,7 @@ The steps of `FOTransformU.uNotBot_indcca`, and how each maps onto `fips203`:
    `G`-table to an eager pair of functions and keeps the keys lazy on the split side;
    `tKeyed_enc_eq_fixedT` and `tKeyed_dec_eq_fixedT` identify the
    derandomised scheme with `fixedT P (f pk)` on the key pair in play, and
-   `uniformOfFintype_prod` separates the `K`- and `R`-coordinates of one `G`-value.
+   `uniformFintype_prod` separates the `K`- and `R`-coordinates of one `G`-value.
 5. Correctness (`failInd`, `corrErr_eq`). Transfers: the challenge decrypts to `m*`
    except with probability `P.corrErr`.
 6. Composition. `tTransform_owpca_of_total` with `n = 2·qRO`, since each `G`-query at
@@ -170,12 +170,12 @@ end Bridge
 omit [Fintype M] [Nonempty M] [Fintype Z] [Nonempty Z] [Nonempty R] [Nonempty K] [DecidableEq C] in
 /-- A uniform pair is a uniform first coordinate followed by an independent uniform
 second coordinate. -/
-theorem uniformOfFintype_prod {α β : Type} [Fintype α] [Nonempty α] [Fintype β] [Nonempty β] :
-    PMF.uniformOfFintype (α × β) =
-      (PMF.uniformOfFintype α).bind fun a => (PMF.uniformOfFintype β).map fun b => (a, b) := by
+theorem uniformFintype_prod {α β : Type} [Fintype α] [Nonempty α] [Fintype β] [Nonempty β] :
+    PMF.uniformFintype (α × β) =
+      (PMF.uniformFintype α).bind fun a => (PMF.uniformFintype β).map fun b => (a, b) := by
   classical
   ext ⟨a, b⟩
-  simp only [PMF.uniformOfFintype_apply, Fintype.card_prod, Nat.cast_mul, PMF.bind_apply,
+  simp only [PMF.uniformFintype_apply, Fintype.card_prod, Nat.cast_mul, PMF.bind_apply,
     PMF.map_apply, tsum_fintype, Prod.mk.injEq]
   have hα : (Fintype.card α : ℝ≥0∞) ≠ 0 := by simp
   rw [Finset.sum_eq_single a]
@@ -234,7 +234,7 @@ at most `n` keys logs `z` with probability at most `n / |Z|`. -/
 theorem tsum_uniform_mem_log_le {α : Type} [DecidableEq Z] (O : σ → D → PMF (A × σ))
     (key : D → Option Z) (B : OracleAdv D A α) (n : ℕ) (hB : B.IsQueryBoundBy (keyCost key) n)
     (s : σ) :
-    ∑' z, PMF.uniformOfFintype Z z *
+    ∑' z, PMF.uniformFintype Z z *
       (OracleAdv.run (logged O key) B (s, [])).toOuterMeasure {y | z ∈ y.2.2} ≤
       (n : ℝ≥0∞) / Fintype.card Z := by
   classical
@@ -246,7 +246,7 @@ theorem tsum_uniform_mem_log_le {α : Type} [DecidableEq Z] (O : σ → D → PM
     by_cases h : z ∈ y.2.2 <;> simp [Set.indicator, h]
   simp_rw [hs, ← ENNReal.tsum_mul_left]
   rw [ENNReal.tsum_comm]
-  calc ∑' y, ∑' z, PMF.uniformOfFintype Z z * (p y * (if z ∈ y.2.2 then 1 else 0))
+  calc ∑' y, ∑' z, PMF.uniformFintype Z z * (p y * (if z ∈ y.2.2 then 1 else 0))
       ≤ ∑' y, p y * ((n : ℝ≥0∞) / Fintype.card Z) := by
         refine ENNReal.tsum_le_tsum fun y => ?_
         by_cases hy : p y = 0
@@ -254,17 +254,17 @@ theorem tsum_uniform_mem_log_le {α : Type} [DecidableEq Z] (O : σ → D → PM
         have hlen : y.2.2.length ≤ n := by
           simpa using length_log_le_of_mem_support O key B n hB s [] y
             ((PMF.mem_support_iff _ _).mpr hy)
-        have hcard : ∑' z, PMF.uniformOfFintype Z z * (if z ∈ y.2.2 then 1 else 0) ≤
+        have hcard : ∑' z, PMF.uniformFintype Z z * (if z ∈ y.2.2 then 1 else 0) ≤
             (n : ℝ≥0∞) / Fintype.card Z := by
           rw [tsum_fintype]
-          simp only [PMF.uniformOfFintype_apply, mul_ite, mul_one, mul_zero]
+          simp only [PMF.uniformFintype_apply, mul_ite, mul_one, mul_zero]
           rw [Finset.sum_ite, Finset.sum_const_zero, add_zero, Finset.sum_const, nsmul_eq_mul,
             ENNReal.div_eq_inv_mul, mul_comm]
           gcongr
           exact (Finset.card_le_card fun z hz => by simpa using hz).trans
             ((List.toFinset_card_le _).trans hlen)
-        calc ∑' z, PMF.uniformOfFintype Z z * (p y * (if z ∈ y.2.2 then 1 else 0))
-            = p y * ∑' z, PMF.uniformOfFintype Z z * (if z ∈ y.2.2 then 1 else 0) := by
+        calc ∑' z, PMF.uniformFintype Z z * (p y * (if z ∈ y.2.2 then 1 else 0))
+            = p y * ∑' z, PMF.uniformFintype Z z * (if z ∈ y.2.2 then 1 else 0) := by
               rw [← ENNReal.tsum_mul_left]; exact tsum_congr fun z => by ring
           _ ≤ _ := by gcongr
     _ = _ := by rw [ENNReal.tsum_mul_right, PMF.tsum_coe, one_mul]
@@ -305,7 +305,7 @@ noncomputable def lazyTab {D' R' I V S A : Type} [DecidableEq I] [Fintype V] [No
     OracleAdv D' R' (A × S) :=
   match tab i with
   | some v => .ret (w v, set tab)
-  | none => .rand (PMF.uniformOfFintype V) fun v => .ret (w v, set (Function.update tab i (some v)))
+  | none => .rand (PMF.uniformFintype V) fun v => .ret (w v, set (Function.update tab i (some v)))
 
 omit [Fintype M] [Nonempty M] [Fintype Z] [Nonempty Z] [Nonempty R] [Nonempty K] [DecidableEq C]
   [DecidableEq M] [DecidableEq Hash] [DecidableEq Z] [Fintype R] [Fintype K] in
@@ -376,7 +376,7 @@ theorem isQueryBoundBy_simImplF (P : Scheme PK SK M C R) (hpk : PK → Hash) (pk
 noncomputable def redRun (P : Scheme PK SK M C R) (hpk : PK → Hash) {qRO qD : ℕ}
     (B : ROM2INDCCAAdversary PK K C (M × Hash) (K × R) (Z × C) K qRO qD) (pk : PK) (c : C) :
     OracleAdv (M ⊕ (M × C)) (R ⊕ Bool) M :=
-  .rand (PMF.uniformOfFintype K) fun kstar =>
+  .rand (PMF.uniformFintype K) fun kstar =>
     (OracleAdv.simulate (simImplF P hpk pk c kstar) (B.run pk c kstar) SimStateF.init).bind
       fun x => .ret (x.2.found.getD (Classical.arbitrary M))
 
@@ -435,9 +435,9 @@ variable (P : Scheme PK SK M C R) (hpk : PK → Hash)
 
 /-- The joint distribution of the randomness of the IND-CCA experiment. -/
 noncomputable def setup : PMF (Draw PK SK M R K Z) :=
-  P.keygen.bind fun ks => (PMF.uniformOfFintype Z).bind fun z =>
-    (PMF.uniformOfFintype M).bind fun m => (PMF.uniformOfFintype K).bind fun k₀ =>
-      (PMF.uniformOfFintype R).bind fun r => (PMF.uniformOfFintype K).map fun k₁ =>
+  P.keygen.bind fun ks => (PMF.uniformFintype Z).bind fun z =>
+    (PMF.uniformFintype M).bind fun m => (PMF.uniformFintype K).bind fun k₀ =>
+      (PMF.uniformFintype R).bind fun r => (PMF.uniformFintype K).map fun k₁ =>
         ⟨ks.1, ks.2, z, m, r, k₀, k₁⟩
 
 /-- The challenge ciphertext of a draw. -/
@@ -452,8 +452,8 @@ theorem setup_map_swap :
   simp only [setup, PMF.map_bind, PMF.map_comp]
   refine congrArg _ (funext fun ks => congrArg _ (funext fun z => congrArg _ (funext fun m => ?_)))
   simp only [PMF.map, Function.comp_def, Draw.swap]
-  rw [PMF.bind_comm (PMF.uniformOfFintype K) (PMF.uniformOfFintype R)]
-  conv_rhs => rw [PMF.bind_comm (PMF.uniformOfFintype K) (PMF.uniformOfFintype R)]
+  rw [PMF.bind_comm (PMF.uniformFintype K) (PMF.uniformFintype R)]
+  conv_rhs => rw [PMF.bind_comm (PMF.uniformFintype K) (PMF.uniformFintype R)]
   refine congrArg _ (funext fun r => ?_)
   exact PMF.bind_comm _ _ _
 
@@ -535,7 +535,7 @@ theorem oFlag_map (sk : SK) (pk : PK) (z : Z) (mstar : M) (rstar : R) (v : K)
   · by_cases hq : q = (mstar, hpk pk)
     · subst hq
       simp [oFlag, rom2CCAOracle, ro2Oracle, roOracle, storePt, PMF.pure_map]
-    · simp only [oFlag, rom2CCAOracle, ro2Oracle, hq, if_false, PMF.map_comp, storePt]
+    · simp only [oFlag, rom2CCAOracle, ro2Oracle, hq, ite_false, PMF.map_comp, storePt]
       rw [← roOracle_update_ne _ _ _ _ hq, PMF.map_comp]
       rfl
   · simp only [oFlag, rom2CCAOracle, ro2Oracle, PMF.map_comp, storePt]
@@ -543,7 +543,7 @@ theorem oFlag_map (sk : SK) (pk : PK) (z : Z) (mstar : M) (rstar : R) (v : K)
   · by_cases hc : c = P.enc pk mstar rstar
     · subst hc
       simp [oFlag, rom2CCAOracle, storePt, PMF.pure_map]
-    · simp only [oFlag, rom2CCAOracle, hc, if_false]
+    · simp only [oFlag, rom2CCAOracle, hc, ite_false]
       rcases hd : P.dec sk c with _ | m
       · dsimp only
         rw [jRead_map_store]
@@ -551,13 +551,13 @@ theorem oFlag_map (sk : SK) (pk : PK) (z : Z) (mstar : M) (rstar : R) (v : K)
       · dsimp only
         by_cases hm : m = mstar
         · subst hm
-          rw [if_pos rfl, jRead_map_store]
+          rw [ite_eq_left rfl, jRead_map_store]
           have hc' : P.enc pk m rstar ≠ c := Ne.symm hc
           simp only [fips203, hd, gQ, OracleAdv.run_bind, OracleAdv.run_query, OracleAdv.run_ret,
             ro2Oracle, storePt, roOracle, Function.update_self, PMF.map_bind, PMF.pure_map,
-            PMF.pure_bind, Sum.elim_inl, id, hc', if_false]
+            PMF.pure_bind, Sum.elim_inl, id, hc', ite_false]
         · have hne : (m, hpk pk) ≠ (mstar, hpk pk) := fun h => hm (congrArg Prod.fst h)
-          simp only [fips203, hd, hm, if_false, gQ, OracleAdv.run_bind, OracleAdv.run_query,
+          simp only [fips203, hd, hm, ite_false, gQ, OracleAdv.run_bind, OracleAdv.run_query,
             OracleAdv.run_ret, ro2Oracle, PMF.map_bind, PMF.bind_map, storePt]
           rw [← roOracle_update_ne _ _ _ _ hne, PMF.bind_map, PMF.bind_bind]
           refine congrArg _ (funext fun x => ?_)
@@ -592,7 +592,7 @@ theorem rom2INDCCAGame_fips203 {qRO qD : ℕ}
   have hempty : ∀ q : M × Hash, (emptyTable : M × Hash → Option (K × R)) q = none := fun _ => rfl
   simp only [rom2INDCCAGame, setup, fips203, gQ, PMF.bind_bind, PMF.bind_map, Function.comp_def,
     OracleAdv.run_rand, OracleAdv.run_bind, OracleAdv.run_query, OracleAdv.run_ret, ro2Oracle,
-    roOracle, hempty, PMF.map_bind, PMF.pure_bind, Sum.elim_inl, id, uniformOfFintype_prod]
+    roOracle, hempty, PMF.map_bind, PMF.pure_bind, Sum.elim_inl, id, uniformFintype_prod]
   refine congrArg _ (funext fun ks => congrArg _ (funext fun z => congrArg _ (funext fun m =>
     congrArg _ (funext fun k₀ => congrArg _ (funext fun r => ?_)))))
   simp only [PMF.map, Function.comp_def]
@@ -702,7 +702,7 @@ noncomputable def lazyRead {I V S G A : Type} [DecidableEq I] [Fintype V] [Nonem
     PMF (A × (S × G)) :=
   match tab i with
   | some v => PMF.pure (w v, (set tab, g))
-  | none => (PMF.uniformOfFintype V).map fun v =>
+  | none => (PMF.uniformFintype V).map fun v =>
       (w v, (set (Function.update tab i (some v)), g))
 
 omit [Fintype M] [Nonempty M] [Fintype Z] [Nonempty Z] [Nonempty R] [Nonempty K] [DecidableEq C]
@@ -863,7 +863,7 @@ theorem validB_eq_true_iff (sk : SK) (pk : PK) (c : C) :
     · rintro ⟨m', hm', he⟩
       simp only [Option.some.injEq] at hm'
       subst hm'
-      exact ⟨_, if_pos he⟩
+      exact ⟨_, ite_eq_left he⟩
 
 omit [Fintype M] [Nonempty M] [Fintype Z] [Nonempty Z] [Nonempty R] [Nonempty K] [Fintype R]
   [Fintype K] [DecidableEq Hash] in
@@ -875,7 +875,7 @@ theorem table_updateLD_of_invalid (sk : SK) (pk : PK) (z : Z) (st : SimStateF M 
   simp only [table, SplitTab.mk.injEq]
   refine ⟨funext fun m => ?_, trivial, funext fun q => ?_⟩
   · by_cases hs : selK P f sk pk m = true
-    · simp only [hs, if_true]
+    · simp only [hs, ite_true]
       rw [Function.update_of_ne]
       intro he
       have : validB P f sk pk c = true := (validB_eq_true_iff P f sk pk c).mpr
@@ -889,7 +889,7 @@ theorem table_updateLD_of_invalid (sk : SK) (pk : PK) (z : Z) (st : SimStateF M 
       simp [selJ, hc]
     · rw [Function.update_of_ne hq]
       by_cases hs : selJ P f sk pk z (z', c') = true
-      · simp only [hs, if_true]
+      · simp only [hs, ite_true]
         rw [Function.update_of_ne]
         intro he
         subst he
@@ -912,14 +912,14 @@ theorem table_updateLD_of_valid (sk : SK) (pk : PK) (z : Z) (st : SimStateF M C 
       simp [selK_of_dec P f sk pk m' c hd hc, hc]
     · rw [Function.update_of_ne hm]
       by_cases hs : selK P f sk pk m' = true
-      · simp only [hs, if_true]
+      · simp only [hs, ite_true]
         rw [Function.update_of_ne]
         intro he
         simp only [selK, he, hd, Option.some.injEq, decide_eq_true_eq] at hs
         exact hm hs.symm
       · simp [hs]
   · by_cases hs : selJ P f sk pk z q = true
-    · simp only [hs, if_true]
+    · simp only [hs, ite_true]
       rw [Function.update_of_ne]
       intro he
       simp only [selJ, Bool.and_eq_true, Bool.not_eq_eq_eq_not, Bool.not_true] at hs
@@ -1022,13 +1022,13 @@ theorem oSim_map_table (sk : SK) (pk : PK) (z : Z) (mstar : M) (v : K)
       · subst hm
         have hs : selK P f sk pk m = true := selK_of_dec P f sk pk m _ hdec rfl
         simp [oSim, oSplit, hs, PMF.pure_map, table]
-      · simp only [oSim, oSplit, if_true, hm, if_false]
+      · simp only [oSim, oSplit, ite_true, hm, ite_false]
         by_cases hs : selK P f sk pk m = true
         · have hne : cOf P f pk m ≠ cOf P f pk mstar := by
             intro he
             simp only [selK, he, hdec, Option.some.injEq, decide_eq_true_eq] at hs
             exact hm hs.symm
-          simp only [hs, if_true, hne, if_false]
+          simp only [hs, ite_true, hne, ite_false]
           rw [lazyRead_eq]
           refine roOracle_map_eq _ _ _ _ _ _ _ ?_ ?_ ?_
           · simp [table, hs]
@@ -1036,7 +1036,7 @@ theorem oSim_map_table (sk : SK) (pk : PK) (z : Z) (mstar : M) (v : K)
           · intro k
             simp only [Prod.map_apply, id]
             rw [table_updateLD_of_valid P f sk pk z st _ m k (by simpa [selK] using hs) rfl]
-        · simp only [hs, Bool.false_eq_true, if_false]
+        · simp only [hs, Bool.false_eq_true, ite_false]
           rw [lazyRead_eq]
           refine roOracle_map_eq _ _ _ _ _ _ _ ?_ ?_ ?_
           · simp [table, hs]
@@ -1044,12 +1044,12 @@ theorem oSim_map_table (sk : SK) (pk : PK) (z : Z) (mstar : M) (v : K)
           · intro k
             simp only [Prod.map_apply, id]
             rw [table_updateLQ P f sk pk z st m k (by simpa using hs)]
-    · simp only [oSim, oSplit, hh, if_false]
+    · simp only [oSim, oSplit, hh, ite_false]
       rw [lazyRead_eq]
       exact roOracle_map_eq _ _ _ _ _ _ _ rfl (fun _ => rfl) (fun _ => rfl)
   · by_cases hs : selJ P f sk pk z q = true
     · obtain ⟨hz, hv⟩ := (selJ_eq_true_iff P f sk pk z q).mp hs
-      simp only [oSim, oSplit, hs, if_true]
+      simp only [oSim, oSplit, hs, ite_true]
       rw [lazyRead_eq]
       refine roOracle_map_eq _ _ _ _ _ _ _ ?_ ?_ ?_
       · simp [table, hs]
@@ -1057,7 +1057,7 @@ theorem oSim_map_table (sk : SK) (pk : PK) (z : Z) (mstar : M) (v : K)
       · intro k
         simp only [Prod.map_apply, id]
         rw [table_updateLD_of_invalid P f sk pk z st _ k hv, ← hz]
-    · simp only [oSim, oSplit, hs, Bool.false_eq_true, if_false]
+    · simp only [oSim, oSplit, hs, Bool.false_eq_true, ite_false]
       rw [lazyRead_eq]
       refine roOracle_map_eq _ _ _ _ _ _ _ ?_ ?_ ?_
       · simp [table, hs]
@@ -1068,7 +1068,7 @@ theorem oSim_map_table (sk : SK) (pk : PK) (z : Z) (mstar : M) (v : K)
   · by_cases hc : c = cOf P f pk mstar
     · subst hc
       simp [oSim, oSplit, PMF.pure_map]
-    · simp only [oSim, oSplit, hc, if_false]
+    · simp only [oSim, oSplit, hc, ite_false]
       rw [lazyRead_eq]
       have hj : ∀ hv : validB P f sk pk c = false,
           ((roOracle st.LD c).map fun y =>
@@ -1089,11 +1089,11 @@ theorem oSim_map_table (sk : SK) (pk : PK) (z : Z) (mstar : M) (v : K)
       · dsimp only
         by_cases hm : m = mstar
         · subst hm
-          rw [if_pos rfl]
+          rw [ite_eq_left rfl]
           exact hj (validB_eq_false_of_dec_some P f sk pk c m hd (Ne.symm hc))
-        · rw [if_neg hm]
+        · rw [ite_eq_right hm]
           by_cases he : cOf P f pk m = c
-          · rw [if_pos he]
+          · rw [ite_eq_left he]
             have hs : selK P f sk pk m = true := selK_of_dec P f sk pk m c hd he
             refine roOracle_map_eq _ _ _ _ _ _ _ ?_ ?_ ?_
             · simp [table, hs, he]
@@ -1101,7 +1101,7 @@ theorem oSim_map_table (sk : SK) (pk : PK) (z : Z) (mstar : M) (v : K)
             · intro k
               simp only [Prod.map_apply, id]
               rw [table_updateLD_of_valid P f sk pk z st c m k hd he]
-          · rw [if_neg he]
+          · rw [ite_eq_right he]
             exact hj (validB_eq_false_of_dec_some P f sk pk c m hd he)
 
 end Split
@@ -1241,7 +1241,7 @@ random-oracle queries makes a `J`-query with prefix `z` with probability at most
 theorem tsum_bad_le {α : Type} (sK : M → Bool) (sJ : Z × C → Bool) (pk : PK) (cstar : C) (v : K)
     (A : OracleAdv (((M × Hash) ⊕ (Z × C)) ⊕ C) (((K × R) ⊕ K) ⊕ Option K) α) (n : ℕ)
     (hA : A.IsQueryBoundBy (Sum.elim (fun _ => 1) fun _ => 0) n) :
-    ∑' z, PMF.uniformOfFintype Z z *
+    ∑' z, PMF.uniformFintype Z z *
       (OracleAdv.run (oSim P hpk f (badUpd z) sK sJ pk cstar v) A (SimStateF.init, false)).toOuterMeasure
         {y | y.2.2 = true} ≤ (n : ℝ≥0∞) / Fintype.card Z := by
   have hA' : A.IsQueryBoundBy (keyCost keyJ) n :=
@@ -1298,29 +1298,29 @@ theorem isQueryBound_simImplFix (pk : PK) (cstar : C) (kstar : K) (st : SimState
   rcases d with (q | q) | c
   · simp only [simImplFix, Sum.elim_inl]
     by_cases hh : q.2 = hpk pk
-    · rw [if_pos hh]
+    · rw [ite_eq_left hh]
       intro b
       dsimp only
       by_cases hb : b = true
-      · rw [if_pos hb]
+      · rw [ite_eq_left hb]
         by_cases hc : cOf P f pk q.1 = cstar
-        · rw [if_pos hc]; trivial
-        · rw [if_neg hc]; apply isQueryBound_lazyTab
-      · rw [if_neg hb]; apply isQueryBound_lazyTab
-    · rw [if_neg hh]; apply isQueryBound_lazyTab
+        · rw [ite_eq_left hc]; trivial
+        · rw [ite_eq_right hc]; apply isQueryBound_lazyTab
+      · rw [ite_eq_right hb]; apply isQueryBound_lazyTab
+    · rw [ite_eq_right hh]; apply isQueryBound_lazyTab
   · simp only [simImplFix, Sum.elim_inl]
     apply isQueryBound_lazyTab
   · simp only [simImplFix, Sum.elim_inr]
     by_cases hc : c = cstar
-    · rw [if_pos hc]; trivial
-    · rw [if_neg hc]; apply isQueryBound_lazyTab
+    · rw [ite_eq_left hc]; trivial
+    · rw [ite_eq_right hc]; apply isQueryBound_lazyTab
 
 /-- The OW-PCA adversary against `fixedT P f` built from an IND-CCA adversary `B`
 against `fips203 P hpk`, with the coins at prefix `hpk pk` given by `f`. -/
 noncomputable def redFix {qRO qD : ℕ}
     (B : ROM2INDCCAAdversary PK K C (M × Hash) (K × R) (Z × C) K qRO qD) :
     OWPCAAdversary PK M C qRO where
-  run pk cstar := .rand (PMF.uniformOfFintype K) fun kstar =>
+  run pk cstar := .rand (PMF.uniformFintype K) fun kstar =>
     (OracleAdv.simulate (simImplFix P hpk f pk cstar kstar) (B.run pk cstar kstar)
       SimStateF.init).bind fun x => .ret (x.2.found.getD (Classical.arbitrary M))
   isQueryBound pk cstar kstar := by
@@ -1356,18 +1356,18 @@ theorem simOracle_eq_oSim (sk : SK) (pk : PK) (cstar : C) (v : K)
   rcases d with (q | q) | c
   · simp only [OracleAdv.simOracle, simImplFix, oSim]
     by_cases hh : q.2 = hpk pk
-    · simp only [hh, if_true, OracleAdv.run_query, pcoOracle, PMF.pure_bind, pco_fixedT_cOf]
+    · simp only [hh, ite_true, OracleAdv.run_query, pcoOracle, PMF.pure_bind, pco_fixedT_cOf]
       by_cases hs : selK P f sk pk q.1 = true
-      · simp only [hs, if_true]
+      · simp only [hs, ite_true]
         by_cases hc : cOf P f pk q.1 = cstar
         · simp [hc, PMF.pure_map]
-        · simp only [hc, if_false]
+        · simp only [hc, ite_false]
           exact run_lazyTab _ _ _ _ _ _
-      · simp only [hs, Bool.false_eq_true, if_false]
+      · simp only [hs, Bool.false_eq_true, ite_false]
         exact run_lazyTab _ _ _ _ _ _
-    · simp only [hh, if_false]
+    · simp only [hh, ite_false]
       exact run_lazyTab _ _ _ _ _ _
-  · simp only [OracleAdv.simOracle, simImplFix, oSim, Bool.false_eq_true, if_false]
+  · simp only [OracleAdv.simOracle, simImplFix, oSim, Bool.false_eq_true, ite_false]
     exact run_lazyTab _ _ _ _ _ _
   · simp only [OracleAdv.simOracle, simImplFix, oSim]
     split_ifs
@@ -1459,10 +1459,10 @@ theorem flag_le (sk : SK) (pk : PK) (z : Z) (mstar : M) (v : K)
         (cOf P f pk mstar) v) A (SimStateF.init, false)).toOuterMeasure {y | y.2.2 = true} := by
   by_cases hdec : P.dec sk (cOf P f pk mstar) = some mstar
   swap
-  · simp only [FOTransformU.failInd, hdec, if_false]
+  · simp only [FOTransformU.failInd, hdec, ite_false]
     exact (le_self_add.trans_eq (Constructions.ECBCPRF.toOuterMeasure_add_compl _ _)).trans
       (le_add_right le_self_add)
-  simp only [FOTransformU.failInd, hdec, if_true, zero_add]
+  simp only [FOTransformU.failInd, hdec, ite_true, zero_add]
   have h1 : (OracleAdv.run (oSplit P hpk f sk pk z mstar v) A (SplitTab.empty, false)).toOuterMeasure
       {y | y.2.2 = true} =
       (OracleAdv.run (oSim P hpk f (badUpd z) (selK P f sk pk) (selJ P f sk pk z) pk
@@ -1657,7 +1657,7 @@ theorem simOracle_progF_map (sk : SK) (pk : PK) (z : Z) (mstar : M) (rstar : R) 
               ((Sum.inl (Sum.inl y.1) : (((K × R) ⊕ K) ⊕ Option K)), (s, y.2)) := by
           simp [OracleAdv.simOracle, progF, hm, PMF.map, Function.comp_def]
         rw [hL]
-        simp only [oFlag, if_neg hq, flatF]
+        simp only [oFlag, ite_eq_right hq, flatF]
         refine roOracle_map_eq _ _ _ _ _ _ _ (joinG_apply_on hpk pk _ _ _) (fun _ => rfl)
           (fun w => ?_)
         simp [flatF, joinG_update]
@@ -1668,9 +1668,9 @@ theorem simOracle_progF_map (sk : SK) (pk : PK) (z : Z) (mstar : M) (rstar : R) 
             (fun kr => (Sum.inl (Sum.inl kr) : (((K × R) ⊕ K) ⊕ Option K))) U := by
         rw [← run_lazyTab roOracle s.1.1 (m, h) (fun t => ((t, s.1.2), s.2))
           (fun kr => (Sum.inl (Sum.inl kr) : (((K × R) ⊕ K) ⊕ Option K))) U]
-        simp only [OracleAdv.simOracle, progF, if_neg hh]
+        simp only [OracleAdv.simOracle, progF, ite_eq_right hh]
       rw [hL, lazyRead_eq]
-      simp only [oFlag, if_neg hq, flatF]
+      simp only [oFlag, ite_eq_right hq, flatF]
       refine roOracle_map_eq _ _ _ _ _ _ _ (joinG_apply_off hpk pk _ _ _ hh) (fun _ => rfl)
         (fun w => ?_)
       simp only [flatF, Prod.map_apply, id]
@@ -1698,26 +1698,26 @@ theorem simOracle_progF_map (sk : SK) (pk : PK) (z : Z) (mstar : M) (rstar : R) 
     by_cases hc : c = P.enc pk mstar rstar
     · subst hc
       simp [OracleAdv.simOracle, progF, oFlag, flatF, PMF.pure_map]
-    · simp only [OracleAdv.simOracle, progF, oFlag, if_neg hc, flatF]
+    · simp only [OracleAdv.simOracle, progF, oFlag, ite_eq_right hc, flatF]
       rcases hd : P.dec sk c with _ | m
       · exact hjR U
       · dsimp only
         by_cases hm : m = mstar
         · subst hm
-          rw [if_pos rfl, if_pos rfl]
+          rw [ite_eq_left rfl, ite_eq_left rfl]
           exact hjR U
-        · rw [if_neg hm, if_neg hm]
+        · rw [ite_eq_right hm, ite_eq_right hm]
           simp only [OracleAdv.run_query]
           rw [PMF.map_bind]
           refine roOracle_bind_eq (V := K × R) U m (joinG hpk pk s.1.1 U) (m, hpk pk) _ _
             (flatF hpk pk) (joinG_apply_on hpk pk _ _ _) (fun w => ?_) (fun w => ?_)
           · by_cases he : P.enc pk m w.2 = c
             · simp [he, flatF, PMF.pure_map]
-            · rw [if_neg he, if_neg he]
+            · rw [ite_eq_right he, ite_eq_right he]
               exact hjR U
           · by_cases he : P.enc pk m w.2 = c
             · simp [he, flatF, PMF.pure_map, joinG_update]
-            · rw [if_neg he, if_neg he]
+            · rw [ite_eq_right he, ite_eq_right he]
               simp [hjR (Function.update U m (some w)), flatF, joinG_update]
 
 /-- The state of the split oracle assembled from the state of `progS` and the table of
@@ -1766,7 +1766,7 @@ theorem simOracle_progS_map (f : M → R) (sk : SK) (pk : PK) (z : Z) (mstar : M
               ((Sum.inl (Sum.inl (y.1, f m)) : (((K × R) ⊕ K) ⊕ Option K)), (s, y.2)) := by
           simp [OracleAdv.simOracle, progS, hm, PMF.map, Function.comp_def]
         rw [hL]
-        simp only [oSplit, if_neg hm, flatS]
+        simp only [oSplit, ite_eq_right hm, flatS]
         exact roOracle_map_eq _ _ _ _ _ _ _ rfl (fun _ => rfl) (fun _ => rfl)
     · have hL : OracleAdv.simOracle (progS P hpk f sk pk z mstar v) roOracle (s, U)
           (.inl (.inl (m, h))) =
@@ -1774,9 +1774,9 @@ theorem simOracle_progS_map (f : M → R) (sk : SK) (pk : PK) (z : Z) (mstar : M
             (fun kr => (Sum.inl (Sum.inl kr) : (((K × R) ⊕ K) ⊕ Option K))) U := by
         rw [← run_lazyTab roOracle s.1.1 (m, h) (fun t => ((t, s.1.2), s.2))
           (fun kr => (Sum.inl (Sum.inl kr) : (((K × R) ⊕ K) ⊕ Option K))) U]
-        simp only [OracleAdv.simOracle, progS, if_neg hh]
+        simp only [OracleAdv.simOracle, progS, ite_eq_right hh]
       rw [hL, lazyRead_eq]
-      simp only [oSplit, if_neg hh, flatS]
+      simp only [oSplit, ite_eq_right hh, flatS]
       exact roOracle_map_eq _ _ _ _ _ _ _ rfl (fun _ => rfl) (fun _ => rfl)
   · have hL : OracleAdv.simOracle (progS P hpk f sk pk z mstar v) roOracle (s, U)
         (.inl (.inr q)) =
@@ -1801,17 +1801,17 @@ theorem simOracle_progS_map (f : M → R) (sk : SK) (pk : PK) (z : Z) (mstar : M
     by_cases hc : c = cOf P f pk mstar
     · subst hc
       simp [OracleAdv.simOracle, progS, oSplit, flatS, PMF.pure_map]
-    · simp only [OracleAdv.simOracle, progS, oSplit, if_neg hc]
+    · simp only [OracleAdv.simOracle, progS, oSplit, ite_eq_right hc]
       rcases hd : P.dec sk c with _ | m
       · exact hjS U
       · dsimp only
         by_cases hm : m = mstar
         · subst hm
-          rw [if_pos rfl, if_pos rfl]
+          rw [ite_eq_left rfl, ite_eq_left rfl]
           exact hjS U
-        · rw [if_neg hm, if_neg hm]
+        · rw [ite_eq_right hm, ite_eq_right hm]
           by_cases he : cOf P f pk m = c
-          · rw [if_pos he, if_pos he]
+          · rw [ite_eq_left he, ite_eq_left he]
             have hL : ((OracleAdv.run roOracle
                 (OracleAdv.query (R := K) m fun k =>
                   OracleAdv.ret ((Sum.inr (some k) : (((K × R) ⊕ K) ⊕ Option K)), s)) U).map
@@ -1822,7 +1822,7 @@ theorem simOracle_progS_map (f : M → R) (sk : SK) (pk : PK) (z : Z) (mstar : M
             rw [hL]
             simp only [flatS]
             exact roOracle_map_eq _ _ _ _ _ _ _ rfl (fun _ => rfl) (fun _ => rfl)
-          · rw [if_neg he, if_neg he]
+          · rw [ite_eq_right he, ite_eq_right he]
             exact hjS U
 
 omit [Fintype M] [Nonempty M] [Fintype Z] [Nonempty Z] in
@@ -1843,28 +1843,28 @@ theorem simOracle_keyed_eq (f : M → R) (g : M → K) (F : M → K × R) (sk : 
       · subst hm
         simp [OracleAdv.simOracle, progF, progS, hr]
       · simp [OracleAdv.simOracle, progF, progS, hm, PKE.FOTransformT.keyedRO, hF m hm]
-    · simp only [OracleAdv.simOracle, progF, progS, if_neg hh]
+    · simp only [OracleAdv.simOracle, progF, progS, ite_eq_right hh]
       rw [run_lazyTab, run_lazyTab]
   · simp only [OracleAdv.simOracle, progF, progS]
     rw [run_lazyTab, run_lazyTab]
   · by_cases hcc : c = P.enc pk mstar rstar
     · simp [OracleAdv.simOracle, progF, progS, hcc, hc]
-    · simp only [OracleAdv.simOracle, progF, progS, hc, if_neg hcc]
+    · simp only [OracleAdv.simOracle, progF, progS, hc, ite_eq_right hcc]
       rcases hd : P.dec sk c with _ | m
       · simp only [jProg]
         rw [run_lazyTab, run_lazyTab]
       · dsimp only
         by_cases hm : m = mstar
         · subst hm
-          rw [if_pos rfl, if_pos rfl]
+          rw [ite_eq_left rfl, ite_eq_left rfl]
           simp only [jProg]
           rw [run_lazyTab, run_lazyTab]
-        · rw [if_neg hm, if_neg hm]
+        · rw [ite_eq_right hm, ite_eq_right hm]
           simp only [OracleAdv.run_query, PKE.FOTransformT.keyedRO, PMF.pure_bind, hF m hm]
           by_cases he : cOf P f pk m = c
-          · rw [if_pos he, if_pos (show P.enc pk m (f m) = c from he)]
+          · rw [ite_eq_left he, ite_eq_left (show P.enc pk m (f m) = c from he)]
             simp [PKE.FOTransformT.keyedRO]
-          · rw [if_neg he, if_neg (show ¬P.enc pk m (f m) = c from he)]
+          · rw [ite_eq_right he, ite_eq_right (show ¬P.enc pk m (f m) = c from he)]
             simp only [jProg]
             rw [run_lazyTab, run_lazyTab]
 
@@ -1876,7 +1876,7 @@ theorem run_oFlag_eq_keyed {α : Type} (sk : SK) (pk : PK) (z : Z) (mstar : M) (
     (v : K) (A : OracleAdv (((M × Hash) ⊕ (Z × C)) ⊕ C) (((K × R) ⊕ K) ⊕ Option K) α) :
     (OracleAdv.run (oFlag P hpk sk pk z mstar rstar v) A ((emptyTable, emptyTable), false)).map
         (fun y => (y.1, y.2.2)) =
-      (PMF.uniformOfFintype (M → K × R)).bind fun F =>
+      (PMF.uniformFintype (M → K × R)).bind fun F =>
         (OracleAdv.run (OracleAdv.simOracle (progF P hpk sk pk z mstar rstar v)
           (PKE.FOTransformT.keyedRO F)) A (((emptyTable, emptyTable), false), ())).map
             fun x => (x.1, x.2.1.2) := by
@@ -1909,7 +1909,7 @@ theorem run_oSplit_eq_keyed {α : Type} (f : M → R) (sk : SK) (pk : PK) (z : Z
     (v : K) (A : OracleAdv (((M × Hash) ⊕ (Z × C)) ⊕ C) (((K × R) ⊕ K) ⊕ Option K) α) :
     (OracleAdv.run (oSplit P hpk f sk pk z mstar v) A (SplitTab.empty, false)).map
         (fun y => (y.1, y.2.2)) =
-      (PMF.uniformOfFintype (M → K)).bind fun g =>
+      (PMF.uniformFintype (M → K)).bind fun g =>
         (OracleAdv.run (OracleAdv.simOracle (progS P hpk f sk pk z mstar v)
           (PKE.FOTransformT.keyedRO g)) A (((emptyTable, emptyTable), false), ())).map
             fun x => (x.1, x.2.1.2) := by
@@ -1936,13 +1936,13 @@ omit [Fintype M] [Nonempty M] [Fintype Z] [Nonempty Z] [Nonempty R] [Nonempty K]
 /-- A uniform function into a product is a pair of independent uniform functions. -/
 theorem uniform_arrow_prod {α β γ : Type} [Fintype α] [DecidableEq α] [Fintype β] [Nonempty β]
     [Fintype γ] [Nonempty γ] :
-    PMF.uniformOfFintype (α → β × γ) =
-      (PMF.uniformOfFintype (α → β)).bind fun g =>
-        (PMF.uniformOfFintype (α → γ)).map fun f => fun a => (g a, f a) := by
-  rw [← PMF.uniformOfFintype_map_equiv (β := α → β × γ)
+    PMF.uniformFintype (α → β × γ) =
+      (PMF.uniformFintype (α → β)).bind fun g =>
+        (PMF.uniformFintype (α → γ)).map fun f => fun a => (g a, f a) := by
+  rw [← PMF.uniformFintype_map_equiv (β := α → β × γ)
       ⟨fun p a => (p.1 a, p.2 a), fun h => (fun a => (h a).1, fun a => (h a).2),
         fun _ => rfl, fun _ => rfl⟩,
-    uniformOfFintype_prod, PMF.map_bind]
+    uniformFintype_prod, PMF.map_bind]
   refine congrArg _ (funext fun g => ?_)
   rw [PMF.map_comp]
   rfl
@@ -1955,7 +1955,7 @@ theorem run_oFlag_eq_oSplit_avg {α : Type} (sk : SK) (pk : PK) (z : Z) (mstar :
     (v : K) (A : OracleAdv (((M × Hash) ⊕ (Z × C)) ⊕ C) (((K × R) ⊕ K) ⊕ Option K) α) :
     (OracleAdv.run (oFlag P hpk sk pk z mstar rstar v) A ((emptyTable, emptyTable), false)).map
         (fun y => (y.1, y.2.2)) =
-      (PMF.uniformOfFintype (M → R)).bind fun f₀ =>
+      (PMF.uniformFintype (M → R)).bind fun f₀ =>
         (OracleAdv.run (oSplit P hpk (Function.update f₀ mstar rstar) sk pk z mstar v) A
           (SplitTab.empty, false)).map fun y => (y.1, y.2.2) := by
   have hstep : ∀ (g : M → K) (f₀ : M → R),
@@ -1968,12 +1968,12 @@ theorem run_oFlag_eq_oSplit_avg {α : Type} (sk : SK) (pk : PK) (z : Z) (mstar :
       (Function.update f₀ mstar rstar) g (fun m => (g m, f₀ m)) sk pk z mstar rstar v
       (fun m hm => by simp [Function.update_of_ne hm]) (by simp) x d
   rw [run_oFlag_eq_keyed, uniform_arrow_prod, PMF.bind_bind]
-  calc (PMF.uniformOfFintype (M → K)).bind (fun g =>
-        ((PMF.uniformOfFintype (M → R)).map fun f => fun m => (g m, f m)).bind fun F =>
+  calc (PMF.uniformFintype (M → K)).bind (fun g =>
+        ((PMF.uniformFintype (M → R)).map fun f => fun m => (g m, f m)).bind fun F =>
           (OracleAdv.run (OracleAdv.simOracle (progF P hpk sk pk z mstar rstar v)
             (PKE.FOTransformT.keyedRO F)) A (((emptyTable, emptyTable), false), ())).map
               fun x => (x.1, x.2.1.2))
-      = (PMF.uniformOfFintype (M → K)).bind fun g => (PMF.uniformOfFintype (M → R)).bind
+      = (PMF.uniformFintype (M → K)).bind fun g => (PMF.uniformFintype (M → R)).bind
           fun f₀ => (OracleAdv.run (OracleAdv.simOracle
             (progS P hpk (Function.update f₀ mstar rstar) sk pk z mstar v)
             (PKE.FOTransformT.keyedRO g)) A (((emptyTable, emptyTable), false), ())).map
@@ -1993,10 +1993,10 @@ the split run averaged over a uniform derandomiser `f`, the challenge coin being
 `f mstar`. -/
 theorem oFlag_eq_eager {α : Type} (sk : SK) (pk : PK) (z : Z) (mstar : M) (v : K)
     (A : R → OracleAdv (((M × Hash) ⊕ (Z × C)) ⊕ C) (((K × R) ⊕ K) ⊕ Option K) α) :
-    ((PMF.uniformOfFintype R).bind fun rstar =>
+    ((PMF.uniformFintype R).bind fun rstar =>
       (OracleAdv.run (oFlag P hpk sk pk z mstar rstar v) (A rstar)
         ((emptyTable, emptyTable), false)).map fun y => (y.1, y.2.2)) =
-      (PMF.uniformOfFintype (M → R)).bind fun f =>
+      (PMF.uniformFintype (M → R)).bind fun f =>
         (OracleAdv.run (oSplit P hpk f sk pk z mstar v) (A (f mstar))
           (SplitTab.empty, false)).map fun y => (y.1, y.2.2) := by
   conv_rhs => rw [← Constructions.ECBCPRF.uniform_bind_update mstar]
@@ -2011,20 +2011,20 @@ by a uniform derandomiser and the challenge point of `G` removed. -/
 theorem flagDist_map_eq_eager {qRO qD : ℕ}
     (B : ROM2INDCCAAdversary PK K C (M × Hash) (K × R) (Z × C) K qRO qD) :
     (flagDist P hpk B false).map (fun y => (y.1, y.2.2)) =
-      P.keygen.bind fun ks => (PMF.uniformOfFintype Z).bind fun z =>
-        (PMF.uniformOfFintype M).bind fun m => (PMF.uniformOfFintype K).bind fun k₀ =>
-          (PMF.uniformOfFintype (M → R)).bind fun f =>
+      P.keygen.bind fun ks => (PMF.uniformFintype Z).bind fun z =>
+        (PMF.uniformFintype M).bind fun m => (PMF.uniformFintype K).bind fun k₀ =>
+          (PMF.uniformFintype (M → R)).bind fun f =>
             (OracleAdv.run (oSplit P hpk f ks.2 ks.1 z m k₀)
               (B.run ks.1 (cOf P f ks.1 m) k₀) (SplitTab.empty, false)).map
                 fun y => (y.1, y.2.2) := by
   simp only [flagDist, setup, PMF.map_bind, PMF.bind_bind, PMF.bind_map, Function.comp_def,
-    Bool.false_eq_true, if_false, Draw.c]
+    Bool.false_eq_true, ite_false, Draw.c]
   refine congrArg _ (funext fun ks => congrArg _ (funext fun z => congrArg _ (funext fun m =>
     congrArg _ (funext fun k₀ => ?_))))
-  rw [show (PMF.uniformOfFintype R).bind (fun r => (PMF.uniformOfFintype K).bind fun _ =>
+  rw [show (PMF.uniformFintype R).bind (fun r => (PMF.uniformFintype K).bind fun _ =>
       (OracleAdv.run (oFlag P hpk ks.2 ks.1 z m r k₀) (B.run ks.1 (P.enc ks.1 m r) k₀)
         ((emptyTable, emptyTable), false)).map fun y => (y.1, y.2.2)) =
-      (PMF.uniformOfFintype R).bind fun r =>
+      (PMF.uniformFintype R).bind fun r =>
         (OracleAdv.run (oFlag P hpk ks.2 ks.1 z m r k₀) (B.run ks.1 (P.enc ks.1 m r) k₀)
           ((emptyTable, emptyTable), false)).map fun y => (y.1, y.2.2) from
       congrArg _ (funext fun _ => PMF.bind_const _ _)]
@@ -2037,9 +2037,9 @@ challenge message and key, and the derandomiser. -/
 theorem advantage_le_eager {qRO qD : ℕ}
     (B : ROM2INDCCAAdversary PK K C (M × Hash) (K × R) (Z × C) K qRO qD) :
     rom2INDCCAAdvantage (fips203 P hpk) B ≤
-      (P.keygen.bind fun ks => (PMF.uniformOfFintype Z).bind fun z =>
-        (PMF.uniformOfFintype M).bind fun m => (PMF.uniformOfFintype K).bind fun k₀ =>
-          (PMF.uniformOfFintype (M → R)).bind fun f =>
+      (P.keygen.bind fun ks => (PMF.uniformFintype Z).bind fun z =>
+        (PMF.uniformFintype M).bind fun m => (PMF.uniformFintype K).bind fun k₀ =>
+          (PMF.uniformFintype (M → R)).bind fun f =>
             (OracleAdv.run (oSplit P hpk f ks.2 ks.1 z m k₀)
               (B.run ks.1 (cOf P f ks.1 m) k₀) (SplitTab.empty, false)).map
                 fun y => (y.1, y.2.2)).toOuterMeasure {y | y.2 = true} := by
@@ -2064,7 +2064,7 @@ theorem redFix_prob {qRO qD : ℕ}
     (c : C) :
     ((OracleAdv.run (pcoOracle (fixedT P f) (pk, sk)) ((redFix P hpk f B).run pk c) ()).map
       fun x => (fixedT P f).pco (pk, sk) x.1 c).toOuterMeasure {b | b = true} =
-    ∑' k, PMF.uniformOfFintype K k *
+    ∑' k, PMF.uniformFintype K k *
       (OracleAdv.run (OracleAdv.simOracle (simImplFix P hpk f pk c k)
         (pcoOracle (fixedT P f) (pk, sk))) (B.run pk c k) (SimStateF.init, ())).toOuterMeasure
           {y | (fixedT P f).pco (pk, sk) (y.2.1.found.getD (Classical.arbitrary M)) c = true} := by
@@ -2086,13 +2086,13 @@ and the key `k*`. -/
 theorem owpcaAdvantage_redFix {qRO qD : ℕ}
     (B : ROM2INDCCAAdversary PK K C (M × Hash) (K × R) (Z × C) K qRO qD) :
     owpcaAdvantage (fixedT P f) (redFix P hpk f B) =
-      ∑' ks, P.keygen ks * ∑' m, PMF.uniformOfFintype M m * ∑' k, PMF.uniformOfFintype K k *
+      ∑' ks, P.keygen ks * ∑' m, PMF.uniformFintype M m * ∑' k, PMF.uniformFintype K k *
         (OracleAdv.run (OracleAdv.simOracle (simImplFix P hpk f ks.1 (cOf P f ks.1 m) k)
           (pcoOracle (fixedT P f) (ks.1, ks.2))) (B.run ks.1 (cOf P f ks.1 m) k)
             (SimStateF.init, ())).toOuterMeasure
               {y | (fixedT P f).pco (ks.1, ks.2) (y.2.1.found.getD (Classical.arbitrary M))
                 (cOf P f ks.1 m) = true} := by
-  have hU : (PMF.uniformOfFintype Unit) = PMF.pure () := by ext u; simp
+  have hU : (PMF.uniformFintype Unit) = PMF.pure () := by ext u; simp
   rw [owpcaAdvantage, prTrue_liftPMF_toOuterMeasure, owpcaGame,
     show (fixedT P f).keygen = P.keygen.map (fun ks => (ks.1, (ks.1, ks.2))) from rfl]
   simp only [Scheme.encDist, PMF.bind_map, Function.comp_def, hU, PMF.pure_bind,
@@ -2103,31 +2103,31 @@ theorem owpcaAdvantage_redFix {qRO qD : ℕ}
 omit [DecidableEq C] [DecidableEq Z] in
 /-- An average whose summand does not depend on the rejection seed. -/
 theorem tsum_seed_const (H : (PK × SK) → M → K → (M → R) → ℝ≥0∞) :
-    ∑' ks, P.keygen ks * ∑' _z : Z, PMF.uniformOfFintype Z _z *
-        ∑' m, PMF.uniformOfFintype M m * ∑' k, PMF.uniformOfFintype K k *
-          ∑' f, PMF.uniformOfFintype (M → R) f * H ks m k f =
-      ∑' ks, P.keygen ks * ∑' m, PMF.uniformOfFintype M m * ∑' k, PMF.uniformOfFintype K k *
-        ∑' f, PMF.uniformOfFintype (M → R) f * H ks m k f :=
+    ∑' ks, P.keygen ks * ∑' _z : Z, PMF.uniformFintype Z _z *
+        ∑' m, PMF.uniformFintype M m * ∑' k, PMF.uniformFintype K k *
+          ∑' f, PMF.uniformFintype (M → R) f * H ks m k f =
+      ∑' ks, P.keygen ks * ∑' m, PMF.uniformFintype M m * ∑' k, PMF.uniformFintype K k *
+        ∑' f, PMF.uniformFintype (M → R) f * H ks m k f :=
   tsum_congr fun _ks => congrArg _ (FOTransformU.tsum_mul_const _ _)
 
 omit [DecidableEq C] in
 /-- The average over the derandomiser moves outside the averages over the key pair, the
 challenge message and the key. -/
 theorem tsum_arrow_comm (H : (PK × SK) → M → K → (M → R) → ℝ≥0∞) :
-    ∑' ks, P.keygen ks * ∑' m, PMF.uniformOfFintype M m * ∑' k, PMF.uniformOfFintype K k *
-        ∑' f, PMF.uniformOfFintype (M → R) f * H ks m k f =
-      ∑' f, PMF.uniformOfFintype (M → R) f * ∑' ks, P.keygen ks * ∑' m,
-        PMF.uniformOfFintype M m * ∑' k, PMF.uniformOfFintype K k * H ks m k f := by
+    ∑' ks, P.keygen ks * ∑' m, PMF.uniformFintype M m * ∑' k, PMF.uniformFintype K k *
+        ∑' f, PMF.uniformFintype (M → R) f * H ks m k f =
+      ∑' f, PMF.uniformFintype (M → R) f * ∑' ks, P.keygen ks * ∑' m,
+        PMF.uniformFintype M m * ∑' k, PMF.uniformFintype K k * H ks m k f := by
   have h1 : ∀ (ks : PK × SK) (m : M),
-      ∑' k, PMF.uniformOfFintype K k * ∑' f, PMF.uniformOfFintype (M → R) f * H ks m k f =
-        ∑' f, PMF.uniformOfFintype (M → R) f * ∑' k, PMF.uniformOfFintype K k * H ks m k f :=
+      ∑' k, PMF.uniformFintype K k * ∑' f, PMF.uniformFintype (M → R) f * H ks m k f =
+        ∑' f, PMF.uniformFintype (M → R) f * ∑' k, PMF.uniformFintype K k * H ks m k f :=
     fun ks m => FOTransformU.tsum_mul_comm _ _ _
   simp only [h1]
   have h2 : ∀ ks : PK × SK,
-      ∑' m, PMF.uniformOfFintype M m *
-          ∑' f, PMF.uniformOfFintype (M → R) f * ∑' k, PMF.uniformOfFintype K k * H ks m k f =
-        ∑' f, PMF.uniformOfFintype (M → R) f *
-          ∑' m, PMF.uniformOfFintype M m * ∑' k, PMF.uniformOfFintype K k * H ks m k f :=
+      ∑' m, PMF.uniformFintype M m *
+          ∑' f, PMF.uniformFintype (M → R) f * ∑' k, PMF.uniformFintype K k * H ks m k f =
+        ∑' f, PMF.uniformFintype (M → R) f *
+          ∑' m, PMF.uniformFintype M m * ∑' k, PMF.uniformFintype K k * H ks m k f :=
     fun ks => FOTransformU.tsum_mul_comm _ _ _
   simp only [h2]
   exact FOTransformU.tsum_mul_comm _ _ _
@@ -2135,11 +2135,11 @@ theorem tsum_arrow_comm (H : (PK × SK) → M → K → (M → R) → ℝ≥0∞
 omit [DecidableEq C] [DecidableEq Z] in
 /-- The average over the rejection seed moves inside the other averages. -/
 theorem tsum_seed_inner (H : (PK × SK) → Z → M → K → (M → R) → ℝ≥0∞) :
-    ∑' ks, P.keygen ks * ∑' z, PMF.uniformOfFintype Z z *
-        ∑' m, PMF.uniformOfFintype M m * ∑' k, PMF.uniformOfFintype K k *
-          ∑' f, PMF.uniformOfFintype (M → R) f * H ks z m k f =
-      ∑' ks, P.keygen ks * ∑' m, PMF.uniformOfFintype M m * ∑' k, PMF.uniformOfFintype K k *
-        ∑' f, PMF.uniformOfFintype (M → R) f * ∑' z, PMF.uniformOfFintype Z z * H ks z m k f := by
+    ∑' ks, P.keygen ks * ∑' z, PMF.uniformFintype Z z *
+        ∑' m, PMF.uniformFintype M m * ∑' k, PMF.uniformFintype K k *
+          ∑' f, PMF.uniformFintype (M → R) f * H ks z m k f =
+      ∑' ks, P.keygen ks * ∑' m, PMF.uniformFintype M m * ∑' k, PMF.uniformFintype K k *
+        ∑' f, PMF.uniformFintype (M → R) f * ∑' z, PMF.uniformFintype Z z * H ks z m k f := by
   refine tsum_congr fun ks => congrArg _ ?_
   rw [FOTransformU.tsum_mul_comm]
   refine tsum_congr fun m => congrArg _ ?_
@@ -2160,7 +2160,7 @@ theorem cca_le_three_terms {qRO qD : ℕ}
     (B : ROM2INDCCAAdversary PK K C (M × Hash) (K × R) (Z × C) K qRO qD) :
     rom2INDCCAAdvantage (fips203 P hpk) B ≤
       P.corrErr +
-        (∑' f, PMF.uniformOfFintype (M → R) f * owpcaAdvantage (fixedT P f) (redFix P hpk f B)) +
+        (∑' f, PMF.uniformFintype (M → R) f * owpcaAdvantage (fixedT P f) (redFix P hpk f B)) +
         (qRO : ℝ≥0∞) / Fintype.card Z := by
   refine (advantage_le_eager P hpk B).trans ?_
   simp only [PMF.toOuterMeasure_bind_apply, PMF.toOuterMeasure_map_apply]
@@ -2225,19 +2225,19 @@ theorem simOracle_simImplF_eq_oSim (ks : PK × SK) (cstar : C) (v : K)
   rcases d with (q | q) | c
   · simp only [OracleAdv.simOracle, simImplF, oSim]
     by_cases hh : q.2 = hpk ks.1
-    · simp only [hh, if_true, OracleAdv.run_query, PKE.FOTransformT.eO, PMF.pure_bind,
+    · simp only [hh, ite_true, OracleAdv.run_query, PKE.FOTransformT.eO, PMF.pure_bind,
         Sum.elim_inl, Sum.elim_inr, id, hc, FOTransform.ansReal_eq_pco, pco_fixedT_cOf]
       by_cases hs : selK P f ks.2 ks.1 q.1 = true
-      · simp only [hs, if_true]
+      · simp only [hs, ite_true]
         by_cases hcs : cOf P f ks.1 q.1 = cstar
         · simp [hcs, PMF.pure_map]
-        · simp only [hcs, if_false]
+        · simp only [hcs, ite_false]
           exact run_lazyTab _ _ _ _ _ _
-      · simp only [hs, Bool.false_eq_true, if_false]
+      · simp only [hs, Bool.false_eq_true, ite_false]
         exact run_lazyTab _ _ _ _ _ _
-    · simp only [hh, if_false]
+    · simp only [hh, ite_false]
       exact run_lazyTab _ _ _ _ _ _
-  · simp only [OracleAdv.simOracle, simImplF, oSim, Bool.false_eq_true, if_false]
+  · simp only [OracleAdv.simOracle, simImplF, oSim, Bool.false_eq_true, ite_false]
     exact run_lazyTab _ _ _ _ _ _
   · simp only [OracleAdv.simOracle, simImplF, oSim]
     split_ifs
@@ -2278,10 +2278,10 @@ omit [Fintype Z] [Nonempty Z] in
 theorem owpcaGame_fixedT_redFix {qRO qD : ℕ}
     (B : ROM2INDCCAAdversary PK K C (M × Hash) (K × R) (Z × C) K qRO qD) :
     owpcaGame (fixedT P f) (redFix P hpk f B) = P.keygen.bind fun ks =>
-      (PMF.uniformOfFintype M).bind fun m => owpcaInnerF P hpk B ks m f := by
+      (PMF.uniformFintype M).bind fun m => owpcaInnerF P hpk B ks m f := by
   simp only [owpcaGame, Scheme.encDist, PMF.bind_map, Function.comp_def, owpcaInnerF]
   rw [show (fixedT P f).keygen = P.keygen.map fun ks => (ks.1, (ks.1, ks.2)) from rfl, PMF.bind_map]
-  have hU : PMF.uniformOfFintype Unit = PMF.pure () := by ext u; simp
+  have hU : PMF.uniformFintype Unit = PMF.pure () := by ext u; simp
   simp only [Function.comp_def, hU, PMF.pure_bind]
   rfl
 
@@ -2289,7 +2289,7 @@ omit [Fintype Z] [Nonempty Z] in
 theorem romOWPCAGame_redROM {qRO qD : ℕ}
     (B : ROM2INDCCAAdversary PK K C (M × Hash) (K × R) (Z × C) K qRO qD) :
     romOWPCAGame (PKE.FOTransformT.tTransform P) (redROM P hpk B) = P.keygen.bind fun ks =>
-      (PMF.uniformOfFintype M).bind fun m => (PMF.uniformOfFintype (M → R)).bind fun f =>
+      (PMF.uniformFintype M).bind fun m => (PMF.uniformFintype (M → R)).bind fun f =>
         owpcaInnerF P hpk B ks m f := by
   rw [PKE.FOTransformT.romOWPCAGame_eq]
   refine congrArg _ (funext fun ks => congrArg _ (funext fun m => ?_))
@@ -2325,11 +2325,11 @@ derandomiser of the OW-PCA advantage of `redFix` against `fixedT P f`. -/
 theorem owpca_eq_redROM {qRO qD : ℕ}
     (B : ROM2INDCCAAdversary PK K C (M × Hash) (K × R) (Z × C) K qRO qD) :
     romOWPCAAdvantage (PKE.FOTransformT.tTransform P) (redROM P hpk B) =
-      ∑' f, PMF.uniformOfFintype (M → R) f *
+      ∑' f, PMF.uniformFintype (M → R) f *
         owpcaAdvantage (fixedT P f) (redFix P hpk f B) := by
   simp only [romOWPCAAdvantage, owpcaAdvantage, prTrue_liftPMF_toOuterMeasure,
     romOWPCAGame_redROM, owpcaGame_fixedT_redFix]
-  rw [← PMF.toOuterMeasure_bind_apply, PMF.bind_comm (PMF.uniformOfFintype (M → R)) P.keygen]
+  rw [← PMF.toOuterMeasure_bind_apply, PMF.bind_comm (PMF.uniformFintype (M → R)) P.keygen]
   refine congrArg (fun p : PMF Bool => p.toOuterMeasure _) (congrArg _ (funext fun ks => ?_))
   exact (PMF.bind_comm _ _ _).symm
 

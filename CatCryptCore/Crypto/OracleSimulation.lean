@@ -254,7 +254,7 @@ value, an undefined point samples a uniform value and records it. -/
 noncomputable def roOracle (T : D → Option H) (d : D) : PMF (H × (D → Option H)) :=
   match T d with
   | some h => PMF.pure (h, T)
-  | none => (PMF.uniformOfFintype H).map fun h => (h, Function.update T d (some h))
+  | none => (PMF.uniformFintype H).map fun h => (h, Function.update T d (some h))
 
 omit [Fintype H] [Nonempty H] in
 /-- The empty random-oracle table. -/

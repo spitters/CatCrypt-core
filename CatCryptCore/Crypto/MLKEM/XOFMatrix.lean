@@ -165,7 +165,7 @@ theorem card_prefix_step {C Ω V : Type} [Fintype C] [Fintype Ω] [DecidableEq V
       | none =>
         have := hF (a :: u')
         simp only [List.length_cons] at this
-        simp only [Option.toList_none, List.nil_append, if_true, reduceCtorEq, if_false,
+        simp only [Option.toList_none, List.nil_append, ite_true, reduceCtorEq, ite_false,
           add_zero]
         exact this
       | some b =>
@@ -226,11 +226,11 @@ theorem card_accept_some (a : Zq) :
   · intro h
     unfold accept at h
     by_cases hd : d.val < 3329
-    · rw [if_pos hd] at h
+    · rw [ite_eq_left hd] at h
       have h' := Option.some.inj h
       ext
       simp only [← h', Zq3329.fromNat, ZMod.val_natCast, Nat.mod_eq_of_lt hd]
-    · rw [if_neg hd] at h
+    · rw [ite_eq_right hd] at h
       exact absurd h (by simp)
   · rintro rfl
     simp [accept, ZMod.val_lt, Zq3329.fromNat]
@@ -481,12 +481,12 @@ theorem card_short_step {C Ω V : Type} [Fintype C] [Fintype Ω]
       intro d
       cases hd : acc d with
       | none =>
-        simp only [Option.toList_none, List.nil_append, if_true, if_false, add_zero,
+        simp only [Option.toList_none, List.nil_append, ite_true, ite_false, add_zero,
           not_true_eq_false]
         exact hF (K + 1)
       | some b =>
         simp only [Option.toList_some, List.singleton_append, List.length_cons,
-          Nat.add_lt_add_iff_right, reduceCtorEq, if_false, zero_add, not_false_eq_true, if_true]
+          Nat.add_lt_add_iff_right, reduceCtorEq, ite_false, zero_add, not_false_eq_true, ite_true]
         exact hF K
     simp only [hterm, Finset.sum_add_distrib, Finset.sum_ite, Finset.sum_const_zero,
       Finset.sum_const, smul_eq_mul, add_zero, he, ha, shortStep]

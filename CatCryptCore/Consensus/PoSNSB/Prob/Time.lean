@@ -220,7 +220,7 @@ theorem histBound_sRcv (ideal : Bool) (p : Fin np) {h : ℕ} {M : GS P ω A}
   | none => exact hM.mono (by omega)
   | some l =>
     by_cases hc : is_corrupt p
-    · simp only [hc, Bool.not_true, Bool.false_eq_true, if_false]
+    · simp only [hc, Bool.not_true, Bool.false_eq_true, ite_false]
       refine ⟨?_, ?_⟩
       · simpa [flood_msgs_adv_exec_order, fetch_msgs, rmv_zero_msgs] using hM.1
       · have h1 := outFilter_length_le Sch ideal (fun j => (ω.ks j).1)
@@ -235,7 +235,7 @@ theorem histBound_sRcv (ideal : Bool) (p : Fin np) {h : ℕ} {M : GS P ω A}
         simp only [advRaw] at h1 ⊢
         simp only [fetch_msgs, rmv_zero_msgs] at h1 h2 ⊢
         omega
-    · simp only [hc, Bool.not_false, if_true]
+    · simp only [hc, Bool.not_false, ite_true]
       exact ⟨by simpa [upd_local, fetch_msgs, rmv_zero_msgs] using hM.1,
         by simpa [upd_local, fetch_msgs, rmv_zero_msgs] using hM.2.trans (by omega)⟩
 
@@ -247,7 +247,7 @@ theorem histBound_sBake (ideal : Bool) (p : Fin np) {h : ℕ} {M : GS P ω A}
   | none => exact hM.mono (by omega)
   | some l =>
     by_cases hc : is_corrupt p
-    · simp only [hc, Bool.not_true, Bool.false_eq_true, if_false]
+    · simp only [hc, Bool.not_true, Bool.false_eq_true, ite_false]
       refine ⟨by simpa [flood_msgs_adv_exec_order] using hM.1, ?_⟩
       have h1 := outFilter_length_le Sch ideal (fun j => (ω.ks j).1) M.t_now M.history
         (advRaw Sch ω A ⟨none, M.t_now, M.history, M.msg_buff, M.adv_state⟩).1
@@ -257,7 +257,7 @@ theorem histBound_sBake (ideal : Bool) (p : Fin np) {h : ℕ} {M : GS P ω A}
       simp only [flood_msgs_adv_history, List.length_append, List.length_map, mkExec_bake]
       simp only [advRaw] at h1 ⊢
       omega
-    · simp only [hc, Bool.not_false, if_true]
+    · simp only [hc, Bool.not_false, ite_true]
       have h1 := honest_bake_length M.t_now
         (TxSelection (Hash := Hash) (AdvState := A.AdvState) M.t_now p) l
       have h3 := hM.2
@@ -503,11 +503,11 @@ theorem simStep.stepTimeBound_timed (bake : Bool) (p : Fin np) {h : ℕ} {M : GS
           cases bake
           · have := h1 (fetch_msgs p M).2.t_now (fetch_msgs p M).2.history r.1
             simp only [fetch_msgs, rmv_zero_msgs] at this
-            simp only [Bool.false_eq_true, if_false, flood_msgs_adv_history, List.length_append,
+            simp only [Bool.false_eq_true, ite_false, flood_msgs_adv_history, List.length_append,
               List.length_map, fetch_msgs, rmv_zero_msgs]
             omega
           · have := h1 M.t_now M.history r.1
-            simp only [if_true, flood_msgs_adv_history, List.length_append, List.length_map]
+            simp only [ite_true, flood_msgs_adv_history, List.length_append, List.length_map]
             omega
     · rw [stepCall_hist]
       have := Nat.mul_le_mul_right (1 + cost.sign) hM.2

@@ -715,7 +715,6 @@ theorem exists_eq_sum_vecMulVec_of_posSemidef {d : ℕ} {ρ : Matrix (Fin d) (Fi
     have hs := hρ.isHermitian.spectral_theorem
     simp only [Unitary.conjStarAlgAut_apply] at hs
     convert hs using 1
-    rfl
   refine ⟨fun k a => U a k * (Real.sqrt (ev k) : ℂ), ?_⟩
   rw [hs]
   ext a b

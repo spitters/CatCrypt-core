@@ -165,7 +165,7 @@ noncomputable def sprpOracle (t : List (W × W)) : W ⊕ W → PMF (W × List (W
 
 /-- Strong PRP real game: sample a key and run `A` against `enc k` and `dec k`. -/
 noncomputable def SPRP_Real (P : PRPDef W) (A : SPRP_Adversary W) : SPComp Bool :=
-  liftPMF ((PMF.uniformOfFintype W).bind fun k =>
+  liftPMF ((PMF.uniformFintype W).bind fun k =>
     (OracleAdv.run (sprpKeyedOracle P k) A ()).map Prod.fst)
 
 /-- Strong PRP ideal game: run `A` against the lazily sampled random

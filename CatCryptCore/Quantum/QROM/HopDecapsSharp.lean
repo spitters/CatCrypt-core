@@ -110,7 +110,7 @@ theorem simKeyAt_eq_keyAt_of_not_mem_badImage (enc : M → Coin → C) (dec : C 
   · have hgood : hex.choose ∈ Good enc dec (coinsOf T) := by
       by_contra h
       exact hc ((mem_badImage_iff enc dec T c).2 ⟨hex.choose, h, hex.choose_spec⟩)
-    calc simKeyAt enc T c = some (T hex.choose).1 := by rw [simKeyAt, dif_pos hex]
+    calc simKeyAt enc T c = some (T hex.choose).1 := by rw [simKeyAt, dite_eq_left hex]
       _ = keyAt enc dec T (encOf enc T hex.choose) := (keyAt_encOf hgood).symm
       _ = keyAt enc dec T c := by rw [hex.choose_spec]
   · rw [simKeyAt_eq_none_of_not_mem_range hex,
@@ -150,8 +150,8 @@ theorem decapsSim_apply_eq_of_not_mem (i : KEMInput PK SK Z M K m₁ m₂ n) (x 
     decapsSim P hpk eG eJ eKR eC eKa i x = kemDecaps P hpk eG eJ eKR eC eKa i x := by
   simp only [decapsSim, kemDecaps, decapsOracle]
   by_cases hc : eC.symm x = kemChal P hpk eG eKR i
-  · rw [if_pos hc, if_pos hc]
-  · rw [if_neg hc, if_neg hc,
+  · rw [ite_eq_left hc, ite_eq_left hc]
+  · rw [ite_eq_right hc, ite_eq_right hc,
       simKeyAt_eq_keyAt_of_not_mem_badImage (P.enc i.1.1) (P.dec i.1.2)
         (kemTab hpk eG eKR i) hx,
       keyAt_getD_eq_decapsFixed]
@@ -507,7 +507,7 @@ theorem abs_acc_mrChain_sub_le (O : QComp d Unit) (Rest : QComp d Bool)
           else roundWeightRe O f S k q (tail 0) (Fin.tail tail) (Fin.tail R) (τ f y)) := by
       intro y
       by_cases hy : y ∈ S
-      · rw [if_pos hy]
+      · rw [ite_eq_left hy]
         have hf := hbound f y
         have hf' := hbound f' y
         have hw' : (τ f' y).trace.re = ((R 0).P y * σ' * (R 0).P y).trace.re := by
@@ -521,7 +521,7 @@ theorem abs_acc_mrChain_sub_le (O : QComp d Unit) (Rest : QComp d Bool)
         rw [hw'] at hf'
         rw [abs_le]
         constructor <;> linarith [hf.1, hf.2, hf'.1, hf'.2]
-      · rw [if_neg hy]
+      · rw [ite_eq_right hy]
         have hτeq : τ f' y = τ f y := by simp only [hτ, hK, hff' y hy]
         have := ih q (tail 0) (Fin.tail tail) (Fin.tail R) (τ f y) (hτpsd f y)
         simp only [hacc, hTail, hτeq]

@@ -325,9 +325,9 @@ theorem kindDist_padded (ν : PMF SlotKind) (W : ℕ) :
   intro i hi
   rw [PMF.mem_support_iff, kindDist, PMF.piFin_apply, Finset.prod_ne_zero_iff] at hκ
   have := hκ i (Finset.mem_univ _)
-  simp only [slotDist, if_neg (not_lt.2 hi), PMF.pure_apply] at this
+  simp only [slotDist, ite_eq_right (not_lt.2 hi), PMF.pure_apply] at this
   by_contra h
-  exact this (if_neg h)
+  exact this (ite_eq_right h)
 
 /-- The common-prefix condition `3 ≤ d (pH - 2 pA)` forces `3 ≤ d`. -/
 theorem three_le_of_cp (ν : PMF SlotKind) {d : ℕ} (h3 : (3 : ℝ) ≤ d * (pH ν - 2 * pA ν)) :

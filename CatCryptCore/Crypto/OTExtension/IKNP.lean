@@ -163,7 +163,7 @@ theorem iknpSenderMsg_otChoose (H : Fin m → (Fin κ → Bool) → M) (x : Fin 
   rw [otChoose_iknpBaseIn]
   funext j
   by_cases hr : r j <;> simp only [iknpSenderMsg, iknpShift, hr, Pi.add_apply,
-    if_true, if_false, Bool.false_eq_true] <;> congr 3 <;> funext i <;>
+    ite_true, ite_false, Bool.false_eq_true] <;> congr 3 <;> funext i <;>
     simp only [Pi.add_apply, Pi.zero_apply] <;> cases T j i <;> cases s i <;> rfl
 
 /-- On the ideal base OT, the receiver outputs the chosen messages. -/

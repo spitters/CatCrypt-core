@@ -54,15 +54,15 @@ variable (P : Sigma)
 the honest `(commit, respond e)` equals the simulator `simulate x e` as computations. -/
 theorem shvzk_toSigmaProtocol
     (h : ∀ x w, P.rel x w → ∀ e,
-      (PMF.uniformOfFintype P.Rand).map (fun r => (P.commit x w r, P.respond x w r e)) =
-        (PMF.uniformOfFintype P.SimRand).map (P.simulate x e)) :
+      (PMF.uniformFintype P.Rand).map (fun r => (P.commit x w r, P.respond x w r e)) =
+        (PMF.uniformFintype P.SimRand).map (P.simulate x e)) :
     ZK.SigmaUCZK.SHVZK P.toSigmaProtocol := by
   intro (x : P.Stmt) (w : P.Wit) (e : P.Ch) hrel
   have hreal : (do
       let a ← P.toSigmaProtocol.commit x w
       let z ← P.toSigmaProtocol.respond x w a e
       SPComp.pure (a, z) : SPComp (P.Com × P.Resp)) =
-      liftSDistr (((PMF.uniformOfFintype P.Rand).map
+      liftSDistr (((PMF.uniformFintype P.Rand).map
         (fun r => (P.commit x w r, P.respond x w r e))).map some) := by
     rw [map_pair_eq_bind_fibreDist]
     simp only [SPComp.monad_bind_eq]
@@ -89,8 +89,8 @@ The verifier is honest; the non-interactive form is covered by the Fiat–Shamir
 bounds of the same module chain. (genuine UC) -/
 theorem toSigmaProtocol_uc_zk_secure
     (h : ∀ x w, P.rel x w → ∀ e,
-      (PMF.uniformOfFintype P.Rand).map (fun r => (P.commit x w r, P.respond x w r e)) =
-        (PMF.uniformOfFintype P.SimRand).map (P.simulate x e))
+      (PMF.uniformFintype P.Rand).map (fun r => (P.commit x w r, P.respond x w r e)) =
+        (PMF.uniformFintype P.SimRand).map (P.simulate x e))
     (V : Type) :
     UCEmulates 0 (sigmaUCZKSpec P.toSigmaProtocol V) (sigma_real P.toSigmaProtocol)
       (sigma_ideal P.toSigmaProtocol) :=

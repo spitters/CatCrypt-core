@@ -407,9 +407,9 @@ theorem rewind_offDiag_eq {d : ℕ} (P : Fin n → Matrix (Fin d) (Fin d) ℂ)
   have hite : ∀ θ₁, ∑ θ₂, (if θ₁ = θ₂ then 0 else (P θ₂ * (P θ₁ * σ * P θ₁)).trace.re) =
       ∑ θ₂, (P θ₂ * (P θ₁ * σ * P θ₁)).trace.re - (P θ₁ * σ).trace.re := fun θ₁ => by
     rw [← hd θ₁, eq_sub_iff_add_eq, ← Finset.add_sum_erase _ _ (Finset.mem_univ θ₁),
-      ← Finset.add_sum_erase _ _ (Finset.mem_univ θ₁), if_pos rfl, zero_add, add_comm]
+      ← Finset.add_sum_erase _ _ (Finset.mem_univ θ₁), ite_eq_left rfl, zero_add, add_comm]
     refine congrArg _ (Finset.sum_congr rfl fun θ₂ h => ?_)
-    rw [if_neg (Finset.ne_of_mem_erase h).symm]
+    rw [ite_eq_right (Finset.ne_of_mem_erase h).symm]
   simp only [hite, hs, ← Finset.mul_sum, Finset.sum_sub_distrib]
   ring
 

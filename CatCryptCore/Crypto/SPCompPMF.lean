@@ -80,7 +80,7 @@ theorem liftPMF_bind_pure {α β : Type} (p : PMF α) (f : α → β) :
 
 /-- Uniform sampling is the lift of the uniform distribution. -/
 theorem sample_eq_liftPMF (α : Type) [Fintype α] [Nonempty α] :
-    SPComp.sample α = liftPMF (PMF.uniformOfFintype α) := by
+    SPComp.sample α = liftPMF (PMF.uniformFintype α) := by
   funext h
   unfold SPComp.sample SDistr.uniform liftPMF
   rw [sdistr_bind_map_some]
@@ -122,7 +122,7 @@ of `true` under the bind of the uniform distribution. -/
 theorem prTrue_sample_bind_liftPMF {α : Type} [Fintype α] [Nonempty α]
     (f : α → PMF Bool) (h₀ : Heap) :
     prTrue (SPComp.bind (SPComp.sample α) fun a => liftPMF (f a)) h₀ =
-      ((PMF.uniformOfFintype α).bind f) true := by
+      ((PMF.uniformFintype α).bind f) true := by
   rw [sample_eq_liftPMF, liftPMF_bind_liftPMF, prTrue_liftPMF]
 
 /-! ## The output bit of a distinguisher -/

@@ -240,7 +240,7 @@ theorem evalOn_surjective (k : ℕ) (ι : D → F) (hι : Function.Injective ι)
   obtain ⟨cf, hcf⟩ := exists_polyEval k ι hι S hS fun x => if hx : x ∈ S then v ⟨x, hx⟩ else 0
   refine ⟨cf, funext fun x => ?_⟩
   show polyEval cf (ι x) = v x
-  rw [hcf x x.2, dif_pos x.2]
+  rw [hcf x x.2, dite_eq_left x.2]
 
 variable {R : Type} [Fintype R] [DecidableEq R]
 
@@ -363,9 +363,9 @@ theorem KWiseInvariant.push [Nonempty Ω] {k : ℕ} {g : (α → β) → ℝ≥0
   rw [Finset.sum_comm]
   refine Finset.sum_congr rfl fun ω _ => ?_
   rw [Finset.sum_eq_single (Φ ω)]
-  · rw [if_pos rfl, ENNReal.coe_inv (by simp), ENNReal.coe_natCast]
+  · rw [ite_eq_left rfl, ENNReal.coe_inv (by simp), ENNReal.coe_natCast]
   · intro H _ hH
-    rw [if_neg (Ne.symm hH), ENNReal.coe_zero, zero_mul]
+    rw [ite_eq_right (Ne.symm hH), ENNReal.coe_zero, zero_mul]
   · intro h
     exact absurd (Finset.mem_univ _) h
 
@@ -710,10 +710,10 @@ theorem kWiseInvariant_qAuxRun_Hq (G : Fin m₁ → Fin n) (J : Fin m₂ → Fin
           (auxOracle S hpk eG eJ eKR (key x) Hq G J T z))).re := by
     funext Hq
     rw [Finset.sum_eq_single (Hq p)]
-    · rw [if_pos rfl, one_mul, ← prOut_eq_ofReal_re]
+    · rw [ite_eq_left rfl, one_mul, ← prOut_eq_ofReal_re]
       rfl
     · intro h _ hh
-      rw [if_neg (Ne.symm hh), zero_mul, Complex.zero_re, ENNReal.ofReal_zero]
+      rw [ite_eq_right (Ne.symm hh), zero_mul, Complex.zero_re, ENNReal.ofReal_zero]
     · intro hn
       exact absurd (Finset.mem_univ _) hn
   rw [e]

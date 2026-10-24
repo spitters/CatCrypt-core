@@ -622,13 +622,13 @@ theorem run_hEv (hOF : OF.NoRand) (hm : ∀ σ, (OF.atO σ).toAdversary.OutputBo
           · rcases p3 b hb with hb | hb
             · exact List.mem_append_left _ (hQ b (List.mem_cons_of_mem _ hb))
             · exact List.mem_append_right _ hb
-      · simp only [hEv, if_pos hjK]
+      · simp only [hEv, ite_eq_left hjK]
         exact OracleAdv.run_logOracle_bind f (noRand_hPhase Sch IP h0 GB U _ L ks _ m
           (fun _ _ _ _ _ _ => hOF.1 _ _ _ _ _ _ _) (fun _ _ _ _ _ _ _ => hOF.2 _ _ _ _ _ _ _ _)
           _) _ l
     · refine ⟨v, (s.1, s.2), l, ?_, hInvE_append Sch IP h0 GB U UT OF x₀ dt L ks K f hI _
         (Or.inr ⟨⟨x, rfl⟩, not_lt.1 hjK⟩) s.2 hI.2.2.2.1.tbl l (List.Subset.refl _)⟩
-      simp only [hEv, if_neg hjK]
+      simp only [hEv, ite_eq_right hjK]
       rfl
   · refine ⟨v, (s.1, Function.update s.2 d (f d)), l ++ [d], ?_,
       hInvE_append Sch IP h0 GB U UT OF x₀ dt L ks K f hI _ (Or.inl rfl) _ (fun b hb => ?_) _
@@ -1039,7 +1039,7 @@ theorem collFinderE_advantage_rom_le_of_noRand {qc m : ℕ} (hnr : OF.NoRand)
       (isQueryBound_hashProgE Sch IP h0 GB U UT OF x₀ dt c.1 c.2 m K Δ hOF Z)
   unfold CR_Search_Advantage CR_Search_Game collFinderE collFinderG
   rw [show SPComp.sample (HashScheme.randomFun (BlockDom Tx Hash np Hz) Hash).Key =
-    sampleFrom (ofPMF (PMF.uniformOfFintype _)) from rfl]
+    sampleFrom (ofPMF (PMF.uniformFintype _)) from rfl]
   simp only [SPComp.monad_bind_eq, SPComp.bind_assoc, SPComp.pure_bind]
   rw [prTrue_bind_sampleFrom]
   simp_rw [prTrue_bind_sampleFrom, ofPMF_apply_some]

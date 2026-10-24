@@ -104,7 +104,7 @@ theorem prTrue_bind_pure_test {α : Type} (c : SPComp α) (P : α → Bool) (h�
   simp only [SPComp.bind, SPComp.pure, SDistr.bind, PMF.bind_apply]
   rw [ENNReal.tsum_comm, SDistr.tsum_option_eq_add]
   simp only [SDistr.fail, SDistr.pure, PMF.pure_apply, Option.some.injEq, Prod.mk.injEq,
-    reduceCtorEq, if_false, mul_zero, tsum_zero, zero_add]
+    reduceCtorEq, ite_false, mul_zero, tsum_zero, zero_add]
   refine tsum_congr fun y => ?_
   rw [ENNReal.tsum_mul_left]
   cases hP : P y.1 <;> simp

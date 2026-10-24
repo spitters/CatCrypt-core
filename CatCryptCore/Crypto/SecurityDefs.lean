@@ -216,7 +216,7 @@ open Classical in
 from the empty query list, and return whether the forgery `(m*, t*)` verifies
 under `k` and `m*` was not queried. -/
 noncomputable def EUF_CMA_Real (M : MACScheme) (A : EUF_CMA_Adversary M) : PMF Bool :=
-  (PMF.uniformOfFintype M.Key).bind fun k =>
+  (PMF.uniformFintype M.Key).bind fun k =>
     (OracleAdv.run (macTagOracle M k) A []).map fun r =>
       M.verify k r.1.1 r.1.2 && decide (r.1.1 ∉ r.2)
 

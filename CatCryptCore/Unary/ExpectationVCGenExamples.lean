@@ -39,7 +39,7 @@ them before calling `vcgen`.
 
 open CatCrypt.Core CatCrypt.Prob
 open scoped ENNReal
-open Std.Internal.Do
+open Std.WP
 
 namespace CatCrypt.Unary
 
@@ -293,8 +293,8 @@ theorem prTrue_union_bound_vcgen (bad₁ bad₂ : SPComp Bool)
     simp only [leanOrder_rel_dual_iff, OrderDual.ofDual_toDual]
     calc _ ≤ wpE bad₁ (fun b _ => (if b then 1 else 0) +
           wpE bad₂ (fun b _ => if b then (1 : ℝ≥0∞) else 0) Heap.empty) s := by
+          erw [wpE_bind]
           refine wpE_mono bad₁ (fun b h' => ?_) s
-          simp only [SPCompU.wp_eq, OrderDual.ofDual_toDual, wpEF, zero_mul, add_zero]
           change wpE (SPComp.bind bad₂ fun b₂ => SPComp.pure (b || b₂)) _ h' ≤ _
           rw [wpE_bind]
           cases b

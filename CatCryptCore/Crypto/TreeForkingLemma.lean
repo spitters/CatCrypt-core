@@ -308,7 +308,7 @@ theorem runAccept_le : ∀ (rs : List Round) (V : Transcript rs → Y → Bool)
       have hsum : knowledgeError (r :: rs) + survival (r :: rs) = 1 :=
         knowledgeError_add_survival _
       by_cases hex : (extract (r :: rs) V s).isSome = true
-      · rw [if_pos hex, mul_one, hsum]
+      · rw [ite_eq_left hex, mul_one, hsum]
         calc κ' + σ' * ((Finset.univ.filter fun c => p c = true).card / N)
             ≤ κ' + σ' * 1 := by
               gcongr
@@ -317,7 +317,7 @@ theorem runAccept_le : ∀ (rs : List Round) (V : Transcript rs → Y → Bool)
                 (Finset.card_filter_le _ _).trans_eq Finset.card_univ
               exact Nat.cast_le.mpr hc
           _ = 1 := by rw [mul_one]; exact knowledgeError_add_survival rs
-      · rw [if_neg hex, mul_zero, add_zero]
+      · rw [ite_eq_right hex, mul_zero, add_zero]
         have hcard : (Finset.univ.filter fun c => p c = true).card ≤ r.k - 1 := by
           have h2 : ¬ r.k ≤ (Finset.univ.filter fun c => p c = true).card :=
             (extract_cons_isSome r rs V s).not.mp hex

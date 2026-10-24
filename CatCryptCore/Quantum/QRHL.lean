@@ -317,9 +317,9 @@ theorem extractBlock_oneSidedPost (C₁ : QComp d₁ α) (b : β)
     extractBlock (oneSidedPost C₁ b ρ) i₂ j₂ = ∑' a, C₁.branch a (extractBlock ρ i₂ j₂) := by
   ext i₁ j₁
   rw [extractBlock_apply, oneSidedPost]
-  erw [tsum_apply (summable_jointBranch_qpure_right C₁ b ρ),
-    tsum_apply (Pi.summable.mp (summable_jointBranch_qpure_right C₁ b ρ) _),
-    tsum_apply (C₁.branch_summable _), tsum_apply (Pi.summable.mp (C₁.branch_summable _) _)]
+  erw [Pi.tsum_apply (summable_jointBranch_qpure_right C₁ b ρ),
+    Pi.tsum_apply (Pi.summable.mp (summable_jointBranch_qpure_right C₁ b ρ) _),
+    Pi.tsum_apply (C₁.branch_summable _), Pi.tsum_apply (Pi.summable.mp (C₁.branch_summable _) _)]
   simp only [jointBranch_qpure_right_apply, Equiv.symm_apply_apply]
 
 /-- The first marginal of `oneSidedPost C₁ b ρ` is the total action of `C₁` on the

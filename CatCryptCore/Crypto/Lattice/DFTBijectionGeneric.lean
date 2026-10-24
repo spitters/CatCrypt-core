@@ -75,7 +75,7 @@ theorem dft_idft {ω : R} {n : ℕ} (hω : IsPrimitiveRoot ω n) (hn : (n : R) �
     ring
   rw [Finset.sum_congr rfl (fun y _ => hinner y)]
   simp only [mul_ite, mul_zero,
-    Finset.sum_ite_eq Finset.univ k (fun y => X y * (n : R)), Finset.mem_univ, if_true]
+    Finset.sum_ite_eq Finset.univ k (fun y => X y * (n : R)), Finset.mem_univ, ite_true]
   rw [mul_comm (X k) (n : R), ← mul_assoc, inv_mul_cancel₀ hn, one_mul]
 
 /-- The DFT as an explicit bijection on `Fin n → R`. With `ω` a primitive `n`-th

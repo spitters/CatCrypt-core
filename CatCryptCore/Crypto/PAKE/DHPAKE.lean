@@ -74,7 +74,7 @@ open CatCrypt.Core CatCrypt.Prob CatCrypt.Crypto CatCrypt.Crypto.Assumptions
 open scoped ENNReal
 open CatCrypt.Crypto.ROProgramming
 open PMF (indicator_le_mul_guess bind_apply_le_add_tsum tsum_le_mul_bind_apply
-  bind_apply_le_of_le uniformOfFintype_map_equiv)
+  bind_apply_le_of_le uniformFintype_map_equiv)
 
 /-! ## The protocol and the game -/
 
@@ -124,27 +124,27 @@ def hashInput (P : DHPAKE S W Pw) (pw : Pw) (x y : S) : Pw × W × W × W :=
     against the same oracle. -/
 noncomputable def dhpakeGame (P : DHPAKE S W Pw) (D : DHPAKEAdversary Pw W K qH qS) :
     PMF Bool :=
-  (PMF.uniformOfFintype Bool).bind fun c => (PMF.uniformOfFintype S).bind fun x =>
-  (PMF.uniformOfFintype S).bind fun y => (PMF.uniformOfFintype Pw).bind fun pw =>
+  (PMF.uniformFintype Bool).bind fun c => (PMF.uniformFintype S).bind fun x =>
+  (PMF.uniformFintype S).bind fun y => (PMF.uniformFintype Pw).bind fun pw =>
     (roOracle emptyTable (hashInput P pw x y)).bind fun kt =>
-    (if c then PMF.pure kt.1 else PMF.uniformOfFintype K).bind fun k =>
+    (if c then PMF.pure kt.1 else PMF.uniformFintype K).bind fun k =>
       (OracleAdv.run roOracle (D.run (msgC P pw x) (msgS P pw y) k) kt.2).map
         fun z => success c pw z.1
 
 /-- The hybrid game: a uniform key and a fresh oracle. -/
 noncomputable def dhpakeHybrid (P : DHPAKE S W Pw) (D : DHPAKEAdversary Pw W K qH qS) :
     PMF Bool :=
-  (PMF.uniformOfFintype Bool).bind fun c => (PMF.uniformOfFintype S).bind fun x =>
-  (PMF.uniformOfFintype S).bind fun y => (PMF.uniformOfFintype Pw).bind fun pw =>
-  (PMF.uniformOfFintype K).bind fun k =>
+  (PMF.uniformFintype Bool).bind fun c => (PMF.uniformFintype S).bind fun x =>
+  (PMF.uniformFintype S).bind fun y => (PMF.uniformFintype Pw).bind fun pw =>
+  (PMF.uniformFintype K).bind fun k =>
     (OracleAdv.run roOracle (D.run (msgC P pw x) (msgS P pw y) k) emptyTable).map
       fun z => success c pw z.1
 
 /-- The probability that the adversary queries the honest input in the hybrid game. -/
 noncomputable def dhpakeQueryProb (P : DHPAKE S W Pw) (D : DHPAKEAdversary Pw W K qH qS) :
     ℝ≥0∞ :=
-  ∑' x, PMF.uniformOfFintype S x * ∑' y, PMF.uniformOfFintype S y *
-  ∑' pw, PMF.uniformOfFintype Pw pw * ∑' k, PMF.uniformOfFintype K k *
+  ∑' x, PMF.uniformFintype S x * ∑' y, PMF.uniformFintype S y *
+  ∑' pw, PMF.uniformFintype Pw pw * ∑' k, PMF.uniformFintype K k *
     queryProb (hashInput P pw x y) (D.run (msgC P pw x) (msgS P pw y) k)
 
 /-! ## The CDH reduction -/
@@ -153,7 +153,7 @@ noncomputable def dhpakeQueryProb (P : DHPAKE S W Pw) (D : DHPAKEAdversary Pw W 
     `g^s` as both components, and `ecdh (g^s) Y = dh s Y`. -/
 noncomputable def cdhDef (P : DHPAKE S W Pw) : DDHDef W where
   ecdh priv pub := P.dh (P.pubEquiv.symm priv) pub
-  keygen := liftPMF ((PMF.uniformOfFintype S).map fun s => (P.pubEquiv s, P.pubEquiv s))
+  keygen := liftPMF ((PMF.uniformFintype S).map fun s => (P.pubEquiv s, P.pubEquiv s))
   keygen_isPure := liftPMF_isPure _
 
 /-- The output distribution of the reduction on the challenge `(gA, gB)`: sample the
@@ -162,10 +162,10 @@ noncomputable def cdhDef (P : DHPAKE S W Pw) : DDHDef W where
     uniform position of the log. -/
 noncomputable def cdhDist (P : DHPAKE S W Pw) (D : DHPAKEAdversary Pw W K qH qS)
     (gA gB : W) : PMF W :=
-  (PMF.uniformOfFintype Pw).bind fun pw => (PMF.uniformOfFintype K).bind fun k =>
+  (PMF.uniformFintype Pw).bind fun pw => (PMF.uniformFintype K).bind fun k =>
     (OracleAdv.run (OracleAdv.withLog roOracle)
       (D.run (P.maskC pw gA) (P.maskS pw gB) k) (emptyTable, [])).bind fun z =>
-    (PMF.uniformOfFintype (Fin (max qH 1))).map fun i : Fin (max qH 1) =>
+    (PMF.uniformFintype (Fin (max qH 1))).map fun i : Fin (max qH 1) =>
       (z.2.2.getD (i : ℕ) (pw, gA, gB, gA)).2.2.2
 
 /-- **The CDH reduction.** On the challenge `(gA, gB)` it samples from `cdhDist`. -/
@@ -176,7 +176,7 @@ noncomputable def cdhReduction (P : DHPAKE S W Pw) (D : DHPAKEAdversary Pw W K q
 /-- The CDH advantage of `cdhReduction P D` as a probability over the secrets. -/
 theorem cdhAdvantage_cdhReduction (P : DHPAKE S W Pw) (D : DHPAKEAdversary Pw W K qH qS) :
     CDH_Advantage (cdhDef P) (cdhReduction P D) =
-      ((PMF.uniformOfFintype S).bind fun a => (PMF.uniformOfFintype S).bind fun b =>
+      ((PMF.uniformFintype S).bind fun a => (PMF.uniformFintype S).bind fun b =>
         (cdhDist P D (P.pubEquiv a) (P.pubEquiv b)).map
           fun c => decide (c = P.dh a (P.pubEquiv b))) true := by
   unfold CDH_Advantage
@@ -204,7 +204,7 @@ theorem cdhAdvantage_cdhReduction (P : DHPAKE S W Pw) (D : DHPAKEAdversary Pw W 
 theorem dhpakeGame_le_hybrid (P : DHPAKE S W Pw) (D : DHPAKEAdversary Pw W K qH qS) :
     dhpakeGame P D true ≤ dhpakeHybrid P D true + dhpakeQueryProb P D := by
   unfold dhpakeGame dhpakeHybrid
-  rw [show dhpakeQueryProb P D = ∑' c : Bool, PMF.uniformOfFintype Bool c * dhpakeQueryProb P D
+  rw [show dhpakeQueryProb P D = ∑' c : Bool, PMF.uniformFintype Bool c * dhpakeQueryProb P D
     by rw [ENNReal.tsum_mul_right, PMF.tsum_coe, one_mul]]
   refine bind_apply_le_add_tsum _ _ _ _ _ fun c => ?_
   · unfold dhpakeQueryProb
@@ -213,41 +213,41 @@ theorem dhpakeGame_le_hybrid (P : DHPAKE S W Pw) (D : DHPAKEAdversary Pw W K qH 
     refine bind_apply_le_add_tsum _ _ _ _ _ fun pw => ?_
     rw [Extracted.roOracle_emptyTable_eq, PMF.bind_map]
     cases c
-    · simp only [Function.comp_def, Bool.false_eq_true, if_false]
+    · simp only [Function.comp_def, Bool.false_eq_true, ite_false]
       refine bind_apply_le_of_le _ _ _ _ fun y0 => ?_
       exact bind_apply_le_add_tsum _ _ _ _ _ fun k => run_update_le _ y0 _ _
-    · simp only [Function.comp_def, if_true, PMF.pure_bind]
+    · simp only [Function.comp_def, ite_true, PMF.pure_bind]
       exact bind_apply_le_add_tsum _ _ _ _ _ fun k => run_update_le _ k _ _
 
 /-- For a fixed output `o`, a uniform bit and a uniform password make `o` succeed with
     probability at most `1/2 + qS/|Pw|`. -/
 theorem success_prob_le (o : Bool × (Fin qS → Pw)) :
-    ((PMF.uniformOfFintype Bool).bind fun c => (PMF.uniformOfFintype Pw).bind fun pw =>
+    ((PMF.uniformFintype Bool).bind fun c => (PMF.uniformFintype Pw).bind fun pw =>
       PMF.pure (success c pw o)) true ≤ 2⁻¹ + qS * (Fintype.card Pw : ℝ≥0∞)⁻¹ := by
-  have hsplit : ((PMF.uniformOfFintype Bool).bind fun c => (PMF.uniformOfFintype Pw).bind
+  have hsplit : ((PMF.uniformFintype Bool).bind fun c => (PMF.uniformFintype Pw).bind
       fun pw => PMF.pure (success c pw o)) true ≤
-      ((PMF.uniformOfFintype Bool).bind fun c => PMF.pure (o.1 == c)) true +
-        ((PMF.uniformOfFintype Pw).bind fun pw => PMF.pure (decide (∃ i, o.2 i = pw))) true := by
-    set G := ((PMF.uniformOfFintype Pw).bind fun pw => PMF.pure (decide (∃ i, o.2 i = pw))) true
-    have hc : ∀ c : Bool, ((PMF.uniformOfFintype Pw).bind fun pw =>
+      ((PMF.uniformFintype Bool).bind fun c => PMF.pure (o.1 == c)) true +
+        ((PMF.uniformFintype Pw).bind fun pw => PMF.pure (decide (∃ i, o.2 i = pw))) true := by
+    set G := ((PMF.uniformFintype Pw).bind fun pw => PMF.pure (decide (∃ i, o.2 i = pw))) true
+    have hc : ∀ c : Bool, ((PMF.uniformFintype Pw).bind fun pw =>
         PMF.pure (success c pw o)) true ≤ PMF.pure (o.1 == c) true + G := by
       intro c
-      have h := bind_apply_le_add_tsum (PMF.uniformOfFintype Pw)
+      have h := bind_apply_le_add_tsum (PMF.uniformFintype Pw)
         (fun pw => PMF.pure (success c pw o)) (fun _ => PMF.pure (o.1 == c))
         (fun pw => PMF.pure (decide (∃ i, o.2 i = pw)) true) true fun pw => by
           unfold success
           cases (o.1 == c) <;> cases (decide (∃ i, o.2 i = pw)) <;> simp
       rwa [PMF.bind_const, ← PMF.bind_apply] at h
-    have h := bind_apply_le_add_tsum (PMF.uniformOfFintype Bool) _
+    have h := bind_apply_le_add_tsum (PMF.uniformFintype Bool) _
       (fun c => PMF.pure (o.1 == c)) (fun _ => G) true hc
     rwa [ENNReal.tsum_mul_right, PMF.tsum_coe, one_mul] at h
-  have hbit : ((PMF.uniformOfFintype Bool).bind fun c => PMF.pure (o.1 == c)) true = 2⁻¹ := by
+  have hbit : ((PMF.uniformFintype Bool).bind fun c => PMF.pure (o.1 == c)) true = 2⁻¹ := by
     simp [PMF.bind_apply, tsum_fintype, PMF.pure_apply]
-  have hguess : ((PMF.uniformOfFintype Pw).bind fun pw => PMF.pure (decide (∃ i, o.2 i = pw)))
+  have hguess : ((PMF.uniformFintype Pw).bind fun pw => PMF.pure (decide (∃ i, o.2 i = pw)))
       true ≤ qS * (Fintype.card Pw : ℝ≥0∞)⁻¹ := by
     rw [PMF.bind_apply, tsum_fintype]
-    calc ∑ pw, PMF.uniformOfFintype Pw pw * PMF.pure (decide (∃ i, o.2 i = pw)) true
-        ≤ ∑ pw, ∑ i : Fin qS, PMF.uniformOfFintype Pw pw *
+    calc ∑ pw, PMF.uniformFintype Pw pw * PMF.pure (decide (∃ i, o.2 i = pw)) true
+        ≤ ∑ pw, ∑ i : Fin qS, PMF.uniformFintype Pw pw *
             (if o.2 i = pw then (1 : ℝ≥0∞) else 0) := by
           refine Finset.sum_le_sum fun pw _ => ?_
           rw [← Finset.mul_sum]
@@ -258,7 +258,7 @@ theorem success_prob_le (o : Bool × (Fin qS → Pw)) :
               if o.2 j = pw then (1 : ℝ≥0∞) else 0) (fun _ _ => by positivity) (Finset.mem_univ i)
             have h1 : PMF.pure (decide (∃ i, o.2 i = pw)) true = 1 := by
               simp only [PMF.pure_apply]
-              rw [if_pos (by rw [eq_comm, decide_eq_true_eq]; exact ⟨i, hi⟩)]
+              rw [ite_eq_left (by rw [eq_comm, decide_eq_true_eq]; exact ⟨i, hi⟩)]
             rw [h1]
             refine le_trans (le_of_eq ?_) hle
             simp [hi]
@@ -266,24 +266,24 @@ theorem success_prob_le (o : Bool × (Fin qS → Pw)) :
       _ = ∑ i : Fin qS, (Fintype.card Pw : ℝ≥0∞)⁻¹ := by
           rw [Finset.sum_comm]
           refine Finset.sum_congr rfl fun i _ => ?_
-          simp [PMF.uniformOfFintype_apply]
+          simp [PMF.uniformFintype_apply]
       _ = qS * (Fintype.card Pw : ℝ≥0∞)⁻¹ := by simp
   exact hsplit.trans (by rw [hbit]; gcongr)
 
 omit [Fintype Pw] [Nonempty Pw] in
 /-- In the hybrid game the adversary's view is independent of the password. -/
 theorem hybrid_view_eq (P : DHPAKE S W Pw) (D : DHPAKEAdversary Pw W K qH qS) (pw : Pw) :
-    ((PMF.uniformOfFintype S).bind fun x => (PMF.uniformOfFintype S).bind fun y =>
-      (PMF.uniformOfFintype K).bind fun k =>
+    ((PMF.uniformFintype S).bind fun x => (PMF.uniformFintype S).bind fun y =>
+      (PMF.uniformFintype K).bind fun k =>
         (OracleAdv.run roOracle (D.run (msgC P pw x) (msgS P pw y) k) emptyTable).map
           Prod.fst) =
-      ((PMF.uniformOfFintype W).bind fun X => (PMF.uniformOfFintype W).bind fun Y =>
-        (PMF.uniformOfFintype K).bind fun k =>
+      ((PMF.uniformFintype W).bind fun X => (PMF.uniformFintype W).bind fun Y =>
+        (PMF.uniformFintype K).bind fun k =>
           (OracleAdv.run roOracle (D.run X Y k) emptyTable).map Prod.fst) := by
-  nth_rewrite 1 [← uniformOfFintype_map_equiv (P.pubEquiv.trans (P.maskC pw))]
+  nth_rewrite 1 [← uniformFintype_map_equiv (P.pubEquiv.trans (P.maskC pw))]
   rw [PMF.bind_map]
   refine congrArg _ (funext fun x => ?_)
-  rw [← uniformOfFintype_map_equiv (P.pubEquiv.trans (P.maskS pw))]
+  rw [← uniformFintype_map_equiv (P.pubEquiv.trans (P.maskS pw))]
   simp only [Function.comp_apply]
   rw [PMF.bind_map]
   rfl
@@ -293,16 +293,16 @@ theorem hybrid_view_eq (P : DHPAKE S W Pw) (D : DHPAKEAdversary Pw W K qH qS) (p
     password with probability at most `qS/|Pw|`. -/
 theorem dhpakeHybrid_le (P : DHPAKE S W Pw) (D : DHPAKEAdversary Pw W K qH qS) :
     dhpakeHybrid P D true ≤ 2⁻¹ + qS * (Fintype.card Pw : ℝ≥0∞)⁻¹ := by
-  set view := (PMF.uniformOfFintype W).bind fun X => (PMF.uniformOfFintype W).bind fun Y =>
-    (PMF.uniformOfFintype K).bind fun k =>
+  set view := (PMF.uniformFintype W).bind fun X => (PMF.uniformFintype W).bind fun Y =>
+    (PMF.uniformFintype K).bind fun k =>
       (OracleAdv.run roOracle (D.run X Y k) emptyTable).map Prod.fst with hview
-  have heq : dhpakeHybrid P D = view.bind fun o => (PMF.uniformOfFintype Bool).bind fun c =>
-      (PMF.uniformOfFintype Pw).bind fun pw => PMF.pure (success c pw o) := by
-    rw [PMF.bind_comm view (PMF.uniformOfFintype Bool)]
+  have heq : dhpakeHybrid P D = view.bind fun o => (PMF.uniformFintype Bool).bind fun c =>
+      (PMF.uniformFintype Pw).bind fun pw => PMF.pure (success c pw o) := by
+    rw [PMF.bind_comm view (PMF.uniformFintype Bool)]
     unfold dhpakeHybrid
     refine congrArg _ (funext fun c => ?_)
-    rw [PMF.bind_comm view (PMF.uniformOfFintype Pw)]
-    simp only [PMF.bind_comm (PMF.uniformOfFintype S) (PMF.uniformOfFintype Pw)]
+    rw [PMF.bind_comm view (PMF.uniformFintype Pw)]
+    simp only [PMF.bind_comm (PMF.uniformFintype S) (PMF.uniformFintype Pw)]
     refine congrArg _ (funext fun pw => ?_)
     rw [hview, ← hybrid_view_eq P D pw]
     simp only [PMF.bind_bind, PMF.bind_map, Function.comp_def]
@@ -351,7 +351,7 @@ noncomputable def cdhReduction.timedRun (P : DHPAKE S W Pw) (tH tOut : ℕ)
   OracleAdv.Timed.stepBind
     (OracleAdv.Timed.runOracle (OracleAdv.withLog roOracle) (fun _ => tH)
       (D' (P.maskC pw gA) (P.maskS pw gB) k) (emptyTable, []))
-    fun z => (0, .rand (PMF.uniformOfFintype (Fin (max qH 1))) (fun _ => tOut)
+    fun z => (0, .rand (PMF.uniformFintype (Fin (max qH 1))) (fun _ => tOut)
       fun i => .ret (z.2.2.getD (i : ℕ) (pw, gA, gB, gA)).2.2.2)
 
 variable (qH) in
@@ -360,8 +360,8 @@ variable (qH) in
 noncomputable def cdhReduction.timed (P : DHPAKE S W Pw) (tH tOut : ℕ)
     (D' : W → W → K → OracleAdv.Timed (Pw × W × W × W) K (Bool × (Fin qS → Pw)))
     (gA gB : W) : ℕ × OracleAdv.Timed Empty Empty W :=
-  (0, .rand (PMF.uniformOfFintype Pw) (fun _ => 0) fun pw =>
-    .rand (PMF.uniformOfFintype K)
+  (0, .rand (PMF.uniformFintype Pw) (fun _ => 0) fun pw =>
+    .rand (PMF.uniformFintype K)
       (fun k => (cdhReduction.timedRun qH P tH tOut D' gA gB pw k).1)
       fun k => (cdhReduction.timedRun qH P tH tOut D' gA gB pw k).2)
 

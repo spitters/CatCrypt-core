@@ -122,7 +122,8 @@ theorem contextEquiv_of_sdist {α β : Type*} {f g : α → SPComp β} {ε : ℝ
     have : absDiff (prTrue (SPComp.bind (SPComp.bind (f a) D) SPComp.pure) h₀)
         (prTrue (SPComp.bind (SPComp.bind (g a) D) SPComp.pure) h₀)
         ≤ sdist (fun x => SPComp.bind (f x) D) (fun x => SPComp.bind (g x) D) :=
-      sdist_le_of_forall le_rfl SPComp.pure a h₀
+      sdist_le_of_forall (f := fun x => SPComp.bind (f x) D)
+        (g := fun x => SPComp.bind (g x) D) le_rfl SPComp.pure a h₀
     simp only [SPComp.bind_pure] at this
     exact this
   exact le_trans key (h D)

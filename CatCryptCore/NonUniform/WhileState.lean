@@ -65,12 +65,12 @@ theorem whileApproxS_succ_of_guard {guard : σ → Heap → Bool} {body : σ →
     {s : σ} {h : Heap} (hg : guard s h = true) (n : ℕ) :
     whileApproxS guard body (n + 1) s h =
       SPComp.bind (body s) (fun s' => whileApproxS guard body n s') h := by
-  rw [whileApproxS_succ, if_pos hg]
+  rw [whileApproxS_succ, ite_eq_left hg]
 
 theorem whileApproxS_succ_of_not_guard {guard : σ → Heap → Bool}
     {body : σ → SPComp σ} {s : σ} {h : Heap} (hg : guard s h = false) (n : ℕ) :
     whileApproxS guard body (n + 1) s h = SPComp.pure s h := by
-  rw [whileApproxS_succ, if_neg (by simp [hg])]
+  rw [whileApproxS_succ, ite_eq_right (by simp [hg])]
 
 /-- The guarded step as an `SDistr` bind: the body runs once and the remaining
 budget is spent from the resulting state and heap. -/

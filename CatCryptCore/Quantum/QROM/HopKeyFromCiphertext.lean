@@ -143,11 +143,11 @@ open scoped Classical in
 theorem keySwapCt_of_inj {p : (X → V) × (C → K)} (h : SliceInj S e ε p.1) :
     keySwapCt S e ε p = (keyHop S e ε p.2 p.1, fun y =>
       if h : ∃ x, S x ∧ coinCt e ε p.1 x = y then (ε (p.1 h.choose)).1 else p.2 y) := by
-  rw [keySwapCt, if_pos h]
+  rw [keySwapCt, ite_eq_left h]
 
 theorem keySwapCt_of_not_inj {p : (X → V) × (C → K)} (h : ¬ SliceInj S e ε p.1) :
     keySwapCt S e ε p = p := by
-  rw [keySwapCt, if_neg h]
+  rw [keySwapCt, ite_eq_right h]
 
 /-- The exchange is an involution. -/
 theorem keySwapCt_involutive : Function.Involutive (keySwapCt S e ε) := by
@@ -163,14 +163,14 @@ theorem keySwapCt_involutive : Function.Involutive (keySwapCt S e ε) := by
       by_cases hx : S x
       · have hex : ∃ x', S x' ∧ coinCt e ε g x' = coinCt e ε g x := ⟨x, hx, rfl⟩
         have hch : hex.choose = x := hinj _ _ hex.choose_spec.1 hx hex.choose_spec.2
-        simp only [keyHop, if_pos hx, coinCt_keyHop, dif_pos hex, hch, Equiv.apply_symm_apply]
+        simp only [keyHop, ite_eq_left hx, coinCt_keyHop, dite_eq_left hex, hch, Equiv.apply_symm_apply]
         simp
-      · simp only [keyHop, if_neg hx]
+      · simp only [keyHop, ite_eq_right hx]
     · dsimp only
       by_cases hy : ∃ x, S x ∧ coinCt e ε g x = y
-      · rw [dif_pos hy]
-        simp only [keyHop, if_pos hy.choose_spec.1, Equiv.apply_symm_apply, hy.choose_spec.2]
-      · rw [dif_neg hy, dif_neg hy]
+      · rw [dite_eq_left hy]
+        simp only [keyHop, ite_eq_left hy.choose_spec.1, Equiv.apply_symm_apply, hy.choose_spec.2]
+      · rw [dite_eq_right hy, dite_eq_right hy]
   · rw [keySwapCt_of_not_inj S e ε (p := (g, Hq)) hinj,
       keySwapCt_of_not_inj S e ε (p := (g, Hq)) hinj]
 
@@ -189,8 +189,8 @@ theorem offImage_keySwapCt {p : (X → V) × (C → K)} (h : SliceInj S e ε p.1
   funext y
   simp only [offImage, coinCt_keyHop]
   by_cases hy : ∃ x, S x ∧ coinCt e ε p.1 x = y
-  · rw [if_pos hy, if_pos hy]
-  · rw [if_neg hy, if_neg hy, dif_neg hy]
+  · rw [ite_eq_left hy, ite_eq_left hy]
+  · rw [ite_eq_right hy, ite_eq_right hy, dite_eq_right hy]
 
 open scoped Classical in
 /-- The relabelling: over the tables whose ciphertext map is injective on the
@@ -209,8 +209,8 @@ theorem sum_keyHop (F : (X → V) → (C → Option K) → ℝ≥0∞) :
   by_cases h : SliceInj S e ε p.1
   · have h' : SliceInj S e ε (keySwapCt S e ε p).1 := by
       rw [keySwapCt_of_inj S e ε h]; exact (sliceInj_keyHop S e ε _ _).2 h
-    rw [if_pos h, if_pos h', offImage_keySwapCt S e ε h, keySwapCt_of_inj S e ε h]
-  · rw [if_neg h, keySwapCt_of_not_inj S e ε h, if_neg h]
+    rw [ite_eq_left h, ite_eq_left h', offImage_keySwapCt S e ε h, keySwapCt_of_inj S e ε h]
+  · rw [ite_eq_right h, keySwapCt_of_not_inj S e ε h, ite_eq_right h]
 
 end Relabel
 
@@ -324,10 +324,10 @@ theorem simKeyAt_inputH (i : KEMInput PK SK Z M K m₁ m₂ n) (Hq : C → K) (c
       rwa [encOf_inputH]
     have hc : encOf (P.enc i.1.1) (kemTab hpk eG eKR i) h'.choose = c' :=
       (congrFun (encOf_inputH P hpk eG eKR i Hq) h'.choose).symm.trans h'.choose_spec
-    rw [dif_pos h', if_pos h, kemTab_inputH, hc]
+    rw [dite_eq_left h', ite_eq_left h, kemTab_inputH, hc]
   · have h' : ¬ ∃ m, encOf (P.enc i.1.1) (kemTab hpk eG eKR (inputH P hpk eG eKR i Hq)) m = c' := by
       rwa [encOf_inputH]
-    rw [dif_neg h', if_neg h]
+    rw [dite_eq_right h', ite_eq_right h]
 
 omit [DecidableEq Hash] in
 /-- The ciphertext map is injective on the slice exactly when the ciphertext map
@@ -402,9 +402,9 @@ theorem sum_inputH (Φ : KEMInput PK SK Z M K m₁ m₂ n → ℝ≥0∞) :
   have hw : kemSample P (kemSwapH P hpk eG eKR p).1 = kemSample P p.1 := rfl
   rw [hw]
   by_cases h : kemInj P hpk eG eKR p.1
-  · rw [if_pos h, if_pos ((kemInj_kemSwapH P hpk eG eKR p).2 h),
+  · rw [ite_eq_left h, ite_eq_left ((kemInj_kemSwapH P hpk eG eKR p).2 h),
       show p = (p.1, p.2) from rfl, kemSwapH_fst_of_inj P hpk eG eKR p.2 h]
-  · rw [if_neg h, if_neg (fun h' => h ((kemInj_kemSwapH P hpk eG eKR p).1 h'))]
+  · rw [ite_eq_right h, ite_eq_right (fun h' => h ((kemInj_kemSwapH P hpk eG eKR p).1 h'))]
 
 end Input
 
@@ -429,7 +429,7 @@ theorem decapsH_apply (i : KEMInput PK SK Z M K m₁ m₂ n) (Hq : C → K) (x :
       eKa ((if ∃ m, encOf (P.enc i.1.1) (kemTab hpk eG eKR i) m = eC.symm x then
         some (Hq (eC.symm x)) else none).getD (kemJ eJ eKR i (i.2.1, eC.symm x))) := by
   simp only [decapsH, decapsSim]
-  rw [kemChal_inputH, if_neg hx]
+  rw [kemChal_inputH, ite_eq_right hx]
   change eKa ((simKeyAt (P.enc i.1.1) (kemTab hpk eG eKR (inputH P hpk eG eKR i Hq))
     (eC.symm x)).getD (kemJ eJ eKR i (i.2.1, eC.symm x))) = _
   rw [simKeyAt_inputH]
@@ -459,9 +459,9 @@ theorem decapsH_eq_decapsHq (i : KEMInput PK SK Z M K m₁ m₂ n) (Hq : C → K
         Hq (fun y => kemJ eJ eKR i (i.2.1, y))) (kemChal P hpk eG eKR i) := by
   funext x
   by_cases hx : eC.symm x = kemChal P hpk eG eKR i
-  · simp only [decapsH, decapsSim, decapsHq, kemChal_inputH, if_pos hx]
+  · simp only [decapsH, decapsSim, decapsHq, kemChal_inputH, ite_eq_left hx]
   · rw [decapsH_apply P hpk eG eJ eKR eC eKa i Hq x hx]
-    simp only [decapsHq, if_neg hx, mergeOn]
+    simp only [decapsHq, ite_eq_right hx, mergeOn]
     split_ifs <;> rfl
 
 variable [Fintype PK] [Fintype SK] [Fintype M] [Fintype Z] [Fintype K] [Fintype C] [NeZero n]
@@ -561,8 +561,8 @@ theorem hopH_cost_le (i : KEMInput PK SK Z M K m₁ m₂ n) :
   · have hinj : Function.Injective (encOf (P.enc i.1.1) (kemTab hpk eG eKR i)) :=
       encAt_injective_of_good_eq_univ (P.enc i.1.1) (P.dec i.1.2) _
         (Finset.eq_univ_iff_forall.mpr hg)
-    rw [if_pos hinj, if_pos hg]
-  · rw [if_neg hg]
+    rw [ite_eq_left hinj, ite_eq_left hg]
+  · rw [ite_eq_right hg]
     split_ifs <;> simp
 
 end Game

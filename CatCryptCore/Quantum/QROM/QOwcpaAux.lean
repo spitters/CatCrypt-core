@@ -116,9 +116,9 @@ theorem guessProb_singleton_le (A : QAdv m n w q) (H : Fin m → Fin n) (t : Fin
     (hpure : A.init.val = vecMulVec ψ (star ψ)) :
     guessProb A H {t} j ≤ guessProb A H W j + if t ∈ W then 0 else 1 := by
   by_cases ht : t ∈ W
-  · rw [if_pos ht, add_zero, guessProb_eq_sum A H W j hpure]
+  · rw [ite_eq_left ht, add_zero, guessProb_eq_sum A H W j hpure]
     exact Finset.single_le_sum (f := fun x => guessProb A H {x} j) (fun _ _ => zero_le) ht
-  · rw [if_neg ht]
+  · rw [ite_eq_right ht]
     exact ((Finset.single_le_sum (f := fun x => guessProb A H {x} j) (fun _ _ => zero_le)
       (Finset.mem_univ t)).trans (sum_guessProb_singleton_le_one A H j hpure)).trans le_add_self
 
@@ -258,8 +258,8 @@ theorem sum_guessProb_hopCoinGame_le (A : KEMQAdv m₁ m₂ n w q k c a PK C K) 
     · have hmem : kemPtMerged hpk eG p.1 ∈ W := by
         rw [hW, owWinSet, Finset.mem_filter, decodeG_kemPtMerged]
         exact ⟨Finset.mem_univ _, (mem_good_iff _ _ _ _).1 hg⟩
-      rw [if_pos hmem, if_pos hg]
-    · rw [if_neg hg]
+      rw [ite_eq_left hmem, ite_eq_left hg]
+    · rw [ite_eq_right hg]
       split_ifs <;> simp
   calc ∑ j, guessProb (Gm.adv p) (Gm.oracle' p) (Gm.S p) j
       ≤ ∑ j : Fin (flatQ q k q), (guessProb (Gm.adv p) (Gm.oracle' p) W j +

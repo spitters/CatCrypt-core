@@ -269,16 +269,16 @@ theorem st_ite {c : Prop} [Decidable c] {x y : ℕ × SPTree.Timed α}
     (hx : c → P + SPTree.Timed.stepTime x ≤ B) (hy : ¬c → P + SPTree.Timed.stepTime y ≤ B) :
     P + SPTree.Timed.stepTime (if c then x else y) ≤ B := by
   by_cases hc : c
-  · simpa only [if_pos hc] using hx hc
-  · simpa only [if_neg hc] using hy hc
+  · simpa only [ite_eq_left hc] using hx hc
+  · simpa only [ite_eq_right hc] using hy hc
 
 theorem st_dite {c : Prop} [Decidable c] {x : c → ℕ × SPTree.Timed α}
     {y : ¬c → ℕ × SPTree.Timed α} (hx : ∀ h : c, P + SPTree.Timed.stepTime (x h) ≤ B)
     (hy : ∀ h : ¬c, P + SPTree.Timed.stepTime (y h) ≤ B) :
     P + SPTree.Timed.stepTime (if h : c then x h else y h) ≤ B := by
   by_cases hc : c
-  · simpa only [dif_pos hc] using hx hc
-  · simpa only [dif_neg hc] using hy hc
+  · simpa only [dite_eq_left hc] using hx hc
+  · simpa only [dite_eq_right hc] using hy hc
 
 theorem st_bind_ret {a : α} {f : α → ℕ × SPTree.Timed β}
     (h : P + SPTree.Timed.stepTime (f a) ≤ B) :
@@ -430,15 +430,15 @@ theorem time_ite {c : Prop} [Decidable c] {x y : SPTree.Timed α}
     (hx : c → P + x.time ≤ B) (hy : ¬c → P + y.time ≤ B) :
     P + (if c then x else y).time ≤ B := by
   by_cases hc : c
-  · simpa only [if_pos hc] using hx hc
-  · simpa only [if_neg hc] using hy hc
+  · simpa only [ite_eq_left hc] using hx hc
+  · simpa only [ite_eq_right hc] using hy hc
 
 theorem time_dite {c : Prop} [Decidable c] {x : c → SPTree.Timed α} {y : ¬c → SPTree.Timed α}
     (hx : ∀ h : c, P + (x h).time ≤ B) (hy : ∀ h : ¬c, P + (y h).time ≤ B) :
     P + (if h : c then x h else y h).time ≤ B := by
   by_cases hc : c
-  · simpa only [dif_pos hc] using hx hc
-  · simpa only [dif_neg hc] using hy hc
+  · simpa only [dite_eq_left hc] using hx hc
+  · simpa only [dite_eq_right hc] using hy hc
 
 theorem time_of {t : SPTree.Timed α} {T : ℕ} (h : t.time ≤ T) (h0 : P + T ≤ B) :
     P + t.time ≤ B := by
@@ -549,16 +549,16 @@ theorem tb_ite {c : Prop} [Decidable c] {x y : OracleAdv.Timed D R α}
     (hx : c → x.TimeBound (B - P)) (hy : ¬c → y.TimeBound (B - P)) :
     (if c then x else y).TimeBound (B - P) := by
   by_cases hc : c
-  · simpa only [if_pos hc] using hx hc
-  · simpa only [if_neg hc] using hy hc
+  · simpa only [ite_eq_left hc] using hx hc
+  · simpa only [ite_eq_right hc] using hy hc
 
 theorem tb_dite {c : Prop} [Decidable c] {x : c → OracleAdv.Timed D R α}
     {y : ¬c → OracleAdv.Timed D R α} (hx : ∀ h : c, (x h).TimeBound (B - P))
     (hy : ∀ h : ¬c, (y h).TimeBound (B - P)) :
     (if h : c then x h else y h).TimeBound (B - P) := by
   by_cases hc : c
-  · simpa only [dif_pos hc] using hx hc
-  · simpa only [dif_neg hc] using hy hc
+  · simpa only [dite_eq_left hc] using hx hc
+  · simpa only [dite_eq_right hc] using hy hc
 
 theorem tb_of {A : OracleAdv.Timed D R α} {T : ℕ} (h : A.TimeBound T) (h0 : P + T ≤ B) :
     A.TimeBound (B - P) :=
@@ -600,8 +600,8 @@ theorem stb_ite {c : Prop} [Decidable c] {x y : ℕ × OracleAdv.Timed D R α}
     (hy : ¬c → OracleAdv.Timed.StepTimeBound y (B - P)) :
     OracleAdv.Timed.StepTimeBound (if c then x else y) (B - P) := by
   by_cases hc : c
-  · simpa only [if_pos hc] using hx hc
-  · simpa only [if_neg hc] using hy hc
+  · simpa only [ite_eq_left hc] using hx hc
+  · simpa only [ite_eq_right hc] using hy hc
 
 theorem stb_dite {c : Prop} [Decidable c] {x : c → ℕ × OracleAdv.Timed D R α}
     {y : ¬c → ℕ × OracleAdv.Timed D R α}
@@ -609,8 +609,8 @@ theorem stb_dite {c : Prop} [Decidable c] {x : c → ℕ × OracleAdv.Timed D R 
     (hy : ∀ h : ¬c, OracleAdv.Timed.StepTimeBound (y h) (B - P)) :
     OracleAdv.Timed.StepTimeBound (if h : c then x h else y h) (B - P) := by
   by_cases hc : c
-  · simpa only [dif_pos hc] using hx hc
-  · simpa only [dif_neg hc] using hy hc
+  · simpa only [dite_eq_left hc] using hx hc
+  · simpa only [dite_eq_right hc] using hy hc
 
 theorem stb_bind_ret {a : α} {f : α → ℕ × OracleAdv.Timed D R β}
     (h : OracleAdv.Timed.StepTimeBound (f a) (B - P)) :

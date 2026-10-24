@@ -163,10 +163,10 @@ theorem eval_ite_ceq {τ : Ty} {bt : Tm Γ .bool} {t u : Tm Γ τ} {cb m : ℕ} 
   rw [key]
   by_cases hP : P
   · have hc : (bif decide P then t.eval ρ else u.eval ρ) = t.eval ρ := by simp [hP]
-    rw [hc, if_pos hP]
+    rw [hc, ite_eq_left hP]
     exact TimedSimTree.stepN_tick hx (cb + 1) (by omega)
   · have hc : (bif decide P then t.eval ρ else u.eval ρ) = u.eval ρ := by simp [hP]
-    rw [hc, if_neg hP]
+    rw [hc, ite_eq_right hP]
     exact TimedSimTree.stepN_tick hy (cb + 1) (by omega)
 
 end TimedSim

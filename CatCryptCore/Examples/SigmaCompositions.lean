@@ -457,8 +457,8 @@ theorem sigmaOR_special_soundness [DecidableEq G] (sp₁ sp₂ : SigmaProtocol)
       {b : ¬p → α}, (∀ h, R (a h)) → (∀ h, R (b h)) → R (dite p a b) := by
     intro p _ α R a b ha hb
     by_cases h : p
-    · rw [dif_pos h]; exact ha h
-    · rw [dif_neg h]; exact hb h
+    · rw [dite_eq_left h]; exact ha h
+    · rw [dite_eq_right h]; exact hb h
   exact key (fun _ => hext₂ _ _) (fun _ => hext₁ _ _)
 
 /-- The simulated run of Sigma-OR: a uniform share `c₁`, the simulator of `Σ₁` at

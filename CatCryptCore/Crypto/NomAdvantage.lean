@@ -450,7 +450,7 @@ theorem runPkg_interchange (p₁ p₂ p₃ p₄ : CatCrypt.Deep.DeepPackage)
   simp only [h_app, dite_true]
   -- Step 3: The par dispatch on the left gives p₁'s implementation
   -- (since (0,Unit,Bool) ∈ p₁.exports.ops)
-  simp only [dif_pos h_main, ValidCodeBundle.mono]
+  simp only [dite_eq_left h_main, ValidCodeBundle.mono]
   -- Step 4: Convert both sides to evalWith form via eval_substOracle
   rw [CatCrypt.Deep.eval_substOracle, CatCrypt.Deep.eval_substOracle]
   -- Step 5: Apply evalWith_congr — the handlers must agree pointwise
@@ -493,7 +493,7 @@ theorem runPkg_par_right (X Y : CatCrypt.Deep.DeepPackage)
   have h_app : (0, Unit, Bool) ∈ (CatCrypt.Deep.DeepPackage.par X Y hsep).exports.ops := by
     simp only [CatCrypt.Deep.DeepPackage.par]
     exact List.mem_append_right _ h_main
-  simp only [runPkg, dif_pos h_app, dif_pos h_main]
+  simp only [runPkg, dite_eq_left h_app, dite_eq_left h_main]
   rw [CatCrypt.Deep.DeepPackage.par_impl_code_eq_right X Y hsep 0 Unit Bool h_notX h_main h_app ()]
 
 open CatCrypt.Deep in
@@ -530,7 +530,7 @@ theorem runPkg_interchange_right (p₁ p₂ p₃ p₄ : CatCrypt.Deep.DeepPackag
   have h_app : (0, Unit, Bool) ∈ p₁.exports.ops ++ p₂.exports.ops :=
     List.mem_append_right _ h_main
   simp only [h_app, dite_true]
-  simp only [dif_neg h_notMain, ValidCodeBundle.mono]
+  simp only [dite_eq_right h_notMain, ValidCodeBundle.mono]
   rw [CatCrypt.Deep.eval_substOracle, CatCrypt.Deep.eval_substOracle]
   apply CatCrypt.Deep.evalWith_congr
   exact h_env

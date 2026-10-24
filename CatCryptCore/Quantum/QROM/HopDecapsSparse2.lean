@@ -75,8 +75,8 @@ theorem roundProjS_eq_projS_of_label {R : ClassicalRound (m * n * w) c a}
   funext x
   simp only [indS]
   by_cases hx : reg x ∈ S
-  · rw [if_pos hx, if_pos ((hfac x).1 hx)]
-  · rw [if_neg hx, if_neg fun hc => hx ((hfac x).2 hc)]
+  · rw [ite_eq_left hx, ite_eq_left ((hfac x).1 hx)]
+  · rw [ite_eq_right hx, ite_eq_right fun hc => hx ((hfac x).2 hc)]
 
 variable [NeZero n]
 

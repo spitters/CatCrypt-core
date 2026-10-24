@@ -83,15 +83,15 @@ theorem collWeight_mapCiphertext_toScheme_eq :
         collProb (mapCiphertext (toScheme P) f g)
           (A, P.vec_add (P.mat_vec_mul A (P.sampleKey ks).1) (P.sampleKey ks).2) m := by
   unfold collWeight
-  change ∑' ks, ((PMF.uniformOfFintype P.Mat).bind fun A =>
-    (PMF.uniformOfFintype P.KeySeed).map fun ks =>
+  change ∑' ks, ((PMF.uniformFintype P.Mat).bind fun A =>
+    (PMF.uniformFintype P.KeySeed).map fun ks =>
       ((A, P.vec_add (P.mat_vec_mul A (P.sampleKey ks).1) (P.sampleKey ks).2),
         (P.sampleKey ks).1)) ks * _ = _
   rw [tsum_bind_mul, tsum_fintype]
   refine Finset.sum_congr rfl fun A _ => ?_
-  rw [tsum_map_mul, tsum_fintype, PMF.uniformOfFintype_apply]
+  rw [tsum_map_mul, tsum_fintype, PMF.uniformFintype_apply]
   refine congrArg _ (Finset.sum_congr rfl fun ks _ => ?_)
-  rw [PMF.uniformOfFintype_apply]
+  rw [PMF.uniformFintype_apply]
   rfl
 
 end Marginal
@@ -192,7 +192,7 @@ theorem collWeight_mlkem512_le :
     rw [avg_comm]
     refine (avg_mono fun r' => ?_).trans (avg_const _).le
     by_cases h40 : 40 ≤ (zeroPairs (sampleVec 3 r'.1 - sampleVec 3 r.1)).card
-    · simp only [windowHit, h40, not_true_eq_false, false_and, if_false]
+    · simp only [windowHit, h40, not_true_eq_false, false_and, ite_false]
       rw [avg_const]
       exact zero_le
     · simp only [windowHit, h40, not_false_eq_true, true_and]

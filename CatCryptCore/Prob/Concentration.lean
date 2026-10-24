@@ -464,7 +464,7 @@ exponential function), and Hoeffding's lemma for a Bernoulli variable
 `PMF.one_sub_add_mul_exp_le`, which is obtained from Mathlib's
 `ProbabilityTheory.hasSubgaussianMGF_of_mem_Icc`. -/
 theorem hypergeometric_upper {k : ℕ} [Nonempty (Fin k ↪ β)] {t : ℝ} (ht : 0 ≤ t) :
-    (PMF.uniformOfFintype (Fin k ↪ β)).toOuterMeasure
+    (PMF.uniformFintype (Fin k ↪ β)).toOuterMeasure
         {e | (k : ℝ) * t ≤ numMarked M e - k * M.card / Fintype.card β}
       ≤ ENNReal.ofReal (Real.exp (-2 * k * t ^ 2)) := by
   obtain ⟨e₀⟩ := ‹Nonempty (Fin k ↪ β)›
@@ -485,11 +485,11 @@ theorem hypergeometric_upper {k : ℕ} [Nonempty (Fin k ↪ β)] {t : ℝ} (ht :
   rw [PMF.toOuterMeasure_apply_fintype]
   have hpt : ∀ e : Fin k ↪ β,
       Set.indicator {e : Fin k ↪ β | (k : ℝ) * t ≤ numMarked M e - k * K / N}
-        (PMF.uniformOfFintype (Fin k ↪ β)) e
+        (PMF.uniformFintype (Fin k ↪ β)) e
         ≤ ENNReal.ofReal (C⁻¹ * Real.exp (l * (numMarked M e - a))) := by
     intro e
     by_cases he : e ∈ {e : Fin k ↪ β | (k : ℝ) * t ≤ numMarked M e - k * K / N}
-    · rw [Set.indicator_of_mem he, PMF.uniformOfFintype_apply]
+    · rw [Set.indicator_of_mem he, PMF.uniformFintype_apply]
       have h1 : 1 ≤ Real.exp (l * (numMarked M e - a)) := by
         refine Real.one_le_exp (mul_nonneg hl ?_)
         simp only [Set.mem_ofPred_eq] at he
@@ -535,7 +535,7 @@ satisfies `Pr[#(T ∩ M) - k K / N ≥ k t] ≤ exp (-2 k t²)`.
 
 Direct consequence of `hypergeometric_upper` (MGF method on `PMF`). -/
 theorem committee_upper {k : ℕ} [Nonempty (Fin k ↪ β)] {t : ℝ} (ht : 0 ≤ t) :
-    ((PMF.uniformOfFintype (Fin k ↪ β)).map fun e => Finset.univ.map e).toOuterMeasure
+    ((PMF.uniformFintype (Fin k ↪ β)).map fun e => Finset.univ.map e).toOuterMeasure
         {T | (k : ℝ) * t ≤ (T ∩ M).card - k * M.card / Fintype.card β}
       ≤ ENNReal.ofReal (Real.exp (-2 * k * t ^ 2)) := by
   have key : ∀ e : Fin k ↪ β, (Finset.univ.map e ∩ M).card = numMarked M e := fun e => by
@@ -551,7 +551,7 @@ distribution on injective sequences `e : Fin k ↪ β`, for `t ≥ 0`,
 `Pr[some e with #marked(e) - k K / N ≥ k t] ≤ exp (-2 k t²)`.
 
 Reduced to `hypergeometric_upper` (MGF method on `PMF`) since `SDistr.uniform` is the image of
-`PMF.uniformOfFintype` under `some`. -/
+`PMF.uniformFintype` under `some`. -/
 theorem SDistr.hypergeometric_upper {k : ℕ} [Nonempty (Fin k ↪ β)] {t : ℝ} (ht : 0 ≤ t) :
     (SDistr.uniform (Fin k ↪ β)).toOuterMeasure
         (some '' {e | (k : ℝ) * t ≤ numMarked M e - k * M.card / Fintype.card β})
@@ -569,7 +569,7 @@ below one and the event is nonempty (the sequence `0, 1, 2, 3` draws four marked
 statement is not vacuous. -/
 theorem committee_four_of_ten :
     haveI : Nonempty (Fin 4 ↪ Fin 10) := ⟨Fin.castLEEmb (by norm_num : 4 ≤ 10)⟩
-    (PMF.uniformOfFintype (Fin 4 ↪ Fin 10)).toOuterMeasure
+    (PMF.uniformFintype (Fin 4 ↪ Fin 10)).toOuterMeasure
         {e | (4 : ℝ) * (1 / 4) ≤
           numMarked (Finset.univ.filter fun i : Fin 10 => i.val < 5) e - 4 * 5 / 10}
       ≤ ENNReal.ofReal (Real.exp (-1 / 2)) ∧

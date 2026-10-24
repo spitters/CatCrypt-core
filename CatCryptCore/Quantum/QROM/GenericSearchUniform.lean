@@ -188,12 +188,12 @@ theorem sum_fiber_resample (hgood : ∀ x, ∃ y, bad x y = false) (x : Fin m) (
         else if y = k then (n : ℝ≥0∞)⁻¹ * c y else 0 := by
     intro y
     by_cases hb : bad x y
-    · simp only [hb, if_true]
+    · simp only [hb, ite_true]
       rw [Finset.sum_ite_eq' Finset.univ k fun z => (n : ℝ≥0∞)⁻¹ * goodMass bad x z * c y]
       simp
     · simp only [hb]
       by_cases hyk : y = k
-      · simp only [hyk, Bool.false_eq_true, if_false, if_true]
+      · simp only [hyk, Bool.false_eq_true, ite_false, ite_true]
         rw [← Finset.sum_mul, ← Finset.mul_sum, sum_goodMass hgood, mul_one]
       · simp [hyk]
   rw [Finset.sum_filter, Fintype.sum_prod_type]
@@ -265,7 +265,7 @@ theorem sum_fiber_fst (hgood : ∀ x, ∃ y, bad x y = false) (x : Fin m) (k : F
         if y = k then (n : ℝ≥0∞)⁻¹ else 0 := by
     intro y
     by_cases hyk : y = k
-    · simp only [hyk, if_true]
+    · simp only [hyk, ite_true]
       rw [← Finset.mul_sum, sum_goodMass hgood, mul_one]
     · simp [hyk]
   simp only [hy]
@@ -330,9 +330,9 @@ theorem sum_pairMass_resample (hgood : ∀ x, ∃ y, bad x y = false) (x₀ : Fi
     intro x
     by_cases hx : x = x₀
     · subst hx
-      simp only [if_true]
+      simp only [ite_true]
       rw [sum_fiber_resample_bad hgood x (K x), mul_assoc]
-    · simp only [if_neg hx, one_mul]
+    · simp only [ite_eq_right hx, one_mul]
       exact sum_fiber_resample_one hgood x (K x)
   rw [Finset.prod_congr rfl fun x _ => hfib x, Finset.prod_mul_distrib,
     Finset.prod_ite_eq' Finset.univ x₀ fun _ => ((badVals bad x₀).card : ℝ≥0∞) * (n : ℝ≥0∞)⁻¹]

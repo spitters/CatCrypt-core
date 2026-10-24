@@ -106,7 +106,7 @@ theorem otp_indcpa_coupling (m₀ m₁ : Bool) :
       (INDCPA_Game BoolOTP m₀ m₁ true)
       (INDCPA_Game BoolOTP m₀ m₁ false)
       eqPost := by
-  simp only [INDCPA_Game, BoolOTP, if_true, Bool.false_eq_true, if_false,
+  simp only [INDCPA_Game, BoolOTP, ite_true, Bool.false_eq_true, ite_false,
     SPComp.monad_bind_eq]
   ssprove_couple_bij (boolXorBij (xor m₀ m₁))
 

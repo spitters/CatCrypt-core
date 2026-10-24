@@ -111,7 +111,7 @@ theorem extending_own_chain {l : LocalState Tx Hash Party} (hL : l.tT.LongestCha
     {sl : Slot} (ht : 0 < sl) (hw : Winner l.pk sl = true) (txs : Tx) :
     (l.tT.bestChain (sl - 1) l.tree).length <
       ((honest_bake sl txs l).2.tT.bestChain sl (honest_bake sl txs l).2.tree).length := by
-  rw [honest_bake_eq, if_pos hw]
+  rw [honest_bake_eq, ite_eq_left hw]
   simp only [extend_tree_l]
   set c := l.tT.bestChain (sl - 1) l.tree with hc
   have hval := l.tT.best_chain_valid l.tree (sl - 1)
@@ -327,12 +327,12 @@ theorem chain_growth_gen (hu : (InitParties : List Party).Nodup)
       by_cases hq : Q N.t_now <;> simp [hq]
     rw [hrange, List.length_append] at hw
     by_cases hq : Q N.t_now
-    · simp only [hq, if_true, List.length_singleton] at hw ih'
+    · simp only [hq, ite_true, List.length_singleton] at hw ih'
       have h1 := chain_growth_lucky_slot hu hL hLmap hR hNM hMt hready hMr (hQ _ hq)
         (Tree := Tree)
       have h2 := ih' (by omega) (by omega)
       omega
-    · simp only [hq, Bool.false_eq_true, if_false, List.length_nil, Nat.sub_zero] at hw ih'
+    · simp only [hq, Bool.false_eq_true, ite_false, List.length_nil, Nat.sub_zero] at hw ih'
       have h1 := monotone_growth_honest_chain hL hNM (Tree := Tree)
       have h2 := ih' (by omega) (by omega)
       omega

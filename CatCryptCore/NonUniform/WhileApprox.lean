@@ -56,11 +56,11 @@ theorem whileApprox_succ_of_guard {guard : Heap → Bool} {body : SPComp Unit}
     {h : Heap} (hg : guard h = true) (n : ℕ) :
     whileApprox guard body (n + 1) h =
       SPComp.bind body (fun _ => whileApprox guard body n) h := by
-  rw [whileApprox_succ, if_pos hg]
+  rw [whileApprox_succ, ite_eq_left hg]
 
 theorem whileApprox_succ_of_not_guard {guard : Heap → Bool} {body : SPComp Unit}
     {h : Heap} (hg : guard h = false) (n : ℕ) :
     whileApprox guard body (n + 1) h = SPComp.pure () h := by
-  rw [whileApprox_succ, if_neg (by simp [hg])]
+  rw [whileApprox_succ, ite_eq_right (by simp [hg])]
 
 end CatCrypt.NonUniform

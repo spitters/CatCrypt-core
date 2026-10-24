@@ -229,8 +229,8 @@ theorem ite {c : Ty} {β : Type} (E : β → Val c) {P : Prop} [Decidable P] {b 
   show (b.den ρ).bind (fun (v : Bool) => bif v then t.den ρ else e.den ρ) = _
   rw [hb]
   by_cases hP : P
-  · rw [decide_eq_true hP, if_pos hP]; exact ht
-  · rw [decide_eq_false hP, if_neg hP]; exact he
+  · rw [decide_eq_true hP, ite_eq_left hP]; exact ht
+  · rw [decide_eq_false hP, ite_eq_right hP]; exact he
 
 theorem lcase {a c : Ty} {β : Type} (E : β → Val c) {xs : Tm Γ (.list a)} {n : Tm Γ c}
     {k : Tm (a :: .list a :: Γ) c} {l : List (Val a)} {N : β} {C : Val a → List (Val a) → β}
@@ -401,8 +401,8 @@ theorem ite {c : Ty} {P : Prop} [Decidable P] {b : Tm Γ .bool} {t e : Tm Γ c}
   show ((b.den ρ).bind (fun (v : Bool) => bif v then t.den ρ else e.den ρ)).run O = _
   rw [hb]
   by_cases hP : P
-  · rw [decide_eq_true hP, if_pos hP]; exact ht
-  · rw [decide_eq_false hP, if_neg hP]; exact he
+  · rw [decide_eq_true hP, ite_eq_left hP]; exact ht
+  · rw [decide_eq_false hP, ite_eq_right hP]; exact he
 
 theorem cond {c : Ty} {b : Tm Γ .bool} {t e : Tm Γ c} {v : Bool} {x y : SPComp (Val c)}
     (hb : Den b ρ v) (ht : DenM O t ρ x) (he : DenM O e ρ y) :
@@ -570,12 +570,12 @@ theorem ite {c : Ty} {β : Type} (E : β → Val c) {P : Prop} [Decidable P] {b 
   by_cases hP : P
   · have hc : (bif decide P then t.eval ρ else e.eval ρ) = t.eval ρ := by simp [hP]
     show stepN CTree.tick cb (CTree.tick (bif decide P then t.eval ρ else e.eval ρ)) = _
-    rw [hc, ht, stepN_tick_succ, stepN_tick_add, if_pos hP, if_pos hP]
+    rw [hc, ht, stepN_tick_succ, stepN_tick_add, ite_eq_left hP, ite_eq_left hP]
     congr 1
     omega
   · have hc : (bif decide P then t.eval ρ else e.eval ρ) = e.eval ρ := by simp [hP]
     show stepN CTree.tick cb (CTree.tick (bif decide P then t.eval ρ else e.eval ρ)) = _
-    rw [hc, he, stepN_tick_succ, stepN_tick_add, if_neg hP, if_neg hP]
+    rw [hc, he, stepN_tick_succ, stepN_tick_add, ite_eq_right hP, ite_eq_right hP]
     congr 1
     omega
 
@@ -702,11 +702,11 @@ theorem ite {c : Ty} {P : Prop} [Decidable P] {b : Tm Γ .bool} {t e : Tm Γ c} 
   by_cases hP : P
   · have hc : (bif decide P then t.eval ρ else e.eval ρ) = t.eval ρ := by simp [hP]
     have : (t.eval ρ).cost ≤ Bt := ht
-    rw [hc, if_pos hP]
+    rw [hc, ite_eq_left hP]
     omega
   · have hc : (bif decide P then t.eval ρ else e.eval ρ) = e.eval ρ := by simp [hP]
     have : (e.eval ρ).cost ≤ Be := he
-    rw [hc, if_neg hP]
+    rw [hc, ite_eq_right hP]
     omega
 
 theorem mono {τ : Ty} {t : Tm Γ τ} {B B' : ℕ} (h : CLe t ρ B) (hB : B ≤ B') : CLe t ρ B' :=

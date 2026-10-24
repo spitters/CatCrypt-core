@@ -236,7 +236,7 @@ theorem ow_perfect (hdec : ∀ sk c, S.dec sk c none = 0)
     simp only [SDistr.pure_apply_some]
     by_cases h : md = some m
     · subst h; simp
-    · simp only [h, ne_eq, not_false_eq_true, decide_true, if_pos]
+    · simp only [h, ne_eq, not_false_eq_true, decide_true, ite_eq_left]
       constructor <;> exact le_add_left (by split_ifs <;> simp)
   -- The two inequalities after the challenge ciphertext `c` is fixed.
   have hinner : ∀ (pk : S.PK) (sk : S.SK) (m : S.PT) (c : S.CT),

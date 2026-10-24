@@ -340,7 +340,7 @@ each coefficient of `e₁` is read from its own 4-bit window, at most 15 of whos
 values are admissible (`card_window_filter_le`). -/
 theorem mlkem512_isSpread : mlkem512CompressedScheme.IsSpread ((15 / 16) ^ 512) := by
   intro ks _ m c
-  rw [PMF.toOuterMeasure_uniformOfFintype_apply]
+  rw [PMF.toOuterMeasure_uniformFintype_apply]
   have ha : Fintype.card ↑{r | mlkem512CompressedScheme.enc ks.1 m r = c} ≤
       Fintype.card (PrfVecBlock 3) * (15 ^ 512 * Fintype.card (PrfBlock 2)) := by
     refine le_trans ?_ (card_uAdmissible_le ks.1 c)

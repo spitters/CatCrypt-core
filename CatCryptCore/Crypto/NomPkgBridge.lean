@@ -132,7 +132,7 @@ theorem isPure_bind_some_ne {c : SPComp Bool} {d : SDistr Bool}
   · simp only [SDistr.pure, PMF.pure_apply]
     have : some (b, h) ≠ some (a, h₀) := by
       intro h_eq; exact hne (congrArg Prod.snd (Option.some.inj h_eq))
-    rw [if_neg this, mul_zero]
+    rw [ite_eq_right this, mul_zero]
 
 /-- For IsPure c : SPComp Bool, `prTrue c h₀ = d(some true)` for any h₀.
     The heap doesn't affect the output distribution. -/

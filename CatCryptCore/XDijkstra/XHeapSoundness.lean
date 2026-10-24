@@ -157,8 +157,8 @@ theorem pointsTo_sep_disjoint {V : Type} (ℓ₁ ℓ₂ : Nat) (v₁ v₂ : V)
     fun ℓ => by
       simp only [single]
       by_cases hc : ℓ = ℓ₁
-      · subst hc; exact Or.inr (if_neg hne)
-      · exact Or.inl (if_neg hc),
+      · subst hc; exact Or.inr (ite_eq_right hne)
+      · exact Or.inl (ite_eq_right hc),
     rfl, rfl⟩
 
 /-- **`∗` is non-idempotent, distinguishing it from `∧`.**
@@ -168,7 +168,7 @@ the failure witnesses that this carrier is separating. -/
 theorem pointsTo_sep_self_empty {V : Type} (ℓ : Nat) (v : V) (h : Heap V) :
     ¬ hsep (pointsTo ℓ v) (pointsTo ℓ v) h := by
   rintro ⟨h₁, h₂, -, hd, rfl, rfl⟩
-  rcases hd ℓ with h' | h' <;> · simp only [single, if_true] at h'; nomatch h'
+  rcases hd ℓ with h' | h' <;> · simp only [single, ite_true] at h'; nomatch h'
 
 /-! ## 3. The frame rule on the concrete heap — a framed points-to triple
 

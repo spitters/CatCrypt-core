@@ -115,7 +115,7 @@ theorem mrPrefix_of_lt (O : QComp d Bool) (f : Fin c → Fin a) (k q₀ : ℕ)
       scChain O j fun i => head (Fin.castLE (by omega) i) := by
   cases k with
   | zero => rfl
-  | succ k => simp only [mrPrefix, dif_pos h]
+  | succ k => simp only [mrPrefix, dite_eq_left h]
 
 end Cut
 
@@ -191,7 +191,7 @@ theorem mrPrefix_mergeChain (O : QComp d Bool) (f : Fin c → Fin a) (q₀ : ℕ
         mergeChain_castLE V B j h.le q₀ A, scChain_mergeChain]
     · obtain ⟨j', rfl⟩ : ∃ j', j = j' + q := ⟨j - q, by omega⟩
       have hl : ¬ j' + q + q₀ < q + q₀ := by omega
-      simp only [mrPrefix, dif_neg hl, dif_neg h, scChain_mergeChain, QComp.qbind_assoc,
+      simp only [mrPrefix, dite_eq_right hl, dite_eq_right h, scChain_mergeChain, QComp.qbind_assoc,
         QComp.qpure_qbind, Bool.or_assoc, show j' + q + q₀ - (q + q₀) = j' by omega,
         Nat.add_sub_cancel]
 
@@ -213,9 +213,9 @@ theorem liftsQ_mrPrefix (e : Fin (d * c) ≃ Fin d') (O : QComp d Bool) (O' : QC
   | 0, q₀, head, _, _, j => liftsQ_scChain e O O' hO j _
   | k + 1, q₀, head, tail, R, j => by
     by_cases h : (j : ℕ) < q₀
-    · simp only [mrPrefix, dif_pos h]
+    · simp only [mrPrefix, dite_eq_left h]
       exact liftsQ_scChain e O O' hO j _
-    · simp only [mrPrefix, dif_neg h]
+    · simp only [mrPrefix, dite_eq_right h]
       exact liftsQ_qbind e (liftsQ_scChain e O O' hO q₀ head) fun b =>
         liftsQ_qbind e (liftsQ_roundU e (R 0) f) fun _ =>
           liftsQ_qbind e (liftsQ_mrPrefix e O O' hO f k q (tail 0) (Fin.tail tail) (Fin.tail R) _)
@@ -266,7 +266,7 @@ theorem trace_peel_prefix (e : Fin (d * c) ≃ Fin d') (O : QComp d Bool) (O' : 
   by_cases h : jv < q₀
   · rw [mrPrefix_of_lt _ _ _ _ _ _ _ _ _ (by omega : jv < q + q₀),
       mergeChain_castLE_lt _ _ q₀ _ jv h]
-    simp only [mrPrefix, dif_pos h]
+    simp only [mrPrefix, dite_eq_left h]
     have hl := liftsQ_scChain e O O' hO jv (fun i => head (Fin.castLE (by omega) i)) b ρ
       (ancProj 0)
     erw [hl]
@@ -276,7 +276,7 @@ theorem trace_peel_prefix (e : Fin (d * c) ≃ Fin d') (O : QComp d Bool) (O' : 
       have := flatQ_succ_sub_lt hjv h
       rwa [Nat.add_sub_cancel] at this
     rw [mrPrefix_mergeChain O' f q₀ _ _ _ k _ _ j' hjv' h2]
-    simp only [mrPrefix, dif_neg h]
+    simp only [mrPrefix, dite_eq_right h]
     rw [mrPrefix_mk_congr O f k q (tail 0) (Fin.tail tail) (Fin.tail R) _ h2
       (Nat.add_sub_cancel j' q₀)]
     exact trace_kr_one_mul_head_roundV e O O' hO f q₀ head (R 0) _ _
@@ -321,8 +321,8 @@ theorem mrPrefix_qbind_pure_false (O : QComp d Unit) (f : Fin c → Fin a) : ∀
   | 0, _, _, _, _, _ => scChain_qbind_pure_false O _ _
   | k + 1, q₀, head, tail, R, j => by
     by_cases h : (j : ℕ) < q₀
-    · simp only [mrPrefix, mrPrefixU, dif_pos h, scChain_qbind_pure_false]
-    · simp only [mrPrefix, mrPrefixU, dif_neg h, scChain_qbind_pure_false,
+    · simp only [mrPrefix, mrPrefixU, dite_eq_left h, scChain_qbind_pure_false]
+    · simp only [mrPrefix, mrPrefixU, dite_eq_right h, scChain_qbind_pure_false,
         mrPrefix_qbind_pure_false O f k q (tail 0) (Fin.tail tail) (Fin.tail R),
         QComp.qbind_assoc, QComp.qpure_qbind, Bool.false_or]
 
@@ -353,7 +353,7 @@ theorem prOutPrefixMR_eq_trace (A : QAdvMR m n w q k c a) (H : Fin m → Fin n)
   unfold prOutPrefixMR prTrue_Q
   rw [qbind_unit_branch, measProj_branch_true, projS_conjTranspose,
     trace_proj_mul_mul_proj (projS_mul_self m n w S), scOracleQ_empty,
-    mrPrefix_qbind_pure_false, qbind_unit_branch, qpure_branch_apply, if_pos rfl]
+    mrPrefix_qbind_pure_false, qbind_unit_branch, qpure_branch_apply, ite_eq_left rfl]
 
 variable [NeZero c]
 

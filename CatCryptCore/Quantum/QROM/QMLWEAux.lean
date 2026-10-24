@@ -194,7 +194,7 @@ stage outputs `1` with probability `v pk i c`. It is a device of the proof of
 def bernAdv (msgs : PK → ι → M × M) (v : PK → ι → C → ℝ≥0∞) (hv : ∀ pk i c, v pk i c ≤ 1) :
     INDCPAAdversary PK M C where
   St := PK × ι
-  choose pk := (PMF.uniformOfFintype ι).map fun i => ((msgs pk i).2, (msgs pk i).1, (pk, i))
+  choose pk := (PMF.uniformFintype ι).map fun i => ((msgs pk i).2, (msgs pk i).1, (pk, i))
   guess st c := coinPMF (v st.1 st.2 c).toNNReal
     ((ENNReal.toNNReal_mono ENNReal.one_ne_top (hv _ _ _)).trans_eq ENNReal.toNNReal_one)
 
@@ -211,7 +211,7 @@ theorem indcpaGame_bernAdv [Fintype PK] [Fintype SK] [Fintype R] [Nonempty R]
     (hv : ∀ pk i c, v pk i c ≤ 1) (b : Bool) :
     indcpaGame S (bernAdv msgs v hv) b true = cpaExp S msgs v b := by
   simp only [indcpaGame, bernAdv, Scheme.encDist, PMF.bind_map, PMF.bind_apply, tsum_fintype,
-    PMF.uniformOfFintype_apply, Function.comp_apply, coinPMF_true,
+    PMF.uniformFintype_apply, Function.comp_apply, coinPMF_true,
     coe_toNNReal_of_le_one hv, cpaExp, encExp]
 
 end Transfer
@@ -247,7 +247,7 @@ theorem prTrue_B1_st_bernAdv (hv : ∀ pk i c, v pk i c ≤ 1) (b : Bool) (A : P
   simp only [MLWE_PKE_Stateful.B1_st, FOFromMLWE.choose_st, FOFromMLWE.guess_st,
     ← MLWE_PKE_Scheme.encDist_eq, CatCrypt.Prob.SDistr.monad_bind_eq,
     MLWE_PKE_Scheme.sdistr_bind_map_some, prTrue, cpaReduction, bernAdv, Scheme.encDist,
-    PMF.bind_map, PMF.bind_apply, tsum_fintype, PMF.uniformOfFintype_apply, Function.comp_apply,
+    PMF.bind_map, PMF.bind_apply, tsum_fintype, PMF.uniformFintype_apply, Function.comp_apply,
     PMF.map_some_apply_some, coinPMF_true, coe_toNNReal_of_le_one hv, encExp, mapCiphertext]
 
 /-- The `true`-probability of the second-hop extended module-LWE reduction of
@@ -260,7 +260,7 @@ theorem prTrue_B2_ext_st_bernAdv (hv : ∀ pk i c, v pk i c ≤ 1) (b : Bool) (A
   simp only [MLWE_PKE_Stateful.B2_ext_st, FOFromMLWE.choose_st, FOFromMLWE.guess_st,
     CatCrypt.Prob.SDistr.monad_bind_eq, MLWE_PKE_Scheme.sdistr_bind_map_some, prTrue,
     cpaReduction,
-    bernAdv, PMF.bind_map, PMF.bind_apply, tsum_fintype, PMF.uniformOfFintype_apply,
+    bernAdv, PMF.bind_map, PMF.bind_apply, tsum_fintype, PMF.uniformFintype_apply,
     Function.comp_apply, PMF.map_some_apply_some, coinPMF_true, coe_toNNReal_of_le_one hv,
     extView]
 

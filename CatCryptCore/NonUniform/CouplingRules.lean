@@ -72,7 +72,7 @@ theorem liftR_graph (d : SDistr α) (f : α → β) :
     have hneq : ¬(some (a, b) = some (x, f x)) := by
       simp only [Option.some.injEq, Prod.mk.injEq, not_and]
       exact fun hax hfab => hne (by rw [hax, hfab])
-    rw [if_neg hneq, mul_zero]
+    rw [ite_eq_right hneq, mul_zero]
 
 /-- If the pushforward of `d` along `f` is `e`, then `f`'s graph relation lifts
     to `d` and `e`. -/

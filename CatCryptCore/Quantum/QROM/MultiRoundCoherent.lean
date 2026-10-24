@@ -465,8 +465,8 @@ theorem permUnitary_parkLift_mul_recProj (B : Equiv.Perm ((Fin m × Fin n) × Fi
   ext i j
   simp only [Matrix.of_apply]
   by_cases h : i = parkLift m n w c B j
-  · rw [if_pos h, if_pos h, h, cleanRec_parkLift]
-  · rw [if_neg h, if_neg h]
+  · rw [ite_eq_left h, ite_eq_left h, h, cleanRec_parkLift]
+  · rw [ite_eq_right h, ite_eq_right h]
 
 omit [NeZero c] in
 /-- The projector onto the record-`y'` indices restricted to the clean
@@ -516,9 +516,9 @@ theorem roundCoh_permRoundCoh_mul_cleanRecProj (φ : Fin c → Fin n → Fin n �
   rw [roundChainU_mul_cleanRecProj, permRound_ans, roundCoh_val]
   simp only [permRoundCoh_P, permRoundCoh_ans]
   rw [Finset.sum_mul, Finset.sum_eq_single y]
-  · rw [Matrix.mul_assoc, recProj_mul_cleanRecProj, if_pos rfl]
+  · rw [Matrix.mul_assoc, recProj_mul_cleanRecProj, ite_eq_left rfl]
   · intro y' _ hy'
-    rw [Matrix.mul_assoc, recProj_mul_cleanRecProj, if_neg hy', Matrix.mul_zero]
+    rw [Matrix.mul_assoc, recProj_mul_cleanRecProj, ite_eq_right hy', Matrix.mul_zero]
   · intro h; exact absurd (Finset.mem_univ y) h
 
 end Query

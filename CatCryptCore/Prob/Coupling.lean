@@ -146,7 +146,7 @@ theorem liftR_refl (d : SDistr α) : d ⟨Eq⟩# d := by
       simp only [Option.some.injEq, Prod.mk.injEq]
       intro ⟨ha, hb⟩
       exact hne (ha.trans hb.symm)
-    rw [if_neg hneq, mul_zero]
+    rw [ite_eq_right hneq, mul_zero]
 
 /-- Monotonicity: if R ⊆ S and R lifts, then S lifts -/
 theorem liftR_mono {R S : α → β → Prop} {d₁ : SDistr α} {d₂ : SDistr β}
@@ -468,7 +468,7 @@ theorem liftR_bind {d₁ : SDistr α} {d₂ : SDistr β}
       simp only [joint_composed]
       exact coupling_marginal_proof c.joint kd Prod.fst Prod.fst f₁ d₁
         (fun a b hne => by
-          simp only [kd, dif_pos hne]
+          simp only [kd, dite_eq_left hne]
           apply SDistr.eq_of_some_eq
           exact (hf a b (hc a b hne)).choose.left_marginal)
         c.left_marginal g
@@ -476,7 +476,7 @@ theorem liftR_bind {d₁ : SDistr α} {d₂ : SDistr β}
       simp only [joint_composed]
       exact coupling_marginal_proof c.joint kd Prod.snd Prod.snd f₂ d₂
         (fun a b hne => by
-          simp only [kd, dif_pos hne]
+          simp only [kd, dite_eq_left hne]
           apply SDistr.eq_of_some_eq
           exact (hf a b (hc a b hne)).choose.right_marginal)
         c.right_marginal d
@@ -503,7 +503,7 @@ theorem liftR_bind {d₁ : SDistr α} {d₂ : SDistr β}
     · simp [hcjoint]
     · -- c.joint (some p) ≠ 0, so kd p uses the coupling from hf
       simp only [kd]
-      rw [dif_pos hcjoint]
+      rw [dite_eq_left hcjoint]
       -- Let cf be the coupling from hf
       let cf := (hf p.1 p.2 (hc p.1 p.2 hcjoint)).choose
       have hcf_sat := (hf p.1 p.2 (hc p.1 p.2 hcjoint)).choose_spec
@@ -616,7 +616,7 @@ theorem liftR_uniform_bij [Fintype α] [Fintype β] [Nonempty α] [Nonempty β]
       intro hax
       rw [← hax]
       exact fun hfab => hne hfab.symm
-    rw [if_neg hneq, mul_zero]
+    rw [ite_eq_right hneq, mul_zero]
 
 /-- Same uniform distribution lifts with equality -/
 theorem liftR_uniform_same [Fintype α] [Nonempty α] :

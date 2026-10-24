@@ -123,7 +123,7 @@ noncomputable def schnorrSigma : Sigma where
   SimRand := gp.Scalar
   inhWit := ⟨gp.scalarZero⟩
   rel x w := gp.exp w = x
-  gen := (PMF.uniformOfFintype gp.Scalar).map fun w => (gp.exp w, w)
+  gen := (PMF.uniformFintype gp.Scalar).map fun w => (gp.exp w, w)
   commit _ _ r := gp.exp r
   respond _ w r e := gp.scalarAdd r (gp.scalarMul e w)
   verify x a e z := gp.exp z == gp.groupMul a (gp.groupExp x e)
@@ -157,14 +157,14 @@ theorem schnorrSigma_uniqueResp : (schnorrSigma gp).UniqueResp := by
   exact congrFun (dlogSigma_uniqueResp gp pk _ e _ _ h h') 0
 
 omit gp in
-theorem map_uniformOfFintype_equiv' {α : Type} [Fintype α] [Nonempty α] (c : α ≃ α) :
-    (PMF.uniformOfFintype α).map c = PMF.uniformOfFintype α := by
+theorem map_uniformFintype_equiv' {α : Type} [Fintype α] [Nonempty α] (c : α ≃ α) :
+    (PMF.uniformFintype α).map c = PMF.uniformFintype α := by
   classical
   ext z
   rw [PMF.map_apply, tsum_eq_single (c.symm z)]
   · simp
   · intro r hr
-    rw [if_neg]
+    rw [ite_eq_right]
     intro h
     exact hr (by rw [h, Equiv.symm_apply_apply])
 
@@ -175,11 +175,11 @@ theorem schnorrSigma_perfectHVZK : (schnorrSigma gp).PerfectHVZK := by
   obtain ⟨hx, hw'⟩ := Prod.mk.inj hw
   subst hx
   subst hw'
-  change (PMF.uniformOfFintype gp.Scalar).map
+  change (PMF.uniformFintype gp.Scalar).map
       (fun r => (gp.exp r, gp.scalarAdd r (gp.scalarMul e w'))) =
-    (PMF.uniformOfFintype gp.Scalar).map
+    (PMF.uniformFintype gp.Scalar).map
       (fun z => (gp.groupMul (gp.exp z) (gp.groupInv (gp.groupExp (gp.exp w') e)), z))
-  conv_rhs => rw [← map_uniformOfFintype_equiv' (gp.addEquiv (gp.scalarMul e w')),
+  conv_rhs => rw [← map_uniformFintype_equiv' (gp.addEquiv (gp.scalarMul e w')),
     PMF.map_comp]
   congr 1
   funext r
@@ -190,8 +190,8 @@ theorem schnorrSigma_commitBound :
     (schnorrSigma gp).CommitBound (1 / Fintype.card gp.Scalar) := by
   classical
   intro x w _ a
-  change (PMF.uniformOfFintype gp.Scalar).toOuterMeasure {r | gp.exp r = a} ≤ _
-  rw [PMF.toOuterMeasure_uniformOfFintype_apply, one_div, ENNReal.div_eq_inv_mul]
+  change (PMF.uniformFintype gp.Scalar).toOuterMeasure {r | gp.exp r = a} ≤ _
+  rw [PMF.toOuterMeasure_uniformFintype_apply, one_div, ENNReal.div_eq_inv_mul]
   refine mul_le_of_le_one_right (by positivity) ?_
   exact Nat.cast_le_one.mpr (Fintype.card_le_one_iff.mpr fun r s =>
     Subtype.ext (gp.exp_inj _ _ ((show gp.exp r.1 = a from r.2).trans
@@ -206,7 +206,7 @@ noncomputable def dlOfWitness (B : gp.G → PMF gp.Scalar) : gp.G → SPComp gp.
 theorem relAdvantage_schnorrSigma (B : gp.G → PMF gp.Scalar) :
     (schnorrSigma gp).relAdvantage B = gp.DL_Advantage (dlOfWitness gp B) := by
   have hgame : gp.dlGame (dlOfWitness gp B) = liftPMF
-      ((PMF.uniformOfFintype gp.Scalar).bind fun w =>
+      ((PMF.uniformFintype gp.Scalar).bind fun w =>
         (B (gp.exp w)).map fun w' => gp.exp w' == gp.exp w) := by
     funext h
     simp only [GroupParam.dlGame, liftPMF, SPComp.monad_bind_eq, SPComp.bind,

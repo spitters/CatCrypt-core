@@ -155,7 +155,7 @@ theorem avg_eq_prod_bad_le (B : V → V → Bool) (v : V) (p : ℝ≥0∞)
         refine Finset.prod_le_prod' fun s _ => ?_
         by_cases hs : s = σ
         · subst hs
-          simp only [if_true, hσ, if_false, mul_one]
+          simp only [ite_true, hσ, ite_false, mul_one]
           rw [CatCrypt.Crypto.MLKEM.PRFOracle.avg_eq_inv_mul_sum]
           simp
         · by_cases hT : s ∈ T
@@ -433,7 +433,7 @@ variable {Sd Nc PK SK M C KS K Hash Z Φ : Type} {m₁ m₂ m₃ n w q k c a : �
 key-noise row `v` uniformly and returns `kg φ (eK v)`; encryption with the
 encryption-noise row `w` is `enc pk m w`; decryption is `dec`. -/
 def idealScheme : Scheme PK SK M C (Nc → Fin n) where
-  keygen := (PMF.uniformOfFintype (Φ × (Nc → Fin n))).map fun p => kg p.1 (eK p.2)
+  keygen := (PMF.uniformFintype (Φ × (Nc → Fin n))).map fun p => kg p.1 (eK p.2)
   enc := enc
   dec := dec
 
@@ -444,7 +444,7 @@ key-noise row `v` is the fraction of encryption-noise rows in `failRel`. -/
 theorem failProb_idealScheme (φ : Φ) (m : M) (v : Nc → Fin n) :
     (idealScheme kg enc dec eK).failProb (kg φ (eK v)).1 (kg φ (eK v)).2 m =
       avg (fun w => if failRel kg enc dec eK id φ m v w then (1 : ℝ≥0∞) else 0) := by
-  rw [Scheme.failProb, PMF.toOuterMeasure_uniformOfFintype_apply, avg_boole]
+  rw [Scheme.failProb, PMF.toOuterMeasure_uniformFintype_apply, avg_boole]
   congr 2
   simp [failRel, idealScheme]
   exact Fintype.card_subtype _
@@ -458,7 +458,7 @@ theorem corrWorst_idealScheme :
       avg fun φ : Φ => avg fun v : Nc → Fin n => ⨆ m : M,
         avg (fun w => if failRel kg enc dec eK id φ m v w then (1 : ℝ≥0∞) else 0) := by
   rw [Scheme.corrWorst, tsum_fintype]
-  change ∑ ks, ((PMF.uniformOfFintype (Φ × (Nc → Fin n))).map fun p => kg p.1 (eK p.2)) ks *
+  change ∑ ks, ((PMF.uniformFintype (Φ × (Nc → Fin n))).map fun p => kg p.1 (eK p.2)) ks *
     ⨆ m, (idealScheme kg enc dec eK).failProb ks.1 ks.2 m = _
   rw [sum_map_uniform, avg_prod]
   simp only [failProb_idealScheme]

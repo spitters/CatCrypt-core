@@ -279,7 +279,7 @@ theorem accumulate_weights_spec {n : ℕ} (els : Array (Array Int))
       rw [dotVal_update _ _ _ _ _ (by omega), hv, show (i + 1).toNat = i.toNat + 1 by omega,
         Finset.sum_range_succ, Int.toNat_of_nonneg h0]
       simp only [groupSigmaProofsDeps_scalar_sub, groupSigmaProofsDeps_scalar_mul, E.decS_encS,
-        GroupParam.scalarSub_eq_sub, GroupParam.scalarMul_eq_mul, vecGet, dif_pos hs']
+        GroupParam.scalarSub_eq_sub, GroupParam.scalarMul_eq_mul, vecGet, dite_eq_left hs']
       ring)
   refine ⟨h2.1, ?_⟩
   rw [h2.2, hv1]
@@ -300,9 +300,9 @@ theorem verifier_with_randomness_ok_iff_sum {n m : ℕ} (inst : SigmaProofs.Inst
           termSum E inst.1 (Hax.index inst.2.1 (j : Int)) z) = 0 := by
   unfold SigmaProofs.Instance_verifier_with_randomness
   by_cases ha : a.size = m
-  · rw [if_neg (by simp [SigmaProofs.«.equations», SigmaProofs.«Instance.num_scalars», Hax.array_len,
+  · rw [ite_eq_right (by simp [SigmaProofs.«.equations», SigmaProofs.«Instance.num_scalars», Hax.array_len,
         Hax.bne, Hax.bor, ha, hm, hn]),
-      if_neg (by simp [SigmaProofs.«.equations», Hax.array_len, Hax.beq, hm]; omega), ite_ok_iff]
+      ite_eq_right (by simp [SigmaProofs.«.equations», Hax.array_len, Hax.beq, hm]; omega), ite_ok_iff]
     simp only [SigmaProofs.«.equations», SigmaProofs.«.elements», Hax.array_len, Hax.deref, hm]
     rw [show Hax.foldRange (0 : Int) (inst.1.size : Int) (#[] : Array (Array Int))
         (fun _k weights => Hax.push weights
@@ -379,7 +379,7 @@ theorem verifier_with_randomness_ok_iff_sum {n m : ℕ} (inst : SigmaProofs.Inst
         ρ ^ j * (gp.dlog (E.decG (Hax.index a (j : Int))) +
           c * imgSum E inst.1 (Hax.index inst.2.1 (j : Int)) -
             termSum E inst.1 (Hax.index inst.2.1 (j : Int)) z))]
-  · rw [if_pos (by simp [SigmaProofs.«.equations», SigmaProofs.«Instance.num_scalars», Hax.array_len,
+  · rw [ite_eq_left (by simp [SigmaProofs.«.equations», SigmaProofs.«Instance.num_scalars», Hax.array_len,
         Hax.bne, Hax.bor, ha, hm])]
     simp [ha]
 
@@ -465,12 +465,12 @@ theorem Instance_verifier_with_randomness_ok_iff {n m : ℕ} {inst : SigmaProofs
   · subst hm1
     unfold SigmaProofs.Instance_verifier_with_randomness
     by_cases ha : a.size = 1
-    · rw [if_neg (by simp [SigmaProofs.«.equations», SigmaProofs.«Instance.num_scalars»,
+    · rw [ite_eq_right (by simp [SigmaProofs.«.equations», SigmaProofs.«Instance.num_scalars»,
           Hax.array_len, Hax.bne, Hax.bor, ha, h.1, h.2.1]),
-        if_pos (by simp [SigmaProofs.«.equations», Hax.array_len, Hax.beq, h.2.1]),
+        ite_eq_left (by simp [SigmaProofs.«.equations», Hax.array_len, Hax.beq, h.2.1]),
         Instance_verifier_ok_iff_defect h]
       simp [Fin.forall_fin_one]
-    · rw [if_pos (by simp [SigmaProofs.«.equations», SigmaProofs.«Instance.num_scalars»,
+    · rw [ite_eq_left (by simp [SigmaProofs.«.equations», SigmaProofs.«Instance.num_scalars»,
           Hax.array_len, Hax.bne, Hax.bor, ha, h.2.1])]
       simp [ha]
   · have hr : ∀ j : ℕ, j < m → EqInRange inst.1.size n (Hax.index inst.2.1 (j : Int)) :=
@@ -588,11 +588,11 @@ theorem batch_accept_prob_le {n m : ℕ} {inst : SigmaProofs.Instance_T}
     (a : Array (Array Int)) (c : gp.Scalar) (z : Fin n → gp.Scalar)
     (hrej : @SigmaProofs.Instance_verifier (groupSigmaProofsDeps E) inst a (E.encS c)
       (encVec E z) ≠ .ok ()) :
-    (PMF.uniformOfFintype gp.Scalar).toOuterMeasure {ρ |
+    (PMF.uniformFintype gp.Scalar).toOuterMeasure {ρ |
       @SigmaProofs.Instance_verifier_with_randomness (groupSigmaProofsDeps E) inst a (E.encS c)
         (encVec E z) (E.encS ρ) = .ok ()} ≤ ((m - 1 : ℕ) : ℝ≥0∞) / Fintype.card gp.Scalar := by
   classical
-  rw [PMF.toOuterMeasure_uniformOfFintype_apply]
+  rw [PMF.toOuterMeasure_uniformFintype_apply]
   gcongr
   rw [Fintype.card_ofFinset]
   refine le_trans (le_of_eq ?_) (card_batch_accept_le h hel himg a c z hrej)

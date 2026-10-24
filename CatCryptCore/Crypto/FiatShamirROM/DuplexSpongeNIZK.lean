@@ -104,7 +104,7 @@ of a run with at most `q` queries against fresh values from `ν` is at most the 
 the run against uniform fresh values plus `q·β`. -/
 theorem run_toOracleWith_le (ν : PMF Ch) {β : ℝ≥0∞}
     (hν : ∀ g : Ch → ℝ≥0∞, (∀ c, g c ≤ 1) →
-      ∑' c, ν c * g c ≤ ∑' c, PMF.uniformOfFintype Ch c * g c + β)
+      ∑' c, ν c * g c ≤ ∑' c, PMF.uniformFintype Ch c * g c + β)
     (O : S → D → Step R S Ch) (A : OracleAdv D R α) (q : ℕ) (hA : A.IsQueryBound q)
     (s : S) (F : α × S → ℝ≥0∞) (hF : ∀ y, F y ≤ 1) :
     ∑' y, OracleAdv.run (toOracleWith ν O) A s y * F y ≤
@@ -285,11 +285,11 @@ encodings, if the decoding `ν` of uniform bytes has the minorant `(1 − β)·u
 the knowledge-soundness advantage against the sponge is at most the advantage in the
 game of `FiatShamirROM.NIZK` plus `(qH + 1)·β`. -/
 theorem dsKsAdvantage_le (hX : PrefixFree Dp.encX) (hA : PrefixFree Dp.encA) {β : ℝ≥0∞}
-    (hβ : ∀ c, (1 - β) * PMF.uniformOfFintype P.Ch c ≤
-      (PMF.uniformOfFintype (Fin Dp.L → UInt8)).map Dp.decB c)
+    (hβ : ∀ c, (1 - β) * PMF.uniformFintype P.Ch c ≤
+      (PMF.uniformFintype (Fin Dp.L → UInt8)).map Dp.decB c)
     {qH : ℕ} (A : KSAdversary P SessionId qH) :
     dsKsAdvantage Dp A ≤ ksAdvantage A + (qH + 1 : ℕ) * β := by
-  set ν := (PMF.uniformOfFintype (Fin Dp.L → UInt8)).map Dp.decB with hνdef
+  set ν := (PMF.uniformFintype (Fin Dp.L → UInt8)).map Dp.decB with hνdef
   have hinj : Function.Injective Dp.absorbed := absorbedTranscript_injective Dp.R hX hA
   set f₁ : List (P.NizkInput SessionId × (Fin Dp.L → UInt8)) →
       List (Bytes × (Fin Dp.L → UInt8)) := List.map (Prod.map Dp.absorbed id) with hf₁
@@ -332,7 +332,7 @@ theorem dsKsAdvantage_le (hX : PrefixFree Dp.encX) (hA : PrefixFree Dp.encA) {β
     rw [← hR₁, PMF.toOuterMeasure_map_apply, hpre, ← PMF.toOuterMeasure_map_apply, hR₂]
     rfl
   have hν : ∀ g : P.Ch → ℝ≥0∞, (∀ c, g c ≤ 1) →
-      ∑' c, ν c * g c ≤ ∑' c, PMF.uniformOfFintype P.Ch c * g c + β := fun g hg =>
+      ∑' c, ν c * g c ≤ ∑' c, PMF.uniformFintype P.Ch c * g c + β := fun g hg =>
     (MLKEM.XOFMatrix.tsum_le_add_of_minorant ν _ β hβ g hg).1
   rw [e₁, ksAdvantage, toOuterMeasure_eq_tsum_ite, toOuterMeasure_eq_tsum_ite]
   exact run_toOracleWith_le ν hν ksStep (ksWithVerify A.run) (qH + 1)
@@ -345,8 +345,8 @@ every adversary with at most `qH` oracle queries satisfies, with
 `ε·(ε/(qH + 1) − 1/|Ch|) ≤ ksExtractProb A`. -/
 theorem dsKsExtractProb_ge (hSS : P.SpecialSound) (hX : PrefixFree Dp.encX)
     (hA : PrefixFree Dp.encA) {β : ℝ≥0∞}
-    (hβ : ∀ c, (1 - β) * PMF.uniformOfFintype P.Ch c ≤
-      (PMF.uniformOfFintype (Fin Dp.L → UInt8)).map Dp.decB c)
+    (hβ : ∀ c, (1 - β) * PMF.uniformFintype P.Ch c ≤
+      (PMF.uniformFintype (Fin Dp.L → UInt8)).map Dp.decB c)
     {qH : ℕ} (A : KSAdversary P SessionId qH) :
     (dsKsAdvantage Dp A - (qH + 1 : ℕ) * β) *
         ((dsKsAdvantage Dp A - (qH + 1 : ℕ) * β) / ((qH + 1 : ℕ) : ℝ≥0∞) -
@@ -362,19 +362,19 @@ omit [DecidableEq P.Stmt] in
 decoding of `L` uniform bytes has the minorant `(1 − M/256^L)·uniform`. -/
 theorem minorant_decB_of_decodeUint (M : ℕ) [NeZero M] (e : Fin M ≃ P.Ch)
     (hdec : ∀ b, Dp.dec b = e (decodeUint M b)) (c : P.Ch) :
-    (1 - (M : ℝ≥0∞) / (256 ^ Dp.L : ℕ)) * PMF.uniformOfFintype P.Ch c ≤
-      (PMF.uniformOfFintype (Fin Dp.L → UInt8)).map Dp.decB c := by
-  have hmap : (PMF.uniformOfFintype (Fin Dp.L → UInt8)).map Dp.decB =
+    (1 - (M : ℝ≥0∞) / (256 ^ Dp.L : ℕ)) * PMF.uniformFintype P.Ch c ≤
+      (PMF.uniformFintype (Fin Dp.L → UInt8)).map Dp.decB c := by
+  have hmap : (PMF.uniformFintype (Fin Dp.L → UInt8)).map Dp.decB =
       (decodeUintDist M Dp.L).map e := by
     rw [decodeUintDist, PMF.map_comp]
     congr 1
     funext b
     simp [DSParams.decB, hdec]
-  have hU : PMF.uniformOfFintype P.Ch c = PMF.uniformOfFintype (Fin M) (e.symm c) := by
-    simp [PMF.uniformOfFintype_apply, Fintype.card_congr e]
+  have hU : PMF.uniformFintype P.Ch c = PMF.uniformFintype (Fin M) (e.symm c) := by
+    simp [PMF.uniformFintype_apply, Fintype.card_congr e]
   have hv : ((decodeUintDist M Dp.L).map e) c = decodeUintDist M Dp.L (e.symm c) := by
     rw [PMF.map_apply, tsum_eq_single (e.symm c) fun b hb => by
-      rw [if_neg]; rintro rfl; exact hb (e.symm_apply_apply b).symm]
+      rw [ite_eq_right]; rintro rfl; exact hb (e.symm_apply_apply b).symm]
     simp
   rw [hmap, hv, hU]
   exact one_sub_mul_uniform_le_decodeUintDist M Dp.L (e.symm c)

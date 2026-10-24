@@ -3,11 +3,11 @@
 
   Part A: PMF.prob and PMF.condProb — probability of sets, conditional probability
   Part B: Bayesian inversion in Kl(PMF) — posterior distribution, recovery equation
-  Part C: Uniform conditioning — counting arguments for PMF.uniformOfFintype
+  Part C: Uniform conditioning — counting arguments for PMF.uniformFintype
 -/
 module
 
-public import Mathlib.Probability.Distributions.Uniform
+public import CatCryptCore.ForMathlib.PMFUniformDefs
 
 
 @[expose] public section
@@ -177,21 +177,21 @@ theorem marginalβ_eq_tsum_joint (π : PMF α) (f : α → PMF β) (b : β) :
 
 /-- For uniform distribution, `Pr[A] = |A| / |α|`. -/
 theorem prob_uniform_eq [Fintype α] [Nonempty α] [DecidableEq α] (A : Finset α) :
-    (PMF.uniformOfFintype α).prob (↑A) =
+    (PMF.uniformFintype α).prob (↑A) =
       (A.card : ℝ≥0∞) / (Fintype.card α : ℝ≥0∞) := by
-  show ∑' a, (↑A : Set α).indicator (⇑(PMF.uniformOfFintype α)) a = _
-  trans ∑ a ∈ A, (PMF.uniformOfFintype α) a
+  show ∑' a, (↑A : Set α).indicator (⇑(PMF.uniformFintype α)) a = _
+  trans ∑ a ∈ A, (PMF.uniformFintype α) a
   · rw [tsum_eq_sum (s := A)]
     · exact Finset.sum_congr rfl fun a ha =>
         indicator_of_mem (Finset.mem_coe.mpr ha) _
     · intro a ha; simp [ha]
-  · simp [PMF.uniformOfFintype_apply, Finset.sum_const, nsmul_eq_mul, div_eq_mul_inv]
+  · simp [PMF.uniformFintype_apply, Finset.sum_const, nsmul_eq_mul, div_eq_mul_inv]
 
 /-- For uniform distribution on a finite type, conditional probability is
     `Pr[A | B] = |A ∩ B| / |B|`. -/
 theorem condProb_uniform_eq [Fintype α] [Nonempty α] [DecidableEq α]
     (A B : Finset α) :
-    (PMF.uniformOfFintype α).condProb (↑A) (↑B) =
+    (PMF.uniformFintype α).condProb (↑A) (↑B) =
       ((A ∩ B).card : ℝ≥0∞) / (B.card : ℝ≥0∞) := by
   simp only [PMF.condProb]
   rw [show (↑A : Set α) ∩ (↑B : Set α) = ↑(A ∩ B) from by ext; simp]
@@ -207,7 +207,7 @@ theorem condProb_uniform_eq [Fintype α] [Nonempty α] [DecidableEq α]
     in `B` is `1 / |B|`. -/
 theorem condProb_uniform_singleton [Fintype α] [Nonempty α] [DecidableEq α]
     (a : α) (B : Finset α) (ha : a ∈ B) :
-    (PMF.uniformOfFintype α).condProb {↑a} (↑B) = (B.card : ℝ≥0∞)⁻¹ := by
+    (PMF.uniformFintype α).condProb {↑a} (↑B) = (B.card : ℝ≥0∞)⁻¹ := by
   rw [show ({↑a} : Set α) = ↑({a} : Finset α) from by simp]
   rw [condProb_uniform_eq]
   simp [Finset.singleton_inter_of_mem ha]

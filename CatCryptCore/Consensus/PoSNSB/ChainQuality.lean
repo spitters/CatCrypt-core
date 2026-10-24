@@ -303,7 +303,7 @@ theorem honest_block_state_ext (hu : (InitParties : List Party).Nodup)
     have hown := bakes_own A hnd hqo hhq hlqA
     have hbake : (honest_bake A.t_now (TxSelection (Hash := Hash) (AdvState := AdvState)
         A.t_now q) lq).2 = extend_tree_l lq b := by
-      rw [honest_bake_eq, if_pos hw, hbq]
+      rw [honest_bake_eq, ite_eq_left hw, hbq]
       rfl
     obtain ⟨-, hst⟩ := baked_next hBN2 rfl (by omega)
     have hl' : N2.state_map q = some (extend_tree_l lq b) := by

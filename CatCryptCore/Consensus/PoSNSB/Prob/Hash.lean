@@ -102,7 +102,7 @@ def ROCollision (next : Querier D R) (q : ℕ) (f : D → R) : Prop :=
 /-- The uniform distribution on the functions from `D` to `R`. -/
 noncomputable def uniformFun (D R : Type) [Fintype D] [DecidableEq D] [Fintype R] [Nonempty R] :
     PMF (D → R) :=
-  PMF.uniformOfFintype (D → R)
+  PMF.uniformFintype (D → R)
 
 /-- **Birthday bound for an adaptive querier (part 2).** For a uniformly random function
 `f : D → R` and any adaptive querier `next`, the probability that two distinct points among the

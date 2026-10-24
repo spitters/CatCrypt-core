@@ -259,7 +259,7 @@ noncomputable def forkRun.timedDecide {γ : Type} (s : S) (td : ℕ) (f : Ch →
     (g : (α × S) × Option ((α × S) × Ch × Ch) → ℕ × OracleAdv.Timed Empty Empty γ) (e₁ : Ch)
     (r : (α × S) × Option ((α × S) × Ch × Ch)) : ℕ × OracleAdv.Timed Empty Empty γ :=
   if r.2.isNone && hit (ctr s) r.1 then
-    (tF, .rand (PMF.uniformOfFintype Ch)
+    (tF, .rand (PMF.uniformFintype Ch)
       (fun e₂ => (forkRun.timedSecond O t td f c k (fun y₂ => g (r.1, some (y₂, e₁, e₂))) e₂).1)
       fun e₂ => (forkRun.timedSecond O t td f c k (fun y₂ => g (r.1, some (y₂, e₁, e₂))) e₂).2)
   else OracleAdv.Timed.delay tF (g r)
@@ -279,7 +279,7 @@ noncomputable def forkRun.timedK {γ : Type} :
     match O s d with
     | .plain p => (t d, .rand p (fun x => c x.1 + (forkRun.timedK (k x.1) x.2 g).1)
         fun x => (forkRun.timedK (k x.1) x.2 g).2)
-    | .fresh f => (t d, .rand (PMF.uniformOfFintype Ch)
+    | .fresh f => (t d, .rand (PMF.uniformFintype Ch)
         (fun e₁ => c (f e₁).1 + (forkRun.timedK (k (f e₁).1) (f e₁).2
           (forkRun.timedDecide O ctr hit t tF s (t d) f c k g e₁)).1)
         fun e₁ => (forkRun.timedK (k (f e₁).1) (f e₁).2
@@ -369,7 +369,7 @@ theorem forkRun.run_erase_timedK
             rw [hfresh s d f h e₁] at hc'
             have := hdisj _ _ _ hh hh'
             omega
-        simp only [forkRun.timedDecide, hn, hh, Bool.and_self, if_true, OracleAdv.Timed.erase,
+        simp only [forkRun.timedDecide, hn, hh, Bool.and_self, ite_true, OracleAdv.Timed.erase,
           OracleAdv.run_rand, PMF.map_bind, PMF.bind_bind, PMF.bind_map]
         congr 1
         funext e₂
@@ -378,7 +378,7 @@ theorem forkRun.run_erase_timedK
         simp only [OracleAdv.Timed.delay]
         rw [OracleAdv.Timed.run_erase_runOracle]
         rfl
-      · simp only [forkRun.timedDecide, hh, Bool.and_false, Bool.false_eq_true, if_false,
+      · simp only [forkRun.timedDecide, hh, Bool.and_false, Bool.false_eq_true, ite_false,
           OracleAdv.Timed.delay, PMF.pure_bind]
 
 /-- Under the hypotheses of `forkRun.run_erase_timedK`, the erased costed forking run has
@@ -808,8 +808,8 @@ theorem hybRunOf.erase_timed (sgn : G.SignStep) (D D' : G.Sampler) (k : ℕ)
     | inl key => simp only [hybRunOf.timed, hybRunOf, OracleAdv.Timed.erase, ih]
     | inr m =>
       by_cases hj : j = k
-      · simp only [hybRunOf.timed, hybRunOf, hj, if_true, OracleAdv.Timed.erase, ih]
-      · simp only [hybRunOf.timed, hybRunOf, hj, if_false, OracleAdv.Timed.erase, ih]
+      · simp only [hybRunOf.timed, hybRunOf, hj, ite_true, OracleAdv.Timed.erase, ih]
+      · simp only [hybRunOf.timed, hybRunOf, hj, ite_false, OracleAdv.Timed.erase, ih]
 
 /-- **Time of the costed hybrid run.** With `A` of time `T` whose query costs, `tH + 1`
 per hash and `tS + 1` per signing query, sum to at most `n`, the costed run has time at
@@ -848,13 +848,13 @@ theorem hybRunOf.timeBound_timed (sgn : G.SignStep) (D D' : G.Sampler) (k : ℕ)
     | inr m =>
       simp only [Sum.elim_inr] at hd hk
       by_cases hj : j = k
-      · simp only [hybRunOf.timed, hj, if_true, OracleAdv.Timed.stepTimeBound_zero,
+      · simp only [hybRunOf.timed, hj, ite_true, OracleAdv.Timed.stepTimeBound_zero,
           OracleAdv.Timed.timeBound_query_iff]
         refine ⟨by omega, fun o => ?_⟩
         have h2 := (hA.2 o.1).1
         exact (OracleAdv.Timed.stepTimeBound_delay (c := c o.1)
           (ih o.1 (hA.2 o.1).2 (hk o.1) (k + 1) o.2)).mono (by omega)
-      · simp only [hybRunOf.timed, hj, if_false, OracleAdv.Timed.stepTimeBound_zero,
+      · simp only [hybRunOf.timed, hj, ite_false, OracleAdv.Timed.stepTimeBound_zero,
           OracleAdv.Timed.timeBound_rand_iff]
         refine ⟨by omega, fun o => ?_⟩
         have h2 := (hA.2 o.1).1

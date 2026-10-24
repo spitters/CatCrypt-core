@@ -91,7 +91,7 @@ variable {PK SK M C R : Type} [Fintype R] [Nonempty R] (P : Scheme PK SK M C R)
 
 /-- The ciphertext distribution of `m` under `pk` with uniform coins. -/
 noncomputable def encDist (pk : PK) (m : M) : PMF C :=
-  (PMF.uniformOfFintype R).map (P.enc pk m)
+  (PMF.uniformFintype R).map (P.enc pk m)
 
 /-- The plaintext-checking predicate `[Dec(sk, c) = m]`. -/
 def pco [DecidableEq M] (sk : SK) (m : M) (c : C) : Bool :=
@@ -100,7 +100,7 @@ def pco [DecidableEq M] (sk : SK) (m : M) (c : C) : Bool :=
 /-- The probability over uniform coins that encrypting `m` under `pk` does not
 decrypt to `m` under `sk`. -/
 noncomputable def failProb (pk : PK) (sk : SK) (m : M) : ℝ≥0∞ :=
-  (PMF.uniformOfFintype R).toOuterMeasure {r | P.dec sk (P.enc pk m r) ≠ some m}
+  (PMF.uniformFintype R).toOuterMeasure {r | P.dec sk (P.enc pk m r) ≠ some m}
 
 /-- The correctness error δ: the expectation over key pairs of the largest
 decryption-failure probability over messages. -/
@@ -113,20 +113,20 @@ def IsCorrect (δ : ℝ≥0∞) : Prop := P.corrWorst ≤ δ
 /-- The decryption-failure probability for a uniform message and uniform coins,
 averaged over key pairs. -/
 noncomputable def corrErr [Fintype M] [Nonempty M] : ℝ≥0∞ :=
-  ∑' ks, P.keygen ks * ∑' m, PMF.uniformOfFintype M m * P.failProb ks.1 ks.2 m
+  ∑' ks, P.keygen ks * ∑' m, PMF.uniformFintype M m * P.failProb ks.1 ks.2 m
 
 /-- `ε`-spreadness (`ε = 2^(−γ)` for γ-spread): for every generated key pair, every
 message and every ciphertext, uniform coins hit the ciphertext with probability at
 most `ε`. -/
 def IsSpread (ε : ℝ≥0∞) : Prop :=
   ∀ ks ∈ P.keygen.support, ∀ (m : M) (c : C),
-    (PMF.uniformOfFintype R).toOuterMeasure {r | P.enc ks.1 m r = c} ≤ ε
+    (PMF.uniformFintype R).toOuterMeasure {r | P.enc ks.1 m r = c} ≤ ε
 
 /-- The uniform-message failure probability is at most the correctness error. -/
 theorem corrErr_le_corrWorst [Fintype M] [Nonempty M] : P.corrErr ≤ P.corrWorst := by
   refine ENNReal.tsum_le_tsum fun ks => mul_le_mul_right ?_ _
-  calc ∑' m, PMF.uniformOfFintype M m * P.failProb ks.1 ks.2 m
-      ≤ ∑' m, PMF.uniformOfFintype M m * ⨆ m', P.failProb ks.1 ks.2 m' :=
+  calc ∑' m, PMF.uniformFintype M m * P.failProb ks.1 ks.2 m
+      ≤ ∑' m, PMF.uniformFintype M m * ⨆ m', P.failProb ks.1 ks.2 m' :=
         ENNReal.tsum_le_tsum fun m => mul_le_mul_right (le_iSup (P.failProb ks.1 ks.2) m) _
     _ = ⨆ m', P.failProb ks.1 ks.2 m' := by rw [ENNReal.tsum_mul_right, PMF.tsum_coe, one_mul]
 
@@ -142,7 +142,7 @@ variable [Fintype M] [Nonempty M] [DecidableEq M] (P : Scheme PK SK M C R)
 
 /-- The OW-CPA experiment against the adversary `A` on `(pk, c*)`. -/
 noncomputable def owcpaGame (A : PK → C → PMF M) : PMF Bool :=
-  P.keygen.bind fun ks => (PMF.uniformOfFintype M).bind fun m =>
+  P.keygen.bind fun ks => (PMF.uniformFintype M).bind fun m =>
     (P.encDist ks.1 m).bind fun c => (A ks.1 c).map fun m' => P.pco ks.2 m' c
 
 /-- The OW-CPA advantage. -/
@@ -163,7 +163,7 @@ structure OWPCAAdversary (q : ℕ) : Type 1 where
 
 /-- The OW-PCA experiment. -/
 noncomputable def owpcaGame {q : ℕ} (A : OWPCAAdversary PK M C q) : PMF Bool :=
-  P.keygen.bind fun ks => (PMF.uniformOfFintype M).bind fun m =>
+  P.keygen.bind fun ks => (PMF.uniformFintype M).bind fun m =>
     (P.encDist ks.1 m).bind fun c =>
       (OracleAdv.run (pcoOracle P ks.2) (A.run ks.1 c) ()).map fun x => P.pco ks.2 x.1 c
 
@@ -192,7 +192,7 @@ structure OWPCVAAdversary (qP qV : ℕ) : Type 1 where
 /-- The OW-PCVA experiment. -/
 noncomputable def owpcvaGame [DecidableEq C] {qP qV : ℕ} (A : OWPCVAAdversary PK M C qP qV) :
     PMF Bool :=
-  P.keygen.bind fun ks => (PMF.uniformOfFintype M).bind fun m =>
+  P.keygen.bind fun ks => (PMF.uniformFintype M).bind fun m =>
     (P.encDist ks.1 m).bind fun c =>
       (OracleAdv.run (pcvaOracle P ks.2 c) (A.run ks.1 c) ()).map fun x => P.pco ks.2 x.1 c
 
@@ -278,8 +278,8 @@ messages, runs `A` once on the challenge, and outputs whether `A` returned the f
 message. -/
 noncomputable def owToIndcpa (A : PK → C → PMF M) : INDCPAAdversary PK M C where
   St := PK × M
-  choose pk := (PMF.uniformOfFintype M).bind fun m₀ =>
-    (PMF.uniformOfFintype M).map fun m₁ => (m₀, m₁, (pk, m₀))
+  choose pk := (PMF.uniformFintype M).bind fun m₀ =>
+    (PMF.uniformFintype M).map fun m₁ => (m₀, m₁, (pk, m₀))
   guess st c := (A st.1 c).map fun m' => decide (m' = st.2)
 
 /-- **One-wayness from indistinguishability** (Hofheinz–Hövelmanns–Kiltz, Lemma 2.3,
@@ -292,34 +292,34 @@ theorem owcpa_le_indcpa (A : PK → C → PMF M) :
     intro p
     have h := prTrue_liftPMF_map p id Heap.empty
     rwa [PMF.map_id] at h
-  have hconst : ∀ (c : ℝ≥0∞), ∑' m : M, PMF.uniformOfFintype M m * c = c := fun c => by
+  have hconst : ∀ (c : ℝ≥0∞), ∑' m : M, PMF.uniformFintype M m * c = c := fun c => by
     rw [ENNReal.tsum_mul_right, PMF.tsum_coe, one_mul]
   have h1 : (indcpaGame P (owToIndcpa A) true).toOuterMeasure {b | b = true} =
-      ∑' ks, P.keygen ks * ∑' m, PMF.uniformOfFintype M m * ∑' r, PMF.uniformOfFintype R r *
+      ∑' ks, P.keygen ks * ∑' m, PMF.uniformFintype M m * ∑' r, PMF.uniformFintype R r *
         (A ks.1 (P.enc ks.1 m r)).toOuterMeasure {m' | m' = m} := by
     simp only [indcpaGame, owToIndcpa, Scheme.encDist, PMF.bind_bind, PMF.bind_map,
-      Function.comp_def, if_true, PMF.toOuterMeasure_bind_apply, PMF.toOuterMeasure_map_apply,
+      Function.comp_def, ite_true, PMF.toOuterMeasure_bind_apply, PMF.toOuterMeasure_map_apply,
       Set.preimage, Set.mem_ofPred_eq, decide_eq_true_eq, hconst]
   have h0 : (indcpaGame P (owToIndcpa A) false).toOuterMeasure {b | b = true} =
-      ∑' ks, P.keygen ks * ∑' m₀, PMF.uniformOfFintype M m₀ * ∑' m₁, PMF.uniformOfFintype M m₁ *
-        ∑' r, PMF.uniformOfFintype R r *
+      ∑' ks, P.keygen ks * ∑' m₀, PMF.uniformFintype M m₀ * ∑' m₁, PMF.uniformFintype M m₁ *
+        ∑' r, PMF.uniformFintype R r *
           (A ks.1 (P.enc ks.1 m₁ r)).toOuterMeasure {m' | m' = m₀} := by
     simp only [indcpaGame, owToIndcpa, Scheme.encDist, PMF.bind_bind, PMF.bind_map,
-      Function.comp_def, Bool.false_eq_true, if_false, PMF.toOuterMeasure_bind_apply,
+      Function.comp_def, Bool.false_eq_true, ite_false, PMF.toOuterMeasure_bind_apply,
       PMF.toOuterMeasure_map_apply, Set.preimage, Set.mem_ofPred_eq, decide_eq_true_eq]
   have hN : (indcpaGame P (owToIndcpa A) false).toOuterMeasure {b | b = true} =
       (Fintype.card M : ℝ≥0∞)⁻¹ := by
     rw [h0]
-    have hin : ∀ (q : PMF M), ∑' m₀, PMF.uniformOfFintype M m₀ * q.toOuterMeasure {m' | m' = m₀} =
+    have hin : ∀ (q : PMF M), ∑' m₀, PMF.uniformFintype M m₀ * q.toOuterMeasure {m' | m' = m₀} =
         (Fintype.card M : ℝ≥0∞)⁻¹ := by
       intro q
-      simp only [PMF.uniformOfFintype_apply, ENNReal.tsum_mul_left]
+      simp only [PMF.uniformFintype_apply, ENNReal.tsum_mul_left]
       rw [show (fun m₀ => q.toOuterMeasure {m' | m' = m₀}) = fun m₀ => q m₀ from
         funext fun m₀ => by
           rw [show {m' | m' = m₀} = ({m₀} : Set M) from rfl, PMF.toOuterMeasure_apply_singleton],
         PMF.tsum_coe, mul_one]
-    calc _ = ∑' ks, P.keygen ks * ∑' m₁, PMF.uniformOfFintype M m₁ * ∑' r,
-          PMF.uniformOfFintype R r * ∑' m₀, PMF.uniformOfFintype M m₀ *
+    calc _ = ∑' ks, P.keygen ks * ∑' m₁, PMF.uniformFintype M m₁ * ∑' r,
+          PMF.uniformFintype R r * ∑' m₀, PMF.uniformFintype M m₀ *
             (A ks.1 (P.enc ks.1 m₁ r)).toOuterMeasure {m' | m' = m₀} := by
           refine tsum_congr fun ks => congrArg _ ?_
           simp only [← ENNReal.tsum_mul_left]
@@ -333,14 +333,14 @@ theorem owcpa_le_indcpa (A : PK → C → PMF M) :
   have hOW : (owcpaGame P A).toOuterMeasure {b | b = true} ≤
       (indcpaGame P (owToIndcpa A) true).toOuterMeasure {b | b = true} + P.corrErr := by
     have hOWeq : (owcpaGame P A).toOuterMeasure {b | b = true} =
-        ∑' ks, P.keygen ks * ∑' m, PMF.uniformOfFintype M m * ∑' r, PMF.uniformOfFintype R r *
+        ∑' ks, P.keygen ks * ∑' m, PMF.uniformFintype M m * ∑' r, PMF.uniformFintype R r *
           (A ks.1 (P.enc ks.1 m r)).toOuterMeasure {m' | P.pco ks.2 m' (P.enc ks.1 m r) = true} := by
       simp only [owcpaGame, Scheme.encDist, PMF.bind_map, Function.comp_def,
         PMF.toOuterMeasure_bind_apply, PMF.toOuterMeasure_map_apply]
       rfl
-    have hinner : ∀ (ks : PK × SK) (m : M), ∑' r, PMF.uniformOfFintype R r *
+    have hinner : ∀ (ks : PK × SK) (m : M), ∑' r, PMF.uniformFintype R r *
         (A ks.1 (P.enc ks.1 m r)).toOuterMeasure {m' | P.pco ks.2 m' (P.enc ks.1 m r) = true} ≤
-        ∑' r, PMF.uniformOfFintype R r * (A ks.1 (P.enc ks.1 m r)).toOuterMeasure {m' | m' = m} +
+        ∑' r, PMF.uniformFintype R r * (A ks.1 (P.enc ks.1 m r)).toOuterMeasure {m' | m' = m} +
           P.failProb ks.1 ks.2 m := by
       intro ks m
       rw [Scheme.failProb, PMF.toOuterMeasure_apply, ← ENNReal.tsum_add]
@@ -350,7 +350,7 @@ theorem owcpa_le_indcpa (A : PK → C → PMF M) :
           ext m'; simp [Scheme.pco, hd, eq_comm]
         rw [hs, Set.indicator_of_notMem (by simpa using hd), add_zero]
       · rw [Set.indicator_of_mem (by simpa using hd)]
-        calc _ ≤ PMF.uniformOfFintype R r * 1 :=
+        calc _ ≤ PMF.uniformFintype R r * 1 :=
               mul_le_mul_of_nonneg_left ((MeasureTheory.measure_mono (Set.subset_univ _)).trans_eq
                 ((PMF.toOuterMeasure_apply_eq_one_iff _ _).mpr (Set.subset_univ _))) bot_le
           _ ≤ _ := by rw [mul_one]; exact le_add_self
@@ -416,7 +416,7 @@ uniform message against the empty table, runs the adversary against
 challenge against the final table. -/
 noncomputable def romOWPCAGame (S : ROMScheme PK SK M C D H) {qG qP : ℕ}
     (B : ROMOWPCAAdversary PK M C D H qG qP) : PMF Bool :=
-  S.keygen.bind fun ks => (PMF.uniformOfFintype M).bind fun m =>
+  S.keygen.bind fun ks => (PMF.uniformFintype M).bind fun m =>
     (OracleAdv.run roOracle (S.enc ks.1 m) emptyTable).bind fun x =>
       (OracleAdv.run (romPcaOracle S ks.2) (B.run ks.1 x.1) x.2).bind fun y =>
         (OracleAdv.run roOracle (S.dec ks.2 x.1) y.2).map fun z => decide (z.1 = some y.1)

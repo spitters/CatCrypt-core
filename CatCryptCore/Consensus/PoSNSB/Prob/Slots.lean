@@ -168,9 +168,9 @@ theorem super_of_kind (hnd : IP.Nodup) (hL : LeaderHyp IP h0) (sl : ℕ)
   simp only [honestKind, decide_eq_true_eq, kindAt_kinds hL.h0_honest] at h
   simp only [super_slot, Parameters.Winner, Parameters.InitParties, decide_eq_true_eq]
   by_cases h0s : sl = 0
-  · simp only [h0s, if_true]
+  · simp only [h0s, ite_true]
     exact countP_leader hnd (hL.honest_mem h0 hL.h0_honest) hL.h0_honest
-  · simp only [h0s, if_false]
+  · simp only [h0s, ite_false]
     rcases hl : leaderAt h0 L sl with _ | p
     · rw [hl] at h; simp [kindOf] at h
     · rw [hl] at h
@@ -279,8 +279,8 @@ theorem sum_score {n : ℕ} (κ : Fin n → SlotKind) (α β γ : ℝ) (a b : �
     by_cases h : a ≤ (i : ℕ) ∧ (i : ℕ) < b
     · simp [h, score]
     · have h' : ¬(a ≤ (i : ℕ) ∧ (i : ℕ) < b) := h
-      simp only [h', if_false]
-      rw [if_neg (fun h'' => h ⟨h''.1, h''.2.1⟩), if_neg (fun h'' => h ⟨h''.1, h''.2.1⟩)]
+      simp only [h', ite_false]
+      rw [ite_eq_right (fun h'' => h ⟨h''.1, h''.2.1⟩), ite_eq_right (fun h'' => h ⟨h''.1, h''.2.1⟩)]
       ring
   simp only [hpt, Finset.sum_add_distrib, ← Finset.mul_sum, Finset.sum_boole, cnt,
     card_interval a b hb]
@@ -421,7 +421,7 @@ theorem kindLaw_stakeElect_honest (st : Party → ℕ) (hst : 0 < stakeOf st Fin
       φ * stakeOf st (Finset.univ.filter fun p => is_honest p = true) /
         (stakeOf st Finset.univ : ℝ≥0∞) := by
   rw [kindLaw_apply, Fintype.sum_option]
-  simp only [kindOf, stakeElect, PMF.ofFintype_apply, stakeMass, reduceCtorEq, if_false,
+  simp only [kindOf, stakeElect, PMF.ofFintype_apply, stakeMass, reduceCtorEq, ite_false,
     zero_add]
   simp_rw [stakeOf, Nat.cast_sum, div_eq_mul_inv, Finset.mul_sum, Finset.sum_mul,
     Finset.sum_filter]
@@ -436,7 +436,7 @@ theorem kindLaw_stakeElect_adversarial (st : Party → ℕ) (hst : 0 < stakeOf s
       φ * stakeOf st (Finset.univ.filter fun p => is_honest p = false) /
         (stakeOf st Finset.univ : ℝ≥0∞) := by
   rw [kindLaw_apply, Fintype.sum_option]
-  simp only [kindOf, stakeElect, PMF.ofFintype_apply, stakeMass, reduceCtorEq, if_false,
+  simp only [kindOf, stakeElect, PMF.ofFintype_apply, stakeMass, reduceCtorEq, ite_false,
     zero_add]
   simp_rw [stakeOf, Nat.cast_sum, div_eq_mul_inv, Finset.mul_sum, Finset.sum_mul,
     Finset.sum_filter]

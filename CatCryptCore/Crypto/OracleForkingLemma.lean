@@ -85,7 +85,7 @@ variable {D R S Ch α : Type} [Fintype Ch] [Nonempty Ch]
 /-- The distribution of a transition. -/
 noncomputable def Step.toPMF : Step R S Ch → PMF (R × S)
   | .plain p => p
-  | .fresh f => (PMF.uniformOfFintype Ch).map f
+  | .fresh f => (PMF.uniformFintype Ch).map f
 
 /-- The stateful oracle given by the transitions `O`. -/
 noncomputable def toOracle (O : S → D → Step R S Ch) : S → D → PMF (R × S) :=
@@ -106,10 +106,10 @@ noncomputable def forkRun :
   | .query d k, s =>
     match O s d with
     | .plain p => p.bind fun x => forkRun (k x.1) x.2
-    | .fresh f => (PMF.uniformOfFintype Ch).bind fun e₁ =>
+    | .fresh f => (PMF.uniformFintype Ch).bind fun e₁ =>
         (forkRun (k (f e₁).1) (f e₁).2).bind fun r =>
           if hit (ctr s) r.1 then
-            (PMF.uniformOfFintype Ch).bind fun e₂ =>
+            (PMF.uniformFintype Ch).bind fun e₂ =>
               (OracleAdv.run (toOracle O) (k (f e₂).1) (f e₂).2).map fun y₂ =>
                 (r.1, some (y₂, e₁, e₂))
           else PMF.pure r
@@ -144,7 +144,7 @@ theorem forkRun_map_fst (A : OracleAdv D R α) (s : S) :
       congr 1; funext e₁
       have hc : ∀ r : (α × S) × Option ((α × S) × Ch × Ch),
           PMF.map Prod.fst (if hit (ctr s) r.1 = true then
-            (PMF.uniformOfFintype Ch).bind fun e₂ =>
+            (PMF.uniformFintype Ch).bind fun e₂ =>
               PMF.map (fun y₂ => (r.1, some (y₂, e₁, e₂)))
                 (OracleAdv.run (toOracle O) (k (f e₂).1) (f e₂).2)
             else PMF.pure r) = PMF.pure r.1 := by
@@ -249,7 +249,7 @@ theorem accProb_sq_sub_le_forkProb
   | ret a =>
     have h0 : accProb O hit c (.ret a) s = 0 := by
       simp only [accProb, OracleAdv.run_ret, PMF.toOuterMeasure_pure_apply, Set.mem_ofPred_eq]
-      rw [if_neg]
+      rw [ite_eq_right]
       intro h
       exact absurd (hlt c _ h) (not_lt.mpr hc)
     simp [h0]
@@ -269,7 +269,7 @@ theorem accProb_sq_sub_le_forkProb
       · simp [(PMF.apply_eq_zero_iff p x).mpr hx]
     | fresh f =>
       simp only [forkProb, forkRun, h, PMF.toOuterMeasure_bind_apply]
-      set u := PMF.uniformOfFintype Ch
+      set u := PMF.uniformFintype Ch
       set a : Ch → ℝ≥0∞ := fun e => accProb O hit c (k (f e).1) (f e).2 with ha_def
       have hacc : accProb O hit c (.query d k) s = ∑' e, u e * a e := by
         simp only [accProb, OracleAdv.run_query, toOracle, h, Step.toPMF, PMF.bind_map,
@@ -304,11 +304,11 @@ theorem accProb_sq_sub_le_forkProb
               by_contra hne
               rw [hit_of_forkSucc hit (Bool.not_eq_false _ ▸ hne)] at hc1
               exact Bool.noConfusion hc1
-            simp only [hh, if_true, PMF.toOuterMeasure_bind_apply, PMF.toOuterMeasure_map_apply,
+            simp only [hh, ite_true, PMF.toOuterMeasure_bind_apply, PMF.toOuterMeasure_map_apply,
               hS, MeasureTheory.measure_empty, mul_zero, tsum_zero,
               PMF.toOuterMeasure_pure_apply, Set.mem_ofPred_eq, hr]
             simp
-          · rw [if_neg hh]
+          · rw [ite_eq_right hh]
         simp_rw [hinner]
         refine (tsum_mul_sq_sub_le _ _ (le_of_eq u.tsum_coe) (fun _ => toOuterMeasure_le_one _ _)
           _).trans (ENNReal.tsum_le_tsum fun e => mul_le_mul_right (ih _ _ ?_) _)
@@ -334,14 +334,14 @@ theorem accProb_sq_sub_le_forkProb
                 (if hit (ctr s) r.1 = true then 1 else 0) * B e₁ := by
             intro r
             by_cases hh : hit (ctr s) r.1 = true
-            · simp only [hh, if_true, one_mul, PMF.toOuterMeasure_bind_apply,
+            · simp only [hh, ite_true, one_mul, PMF.toOuterMeasure_bind_apply,
                 PMF.toOuterMeasure_map_apply, B]
               refine tsum_congr fun e₂ => ?_
               congr 1
               by_cases he : e₁ = e₂
               · subst he
                 simp [forkSucc]
-              · simp only [ne_eq, he, not_false_eq_true, if_true, a, accProb]
+              · simp only [ne_eq, he, not_false_eq_true, ite_true, a, accProb]
                 congr 1
                 ext y
                 simp [forkSucc, hh, he]
@@ -360,7 +360,7 @@ theorem accProb_sq_sub_le_forkProb
           rw [← hmeas, ← ENNReal.tsum_mul_right]
           exact tsum_congr fun r => (mul_assoc _ _ _).symm
         simp_rw [hinner]
-        have hu : ∀ e, u e = (Fintype.card Ch : ℝ≥0∞)⁻¹ := PMF.uniformOfFintype_apply
+        have hu : ∀ e, u e = (Fintype.card Ch : ℝ≥0∞)⁻¹ := PMF.uniformFintype_apply
         have ha1 : ∀ e, a e ≤ 1 := fun _ => toOuterMeasure_le_one _ _
         simp only [tsum_fintype, hu, B]
         exact sq_sub_le_sum_offDiag a ha1
@@ -408,7 +408,7 @@ theorem sum_forkProb_le
       · simp [hc, hW r hr c hc]
       · intro c' _ hne
         simp only [Set.indicator_apply, Set.mem_ofPred_eq]
-        rw [if_neg]
+        rw [ite_eq_right]
         intro hc'
         exact hne (Fin.ext (hdisj _ _ _ (hit_of_forkSucc hit hc') (hit_of_forkSucc hit hc)))
       · simp
@@ -527,7 +527,7 @@ theorem sum_fin_toOuterMeasure_eq {β : Type} (p : PMF β) (Q : ℕ) (E : ℕ �
       · simp [hc, (hW y hy).mpr ⟨c, hc⟩]
       · intro c' _ hne
         simp only [Set.indicator_apply, Set.mem_ofPred_eq]
-        rw [if_neg]
+        rw [ite_eq_right]
         intro hc'
         exact hne (Fin.ext (hdisj _ _ _ hc' hc))
       · simp

@@ -81,7 +81,7 @@ def complete (T : M → Option R) (f : M → R) : M → R := fun m => (T m).getD
 
 /-- A uniform function agreeing with the table `T` where it is defined. -/
 noncomputable def extDist (T : M → Option R) : PMF (M → R) :=
-  (PMF.uniformOfFintype (M → R)).map (complete T)
+  (PMF.uniformFintype (M → R)).map (complete T)
 
 /-- The random oracle answered by the function `f`, without state. -/
 noncomputable def keyedRO (f : M → R) (_ : Unit) (m : M) : PMF (R × Unit) := PMF.pure (f m, ())
@@ -96,7 +96,7 @@ theorem complete_update (T : M → Option R) (m : M) (r : R) (g : M → R) (hT :
 
 theorem extDist_map_pair (T : M → Option R) (m : M) (hT : T m = none) :
     (extDist T).map (fun f => (f m, f)) =
-      (PMF.uniformOfFintype R).bind fun r =>
+      (PMF.uniformFintype R).bind fun r =>
         (extDist (Function.update T m (some r))).map fun f => (r, f) := by
   classical
   simp only [extDist, PMF.map_comp, Function.comp_def]
@@ -131,7 +131,7 @@ theorem run_roOracle_map_fst_eq {β : Type} (B : OracleAdv M R β) (T : M → Op
     | none =>
       simp only [roOracle, hT, PMF.bind_map, Function.comp_def, ih]
       have hp := extDist_map_pair T m hT
-      calc _ = (PMF.uniformOfFintype R).bind fun r =>
+      calc _ = (PMF.uniformFintype R).bind fun r =>
             ((extDist (Function.update T m (some r))).map fun f => (r, f)).bind fun x =>
               (OracleAdv.run (keyedRO x.2) (k x.1) ()).map Prod.fst := by
             simp only [PMF.bind_map, Function.comp_def]
@@ -163,7 +163,7 @@ theorem run_simOracle_roOracle_eq {D A σ α : Type} (prog : σ → D → Oracle
   simp only [e₁, e₂]
   exact run_roOracle_map_fst_eq _ T
 
-theorem extDist_empty : extDist (emptyTable : M → Option R) = PMF.uniformOfFintype (M → R) := by
+theorem extDist_empty : extDist (emptyTable : M → Option R) = PMF.uniformFintype (M → R) := by
   have : complete (emptyTable : M → Option R) = id := by
     funext g m; simp [complete, emptyTable]
   rw [extDist, this, PMF.map_id]
@@ -218,7 +218,7 @@ noncomputable def tReductionD {qG qP : ℕ} (B : ROMOWPCAAdversary PK M C M R qG
     PK → C → PMF M := fun pk c =>
   (OracleAdv.run (OracleAdv.simOracle (progLog P pk) roOracle) (withCheck B pk c)
     ([], emptyTable)).bind fun x =>
-      (PMF.uniformOfFintype (Fin (n + 1))).map fun i => x.2.1.getD i x.1.1
+      (PMF.uniformFintype (Fin (n + 1))).map fun i => x.2.1.getD i x.1.1
 
 /-! ## The experiment as a run against the random oracle -/
 
@@ -254,7 +254,7 @@ theorem romPcaOracle_eq (ks : PK × SK) (T : M → Option R) (d : M ⊕ (M × C)
     rfl
 
 theorem romOWPCAGame_eq {qG qP : ℕ} (B : ROMOWPCAAdversary PK M C M R qG qP) :
-    romOWPCAGame (tTransform P) B = P.keygen.bind fun ks => (PMF.uniformOfFintype M).bind fun m =>
+    romOWPCAGame (tTransform P) B = P.keygen.bind fun ks => (PMF.uniformFintype M).bind fun m =>
       (OracleAdv.run (OracleAdv.simOracle (progReal P ks) roOracle) (fullRun P B ks.1 m)
         ((), emptyTable)).map fun x => x.1.2 := by
   have hB : ∀ (ks : PK × SK) (c : C) (T : M → Option R),
@@ -374,7 +374,7 @@ theorem game_eq_eager {qG qP : ℕ} (B : ROMOWPCAAdversary PK M C M R qG qP) (ks
     (m : M) :
     (OracleAdv.run (OracleAdv.simOracle (progReal P ks) roOracle) (fullRun P B ks.1 m)
         ((), emptyTable)).map (fun x => x.1.2) =
-      (PMF.uniformOfFintype (M → R)).bind fun f =>
+      (PMF.uniformFintype (M → R)).bind fun f =>
         (OracleAdv.run (eO (ansReal P ks) (fun _ _ u => u) f) (withCheck B ks.1 (P.enc ks.1 m (f m)))
           ()).map fun x => x.1.2 := by
   have h := run_simOracle_roOracle_eq (progReal P ks) (fullRun P B ks.1 m) () emptyTable
@@ -478,10 +478,10 @@ independent uniform `r`, plus the probability that the latter reads the random
 oracle at `m*`. -/
 theorem challenge_hop {qG qP : ℕ} (B : ROMOWPCAAdversary PK M C M R qG qP) (ks : PK × SK)
     (mstar : M) (S : Set ((M × Bool) × (Bool × Bool))) :
-    ∑' f, PMF.uniformOfFintype (M → R) f *
+    ∑' f, PMF.uniformFintype (M → R) f *
       (OracleAdv.run (eO (ansSim P ks.1) (ghostUpd P ks mstar) f)
         (withCheck B ks.1 (P.enc ks.1 mstar (f mstar))) (false, false)).toOuterMeasure S ≤
-    ∑' f, PMF.uniformOfFintype (M → R) f * ∑' r, PMF.uniformOfFintype R r *
+    ∑' f, PMF.uniformFintype (M → R) f * ∑' r, PMF.uniformFintype R r *
       ((OracleAdv.run (eO (ansSim P ks.1) (ghostUpd P ks mstar) f)
         (withCheck B ks.1 (P.enc ks.1 mstar r)) (false, false)).toOuterMeasure S +
       (OracleAdv.run (eO (ansSim P ks.1) (ghostUpd P ks mstar) f)
@@ -491,8 +491,8 @@ theorem challenge_hop {qG qP : ℕ} (B : ROMOWPCAAdversary PK M C M R qG qP) (ks
   set F : (M → R) → ℝ≥0∞ := fun f =>
     (OracleAdv.run (eO (ansSim P ks.1) (ghostUpd P ks mstar) f)
       (withCheck B ks.1 (P.enc ks.1 mstar (f mstar))) (false, false)).toOuterMeasure S
-  have hu : ∑' f, PMF.uniformOfFintype (M → R) f * F f =
-      ∑' f, PMF.uniformOfFintype (M → R) f * ∑' r, PMF.uniformOfFintype R r *
+  have hu : ∑' f, PMF.uniformFintype (M → R) f * F f =
+      ∑' f, PMF.uniformFintype (M → R) f * ∑' r, PMF.uniformFintype R r *
         F (Function.update f mstar r) := by
     have h := uniform_bind_update (D := M) (R := R) mstar
     conv_lhs => rw [← h]
@@ -502,7 +502,7 @@ theorem challenge_hop {qG qP : ℕ} (B : ROMOWPCAAdversary PK M C M R qG qP) (ks
     rw [ENNReal.tsum_comm]
     refine tsum_congr fun r => ?_
     rw [tsum_eq_single (Function.update f mstar r)]
-    · simp only [if_true]; ring
+    · simp only [ite_true]; ring
     · intro g hg; simp [hg]
   rw [hu]
   refine ENNReal.tsum_le_tsum fun f => mul_le_mul_right (ENNReal.tsum_le_tsum fun r =>
@@ -574,7 +574,7 @@ over a uniform function. -/
 theorem lazy_log_eq {α : Type} (pk : PK) (A : OracleAdv (M ⊕ (M × C)) (R ⊕ Bool) α) :
     (OracleAdv.run (OracleAdv.simOracle (progLog P pk) roOracle) A ([], emptyTable)).map
       (fun x => (x.1, x.2.1)) =
-    (PMF.uniformOfFintype (M → R)).bind fun f =>
+    (PMF.uniformFintype (M → R)).bind fun f =>
       OracleAdv.run (eO (ansSim P pk) (fun m _ l => m :: l) f) A [] := by
   rw [run_simOracle_roOracle_eq, extDist_empty]
   refine congrArg _ (funext fun f => ?_)
@@ -585,7 +585,7 @@ theorem lazy_log_eq {α : Type} (pk : PK) (A : OracleAdv (M ⊕ (M × C)) (R ⊕
 
 omit [Nonempty M] in
 theorem tReductionC_eq {qG qP : ℕ} (B : ROMOWPCAAdversary PK M C M R qG qP) (pk : PK) (c : C) :
-    tReductionC P B pk c = (PMF.uniformOfFintype (M → R)).bind fun f =>
+    tReductionC P B pk c = (PMF.uniformFintype (M → R)).bind fun f =>
       (OracleAdv.run (eO (ansSim P pk) (fun _ _ u => u) f) (B.run pk c) ()).map Prod.fst := by
   unfold tReductionC
   rw [show (Prod.fst : M × (List M × (M → Option R)) → M) =
@@ -665,7 +665,7 @@ theorem lazy_bad_le {α : Type} (ks : PK × SK) (A : OracleAdv (M ⊕ (M × C)) 
       gcongr; simp
     | none =>
       have hro : roOracle T pt =
-          (PMF.uniformOfFintype R).map fun r => (r, Function.update T pt (some r)) := by
+          (PMF.uniformFintype R).map fun r => (r, Function.update T pt (some r)) := by
         simp [roOracle, hTp]
       rw [hro, PMF.bind_map, PMF.toOuterMeasure_bind_apply]
       have hterm : ∀ r, (OracleAdv.run (OracleAdv.simOracle (progBad P ks) roOracle) (k (ans r))
@@ -674,16 +674,16 @@ theorem lazy_bad_le {α : Type} (ks : PK × SK) (A : OracleAdv (M ⊕ (M × C)) 
           (if prob P ks pt r = true then 1 else 0) + n' * worst P ks := by
         intro r
         by_cases hp : prob P ks pt r = true
-        · simp only [hp, if_true]
+        · simp only [hp, ite_true]
           exact (le_self_add.trans_eq (toOuterMeasure_add_compl _ _)).trans le_self_add
         · have hb : badOnly P ks pt r false = false := by simp [badOnly, hp]
-          simp only [hp, hb, Bool.false_eq_true, if_false, zero_add]
+          simp only [hp, hb, Bool.false_eq_true, ite_false, zero_add]
           refine ih _ n' (hk _) _ fun m' r' h' => ?_
           by_cases hm : m' = pt
           · subst hm; simp at h'; subst h'; simpa using hp
           · rw [Function.update_of_ne hm] at h'; exact hT m' r' h'
-      calc ∑' r, PMF.uniformOfFintype R r * _
-          ≤ ∑' r, PMF.uniformOfFintype R r *
+      calc ∑' r, PMF.uniformFintype R r * _
+          ≤ ∑' r, PMF.uniformFintype R r *
               ((if prob P ks pt r = true then 1 else 0) + n' * worst P ks) :=
             ENNReal.tsum_le_tsum fun r => mul_le_mul_right (hterm r) _
         _ = P.failProb ks.1 ks.2 pt + n' * worst P ks := by
@@ -719,7 +719,7 @@ omit [Nonempty M] in
 problematic-read probability of the lazily sampled run. -/
 theorem eager_bad_eq {qG qP : ℕ} (B : ROMOWPCAAdversary PK M C M R qG qP) (ks : PK × SK)
     (mstar : M) (c : C) :
-    ∑' f, PMF.uniformOfFintype (M → R) f *
+    ∑' f, PMF.uniformFintype (M → R) f *
       (OracleAdv.run (eO (ansSim P ks.1) (ghostUpd P ks mstar) f) (withCheck B ks.1 c)
         (false, false)).toOuterMeasure {x | x.2.1 = true} =
     (OracleAdv.run (OracleAdv.simOracle (progBad P ks) roOracle) (withCheck B ks.1 c)
@@ -747,7 +747,7 @@ omit [Nonempty M] in
 function, is the probability that `m*` is in the log of the lazily sampled run. -/
 theorem eager_query_eq {qG qP : ℕ} (B : ROMOWPCAAdversary PK M C M R qG qP) (ks : PK × SK)
     (mstar : M) (c : C) :
-    ∑' f, PMF.uniformOfFintype (M → R) f *
+    ∑' f, PMF.uniformFintype (M → R) f *
       (OracleAdv.run (eO (ansSim P ks.1) (ghostUpd P ks mstar) f) (withCheck B ks.1 c)
         (false, false)).toOuterMeasure {x | x.2.2 = true} =
     (OracleAdv.run (OracleAdv.simOracle (progLog P ks.1) roOracle) (withCheck B ks.1 c)
@@ -839,7 +839,7 @@ theorem query_le_D {qG qP : ℕ} (B : ROMOWPCAAdversary PK M C M R qG qP) (n : �
   simp only [List.length_nil, zero_add] at hlen
   obtain ⟨i, hi, hxi⟩ := List.getElem_of_mem hx
   have hL : i < n + 1 := lt_of_lt_of_le hi hlen
-  simp only [Set.indicator, Set.mem_ofPred_eq, hx, if_true]
+  simp only [Set.indicator, Set.mem_ofPred_eq, hx, ite_true]
   calc p x = ((n + 1 : ℕ) : ℝ≥0∞) * (((n + 1 : ℕ) : ℝ≥0∞)⁻¹ * p x) := by
         rw [← mul_assoc, ENNReal.mul_inv_cancel (by simp) (ENNReal.natCast_ne_top _), one_mul]
     _ ≤ _ := by
@@ -847,11 +847,11 @@ theorem query_le_D {qG qP : ℕ} (B : ROMOWPCAAdversary PK M C M R qG qP) (n : �
         rw [mul_comm]
         refine mul_le_mul_of_nonneg_left ?_ bot_le
         rw [PMF.toOuterMeasure_map_apply]
-        change _ ≤ ((PMF.uniformOfFintype (Fin (n + 1))).bind fun a =>
+        change _ ≤ ((PMF.uniformFintype (Fin (n + 1))).bind fun a =>
           PMF.pure (a : ℕ)).toOuterMeasure _
         rw [PMF.toOuterMeasure_bind_apply]
         refine le_trans (le_of_eq ?_) (ENNReal.le_tsum ⟨i, hL⟩)
-        rw [PMF.toOuterMeasure_pure_apply, if_pos]
+        rw [PMF.toOuterMeasure_pure_apply, ite_eq_left]
         · simp
         · simp [List.getD_eq_getElem?_getD, List.getElem?_eq_getElem hi, hxi, hdec]
 
@@ -874,8 +874,8 @@ noncomputable def failInd (sk : SK) (m : M) (c : C) : ℝ≥0∞ :=
 
 omit [DecidableEq C] in
 theorem corrErr_eq :
-    P.corrErr = ∑' ks, P.keygen ks * ∑' m, PMF.uniformOfFintype M m *
-      ∑' r, PMF.uniformOfFintype R r * failInd P ks.2 m (P.enc ks.1 m r) := by
+    P.corrErr = ∑' ks, P.keygen ks * ∑' m, PMF.uniformFintype M m *
+      ∑' r, PMF.uniformFintype R r * failInd P ks.2 m (P.enc ks.1 m r) := by
   unfold Scheme.corrErr Scheme.failProb
   refine tsum_congr fun ks => congrArg _ (tsum_congr fun m => congrArg _ ?_)
   rw [PMF.toOuterMeasure_apply]
@@ -884,8 +884,8 @@ theorem corrErr_eq :
 
 omit [DecidableEq C] in
 theorem owcpaAdvantage_eq (A : PK → C → PMF M) :
-    owcpaAdvantage P A = ∑' ks, P.keygen ks * ∑' m, PMF.uniformOfFintype M m *
-      ∑' r, PMF.uniformOfFintype R r *
+    owcpaAdvantage P A = ∑' ks, P.keygen ks * ∑' m, PMF.uniformFintype M m *
+      ∑' r, PMF.uniformFintype R r *
         (A ks.1 (P.enc ks.1 m r)).toOuterMeasure {m' | P.dec ks.2 (P.enc ks.1 m r) = some m'} := by
   rw [owcpaAdvantage, prTrue_liftPMF_toOuterMeasure, owcpaGame]
   simp only [PMF.toOuterMeasure_bind_apply, Scheme.encDist, PMF.bind_map, Function.comp_def,
@@ -906,12 +906,12 @@ theorem game_le_chain {qG qP : ℕ} (B : ROMOWPCAAdversary PK M C M R qG qP) (ks
     (mstar : M) :
     ((OracleAdv.run (OracleAdv.simOracle (progReal P ks) roOracle) (fullRun P B ks.1 mstar)
       ((), emptyTable)).map fun x => x.1.2).toOuterMeasure {b | b = true} ≤
-    ∑' r, PMF.uniformOfFintype R r *
-      (∑' f, PMF.uniformOfFintype (M → R) f * (ghRun P B ks mstar f (P.enc ks.1 mstar r)).toOuterMeasure
+    ∑' r, PMF.uniformFintype R r *
+      (∑' f, PMF.uniformFintype (M → R) f * (ghRun P B ks mstar f (P.enc ks.1 mstar r)).toOuterMeasure
           {x | P.dec ks.2 (P.enc ks.1 mstar r) = some x.1.1} +
-        ∑' f, PMF.uniformOfFintype (M → R) f *
+        ∑' f, PMF.uniformFintype (M → R) f *
           (ghRun P B ks mstar f (P.enc ks.1 mstar r)).toOuterMeasure {x | x.2.1 = true} +
-        ∑' f, PMF.uniformOfFintype (M → R) f *
+        ∑' f, PMF.uniformFintype (M → R) f *
           (ghRun P B ks mstar f (P.enc ks.1 mstar r)).toOuterMeasure {x | x.2.2 = true}) := by
   rw [game_eq_eager, PMF.toOuterMeasure_bind_apply]
   have h1 := fun f => real_le_sim P B ks mstar f (P.enc ks.1 mstar (f mstar))
@@ -932,7 +932,7 @@ theorem game_le_chain {qG qP : ℕ} (B : ROMOWPCAAdversary PK M C M R qG qP) (ks
 omit [Nonempty M] in
 theorem sumC_eq {qG qP : ℕ} (B : ROMOWPCAAdversary PK M C M R qG qP) (ks : PK × SK)
     (mstar : M) (c : C) :
-    ∑' f, PMF.uniformOfFintype (M → R) f * (ghRun P B ks mstar f c).toOuterMeasure
+    ∑' f, PMF.uniformFintype (M → R) f * (ghRun P B ks mstar f c).toOuterMeasure
       {x | P.dec ks.2 c = some x.1.1} =
     (tReductionC P B ks.1 c).toOuterMeasure {m' | P.dec ks.2 c = some m'} := by
   rw [tReductionC_eq, PMF.toOuterMeasure_bind_apply]
@@ -944,7 +944,7 @@ omit [Nonempty M] in
 theorem sumBad_le {qG qP : ℕ} (B : ROMOWPCAAdversary PK M C M R qG qP) (n : ℕ)
     (hB : ∀ pk c, (B.run pk c).IsQueryBoundBy (fun _ => 1) n) (ks : PK × SK)
     (mstar : M) (c : C) :
-    ∑' f, PMF.uniformOfFintype (M → R) f * (ghRun P B ks mstar f c).toOuterMeasure
+    ∑' f, PMF.uniformFintype (M → R) f * (ghRun P B ks mstar f c).toOuterMeasure
       {x | x.2.1 = true} ≤ ((n + 1 : ℕ) : ℝ≥0∞) * worst P ks := by
   unfold ghRun
   rw [eager_bad_eq]
@@ -955,7 +955,7 @@ omit [Nonempty M] in
 theorem sumQuery_le {qG qP : ℕ} (B : ROMOWPCAAdversary PK M C M R qG qP) (n : ℕ)
     (hB : ∀ pk c, (B.run pk c).IsQueryBoundBy (fun _ => 1) n) (ks : PK × SK)
     (mstar : M) (c : C) :
-    ∑' f, PMF.uniformOfFintype (M → R) f * (ghRun P B ks mstar f c).toOuterMeasure
+    ∑' f, PMF.uniformFintype (M → R) f * (ghRun P B ks mstar f c).toOuterMeasure
       {x | x.2.2 = true} ≤
     failInd P ks.2 mstar c + ((n + 1 : ℕ) : ℝ≥0∞) *
       (tReductionD P B n ks.1 c).toOuterMeasure {m' | P.dec ks.2 c = some m'} := by
@@ -963,7 +963,7 @@ theorem sumQuery_le {qG qP : ℕ} (B : ROMOWPCAAdversary PK M C M R qG qP) (n : 
   rw [eager_query_eq]
   by_cases hdec : P.dec ks.2 c = some mstar
   · exact (query_le_D P B n hB ks mstar c hdec).trans le_add_self
-  · simp only [failInd, hdec, if_false]
+  · simp only [failInd, hdec, ite_false]
     exact (le_self_add.trans_eq (toOuterMeasure_add_compl _ _)).trans le_self_add
 
 omit [Nonempty M] in
@@ -972,7 +972,7 @@ theorem game_le {qG qP : ℕ} (B : ROMOWPCAAdversary PK M C M R qG qP) (n : ℕ)
     (hB : ∀ pk c, (B.run pk c).IsQueryBoundBy (fun _ => 1) n) (ks : PK × SK) (mstar : M) :
     ((OracleAdv.run (OracleAdv.simOracle (progReal P ks) roOracle) (fullRun P B ks.1 mstar)
       ((), emptyTable)).map fun x => x.1.2).toOuterMeasure {b | b = true} ≤
-    ∑' r, PMF.uniformOfFintype R r *
+    ∑' r, PMF.uniformFintype R r *
       ((tReductionC P B ks.1 (P.enc ks.1 mstar r)).toOuterMeasure
           {m' | P.dec ks.2 (P.enc ks.1 mstar r) = some m'} +
         ((n + 1 : ℕ) : ℝ≥0∞) * worst P ks + failInd P ks.2 mstar (P.enc ks.1 mstar r) +
@@ -1000,7 +1000,7 @@ theorem tTransform_owpca_of_total {qG qP : ℕ} (B : ROMOWPCAAdversary PK M C M 
         P.corrErr + ((n + 1 : ℕ) : ℝ≥0∞) * owcpaAdvantage P (tReductionD P B n) := by
   rw [romOWPCAAdvantage, prTrue_liftPMF_toOuterMeasure, romOWPCAGame_eq, PMF.toOuterMeasure_bind_apply]
   simp only [PMF.toOuterMeasure_bind_apply]
-  calc _ ≤ ∑' ks, P.keygen ks * ∑' m, PMF.uniformOfFintype M m * ∑' r, PMF.uniformOfFintype R r *
+  calc _ ≤ ∑' ks, P.keygen ks * ∑' m, PMF.uniformFintype M m * ∑' r, PMF.uniformFintype R r *
           ((tReductionC P B ks.1 (P.enc ks.1 m r)).toOuterMeasure
               {m' | P.dec ks.2 (P.enc ks.1 m r) = some m'} +
             ((n + 1 : ℕ) : ℝ≥0∞) * worst P ks + failInd P ks.2 m (P.enc ks.1 m r) +

@@ -84,15 +84,15 @@ def decIdx (P : Scheme PK SK M C R) (sk : SK) (s : M) (c : C) : M × C :=
 /-- The transform `U̸⊥[P, H]` with implicit rejection. -/
 noncomputable def uNotBot (P : Scheme PK SK M C R) :
     KEM.Games.ROMScheme PK (SK × M) K C (M × C) K where
-  keygen := P.keygen.bind fun ks => (PMF.uniformOfFintype M).map fun s => (ks.1, (ks.2, s))
-  encaps pk := .rand (PMF.uniformOfFintype M) fun m => .rand (PMF.uniformOfFintype R) fun r =>
+  keygen := P.keygen.bind fun ks => (PMF.uniformFintype M).map fun s => (ks.1, (ks.2, s))
+  encaps pk := .rand (PMF.uniformFintype M) fun m => .rand (PMF.uniformFintype R) fun r =>
     .query (m, P.enc pk m r) fun k => .ret (k, P.enc pk m r)
   decaps sk c := .query (decIdx P sk.1 sk.2 c) fun k => .ret (some k)
 
 /-- The transform `U⊥[P, H]` with explicit rejection. -/
 noncomputable def uBot (P : Scheme PK SK M C R) : KEM.Games.ROMScheme PK SK K C (M × C) K where
   keygen := P.keygen
-  encaps pk := .rand (PMF.uniformOfFintype M) fun m => .rand (PMF.uniformOfFintype R) fun r =>
+  encaps pk := .rand (PMF.uniformFintype M) fun m => .rand (PMF.uniformFintype R) fun r =>
     .query (m, P.enc pk m r) fun k => .ret (k, P.enc pk m r)
   decaps sk c := match P.dec sk c with
     | some m => .query (m, c) fun k => .ret (some k)
@@ -119,14 +119,14 @@ noncomputable def lazyDProg {A : Type} (st : SimState M C K) (c : C) (w : K → 
     OracleAdv (M × C) Bool (A × SimState M C K) :=
   match st.LD c with
   | some k => .ret (w k, st)
-  | none => .rand (PMF.uniformOfFintype K) fun k => .ret (w k, { st with LD := Function.update st.LD c (some k) })
+  | none => .rand (PMF.uniformFintype K) fun k => .ret (w k, { st with LD := Function.update st.LD c (some k) })
 
 /-- Answer from the table indexed by `(m, c)`, sampling and recording a fresh key. -/
 noncomputable def lazyQProg {A : Type} (st : SimState M C K) (q : M × C) (w : K → A) :
     OracleAdv (M × C) Bool (A × SimState M C K) :=
   match st.LQ q with
   | some k => .ret (w k, st)
-  | none => .rand (PMF.uniformOfFintype K) fun k => .ret (w k, { st with LQ := Function.update st.LQ q (some k) })
+  | none => .rand (PMF.uniformFintype K) fun k => .ret (w k, { st with LQ := Function.update st.LQ q (some k) })
 
 /-- The simulation of the random oracle and the decapsulation oracle from the
 challenge `c*`, the key `k*` and plaintext-checking queries. -/
@@ -176,7 +176,7 @@ plaintext-checking query per random-oracle query of `B`, and outputs the message
 found to decrypt `c*` (an arbitrary message if none was found). -/
 noncomputable def uReduction {qH qD : ℕ} (B : ROMINDCCAAdversary PK K C (M × C) K qH qD) :
     OWPCAAdversary PK M C qH where
-  run pk cstar := .rand (PMF.uniformOfFintype K) fun kstar =>
+  run pk cstar := .rand (PMF.uniformFintype K) fun kstar =>
     (OracleAdv.simulate (simImpl cstar kstar) (B.run pk cstar kstar) SimState.init).bind
       fun x => .ret (x.2.found.getD (Classical.arbitrary M))
   isQueryBound pk cstar kstar := by
@@ -213,9 +213,9 @@ variable (P : Scheme PK SK M C R)
 
 /-- The joint distribution of the randomness of the IND-CCA experiment. -/
 noncomputable def setup : PMF (Draw PK SK M R K) :=
-  P.keygen.bind fun ks => (PMF.uniformOfFintype M).bind fun s =>
-    (PMF.uniformOfFintype M).bind fun m => (PMF.uniformOfFintype R).bind fun r =>
-      (PMF.uniformOfFintype K).bind fun k₀ => (PMF.uniformOfFintype K).map fun k₁ =>
+  P.keygen.bind fun ks => (PMF.uniformFintype M).bind fun s =>
+    (PMF.uniformFintype M).bind fun m => (PMF.uniformFintype R).bind fun r =>
+      (PMF.uniformFintype K).bind fun k₀ => (PMF.uniformFintype K).map fun k₁ =>
         ⟨ks.1, ks.2, s, m, r, k₀, k₁⟩
 
 /-- The challenge ciphertext of a draw. -/
@@ -275,7 +275,7 @@ theorem oFlag_map (sk : SK) (s : M) (m : M) (c : C) (v : K)
     by_cases hd : d = (m, c)
     · subst hd
       simp [oFlag, romCCAOracle, roOracle, PMF.pure_map]
-    · simp only [oFlag, romCCAOracle, hd, if_false, PMF.map_comp]
+    · simp only [oFlag, romCCAOracle, hd, ite_false, PMF.map_comp]
       rw [← roOracle_update_ne _ _ _ _ hd, PMF.map_comp]
       rfl
   | inr c' =>
@@ -283,7 +283,7 @@ theorem oFlag_map (sk : SK) (s : M) (m : M) (c : C) (v : K)
     · subst hc
       simp [oFlag, romCCAOracle, PMF.pure_map]
     · have hne : decIdx P sk s c' ≠ (m, c) := fun h => hc (congrArg Prod.snd h)
-      simp only [oFlag, romCCAOracle, hc, if_false, PMF.map_comp, uNotBot, OracleAdv.run_query,
+      simp only [oFlag, romCCAOracle, hc, ite_false, PMF.map_comp, uNotBot, OracleAdv.run_query,
         OracleAdv.run_ret]
       rw [← roOracle_update_ne _ _ _ _ hne]
       rw [show (fun x : K × (M × C → Option K) => PMF.pure (some x.1, x.2)) =
@@ -386,7 +386,7 @@ noncomputable def lazyD {A : Type} (st : SimState M C K) (c : C) (w : K → A) (
     PMF (A × (SimState M C K × G)) :=
   match st.LD c with
   | some k => PMF.pure (w k, (st, g))
-  | none => (PMF.uniformOfFintype K).map fun k =>
+  | none => (PMF.uniformFintype K).map fun k =>
       (w k, ({ st with LD := Function.update st.LD c (some k) }, g))
 
 /-- Answer from the table indexed by `(m, c)` with ghost state `g`. -/
@@ -394,7 +394,7 @@ noncomputable def lazyQ {A : Type} (st : SimState M C K) (q : M × C) (w : K →
     PMF (A × (SimState M C K × G)) :=
   match st.LQ q with
   | some k => PMF.pure (w k, (st, g))
-  | none => (PMF.uniformOfFintype K).map fun k =>
+  | none => (PMF.uniformFintype K).map fun k =>
       (w k, ({ st with LQ := Function.update st.LQ q (some k) }, g))
 
 /-- The re-indexed oracle with selector `sel`, challenge `c*` and key `v`: a
@@ -498,7 +498,7 @@ theorem oTwo_map_table (sk : SK) (s mstar : M) (cstar : C) (v : K)
         rfl
       · have hq : (m, c) ≠ (mstar, cstar) := fun h => hc (congrArg Prod.snd h)
         have ht : table P sk s st (m, c) = st.LD c := by simp [table, hsel]
-        simp only [oTwo, oFlag, selIdx, hsel, decide_true, if_true, hc, if_false, hq]
+        simp only [oTwo, oFlag, selIdx, hsel, decide_true, ite_true, hc, ite_false, hq]
         unfold lazyD roOracle
         rw [ht]
         cases st.LD c with
@@ -512,7 +512,7 @@ theorem oTwo_map_table (sk : SK) (s mstar : M) (cstar : C) (v : K)
     · have hq : (m, c) ≠ (mstar, cstar) := by
         rintro ⟨rfl, rfl⟩; exact hsel (by rw [hdec, Option.getD_some])
       have ht : table P sk s st (m, c) = st.LQ (m, c) := by simp [table, hsel]
-      simp only [oTwo, oFlag, selIdx, hsel, decide_false, Bool.false_eq_true, if_false, hq]
+      simp only [oTwo, oFlag, selIdx, hsel, decide_false, Bool.false_eq_true, ite_false, hq]
       unfold lazyQ roOracle
       rw [ht]
       cases st.LQ (m, c) with
@@ -525,7 +525,7 @@ theorem oTwo_map_table (sk : SK) (s mstar : M) (cstar : C) (v : K)
     by_cases hc : c = cstar
     · subst hc; simp [oTwo, oFlag, PMF.pure_map]
     · have ht : table P sk s st (decIdx P sk s c) = st.LD c := by simp [table, decIdx]
-      simp only [oTwo, oFlag, hc, if_false]
+      simp only [oTwo, oFlag, hc, ite_false]
       unfold lazyD roOracle
       rw [ht]
       cases st.LD c with
@@ -709,7 +709,7 @@ most `n` random-oracle queries queries the oracle at `s` with probability at mos
 theorem tsum_bad_le (sel : M × C → Bool) (cstar : C) (v : K)
     {α : Type} (A : OracleAdv ((M × C) ⊕ C) (K ⊕ Option K) α) (n : ℕ)
     (hA : A.IsQueryBoundBy costH n) :
-    ∑' s, PMF.uniformOfFintype M s *
+    ∑' s, PMF.uniformFintype M s *
       (OracleAdv.run (oTwo (badUpd s) sel cstar v) A (SimState.init, false)).toOuterMeasure
         {y | y.2.2 = true} ≤ (n : ℝ≥0∞) / Fintype.card M := by
   classical
@@ -722,7 +722,7 @@ theorem tsum_bad_le (sel : M × C → Bool) (cstar : C) (v : K)
     by_cases h : s ∈ y.2.2 <;> simp [Set.indicator, h, p]
   simp_rw [hs, ← ENNReal.tsum_mul_left]
   rw [ENNReal.tsum_comm]
-  calc ∑' y, ∑' s, PMF.uniformOfFintype M s * (p y * (if s ∈ y.2.2 then 1 else 0))
+  calc ∑' y, ∑' s, PMF.uniformFintype M s * (p y * (if s ∈ y.2.2 then 1 else 0))
       ≤ ∑' y, p y * ((n : ℝ≥0∞) / Fintype.card M) := by
         refine ENNReal.tsum_le_tsum fun y => ?_
         by_cases hy : p y = 0
@@ -730,17 +730,17 @@ theorem tsum_bad_le (sel : M × C → Bool) (cstar : C) (v : K)
         have hlen : y.2.2.length ≤ n := by
           simpa [SimState.init] using length_log_le_of_mem_support sel cstar v A n hA
             SimState.init [] y ((PMF.mem_support_iff _ _).mpr hy)
-        have hcard : ∑' s, PMF.uniformOfFintype M s * (if s ∈ y.2.2 then 1 else 0) ≤
+        have hcard : ∑' s, PMF.uniformFintype M s * (if s ∈ y.2.2 then 1 else 0) ≤
             (n : ℝ≥0∞) / Fintype.card M := by
           rw [tsum_fintype]
-          simp only [PMF.uniformOfFintype_apply, mul_ite, mul_one, mul_zero]
+          simp only [PMF.uniformFintype_apply, mul_ite, mul_one, mul_zero]
           rw [Finset.sum_ite, Finset.sum_const_zero, add_zero, Finset.sum_const, nsmul_eq_mul,
             ENNReal.div_eq_inv_mul, mul_comm]
           gcongr
           exact (Finset.card_le_card fun s hs => by simpa using hs).trans
             ((List.toFinset_card_le _).trans hlen)
-        calc ∑' s, PMF.uniformOfFintype M s * (p y * (if s ∈ y.2.2 then 1 else 0))
-            = p y * ∑' s, PMF.uniformOfFintype M s * (if s ∈ y.2.2 then 1 else 0) := by
+        calc ∑' s, PMF.uniformFintype M s * (p y * (if s ∈ y.2.2 then 1 else 0))
+            = p y * ∑' s, PMF.uniformFintype M s * (if s ∈ y.2.2 then 1 else 0) := by
               rw [← ENNReal.tsum_mul_left]; exact tsum_congr fun s => by ring
           _ ≤ _ := by gcongr
     _ = _ := by rw [ENNReal.tsum_mul_right, PMF.tsum_coe, one_mul]
@@ -869,9 +869,9 @@ theorem flag_le (sk : SK) (s m : M) (c : C) (v : K)
         {y | y.2.2 = true} := by
   by_cases hdec : P.dec sk c = some m
   swap
-  · simp only [failInd, hdec, if_false]
+  · simp only [failInd, hdec, ite_false]
     exact (le_self_add.trans_eq (toOuterMeasure_add_compl _ _)).trans (le_add_right le_self_add)
-  simp only [failInd, hdec, if_true, zero_add]
+  simp only [failInd, hdec, ite_true, zero_add]
   -- re-indexing
   have h1 : (OracleAdv.run (oFlag P sk s (m, c) v) A (emptyTable, false)).toOuterMeasure
       {y | y.2.2 = true} =
@@ -943,7 +943,7 @@ theorem tsum_map_mul {α β : Type} (p : PMF α) (g : α → β) (F : β → ℝ
   rw [PMF.map, tsum_bind_mul]
   refine tsum_congr fun a => congrArg _ ?_
   simp only [Function.comp_apply, PMF.pure_apply, ite_mul, one_mul, zero_mul]
-  rw [tsum_eq_single (g a) fun b hb => if_neg hb, if_pos rfl]
+  rw [tsum_eq_single (g a) fun b hb => ite_eq_right hb, ite_eq_left rfl]
 
 omit [Fintype R] [Nonempty R] [Fintype M] [Nonempty M] [DecidableEq M] [DecidableEq C]
   [Fintype K] [Nonempty K] in
@@ -962,9 +962,9 @@ variable (P : Scheme PK SK M C R)
 
 omit [DecidableEq M] [DecidableEq C] in
 theorem tsum_setup_mul (F : Draw PK SK M R K → ℝ≥0∞) :
-    ∑' x, setup P x * F x = ∑' ks, P.keygen ks * ∑' s, PMF.uniformOfFintype M s *
-      ∑' m, PMF.uniformOfFintype M m * ∑' r, PMF.uniformOfFintype R r *
-        ∑' k₀, PMF.uniformOfFintype K k₀ * ∑' k₁, PMF.uniformOfFintype K k₁ *
+    ∑' x, setup P x * F x = ∑' ks, P.keygen ks * ∑' s, PMF.uniformFintype M s *
+      ∑' m, PMF.uniformFintype M m * ∑' r, PMF.uniformFintype R r *
+        ∑' k₀, PMF.uniformFintype K k₀ * ∑' k₁, PMF.uniformFintype K k₁ *
           F ⟨ks.1, ks.2, s, m, r, k₀, k₁⟩ := by
   simp only [setup, tsum_bind_mul, tsum_map_mul]
 
@@ -975,7 +975,7 @@ theorem uReduction_prob {qH qD : ℕ} (B : ROMINDCCAAdversary PK K C (M × C) K 
     (sk : SK) (c : C) :
     ((OracleAdv.run (pcoOracle P sk) ((uReduction B).run pk c) ()).map
       fun x => P.pco sk x.1 c).toOuterMeasure {b | b = true} =
-    ∑' k, PMF.uniformOfFintype K k *
+    ∑' k, PMF.uniformFintype K k *
       (OracleAdv.run (OracleAdv.simOracle (simImpl c k) (pcoOracle P sk)) (B.run pk c k)
         (SimState.init, ())).toOuterMeasure
           {y | P.pco sk (y.2.1.found.getD (Classical.arbitrary M)) c = true} := by
@@ -994,8 +994,8 @@ theorem uReduction_prob {qH qD : ℕ} (B : ROMINDCCAAdversary PK K C (M × C) K 
 
 theorem owpcaAdvantage_uReduction {qH qD : ℕ} (B : ROMINDCCAAdversary PK K C (M × C) K qH qD) :
     owpcaAdvantage P (uReduction B) =
-      ∑' ks, P.keygen ks * ∑' m, PMF.uniformOfFintype M m * ∑' r, PMF.uniformOfFintype R r *
-        ∑' k, PMF.uniformOfFintype K k *
+      ∑' ks, P.keygen ks * ∑' m, PMF.uniformFintype M m * ∑' r, PMF.uniformFintype R r *
+        ∑' k, PMF.uniformFintype K k *
           (OracleAdv.run (OracleAdv.simOracle (simImpl (P.enc ks.1 m r) k) (pcoOracle P ks.2))
             (B.run ks.1 (P.enc ks.1 m r) k) (SimState.init, ())).toOuterMeasure
               {y | P.pco ks.2 (y.2.1.found.getD (Classical.arbitrary M)) (P.enc ks.1 m r) = true} := by
@@ -1007,8 +1007,8 @@ theorem owpcaAdvantage_uReduction {qH qD : ℕ} (B : ROMINDCCAAdversary PK K C (
 
 omit [DecidableEq C] in
 theorem corrErr_eq :
-    P.corrErr = ∑' ks, P.keygen ks * ∑' m, PMF.uniformOfFintype M m *
-      ∑' r, PMF.uniformOfFintype R r *
+    P.corrErr = ∑' ks, P.keygen ks * ∑' m, PMF.uniformFintype M m *
+      ∑' r, PMF.uniformFintype R r *
         failInd P ks.2 m (P.enc ks.1 m r) := by
   unfold PKE.Games.Scheme.corrErr PKE.Games.Scheme.failProb
   refine tsum_congr fun ks => congrArg _ (tsum_congr fun m => congrArg _ ?_)
@@ -1065,13 +1065,13 @@ theorem uNotBot_indcca {qH qD : ℕ} (P : Scheme PK SK M C R)
         calc _ ≤ ∑' ks, P.keygen ks * ((qH : ℝ≥0∞) / Fintype.card M) := by
               refine ENNReal.tsum_le_tsum fun ks => mul_le_mul_right ?_ _
               rw [tsum_mul_comm]
-              calc _ ≤ ∑' m, PMF.uniformOfFintype M m * ((qH : ℝ≥0∞) / Fintype.card M) := by
+              calc _ ≤ ∑' m, PMF.uniformFintype M m * ((qH : ℝ≥0∞) / Fintype.card M) := by
                     refine ENNReal.tsum_le_tsum fun m => mul_le_mul_right ?_ _
                     rw [tsum_mul_comm]
-                    calc _ ≤ ∑' r, PMF.uniformOfFintype R r * ((qH : ℝ≥0∞) / Fintype.card M) := by
+                    calc _ ≤ ∑' r, PMF.uniformFintype R r * ((qH : ℝ≥0∞) / Fintype.card M) := by
                           refine ENNReal.tsum_le_tsum fun r => mul_le_mul_right ?_ _
                           rw [tsum_mul_comm]
-                          calc _ ≤ ∑' k₀, PMF.uniformOfFintype K k₀ *
+                          calc _ ≤ ∑' k₀, PMF.uniformFintype K k₀ *
                                 ((qH : ℝ≥0∞) / Fintype.card M) := by
                                 refine ENNReal.tsum_le_tsum fun k₀ => mul_le_mul_right ?_ _
                                 exact tsum_bad_le _ _ _ _ qH (B.isQueryBoundH _ _ _)

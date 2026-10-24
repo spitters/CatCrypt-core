@@ -83,7 +83,7 @@ namespace CatCrypt.Crypto.BadEvent
 open CatCrypt.Core CatCrypt.Prob CatCrypt.Crypto
 open CatCrypt.Crypto.HybridArgument
 open scoped ENNReal
-open CatCrypt.Unary Std.Internal.Do
+open CatCrypt.Unary Std.WP
 
 /-! ## Identical-Until-Bad
 
@@ -408,7 +408,7 @@ theorem exists_noFail_tsub_le {α : Type} (G₀ G₁ : SPComp α) (D : α → SP
     · have hv : prTrue (D a) h' ≤ 1 := prTrue_le_one _ _
       simp only [v, e, hA]
       by_cases hle : (G₁ h₀) (some (a, h')) ≤ (G₀ h₀) (some (a, h'))
-      · simp only [hle, if_true, mul_one]
+      · simp only [hle, ite_true, mul_one]
         obtain ⟨δ, hδ⟩ := exists_add_of_le hle
         rw [hδ, add_mul]
         calc (G₁ h₀) (some (a, h')) * prTrue (D a) h' + δ * prTrue (D a) h' +
@@ -417,7 +417,7 @@ theorem exists_noFail_tsub_le {α : Type} (G₀ G₁ : SPComp α) (D : α → SP
               (G₁ h₀) (some (a, h')) := by
               gcongr; exact mul_le_of_le_one_right zero_le hv
           _ = _ := by ring
-      · simp only [hle, if_false, mul_zero, add_zero]
+      · simp only [hle, ite_false, mul_zero, add_zero]
         exact mul_le_mul_left (le_of_lt (not_le.mp hle)) _
   have hsum := ENNReal.tsum_le_tsum hpt
   rw [ENNReal.tsum_add, ENNReal.tsum_add] at hsum
@@ -499,7 +499,7 @@ theorem prTrue_map_fst_bind_le {α : Type} (G₀b G₁b : SPComp (α × Bool)) (
   · simp only
     rw [hagree a h']
     exact le_add_self
-  · simp only [prTrue_spcomp_pure, if_true, mul_one]
+  · simp only [prTrue_spcomp_pure, ite_true, mul_one]
     exact le_add_right (mul_le_of_le_one_right zero_le (prTrue_le_one _ _))
 
 /-- Advantage bound from flagged games, unbundled: if `G₀ = map fst G₀b`,
@@ -679,8 +679,8 @@ theorem prTrue_union_bound (bad₁ bad₂ : SPComp Bool)
     simp only [leanOrder_rel_dual_iff, OrderDual.ofDual_toDual]
     calc _ ≤ wpE bad₁ (fun b _ => (if b then 1 else 0) +
           wpE bad₂ (fun b _ => if b then (1 : ℝ≥0∞) else 0) Heap.empty) s := by
+          erw [wpE_bind]
           refine wpE_mono bad₁ (fun b h' => ?_) s
-          simp only [SPCompU.wp_eq, OrderDual.ofDual_toDual, wpEF, zero_mul, add_zero]
           change wpE (SPComp.bind bad₂ fun b₂ => SPComp.pure (b || b₂)) _ h' ≤ _
           rw [wpE_bind]
           cases b

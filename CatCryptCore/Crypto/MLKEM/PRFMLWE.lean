@@ -251,12 +251,12 @@ theorem redProgK_U_dependsOn (A : KEMQAdv (m₁ + m₂) m₃ n w q k c a PK C K)
       Matrix (Fin (((m₁ + m₂) + m₃) * n * ancW c k (2 * w)))
         (Fin (((m₁ + m₂) + m₃) * n * ancW c k (2 * w))) ℂ)) := by
   by_cases hi : (i : ℕ) ≤ x.2.2.2
-  · simp only [redProgK, padQ, dif_pos hi, queryPrefix, toQAdv]
+  · simp only [redProgK, padQ, dite_eq_left hi, queryPrefix, toQAdv]
     exact (flatten_family_dependsOn (fun Hq => decapsHq eC eKa Hq cst)
       (readsOne_decapsHq eC eKa cst) k (fun _ => (A.run pk cst h).toMRH)
       (A.run pk cst h).rounds 0 (fun _ => rfl) (fun _ => EntriesDependOnAtMost.const 0 _)
       (fun _ _ => EntriesDependOnAtMost.const 0 _) _).mono (by omega)
-  · simp only [redProgK, padQ, dif_neg hi]
+  · simp only [redProgK, padQ, dite_eq_right hi]
     exact EntriesDependOnAtMost.const k _
 
 theorem redProgK_init (A : KEMQAdv (m₁ + m₂) m₃ n w q k c a PK C K) (pk : PK) (cst : C)
@@ -435,10 +435,10 @@ theorem kWiseInvariant_runF_Hq (G : Fin m₁ → Fin n) (J : Fin m₂ → Fin n)
           (auxOracleF eD kg enc dec eK hpk eG eJ eKR F pk Hq G J T z))).re := by
     funext Hq
     rw [Finset.sum_eq_single (κ Hq)]
-    · rw [if_pos rfl, one_mul, ← prOut_eq_ofReal_re]
+    · rw [ite_eq_left rfl, one_mul, ← prOut_eq_ofReal_re]
       rfl
     · intro h _ hh
-      rw [if_neg (Ne.symm hh), zero_mul, Complex.zero_re, ENNReal.ofReal_zero]
+      rw [ite_eq_right (Ne.symm hh), zero_mul, Complex.zero_re, ENNReal.ofReal_zero]
     · intro hn
       exact absurd (Finset.mem_univ _) hn
   rw [e]

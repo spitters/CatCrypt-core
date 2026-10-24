@@ -172,7 +172,7 @@ theorem measChain_branch (o : Matrix.unitaryGroup (Fin d) ℂ) (M : QComp d α)
     | succ q =>
       simp only [measChain, simOp, qbind_unit_branch]
       rw [qbind_branch_of_single _ _ a a]
-      · simp only [qbind_unit_branch, qpure_branch_apply, if_true,
+      · simp only [qbind_unit_branch, qpure_branch_apply, ite_true,
           oracleChain_unitaryChannel_branch, unitaryChannel_branch_apply, hM,
           conjTranspose_mul, Matrix.mul_assoc]
       · intro a' ha'
@@ -281,7 +281,7 @@ theorem nrm_sq_le_card_mul_sum_simOp {o g P F : Matrix (Fin d) (Fin d) ℂ}
   have hdec : (F * P * chainOp g q U) *ᵥ ψ =
       e none + ∑ i : Fin q, (e (some (i, false)) - e (some (i, true))) := by
     rw [h1, add_mulVec, sum_mulVec]
-    simp only [sub_mulVec, he, mrSlot, mrKeep, Bool.false_eq_true, if_false, if_true]
+    simp only [sub_mulVec, he, mrSlot, mrKeep, Bool.false_eq_true, ite_false, ite_true]
   have hn : nrm ((F * P * chainOp g q U) *ᵥ ψ) ≤ ∑ t, nrm (e t) := by
     rw [hdec, Fintype.sum_option, Fintype.sum_prod_type]
     simp only [Fintype.sum_bool]
@@ -364,7 +364,7 @@ theorem outRun_branch (A : QAdv m n w q) (G : Fin m → Fin n) (x₀ : Fin m)
         (A.final * projS m n w {x₀} * runOp A G)ᴴ := by
   unfold outRun
   rw [qbind_unit_branch, qbind_branch_of_single _ _ _ x₀, qbind_branch_of_single _ _ _ true]
-  · rw [qpure_branch_apply, if_pos rfl]
+  · rw [qpure_branch_apply, ite_eq_left rfl]
     unfold oracleQ runOp QAdv.measure
     rw [measProj_branch_true, measX_branch, oracleChain_unitaryChannel_branch]
     simp only [conjTranspose_mul, A.final_conjTranspose, projS_conjTranspose, Matrix.mul_assoc]
@@ -397,7 +397,7 @@ theorem simRun_branch (A : QAdv m n w q) (H : Fin m → Fin n) (θ : Fin n) (x�
   unfold simRun
   rw [qbind_branch_of_single _ _ _ x₀, qbind_branch_of_single _ _ _ x₀,
     qbind_branch_of_single _ _ _ true]
-  · rw [qpure_branch_apply, if_pos rfl, hc]
+  · rw [qpure_branch_apply, ite_eq_left rfl, hc]
     unfold QAdv.measure
     rw [measProj_branch_true, measX_branch]
     simp only [conjTranspose_mul, A.final_conjTranspose, projS_conjTranspose, Matrix.mul_assoc]

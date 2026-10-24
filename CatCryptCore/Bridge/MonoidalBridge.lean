@@ -147,16 +147,16 @@ noncomputable def tensorAppendIso :
     funext h k
     simp only [pkg_comp_apply, pkg_id_apply, appendToTensor, tensorToAppend]
     by_cases hk : k.val < I.ops.length
-    · exact (dif_pos hk).trans (castKl'_castKl'_symm _ _ _)
+    · exact (dite_eq_left hk).trans (castKl'_castKl'_symm _ _ _)
     · have hval : I.ops.length + (k.val - I.ops.length) = k.val := by omega
-      exact (dif_neg hk).trans
+      exact (dite_eq_right hk).trans
         ((castKl'_trans _ _ _).trans (castKl'_dep_fn (Fin.ext hval) h _))
   inv_hom_id := by
     funext h k
     simp only [pkg_comp_apply, pkg_id_apply, appendToTensor, tensorToAppend]
     cases k with
     | inl i =>
-      exact (congrArg (castKl' _) (dif_pos i.isLt)).trans (castKl'_castKl'_symm _ _ _)
+      exact (congrArg (castKl' _) (dite_eq_left i.isLt)).trans (castKl'_castKl'_symm _ _ _)
     | inr j =>
       -- The elaborator cannot infer the `Fin` term for `Fin.ext` here;
       -- supply it explicitly. The Fin equality transports the chained
@@ -177,7 +177,7 @@ noncomputable def tensorAppendIso :
         subst ha
         exact castKl'_castKl'_symm _ _ _
       exact (congrArg (castKl' _)
-        (dif_neg (show ¬(I.ops.length + j.val < I.ops.length) by omega))).trans
+        (dite_eq_right (show ¬(I.ops.length + j.val < I.ops.length) by omega))).trans
         (key _ _ _ hval)
 
 /-! ## Unit Correspondence -/

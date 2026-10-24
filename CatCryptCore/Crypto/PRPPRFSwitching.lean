@@ -70,41 +70,41 @@ theorem card_usedAnswers_le (t : List (D × R)) : (usedAnswers t).card ≤ t.len
 /-- Uniform distribution on the complement of `u`, and on all of `R` when the
 complement is empty. -/
 noncomputable def freshDist (u : Finset R) : PMF R :=
-  if h : uᶜ.Nonempty then PMF.uniformOfFinset uᶜ h else PMF.uniformOfFintype R
+  if h : uᶜ.Nonempty then PMF.uniformFinset uᶜ h else PMF.uniformFintype R
 
 /-- Sampling uniformly from `R` and resampling from the complement of `u` when
 the sample lies in `u` is sampling from `freshDist u`. -/
 theorem uniform_bind_resample (u : Finset R) :
-    (PMF.uniformOfFintype R).bind (fun r => if r ∈ u then freshDist u else PMF.pure r) =
+    (PMF.uniformFintype R).bind (fun r => if r ∈ u then freshDist u else PMF.pure r) =
       freshDist u := by
   by_cases hc : uᶜ.Nonempty
   · ext x
-    simp only [PMF.bind_apply, PMF.uniformOfFintype_apply, freshDist, dif_pos hc, tsum_fintype,
-      ← Finset.mul_sum, apply_ite (fun p : PMF R => p x), PMF.uniformOfFinset_apply,
+    simp only [PMF.bind_apply, PMF.uniformFintype_apply, freshDist, dite_eq_left hc, tsum_fintype,
+      ← Finset.mul_sum, apply_ite (fun p : PMF R => p x), PMF.uniformFinset_apply,
       PMF.pure_apply, Finset.mem_compl]
     by_cases hx : x ∈ u
-    · rw [if_neg (by simpa using hx), Finset.sum_eq_zero, mul_zero]
+    · rw [ite_eq_right (by simpa using hx), Finset.sum_eq_zero, mul_zero]
       intro i _
       by_cases hi : i ∈ u
       · simp [hi]
-      · simp only [hi, if_false]
-        rw [if_neg (by rintro rfl; exact hi hx)]
+      · simp only [hi, ite_false]
+        rw [ite_eq_right (by rintro rfl; exact hi hx)]
     · have hcu : uᶜ.card + u.card = Fintype.card R := by
         rw [Finset.card_compl]; have := Finset.card_le_univ u; omega
       have hc0 : (uᶜ.card : ℝ≥0∞) ≠ 0 := by exact_mod_cast hc.card_pos.ne'
       have hN0 : (Fintype.card R : ℝ≥0∞) ≠ 0 := by exact_mod_cast Fintype.card_ne_zero
-      rw [if_pos (by simpa using hx), Finset.sum_ite]
+      rw [ite_eq_left (by simpa using hx), Finset.sum_ite]
       simp only [Finset.sum_const, Finset.filter_mem_eq_inter, Finset.univ_inter]
-      rw [Finset.sum_eq_single_of_mem x, if_pos rfl, nsmul_eq_mul,
+      rw [Finset.sum_eq_single_of_mem x, ite_eq_left rfl, nsmul_eq_mul,
         ← ENNReal.mul_inv_cancel hc0 (ENNReal.natCast_ne_top _), ← add_mul, ← Nat.cast_add,
         add_comm u.card, hcu, ← mul_assoc, ENNReal.inv_mul_cancel hN0 (ENNReal.natCast_ne_top _),
         one_mul]
       · simpa using hx
-      · exact fun b _ hb => if_neg (Ne.symm hb)
+      · exact fun b _ hb => ite_eq_right (Ne.symm hb)
   · have hall : ∀ r, r ∈ u := by
       intro r; by_contra hr
       exact hc ⟨r, Finset.mem_compl.mpr hr⟩
-    simp only [hall, if_true, PMF.bind_const]
+    simp only [hall, ite_true, PMF.bind_const]
 
 /-! ## Lazily sampled oracles -/
 
@@ -114,7 +114,7 @@ records it. -/
 noncomputable def rfOracle (t : List (D × R)) (d : D) : PMF (R × List (D × R)) :=
   match List.lookup d t with
   | some r => PMF.pure (r, t)
-  | none => (PMF.uniformOfFintype R).map fun r => (r, (d, r) :: t)
+  | none => (PMF.uniformFintype R).map fun r => (r, (d, r) :: t)
 
 /-- Lazily sampled random injection (a random permutation when `D = R`) with
 the table as state: a recorded query returns its recorded answer; a fresh query
@@ -130,7 +130,7 @@ noncomputable def rfFlagOracle (s : List (D × R) × Bool) (d : D) :
     PMF (R × (List (D × R) × Bool)) :=
   match List.lookup d s.1 with
   | some r => PMF.pure (r, s)
-  | none => (PMF.uniformOfFintype R).map fun r =>
+  | none => (PMF.uniformFintype R).map fun r =>
       (r, ((d, r) :: s.1, s.2 || decide (r ∈ usedAnswers s.1)))
 
 /-- `rpOracle` in resampling form with a flag: a fresh query samples a uniform
@@ -140,7 +140,7 @@ noncomputable def rpFlagOracle (s : List (D × R) × Bool) (d : D) :
     PMF (R × (List (D × R) × Bool)) :=
   match List.lookup d s.1 with
   | some r => PMF.pure (r, s)
-  | none => (PMF.uniformOfFintype R).bind fun r =>
+  | none => (PMF.uniformFintype R).bind fun r =>
       if r ∈ usedAnswers s.1 then
         (freshDist (usedAnswers s.1)).map fun r' => (r', ((d, r') :: s.1, true))
       else PMF.pure (r, ((d, r) :: s.1, s.2))
@@ -234,17 +234,17 @@ theorem run_rfFlagOracle_flag_le (A : OracleAdv D R α) (n : ℕ) (hA : A.IsQuer
     | none =>
       simp only [PMF.bind_map, Function.comp_def, Bool.false_or]
       rw [PMF.toOuterMeasure_bind_apply, tsum_fintype]
-      simp only [PMF.uniformOfFintype_apply]
+      simp only [PMF.uniformFintype_apply]
       set B : ℝ≥0∞ := ((∑ i ∈ Finset.range n, ((t.length + 1) + i) : ℕ) : ℝ≥0∞) / N
       have hterm : ∀ r, (OracleAdv.run rfFlagOracle (k r)
           ((d, r) :: t, decide (r ∈ usedAnswers t))).toOuterMeasure {x | x.2.2 = true} ≤
           (if r ∈ usedAnswers t then 1 else 0) + B := by
         intro r
         by_cases hr : r ∈ usedAnswers t
-        · simp only [hr, decide_true, if_true]
+        · simp only [hr, decide_true, ite_true]
           exact ((MeasureTheory.measure_mono (Set.subset_univ _)).trans_eq
             ((PMF.toOuterMeasure_apply_eq_one_iff _ _).mpr (Set.subset_univ _))).trans le_self_add
-        · simp only [hr, decide_false, if_false, zero_add]
+        · simp only [hr, decide_false, ite_false, zero_add]
           have h := ih r n (hk r) ((d, r) :: t)
           rwa [List.length_cons] at h
       have hN0 : N ≠ 0 := by simp [N, Fintype.card_ne_zero]
@@ -279,7 +279,7 @@ variable {K : Type} [Fintype K] [Nonempty K]
 
 /-- Real game: sample a key once, then run `A` against `F k`. -/
 noncomputable def realGame (F : K → D → R) (A : OracleAdv D R Bool) : SPComp Bool :=
-  liftPMF ((PMF.uniformOfFintype K).bind fun k =>
+  liftPMF ((PMF.uniformFintype K).bind fun k =>
     (OracleAdv.run (keyedOracle F k) A ()).map Prod.fst)
 
 /-- Ideal PRF game: run `A` against the lazily sampled random function. -/
@@ -331,7 +331,7 @@ theorem tsum_ite_map_some {β γ : Type} (p : PMF β) (f : β → γ) (P : γ �
   simp only [h]
   rw [ENNReal.tsum_comm]
   refine tsum_congr fun x => ?_
-  rw [tsum_eq_single (f x) (fun y hy => if_neg fun h' => hy h'.2)]
+  rw [tsum_eq_single (f x) (fun y hy => ite_eq_right fun h' => hy h'.2)]
   simp [Set.indicator]
 
 omit [DecidableEq D] [DecidableEq R] [Fintype R] [Nonempty R] in
@@ -405,7 +405,7 @@ theorem RF_RP_Advantage_le (A : OracleAdv D R Bool) (q : ℕ) (hA : A.IsQueryBou
     | true =>
       have hne : some (b, h') ≠ some (a, Heap.empty.set flagLoc true) := by
         grind [Heap.get_set_same, Heap.get_set_other]
-      simp only [hne, if_false]
+      simp only [hne, ite_false]
   · rw [prEventComp_flagGame]
     refine (run_rfFlagOracle_flag_le A q hA []).trans_eq ?_
     simp [CatCrypt.Prob.BirthdayBound.gauss_sum_nat]

@@ -516,7 +516,7 @@ theorem hsim_hRcv (hA : A.toAdversary.OutputBound m) (f : BlockDom Tx Hash np Hz
       simp only [hRcv, xRcv, XSt.rcv, ht, hc] at hH ⊢
       exact ⟨rfl, ⟨hH, hI.tbl⟩, fun _ hb => Or.inl hb⟩
     · intro hH
-      simp only [hRcv, xRcv, XSt.rcv, ht, hc, Bool.not_true, Bool.false_eq_true, if_false,
+      simp only [hRcv, xRcv, XSt.rcv, ht, hc, Bool.not_true, Bool.false_eq_true, ite_false,
         OracleAdv.evalOn_bind, OracleAdv.evalOn_ret] at hH ⊢
       exact ⟨rfl, hInv_corrupt IP h0 GB U L A m f x _ tbl _ _ _ hI rfl
         ((outFilter_length_le _ _ _ _ _ _).trans
@@ -578,14 +578,14 @@ theorem hsim_hBake (hA : A.toAdversary.OutputBound m) (f : BlockDom Tx Hash np H
             have hb := (U L p).best_chain_in_all _ (x.t_now - 1) t b (by rw [hcb]; simp)
             exact hloc b (List.mem_filter.1 hb).1
         intro hH
-        simp only [hBake, xBake, XSt.bake, ht, hc, hw, hbest, hhead, Bool.not_false, if_true,
+        simp only [hBake, xBake, XSt.bake, ht, hc, hw, hbest, hhead, Bool.not_false, ite_true,
           OracleAdv.evalOn_query, OracleAdv.evalOn_ret] at hH ⊢
         exact ⟨trivial, hInv_honestBake IP h0 GB U L A f x tbl p _ _ hI hH⟩
       · intro hH
-        simp only [hBake, xBake, XSt.bake, ht, hc, hw, Bool.not_false, if_true] at hH ⊢
+        simp only [hBake, xBake, XSt.bake, ht, hc, hw, Bool.not_false, ite_true] at hH ⊢
         exact ⟨rfl, ⟨hH, hI.tbl⟩, fun _ hb => Or.inl hb⟩
     · intro hH
-      simp only [hBake, xBake, XSt.bake, ht, hc, Bool.not_true, Bool.false_eq_true, if_false,
+      simp only [hBake, xBake, XSt.bake, ht, hc, Bool.not_true, Bool.false_eq_true, ite_false,
         OracleAdv.evalOn_bind, OracleAdv.evalOn_ret] at hH ⊢
       exact ⟨rfl, hInv_corrupt IP h0 GB U L A m f x _ tbl _ _ _ hI rfl
         ((outFilter_length_le _ _ _ _ _ _).trans

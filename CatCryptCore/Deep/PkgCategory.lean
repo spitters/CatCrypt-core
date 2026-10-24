@@ -139,7 +139,7 @@ theorem DeepPackage.toPkgHom_id (iface : DeepInterface.{u}) :
     (DeepPackage.id iface).toPkgHom = PkgHom.id iface := by
   funext op dom codom h x handler
   simp only [DeepPackage.toPkgHom, PkgHom.id, DeepPackage.id, RawCode.evalWith]
-  exact dif_pos h
+  exact dite_eq_left h
 
 /-! ## Tensor Product of Interfaces -/
 

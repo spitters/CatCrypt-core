@@ -56,7 +56,7 @@ theorem bernoulli_apply_some (p : ℝ≥0) (hp : p ≤ 1) (b : Bool) :
   rw [bernoulli, ofPMF_apply_some, MeasureTheory.Measure.toPMF_apply,
     ProbabilityTheory.bernoulliMeasure_apply _ (MeasurableSet.singleton b)]
   cases b
-  · simp only [Set.mem_singleton_iff, Bool.true_eq_false, if_false, if_true, Bool.cond_false]
+  · simp only [Set.mem_singleton_iff, Bool.true_eq_false, ite_false, ite_true, Bool.cond_false]
     congr 1
     ext
     rw [NNReal.coe_sub hp]

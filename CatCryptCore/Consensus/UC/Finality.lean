@@ -379,7 +379,7 @@ theorem inv_step_gen (m : MSt Party Blk σT ET OT) (e : ET × GAct Party Blk) (s
     with hx
   have hlen : (tr ++ [x]).length = tr.length + 1 := by simp
   have hlast' : stAt s₀ (tr ++ [x]) (tr ++ [x]).length = x.2.2 := by
-    rw [stAt_snoc', if_neg (by simp)]
+    rw [stAt_snoc', ite_eq_right (by simp)]
   have hgold : (stAt s₀ tr tr.length).1.core = g.core := by rw [hlast]
   have hguardF : ∀ tr' : Trace (WSt Party Blk σT ET OT) (ET × GAct Party Blk) (TreeView Party Blk),
       FinTreeGuard c.T (finP c P σ d) c.Δ (suppF c)
@@ -400,9 +400,9 @@ theorem inv_step_gen (m : MSt Party Blk σT ET OT) (e : ET × GAct Party Blk) (s
     subst hfT
     have hnext : (treeNext c ST vwT P exT out ((g, sT, trT, false), tr, false) e s').2.2 = false := by
       by_contra hc
-      exact ho (by rw [treeOut, if_pos (by simpa using hc)])
+      exact ho (by rw [treeOut, ite_eq_left (by simpa using hc)])
     have hout' : treeOut c ST vwT P exT out ((g, sT, trT, false), tr, false) e s' = out s' := by
-      rw [treeOut, if_neg (by simp [hnext])]
+      rw [treeOut, ite_eq_right (by simp [hnext])]
     have hgT' : (treeF c ST vwT P exT).guard (trT ++ [(e.1, out s', s')]) = true := by
       simpa [treeNext] using hnext
     have hGT : FTreeGuard c.T P (traceOf vwT (· ∈ c.H) ST.init (trT ++ [(e.1, out s', s')])) :=
@@ -422,18 +422,18 @@ theorem inv_step_gen (m : MSt Party Blk σT ET OT) (e : ET × GAct Party Blk) (s
       · exact hv t
       · exact gstep_view _ _ _ _
     have hrun' : RunSteps c (coreAt s₀ (tr ++ [x])) := by
-      refine ⟨by rw [hcore, if_pos (Nat.zero_le _)]; exact hrun.1,
-        fun p => by rw [hcore, if_pos (Nat.zero_le _)]; exact hrun.2.1 p,
-        by rw [hcore, if_pos (Nat.zero_le _)]; exact hrun.2.2.1,
-        by rw [hcore, if_pos (Nat.zero_le _)]; exact hrun.2.2.2.1, fun t => ?_⟩
+      refine ⟨by rw [hcore, ite_eq_left (Nat.zero_le _)]; exact hrun.1,
+        fun p => by rw [hcore, ite_eq_left (Nat.zero_le _)]; exact hrun.2.1 p,
+        by rw [hcore, ite_eq_left (Nat.zero_le _)]; exact hrun.2.2.1,
+        by rw [hcore, ite_eq_left (Nat.zero_le _)]; exact hrun.2.2.2.1, fun t => ?_⟩
       rw [hcore, hcore]
       by_cases h₁ : t + 1 ≤ tr.length
-      · rw [if_pos h₁, if_pos (by omega)]; exact hrun.2.2.2.2 t
+      · rw [ite_eq_left h₁, ite_eq_left (by omega)]; exact hrun.2.2.2.2 t
       · by_cases h₂ : t = tr.length
         · subst h₂
-          rw [if_neg h₁, if_pos le_rfl]
+          rw [ite_eq_right h₁, ite_eq_left le_rfl]
           exact Or.inr ⟨e.2, vwT s', by simp [coreAt, hgold]⟩
-        · rw [if_neg h₁, if_neg (by omega)]
+        · rw [ite_eq_right h₁, ite_eq_right (by omega)]
           exact Or.inl rfl
     have hF := guard_of_live hP hset hΔ hA hLive hcut hE hv₀ hstart hGT hv' hrun'
     refine ⟨?_, hF, hlast', fun _ => ⟨hnext, hgT', ?_, hv', hrun'⟩⟩
@@ -753,7 +753,7 @@ theorem gstep_cast_avote {c : Cfg (Fin 4) (Fin 3)} {g : GCore (Fin 4) (Fin 3)}
   rw [gstep_cast]
   have hv := (hround_spec c { g with view := v }).1
   dsimp only [act]
-  rw [if_pos h]
+  rw [ite_eq_left h]
   dsimp only
   rw [hv]
 

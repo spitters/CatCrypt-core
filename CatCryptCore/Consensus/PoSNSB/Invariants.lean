@@ -154,7 +154,7 @@ theorem bake_own_msgs {p : Party} {l : LocalState Tx Hash Party}
     have := honest_not_corrupt p; rw [hh] at this; simpa using this.symm
   intro m hm r hr
   unfold party_bake_step_world
-  simp only [hl, hc, Bool.not_false, if_true]
+  simp only [hl, hc, Bool.not_false, ite_true]
   rw [mem_flood_msgs]
   exact Or.inr ⟨m, hm, r, by simpa [upd_local] using hr, rfl⟩
 

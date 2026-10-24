@@ -155,7 +155,7 @@ def attSignOutPR (ρ : G.Recovery κ rel) (t : G.Tables) (b : Bool) (m : G.Msg)
 from the state `s`: uniform values `e`, then an attempt from `D xw m e`. -/
 noncomputable def attSignPR (ρ : G.Recovery κ rel) (D : G.Sampler) (xw : G.Stmt × G.Wit)
     (s : G.Tables × Bool) (m : G.Msg) : PMF (G.Answer × (G.Tables × Bool)) :=
-  (PMF.uniformOfFintype (Fin G.μ → G.Ch)).bind fun e =>
+  (PMF.uniformFintype (Fin G.μ → G.Ch)).bind fun e =>
     (D xw m e).map (attSignOutPR ρ s.1 s.2 m e)
 
 /-- A hash query of the exempt game: the hash query of the real game, whose flag is
@@ -253,7 +253,7 @@ theorem Protocol.Attempt.vals_of_ev (a : G.Attempt) (look : G.Key → Option G.C
     (e : Fin G.μ → G.Ch) (i : Fin G.μ) (hi : G.ev i = true) :
     a.vals look e i = (look (a.key (a.vals look e) i)).getD (e i) := by
   change effVal _ a.key e i = _
-  rw [effVal_eq _ a.key a.key_causal e i, if_pos hi]
+  rw [effVal_eq _ a.key a.key_causal e i, ite_eq_left hi]
   rfl
 
 /-- The value of an entry of an attempt that is programmed or at a point undefined in
@@ -264,7 +264,7 @@ theorem Protocol.Attempt.vals_eq_of_fresh (a : G.Attempt) (look : G.Key → Opti
     a.vals look e i = e i := by
   cases hi : G.ev i
   · change effVal _ a.key e i = _
-    rw [effVal_eq _ a.key a.key_causal e i, if_neg (by simp [hi])]
+    rw [effVal_eq _ a.key a.key_causal e i, ite_eq_right (by simp [hi])]
     rfl
   · rw [a.vals_of_ev look e i hi]
     simp only [hi, Bool.not_true, Bool.false_or, Option.isNone_iff_eq_none] at h
@@ -442,10 +442,10 @@ theorem recInv_attSignOut (hrec : ρ.CompleteAt D xw) {m : G.Msg} {e : Fin G.μ 
       · exact h.mono ρ xw.1 hvis
     · have h1i := h1 i
       cases hpi : a.pub v i
-      · simp only [hpi, Bool.false_eq_true, if_false] at hi h1i
+      · simp only [hpi, Bool.false_eq_true, ite_false] at hi h1i
         rw [hi] at h1i
         exact absurd h1i (by simp)
-      · simp only [hpi, if_true, Bool.and_eq_true] at hi
+      · simp only [hpi, ite_true, Bool.and_eq_true] at hi
         obtain ⟨⟨hev, hnone⟩, hrej⟩ := hi
         have hR : ρ.R (κ.cls (a.key v i)) = true := by
           cases hc : ρ.R (κ.cls (a.key v i))
@@ -471,7 +471,7 @@ theorem recInv_attSignOut (hrec : ρ.CompleteAt D xw) {m : G.Msg} {e : Fin G.μ 
           (hpubmem _ (List.mem_append_right _
             (Protocol.Attempt.mem_entries_of (by simp [hev, hpi])))) rfl
       · have h1i := h1 i
-        simp only [hpi, Bool.false_eq_true, if_false, hsome] at h1i
+        simp only [hpi, Bool.false_eq_true, ite_false, hsome] at h1i
         exact absurd h1i (by simp)
   · change p ∈ t.rej ++ _ at hp
     rcases List.mem_append.mp hp with hp | hp
@@ -585,14 +585,14 @@ theorem run_attP_winsOrFlag_le_recR (hrec : ρ.CompleteAt D xw)
   refine run_attP_le_attPR ρ hrec A _ false false (recInv_empty ρ xw.1) _ _
     fun y t' bP' bPR' h => ?_
   by_cases hw : winsOrFlag xw.1 (y, (t', bP')) = true
-  · rw [if_pos hw, if_pos]
+  · rw [ite_eq_left hw, ite_eq_left]
     simp only [winsOrFlag, Bool.or_eq_true] at hw ⊢
     rcases hw with hw | hw
     · exact Or.inl (Or.inl hw)
     · rcases h.1 hw with h' | h'
       · exact Or.inl (Or.inr h')
       · exact Or.inr (recTest_of_recReady ρ xw.1 h')
-  · rw [if_neg hw]
+  · rw [ite_eq_right hw]
     exact zero_le
 
 /-- **Exempt touches are recoveries.** For a recovery complete at the sampler at every
@@ -633,7 +633,7 @@ def AttKeyBoundClsAtNRB {κ : G.Classes} {rel : G.Stmt → G.Wit → Prop} (ρ :
   ∀ (c : κ.ι) (m : G.Msg) (look : G.Key → Option G.Ch), B look →
     (∃ ks : List G.Key, ks.length ≤ N ∧ ∀ k, (look k).isSome → k ∈ ks) →
     ∀ (Q : G.Trace → PMF G.Key),
-    ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e * ∑' a, D xw m e a *
+    ∑' e, PMF.uniformFintype (Fin G.μ → G.Ch) e * ∑' a, D xw m e a *
       ∑ i ∈ Finset.univ.filter (fun i => κ.ecls i = c),
         (if a.charged look e i &&
             (!ρ.R (κ.ecls i) || (look (a.key (a.vals look e) i)).isSome) then
@@ -821,10 +821,10 @@ theorem recReady_traceOut_of_land (hpc : G.AttPubCausalAt D xw) {m : G.Msg}
     refine ⟨i, Finset.mem_filter.mpr ⟨Finset.mem_univ _, ?_⟩⟩
     have h1i := h1 i
     cases hpi : a.pub v i
-    · simp only [hpi, Bool.false_eq_true, if_false] at hi h1i
+    · simp only [hpi, Bool.false_eq_true, ite_false] at hi h1i
       rw [hi] at h1i
       exact absurd h1i (by simp)
-    · simp only [hpi, if_true, Bool.and_eq_true] at hi
+    · simp only [hpi, ite_true, Bool.and_eq_true] at hi
       exact ⟨rfl, hi.1.1, hi.1.2, hi.2⟩
   set j := S.min' hS with hj
   have hjS : j ∈ S := S.min'_mem hS
@@ -840,7 +840,7 @@ theorem recReady_traceOut_of_land (hpc : G.AttPubCausalAt D xw) {m : G.Msg}
       (if G.ev i then t.lookupAll else fun _ => none) (a.key v i)
     cases hev : G.ev i
     · rfl
-    · simp only [if_true]
+    · simp only [ite_true]
       refine (Protocol.lookupAll_eq_lookup fun hn => ?_).symm
       cases hr : lookupIn t.rej (a.key v i) with
       | none => rfl
@@ -848,7 +848,7 @@ theorem recReady_traceOut_of_land (hpc : G.AttPubCausalAt D xw) {m : G.Msg}
         exfalso
         cases hpi : a.pub v i
         · have h1i := h1 i
-          simp only [hpi, Bool.false_eq_true, if_false] at h1i
+          simp only [hpi, Bool.false_eq_true, ite_false] at h1i
           have : (t.lookupAll (a.key v i)).isSome = true := by
             simp [Protocol.Tables.lookupAll, Option.isNone_iff_eq_none.mp hn, hr]
           rw [this] at h1i
@@ -863,7 +863,7 @@ theorem recReady_traceOut_of_land (hpc : G.AttPubCausalAt D xw) {m : G.Msg}
   have hwj : w j = e j := by
     rw [hw, a.vals_eq_of_fresh _ e j (by rw [← hw, hkj]; simp [Option.isNone_iff_eq_none.mp hnj])]
   have h1j := h1 j
-  simp only [hpj, hevj, hnj, hrj, if_true, Bool.true_and] at h1j
+  simp only [hpj, hevj, hnj, hrj, ite_true, Bool.true_and] at h1j
   have hR : ρ.R (κ.cls (a.key v j)) = true := by
     cases hc : ρ.R (κ.cls (a.key v j))
     · exact absurd (by simp [hc]) h1j
@@ -911,7 +911,7 @@ theorem offFlag_attSignOutPR_le_land (hpc : G.AttPubCausalAt D xw) {m : G.Msg}
       exact offFlag_attSignOut_le F hFr hFf t false m e a
     | true =>
       obtain ⟨hfr, hrd⟩ := recReady_traceOut_of_land ρ hpc ha hI hf hl
-      rw [if_pos hfr, hFs _ hrd]
+      rw [ite_eq_left hfr, hFs _ hrd]
       exact (offFlag_le F _).trans (hF _)
 
 /-- **A hash query of the exempt game.** From tables satisfying the invariant and for a
@@ -959,9 +959,9 @@ theorem attSignPR_le_simSign {δ : ℝ≥0∞} (hZK : G.AttHVZKAt D xw δ)
     ∑' o, attSignPR ρ D xw (t, false) m o * offFlag F o ≤
       ∑' o, sampleVec G (simSignOut xw.1 t false m) o * F o + δ := by
   simp only [attSignPR, sampleVec, tsum_bind_mul, tsum_map_mul']
-  calc ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e * ∑' a, D xw m e a *
+  calc ∑' e, PMF.uniformFintype (Fin G.μ → G.Ch) e * ∑' a, D xw m e a *
         offFlag F (attSignOutPR ρ t false m e a)
-      ≤ ∑' e, PMF.uniformOfFintype (Fin G.μ → G.Ch) e * ∑' a, D xw m e a *
+      ≤ ∑' e, PMF.uniformFintype (Fin G.μ → G.Ch) e * ∑' a, D xw m e a *
           (if a.hidFresh t.lookup (a.vals t.lookup e) then
             F (traceOut t false m (a.trace (a.vals t.lookup e))) else 0) :=
         ENNReal.tsum_le_tsum fun e => mul_le_mul_right

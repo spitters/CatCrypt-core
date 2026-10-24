@@ -177,10 +177,10 @@ theorem pkeyOracle_apply_false_eq (kg : PMF (PK × SK)) (s : PKEYState PK SK × 
     by_cases hx : x.1 ∈ s.reg
     · simp [genStep, hx]
     · have e : genStep false s fl x = genStep true s fl x := by
-        unfold genStep; rw [if_neg hx, if_neg hx]
+        unfold genStep; rw [ite_eq_right hx, ite_eq_right hx]
       by_cases h : (r, s', false) = genStep false s fl x
-      · rw [if_pos h, if_pos (h.trans e)]
-      · rw [if_neg h, if_neg fun h' => h (h'.trans e.symm)]
+      · rw [ite_eq_left h, ite_eq_left (h.trans e)]
+      · rw [ite_eq_right h, ite_eq_right fun h' => h (h'.trans e.symm)]
   | csetpk pk => rfl
   | honpk pk => rfl
 
@@ -193,7 +193,7 @@ public keys, an adversary asking at most `g` `gen` queries and `c` `csetpk`
 queries sets the flag in game `false` with probability at most
 `(∑ i < g, (m + i + c)) / |PK|`. -/
 theorem run_pkeyOracle_flag_le (kg : PMF (PK × SK))
-    (hkg : kg.map Prod.fst = PMF.uniformOfFintype PK)
+    (hkg : kg.map Prod.fst = PMF.uniformFintype PK)
     (A : OracleAdv (PKEYQuery PK) (PK × Bool) α) (g c : ℕ) (hA : IsPKEYBound A g c)
     (s : PKEYState PK SK) :
     (OracleAdv.run (pkeyOracle kg false) A (s, false)).toOuterMeasure {x | x.2.2 = true} ≤
@@ -229,7 +229,7 @@ theorem run_pkeyOracle_flag_le (kg : PMF (PK × SK))
             ((PMF.toOuterMeasure_apply_eq_one_iff _ _).mpr (Set.subset_univ _))).trans le_self_add
         · rw [Set.indicator_of_notMem (by exact hx), zero_add]
           have h := ih (x.1, true) g c (hk _) (s.register x)
-          simp only [genStep, if_neg hx]
+          simp only [genStep, ite_eq_right hx]
           rwa [PKEYState.card_reg_register s x hx] at h
       calc ∑' x, kg x * (OracleAdv.run (pkeyOracle kg false) (k (genStep false s false x).1)
             (genStep false s false x).2).toOuterMeasure {x | x.2.2 = true}
@@ -246,7 +246,7 @@ theorem run_pkeyOracle_flag_le (kg : PMF (PK × SK))
         _ = s.reg.card / N + B := by
             have hpre : {x : PK × SK | x.1 ∈ s.reg} = Prod.fst ⁻¹' (s.reg : Set PK) := rfl
             rw [hpre, ← PMF.toOuterMeasure_map_apply, hkg,
-              PMF.toOuterMeasure_uniformOfFintype_apply]
+              PMF.toOuterMeasure_uniformFintype_apply]
             simp [N]
         _ ≤ _ := by
             rw [ENNReal.div_add_div_same, ← Nat.cast_add]
@@ -324,7 +324,7 @@ theorem two_mul_sum_range_add (g c : ℕ) :
 queries and `q_csetpk` `csetpk` queries has PKEY advantage at most
 `(q_gen (q_gen - 1) + 2 q_gen q_csetpk) / (2 |PK|)` when the public-key marginal
 of key generation is uniform. -/
-theorem pkeyQAdvantage_le (kg : PMF (PK × SK)) (hkg : kg.map Prod.fst = PMF.uniformOfFintype PK)
+theorem pkeyQAdvantage_le (kg : PMF (PK × SK)) (hkg : kg.map Prod.fst = PMF.uniformFintype PK)
     (A : OracleAdv (PKEYQuery PK) (PK × Bool) Bool) (q_gen q_csetpk : ℕ)
     (hA : IsPKEYBound A q_gen q_csetpk) :
     pkeyQAdvantage kg A ≤
@@ -347,7 +347,7 @@ theorem pkeyQAdvantage_le (kg : PMF (PK × SK)) (hkg : kg.map Prod.fst = PMF.uni
     | true =>
       have hne : some (b, h') ≠ some (a, Heap.empty.set flagLoc true) := by
         grind [Heap.get_set_same, Heap.get_set_other]
-      simp only [hne, if_false]
+      simp only [hne, ite_false]
   · rw [prEventComp_pkeyFlagGame]
     refine (run_pkeyOracle_flag_le kg hkg A q_gen q_csetpk hA PKEYState.init).trans_eq ?_
     have h0 : (PKEYState.init : PKEYState PK SK).reg.card = 0 := rfl

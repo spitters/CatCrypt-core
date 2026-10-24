@@ -194,8 +194,8 @@ theorem sigma_view_eq
   unfold sigma_real sigma_ideal sigma_uc_sim
   by_cases hR : sp.relation x w
   swap
-  · simp only [hR, if_false, SPComp.pure_bind, mapSum_inl]
-  simp only [hR, if_true]
+  · simp only [hR, ite_false, SPComp.pure_bind, mapSum_inl]
+  simp only [hR, ite_true]
   bind_vcgen_sum
   -- Commute the (pure) challenge sample past `commit` so both sides lead with
   -- `bind (sample Challenge) (fun e => …)`. This higher-order rewrite must be

@@ -211,8 +211,8 @@ private theorem summable_entry {f : α → Matrix (Fin d) (Fin d) ℂ}
 private theorem tsum_entry {f : α → Matrix (Fin d) (Fin d) ℂ}
     (hf : Summable f) (i j : Fin d) :
     (∑' a, f a) i j = ∑' a, f a i j := by
-  have h1 : (∑' a, f a) i = ∑' a, f a i := tsum_apply hf
-  have h2 : (∑' a, f a i) j = ∑' a, f a i j := tsum_apply (Pi.summable.mp hf i)
+  have h1 : (∑' a, f a) i = ∑' a, f a i := Pi.tsum_apply hf
+  have h2 : (∑' a, f a i) j = ∑' a, f a i j := Pi.tsum_apply (Pi.summable.mp hf i)
   exact (congr_fun h1 j).trans h2
 
 /-- Tsum of Hermitian matrices is Hermitian. -/

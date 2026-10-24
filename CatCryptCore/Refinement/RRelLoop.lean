@@ -149,7 +149,7 @@ theorem RRel.repeatM [Monad M] [Lean.Order.MonadTail M] [WPMonad M ps]
   induction n using Nat.strongRecOn with
   | _ n ih =>
     intro a a' hn h
-    rw [repeatM_eq_of_monadTail, repeatM_eq_of_monadTail (f := f')]
+    rw [repeatM.Internal.eq_of_monadTail, repeatM.Internal.eq_of_monadTail (f := f')]
     refine RRel.bind (hf a a' h) (fun s s' hs => ?_)
     cases hs with
     | inl hx => exact ih _ (hn ▸ hx.2) _ _ rfl hx.1

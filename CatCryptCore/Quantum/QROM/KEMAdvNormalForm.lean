@@ -393,12 +393,12 @@ theorem kr_ancProj_conj_kr_ancUnit (e : Fin (d * c) ≃ Fin d') (A B : Matrix (F
   rw [kr_conjTranspose, kr_mul, kr_mul, ancProj_conjTranspose, ancProj_mul_ancUnit]
   by_cases hy : z = y
   · subst hy
-    rw [if_pos rfl, ancUnit_mul_ancProj]
+    rw [ite_eq_left rfl, ancUnit_mul_ancProj]
     by_cases hy' : z = y'
     · subst hy'
-      rw [if_pos rfl, if_pos ⟨rfl, rfl⟩, ancUnit_self]
-    · rw [if_neg hy', if_neg fun h => hy' h.2, kr_zero_right]
-  · rw [if_neg hy, if_neg fun h => hy h.1, zero_mul, kr_zero_right]
+      rw [ite_eq_left rfl, ite_eq_left ⟨rfl, rfl⟩, ancUnit_self]
+    · rw [ite_eq_right hy', ite_eq_right fun h => hy' h.2, kr_zero_right]
+  · rw [ite_eq_right hy, ite_eq_right fun h => hy h.1, zero_mul, kr_zero_right]
 
 /-- `tr ((X ⊗ 1) ∑ y, B y ⊗ |g y⟩⟨g y|) = ∑ y, tr (X B y)`. -/
 theorem trace_kr_one_mul_sum_ancProj {ι : Type} [Fintype ι] (e : Fin (d * c) ≃ Fin d')
@@ -413,8 +413,8 @@ answering by the answer unitaries of `R` on the register. -/
 def recRound (e : Fin (d * c) ≃ Fin d') (R : ClassicalRound d c a) : ClassicalRound d' c a where
   P y := kr e 1 (ancProj y)
   P_conjTranspose y := by rw [kr_conjTranspose, conjTranspose_one, ancProj_conjTranspose]
-  P_mul_self y := by rw [kr_mul, one_mul, ancProj_mul_ancProj, if_pos rfl]
-  P_orth y y' h := by rw [kr_mul, ancProj_mul_ancProj, if_neg h, kr_zero_right]
+  P_mul_self y := by rw [kr_mul, one_mul, ancProj_mul_ancProj, ite_eq_left rfl]
+  P_orth y y' h := by rw [kr_mul, ancProj_mul_ancProj, ite_eq_right h, kr_zero_right]
   P_sum := by rw [← kr_sum_right, sum_ancProj, kr_one]
   ans k := liftU e (R.ans k)
 
@@ -435,13 +435,13 @@ theorem roundU_recRound_roundW [NeZero c] (e : Fin (d * c) ≃ Fin d') (R : Clas
   rw [hop, Finset.mul_sum, Finset.sum_mul]
   simp only [Finset.mul_sum, Finset.sum_mul, kr_ancProj_conj_kr_ancUnit]
   rw [Finset.sum_eq_single z, Finset.sum_eq_single z]
-  · rw [if_pos ⟨rfl, rfl⟩, conjTranspose_mul, R.P_conjTranspose]
+  · rw [ite_eq_left ⟨rfl, rfl⟩, conjTranspose_mul, R.P_conjTranspose]
     simp only [Matrix.mul_assoc]
   · intro y' _ hy'
-    rw [if_neg fun h => hy' h.2.symm]
+    rw [ite_eq_right fun h => hy' h.2.symm]
   · intro h; exact absurd (Finset.mem_univ z) h
   · intro y _ hy
-    exact Finset.sum_eq_zero fun y' _ => if_neg fun h => hy h.1.symm
+    exact Finset.sum_eq_zero fun y' _ => ite_eq_right fun h => hy h.1.symm
   · intro h; exact absurd (Finset.mem_univ z) h
 
 /-- Seen through `X ⊗ 1`, the copy by `roundW` followed by `recRound` is the
@@ -479,8 +479,8 @@ theorem ctrlAns_mul_conjTranspose_self (e : Fin (d * a) ≃ Fin d') (R : Classic
       kr e 1 (ancProj k) := by
     intro k
     rw [Finset.sum_eq_single k]
-    · rw [if_pos rfl, ← star_eq_conjTranspose, Matrix.mem_unitaryGroup_iff.mp (R.ans k).prop]
-    · intro k' _ hk'; rw [if_neg (Ne.symm hk'), kr_zero_right]
+    · rw [ite_eq_left rfl, ← star_eq_conjTranspose, Matrix.mem_unitaryGroup_iff.mp (R.ans k).prop]
+    · intro k' _ hk'; rw [ite_eq_right (Ne.symm hk'), kr_zero_right]
     · intro h; exact absurd (Finset.mem_univ k) h
   simp only [h, ← kr_sum_right, sum_ancProj, kr_one]
 
@@ -507,7 +507,7 @@ theorem ctrlAns_roundU_xorRound [NeZero a] (e : Fin (d * a) ≃ Fin d')
   simp only [← ancUnit_self (f y), kr_conjTranspose, kr_mul, ancProj_conjTranspose,
     ancProj_mul_ancUnit, ite_mul, zero_mul, ancUnit_mul_ancProj]
   rw [Finset.sum_eq_single (f y), Finset.sum_eq_single (f y)]
-  · simp only [if_true, ancUnit_self, conjTranspose_mul, R.P_conjTranspose, Matrix.mul_assoc]
+  · simp only [ite_true, ancUnit_self, conjTranspose_mul, R.P_conjTranspose, Matrix.mul_assoc]
   · intro k' _ hk'; simp [hk', kr_zero_right]
   · intro h; exact absurd (Finset.mem_univ (f y)) h
   · intro k _ hk

@@ -118,7 +118,7 @@ theorem qbind_qpure_branch_of_ne (I : QComp d α) (g : α → β) (b : β)
     (hb : ∀ a, b ≠ g a) (ρ : Matrix (Fin d) (Fin d) ℂ) :
     (QComp.qbind I (fun a => QComp.qpure (g a))).branch b ρ = 0 := by
   show ∑' a, (QComp.qpure (g a) : QComp d β).branch b (I.branch a ρ) = 0
-  simp only [qpure_branch_apply, hb, if_false, tsum_zero]
+  simp only [qpure_branch_apply, hb, ite_false, tsum_zero]
 
 /-- The branch of a unitary channel is conjugation by the unitary. -/
 theorem unitaryChannel_branch_apply (U : Matrix.unitaryGroup (Fin d) ℂ)
@@ -435,7 +435,7 @@ theorem oracleU_mul_one_sub_projS (H H' : Fin m → Fin n) (S : Finset (Fin m))
   rw [Matrix.mul_diagonal, Matrix.mul_diagonal]
   by_cases hx : xPart m n w j ∈ S
   · simp [indS, hx]
-  · simp only [indS, hx, if_false, sub_zero, mul_one, oracleU_val, kronecker_apply]
+  · simp only [indS, hx, ite_false, sub_zero, mul_one, oracleU_val, kronecker_apply]
     congr 1
     obtain ⟨⟨x, y⟩, hxy⟩ := (fixedIndex m n).surjective ((finProdEquiv (m * n) w).symm j).1
     have hx' : x = xPart m n w j := by

@@ -170,7 +170,7 @@ structure LogExtractor (rel : G.Stmt → G.Wit → Prop) (N : ℕ) (ε : ℝ≥0
   Bad : G.Stmt → G.Tables → G.Key → G.Ch → Bool
   /-- A uniform answer is bad with probability at most `ε`. -/
   bad_le : ∀ x t k, t.size ≤ N →
-    (PMF.uniformOfFintype G.Ch).toOuterMeasure {e | Bad x t k e = true} ≤ ε
+    (PMF.uniformFintype G.Ch).toOuterMeasure {e | Bad x t k e = true} ≤ ε
   /-- The programmed entries of a simulated attempt from the tables `t` on uniform
   values and simulator randomness contain an entry that is bad given the tables after
   the evaluated entries with probability at most `ε` times the number of programmed
@@ -277,10 +277,10 @@ then a uniform vector `e` satisfies `B (F e) (e i)` with probability at most `ε
 theorem uniform_pi_le_of_update_invariant {ι C Z : Type} [Fintype ι] [DecidableEq ι]
     [Fintype C] [Nonempty C] (i : ι) (F : (ι → C) → Z)
     (hF : ∀ e c, F (Function.update e i c) = F e) (B : Z → C → Bool) {ε : ℝ≥0∞}
-    (hB : ∀ z, (PMF.uniformOfFintype C).toOuterMeasure {c | B z c = true} ≤ ε) :
-    (PMF.uniformOfFintype (ι → C)).toOuterMeasure {e | B (F e) (e i) = true} ≤ ε := by
+    (hB : ∀ z, (PMF.uniformFintype C).toOuterMeasure {c | B z c = true} ≤ ε) :
+    (PMF.uniformFintype (ι → C)).toOuterMeasure {e | B (F e) (e i) = true} ≤ ε := by
   rw [← Constructions.ECBCPRF.uniform_bind_update i, PMF.toOuterMeasure_bind_apply]
-  calc _ ≤ ∑' e, PMF.uniformOfFintype (ι → C) e * ε := by
+  calc _ ≤ ∑' e, PMF.uniformFintype (ι → C) e * ε := by
         refine ENNReal.tsum_le_tsum fun e => ?_
         gcongr
         rw [PMF.toOuterMeasure_map_apply]
@@ -294,14 +294,14 @@ theorem uniform_pi_le_of_update_invariant {ι C Z : Type} [Fintype ι] [Decidabl
 of an event by its bound at every value of `β`. -/
 theorem sampleVec_le_of_forall {G : Protocol} {β : Type} [Fintype β] [Nonempty β]
     (F : (Fin G.μ → G.Ch) → β → Bool) {c : ℝ≥0∞}
-    (h : ∀ y, (PMF.uniformOfFintype (Fin G.μ → G.Ch)).toOuterMeasure {e | F e y = true} ≤ c) :
+    (h : ∀ y, (PMF.uniformFintype (Fin G.μ → G.Ch)).toOuterMeasure {e | F e y = true} ≤ c) :
     (sampleVec G F).toOuterMeasure {b | b = true} ≤ c := by
-  have hc : sampleVec G F = (PMF.uniformOfFintype β).bind fun y =>
-      (PMF.uniformOfFintype (Fin G.μ → G.Ch)).map fun e => F e y := by
+  have hc : sampleVec G F = (PMF.uniformFintype β).bind fun y =>
+      (PMF.uniformFintype (Fin G.μ → G.Ch)).map fun e => F e y := by
     simp only [sampleVec, PMF.map]
     exact PMF.bind_comm _ _ _
   rw [hc, PMF.toOuterMeasure_bind_apply]
-  calc _ ≤ ∑' y, PMF.uniformOfFintype β y * c := by
+  calc _ ≤ ∑' y, PMF.uniformFintype β y * c := by
         refine ENNReal.tsum_le_tsum fun y => ?_
         gcongr
         rw [PMF.toOuterMeasure_map_apply]

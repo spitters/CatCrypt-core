@@ -422,7 +422,7 @@ theorem sRcv_eq (p : Fin np) (M : GS P ω A)
   | some l =>
     by_cases hc : is_corrupt p
     · have h' := outFilter_eq_of_not_forged Sch (h (rcvCall P ω A p M) (by simp [hs, hc]))
-      simp only [hc, Bool.not_true, Bool.false_eq_true, if_false]
+      simp only [hc, Bool.not_true, Bool.false_eq_true, ite_false]
       have e : ∀ ms sl hist mb st, (ms, sl, hist, mb, st) = ((fetch_msgs p M).1,
           (fetch_msgs p M).2.t_now, (fetch_msgs p M).2.history, (fetch_msgs p M).2.msg_buff,
           (fetch_msgs p M).2.adv_state) →
@@ -448,7 +448,7 @@ theorem sBake_eq (p : Fin np) (M : GS P ω A)
   | some l =>
     by_cases hc : is_corrupt p
     · have h' := outFilter_eq_of_not_forged Sch (h (bakeCall P ω A M) (by simp [hs, hc]))
-      simp only [hc, Bool.not_true, Bool.false_eq_true, if_false]
+      simp only [hc, Bool.not_true, Bool.false_eq_true, ite_false]
       have e : (mkExec Sch true P ω A).AdversarialBake M.t_now M.history M.msg_buff M.adv_state =
           (mkExec Sch false P ω A).AdversarialBake M.t_now M.history M.msg_buff M.adv_state := by
         rw [mkExec_bake, mkExec_bake]

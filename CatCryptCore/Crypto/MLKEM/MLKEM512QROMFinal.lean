@@ -81,7 +81,7 @@ theorem failProb_eq_sum (P : Scheme PK SK M C R) (pk : PK) (sk : SK) (m : M) :
   rw [Scheme.failProb, PMF.toOuterMeasure_apply, tsum_fintype]
   refine Finset.sum_congr rfl fun r _ => ?_
   by_cases h : P.dec sk (P.enc pk m r) = some m <;>
-    simp [Set.indicator, h, PMF.uniformOfFintype_apply]
+    simp [Set.indicator, h, PMF.uniformFintype_apply]
 
 /-- The decryption error `corrErr` (the key-weighted average over messages and coins
 of the failure indicator) is at most the correctness error `corrWorst` (the

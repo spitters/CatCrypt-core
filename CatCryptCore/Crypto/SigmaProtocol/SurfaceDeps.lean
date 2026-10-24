@@ -613,7 +613,7 @@ theorem decodeRel_elem_term (n m : ℕ) (inst : SigmaProofs.Instance_T) (i k : �
   have hlt := term_index_lt m i k (termBound inst) hi (by omega)
   rw [decodeRel_elem E n m inst _ (by omega)]
   have hpos : 0 < termBound inst := by omega
-  simp only [decodeElem, show ¬ (m + i * termBound inst + k < m) by omega, if_false,
+  simp only [decodeElem, show ¬ (m + i * termBound inst + k < m) by omega, ite_false,
     show m + i * termBound inst + k - m = k + termBound inst * i by rw [Nat.mul_comm]; omega,
     Nat.add_mul_div_left _ _ hpos, Nat.add_mul_mod_self_left,
     Nat.div_eq_of_lt (by omega : k < termBound inst),
@@ -671,7 +671,7 @@ theorem Instance_evaluation_pairs_dot (n : ℕ) (inst : SigmaProofs.Instance_T)
   simp only [Hax.push]
   refine ⟨by simp [hsb], ?_⟩
   rw [dotVal_push E _ _ _ _ hsb, encVec, index_castVal_ofFn _ _ (hv k hk)]
-  simp only [groupSigmaProofsDeps_scalar_mul, E.decS_encS, termElem, vecGet, dif_pos (hv k hk)]
+  simp only [groupSigmaProofsDeps_scalar_mul, E.decS_encS, termElem, vecGet, dite_eq_left (hv k hk)]
   congr 1
   rw [GroupParam.groupExp_eq_exp, GroupParam.dlog_exp]
   simp only [GroupParam.scalarMul_eq_mul]
@@ -762,7 +762,7 @@ theorem Instance_prover_response_eq {n m : ℕ} {inst : SigmaProofs.Instance_T}
   unfold SigmaProofs.Instance_prover_response
   simp only [SigmaProofs.«Instance.num_scalars», SigmaProofs.«.witness», SigmaProofs.«.nonces»,
     Hax.bne, Hax.bor, Hax.array_len, h.1, size_encVec, beq_self_eq_true, Bool.not_true,
-    Bool.or_self, Bool.false_eq_true, if_false, groupSigmaProofsDeps_scalar_add,
+    Bool.or_self, Bool.false_eq_true, ite_false, groupSigmaProofsDeps_scalar_add,
     groupSigmaProofsDeps_scalar_mul]
   rw [foldRange_push_ofFn]
   unfold encVec
@@ -781,7 +781,7 @@ theorem Instance_simulate_commitment_eq {n m : ℕ} {inst : SigmaProofs.Instance
   unfold SigmaProofs.Instance_simulate_commitment
   simp only [SigmaProofs.«Instance.num_scalars», SigmaProofs.«.equations»,
     SigmaProofs.«Instance.image», Hax.bne, Hax.array_len, h.1, h.2.1, size_encVec,
-    beq_self_eq_true, Bool.not_true, Bool.false_eq_true, if_false,
+    beq_self_eq_true, Bool.not_true, Bool.false_eq_true, ite_false,
     groupSigmaProofsDeps_scalar_neg]
   rw [foldRange_push_ofFn, Hax.deref, msm_rows_vartime_ofFn]
   unfold encCom
@@ -833,7 +833,7 @@ theorem Instance_verifier_ok_iff {n m : ℕ} {inst : SigmaProofs.Instance_T}
       (Hax.index a j))
     simp only [SigmaProofs.«Instance.num_scalars», SigmaProofs.«.equations», Hax.array_len, h.1,
       h.2.1, ha, size_encVec, hsz, Hax.bne, Hax.bor, beq_self_eq_true, Bool.not_true,
-      Bool.or_self, Bool.false_eq_true, if_false]
+      Bool.or_self, Bool.false_eq_true, ite_false]
     generalize Hax.foldRange _ _ _ _ = F at hall ⊢
     have key : decCom E m a = (decodeRel E n m inst).simCommit c z ↔ F = true := by
       rw [hall, funext_iff]
@@ -911,12 +911,12 @@ theorem column_entry_dot (els : Array (Array Int))
   by_cases hq : (Hax.index eq.2 (k : Int)).1 = q
   · have hb : Hax.beq (Hax.index (SigmaProofs.«Equation.terms» eq) (k : Int)).1 q = true := by
       simp [SigmaProofs.«Equation.terms», Hax.beq, hq]
-    rw [if_pos hb, if_pos hq]
+    rw [ite_eq_left hb, ite_eq_left hq]
     simp only [Hax.push]
     exact ⟨by simp [hsb], dotVal_push E _ _ _ _ hsb⟩
   · have hb : ¬ Hax.beq (Hax.index (SigmaProofs.«Equation.terms» eq) (k : Int)).1 q = true := by
       simp [SigmaProofs.«Equation.terms», Hax.beq, hq]
-    rw [if_neg hb, if_neg hq]
+    rw [ite_eq_right hb, ite_eq_right hq]
     exact ⟨hsb, by simp⟩
 
 /-- The extracted `compute_image` is the array of the encoded images `imageComb`. -/
@@ -1138,7 +1138,7 @@ theorem foldRange_set_const {α : Type} (lo hi : Int) (init K : α) (c : Int →
     intro i a hlo hi ha
     subst ha
     split_ifs <;> grind
-  · rw [Hax.foldRange_stop _ _ _ _ (by omega), if_neg]
+  · rw [Hax.foldRange_stop _ _ _ _ (by omega), ite_eq_right]
     rintro ⟨j, h1, h2, -⟩
     omega
 
@@ -1355,17 +1355,17 @@ theorem validate_terms_loop [SigmaProofs.SigmaProofsDeps] (els : Array (Array In
       simp only [Hax.ge, Hax.gt, Hax.add, hNe, decide_eq_true_eq]
       refine ⟨?_, ?_, fun p hp => ?_, ?_, ?_, ?_, ⟨fun t' ht'' => ?_, ?_⟩, ?_, by omega⟩
       · by_cases hge : (els.size : Int) ≤ e
-        · rw [if_pos hge]
+        · rw [ite_eq_left hge]
           exact ⟨fun h => absurd h (by norm_num), fun h => absurd h.2.2 (not_lt.mpr hge)⟩
-        · rw [if_neg hge, hy1]
+        · rw [ite_eq_right hge, hy1]
           exact ⟨fun h => ⟨h.1, h.2, lt_of_not_ge hge⟩, fun h => ⟨h.1, h.2.1⟩⟩
       · split_ifs
         · exact hy2
         · rw [Hax.size_array_update_eq, hy2]
       · by_cases hge : (els.size : Int) ≤ e
-        · rw [if_pos hge, hy3 p hp]
+        · rw [ite_eq_left hge, hy3 p hp]
           exact or_congr Iff.rfl ⟨Or.inl, fun h => h.elim id fun h => by omega⟩
-        · rw [if_neg hge, index_array_update_true_iff _ _ _ (by omega) he0 (by omega), hy3 p hp,
+        · rw [ite_eq_right hge, index_array_update_true_iff _ _ _ (by omega) he0 (by omega), hy3 p hp,
             or_assoc]
           exact or_congr Iff.rfl (or_congr Iff.rfl eq_comm)
       · split_ifs <;> omega
@@ -1458,9 +1458,9 @@ theorem validate_check6_iff (ms nt : Int) (su : Array Bool) :
         if Hax.beq (Hax.index su s) 0 = true then 6 else failed) = 0 ↔
       ¬ nt ≤ ms ∧ ∀ s, 0 ≤ s → s < Hax.add ms 1 → ¬ Hax.beq (Hax.index su s) 0 = true := by
   by_cases hg : nt ≤ ms
-  · rw [if_pos (by simp [Hax.ge, hg])]
+  · rw [ite_eq_left (by simp [Hax.ge, hg])]
     exact ⟨fun h' => absurd h' (by decide), fun h' => absurd hg h'.1⟩
-  · rw [if_neg (by simp [Hax.ge, hg]), foldRange_set_eq_zero_iff 0 _ 0 6 (by decide)]
+  · rw [ite_eq_right (by simp [Hax.ge, hg]), foldRange_set_eq_zero_iff 0 _ 0 6 (by decide)]
     exact ⟨fun h' => ⟨hg, h'.2⟩, fun h' => ⟨rfl, h'.2⟩⟩
 
 /-- A statement over the integers of `[a, b)` for `0 ≤ a` is a statement over the natural
@@ -1639,7 +1639,7 @@ theorem validate_ok_iff_checks [SigmaProofs.SigmaProofsDeps] {els : Array (Array
       nt = ∑ j ∈ Finset.range eqs.size, ((Hax.index eqs (j : Int)).2.size : Int) := fun h =>
     validate_terms_loop els eqs hL4 m6 (by
       show _ = (if Hax.beq f14 0 = true then _ else _)
-      rw [if_pos (by rw [h]; rfl), h])
+      rw [ite_eq_left (by rw [h]; rfl), h])
   have e4 : f12 = 0 ↔ f14 = 0 ∧ ∀ j : ℕ, j < eqs.size → imageElemIdx eqs j < els.size ∧
       ∀ t : ℕ, t < (Hax.index eqs (j : Int)).2.size → termElemIdx eqs j t < els.size := by
     by_cases h : f14 = 0
@@ -1647,7 +1647,7 @@ theorem validate_ok_iff_checks [SigmaProofs.SigmaProofsDeps] {els : Array (Array
       exact ⟨fun h' => ⟨h, h'⟩, fun h' => h'.2⟩
     · have e : f12 = f14 := by
         show (if Hax.beq f14 0 = true then _ else (f14, eu1, c0, c0)).1 = f14
-        rw [if_neg (by simp [Hax.beq, h])]
+        rw [ite_eq_right (by simp [Hax.beq, h])]
       rw [e]
       exact ⟨fun h' => absurd h' h, fun h' => absurd h'.1 h⟩
   have e3 : f14 = 0 ↔ f17 = 0 ∧
@@ -1915,8 +1915,8 @@ theorem column_entry_eq_column (n : ℕ) (els : Array (Array Int))
   rw [hs, he, layoutRel_elem n eqs.size els eqs _ (by omega), Int.toNat_of_nonneg he0',
     castVal_usize_of_lt he0 he1]
   by_cases hj : (termScalar eqs i k).toNat = j
-  · rw [if_pos hj, if_pos (show termScalar eqs i k = (j : Int) by omega)]
-  · rw [if_neg hj, if_neg (fun h => hj (by have : termScalar eqs i k = (j : Int) := h; omega))]
+  · rw [ite_eq_left hj, ite_eq_left (show termScalar eqs i k = (j : Int) by omega)]
+  · rw [ite_eq_right hj, ite_eq_right (fun h => hj (by have : termScalar eqs i k = (j : Int) := h; omega))]
 
 /-- On equations in the core layout, the extracted `validate` succeeds with `n` scalars
 exactly when the number of equations and the number of terms of each are at most
@@ -2276,8 +2276,8 @@ adversary with at most `qH` oracle queries satisfies, with
 `ε = dsKsAdvantage A − (qH + 1)·β`, `ε·(ε/(qH + 1) − 1/|Scalar|) ≤ ksExtractProb A`. -/
 theorem extSigma_dsKsExtractProb_ge (Dp : DSParams (extSigma E n m gen))
     (hX : PrefixFree Dp.encX) (hA : PrefixFree Dp.encA) {β : ℝ≥0∞}
-    (hβ : ∀ c, (1 - β) * PMF.uniformOfFintype gp.Scalar c ≤
-      (PMF.uniformOfFintype (Fin Dp.L → UInt8)).map Dp.decB c)
+    (hβ : ∀ c, (1 - β) * PMF.uniformFintype gp.Scalar c ≤
+      (PMF.uniformFintype (Fin Dp.L → UInt8)).map Dp.decB c)
     {qH : ℕ} (A : KSAdversary (extSigma E n m gen) SessionId qH) :
     (dsKsAdvantage Dp A - (qH + 1 : ℕ) * β) *
         ((dsKsAdvantage Dp A - (qH + 1 : ℕ) * β) / ((qH + 1 : ℕ) : ℝ≥0∞) -

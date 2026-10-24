@@ -259,16 +259,16 @@ theorem split_eq (p : R[X]) {n : ℕ}
   ext d
   rw [coeff_add, coeff_loPart, coeff_mul_X_pow', coeff_hiPart]
   by_cases hdn : d < n
-  · simp only [hdn, if_true]
-    rw [if_neg (by omega)]
+  · simp only [hdn, ite_true]
+    rw [ite_eq_right (by omega)]
     ring
-  · simp only [hdn, if_false]
-    rw [if_pos (by omega)]
+  · simp only [hdn, ite_false]
+    rw [ite_eq_left (by omega)]
     by_cases hd2 : d - n < n
-    · simp only [hd2, if_true]
+    · simp only [hd2, ite_true]
       have : d - n + n = d := by omega
       rw [this, zero_add]
-    · simp only [hd2, if_false]
+    · simp only [hd2, ite_false]
       -- both terms vanish: `d ≥ 2n > degree p`, so `p.coeff d = 0`.
       have hge : (2 * n : ℕ) ≤ d := by omega
       have hcast : ((2 * n : ℕ) : WithBot ℕ) ≤ (d : ℕ) := by
@@ -320,7 +320,7 @@ theorem negacyclic_modByMonic_coeff (p : R[X]) {n : ℕ} (hn : 0 < n)
       rw [hf_deg]; exact hr_deg
     have hrr : r %ₘ negaPoly n = r := (modByMonic_eq_self_iff hmonic).2 hdeg
     rw [hrr, sub_eq_zero] at hzero
-    rw [hzero, hr, hlo, hhi, coeff_sub, coeff_loPart, coeff_hiPart, if_pos hk, if_pos hk]
+    rw [hzero, hr, hlo, hhi, coeff_sub, coeff_loPart, coeff_hiPart, ite_eq_left hk, ite_eq_left hk]
 
 /--
 **Negacyclic convolution as an antidiagonal sum.**

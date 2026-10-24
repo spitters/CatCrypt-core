@@ -336,7 +336,8 @@ theorem prTrue_sample_bind_ge [Fintype R] [Nonempty R]
               show ¬(some (a₀, h₀) = some (a, h₀)) from by simp [this.symm]]
     _ ≤ ∑' p, (SPComp.sample R h₀ : PMF _) p *
         (match p with | some ⟨a, h'⟩ => prTrue (k a) h' | none => 0) :=
-        ENNReal.le_tsum (some (a₀, h₀))
+        ENNReal.le_tsum (f := fun p : Option (R × Heap) => (SPComp.sample R h₀ : PMF _) p *
+          (match p with | some ⟨a, h'⟩ => prTrue (k a) h' | none => 0)) (some (a₀, h₀))
 
 /-! ## Forking Lemma -/
 

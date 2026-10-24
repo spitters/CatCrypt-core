@@ -299,8 +299,8 @@ theorem failure_event_lemma
         (G₁ h₀) (some (true, h)) +
           (if bad h then (G₀ h₀) (some (true, h)) else 0 : ℝ≥0∞) := by
       intro h; by_cases hb : bad h
-      · rw [if_pos hb]; exact le_add_self
-      · rw [if_neg hb, add_zero]; exact le_of_eq (h_agree true h hb)
+      · rw [ite_eq_left hb]; exact le_add_self
+      · rw [ite_eq_right hb, add_zero]; exact le_of_eq (h_agree true h hb)
     calc ∑' h, (G₀ h₀) (some (true, h))
         ≤ ∑' h, ((G₁ h₀) (some (true, h)) +
           (if bad h then (G₀ h₀) (some (true, h)) else 0 : ℝ≥0∞)) :=
@@ -315,8 +315,8 @@ theorem failure_event_lemma
         (G₀ h₀) (some (true, h)) +
           (if bad h then (G₁ h₀) (some (true, h)) else 0 : ℝ≥0∞) := by
       intro h; by_cases hb : bad h
-      · rw [if_pos hb]; exact le_add_self
-      · rw [if_neg hb, add_zero]; exact le_of_eq (h_agree true h hb).symm
+      · rw [ite_eq_left hb]; exact le_add_self
+      · rw [ite_eq_right hb, add_zero]; exact le_of_eq (h_agree true h hb).symm
     calc ∑' h, (G₁ h₀) (some (true, h))
         ≤ ∑' h, ((G₀ h₀) (some (true, h)) +
           (if bad h then (G₁ h₀) (some (true, h)) else 0 : ℝ≥0∞)) :=

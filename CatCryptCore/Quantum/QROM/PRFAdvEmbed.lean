@@ -214,11 +214,11 @@ def isoR (y₀ : Fin c) (R : ClassicalRound d c a) : ClassicalRound d' c a where
     rw [isoP_mul V hV, R.P_mul_self, isoP]
     simp only [and_self]
   P_orth y y' h := by
-    rw [isoP_mul V hV, R.P_orth y y' h, Matrix.mul_zero, Matrix.zero_mul, zero_add, if_neg]
+    rw [isoP_mul V hV, R.P_orth y y' h, Matrix.mul_zero, Matrix.zero_mul, zero_add, ite_eq_right]
     rintro ⟨h1, h2⟩
     exact h (h1.trans h2.symm)
   P_sum := by
-    simp only [isoP, Finset.sum_add_distrib, Finset.sum_ite_eq', Finset.mem_univ, if_true]
+    simp only [isoP, Finset.sum_add_distrib, Finset.sum_ite_eq', Finset.mem_univ, ite_true]
     rw [← Matrix.sum_mul, ← Matrix.mul_sum, R.P_sum, Matrix.mul_one, add_sub_cancel]
   ans z := isoU V hV (R.ans z)
 
@@ -274,7 +274,7 @@ theorem carries_oracleChain
   | q + 1, U => by
     refine carries_qbind (carries_unitaryChannel (U 0) _ ?_)
       (carries_qbind hO ?_)
-    · simp only [isoChain, Fin.val_zero, Nat.zero_lt_succ, if_true]
+    · simp only [isoChain, Fin.val_zero, Nat.zero_lt_succ, ite_true]
       rw [MulMemClass.coe_mul, Matrix.mul_assoc, isoU_mul_iso, Matrix.mul_assoc]
     · show Carries V V (oracleChain O q (Fin.tail U))
         (oracleChain O' q (Fin.tail (isoChain C V hV U)))
@@ -311,15 +311,15 @@ theorem carries_mrPrefixU
     carries_oracleChain_pre C V hV hO j _ _ fun i => by
       have hi : ((Fin.castLE (Nat.succ_le_succ j.isLt.le) i : Fin (q₀ + 1)) : ℕ) < q₀ := by
         have := i.isLt; have := j.isLt; simp only [flatQ] at this; simp; omega
-      simp only [isoChain, if_pos hi]
+      simp only [isoChain, ite_eq_left hi]
   | k + 1, q₀, head, tail, R, j => by
     by_cases h : (j : ℕ) < q₀
-    · simp only [mrPrefixU, dif_pos h]
+    · simp only [mrPrefixU, dite_eq_left h]
       exact carries_oracleChain_pre C V hV hO j _ _ fun i => by
         have hi : ((Fin.castLE (by omega) i : Fin (q₀ + 1)) : ℕ) < q₀ := by
           have := i.isLt; simp; omega
-        simp only [isoChain, if_pos hi]
-    · simp only [mrPrefixU, dif_neg h]
+        simp only [isoChain, ite_eq_left hi]
+    · simp only [mrPrefixU, dite_eq_right h]
       exact carries_qbind (carries_oracleChain C V hV hO q₀ head)
         (carries_qbind (carries_isoR V hV y₀ (R 0) f)
           (carries_mrPrefixU hO k q (tail 0) (Fin.tail tail) (Fin.tail R) _))
@@ -486,7 +486,7 @@ theorem sum_coreV [NeZero n] (x x₂ : Fin (m + mF)) (y y₂ : Fin n) :
       exact absurd (congrArg Fin.val h) (by simp; omega)
     | right v₂ =>
       simp only [coreV, Fin.addCases_right, Fintype.sum_option]
-      simp only [reduceCtorEq, and_false, if_false, star_zero, zero_mul, zero_add, ite_and,
+      simp only [reduceCtorEq, and_false, ite_false, star_zero, zero_mul, zero_add, ite_and,
         Option.some.injEq]
       simp [Finset.sum_ite_eq', Fin.natAdd_inj]
       have hn : n ≠ 0 := NeZero.ne n
@@ -517,15 +517,15 @@ theorem embT_iso [NeZero n] :
     intro u y'
     simp only [apply_ite star, star_zero, ite_mul, zero_mul, mul_ite, mul_zero]
     rw [Finset.sum_comm]
-    simp only [Finset.sum_ite_eq', Finset.mem_univ, if_true]
+    simp only [Finset.sum_ite_eq', Finset.mem_univ, ite_true]
     by_cases hr : r = r₂
     · subst hr; simp
-    · simp only [if_neg hr]
-      exact Finset.sum_eq_zero fun t _ => by rw [if_neg (Ne.symm hr)]
+    · simp only [ite_eq_right hr]
+      exact Finset.sum_eq_zero fun t _ => by rw [ite_eq_right (Ne.symm hr)]
   simp only [h]
   rw [Matrix.one_apply]
   by_cases hr : r = r₂
-  · simp only [if_pos hr]
+  · simp only [ite_eq_left hr]
     rw [sum_coreV]
     subst hr
     simp [Prod.ext_iff]
@@ -670,10 +670,10 @@ theorem one_kronecker_diagonal {d₁ d₂ : ℕ} (f : Fin d₂ → ℂ) :
   · subst h; simp
   · have h' : (finProdEquiv d₁ d₂).symm i ≠ (finProdEquiv d₁ d₂).symm j :=
       fun e => h ((finProdEquiv d₁ d₂).symm.injective e)
-    rw [if_neg h]
+    rw [ite_eq_right h]
     by_cases h1 : ((finProdEquiv d₁ d₂).symm i).1 = ((finProdEquiv d₁ d₂).symm j).1
-    · rw [if_pos h1, if_neg (fun h2 => h' (Prod.ext h1 h2)), mul_zero]
-    · rw [if_neg h1, zero_mul]
+    · rw [ite_eq_left h1, ite_eq_right (fun h2 => h' (Prod.ext h1 h2)), mul_zero]
+    · rw [ite_eq_right h1, zero_mul]
 
 /-- `winBitProj` is the diagonal of the indicator that the first factor of the
 work register is `1`. -/
@@ -761,7 +761,7 @@ theorem shiftU_mul_projS (F : Fin mF → Fin n) (S : Finset (Fin m)) :
     hx, Equiv.symm_apply_eq]
   by_cases h : z₁ = shiftT w F z
   · subst h; simp [shiftT]
-  · rw [if_neg h, if_neg h]
+  · rw [ite_eq_right h, ite_eq_right h]
 
 /-- The embedding after the tag shift pulls `projS S` back to `projS (pullS u₀ S)`. -/
 theorem projS_pullback (F : Fin mF → Fin n) (S : Finset (Fin m)) :

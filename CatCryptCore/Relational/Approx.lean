@@ -173,7 +173,7 @@ theorem SDistr.swapPair_apply (w : SDistr (α × β)) (q : β × α) :
   · rw [SDistr.pure_apply_some]
     simp
   · intro p hne
-    rw [SDistr.pure_apply_some, if_neg, mul_zero]
+    rw [SDistr.pure_apply_some, ite_eq_right, mul_zero]
     intro heq
     apply hne
     have h1 : p.2 = q.1 := by rw [← heq]
@@ -327,7 +327,7 @@ theorem liftRApprox_bind
   have hK_on : ∀ p (hp : w.joint (some p) ≠ 0),
       K p = (hf p.1 p.2 (hw p.1 p.2 hp)).choose.joint := by
     intro p hp
-    simp only [K, dif_pos hp]
+    simp only [K, dite_eq_left hp]
   -- continuation facts, left side
   have hK_left_le : ∀ p, w.joint (some p) ≠ 0 →
       ∀ c, (∑' d', (K p) (some (c, d'))) ≤ (f₁ p.1) (some c) := by
@@ -430,10 +430,10 @@ theorem SDistr.bind_fst_apply (w : SDistr (α × β)) (a : α) :
     _ = ∑' b, w (some (a, b)) * (SDistr.pure a) (some a) := by
         refine tsum_eq_single a fun a' hne => ?_
         refine ENNReal.tsum_eq_zero.mpr fun b => ?_
-        rw [SDistr.pure_apply_some, if_neg hne, mul_zero]
+        rw [SDistr.pure_apply_some, ite_eq_right hne, mul_zero]
     _ = ∑' b, w (some (a, b)) := by
         refine tsum_congr fun b => ?_
-        rw [SDistr.pure_apply_some, if_pos rfl, mul_one]
+        rw [SDistr.pure_apply_some, ite_eq_left rfl, mul_one]
 
 /-- Marginal application formula: binding with the second projection computes
     the right marginal sum. -/
@@ -442,8 +442,8 @@ theorem SDistr.bind_snd_apply (w : SDistr (α × β)) (b : β) :
   classical
   rw [SDistr.bind_apply_some, ENNReal.tsum_prod']
   refine tsum_congr fun a => ?_
-  rw [tsum_eq_single b fun b' hne => by rw [SDistr.pure_apply_some, if_neg hne, mul_zero]]
-  rw [SDistr.pure_apply_some, if_pos rfl, mul_one]
+  rw [tsum_eq_single b fun b' hne => by rw [SDistr.pure_apply_some, ite_eq_right hne, mul_zero]]
+  rw [SDistr.pure_apply_some, ite_eq_left rfl, mul_one]
 
 /-- Exact couplings embed at grade 0: the marginal sums are exact, so the
     deficits vanish. -/
@@ -469,11 +469,13 @@ theorem liftR_of_liftRApprox_zero {R : α → β → Prop} {d₁ : SDistr α} {d
   have hL : ∀ a, (∑' b, c.joint (some (a, b))) = d₁ (some a) := by
     intro a
     refine le_antisymm (c.left_le a) (tsub_eq_zero_iff_le.mp ?_)
-    exact le_antisymm (le_trans (ENNReal.le_tsum a) c.left_deficit) (zero_le)
+    exact le_antisymm (le_trans (ENNReal.le_tsum (f := fun a => d₁ (some a) - ∑' b, c.joint (some (a, b))) a)
+      c.left_deficit) (zero_le)
   have hR : ∀ b, (∑' a, c.joint (some (a, b))) = d₂ (some b) := by
     intro b
     refine le_antisymm (c.right_le b) (tsub_eq_zero_iff_le.mp ?_)
-    exact le_antisymm (le_trans (ENNReal.le_tsum b) c.right_deficit) (zero_le)
+    exact le_antisymm (le_trans (ENNReal.le_tsum (f := fun b => d₂ (some b) - ∑' a, c.joint (some (a, b))) b)
+      c.right_deficit) (zero_le)
   refine ⟨⟨c.joint, ?_, ?_⟩, hc⟩
   · intro a
     rw [SDistr.bind_fst_apply]
@@ -636,7 +638,7 @@ theorem liftRApprox_eq_of_tv {d₁ d₂ : SDistr α} {ε : ℝ≥0∞}
     apply hab
     show minDiagFn d₁ d₂ (some (a, b)) = 0
     simp only [minDiagFn]
-    rw [if_neg fun h => hne h.symm]
+    rw [ite_eq_right fun h => hne h.symm]
 
 /-- Converse at equality: an `Eq`-graded sub-coupling concentrates on the
     diagonal, so its deficits dominate the one-sided statistical distances. -/
@@ -1044,18 +1046,18 @@ theorem prTrue_indicatorAdv_mem {S : Set (α × Heap)} {a : α} {h : Heap}
     (hS : (a, h) ∈ S) : prTrue (indicatorAdv S a) h = 1 := by
   classical
   unfold prTrue indicatorAdv
-  rw [if_pos hS]
+  rw [ite_eq_left hS]
   rw [tsum_eq_single h fun h' hne => by
-    rw [SDistr.pure_apply_some, if_neg fun heq => hne (congrArg Prod.snd heq).symm]]
-  rw [SDistr.pure_apply_some, if_pos rfl]
+    rw [SDistr.pure_apply_some, ite_eq_right fun heq => hne (congrArg Prod.snd heq).symm]]
+  rw [SDistr.pure_apply_some, ite_eq_left rfl]
 
 theorem prTrue_indicatorAdv_not_mem {S : Set (α × Heap)} {a : α} {h : Heap}
     (hS : (a, h) ∉ S) : prTrue (indicatorAdv S a) h = 0 := by
   classical
   unfold prTrue indicatorAdv
-  rw [if_neg hS]
+  rw [ite_eq_right hS]
   refine ENNReal.tsum_eq_zero.mpr fun h' => ?_
-  rw [SDistr.pure_apply_some, if_neg fun heq => Bool.noConfusion (congrArg Prod.fst heq)]
+  rw [SDistr.pure_apply_some, ite_eq_right fun heq => Bool.noConfusion (congrArg Prod.fst heq)]
 
 /-- Weighted-sum form of `prTrue` over a bind (the `some`-restricted
     instance of `prTrue_bind_eq_weighted`). -/

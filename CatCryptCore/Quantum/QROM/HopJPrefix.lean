@@ -130,8 +130,8 @@ theorem prefixUpdate_prefixUpdate (z : Z) (J : Fin m₂ → Fin n) (T : C → Fi
   funext y
   simp only [prefixUpdate]
   by_cases h : (eJ.symm y).1 = z
-  · rw [if_pos h, ← h, Prod.mk.eta, Equiv.apply_symm_apply]
-  · rw [if_neg h, if_neg h]
+  · rw [ite_eq_left h, ← h, Prod.mk.eta, Equiv.apply_symm_apply]
+  · rw [ite_eq_right h, ite_eq_right h]
 
 /-- `J` and `prefixUpdate eJ z J T` agree outside `prefixSet eJ z`. -/
 theorem prefixUpdate_agree [Fintype C] (z : Z) (J : Fin m₂ → Fin n) (T : C → Fin n) :
@@ -299,10 +299,10 @@ theorem sum_nrm_sq_projS_le (S : ι → Finset (Fin m))
   simp only [hterm]
   by_cases h : ∃ i, xPart m n w k ∈ S i
   · obtain ⟨i₀, hi₀⟩ := h
-    rw [Finset.sum_eq_single i₀ (fun i _ hi => if_neg fun hx => hi (hS i i₀ _ hx hi₀))
-      (fun h => absurd (Finset.mem_univ _) h), if_pos hi₀]
+    rw [Finset.sum_eq_single i₀ (fun i _ hi => ite_eq_right fun hx => hi (hS i i₀ _ hx hi₀))
+      (fun h => absurd (Finset.mem_univ _) h), ite_eq_left hi₀]
   · push Not at h
-    simp only [h, if_false, Finset.sum_const_zero]
+    simp only [h, ite_false, Finset.sum_const_zero]
     positivity
 
 end Orth
@@ -435,8 +435,8 @@ theorem kemDecaps_hopInput (o : HopOuter PK SK M K m₁ n) (z : Z) (J : Fin m₂
   funext x
   simp only [hopDecaps, decapsOracle]
   by_cases h : eC.symm x = hopChal P hpk eG eKR o
-  · rw [if_pos h, if_pos h]
-  · rw [if_neg h, if_neg h, decapsFixed_eq_decapsTable P hpk (kemG eG eKR (hopInput o z J))
+  · rw [ite_eq_left h, ite_eq_left h]
+  · rw [ite_eq_right h, ite_eq_right h, decapsFixed_eq_decapsTable P hpk (kemG eG eKR (hopInput o z J))
       (kemJ eJ eKR (hopInput o z J)) (fun c => (eKR.symm (J (eJ (z, c)))).1) o.1.2 o.1.1 z
       (fun c => rfl)]
     rfl

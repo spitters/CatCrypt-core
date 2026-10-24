@@ -140,19 +140,19 @@ noncomputable def ofPMF (p : PMF α) : SDistr α := p.map some
 theorem ofPMF_apply_some (p : PMF α) (a : α) : ofPMF p (some a) = p a := by
   classical
   simp only [ofPMF, PMF.map_apply, Option.some.injEq]
-  rw [tsum_eq_single a fun a' ha' => if_neg (Ne.symm ha'), if_pos rfl]
+  rw [tsum_eq_single a fun a' ha' => ite_eq_right (Ne.symm ha'), ite_eq_left rfl]
 
 @[simp]
 theorem ofPMF_apply_none (p : PMF α) : ofPMF p none = 0 := by
-  simp only [ofPMF, PMF.map_apply, reduceCtorEq, if_false, tsum_zero]
+  simp only [ofPMF, PMF.map_apply, reduceCtorEq, ite_false, tsum_zero]
 
 @[simp]
 theorem mass_ofPMF (p : PMF α) : SDistr.mass (ofPMF p) = 1 := by
   simp only [SDistr.mass, ofPMF_apply_none, tsub_zero]
 
 /-- `SDistr.uniform` is `ofPMF` of the uniform `PMF`. -/
-theorem ofPMF_uniformOfFintype (α : Type*) [Fintype α] [Nonempty α] :
-    ofPMF (PMF.uniformOfFintype α) = SDistr.uniform α := rfl
+theorem ofPMF_uniformFintype (α : Type*) [Fintype α] [Nonempty α] :
+    ofPMF (PMF.uniformFintype α) = SDistr.uniform α := rfl
 
 /-- `sampleFrom (ofPMF p)` is lossless. -/
 theorem isLossless_sampleFrom_ofPMF (p : PMF α) : isLossless (sampleFrom (ofPMF p)) :=

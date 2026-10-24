@@ -320,8 +320,8 @@ theorem prWinKEMHqCoin_indep (A : KEMQAdv m₁ m₂ n w q k c a PK C K) :
     refine Finset.sum_congr rfl fun i _ => Finset.sum_congr rfl fun u _ =>
       Finset.sum_congr rfl fun Hq _ => Finset.sum_congr rfl fun T _ => ?_
     by_cases h : Bad i u
-    · rw [if_pos h, if_pos h, zero_add]
-    · rw [if_neg h, if_neg h, add_zero]
+    · rw [ite_eq_left h, ite_eq_left h, zero_add]
+    · rw [ite_eq_right h, ite_eq_right h, add_zero]
   have hX : (∑ i, ∑ u, ∑ Hq, ∑ T, if Bad i u then 0 else F true i u Hq T) =
       ∑ i, ∑ u, ∑ Hq, ∑ T, if Bad i u then 0 else F false i u Hq T := by
     have hc : ∀ f : KEMInput PK SK Z M K m₁ m₂ n → Fin n → (C → K) → ℝ≥0∞,
@@ -339,8 +339,8 @@ theorem prWinKEMHqCoin_indep (A : KEMQAdv m₁ m₂ n w q k c a PK C K) :
       F false (kfSwap P hpk eG eKR p).1 u (kfSwap P hpk eG eKR p).2 T
     have hb : Bad (kfSwap P hpk eG eKR p).1 u ↔ Bad p.1 u := Iff.rfl
     by_cases h : Bad p.1 u
-    · rw [if_pos h, if_pos (hb.2 h)]
-    · rw [if_neg h, if_neg (fun h' => h (hb.1 h'))]
+    · rw [ite_eq_left h, ite_eq_left (hb.2 h)]
+    · rw [ite_eq_right h, ite_eq_right (fun h' => h (hb.1 h'))]
       have hH : ∀ y, (∃ m, encOf (P.enc p.1.1.1)
           (kemTab hpk eG eKR (coinUpd hpk eG (kfSwap P hpk eG eKR p).1 u)) m = y) →
           (kfSwap P hpk eG eKR p).2 y = p.2 y := by
@@ -356,7 +356,7 @@ theorem prWinKEMHqCoin_indep (A : KEMQAdv m₁ m₂ n w q k c a PK C K) :
       have hc2 : kemChal P hpk eG eKR
           (p.1.1, p.1.2.1, p.1.2.2.1, p.2 (kemChal P hpk eG eKR p.1), p.1.2.2.2.2) =
           kemChal P hpk eG eKR p.1 := rfl
-      simp only [kfSwap, hc2, decapsHq_update_self, Bool.false_eq_true, if_false, if_true]
+      simp only [kfSwap, hc2, decapsHq_update_self, Bool.false_eq_true, ite_false, ite_true]
       rfl
   have hY : ∀ b, (∑ i, ∑ u, ∑ Hq, ∑ T, if Bad i u then F b i u Hq T else 0) ≤
       coinBadWeight (Z := Z) (m₂ := m₂) P hpk eG eKR := by

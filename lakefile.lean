@@ -29,14 +29,14 @@ lean_lib CatCryptCore where
 -- Pinned to the module-system port on spitters/nominal-lean. A path-require of
 -- the sibling builds locally but breaks CI, which has no sibling checkout.
 require nominalLean from git
-  "https://github.com/spitters/nominal-lean" @ "lean-upgrade-4.33"
+  "https://github.com/spitters/nominal-lean" @ "lean-upgrade-4.35"
 
 -- hax-lean: the runtime and typed AST of haxpipeT extractions (`HaxLean.Runtime`), which the
 -- extraction bridges and the fold lemmas of `CatCryptCore.Hax.FoldRange` read.
 require «hax-lean» from git
-  "https://github.com/spitters/hax-lean.git" @ "908a6ec67aae1356f5785944ca1caf8e1e9b4b10"
+  "https://github.com/spitters/hax-lean.git" @ "lean-upgrade-4.35"
 
 -- mathlib LAST so its proofwidgets/aesop versions win on conflicts;
 -- this is required for `lake exe cache get` to find oleans.
 require mathlib from git
-  "https://github.com/leanprover-community/mathlib4" @ "v4.33.1"
+  "https://github.com/leanprover-community/mathlib4" @ "v4.35.0"

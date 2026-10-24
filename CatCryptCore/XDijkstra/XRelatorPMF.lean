@@ -7,7 +7,7 @@ module
 
 public import Mathlib.Probability.ProbabilityMassFunction.Monad
 public import Mathlib.Probability.ProbabilityMassFunction.Constructions
-public import Mathlib.Probability.Distributions.Uniform
+public import CatCryptCore.ForMathlib.PMFUniformDefs
 public import CatCryptCore.XDijkstra.XPostShape
 
 
@@ -276,7 +276,7 @@ which the independent product `xprod` does not provide. -/
 `Couples unif unif (· = ·)` via the diagonal coupling. This is the
 `x ← unif; y ← unif; assume x = y` case made concrete. -/
 theorem demo_coin_coupling :
-    Couples (PMF.uniformOfFintype Bool) (PMF.uniformOfFintype Bool) (· = ·) :=
+    Couples (PMF.uniformFintype Bool) (PMF.uniformFintype Bool) (· = ·) :=
   Couples_same _
 
 end CatCrypt.XDijkstra

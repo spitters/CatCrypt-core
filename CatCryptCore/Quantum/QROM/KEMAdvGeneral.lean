@@ -167,9 +167,9 @@ theorem LiftsQ.trAnc_branch {β : Type} {e : Fin (d * c) ≃ Fin D} {O : QComp d
   rw [hO.branch_eq_sum, trAnc_sum, trAnc_eq_sum_blk, map_sum]
   refine Finset.sum_congr rfl fun i _ => ?_
   rw [trAnc_sum, Finset.sum_eq_single i]
-  · rw [trAnc_kr, trace_ancUnit, if_pos rfl, one_smul]
+  · rw [trAnc_kr, trace_ancUnit, ite_eq_left rfl, one_smul]
   · intro j _ hj
-    rw [trAnc_kr, trace_ancUnit, if_neg (Ne.symm hj), zero_smul]
+    rw [trAnc_kr, trace_ancUnit, ite_eq_right (Ne.symm hj), zero_smul]
   · intro h; exact absurd (Finset.mem_univ i) h
 
 end Blocks

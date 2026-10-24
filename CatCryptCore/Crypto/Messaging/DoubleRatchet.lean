@@ -398,8 +398,8 @@ theorem ctsOf_idealCtsSnoc (msgs : List (List (W × W))) (t : ℕ)
   have h : idealCtsSnoc msgs t (a, v) =
       Fin.snoc (α := fun j : Fin (t + 1) => Fin (epochLen msgs j) → Ct) v a := rfl
   rw [h, ctsOf, List.ofFn_succ_last]
-  simp only [ctsOf, Fin.snoc, Fin.val_castSucc, Fin.is_lt, dif_pos, Fin.val_last, lt_irrefl,
-    dif_neg, not_false_eq_true, cast_eq, Fin.castLT_castSucc]
+  simp only [ctsOf, Fin.snoc, Fin.val_castSucc, Fin.is_lt, dite_eq_left, Fin.val_last, lt_irrefl,
+    dite_eq_right, not_false_eq_true, cast_eq, Fin.castLT_castSucc]
   rfl
 
 omit [Fintype Key] [Nonempty Key] in
