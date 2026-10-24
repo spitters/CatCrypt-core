@@ -74,8 +74,12 @@ caught) is undone with its messages, and the next arm runs. The steps between ar
 shape matchers, the normalisation and unfolding steps, the premise ranking) run under
 the heartbeat budget of one arm and the time left of the total budget; a step that
 exceeds them is undone and treated as having found nothing. Once the total budget is
-spent no further arm runs. When every arm fails, the error names the shape and each arm
-with the first line of its error, formatted without the goals and traces that the arm's
+spent no further arm runs. Before the first arm whose text contains `+suggestions` in a
+run, the registered library-suggestion selector runs once on the goal outside these
+budgets (`warmSuggestions`), so that its index of the imported theorems, which the
+selector builds on first use in a process, is not built under the budget of an arm; the
+time it takes extends the total budget. When every arm fails, the error names the shape
+and each arm with the first line of its error, formatted without the goals and traces that the arm's
 error carries (`elideMessage`).
 
 The wall-clock budgets use the cancellation token of `Core.Context`: a watcher task sets
@@ -182,18 +186,26 @@ structure Budget where
   ms : Nat
   /-- Milliseconds of the whole run. -/
   totalMs : Nat
-  /-- The end of the run, in the time of `IO.monoMsNow`. -/
+  /-- The end of the run, in the time of `IO.monoMsNow`, before the extension by `warm`. -/
   deadline : Nat
+  /-- The milliseconds taken by `warmSuggestions` in this run, `none` before it runs;
+  they extend `deadline`. -/
+  warm : IO.Ref (Option Nat)
+
+/-- The end of the run of `b`, extended by the time of `warmSuggestions`. -/
+def Budget.finish (b : Budget) : IO Nat := do
+  return b.deadline + ((← b.warm.get).getD 0)
 
 /-- The total budget of `b` is spent. -/
 def Budget.spent (b : Budget) : IO Bool := do
-  return b.totalMs != 0 && (← IO.monoMsNow) ≥ b.deadline
+  return b.totalMs != 0 && (← IO.monoMsNow) ≥ (← b.finish)
 
 /-- The wall-clock budget of a step: the milliseconds left of the total budget, cut to
 the budget of an arm when `arm` is set; `0` when neither budget is set. -/
 def Budget.slice (b : Budget) (arm : Bool) : IO Nat := do
   let now ← IO.monoMsNow
-  let left := if b.totalMs == 0 then 0 else max 1 (b.deadline - now)
+  let fin ← b.finish
+  let left := if b.totalMs == 0 then 0 else max 1 (fin - now)
   let own := if arm then b.ms else 0
   return if own == 0 then left else if left == 0 then own else min own left
 
@@ -203,7 +215,24 @@ def Budget.ofOptions (hb : Nat) : CoreM Budget := do
   let opts ← getOptions
   let totalMs := catcrypt_auto.totalMillis.get opts
   return { hb, ms := catcrypt_auto.maxMillis.get opts, totalMs,
-           deadline := (← IO.monoMsNow) + totalMs }
+           deadline := (← IO.monoMsNow) + totalMs, warm := ← IO.mkRef none }
+
+/-- Run the registered library-suggestion selector (`LibrarySuggestions.select`) on `g`
+and discard its result, with the state restored. The selector caches its index of the
+imported theorems on first use in a process; this computes it under the enclosing
+cancellation token and heartbeat limit only. Errors other than interrupts are ignored. -/
+def warmSuggestions (g : MVarId) : MetaM Unit := do
+  try
+    discard <| withoutModifyingState <| g.withContext <| LibrarySuggestions.select g
+  catch ex =>
+    if ex.isInterrupt then throw ex
+
+/-- Run `warmSuggestions` on `g` once in the run of `b`, recording its time in `b.warm`. -/
+def Budget.warmFor (b : Budget) (g : MVarId) : MetaM Unit := do
+  if (← b.warm.get).isSome then return
+  let t0 ← IO.monoMsNow
+  warmSuggestions g
+  b.warm.set (some ((← IO.monoMsNow) - t0))
 
 /-! ## The registry -/
 
@@ -851,6 +880,8 @@ def runArms (sh : String) (c : ArgClasses) (b : Budget) (withTerms : Bool) :
       tried := tried.push m!"\n  {label} and the arms after it: not run, the total time \
         budget of {b.totalMs} ms is spent"
       break
+    if (arm.txt.splitOn "+suggestions").length > 1 then
+      b.warmFor g
     let s ← Tactic.saveState
     let r ← budgeted arm.budget (← b.slice true) do
       evalTactic tac

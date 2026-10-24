@@ -7,6 +7,7 @@ module
 
 public import CatCryptCore.Tactics.DeriveTimed
 public import CatCryptCore.Tactics.AutoTime
+public import CatCryptCore.Tactics.StdCosts
 import CatCryptCore.Core.SPTree
 
 /-!
