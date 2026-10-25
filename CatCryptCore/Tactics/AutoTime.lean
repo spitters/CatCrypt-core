@@ -73,31 +73,45 @@ these summands as atoms; the leaf is split on its case distinctions only when th
 
 A subtree that no rule consumes is bounded by a source: a local hypothesis whose conclusion
 bounds it (`∀ x, (A x).time ≤ T`, `∀ x, (A x).TimeBound T`), or, below the definition named in
-the goal, the theorem `N.timeBound_timed` (or `N.timeBound`) of a definition `N.timed` (or
-`N`), or the theorem `Ns.timeBound_f` of a combinator `Ns.f` (`timeBound_simulate`,
-`timeBound_mapQuery`). The premises of a source are closed in this order:
+the goal or below a root of the goal's tree that is a constructor or a constant read as tree
+structure (`structuralRoot`), the time theorems of the callees: the theorem `N.timeBound_timed`
+(or `N.timeBound`) of a definition `N.timed` (or `N`), or the theorem `Ns.timeBound_f` of a
+combinator `Ns.f` (`timeBound_simulate`, `timeBound_mapQuery`). A time theorem stated in
+another namespace than its definition (`simImpl.timeBound` in namespace `FOTransform` for
+`FOTransformU.simImpl.timed`) is found by resolving the trailing parts of the definition's name
+in the current namespaces and the open declarations (`resolvedCompanions`). An adversary `y.2`
+is bounded from a source of the step-prefixed tree `y` (`tb_snd_of_stb`), so that the premise
+`A.TimeBound ?T` of a callee's time theorem (`liftP.timeBound_timed`) is closed from a
+hypothesis `StepTimeBound X N` at `A = X.2`. The premises of a source are closed in this order:
 
 * by a local hypothesis whose type unifies with the premise, or, for a cost bound
   `∀ x, c x ≤ ?t` whose bound is still free, by reflexivity when `c x` does not depend on `x`;
 * a time premise `∀ x, StepTimeBound (g x) ?t` (or another kind) with a free bound, by a
   source of `g x` whose bound does not depend on `x`;
-* a query bound `A.erase.IsQueryBound ?q` of a costed adversary, by
+* a query bound `(N.timed …).2.erase.IsQueryBound ?q`, by the theorem `N.isQueryBound_erase`,
+  found by name as the time theorems are (`queryBoundSource`); any other query bound
+  `A.erase.IsQueryBound ?q` of a costed adversary, by
   `OracleAdv.Timed.isQueryBound_of_timeBound` from a time bound of `A`;
 * any other premise, by the procedure.
 
-An arithmetic leaf is closed by `omega`, then `linarith`, then `nlinarith`, after its step
-costs `x.1` are reduced (when `x` is a `delay` or its head definition unfolds to a pair) or
-bounded by a source of `x`, and after the bounded atoms are added: for every subterm `f a` of
-the leaf and every local hypothesis `∀ x, f x ≤ b`, the instance `f a ≤ b[a/x]`; for every
-subtype value `↑m`, its invariant `m.property`; for every registered cost `f.timedCost a`, the
-instance of `f.timedCost_eq` or `f.timedCost_le` (premises by the context). Projections of
-pairs, applied or not (`(a, b).2 x`), and beta redexes are reduced first. When these fail, a
-summand `t.time` of a tree that the rules consume (a second projection, a definition with a
-visible body) is read with the rest of the leaf as its path (`arith_time`); else, when the
-leaf contains an `if b = true` on a Boolean local `b`, the leaf is split by cases on `b`;
-else, when it contains an `if` or a `match`, it is split on its condition or scrutinee, and
-each case is solved again. A summand `y.1` on the path is sought as it stands before the step
-costs of the path are reduced.
+An arithmetic leaf is reduced and extended before it is closed: its step costs `x.1` are
+reduced (when `x` is a `delay` or its head definition unfolds to a pair) or bounded by a source
+of `x`; projections of pairs, applied or not (`(a, b).2 x`), and beta redexes are reduced; a
+recursor or `casesOn` on a constructor is reduced by iota, and a number-valued application of a
+definition to a constructor is reduced to its numeral (`reduceCtorArg?`:
+`Sum.elim (fun _ => 1) (fun _ => 0) (.inl q)` to `1`); and the bounded atoms are added: for
+every subterm `f a` of the leaf and every local hypothesis `∀ x, f x ≤ b`, the instance
+`f a ≤ b[a/x]`; for every subtype value `↑m`, its invariant `m.property`; for every registered
+cost `f.timedCost a`, the instance of `f.timedCost_eq` or `f.timedCost_le` (premises by the
+context). The leaf is then closed by `omega`. When `omega` fails, the case distinctions of the
+leaf are split before `linarith` and `nlinarith` are tried, each case solved again: an
+`if b = true` on a Boolean local `b` by cases on `b`; a recursor or `casesOn` on a local
+variable or a pair projection of one (the answer cost `Sum.rec (fun _ => 0) (fun _ => 0) r`) by
+cases on the variable (`recCases?`); an `if` or a `match` on its condition or scrutinee. A leaf
+without case distinctions is closed by `omega`, then `linarith`, then `nlinarith`; when these
+fail, a summand `t.time` of a tree that the rules consume (a second projection, a definition
+with a visible body) is read with the rest of the leaf as its path (`arith_time`). A summand
+`y.1` on the path is sought as it stands before the step costs of the path are reduced.
 
 Every reduction to weak head normal form, unfolding and case split runs under its own
 heartbeat budget (`stepHeartbeats`); a step that exceeds it is not taken, and the subtree is
@@ -111,9 +125,19 @@ fails.
 in the direct stage on goals whose head is `StepTimeBound` or `TimeBound`, or that are `≤`
 over `ℕ` mentioning `SPTree.Timed.stepTime` or `SPTree.Timed.time`.
 
+The tactic `allret_bound` proves leaf invariants `AllRet P t` of costed oracle adversaries:
+the head of `t` is unfolded, a node is read by the definition of `AllRet`, an `if`, `match` or
+recursor on a local variable is split, a bind `(A.bind f).2` takes a leaf invariant of `A` from
+a source (`allRet_bind`), a tree with a source is closed through `allRet_mono`, and each leaf is
+closed by `omega` with the instances of the hypotheses `∀ x, f x ≤ b` at its subterms. The
+sources are local hypotheses, the theorem `N.allRet_le` of a costed definition `N.timed`, and
+the theorem `allRet_f` of a combinator `f` (`allRet_mapQueryAnswer`), each resolved by name in
+the current namespaces.
+
 ## Main definitions
 
 * `time_bound` — the procedure
+* `allret_bound` — the leaf invariants of costed oracle adversaries
 * `time_bound_simps` — the simp set of unfolding equations
 -/
 
@@ -568,6 +592,11 @@ theorem tb_snd {x : ℕ × OracleAdv.Timed D R α} (h : OracleAdv.Timed.StepTime
     x.2.TimeBound (B - P) :=
   h.2.mono (Nat.sub_le _ _)
 
+/-- The adversary of a step-prefixed tree of time `T` has time `T` less the step cost. -/
+theorem tb_snd_of_stb {x : ℕ × OracleAdv.Timed D R α} {T : ℕ}
+    (h : OracleAdv.Timed.StepTimeBound x T) : x.2.TimeBound (T - x.1) :=
+  h.2
+
 theorem stb_pair {c : ℕ} {A : OracleAdv.Timed D R α} (h0 : P + c ≤ B)
     (h : A.TimeBound (B - (P + c))) : OracleAdv.Timed.StepTimeBound (c, A) (B - P) := by
   refine ⟨by dsimp only; omega, ?_⟩
@@ -727,6 +756,14 @@ def unfoldableDef (n : Name) : MetaM Bool := do
     | _ => false
   return rec_.isNone
 
+/-- Whether the head of the tree `x` is a constructor or a constant read as tree structure:
+the subtrees of such a root are below the root, where the time theorems of the environment
+are sources. -/
+def structuralRoot (x : Expr) : MetaM Bool := do
+  let some n := x.getAppFn.constName? | return false
+  if structural.contains n then return true
+  return (← getEnv).find? n matches some (.ctorInfo _)
+
 /-- The heartbeat budget, in thousands, of one reduction or case split of the procedure. -/
 def stepHeartbeats : Nat := 50000
 
@@ -767,9 +804,8 @@ def unfoldTree? (e : Expr) : MetaM (Option Expr) := do
     return some (← whnfR e'.headBeta)
   return r.join
 
-/-- The local variable that an application of a recursor or `casesOn` analyses, when it is
-one. -/
-def recMajor? (e : Expr) : MetaM (Option FVarId) := do
+/-- The major premise of an application of a recursor or `casesOn`. -/
+def recMajorArg? (e : Expr) : MetaM (Option Expr) := do
   let some n := e.getAppFn.constName? | return none
   let some info := (← getEnv).find? n | return none
   let idx? ← match info with
@@ -780,7 +816,12 @@ def recMajor? (e : Expr) : MetaM (Option FVarId) := do
         pure (some (ind.numParams + 1 + ind.numIndices))
       else pure none
   let some i := idx? | return none
-  let some a := e.getAppArgs[i]? | return none
+  return e.getAppArgs[i]?
+
+/-- The local variable that an application of a recursor or `casesOn` analyses, when it is
+one. -/
+def recMajor? (e : Expr) : MetaM (Option FVarId) := do
+  let some a ← recMajorArg? e | return none
   return if a.isFVar then some a.fvarId! else none
 
 /-- The target of `g` with the subterm `x` replaced by the definitionally equal `x'`. -/
@@ -915,12 +956,16 @@ def addSubtypeFacts (g : MVarId) : MetaM MVarId := g.withContext do
     g := g'
   return g
 
-/-- Close an arithmetic leaf by `omega`, then `linarith`, then `nlinarith`, after adding the
-bounded atoms and the invariants of subtype values. -/
-def closeArithCore (g : MVarId) : TacticM Unit := do
+/-- Close an arithmetic leaf by `omega`, then (unless `omegaOnly`) `linarith`, then
+`nlinarith`, after adding the bounded atoms and the invariants of subtype values. -/
+def closeArithCore (g : MVarId) (omegaOnly : Bool := false) : TacticM Unit := do
   let g ← addBoundedAtoms g
   let g ← addSubtypeFacts g
-  for tac in #[← `(tactic| omega), ← `(tactic| linarith), ← `(tactic| nlinarith)] do
+  let om ← `(tactic| omega)
+  let li ← `(tactic| linarith)
+  let nl ← `(tactic| nlinarith)
+  let tacs := if omegaOnly then #[om] else #[om, li, nl]
+  for tac in tacs do
     let s ← saveState
     try
       setGoals [g]
@@ -930,10 +975,26 @@ def closeArithCore (g : MVarId) : TacticM Unit := do
     s.restore
   throwError "time_bound: arithmetic leaf not closed{indentExpr (← g.getType)}"
 
+/-- The constants `s.t` for the tags `t` and the trailing parts `s` of the name `p` (its last
+component, its last two, and so on), each resolved in the current namespaces and the open
+declarations: the companion theorems of a definition `p` stated in another namespace than
+`p`, as `simImpl.timeBound` in namespace `FOTransform` of `FOTransformU.simImpl.timed`. -/
+def resolvedCompanions (p : Name) (tags : List Name) : CoreM (List Name) := do
+  let comps := p.components
+  let mut out : List Name := []
+  for i in [0:comps.length] do
+    let s := (comps.drop (comps.length - 1 - i)).foldl (· ++ ·) Name.anonymous
+    for t in tags do
+      for (c, fields) in ← resolveGlobalName (s ++ t) do
+        if fields.isEmpty && (← getEnv).contains c && !out.contains c then
+          out := out ++ [c]
+  return out
+
 /-- The theorems `N.timeBound_timed`, `N.timeBound` of the definition `N.timed` at the head
 of `x`, `M.timeBound` of a head `M`, and `Ns.timeBound_f` of a combinator `Ns.f`
 (`OracleAdv.Timed.timeBound_simulate` of `OracleAdv.Timed.simulate`). -/
 def envSources (x : Expr) : MetaM (Array Expr) := do
+  let x ← zetaReduce x
   let some n := x.getAppFn.constName? | return #[]
   let last := n.lastComponentAsString
   let cands :=
@@ -941,7 +1002,11 @@ def envSources (x : Expr) : MetaM (Array Expr) := do
       [n.getPrefix ++ `timeBound_timed, n.getPrefix ++ `timeBound] else []) ++
       [n ++ `timeBound, Name.str n.getPrefix ("timeBound_" ++ last)]
   let env ← getEnv
-  cands.filter env.contains |>.toArray.mapM mkConstWithFreshMVarLevels
+  let mut out := cands.filter env.contains
+  if last == "timed" then
+    for c in ← resolvedCompanions n.getPrefix [`timeBound_timed, `timeBound] do
+      unless out.contains c do out := out ++ [c]
+  out.toArray.mapM mkConstWithFreshMVarLevels
 
 /-- Close the proposition `mid` from the context: a local hypothesis whose type unifies with
 it, or, for `∀ x, l ≤ ?r` with `?r` unassigned and independent of `x`, reflexivity. -/
@@ -963,6 +1028,37 @@ def closeByContext (mid : MVarId) : MetaM Bool := mid.withContext do
     return true
   unless ok do s.restore
   return ok
+
+/-- A proof of the query bound `body` (`A.erase.IsQueryBound ?q`) of the adversary `A = y.2`
+of a costed definition `y = N.timed …` by the theorem `N.isQueryBound_erase`, found by name as
+the time theorems of `envSources` are, with its propositional premises closed by the
+context. -/
+def queryBoundSource (body A : Expr) : MetaM (Option Expr) := do
+  let some y := sndOf? A | return none
+  let y ← zetaReduce y
+  let some n := y.getAppFn.constName? | return none
+  unless n.lastComponentAsString == "timed" do return none
+  let exact := n.getPrefix ++ `isQueryBound_erase
+  let mut names := if (← getEnv).contains exact then [exact] else []
+  for c in ← resolvedCompanions n.getPrefix [`isQueryBound_erase] do
+    unless names.contains c do names := names ++ [c]
+  for c in names do
+    let s ← saveState
+    let e ← mkConstWithFreshMVarLevels c
+    let (ms, _, concl) ← forallMetaTelescopeReducing (← inferType e)
+    if ← isDefEq concl body then
+      let mut ok := true
+      for m in ms do
+        let mid := m.mvarId!
+        if ← mid.isAssigned then continue
+        unless ← isProp (← mid.getType) do continue
+        unless ← closeByContext mid do
+          ok := false
+          break
+      let pf ← instantiateMVars (mkAppN e ms)
+      if ok && !pf.hasExprMVar then return some pf
+    s.restore
+  return none
 
 /-- The lemmas `f.timedCost_eq`, `f.timedCost_le` of the registered cost `f.timedCost`. -/
 def costLemmas (n : Name) : MetaM (Array Expr) := do
@@ -1051,12 +1147,58 @@ def reduceProjApp? (e : Expr) : Option Expr :=
     else none
   | _ => none
 
+/-- Case analysis on a local variable, not a `let` variable, that a recursor or `casesOn` in
+`x` analyses; `none` when there is none. -/
+def recCases? (g : MVarId) (x : Expr) : MetaM (Option (List MVarId)) := g.withContext do
+  for s in appsOf x #[] do
+    let some a ← recMajorArg? s | continue
+    -- a major premise `p.1` (a chain of pair projections of `p`): case analysis on `p`
+    let mut r := a
+    for _ in [0:16] do
+      match fstOf? r <|> sndOf? r with
+      | some y => r := y
+      | none => break
+    unless r.isFVar do continue
+    let fv := r.fvarId!
+    if ← fv.isLetVar then continue
+    let some subgoals ← capped (g.cases fv) | continue
+    return some (subgoals.toList.map (·.mvarId))
+  return none
+
+/-- An application with a constructor argument, reduced: a recursor or `casesOn` on a
+constructor by iota reduction, and a number-valued application of a definition to its value
+when that is a numeral (`Sum.elim (fun _ => 1) (fun _ => 0) (.inl q)` to `1`). -/
+def reduceCtorArg? (e : Expr) : MetaM (Option Expr) := do
+  let some n := e.getAppFn.constName? | return none
+  if structural.contains n || e.hasLooseBVars then return none
+  let env ← getEnv
+  let isCtor (a : Expr) : Bool :=
+    (a.getAppFn.constName?.bind env.find?) matches some (.ctorInfo _)
+  if let some a ← recMajorArg? e then
+    unless isCtor a do return none
+    let r ← whnfC e
+    return if r == e then none else some r
+  unless e.getAppArgs.any isCtor do return none
+  if env.find? n matches some (.ctorInfo _) then return none
+  let some ty ← capped (inferType e) | return none
+  unless ty.isConstOf ``Nat do return none
+  -- one unfolding of the head, then reducible reduction (iota and matchers)
+  let some (some r) ← capped (do
+    let some e' ← withDefault (unfoldDefinition? e) | return none
+    return some (← whnfR e'.headBeta)) | return none
+  match r.nat? with
+  | some k => return some (mkNatLit k)
+  | none => match r.rawNatLit? with
+    | some k => return some (mkNatLit k)
+    | none => return none
+
 /-- The target with projections of pairs (applied or not) and beta redexes reduced. -/
 def reduceProjBeta (g : MVarId) : MetaM MVarId := g.withContext do
   let tgt ← instantiateMVars (← g.getType)
   let tgt' ← Meta.transform tgt (post := fun e => do
     if e.isHeadBetaTarget then return .visit e.headBeta
     if let some e' := reduceProjApp? e then return .visit e'
+    if let some e' ← reduceCtorArg? e then return .visit e'
     return .continue)
   if tgt' == tgt then return g
   g.replaceTargetDefEq tgt'
@@ -1544,25 +1686,35 @@ partial def closeArith (g : MVarId) (env : Bool) (fuel : Nat) : TacticM Unit := 
   let gc ← addCaseFacts (← addCostFacts g)
   let s ← saveState
   try
-    closeArithCore gc
-  catch e =>
+    closeArithCore gc (omegaOnly := true)
+  catch _ =>
     s.restore
-    -- the time of a tree that the rules consume, with the rest of the leaf as its path (on
-    -- the leaf before its step costs are reduced, so that `fstSummand` finds them)
-    let s1 ← saveState
-    s0.restore
-    if let some g' ← timeAtom? g0 then
-      solve g' env (fuel - 1)
-      return
-    s1.restore
-    -- an `if b = true` on a Boolean local: case analysis on `b`
+    -- case distinctions of the leaf before `linarith` and `nlinarith`, whose failed searches
+    -- on a leaf that a split closes are the expensive part of a leaf
     let tgtc ← gc.withContext do instantiateMVars (← gc.getType)
+    -- an `if b = true` on a Boolean local: case analysis on `b`
     if let some gs ← boolCases? gc tgtc then
       for g' in gs do solve g' env (fuel - 1)
       return
+    -- a recursor or `casesOn` on a local variable (a cost `Sum.rec (fun _ => 0) (fun _ => 0) r`
+    -- of an answer `r`): case analysis on the variable, the cases reduced by iota
+    if let some gs ← recCases? gc tgtc then
+      for g' in gs do solve g' env (fuel - 1)
+      return
     -- an `if` or `match` in the leaf: split on its condition or scrutinee
-    let some (some gs) ← capped (splitTarget? gc) | throw e
-    for g' in gs do solve g' env (fuel - 1)
+    if let some (some gs) ← capped (splitTarget? gc) then
+      for g' in gs do solve g' env (fuel - 1)
+      return
+    let s2 ← saveState
+    try
+      closeArithCore gc
+    catch e =>
+      s2.restore
+      -- the time of a tree that the rules consume, with the rest of the leaf as its path (on
+      -- the leaf before its step costs are reduced, so that `fstSummand` finds them)
+      s0.restore
+      let some g' ← timeAtom? g0 | throw e
+      solve g' env (fuel - 1)
 
 /-- A premise of a source with metavariables in its type: by the context
 (`closeByContext`); a time premise `∀ x, StepTimeBound (g x) ?t` (or another kind) by a
@@ -1583,6 +1735,9 @@ partial def solvePremise (mid : MVarId) (env : Bool) (fuel : Nat) : TacticM Bool
     if body.isAppOfArity ``OracleAdv.IsQueryBound 5 then
       let a := body.getArg! 3
       if a.isAppOfArity ``OracleAdv.Timed.erase 4 then
+        if let some pf ← queryBoundSource body a.appArg! then
+          mid.assign (← mkLambdaFVars xs pf)
+          return true
         if let some pf ← findSource .tb a.appArg! env fuel then
           let q ← mkAppM ``OracleAdv.Timed.isQueryBound_of_timeBound #[pf]
           if ← isDefEq (← inferType q) body then
@@ -1637,6 +1792,10 @@ partial def findSource (k : Kind) (x : Expr) (env : Bool) (fuel : Nat) :
       return some pf
     catch _ =>
       s.restore
+  -- the adversary `y.2` of a step-prefixed tree `y` bounded as a whole
+  if let (.tb, some y) := (k, sndOf? x) then
+    if let some pf ← findSource .stb y env fuel then
+      return some (← mkAppM ``tb_snd_of_stb #[pf])
   return none
 
 /-- A subtree that no structural rule consumes: a source, else the unfolding of its head
@@ -1949,8 +2108,10 @@ partial def solve (g : MVarId) (env : Bool) (fuel : Nat) : TacticM Unit := do
   else if tgt.isAppOfArity ``And 2 then rule g ``And.intro env fuel
   else if tgt.isConstOf ``True then g.assign (mkConst ``True.intro)
   else if let some (l, _) := natLe? tgt then
-    if l.isAppOfArity ``SPTree.Timed.stepTime 2 then rule g ``st_start env fuel
-    else if l.isAppOfArity ``SPTree.Timed.time 2 then rule g ``time_start env fuel
+    if l.isAppOfArity ``SPTree.Timed.stepTime 2 then
+      rule g ``st_start (env || (← structuralRoot l.appArg!)) fuel
+    else if l.isAppOfArity ``SPTree.Timed.time 2 then
+      rule g ``time_start (env || (← structuralRoot l.appArg!)) fuel
     else if l.isAppOfArity ``HAdd.hAdd 6 then
       let y := l.appArg!
       if y.isAppOfArity ``SPTree.Timed.stepTime 2 then stepCase g y.appArg! env fuel
@@ -1959,10 +2120,10 @@ partial def solve (g : MVarId) (env : Bool) (fuel : Nat) : TacticM Unit := do
     else closeArith g env fuel
   else if tgt.isAppOfArity ``OracleAdv.Timed.TimeBound 5 then
     if (tgt.getArg! 4).isAppOfArity ``HSub.hSub 6 then tbCase g (tgt.getArg! 3) env fuel
-    else rule g ``tb_start env fuel
+    else rule g ``tb_start (env || (← structuralRoot (tgt.getArg! 3))) fuel
   else if tgt.isAppOfArity ``OracleAdv.Timed.StepTimeBound 5 then
     if (tgt.getArg! 4).isAppOfArity ``HSub.hSub 6 then stbCase g (tgt.getArg! 3) env fuel
-    else rule g ``stb_start env fuel
+    else rule g ``stb_start (env || (← structuralRoot (tgt.getArg! 3))) fuel
   else
     let s ← saveState
     try
@@ -1972,6 +2133,220 @@ partial def solve (g : MVarId) (env : Bool) (fuel : Nat) : TacticM Unit := do
       closeArith g env fuel
 
 end
+
+/-! ### Leaf invariants of costed oracle adversaries -/
+
+/-- `OracleAdv.Timed.AllRet`, named without the import of its module. -/
+def advAllRet : Name := `CatCrypt.Crypto.OracleAdv.Timed.AllRet
+
+/-- The adversary `t` with its head brought to view: `(c, A).2` is `A`, `(delay c x).2` is
+`x.2`, and a head definition (also below a second projection) is unfolded. A bind
+`(A.bind f).2` is kept. -/
+def advHead (t : Expr) : MetaM Expr := do
+  let mut t ← whnfC t
+  for _ in [0:32] do
+    if let some y := sndOf? t then
+      let y' ← whnfC y
+      if y'.isAppOfArity ``Prod.mk 4 then t ← whnfC (y'.getArg! 3)
+      else if y'.isAppOfArity ``OracleAdv.Timed.delay 5 then
+        t ← whnfC (← mkAppM ``Prod.snd #[y'.getArg! 4])
+      else if y'.isAppOfArity ``OracleAdv.Timed.bind 6 then
+        return ← mkAppM ``Prod.snd #[y']
+      else if let some y'' ← unfoldTree? y' then
+        t ← whnfC (← mkAppM ``Prod.snd #[y''])
+      else return ← mkAppM ``Prod.snd #[y']
+    else if let some t' ← unfoldTree? t then t := t'
+    else return t
+  return t
+
+/-- The names of the leaf-invariant theorems of the adversary `t`: `N.allRet_le` for
+`t = (N.timed …).2`, and `Ns.allRet_f` for a combinator `Ns.f` at the head of `t`, each also
+resolved in the current namespaces. -/
+def allRetNames (t : Expr) : MetaM (List Name) := do
+  let t ← zetaReduce t
+  let mut out : List Name := []
+  if let some y := sndOf? t then
+    if let some n := y.getAppFn.constName? then
+      if n.lastComponentAsString == "timed" then
+        let ex := n.getPrefix ++ `allRet_le
+        if (← getEnv).contains ex then out := out ++ [ex]
+        for c in ← resolvedCompanions n.getPrefix [`allRet_le] do
+          unless out.contains c do out := out ++ [c]
+  if let some n := t.getAppFn.constName? then
+    let tag := Name.mkSimple ("allRet_" ++ n.lastComponentAsString)
+    let ex := n.getPrefix ++ tag
+    if (← getEnv).contains ex && !out.contains ex then out := out ++ [ex]
+    for (c, fields) in ← resolveGlobalName tag do
+      if fields.isEmpty && (← getEnv).contains c && !out.contains c then out := out ++ [c]
+  return out
+
+mutual
+
+/-- A proof of `AllRet ?Q t`, `?Q` possibly unassigned, by a local hypothesis or a theorem of
+`allRetNames`, its premises closed by the context or (for leaf invariants) by `arSource`. -/
+partial def arSource (Q t : Expr) (fuel : Nat) : TacticM (Option Expr) := do
+  if fuel == 0 then return none
+  if let some pf ← arSourceAt Q t fuel then return some pf
+  let t' ← advHead t
+  if t' == t then return none
+  arSourceAt Q t' fuel
+
+/-- `arSource` at the tree `t` as it stands. -/
+partial def arSourceAt (Q t : Expr) (fuel : Nat) : TacticM (Option Expr) := do
+  let locals ← (← getLCtx).getFVars.filterM fun f => do
+    return !(← f.fvarId!.getDecl).isImplementationDetail
+  let names ← allRetNames t
+  let cands := locals ++ (← names.toArray.mapM fun n => mkConstWithFreshMVarLevels n)
+  for c in cands do
+    let s ← saveState
+    try
+      let (ms, _, body) ← forallMetaTelescopeReducing (← inferType c)
+      unless body.isAppOfArity advAllRet 5 do throwError "no"
+      unless ← isDefEq (body.getArg! 4) t do throwError "no"
+      unless ← isDefEq (body.getArg! 3) Q do throwError "no"
+      for m in ms do
+        let mid := m.mvarId!
+        if ← mid.isAssigned then continue
+        let ty ← instantiateMVars (← mid.getType)
+        unless ← isProp ty do continue
+        if ty.isAppOfArity advAllRet 5 then
+          let some pf ← arSource (ty.getArg! 3) (ty.getArg! 4) (fuel - 1) | throwError "no"
+          mid.assign pf
+        else unless ← closeByContext mid do throwError "no"
+      let pf ← instantiateMVars (mkAppN c ms)
+      if pf.hasExprMVar then throwError "no"
+      return some pf
+    catch _ => s.restore
+  return none
+
+/-- An arithmetic or propositional leaf of a leaf invariant: conjunctions and universal
+statements are split, the conjunctions of the context are split, and the goal is closed by
+`omega` with the bounded atoms of the context, after case splits. -/
+partial def arLeaf (g : MVarId) (fuel : Nat) : TacticM Unit := do
+  if fuel == 0 then throwError "allret_bound: depth bound reached"
+  let g ← g.casesAnd
+  let g ← reduceProjBeta g
+  g.withContext do
+  let tgt ← instantiateMVars (← g.getType)
+  if tgt.isForall then
+    let (_, g') ← g.intro1P
+    arLeaf g' (fuel - 1)
+  else if tgt.isAppOfArity ``And 2 then
+    let [g1, g2] ← g.apply (mkConst ``And.intro) | throwError "allret_bound: And"
+    arLeaf g1 (fuel - 1)
+    arLeaf g2 (fuel - 1)
+  else if tgt.isConstOf ``True then g.assign (mkConst ``True.intro)
+  else if tgt.isAppOfArity advAllRet 5 then arAdv g (fuel - 1)
+  else
+    let s ← saveState
+    try
+      g.assumption
+      return
+    catch _ => s.restore
+    let g1 ← addBoundedAtoms g
+    try
+      setGoals [g1]
+      evalTactic (← `(tactic| omega))
+      if (← getUnsolvedGoals).isEmpty then return
+    catch _ => pure ()
+    s.restore
+    if let some gs ← recCases? g tgt then
+      for g' in gs do arLeaf g' (fuel - 1)
+      return
+    let some (some gs) ← capped (splitTarget? g) |
+      throwError "allret_bound: leaf not closed{indentExpr tgt}"
+    for g' in gs do arLeaf g' (fuel - 1)
+
+/-- `AllRet P t` for a costed oracle adversary `t`: a node by the definition of `AllRet`, an
+`if` or `match` by a split, a bind `(A.bind f).2` by a leaf invariant of `A` from `arSource`
+(`allRet_bind`) or by reducing the bind at a node, and any tree by a source (`allRet_mono`). -/
+partial def arAdv (g : MVarId) (fuel : Nat) : TacticM Unit := do
+  if fuel == 0 then throwError "allret_bound: depth bound reached"
+  g.withContext do
+  let tgt ← instantiateMVars (← g.getType)
+  unless tgt.isAppOfArity advAllRet 5 do
+    arLeaf g (fuel - 1)
+    return
+  let P := tgt.getArg! 3
+  let t0 := tgt.getArg! 4
+  let t ← advHead t0
+  let g ← replaceIn g t0 t
+  let isNode := t.isAppOf ``OracleAdv.Timed.ret || t.isAppOf ``OracleAdv.Timed.rand ||
+    t.isAppOf ``OracleAdv.Timed.query
+  if isNode then
+    let some tgt' ← capped (whnfD (← g.getType)) | throwError "allret_bound: node"
+    arLeaf (← g.replaceTargetDefEq (← Core.betaReduce tgt')) (fuel - 1)
+    return
+  let inner := (sndOf? t).getD t
+  if inner.isAppOfArity ``ite 5 || inner.isAppOfArity ``dite 5 ||
+      (← matchMatcherApp? inner).isSome then
+    if let some (some gs) ← capped (splitTarget? g) then
+      for g' in gs do arAdv g' (fuel - 1)
+      return
+  if let some fv ← recMajor? inner then
+    if let some subgoals ← capped (g.cases fv) then
+      for sg in subgoals do arAdv sg.mvarId (fuel - 1)
+      return
+  -- a source for the whole tree
+  let s ← saveState
+  let Q ← mkFreshExprMVar (← inferType P)
+  if let some pf ← arSource Q t fuel then
+    let e ← mkConstWithFreshMVarLevels `CatCrypt.Crypto.OracleAdv.Timed.allRet_mono
+    let (ms, _, concl) ← forallMetaTelescopeReducing (← inferType e)
+    if ← isDefEq concl (← g.getType) then
+      let h := ms.back!
+      if ← isDefEq h pf then
+        g.assign (mkAppN e ms)
+        for m in ms do
+          unless ← m.mvarId!.isAssigned do arLeaf m.mvarId! (fuel - 1)
+        return
+  s.restore
+  -- a bind: a leaf invariant of its first tree
+  if let some b := sndOf? t then
+    if b.isAppOfArity ``OracleAdv.Timed.bind 6 then
+      let A := b.getArg! 4
+      let α := b.getArg! 2
+      let Q ← mkFreshExprMVar (← mkArrow α (mkSort .zero))
+      let s1 ← saveState
+      if let some pf ← arSource Q A fuel then
+        let e ← mkConstWithFreshMVarLevels `CatCrypt.Crypto.OracleAdv.Timed.allRet_bind
+        let (ms, _, concl) ← forallMetaTelescopeReducing (← inferType e)
+        if ← isDefEq concl (← g.getType) then
+          let hA := ms[ms.size - 2]!
+          if ← isDefEq hA pf then
+            g.assign (mkAppN e ms)
+            let hf := ms.back!.mvarId!
+            let (_, g1) ← hf.intro1P
+            let (hq, g2) ← g1.intro1P
+            let g3 ← g2.withContext do
+              g2.replaceLocalDeclDefEq hq (← Core.betaReduce (← instantiateMVars (← hq.getType)))
+            arAdv g3 (fuel - 1)
+            return
+      s1.restore
+      -- the first tree at a node: the bind reduced
+      let A' ← advHead A
+      if A'.isAppOf ``OracleAdv.Timed.ret || A'.isAppOf ``OracleAdv.Timed.rand ||
+          A'.isAppOf ``OracleAdv.Timed.query then
+        let b' := mkAppN b.getAppFn (b.getAppArgs.set! 4 A')
+        let some t' ← capped (whnfD (← mkAppM ``Prod.snd #[b'])) |
+          throwError "allret_bound: bind"
+        let g' ← g.replaceTargetDefEq (mkAppN tgt.getAppFn (tgt.getAppArgs.set! 4 t'))
+        arAdv g' (fuel - 1)
+        return
+  throwError "allret_bound: no leaf invariant for{indentExpr t}"
+
+end
+
+/-- `allret_bound` proves a leaf invariant `AllRet P t` of a costed oracle adversary `t`, as
+the companion bounds `∀ x, y.2.1.2 x ≤ b + 3` of the states that a costed handler returns, from
+the hypotheses bounding the companions it receives (see `arAdv`). -/
+syntax (name := allRetBoundStx) "allret_bound" : tactic
+
+@[tactic allRetBoundStx] def evalAllRetBound : Tactic := fun _ => do
+  let g ← getMainGoal
+  let rest := (← getGoals).tail
+  arLeaf g 256
+  setGoals rest
 
 /-- The depth bound of `time_bound`. -/
 def maxDepth : Nat := 512
