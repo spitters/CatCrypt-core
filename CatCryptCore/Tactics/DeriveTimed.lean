@@ -551,6 +551,37 @@ theorem bind_hat {α α' β : Type} (ε : α' → α) (ι : α → α') (t : SPT
 
 end CatCrypt.Core.SPTree.Timed
 
+namespace CatCrypt.Crypto.OracleAdv
+
+/-- The bind of an `if` is the `if` of the binds. -/
+theorem ite_bind {D R α β : Type} (c : Prop) [Decidable c] (t e : OracleAdv D R α)
+    (f : α → OracleAdv D R β) :
+    (if c then t else e).bind f = if c then t.bind f else e.bind f := by
+  split <;> rfl
+
+/-- The bind of a dependent `if` is the dependent `if` of the binds. -/
+theorem dite_bind {D R α β : Type} (c : Prop) [Decidable c] (t : c → OracleAdv D R α)
+    (e : ¬c → OracleAdv D R α) (f : α → OracleAdv D R β) :
+    (if h : c then t h else e h).bind f = if h : c then (t h).bind f else (e h).bind f := by
+  split <;> rfl
+
+end CatCrypt.Crypto.OracleAdv
+
+namespace CatCrypt.Core.SPTree
+
+/-- The bind of an `if` is the `if` of the binds. -/
+theorem ite_bind {α β : Type} (c : Prop) [Decidable c] (t e : SPTree α) (f : α → SPTree β) :
+    (if c then t else e).bind f = if c then t.bind f else e.bind f := by
+  split <;> rfl
+
+/-- The bind of a dependent `if` is the dependent `if` of the binds. -/
+theorem dite_bind {α β : Type} (c : Prop) [Decidable c] (t : c → SPTree α) (e : ¬c → SPTree α)
+    (f : α → SPTree β) :
+    (if h : c then t h else e h).bind f = if h : c then (t h).bind f else (e h).bind f := by
+  split <;> rfl
+
+end CatCrypt.Core.SPTree
+
 meta section
 
 namespace CatCrypt.Tactics.DeriveTimed
@@ -1436,6 +1467,87 @@ def matchEraseLemma (k : TreeKind) (M : Name) : TermElabM (Option Name) := do
   catch _ =>
     s.restore
     return none
+
+/-- The bind of the tree kind `k`: its combinator named `bind`. -/
+def kindBind? (k : TreeKind) : Option Name :=
+  (k.combinators.find? fun cb => match cb.src with
+    | .str _ "bind" => true
+    | _ => false).map (·.src)
+
+/-- The bind lemma `M.bind_<kind>` of the matcher `M` for trees of kind `k`: the bind of a match
+whose alternatives are trees is the match of the binds of the alternatives, stated at every
+continuation `f`. It is generated and proved by case analysis on its first use, and is `none`
+when the matcher has no universe parameter for its motive or the proof fails. -/
+def matchBindLemma (k : TreeKind) (M : Name) : TermElabM (Option Name) := do
+  let name := M ++ Name.mkSimple ("bind_" ++ k.noun.replace " " "_")
+  if (← getEnv).contains name then return some name
+  let some bindC := kindBind? k | return none
+  let some mi ← getMatcherInfo? M | return none
+  let some uPos := mi.uElimPos? | return none
+  let cinfo ← getConstInfo M
+  let lps := cinfo.levelParams
+  let stmt? ← forallTelescope (← inferType (mkConst k.tree)) fun tps _ => do
+    let some α := tps.back? | return none
+    withLocalDeclD `β (← inferType α) fun β => do
+      let T1 := mkAppN (mkConst k.tree) tps
+      let T2 := mkAppN (mkConst k.tree) (tps.pop.push β)
+      withLocalDeclD `f (← mkArrow α T2) fun f => do
+        let lvls := lps.map mkLevelParam
+        let M1 := Lean.mkConst M (lvls.set uPos (← getLevel T1))
+        let M2 := Lean.mkConst M (lvls.set uPos (← getLevel T2))
+        let ty1 ← inferType M1
+        forallBoundedTelescope ty1 mi.numParams fun ps rest => do
+          let .forallE _ motTy _ _ := rest | return none
+          let mot1 ← forallTelescope motTy fun xs _ => mkLambdaFVars xs T1
+          let mot2 ← forallTelescope motTy fun xs _ => mkLambdaFVars xs T2
+          let rest1 ← instantiateForall ty1 (ps.push mot1)
+          forallBoundedTelescope rest1 mi.numDiscrs fun ds rest2 => do
+            forallBoundedTelescope rest2 mi.numAlts fun alts _ => do
+              let lhs ← mkAppM bindC #[mkAppN M1 (ps ++ #[mot1] ++ ds ++ alts), f]
+              let alts2 ← alts.mapM fun a => do
+                forallTelescope (← inferType a) fun fs _ => do
+                  mkLambdaFVars fs (← mkAppM bindC #[mkAppN a fs, f])
+              let rhs := mkAppN M2 (ps ++ #[mot2] ++ ds ++ alts2)
+              let eq ← mkEq lhs rhs
+              return some (← Core.betaReduce
+                (← mkForallFVars (tps ++ #[β, f] ++ ps ++ ds ++ alts) eq))
+  let some stmt := stmt? | return none
+  let s ← saveState
+  try
+    let mv ← mkFreshExprMVar stmt
+    let gs ← Tactic.run mv.mvarId! (Tactic.evalTactic (← `(tactic|
+      (intros; split <;> (try rfl) <;> (split <;> first | rfl | (exfalso; simp_all))))))
+    unless gs.isEmpty do
+      s.restore
+      return none
+    let proof ← instantiateMVars mv
+    if proof.hasSorry || proof.hasMVar then
+      s.restore
+      return none
+    let thm : TheoremVal :=
+      { name := name, levelParams := lps.eraseIdx uPos, type := stmt, value := proof }
+    addDecl (Declaration.thmDecl thm)
+    return some name
+  catch _ =>
+    s.restore
+    return none
+
+/-- Whether the call `e` of the tree-valued definition `c` is unfolded rather than translated
+to a call of a costed form: `c` is a non-recursive definition that is not a matcher, the result
+type of the tree at the call holds functions (`hatTy?`), and the result type of the tree in the
+declared type of `c` does not (a callee generic in its state type, called at a state holding
+functions). -/
+def unfoldsGenericCall (c : Name) (e : Expr) : MetaM Bool := do
+  let env ← getEnv
+  let some (.defnInfo dv) := env.find? c | return false
+  if (Structural.eqnInfoExt.find? env c).isSome || (WF.eqnInfoExt.find? env c).isSome then
+    return false
+  if isMatcherCore env c then return false
+  let some Tc ← treeTy? (← inferType e) | return false
+  if (← hatTy? Tc.result).isNone then return false
+  forallTelescope dv.type fun _ b => do
+    let some Tg ← treeTy? b | return false
+    return (← hatTy? Tg.result).isNone
 
 /-- The costed tree of the tree binder `e`, when `e` is one. -/
 def treeLocal? (ctx : Ctx) (e : Expr) : Option Expr :=
@@ -2661,6 +2773,16 @@ partial def trConst (ctx : Ctx) (e : Expr) (c : Name) (args : Array Expr) (T : T
         if let some r := ctx.fieldRec? then
           unless (← r.get).contains p do r.modify (·.push p)
           return T.mkPair (add (natE 1) (← argsCost ctx rest)) leaf
+  -- A non-recursive callee generic in its state type, called at a state holding functions: its
+  -- body is translated in the caller's context, where the state has its costed value, and the
+  -- erasure theorem unfolds it.
+  if ctx.self?.all (·.1 != c) && (← unfoldsGenericCall c e) then
+    if ctx.depth ≥ (← maxDepth) then
+      fail m!"needs a registered costed form: `{c}` unfolds too deep"
+    let some e' ← delta? e | fail m!"the call `{e}` does not unfold"
+    if let some r := ctx.unfolded? then
+      r.modify fun a => if a.contains c then a else a.push c
+    return ← tr { ctx with depth := ctx.depth + 1 } (← Core.betaReduce e')
   -- A call of a reduction.
   let target ← match ctx.self? with
     | some (self, rec) => if self == c then pure rec else ensureTimed ctx c e.getAppFn
@@ -2727,6 +2849,19 @@ partial def ensureTimed (ctx : Ctx) (c : Name) (f : Expr) : TermElabM Expr := do
         {ex.toMessageData}"
   return mkConst name f.constLevels!
 
+/-- The cost companion of the field path `p` of a local holding functions (a simulation state
+of kind `hat`, such as the state of a handler under `simulateHat`): the companion of the
+costed closure that the costed value of the local holds at the field; `none` when `p` mentions
+no such local or its costed value is not a costed closure. -/
+partial def hatFieldCompanion? (ctx : Ctx) (p : Expr) : TermElabM (Option Expr) := do
+  let isHat (id : FVarId) : Bool := match ctx.locals.get? id with
+    | some { kind := .hat, .. } => true
+    | _ => false
+  unless p.hasAnyFVar isHat do return none
+  let (_, v) ← tv ctx p
+  unless (← whnfR (← inferType v)).isAppOfArity ``Prod 2 do return none
+  return some (← mkAppM ``Prod.snd #[v])
+
 /-- A call of the reduction whose costed form is `target`: one plus the step cost of the
 costed call plus the costs of the arguments. -/
 partial def callTimed (ctx : Ctx) (e target : Expr) (args : Array Expr) (T : TreeTy) :
@@ -2787,6 +2922,8 @@ partial def callTimed (ctx : Ctx) (e target : Expr) (args : Array Expr) (T : Tre
           tup := (tup.getArg! 3).headBeta
         for p in paths do
           if let some (_, cc) := ctx.fields.find? (·.1 == p) then
+            out := out.push cc
+          else if let some cc ← hatFieldCompanion? ctx p then
             out := out.push cc
           else if let some r := ctx.fieldRec? then
             unless (← r.get).contains p do r.modify (·.push p)
@@ -3046,6 +3183,53 @@ partial def deriveTimed (ctx : Ctx) (c : Name) : TermElabM Unit := do
   let tacDisch? : Option (TSyntax `tactic) ← if recursive || hatLemmas.isEmpty then pure none
     else if treeRec then some <$> `(tactic| ($intros; $closeDisch))
     else some <$> `(tactic| ($intros; (try unfold $(mkIdent timedName):ident); $closeDisch))
+  -- A bind of an `if` or a match under a binder (an `if` under the binder of a `query` node
+  -- whose branches rebuild a state holding functions, followed by the erasure `ε` of the
+  -- result): the bind lemmas of `if`, dependent `if` and the matchers of both sides push the
+  -- bind into the branches. The stage runs without the discharger, then with it.
+  let usedKinds := treeKinds.filter fun k => used.contains k.timed
+  let mut bindNames : Array Name := #[]
+  for k in usedKinds do
+    if k.tree == ``CatCrypt.Crypto.OracleAdv then
+      bindNames := bindNames ++ #[``CatCrypt.Crypto.OracleAdv.ite_bind,
+        ``CatCrypt.Crypto.OracleAdv.dite_bind]
+    if k.tree == ``CatCrypt.Core.SPTree then
+      bindNames := bindNames ++ #[``CatCrypt.Core.SPTree.ite_bind,
+        ``CatCrypt.Core.SPTree.dite_bind]
+  let bodyConsts := match info with
+    | .defnInfo dv => dv.value.getUsedConstants
+    | _ => #[]
+  for m in (tValue.getUsedConstants ++ bodyConsts).filter (isMatcherCore envNow ·) do
+    for k in usedKinds do
+      if let some n ← matchBindLemma k m then
+        unless bindNames.contains n do bindNames := bindNames.push n
+  let bindLemmas : Array (TSyntax `Lean.Parser.Tactic.simpLemma) ←
+    bindNames.mapM fun n => `(Lean.Parser.Tactic.simpLemma| $(mkIdent n):ident)
+  let allBind := allIte ++ bindLemmas
+  let closeBind ← `(tactic| ((try simp only [$allBind,*, *]) <;> (try (repeat' split)) <;>
+    (try split_ifs) <;> (try simp only [$allBind,*, *]) <;> (try rfl)))
+  -- With the discharger, the erasure theorems `R.erase_timed_bind` of callees are left out when
+  -- `R.erase_timed` is present: in a side condition of `erase_simulateHat_bind` the handler's
+  -- result is followed by `ε`, which `R.erase_timed` matches, while `R.erase_timed_bind` leaves
+  -- the round trip `ι ∘ ε` of the state, a structure eta-expanded field by field.
+  let plainNames := simpLemmas.filter fun n =>
+    !(callees.contains n && n.toString.endsWith "_bind" &&
+      callees.any (·.toString ++ "_bind" == n.toString))
+  let plainLemmas : Array (TSyntax `Lean.Parser.Tactic.simpLemma) ←
+    plainNames.mapM fun n => `(Lean.Parser.Tactic.simpLemma| $(mkIdent n):ident)
+  let allPlain := plainLemmas ++ iteLemmas ++ bindLemmas
+  let closeBindDisch ← `(tactic|
+    ((try simp (disch := (intros; simp only [$allPlain,*])) only [$allPlain,*, *]) <;>
+      (try (repeat' split)) <;> (try split_ifs) <;>
+      (try simp (disch := (intros; simp only [$allPlain,*])) only [$allPlain,*, *]) <;>
+      (try rfl)))
+  let tacBind? : Option (TSyntax `tactic) ← if recursive || bindNames.isEmpty then pure none
+    else if treeRec then some <$> `(tactic| ($intros; $closeBind))
+    else some <$> `(tactic| ($intros; (try unfold $(mkIdent timedName):ident); $closeBind))
+  let tacBindDisch? : Option (TSyntax `tactic) ←
+    if recursive || bindNames.isEmpty || hatLemmas.isEmpty then pure none
+    else if treeRec then some <$> `(tactic| ($intros; $closeBindDisch))
+    else some <$> `(tactic| ($intros; (try unfold $(mkIdent timedName):ident); $closeBindDisch))
   let proof ← Term.withoutErrToSorry do
     let mv ← mkFreshExprMVar eType
     let rem ← if recursive && hatted then do
@@ -3070,6 +3254,18 @@ partial def deriveTimed (ctx : Ctx) (c : Name) : TermElabM Unit := do
       | _ :: _, some tacIte => do
         let mv' ← mkFreshExprMVar eType
         let rem' ← Tactic.run mv'.mvarId! (Tactic.evalTactic tacIte)
+        pure (if rem'.isEmpty then (mv', rem') else (mv, rem))
+      | _, _ => pure (mv, rem)
+    let (mv, rem) ← match rem, tacBind? with
+      | _ :: _, some tacBind => do
+        let mv' ← mkFreshExprMVar eType
+        let rem' ← Tactic.run mv'.mvarId! (Tactic.evalTactic tacBind)
+        pure (if rem'.isEmpty then (mv', rem') else (mv, rem))
+      | _, _ => pure (mv, rem)
+    let (mv, rem) ← match rem, tacBindDisch? with
+      | _ :: _, some tacBindDisch => do
+        let mv' ← mkFreshExprMVar eType
+        let rem' ← Tactic.run mv'.mvarId! (Tactic.evalTactic tacBindDisch)
         pure (if rem'.isEmpty then (mv', rem') else (mv, rem))
       | _, _ => pure (mv, rem)
     let (mv, rem) ← match rem, tacDisch? with
