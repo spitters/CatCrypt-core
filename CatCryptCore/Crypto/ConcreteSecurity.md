@@ -52,8 +52,9 @@ time(Bᵢ A) ≤ k · time(A) + q · t + c
 
 where `q` is the number of oracle queries of `A`, `t` the cost of answering one, `k` the number
 of runs of `A` inside `Bᵢ` (one for a black-box reduction, more under rewinding) and `c` the
-remaining work of `Bᵢ`. EasyCrypt proves statements of this form in the cost logic of
-[BBGKS21], with the adversary an abstract module whose cost is a parameter. In CatCrypt a
+remaining work of `Bᵢ`. The cost logic of EasyCrypt [BBGKS21] proved statements of this form,
+with the adversary an abstract module whose cost is a parameter, until its removal in 2024
+(§4). In CatCrypt a
 reduction `R` is certified by a costed form and two theorems checked by the kernel.
 
 1. Costed mirrors. The oracle trees `OracleAdv` ([OracleAdversary.lean](OracleAdversary.lean))
@@ -137,8 +138,13 @@ and stateless handlers whose overhead is the cost of answering a query, and `tim
 is their time law; the PRF-to-MAC reduction and the inner cascade reduction take time
 `4 · T + 6` and `(6 + e) · T + 3`, with `e` a bound on the cost of the keyed function
 ([PRFMACTimed.lean](../Examples/PRFMACTimed.lean), [PRFTimed.lean](../Examples/PRFTimed.lean)).
-These are the rules of Isabelle's `time_fun` [HOL] and of [Hop26]. A primitive without a body
-to price takes the cost registered for it with `timed_cost f := e`.
+The rules for calls, decisions, constructors and variables are those of [Hop26]. They follow the
+translation of Isabelle's `time_fun` [Nip25, HOL-Time] and in addition charge one unit for each
+call of a non-recursive function and for each decision of `if` and `match`; `derive_timed` also
+charges one unit for each arithmetic operation, which `time_fun` counts as free. The two
+conventions differ by a constant per call and per decision, which changes the constants `k` and
+`c` of `k · T + q · t + c` (§4). A primitive without a body to price takes the cost registered
+for it with `timed_cost f := e`.
 
 `derive_reduction R` ([DeriveReduction.lean](../Tactics/DeriveReduction.lean)) takes a reduction
 into `SPComp`, written in `do`-notation or with the constructors of `SPComp`. It reflects the
@@ -237,50 +243,215 @@ pair is at least that much in every class on `SPComp`. Computational indistingui
 carried by the convention of §1; the classes serve statements about queries, size and shape and
 the structure of computational UC.
 
-## 4. Relation to implicit computational complexity
+## 4. Relation to other cost analyses
 
-The derived costs of §2 are an automatic cost analysis: a cost function computed from the text
-of a program under call-by-value evaluation, as `time_fun` derives a time function from a
-function's equations and Forster and Kunze [FK19] certify time bounds of extracted
-call-by-value λ-terms. The cost is derived program by program; a bound on it is a theorem.
+A time certificate of §2 consists of a costed form whose step costs are derived from the code of
+the reduction, an erasure theorem checked by the kernel, and a time theorem. The paragraphs below
+compare it with the closest related work in the cost model, in what is derived, checked and
+trusted, and in how adversaries enter.
 
-Hopwood's `assert_efficient` [Hop26] derives a cost function from the elaborated body of a
-computable Lean definition, with a cost argument for each function-typed parameter, so that the
-cost of a reduction is symbolic in the cost of the adversary; bounds on it are ordinary
-theorems. `derive_timed` applies the same call-by-value rules and follows the instrumented
-translation of [Hop26], which pairs a function with a costed version of it; the derived step
-costs sit inside a costed form whose erasure theorem the kernel checks. `assert_efficient`
-rejects a `noncomputable` definition before deriving a cost, and most reductions of §1 are
-`noncomputable` functions into `SPComp`, whose values are distributions; `derive_reduction`
-reflects such a reduction into an `SPTree` and derives the costs of the tree. `derive_cost f`
-([DeriveCost.lean](../Tactics/DeriveCost.lean)) defines the cost of a computable data function
-`f`, recursive or not, from the body that Lean keeps for the equation lemmas of `f`, the body
-that [Hop26] prices, and `derive_timed` and `derive_reduction` price each call of `f` by that
-cost.
+EasyCrypt's cost logic [BBGKS21] attaches complexity restrictions to module signatures:
+`compl[intr : k, x₁.f₁ : k₁, …]` bounds the time of a procedure, excluding calls to its functor
+parameters, by `k`, and its number of calls to each parameter procedure `xᵢ.fᵢ` by `kᵢ` (§3.2).
+Typing a module against a restriction generates an obligation, discharged in a Hoare logic for
+cost whose judgements `E ⊢ {φ} s {ψ | t}` record in `t` the concrete time and the number of calls
+of each abstract procedure (Defs. 4.1, 4.2). Operators are costed by rules, some supplied by the
+user, and a variable costs one (§4.1, App. E). The abstract-call rule Abs (Fig. 6) charges a call
+of an abstract procedure `x.f` one unit in the entry `x.f` and, for the `k`-th call it makes to a
+parameter procedure `xᵢ.fᵢ`, a bound `tᵢₖ`, under an invariant indexed by the call counts. The statement
+shape is that of §2: the time of a reduction is its own cost plus, for each oracle or adversary
+procedure, the number of calls times the cost of a call, with the cost of the adversary a
+parameter; an abstract module with a restriction plays the role of the costed adversaries `A'`
+with erasure `A`, time at most `T` and `q` queries. In EasyCrypt the cost is a property of the
+program, proved interactively in a logic whose soundness (Theorem 4.1, relative to a
+denotational semantics that takes the worst case over final memories) is a metatheorem; the
+implementation of the logic and the operator costs are trusted. In CatCrypt the costs are
+annotations on a second definition `R.timed`, `derive_timed` derives them together with the
+erasure theorem, and the kernel checks that theorem and the time theorem; the trusted base is
+the rule set and the `timed_cost` registrations, and the program logic of the advantage bounds
+carries no costs. Rule Abs bounds each call of a parameter procedure separately, and
+`timeBound_simulate` uses one bound `t_impl` for every query. The example of [BBGKS21, §2]
+concludes with an existential over inverters in a complexity class (Theorem 2.1); a time theorem
+of CatCrypt bounds the named reduction `R`. For UC, [BBGKS21] puts cost restrictions into the
+module types of simulators and environments, and transitivity yields the sequential composition
+of the two simulators with the corresponding cost (§5, Lemma 5.1, Theorem 5.2).
+`UCEmulatesCSim` takes an explicit simulator map `sim`, and the time of `sim A` is the subject of
+a separate time theorem. EasyCrypt removed the cost logic on 2024-03-29 [EC24]; the commit
+message states that it "does not implement what is needed, and is then barely used" and that
+"its implementation is invasive and duplicates some internal mechanisms".
 
-Implicit computational complexity in the type-theoretic sense characterises a complexity class
-by a restriction of the language: safe recursion [BC92], bounded linear logic [GSS92], light
-linear and light affine logic [Gir98, AR02] and soft linear logic [Laf04] capture the
-polynomial-time functions, and their typable programs are closed under composition; Atkey
-[Atk24] surveys these characterisations and extends them to dependent types. The `UCAdmClass`
-laws take this closure under composition as their model: the admissible arrows form a wide
-subcategory of the Kleisli category. Through `adm_precomp`, which admits precomposition with
-every function, the laws also admit every pure test, so a class satisfying them bounds the
-effectful operations of an arrow and leaves its pure computation free. The running time of that
-pure computation in a reduction is what the derived costs of §2 certify.
+Hopwood's `assert_efficient` [Hop26, Ironwood] rejects a definition that is `unsafe`, `partial`
+or `noncomputable` and derives a cost function `f.cost` with the binders of `f`: a call costs one
+plus the callee's cost at its arguments, a recursive call one plus `f.cost`, `if` and `match` one
+plus the branch taken; constructors, literals, projections and local variables are free; a
+callee without a cost function gets one derived on demand; a primitive (an axiom, an opaque
+definition, a recursor, `Nat` arithmetic) takes a cost registered with `efficient_cost`; and
+each function-typed binder is followed by a cost companion. The same pull request adds an
+instrumented translation: the class `Costed` gives each type a costed form, the costed form of a
+function pairs it with an instrumented version, a Kleisli arrow of the writer monad `Nat × -`,
+and `f.inst` is defined term by term. `derive_timed` takes its translation rules and its
+derivation on demand from this code. The two share the rules for calls, decisions, constructors
+and variables, one cost companion after each function binder and one for each applied field of a
+structure binder, registered costs for primitives, and the description of the trusted base as
+the rules plus the registered costs; in both, a bound on the derived cost is an ordinary theorem.
+For a computable data function `f`, `derive_cost f` ([DeriveCost.lean](../Tactics/DeriveCost.lean))
+prices the body that Lean keeps for the equation lemmas of `f`, which is the body that [Hop26]
+prices. In [Ironwood] the relation between the instrumented and the original program is a
+predicate `Consistent`, whose documentation states that it cannot exclude an instrumented
+function that reports too little cost, and at the cited head no theorem relates `f.inst` to `f`.
+For a reduction, that relation is the erasure theorem `(R.timed xs').2.erase = R xs`, which
+`derive_timed` proves and the kernel checks. Most reductions of §1 are `noncomputable` functions
+into `SPComp`, which `assert_efficient` rejects before deriving a cost; `derive_reduction`
+reflects such a reduction into an `SPTree` with a kernel-checked compile equation and derives the
+costs of the tree, whose sampling, query and state nodes cost one unit each. In [Ironwood] the
+adversary is a function parameter priced by its companion. In CatCrypt it is a costed tree whose
+time `T` bounds every path, and a handler defined by recursion over the adversary's nodes is
+translated to recursion over the costed tree, with time `(1 + h) · T + r` by
+`OracleAdv.Timed.timeBound_fold`. The costed form of a function in [Ironwood] is higher-order and
+dependent, and containers have costed forms (`List (WithCosts α)` for `List α`); the costed
+closures of `derive_timed` have first-order domains, and a function inside a list or an option is
+refused.
+
+Isabelle's `time_fun` [HOL-Time] defines a step-counting function `T_f` from the defining
+equations of `f` by the translation of [Nip25, §1.5]: an equation `f p₁ … pₙ = e` gives
+`T_f p₁ … pₙ = T⟦e⟧ + 1`; a call `f e₁ … eₙ` costs the costs of its arguments plus
+`T_f e₁ … eₙ`; variables, constructors and the predefined operations on booleans and numbers
+cost 0 (`time_fun_0`); `if` and `case` cost the condition plus the branch taken; `let` charges
+its bound term once; and the `+ 1` is dropped for a non-recursive function. A functional
+argument is passed as a pair of the function and its time function (`T_foldl`), and a function
+defined in a locale takes a time function `T_f` for each locale parameter `f` it uses. The costed
+closure `(f, fCost)` of §2 is the pair of `T_foldl`, the cost companions of function binders are
+the time functions of locale parameters, and the `let` rule of §2 is that of §1.5. `derive_timed`
+in addition charges one unit for each call of a non-recursive function, for each decision of
+`if` and `match`, and for each arithmetic operation on `ℕ`, `ZMod p` and fixed-width words. By
+[Nip25, §1.5.2], which follows Sands in counting only non-primitive calls, the two conventions
+differ by a constant per call and per decision: the order of growth of the time function is the
+same, and the constants `k` and `c` of a bound `k · T + q · t + c` differ. `time_fun` refuses
+partial application, which `derive_timed` prices by evaluating the arguments when the partial
+application is built. `time_fun` defines `T_f` alone, and its manual states that the framework
+"is not verified" and that "there is no underlying formal model"; the correspondence of `T_f`
+with `f` rests on the translation. `derive_timed` defines a mirror of `R` whose erasure theorem
+the kernel checks, which confines the trust to the step costs. The option `equations` of
+`time_fun` derives `T_f` from proved equations in place of the definition. The same option for
+`derive_timed` would price a program provably equal to `R`, with the erasure theorem stated
+relative to those equations, and would give costed forms to definitions whose Lean body is not
+the intended algorithm.
+
+Danner, Licata and Ramyaa [DLR15] translate a call-by-value λ-calculus with inductive types into
+a complexity language by a monadic translation into the writer monad `C × −` (§3.2). The
+potential of a function maps argument potentials to a cost and a result potential,
+`⟨⟨σ → τ⟩⟩ = ⟨⟨σ⟩⟩ → C × ⟨⟨τ⟩⟩`; an abstraction is free, an application costs one plus the costs
+of the function, of the argument and of the body, and `let` charges its bound term once
+(Fig. 5). Potentials may then be abstracted to sizes (§§4–5). The costed closure of §2 is the
+first-order case of this translation without size abstraction: when the potential of a value is
+the value, the potential of a function with first-order domain and codomain has type
+`X → C × Y`, isomorphic to `(X → Y) × (X → ℕ)`, and the application rule of Fig. 5 is that of a
+costed closure. The translation replaces a function by its potential; the costed closure keeps
+the function beside its companion, so that erasure is a projection. The bounding theorem of
+[DLR15] (Theorem 5.7) states for every well-typed term that its operational cost is at most the
+cost component of its translation and that its value is bounded by the potential component; it
+is proved once for the language, by logical relations. CatCrypt proves the value component, at
+the identity size abstraction, as the erasure theorem of each reduction; Lean has no operational
+cost semantics of its terms against which a cost component could be proved. [DLR15] admits
+higher-order potentials and has no probabilistic or oracle constructs.
+
+calf [NSGH22] is a dependent type theory with one effect, `step^c(M)`, which incurs cost `c`
+before `M`, and a proposition `¶_E`, the extensional phase, under which cost is trivial; by
+noninterference every function from an intensional to an extensional type is constant
+(§§1.1–1.3). A cost bound is a refinement defined in the theory, such as
+`hasCost(A, e, c) ≔ Σ a : A. e = step^c(ret(a))` (§1.4). The cost model is chosen for each
+algorithm by placing `step` by hand, counting for instance comparisons for sorting or `mod`
+operations for Euclid's algorithm (§§3.2, 4), and a recurrence is written by hand and related to
+the program by proving the bound. Both calf and CatCrypt separate behaviour from cost and
+guarantee that cost annotations leave behaviour unchanged: the extensional equality
+`◯(insertionSort = mergeSort)` of calf corresponds to two costed forms with different step costs
+and the same erasure. A calf program is written in the cost-aware language, and noninterference
+holds for every program by the type theory and its model (§5). A CatCrypt reduction is a plain
+Lean definition, `R.timed` a second definition, and the separation is the erasure theorem,
+proved for each reduction. The step costs of a derived costed form follow the fixed rules of
+`derive_timed`; those of a hand-written costed form are chosen by its author, as the placement of
+`step` is in calf, and in both cases the agreement of the costs with an intended cost model is
+not part of what is proved. Cost is the only effect of [NSGH22]; the costed trees of CatCrypt
+carry sampling, queries and state.
+
+Forster and Kunze [FK19] extract Coq functions of simple polymorphic types to the weak
+call-by-value λ-calculus L, whose time is its number of β-steps; for decision functions, L and Turing machines
+simulate each other with polynomial overhead in time and constant-factor overhead in space
+[FKR20, Theorem 2], so L is a reasonable machine model. Correctness of the extraction is a
+logical relation, and its time-indexed form uses complexity measures
+`C(A → B) = A → C_A → ℕ × C_B`, with `C_A = 1` for an encodable `A`: the measure of `map` takes
+`f` and the measure of `f` (§3.2). An instance `computableTime f τ` is proved by tactics that
+count β-steps and leave the recurrence inequalities that the user-supplied measure `τ` must
+satisfy (§5.4). At first-order arguments the measure is the cost companion of §2:
+`C(X → Y) = X → 1 → ℕ × 1 ≅ X → ℕ` for encodable `X` and `Y`. In [FK19] the measure is chosen by
+the user and checked against the β-steps of L, and nothing beyond Coq is trusted; `derive_timed`
+computes the measure from its rules, and no machine model checks it. The deep language D of
+CatCrypt ([Complexity/D](../Complexity/D/README.md)) counts β-steps as L does and has a
+certifying reflection `reflect_d` after [FK19]; a relation `TimedSim E K n x t` from a costed
+tree `x` to a D evaluation tree `t`, with `E` relating the leaves, gives
+`t.cost ≤ n + K · stepTime x` (`TimedSim.cost_le`, [Link.lean](../Complexity/D/Link.lean)). The
+theorem relating the two cost models would be a `computableTime` instance whose measure is the
+one `derive_timed` computes: for a reduction `R` with costed form `R.timed` and reflection
+`R.d`, the relation `TimedSim E K n (R.timed xs').2 t` for the evaluation tree `t` of `R.d`,
+proved construct by construct in the manner of §5.4 of [FK19]. A time theorem
+`k · T + q · t + c` would then give a time bound in D, and through it the `TimeReduction` and
+`polyTime_transfer` of [Complexity.md](Complexity.md). That theorem needs operands of bounded
+width, or companions that charge bit length, since `derive_timed` charges one unit for an
+operation on `ℕ` and D charges its bit length; a reflection that covers recursion over the
+adversary's tree, recursive helpers and structures with function fields, where `reflect_d` has
+`foldl` and `iter` as its only recursion; and, for the chain from D to Turing machines, a
+simulation of the primitive steps of D in L, which [FKR20] does not provide. A query node of D
+is matched with a branching of the costed tree over the oracle's answers (`TimedSim.query`),
+since D charges the maximum over them.
+
+FCF [PM15, FCF] parametrises asymptotic security definitions by an admissibility predicate on
+families of adversaries (§3.7). The cost of a Gallina function is an assumed relation
+`FunctionCostModel := ∀ A B, (A → B) → nat → Prop`, with closure properties collected in a
+class: identity and constants cost 0, composition adds, extensionally equal functions have equal
+costs, and a conditional costs its condition plus both branches. `oc_cost` gives an oracle
+computation a cost as a function of the cost of the oracle, and the paper states that "the cost
+model for Gallina functions is axiomatic". VCVio [VCVio] instruments oracle computations with
+an additive cost per query and proves once, for this uniform instrumentation, that it does not
+change the output distribution (`fst_map_costDist`). In its ElGamal example the instrumented
+reduction places `addTell` by hand at each query site and takes its own overhead as a parameter
+`intrinsic`, and a theorem states that the pathwise cost is `intrinsic` plus one use of each
+adversary procedure.
+FCF's cost of running against an oracle and VCVio's count of interface uses agree with the query
+part `T_A + q_A · t_impl` of `timeBound_simulate`. The cost of the code of the reduction itself
+is an assumed relation invariant under extensional equality in FCF, so that it belongs to a
+function as a mathematical object, and a free parameter in VCVio; `derive_timed` derives it from
+the code of `R`, and the erasure theorem fixes the code that was priced. FCF's function costs are
+constants over all arguments; the cost companions of §2 are functions of the arguments, and the
+worst case is taken in the time theorem. VCVio proves its erasure property once because the
+instrumentation is a uniform handler; CatCrypt proves the erasure theorem for each reduction
+because a meta-program inserts the step costs into the code of each.
+
+Implicit computational complexity characterises a complexity class by a restriction of the
+language whose typable programs are closed under composition, as safe recursion [BC92] does for
+the polynomial-time functions; Atkey [Atk24] surveys these characterisations and extends them to
+dependent types. The `UCAdmClass` laws of §3 take this closure under composition as their model:
+the admissible arrows form a wide subcategory of the Kleisli category. Through `adm_precomp`,
+which admits precomposition with every function, the laws also admit every pure test, so a class
+satisfying them bounds the effectful operations of an arrow and leaves its pure computation free.
+The running time of that pure computation in a reduction is what the derived costs of §2 certify.
 
 ## References
 
-- [AR02] A. Asperti, L. Roversi. Intuitionistic light affine logic. ACM TOCL 3(1), 2002.
 - [Atk24] R. Atkey. Polynomial time and dependent types. POPL 2024.
-- [BBGKS21] M. Barbosa, G. Barthe, B. Grégoire, A. Koutsos, P.-Y. Strub. Mechanized proofs of adversarial complexity and application to universal composability. CCS 2021.
+- [BBGKS21] M. Barbosa, G. Barthe, B. Grégoire, A. Koutsos, P.-Y. Strub. Mechanized proofs of adversarial complexity and application to universal composability. CCS 2021, pp. 2541–2563. doi:10.1145/3460120.3484548. Full version: HAL hal-03469015.
 - [BC92] S. Bellantoni, S. Cook. A new recursion-theoretic characterization of the polytime functions. Computational Complexity 2, 1992.
 - [BGHZ11] G. Barthe, B. Grégoire, S. Heraud, S. Zanella-Béguelin. Computer-aided security proofs for the working cryptographer. CRYPTO 2011.
 - [BGZ09] G. Barthe, B. Grégoire, S. Zanella-Béguelin. Formal certification of code-based cryptographic proofs. POPL 2009.
 - [BR06] M. Bellare, P. Rogaway. The security of triple encryption and a framework for code-based game-playing proofs. EUROCRYPT 2006.
-- [FK19] Y. Forster, F. Kunze. A certifying extraction with time bounds from Coq to call-by-value lambda calculus. ITP 2019.
-- [Gir98] J.-Y. Girard. Light linear logic. Information and Computation 143(2), 1998.
-- [GSS92] J.-Y. Girard, A. Scedrov, P. J. Scott. Bounded linear logic: a modular approach to polynomial-time computability. Theoretical Computer Science 97(1), 1992.
-- [HOL] Isabelle/HOL, HOL-Library: the `time_fun` command.
+- [DLR15] N. Danner, D. R. Licata, R. Ramyaa. Denotational cost semantics for functional languages with inductive types. ICFP 2015, pp. 140–151. doi:10.1145/2784731.2784749. Long version: arXiv:1506.01949.
+- [EC24] The EasyCrypt development team. EasyCrypt commit 41c2667f7fa794d0145ea30d42cc77285c1270d7: removal of the cost logic, 2024-03-29. https://github.com/EasyCrypt/easycrypt/commit/41c2667f7fa794d0145ea30d42cc77285c1270d7.
+- [FCF] A. Petcher. FCF: The Foundational Cryptography Framework. https://github.com/adampetcher/fcf, files `src/FCF/WC_PolyTime.v` and `src/FCF/Admissibility.v`.
+- [FK19] Y. Forster, F. Kunze. A certifying extraction with time bounds from Coq to call-by-value lambda calculus. ITP 2019, LIPIcs 141, 17:1–17:19. doi:10.4230/LIPIcs.ITP.2019.17.
+- [FKR20] Y. Forster, F. Kunze, M. Roth. The weak call-by-value λ-calculus is reasonable for both time and space. Proc. ACM Program. Lang. 4(POPL), 2020. doi:10.1145/3371095. arXiv:1902.07515.
+- [HOL-Time] J. Stahl, T. Nipkow. Theories `Time_Commands`, `Time_Functions` and `Time_Manual`. Isabelle2026, HOL-Library. https://isabelle.in.tum.de/library/HOL/HOL-Library/Time_Manual.html.
 - [Hop26] D.-E. Hopwood. Are the reductions efficient? An `efficient` keyword for Lean. Talk, October 2026; implementation in the zcash/ironwood repository.
-- [Laf04] Y. Lafont. Soft linear logic and polynomial time. Theoretical Computer Science 318, 2004.
+- [Ironwood] D.-E. Hopwood. meta: efficient def and assert_efficient (prototype). zcash/ironwood pull request 228, head 6b83c6f893fb3e26b6f11198c342020cb7d52ad8, 2026. https://github.com/zcash/ironwood/pull/228.
+- [Nip25] T. Nipkow (ed.). Functional Data Structures and Algorithms: A Proof Assistant Approach. ACM Books, 2025. doi:10.1145/3731369. Chapter 1 by T. Nipkow.
+- [NSGH22] Y. Niu, J. Sterling, H. Grodin, R. Harper. A cost-aware logical framework. Proc. ACM Program. Lang. 6(POPL), 2022. doi:10.1145/3498670. arXiv:2107.04663.
+- [PM15] A. Petcher, G. Morrisett. The Foundational Cryptography Framework. POST 2015, LNCS, pp. 53–72. doi:10.1007/978-3-662-46666-7_4. arXiv:1410.3735.
+- [VCVio] VCVio contributors. VCVio: a framework for oracle computations and cryptographic proofs in Lean. https://github.com/Verified-zkEVM/VCVio, commit 96754a37e739.
