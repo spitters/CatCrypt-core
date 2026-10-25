@@ -216,12 +216,31 @@ continuation), `if` by `SPTree.compile_ite_eq` and `SPTree.compile_dite_eq`, a `
 `split` tactic, a call of a computation primitive by its hypothesis, and a leaf (`ret`,
 `fail`, an adversary call) by reflexivity.
 
+## Costed states
+
+A structure-valued reduction whose computation fields take data holding functions, the state
+of a state machine with a table field, has its costed form in the mirror at the costed
+parameters: each parameter `σ` of the result structure whose values hold functions is
+replaced by its costed type `σ̂` (`hatTy?`), so that the computation fields take and return
+costed states, as `OracleAdv.Timed.simulateHat` does for oracle trees.
+
+* `derive_erases_hat S` defines `S.Timed.ErasesHat`, the erasure relation through erasure maps
+  `ε : σ̂ → σ` of the type parameters of `S`: a data field erases to `ε` of its value, a
+  computation field at the costed arguments `ŷs` erases, compiled and followed by `ε` on its
+  results, to the field at `ε ŷs`.
+* For each computation field `f` whose binders hold functions, the tree `B.f.treeHat` is the
+  tree `B.f.tree` with each such binder taken flat (`flatTy?`: a structure replaced by the tuple
+  of its fields), so that `derive_timed` gives it the costed value of the binder; its costed
+  form `B.f.treeHat.timed` is the field of `B.timed`, and `B.erase_timed` states
+  `S.Timed.ErasesHat` with `ε = epsFun σ` at the costed parameters and the identity elsewhere.
+
 ## Main definitions
 
 * `derive_reduction B`, `derive_reduction B (adv := A₁ … Aₖ)` — define `B.tree`, prove
   `B.compile_tree`, and run `derive_timed B.tree`; for a structure-valued `B`, define
   `B.f.tree` for each tree and computation field, `B.timed`, and prove `B.erase_timed`; for a
   tree-valued `B`, run `derive_timed B`
+* `derive_erases_hat S` — define `S.Timed.ErasesHat`
 
 ## Main results
 
@@ -233,6 +252,8 @@ continuation), `if` by `SPTree.compile_ite_eq` and `SPTree.compile_dite_eq`, a `
 * `SPTree.compile_load_eq`, `SPTree.compile_load_initHeap_eq`,
   `SPTree.compile_load_initHeap_ret` — a heap reset compiles to `fun _ => c h₀` and to
   `SPComp.initHeap h₀` followed by its continuation
+* `DeriveReduction.compile_bind_pure_of_erase` — the compiled erasure of a costed tree
+  followed by an erasure map, from the erasure theorem and the compile equation
 -/
 
 public section
@@ -308,6 +329,24 @@ theorem compile_dite_eq {p : Prop} [Decidable p] {t : p → SPTree α} {e : ¬p 
   · exact he _
 
 end CatCrypt.Core.SPTree
+
+namespace CatCrypt.Tactics.DeriveReduction
+
+open CatCrypt.Core
+
+/-- The erasure of a costed tree whose results hold costed closures, followed by `ε` and
+compiled: from the erasure theorem `h1` of the costed tree and the compile equation `h2` of the
+erased tree, the compiled erasure followed by `ε` is the computation `c`; `hε` relates the
+erasure `ε'` of the statement to the erasure `ε` of the erasure theorem. -/
+theorem compile_bind_pure_of_erase {α β : Type} (X : SPTree.Timed α) (ε ε' : α → β)
+    (t : SPTree β) (c : SPComp β) (hε : ε' = ε)
+    (h1 : X.erase.bind (fun y => SPTree.ret (ε y)) = t) (h2 : t.compile = c) :
+    SPComp.bind X.erase.compile (fun y => SPComp.pure (ε' y)) = c := by
+  subst hε
+  rw [← h2, ← h1, SPTree.compile_bind]
+  rfl
+
+end CatCrypt.Tactics.DeriveReduction
 
 meta section
 
@@ -1323,6 +1362,214 @@ partial def withPrims {γ : Type} (found : Array Prim) (i : Nat) (used : Array N
           withPrims found (i + 1) used (ps.push { p with fv := f, hyp? := some hp }) k
   else k ps
 
+/-! ### Costed states -/
+
+/-- The positions of the type parameters of the structure `S` that no other parameter depends
+on: the parameters that its erasure relation through erasure maps (`S.Timed.ErasesHat`) takes
+at a costed type. -/
+def typeParamIdxs (S : Name) : TermElabM (Array Nat) :=
+  CatCrypt.Tactics.DeriveTimedStructure.withCtor S fun ps _ _ => do
+    let mut out := #[]
+    for i in [0:ps.size] do
+      let p := ps[i]!
+      unless (← whnf (← inferType p)) == mkSort Level.one do continue
+      let mut dep := false
+      for j in [i+1:ps.size] do
+        if (← inferType ps[j]!).containsFVar p.fvarId! then dep := true
+      unless dep do out := out.push i
+    return out
+
+/-- The erasure `ε v : t` of the value `v` of the costed type of `t`, through the erasure maps
+`ε : p̂ → p` of the type parameters `p` (the triples `(p, p̂, ε)` of `hs`): `ε v` at a parameter,
+componentwise on a pair and by `Sum.map` on a sum, and `v` on a type that mentions no
+parameter. -/
+partial def epsParam (hs : Array (Expr × Expr × Expr)) (t v : Expr) : MetaM Expr := do
+  let ps := hs.map (·.1)
+  if !t.hasAnyFVar (fun f => ps.any (·.fvarId! == f)) then return v
+  let tw ← whnfR t
+  if tw.isFVar then
+    if let some (_, _, e) := hs.find? (·.1 == tw) then return mkApp e v
+  if tw.isAppOfArity ``Prod 2 then
+    let a ← epsParam hs (tw.getArg! 0) (← mkAppM ``Prod.fst #[v])
+    let b ← epsParam hs (tw.getArg! 1) (← mkAppM ``Prod.snd #[v])
+    return ← mkAppM ``Prod.mk #[a, b]
+  if tw.isAppOfArity ``Sum 2 then
+    let side (c : Expr) : MetaM Expr := do
+      withLocalDeclD `x (c.replaceFVars ps (hs.map (·.2.1))) fun x => do
+        return (← mkLambdaFVars #[x] (← epsParam hs c x)).eta
+    return ← mkAppM ``Sum.map #[← side (tw.getArg! 0), ← side (tw.getArg! 1), v]
+  throwError "derive_erases_hat: the type `{t}` mentions a type parameter under a type \
+    other than a product or a sum"
+
+/-- Define `S.Timed.ErasesHat ps p̂s εs A' A` for a costed structure `A' : S.Timed ps[p̂s]` at
+costed types `p̂` of the type parameters `p` of `S` (`typeParamIdxs`) with erasure maps
+`ε : p̂ → p`, and `A : S ps`: the conjunction, over the fields of `S` that are not propositions,
+of `ε (A'.f) = A.f` for a data field, of
+`∀ ŷs, SPComp.bind (A'.f ŷs).erase.compile (fun y => SPComp.pure (ε y)) = A.f (ε ŷs)` for a
+computation field, and of `∀ ŷs, (A'.f ŷs).erase = A.f (ε ŷs)` for a tree field whose result
+mentions no type parameter. -/
+def defineErasesHat (S : Name) : TermElabM Unit := do
+  let env ← getEnv
+  let some (.inductInfo iv) := env.find? S
+    | throwError "derive_erases_hat: `{S}` is not an inductive type"
+  unless env.contains (S ++ `Timed) do
+    throwError "derive_erases_hat: `{S}` has no costed mirror; `derive_timed_structure {S}` \
+      defines it"
+  let lps := iv.levelParams
+  let lvls := lps.map mkLevelParam
+  let idx ← typeParamIdxs S
+  let (type, value) ← CatCrypt.Tactics.DeriveTimedStructure.withCtor S fun ps rest fields => do
+    unless (← CatCrypt.Tactics.DeriveTimedStructure.gateSetTypes ps rest fields).isEmpty do
+      throwError "derive_erases_hat: `{S}` has fields of a circuit kind"
+    let tps := idx.map (ps[·]!)
+    let hatDecls ← tps.mapM fun p => do
+      return ((← p.fvarId!.getUserName).eraseMacroScopes.appendAfter "Hat",
+        fun (_ : Array Expr) => (pure (mkSort Level.one) : TermElabM Expr))
+    withLocalDeclsD hatDecls fun hats => do
+    let epsDecls ← (tps.zip hats).mapM fun (p, h) => do
+      return (Name.mkSimple ("ε" ++ (← p.fvarId!.getUserName).eraseMacroScopes.toString),
+        fun (_ : Array Expr) => (mkArrow h p : TermElabM Expr))
+    withLocalDeclsD epsDecls fun eps => do
+    let hs := (tps.zip (hats.zip eps)).map fun (p, h, e) => (p, h, e)
+    let hatT (t : Expr) : Expr := t.replaceFVars tps hats
+    let withHats (ys : Array Expr) (k : Array Expr → TermElabM Expr) : TermElabM Expr := do
+      let decls ← ys.mapM fun y => do
+        let t := hatT (← inferType y)
+        return ((← y.fvarId!.getUserName).eraseMacroScopes,
+          fun (_ : Array Expr) => (pure t : TermElabM Expr))
+      withLocalDeclsD decls k
+    let sT := mkAppN (mkConst S lvls) ps
+    let tT := mkAppN (mkConst (S ++ `Timed) lvls) (ps.map hatT)
+    withLocalDeclD `A' tT fun A' => withLocalDeclD `A sT fun A => do
+      let conjs ← forallBoundedTelescope rest fields.size fun xs _ => do
+        let mut conjs : Array Expr := #[]
+        for x in xs, f in fields do
+          let d ← inferType x
+          let k ← CatCrypt.Tactics.DeriveTimedStructure.fieldKind d
+          if !(k matches .prop) && xs.any (d.containsFVar ·.fvarId!) then
+            throwError "derive_erases_hat: the type of the field `{f}` depends on a field"
+          match k with
+          | .prop => pure ()
+          | .type => throwError "derive_erases_hat: `{S}` has the type field `{f}`"
+          | .data | .bounded _ _ =>
+            conjs := conjs.push
+              (← mkEq (← epsParam hs d (← mkProjection A' f)) (← mkProjection A f))
+          | .comp n =>
+            conjs := conjs.push (← forallBoundedTelescope (← whnfR d) n fun ys b => do
+              withHats ys fun yh => do
+                let β := (← whnfR b).appArg!
+                let m ← mkAppM ``CatCrypt.Core.SPTree.compile
+                  #[← mkAppM ``CatCrypt.Core.SPTree.Timed.erase
+                    #[mkAppN (← mkProjection A' f) yh]]
+                let kf ← withLocalDeclD `y (hatT β) fun y => do
+                  mkLambdaFVars #[y] (← mkAppM ``CatCrypt.Core.SPComp.pure
+                    #[← epsParam hs β y])
+                let lhs ← mkAppM ``CatCrypt.Core.SPComp.bind #[m, kf]
+                let rhs := mkAppN (← mkProjection A f)
+                  (← (ys.zip yh).mapM fun (y, z) => do epsParam hs (← inferType y) z)
+                mkForallFVars yh (← mkEq lhs rhs))
+          | .tree n =>
+            conjs := conjs.push (← forallBoundedTelescope (← whnfR d) n fun ys b => do
+              if b.hasAnyFVar (fun v => tps.any (·.fvarId! == v)) then
+                throwError "derive_erases_hat: the result of the tree field `{f}` mentions a \
+                  type parameter"
+              let some T ← CatCrypt.Tactics.DeriveTimed.treeTy? b
+                | throwError "derive_erases_hat: the field `{f}`"
+              withHats ys fun yh => do
+                let lhs := T.eraseE (mkAppN (← mkProjection A' f) yh)
+                let rhs := mkAppN (← mkProjection A f)
+                  (← (ys.zip yh).mapM fun (y, z) => do epsParam hs (← inferType y) z)
+                mkForallFVars yh (← mkEq lhs rhs))
+          | .circuit _ _ => throwError "derive_erases_hat: `{S}` has the circuit field `{f}`"
+        return conjs
+      let body := if conjs.isEmpty then Lean.mkConst ``True else mkAndN conjs.toList
+      let bs := ps ++ hats ++ eps ++ #[A', A]
+      return (← mkForallFVars bs (mkSort .zero), ← mkLambdaFVars bs body)
+  CatCrypt.Tactics.DeriveTimed.addTimedDef (S ++ `Timed ++ `ErasesHat) lps type value
+
+/-- The flat type of a type `t` of data holding functions: each structure with a costed mirror
+(`mirrorStruct?`) replaced by the tuple of the flat types of its fields, through products and
+sums; `none` when `t` has no such structure holding functions. The costed type of the flat type
+is that of `t`, and a binder of a flat type is a binder with a costed value in `derive_timed`
+(of kind `hat`), where a binder of a structure type keeps the convention of field paths. -/
+partial def flatTy? (t : Expr) : MetaM (Option Expr) := do
+  let some _ ← CatCrypt.Tactics.DeriveTimed.hatTy? t | return none
+  let tw ← whnfR t
+  let prod := tw.isAppOfArity ``Prod 2
+  if prod || tw.isAppOfArity ``Sum 2 then
+    let a := tw.getArg! 0
+    let b := tw.getArg! 1
+    let fa ← flatTy? a
+    let fb ← flatTy? b
+    if fa.isNone && fb.isNone then return none
+    return some (← mkAppM (if prod then ``Prod else ``Sum) #[fa.getD a, fb.getD b])
+  if let some m ← CatCrypt.Tactics.DeriveTimed.mirrorStruct? tw then
+    let fs ← m.fieldTypes.mapM fun f => return (← flatTy? f).getD f
+    return some (← CatCrypt.Tactics.DeriveTimed.mirrorType fs)
+  return none
+
+/-- The value of type `t` of the value `v` of its flat type (`flatTy?`): each tuple of fields
+of a structure assembled by its constructor. -/
+partial def unflatE (t v : Expr) : MetaM Expr := do
+  let some _ ← flatTy? t | return v
+  let tw ← whnfR t
+  if tw.isAppOfArity ``Prod 2 then
+    return ← mkAppM ``Prod.mk #[← unflatE (tw.getArg! 0) (← mkAppM ``Prod.fst #[v]),
+      ← unflatE (tw.getArg! 1) (← mkAppM ``Prod.snd #[v])]
+  if tw.isAppOfArity ``Sum 2 then
+    let side (c : Expr) : MetaM Expr := do
+      withLocalDeclD `x ((← flatTy? c).getD c) fun x => do
+        mkLambdaFVars #[x] (← unflatE c x)
+    return ← mkAppM ``Sum.map #[← side (tw.getArg! 0), ← side (tw.getArg! 1), v]
+  if let some m ← CatCrypt.Tactics.DeriveTimed.mirrorStruct? tw then
+    let n := m.fieldTypes.size
+    let mut fs := #[]
+    for i in [0:n] do
+      fs := fs.push (← unflatE m.fieldTypes[i]!
+        (← CatCrypt.Tactics.DeriveTimed.mirrorProj n i v))
+    return mkAppN (mkConst m.ctor m.levels) (m.params ++ fs)
+  return v
+
+/-- The binders `ys` with each binder whose type has a flat type (`flatTy?`) replaced by a
+binder of the flat type, continued in `k` with the new binders and, for each binder of `ys`,
+its value in terms of them. -/
+partial def withFlatBinders {γ : Type} (ys : Array Expr)
+    (k : Array Expr → Array Expr → TermElabM γ) : TermElabM γ :=
+  go 0 #[] #[]
+where
+  go (i : Nat) (ys' us : Array Expr) : TermElabM γ := do
+    if h : i < ys.size then
+      let y := ys[i]
+      let t ← inferType y
+      match ← flatTy? t with
+      | none => go (i + 1) (ys'.push y) (us.push y)
+      | some ft =>
+        withLocalDeclD (← y.fvarId!.getUserName) ft fun y' => do
+          go (i + 1) (ys'.push y') (us.push (← unflatE t y'))
+    else k ys' us
+
+/-- The field `i` of the constructor application `s`, when `s` is one. -/
+def ctorField? (s : Expr) (i : Nat) : MetaM (Option Expr) := do
+  let s := s.consumeMData
+  let .const k _ := s.getAppFn | return none
+  let some (.ctorInfo ci) := (← getEnv).find? k | return none
+  unless s.getAppNumArgs == ci.numParams + ci.numFields do return none
+  return s.getAppArgs[ci.numParams + i]?
+
+/-- `e` with each projection of a constructor application reduced to the field, applied to
+the remaining arguments. -/
+def reduceProjCtor (e : Expr) : MetaM Expr :=
+  Meta.transform e (post := fun e => do
+    if let .proj _ i s := e then
+      if let some r ← ctorField? s i then return .visit r
+    if let .const m _ := e.getAppFn then
+      if let some info ← getProjectionFnInfo? m then
+        let args := e.getAppArgs
+        if h : info.numParams < args.size then
+          if let some r ← ctorField? args[info.numParams] info.i then
+            return .visit (mkAppN r (args.extract (info.numParams + 1) args.size)).headBeta
+    return .continue)
+
 /-- A field of a structure-valued reduction: its name, its kind, its value in the body, the
 binders `ys` of a tree or computation field, the field's body at `ys`, and its result type. -/
 structure SField where
@@ -1521,6 +1768,245 @@ partial def assembleStruct (c : Name) (levels : List Level) (levelParams : List 
     { name := c ++ `erase_timed, levelParams,
       type := ← mkForallFVars eBs goalTy, value := ← mkLambdaFVars eBs pf })
 
+/-- Close the goal `g` by `rfl`, or else by rewriting with `Sum.map id id = id`. -/
+def closeEpsGoal (g : MVarId) : TermElabM Unit := do
+  let gs ← Lean.Elab.Tactic.run g do
+    Lean.Elab.Tactic.evalTactic (← `(tactic|
+      first
+        | rfl
+        | (funext y; simp only [Sum.map_id_id, id_eq]; done)
+        | (simp only [Sum.map_id_id, id_eq]; done)))
+  unless gs.isEmpty do fail m!"internal: an erasure map is not closed"
+
+/-- Define `c.timed` at the costed parameters of `S` from the costed forms `c.f.treeHat.timed`
+of the computation fields, whose binders hold functions, and prove
+`c.erase_timed : S.Timed.ErasesHat qs q̂s εs (c.timed …) (c …)`, with `q̂ = hatTy? q` and
+`ε = epsFun q` at a parameter holding functions, and `q̂ = q`, `ε` the identity elsewhere. The
+arguments are those of `assembleStruct`. -/
+partial def assembleStructHat (c : Name) (levels : List Level) (levelParams : List Name)
+    (S : Name) (lvlsS : List Level) (qs : Array Expr) (mirrorFields : Array Name)
+    (fields : Array SField) (xs bsOrig : Array Expr) (advs : Array Adv)
+    (kept : Array Expr) (ps : Array Prim) : TermElabM Unit := do
+  let env ← getEnv
+  let timedS := S ++ `Timed
+  let ehName := timedS ++ `ErasesHat
+  unless env.contains ehName do
+    fail m!"the computation fields of `{c}` take data holding functions, whose erasure is \
+      stated by `{ehName}`; `derive_erases_hat {S}` defines it"
+  for fd in fields do
+    if fd.kind matches .tree _ then
+      fail m!"the tree field `{fd.name}` of a structure whose computation fields take data \
+        holding functions"
+  -- The costed parameters, and the arguments of the erasure relation.
+  let tpIdx ← typeParamIdxs S
+  let mut qsHat := qs
+  for i in [0:qs.size] do
+    if let some h ← CatCrypt.Tactics.DeriveTimed.hatTy? qs[i]! then
+      unless tpIdx.contains i do
+        fail m!"the parameter `{qs[i]!}` of `{S}` holds functions and is not a type parameter \
+          that no other parameter depends on"
+      qsHat := qsHat.set! i h
+  let mut hatArgs : Array Expr := #[]
+  let mut epsArgs : Array Expr := #[]
+  for i in tpIdx do
+    let q := qs[i]!
+    hatArgs := hatArgs.push qsHat[i]!
+    if (← CatCrypt.Tactics.DeriveTimed.hatTy? q).isSome then
+      epsArgs := epsArgs.push (← CatCrypt.Tactics.DeriveTimed.epsFun q)
+    else
+      epsArgs := epsArgs.push (mkApp (Lean.mkConst ``id [Level.one]) q)
+  let dps := ps.filter (·.data)
+  let pps := ps.filter fun p => !p.data
+  let cps := pps.filter fun p => !p.tree
+  let tBs := kept ++ dps.map (·.fv) ++ pps.map (·.fv)
+  CatCrypt.Tactics.DeriveTimed.withBinders {} tBs fun tctx bs _ => do
+  let costed (fv : Expr) : TermElabM Expr := do
+    let some info := tctx.locals.get? fv.fvarId! | fail m!"internal: `{fv}` has no costed form"
+    return info.value
+  let hatName (fd : SField) : Name := c ++ fd.name ++ `treeHat
+  -- The field paths whose cost companions the costed forms of the fields take.
+  let mut allPaths : Array Expr := #[]
+  let mut fieldPaths : Array (Name × Array Expr) := #[]
+  for fd in fields do
+    unless fd.kind matches .comp _ do continue
+    let fpName := hatName fd ++ `timed ++ `fieldPaths
+    unless env.contains fpName do continue
+    let paths ← withFlatBinders fd.ys fun ys' _ => do
+      let some fp ← unfoldDefinition? (mkAppN (Lean.mkConst fpName levels) (tBs ++ ys'))
+        | fail m!"internal: `{fpName}` does not unfold"
+      let mut tup := fp.headBeta
+      let mut paths := #[]
+      while tup.isAppOfArity ``PProd.mk 4 do
+        let p := tup.getArg! 2
+        for y in ys' do
+          if p.containsFVar y.fvarId! then
+            fail m!"the costed form of the field `{fd.name}` takes the cost of the field `{p}`, \
+              which depends on the arguments of the field"
+        paths := paths.push p
+        tup := (tup.getArg! 3).headBeta
+      return paths
+    for p in paths do
+      unless allPaths.contains p do allPaths := allPaths.push p
+    fieldPaths := fieldPaths.push (fd.name, paths)
+  let compDecls ← allPaths.mapM fun p => do
+    return (← CatCrypt.Tactics.DeriveTimed.fieldCostName p,
+      fun _ => do CatCrypt.Tactics.DeriveTimed.companionType (← inferType p))
+  withLocalDeclsD compDecls fun comps => do
+  let compsOf (n : Name) : Array Expr :=
+    match fieldPaths.find? (·.1 == n) with
+    | some (_, ps) => ps.filterMap fun p => (allPaths.idxOf? p).map (comps[·]!)
+    | none => #[]
+  let erase (fv : Expr) (compile : Bool) : TermElabM Expr := do
+    let v ← costed fv
+    forallTelescope (← whnfR (← inferType fv)) fun ys bt => do
+      let some T ← CatCrypt.Tactics.DeriveTimed.treeTy? bt | fail m!"internal: `{fv}`"
+      let e := T.eraseE (mkAppN v ys)
+      let e ← if compile then mkAppM ``CatCrypt.Core.SPTree.compile #[e] else pure e
+      mkLambdaFVars ys e
+  let advFvs := advs.map (mkFVar ·.orig)
+  let advErased ← advs.mapM fun a => do
+    if kept.contains a.tree then erase a.tree true else pure (mkFVar a.orig)
+  -- The costed form, checked field by field against the mirror at the costed parameters.
+  let mirrorCtor := (getStructureCtor env timedS).name
+  let mut mty ← instantiateForall (← inferType (mkConst mirrorCtor lvlsS)) qsHat
+  let mut mvals : Array Expr := #[]
+  for fd in fields do
+    match fd.kind with
+    | .prop => pure ()
+    | .type | .data =>
+      let mut v ← Core.betaReduce (fd.value.replaceFVars advFvs advErased)
+      for x in xs do
+        if v.containsFVar x.fvarId! && !bs.contains x then
+          fail m!"the field `{fd.name}` of the result mentions `{x}`, which the costed form \
+            does not take"
+      let .forallE _ d b _ ← whnf mty | fail m!"internal: the mirror of `{S}`"
+      unless ← isDefEq (← inferType v) d do
+        v := (← CatCrypt.Tactics.DeriveTimed.tv tctx v).2
+        unless ← isDefEq (← inferType v) d do
+          fail m!"the costed value of the field `{fd.name}` has type{indentExpr (← inferType v)}\n\
+            and the mirror at the costed parameters takes{indentExpr d}"
+      mvals := mvals.push v
+      mty := b.instantiate1 v
+    | _ =>
+      let tc := Lean.mkConst (hatName fd ++ `timed) levels
+      let fcs := compsOf fd.name
+      let tcT ← instantiateForall (← inferType tc) bs
+      let (fv, cv) ← forallBoundedTelescope tcT fd.ys.size fun yh _ => do
+        unless yh.size == fd.ys.size do
+          fail m!"the costed form of the field `{fd.name}` takes fewer arguments than the field"
+        let call := mkAppN tc (bs ++ yh ++ fcs)
+        return (← mkLambdaFVars yh (← mkAppM ``Prod.snd #[call]),
+          ← mkLambdaFVars yh (← mkAppM ``Prod.fst #[call]))
+      let .forallE _ d b _ ← whnf mty | fail m!"internal: the mirror of `{S}`"
+      unless ← isDefEq (← inferType fv) d do
+        fail m!"the costed form of the field `{fd.name}` has type{indentExpr (← inferType fv)}\n\
+          and the mirror at the costed parameters takes{indentExpr d}"
+      mvals := mvals.push fv
+      mty := b.instantiate1 fv
+      if mirrorFields.contains (fd.name.appendAfter "Cost") then
+        let .forallE _ _ b' _ ← whnf mty | fail m!"internal: the mirror of `{S}`"
+        mvals := mvals.push cv
+        mty := b'.instantiate1 cv
+  let resT := mkAppN (mkConst timedS lvlsS) qsHat
+  let timedName := c ++ `timed
+  CatCrypt.Tactics.DeriveTimed.addTimedDef timedName levelParams
+    (← mkForallFVars (bs ++ comps) resT)
+    (← mkLambdaFVars (bs ++ comps) (mkAppN (mkConst mirrorCtor lvlsS) (qsHat ++ mvals)))
+  -- The erasure theorem.
+  let bsInst := bs.map fun b => match dps.find? (·.fv == b) with
+    | some p => p.key
+    | none => b
+  let argsC ← xs.mapM fun x => do
+    match advs.find? (·.orig == x.fvarId!) with
+    | some a => erase a.tree true
+    | none => pure x
+  let mut hypDecls : Array (Name × (Array Expr → TermElabM Expr)) := #[]
+  for p in pps do
+    let v ← costed p.fv
+    let t ← forallTelescope (← whnfR (← inferType p.fv)) fun ys _ => do
+      let some T ← CatCrypt.Tactics.DeriveTimed.treeTy? (← inferType (mkAppN p.fv ys)) |
+        fail m!"internal: `{p.fv}`"
+      let lhs := T.eraseE (mkAppN v ys)
+      let lhs ← if p.tree then pure lhs else mkAppM ``CatCrypt.Core.SPTree.compile #[lhs]
+      mkForallFVars ys (← mkEq lhs (mkAppN p.key ys))
+    let n := (← p.fv.fvarId!.getUserName).eraseMacroScopes.appendBefore "h_"
+    hypDecls := hypDecls.push (n, fun _ => pure t)
+  withLocalDeclsD hypDecls fun hs => do
+  let lhsA := mkAppN (mkConst timedName levels) (bsInst ++ comps)
+  let rhsA := mkAppN (mkConst c levels) argsC
+  let goalTy := mkAppN (mkConst ehName lvlsS) (qs ++ hatArgs ++ epsArgs ++ #[lhsA, rhsA])
+  let some unfolded ← unfoldDefinition? goalTy | fail m!"internal: `{ehName}`"
+  let unfolded := unfolded.headBeta
+  -- The conjuncts, one for each field that is not a proposition.
+  let nConj := (fields.filter fun fd => !(fd.kind matches .prop)).size
+  let mut conjs : Array Expr := #[]
+  let mut rest := unfolded
+  for i in [0:nConj] do
+    if i + 1 < nConj then
+      unless rest.isAppOfArity ``And 2 do fail m!"internal: the erasure relation `{ehName}`"
+      conjs := conjs.push (rest.getArg! 0)
+      rest := rest.getArg! 1
+    else conjs := conjs.push rest
+  let compArgs ← bsOrig.mapM fun b => do
+    match advs.find? (·.tree == b) with
+    | some _ => erase b false
+    | none => pure b
+  let cArgs ← cps.mapM fun p => erase p.fv false
+  let cHyps := (pps.zip hs).filterMap fun (p, h) => if p.tree then none else some h
+  let mut proofs : Array Expr := #[]
+  let mut j := 0
+  for fd in fields do
+    if fd.kind matches .prop then continue
+    let C := conjs[j]!
+    j := j + 1
+    match fd.kind with
+    | .comp _ =>
+      let pf ← forallTelescope C fun yh body => do
+        let some (_, lhs, _) := body.eq? | fail m!"internal: the conjunct of `{fd.name}`"
+        let kf := lhs.appArg!
+        let .lam yn yt kb ybi := kf | fail m!"internal: the conjunct of `{fd.name}`"
+        let ε' := Expr.lam yn yt kb.appArg! ybi
+        let some β ← spCompArg? (← inferType fd.body) | fail m!"internal: `{fd.name}`"
+        let call := mkAppN (Lean.mkConst (hatName fd ++ `timed) levels)
+          (bsInst ++ yh ++ compsOf fd.name)
+        let X ← mkAppM ``Prod.snd #[call]
+        let α := (← whnfR (← inferType X)).appArg!
+        let ε ← CatCrypt.Tactics.DeriveTimed.epsFun β
+        let hεT ← mkEq ε' ε
+        let hεM ← mkFreshExprSyntheticOpaqueMVar hεT
+        closeEpsGoal hεM.mvarId!
+        let hε ← instantiateMVars hεM
+        let h1 := mkAppN (Lean.mkConst (hatName fd ++ `erase_timed) levels)
+          (bsInst ++ yh ++ compsOf fd.name)
+        let some (_, _, t) := (← inferType h1).eq? | fail m!"internal: `{hatName fd}`"
+        let εy ← (fd.ys.zip yh).mapM fun (y, z) => do
+          CatCrypt.Tactics.DeriveTimed.epsE (← inferType y) z
+        let h2 := mkAppN (mkConst (c ++ fd.name ++ `compile_tree) levels)
+          (compArgs ++ cArgs ++ cHyps ++ εy)
+        let some (_, _, cC) := (← inferType h2).eq? | fail m!"internal: `{fd.name}`"
+        let pf := mkAppN (Lean.mkConst ``compile_bind_pure_of_erase)
+          #[α, β, X, ε, ε', t, cC, hε, h1, h2]
+        mkLambdaFVars yh (← mkExpectedTypeHint pf body)
+      proofs := proofs.push pf
+    | _ =>
+      let mv ← mkFreshExprSyntheticOpaqueMVar C
+      closeEpsGoal mv.mvarId!
+      proofs := proofs.push (← instantiateMVars mv)
+  let mut pf := if nConj == 0 then Lean.mkConst ``True.intro else proofs.back!
+  if nConj > 1 then
+    for i in (List.range (nConj - 1)).reverse do
+      pf := mkApp4 (Lean.mkConst ``And.intro) conjs[i]!
+        (mkAndN (conjs.extract (i + 1) conjs.size).toList) proofs[i]! pf
+  pf ← mkExpectedTypeHint pf goalTy
+  if pf.hasSorry || pf.hasExprMVar then
+    fail m!"the erasure theorem `{c ++ `erase_timed}` is not proved"
+  let newBs := bs.filter fun b => !tBs.contains b
+  let eBs := xs.filter (fun x => (advs.find? (·.orig == x.fvarId!)).isNone) ++ newBs ++ comps ++
+    hs
+  addDecl (Declaration.thmDecl
+    { name := c ++ `erase_timed, levelParams,
+      type := ← mkForallFVars eBs goalTy, value := ← mkLambdaFVars eBs pf })
+
 /-- Derive the costed form of the reduction `c` with the value `value`, whose result is a
 structure `S qs` with a costed mirror `S.Timed`: for each computation field `f` the tree
 `c.f.tree` and `c.f.compile_tree`, for each tree field `f` the tree `c.f.tree`, the costed forms
@@ -1691,11 +2177,50 @@ partial def deriveStructReduction (c : Name) (advNames : Array Name) (unfold : B
               { name := c ++ fd.name ++ `compile_tree, levelParams,
                 type := ← mkForallFVars eBs (← mkEq lhs rhs),
                 value := ← mkLambdaFVars eBs pf })
-        -- The costed forms of the trees.
-        for fd in fields, t in trees do
-          if t.isSome then
+        -- The costed forms of the trees at the plain interface, and the assembly.
+        let plainPath : TermElabM Unit := do
+          for fd in fields, t in trees do
+            let some _ := t | continue
             CatCrypt.Tactics.DeriveTimed.deriveTimed {} (c ++ fd.name ++ `tree)
-        assembleStruct c levels levelParams S lvlsS qs mirrorFields fields xs bs advs kept ps
+          assembleStruct c levels levelParams S lvlsS qs mirrorFields fields xs bs advs kept ps
+        -- A computation field whose binders hold functions: the costed state, through the
+        -- tree `c.f.treeHat` over flat binders, when the structure has the erasure relation
+        -- `S.Timed.ErasesHat` (`derive_erases_hat`) and the plain interface fails; a reduction
+        -- that derives at the plain interface keeps it.
+        let hatCapable ← fields.anyM fun fd => do
+          unless fd.kind matches .comp _ do return false
+          fd.ys.anyM fun y => do
+            return (← CatCrypt.Tactics.DeriveTimed.hatTy? (← inferType y)).isSome
+        let hatPath : TermElabM Unit := do
+         for fd in fields, t in trees do
+          let some t := t | continue
+          if fd.kind matches .comp _ then
+            -- The hat tree `c.f.treeHat` is a definition separate from `c.f.tree`:
+            -- `derive_timed` gives the plain interface only to a tree named `R.f.tree` of a
+            -- field `f` of the result structure of `R` (the name-based rule `fieldTree` in
+            -- `CatCryptCore.Tactics.DeriveTimed`), so `c.f.treeHat.timed` takes the costed
+            -- values of its flat binders.
+            let hatName := c ++ fd.name ++ `treeHat
+            withFlatBinders fd.ys fun ys' us => do
+              let tH ← reduceProjCtor (t.replaceFVars fd.ys us)
+              CatCrypt.Tactics.DeriveTimed.addTimedDef hatName levelParams
+                (← mkForallFVars (tBs ++ ys') (← inferType tH))
+                (← mkLambdaFVars (tBs ++ ys') tH)
+            CatCrypt.Tactics.DeriveTimed.deriveTimed {} hatName
+          else
+            CatCrypt.Tactics.DeriveTimed.deriveTimed {} (c ++ fd.name ++ `tree)
+         assembleStructHat c levels levelParams S lvlsS qs mirrorFields fields xs bs advs kept ps
+        if hatCapable && (← getEnv).contains (S ++ `Timed ++ `ErasesHat) then
+          let s ← saveState
+          try plainPath
+          catch e₁ =>
+            s.restore
+            try hatPath
+            catch e₂ =>
+              s.restore
+              throwError "derive_reduction: at the plain interface:{indentD e₁.toMessageData}\n\
+                with the costed state:{indentD e₂.toMessageData}"
+        else plainPath
     go 0 #[] #[] #[]
 
 /-- Replace each call `recF as` of the local `recF` in `e` by `t as extra`. -/
@@ -1999,6 +2524,16 @@ the adversaries to be the binders `A₁ … Aₖ`. -/
 syntax (name := deriveReductionCmd) "derive_reduction " ident
   (" (" &"adv" " := " ident+ ")")? : command
 
+/-- `derive_erases_hat S` defines `S.Timed.ErasesHat`, the erasure relation of the costed mirror
+of `S` at costed types of its type parameters, through erasure maps. -/
+syntax (name := deriveErasesHatCmd) "derive_erases_hat " ident : command
+
+@[command_elab deriveErasesHatCmd]
+def elabDeriveErasesHat : CommandElab := fun stx => do
+  liftTermElabM do
+    let S ← realizeGlobalConstNoOverloadWithInfo stx[1]
+    defineErasesHat S
+
 @[command_elab deriveReductionCmd]
 def elabDeriveReduction : CommandElab := fun stx => do
   let advs : Array Name :=
@@ -2009,11 +2544,12 @@ def elabDeriveReduction : CommandElab := fun stx => do
     try
       deriveReduction c advs
     catch e =>
-      -- Second attempt: unfold the data definitions applied to a structure binder.
+      -- Second attempt: unfold the data definitions applied to a structure binder. Any failure
+      -- of it, a runtime exception such as a heartbeat timeout included, restores the state
+      -- before it and reports the error of the first attempt; an interrupt is rethrown.
       s.restore
-      try
-        deriveReduction c advs (unfold := true)
-      catch _ =>
+      tryCatchRuntimeEx (deriveReduction c advs (unfold := true)) fun e₂ => do
+        if e₂.isInterrupt then throw e₂
         s.restore
         throw e
 

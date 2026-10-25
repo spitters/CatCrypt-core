@@ -2043,6 +2043,44 @@ def reduceFieldArg (e : Expr) : MetaM Expr := do
   if s' == s.consumeMData then return e
   return replaceProjArg e s'
 
+/-- The key of the field path `p = S.f ps s` of a callee at a structure `s` computed by a
+definition: `s`, or the value of the `let` that binds it, is an application `g as bs` of a
+definition `g` that is not a projection, whose value is not a constructor application up to
+reducible unfolding, where `as` are the leading implicit and instance arguments of `g` and `bs`
+the remaining arguments, none empty. The key is `fun xs => S.f ps (g as xs)`, returned with
+`bs`; the caller passes the cost companion of the key applied to `bs`, as for a field of a
+computed structure (`computedFieldKey?`). -/
+def computedPathKey? (ctx : Ctx) (p : Expr) : MetaM (Option (Expr × Array Expr)) := do
+  if p.hasLooseBVars || p.isLambda then return none
+  let some (_, _, s₀) ← projStep? p | return none
+  let mut s := s₀.consumeMData
+  if ← isFieldPath ctx s then return none
+  -- The value of the `let` that binds the structure, through nested `let`s.
+  for _ in [0:8] do
+    let .fvar id := s | break
+    let some v ← id.getValue? | break
+    s := v.consumeMData
+  if (← isConstructorApp? (← whnfR s)).isSome then return none
+  let .const g lvls := s.getAppFn | return none
+  let some (.defnInfo _) := (← getEnv).find? g | return none
+  if (← getProjectionFnInfo? g).isSome then return none
+  let sargs := s.getAppArgs
+  let k ← forallTelescope (← inferType (mkConst g lvls)) fun ys _ => do
+    let mut k := 0
+    for y in ys do
+      if (← y.fvarId!.getBinderInfo).isExplicit then break
+      k := k + 1
+    return k
+  if k ≥ sargs.size then return none
+  let gp := mkAppN (mkConst g lvls) (sargs.extract 0 k)
+  let bs := sargs.extract k sargs.size
+  if gp.hasLooseBVars then return none
+  forallBoundedTelescope (← whnfR (← inferType gp)) bs.size fun xs _ => do
+    unless xs.size == bs.size do return none
+    let key ← mkLambdaFVars xs (replaceProjArg p (mkAppN gp xs))
+    unless ← isTypeCorrect key do return none
+    return some (key, bs)
+
 /-- The cost `if c then a else b`, which is `a` when the two branch costs are the same term. -/
 def iteNatE (c inst a b : Expr) : Expr :=
   if a == b then a else mkApp5 (mkConst ``ite [Level.one]) (mkConst ``Nat) c inst a b
@@ -2467,6 +2505,10 @@ partial def costConst (ctx : Ctx) (e : Expr) (c : Name) (args : Array Expr) :
       let mut missing := false
       for p in ← calleeFieldPaths c f.constLevels! args do
         let p ← reduceFieldArg p
+        -- The key of a field of a structure computed by a definition, for a path that is not a
+        -- field path of the binders (those keep their own companions).
+        let ck? ← if p.isLambda || (p.isApp && (← isFieldPath ctx p.appArg!)) then pure none
+          else computedPathKey? ctx p
         if let some (_, cc) := ctx.fields.find? (·.1 == p) then
           fieldArgs := fieldArgs.push cc
         else if let some (_, cc) := ctx.fields.find? (·.1 == (← canonPath p)) then
@@ -2474,6 +2516,17 @@ partial def costConst (ctx : Ctx) (e : Expr) (c : Name) (args : Array Expr) :
         else if ← isValueField ctx p then
           -- A field of a structure value: priced at the structure's value.
           fieldArgs := fieldArgs.push (← companionOf ctx p)
+        else if let some (key, bs) := ck? then
+          -- A field of a structure computed by a definition: the companion of the key,
+          -- applied to the arguments that compute the structure.
+          if let some (_, cc) := ctx.fields.find? (·.1 == key) then
+            fieldArgs := fieldArgs.push (mkAppN cc bs)
+          else if let some r := ctx.fieldRec? then
+            unless (← r.get).contains key do r.modify (·.push key)
+            missing := true
+          else
+            fail m!"the cost `{reg}` takes the cost of the field `{p}`, whose key `{key}` has \
+              no cost companion"
         else if let some r := ctx.fieldRec? then
           if !p.hasLooseBVars && (p.isLambda || (← isFieldPath ctx p.appArg!)) then
             unless (← r.get).contains p do r.modify (·.push p)

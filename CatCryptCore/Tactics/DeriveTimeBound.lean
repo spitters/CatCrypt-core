@@ -32,6 +32,13 @@ replaced by the right side of `f.timedCost_eq` at `a`, or by the bound of `f.tim
 value (`rewriteCosts`). Since every operation of a bound is monotone, the replaced bound bounds
 the original one, and `time_bound` uses the same lemmas at its arithmetic leaves.
 
+A `match` in a step cost whose alternatives have bounds that mention their pattern variables
+is bounded by the same `match` on the same discriminants, each alternative replaced by its
+bound (`matchBound`). When no bound of an alternative mentions its pattern variables, the
+bound of the `match` is the maximum of the bounds of its alternatives. The bound of a match by
+cases is monotone in each alternative, and `time_bound` proves it by splitting the arithmetic
+leaf on the discriminants of the match.
+
 The theorem is proved by `time_bound`, under its own heartbeat budget (`proofHeartbeats`).
 When the bound cannot be computed (a cost that depends on a bound value through a term other
 than a companion with such a closed form, a recursive definition) or `time_bound` does not
@@ -42,6 +49,7 @@ in place of a hand-stated theorem of the same name.
 ## Main definitions
 
 * `rewriteCosts` — the registered costs that mention a bound value, replaced by closed forms
+* `matchBound` — the bound of a `match` by cases
 * `emitTimeBound` — the procedure; it returns the reason when the theorem is not proved
 * `derive_time_bound R.tree` — the command
 -/
@@ -147,6 +155,20 @@ def reduceHead (e : Expr) : MetaM Expr := do
     | none => break
   return e
 
+/-- The `match` `m` with result type `ℕ` and the alternatives `alts` (each a function of the
+pattern variables of its alternative), on the discriminants of `m`. `none` when `m` has
+arguments after its alternatives or its motive has no universe parameter. -/
+def matchBound (m : MatcherApp) (alts : Array Expr) : MetaM (Option Expr) := do
+  unless m.remaining.isEmpty do return none
+  let some pos := m.uElimPos? | return none
+  let motive ← forallBoundedTelescope (← inferType m.motive) m.discrs.size fun xs _ =>
+    mkLambdaFVars xs natE
+  let r := { m with matcherLevels := m.matcherLevels.set! pos Level.one, motive, alts }.toExpr
+  try
+    check r
+    return some r
+  catch _ => return none
+
 mutual
 
 /-- The bound of a step cost `e : ℕ`. -/
@@ -169,19 +191,28 @@ partial def boundCost (bs : Bounds) (e : Expr) : MetaM Expr := do
     return ← boundStep bs y
   if let .fvar f := e.getAppFn then
     if let some (_, v, .cost) := bs.find? (·.1 == f) then return v
-  -- a `match` in a cost: the maximum of the bounds of its alternatives
+  -- a `match` in a cost: the maximum of the bounds of its alternatives, or, when a bound
+  -- mentions a pattern variable, the `match` of the bounds of its alternatives
   if let some m ← matchMatcherApp? e then
     let mut acc : Option Expr := none
+    let mut lams : Array Expr := #[]
+    let mut dep := false
     for alt in m.alts, n in m.altNumParams do
-      let b ← lambdaBoundedTelescope alt n fun ys body => do
+      let (b, lam, d) ← lambdaBoundedTelescope alt n fun ys body => do
         let r ← instantiateMVars (← boundCost bs body)
         let r ← ys.foldlM (init := r) fun r y => rewriteCosts y.fvarId! r
-        if ys.any fun y => r.containsFVar y.fvarId! then
-          throwError "the bound depends on a matched value{indentExpr r}"
-        return r
-      acc ← match acc with
-        | none => pure (some b)
-        | some a => if a == b then pure (some a) else some <$> mkMaxN a b
+        let d := ys.any fun y => r.containsFVar y.fvarId!
+        return (r, ← mkLambdaFVars ys r, d)
+      lams := lams.push lam
+      dep := dep || d
+      unless d do
+        acc ← match acc with
+          | none => pure (some b)
+          | some a => if a == b then pure (some a) else some <$> mkMaxN a b
+    if dep then
+      match ← matchBound m lams with
+      | some r => return r
+      | none => throwError "the bound depends on a matched value{indentExpr e}"
     if let some r := acc then return r
   if let some _ := e.nat? then return e
   if e.isRawNatLit then return e

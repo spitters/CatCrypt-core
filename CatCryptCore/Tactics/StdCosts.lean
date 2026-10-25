@@ -410,6 +410,20 @@ timed_cost List.toFinset := fun (α : Type _) [DecidableEq α] (l : List α) =>
 timed_cost Multiset.toFinset := fun (α : Type _) [DecidableEq α] (s : Multiset α) =>
   Multiset.card s * (Multiset.card s + 1) + 1
 
+/-! Registered costs of unions, images and filters. The union of two multisets without
+repetitions (`List.union`, a right fold of `List.insert`) tests each element of the first
+multiset against at most all elements of both, and costs `card s * (card s + card t + 1) + 1`;
+it depends on the multisets through their cardinalities, so it is well defined on the quotient.
+The image of `s` maps each element (one unit and the cost of `f`) and deduplicates the result
+at the cost of `Multiset.toFinset`. Filtering `s` decides the predicate once per element, at
+one unit each, and one more. -/
+timed_cost Multiset.ndunion := fun (α : Type _) [DecidableEq α] (s t : Multiset α) =>
+  Multiset.card s * (Multiset.card s + Multiset.card t + 1) + 1
+timed_cost Finset.image := fun (α β : Type _) [DecidableEq β] (_f : α → β) (fCost : α → ℕ)
+  (s : Finset α) => ∑ i ∈ s, (1 + fCost i) + s.card * (s.card + 1) + 1
+timed_cost Finset.filter := fun (α : Type _) (p : α → Prop) [DecidablePred p]
+  (s : Finset α) => s.card + 1
+
 /-- Enumerating `s` as a list costs one unit per element and one more. -/
 theorem Finset.toList.timedCost_eq {α : Type*} (s : Finset α) :
     Finset.toList.timedCost α s = s.card + 1 := by
