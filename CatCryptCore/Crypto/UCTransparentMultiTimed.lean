@@ -1,0 +1,32 @@
+/-
+Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
+Released under MIT license as described in the file LICENSE.
+Authors: CatCrypt Contributors
+-/
+module
+
+public import CatCryptCore.Crypto.UCTransparentMulti
+public import CatCryptCore.Tactics.DeriveTimedStructure
+
+/-!
+# The costed mirrors of the hybrid machines
+
+`Hybrid.Timed` and `MultiHybrid.Timed`, the costed mirrors of the hybrid machines of
+UCTransparent by `derive_timed_structure`: each step field becomes a costed computation with its
+cost companion and the no-failure fields are dropped. They are the result types of the costed
+forms of simulators that return a hybrid machine, and are generated here once for every
+companion that certifies such a simulator.
+
+## Main definitions
+
+* `Hybrid.Timed`, `Hybrid.Timed.Erases`, `Hybrid.Timed.TimeBound`
+* `MultiHybrid.Timed`, `MultiHybrid.Timed.Erases`, `MultiHybrid.Timed.TimeBound`
+-/
+
+@[expose] public section
+
+set_option autoImplicit false
+
+derive_timed_structure CatCrypt.Crypto.UCTransparent.Hybrid
+
+derive_timed_structure CatCrypt.Crypto.UCTransparent.MultiHybrid
