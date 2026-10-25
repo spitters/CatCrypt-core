@@ -30,6 +30,8 @@ answer back through `Sum.elim` costs one unit, charged on the continuation of th
 
 * `liftP_eq_mapQueryAnswer` — `liftP` is a relabelling of queries and answers
 * `liftP.erase_timed` — `(liftP.timed A').2.erase = liftP A'.erase`
+* `liftP.bind_ret` — `(liftP X).bind (fun y => .ret (f y)) = liftP (X.bind fun y => .ret (f y))`,
+  the naturality lemma that `derive_timed` uses at a call of `liftP` at a costed state
 * `liftP.timeBound_timed` — an adversary of time `T` with at most `q` queries gives time at
   most `T + q`
 -/
@@ -58,6 +60,15 @@ theorem liftP.erase_timed {M C R α : Type} (A : OracleAdv.Timed (M × C) Bool �
     (liftP.timed (R := R) A).2.erase = liftP A.erase := by
   rw [liftP_eq_mapQueryAnswer]
   exact OracleAdv.Timed.erase_mapQueryAnswer _ _ _ _ A
+
+/-- `liftP` commutes with a bind into `ret`: relabelling the queries and then mapping the
+result is mapping the result and then relabelling. -/
+theorem liftP.bind_ret {M C R α β : Type} (X : OracleAdv (M × C) Bool α) (f : α → β) :
+    (liftP (R := R) X).bind (fun y => .ret (f y)) = liftP (X.bind fun y => .ret (f y)) := by
+  induction X with
+  | ret a => rfl
+  | rand p k ih => simp only [liftP, OracleAdv.bind, ih]
+  | query q k ih => simp only [liftP, OracleAdv.bind, ih]
 
 /-- An adversary of time `T` with at most `q` queries gives a lift of time at most
 `T + q`. -/
