@@ -237,9 +237,9 @@ unfold them. A reduction valued in `PMF` is refused: a distribution has no cost 
 
 Calls of reductions without a costed form are derived on demand. A derivation fails, with
 the reason, on a function stored in data that is not a costed closure as above (a local
-function without a cost companion applied, a function in a list or an option, a closure returned by a recursive function), a field of a structure that is neither a field
-path, nor a field of a computed structure, nor a field of a structure with a mirror as
-above, an opaque data function without a registered cost, an operation on a quotient type
+function without a cost companion applied, a function in a list or an option), a field of a
+structure that is neither a field path, nor a field of a computed structure, nor a field of a
+structure with a mirror, nor a field of a structure value as below, an opaque data function without a registered cost, an operation on a quotient type
 (`Finset`, `Multiset`, `Quot`) without a registered cost (the costs of `Finset.sum`,
 `Finset.prod`, `Finset.univ`, `Finset.range` and `Finset.erase` are registered in
 `CatCryptCore.Tactics.StdCosts`), a recursive data
@@ -249,12 +249,40 @@ discriminants, a match on an oracle tree that is not a binder, a recursive call 
 structure whose fields have cost companions, and a call of a reduction whose costed form
 takes such companions.
 
+## States, generic callees and recursion
+
+A leaf of a handler that returns its incoming state, or a structure update of it, keeps the cost
+companions of the unchanged function fields of the state (`iotaPathE`), and the costed form
+takes those companions after its binders. A call of a non-recursive tree-valued definition
+generic in its state type, at a state holding functions, is unfolded and translated in the
+caller's context (`unfoldsGenericCall`). A call of a registered costed form generic in the
+result type of a tree argument, at a result type holding functions, passes the costed tree and
+instantiates the type parameter at its costed type; the erasure theorem uses the naturality
+lemma `c.bind_ret : (c X).bind (fun y => .ret (f y)) = c (X.bind fun y => .ret (f y))` of the
+callee, without which the call is refused. A recursive data function whose result holds
+functions gets a costed value `c.timed` by its recursion, with the erasure theorem
+`c.erase_timed : ε (c.timed xs) = c (ε xs)`, proved by functional induction, and one projection
+lemma `c.erase_timed_<i>` per component (`deriveHatValue`). The members of a mutual block are
+priced together (`deriveCostBlock`): their costs take the cost companions of the fields that the
+block applies, shared by all members and passed through the recursive calls. A function field
+of a structure value given as a constructor application or by a `let` is priced through that
+value (`isValueField`).
+
+The erasure proof unfolds the data definitions whose bodies are headed by a case analysis (a
+matcher, `if` or dependent `if`; `isCaseHead`). After the `if` closer it runs a stage with the
+bind lemmas of `if`, of dependent `if` (`OracleAdv.ite_bind`, `SPTree.dite_bind`) and of the
+matchers of the costed form (`matchBindLemma`), first without the discharger, then with it. A
+costed form whose value uses a declaration private to the module is not exposed, since its
+equation lemmas could not be stated in the exported environment.
+
 ## Attribution
 
 The translation rules and the derivation on demand follow the instrumented translation of
 the Ironwood project (`Zcash/Meta/Translate.lean`, `Instrument.lean`, `Efficient.lean`),
-which is dual-licensed under the MIT and Apache-2.0 licences; the cost rules are those of
-Isabelle's `time_fun` command.
+which is dual-licensed under the MIT and Apache-2.0 licences. Those rules follow the
+translation of Isabelle's `time_fun` command and in addition charge one unit for each call of a
+non-recursive function and for each decision of `if` and `match`; `derive_timed` also charges
+one unit for each arithmetic operation (`CatCryptCore/Crypto/ConcreteSecurity.md`, §4).
 
 ## Main definitions
 
@@ -656,6 +684,12 @@ register_option derive_timed.maxDepth : Nat := {
   descr := "the maximal nesting of data definitions that derive_timed, derive_cost and \
     derive_reduction unfold to price a call"
 }
+
+/-- Whether the constant `n` is a case analysis: a matcher, `ite` or `dite`. A data definition
+whose body is headed by one is unfolded by the erasure theorem, so that its cases meet the
+cases of the costed value. -/
+def isCaseHead (env : Environment) (n : Name) : Bool :=
+  isMatcherCore env n || n == ``ite || n == ``dite
 
 /-- The maximal nesting of unfolded data definitions: the option `derive_timed.maxDepth`, read
 by its name, so that a command of this module runs before the option's initializer has (the
@@ -1953,6 +1987,29 @@ partial def iotaPathE (ctx : Ctx) (t v : Expr) : TermElabM Expr := do
     return ← mirrorMk fs
   iotaE t v
 
+/-- Whether `p` is a function field `S.f ps s` of a structure value: `s` is not a field path of
+the binders of the reduction, and `s`, or the value of the `let` that binds it, is a
+constructor application up to reducible unfolding. The cost companion of such a field is the
+cost of the field applied, read through the structure's value (`companionOf`). A field of a
+structure computed by a definition, `(kit.aead iv).enc`, keeps its own cost companion (the rule
+for computed structures), since unfolding the definition would price its whole body. -/
+def isValueField (ctx : Ctx) (p : Expr) : MetaM Bool := do
+  if p.hasLooseBVars then return false
+  unless (← whnfR (← inferType p)).isForall do return false
+  let .const m _ := p.getAppFn | return false
+  let some info ← getProjectionFnInfo? m | return false
+  if info.fromClass then return false
+  unless p.getAppNumArgs == info.numParams + 1 do return false
+  let s := p.appArg!.consumeMData
+  if ← isFieldPath ctx s then return false
+  let sv ← match s with
+    | .fvar id => do
+      match ← id.getValue? with
+      | some v => pure v
+      | none => pure s
+    | _ => pure s
+  return (← isConstructorApp? (← whnfR sv)).isSome
+
 /-- The cost `if c then a else b`, which is `a` when the two branch costs are the same term. -/
 def iteNatE (c inst a b : Expr) : Expr :=
   if a == b then a else mkApp5 (mkConst ``ite [Level.one]) (mkConst ``Nat) c inst a b
@@ -2256,7 +2313,7 @@ partial def tv (ctx : Ctx) (e : Expr) : TermElabM (Expr × Expr) := do
     if let some r := ctx.unfolded? then
       unless isMatcherCore env c do
         let headed ← lambdaTelescope dv.value fun _ b =>
-          pure (isMatcherCore env b.getAppFn.constName)
+          pure (isCaseHead env b.getAppFn.constName)
         if headed then r.modify fun a => if a.contains c then a else a.push c
     let (cb, vb) ← tv { ctx with depth := ctx.depth + 1 } e'
     let callCost := if ← isReducible c then natE 0 else natE 1
@@ -2355,6 +2412,9 @@ partial def costConst (ctx : Ctx) (e : Expr) (c : Name) (args : Array Expr) :
       for p in ← calleeFieldPaths c f.constLevels! args do
         if let some (_, cc) := ctx.fields.find? (·.1 == p) then
           fieldArgs := fieldArgs.push cc
+        else if ← isValueField ctx p then
+          -- A field of a structure value: priced at the structure's value.
+          fieldArgs := fieldArgs.push (← companionOf ctx p)
         else if let some r := ctx.fieldRec? then
           if !p.hasLooseBVars && (p.isLambda || (← isFieldPath ctx p.appArg!)) then
             unless (← r.get).contains p do r.modify (·.push p)
@@ -3185,6 +3245,9 @@ partial def callTimed (ctx : Ctx) (e target : Expr) (args : Array Expr) (T : Tre
             out := out.push cc
           else if let some cc ← hatFieldCompanion? ctx p then
             out := out.push cc
+          else if ← isValueField ctx p then
+            -- A field of a structure value: priced at the structure's value.
+            out := out.push (← companionOf ctx p)
           else if let some r := ctx.fieldRec? then
             unless (← r.get).contains p do r.modify (·.push p)
             out := out.push (← mkFreshExprMVar (← pathCompanionType p))
@@ -3719,13 +3782,63 @@ partial def mutualBlock (env : Environment) (c : Name) : Array Name :=
 /-- Derive and add the costs `g.timedCost` of the members `g` of the mutual block `block` of the
 data function `c` as one mutual definition, charging the class methods `units` on local
 instances one unit. A call of a member is priced by the member's cost being defined, so the
-costs are defined by the recursion of the block. -/
+costs are defined by the recursion of the block. Each cost takes, after the costed binders of its
+member, the cost companions of the field paths of the block (`blockFieldPaths`), and a call of a
+member passes the same companions. -/
 partial def deriveCostBlock (units : Array Name) (c : Name) (block : Array Name) :
     TermElabM Unit := do
   let env ← getEnv
   let some cInfo := env.find? c | throwError "derive_cost: unknown constant `{c}`"
   let levels := cInfo.levelParams.map mkLevelParam
-  -- The members, their values priced, and the types of their costs.
+  for g in block do
+    if env.contains (g ++ `timedCost) then
+      throwError "derive_cost: `{g ++ `timedCost}` already exists"
+  let members ← blockMembers c block
+  let (shared, k) ← blockFieldPaths units c members
+  let defs ← withLocalDeclsDND (members.map fun (_, _, t) => (`rec, t)) fun recFs => do
+    let selfCosts := block.zip recFs
+    members.mapM fun (g, value, _) => lambdaTelescope value fun xs b => do
+      let pre := xs.extract 0 k
+      let paths := shared.map (·.instantiateRev pre)
+      for p in paths do
+        try Meta.check p
+        catch ex =>
+          throwError "derive_cost: the field path `{p}` of the mutual block of `{c}` is not a \
+            path of the binders of `{g}`:{indentD ex.toMessageData}"
+      -- A call of a member passes the binders that the field paths mention unchanged.
+      unless paths.isEmpty do
+        let fixed := (List.range k).filter fun i =>
+          paths.any fun p => p.containsFVar xs[i]!.fvarId!
+        let need := fixed.foldl (fun m i => max m (i + 1)) 0
+        let bad := b.find? fun s => block.any (s.isAppOf ·) && s.getAppNumArgs ≥ need &&
+          fixed.any fun i => s.getArg! i != xs[i]!
+        if let some s := bad then
+          throwError "derive_cost: the call `{s}` in the mutual block of `{c}` changes a \
+            structure whose applied fields are priced by cost companions"
+      withBinders { top := xs.map (·.fvarId!) } xs fun ctx bs _ => do
+        withFieldCosts paths fun fcs => do
+          let cs := fcs.map (·.2)
+          let cost ← costWithUnits { ctx with selfCosts, fields := fcs }
+            (← unitPrefixes units b) b
+          let cost ← instantiateMVars cost
+          if cost.hasMVar then
+            throwError "derive_cost: the cost of `{g}` has unassigned universes"
+          -- Each local standing for the cost of a member is that member's cost at the same
+          -- companions.
+          let selfs ← (block.zip recFs).mapM fun (g', r) => do
+            forallTelescope (← inferType r) fun ys _ =>
+              mkLambdaFVars ys (mkAppN (mkConst (g' ++ `timedCost) levels) (ys ++ cs))
+          let cost ← Core.betaReduce (cost.replaceFVars recFs selfs)
+          return (g ++ `timedCost, ← mkForallFVars (bs ++ cs) (mkConst ``Nat),
+            ← mkLambdaFVars (bs ++ cs) cost)
+  addTimedDefs cInfo.levelParams defs
+
+/-- The members `g` of the mutual block `block` of the data function `c`, each with the value
+that `derive_cost` prices and the type of its cost without the costs of fields. -/
+partial def blockMembers (c : Name) (block : Array Name) :
+    TermElabM (Array (Name × Expr × Expr)) := do
+  let env ← getEnv
+  let some cInfo := env.find? c | throwError "derive_cost: unknown constant `{c}`"
   let mut members : Array (Name × Expr × Expr) := #[]
   for g in block do
     let some info := env.find? g
@@ -3733,8 +3846,6 @@ partial def deriveCostBlock (units : Array Name) (c : Name) (block : Array Name)
     unless info.levelParams == cInfo.levelParams do
       throwError "derive_cost: the members `{c}` and `{g}` of a mutual block have different \
         universe parameters"
-    if env.contains (g ++ `timedCost) then
-      throwError "derive_cost: `{g ++ `timedCost}` already exists"
     let value ← costValue g info
     let cType ← lambdaTelescope value fun xs b => do
       if (← treeTyH? (← inferType b)).isSome then
@@ -3745,25 +3856,32 @@ partial def deriveCostBlock (units : Array Name) (c : Name) (block : Array Name)
       withBinders { top := xs.map (·.fvarId!) } xs fun _ bs _ =>
         mkForallFVars bs (mkConst ``Nat)
     members := members.push (g, value, cType)
-  let defs ← withLocalDeclsDND (members.map fun (_, _, t) => (`rec, t)) fun recFs => do
-    let selfCosts := block.zip recFs
-    let costs ← members.mapM fun (g, value, cType) => lambdaTelescope value fun xs b => do
-      let paths ← recordFieldPaths units g xs b selfCosts
-      unless paths.isEmpty do
-        throwError "derive_cost: `{g}`, in the mutual block of `{c}`, applies fields of its \
-          binders that are priced by cost companions; the costs of a mutual block take no \
-          costs of fields"
-      withBinders { top := xs.map (·.fvarId!) } xs fun ctx bs _ => do
-        let cost ← costWithUnits { ctx with selfCosts } (← unitPrefixes units b) b
-        let cost ← instantiateMVars cost
-        if cost.hasMVar then
-          throwError "derive_cost: the cost of `{g}` has unassigned universes"
-        return (g ++ `timedCost, cType, ← mkLambdaFVars bs cost)
-    -- Each local standing for the cost of a member is replaced by that member's cost.
-    costs.mapM fun (n, t, v) => do
-      let v := v.replaceFVars recFs (block.map fun g => mkConst (g ++ `timedCost) levels)
-      return (n, t, ← Core.betaReduce v)
-  addTimedDefs cInfo.levelParams defs
+  return members
+
+/-- The field paths whose cost companions the costs of the members `members` of the mutual
+block of `c` take: the field paths of every member, in the order in which pricing passes reach
+them, each abstracted over the first `k` binders of its member, where `k` is the least number of
+binders of a member; returned with `k`. A path that mentions a later binder is refused. -/
+partial def blockFieldPaths (units : Array Name) (c : Name)
+    (members : Array (Name × Expr × Expr)) : TermElabM (Array Expr × Nat) := do
+  let k := members.foldl (fun m (_, v, _) => min m v.getNumHeadLambdas)
+    (members[0]?.map (·.2.1.getNumHeadLambdas) |>.getD 0)
+  withLocalDeclsDND (members.map fun (_, _, t) => (`rec, t)) fun recFs => do
+    let selfCosts := (members.map (·.1)).zip recFs
+    let mut shared : Array Expr := #[]
+    for (g, value, _) in members do
+      let ps ← lambdaTelescope value fun xs b => do
+        let paths ← recordFieldPaths units g xs b selfCosts
+        let pre := xs.extract 0 k
+        paths.mapM fun p => do
+          let a := p.abstract pre
+          if xs.any fun x => a.containsFVar x.fvarId! then
+            throwError "derive_cost: `{g}`, in the mutual block of `{c}`, applies the field \
+              `{p}` of a binder after the first {k} binders, which all members share"
+          return a
+      for a in ps do
+        unless shared.contains a do shared := shared.push a
+    return (shared, k)
 
 /-- The value of the data function `c` that `derive_cost` prices: the body of its equation
 lemmas, eta-expanded to all binders of its type through type definitions. -/
@@ -3798,6 +3916,16 @@ instantiated at the arguments `args` of a call of `c` at the universe levels `lv
 partial def calleeFieldPaths (c : Name) (lvls : List Level) (args : Array Expr) :
     TermElabM (Array Expr) := do
   let some info := (← getEnv).find? c | return #[]
+  -- A member of a mutual block: the field paths shared by the block.
+  let block := mutualBlock (← getEnv) c
+  if block.size > 1 then
+    let (shared, k) ← blockFieldPaths #[] c (← blockMembers c block)
+    if shared.isEmpty then return #[]
+    unless k ≤ args.size do
+      fail m!"the cost of `{c}` takes the costs of fields, and `{c}` is applied to \
+        {args.size} of the {k} arguments that its field paths take"
+    return shared.map fun a =>
+      (a.instantiateLevelParams info.levelParams lvls).instantiateRev (args.extract 0 k)
   let value := (← costValue c info).instantiateLevelParams info.levelParams lvls
   lambdaTelescope value fun xs b => do
     unless xs.size == args.size do
