@@ -66,6 +66,7 @@ registrations of `QAdv`, `DeepPackage` and `RawCode` are the last section of thi
 * `QAdv.Timed.absorb` — the costed form of `absorbOracle`
 * `RawCode.TimeLE h c n` — the time of package code under a handler cost
 * `DeepPackage.TimeBound p h T` — the time of every export of a package
+* `NomPackage.TimeBound p h T` — the time of every export of a nominal package
 * `QAdv.handlerGateSet`, `QAdv.handlerMirror`, `QAdv.handlerErases`, `QAdv.handlerTime`,
   `DeepPackage.handlerBound`, `RawCode.handlerBound` — the handler kinds read by
   `derive_timed_structure`
@@ -78,6 +79,7 @@ registrations of `QAdv`, `DeepPackage` and `RawCode` are the last section of thi
   absorption: erasure, and time `Σ_j cost (gates j) + q * cost v`
 * `RawCode.TimeLE.bind'`, `RawCode.TimeLE.mono` — times add under `bind`
 * `RawCode.TimeLE.substOracle` — handler substitution replaces each call by its handler
+* `RawCode.TimeLE.eqRec_iff` — a cast of the result type keeps the time
 * `DeepPackage.timeBound_link` — the time of a linked package
 -/
 
@@ -273,6 +275,12 @@ theorem substOracle {h' : ℕ → ℕ} {α : Type u} {c : RawCode α} {n : ℕ}
   | fail n => exact .fail n
   | oracleCall op dom codom x hn => exact (henv op dom codom x).mono (by omega)
 
+/-- A cast of the result type keeps the time of package code. -/
+@[simp] theorem eqRec_iff {α β : Type u} (e : α = β) (c : RawCode α) (n : ℕ) :
+    RawCode.TimeLE h (@Eq.rec (Type u) α (fun x _ => RawCode x) c β e) n ↔
+      RawCode.TimeLE h c n := by
+  subst e; rfl
+
 end RawCode.TimeLE
 
 /-- Every export of `p` runs in at most `T` units under the handler cost `h`. -/
@@ -294,6 +302,16 @@ theorem DeepPackage.timeBound_link {p₁ p₂ : DeepPackage.{u}} {h h₂ : ℕ �
   by_cases hm : (op', dom', codom') ∈ p₂.exports.ops
   · rw [dite_eq_left hm]; exact hp₂ op' dom' codom' hm x'
   · rw [dite_eq_right hm]; exact .fail _
+
+/-- Every export of the nominal package `p` runs in at most `T` units under the handler
+cost `h`. -/
+def NomPackage.TimeBound (p : NomPackage) (h : ℕ → ℕ) (T : ℕ) : Prop :=
+  p.pkg.TimeBound h T
+
+/-- The unfolding lemma of `NomPackage.TimeBound`. -/
+theorem NomPackage.timeBound_def (p : NomPackage) (h : ℕ → ℕ) (T : ℕ) :
+    p.TimeBound h T ↔ p.pkg.TimeBound h T :=
+  Iff.rfl
 
 end CatCrypt.Deep
 
