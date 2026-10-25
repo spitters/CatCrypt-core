@@ -203,7 +203,7 @@ theorem simImplFix.timeBound_ro_hit (P : Scheme PK SK M C R) (hpk : PK → Hash)
     (he : ∀ pk m r, encCost pk m r ≤ ee) (hQ : ∀ x, LQCost x ≤ b) (h : q.2 = hpk pk)
     (hc : cOf P f pk q.1 = cstar) :
     StepTimeBound (simImplFix.timed P hpk hpkCost f fCost pk cstar kstar st (.inl (.inl q))
-      LDCost encCost LQCost LOCost LJCost) (2 * b + eh + 8 * ef + 6 * ee + 32) := by
+      LDCost LQCost LOCost LJCost encCost) (2 * b + eh + 8 * ef + 6 * ee + 32) := by
   simp only [simImplFix.timed, h, hc, ↓reduceIte]
   show StepTimeBound _ _
   time_bound
@@ -219,7 +219,7 @@ theorem simImplFix.timeBound_ro_miss (P : Scheme PK SK M C R) (hpk : PK → Hash
     (he : ∀ pk m r, encCost pk m r ≤ ee) (hD : ∀ x, LDCost x ≤ b) (hQ : ∀ x, LQCost x ≤ b)
     (h : q.2 = hpk pk) (hc : ¬cOf P f pk q.1 = cstar) :
     StepTimeBound (simImplFix.timed P hpk hpkCost f fCost pk cstar kstar st (.inl (.inl q))
-      LDCost encCost LQCost LOCost LJCost) (2 * b + eh + 8 * ef + 6 * ee + 32) := by
+      LDCost LQCost LOCost LJCost encCost) (2 * b + eh + 8 * ef + 6 * ee + 32) := by
   simp only [simImplFix.timed, h, hc, ↓reduceIte]
   show StepTimeBound _ _
   time_bound
@@ -233,7 +233,7 @@ theorem simImplFix.timeBound_ro_ne (P : Scheme PK SK M C R) (hpk : PK → Hash)
     {eh ef ee b : ℕ} (hh : ∀ pk, hpkCost pk ≤ eh) (hO : ∀ x, LOCost x ≤ b)
     (h : ¬q.2 = hpk pk) :
     StepTimeBound (simImplFix.timed P hpk hpkCost f fCost pk cstar kstar st (.inl (.inl q))
-      LDCost encCost LQCost LOCost LJCost) (2 * b + eh + 8 * ef + 6 * ee + 32) := by
+      LDCost LQCost LOCost LJCost encCost) (2 * b + eh + 8 * ef + 6 * ee + 32) := by
   simp only [simImplFix.timed, h, ↓reduceIte]
   show StepTimeBound _ _
   time_bound
@@ -249,8 +249,8 @@ theorem simImplFix.timeBound (P : Scheme PK SK M C R) (hpk : PK → Hash) (hpkCo
     {eh ef ee b : ℕ} (hh : ∀ pk, hpkCost pk ≤ eh) (hf : ∀ m, fCost m ≤ ef)
     (he : ∀ pk m r, encCost pk m r ≤ ee) (hD : ∀ x, LDCost x ≤ b) (hQ : ∀ x, LQCost x ≤ b)
     (hO : ∀ x, LOCost x ≤ b) (hJ : ∀ x, LJCost x ≤ b) :
-    StepTimeBound (simImplFix.timed P hpk hpkCost f fCost pk cstar kstar st d LDCost encCost
-      LQCost LOCost LJCost) (2 * b + eh + 8 * ef + 6 * ee + 32) := by
+    StepTimeBound (simImplFix.timed P hpk hpkCost f fCost pk cstar kstar st d LDCost LQCost
+      LOCost LJCost encCost) (2 * b + eh + 8 * ef + 6 * ee + 32) := by
   rcases d with (q | q) | c
   · by_cases h : q.2 = hpk pk
     · by_cases hc : cOf P f pk q.1 = cstar
@@ -274,8 +274,8 @@ theorem simImplFix.allRet_le (P : Scheme PK SK M C R) (hpk : PK → Hash) (hpkCo
     (hJ : ∀ x, LJCost x ≤ b) :
     AllRet (fun y => (∀ x, y.2.1.2 x ≤ b + 3) ∧ (∀ x, y.2.2.1.2 x ≤ b + 3) ∧
         (∀ x, y.2.2.2.1.2 x ≤ b + 3) ∧ (∀ x, y.2.2.2.2.1.2 x ≤ b + 3))
-      (simImplFix.timed P hpk hpkCost f fCost pk cstar kstar st d LDCost encCost LQCost LOCost
-        LJCost).2 := by
+      (simImplFix.timed P hpk hpkCost f fCost pk cstar kstar st d LDCost LQCost LOCost LJCost
+        encCost).2 := by
   rcases d with (q | q) | c <;> dsimp only [simImplFix.timed, delay] <;>
     (repeat' (first | split_ifs | split | intro _ | dsimp only [AllRet])) <;>
     refine ⟨fun x => ?_, fun x => ?_, fun x => ?_, fun x => ?_⟩ <;>
@@ -308,13 +308,13 @@ theorem redFix.timeBound (P : Scheme PK SK M C R) (hpk : PK → Hash) (hpkCost :
         (∀ x, s.2.2.2.1.2 x ≤ 3 * i)) →
       StepTimeBound (delay 1 (simImplFix.timed P hpk hpkCost f fCost pk c kstar
           { LD := s.1.1, LQ := s.2.1.1, LO := s.2.2.1.1, LJ := s.2.2.2.1.1, found := s.2.2.2.2 }
-          d s.1.2 encCost s.2.1.2 s.2.2.1.2 s.2.2.2.1.2))
+          d s.1.2 s.2.1.2 s.2.2.1.2 s.2.2.2.1.2 encCost))
         (2 * (3 * i) + eh + 8 * ef + 6 * ee + 33) ∧
       AllRet (fun y => (∀ x, y.2.1.2 x ≤ 3 * (i + 1)) ∧ (∀ x, y.2.2.1.2 x ≤ 3 * (i + 1)) ∧
           (∀ x, y.2.2.2.1.2 x ≤ 3 * (i + 1)) ∧ (∀ x, y.2.2.2.2.1.2 x ≤ 3 * (i + 1)))
         (delay 1 (simImplFix.timed P hpk hpkCost f fCost pk c kstar
           { LD := s.1.1, LQ := s.2.1.1, LO := s.2.2.1.1, LJ := s.2.2.2.1.1, found := s.2.2.2.2 }
-          d s.1.2 encCost s.2.1.2 s.2.2.1.2 s.2.2.2.1.2)).2 := by
+          d s.1.2 s.2.1.2 s.2.2.1.2 s.2.2.2.1.2 encCost)).2 := by
     intro i s d hs
     refine ⟨?_, ?_⟩
     · exact (stepTimeBound_delay (simImplFix.timeBound P hpk hpkCost f fCost pk c kstar _ d _
@@ -335,7 +335,7 @@ theorem redFix.timeBound (P : Scheme PK SK M C R) (hpk : PK → Hash) (hpkCost :
         (fun a => y.LO a, fun _ => 0), (fun a => y.LJ a, fun _ => 0), y.found))
     (fun st a => delay 1 (simImplFix.timed P hpk hpkCost f fCost pk c kstar
       { LD := st.1.1, LQ := st.2.1.1, LO := st.2.2.1.1, LJ := st.2.2.2.1.1, found := st.2.2.2.2 }
-      a st.1.2 encCost st.2.1.2 st.2.2.1.2 st.2.2.2.1.2))
+      a st.1.2 st.2.1.2 st.2.2.1.2 st.2.2.2.1.2 encCost))
     (fun i s => (∀ x, s.1.2 x ≤ 3 * i) ∧ (∀ x, s.2.1.2 x ≤ 3 * i) ∧
       (∀ x, s.2.2.1.2 x ≤ 3 * i) ∧ (∀ x, s.2.2.2.1.2 x ≤ 3 * i))
     (fun i => 2 * (3 * i) + eh + 8 * ef + 6 * ee + 33) himpl (hA pk c kstar) (hq pk c kstar) 0

@@ -145,9 +145,9 @@ noncomputable def o9OekeRead (sid : ℕ → ℕ) (st : ℕ → O9State) (a : ℕ
 derive_timed o9OekeRead
 
 example (sid sidCost : ℕ → ℕ) (st : ℕ → O9State) (stCost : ℕ → ℕ) (a : ℕ) (m : ℕ × ℕ)
-    (gCost : ℕ → ℕ) :
-    (o9OekeRead.timed sid sidCost st stCost a m gCost).2.erase = o9OekeRead sid st a m :=
-  o9OekeRead.erase_timed sid sidCost st stCost a m gCost
+    (gCost sCost : ℕ → ℕ) :
+    (o9OekeRead.timed sid sidCost st stCost a m gCost sCost).2.erase = o9OekeRead sid st a m :=
+  o9OekeRead.erase_timed sid sidCost st stCost a m gCost sCost
 
 /-! ## Structures holding functions in a result, a binder and a costed bind -/
 

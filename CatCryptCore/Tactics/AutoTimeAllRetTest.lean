@@ -78,24 +78,24 @@ derive_timed red
 at `uid`. -/
 theorem pfx_bind_time (handler : ℕ → SPTree.Timed ℕ) (handlerCost : ℕ → ℕ)
     (corr : ℕ → SPTree.Timed Bool) (corrCost : ℕ → ℕ) (sid uid : ℕ) (s : St)
-    (inputHat : ℕ → ℕ)
+    (inputHat statusHat : ℕ → ℕ)
     {t c q e p : ℕ} (hH : ∀ x, (handler x).time ≤ t) (hh : ∀ x, handlerCost x ≤ c)
     (hC : ∀ x, (corr x).time ≤ q) (hc : ∀ x, corrCost x ≤ e)
     (hp : ∀ x, inputHat x ≤ p) :
     SPTree.Timed.stepTime ((pfx.timed handler handlerCost corr corrCost sid uid s
-      inputHat).2.bind fun r => (r.1.1.2 uid, .ret ())) ≤ t + c + q + e + p + 30 := by
+      inputHat statusHat).2.bind fun r => (r.1.1.2 uid, .ret ())) ≤ t + c + q + e + p + 30 := by
   time_bound
 
 /-- The same bind with the step cost of `pfx` on the path. -/
 theorem pfx_prefix_bind_time (handler : ℕ → SPTree.Timed ℕ) (handlerCost : ℕ → ℕ)
     (corr : ℕ → SPTree.Timed Bool) (corrCost : ℕ → ℕ) (sid uid : ℕ) (s : St)
-    (inputHat : ℕ → ℕ)
+    (inputHat statusHat : ℕ → ℕ)
     {t c q e p : ℕ} (hH : ∀ x, (handler x).time ≤ t) (hh : ∀ x, handlerCost x ≤ c)
     (hC : ∀ x, (corr x).time ≤ q) (hc : ∀ x, corrCost x ≤ e)
     (hp : ∀ x, inputHat x ≤ p) :
-    (pfx.timed handler handlerCost corr corrCost sid uid s inputHat).1 +
+    (pfx.timed handler handlerCost corr corrCost sid uid s inputHat statusHat).1 +
     SPTree.Timed.stepTime ((pfx.timed handler handlerCost corr corrCost sid uid s
-      inputHat).2.bind fun r => (r.1.1.2 uid, .ret ())) ≤ t + c + q + e + p + 30 := by
+      inputHat statusHat).2.bind fun r => (r.1.1.2 uid, .ret ())) ≤ t + c + q + e + p + 30 := by
   time_bound
 
 /-- The time of the costed form of `red`: the heap reset, the corruption query, the handler
@@ -104,13 +104,13 @@ theorem red.timeBound (handler : ℕ → SPTree.Timed ℕ) (handlerCost : ℕ �
     (corr : ℕ → SPTree.Timed Bool) (corrCost : ℕ → ℕ) (sid uid : ℕ)
     (Z : Env (Unit × St) ((Unit ⊕ ℕ) × St))
     (dist : (Unit ⊕ ℕ) × St → SPTree.Timed Bool)
-    (distCost : (Unit ⊕ ℕ) × St → ℕ) (inputHat : ℕ → ℕ)
+    (distCost : (Unit ⊕ ℕ) × St → ℕ) (inputHat statusHat : ℕ → ℕ)
     {t c q e T a p : ℕ} (hH : ∀ x, (handler x).time ≤ t) (hh : ∀ x, handlerCost x ≤ c)
     (hC : ∀ x, (corr x).time ≤ q) (hc : ∀ x, corrCost x ≤ e)
     (hD : ∀ y, (dist y).time ≤ T) (hd : ∀ y, distCost y ≤ a)
     (hp : ∀ x, inputHat x ≤ p) :
     SPTree.Timed.stepTime (red.timed handler handlerCost corr corrCost sid uid Z dist distCost
-      inputHat) ≤ Z.heap.data.keys.card + t + c + q + e + T + a + p + 30 := by
+      inputHat statusHat) ≤ Z.heap.data.keys.card + t + c + q + e + T + a + p + 30 := by
   time_bound
 
 end CatCrypt.Tactics.AutoTimeAllRetTest

@@ -205,7 +205,8 @@ theorem simImplFO.allRet_le (cstar : C) (kstar : K) (st : FOTransformU.SimState 
       (simImplFO.timed (R := R) cstar kstar st d LDCost LQCost).2 := by
   rcases d with (m | q) | c
   · intro _
-    exact ⟨fun _ => Nat.zero_le _, fun _ => Nat.zero_le _⟩
+    exact ⟨fun x => (hD x).trans (Nat.le_add_right _ _),
+      fun x => (hQ x).trans (Nat.le_add_right _ _)⟩
   all_goals
     simp only [simImplFO.timed, delay]
     exact allRet_bind (allRet_mapQueryAnswer _ _ _ _
