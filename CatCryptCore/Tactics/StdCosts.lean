@@ -400,6 +400,16 @@ derive_cost (unit := BEq.beq) List.elem
 
 timed_cost Finset.toList := fun (α : Type _) (s : Finset α) => s.card + 1
 
+/-! Registered costs of deduplication. Deduplicating a list of length `n` (`List.dedup`, a right
+fold of `List.pwFilter`) compares each element with at most `n` kept elements and costs one unit
+per element and one more. The cost of `Multiset.toFinset` is that of `List.toFinset` on any list
+representing the multiset; it depends on the multiset through its cardinality, so it is well
+defined on the quotient. -/
+timed_cost List.toFinset := fun (α : Type _) [DecidableEq α] (l : List α) =>
+  l.length * (l.length + 1) + 1
+timed_cost Multiset.toFinset := fun (α : Type _) [DecidableEq α] (s : Multiset α) =>
+  Multiset.card s * (Multiset.card s + 1) + 1
+
 /-- Enumerating `s` as a list costs one unit per element and one more. -/
 theorem Finset.toList.timedCost_eq {α : Type*} (s : Finset α) :
     Finset.toList.timedCost α s = s.card + 1 := by

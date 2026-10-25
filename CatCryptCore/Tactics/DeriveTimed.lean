@@ -691,6 +691,13 @@ cases of the costed value. -/
 def isCaseHead (env : Environment) (n : Name) : Bool :=
   isMatcherCore env n || n == ``ite || n == ``dite
 
+/-- The body of the `let` telescope `e`: a definition `let c := v; match c.f with …` is headed by
+its match. -/
+partial def letBody (e : Expr) : Expr :=
+  match e.consumeMData with
+  | .letE _ _ _ b _ => letBody b
+  | e' => e'
+
 /-- The maximal nesting of unfolded data definitions: the option `derive_timed.maxDepth`, read
 by its name, so that a command of this module runs before the option's initializer has (the
 tests of the module). -/
@@ -2010,6 +2017,32 @@ def isValueField (ctx : Ctx) (p : Expr) : MetaM Bool := do
     | _ => pure s
   return (← isConstructorApp? (← whnfR sv)).isSome
 
+/-- The projection path `e` with its step to the structure argument `s` replaced by `s'`. -/
+def replaceProjArg (e s' : Expr) : Expr :=
+  match e.consumeMData with
+  | .proj S j _ => .proj S j s'
+  | e' => mkApp e'.appFn! s'
+
+/-- The structure term `s` with every projection of a constructor application reduced, from the
+innermost structure argument out: `{ cfg := s.cfg, … }.cfg` is `s.cfg`. -/
+partial def reduceStructArg (s : Expr) : MetaM Expr := do
+  let some (_, i, s₀) ← projStep? s | return s
+  let s₀' ← reduceStructArg s₀
+  if let some v ← projectCore? (← whnfR s₀') i then
+    return ← reduceStructArg v
+  if s₀' == s₀.consumeMData then return s
+  return replaceProjArg s s₀'
+
+/-- The field `S.f s` with its structure argument reduced by `reduceStructArg`:
+`{ cfg := s.cfg, … }.cfg.env` is `s.cfg.env`. The outermost projection is kept, so that a field
+of a constructor application (`Corr.leaks ⟨f, g⟩`) stays a field of a structure value. -/
+def reduceFieldArg (e : Expr) : MetaM Expr := do
+  if e.hasLooseBVars then return e
+  let some (_, _, s) ← projStep? e | return e
+  let s' ← reduceStructArg s
+  if s' == s.consumeMData then return e
+  return replaceProjArg e s'
+
 /-- The cost `if c then a else b`, which is `a` when the two branch costs are the same term. -/
 def iteNatE (c inst a b : Expr) : Expr :=
   if a == b then a else mkApp5 (mkConst ``ite [Level.one]) (mkConst ``Nat) c inst a b
@@ -2027,6 +2060,26 @@ def constAlts? (e : Expr) : MetaM (Option Expr) := do
     | none => v? := some b
     | some v => unless v == b do return none
   return v?
+
+/-- Close the goal `g` by rewriting it from right to left with a case hypothesis `d = C as`
+(a constructor application, as `split` introduces) and `rfl`: the structure
+`{ cur := k + 1, env := s.cfg.env }` that the hypothesis `s.cfg.cur = k + 1` produced from the
+eta expansion of `s.cfg` becomes that eta expansion again, which `rfl` closes. Each case
+hypothesis is tried alone; the goal is unchanged when none closes it. -/
+def closeByCaseHypsRev (g : MVarId) : MetaM Bool := g.withContext do
+  for d in ← getLCtx do
+    if d.isImplementationDetail then continue
+    let some (_, _, rhs) := (← instantiateMVars d.type).eq? | continue
+    unless (← isConstructorApp? rhs).isSome do continue
+    let s ← saveState
+    try
+      let r ← g.rewrite (← g.getType) (← mkEqSymm d.toExpr)
+      unless r.mvarIds.isEmpty do throwError "side goals"
+      let g' ← g.replaceTargetEq r.eNew r.eqProof
+      g'.refl
+      return true
+    catch _ => s.restore
+  return false
 
 mutual
 
@@ -2313,7 +2366,7 @@ partial def tv (ctx : Ctx) (e : Expr) : TermElabM (Expr × Expr) := do
     if let some r := ctx.unfolded? then
       unless isMatcherCore env c do
         let headed ← lambdaTelescope dv.value fun _ b =>
-          pure (isCaseHead env b.getAppFn.constName)
+          pure (isCaseHead env (letBody b).getAppFn.constName)
         if headed then r.modify fun a => if a.contains c then a else a.push c
     let (cb, vb) ← tv { ctx with depth := ctx.depth + 1 } e'
     let callCost := if ← isReducible c then natE 0 else natE 1
@@ -2409,8 +2462,14 @@ partial def costConst (ctx : Ctx) (e : Expr) (c : Name) (args : Array Expr) :
     let extra ← forallTelescope (← inferType regE) fun ys _ => pure ys.size
     let mut fieldArgs := #[]
     if extra > 0 then
+      -- In the first pass, every path without a companion is recorded before the call is
+      -- priced without its field costs.
+      let mut missing := false
       for p in ← calleeFieldPaths c f.constLevels! args do
+        let p ← reduceFieldArg p
         if let some (_, cc) := ctx.fields.find? (·.1 == p) then
+          fieldArgs := fieldArgs.push cc
+        else if let some (_, cc) := ctx.fields.find? (·.1 == (← canonPath p)) then
           fieldArgs := fieldArgs.push cc
         else if ← isValueField ctx p then
           -- A field of a structure value: priced at the structure's value.
@@ -2418,10 +2477,11 @@ partial def costConst (ctx : Ctx) (e : Expr) (c : Name) (args : Array Expr) :
         else if let some r := ctx.fieldRec? then
           if !p.hasLooseBVars && (p.isLambda || (← isFieldPath ctx p.appArg!)) then
             unless (← r.get).contains p do r.modify (·.push p)
-          return add (natE 1) (← argsCost ctx args)
+          missing := true
         else
           fail m!"the cost `{reg}` takes the cost of the field `{p}`, which is not a field of a \
             binder of the reduction"
+      if missing then return add (natE 1) (← argsCost ctx args)
       unless fieldArgs.size == extra do
         fail m!"the cost `{reg}` takes {extra} field costs at `{e}`, and {fieldArgs.size} were \
           found"
@@ -2466,6 +2526,12 @@ partial def costConst (ctx : Ctx) (e : Expr) (c : Name) (args : Array Expr) :
     if args.size > info.numParams + 1 then
       let p := mkAppN f (args.extract 0 (info.numParams + 1))
       let rest := args.extract (info.numParams + 1) args.size
+      -- A field below a projection of a constructor application (`{ cfg := s.cfg, … }.cfg.env`):
+      -- the structure is priced, and the field is priced at the reduced path (`s.cfg.env`).
+      if !info.fromClass then
+        let p' ← reduceFieldArg p
+        if p' != p then
+          return add (← costOf ctx args[info.numParams]!) (← costOf ctx (mkAppN p' rest))
       -- A function field of a structure below a data path with a binder (`Z.input.2.f x`):
       -- the costed closure of the field in the costed value of the data path, applied.
       if !info.fromClass then
@@ -3241,7 +3307,10 @@ partial def callTimed (ctx : Ctx) (e target : Expr) (args : Array Expr) (T : Tre
           paths := paths.push (tup.getArg! 2)
           tup := (tup.getArg! 3).headBeta
         for p in paths do
+          let p ← reduceFieldArg p
           if let some (_, cc) := ctx.fields.find? (·.1 == p) then
+            out := out.push cc
+          else if let some (_, cc) := ctx.fields.find? (·.1 == (← canonPath p)) then
             out := out.push cc
           else if let some cc ← hatFieldCompanion? ctx p then
             out := out.push cc
@@ -3605,6 +3674,9 @@ partial def deriveTimed (ctx : Ctx) (c : Name) : TermElabM Unit := do
           | none => pure rem'
         pure (if rem'.isEmpty then (mv', rem') else (mv, rem))
       | _, _ => pure (mv, rem)
+    -- A goal left with a structure rebuilt from the projections of a state, one of which a case
+    -- hypothesis rewrote (`{ cur := k + 1, env := s.cfg.env } = s.cfg` with `s.cfg.cur = k + 1`).
+    let rem ← rem.filterM fun g => return !(← closeByCaseHypsRev g)
     unless rem.isEmpty do
       fail m!"the erasure theorem `{eraseName}` is not closed by unfolding and the erasure \
         lemmas; goals left:{indentD (MessageData.joinSep (rem.map (.ofGoal ·)) "\n")}"
