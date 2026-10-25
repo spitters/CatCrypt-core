@@ -1739,6 +1739,7 @@ def fieldCostName (p : Expr) : MetaM Name := do
   if p.isLambda then
     return ← lambdaTelescope p fun _ b => do
       let some fl ← last b | return `fieldCost
+      unless b.isApp do return Name.mkSimple (fl ++ "Cost")
       let some gl ← last b.appArg! | return Name.mkSimple (fl ++ "Cost")
       return Name.mkSimple (gl ++ "_" ++ fl ++ "Cost")
   if let .proj S i _ := p then
@@ -1911,6 +1912,16 @@ partial def canonPath (e : Expr) : MetaM Expr := do
   match ← projStep? e with
   | some (S, i, s) => return .proj S i (← canonPath s)
   | none => return e.consumeMData
+
+/-- Whether the field path `p` of a callee's derived cost is a step below a field path of the
+binders of the reduction: `p` is a projection (a primitive projection such as `s.1`, or a
+projection function applied to its parameters) of a field path, or an application whose last
+argument is a field path. -/
+def isFieldPathStep (ctx : Ctx) (p : Expr) : MetaM Bool := do
+  if let some (_, _, s) ← projStep? p then return ← isFieldPath ctx s
+  let p := p.consumeMData
+  if p.isApp then return ← isFieldPath ctx p.appArg!
+  return false
 
 /-- The start of the projection path `e`: the term whose projections it takes. -/
 partial def pathRoot (e : Expr) : MetaM Expr := do
@@ -2507,7 +2518,7 @@ partial def costConst (ctx : Ctx) (e : Expr) (c : Name) (args : Array Expr) :
         let p ← reduceFieldArg p
         -- The key of a field of a structure computed by a definition, for a path that is not a
         -- field path of the binders (those keep their own companions).
-        let ck? ← if p.isLambda || (p.isApp && (← isFieldPath ctx p.appArg!)) then pure none
+        let ck? ← if p.isLambda || (← isFieldPathStep ctx p) then pure none
           else computedPathKey? ctx p
         if let some (_, cc) := ctx.fields.find? (·.1 == p) then
           fieldArgs := fieldArgs.push cc
@@ -2528,7 +2539,7 @@ partial def costConst (ctx : Ctx) (e : Expr) (c : Name) (args : Array Expr) :
             fail m!"the cost `{reg}` takes the cost of the field `{p}`, whose key `{key}` has \
               no cost companion"
         else if let some r := ctx.fieldRec? then
-          if !p.hasLooseBVars && (p.isLambda || (← isFieldPath ctx p.appArg!)) then
+          if !p.hasLooseBVars && (p.isLambda || (← isFieldPathStep ctx p)) then
             unless (← r.get).contains p do r.modify (·.push p)
           missing := true
         else

@@ -112,7 +112,11 @@ that the field has one binder and one cost companion in the costed form. A funct
 command derives again with the
 data definitions applied to a structure binder or a local instance (`kit.expandPair p`, a
 helper `f kit x`) unfolded in the tree, so that the fields and methods used in their bodies
-become data-function primitives; the error of the first derivation is reported when both fail.
+become data-function primitives. Each attempt (the first derivation, the derivation with the
+unfolding, and the plain and costed-state interfaces of a structure-valued reduction) runs with a
+fresh heartbeat budget; a failure of an attempt, a runtime exception such as a heartbeat timeout
+or the maximal recursion depth included, restores the state before it, and the error of the last
+attempt names the failure of every attempt. An interrupt is rethrown.
 
 A `let` whose value is a field path of the binders (`let 𝒮 := pcs.scheme`) is substituted,
 so that the fields applied through it are primitives. Any other `let` of first-order data stays
@@ -357,6 +361,16 @@ open Lean Elab Meta Term Command
 /-- Fail with the reason a derivation does not go through. -/
 def fail {γ : Type} (what : MessageData) : MetaM γ :=
   throwError m!"derive_reduction: {what}"
+
+/-- The attempt `x` run with a fresh heartbeat budget: its result, or its error with the state
+before it restored. A runtime exception (a heartbeat timeout, the maximal recursion depth) is an
+error of the attempt; an interrupt is rethrown. -/
+def attempt {α : Type} (x : TermElabM α) : TermElabM (Except Exception α) := do
+  let s ← saveState
+  tryCatchRuntimeEx (Except.ok <$> withCurrHeartbeats x) fun e => do
+    if e.isInterrupt then throw e
+    s.restore
+    return .error e
 
 /-- The constructors of `SPComp`, at which unfolding stops. -/
 def spCompCtors : Array Name :=
@@ -2211,13 +2225,14 @@ partial def deriveStructReduction (c : Name) (advNames : Array Name) (unfold : B
             CatCrypt.Tactics.DeriveTimed.deriveTimed {} (c ++ fd.name ++ `tree)
          assembleStructHat c levels levelParams S lvlsS qs mirrorFields fields xs bs advs kept ps
         if hatCapable && (← getEnv).contains (S ++ `Timed ++ `ErasesHat) then
-          let s ← saveState
-          try plainPath
-          catch e₁ =>
-            s.restore
-            try hatPath
-            catch e₂ =>
-              s.restore
+          -- Each interface is an attempt (`attempt`): a runtime exception of the plain
+          -- interface leads to the costed state, and the error names both failures.
+          match ← attempt plainPath with
+          | .ok () => pure ()
+          | .error e₁ =>
+            match ← attempt hatPath with
+            | .ok () => pure ()
+            | .error e₂ =>
               throwError "derive_reduction: at the plain interface:{indentD e₁.toMessageData}\n\
                 with the costed state:{indentD e₂.toMessageData}"
         else plainPath
@@ -2540,17 +2555,18 @@ def elabDeriveReduction : CommandElab := fun stx => do
     if stx[2].getNumArgs > 3 then stx[2][3].getArgs.map (·.getId) else #[]
   liftTermElabM do
     let c ← realizeGlobalConstNoOverloadWithInfo stx[1]
-    let s ← saveState
-    try
-      deriveReduction c advs
-    catch e =>
-      -- Second attempt: unfold the data definitions applied to a structure binder. Any failure
-      -- of it, a runtime exception such as a heartbeat timeout included, restores the state
-      -- before it and reports the error of the first attempt; an interrupt is rethrown.
-      s.restore
-      tryCatchRuntimeEx (deriveReduction c advs (unfold := true)) fun e₂ => do
-        if e₂.isInterrupt then throw e₂
-        s.restore
-        throw e
+    -- The first attempt, then the attempt that unfolds the data definitions applied to a
+    -- structure binder (`attempt`); the error names the failures of both, or the one failure
+    -- when both attempts fail with the same message.
+    match ← attempt (deriveReduction c advs) with
+    | .ok () => pure ()
+    | .error e₁ =>
+      match ← attempt (deriveReduction c advs (unfold := true)) with
+      | .ok () => pure ()
+      | .error e₂ =>
+        if (← e₁.toMessageData.toString) == (← e₂.toMessageData.toString) then throw e₁
+        throwError "derive_reduction: the first attempt fails:{indentD e₁.toMessageData}\n\
+          with the data definitions applied to a structure binder unfolded:\
+          {indentD e₂.toMessageData}"
 
 end CatCrypt.Tactics.DeriveReduction

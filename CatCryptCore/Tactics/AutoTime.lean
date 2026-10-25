@@ -103,7 +103,14 @@ definition to a constructor is reduced to its numeral (`reduceCtorArg?`:
 every subterm `f a` of the leaf and every local hypothesis `∀ x, f x ≤ b`, the instance
 `f a ≤ b[a/x]`; for every subtype value `↑m`, its invariant `m.property`; for every registered
 cost `f.timedCost a`, the instance of `f.timedCost_eq` or `f.timedCost_le` (premises by the
-context). The leaf is then closed by `omega`. When `omega` fails, the case distinctions of the
+context). A summand `m₁` of the left side that is a `match` and a summand `m₂` of the right side
+that is a `match` of the same matcher on the same discriminants are compared by cases
+(`matchFacts`): the matcher proves `m₁ ≤ m₂` with the motive `fun ds => m₁[ds] ≤ m₂[ds]`, each
+alternative comparing the alternatives of `m₁` and `m₂` at its pattern (`cmpLe`: reflexivity, a
+nested `match` of the same discriminants, `add_le_add`, `max_le_max`, an `if` against the `if`
+or the maximum of its branches, else `omega` with the bounded atoms), and `omega` is tried first
+on the leaf with the compared matches replaced by variables bounded by these facts. The leaf is
+then closed by `omega`. When `omega` fails, the case distinctions of the
 leaf are split before `linarith` and `nlinarith` are tried, each case solved again: an
 `if b = true` on a Boolean local `b` by cases on `b`; a recursor or `casesOn` on a local
 variable or a pair projection of one (the answer cost `Sum.rec (fun _ => 0) (fun _ => 0) r`) by
@@ -691,6 +698,16 @@ theorem stb_of {x : ℕ × OracleAdv.Timed D R α} {T : ℕ}
   h.mono (by omega)
 
 end Oracle
+
+/-- An `if` is at most the `if` on the same condition of larger branches. -/
+theorem ite_le_ite_of {c : Prop} [Decidable c] {a b a' b' : ℕ} (h₁ : a ≤ a') (h₂ : b ≤ b') :
+    (if c then a else b) ≤ (if c then a' else b') := by
+  split <;> assumption
+
+/-- An `if` is at most the maximum of larger branches. -/
+theorem ite_le_max_of {c : Prop} [Decidable c] {a b a' b' : ℕ} (h₁ : a ≤ a') (h₂ : b ≤ b') :
+    (if c then a else b) ≤ max a' b' := by
+  split <;> omega
 
 /-! ## The procedure -/
 
@@ -1652,10 +1669,174 @@ def invCandidates (α f : Expr) : MetaM (Array (Array Expr)) := do
         out := out.push ladder
     return out
 
+/-- The proposition `a ≤ b` over `ℕ`. -/
+def mkNatLe (a b : Expr) : Expr :=
+  mkApp4 (mkConst ``LE.le [Level.zero]) (mkConst ``Nat) (mkConst ``instLENat) a b
+
+/-- Whether `m₁` and `m₂` are applications of the same matcher to the same discriminants,
+without arguments after their alternatives. -/
+def sameMatch (m₁ m₂ : MatcherApp) : MetaM Bool := do
+  unless m₁.matcherName == m₂.matcherName && m₁.discrs.size == m₂.discrs.size &&
+    m₁.remaining.isEmpty && m₂.remaining.isEmpty && m₁.uElimPos?.isSome do return false
+  for d₁ in m₁.discrs, d₂ in m₂.discrs do
+    unless d₁ == d₂ do
+      unless ← withReducible (isDefEq d₁ d₂) do return false
+  return true
+
+/-- The application `e` of a matcher reduced by iota at its pattern, beta-reduced; `e` when
+it does not reduce. -/
+def reduceMatch (e : Expr) : MetaM Expr := do
+  match ← reduceMatcher? e with
+  | .reduced e' => return e'.headBeta
+  | _ => return e
+
+/-- `g : a ≤ b` reduced by `rule` (`Nat.add_le_add`, `max_le_max`, `ite_le_ite_of`,
+`ite_le_max_of`) to the comparisons of its parts; `none` when the conclusion of the rule does
+not match the target. -/
+def splitLe (g : MVarId) (rule : Name) : MetaM (Option (MVarId × MVarId)) := do
+  let s ← saveState
+  match ← applyRule g rule with
+  | some [g₁, g₂] => return some (g₁, g₂)
+  | _ =>
+    s.restore
+    return none
+
+mutual
+
+/-- `a ≤ b` by the structure of the two costs: reflexivity; two matches of the same
+discriminants by `matchLe`; two sums by `Nat.add_le_add`, two maxima by `max_le_max`, an `if`
+against the `if` on the same condition or the maximum of two branches by `ite_le_ite_of` or
+`ite_le_max_of`, each with its parts compared; else `omega` with the bounded atoms of the
+context. -/
+partial def cmpLe (g : MVarId) (fuel : Nat) : TacticM Unit := g.withContext do
+  if fuel == 0 then throwError "time_bound: depth bound reached"
+  let tgt ← zetaAll (← instantiateMVars (← g.getType))
+  let some (a, b) := natLe? tgt | throwError "time_bound: not a comparison{indentExpr tgt}"
+  let a := a.headBeta
+  let b := b.headBeta
+  let g ← g.replaceTargetDefEq (mkNatLe a b)
+  if a == b then
+    g.assign (mkApp (mkConst ``Nat.le_refl) a)
+    return
+  if let some m₁ ← matchMatcherApp? a then
+    let m₂? ← match ← matchMatcherApp? b with
+      | some m₂ => do pure (if ← sameMatch m₁ m₂ then some m₂ else none)
+      | none => pure none
+    -- the matches compared by cases, or the match of `a` against the bound `b` by cases
+    let s ← saveState
+    try
+      matchLe g m₁ m₂? b (fuel - 1)
+      return
+    catch _ => s.restore
+  let rule? : Option Name :=
+    if a.isAppOfArity ``HAdd.hAdd 6 && b.isAppOfArity ``HAdd.hAdd 6 then some ``Nat.add_le_add
+    else if a.isAppOfArity ``Max.max 4 && b.isAppOfArity ``Max.max 4 then some ``max_le_max
+    else if a.isAppOfArity ``ite 5 && b.isAppOfArity ``ite 5 && a.getArg! 1 == b.getArg! 1 then
+      some ``ite_le_ite_of
+    else if a.isAppOfArity ``ite 5 && b.isAppOfArity ``Max.max 4 then some ``ite_le_max_of
+    else none
+  if let some rule := rule? then
+    let s ← saveState
+    try
+      if let some (g₁, g₂) ← splitLe g rule then
+        cmpLe g₁ (fuel - 1)
+        cmpLe g₂ (fuel - 1)
+        return
+    catch _ => pure ()
+    s.restore
+  -- a cost against a maximum: against one of its arguments
+  if b.isAppOfArity ``Max.max 4 then
+    for rule in [``le_max_of_le_left, ``le_max_of_le_right] do
+      let s ← saveState
+      try
+        if let some [g₁] ← applyRule g rule then
+          cmpLe g₁ (fuel - 1)
+          return
+      catch _ => pure ()
+      s.restore
+  closeArithCore (← addCostFacts g) (omegaOnly := true)
+
+/-- `m₁ ≤ b` by the matcher of `m₁`: with the motive `fun ds => m₁[ds] ≤ m₂[ds]` when `b` is
+the match `m₂` of the same matcher on the same discriminants, else `fun ds => m₁[ds] ≤ b`; at
+each alternative the two sides are reduced at the pattern and compared by `cmpLe`. -/
+partial def matchLe (g : MVarId) (m₁ : MatcherApp) (m₂? : Option MatcherApp) (b : Expr)
+    (fuel : Nat) : TacticM Unit := g.withContext do
+  let some pos := m₁.uElimPos? | throwError "time_bound: match without a motive universe"
+  let motive ← forallBoundedTelescope (← inferType m₁.motive) m₁.discrs.size fun xs _ => do
+    let rhs := match m₂? with
+      | some m₂ => { m₂ with discrs := xs }.toExpr
+      | none => b
+    mkLambdaFVars xs (mkNatLe { m₁ with discrs := xs }.toExpr rhs)
+  let lvls := m₁.matcherLevels.set! pos Level.zero
+  let f := mkAppN (mkConst m₁.matcherName lvls.toList) (m₁.params ++ #[motive] ++ m₁.discrs)
+  let mut fty ← inferType f
+  let mut alts : Array Expr := #[]
+  for _ in m₁.altNumParams do
+    let .forallE _ d b _ ← whnfD fty | throwError "time_bound: matcher type"
+    let mv ← mkFreshExprSyntheticOpaqueMVar d
+    alts := alts.push mv
+    fty := b.instantiate1 mv
+  let pf := mkAppN f alts
+  unless ← isDefEq (← inferType pf) (← g.getType) do
+    throwError "time_bound: matcher motive"
+  g.assign pf
+  for mv in alts, n in m₁.altNumParams do
+    let (_, g') ← mv.mvarId!.introN n
+    g'.withContext do
+      let tgt := (← instantiateMVars (← g'.getType)).headBeta
+      let some (a, b) := natLe? tgt | throwError "time_bound: alternative"
+      cmpLe (← g'.replaceTargetDefEq (mkNatLe (← reduceMatch a) (← reduceMatch b))) fuel
+
+end
+
+/-- An arithmetic leaf `l ≤ r` with a summand `m₁` of `l` and a summand `m₂` of `r` that are
+matches of the same discriminants, `m₁ ≤ m₂` proved by `cmpLe`: the leaf
+`∀ x₁ y₁ …, x₁ ≤ y₁ → … → l[xᵢ/m₁ᵢ] ≤ r[yᵢ/m₂ᵢ]` with its binders introduced, which proves
+`l ≤ r` from these facts. `none` when no pair is compared. -/
+def matchFacts (g : MVarId) : TacticM (Option MVarId) := g.withContext do
+  let tgt ← instantiateMVars (← g.getType)
+  let some (l, r) := natLe? tgt | return none
+  let rs := linAtoms r #[]
+  let mut pairs : Array (Expr × Expr × Expr) := #[]
+  for t in linAtoms l #[] do
+    if t.hasLooseBVars || t.hasExprMVar || pairs.any (·.1 == t) then continue
+    let some m₁ ← matchMatcherApp? t | continue
+    for u in rs do
+      if u.hasLooseBVars || u.hasExprMVar then continue
+      let some m₂ ← matchMatcherApp? u | continue
+      unless ← sameMatch m₁ m₂ do continue
+      let s ← saveState
+      let mv ← mkFreshExprMVar (mkNatLe t u)
+      try
+        cmpLe mv.mvarId! 64
+        pairs := pairs.push (t, u, ← instantiateMVars mv)
+        break
+      catch _ => s.restore
+  if pairs.isEmpty then return none
+  let n := pairs.size
+  let decls := (Array.range (2 * n)).map fun i => (Name.mkSimple s!"m{i}", fun _ => pure (mkConst ``Nat))
+  let stmt ← withLocalDeclsD decls fun xs => do
+    let sub (side : Nat) (e : Expr) : Expr := e.replace fun e' =>
+      match pairs.findIdx? fun p => (if side == 0 then p.1 else p.2.1) == e' with
+      | some i => some xs[2 * i + side]!
+      | none => none
+    let mut body := mkNatLe (sub 0 l) (sub 1 r)
+    for i in (List.range n).reverse do
+      body := mkForall `h .default (mkNatLe xs[2 * i]! xs[2 * i + 1]!) body
+    mkForallFVars xs body
+  let G ← mkFreshExprSyntheticOpaqueMVar stmt
+  let args := (pairs.foldl (fun acc p => acc.push p.1 |>.push p.2.1) #[]) ++ pairs.map (·.2.2)
+  let pf := mkAppN G args
+  unless ← isDefEq (← inferType pf) tgt do return none
+  g.assign pf
+  let (_, g') ← G.mvarId!.introN (3 * n)
+  return some g'
+
 mutual
 
 /-- An arithmetic leaf: the step costs of pairs are reduced, each remaining step cost `x.1` of a
-costed tree is bounded by a source of `x`, and `closeArithCore` closes the goal. -/
+costed tree is bounded by a source of `x`, the matches of the same discriminants on its two
+sides are compared by cases (`matchFacts`), and `closeArithCore` closes the goal. -/
 partial def closeArith (g : MVarId) (env : Bool) (fuel : Nat) : TacticM Unit := do
   let s0 ← saveState
   let g0 := g
@@ -1683,7 +1864,15 @@ partial def closeArith (g : MVarId) (env : Bool) (fuel : Nat) : TacticM Unit := 
         pure (some g')
       | none => pure none
     if let some g' := r then g := g'
-  let gc ← addCaseFacts (← addCostFacts g)
+  g ← addCostFacts g
+  -- the matches of the same discriminants on the two sides, compared by cases
+  let sm ← saveState
+  if let some gm ← matchFacts g then
+    try
+      closeArithCore gm (omegaOnly := true)
+      return
+    catch _ => sm.restore
+  let gc ← addCaseFacts g
   let s ← saveState
   try
     closeArithCore gc (omegaOnly := true)
