@@ -17,12 +17,17 @@ A DDH-style reduction and a reduction with two adversary calls, whose time theor
 once. Two reductions sample an index and pass a function of it to the adversary, at a cost
 that the registered closed form of the function's cost companion makes independent of the
 index: `List.replicate.timedCost_le` in `padRed`, `digits7.timedCost_eq` in `digitRed`.
+A pure step over a nested state structure (`PureStep.stepRed`: a flag test, a match on the
+event, and on a tick a match on the head statement whose alternatives test flags, match with a
+wildcard alternative and update the state with record updates) has its time theorem proved
+along its bound.
 
 ## Main results
 
 * `ddhRed.tree.timeBound_timed`, `twoCall.tree.timeBound_timed`,
-  `letRed.tree.timeBound_timed`, `padRed.tree.timeBound_timed` and
-  `digitRed.tree.timeBound_timed`, emitted by the command
+  `letRed.tree.timeBound_timed`, `padRed.tree.timeBound_timed`,
+  `digitRed.tree.timeBound_timed` and `PureStep.stepRed.tree.timeBound_timed`, emitted by the
+  command
 * `digits7.timedCost_eq` — computing `t` digits costs `4 t + 1`
 -/
 
@@ -122,5 +127,72 @@ example (t : ℕ) (A : List ℕ → SPTree.Timed Bool) (ACost : List ℕ → ℕ
     (hA : ∀ x, (A x).time ≤ T) (hAc : ∀ x, ACost x ≤ c) :
     SPTree.Timed.stepTime (digitRed.tree.timed t A ACost) ≤ c + 4 * t + T + 4 :=
   digitRed.tree.timeBound_timed t A ACost hA hAc
+
+namespace PureStep
+
+/-- A statement. -/
+inductive Stmt where
+  | skip
+  | put (x : ℕ) (k : Stmt)
+  | out (x : ℕ) (k : Stmt)
+  | inp (x : ℕ) (k : Stmt)
+
+/-- A configuration: the statement, its environment and a flag. -/
+structure Cfg where
+  /-- The statement. -/
+  cur : Stmt
+  /-- The environment. -/
+  env : ℕ → List ℕ
+  /-- A flag. -/
+  got : Bool
+
+/-- A state: the configuration, a start flag, a buffer and an input queue. -/
+structure St where
+  /-- The configuration. -/
+  cfg : Cfg
+  /-- Whether the state is started. -/
+  started : Bool
+  /-- The buffer. -/
+  buf : List ℕ
+  /-- The input queue. -/
+  iq : ℕ → List ℕ
+
+/-- An event. -/
+inductive Ev where
+  | inp (h v : ℕ)
+  | tick
+
+/-- One step on the event `e`. -/
+def step (s : St) (e : Ev) : St × Option ℕ :=
+  if s.started then
+    match e with
+    | .inp h v => ({ s with iq := fun i => s.iq i ++ [h + v] }, none)
+    | .tick =>
+      match s.cfg.cur with
+      | .skip => ({ s with buf := [] }, none)
+      | .put x k => ({ s with cfg := { s.cfg with cur := k, env := fun i => s.cfg.env i ++ [x] } },
+          none)
+      | .out x k =>
+        if s.cfg.got then ({ s with cfg := { s.cfg with cur := k }, buf := s.buf ++ [x] }, some x)
+        else
+          match s.buf.head? with
+          | some 0 => ({ s with cfg := { s.cfg with cur := k }, buf := s.buf ++ s.buf }, none)
+          | _ => ({ s with cfg := { s.cfg with cur := k } }, none)
+      | .inp x k =>
+        match s.iq x with
+        | [] => ({ s with buf := s.buf ++ [x] }, none)
+        | v :: _ => ({ s with cfg := { s.cfg with cur := k, got := true }, buf := v :: s.buf },
+            some v)
+  else ({ s with started := true }, none)
+
+/-- The step as a computation. -/
+noncomputable def stepRed (s : St) (e : Ev) : SPComp (St × Option ℕ) :=
+  SPComp.pure (step s e)
+
+derive_reduction stepRed
+
+derive_time_bound stepRed.tree
+
+end PureStep
 
 end CatCrypt.Tactics.DeriveTimeBoundTest

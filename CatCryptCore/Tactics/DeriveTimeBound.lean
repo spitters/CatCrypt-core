@@ -6,6 +6,7 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Tactics.AutoTime
+public import CatCryptCore.Tactics.DeriveReduction
 
 /-!
 # The time theorem of a costed computation tree
@@ -39,18 +40,52 @@ bound of the `match` is the maximum of the bounds of its alternatives. The bound
 cases is monotone in each alternative, and `time_bound` proves it by splitting the arithmetic
 leaf on the discriminants of the match.
 
-The theorem is proved by `time_bound`, under its own heartbeat budget (`proofHeartbeats`).
-When the bound cannot be computed (a cost that depends on a bound value through a term other
-than a companion with such a closed form, a recursive definition) or `time_bound` does not
-close the goal, nothing is
-declared and the command fails with the reason. The command is written once per reduction,
-in place of a hand-stated theorem of the same name.
+A costed tree whose body is a pure step `(e, t)` with `t` a `ret` leaf (a reduction that
+computes its result without sampling, state or calls) has its theorem proved by the recursion
+that computes the bound (`mirrorTimeBound`). The body is first put in projection-normal form
+(`reduceProjCtor`: each projection of a constructor application, of a pair or of a structure,
+replaced by the field). The bound `B₀` of the step cost `e` is computed clause by clause as
+above, and each clause yields its monotonicity proof:
+
+* a sum, product or maximum: `Nat.add_le_add`, `Nat.mul_le_mul`, `max_le_max`;
+* an `if`: `ite_le_max_of`;
+* a cost companion `f a`: the hypothesis `h_f a`;
+* a `match` whose alternative bounds do not mention their pattern variables: the splitter of
+  its matcher with the motive `fun ds => m[ds] ≤ B` and the maximum `B` of the alternative
+  bounds, each alternative bound lifted to `B` by `le_max_left` and `le_max_right`;
+* a `match` whose alternative bounds mention their pattern variables: the splitter with the
+  motive `fun ds => m[ds] ≤ mB[ds]`, `mB` the same match of the alternative bounds;
+* at each alternative of a splitter, the equation lemma of the matcher reduces the match at
+  the pattern of the alternative (under its overlap hypotheses, for a wildcard alternative)
+  to the body of the alternative;
+* a registered cost that mentions a pattern variable: its closed form, with the proof from
+  `f.timedCost_eq` or `f.timedCost_le`;
+* any other term: itself, by `Nat.le_refl`.
+
+The pair is read as `boundStep` reads it, and the step cost is put in projection-normal form
+before the recursion. The stated bound is the bound `B` of the other procedure, so the
+statement does not depend on the procedure that proves it; `B₀ ≤ B` is closed by `omega`. The
+proof is linear in the size of the step cost, where `time_bound` unfolds the step cost against
+the bound as a whole.
+
+Every other tree, and a pure step with a clause outside this fragment (the step cost `y.1` of
+a subtree) or with `B₀ ≤ B` outside `omega` (a cost that the projection-normal form or the
+closed forms of registered costs change), has its theorem proved by `time_bound`, under its
+own heartbeat budget
+(`proofHeartbeats`). When the bound cannot be computed (a cost that depends on a bound value
+through a term other than a companion with such a closed form, a recursive definition) or
+`time_bound` does not close the goal, nothing is declared and the command fails with the
+reason. The command is written once per reduction, in place of a hand-stated theorem of the
+same name.
 
 ## Main definitions
 
 * `rewriteCosts` — the registered costs that mention a bound value, replaced by closed forms
 * `matchBound` — the bound of a `match` by cases
-* `emitTimeBound` — the procedure; it returns the reason when the theorem is not proved
+* `emitTimeBound` — the procedure by `time_bound`; it returns the reason when the theorem is
+  not proved
+* `mirrorCost` — the bound of a step cost with its proof
+* `mirrorTimeBound` — the procedure for a pure step, along the bound
 * `derive_time_bound R.tree` — the command
 -/
 
@@ -397,8 +432,249 @@ def emitTimeBound (c name : Name) : TermElabM (Option MessageData) := do
         { name, levelParams := info.levelParams, type := ty, value := val })
       return none
 
+/-- The bounds with the hypothesis of each bounded binder. -/
+abbrev HBounds := Array (FVarId × Expr × Role × Expr)
+
+/-- `a ≤ b` over `ℕ`. -/
+def mkNatLe (a b : Expr) : Expr :=
+  mkApp4 (mkConst ``LE.le [Level.zero]) natE (mkConst ``instLENat) a b
+
+/-- The maximum of the bounds `bs` folded from the left, with a proof of `bᵢ ≤ max` for each:
+`max (… (max b₀ b₁) …) bₙ`. Equal neighbours are kept once, as in `boundCost`. -/
+def maxChain (bs : Array Expr) : MetaM (Expr × Array Expr) := do
+  let some b0 := bs[0]? | throwError "maxChain: no bound"
+  let mut acc := b0
+  let mut pfs : Array Expr := #[mkApp (mkConst ``Nat.le_refl) b0]
+  for b in bs[1:] do
+    if b == acc then
+      pfs := pfs.push (mkApp (mkConst ``Nat.le_refl) b)
+      continue
+    let acc' ← mkMaxN acc b
+    -- the earlier proofs lifted by `le_max_left`, the new bound by `le_max_right`
+    let l ← mkAppM ``le_max_left #[acc, b]
+    pfs ← pfs.mapM fun p => mkAppM ``le_trans #[p, l]
+    pfs := pfs.push (← mkAppM ``le_max_right #[acc, b])
+    acc := acc'
+  return (acc, pfs)
+
+/-- The equation `eqn` of a matcher at the application `l` of that matcher to the patterns of
+its alternative, the overlap hypotheses taken from `ys`: the arguments of the alternative in
+the right side, and the proof of `l = alt args`. -/
+def eqnAt (eqn : Name) (l : Expr) (ys : Array Expr) : MetaM (Array Expr × Expr) := do
+  let c ← mkConstWithFreshMVarLevels eqn
+  let (ms, _, ty) ← forallMetaTelescopeReducing (← inferType c)
+  unless ty.isAppOfArity ``Eq 3 do throwError "mirror: equation {eqn}"
+  -- argument by argument: on a constructor pattern `isDefEq` would first reduce both matcher
+  -- applications by iota, leaving `?h ()` against the body of the alternative
+  let lhs := ty.getArg! 1
+  let .const n₁ us₁ := lhs.getAppFn | throwError "mirror: equation {eqn}"
+  let .const n₂ us₂ := l.getAppFn | throwError "mirror: equation {eqn} does not apply"
+  unless n₁ == n₂ && us₁.length == us₂.length &&
+      lhs.getAppNumArgs == l.getAppNumArgs do
+    throwError "mirror: equation {eqn} does not apply"
+  for u₁ in us₁, u₂ in us₂ do
+    unless ← isLevelDefEq u₁ u₂ do throwError "mirror: equation {eqn}: universe"
+  for a in lhs.getAppArgs, b in l.getAppArgs do
+    unless ← isDefEq a b do throwError "mirror: equation {eqn} does not apply"
+  for mv in ms do
+    let mid := mv.mvarId!
+    if ← mid.isAssigned then continue
+    let t ← instantiateMVars (← mid.getType)
+    let some y ← ys.findM? fun y => do isDefEq (← inferType y) t
+      | throwError "mirror: overlap hypothesis of {eqn}"
+    mid.assign y
+  let args ← (ty.getArg! 2).getAppArgs.mapM instantiateMVars
+  return (args, ← instantiateMVars (mkAppN c ms))
+
+/-- A proof of `m[ds] ≤ rhs ds` by the splitter of the matcher of `m` with the motive
+`fun ds => m[ds] ≤ rhs ds`: at alternative `i`, the equation `i` of the matcher reduces
+`m[pat]` to the body of the alternative at its arguments, which `altPfs[i]` (a function of
+the pattern variables of the alternative) bounds by `rhs`; when `rhsMatch`, `rhs` is a match
+of the same matcher, reduced by the same equation. -/
+def splitProof (m : MatcherApp) (rhs : Array Expr → Expr) (altPfs : Array Expr)
+    (rhsMatch : Bool) : MetaM Expr := do
+  let some pos := m.uElimPos? | throwError "mirror: match without a motive universe"
+  let eqns ← Match.getEquationsFor m.matcherName
+  let motive ← forallBoundedTelescope (← inferType m.motive) m.discrs.size fun xs _ =>
+    mkLambdaFVars xs (mkNatLe { m with discrs := xs }.toExpr (rhs xs))
+  let lvls := m.matcherLevels.set! pos Level.zero
+  let f := mkAppN (mkConst eqns.splitterName lvls.toList) (m.params ++ #[motive] ++ m.discrs)
+  let mut fty ← inferType f
+  let mut alts : Array Expr := #[]
+  for i in [0:m.alts.size] do
+    let .forallE _ d b _ ← whnfD fty | throwError "mirror: splitter type"
+    let pf ← forallTelescopeReducing d fun ys tgt => do
+      let some (l, r) := CatCrypt.Tactics.AutoTime.natLe? tgt.headBeta
+        | throwError "mirror: splitter alternative"
+      let (args, eq₁) ← eqnAt eqns.eqnNames[i]! l ys
+      let mut pf ← mkAppM ``le_trans #[← mkAppM ``Nat.le_of_eq #[eq₁], altPfs[i]!.beta args]
+      if rhsMatch then
+        let (_, eq₂) ← eqnAt eqns.eqnNames[i]! r ys
+        pf ← mkAppM ``le_trans #[pf, ← mkAppM ``Nat.le_of_eq #[← mkEqSymm eq₂]]
+      mkLambdaFVars ys pf
+    alts := alts.push pf
+    fty := b.instantiate1 pf
+  return mkAppN f alts
+
+/-- The closed form `r` of the registered cost `s = f.timedCost a` free of the variable `b`,
+with a proof of `s ≤ r`: from `f.timedCost_eq` at `a` by `Nat.le_of_eq`, or from
+`f.timedCost_le` at `a`, the propositional premises closed from the context
+(`costClosedForm?` with its proof). -/
+def costClosedFormPf? (b : FVarId) (s : Expr) : MetaM (Option (Expr × Expr)) := do
+  let some n := s.getAppFn.constName? | return none
+  for c in ← CatCrypt.Tactics.AutoTime.costLemmas n do
+    let st ← saveState
+    let (ms, _, body) ← forallMetaTelescopeReducing (← inferType c)
+    let isEq := body.isAppOfArity ``Eq 3
+    let side? := if isEq then some (body.getArg! 1, body.getArg! 2)
+      else CatCrypt.Tactics.AutoTime.natLe? body
+    let some (l, r) := side? | st.restore; continue
+    if ← isDefEq l s then
+      let ok ← ms.allM fun m => do
+        let mid := m.mvarId!
+        if ← mid.isAssigned then return true
+        unless ← isProp (← mid.getType) do return true
+        CatCrypt.Tactics.AutoTime.closeByContext mid
+      let r ← instantiateMVars r
+      let pf ← instantiateMVars (mkAppN c ms)
+      if ok && !r.hasExprMVar && !pf.hasExprMVar && !r.containsFVar b then
+        let pf ← if isEq then mkAppM ``Nat.le_of_eq #[pf] else pure pf
+        return some (r, pf)
+    st.restore
+  return none
+
+/-- The registered cost `s` with a proof of `s ≤ r`, `r` its replacement in the bound of
+`boundCost`: for the pattern variables `pvs` of the enclosing matches, grouped by match from the
+outermost, the innermost group first and each group in order, a registered cost that mentions
+the variable is replaced by its closed form free of it, as `rewriteCosts` does at each
+alternative. -/
+def rewriteCostPf (pvs : Array (Array FVarId)) (s : Expr) : MetaM (Expr × Expr) := do
+  let mut cur := s
+  let mut pf := mkApp (mkConst ``Nat.le_refl) s
+  for ys in pvs.reverse do
+    for y in ys do
+      let some n := cur.getAppFn.constName? | return (cur, pf)
+      unless n.lastComponentAsString == "timedCost" && cur.containsFVar y do continue
+      if let some (r, p) ← costClosedFormPf? y cur then
+        pf ← mkAppM ``le_trans #[pf, p]
+        cur := r
+  return (cur, pf)
+
+/-- The bound of a step cost `e : ℕ` with a proof of `e ≤ bound`, by the clauses of
+`boundCost`; throws outside them. `pvs` are the pattern variables of the enclosing matches,
+one group per match from the outermost (`rewriteCostPf`). -/
+partial def mirrorCost (hs : HBounds) (pvs : Array (Array FVarId)) (e : Expr) :
+    MetaM (Expr × Expr) := do
+  let go := fun e => mirrorCost hs pvs e
+  let e := e.headBeta
+  match e with
+  | .letE _ _ v b _ => go (b.instantiate1 v)
+  | .mdata _ b => go b
+  | _ =>
+  if e.isAppOfArity ``HAdd.hAdd 6 then
+    let (a, pa) ← go (e.getArg! 4)
+    let (b, pb) ← go (e.getArg! 5)
+    return (mkAddN a b, ← mkAppM ``Nat.add_le_add #[pa, pb])
+  if e.isAppOfArity ``HMul.hMul 6 then
+    let (a, pa) ← go (e.getArg! 4)
+    let (b, pb) ← go (e.getArg! 5)
+    return (mkMulN a b, ← mkAppM ``Nat.mul_le_mul #[pa, pb])
+  if e.isAppOfArity ``Max.max 4 then
+    let (a, pa) ← go (e.getArg! 2)
+    let (b, pb) ← go (e.getArg! 3)
+    return (← mkMaxN a b, ← mkAppM ``max_le_max #[pa, pb])
+  if e.isAppOfArity ``ite 5 then
+    let (a, pa) ← go (e.getArg! 3)
+    let (b, pb) ← go (e.getArg! 4)
+    let pf := mkAppN (mkConst ``CatCrypt.Tactics.AutoTime.ite_le_max_of)
+      #[e.getArg! 1, e.getArg! 2, e.getArg! 3, e.getArg! 4, a, b, pa, pb]
+    return (← mkMaxN a b, pf)
+  if (CatCrypt.Tactics.AutoTime.fstOf? e).isSome then
+    throwError "mirror: the step cost of a subtree"
+  if let .fvar f := e.getAppFn then
+    if let some (_, v, .cost, h) := hs.find? (·.1 == f) then
+      return (v, mkAppN h e.getAppArgs)
+  if let some m ← matchMatcherApp? e then
+    let mut bnds : Array Expr := #[]
+    let mut pfs : Array Expr := #[]
+    let mut lams : Array Expr := #[]
+    let mut dep := false
+    for alt in m.alts, n in m.altNumParams do
+      let (b, pf, lam, d) ← lambdaBoundedTelescope alt n fun ys body => do
+        let (r, p) ← mirrorCost hs (pvs.push (ys.map (·.fvarId!))) body
+        let r ← instantiateMVars r
+        let d := ys.any fun y => r.containsFVar y.fvarId!
+        return (r, ← mkLambdaFVars ys p, ← mkLambdaFVars ys r, d)
+      bnds := bnds.push b
+      pfs := pfs.push pf
+      lams := lams.push lam
+      dep := dep || d
+    if dep then
+      let some mB ← matchBound m lams | throwError "mirror: no match of the bounds"
+      let some mBm ← matchMatcherApp? mB | throwError "mirror: the match of the bounds"
+      let pf ← splitProof m (fun xs => { mBm with discrs := xs }.toExpr) pfs true
+      return (mB, pf)
+    let (B, ups) ← maxChain bnds
+    -- each alternative proof lifted to the maximum
+    let mut pfs' : Array Expr := #[]
+    for alt in m.alts, n in m.altNumParams, pf in pfs, up in ups do
+      pfs' := pfs'.push (← lambdaBoundedTelescope alt n fun ys _ => do
+        mkLambdaFVars ys (← mkAppM ``le_trans #[pf.beta ys, up]))
+    return (B, ← splitProof m (fun _ => B) pfs' false)
+  if let some n := e.getAppFn.constName? then
+    if n.lastComponentAsString == "timedCost" && pvs.any (·.any e.containsFVar) then
+      return ← rewriteCostPf pvs e
+  return (e, mkApp (mkConst ``Nat.le_refl) e)
+
+/-- The time theorem of the costed tree `c` with a pure step body, proved along its bound;
+`none` when `c` is outside the fragment. The theorem states the bound of `emitTimeBound`
+(`boundStep`), so the statement does not depend on the procedure that proves it. -/
+def mirrorTimeBound (c name : Name) : TermElabM (Option Unit) := do
+  let info ← getConstInfo c
+  let lvls := info.levelParams.map mkLevelParam
+  forallTelescope info.type fun xs _ => do
+    withBounds xs 0 #[] #[] #[] fun bs vars hyps => do
+      let hs : HBounds := (bs.zip hyps).map fun ((f, v, r), h) => (f, v, r, h)
+      let x := mkAppN (Lean.mkConst c lvls) xs
+      -- the pair as `boundStep` reads it
+      let body ← reduceHead x
+      unless body.isAppOfArity ``Prod.mk 4 do return none
+      let t ← reduceHead (body.getArg! 3)
+      unless t.isAppOfArity ``SPTree.Timed.ret 2 do return none
+      let bound? : Option Expr ← try
+          pure (some (← normalizeSum (← instantiateMVars (← boundStep bs x))))
+        catch _ => pure none
+      let some bound := bound? | return none
+      let e := body.getArg! 2
+      let eP ← CatCrypt.Tactics.DeriveReduction.reduceProjCtor e
+      let r ← try some <$> mirrorCost hs #[] eP catch _ => pure none
+      let some (b0, pe) := r | return none
+      let b0 ← instantiateMVars b0
+      -- `B₀ ≤ B` by `omega`, `B` the bound of `boundStep`
+      let mv ← mkFreshExprSyntheticOpaqueMVar (mkNatLe b0 bound)
+      let gs ← try Tactic.run mv.mvarId! (Tactic.evalTactic (← `(tactic| omega)))
+        catch _ => pure [mv.mvarId!]
+      unless gs.isEmpty do return none
+      -- `stepTime x ≤ B` from `e ≤ B₀ ≤ B` by `st_start`, `st_pair` and `time_ret`, the body
+      -- `(e, ret a)` of `x` read by the kernel through the definition of `x`
+      let goal ← mkAppM ``LE.le #[← mkAppM ``SPTree.Timed.stepTime #[x], bound]
+      let α := t.getArg! 0
+      let h1 ← mkAppM ``Nat.le_trans #[pe, ← instantiateMVars mv]
+      let h2 ← mkAppM ``Nat.le_trans #[← mkAppM ``Nat.le_of_eq #[← mkAppM ``Nat.zero_add #[e]], h1]
+      let h3 := mkAppN (mkConst ``CatCrypt.Tactics.AutoTime.time_ret)
+        #[α, mkAddN (mkNatLit 0) e, bound, t.getArg! 1, h2]
+      let h4 ← mkAppM ``CatCrypt.Tactics.AutoTime.st_pair #[h3]
+      let pf := mkAppN (mkConst ``CatCrypt.Tactics.AutoTime.st_start) #[α, bound, x, h4]
+      let ty ← mkForallFVars (xs ++ vars ++ hyps) goal
+      let v ← mkLambdaFVars (xs ++ vars ++ hyps) pf
+      addDecl (Declaration.thmDecl
+        { name, levelParams := info.levelParams, type := ty, value := v })
+      return some ()
+
 /-- `derive_time_bound R.tree` states and proves `R.tree.timeBound_timed`, the time theorem of
-`R.tree.timed` (see the module docstring), and fails with the reason when it is not proved. -/
+`R.tree.timed` (see the module docstring): along its bound for a pure step body
+(`mirrorTimeBound`), else by `time_bound` (`emitTimeBound`); it fails with the reason when the
+theorem is not proved. -/
 syntax (name := deriveTimeBoundCmd) "derive_time_bound " ident : command
 
 @[command_elab deriveTimeBoundCmd]
@@ -406,6 +682,7 @@ def elabDeriveTimeBound : CommandElab := fun stx => do
   liftTermElabM do
     let t ← realizeGlobalConstNoOverloadWithInfo stx[1]
     let name := t ++ `timeBound_timed
+    if (← mirrorTimeBound (t ++ `timed) name).isSome then return
     if let some why ← emitTimeBound (t ++ `timed) name then
       throwError "`{name}` is not proved: {why}"
 
