@@ -626,10 +626,20 @@ partial def mirrorCost (hs : HBounds) (pvs : Array (Array FVarId)) (e : Expr) :
       return ← rewriteCostPf pvs e
   return (e, mkApp (mkConst ``Nat.le_refl) e)
 
-/-- The time theorem of the costed tree `c` with a pure step body, proved along its bound;
-`none` when `c` is outside the fragment. The theorem states the bound of `emitTimeBound`
-(`boundStep`), so the statement does not depend on the procedure that proves it. -/
-def mirrorTimeBound (c name : Name) : TermElabM (Option Unit) := do
+/-- The outcome of `mirrorTimeBound`. -/
+inductive MirrorResult where
+  /-- The theorem is declared. -/
+  | proved
+  /-- The tree is not a pure step. -/
+  | outside
+  /-- The tree is a pure step and the procedure stops for the reason `why`. -/
+  | refused (why : MessageData)
+
+/-- The time theorem of the costed tree `c` with a pure step body, proved along its bound. The
+theorem states the bound `B` of `emitTimeBound` (`boundStep`), so the statement does not depend
+on the procedure that proves it; `B₀ ≤ B` is proved by `omega` against `B` in projection-normal
+form, which is definitionally `B`. -/
+def mirrorTimeBound (c name : Name) : TermElabM MirrorResult := do
   let info ← getConstInfo c
   let lvls := info.levelParams.map mkLevelParam
   forallTelescope info.type fun xs _ => do
@@ -638,23 +648,31 @@ def mirrorTimeBound (c name : Name) : TermElabM (Option Unit) := do
       let x := mkAppN (Lean.mkConst c lvls) xs
       -- the pair as `boundStep` reads it
       let body ← reduceHead x
-      unless body.isAppOfArity ``Prod.mk 4 do return none
+      unless body.isAppOfArity ``Prod.mk 4 do return .outside
       let t ← reduceHead (body.getArg! 3)
-      unless t.isAppOfArity ``SPTree.Timed.ret 2 do return none
-      let bound? : Option Expr ← try
-          pure (some (← normalizeSum (← instantiateMVars (← boundStep bs x))))
-        catch _ => pure none
-      let some bound := bound? | return none
+      unless t.isAppOfArity ``SPTree.Timed.ret 2 do return .outside
+      let bound? : Except MessageData Expr ← try
+          pure (.ok (← normalizeSum (← instantiateMVars (← boundStep bs x))))
+        catch ex => pure (.error ex.toMessageData)
+      let bound ← match bound? with
+        | .ok b => pure b
+        | .error why => return .refused m!"no bound: {why}"
       let e := body.getArg! 2
       let eP ← CatCrypt.Tactics.DeriveReduction.reduceProjCtor e
-      let r ← try some <$> mirrorCost hs #[] eP catch _ => pure none
-      let some (b0, pe) := r | return none
+      let r : Except MessageData (Expr × Expr) ← try
+          pure (.ok (← mirrorCost hs #[] eP))
+        catch ex => pure (.error ex.toMessageData)
+      let (b0, pe) ← match r with
+        | .ok p => pure p
+        | .error why => return .refused why
       let b0 ← instantiateMVars b0
-      -- `B₀ ≤ B` by `omega`, `B` the bound of `boundStep`
-      let mv ← mkFreshExprSyntheticOpaqueMVar (mkNatLe b0 bound)
+      -- `B₀ ≤ B` by `omega`, `B` the bound of `boundStep` in projection-normal form
+      let boundP ← CatCrypt.Tactics.DeriveReduction.reduceProjCtor bound
+      let mv ← mkFreshExprSyntheticOpaqueMVar (mkNatLe b0 boundP)
       let gs ← try Tactic.run mv.mvarId! (Tactic.evalTactic (← `(tactic| omega)))
         catch _ => pure [mv.mvarId!]
-      unless gs.isEmpty do return none
+      unless gs.isEmpty do
+        return .refused m!"`omega` does not prove{indentExpr (mkNatLe b0 boundP)}"
       -- `stepTime x ≤ B` from `e ≤ B₀ ≤ B` by `st_start`, `st_pair` and `time_ret`, the body
       -- `(e, ret a)` of `x` read by the kernel through the definition of `x`
       let goal ← mkAppM ``LE.le #[← mkAppM ``SPTree.Timed.stepTime #[x], bound]
@@ -669,12 +687,12 @@ def mirrorTimeBound (c name : Name) : TermElabM (Option Unit) := do
       let v ← mkLambdaFVars (xs ++ vars ++ hyps) pf
       addDecl (Declaration.thmDecl
         { name, levelParams := info.levelParams, type := ty, value := v })
-      return some ()
+      return .proved
 
 /-- `derive_time_bound R.tree` states and proves `R.tree.timeBound_timed`, the time theorem of
 `R.tree.timed` (see the module docstring): along its bound for a pure step body
 (`mirrorTimeBound`), else by `time_bound` (`emitTimeBound`); it fails with the reason when the
-theorem is not proved. -/
+theorem is not proved, for a pure step with the reasons of both procedures. -/
 syntax (name := deriveTimeBoundCmd) "derive_time_bound " ident : command
 
 @[command_elab deriveTimeBoundCmd]
@@ -682,8 +700,11 @@ def elabDeriveTimeBound : CommandElab := fun stx => do
   liftTermElabM do
     let t ← realizeGlobalConstNoOverloadWithInfo stx[1]
     let name := t ++ `timeBound_timed
-    if (← mirrorTimeBound (t ++ `timed) name).isSome then return
+    let r ← mirrorTimeBound (t ++ `timed) name
+    if let .proved := r then return
     if let some why ← emitTimeBound (t ++ `timed) name then
+      if let .refused w := r then
+        throwError "`{name}` is not proved: {why}\nalong the bound of the pure step: {w}"
       throwError "`{name}` is not proved: {why}"
 
 end
