@@ -642,6 +642,10 @@ structure Ctx where
   /-- The data definitions unfolded in the costed value whose body is a match: unfolded by the
   erasure theorem, so that the hypotheses of its case split rewrite their discriminants. -/
   unfolded? : Option (IO.Ref (Array Name)) := none
+  /-- The naturality lemmas `c.bind_ret` of the registered callees `c` called at a costed
+  instance of the type parameter that is the result type of a tree argument (`callTimed`):
+  rewriting lemmas of the erasure theorem. -/
+  natural? : Option (IO.Ref (Array Name)) := none
 
 /-- The maximal nesting of unfolded data definitions (option `derive_timed.maxDepth`). -/
 register_option derive_timed.maxDepth : Nat := {
@@ -2862,16 +2866,47 @@ partial def hatFieldCompanion? (ctx : Ctx) (p : Expr) : TermElabM (Option Expr) 
   unless (← whnfR (← inferType v)).isAppOfArity ``Prod 2 do return none
   return some (← mkAppM ``Prod.snd #[v])
 
+/-- The pairs `(i, j)` of binders of the function `f`, among its first `n`, such that the
+binder `i` is a tree whose result type is the binder `j`, a type parameter that is also the
+result type of the tree after the `n` binders (a callee generic in the result type of a tree
+argument and of its own result). -/
+partial def genericTreeArgs (f : Expr) (n : Nat) : MetaM (Array (Nat × Nat)) := do
+  forallBoundedTelescope (← inferType f) (some n) fun xs b => do
+    let some Tb ← treeTy? b | return #[]
+    let mut out := #[]
+    for i in [0:xs.size] do
+      let some Tx ← treeTy? (← inferType xs[i]!) | continue
+      let r := Tx.result
+      unless r.isFVar && Tb.result == r do continue
+      let some j := xs.findIdx? (· == r) | continue
+      out := out.push (i, j)
+    return out
+
 /-- A call of the reduction whose costed form is `target`: one plus the step cost of the
-costed call plus the costs of the arguments. -/
+costed call plus the costs of the arguments.
+
+A tree argument whose raw result type is a type parameter `α` of a registered callee `c`
+(`genericTreeArgs`) and holds functions is passed as the costed tree, with its results costed,
+and `α` is instantiated with their costed type: the call's result has the costed type of the
+caller's state. The erasure theorem moves the erasure of the results inside `c` by the
+naturality lemma `c.bind_ret`, recorded in `ctx.natural?`; a callee without it is refused. -/
 partial def callTimed (ctx : Ctx) (e target : Expr) (args : Array Expr) (T : TreeTy) :
     TermElabM Expr := do
   let kinds ← argKinds e.getAppFn args
+  let generic ← genericTreeArgs e.getAppFn args.size
   let mut out := #[]
   let mut cost := natE 0
-  for a in args, (k, _) in kinds do
+  -- The positions in `out` of the static arguments, and the costed instances of the type
+  -- parameters of the generic rule.
+  let mut staticPos : Array (Nat × Nat) := #[]
+  let mut instAt : Array (Nat × Expr) := #[]
+  for i in [0:args.size] do
+    let a := args[i]!
+    let k := kinds[i]!.1
     match k with
-    | .static => out := out.push a
+    | .static =>
+      staticPos := staticPos.push (i, out.size)
+      out := out.push a
     | .data =>
       out := out.push a
       cost := add cost (← costOf ctx a)
@@ -2886,9 +2921,26 @@ partial def callTimed (ctx : Ctx) (e target : Expr) (args : Array Expr) (T : Tre
       let some Ta ← treeTyH? (← inferType a)
         | fail m!"`{a}` is not a tree of a registered kind"
       let some raw ← treeTy? (← inferType a) | fail m!"`{a}` is not a tree"
-      let p ← lowerArgE Ta raw (← tr ctx a)
-      out := out.push (raw.sndOf p)
-      cost := add cost (raw.fstOf p)
+      let gen? := generic.find? (·.1 == i)
+      if let (some (_, j), some _) := (gen?, ← hatTy? raw.result) then
+        let .const cn _ := e.getAppFn
+          | fail m!"internal: the generic callee `{e.getAppFn}` is not a constant"
+        let lem := cn ++ `bind_ret
+        unless (← getEnv).contains lem do
+          fail m!"the callee `{cn}` is generic in the result type of its tree argument `{a}`, \
+            called at a result type holding functions: its costed form takes the costed \
+            results, which needs the naturality lemma `{lem}`, \
+            `(c X).bind (fun y => .ret (f y)) = c (X.bind fun y => .ret (f y))`"
+        if let some r := ctx.natural? then
+          r.modify fun ns => if ns.contains lem then ns else ns.push lem
+        let p ← tr ctx a
+        instAt := instAt.push (j, Ta.result)
+        out := out.push (Ta.sndOf p)
+        cost := add cost (Ta.fstOf p)
+      else
+        let p ← lowerArgE Ta raw (← tr ctx a)
+        out := out.push (raw.sndOf p)
+        cost := add cost (raw.fstOf p)
     | .treeFn =>
       match a.consumeMData with
       | .fvar id =>
@@ -2905,6 +2957,10 @@ partial def callTimed (ctx : Ctx) (e target : Expr) (args : Array Expr) (T : Tre
           let p ← lowerArgE Tb raw (← tr ctx b)
           return (← mkLambdaFVars ys (raw.sndOf p), ← mkLambdaFVars ys (raw.fstOf p))
         out := out.push v |>.push c
+  for (j, h) in instAt do
+    let some (_, pos) := staticPos.find? (·.1 == j)
+      | fail m!"internal: the type parameter of the generic callee `{e.getAppFn}` is not static"
+    out := out.set! pos h
   let arity ← forallTelescope (← inferType target) fun ys _ => pure ys.size
   -- The costed form of the callee takes the cost companions of field paths of its binders
   -- (`R.timed.fieldPaths`): the caller passes its companions for the same paths at the
@@ -2983,7 +3039,8 @@ partial def deriveTimed (ctx : Ctx) (c : Name) : TermElabM Unit := do
     | _ => pure false
   let plain ← if ctx.plain then pure true else fieldTree
   let unfoldedRef ← IO.mkRef (#[] : Array Name)
-  let ctx := { ctx with plain, unfolded? := some unfoldedRef }
+  let naturalRef ← IO.mkRef (#[] : Array Name)
+  let ctx := { ctx with plain, unfolded? := some unfoldedRef, natural? := some naturalRef }
   -- A plain interface around data holding functions: the erasure lemmas of costed closures.
   let plainHat ← if !plain then pure false else lambdaTelescope value fun xs b => do
     if ← xs.anyM fun x => do return (← hatTy? (← inferType x)).isSome then return true
@@ -3084,6 +3141,10 @@ partial def deriveTimed (ctx : Ctx) (c : Name) : TermElabM Unit := do
   -- The erasure lemmas of the tree kinds whose costed trees occur in the costed form.
   let used := tType.getUsedConstants ++ tValue.getUsedConstants
   let kindLemmas := (treeKinds.filter fun k => used.contains k.timed).flatMap (·.eraseLemmas)
+  -- The naturality lemmas `c.bind_ret` of registered callees called at a costed instance of
+  -- their type parameter (`callTimed`), oriented left to right: the erasure of the results
+  -- moves inside the callee, onto the erasure theorem of its tree argument.
+  let naturalLemmas ← naturalRef.get
   -- A costed form by recursion over an oracle tree has a case analysis as its only equation,
   -- which `fun_induction` unfolds; as a simp lemma it would loop.
   let treeRec := tValue.getUsedConstants.contains ``CatCrypt.Crypto.OracleAdv.Timed.casesOn
@@ -3091,7 +3152,7 @@ partial def deriveTimed (ctx : Ctx) (c : Name) : TermElabM Unit := do
   -- leaves and the erasure of a simulation with a costed state.
   let hatLemmas : Array Name :=
     if hatted || binderHat || plainHat || dataHat || used.contains ``CatCrypt.Crypto.OracleAdv.Timed.simulateHat ||
-        callees.any (fun n => n.toString.endsWith "_bind") then
+        callees.any (fun n => n.toString.endsWith "_bind") || !naturalLemmas.isEmpty then
       (treeKinds.filter fun k => used.contains k.timed).flatMap (·.hatLemmas)
     else #[]
   -- A definition by well-founded recursion has an unconditional equation, which loops as a
@@ -3108,7 +3169,7 @@ partial def deriveTimed (ctx : Ctx) (c : Name) : TermElabM Unit := do
   let unfoldedDefs := (← unfoldedRef.get).filter (fun n => n != c)
   let simpLemmas : Array Name :=
     ((if treeRec then #[c] else #[timedName, c]).filter (!wf ·)) ++ kindLemmas ++ hatLemmas ++
-      matchLemmas ++ callees ++ unfoldedDefs ++
+      matchLemmas ++ callees ++ naturalLemmas ++ unfoldedDefs ++
       (if used.contains ``ite then #[``CatCrypt.Tactics.DeriveTimed.boolRec_eq_ite] else #[])
   let ids : Array (TSyntax `ident) := (Array.range nBinders.size).map fun i =>
     mkIdent (Name.mkSimple s!"x{i}")

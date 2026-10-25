@@ -7,6 +7,9 @@ module
 
 public import CatCryptCore.Crypto.KEM.FOTransform
 public import CatCryptCore.Crypto.OracleAdversaryRelabelTimed
+public import CatCryptCore.Crypto.PKE.GamesTimed
+public import CatCryptCore.Tactics.DeriveReduction
+public import CatCryptCore.Tactics.AutoTime
 
 /-!
 # Costed form of the plaintext-checking lift of the FO reduction
@@ -79,5 +82,7 @@ theorem liftP.timeBound_timed {M C R α : Type} {A : OracleAdv.Timed (M × C) Bo
     (fun a : R ⊕ Bool => a.elim (fun _ => false) id) (fun _ => 1) (t₀ := 0) (u₀ := 1)
     (fun _ => le_rfl) (fun _ => le_rfl) hA hq
   simpa [liftP.timed, OracleAdv.Timed.stepTimeBound_zero] using h
+
+derive_timed uRedRun
 
 end CatCrypt.Crypto.KEM.FOTransform
