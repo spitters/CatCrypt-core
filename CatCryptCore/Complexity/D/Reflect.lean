@@ -2069,7 +2069,9 @@ def reflect (c : Name) : Term.TermElabM Unit := do
       let dv : DefinitionVal :=
         { name := dName, levelParams := [], type := ← instantiateMVars dType,
           value := ← instantiateMVars dVal, hints := .regular 0, safety := .safe }
-      addDecl (.defnDecl dv)
+      -- In a `module` file the D-term is exposed, so that importing modules unfold it (as
+      -- the costed forms of `derive_timed` are): the time link of `TimedLink` walks its body.
+      withExporting (isExporting := (← getEnv).header.isModule) <| addDecl (.defnDecl dv)
       addDocStringCore dName s!"The D-term of `{c}`, reflected by `reflect_d`."
       let dC := mkAppN (mkConst dName) ps.statics
       let fx := mkAppN (mkConst c) ps.args
