@@ -164,7 +164,29 @@ The stages run separately, so their bounds are not added. A reduction whose resu
 structure is derived by `derive_reduction` field by field: `R.timed : … → S.Timed …` and
 `R.erase_timed : … → (R.timed …).Erases (R …)`. A stage of a structure binder
 (`A.choose`, `B.guess`) is a primitive of the reduction with a costed binder and a hypothesis
-relating its erasure to the field.
+relating its erasure to the field. A field whose value is priced by its own cost model is of a
+handler kind ([HandlerCost.lean](../Complexity/HandlerCost.lean)): a quantum circuit `QAdv` is
+mirrored as a word of gates over a gate-set parameter, with time the gate costs plus one unit
+and the handler cost per oracle call; a package is kept and bounded by
+`DeepPackage.TimeBound` under a handler cost for its imports. A field whose type has neither a
+tree kind nor a handler kind is kept as data and is not priced, so a certificate of a reduction
+that returns such a field does not bound the work of that field.
+
+The time theorem is proved by the tactic `time_bound`
+([AutoTime.lean](../Tactics/AutoTime.lean)), and `derive_time_bound R.tree`
+([DeriveTimeBound.lean](../Tactics/DeriveTimeBound.lean)) states it as well: each adversary,
+key generation and cost companion binder receives a bound and a hypothesis, and the stated
+bound is the cost of the tree with every atom replaced by its bound, normalised to a sum of
+atoms. `time_bound` follows the path costs of the tree node by node with one rule lemma per
+node, splits on the decisions of the tree and of its step costs, reads the time theorems of
+derived callees as sources, and closes each arithmetic leaf by `omega`, `linarith` or
+`nlinarith`. A continuation is bounded only at the values its prefix can return: the tactic
+`allret_bound` proves the leaf invariant `AllRet P t` of a prefix, and the bind rule takes the
+continuation's bound under that invariant. A reduction that computes its result without
+sampling, state or calls has its time theorem proved along the recursion that computes the
+bound, in time linear in the size of its step cost. A simulator map is certified as a
+reduction is, and its time theorem bounds the simulator by the time of the adversary it
+simulates plus a constant.
 
 A derived step cost follows from the code of the reduction by these rules. A costed form written
 by hand carries step costs chosen by its author, which the kernel checks only through the
@@ -190,8 +212,10 @@ without loading Lean, and keep counts that may fall and never rise.
 - Reductions without a certificate. A definition named as a reduction, inverter or extractor
   whose type is a computation or an adversary is certified when the sources of the two
   repositories hold its costed form, its erasure theorem and a time theorem, or its tree, its
-  compile equation and a time theorem for the costed tree. At 2026-10-20 the CatCrypt
-  repository has 22 certified and 358 uncertified reductions and CatCrypt-core 44 and 51.
+  compile equation and a time theorem for the costed tree. At 2026-10-26 the CatCrypt
+  repository has 321 certified and 55 uncertified reductions and CatCrypt-core 69 and 17. A
+  simulator map counts in the same way: 72 certified and 36 uncertified in the CatCrypt
+  repository, 6 and 6 in CatCrypt-core.
 - Reductions with exponential code. A reduction that draws a whole random function
   (`PMF.uniformOfFintype (X → Y)`) or computes the measurement distribution of a quantum
   adversary's state runs in time exponential in the bit length of `X` or of the adversary's
@@ -202,7 +226,7 @@ without loading Lean, and keep counts that may fall and never rise.
   simulation, and `SIVNonce.lazyRF.timeBound_timed` bounds the time of the lazy sampler by the
   time of the adversary.
 - Hand-written costed forms. The costed forms `R.timed` defined by hand, counted across the two
-  repositories, number 110 at 2026-10-20.
+  repositories, number 109 at 2026-10-26 (60 in the CatCrypt repository, 49 in CatCrypt-core).
 
 ## 3. What the complexity measures are for
 
