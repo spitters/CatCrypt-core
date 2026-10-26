@@ -7,9 +7,7 @@ module
 
 public import Std.WP
 public import CatCryptCore.XDijkstra.XPredCore
-
-@[expose] public section
-set_option autoImplicit false
+public import CatCryptCore.XDijkstra.XPullback
 
 /-!
 # The toolchain's `WPMonad` class and `XCoreWP` at the trivial grade
@@ -59,7 +57,10 @@ The laws of `WPMonad` for `pure` and `bind` are lower bounds (`⊑`), and
 `LawfulXCoreWP` states them as equalities. A `WPMonad` instance therefore gives
 an `XCoreWP` that satisfies `LowerLaws`, and an instance of `LawfulXCoreWP`
 exactly when both inequalities are equalities. Monotonicity corresponds exactly.
+`lowerLaws_pullback` carries these laws along a monad morphism.
 -/
+
+@[expose] public section
 
 namespace CatCrypt.StdWPBridge
 
@@ -161,6 +162,30 @@ theorem triple_iff_xcoreTriple {α : Type u} {P : Pred} {c : m α}
   Triple.iff.trans (LERelCompat.le_iff_rel _ _).symm
 
 end OfWPMonad
+
+/-! ## Pull-back along a monad morphism -/
+
+section Pullback
+
+variable {m : Type u → Type v} {n : Type u → Type v} {Pred : Type w} {EPred : Type w'}
+  {G : Type g} [Monad m] [Monad n] [LE Pred] [LE EPred]
+
+/-- The observation pulled back along a monad morphism `h` satisfies the laws of
+`WPMonad` when the observation of the target does. -/
+theorem lowerLaws_pullback (h : {α : Type u} → m α → n α) (hh : IsMonadMorphism m n @h)
+    [XCoreWP n Pred EPred G] (hL : XCoreWP.LowerLaws n (Pred := Pred) (EPred := EPred) (G := G)) :
+    @XCoreWP.LowerLaws m Pred EPred G _ _ _ (XCoreWP.pullback @h) :=
+  @XCoreWP.LowerLaws.mk m Pred EPred G _ _ _ (XCoreWP.pullback @h)
+    (fun a post epost => by
+      have hp := hL.pure_le a post epost
+      rw [← hh.map_pure] at hp
+      exact hp)
+    (fun c f post epost => by
+      have hb := hL.bind_le (h c) (fun a => h (f a)) post epost
+      rw [← hh.map_bind] at hb
+      exact hb)
+
+end Pullback
 
 /-! ## From `XCoreWP` to `WPMonad` -/
 
