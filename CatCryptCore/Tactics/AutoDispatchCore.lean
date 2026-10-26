@@ -35,6 +35,8 @@ imports this one to register shapes and arms for the theory it imports.
 * `catcrypt_auto_norm [needs [c₁, …]] when m := "tactic"` registers a normalisation step,
   run before the shape of the normalised stage is read on a goal that `m` matches; the
   step is kept when it changes the goal.
+* `catcrypt_funext_type T` registers the type constant `T` as a program type of the
+  tactic `funext_unfold` (`CatCryptCore.Tactics.AutoArms`).
 
 Registrations from imported modules are merged. An arm whose `needs` constant is not in
 the environment, or whose text does not parse there, is skipped, and the error names it
@@ -61,7 +63,9 @@ the premises of the premise stage; an arm with it is left out when there are non
    steps are applied, and the arms of the new shape run.
 5. Premise stage: the goal of step 3 is restored and the arms of `"premises"` run with
    the premises that `AutoPremises.premises` ranks for it from the theorems of the current
-   file and the fields of local hypotheses.
+   file and the fields of local hypotheses; when they fail, the premises are applied in
+   the forms of `PremiseForms.closeWith` (section "Premises in several forms"), under the
+   budget of one arm, and the closing form is the arm that `catcrypt_auto?` suggests.
 
 Each arm runs under its own heartbeat budget, counted from its start:
 `catcrypt_auto.maxHeartbeats` heartbeats (default 20000, in the unit of `maxHeartbeats`),
@@ -945,6 +949,226 @@ def stagePremises : TacticM (Array String) := do
     (AutoPremises.catcrypt_premises.fieldDepth.get opts)
   return (ps.filter fun p => p.source == .fileDecl || p.source == .hypField).map (·.display)
 
+/-! ## Premises in several forms
+
+`PremiseForms.closeWith [p₁, …, pₙ]` closes the main goal with one of the premises
+`p₁, …, pₙ`, each used in several forms. Of the first `2 * k` premises, where `k` is
+`catcrypt_premise_forms.premises` (default 3), the first `k` are used after a stable
+reordering that puts the premises with an instance on the goal first.
+
+For a premise `p` whose statement has `k` leading explicit binders, the forms are
+
+1. `exact p _ … _`, with `k` holes;
+2. `(apply p <;> assumption)`;
+3. `(rw [p]; first | done | assumption | omega | simp)`, when the conclusion of `p` is an
+   equation or an equivalence;
+4. `(simp only [p]; first | done | assumption | omega | simp)`;
+
+and, once for all premises,
+
+5. `catcrypt_grind [q₁, …, qₘ]`, where the `qᵢ` are the instances of all premises;
+6. `catcrypt_grind [p₁, …, pₙ]`, with the premises that are not local hypotheses (which
+   `grind` uses already and rejects as parameters).
+
+Forms 1 to 4 run for every premise before forms 5 and 6; the first form that closes the
+goal is kept.
+
+An instance of `p` is `p a₁ … aₖ`, printed by the delaborator, where the explicit arguments
+`aᵢ` are read off a subterm of the goal: the leading quantifiers of the statement of `p` are
+instantiated by metavariables, and a side of its conclusion (both sides of an equation, an
+equivalence, `≤` or `<`; the conclusion itself otherwise) is unified, at reducible
+transparency, with the subterms of the goal that have the same head constant, in the order
+of a pre-order traversal of at most 256 subterms. An instance is kept when it assigns every
+explicit argument; at most `catcrypt_premise_forms.instances` instances (default 2) are kept
+per premise. A premise whose statement has no explicit binder has no instance.
+
+Each form runs under `catcrypt_premise_forms.maxHeartbeats` heartbeats (default 5000, in the
+unit of `maxHeartbeats`) and `catcrypt_premise_forms.maxMillis` milliseconds (default 1000),
+with the checks of `budgeted`; the instances of a premise are computed under the same
+budget. No form starts once the run has used `catcrypt_premise_forms.totalHeartbeats`
+heartbeats (default 20000). A failing run makes at most two `catcrypt_grind` calls.
+-/
+
+register_option catcrypt_premise_forms.premises : Nat := {
+  defValue := 3
+  descr := "the number of premises applied in several forms by the premise stage of \
+    `catcrypt_auto`"
+}
+
+register_option catcrypt_premise_forms.instances : Nat := {
+  defValue := 2
+  descr := "the number of instances per premise read off the goal by the premise forms of \
+    `catcrypt_auto`"
+}
+
+register_option catcrypt_premise_forms.maxHeartbeats : Nat := {
+  defValue := 5000
+  descr := "heartbeat budget of each premise form of `catcrypt_auto`, in the unit of \
+    `maxHeartbeats`"
+}
+
+register_option catcrypt_premise_forms.maxMillis : Nat := {
+  defValue := 1000
+  descr := "wall-clock budget of each premise form of `catcrypt_auto`, in milliseconds"
+}
+
+register_option catcrypt_premise_forms.totalHeartbeats : Nat := {
+  defValue := 20000
+  descr := "heartbeats after which the premise forms of `catcrypt_auto` start no further \
+    form, in the unit of `maxHeartbeats`"
+}
+
+namespace PremiseForms
+
+/-- What the forms need to know of a premise. -/
+structure PremiseInfo where
+  /-- The source text of the premise. -/
+  text : String
+  /-- The number of leading explicit binders of its statement. -/
+  explicit : Nat
+  /-- Its conclusion is an equation or an equivalence. -/
+  isEq : Bool
+  /-- It is a local hypothesis. -/
+  isLocal : Bool
+  /-- Its instances read off the goal, as printed terms. -/
+  insts : Array String
+  deriving Inhabited
+
+/-- The subterms of `e` without loose bound variables, in pre-order, at most `n` of them. -/
+partial def subterms (n : Nat) (e : Expr) (acc : Array Expr) : Array Expr :=
+  if acc.size ≥ n then acc else
+  match e with
+  | .mdata _ b => subterms n b acc
+  | .proj _ _ b => subterms n b (if e.hasLooseBVars then acc else acc.push e)
+  | .lam _ d b _ | .forallE _ d b _ => subterms n b (subterms n d acc)
+  | .letE _ t v b _ => subterms n b (subterms n v (subterms n t acc))
+  | .app .. =>
+    let acc := if e.hasLooseBVars then acc else acc.push e
+    let fn := e.getAppFn
+    let acc := if fn.isConst || fn.isFVar then acc else subterms n fn acc
+    e.getAppArgs.foldl (fun a x => subterms n x a) acc
+  | _ => acc
+
+/-- The sides of the conclusion `c` that are unified with subterms of the goal. -/
+def patterns (c : Expr) : Array Expr :=
+  let c := c.cleanupAnnotations
+  match c.getAppFnArgs with
+  | (``Eq, #[_, l, r]) | (``Iff, #[l, r]) | (``LE.le, #[_, _, l, r])
+  | (``LT.lt, #[_, _, l, r]) => #[l, r]
+  | _ => #[c]
+
+/-- The instances of the premise `e : ty` read off the goal type `t` (see the section
+docstring), at most `max` of them, as printed terms. -/
+def instances (e ty t : Expr) (max : Nat) : MetaM (Array String) := do
+  if max == 0 then return #[]
+  let (ms, bis, concl) ← forallMetaTelescopeReducing ty
+  let expl := (ms.zip bis).filterMap fun (m, bi) => if bi.isExplicit then some m else none
+  if expl.isEmpty then return #[]
+  let subs := subterms 256 t #[]
+  let mut out : Array String := #[]
+  for pat in patterns concl do
+    let pat ← instantiateMVars pat
+    let hd := pat.getAppFn.constName?
+    for s in subs do
+      if out.size ≥ max then return out
+      if let some h := hd then
+        unless s.getAppFn.constName? == some h do continue
+      let saved ← saveState
+      let ok ← try withReducible (isDefEq pat s) catch _ => pure false
+      if ok then
+        let explOk ← expl.allM fun m => do return !(← instantiateMVars m).hasExprMVar
+        if explOk then
+          let inst ← instantiateMVars (mkAppN e ms)
+          let txt ← try
+              some <$> (do pure (← PrettyPrinter.ppTerm (← PrettyPrinter.delab inst)).pretty)
+            catch _ => pure none
+          if let some txt := txt then
+            unless out.contains txt do out := out.push txt
+      saved.restore
+  return out
+
+/-- The information of the premise with source text `s` on the goal `g`, or `none` when
+`s` does not parse or elaborate there. -/
+def premiseInfo (g : MVarId) (s : String) (maxInst : Nat) : TacticM (Option PremiseInfo) :=
+  g.withContext do
+    let .ok stx := Parser.runParserCategory (← getEnv) `term s | return none
+    withoutModifyingState do
+      try
+        let e ← Term.withoutErrToSorry <|
+          Term.withSynthesize (postpone := .partial) <| Term.elabTerm stx none
+        let e ← instantiateMVars e
+        let ty ← instantiateMVars (← inferType e)
+        unless ← isProp ty do return none
+        let (explicit, isEq) ← forallTelescopeReducing ty fun xs c => do
+          let k ← xs.foldlM (init := 0) fun k x => do
+            return if (← x.fvarId!.getDecl).binderInfo.isExplicit then k + 1 else k
+          let c := c.cleanupAnnotations
+          return (k, c.isAppOfArity ``Eq 3 || c.isAppOfArity ``Iff 2)
+        let insts ← instances e ty (← instantiateMVars (← g.getType)) maxInst
+        return some { text := s, explicit, isEq, isLocal := e.isFVar, insts }
+      catch _ => return none
+
+/-- `s`, in parentheses unless it is an identifier. -/
+def paren (s : String) : String :=
+  if s.any (fun c => c == ' ' || c == '(') then s!"({s})" else s
+
+/-- The forms 1 to 4 of the premise `p`. -/
+def cheapForms (p : PremiseInfo) : Array String :=
+  let holes := String.join (List.replicate p.explicit " _")
+  let fin := "first | done | assumption | omega | simp"
+  let base := #[s!"exact {paren p.text}{holes}", s!"(apply {p.text} <;> assumption)"]
+  let base := if p.isEq then base.push s!"(rw [{p.text}]; {fin})" else base
+  base.push s!"(simp only [{p.text}]; {fin})"
+
+/-- The forms 5 and 6 of the premises `ps`. -/
+def grindForms (ps : Array PremiseInfo) : Array String :=
+  let insts := ps.flatMap (·.insts)
+  let first := if insts.isEmpty then #[]
+    else #[s!"catcrypt_grind [{", ".intercalate insts.toList}]"]
+  let bare := (ps.filter (!·.isLocal)).map (·.text)
+  if bare.isEmpty then first else first.push s!"catcrypt_grind [{", ".intercalate bare.toList}]"
+
+/-- Close the main goal with the premises `ps` by the forms of the section docstring.
+Returns the text of the closing form; throws an error naming each form tried otherwise. -/
+def closeWith (ps : Array String) : TacticM String := do
+  let opts ← getOptions
+  let n := catcrypt_premise_forms.premises.get opts
+  let hb := catcrypt_premise_forms.maxHeartbeats.get opts
+  let ms := catcrypt_premise_forms.maxMillis.get opts
+  let total := catcrypt_premise_forms.totalHeartbeats.get opts * 1000
+  let maxInst := catcrypt_premise_forms.instances.get opts
+  let g ← getMainGoal
+  let start ← IO.getNumHeartbeats
+  let mut all : Array PremiseInfo := #[]
+  for s in ps.extract 0 (2 * n) do
+    let r ← budgetedValue hb ms (premiseInfo g s maxInst)
+    if let some (some i) := r then all := all.push i
+  let infos := (all.filter (!·.insts.isEmpty) ++ all.filter (·.insts.isEmpty)).extract 0 n
+  let forms := infos.flatMap cheapForms ++ grindForms infos
+  let mut tried : Array MessageData := #[]
+  for f in forms do
+    if (← IO.getNumHeartbeats) - start ≥ total then
+      tried := tried.push m!"\n  {f} and the forms after it: not run, the budget of \
+        {total / 1000} heartbeats is spent"
+      break
+    let some tac ← (try some <$> parseTactic f catch _ => pure none)
+      | tried := tried.push m!"\n  {f}: does not parse"; continue
+    match ← budgeted hb ms (do
+        evalTactic tac
+        unless (← getGoals).isEmpty do throwError "goals remain open") with
+    | .ok () => return f
+    | .error e => tried := tried.push m!"\n  {f}: {e}"
+  throwError m!"every premise form failed:{MessageData.joinSep tried.toList ""}"
+where
+  /-- `x` under the budgets of `budgeted`, its value kept; `none` when it fails. -/
+  budgetedValue {α : Type} (hb ms : Nat) (x : TacticM α) : TacticM (Option α) := do
+    let r ← IO.mkRef (none : Option α)
+    match ← budgeted hb ms (do r.set (some (← x))) with
+    | .ok () => r.get
+    | .error _ => return none
+
+end PremiseForms
+
 /-- Close the main goal by the procedure of the module docstring, with the arguments
 `ts`, each step and arm under the budgets `b`. Returns the closing arm, preceded by the
 normalisation and unfolding steps that changed the goal. -/
@@ -991,6 +1215,28 @@ def runWith (b : Budget) (ts : Array Term) : TacticM (TSyntax `tactic) := do
       match ← runArms "premises" { premises := ps } b false with
       | .ok arm => return ← finishWith rest steps arm
       | .error tried3 =>
+        let mut tried3 := tried3
+        unless ← b.spent do
+          let g ← getMainGoal
+          let s ← Tactic.saveState
+          let form ← IO.mkRef ""
+          match ← budgeted b.hb (← b.slice true)
+              (do form.set (← PremiseForms.closeWith ps)) with
+          | .ok () =>
+            match ← kernelReject? s.term.meta.core.env g with
+            | none =>
+              let f ← form.get
+              return ← finishWith rest steps
+                { tac := some (← parseTactic f), txt := f, budget := b.hb }
+            | some m =>
+              s.restore
+              let msg ← (elideMessage m).toString
+              let line := " ".intercalate ((msg.splitOn "\n").map (·.trimAscii.toString))
+              tried3 := tried3.push m!"\n  premise forms: the kernel rejects the proof \
+                term: {line.take 160}"
+          | .error e =>
+            s.restore
+            tried3 := tried3.push m!"\n  premise forms: {e}"
         unless tried3.isEmpty do
           third := m!"\nwith the premises of the current file and the local hypotheses:\
             {MessageData.joinSep tried3.toList ""}"
@@ -1113,6 +1359,25 @@ syntax (name := normCmd) "catcrypt_auto_norm " (&"needs" "[" ident,* "]")? &"whe
   let needs := if stx[1].isNone then [] else idsOf stx[1][2]
   let m ← elabMatcher stx[3]
   autoRegistryExt.add (.norm { trigger := m, text := stx[5].isStrLit?.getD "", needs })
+
+/-! ## Program types of `funext_unfold` -/
+
+/-- The program types of `funext_unfold`, by name. -/
+initialize funextTypeExt : SimpleScopedEnvExtension Name (Array Name) ←
+  registerSimpleScopedEnvExtension { addEntry := Array.push, initial := #[] }
+
+/-- `catcrypt_funext_type T` registers the type constant `T` as a program type of
+`funext_unfold`. The identifier is resolved when it names a constant of the environment
+(a private constant of a `module` file has a `_private` name); otherwise the name is
+registered as written, so that a module registers a type without importing the module
+that declares it. -/
+syntax (name := funextTypeCmd) "catcrypt_funext_type " ident : command
+
+/-- The elaborator of `catcrypt_funext_type`. -/
+@[command_elab funextTypeCmd] def elabFunextType : Command.CommandElab := fun stx => do
+  let n ← try Command.liftCoreM (realizeGlobalConstNoOverload stx[1])
+    catch _ => pure stx[1].getId
+  funextTypeExt.add n
 
 /-! ## Import closure -/
 

@@ -6,6 +6,8 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Crypto.UCAdmClass
+public import CatCryptCore.Tactics.AutoBase
+public import CatCryptCore.Tactics.AutoArms
 
 /-!
 # Security levels 2 and 3

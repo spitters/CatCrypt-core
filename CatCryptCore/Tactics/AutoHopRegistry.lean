@@ -16,14 +16,16 @@ The attribute `@[hop_metric]` and the reading of a term as a registered distance
 (`hop_chain` and `sum_atoms_le` in `CatCryptCore.Tactics.AutoArms`, the shape matcher of
 `catcrypt_auto` in `CatCryptCore.Tactics.AutoDispatchCore`) read it.
 
-`@[hop_metric]` accepts three kinds of declaration:
+`@[hop_metric]` accepts four kinds of declaration:
 
 * a triangle lemma `d … x z ≤ d … x y + d … y z`; the positions of the two endpoints
   among the arguments of `d` are read off the statement, and the remaining arguments
   (types, a fixed adversary) are the context of the distance;
 * a symmetry lemma `d … x y = d … y x`;
 * a definition whose unfolding is a distance term (an advantage-valued definition such
-  as `KA_Advantage`), or an equation `D … = d …` whose right side is one.
+  as `KA_Advantage`), or an equation `D … = d …` whose right side is one;
+* a dominance lemma `d₁ … ≤ d₂ …` between two distances with different heads, by which
+  `hop_chain` reads a fact over `d₂` as a fact over `d₁`.
 -/
 
 public section
@@ -44,11 +46,14 @@ inductive HopKind where
   | unfoldDef
   /-- An equation `D … = d …`. -/
   | unfoldEq
+  /-- A dominance lemma `d₁ … ≤ d₂ …`; the head of the dominating distance `d₂`. -/
+  | dominance (rhsHead : Name)
   deriving Inhabited, BEq
 
 /-- A registered declaration: its head constant, the arity of that head, and its role. -/
 structure HopEntry where
-  /-- The head constant: the distance for `triangle`/`symm`, the unfolded head otherwise. -/
+  /-- The head constant: the distance for `triangle`/`symm`, the dominated distance for
+  `dominance`, the unfolded head otherwise. -/
   head : Name
   /-- The number of arguments of the head in the statement (`0` for `unfoldDef`). -/
   arity : Nat
@@ -106,14 +111,20 @@ def classifyHop (decl : Name) : MetaM HopEntry := do
           return { head := h, arity := la.size, kind := .symm, decl }
         if h != h' then
           return { head := h, arity := la.size, kind := .unfoldEq, decl }
+    if let some (l, r) := leSides? concl then
+      if let (some (h₁, la), some (h₂, _)) := (appParts? l, appParts? r) then
+        if h₁ != h₂ then
+          return { head := h₁, arity := la.size, kind := .dominance h₂, decl }
     throwError "hop_metric: `{decl}` is not a triangle lemma `d … x z ≤ d … x y + d … y z`, \
-      a symmetry lemma `d … x y = d … y x`, an equation `D … = d …`, or a definition"
+      a symmetry lemma `d … x y = d … y x`, an equation `D … = d …`, a dominance lemma \
+      `d₁ … ≤ d₂ …` with different heads, or a definition"
 
 /-- `@[hop_metric]` registers a triangle lemma, a symmetry lemma, an unfolding equation,
-or a definition to be unfolded, for use by `hop_chain`. -/
+a definition to be unfolded, or a dominance lemma, for use by `hop_chain`. -/
 initialize registerBuiltinAttribute {
   name := `hop_metric
-  descr := "Register a triangle lemma, symmetry lemma or unfolding for `hop_chain`"
+  descr := "Register a triangle lemma, symmetry lemma, unfolding or dominance lemma for \
+    `hop_chain`"
   add := fun decl _ kind => MetaM.run' do
     hopMetricExt.add (← classifyHop decl) kind
   applicationTime := .afterTypeChecking

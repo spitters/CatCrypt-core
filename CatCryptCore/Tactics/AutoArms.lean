@@ -12,11 +12,12 @@ public import Mathlib.Tactic.Ring
 public import CatCryptCore.Tactics.AutoHopRegistry
 public meta import CatCryptCore.Tactics.AutoHopRegistry
 public import CatCryptCore.Tactics.AutoDispatchCore
+public meta import CatCryptCore.Tactics.AutoDispatchCore
 
 /-!
 # Hop chains over registered pseudometrics, sums of atoms, and monotonicity
 
-This module provides five procedures.
+This module provides seven procedures.
 
 * `hop_chain [facts]` proves `d x y ≤ e` for a distance `d` registered with the
   attribute `@[hop_metric]`. It collects hop facts `d u v ≤ b` (and `d u v = b`) from the
@@ -24,6 +25,9 @@ This module provides five procedures.
   and whose edges are hop facts (both directions when a symmetry lemma is registered) for
   a path from `x` to `y`, composes the triangle lemma along the path, and closes the
   residual inequality between the sum of the hop bounds and `e` with `sum_atoms_le`.
+  A fact over a distance `d₂` that dominates `d` by a lemma `d … x y ≤ d₂ … x y`
+  registered with `@[hop_metric]` is read as a hop fact over `d` (two rounds, so that
+  `d ≤ d₂ ≤ d₃` composes).
 * `sum_atoms_le` decides inequalities between ℕ-weighted sums of atoms in an ordered
   commutative semiring whose elements are nonnegative (`ℝ≥0∞` in practice), using in
   addition hypotheses `a ≤ b` between atoms; a goal outside the fragment is read again
@@ -37,6 +41,18 @@ This module provides five procedures.
   the residual inequality is not closed.
 * `bool_cases` splits the goal, in at most three rounds, by `cases` on local Boolean
   variables and `by_cases` on the propositions of `decide` and `if` subterms.
+* `hyp_unfold` unfolds, in the local hypotheses, the predicate definitions found at the
+  head of a hypothesis or under `¬`, `∧`, `∨`, `↔` and non-dependent `→` (to depth 4):
+  definitions that `AutoDispatch.isUnfoldable` accepts. Two rounds, so that a definition
+  exposed by the first unfolding is unfolded too. The hypotheses are changed by delta
+  reduction (`replaceLocalDeclDefEq`). It fails when no hypothesis has such a definition.
+* `funext_unfold` proves an equality `f = g` at a function type whose codomain is a
+  program type registered with `catcrypt_funext_type`, or at a registered program type
+  that unfolds to a function type, by applying `funext` once for each argument up to and
+  including the arguments of the program type, and then unfolding in the goal each
+  definition from the workspace that is applied to more arguments than its declared
+  binders (an operation on the representation of the program type, such as
+  `SPComp.bind c f h`).
 
 The attribute `@[hop_metric]` and the distance views are in
 `CatCryptCore.Tactics.AutoHopRegistry`. No distance is built into the procedures; the
@@ -44,11 +60,19 @@ registrations of `Advantage`, `sdist` and `AdvantageA` are beside their triangle
 in `CatCryptCore.Crypto.Advantage`, `CatCryptCore.Crypto.SDist` and
 `CatCryptCore.Tactics.Triangle`.
 
-The module registers with `catcrypt_auto` (`CatCryptCore.Tactics.AutoDispatchCore`) the
-arms `hop_chain`, `hop_chain!` and `sum_atoms_le` of the distance shape, `gcongr_unfold`,
-`gcongr` and `sum_atoms_le` of the monotonicity shape, and `sum_atoms_le` and
-`bool_cases` followed on each case by `rfl`, `decide` or `simp_all` of the shapes `other`
-and `SPComp equality`.
+The module registers with `catcrypt_auto` (`CatCryptCore.Tactics.AutoDispatchCore`) these
+arms:
+
+| Shape | Arm | Order |
+|---|---|---|
+| `distance inequality` | `hop_chain`; `hop_chain!`; `sum_atoms_le` | 10; 11; 20 |
+| `monotonicity inequality` | `gcongr_unfold`; `gcongr`; `sum_atoms_le` | 10; 20; 40 |
+| `other` | `sum_atoms_le` | 10 |
+| `other` | `bool_cases`, then `rfl`, `decide` or `simp_all` on each case | 25 |
+| `SPComp equality` | `bool_cases` when it splits, then `rfl`, `decide` or `simp_all` | 25 |
+| `SPComp equality`, `heap read after write` | `hyp_unfold`, then `grind` or `simp_all` | 30 |
+| `other` | `hyp_unfold`, then `grind` or `simp_all` | 35 |
+| `SPComp equality`; `other` | `funext_unfold`, then `rfl`, `grind` or `simp_all` | 15; 36 |
 -/
 
 @[expose] public section
@@ -443,6 +467,44 @@ def unfoldBoundHead? (e : Expr) : MetaM (Option Expr) := do
     changed := true
   return if changed then some cur else none
 
+/-- The proof `h` of `t ≤ b` or `t = b` as a proof of `t ≤ b`, with `t`. -/
+def leFact? (h : Expr) : MetaM (Option (Expr × Expr)) := do
+  let ty ← whnfR (← instantiateMVars (← inferType h))
+  if let some (l, _) := leSides? ty then return some (l, h)
+  if let some (l, _) := eqSides? ty then
+    if (← inferType l).isProp then return none
+    return some (l, ← mkAppM ``le_of_eq #[h])
+  return none
+
+/-- The facts over dominated distances obtained from the facts `cands` by the dominance
+lemmas registered with `@[hop_metric]`, in `rounds` rounds: for a lemma
+`d₁ … x y ≤ d₂ … x y` and a fact `d₂ … u v ≤ b` (or `= b`), the fact `d₁ … u v ≤ b`. -/
+def liftDominated (cands : Array Expr) (rounds : Nat := 2) : MetaM (Array Expr) := do
+  let doms := (← hopEntries).filterMap fun x => match x.kind with
+    | .dominance r => some (x.decl, r)
+    | _ => none
+  if doms.isEmpty then return #[]
+  let mut out : Array Expr := #[]
+  let mut frontier := cands
+  for _ in [0:rounds] do
+    let mut next : Array Expr := #[]
+    for c in frontier do
+      let some (t, pf) ← leFact? c | continue
+      let some (h, _) := appParts? t | continue
+      for (decl, rhsHead) in doms do
+        unless rhsHead == h do continue
+        let (p, ty) ← instThm decl
+        let some (l, r) := leSides? ty | continue
+        unless ← isDefEq r t do continue
+        let l ← instantiateMVars l
+        if l.hasExprMVar then continue
+        let p ← instantiateMVars p
+        next := next.push (← mkAppM ``le_trans #[p, pf])
+    if next.isEmpty then break
+    out := out ++ next
+    frontier := next
+  return out
+
 /-- The core of `hop_chain` and `hop_chain!`: prove the main goal from the elaborated
 argument proofs `extra` and the hypotheses of the local context. With `deep`
 (`hop_chain!`), hop endpoints are identified up to definitional equality at default
@@ -463,6 +525,7 @@ def hopChainCore (extra : Array Expr) (deep : Bool := false) : TacticM Unit := d
   let mut cands : Array Expr := extra
   for d in ← getLCtx do
     unless d.isImplementationDetail do cands := cands.push d.toExpr
+  cands := cands ++ (← liftDominated cands)
   let mut hops : Array Hop := #[]
   for c in cands do
     if let some hop ← hopOf? gv c then
@@ -517,7 +580,9 @@ def hopChainCore (extra : Array Expr) (deep : Bool := false) : TacticM Unit := d
 Hop facts are proofs of `d … u v ≤ b` or `d … u v = b` whose context arguments agree
 with the goal's: the arguments `hᵢ` and the hypotheses of the local context. A
 universally quantified hypothesis is never a hop fact; pass its instances as arguments.
-Terms headed by a registered definition or equation are unfolded to the distance first.
+Terms headed by a registered definition or equation are unfolded to the distance first,
+and a fact over a distance that dominates `d` by a registered dominance lemma is read as a
+fact over `d` (`liftDominated`).
 The procedure searches breadth first for a path of hop facts from `x` to `y` (using
 each fact in both directions when a symmetry lemma for `d` is registered), composes the
 registered triangle lemma along the path to `d x y ≤ b₁ + (b₂ + …)`, and closes the
@@ -679,6 +744,126 @@ syntax (name := boolCasesStx) "bool_cases" : tactic
     goals := next
   replaceMainGoal goals
 
+/-! ## Definitions in hypotheses -/
+
+/-- The predicate definitions of the proposition `e` that `hyp_unfold` unfolds, added to
+`acc`: the head of `e`, read through `¬`, `∧`, `∨`, `↔` and non-dependent `→` between
+propositions to depth `depth`, when it is a definition that `isUnfoldable` accepts. -/
+partial def predDefHeads (e : Expr) (depth : Nat) (acc : Array Name) :
+    MetaM (Array Name) := do
+  let e := e.cleanupAnnotations
+  if depth == 0 then return acc
+  if e.isAppOfArity ``Not 1 then return ← predDefHeads e.appArg! (depth - 1) acc
+  if e.isAppOfArity ``And 2 || e.isAppOfArity ``Or 2 || e.isAppOfArity ``Iff 2 then
+    let acc ← predDefHeads e.appFn!.appArg! (depth - 1) acc
+    return ← predDefHeads e.appArg! (depth - 1) acc
+  if let .forallE _ d b _ := e then
+    if b.hasLooseBVars || !(← isProp d) then return acc
+    let acc ← predDefHeads d (depth - 1) acc
+    return ← predDefHeads b (depth - 1) acc
+  let some n := e.getAppFn.constName? | return acc
+  if acc.contains n then return acc
+  if ← AutoDispatch.isUnfoldable n then return acc.push n
+  return acc
+
+/-- One round of `hyp_unfold` on `g`: the goal with its hypotheses changed, and whether
+a hypothesis changed. -/
+def hypUnfoldRound (g : MVarId) : MetaM (MVarId × Bool) := g.withContext do
+  let mut g := g
+  let mut changed := false
+  for d in ← getLCtx do
+    if d.isImplementationDetail then continue
+    let ty ← instantiateMVars d.type
+    unless ← isProp ty do continue
+    let ns ← predDefHeads ty 4 #[]
+    if ns.isEmpty then continue
+    let ty' ← deltaExpand ty ns.contains
+    if ty' == ty then continue
+    g ← g.replaceLocalDeclDefEq d.fvarId ty'
+    changed := true
+  return (g, changed)
+
+/-- `hyp_unfold` unfolds the predicate definitions at the heads of the local hypotheses
+(see the module docstring); it fails when there is none. -/
+syntax (name := hypUnfoldStx) "hyp_unfold" : tactic
+
+/-- The elaborator of `hyp_unfold`. -/
+@[tactic hypUnfoldStx] def evalHypUnfold : Tactic := fun _ => do
+  let g ← getMainGoal
+  let (g, changed) ← hypUnfoldRound g
+  unless changed do
+    throwError "hyp_unfold: no hypothesis has a predicate definition at its head"
+  let (g, _) ← hypUnfoldRound g
+  replaceMainGoal [g]
+
+/-! ## Extensionality over program types -/
+
+/-- The number of `funext` steps that `funext_unfold` takes on an equality at the type
+`T`: the binders of `T` (read with `whnfR`) up to a type registered with
+`catcrypt_funext_type`, plus the leading binders of that type's unfolding; `none` when no
+registered type is reached within `fuel` binders. -/
+partial def funextArity? (T : Expr) (fuel : Nat := 8) : MetaM (Option Nat) := do
+  if fuel == 0 then return none
+  let T ← whnfR T
+  if let some n := T.getAppFn.constName? then
+    if (AutoDispatch.funextTypeExt.getState (← getEnv)).contains n then
+      let some T' ← unfoldDefinition? T | return none
+      let T' ← whnfR T'
+      let k := T'.getForallArity
+      return if k == 0 then none else some k
+  if let .forallE nm d b bi := T then
+    return ← withLocalDecl nm bi d fun x => do
+      let some k ← funextArity? (b.instantiate1 x) (fuel - 1) | return none
+      return some (k + 1)
+  return none
+
+/-- The bound on the unfoldings of one call of `unfoldOverApplied`. -/
+def maxOverAppliedUnfolds : Nat := 64
+
+/-- `e` with its beta-redexes reduced and each application of a definition that
+`unfoldsBound` accepts to more arguments than its declared binders unfolded and
+beta-reduced, at most `maxOverAppliedUnfolds` times. -/
+def unfoldOverApplied (e : Expr) : MetaM Expr := do
+  let count ← IO.mkRef 0
+  transform e (post := fun t => do
+    if t.isApp && t.getAppFn.isLambda then return .visit t.headBeta
+    let some n := t.getAppFn.constName? | return .continue
+    if (← count.get) ≥ maxOverAppliedUnfolds then return .continue
+    unless ← unfoldsBound n do return .continue
+    let some (.defnInfo d) := (← getEnv).find? n | return .continue
+    unless t.getAppNumArgs > d.type.getForallArity do return .continue
+    let some t' ← unfoldDefinition? t | return .continue
+    count.modify (· + 1)
+    return .visit t'.headBeta)
+
+/-- `funext_unfold` applies `funext` to an equality of functions into a registered
+program type and unfolds the over-applied definitions of the goal (see the module
+docstring). It fails when the goal is not such an equality. -/
+syntax (name := funextUnfoldStx) "funext_unfold" : tactic
+
+/-- The elaborator of `funext_unfold`. -/
+@[tactic funextUnfoldStx] def evalFunextUnfold : Tactic := fun _ => do
+  let g ← getMainGoal
+  let g ← g.withContext do
+    let ty ← whnfR (← instantiateMVars (← g.getType))
+    let some (T, _, _) := ty.eq? |
+      throwError "funext_unfold: the goal is not an equality"
+    let some k ← funextArity? T |
+      throwError "funext_unfold: the goal is not an equality at a function type into a \
+        registered program type:{indentExpr T}"
+    let mut g := g
+    for _ in [0:k] do
+      let [g'] ← g.apply (← mkConstWithFreshMVarLevels ``funext) |
+        throwError "funext_unfold: `funext` does not apply"
+      let (_, g'') ← g'.intro1
+      g := g''
+    g.withContext do
+      let t ← instantiateMVars (← g.getType)
+      let t' ← unfoldOverApplied t
+      if t' == t then return g
+      g.replaceTargetDefEq t'
+  replaceMainGoal [g]
+
 end CatCrypt.Tactics.AutoArms
 
 end
@@ -694,4 +879,13 @@ catcrypt_auto_arm "monotonicity inequality" order 40 le_only := "sum_atoms_le"
 catcrypt_auto_arm "other" order 10 le_only := "sum_atoms_le"
 catcrypt_auto_arm "other" order 25 := "(bool_cases <;> first | rfl | decide | %SIMP_ALL)"
 catcrypt_auto_arm "SPComp equality" order 25 :=
-  "(bool_cases <;> first | rfl | decide | %SIMP_ALL)"
+  "((first | bool_cases | skip) <;> first | rfl | decide | %SIMP_ALL)"
+
+catcrypt_auto_arm "other" order 35 := "(hyp_unfold; first | grind%GRIND | %SIMP_ALL)"
+catcrypt_auto_arm "heap read after write" order 30 :=
+  "(hyp_unfold; first | grind%GRIND | %SIMP_ALL)"
+catcrypt_auto_arm "SPComp equality" order 30 := "(hyp_unfold; first | grind%GRIND | %SIMP_ALL)"
+
+catcrypt_auto_arm "SPComp equality" order 15 :=
+  "(funext_unfold; first | rfl | grind%GRIND | %SIMP_ALL)"
+catcrypt_auto_arm "other" order 36 := "(funext_unfold; first | rfl | grind%GRIND | %SIMP_ALL)"

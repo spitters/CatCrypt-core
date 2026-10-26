@@ -6,6 +6,7 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Tactics.AutoDispatchCore
+public import CatCryptCore.Tactics.RepairAction
 
 /-!
 # The shapes of `catcrypt_auto` and its arms from the Lean core
@@ -18,6 +19,10 @@ that imports it, and the theory it states goals in, uses `catcrypt_auto`.
 The module also defines `catcrypt_grind` and `catcrypt_grind [p₁, …]`: `grind`, with the
 given parameters, with the scoped lemma set of namespace `CatCryptGrind` active. The
 theory modules add their lemmas to that set beside their statements.
+
+The module also brings into scope the grind repair code action of
+`CatCryptCore.Tactics.RepairAction`, and registers `SPComp` as a program type of
+`funext_unfold`.
 
 Normalisation: a goal mentioning `>>=` is rewritten by
 `simp only [CatCrypt.Core.SPComp.monad_bind_eq]`.
@@ -53,6 +58,7 @@ attribute is absent from the environment fails and the next arm runs:
 | `monotonicity inequality` | `simp_all`; `grind` | 50; 60 |
 | `other` | `simp_all`; `grind` | 20; 30 |
 | `premises` | `solve_by_elim [p₁, …]` | 10 |
+| `premises` | the forms of `AutoDispatch.PremiseForms.closeWith`, after the arms | — |
 -/
 
 public section
@@ -79,6 +85,10 @@ end CatCrypt.Tactics
 
 catcrypt_auto_norm needs [CatCrypt.Core.SPComp.monad_bind_eq] when mentions [Bind.bind] :=
   "simp only [CatCrypt.Core.SPComp.monad_bind_eq]"
+
+/-! ## Program types of `funext_unfold` -/
+
+catcrypt_funext_type CatCrypt.Core.SPComp
 
 /-! ## Shapes -/
 

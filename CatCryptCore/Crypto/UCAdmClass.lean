@@ -158,9 +158,11 @@ noncomputable def ucCdist {α β : Type}
 
 /-! ## Section 4: Derived Metric Properties (All Theorems, 0 Axioms) -/
 
-/-- Computational distance is bounded by statistical distance.
-    Proof: restricted supremum ≤ unrestricted supremum. -/
-theorem ucCdist_le_ucSdist {α β : Type} (f g : α → T β) :
+/-- Computational distance is bounded by statistical distance: the supremum over the
+admissible distinguishers is at most the supremum over all of them. Registered with
+`@[hop_metric]` as a dominance lemma, so that `hop_chain` reads a `ucSdist` fact as a
+`ucCdist` fact. -/
+@[hop_metric] theorem ucCdist_le_ucSdist {α β : Type} (f g : α → T β) :
     ucCdist f g ≤ UCMonadMetric.ucSdist f g := by
   rw [UCMonadCompDist.ucSdist_eq_iSup_distComp]
   apply iSup₂_le
