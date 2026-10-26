@@ -9,6 +9,7 @@ public import CatCryptCore.XDijkstra.XPostShape
 public import CatCryptCore.XDijkstra.XMvcgen
 public import CatCryptCore.XDijkstra.XRelatorPMF
 public import CatCryptCore.XDijkstra.XHeapSoundness
+public import CatCryptCore.XDijkstra.XStdWP
 
 /-!
 # XDijkstra — the extended-PostShape Dijkstra-monad framework (import aggregator)

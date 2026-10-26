@@ -14,7 +14,7 @@ postcondition. The kernel adds four things that a `Std.Do` triple does not state
   different effect shapes.
 
 All declarations are in the namespace `CatCrypt.XDijkstra`, except those of
-`GradedWP.lean`. A tutorial with one short example per feature is in
+`GradedWP.lean` and of `XStdWP.lean` (namespace `CatCrypt.StdWPBridge`). A tutorial with one short example per feature is in
 [`Demo.lean`](Demo.lean).
 
 ## For users of `mvcgen`
@@ -223,7 +223,33 @@ with `XCoreWP.Triple`.
 `xphi`, `xfor` and `tick` are defined at the single shape `.graded ℕ .pure` over
 `Prop`.
 
-The Lean 4.33.1 toolchain contains, beside `Std.Do`, a library `Std.Internal.Do`
-whose `PredTrans Pred EPred α` is parameterised by an assertion type and an
-exception-postcondition type instead of a `PostShape`. `XCorePT` has these two
-parameters and the grade.
+## Assertions ordered by `≤`, and `Std.WP`
+
+The toolchain's program logic `Std.WP` observes a monad by `WPMonad m Pred EPred`:
+for each program a transformer over assertion types that are complete lattices in
+`Lean.Order`'s `⊑`, with `pure` and `bind` bounded from below. `XCorePT` has the
+same two parameters `Pred` and `EPred` and the grade, and asks for `≤` alone: the
+sequencing, frame and relational rules use a preorder, and the transfer rule and
+the grade equations use `≤`.
+
+[`XStdWP.lean`](XStdWP.lean) relates the two observations. `XCoreWP.ofWPMonad`
+observes a `WPMonad` instance as an `XCoreWP` at grade `Unit`; it satisfies
+`XCoreWP.LowerLaws` (`lowerLaws_ofWPMonad`) and is lawful when the laws of
+`WPMonad` hold with equality (`lawfulXCoreWP_ofWPMonad`). Conversely
+`XCoreWP.toWPMonadOfLe` and `XCoreWP.toWPMonad` give a `WPMonad` instance,
+forgetting the grade, when `≤` and `⊑` agree on the assertion types
+(`LERelCompat`). Weakest preconditions and triples agree under either
+construction (`xcore_wp_eq_wp`, `wp_eq_xcore_wp`, `triple_iff_xcoreTriple`,
+`xcoreTriple_iff_triple`), and the two constructions are mutually inverse on
+weakest preconditions (`toWPMonad_ofWPMonad_wpTrans`,
+`ofWPMonad_toWPMonad_apply`).
+
+Because only `≤` is used, an observation may take assertions that do not form a
+lattice. The quantum instrument monad `QComp d` is observed at effects, the
+positive operators `E` with `0 ≤ E ≤ 1`, in the Löwner order: the weakest
+precondition of `C : QComp d α` at `Q` is `Σ' a, (C.branch a)†(Q a)`, the
+Heisenberg dual of each branch applied to the postcondition of its outcome. Binary
+meets of effects do not exist in general, so this observation is not a `WPMonad`
+instance; it is an `XWP` instance at the shape `.pure`, adequate for Ying's
+total-correctness triple. The instance is in the CatCrypt development that builds
+on this package (`instXWPQComp`, `xTriple_qcomp_iff_qTotal`).
