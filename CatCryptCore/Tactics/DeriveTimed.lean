@@ -268,6 +268,22 @@ block applies, shared by all members and passed through the recursive calls. A f
 of a structure value given as a constructor application or by a `let` is priced through that
 value (`isValueField`).
 
+A function-typed discriminant `r` of a match that has a cost companion `rCost` and whose type
+depends on another discriminant (`r : Fin L → ℕ` in a match on `L, r`) is bound in each
+alternative at the type of that alternative (`Fin (L + 1) → ℕ`), at which `rCost` has no type.
+Its companion is carried through the match as a further argument (the convoy pattern,
+`mapMatch`): the motive of the translated match takes, after the discriminants, the type of
+`rCost` with the discriminants abstracted; each alternative takes the companion at its own
+type, which is the companion of the field that its pattern binds to `r`; and the match is
+applied to `rCost`. Such a costed form has no functional induction theorem of its own (Lean's
+`FunInd` does not reduce the recursor applied to the carried arguments), so its erasure
+theorem falls back to functional induction on the source `c`, at the binders of `c` kept as
+binders of the costed form, or at the application of `c` in the goal when an argument of `c` is
+the erasure of a costed binder. When the result holds functions, each induction hypothesis,
+quantified over the generalized companions, is first instantiated at the companions of the
+recursive call of the costed form in the goal (`instRecHyps`) and then used by
+`rewriteRecHyps`.
+
 The erasure proof unfolds the data definitions whose bodies are headed by a case analysis (a
 matcher, `if` or dependent `if`; `isCaseHead`). After the `if` closer it runs a stage with the
 bind lemmas of `if`, of dependent `if` (`OracleAdv.ite_bind`, `SPTree.dite_bind`) and of the
@@ -1894,6 +1910,51 @@ def rewriteRecHyps (c : Name) (g : MVarId) : MetaM MVarId := g.withContext do
   for h in used do g ← g.tryClear h
   return g
 
+/-- The applications of the constant `t` in `e`, outermost first. -/
+partial def appsOfConst (t : Name) (e : Expr) (acc : Array Expr := #[]) : Array Expr :=
+  let acc := if e.isAppOf t then acc.push e else acc
+  match e with
+  | .app f a => appsOfConst t a (appsOfConst t f acc)
+  | .lam _ d b _ | .forallE _ d b _ => appsOfConst t b (appsOfConst t d acc)
+  | .letE _ ty v b _ => appsOfConst t b (appsOfConst t v (appsOfConst t ty acc))
+  | .mdata _ b | .proj _ _ b => appsOfConst t b acc
+  | _ => acc
+
+/-- The induction hypotheses of a functional induction on the source `c` of the costed form `t`
+are quantified over the cost companions that the induction generalizes:
+`∀ cs, (t ys cs).2.erase … = c ys`. Each is instantiated at the companions of a call `t ys cs'`
+in the goal `g`, found by unifying its call of `t` with the call in the goal, and added as a
+hypothesis, so that `rewriteRecHyps` rewrites the recursive call of `c` with it. -/
+def instRecHyps (t : Name) (g : MVarId) : MetaM MVarId := g.withContext do
+  let mut g := g
+  let mut used : Array FVarId := #[]
+  -- The calls without loose bound variables: a call under a binder whose arguments depend on
+  -- the bound variable has no instance of the hypothesis to rewrite with.
+  let occs := (appsOfConst t (← instantiateMVars (← g.getType))).filter (!·.hasLooseBVars)
+  for d in ← getLCtx do
+    if d.isImplementationDetail then continue
+    let ty ← instantiateMVars d.type
+    unless ty.isForall do continue
+    for occ in occs do
+      let s ← saveState
+      let (ms, _, body) ← forallMetaTelescopeReducing ty
+      let some (_, lhs, _) := body.eq? | s.restore; break
+      let some call := (appsOfConst t lhs)[0]? | s.restore; break
+      if ← isDefEq call occ then
+        let inst ← instantiateMVars (mkAppN d.toExpr ms)
+        let instTy ← instantiateMVars body
+        if inst.hasExprMVar || instTy.hasExprMVar then
+          s.restore
+          continue
+        let (_, g') ← (← g.assert d.userName instTy inst).intro1P
+        g := g'
+        used := used.push d.fvarId
+      else s.restore
+  -- An instantiated hypothesis is cleared, so that a later `simp [*]` does not rewrite the
+  -- recursive call back with it.
+  for h in used do g ← g.tryClear h
+  return g
+
 /-- The step of the projection `e = s.i` of the structure `S`, a primitive projection or a
 projection function (not a class method) applied to its parameters and to `s`: `(S, i, s)`. -/
 def projStep? (e : Expr) : MetaM (Option (Name × Nat × Expr)) := do
@@ -2747,7 +2808,16 @@ partial def mapMatch (ctx : Ctx) (e resultType : Expr)
   let mut discrs := #[]
   let mut trDiscrs : Array (Expr × LocalInfo) := #[]
   let mut cost := natE 0
-  for d in app.discrs do
+  -- The discriminants that are local, whose types the motive abstracts.
+  let discrFVars := (app.discrs.map (·.consumeMData)).filter (·.isFVar)
+  let dependsOnDiscr (t : Expr) : Bool :=
+    t.hasAnyFVar fun f => discrFVars.any (·.fvarId! == f)
+  -- The function discriminants whose companions are carried through the match (the convoy
+  -- pattern): those whose type depends on another discriminant, so that the field binding
+  -- them has the type of its alternative, at which the companion has no type. Each is the
+  -- position of the discriminant with its companion.
+  let mut convoy : Array (Nat × Expr) := #[]
+  for d in app.discrs, j in [0:app.discrs.size] do
     if let some Td ← treeTy? (← inferType d) then
       fail m!"a recursion over an {Td.kind.noun}: a match on the {Td.kind.noun} `{d}`; register \
         a costed form written by hand"
@@ -2758,7 +2828,11 @@ partial def mapMatch (ctx : Ctx) (e resultType : Expr)
         let dt ← inferType d
         if info.kind == .fn then discrs := discrs.push d
         else discrs := discrs.push (← erasure info.kind dt info.value)
-        trDiscrs := trDiscrs.push (dt, info)
+        match info.kind, info.companion? with
+        | .fn, some c =>
+          if dependsOnDiscr dt then convoy := convoy.push (j, c)
+          else trDiscrs := trDiscrs.push (dt, info)
+        | _, _ => trDiscrs := trDiscrs.push (dt, info)
       | none => discrs := discrs.push d
     | _ =>
       discrs := discrs.push d
@@ -2767,13 +2841,22 @@ partial def mapMatch (ctx : Ctx) (e resultType : Expr)
       -- that binds it is a local function with the companion of the function.
       let dt ← inferType d
       if (← isDataExpr d) && (← whnfR dt).isForall && (← treeTy? dt).isNone then
-        trDiscrs := trDiscrs.push (dt, ⟨.fn, d, some (← companionOf ctx d)⟩)
+        let c ← companionOf ctx d
+        if dependsOnDiscr dt then convoy := convoy.push (j, c)
+        else trDiscrs := trDiscrs.push (dt, ⟨.fn, d, some c⟩)
+  let convoyTypes ← convoy.mapM fun (_, c) => inferType c
   let motive ← lambdaTelescope app.motive fun xs body => do
-    if xs.any (fun x => body.containsFVar x.fvarId!) then
+    let res ← if xs.any (fun x => body.containsFVar x.fvarId!) then
       match motiveRes? with
-      | some f => mkLambdaFVars xs (← f body)
+      | some f => f body
       | none => fail m!"the match `{e}` has a motive that depends on its discriminants"
-    else mkLambdaFVars xs resultType
+    else pure resultType
+    -- The type of each carried companion, with the discriminants abstracted.
+    let xs' := (app.discrs.zip xs).filterMap fun (d, x) =>
+      if d.consumeMData.isFVar then some x else none
+    let res := convoyTypes.foldr (init := res) fun ct acc =>
+      .forallE `cost (ct.replaceFVars discrFVars xs') acc .default
+    mkLambdaFVars xs res
   let lvl ← getLevel resultType
   let levels := match app.uElimPos? with
     | some i => app.matcherLevels.set! i lvl
@@ -2784,7 +2867,11 @@ partial def mapMatch (ctx : Ctx) (e resultType : Expr)
   let mut ty := matcherType
   for a in app.alts do
     let .forallE _ aty body _ ← whnf ty | fail m!"the match `{e}` has an unexpected type"
-    let n ← forallTelescope aty fun ys _ => pure ys.size
+    -- With carried companions, the alternative takes its fields and then one companion for
+    -- each carried discriminant.
+    let n ← if convoy.isEmpty then forallTelescope aty fun ys _ => pure ys.size
+      else forallTelescopeReducing aty fun ys _ => pure (ys.size - convoy.size)
+    let i := alts.size
     let a' ← lambdaBoundedTelescope a n fun fs b => do
       let mut ctx' := ctx
       for fv in fs do
@@ -2810,11 +2897,25 @@ partial def mapMatch (ctx : Ctx) (e resultType : Expr)
             if (← hatTy? ft).isNone then continue
             ctx' := { ctx' with
               locals := ctx'.locals.insert fv.fvarId! ⟨.hat, ← refillE ft fv c, none⟩ }
-      mkLambdaFVars fs (← alt ctx' b)
+      if convoy.isEmpty then return ← mkLambdaFVars fs (← alt ctx' b)
+      -- The carried companions at the types of this alternative: each is the companion of
+      -- the field that the alternative's pattern binds to its discriminant.
+      let pats? ← altPatterns app i fs
+      forallBoundedTelescope (← instantiateForall aty fs) (some convoy.size) fun cs _ => do
+        unless cs.size == convoy.size do
+          fail m!"internal: the alternative {i} of `{e}` takes fewer carried companions"
+        let mut ctx'' := ctx'
+        for (j, _) in convoy, cc in cs do
+          let some pats := pats? | continue
+          let some p := pats[j]? | continue
+          let p := p.consumeMData
+          if p.isFVar && fs.contains p then
+            ctx'' := { ctx'' with locals := ctx''.locals.insert p.fvarId! ⟨.fn, p, some cc⟩ }
+        mkLambdaFVars (fs ++ cs) (← alt ctx'' b)
     alts := alts.push a'
     ty := body.instantiate1 a'
   let e' := mkAppN (mkConst app.matcherName levels.toList)
-    (app.params ++ #[motive] ++ discrs ++ alts)
+    (app.params ++ #[motive] ++ discrs ++ alts ++ convoy.map (·.2))
   return (e', cost)
 
 /-- The cost of a data-valued match: one, the discriminants, and the branch taken. -/
@@ -3523,6 +3624,15 @@ partial def deriveTimed (ctx : Ctx) (c : Name) : TermElabM Unit := do
         let rhs := mkAppN (mkConst c levels) args
         let eType ← mkForallFVars bs (← mkEq lhs rhs)
         let explicit ← bs.mapM fun b => return (← b.fvarId!.getBinderInfo).isExplicit
+        -- The positions among the binders of the costed form of the explicit binders of `c`,
+        -- when each is kept as it is: the targets of a functional induction on `c`.
+        let mut srcPos : Option (Array Nat) := some #[]
+        for x in xs, a in args do
+          if (← x.fvarId!.getBinderInfo).isExplicit then
+            srcPos := match srcPos, bs.idxOf? a with
+              | some ps, some i => some (ps.push i)
+              | _, _ => none
+        let explicit := (explicit, srcPos)
         -- The field paths whose cost companions the costed form takes, as a function of the
         -- binders of `c`: a caller passes its companions for them (`callTimed`).
         let fp? ← if used.isEmpty then pure none else do
@@ -3571,9 +3681,18 @@ partial def deriveTimed (ctx : Ctx) (c : Name) : TermElabM Unit := do
     ((if treeRec then #[c] else #[timedName, c]).filter (!wf ·)) ++ kindLemmas ++ hatLemmas ++
       matchLemmas ++ callees ++ naturalLemmas ++ unfoldedDefs ++
       (if used.contains ``ite then #[``CatCrypt.Tactics.DeriveTimed.boolRec_eq_ite] else #[])
+  let (nBinders, srcPos) := nBinders
   let ids : Array (TSyntax `ident) := (Array.range nBinders.size).map fun i =>
     mkIdent (Name.mkSimple s!"x{i}")
   let explicitIds := (ids.zip nBinders).filterMap fun (i, e) => if e then some i else none
+  let srcIds? : Option (Array (TSyntax `ident)) := srcPos.map (·.filterMap (ids[·]?))
+  -- The functional induction on the source `c`: at the binders of the costed form that are
+  -- binders of `c`, or, when an argument of `c` is the erasure of a costed binder (a tree or a
+  -- function into trees, `fun x => (k x).erase`), at the application of `c` in the goal, the
+  -- right side `c (ε xs)` of the erasure theorem.
+  let srcInd : TSyntax `tactic ← match srcIds? with
+    | some srcIds => `(tactic| fun_induction $(mkIdent c):ident $srcIds*)
+    | none => `(tactic| fun_induction $(mkIdent c):ident)
   let lemmas : Array (TSyntax `Lean.Parser.Tactic.simpLemma) ←
     simpLemmas.mapM fun n => `(Lean.Parser.Tactic.simpLemma| $(mkIdent n):ident)
   -- The side conditions of `erase_simulateHat_bind` are equations under binders, discharged
@@ -3620,7 +3739,13 @@ partial def deriveTimed (ctx : Ctx) (c : Name) : TermElabM Unit := do
         (try unfold $(mkIdent c):ident) <;>
         (try simp (disch := assumption) only [$lemmas,*, *]) <;> $close))
     else if recursive then
-      `(tactic| ($intros; fun_induction $(mkIdent timedName):ident $explicitIds* <;> $close))
+      -- A costed form that carries companions through a dependent match has no functional
+      -- induction theorem of its own (Lean's `FunInd` does not reduce the recursor applied
+      -- to the carried companions); it has the recursion of `c`, whose functional induction
+      -- generalizes the companions in the induction hypotheses.
+      `(tactic| ($intros; first
+        | (fun_induction $(mkIdent timedName):ident $explicitIds* <;> $close)
+        | ($srcInd <;> $close)))
     else if treeRec then
       `(tactic| ($intros; $close))
     else
@@ -3698,12 +3823,27 @@ partial def deriveTimed (ctx : Ctx) (c : Name) : TermElabM Unit := do
         -- `(R.timed ys).2.erase.bind (fun y => ret (ε y)) = R ys` is used from right to left,
         -- so that the recursive call of `R` becomes the erased costed call followed by `ε`,
         -- which the continuation's lemmas (`bind_assoc`, `bind_ret`) absorb.
-        let gs ← Tactic.run mv.mvarId! (Tactic.evalTactic (← `(tactic|
-          ($intros; fun_induction $(mkIdent timedName):ident $explicitIds* <;>
-            (try unfold $(mkIdent c):ident) <;>
-            (try simp only [$lemmas,*]) <;> (try (repeat' split))))))
+        let s ← saveState
+        let byTimed ← try
+            some <$> Tactic.run mv.mvarId! (Tactic.evalTactic (← `(tactic|
+              ($intros; fun_induction $(mkIdent timedName):ident $explicitIds* <;>
+                (try unfold $(mkIdent c):ident) <;>
+                (try simp only [$lemmas,*]) <;> (try (repeat' split))))))
+          catch _ =>
+            s.restore
+            pure none
+        -- A costed form that carries companions through a dependent match: functional induction
+        -- on the source `c`, whose hypotheses quantify the companions (`instRecHyps`).
+        let (gs, bySource) ← match byTimed with
+          | some gs => pure (gs, false)
+          | none => do
+            let gs ← Tactic.run mv.mvarId! (Tactic.evalTactic (← `(tactic|
+              ($intros; $srcInd <;>
+                (try simp only [$lemmas,*]) <;> (try (repeat' split))))))
+            pure (gs, true)
         let mut rem := []
         for g in gs do
+          let g ← if bySource then instRecHyps timedName g else pure g
           let g ← rewriteRecHyps c g
           rem := rem ++ (← Tactic.run g (Tactic.evalTactic close))
         pure rem
