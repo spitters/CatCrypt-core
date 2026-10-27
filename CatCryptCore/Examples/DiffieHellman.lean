@@ -10,6 +10,8 @@ public import CatCryptCore.Crypto.Assumptions.DDH
 public import CatCryptCore.Crypto.PairingGroup
 public import CatCryptCore.Examples.ElGamal
 public import CatCryptCore.Tactics
+public import CatCryptCore.Tactics.GroupExpNF
+public meta import CatCryptCore.Tactics.GroupExpNF
 public import CatCryptCore.Tactics.AutoHopRegistry
 public meta import CatCryptCore.Tactics.AutoHopRegistry
 
@@ -136,10 +138,8 @@ noncomputable def dhReduction (D : KA_Distinguisher P.G₁) : DDH_Adversary P.G�
     `elgamalEcdh (g^a) (g^b) = g^{ab}` is exactly the true DH shared key. -/
 theorem ka_real_eq (D : KA_Distinguisher P.G₁) :
     KA_Game_Real P D = DDH_Game_Real (elgamalDDH P) (dhReduction D) := by
-  simp only [KA_Game_Real, DDH_Game_Real, elgamalDDH, elgamalKeygen, dhReduction,
-    SPComp.monad_bind_eq, SPComp.bind_assoc, SPComp.pure_bind]
-  bind_align
-  simp only [dlog_exp]
+  group_exp_nf [KA_Game_Real, DDH_Game_Real, elgamalDDH, elgamalKeygen, dhReduction,
+    elgamalEcdh, dlog_exp]
 
 /-- The ideal key-agreement experiment equals the ideal DDH game under the
     reduction: both replace the shared key with a fresh uniform group element. -/

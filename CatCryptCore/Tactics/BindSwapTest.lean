@@ -10,7 +10,7 @@ public meta import CatCryptCore.Tactics.BindSwap
 public import CatCryptCore.Crypto.Advantage
 
 /-!
-# Tests for `bind_swap_nf`, `bij_cov`, `spec_inline` and `le_of_eq_nf`
+# Tests for `bind_swap_nf`, `bind_swap_branch`, `bij_cov`, `spec_inline` and `le_of_eq_nf`
 
 Equalities of `SPComp` bind chains over abstract computations that differ by the order of
 independent bindings: an `IsPure` computation exchanged with an arbitrary one, a
@@ -22,6 +22,14 @@ fact (a field, or an argument) on adjacent and on separated key pairs, and a per
 equation applied to the leaves. Definitions with an implicit type parameter and instance
 arguments given as arguments and unfolded by name, and a sample of a product type aligned
 with the samples of its components.
+
+`bind_swap_branch` closes game equalities that branch, which `bind_swap_nf` does not
+close: on a Boolean, on the component of a pair input (`match` on the pair constructor
+under a bind), on a bound variable with the sample inside the branches on one side, on a
+pair bound in the chain, and a dependent `if`; a sample is moved past an adversary call, an
+`IsPure` key generation and a sampling computation. It does not close two goals: the
+branches exchanged, and two computations neither of which is `IsPure` exchanged in a
+branch.
 
 `bij_cov` (of `CatCryptCore.Tactics.BindVcgen`), `spec_inline` and `le_of_eq_nf` close
 goals over the definitions of this file, directly and through `catcrypt_auto`, and fail on
@@ -417,6 +425,116 @@ example (a b : ENNReal) (h : a ≤ b) : a ≤ b := by
   exact h
 
 end Advantage
+
+/-! ## Commutation of independent bindings through branches (`bind_swap_branch`) -/
+
+section Branch
+
+/-- A game that branches on a Boolean: an adversary call followed by a sample. -/
+noncomputable def brL {K : Type} [Fintype K] [Nonempty K] (adv : SPComp Bool)
+    (k : Bool → K → SPComp Bool) (b : Bool) : SPComp Bool :=
+  if b then do let a ← adv; let s ← SPComp.sample K; k a s else SPComp.pure false
+
+/-- The game `brL` with the sample drawn before the adversary call. -/
+noncomputable def brR {K : Type} [Fintype K] [Nonempty K] (adv : SPComp Bool)
+    (k : Bool → K → SPComp Bool) (b : Bool) : SPComp Bool :=
+  if b then do let s ← SPComp.sample K; let a ← adv; k a s else SPComp.pure false
+
+/-- Branching on a Boolean, a sample moved past a computation that is not `IsPure`; the
+games are given as arguments. -/
+example {K : Type} [Fintype K] [Nonempty K] (adv : SPComp Bool) (k : Bool → K → SPComp Bool)
+    (b : Bool) : brL adv k b = brR adv k b := by
+  fail_if_success bind_swap_nf [brL, brR]
+  bind_swap_branch [brL, brR]
+
+/-- A game on a pair input that branches on its second component. -/
+noncomputable def prL {K : Type} [Fintype K] [Nonempty K] (adv : SPComp Bool)
+    (k : Bool → K → SPComp Bool) : K × Bool → SPComp Bool :=
+  fun ⟨x, w⟩ => if w then do let a ← adv; let s ← SPComp.sample K; k a (if a then x else s)
+    else SPComp.pure false
+
+/-- The game `prL` with the sample drawn before the adversary call. -/
+noncomputable def prR {K : Type} [Fintype K] [Nonempty K] (adv : SPComp Bool)
+    (k : Bool → K → SPComp Bool) : K × Bool → SPComp Bool :=
+  fun ⟨x, w⟩ => if w then do let s ← SPComp.sample K; let a ← adv; k a (if a then x else s)
+    else SPComp.pure false
+
+/-- Branching inside a `match` on a pair, under a bind: the games applied to the pair
+constructor are reduced by their equation lemmas, without arguments. -/
+example {K : Type} [Fintype K] [Nonempty K] (adv : SPComp Bool) (k : Bool → K → SPComp Bool)
+    (x : K) (w : Bool) (f : Bool → SPComp Bool) :
+    SPComp.bind (prL adv k (x, w)) f = SPComp.bind (prR adv k (x, w)) f := by
+  fail_if_success bind_swap_nf
+  bind_swap_branch
+
+/-- A condition on a bound variable: the sample in both branches on one side, before the
+adversary call on the other. -/
+example {K : Type} [Fintype K] [Nonempty K] (adv : SPComp Bool)
+    (k₁ k₂ : Bool → K → SPComp Bool) :
+    (do let a ← adv
+        if a then (do let s ← SPComp.sample K; k₁ a s)
+        else (do let s ← SPComp.sample K; k₂ a s) : SPComp Bool) =
+    (do let s ← SPComp.sample K; let a ← adv; if a then k₁ a s else k₂ a s) := by
+  fail_if_success bind_swap_nf
+  bind_swap_branch
+
+/-- A `match` on a pair bound in the chain, branching on its first component, and a sample
+moved past an `IsPure` key generation and past the adversary call. -/
+example {K : Type} [Fintype K] [Nonempty K] [DecidableEq K] (kg : SPComp (K × K))
+    (_hkg : SPComp.IsPure kg) (adv : SPComp K) (k₁ k₂ : K → K → K → SPComp Bool) :
+    (do let x ← adv; let s ← SPComp.sample K; let pr ← kg
+        match pr with
+        | (a, b) => if a = x then k₁ a b s else k₂ a b s : SPComp Bool) =
+    (do let pr ← kg; let x ← adv
+        (match pr with
+          | (a, b) =>
+            if a = x then (do let s ← SPComp.sample K; k₁ a b s)
+            else (do let s ← SPComp.sample K; k₂ a b s))) := by
+  fail_if_success bind_swap_nf
+  bind_swap_branch
+
+/-- Branching on a Boolean, a sample moved past a sampling computation. -/
+example {K L : Type} [Fintype K] [Nonempty K] [Fintype L] [Nonempty L] (b : Bool)
+    (g : L → L) (k : K → L → SPComp Bool) :
+    (if b then (do let s ← SPComp.sample K; let t ← SPComp.map g (SPComp.sample L); k s t)
+      else SPComp.pure true : SPComp Bool) =
+    (if b then (do let u ← SPComp.sample L; let s ← SPComp.sample K; k s (g u))
+      else SPComp.pure true) := by
+  fail_if_success bind_swap_nf
+  bind_swap_branch
+
+/-- A dependent `if`, with the adversary call before it on one side and in both branches
+on the other. -/
+example {K : Type} [Fintype K] [Nonempty K] (c : Prop) [Decidable c] (adv : SPComp Bool)
+    (k₁ : c → Bool → K → SPComp Bool) (k₂ : ¬c → Bool → SPComp Bool) :
+    (if h : c then (do let s ← SPComp.sample K; let a ← adv; k₁ h a s)
+      else (do let a ← adv; k₂ h a) : SPComp Bool) =
+    (do let a ← adv; if h : c then (do let s ← SPComp.sample K; k₁ h a s) else k₂ h a) := by
+  fail_if_success bind_swap_nf
+  bind_swap_branch
+
+/-- The two branches exchanged: not closed. -/
+example {K : Type} [Fintype K] [Nonempty K] (b : Bool) (adv : SPComp Bool)
+    (k : Bool → K → SPComp Bool)
+    (h : (if b then (do let a ← adv; let s ← SPComp.sample K; k a s) else SPComp.pure false
+        : SPComp Bool) =
+      (if b then SPComp.pure false else (do let s ← SPComp.sample K; let a ← adv; k a s))) :
+    (if b then (do let a ← adv; let s ← SPComp.sample K; k a s) else SPComp.pure false
+      : SPComp Bool) =
+    (if b then SPComp.pure false else (do let s ← SPComp.sample K; let a ← adv; k a s)) := by
+  fail_if_success bind_swap_branch
+  exact h
+
+/-- Two computations neither of which is `IsPure` exchanged in a branch: not closed. -/
+example (b : Bool) (p q : SPComp Bool) (k : Bool → Bool → SPComp Bool)
+    (h : (if b then (do let x ← p; let y ← q; k x y) else SPComp.pure false : SPComp Bool) =
+      (if b then (do let y ← q; let x ← p; k x y) else SPComp.pure false)) :
+    (if b then (do let x ← p; let y ← q; k x y) else SPComp.pure false : SPComp Bool) =
+    (if b then (do let y ← q; let x ← p; k x y) else SPComp.pure false) := by
+  fail_if_success bind_swap_branch
+  exact h
+
+end Branch
 
 end
 

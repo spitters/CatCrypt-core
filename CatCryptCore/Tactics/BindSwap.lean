@@ -108,6 +108,52 @@ operation occurs in the goal.
 `le_of_eq_nf [t₁, …]` proves `a ≤ b` between two advantages by `le_of_eq` and
 `advantage_eq_nf [t₁, …]`.
 
+## Branches: `bind_swap_branch`
+
+`bind_swap_nf` reads a side as a chain of bindings and stops at the first term that is
+not a bind: an `if` (or a dependent `if`) that binds the rest of the chain, or ends it,
+is a leaf compared by definitional equality, so a binding cannot be exchanged with one
+that sits in the branches, and the two sides of a goal whose programs branch never align.
+`bind_swap_branch [t₁, …]` runs `bind_swap_nf [t₁, …]` and, when it fails, the following
+procedure.
+
+1. Branch normal form: a `match` on a variable of a structure type is reduced by structure
+   eta, and the goal is rewritten by `simp only` with the monad laws, `SPComp.ite_bind`
+   and `SPComp.dite_bind` (a bind distributes over the branches of the `if` it binds),
+   `SPComp.bind_ite_comm` and `SPComp.bind_dite_comm` (an `if` moves out of a
+   continuation whose variable its condition does not mention), the unfolding of
+   `SPComp.map`, and the equation lemmas of the program-valued definitions by pattern
+   matching of the goal (they reduce such a definition applied to a constructor, as a
+   continuation `mapSum f g` applied to `Sum.inr v`, or a game `G (x, w)` defined by a
+   `match` on a pair). After it, each `if` stands immediately after the binding of the
+   last variable its condition mentions, and each binding that its condition does not
+   mention and that follows that binding stands in both branches.
+2. Alignment with case splits: the alignment of `bind_swap_nf` (steps 2 to 7, with the
+   facts of the context and the arguments) runs with one more step: when a side is an
+   `if` or a dependent `if`, the goal is split on its condition with its `Decidable`
+   instance (`MVarId.byCasesDec`); in each branch, the `if`s whose condition or negated
+   condition is a hypothesis are reduced (`if_pos`, `if_neg`, `dif_pos`, `dif_neg`,
+   discharged by the hypothesis up to reducible transparency), and the goal is brought
+   to the normal form and closed in the same way. The splits nest at most
+   `maxSplitDepth` deep on one branch.
+
+Decided fragment. Programs built from `SPComp.bind`, `SPComp.pure`, samples, abstract
+computations, `if` and dependent `if` with any `Decidable` instance, `match` on pairs and
+program-valued definitions by pattern matching applied to constructors. `bind_swap_branch`
+closes `P = Q` when, for every truth value of the conditions met along the alignment, the
+two branch programs are equal up to the relation of `bind_swap_nf`: exchanges of two
+bindings one of which is `IsPure` and neither of which reads the variable of the other
+(non-dependence is checked syntactically: a binding is moved only past bindings whose
+variables it does not mention, and an `if` only out of continuations whose variable its
+condition does not mention), removal of unused bindings and rewrites by chain facts, within
+`maxSteps` alignment steps per branch and `maxSplitDepth` nested splits. A condition is
+decided only by a hypothesis whose type is it or its negation up to reducible
+transparency, so two sides that branch on conditions that are equivalent but not
+syntactically equal are split on both. Outside the fragment: `match` on a variable of an
+inductive type that is not a structure (`Bool`, `Sum`, `Option`), which is not split;
+exchanges of two bindings neither of which is `IsPure`; and equalities that need a
+specification of an operation (`spec_inline`) or a change of variables (`bij_cov`).
+
 The module registers with `catcrypt_auto` (`CatCryptCore.Tactics.AutoDispatchCore`) these
 arms:
 
@@ -117,6 +163,8 @@ arms:
 | `SPComp equality` | `bind_swap_nf`; `spec_inline` | 5; 22 |
 | `distance inequality` | `le_of_eq_nf` | 25 |
 -/
+
+set_option autoImplicit false
 
 @[expose] public section
 
@@ -145,6 +193,36 @@ theorem isPure_bind_discard (c : SPComp α) (k : SPComp β) (hc : IsPure c)
     simp only [bind, hd h, CatCrypt.Prob.SDistr.bind_assoc, CatCrypt.Prob.SDistr.pure_bind]
   rw [e]
   exact CatCrypt.Prob.SDistr.bind_const_mass_one (hl h) (k h)
+
+/-- A bind distributes over the branches of an `if` that it binds:
+`(if c then x else y) >>= f` equals `if c then x >>= f else y >>= f`. -/
+theorem ite_bind (c : Prop) {_ : Decidable c} (x y : SPComp α) (f : α → SPComp β) :
+    SPComp.bind (if c then x else y) f =
+    if c then SPComp.bind x f else SPComp.bind y f := by
+  grind
+
+/-- A bind distributes over the branches of a dependent `if` that it binds. -/
+theorem dite_bind (c : Prop) {_ : Decidable c} (x : c → SPComp α) (y : ¬c → SPComp α)
+    (f : α → SPComp β) :
+    SPComp.bind (if hc : c then x hc else y hc) f =
+    if hc : c then SPComp.bind (x hc) f else SPComp.bind (y hc) f := by
+  grind
+
+/-- An `if` whose condition does not mention the variable of a binding moves out of the
+continuation of that binding: `c₁ >>= fun a => if c then x a else y a` equals
+`if c then c₁ >>= x else c₁ >>= y`. -/
+theorem bind_ite_comm (c : Prop) {_ : Decidable c} (p : SPComp α) (x y : α → SPComp β) :
+    SPComp.bind p (fun a => if c then x a else y a) =
+    if c then SPComp.bind p x else SPComp.bind p y := by
+  by_cases hc : c <;> simp [hc]
+
+/-- A dependent `if` whose condition does not mention the variable of a binding moves out
+of the continuation of that binding. -/
+theorem bind_dite_comm (c : Prop) {_ : Decidable c} (p : SPComp α) (x : c → α → SPComp β)
+    (y : ¬c → α → SPComp β) :
+    SPComp.bind p (fun a => if hc : c then x hc a else y hc a) =
+    if hc : c then SPComp.bind p (x hc) else SPComp.bind p (y hc) := by
+  by_cases hc : c <;> simp [hc]
 
 end CatCrypt.Core.SPComp
 
@@ -516,15 +594,25 @@ def simpOnlyWith (g : MVarId) (eqs : Array Expr) : MetaM (Option MVarId) := g.wi
   let (r?, _) ← simpTarget g ctx
   return r?
 
+/-- The condition and the `Decidable` instance of `e` when it is an `if` or a dependent
+`if`. -/
+def iteCond? (e : Expr) : Option (Expr × Expr) :=
+  if e.isAppOfArity ``ite 5 || e.isAppOfArity ``dite 5 then
+    some (e.getArg! 1, e.getArg! 2)
+  else none
+
 /-- Close the goal `g : lhs = rhs` by the alignment documented at `bind_swap_nf`. The
 partner of the left head in the right chain is first the binding that `hint` pairs with
 it, then the occurrences of its computation in order (at most `maxCandidates`), with
 backtracking when the alignment under the binder fails; when none succeeds, the head of
 the right chain is searched in the left chain. Two leaves (sides that are not binds) that
-are not definitionally equal are closed by `simp only` with the equations `eqs`. Every
-call consumes one unit of `budget`. -/
+are not definitionally equal are closed by `simp only` with the equations `eqs`. When
+`split = some k` and one side is an `if` or a dependent `if`, the goal is split on its
+condition (`MVarId.byCasesDec`, with its `Decidable` instance) and `k` closes the two
+goals. Every call consumes one unit of `budget`. -/
 partial def align (facts : Array Expr) (g : MVarId) (budget : IO.Ref Nat)
-    (hint : Option Hint) (eqs : Array Expr := #[]) : MetaM Unit :=
+    (hint : Option Hint) (eqs : Array Expr := #[])
+    (split : Option (MVarId → MetaM Unit) := none) : MetaM Unit :=
   g.withContext do
   let ty ← instantiateMVars (← g.getType)
   let some (_, lhs, rhs) := ty.eq? |
@@ -537,6 +625,12 @@ partial def align (facts : Array Expr) (g : MVarId) (budget : IO.Ref Nat)
   budget.set (fuel - 1)
   let lhs ← chainView lhs
   let rhs ← chainView rhs
+  if let some k := split then
+    if let some (c, dec) := iteCond? lhs <|> iteCond? rhs then
+      let (gt, ge) ← g.byCasesDec c dec `hc
+      k gt.mvarId
+      k ge.mvarId
+      return
   if !eqs.isEmpty && (bindApp? lhs).isNone && (bindApp? rhs).isNone then
     let s ← saveState
     try
@@ -557,7 +651,7 @@ partial def align (facts : Array Expr) (g : MVarId) (budget : IO.Ref Nat)
     let h ← mkCongrArg bindP (← mkFunExt m)
     g.assign (← mkExpectedTypeHint (← close h) ty)
     let (_, g') ← m.mvarId!.intro n
-    align facts g' budget hint' eqs
+    align facts g' budget hint' eqs split
   -- the hint after the left head is paired with the right binding at position `pos`
   let advance (pos : Nat) : Option Hint := hint.map fun h =>
     { h with rhsOrder := h.rhsOrder.eraseIdxIfInBounds pos, lhsIdx := h.lhsIdx + 1 }
@@ -717,20 +811,22 @@ def rewriteSide (g : MVarId) (left : Bool) (e' pf : Expr) : MetaM MVarId := g.wi
     return g'.mvarId!
 
 /-- Close `g : lhs = rhs` by `align` with the budget `maxSteps` and the pairing hint read
-from its two sides. -/
-def alignGoal (fs : Facts) (g : MVarId) : MetaM Unit := g.withContext do
+from its two sides; `split` is passed to `align`. -/
+def alignGoal (fs : Facts) (g : MVarId) (split : Option (MVarId → MetaM Unit) := none) :
+    MetaM Unit := g.withContext do
   let some (_, lhs, rhs) := (← instantiateMVars (← g.getType)).eq? |
     throwError "bind_swap_nf: the goal is not an equality"
   let σ ← varHint lhs rhs
   let n ← withChain rhs #[] fun rv _ => return rv.size
   align fs.isPure g (← IO.mkRef maxSteps)
-    (some { σ, rhsOrder := (List.range n).toArray, lhsIdx := 0 }) fs.equations
+    (some { σ, rhsOrder := (List.range n).toArray, lhsIdx := 0 }) fs.equations split
 
 /-- `alignGoal`, with the state restored and `false` returned when it fails. -/
-def tryAlign (fs : Facts) (g : MVarId) : MetaM Bool := do
+def tryAlign (fs : Facts) (g : MVarId) (split : Option (MVarId → MetaM Unit) := none) :
+    MetaM Bool := do
   let s ← saveState
   try
-    alignGoal fs g
+    alignGoal fs g split
     return true
   catch _ =>
     s.restore
@@ -760,8 +856,8 @@ def maxFactTries : Nat := 64
 /-- Close `g` by rewriting one side with a chain fact (`factRewrite`, every position,
 partner, fact and orientation) and `alignGoal`, up to `depth` rewrites on a branch and
 `tries` goals in all. -/
-partial def factSearch (fs : Facts) (g : MVarId) (depth : Nat) (tries : IO.Ref Nat) :
-    MetaM Bool := g.withContext do
+partial def factSearch (fs : Facts) (g : MVarId) (depth : Nat) (tries : IO.Ref Nat)
+    (split : Option (MVarId → MetaM Unit) := none) : MetaM Bool := g.withContext do
   if depth == 0 then return false
   let some (_, lhs, rhs) := (← instantiateMVars (← g.getType)).eq? | return false
   let mut cands : Array (Bool × Expr × Expr) := #[]
@@ -787,8 +883,8 @@ partial def factSearch (fs : Facts) (g : MVarId) (depth : Nat) (tries : IO.Ref N
     let s ← saveState
     try
       let g' ← rewriteSide g left e' pf
-      if ← tryAlign fs g' then return true
-      if ← factSearch fs g' (depth - 1) tries then return true
+      if ← tryAlign fs g' split then return true
+      if ← factSearch fs g' (depth - 1) tries split then return true
       s.restore
     catch _ =>
       s.restore
@@ -796,19 +892,20 @@ partial def factSearch (fs : Facts) (g : MVarId) (depth : Nat) (tries : IO.Ref N
 
 /-- Close `g : lhs = rhs`: by `alignGoal`; failing that, after removing the unused bindings
 (`dropGoal`); failing that, by `factSearch` with the chain facts. The error is that of the
-first `alignGoal`. -/
-def closeGoalCore (fs : Facts) (g : MVarId) : MetaM Unit := do
+first `alignGoal`. `split` is passed to `align`. -/
+def closeGoalCore (fs : Facts) (g : MVarId) (split : Option (MVarId → MetaM Unit) := none) :
+    MetaM Unit := do
   let s ← saveState
   let err ← try
-      alignGoal fs g
+      alignGoal fs g split
       return
     catch e => pure e
   s.restore
   let g' := (← dropGoal fs g).getD g
   if g' != g then
-    if ← tryAlign fs g' then return
+    if ← tryAlign fs g' split then return
   unless fs.chain.isEmpty do
-    if ← factSearch fs g' maxFactDepth (← IO.mkRef maxFactTries) then return
+    if ← factSearch fs g' maxFactDepth (← IO.mkRef maxFactTries) split then return
   s.restore
   throw err
 
@@ -833,11 +930,13 @@ def splitProdSamples (g : MVarId) : MetaM (Option MVarId) := g.withContext do
 /-- Close `g : lhs = rhs` by `closeGoalCore`; failing that, when the goal samples from a
 product type, by `closeGoalCore` after each such sample is replaced by the samples of its
 components (`splitProdSamples`), so that a product sample on one side aligns with the
-samples of the components on the other. The error is that of the first `closeGoalCore`. -/
-def closeGoal (fs : Facts) (g : MVarId) : MetaM Unit := do
+samples of the components on the other. The error is that of the first `closeGoalCore`.
+`split` is passed to `align`. -/
+def closeGoal (fs : Facts) (g : MVarId) (split : Option (MVarId → MetaM Unit) := none) :
+    MetaM Unit := do
   let s ← saveState
   let err ← try
-      closeGoalCore fs g
+      closeGoalCore fs g split
       return
     catch e => pure e
   s.restore
@@ -846,7 +945,7 @@ def closeGoal (fs : Facts) (g : MVarId) : MetaM Unit := do
       match ← splitProdSamples g with
       | none => return
       | some g' =>
-        closeGoalCore fs g'
+        closeGoalCore fs g' split
         return
     catch _ => s.restore
   throw err
@@ -1222,6 +1321,142 @@ macro_rules
     `(tactic| (refine le_of_eq ?_; advantage_eq_nf [$ts,*]))
 
 end CatCrypt.Tactic.SpecInline
+
+namespace CatCrypt.Tactic.BindSwapBranch
+
+open Lean Meta Elab Tactic
+open CatCrypt.Tactic.BindSwap
+
+/-- Maximal nesting of the case splits of `bind_swap_branch` on one branch. -/
+def maxSplitDepth : Nat := 8
+
+/-- The rewrite rules of the branch normal form: the monad laws, the distribution of a bind
+over the branches of an `if` it binds, the motion of an `if` out of a continuation whose
+variable its condition does not mention, and the reduction of an `if` whose condition or
+its negation is a local hypothesis (`caseDischarge`). -/
+def branchLemmas : Array Name :=
+  #[``CatCrypt.Core.SPComp.monad_bind_eq, ``CatCrypt.Core.SPComp.monad_pure_eq,
+    ``CatCrypt.Core.SPComp.bind_assoc, ``CatCrypt.Core.SPComp.pure_bind,
+    ``CatCrypt.Core.SPComp.ite_bind, ``CatCrypt.Core.SPComp.dite_bind,
+    ``CatCrypt.Core.SPComp.bind_ite_comm, ``CatCrypt.Core.SPComp.bind_dite_comm,
+    ``if_pos, ``if_neg, ``dif_pos, ``dif_neg]
+
+/-- `n` is a definition by pattern matching whose value is an `SPComp` program: one of its
+equation lemmas has a constructor application among the arguments of its left side. It is
+not an operation of `SPComp`, an instance or a projection. -/
+def isProgMatchDef (n : Name) : MetaM Bool := do
+  let env ← getEnv
+  let some (.defnInfo info) := env.find? n | return false
+  if n.getPrefix == ``CatCrypt.Core.SPComp || isInstanceCore env n || (← isProjectionFn n) then
+    return false
+  unless ← forallTelescope info.type fun _ b => return b.isAppOf ``CatCrypt.Core.SPComp do
+    return false
+  let some eqns ← getEqnsFor? n | return false
+  eqns.anyM fun e => do
+    forallTelescope (← getConstInfo e).type fun _ b => do
+      let some (_, l, _) := b.eq? | return false
+      l.getAppArgs.anyM isConstructorApp
+
+/-- The definitions of `e` that `isProgMatchDef` accepts. -/
+def progMatchDefs (e : Expr) : MetaM (Array Name) :=
+  e.getUsedConstants.filterM isProgMatchDef
+
+/-- The conditions of the `if`s and dependent `if`s of `e` that mention no bound
+variable of `e`, added to `acc`. -/
+partial def iteConds (e : Expr) (acc : Array Expr) : Array Expr :=
+  let acc := match iteCond? e with
+    | some (c, _) => if c.hasLooseBVars || acc.contains c then acc else acc.push c
+    | none => acc
+  match e with
+  | .app f a => iteConds a (iteConds f acc)
+  | .lam _ d b _ | .forallE _ d b _ => iteConds b (iteConds d acc)
+  | .letE _ t v b _ => iteConds b (iteConds v (iteConds t acc))
+  | .mdata _ b | .proj _ _ b => iteConds b acc
+  | _ => acc
+
+/-- The local hypotheses that decide a condition of an `if` or a dependent `if` of `e`:
+of type `c` or `¬c`. -/
+def caseHyps (e : Expr) : MetaM (Array Expr) := do
+  let conds := iteConds e #[]
+  if conds.isEmpty then return #[]
+  let mut out := #[]
+  for h in ← getLocalHyps do
+    let ty ← instantiateMVars (← inferType h)
+    if conds.contains ty || (ty.isAppOfArity ``Not 1 && conds.contains ty.appArg!) then
+      out := out.push h
+  return out
+
+/-- The discharger of the side conditions `c` and `¬c` of `if_pos`, `if_neg`, `dif_pos`
+and `dif_neg`: a hypothesis among `hyps` whose type is the side condition (reducible
+transparency). -/
+def caseDischarge (hyps : Array Expr) : Simp.Discharge := fun e => do
+  for h in hyps do
+    if ← withReducible (isDefEq e (← inferType h)) then return some h
+  return none
+
+/-- Bring the target of `g` to the branch normal form: each `match` on a variable of a
+structure type is reduced by structure eta (`etaMatches`), and the target is rewritten by
+`simp only` with `branchLemmas`, the unfolding of `SPComp.map`, the equation lemmas of the
+definitions of `progMatchDefs` (which reduce such a definition applied to a constructor),
+the side conditions of the reduction of an `if` discharged by the hypotheses of `caseHyps`,
+in rounds until no new definition appears (at most
+four). The new goal, or `none` when the goal is closed. -/
+def branchSimp (g : MVarId) : MetaM (Option MVarId) := g.withContext do
+  let mut g := g
+  let mut seen : Array Name := #[]
+  for _ in [0:4] do
+    let ty ← instantiateMVars (← g.getType)
+    g ← g.replaceTargetDefEq (← etaMatches ty)
+    let ty ← instantiateMVars (← g.getType)
+    let defs ← progMatchDefs ty
+    if !seen.isEmpty && defs.all seen.contains then break
+    seen := seen ++ defs.filter (!seen.contains ·)
+    let mut thms : SimpTheorems := {}
+    for n in branchLemmas do thms ← thms.addConst n
+    thms ← thms.addDeclToUnfold ``CatCrypt.Core.SPComp.map
+    for n in seen do thms ← thms.addDeclToUnfold n
+    let ctx ← Simp.mkContext (simpTheorems := #[thms])
+      (congrTheorems := ← getSimpCongrTheorems)
+    let (r?, _) ← simpTarget g ctx (discharge? := some (caseDischarge (← caseHyps ty)))
+    let some g' := r? | return none
+    g := g'
+  return some g
+
+/-- Close `g` by `closeGoal` after `branchSimp`, splitting the goal (`align`) on the
+condition of an `if` that heads a side, up to `depth` nested splits; each branch is closed
+in the same way. -/
+partial def closeBranching (fs : Facts) (g : MVarId) (depth : Nat) : MetaM Unit := do
+  let some g ← branchSimp g | return
+  closeGoal fs g (if depth == 0 then none else some fun g' => closeBranching fs g' (depth - 1))
+
+/-- `bind_swap_branch [h₁, …]` proves an equality of two `SPComp` programs that branch
+(`if`, dependent `if`, `match` on a pair or on a constructor) and are equal, in each
+branch, up to the exchanges, removals and rewrites of `bind_swap_nf`. It first runs
+`bind_swap_nf [h₁, …]`; when that fails, it unfolds the definitions among the arguments,
+brings the goal to the branch normal form, in which each `if` stands immediately after the
+binding of the last variable its condition mentions and each binding is pushed into the
+branches of the `if` it binds, and runs the alignment of `bind_swap_nf` with one more
+step: when a side is an `if`, the goal is split on its condition, the `if`s decided by the
+case hypothesis are reduced, and each branch is normalised and aligned again. The
+decided fragment is in the module documentation. -/
+syntax (name := bindSwapBranchStx) "bind_swap_branch" (" [" term,* "]")? : tactic
+
+@[tactic bindSwapBranchStx] def evalBindSwapBranch : Tactic := fun stx => do
+  let ts : Array Syntax :=
+    if stx[1].isNone then #[] else stx[1][1].getSepArgs
+  let s ← saveState
+  try
+    runBindSwapNf ts
+    return
+  catch _ => s.restore
+  let (ns, es) ← withMainContext (elabArgs ts)
+  unfoldNames ns
+  let g ← getMainGoal
+  g.withContext do
+    closeBranching (← collectFacts es) g maxSplitDepth
+  replaceMainGoal []
+
+end CatCrypt.Tactic.BindSwapBranch
 
 end
 
