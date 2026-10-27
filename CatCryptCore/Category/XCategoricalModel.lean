@@ -31,6 +31,14 @@ Mathlib `CategoryTheory` effectus instance, the universal property and the
 adjunction) are stated in this docstring only. The fourth axis, the relational
 lifting as a monad on pairs, depends on the relational coupling layer and is stated outside this library.
 
+`XCategoricalModelExt` states three further constructions over the core observation
+`XCoreWP`: pull-back along a monad morphism as split reindexing of a fibred category of
+observations, with `XCoreWP.pullbackHom` cartesian; the frame rule along a separating
+map `sep : P₁ → P₂ → P₃` as lax naturality of the observation for an action of the
+frame posets, with the homogeneous frame as its diagonal case; and the `Std.WP` bridge
+(`XCoreWP.ofWPMonad`, `XCoreWP.toWPMonadOfLe`) as a pair of constructions mutually
+inverse on weakest preconditions and compatible with reindexing.
+
 The file builds on:
 
 * `XPostShape` — the extended predicate transformer `XPredTrans`, the effect
