@@ -37,8 +37,9 @@ takes cores from the arms after it.
    `repairAction.dispatchMillis` (default 1000 ms). It runs under the dispatcher's own
    budgets (`catcrypt_auto.maxHeartbeats` per arm of the dispatcher), with
    `catcrypt_auto.totalMillis` and `catcrypt_auto.maxMillis` cut to the cap. Unless
-   `repairAction.dispatchSuggestions` is set, it runs with no library-suggestion selector in
-   its environment, so that the arms `grind +suggestions` of the dispatcher fail at once. Its
+   `repairAction.dispatchSuggestions` is set, its library-suggestion selector is
+   `offSelector`, which fails, so that the arms `grind +suggestions` of the dispatcher fail
+   at once, and records the call (see "Final failures"). Its
    text is the suggestion it adds to the info tree (its last `TryThisInfo` node), and
    `catcrypt_auto` when there is none.
 4. `grind? +suggestions`, cap `repairAction.grindSuggestionsMillis` (default 1000 ms).
@@ -49,13 +50,50 @@ last "Try this" message it adds to the info tree, and the arm closes only when t
 contains no placeholder token for a missing proof (`hasSorryToken`; a `grind` script ending
 in an open case has one) and, run alone on the goal under the same token, closes it with a
 proof that the kernel accepts. The library-suggestion selector of these arms indexes the
-imported theorems on first use in a process (tens of seconds over Mathlib), and an index
-build that is interrupted is not kept. The first suggestion arm of a process therefore starts
-the build in a background task, under no cap and no token, and until that task has finished
-the arms run with the selector `LibrarySuggestions.currentFile` (the theorems of the current
-file) in place of the registered one; so do all suggestion arms when
-`repairAction.suggestionIndex` is false. While the build runs it takes the cores of the
+imported theorems on first use in a process (10 s of wall time and 81 s of CPU time on 24
+threads over Mathlib; the second use takes milliseconds), and an index build that is
+interrupted is not kept. The first suggestion arm of a process therefore starts the build in
+a background task, under no cap and no token. While that task runs, a suggestion arm waits
+for it before its caps start, until `repairAction.indexWaitMillis` milliseconds (default
+40000) after the start of the build; the bound counts from the start of the build, so that
+the arms and leaves after a wait that ended without the index do not wait again. An arm
+whose wait ends without the index runs with the selector `LibrarySuggestions.currentFile`
+(the theorems of the current file) in place of the registered one, and its failure reason
+says `index not built`. When `repairAction.suggestionIndex` is false no build starts, no arm
+waits, and the arms run with `currentFile`. While the build runs it takes the cores of the
 machine, and the arms are slower.
+
+## Final failures
+
+When no arm closes, the outer tool that calls the action runs `grind? +suggestions`,
+`catcrypt_auto?` and `try?` again in a scratch copy of the file, each as
+`set_option maxHeartbeats 100000 in <arm>`, with no wall-clock cap and the options of the
+file: the registered selector with its index, the dispatcher's own budgets and its library
+suggestions. A failed arm is final when it follows from how the arm ran that the same arm
+fails in that run, on the same environment and goal (`ArmResult.final`, with the reason in
+`ArmResult.finality`):
+* no arm that reached its heartbeat cap or its wall-clock cap is final (`capped` records the
+  cap reached: an interrupt or a run past the deadline, the heartbeat exception, or at least
+  `repairAction.maxHeartbeats` thousand heartbeats spent by the arm's thread, since a tactic
+  can catch the exception and fail for another reason);
+* `grind` and `grind [args]` are final otherwise: the tactic, goal and options are those of
+  the scratch run, and a run that stayed under the cap stays under any larger limit;
+* a suggestion arm is final otherwise when it ran with the registered selector and its
+  index built, whatever its failure (no suggestion, a suggestion containing `sorry`, one
+  that leaves goals or that the kernel rejects); with `currentFile` it is not final;
+* `catcrypt_auto?` is final when it is not in the environment, and otherwise when the run
+  differs from the scratch run in nothing that can change its outcome. The run differs in
+  two ways. Its wall-clock budgets `catcrypt_auto.maxMillis` and `catcrypt_auto.totalMillis`
+  are cut to the arm's cap (its heartbeat budgets are its own in both runs); the dispatcher
+  reports each budget that ran out in its error ("exceeded the time budget of N ms", "the
+  total time budget of N ms is spent", `reportsBudgetOut`; a step between arms that
+  exceeds the time left also spends the total budget, which the error then reports). And
+  unless `repairAction.dispatchSuggestions` is set its selector is `offSelector`, which
+  records that the run consulted it (the dispatcher's `warmSuggestions` before an arm
+  `grind +suggestions`, or the arm itself) and fails. The failure is final when the run
+  reached no cap, no budget ran out and no library suggestion was consulted. A run under
+  the scratch run's budgets (5 s per arm, 30 s in all by default) does not fit the arm's cap
+  of 1 s, so the arm is not run again.
 
 ## Arguments of `grind [args]`
 
@@ -107,10 +145,18 @@ parses there to the same tactic.
   inside a tactic written over several lines thus selects that tactic, and a step that a
   macro adds (the closing `rfl` of `rw`, placed at its `]`) is not a leaf.
   At most three leaves are treated per request.
-* The title of the action names, in brackets, the head symbol of the goal (`goalHead`) and,
-  when the arm `catcrypt_auto?` ran and failed, the goal shape its error names; a closing
-  title then gives the arm's text and time, a failing one each arm with its time and
-  outcome, so that logs can group the leaves by goal.
+* The title of the action names, in brackets, the head symbol of the goal (`goalHead`),
+  when the arm `catcrypt_auto?` ran and failed, the goal shape its error names, and, when no
+  arm closed and some failure is final, the element `final: A; B; …` naming the arms whose
+  failure is final, by the names `grind`, `grind args`, `catcrypt_auto?`,
+  `grind? +suggestions` and `try?` (`grind args` is the arm `grind [args]`: the tag holds no
+  `]`, so that the outer tool's pattern `Repair line (\d+)( \[[^\]]*\])?: (.*)` reads it).
+  A closing title then gives the arm's text and time, a failing one each arm with its time
+  and outcome, so that logs can group the leaves by goal. Examples:
+  `Repair line 12 [head Eq]: grind [triple] (kernel-checked, 19 ms)`,
+  `Repair line 12 [head Eq, shape other, final: grind; catcrypt_auto?]: no closing arm;
+  grind 4 ms (…); …`, and with no final failure
+  `Repair line 12 [head Eq]: no closing arm; grind 0 ms (exceeded the cap of 0 ms); …`.
 * The options are read from the options in force at the leaf (`set_option` above the
   declaration), by name.
 * For a request with a nonempty range the arms run when the actions are listed; for an empty
@@ -130,7 +176,8 @@ open Lean Elab Server Lsp RequestM Snapshots Meta
 register_option repairAction.maxHeartbeats : Nat := {
   defValue := 100000
   descr := "heartbeat cap (in thousands, as `maxHeartbeats`) for each arm of the grind \
-    repair code action and for its kernel check"
+    repair code action and for its kernel check; an arm that reaches it, or its \
+    wall-clock cap, has no final failure"
 }
 
 register_option repairAction.extraNames : String := {
@@ -166,14 +213,35 @@ register_option repairAction.tryMillis : Nat := {
 register_option repairAction.dispatchSuggestions : Bool := {
   defValue := false
   descr := "keep the library-suggestion selector in the `catcrypt_auto?` arm of the \
-    repair code action"
+    repair code action; when false a failure of that arm in which the dispatcher \
+    consulted library suggestions is not final"
 }
 
 register_option repairAction.suggestionIndex : Bool := {
   defValue := true
   descr := "build the library-suggestion index of the imported theorems in a background \
-    task for the suggestion arms of the repair code action; when false they use the \
-    theorems of the current file only"
+    task for the suggestion arms of the repair code action, and let these arms wait for it \
+    (`repairAction.indexWaitMillis`); when false they use the theorems of the current file \
+    only, with no wait, and their failures are not final"
+}
+
+/-- The default of `repairAction.indexWaitMillis`. The first run of the registered selector
+in a process, which builds its index, was measured at 10.1 s of wall time and 81 s of CPU
+time on 24 threads in a worker importing `AutoDispatch`; the same CPU time takes longer on
+fewer cores (32.5 s on 4 cores). The outer tool waits up to 60 s for the action. The action
+treats up to three leaves; by the default caps each runs its arms in at most 5.2 s, and the
+build starts at the first suggestion arm, so a request takes at most `W + 15.6` s with a
+bound of `W`. A bound of 40 s covers both measurements and keeps a request under 60 s. -/
+def indexWaitDefault : Nat := 40000
+
+register_option repairAction.indexWaitMillis : Nat := {
+  defValue := indexWaitDefault
+  descr := "wall-clock bound, in milliseconds counted from the start of the build, for \
+    which the suggestion arms of the repair code action wait for the library-suggestion \
+    index; when the wait ends without it they run with the theorems of the current file. \
+    The default (40000) covers the measured build (10.1 s on 24 threads, 32.5 s on 4) and \
+    keeps the wait and the arms of three leaves (5.2 s each) under the caller's bound of \
+    60 s"
 }
 
 /-- Syntax kinds of tactic sequences; nodes of these kinds are never leaves. -/
@@ -492,6 +560,16 @@ structure ArmResult where
   msg : String
   /-- The goal shape that the arm reported, empty when it reported none. -/
   shape : String := ""
+  /-- Name of the arm in the title element `final:`: `grind`, `grind args`,
+  `catcrypt_auto?`, `grind? +suggestions` or `try?`. -/
+  arm : String := text
+  /-- The failure is final: the arm run as in the outer tool's scratch run (module
+  docstring, "Final failures") fails as well. `false` on success. -/
+  final : Bool := false
+  /-- Why the failure is final or not; empty on success. -/
+  finality : String := ""
+  /-- Milliseconds waited for the library-suggestion index before the arm ran. -/
+  waitMs : Nat := 0
 
 /-- Kernel check of `value : type of g`, closed over the local context of `g`. The check
 stops when `cancelTk?` is set. -/
@@ -536,35 +614,64 @@ partial def waitUntil {α : Type} (t : Task α) (deadline : Nat) : IO Bool := do
   IO.sleep 2
   waitUntil t deadline
 
+/-- The outcome of a run under `capped`. -/
+structure Capped (α : Type) where
+  /-- The value, or the failure reason. -/
+  res : Except String α
+  /-- Time waited for the run, in milliseconds. -/
+  ms : Nat
+  /-- The cap that the run reached (`heartbeat cap`, `wall-clock cap`), `none` when it
+  reached neither. -/
+  cap? : Option String := none
+
 /-- `x` in a task of its own, on a copy of the state, under the heartbeat cap `hb` and a
 cancellation token, with the auxiliary declarations named under `auxPrefix declName?`. The
 caller waits for the task until `ms` milliseconds have passed; then it sets the token and
 returns without waiting further, since a tactic (`try?`, the library-suggestion selector)
 can run on for a while after the token is set. The state of the caller is not changed. An
-exception of `x` becomes its failure reason. Returns the outcome and the time waited. -/
+exception of `x` becomes its failure reason. Returns the outcome, the time waited and the
+cap reached: the wall-clock cap when the task had not finished at the deadline or was
+interrupted, the heartbeat cap when the task threw the heartbeat exception or used at least
+`hb` thousand heartbeats (a tactic such as `grind` can catch the exception and fail for
+another reason). Heartbeats are counted per thread, and the task has a thread of its own. -/
 def capped {α : Type} (hb ms : Nat) (declName? : Option Name)
-    (x : IO.CancelToken → MetaM (Except String α)) : MetaM (Except String α × Nat) := do
+    (x : IO.CancelToken → MetaM (Except String α)) : MetaM (Capped α) := do
   let t0 ← IO.monoMsNow
   let tk ← IO.CancelToken.new
   let mctx ← readThe Meta.Context
   let mst ← getThe Meta.State
-  let body : CoreM (Except String α) := catchAllCore
-    (withTheReader Core.Context (fun c => { c with maxHeartbeats := hb * 1000 }) <|
-      withCurrHeartbeats <| withDeclNameForAuxNaming (auxPrefix declName?) <|
-        (x tk).run' mctx mst)
-    (fun e => do
-      if e.isInterrupt then return .error s!"exceeded the cap of {ms} ms"
-      return .error (shorten (← e.toMessageData.toString)))
+  let wall := s!"exceeded the cap of {ms} ms"
+  let body : CoreM (Capped α) := do
+    let h0 ← IO.getNumHeartbeats
+    let spent : CoreM Bool := return hb != 0 && (← IO.getNumHeartbeats) - h0 ≥ hb * 1000
+    catchAllCore
+      (do
+        let r ← withTheReader Core.Context (fun c => { c with maxHeartbeats := hb * 1000 }) <|
+          withCurrHeartbeats <| withDeclNameForAuxNaming (auxPrefix declName?) <|
+            (x tk).run' mctx mst
+        return { res := r, ms := 0, cap? := if ← spent then some "heartbeat cap" else none })
+      (fun e => do
+        if e.isInterrupt then return { res := .error wall, ms := 0, cap? := some "wall-clock cap" }
+        let cap? := if e.isMaxHeartbeat || (← spent) then some "heartbeat cap" else none
+        return { res := .error (shorten (← e.toMessageData.toString)), ms := 0, cap? })
   let act ← Core.wrapAsync (fun (_ : Unit) => body) (some tk)
   let task ← EIO.asTask (act ()) (prio := .dedicated)
-  let res ← if ← waitUntil task (t0 + ms) then
+  let r ← if ← waitUntil task (t0 + ms) then
       match task.get with
       | .ok r => pure r
-      | .error e => pure (.error (shorten (← e.toMessageData.toString)))
+      | .error e => pure { res := .error (shorten (← e.toMessageData.toString)), ms := 0 }
     else
       tk.set
-      pure (.error s!"exceeded the cap of {ms} ms")
-  return (res, (← IO.monoMsNow) - t0)
+      pure { res := .error wall, ms := 0, cap? := some "wall-clock cap" }
+  return { r with ms := (← IO.monoMsNow) - t0 }
+
+/-- Finality of a failure that reached the cap `cap?`: not final at a cap, since the scratch
+run has no wall-clock cap and its own heartbeat limit; otherwise final when `final`, with the
+reason `why`. -/
+def finalityAt (cap? : Option String) (final : Bool) (why : String) : Bool × String :=
+  match cap? with
+  | some c => (false, s!"not final: stopped at the {c}")
+  | none => (final, why)
 
 /-- Runs the tactic `stx` on `g` and checks the proof in the kernel, the check under the
 cancellation token `tk`. -/
@@ -577,18 +684,24 @@ def closeWith (g : MVarId) (stx : Syntax) (hb : Nat) (declName? : Option Name)
   | some m => return .error m
   | none => return .ok ()
 
-/-- Runs the tactic `text` on `g`, then checks the proof in the kernel, under `capped` with the
-heartbeat cap `hb` and the wall-clock cap `ms`. The wall-clock cap bounds a run of `grind`
-that does not reach the heartbeat check. The state of the caller is not changed. -/
-def runArm (g : MVarId) (text : String) (hb ms : Nat) (declName? : Option Name) :
+/-- Runs the tactic `text` (the arm named `arm`) on `g`, then checks the proof in the kernel,
+under `capped` with the heartbeat cap `hb` and the wall-clock cap `ms`. The wall-clock cap
+bounds a run of `grind` that does not reach the heartbeat check. A failure is final when it
+reached neither cap: the tactic and the goal are those of the scratch run, and the heartbeat
+cap that it did not reach bounds the run as `maxHeartbeats` does there. The state of the
+caller is not changed. -/
+def runArm (g : MVarId) (text arm : String) (hb ms : Nat) (declName? : Option Name) :
     MetaM ArmResult := do
   let stx ← match Parser.runParserCategory (← getEnv) `tactic text with
     | .ok stx => pure stx
-    | .error e => return { text, closed := false, ms := 0, msg := s!"parse: {e}" }
-  let (res, ms) ← capped hb ms declName? (closeWith g stx hb declName?)
-  match res with
-  | .ok () => return { text, closed := true, ms, msg := "" }
-  | .error m => return { text, closed := false, ms, msg := m }
+    | .error e => return { text, arm, closed := false, ms := 0, msg := s!"parse: {e}",
+                           final := true, finality := "final: the arm does not parse" }
+  let c ← capped hb ms declName? (closeWith g stx hb declName?)
+  match c.res with
+  | .ok () => return { text, arm, closed := true, ms := c.ms, msg := "" }
+  | .error m =>
+    let (final, finality) := finalityAt c.cap? true "final: no cap reached"
+    return { text, arm, closed := false, ms := c.ms, msg := m, final, finality }
 
 /-- `stx` with every node and token given the synthetic source range `r`. -/
 partial def atRange (r : Syntax.Range) : Syntax → Syntax
@@ -658,49 +771,98 @@ def shapeOfError (msg : String) : String :=
   | _ :: rest :: _ => ((rest.splitOn ";").headD "").trimAscii.toString
   | _ => ""
 
+/-- The error `m` of `catcrypt_auto` reports that a wall-clock budget of the dispatcher ran
+out: an arm or step "exceeded the time budget", or "the total time budget of N ms is
+spent". These are the only budgets that `capOptions` cuts; the heartbeat budgets of the
+dispatcher are its own in the scratch run as well. -/
+def reportsBudgetOut (m : String) : Bool :=
+  (m.splitOn "exceeded the time budget").length > 1 ||
+    ((m.splitOn "total time budget of").length > 1 && (m.splitOn "ms is spent").length > 1)
+
+/-- The key, in the options of a run of the arm `catcrypt_auto?`, of the number of that run
+(`dispatchRunCounter`), which `offSelector` reads. -/
+def dispatchRunKey : Name := `repairAction.dispatchRun
+
+/-- The number of the last run of the arm `catcrypt_auto?` in this process. -/
+initialize dispatchRunCounter : IO.Ref Nat ← IO.mkRef 0
+
+/-- The numbers of the runs of the arm `catcrypt_auto?` in which the dispatcher called the
+library-suggestion selector. -/
+initialize consultedRuns : IO.Ref (Array Nat) ← IO.mkRef #[]
+
+/-- The library-suggestion selector of the arm `catcrypt_auto?` when
+`repairAction.dispatchSuggestions` is false: records that the run (`dispatchRunKey`)
+consulted library suggestions and fails, so that an arm `grind +suggestions` of the
+dispatcher fails at once. -/
+def offSelector : LibrarySuggestions.Selector := fun _ _ => do
+  let n := (← getOptions).get dispatchRunKey (0 : Nat)
+  consultedRuns.modify (·.push n)
+  throwError "library suggestions are off in the repair action"
+
 /-- Runs `catcrypt_auto?` on `g` under the dispatcher's budgets cut to `ms` milliseconds,
 then checks the proof in the kernel, under `capped` with the heartbeat cap `hb` and the
-wall-clock cap `ms`. The syntax of the run carries the source range `r`. On a failure the
-goal shape that the dispatcher's error names is kept. The state of the caller is not
-changed. -/
+wall-clock cap `ms`. The syntax of the run carries the source range `r`. Unless
+`repairAction.dispatchSuggestions` is set, the library-suggestion selector of the run is
+`offSelector`. On a failure the goal shape that the dispatcher's error names is kept, and
+the failure is final when the run reached neither cap, the dispatcher's error reports no
+budget that ran out (`reportsBudgetOut`), and the dispatcher did not consult the selector
+`offSelector` (each of these differs from the scratch run, where the dispatcher runs under
+its own budgets with the registered selector). The state of the caller is not changed. -/
 def runDispatch (g : MVarId) (r : Syntax.Range) (hb ms : Nat) (declName? : Option Name) :
     MetaM ArmResult := do
   let some stx := (Parser.runParserCategory (← getEnv) `tactic dispatchText).toOption
-    | return { text := "catcrypt_auto", closed := false, ms := 0,
-               msg := "catcrypt_auto? is not in the environment" }
+    | return { text := "catcrypt_auto", arm := dispatchText, closed := false, ms := 0,
+               msg := "catcrypt_auto? is not in the environment", final := true,
+               finality := "final: catcrypt_auto? is not in the environment" }
   let stx := atRange r stx
   let shape ← IO.mkRef ""
-  let opts := capOptions (← getOptions) ms
-  let (res, dt) ← capped hb ms declName? fun tk =>
+  let budgetOut ← IO.mkRef false
+  let run ← dispatchRunCounter.modifyGet fun n => (n + 1, n + 1)
+  let off := !(← getOptions).get `repairAction.dispatchSuggestions false
+  let opts := (capOptions (← getOptions) ms).set dispatchRunKey run
+  let c ← capped hb ms declName? fun tk =>
     withTheReader Core.Context (fun c => { c with options := opts }) do
       modifyThe Core.State fun s => { s with infoState := { enabled := true } }
-      unless (← getOptions).get `repairAction.dispatchSuggestions false do
-        modifyEnv fun env =>
-          LibrarySuggestions.librarySuggestionsExt.modifyState env fun _ => none
+      if off then
+        modifyEnv fun env => LibrarySuggestions.librarySuggestionsExt.modifyState env
+          fun _ => some ``offSelector
       let r ← catchAll (closeWith g stx hb declName? tk) fun e => do
         if e.isInterrupt then throw e
         let m ← e.toMessageData.toString
         shape.set (shapeOfError m)
+        budgetOut.set (reportsBudgetOut m)
         return .error (shorten m)
       let trees := (← getThe Core.State).infoState.trees
       return r.map fun () => lastSuggestion trees
   let shape ← shape.get
-  match res with
-  | .ok s => return { text := s.getD "catcrypt_auto", closed := true, ms := dt, msg := "" }
-  | .error m => return { text := "catcrypt_auto", closed := false, ms := dt, msg := m, shape }
+  let consulted := (← consultedRuns.get).contains run
+  consultedRuns.modify (·.filter (· != run))
+  match c.res with
+  | .ok s => return { text := s.getD "catcrypt_auto", arm := dispatchText, closed := true,
+                      ms := c.ms, msg := "" }
+  | .error m =>
+    let why := (if ← budgetOut.get then #["a budget of the dispatcher ran out"] else #[]) ++
+      (if consulted then #["the dispatcher consulted the library suggestions, which are off"]
+       else #[])
+    let (final, finality) := finalityAt c.cap? why.isEmpty <|
+      if why.isEmpty then "final: no cap reached, no budget ran out, no library suggestion \
+        consulted"
+      else s!"not final: {", ".intercalate why.toList}"
+    return { text := "catcrypt_auto", arm := dispatchText, closed := false, ms := c.ms,
+             msg := m, shape, final, finality }
 
 /-! ## The suggestion arms -/
 
 /-- The background task that builds the library-suggestion index of this process, once
-started. -/
-initialize suggestionIndexTask : IO.Ref (Option (Task (Except Exception Unit))) ←
+started, with its start time (of `IO.monoMsNow`). -/
+initialize suggestionIndexTask : IO.Ref (Option (Task (Except Exception Unit) × Nat)) ←
   IO.mkRef none
 
 /-- The library-suggestion index of this process is built. Otherwise, unless
 `repairAction.suggestionIndex` is false, a background task building it is started (when
 none runs) by running the registered selector on `g` with no heartbeat cap and no token. -/
 def suggestionIndexReady (g : MVarId) : MetaM Bool := do
-  if let some t ← suggestionIndexTask.get then
+  if let some (t, _) ← suggestionIndexTask.get then
     unless ← IO.hasFinished t do return false
     if t.get matches .ok _ then return true
     suggestionIndexTask.set none
@@ -712,22 +874,43 @@ def suggestionIndexReady (g : MVarId) : MetaM Bool := do
     Core.wrapAsync (fun (_ : Unit) => (do
       setMCtx mctx
       withLCtx lctx {} (discard <| LibrarySuggestions.select g) : MetaM Unit).run') none
-  suggestionIndexTask.set (some (← EIO.asTask (act ()) (prio := .dedicated)))
+  suggestionIndexTask.set (some (← EIO.asTask (act ()) (prio := .dedicated), ← IO.monoMsNow))
   return false
+
+/-- `suggestionIndexReady g`, and while the build of the index runs, a wait for it until
+`waitMs` milliseconds after the start of the build. The bound counts from the start of the
+build, not of the call, so that the arms and leaves after a wait that ended without the
+index do not wait again. A build that ends with an error is not restarted here. Returns
+whether the index is built and the milliseconds waited; no wait when
+`repairAction.suggestionIndex` is false. -/
+def awaitSuggestionIndex (g : MVarId) (waitMs : Nat) : MetaM (Bool × Nat) := do
+  if ← suggestionIndexReady g then return (true, 0)
+  unless (← getOptions).get `repairAction.suggestionIndex true do return (false, 0)
+  let some (t, start) ← suggestionIndexTask.get | return (false, 0)
+  let t0 ← IO.monoMsNow
+  let done ← waitUntil t (start + waitMs)
+  return (done && t.get matches .ok _, (← IO.monoMsNow) - t0)
 
 /-- Runs the suggestion arm `text` on `g` under `capped` with the heartbeat cap `hb` and the
 wall-clock cap `ms`: the arm, then its suggestion (`firstOfLastSuggestions`) alone on `g`,
 then the kernel check of that proof. The syntax of the arm carries the source range `r`, so
-that its suggestion is laid out for that range. The library-suggestion selector is the
-registered one when its index is built, and `LibrarySuggestions.currentFile` otherwise. The
-state of the caller is not changed. -/
+that its suggestion is laid out for that range. Before the arm, while the build of the
+library-suggestion index runs, the arm waits for it (`awaitSuggestionIndex`, bounded by
+`repairAction.indexWaitMillis`); the wait is outside the caps. The selector is the
+registered one when its index is built, and `LibrarySuggestions.currentFile` otherwise, and
+the failure reason then says `index not built`. A failure is final when the run reached
+neither cap and the selector was the registered one with its index: the selector, its
+premises, the tactic and the goal are then those of the scratch run. The state of the caller
+is not changed. -/
 def runSuggestionArm (g : MVarId) (text : String) (r : Syntax.Range) (hb ms : Nat)
     (declName? : Option Name) : MetaM ArmResult := do
   let stx ← match Parser.runParserCategory (← getEnv) `tactic text with
     | .ok stx => pure (atRange r stx)
-    | .error e => return { text, closed := false, ms := 0, msg := s!"parse: {e}" }
-  let ready ← g.withContext (suggestionIndexReady g)
-  let (res, dt) ← capped hb ms declName? fun tk => do
+    | .error e => return { text, closed := false, ms := 0, msg := s!"parse: {e}",
+                           final := true, finality := "final: the arm does not parse" }
+  let waitMs := (← getOptions).get `repairAction.indexWaitMillis indexWaitDefault
+  let (ready, waited) ← g.withContext (awaitSuggestionIndex g waitMs)
+  let c ← capped hb ms declName? fun tk => do
     unless ready do
       modifyEnv fun env => LibrarySuggestions.librarySuggestionsExt.modifyState env
         fun _ => some ``LibrarySuggestions.currentFile
@@ -744,9 +927,15 @@ def runSuggestionArm (g : MVarId) (text : String) (r : Syntax.Range) (hb ms : Na
     if hasSorryToken sstx then
       return .error s!"the suggestion {shorten (squash sugg) 40} has sorry"
     return (← closeWith g sstx hb declName? tk).map fun () => sugg
-  match res with
-  | .ok s => return { text := s, closed := true, ms := dt, msg := "" }
-  | .error m => return { text, closed := false, ms := dt, msg := m }
+  match c.res with
+  | .ok s => return { text := s, arm := text, closed := true, ms := c.ms, msg := "",
+                      waitMs := waited }
+  | .error m =>
+    let (final, finality) := finalityAt c.cap? ready <|
+      if ready then "final: no cap reached, the registered selector with its index"
+      else "not final: the index was not built, the arm ran with the theorems of the file"
+    let msg := if ready then m else s!"{m}; index not built"
+    return { text, closed := false, ms := c.ms, msg, final, finality, waitMs := waited }
 
 /-! ## The arms at a leaf -/
 
@@ -758,13 +947,13 @@ def repairGoal (g : MVarId) (stxs : Array Syntax) (r : Syntax.Range) (declName? 
   let opts ← getOptions
   let hb := opts.get `repairAction.maxHeartbeats (100000 : Nat)
   let args ← grindArgs g stxs (extraNames opts)
-  let mut arms := #["grind"]
+  let mut arms := #[("grind", "grind")]
   unless args.isEmpty do
-    arms := arms.push s!"grind [{", ".intercalate args.toList}]"
+    arms := arms.push (s!"grind [{", ".intercalate args.toList}]", "grind args")
   let mut out := #[]
   let gms := opts.get `repairAction.grindMillis (600 : Nat)
-  for a in arms do
-    let res ← runArm g a hb gms declName?
+  for (a, name) in arms do
+    let res ← runArm g a name hb gms declName?
     out := out.push res
     if res.closed then return out
   if dispatchAvailable (← getEnv) then
@@ -847,11 +1036,17 @@ def repairLeaf (ss : Array Step) (l : Leaf) (col : String.Pos.Raw → Nat) :
         return r
       return some { head, span, arms }
 
-/-- The bracketed tag of a title: the head symbol of the goal and the reported goal shape. -/
+/-- The bracketed tag of a title: the head symbol of the goal, the reported goal shape and,
+when no arm closed, the names of the arms whose failure is final (`final: A; B`, the
+element left out when there are none). -/
 def goalTag (head : String) (rs : Array ArmResult) : String :=
-  match rs.find? (!·.shape.isEmpty) with
-  | some r => s!"[head {head}, shape {r.shape}]"
-  | none => s!"[head {head}]"
+  let shape := match rs.find? (!·.shape.isEmpty) with
+    | some r => s!", shape {r.shape}"
+    | none => ""
+  let finals := (rs.filter fun r => !r.closed && r.final).map (·.arm)
+  let final := if finals.isEmpty || rs.any (·.closed) then ""
+    else s!", final: {"; ".intercalate finals.toList}"
+  s!"[head {head}{shape}{final}]"
 
 /-- The code action reporting `rep` at a leaf on line `line`; `text` converts source ranges. -/
 def mkAction (docId : VersionedTextDocumentIdentifier) (text : FileMap) (line : Nat)
