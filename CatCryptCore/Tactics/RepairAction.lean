@@ -18,10 +18,17 @@ is elaborated again; each arm runs under the heartbeat cap `repairAction.maxHear
 and a proof it produces is closed over its local context and checked by the kernel before
 the arm counts as closing. The arms `grind` and `grind [names]`, kernel check included, also
 run under a cancellation token set at the cap `repairAction.grindMillis`, since a run of
-`grind` can exceed any heartbeat cap.
+`grind` can exceed any heartbeat cap. The auxiliary declarations an arm adds (`_proof_1`, …)
+are named under the prefix `<declaration>._repairAction`, which no declaration of the file
+has: under the empty prefix of a fresh elaboration state their names would be those of the
+file's own auxiliary declarations.
 
-* A leaf is a tactic node with an original source range, other than a tactic sequence, that
-  lies inside the request range or contains it, and that contains no other such node.
+* A leaf is a node of the info tree for a tactic as written in the source: its syntax kind
+  is a kind of the tactic category other than a tactic sequence, and its source information
+  is original. Its source range meets the request range (overlaps it when the request range
+  is nonempty, contains it when it is empty), and it contains no other such node. A line
+  inside a tactic written over several lines thus selects that tactic, and a step that a
+  macro adds (the closing `rfl` of `rw`, placed at its `]`) is not a leaf.
   At most three leaves are treated per request.
 * `names` are the identifiers in the leaf's syntax that resolve to global constants and are
   not local hypotheses of the goal, followed by the names in the option
@@ -41,8 +48,9 @@ run under a cancellation token set at the cap `repairAction.grindMillis`, since 
 * On a closing arm the action replaces the leaf by the arm's text. When no arm closes, the
   action has no edit and its title lists each arm with its time and outcome.
 * The options are read from the options in force at the leaf (`set_option` above the
-  declaration), by name, with defaults 100000 heartbeats, no extra names, caps of 600 ms
-  for each arm `grind` and for the arm `catcrypt_auto?`, and no library-suggestion selector.
+  declaration), by name, with defaults 100000 heartbeats, no extra names, a cap of 600 ms
+  for each arm `grind` and of 1000 ms for the arm `catcrypt_auto?`, and no library-suggestion
+  selector.
 * For a request with a nonempty range the arms run when the actions are listed; for an empty
   range (an editor cursor) they run when the action is resolved.
 
@@ -70,7 +78,7 @@ register_option repairAction.extraNames : String := {
 }
 
 register_option repairAction.dispatchMillis : Nat := {
-  defValue := 600
+  defValue := 1000
   descr := "wall-clock cap, in milliseconds, of the `catcrypt_auto?` arm of the repair \
     code action"
 }
@@ -101,16 +109,24 @@ structure Leaf where
   /-- Original source range of the node's syntax. -/
   range : Syntax.Range
 
-/-- Tactic nodes with an original range inside `[lo, hi]` or containing it, with a goal. -/
+/-- `k` is a syntax kind of the tactic category of `env`. -/
+def isTacticKind (env : Environment) (k : SyntaxNodeKind) : Bool :=
+  match Parser.getParserCategory? env `tactic with
+  | some cat => cat.kinds.contains k
+  | none => false
+
+/-- Nodes of tactics as written in the source, with a goal, whose original range meets
+`[lo, hi]`: overlaps it when `lo < hi`, contains `lo` when `lo = hi`. -/
 def collectLeaves (t : InfoTree) (lo hi : String.Pos.Raw) : Array Leaf :=
   t.foldInfo (init := #[]) fun ctx info acc => Id.run do
     let .ofTacticInfo ti := info | acc
-    if sequenceKinds.contains ti.stx.getKind then return acc
+    let k := ti.stx.getKind
+    if sequenceKinds.contains k || !isTacticKind ctx.env k then return acc
+    unless ti.stx.getHeadInfo matches .original .. do return acc
     if ti.goalsBefore.isEmpty then return acc
     let some r := ti.stx.getRange? (canonicalOnly := true) | acc
-    let inside := lo ≤ r.start && r.stop ≤ hi
-    let covers := r.start ≤ lo && hi ≤ r.stop
-    unless inside || covers do return acc
+    let meets := if lo == hi then r.start ≤ lo && lo ≤ r.stop else r.start < hi && lo < r.stop
+    unless meets do return acc
     acc.push { ctx, info := ti, range := r }
 
 /-- `r` lies inside `s` and differs from it. -/
@@ -198,6 +214,10 @@ partial def watch (tk stop : IO.CancelToken) (deadline : Nat) : IO Unit := do
   IO.sleep 5
   watch tk stop deadline
 
+/-- The prefix of the names of the auxiliary declarations that an arm adds. -/
+def auxPrefix (declName? : Option Name) : Name :=
+  (declName?.getD .anonymous) ++ `_repairAction
+
 /-- Runs the tactic `text` on `g` under the heartbeat cap `hb` and a cancellation token set
 after `ms` milliseconds, then checks the proof in the kernel under the same token. The token
 bounds a run of `grind` that does not reach the heartbeat check. The metavariable and
@@ -215,7 +235,7 @@ def runArm (g : MVarId) (text : String) (hb ms : Nat) (declName? : Option Name) 
   let msg ← catchAll
     (withTheReader Core.Context
       (fun c => { c with cancelTk? := some tk, maxHeartbeats := hb * 1000 }) <|
-      withCurrHeartbeats do
+      withCurrHeartbeats <| withDeclNameForAuxNaming (auxPrefix declName?) do
         let gs ← (Tactic.run g (Tactic.evalTactic stx)).run'
           { declName? := declName?, errToSorry := false }
         unless gs.isEmpty do return some s!"{gs.length} goals remain"
@@ -283,7 +303,7 @@ def runDispatch (g : MVarId) (r : Syntax.Range) (hb ms : Nat) (declName? : Optio
   let res : Except String (Option String) ← catchAll
     (withTheReader Core.Context
       (fun c => { c with options := opts, cancelTk? := some tk, maxHeartbeats := hb * 1000 }) <|
-      withCurrHeartbeats do
+      withCurrHeartbeats <| withDeclNameForAuxNaming (auxPrefix declName?) do
         modifyThe Core.State fun s => { s with infoState := { enabled := true } }
         unless (← getOptions).get `repairAction.dispatchSuggestions false do
           modifyEnv fun env =>
@@ -329,7 +349,7 @@ def repairGoal (g : MVarId) (stx : Syntax) (r : Syntax.Range) (declName? : Optio
     if res.closed then return out
   if dispatchAvailable (← getEnv) then
     out := out.push
-      (← runDispatch g r hb (opts.get `repairAction.dispatchMillis (600 : Nat)) declName?)
+      (← runDispatch g r hb (opts.get `repairAction.dispatchMillis (1000 : Nat)) declName?)
   return out
 
 /-- `repairGoal` on the main goal before the leaf `l`, in the context and with the options

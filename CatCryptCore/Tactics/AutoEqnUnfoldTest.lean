@@ -5,20 +5,22 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import CatCryptCore.Tactics.AutoEqnUnfoldDraft
+public import CatCryptCore.Tactics.AutoEqnUnfold
+public import CatCryptCore.Tactics.AutoArms
 
 /-!
 # Tests of `eqn_unfold`
 
 Each test is over a definition of this module, and each positive test closes as the arm
-would run in the dispatcher: `eqn_unfold <;> grind` or `eqn_unfold; simp_all`. The last
-four tests have the shape of a front-recursive heap update by a list and an iterated
-counter, with an induction hypothesis over all heaps.
+would run in the dispatcher: `eqn_unfold; grind` or `eqn_unfold; simp_all`. The last
+six tests have the shape of a front-recursive heap update by a list and an iterated
+counter, with an induction hypothesis over all heaps; the last two close through
+`catcrypt_auto`, whose `other` shape has the arm `eqn_unfold`.
 -/
 
 set_option autoImplicit false
 
-namespace CatCrypt.Tactics.AutoEqnUnfoldDraftTest
+namespace CatCrypt.Tactics.AutoEqnUnfoldTest
 
 /-- The sum of a list, by structural recursion. -/
 def lsum : List Nat → Nat
@@ -58,29 +60,29 @@ def half2 : Nat → Nat
   | n + 2 => half2 n + 1
 
 example (x : Nat) (xs : List Nat) : x ≤ lsum (x :: xs) := by
-  eqn_unfold <;> grind
+  eqn_unfold; grind
 
 example (x : Nat) (xs : List Nat) (h : lsum (x :: xs) = 0) : x = 0 := by
-  eqn_unfold <;> grind
+  eqn_unfold; grind
 
 example (n : Nat) : n + 1 ≤ tri (n + 1) := by
-  eqn_unfold <;> grind
+  eqn_unfold; grind
 
 example : tri 3 = 6 := by
   eqn_unfold; simp_all
 
 example (x : Nat) (xs : List Nat) : lsum (dbl (x :: xs)) = 2 * x + lsum (dbl xs) := by
-  eqn_unfold <;> grind
+  eqn_unfold; grind
 
 example (x : Nat) (xs : List Nat) (s : Nat) (h : osum xs = some s) :
     osum (x :: xs) = some (x + s) := by
   eqn_unfold; simp_all
 
 example (n : Nat) : getZ (some n) = n := by
-  eqn_unfold <;> grind
+  eqn_unfold; grind
 
 example (n : Nat) : half2 (n + 2) = half2 n + 1 := by
-  eqn_unfold <;> grind
+  eqn_unfold; grind
 
 /-- error: eqn_unfold: no recursive definition applied to a constructor -/
 #guard_msgs in
@@ -131,7 +133,7 @@ example {W : Type} (nxt : W → W) (m : W) (ms : List W)
 example {W : Type} (nxt : W → W) (m : W) (ms : List W)
     (ih : ∀ σ : H W, (sh nxt σ ms).get 0 = ic nxt (σ.get 0) ms) (σ : H W) :
     (sh nxt σ (m :: ms)).get 0 = ic nxt (σ.get 0) (m :: ms) := by
-  eqn_unfold <;> grind [H.get_set_same]
+  eqn_unfold; grind [H.get_set_same]
 
 example {W : Type} (nxt : W → W) (m : W) (ms : List W)
     (ih : ∀ σ : H W, sh nxt σ ms = σ.set 0 (ic nxt (σ.get 0) ms)) (σ : H W) :
@@ -141,6 +143,16 @@ example {W : Type} (nxt : W → W) (m : W) (ms : List W)
 example {W : Type} (nxt : W → W) (m : W) (ms : List W)
     (ih : ∀ σ : H W, sh nxt σ ms = σ.set 0 (ic nxt (σ.get 0) ms)) (σ : H W) :
     sh nxt σ (m :: ms) = σ.set 0 (ic nxt (σ.get 0) (m :: ms)) := by
-  eqn_unfold <;> grind [H.get_set_same, H.set_set_same]
+  eqn_unfold; grind [H.get_set_same, H.set_set_same]
 
-end CatCrypt.Tactics.AutoEqnUnfoldDraftTest
+example {W : Type} (nxt : W → W) (m : W) (ms : List W)
+    (ih : ∀ σ : H W, (sh nxt σ ms).get 0 = ic nxt (σ.get 0) ms) (σ : H W) :
+    (sh nxt σ (m :: ms)).get 0 = ic nxt (σ.get 0) (m :: ms) := by
+  catcrypt_auto
+
+example {W : Type} (nxt : W → W) (m : W) (ms : List W)
+    (ih : ∀ σ : H W, sh nxt σ ms = σ.set 0 (ic nxt (σ.get 0) ms)) (σ : H W) :
+    sh nxt σ (m :: ms) = σ.set 0 (ic nxt (σ.get 0) (m :: ms)) := by
+  catcrypt_auto
+
+end CatCrypt.Tactics.AutoEqnUnfoldTest

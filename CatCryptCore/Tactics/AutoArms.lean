@@ -13,6 +13,7 @@ public import CatCryptCore.Tactics.AutoHopRegistry
 public meta import CatCryptCore.Tactics.AutoHopRegistry
 public import CatCryptCore.Tactics.AutoDispatchCore
 public meta import CatCryptCore.Tactics.AutoDispatchCore
+public import CatCryptCore.Tactics.AutoEqnUnfold
 
 /-!
 # Hop chains over registered pseudometrics, sums of atoms, and monotonicity
@@ -74,7 +75,8 @@ in `CatCryptCore.Crypto.Advantage`, `CatCryptCore.Crypto.SDist` and
 `CatCryptCore.Tactics.Triangle`.
 
 The module registers with `catcrypt_auto` (`CatCryptCore.Tactics.AutoDispatchCore`) these
-arms:
+arms, among them one of `eqn_unfold` (`CatCryptCore.Tactics.AutoEqnUnfold`), the rewriting
+of recursive definitions applied to constructors by their equation lemmas:
 
 | Shape | Arm | Order |
 |---|---|---|
@@ -86,6 +88,7 @@ arms:
 | `SPComp equality`, `heap read after write` | `hyp_unfold`, then `grind` or `simp_all` | 30 |
 | `other` | `hyp_unfold`, then `grind` or `simp_all` | 35 |
 | `SPComp equality`; `other` | `funext_unfold`, then `rfl`, `grind` or `simp_all` | 15; 36 |
+| `other` | `eqn_unfold`, then `rfl`, `grind` or `simp_all` on the goal left | 37 |
 | `distance inequality`; `monotonicity inequality` | `ord_residual` | 45; 45 |
 | `other` | `ord_residual` | 15 |
 -/
@@ -1002,6 +1005,8 @@ catcrypt_auto_arm "SPComp equality" order 30 := "(hyp_unfold; first | grind%GRIN
 catcrypt_auto_arm "SPComp equality" order 15 :=
   "(funext_unfold; first | rfl | grind%GRIND | %SIMP_ALL)"
 catcrypt_auto_arm "other" order 36 := "(funext_unfold; first | rfl | grind%GRIND | %SIMP_ALL)"
+catcrypt_auto_arm "other" order 37 :=
+  "(eqn_unfold; all_goals (first | rfl | grind%GRIND | %SIMP_ALL))"
 catcrypt_auto_arm "distance inequality" order 45 := "ord_residual"
 catcrypt_auto_arm "monotonicity inequality" order 45 := "ord_residual"
 catcrypt_auto_arm "other" order 15 := "ord_residual"

@@ -30,7 +30,8 @@ info: import closure of CatCryptCore.Tactics.AutoBase: roots [CatCryptCore,
  Std]; modules outside Init, Std and Lean: [CatCryptCore.Tactics.AutoBase,
  CatCryptCore.Tactics.AutoDispatchCore,
  CatCryptCore.Tactics.AutoHopRegistry,
- CatCryptCore.Tactics.AutoPremises]
+ CatCryptCore.Tactics.AutoPremises,
+ CatCryptCore.Tactics.RepairAction]
 -/
 #guard_msgs in
 #import_closure_roots CatCryptCore.Tactics.AutoBase
