@@ -16,7 +16,9 @@ elaborated file, and stops at the first closing arm. The goal is taken from
 `TacticInfo.goalsBefore` and its metavariable context `mctxBefore`, so no part of the file
 is elaborated again; each arm runs under the heartbeat cap `repairAction.maxHeartbeats`,
 and a proof it produces is closed over its local context and checked by the kernel before
-the arm counts as closing.
+the arm counts as closing. The arms `grind` and `grind [names]`, kernel check included, also
+run under a cancellation token set at the cap `repairAction.grindMillis`, since a run of
+`grind` can exceed any heartbeat cap.
 
 * A leaf is a tactic node with an original source range, other than a tactic sequence, that
   lies inside the request range or contains it, and that contains no other such node.
@@ -39,8 +41,8 @@ the arm counts as closing.
 * On a closing arm the action replaces the leaf by the arm's text. When no arm closes, the
   action has no edit and its title lists each arm with its time and outcome.
 * The options are read from the options in force at the leaf (`set_option` above the
-  declaration), by name, with defaults 100000 heartbeats, no extra names, a cap of 600 ms
-  for the arm `catcrypt_auto?` and no library-suggestion selector.
+  declaration), by name, with defaults 100000 heartbeats, no extra names, caps of 600 ms
+  for each arm `grind` and for the arm `catcrypt_auto?`, and no library-suggestion selector.
 * For a request with a nonempty range the arms run when the actions are listed; for an empty
   range (an editor cursor) they run when the action is resolved.
 
@@ -71,6 +73,12 @@ register_option repairAction.dispatchMillis : Nat := {
   defValue := 600
   descr := "wall-clock cap, in milliseconds, of the `catcrypt_auto?` arm of the repair \
     code action"
+}
+
+register_option repairAction.grindMillis : Nat := {
+  defValue := 600
+  descr := "wall-clock cap, in milliseconds, of each arm `grind` and `grind [names]` of the \
+    repair code action, kernel check included"
 }
 
 register_option repairAction.dispatchSuggestions : Bool := {
@@ -172,23 +180,50 @@ def shorten (s : String) (n : Nat := 80) : String :=
   let l := (s.splitOn "\n").headD ""
   if l.length ≤ n then l else (l.take n).toString ++ "…"
 
-/-- Runs the tactic `text` on `g` under the cap `hb`, then checks the proof in the kernel.
-The metavariable and environment state is restored afterwards. -/
-def runArm (g : MVarId) (text : String) (hb : Nat) (declName? : Option Name) :
+/-- `x`, with every exception of `x`, including an interrupt, passed to `h`. -/
+def catchAllCore {α : Type} (x : CoreM α) (h : Exception → CoreM α) : CoreM α :=
+  fun ctx s => (x ctx s).tryCatch (fun e => h e ctx s)
+
+/-- `catchAllCore` lifted to `MetaM`. -/
+def catchAll {α : Type} (x : MetaM α) (h : Exception → MetaM α) : MetaM α :=
+  controlAt CoreM fun run => catchAllCore (run x) (fun e => run (h e))
+
+/-- Sets `tk` at the time `deadline` (of `IO.monoMsNow`), polling every 5 ms, and returns
+without setting it once `stop` is set. -/
+partial def watch (tk stop : IO.CancelToken) (deadline : Nat) : IO Unit := do
+  if ← stop.isSet then return
+  if (← IO.monoMsNow) ≥ deadline then
+    tk.set
+    return
+  IO.sleep 5
+  watch tk stop deadline
+
+/-- Runs the tactic `text` on `g` under the heartbeat cap `hb` and a cancellation token set
+after `ms` milliseconds, then checks the proof in the kernel under the same token. The token
+bounds a run of `grind` that does not reach the heartbeat check. The metavariable and
+environment state is restored afterwards. -/
+def runArm (g : MVarId) (text : String) (hb ms : Nat) (declName? : Option Name) :
     MetaM ArmResult := do
   let t0 ← IO.monoMsNow
   let stx ← match Parser.runParserCategory (← getEnv) `tactic text with
     | .ok stx => pure stx
     | .error e => return { text, closed := false, ms := 0, msg := s!"parse: {e}" }
   let saved ← saveState
-  let msg ← tryCatchRuntimeEx
-    (withTheReader Core.Context (fun c => { c with maxHeartbeats := hb * 1000 }) <|
+  let tk ← IO.CancelToken.new
+  let stop ← IO.CancelToken.new
+  let _ ← IO.asTask (prio := .dedicated) (watch tk stop (t0 + ms))
+  let msg ← catchAll
+    (withTheReader Core.Context
+      (fun c => { c with cancelTk? := some tk, maxHeartbeats := hb * 1000 }) <|
       withCurrHeartbeats do
         let gs ← (Tactic.run g (Tactic.evalTactic stx)).run'
           { declName? := declName?, errToSorry := false }
         unless gs.isEmpty do return some s!"{gs.length} goals remain"
-        kernelCheck g (← instantiateMVars (mkMVar g)) hb declName?)
-    (fun e => return some (shorten (← e.toMessageData.toString)))
+        kernelCheck g (← instantiateMVars (mkMVar g)) hb declName? (some tk))
+    (fun e => do
+      if e.isInterrupt then return some s!"exceeded the cap of {ms} ms"
+      return some (shorten (← e.toMessageData.toString)))
+  stop.set
   saved.restore
   let ms := (← IO.monoMsNow) - t0
   return { text, closed := msg.isNone, ms, msg := msg.getD "" }
@@ -228,24 +263,6 @@ partial def lastSuggestion (t : InfoTree) (acc : Option String := none) : Option
       | _ => acc
     cs.foldl (fun a c => lastSuggestion c a) acc
   | .hole _ => acc
-
-/-- `x`, with every exception of `x`, including an interrupt, passed to `h`. -/
-def catchAllCore {α : Type} (x : CoreM α) (h : Exception → CoreM α) : CoreM α :=
-  fun ctx s => (x ctx s).tryCatch (fun e => h e ctx s)
-
-/-- `catchAllCore` lifted to `MetaM`. -/
-def catchAll {α : Type} (x : MetaM α) (h : Exception → MetaM α) : MetaM α :=
-  controlAt CoreM fun run => catchAllCore (run x) (fun e => run (h e))
-
-/-- Sets `tk` at the time `deadline` (of `IO.monoMsNow`), polling every 5 ms, and returns
-without setting it once `stop` is set. -/
-partial def watch (tk stop : IO.CancelToken) (deadline : Nat) : IO Unit := do
-  if ← stop.isSet then return
-  if (← IO.monoMsNow) ≥ deadline then
-    tk.set
-    return
-  IO.sleep 5
-  watch tk stop deadline
 
 /-- Runs `catcrypt_auto?` on `g` under the dispatcher's budgets cut to `ms` milliseconds,
 the heartbeat cap `hb` and a cancellation token set after `ms` milliseconds, then checks
@@ -305,8 +322,9 @@ def repairGoal (g : MVarId) (stx : Syntax) (r : Syntax.Range) (declName? : Optio
   unless names.isEmpty do
     arms := arms.push s!"grind [{", ".intercalate (names.map toString).toList}]"
   let mut out := #[]
+  let gms := opts.get `repairAction.grindMillis (600 : Nat)
   for a in arms do
-    let res ← runArm g a hb declName?
+    let res ← runArm g a hb gms declName?
     out := out.push res
     if res.closed then return out
   if dispatchAvailable (← getEnv) then
