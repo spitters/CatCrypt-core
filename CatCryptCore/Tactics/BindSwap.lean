@@ -85,12 +85,37 @@ it. The procedure does not reorder two bindings neither of which is `IsPure`.
 Advantage X' Y'` (after unfolding the heads of the two sides, such as `AdvantageA` and
 `DDH_Advantage`) from the game equalities `X = X'` and `Y = Y'` (or `X = Y'` and
 `Y = X'`), each closed by unfolding the game definitions at its heads and the definitions
-among the arguments, and `bind_swap_nf [h₁, …]`. It refers to `CatCrypt.Crypto.Advantage` by name and applies
-where that definition is in the environment.
+among the arguments, and `bind_swap_nf [h₁, …]`. It refers to `CatCrypt.Crypto.Advantage`
+by name and applies where that definition is in the environment.
 
-The module registers with `catcrypt_auto` (`CatCryptCore.Tactics.AutoDispatchCore`) the arm
-`advantage_eq_nf` of the shape `advantage equality` and the arm `bind_swap_nf` of the shape
-`SPComp equality`, both at order 5.
+`spec_inline [t₁, …]` proves an `SPComp` equality in which an abstract operation `op a`
+occurs that a hypothesis specifies as a bind chain:
+`h : ∀ xs, P xs → (c₁ >>= fun a => … pure t) = op a`. The goal is normalised by
+`simp only` with the monad laws and the arguments that are not specifications, its
+conditionals are split by `split_ifs`, and in each branch the specifications are turned
+into rewrite rules `op a = chain`: the binders of `h` that are not propositions and occur
+in `op a` stay universally quantified, the others are instantiated by local variables of
+their type; a premise that mentions a quantified binder stays a premise of the rule, the
+others are instantiated by local hypotheses. The rules rewrite the goal by `simp only`
+together with the propositional local hypotheses (such as the case hypothesis of the
+split, which discharges the premises) and the monad laws; then the definitions of the goal
+applied to a constructor (such as a definition by cases applied to `Sum.inr a`) are
+unfolded by their equation lemmas, and each branch is closed by `rfl` or by
+`bind_swap_nf`. The procedure fails without running any tactic when the goal is not an
+`SPComp` equality or no hypothesis or argument has the form of a specification whose
+operation occurs in the goal.
+
+`le_of_eq_nf [t₁, …]` proves `a ≤ b` between two advantages by `le_of_eq` and
+`advantage_eq_nf [t₁, …]`.
+
+The module registers with `catcrypt_auto` (`CatCryptCore.Tactics.AutoDispatchCore`) these
+arms:
+
+| Shape | Arm | Order |
+|---|---|---|
+| `advantage equality` | `advantage_eq_nf` | 5 |
+| `SPComp equality` | `bind_swap_nf`; `spec_inline` | 5; 22 |
+| `distance inequality` | `le_of_eq_nf` | 25 |
 -/
 
 @[expose] public section
@@ -361,7 +386,8 @@ partial def proveLossless (facts : Array Expr) (c : Expr) (depth : Nat) :
     let some h ← proveLossless facts (k.beta #[x]) (depth - 1) | return none
     return some (← mkLambdaFVars #[x] h)
   let some hk := hk? | return none
-  observing? (mkAppOptM `CatCrypt.Unary.lossless_bind #[none, none, some p, some k, some hp, some hk])
+  observing? (mkAppOptM `CatCrypt.Unary.lossless_bind
+    #[none, none, some p, some k, some hp, some hk])
 
 /-- A proof of `SPComp.bind r (fun _ => body) = body`, for `r : SPComp α` and
 `body : SPComp β`, from a discard fact, or from `SPComp.isPure_bind_discard` with the
@@ -1010,9 +1036,198 @@ syntax (name := advantageEqNfStx) "advantage_eq_nf" (" [" term,* "]")? : tactic
 
 end CatCrypt.Tactic.BindSwap
 
+namespace CatCrypt.Tactic.SpecInline
+
+open Lean Meta Elab Tactic
+
+/-- `L` is a bind chain: its head is `SPComp.bind` or `Bind.bind`. -/
+def isChain (L : Expr) : Bool :=
+  L.isAppOf ``CatCrypt.Core.SPComp.bind || L.isAppOf ``Bind.bind
+
+/-- The head of an operation `op a`: a constant, a projection or a local variable, applied,
+when `op a` is not a monad combinator or a sample. -/
+def opHead? (R : Expr) : Option Expr :=
+  let f := R.getAppFn
+  if R.isAppOf ``CatCrypt.Core.SPComp.bind || R.isAppOf ``CatCrypt.Core.SPComp.pure ||
+      R.isAppOf ``Bind.bind || R.isAppOf ``Pure.pure ||
+      R.isAppOf ``CatCrypt.Core.SPComp.sample then none
+  else if f.isConst || f.isProj || f.isFVar then some f
+  else none
+
+/-- `T` (a hypothesis type) has the form `∀ xs, … → L = R` with `L` a bind chain and `R`
+an operation whose head occurs in `goal`. -/
+def specForm (goal T : Expr) : MetaM Bool :=
+  forallTelescopeReducing T fun _ body => do
+    let some (_, L, R) := body.eq? | return false
+    unless isChain L do return false
+    let some hd := opHead? R | return false
+    return (goal.find? (· == hd)).isSome
+
+/-- A local value for the binder type `d`: a local hypothesis when `d` is a proposition,
+an instance by synthesis when `inst`, else a local variable of type `d`; none of `avoid`. -/
+def localValue (d : Expr) (inst : Bool) (avoid : Array Expr) : MetaM (Option Expr) := do
+  if inst then return ← observing? (synthInstance d)
+  for decl in (← getLCtx).decls.toArray.reverse do
+    let some decl := decl | continue
+    if decl.isImplementationDetail || avoid.contains decl.toExpr then continue
+    if ← withReducible (isDefEq decl.type d) then return some decl.toExpr
+  return none
+
+/-- The rewrite rule `∀ ys, R = L` obtained from `t : ∀ xs, … → L = R`: the binders listed
+in `keep` stay universally quantified, the others are instantiated by `localValue`. -/
+partial def buildRule (t T : Expr) (keep : Array Bool) (i : Nat) (kept : Array Expr) :
+    MetaM (Option Expr) := do
+  let T ← whnfR T
+  match T with
+  | .forallE n d b bi =>
+    if keep.getD i false then
+      withLocalDecl n bi d fun x =>
+        buildRule (mkApp t x) (b.instantiate1 x) keep (i + 1) (kept.push x)
+    else
+      let some v ← localValue d bi.isInstImplicit kept | return none
+      buildRule (mkApp t v) (b.instantiate1 v) keep (i + 1) kept
+  | _ =>
+    unless T.isEq do return none
+    let r ← mkLambdaFVars kept (← mkEqSymm t)
+    if (← instantiateMVars r).hasLooseBVars then return none
+    return some r
+
+/-- The rewrite rule of a specification `t : ∀ xs, … → L = R` (see `buildRule`): the
+binders that occur in `R` and are not propositions stay quantified. -/
+def specRule (t : Expr) : MetaM (Option Expr) := do
+  let T ← inferType t
+  let keep ← forallTelescopeReducing T fun xs body => do
+    let some (_, L, R) := body.eq? | return none
+    unless isChain L do return none
+    let some hd := opHead? R | return none
+    if (L.find? (· == hd)).isSome then return none
+    let mut keep : Array Bool := #[]
+    for x in xs do
+      let xty ← inferType x
+      if ← isProp xty then
+        -- a premise stays a premise of the rule when it mentions a quantified binder
+        keep := keep.push ((xs.zip keep).any fun (y, k) => k && (xty.find? (· == y)).isSome)
+      else
+        keep := keep.push (R.find? (· == x)).isSome
+    return some keep
+  let some keep := keep | return none
+  buildRule t T keep 0 #[]
+
+/-- The specifications available in the current context: the arguments and the local
+hypotheses whose type has the form of `specForm` at `goal`. -/
+def specSources (goal : Expr) (extra : Array Expr) : MetaM (Array Expr) := do
+  let mut out := #[]
+  for t in extra do
+    if ← specForm goal (← inferType t) then out := out.push t
+  for h in ← getLocalHyps do
+    let decl ← h.fvarId!.getDecl
+    if decl.isImplementationDetail then continue
+    if ← specForm goal (← instantiateMVars decl.type) then out := out.push h
+  return out
+
+/-- The local hypotheses that discharge the premises of a rule: propositions that are not
+equations, implications or universal statements, such as the case hypotheses of a split. -/
+def atomHyps : MetaM (Array Expr) := do
+  let mut out := #[]
+  for h in ← getLocalHyps do
+    let decl ← h.fvarId!.getDecl
+    if decl.isImplementationDetail then continue
+    let ty ← instantiateMVars decl.type
+    unless ← isProp ty do continue
+    if ty.isForall || ty.isEq || ty.isAppOf ``CatCrypt.Core.SPComp.IsPure then continue
+    out := out.push h
+  return out
+
+/-- The definitions (not theorems, not constructors, not monad combinators) applied in `e`
+to an argument that is a constructor application: their equation lemmas reduce such an
+application by `simp only` (a definition by pattern matching applied to `Sum.inr a`). -/
+def ctorAppliedDefs (e : Expr) : MetaM (Array Name) := do
+  let env ← getEnv
+  let mut out : Array Name := #[]
+  for t in collectApps e #[] do
+    let some f := t.getAppFn.constName? | continue
+    if out.contains f || f.getPrefix == ``CatCrypt.Core.SPComp then continue
+    unless (env.find? f).any (·.isDefinition) do continue
+    if ← t.getAppArgs.anyM fun a => return (← isConstructorApp a) then
+      out := out.push f
+  return out
+where
+  /-- The applications in `e`. -/
+  collectApps (e : Expr) (acc : Array Expr) : Array Expr :=
+    match e with
+    | .app f a => collectApps a (collectApps f (if acc.contains e then acc else acc.push e))
+    | .lam _ d b _ | .forallE _ d b _ => collectApps b (collectApps d acc)
+    | .mdata _ b => collectApps b acc
+    | _ => acc
+
+/-- `spec_inline [t₁, …]` proves an `SPComp` equality by splitting its conditionals,
+inlining the specifications of abstract operations given by hypotheses as bind chains,
+and commuting `IsPure` bindings (see the module docstring). -/
+syntax (name := specInlineStx) "spec_inline" (" [" term,* "]")? : tactic
+
+/-- The elaborator of `spec_inline`. -/
+@[tactic specInlineStx] def evalSpecInline : Tactic := fun stx => do
+  let ts : Array Term := if stx[1].isNone then #[] else stx[1][1].getSepArgs.map (⟨·⟩)
+  let g ← getMainGoal
+  -- the arguments that are not specifications (or do not elaborate alone) are
+  -- normalisation lemmas
+  let (extra, norm) ← g.withContext do
+    let t ← instantiateMVars (← g.getType)
+    unless t.eq?.any (fun (ty, _, _) => ty.isAppOf ``CatCrypt.Core.SPComp) do
+      throwError "spec_inline: the goal is not an SPComp equality"
+    let mut extra : Array Expr := #[]
+    let mut norm : Array Term := #[]
+    for s in ts do
+      let e? ← observing? (Term.withoutErrToSorry (elabTerm s none))
+      match e? with
+      | some e =>
+        if ← specForm t (← inferType e) then extra := extra.push e else norm := norm.push s
+      | none => norm := norm.push s
+    if (← specSources t extra).isEmpty then
+      throwError "spec_inline: no hypothesis specifies an operation of the goal as a chain"
+    return (extra, norm)
+  let laws : Array Term := #[``CatCrypt.Core.SPComp.monad_bind_eq,
+    ``CatCrypt.Core.SPComp.bind_assoc, ``CatCrypt.Core.SPComp.pure_bind].map
+    fun n => ⟨(mkIdent n).raw⟩
+  let simpWith (xs : Array Term) : TacticM Unit := do
+    let lemmas ← xs.mapM fun t => `(Lean.Parser.Tactic.simpLemma| $t:term)
+    evalTactic (← `(tactic| try simp only [$lemmas,*]))
+  simpWith (norm ++ laws)
+  evalTactic (← `(tactic| try split_ifs))
+  for b in ← getGoals do
+    setGoals [b]
+    let (rules, atoms) ← b.withContext do
+      let t ← instantiateMVars (← b.getType)
+      let srcs ← specSources t extra
+      let rs ← srcs.filterMapM fun s => (specRule s : MetaM _)
+      let atoms ← atomHyps
+      return (← rs.mapM fun r => Term.exprToSyntax r,
+        ← atoms.mapM fun a => Term.exprToSyntax a)
+    simpWith (rules ++ atoms ++ norm ++ laws)
+    for b' in ← getGoals do
+      let defs ← b'.withContext do
+        ctorAppliedDefs (← instantiateMVars (← b'.getType))
+      unless defs.isEmpty do
+        simpWith (defs.map (fun n => (⟨(mkIdent n).raw⟩ : Term)) ++ norm ++ laws)
+    evalTactic (← `(tactic| all_goals first | rfl | bind_swap_nf))
+  setGoals []
+
+/-- `le_of_eq_nf [t₁, …]` proves `a ≤ b` between two advantages from the equality
+`a = b`, proved by `advantage_eq_nf [t₁, …]`. -/
+syntax (name := leOfEqNfStx) "le_of_eq_nf" (" [" term,* "]")? : tactic
+
+macro_rules
+  | `(tactic| le_of_eq_nf) => `(tactic| (refine le_of_eq ?_; advantage_eq_nf))
+  | `(tactic| le_of_eq_nf [$ts,*]) =>
+    `(tactic| (refine le_of_eq ?_; advantage_eq_nf [$ts,*]))
+
+end CatCrypt.Tactic.SpecInline
+
 end
 
 /-! ## Arms of `catcrypt_auto` -/
 
 catcrypt_auto_arm "advantage equality" order 5 := "advantage_eq_nf%GRIND"
 catcrypt_auto_arm "SPComp equality" order 5 := "bind_swap_nf%GRIND"
+catcrypt_auto_arm "SPComp equality" order 22 := "spec_inline%GRIND"
+catcrypt_auto_arm "distance inequality" order 25 le_only := "le_of_eq_nf%GRIND"

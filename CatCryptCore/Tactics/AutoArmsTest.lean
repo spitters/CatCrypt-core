@@ -23,7 +23,10 @@ proofs over `sdist`, `Advantage` and `AdvantageA`, registered in
 distances registered with `@[hop_metric]` at their definition sites: `UCMonad.ucCdist`,
 `KA_Advantage` and the KEM and PKE `indcpaAdvantage`. The last part tests `hop_chain!`
 on a bound defined as a sum and on endpoints that agree after unfolding, and
-`bool_cases`.
+`bool_cases`. The final part tests `ord_residual` on ordered-semiring residuals in `ℝ≥0∞`,
+`ℝ` and `ℕ`, directly and through `catcrypt_auto` (including a goal beside an equation
+whose right side contains its left side, which the arm `simp_all` clears), and its two
+failures: a goal outside its shape and a false bound that exhausts the depth.
 -/
 
 set_option autoImplicit false
@@ -297,5 +300,35 @@ example (a b c d e : Bool) : (a && b && c && d && e) = (e && d && c && b && a) :
 example (n : ℕ) : n + 0 = n := by
   fail_if_success bool_cases
   rfl
+
+/-! ## `ord_residual` -/
+
+example (x S : ℝ≥0∞) (h : x ≤ 1) : x * S ≤ S := by ord_residual
+example (b S : ℝ≥0∞) (h : S ≤ 1) : b * S ≤ b := by ord_residual
+example (p e : ℝ≥0∞) (t n : ℕ) (ht : 1 ≤ t) (hn : 1 ≤ n) :
+    p + e ≤ t * p + n * e := by ord_residual
+example (x S : ℝ) (h : x ≤ 1) (h0 : 0 ≤ S) : x * S ≤ S := by ord_residual
+example (a n : ℕ) (h : 1 ≤ n) : a ≤ n * a := by ord_residual
+example (R b c S : ℝ≥0∞) (h1 : R ≤ b) (h2 : c ≤ 1) : R + c * S ≤ b + S := by
+  ord_residual
+
+example (x S : ℝ≥0∞) (h : x ≤ 1) : x * S ≤ S := by catcrypt_auto
+example (p e : ℝ≥0∞) (t n : ℕ) (ht : 1 ≤ t) (hn : 1 ≤ n) :
+    p + e ≤ t * p + n * e := by catcrypt_auto
+/-- The looping equation `_hQ` stays in the context; `catcrypt_auto` must not hand it to
+`simp_all` unguarded. -/
+example (S c b : ℝ≥0∞) (_hQ : S = c * S + b * S) (_h : c ≤ 1) (hS : S ≤ 1) :
+    b * S ≤ b := by catcrypt_auto
+
+/-- error: ord_residual: the goal is not `_ ≤ _` over an ordered semiring -/
+#guard_msgs in
+example (a b : ℕ) : a = b := by ord_residual
+
+/--
+error: ord_residual: no step closes
+  x * S ≤ S
+-/
+#guard_msgs in
+example (x S : ℝ≥0∞) : x * S ≤ S := by ord_residual
 
 end CatCrypt.Tactics.AutoArmsTest

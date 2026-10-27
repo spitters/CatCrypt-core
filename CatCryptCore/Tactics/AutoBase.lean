@@ -55,10 +55,15 @@ attribute is absent from the environment fails and the next arm runs:
 | `IsPure/NoFail side condition` | `solve_by_elim` over the `IsPure` combinators of `pure`, `sample`, `fail` and `SPComp.bind` | 90 |
 | `IsPure/NoFail side condition` | `solve_by_elim` over the `NoFail` combinators of `pure`, `sample` and `SPComp.bind` | 91 |
 | `heap read after write` | `grind [Heap.get_set_same, Heap.get_set_other, …]` | 10 |
-| `monotonicity inequality` | `simp_all`; `grind` | 50; 60 |
-| `other` | `simp_all`; `grind` | 20; 30 |
+| `monotonicity inequality` | `simp_all` (see below); `grind` | 50; 60 |
+| `other` | `simp_all` (see below); `grind` | 20; 30 |
 | `premises` | `solve_by_elim [p₁, …]` | 10 |
 | `premises` | the forms of `AutoDispatch.PremiseForms.closeWith`, after the arms | — |
+
+The arm `simp_all` runs after `clear` of the `set` equations of the goal and of the
+equations `l = r` whose right side contains their left side (`AutoDispatch.simpAllText`).
+The ordered-semiring arm `ord_residual` (orders 45 at `distance inequality` and
+`monotonicity inequality`, 15 at `other`) is registered in `CatCryptCore.Tactics.AutoArms`.
 -/
 
 public section

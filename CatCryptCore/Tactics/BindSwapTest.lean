@@ -7,9 +7,10 @@ module
 
 public import CatCryptCore.Tactics.BindSwap
 public meta import CatCryptCore.Tactics.BindSwap
+public import CatCryptCore.Crypto.Advantage
 
 /-!
-# Tests for `bind_swap_nf`
+# Tests for `bind_swap_nf`, `bij_cov`, `spec_inline` and `le_of_eq_nf`
 
 Equalities of `SPComp` bind chains over abstract computations that differ by the order of
 independent bindings: an `IsPure` computation exchanged with an arbitrary one, a
@@ -21,6 +22,10 @@ fact (a field, or an argument) on adjacent and on separated key pairs, and a per
 equation applied to the leaves. Definitions with an implicit type parameter and instance
 arguments given as arguments and unfolded by name, and a sample of a product type aligned
 with the samples of its components.
+
+`bij_cov` (of `CatCryptCore.Tactics.BindVcgen`), `spec_inline` and `le_of_eq_nf` close
+goals over the definitions of this file, directly and through `catcrypt_auto`, and fail on
+a goal outside their shape (`fail_if_success`).
 -/
 
 set_option autoImplicit false
@@ -181,5 +186,238 @@ example {W : Type} [Fintype W] [Nonempty W] (A : W → W → SPComp Bool) :
     (do let ⟨a, b⟩ ← SPComp.sample (W × W); A a b : SPComp Bool) =
       (SPComp.sample W).bind fun b => (SPComp.sample W).bind fun a => A a b := by
   bind_swap_nf
+
+@[expose] public section
+
+/-! ## Change of variables through a bijection -/
+
+/-- A family of bijections from keys to outputs, indexed by inputs. -/
+structure BijFam where
+  /-- Keys. -/
+  K : Type
+  /-- Inputs. -/
+  I : Type
+  /-- Outputs. -/
+  O : Type
+  [fK : Fintype K]
+  [nK : Nonempty K]
+  [fO : Fintype O]
+  [nO : Nonempty O]
+  /-- The bijection of each input. -/
+  bij : I → (K ≃ O)
+
+attribute [instance] BijFam.fK BijFam.nK BijFam.fO BijFam.nO
+
+example (B : BijFam) (x : B.I) :
+    (SPComp.sample B.K).bind (fun k => SPComp.pure (B.bij x k)) = SPComp.sample B.O := by
+  bij_cov
+
+example (B : BijFam) (x : B.I) :
+    (SPComp.sample B.K).bind (fun k => SPComp.pure (B.bij x k)) = SPComp.sample B.O := by
+  catcrypt_auto
+
+example {K O : Type} [Fintype K] [Nonempty K] [Fintype O] [Nonempty O] (f : K → O)
+    (hf : Function.Bijective f) (c : SPComp Bool) (g : Bool → O → SPComp ℕ) :
+    c.bind (fun b => (SPComp.sample K).bind (fun k => g b (f k))) =
+    c.bind (fun b => (SPComp.sample O).bind (fun o => g b o)) := by
+  bij_cov
+
+example (c : SPComp Bool) : c.bind (fun b => SPComp.pure b) = c := by
+  fail_if_success bij_cov
+  simp
+
+/-! ## Inlining a specification of an abstract operation -/
+
+/-- A three-move protocol with a simulator, over abstract operations. -/
+structure Proto where
+  /-- Statements. -/
+  St : Type
+  /-- Witnesses. -/
+  Wi : Type
+  /-- First messages. -/
+  Msg : Type
+  /-- Challenges. -/
+  Ch : Type
+  /-- Responses. -/
+  Rsp : Type
+  [fCh : Fintype Ch]
+  [nCh : Nonempty Ch]
+  /-- The relation. -/
+  rel : St → Wi → Prop
+  [dec : ∀ x w, Decidable (rel x w)]
+  /-- The first message. -/
+  commit : St → Wi → SPComp Msg
+  /-- The response. -/
+  respond : St → Wi → Msg → Ch → SPComp Rsp
+  /-- The simulator of a transcript with a given challenge. -/
+  simulate : St → Ch → SPComp (Msg × Rsp)
+
+attribute [instance] Proto.fCh Proto.nCh Proto.dec
+
+/-- The honest transcript, or `none` outside the relation. -/
+noncomputable def pReal (sp : Proto) :
+    sp.St × sp.Wi → SPComp (Option (sp.Msg × sp.Ch × sp.Rsp)) :=
+  fun ⟨x, w⟩ =>
+    if sp.rel x w then do
+      let a ← sp.commit x w
+      let e ← SPComp.sample sp.Ch
+      let z ← sp.respond x w a e
+      SPComp.pure (some (a, e, z))
+    else SPComp.pure none
+
+/-- The simulated transcript, or `none` outside the relation. -/
+noncomputable def pIdeal (sp : Proto) :
+    sp.St × sp.Wi → SPComp (Option (sp.Msg × sp.Ch × sp.Rsp)) :=
+  fun ⟨x, w⟩ =>
+    if sp.rel x w then do
+      let e ← SPComp.sample sp.Ch
+      let (a, z) ← sp.simulate x e
+      SPComp.pure (some (a, e, z))
+    else SPComp.pure none
+
+example (sp : Proto)
+    (hzk : ∀ x w e, sp.rel x w →
+      (do let a ← sp.commit x w; let z ← sp.respond x w a e; SPComp.pure (a, z)) =
+        sp.simulate x e)
+    (x : sp.St) (w : sp.Wi) :
+    pReal sp (x, w) = pIdeal sp (x, w) := by
+  unfold pReal pIdeal
+  spec_inline
+
+example (sp : Proto)
+    (hzk : ∀ x w e, sp.rel x w →
+      (do let a ← sp.commit x w; let z ← sp.respond x w a e; SPComp.pure (a, z)) =
+        sp.simulate x e)
+    (x : sp.St) (w : sp.Wi) :
+    pReal sp (x, w) = pIdeal sp (x, w) := by
+  unfold pReal pIdeal
+  catcrypt_auto
+
+example {C D N : Type} [Fintype C] [Nonempty C] [Fintype D] [Nonempty D]
+    (mk : N → SPComp (N × C)) (g : D → N)
+    (h : ∀ n, (SPComp.sample C).bind (fun c => SPComp.pure (n, c)) = mk n) :
+    (SPComp.sample D).bind (fun d => mk (g d)) =
+    (SPComp.sample C).bind (fun c => (SPComp.sample D).bind fun d => SPComp.pure (g d, c)) := by
+  spec_inline
+
+example (c : SPComp Bool) : c.bind (fun b => SPComp.pure b) = c := by
+  fail_if_success spec_inline
+  simp
+
+/-- The continuation that runs `f` on a right injection and passes a left one through. -/
+noncomputable def mapS {α β : Type} (f : α → SPComp β) : Unit ⊕ α → SPComp (Unit ⊕ β)
+  | .inl u => SPComp.pure (.inl u)
+  | .inr a => (f a).bind fun b => SPComp.pure (.inr b)
+
+/-- Unfolding lemma of `mapS` at a left injection. -/
+theorem mapS_inl {α β : Type} (f : α → SPComp β) (u : Unit) :
+    mapS f (.inl u) = SPComp.pure (.inl u) := rfl
+
+/-- Unfolding lemma of `mapS` at a right injection. -/
+theorem mapS_inr {α β : Type} (f : α → SPComp β) (a : α) :
+    mapS f (.inr a) = (f a).bind fun b => SPComp.pure (.inr b) := rfl
+
+/-- The honest transcript as a right injection, or a left one outside the relation. -/
+noncomputable def pRealS (sp : Proto) :
+    sp.St × sp.Wi → SPComp (Unit ⊕ (sp.Msg × sp.Ch × sp.Rsp)) :=
+  fun ⟨x, w⟩ =>
+    if sp.rel x w then do
+      let a ← sp.commit x w
+      let e ← SPComp.sample sp.Ch
+      let z ← sp.respond x w a e
+      SPComp.pure (.inr (a, e, z))
+    else SPComp.pure (.inl ())
+
+/-- The statement as a right injection, or a left one outside the relation. -/
+noncomputable def pIdealS (sp : Proto) : sp.St × sp.Wi → SPComp (Unit ⊕ sp.St) :=
+  fun ⟨x, w⟩ => if sp.rel x w then SPComp.pure (.inr x) else SPComp.pure (.inl ())
+
+/-- The simulator: a simulated transcript passed to `A`. -/
+noncomputable def pSim (sp : Proto) {V : Type} (A : sp.Msg × sp.Ch × sp.Rsp → SPComp V) :
+    sp.St → SPComp V := fun x => do
+  let e ← SPComp.sample sp.Ch
+  let (a, z) ← sp.simulate x e
+  A (a, e, z)
+
+example (sp : Proto)
+    (hzk : ∀ x w e, sp.rel x w →
+      (do let a ← sp.commit x w; let z ← sp.respond x w a e; SPComp.pure (a, z)) =
+        sp.simulate x e)
+    (x : sp.St) (w : sp.Wi) (V : Type) (A : sp.Msg × sp.Ch × sp.Rsp → SPComp V) :
+    (pRealS sp (x, w)).bind (mapS A) = (pIdealS sp (x, w)).bind (mapS (pSim sp A)) := by
+  unfold pRealS pIdealS pSim
+  spec_inline [mapS_inl, mapS_inr]
+
+example (sp : Proto)
+    (hzk : ∀ x w e, sp.rel x w →
+      (do let a ← sp.commit x w; let z ← sp.respond x w a e; SPComp.pure (a, z)) =
+        sp.simulate x e)
+    (x : sp.St) (w : sp.Wi) (V : Type) (A : sp.Msg × sp.Ch × sp.Rsp → SPComp V) :
+    (pRealS sp (x, w)).bind (mapS A) = (pIdealS sp (x, w)).bind (mapS (pSim sp A)) := by
+  unfold pRealS pIdealS pSim
+  catcrypt_auto
+
+/-! ## An advantage bound between equal games -/
+
+section Advantage
+
+open CatCrypt.Crypto
+
+/-- Two operations, the first of them heap-independent, and a deterministic combiner. -/
+structure TwoOps where
+  /-- First results. -/
+  P : Type
+  /-- Second results. -/
+  C : Type
+  /-- Outputs. -/
+  S : Type
+  [fC : Fintype C]
+  [nC : Nonempty C]
+  /-- The first operation. -/
+  op₁ : SPComp P
+  /-- The first operation does not touch the heap. -/
+  op₁_isPure : SPComp.IsPure op₁
+  /-- The second operation. -/
+  op₂ : SPComp C
+  /-- The combiner. -/
+  core : P → C → S
+
+attribute [instance] TwoOps.fC TwoOps.nC
+
+/-- Both operations run. -/
+noncomputable def gReal (c : TwoOps) : SPComp c.S :=
+  c.op₁.bind fun p => c.op₂.bind fun q => SPComp.pure (c.core p q)
+
+/-- The second operation replaced by a uniform sample. -/
+noncomputable def gHyb (c : TwoOps) : SPComp c.S :=
+  c.op₁.bind fun p => (SPComp.sample c.C).bind fun q => SPComp.pure (c.core p q)
+
+/-- The advantage of `A` against the second operation. -/
+noncomputable def advOp₂ (c : TwoOps) (A : c.C → SPComp Bool) : ENNReal :=
+  AdvantageA c.op₂ (SPComp.sample c.C) A
+
+/-- The reduction: run the first operation and the distinguisher on the combination. -/
+noncomputable def redOp₂ (c : TwoOps) (D : c.S → SPComp Bool) : c.C → SPComp Bool :=
+  fun q => c.op₁.bind fun p => D (c.core p q)
+
+example (c : TwoOps) (D : c.S → SPComp Bool) :
+    AdvantageA (gReal c) (gHyb c) D ≤ advOp₂ c (redOp₂ c D) := by
+  le_of_eq_nf
+
+example (c : TwoOps) (D : c.S → SPComp Bool) :
+    AdvantageA (gReal c) (gHyb c) D ≤ advOp₂ c (redOp₂ c D) := by
+  catcrypt_auto
+
+example (c : TwoOps) (D : c.S → SPComp Bool) :
+    AdvantageA (gHyb c) (gReal c) D ≤ advOp₂ c (redOp₂ c D) := by
+  le_of_eq_nf
+
+example (a b : ENNReal) (h : a ≤ b) : a ≤ b := by
+  fail_if_success le_of_eq_nf
+  exact h
+
+end Advantage
+
+end
 
 end CatCrypt.Tactic.BindSwapTest

@@ -557,12 +557,24 @@ def setEqHyps (g : MVarId) : MetaM (Array Name) := g.withContext do
     if (← isSetEq a b) || (← isSetEq b a) then out := out.push d.userName
   return out
 
+/-- The names of the local hypotheses `h : l = r` of the goal `g` whose right side `r`
+contains the left side `l`. Hypotheses with inaccessible names are left out. -/
+def loopEqHyps (g : MVarId) : MetaM (Array Name) := g.withContext do
+  let mut out := #[]
+  for d in ← getLCtx do
+    if d.isImplementationDetail || d.userName.hasMacroScopes then continue
+    let some (_, l, r) := (← instantiateMVars d.type).eq? | continue
+    if l != r && (r.find? (· == l)).isSome then out := out.push d.userName
+  return out
+
 /-- The `simp_all` arm with the lemma arguments `xs`, run after `clear` of the
-`set` equations `hs`. Rule: `simp_all` runs without the equations of `set`. Such an
-equation `x = e` rewrites the local definition `x` back into `e`; beside a
-hypothesis that states a subterm of `e` in terms of `x` the two rewrite into each
-other until the maximum recursion depth. The local definition `x` keeps its value
-after the `clear`. -/
+equations `hs`: the `set` equations (`setEqHyps`) and the equations whose right side
+contains their left side (`loopEqHyps`). Rule: `simp_all` runs without these
+equations. A `set` equation `x = e` rewrites the local definition `x` back into `e`;
+beside a hypothesis that states a subterm of `e` in terms of `x` the two rewrite into
+each other until the maximum recursion depth. The local definition `x` keeps its value
+after the `clear`. An equation `l = r` with `l` occurring in `r` rewrites `l` to a term
+that contains `l` again, until the maximum recursion depth. -/
 def simpAllText (hs : Array Name) (xs : Array String) : String :=
   let xs := xs.filter fun x => !hs.any (·.toString == x)
   let tac := s!"simp_all{listText xs}"
@@ -695,7 +707,7 @@ def mkArm (a : ArmSpec) (g : MVarId) (c : ArgClasses) (hb : Nat) (simpAll : Stri
 `withTerms` is set, each term of `c.terms` contributes the arms of `"*"` first. -/
 def arms (sh : String) (g : MVarId) (c : ArgClasses) (hb : Nat) (withTerms : Bool) :
     TacticM (Array Arm) := do
-  let simpAll := simpAllText (← setEqHyps g) c.simp
+  let simpAll := simpAllText ((← setEqHyps g) ++ (← loopEqHyps g)) c.simp
   let mut out : Array Arm := #[]
   if withTerms then
     let stars ← armSpecs "*"

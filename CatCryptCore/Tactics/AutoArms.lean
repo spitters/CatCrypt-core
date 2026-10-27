@@ -17,7 +17,7 @@ public meta import CatCryptCore.Tactics.AutoDispatchCore
 /-!
 # Hop chains over registered pseudometrics, sums of atoms, and monotonicity
 
-This module provides seven procedures.
+This module provides eight procedures.
 
 * `hop_chain [facts]` proves `d x y ≤ e` for a distance `d` registered with the
   attribute `@[hop_metric]`. It collects hop facts `d u v ≤ b` (and `d u v = b`) from the
@@ -53,6 +53,19 @@ This module provides seven procedures.
   definition from the workspace that is applied to more arguments than its declared
   binders (an operation on the representation of the program type, such as
   `SPComp.bind c f h`).
+* `ord_residual` proves a goal `a ≤ b` over a type with `Semiring` and `PartialOrder`
+  instances (`ℝ≥0∞`, `ℝ`, `ℕ`, …) by a depth-bounded monotonicity search. At each goal it
+  tries, in order: the leaf closers `assumption`, `exact le_rfl`, `assumption_mod_cast`
+  and, on a goal `0 ≤ x`, `positivity`; the factor bounds `c * a ≤ a`, `a * c ≤ a` from
+  `c ≤ 1` (`mul_le_of_le_one_left`, `mul_le_of_le_one_right`), `a ≤ c * a`, `a ≤ a * c`
+  from `1 ≤ c` (`le_mul_of_one_le_left`, `le_mul_of_one_le_right`), `a * c ≤ 1` from
+  `a ≤ 1` and `c ≤ 1` (`mul_le_one₀`), and `a ≤ b + c`, `a ≤ c + b` from `a ≤ b` and
+  `0 ≤ c` (`le_add_of_le_of_nonneg`, `le_add_of_nonneg_of_le`), each applied at instance
+  transparency with every new goal solved recursively; then `gcongr`, its side goals
+  discharged by its own discharger, each main goal it leaves solved recursively. The
+  search has depth `n` for `ord_residual n` and 3 for `ord_residual`. A goal that is not
+  `_ ≤ _` over a type with both instances fails at once, before any tactic runs. A factor
+  lemma absent from the environment is skipped.
 
 The attribute `@[hop_metric]` and the distance views are in
 `CatCryptCore.Tactics.AutoHopRegistry`. No distance is built into the procedures; the
@@ -73,6 +86,8 @@ arms:
 | `SPComp equality`, `heap read after write` | `hyp_unfold`, then `grind` or `simp_all` | 30 |
 | `other` | `hyp_unfold`, then `grind` or `simp_all` | 35 |
 | `SPComp equality`; `other` | `funext_unfold`, then `rfl`, `grind` or `simp_all` | 15; 36 |
+| `distance inequality`; `monotonicity inequality` | `ord_residual` | 45; 45 |
+| `other` | `ord_residual` | 15 |
 -/
 
 @[expose] public section
@@ -287,7 +302,8 @@ def sumAtomsLe (g : MVarId) : TacticM Unit := g.withContext do
     let (ok, _, mr) := augment adj u (Array.replicate rUnits.size false) matchR
     unless ok do
       throwError "sum_atoms_le: the atom{indentExpr lUnits[u]!}\noccurs more often on the \
-        left than it is bounded on the right (by itself or by a hypothesis `a ≤ b`) in{indentExpr ty}"
+        left than it is bounded on the right (by itself or by a hypothesis `a ≤ b`) \
+        in{indentExpr ty}"
     matchR := mr
   let mut matchL : Array Nat := Array.replicate lUnits.size 0
   for r in [0:rUnits.size] do
@@ -864,6 +880,103 @@ syntax (name := funextUnfoldStx) "funext_unfold" : tactic
       g.replaceTargetDefEq t'
   replaceMainGoal [g]
 
+/-! ## Ordered-semiring residuals -/
+
+/-- The search depth of `ord_residual` without a depth argument. -/
+def ordResidualDepth : Nat := 3
+
+/-- The factor and summand bounds that `ord_residual` applies, in order. -/
+def factorLemmas : List Name :=
+  [``mul_le_of_le_one_left, ``mul_le_of_le_one_right, ``le_mul_of_one_le_left,
+    ``le_mul_of_one_le_right, ``mul_le_one₀, ``le_add_of_le_of_nonneg,
+    ``le_add_of_nonneg_of_le]
+
+/-- The type `α` of a goal `a ≤ b` (read after `whnfR`) when `α` has `Semiring` and
+`PartialOrder` instances. -/
+def orderedType? (t : Expr) : MetaM (Option Expr) := do
+  let t ← whnfR (← instantiateMVars t)
+  unless t.isAppOfArity ``LE.le 4 do return none
+  let α := t.getArg! 0
+  let u ← getLevel α
+  let some u' := u.dec | return none
+  let some _ ← synthInstance? (mkApp (mkConst ``Semiring [u']) α) | return none
+  let some _ ← synthInstance? (mkApp (mkConst ``PartialOrder [u']) α) | return none
+  return some α
+
+/-- `e` is the numeral `0`, `OfNat.ofNat _ 0 _`, or `Zero.zero`. -/
+def isZeroLit (e : Expr) : Bool :=
+  (e.isAppOfArity ``OfNat.ofNat 3 && (e.getArg! 1).rawNatLit? == some 0) ||
+    e.isAppOfArity ``Zero.zero 2
+
+/-- `g` is closed by one of the leaf closers of `ord_residual`. -/
+def closeLeaf (g : MVarId) : TacticM Bool := do
+  let t ← whnfR (← instantiateMVars (← g.getType))
+  let nonneg := t.isAppOfArity ``LE.le 4 && isZeroLit (t.getArg! 2)
+  let pos ← `(tactic| positivity)
+  let tacs : List (TSyntax `tactic) :=
+    [← `(tactic| assumption), ← `(tactic| exact le_rfl), ← `(tactic| assumption_mod_cast)] ++
+      (if nonneg then [pos] else [])
+  for tac in tacs do
+    let s ← saveState
+    try
+      setGoals [g]
+      evalTactic tac
+      if (← getUnsolvedGoals).isEmpty then return true
+      s.restore
+    catch _ => s.restore
+  return false
+
+mutual
+
+/-- Solve `g` by the search of `ord_residual` at depth `fuel`, or throw. -/
+partial def solve (fuel : Nat) (g : MVarId) : TacticM Unit := do
+  if ← g.isAssigned then return
+  if ← closeLeaf g then return
+  if fuel == 0 then throwError "ord_residual: depth exhausted"
+  let env ← getEnv
+  for n in factorLemmas do
+    unless env.contains n do continue
+    let s ← saveState
+    try
+      let gs ← withTransparency .instances <|
+        g.apply (← mkConstWithFreshMVarLevels n) { synthAssignedInstances := false }
+      solveAll (fuel - 1) gs
+      return
+    catch _ => s.restore
+  let s ← saveState
+  try
+    setGoals [g]
+    evalTactic (← `(tactic| gcongr))
+    let gs ← getUnsolvedGoals
+    solveAll (fuel - 1) gs
+    return
+  catch _ => s.restore
+  throwError "ord_residual: no step closes{indentExpr (← g.getType)}"
+
+/-- Solve each of `gs` by `solve fuel`, or throw. -/
+partial def solveAll (fuel : Nat) (gs : List MVarId) : TacticM Unit := do
+  for g' in gs do solve fuel g'
+
+end
+
+/-- `ord_residual` proves `a ≤ b` over an ordered semiring by the monotonicity search
+described in the module docstring, to depth `n` (`ord_residual n`) or 3. It fails at once
+on a goal that is not `_ ≤ _` over a type with `Semiring` and `PartialOrder` instances. -/
+syntax (name := ordResidualStx) "ord_residual" (ppSpace num)? : tactic
+
+/-- The elaborator of `ord_residual`. -/
+@[tactic ordResidualStx] def evalOrdResidual : Tactic := fun stx => do
+  let depth := match stx[1].getOptional? with
+    | some n => n.isNatLit?.getD ordResidualDepth
+    | none => ordResidualDepth
+  let g ← getMainGoal
+  let rest := (← getGoals).drop 1
+  g.withContext do
+    if (← orderedType? (← g.getType)).isNone then
+      throwError "ord_residual: the goal is not `_ ≤ _` over an ordered semiring"
+    solve depth g
+  setGoals rest
+
 end CatCrypt.Tactics.AutoArms
 
 end
@@ -889,3 +1002,6 @@ catcrypt_auto_arm "SPComp equality" order 30 := "(hyp_unfold; first | grind%GRIN
 catcrypt_auto_arm "SPComp equality" order 15 :=
   "(funext_unfold; first | rfl | grind%GRIND | %SIMP_ALL)"
 catcrypt_auto_arm "other" order 36 := "(funext_unfold; first | rfl | grind%GRIND | %SIMP_ALL)"
+catcrypt_auto_arm "distance inequality" order 45 := "ord_residual"
+catcrypt_auto_arm "monotonicity inequality" order 45 := "ord_residual"
+catcrypt_auto_arm "other" order 15 := "ord_residual"
