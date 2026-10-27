@@ -129,6 +129,8 @@ public import CatCryptCore.Tactics.VC
 public import CatCryptCore.Tactics.StdCosts
 public import CatCryptCore.Tactics.StdCostsPoly
 public import CatCryptCore.Tactics.DeriveTimedStructure
+public import CatCryptCore.Tactics.GroupExpNF
+public import CatCryptCore.Tactics.GroupExpNFTest
 
 -- Crypto foundation
 public import CatCryptCore.Crypto.Game
