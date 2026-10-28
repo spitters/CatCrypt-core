@@ -665,7 +665,10 @@ partial def proofConstsGo (env : Environment) (pre : Name) :
   | [], _, out => out
   | c :: cs, seen, out =>
     if seen.contains c then proofConstsGo env pre cs seen out
-    else if pre.isPrefixOf c then
+    -- In a `module` the arm's auxiliary proofs, and the declaration name itself, may be
+    -- private (`_private.<module>.0.<decl>._repairAction._proof_4`) independently of each
+    -- other, so the prefix is tested on the user-facing names of both.
+    else if (privateToUserName pre).isPrefixOf (privateToUserName c) then
       let more := ((env.find? c).map constsOf).getD #[]
       proofConstsGo env pre (more.toList ++ cs) (seen.insert c) out
     else proofConstsGo env pre cs (seen.insert c) (out.push c)
@@ -743,7 +746,8 @@ def unavailableConst? (declName? : Option Name) (type val : Expr) : MetaM (Optio
   for c in cs do
     if declName? == some c then return some c
     if inGoal.contains c || (env.getModuleIdxFor? c).isSome then continue
-    if declName?.any (·.isPrefixOf c) then return some c
+    if declName?.any (fun d => (privateToUserName d).isPrefixOf (privateToUserName c)) then
+      return some c
     match bound?, ← declStart? c with
     | some s, some p => if atOrAfter p s then return some c
     | _, _ => return some c
