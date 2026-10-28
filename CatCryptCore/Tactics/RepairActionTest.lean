@@ -38,6 +38,12 @@ The probes of this file, each over fresh definitions:
   (`A final`, `A open`), and optionally a reason and the title.
 * `repair_range_probe` elaborates a declaration and checks the edit range
   (`RepairAction.editSpan`) at one of its leaves.
+* `repair_action_probe` elaborates a declaration, lists the code actions of the provider
+  (`RepairAction.actionsAt`) at the first occurrence of a text in it, and checks the title of
+  one action and its text edit, or that it has the field `edit` and no text edit.
+* `repair_resolve_probe` lists the code actions at a range, or at a cursor, resolves them as
+  lean-lsp-mcp and VS Code do (only an action without the field `edit`) by the steps of Lean's
+  `handleCodeActionResolve`, and counts the arms run (`RepairAction.armRuns`).
 
 The file sets `repairAction.suggestionIndex` to false, so that the suggestion arms use the
 theorems of this file and no index of the imported theorems is built, except in its last
@@ -76,6 +82,15 @@ The probes and their outcomes:
   premise) final, with the title `[head …Holds, shape repair holds, final: grind;
   catcrypt_auto?]`; on the same goal with `catcrypt_auto.totalMillis` 1, not final, since a
   budget ran out.
+* resolution, on `quad n = 4 * n` at the failing leaf `skip`: four arms in all, both when
+  listed with a range (the failing action carries the empty edit and is not resolved) and at
+  a cursor (no arm when listed, four when resolved); no unsolved-goals action at `skip`.
+* unsolved goals: `refine ⟨?_, trivial⟩` leaving `a < a + 1`, closed by `grind` on a new line;
+  `constructor` leaving `a < a + 1` and `triple n = 3 * n`, closed by `grind` and
+  `grind [triple]` in two bullets (title `[unsolved 2, head LT.lt]`); `intro n` leaving
+  `quad n = 4 * n`, closed by no arm (title `[unsolved 1, head Eq, final: grind]`, no text
+  edit); a request at the `by` token of a block ending in `intro h`; `refine ⟨?_, ?_⟩` in a
+  nested bullet, two bullets at the column of that bullet's block.
 * caps: `False` from `∀ n, 2 * sumTo n = n * n`: no arm, within 7000 ms in all, with the
   title `[head False, shape other, final: grind]`.
 * index, last in the file: `grind? +suggestions` on `Holds n` waits for the build of the
@@ -301,6 +316,121 @@ def elabLayoutProbe : CommandElab := fun stx => do
   let got ← liftTermElabM (layoutAt text col)
   unless got == expected do
     throwError "repair_layout_probe: the layout is{indentD got}\nexpected{indentD expected}"
+
+/-- The document of the actions of the probes. -/
+def probeDoc : Lsp.VersionedTextDocumentIdentifier :=
+  { uri := "file:///probe.lean", version? := none }
+
+/-- Elaborates `cmd`, dropping its messages, and returns its info tree, the line of its start
+and the source range of the first occurrence of `sel` in it. -/
+def elabForActions (cmd : Syntax) (sel : String) :
+    CommandElabM (InfoTree × Nat × Syntax.Range) := do
+  let msgs := (← get).messages
+  let n := (← getInfoTrees).size
+  elabCommand cmd
+  modify fun s => { s with messages := msgs }
+  let some t := (← getInfoTrees).toArray[n]? | throwError "repair probe: no info tree"
+  let text ← getFileMap
+  let some r := cmd.getRange? | throwError "repair probe: no source range"
+  let body := String.Pos.Raw.extract text.source r.start r.stop
+  let parts := body.splitOn sel
+  unless parts.length > 1 do throwError "repair probe: {sel} is not in the command"
+  let lo : String.Pos.Raw := ⟨r.start.byteIdx + (parts.headD "").utf8ByteSize⟩
+  return (t, (text.toPosition r.start).line, ⟨lo, ⟨lo.byteIdx + sel.utf8ByteSize⟩⟩)
+
+/-- The line `N` of a title `Repair line N…` and the rest of the title. -/
+def titleLine (title : String) : Option (Nat × String) := do
+  unless title.startsWith "Repair line " do none
+  let rest := (title.drop 12).toString
+  let digits := (rest.takeWhile Char.isDigit).toString
+  return (← digits.toNat?, (rest.drop digits.length).toString)
+
+/-- `title` with the line `N` of `Repair line N` written `+k`, where `k = N - base`. -/
+def relativeTitle (title : String) (base : Nat) : String :=
+  match titleLine title with
+  | some (n, rest) => s!"Repair line +{n - base}{rest}"
+  | none => title
+
+/-- The text edits of the action `a`, read from its JSON as lean-lsp-mcp reads them (the edits
+of each element of `documentChanges`); `none` when the JSON has no field `edit`. -/
+def jsonEdits (a : Lsp.CodeAction) : Option (Array Lsp.TextEdit) := do
+  let e ← ((toJson a).getObjVal? "edit").toOption
+  let dcs := ((e.getObjVal? "documentChanges").toOption.bind (·.getArr?.toOption)).getD #[]
+  return dcs.flatMap fun dc =>
+    (((dc.getObjVal? "edits").toOption.bind (·.getArr?.toOption)).getD #[]).filterMap
+      fun te => (fromJson? te).toOption
+
+/-- `repair_action_probe "s" titled "t" ↦ "e" in cmd` elaborates `cmd`, dropping its messages,
+lists the code actions of the provider (`actionsAt`, the arms run at once) for the range of
+the first occurrence of `s` in `cmd`, and requires an action whose title, with its line
+written `+k` for the `k`-th line after the first line of `cmd`, starts with `t`. With `↦ "e"`
+that action has one text edit, which starts on the line of its title and has the text `e`;
+with `↦ none` its JSON has the field `edit` and it has no text edit. -/
+syntax (name := actionProbe)
+  "repair_action_probe " str " titled " str " ↦ " (str <|> &"none") " in " command : command
+
+@[command_elab actionProbe, inherit_doc actionProbe]
+def elabActionProbe : CommandElab := fun stx => do
+  let sel := stx[1].isStrLit?.getD ""
+  let expected := stx[3].isStrLit?.getD ""
+  let edit? := stx[5].isStrLit?
+  let (t, base, r) ← elabForActions stx[7] sel
+  let text ← getFileMap
+  let actions ← actionsAt probeDoc text t r.start r.stop true
+  let titles := actions.map (relativeTitle ·.eager.title base)
+  let some (a, title) := (actions.zip titles).find? (·.2.startsWith expected)
+    | throwError "repair_action_probe: no title starts with {expected}; the titles are\
+        {indentD (MessageData.joinSep (titles.map toMessageData).toList "\n")}"
+  let a := a.eager
+  logInfo m!"{title}"
+  match jsonEdits a, edit? with
+  | none, _ => throwError "repair_action_probe: the action has no field edit"
+  | some es, none =>
+    unless es.isEmpty do throwError "repair_action_probe: the action has {es.size} text edits"
+  | some es, some e =>
+    let #[te] := es | throwError "repair_action_probe: the action has {es.size} text edits"
+    unless (titleLine a.title).any (·.1 == te.range.start.line + 1) do
+      throwError "repair_action_probe: the edit starts on line {te.range.start.line + 1}, \
+        not on the line of the title"
+    unless te.newText == e do
+      throwError "repair_action_probe: the edit text is{indentD te.newText}\nexpected{indentD e}"
+
+/-- `repair_resolve_probe "s" runs n in cmd` elaborates `cmd` as `repair_action_probe` does,
+lists the code actions of the provider for the range of the first occurrence of `s` (the
+empty range at its start with `cursor`), then resolves each action as lean-lsp-mcp and VS Code
+do, only when its JSON has no field `edit`, and as `handleCodeActionResolve` does: the
+provider runs again on the same range and the lazy part of the action at the same index, if
+any, gives the result. Requires that listing and resolution run `n` arms in all (`armRuns`),
+and reports the arms run by each and the titles of the resolved actions. -/
+syntax (name := resolveProbe)
+  "repair_resolve_probe " str (ppSpace &"cursor")? " runs " num " in " command : command
+
+@[command_elab resolveProbe, inherit_doc resolveProbe]
+def elabResolveProbe : CommandElab := fun stx => do
+  let sel := stx[1].isStrLit?.getD ""
+  let cursor := stx[2].getNumArgs > 0
+  let n := stx[4].isNatLit?.getD 0
+  let (t, base, r) ← elabForActions stx[6] sel
+  let text ← getFileMap
+  let list := actionsAt probeDoc text t r.start (if cursor then r.start else r.stop) (!cursor)
+  let runs0 ← armRuns.get
+  let listed ← list
+  let runs1 ← armRuns.get
+  let mut resolved : Array Lsp.CodeAction := #[]
+  for h : i in [0:listed.size] do
+    let a := listed[i].eager
+    if (jsonEdits a).isSome then
+      resolved := resolved.push a
+      continue
+    match (← list)[i]?.bind (·.lazy?) with
+    | some lazy => resolved := resolved.push (← lazy)
+    | none => resolved := resolved.push a
+  let runs2 ← armRuns.get
+  let titles := resolved.map (relativeTitle ·.title base)
+  logInfo m!"listing: {runs1 - runs0} arms; resolution: {runs2 - runs1} arms; titles:\
+    {indentD (MessageData.joinSep (titles.map toMessageData).toList "\n")}"
+  unless runs2 - runs0 == n do
+    throwError "repair_resolve_probe: {runs2 - runs0} arms ran, expected {n}"
 
 end
 
@@ -616,6 +746,84 @@ example (n : Nat) : Holds n := by
   repair_final_probe "grind open; catcrypt_auto? open; grind? +suggestions open; try? open"
     because "catcrypt_auto?: not final: a budget of the dispatcher ran out"
   exact Holds.intro n
+
+/-! ## One run of the arms per action
+
+The failing leaf `skip`, on `quad n = 4 * n`: four arms, `grind` failing and the others at a
+cap of 0 ms. Its block has no unsolved-goals action, since `skip` leaves its one goal as it
+was and the request selects it as a leaf. -/
+
+-- Listed with a nonempty range: the arms run once, and the failing action, which carries the
+-- empty edit, is not resolved.
+set_option repairAction.dispatchMillis 0 in
+set_option repairAction.grindSuggestionsMillis 0 in
+set_option repairAction.tryMillis 0 in
+set_option linter.unusedTactic false in
+#guard_msgs (drop info) in
+repair_resolve_probe "skip" runs 4 in
+example (n : Nat) : quad n = 4 * n := by
+  skip
+
+-- Listed at a cursor: no arm runs, then the resolve runs the provider again and the lazy part
+-- of the action, which runs the arms once.
+set_option repairAction.dispatchMillis 0 in
+set_option repairAction.grindSuggestionsMillis 0 in
+set_option repairAction.tryMillis 0 in
+set_option linter.unusedTactic false in
+#guard_msgs (drop info) in
+repair_resolve_probe "skip" cursor runs 4 in
+example (n : Nat) : quad n = 4 * n := by
+  skip
+
+/-! ## Unsolved goals at the end of a block -/
+
+-- One goal left, closed by `grind`: a new line at the block's column.
+#guard_msgs (drop info) in
+repair_action_probe "refine ⟨?_, trivial⟩"
+  titled "Repair line +1 [unsolved 1, head LT.lt]: grind (kernel-checked"
+  ↦ "refine ⟨?_, trivial⟩\n  grind" in
+example (a : Nat) : a < a + 1 ∧ True := by
+  refine ⟨?_, trivial⟩
+
+-- Two goals left, closed by `grind` and by `grind [triple]`: one bullet per goal.
+set_option repairAction.extraNames "triple" in
+#guard_msgs (drop info) in
+repair_action_probe "constructor"
+  titled "Repair line +1 [unsolved 2, head LT.lt]: grind; grind [triple] (kernel-checked"
+  ↦ "constructor\n  · grind\n  · grind [triple]" in
+example (a n : Nat) : a < a + 1 ∧ triple n = 3 * n := by
+  constructor
+
+-- One goal that no arm closes: `grind` fails within its caps, the other arms stop at a cap of
+-- 0 ms; no text edit.
+set_option repairAction.dispatchMillis 0 in
+set_option repairAction.grindSuggestionsMillis 0 in
+set_option repairAction.tryMillis 0 in
+#guard_msgs (drop info) in
+repair_action_probe "intro n"
+  titled "Repair line +1 [unsolved 1, head Eq, final: grind]: no closing arm; grind "
+  ↦ none in
+example : ∀ n : Nat, quad n = 4 * n := by
+  intro n
+
+-- A request at the `by` token selects the block; the line is that of its last tactic.
+#guard_msgs (drop info) in
+repair_action_probe "by"
+  titled "Repair line +2 [unsolved 1, head LT.lt]: grind (kernel-checked"
+  ↦ "intro h\n  grind" in
+example (a b : Nat) :
+    a ≤ b → a < b + 1 := by
+  intro h
+
+-- A nested bullet: the bullets go at the column of its block.
+#guard_msgs (drop info) in
+repair_action_probe "refine ⟨?_, ?_⟩"
+  titled "Repair line +3 [unsolved 2, head LT.lt]: grind; grind (kernel-checked"
+  ↦ "refine ⟨?_, ?_⟩\n    · grind\n    · grind" in
+example (p : Prop) (hp : p) (a : Nat) : p ∧ (a < a + 1 ∧ True) := by
+  constructor
+  · exact hp
+  · refine ⟨?_, ?_⟩
 
 /-! ## The caps
 
