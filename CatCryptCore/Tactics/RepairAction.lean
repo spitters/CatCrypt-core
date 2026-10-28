@@ -94,6 +94,30 @@ fails in that run, on the same environment and goal (`ArmResult.final`, with the
   reached no cap, no budget ran out and no library suggestion was consulted. A run under
   the scratch run's budgets (5 s per arm, 30 s in all by default) does not fit the arm's cap
   of 1 s, so the arm is not run again.
+* every arm whose proof uses a constant not available at the leaf is final (below), whatever
+  cap or selector it ran under: the scratch run of the arm cites the same constant.
+
+## The kernel check
+
+A closing proof is closed over the local context of the goal and checked (`kernelCheck`).
+It is rejected when it has a metavariable or contains `sorry`, and when it uses a constant
+that is not available at the leaf (`unavailableConst?`), with the reason
+`uses <name>, not available here`. The arms run in the environment recorded at the leaf, which
+can hold the enclosing declaration and declarations that the compiled file adds only after
+the leaf, so that a proof checked there need not elaborate in the file. The constants of the
+proof are collected, with each auxiliary declaration of the arm (named under
+`<declaration>._repairAction`) followed into its value; such a constant is not available when
+* it is the enclosing declaration;
+* it is a constant of the current module that does not occur in the goal or its hypotheses,
+  and either its name extends that of the enclosing declaration (an auxiliary declaration of
+  it), or its declaration starts at or after the bound. The bound is the start of the
+  enclosing declaration's range (`findDeclarationRanges?`); while that declaration has no
+  range, it is the position of the leaf. A constant with no range takes that of the nearest
+  prefix of its name that has one (`f.match_1`, `f.eq_1` belong to `f`). A constant whose
+  start is unknown, or every constant of the module when the bound is unknown, is not
+  available: the fallback rejects a proof whose availability is not decided;
+* it depends on `sorryAx`: by the axioms recorded at export for an imported constant
+  (`collectAxioms`), by a walk over the constants it names for one of the current module.
 
 ## Arguments of `grind [args]`
 
@@ -616,8 +640,129 @@ structure ArmResult where
   /-- Milliseconds waited for the library-suggestion index before the arm ran. -/
   waitMs : Nat := 0
 
-/-- Kernel check of `value : type of g`, closed over the local context of `g`. The check
-stops when `cancelTk?` is set. -/
+/-! ## Availability of the constants of a proof -/
+
+/-- The prefix of the names of the auxiliary declarations that an arm adds. -/
+def auxPrefix (declName? : Option Name) : Name :=
+  (declName?.getD .anonymous) ++ `_repairAction
+
+/-- The constants that the declaration `info` names: in its type, in its value (that of an
+opaque declaration included), and its constructors. -/
+def constsOf (info : ConstantInfo) : Array Name :=
+  let ns := info.type.getUsedConstants
+  let ns := match info.value? (allowOpaque := true) with
+    | some v => ns ++ v.getUsedConstants
+    | none => ns
+  match info with
+  | .inductInfo v => ns ++ v.ctors.toArray
+  | _ => ns
+
+/-- The constants of the work list `todo`, with each declaration named under `pre` (an
+auxiliary declaration of the arm) replaced, transitively, by the constants it names
+(`constsOf`). `seen` holds the names already treated. -/
+partial def proofConstsGo (env : Environment) (pre : Name) :
+    List Name → NameSet → Array Name → Array Name
+  | [], _, out => out
+  | c :: cs, seen, out =>
+    if seen.contains c then proofConstsGo env pre cs seen out
+    else if pre.isPrefixOf c then
+      let more := ((env.find? c).map constsOf).getD #[]
+      proofConstsGo env pre (more.toList ++ cs) (seen.insert c) out
+    else proofConstsGo env pre cs (seen.insert c) (out.push c)
+
+/-- The constants of the proof `e`, the auxiliary declarations under `pre` followed into their
+types and values (`proofConstsGo`). -/
+def proofConsts (pre : Name) (e : Expr) : MetaM (Array Name) :=
+  return proofConstsGo (← getEnv) pre e.getUsedConstants.toList {} #[]
+
+/-- The start of the declaration range of `c`, or of the nearest prefix of `c` that has one:
+an auxiliary declaration (`f.match_1`, `f._proof_1`, `f.eq_1`) has no range of its own and
+belongs to the declaration that its name extends. `none` when no prefix has a range. -/
+partial def declStart? (c : Name) : MetaM (Option Lean.Position) := do
+  if c.isAnonymous then return none
+  if let some r ← findDeclarationRanges? c then return some r.range.pos
+  declStart? c.getPrefix
+
+/-- The position `p` is at or after the position `q`. -/
+def atOrAfter (p q : Lean.Position) : Bool :=
+  p.line > q.line || (p.line == q.line && p.column ≥ q.column)
+
+/-- The constant `c` depends on `sorryAx`. For an imported constant the axioms are those that
+the module recorded when it was exported (`collectAxioms`, a lookup); a constant of the current
+module is walked through the constants it names (`constsOf`). The state holds the constants of
+the current module already walked, so that a walk over several roots visits each once. -/
+partial def dependsOnSorry (c : Name) : StateRefT NameSet MetaM Bool := do
+  if c == ``sorryAx then return true
+  if (← get).contains c then return false
+  modify (·.insert c)
+  let env ← getEnv
+  if (env.getModuleIdxFor? c).isSome then
+    return (← collectAxioms c).contains ``sorryAx
+  let some info := env.find? c | return false
+  for d in constsOf info do
+    if ← dependsOnSorry d then return true
+  return false
+
+/-- The option that holds the byte position of the leaf in the document, set by `withLeafPos`
+and read by `unavailableConst?`. -/
+def leafPosKey : Name := `repairAction.leafPos
+
+/-- `x` with the start of the range `r` recorded as the position of the leaf (`leafPosKey`). -/
+def withLeafPos {α : Type} (r : Syntax.Range) (x : MetaM α) : MetaM α :=
+  withTheReader Core.Context
+    (fun c => { c with options := c.options.set leafPosKey r.start.byteIdx }) x
+
+/-- The position of the leaf recorded by `withLeafPos`, in the file map of the context. -/
+def leafPos? : MetaM (Option Lean.Position) := do
+  let some b := (← getOptions).get? leafPosKey (α := Nat) | return none
+  return some ((← getFileMap).toPosition ⟨b⟩)
+
+/-- The first constant of the proof `val` of the closed goal `type` that is not available at a
+leaf of the declaration `declName?` (module docstring, "The kernel check"), `none` when every
+constant is available. The constants are those of `val` with the auxiliary declarations of the
+arm (named under `auxPrefix declName?`) followed into their values (`proofConsts`). A constant
+is not available when
+* it is `declName?`;
+* it belongs to the current module, does not occur in `type`, and either its name extends
+  `declName?` (an auxiliary declaration of the enclosing declaration), or its declaration
+  (`declStart?`) starts at or after the bound. The bound is the start of `declName?`; while
+  `declName?` has no range (the enclosing declaration is still being elaborated) it is the
+  position of the leaf (`leafPos?`), which every later declaration of the file follows. When
+  the bound or the start of the constant is unknown, the constant is not available;
+* it depends on `sorryAx` (`dependsOnSorry`). -/
+def unavailableConst? (declName? : Option Name) (type val : Expr) : MetaM (Option Name) := do
+  let env ← getEnv
+  let cs ← proofConsts (auxPrefix declName?) val
+  let inGoal := type.getUsedConstantsAsSet
+  let start? ← match declName? with
+    | some d => declStart? d
+    | none => pure none
+  let bound? ← match start? with
+    | some s => pure (some s)
+    | none => leafPos?
+  for c in cs do
+    if declName? == some c then return some c
+    if inGoal.contains c || (env.getModuleIdxFor? c).isSome then continue
+    if declName?.any (·.isPrefixOf c) then return some c
+    match bound?, ← declStart? c with
+    | some s, some p => if atOrAfter p s then return some c
+    | _, _ => return some c
+  let (r, _) ← (cs.findM? fun c => dependsOnSorry c).run {}
+  return r
+
+/-- The failure reason of a proof that uses the constant `c`, not available at the leaf. -/
+def unavailableMsg (c : Name) : String :=
+  s!"uses {privateToUserName c}, not available here"
+
+/-- The failure reason `m` is that of a proof using a constant not available at the leaf
+(`unavailableMsg`). -/
+def isUnavailableMsg (m : String) : Bool :=
+  m.startsWith "uses " && m.endsWith ", not available here"
+
+/-- Kernel check of `value : type of g`, closed over the local context of `g`. Before the
+kernel, the proof is rejected when it has a metavariable, contains `sorry`, or uses a
+constant that is not available at the leaf of `declName?` (`unavailableConst?`, the reason
+`unavailableMsg`). The check stops when `cancelTk?` is set. -/
 def kernelCheck (g : MVarId) (value : Expr) (hb : Nat) (declName? : Option Name)
     (cancelTk? : Option IO.CancelToken := none) : MetaM (Option String) := g.withContext do
   let fvars := (← getLCtx).foldl (init := #[]) fun acc d =>
@@ -626,6 +771,7 @@ def kernelCheck (g : MVarId) (value : Expr) (hb : Nat) (declName? : Option Name)
   let val ← instantiateMVars (← mkLambdaFVars fvars value)
   if type.hasMVar || val.hasMVar then return some "metavariables remain in the proof"
   if val.hasSorry then return some "the proof uses sorry"
+  if let some c ← unavailableConst? declName? type val then return some (unavailableMsg c)
   let lps := (collectLevelParams (collectLevelParams {} type) val).params
   let name := (declName?.getD .anonymous) ++ `_repairAction_check
   let decl := Declaration.thmDecl { name, levelParams := lps.toList, type, value := val }
@@ -646,10 +792,6 @@ def catchAllCore {α : Type} (x : CoreM α) (h : Exception → CoreM α) : CoreM
 /-- `catchAllCore` lifted to `MetaM`. -/
 def catchAll {α : Type} (x : MetaM α) (h : Exception → MetaM α) : MetaM α :=
   controlAt CoreM fun run => catchAllCore (run x) (fun e => run (h e))
-
-/-- The prefix of the names of the auxiliary declarations that an arm adds. -/
-def auxPrefix (declName? : Option Name) : Name :=
-  (declName?.getD .anonymous) ++ `_repairAction
 
 /-- Waits until `t` has finished or the time `deadline` (of `IO.monoMsNow`) has come, polling
 every 2 ms; `true` when `t` has finished. -/
@@ -718,6 +860,14 @@ def finalityAt (cap? : Option String) (final : Bool) (why : String) : Bool × St
   | some c => (false, s!"not final: stopped at the {c}")
   | none => (final, why)
 
+/-- Finality of the failure with reason `m` that reached the cap `cap?`: final when the proof
+used a constant not available at the leaf (`isUnavailableMsg`), since the scratch run of the
+arm cites the same constant; otherwise `finalityAt cap? final why`. -/
+def finalityOf (m : String) (cap? : Option String) (final : Bool) (why : String) :
+    Bool × String :=
+  if isUnavailableMsg m then (true, "final: the proof uses a declaration not available here")
+  else finalityAt cap? final why
+
 /-- Runs the tactic `stx` on `g` and checks the proof in the kernel, the check under the
 cancellation token `tk`. -/
 def closeWith (g : MVarId) (stx : Syntax) (hb : Nat) (declName? : Option Name)
@@ -745,7 +895,7 @@ def runArm (g : MVarId) (text arm : String) (hb ms : Nat) (declName? : Option Na
   match c.res with
   | .ok () => return { text, arm, closed := true, ms := c.ms, msg := "" }
   | .error m =>
-    let (final, finality) := finalityAt c.cap? true "final: no cap reached"
+    let (final, finality) := finalityOf m c.cap? true "final: no cap reached"
     return { text, arm, closed := false, ms := c.ms, msg := m, final, finality }
 
 /-- `stx` with every node and token given the synthetic source range `r`. -/
@@ -865,7 +1015,7 @@ def runDispatch (g : MVarId) (r : Syntax.Range) (hb ms : Nat) (declName? : Optio
   let run ← dispatchRunCounter.modifyGet fun n => (n + 1, n + 1)
   let off := !(← getOptions).get `repairAction.dispatchSuggestions false
   let opts := (capOptions (← getOptions) ms).set dispatchRunKey run
-  let c ← capped hb ms declName? fun tk =>
+  let c ← withLeafPos r <| capped hb ms declName? fun tk =>
     withTheReader Core.Context (fun c => { c with options := opts }) do
       modifyThe Core.State fun s => { s with infoState := { enabled := true } }
       if off then
@@ -889,7 +1039,7 @@ def runDispatch (g : MVarId) (r : Syntax.Range) (hb ms : Nat) (declName? : Optio
     let why := (if ← budgetOut.get then #["a budget of the dispatcher ran out"] else #[]) ++
       (if consulted then #["the dispatcher consulted the library suggestions, which are off"]
        else #[])
-    let (final, finality) := finalityAt c.cap? why.isEmpty <|
+    let (final, finality) := finalityOf m c.cap? why.isEmpty <|
       if why.isEmpty then "final: no cap reached, no budget ran out, no library suggestion \
         consulted"
       else s!"not final: {", ".intercalate why.toList}"
@@ -955,7 +1105,7 @@ def runSuggestionArm (g : MVarId) (text : String) (r : Syntax.Range) (hb ms : Na
                            final := true, finality := "final: the arm does not parse" }
   let waitMs := (← getOptions).get `repairAction.indexWaitMillis indexWaitDefault
   let (ready, waited) ← g.withContext (awaitSuggestionIndex g waitMs)
-  let c ← capped hb ms declName? fun tk => do
+  let c ← withLeafPos r <| capped hb ms declName? fun tk => do
     unless ready do
       modifyEnv fun env => LibrarySuggestions.librarySuggestionsExt.modifyState env
         fun _ => some ``LibrarySuggestions.currentFile
@@ -976,7 +1126,7 @@ def runSuggestionArm (g : MVarId) (text : String) (r : Syntax.Range) (hb ms : Na
   | .ok s => return { text := s, arm := text, closed := true, ms := c.ms, msg := "",
                       waitMs := waited }
   | .error m =>
-    let (final, finality) := finalityAt c.cap? ready <|
+    let (final, finality) := finalityOf m c.cap? ready <|
       if ready then "final: no cap reached, the registered selector with its index"
       else "not final: the index was not built, the arm ran with the theorems of the file"
     let msg := if ready then m else s!"{m}; index not built"
@@ -1002,7 +1152,7 @@ def repairGoal (g : MVarId) (stxs : Array Syntax) (r : Syntax.Range) (declName? 
   let gms := opts.get `repairAction.grindMillis (600 : Nat)
   for (a, name) in arms do
     armRuns.modify (· + 1)
-    let res ← runArm g a name hb gms declName?
+    let res ← withLeafPos r <| runArm g a name hb gms declName?
     out := out.push res
     if res.closed then return out
   if dispatchAvailable (← getEnv) then
