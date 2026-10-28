@@ -162,6 +162,51 @@ parses there to the same tactic.
 * For a request with a nonempty range the arms run when the actions are listed; for an empty
   range (an editor cursor) they run when the action is resolved.
 
+## Unsolved goals at the end of a block
+
+Lean reports `unsolved goals` at the token that opens a tactic block (`by`, `·`, `case`,
+`next`) when the last tactic of the block succeeds and leaves goals. Beside the replace
+action, the provider offers an unsolved-goals action for such a block (`unsolvedSites`).
+
+* Line selection. The block is selected when the request range meets its opening token, or
+  when a leaf of the request lies in the last element of its tactic sequence (the last tactic,
+  or a combinator around the leaf); a leaf in the last elements of several nested blocks
+  selects the innermost one with goals left. The goals are the `goalsAfter` of the node of
+  that last element, in its `mctxAfter`; the block is not selected when they are empty, when
+  that element ran on several goal lists, or when the element changed nothing on its one goal
+  (`goalsAfter = goalsBefore = [g]`, a tactic that failed or `skip`) and the request selects
+  it as a leaf: the replace action then runs the same arms on the same goal. At most three
+  blocks are treated per request, and the line of the action is that of the last tactic.
+* The arms run on each goal of `goalsAfter` in turn, in the order, under the caps, with the
+  finality rule and the kernel check of the replace action (`repairGoal`), with the last
+  tactic as the source of the arguments of `grind [args]`. The goals are treated until one
+  that no arm closes, and the action closes when every goal closes.
+* Edit layout. The edit replaces the last tactic by its own source text followed by new
+  lines at the column of the block's first tactic: the closing arm's text when one goal is
+  left, or one bullet `· <arm>` per goal, in the order of `goalsAfter`; each text is laid out
+  (`layoutAt`) for the column at which it starts (two more after a bullet). The edit thus
+  starts on the line of the last tactic and leaves its text unchanged.
+* The title has the first tag element `unsolved K`, K the number of goals left; the head
+  symbol, the shape and the element `final:` are those of the first goal that no arm closed,
+  or of the first goal when every goal closed. Examples:
+  `Repair line 12 [unsolved 2, head LT.lt]: grind; grind [triple] (kernel-checked, 31 ms)`
+  (the closing arms of the goals in order, and the sum of their times) and
+  `Repair line 12 [unsolved 1, head Eq, final: grind]: no closing arm; grind 9 ms (…); …`.
+
+## Resolution
+
+Lean's handler of `codeAction/resolve` runs the provider again on the request's parameters
+and returns an action that has no lazy part unchanged (`handleCodeActionResolve`); the
+provider computes its eager actions in full, so a resolved eager action runs its arms twice.
+The LSP clients resolve an action only when it has no field `edit`: lean-lsp-mcp
+(`_resolve_code_action`) and VS Code (`CodeActionItem.resolve`) alike, since resolution exists
+to compute a missing edit lazily. Every action that the provider lists with its arms already
+run therefore carries an edit: the closing edit, or an empty workspace edit (`{}`, no text
+change) for a report without a closure, so that no client resolves it. Only the placeholder
+of an empty request range has no edit; its resolve runs the provider, which runs no arm for
+such a range, then the arms of that one action. A request thus runs each action's arms once,
+whatever the client, and no state is kept between requests. `armRuns` counts the arms run.
+
 The provider is in scope wherever `CatCryptCore.Tactics.AutoBase` is imported.
 -/
 
@@ -939,6 +984,9 @@ def runSuggestionArm (g : MVarId) (text : String) (r : Syntax.Range) (hb ms : Na
 
 /-! ## The arms at a leaf -/
 
+/-- The number of arms that `repairGoal` has run in this process, read by the tests. -/
+initialize armRuns : IO.Ref Nat ← IO.mkRef 0
+
 /-- Runs the arms of the module docstring on `g` in order, stopping at the first closing arm.
 The arguments of `grind [args]` are taken from the tactics `stxs` and
 `repairAction.extraNames`; `r` is the edit range. The options are those of the context. -/
@@ -953,10 +1001,12 @@ def repairGoal (g : MVarId) (stxs : Array Syntax) (r : Syntax.Range) (declName? 
   let mut out := #[]
   let gms := opts.get `repairAction.grindMillis (600 : Nat)
   for (a, name) in arms do
+    armRuns.modify (· + 1)
     let res ← runArm g a name hb gms declName?
     out := out.push res
     if res.closed then return out
   if dispatchAvailable (← getEnv) then
+    armRuns.modify (· + 1)
     let res ← runDispatch g r hb (opts.get `repairAction.dispatchMillis (1000 : Nat)) declName?
     out := out.push res
     if res.closed then return out
@@ -964,6 +1014,7 @@ def repairGoal (g : MVarId) (stxs : Array Syntax) (r : Syntax.Range) (declName? 
     [("grind? +suggestions", opts.get `repairAction.grindSuggestionsMillis (1000 : Nat)),
      ("try?", opts.get `repairAction.tryMillis (2000 : Nat))]
   for (a, ms) in suggestionArms do
+    armRuns.modify (· + 1)
     let res ← runSuggestionArm g a r hb ms declName?
     out := out.push res
     if res.closed then return out
@@ -1015,17 +1066,31 @@ structure LeafReport where
   /-- The arms that ran. -/
   arms : Array ArmResult
 
+/-- `x` in the context `ctx` with the metavariable context `mctx` and the local context `lctx`,
+as `ContextInfo.runMetaM` runs it, but with the file map `text` of the document, where
+`runMetaM` has the empty file map. The arms give their syntax source ranges of the document,
+and a "Try this" suggestion made at a range outside the file map panics
+(`TryThis.getIndentAndColumn`); `catcrypt_auto?` and the suggestion arms make one. -/
+def runArmsM {α : Type} (ctx : ContextInfo) (mctx : MetavarContext) (lctx : LocalContext)
+    (text : FileMap) (x : MetaM α) : IO α := do
+  let env := ctx.env.setExporting false
+  (·.1) <$> (withOptions (fun _ => ctx.options) (x.run' { lctx } { mctx })).toIO
+    { currNamespace := ctx.currNamespace, openDecls := ctx.openDecls
+      fileName := "<InfoTree>", fileMap := text }
+    { env, ngen := ctx.ngen }
+
 /-- `repairGoal` on the main goal before the leaf `l`, in the context and with the options
-recorded at the leaf, over the edit span that `editSpan` computes from the tactic nodes
-`ss`; no arm runs when there is no edit span. The text of a closing arm is laid out
-(`layoutAt`) for the column `col` of the start of the edit span. -/
-def repairLeaf (ss : Array Step) (l : Leaf) (col : String.Pos.Raw → Nat) :
-    IO (Option LeafReport) := do
+recorded at the leaf (`runArmsM`, with the file map `text` of the document), over the edit
+span that `editSpan` computes from the tactic nodes `ss`; no arm runs when there is no edit
+span. The text of a closing arm is laid out (`layoutAt`) for the column of the start of the
+edit span. -/
+def repairLeaf (ss : Array Step) (l : Leaf) (text : FileMap) : IO (Option LeafReport) := do
   let some g := l.info.goalsBefore.head? | return none
   let some decl := l.info.mctxBefore.findDecl? g | return none
   let ctx := { l.ctx with mctx := l.info.mctxBefore }
+  let col (p : String.Pos.Raw) := (text.toPosition p).column
   let span := editSpan ss l.range g
-  ctx.runMetaM decl.lctx do
+  runArmsM ctx ctx.mctx decl.lctx text do
     let head ← goalHead g
     match span with
     | .error _ => return some { head, span, arms := #[] }
@@ -1036,57 +1101,224 @@ def repairLeaf (ss : Array Step) (l : Leaf) (col : String.Pos.Raw → Nat) :
         return r
       return some { head, span, arms }
 
-/-- The bracketed tag of a title: the head symbol of the goal, the reported goal shape and,
-when no arm closed, the names of the arms whose failure is final (`final: A; B`, the
-element left out when there are none). -/
-def goalTag (head : String) (rs : Array ArmResult) : String :=
+/-- The bracketed tag of a title: the elements `pre` (empty, or ending in `, `), the head
+symbol of the goal, the reported goal shape and, when no arm closed, the names of the arms
+whose failure is final (`final: A; B`, the element left out when there are none). -/
+def goalTag (head : String) (rs : Array ArmResult) (pre : String := "") : String :=
   let shape := match rs.find? (!·.shape.isEmpty) with
     | some r => s!", shape {r.shape}"
     | none => ""
   let finals := (rs.filter fun r => !r.closed && r.final).map (·.arm)
   let final := if finals.isEmpty || rs.any (·.closed) then ""
     else s!", final: {"; ".intercalate finals.toList}"
-  s!"[head {head}{shape}{final}]"
+  s!"[{pre}head {head}{shape}{final}]"
 
-/-- The code action reporting `rep` at a leaf on line `line`; `text` converts source ranges. -/
+/-- The empty workspace edit, which changes no text: its JSON is `{}`. -/
+def noEdit : WorkspaceEdit := { changes? := none }
+
+/-- The text of a title after `no closing arm; `: each arm with its time and outcome. -/
+def failureText (rs : Array ArmResult) : String :=
+  "; ".intercalate (rs.map fun r => s!"{r.text} {r.ms} ms ({r.msg})").toList
+
+/-- The code action reporting `rep` at a leaf on line `line`; `text` converts source ranges.
+An action without a closure carries the empty workspace edit, which changes no text and keeps
+clients from resolving it (module docstring, "Resolution"). -/
 def mkAction (docId : VersionedTextDocumentIdentifier) (text : FileMap) (line : Nat)
     (rep : LeafReport) : CodeAction :=
   let tag := goalTag rep.head rep.arms
   match rep.span, rep.arms.find? (·.closed) with
   | .error why, _ =>
-    { title := s!"Repair line {line} {tag}: no closure offered, {why}", kind? := "quickfix" }
+    { title := s!"Repair line {line} {tag}: no closure offered, {why}", kind? := "quickfix"
+      edit? := some noEdit }
   | .ok s, some r =>
     { title := s!"Repair line {line} {tag}: {shorten r.text} (kernel-checked, {r.ms} ms)"
       kind? := "quickfix"
       edit? := some <| .ofTextEdit docId
         { range := text.utf8RangeToLspRange s.range, newText := r.text } }
   | .ok _, none =>
-    let arms := rep.arms.map fun r => s!"{r.text} {r.ms} ms ({r.msg})"
-    { title := s!"Repair line {line} {tag}: no closing arm; {"; ".intercalate arms.toList}"
-      kind? := "quickfix" }
+    { title := s!"Repair line {line} {tag}: no closing arm; {failureText rep.arms}"
+      kind? := "quickfix", edit? := some noEdit }
 
-/-- Grind repair code action at the leaves selected by the request range. -/
+/-! ## Unsolved goals at the end of a block -/
+
+/-- `stx` opens a tactic block whose goals must be closed: `by`, `·`, `case` or `next`. -/
+def isBlockOpener (env : Environment) (stx : Syntax) : Bool :=
+  stx.isOfKind ``Parser.Term.byTactic || stx.isOfKind ``Lean.cdot ||
+    stx.isOfKind ``Parser.Tactic.case ||
+    (isTacticKind env stx.getKind && (stx.getHead?.any (·.isToken "next")))
+
+/-- A tactic block: the source range of its opening token and its tactic sequence. -/
+structure Block where
+  /-- Source range of the opening token. -/
+  head? : Option Syntax.Range
+  /-- The tactic sequence of the block. -/
+  seq : Sequence
+
+/-- The blocks opened by nodes of `t` as written in the source, one per sequence. The sequence
+of a block is the first in preorder in the syntax of the node that opens it. -/
+def blocksOf (t : InfoTree) : Array Block :=
+  t.foldInfo (init := #[]) fun ctx info acc => Id.run do
+    let .ofTacticInfo ti := info | acc
+    unless isBlockOpener ctx.env ti.stx do return acc
+    unless ti.stx.getHeadInfo matches .original .. do return acc
+    let some seq := (sequencesIn ti.stx #[])[0]? | acc
+    if acc.any (Syntax.Range.same ·.seq.range seq.range) then return acc
+    acc.push { head? := ti.stx.getHead?.bind (·.getRange? (canonicalOnly := true)), seq }
+
+/-- The nodes of the sequence element `e` in `t`, with their contexts. -/
+def elementInfos (t : InfoTree) (e : Syntax × Syntax.Range) : Array (ContextInfo × TacticInfo) :=
+  t.foldInfo (init := #[]) fun ctx info acc => Id.run do
+    let .ofTacticInfo ti := info | acc
+    unless ti.stx.getKind == e.1.getKind do return acc
+    let some r := ti.stx.getRange? (canonicalOnly := true) | acc
+    if Syntax.Range.same r e.2 then acc.push (ctx, ti) else acc
+
+/-- A block selected for the unsolved-goals action: the start of its first tactic, its last
+tactic, and the node of that tactic with its context. -/
+structure UnsolvedSite where
+  /-- Start of the first tactic of the block, whose column the new lines take. -/
+  blockStart : String.Pos.Raw
+  /-- The last element of the block's sequence, with its source range. -/
+  last : Syntax × Syntax.Range
+  /-- Context of the node of the last element. -/
+  ctx : ContextInfo
+  /-- The node of the last element. -/
+  info : TacticInfo
+
+/-- The site of the block `b` in `t`: none when the last element of its sequence did not run,
+ran on several goal lists, or left no goal. -/
+def siteOf (t : InfoTree) (b : Block) : Option UnsolvedSite := do
+  let first ← b.seq.elems[0]?
+  let last ← b.seq.elems.back?
+  let ns := elementInfos t last
+  let (ctx, info) ← ns[0]?
+  unless ns.all (·.2.goalsBefore == info.goalsBefore) do none
+  if info.goalsAfter.isEmpty then none
+  return { blockStart := first.2.start, last, ctx, info }
+
+/-- The blocks selected for the unsolved-goals action by the request range `[lo, hi]` and its
+leaves `leaves`, by the rule of the module docstring, at most three. -/
+def unsolvedSites (t : InfoTree) (leaves : Array Leaf) (lo hi : String.Pos.Raw) :
+    Array UnsolvedSite := Id.run do
+  let bs := blocksOf t
+  let meets (r : Syntax.Range) : Bool :=
+    if lo == hi then r.start ≤ lo && lo ≤ r.stop else r.start < hi && lo < r.stop
+  let size (b : Block) : Nat :=
+    (b.seq.elems.back?.map fun e => e.2.stop.byteIdx - e.2.start.byteIdx).getD 0
+  let mut out : Array UnsolvedSite := (bs.filter (·.head?.any meets)).filterMap (siteOf t)
+  for l in leaves do
+    let around := bs.filter fun b => b.seq.elems.back?.any (Syntax.Range.inside l.range ·.2)
+    if let some s := (around.qsort (size · < size ·)).findSome? (siteOf t) then
+      out := out.push s
+  let redundant (s : UnsolvedSite) : Bool :=
+    s.info.goalsAfter == s.info.goalsBefore && s.info.goalsBefore.length == 1 &&
+      leaves.any (Syntax.Range.same ·.range s.last.2)
+  let mut sites : Array UnsolvedSite := #[]
+  for s in out do
+    if redundant s || sites.any (Syntax.Range.same ·.last.2 s.last.2) then continue
+    sites := sites.push s
+  return sites.extract 0 3
+
+/-- What the unsolved-goals action reports at a block. -/
+structure UnsolvedReport where
+  /-- The number of goals left by the last tactic. -/
+  goals : Nat
+  /-- Head symbol of the first goal that no arm closed, else of the first goal. -/
+  head : String
+  /-- The arms run on each goal treated, in the order of the goals, up to the first goal that
+  no arm closed. -/
+  arms : Array (Array ArmResult)
+  /-- Source range of the last tactic. -/
+  range : Syntax.Range
+  /-- The text replacing the last tactic when every goal closed: its source text followed by
+  the new lines. -/
+  text? : Option String
+
+/-- `repairGoal` on each goal left by the last tactic of the site `s`, in the context and with
+the options recorded at that tactic (`runArmsM`, with the file map `text` of the
+document), until a goal that no arm closes; the closing texts laid out by the rule of the
+module docstring. -/
+def repairUnsolved (s : UnsolvedSite) (text : FileMap) : IO UnsolvedReport := do
+  let gs := s.info.goalsAfter
+  let ctx := s.ctx
+  let c := (text.toPosition s.blockStart).column
+  let bullet := gs.length > 1
+  let mut heads : Array String := #[]
+  let mut arms : Array (Array ArmResult) := #[]
+  let mut lines : Array String := #[]
+  for g in gs do
+    let lctx := ((s.info.mctxAfter.findDecl? g).map (·.lctx)).getD {}
+    let (h, rs) ← runArmsM ctx s.info.mctxAfter lctx text do
+      let h ← goalHead g
+      let rs ← repairGoal g #[s.last.1] s.last.2 ctx.parentDecl?
+      let rs ← rs.mapM fun r => do
+        if r.closed then return { r with text := ← layoutAt r.text (if bullet then c + 2 else c) }
+        return r
+      return (h, rs)
+    heads := heads.push h
+    arms := arms.push rs
+    let some r := rs.find? (·.closed) | break
+    lines := lines.push ("".pushn ' ' c ++ (if bullet then "· " else "") ++ r.text)
+  let closed := lines.size == gs.length
+  let source := String.Pos.Raw.extract text.source s.last.2.start s.last.2.stop
+  return { goals := gs.length, arms, range := s.last.2
+           head := (if closed then heads[0]? else heads.back?).getD ""
+           text? := if closed then some (lines.foldl (· ++ "\n" ++ ·) source) else none }
+
+/-- The unsolved-goals action reporting `rep` at a last tactic on line `line`; `text`
+converts source ranges. Without a closure it carries the empty workspace edit. -/
+def mkUnsolvedAction (docId : VersionedTextDocumentIdentifier) (text : FileMap) (line : Nat)
+    (rep : UnsolvedReport) : CodeAction :=
+  let rs := (if rep.text?.isSome then rep.arms[0]? else rep.arms.back?).getD #[]
+  let tag := goalTag rep.head rs (pre := s!"unsolved {rep.goals}, ")
+  match rep.text? with
+  | some t =>
+    let closing := rep.arms.filterMap (·.find? (·.closed))
+    let ms := closing.foldl (· + ·.ms) 0
+    { title := s!"Repair line {line} {tag}: \
+        {"; ".intercalate (closing.map (shorten ·.text)).toList} (kernel-checked, {ms} ms)"
+      kind? := "quickfix"
+      edit? := some <| .ofTextEdit docId
+        { range := text.utf8RangeToLspRange rep.range, newText := t } }
+  | none =>
+    { title := s!"Repair line {line} {tag}: no closing arm; {failureText rs}"
+      kind? := "quickfix", edit? := some noEdit }
+
+/-! ## The provider -/
+
+/-- The code actions for the request range `[lo, hi]` of the document `docId` with text `text`
+over the info tree `t`: the replace action of each leaf (at most three), then the
+unsolved-goals action of each selected block (`unsolvedSites`). With `eager` the arms run
+here and every action carries an edit; otherwise each action is a placeholder whose lazy part
+runs the arms when it is resolved. -/
+def actionsAt (docId : VersionedTextDocumentIdentifier) (text : FileMap) (t : InfoTree)
+    (lo hi : String.Pos.Raw) (eager : Bool) : IO (Array LazyCodeAction) := do
+  let leaves := (minimalLeaves (collectLeaves t lo hi)).extract 0 3
+  let ss := steps t
+  let lineOf (r : Syntax.Range) := (text.utf8RangeToLspRange r).start.line + 1
+  let lazyOr (line : Nat) (what : String) (compute : IO (Option CodeAction)) :
+      IO (Option LazyCodeAction) := do
+    if eager then return (← compute).map fun a => { eager := a }
+    let empty : CodeAction := { title := s!"Repair line {line}: no goal", kind? := "quickfix" }
+    return some { eager := { title := s!"Repair line {line}{what} with grind, catcrypt_auto \
+                                or try?", kind? := "quickfix" }
+                  lazy? := some do return (← compute).getD empty }
+  let replace ← leaves.filterMapM fun l => do
+    let line := lineOf l.range
+    lazyOr line "" do return (← repairLeaf ss l text).map (mkAction docId text line)
+  let unsolved ← (unsolvedSites t leaves lo hi).filterMapM fun s => do
+    let line := lineOf s.last.2
+    lazyOr line ", unsolved goals," do
+      return some (mkUnsolvedAction docId text line (← repairUnsolved s text))
+  return replace ++ unsolved
+
+/-- Grind repair code action at the leaves and blocks selected by the request range. -/
 @[code_action_provider]
 def grindRepairProvider : CodeActionProvider := fun params snap => do
   let doc ← readDoc
   let text := doc.meta.text
-  let lo := text.lspPosToUtf8Pos params.range.start
-  let hi := text.lspPosToUtf8Pos params.range.end
-  let leaves := (minimalLeaves (collectLeaves snap.infoTree lo hi)).extract 0 3
-  let eager := params.range.start != params.range.end
-  let ss := steps snap.infoTree
-  leaves.filterMapM fun l => do
-    let line := (text.utf8RangeToLspRange l.range).start.line + 1
-    let compute : IO (Option CodeAction) := do
-      let col (p : String.Pos.Raw) := (text.toPosition p).column
-      return (← repairLeaf ss l col).map (mkAction doc.versionedIdentifier text line)
-    if eager then
-      return (← compute).map fun a => { eager := a }
-    else
-      let empty : CodeAction := { title := s!"Repair line {line}: no goal", kind? := "quickfix" }
-      return some { eager := { title := s!"Repair line {line} with grind, catcrypt_auto or try?",
-                               kind? := "quickfix" }
-                    lazy? := some do return (← compute).getD empty }
+  actionsAt doc.versionedIdentifier text snap.infoTree (text.lspPosToUtf8Pos params.range.start)
+    (text.lspPosToUtf8Pos params.range.end) (params.range.start != params.range.end)
 
 end CatCryptCore.RepairAction
 
