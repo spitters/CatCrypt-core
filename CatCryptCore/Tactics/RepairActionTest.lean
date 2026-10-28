@@ -33,12 +33,15 @@ The probes of this file, each over fresh definitions:
   that text; or requires that no arm closes, within the given time. With a leaf, given in
   parentheses, the arm `grind [args]` takes its arguments from that leaf.
 * `repair_suggestion_probe` runs one suggestion arm (`RepairAction.runSuggestionArm`) with a
-  given tactic text.
+  given tactic text, and can require its failure to be final or not.
+* `repair_final_probe` runs `RepairAction.repairGoal` and requires the finality of each arm
+  (`A final`, `A open`), and optionally a reason and the title.
 * `repair_range_probe` elaborates a declaration and checks the edit range
   (`RepairAction.editSpan`) at one of its leaves.
 
 The file sets `repairAction.suggestionIndex` to false, so that the suggestion arms use the
-theorems of this file and no index of the imported theorems is built.
+theorems of this file and no index of the imported theorems is built, except in its last
+test, the only one that builds the index (about 10 s of wall time and 81 s of CPU time).
 
 The probes and their outcomes:
 * dispatch: `IsPure flipNeg` by `(unfold flipNeg; simp only [...]; aesop ...)`; `IsPure` of
@@ -62,8 +65,22 @@ The probes and their outcomes:
   `intro s` inside `·`: the bullet's body.
 * range, none: `skip` then `all_goals assumption`; `skip`, `swap`, `exact hq`, `exact hp`;
   `intro s`, a failing `simp only []`, then `rfl`.
-* caps, last in the file: `False` from `∀ n, 2 * sumTo n = n * n`: no arm, within 7000 ms in
-  all, with the title `[head False, shape other]`.
+* final, on `quad n = 4 * n` (`quad` not unfolded by `grind`): every arm at a wall-clock cap
+  of 0 ms, none final and no element `final` in the title `[head Eq]`; `grind` at a heartbeat
+  cap of 1 (thousand), not final; `grind` failing within its caps, final, and
+  `grind? +suggestions` failing with the theorems of the file, not final (`index not
+  built`), with the title `[head Eq, final: grind]`.
+* final, the dispatcher: on `2 * sumTo n = n * (n + 1)` (shape `other`, which has an arm
+  `grind +suggestions`) not final, since the dispatcher consulted the library suggestions;
+  on `Holds n` (the shape `repair holds` of this file, whose one arm is `omega`, and no
+  premise) final, with the title `[head …Holds, shape repair holds, final: grind;
+  catcrypt_auto?]`; on the same goal with `catcrypt_auto.totalMillis` 1, not final, since a
+  budget ran out.
+* caps: `False` from `∀ n, 2 * sumTo n = n * n`: no arm, within 7000 ms in all, with the
+  title `[head False, shape other, final: grind]`.
+* index, last in the file: `grind? +suggestions` on `Holds n` waits for the build of the
+  index, runs with it, suggests a script containing `sorry`, and fails without reaching a
+  cap: final.
 -/
 
 set_option autoImplicit false
@@ -180,10 +197,40 @@ def evalProbeFails : Tactic.Tactic := fun stx => do
   unless total < n do
     throwError "repair_dispatch_probe: the arms take {total} ms, not under {n} ms"
 
+/-- The finality of each arm, `A final` or `A open` (`A closed` for a closing arm), joined by
+`; `, and the reasons. -/
+def finalities (rs : Array ArmResult) : String × String :=
+  ("; ".intercalate (rs.map fun r =>
+      s!"{r.arm} {if r.closed then "closed" else if r.final then "final" else "open"}").toList,
+    "; ".intercalate (rs.map fun r => s!"{r.arm}: {r.finality}").toList)
+
+/-- `repair_final_probe "A final; B open; …"` runs `repairGoal` on the main goal and requires
+that the finality of its arms (`finalities`) is the given text; the goal is unchanged. It
+reports the arms, then their finality with the reasons. With `because "m"` the reasons must
+contain `m`; with `titled "t"` the title of the code action must start with `t`. -/
+syntax (name := finalProbe)
+  "repair_final_probe " str (" because " str)? (" titled " str)? : tactic
+
+@[tactic finalProbe, inherit_doc finalProbe]
+def evalFinalProbe : Tactic.Tactic := fun stx => do
+  let expected := stx[1].isStrLit?.getD ""
+  let (rs, _) ← probeArms stx #[] (stx[3][1].isStrLit?)
+  let (got, why) := finalities rs
+  logInfo m!"finality: {why}"
+  unless got == expected do
+    throwError "repair_final_probe: the finality is {got}, expected {expected}"
+  if let some m := stx[2][1].isStrLit? then
+    unless (why.splitOn m).length > 1 do
+      throwError "repair_final_probe: the reasons are {why}, expected {m} among them"
+
 /-- `repair_suggestion_probe "t" fails "m"` runs the suggestion arm `t` (`runSuggestionArm`,
 under the cap `repairAction.tryMillis`) on the main goal and requires that it does not close
-the goal, with a failure reason containing `m`; the goal is unchanged. It reports the arm. -/
-syntax (name := suggestionProbe) "repair_suggestion_probe " str " fails " str : tactic
+the goal, with a failure reason containing `m`; the goal is unchanged. It reports the arm,
+its finality and the time it waited for the library-suggestion index. With `final` or
+`open` after it, the failure must be final, or not final. -/
+syntax (name := suggestionProbe)
+  "repair_suggestion_probe " str " fails " str (ppSpace (&"final" <|> &"open"))? :
+    tactic
 
 @[tactic suggestionProbe, inherit_doc suggestionProbe]
 def evalSuggestionProbe : Tactic.Tactic := fun stx => do
@@ -195,10 +242,15 @@ def evalSuggestionProbe : Tactic.Tactic := fun stx => do
   let res ← g.withContext <| runSuggestionArm g text r
     (opts.get `repairAction.maxHeartbeats (100000 : Nat))
     (opts.get `repairAction.tryMillis (2000 : Nat)) (← Term.getDeclName?)
-  logInfo m!"repair arm: {report #[res]}"
+  logInfo m!"repair arm: {report #[res]}; {res.finality}; waited {res.waitMs} ms"
   if res.closed then throwError "repair_suggestion_probe: the arm closes the goal"
   unless (res.msg.splitOn m).length > 1 do
     throwError "repair_suggestion_probe: the failure reason is {res.msg}, expected {m}"
+  if stx[4].getNumArgs > 0 then
+    let wantFinal := (stx[4].find? (·.isAtom)).any (·.getAtomVal == "final")
+    unless res.final == wantFinal do
+      throwError "repair_suggestion_probe: the failure is {if res.final then "" else "not "}\
+        final ({res.finality})"
 
 /-- `repair_range_probe "t" ↦ "s" in cmd` elaborates `cmd`, takes the leaf of the code action
 whose source text is the first occurrence of `t` in `cmd`, and requires that its edit range
@@ -472,18 +524,128 @@ example : gameL = gameR := by
 
 end Dispatch
 
+/-! ## Final failures -/
+
+/-- Four times `n`, as a definition that `grind` does not unfold. -/
+def quad (n : Nat) : Nat := n + n + n + n
+
+/-- A predicate that holds of every number, by a constructor that neither `grind` nor the
+premise stage of the dispatcher applies. -/
+public inductive Holds : Nat → Prop
+  | intro (n : Nat) : Holds n
+
+catcrypt_auto_shape "repair holds" priority 200 := app CatCryptCore.RepairActionTest.Holds
+catcrypt_auto_arm "repair holds" order 10 := "omega"
+
+-- Every arm stops at its wall-clock cap of 0 ms: no failure is final, and the title has no
+-- element `final`.
+set_option repairAction.grindMillis 0 in
+set_option repairAction.dispatchMillis 0 in
+set_option repairAction.grindSuggestionsMillis 0 in
+set_option repairAction.tryMillis 0 in
+set_option linter.unusedTactic false in
+#guard_msgs (drop info) in
+example (n : Nat) : quad n = 4 * n := by
+  repair_final_probe "grind open; catcrypt_auto? open; grind? +suggestions open; try? open"
+    because "grind: not final: stopped at the wall-clock cap"
+    titled "Repair line 1 [head Eq]: no closing arm; grind "
+  grind [quad]
+
+-- Under a heartbeat cap of one thousand, `grind` stops at the heartbeat cap well within its
+-- wall-clock cap: not final.
+set_option repairAction.maxHeartbeats 1 in
+set_option repairAction.grindMillis 5000 in
+set_option repairAction.dispatchMillis 0 in
+set_option repairAction.grindSuggestionsMillis 0 in
+set_option repairAction.tryMillis 0 in
+set_option linter.unusedTactic false in
+#guard_msgs (drop info) in
+example (n : Nat) : quad n = 4 * n := by
+  repair_final_probe "grind open; catcrypt_auto? open; grind? +suggestions open; try? open"
+    because "grind: not final: stopped at the heartbeat cap"
+  grind [quad]
+
+-- `grind` fails without reaching a cap: final. `grind? +suggestions` fails too, but with the
+-- theorems of the file in place of the index: not final, and its message says so.
+set_option repairAction.dispatchMillis 0 in
+set_option repairAction.tryMillis 0 in
+set_option linter.unusedTactic false in
+#guard_msgs (drop info) in
+example (n : Nat) : quad n = 4 * n := by
+  repair_final_probe "grind final; catcrypt_auto? open; grind? +suggestions open; try? open"
+    because "grind? +suggestions: not final: the index was not built"
+    titled "Repair line 1 [head Eq, final: grind]: no closing arm; grind "
+  grind [quad]
+
+-- The shape `other` has the dispatcher arm `grind +suggestions`, which consults the library
+-- suggestions that the arm `catcrypt_auto?` switches off: not final, though no budget ran
+-- out under the cap of 10 s.
+set_option repairAction.grindMillis 0 in
+set_option repairAction.dispatchMillis 10000 in
+set_option repairAction.grindSuggestionsMillis 0 in
+set_option repairAction.tryMillis 0 in
+set_option linter.unusedTactic false in
+#guard_msgs (drop info) in
+example (n : Nat) : 2 * sumTo n = n * (n + 1) := by
+  repair_final_probe "grind open; catcrypt_auto? open; grind? +suggestions open; try? open"
+    because "catcrypt_auto?: not final: the dispatcher consulted the library suggestions"
+  fun_induction sumTo <;> grind
+
+-- The shape `repair holds` has the one arm `omega`, the premise stage finds no premise, and
+-- no budget runs out: the failure of `catcrypt_auto?` is final.
+set_option repairAction.dispatchMillis 10000 in
+set_option repairAction.grindSuggestionsMillis 0 in
+set_option repairAction.tryMillis 0 in
+set_option linter.unusedTactic false in
+#guard_msgs (drop info) in
+example (n : Nat) : Holds n := by
+  repair_final_probe "grind final; catcrypt_auto? final; grind? +suggestions open; try? open"
+    titled "Repair line 1 [head CatCryptCore.RepairActionTest.Holds, shape repair holds, \
+      final: grind; catcrypt_auto?]: no closing arm; grind "
+  exact Holds.intro n
+
+-- The same dispatch with a total budget of 1 ms: the budget runs out, not final.
+set_option catcrypt_auto.totalMillis 1 in
+set_option repairAction.grindMillis 0 in
+set_option repairAction.dispatchMillis 10000 in
+set_option repairAction.grindSuggestionsMillis 0 in
+set_option repairAction.tryMillis 0 in
+set_option linter.unusedTactic false in
+#guard_msgs (drop info) in
+example (n : Nat) : Holds n := by
+  repair_final_probe "grind open; catcrypt_auto? open; grind? +suggestions open; try? open"
+    because "catcrypt_auto?: not final: a budget of the dispatcher ran out"
+  exact Holds.intro n
+
 /-! ## The caps
 
-Last in the file: a run of `try?` that reaches its cap goes on in the background for a while
-and slows the arms that run after it. -/
+Near the end of the file: a run of `try?` that reaches its cap goes on in the background for
+a while and slows the arms that run after it. -/
 
 -- No arm closes; every arm stops within its cap.
 set_option linter.unusedTactic false in
 #guard_msgs (drop info) in
 example (h : ∀ n, 2 * sumTo n = n * n) : False := by
   repair_dispatch_probe fails_within 7000
-    titled "Repair line 1 [head False, shape other]: no closing arm; grind "
+    titled "Repair line 1 [head False, shape other, final: grind]: no closing arm; grind "
   have h1 := h 1
   simp [sumTo] at h1
+
+/-! ## The library-suggestion index
+
+Last in the file, and the only test that builds the index of the imported theorems (about
+10 s of wall time and 81 s of CPU time): once built, the index serves the suggestion arms
+of the rest of the process. -/
+
+-- The arm waits for the build that it starts, then runs with the registered selector and
+-- its index and fails without reaching a cap: final.
+set_option repairAction.suggestionIndex true in
+set_option repairAction.indexWaitMillis 300000 in
+set_option repairAction.tryMillis 20000 in
+set_option linter.unusedTactic false in
+#guard_msgs (drop info) in
+example (n : Nat) : Holds n := by
+  repair_suggestion_probe "grind? +suggestions" fails "grind" final
+  exact Holds.intro n
 
 end CatCryptCore.RepairActionTest
