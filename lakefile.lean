@@ -36,6 +36,12 @@ require nominalLean from git
 require «hax-lean» from git
   "https://github.com/spitters/hax-lean.git" @ "lean-upgrade-4.35"
 
+-- QuantumFoundations: the quantum-information library shared with VCVio; `CPComp` is its
+-- `SubInstrument` on `Fin d`. Pinned to a commit of `main`.
+require QuantumFoundations from git
+  "https://github.com/lean-crypto-foundations/QuantumFoundations" @
+    "901aaab7967ceecd2240d0b38bbde7cf3e2c14ac"
+
 -- mathlib LAST so its proofwidgets/aesop versions win on conflicts;
 -- this is required for `lake exe cache get` to find oleans.
 require mathlib from git

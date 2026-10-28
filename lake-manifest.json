@@ -278,6 +278,18 @@
       "subDir": null,
       "type": "git",
       "url": "https://github.com/leanprover/cslib"
+    },
+    {
+      "configFile": "lakefile.toml",
+      "inherited": false,
+      "inputRev": "901aaab7967ceecd2240d0b38bbde7cf3e2c14ac",
+      "manifestFile": "lake-manifest.json",
+      "name": "QuantumFoundations",
+      "rev": "901aaab7967ceecd2240d0b38bbde7cf3e2c14ac",
+      "scope": "",
+      "subDir": null,
+      "type": "git",
+      "url": "https://github.com/lean-crypto-foundations/QuantumFoundations"
     }
   ],
   "packagesDir": ".lake/packages",
