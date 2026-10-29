@@ -148,11 +148,22 @@ the goals it adds) or when it changes no goal and its main goal is in `D` (`skip
 tactic that failed). The range runs from the anchor to the last element acting on `D`, and
 stops once `D` is empty. When `D` is still nonempty at the end of the sequence and its goals
 outlive the tactic enclosing the sequence (a goal after that tactic is in `D`), the anchor
-moves to that tactic, provided the leaf's anchor is the first element of its sequence. The
-action offers no closure, and says why in its title, when an element acts on `D` and on
+moves to that tactic, provided the leaf's anchor is the first element of its sequence.
+
+When the anchor failed, the elements after it did not run and have no tactic nodes; the range
+is then read from the syntax of the sequence (`failedSpan`). With no goal other than `g`
+before the anchor, every later element of the sequence acts on the descendants of `g`, and
+the range runs to the end of the sequence. With `k` other goals, the range is the anchor
+alone when the later elements are `k` blocks `·`, `case` or `next` and the sequence fails
+unless it closes its goals (the sequence of a `by` block or of such a block): each block
+closes one goal, so the anchor was to close `g`.
+
+The action offers no closure, and says why in its title, when an element acts on `D` and on
 other goals, when an element that changes other goals comes between two elements acting on
-`D`, when an element after the anchor did not run while `D` is nonempty (a tactic before it
-failed), or when the leaf runs on several goals.
+`D`, when an element after the anchor did not run though the element after the anchor ran
+(a tactic between them failed), when the anchor failed with other goals and the later elements are
+not one focusing block per other goal in a sequence that closes its goals, or when the leaf
+runs on several goals.
 
 The text of a closing arm is laid out for the column at which the edit range starts
 (`layoutAt`): a suggestion is laid out for the column of the syntax that made it, and a text
@@ -458,6 +469,58 @@ def enclosing (seqs : Array Sequence) (si : Nat) : Option (Syntax × Syntax.Rang
         best := some e
   return best
 
+/-- `stx` is a block that focuses one goal and fails unless it closes it: `·`, `case` or
+`next`. -/
+def isFocusBlock (stx : Syntax) : Bool :=
+  stx.isOfKind ``Lean.cdot || stx.isOfKind ``Parser.Tactic.case ||
+    (stx[0].isAtom && stx[0].getAtomVal == "next")
+
+/-- The innermost node of `stx`, not of a sequence kind, whose range contains the range `r`
+strictly: the node that owns the tactic sequence of range `r`. -/
+partial def sequenceOwner (stx : Syntax) (r : Syntax.Range) : Option Syntax :=
+  match stx with
+  | .node _ k args =>
+    match args.findSome? (sequenceOwner · r) with
+    | some o => some o
+    | none =>
+      if !sequenceKinds.contains k &&
+          (stx.getRange? (canonicalOnly := true)).any (Syntax.Range.strictlyInside r ·) then
+        some stx
+      else none
+  | _ => none
+
+/-- The tactic sequence of range `r` in the outermost tactic node `top` fails unless it closes
+its goals: it is the sequence of `top` itself, of a `by` block, or of a block `isFocusBlock`. -/
+def closesItsGoals (top : Syntax) (r : Syntax.Range) : Bool :=
+  match sequenceOwner top r with
+  | none => true
+  | some o => o.isOfKind ``Parser.Term.byTactic || isFocusBlock o
+
+/-- The edit range at the element `ei` of the sequence `s` when that element failed on the
+goals `before`, whose head the closure closes, so that the later elements did not run. With
+no other goal, the later elements of the sequence act on the goal of the leaf alone and are
+in the range. With `k` other goals, the later elements are in the range of none of them when
+they are `k` blocks `isFocusBlock` and the sequence closes its goals (`closesItsGoals`): each
+block closes one goal, so the leaf was to close its goal and the blocks take the other goals.
+Otherwise there is no range, since the syntax does not say which goal a later tactic was
+written for. -/
+def failedSpan (top : Syntax) (s : Sequence) (ei : Nat) (before : List MVarId) :
+    Except String EditSpan := do
+  let es := s.elems
+  let some e := es[ei]? | throw "the leaf is in no tactic sequence"
+  let others := before.length - 1
+  let rest := es.extract (ei + 1) es.size
+  let last ←
+    if others == 0 then pure (es.size - 1)
+    else if !(rest.size == others && rest.all (isFocusBlock ·.1)) then
+      throw s!"the leaf failed with {others} other goals open, and the tactics after it are \
+        not one block `·`, `case` or `next` per other goal"
+    else if !closesItsGoals top s.range then
+      throw "the leaf failed with other goals open, in a sequence that need not close its goals"
+    else pure ei
+  let stop := (es[last]?.map (·.2.stop)).getD e.2.stop
+  return { range := ⟨e.2.start, stop⟩, tactics := (es.extract ei (last + 1)).map (·.1) }
+
 /-- The edit range for a closure of the goal `g` of the tactic at `cur`, by the rule of the
 module docstring, over the tactic nodes `ss` of the info tree, within the outermost of them
 that contains `cur`. `fuel` bounds the number of times the anchor moves outwards. -/
@@ -476,13 +539,16 @@ partial def editSpan (ss : Array Step) (cur : Syntax.Range) (g : MVarId) (fuel :
   let some n ← elementNode ss e | throw "the leaf did not run"
   unless n.before.head? == some g do
     throw "the leaf runs inside a tactic on another goal"
+  if let some e1 := es[ei + 1]? then
+    if (← elementNode ss e1).isNone then
+      return ← failedSpan top.stx s ei n.before
   let mut d : List MVarId := [g]
   let mut last := ei
   let mut gap := false
   for h : j in [ei:es.size] do
     if d.isEmpty then break
     let some n ← elementNode ss es[j]
-      | throw "a tactic after the leaf did not run (a tactic before it failed)"
+      | throw "a tactic after the leaf did not run (a tactic between them failed)"
     let removed := n.before.filter (!n.after.contains ·)
     let added := n.after.filter (!n.before.contains ·)
     let acts := removed.any d.contains ||
