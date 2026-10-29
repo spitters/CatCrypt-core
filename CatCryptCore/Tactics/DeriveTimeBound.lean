@@ -38,7 +38,13 @@ is bounded by the same `match` on the same discriminants, each alternative repla
 bound (`matchBound`). When no bound of an alternative mentions its pattern variables, the
 bound of the `match` is the maximum of the bounds of its alternatives. The bound of a match by
 cases is monotone in each alternative, and `time_bound` proves it by splitting the arithmetic
-leaf on the discriminants of the match.
+leaf on the discriminants of the match. A step or a tree dispatched by a `match` (the
+hoisted match of a reduction on its input, a dispatch on a sum, a match on two discriminants
+or on nested patterns) is bounded in the same way, each alternative by the bound of its step
+or tree, which includes the cost of the dispatch charged in that alternative (`boundMatch`).
+A case analysis `T.casesOn` or `T.rec` of a non-recursive inductive type in a step cost (the
+cost of `Sum.map f g` on a bound value) is bounded by the maximum of the bounds of its minor
+premises when none mentions a field (`casesBound?`).
 
 A costed tree whose body is a pure step `(e, t)` with `t` a `ret` leaf (a reduction that
 computes its result without sampling, state or calls) has its theorem proved by the recursion
@@ -204,6 +210,72 @@ def matchBound (m : MatcherApp) (alts : Array Expr) : MetaM (Option Expr) := do
     return some r
   catch _ => return none
 
+/-- The bound of the `match` `m` whose alternatives are bounded by `k` (a step cost, a pair or
+a tree): the maximum of the bounds of its alternatives, or, when a bound mentions a pattern
+variable after the registered costs are replaced by closed forms, the `match` of the bounds of
+its alternatives (`matchBound`). The bounds of the alternatives include the cost of the
+dispatch that the costed form charges in each alternative. -/
+def boundMatch (m : MatcherApp) (k : Expr → MetaM Expr) : MetaM Expr := do
+  let mut acc : Option Expr := none
+  let mut lams : Array Expr := #[]
+  let mut dep := false
+  for alt in m.alts, n in m.altNumParams do
+    let (b, lam, d) ← lambdaBoundedTelescope alt n fun ys body => do
+      let r ← instantiateMVars (← k body)
+      let r ← ys.foldlM (init := r) fun r y => rewriteCosts y.fvarId! r
+      let d := ys.any fun y => r.containsFVar y.fvarId!
+      return (r, ← mkLambdaFVars ys r, d)
+    lams := lams.push lam
+    dep := dep || d
+    unless d do
+      acc ← match acc with
+        | none => pure (some b)
+        | some a => if a == b then pure (some a) else some <$> mkMaxN a b
+  if dep then
+    match ← matchBound m lams with
+    | some r => return r
+    | none => throwError "the bound depends on a matched value{indentExpr m.toExpr}"
+  match acc with
+  | some r => return r
+  | none => throwError "a match without alternatives{indentExpr m.toExpr}"
+
+/-- The bound of a case analysis `T.casesOn ps m x a₁ … aₖ` or `T.rec ps m a₁ … aₖ x` of a
+non-recursive inductive type `T` with one motive and no argument after its major premise, whose
+minor premises `aᵢ` (functions of the fields of constructor `i`) are bounded by `k`: the maximum
+of the bounds of the minor premises (a cost of `Sum.map f g` on a bound value). `none` when `e`
+is not such a case analysis or a bound of a minor premise mentions a field. -/
+def casesBound? (e : Expr) (k : Expr → MetaM Expr) : MetaM (Option Expr) := do
+  let some c := e.getAppFn.constName? | return none
+  let env ← getEnv
+  let args := e.getAppArgs
+  let some (iv, start) ← (do
+      if isCasesOnRecursor env c then
+        let some (.inductInfo iv) := env.find? c.getPrefix | return none
+        return some (iv, iv.numParams + 1 + iv.numIndices + 1)
+      let some (.recInfo rv) := env.find? c | return none
+      unless rv.numMotives == 1 do return none
+      let some (.inductInfo iv) := env.find? rv.getMajorInduct | return none
+      return some (iv, rv.numParams + 1) : MetaM (Option (InductiveVal × Nat)))
+    | return none
+  if iv.isRec then return none
+  let nCtors := iv.ctors.length
+  unless args.size == iv.numParams + 1 + iv.numIndices + 1 + nCtors do return none
+  let mut acc : Option Expr := none
+  for ctor in iv.ctors, i in [0:nCtors] do
+    let some (.ctorInfo cv) := env.find? ctor | return none
+    let some minor := args[start + i]? | return none
+    let b? ← lambdaBoundedTelescope minor cv.numFields fun ys body => do
+      if ys.size != cv.numFields then return none
+      let r ← instantiateMVars (← k body)
+      let r ← ys.foldlM (init := r) fun r y => rewriteCosts y.fvarId! r
+      if ys.any fun y => r.containsFVar y.fvarId! then return none
+      return some r
+    let some b := b? | return none
+    acc ← match acc with
+      | none => pure (some b)
+      | some a => if a == b then pure (some a) else some <$> mkMaxN a b
+  return acc
+
 mutual
 
 /-- The bound of a step cost `e : ℕ`. -/
@@ -229,26 +301,8 @@ partial def boundCost (bs : Bounds) (e : Expr) : MetaM Expr := do
   -- a `match` in a cost: the maximum of the bounds of its alternatives, or, when a bound
   -- mentions a pattern variable, the `match` of the bounds of its alternatives
   if let some m ← matchMatcherApp? e then
-    let mut acc : Option Expr := none
-    let mut lams : Array Expr := #[]
-    let mut dep := false
-    for alt in m.alts, n in m.altNumParams do
-      let (b, lam, d) ← lambdaBoundedTelescope alt n fun ys body => do
-        let r ← instantiateMVars (← boundCost bs body)
-        let r ← ys.foldlM (init := r) fun r y => rewriteCosts y.fvarId! r
-        let d := ys.any fun y => r.containsFVar y.fvarId!
-        return (r, ← mkLambdaFVars ys r, d)
-      lams := lams.push lam
-      dep := dep || d
-      unless d do
-        acc ← match acc with
-          | none => pure (some b)
-          | some a => if a == b then pure (some a) else some <$> mkMaxN a b
-    if dep then
-      match ← matchBound m lams with
-      | some r => return r
-      | none => throwError "the bound depends on a matched value{indentExpr e}"
-    if let some r := acc then return r
+    if !m.alts.isEmpty then return ← boundMatch m (boundCost bs)
+  if let some r ← casesBound? e (boundCost bs) then return r
   if let some _ := e.nat? then return e
   if e.isRawNatLit then return e
   return e
@@ -288,6 +342,9 @@ partial def boundStep (bs : Bounds) (x : Expr) : MetaM Expr := do
     let l ← withFresh c fun h => boundStep bs ((x.getArg! 3).beta #[h])
     let r ← withFresh (mkNot c) fun h => boundStep bs ((x.getArg! 4).beta #[h])
     return ← mkMaxN l r
+  -- a step dispatched by a `match`: the bounds of its alternatives (`boundMatch`)
+  if let some m ← matchMatcherApp? x then
+    if !m.alts.isEmpty then return ← boundMatch m (boundStep bs)
   throwError "no bound for the pair{indentExpr x}"
 
 /-- The bound of `t.time` for a tree `t : SPTree.Timed α`. -/
@@ -326,6 +383,9 @@ partial def boundTree (bs : Bounds) (t : Expr) : MetaM Expr := do
     return ← boundStep bs y
   if t.isAppOfArity ``ite 5 then
     return ← mkMaxN (← boundTree bs (t.getArg! 3)) (← boundTree bs (t.getArg! 4))
+  -- a tree dispatched by a `match`: the bounds of its alternatives (`boundMatch`)
+  if let some m ← matchMatcherApp? t then
+    if !m.alts.isEmpty then return ← boundMatch m (boundTree bs)
   throwError "no bound for the tree{indentExpr t}"
 
 end

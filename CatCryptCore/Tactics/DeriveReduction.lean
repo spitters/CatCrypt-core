@@ -47,7 +47,13 @@ first-order data arguments bound by `let`s around its body, so that an argument 
 however often the body uses it, and a call `b` of which two projections `b.1`, `b.2` occur among
 the arguments is bound once by a `let` (`unfoldShared?`). Unfolding stops at the six `SPComp`
 constructors, at `ite`,
-`dite` and matchers, at a local, and at a projection of a local. A chain of `let`s applied to
+`dite` and matchers, at a local, and at a projection of a local. A dispatch on a sum
+`Sum.elim f g x`, `Sum.casesOn x f g` or `Sum.rec f g x` whose scrutinee `x` is not a
+constructor is the match of `sumDispatch` on `x` with the alternatives `f` and `g`
+(`sumDispatch?`), so that it is reflected, priced and proved as an explicit `match` on the sum;
+on a constructor it is the alternative of that constructor. A dispatch applied to further
+arguments (`Sum.elim f g x s`) on a scrutinee that is not a constructor is not such a match,
+as for an explicit `match` applied to further arguments. A chain of `let`s applied to
 arguments (the unfolded body of a definition that returns a function after its `let`s,
 `opaquePost sid uid s r o`) has the arguments pushed under the `let`s,
 `(let x := v; fun y => b) a ↦ let x := v; b[a/y]` (`pushAppUnderLets`), so that the `let`s are
@@ -350,6 +356,16 @@ theorem compile_bind_pure_of_erase {α β : Type} (X : SPTree.Timed α) (ε ε' 
   rw [← h2, ← h1, SPTree.compile_bind]
   rfl
 
+/-- The case analysis of `x : α ⊕ β` by `f` on the left and `g` on the right, written as a
+`match`. Its matcher `sumDispatch.match_1` is the form in which `derive_reduction` keeps a
+dispatch `Sum.elim f g x`, `Sum.casesOn x f g` or `Sum.rec f g x` on a sum `x` that is not a
+constructor (`sumDispatch?`). -/
+@[expose] def sumDispatch.{u, v, w} {α : Type u} {β : Type v} (motive : α ⊕ β → Sort w)
+    (x : α ⊕ β) (f : (a : α) → motive (.inl a)) (g : (b : β) → motive (.inr b)) : motive x :=
+  match x with
+  | .inl a => f a
+  | .inr b => g b
+
 end CatCrypt.Tactics.DeriveReduction
 
 meta section
@@ -446,6 +462,40 @@ partial def pushAppUnderLets (f : Expr) (args : Array Expr) : Expr :=
   | .mdata _ b => pushAppUnderLets b args
   | f => (mkAppN f args).headBeta
 
+/-- A dispatch on a sum, `Sum.elim f g x a₁ … aₙ`, `Sum.casesOn x f g a₁ … aₙ` or
+`Sum.rec f g x a₁ … aₙ`, as a match: when `whnf` brings `x` to a constructor, the alternative
+of that constructor at its field, applied to `a₁ … aₙ`; otherwise, when `n = 0`, the matcher
+of `sumDispatch` on `x`. `none` when `e` is not such a dispatch, and on a scrutinee that is not
+a constructor when `n > 0`: the match with the arguments passed into its alternatives equals
+the dispatch only propositionally. -/
+def sumDispatch? (e : Expr) : MetaM (Option Expr) := do
+  let args := e.getAppArgs
+  let some c := e.getAppFn.constName? | return none
+  unless args.size ≥ 6 do return none
+  -- the motive, the scrutinee and the two alternatives
+  let (motive?, x, f, g) ←
+    if c == ``Sum.elim then pure (none, args[5]!, args[3]!, args[4]!)
+    else if c == ``Sum.casesOn then pure (some args[2]!, args[3]!, args[4]!, args[5]!)
+    else if c == ``Sum.rec then pure (some args[2]!, args[5]!, args[3]!, args[4]!)
+    else return none
+  let rest := args.extract 6 args.size
+  let x' ← whnf x
+  if x'.isAppOfArity ``Sum.inl 3 then
+    return some (mkAppN (mkApp f x'.appArg!).headBeta rest).headBeta
+  if x'.isAppOfArity ``Sum.inr 3 then
+    return some (mkAppN (mkApp g x'.appArg!).headBeta rest).headBeta
+  -- A dispatch applied to further arguments is not definitionally the match with the
+  -- arguments passed into its alternatives; it is left to the unfolding.
+  unless rest.isEmpty do return none
+  let motive ← match motive? with
+    | some m => pure m
+    | none =>
+      let ty ← inferType e
+      withLocalDeclD `x (← inferType x) fun y => mkLambdaFVars #[y] ty
+  let d ← mkAppM ``sumDispatch #[motive, x, f, g]
+  let some d' ← unfoldDefinition? d | return none
+  return some d'.headBeta
+
 /-- Bring the computation `e` to a head: a constructor of `SPComp`, `ite`, `dite`, a matcher,
 `SPTree.compile`, a call of a recursive definition, a local or a `let`, or a stuck term. A
 definition is unfolded by `unfoldShared?`, so that its arguments stay `let`s priced once. A
@@ -468,6 +518,7 @@ partial def normalize (e : Expr) : MetaM Expr := do
       let e' ← withTransparency .instances (whnf e)
       if e' == e then return e
       return ← normalize e'
+    if let some e' ← sumDispatch? e then return ← normalize e'
     if let some e' ← unfoldShared? e then return ← normalize e'
     match ← unfoldDefinition? e with
     | some e' => normalize e'.headBeta
