@@ -7,6 +7,8 @@ module
 
 public import CatCryptCore.Quantum.InstrumentCP
 public import CatCryptCore.Crypto.UCMonad.DiamondDominates
+public import CatCryptCore.Quantum.CPMapMatrixMap
+public import QuantumFoundations.SubInstrument
 
 @[expose] public section
 
@@ -21,14 +23,20 @@ semidefiniteness by `id_k ⊗ Φ` for every `k` — is the separate predicate
 `IsCPMap`, and it is the side condition of `localOp₁`, `localOp₂` and
 `QComp.tensor`.
 
-`CPComp d α` bundles a `QComp d α` with complete positivity of every branch.
-Equality of `CPComp`s is equality of the underlying instruments
-(`CPComp.toQComp_injective`, `CPComp.ext`), since `branch_cp` is a `Prop`.
+`CPComp d α` is QuantumFoundations' `Quantum.SubInstrument (Fin d) (Fin d) α`:
+a family of completely positive branches whose traces over every finite set of
+outcomes sum to at most the trace of the input. `CPComp.toQComp` forgets it to
+a `QComp d α`, and `CPComp.mk'` builds one from a `QComp d α` whose branches
+satisfy `IsCPMap`; the two notions of complete positivity agree by
+`isCPMap_iff_isCP`. Equality of `CPComp`s is equality of the underlying
+instruments (`CPComp.toQComp_injective`, `CPComp.ext`).
 
 ## Main definitions
 
 * `CPComp`: an instrument whose every branch is completely positive
-* `CPComp.qpure`, `CPComp.qbind`, `CPComp.qfail`: the monad operations
+* `CPComp.toQComp`, `CPComp.mk'`: the passage to and from `QComp`
+* `CPComp.qpure`, `CPComp.qbind`, `CPComp.qfail`: the monad operations, those
+  of `Quantum.SubInstrument`
 * `CPComp.tensor`: parallel composition, with no side-condition argument
 
 ## Main results
@@ -36,7 +44,9 @@ Equality of `CPComp`s is equality of the underlying instruments
 * `CPComp.ext`: equality of `CPComp`s is equality of the underlying
   instruments
 * `CPComp.qpure_qbind`, `CPComp.qbind_qpure`, `CPComp.qbind_assoc`: the monad
-  laws, transported from `QComp`
+  laws, those of `Quantum.SubInstrument`
+* `CPComp.toQComp_qpure`, `CPComp.toQComp_qfail`, `CPComp.toQComp_qbind`:
+  `toQComp` commutes with the monad operations
 * `localOp₁_branch_isCPMap`, `localOp₂_branch_isCPMap`: lifting a completely
   positive instrument to one register of a bipartite system preserves
   complete positivity
@@ -57,68 +67,108 @@ open CatCrypt.Crypto.UCMonad.DiamondDominates (qbind_branch_isCPMap)
 /-! ## The completely positive instruments -/
 
 /-- A sub-normalised quantum instrument all of whose branches are completely
-positive. -/
-structure CPComp (d : ℕ) (α : Type) where
-  /-- The underlying instrument. -/
-  toQComp : QComp d α
-  /-- Every branch is completely positive. -/
-  branch_cp : ∀ a, IsCPMap (toQComp.branch a)
+positive: QuantumFoundations' subinstrument from `Fin d` to `Fin d`. -/
+abbrev CPComp (d : ℕ) (α : Type) := _root_.Quantum.SubInstrument (Fin d) (Fin d) α
 
 namespace CPComp
 
 variable {d e : ℕ} {α β γ : Type}
 
-theorem toQComp_injective :
-    Function.Injective (CPComp.toQComp (d := d) (α := α)) := by
-  rintro ⟨C, hC⟩ ⟨D, hD⟩ rfl
-  rfl
+/-- The underlying instrument of a completely positive instrument. -/
+def toQComp (C : CPComp d α) : QComp d α where
+  branch := C.branch
+  branch_psd a _ hρ := (C.isCP_branch a).posSemidef hρ
+  branch_summable := C.summable_branch_apply
+  branch_stp ρ hρ := by
+    rw [C.isCPTNIFamily.re_tsum_trace_apply]
+    exact C.tsum_trace_re_le hρ
 
-@[ext]
+@[simp]
+theorem toQComp_branch (C : CPComp d α) : C.toQComp.branch = C.branch := rfl
+
+/-- Every branch of a completely positive instrument is completely positive in the sense of
+`IsCPMap`. -/
+theorem branch_cp (C : CPComp d α) (a : α) : IsCPMap (C.toQComp.branch a) :=
+  isCPMap_of_isCP (C.isCP_branch a)
+
+/-- The completely positive instrument with the branches of an instrument whose branches are
+completely positive. -/
+def mk' (I : QComp d α) (h : ∀ a, IsCPMap (I.branch a)) : CPComp d α where
+  branch := I.branch
+  isCP_branch a := (h a).isCP
+  trace_le s ρ hρ := by
+    have hs := trace_re_summable (I.branch_summable ρ)
+    calc ∑ a ∈ s, (I.branch a ρ).trace.re
+        ≤ ∑' a, (I.branch a ρ).trace.re :=
+          hs.sum_le_tsum s fun a _ => trace_re_nonneg_of_psd (I.branch_psd a ρ hρ)
+      _ = (∑' a, (I.branch a ρ).trace).re :=
+          (Complex.re_tsum (trace_summable (I.branch_summable ρ))).symm
+      _ ≤ ρ.trace.re := I.branch_stp ρ hρ
+
+@[simp]
+theorem branch_mk' (I : QComp d α) (h : ∀ a, IsCPMap (I.branch a)) :
+    (mk' I h).branch = I.branch := rfl
+
+@[simp]
+theorem toQComp_mk' (I : QComp d α) (h : ∀ a, IsCPMap (I.branch a)) :
+    (mk' I h).toQComp = I :=
+  QComp.ext fun _ => rfl
+
+@[simp]
+theorem mk'_toQComp (C : CPComp d α) : mk' C.toQComp C.branch_cp = C :=
+  _root_.Quantum.DSubInstrument.ext rfl
+
+theorem toQComp_injective :
+    Function.Injective (CPComp.toQComp (d := d) (α := α)) := fun _ _ h =>
+  _root_.Quantum.DSubInstrument.ext (congrArg QComp.branch h)
+
 theorem ext {C D : CPComp d α} (h : C.toQComp = D.toQComp) : C = D :=
   toQComp_injective h
 
 /-! ## Monad operations -/
 
 /-- The trivial instrument returning `a`. -/
-def qpure (a : α) : CPComp d α where
-  toQComp := QComp.qpure a
-  branch_cp := qpure_branch_isCPMap a
+def qpure (a : α) : CPComp d α := _root_.Quantum.SubInstrument.pure a
 
 /-- The everywhere-zero instrument. -/
-def qfail : CPComp d α where
-  toQComp := QComp.qfail
-  branch_cp _ := isCPMap_zero
+def qfail : CPComp d α := _root_.Quantum.SubInstrument.fail
 
 /-- Kleisli composition of completely positive instruments. -/
-def qbind (C : CPComp d α) (f : α → CPComp d β) : CPComp d β where
-  toQComp := QComp.qbind C.toQComp fun a => (f a).toQComp
-  branch_cp := qbind_branch_isCPMap _ _ C.branch_cp fun a => (f a).branch_cp
+def qbind (C : CPComp d α) (f : α → CPComp d β) : CPComp d β :=
+  _root_.Quantum.SubInstrument.bind C f
 
 @[simp]
 theorem toQComp_qpure (a : α) :
-    (qpure (d := d) a).toQComp = QComp.qpure a := rfl
+    (qpure (d := d) a).toQComp = QComp.qpure a := by
+  refine QComp.ext fun a' => ?_
+  by_cases h : a' = a
+  · subst h
+    simp [qpure, QComp.qpure]
+  · simp [qpure, QComp.qpure, h]
 
 @[simp]
 theorem toQComp_qfail :
-    (qfail (d := d) (α := α)).toQComp = QComp.qfail := rfl
+    (qfail (d := d) (α := α)).toQComp = QComp.qfail :=
+  QComp.ext fun _ => rfl
 
 @[simp]
 theorem toQComp_qbind (C : CPComp d α) (f : α → CPComp d β) :
-    (C.qbind f).toQComp = QComp.qbind C.toQComp fun a => (f a).toQComp := rfl
+    (C.qbind f).toQComp = QComp.qbind C.toQComp fun a => (f a).toQComp :=
+  QComp.ext_fun fun b ρ => _root_.Quantum.DSubInstrument.branch_bind_apply C f b ρ
 
 /-! ## Monad laws -/
 
 theorem qpure_qbind (a : α) (f : α → CPComp d β) :
     (qpure a).qbind f = f a :=
-  ext (QComp.qpure_qbind a fun a' => (f a').toQComp)
+  _root_.Quantum.SubInstrument.pure_bind a f
 
 theorem qbind_qpure (C : CPComp d α) : C.qbind qpure = C :=
-  ext (QComp.qbind_qpure C.toQComp)
+  _root_.Quantum.SubInstrument.bind_pure C
 
 theorem qbind_assoc (C : CPComp d α) (f : α → CPComp d β)
     (g : β → CPComp d γ) :
     (C.qbind f).qbind g = C.qbind fun a => (f a).qbind g :=
-  ext (QComp.qbind_assoc C.toQComp _ _)
+  _root_.Quantum.SubInstrument.bind_assoc C f g
 
 end CPComp
 
@@ -273,14 +323,15 @@ theorem QComp.tensor_branch_isCPMap (C : QComp d α) (D : QComp e β)
 /-- Parallel composition of completely positive instruments on the two
 registers of a `d * e`-dimensional system. The complete-positivity side
 conditions of `QComp.tensor` are supplied by the `branch_cp` fields. -/
-def CPComp.tensor (C : CPComp d α) (D : CPComp e β) : CPComp (d * e) (α × β) where
-  toQComp := QComp.tensor C.toQComp D.toQComp C.branch_cp D.branch_cp
-  branch_cp := QComp.tensor_branch_isCPMap _ _ _ _
+def CPComp.tensor (C : CPComp d α) (D : CPComp e β) : CPComp (d * e) (α × β) :=
+  CPComp.mk' (QComp.tensor C.toQComp D.toQComp C.branch_cp D.branch_cp)
+    (QComp.tensor_branch_isCPMap _ _ _ _)
 
 @[simp]
 theorem CPComp.toQComp_tensor (C : CPComp d α) (D : CPComp e β) :
     (C.tensor D).toQComp =
-      QComp.tensor C.toQComp D.toQComp C.branch_cp D.branch_cp := rfl
+      QComp.tensor C.toQComp D.toQComp C.branch_cp D.branch_cp :=
+  CPComp.toQComp_mk' _ _
 
 end Tensor
 

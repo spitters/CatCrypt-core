@@ -24,9 +24,8 @@ completely positive by induction, using that Kleisli composition preserves
 complete positivity (`qbind_branch_isCPMap`).
 
 Each run is then packaged as a `CPComp` whose underlying instrument is the run
-itself, so `(cpRun A H).toQComp = run A H` holds by `rfl`, and the output
-probabilities of the QROM development are `CPComp.prTrue` of these packages,
-again by `rfl`.
+itself (`toQComp_cpRun`), and the output probabilities of the QROM
+development are `CPComp.prTrue` of these packages.
 
 ## Main results
 
@@ -227,23 +226,23 @@ theorem runSC_branch_isCPMap (A : QAdv m n w q) (H : Fin m → Fin n) (S : Finse
       fun out => qpure_branch_isCPMap (out, fl)) p
 
 /-- The standard run as a completely positive instrument. -/
-def cpRun (A : QAdv m n w q) (H : Fin m → Fin n) : CPComp (m * n * w) Bool where
-  toQComp := run A H
-  branch_cp := run_branch_isCPMap A H
+def cpRun (A : QAdv m n w q) (H : Fin m → Fin n) : CPComp (m * n * w) Bool :=
+  CPComp.mk' (run A H) (run_branch_isCPMap A H)
 
 /-- The semi-classical run as a completely positive instrument. -/
 def cpRunSC (A : QAdv m n w q) (H : Fin m → Fin n) (S : Finset (Fin m)) :
-    CPComp (m * n * w) (Bool × Bool) where
-  toQComp := runSC A H S
-  branch_cp := runSC_branch_isCPMap A H S
+    CPComp (m * n * w) (Bool × Bool) :=
+  CPComp.mk' (runSC A H S) (runSC_branch_isCPMap A H S)
 
 @[simp]
 theorem toQComp_cpRun (A : QAdv m n w q) (H : Fin m → Fin n) :
-    (cpRun A H).toQComp = run A H := rfl
+    (cpRun A H).toQComp = run A H :=
+  CPComp.toQComp_mk' _ _
 
 @[simp]
 theorem toQComp_cpRunSC (A : QAdv m n w q) (H : Fin m → Fin n) (S : Finset (Fin m)) :
-    (cpRunSC A H S).toQComp = runSC A H S := rfl
+    (cpRunSC A H S).toQComp = runSC A H S :=
+  CPComp.toQComp_mk' _ _
 
 /-- `prOut` is the acceptance probability of `cpRun`. -/
 theorem prOut_eq_prTrue (A : QAdv m n w q) (H : Fin m → Fin n) :
@@ -251,11 +250,15 @@ theorem prOut_eq_prTrue (A : QAdv m n w q) (H : Fin m → Fin n) :
 
 /-- `prOutSC` is the acceptance probability of the output bit of `cpRunSC`. -/
 theorem prOutSC_eq_prTrue (A : QAdv m n w q) (H : Fin m → Fin n) (S : Finset (Fin m)) :
-    prOutSC A H S = (cpRunSC A H S >>= fun p => pure p.1).prTrue A.init := rfl
+    prOutSC A H S = (cpRunSC A H S >>= fun p => pure p.1).prTrue A.init := by
+  simp only [CPComp.prTrue_def, CPComp.toQComp_bind, CPComp.toQComp_pure, toQComp_cpRunSC]
+  rfl
 
 /-- `prFind` is the acceptance probability of the find bit of `cpRunSC`. -/
 theorem prFind_eq_prTrue (A : QAdv m n w q) (H : Fin m → Fin n) (S : Finset (Fin m)) :
-    prFind A H S = (cpRunSC A H S >>= fun p => pure p.2).prTrue A.init := rfl
+    prFind A H S = (cpRunSC A H S >>= fun p => pure p.2).prTrue A.init := by
+  simp only [CPComp.prTrue_def, CPComp.toQComp_bind, CPComp.toQComp_pure, toQComp_cpRunSC]
+  rfl
 
 end Run
 
@@ -303,33 +306,33 @@ theorem prefixRunMR_branch_isCPMap (A : QAdvMR m n w q k c a) (H : Fin m → Fin
 
 /-- The standard multi-round run as a completely positive instrument. -/
 def cpRunMR (A : QAdvMR m n w q k c a) (H : Fin m → Fin n) (f : Fin c → Fin a) :
-    CPComp (m * n * w) Bool where
-  toQComp := runMR A H f
-  branch_cp := runMR_branch_isCPMap A H f
+    CPComp (m * n * w) Bool :=
+  CPComp.mk' (runMR A H f) (runMR_branch_isCPMap A H f)
 
 /-- The semi-classical multi-round run as a completely positive instrument. -/
 def cpRunSCMR (A : QAdvMR m n w q k c a) (H : Fin m → Fin n) (f : Fin c → Fin a)
-    (S : Finset (Fin m)) : CPComp (m * n * w) (Bool × Bool) where
-  toQComp := runSCMR A H f S
-  branch_cp := runSCMR_branch_isCPMap A H f S
+    (S : Finset (Fin m)) : CPComp (m * n * w) (Bool × Bool) :=
+  CPComp.mk' (runSCMR A H f S) (runSCMR_branch_isCPMap A H f S)
 
 /-- The cut multi-round run followed by `{Π_S, 1 - Π_S}` as a completely
 positive instrument. -/
 def cpPrefixRunMR (A : QAdvMR m n w q k c a) (H : Fin m → Fin n) (f : Fin c → Fin a)
-    (S : Finset (Fin m)) (j : Fin (flatQ q k q)) : CPComp (m * n * w) Bool where
-  toQComp := QComp.qbind
+    (S : Finset (Fin m)) (j : Fin (flatQ q k q)) : CPComp (m * n * w) Bool :=
+  CPComp.mk' (QComp.qbind
     (mrPrefixU (oracleQ m n w H) f k q (A.seg 0) (Fin.tail A.seg) A.rounds j)
-    fun _ => measProj (projS m n w S) (projS_conjTranspose m n w S) (projS_mul_self m n w S)
-  branch_cp := prefixRunMR_branch_isCPMap A H f S j
+    fun _ => measProj (projS m n w S) (projS_conjTranspose m n w S) (projS_mul_self m n w S))
+    (prefixRunMR_branch_isCPMap A H f S j)
 
 @[simp]
 theorem toQComp_cpRunMR (A : QAdvMR m n w q k c a) (H : Fin m → Fin n) (f : Fin c → Fin a) :
-    (cpRunMR A H f).toQComp = runMR A H f := rfl
+    (cpRunMR A H f).toQComp = runMR A H f :=
+  CPComp.toQComp_mk' _ _
 
 @[simp]
 theorem toQComp_cpRunSCMR (A : QAdvMR m n w q k c a) (H : Fin m → Fin n)
     (f : Fin c → Fin a) (S : Finset (Fin m)) :
-    (cpRunSCMR A H f S).toQComp = runSCMR A H f S := rfl
+    (cpRunSCMR A H f S).toQComp = runSCMR A H f S :=
+  CPComp.toQComp_mk' _ _
 
 /-- `prOutMR` is the acceptance probability of `cpRunMR`. -/
 theorem prOutMR_eq_prTrue (A : QAdvMR m n w q k c a) (H : Fin m → Fin n)
@@ -338,7 +341,9 @@ theorem prOutMR_eq_prTrue (A : QAdvMR m n w q k c a) (H : Fin m → Fin n)
 /-- `prFindMR` is the acceptance probability of the find bit of `cpRunSCMR`. -/
 theorem prFindMR_eq_prTrue (A : QAdvMR m n w q k c a) (H : Fin m → Fin n)
     (f : Fin c → Fin a) (S : Finset (Fin m)) :
-    prFindMR A H f S = (cpRunSCMR A H f S >>= fun p => pure p.2).prTrue A.init := rfl
+    prFindMR A H f S = (cpRunSCMR A H f S >>= fun p => pure p.2).prTrue A.init := by
+  simp only [CPComp.prTrue_def, CPComp.toQComp_bind, CPComp.toQComp_pure, toQComp_cpRunSCMR]
+  rfl
 
 /-- `prOutPrefixMR` is the acceptance probability of `cpPrefixRunMR`. -/
 theorem prOutPrefixMR_eq_prTrue (A : QAdvMR m n w q k c a) (H : Fin m → Fin n)

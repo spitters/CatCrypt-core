@@ -161,8 +161,9 @@ theorem prTrue_add_prFalse_of_totalQ (G : CPComp d Bool) (hG : TotalQ G.toQComp)
 
 /-- Resetting the register after a total game gives a total game. -/
 theorem totalQ_withReset (σ₀ : DensityMatrix d) (G : CPComp d Bool) (hG : TotalQ G.toQComp) :
-    TotalQ (CPComp.withReset σ₀ G).toQComp :=
-  totalQ_qbind hG fun _ => totalQ_qbind (totalQ_prep σ₀) fun _ => totalQ_qpure _
+    TotalQ (CPComp.withReset σ₀ G).toQComp := by
+  simp only [CPComp.withReset, CPComp.toQComp_bind, CPComp.toQComp_prep, CPComp.toQComp_pure]
+  exact totalQ_qbind hG fun _ => totalQ_qbind (totalQ_prep σ₀) fun _ => totalQ_qpure _
 
 end Total
 
@@ -231,8 +232,10 @@ theorem absDiff_prTrue_qINDCCAGame (A : KEMQAdv m₁ m₂ n w q k c a PK C K)
 
 /-- The experiment is a total instrument. -/
 theorem totalQ_qINDCCAGame (A : KEMQAdv m₁ m₂ n w q k c a PK C K) (b : Bool) :
-    TotalQ (qINDCCAGame P hpk eG eJ eKR eC eKa A b).toQComp :=
-  totalQ_qbind (totalQ_classicalEmbed _ (sum_kemDist_apply_some P eKR)) fun _ =>
+    TotalQ (qINDCCAGame P hpk eG eJ eKR eC eKa A b).toQComp := by
+  simp only [qINDCCAGame, CPComp.toQComp_bind, CPComp.toQComp_sample, CPComp.toQComp_prep,
+    toQComp_cpRunMR]
+  exact totalQ_qbind (totalQ_classicalEmbed _ (sum_kemDist_apply_some P eKR)) fun _ =>
     totalQ_qbind (totalQ_prep _) fun _ =>
       totalQ_qbind (totalQ_mrChain _ (totalQ_unitaryChannel _) _ _ _ _ _ _) fun _ =>
         totalQ_measProj _ _ _
@@ -305,8 +308,10 @@ theorem prTrue_qINDCCAGameF (P : Scheme PK SK M C R) (F : Fin m₃ → Fin n)
 
 theorem totalQ_qINDCCAGameF (P : Scheme PK SK M C R) (F : Fin m₃ → Fin n)
     (A : KEMQAdv (m₁ + m₂) m₃ n w q k c a PK C K) (b : Bool) :
-    TotalQ (qINDCCAGameF hpk eG eJ eKR eC eKa P F A b).toQComp :=
-  totalQ_qbind (totalQ_classicalEmbed _ (sum_kemDist_apply_some P eKR)) fun _ =>
+    TotalQ (qINDCCAGameF hpk eG eJ eKR eC eKa P F A b).toQComp := by
+  simp only [qINDCCAGameF, CPComp.toQComp_bind, CPComp.toQComp_sample, CPComp.toQComp_prep,
+    toQComp_cpRunMR]
+  exact totalQ_qbind (totalQ_classicalEmbed _ (sum_kemDist_apply_some P eKR)) fun _ =>
     totalQ_qbind (totalQ_prep _) fun _ =>
       totalQ_qbind (totalQ_mrChain _ (totalQ_unitaryChannel _) _ _ _ _ _ _) fun _ =>
         totalQ_measProj _ _ _
@@ -343,8 +348,9 @@ theorem absDiff_prTrue_qINDCCAGameAvg_le (Pf : (Fin m₃ → Fin n) → Scheme P
 
 theorem totalQ_qINDCCAGameAvg (Pf : (Fin m₃ → Fin n) → Scheme PK SK M C R)
     (A : KEMQAdv (m₁ + m₂) m₃ n w q k c a PK C K) (b : Bool) :
-    TotalQ (qINDCCAGameAvg hpk eG eJ eKR eC eKa Pf A b).toQComp :=
-  totalQ_qbind (totalQ_classicalEmbed _ (by
+    TotalQ (qINDCCAGameAvg hpk eG eJ eKR eC eKa Pf A b).toQComp := by
+  simp only [qINDCCAGameAvg, CPComp.toQComp_bind, CPComp.toQComp_sample]
+  exact totalQ_qbind (totalQ_classicalEmbed _ (by
       simp only [SDistr.uniform_apply_some, Finset.sum_const, Finset.card_univ, nsmul_eq_mul]
       exact ENNReal.mul_inv_cancel (by simp [NeZero.ne n]) (ENNReal.natCast_ne_top _)))
     fun F => totalQ_qINDCCAGameF hpk eG eJ eKR eC eKa (Pf F) F A b

@@ -492,9 +492,8 @@ theorem liftChQ_branch (e : Fin (d * c) ≃ Fin D) (Φ : CPComp d Unit)
 
 /-- The channel `Φ ⊗ id` on the register extended by the ancilla `Fin c`. -/
 def liftCh (e : Fin (d * c) ≃ Fin D) (Φ : CPComp d Unit) (hTP : IsTP (Φ.toQComp.branch ())) :
-    CPComp D Unit where
-  toQComp := liftChQ e Φ hTP
-  branch_cp u := isCPMap_krausSum _ _ (liftChQ_branch e Φ hTP u)
+    CPComp D Unit :=
+  CPComp.mk' (liftChQ e Φ hTP) fun u => isCPMap_krausSum _ _ (liftChQ_branch e Φ hTP u)
 
 theorem isTP_liftCh (e : Fin (d * c) ≃ Fin D) (Φ : CPComp d Unit)
     (hTP : IsTP (Φ.toQComp.branch ())) : IsTP ((liftCh e Φ hTP).toQComp.branch ()) := fun M => by

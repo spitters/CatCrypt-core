@@ -150,18 +150,20 @@ theorem bind_eq_qbind (C : CPComp d α) (f : α → CPComp d β) :
     C >>= f = C.qbind f := rfl
 
 theorem toQComp_pure (a : α) :
-    (pure a : CPComp d α).toQComp = pure a := rfl
+    (pure a : CPComp d α).toQComp = pure a :=
+  toQComp_qpure a
 
 theorem toQComp_bind (C : CPComp d α) (f : α → CPComp d β) :
-    (C >>= f).toQComp = C.toQComp >>= fun a => (f a).toQComp := rfl
+    (C >>= f).toQComp = C.toQComp >>= fun a => (f a).toQComp :=
+  toQComp_qbind C f
 
 theorem qbind_qfail (C : CPComp d α) :
     C.qbind (fun _ => (qfail : CPComp d β)) = qfail :=
-  ext (QComp.qbind_fail C.toQComp)
+  _root_.Quantum.DSubInstrument.bind_fail C
 
 theorem qfail_qbind (f : α → CPComp d β) :
     (qfail : CPComp d α).qbind f = qfail :=
-  ext (QComp.qfail_qbind _)
+  _root_.Quantum.DSubInstrument.fail_bind f
 
 /-! ## Readout -/
 
@@ -194,30 +196,31 @@ theorem prTrue_bind (C : CPComp d α) (f : α → CPComp d Bool) (ρ : DensityMa
   have hnn : ∀ a, 0 ≤ ((f a).toQComp.branch true (C.toQComp.branch a ρ.val)).trace.re :=
     fun a => trace_re_nonneg_of_psd
       ((f a).toQComp.branch_psd true _ (C.toQComp.branch_psd a ρ.val ρ.psd))
-  rw [← ENNReal.ofReal_tsum_of_nonneg hnn (trace_re_summable hsum)]
-  show ENNReal.ofReal (∑' a, (f a).toQComp.branch true (C.toQComp.branch a ρ.val)).trace.re = _
+  rw [← ENNReal.ofReal_tsum_of_nonneg hnn (trace_re_summable hsum), prTrue_def, toQComp_bind]
+  change ENNReal.ofReal (∑' a, (f a).toQComp.branch true (C.toQComp.branch a ρ.val)).trace.re = _
   rw [trace_tsum hsum, Complex.re_tsum (trace_summable hsum)]
 
 /-! ## Unitaries and measurements -/
 
 /-- Unitary evolution `ρ ↦ U ρ Uᴴ`. -/
-def unitary (U : Matrix.unitaryGroup (Fin d) ℂ) : CPComp d Unit where
-  toQComp := UnitaryChannel.unitaryChannel U
-  branch_cp _ := isCPMap_conj (U : Matrix (Fin d) (Fin d) ℂ) _ fun _ => rfl
+def unitary (U : Matrix.unitaryGroup (Fin d) ℂ) : CPComp d Unit :=
+  mk' (UnitaryChannel.unitaryChannel U)
+    fun _ => isCPMap_conj (U : Matrix (Fin d) (Fin d) ℂ) _ fun _ => rfl
 
 @[simp]
 theorem toQComp_unitary (U : Matrix.unitaryGroup (Fin d) ℂ) :
-    (unitary U).toQComp = UnitaryChannel.unitaryChannel U := rfl
+    (unitary U).toQComp = UnitaryChannel.unitaryChannel U :=
+  toQComp_mk' _ _
 
 /-- The two-outcome projective measurement `{P, 1 - P}`: outcome `true` is
 `ρ ↦ P ρ P`, outcome `false` is `ρ ↦ (1 - P) ρ (1 - P)`. -/
-def measProj (P : Projector d) : CPComp d Bool where
-  toQComp := measureProj P
-  branch_cp := measureProj_branch_isCPMap P
+def measProj (P : Projector d) : CPComp d Bool :=
+  mk' (measureProj P) (measureProj_branch_isCPMap P)
 
 @[simp]
 theorem toQComp_measProj (P : Projector d) :
-    (measProj P).toQComp = measureProj P := rfl
+    (measProj P).toQComp = measureProj P :=
+  toQComp_mk' _ _
 
 end CPComp
 
@@ -241,44 +244,44 @@ variable {d : ℕ} {α β γ δ : Type}
 
 /-- The instrument of a family of measurement operators `{M_a}`: branch `a` is
 `ρ ↦ M_a ρ M_aᴴ`. -/
-def measureOps [Fintype α] (M : Measurement.MeasurementOps d α) : CPComp d α where
-  toQComp := Measurement.measureOps M
-  branch_cp := Measurement.measureOps_branch_isCPMap M
+def measureOps [Fintype α] (M : Measurement.MeasurementOps d α) : CPComp d α :=
+  mk' (Measurement.measureOps M) (Measurement.measureOps_branch_isCPMap M)
 
 @[simp]
 theorem toQComp_measureOps [Fintype α] (M : Measurement.MeasurementOps d α) :
-    (measureOps M).toQComp = Measurement.measureOps M := rfl
+    (measureOps M).toQComp = Measurement.measureOps M :=
+  toQComp_mk' _ _
 
 /-- The instrument with one Kraus operator per outcome: branch `a` is
 `ρ ↦ M a * ρ * (M a)ᴴ`. -/
 def ofKraus [Fintype α] (M : α → Matrix (Fin d) (Fin d) ℂ)
-    (h : ∑ a, (M a)ᴴ * M a = 1) : CPComp d α where
-  toQComp := QComp.ofKraus M h
-  branch_cp := QComp.ofKraus_branch_isCPMap M h
+    (h : ∑ a, (M a)ᴴ * M a = 1) : CPComp d α :=
+  mk' (QComp.ofKraus M h) (QComp.ofKraus_branch_isCPMap M h)
 
 @[simp]
 theorem toQComp_ofKraus [Fintype α] (M : α → Matrix (Fin d) (Fin d) ℂ)
     (h : ∑ a, (M a)ᴴ * M a = 1) :
-    (ofKraus M h).toQComp = QComp.ofKraus M h := rfl
+    (ofKraus M h).toQComp = QComp.ofKraus M h :=
+  toQComp_mk' _ _
 
 /-! ## Classical sampling -/
 
 /-- Sampling from a classical sub-distribution: branch `a` scales the state
 by `μ (some a)`. -/
-def sample (μ : SDistr α) : CPComp d α where
-  toQComp := classicalEmbed μ
-  branch_cp := ClassicalDiamondLift.classicalEmbed_isCPMap μ
+def sample (μ : SDistr α) : CPComp d α :=
+  mk' (classicalEmbed μ) (ClassicalDiamondLift.classicalEmbed_isCPMap μ)
 
 @[simp]
 theorem toQComp_sample (μ : SDistr α) :
-    (sample (d := d) μ).toQComp = classicalEmbed μ := rfl
+    (sample (d := d) μ).toQComp = classicalEmbed μ :=
+  toQComp_mk' _ _
 
 theorem sample_pure (a : α) : sample (d := d) (SDistr.pure a) = pure a :=
-  ext (classicalEmbed_pure a)
+  ext (by rw [toQComp_sample, classicalEmbed_pure, toQComp_pure]; rfl)
 
 theorem sample_bind (μ : SDistr α) (f : α → SDistr β) :
     sample (d := d) (SDistr.bind μ f) = sample μ >>= fun a => sample (f a) :=
-  ext (classicalEmbed_bind μ f)
+  ext (by simp only [toQComp_sample, classicalEmbed_bind, toQComp_bind]; rfl)
 
 /-- Sampling `a` from `μ` and running `f a` accepts with the `μ`-weighted sum
 of the acceptance probabilities of the `f a`. -/
@@ -287,7 +290,8 @@ theorem prTrue_sample_bind (μ : SDistr α) (f : α → CPComp d Bool)
     (sample μ >>= f).prTrue ρ = ∑' a, μ (some a) * (f a).prTrue ρ := by
   rw [prTrue_bind]
   refine tsum_congr fun a => ?_
-  show ENNReal.ofReal (((f a).toQComp.branch true
+  rw [toQComp_sample]
+  change ENNReal.ofReal (((f a).toQComp.branch true
       (((μ (some a)).toReal : ℂ) • ρ.val)).trace.re) = _
   rw [map_smul, trace_smul, smul_eq_mul, Complex.re_ofReal_mul,
     ENNReal.ofReal_mul ENNReal.toReal_nonneg,
@@ -308,20 +312,20 @@ theorem prTrue_sample_uniform_bind [Fintype α] [Nonempty α]
 
 /-- Preparing the density matrix `σ`: the replacement channel `ρ ↦ tr(ρ) • σ`
 with a single outcome. -/
-def prep (σ : DensityMatrix d) : CPComp d Unit where
-  toQComp := QComp.prep σ
-  branch_cp _ := prepMap_isCPMap σ.psd
+def prep (σ : DensityMatrix d) : CPComp d Unit :=
+  mk' (QComp.prep σ) fun _ => prepMap_isCPMap σ.psd
 
 @[simp]
-theorem toQComp_prep (σ : DensityMatrix d) : (prep σ).toQComp = QComp.prep σ := rfl
+theorem toQComp_prep (σ : DensityMatrix d) : (prep σ).toQComp = QComp.prep σ :=
+  toQComp_mk' _ _
 
 /-- Preparing `σ` and then running `G` accepts with the probability that `G`
 accepts `σ`, on every input state. -/
 theorem prTrue_prep_bind (σ : DensityMatrix d) (G : CPComp d Bool)
     (ρ : DensityMatrix d) :
     (prep σ >>= fun _ => G).prTrue ρ = G.prTrue σ := by
-  rw [prTrue_bind, tsum_fintype, Fintype.sum_unique]
-  show ENNReal.ofReal ((G.toQComp.branch true (prepMap σ.val ρ.val)).trace.re) = _
+  rw [prTrue_bind, tsum_fintype, Fintype.sum_unique, toQComp_prep]
+  change ENNReal.ofReal ((G.toQComp.branch true (prepMap σ.val ρ.val)).trace.re) = _
   rw [prepMap_apply, ρ.tr_one, one_smul]
   rfl
 
@@ -342,7 +346,7 @@ theorem mapSum_inr (f : α → CPComp d β) (g : γ → CPComp d δ) (c : γ) :
 theorem toQComp_mapSum (f : α → CPComp d β) (g : γ → CPComp d δ) (x : α ⊕ γ) :
     (mapSum f g x).toQComp =
       QComp.mapSum (fun a => (f a).toQComp) (fun c => (g c).toQComp) x := by
-  cases x <;> rfl
+  cases x <;> simp only [mapSum, QComp.mapSum, toQComp_bind, toQComp_pure] <;> rfl
 
 theorem mapSum_pure_pure :
     mapSum (pure : α → CPComp d α) (pure : β → CPComp d β) = pure := by

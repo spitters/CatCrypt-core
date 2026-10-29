@@ -177,8 +177,8 @@ theorem outProb_qbind (C : CPComp d α) (f : α → CPComp d β) (ρ : DensityMa
   have hnn : ∀ a, 0 ≤ ((f a).toQComp.branch b (C.toQComp.branch a ρ.val)).trace.re :=
     fun a => trace_re_nonneg_of_psd
       ((f a).toQComp.branch_psd b _ (C.toQComp.branch_psd a ρ.val ρ.psd))
-  rw [← ENNReal.ofReal_tsum_of_nonneg hnn (trace_re_summable hsum)]
-  show ENNReal.ofReal (∑' a, (f a).toQComp.branch b (C.toQComp.branch a ρ.val)).trace.re = _
+  rw [← ENNReal.ofReal_tsum_of_nonneg hnn (trace_re_summable hsum), outProb, toQComp_qbind]
+  change ENNReal.ofReal (∑' a, (f a).toQComp.branch b (C.toQComp.branch a ρ.val)).trace.re = _
   rw [trace_tsum hsum, Complex.re_tsum (trace_summable hsum)]
 
 /-- The probability of outcome `b` of a Kleisli composite: the first outcome `a` weighted by
@@ -193,9 +193,8 @@ theorem outProb_qbind_postState (C : CPComp d α) (f : α → CPComp d β) (ρ :
   rfl
 
 /-- Sampling from a classical sub-distribution, as a completely positive instrument. -/
-def sampleD (μ : SDistr α) : CPComp d α where
-  toQComp := classicalEmbed μ
-  branch_cp := ClassicalDiamondLift.classicalEmbed_isCPMap μ
+def sampleD (μ : SDistr α) : CPComp d α :=
+  mk' (classicalEmbed μ) (ClassicalDiamondLift.classicalEmbed_isCPMap μ)
 
 /-- Sampling `a` from `μ` and running `f a` gives outcome `b` with the `μ`-weighted sum of the
 probabilities of `b` under the `f a`. -/
@@ -203,7 +202,8 @@ theorem outProb_sampleD_qbind (μ : SDistr α) (f : α → CPComp d β) (ρ : De
     (b : β) : ((sampleD μ).qbind f).outProb ρ b = ∑' a, μ (some a) * (f a).outProb ρ b := by
   rw [outProb_qbind]
   refine tsum_congr fun a => ?_
-  show ENNReal.ofReal (((f a).toQComp.branch b
+  rw [sampleD, toQComp_mk']
+  change ENNReal.ofReal (((f a).toQComp.branch b
       (((μ (some a)).toReal : ℂ) • ρ.val)).trace.re) = _
   rw [Complex.coe_smul, ofReal_trace_re_smul _ ENNReal.toReal_nonneg,
     ENNReal.ofReal_toReal (ne_top_of_le_ne_top ENNReal.one_ne_top (PMF.coe_le_one μ _))]
@@ -213,8 +213,8 @@ theorem outProb_qpure (a b : α) (ρ : DensityMatrix d) :
     (qpure a : CPComp d α).outProb ρ b = SDistr.pure a (some b) := by
   classical
   unfold outProb
-  rw [SDistr.pure_apply_some]
-  show ENNReal.ofReal ((if b = a then LinearMap.id else 0 :
+  rw [SDistr.pure_apply_some, toQComp_qpure]
+  change ENNReal.ofReal ((if b = a then LinearMap.id else 0 :
     Matrix (Fin d) (Fin d) ℂ →ₗ[ℂ] Matrix (Fin d) (Fin d) ℂ) ρ.val).trace.re = _
   by_cases h : b = a
   · subst h; simp [ρ.tr_one]

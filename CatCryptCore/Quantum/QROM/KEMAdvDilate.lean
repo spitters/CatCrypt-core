@@ -98,9 +98,8 @@ theorem krausChQ_branch (K : Fin r → Matrix (Fin d) (Fin d) ℂ) (hK : ∑ i, 
 
 /-- The channel of a complete Kraus family as a completely positive instrument. -/
 def krausCh (K : Fin r → Matrix (Fin d) (Fin d) ℂ) (hK : ∑ i, (K i)ᴴ * K i = 1) :
-    CPComp d Unit where
-  toQComp := krausChQ K hK
-  branch_cp u := isCPMap_krausSum _ _ (krausChQ_branch K hK u)
+    CPComp d Unit :=
+  CPComp.mk' (krausChQ K hK) fun u => isCPMap_krausSum _ _ (krausChQ_branch K hK u)
 
 theorem isTP_krausCh (K : Fin r → Matrix (Fin d) (Fin d) ℂ) (hK : ∑ i, (K i)ᴴ * K i = 1) :
     IsTP ((krausCh K hK).toQComp.branch ()) := fun M => by

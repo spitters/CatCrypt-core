@@ -256,6 +256,7 @@ public import CatCryptCore.Crypto.KEM.FIPS203Security
 -- Quantum foundations: instruments, channels, trace norm, tensor products
 public import CatCryptCore.Quantum.Instrument
 public import CatCryptCore.Quantum.InstrumentCP
+public import CatCryptCore.Quantum.CPMapMatrixMap
 public import CatCryptCore.Quantum.CPInstrument
 public import CatCryptCore.Quantum.CPCompMonad
 public import CatCryptCore.Quantum.TraceNorm

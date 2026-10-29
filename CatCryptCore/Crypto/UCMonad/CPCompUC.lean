@@ -75,11 +75,14 @@ theorem cpSdist_eq_qdistCP {α β : Type} (f g : α → CPComp d β) :
     cpSdist f g = qdistCP (fun a => (f a).toQComp) (fun a => (g a).toQComp) := by
   apply le_antisymm
   · refine iSup_le fun D => iSup_le fun a => iSup_le fun ρ => ?_
+    rw [CPComp.prTrue_def, CPComp.prTrue_def, CPComp.toQComp_bind, CPComp.toQComp_bind]
     exact le_iSup_of_le (fun b => (D b).toQComp) (le_iSup_of_le (fun b => (D b).branch_cp)
       (le_iSup_of_le a (le_iSup_of_le ρ le_rfl)))
   · refine iSup_le fun D => iSup_le fun hD => iSup_le fun a => iSup_le fun ρ => ?_
-    exact le_iSup_of_le (fun b => (⟨D b, hD b⟩ : CPComp d Bool))
-      (le_iSup_of_le a (le_iSup_of_le ρ le_rfl))
+    refine Eq.trans_le ?_ (le_iSup_of_le (fun b => CPComp.mk' (D b) (hD b))
+      (le_iSup_of_le a (le_iSup_of_le ρ le_rfl)))
+    simp only [CPComp.prTrue_def, CPComp.toQComp_bind, CPComp.toQComp_mk']
+    rfl
 
 /-- The diamond distance bounds `cpSdist`. -/
 theorem cpSdist_le_qdistDiamond {α β : Type} (f g : α → CPComp d β) :
@@ -116,6 +119,7 @@ theorem cpSdist_comp_left {α β γ : Type} (f : α → CPComp d β)
     cpSdist (fun a => f a >>= g₁) (fun a => f a >>= g₂) ≤ cpSdist g₁ g₂ := by
   refine iSup_le fun D => iSup_le fun a => iSup_le fun ρ => ?_
   simp only [bind_assoc]
+  rw [CPComp.prTrue_def, CPComp.prTrue_def, CPComp.toQComp_bind, CPComp.toQComp_bind]
   refine absDiff_prTrue_Q_qbind_le (f a).toQComp (fun b => (g₁ b >>= D).toQComp)
     (fun b => (g₂ b >>= D).toQComp) ρ (cpSdist g₁ g₂) fun b ρ' => ?_
   exact le_iSup_of_le D (le_iSup_of_le b (le_iSup_of_le ρ' le_rfl))
@@ -177,6 +181,7 @@ theorem ofReal_trace_prep_bind_branch (σ : DensityMatrix d) (K : CPComp d Bool)
       ENNReal.ofReal M.trace.re * K.prTrue σ := by
   have hbr : (prep σ >>= fun _ => K).toQComp.branch true M =
       M.trace • K.toQComp.branch true σ.val := by
+    rw [CPComp.toQComp_bind, CPComp.toQComp_prep]
     show (∑' _ : Unit, K.toQComp.branch true (prepMap σ.val M)) = _
     rw [tsum_fintype, Fintype.sum_unique, prepMap_apply, map_smul]
   have him : M.trace.im = 0 := trace_im_zero_of_hermitian hM.isHermitian
