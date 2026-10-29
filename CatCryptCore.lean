@@ -419,6 +419,7 @@ public import CatCryptCore.Crypto.OT.DualModeOT
 public import CatCryptCore.Crypto.UCTransparent
 public import CatCryptCore.Crypto.UCTransparentSquare
 public import CatCryptCore.Crypto.UCCoupling
+public import CatCryptCore.Crypto.UCCompiled
 public import CatCryptCore.Crypto.UCTransparentHybrid
 public import CatCryptCore.Crypto.UCOpen
 public import CatCryptCore.Crypto.UCSimulator
