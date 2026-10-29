@@ -429,6 +429,7 @@ public import CatCryptCore.Crypto.UCChannel
 public import CatCryptCore.Crypto.UCFeedback
 public import CatCryptCore.Crypto.UCFeedbackLaws
 public import CatCryptCore.Crypto.UCGlobalSquare
+public import CatCryptCore.Crypto.UCGlobalCompose
 public import CatCryptCore.Crypto.UCTransparentAdv
 public import CatCryptCore.Crypto.UCTransparentExample
 public import CatCryptCore.Crypto.UCClockNetworkDet
