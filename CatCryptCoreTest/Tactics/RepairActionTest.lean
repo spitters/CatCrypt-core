@@ -460,12 +460,15 @@ theorem dbl_add (a b : Nat) : dbl (a + b) = dbl a + dbl b := by
   simp only [dbl]
   omega
 
--- `grind` fails without `dbl_add`; `grind? +suggestions` finds it among the theorems of the
--- file. The cap of 0 ms stops the arm `catcrypt_auto?` at once.
+-- `grind` fails without a fact about `dbl`; `grind? +suggestions` finds one among the
+-- declarations of the file, `dbl_add` or the equation lemma `dbl.eq_1` (after the tests
+-- moved to the CatCryptCoreTest root, core ca93ef6, the selector returned the latter). The
+-- cap of 0 ms stops the arm `catcrypt_auto?` at once.
+set_option repairAction.suggestionIndex false in
 set_option repairAction.dispatchMillis 0 in
 #guard_msgs (drop info) in
 example (a b c : Nat) : dbl (a + b + c) = dbl a + dbl b + dbl c := by
-  repair_dispatch_probe closes "grind only [dbl_add"
+  repair_dispatch_probe closes "grind only [dbl"
 
 -- Induction on the recursion of `sumTo`: the arm `try?`.
 set_option repairAction.dispatchMillis 0 in
