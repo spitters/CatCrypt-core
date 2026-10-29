@@ -420,6 +420,7 @@ public import CatCryptCore.Crypto.UCTransparentHybrid
 public import CatCryptCore.Crypto.UCOpen
 public import CatCryptCore.Crypto.UCSimulator
 public import CatCryptCore.Crypto.UCSquare
+public import CatCryptCore.Crypto.UCInterleave
 public import CatCryptCore.Crypto.UCOneShot
 public import CatCryptCore.Crypto.UCTransparentAdv
 public import CatCryptCore.Crypto.UCTransparentExample
