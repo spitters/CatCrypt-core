@@ -5,7 +5,7 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import CatCryptCore.Crypto.UCTransparentMulti
+public import CatCryptCore.Crypto.UCOpen
 public import CatCryptCore.Relational.Rules
 
 /-!
@@ -47,6 +47,8 @@ simulator `S`.
 * `Simulator`, `Simulator.id`, `Simulator.comp`, `Simulator.ofMultiHybrid`: bundled opaque
   simulators.
 * `RealizesSim R I S bound`: `Realizes R (S.withSub I) bound`.
+* `SimR`, `SimR.id`, `SimR.comp`, `SimR.ofMultiHybrid`: simulators with an environment
+  reduction (`Open`).
 
 ## Main results
 
@@ -58,6 +60,8 @@ simulator `S`.
 * `RealizesSim.toUCEmulatesCSim`: realization behind a simulator gives concrete UC emulation.
 * `RealizesSim.compose_ofMultiHybrid`: realization behind an opaque multi-call simulator over
   `J`, and realization of `J` behind `S₂`, give realization behind the composite simulator.
+* `RealizesSim.comp`: the same for every simulator with an environment reduction.
+* `SimR.comp_assoc`, `SimR.id_comp`, `SimR.comp_id`: the category laws.
 -/
 
 @[expose] public section
@@ -324,6 +328,52 @@ def mono (S : Simulator E O EG OG V W) {V' : PubView E O} {W' : PubView EG OG}
 
 end Simulator
 
+/-! ## Simulators with an environment reduction -/
+
+/-- A simulator from `(EG, OG)` with view `W` to `(E, O)` with view `V` that is also an open
+system: its composite with an admissible subroutine is explained by an environment reduction
+(`Open.view_withSub`). -/
+structure SimR (E O EG OG : Type) (V : PubView E O) (W : PubView EG OG) : Type 1
+    extends Simulator E O EG OG V W, Open E O EG OG
+
+namespace SimR
+
+variable {E O EM OM EG OG : Type} {V : PubView E O} {U : PubView EM OM} {W : PubView EG OG}
+
+/-- The identity simulator with the identity environment reduction. -/
+noncomputable def id (E O : Type) (V : PubView E O) : SimR E O E O V V :=
+  { Simulator.id E O V, Open.id E O with }
+
+/-- **Sequential composition**: `Simulator.comp` with `Open.comp`. -/
+noncomputable def comp (S₁ : SimR E O EM OM V U) (S₂ : SimR EM OM EG OG U W) :
+    SimR E O EG OG V W :=
+  { S₁.toSimulator.comp S₂.toSimulator, S₁.toOpen.comp S₂.toOpen with }
+
+/-- An opaque multi-call simulator with the environment reduction at the idle event `idle`. -/
+noncomputable def ofMultiHybrid {σ : Type} (π : MultiHybrid σ E O EG OG) (h : π.Opaque V W)
+    (idle : EG) : SimR E O EG OG V W :=
+  { Simulator.ofMultiHybrid π h, Open.ofMultiHybrid π idle with }
+
+/-- Associativity of composition. -/
+theorem comp_assoc {EN ON : Type} {X : PubView EN ON} (S₁ : SimR E O EM OM V U)
+    (S₂ : SimR EM OM EN ON U X) (S₃ : SimR EN ON EG OG X W) :
+    (S₁.comp S₂).comp S₃ = S₁.comp (S₂.comp S₃) := by
+  simp only [comp, Simulator.comp, Open.comp, SPComp.bind_assoc, and_assoc]
+
+/-- The identity is a left unit. -/
+theorem id_comp (S : SimR E O EG OG V W) : (SimR.id E O V).comp S = S := by
+  cases S
+  simp only [comp, SimR.id, Simulator.comp, Simulator.id, Open.comp, Open.id,
+    SPComp.bind_pure, and_true]
+
+/-- The identity is a right unit. -/
+theorem comp_id (S : SimR E O EG OG V W) : S.comp (SimR.id EG OG W) = S := by
+  cases S
+  simp only [comp, SimR.id, Simulator.comp, Simulator.id, Open.comp, Open.id,
+    SPComp.pure_bind, true_and]
+
+end SimR
+
 /-! ## Realization behind a simulator -/
 
 /-- `R` realizes `I` behind the simulator `S` with bound `bound`: `R` realizes `S` running with
@@ -351,6 +401,20 @@ theorem toUCEmulatesCSim {R : Sys τ E O} {I : Sys υ EG OG} {S : Simulator E O 
   Realizes.toUCEmulatesCSim h ζ Λ
 
 /-- **Composition behind simulators** (composition plumbing). If `R` realizes `J` behind the
+simulator `S₁` with an environment reduction with bound `b₁`, and `J` realizes `I` behind `S₂`
+with bound `b₂`, with `J` and `S₂` running with `I` admissible for `S₁`, then `R` realizes `I`
+behind the composite simulator with bound `b₁` plus `b₂` at the reduced environment. -/
+theorem comp {R : Sys τ E O} {J : Sys υ EM OM} {I : Sys υ' EG OG}
+    (S₁ : SimR E O EM OM V U) (S₂ : Simulator EM OM EG OG U W)
+    (hJ : S₁.Adm J) (hI : S₁.Adm (S₂.withSub I))
+    {b₁ : (ζ : Type) → Env (Strat ζ E O) ζ → ℝ≥0∞}
+    {b₂ : (ζ : Type) → Env (Strat ζ EM OM) ζ → ℝ≥0∞}
+    (h₁ : RealizesSim R J S₁.toSimulator b₁) (h₂ : RealizesSim J I S₂ b₂) :
+    RealizesSim R I (S₁.toSimulator.comp S₂)
+      (fun ζ Z => b₁ ζ Z + b₂ (S₁.Ctx ζ) (S₁.toOpen.reduceEnv Z)) :=
+  Realizes.trans h₁ (S₁.toOpen.realizes_withSub hJ hI h₂)
+
+/-- **Composition behind simulators** (composition plumbing). If `R` realizes `J` behind the
 opaque multi-call simulator `π` with bound `b₁`, and `J` realizes `I` behind `S₂` with bound
 `b₂`, with `J` and `S₂` running with `I` idle at `idle`, then `R` realizes `I` behind the
 composite simulator with bound `b₁` plus `b₂` at the reduced environment. -/
@@ -363,12 +427,11 @@ theorem compose_ofMultiHybrid {R : Sys τ E O} {J : Sys υ EM OM} {I : Sys υ' E
     (h₁ : RealizesSim R J (Simulator.ofMultiHybrid π hπ) b₁) (h₂ : RealizesSim J I S₂ b₂) :
     RealizesSim R I ((Simulator.ofMultiHybrid π hπ).comp S₂)
       (fun ζ Z => b₁ ζ Z + b₂ (MultiHybrid.RState σ ζ EM O) (π.reduceEnv idle Z)) := by
-  have hsub := MultiHybrid.realizes_compose π idle oJ oI J (S₂.withSub I)
-    (π.withSub (S₂.withSub I)) hJ hI (fun _ _ => 0) b₂ (fun _ => DistC.refl _) h₂
+  have h := comp (SimR.ofMultiHybrid π hπ idle) S₂ ⟨oJ, hJ⟩ ⟨oI, hI⟩ h₁ h₂
   intro ζ Z
-  have h := Realizes.trans h₁ hsub ζ Z
-  simp only [add_zero] at h
-  exact h
+  refine le_of_le_of_eq (h ζ Z) ?_
+  exact congrArg (fun E => b₁ ζ Z + b₂ (MultiHybrid.RState σ ζ EM O) E)
+    (Open.reduceEnv_ofMultiHybrid π idle Z)
 
 end RealizesSim
 
