@@ -416,6 +416,7 @@ public import CatCryptCore.Crypto.OT.DualModeOT
 -- Transparent functionalities, hybrid composition, the clock and the network
 public import CatCryptCore.Crypto.UCTransparent
 public import CatCryptCore.Crypto.UCTransparentHybrid
+public import CatCryptCore.Crypto.UCSimulator
 public import CatCryptCore.Crypto.UCTransparentAdv
 public import CatCryptCore.Crypto.UCTransparentExample
 public import CatCryptCore.Crypto.UCClockNetworkDet
