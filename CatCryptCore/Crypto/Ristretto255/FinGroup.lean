@@ -10,6 +10,7 @@ public meta import CatCryptCore.ForMathlib.Pocklington
 public import CatCryptCore.ForMathlib.Pocklington
 public import Mathlib.Data.ZMod.Basic
 public import Mathlib.GroupTheory.SpecificGroups.Cyclic
+public import CatCryptCore.Tactics.GrindChar
 
 /-!
 # ristretto255 as a finite cyclic group
@@ -529,6 +530,9 @@ Mathlib provides `ZMod n` with a `CommGroup`, `Fintype`, `DecidableEq`, and
 
 /-- The ristretto255 group type. -/
 abbrev R255 : Type := ZMod curve25519_l
+
+-- grind reduces mod l in R255: a literal characteristic (grind_char_numeral).
+grind_char_numeral R255
 
 /-- The ristretto255 basepoint generator (the canonical generator `1` of the
 additive cyclic group `ZMod l`). -/

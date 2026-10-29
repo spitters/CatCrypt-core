@@ -10,6 +10,7 @@ public import CatCryptCore.Crypto.KeyAgreement.MontgomeryAsWeierstrass
 public import Mathlib.Algebra.Field.ZMod
 public import CatCryptCore.Crypto.KeyAgreement.P25519PrimeCert
 public import CatCryptCore.Crypto.KeyAgreement.Ed25519LPrimeCert
+public import CatCryptCore.Tactics.GrindChar
 
 /-!
 # Curve25519 as an abelian group
@@ -68,6 +69,9 @@ theorem curve25519Prime_pos : 0 < curve25519Prime := by
 
 /-- Base field for Curve25519 arithmetic. -/
 abbrev Fp25519 : Type := ZMod curve25519Prime
+
+-- grind reduces mod p in Fp25519: a literal characteristic (grind_char_numeral).
+grind_char_numeral Fp25519
 
 /-- Curve25519's Montgomery parameters, specialised to `Fp25519`. -/
 noncomputable def curve25519FpParams : MontyParams Fp25519 :=
