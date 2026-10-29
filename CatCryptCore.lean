@@ -60,6 +60,7 @@ public import CatCryptCore.Category.Affine
 public import CatCryptCore.Category.Effectus
 public import CatCryptCore.Category.ProtCategory
 public import CatCryptCore.Category.ProtBicat
+public import CatCryptCore.Category.ProtBicatApprox
 public import CatCryptCore.Category.CoParaGradedBridge
 public import CatCryptCore.Category.XCategoricalModel
 public import CatCryptCore.Refinement.RRel
