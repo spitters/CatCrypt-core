@@ -426,6 +426,8 @@ public import CatCryptCore.Crypto.UCParallel
 public import CatCryptCore.Crypto.UCGlobal
 public import CatCryptCore.Crypto.ChannelCap
 public import CatCryptCore.Crypto.UCChannel
+public import CatCryptCore.Crypto.UCFeedback
+public import CatCryptCore.Crypto.UCGlobalSquare
 public import CatCryptCore.Crypto.UCTransparentAdv
 public import CatCryptCore.Crypto.UCTransparentExample
 public import CatCryptCore.Crypto.UCClockNetworkDet
