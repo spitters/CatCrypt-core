@@ -57,6 +57,11 @@ jobs:
           set -euo pipefail
           lake build 2>&1 | tee build.log
 
+      - name: Build — test library
+        run: |
+          set -euo pipefail
+          lake build CatCryptCoreTest 2>&1 | tee -a build.log
+
       - name: Guard — axiom allowlist
         run: |
           set -euo pipefail

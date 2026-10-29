@@ -6,8 +6,8 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Tactics.LinkTimed
-public import CatCryptCore.Complexity.D.ReflectCertTest
-public import CatCryptCore.Tactics.DeriveReductionTest
+public import CatCryptCoreTest.Complexity.D.ReflectCertTest
+public import CatCryptCoreTest.Tactics.DeriveReductionTest
 
 /-!
 # Tests of `link_timed`

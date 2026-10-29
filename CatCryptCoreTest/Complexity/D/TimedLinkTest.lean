@@ -6,7 +6,7 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Complexity.D.TimedLink
-public import CatCryptCore.Complexity.D.ReflectCertTest
+public import CatCryptCoreTest.Complexity.D.ReflectCertTest
 
 /-!
 # The per-construct rules on a reflected reduction tree

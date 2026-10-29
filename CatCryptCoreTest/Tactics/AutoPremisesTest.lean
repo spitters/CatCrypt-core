@@ -120,8 +120,8 @@ example (hn : ∀ n : Nat, f n ≤ g n) (hA : ∀ A : Adversary, adv A ≤ 1)
 /--
 info: premises:
 2.00 unfold Bound
-0.20 fileDecl f_le_self
 0.20 fileDecl k_id
+0.20 fileDecl f_le_self
 0.17 fileDecl hop_fg
 -/
 #guard_msgs in

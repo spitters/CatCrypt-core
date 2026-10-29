@@ -20,11 +20,17 @@ lean_lib CatCryptCore where
   -- monorepo, so downstream packages can require this library without a
   -- module-name collision). Declared namespaces remain `CatCrypt.*`.
   -- `.andSubmodules` includes the umbrella module `CatCryptCore` itself (not
-  -- only its submodules). The umbrella is the lib's root module, so doc-gen4's
-  -- `CatCryptCore:docs` library facet documents it and, transitively, the
-  -- whole library; with a strict-`submodules` glob the root is filtered out
-  -- and the facet sees 0 root modules.
+  -- only its submodules). The umbrella and the example aggregator
+  -- `CatCryptCore.Examples` are the lib's root modules, so doc-gen4's
+  -- `CatCryptCore:docs` library facet documents them and, transitively, the
+  -- library and its examples; `import CatCryptCore` does not load the examples.
+  roots := #[`CatCryptCore, `CatCryptCore.Examples]
   globs := #[.andSubmodules `CatCryptCore]
+
+-- Test modules of the tactics and of the complexity layer. No module of
+-- `CatCryptCore` imports them; `lake build CatCryptCoreTest` builds them.
+lean_lib CatCryptCoreTest where
+  globs := #[.submodules `CatCryptCoreTest]
 
 -- Pinned to the module-system port on spitters/nominal-lean. A path-require of
 -- the sibling builds locally but breaks CI, which has no sibling checkout.

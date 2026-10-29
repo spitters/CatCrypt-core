@@ -149,54 +149,6 @@
     },
     {
       "configFile": "lakefile.lean",
-      "inherited": false,
-      "inputRev": "v4.35.0",
-      "manifestFile": "lake-manifest.json",
-      "name": "CompPoly",
-      "rev": "06686e4c70939af82203af21516f8ab8a21a8051",
-      "scope": "",
-      "subDir": null,
-      "type": "git",
-      "url": "https://github.com/Verified-zkEVM/CompPoly"
-    },
-    {
-      "configFile": "lakefile.toml",
-      "inherited": false,
-      "inputRev": "d023c5d31d7611ad772588b2da3286a7f3f0628b",
-      "manifestFile": "lake-manifest.json",
-      "name": "ArkLib",
-      "rev": "d023c5d31d7611ad772588b2da3286a7f3f0628b",
-      "scope": "",
-      "subDir": null,
-      "type": "git",
-      "url": "https://github.com/Verified-zkEVM/ArkLib"
-    },
-    {
-      "configFile": "lakefile.lean",
-      "inherited": true,
-      "inputRev": "v4.35.0",
-      "manifestFile": "lake-manifest.json",
-      "name": "VCVio",
-      "rev": "88efe9715a9fa9e7d89635c38cf70259836766c2",
-      "scope": "",
-      "subDir": null,
-      "type": "git",
-      "url": "https://github.com/Verified-zkEVM/VCVio"
-    },
-    {
-      "configFile": "lakefile.lean",
-      "inherited": true,
-      "inputRev": "lean4.18.0",
-      "manifestFile": "lake-manifest.json",
-      "name": "checkdecls",
-      "rev": "3d425859e73fcfbef85b9638c2a91708ef4a22d4",
-      "scope": "",
-      "subDir": null,
-      "type": "git",
-      "url": "https://github.com/PatrickMassot/checkdecls.git"
-    },
-    {
-      "configFile": "lakefile.lean",
       "inherited": true,
       "inputRev": "v4.35.0",
       "manifestFile": "lake-manifest.json",
@@ -206,18 +158,6 @@
       "subDir": null,
       "type": "git",
       "url": "https://github.com/leanprover/doc-gen4"
-    },
-    {
-      "configFile": "lakefile.toml",
-      "inherited": true,
-      "inputRev": "ef4c157b3c6775fb55864303d96f9b400428d5f0",
-      "manifestFile": "lake-manifest.json",
-      "name": "PolyFun",
-      "rev": "ef4c157b3c6775fb55864303d96f9b400428d5f0",
-      "scope": "",
-      "subDir": null,
-      "type": "git",
-      "url": "https://github.com/Verified-zkEVM/PolyFun"
     },
     {
       "configFile": "lakefile.lean",
@@ -266,18 +206,6 @@
       "subDir": null,
       "type": "git",
       "url": "https://github.com/acmepjz/md4lean"
-    },
-    {
-      "configFile": "lakefile.toml",
-      "inherited": true,
-      "inputRev": "v4.35.0",
-      "manifestFile": "lake-manifest.json",
-      "name": "cslib",
-      "rev": "5b56df99362532c46e1175381fbbdd755bd56030",
-      "scope": "leanprover",
-      "subDir": null,
-      "type": "git",
-      "url": "https://github.com/leanprover/cslib"
     },
     {
       "configFile": "lakefile.toml",

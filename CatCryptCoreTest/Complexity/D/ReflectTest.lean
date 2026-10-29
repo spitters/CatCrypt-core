@@ -6,7 +6,7 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Complexity.D.Reflect
-public import CatCryptCore.Complexity.D.Examples
+public import CatCryptCoreTest.Complexity.D.Examples
 public import CatCryptCore.Crypto.QueryBoundedUC
 
 /-!
