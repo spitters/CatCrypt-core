@@ -62,6 +62,7 @@ public import CatCryptCore.Category.ProtCategory
 public import CatCryptCore.Category.ProtBicat
 public import CatCryptCore.Category.ProtBicatApprox
 public import CatCryptCore.Category.ProtBicatReactive
+public import CatCryptCore.Category.ProtBicatReactiveTimed
 public import CatCryptCore.Category.CoParaGradedBridge
 public import CatCryptCore.Category.XCategoricalModel
 public import CatCryptCore.Refinement.RRel
@@ -428,14 +429,17 @@ public import CatCryptCore.Crypto.UCSimulator
 public import CatCryptCore.Crypto.UCSquare
 public import CatCryptCore.Crypto.UCInterleave
 public import CatCryptCore.Crypto.UCFuelPad
+public import CatCryptCore.Crypto.UCFuelPadTimed
 public import CatCryptCore.Crypto.UCOneShot
 public import CatCryptCore.Crypto.UCParallel
 public import CatCryptCore.Crypto.UCGlobal
 public import CatCryptCore.Crypto.ChannelCap
 public import CatCryptCore.Crypto.UCChannel
 public import CatCryptCore.Crypto.UCFeedback
+public import CatCryptCore.Crypto.UCFeedbackTimed
 public import CatCryptCore.Crypto.UCFeedbackLaws
 public import CatCryptCore.Crypto.UCGlobalSquare
+public import CatCryptCore.Crypto.UCGlobalSquareTimed
 public import CatCryptCore.Crypto.UCGlobalCompose
 public import CatCryptCore.Crypto.UCTransparentAdv
 public import CatCryptCore.Crypto.UCTransparentExample
