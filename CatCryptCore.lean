@@ -425,6 +425,7 @@ public import CatCryptCore.Crypto.UCOpen
 public import CatCryptCore.Crypto.UCSimulator
 public import CatCryptCore.Crypto.UCSquare
 public import CatCryptCore.Crypto.UCInterleave
+public import CatCryptCore.Crypto.UCFuelPad
 public import CatCryptCore.Crypto.UCOneShot
 public import CatCryptCore.Crypto.UCParallel
 public import CatCryptCore.Crypto.UCGlobal
