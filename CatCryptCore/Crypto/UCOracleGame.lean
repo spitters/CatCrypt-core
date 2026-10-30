@@ -55,6 +55,10 @@ at every environment `Z`, the game advantage of the compiled adversary of `Z`.
   with that bound.
 * `Realizes.ofAEAD` — for the authenticated-encryption games of
   `CatCryptCore.Crypto.Assumptions.AEAD`, the bound is `AEAD_CCA_Advantage D (P.reduction Z)`.
+* `prTrue_bind_le_pmf_bind`, `prTrue_bind_le_runRand` — a run that samples from its heap is
+  bounded by an oracle adversary that samples the same distribution, step by step.
+* `prTrue_bind_liftPMF` — a bind after a lifted distribution accepts with the average of its
+  continuations.
 -/
 
 @[expose] public section
@@ -434,5 +438,40 @@ theorem Realizes.ofAEAD {τ E O : Type}
   fun _ Z => (le_of_eq (P.adv_sys _ _ Z)).trans_eq (advantage_aeadGame D _)
 
 end AEAD
+
+/-! ## Bounding a run by an oracle adversary -/
+
+/-- A bind after `c` accepts from the heap `h` with at most the probability of `true` in the
+distribution that samples `o` from `c h` and continues with `F o`, when every continuation of
+the bind is dominated by the corresponding continuation `F`. -/
+theorem prTrue_bind_le_pmf_bind {α : Type} (c : SPComp α) (f : α → SPComp Bool) (h : Heap)
+    (F : Option (α × Heap) → PMF Bool)
+    (hF : ∀ a h', prTrue (f a) h' ≤ F (some (a, h')) true) :
+    prTrue (SPComp.bind c f) h ≤ (PMF.bind (c h) F) true := by
+  rw [prTrue_bind_eq_weighted, PMF.bind_apply]
+  refine ENNReal.tsum_le_tsum fun o => ?_
+  rcases o with _ | ⟨a, h'⟩
+  · simp
+  · gcongr
+    exact hF a h'
+
+/-- A bind after `c` accepts from the heap `h` with at most the probability that an oracle
+adversary that samples from `c h` produces an output accepted by `w`, when every continuation
+of the bind is dominated by the corresponding continuation of the adversary. -/
+theorem prTrue_bind_le_runRand {α Q A β S : Type} (c : SPComp α) (f : α → SPComp Bool)
+    (h : Heap) (orc : S → Q → PMF (A × S)) (k : Option (α × Heap) → OracleAdv Q A β) (s : S)
+    (w : β × S → Bool)
+    (hk : ∀ a h', prTrue (f a) h' ≤ ((OracleAdv.run orc (k (some (a, h'))) s).map w) true) :
+    prTrue (SPComp.bind c f) h ≤ ((OracleAdv.run orc (.rand (c h) k) s).map w) true := by
+  rw [OracleAdv.run_rand, PMF.map_bind]
+  exact prTrue_bind_le_pmf_bind c f h _ hk
+
+/-- A bind after a lifted distribution `p` accepts with the `p`-average of the acceptance
+probabilities of its continuations. -/
+theorem prTrue_bind_liftPMF {α : Type} (p : PMF α) (f : α → SPComp Bool) (h : Heap) :
+    prTrue (SPComp.bind (liftPMF p) f) h = ∑' a, p a * prTrue (f a) h := by
+  simp only [prTrue, liftPMF_bind_apply, PMF.bind_apply]
+  rw [ENNReal.tsum_comm]
+  simp_rw [ENNReal.tsum_mul_left]
 
 end CatCrypt.Crypto.UCTransparent

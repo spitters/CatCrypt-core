@@ -220,6 +220,7 @@ public import CatCryptCore.Crypto.Signatures.Scheme
 public import CatCryptCore.Crypto.Signatures.EUFCMA
 public import CatCryptCore.Crypto.Signatures.EUFCMAPMF
 public import CatCryptCore.Crypto.Signatures.FSigSys
+public import CatCryptCore.Crypto.Signatures.FSigReduction
 public import CatCryptCore.Crypto.BLSSig.Security
 
 -- Fujisaki–Okamoto transforms, FIPS 203 KEM, total variation
