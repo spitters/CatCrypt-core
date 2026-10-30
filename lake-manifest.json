@@ -218,6 +218,30 @@
       "subDir": null,
       "type": "git",
       "url": "https://github.com/lean-crypto-foundations/QuantumFoundations"
+    },
+    {
+      "configFile": "lakefile.toml",
+      "inherited": false,
+      "inputRev": "ef4c157b3c6775fb55864303d96f9b400428d5f0",
+      "manifestFile": "lake-manifest.json",
+      "name": "PolyFun",
+      "rev": "ef4c157b3c6775fb55864303d96f9b400428d5f0",
+      "scope": "",
+      "subDir": null,
+      "type": "git",
+      "url": "https://github.com/Verified-zkEVM/PolyFun"
+    },
+    {
+      "configFile": "lakefile.toml",
+      "inherited": true,
+      "inputRev": "v4.35.0",
+      "manifestFile": "lake-manifest.json",
+      "name": "cslib",
+      "rev": "5b56df99362532c46e1175381fbbdd755bd56030",
+      "scope": "leanprover",
+      "subDir": null,
+      "type": "git",
+      "url": "https://github.com/leanprover/cslib"
     }
   ],
   "packagesDir": ".lake/packages",

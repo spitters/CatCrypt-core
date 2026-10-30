@@ -48,6 +48,12 @@ require QuantumFoundations from git
   "https://github.com/lean-crypto-foundations/QuantumFoundations" @
     "901aaab7967ceecd2240d0b38bbde7cf3e2c14ac"
 
+-- PolyFun: polynomial functors, the free monad `PFunctor.FreeM` (from cslib), roll bounds
+-- and the charge fold; `SPTree` and `OracleAdv` are related to `FreeM` by equivalences.
+-- Pinned to the revision VCVio uses.
+require PolyFun from git
+  "https://github.com/Verified-zkEVM/PolyFun" @ "ef4c157b3c6775fb55864303d96f9b400428d5f0"
+
 -- mathlib LAST so its proofwidgets/aesop versions win on conflicts;
 -- this is required for `lake exe cache get` to find oleans.
 require mathlib from git
