@@ -74,6 +74,10 @@ Pinned in `lakefile.lean` and `lake-manifest.json`; the toolchain is in `lean-to
 - **Graded weakest preconditions:** [CatCryptCore/XDijkstra/README.md](CatCryptCore/XDijkstra/README.md)
   relates the kernel to `Std.Do` and `mvcgen`;
   [`Demo.lean`](CatCryptCore/XDijkstra/Demo.lean) is the tutorial.
+- **Proof automation:** [CatCryptCore/Tactics/README.md](CatCryptCore/Tactics/README.md)
+  documents `catcrypt_auto` and `catcrypt_auto?`, their goal shapes and arms, and how a
+  library registers shapes and arms for its own goals, with the VCVio registrations as
+  the worked example.
 - **Design and influences:** [DESIGN.md](DESIGN.md) ·
   **Changelog:** [CHANGELOG.md](CHANGELOG.md) ·
   **Contributing:** [CONTRIBUTING.md](CONTRIBUTING.md)
