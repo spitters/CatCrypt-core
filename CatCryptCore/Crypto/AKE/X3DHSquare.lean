@@ -9,11 +9,15 @@ public import CatCryptCore.Crypto.AKE.FAKESys
 public import CatCryptCore.Crypto.PAKE.CPaceSquare
 
 /-!
-# X3DH as a real protocol over the key-exchange interface
+# X3DH against the authenticated key-exchange functionality
 
 **Ideal functionality.** `F_AKE (SPComp.sample K)` of `CatCryptCore.Crypto.AKE.FAKESys`: the
 multi-session authenticated key exchange of Canetti and Krawczyk with adversarial key delivery
-and corruption of parties.
+and corruption of parties, with uniform keys in `K`. Its adversary port has the unlinked
+delivery `newKeyUnlinked`, which gives a session a key independent of its partner's: an attacker
+that replaces the initiator's ephemeral key on its way to the responder causes the two to derive
+different keys. Corruption in `F_AKE` is adaptive; the real protocol and the simulator use it
+statically.
 
 **Real protocol.** `x3dhReal G` runs X3DH (Marlinspike and Perrin, *The X3DH Key Agreement
 Protocol*, 2016) for every session, over the group `G : DHGroup S W` and with the key-derivation
@@ -37,15 +41,39 @@ function a lazily sampled random function into `K`. The variant:
 The initiator's and the responder's inputs agree when the responder receives the initiator's
 ephemeral key (`aliceInp_eq_bobInp`), so partners derive the same key.
 
+**Simulator.** `x3dhSim G` keeps a copy of the real state: the honest events carry no secret, so
+it draws every long-term and session secret itself, forwards the honest events to `F_AKE`, and
+answers `poll`, `pub`, `ephPub` and `kdf` as the real protocol does on its copy. On `corrupt p`
+it corrupts `p` in `F_AKE` under the same static rule. When a session completes it computes the
+session's key-derivation input `ip` (`deliver`):
+* for an exposed session (its party or its peer corrupt), it samples the key derivation at `ip`
+  and passes the value to `newKey`, which `F_AKE` delivers;
+* otherwise it leaves the key-derivation table unchanged and calls `newKey` when the partner has
+  not completed or completed with the input `ip`, and `newKeyUnlinked` otherwise; `F_AKE`
+  delivers a uniform key or the partner's.
+The simulator reads no key of `F_AKE` (`simProt_opaque`).
+
+**Results.** The simulator running with `F_AKE` is a system whose steps do not read the heap; it
+is at distance `0` from the oracle system of the game `simGame G` (`simWorld_realizes`). The
+square is the oracle-game bound `x3dh_realizesSim_oracleGame`: `x3dhReal G` realizes `F_AKE`
+behind `x3dhSim G` with bound, at the environment `Z`, the advantage of the oracle adversary
+`OProt.oracle.reduction Z` between `realGame G` and `simGame G`.
+
 ## Main definitions
 
 * `Inp`, `aliceInp`, `bobInp`: the inputs of the key derivation.
 * `RSt`, `RAEv`, `ROut`: the state and the adversary port of the real protocol.
 * `realGame`, `x3dhReal`: the real protocol as an oracle game and as a system.
+* `simProt`, `x3dhSim`: the simulator.
+* `simGame`: the oracle game of the simulated world.
 
 ## Main results
 
 * `aliceInp_eq_bobInp`: the two sides of an unmodified exchange derive from the same input.
+* `simProt_opaque`: opacity of the simulator.
+* `F_AKE_pureNF`, `simWorld_realizes`.
+* `x3dh_realizesSim_oracleGame`: X3DH realizes `F_AKE` behind `x3dhSim` with the oracle-game
+  bound.
 -/
 
 @[expose] public section
@@ -57,7 +85,9 @@ namespace CatCrypt.Crypto.AKE.X3DHSquare
 open CatCrypt.Core CatCrypt.Prob CatCrypt.Crypto CatCrypt.Relational
 open CatCrypt.Crypto.UCConcrete CatCrypt.Crypto.UCTransparent CatCrypt.Crypto.UCTransparent.FAKE
 open CatCrypt.Crypto.PAKE.DHExtract
-open CatCrypt.Crypto.PAKE.CPaceSquare (roAt)
+open CatCrypt.Crypto.PAKE.CPaceSquare (roAt PureNF pureNF_pure pureNF_sample PureNF.map
+  withSub_pureNF pureGame pureGame_realizes)
+open PubView (eqView)
 open scoped ENNReal
 
 /-! ## Inputs of the key derivation -/
@@ -157,7 +187,7 @@ inductive ROut (S W K : Type) where
 
 section Real
 
-variable {S W K : Type} [Field S] [Fintype S] [DecidableEq S] [DecidableEq W] [Fintype K]
+variable {S W K : Type} [Field S] [Fintype S] [DecidableEq W] [Fintype K]
   [Nonempty K]
 
 /-- The long-term secrets of the party `pid`, sampled at their first use. -/
@@ -260,5 +290,233 @@ noncomputable def x3dhReal :=
   (OProt.oracle (Q := HEv ⊕ RAEv W) (A := HOut K ⊕ ROut S W K)).sys (realGame G)
 
 end Real
+
+/-! ## The simulator -/
+
+/-- The phase of the simulator within an activation. -/
+inductive Phase (S W K : Type) where
+  /-- Forward the answer of `F_AKE` on its honest port. -/
+  | fwd
+  /-- Output `o` after the call to `F_AKE`. -/
+  | out (o : ROut S W K)
+
+/-- The state of the simulator: its copy of the real state, the key-derivation input of each
+session it completed, and the phase. -/
+abbrev SimSt (S W K : Type) := RSt S W K × (Inst → Option (Inp W)) × Phase S W K
+
+/-- The outer events of the simulator: the interface of the real protocol. -/
+abbrev OEv (W : Type) := HEv ⊕ RAEv W
+
+/-- The outer outputs of the simulator. -/
+abbrev OOut (S W K : Type) := HOut K ⊕ ROut S W K
+
+/-- The events of `F_AKE`. -/
+abbrev FEv (K : Type) := HEv ⊕ AEv K
+
+/-- The outputs of `F_AKE`. -/
+abbrev FOut (K : Type) := HOut K ⊕ AOut
+
+/-- A decision of the simulator. -/
+abbrev Dec (S W K : Type) := FEv K ⊕ OOut S W K
+
+/-- The simulator's answer to an answer of `F_AKE`: in the phase `fwd`, the answer on the
+honest port, and an acknowledgement for an answer on the adversary port; otherwise the
+stored output otherwise. -/
+def simOut {S W K : Type} : Phase S W K → FOut K → OOut S W K
+  | .fwd, .inl o => .inl o
+  | .fwd, .inr _ => .inr .ack
+  | .out r, _ => .inr r
+
+section Sim
+
+variable {S W K : Type} [Field S] [Fintype S] [DecidableEq W] [Fintype K]
+  [Nonempty K] [Inhabited K] (G : DHGroup S W)
+
+/-- The delivery of the key of the session `x` with record `r` and input `ip`. An exposed session
+receives the key-derivation value at `ip`, which the simulator samples and passes to `newKey`.
+Any other session receives the key of `F_AKE`: `newKey` when its partner has not completed or
+completed with the same input, `newKeyUnlinked` otherwise; the key-derivation table is
+unchanged. -/
+noncomputable def deliver (rs : RSt S W K) (inp : Inst → Option (Inp W)) (x : Inst) (r : Rec K)
+    (ip : Inp W) : PMF (SimSt S W K × Dec S W K) :=
+  if Exposed rs.st x r then
+    (roAt rs.ro ip).map fun p =>
+      ((keyed rs x r p.1 p.2, Function.update inp x (some ip), .out .ack),
+        .inl (.inr (.newKey x.1 x.2 p.1)))
+  else
+    PMF.pure ((keyed rs x r default rs.ro, Function.update inp x (some ip), .out .ack),
+      .inl (.inr (if (inp (x.1, r.peer)).all (· = ip) then .newKey x.1 x.2 default
+        else .newKeyUnlinked x.1 x.2 default)))
+
+/-- The simulator on `complete sid pid`: the computation of `completeStep` on its copy, and the
+delivery by `deliver`. -/
+noncomputable def simComplete (s : SimSt S W K) (x : Inst) : PMF (SimSt S W K × Dec S W K) :=
+  match s.1.st.recs x, s.1.eph x with
+  | some r, some ek =>
+    match opkOf s.1 x.1 r.peer with
+    | some opk =>
+      if r.role = .initiator ∧ r.key.isNone then
+        (ltAt s.1 x.2).bind fun la => (ltAt la.2 r.peer).bind fun lb =>
+          deliver lb.2 s.2.1 x r
+            (aliceInp G x.1 x.2 r.peer la.1.1 ek (G.pub lb.1.1) (G.pub lb.1.2) (G.pub opk))
+      else PMF.pure ((s.1, s.2.1, .fwd), .inr (.inr .ack))
+    | none => PMF.pure ((s.1, s.2.1, .fwd), .inr (.inr .ack))
+  | _, _ => PMF.pure ((s.1, s.2.1, .fwd), .inr (.inr .ack))
+
+/-- The simulator on `send sid pid e`: the computation of `sendStep` on its copy, and the
+delivery by `deliver`. -/
+noncomputable def simSend (s : SimSt S W K) (x : Inst) (e : W) :
+    PMF (SimSt S W K × Dec S W K) :=
+  match s.1.st.recs x, s.1.eph x with
+  | some r, some opk =>
+    if r.role = .responder ∧ r.key.isNone then
+      (ltAt s.1 x.2).bind fun lb => (ltAt lb.2 r.peer).bind fun la =>
+        deliver la.2 s.2.1 x r (bobInp G x.1 r.peer x.2 (G.pub la.1.1) e lb.1.1 lb.1.2 opk)
+    else PMF.pure ((s.1, s.2.1, .fwd), .inr (.inr .ack))
+  | _, _ => PMF.pure ((s.1, s.2.1, .fwd), .inr (.inr .ack))
+
+/-- The simulator on `corrupt pid`: refused as in the real protocol when a session names `pid`;
+otherwise the secrets of its copy are output and `pid` is corrupted in `F_AKE`. -/
+noncomputable def simCorrupt (s : SimSt S W K) (pid : PartyId) :
+    PMF (SimSt S W K × Dec S W K) :=
+  if Named s.1.st pid then PMF.pure ((s.1, s.2.1, .fwd), .inr (.inr (.secret none))) else
+    (ltAt s.1 pid).map fun l =>
+      (({ l.2 with st := corruptStep l.2.st pid }, s.2.1, .out (.secret (some l.1))),
+        .inl (.inr (.corrupt pid)))
+
+/-- The start of an activation of the simulator. Honest events go to `F_AKE` and update the
+copy (a new session draws its secret); `complete`, `send` and `corrupt` are handled as above;
+every other adversary event is answered by the real protocol on the copy. -/
+noncomputable def simStartP (s : SimSt S W K) : OEv W → PMF (SimSt S W K × Dec S W K)
+  | .inl h => (realHon s.1 h).map fun p => ((p.2, s.2.1, .fwd), .inl (.inl h))
+  | .inr (.complete sid pid) => simComplete G s (sid, pid)
+  | .inr (.send sid pid e) => simSend G s (sid, pid) e
+  | .inr (.corrupt pid) => simCorrupt s pid
+  | .inr a => (realAdv G s.1 a).map fun p => ((p.2, s.2.1, .fwd), .inr (.inr p.1))
+
+/-- **The X3DH simulator** as a multi-call simulator over `F_AKE`, one call per activation. -/
+noncomputable def simProt :
+    MultiHybrid (SimSt S W K) (OEv W) (OOut S W K) (FEv K) (FOut K) where
+  init := (rInit, fun _ => none, .fwd)
+  fuel := 0
+  start s e := liftPMF (simStartP G s e)
+  resume s o := SPComp.pure ((s.1, s.2.1, .fwd), .inr (simOut s.2.2 o))
+  finish s o := SPComp.pure ((s.1, s.2.1, .fwd), simOut s.2.2 o)
+  start_noFail _ _ := liftPMF_noFail _
+  resume_noFail _ _ := CatCrypt.Crypto.SPComp.pure_noFail _
+  finish_noFail _ _ := CatCrypt.Crypto.SPComp.pure_noFail _
+
+end Sim
+
+/-! ## Opacity of the simulator -/
+
+/-- The view of the real interface: equal events, any two honest outputs, equal adversary
+outputs. -/
+abbrev outerView {S W K : Type} : PubView (OEv W) (OOut S W K) := keHonView.sum eqView
+
+/-- The view of `F_AKE`, for which `F_AKE_opaque` holds. -/
+abbrev subView {K : Type} : PubView (FEv K) (FOut K) := keHonView.sum eqView
+
+/-- Every decision is related to itself. -/
+theorem stepRel_refl {S W K : Type} (d : Dec S W K) :
+    PubView.StepRel (outerView (W := W)) subView d d := by
+  rcases d with (h | a) | (o | o)
+  · exact Sum.LiftRel.inl rfl
+  · exact Sum.LiftRel.inr rfl
+  · exact Sum.LiftRel.inl trivial
+  · exact Sum.LiftRel.inr rfl
+
+/-- The answers of the simulator to related answers of `F_AKE` are related. -/
+theorem simOut_rel {S W K : Type} (ph : Phase S W K) {o o' : FOut K}
+    (h : (subView (K := K)).out o o') :
+    (outerView (W := W)).out (simOut ph o) (simOut ph o') := by
+  cases ph with
+  | fwd =>
+    cases h with
+    | inl _ => exact Sum.LiftRel.inl trivial
+    | inr _ => exact Sum.LiftRel.inr rfl
+  | out r => exact Sum.LiftRel.inr rfl
+
+section SimOpaque
+
+variable {S W K : Type} [Field S] [Fintype S] [DecidableEq W] [Fintype K]
+  [Nonempty K] [Inhabited K] (G : DHGroup S W)
+
+/-- **The unwinding condition of the simulator** for the equality of states: its state and its
+decisions depend on its events and not on the answers of `F_AKE` on its honest port. -/
+theorem simProt_unwinding : (simProt (K := K) G).Unwinding outerView subView Eq := by
+  refine ⟨rfl, ?_, ?_, ?_⟩
+  · rintro s _ e e' rfl he
+    have he' : e = e' := by
+      cases he with
+      | inl h => exact congrArg Sum.inl h
+      | inr h => exact congrArg Sum.inr h
+    subst he'
+    exact rHoare_conseq (fun _ _ h => h)
+      (fun _ _ _ _ hp => by obtain ⟨rfl, rfl⟩ := hp; exact ⟨rfl, rfl, stepRel_refl _⟩)
+      (rHoare_refl _)
+  · rintro s _ o o' rfl ho
+    exact rHoare_ret fun _ _ hh => ⟨hh, rfl, simOut_rel _ ho⟩
+  · rintro s _ o o' rfl ho
+    exact rHoare_ret fun _ _ hh => ⟨hh, rfl, simOut_rel _ ho⟩
+
+/-- **Opacity of the simulator**: it reads no key of `F_AKE`. -/
+theorem simProt_opaque : (simProt (K := K) G).Opaque outerView subView :=
+  ⟨Eq, simProt_unwinding G⟩
+
+/-- **The X3DH simulator** as a bundled opaque simulator. -/
+noncomputable def x3dhSim :
+    Simulator (OEv W) (OOut S W K) (FEv K) (FOut K) outerView subView :=
+  Simulator.ofMultiHybrid (simProt G) (simProt_opaque G)
+
+end SimOpaque
+
+/-! ## The square in oracle-game form -/
+
+/-- The steps of `F_AKE` with uniform keys do not touch the heap. -/
+theorem F_AKE_pureNF {K : Type} [Fintype K] [Nonempty K] (t : St K) (e : FEv K) :
+    PureNF ((F_AKE (SPComp.sample K)).step t e) := by
+  rcases e with h | a
+  · simp only [F_AKE, Sys.ofPorts_step_inl, honSys]
+    exact (pureNF_pure _).map _
+  · simp only [F_AKE, Sys.ofPorts_step_inr, advSys]
+    refine PureNF.map _ ?_
+    cases a <;> first | exact pureNF_pure _ | exact (pureNF_sample K).map _
+
+section SimWorld
+
+variable {S W K : Type} [Field S] [Fintype S] [DecidableEq W] [Fintype K]
+  [Nonempty K] [Inhabited K] (G : DHGroup S W)
+
+/-- The steps of the simulated world, the simulator running with `F_AKE`, do not touch the
+heap. -/
+theorem simWorld_pureNF :
+    ∀ t e, PureNF (((simProt (K := K) G).withSub (F_AKE (SPComp.sample K))).step t e) :=
+  withSub_pureNF _ _ F_AKE_pureNF (fun _ _ => ⟨liftPMF_isPure _, liftPMF_noFail _⟩)
+    (fun _ _ => pureNF_pure _) (fun _ _ => pureNF_pure _)
+
+/-- **The simulated X3DH game**: the oracle game of the simulator running with `F_AKE`. -/
+noncomputable def simGame : KeyedGame (OEv W) (OOut S W K) :=
+  pureGame ((simProt (K := K) G).withSub (F_AKE (SPComp.sample K))) (simWorld_pureNF G)
+
+/-- **The simulated world as an oracle game**: the oracle system of `simGame G` realizes the
+simulator running with `F_AKE` at distance `0`. -/
+theorem simWorld_realizes :
+    Realizes ((OProt.oracle (Q := OEv W) (A := OOut S W K)).sys (simGame G))
+      ((simProt (K := K) G).withSub (F_AKE (SPComp.sample K))) (fun _ _ => 0) :=
+  pureGame_realizes _ _
+
+/-- **X3DH realizes `F_AKE` behind `x3dhSim`, in oracle-game form.** For every environment `Z`,
+the distance between the real X3DH protocol and the simulator running with `F_AKE` is at most
+the advantage of the oracle adversary `OProt.oracle.reduction Z` between the real game
+`realGame G` and the simulated game `simGame G`. -/
+theorem x3dh_realizesSim_oracleGame :
+    RealizesSim (x3dhReal (K := K) G) (F_AKE (SPComp.sample K)) (x3dhSim G)
+      (fun _ Z => KeyedGame.advantage (realGame G) (simGame G) (OProt.oracle.reduction Z)) :=
+  fun ζ Z => le_of_le_of_eq
+    ((Realizes.trans (Realizes.ofOracleGame OProt.oracle (realGame G) (simGame G))
+      (simWorld_realizes G)) ζ Z) (add_zero _)
+
+end SimWorld
 
 end CatCrypt.Crypto.AKE.X3DHSquare
