@@ -6,6 +6,7 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Crypto.AKE.ChannelSquare
+public import CatCryptCore.Crypto.UCOracleGameTimed
 public import CatCryptCore.Tactics.DeriveReduction
 public import CatCryptCore.Tactics.DeriveTimeBound
 

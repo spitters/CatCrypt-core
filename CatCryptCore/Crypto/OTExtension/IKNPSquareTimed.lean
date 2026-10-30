@@ -7,6 +7,7 @@ module
 
 public import CatCryptCore.Crypto.OTExtension.IKNPSquare
 public import CatCryptCore.Tactics.DeriveReduction
+public import CatCryptCore.Crypto.UCSimulatorTimed
 public import CatCryptCore.Tactics.DeriveSimulator
 public import CatCryptCore.Tactics.DeriveTimeBound
 

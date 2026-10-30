@@ -6,6 +6,8 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Crypto.Commitment.PedersenUCSquare
+public import CatCryptCore.Category.ProtBicatReactiveTimed
+public import CatCryptCore.Crypto.Commitment.PedersenUCTimed
 public import CatCryptCore.Tactics.DeriveReduction
 public import CatCryptCore.Tactics.DeriveSimulator
 public import CatCryptCore.Tactics.DeriveTimeBound
@@ -16,8 +18,7 @@ public import CatCryptCore.Tactics.DeriveTimeBound
 `pedersenSquareSim` is the bundled simulator of `pedersen_commit_phase_square`: `simWrapSim ev`
 of `pedersen_commit_sim` at the dummy adversary. `derive_simulator` builds its costed form, its
 erasure theorem and its time theorem, over a costed form of `pedersen_commit_sim` as a binder;
-`derive_reduction` and `derive_time_bound` build the costed form of `pedersen_commit_sim` and
-its time theorem.
+the costed form of `pedersen_commit_sim` and its time theorem come from `PedersenUCTimed`.
 
 No module imports this file.
 
@@ -51,5 +52,3 @@ noncomputable def pedersenSquareSim (ev : gp.Scalar → gp.Scalar → Prop) :=
 end CatCrypt.Crypto.Commitment.PedersenUC
 
 derive_simulator CatCrypt.Crypto.Commitment.PedersenUC.pedersenSquareSim
-derive_reduction CatCrypt.Crypto.Commitment.PedersenUC.pedersen_commit_sim
-derive_time_bound CatCrypt.Crypto.Commitment.PedersenUC.pedersen_commit_sim.tree

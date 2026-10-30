@@ -6,6 +6,7 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Crypto.Signatures.FSigSys
+public import CatCryptCore.Crypto.UCSimulatorTimed
 public import CatCryptCore.Tactics.DeriveSimulator
 
 /-!

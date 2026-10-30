@@ -6,6 +6,8 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Crypto.ZK.SigmaUCZKSquare
+public import CatCryptCore.Category.ProtBicatReactiveTimed
+public import CatCryptCore.Crypto.ZK.SigmaUCZKTimed
 public import CatCryptCore.Tactics.DeriveReduction
 public import CatCryptCore.Tactics.DeriveSimulator
 public import CatCryptCore.Tactics.DeriveTimeBound
@@ -15,9 +17,8 @@ public import CatCryptCore.Tactics.DeriveTimeBound
 
 `sigmaSquareSim` is the bundled simulator of `sigma_uc_zk_square`: `simWrapSim ev` of
 `sigma_uc_sim` at the dummy adversary. `derive_simulator` builds its costed form, its erasure
-theorem and its time theorem, over a costed form of `sigma_uc_sim` as a binder;
-`derive_reduction` and `derive_time_bound` build the costed form of `sigma_uc_sim` and its time
-theorem.
+theorem and its time theorem, over a costed form of `sigma_uc_sim` as a binder; the costed
+form of `sigma_uc_sim` and its time theorem come from `SigmaUCZKTimed`.
 
 No module imports this file.
 
@@ -51,5 +52,3 @@ noncomputable def sigmaSquareSim (hsim : ∀ x e, SPComp.NoFail (sp.simulate x e
 end CatCrypt.Crypto.ZK.SigmaUCZK
 
 derive_simulator CatCrypt.Crypto.ZK.SigmaUCZK.sigmaSquareSim
-derive_reduction CatCrypt.Crypto.ZK.SigmaUCZK.sigma_uc_sim
-derive_time_bound CatCrypt.Crypto.ZK.SigmaUCZK.sigma_uc_sim.tree
