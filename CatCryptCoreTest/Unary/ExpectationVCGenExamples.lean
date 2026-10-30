@@ -90,11 +90,12 @@ set_option mvcgen.warning false in
 /-- `ecost_compileCharged_le_queryCost` by `vcgen` on `SPCompU`: induction on the tree,
 with `vcgen` on the charged operation of each node and the subtrees as abstract
 sub-programs. -/
-theorem ecost_compileCharged_le_queryCost_vcgen {α : Type} (s : SPTree α) (h : Heap) :
-    ecost (compileCharged s) h ≤ (s.queryCost : ℝ≥0∞) := by
+theorem ecost_compileCharged_le_queryCost_vcgen {α : Type} (s : SPTree α) (hs : s.QueryBdd)
+    (h : Heap) : ecost (compileCharged s) h ≤ (s.queryCost : ℝ≥0∞) := by
   induction s generalizing h with
   | ret a => simp [compileCharged]
   | fail => simp [compileCharged]
+  | sampleDist β μ k _ => exact ecost_compileCharged_le_queryCost (.sampleDist β μ k) hs h
   | sample β finβ neβ k ih =>
     let := finβ; let := neβ
     have hk : ∀ b (post : α × ℕ → Heap → ℝ≥0∞ᵒᵈ),
@@ -113,7 +114,7 @@ theorem ecost_compileCharged_le_queryCost_vcgen {α : Type} (s : SPTree α) (h :
       calc _ ≤ (Fintype.card β : ℝ≥0∞)⁻¹ * ∑' _ : β,
             (1 + ((Finset.univ.sup fun b => (k b).queryCost : ℕ) : ℝ≥0∞)) := by
             gcongr _ * ∑' a, ?_
-            exact add_le_add (wpE_const_le _ _ _) ((ih a s).trans (Nat.cast_le.mpr
+            exact add_le_add (wpE_const_le _ _ _) ((ih a (hs a) s).trans (Nat.cast_le.mpr
               (Finset.le_sup (f := fun b => (k b).queryCost) (Finset.mem_univ a))))
         _ = _ := by
             rw [tsum_fintype, Finset.sum_const, Finset.card_univ, nsmul_eq_mul, ← mul_assoc,
@@ -135,7 +136,7 @@ theorem ecost_compileCharged_le_queryCost_vcgen {α : Type} (s : SPTree α) (h :
       rename_i s
       simp only [leanOrder_rel_dual_iff, OrderDual.ofDual_toDual, SPCompU.wp_eq, wpEF, zero_mul,
         add_zero, wpE_pure, Nat.cast_add, Nat.cast_one, wpE_add]
-      refine (add_le_add (wpE_const_le _ _ _) ((ih _ s).trans (Nat.cast_le.mpr
+      refine (add_le_add (wpE_const_le _ _ _) ((ih _ (hs _) s).trans (Nat.cast_le.mpr
         (Finset.le_sup (f := fun v => (k v).queryCost) (Finset.mem_univ _))))).trans ?_
       show _ ≤ ((1 + Finset.univ.sup fun v => (k v).queryCost : ℕ) : ℝ≥0∞)
       push_cast; exact le_rfl
@@ -154,11 +155,11 @@ theorem ecost_compileCharged_le_queryCost_vcgen {α : Type} (s : SPTree α) (h :
       rename_i s
       simp only [leanOrder_rel_dual_iff, OrderDual.ofDual_toDual, SPCompU.wp_eq, wpEF, zero_mul,
         add_zero, wpE_pure, Nat.cast_add, Nat.cast_one, wpE_add]
-      refine (add_le_add (wpE_const_le _ _ _) (ih _)).trans ?_
+      refine (add_le_add (wpE_const_le _ _ _) (ih hs _)).trans ?_
       show _ ≤ ((1 + t.queryCost : ℕ) : ℝ≥0∞)
       push_cast; exact le_rfl
     exact (SPCompU.triple_iff_wpE_le _ _ _).1 ht h
-  | load h₀ t _ => exact ecost_compileCharged_le_queryCost (.load h₀ t) h
+  | load h₀ t _ => exact ecost_compileCharged_le_queryCost (.load h₀ t) hs h
 
 set_option mvcgen.warning false in
 /-- `prBad_induction` by `vcgen` on `SPCompU`. `repeatStep` is structural recursion, not a

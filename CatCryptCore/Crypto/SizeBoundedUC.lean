@@ -31,6 +31,7 @@ and is admissible (`adm_pure_predicate_size`).
 ## Main definitions
 
 * `SPTree.size` — total node count of a syntax tree
+* `SPTree.FinBranch` — every `sampleDist` node samples from a finite type
 * `spTreeSizeAdm` — size-bounded admissibility on `SPComp`
 * `sizeCompDist` — `UCMonadCompDist SPComp` with size-bounded admissibility
 * `wideTree` — a single fan-out over `Fin (2 ^ n)`
@@ -66,10 +67,12 @@ set_option linter.unusedVariables false in
 /-- **Total node count.** Counts every constructor, **summing** over the branches of a
     `sample` / `get` node (contrast `queryCost`, which takes the supremum). This is the
     "whole computation / description size" measure: it charges for the entire fan-out, not
-    just the worst-case path depth. -/
-def size {α : Type} : SPTree α → ℕ
+    just the worst-case path depth. A node `sampleDist β μ k` sums with `finsum`, which is
+    the sum over the branches for a finite `β` and `0` for an infinite `β`. -/
+noncomputable def size {α : Type} : SPTree α → ℕ
   | .ret _ => 1
   | .sample β finβ _ k => letI := finβ; 1 + Finset.univ.sum (fun b => size (k b))
+  | .sampleDist _ _ k => 1 + ∑ᶠ b, size (k b)
   | .get _l k => 1 + Finset.univ.sum (fun v => size (k v))
   | .set _ _ t => 1 + size t
   | .fail => 1
@@ -78,6 +81,38 @@ def size {α : Type} : SPTree α → ℕ
 @[simp] theorem size_ret {α : Type} (a : α) : (SPTree.ret a : SPTree α).size = 1 := rfl
 
 @[simp] theorem size_fail {α : Type} : (SPTree.fail : SPTree α).size = 1 := rfl
+
+/-- Every tree has at least one node. -/
+theorem one_le_size {α : Type} (s : SPTree α) : 1 ≤ s.size := by
+  cases s <;> simp only [size] <;> omega
+
+/-- Every node `sampleDist β μ k` of the tree samples from a finite type `β`, so that `size`
+    sums over finitely many branches. -/
+def FinBranch {α : Type} : SPTree α → Prop
+  | .ret _ => True
+  | .sample _ _ _ k => ∀ b, FinBranch (k b)
+  | .sampleDist β _ k => Finite β ∧ ∀ b, FinBranch (k b)
+  | .get _ k => ∀ v, FinBranch (k v)
+  | .set _ _ t => FinBranch t
+  | .fail => True
+  | .load _ t => FinBranch t
+
+/-- `ret` has finite branching. -/
+theorem finBranch_ret {α : Type} (a : α) : (SPTree.ret a).FinBranch :=
+  trivial
+
+/-- Substituting continuations of finite branching into a tree of finite branching gives a
+    tree of finite branching. -/
+theorem FinBranch.bind {α β : Type} {s : SPTree α} {f : α → SPTree β} (hs : s.FinBranch)
+    (hf : ∀ a, (f a).FinBranch) : (s.bind f).FinBranch := by
+  induction s with
+  | ret a => exact hf a
+  | sample γ finγ neγ k ih => exact fun c => ih c (hs c)
+  | sampleDist γ μ k ih => exact ⟨hs.1, fun c => ih c (hs.2 c)⟩
+  | get l k ih => exact fun v => ih v (hs v)
+  | set l v t ih => exact ih hs
+  | fail => trivial
+  | load h₀ t ih => exact ih hs
 
 /-- **Multiplicative bind law.** Substituting a continuation of size `≤ bound` at every leaf
     of `s` blows the total node count up by a factor `bound + 1` (each of the up-to-`size s`
@@ -96,6 +131,24 @@ theorem size_bind_mul {α β : Type} (s : SPTree α) (f : α → SPTree β) (bou
           gcongr with c; exact ih c
       _ = 1 + (Finset.univ.sum (fun c => (k c).size)) * (bound + 1) := by rw [Finset.sum_mul]
       _ ≤ (1 + Finset.univ.sum (fun c => (k c).size)) * (bound + 1) := by linarith
+  | sampleDist γ μ k ih =>
+    simp only [SPTree.bind, size]
+    by_cases hγ : Finite γ
+    · have := Fintype.ofFinite γ
+      simp only [finsum_eq_sum_of_fintype]
+      calc 1 + Finset.univ.sum (fun c => ((k c).bind f).size)
+          ≤ 1 + Finset.univ.sum (fun c => (k c).size * (bound + 1)) := by
+            gcongr with c; exact ih c
+        _ = 1 + (Finset.univ.sum (fun c => (k c).size)) * (bound + 1) := by rw [Finset.sum_mul]
+        _ ≤ (1 + Finset.univ.sum (fun c => (k c).size)) * (bound + 1) := by linarith
+    · have hinf : ∀ g : γ → SPTree β, ∑ᶠ c, (g c).size = 0 := fun g =>
+        finsum_of_infinite_support (by
+          have : Function.support (fun c => (g c).size) = Set.univ :=
+            Set.eq_univ_of_forall fun c => Nat.pos_iff_ne_zero.mp (one_le_size (g c))
+          rw [this]
+          exact Set.infinite_univ_iff.mpr (not_finite_iff_infinite.mp hγ))
+      rw [hinf]
+      nlinarith [Nat.zero_le bound, Nat.zero_le (∑ᶠ c, (k c).size)]
   | get l k ih =>
     simp only [SPTree.bind, size]
     calc 1 + Finset.univ.sum (fun v => ((k v).bind f).size)
@@ -143,7 +196,8 @@ open scoped ENNReal
 /-! ## Section 1: The size-bounded admissibility class (built directly) -/
 
 /-- **Size-bounded admissibility.** A Kleisli arrow `f : α → SPComp β` is admissible iff it
-    has a syntax-tree family of uniformly bounded **total node count**.
+    has a syntax-tree family of finite branching (`SPTree.FinBranch`) and uniformly bounded
+    **total node count**.
 
     Built directly (not via `UCAdmClass_of_costModel`): total node count is super-additive
     under bind (`size_bind_mul` is multiplicative), so it is not a `MonadCostModel`. Closure
@@ -151,21 +205,23 @@ open scoped ENNReal
     (`nf * (ng + 1)` for bind, `max (nf*2) (ng*2)` for mapSum). -/
 @[reducible] noncomputable def spTreeSizeAdm : UCAdmClass SPComp where
   adm {α β} f :=
-    ∃ (s : α → SPTree β), (∀ a, (s a).compile = f a) ∧ ∃ n, ∀ a, (s a).size ≤ n
-  adm_pure := ⟨SPTree.ret, fun _ => rfl, 1, fun _ => le_refl 1⟩
+    ∃ (s : α → SPTree β), (∀ a, (s a).compile = f a) ∧ (∀ a, (s a).FinBranch) ∧
+      ∃ n, ∀ a, (s a).size ≤ n
+  adm_pure := ⟨SPTree.ret, fun _ => rfl, fun a => finBranch_ret a, 1, fun _ => le_refl 1⟩
   adm_bind {α β γ} {f g} hf hg := by
-    obtain ⟨sf, hsf, nf, hcf⟩ := hf
-    obtain ⟨sg, hsg, ng, hcg⟩ := hg
-    refine ⟨fun a => (sf a).bind sg, ?_, nf * (ng + 1), ?_⟩
+    obtain ⟨sf, hsf, hbf, nf, hcf⟩ := hf
+    obtain ⟨sg, hsg, hbg, ng, hcg⟩ := hg
+    refine ⟨fun a => (sf a).bind sg, ?_, fun a => (hbf a).bind hbg, nf * (ng + 1), ?_⟩
     · intro a; rw [SPTree.compile_bind, hsf a]; congr 1; funext b; exact hsg b
     · intro a
       exact le_trans (size_bind_mul (sf a) sg ng hcg) (Nat.mul_le_mul_right _ (hcf a))
   adm_mapSum {α β γ δ} {f g} hf hg := by
-    obtain ⟨sf, hsf, nf, hcf⟩ := hf
-    obtain ⟨sg, hsg, ng, hcg⟩ := hg
+    obtain ⟨sf, hsf, hbf, nf, hcf⟩ := hf
+    obtain ⟨sg, hsg, hbg, ng, hcg⟩ := hg
     refine ⟨fun x => match x with
       | .inl a => (sf a).bind (fun b => SPTree.ret (.inl b))
-      | .inr c => (sg c).bind (fun b => SPTree.ret (.inr b)), ?_, max (nf * 2) (ng * 2), ?_⟩
+      | .inr c => (sg c).bind (fun b => SPTree.ret (.inr b)), ?_, ?_,
+        max (nf * 2) (ng * 2), ?_⟩
     · intro x; cases x with
       | inl a =>
         simp only [SPTree.compile_bind, SPTree.compile_ret, hsf]
@@ -178,6 +234,9 @@ open scoped ENNReal
           UCMonadBase.ucMapSum f g (.inr c)
         simp [UCMonadBase.ucMapSum, SPComp.map]
     · intro x; cases x with
+      | inl a => exact (hbf a).bind fun b => finBranch_ret _
+      | inr c => exact (hbg c).bind fun b => finBranch_ret _
+    · intro x; cases x with
       | inl a =>
         show ((sf a).bind (fun b => SPTree.ret (Sum.inl b))).size ≤ max (nf * 2) (ng * 2)
         refine le_trans (le_trans (size_bind_mul (sf a) _ 1 (fun _ => le_refl 1))
@@ -187,8 +246,8 @@ open scoped ENNReal
         refine le_trans (le_trans (size_bind_mul (sg c) _ 1 (fun _ => le_refl 1))
           (Nat.mul_le_mul_right _ (hcg c))) (le_max_right _ _)
   adm_precomp {α α' β} {g} f hg := by
-    obtain ⟨sg, hsg, ng, hcg⟩ := hg
-    exact ⟨sg ∘ f, fun a' => hsg (f a'), ng, fun a' => hcg (f a')⟩
+    obtain ⟨sg, hsg, hbg, ng, hcg⟩ := hg
+    exact ⟨sg ∘ f, fun a' => hsg (f a'), fun a' => hbg (f a'), ng, fun a' => hcg (f a')⟩
 
 /-! ## Section 2: The size-bounded compdist -/
 
@@ -205,12 +264,12 @@ open scoped ENNReal
     adm_precomp := spTreeSizeAdm.adm_precomp }
 
 /-- The admissibility of `sizeCompDist` is *definitionally* the size-bounded class: an arrow
-    is admissible iff it has a syntax-tree family of uniformly bounded total node count. This
-    is the non-triviality witness — it is not `fun _ => True`. -/
+    is admissible iff it has a syntax-tree family of finite branching and uniformly bounded
+    total node count. This is the non-triviality witness — it is not `fun _ => True`. -/
 theorem sizeCompDist_adm_iff {α β : Type} (f : α → SPComp β) :
     adm (self := sizeCompDist.toUCAdmClass) f ↔
       ∃ (s : α → SPTree β),
-        (∀ a, (s a).compile = f a) ∧ ∃ n, ∀ a, (s a).size ≤ n :=
+        (∀ a, (s a).compile = f a) ∧ (∀ a, (s a).FinBranch) ∧ ∃ n, ∀ a, (s a).size ≤ n :=
   Iff.rfl
 
 /-- The `adm` field of `sizeCompDist` equals `spTreeSizeAdm`'s on the nose. -/
@@ -223,7 +282,8 @@ theorem sizeCompDist_adm_eq {α β : Type} (f : α → SPComp β) :
     contains all output-thresholding distinguishers. -/
 theorem adm_pure_predicate_size {β : Type} (p : β → Bool) :
     adm (self := sizeCompDist.toUCAdmClass) (fun b => SPComp.pure (p b)) :=
-  ⟨fun b => SPTree.ret (p b), fun _ => rfl, 1, fun _ => Nat.le_refl 1⟩
+  ⟨fun b => SPTree.ret (p b), fun _ => rfl, fun b => finBranch_ret (p b), 1,
+    fun _ => Nat.le_refl 1⟩
 
 /-! ## Section 3: The computational separation (the core) -/
 

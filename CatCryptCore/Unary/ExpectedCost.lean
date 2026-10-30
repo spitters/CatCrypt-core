@@ -262,6 +262,41 @@ theorem ecost_bind_le_add {c : CostComp α} {f : α → CostComp β} {C₁ C₂ 
   refine le_trans (ecost_bind_le c f h) (add_le_add (hc h) ?_)
   exact le_trans (wpE_mono c (fun p h' => hf p.1 h') h) (wpE_const_le c C₂ h)
 
+/-- The expected value under a heap-independent sample from `μ` is at most `C` when the
+    postexpectation is at most `C` on the support of `μ`. -/
+theorem wpE_liftSDistr_le {μ : SDistr γ} {post : γ → Heap → ℝ≥0∞} {C : ℝ≥0∞}
+    (hp : ∀ b ∈ μ.support, ∀ h', post b h' ≤ C) (h : Heap) :
+    wpE (liftSDistr μ) post h ≤ C := by
+  rw [wpE_eq_tsum]
+  calc ∑' p : γ × Heap, liftSDistr μ h (some p) * post p.1 p.2
+      ≤ ∑' p : γ × Heap, liftSDistr μ h (some p) * C := by
+        refine ENNReal.tsum_le_tsum fun p => ?_
+        by_cases hz : liftSDistr μ h (some p) = 0
+        · simp [hz]
+        · have hs : p.1 ∈ μ.support := by
+            obtain ⟨y, hy1, hy2⟩ :=
+              (PMF.mem_support_bind_iff _ _ _).mp ((PMF.mem_support_iff _ _).mpr hz)
+            rcases y with _ | a
+            · simp [SDistr.fail] at hy2
+            · simp only [SDistr.pure, PMF.support_pure, Set.mem_singleton_iff,
+                Option.some.injEq] at hy2
+              subst hy2
+              exact (PMF.mem_support_iff _ _).mp hy1
+          exact mul_le_mul' le_rfl (hp p.1 hs p.2)
+    _ = wpE (liftSDistr μ) (fun _ _ => C) h := by rw [wpE_eq_tsum]
+    _ ≤ C := wpE_const_le _ _ _
+
+/-- A unit-charged sample from `μ` followed by a continuation of expected cost at most `C`
+    on the support of `μ` has expected cost at most `1 + C`. -/
+theorem ecost_bind_liftSDistr_le {μ : SDistr γ} {f : γ → CostComp β} {C : ℝ≥0∞}
+    (hf : ∀ b ∈ μ.support, ∀ h, ecost (f b) h ≤ C) (h : Heap) :
+    ecost (CostComp.bind (CostComp.lift (liftSDistr μ) 1) f) h ≤ ((1 : ℕ) : ℝ≥0∞) + C := by
+  refine le_trans (ecost_bind_le _ f h) (add_le_add (ecost_lift_le _ 1 h) ?_)
+  unfold CostComp.lift
+  rw [wpE_bind]
+  simp only [wpE_pure]
+  exact wpE_liftSDistr_le (fun b hb h' => hf b hb h') h
+
 /-! ### Erasure: instrumentation does not change semantics -/
 
 @[simp] theorem erase_pure (a : α) :
@@ -336,6 +371,8 @@ noncomputable def compileCharged : SPTree α → CostComp α
   | .sample β finβ neβ k =>
       letI := finβ; letI := neβ
       CostComp.bind (CostComp.sampleC β) fun b => compileCharged (k b)
+  | .sampleDist _ μ k =>
+      CostComp.bind (CostComp.lift (liftSDistr μ) 1) fun b => compileCharged (k b)
   | .get l k => CostComp.bind (CostComp.getC l) fun v => compileCharged (k v)
   | .set l v t => CostComp.bind (CostComp.setC l v) fun _ => compileCharged t
   | .fail => CostComp.fail
@@ -352,6 +389,12 @@ theorem compileCharged_erase (s : SPTree α) :
       compileCharged (k b)).erase = _
     rw [erase_bind_lift]
     show _ = SPComp.bind (SPComp.sample β) fun b => (k b).compile
+    congr 1
+    funext b
+    exact ih b
+  | sampleDist β μ k ih =>
+    simp only [compileCharged, SPTree.compile]
+    rw [erase_bind_lift]
     congr 1
     funext b
     exact ih b
@@ -376,9 +419,9 @@ theorem compileCharged_erase (s : SPTree α) :
     show (CostComp.bind (CostComp.loadC h₀) fun _ => compileCharged t).erase = _
     rw [erase_bind_loadC, ih, SPTree.compile_load_eq_bind]
 
-/-- **Conservativity**: the expected cost of the charged compilation is
-    bounded by the worst-case operation count `SPTree.queryCost`. -/
-theorem ecost_compileCharged_le_queryCost (s : SPTree α) (h : Heap) :
+/-- **Conservativity**: on a tree of bounded branching, the expected cost of the charged
+    compilation is bounded by the worst-case operation count `SPTree.queryCost`. -/
+theorem ecost_compileCharged_le_queryCost (s : SPTree α) (hs : s.QueryBdd) (h : Heap) :
     ecost (compileCharged s) h ≤ (s.queryCost : ℝ≥0∞) := by
   induction s generalizing h with
   | ret a => simp [compileCharged]
@@ -390,11 +433,20 @@ theorem ecost_compileCharged_le_queryCost (s : SPTree α) (h : Heap) :
       refine ecost_bind_le_add (fun h' => ?_) (fun b h' => ?_) h
       · show ecost (CostComp.lift (SPComp.sample β) 1) h' ≤ (1 : ℝ≥0∞)
         exact_mod_cast ecost_lift_le (SPComp.sample β) 1 h'
-      · exact le_trans (ih b h')
+      · exact le_trans (ih b (hs b) h')
           (Nat.cast_le.mpr
             (Finset.le_sup (f := fun b => (k b).queryCost) (Finset.mem_univ b)))
     refine le_trans hbound ?_
     show (1 : ℝ≥0∞) + _ ≤ ((1 + Finset.univ.sup fun b => (k b).queryCost : ℕ) : ℝ≥0∞)
+    push_cast
+    exact le_rfl
+  | sampleDist β μ k ih =>
+    obtain ⟨hb, hk⟩ := hs
+    simp only [compileCharged, SPTree.queryCost]
+    refine le_trans (ecost_bind_le_add (C₁ := 1)
+      (C₂ := ((⨆ b, (k b).queryCost : ℕ) : ℝ≥0∞))
+      (fun h' => by exact_mod_cast ecost_lift_le _ 1 h')
+      (fun b h' => le_trans (ih b (hk b) h') (Nat.cast_le.mpr (le_ciSup hb b))) h) ?_
     push_cast
     exact le_rfl
   | get l k ih =>
@@ -404,7 +456,7 @@ theorem ecost_compileCharged_le_queryCost (s : SPTree α) (h : Heap) :
       refine ecost_bind_le_add (fun h' => ?_) (fun v h' => ?_) h
       · show ecost (CostComp.lift (SPComp.get l) 1) h' ≤ (1 : ℝ≥0∞)
         exact_mod_cast ecost_lift_le (SPComp.get l) 1 h'
-      · exact le_trans (ih v h')
+      · exact le_trans (ih v (hs v) h')
           (Nat.cast_le.mpr
             (Finset.le_sup (f := fun v => (k v).queryCost) (Finset.mem_univ v)))
     refine le_trans hbound ?_
@@ -414,7 +466,7 @@ theorem ecost_compileCharged_le_queryCost (s : SPTree α) (h : Heap) :
   | set l v t ih =>
     have hbound : ecost (CostComp.bind (CostComp.setC l v) fun _ =>
         compileCharged t) h ≤ 1 + (t.queryCost : ℝ≥0∞) := by
-      refine ecost_bind_le_add (fun h' => ?_) (fun _ h' => ih h') h
+      refine ecost_bind_le_add (fun h' => ?_) (fun _ h' => ih hs h') h
       show ecost (CostComp.lift (SPComp.set l v) 1) h' ≤ (1 : ℝ≥0∞)
       exact_mod_cast ecost_lift_le (SPComp.set l v) 1 h'
     refine le_trans hbound ?_
@@ -425,7 +477,7 @@ theorem ecost_compileCharged_le_queryCost (s : SPTree α) (h : Heap) :
   | load h₀ t ih =>
     have hbound : ecost (CostComp.bind (CostComp.loadC h₀) fun _ =>
         compileCharged t) h ≤ ((1 + h₀.data.keys.card : ℕ) : ℝ≥0∞) + (t.queryCost : ℝ≥0∞) :=
-      ecost_bind_le_add (fun h' => ecost_loadC_le h₀ h') (fun _ h' => ih h') h
+      ecost_bind_le_add (fun h' => ecost_loadC_le h₀ h') (fun _ h' => ih hs h') h
     refine le_trans hbound ?_
     show _ ≤ ((1 + h₀.data.keys.card + t.queryCost : ℕ) : ℝ≥0∞)
     push_cast
@@ -440,10 +492,10 @@ theorem ecost_of_spTreeQueryAdm {f : α → SPComp β}
     (hadm : UCMonad.spTreeQueryAdm.adm f) :
     ∃ (g : α → CostComp β) (n : ℕ),
       (∀ a, (g a).erase = f a) ∧ ∀ a h, ecost (g a) h ≤ (n : ℝ≥0∞) := by
-  obtain ⟨s, hs, n, hn⟩ := hadm
+  obtain ⟨s, hs, hb, n, hn⟩ := hadm
   refine ⟨fun a => compileCharged (s a), n, fun a => ?_, fun a h => ?_⟩
   · rw [compileCharged_erase, hs a]
-  · exact le_trans (ecost_compileCharged_le_queryCost (s a) h)
+  · exact le_trans (ecost_compileCharged_le_queryCost (s a) (hb a) h)
       (Nat.cast_le.mpr (hn a))
 
 /-- **Bounded cost ⟹ expected-cost instrumentation.** An arrow of query cost at most `n` in
@@ -452,10 +504,10 @@ theorem ecost_of_spTreeQueryAdm {f : α → SPComp β}
 theorem ecost_of_costBounded {f : α → SPComp β} {n : ℕ}
     (h : UCMonad.costBounded n f) :
     ∃ g : α → CostComp β, (∀ a, (g a).erase = f a) ∧ ∀ a h, ecost (g a) h ≤ (n : ℝ≥0∞) := by
-  obtain ⟨s, hs, hn⟩ := (UCMonad.spTreeQueryCost_le_iff n).mp h
+  obtain ⟨s, hs, hb, hn⟩ := (UCMonad.spTreeQueryCost_le_iff n).mp h
   refine ⟨fun a => compileCharged (s a), fun a => ?_, fun a h => ?_⟩
   · rw [compileCharged_erase, hs a]
-  · exact le_trans (ecost_compileCharged_le_queryCost (s a) h)
+  · exact le_trans (ecost_compileCharged_le_queryCost (s a) (hb a) h)
       (Nat.cast_le.mpr (hn a))
 
 /-! ## The geometric-retry theorem

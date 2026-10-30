@@ -83,6 +83,7 @@ theorem bind_ret (t : SPTree.Timed α) : t.bind (fun a => (0, ret a)) = (0, t) :
   induction t with
   | ret a => rfl
   | sample γ finγ neγ c k ih => simp only [bind, ih, Nat.add_zero]
+  | sampleDist γ μ c k ih => simp only [bind, ih, Nat.add_zero]
   | get l c k ih => simp only [bind, ih, Nat.add_zero]
   | set l v c t ih => simp only [bind, ih, Nat.add_zero]
   | fail => rfl
@@ -97,6 +98,9 @@ theorem bind_bind (t : SPTree.Timed α) (f : α → ℕ × SPTree.Timed β)
   induction t with
   | ret a => rfl
   | sample γ finγ neγ c k ih =>
+    simp only [delay] at ih
+    simp only [bind, ← ih, delay, Nat.add_assoc, Nat.add_zero]
+  | sampleDist γ μ c k ih =>
     simp only [delay] at ih
     simp only [bind, ← ih, delay, Nat.add_assoc, Nat.add_zero]
   | get l c k ih =>
@@ -116,6 +120,7 @@ theorem bind_bind (t : SPTree.Timed α) (f : α → ℕ × SPTree.Timed β)
 def AllRet (Q : α → Prop) : SPTree.Timed α → Prop
   | ret a => Q a
   | sample _ _ _ _ k => ∀ b, AllRet Q (k b)
+  | sampleDist _ _ _ k => ∀ b, AllRet Q (k b)
   | get _ _ k => ∀ v, AllRet Q (k v)
   | set _ _ _ t => AllRet Q t
   | fail => True
@@ -126,6 +131,7 @@ theorem allRet_mono {Q Q' : α → Prop} (h : ∀ a, Q a → Q' a) (t : SPTree.T
   induction t with
   | ret a => exact h a
   | sample γ finγ neγ c k ih => exact fun hk b => ih b (hk b)
+  | sampleDist γ μ c k ih => exact fun hk b => ih b (hk b)
   | get l c k ih => exact fun hk v => ih v (hk v)
   | set l v c t ih => exact ih
   | fail => exact id
@@ -138,31 +144,74 @@ theorem allRet_bind (Q : β → Prop) (t : SPTree.Timed α) (f : α → ℕ × S
   induction t with
   | ret a => rfl
   | sample γ finγ neγ c k ih => simp only [bind, AllRet, ih]
+  | sampleDist γ μ c k ih => simp only [bind, AllRet, ih]
   | get l c k ih => simp only [bind, AllRet, ih]
   | set l v c t ih => simp only [bind, AllRet, ih]
   | fail => simp only [bind, AllRet]
   | load h₀ c t ih => simp only [bind, AllRet, ih]
 
-/-- The query cost of the erasure is at most the time. -/
-theorem queryCost_erase_le_time (t : SPTree.Timed α) : t.erase.queryCost ≤ t.time := by
+/-- On a tree with bounded families of continuation times, the erasure has bounded branching
+and its query cost is at most the time. -/
+theorem queryBdd_erase_and_queryCost_le (t : SPTree.Timed α) (ht : t.TimeBdd) :
+    t.erase.QueryBdd ∧ t.erase.queryCost ≤ t.time := by
   induction t with
-  | ret a => simp only [erase, SPTree.queryCost, time, le_refl]
+  | ret a => exact ⟨trivial, by simp only [erase, SPTree.queryCost, time, le_refl]⟩
   | sample γ finγ neγ c k ih =>
     let _ := finγ
     simp only [erase, SPTree.queryCost, time]
-    exact Nat.add_le_add_left
-      (Finset.sup_mono_fun fun b _ => (ih b).trans (Nat.le_add_left _ _)) 1
+    exact ⟨fun b => (ih b (ht b)).1, Nat.add_le_add_left
+      (Finset.sup_mono_fun fun b _ => (ih b (ht b)).2.trans (Nat.le_add_left _ _)) 1⟩
+  | sampleDist γ μ c k ih =>
+    obtain ⟨hb, hk⟩ := ht
+    have hle : ∀ b, (k b).erase.queryCost ≤ c b + (k b).time :=
+      fun b => (ih b (hk b)).2.trans (Nat.le_add_left _ _)
+    have hq : BddAbove (Set.range fun b => (k b).erase.queryCost) := by
+      obtain ⟨M, hM⟩ := hb
+      exact ⟨M, by rintro _ ⟨b, rfl⟩; exact (hle b).trans (hM ⟨b, rfl⟩)⟩
+    simp only [erase, SPTree.queryCost, time, SPTree.QueryBdd]
+    exact ⟨⟨hq, fun b => (ih b (hk b)).1⟩, Nat.add_le_add_left (ciSup_mono hb hle) 1⟩
   | get l c k ih =>
     simp only [erase, SPTree.queryCost, time]
-    exact Nat.add_le_add_left
-      (Finset.sup_mono_fun fun v _ => (ih v).trans (Nat.le_add_left _ _)) 1
+    exact ⟨fun v => (ih v (ht v)).1, Nat.add_le_add_left
+      (Finset.sup_mono_fun fun v _ => (ih v (ht v)).2.trans (Nat.le_add_left _ _)) 1⟩
   | set l v c t ih =>
     simp only [erase, SPTree.queryCost, time]
-    omega
-  | fail => simp only [erase, SPTree.queryCost, time, le_refl]
+    exact ⟨(ih ht).1, by have := (ih ht).2; omega⟩
+  | fail => exact ⟨trivial, by simp only [erase, SPTree.queryCost, time, le_refl]⟩
   | load h₀ c t ih =>
     simp only [erase, SPTree.queryCost, time]
+    exact ⟨(ih ht).1, by have := (ih ht).2; omega⟩
+
+/-- On a tree with bounded families of continuation times, the query cost of the erasure is at
+most the time. -/
+theorem queryCost_erase_le_time (t : SPTree.Timed α) (ht : t.TimeBdd) :
+    t.erase.queryCost ≤ t.time :=
+  (queryBdd_erase_and_queryCost_le t ht).2
+
+/-- `ret` has bounded families of continuation times. -/
+theorem timeBdd_ret (a : α) : (ret a).TimeBdd := trivial
+
+/-- A costed bind of a tree with bounded families of continuation times, into continuations
+with bounded families of continuation times and uniformly bounded times, has bounded families
+of continuation times. -/
+theorem TimeBdd.bind {t : SPTree.Timed α} {f : α → ℕ × SPTree.Timed β} {T : ℕ}
+    (ht : t.TimeBdd) (hf : ∀ a, (f a).2.TimeBdd) (hfc : ∀ a, stepTime (f a) ≤ T) :
+    (t.bind f).2.TimeBdd := by
+  induction t with
+  | ret a => exact hf a
+  | sample γ finγ neγ c k ih => exact fun b => ih b (ht b)
+  | sampleDist γ μ c k ih =>
+    obtain ⟨⟨M, hM⟩, hk⟩ := ht
+    refine ⟨⟨M + T, ?_⟩, fun b => ih b (hk b)⟩
+    rintro _ ⟨b, rfl⟩
+    have h1 := hM ⟨b, rfl⟩
+    have h2 := stepTime_bind_le (k b) f T hfc
+    simp only [stepTime] at h1 h2 ⊢
     omega
+  | get l c k ih => exact fun v => ih v (ht v)
+  | set l v c t ih => exact ih ht
+  | fail => trivial
+  | load h₀ c t ih => exact ih ht
 
 end CatCrypt.Core.SPTree.Timed
 
@@ -176,6 +225,9 @@ structure TimedM (n : ℕ) (α : Type) where
   tree : ℕ × SPTree.Timed α
   /-- The time of the tree is at most the index. -/
   stepTime_le : SPTree.Timed.stepTime tree ≤ n
+  /-- The tree has bounded families of continuation times, so that its time is its
+  worst-case time. -/
+  timeBdd : tree.2.TimeBdd
 
 namespace TimedM
 
@@ -185,6 +237,7 @@ variable {α β : Type} {m n : ℕ}
 protected def pure (a : α) : TimedM 0 α where
   tree := (0, .ret a)
   stepTime_le := by simp [SPTree.Timed.stepTime, SPTree.Timed.time]
+  timeBdd := SPTree.Timed.timeBdd_ret a
 
 /-- The costed bind behind the step cost of the head; the indices add. -/
 protected def bind (x : TimedM m α) (f : α → TimedM n β) : TimedM (m + n) β where
@@ -196,21 +249,25 @@ protected def bind (x : TimedM m α) (f : α → TimedM n β) : TimedM (m + n) �
     rw [SPTree.Timed.stepTime_delay]
     simp only [SPTree.Timed.stepTime] at h1
     omega
+  timeBdd := x.timeBdd.bind (fun a => (f a).timeBdd) fun a => (f a).stepTime_le
 
-/-- A tree with step costs, at its time. -/
-def lift (t : SPTree.Timed α) : TimedM t.time α where
+/-- A tree with step costs and bounded families of continuation times, at its time. -/
+def lift (t : SPTree.Timed α) (ht : t.TimeBdd) : TimedM t.time α where
   tree := (0, t)
   stepTime_le := by simp [SPTree.Timed.stepTime]
+  timeBdd := ht
 
 /-- The step cost `c` in front of the tree `t`, at the index `c + t.time`. -/
-def ofStep (c : ℕ) (t : SPTree.Timed α) : TimedM (c + t.time) α where
+def ofStep (c : ℕ) (t : SPTree.Timed α) (ht : t.TimeBdd) : TimedM (c + t.time) α where
   tree := (c, t)
   stepTime_le := le_rfl
+  timeBdd := ht
 
 /-- The same tree at a larger index. -/
 def relax (h : m ≤ n) (x : TimedM m α) : TimedM n α where
   tree := x.tree
   stepTime_le := x.stepTime_le.trans h
+  timeBdd := x.timeBdd
 
 /-- The tree with its step costs erased. -/
 def erase (x : TimedM n α) : SPTree α := x.tree.2.erase
@@ -222,16 +279,18 @@ def erase (x : TimedM n α) : SPTree α := x.tree.2.erase
 @[simp, xspec] theorem tree_bind (x : TimedM m α) (f : α → TimedM n β) :
     (x.bind f).tree = SPTree.Timed.delay x.tree.1 (x.tree.2.bind fun a => (f a).tree) := rfl
 
-@[simp, xspec] theorem tree_lift (t : SPTree.Timed α) : (lift t).tree = (0, t) := rfl
+@[simp, xspec] theorem tree_lift (t : SPTree.Timed α) (ht : t.TimeBdd) :
+    (lift t ht).tree = (0, t) := rfl
 
-@[simp, xspec] theorem tree_ofStep (c : ℕ) (t : SPTree.Timed α) : (ofStep c t).tree = (c, t) :=
+@[simp, xspec] theorem tree_ofStep (c : ℕ) (t : SPTree.Timed α) (ht : t.TimeBdd) :
+    (ofStep c t ht).tree = (c, t) :=
   rfl
 
 @[simp, xspec] theorem tree_relax (h : m ≤ n) (x : TimedM m α) : (x.relax h).tree = x.tree := rfl
 
 /-- A tree lifted at its time, followed by a continuation, is the costed bind of the tree. -/
-@[simp, xspec] theorem tree_lift_bind (t : SPTree.Timed α) (f : α → TimedM n β) :
-    ((lift t).bind f).tree = t.bind fun a => (f a).tree := by
+@[simp, xspec] theorem tree_lift_bind (t : SPTree.Timed α) (ht : t.TimeBdd)
+    (f : α → TimedM n β) : ((lift t ht).bind f).tree = t.bind fun a => (f a).tree := by
   simp only [tree_bind, tree_lift, SPTree.Timed.delay, Nat.zero_add, Prod.mk.eta]
 
 /-- The erasure of `TimedM.bind` is `SPTree.bind` of the erasures. -/
@@ -340,10 +399,11 @@ open scoped ENNReal
 variable {α β : Type}
 
 /-- The step-time cost of a Kleisli arrow into `SPComp`: the least worst-case time of a
-step-prefixed tree family whose erasure compiles to it, `⊤` when there is none with a uniform
-bound. -/
+step-prefixed tree family with bounded families of continuation times whose erasure compiles to
+it, `⊤` when there is none with a uniform bound. -/
 noncomputable def spTreeTimeCost (f : α → SPComp β) : WithTop ℕ :=
-  ⨅ s : {s : α → ℕ × SPTree.Timed β // ∀ a, (s a).2.erase.compile = f a},
+  ⨅ s : {s : α → ℕ × SPTree.Timed β //
+      (∀ a, (s a).2.erase.compile = f a) ∧ ∀ a, (s a).2.TimeBdd},
     ⨆ a, ((SPTree.Timed.stepTime (s.1 a) : ℕ) : ℕ∞)
 
 /-- The step-time cost is the query cost: a tree with zero step costs has time equal to its
@@ -351,28 +411,33 @@ query cost, and the query cost of the erasure of a tree is at most its time. -/
 theorem spTreeTimeCost_eq_spTreeQueryCost (f : α → SPComp β) :
     spTreeTimeCost f = spTreeQueryCost f := by
   refine le_antisymm (le_iInf fun s => ?_) (le_iInf fun s => ?_)
-  · refine iInf_le_of_le ⟨fun a => (0, SPTree.Timed.ofTree (s.1 a)), fun a => ?_⟩
-      (iSup_mono fun a => le_of_eq ?_)
+  · refine iInf_le_of_le ⟨fun a => (0, SPTree.Timed.ofTree (s.1 a)), fun a => ?_,
+      fun a => SPTree.Timed.timeBdd_ofTree _ (s.2.2 a)⟩ (iSup_mono fun a => le_of_eq ?_)
     · rw [SPTree.Timed.erase_ofTree]
-      exact s.2 a
+      exact s.2.1 a
     · simp only [SPTree.Timed.stepTime, SPTree.Timed.time_ofTree, Nat.zero_add]
       rfl
-  · exact iInf_le_of_le ⟨fun a => (s.1 a).2.erase, s.2⟩ (iSup_mono fun a => Nat.cast_le.mpr
-      ((SPTree.Timed.queryCost_erase_le_time _).trans (Nat.le_add_left _ _)))
+  · exact iInf_le_of_le ⟨fun a => (s.1 a).2.erase, s.2.1,
+      fun a => (SPTree.Timed.queryBdd_erase_and_queryCost_le _ (s.2.2 a)).1⟩
+      (iSup_mono fun a => Nat.cast_le.mpr
+        ((SPTree.Timed.queryCost_erase_le_time _ (s.2.2 a)).trans (Nat.le_add_left _ _)))
 
 /-- The arrows of step-time cost at most `n` are the erasures of the arrows into `TimedM n`. -/
 theorem spTreeTimeCost_le_iff (f : α → SPComp β) (n : ℕ) :
     spTreeTimeCost f ≤ n ↔ ∃ k : α → TimedM n β, ∀ a, (k a).erase.compile = f a := by
   rw [spTreeTimeCost_eq_spTreeQueryCost, spTreeQueryCost_le_iff]
   constructor
-  · rintro ⟨s, hs, hc⟩
-    refine ⟨fun a => ⟨(0, SPTree.Timed.ofTree (s a)), ?_⟩, fun a => ?_⟩
+  · rintro ⟨s, hs, hb, hc⟩
+    refine ⟨fun a => ⟨(0, SPTree.Timed.ofTree (s a)), ?_,
+      SPTree.Timed.timeBdd_ofTree _ (hb a)⟩, fun a => ?_⟩
     · simp only [SPTree.Timed.stepTime, SPTree.Timed.time_ofTree, Nat.zero_add]
       exact hc a
     · simp only [TimedM.erase, SPTree.Timed.erase_ofTree, hs]
   · rintro ⟨k, hk⟩
-    exact ⟨fun a => (k a).erase, hk, fun a => (SPTree.Timed.queryCost_erase_le_time _).trans
-      ((Nat.le_add_left _ _).trans (k a).stepTime_le)⟩
+    exact ⟨fun a => (k a).erase, hk,
+      fun a => (SPTree.Timed.queryBdd_erase_and_queryCost_le _ (k a).timeBdd).1,
+      fun a => (SPTree.Timed.queryCost_erase_le_time _ (k a).timeBdd).trans
+        ((Nat.le_add_left _ _).trans (k a).stepTime_le)⟩
 
 /-- The step-time cost as a `MonadCostModel` on `SPComp`. All four laws hold; it is the
 query-cost model (`timeCostModel_eq`). It is a `def` because `SPComp` carries the query-cost

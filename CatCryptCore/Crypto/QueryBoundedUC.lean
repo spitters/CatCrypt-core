@@ -70,12 +70,13 @@ open scoped ENNReal
     adm_precomp := spTreeQueryAdm.adm_precomp }
 
 /-- The admissibility of `queryBoundedCompDist` is *definitionally* the query-bounded class
-    `spTreeQueryAdm`: an arrow is admissible iff it has a syntax-tree family with uniformly
-    bounded query cost. This is the non-triviality witness — it is not `fun _ => True`. -/
+    `spTreeQueryAdm`: an arrow is admissible iff it has a syntax-tree family of bounded
+    branching with uniformly bounded query cost. This is the non-triviality witness — it is
+    not `fun _ => True`. -/
 theorem queryBoundedCompDist_adm_iff {α β : Type} (f : α → SPComp β) :
     adm (self := queryBoundedCompDist.toUCAdmClass) f ↔
       ∃ (s : α → SPTree β),
-        (∀ a, (s a).compile = f a) ∧ ∃ n, ∀ a, (s a).queryCost ≤ n :=
+        (∀ a, (s a).compile = f a) ∧ (∀ a, (s a).QueryBdd) ∧ ∃ n, ∀ a, (s a).queryCost ≤ n :=
   Iff.rfl
 
 /-- The `adm` field of `queryBoundedCompDist` equals `spTreeQueryAdm`'s on the nose. -/
@@ -135,7 +136,8 @@ concretely on the canonical separating pair. -/
     ranges over already contains all output-thresholding distinguishers. -/
 theorem adm_pure_predicate {β : Type} (p : β → Bool) :
     adm (self := queryBoundedCompDist.toUCAdmClass) (fun b => SPComp.pure (p b)) :=
-  ⟨fun b => SPTree.ret (p b), fun _ => rfl, 0, fun _ => Nat.le_refl 0⟩
+  ⟨fun b => SPTree.ret (p b), fun _ => rfl, fun b => SPTree.queryBdd_ret (p b), 0,
+    fun _ => Nat.le_refl 0⟩
 
 /-- The canonical separating distinguisher (reads the leaked bit off the `.inr` channel),
     written as a pure predicate test so it is manifestly query-bounded. -/

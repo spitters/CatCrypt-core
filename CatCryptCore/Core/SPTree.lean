@@ -18,10 +18,11 @@ analysis by structural recursion.
 
 ## Main definitions
 
-* `SPTree` — syntactic computation tree (ret, sample, get, set, fail, and the heap reset
-  load)
+* `SPTree` — syntactic computation tree (ret, uniform sampling `sample`, sampling from a
+  sub-distribution `sampleDist`, get, set, fail, and the heap reset load)
 * `SPTree.compile` — denotational semantics (→ SPComp)
 * `SPTree.queryCost` — worst-case operation count (structural recursion)
+* `SPTree.QueryBdd` — every `sampleDist` node has a bounded family of continuation costs
 * `SPTree.bind` — monadic composition (substitution at leaves)
 
 ## Main results
@@ -45,6 +46,8 @@ inductive SPTree : Type → Type 1 where
   | ret {α : Type} : α → SPTree α
   | sample {α : Type} (β : Type) (finβ : Fintype β) (neβ : Nonempty β) :
       (β → SPTree α) → SPTree α
+  /-- Sample from the sub-distribution `μ` and continue with the subtree at the outcome. -/
+  | sampleDist {α : Type} (β : Type) (μ : SDistr β) : (β → SPTree α) → SPTree α
   | get {α : Type} : (l : Location) → (l.ty → SPTree α) → SPTree α
   | set {α : Type} : (l : Location) → l.ty → SPTree α → SPTree α
   | fail {α : Type} : SPTree α
@@ -62,6 +65,7 @@ noncomputable def compile : SPTree α → SPComp α
   | .ret a => SPComp.pure a
   | .sample β finβ neβ k => letI := finβ; letI := neβ;
     SPComp.bind (SPComp.sample β) (fun b => (k b).compile)
+  | .sampleDist _ μ k => SPComp.bind (liftSDistr μ) (fun b => (k b).compile)
   | .get l k => SPComp.bind (SPComp.get l) (fun v => (k v).compile)
   | .set l v t => SPComp.bind (SPComp.set l v) (fun _ => t.compile)
   | .fail => SPComp.fail
@@ -72,12 +76,15 @@ noncomputable def compile : SPTree α → SPComp α
 /-- Worst-case operation count: counts sample + get + set operations, and charges a heap
     reset `load h₀` one unit plus one per location of `h₀`.
     Uses `Finset.univ.sup` for branching to take the maximum cost
-    across all possible continuations. Structurally recursive. -/
-def queryCost : SPTree α → ℕ
+    across all possible continuations. A sampling node `sampleDist β μ k` takes the
+    supremum `⨆ b, (k b).queryCost` in `ℕ`, which is the maximum when that family is
+    bounded (`QueryBdd`) and `0` otherwise. Structurally recursive. -/
+noncomputable def queryCost : SPTree α → ℕ
   | .ret _ => 0
-  | .sample β finβ _ k =>
+  | .sample _ finβ _ k =>
     letI := finβ
     1 + Finset.univ.sup (fun b => (k b).queryCost)
+  | .sampleDist _ _ k => 1 + ⨆ b, (k b).queryCost
   | .get _l k => 1 + Finset.univ.sup (fun v => (k v).queryCost)
   | .set _ _ t => 1 + t.queryCost
   | .fail => 0
@@ -89,6 +96,7 @@ def queryCost : SPTree α → ℕ
 def bind : SPTree α → (α → SPTree β) → SPTree β
   | .ret a, f => f a
   | .sample γ finγ neγ k, f => .sample γ finγ neγ (fun c => (k c).bind f)
+  | .sampleDist γ μ k, f => .sampleDist γ μ (fun c => (k c).bind f)
   | .get l k, f => .get l (fun v => (k v).bind f)
   | .set l v t, f => .set l v (t.bind f)
   | .fail, _ => .fail
@@ -139,6 +147,8 @@ theorem compile_bind (s : SPTree α) (f : α → SPTree β) :
   | ret a => exact (SPComp.pure_bind a (fun a => (f a).compile)).symm
   | sample γ finγ neγ k ih =>
     simp only [bind, compile]; rw [SPComp.bind_assoc]; congr_funext
+  | sampleDist γ μ k ih =>
+    simp only [bind, compile]; rw [SPComp.bind_assoc]; congr_funext
   | get l k ih =>
     simp only [bind, compile]; rw [SPComp.bind_assoc]; congr_funext
   | set l v t ih =>
@@ -152,29 +162,56 @@ theorem compile_bind (s : SPTree α) (f : α → SPTree β) :
 
 /-! ## Query Cost Bound for Bind -/
 
-/-- Cost of bind ≤ cost of tree + uniform bound on continuation. -/
-theorem queryCost_bind (s : SPTree α) (f : α → SPTree β) (bound : ℕ)
+/-- Under a uniform bound `bound` on the query cost of the continuation, binding does not
+decrease the query cost and raises it by at most `bound`. -/
+theorem queryCost_le_bind_and_bind_le (s : SPTree α) (f : α → SPTree β) (bound : ℕ)
     (hf : ∀ a, (f a).queryCost ≤ bound) :
-    (s.bind f).queryCost ≤ s.queryCost + bound := by
+    s.queryCost ≤ (s.bind f).queryCost ∧ (s.bind f).queryCost ≤ s.queryCost + bound := by
   induction s with
-  | ret a => simp only [bind, queryCost, Nat.zero_add]; exact hf a
+  | ret a => simp only [bind, queryCost, Nat.zero_add]; exact ⟨Nat.zero_le _, hf a⟩
   | sample γ finγ neγ k ih =>
     simp only [bind, queryCost]
-    have : Finset.univ.sup (fun c => ((k c).bind f).queryCost) ≤
+    have h1 : Finset.univ.sup (fun c => (k c).queryCost) ≤
+        Finset.univ.sup (fun c => ((k c).bind f).queryCost) :=
+      Finset.sup_mono_fun fun c _ => (ih c).1
+    have h2 : Finset.univ.sup (fun c => ((k c).bind f).queryCost) ≤
         Finset.univ.sup (fun c => (k c).queryCost) + bound := by
       apply Finset.sup_le; intro c _
       calc ((k c).bind f).queryCost
-          ≤ (k c).queryCost + bound := ih c
+          ≤ (k c).queryCost + bound := (ih c).2
         _ ≤ Finset.univ.sup (fun c => (k c).queryCost) + bound := by
           gcongr; exact Finset.le_sup (f := fun c => (k c).queryCost) (Finset.mem_univ c)
     omega
+  | sampleDist γ μ k ih =>
+    simp only [bind, queryCost]
+    by_cases hb : BddAbove (Set.range fun c => (k c).queryCost)
+    · have hb' : BddAbove (Set.range fun c => ((k c).bind f).queryCost) := by
+        obtain ⟨M, hM⟩ := hb
+        refine ⟨M + bound, ?_⟩
+        rintro _ ⟨c, rfl⟩
+        have := hM ⟨c, rfl⟩
+        have := (ih c).2
+        grind
+      have h1 : (⨆ c, (k c).queryCost) ≤ ⨆ c, ((k c).bind f).queryCost :=
+        ciSup_mono hb' fun c => (ih c).1
+      have h2 : (⨆ c, ((k c).bind f).queryCost) ≤ (⨆ c, (k c).queryCost) + bound :=
+        ciSup_le' fun c => ((ih c).2).trans (Nat.add_le_add_right (le_ciSup hb c) _)
+      omega
+    · have hb' : ¬ BddAbove (Set.range fun c => ((k c).bind f).queryCost) := by
+        rintro ⟨M, hM⟩
+        exact hb ⟨M, by rintro _ ⟨c, rfl⟩; exact ((ih c).1).trans (hM ⟨c, rfl⟩)⟩
+      simp only [ciSup_of_not_bddAbove hb, ciSup_of_not_bddAbove hb', csSup_empty]
+      omega
   | get l k ih =>
     simp only [bind, queryCost]
-    have : Finset.univ.sup (fun v => ((k v).bind f).queryCost) ≤
+    have h1 : Finset.univ.sup (fun v => (k v).queryCost) ≤
+        Finset.univ.sup (fun v => ((k v).bind f).queryCost) :=
+      Finset.sup_mono_fun fun v _ => (ih v).1
+    have h2 : Finset.univ.sup (fun v => ((k v).bind f).queryCost) ≤
         Finset.univ.sup (fun v => (k v).queryCost) + bound := by
       apply Finset.sup_le; intro v _
       calc ((k v).bind f).queryCost
-          ≤ (k v).queryCost + bound := ih v
+          ≤ (k v).queryCost + bound := (ih v).2
         _ ≤ Finset.univ.sup (fun v => (k v).queryCost) + bound := by
           gcongr; exact Finset.le_sup (f := fun v => (k v).queryCost) (Finset.mem_univ v)
     omega
@@ -187,6 +224,26 @@ theorem queryCost_bind (s : SPTree α) (f : α → SPTree β) (bound : ℕ)
     simp only [bind, queryCost]
     omega
 
+/-- Cost of bind ≤ cost of tree + uniform bound on continuation. -/
+theorem queryCost_bind (s : SPTree α) (f : α → SPTree β) (bound : ℕ)
+    (hf : ∀ a, (f a).queryCost ≤ bound) :
+    (s.bind f).queryCost ≤ s.queryCost + bound :=
+  (queryCost_le_bind_and_bind_le s f bound hf).2
+
+/-! ## Bounded branching -/
+
+/-- Every node `sampleDist β μ k` of the tree has a bounded family of continuation query
+costs, so that `queryCost` is the worst-case operation count. Trees without
+`sampleDist` nodes satisfy it. -/
+def QueryBdd : SPTree α → Prop
+  | .ret _ => True
+  | .sample _ _ _ k => ∀ b, QueryBdd (k b)
+  | .sampleDist _ _ k => BddAbove (Set.range fun b => (k b).queryCost) ∧ ∀ b, QueryBdd (k b)
+  | .get _ k => ∀ v, QueryBdd (k v)
+  | .set _ _ t => QueryBdd t
+  | .fail => True
+  | .load _ t => QueryBdd t
+
 /-! ## Monad Laws -/
 
 theorem ret_bind (a : α) (f : α → SPTree β) :
@@ -196,6 +253,7 @@ theorem ret_bind (a : α) (f : α → SPTree β) :
   induction s with
   | ret a => simp [bind]
   | sample γ finγ neγ k ih => simp only [bind]; congr_funext
+  | sampleDist γ μ k ih => simp only [bind]; congr_funext
   | get l k ih => simp only [bind]; congr_funext
   | set l v t ih => simp only [bind]; congr_funext
   | fail => rfl
@@ -206,6 +264,7 @@ theorem ret_bind (a : α) (f : α → SPTree β) :
   induction s with
   | ret a => simp [bind]
   | sample δ finδ neδ k ih => simp only [bind]; congr_funext
+  | sampleDist δ μ k ih => simp only [bind]; congr_funext
   | get l k ih => simp only [bind]; congr_funext
   | set l v t ih => simp only [bind]; congr_funext
   | fail => rfl

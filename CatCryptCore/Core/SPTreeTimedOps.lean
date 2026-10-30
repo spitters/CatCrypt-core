@@ -72,6 +72,16 @@ theorem erase_sample (γ : Type) (finγ : Fintype γ) (neγ : Nonempty γ) (c : 
     (sample γ finγ neγ c k).erase = .sample γ finγ neγ fun b => (k b).erase := by
   simp only [erase]
 
+/-- Unfolding lemma of `erase` at a sampling node of a sub-distribution. -/
+theorem erase_sampleDist (γ : Type) (μ : Prob.SDistr γ) (c : γ → ℕ) (k : γ → SPTree.Timed α) :
+    (sampleDist γ μ c k).erase = .sampleDist γ μ fun b => (k b).erase := by
+  simp only [erase]
+
+/-- Unfolding lemma of `time` at a sampling node of a sub-distribution. -/
+theorem time_sampleDist (γ : Type) (μ : Prob.SDistr γ) (c : γ → ℕ) (k : γ → SPTree.Timed α) :
+    (sampleDist γ μ c k).time = 1 + ⨆ b, c b + (k b).time := by
+  simp only [time]
+
 theorem erase_get (l : Location) (c : l.ty → ℕ) (k : l.ty → SPTree.Timed α) :
     (get l c k).erase = .get l fun v => (k v).erase := by
   simp only [erase]
@@ -115,7 +125,7 @@ theorem time_load (h₀ : Heap) (c : ℕ) (t : SPTree.Timed α) :
 def delay (c : ℕ) (x : ℕ × SPTree.Timed α) : ℕ × SPTree.Timed α := (c + x.1, x.2)
 
 /-- The time of a step-prefixed tree: its step cost plus the time of the tree. -/
-def stepTime (x : ℕ × SPTree.Timed α) : ℕ := x.1 + x.2.time
+noncomputable def stepTime (x : ℕ × SPTree.Timed α) : ℕ := x.1 + x.2.time
 
 /-- Costed bind: the continuation `f` returns a step-prefixed tree, whose step cost is added to
 the step cost of the continuation leading to the leaf. -/
@@ -123,6 +133,8 @@ def bind : SPTree.Timed α → (α → ℕ × SPTree.Timed β) → ℕ × SPTree
   | ret a, f => f a
   | sample γ finγ neγ c k, f =>
     (0, sample γ finγ neγ (fun b => c b + (bind (k b) f).1) fun b => (bind (k b) f).2)
+  | sampleDist γ μ c k, f =>
+    (0, sampleDist γ μ (fun b => c b + (bind (k b) f).1) fun b => (bind (k b) f).2)
   | get l c k, f => (0, get l (fun v => c v + (bind (k v) f).1) fun v => (bind (k v) f).2)
   | set l v c t, f => (0, set l v (c + (bind t f).1) (bind t f).2)
   | fail, _ => (0, fail)
@@ -137,6 +149,7 @@ theorem erase_bind (A : SPTree.Timed α) (f : α → ℕ × SPTree.Timed β) :
   induction A with
   | ret a => rfl
   | sample γ finγ neγ c k ih => simp only [bind, erase, SPTree.bind, ih]
+  | sampleDist γ μ c k ih => simp only [bind, erase, SPTree.bind, ih]
   | get l c k ih => simp only [bind, erase, SPTree.bind, ih]
   | set l v c t ih => simp only [bind, erase, SPTree.bind, ih]
   | fail => rfl
@@ -150,30 +163,69 @@ theorem stepTime_delay (c : ℕ) (x : ℕ × SPTree.Timed α) :
     stepTime (delay c x) = c + stepTime x := by
   simp only [stepTime, delay, Nat.add_assoc]
 
-/-- The time of a costed bind is at most the time of the tree plus a bound `T` on the times of
-the continuation. -/
-theorem stepTime_bind_le (A : SPTree.Timed α) (f : α → ℕ × SPTree.Timed β) (T : ℕ)
-    (hf : ∀ a, stepTime (f a) ≤ T) : stepTime (A.bind f) ≤ A.time + T := by
+/-- Under a bound `T` on the times of the continuation, the time of a costed bind is at least
+the time of the tree and at most the time of the tree plus `T`. -/
+theorem time_le_stepTime_bind_and_le (A : SPTree.Timed α) (f : α → ℕ × SPTree.Timed β)
+    (T : ℕ) (hf : ∀ a, stepTime (f a) ≤ T) :
+    A.time ≤ stepTime (A.bind f) ∧ stepTime (A.bind f) ≤ A.time + T := by
   induction A with
-  | ret a => simpa [bind, time] using hf a
+  | ret a => exact ⟨by simp [time], by simpa [bind, time] using hf a⟩
   | sample γ finγ neγ c k ih =>
     let _ := finγ
     simp only [stepTime, bind, time, Nat.zero_add]
+    have hm : (Finset.univ.sup fun b => c b + (k b).time) ≤
+        (Finset.univ.sup fun b => c b + (bind (k b) f).1 + (bind (k b) f).2.time) :=
+      Finset.sup_mono_fun fun b _ => by
+        have h1 := (ih b).1
+        simp only [stepTime] at h1
+        omega
     have hs : (Finset.univ.sup fun b => c b + (bind (k b) f).1 + (bind (k b) f).2.time) ≤
         (Finset.univ.sup fun b => c b + (k b).time) + T :=
       Finset.sup_le fun b _ => by
-        have h1 := ih b
+        have h1 := (ih b).2
         have h2 : c b + (k b).time ≤ Finset.univ.sup fun b => c b + (k b).time :=
           Finset.le_sup (f := fun b => c b + (k b).time) (Finset.mem_univ b)
         simp only [stepTime] at h1
         omega
     omega
+  | sampleDist γ μ c k ih =>
+    simp only [stepTime, bind, time, Nat.zero_add]
+    have hFG : ∀ b, c b + (k b).time ≤ c b + (bind (k b) f).1 + (bind (k b) f).2.time :=
+      fun b => by have h1 := (ih b).1; simp only [stepTime] at h1; omega
+    have hGF : ∀ b, c b + (bind (k b) f).1 + (bind (k b) f).2.time ≤ c b + (k b).time + T :=
+      fun b => by have h1 := (ih b).2; simp only [stepTime] at h1; omega
+    by_cases hb : BddAbove (Set.range fun b => c b + (k b).time)
+    · have hb' : BddAbove
+          (Set.range fun b => c b + (bind (k b) f).1 + (bind (k b) f).2.time) := by
+        obtain ⟨M, hM⟩ := hb
+        refine ⟨M + T, ?_⟩
+        rintro _ ⟨b, rfl⟩
+        have := hM ⟨b, rfl⟩
+        have := hGF b
+        grind
+      have h1 := ciSup_mono hb' hFG
+      have h2 : (⨆ b, c b + (bind (k b) f).1 + (bind (k b) f).2.time) ≤
+          (⨆ b, c b + (k b).time) + T :=
+        ciSup_le' fun b => (hGF b).trans (Nat.add_le_add_right (le_ciSup hb b) _)
+      omega
+    · have hb' : ¬ BddAbove
+          (Set.range fun b => c b + (bind (k b) f).1 + (bind (k b) f).2.time) := by
+        rintro ⟨M, hM⟩
+        exact hb ⟨M, by rintro _ ⟨b, rfl⟩; exact (hFG b).trans (hM ⟨b, rfl⟩)⟩
+      simp only [ciSup_of_not_bddAbove hb, ciSup_of_not_bddAbove hb', csSup_empty]
+      omega
   | get l c k ih =>
     simp only [stepTime, bind, time, Nat.zero_add]
+    have hm : (Finset.univ.sup fun v => c v + (k v).time) ≤
+        (Finset.univ.sup fun v => c v + (bind (k v) f).1 + (bind (k v) f).2.time) :=
+      Finset.sup_mono_fun fun v _ => by
+        have h1 := (ih v).1
+        simp only [stepTime] at h1
+        omega
     have hs : (Finset.univ.sup fun v => c v + (bind (k v) f).1 + (bind (k v) f).2.time) ≤
         (Finset.univ.sup fun v => c v + (k v).time) + T :=
       Finset.sup_le fun v _ => by
-        have h1 := ih v
+        have h1 := (ih v).2
         have h2 : c v + (k v).time ≤ Finset.univ.sup fun v => c v + (k v).time :=
           Finset.le_sup (f := fun v => c v + (k v).time) (Finset.mem_univ v)
         simp only [stepTime] at h1
@@ -186,6 +238,12 @@ theorem stepTime_bind_le (A : SPTree.Timed α) (f : α → ℕ × SPTree.Timed �
   | load h₀ c t ih =>
     simp only [stepTime, bind, time] at ih ⊢
     omega
+
+/-- The time of a costed bind is at most the time of the tree plus a bound `T` on the times of
+the continuation. -/
+theorem stepTime_bind_le (A : SPTree.Timed α) (f : α → ℕ × SPTree.Timed β) (T : ℕ)
+    (hf : ∀ a, stepTime (f a) ≤ T) : stepTime (A.bind f) ≤ A.time + T :=
+  (time_le_stepTime_bind_and_le A f T hf).2
 
 /-- The time of a costed map is at most the time of the tree plus a bound `t` on the cost of
 the function. -/
@@ -250,6 +308,7 @@ theorem bind_ret_bind {γ : Type} (A : SPTree.Timed α) (h : α → β)
   induction A with
   | ret a => rfl
   | sample γ' finγ neγ c k ih => simp [SPTree.Timed.bind, ih, bind_ret_fst]
+  | sampleDist γ' μ c k ih => simp [SPTree.Timed.bind, ih, bind_ret_fst]
   | get l c k ih => simp [SPTree.Timed.bind, ih, bind_ret_fst]
   | set l v c t ih => simp [SPTree.Timed.bind, ih, bind_ret_fst]
   | fail => rfl

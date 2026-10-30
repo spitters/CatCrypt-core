@@ -170,16 +170,51 @@ end GradedSubcategories
 
 open CatCrypt.Core CatCrypt.Crypto
 
+/-! ### Bounded branching of `SPTree` witnesses under `bind`
+
+The query-bounded classes admit only witness trees satisfying `SPTree.QueryBdd`, on which
+`SPTree.queryCost` is the worst-case operation count. -/
+
+/-- `ret` has bounded branching. -/
+theorem _root_.CatCrypt.Core.SPTree.queryBdd_ret {α : Type} (a : α) :
+    (SPTree.ret a).QueryBdd :=
+  trivial
+
+/-- Substituting continuations of bounded branching and uniformly bounded query cost into a
+tree of bounded branching gives a tree of bounded branching. -/
+theorem _root_.CatCrypt.Core.SPTree.QueryBdd.bind {α β : Type} {s : SPTree α}
+    {f : α → SPTree β} {bound : ℕ} (hs : s.QueryBdd) (hf : ∀ a, (f a).QueryBdd)
+    (hfc : ∀ a, (f a).queryCost ≤ bound) : (s.bind f).QueryBdd := by
+  induction s with
+  | ret a => exact hf a
+  | sample γ finγ neγ k ih => exact fun c => ih c (hs c)
+  | sampleDist γ μ k ih =>
+    obtain ⟨⟨M, hM⟩, hk⟩ := hs
+    refine ⟨⟨M + bound, ?_⟩, fun c => ih c (hk c)⟩
+    rintro _ ⟨c, rfl⟩
+    have h1 := hM ⟨c, rfl⟩
+    have h2 := SPTree.queryCost_bind (k c) f bound hfc
+    simp only at h1 ⊢
+    omega
+  | get l k ih => exact fun v => ih v (hs v)
+  | set l v t ih => exact ih hs
+  | fail => trivial
+  | load h₀ t ih => exact ih hs
+
 /-- Splicing `SPTree` witnesses: if `sf` compiles to `f` with query cost at most `n` and `sg`
-    compiles to `g` with query cost at most `m`, then `fun a => (sf a).bind sg` compiles to
-    `fun a => f a >>= g` with query cost at most `n + m`. -/
+    compiles to `g` with query cost at most `m`, both of bounded branching, then
+    `fun a => (sf a).bind sg` compiles to `fun a => f a >>= g`, has bounded branching and
+    has query cost at most `n + m`. -/
 theorem exists_spTree_bind {α β γ : Type} {f : α → SPComp β} {g : β → SPComp γ} {n m : ℕ}
-    (hf : ∃ s : α → SPTree β, (∀ a, (s a).compile = f a) ∧ ∀ a, (s a).queryCost ≤ n)
-    (hg : ∃ s : β → SPTree γ, (∀ b, (s b).compile = g b) ∧ ∀ b, (s b).queryCost ≤ m) :
-    ∃ s : α → SPTree γ, (∀ a, (s a).compile = f a >>= g) ∧ ∀ a, (s a).queryCost ≤ n + m := by
-  obtain ⟨sf, hsf, hcf⟩ := hf
-  obtain ⟨sg, hsg, hcg⟩ := hg
-  refine ⟨fun a => (sf a).bind sg, ?_, ?_⟩
+    (hf : ∃ s : α → SPTree β, (∀ a, (s a).compile = f a) ∧ (∀ a, (s a).QueryBdd) ∧
+      ∀ a, (s a).queryCost ≤ n)
+    (hg : ∃ s : β → SPTree γ, (∀ b, (s b).compile = g b) ∧ (∀ b, (s b).QueryBdd) ∧
+      ∀ b, (s b).queryCost ≤ m) :
+    ∃ s : α → SPTree γ, (∀ a, (s a).compile = f a >>= g) ∧ (∀ a, (s a).QueryBdd) ∧
+      ∀ a, (s a).queryCost ≤ n + m := by
+  obtain ⟨sf, hsf, hbf, hcf⟩ := hf
+  obtain ⟨sg, hsg, hbg, hcg⟩ := hg
+  refine ⟨fun a => (sf a).bind sg, ?_, fun a => (hbf a).bind hbg hcg, ?_⟩
   · intro a
     rw [SPTree.compile_bind, hsf a]
     congr 1; funext b; exact hsg b
@@ -188,18 +223,21 @@ theorem exists_spTree_bind {α β γ : Type} {f : α → SPComp β} {g : β → 
       (SPTree.queryCost_bind (sf a) sg m hcg)
       (Nat.add_le_add_right (hcf a) m)
 
-/-- `SPTree` witnesses for `ucMapSum`: case analysis on the sum, with query cost at most the
-    maximum of the two bounds. -/
+/-- `SPTree` witnesses for `ucMapSum`: case analysis on the sum, with bounded branching and
+    query cost at most the maximum of the two bounds. -/
 theorem exists_spTree_mapSum {α β γ δ : Type} {f : α → SPComp β} {g : γ → SPComp δ} {n m : ℕ}
-    (hf : ∃ s : α → SPTree β, (∀ a, (s a).compile = f a) ∧ ∀ a, (s a).queryCost ≤ n)
-    (hg : ∃ s : γ → SPTree δ, (∀ c, (s c).compile = g c) ∧ ∀ c, (s c).queryCost ≤ m) :
+    (hf : ∃ s : α → SPTree β, (∀ a, (s a).compile = f a) ∧ (∀ a, (s a).QueryBdd) ∧
+      ∀ a, (s a).queryCost ≤ n)
+    (hg : ∃ s : γ → SPTree δ, (∀ c, (s c).compile = g c) ∧ (∀ c, (s c).QueryBdd) ∧
+      ∀ c, (s c).queryCost ≤ m) :
     ∃ s : α ⊕ γ → SPTree (β ⊕ δ),
-      (∀ x, (s x).compile = UCMonadBase.ucMapSum f g x) ∧ ∀ x, (s x).queryCost ≤ max n m := by
-  obtain ⟨sf, hsf, hcf⟩ := hf
-  obtain ⟨sg, hsg, hcg⟩ := hg
+      (∀ x, (s x).compile = UCMonadBase.ucMapSum f g x) ∧ (∀ x, (s x).QueryBdd) ∧
+        ∀ x, (s x).queryCost ≤ max n m := by
+  obtain ⟨sf, hsf, hbf, hcf⟩ := hf
+  obtain ⟨sg, hsg, hbg, hcg⟩ := hg
   refine ⟨fun x => match x with
     | .inl a => (sf a).bind (fun b => SPTree.ret (.inl b))
-    | .inr c => (sg c).bind (fun b => SPTree.ret (.inr b)), ?_, ?_⟩
+    | .inr c => (sg c).bind (fun b => SPTree.ret (.inr b)), ?_, ?_, ?_⟩
   · intro x; cases x with
     | inl a =>
       simp only [SPTree.compile_bind, SPTree.compile_ret, hsf]
@@ -211,6 +249,11 @@ theorem exists_spTree_mapSum {α β γ δ : Type} {f : α → SPComp β} {g : γ
       show SPComp.bind (g c) (fun b => SPComp.pure (Sum.inr b)) =
         UCMonadBase.ucMapSum f g (.inr c)
       simp [UCMonadBase.ucMapSum, mapSumSP, SPComp.map]
+  · intro x; cases x with
+    | inl a =>
+      exact (hbf a).bind (bound := 0) (fun _ => SPTree.queryBdd_ret _) (fun _ => le_refl 0)
+    | inr c =>
+      exact (hbg c).bind (bound := 0) (fun _ => SPTree.queryBdd_ret _) (fun _ => le_refl 0)
   · intro x; cases x with
     | inl a =>
       show ((sf a).bind (fun b => SPTree.ret (Sum.inl b))).queryCost ≤ max n m
@@ -230,7 +273,8 @@ theorem exists_spTree_mapSum {α β γ δ : Type} {f : α → SPComp β} {g : γ
         _ ≤ max n m := le_max_right _ _
 
 /-- A Kleisli arrow `f : α → SPComp β` is **query-bounded** if there exists
-    a syntax tree representation with uniformly bounded operation count.
+    a syntax tree representation of bounded branching (`SPTree.QueryBdd`) with uniformly
+    bounded operation count.
 
     Membership in the class:
     - Opaque functions without syntax tree witnesses are NOT admissible
@@ -239,57 +283,62 @@ theorem exists_spTree_mapSum {α β γ δ : Type} {f : α → SPComp β} {g : γ
 noncomputable def spTreeQueryAdm : UCAdmClass SPComp where
   adm {α β} f :=
     ∃ (s : α → SPTree β),
-      (∀ a, (s a).compile = f a) ∧
+      (∀ a, (s a).compile = f a) ∧ (∀ a, (s a).QueryBdd) ∧
       ∃ n, ∀ a, (s a).queryCost ≤ n
   adm_pure :=
-    ⟨SPTree.ret, fun _ => rfl, 0, fun _ => le_refl 0⟩
+    ⟨SPTree.ret, fun _ => rfl, fun a => SPTree.queryBdd_ret a, 0, fun _ => le_refl 0⟩
   adm_bind {α β γ} {f g} hf hg := by
-    obtain ⟨sf, hsf, nf, hcf⟩ := hf
-    obtain ⟨sg, hsg, ng, hcg⟩ := hg
-    obtain ⟨s, hs, hc⟩ := exists_spTree_bind ⟨sf, hsf, hcf⟩ ⟨sg, hsg, hcg⟩
-    exact ⟨s, hs, nf + ng, hc⟩
+    obtain ⟨sf, hsf, hbf, nf, hcf⟩ := hf
+    obtain ⟨sg, hsg, hbg, ng, hcg⟩ := hg
+    obtain ⟨s, hs, hb, hc⟩ := exists_spTree_bind ⟨sf, hsf, hbf, hcf⟩ ⟨sg, hsg, hbg, hcg⟩
+    exact ⟨s, hs, hb, nf + ng, hc⟩
   adm_mapSum {α β γ δ} {f g} hf hg := by
-    obtain ⟨sf, hsf, nf, hcf⟩ := hf
-    obtain ⟨sg, hsg, ng, hcg⟩ := hg
-    obtain ⟨s, hs, hc⟩ := exists_spTree_mapSum ⟨sf, hsf, hcf⟩ ⟨sg, hsg, hcg⟩
-    exact ⟨s, hs, max nf ng, hc⟩
+    obtain ⟨sf, hsf, hbf, nf, hcf⟩ := hf
+    obtain ⟨sg, hsg, hbg, ng, hcg⟩ := hg
+    obtain ⟨s, hs, hb, hc⟩ := exists_spTree_mapSum ⟨sf, hsf, hbf, hcf⟩ ⟨sg, hsg, hbg, hcg⟩
+    exact ⟨s, hs, hb, max nf ng, hc⟩
   adm_precomp {α α' β} {g} f hg := by
-    obtain ⟨sg, hsg, ng, hcg⟩ := hg
-    exact ⟨sg ∘ f, fun a' => hsg (f a'), ng, fun a' => hcg (f a')⟩
+    obtain ⟨sg, hsg, hbg, ng, hcg⟩ := hg
+    exact ⟨sg ∘ f, fun a' => hsg (f a'), fun a' => hbg (f a'), ng, fun a' => hcg (f a')⟩
 
 /-! ## Section 5: Query cost of `SPComp` as a cost model -/
 
 /-- Query cost of a Kleisli arrow into `SPComp`: the least worst-case query cost over all
-    `SPTree` families compiling to it, `⊤` when there is no such family or none with a
-    uniform bound. -/
+    `SPTree` families of bounded branching compiling to it, `⊤` when there is no such family
+    or none with a uniform bound. -/
 noncomputable def spTreeQueryCost {α β : Type} (f : α → SPComp β) : WithTop ℕ :=
-  ⨅ s : {s : α → SPTree β // ∀ a, (s a).compile = f a}, ⨆ a, ((s.1 a).queryCost : ℕ∞)
+  ⨅ s : {s : α → SPTree β // (∀ a, (s a).compile = f a) ∧ ∀ a, (s a).QueryBdd},
+    ⨆ a, ((s.1 a).queryCost : ℕ∞)
 
 /-- The infimum in `spTreeQueryCost` is attained: the query cost of `f` is at most `n` iff
-    some `SPTree` family compiling to `f` has query cost at most `n` at every input. -/
+    some `SPTree` family of bounded branching compiling to `f` has query cost at most `n` at
+    every input. -/
 theorem spTreeQueryCost_le_iff {α β : Type} {f : α → SPComp β} (n : ℕ) :
     spTreeQueryCost f ≤ n ↔
-      ∃ s : α → SPTree β, (∀ a, (s a).compile = f a) ∧ ∀ a, (s a).queryCost ≤ n := by
+      ∃ s : α → SPTree β, (∀ a, (s a).compile = f a) ∧ (∀ a, (s a).QueryBdd) ∧
+        ∀ a, (s a).queryCost ≤ n := by
   constructor
   · intro h
-    have hne : Nonempty {s : α → SPTree β // ∀ a, (s a).compile = f a} := by
+    have hne : Nonempty
+        {s : α → SPTree β // (∀ a, (s a).compile = f a) ∧ ∀ a, (s a).QueryBdd} := by
       by_contra hem
       rw [not_nonempty_iff] at hem
       simp [spTreeQueryCost] at h
     obtain ⟨s, hs⟩ := ciInf_mem
-      (fun s : {s : α → SPTree β // ∀ a, (s a).compile = f a} =>
+      (fun s : {s : α → SPTree β // (∀ a, (s a).compile = f a) ∧ ∀ a, (s a).QueryBdd} =>
         ⨆ a, ((s.1 a).queryCost : ℕ∞))
-    refine ⟨s.1, s.2, fun a => ?_⟩
+    refine ⟨s.1, s.2.1, s.2.2, fun a => ?_⟩
     have : ((s.1 a).queryCost : ℕ∞) ≤ n :=
       le_trans (le_iSup (fun a => ((s.1 a).queryCost : ℕ∞)) a) (hs.trans_le h)
     exact_mod_cast this
-  · rintro ⟨s, hs, hc⟩
-    exact iInf_le_of_le ⟨s, hs⟩ (iSup_le fun a => Nat.cast_le.mpr (hc a))
+  · rintro ⟨s, hs, hb, hc⟩
+    exact iInf_le_of_le ⟨s, hs, hb⟩ (iSup_le fun a => Nat.cast_le.mpr (hc a))
 
 noncomputable instance : MonadCostModel SPComp where
   cost := spTreeQueryCost
   cost_pure {α} := le_antisymm
-    ((spTreeQueryCost_le_iff 0).mpr ⟨SPTree.ret, fun _ => rfl, fun _ => le_refl 0⟩)
+    ((spTreeQueryCost_le_iff 0).mpr
+      ⟨SPTree.ret, fun _ => rfl, fun a => SPTree.queryBdd_ret a, fun _ => le_refl 0⟩)
     bot_le
   cost_bind {α β γ} {f g} := by
     show spTreeQueryCost _ ≤ spTreeQueryCost f + spTreeQueryCost g
@@ -314,19 +363,21 @@ noncomputable instance : MonadCostModel SPComp where
     exact (spTreeQueryCost_le_iff _).mpr (exists_spTree_mapSum
       ((spTreeQueryCost_le_iff n).mp hn.ge) ((spTreeQueryCost_le_iff m).mp hm.ge))
   cost_precomp {α α' β} {g} f :=
-    le_iInf fun sg => iInf_le_of_le ⟨sg.1 ∘ f, fun a' => sg.2 (f a')⟩
+    le_iInf fun sg =>
+      iInf_le_of_le ⟨sg.1 ∘ f, fun a' => sg.2.1 (f a'), fun a' => sg.2.2 (f a')⟩
       (iSup_le fun a' => le_iSup (fun a => ((sg.1 a).queryCost : ℕ∞)) (f a'))
 
 /-- Query-bounded admissibility is finiteness of the query cost. -/
 theorem spTreeQueryAdm_adm_iff {α β : Type} {f : α → SPComp β} :
     spTreeQueryAdm.adm f ↔ cost f < ⊤ := by
   constructor
-  · rintro ⟨s, hs, n, hn⟩
-    exact lt_of_le_of_lt ((spTreeQueryCost_le_iff n).mpr ⟨s, hs, hn⟩) (WithTop.coe_lt_top n)
+  · rintro ⟨s, hs, hb, n, hn⟩
+    exact lt_of_le_of_lt ((spTreeQueryCost_le_iff n).mpr ⟨s, hs, hb, hn⟩)
+      (WithTop.coe_lt_top n)
   · intro h
     obtain ⟨n, hn⟩ := WithTop.ne_top_iff_exists.mp h.ne
-    obtain ⟨s, hs, hc⟩ := (spTreeQueryCost_le_iff n).mp hn.ge
-    exact ⟨s, hs, n, hc⟩
+    obtain ⟨s, hs, hb, hc⟩ := (spTreeQueryCost_le_iff n).mp hn.ge
+    exact ⟨s, hs, hb, n, hc⟩
 
 /-- `spTreeQueryAdm` is the admissibility class induced by the query-cost model. -/
 theorem spTreeQueryAdm_eq_costModel : spTreeQueryAdm = UCAdmClass_of_costModel SPComp := by

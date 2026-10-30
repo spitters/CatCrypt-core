@@ -27,21 +27,23 @@ open CatCrypt.Core CatCrypt.Crypto.Messaging
 /-- The costed distinguisher of `ckaPubRedOf` as a `gdo` block: the costed public computation
 `pubT`, lifted at its time, then the call of `A` behind its step cost, moved to the common index
 `T + a + tv + 2`. -/
-def pubRedT {Y P V : Type} (view : P → Y → V) (viewCost : P → Y → ℕ)
+noncomputable def pubRedT {Y P V : Type} (view : P → Y → V) (viewCost : P → Y → ℕ)
     (A : V → SPTree.Timed Bool) (ACost : V → ℕ) {T a tv : ℕ}
-    (hA : ∀ x, (A x).time ≤ T) (hAc : ∀ x, ACost x ≤ a) (hv : ∀ c y, viewCost c y ≤ tv)
-    (pubT : SPTree.Timed P) (y : Y) : TimedM (pubT.time + (T + a + tv + 2)) Bool := gdo
-  let x ← TimedM.lift pubT
-  (TimedM.ofStep (1 + (ACost (view x y) + (1 + viewCost x y))) (A (view x y))).relax (by
+    (hA : ∀ x, (A x).time ≤ T) (hAb : ∀ x, (A x).TimeBdd) (hAc : ∀ x, ACost x ≤ a)
+    (hv : ∀ c y, viewCost c y ≤ tv) (pubT : SPTree.Timed P) (hpb : pubT.TimeBdd) (y : Y) :
+    TimedM (pubT.time + (T + a + tv + 2)) Bool := gdo
+  let x ← TimedM.lift pubT hpb
+  (TimedM.ofStep (1 + (ACost (view x y) + (1 + viewCost x y))) (A (view x y))
+    (hAb (view x y))).relax (by
     have := hA (view x y); have := hAc (view x y); have := hv x y
     omega)
 
 /-- The tree of `pubRedT` is the costed form `ckaPubRedOf.tree.timed`. -/
 theorem pubRedT_tree {Y P V : Type} (pub : SPComp P) (view : P → Y → V)
     (viewCost : P → Y → ℕ) (A : V → SPTree.Timed Bool) (ACost : V → ℕ) {T a tv : ℕ}
-    (hA : ∀ x, (A x).time ≤ T) (hAc : ∀ x, ACost x ≤ a) (hv : ∀ c y, viewCost c y ≤ tv)
-    (pubT : SPTree.Timed P) (y : Y) :
-    (pubRedT view viewCost A ACost hA hAc hv pubT y).tree =
+    (hA : ∀ x, (A x).time ≤ T) (hAb : ∀ x, (A x).TimeBdd) (hAc : ∀ x, ACost x ≤ a)
+    (hv : ∀ c y, viewCost c y ≤ tv) (pubT : SPTree.Timed P) (hpb : pubT.TimeBdd) (y : Y) :
+    (pubRedT view viewCost A ACost hA hAb hAc hv pubT hpb y).tree =
       ckaPubRedOf.tree.timed pub view viewCost A ACost y pubT := by
   simp only [pubRedT, TimedM.gbind_eq, TimedM.tree_bind, TimedM.tree_lift, TimedM.tree_relax,
     TimedM.tree_ofStep, SPTree.Timed.delay, Nat.zero_add, Prod.mk.eta, ckaPubRedOf.tree.timed]
@@ -50,15 +52,17 @@ theorem pubRedT_tree {Y P V : Type} (pub : SPComp P) (view : P → Y → V)
 bound of `pubRedT` to `pubT.time + (T + a + tv + 2) ≤ T + a + tv + tp + 2`. -/
 theorem ckaPubRedOf_timeBound_xmvcgen {Y P V : Type} (pub : SPComp P) (view : P → Y → V)
     (viewCost : P → Y → ℕ) (A : V → SPTree.Timed Bool) (ACost : V → ℕ) {T a tv tp : ℕ}
-    (hA : ∀ x, (A x).time ≤ T) (hAc : ∀ x, ACost x ≤ a) (hv : ∀ c y, viewCost c y ≤ tv)
-    (pubT : SPTree.Timed P) (hp : pubT.time ≤ tp) (y : Y) :
+    (hA : ∀ x, (A x).time ≤ T) (hAb : ∀ x, (A x).TimeBdd) (hAc : ∀ x, ACost x ≤ a)
+    (hv : ∀ c y, viewCost c y ≤ tv) (pubT : SPTree.Timed P) (hpb : pubT.TimeBdd)
+    (hp : pubT.time ≤ tp) (y : Y) :
     SPTree.Timed.stepTime (ckaPubRedOf.tree.timed pub view viewCost A ACost y pubT) ≤
       T + a + tv + tp + 2 := by
   have hb : (XWP.xwp (ps := psTimed) (Ω := Prop)
-      (pubRedT view viewCost A ACost hA hAc hv pubT y)).grade.1 ≤ T + a + tv + tp + 2 := by
+      (pubRedT view viewCost A ACost hA hAb hAc hv pubT hpb y)).grade.1 ≤
+        T + a + tv + tp + 2 := by
     xmvcgen!
     omega
-  rw [← pubRedT_tree pub view viewCost A ACost hA hAc hv pubT y]
-  exact (pubRedT view viewCost A ACost hA hAc hv pubT y).stepTime_le.trans hb
+  rw [← pubRedT_tree pub view viewCost A ACost hA hAb hAc hv pubT hpb y]
+  exact (pubRedT view viewCost A ACost hA hAb hAc hv pubT hpb y).stepTime_le.trans hb
 
 end CatCrypt.XDijkstra.XTimedMonadTest

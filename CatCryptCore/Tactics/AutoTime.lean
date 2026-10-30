@@ -172,6 +172,7 @@ theorem allRet_of_forall {Q : α → Prop} (h : ∀ a, Q a) (t : SPTree.Timed α
     induction t with
     | ret a => exact trivial
     | sample γ finγ neγ c k ih => exact ih
+    | sampleDist γ μ c k ih => exact ih
     | get l c k ih => exact ih
     | set l v c t ih => exact ih
     | fail => exact trivial
@@ -183,6 +184,7 @@ theorem allRet_and {Q R : α → Prop} {t : SPTree.Timed α} (hQ : AllRet Q t)
   induction t with
   | ret a => exact ⟨hQ, hR⟩
   | sample γ finγ neγ c k ih => exact fun b => ih b (hQ b) (hR b)
+  | sampleDist γ μ c k ih => exact fun b => ih b (hQ b) (hR b)
   | get l c k ih => exact fun v => ih v (hQ v) (hR v)
   | set l v c t ih => exact ih hQ hR
   | fail => exact trivial
@@ -194,45 +196,37 @@ theorem allRet_bind_of {Q : β → Prop} {t : SPTree.Timed α} {f : α → ℕ �
     (h : AllRet (fun a => AllRet Q (f a).2) t) : AllRet Q (t.bind f).2 :=
   (allRet_bind Q t f).2 h
 
+/-- Two continuations that agree at the values satisfying a leaf invariant `Q` of the tree give
+the same costed bind. -/
+theorem bind_congr_of_allRet {Q : α → Prop} {A : SPTree.Timed α}
+    {f g : α → ℕ × SPTree.Timed β} (hA : AllRet Q A) (h : ∀ a, Q a → f a = g a) :
+    A.bind f = A.bind g := by
+  induction A with
+  | ret a => exact h a hA
+  | sample γ finγ neγ c k ih =>
+    have hk := fun b => ih b (hA b)
+    simp only [bind, hk]
+  | sampleDist γ μ c k ih =>
+    have hk := fun b => ih b (hA b)
+    simp only [bind, hk]
+  | get l c k ih =>
+    have hk := fun v => ih v (hA v)
+    simp only [bind, hk]
+  | set l v c t ih => simp only [bind, ih hA]
+  | fail => rfl
+  | load h₀ c t ih => simp only [bind, ih hA]
+
 /-- The time of a costed bind is at most the time of the tree plus a bound `T` on the
 continuation at the values satisfying a leaf invariant `Q` of the tree. -/
 theorem stepTime_bind_le_of_allRet {Q : α → Prop} (A : SPTree.Timed α)
     (f : α → ℕ × SPTree.Timed β) (T : ℕ) (hA : AllRet Q A)
     (hf : ∀ a, Q a → stepTime (f a) ≤ T) : stepTime (A.bind f) ≤ A.time + T := by
-  induction A with
-  | ret a => simpa [bind, time_ret] using hf a hA
-  | sample γ finγ neγ c k ih =>
-    let _ := finγ
-    simp only [stepTime, bind, time_sample, Nat.zero_add]
-    have hs : (Finset.univ.sup fun b => c b + (bind (k b) f).1 + (bind (k b) f).2.time) ≤
-        (Finset.univ.sup fun b => c b + (k b).time) + T :=
-      Finset.sup_le fun b _ => by
-        have h1 := ih b (hA b)
-        have h2 : c b + (k b).time ≤ Finset.univ.sup fun b => c b + (k b).time :=
-          Finset.le_sup (f := fun b => c b + (k b).time) (Finset.mem_univ b)
-        simp only [stepTime] at h1
-        omega
-    omega
-  | get l c k ih =>
-    simp only [stepTime, bind, time_get, Nat.zero_add]
-    have hs : (Finset.univ.sup fun v => c v + (bind (k v) f).1 + (bind (k v) f).2.time) ≤
-        (Finset.univ.sup fun v => c v + (k v).time) + T :=
-      Finset.sup_le fun v _ => by
-        have h1 := ih v (hA v)
-        have h2 : c v + (k v).time ≤ Finset.univ.sup fun v => c v + (k v).time :=
-          Finset.le_sup (f := fun v => c v + (k v).time) (Finset.mem_univ v)
-        simp only [stepTime] at h1
-        omega
-    omega
-  | set l v c t ih =>
-    have := ih hA
-    simp only [stepTime, bind, time_set] at this ⊢
-    omega
-  | fail => simp [stepTime, bind, time_fail]
-  | load h₀ c t ih =>
-    have := ih hA
-    simp only [stepTime, bind, time_load] at this ⊢
-    omega
+  classical
+  have h := stepTime_bind_le A (fun a => if Q a then f a else (0, fail)) T fun a => by
+    split_ifs with hq
+    · exact hf a hq
+    · simp [stepTime, time_fail]
+  rwa [bind_congr_of_allRet hA fun a hq => ite_eq_left hq] at h
 
 /-- A step cost `C` in front of a costed bind whose continuation is bounded at the values
 satisfying a leaf invariant of the tree. -/
@@ -425,6 +419,14 @@ theorem stepTime_fst_bind_bind {γ : Type} (A : SPTree.Timed γ) (g : γ → ℕ
   | sample γ' finγ neγ c k' ih =>
     let _ := finγ
     simp only [SPTree.Timed.bind, SPTree.Timed.stepTime, SPTree.Timed.time_sample,
+      Nat.zero_add]
+    congr 2
+    funext b
+    have := ih b
+    simp only [SPTree.Timed.stepTime] at this
+    omega
+  | sampleDist γ' μ c k' ih =>
+    simp only [SPTree.Timed.bind, SPTree.Timed.stepTime, SPTree.Timed.time_sampleDist,
       Nat.zero_add]
     congr 2
     funext b

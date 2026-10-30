@@ -94,6 +94,9 @@ structure CostedOracle (O : CTree.Oracle) : Type 1 where
   /-- A bound on the time of an answer. -/
   time : ℕ
   time_le : ∀ d r x, SPTree.Timed.stepTime (tree d r x) ≤ time
+  /-- Every answer has bounded families of continuation times, so that its time is its
+  worst-case time. -/
+  timeBdd : ∀ d r x, (tree d r x).2.TimeBdd
   compile_eq : ∀ d r x, (tree d r x).2.erase.compile = O d r x
 
 /-- The oracle that answers every query by the default value without effects. -/
@@ -104,6 +107,7 @@ noncomputable def CostedOracle.zero : CostedOracle CTree.Oracle.zero where
   tree _ _ _ := (0, .ret default)
   time := 0
   time_le _ _ _ := by simp [SPTree.Timed.stepTime, SPTree.Timed.time_ret]
+  timeBdd _ _ _ := by simp [SPTree.Timed.TimeBdd]
   compile_eq _ _ _ := by rw [SPTree.Timed.erase_ret]; rfl
 
 /-! ## From D trees to costed trees -/

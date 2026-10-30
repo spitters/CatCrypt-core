@@ -102,6 +102,8 @@ inductive SPShape : Type 1 where
   | ret : SPShape
   | sample (β : Type) (finβ : Fintype β) (neβ : Nonempty β) :
       (β → SPShape) → SPShape
+  /-- Sampling from a sub-distribution on `β`. -/
+  | sampleDist (β : Type) : (β → SPShape) → SPShape
   | get (l : Location) : (l.ty → SPShape) → SPShape
   | set (l : Location) : SPShape → SPShape
   | fail : SPShape
@@ -114,18 +116,20 @@ namespace SPShape
 def bind : SPShape → SPShape → SPShape
   | .ret, s => s
   | .sample β finβ neβ k, s => .sample β finβ neβ (fun b => (k b).bind s)
+  | .sampleDist β k, s => .sampleDist β (fun b => (k b).bind s)
   | .get l k, s => .get l (fun v => (k v).bind s)
   | .set l t, s => .set l (t.bind s)
   | .fail, _ => .fail
   | .load n t, s => .load n (t.bind s)
 
-/-- Operation count at shape level. -/
-def queryCost : SPShape → ℕ
+/-- Operation count at shape level, with the convention of `SPTree.queryCost`. -/
+noncomputable def queryCost : SPShape → ℕ
   | .ret => 0
-  | .sample β finβ _ k =>
+  | .sample _ finβ _ k =>
     letI := finβ
     1 + Finset.univ.sup (fun b => (k b).queryCost)
-  | .get l k => 1 + Finset.univ.sup (fun v => (k v).queryCost)
+  | .sampleDist _ k => 1 + ⨆ b, (k b).queryCost
+  | .get _ k => 1 + Finset.univ.sup (fun v => (k v).queryCost)
   | .set _ t => 1 + t.queryCost
   | .fail => 0
   | .load n t => 1 + n + t.queryCost
@@ -134,6 +138,7 @@ def queryCost : SPShape → ℕ
   induction s with
   | ret => rfl
   | sample β finβ neβ k ih => simp only [bind]; congr_funext
+  | sampleDist β k ih => simp only [bind]; congr_funext
   | get l k ih => simp only [bind]; congr_funext
   | set l t ih => simp only [bind]; congr_funext
   | fail => rfl
@@ -144,6 +149,7 @@ def queryCost : SPShape → ℕ
   induction s₁ with
   | ret => rfl
   | sample β finβ neβ k ih => simp only [bind]; congr_funext
+  | sampleDist β k ih => simp only [bind]; congr_funext
   | get l k ih => simp only [bind]; congr_funext
   | set l t ih => simp only [bind]; congr_funext
   | fail => rfl
@@ -159,6 +165,7 @@ variable {α β : Type}
 def toShape : SPTree α → SPShape
   | .ret _ => .ret
   | .sample β finβ neβ k => .sample β finβ neβ (fun b => (k b).toShape)
+  | .sampleDist β _ k => .sampleDist β (fun b => (k b).toShape)
   | .get l k => .get l (fun v => (k v).toShape)
   | .set l _ t => .set l t.toShape
   | .fail => .fail
@@ -172,6 +179,8 @@ theorem queryCost_eq_shape_queryCost (s : SPTree α) :
   | sample β finβ neβ k ih =>
     simp only [SPTree.queryCost, toShape, SPShape.queryCost]
     congr 1; apply Finset.sup_congr rfl; intro b _; exact ih b
+  | sampleDist β μ k ih =>
+    simp only [SPTree.queryCost, toShape, SPShape.queryCost, ih]
   | get l k ih =>
     simp only [SPTree.queryCost, toShape, SPShape.queryCost]
     congr 1; apply Finset.sup_congr rfl; intro v _; exact ih v
@@ -187,8 +196,10 @@ theorem toShape_bind (s : SPTree α) (f : α → SPTree β) (sf : SPShape)
     (s.bind f).toShape = s.toShape.bind sf := by
   induction s with
   | ret a =>
-    simp [SPTree.bind, toShape, SPShape.bind]; exact hf a
+    simp only [SPTree.bind_ret_val]; exact hf a
   | sample γ finγ neγ k ih =>
+    simp only [SPTree.bind, toShape, SPShape.bind]; congr_funext
+  | sampleDist γ μ k ih =>
     simp only [SPTree.bind, toShape, SPShape.bind]; congr_funext
   | get l k ih =>
     simp only [SPTree.bind, toShape, SPShape.bind]; congr_funext
@@ -207,26 +218,27 @@ open CatCrypt.Core (SPTree SPComp Location)
 open UCMonad
 
 /-- A Kleisli arrow `f : α → SPComp β` is **constant-time** if there exists
-    an SPTree representation where the shape is independent of the input.
+    an SPTree representation of bounded branching (`SPTree.QueryBdd`) where the shape is
+    independent of the input.
 
     Strictly stronger than `spTreeQueryAdm`:
     - CT: entire operation pattern is input-independent
     - Query-bounded: only the operation count is bounded -/
 def ct_spComp {α β : Type} (f : α → SPComp β) : Prop :=
   ∃ (s : α → SPTree β),
-    (∀ a, (s a).compile = f a) ∧
+    (∀ a, (s a).compile = f a) ∧ (∀ a, (s a).QueryBdd) ∧
     ∃ (shape : SPShape), ∀ a, (s a).toShape = shape
 
 /-- CT implies query-bounded: constant shape implies constant cost. -/
 theorem ct_spComp_implies_queryAdm {α β : Type} {f : α → SPComp β}
     (h : ct_spComp f) : spTreeQueryAdm.adm f := by
-  obtain ⟨s, hs_compile, shape, hs_shape⟩ := h
-  refine ⟨s, hs_compile, shape.queryCost, fun a => ?_⟩
+  obtain ⟨s, hs_compile, hs_bdd, shape, hs_shape⟩ := h
+  refine ⟨s, hs_compile, hs_bdd, shape.queryCost, fun a => ?_⟩
   rw [SPTree.queryCost_eq_shape_queryCost, hs_shape]
 
 /-- Pure is constant-time. -/
 theorem ct_spComp_pure {α : Type} : ct_spComp (SPComp.pure : α → SPComp α) :=
-  ⟨SPTree.ret, fun _ => rfl, .ret, fun _ => rfl⟩
+  ⟨SPTree.ret, fun _ => rfl, fun a => SPTree.queryBdd_ret a, .ret, fun _ => rfl⟩
 
 /-- Kleisli composition preserves constant-time:
     if `f` and `g` have constant shapes `sf` and `sg`, then `f >=> g`
@@ -234,12 +246,14 @@ theorem ct_spComp_pure {α : Type} : ct_spComp (SPComp.pure : α → SPComp α) 
 theorem ct_spComp_bind {α β γ : Type} {f : α → SPComp β} {g : β → SPComp γ}
     (hf : ct_spComp f) (hg : ct_spComp g) :
     ct_spComp (fun a => SPComp.bind (f a) g) := by
-  obtain ⟨sf, hsf, shapef, hshapef⟩ := hf
-  obtain ⟨sg, hsg, shapeg, hshapeg⟩ := hg
-  refine ⟨fun a => (sf a).bind sg, ?_, shapef.bind shapeg, ?_⟩
+  obtain ⟨sf, hsf, hbf, shapef, hshapef⟩ := hf
+  obtain ⟨sg, hsg, hbg, shapeg, hshapeg⟩ := hg
+  refine ⟨fun a => (sf a).bind sg, ?_, fun a => ?_, shapef.bind shapeg, ?_⟩
   · intro a
     rw [SPTree.compile_bind, hsf a]
     congr_funext
+  · refine (hbf a).bind (bound := shapeg.queryCost) hbg fun b => ?_
+    rw [SPTree.queryCost_eq_shape_queryCost, hshapeg]
   · intro a
     rw [SPTree.toShape_bind (sf a) sg shapeg hshapeg, hshapef]
 
