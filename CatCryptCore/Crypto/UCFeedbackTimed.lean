@@ -16,7 +16,7 @@ public import CatCryptCore.Tactics.StdCosts
 
 The costed form of the feedback hybrid `MultiHybrid.fbHybrid` of `UCFeedback.lean`, derived by
 `derive_reduction`, and the time theorems of its three steps, derived by `derive_time_bound`.
-No module imports this file.
+No library module imports this file; the companion `UCWakeTimed` does.
 
 ## Main results
 
