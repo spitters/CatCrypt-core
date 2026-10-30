@@ -456,6 +456,7 @@ public import CatCryptCore.Crypto.UCTransparent
 public import CatCryptCore.Crypto.UCTransparentSquare
 public import CatCryptCore.Crypto.UCCoupling
 public import CatCryptCore.Crypto.UCCompiled
+public import CatCryptCore.Crypto.UCCompiledCT
 public import CatCryptCore.Crypto.UCOracleGame
 public import CatCryptCore.Crypto.UCOracleGameTimed
 public import CatCryptCore.Crypto.UCRoundHybrid
