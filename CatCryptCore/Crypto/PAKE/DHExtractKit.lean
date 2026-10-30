@@ -161,6 +161,10 @@ structure DHGroup (S W : Type) [Field S] where
   exp : W → S → W
   /-- `(g^a)^b = g^{ab}`. -/
   exp_pub : ∀ a b, exp (pub a) b = pub (a * b)
+  /-- The group operation, `mul Y Z = Y · Z`. -/
+  mul : W → W → W
+  /-- `g^a · g^b = g^{a + b}`. -/
+  mul_pub : ∀ a b, mul (pub a) (pub b) = pub (a + b)
 
 namespace DHGroup
 
@@ -172,13 +176,52 @@ def dlog (Y : W) : S := G.pub.symm Y
 /-- Unfolding lemma of `dlog` on a public value. -/
 @[simp] theorem dlog_pub (s : S) : G.dlog (G.pub s) = s := G.pub.symm_apply_apply s
 
+/-- `pub` of the discrete logarithm. -/
+@[simp] theorem pub_dlog (Y : W) : G.pub (G.dlog Y) = Y := G.pub.apply_symm_apply Y
+
+/-- The group operation in terms of the discrete logarithm. -/
+theorem mul_eq (Y Z : W) : G.mul Y Z = G.pub (G.dlog Y + G.dlog Z) := by
+  rw [← G.mul_pub, pub_dlog, pub_dlog]
+
+/-- The discrete logarithm of a product is the sum of the discrete logarithms. -/
+@[simp] theorem dlog_mul (Y Z : W) : G.dlog (G.mul Y Z) = G.dlog Y + G.dlog Z := by
+  rw [mul_eq, dlog_pub]
+
+/-- The group operation is commutative. -/
+theorem mul_comm (Y Z : W) : G.mul Y Z = G.mul Z Y := by
+  rw [mul_eq, mul_eq, add_comm]
+
+/-- The group operation is associative. -/
+theorem mul_assoc (Y Z U : W) : G.mul (G.mul Y Z) U = G.mul Y (G.mul Z U) := by
+  simp only [mul_eq, dlog_pub, add_assoc]
+
+/-- `g^0` is the identity on the right. -/
+@[simp] theorem mul_pub_zero (Y : W) : G.mul Y (G.pub 0) = Y := by
+  rw [mul_eq, dlog_pub, add_zero, pub_dlog]
+
+/-- `g^0` is the identity on the left. -/
+@[simp] theorem pub_zero_mul (Y : W) : G.mul (G.pub 0) Y = Y := by
+  rw [mul_comm, mul_pub_zero]
+
 /-- Exponentiation in terms of the discrete logarithm. -/
 theorem exp_eq (Y : W) (s : S) : G.exp Y s = G.pub (G.dlog Y * s) := by
   simpa [dlog] using G.exp_pub (G.pub.symm Y) s
 
 /-- `(Y^a)^b = Y^{ab}`. -/
 theorem exp_exp (Y : W) (a b : S) : G.exp (G.exp Y a) b = G.exp Y (a * b) := by
-  rw [exp_eq, exp_eq, exp_eq, dlog_pub, mul_assoc]
+  rw [exp_eq, exp_eq, exp_eq, dlog_pub, _root_.mul_assoc]
+
+/-- Exponentiation distributes over the group operation: `(Y · Z)^s = Y^s · Z^s`. -/
+theorem exp_mul (Y Z : W) (s : S) : G.exp (G.mul Y Z) s = G.mul (G.exp Y s) (G.exp Z s) := by
+  simp only [exp_eq, mul_eq, dlog_pub, add_mul]
+
+/-- `Y^a · Y^b = Y^{a + b}`. -/
+theorem mul_exp_exp (Y : W) (a b : S) : G.mul (G.exp Y a) (G.exp Y b) = G.exp Y (a + b) := by
+  rw [exp_eq, exp_eq, exp_eq, mul_pub, mul_add]
+
+/-- `Y^{-1}` is the inverse of `Y`: `Y · Y^{-1} = g^0`. -/
+theorem mul_exp_neg_one (Y : W) : G.mul Y (G.exp Y (-1)) = G.pub 0 := by
+  rw [mul_eq, exp_eq, dlog_pub, mul_neg_one, add_neg_cancel]
 
 /-- Exponentiation of an element other than the identity is injective. -/
 theorem exp_injective {Y : W} (hY : Y ≠ G.pub 0) : Function.Injective (G.exp Y) := by
