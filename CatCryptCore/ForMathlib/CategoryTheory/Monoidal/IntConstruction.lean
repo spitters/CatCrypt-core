@@ -50,10 +50,6 @@ namespace IntConstruction
 
 variable {C : Type u} [Category.{v} C] [MonoidalCategory C] [SymmetricCategory C]
 
-/-- The symmetry exchanging the last two factors of `(X ⊗ U) ⊗ V`. -/
-def swapRight (X U V : C) : (X ⊗ U) ⊗ V ⟶ (X ⊗ V) ⊗ U :=
-  (α_ X U V).hom ≫ X ◁ (β_ U V).hom ≫ (α_ X V U).inv
-
 /-- Exchanging the last two factors twice is the identity. -/
 @[reassoc (attr := simp)]
 theorem swapRight_swapRight (X U V : C) : swapRight X U V ≫ swapRight X V U = 𝟙 _ := by
@@ -86,47 +82,6 @@ theorem braiding_comp_yangBaxter_comp_braiding (p q r : C) :
     whiskerLeft_id, id_comp]
 
 end IntConstruction
-
-namespace TracedCategory
-
-open IntConstruction (swapRight)
-
-variable {C : Type u} [Category.{v} C] [MonoidalCategory C] [SymmetricCategory C]
-  [TracedCategory C]
-
-/-- The trace over `U'` is the trace over `U` conjugated by an isomorphism `U ≅ U'`. -/
-theorem trace_eq_trace_conj {U U' X Y : C} (e : U ≅ U') (f : X ⊗ U' ⟶ Y ⊗ U') :
-    trace U' f = trace U (X ◁ e.hom ≫ f ≫ Y ◁ e.inv) := by
-  rw [trace_whiskerLeft_comp]
-  simp
-
-/-- Tracing over `V` and then over `U` is tracing over `U ⊗ V`. -/
-theorem trace_trace (U V : C) {X Y : C} (f : (X ⊗ U) ⊗ V ⟶ (Y ⊗ U) ⊗ V) :
-    trace U (trace V f) = trace (U ⊗ V) ((α_ X U V).inv ≫ f ≫ (α_ Y U V).hom) := by
-  rw [trace_tensor]
-  simp
-
-/-- Whiskering a trace on the right moves the whiskered object past the traced one. -/
-theorem whiskerRight_trace (U W : C) {X Y : C} (f : X ⊗ U ⟶ Y ⊗ U) :
-    trace U f ▷ W = trace U (swapRight X W U ≫ f ▷ W ≫ swapRight Y U W) := by
-  have h : trace U f ▷ W = (β_ X W).hom ≫ W ◁ trace U f ≫ (β_ W Y).hom := by
-    rw [← braiding_naturality_left_assoc, SymmetricCategory.symmetry, comp_id]
-  rw [h, whiskerLeft_trace, ← trace_comp_whiskerRight, ← trace_whiskerRight_comp]
-  congr 1
-  have hf : W ◁ f = (β_ W (X ⊗ U)).hom ≫ f ▷ W ≫ (β_ (Y ⊗ U) W).hom := by
-    rw [← braiding_naturality_right_assoc, SymmetricCategory.symmetry, comp_id]
-  have hL : (β_ X W).hom ▷ U ≫ (α_ W X U).hom ≫ (β_ W (X ⊗ U)).hom = swapRight X W U := by
-    rw [braiding_tensor_right_hom]
-    simp only [swapRight, Iso.hom_inv_id_assoc]
-    rw [← comp_whiskerRight_assoc, SymmetricCategory.symmetry, id_whiskerRight, id_comp]
-  have hR : (β_ (Y ⊗ U) W).hom ≫ (α_ W Y U).inv ≫ (β_ W Y).hom ▷ U = swapRight Y U W := by
-    rw [braiding_tensor_left_hom]
-    simp only [swapRight, assoc, Iso.hom_inv_id_assoc]
-    rw [← comp_whiskerRight, SymmetricCategory.symmetry, id_whiskerRight, comp_id]
-  rw [hf, ← hL, ← hR]
-  simp only [assoc]
-
-end TracedCategory
 
 variable (C : Type u) [Category.{v} C] [MonoidalCategory C] [SymmetricCategory C]
   [TracedCategory C]
