@@ -430,6 +430,8 @@ public import CatCryptCore.Crypto.ZK.LinearSigmaUC
 public import CatCryptCore.Crypto.OT.DualModeOT
 public import CatCryptCore.Crypto.OT.DualModeOTSquare
 public import CatCryptCore.Crypto.OT.DualModeOTSquareTimed
+public import CatCryptCore.Crypto.OT.PVWOTSquare
+public import CatCryptCore.Crypto.OT.PVWOTSquareTimed
 
 -- Transparent functionalities, hybrid composition, the clock and the network
 public import CatCryptCore.Crypto.UCTransparent
