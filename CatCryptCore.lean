@@ -247,6 +247,7 @@ public import CatCryptCore.Crypto.Anon.Signalling
 public import CatCryptCore.Crypto.Anon.SignallingUC
 public import CatCryptCore.Crypto.OT.Games
 public import CatCryptCore.Crypto.OTExtension.IKNP
+public import CatCryptCore.Crypto.OTExtension.IKNPSquare
 public import CatCryptCore.Crypto.PRPPRFPmfGame
 public import CatCryptCore.Crypto.FiatShamirROM.Verification
 public import CatCryptCore.Crypto.ROProgramming
