@@ -413,9 +413,12 @@ public import CatCryptCore.Crypto.MLKEM.CollisionSpreadIdeal
 
 -- UC ideal functionalities (F_commit, F_ZK, F_OT)
 public import CatCryptCore.Crypto.Commitment.PedersenUC
+public import CatCryptCore.Crypto.Commitment.PedersenUCSquare
 public import CatCryptCore.Crypto.ZK.SigmaUCZK
+public import CatCryptCore.Crypto.ZK.SigmaUCZKSquare
 public import CatCryptCore.Crypto.ZK.LinearSigmaUC
 public import CatCryptCore.Crypto.OT.DualModeOT
+public import CatCryptCore.Crypto.OT.DualModeOTSquare
 
 -- Transparent functionalities, hybrid composition, the clock and the network
 public import CatCryptCore.Crypto.UCTransparent

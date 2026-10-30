@@ -30,6 +30,9 @@ after the first choice.
 * `Strat.toOneShot Z D y h` — the one-shot environment of the strategy `Z` with distinguisher
   `D`, after its first choice `y` and heap `h`.
 * `oneShotBound b` — the realization bound induced by a one-shot bound `b`.
+* `simOf s` — the straight-line simulator map: the simulator runs `s` and hands the result to
+  the adversary.
+* `idealOf F s` — the ideal functionality `F` followed by `s` on the simulator interface.
 
 ## Main results
 
@@ -38,6 +41,10 @@ after the first choice.
   one-shot form.
 * `realizes_oneShot_of_distC` — a concrete distance between one-shot protocols gives a
   realization between their one-shot systems.
+* `realizes_oneShot_of_ucEmulatesCSim` — a `UCEmulatesCSim` statement with simulator map
+  `simOf s` gives `Realizes (Sys.oneShot π) (Sys.oneShot (idealOf F s))`, with the bound at the
+  dummy adversary `SPComp.pure`.
+* `realizes_oneShot_of_ucEmulatesCSim_id` — the same for the identity simulator map.
 -/
 
 @[expose] public section
@@ -138,5 +145,48 @@ theorem realizes_oneShot_of_distC {π₁ π₂ : hon → SPComp α} {b : Env hon
         h (Strat.toOneShot Zs W.dist W.input W.heap)
     have hc := DistC.comp_left (fun _ : Unit => Zs.next Zs.init) hg ⟨(), h₀, D⟩
     simpa only [Env.gap, oneShotBound, view_oneShot_succ _ _ _ hr] using hc
+
+/-! ## Concrete UC statements of one-shot protocols -/
+
+/-- The straight-line simulator map of `s`: the simulator runs `s` on the simulator interface
+and hands the result to the adversary. -/
+noncomputable def simOf {sim_if leak V : Type} (s : sim_if → SPComp leak) :
+    (leak → SPComp V) → sim_if → SPComp V :=
+  fun A x => SPComp.bind (s x) A
+
+/-- At the dummy adversary `SPComp.pure`, the straight-line simulator is `s`. -/
+@[simp] theorem simOf_pure {sim_if leak : Type} (s : sim_if → SPComp leak) :
+    simOf s SPComp.pure = s :=
+  funext fun x => SPComp.bind_pure (s x)
+
+/-- The ideal functionality `F` followed by `s` on the simulator interface. -/
+noncomputable def idealOf {out sim_if leak : Type} (F : hon → SPComp (out ⊕ sim_if))
+    (s : sim_if → SPComp leak) : hon → SPComp (out ⊕ leak) :=
+  fun a => SPComp.bind (F a) (mapSum SPComp.pure s)
+
+/-- A concrete UC emulation of `F` by `π` whose simulator map is the straight-line `simOf s`
+gives a realization of `Sys.oneShot (idealOf F s)` by `Sys.oneShot π`; the bound is the
+one-shot bound of the UC statement at the dummy adversary `SPComp.pure`. -/
+theorem realizes_oneShot_of_ucEmulatesCSim {out sim_if leak : Type}
+    {π : hon → SPComp (out ⊕ leak)} {F : hon → SPComp (out ⊕ sim_if)}
+    {s : sim_if → SPComp leak}
+    {bound : (leak → SPComp leak) → Env hon (out ⊕ leak) → ℝ≥0∞}
+    (h : UCEmulatesCSim ⟨hon, out, leak, sim_if, leak⟩ π F (simOf s) bound) :
+    Realizes (Sys.oneShot π) (Sys.oneShot (idealOf F s))
+      (oneShotBound (bound SPComp.pure)) := by
+  have h₀ : DistC π (idealOf F s) (bound SPComp.pure) := fun Z => by
+    simpa [Env.gap, idealOf] using h SPComp.pure Z
+  exact realizes_oneShot_of_distC h₀
+
+/-- A concrete UC emulation of `F` by `π` with the identity simulator map (`S = A`, the form
+of `UCEmulatesCSim_of_DistC` and `UCFromGameC`) gives a realization of `Sys.oneShot F` by
+`Sys.oneShot π`; the bound is the one-shot bound of the UC statement at the dummy adversary
+`SPComp.pure`. -/
+theorem realizes_oneShot_of_ucEmulatesCSim_id {out leak : Type}
+    {π F : hon → SPComp (out ⊕ leak)}
+    {bound : (leak → SPComp leak) → Env hon (out ⊕ leak) → ℝ≥0∞}
+    (h : UCEmulatesCSim ⟨hon, out, leak, leak, leak⟩ π F id bound) :
+    Realizes (Sys.oneShot π) (Sys.oneShot F) (oneShotBound (bound SPComp.pure)) :=
+  realizes_oneShot_of_distC fun Z => by simpa [Env.gap] using h SPComp.pure Z
 
 end CatCrypt.Crypto.UCTransparent
