@@ -247,6 +247,7 @@ public import CatCryptCore.Crypto.PAKE.FPAKESys
 public import CatCryptCore.Crypto.PAKE.DHExtractKit
 public import CatCryptCore.Crypto.PAKE.CPaceH1
 public import CatCryptCore.Crypto.PAKE.CPaceH1Timed
+public import CatCryptCore.Crypto.PAKE.CPaceSquare
 public import CatCryptCore.Crypto.Signatures.Threshold
 public import CatCryptCore.Crypto.FiatShamirROM.MPCitH
 public import CatCryptCore.Crypto.Anon.Signalling
