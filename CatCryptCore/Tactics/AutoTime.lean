@@ -36,7 +36,8 @@ traversed. Each node of the tree is consumed by one rule lemma of this module:
   `P` are reduced before `y.1` is sought;
 * a node `sample`, `get`, `set`, `rand`, `query` adds its unit and its step cost and leaves one
   goal for every branch (`∀ b`), so that a maximum over a finite support becomes a universal
-  statement;
+  statement; a node `sampleDist` of a sub-distribution does the same over the supremum of its
+  branches, with a further goal for the unit alone (`time_sampleDist`, `st_bind_sampleDist`);
 * `bind A f` with `A` a node is pushed into the node; with `A` not a node, the time of `A` is
   added to `P` (`stepTime_bind_le`, `timeBound_bind`) and the continuation is bounded for
   every value;
@@ -381,6 +382,34 @@ theorem time_sample {γ : Type} {fγ : Fintype γ} {nγ : Nonempty γ} {c : γ �
       have := h b
       omega
   have h0 := h (Classical.choice nγ)
+  omega
+
+/-- The time of a sampling node of a sub-distribution: its unit and, for every sample, the step
+cost and the time of the continuation. The second hypothesis bounds the unit on an empty
+sample space. -/
+theorem time_sampleDist {γ : Type} {μ : Prob.SDistr γ} {c : γ → ℕ} {k : γ → SPTree.Timed α}
+    (h : ∀ b, P + 1 + c b + (k b).time ≤ B) (h₀ : P + 1 ≤ B) :
+    P + (SPTree.Timed.sampleDist γ μ c k).time ≤ B := by
+  rw [SPTree.Timed.time_sampleDist]
+  have hs : (⨆ b, c b + (k b).time) ≤ B - P - 1 :=
+    ciSup_le' fun b => by
+      have := h b
+      omega
+  omega
+
+/-- The step time of a sampling node of a sub-distribution followed by a costed bind. -/
+theorem st_bind_sampleDist {γ : Type} {μ : Prob.SDistr γ} {c : γ → ℕ}
+    {k : γ → SPTree.Timed α} {f : α → ℕ × SPTree.Timed β}
+    (h : ∀ b, P + 1 + c b + SPTree.Timed.stepTime ((k b).bind f) ≤ B) (h₀ : P + 1 ≤ B) :
+    P + SPTree.Timed.stepTime ((SPTree.Timed.sampleDist γ μ c k).bind f) ≤ B := by
+  simp only [SPTree.Timed.bind, SPTree.Timed.stepTime, SPTree.Timed.time_sampleDist,
+    Nat.zero_add]
+  have hs : (⨆ b, c b + (SPTree.Timed.bind (k b) f).1 + (SPTree.Timed.bind (k b) f).2.time) ≤
+      B - P - 1 :=
+    ciSup_le' fun b => by
+      have := h b
+      simp only [SPTree.Timed.stepTime] at this
+      omega
   omega
 
 theorem time_get {l : Location} {c : l.ty → ℕ} {k : l.ty → SPTree.Timed α} (h0 : P + 1 ≤ B)
@@ -1858,7 +1887,8 @@ def matchFacts (g : MVarId) : TacticM (Option MVarId) := g.withContext do
       catch _ => s.restore
   if pairs.isEmpty then return none
   let n := pairs.size
-  let decls := (Array.range (2 * n)).map fun i => (Name.mkSimple s!"m{i}", fun _ => pure (mkConst ``Nat))
+  let decls := (Array.range (2 * n)).map fun i =>
+    (Name.mkSimple s!"m{i}", fun _ => pure (mkConst ``Nat))
   let stmt ← withLocalDeclsD decls fun xs => do
     let sub (side : Nat) (e : Expr) : Expr := e.replace fun e' =>
       match pairs.findIdx? fun p => (if side == 0 then p.1 else p.2.1) == e' with
@@ -2181,6 +2211,7 @@ partial def stepCase (g : MVarId) (x : Expr) (env : Bool) (fuel : Nat) : TacticM
     let node : Option Name :=
       if a'.isAppOf ``SPTree.Timed.ret then some ``st_bind_ret
       else if a'.isAppOf ``SPTree.Timed.sample then some ``st_bind_sample
+      else if a'.isAppOf ``SPTree.Timed.sampleDist then some ``st_bind_sampleDist
       else if a'.isAppOf ``SPTree.Timed.get then some ``st_bind_get
       else if a'.isAppOf ``SPTree.Timed.set then some ``st_bind_set
       else if a'.isAppOf ``SPTree.Timed.fail then some ``st_bind_fail
@@ -2334,6 +2365,7 @@ partial def treeCase (g : MVarId) (t : Expr) (env : Bool) (fuel : Nat) : TacticM
   g.withContext do
   if t'.isAppOf ``SPTree.Timed.ret then rule g ``time_ret env fuel
   else if t'.isAppOf ``SPTree.Timed.sample then rule g ``time_sample env fuel
+  else if t'.isAppOf ``SPTree.Timed.sampleDist then rule g ``time_sampleDist env fuel
   else if t'.isAppOf ``SPTree.Timed.get then rule g ``time_get env fuel
   else if t'.isAppOf ``SPTree.Timed.set then rule g ``time_set env fuel
   else if t'.isAppOf ``SPTree.Timed.fail then rule g ``time_fail env fuel
@@ -2667,7 +2699,8 @@ end CatCrypt.Tactics.AutoTime
 catcrypt_auto_shape "time bound" direct priority 120 :=
   any [app CatCrypt.Crypto.OracleAdv.Timed.TimeBound,
     app CatCrypt.Crypto.OracleAdv.Timed.StepTimeBound,
-    all [app LE.le, mentions [CatCrypt.Core.SPTree.Timed.stepTime, CatCrypt.Core.SPTree.Timed.time]]]
+    all [app LE.le,
+      mentions [CatCrypt.Core.SPTree.Timed.stepTime, CatCrypt.Core.SPTree.Timed.time]]]
 
 catcrypt_auto_arm "time bound" order 10 := "time_bound"
 

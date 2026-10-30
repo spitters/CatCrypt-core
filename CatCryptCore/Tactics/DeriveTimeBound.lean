@@ -23,7 +23,8 @@ costed tree `R.tree.timed` that `derive_timed` (or `derive_reduction R`) defined
 * the bound of the theorem is the cost of the tree with every atom replaced by its bound:
   the step costs and node units along the tree, a bind charged with the bound of its first
   tree plus the bound of its continuation, a branch `if` charged with the maximum of its
-  branches, normalised to a sum of atoms with natural coefficients.
+  branches, a `sample` or `sampleDist` node charged with one plus the bound of its step cost
+  and continuation at a fresh sample, normalised to a sum of atoms with natural coefficients.
 
 A bound that mentions a value bound inside the tree (a sampled value, a value read from the
 heap, the result of a bind, a matched value) is admitted when the value occurs only inside
@@ -366,6 +367,13 @@ partial def boundTree (bs : Bounds) (t : Expr) : MetaM Expr := do
     let γ := t.getArg! 1
     let c := t.getArg! 4
     let k := t.getArg! 5
+    let b ← withFresh γ fun v => do
+      return mkAddN (← boundCost bs (c.beta #[v])) (← boundTree bs (k.beta #[v]))
+    return mkAddN (mkNatLit 1) b
+  if t.isAppOfArity ``SPTree.Timed.sampleDist 5 then
+    let γ := t.getArg! 1
+    let c := t.getArg! 3
+    let k := t.getArg! 4
     let b ← withFresh γ fun v => do
       return mkAddN (← boundCost bs (c.beta #[v])) (← boundTree bs (k.beta #[v]))
     return mkAddN (mkNatLit 1) b

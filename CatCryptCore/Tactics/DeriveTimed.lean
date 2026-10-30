@@ -31,8 +31,8 @@ The table has two entries:
   (`CatCryptCore.Crypto.OracleAdversaryTimed`);
 * syntactic computation trees `SPTree α`, costed by `SPTree.Timed α`
   (`CatCryptCore.Core.SPTreeTimed`, `CatCryptCore.Core.SPTreeTimedOps`): the nodes `ret`,
-  `sample`, `get`, `set`, `fail` and the heap reset `load`, and the combinators `SPTree.bind`
-  and `SPTree.map`.
+  `sample`, `sampleDist` (sampling from a sub-distribution), `get`, `set`, `fail` and the heap
+  reset `load`, and the combinators `SPTree.bind` and `SPTree.map`.
 
 Below, "tree" means a tree of a kind in the table, and the rules for oracle trees apply to
 every kind.
@@ -64,12 +64,15 @@ its cost companion with it, as the costed closure of the function and its compan
 companion is built where the function is created and read where the function is applied
 (the convention of `OracleAdv.Timed.simulateHat` for a simulation state):
 
-* the costed type of a sum `A ⊕ B` is `Â ⊕ B̂`, erased and lifted componentwise by `Sum.map`;
+* the costed type of a sum `A ⊕ B` is `Â ⊕ B̂`, erased and lifted componentwise by `Sum.map`,
+  and the costed type of an optional function `Option F` is `Option F̂`, erased and lifted by
+  `Option.map`;
 * a structure `S` whose fields are data of types independent of the other fields, one of
   which holds functions, has as costed value its mirror (`mirrorStruct?`, `mirrorType`): the
   tuple `ĥ₀ × (ĥ₁ × … × ĥₙ₋₁)` of the costed values of its fields; `ε` applies the constructor
   to the erased components, `ι` lifts each field;
-* a constructor application `S.mk a₁ … aₙ` or `Sum.inl a` is translated componentwise; a
+* a constructor application `S.mk a₁ … aₙ`, `Sum.inl a`, `some a` or `none` is translated
+  componentwise; a
   field `s.f` of such a structure is the component of the costed value of `s`, and a
   function field applied, `s.f x`, costs one plus the companion of that component at `x`
   (`costConst`); a `let` of a structure stays a `let`, and its costed value is that of its
@@ -77,10 +80,16 @@ companion is built where the function is created and read where the function is 
 * a field of a pattern of a match on a discriminant with a costed value (the block `a` of
   `| .inl a`, a field of `| ⟨f, g⟩`) keeps its function and reads its companion from the
   discriminant's costed value (`patternHats`, `refillE`): a component of a pair or a mirror,
-  or, under `Sum.inl`/`Sum.inr`, the component selected by `Sum.elim`;
+  or, under `Sum.inl`/`Sum.inr`, the component selected by `Sum.elim`; under `some`, the
+  content of the costed option `ô`, read as `Option.elim ô (ι a) id`;
+* a dispatch on an optional value, `Option.elim o y f`, `Option.casesOn o y f` or
+  `Option.rec y f o`, whose result is a tree or a computation, is the match of
+  `optionDispatch` on `o` (`optionDispatch?`): the function `f` is an alternative of the match
+  and not a discriminant; on a constructor `o` it is the alternative of that constructor;
 * the result of a call of a function binder holding functions (`st a : S`), a local without
-  a costed value, and a function under any other constructor (`Option`, `List`) hold tables
-  (`ι`), as the functions received from a tree do.
+  a costed value, a function in a structure, pair or sum under `Option`, and a function under
+  any other constructor (`List`) hold tables (`ι`), as
+  the functions received from a tree do.
 
 A binder of the reduction whose type is such a structure keeps the convention of field paths
 (below), so that a scheme or a kit passed as a binder has the cost companions of its applied
@@ -175,7 +184,8 @@ Costs follow call-by-value evaluation:
   distributions free, since sampling is included in the node's unit;
 * a `sample`, `get` or `set` node of a computation tree costs its registered unit
   (`SPTree.Timed.time`), and the location and the value of a `get` or `set` node are priced by
-  the rules above;
+  the rules above; a `sampleDist` node costs its unit, and its distribution is kept and not
+  priced, since sampling is included in the node's unit;
 * `OracleAdv.bind`, `OracleAdv.simulate` and `OracleAdv.mapQuery` are translated to
   `OracleAdv.Timed.bind`, `OracleAdv.Timed.simulate` and `OracleAdv.Timed.mapQuery`, with the
   cost of the renaming `ren d` of a `mapQuery` charged per query; `SPTree.bind` and
@@ -237,9 +247,10 @@ unfold them. A reduction valued in `PMF` is refused: a distribution has no cost 
 
 Calls of reductions without a costed form are derived on demand. A derivation fails, with
 the reason, on a function stored in data that is not a costed closure as above (a local
-function without a cost companion applied, a function in a list or an option), a field of a
-structure that is neither a field path, nor a field of a computed structure, nor a field of a
-structure with a mirror, nor a field of a structure value as below, an opaque data function without a registered cost, an operation on a quotient type
+function without a cost companion applied, a function in a list), a field of a structure that
+is neither a field path, nor a field of a computed structure, nor a field of a structure with a
+mirror, nor a field of a structure value as below, an opaque data function without a
+registered cost, an operation on a quotient type
 (`Finset`, `Multiset`, `Quot`) without a registered cost (the costs of `Finset.sum`,
 `Finset.prod`, `Finset.univ`, `Finset.range` and `Finset.erase` are registered in
 `CatCryptCore.Tactics.StdCosts`), a recursive data
@@ -306,6 +317,7 @@ one unit for each arithmetic operation (`CatCryptCore/Crypto/ConcreteSecurity.md
   `R.erase_timed` (or `R.erase_s`)
 * `timed_cost f := e` — register the cost `e` of the primitive `f`
 * `treeKinds` — the table of tree kinds
+* `optionDispatch` — the case analysis of an optional value, written as a `match`
 
 ## Main results
 
@@ -565,7 +577,7 @@ theorem allRet_simulateHat_inv {D' R' S Ŝ : Type} (ε : Ŝ → S) (ι : S → �
   unfold simulateHat
   induction A generalizing q i s with
   | ret a =>
-    show Inv (i + q) s
+    change Inv (i + q) s
     clear hq
     induction q with
     | zero => exact hs
@@ -642,6 +654,39 @@ theorem dite_bind {α β : Type} (c : Prop) [Decidable c] (t : c → SPTree α) 
   split <;> rfl
 
 end CatCrypt.Core.SPTree
+
+namespace CatCrypt.Tactics.DeriveTimed
+
+open CatCrypt.Core
+
+/-- The case analysis of `x : Option α` by `n` on `none` and `s` on `some`, written as a
+`match`. Its matcher `optionDispatch.match_1` is the form in which a dispatch `Option.elim x n s`,
+`Option.casesOn x n s` or `Option.rec n s x` on an optional value that is not a constructor is
+kept (`optionDispatch?`). -/
+@[expose] def optionDispatch.{u, w} {α : Type u} (motive : Option α → Sort w) (x : Option α)
+    (n : motive none) (s : (a : α) → motive (some a)) : motive x :=
+  match x with
+  | none => n
+  | some a => s a
+
+/-- `Option.elim` is the case analysis `optionDispatch` at the constant motive. -/
+theorem elim_eq_optionDispatch {α β : Type} (x : Option α) (n : β) (s : α → β) :
+    x.elim n s = optionDispatch (fun _ => β) x n s := by
+  cases x <;> rfl
+
+/-- The compile equation of a sampling node of a sub-distribution followed by a continuation. -/
+theorem compile_sampleDist_eq {α β : Type} {μ : Prob.SDistr β} {k : β → SPTree α}
+    {k₀ : β → SPComp α} (h : ∀ b, (k b).compile = k₀ b) :
+    (SPTree.sampleDist β μ k).compile = SPComp.bind (liftSDistr μ) k₀ := by
+  simp only [SPTree.compile, funext h]
+
+/-- The compile equation of a sampling node of a sub-distribution that returns its sample. -/
+theorem compile_sampleDist_ret {β : Type} {μ : Prob.SDistr β} :
+    (SPTree.sampleDist β μ fun b => .ret b).compile = liftSDistr μ := by
+  simp only [SPTree.compile]
+  exact SPComp.bind_pure _
+
+end CatCrypt.Tactics.DeriveTimed
 
 meta section
 
@@ -915,13 +960,14 @@ def oracleKind : TreeKind where
   hatLemmas := #[``CatCrypt.Crypto.OracleAdv.bind, ``CatCrypt.Crypto.OracleAdv.bind_assoc,
     ``CatCrypt.Crypto.OracleAdv.bind_ret,
     ``CatCrypt.Crypto.OracleAdv.Timed.erase_simulateHat_bind, ``Prod.mk.eta,
-    ``Sum.map_inl, ``Sum.map_inr,
+    ``Sum.map_inl, ``Sum.map_inr, ``Option.map_some, ``Option.map_none,
     ``CatCrypt.Crypto.OracleAdv.Timed.bind_ret_eq,
     ``CatCrypt.Tactics.DeriveTimed.fst_ite, ``CatCrypt.Tactics.DeriveTimed.snd_ite,
     ``CatCrypt.Tactics.DeriveTimed.ite_prod_mk, ``CatCrypt.Tactics.DeriveTimed.erase_ite_oracle]
 
-/-- Syntactic computation trees `SPTree α`: `ret`, `sample`, `get`, `set`, `fail` and `load`
-nodes, and the combinators `SPTree.bind` and `SPTree.map`. -/
+/-- Syntactic computation trees `SPTree α`: `ret`, `sample`, `sampleDist` (its distribution kept
+and not priced), `get`, `set`, `fail` and `load` nodes, and the combinators `SPTree.bind` and
+`SPTree.map`. -/
 def spTreeKind : TreeKind where
   noun := "computation tree"
   tree := ``CatCrypt.Core.SPTree
@@ -933,6 +979,8 @@ def spTreeKind : TreeKind where
     ⟨``CatCrypt.Core.SPTree.ret, ``CatCrypt.Core.SPTree.Timed.ret, #[.data]⟩,
     ⟨``CatCrypt.Core.SPTree.sample, ``CatCrypt.Core.SPTree.Timed.sample,
       #[.keep, .keep, .keep, .cont 1]⟩,
+    ⟨``CatCrypt.Core.SPTree.sampleDist, ``CatCrypt.Core.SPTree.Timed.sampleDist,
+      #[.keep, .keep, .cont 1]⟩,
     ⟨``CatCrypt.Core.SPTree.get, ``CatCrypt.Core.SPTree.Timed.get, #[.data, .cont 1]⟩,
     ⟨``CatCrypt.Core.SPTree.set, ``CatCrypt.Core.SPTree.Timed.set, #[.data, .data, .cont 0]⟩,
     ⟨``CatCrypt.Core.SPTree.fail, ``CatCrypt.Core.SPTree.Timed.fail, #[]⟩,
@@ -942,7 +990,8 @@ def spTreeKind : TreeKind where
     ⟨``CatCrypt.Core.SPTree.map, ``CatCrypt.Core.SPTree.Timed.map, #[.perCall 0 1, .tree],
       true⟩]
   eraseLemmas := #[``CatCrypt.Core.SPTree.Timed.erase_ret,
-    ``CatCrypt.Core.SPTree.Timed.erase_sample, ``CatCrypt.Core.SPTree.Timed.erase_get,
+    ``CatCrypt.Core.SPTree.Timed.erase_sample, ``CatCrypt.Core.SPTree.Timed.erase_sampleDist,
+    ``CatCrypt.Core.SPTree.Timed.erase_get,
     ``CatCrypt.Core.SPTree.Timed.erase_set, ``CatCrypt.Core.SPTree.Timed.erase_fail,
     ``CatCrypt.Core.SPTree.Timed.erase_load,
     ``CatCrypt.Core.SPTree.Timed.delay, ``CatCrypt.Core.SPTree.Timed.erase_bind,
@@ -950,7 +999,7 @@ def spTreeKind : TreeKind where
     ``CatCrypt.Core.SPTree.Timed.erase_snd_dite]
   hatLemmas := #[``CatCrypt.Core.SPTree.bind, ``CatCrypt.Core.SPTree.bind_assoc,
     ``CatCrypt.Core.SPTree.bind_ret_val, ``CatCrypt.Core.SPTree.bind_ret, ``Prod.mk.eta,
-    ``Sum.map_inl, ``Sum.map_inr,
+    ``Sum.map_inl, ``Sum.map_inr, ``Option.map_some, ``Option.map_none,
     ``CatCrypt.Tactics.DeriveTimed.fst_ite,
     ``CatCrypt.Tactics.DeriveTimed.snd_ite, ``CatCrypt.Tactics.DeriveTimed.ite_prod_mk,
     ``CatCrypt.Tactics.DeriveTimed.erase_ite_spTree]
@@ -1107,6 +1156,12 @@ partial def hatTy? (t : Expr) (seen : List Name := []) (mirror : Bool := true) :
     let hb ← hatTy? b seen mirror
     if ha.isNone && hb.isNone then return none
     return some (← mkAppM ``Sum #[ha.getD a, hb.getD b])
+  if tw.isAppOfArity ``Option 1 then
+    -- Only an optional function is costed; an option of a structure, a pair or a sum holding
+    -- functions keeps its functions as tables.
+    unless (← whnfR (tw.getArg! 0)).isForall do return none
+    let some ha ← hatTy? (tw.getArg! 0) seen mirror | return none
+    return some (← mkAppM ``Option #[ha])
   if let some m ← mirrorStruct? tw then
     if seen.contains m.struct || !mirror then return none
     let hs ← m.fieldTypes.mapM (hatTy? · (m.struct :: seen))
@@ -1139,6 +1194,13 @@ def sumMapE (a b v : Expr) (f : Expr → Expr → MetaM Expr) : MetaM Expr := do
     withLocalDeclD `x (vt.getArg! i) fun x => do mkLambdaFVars #[x] (← f c x)
   mkAppM ``Sum.map #[← side 0 a, ← side 1 b, v]
 
+/-- `Option.map` of `f` at the content `a` of the optional value `v`: with `f = epsE` from the
+costed option to `Option a`, with `f = iotaE` from `Option a` to the costed option. -/
+def optionMapE (a v : Expr) (f : Expr → Expr → MetaM Expr) : MetaM Expr := do
+  let vt ← whnfR (← inferType v)
+  let g ← withLocalDeclD `x (vt.getArg! 0) fun x => do mkLambdaFVars #[x] (← f a x)
+  mkAppM ``Option.map #[g, v]
+
 /-- The erasure `ε v : t` of the costed value `v` of type `hatTy? t`: the function of each
 costed closure. -/
 partial def epsE (t v : Expr) : MetaM Expr := do
@@ -1150,6 +1212,8 @@ partial def epsE (t v : Expr) : MetaM Expr := do
     return ← mkAppM ``Prod.mk #[a, b]
   if tw.isAppOfArity ``Sum 2 then
     return ← sumMapE (tw.getArg! 0) (tw.getArg! 1) v epsE
+  if tw.isAppOfArity ``Option 1 then
+    return ← optionMapE (tw.getArg! 0) v epsE
   if let some m ← mirrorStruct? tw then
     let n := m.fieldTypes.size
     let mut fs := #[]
@@ -1172,6 +1236,8 @@ partial def iotaE (t v : Expr) : MetaM Expr := do
     return ← mkAppM ``Prod.mk #[a, b]
   if tw.isAppOfArity ``Sum 2 then
     return ← sumMapE (tw.getArg! 0) (tw.getArg! 1) v iotaE
+  if tw.isAppOfArity ``Option 1 then
+    return ← optionMapE (tw.getArg! 0) v iotaE
   if let some m ← mirrorStruct? tw then
     let mut fs := #[]
     for i in [0:m.fieldTypes.size] do
@@ -1204,7 +1270,7 @@ partial def epsLeaves (t v x : Expr) : MetaM (Array (Expr × Expr)) := do
     let a ← epsLeaves (tw.getArg! 0) (← mkAppM ``Prod.fst #[v]) (← mkAppM ``Prod.fst #[x])
     let b ← epsLeaves (tw.getArg! 1) (← mkAppM ``Prod.snd #[v]) (← mkAppM ``Prod.snd #[x])
     return a ++ b
-  if tw.isAppOfArity ``Sum 2 then return #[]
+  if tw.isAppOfArity ``Sum 2 || tw.isAppOfArity ``Option 1 then return #[]
   if let some m ← mirrorStruct? tw then
     let n := m.fieldTypes.size
     let mut out := #[]
@@ -1226,7 +1292,7 @@ partial def refillE (t x c : Expr) : MetaM Expr := do
     let a ← refillE (tw.getArg! 0) (← mkAppM ``Prod.fst #[x]) (← mkAppM ``Prod.fst #[c])
     let b ← refillE (tw.getArg! 1) (← mkAppM ``Prod.snd #[x]) (← mkAppM ``Prod.snd #[c])
     return ← mkAppM ``Prod.mk #[a, b]
-  if tw.isAppOfArity ``Sum 2 then return ← iotaE t x
+  if tw.isAppOfArity ``Sum 2 || tw.isAppOfArity ``Option 1 then return ← iotaE t x
   if let some m ← mirrorStruct? tw then
     let n := m.fieldTypes.size
     let mut fs := #[]
@@ -1267,6 +1333,13 @@ partial def patternHats (p v : Expr) : MetaM (Array (Expr × Expr)) := do
     let comp ← if left then mkAppM ``Sum.elim #[get, other, v]
       else mkAppM ``Sum.elim #[other, get, v]
     return ← patternHats args[2]! comp
+  if c == ``Option.some && args.size == 2 then
+    -- The content of `some a` is read from the costed option `v`, with `ι a` on `none`.
+    let vt ← whnfR (← inferType v)
+    unless vt.isAppOfArity ``Option 1 do return #[]
+    let dflt ← iotaE args[0]! args[1]!
+    let get ← withLocalDeclD `z (vt.getArg! 0) fun z => mkLambdaFVars #[z] z
+    return ← patternHats args[1]! (← mkAppM ``Option.elim #[v, dflt, get])
   let some m ← mirrorStruct? (← whnfR (← inferType p)) | return #[]
   unless c == m.ctor && args.size == m.params.size + m.fieldTypes.size do return #[]
   let mut out := #[]
@@ -1331,6 +1404,37 @@ def boolRecIte? (e : Expr) : MetaM (Option Expr) := do
   let c ← mkEq args[3]! (mkConst ``Bool.true)
   let inst := mkApp2 (mkConst ``instDecidableEqBool) args[3]! (mkConst ``Bool.true)
   return some (mkApp5 (mkConst ``ite [u]) body c inst args[2]! args[1]!)
+
+/-- A dispatch on an optional value, `Option.elim o y f a₁ … aₙ`, `Option.casesOn o y f a₁ … aₙ`
+or `Option.rec y f o a₁ … aₙ`, as a match: when `whnf` brings `o` to a constructor, the
+alternative of that constructor applied to `a₁ … aₙ`; otherwise, when `n = 0`, the matcher of
+`optionDispatch` on `o`, whose only discriminant is `o`. `none` when `e` is not such a dispatch,
+and on a scrutinee that is not a constructor when `n > 0`: the match with the arguments passed
+into its alternatives equals the dispatch only propositionally. -/
+def optionDispatch? (e : Expr) : MetaM (Option Expr) := do
+  let args := e.getAppArgs
+  let some c := e.getAppFn.constName? | return none
+  unless args.size ≥ 5 do return none
+  -- the motive, the scrutinee and the alternatives on `none` and on `some`
+  let (motive?, x, y, f) ←
+    if c == ``Option.elim then pure (none, args[2]!, args[3]!, args[4]!)
+    else if c == ``Option.casesOn then pure (some args[1]!, args[2]!, args[3]!, args[4]!)
+    else if c == ``Option.rec then pure (some args[1]!, args[4]!, args[2]!, args[3]!)
+    else return none
+  let rest := args.extract 5 args.size
+  let x' ← whnf x
+  if x'.isAppOfArity ``Option.none 1 then return some (mkAppN y rest).headBeta
+  if x'.isAppOfArity ``Option.some 2 then
+    return some (mkAppN (mkApp f x'.appArg!).headBeta rest).headBeta
+  unless rest.isEmpty do return none
+  let motive ← match motive? with
+    | some m => pure m
+    | none =>
+      let ty ← inferType e
+      withLocalDeclD `x (← inferType x) fun z => mkLambdaFVars #[z] ty
+  let d ← mkAppM ``optionDispatch #[motive, x, y, f]
+  let some d' ← unfoldDefinition? d | return none
+  return some d'.headBeta
 
 /-- Whether `t` is a computation type `SPComp α`. -/
 def isSPCompType (t : Expr) : MetaM Bool := do
@@ -2395,6 +2499,14 @@ partial def tv (ctx : Ctx) (e : Expr) : TermElabM (Expr × Expr) := do
       let lvls' ← [ha, hb].mapM fun x => (getDecLevel x : MetaM Level)
       unless lvls.length == 2 do fail m!"internal: `{e}`"
       return (ca, mkAppN (mkConst n lvls') #[ha, hb, va])
+    -- An optional value holding functions: the costed value of its content.
+    if f.isConstOf ``Option.some && args.size == 2 then
+      let (ca, va) ← tv ctx args[1]!
+      return (ca, ← mkAppM ``Option.some #[va])
+    if f.isConstOf ``Option.none && args.size == 1 then
+      let hw ← whnfR ht
+      unless hw.isAppOfArity ``Option 1 do fail m!"internal: `{e}`"
+      return (natE 0, ← mkAppOptM ``Option.none #[hw.appArg!])
     if let .const fc _ := f then
       if let some m ← mirrorStruct? tw then
         -- A structure holding functions built by its constructor: the mirror tuple of the
@@ -3146,6 +3258,9 @@ partial def trConst (ctx : Ctx) (e : Expr) (c : Name) (args : Array Expr) (T : T
   if let some cb := T.kind.combinators.find? (·.src == c) then
     return ← trComb ctx e cb args T
   if let some e' ← boolRecIte? e then return ← tr ctx e'
+  -- A dispatch on an optional value: the match of `optionDispatch`, whose alternative on
+  -- `some` is a branch and not a function discriminant.
+  if let some e' ← optionDispatch? e then return ← tr ctx e'
   if c == ``ite && n == 5 then
     let pt ← tr ctx args[3]!
     let pe ← tr ctx args[4]!
@@ -3704,7 +3819,8 @@ partial def deriveTimed (ctx : Ctx) (c : Name) : TermElabM Unit := do
   -- Costed closures in a result or in a simulation state: the lemmas that push `ε` to the
   -- leaves and the erasure of a simulation with a costed state.
   let hatLemmas : Array Name :=
-    if hatted || binderHat || plainHat || dataHat || used.contains ``CatCrypt.Crypto.OracleAdv.Timed.simulateHat ||
+    if hatted || binderHat || plainHat || dataHat ||
+        used.contains ``CatCrypt.Crypto.OracleAdv.Timed.simulateHat ||
         callees.any (fun n => n.toString.endsWith "_bind") || !naturalLemmas.isEmpty then
       (treeKinds.filter fun k => used.contains k.timed).flatMap (·.hatLemmas)
     else #[]
@@ -3723,7 +3839,12 @@ partial def deriveTimed (ctx : Ctx) (c : Name) : TermElabM Unit := do
   let simpLemmas : Array Name :=
     ((if treeRec then #[c] else #[timedName, c]).filter (!wf ·)) ++ kindLemmas ++ hatLemmas ++
       matchLemmas ++ callees ++ naturalLemmas ++ unfoldedDefs ++
-      (if used.contains ``ite then #[``CatCrypt.Tactics.DeriveTimed.boolRec_eq_ite] else #[])
+      (if used.contains ``ite then #[``CatCrypt.Tactics.DeriveTimed.boolRec_eq_ite] else #[]) ++
+      -- A dispatch on an optional value (`optionDispatch?`): the source keeps `Option.elim`,
+      -- which the case split of the costed match reduces at a constructor.
+      (if used.any (·.getPrefix == ``optionDispatch) then
+        #[``Option.elim_none, ``Option.elim_some, ``Option.map_none, ``Option.map_some]
+      else #[])
   let (nBinders, srcPos) := nBinders
   let ids : Array (TSyntax `ident) := (Array.range nBinders.size).map fun i =>
     mkIdent (Name.mkSimple s!"x{i}")
@@ -3769,7 +3890,8 @@ partial def deriveTimed (ctx : Ctx) (c : Name) : TermElabM Unit := do
       pure (isMatcherCore envNow b.getAppFn.constName)
     if headed then matchDefs := matchDefs ++ #[p, n]
   let closeMatch? ← if matchDefs.isEmpty then pure none else do
-    let extra := matchDefs ++ #[``Sum.map_inl, ``Sum.map_inr, ``Sum.elim_inl, ``Sum.elim_inr]
+    let extra := matchDefs ++ #[``Sum.map_inl, ``Sum.map_inr, ``Sum.elim_inl, ``Sum.elim_inr,
+      ``Option.map_some, ``Option.map_none, ``Option.elim_some, ``Option.elim_none]
     let more : Array (TSyntax `Lean.Parser.Tactic.simpLemma) ←
       extra.mapM fun n => `(Lean.Parser.Tactic.simpLemma| $(mkIdent n):ident)
     pure (some (← mkClose (lemmas ++ more) true))

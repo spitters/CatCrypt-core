@@ -53,7 +53,9 @@ constructor is the match of `sumDispatch` on `x` with the alternatives `f` and `
 (`sumDispatch?`), so that it is reflected, priced and proved as an explicit `match` on the sum;
 on a constructor it is the alternative of that constructor. A dispatch applied to further
 arguments (`Sum.elim f g x s`) on a scrutinee that is not a constructor is not such a match,
-as for an explicit `match` applied to further arguments. A chain of `let`s applied to
+as for an explicit `match` applied to further arguments. A dispatch on an optional value
+`Option.elim o y f`, `Option.casesOn o y f` or `Option.rec y f o` is, in the same way, the match
+of `optionDispatch` on `o` (`DeriveTimed.optionDispatch?`). A chain of `let`s applied to
 arguments (the unfolded body of a definition that returns a function after its `let`s,
 `opaquePost sid uid s r o`) has the arguments pushed under the `let`s,
 `(let x := v; fun y => b) a ↦ let x := v; b[a/y]` (`pushAppUnderLets`), so that the `let`s are
@@ -70,7 +72,9 @@ syntax.
 | `SPComp.sample β`              | `SPTree.sample β _ _ (fun b => .ret b)`                 |
 | `SPComp.get l`                 | `SPTree.get l (fun v => .ret v)`                        |
 | `SPComp.set l v`               | `SPTree.set l v (.ret ())`                              |
+| `liftSDistr μ`, `sampleFrom μ` | `SPTree.sampleDist β μ (fun b => .ret b)`               |
 | `SPComp.bind (sample β) k`     | `SPTree.sample β _ _ (fun b => tree (k b))`             |
+| `SPComp.bind (liftSDistr μ) k` | `SPTree.sampleDist β μ (fun b => tree (k b))`           |
 | `SPComp.bind (get l) k`        | `SPTree.get l (fun v => tree (k v))`                    |
 | `SPComp.bind (set l v) k`      | `SPTree.set l v (tree (k ()))`                          |
 | `SPComp.initHeap h₀`           | `SPTree.load h₀ (.ret ())`                              |
@@ -222,9 +226,10 @@ the tree kind of `derive_timed` (`CatCryptCore.Core.SPTreeTimed`) and has `compi
 The equation is proved by a traversal of the tree beside the unfolded body: `SPTree.bind` by
 `SPTree.compile_bind_eq`, a `sample`, `get` or `set` node by `SPTree.compile_sample_eq`,
 `SPTree.compile_get_eq`, `SPTree.compile_set_eq` (or the forms `…_ret` for a node with no
-continuation), `if` by `SPTree.compile_ite_eq` and `SPTree.compile_dite_eq`, a `match` by the
-`split` tactic, a call of a computation primitive by its hypothesis, and a leaf (`ret`,
-`fail`, an adversary call) by reflexivity.
+continuation), a `sampleDist` node by `DeriveTimed.compile_sampleDist_eq` (or
+`DeriveTimed.compile_sampleDist_ret`), `if` by `SPTree.compile_ite_eq` and
+`SPTree.compile_dite_eq`, a `match` by the `split` tactic, a call of a computation primitive
+by its hypothesis, and a leaf (`ret`, `fail`, an adversary call) by reflexivity.
 
 ## Costed states
 
@@ -393,11 +398,20 @@ def spCompCtors : Array Name :=
   #[``CatCrypt.Core.SPComp.pure, ``CatCrypt.Core.SPComp.bind, ``CatCrypt.Core.SPComp.sample,
     ``CatCrypt.Core.SPComp.get, ``CatCrypt.Core.SPComp.set, ``CatCrypt.Core.SPComp.fail]
 
+/-- The computations sampling from a sub-distribution: `liftSDistr` and `sampleFrom`. -/
+def sampleDistHeads : Array Name :=
+  #[``CatCrypt.Core.liftSDistr, `CatCrypt.NonUniform.sampleFrom]
+
 /-- The constants at which `normalize` stops: the constructors of `SPComp`, the heap reset
-`SPComp.initHeap`, `ite`, `dite` and `SPTree.compile`. -/
+`SPComp.initHeap`, sampling from a sub-distribution, `ite`, `dite` and `SPTree.compile`. -/
 def normalizeStops : Array Name :=
   spCompCtors ++ #[``CatCrypt.Crypto.SPComp.initHeap, ``ite, ``dite,
-    ``CatCrypt.Core.SPTree.compile]
+    ``CatCrypt.Core.SPTree.compile] ++ sampleDistHeads
+
+/-- Sampling from a sub-distribution `μ`, `liftSDistr μ` or `sampleFrom μ`
+(`CatCryptCore.NonUniform.Sample`, named without importing it): the distribution `μ`. -/
+def sampleDist? (e : Expr) : Option Expr :=
+  if e.getAppNumArgs == 2 && sampleDistHeads.any e.isAppOf then some e.appArg! else none
 
 /-- The result type `α` of the unfolded computation type `Heap → SDistr (α × Heap)`, the type
 that a heap reset `fun _ => c h₀` (or a `let` around one) is inferred at. -/
@@ -519,6 +533,8 @@ partial def normalize (e : Expr) : MetaM Expr := do
       if e' == e then return e
       return ← normalize e'
     if let some e' ← sumDispatch? e then return ← normalize e'
+    if let some e' ← CatCrypt.Tactics.DeriveTimed.optionDispatch? e then
+      return ← normalize e'
     if let some e' ← unfoldShared? e then return ← normalize e'
     match ← unfoldDefinition? e with
     | some e' => normalize e'.headBeta
@@ -960,6 +976,9 @@ partial def reify (ctx : RCtx) (e : Expr) : TermElabM Expr := do
   | .const c _ =>
     if c == ``CatCrypt.Core.SPComp.pure && args.size == 2 then
       return mkRet α args[1]!
+    if let some μ := sampleDist? e then
+      let k ← withLocalDeclD `b α fun b => mkLambdaFVars #[b] (mkRet α b)
+      return mkApp4 (mkConst ``CatCrypt.Core.SPTree.sampleDist) α α μ k
     if c == ``CatCrypt.Core.SPComp.fail && args.size == 1 then
       return mkApp (mkConst ``CatCrypt.Core.SPTree.fail) α
     if c == ``CatCrypt.Core.SPComp.sample && args.size == 3 then
@@ -1075,6 +1094,9 @@ partial def reifyBind (ctx : RCtx) (α β c k : Expr) : TermElabM Expr := do
   if c'.isAppOfArity ``CatCrypt.Core.SPComp.sample 3 then
     let k' ← withLocalDeclD `b cargs[0]! fun b => do mkLambdaFVars #[b] (← cont b)
     return mkApp5 (mkConst ``CatCrypt.Core.SPTree.sample) β cargs[0]! cargs[1]! cargs[2]! k'
+  if let some μ := sampleDist? c' then
+    let k' ← withLocalDeclD `b α fun b => do mkLambdaFVars #[b] (← cont b)
+    return mkApp4 (mkConst ``CatCrypt.Core.SPTree.sampleDist) β α μ k'
   if c'.isAppOfArity ``CatCrypt.Core.SPComp.get 1 then
     let k' ← withLocalDeclD `v α fun v => do mkLambdaFVars #[v] (← cont v)
     return mkApp3 (mkConst ``CatCrypt.Core.SPTree.get) β cargs[0]! k'
@@ -1183,7 +1205,8 @@ def close (g : MVarId) (pf : Expr) : MetaM Unit := do
 
 /-- The constants at which `treeHead` stops. -/
 def treeStops : Array Name :=
-  #[``CatCrypt.Core.SPTree.ret, ``CatCrypt.Core.SPTree.sample, ``CatCrypt.Core.SPTree.get,
+  #[``CatCrypt.Core.SPTree.ret, ``CatCrypt.Core.SPTree.sample,
+    ``CatCrypt.Core.SPTree.sampleDist, ``CatCrypt.Core.SPTree.get,
     ``CatCrypt.Core.SPTree.set, ``CatCrypt.Core.SPTree.fail, ``CatCrypt.Core.SPTree.load,
     ``CatCrypt.Core.SPTree.bind, ``ite, ``dite]
 
@@ -1250,6 +1273,15 @@ partial def prove (hs : Array (Expr × Expr)) (g : MVarId) : TermElabM Unit := g
         let h ← sub (← mkPointwise k k₀ 1 a) 1
         return ← close g (mkAppN (core `compile_sample_eq) #[a, γ, fi, ne, k, k₀, h])
       return ← close g (mkAppN (core `compile_sample_ret) #[γ, fi, ne])
+    if c == ``CatCrypt.Core.SPTree.sampleDist && targs.size == 4 then
+      let (a, γ, μ, k) := (targs[0]!, targs[1]!, targs[2]!, targs[3]!)
+      if r.isAppOfArity ``CatCrypt.Core.SPComp.bind 4 then
+        let k₀ := rargs[3]!
+        let h ← sub (← mkPointwise k k₀ 1 a) 1
+        return ← close g (mkAppN (mkConst ``CatCrypt.Tactics.DeriveTimed.compile_sampleDist_eq)
+          #[a, γ, μ, k, k₀, h])
+      return ← close g
+        (mkAppN (mkConst ``CatCrypt.Tactics.DeriveTimed.compile_sampleDist_ret) #[γ, μ])
     if c == ``CatCrypt.Core.SPTree.get && targs.size == 3 then
       let (a, l, k) := (targs[0]!, targs[1]!, targs[2]!)
       if r.isAppOfArity ``CatCrypt.Core.SPComp.bind 4 then
@@ -1829,7 +1861,8 @@ partial def assembleStruct (c : Name) (levels : List Level) (levelParams : List 
       g ← g.existsIntro (← mkProjection rhsA fd.name)
   g.refl
   let pf ← instantiateMVars mv
-  if pf.hasSorry || pf.hasExprMVar then fail m!"the erasure theorem `{c ++ `erase_timed}` is not proved"
+  if pf.hasSorry || pf.hasExprMVar then
+    fail m!"the erasure theorem `{c ++ `erase_timed}` is not proved"
   let newBs := bs.filter fun b => !tBs.contains b
   let eBs := xs.filter (fun x => (advs.find? (·.orig == x.fvarId!)).isNone) ++ newBs ++ comps ++
     hs
@@ -2301,8 +2334,8 @@ partial def replaceRecCalls (recF t : Expr) (extra : Array Expr) (e : Expr) : Ex
     else none
 
 /-- The branch of the `if` (or `if h :`) `e` that a local hypothesis decides, with the proof of
-`e = branch` by `ite_eq_left`, `ite_eq_right`, `dite_eq_left` or `dite_eq_right`; `none` when `e` is not an `if` or no
-local proves its condition or the negation of its condition. -/
+`e = branch` by `ite_eq_left`, `ite_eq_right`, `dite_eq_left` or `dite_eq_right`; `none` when
+`e` is not an `if` or no local proves its condition or the negation of its condition. -/
 def decideIf? (e : Expr) : MetaM (Option (Expr × Expr)) := do
   let dep := e.isAppOfArity ``dite 5
   unless dep || e.isAppOfArity ``ite 5 do return none
@@ -2537,7 +2570,8 @@ partial def deriveReduction (c : Name) (advNames : Array Name) (unfold : Bool :=
           return ← recursiveTree c levels info.levelParams xs bs args advs ps recF α tree
         for a in advs do
           if tree.containsFVar a.orig then
-            fail m!"the adversary `{mkFVar a.orig}` occurs outside a call position in{indentExpr tree}"
+            fail m!"the adversary `{mkFVar a.orig}` occurs outside a call position \
+              in{indentExpr tree}"
         for bnd in bs do
           let bt ← inferType bnd
           for a in advs do
