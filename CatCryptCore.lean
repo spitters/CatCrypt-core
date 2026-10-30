@@ -444,6 +444,7 @@ public import CatCryptCore.Crypto.UCFeedbackSquare
 public import CatCryptCore.Crypto.UCGlobalSquare
 public import CatCryptCore.Crypto.UCGlobalSquareTimed
 public import CatCryptCore.Crypto.UCGlobalCompose
+public import CatCryptCore.Crypto.UCGlobalPipe
 public import CatCryptCore.Crypto.UCTransparentAdv
 public import CatCryptCore.Crypto.UCTransparentExample
 public import CatCryptCore.Crypto.UCClockNetworkDet
