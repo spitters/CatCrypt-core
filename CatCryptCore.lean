@@ -460,6 +460,7 @@ public import CatCryptCore.Crypto.UCGlobal
 public import CatCryptCore.Crypto.ChannelCap
 public import CatCryptCore.Crypto.UCChannel
 public import CatCryptCore.Crypto.UCChannelLift
+public import CatCryptCore.Crypto.UCChannelLiftTimed
 public import CatCryptCore.Crypto.UCFeedback
 public import CatCryptCore.Crypto.UCFeedbackTimed
 public import CatCryptCore.Crypto.UCFeedbackLaws
