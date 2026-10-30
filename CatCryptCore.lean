@@ -241,6 +241,7 @@ public import CatCryptCore.Crypto.AKE.KeySchedule
 public import CatCryptCore.Crypto.AKE.ChannelSquare
 public import CatCryptCore.Crypto.AKE.FAKESys
 public import CatCryptCore.Crypto.AKE.X3DHSquare
+public import CatCryptCore.Crypto.AKE.PQXDHSquare
 public import CatCryptCore.Crypto.AKE.ChannelSquareTimed
 public import CatCryptCore.Crypto.Messaging.FSPRG
 public import CatCryptCore.Crypto.Messaging.CKA
