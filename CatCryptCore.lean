@@ -440,6 +440,7 @@ public import CatCryptCore.Crypto.UCChannel
 public import CatCryptCore.Crypto.UCFeedback
 public import CatCryptCore.Crypto.UCFeedbackTimed
 public import CatCryptCore.Crypto.UCFeedbackLaws
+public import CatCryptCore.Crypto.UCFeedbackSquare
 public import CatCryptCore.Crypto.UCGlobalSquare
 public import CatCryptCore.Crypto.UCGlobalSquareTimed
 public import CatCryptCore.Crypto.UCGlobalCompose
