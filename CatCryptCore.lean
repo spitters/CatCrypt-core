@@ -252,6 +252,7 @@ public import CatCryptCore.Crypto.PAKE.CPaceH1Timed
 public import CatCryptCore.Crypto.PAKE.CPaceSquare
 public import CatCryptCore.Crypto.PAKE.CPaceHops
 public import CatCryptCore.Crypto.PAKE.CPaceBad
+public import CatCryptCore.Crypto.PAKE.CPaceBound
 public import CatCryptCore.Crypto.PAKE.CPaceChan
 public import CatCryptCore.Crypto.Signatures.Threshold
 public import CatCryptCore.Crypto.FiatShamirROM.MPCitH
