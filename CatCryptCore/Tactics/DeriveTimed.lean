@@ -317,6 +317,8 @@ one unit for each arithmetic operation (`CatCryptCore/Crypto/ConcreteSecurity.md
   holds costed closures
 * `OracleAdv.Timed.timeBound_simulateHat_inv` — the time of a costed simulation under a state
   invariant indexed by the number of queries: `T + ∑_{j < q} t (i + j)`
+* `OracleAdv.Timed.timeBound_simulateHat` — the time `T + q * t` of a costed simulation whose
+  handler returns lifted states (`y.2 = ι (ε y.2)`) from a lifted state
 * `OracleAdv.Timed.allRet_bind`, `OracleAdv.Timed.allRet_mono` — leaves of a sequencing, and
   monotonicity of `AllRet`
 * `OracleAdv.Timed.allRet_simulateHat_inv` — the final state of a costed simulation satisfies
@@ -576,6 +578,21 @@ theorem allRet_simulateHat_inv {D' R' S Ŝ : Type} (ε : Ŝ → S) (ι : S → �
       refine allRet_bind (himpl i s d hs) fun x hx => ?_
       have h := ih x.1 (hq x.1) (i + 1) x.2 hx
       rwa [show i + 1 + q = i + (q + 1) by omega] at h
+
+/-- **Simulation time of a handler over tables.** If the programs of `impl` from a lifted state
+`ι s` have time at most `t` and return lifted states (`y.2 = ι (ε y.2)`), then an adversary of
+time `T` with at most `q` queries, simulated from a lifted state, has time at most `T + q * t`.
+This is `timeBound_simulateHat_inv` at the invariant that the state is a lift. -/
+theorem timeBound_simulateHat {D' R' S Ŝ : Type} (ε : Ŝ → S) (ι : S → Ŝ)
+    (impl : Ŝ → D → ℕ × Timed D' R' (R × Ŝ)) {t : ℕ}
+    (himpl : ∀ s d, StepTimeBound (impl (ι s) d) t)
+    (hret : ∀ s d, AllRet (fun y => y.2 = ι (ε y.2)) (impl (ι s) d).2)
+    {A : Timed D R α} {T q : ℕ} (hA : A.TimeBound T) (hq : A.erase.IsQueryBound q) (s : S) :
+    StepTimeBound (simulateHat ε ι impl A (ι s)) (T + q * t) := by
+  have h := timeBound_simulateHat_inv ε ι impl (fun _ x => ∃ s, x = ι s) (fun _ => t)
+    (fun _ x d ⟨s, hs⟩ => hs ▸ ⟨himpl s d, allRet_mono (fun y hy => ⟨ε y.2, hy⟩) (hret s d)⟩)
+    hA hq 0 (ι s) ⟨s, rfl⟩
+  simpa only [Finset.sum_const, Finset.card_range, smul_eq_mul] using h
 
 end CatCrypt.Crypto.OracleAdv.Timed
 
@@ -2225,10 +2242,14 @@ partial def propCost (ctx : Ctx) (p : Expr) : TermElabM Expr := do
     return add (← propCost ctx (p.getArg! 0)) (← propCost ctx (p.getArg! 1))
   argsCost ctx p.getAppArgs
 
-/-- The cost companion of the function-valued argument `a`. -/
+/-- The cost companion of the function-valued argument `a`: the companion of a local function,
+the second component of the costed closure that a path into a costed value denotes, and
+otherwise the cost of `a` applied. -/
 partial def companionOf (ctx : Ctx) (a : Expr) : TermElabM Expr := do
   if let .fvar id := a.consumeMData then
     if let some { companion? := some c, .. } := ctx.locals.get? id then return c
+  if let some v ← hatOf? ctx a then
+    if (← whnfR (← inferType v)).isAppOfArity ``Prod 2 then return ← projE false v
   let t ← whnfR (← inferType a)
   forallTelescope t fun ys _ => do
     mkLambdaFVars ys (← costOf ctx (mkAppN a ys).headBeta)

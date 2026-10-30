@@ -65,6 +65,8 @@ maxima of comparable numerals, with the monotonicity of the time bound
 ## Main definitions
 
 * `derive_simulator S` — define `S.timed`, prove `S.erase_timed` and `S.timeBound_timed`
+* `derive_hybrid_time R` — prove `R.timeBound_timed` for the costed form `R.timed` of a hybrid
+  machine (`Hybrid.Timed` or `MultiHybrid.Timed`) from the time theorems of its steps
 -/
 
 public section
@@ -311,33 +313,44 @@ partial def timeHybrid (bounds hyps : IO.Ref (Array (MVarId × BinderInfo))) (A 
     let p ← timeHybrid bounds hyps args[12]!
     let p' ← timeHybrid bounds hyps args[13]!
     return (← applyConst ``MultiHybrid.Timed.tensor_timeBound #[args[10]!, args[11]!, p, p']).1
-  let f := f.getPrefix
-  let targs := A.getAppArgs
-  let mut pfs := #[]
-  let mut bs := #[]
-  for st in steps do
-    let thm ← mkConstWithFreshMVarLevels (f ++ st ++ `tree ++ `timeBound_timed)
-    let (ms, _, concl) ← forallMetaTelescopeReducing (← inferType thm)
-    for i in [0:targs.size] do
-      unless ← isDefEq ms[i]! targs[i]! do
-        throwError "derive_simulator: `{thm}` does not take the arguments of `{A}`"
-    let sM := ms[targs.size]!
-    let aM := ms[targs.size + 1]!
-    recordOpen bounds hyps .implicit (ms.extract (targs.size + 2) ms.size)
-    let B ← instantiateMVars concl.appArg!
-    if B.findMVar? (fun m => m == sM.mvarId! || m == aM.mvarId!) |>.isSome then
-      throwError "derive_simulator: the bound of `{thm}` depends on the input of the step"
-    let sTy ← instantiateMVars (← inferType sM)
-    let aTy ← instantiateMVars (← inferType aM)
-    let pf ← withLocalDeclD `s sTy fun s =>
-      withLocalDeclD `a aTy fun a => do
-        sM.mvarId!.assign s
-        aM.mvarId!.assign a
-        mkLambdaFVars #[s, a] (← instantiateMVars (mkAppN thm ms))
-    pfs := pfs.push pf
-    bs := bs.push B
-  let pf ← mkAppM ``And.intro #[pfs[0]!, ← mkAppM ``And.intro #[pfs[1]!, pfs[2]!]]
-  mkExpectedTypeHint pf (← mkAppM ``MultiHybrid.Timed.TimeBound #[A, bs[0]!, bs[1]!, bs[2]!])
+  stepsTimeBound bounds hyps ``MultiHybrid.Timed.TimeBound f.getPrefix steps A
+where
+  /-- The time bound `tb A B₁ ⋯ Bₙ` of the costed machine `A`, an application of `f.timed`,
+  from the step theorems `f.st.tree.timeBound_timed` of the steps `sts`, each a bound
+  `∀ s a, … ≤ Bᵢ` of a step of two inputs; their binders after the arguments of `A` and the
+  inputs are recorded in `bounds` and `hyps`. -/
+  stepsTimeBound (bounds hyps : IO.Ref (Array (MVarId × BinderInfo))) (tb f : Name)
+      (sts : Array Name) (A : Expr) : MetaM Expr := do
+    let targs := A.getAppArgs
+    let mut pfs := #[]
+    let mut bs := #[]
+    for st in sts do
+      let thm ← mkConstWithFreshMVarLevels (f ++ st ++ `tree ++ `timeBound_timed)
+      let (ms, _, concl) ← forallMetaTelescopeReducing (← inferType thm)
+      unless targs.size + 2 ≤ ms.size do
+        throwError "derive_simulator: `{thm}` does not take the arguments of `{A}` and the \
+          inputs of the step"
+      for i in [0:targs.size] do
+        unless ← isDefEq ms[i]! targs[i]! do
+          throwError "derive_simulator: `{thm}` does not take the arguments of `{A}`"
+      let sM := ms[targs.size]!
+      let aM := ms[targs.size + 1]!
+      recordOpen bounds hyps .implicit (ms.extract (targs.size + 2) ms.size)
+      let B ← instantiateMVars concl.appArg!
+      if B.findMVar? (fun m => m == sM.mvarId! || m == aM.mvarId!) |>.isSome then
+        throwError "derive_simulator: the bound of `{thm}` depends on the input of the step"
+      let sTy ← instantiateMVars (← inferType sM)
+      let aTy ← instantiateMVars (← inferType aM)
+      let pf ← withLocalDeclD `s sTy fun s =>
+        withLocalDeclD `a aTy fun a => do
+          sM.mvarId!.assign s
+          aM.mvarId!.assign a
+          mkLambdaFVars #[s, a] (← instantiateMVars (mkAppN thm ms))
+      pfs := pfs.push pf
+      bs := bs.push B
+    let some last := pfs.back? | throwError "derive_simulator: no steps"
+    let pf ← pfs.pop.foldrM (fun p acc => mkAppM ``And.intro #[p, acc]) last
+    mkExpectedTypeHint pf (← mkAppM tb (#[A] ++ bs))
 
 /-- The time-bound proof of the costed simulator `T` of the node. -/
 partial def timeNode (bounds hyps : IO.Ref (Array (MVarId × BinderInfo))) (T : Expr) :
@@ -439,7 +452,45 @@ def hybridHeads (c : Name) : TermElabM (Array Name) := do
         unless heads.contains f do heads := heads.push f
     return heads
 
+/-- Prove `R.timeBound_timed : ∀ xs, (R.timed xs).TimeBound B₁ ⋯ Bₙ` for a costed hybrid machine
+`R.timed`, a `Hybrid.Timed` (steps `pre`, `post`) or a `MultiHybrid.Timed` (steps `start`,
+`resume`, `finish`), from the step theorems `R.st.tree.timeBound_timed`; the binders of the step
+theorems left open become implicit binders and hypotheses of the theorem. -/
+def deriveHybridTime (R : Name) : TermElabM Unit := do
+  let tName := R ++ `timed
+  let info ← getConstInfo tName
+  let lvls := info.levelParams.map mkLevelParam
+  forallTelescope info.type fun xs ty => do
+    let ty ← whnfR ty
+    let (tb, sts) ←
+      if ty.isAppOf ``Hybrid.Timed then pure (``Hybrid.Timed.TimeBound, #[`pre, `post])
+      else if ty.isAppOf ``MultiHybrid.Timed then pure (``MultiHybrid.Timed.TimeBound, steps)
+      else throwError "derive_hybrid_time: `{tName}` is not a `Hybrid.Timed` or a \
+        `MultiHybrid.Timed`{indentExpr ty}"
+    let A := mkAppN (mkConst tName lvls) xs
+    let bounds ← IO.mkRef #[]
+    let hyps ← IO.mkRef #[]
+    let pf ← timeHybrid.stepsTimeBound bounds hyps tb R sts A
+    withMVarsAsFVars ((← bounds.get) ++ (← hyps.get)) 0 #[] fun tFvs => do
+      let pf ← instantiateMVars pf
+      if pf.hasExprMVar then throwError "derive_hybrid_time: the time proof is incomplete"
+      let tBs := xs ++ tFvs
+      addDecl (Declaration.thmDecl
+        { name := R ++ `timeBound_timed, levelParams := info.levelParams,
+          type := ← mkForallFVars tBs (← inferType pf), value := ← mkLambdaFVars tBs pf })
+
 end
+
+/-- `derive_hybrid_time R` proves the time theorem `R.timeBound_timed` of the costed form
+`R.timed` of a hybrid machine (`Hybrid.Timed` or `MultiHybrid.Timed`) from the time theorems
+`R.st.tree.timeBound_timed` of its steps. -/
+syntax (name := deriveHybridTimeCmd) "derive_hybrid_time " ident : command
+
+/-- Elaborate `derive_hybrid_time R`. -/
+@[command_elab deriveHybridTimeCmd]
+meta def elabDeriveHybridTime : CommandElab := fun stx => do
+  let R ← liftTermElabM <| realizeGlobalConstNoOverloadWithInfo stx[1]
+  liftTermElabM <| deriveHybridTime R
 
 /-- `derive_simulator S` defines the costed form `S.timed` of a bundled simulator `S` built
 from `Simulator.ofMultiHybrid`, `Simulator.comp` and `Simulator.tensor`, and proves its erasure

@@ -136,7 +136,9 @@ The tactic `allret_bound` proves leaf invariants `AllRet P t` of costed oracle a
 the head of `t` is unfolded, a node is read by the definition of `AllRet`, an `if`, `match` or
 recursor on a local variable is split, a bind `(A.bind f).2` takes a leaf invariant of `A` from
 a source (`allRet_bind`), a tree with a source is closed through `allRet_mono`, and each leaf is
-closed by `omega` with the instances of the hypotheses `∀ x, f x ≤ b` at its subterms. The
+closed by an assumption, by reflexivity of an equation (a returned state that is the lift of its
+erasure, the premise of `OracleAdv.Timed.timeBound_simulateHat`), or by `omega` with the
+instances of the hypotheses `∀ x, f x ≤ b` at its subterms. The
 sources are local hypotheses, the theorem `N.allRet_le` of a costed definition `N.timed`, and
 the theorem `allRet_f` of a combinator `f` (`allRet_mapQueryAnswer`), each resolved by name in
 the current namespaces.
@@ -2471,6 +2473,9 @@ partial def arLeaf (g : MVarId) (fuel : Nat) : TacticM Unit := do
       g.assumption
       return
     catch _ => s.restore
+    if tgt.isAppOfArity ``Eq 3 && !(tgt.getArg! 0).isConstOf ``Nat then
+      if (← capped g.refl).isSome then return
+      s.restore
     let g1 ← addBoundedAtoms g
     try
       setGoals [g1]
