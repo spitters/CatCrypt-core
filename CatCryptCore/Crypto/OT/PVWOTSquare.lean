@@ -11,6 +11,7 @@ public import CatCryptCore.Examples.CyclicGroupDDH
 public import CatCryptCore.Crypto.UCSimulator
 public import CatCryptCore.Crypto.UCChannel
 public import CatCryptCore.Crypto.UCOracleGame
+public import CatCryptCore.Crypto.OT.FOTSched
 
 /-!
 # The Peikert–Vaikuntanathan–Waters dual-mode OT as squares against `F_OT`
@@ -24,13 +25,13 @@ decoded by `decode : G → M`, against a corrupt receiver and against a corrupt 
 `(g₁, h₁) = (g₀ ^ y, h₀ ^ y)`. The CRS of a Diffie–Hellman tuple is in decryption mode
 (`decCRS_td`), that of a random tuple in messy mode outside `b = 0` and `c = a b` (`randCRS_td`).
 
-**Ideal functionality.** `F_OT` (`fRecvSys`, `fSendSys`) for `m` transfers. Its state holds the
-receiver's first choices, the sender's first message pairs and whether the receiver has
-obtained its output. A receiver activation keeps the first choices and, once the message pairs
-are given, outputs the chosen messages at the first such activation. A sender activation keeps
-the first message pairs, if it carries any, and tells the sender whether the receiver has
-chosen. `FOTR` places the sender on the honest port and the receiver on the adversary port,
-`FOTS` the receiver on the honest port and the sender on the adversary port.
+**Ideal functionality.** `F_OT` with adversarially scheduled delivery (`FOTSched.lean`) for `m`
+transfers: the sender's input is the vector of `m` message pairs, the receiver's choice the
+vector `Fin m → Bool`, and the receiver's output `otChoose x c`. The receiver obtains its output,
+and the sender the completion notice, only after the adversary delivers them. `FOTSchedR
+otChoose` places the sender on the honest port and the receiver beside the scheduler on the
+adversary port, `FOTSchedS otChoose` the receiver on the honest port and the sender beside the
+scheduler on the adversary port.
 
 **Real protocol.** The receiver with choice `c` and randomness `r` sends the key
 `(g_c ^ r, h_c ^ r)` (`recvMsg`). The sender answers a key `(g, h)` with
@@ -38,17 +39,21 @@ chosen. `FOTR` places the sender on the honest port and the receiver on the adve
 receiver decrypts the chosen branch with `r` (`recvOut`; correctness `recvOut_senderMsg`). The
 sender answers only keys with `g ≠ 1`. Against a corrupt receiver (`realR`, port-typed), the
 first activation of the receiver's port with a stored key after the sender's input outputs the
-sender's message. Against a corrupt sender (`realS`, port-typed), the sender obtains the
-receiver's message by an activation `inl ()` once the receiver has chosen, and its first message
-`inr ct` after that is decrypted at the next receiver activation.
+sender's message, and every sender activation tells the sender whether it has answered.
+Against a corrupt sender (`realS`, port-typed), the sender obtains the receiver's message by an
+activation `inl ()` once the receiver has chosen, and its first message `inr ct` after that is
+decrypted at the next receiver activation.
 
-**Simulators.** Both forward the honest port and read no honest value. Against a corrupt
+**Simulators.** Both forward the honest port, read no honest value, and drive the scheduling
+port so that `F_OT` delivers when the real protocol's message arrives. Against a corrupt
 receiver in messy mode, `pvwSimRecv` extracts each choice as the branch `b` with `h = g ^ x_b`
-(`extract`), sends the choices to `F_OT`, and encrypts the chosen messages on the extracted
+(`extract`) from the first well-formed key, sends the choices to `F_OT`, delivers the receiver's
+output and the sender's completion notice, and encrypts the chosen messages on the extracted
 branches and the identity on the others. Against a corrupt sender in decryption mode,
-`pvwSimSend` sends keys of branch `0` with its own randomness `ρ`, and decrypts both branches of
-the sender's message, branch `0` with `ρ` and branch `1` with `ρ / y` (`extractS`), to send both
-messages of each pair to `F_OT`.
+`pvwSimSend` polls `F_OT` at a delivery request and, once the receiver has chosen, sends keys of
+branch `0` with its own randomness `ρ`; it decrypts both branches of the first sender's message
+after delivery, branch `0` with `ρ` and branch `1` with `ρ / y` (`extractS`), sends both
+messages of each pair to `F_OT` and delivers the receiver's output.
 
 **Proofs.** Against a corrupt receiver the encryption on the branch other than the extracted
 choice is a shift of the encryption of the identity (`elEnc_messy_shift`), so the real and
@@ -62,10 +67,10 @@ reduction `ddhEnvRed`.
 
 ## Main results
 
-* `pvw_realizesSim_corruptReceiver` — in messy mode, `realR crs code` realizes `FOTR` behind
-  `pvwSimRecv td code` at distance `0`.
-* `pvw_realizesSim_corruptSender` — in decryption mode, `realS crs decode` realizes `FOTS` behind
-  `pvwSimSend td decode` at distance `0`.
+* `pvw_realizesSim_corruptReceiver` — in messy mode, `realR crs code` realizes
+  `FOTSchedR otChoose` behind `pvwSimRecv td code` at distance `0`.
+* `pvw_realizesSim_corruptSender` — in decryption mode, `realS crs decode` realizes
+  `FOTSchedS otChoose` behind `pvwSimSend td decode` at distance `0`.
 * `crs_ddh_hop` — a system family with the CRS of a Diffie–Hellman tuple realizes it with the
   CRS of a random tuple, with bound the DDH advantage of `ddhEnvRed S t₀ Z`.
 -/
@@ -313,46 +318,6 @@ abbrev VKey := {k : Key gp m // KeyOK k}
 noncomputable def storeKey (ko : Option (VKey gp m)) (k : Key gp m) : Option (VKey gp m) :=
   open Classical in ko.or (if h : KeyOK k then some ⟨k, h⟩ else none)
 
-/-! ## The ideal functionality `F_OT` -/
-
-/-- The state of `F_OT` for `m` transfers: the receiver's first choices, the sender's first
-message pairs, and whether the receiver has obtained its output. -/
-abbrev FState (m : ℕ) (M : Type) := Option (Fin m → Bool) × Option (Fin m → M × M) × Bool
-
-/-- A receiver activation of `F_OT` with choices `r`: the first choices are kept; once the message
-pairs `x` are given, the first such activation outputs the chosen messages. -/
-def fRecv (t : FState m M) (r : Fin m → Bool) : FState m M × Option (Fin m → M) :=
-  match t with
-  | (co, some x, false) => ((some (co.getD r), some x, true), some (otChoose x (co.getD r)))
-  | (co, xo, d) => ((some (co.getD r), xo, d), none)
-
-/-- A sender activation of `F_OT` with optional message pairs: the first message pairs are kept,
-and the sender learns whether the receiver has given its choices. -/
-def fSend (t : FState m M) (xo : Option (Fin m → M × M)) : FState m M × Bool :=
-  ((t.1, t.2.1.or xo, t.2.2), t.1.isSome)
-
-/-- The receiver port of `F_OT`. -/
-noncomputable def fRecvSys : Sys (FState m M) (Fin m → Bool) (Option (Fin m → M)) where
-  init := (none, none, false)
-  step t r := SPComp.pure (fRecv t r)
-
-/-- The sender port of `F_OT`. -/
-noncomputable def fSendSys : Sys (FState m M) (Option (Fin m → M × M)) Bool where
-  init := (none, none, false)
-  step t xo := SPComp.pure (fSend t xo)
-
-/-- **`F_OT` against a corrupt receiver**: the sender on the honest port, the receiver on the
-adversary port. -/
-noncomputable def FOTR :
-    Sys (FState m M) (Option (Fin m → M × M) ⊕ (Fin m → Bool)) (Bool ⊕ Option (Fin m → M)) :=
-  Sys.ofPorts fSendSys fRecvSys
-
-/-- **`F_OT` against a corrupt sender**: the receiver on the honest port, the sender on the
-adversary port. -/
-noncomputable def FOTS :
-    Sys (FState m M) ((Fin m → Bool) ⊕ Option (Fin m → M × M)) (Option (Fin m → M) ⊕ Bool) :=
-  Sys.ofPorts fRecvSys fSendSys
-
 /-! ## Against a corrupt receiver, in messy mode -/
 
 section CorruptReceiver
@@ -363,10 +328,10 @@ message, the sender's first message pairs, and whether the sender has answered. 
 abbrev RState := Option (VKey gp m) × Option (Fin m → M × M) × Bool
 
 /-- The honest sender's port: the first message pairs are kept, and the sender learns whether it
-holds a well-formed receiver message. -/
-noncomputable def realRSend : Sys (RState gp m M) (Option (Fin m → M × M)) Bool where
+has answered the receiver. -/
+noncomputable def realRSend : Sys (RState gp m M) (Fin m → M × M) Bool where
   init := (none, none, false)
-  step t xo := SPComp.pure ((t.1, t.2.1.or xo, t.2.2), t.1.isSome)
+  step t x := SPComp.pure ((t.1, t.2.1.or (some x), t.2.2), t.2.2)
 
 /-- The corrupt receiver's port: a receiver message is stored if it is the first well-formed
 one; once the sender holds a receiver message and its message pairs, the first such activation
@@ -383,7 +348,7 @@ noncomputable def realRRecv (crs : CRS gp) (code : M → gp.G) :
 /-- **The dual-mode OT against a corrupt receiver**, with the CRS `crs`: the sender on the honest
 port, the receiver on the adversary port. -/
 noncomputable def realR (crs : CRS gp) (code : M → gp.G) :
-    Sys (RState gp m M) (Option (Fin m → M × M) ⊕ Key gp m) (Bool ⊕ Option (Cts gp m)) :=
+    Sys (RState gp m M) ((Fin m → M × M) ⊕ Key gp m) (Bool ⊕ Option (Cts gp m)) :=
   Sys.ofPorts realRSend (realRRecv crs code)
 
 /-- `realR` answers each event on the port of the event. -/
@@ -452,18 +417,23 @@ theorem senderMsg_sample {β : Type} (td : MessyTD crs) (code : M → gp.G) (v :
   exact SPComp.sample_bind_equiv (Equiv.addRight δ) fun ρ => SPComp.pure
     (G (simCts crs code (extract td v.1) v.1 (otChoose x (extract td v.1)) ρ))
 
+variable (gp m) in
+/-- The state of the simulator against a corrupt receiver: the stored receiver message and the
+phase of the current activation. -/
+abbrev SimRSt := Option (VKey gp m) × ℕ
+
 /-- The adversary-port answer of the simulator against a corrupt receiver: from the stored
-receiver message and the chosen messages from `F_OT`, the simulated sender's message. -/
+receiver message and the receiver's output from `F_OT`, the simulated sender's message. -/
 noncomputable def simRFinish (td : MessyTD crs) (code : M → gp.G) :
-    Option (VKey gp m) → Option (Fin m → M) → SPComp (Option (VKey gp m) × Option (Cts gp m))
-  | some v, some z => SPComp.bind (SPComp.sample (SRand gp m)) fun ρ =>
-      SPComp.pure (some v, some (simCts crs code (extract td v.1) v.1 z ρ))
-  | s, _ => SPComp.pure (s, none)
+    Option (VKey gp m) → Option (Fin m → M) ⊕ SchedOut → SPComp (SimRSt gp m × Option (Cts gp m))
+  | some v, .inl (some z) => SPComp.bind (SPComp.sample (SRand gp m)) fun ρ =>
+      SPComp.pure ((some v, 0), some (simCts crs code (extract td v.1) v.1 z ρ))
+  | s, _ => SPComp.pure ((s, 0), none)
 
 /-- `simRFinish` never fails. -/
 theorem simRFinish_noFail (td : MessyTD crs) (code : M → gp.G) (s : Option (VKey gp m))
-    (o : Option (Fin m → M)) : SPComp.NoFail (simRFinish td code s o) := by
-  rcases s with _ | v <;> rcases o with _ | z <;> simp only [simRFinish] <;>
+    (o : Option (Fin m → M) ⊕ SchedOut) : SPComp.NoFail (simRFinish td code s o) := by
+  rcases s with _ | v <;> rcases o with (_ | z) | o <;> simp only [simRFinish] <;>
     first
     | exact SPComp.pure_noFail _
     | exact Assumptions.SPComp.bind_noFail Assumptions.SPComp.sample_noFail
@@ -473,41 +443,53 @@ theorem simRFinish_noFail (td : MessyTD crs) (code : M → gp.G) (s : Option (VK
 receiver message is stored and its extracted choices are sent to `F_OT`; without a stored
 message the answer is empty. -/
 noncomputable def simRStart (td : MessyTD crs) (s : Option (VKey gp m)) (k : Key gp m) :
-    Option (VKey gp m) × ((Fin m → Bool) ⊕ Option (Cts gp m)) :=
+    SimRSt gp m × (((Fin m → Bool) ⊕ SchedEv) ⊕ Option (Cts gp m)) :=
   match storeKey s k with
-  | some v => (some v, .inl (extract td v.1))
-  | none => (none, .inr none)
+  | some v => ((some v, 1), .inl (.inl (extract td v.1)))
+  | none => ((none, 0), .inr none)
 
-/-- The simulator against a corrupt receiver on the adversary port. -/
+/-- The next call of the simulator against a corrupt receiver after the call of phase `n`: the
+delivery of the receiver's output, the delivery of the completion notice to the sender, and the
+receiver's activation that obtains its output. -/
+noncomputable def simRNext (td : MessyTD crs) :
+    SimRSt gp m → SimRSt gp m × (((Fin m → Bool) ⊕ SchedEv) ⊕ Option (Cts gp m))
+  | (some v, 1) => ((some v, 2), .inl (.inr .deliverRecv))
+  | (some v, 2) => ((some v, 3), .inl (.inr .deliverSend))
+  | (some v, _) => ((some v, 0), .inl (.inl (extract td v.1)))
+  | (none, _) => ((none, 0), .inr none)
+
+/-- The simulator against a corrupt receiver on the adversary port: four calls of `F_OT` per
+activation with a stored receiver message (the choices, the two deliveries, the receiver's
+output). -/
 noncomputable def simRAdv (td : MessyTD crs) (code : M → gp.G) :
-    MultiHybrid (Option (VKey gp m)) (Key gp m) (Option (Cts gp m)) (Fin m → Bool)
-      (Option (Fin m → M)) where
-  init := none
-  fuel := 0
-  start s k := SPComp.pure (simRStart td s k)
-  resume s z := SPComp.map (fun p => (p.1, .inr p.2)) (simRFinish td code s z)
-  finish := simRFinish td code
+    MultiHybrid (SimRSt gp m) (Key gp m) (Option (Cts gp m)) ((Fin m → Bool) ⊕ SchedEv)
+      (Option (Fin m → M) ⊕ SchedOut) where
+  init := (none, 0)
+  fuel := 3
+  start s k := SPComp.pure (simRStart td s.1 k)
+  resume s _ := SPComp.pure (simRNext td s)
+  finish s o := simRFinish td code s.1 o
   start_noFail _ _ := SPComp.pure_noFail _
-  resume_noFail _ _ := Assumptions.SPComp.bind_noFail (simRFinish_noFail _ _ _ _)
-    fun _ => SPComp.pure_noFail _
-  finish_noFail := simRFinish_noFail td code
+  resume_noFail _ _ := SPComp.pure_noFail _
+  finish_noFail s o := simRFinish_noFail td code s.1 o
 
 /-- The simulator against a corrupt receiver as a multi-call simulator: forwarding on the
-sender's port, `simRAdv` on the receiver's port. -/
+sender's port, `simRAdv` on the receiver's and the scheduler's port. -/
 noncomputable def simProtR (td : MessyTD crs) (code : M → gp.G) :
-    MultiHybrid (Unit × Option (VKey gp m)) (Option (Fin m → M × M) ⊕ Key gp m)
-      (Bool ⊕ Option (Cts gp m)) (Option (Fin m → M × M) ⊕ (Fin m → Bool))
-      (Bool ⊕ Option (Fin m → M)) :=
-  (MultiHybrid.idSim (Option (Fin m → M × M)) Bool).tensor (simRAdv td code)
+    MultiHybrid (Unit × SimRSt gp m) ((Fin m → M × M) ⊕ Key gp m)
+      (Bool ⊕ Option (Cts gp m)) ((Fin m → M × M) ⊕ ((Fin m → Bool) ⊕ SchedEv))
+      (Bool ⊕ (Option (Fin m → M) ⊕ SchedOut)) :=
+  (MultiHybrid.idSim (Fin m → M × M) Bool).tensor (simRAdv td code)
 
 /-- **The simulator against a corrupt receiver.** It forwards the honest sender's events and
 outputs; it extracts the choices from the first well-formed receiver message with the messy
-trapdoor, sends them to `F_OT`, and answers with encryptions of the chosen messages from `F_OT`
-on the extracted branches and of the identity on the other branches. It reads no honest value.
-Opaque for `hidView.sum eqView`. -/
+trapdoor, sends them to `F_OT`, delivers the receiver's output and the sender's completion
+notice, and answers with encryptions of the chosen messages from `F_OT` on the extracted
+branches and of the identity on the other branches. It reads no honest value. Opaque for
+`hidView.sum eqView`. -/
 noncomputable def pvwSimRecv (td : MessyTD crs) (code : M → gp.G) :
-    Simulator (Option (Fin m → M × M) ⊕ Key gp m) (Bool ⊕ Option (Cts gp m))
-      (Option (Fin m → M × M) ⊕ (Fin m → Bool)) (Bool ⊕ Option (Fin m → M))
+    Simulator ((Fin m → M × M) ⊕ Key gp m) (Bool ⊕ Option (Cts gp m))
+      ((Fin m → M × M) ⊕ ((Fin m → Bool) ⊕ SchedEv)) (Bool ⊕ (Option (Fin m → M) ⊕ SchedOut))
       (IKNPSquare.hidView.sum PubView.eqView) (IKNPSquare.hidView.sum PubView.eqView) :=
   Simulator.ofMultiHybrid (simProtR td code)
     (MultiHybrid.Opaque.tensor (MultiHybrid.idSim_opaque _) (MultiHybrid.opaque_eqView _))
@@ -520,22 +502,28 @@ theorem storeKey_some (ko : Option (VKey gp m)) (k : Key gp m) (v : VKey gp m)
   exact (Option.some_injective _ hv).symm
 
 /-- **The dual-mode OT against a corrupt receiver in messy mode as a square.** Ideal
-functionality: `FOTR`, `F_OT` for `m` transfers with the sender on the honest port and the
-receiver on the adversary port. Real protocol: `realR crs code`, whose sender answers the first
-well-formed receiver message with the encryptions of both messages, the first on branch `0` and
-the second on branch `1`. CRS: messy mode with trapdoor `td`. Simulator: `pvwSimRecv td code`,
-which extracts the choices with the messy trapdoor. Distance `0`: on the branch other than the
-extracted choice, the encryption is independent of the message (`senderMsg_sample`). Corrupt
-receiver, one transfer of `m` message pairs. -/
+functionality: `FOTSchedR otChoose`, `F_OT` with scheduled delivery for `m` transfers, with the
+sender on the honest port and the receiver beside the scheduler on the adversary port. Real
+protocol: `realR crs code`, whose sender answers the first well-formed receiver message with the
+encryptions of both messages, the first on branch `0` and the second on branch `1`, and tells
+the honest sender whether it has answered. CRS: messy mode with trapdoor `td`. Simulator:
+`pvwSimRecv td code`, which extracts the choices with the messy trapdoor and delivers both
+outputs of `F_OT` at the activation at which the real sender answers. Distance `0`: on the branch
+other than the extracted choice, the encryption is independent of the message
+(`senderMsg_sample`). Corrupt receiver, one transfer of `m` message pairs. -/
 theorem pvw_realizesSim_corruptReceiver (td : MessyTD crs) (code : M → gp.G) :
-    RealizesSim (realR crs code) FOTR (pvwSimRecv (m := m) td code) fun _ _ => 0 := by
-  refine realizes_zero_of_stepMap _ ((simProtR td code).withSub FOTR)
-    (fun t => (((), t.1), (t.1.map (fun v => extract td v.1), t.2.1, t.2.2))) rfl ?_
-  rintro ⟨ko, xo, d⟩ (xo' | k)
-  · rw [simProtR, MultiHybrid.tensor_withSub_step_inl _ _ FOTR fSendSys (fun _ _ => rfl),
-      MultiHybrid.idSim_stepFuel]
-    simp [realR, realRSend, fSendSys, fSend, SPComp.map, SPComp.pure_bind]
-  · rw [simProtR, MultiHybrid.tensor_withSub_step_inr _ _ FOTR fRecvSys (fun _ _ => rfl)]
+    RealizesSim (realR crs code) (FOTSchedR otChoose) (pvwSimRecv (m := m) td code)
+      fun _ _ => 0 := by
+  refine realizes_zero_of_stepMap _ ((simProtR td code).withSub (FOTSchedR otChoose))
+    (fun t => (((), (t.1, 0)),
+      (⟨t.2.1, t.1.map (fun v => extract td v.1), none, t.2.2, t.2.2⟩ :
+        SchedSt (Fin m → M × M) (Fin m → Bool) (Fin m → M)))) rfl ?_
+  rintro ⟨ko, xo, d⟩ (x | k)
+  · rw [simProtR, MultiHybrid.tensor_withSub_step_inl _ _ (FOTSchedR otChoose) FOTSched.sendSys
+      (fun _ _ => rfl), MultiHybrid.idSim_stepFuel]
+    simp [realR, realRSend, FOTSched.sendSys, FOTSched.sendStep, SPComp.map, SPComp.pure_bind]
+  · rw [simProtR, MultiHybrid.tensor_withSub_step_inr _ _ (FOTSchedR otChoose)
+      (Sys.ofPorts FOTSched.recvSys (FOTSched.schedSys otChoose)) (fun _ _ => rfl)]
     have hko : ∀ v₀ : VKey gp m, storeKey (some v₀) k = some v₀ := fun _ => rfl
     rcases ko with _ | v₀
     · by_cases hk : KeyOK k
@@ -543,29 +531,38 @@ theorem pvw_realizesSim_corruptReceiver (td : MessyTD crs) (code : M → gp.G) :
         rcases xo with _ | x <;> rcases d with _ | _
         case some.false =>
           simp only [SPComp.map, realR, realRRecv, Sys.ofPorts_step_inr, hs, SPComp.bind_assoc,
-            SPComp.pure_bind, Option.map_subtype, Prod.mk.eta, Option.unattach_some,
-            Option.map_some, MultiHybrid.stepFuel, simRAdv, simRStart, simRFinish, fRecvSys, fRecv,
-            MultiHybrid.idSim, max_self, Option.map_none, MultiHybrid.drive, Option.getD_none]
+            SPComp.pure_bind, Option.map_subtype, Option.unattach_some, Option.map_some,
+            MultiHybrid.stepFuel, simRAdv, simRStart, simRNext, simRFinish, FOTSched.recvSys,
+            FOTSched.recvStep, Option.or_some, FOTSched.schedSys, FOTSched.schedStep,
+            MultiHybrid.idSim, zero_le, sup_of_le_right, Option.map_none, MultiHybrid.drive,
+            Sys.ofPorts_step_inl, Option.getD_none, Option.getD_some]
           exact senderMsg_sample td code ⟨k, hk⟩ x fun w =>
-            ((((), some (⟨k, hk⟩ : VKey gp m)), some (extract td k), some x, true),
+            ((((), some (⟨k, hk⟩ : VKey gp m), 0),
+              (⟨some x, some (extract td k), none, true, true⟩ :
+                SchedSt (Fin m → M × M) (Fin m → Bool) (Fin m → M))),
               (Sum.inr (some w) : Bool ⊕ Option (Cts gp m)))
-        all_goals simp [realR, realRRecv, hs, simRAdv, simRStart, simRFinish,
-          MultiHybrid.stepFuel, MultiHybrid.idSim, MultiHybrid.drive, fRecvSys, fRecv, SPComp.map,
-          SPComp.pure_bind]
+        all_goals simp [realR, realRRecv, hs, simRAdv, simRStart, simRNext, simRFinish,
+          MultiHybrid.stepFuel, MultiHybrid.idSim, MultiHybrid.drive, FOTSched.recvSys,
+          FOTSched.recvStep, FOTSched.schedSys, FOTSched.schedStep, SPComp.map, SPComp.pure_bind]
       · have hs : storeKey (m := m) none k = none := by simp [storeKey, hk]
-        simp [realR, realRRecv, hs, simRAdv, simRStart, MultiHybrid.stepFuel,
+        simp [realR, realRRecv, hs, simRAdv, simRStart, MultiHybrid.stepFuel, MultiHybrid.idSim,
           MultiHybrid.drive, SPComp.map, SPComp.pure_bind]
     · rcases xo with _ | x <;> rcases d with _ | _
       case some.false =>
         simp only [SPComp.map, realR, realRRecv, Sys.ofPorts_step_inr, hko, SPComp.bind_assoc,
-          SPComp.pure_bind, Option.map_subtype, Prod.mk.eta, Option.unattach_some,
-          Option.map_some, MultiHybrid.stepFuel, simRAdv, simRStart, simRFinish, fRecvSys, fRecv,
-          MultiHybrid.idSim, max_self, MultiHybrid.drive, Option.getD_some]
+          SPComp.pure_bind, Option.map_subtype, Option.unattach_some, Option.map_some,
+          MultiHybrid.stepFuel, simRAdv, simRStart, simRNext, simRFinish, FOTSched.recvSys,
+          FOTSched.recvStep, Option.or_some, FOTSched.schedSys, FOTSched.schedStep,
+          MultiHybrid.idSim, zero_le, sup_of_le_right, MultiHybrid.drive,
+          Sys.ofPorts_step_inl, Option.getD_some]
         exact senderMsg_sample td code v₀ x fun w =>
-          ((((), some v₀), some (extract td v₀.1), some x, true),
+          ((((), some v₀, 0),
+            (⟨some x, some (extract td v₀.1), none, true, true⟩ :
+              SchedSt (Fin m → M × M) (Fin m → Bool) (Fin m → M))),
             (Sum.inr (some w) : Bool ⊕ Option (Cts gp m)))
-      all_goals simp [realR, realRRecv, hko, simRAdv, simRStart, simRFinish, MultiHybrid.stepFuel,
-        MultiHybrid.idSim, MultiHybrid.drive, fRecvSys, fRecv, SPComp.map, SPComp.pure_bind]
+      all_goals simp [realR, realRRecv, hko, simRAdv, simRStart, simRNext, simRFinish,
+        MultiHybrid.stepFuel, MultiHybrid.idSim, MultiHybrid.drive, FOTSched.recvSys,
+        FOTSched.recvStep, FOTSched.schedSys, FOTSched.schedStep, SPComp.map, SPComp.pure_bind]
 
 end CorruptReceiver
 
@@ -771,94 +768,121 @@ theorem otChoose_extractS (td : DecTD crs) (decode : gp.G → M) (c : Fin m → 
   cases hc : c j <;> simp [otChoose, extractS, recvOut, rhoEquiv, hc, mulEquiv, hy]
 
 variable (gp m) in
-/-- The state of the simulator against a corrupt sender: its randomness once drawn, whether it
-has sent message pairs to `F_OT`, and whether the pending activation is a delivery. -/
-abbrev SimS := Option (Fin m → gp.Scalar) × Bool × Bool
+/-- The state of the simulator against a corrupt sender: the vector of its scalars once drawn,
+and whether it has sent message pairs to `F_OT`. -/
+abbrev SimS := Option (Vector gp.Scalar m) × Bool
 
-/-- The start of an activation of the simulator against a corrupt sender: a delivery asks
-`F_OT` whether the receiver has chosen; the first sender's message after delivery is decrypted
-with the decryption trapdoor and the message pairs are sent to `F_OT`. -/
+/-- The start of an activation of the simulator against a corrupt sender: a delivery request
+polls `F_OT`; the first sender's message after delivery is decrypted with the decryption
+trapdoor and the message pairs are sent to `F_OT`; any other sender's message is answered with
+nothing. -/
 def simSStart (td : DecTD crs) (decode : gp.G → M) (s : SimS gp m) :
-    Unit ⊕ Cts gp m → SimS gp m × (Option (Fin m → M × M) ⊕ Option (Key gp m))
-  | .inl _ => ((s.1, s.2.1, true), .inl none)
+    Unit ⊕ Cts gp m → SimS gp m × (((Fin m → M × M) ⊕ SchedEv) ⊕ Option (Key gp m))
+  | .inl _ => (s, .inl (.inr .poll))
   | .inr ct =>
     match s with
-    | (some ρ, false, _) => ((some ρ, true, false), .inl (some (extractS td decode ρ ct)))
-    | (ρo, sb, _) => ((ρo, sb, false), .inl none)
+    | (some v, false) => ((some v, true), .inl (.inl (extractS td decode v.get ct)))
+    | s => (s, .inr none)
 
 variable (crs) in
-/-- The end of an activation of the simulator against a corrupt sender: at a delivery after the
-receiver has chosen, the simulated receiver's message with randomness drawn at the first
-delivery. -/
-noncomputable def simSFinish : SimS gp m → Bool → SPComp (SimS gp m × Option (Key gp m))
-  | (some ρ, sb, true), true => SPComp.pure ((some ρ, sb, false), some (simKey crs ρ))
-  | (none, sb, true), true => SPComp.bind (SPComp.sample (Fin m → gp.Scalar)) fun ρ =>
-      SPComp.pure ((some ρ, sb, false), some (simKey crs ρ))
-  | (ρo, sb, _), _ => SPComp.pure ((ρo, sb, false), none)
+/-- The simulated receiver's message at a delivery after the receiver has chosen, with
+randomness drawn at the first delivery. -/
+noncomputable def simSKey : SimS gp m → SPComp (SimS gp m × Option (Key gp m))
+  | (some v, sb) => SPComp.pure ((some v, sb), some (simKey crs v.get))
+  | (none, sb) => SPComp.bind (SPComp.sample (Fin m → gp.Scalar)) fun ρ =>
+      SPComp.pure ((some (Vector.ofFn ρ), sb), some (simKey crs ρ))
 
-/-- `simSFinish` never fails. -/
-theorem simSFinish_noFail (s : SimS gp m) (b : Bool) : SPComp.NoFail (simSFinish crs s b) := by
-  obtain ⟨_ | ρ, sb, _ | _⟩ := s <;> rcases b with _ | _ <;> simp only [simSFinish] <;>
+variable (crs) in
+/-- The continuation of the simulator against a corrupt sender on an answer of `F_OT`: after the
+message pairs are sent, the delivery of the receiver's output; after a poll that reports the
+receiver's choice, the simulated receiver's message; otherwise nothing. -/
+noncomputable def simSResume (s : SimS gp m) :
+    Bool ⊕ SchedOut → SPComp (SimS gp m × (((Fin m → M × M) ⊕ SchedEv) ⊕ Option (Key gp m)))
+  | .inl _ => SPComp.pure (s, .inl (.inr .deliverRecv))
+  | .inr (.status _ true) => SPComp.map (fun p => (p.1, .inr p.2)) (simSKey crs s)
+  | .inr _ => SPComp.pure (s, .inr none)
+
+/-- `simSResume` never fails. -/
+theorem simSResume_noFail (s : SimS gp m) (o : Bool ⊕ SchedOut) :
+    SPComp.NoFail (simSResume (M := M) crs s o) := by
+  obtain ⟨_ | ρ, sb⟩ := s <;> rcases o with b | (_ | ⟨_, _ | _⟩) <;>
+    simp only [simSResume, simSKey, SPComp.map] <;>
     first
     | exact SPComp.pure_noFail _
-    | exact Assumptions.SPComp.bind_noFail Assumptions.SPComp.sample_noFail
+    | exact Assumptions.SPComp.bind_noFail (SPComp.pure_noFail _) fun _ => SPComp.pure_noFail _
+    | exact Assumptions.SPComp.bind_noFail (Assumptions.SPComp.bind_noFail
+        Assumptions.SPComp.sample_noFail fun _ => SPComp.pure_noFail _)
         fun _ => SPComp.pure_noFail _
 
-/-- The simulator against a corrupt sender on the adversary port. -/
+/-- The simulator against a corrupt sender on the adversary port: at most two calls of `F_OT`
+per activation (a poll, or the message pairs and the delivery of the receiver's output). -/
 noncomputable def simSAdv (td : DecTD crs) (decode : gp.G → M) :
-    MultiHybrid (SimS gp m) (Unit ⊕ Cts gp m) (Option (Key gp m)) (Option (Fin m → M × M))
-      Bool where
-  init := (none, false, false)
-  fuel := 0
+    MultiHybrid (SimS gp m) (Unit ⊕ Cts gp m) (Option (Key gp m)) ((Fin m → M × M) ⊕ SchedEv)
+      (Bool ⊕ SchedOut) where
+  init := (none, false)
+  fuel := 1
   start s e := SPComp.pure (simSStart td decode s e)
-  resume s b := SPComp.map (fun p => (p.1, .inr p.2)) (simSFinish crs s b)
-  finish := simSFinish crs
+  resume s o := simSResume crs s o
+  finish s _ := SPComp.pure (s, none)
   start_noFail _ _ := SPComp.pure_noFail _
-  resume_noFail _ _ := Assumptions.SPComp.bind_noFail (simSFinish_noFail _ _)
-    fun _ => SPComp.pure_noFail _
-  finish_noFail := simSFinish_noFail
+  resume_noFail s o := simSResume_noFail s o
+  finish_noFail _ _ := SPComp.pure_noFail _
 
 /-- The simulator against a corrupt sender as a multi-call simulator: forwarding on the
-receiver's port, `simSAdv` on the sender's port. -/
+receiver's port, `simSAdv` on the sender's and the scheduler's port. -/
 noncomputable def simProtS (td : DecTD crs) (decode : gp.G → M) :
     MultiHybrid (Unit × SimS gp m) ((Fin m → Bool) ⊕ (Unit ⊕ Cts gp m))
-      (Option (Fin m → M) ⊕ Option (Key gp m)) ((Fin m → Bool) ⊕ Option (Fin m → M × M))
-      (Option (Fin m → M) ⊕ Bool) :=
+      (Option (Fin m → M) ⊕ Option (Key gp m)) ((Fin m → Bool) ⊕ ((Fin m → M × M) ⊕ SchedEv))
+      (Option (Fin m → M) ⊕ (Bool ⊕ SchedOut)) :=
   (MultiHybrid.idSim (Fin m → Bool) (Option (Fin m → M))).tensor (simSAdv td decode)
 
 /-- **The simulator against a corrupt sender.** It forwards the honest receiver's events and
-outputs; at a delivery after `F_OT` reports that the receiver has chosen, it answers with keys
-of branch `0` with its own randomness; it decrypts the first sender's message after delivery on
-both branches with the decryption trapdoor and sends the message pairs to `F_OT`. It reads no
-honest value. Opaque for `hidView.sum eqView`. -/
+outputs; at a delivery after a poll of `F_OT` reports that the receiver has chosen, it answers
+with keys of branch `0` with its own randomness; it decrypts the first sender's message after
+delivery on both branches with the decryption trapdoor, sends the message pairs to `F_OT` and
+delivers the receiver's output. It reads no honest value. Opaque for `hidView.sum eqView`. -/
 noncomputable def pvwSimSend (td : DecTD crs) (decode : gp.G → M) :
     Simulator ((Fin m → Bool) ⊕ (Unit ⊕ Cts gp m)) (Option (Fin m → M) ⊕ Option (Key gp m))
-      ((Fin m → Bool) ⊕ Option (Fin m → M × M)) (Option (Fin m → M) ⊕ Bool)
+      ((Fin m → Bool) ⊕ ((Fin m → M × M) ⊕ SchedEv)) (Option (Fin m → M) ⊕ (Bool ⊕ SchedOut))
       (IKNPSquare.hidView.sum PubView.eqView) (IKNPSquare.hidView.sum PubView.eqView) :=
   Simulator.ofMultiHybrid (simProtS td decode)
     (MultiHybrid.Opaque.tensor (MultiHybrid.idSim_opaque _) (MultiHybrid.opaque_eqView _))
 
-/-- The simulator's randomness for the receiver's randomness `ko` and choices `co`. -/
+/-- The simulator's scalars for the receiver's randomness `ko` and choices `co`. -/
 def simRho (td : DecTD crs) (ko : Option (Fin m → gp.Scalar)) (co : Option (Fin m → Bool)) :
-    Option (Fin m → gp.Scalar) :=
+    Option (Vector gp.Scalar m) :=
   match ko, co with
-  | some r, some c => some (rhoEquiv td c r)
+  | some r, some c => some (Vector.ofFn (rhoEquiv td c r))
   | _, _ => none
 
-/-- The message pairs extracted by the simulator with randomness `ρo` from the stored sender's
+/-- The message pairs extracted by the simulator with scalars `ρo` from the stored sender's
 message `cto`. -/
-def simX (td : DecTD crs) (decode : gp.G → M) (ρo : Option (Fin m → gp.Scalar))
+def simX (td : DecTD crs) (decode : gp.G → M) (ρo : Option (Vector gp.Scalar m))
     (cto : Option (Cts gp m)) : Option (Fin m → M × M) :=
   match ρo, cto with
-  | some ρ, some ct => some (extractS td decode ρ ct)
+  | some v, some ct => some (extractS td decode v.get ct)
   | _, _ => none
+
+/-- The entries of the vector of the values of `f` are the values of `f`. -/
+private theorem vector_get_ofFn {α : Type} (f : Fin m → α) : (Vector.ofFn f).get = f :=
+  funext fun _ => Vector.getElem_ofFn _
+
+/-- The output of `F_OT` delivered to the receiver and not yet obtained, for the extracted
+message pairs `xo`, the choices `co` and whether the receiver has output. -/
+def simInbox (xo : Option (Fin m → M × M)) (co : Option (Fin m → Bool)) (o : Bool) :
+    Option (Fin m → M) :=
+  match xo, co, o with
+  | some x, some c, false => some (otChoose x c)
+  | _, _, _ => none
 
 /-- The state of the simulator over `F_OT` for a state of the protocol against a corrupt
 sender. -/
 def sMap (td : DecTD crs) (decode : gp.G → M) (t : Option (Fin m → gp.Scalar) × SState gp m) :
-    (Unit × SimS gp m) × FState m M :=
-  (((), (simRho td t.1 t.2.1, t.2.2.2.1.isSome, false)),
-    (t.2.1, simX td decode (simRho td t.1 t.2.1) t.2.2.2.1, t.2.2.2.2))
+    (Unit × SimS gp m) × SchedSt (Fin m → M × M) (Fin m → Bool) (Fin m → M) :=
+  (((), (simRho td t.1 t.2.1, t.2.2.2.1.isSome)),
+    ⟨simX td decode (simRho td t.1 t.2.1) t.2.2.2.1, t.2.1,
+      simInbox (simX td decode (simRho td t.1 t.2.1) t.2.2.2.1) t.2.1 t.2.2.2.2,
+      t.2.2.2.1.isSome || t.2.2.2.2, false⟩)
 
 /-- The invariant of the protocol against a corrupt sender with late randomness: the randomness
 is drawn exactly when the receiver's message is delivered, delivery follows the choice, and the
@@ -958,18 +982,18 @@ theorem late_pres (crs : CRS gp) (decode : gp.G → M) (t : Option (Fin m → gp
       · exact h'
 
 /-- Hop 2: the protocol against a corrupt sender with late randomness realizes the simulator
-against a corrupt sender over `FOTS` at distance `0`. The receiver's message couples with the
-simulated one at the delivery that draws the randomness (`recvMsg_eq_simKey`), and the
-receiver's output is the chosen messages of the extracted pairs (`otChoose_extractS`). -/
+against a corrupt sender over `FOTSchedS otChoose` at distance `0`. The receiver's message
+couples with the simulated one at the delivery that draws the randomness (`recvMsg_eq_simKey`),
+and the receiver's output is the chosen messages of the extracted pairs (`otChoose_extractS`). -/
 theorem late_realizes_sim (td : DecTD crs) (decode : gp.G → M) :
     Realizes ((keyedS (m := m) crs decode false).lazy (PMF.uniformFintype _))
-      ((simProtS td decode).withSub FOTS) fun _ _ => 0 := by
+      ((simProtS td decode).withSub (FOTSchedS otChoose)) fun _ _ => 0 := by
   refine realizes_zero_of_stepMap_on _ _ SInv (sMap td decode)
     (by simp [SInv, KeyedSys.lazy, keyedS, KeyedSys.ofPorts, keyedSR]) rfl
     (fun t e hI => late_pres crs decode t e hI) ?_
   rintro ⟨ko, co, dl, cto, o⟩ (c' | (u | ct)) ⟨h₁, h₂, h₃⟩
-  · rw [simProtS, MultiHybrid.tensor_withSub_step_inl _ _ FOTS fRecvSys (fun _ _ => rfl),
-      MultiHybrid.idSim_stepFuel]
+  · rw [simProtS, MultiHybrid.tensor_withSub_step_inl _ _ (FOTSchedS otChoose) FOTSched.recvSys
+      (fun _ _ => rfl), MultiHybrid.idSim_stepFuel]
     simp only at h₁ h₂ h₃
     rcases co with _ | c
     · have hdl : dl = false := by cases dl <;> simp_all
@@ -978,19 +1002,22 @@ theorem late_realizes_sim (td : DecTD crs) (decode : gp.G → M) :
       have hct : cto = none := by cases cto <;> simp_all
       subst hko hct
       simp [KeyedSys.lazy, KeyedSys.lazyStep, keyedS, KeyedSys.ofPorts, keyedSR, sStepR,
-        fRecvSys, fRecv, sMap, simRho, simX, SPComp.map, SPComp.pure_bind]
+        FOTSched.recvSys, FOTSched.recvStep, sMap, simInbox, simRho, simX, SPComp.map,
+        SPComp.pure_bind]
     · rcases cto with _ | ct
       · rcases ko with _ | r <;> rcases o with _ | _ <;>
           simp [KeyedSys.lazy, KeyedSys.lazyStep, keyedS, KeyedSys.ofPorts, keyedSR, sStepR,
-            fRecvSys, fRecv, sMap, simRho, simX, SPComp.map, SPComp.pure_bind]
+            FOTSched.recvSys, FOTSched.recvStep, sMap, simInbox, simRho, simX, SPComp.map,
+            SPComp.pure_bind]
       · have hdl : dl = true := h₃ rfl
         subst hdl
         obtain ⟨r, rfl⟩ : ∃ r, ko = some r := Option.isSome_iff_exists.mp h₁
         rcases o with _ | _ <;>
           simp [KeyedSys.lazy, KeyedSys.lazyStep, keyedS, KeyedSys.ofPorts, keyedSR, sStepR,
-            fRecvSys, fRecv, sMap, simRho, simX, SPComp.map, SPComp.pure_bind,
-            otChoose_extractS]
-  · rw [simProtS, MultiHybrid.tensor_withSub_step_inr _ _ FOTS fSendSys (fun _ _ => rfl)]
+            FOTSched.recvSys, FOTSched.recvStep, sMap, simInbox, simRho, simX, SPComp.map,
+            SPComp.pure_bind, vector_get_ofFn, otChoose_extractS]
+  · rw [simProtS, MultiHybrid.tensor_withSub_step_inr _ _ (FOTSchedS otChoose)
+      (Sys.ofPorts FOTSched.sendSys (FOTSched.schedSys otChoose)) (fun _ _ => rfl)]
     simp only at h₁ h₂ h₃
     rcases co with _ | c
     · have hdl : dl = false := by cases dl <;> simp_all
@@ -998,8 +1025,9 @@ theorem late_realizes_sim (td : DecTD crs) (decode : gp.G → M) :
       have hko : ko = none := by cases ko <;> simp_all
       subst hko
       simp [KeyedSys.lazy, KeyedSys.lazyStep, keyedS, KeyedSys.ofPorts, keyedSA, sStepA,
-        simSAdv, simSStart, simSFinish, MultiHybrid.stepFuel, MultiHybrid.idSim,
-        MultiHybrid.drive, fSendSys, fSend, sMap, simRho, simX, SPComp.map, SPComp.pure_bind]
+        simSAdv, simSStart, simSResume, MultiHybrid.stepFuel, MultiHybrid.idSim,
+        MultiHybrid.drive, FOTSched.schedSys, FOTSched.schedStep, sMap, simInbox, simRho, simX,
+        SPComp.map, SPComp.pure_bind]
     · rcases ko with _ | r
       · have hdl : dl = false := by cases dl <;> simp_all
         subst hdl
@@ -1008,19 +1036,24 @@ theorem late_realizes_sim (td : DecTD crs) (decode : gp.G → M) :
         simp only [SPComp.map, KeyedSys.lazy, keyedS, KeyedSys.ofPorts, keyedSA, sStepA,
           recvMsg_eq_simKey td, SPComp.pure_bind, KeyedSys.lazyStep, Option.isSome_some,
           Bool.and_true, Sum.elim_inr, Sum.isLeft_inl, ↓reduceIte, ofPMF_uniformFintype,
-          sampleFrom_uniform, sMap, simRho, simX, SPComp.bind_assoc, Option.isSome_none,
-          MultiHybrid.stepFuel, simSAdv, simSStart, simSFinish, fSendSys, fSend,
-          MultiHybrid.idSim, max_self, MultiHybrid.drive, Option.or_self]
+          sampleFrom_uniform, sMap, simRho, simX, simInbox, SPComp.bind_assoc,
+          MultiHybrid.stepFuel, simSAdv, simSStart, simSResume, simSKey, FOTSched.schedSys,
+          FOTSched.schedStep, MultiHybrid.idSim, zero_le, sup_of_le_right, MultiHybrid.drive,
+          Sys.ofPorts_step_inr, Option.isSome_none, Bool.false_or]
         exact SPComp.sample_bind_equiv (rhoEquiv td c) fun ρ =>
-          SPComp.pure ((((), some ρ, false, false), some c, none, o),
+          SPComp.pure ((((), some (Vector.ofFn ρ), false),
+            (⟨none, some c, none, o, false⟩ :
+              SchedSt (Fin m → M × M) (Fin m → Bool) (Fin m → M))),
             (Sum.inr (some (simKey crs ρ)) : Option (Fin m → M) ⊕ Option (Key gp m)))
       · have hdl : dl = true := by cases dl <;> simp_all
         subst hdl
         simp [KeyedSys.lazy, KeyedSys.lazyStep, keyedS, KeyedSys.ofPorts, keyedSA, sStepA,
-          simSAdv, simSStart, simSFinish, MultiHybrid.stepFuel, MultiHybrid.idSim,
-          MultiHybrid.drive, fSendSys, fSend, sMap, simRho, simX, SPComp.map, SPComp.pure_bind,
-          recvMsg_eq_simKey td]
-  · rw [simProtS, MultiHybrid.tensor_withSub_step_inr _ _ FOTS fSendSys (fun _ _ => rfl)]
+          simSAdv, simSStart, simSResume, simSKey, MultiHybrid.stepFuel, MultiHybrid.idSim,
+          MultiHybrid.drive, FOTSched.schedSys, FOTSched.schedStep, sMap, simInbox, simRho, simX,
+          vector_get_ofFn,
+          SPComp.map, SPComp.pure_bind, recvMsg_eq_simKey td]
+  · rw [simProtS, MultiHybrid.tensor_withSub_step_inr _ _ (FOTSchedS otChoose)
+      (Sys.ofPorts FOTSched.sendSys (FOTSched.schedSys otChoose)) (fun _ _ => rfl)]
     simp only at h₁ h₂ h₃
     rcases dl with _ | _
     · have hko : ko = none := by cases ko <;> simp_all
@@ -1028,25 +1061,29 @@ theorem late_realizes_sim (td : DecTD crs) (decode : gp.G → M) :
       subst hko hct
       rcases co with _ | c <;>
         simp [KeyedSys.lazy, KeyedSys.lazyStep, keyedS, KeyedSys.ofPorts, keyedSA, sStepA,
-          simSAdv, simSStart, simSFinish, MultiHybrid.stepFuel, MultiHybrid.idSim,
-          MultiHybrid.drive, fSendSys, fSend, sMap, simRho, simX, SPComp.map, SPComp.pure_bind]
+          simSAdv, simSStart, MultiHybrid.stepFuel, MultiHybrid.idSim,
+          MultiHybrid.drive, sMap, simInbox, simRho, simX, SPComp.map, SPComp.pure_bind]
     · obtain ⟨r, rfl⟩ : ∃ r, ko = some r := Option.isSome_iff_exists.mp h₁
       obtain ⟨c, rfl⟩ : ∃ c, co = some c := Option.isSome_iff_exists.mp (h₂ rfl)
-      rcases cto with _ | ct₀ <;>
+      rcases cto with _ | ct₀ <;> rcases o with _ | _ <;>
         simp [KeyedSys.lazy, KeyedSys.lazyStep, keyedS, KeyedSys.ofPorts, keyedSA, sStepA,
-          simSAdv, simSStart, simSFinish, MultiHybrid.stepFuel, MultiHybrid.idSim,
-          MultiHybrid.drive, fSendSys, fSend, sMap, simRho, simX, SPComp.map, SPComp.pure_bind]
+          simSAdv, simSStart, simSResume, MultiHybrid.stepFuel, MultiHybrid.idSim,
+          MultiHybrid.drive, FOTSched.sendSys, FOTSched.sendStep, FOTSched.schedSys,
+          FOTSched.schedStep, sMap, simInbox, simRho, simX, SPComp.map, SPComp.pure_bind]
 
 /-- **The dual-mode OT against a corrupt sender in decryption mode as a square.** Ideal
-functionality: `FOTS`, `F_OT` for `m` transfers with the receiver on the honest port and the
-sender on the adversary port. Real protocol: `realS crs decode`, whose receiver sends keys of the
-chosen branches and outputs the decoded decryptions of the chosen branches of the sender's
-message. CRS: decryption mode with trapdoor `td`. Simulator: `pvwSimSend td decode`, which sends
-keys of branch `0` and extracts both messages of each pair with the decryption trapdoor.
-Distance `0`: in decryption mode the receiver's message does not depend on its choices
-(`recvMsg_eq_simKey`). Corrupt sender, one transfer of `m` message pairs. -/
+functionality: `FOTSchedS otChoose`, `F_OT` with scheduled delivery for `m` transfers, with the
+receiver on the honest port and the sender beside the scheduler on the adversary port. Real
+protocol: `realS crs decode`, whose receiver sends keys of the chosen branches and outputs the
+decoded decryptions of the chosen branches of the sender's message. CRS: decryption mode with
+trapdoor `td`. Simulator: `pvwSimSend td decode`, which sends keys of branch `0`, extracts both
+messages of each pair with the decryption trapdoor, and delivers the receiver's output at the
+activation at which the real sender's message arrives. Distance `0`: in decryption mode the
+receiver's message does not depend on its choices (`recvMsg_eq_simKey`). Corrupt sender, one
+transfer of `m` message pairs. -/
 theorem pvw_realizesSim_corruptSender (td : DecTD crs) (decode : gp.G → M) :
-    RealizesSim (realS crs decode) FOTS (pvwSimSend (m := m) td decode) fun _ _ => 0 :=
+    RealizesSim (realS crs decode) (FOTSchedS otChoose) (pvwSimSend (m := m) td decode)
+      fun _ _ => 0 :=
   fun ζ Z =>
     le_of_le_of_eq ((Realizes.trans (realS_realizes_late crs decode)
       (late_realizes_sim td decode)) ζ Z) (add_zero _)

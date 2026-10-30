@@ -433,7 +433,6 @@ public import CatCryptCore.Crypto.OT.DualModeOT
 public import CatCryptCore.Crypto.OT.DualModeOTSquare
 public import CatCryptCore.Crypto.OT.DualModeOTSquareTimed
 public import CatCryptCore.Crypto.OT.PVWOTSquare
-public import CatCryptCore.Crypto.OT.PVWOTSquareTimed
 public import CatCryptCore.Crypto.OT.FOTSched
 
 -- Transparent functionalities, hybrid composition, the clock and the network
