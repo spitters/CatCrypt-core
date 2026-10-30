@@ -244,6 +244,7 @@ public import CatCryptCore.Crypto.Messaging.FSAEAD
 public import CatCryptCore.Crypto.Messaging.DoubleRatchet
 public import CatCryptCore.Crypto.PAKE.DHPAKE
 public import CatCryptCore.Crypto.PAKE.FPAKESys
+public import CatCryptCore.Crypto.PAKE.DHExtractKit
 public import CatCryptCore.Crypto.Signatures.Threshold
 public import CatCryptCore.Crypto.FiatShamirROM.MPCitH
 public import CatCryptCore.Crypto.Anon.Signalling
