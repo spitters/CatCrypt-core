@@ -429,6 +429,7 @@ public import CatCryptCore.Crypto.UCCoupling
 public import CatCryptCore.Crypto.UCCompiled
 public import CatCryptCore.Crypto.UCOracleGame
 public import CatCryptCore.Crypto.UCRoundHybrid
+public import CatCryptCore.Crypto.UCRoundHybridTimed
 public import CatCryptCore.Crypto.UCTransparentHybrid
 public import CatCryptCore.Crypto.UCOpen
 public import CatCryptCore.Crypto.UCSimulator
