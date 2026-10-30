@@ -13,20 +13,31 @@ public import CatCryptCore.Crypto.UCChannel
 Two ideal functionalities for password-authenticated key exchange, each a system
 `Sys.ofPorts hon adv` with an honest port and an adversary port over one shared state.
 
-`F_lePAKE keySample` is the functionality `F_pwKE` of Canetti, Halevi, Katz, Lindell and
-MacKenzie (Eurocrypt 2005) with the late password test of the lazy-extraction relaxation
-(Abdalla, Barbosa, Bradley, Jarecki, Katz, Xu, CRYPTO 2020; Abdalla, Haase, Hesse,
-Asiacrypt 2021). A session is the record of the party `pid` in the protocol session `sid`.
-* Honest port: `newSession sid pid peer role pw` creates the session with the password `pw`;
-  `getKey sid pid` returns the key of the session, if one was delivered.
+`F_lePAKE keySample` is the lazy-extraction functionality `F_lePAKE` of Abdalla, Barbosa,
+Bradley, Jarecki, Katz and Xu (CRYPTO 2020, ePrint 2020/320, Fig. 1 with the gray text and
+without the dashed portions), the functionality `F_PAKE` of Canetti, Halevi, Katz, Lindell and
+MacKenzie (Eurocrypt 2005) with the events `RegisterTest` and `LateTestPwd`. A session is the
+record of the party `pid` in the protocol session `sid`; its status is `fresh`, `compromised`,
+`interrupted`, or `completed` (it received a key while fresh). A record received a key exactly
+when its `key` is set; this is the mark `completed` of Fig. 1.
+* Honest port: `newSession sid pid peer role pw` records the session, marked fresh, unless a
+  record of `pid` in `sid` exists; `getKey sid pid` returns the key of the session, if any.
 * Adversary port: `poll` returns the next notice `(sid, pid, peer, role)` of a new session,
-  without its password; `testPwd sid pid g` is the one online guess against a fresh session and
-  answers whether `g` is its password, marking it compromised or interrupted;
-  `newKey sid pid k` delivers a key: `k` to a compromised session, the key of the partner
-  session to a fresh session whose partner completed while fresh with the same password, and a
-  fresh sample of `keySample` otherwise; `lateTestPwd sid pid g` is the one guess against a
-  completed session that has spent no guess, and returns the key of the session when `g` is its
-  password and a fresh sample otherwise; `idle` changes nothing.
+  without its password.
+  `testPwd sid pid g` applies to a fresh session: it answers whether `g` is its password and
+  marks it compromised on a correct guess and interrupted on a wrong one.
+  `registerTest sid pid` applies to a fresh session: it marks it interrupted and flags it
+  tested, and answers nothing.
+  `newKey sid pid k` applies to a session without a key and delivers `k` to a compromised
+  session; to a fresh session, the key of the session of `peer` in `sid` when that session has
+  `pid` as peer, the other role and the same password and received its key while fresh; a fresh
+  sample of `keySample` otherwise.
+  `lateTestPwd sid pid g` applies to a session with a key that is flagged tested: it removes the
+  flag and returns the key of the session when `g` is its password and a fresh sample of
+  `keySample` otherwise, without saying which.
+  `idle` changes nothing.
+  The functionality has no corruption events, so the clause of `NewKey` for a corrupted party
+  does not arise.
 
 `F_aPAKE keySample` is the asymmetric functionality of Gentry, MacKenzie and Ramzan (CRYPTO
 2006) in the form of Jarecki, Krawczyk and Xu (Eurocrypt 2018).
@@ -54,7 +65,8 @@ equal give the adversary equal outputs at every step except the answers. Opacity
 answers compared by equality does not hold for a password-blind view: a test answer depends on
 the password.
 
-**Correctness.** Two honest sessions that are partners and have the same password receive
+**Correctness.** Two honest sessions that are partners of different roles (for `F_lePAKE`)
+and have the same password receive
 the same key when the adversary delivers keys without testing a password (`F_lePAKE_correct`,
 `F_aPAKE_correct`).
 
@@ -138,8 +150,10 @@ structure Rec (Pw K : Type) where
   status : Status
   /-- The key delivered to the session, if any. -/
   key : Option K
-  /-- The outcome of the one guess against the session, if spent. -/
+  /-- The outcome of the one online guess against the session, if spent. -/
   tested : Option Bool
+  /-- The flag `tested` of `F_lePAKE`: set by `registerTest`, removed by `lateTestPwd`. -/
+  registered : Bool
 
 /-- A password file of the asymmetric functionality. -/
 structure FileRec (Pw : Type) where
@@ -191,7 +205,7 @@ def setRec (t : St Pw K) (x : Inst) (r : Rec Pw K) : St Pw K :=
 /-- A new fresh session at `x` with its notice, when `x` has no record. -/
 def addSession (t : St Pw K) (x : Inst) (peer : PartyId) (role : Role) (pw : Pw) : St Pw K :=
   if (t.recs x).isSome then t else
-    { t with recs := Function.update t.recs x (some ⟨peer, role, pw, .fresh, none, none⟩),
+    { t with recs := Function.update t.recs x (some ⟨peer, role, pw, .fresh, none, none, false⟩),
              notices := t.notices ++ [⟨x.1, x.2, peer, role⟩] }
 
 /-- The key of the session `x`, if delivered. -/
@@ -225,14 +239,25 @@ def testStep [DecidableEq Pw] (t : St Pw K) (x : Inst) (g : Pw) : St Pw K :=
   | some r => if Testable r then setRec t x (guessed r (decide (r.pw = g))) else t
   | none => t
 
+/-- The state after `registerTest` against `x`: a fresh session is marked interrupted and
+flagged; no guess is spent. -/
+def registerStep (t : St Pw K) (x : Inst) : St Pw K :=
+  match t.recs x with
+  | some r => if Testable r then setRec t x { r with status := .interrupted, registered := true }
+    else t
+  | none => t
+
 /-- The key that `newKey` gives to the session `x` with record `r`, for the adversary key `k`
-and the fresh sample `kf`. -/
+and the fresh sample `kf`: `k` to a compromised session; to a fresh session, the key of the
+partner of the other role that completed while fresh with the same password; `kf` otherwise. -/
 def newKeyVal [DecidableEq Pw] (t : St Pw K) (x : Inst) (r : Rec Pw K) (k kf : K) : K :=
   match r.status with
   | .compromised => k
   | .fresh =>
     match t.recs (x.1, r.peer) with
-    | some p => if p.peer = x.2 ∧ p.status = .completed ∧ p.pw = r.pw then p.key.getD kf else kf
+    | some p =>
+      if p.peer = x.2 ∧ p.role ≠ r.role ∧ p.status = .completed ∧ p.pw = r.pw then p.key.getD kf
+      else kf
     | none => kf
   | _ => kf
 
@@ -246,9 +271,9 @@ def newKeyStep [DecidableEq Pw] (t : St Pw K) (x : Inst) (k kf : K) : St Pw K :=
     else t
   | none => t
 
-/-- Whether the late guess against a session applies: it completed while fresh and spent no
-guess. -/
-def LateTestable (r : Rec Pw K) : Prop := r.status = .completed ∧ r.tested = none
+/-- Whether the late guess against a session applies: the session has a key and carries the
+flag set by `registerTest`. -/
+def LateTestable (r : Rec Pw K) : Prop := r.key.isSome ∧ r.registered = true
 
 instance (r : Rec Pw K) : Decidable (LateTestable r) := inferInstanceAs (Decidable (_ ∧ _))
 
@@ -259,11 +284,10 @@ def lateReveal [DecidableEq Pw] (t : St Pw K) (x : Inst) (g : Pw) (kf : K) : Opt
   | some r => if LateTestable r then some (if r.pw = g then r.key.getD kf else kf) else none
   | none => none
 
-/-- The state after the late guess `g` against `x`: the guess is spent. -/
-def lateStep [DecidableEq Pw] (t : St Pw K) (x : Inst) (g : Pw) : St Pw K :=
+/-- The state after the late guess against `x`: the flag is removed. -/
+def lateStep (t : St Pw K) (x : Inst) : St Pw K :=
   match t.recs x with
-  | some r => if LateTestable r then setRec t x { r with tested := some (decide (r.pw = g)) }
-    else t
+  | some r => if LateTestable r then setRec t x { r with registered := false } else t
   | none => t
 
 /-! ## The relation of states with equal public parts -/
@@ -312,9 +336,12 @@ theorem pubRel_newKeyStep [DecidableEq Pw] (t : St Pw K) (x : Inst) (k kf : K) :
     PubRel (newKeyStep t x k kf) t := by
   grind [newKeyStep, pubRel_setRec, PubRel.refl]
 
+/-- `registerTest` keeps the public part. -/
+theorem pubRel_registerStep (t : St Pw K) (x : Inst) : PubRel (registerStep t x) t := by
+  grind [registerStep, pubRel_setRec, PubRel.refl]
+
 /-- The late guess keeps the public part. -/
-theorem pubRel_lateStep [DecidableEq Pw] (t : St Pw K) (x : Inst) (g : Pw) :
-    PubRel (lateStep t x g) t := by
+theorem pubRel_lateStep (t : St Pw K) (x : Inst) : PubRel (lateStep t x) t := by
   grind [lateStep, pubRel_setRec, PubRel.refl]
 
 /-- New sessions with the same public part keep `PubRel`, whatever their passwords. -/
@@ -488,10 +515,12 @@ inductive LeAEv (Pw K : Type) where
   | poll
   /-- The online guess `g` against the session of `pid` in `sid`. -/
   | testPwd (sid : SessionId) (pid : PartyId) (g : Pw)
+  /-- Interrupt the fresh session of `pid` in `sid` and flag it for a late guess. -/
+  | registerTest (sid : SessionId) (pid : PartyId)
   /-- Deliver a key to the session of `pid` in `sid`; `k` is used if the session is
   compromised. -/
   | newKey (sid : SessionId) (pid : PartyId) (k : K)
-  /-- The late guess `g` against the completed session of `pid` in `sid`. -/
+  /-- The late guess `g` against the flagged session of `pid` in `sid` that has a key. -/
   | lateTestPwd (sid : SessionId) (pid : PartyId) (g : Pw)
 
 /-- Events of the honest port of `F_aPAKE`. -/
@@ -557,10 +586,11 @@ noncomputable def leAdvSys [DecidableEq Pw] (keySample : SPComp K) :
     | .poll => SPComp.pure ((pollStep t).1, .notice (pollStep t).2)
     | .testPwd sid pid g =>
       SPComp.pure (testStep t (sid, pid) g, .answer (testAns t (sid, pid) g))
+    | .registerTest sid pid => SPComp.pure (registerStep t (sid, pid), .ack)
     | .newKey sid pid k =>
       SPComp.map (fun kf => (newKeyStep t (sid, pid) k kf, .ack)) keySample
     | .lateTestPwd sid pid g =>
-      SPComp.map (fun kf => (lateStep t (sid, pid) g, .reveal (lateReveal t (sid, pid) g kf)))
+      SPComp.map (fun kf => (lateStep t (sid, pid), .reveal (lateReveal t (sid, pid) g kf)))
         keySample
 
 /-- The adversary port of `F_aPAKE` as a system; `newKey` draws a fresh sample of
@@ -674,6 +704,9 @@ theorem leAdvSys_unwinding [DecidableEq Pw] (keySample : SPComp K) :
   | testPwd sid pid g =>
     exact rHoare_ret fun _ _ h =>
       ⟨h, (pubRel_testStep _ _ _).of_left_right ht (pubRel_testStep _ _ _), trivial⟩
+  | registerTest sid pid =>
+    exact rHoare_ret fun _ _ h =>
+      ⟨h, (pubRel_registerStep _ _).of_left_right ht (pubRel_registerStep _ _), trivial⟩
   | newKey sid pid k =>
     simp only [leAdvSys]
     refine rHoare_bind (rHoare_refl keySample) fun _ _ => rHoare_ret fun _ _ hp => ?_
@@ -682,7 +715,7 @@ theorem leAdvSys_unwinding [DecidableEq Pw] (keySample : SPComp K) :
   | lateTestPwd sid pid g =>
     simp only [leAdvSys]
     refine rHoare_bind (rHoare_refl keySample) fun _ _ => rHoare_ret fun _ _ hp => ?_
-    exact ⟨hp.2, (pubRel_lateStep _ _ _).of_left_right ht (pubRel_lateStep _ _ _), trivial⟩
+    exact ⟨hp.2, (pubRel_lateStep _ _).of_left_right ht (pubRel_lateStep _ _), trivial⟩
 
 /-- The unwinding condition of the adversary port of `F_aPAKE` for `answerView`. -/
 theorem aAdvSys_unwinding [DecidableEq Pw] (keySample : SPComp K) :
@@ -752,17 +785,18 @@ theorem F_aPAKE_opaque (keySample : SPComp K) :
 
 /-! ## Correctness -/
 
-/-- **Correctness of `F_lePAKE`**: two new partner sessions of `a` and `b` in `sid` with the
-same password, followed by `newKey` at both without a password test, give both the key
-sampled at the first `newKey`, whatever keys the adversary proposes. -/
+/-- **Correctness of `F_lePAKE`**: two new partner sessions of `a` and `b` in `sid` with
+different roles and the same password, followed by `newKey` at both without a password test,
+give both the key sampled at the first `newKey`, whatever keys the adversary proposes. -/
 theorem F_lePAKE_correct (t : St Pw K) (sid : SessionId) (a b : PartyId) (ra rb : Role)
-    (pw : Pw) (k₁ k₂ kf₁ kf₂ : K) (hab : a ≠ b) (ha : t.recs (sid, a) = none)
+    (pw : Pw) (k₁ k₂ kf₁ kf₂ : K) (hab : a ≠ b) (hr : ra ≠ rb) (ha : t.recs (sid, a) = none)
     (hb : t.recs (sid, b) = none) :
     let t₂ := (leHonStep (leHonStep t (.newSession sid a b ra pw)).1
       (.newSession sid b a rb pw)).1
     let t₄ := newKeyStep (newKeyStep t₂ (sid, a) k₁ kf₁) (sid, b) k₂ kf₂
     keyOf t₄ (sid, a) = some kf₁ ∧ keyOf t₄ (sid, b) = some kf₁ := by
-  simp [leHonStep, addSession, ha, hb, newKeyStep, newKeyVal, setRec, keyOf, hab, Ne.symm hab]
+  simp [leHonStep, addSession, ha, hb, newKeyStep, newKeyVal, setRec, keyOf, hab, Ne.symm hab,
+    hr]
 
 /-- **Correctness of `F_aPAKE`**: a stored file of `srv` for `cli`, a client session of `cli`
 with the password of the file and a server session of `srv` in `sid`, followed by `newKey` at
