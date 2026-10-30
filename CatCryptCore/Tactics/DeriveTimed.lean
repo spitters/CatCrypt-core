@@ -2669,6 +2669,15 @@ partial def costConst (ctx : Ctx) (e : Expr) (c : Name) (args : Array Expr) :
                 return add (← costOf ctx s) (← closureApp ctx comp rest).1
       if let some (_, cc) := ctx.fields.find? (·.1 == p) then
         let arity ← forallTelescope (← whnfR (← inferType cc)) fun ys _ => pure ys.size
+        -- A field whose result is a function under a non-reducible name, applied further
+        -- (`Z.obs z o h`, the computation `Z.obs z o : SPComp ζ` run on the heap `h`): the
+        -- companion prices the call, and the result is a table whose application to the
+        -- remaining arguments costs one plus their costs, as for a local with a companion.
+        if rest.size > arity then
+          let now := rest.extract 0 arity
+          let later := rest.extract arity rest.size
+          let call := add (natE 1) (add (mkAppN cc now) (← argsCost ctx now))
+          return add call (add (natE 1) (← argsCost ctx later))
         unless rest.size == arity do
           fail m!"the field `{c}` is applied to {rest.size} arguments in `{e}`, and its cost \
             companion takes {arity}"
@@ -2769,29 +2778,42 @@ partial def costConst (ctx : Ctx) (e : Expr) (c : Name) (args : Array Expr) :
   return add callCost (← costOf { ctx with depth := ctx.depth + 1 } e')
 
 /-- The cost of a data-valued `casesOn` of an inductive type without indices: one, the major
-premise, and the branch taken. -/
+premise, and the branch taken. A case analysis applied to `k` further arguments `a₁ … aₖ`
+(the `Bool.casesOn` of a decidable `if`, applied to the proof of reflection and to the
+arguments of the function it selects) is priced by the case analysis of the same major premise
+with the motive `fun x => (y₁ : A₁ x) → … → (yₖ : Aₖ x) → ℕ`, whose branches are the costs of
+the branches at `y₁ … yₖ`, applied to `a₁ … aₖ`, plus the costs of the arguments. -/
 partial def costCases (ctx : Ctx) (e : Expr) (c : Name) (args : Array Expr) :
     TermElabM Expr := do
   let some (.inductInfo iv) := (← getEnv).find? c.getPrefix
     | fail m!"`{c}` is not the case analysis of an inductive type"
   unless iv.numIndices == 0 do fail m!"the case analysis `{e}` is over an indexed family"
   let arity := iv.numParams + 2 + iv.numCtors
-  unless args.size == arity do
-    fail m!"the case analysis `{e}` has a motive that depends on further arguments"
+  unless args.size ≥ arity do
+    fail m!"the case analysis `{e}` is applied to fewer arguments than its minor premises"
+  let extra := args.extract arity args.size
+  let k := extra.size
   let major := args[iv.numParams + 1]!
-  let motive ← withLocalDeclD `x (← inferType major) fun x => mkLambdaFVars #[x] (mkConst ``Nat)
+  -- the motive `fun x => (ys : As x) → ℕ` over the binders of the further arguments
+  let (motive, mlvl) ← withLocalDeclD `x (← inferType major) fun x => do
+    let body := (mkApp args[iv.numParams]! x).headBeta
+    let ty ← forallBoundedTelescope body k fun ys _ => do
+      unless ys.size == k do
+        fail m!"the motive of the case analysis `{e}` takes fewer than {k} arguments"
+      mkForallFVars ys (mkConst ``Nat)
+    return (← mkLambdaFVars #[x] ty, ← getLevel ty)
   let mut minors := #[]
   for i in [0:iv.numCtors] do
     let ctor ← getConstInfoCtor iv.ctors[i]!
     let minor := args[iv.numParams + 2 + i]!
-    minors := minors.push (← withEta minor ctor.numFields fun fs b => do
+    minors := minors.push (← withEta minor (ctor.numFields + k) fun fs b => do
       mkLambdaFVars fs (← costOf ctx b))
   let levels := match e.getAppFn.constLevels! with
-    | _ :: ls => Level.one :: ls
+    | _ :: ls => mlvl.normalize :: ls
     | [] => []
   let cases := mkAppN (mkConst c levels)
-    (args[0:iv.numParams].toArray ++ #[motive, major] ++ minors)
-  return add (natE 1) (add (← costOf ctx major) cases)
+    (args[0:iv.numParams].toArray ++ #[motive, major] ++ minors ++ extra)
+  return add (natE 1) (add (← costOf ctx major) (add cases (← argsCost ctx extra)))
 
 /-- The matcher application `e` with its discriminants and alternatives prepared for a
 translation with result type `resultType`: the translated discriminants replaced by their

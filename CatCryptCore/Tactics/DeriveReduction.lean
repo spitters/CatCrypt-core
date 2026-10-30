@@ -1236,6 +1236,10 @@ partial def prove (hs : Array (Expr × Expr)) (g : MVarId) : TermElabM Unit := g
       let (a, b, s, f) := (targs[0]!, targs[1]!, targs[2]!, targs[3]!)
       let c₀ ← normalize rargs[2]!
       let k₀ := rargs[3]!
+      -- The goal with the bound computation in its normal form: a dispatch on a sum below the
+      -- bind (`(π.tensor π').start s a`, a `Sum.elim`) normalizes to the matcher of
+      -- `sumDispatch`, which `isDefEq` does not unfold on a variable scrutinee.
+      let g ← g.replaceTargetDefEq (← mkEq (mkCompile α t) (mkAppN r.getAppFn (rargs.set! 2 c₀)))
       let h₁ ← sub (← mkEq (mkCompile a s) c₀) 0
       let h₂ ← sub (← mkPointwise f k₀ 1 b) 1
       return ← close g (mkAppN (core `compile_bind_eq) #[a, b, s, f, c₀, k₀, h₁, h₂])

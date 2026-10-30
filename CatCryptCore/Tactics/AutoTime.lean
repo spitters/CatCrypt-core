@@ -1124,6 +1124,13 @@ def addCostFacts (g : MVarId) : MetaM MVarId := g.withContext do
       g := g'
   return g
 
+/-- The costed bind `(ret a).bind f` reduced by the first equation of `SPTree.Timed.bind` to
+`f a`, when its tree is syntactically a `ret` leaf. -/
+def bindOfCtor? (x : Expr) : Option Expr :=
+  let a := (x.getArg! 2).consumeMData
+  if a.isAppOfArity ``SPTree.Timed.ret 2 then some (mkApp (x.getArg! 3) a.appArg!).headBeta
+  else none
+
 /-- The step cost `x.1` of a pair `x` whose head definition unfolds to a pair, replaced by the
 first component of that pair, in the target. -/
 def reduceStepCosts (g : MVarId) : MetaM MVarId := g.withContext do
@@ -1136,6 +1143,11 @@ def reduceStepCosts (g : MVarId) : MetaM MVarId := g.withContext do
       if x.isAppOf ``SPTree.Timed.delay || x.isAppOf ``OracleAdv.Timed.delay then
         match ← withDefault (unfoldDefinition? x) with
         | some x' => x ← whnfC x'.headBeta
+        | none => break
+      else if x.isAppOfArity ``SPTree.Timed.bind 4 then
+        -- a costed bind of a tree whose root reduces to a constructor: one step of `bind`
+        match bindOfCtor? x with
+        | some x' => x := x'
         | none => break
       else
         match ← unfoldTree? x with
@@ -1832,6 +1844,33 @@ def matchFacts (g : MVarId) : TacticM (Option MVarId) := g.withContext do
   let (_, g') ← G.mvarId!.introN (3 * n)
   return some g'
 
+/-- The target with each step cost `(A.bind fun y => (0, ret (h y))).1` of a costed bind whose
+continuation returns at zero cost rewritten to `0` (`SPTree.Timed.bind_ret_fst`); the goal
+itself when there is none. The rewrite runs only when the target has such a step cost, read
+syntactically (a lambda continuation whose body is a pair with first component `0`), and
+without `zeta`, so that the `let`s of the target are not unfolded. -/
+def rewriteBindRet (g : MVarId) : TacticM MVarId := do
+  let tgt ← instantiateMVars (← g.getType)
+  let zeroRet (f : Expr) : Bool := match f with
+    | .lam _ _ b _ => b.isAppOfArity ``Prod.mk 4 && (b.getArg! 2).nat? == some 0
+    | _ => false
+  let has := (tgt.find? fun e => match fstOf? e with
+    | some y => y.isAppOfArity ``SPTree.Timed.bind 4 && zeroRet (y.getArg! 3)
+    | none => false).isSome
+  unless has do return g
+  let s ← saveState
+  try
+    setGoals [g]
+    evalTactic (← `(tactic| simp -zeta only [CatCrypt.Core.SPTree.Timed.bind_ret_fst]))
+    match ← getUnsolvedGoals with
+    | [g'] => return g'
+    | _ =>
+      s.restore
+      return g
+  catch _ =>
+    s.restore
+    return g
+
 mutual
 
 /-- An arithmetic leaf: the step costs of pairs are reduced, each remaining step cost `x.1` of a
@@ -1840,7 +1879,7 @@ sides are compared by cases (`matchFacts`), and `closeArithCore` closes the goal
 partial def closeArith (g : MVarId) (env : Bool) (fuel : Nat) : TacticM Unit := do
   let s0 ← saveState
   let g0 := g
-  let g ← liftLets (← reduceStepCosts (← reduceProjBeta g))
+  let g ← liftLets (← rewriteBindRet (← reduceStepCosts (← reduceProjBeta g)))
   let mut g := g
   let tgt ← g.withContext do instantiateMVars (← g.getType)
   let mut seen : Array Expr := #[]
