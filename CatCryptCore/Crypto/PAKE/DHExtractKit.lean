@@ -8,6 +8,7 @@ module
 public import CatCryptCore.Crypto.PAKE.DHPAKE
 public import CatCryptCore.Tactics.DeriveReduction
 public import CatCryptCore.Tactics.AutoTime
+public import CatCryptCore.Crypto.OracleSimulation
 
 /-!
 # Straight-line password extraction for Diffie–Hellman PAKEs
@@ -34,7 +35,15 @@ The instances:
   generator `gen pw` (`cpace_matchTest_iff`). The three bad events of the realization proof:
   - a double match on the passwords of generators `g^{c₁}`, `g^{c₂}` is a solution of the
     simultaneous Diffie–Hellman game `sdhGame` on the challenge `(g^z, g^{c₁}, g^{c₂})`
-    (`cpace_doubleMatch_sdhWins`, `sdhWins_pub_iff`);
+    (`cpace_doubleMatch_sdhWins`, `sdhWins_pub_iff`). At the level of games, the
+    double-match game `dmGame` (the adversary sees `g^z` and the generator table, queries
+    the match test as an oracle, and outputs two matches for distinct passwords) is bounded
+    by the strong SDH game `ssdhGame` of Abdalla–Haase–Hesse, whose adversary queries the
+    restricted DDH oracles `DDH(gen_i, X, ·, ·)`: `dmGame_le_ssdhGame` gives
+    `Pr[dmGame A] ≤ 2 · Pr[ssdhGame (ssdhReduction A)]`. The reduction programs the
+    generator of each password as `gen₁^r` or `gen₂^r` by a coin, answers each match query
+    by one DDH query, and runs in the adversary's time plus one exponentiation per query
+    (`ssdhReduction.timeBound_timed`);
   - a match against a generator independent of the adversary's view (an `H1` point it never
     queried) has probability at most `1/|S|` per query (`cpace_fresh_generator_le`), an
     information-theoretic term;
@@ -234,6 +243,14 @@ theorem exp_injective {Y : W} (hY : Y ≠ G.pub 0) : Function.Injective (G.exp Y
     `Y^{dlog X / dlog gen}`, which is `Y^x` for `X = gen^x`. -/
 def cdhIn (gen X Y : W) : W := G.exp Y (G.dlog X * (G.dlog gen)⁻¹)
 
+/-- **Changing the generator by an exponent.** For `u ≠ 0`, `k^u` is the Diffie–Hellman value
+    of `X` and `Y` over `gen` iff `k` is that value over `gen^u`. -/
+theorem exp_eq_cdhIn_iff {u : S} (hu : u ≠ 0) (gen X Y k : W) :
+    G.exp k u = G.cdhIn gen X Y ↔ k = G.cdhIn (G.exp gen u) X Y := by
+  simp only [cdhIn, exp_eq, dlog_pub, G.pub.injective.eq_iff, mul_inv]
+  conv_rhs => rw [← G.pub_dlog k, G.pub.injective.eq_iff]
+  grind
+
 /-- The group as a `DHPAKE` with one password and identity masks, `dh x Y = Y^x`; its
     `cdhDef` is the CDH group of `G`. -/
 def toDHPAKE : DHPAKE S W PUnit where
@@ -410,6 +427,326 @@ theorem passiveCDHReduction.tree.timeBound_timed (c : S) (A : W → W → SPTree
     SPTree.Timed.stepTime (passiveCDHReduction.tree.timed G c A ACost gA gB exp expCost) ≤
       T + a + te + 2 := by
   time_bound
+
+/-! ### Double matches and the strong simultaneous Diffie–Hellman problem -/
+
+/-- **The restricted DDH oracle** of the strong SDH problem on the challenge
+    `(X, gen₁, gen₂)`: the query `(i, Y, K)` asks whether `Y` is not the identity and `K` is
+    the Diffie–Hellman value of `X` and `Y` over `gen₁` (`i = true`) or `gen₂` (`i = false`).
+    Each DDH test has its first two arguments fixed to `(gen_i, X)`; the identity test on `Y`
+    is public. -/
+noncomputable def ssdhOracle (X gen₁ gen₂ : W) (s : Unit) (q : Bool × W × W) :
+    PMF (Bool × Unit) :=
+  PMF.pure
+    (decide (q.2.1 ≠ G.pub 0 ∧ q.2.2 = G.cdhIn (if q.1 then gen₁ else gen₂) X q.2.1), s)
+
+/-- An adversary against the strong SDH problem: on the challenge `(X, gen₁, gen₂)` it
+    queries the restricted DDH oracle and outputs `(Y, K₁, K₂)`. -/
+abbrev SSDHAdversary (W : Type) := W → W → W → OracleAdv (Bool × W × W) Bool (W × W × W)
+
+/-- **The match oracle** of the double-match game with the simulated message `X` and the
+    generator table `H`: the query `(pw, peer, k)` asks whether `peer` is not the identity and
+    `k` is the Diffie–Hellman value of `X` and `peer` over `H pw`, the CPace match test
+    (`dmOracle_eq_matchTest`). -/
+noncomputable def dmOracle (X : W) (H : Pw → W) (s : Unit) (q : Pw × W × W) :
+    PMF (Bool × Unit) :=
+  PMF.pure (decide (q.2.1 ≠ G.pub 0 ∧ q.2.2 = G.cdhIn (H q.1) X q.2.1), s)
+
+/-- **The double-match winning condition** on the output `(peer, k₁, k₂, pw₁, pw₂)`: the
+    passwords are distinct and `(peer, k₁, k₂)` solves the SDH problem on `(X, H pw₁, H pw₂)`,
+    so that both queries pass the match test. -/
+def DMWins (X : W) (H : Pw → W) (o : W × W × W × Pw × Pw) : Prop :=
+  o.2.2.2.1 ≠ o.2.2.2.2 ∧ SDHWins G X (H o.2.2.2.1) (H o.2.2.2.2) (o.1, o.2.1, o.2.2.1)
+
+instance [DecidableEq Pw] (X : W) (H : Pw → W) (o : W × W × W × Pw × Pw) :
+    Decidable (DMWins G X H o) :=
+  inferInstanceAs (Decidable (_ ∧ _))
+
+/-- An adversary against CPace double matches: on the simulated message `X` and the
+    generator table `H` it queries the match oracle and outputs `(peer, k₁, k₂, pw₁, pw₂)`. -/
+abbrev DMAdversary (W Pw : Type) :=
+  W → (Pw → W) → OracleAdv (Pw × W × W) Bool (W × W × W × Pw × Pw)
+
+/-- The generator table of the strong SDH reduction: the generator of `pw` is
+    `gen₁^{r pw}` or `gen₂^{r pw}` according to the coin `b pw`. -/
+def ssdhTable (gen₁ gen₂ : W) (b : Pw → Bool) (r : Pw → Sˣ) (pw : Pw) : W :=
+  G.exp (if b pw then gen₁ else gen₂) (r pw)
+
+/-- The output of the strong SDH reduction on a double match `(peer, k₁, k₂, pw₁, pw₂)`: the
+    keys raised to the exponents of their passwords, the key of the password with coin `true`
+    first. -/
+def ssdhConvert (b : Pw → Bool) (r : Pw → Sˣ) (o : W × W × W × Pw × Pw) : W × W × W :=
+  if b o.2.2.2.1 = true then (o.1, G.exp o.2.1 (r o.2.2.2.1), G.exp o.2.2.1 (r o.2.2.2.2))
+  else (o.1, G.exp o.2.2.1 (r o.2.2.2.2), G.exp o.2.1 (r o.2.2.2.1))
+
+/-- **The strong SDH reduction for double matches.** On the challenge `(X, gen₁, gen₂)` it
+    flips a coin `b pw` and draws a nonzero exponent `r pw` for every password, gives the
+    double-match adversary the simulated message `X` and the generator table
+    `ssdhTable gen₁ gen₂ b r`, answers each match query `(pw, peer, k)` by the DDH query
+    `(b pw, peer, k^{r pw})`, and converts the output with `ssdhConvert`. -/
+noncomputable def ssdhReduction [Fintype Pw] [DecidableEq Pw] [DecidableEq S]
+    (A : DMAdversary W Pw) : SSDHAdversary W :=
+  fun X gen₁ gen₂ =>
+    .rand (PMF.uniformFintype (Pw → Bool)) fun b =>
+    .rand (PMF.uniformFintype (Pw → Sˣ)) fun r =>
+      (OracleAdv.mapQuery (fun q => (b q.1, q.2.1, G.exp q.2.2 (r q.1)))
+        (A X (ssdhTable G gen₁ gen₂ b r))).bind fun o => .ret (ssdhConvert G b r o)
+
+derive_reduction ssdhReduction
+
+omit [DecidableEq W] [Nonempty S] in
+/-- **Time of the strong SDH reduction.** A double-match adversary of time at most `T` with
+    at most `q` match queries and call cost at most `a`, with exponentiations of cost at most
+    `te`, gives a strong SDH adversary of time at most `a + T + q (te + 4) + 2 te + 10`: one
+    exponentiation per query and two for the output. -/
+theorem ssdhReduction.timeBound_timed [Fintype Pw] [DecidableEq Pw] [DecidableEq S]
+    (A : W → (Pw → W) → OracleAdv.Timed (Pw × W × W) Bool (W × W × W × Pw × Pw))
+    (ACost : W → (Pw → W) → ℕ) (X gen₁ gen₂ : W) (expCost : W → S → ℕ) {T q a te : ℕ}
+    (hA : ∀ X H, (A X H).TimeBound T) (hq : ∀ X H, (A X H).erase.IsQueryBound q)
+    (hAc : ∀ X H, ACost X H ≤ a) (he : ∀ Y s, expCost Y s ≤ te) :
+    OracleAdv.Timed.StepTimeBound (ssdhReduction.timed G A ACost X gen₁ gen₂ expCost)
+      (a + T + q * (te + 4) + 2 * te + 10) := by
+  have hB : ∀ (b : Pw → Bool) (r : Pw → Sˣ), OracleAdv.Timed.StepTimeBound
+      ((OracleAdv.Timed.mapQuery (fun qr => (b qr.1, qr.2.1, G.exp qr.2.2 ↑(r qr.1)))
+        (fun qr => 3 + (expCost qr.2.2 ↑(r qr.1) + 1)) (A X (ssdhTable G gen₁ gen₂ b r))).bind
+        fun o => (3 + if b o.2.2.2.1 = true then
+            1 + (expCost o.2.1 ↑(r o.2.2.2.1) + 1) + (1 + (expCost o.2.2.1 ↑(r o.2.2.2.2) + 1))
+          else 1 + (expCost o.2.2.1 ↑(r o.2.2.2.2) + 1) + (1 + (expCost o.2.1 ↑(r o.2.2.2.1) + 1)),
+          OracleAdv.Timed.ret (ssdhConvert G b r o)))
+      (T + q * (te + 4) + (2 * te + 7)) := fun b r =>
+    OracleAdv.Timed.timeBound_bind
+      (OracleAdv.Timed.timeBound_mapQuery _ _ (fun qr => by have := he qr.2.2 (r qr.1); omega)
+        (hA _ _) (hq _ _))
+      fun o => ⟨by
+        have := he o.2.1 (r o.2.2.2.1)
+        have := he o.2.2.1 (r o.2.2.2.2)
+        split <;> omega, trivial⟩
+  unfold ssdhReduction.timed
+  refine ⟨Nat.zero_le _, by omega, fun b => ⟨Nat.zero_le _, by grind, fun r => ?_⟩⟩
+  dsimp only
+  obtain ⟨h1, h2⟩ := hB b r
+  have := hAc X (ssdhTable G gen₁ gen₂ b r)
+  exact ⟨by omega, h2.mono (by omega)⟩
+
+variable [DecidableEq S]
+
+/-- **The strong simultaneous Diffie–Hellman game** `sSDH` (Abdalla–Haase–Hesse): the
+    challenger samples `x` and two generators `g^{c₁}`, `g^{c₂}` (`c_i ≠ 0`); the adversary
+    receives `(g^x, g^{c₁}, g^{c₂})`, queries `ssdhOracle`, and wins with `SDHWins`. -/
+noncomputable def ssdhGame (A : SSDHAdversary W) : PMF Bool :=
+  (PMF.uniformFintype S).bind fun x => (PMF.uniformFintype Sˣ).bind fun c₁ =>
+  (PMF.uniformFintype Sˣ).bind fun c₂ =>
+    (OracleAdv.run (ssdhOracle G (G.pub x) (G.pub c₁) (G.pub c₂))
+      (A (G.pub x) (G.pub c₁) (G.pub c₂)) ()).map fun y =>
+        decide (SDHWins G (G.pub x) (G.pub c₁) (G.pub c₂) y.1)
+
+variable [Fintype Pw] [DecidableEq Pw]
+
+/-- **The double-match game.** The challenger samples the simulator's secret `z` and a
+    nonzero trapdoor `td pw` for every password, programs the generator table
+    `H pw = g^{td pw}`, and runs the adversary on `g^z` and `H` against the match oracle; it
+    wins with `DMWins`. -/
+noncomputable def dmGame (A : DMAdversary W Pw) : PMF Bool :=
+  (PMF.uniformFintype S).bind fun z => (PMF.uniformFintype (Pw → Sˣ)).bind fun td =>
+    (OracleAdv.run (dmOracle G (G.pub z) fun pw => G.pub (td pw))
+      (A (G.pub z) fun pw => G.pub (td pw)) ()).map fun y =>
+        decide (DMWins G (G.pub z) (fun pw => G.pub (td pw)) y.1)
+
+omit [Fintype S] [Nonempty S] [DecidableEq S] [Fintype Pw] [DecidableEq Pw] in
+/-- The match oracle of the double-match game answers with the CPace match test of the
+    trapdoors `td`. -/
+theorem dmOracle_eq_matchTest (td : Pw → Sˣ) (z : S) (s : Unit) (q : Pw × W × W) :
+    dmOracle G (G.pub z) (fun pw => G.pub (td pw)) s q =
+      PMF.pure ((cpaceKit G (fun pw => (td pw : S)) fun pw => (td pw).ne_zero).matchTest z
+        q.2.1 q.2.2 q.1, s) := by
+  have h := cpace_matchTest_iff G (fun pw => (td pw : S)) (fun pw => (td pw).ne_zero) z
+    q.2.1 q.2.2 q.1
+  simp only [dmOracle]
+  congr 2
+  grind
+
+omit [Fintype S] [Nonempty S] [DecidableEq S] [Fintype Pw] [DecidableEq Pw] in
+/-- The reduction's translated DDH queries answer the match oracle of its generator table. -/
+theorem ssdhOracle_translate (X gen₁ gen₂ : W) (b : Pw → Bool) (r : Pw → Sˣ) :
+    (fun s (q : Pw × W × W) =>
+        ssdhOracle G X gen₁ gen₂ s (b q.1, q.2.1, G.exp q.2.2 (r q.1))) =
+      dmOracle G X (ssdhTable G gen₁ gen₂ b r) := by
+  funext s q
+  simp only [ssdhOracle, dmOracle, ssdhTable]
+  congr 2
+  exact decide_eq_decide.mpr
+    (and_congr_right fun _ => G.exp_eq_cdhIn_iff (r q.1).ne_zero _ _ _ _)
+
+omit [Fintype S] [Nonempty S] [DecidableEq S] [Fintype Pw] [DecidableEq Pw] [DecidableEq W] in
+/-- **A double match on passwords of distinct coins is an SDH solution.** -/
+theorem sdhWins_ssdhConvert {X gen₁ gen₂ : W} {b : Pw → Bool} {r : Pw → Sˣ}
+    {o : W × W × W × Pw × Pw} (hw : DMWins G X (ssdhTable G gen₁ gen₂ b r) o)
+    (hb : b o.2.2.2.1 ≠ b o.2.2.2.2) :
+    SDHWins G X gen₁ gen₂ (ssdhConvert G b r o) := by
+  obtain ⟨peer, k₁, k₂, pw₁, pw₂⟩ := o
+  obtain ⟨-, hY, h₁, h₂⟩ := hw
+  rw [ssdhTable, ← G.exp_eq_cdhIn_iff (r pw₁).ne_zero] at h₁
+  rw [ssdhTable, ← G.exp_eq_cdhIn_iff (r pw₂).ne_zero] at h₂
+  simp only [ssdhConvert, SDHWins] at hY h₁ h₂ hb ⊢
+  cases hb₁ : b pw₁ <;> cases hb₂ : b pw₂ <;> simp_all
+
+omit [Nonempty S] in
+/-- The run of the reduction against the restricted DDH oracle is the run of the
+    double-match adversary against the match oracle of the reduction's generator table. -/
+theorem run_ssdhReduction (A : DMAdversary W Pw) (X gen₁ gen₂ : W) :
+    (OracleAdv.run (ssdhOracle G X gen₁ gen₂) (ssdhReduction G A X gen₁ gen₂) ()).map
+        (fun y => decide (SDHWins G X gen₁ gen₂ y.1)) =
+      (PMF.uniformFintype (Pw → Bool)).bind fun b =>
+      (PMF.uniformFintype (Pw → Sˣ)).bind fun r =>
+        (OracleAdv.run (dmOracle G X (ssdhTable G gen₁ gen₂ b r))
+          (A X (ssdhTable G gen₁ gen₂ b r)) ()).map fun y =>
+            decide (SDHWins G X gen₁ gen₂ (ssdhConvert G b r y.1)) := by
+  simp only [ssdhReduction, OracleAdv.run_rand, OracleAdv.run_bind, OracleAdv.run_mapQuery,
+    OracleAdv.run_ret, PMF.map_bind, ssdhOracle_translate]
+  refine congrArg _ (funext fun b => congrArg _ (funext fun r => ?_))
+  simp only [PMF.pure_map]
+  exact PMF.bind_pure_comp _ _
+
+omit [Fintype S] [Nonempty S] [DecidableEq S] [DecidableEq W] in
+/-- **Two distinct passwords get distinct coins with probability one half.** -/
+theorem two_mul_coin_tsum {pw₁ pw₂ : Pw} (h : pw₁ ≠ pw₂) :
+    2 * ∑' b : Pw → Bool, PMF.uniformFintype (Pw → Bool) b *
+      (if b pw₁ ≠ b pw₂ then 1 else 0) = 1 := by
+  let σ : (Pw → Bool) → (Pw → Bool) := fun b => Function.update b pw₂ (!b pw₂)
+  have hσ : Function.Involutive σ := fun b => by
+    funext p
+    by_cases hp : p = pw₂ <;> simp [σ, Function.update, hp]
+  have hswap : ∀ b : Pw → Bool, (σ b pw₁ ≠ σ b pw₂) ↔ (b pw₁ = b pw₂) := fun b => by
+    simp [σ, h]
+  have hperm : ∑' b : Pw → Bool, PMF.uniformFintype (Pw → Bool) b *
+      (if b pw₁ ≠ b pw₂ then 1 else 0) = ∑' b : Pw → Bool, PMF.uniformFintype (Pw → Bool) b *
+      (if b pw₁ = b pw₂ then 1 else 0) := by
+    rw [← (hσ.toPerm σ).tsum_eq]
+    refine tsum_congr fun b => ?_
+    simp only [Function.Involutive.coe_toPerm, PMF.uniformFintype_apply, hswap]
+  rw [two_mul]
+  nth_rewrite 2 [hperm]
+  rw [← ENNReal.tsum_add]
+  refine (tsum_congr fun b => ?_).trans (PMF.uniformFintype (Pw → Bool)).tsum_coe
+  by_cases hb : b pw₁ = b pw₂ <;> simp [hb]
+
+/-- A bind whose continuations are bounded by `k` times others is bounded by `k` times the
+    bind of the others. -/
+theorem bind_apply_le_mul {α β : Type} (p : PMF α) (f g : α → PMF β) (b : β) (k : ℝ≥0∞)
+    (h : ∀ a, f a b ≤ k * g a b) : (p.bind f) b ≤ k * (p.bind g) b := by
+  rw [PMF.bind_apply, PMF.bind_apply, ← ENNReal.tsum_mul_left]
+  exact ENNReal.tsum_le_tsum fun a => by
+    rw [mul_left_comm]
+    gcongr
+    exact h a
+
+/-- The probability of a decided event, as a sum over the outcomes satisfying it. -/
+theorem map_decide_apply_true {α : Type} (p : PMF α) (P : α → Prop) [DecidablePred P] :
+    (p.map fun a => decide (P a)) true = ∑' a, if P a then p a else 0 := by
+  rw [PMF.map_apply]
+  refine tsum_congr fun a => ?_
+  by_cases h : P a <;> simp [h]
+
+omit [Nonempty S] in
+/-- **The inner bound.** For a fixed simulated message `g^x` and fixed nonzero generators,
+    the double-match probability over the trapdoors is at most twice the success probability
+    of the reduction. -/
+theorem dm_inner_le (A : DMAdversary W Pw) (x : S) (c₁ c₂ : Sˣ) :
+    ((PMF.uniformFintype (Pw → Sˣ)).bind fun td =>
+      (OracleAdv.run (dmOracle G (G.pub x) fun pw => G.pub (td pw))
+        (A (G.pub x) fun pw => G.pub (td pw)) ()).map fun y =>
+          decide (DMWins G (G.pub x) (fun pw => G.pub (td pw)) y.1)) true ≤
+    2 * ((OracleAdv.run (ssdhOracle G (G.pub x) (G.pub c₁) (G.pub c₂))
+      (ssdhReduction G A (G.pub x) (G.pub c₁) (G.pub c₂)) ()).map fun y =>
+        decide (SDHWins G (G.pub x) (G.pub c₁) (G.pub c₂) y.1)) true := by
+  rw [run_ssdhReduction]
+  let Hf : (Pw → Sˣ) → Pw → W := fun td pw => G.pub (td pw)
+  let R : (Pw → W) → PMF ((W × W × W × Pw × Pw) × Unit) := fun H =>
+    OracleAdv.run (dmOracle G (G.pub x) H) (A (G.pub x) H) ()
+  let E : (Pw → Sˣ) → (W × W × W × Pw × Pw) × Unit → ℝ≥0∞ := fun td y =>
+    if DMWins G (G.pub x) (Hf td) y.1 then R (Hf td) y else 0
+  let c : (Pw → Bool) → (W × W × W × Pw × Pw) × Unit → ℝ≥0∞ := fun b y =>
+    if b y.1.2.2.2.1 ≠ b y.1.2.2.2.2 then 1 else 0
+  let F : (Pw → Bool) → (Pw → W) → ℝ≥0∞ := fun b H => ∑' y,
+    if DMWins G (G.pub x) H y.1 ∧ b y.1.2.2.2.1 ≠ b y.1.2.2.2.2 then R H y else 0
+  let φ : (Pw → Bool) → (Pw → Sˣ) ≃ (Pw → Sˣ) := fun b =>
+    Equiv.piCongrRight fun pw => Equiv.mulLeft (if b pw then c₁ else c₂)
+  have htab : ∀ b r, ssdhTable G (G.pub c₁) (G.pub c₂) b r = Hf (φ b r) := fun b r => by
+    funext pw
+    by_cases hb : b pw = true <;> simp [ssdhTable, hb, φ, Hf, G.exp_pub]
+  have hstep : ∀ b r, F b (ssdhTable G (G.pub c₁) (G.pub c₂) b r) ≤
+      (PMF.map (fun y => decide (SDHWins G (G.pub x) (G.pub c₁) (G.pub c₂)
+        (ssdhConvert G b r y.1))) (R (ssdhTable G (G.pub c₁) (G.pub c₂) b r))) true := by
+    intro b r
+    rw [map_decide_apply_true]
+    refine ENNReal.tsum_le_tsum fun y => ?_
+    by_cases h1 : DMWins G (G.pub x) (ssdhTable G (G.pub c₁) (G.pub c₂) b r) y.1 ∧
+      b y.1.2.2.2.1 ≠ b y.1.2.2.2.2
+    · simp only [h1.1, h1.2, sdhWins_ssdhConvert G h1.1 h1.2, ne_eq, not_false_eq_true,
+        and_self, ite_true, le_refl]
+    · simp only [h1, ite_false, zero_le]
+  have hre : ∀ b, ∑' r, PMF.uniformFintype (Pw → Sˣ) r *
+      F b (ssdhTable G (G.pub c₁) (G.pub c₂) b r) =
+      ∑' td, PMF.uniformFintype (Pw → Sˣ) td * ∑' y, E td y * c b y := by
+    intro b
+    refine Eq.trans ?_ ((φ b).tsum_eq fun td =>
+      PMF.uniformFintype (Pw → Sˣ) td * ∑' y, E td y * c b y)
+    refine tsum_congr fun r => ?_
+    rw [htab, PMF.uniformFintype_apply, PMF.uniformFintype_apply]
+    congr 1
+    refine tsum_congr fun y => ?_
+    by_cases hD : DMWins G (G.pub x) (Hf (φ b r)) y.1 <;>
+      by_cases hc : b y.1.2.2.2.1 ≠ b y.1.2.2.2.2 <;> simp [E, c, hD, hc]
+  have hcoin : ∀ td y, E td y * (2 * ∑' b, PMF.uniformFintype (Pw → Bool) b * c b y) =
+      E td y := by
+    intro td y
+    by_cases hD : DMWins G (G.pub x) (Hf td) y.1
+    · simp only [c]
+      rw [two_mul_coin_tsum hD.1, mul_one]
+    · simp [E, hD]
+  calc ((PMF.uniformFintype (Pw → Sˣ)).bind fun td =>
+        (R (Hf td)).map fun y => decide (DMWins G (G.pub x) (Hf td) y.1)) true
+      = ∑' td, PMF.uniformFintype (Pw → Sˣ) td * ∑' y, E td y := by
+        rw [PMF.bind_apply]
+        exact tsum_congr fun td => by rw [map_decide_apply_true]
+    _ = ∑' td, PMF.uniformFintype (Pw → Sˣ) td *
+          ∑' y, E td y * (2 * ∑' b, PMF.uniformFintype (Pw → Bool) b * c b y) := by
+        simp only [hcoin]
+    _ = 2 * ∑' b, PMF.uniformFintype (Pw → Bool) b *
+          ∑' td, PMF.uniformFintype (Pw → Sˣ) td * ∑' y, E td y * c b y := by
+        simp only [← ENNReal.tsum_mul_left]
+        refine Eq.trans ?_ ENNReal.tsum_comm
+        refine tsum_congr fun td => Eq.trans ?_ ENNReal.tsum_comm
+        exact tsum_congr fun y => tsum_congr fun b => by ring
+    _ = 2 * ∑' b, PMF.uniformFintype (Pw → Bool) b * ∑' r, PMF.uniformFintype (Pw → Sˣ) r *
+          F b (ssdhTable G (G.pub c₁) (G.pub c₂) b r) := by
+        simp only [hre]
+    _ ≤ 2 * ((PMF.uniformFintype (Pw → Bool)).bind fun b =>
+          (PMF.uniformFintype (Pw → Sˣ)).bind fun r =>
+            (R (ssdhTable G (G.pub c₁) (G.pub c₂) b r)).map fun y =>
+              decide (SDHWins G (G.pub x) (G.pub c₁) (G.pub c₂)
+                (ssdhConvert G b r y.1))) true := by
+        rw [PMF.bind_apply]
+        gcongr with b
+        rw [PMF.bind_apply]
+        gcongr with r
+        exact hstep b r
+
+/-- **A CPace double match reduces to strong SDH** (tightly, up to the factor `2` of the
+    reduction's coins). For every double-match adversary `A`,
+    `Pr[dmGame A] ≤ 2 · Pr[ssdhGame (ssdhReduction A)]`. -/
+theorem dmGame_le_ssdhGame (A : DMAdversary W Pw) :
+    dmGame G A true ≤ 2 * ssdhGame G (ssdhReduction G A) true := by
+  have hconst : dmGame G A = (PMF.uniformFintype S).bind fun x =>
+      (PMF.uniformFintype Sˣ).bind fun _ => (PMF.uniformFintype Sˣ).bind fun _ =>
+        (PMF.uniformFintype (Pw → Sˣ)).bind fun td =>
+          (OracleAdv.run (dmOracle G (G.pub x) fun pw => G.pub (td pw))
+            (A (G.pub x) fun pw => G.pub (td pw)) ()).map fun y =>
+              decide (DMWins G (G.pub x) (fun pw => G.pub (td pw)) y.1) := by
+    simp only [PMF.bind_const, dmGame]
+  rw [hconst, ssdhGame]
+  exact bind_apply_le_mul _ _ _ _ _ fun x => bind_apply_le_mul _ _ _ _ _ fun c₁ =>
+    bind_apply_le_mul _ _ _ _ _ fun c₂ => dm_inner_le G A x c₁ c₂
 
 end CPace
 
