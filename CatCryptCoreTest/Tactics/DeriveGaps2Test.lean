@@ -71,6 +71,25 @@ example (E O : Type) : ∃ a b, (cntHyb.timed E O).TimeBound a b :=
 example (E O : Type) : ∃ a b c, (cntMulti.timed E O).TimeBound a b c :=
   ⟨_, _, _, cntMulti.timeBound_timed E O⟩
 
+/-- The step cost of a costed bind of an opaque tree into continuations whose step cost is a
+`casesOn` on a component of the bound value is bounded by the maximum of the alternatives. -/
+example {α β γ : Type} (A : CatCrypt.Core.SPTree.Timed (α × (β ⊕ γ))) :
+    (A.bind fun x => (3 + Sum.casesOn (motive := fun _ => ℕ) x.2 (fun _ => 1) fun _ => 1,
+      CatCrypt.Core.SPTree.Timed.ret x.1)).1 + 1 ≤ 5 := by
+  time_bound
+
+/-- A costed bind of a `ret` leaf into a continuation whose step cost is a `casesOn` on a
+component of the bound value. -/
+noncomputable def retCasesCost {A : Type} (a : A) : ℕ × CatCrypt.Core.SPTree.Timed Unit :=
+  (CatCrypt.Core.SPTree.Timed.ret ((), (Sum.inl a : A ⊕ A))).bind fun x =>
+    (Sum.casesOn (motive := fun _ => ℕ) x.2 (fun _ => 1) fun _ => 1,
+      CatCrypt.Core.SPTree.Timed.ret x.1)
+
+/-- The step cost of `retCasesCost a`, reduced to `Sum.casesOn ((), Sum.inl a).2 …`, is read
+as the projection of a pair literal under a `casesOn`, which reduces to `1`. -/
+example {A : Type} (a : A) (t : ℕ) : (retCasesCost a).1 + 16 ≤ max 4 (t + 17) := by
+  time_bound
+
 end CatCrypt.Tactics.DeriveGaps2Test
 
 namespace CatCrypt.Crypto.UCTransparent.KeyedGame

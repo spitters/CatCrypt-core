@@ -96,9 +96,12 @@ hypothesis `StepTimeBound X N` at `A = X.2`. The premises of a source are closed
 
 An arithmetic leaf is reduced and extended before it is closed: its step costs `x.1` are
 reduced (when `x` is a `delay` or its head definition unfolds to a pair) or bounded by a source
-of `x`; projections of pairs, applied or not (`(a, b).2 x`), and beta redexes are reduced; a
-recursor or `casesOn` on a constructor is reduced by iota, and a number-valued application of a
-definition to a constructor is reduced to its numeral (`reduceCtorArg?`:
+of `x`, a costed bind `A.bind g` without a source by a bound of the step costs of `g` that does
+not depend on the bound value (`bind_fst_le`, the bound proposed by `ubLin` and proved by the
+case distinctions of `invLeaf`); projections of pairs, applied or not (`(a, b).2 x`), and beta
+redexes are reduced; a recursor or `casesOn` on a constructor is reduced by iota, and a
+number-valued application of a definition to a constructor is reduced to its numeral
+(`reduceCtorArg?`:
 `Sum.elim (fun _ => 1) (fun _ => 0) (.inl q)` to `1`); and the bounded atoms are added: for
 every subterm `f a` of the leaf and every local hypothesis `∀ x, f x ≤ b`, the instance
 `f a ≤ b[a/x]`; for every subtype value `↑m`, its invariant `m.property`; for every registered
@@ -442,6 +445,14 @@ theorem stepTime_fst_bind_bind {γ : Type} (A : SPTree.Timed γ) (g : γ → ℕ
   | load h₀ c t ih =>
     simp only [SPTree.Timed.bind, SPTree.Timed.stepTime, SPTree.Timed.time_load] at ih ⊢
     omega
+
+/-- The step cost of a costed bind `A.bind g` is at most a bound `c` of the step costs of the
+continuations `g a`. -/
+theorem bind_fst_le {γ : Type} (A : SPTree.Timed γ) {g : γ → ℕ × SPTree.Timed α} {c : ℕ}
+    (h : ∀ a, (g a).1 ≤ c) : (A.bind g).1 ≤ c := by
+  cases A with
+  | ret a => exact h a
+  | _ => exact Nat.zero_le _
 
 /-- A bind after the tree `y.2` of a costed bind `y = A.bind g` on a path whose cost `P` has the
 summand `y.1`: the two are the bind of `A` into the continuations `g s` followed by `k`. -/
@@ -1301,6 +1312,9 @@ partial def invLeaf (g : MVarId) (fuel : Nat) : TacticM Unit := g.withContext do
     if let some gs ← boolCases? g tgt then
       for g' in gs do invLeaf g' (fuel - 1)
       return
+    if let some gs ← recCases? g tgt then
+      for g' in gs do invLeaf g' (fuel - 1)
+      return
     let some (some gs) ← capped (splitTarget? g) | throw e
     for g' in gs do invLeaf g' (fuel - 1)
 
@@ -1396,8 +1410,20 @@ def hypBound? (e : Expr) : MetaM (Option Expr) := do
     else s.restore
   return none
 
+/-- The minor premises of a full application of a `casesOn` recursor; `none` for any other
+term. -/
+def casesOnAlts? (e : Expr) : MetaM (Option (Array Expr)) := do
+  let some n := e.getAppFn.constName? | return none
+  unless isCasesOnRecursor (← getEnv) n do return none
+  let ind ← getConstInfoInduct n.getPrefix
+  let first := ind.numParams + 1 + ind.numIndices + 1
+  let args := e.getAppArgs
+  unless args.size == first + ind.ctors.length do return none
+  return some (args.extract first args.size)
+
 /-- A proposed linear bound of the natural number `e`: sums, products by numerals, `if`
-(the componentwise maximum of the branches), projections of pairs and of `if`s, and the
+(the componentwise maximum of the branches), `match` and `casesOn` (the maximum of the
+alternatives), projections of pairs and of `if`s, and the
 bounds of local hypotheses `∀ x, l ≤ b` at the atoms. -/
 partial def ubLin (e : Expr) (fuel : Nat) : MetaM (Option LinB) := do
   if fuel == 0 then return none
@@ -1426,7 +1452,9 @@ partial def ubLin (e : Expr) (fuel : Nat) : MetaM (Option LinB) := do
   -- `dite` and `match`: the maximum over the alternatives, whose bounds do not depend on the
   -- fields of the alternative
   let alts? ← if e.isAppOfArity ``dite 5 then pure (some #[e.getArg! 3, e.getArg! 4])
-    else pure ((← matchMatcherApp? e).map (·.alts))
+    else match ← matchMatcherApp? e with
+      | some m => pure (some m.alts)
+      | none => casesOnAlts? e
   if let some alts := alts? then
     let mut acc : Option LinB := none
     for alt in alts do
@@ -1873,15 +1901,43 @@ def rewriteBindRet (g : MVarId) : TacticM MVarId := do
     s.restore
     return g
 
+/-- The fact `(A.bind g).1 ≤ c` (`bind_fst_le`) for a costed bind `x = A.bind g` whose
+continuation has step costs `(g a).1` with a linear bound `c` (`ubLin`) that does not depend on
+`a`, the premise `∀ a, (g a).1 ≤ c` proved by `invLeaf`; `none` when `x` is not such a bind. -/
+def bindFstFact? (x : Expr) : TacticM (Option Expr) := do
+  unless x.isAppOfArity ``SPTree.Timed.bind 4 do return none
+  let A := x.getArg! 2
+  let k := x.getArg! 3
+  let .forallE n d _ _ ← whnfR (← inferType k) | return none
+  let some stmt ← withLocalDeclD n d fun a => do
+      let e ← mkAppM ``Prod.fst #[(mkApp k a).headBeta]
+      let some l ← ubLin ((reduceProjApp? e).getD e) 64 | return none
+      if l.2.any fun (t, _) => t.containsFVar a.fvarId! then return none
+      return some (← mkForallFVars #[a] (mkNatLe e (← l.toExpr)))
+    | return none
+  let s ← saveState
+  let m ← mkFreshExprMVar stmt
+  try
+    invLeaf m.mvarId! 32
+    return some (← mkAppM ``bind_fst_le #[A, ← instantiateMVars m])
+  catch _ =>
+    s.restore
+    return none
+
 mutual
 
-/-- An arithmetic leaf: the step costs of pairs are reduced, each remaining step cost `x.1` of a
-costed tree is bounded by a source of `x`, the matches of the same discriminants on its two
+/-- An arithmetic leaf: the step costs of pairs are reduced (and the projections and constructor
+applications they expose, when a step cost was reduced), each remaining step cost `x.1` of a
+costed tree is bounded by a source of `x` (a costed bind `A.bind g` without a source by a bound
+of the step costs of `g`, `bindFstFact?`), the matches of the same discriminants on its two
 sides are compared by cases (`matchFacts`), and `closeArithCore` closes the goal. -/
 partial def closeArith (g : MVarId) (env : Bool) (fuel : Nat) : TacticM Unit := do
   let s0 ← saveState
   let g0 := g
-  let g ← liftLets (← rewriteBindRet (← reduceStepCosts (← reduceProjBeta g)))
+  let g1 ← reduceProjBeta g
+  let g2 ← reduceStepCosts g1
+  let g2 ← if g2 == g1 then pure g2 else reduceProjBeta g2
+  let g ← liftLets (← rewriteBindRet g2)
   let mut g := g
   let tgt ← g.withContext do instantiateMVars (← g.getType)
   let mut seen : Array Expr := #[]
@@ -1903,7 +1959,10 @@ partial def closeArith (g : MVarId) (env : Bool) (fuel : Nat) : TacticM Unit := 
         let fact ← mkAppM lem #[pf]
         let (_, g') ← (← g0.assert `hx (← inferType fact) fact).intro1P
         pure (some g')
-      | none => pure none
+      | none =>
+        let some fact ← bindFstFact? x | pure none
+        let (_, g') ← (← g0.assert `hx (← inferType fact) fact).intro1P
+        pure (some g')
     if let some g' := r then g := g'
   g ← addCostFacts g
   -- the matches of the same discriminants on the two sides, compared by cases
