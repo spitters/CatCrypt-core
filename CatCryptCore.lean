@@ -485,7 +485,9 @@ public import CatCryptCore.Crypto.UCGlobalSquareTimed
 public import CatCryptCore.Crypto.UCGlobalCompose
 public import CatCryptCore.Crypto.UCGlobalSetups
 public import CatCryptCore.Crypto.UCGlobalPipe
+public import CatCryptCore.Crypto.UCGlobalPipeTimed
 public import CatCryptCore.Crypto.UCSemiHonest
+public import CatCryptCore.Crypto.UCSemiHonestTimed
 public import CatCryptCore.Crypto.UCTransparentAdv
 public import CatCryptCore.Crypto.UCTransparentExample
 public import CatCryptCore.Crypto.UCClockNetworkDet

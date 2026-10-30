@@ -33,6 +33,8 @@ No module imports this file.
   `sessReduction G₀ G₁ i B.erase`
 * `KeyedGame.sessRed.timeBound_timed` — the costed reduction over an adversary of time `T`
   with at most `q` queries takes `T + q * (c + 8)` when the session oracles cost at most `c`
+* `KeyedGame.sessReduction.timeBound_timed` — the costed hop reduction over such an adversary
+  takes `1 + (T + q * (c + 13 + 8))` when the oracles of `G₀` and `G₁` cost at most `c`
 -/
 
 @[expose] public section
@@ -62,5 +64,31 @@ theorem sessRed.timeBound_timed {Q A S : Type} (orc : ℕ → S → Q → PMF (A
   unfold sessRed.timed
   refine (stepTimeBound_delay (timeBound_bind (n := 0) h.2 fun _ => ?_)).mono ?_
   exacts [⟨le_rfl, trivial⟩, by have := h.1; omega]
+
+/-- A bound on both branches of a case split on a decided Boolean bounds the split. -/
+private theorem casesOn_reflects_le {p : Prop} {X Y : Type} (b : Bool) (hb : b.Reflects p)
+    (F : false.Reflects p → X → Y → ℕ) (G : true.Reflects p → X → Y → ℕ) {n : ℕ}
+    (hF : ∀ h x y, F h x y ≤ n) (hG : ∀ h x y, G h x y ≤ n) (x : X) (y : Y) :
+    Bool.casesOn (motive := fun z => z.Reflects p → X → Y → ℕ) b F G hb x y ≤ n := by
+  cases b
+  · exact hF hb x y
+  · exact hG hb x y
+
+/-- **Time of the session hop reduction.** Over an adversary of time `T` with at most `q`
+queries, the costed hop reduction takes `1 + (T + q * (c + 13 + 8))` when the oracles of `G₀` and
+`G₁` cost at most `c`. -/
+theorem sessReduction.timeBound_timed {Q A : Type} (G₀ G₁ : KeyedGame Q A) (i : ℕ)
+    (B : OracleAdv.Timed (ℕ × Q) A Bool) (cost₀ : G₀.Key → G₀.State → Q → ℕ)
+    (cost₁ : G₁.Key → G₁.State → Q → ℕ) {c : ℕ} (hc₀ : ∀ k t q, cost₀ k t q ≤ c)
+    (hc₁ : ∀ k t q, cost₁ k t q ≤ c) {T q : ℕ} (hB : B.TimeBound T)
+    (hq : B.erase.IsQueryBound q) :
+    StepTimeBound (sessReduction.timed G₀ G₁ i B cost₀ cost₁) (1 + (T + q * (c + 13 + 8))) := by
+  unfold sessReduction.timed
+  refine stepTimeBound_delay (sessRed.timeBound_timed _ _ ?_ i _ B hB hq)
+  intro j s d
+  refine (Nat.add_le_add_left (casesOn_reflects_le (n := c + 8) _ _ _ _ ?_ ?_ s d) 5).trans
+    (by omega)
+  · rintro - ⟨_ | ⟨k, t⟩, _⟩ q' <;> grind
+  · rintro - ⟨_, _ | ⟨k, t⟩⟩ q' <;> grind
 
 end CatCrypt.Crypto.UCTransparent.KeyedGame

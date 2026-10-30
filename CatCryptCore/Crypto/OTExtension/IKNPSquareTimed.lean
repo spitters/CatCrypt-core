@@ -17,7 +17,8 @@ public import CatCryptCore.Tactics.DeriveTimeBound
 `derive_simulator` builds the costed forms, erasure theorems and time theorems of the two
 simulators of `IKNPSquare.lean`, `iknpSimRecv` against a corrupt receiver and `iknpSimSend`
 against a corrupt sender, together with those of the adversary-port simulator `postSim`; the
-answer map of each simulator is a costed binder. `derive_reduction` and `derive_time_bound`
+answer map of each simulator is a costed binder; `derive_hybrid_time` proves the time theorem
+of the costed `postSim` from those of its steps. `derive_reduction` and `derive_time_bound`
 build the costed form and the time theorem of the answer map `simSPost` of `iknpSimSend`.
 
 No module imports this file.
@@ -35,5 +36,6 @@ derive_simulator iknpSimRecv
 derive_simulator iknpSimSend
 derive_reduction simSPost
 derive_time_bound simSPost.tree
+derive_hybrid_time postSim
 
 end CatCrypt.Crypto.OT.IKNPSquare
