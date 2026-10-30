@@ -263,6 +263,7 @@ public import CatCryptCore.Crypto.Messaging.KEMCKA
 public import CatCryptCore.Crypto.HashThenRF
 public import CatCryptCore.Crypto.EagerLazyRF
 public import CatCryptCore.Crypto.OracleLazyMulti
+public import CatCryptCore.Crypto.OracleAdversaryFree
 public import CatCryptCore.Crypto.KEM.Games
 public import CatCryptCore.Crypto.KEM.FOTransformU
 public import CatCryptCore.Crypto.KEM.FOTransformTimed
