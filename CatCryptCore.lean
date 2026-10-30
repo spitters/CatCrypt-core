@@ -221,6 +221,7 @@ public import CatCryptCore.Crypto.Signatures.EUFCMA
 public import CatCryptCore.Crypto.Signatures.EUFCMAPMF
 public import CatCryptCore.Crypto.Signatures.FSigSys
 public import CatCryptCore.Crypto.Signatures.FSigReduction
+public import CatCryptCore.Crypto.Signatures.FSigReductionTimed
 public import CatCryptCore.Crypto.Signatures.FSigSysTimed
 public import CatCryptCore.Crypto.BLSSig.Security
 
@@ -236,6 +237,7 @@ public import CatCryptCore.Crypto.PKE.FOTransformT
 public import CatCryptCore.Crypto.PKE.LWEPKE
 public import CatCryptCore.Crypto.AKE.KeySchedule
 public import CatCryptCore.Crypto.AKE.ChannelSquare
+public import CatCryptCore.Crypto.AKE.ChannelSquareTimed
 public import CatCryptCore.Crypto.Messaging.FSPRG
 public import CatCryptCore.Crypto.Messaging.CKA
 public import CatCryptCore.Crypto.Messaging.FSAEAD
@@ -249,6 +251,7 @@ public import CatCryptCore.Crypto.Anon.SignallingUC
 public import CatCryptCore.Crypto.OT.Games
 public import CatCryptCore.Crypto.OTExtension.IKNP
 public import CatCryptCore.Crypto.OTExtension.IKNPSquare
+public import CatCryptCore.Crypto.OTExtension.IKNPSquareTimed
 public import CatCryptCore.Crypto.PRPPRFPmfGame
 public import CatCryptCore.Crypto.FiatShamirROM.Verification
 public import CatCryptCore.Crypto.ROProgramming
@@ -418,11 +421,14 @@ public import CatCryptCore.Crypto.MLKEM.CollisionSpreadIdeal
 -- UC ideal functionalities (F_commit, F_ZK, F_OT)
 public import CatCryptCore.Crypto.Commitment.PedersenUC
 public import CatCryptCore.Crypto.Commitment.PedersenUCSquare
+public import CatCryptCore.Crypto.Commitment.PedersenUCSquareTimed
 public import CatCryptCore.Crypto.ZK.SigmaUCZK
 public import CatCryptCore.Crypto.ZK.SigmaUCZKSquare
+public import CatCryptCore.Crypto.ZK.SigmaUCZKSquareTimed
 public import CatCryptCore.Crypto.ZK.LinearSigmaUC
 public import CatCryptCore.Crypto.OT.DualModeOT
 public import CatCryptCore.Crypto.OT.DualModeOTSquare
+public import CatCryptCore.Crypto.OT.DualModeOTSquareTimed
 
 -- Transparent functionalities, hybrid composition, the clock and the network
 public import CatCryptCore.Crypto.UCTransparent
@@ -430,6 +436,7 @@ public import CatCryptCore.Crypto.UCTransparentSquare
 public import CatCryptCore.Crypto.UCCoupling
 public import CatCryptCore.Crypto.UCCompiled
 public import CatCryptCore.Crypto.UCOracleGame
+public import CatCryptCore.Crypto.UCOracleGameTimed
 public import CatCryptCore.Crypto.UCRoundHybrid
 public import CatCryptCore.Crypto.UCRoundHybridTimed
 public import CatCryptCore.Crypto.UCTransparentHybrid
