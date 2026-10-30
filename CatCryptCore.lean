@@ -551,6 +551,7 @@ public import CatCryptCore.Crypto.OTExtension.IKNPTimed
 public import CatCryptCore.Crypto.OTExtension.IKNPReceiverTimed
 public import CatCryptCore.Crypto.OTExtension.IKNPWake
 public import CatCryptCore.Crypto.OTExtension.IKNPWakeShape
+public import CatCryptCore.Crypto.OTExtension.IKNPPVW
 public import CatCryptCore.Crypto.ZK.SigmaUCZKTimed
 
 /-! # CatCrypt Core — umbrella
