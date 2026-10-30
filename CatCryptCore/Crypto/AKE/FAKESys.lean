@@ -29,6 +29,9 @@ protocol session `sid`, with its intended peer and its role (`initiator` or `res
   - otherwise the key of the session of `peer` in `sid` when that session has `pid` as peer,
     the other role, and received a key chosen by the functionality (it is marked completed);
   - otherwise a fresh sample of `keySample`.
+  `newKeyUnlinked sid pid k` is `newKey` without the second clause: the adversary may give a
+  session a key independent of its partner's, as an active attacker does who changes a message
+  between them; the key is still the adversary key only for an exposed session.
   `impersonate sid pid` changes nothing, and `idle` changes nothing.
   Corruption is adaptive and affects the sessions that receive their key after it; the
   functionality has no event that reveals a delivered key or the state of a party.
@@ -64,7 +67,7 @@ the adversary delivers keys to both and corrupts neither party (`F_AKE_correct`)
 * `F_AKE_portTyped`, `F_KE_portTyped`, `F_AKE_idleAt`, `F_KE_idleAt`.
 * `F_AKE_opaque`, `F_KE_opaque`, `F_AKEWake_opaque`, `F_KEWake_opaque`.
 * `newKeyStep_key_exposed`, `newKeyStep_key_partner`, `newKeyStep_key_fresh`,
-  `F_AKE_step_newKey_fresh`, `F_AKE_step_impersonate`.
+  `newKeyFreshStep_key`, `F_AKE_step_newKey_fresh`, `F_AKE_step_impersonate`.
 * `F_AKE_correct`.
 -/
 
@@ -227,6 +230,17 @@ def newKeyStep (t : St K) (x : Inst) (k kf : K) : St K :=
     else t
   | none => t
 
+/-- The state after `newKeyUnlinked` at `x` with the adversary key `k` and the fresh sample
+`kf`: `k` to an exposed session, `kf` otherwise, whatever the partner received. -/
+def newKeyFreshStep (t : St K) (x : Inst) (k kf : K) : St K :=
+  match t.recs x with
+  | some r =>
+    if r.key.isNone then
+      setRec t x { r with key := some (if Exposed t x r then k else kf),
+                          status := if Exposed t x r then .compromised else .completed }
+    else t
+  | none => t
+
 /-! ## Events and the ports -/
 
 /-- Events of the honest port. -/
@@ -249,6 +263,9 @@ inductive AEv (K : Type) where
   | impersonate (sid : SessionId) (pid : PartyId)
   /-- Deliver a key to the session of `pid` in `sid`; `k` is used if the session is exposed. -/
   | newKey (sid : SessionId) (pid : PartyId) (k : K)
+  /-- Deliver a key to the session of `pid` in `sid` that is not the key of its partner; `k` is
+  used if the session is exposed. -/
+  | newKeyUnlinked (sid : SessionId) (pid : PartyId) (k : K)
 
 /-- A step of the honest port. -/
 def honStep (t : St K) : HEv → St K × HOut K
@@ -277,10 +294,13 @@ noncomputable def advSys (auth : Bool) (keySample : SPComp K) : Sys (St K) (AEv 
     | .corrupt pid => SPComp.pure (corruptStep t pid, .ack)
     | .impersonate sid pid => SPComp.pure (if auth then t else impStep t (sid, pid), .ack)
     | .newKey sid pid k => SPComp.map (fun kf => (newKeyStep t (sid, pid) k kf, .ack)) keySample
+    | .newKeyUnlinked sid pid k =>
+      SPComp.map (fun kf => (newKeyFreshStep t (sid, pid) k kf, .ack)) keySample
 
 /-- The recipient woken by an adversary event: the session of `newKey`. -/
 def keyDlv : AEv K → Option Inst
   | .newKey sid pid _ => some (sid, pid)
+  | .newKeyUnlinked sid pid _ => some (sid, pid)
   | _ => none
 
 /-- The cut-off answer of the wake closure. -/
@@ -429,6 +449,13 @@ theorem F_AKE_step_newKey_fresh (keySample : SPComp K) {t : St K} {sid : Session
     · rfl
   simp [F_AKE, advSys, newKeyStep, hr, hk, hv, he, SPComp.map, SPComp.bind_assoc,
     SPComp.pure_bind]
+
+/-- A session without a key that `newKeyUnlinked` reaches receives the adversary key when it is
+exposed and the fresh sample otherwise. -/
+theorem newKeyFreshStep_key {t : St K} {x : Inst} {r : Rec K} (k kf : K)
+    (hr : t.recs x = some r) (hk : r.key = none) :
+    keyOf (newKeyFreshStep t x k kf) x = some (if Exposed t x r then k else kf) := by
+  simp [newKeyFreshStep, hr, hk, setRec, keyOf]
 
 /-- `impersonate` changes nothing in `F_AKE`. -/
 theorem F_AKE_step_impersonate (keySample : SPComp K) (t : St K) (sid : SessionId)
