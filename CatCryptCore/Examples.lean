@@ -52,6 +52,7 @@ public import CatCryptCore.Examples.CBCMode
 public import CatCryptCore.Examples.DiffieHellman
 public import CatCryptCore.Examples.CyclicGroupDDH
 public import CatCryptCore.Examples.CyclicGroupModule
+public import CatCryptCore.Examples.CyclicGroupRingPow
 public import CatCryptCore.Examples.HashedElGamal
 public import CatCryptCore.Examples.ChaumPedersen
 public import CatCryptCore.Examples.UniversalHash
@@ -59,6 +60,7 @@ public import CatCryptCore.Examples.DetCPA
 public import CatCryptCore.Examples.CoinToss
 public import CatCryptCore.Examples.INDCPA
 public import CatCryptCore.Examples.ElGamalDDH
+public import CatCryptCore.Examples.ElGamalDDHKeyMsg
 public import CatCryptCore.Examples.ElGamalUCConcrete
 public import CatCryptCore.Examples.CBCModeTimed
 public import CatCryptCore.Examples.CPAFromPRFTimed
