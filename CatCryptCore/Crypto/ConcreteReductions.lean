@@ -6,6 +6,7 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Crypto.UCLevels
+public import Mathlib.Analysis.Asymptotics.SuperpolynomialDecay
 
 /-!
 # Negligible functions and parametric UC emulation
@@ -16,8 +17,9 @@ closed under addition, multiplication by a constant and multiplication by a poly
 that negligible emulation is transitive, follows from perfect emulation, and follows from
 emulation with bound `q λ * ε λ` for a polynomially bounded `q` and a negligible `ε`.
 
-Negligibility is stated multiplicatively, `f λ * λ ^ c ≤ 1` for every `c` and all large
-`λ`, which avoids division in `ℝ≥0∞`; for `λ > 0` it is equivalent to `f λ ≤ 1 / λ ^ c`.
+Negligibility is Mathlib's `Asymptotics.SuperpolynomialDecay` along `atTop` with parameter
+`λ ↦ (λ : ℝ≥0∞)`. `isNegligible_iff_mul_pow_le` states it multiplicatively,
+`f λ * λ ^ c ≤ 1` for every `c` and all large `λ`.
 
 ## Main definitions
 
@@ -28,6 +30,7 @@ Negligibility is stated multiplicatively, `f λ * λ ^ c ≤ 1` for every `c` an
 
 ## Main results
 
+* `isNegligible_iff_mul_pow_le` — the multiplicative form of negligibility
 * `isNegligible_zero`, `isNegligible_add`, `isNegligible_mul_const`, `isNegligible_poly_mul`,
   `isNegligible_of_le_eventually` — closure of negligible functions
 * `UCEmulatesNegl_trans` — transitivity of negligible emulation
@@ -45,105 +48,79 @@ namespace CatCrypt.Crypto
 
 /-! ## Negligible Functions -/
 
-/-- A function `f : ℕ → ℝ≥0∞` is negligible if for every polynomial degree `c`,
-    there exists `N` such that `f λ * λ^c ≤ 1` for all `λ ≥ N`.
-
-    This is a multiplicative formulation avoiding ENNReal division.
-    Equivalent to the standard `∀ c, ∃ N, ∀ λ ≥ N, f λ ≤ λ^{-c}`. -/
+/-- A function `f : ℕ → ℝ≥0∞` is negligible if it has superpolynomial decay at infinity:
+    for every degree `c`, `λ ^ c * f λ` tends to `0` as `λ → ∞`. This is Mathlib's
+    `Asymptotics.SuperpolynomialDecay` along `atTop` with parameter `λ ↦ (λ : ℝ≥0∞)`.
+    `isNegligible_iff_mul_pow_le` gives the multiplicative form
+    `∀ c, ∃ N, ∀ λ ≥ N, f λ * λ ^ c ≤ 1`. -/
 def IsNegligible (f : ℕ → ℝ≥0∞) : Prop :=
-  ∀ c : ℕ, ∃ N : ℕ, ∀ n, N ≤ n → f n * (n : ℝ≥0∞) ^ c ≤ 1
+  Asymptotics.SuperpolynomialDecay Filter.atTop (fun n : ℕ => (n : ℝ≥0∞)) f
+
+/-- Negligibility in multiplicative form: for every degree `c`, `f λ * λ ^ c ≤ 1` for all
+    large `λ`. -/
+theorem isNegligible_iff_mul_pow_le {f : ℕ → ℝ≥0∞} :
+    IsNegligible f ↔ ∀ c : ℕ, ∃ N : ℕ, ∀ n, N ≤ n → f n * (n : ℝ≥0∞) ^ c ≤ 1 := by
+  constructor
+  · intro hf c
+    obtain ⟨N, hN⟩ := Filter.eventually_atTop.1 <|
+      (ENNReal.tendsto_nhds_zero.1 (hf c)) 1 one_pos
+    exact ⟨N, fun n hn => by rw [mul_comm]; exact hN n hn⟩
+  · intro hf z
+    refine ENNReal.tendsto_nhds_zero.2 fun ε hε => ?_
+    obtain ⟨N, hN⟩ := hf (z + 1)
+    have hinv := (ENNReal.tendsto_nhds_zero.1 ENNReal.tendsto_inv_nat_nhds_zero) ε hε
+    filter_upwards [hinv, Filter.eventually_ge_atTop N] with n hn hNn
+    refine le_trans ?_ hn
+    rw [ENNReal.le_inv_iff_mul_le]
+    calc (n : ℝ≥0∞) ^ z * f n * n = f n * (n : ℝ≥0∞) ^ (z + 1) := by ring
+      _ ≤ 1 := hN n hNn
 
 /-- The zero function is negligible. -/
-theorem isNegligible_zero : IsNegligible (fun _ => 0) := by
-  intro c; exact ⟨0, fun _ _ => by simp⟩
+theorem isNegligible_zero : IsNegligible (fun _ => 0) :=
+  Asymptotics.superpolynomialDecay_zero _ _
 
-/-- A constant function (> 0) that tends to 0 is negligible.
-    In particular, `fun _ => 0` is negligible (see above). -/
+/-- A function that is eventually zero is negligible. -/
 theorem isNegligible_of_eventually_zero {f : ℕ → ℝ≥0∞}
     (h : ∃ N, ∀ n, N ≤ n → f n = 0) : IsNegligible f := by
   obtain ⟨N, hN⟩ := h
-  intro c; exact ⟨N, fun n hn => by simp [hN n hn]⟩
+  refine (Asymptotics.superpolynomialDecay_zero _ _).congr' ?_
+  filter_upwards [Filter.eventually_ge_atTop N] with n hn
+  simp [hN n hn]
 
-/-- Sum of negligible functions is negligible.
-
-    Given degree `c`, use `f(c)` and `g(c)` to get `N₁` and `N₂`.
-    For `λ ≥ max(N₁, N₂)`: `(f λ + g λ) * λ^c ≤ 1 + 1 = 2`.
-    The bound `≤ 2` (not `≤ 1`) is acceptable for ℝ≥0∞ negligibility
-    since we can always shift by 1: use `f(c+1)` and `g(c+1)` instead.
-    Then for `λ ≥ max(N₁', N₂', 1)`:
-    `(f λ + g λ) * λ^c ≤ f λ * λ^(c+1)/λ + g λ * λ^(c+1)/λ ≤ 1/λ + 1/λ`.
-    In the multiplicative formulation: `(f+g) * λ^c ≤ f*λ^c + g*λ^c ≤ 1 + 1`. -/
+/-- The sum of two negligible functions is negligible. -/
 theorem isNegligible_add {f g : ℕ → ℝ≥0∞}
     (hf : IsNegligible f) (hg : IsNegligible g) :
-    IsNegligible (fun n => f n + g n) := by
-  intro c
-  obtain ⟨N₁, hN₁⟩ := hf (c + 1)
-  obtain ⟨N₂, hN₂⟩ := hg (c + 1)
-  refine ⟨max (max N₁ N₂) 2, fun n hn => ?_⟩
-  have h1 := hN₁ n (le_trans (le_max_left _ _) (le_of_max_le_left hn))
-  have h2 := hN₂ n (le_trans (le_max_right _ _) (le_of_max_le_left hn))
-  have hn2 : 2 ≤ n := le_of_max_le_right hn
-  have hn0 : (n : ℝ≥0∞) ≠ 0 := by exact_mod_cast (show n ≠ 0 by omega)
-  have hntop : (n : ℝ≥0∞) ≠ ⊤ := ENNReal.natCast_ne_top n
-  rw [show (1 : ℝ≥0∞) = (n : ℝ≥0∞) / (n : ℝ≥0∞) from (ENNReal.div_self hn0 hntop).symm]
-  exact (ENNReal.le_div_iff_mul_le (Or.inl hn0) (Or.inl hntop)).mpr <|
-    calc (f n + g n) * (n : ℝ≥0∞) ^ c * (n : ℝ≥0∞)
-        = f n * ((n : ℝ≥0∞) ^ c * (n : ℝ≥0∞)) + g n * ((n : ℝ≥0∞) ^ c * (n : ℝ≥0∞)) := by ring
-      _ = f n * (n : ℝ≥0∞) ^ (c + 1) + g n * (n : ℝ≥0∞) ^ (c + 1) := by congr 1
-      _ ≤ 1 + 1 := add_le_add h1 h2
-      _ = 2 := by norm_num
-      _ ≤ (n : ℝ≥0∞) := by exact_mod_cast hn2
+    IsNegligible (fun n => f n + g n) :=
+  Asymptotics.SuperpolynomialDecay.add hf hg
 
-/-- Scalar multiplication preserves negligibility.
-
-    More precisely: `k * f` is negligible when `f` is negligible
-    (where `k : ℕ` is a constant). -/
+/-- Multiplication by a natural-number constant `k` preserves negligibility. -/
 theorem isNegligible_mul_const {f : ℕ → ℝ≥0∞}
     (hf : IsNegligible f) (k : ℕ) :
-    IsNegligible (fun n => k * f n) := by
-  intro c
-  obtain ⟨N, hN⟩ := hf (c + 1)
-  refine ⟨max (max N k) 1, fun n hn => ?_⟩
-  have hfn := hN n (le_trans (le_max_left _ _) (le_of_max_le_left hn))
-  have hnk : k ≤ n := le_trans (le_max_right _ _) (le_of_max_le_left hn)
-  have hn0 : (n : ℝ≥0∞) ≠ 0 := by exact_mod_cast (show n ≠ 0 by omega)
-  have hntop : (n : ℝ≥0∞) ≠ ⊤ := ENNReal.natCast_ne_top n
-  rw [show (1 : ℝ≥0∞) = (n : ℝ≥0∞) / (n : ℝ≥0∞) from (ENNReal.div_self hn0 hntop).symm]
-  exact (ENNReal.le_div_iff_mul_le (Or.inl hn0) (Or.inl hntop)).mpr <|
-    calc (k : ℝ≥0∞) * f n * (n : ℝ≥0∞) ^ c * (n : ℝ≥0∞)
-        = (k : ℝ≥0∞) * (f n * (n : ℝ≥0∞) ^ (c + 1)) := by rw [pow_succ]; ring
-      _ ≤ (k : ℝ≥0∞) * 1 := by gcongr
-      _ = (k : ℝ≥0∞) := mul_one _
-      _ ≤ (n : ℝ≥0∞) := by exact_mod_cast hnk
+    IsNegligible (fun n => k * f n) := fun z => by
+  have h := ENNReal.Tendsto.const_mul (hf z) (Or.inr (ENNReal.natCast_ne_top k))
+  rw [mul_zero] at h
+  exact h.congr fun n => by ring
 
-/-- Polynomial × negligible is negligible.
-
-    If `f` is negligible and `g λ ≤ λ^d` (polynomial bound),
-    then `g * f` is negligible.
-
-    Proof: Given degree `c`, use `f(c + d)`. Then:
-    `g λ * f λ * λ^c ≤ λ^d * f λ * λ^c = f λ * λ^(c+d) ≤ 1`. -/
+/-- Polynomial × negligible is negligible: if `f` is negligible and `g λ ≤ λ ^ d`,
+    then `g * f` is negligible. -/
 theorem isNegligible_poly_mul {f : ℕ → ℝ≥0∞} (d : ℕ)
     (g : ℕ → ℝ≥0∞) (hg : ∀ n, g n ≤ (n : ℝ≥0∞) ^ d)
     (hf : IsNegligible f) :
-    IsNegligible (fun n => g n * f n) := by
-  intro c
-  obtain ⟨N, hN⟩ := hf (c + d)
-  refine ⟨N, fun n hn => ?_⟩
-  calc g n * f n * (n : ℝ≥0∞) ^ c
-      ≤ (n : ℝ≥0∞) ^ d * f n * (n : ℝ≥0∞) ^ c := by gcongr; exact hg n
-    _ = f n * ((n : ℝ≥0∞) ^ d * (n : ℝ≥0∞) ^ c) := by ring
-    _ = f n * (n : ℝ≥0∞) ^ (c + d) := by rw [← pow_add]; ring
-    _ ≤ 1 := hN n hn
+    IsNegligible (fun n => g n * f n) :=
+  (Asymptotics.superpolynomialDecay_zero _ _).trans_eventuallyLE
+    (Filter.Eventually.of_forall fun _ => zero_le) (hf.param_pow_mul d)
+    (Filter.Eventually.of_forall fun _ => zero_le)
+    (Filter.Eventually.of_forall fun n => by
+      simp only [Pi.mul_apply, Pi.pow_apply]
+      gcongr
+      exact hg n)
 
 /-- A function eventually below a negligible function is negligible. -/
 theorem isNegligible_of_le_eventually {f g : ℕ → ℝ≥0∞} (hf : IsNegligible f)
-    (h : ∃ N, ∀ n, N ≤ n → g n ≤ f n) : IsNegligible g := by
-  obtain ⟨N, hN⟩ := h
-  intro c
-  obtain ⟨M, hM⟩ := hf c
-  refine ⟨max N M, fun n hn => ?_⟩
-  exact (mul_le_mul_left (hN n (le_of_max_le_left hn)) _).trans (hM n (le_of_max_le_right hn))
+    (h : ∃ N, ∀ n, N ≤ n → g n ≤ f n) : IsNegligible g :=
+  (Asymptotics.superpolynomialDecay_zero _ _).trans_eventuallyLE
+    (Filter.Eventually.of_forall fun _ => zero_le) hf
+    (Filter.Eventually.of_forall fun _ => zero_le) (Filter.eventually_atTop.2 h)
 
 /-! ## Parametric UC Emulation -/
 

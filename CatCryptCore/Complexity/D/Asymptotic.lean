@@ -407,7 +407,8 @@ theorem ucTimeNegl_iff_asymSecure {α : ℕ → Type} {b : ℕ → Ty} (hb : ∀
     exact isNegligible_of_le_eventually (h p hp) ⟨0, fun n _ =>
       le_iSup₂ (f := fun D (_ : TimeAdm (b := .bool) O (p n) D) =>
         spcomp_distComp (f n) (g n) D) (D n) (hD n)⟩
-  · intro h p hp c
+  · intro h p hp
+    refine isNegligible_iff_mul_pow_le.2 fun c => ?_
     -- at each `n`, a distinguisher above the threshold `1 / n ^ c` if there is one
     let D : ∀ n, Val (b n) → SPComp (Val .bool) := fun n =>
       if hex : ∃ E : Val (b n) → SPComp (Val .bool), TimeAdm (b := .bool) O (p n) E ∧
@@ -421,7 +422,8 @@ theorem ucTimeNegl_iff_asymSecure {α : ℕ → Type} {b : ℕ → Ty} (hb : ∀
         exact hex.choose_spec.1.mono (by omega)
       · simp only [D, dite_eq_right hex]
         exact (timeAdm_const_true (hb n)).mono (by omega)
-    obtain ⟨N, hN⟩ := h D ⟨fun n => p n + 1, hp.add (isPolyBound_const 1), hD⟩ c
+    obtain ⟨N, hN⟩ :=
+      isNegligible_iff_mul_pow_le.1 (h D ⟨fun n => p n + 1, hp.add (isPolyBound_const 1), hD⟩) c
     refine ⟨N, fun n hn => ?_⟩
     unfold ucCdistTime
     rw [ENNReal.iSup_mul]
