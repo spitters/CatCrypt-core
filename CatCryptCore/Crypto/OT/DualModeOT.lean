@@ -9,20 +9,20 @@ public import CatCryptCore.Crypto.UC
 public import CatCryptCore.Examples.GroupParam
 
 /-!
-# Oblivious Transfer with Information-Theoretic Sender-Message Privacy
+# Hiding of the Unchosen Sender Message under Two Public Keys
 
-An oblivious-transfer protocol over an abstract discrete-log group in which the
-sender encrypts each of its two messages under a public key and the receiver
-recovers only the chosen one. Encryption is ElGamal-style: `dualEnc pk m r =
-pk ^ r · m`.
+The sender's step of a two-key oblivious transfer over an abstract discrete-log
+group: each of the two messages is encrypted under its own public key, with
+ElGamal-style encryption `dualEnc pk m r = pk ^ r · m`. The real world
+`dualOT_real` outputs the two ciphertexts; it has no receiver message and its
+honest output is `Unit`. The ideal world `dualOT_ideal` hands the simulator the
+choice bit and the ciphertext of the chosen message. The UC statement
+`dualOT_uc_secure_zero` says that the ciphertext of the unchosen message is
+simulated perfectly from this leak.
 
-## Scope of the security statement
-
-The UC statement here covers **corrupt-receiver / sender-message privacy only**.
-The ideal functionality `dualOT_ideal` *reveals the choice bit*: it hands the
-simulator `(choice, chosen-ciphertext)`, so it does not hide which message the
-receiver selected. Receiver privacy — hiding the choice bit from a corrupt
-sender — is out of scope; see the closing note.
+The complete Peikert–Vaikuntanathan–Waters dual-mode OT, with an ideal OT that
+hides the choice bit, both corruption cases through the CRS trapdoors and the
+DDH hop between the CRS modes, is `CatCryptCore.Crypto.OT.PVWOTSquare`.
 
 The simulator `dualOT_sim` reconstructs the two ciphertexts the real world leaks
 from `(choice, chosen-ciphertext)` by sampling a **uniform group element** for
@@ -38,15 +38,8 @@ translation `y ↦ y · m` (a bijection). Hence for uniform `r`, `dualEnc pk m r
 is *exactly* uniform on `G`. `dualEnc_uniform` proves this as an equality of
 distributions, with **no computational assumption and no DDH reduction**;
 `dualOT_uc_secure_zero` threads it into a perfect (`ε = 0`) UC statement whenever
-both public keys are non-identity.
-
-The parametric statement `dualOT_uc_secure` with the hypothesis
-`CiphertextPseudorandom ε` (ciphertext `ε`-close to uniform for every public
-key) is removed: at the identity key the ciphertext `pk ^ r · m = m` is
-deterministic, so the hypothesis fails for every `ε < 1 - 1/|G|`, and for
-non-identity keys it holds at `ε = 0`. `dualOT_uc_secure_zero` is the
-replacement; `dualOT_reduction` keeps the bound for per-key hypotheses on
-`crs.pk₀` and `crs.pk₁`.
+both public keys are non-identity. `dualOT_reduction` gives the bound from
+per-key statistical-distance hypotheses on `crs.pk₀` and `crs.pk₁`.
 
 ## Interface types
 
@@ -69,11 +62,9 @@ variable (gp : GroupParam)
 
 /-! ## Public Keys and Encryption -/
 
-/-- Public keys for the two message slots. `mode`, `sk`, and `pk_eq` record the
-    trapdoor of a full dual-mode CRS (messy vs. decryption mode); they are not
-    used by the sender-message-privacy statement below, which relies only on the
-    two public keys being non-identity, and are retained for the future
-    receiver-privacy extension (see the closing note). -/
+/-- Public keys for the two message slots, with a mode bit and the secret key of
+    the selected public key. The statement below uses only that both public keys
+    are non-identity. -/
 structure DualModeCRS where
   /-- First public key. -/
   pk₀ : gp.G
@@ -104,7 +95,8 @@ structure OTInput where
 
 /-! ## Protocol -/
 
-/-- Real OT protocol: encrypt both messages under the two public keys. -/
+/-- Real world: encrypt both messages under the two public keys and leak both
+    ciphertexts; the honest output is `Unit`. -/
 noncomputable def dualOT_real (crs : DualModeCRS gp) :
     OTInput gp → SPComp (Unit ⊕ (gp.G × gp.G)) :=
   fun input =>
@@ -329,35 +321,5 @@ theorem dualOT_uc_secure_zero (crs : DualModeCRS gp)
     (fun m => le_of_eq (sdist_dualEnc_uniform gp crs.pk₀ m h0))
     (fun m => le_of_eq (sdist_dualEnc_uniform gp crs.pk₁ m h1))
 
-/-! ## Nice-to-have: the full dual-mode construction
-
-The statement above is corrupt-receiver / sender-message privacy only, and its
-simulator ignores the `DualModeCRS` trapdoor. The Peikert–Vaikuntanathan–Waters
-dual-mode OT uses the CRS trapdoor and additionally covers the
-corrupt-sender / receiver-privacy direction:
-
-* **Two indistinguishable CRS modes.** In *messy* mode one public key produces
-  ciphertexts statistically independent of the plaintext (enabling extraction of
-  the receiver's choice bit); in *decryption* mode both keys decrypt correctly
-  (enabling extraction of both sender messages). The two modes are
-  computationally indistinguishable under DDH — this is where a real DDH
-  reduction enters, in contrast to the information-theoretic hiding used here.
-* **Corrupt receiver (messy CRS).** The simulator reads off which key is messy,
-  extracts the choice bit, forwards it to `F_OT`, and simulates the other
-  ciphertext — using the trapdoor, rather than the `dualOT_ideal` leak of the
-  choice bit assumed here.
-* **Corrupt sender (decryption CRS).** The simulator decrypts both ciphertexts
-  via `sk`, extracts both messages, and forwards them to `F_OT` — the case the
-  present ideal functionality does not model at all.
-
-Realizing this needs a `dualOT_ideal` that hides the choice bit, a
-CRS-mode-indistinguishability game, and per-mode simulators; it is not attempted
-here.
-
-This full account is developed in the larger CatCrypt UC development built on top
-of this basis (outside this minimal-basis release): an `OT/` tree with the `F_OT`
-functionality capturing both sender and receiver privacy (`FOT`), the extraction
-machinery, and the plain-model impossibility (`PlainModelOTImpossibility`). This
-file is the self-contained corrupt-receiver / sender-privacy exemplar. -/
 
 end CatCrypt.Crypto.OT.DualModeOT
