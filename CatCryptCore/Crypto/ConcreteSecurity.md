@@ -186,7 +186,12 @@ continuation's bound under that invariant. A reduction that computes its result 
 sampling, state or calls has its time theorem proved along the recursion that computes the
 bound, in time linear in the size of its step cost. A simulator map is certified as a
 reduction is, and its time theorem bounds the simulator by the time of the adversary it
-simulates plus a constant.
+simulates plus a constant. A simulator whose state grows with the activations (a lazily sampled
+table, a list of notices) has the graded bound `MultiHybrid.Timed.TimeBoundGraded`
+([UCSimulatorCostGraded.lean](UCSimulatorCostGraded.lean)): step `i` costs at most `a + b * i`,
+so `q` activations cost at most `q * a + b * (q * (q - 1) / 2)`
+(`MultiHybrid.Timed.TimeBoundGraded.actRun_time_le`), and at `b = 0` the graded bound is the
+invariant bound `MultiHybrid.Timed.TimeBoundInv`.
 
 A derived step cost follows from the code of the reduction by these rules. A costed form written
 by hand carries step costs chosen by its author, which the kernel checks only through the
