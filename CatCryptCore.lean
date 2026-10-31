@@ -494,6 +494,7 @@ public import CatCryptCore.Crypto.UCLoopbackTraced
 public import CatCryptCore.Crypto.UCLoopbackInt
 public import CatCryptCore.Crypto.UCLoopbackOpenTheory
 public import CatCryptCore.Crypto.UCLoopbackObservation
+public import CatCryptCore.Crypto.UCLoopbackObservationBridge
 public import CatCryptCore.Crypto.UCOpenTheory
 public import CatCryptCore.Crypto.UCWake
 public import CatCryptCore.Crypto.UCWakeTimed
