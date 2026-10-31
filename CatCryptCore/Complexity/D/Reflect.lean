@@ -31,7 +31,9 @@ hypothesis `∀ v, (g v).run O = A v` at the oracle `O` of the theorem, and a pa
 A curried parameter `A : α₁ → … → αₙ → β` is a D function on the right-nested tuple of its
 arguments, applied when all `n` arguments are present (a partial application is refused); a
 computation parameter without arguments (`SPComp β`, `SPTree β`) is a D function on `unit`,
-applied to `()`. A parameter the body does not mention is a binder of the theorems only.
+applied to `()`. A parameter the body does not mention is a binder of the theorems only, and
+so is a proof parameter (`hf : ∀ o, NoFail (f o)`); a parameter that only the types of proof
+parameters mention counts as not mentioned.
 The theorem states
 
 * `f.d.den ρ = .ret (f x₁ … xₙ)` when `f` returns data (`.ret (optEnc (f …))` for `Option`);
@@ -2021,8 +2023,12 @@ structure Params where
   entries : List Entry := []
   tys : List Expr := []
   rho : Expr
-  /-- For each binder, whether the body or a later binder type mentions it. -/
+  /-- For each binder, whether the body or the type of a later binder that is not a proof
+  mentions it. -/
   used : Array Bool := #[]
+  /-- For each binder, whether the result type or the type of a later binder that is not a
+  proof mentions it. -/
+  inType : Array Bool := #[]
 
 /-- Add the parameter `x : T` named `n` with source value `val` to the D context: a function
 (`funShape`) as a D function value `g` with its hypotheses `hA` (denotation) and `hC` (cost),
@@ -2262,6 +2268,11 @@ def reflect (c : Name) : Term.TermElabM Unit := do
             if ← hasTypeField ctor then pure (some ctor) else pure none) then
           unbundle n ctor ps fun ps' r =>
             params fuel (b.instantiate1 r) { ps' with args := ps'.args.push r } k
+        else if ← isProp T then
+          withLocalDecl n .instImplicit T fun h =>
+            params fuel (b.instantiate1 h)
+              { ps with dBinders := ps.dBinders.push h, cBinders := ps.cBinders.push h,
+                        args := ps.args.push h } k
         else
           unless T.hasAnyFVar (fun fv => ps.statics.any (·.fvarId! == fv)) do
             throwError "reflect_d: no instance `{T}` at the representation of the parameters"
@@ -2269,6 +2280,11 @@ def reflect (c : Name) : Term.TermElabM Unit := do
             params fuel (b.instantiate1 i)
               { ps with insts := ps.insts.push i, dBinders := ps.dBinders.push i,
                         cBinders := ps.cBinders.push i, args := ps.args.push i } k
+      else if ← isProp T then
+        withLocalDecl n bi T fun h =>
+          params fuel (b.instantiate1 h)
+            { ps with dBinders := ps.dBinders.push h, cBinders := ps.cBinders.push h,
+                      args := ps.args.push h } k
       else if let some ctor ← recordCtor? T then
         if ← hasTypeField ctor then
           unbundle n ctor ps fun ps' r =>
@@ -2279,7 +2295,7 @@ def reflect (c : Name) : Term.TermElabM Unit := do
               { ps with insts := ps.insts.push x, recs := ps.recs.push x,
                         dBinders := ps.dBinders.push x, cBinders := ps.cBinders.push x,
                         args := ps.args.push x } k
-      else if b.hasLooseBVar 0 || !bi.isExplicit then
+      else if ps.inType.getD ps.args.size (b.hasLooseBVar 0) || !bi.isExplicit then
         unless (← isDefEq T (mkConst ``Nat)) || (← isDefEq T (mkConst ``FTy)) do
           throwError "reflect_d: the parameter `{n}` of `{c}` occurs in a type and is not a \
             natural number or a finite ground type"
@@ -2294,16 +2310,30 @@ def reflect (c : Name) : Term.TermElabM Unit := do
       else
         withLocalDeclD n T fun x =>
           addParam O x x n T false ps fun ps' => params fuel (b.instantiate1 x) ps' k
+    -- A binder is used when the body or the type of a later binder that is not a proof
+    -- mentions it, and occurs in a type when the type of a later binder that is not a proof
+    -- or the result type mentions it.
     let used ← lambdaTelescope info.value fun xs body => do
       let mut us : Array Bool := #[]
       for h : j in [0:xs.size] do
         let fv := xs[j].fvarId!
         let mut u := body.containsFVar fv
         for k in [j+1:xs.size] do
-          if (← inferType xs[k]!).containsFVar fv then u := true
+          let Tk ← inferType xs[k]!
+          if Tk.containsFVar fv && !(← isProp Tk) then u := true
         us := us.push u
       return us
-    params 1024 info.type { rho := mkConst ``Env.nil, used } fun ps bodyT => do
+    let inType ← forallTelescope info.type fun xs res => do
+      let mut us : Array Bool := #[]
+      for h : j in [0:xs.size] do
+        let fv := xs[j].fvarId!
+        let mut u := res.containsFVar fv
+        for k in [j+1:xs.size] do
+          let Tk ← inferType xs[k]!
+          if Tk.containsFVar fv && !(← isProp Tk) then u := true
+        us := us.push u
+      return us
+    params 1024 info.type { rho := mkConst ``Env.nil, used, inType } fun ps bodyT => do
       let body := info.value.beta ps.args
       let (ms, eqTys) ← if ps.insts.isEmpty then pure (#[], #[])
         else scanMethods ps.statics ps.insts ps.recs body 8 (#[], #[])

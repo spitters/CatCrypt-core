@@ -19,8 +19,8 @@ again a value that a tree can return.
 
 ## Main definitions
 
-* `FTy`: the finite ground types (unit, booleans, `w`-bit words, residues `Fin (n + 1)`) over
-  which the effects range.
+* `FTy`: the finite ground types (unit, booleans, `w`-bit words, residues `Fin (n + 1)`, tables
+  `Fin q → r`) over which the effects range.
 * `CTree`: the trees, with a `fail` node of cost `0` meaning `SPComp.fail`, and `CTree.bind`
   (substitution at the leaves).
 * `CTree.cost`: worst-case step count: one per `tick` and one per effect node, the maximum over
@@ -64,6 +64,9 @@ inductive FTy : Type where
   | word (w : ℕ)
   /-- The residues modulo `n + 1`, `Fin (n + 1)`, which is `ZMod (n + 1)` by definition. -/
   | fin (n : ℕ)
+  /-- The tables `Fin q → r` of `q` entries of the type `r`; a sample of a table is one sample
+  node. -/
+  | tab (q : ℕ) (r : FTy)
   deriving DecidableEq
 
 /-- The Lean type of a finite ground type. -/
@@ -72,6 +75,7 @@ def FTy.den : FTy → Type
   | .bool => Bool
   | .word w => BitVec w
   | .fin n => Fin (n + 1)
+  | .tab q r => Fin q → r.den
 
 instance FTy.instFintype : (f : FTy) → Fintype f.den
   | .unit => inferInstanceAs (Fintype Unit)
@@ -79,12 +83,16 @@ instance FTy.instFintype : (f : FTy) → Fintype f.den
   | .word w => Fintype.ofEquiv (Fin (2 ^ w))
       ⟨BitVec.ofFin, BitVec.toFin, fun _ => rfl, fun _ => rfl⟩
   | .fin n => inferInstanceAs (Fintype (Fin (n + 1)))
+  | .tab q r =>
+    letI := FTy.instFintype r
+    inferInstanceAs (Fintype (Fin q → r.den))
 
 instance FTy.instInhabited : (f : FTy) → Inhabited f.den
   | .unit => inferInstanceAs (Inhabited Unit)
   | .bool => inferInstanceAs (Inhabited Bool)
   | .word w => inferInstanceAs (Inhabited (BitVec w))
   | .fin n => inferInstanceAs (Inhabited (Fin (n + 1)))
+  | .tab _ r => ⟨fun _ => (FTy.instInhabited r).default⟩
 
 instance FTy.instNonempty (f : FTy) : Nonempty f.den := ⟨default⟩
 
