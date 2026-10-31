@@ -13,18 +13,23 @@ public import CatCryptCore.Complexity.D.TimedLink
 /-!
 # `link_timed`: the costed tree of a reduction simulates its reflected D-term
 
-For a reduction `R` with the tree `R.tree` of `derive_reduction`, its costed form `R.tree.timed`
-of `derive_timed` and its D-term `R.tree.d` of `reflect_d`, the command `link_timed R` proves
+For a tree `T` with its costed form `T.timed` of `derive_timed` and its D-term `T.d` of
+`reflect_d`, the command `link_timed x` proves
 
-* `R.tree.d_timedSim`: `TimedSim (fun a w => a = w) 1 n (R.tree.timed …) ((R.tree.d …).eval ρ)`
-  for a numeral allowance `n` computed by the derivation, and
-* `R.tree.d_cost_le`: `(R.tree.d …).cost ρ ≤ n + 1 * SPTree.Timed.stepTime (R.tree.timed …)`,
-  by `TSim.cost_le`.
+* `T.d_timedSim`: `TimedSim (fun a w => a = w) 1 n (T.timed …) ((T.d …).eval ρ)` for a numeral
+  allowance `n` computed by the derivation, and
+* `T.d_cost_le`: `(T.d …).cost ρ ≤ n + 1 * SPTree.Timed.stepTime (T.timed …)`, by
+  `TSim.cost_le`.
+
+The argument `x` names the tree (`resolveTree`): `T = x.tree` for a reduction `x` of
+`derive_reduction`, for a field `x = R.f` of a structure-valued reduction (its tree `R.f.tree`)
+and for a step `x = S.start` of a multi-call simulator (`S.start.tree`, or `S.start.treeHat` on
+costed states); `T = x` for a definition `x` with the costed form `x.timed` of `derive_timed`.
 
 ## The telescope
 
-The binders are read off `R.tree.d_den`, whose environment `ρ` is the environment of the
-statement, and aligned with the binders of `R.tree.timed`:
+The binders are read off `T.d_den`, whose environment `ρ` is the environment of the
+statement, and aligned with the binders of `T.timed`:
 
 * a type parameter is the finite ground type of `reflect_d` (`MF : FTy` at `MF.den`);
 * a record that `reflect_d` unbundles is the constructor applied to its fields, and the fields
@@ -48,27 +53,31 @@ statement, and aligned with the binders of `R.tree.timed`:
 ## The walk
 
 The proof is a walk over the D-term, one rule of `CatCryptCore.Complexity.D.TimedLink` per
-construct, against the unfolded value of `R.tree.timed`: `letE` of a sample, get or set, of a
+construct, against the unfolded value of `T.timed`: `letE` of a sample, get or set, of a
 data term (`TSim.letE`) or of a computation (`TSim.bind`), a call of a tree function value with
 arguments (`TSim.call`) or on `unit` (`TSim.call0`), `ite`, `fail`, and a data leaf
-(`TSim.ret`); data terms by `DSim.var`, `lit`, `natLit`, `pair`, `fst`, `snd`, `letE`, `prim`
-(and `decide` for the atom of a condition), `app` of a data function value and `appFree` of a
-projection or re-pairing value. At each tree node the costed tree of the goal is replaced by its
-tree under a fresh step cost (`TSim.conv`); the step-cost inequalities are collected and closed
-once the walk has assigned the costed trees, innermost first: an undetermined step cost is set to
-the other side or to `0`, the others are closed by `omega`, with atoms that are definitionally
-equal identified first. Any other construct is refused with a message naming it, as are
-operations on `ℕ` and leaves whose type differs from their D representation (`Option`).
+(`TSim.ret`); data terms by `DSim.var`, `lit`, `natLit`, `pair`, `fst`, `snd`, `inl`, `inr`,
+`letE`, `prim` (and `decide` for the atom of a condition), `app` of a data function value and
+`appFree` of a projection or re-pairing value. The two branches of an `ite` are derived each
+at its own allowance and lifted to the larger one by `TSim.mono`.
+
+At each tree node the costed tree of the goal is replaced by its tree under a fresh step cost
+(`TSim.conv`); the step-cost inequalities are collected and closed once the walk has assigned the
+costed trees, innermost first: an undetermined step cost is set to the other side or to `0`, the
+others are closed by `omega`, with atoms that are definitionally equal identified first.
+Any other construct is refused with a message naming it, as are operations on `ℕ` and leaves
+whose type differs from their D representation (`Option`).
 
 ## Main definitions
 
-* `link_timed R`: the command.
+* `link_timed x`: the command.
 
 ## Main results
 
 * `TimedLink.TSim.conv`: the costed tree of a goal against its tree under a smaller step cost.
 * `TimedLink.DSim.appFree`: an application that the costed form charges nothing for, paid by the
   allowance.
+* `TimedLink.DSim.inl`, `TimedLink.DSim.inr`: the injections into a sum.
 -/
 
 @[expose] public section
@@ -95,6 +104,24 @@ theorem DSim.appFree {a b : Ty} {F : Tm Γ (.arr a b)} {x : Tm Γ a} {g : Val (.
     DSim K (n + (1 + d)) c (.app F x) ρ w := by
   obtain ⟨mx, hmx, l⟩ := hx
   exact ⟨0 + mx + (m + 1), Reflect.CEq.app hF hmx hg, by omega⟩
+
+/-- The left injection of a data term into a sum costs nothing beyond the term. -/
+theorem DSim.inl {a b : Ty} {x : Tm Γ a} {v : Val a} {n c : ℕ} (h : DSim K n c x ρ v) :
+    DSim K n c (.inl x : Tm Γ (.sum a b)) ρ (Sum.inl v : Val a ⊕ Val b) := by
+  obtain ⟨m, hm, l⟩ := h
+  refine ⟨m, ?_, l⟩
+  change ((x.eval ρ).bind fun v => .ret (Sum.inl v : Val a ⊕ Val b)) = _
+  rw [hm]
+  exact Reflect.stepN_ret_bind m v _
+
+/-- The right injection of a data term into a sum costs nothing beyond the term. -/
+theorem DSim.inr {a b : Ty} {x : Tm Γ b} {v : Val b} {n c : ℕ} (h : DSim K n c x ρ v) :
+    DSim K n c (.inr x : Tm Γ (.sum a b)) ρ (Sum.inr v : Val a ⊕ Val b) := by
+  obtain ⟨m, hm, l⟩ := h
+  refine ⟨m, ?_, l⟩
+  change ((x.eval ρ).bind fun v => .ret (Sum.inr v : Val a ⊕ Val b)) = _
+  rw [hm]
+  exact Reflect.stepN_ret_bind m v _
 
 end CatCrypt.Complexity.D.TimedLink
 
@@ -219,6 +246,8 @@ partial def isData (ρ : Expr) (loc : Nat) (e : Expr) : LinkM Bool := do
   | some ``Tm.pair, 5 => return (← isData ρ loc (e.getArg! 3)) && (← isData ρ loc (e.getArg! 4))
   | some ``Tm.fst, 4 => isData ρ loc (e.getArg! 3)
   | some ``Tm.snd, 4 => isData ρ loc (e.getArg! 3)
+  | some ``Tm.inl, 4 => isData ρ loc (e.getArg! 3)
+  | some ``Tm.inr, 4 => isData ρ loc (e.getArg! 3)
   | some ``Tm.prim, 5 => isData ρ loc (e.getArg! 4)
   | some ``Tm.letE, 5 =>
     return (← isData ρ loc (e.getArg! 3)) && (← isData ρ (loc + 1) (e.getArg! 4))
@@ -277,6 +306,12 @@ partial def solveD (g : MVarId) : LinkM Unit := g.withContext do
     solveD (← arg m `h).mvarId!
   | some ``Tm.snd, 4 =>
     let m ← applyRule g ``DSim.snd
+    solveD (← arg m `h).mvarId!
+  | some ``Tm.inl, 4 =>
+    let m ← applyRule g ``DSim.inl
+    solveD (← arg m `h).mvarId!
+  | some ``Tm.inr, 4 =>
+    let m ← applyRule g ``DSim.inr
     solveD (← arg m `h).mvarId!
   | some ``Tm.letE, 5 =>
     let m ← applyRule g ``DSim.letE
@@ -364,6 +399,32 @@ def splitPair (m : Std.HashMap Name Expr) (n : Name) : MetaM Unit := do
   let p ← mkAppM ``Prod.mk #[← mkFreshExprMVar (ty.getArg! 0), ← mkFreshExprMVar (ty.getArg! 1)]
   unless ← isDefEq x p do throwError "link_timed: `{n}` does not split"
 
+/-- The goal of a branch `h : TSim E K n x t ρ` of a conditional at a fresh allowance, and that
+allowance: the branches are derived each at its own allowance. -/
+def freshBranch (h : Expr) : MetaM (Expr × Expr) := do
+  let as ← tsimArgs (← inferType h)
+  let nB ← mkFreshExprMVar (mkConst ``Nat)
+  return (← mkFreshExprMVar (mkAppN (mkConst ``TSim) (as.set! 5 nB)), nB)
+
+/-- Close the branches `(h, g, nB)` of a conditional from their derivations `g` at the
+allowances `nB` by `TSim.mono`, at the common allowance `n`: the largest `nB`, or the value of `n`
+when it is already a numeral. -/
+def joinBranches (n : Expr) (bs : Array (Expr × Expr × Expr)) : LinkM Unit := do
+  let mut k := 0
+  for (_, _, nB) in bs do
+    let nB ← instantiateMVars nB
+    let some kB ← (evalNat nB).run |
+      failL m!"the allowance{indentExpr nB}\nof a branch is not a numeral"
+    k := max k kB
+  let nv ← instantiateMVars n
+  if nv.isMVar then closeWith nv (mkNatLit k)
+  else
+    let some kn ← (evalNat nv).run | failL m!"the allowance{indentExpr nv}\nis not a numeral"
+    k := kn
+  for (h, g, nB) in bs do
+    let hn ← mkDecideProof (← mkAppM ``LE.le #[← instantiateMVars nB, mkNatLit k])
+    closeWith h (← mkAppM ``TSim.mono #[hn, g])
+
 /-- Derive the `TSim` goal `g` construct by construct. -/
 partial def solveT (g : MVarId) : LinkM Unit := g.withContext do
   let as ← tsimArgs (← g.getType)
@@ -432,8 +493,13 @@ partial def solveT (g : MVarId) : LinkM Unit := g.withContext do
     let m ← applyRule (← conv g) ``TSim.ite
     closeWith (← arg m `hK) one
     solveCond (← arg m `hb).mvarId!
-    solveT (← arg m `ht).mvarId!
-    solveT (← arg m `he).mvarId!
+    let ht ← arg m `ht
+    let he ← arg m `he
+    let (gt, nt) ← freshBranch ht
+    solveT gt.mvarId!
+    let (ge, ne) ← freshBranch he
+    solveT ge.mvarId!
+    joinBranches (← arg m `n₂) #[(ht, gt, nt), (he, ge, ne)]
     side (← arg m `hc)
   | _, _ =>
     if ← isData ρ 0 t then ret g
@@ -520,9 +586,31 @@ partial def isPairMap (v e : Expr) : MetaM Bool := do
     return (← isPairMap v (e.getArg! 2)) && (← isPairMap v (e.getArg! 3))
   return false
 
-/-- Build the theorems `R.tree.d_timedSim` and `R.tree.d_cost_le`. -/
-partial def linkTimed (R : Name) : TermElabM Unit := do
-  let tree := R ++ `tree
+/-- The tree `T` that `link_timed x` links, a constant with the costed form `T.timed`, the D-term
+`T.d` and its denotation theorem `T.d_den`: `x.tree` when it has the three (a reduction of
+`derive_reduction`, a field `R.f` of a structure-valued reduction with its tree `R.f.tree`, a
+step `S.start` of a multi-call simulator with its tree `S.start.tree`), else `x` (a definition
+with the costed form `x.timed` of `derive_timed`, or a tree named in full). The name `x` need not
+be a constant; both candidates are resolved in the current namespaces. -/
+def resolveTree (x : Name) : CoreM Name := do
+  let env ← getEnv
+  let parts (t : Name) : List Name := [t ++ `timed, t ++ `d, t ++ `d_den]
+  let cands := [x ++ `tree, x ++ `treeHat, x]
+  let mut found : Array Name := #[]
+  for c in cands do
+    for (t, fs) in ← resolveGlobalName c do
+      if fs.isEmpty && env.contains t then
+        if (parts t).all env.contains then return t
+        found := found.push t
+  match found[0]? with
+  | some t =>
+    let missing := (parts t).filter (!env.contains ·)
+    throwError "link_timed: `{t}` lacks {missing}; `derive_timed` gives `{t ++ `timed}` and \
+      `reflect_d {t}` gives `{t ++ `d}` and `{t ++ `d_den}`"
+  | none => throwError "link_timed: neither `{x ++ `tree}` nor `{x}` is a constant"
+
+/-- Build the theorems `T.d_timedSim` and `T.d_cost_le` for the tree `T` (`resolveTree`). -/
+partial def linkTimed (tree : Name) : TermElabM Unit := do
   let timedN := tree ++ `timed
   let dN := tree ++ `d
   let denN := tree ++ `d_den
@@ -691,15 +779,17 @@ partial def linkTimed (R : Name) : TermElabM Unit := do
           `{timedN}`, proved by `link_timed`."
     go 0 0 (← inferType (mkConst timedN)) #[] #[] {}
 
-/-- `link_timed R` proves `R.tree.d_timedSim`, the simulation of the evaluation of the D-term
-`R.tree.d` of `reflect_d` by the costed tree `R.tree.timed` of `derive_reduction`, and
-`R.tree.d_cost_le`, the cost of `R.tree.d` by the time of `R.tree.timed`. -/
+/-- `link_timed x` proves `T.d_timedSim`, the simulation of the evaluation of the D-term `T.d` of
+`reflect_d` by the costed tree `T.timed`, and `T.d_cost_le`, the cost of `T.d` by the time of
+`T.timed`, for the tree `T` that `x` names: `x.tree` for a reduction `x` of `derive_reduction`, a
+field `x = R.f` of a structure-valued reduction or a step `x = S.start` of a multi-call
+simulator, and `x` for a definition with the costed form `x.timed` of `derive_timed`. -/
 syntax (name := linkTimedCmd) "link_timed " ident : command
 
 @[command_elab linkTimedCmd, inherit_doc linkTimedCmd]
 def elabLinkTimed : CommandElab := fun stx => do
-  let R ← liftCoreM <| realizeGlobalConstNoOverloadWithInfo stx[1]
-  liftTermElabM (linkTimed R)
+  let T ← liftCoreM <| resolveTree stx[1].getId
+  liftTermElabM (linkTimed T)
 
 end CatCrypt.Complexity.D.LinkTimed
 
