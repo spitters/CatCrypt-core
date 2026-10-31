@@ -41,7 +41,9 @@ statement, and aligned with the binders of `R.tree.timed`:
 * a class method of `reflect_d` (the D value `gm` of a method `m` of a local instance, after
   the binders of the source) gets a cost function `mDCost`, the step equation `hm` and the
   bound `hmCost : ∀ v, mDCost v ≤ 0`: the method costs the unit step of its application, as
-  `derive_timed` charges a method of a local instance.
+  `derive_timed` charges a method of a local instance; a method value that is a projection or
+  re-pairing of its argument (`v.1`, `v.2`, `(v.1, v.2)`), which `derive_timed` charges nothing
+  for, has the step of its application paid by the allowance (`DSim.appFree`).
 
 ## The walk
 
@@ -50,12 +52,13 @@ construct, against the unfolded value of `R.tree.timed`: `letE` of a sample, get
 data term (`TSim.letE`) or of a computation (`TSim.bind`), a call of a tree function value with
 arguments (`TSim.call`) or on `unit` (`TSim.call0`), `ite`, `fail`, and a data leaf
 (`TSim.ret`); data terms by `DSim.var`, `lit`, `natLit`, `pair`, `fst`, `snd`, `letE`, `prim`
-(and `decide` for the atom of a condition) and `app` of a data function value. At each tree node
-the costed tree of the goal is replaced by its tree under a fresh step cost (`TSim.conv`); the
-step-cost inequalities are collected and closed once the walk has assigned the costed trees,
-innermost first: an undetermined step cost is set to the other side or to `0`, the others are
-closed by `omega`. Any other construct is refused with a message naming it, as are operations on
-`ℕ` and leaves whose type differs from their D representation (`Option`).
+(and `decide` for the atom of a condition), `app` of a data function value and `appFree` of a
+projection or re-pairing value. At each tree node the costed tree of the goal is replaced by its
+tree under a fresh step cost (`TSim.conv`); the step-cost inequalities are collected and closed
+once the walk has assigned the costed trees, innermost first: an undetermined step cost is set to
+the other side or to `0`, the others are closed by `omega`, with atoms that are definitionally
+equal identified first. Any other construct is refused with a message naming it, as are
+operations on `ℕ` and leaves whose type differs from their D representation (`Option`).
 
 ## Main definitions
 
@@ -64,6 +67,8 @@ closed by `omega`. Any other construct is refused with a message naming it, as a
 ## Main results
 
 * `TimedLink.TSim.conv`: the costed tree of a goal against its tree under a smaller step cost.
+* `TimedLink.DSim.appFree`: an application that the costed form charges nothing for, paid by the
+  allowance.
 -/
 
 @[expose] public section
@@ -82,6 +87,15 @@ theorem TSim.conv {E : α → Val τ → Prop} {n c : ℕ} {X : ℕ × SPTree.Ti
     (h : TSim E K n (c, X.2) t ρ) (hc : c ≤ X.1) : TSim E K n X t ρ :=
   TSim.le_fst hc h
 
+/-- A data function value that `derive_timed` charges nothing for (a projection or re-pairing of
+its argument) applied: the β-step and its `m ≤ d` steps are paid by the allowance. -/
+theorem DSim.appFree {a b : Ty} {F : Tm Γ (.arr a b)} {x : Tm Γ a} {g : Val (.arr a b)}
+    {v : Val a} {w : Val b} {n c d m : ℕ} (hF : Reflect.CEq F ρ 0 g) (hx : DSim K n c x ρ v)
+    (hg : g v = stepN CTree.tick m (.ret w)) (hm : m ≤ d) :
+    DSim K (n + (1 + d)) c (.app F x) ρ w := by
+  obtain ⟨mx, hmx, l⟩ := hx
+  exact ⟨0 + mx + (m + 1), Reflect.CEq.app hF hmx hg, by omega⟩
+
 end CatCrypt.Complexity.D.TimedLink
 
 meta section
@@ -94,6 +108,9 @@ open Lean Elab Meta Term Command CatCrypt.Core CatCrypt.Complexity.D TimedLink
 inductive Kind where
   /-- A data function value: its step equation `hg` and the bound `hFC` of its cost. -/
   | dataFn (hg hFC : Expr)
+  /-- A data function value that `derive_timed` charges nothing for (a projection or re-pairing
+  of its argument): its step equation `hg` and the bound `hFC` of its cost. -/
+  | freeFn (hg hFC : Expr)
   /-- A tree function value with arguments, simulated by the costed tree (`hA`). -/
   | treeFn (hA : Expr)
   /-- A tree function value on `unit`, simulated by the costed tree (`hp`). -/
@@ -213,7 +230,7 @@ partial def isData (ρ : Expr) (loc : Nat) (e : Expr) : LinkM Bool := do
     let v ← whnf (← envNth ρ (i - loc))
     let .fvar fv := v | return false
     match (← read)[fv]? with
-    | some (.dataFn ..) => isData ρ loc (e.getArg! 4)
+    | some (.dataFn ..) | some (.freeFn ..) => isData ρ loc (e.getArg! 4)
     | _ => return false
   | _, _ => return false
 
@@ -279,6 +296,14 @@ partial def solveD (g : MVarId) : LinkM Unit := g.withContext do
     | some (.dataFn hg hFC) =>
       let m ← applyRule g ``DSim.app
       closeWith (← arg m `hK) (← mkAppM ``Nat.le_refl #[as[2]!])
+      let F := t.getArg! 3
+      closeWith (← arg m `hF) (← mkAppM ``Reflect.CEq.var #[F.getArg! 2, ρ])
+      solveD (← arg m `hx).mvarId!
+      let v ← instantiateMVars (← arg m `v)
+      closeWith (← arg m `hg) (mkApp hg v)
+      closeWith (← arg m `hm) (mkApp hFC v)
+    | some (.freeFn hg hFC) =>
+      let m ← applyRule g ``DSim.appFree
       let F := t.getArg! 3
       closeWith (← arg m `hF) (← mkAppM ``Reflect.CEq.var #[F.getArg! 2, ρ])
       solveD (← arg m `hx).mvarId!
@@ -414,6 +439,19 @@ partial def solveT (g : MVarId) : LinkM Unit := g.withContext do
     if ← isData ρ 0 t then ret g
     else failL m!"the tree construct `{t.getAppFn}` is outside the fragment of link_timed"
 
+/-- The `ℕ`-expression `e` with every maximal subterm other than `+`, `*` and a numeral replaced by
+the first atom of the state that it is definitionally equal to (added to the state when there is
+none), so that `omega` sees atoms that differ only in implicit arguments as one. -/
+partial def canonAtoms (e : Expr) : StateT (Array Expr) MetaM Expr := do
+  let e ← instantiateMVars e
+  if e.isAppOfArity ``HAdd.hAdd 6 || e.isAppOfArity ``HMul.hMul 6 then
+    return mkApp2 e.appFn!.appFn! (← canonAtoms (e.getArg! 4)) (← canonAtoms (e.getArg! 5))
+  if e.isAppOf ``OfNat.ofNat || e.isRawNatLit then return e
+  for a in ← get do
+    if ← isDefEq a e then return a
+  modify (·.push e)
+  return e
+
 /-- Close a step-cost side goal `a ≤ b`: a side that is an undetermined step cost is set to the
 other side; a step cost that no construct determines is the least, `0`; the rest is `omega`
 after β-, projection-, `delay`-, `Val`-, `Prim.apply`- and `Equiv.refl`-normalisation. -/
@@ -441,12 +479,22 @@ def solveSide (g : MVarId) : TermElabM Unit := g.withContext do
       Tactic.run g do
         Tactic.evalTactic (← `(tactic| first
           | omega
-          | (dsimp only [SPTree.Timed.delay, Val, Prim.apply, Equiv.refl_apply]; omega)))
+          | (try dsimp only [SPTree.Timed.delay, Val, Prim.apply, Equiv.refl_apply])))
     catch ex =>
       throwError "link_timed: the step-cost inequality{indentExpr ty}\nis not closed: \
         {ex.toMessageData}"
-  unless gs.isEmpty do
-    throwError "link_timed: the step-cost inequality{indentExpr ty}\nis not closed"
+  for g' in gs do
+    let g'' ← g'.withContext do
+      let ty' ← instantiateMVars (← g'.getType)
+      let some (_, _, a', b') := ty'.app4? ``LE.le | pure g'
+      let ((a'', b''), _) ← (do pure (← canonAtoms a', ← canonAtoms b')).run #[]
+      g'.replaceTargetDefEq (mkApp2 ty'.appFn!.appFn! a'' b'')
+    let rest ← try Tactic.run g'' (Tactic.evalTactic (← `(tactic| omega)))
+      catch ex =>
+        throwError "link_timed: the step-cost inequality{indentExpr ty}\nis not closed: \
+          {ex.toMessageData}"
+    unless rest.isEmpty do
+      throwError "link_timed: the step-cost inequality{indentExpr ty}\nis not closed"
 
 /-- The leaf relation `fun a w => a = w` between the leaves `γ` of a costed tree and the values
 `vτ` of their D type; the two types agree (an `Option` leaf, represented by `optEnc`, is
@@ -460,6 +508,17 @@ def eqRel (γ vτ : Expr) : MetaM Expr := do
 /-- The leaf type `γ` of a type `… → SPTree γ` or `… → SPTree.Timed γ`. -/
 def leafTy (T : Expr) : MetaM Expr :=
   forallTelescope T fun _ c => return c.appArg!
+
+/-- Whether `e` is built from the variable `v` by `Prod.fst`, `Prod.snd` and `Prod.mk` alone: a
+projection or re-pairing of a pair argument, which `derive_timed` charges nothing for. -/
+partial def isPairMap (v e : Expr) : MetaM Bool := do
+  let e := (← instantiateMVars e).headBeta
+  if e == v then return true
+  if e.isAppOfArity ``Prod.fst 3 || e.isAppOfArity ``Prod.snd 3 then
+    return ← isPairMap v e.appArg!
+  if e.isAppOfArity ``Prod.mk 4 then
+    return (← isPairMap v (e.getArg! 2)) && (← isPairMap v (e.getArg! 3))
+  return false
 
 /-- Build the theorems `R.tree.d_timedSim` and `R.tree.d_cost_le`. -/
 partial def linkTimed (R : Name) : TermElabM Unit := do
@@ -580,6 +639,9 @@ partial def linkTimed (R : Name) : TermElabM Unit := do
               | _ => `method
             return (← mkLambdaFVars #[FC] (← mkForallFVars vs e1),
               ← mkLambdaFVars #[FC] (← mkForallFVars vs e2), mn)
+        let free ← forallTelescope (← inferType hden) fun vs eq => do
+          let some (_, _, r) := eq.eq? | return false
+          isPairMap vs[0]! r.appArg!
         let lctx := (← getLCtx).setUserName g.fvarId! (mn.appendBefore "g")
         withLCtx lctx (← getLocalInstances) do
         withLocalDeclD (mn.appendAfter "DCost")
@@ -587,7 +649,7 @@ partial def linkTimed (R : Name) : TermElabM Unit := do
         withLocalDeclD (mn.appendBefore "h") (hgT.beta #[FC]) fun hg =>
         withLocalDeclD ((mn.appendAfter "Cost").appendBefore "h") (hFCT.beta #[FC]) fun hFC =>
           go j (i + 2) tty tArgs (binders ++ #[g, FC, hg, hFC])
-            (kinds.insert g.fvarId! (.dataFn hg hFC))
+            (kinds.insert g.fvarId! (if free then .freeFn hg hFC else .dataFn hg hFC))
       else
         let timedApp := mkAppN (mkConst timedN) tArgs
         let dC := mkAppN (mkConst dN) statics
