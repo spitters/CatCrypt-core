@@ -344,7 +344,8 @@ noncomputable def ltStep (s : RSt S W K) (pid : PartyId) : SPComp ((S × S) × R
 
 /-- The key derivation on the simulator's copy of the table `tb` at `x`, as in `roAt`: the
 recorded value, or a uniform value that is recorded. -/
-noncomputable def roStep (tb : List (Inp W × K)) (x : Inp W) : SPComp (K × List (Inp W × K)) :=
+noncomputable def roStep {D : Type} [DecidableEq D] (tb : List (D × K)) (x : D) :
+    SPComp (K × List (D × K)) :=
   match tb.lookup x with
   | some v => SPComp.pure (v, tb)
   | none => SPComp.map (fun v => (v, (x, v) :: tb)) (SPComp.sample K)
@@ -436,7 +437,8 @@ theorem ltStep_pureNF (s : RSt S W K) (pid : PartyId) : PureNF (ltStep s pid) :=
 
 omit [Inhabited K] in
 /-- `roStep` neither touches the heap nor fails. -/
-theorem roStep_pureNF (tb : List (Inp W × K)) (x : Inp W) : PureNF (roStep tb x) := by
+theorem roStep_pureNF {D : Type} [DecidableEq D] (tb : List (D × K)) (x : D) :
+    PureNF (roStep tb x) := by
   unfold roStep
   split
   · exact pureNF_pure _

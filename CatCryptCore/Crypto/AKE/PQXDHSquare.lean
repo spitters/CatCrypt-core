@@ -82,7 +82,8 @@ open CatCrypt.Crypto.PAKE.DHExtract
 open CatCrypt.Crypto.PAKE.CPaceSquare (roAt PureNF pureNF_pure pureNF_sample PureNF.map
   PureNF.bind withSub_pureNF pureGame pureGame_realizes sampleFrom_ofPMF_eq_liftPMF)
 open CatCrypt.Crypto.AKE.X3DHSquare (Inp aliceInp bobInp RSt ROut RAEv ltAt Named keyed realHon
-  ephPubOf opkOf corruptRStep realAdv rInit FEv FOut subView F_AKE_pureNF ltStep ltStep_pureNF)
+  ephPubOf opkOf corruptRStep realAdv rInit FEv FOut subView F_AKE_pureNF ltStep ltStep_pureNF
+  roStep roStep_pureNF)
 open CatCrypt.NonUniform (sampleFrom ofPMF)
 open CatCrypt.Crypto.KEM.Games (Scheme)
 open PubView (eqView)
@@ -274,14 +275,6 @@ section Sim
 variable {S W K PK SK SS C : Type} [Field S] [Fintype S] [DecidableEq W] [Fintype K]
   [Nonempty K] [Inhabited K] [DecidableEq SS] (P : Scheme PK SK SS C) (G : DHGroup S W)
 
-/-- The key derivation on the simulator's copy of the table `tb` at `x`, as in `roAt`: the
-recorded value, or a uniform value that is recorded. -/
-noncomputable def roStep (tb : List (PInp W SS × K)) (x : PInp W SS) :
-    SPComp (K × List (PInp W SS × K)) :=
-  match tb.lookup x with
-  | some v => SPComp.pure (v, tb)
-  | none => SPComp.map (fun v => (v, (x, v) :: tb)) (SPComp.sample K)
-
 /-- The delivery of the key of the session `x` with record `r` and input `ip`, as in X3DH. An
 exposed session receives the key-derivation value at `ip`, which the simulator samples and
 passes to `newKey`. Any other session receives the key of `F_AKE`: `newKey` when its partner
@@ -388,14 +381,6 @@ noncomputable def simStart (s : SimSt S W K PK SK SS C) :
 theorem pureNF_sampleFrom_ofPMF {α : Type} (p : PMF α) : PureNF (sampleFrom (ofPMF p)) := by
   rw [sampleFrom_ofPMF_eq_liftPMF]
   exact ⟨liftPMF_isPure _, liftPMF_noFail _⟩
-
-omit [Inhabited K] in
-/-- `roStep` neither touches the heap nor fails. -/
-theorem roStep_pureNF (tb : List (PInp W SS × K)) (x : PInp W SS) : PureNF (roStep tb x) := by
-  unfold roStep
-  split
-  · exact pureNF_pure _
-  · exact (pureNF_sample _).map _
 
 omit [Field S] [Fintype S] in
 /-- `deliver` neither touches the heap nor fails. -/
