@@ -35,4 +35,10 @@ timed_cost CatCryptCore.Examples.CyclicGroupDDH.CyclicGroup.elemPow :=
   fun (G : Type) [CG : CyclicGroup G] (_x : G) (a : CG.Exp) (powCost : CG.Exp → ℕ)
     (_expMulCost : CG.Exp → CG.Exp → ℕ) => powCost a
 
+/-- The registered cost of `elemPow x a` is the cost of `pow a` (the unfolding lemma of the
+registration, read by `derive_time_bound`). -/
+theorem CyclicGroup.elemPow.timedCost_eq (G : Type) [CG : CyclicGroup G] (x : G) (a : CG.Exp)
+    (powCost : CG.Exp → ℕ) (expMulCost : CG.Exp → CG.Exp → ℕ) :
+    CyclicGroup.elemPow.timedCost G x a powCost expMulCost = powCost a := rfl
+
 end CatCryptCore.Examples.CyclicGroupDDH
