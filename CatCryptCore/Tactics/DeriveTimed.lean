@@ -2303,21 +2303,46 @@ def constAlts? (e : Expr) : MetaM (Option Expr) := do
 (a constructor application, as `split` introduces) and `rfl`: the structure
 `{ cur := k + 1, env := s.cfg.env }` that the hypothesis `s.cfg.cur = k + 1` produced from the
 eta expansion of `s.cfg` becomes that eta expansion again, which `rfl` closes. Each case
-hypothesis is tried alone; the goal is unchanged when none closes it. -/
+hypothesis, and each equation among the conjuncts of a case hypothesis of an `if` on a
+conjunction (`r.role = .responder ∧ …`), is tried alone; the goal is unchanged when none closes
+it. -/
 def closeByCaseHypsRev (g : MVarId) : MetaM Bool := g.withContext do
   for d in ← getLCtx do
     if d.isImplementationDetail then continue
-    let some (_, _, rhs) := (← instantiateMVars d.type).eq? | continue
-    unless (← isConstructorApp? rhs).isSome do continue
-    let s ← saveState
-    try
-      let r ← g.rewrite (← g.getType) (← mkEqSymm d.toExpr)
-      unless r.mvarIds.isEmpty do throwError "side goals"
-      let g' ← g.replaceTargetEq r.eNew r.eqProof
-      g'.refl
-      return true
-    catch _ => s.restore
+    let ty ← instantiateMVars d.type
+    let eqs ← if ty.isAppOfArity ``And 2 then conjEqns d.toExpr ty else pure #[d.toExpr]
+    for pf in eqs do
+      let some (_, _, rhs) := (← instantiateMVars (← inferType pf)).eq? | continue
+      unless (← isConstructorApp? rhs).isSome do continue
+      let s ← saveState
+      try
+        let r ← g.rewrite (← g.getType) (← mkEqSymm pf)
+        unless r.mvarIds.isEmpty do throwError "side goals"
+        let g' ← g.replaceTargetEq r.eNew r.eqProof
+        g'.refl
+        return true
+      catch _ => s.restore
   return false
+
+/-- The result types, free of loose bound variables, of the computations bound by the `bind`
+nodes of the tree kinds in `e` (the third argument from the end of a full application of
+`T.bind`). -/
+partial def bindTypes (e : Expr) (acc : Array Expr := #[]) : Array Expr :=
+  let acc := match e.getAppFn with
+    | .const n _ =>
+      let args := e.getAppArgs
+      if treeKinds.any (fun k => n == k.tree ++ `bind) && args.size ≥ 4 &&
+          !args[args.size - 4]!.hasLooseBVars then acc.push args[args.size - 4]!
+      else acc
+    | _ => acc
+  match e with
+  | .app f a => bindTypes a (bindTypes f acc)
+  | .lam _ t b _ => bindTypes b (bindTypes t acc)
+  | .forallE _ t b _ => bindTypes b (bindTypes t acc)
+  | .letE _ t v b _ => bindTypes b (bindTypes v (bindTypes t acc))
+  | .mdata _ b => bindTypes b acc
+  | .proj _ _ b => bindTypes b acc
+  | _ => acc
 
 mutual
 
@@ -3717,6 +3742,12 @@ partial def deriveTimed (ctx : Ctx) (c : Name) : TermElabM Unit := do
     if ← xs.anyM fun x => do return (← hatTy? (← inferType x)).isSome then return true
     let some rawT ← treeTy? (← inferType b) | return false
     return (← hatTy? rawT.result).isSome
+  -- A computation bound inside the tree whose result holds functions (a chain of calls ending
+  -- in the return of a record with function fields, followed by a continuation): its costed
+  -- result is a tuple of costed closures, which the erasure proof moves along the chain
+  -- (`bind_assoc`, `bind`) to the continuation that reads it.
+  let innerHat ← lambdaTelescope value fun _ b =>
+    (bindTypes b).anyM fun t => return (← hatTy? t).isSome
   let (tType, tValue, eType, nBinders, hatted, dataHat, fp?) ←
       lambdaTelescope value fun xs b => do
     let some T ← treeTyH? (← inferType b)
@@ -3831,7 +3862,7 @@ partial def deriveTimed (ctx : Ctx) (c : Name) : TermElabM Unit := do
   -- Costed closures in a result or in a simulation state: the lemmas that push `ε` to the
   -- leaves and the erasure of a simulation with a costed state.
   let hatLemmas : Array Name :=
-    if hatted || binderHat || plainHat || dataHat ||
+    if hatted || binderHat || plainHat || dataHat || innerHat ||
         used.contains ``CatCrypt.Crypto.OracleAdv.Timed.simulateHat ||
         callees.any (fun n => n.toString.endsWith "_bind") || !naturalLemmas.isEmpty then
       (treeKinds.filter fun k => used.contains k.timed).flatMap (·.hatLemmas)
@@ -4026,6 +4057,21 @@ partial def deriveTimed (ctx : Ctx) (c : Name) : TermElabM Unit := do
     if recursive || bindNames.isEmpty || hatLemmas.isEmpty then pure none
     else if treeRec then some <$> `(tactic| ($intros; $closeBindDisch))
     else some <$> `(tactic| ($intros; (try unfold $(mkIdent timedName):ident); $closeBindDisch))
+  -- A continuation that reads the costed result of a callee whose result holds functions (its
+  -- companions passed on to a later callee) before a trailing bind: the bind lemmas of `if` and
+  -- of the matchers move the trailing bind into the branches, and the erasure theorems
+  -- `R.erase_timed_bind` of the callees, kept here, rewrite the innermost callee first, so that
+  -- each continuation depends on its argument only through the erasure, which discharges the
+  -- side condition of the next one.
+  let hatBind := callees.any fun n => n.toString.endsWith "_bind" && !plainNames.contains n
+  let closeBindDischHat ← `(tactic|
+    ((try simp (disch := (intros; simp only [$allBind,*])) only [$allBind,*, *]) <;>
+      (try (repeat' split)) <;> (try split_ifs) <;>
+      (try simp (disch := (intros; simp only [$allBind,*])) only [$allBind,*, *]) <;>
+      (try rfl)))
+  let tacBindDischHat? : Option (TSyntax `tactic) ←
+    if recursive || treeRec || bindNames.isEmpty || hatLemmas.isEmpty || !hatBind then pure none
+    else some <$> `(tactic| ($intros; (try unfold $(mkIdent timedName):ident); $closeBindDischHat))
   let proof ← Term.withoutErrToSorry do
     let mv ← mkFreshExprMVar eType
     let rem ← if recursive && hatted then do
@@ -4058,6 +4104,17 @@ partial def deriveTimed (ctx : Ctx) (c : Name) : TermElabM Unit := do
           rem := rem ++ (← Tactic.run g (Tactic.evalTactic close))
         pure rem
       else Tactic.run mv.mvarId! (Tactic.evalTactic tac)
+    -- The stage with the erasure theorems of callees whose results hold functions, before the
+    -- others: where it applies, the stages below do not close the goal and their cost adds up
+    -- (`tacBindDischHat?`). A goal it leaves with a structure that a conjunct of a case
+    -- hypothesis rewrote is closed by `closeByCaseHypsRev`.
+    let (mv, rem) ← match rem, tacBindDischHat? with
+      | _ :: _, some tacHat => do
+        let mv' ← mkFreshExprMVar eType
+        let rem' ← Tactic.run mv'.mvarId! (Tactic.evalTactic tacHat)
+        let rem' ← rem'.filterM fun g => return !(← closeByCaseHypsRev g)
+        pure (if rem'.isEmpty then (mv', rem') else (mv, rem))
+      | _, _ => pure (mv, rem)
     let rem ← match closeMatch? with
       | some closeMatch => rem.flatMapM fun g => Tactic.run g (Tactic.evalTactic closeMatch)
       | none => pure rem
