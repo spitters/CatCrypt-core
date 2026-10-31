@@ -27,6 +27,8 @@ The binders are read off `R.tree.d_den`, whose environment `ρ` is the environme
 statement, and aligned with the binders of `R.tree.timed`:
 
 * a type parameter is the finite ground type of `reflect_d` (`MF : FTy` at `MF.den`);
+* a record that `reflect_d` unbundles is the constructor applied to its fields, and the fields
+  that are not types are binders kept in place;
 * a data binder and an unused binder are kept;
 * a data function `f` is kept with its companion `fCost` of `derive_timed`, its D value `gf`, a
   cost function `fDCost`, the step equation `hf : ∀ v, gf v = stepN CTree.tick (fDCost v)
@@ -435,10 +437,14 @@ def solveSide (g : MVarId) : TermElabM Unit := g.withContext do
   for m in (ty.collectMVars {}).result do
     unless ← m.isAssigned do
       if ← isDefEq (← m.getType) (mkConst ``Nat) then m.assign (mkNatLit 0)
-  let gs ← Tactic.run g do
-    Tactic.evalTactic (← `(tactic| first
-      | omega
-      | (dsimp only [SPTree.Timed.delay, Val, Prim.apply, Equiv.refl_apply]; omega)))
+  let gs ← try
+      Tactic.run g do
+        Tactic.evalTactic (← `(tactic| first
+          | omega
+          | (dsimp only [SPTree.Timed.delay, Val, Prim.apply, Equiv.refl_apply]; omega)))
+    catch ex =>
+      throwError "link_timed: the step-cost inequality{indentExpr ty}\nis not closed: \
+        {ex.toMessageData}"
   unless gs.isEmpty do
     throwError "link_timed: the step-cost inequality{indentExpr ty}\nis not closed"
 
@@ -456,7 +462,7 @@ def leafTy (T : Expr) : MetaM Expr :=
   forallTelescope T fun _ c => return c.appArg!
 
 /-- Build the theorems `R.tree.d_timedSim` and `R.tree.d_cost_le`. -/
-def linkTimed (R : Name) : TermElabM Unit := do
+partial def linkTimed (R : Name) : TermElabM Unit := do
   let tree := R ++ `tree
   let timedN := tree ++ `timed
   let dN := tree ++ `d
@@ -476,6 +482,9 @@ def linkTimed (R : Name) : TermElabM Unit := do
         (kinds : Std.HashMap FVarId Kind) : TermElabM Unit := do
       if h : j < targs.size then
         let a := targs[j]
+        -- A field of a record that `reflect_d` unbundles is a binder inside the argument.
+        if i < dBs.size && !dBs.contains a && a.containsFVar dBs[i]!.fvarId! then
+          return ← go j (i + 1) tty tArgs (binders.push dBs[i]!) kinds
         let some i' := dBs.findIdx? (· == a) |
           go (j + 1) i (tty.bindingBody!.instantiate1 a) (tArgs.push a) binders kinds
         unless i' == i do throwError "link_timed: the binders of `{denN}` are out of order"
@@ -560,6 +569,9 @@ def linkTimed (R : Name) : TermElabM Unit := do
             (← mkArrow (mkApp (mkConst ``Val) aτ) (mkConst ``Nat)) fun FC => do
           forallTelescope (← inferType hden) fun vs eq => do
             let some (_, _, r) := eq.eq? | throwError "link_timed: `{hden}`"
+            unless r.isAppOf ``CTree.ret do
+              throwError "link_timed: the method value `{g}` of `{denN}` is a program of a \
+                record{indentExpr r}"
             let v := vs[0]!
             let e1 ← mkEq (mkApp g v) (← mkAppM ``stepN #[mkConst ``CTree.tick, mkApp FC v, r])
             let e2 ← mkAppM ``LE.le #[mkApp FC v, mkNatLit 0]

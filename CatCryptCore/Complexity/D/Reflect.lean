@@ -55,10 +55,20 @@ a definition the translation unfolds, to static parameters and such an instance 
 `mul`, `gen`) is a D value at the innermost end of the context, a function `g` with the
 hypothesis `∀ v, g v = .ret (m v)` (and a cost function, as for a data function parameter) or a
 datum; an equality `a = b` or `a ≠ b` at `MF.den` is decided by the method
-`fun a b => decide (a = b)` of the instance of `DecidableEq MF.den`. A method whose type is not
-data (an associated type, as `CyclicGroup.Exp`) is not represented. A parameter `n : ℕ` that
-occurs in the
-type of a later parameter or of the result (a modulus `Fin (n + 1)`) is a parameter of `f.d`.
+`fun a b => decide (a = b)` of the instance of `DecidableEq MF.den`. A parameter `n : ℕ` that
+occurs in the type of a later parameter or of the result (a modulus `Fin (n + 1)`) is a
+parameter of `f.d`.
+
+A record parameter (a structure in `Type` without a representation in D, as a scheme
+`S : Scheme PK SK M C R` or a CRS) is a binder of the theorems, and its fields applied in the
+body are methods as above (`S.enc`, a datum `crs.trapdoor`); a field that is a program
+(`S.coins : K → SPComp M`) is a D function with the hypothesis of a computation parameter. A
+record or an instance parameter of a structure with a field that is a type (an associated type:
+`CyclicGroup.Exp G`, `gp.Scalar` of `gp : GroupParam`) is unbundled: the theorems state `f` at
+the constructor applied to its fields, a type field is a finite ground type `EF : FTy` at
+`EF.den` (a parameter of `f.d`), and every other field (data, an instance, a proof) is a binder
+of the theorems. A record value is the constructor applied to its fields up to structure eta, so
+the theorems apply to every record whose type fields are finite ground types.
 
 ## The cost theorem
 
@@ -867,10 +877,24 @@ def treeArg? (T : Expr) : MetaM (Option Expr) := do
   let T ← whnfR T
   if T.isAppOfArity ``SPTree 1 then return some T.appArg! else return none
 
+/-- The finite ground type `f` of `T = FTy.den f`, up to the projections of a constructor (a
+field of an unbundled record, `GP.G ⟨FTy.den f, …⟩`). -/
+partial def ftyDen? (T : Expr) : MetaM (Option Expr) := do
+  let T := T.consumeMData
+  if T.isAppOfArity ``FTy.den 1 then return some T.appArg!
+  let T ← whnfCore T
+  if T.isAppOfArity ``FTy.den 1 then return some T.appArg!
+  let .const c _ := T.getAppFn | return none
+  unless (← getProjectionFnInfo? c).isSome do return none
+  let some T' ← unfoldDefinition? T | return none
+  let T'' ← whnfCore T'
+  if T''.isProj then return none
+  ftyDen? T''
+
 /-- The finite ground type of `T`. -/
 def ftyOf (T : Expr) : MetaM Expr := do
   if let some n ← finMod? T then return mkApp (mkConst ``FTy.fin) n
-  if T.consumeMData.isAppOfArity ``FTy.den 1 then return T.consumeMData.appArg!
+  if let some f ← ftyDen? T then return f
   let T ← whnf T
   if T.isAppOfArity ``FTy.den 1 then return T.appArg!
   if T.isConstOf ``Bool then return mkConst ``FTy.bool
@@ -888,7 +912,7 @@ partial def tyOf (T : Expr) : MetaM (Expr × Bool) := do
   if let some γ ← treeArg? T then
     throwError "reflect_d: the computation type `SPTree {γ}` occurs inside a data type"
   if let some n ← finMod? T then return (tyBase (mkApp (mkConst ``FTy.fin) n), false)
-  if T.consumeMData.isAppOfArity ``FTy.den 1 then return (tyBase T.consumeMData.appArg!, false)
+  if let some f ← ftyDen? T then return (tyBase f, false)
   let T ← whnf T
   match T with
   | .forallE _ a b _ =>
@@ -1045,6 +1069,15 @@ def eqMethod? (ctx : Ctx) (T : Expr) : MetaM (Option Expr) := do
     if ← isDefEq T T' then return some x
   return none
 
+/-- The method term of the context that is a prefix of the application of `fn` to `args`: the
+variable that stands for it and the remaining arguments. -/
+def methodMatch? (ctx : Ctx) (fn : Expr) (args : Array Expr) : Option (Expr × Array Expr) :=
+  ctx.methods.findSome? fun (t, x) =>
+    let k := t.getAppNumArgs
+    if fn == t.getAppFn && k ≤ args.size && mkAppN fn (args.extract 0 k) == t then
+      some (x, args.extract k args.size)
+    else none
+
 mutual
 
 /-- Translate a pure source term. -/
@@ -1083,11 +1116,9 @@ partial def goP (ctx : Ctx) (e : Expr) : M Res := do
   | _ =>
     let fn := e.getAppFn.consumeMData
     let args := e.getAppArgs
-    for (t, x) in ctx.methods do
-      let k := t.getAppNumArgs
-      if fn == t.getAppFn && k ≤ args.size && mkAppN fn (args.extract 0 k) == t then
-        if k == args.size then return ← goP ctx x
-        return ← applyAll ctx e x (args.extract k args.size) false
+    if let some (x, rest) := methodMatch? ctx fn args then
+      if rest.isEmpty then return ← goP ctx x
+      return ← applyAll ctx e x rest false
     match fn with
     | .const c _ => goConst ctx e c args
     | .fvar _ | .lam .. | .letE .. | .mdata .. =>
@@ -1706,6 +1737,10 @@ partial def goM (ctx : Ctx) (e : Expr) : M Res := do
   | _ =>
   let fn := e.getAppFn.consumeMData
   let args := e.getAppArgs
+  if let some (x, rest) := methodMatch? ctx fn args then
+    let rm ← applyAll ctx e x rest true
+    if ← synMode then return rm
+    return ← finishM ctx e rm.tm rm.ty rm.pf rm.cpf
   match fn with
   | .const c _ =>
     match c, args.size with
@@ -1850,6 +1885,10 @@ partial def goT (ctx : Ctx) (e : Expr) : M Res := do
   | _ =>
   let fn := e.getAppFn.consumeMData
   let args := e.getAppArgs
+  if let some (x, rest) := methodMatch? ctx fn args then
+    let rm ← applyAll ctx e x rest true
+    if ← synMode then return rm
+    return ← finishT ctx e rm.tm rm.ty rm.pf rm.cpf
   match fn with
   | .const c _ =>
     match c, args.size with
@@ -1970,8 +2009,11 @@ type), the cost parameters of the function parameters, the binders of the denota
 cost theorem, the arguments of the definition, and the D context and environment. -/
 structure Params where
   statics : Array Expr := #[]
-  /-- The instance parameters without an instance at the representation of the parameters. -/
+  /-- The instance parameters without an instance at the representation of the parameters, the
+  record parameters and the fields of the unbundled records (`unbundle`). -/
   insts : Array Expr := #[]
+  /-- The record parameters and the fields of the unbundled records. -/
+  recs : Array Expr := #[]
   costStatics : Array Expr := #[]
   dBinders : Array Expr := #[]
   cBinders : Array Expr := #[]
@@ -2044,18 +2086,31 @@ def addParam (O x val : Expr) (n : Name) (T : Expr) (method : Bool) (ps : Params
                 tys := τ :: ps.tys,
                 rho := mkAppN (mkConst ``Env.cons) #[gam, τ, v, ps.rho] }
 
-/-- Whether `t` is a class method term: it mentions an instance of `insts`, its free variables
-are static parameters or instances, and its type is data or a function on data. -/
-def isMethodTerm (stat insts : Array Expr) (t : Expr) : MetaM Bool := do
+/-- Whether `t` is a method term: it mentions an instance or a record field of `insts`, its
+free variables are static parameters or of `insts`, and its type is data or a function on data;
+a function into `SPComp` or `SPTree` (a program of a record) when `t` mentions a record of
+`recs`. -/
+def isMethodTerm (stat insts recs : Array Expr) (t : Expr) : MetaM Bool := do
   if t.hasLooseBVars then return false
   unless t.hasAnyFVar (fun fv => insts.any (·.fvarId! == fv)) do return false
   if t.hasAnyFVar (fun fv => !stat.any (·.fvarId! == fv) && !insts.any (·.fvarId! == fv)) then
     return false
+  let isRec := t.hasAnyFVar (fun fv => recs.any (·.fvarId! == fv))
   try
     let T ← inferType t
-    if T.containsConst (fun c => c == ``SPComp || c == ``SPTree) then return false
     let (doms, cod) ← funShape T
-    if (← spcompArg? cod).isSome || (← treeArg? cod).isSome then return false
+    let γ? ← do if let some γ ← spcompArg? cod then pure (some γ) else treeArg? cod
+    if let some γ := γ? then
+      unless isRec do return false
+      let field ← match t.getAppFn with
+        | .const c _ => return (← getProjectionFnInfo? c).any (!·.fromClass)
+        | .proj .. => pure true
+        | _ => pure false
+      unless field do return false
+      for d in doms do discard <| tyOf d
+      discard <| tyOf γ
+      return true
+    if T.containsConst (fun c => c == ``SPComp || c == ``SPTree) then return false
     for d in doms do discard <| tyOf d
     discard <| tyOf cod
     return true
@@ -2066,9 +2121,9 @@ application of a class projection or of a constant that is not unfolded, and the
 `FTy.den F` of a static `F` at which `e` states an equality; the definitions that the
 translation unfolds (`unfoldable`, outside `CatCrypt.Core` and D) are scanned to the depth
 `depth`. -/
-partial def scanMethods (stat insts : Array Expr) (e : Expr) (depth : Nat)
+partial def scanMethods (stat insts recs : Array Expr) (e : Expr) (depth : Nat)
     (acc : Array Expr × Array Expr) : MetaM (Array Expr × Array Expr) := do
-  let go (x : Expr) (a : Array Expr × Array Expr) := scanMethods stat insts x depth a
+  let go (x : Expr) (a : Array Expr × Array Expr) := scanMethods stat insts recs x depth a
   match e with
   | .app .. =>
     let fn := e.getAppFn
@@ -2076,15 +2131,18 @@ partial def scanMethods (stat insts : Array Expr) (e : Expr) (depth : Nat)
     let mut acc := acc
     if fn.isConstOf ``Eq && args.size == 3 then
       let T := args[0]!.consumeMData
+      let T ← match ← ftyDen? T with
+        | some f => pure (mkApp (mkConst ``FTy.den) f)
+        | none => pure T
       if T.isAppOfArity ``FTy.den 1 && stat.contains T.appArg! && !acc.2.contains T then
         acc := (acc.1, acc.2.push T)
     if let .const c lvls := fn then
-      let proj := (← getProjectionFnInfo? c).any (·.fromClass)
+      let proj := (← getProjectionFnInfo? c).isSome
       let heads := proj || !(← unfoldable c)
       for k' in [0:if heads then args.size else 0] do
         let k := args.size - k'
         let t := mkAppN fn (args.extract 0 k)
-        if ← isMethodTerm stat insts t then
+        if ← isMethodTerm stat insts recs t then
           let acc' := if acc.1.contains t then acc else (acc.1.push t, acc.2)
           return ← (args.extract k args.size).foldlM (fun a x => go x a) acc'
       acc ← args.foldlM (fun a x => go x a) acc
@@ -2093,13 +2151,16 @@ partial def scanMethods (stat insts : Array Expr) (e : Expr) (depth : Nat)
         let info ← getConstInfo c
         if info.hasValue then
           let v ← instantiateValueLevelParams info lvls
-          acc ← scanMethods stat insts (v.beta args) (depth - 1) acc
+          acc ← scanMethods stat insts recs (v.beta args) (depth - 1) acc
       return acc
     args.foldlM (fun a x => go x a) (← go fn acc)
   | .lam _ _ b _ | .forallE _ _ b _ => go b acc
   | .letE _ _ v b _ => go b (← go v acc)
   | .mdata _ b => go b acc
-  | .proj _ _ s => go s acc
+  | .proj _ _ s =>
+    if ← isMethodTerm stat insts recs e then
+      return if acc.1.contains e then acc else (acc.1.push e, acc.2)
+    go s acc
   | _ => return acc
 
 /-- The name of a method term: the last component of its head constant. -/
@@ -2133,6 +2194,45 @@ partial def addMethods (O : Expr) (ms eqTys : List Expr) (ps : Params)
         addMethods O [] eqTys ps' methods ((T, x) :: eqs) k
   | [], [] => k ps methods eqs
 
+/-- The constructor of the record type `T`, applied to the parameters of `T`, when `T` is a
+structure in `Type` (a class or not) that has no representation in D. -/
+def recordCtor? (T : Expr) : MetaM (Option Expr) := do
+  if ← isProp T then return none
+  let T' ← whnf T
+  let .const sn lvls := T'.getAppFn | return none
+  let env ← getEnv
+  unless isStructure env sn do return none
+  if (← observing? (tyOf T)).isSome then return none
+  let ctor := getStructureCtor env sn
+  return some (mkAppN (mkConst ctor.name lvls) T'.getAppArgs)
+
+/-- Whether the constructor `ctor` (applied to its parameters) has a field that is a type. -/
+def hasTypeField (ctor : Expr) : MetaM Bool := do
+  forallTelescopeReducing (← inferType ctor) fun xs _ =>
+    xs.anyM fun x => return (← inferType x).isSort
+
+/-- Unbundle the record parameter `n` with constructor `ctor`: a field that is a type is a
+static parameter `F : FTy` and is `FTy.den F` in the record, every other field (data, instance
+or proof) a binder of the theorems among `insts`; `k` receives the record, the constructor
+applied to the fields. -/
+partial def unbundle (n : Name) (e : Expr) (ps : Params) (k : Params → Expr → MetaM Unit) :
+    MetaM Unit := do
+  match ← whnf (← inferType e) with
+  | .forallE fn fT _ bi =>
+    let nm := n.appendAfter s!"_{fn.eraseMacroScopes}"
+    if fT.isSort then
+      unless fT == mkSort Level.one do
+        throwError "reflect_d: the field `{fn}` of the record `{n}` is not a type in `Type`"
+      withLocalDeclD (nm.appendAfter "F") (mkConst ``FTy) fun f =>
+        unbundle n (mkApp e (mkApp (mkConst ``FTy.den) f))
+          { ps with statics := ps.statics.push f } k
+    else
+      withLocalDecl nm (if bi.isInstImplicit then .instImplicit else .default) fT fun x =>
+        unbundle n (mkApp e x)
+          { ps with insts := ps.insts.push x, recs := ps.recs.push x,
+                    dBinders := ps.dBinders.push x, cBinders := ps.cBinders.push x } k
+  | _ => k ps e
+
 /-- Reflect the definition `c`: define `c.d`, prove `c.d_den` and, when every construct is in
 the costed fragment, `c.d_cost`. -/
 def reflect (c : Name) : Term.TermElabM Unit := do
@@ -2157,6 +2257,11 @@ def reflect (c : Name) : Term.TermElabM Unit := do
       else if bi.isInstImplicit then
         if let some inst ← synthInstance? T then
           params fuel (b.instantiate1 inst) { ps with args := ps.args.push inst } k
+        else if let some ctor ← (do
+            let some ctor ← recordCtor? T | pure none
+            if ← hasTypeField ctor then pure (some ctor) else pure none) then
+          unbundle n ctor ps fun ps' r =>
+            params fuel (b.instantiate1 r) { ps' with args := ps'.args.push r } k
         else
           unless T.hasAnyFVar (fun fv => ps.statics.any (·.fvarId! == fv)) do
             throwError "reflect_d: no instance `{T}` at the representation of the parameters"
@@ -2164,6 +2269,16 @@ def reflect (c : Name) : Term.TermElabM Unit := do
             params fuel (b.instantiate1 i)
               { ps with insts := ps.insts.push i, dBinders := ps.dBinders.push i,
                         cBinders := ps.cBinders.push i, args := ps.args.push i } k
+      else if let some ctor ← recordCtor? T then
+        if ← hasTypeField ctor then
+          unbundle n ctor ps fun ps' r =>
+            params fuel (b.instantiate1 r) { ps' with args := ps'.args.push r } k
+        else
+          withLocalDeclD n T fun x =>
+            params fuel (b.instantiate1 x)
+              { ps with insts := ps.insts.push x, recs := ps.recs.push x,
+                        dBinders := ps.dBinders.push x, cBinders := ps.cBinders.push x,
+                        args := ps.args.push x } k
       else if b.hasLooseBVar 0 || !bi.isExplicit then
         unless (← isDefEq T (mkConst ``Nat)) || (← isDefEq T (mkConst ``FTy)) do
           throwError "reflect_d: the parameter `{n}` of `{c}` occurs in a type and is not a \
@@ -2191,7 +2306,7 @@ def reflect (c : Name) : Term.TermElabM Unit := do
     params 1024 info.type { rho := mkConst ``Env.nil, used } fun ps bodyT => do
       let body := info.value.beta ps.args
       let (ms, eqTys) ← if ps.insts.isEmpty then pure (#[], #[])
-        else scanMethods ps.statics ps.insts body 8 (#[], #[])
+        else scanMethods ps.statics ps.insts ps.recs body 8 (#[], #[])
       let ms := ms.qsort (fun a b => a.approxDepth.toNat > b.approxDepth.toNat)
       addMethods O ms.toList eqTys.toList ps [] [] fun ps methods eqs => do
       let ctx : Ctx := { entries := ps.entries, tys := ps.tys, rho := ps.rho, oracle := O,
