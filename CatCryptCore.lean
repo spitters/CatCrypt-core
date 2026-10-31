@@ -147,6 +147,7 @@ public import CatCryptCore.Crypto.UCMonad.LeakageExceptT
 public import CatCryptCore.Crypto.UCMonad.UCLeakageDecomp
 public import CatCryptCore.Crypto.UCMonad.SPCompInstance
 public import CatCryptCore.Crypto.RC
+public import CatCryptCore.Crypto.RCGate
 public import CatCryptCore.Crypto.UCAlg
 public import CatCryptCore.Crypto.UCComposition
 public import CatCryptCore.Crypto.UCDSL
