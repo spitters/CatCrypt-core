@@ -20,6 +20,8 @@ The bound is a concrete game bound between `Gr` and the composite game `F >=> Sb
 * `UCEmulatesCSim_of_isPure_simGame` — heap-independent `Gr`, `F`, `Sb` and a bound on the
   advantage between `Gr x` and `(F x).bind Sb` give `UCEmulatesCSim` with the simulator
   `fun A l => (Sb l).bind A` and the bound `gameUCBound bound`.
+* `ucEmulatesCSim_ofGame_map` — transport of concrete UC emulation of a game along a map
+  of its leak.
 -/
 
 @[expose] public section
@@ -56,5 +58,23 @@ theorem UCEmulatesCSim_of_isPure_simGame {hon leak L V : Type}
   simp only [SPComp.bind_assoc]
   rw [← SPComp.bind_assoc (F Z.input) Sb (fun o => SPComp.bind (A o) (fun v => Z.dist (.inr v)))]
   exact h
+
+/-- If a game `G` UC-emulates `F` with simulator `sim`, then `G` followed by `f` UC-emulates `F`
+with the simulator and the bound of the adversary precomposed with `f`. -/
+theorem ucEmulatesCSim_ofGame_map {hon L L' I W : Type} (G : hon → SPComp L) (f : L → L')
+    (F : hon → SPComp (Unit ⊕ I)) (sim : (L → SPComp W) → I → SPComp W)
+    (bound : (L → SPComp W) → Env hon (Unit ⊕ W) → ℝ≥0∞)
+    (h : UCEmulatesCSim ⟨hon, Unit, L, I, W⟩ (UCProtocol.ofGame G) F sim bound) :
+    UCEmulatesCSim ⟨hon, Unit, L', I, W⟩ (UCProtocol.ofGame fun x => (G x).map f) F
+      (fun A => sim (A ∘ f)) (fun A => bound (A ∘ f)) := by
+  intro A
+  have hπ : (fun a => SPComp.bind (UCProtocol.ofGame (fun x => (G x).map f) a)
+      (mapSum SPComp.pure A)) =
+      fun a => SPComp.bind (UCProtocol.ofGame G a) (mapSum SPComp.pure (A ∘ f)) := by
+    funext a
+    simp [UCProtocol.ofGame, mapSum, SPComp.map, SPComp.bind_assoc, SPComp.pure_bind]
+  change DistC _ _ _
+  rw [hπ]
+  exact h (A ∘ f)
 
 end CatCrypt.Crypto.UCConcrete

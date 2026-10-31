@@ -6,6 +6,7 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Crypto.FiatShamirROM.Game
+public import CatCryptCore.Crypto.SigmaProtocol.OrComposition
 public import CatCryptCore.Examples.GroupParam
 public import CatCryptCore.ForMathlib.PMFUniform
 
@@ -45,6 +46,8 @@ the extractor is `(z₁ − z₂)/(c₁ − c₂)` per scalar.
 
 * `linearSigma_complete`, `linearSigma_specialSound`, `linearSigma_perfectHVZK` (for a
   generator supported on the relation), `linearSigma_uniqueResp` (for injective maps)
+* `linearSigma_simVerifies`, `linearSigma_relHVZK` — simulated transcripts verify, and HVZK
+  holds at every pair of the relation: the hypotheses of the OR composition `orSigma`
 * `LinearRelation.map_and`, `LinearRelation.image_and`, `LinearRelation.holds_and_iff`,
   `LinearRelation.indexValid_and`, `LinearRelation.map_and_injective` — the map, image,
   witnesses, index ranges and injectivity of an AND composition are those of its parts
@@ -428,6 +431,17 @@ theorem linearSigma_uniqueResp (hinj : ∀ s, Function.Injective (toRel s).map) 
   intro s a c z z' h h'
   simp only [linearSigma, decide_eq_true_iff] at h h'
   exact hinj s (h.trans h'.symm)
+
+/-- Every simulated transcript of a linear Σ-protocol verifies. -/
+theorem linearSigma_simVerifies : (linearSigma gp n m toRel gen).SimVerifies :=
+  fun s c z => (linearSigma_verify_iff toRel gen s _ c z).2 rfl
+
+/-- A linear Σ-protocol has perfect HVZK at every pair of its relation. -/
+theorem linearSigma_relHVZK : (linearSigma gp n m toRel gen).RelHVZK := fun s w hw c =>
+  linearSigma_perfectHVZK (gen := PMF.pure (s, w)) toRel (fun s' w' h => by
+    rw [PMF.support_pure, Set.mem_singleton_iff] at h
+    obtain ⟨rfl, rfl⟩ := Prod.mk.inj h
+    exact hw) s w ((PMF.mem_support_pure_iff _ _).mpr rfl) c
 
 /-- The verifier of a batchable proof `(a, z)` for the challenge function `H`: the
 transcript `(a, H s a, z)` verifies. -/

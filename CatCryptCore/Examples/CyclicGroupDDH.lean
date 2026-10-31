@@ -119,8 +119,7 @@ abbrev gPow (a : CG.Exp) : G := CG.pow a
 Since `pow` is bijective, there is a unique exponent `e` with `pow e = x`; then
 `x^a = pow (expMul e a)`. -/
 noncomputable def elemPow (x : G) (a : CG.Exp) : G :=
-  let e := (CG.pow_bij.2 x).choose
-  CG.pow (CG.expMul e a)
+  CG.pow (CG.expMul (CG.pow_bij.2 x).choose a)
 
 /-- The inverse operation on exponents: `g^(-a) = (g^a)⁻¹`. -/
 def powNeg (a : CG.Exp) : G := CG.inv (CG.pow a)

@@ -35,6 +35,9 @@ an outcome of a bind.
 * `PMF.map_uniform_fst`, `PMF.map_uniform_prod_map`, `PMF.map_uniform_pi_of_map`,
   `PMF.map_uniform_comp_injective` — images of uniform pairs and uniform functions that
   are uniform
+* `PMF.map_uniform_prod_fst`, `PMF.map_uniform_prod_snd`, `PMF.map_uniform_prod_pair_congr`,
+  `PMF.map_uniform_prod_dep_congr` — maps of uniform pairs through one component, and their
+  congruence under maps with equal image distributions
 
 They belong in `Mathlib/Probability/ProbabilityMassFunction/Monad.lean` and
 `Mathlib/Probability/Distributions/Uniform.lean`.
@@ -378,5 +381,63 @@ theorem map_uniform_comp_injective {D I R : Type} [Fintype D] [DecidableEq D] [F
     rw [PMF.map_comp]
     congr 1
   rw [h1, uniformFintype_map_equiv E, map_uniform_fst]
+
+section UniformProdCongr
+
+variable {A A' B B' C β : Type} [Fintype A] [Nonempty A] [Fintype A'] [Nonempty A']
+  [Fintype B] [Nonempty B] [Fintype B'] [Nonempty B'] [Fintype C] [Nonempty C]
+
+/-- A function of the first component of a uniform pair has the distribution of that function
+of a uniform first component. -/
+theorem map_uniform_prod_fst (f : A → β) :
+    (PMF.uniformFintype (A × B)).map (fun p => f p.1) = (PMF.uniformFintype A).map f := by
+  rw [← map_uniform_fst (A := A) (B := B), PMF.map_comp]
+  rfl
+
+/-- A function of the second component of a uniform pair has the distribution of that function
+of a uniform second component. -/
+theorem map_uniform_prod_snd (g : B → β) :
+    (PMF.uniformFintype (A × B)).map (fun p => g p.2) = (PMF.uniformFintype B).map g := by
+  rw [← uniformFintype_map_equiv (Equiv.prodComm B A), PMF.map_comp]
+  exact map_uniform_prod_fst g
+
+/-- Maps of the two components of a uniform pair with equal image distributions give equal
+distributions of the pair of images. -/
+theorem map_uniform_prod_pair_congr {X Y : Type} {f : A → X} {f' : A' → X} {g : B → Y}
+    {g' : B' → Y} (hf : (PMF.uniformFintype A).map f = (PMF.uniformFintype A').map f')
+    (hg : (PMF.uniformFintype B).map g = (PMF.uniformFintype B').map g') :
+    (PMF.uniformFintype (A × B)).map (fun p => (f p.1, g p.2)) =
+      (PMF.uniformFintype (A' × B')).map (fun p => (f' p.1, g' p.2)) := by
+  have key : ∀ {A₁ B₁ : Type} [Fintype A₁] [Nonempty A₁] [Fintype B₁] [Nonempty B₁]
+      (f₁ : A₁ → X) (g₁ : B₁ → Y),
+      (PMF.uniformFintype (A₁ × B₁)).map (fun p => (f₁ p.1, g₁ p.2)) =
+        ((PMF.uniformFintype A₁).map f₁).bind fun x =>
+          ((PMF.uniformFintype B₁).map g₁).map (Prod.mk x) := by
+    intro A₁ B₁ _ _ _ _ f₁ g₁
+    rw [uniform_prod_eq_bind, PMF.map_bind, PMF.bind_map]
+    refine congrArg _ (funext fun a => ?_)
+    simp only [Function.comp_apply, PMF.map_comp]
+    rfl
+  rw [key, key, hf, hg]
+
+/-- A function of a uniform `c` and of a map at `c` of an independent uniform `a` keeps its
+distribution when, for every `c`, the map is replaced by one with the same image
+distribution. -/
+theorem map_uniform_prod_dep_congr {X : Type} (Φ : C → X → β) {f : C → A → X}
+    {f' : C → A' → X}
+    (hf : ∀ c, (PMF.uniformFintype A).map (f c) = (PMF.uniformFintype A').map (f' c)) :
+    (PMF.uniformFintype (C × A)).map (fun p => Φ p.1 (f p.1 p.2)) =
+      (PMF.uniformFintype (C × A')).map (fun p => Φ p.1 (f' p.1 p.2)) := by
+  rw [uniform_prod_eq_bind, uniform_prod_eq_bind, PMF.map_bind, PMF.map_bind]
+  refine congrArg _ (funext fun c => ?_)
+  have h : ∀ {A₁ : Type} [Fintype A₁] [Nonempty A₁] (f₁ : C → A₁ → X),
+      ((PMF.uniformFintype A₁).map (Prod.mk c)).map (fun p => Φ p.1 (f₁ p.1 p.2)) =
+        ((PMF.uniformFintype A₁).map (f₁ c)).map (Φ c) := by
+    intro A₁ _ _ f₁
+    rw [PMF.map_comp, PMF.map_comp]
+    rfl
+  rw [h, h, hf]
+
+end UniformProdCongr
 
 end PMF
