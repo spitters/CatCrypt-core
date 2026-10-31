@@ -1069,9 +1069,23 @@ def envSources (x : Expr) : MetaM (Array Expr) := do
       unless out.contains c do out := out ++ [c]
   out.toArray.mapM mkConstWithFreshMVarLevels
 
+/-- The lemmas `f.timedCost_eq`, `f.timedCost_le` of the registered cost `f.timedCost`. -/
+def costLemmas (n : Name) : MetaM (Array Expr) := do
+  match n with
+  | .str p s =>
+    let env ← getEnv
+    [Name.str p (s ++ "_eq"), Name.str p (s ++ "_le")].filter env.contains
+      |>.toArray.mapM mkConstWithFreshMVarLevels
+  | _ => return #[]
+
+mutual
+
 /-- Close the proposition `mid` from the context: a local hypothesis whose type unifies with
-it, or, for `∀ x, l ≤ ?r` with `?r` unassigned and independent of `x`, reflexivity. -/
-def closeByContext (mid : MVarId) : MetaM Bool := mid.withContext do
+it, or, for `∀ x, l ≤ ?r` with `?r` unassigned, `?r := l` by reflexivity when `l` does not
+mention `x`, and (when `deep`) `?r` the bound of `l` free of `x` with its proof
+(`boundFree?`). -/
+partial def closeByContext (mid : MVarId) (fuel : Nat := 32) (deep : Bool := true) :
+    MetaM Bool := mid.withContext do
   let ty ← instantiateMVars (← mid.getType)
   for ld in (← getLCtx) do
     if ld.isImplementationDetail then continue
@@ -1081,20 +1095,106 @@ def closeByContext (mid : MVarId) : MetaM Bool := mid.withContext do
       return true
     s.restore
   let s ← saveState
-  let ok ← forallTelescopeReducing ty fun xs body => do
-    let some (l, r) := natLe? body | return false
-    unless (← instantiateMVars r).getAppFn.isMVar do return false
-    unless ← isDefEq r l do return false
-    mid.assign (← mkLambdaFVars xs (← mkAppM ``Nat.le_refl #[l]))
-    return true
+  let ok ← try
+      forallTelescopeReducing ty fun xs body => do
+        let some (l, r) := natLe? body | return false
+        unless (← instantiateMVars r).getAppFn.isMVar do return false
+        unless deep do
+          unless ← isDefEq r l do return false
+          mid.assign (← mkLambdaFVars xs (← mkAppM ``Nat.le_refl #[l]))
+          return true
+        let some (b, pf) ← boundFree? (xs.map (·.fvarId!)) l fuel | return false
+        unless ← isDefEq r b do return false
+        mid.assign (← mkLambdaFVars xs pf)
+        return true
+    catch _ => pure false
   unless ok do s.restore
   return ok
+
+/-- A bound of the natural number `e` that does not mention the variables `xs`, with a proof
+of `e ≤ bound`: `e` with `Nat.le_refl` when it does not mention them; a sum, product, maximum
+or `if` part by part (`Nat.add_le_add`, `Nat.mul_le_mul`, `max_le_max`, `ite_le_max_of`); a
+registered cost `f.timedCost a` by the instance of `f.timedCost_eq` or `f.timedCost_le` at `a`,
+its premises closed by `closeByContext` (a premise `∀ y, fCost y ≤ ?k` on a cost companion
+argument by the bound of the body of `fCost` at fresh `y`), followed by the bound of its right
+side; an atom by a local hypothesis `∀ y, g y ≤ c`. `none` when no clause gives a bound free of
+`xs`. -/
+partial def boundFree? (xs : Array FVarId) (e : Expr) (fuel : Nat) :
+    MetaM (Option (Expr × Expr)) := do
+  if fuel == 0 then return none
+  let e := (← instantiateMVars e).headBeta
+  match e with
+  | .letE _ _ v b _ => return ← boundFree? xs (b.instantiate1 v) (fuel - 1)
+  | .mdata _ b => return ← boundFree? xs b (fuel - 1)
+  | _ => pure ()
+  unless xs.any e.containsFVar do return some (e, ← mkAppM ``Nat.le_refl #[e])
+  if e.isAppOfArity ``HAdd.hAdd 6 || e.isAppOfArity ``HMul.hMul 6 ||
+      e.isAppOfArity ``Max.max 4 then
+    let n := e.getAppNumArgs
+    let some (a, pa) ← boundFree? xs (e.getArg! (n - 2)) (fuel - 1) | return none
+    let some (b, pb) ← boundFree? xs (e.getArg! (n - 1)) (fuel - 1) | return none
+    if e.isAppOfArity ``HAdd.hAdd 6 then
+      return some (← mkAppM ``HAdd.hAdd #[a, b], ← mkAppM ``Nat.add_le_add #[pa, pb])
+    if e.isAppOfArity ``HMul.hMul 6 then
+      return some (← mkAppM ``HMul.hMul #[a, b], ← mkAppM ``Nat.mul_le_mul #[pa, pb])
+    return some (← mkAppM ``Max.max #[a, b], ← mkAppM ``max_le_max #[pa, pb])
+  if e.isAppOfArity ``ite 5 then
+    let some (a, pa) ← boundFree? xs (e.getArg! 3) (fuel - 1) | return none
+    let some (b, pb) ← boundFree? xs (e.getArg! 4) (fuel - 1) | return none
+    let pf := mkAppN (mkConst ``CatCrypt.Tactics.AutoTime.ite_le_max_of)
+      #[e.getArg! 1, e.getArg! 2, e.getArg! 3, e.getArg! 4, a, b, pa, pb]
+    return some (← mkAppM ``Max.max #[a, b], pf)
+  if let some n := e.getAppFn.constName? then
+    if n.lastComponentAsString == "timedCost" then
+      for c in ← costLemmas n do
+        let st ← saveState
+        let (ms, _, body) ← forallMetaTelescopeReducing (← inferType c)
+        let isEq := body.isAppOfArity ``Eq 3
+        let side? := if isEq then some (body.getArg! 1, body.getArg! 2) else natLe? body
+        let some (l, r) := side? | st.restore; continue
+        if ← isDefEq l e then
+          let ok ← ms.allM fun m => do
+            let mid := m.mvarId!
+            if ← mid.isAssigned then return true
+            unless ← isProp (← mid.getType) do return true
+            closeByContext mid (fuel - 1)
+          let r ← instantiateMVars r
+          let pf ← instantiateMVars (mkAppN c ms)
+          if ok && !r.hasExprMVar && !pf.hasExprMVar then
+            let pf ← if isEq then mkAppM ``Nat.le_of_eq #[pf] else pure pf
+            if let some (b, pb) ← boundFree? xs r (fuel - 1) then
+              unless xs.any b.containsFVar do
+                return some (b, ← mkAppM ``Nat.le_trans #[pf, pb])
+        st.restore
+  for ld in (← getLCtx) do
+    if ld.isImplementationDetail then continue
+    let st ← saveState
+    let (ms, _, body) ← forallMetaTelescopeReducing (← instantiateMVars ld.type)
+    let some (l, b) := natLe? body | st.restore; continue
+    if l.getAppFn.isMVar || (← ms.anyM fun m => do isProp (← inferType m)) then
+      st.restore; continue
+    if ← withReducible (isDefEq l e) then
+      let b ← instantiateMVars b
+      let pf ← instantiateMVars (mkAppN ld.toExpr ms)
+      unless b.hasExprMVar || pf.hasExprMVar || xs.any b.containsFVar do
+        return some (b, pf)
+    st.restore
+  return none
+
+end
+
+/-- Whether `ty` has the shape `∀ x, l ≤ ?r` with `?r` unassigned, the premises on which
+`closeByContext` with `deep` goes beyond reflexivity. -/
+def isBoundPremise (ty : Expr) : MetaM Bool := do
+  forallTelescopeReducing (← instantiateMVars ty) fun _ body => do
+    let some (_, r) := natLe? body | return false
+    return (← instantiateMVars r).getAppFn.isMVar
 
 /-- A proof of the query bound `body` (`A.erase.IsQueryBound ?q`) of the adversary `A = y.2`
 of a costed definition `y = N.timed …` by the theorem `N.isQueryBound_erase`, found by name as
 the time theorems of `envSources` are, with its propositional premises closed by the
-context. -/
-def queryBoundSource (body A : Expr) : MetaM (Option Expr) := do
+context (`closeByContext` with `deep`). -/
+def queryBoundSource (body A : Expr) (deep : Bool := true) : MetaM (Option Expr) := do
   let some y := sndOf? A | return none
   let y ← zetaReduce y
   let some n := y.getAppFn.constName? | return none
@@ -1113,22 +1213,13 @@ def queryBoundSource (body A : Expr) : MetaM (Option Expr) := do
         let mid := m.mvarId!
         if ← mid.isAssigned then continue
         unless ← isProp (← mid.getType) do continue
-        unless ← closeByContext mid do
+        unless ← closeByContext mid (deep := deep) do
           ok := false
           break
       let pf ← instantiateMVars (mkAppN e ms)
       if ok && !pf.hasExprMVar then return some pf
     s.restore
   return none
-
-/-- The lemmas `f.timedCost_eq`, `f.timedCost_le` of the registered cost `f.timedCost`. -/
-def costLemmas (n : Name) : MetaM (Array Expr) := do
-  match n with
-  | .str p s =>
-    let env ← getEnv
-    [Name.str p (s ++ "_eq"), Name.str p (s ++ "_le")].filter env.contains
-      |>.toArray.mapM mkConstWithFreshMVarLevels
-  | _ => return #[]
 
 /-- Registered costs: for every subterm `f.timedCost a` of the target, the instance at `a` of
 `f.timedCost_eq` (an equation) or `f.timedCost_le` (a bound), with its premises closed by
@@ -2040,26 +2131,27 @@ partial def closeArith (g : MVarId) (env : Bool) (fuel : Nat) : TacticM Unit := 
 /-- A premise of a source with metavariables in its type: by the context
 (`closeByContext`); a time premise `∀ x, StepTimeBound (g x) ?t` (or another kind) by a
 source of `g x` whose bound does not depend on `x`; a query bound `A.erase.IsQueryBound ?q`
-of a costed adversary by `isQueryBound_of_timeBound` from a time bound of `A`. -/
-partial def solvePremise (mid : MVarId) (env : Bool) (fuel : Nat) : TacticM Bool :=
-    mid.withContext do
-  if ← closeByContext mid then return true
+of a costed adversary by `isQueryBound_of_timeBound` from a time bound of `A`. The context
+and the sources are searched with `closeByContext` at `deep`. -/
+partial def solvePremise (mid : MVarId) (env : Bool) (fuel : Nat) (deep : Bool) :
+    TacticM Bool := mid.withContext do
+  if ← closeByContext mid (deep := deep) then return true
   let ty ← instantiateMVars (← mid.getType)
   let s ← saveState
   let r ← forallTelescopeReducing ty fun xs body => do
     for k in [Kind.stb, .tb, .step, .time] do
       if let some x := k.treeOf body then
-        if let some pf ← findSource k x env fuel then
+        if let some pf ← findSource k x env fuel (some deep) then
           if ← isDefEq (← inferType pf) body then
             mid.assign (← mkLambdaFVars xs pf)
             return true
     if body.isAppOfArity ``OracleAdv.IsQueryBound 5 then
       let a := body.getArg! 3
       if a.isAppOfArity ``OracleAdv.Timed.erase 4 then
-        if let some pf ← queryBoundSource body a.appArg! then
+        if let some pf ← queryBoundSource body a.appArg! deep then
           mid.assign (← mkLambdaFVars xs pf)
           return true
-        if let some pf ← findSource .tb a.appArg! env fuel then
+        if let some pf ← findSource .tb a.appArg! env fuel (some deep) then
           let q ← mkAppM ``OracleAdv.Timed.isQueryBound_of_timeBound #[pf]
           if ← isDefEq (← inferType q) body then
             mid.assign (← mkLambdaFVars xs q)
@@ -2069,9 +2161,25 @@ partial def solvePremise (mid : MVarId) (env : Bool) (fuel : Nat) : TacticM Bool
   return r
 
 /-- A proof that the tree `x` of kind `k` is bounded, from a local hypothesis or (when `env`)
-a theorem of `envSources`, with its premises closed by the context or by `solve`. -/
-partial def findSource (k : Kind) (x : Expr) (env : Bool) (fuel : Nat) :
-    TacticM (Option Expr) := do
+a theorem of `envSources`, with its premises closed by the context or by `solve`. With `deep?`
+unset the candidates are tried with `closeByContext` by reflexivity first, and again with
+`deep` when that finds none and a premise of the shape `∀ x, l ≤ ?r` was left open, so that
+a bound computed by `boundFree?` is used only where no candidate closes without it. -/
+partial def findSource (k : Kind) (x : Expr) (env : Bool) (fuel : Nat)
+    (deep? : Option Bool := none) : TacticM (Option Expr) := do
+  match deep? with
+  | some deep => return (← findSourceAt k x env fuel deep).1
+  | none =>
+    let (r, saw) ← findSourceAt k x env fuel false
+    if r.isSome || !saw then return r
+    return (← findSourceAt k x env fuel true).1
+
+/-- The candidates of `findSource` at one setting `deep` of `closeByContext`, with whether a
+premise of the shape `∀ x, l ≤ ?r` was left open by the context. -/
+partial def findSourceAt (k : Kind) (x : Expr) (env : Bool) (fuel : Nat) (deep : Bool) :
+    TacticM (Option Expr × Bool) := do
+  -- a reference, since the updates of a mutable variable inside `try` are lost on `catch`
+  let saw ← IO.mkRef false
   let locals ← (← getLCtx).getFVars.filterM fun f => do
     return !(← f.fvarId!.getDecl).isImplementationDetail
   let envs ← if env then envSources x else pure #[]
@@ -2088,7 +2196,8 @@ partial def findSource (k : Kind) (x : Expr) (env : Bool) (fuel : Nat) :
         let mid := m.mvarId!
         if ← mid.isAssigned then continue
         if ← isProp (← mid.getType) then
-          discard <| closeByContext mid
+          unless ← closeByContext mid (deep := deep) do
+            if ← isBoundPremise (← mid.getType) then saw.set true
       for m in ms, bi in bis do
         let mid := m.mvarId!
         if ← mid.isAssigned then continue
@@ -2098,26 +2207,26 @@ partial def findSource (k : Kind) (x : Expr) (env : Bool) (fuel : Nat) :
         let mid := m.mvarId!
         if ← mid.isAssigned then continue
         unless ← isProp (← mid.getType) do continue
-        if ← solvePremise mid env (fuel - 1) then continue
+        if ← solvePremise mid env (fuel - 1) deep then continue
         if (← instantiateMVars (← mid.getType)).hasExprMVar then continue
         solve mid env (fuel - 1)
       for m in ms do
         let mid := m.mvarId!
         if ← mid.isAssigned then continue
         unless ← isProp (← mid.getType) do throwError "no"
-        if ← solvePremise mid env (fuel - 1) then continue
+        if ← solvePremise mid env (fuel - 1) deep then continue
         if (← instantiateMVars (← mid.getType)).hasExprMVar then throwError "no"
         solve mid env (fuel - 1)
       let pf ← instantiateMVars (mkAppN c ms)
       if pf.hasExprMVar then throwError "no"
-      return some pf
+      return (some pf, ← saw.get)
     catch _ =>
       s.restore
   -- the adversary `y.2` of a step-prefixed tree `y` bounded as a whole
   if let (.tb, some y) := (k, sndOf? x) then
-    if let some pf ← findSource .stb y env fuel then
-      return some (← mkAppM ``tb_snd_of_stb #[pf])
-  return none
+    if let some pf ← findSource .stb y env fuel (some deep) then
+      return (some (← mkAppM ``tb_snd_of_stb #[pf]), ← saw.get)
+  return (none, ← saw.get)
 
 /-- A subtree that no structural rule consumes: a source, else the unfolding of its head
 definition, else the simp set `time_bound_simps`, else (computation trees) an arithmetic
@@ -2535,7 +2644,7 @@ partial def arSourceAt (Q t : Expr) (fuel : Nat) : TacticM (Option Expr) := do
         if ty.isAppOfArity advAllRet 5 then
           let some pf ← arSource (ty.getArg! 3) (ty.getArg! 4) (fuel - 1) | throwError "no"
           mid.assign pf
-        else unless ← closeByContext mid do throwError "no"
+        else unless ← closeByContext mid (deep := false) do throwError "no"
       let pf ← instantiateMVars (mkAppN c ms)
       if pf.hasExprMVar then throwError "no"
       return some pf
