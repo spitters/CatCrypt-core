@@ -465,6 +465,7 @@ public import CatCryptCore.Crypto.UCTransparent
 public import CatCryptCore.Crypto.Party.Prog
 public import CatCryptCore.Crypto.Party.Compose
 public import CatCryptCore.Crypto.Party.Call
+public import CatCryptCore.Crypto.Party.QProg
 public import CatCryptCore.Crypto.UCTransparentSquare
 public import CatCryptCore.Crypto.UCCoupling
 public import CatCryptCore.Crypto.UCCompiled
