@@ -34,7 +34,8 @@ statement, and aligned with the binders of `T.timed`:
 * a type parameter is the finite ground type of `reflect_d` (`MF : FTy` at `MF.den`);
 * a record that `reflect_d` unbundles is the constructor applied to its fields, and the fields
   that are not types are binders kept in place;
-* a data binder and an unused binder are kept;
+* a data binder, a proof binder and an unused binder are kept, an unused function binder with
+  its companion of `derive_timed`;
 * a data function `f` is kept with its companion `fCost` of `derive_timed`, its D value `gf`, a
   cost function `fDCost`, the step equation `hf : ∀ v, gf v = stepN CTree.tick (fDCost v)
   (.ret (f …))` and the bound `hfCost : ∀ v, fDCost v ≤ fCost …`;
@@ -645,7 +646,14 @@ partial def linkTimed (tree : Name) : TermElabM Unit := do
         if !triple then
           unless ← isDefEq T xT do
             throwError "link_timed: the binder `{tn}` of `{timedN}` does not match `{xn}`"
-          go (j + 1) (i + 1) (tb.instantiate1 a) (tArgs.push a) (binders.push a) kinds
+          let tb := tb.instantiate1 a
+          -- An unused function binder keeps its companion of `derive_timed` as a binder.
+          if let .forallE cn cT cb _ := tb then
+            if cn == tn.appendAfter "Cost" then
+              return ← withLocalDeclD cn cT fun fc =>
+                go (j + 1) (i + 1) (cb.instantiate1 fc) (tArgs ++ #[a, fc])
+                  (binders ++ #[a, fc]) kinds
+          go (j + 1) (i + 1) tb (tArgs.push a) (binders.push a) kinds
         else
           let lctx := (← getLCtx).setUserName dBs[i+1]!.fvarId! (xn.appendBefore "g")
           let insts ← getLocalInstances

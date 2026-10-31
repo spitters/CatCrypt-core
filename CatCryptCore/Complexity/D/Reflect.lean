@@ -87,7 +87,8 @@ values (`CLe.letESup`).
 ## The fragment
 
 Types: `ℕ`, `Bool`, `Unit`, `BitVec w` for a numeral `w`, `Fin m` and `ZMod m` for a modulus
-`m` that is a positive numeral or of the form `n + 1`, products, sums and lists of these;
+`m` that is a positive numeral or of the form `n + 1`, tables `Fin q → R` of a finite ground
+type `R` (the finite ground type `FTy.tab q f`), products, sums and lists of these;
 `Option α` as `α`'s sum with `Unit`, at the parameters, the result and the scrutinees of
 matches; functions as parameters, `let`-bound values and arguments of λ-terms.
 
@@ -893,19 +894,29 @@ partial def ftyDen? (T : Expr) : MetaM (Option Expr) := do
   if T''.isProj then return none
   ftyDen? T''
 
-/-- The finite ground type of `T`. -/
-def ftyOf (T : Expr) : MetaM Expr := do
+/-- The size `q` and the entry type `R` of a table type `T = Fin q → R`. -/
+def tabTy? (T : Expr) : MetaM (Option (Expr × Expr)) := do
+  let .forallE _ a b _ ← whnf T | return none
+  if b.hasLooseBVars then return none
+  let a ← whnfR a
+  unless a.isAppOfArity ``Fin 1 do return none
+  return some (a.appArg!, b)
+
+/-- The finite ground type of `T`; a table `Fin q → R` is `FTy.tab q f` for `R = FTy.den f`. -/
+partial def ftyOf (T : Expr) : MetaM Expr := do
   if let some n ← finMod? T then return mkApp (mkConst ``FTy.fin) n
   if let some f ← ftyDen? T then return f
   let T ← whnf T
   if T.isAppOfArity ``FTy.den 1 then return T.appArg!
+  if let some (q, r) ← tabTy? T then return mkApp2 (mkConst ``FTy.tab) q (← ftyOf r)
   if T.isConstOf ``Bool then return mkConst ``FTy.bool
   if T.isConstOf ``PUnit then return mkConst ``FTy.unit
   if T.isAppOfArity ``BitVec 1 then
     let w := T.appArg!
     if w.hasFVar then throwError "reflect_d: the width of `{T}` depends on a variable"
     return mkApp (mkConst ``FTy.word) w
-  throwError "reflect_d: `{T}` is not a finite ground type (Bool, Unit, BitVec w, Fin m, ZMod m)"
+  throwError "reflect_d: `{T}` is not a finite ground type (Bool, Unit, BitVec w, Fin m, ZMod m, \
+    Fin q → R)"
 
 /-- The D type of a source type; the flag marks `Option`, represented by `optEnc`. -/
 partial def tyOf (T : Expr) : MetaM (Expr × Bool) := do
@@ -915,6 +926,8 @@ partial def tyOf (T : Expr) : MetaM (Expr × Bool) := do
     throwError "reflect_d: the computation type `SPTree {γ}` occurs inside a data type"
   if let some n ← finMod? T then return (tyBase (mkApp (mkConst ``FTy.fin) n), false)
   if let some f ← ftyDen? T then return (tyBase f, false)
+  if (← tabTy? T).isSome then
+    if let some f ← observing? (ftyOf T) then return (tyBase f, false)
   let T ← whnf T
   match T with
   | .forallE _ a b _ =>
