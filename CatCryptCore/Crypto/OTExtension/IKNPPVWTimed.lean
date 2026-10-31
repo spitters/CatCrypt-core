@@ -9,6 +9,9 @@ public import CatCryptCore.Crypto.OTExtension.IKNPPVW
 public import CatCryptCore.Crypto.OTExtension.IKNPWakeTimed
 public import CatCryptCore.Crypto.OT.PVWPullTimed
 public import CatCryptCore.Tactics.DeriveSimulator
+public import CatCryptCore.Crypto.UCSimulatorTimed
+public import CatCryptCore.Crypto.UCWakeTimed
+public import CatCryptCore.Crypto.UCChannelLiftTimed
 
 /-!
 # Costed forms of the simulators of IKNP over the PVW base OTs
