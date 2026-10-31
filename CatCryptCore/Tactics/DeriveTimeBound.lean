@@ -79,9 +79,15 @@ Every other tree, and a pure step with a clause outside this fragment (the step 
 a subtree) or with `B₀ ≤ B` outside `omega` (a cost that the projection-normal form or the
 closed forms of registered costs change), has its theorem proved by `time_bound`, under its
 own heartbeat budget
-(`proofHeartbeats`). When the bound cannot be computed (a cost that depends on a bound value
-through a term other than a companion with such a closed form, a recursive definition) or
-`time_bound` does not close the goal, nothing is declared and the command fails with the
+(`proofHeartbeats`). A pair or tree that no clause reads (a call of a recursive definition
+`C.timed`, which does not unfold) is bounded by the time theorem of the callee
+(`calleeBound?`): a theorem `C.timeBound_timed` found by name as `time_bound` finds it
+(`envSources`), its conclusion unified at the call and its premises (`∀ x, p x ≤ tp` on a cost
+argument) closed from the bound hypotheses of the caller (`closeByContext`); the bound is the
+right side of its conclusion, and `time_bound` uses the same theorem at the call. When the
+bound cannot be computed (a cost that depends on a bound value through a term other than a
+companion with such a closed form, a callee without such a theorem) or `time_bound` does not
+close the goal, nothing is declared and the command fails with the
 reason. The command is written once per reduction, in place of a hand-stated theorem of the
 same name.
 
@@ -89,6 +95,7 @@ same name.
 
 * `rewriteCosts` — the registered costs that mention a bound value, replaced by closed forms
 * `matchBound` — the bound of a `match` by cases
+* `calleeBound?` — the bound of a call from the time theorem of the callee
 * `emitTimeBound` — the procedure by `time_bound`; it returns the reason when the theorem is
   not proved
 * `mirrorCost` — the bound of a step cost with its proof
@@ -277,6 +284,28 @@ def casesBound? (e : Expr) (k : Expr → MetaM Expr) : MetaM (Option Expr) := do
       | some a => if a == b then pure (some a) else some <$> mkMaxN a b
   return acc
 
+/-- The bound of the time theorem of a callee at `x`: a theorem of `envSources` (the theorem
+`C.timeBound_timed` of a costed tree `C.timed`) whose conclusion `stepTime x ≤ B` (or
+`x.time ≤ B` when `step` is false) unifies at `x`, with its propositional premises closed from
+the context by `closeByContext` (the bound hypotheses of the caller); its right side `B`. -/
+def calleeBound? (x : Expr) (step : Bool) : MetaM (Option Expr) := do
+  let lhs ← if step then mkAppM ``SPTree.Timed.stepTime #[x]
+    else mkAppM ``SPTree.Timed.time #[x]
+  for c in ← CatCrypt.Tactics.AutoTime.envSources x do
+    let st ← saveState
+    let (ms, _, body) ← forallMetaTelescopeReducing (← inferType c)
+    let some (l, r) := CatCrypt.Tactics.AutoTime.natLe? body | st.restore; continue
+    if ← isDefEq l lhs then
+      let ok ← ms.allM fun m => do
+        let mid := m.mvarId!
+        if ← mid.isAssigned then return true
+        unless ← isProp (← mid.getType) do return true
+        CatCrypt.Tactics.AutoTime.closeByContext mid
+      let r ← instantiateMVars r
+      if ok && !r.hasExprMVar then return some r
+    st.restore
+  return none
+
 mutual
 
 /-- The bound of a step cost `e : ℕ`. -/
@@ -346,6 +375,8 @@ partial def boundStep (bs : Bounds) (x : Expr) : MetaM Expr := do
   -- a step dispatched by a `match`: the bounds of its alternatives (`boundMatch`)
   if let some m ← matchMatcherApp? x then
     if !m.alts.isEmpty then return ← boundMatch m (boundStep bs)
+  -- a callee that does not unfold (a recursive definition): the bound of its time theorem
+  if let some b ← calleeBound? x true then return b
   throwError "no bound for the pair{indentExpr x}"
 
 /-- The bound of `t.time` for a tree `t : SPTree.Timed α`. -/
@@ -394,6 +425,8 @@ partial def boundTree (bs : Bounds) (t : Expr) : MetaM Expr := do
   -- a tree dispatched by a `match`: the bounds of its alternatives (`boundMatch`)
   if let some m ← matchMatcherApp? t then
     if !m.alts.isEmpty then return ← boundMatch m (boundTree bs)
+  -- a callee tree that does not unfold: the bound of its time theorem
+  if let some b ← calleeBound? t false then return b
   throwError "no bound for the tree{indentExpr t}"
 
 end
