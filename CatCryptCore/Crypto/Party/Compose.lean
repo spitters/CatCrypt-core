@@ -17,8 +17,11 @@ The parallel composition `Prog.par p q` of the party programs `p` (events `E`, o
 waits for an event and dispatches it by its side: an event `inl e` runs one activation of `p` on
 `e` and emits its output tagged `inl`, and the other residual program is left untouched; an event
 `inr e'` runs one activation of `q`. Only the party addressed by the event is active within an
-activation. The definition is a well-founded recursion on the pair of programs, ordered
-lexicographically by the immediate-subprogram relation `Prog.Child`.
+activation. The party language is one generic tree `ProgE` with two effect handlers, the
+classical handler `Prog.handler` and the quantum party handler `QProg.handler`; the parallel
+composition is the generic `ProgE.par`, a well-founded recursion on the pair of programs ordered
+lexicographically by the immediate-subprogram relation `ProgE.Child`, and its activations at the
+classical handler are those of `ProgE.act_par_inl` and `ProgE.act_par_inr`.
 
 The denotation of `par p q` is step-equivalent to the parallel composition `Sys.par` of the
 denotations (`Prog.toSys_par`), so its class in the Int construction on systems is the tensor
@@ -34,8 +37,6 @@ re-express.
 
 ## Main definitions
 
-* `Party.Prog.Child`: the immediate-subprogram relation, well founded.
-* `Party.Prog.par`: the parallel composition of two programs.
 * `Party.Prog.sampleBody`: the loop body of a system that samples and then updates
   deterministically.
 * `Party.Prog.chanBody`: the ideal channel `FChan` as the loop body of a program.
@@ -98,98 +99,7 @@ namespace Prog
 
 variable {E O E' O' α β σ : Type}
 
-/-! ## The immediate-subprogram relation -/
-
-/-- `Child c p`: `c` is an immediate subprogram of `p`, a continuation after one operation. -/
-inductive Child : Prog E O α → Prog E O α → Prop where
-  /-- The continuation of a receive at an event. -/
-  | recv (k : E → Prog E O α) (e : E) : Child (k e) (.recv k)
-  /-- The continuation of a send. -/
-  | send (o : O) (p : Prog E O α) : Child p (.send o p)
-  /-- The continuation of a sample at a code. -/
-  | sampleN (μ : SPComp ℕ) (k : ℕ → Prog E O α) (n : ℕ) : Child (k n) (.sampleN μ k)
-
-/-- The immediate-subprogram relation is well founded. -/
-theorem child_wf : WellFounded (@Child E O α) := by
-  refine ⟨fun p => ?_⟩
-  induction p with
-  | ret a => exact ⟨_, fun y h => nomatch h⟩
-  | recv k ih => exact ⟨_, fun y h => by cases h; exact ih _⟩
-  | send o p ih => exact ⟨_, fun y h => by cases h; exact ih⟩
-  | sampleN μ k ih => exact ⟨_, fun y h => by cases h; exact ih _⟩
-  | fail => exact ⟨_, fun y h => nomatch h⟩
-
-/-- Programs ordered by the immediate-subprogram relation. -/
-instance instWellFoundedRelation : WellFoundedRelation (Prog E O α) :=
-  ⟨Child, child_wf⟩
-
-/-! ## Parallel composition -/
-
-mutual
-
-/-- **Parallel composition.** Wait for an event and run one activation of the program on its
-side; the program on the other side is unchanged. -/
-def par (p : Prog E O α) (q : Prog E' O' β) : Prog (E ⊕ E') (O ⊕ O') Empty :=
-  .recv fun e => match e with
-    | .inl e₁ => parAwL e₁ p q
-    | .inr e₂ => parAwR e₂ p q
-  termination_by (p, q, 2)
-  decreasing_by
-    all_goals exact Prod.Lex.right _ (Prod.Lex.right _ (by decide))
-
-/-- The await phase of the left program on the event `e`. -/
-def parAwL (e : E) (p : Prog E O α) (q : Prog E' O' β) : Prog (E ⊕ E') (O ⊕ O') Empty :=
-  match p with
-  | .recv k => parEmL (k e) q
-  | .sampleN μ k => .sampleN μ fun n => parAwL e (k n) q
-  | .ret _ => .fail
-  | .send _ _ => .fail
-  | .fail => .fail
-  termination_by (p, q, 1)
-  decreasing_by
-    · exact Prod.Lex.left _ _ (Child.recv _ _)
-    · exact Prod.Lex.left _ _ (Child.sampleN _ _ _)
-
-/-- The emit phase of the left program. -/
-def parEmL (p : Prog E O α) (q : Prog E' O' β) : Prog (E ⊕ E') (O ⊕ O') Empty :=
-  match p with
-  | .send o r => .send (.inl o) (par r q)
-  | .sampleN μ k => .sampleN μ fun n => parEmL (k n) q
-  | .ret _ => .fail
-  | .recv _ => .fail
-  | .fail => .fail
-  termination_by (p, q, 0)
-  decreasing_by
-    · exact Prod.Lex.left _ _ (Child.send _ _)
-    · exact Prod.Lex.left _ _ (Child.sampleN _ _ _)
-
-/-- The await phase of the right program on the event `e`. -/
-def parAwR (e : E') (p : Prog E O α) (q : Prog E' O' β) : Prog (E ⊕ E') (O ⊕ O') Empty :=
-  match q with
-  | .recv k => parEmR p (k e)
-  | .sampleN μ k => .sampleN μ fun n => parAwR e p (k n)
-  | .ret _ => .fail
-  | .send _ _ => .fail
-  | .fail => .fail
-  termination_by (p, q, 1)
-  decreasing_by
-    · exact Prod.Lex.right _ (Prod.Lex.left _ _ (Child.recv _ _))
-    · exact Prod.Lex.right _ (Prod.Lex.left _ _ (Child.sampleN _ _ _))
-
-/-- The emit phase of the right program. -/
-def parEmR (p : Prog E O α) (q : Prog E' O' β) : Prog (E ⊕ E') (O ⊕ O') Empty :=
-  match q with
-  | .send o r => .send (.inr o) (par p r)
-  | .sampleN μ k => .sampleN μ fun n => parEmR p (k n)
-  | .ret _ => .fail
-  | .recv _ => .fail
-  | .fail => .fail
-  termination_by (p, q, 0)
-  decreasing_by
-    · exact Prod.Lex.right _ (Prod.Lex.left _ _ (Child.send _ _))
-    · exact Prod.Lex.right _ (Prod.Lex.left _ _ (Child.sampleN _ _ _))
-
-end
+export ProgE (Child child_wf par parAwL parEmL parAwR parEmR)
 
 /-! ## The denotation of the parallel composition -/
 
@@ -198,54 +108,38 @@ its output tagged `inl`. -/
 theorem emitK_parEmL (q : Prog E' O' β) (p : Prog E O α) :
     emitK (fun o r => SPComp.pure (r, o)) (fun _ => SPComp.fail) (parEmL p q) =
       SPComp.map (fun x => (par x.1 q, Sum.inl x.2))
-        (emitK (fun o r => SPComp.pure (r, o)) (fun _ => SPComp.fail) p) := by
-  induction p with
-  | sampleN μ k ih => simp only [parEmL, emitK, ih, SPComp.map, SPComp.bind_assoc]
-  | _ => simp [parEmL, emitK, SPComp.map]
+        (emitK (fun o r => SPComp.pure (r, o)) (fun _ => SPComp.fail) p) :=
+  ProgE.emitK_parEmL handler handler_lawful q p
 
 /-- The emit phase of `parEmR p q` is the emit phase of `q`, `p` composed with its residual and
 its output tagged `inr`. -/
 theorem emitK_parEmR (p : Prog E O α) (q : Prog E' O' β) :
     emitK (fun o r => SPComp.pure (r, o)) (fun _ => SPComp.fail) (parEmR p q) =
       SPComp.map (fun x => (par p x.1, Sum.inr x.2))
-        (emitK (fun o r => SPComp.pure (r, o)) (fun _ => SPComp.fail) q) := by
-  induction q with
-  | sampleN μ k ih => simp only [parEmR, emitK, ih, SPComp.map, SPComp.bind_assoc]
-  | _ => simp [parEmR, emitK, SPComp.map]
+        (emitK (fun o r => SPComp.pure (r, o)) (fun _ => SPComp.fail) q) :=
+  ProgE.emitK_parEmR handler handler_lawful p q
 
 /-- The emit phase of `parAwL e p q` is the activation of `p` on `e`. -/
 theorem emitK_parAwL (e : E) (q : Prog E' O' β) (p : Prog E O α) :
     emitK (fun o r => SPComp.pure (r, o)) (fun _ => SPComp.fail) (parAwL e p q) =
-      SPComp.map (fun x => (par x.1 q, Sum.inl x.2)) (act p e) := by
-  induction p with
-  | recv k => simp only [parAwL, act, stepWith, awaitK, emitK_parEmL]
-  | sampleN μ k ih =>
-    simp only [act, stepWith] at ih
-    simp only [parAwL, emitK, act, stepWith, awaitK, ih, SPComp.map, SPComp.bind_assoc]
-  | _ => simp [parAwL, emitK, act, stepWith, awaitK, SPComp.map]
+      SPComp.map (fun x => (par x.1 q, Sum.inl x.2)) (act p e) :=
+  ProgE.emitK_parAwL handler handler_lawful e q p
 
 /-- The emit phase of `parAwR e p q` is the activation of `q` on `e`. -/
 theorem emitK_parAwR (e : E') (p : Prog E O α) (q : Prog E' O' β) :
     emitK (fun o r => SPComp.pure (r, o)) (fun _ => SPComp.fail) (parAwR e p q) =
-      SPComp.map (fun x => (par p x.1, Sum.inr x.2)) (act q e) := by
-  induction q with
-  | recv k => simp only [parAwR, act, stepWith, awaitK, emitK_parEmR]
-  | sampleN μ k ih =>
-    simp only [act, stepWith] at ih
-    simp only [parAwR, emitK, act, stepWith, awaitK, ih, SPComp.map, SPComp.bind_assoc]
-  | _ => simp [parAwR, emitK, act, stepWith, awaitK, SPComp.map]
+      SPComp.map (fun x => (par p x.1, Sum.inr x.2)) (act q e) :=
+  ProgE.emitK_parAwR handler handler_lawful e p q
 
 /-- An activation of `par p q` on a left event is the activation of `p`. -/
 theorem act_par_inl (p : Prog E O α) (q : Prog E' O' β) (e : E) :
-    act (par p q) (.inl e) = SPComp.map (fun x => (par x.1 q, Sum.inl x.2)) (act p e) := by
-  rw [par]
-  exact emitK_parAwL e q p
+    act (par p q) (.inl e) = SPComp.map (fun x => (par x.1 q, Sum.inl x.2)) (act p e) :=
+  ProgE.act_par_inl handler handler_lawful p q e
 
 /-- An activation of `par p q` on a right event is the activation of `q`. -/
 theorem act_par_inr (p : Prog E O α) (q : Prog E' O' β) (e : E') :
-    act (par p q) (.inr e) = SPComp.map (fun x => (par p x.1, Sum.inr x.2)) (act q e) := by
-  rw [par]
-  exact emitK_parAwR e p q
+    act (par p q) (.inr e) = SPComp.map (fun x => (par p x.1, Sum.inr x.2)) (act q e) :=
+  ProgE.act_par_inr handler handler_lawful p q e
 
 /-- **The denotation of the parallel composition** is step-equivalent to the parallel
 composition of the denotations. -/
@@ -291,8 +185,8 @@ theorem sampleBody_stepEq {ρ : Type} [Countable ρ] (rand : σ → E → SPComp
     Sys.StepEq ⟨_, loopSys (sampleBody rand next) s₀⟩
       ⟨σ, ⟨s₀, fun s e => SPComp.map (next s e) (rand s e)⟩⟩ :=
   loopSys_stepEq _ _ _ fun s e => by
-    simp [sampleBody, act, stepWith, awaitK, recvE, sampleE, sendE, Bind.bind, Pure.pure,
-      Prog.bind, emitK_bind, emitK_sample, emitK, SPComp.map, SPComp.bind_assoc]
+    simp [sampleBody, act_def, stepWith_def, ProgE.recvE, sampleE, ProgE.sendE, ProgE.bind,
+      emitK_bind, emitK_sample, SPComp.map, SPComp.bind_assoc]
 
 /-! ## Example: the ideal channel -/
 
@@ -320,10 +214,10 @@ theorem chanBody_stepEq (cap : ChannelCap) (ℓ : V → Leak) :
     Sys.StepEq ⟨_, loopSys (chanBody cap ℓ) FChan.initSt⟩ ⟨ChanSt V, FChan cap ℓ⟩ :=
   loopSys_stepEq _ _ _ fun t e => by
     rcases e with h | a
-    · simp [chanBody, act, stepWith, awaitK, recvE, sendE, Bind.bind, Pure.pure, Prog.bind,
-        emitK, FChan.honSys, SPComp.map]
-    · simp [chanBody, act, stepWith, awaitK, recvE, sendE, Bind.bind, Pure.pure, Prog.bind,
-        emitK, FChan.advSys, SPComp.map]
+    · simp [chanBody, act_def, stepWith_def, ProgE.recvE, ProgE.sendE, ProgE.bind,
+        FChan.honSys, SPComp.map]
+    · simp [chanBody, act_def, stepWith_def, ProgE.recvE, ProgE.sendE, ProgE.bind,
+        FChan.advSys, SPComp.map]
 
 end Channel
 

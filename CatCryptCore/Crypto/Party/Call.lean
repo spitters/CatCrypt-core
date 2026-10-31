@@ -13,11 +13,12 @@ public import CatCryptCore.Crypto.AKE.X3DHSquare
 # Party programs with subroutine calls
 
 A party with outer events `E`, outer outputs `O`, subroutine calls `Q` and subroutine answers
-`A` is a program `Party.Prog (E ⊕ A) (Q ⊕ O) α`: the program language of
-`CatCryptCore.Crypto.Party.Prog` on the sum interface. A call `Prog.call q k` emits `inl q` and
-waits for an answer `inr a`, continuing with `k a`; `Prog.outE o` emits the outer output `inr o`;
-`Prog.recvO` waits for an outer event `inl e`. Answers are events, so they live in `Type`, and
-sampling between calls uses the codes of `Prog.sampleN` as before.
+`A` is a program `Party.Prog (E ⊕ A) (Q ⊕ O) α`: the party language on the sum interface. The
+party language (classical and quantum party) is one generic tree `Party.ProgE` with two effect
+handlers, and the programs of this module are its classical instance. A call `Prog.call q k`
+emits `inl q` and waits for an answer `inr a`, continuing with `k a`; `Prog.outE o` emits the
+outer output `inr o`; `Prog.recvO` waits for an outer event `inl e`. Answers are events, so they
+live in `Type`, and sampling between calls uses the codes of `Prog.sampleN`.
 
 The denotation of such a program is a multi-call hybrid `MultiHybrid` of
 `CatCryptCore.Crypto.UCTransparentMulti`. A system `X` on the sum interface gives the multi-call
@@ -256,8 +257,8 @@ def outE (o : O) : Prog (E ⊕ A) (Q ⊕ O) Unit := .send (.inr o) (.ret ())
 
 /-- `call` commutes with `bind`. -/
 theorem call_bind (q : Q) (k : A → Prog (E ⊕ A) (Q ⊕ O) α) (f : α → Prog (E ⊕ A) (Q ⊕ O) β) :
-    (call q k).bind f = call q fun a => (k a).bind f := by
-  simp only [call, callK, bind]
+    ProgE.bind (call q k) f = call q fun a => ProgE.bind (k a) f := by
+  simp only [call, callK, ProgE.bind]
   congr 1; congr 1; funext e
   cases e <;> rfl
 
@@ -269,12 +270,12 @@ theorem emitK_call (s : Q ⊕ O → Prog (E ⊕ A) (Q ⊕ O) α → SPComp γ) (
 /-- An outer output in the emit phase emits `inr o` and leaves the rest. -/
 theorem emitK_outE_bind (s : Q ⊕ O → Prog (E ⊕ A) (Q ⊕ O) α → SPComp γ) (r : α → SPComp γ)
     (o : O) (f : Unit → Prog (E ⊕ A) (Q ⊕ O) α) :
-    emitK s r ((outE o).bind f) = s (.inr o) (f ()) := rfl
+    emitK s r (ProgE.bind (outE o) f) = s (.inr o) (f ()) := rfl
 
 /-- An outer event in the await phase is fed to `recvO`. -/
 theorem awaitK_recvO_bind (e : E) (s : Q ⊕ O → Prog (E ⊕ A) (Q ⊕ O) α → SPComp γ)
     (rA rE : α → SPComp γ) (f : E → Prog (E ⊕ A) (Q ⊕ O) α) :
-    awaitK (.inl e) s rA rE ((recvO (A := A)).bind f) = emitK s rE (f e) := rfl
+    awaitK (.inl e) s rA rE (ProgE.bind (recvO (A := A)) f) = emitK s rE (f e) := rfl
 
 /-- An answer in the await phase is fed to the continuation of the call. -/
 theorem emitK_callK (a : A) (s : Q ⊕ O → Prog (E ⊕ A) (Q ⊕ O) α → SPComp γ)
@@ -292,18 +293,19 @@ namespace Samples
 
 /-- A return samples the point mass. -/
 theorem ret (a : α) : Samples (.ret a : Prog E O α) (SPComp.pure a) := fun _ _ _ => by
-  simp only [emitK, SPComp.pure_bind]
+  simp only [emitK_ret, SPComp.pure_bind]
 
 /-- A sampling program followed by `f` in the emit phase. -/
 theorem emitK_bind {p : Prog E O α} {c : SPComp α} (h : Samples p c)
     (s : O → Prog E O β → SPComp γ) (r : β → SPComp γ) (f : α → Prog E O β) :
-    emitK s r (p.bind f) = SPComp.bind c fun a => emitK s r (f a) := by
+    emitK s r (ProgE.bind p f) = SPComp.bind c fun a => emitK s r (f a) := by
   rw [Prog.emitK_bind]
   exact h _ _ _
 
 /-- Sampling programs compose by `bind`. -/
 theorem bind {p : Prog E O α} {c : SPComp α} {f : α → Prog E O β} {d : α → SPComp β}
-    (hp : Samples p c) (hf : ∀ a, Samples (f a) (d a)) : Samples (p.bind f) (SPComp.bind c d) :=
+    (hp : Samples p c) (hf : ∀ a, Samples (f a) (d a)) :
+    Samples (ProgE.bind p f) (SPComp.bind c d) :=
   fun _ s r => by
     rw [hp.emitK_bind, SPComp.bind_assoc]
     congr 1; funext a
@@ -311,7 +313,7 @@ theorem bind {p : Prog E O α} {c : SPComp α} {f : α → Prog E O β} {d : α 
 
 /-- A sampling program followed by a return samples the mapped computation. -/
 theorem map {p : Prog E O α} {c : SPComp α} (hp : Samples p c) (f : α → β) :
-    Samples (p.bind fun a => .ret (f a)) (SPComp.map f c) :=
+    Samples (ProgE.bind p fun a => .ret (f a)) (SPComp.map f c) :=
   hp.bind fun a => ret (f a)
 
 /-- Sampling from a countable type. -/
@@ -401,7 +403,7 @@ noncomputable def roP {D : Type} [DecidableEq D] (tb : List (D × K)) (x : D) :
 noncomputable def deliverP (rs : RSt S W K) (inp : Inst → Option (Inp W)) (x : Inst)
     (r : Rec K) (ip : Inp W) : P S W K (SimSt S W K × Dec S W K) :=
   if Exposed rs.st x r then
-    (roP rs.ro ip).bind fun p => .ret ((keyed rs x r p.1 p.2, Function.update inp x (some ip),
+    ProgE.bind (roP rs.ro ip) fun p => .ret ((keyed rs x r p.1 p.2, Function.update inp x (some ip),
       .out .ack), .inl (.inr (.newKey x.1 x.2 p.1)))
   else
     .ret ((keyed rs x r default rs.ro, Function.update inp x (some ip), .out .ack),
@@ -416,7 +418,7 @@ noncomputable def simCompleteP (s : SimSt S W K) (x : Inst) :
     match opkOf s.1 x.1 r.peer with
     | some opk =>
       if r.role = .initiator ∧ r.key.isNone then
-        (ltP s.1 x.2).bind fun la => (ltP la.2 r.peer).bind fun lb =>
+        ProgE.bind (ltP s.1 x.2) fun la => ProgE.bind (ltP la.2 r.peer) fun lb =>
           deliverP lb.2 s.2.1 x r
             (aliceInp G x.1 x.2 r.peer la.1.1 ek (G.pub lb.1.1) (G.pub lb.1.2) (G.pub opk))
       else .ret ((s.1, s.2.1, .fwd), .inr (.inr .ack))
@@ -429,7 +431,7 @@ noncomputable def simSendP (s : SimSt S W K) (x : Inst) (e : W) :
   match s.1.st.recs x, s.1.eph x with
   | some r, some opk =>
     if r.role = .responder ∧ r.key.isNone then
-      (ltP s.1 x.2).bind fun lb => (ltP lb.2 r.peer).bind fun la =>
+      ProgE.bind (ltP s.1 x.2) fun lb => ProgE.bind (ltP lb.2 r.peer) fun la =>
         deliverP la.2 s.2.1 x r (bobInp G x.1 r.peer x.2 (G.pub la.1.1) e lb.1.1 lb.1.2 opk)
     else .ret ((s.1, s.2.1, .fwd), .inr (.inr .ack))
   | _, _ => .ret ((s.1, s.2.1, .fwd), .inr (.inr .ack))
@@ -438,7 +440,7 @@ noncomputable def simSendP (s : SimSt S W K) (x : Inst) (e : W) :
 noncomputable def simCorruptP (s : SimSt S W K) (pid : PartyId) :
     P S W K (SimSt S W K × Dec S W K) :=
   if Named s.1.st pid then .ret ((s.1, s.2.1, .fwd), .inr (.inr (.secret none))) else
-    (ltP s.1 pid).bind fun l =>
+    ProgE.bind (ltP s.1 pid) fun l =>
       .ret (({ l.2 with st := corruptStep l.2.st pid }, s.2.1, .out (.secret (some l.1))),
         .inl (.inr (.corrupt pid)))
 
@@ -455,31 +457,31 @@ noncomputable def simStartP (s : SimSt S W K) : OEv W → P S W K (SimSt S W K �
   | .inr .idle => .ret ((s.1, s.2.1, .fwd), .inr (.inr .ack))
   | .inr .poll => .ret (({ s.1 with st := (pollStep s.1.st).1 }, s.2.1, .fwd),
       .inr (.inr (.notice (pollStep s.1.st).2)))
-  | .inr (.pub pid) => (ltP s.1 pid).bind fun l =>
+  | .inr (.pub pid) => ProgE.bind (ltP s.1 pid) fun l =>
       .ret ((l.2, s.2.1, .fwd), .inr (.inr (.pub (G.pub l.1.1) (G.pub l.1.2))))
   | .inr (.ephPub sid pid) =>
     .ret ((s.1, s.2.1, .fwd), .inr (.inr (.eph (ephPubOf G s.1 (sid, pid)))))
   | .inr (.corrupt pid) => simCorruptP s pid
   | .inr (.complete sid pid) => simCompleteP G s (sid, pid)
   | .inr (.send sid pid e) => simSendP G s (sid, pid) e
-  | .inr (.kdf x) => (roP s.1.ro x).bind fun p =>
+  | .inr (.kdf x) => ProgE.bind (roP s.1.ro x) fun p =>
       .ret (({ s.1 with ro := p.2 }, s.2.1, .fwd), .inr (.inr (.hash p.1)))
 
 /-- The continuation of the call pending at `s`: output the answer of `F_AKE` as `simOut` does
 in the phase of `s`, and return. -/
 def simK (s : SimSt S W K) (a : FOut K) : P S W K (SimSt S W K) :=
-  (outE (simOut s.2.2 a)).bind fun _ => .ret (s.1, s.2.1, .fwd)
+  ProgE.bind (outE (simOut s.2.2 a)) fun _ => .ret (s.1, s.2.1, .fwd)
 
 /-- The end of an activation after the decision of `simStartP`: a call to `F_AKE` with the
 continuation `simK`, or the outer output. -/
 def simDecide (q : SimSt S W K × Dec S W K) : P S W K (SimSt S W K) :=
   match q.2 with
   | .inl f => call f (simK q.1)
-  | .inr o => (outE o).bind fun _ => .ret q.1
+  | .inr o => ProgE.bind (outE o) fun _ => .ret q.1
 
 /-- **The X3DH simulator as a program**: one iteration per activation. -/
 noncomputable def simBody (s : SimSt S W K) : P S W K (SimSt S W K) :=
-  recvO.bind fun e => (simStartP G s e).bind simDecide
+  ProgE.bind recvO fun e => ProgE.bind (simStartP G s e) simDecide
 
 /-- The loop of `simBody` as a multi-call hybrid over `F_AKE`, with fuel `0`. -/
 noncomputable def simLoop :
@@ -578,7 +580,8 @@ theorem simProt_stepEq_simLoop {τ : Type} (X : Sys τ (FEv K) (FOut K)) :
       ⟨P S W K (SimSt S W K) × τ, (simLoop G).withSub X⟩ := by
   refine loopMulti_stepEq (simProt G) (simBody G) id simK (fun s e => ?_) (fun s a => ?_)
     (fun s a => ?_) X
-  · change emitK _ _ ((simStartP G s e).bind simDecide) = _
+  · change emitK (fun o p => SPComp.pure (p, o)) (fun _ => SPComp.fail)
+      (ProgE.bind (simStartP G s e) simDecide) = _
     rw [(simStartP_samples G s e).emitK_bind]
     simp only [emitK_simDecide, SPComp.map]
     rfl

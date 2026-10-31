@@ -9,7 +9,7 @@ public import CatCryptCore.Quantum.QSysCat
 public import CatCryptCore.Quantum.ClassicalDiamondLift
 public import CatCryptCore.Quantum.ClassicalEmbedGame
 public import CatCryptCore.Crypto.UCLoopbackTraced
-public import CatCryptCore.Crypto.Party.Prog
+public import CatCryptCore.Crypto.Party.QProg
 
 /-!
 # The classical lift of reactive systems to quantum reactive systems
@@ -39,10 +39,13 @@ heap-independent systems. The functor `liftFunctor : PSysCat ⥤ QSysCat R` is t
 on `PSysCat`, the port types with heap-independent systems modulo classical step equivalence;
 `PSysCat.toSysCat` is its inclusion in `SysCat`.
 
-A party program `p : Party.Prog E O α` is lifted by `toQSys p = liftSys (toSys p)`. Its
-quantum interpreter `qAct` runs each sample as the diagonal subinstrument of its
-sub-distribution; on programs whose samples are heap-independent (`SamplesPure`) it is the step
-of `toQSys p` (`qAct_eq_toQSys_step`).
+A party program `p : Party.Prog E O α` is lifted by `toQSys p = liftSys (toSys p)`. The party
+language is one generic tree `Party.ProgE` with two effect handlers, the classical handler
+`Prog.handler` and the quantum party handler `QProg.handler`. The quantum interpreter `qAct` of a
+classical program is the generic activation at the effect handler `liftHandler`, the quantum
+handler precomposed with the operation `liftOp`, which runs each sample as the diagonal
+subinstrument of its sub-distribution; on programs whose samples are heap-independent
+(`SamplesPure`) it is the step of `toQSys p` (`qAct_eq_toQSys_step`).
 
 ## Transport of realizations
 
@@ -59,6 +62,8 @@ quantum.
 * `Quantum.SubInstrument.ofSDistr`: a sub-distribution as a diagonal subinstrument.
 * `ClassicalLiftSys.heapFree`, `ClassicalLiftSys.liftSys`, `Sys.HeapPure`.
 * `ClassicalLiftSys.PSysCat`, `ClassicalLiftSys.liftFunctor`.
+* `ClassicalLiftSys.liftOp`, `ClassicalLiftSys.liftHandler`: the classical lift as an effect
+  handler.
 * `ClassicalLiftSys.toQSys`, `ClassicalLiftSys.qAct`, `ClassicalLiftSys.SamplesPure`.
 * `ClassicalLiftSys.liftQSys`, `ClassicalLiftSys.liftStrat`.
 
@@ -632,25 +637,27 @@ variable {α γ : Type}
 noncomputable def toQSys (p : Prog E O α) : QRSys R (Prog E O α) E O :=
   liftSys (Prog.toSys p)
 
-/-- The emit phase on the register `R`: a sample is the diagonal subinstrument of its
-sub-distribution run from the empty heap. -/
-noncomputable def qEmitK (s : O → Prog E O α → SubInstrument R R γ)
-    (r : α → SubInstrument R R γ) : Prog E O α → SubInstrument R R γ
-  | .ret a => r a
-  | .recv _ => SubInstrument.fail
-  | .send o p => s o p
-  | .sampleN μ k => (ofSDistr (heapFree μ)).bind fun n => qEmitK s r (k n)
-  | .fail => SubInstrument.fail
+/-- The classical lift of a sample: the diagonal subinstrument of its sub-distribution run from
+the empty heap. -/
+noncomputable def liftOp (μ : SPComp ℕ) : SubInstrument R R ℕ :=
+  ofSDistr (heapFree μ)
 
-/-- The await phase on the register `R` on the event `e`: a sample is the diagonal
-subinstrument of its sub-distribution run from the empty heap. -/
+/-- The effect handler of the classical lift: the quantum party handler `QProg.handler`
+precomposed with the classical lift of a sample. -/
+noncomputable def liftHandler : Handler (SPComp ℕ) (SubInstrument R R) :=
+  QProg.handler.comap liftOp
+
+/-- The emit phase on the register `R`: the generic emit phase at the handler of the classical
+lift, which runs a sample as the diagonal subinstrument of its sub-distribution. -/
+noncomputable def qEmitK (s : O → Prog E O α → SubInstrument R R γ)
+    (r : α → SubInstrument R R γ) : Prog E O α → SubInstrument R R γ :=
+  ProgE.emitK liftHandler s r
+
+/-- The await phase on the register `R` on the event `e`: the generic await phase at the handler
+of the classical lift. -/
 noncomputable def qAwaitK (e : E) (s : O → Prog E O α → SubInstrument R R γ)
-    (rA rE : α → SubInstrument R R γ) : Prog E O α → SubInstrument R R γ
-  | .ret a => rA a
-  | .recv k => qEmitK s rE (k e)
-  | .send _ _ => SubInstrument.fail
-  | .sampleN μ k => (ofSDistr (heapFree μ)).bind fun n => qAwaitK e s rA rE (k n)
-  | .fail => SubInstrument.fail
+    (rA rE : α → SubInstrument R R γ) : Prog E O α → SubInstrument R R γ :=
+  ProgE.awaitK liftHandler e s rA rE
 
 /-- The quantum interpreter of one activation of a program that halts on return. -/
 noncomputable def qAct (p : Prog E O α) (e : E) : SubInstrument R R (Prog E O α × O) :=
@@ -680,11 +687,16 @@ theorem qEmitK_eq {s : O → Prog E O α → SubInstrument R R γ} {r : α → S
     qEmitK s r p = ofSDistr (heapFree (Prog.emitK s' r' p)) := by
   induction hp with
   | ret a => exact hr a
-  | recv k _ _ => simp only [qEmitK, Prog.emitK, heapFree_fail, ofSDistr_fail]
+  | recv k _ _ =>
+    change SubInstrument.fail = _
+    simp only [Prog.emitK_recv, heapFree_fail, ofSDistr_fail]
   | send o p hp _ => exact hs o p hp
   | sampleN μ k hμ _ ih =>
-    simp only [qEmitK, Prog.emitK, heapFree_bind hμ, ofSDistr_bind, ih]
-  | fail => simp only [qEmitK, Prog.emitK, heapFree_fail, ofSDistr_fail]
+    change (liftOp μ).bind (fun n => qEmitK s r (k n)) = _
+    simp only [liftOp, Prog.emitK_sampleN, heapFree_bind hμ, ofSDistr_bind, ih]
+  | fail =>
+    change SubInstrument.fail = _
+    simp only [Prog.emitK_fail, heapFree_fail, ofSDistr_fail]
 
 /-- On a program whose samples are heap-independent, the quantum await phase is the lift of the
 classical await phase. -/
@@ -697,10 +709,15 @@ theorem qAwaitK_eq (e : E) {s : O → Prog E O α → SubInstrument R R γ}
   induction hp with
   | ret a => exact hrA a
   | recv k hk _ => exact qEmitK_eq hs hrE (hk e)
-  | send o p _ _ => simp only [qAwaitK, Prog.awaitK, heapFree_fail, ofSDistr_fail]
+  | send o p _ _ =>
+    change SubInstrument.fail = _
+    simp only [Prog.awaitK_send, heapFree_fail, ofSDistr_fail]
   | sampleN μ k hμ _ ih =>
-    simp only [qAwaitK, Prog.awaitK, heapFree_bind hμ, ofSDistr_bind, ih]
-  | fail => simp only [qAwaitK, Prog.awaitK, heapFree_fail, ofSDistr_fail]
+    change (liftOp μ).bind (fun n => qAwaitK e s rA rE (k n)) = _
+    simp only [liftOp, Prog.awaitK_sampleN, heapFree_bind hμ, ofSDistr_bind, ih]
+  | fail =>
+    change SubInstrument.fail = _
+    simp only [Prog.awaitK_fail, heapFree_fail, ofSDistr_fail]
 
 /-- **Party programs.** At a residual program whose samples are heap-independent, the quantum
 interpreter, which runs each sample as the diagonal subinstrument of its sub-distribution, is

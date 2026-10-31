@@ -12,6 +12,16 @@ and quantum parties are
 [`Party.QProg R E O α`](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/Crypto/Party/QProg.lean),
 with qubit ports.
 
+Both are instances of one generic program tree
+[`Party.ProgE Op E O α`](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/Crypto/Party/ProgE.lean)
+over an effect signature `Op`, interpreted through an effect handler `Handler Op M`: the classical
+party language is `ProgE (SPComp ℕ)` with the handler `Prog.handler` in `SPComp`, and the quantum
+party language is `ProgE (SubInstrument R R ℕ)` with the handler `QProg.handler` in
+`SubInstrument R R`. The two phases of an activation (`ProgE.emitK`, `ProgE.awaitK`), the monad
+laws, the parallel composition `ProgE.par` and its activations are stated once for every lawful
+handler, and a map of effect signatures (`ProgE.mapOp`) carries programs from one language to the
+other.
+
 ## Programs and their denotation
 
 A program on input events `E` and outputs `O` returns, waits for the next activation (`recv`),
@@ -76,8 +86,9 @@ every subroutine
 
 A quantum party on the register `R` has the classical ports of `Party.Prog`, and its operation
 `opN q k` applies a subinstrument on `R` and continues with the classical outcome; gates,
-measurements, preparations and sampling (the diagonal subinstrument `QProg.diagOp`) are such
-operations. Its denotation is a quantum reactive system of the quantum system category
+measurements, preparations and sampling (the diagonal subinstrument
+`SubInstrument.ofSDistr` of the classical lift) are such operations, run by the quantum party
+handler `QProg.handler`. Its denotation is a quantum reactive system of the quantum system category
 ([`QProg.toQRSys`](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/Crypto/Party/QProg.lean);
 [core quantum README](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/Quantum/README.md)),
 and the loop `QProg.loopQSys` of one-activation iterations is step-equivalent to the system with
@@ -92,16 +103,18 @@ denotation
 The qubit ports move ownership of a factor: `QProg.sendQ o k` emits `o` with the factor `N` and
 continues as a program on `M`, and `QProg.recvQ p k` runs `p` on `M` and then continues on
 `M × N`. Linearity is enforced by the register type, and every operation is completely positive,
-so no step copies the state of a factor. Classical programs embed by a monad morphism
-([`Prog.toQProg_bind`](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/Crypto/Party/QProg.lean)).
+so no step copies the state of a factor. Framing and the embedding of classical programs are
+maps of effect signatures, monad morphisms of the generic tree
+([`ProgE.mapOp_bind`](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/Crypto/Party/ProgE.lean)).
 The real world of the reactive quantum one-time pad is the loop of a program
 ([`QProg.qotpRealBody_stepEq`](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/Crypto/Party/QProg.lean)).
 
 ## The classical lift
 
 A classical program `p` lifts to the quantum system `ClassicalLiftSys.toQSys p`, the lift of
-`toSys p`, and its quantum interpreter, which runs each sample as a diagonal subinstrument, is
-that lift
+`toSys p`, and its quantum interpreter, the generic activation at the effect handler
+`ClassicalLiftSys.liftHandler` (the quantum party handler precomposed with the diagonal
+subinstrument of a sample), is that lift
 ([`ClassicalLiftSys.qAct_eq_toQSys_step`](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/Quantum/ClassicalLiftSys.lean)).
 The lift of systems is a functor into the quantum system category preserving `⊕` and the trace
 ([`ClassicalLiftSys.liftFunctor_map_trace`](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/Quantum/ClassicalLiftSys.lean)).

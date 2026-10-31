@@ -5,17 +5,18 @@ Authors: CatCrypt Contributors
 -/
 module
 
+public import CatCryptCore.Crypto.Party.ProgE
 public import CatCryptCore.Crypto.UCLoopbackTrace
 public import Mathlib.Logic.Encodable.Basic
 
 /-!
 # Party programs and their denotation as reactive systems
 
-A party with input events `E` and outputs `O` is a first-order program tree `Party.Prog E O α`:
-it returns, waits for the next activation (`recv`), emits the output of the current activation
-(`send`), samples (`sampleN`, a sub-distribution on codes in `ℕ`; `Prog.sample` samples any
-countable type through its encoding) or fails. Programs form a monad, so parties are written in
-`do` notation.
+A party with input events `E` and outputs `O` is a first-order program tree `Party.Prog E O α`,
+the party language `Party.ProgE` at the classical effect of sampling: it returns, waits for the
+next activation (`recv`), emits the output of the current activation (`send`), samples
+(`sampleN`, a sub-distribution on codes in `ℕ`; `Prog.sample` samples any countable type through
+its encoding) or fails. Programs form a monad, so parties are written in `do` notation.
 
 The denotation is a reactive system `UCTransparent.Sys` whose state is the residual program.
 An activation on the event `e` runs the residual program in two phases. In the await phase it
@@ -24,8 +25,9 @@ samples up to the next `send o` and stops there with the output `o`. The residua
 that `send` is the new state, so the samples a party performs after its output and before its
 next `recv` are performed at the start of the next activation. A second `recv` before the
 `send`, a `send` before the `recv`, or a return in the emit phase is a failure. The two phases
-are the continuation-passing interpreters `Prog.emitK` and `Prog.awaitK`, which commute with
-`bind` (`Prog.emitK_bind`, `Prog.awaitK_bind`).
+are the interpreters `ProgE.emitK` and `ProgE.awaitK` through the classical handler
+`Prog.handler`, which runs a sample in `SPComp`; they commute with `bind` (`Prog.emitK_bind`,
+`Prog.awaitK_bind`).
 
 A finite program `p` denotes `Prog.toSys p`: after `p` returns, every activation fails. An
 unbounded session is `Prog.loopSys body s₀`: when the residual program returns a state `s` in
@@ -35,8 +37,9 @@ iteration as its step (`Prog.loopSys_stepEq`).
 
 ## Main definitions
 
-* `Party.Prog E O α`: party programs, with `Monad (Prog E O)`.
+* `Party.Prog E O α`: party programs, the abbreviation of `ProgE (SPComp ℕ) E O α`.
 * `Party.Prog.recvE`, `Party.Prog.sendE`, `Party.Prog.sampleE`: the operations in `do` notation.
+* `Party.Prog.handler`: the classical handler.
 * `Party.Prog.emitK`, `Party.Prog.awaitK`: the two phases of an activation.
 * `Party.Prog.act`: one activation of a program that halts on return.
 * `Party.Prog.toSys`, `Party.Prog.loopSys`: the denotations of a program and of a loop.
@@ -60,64 +63,19 @@ namespace CatCrypt.Crypto.Party
 
 open CatCrypt.Core CatCrypt.Crypto.UCTransparent
 
-/-- Programs of a party with input events `E` and outputs `O`, returning `α`. -/
-inductive Prog (E O : Type) (α : Type) : Type where
-  /-- Return `a`. -/
-  | ret (a : α)
-  /-- Wait for the next activation and continue with its event. -/
-  | recv (k : E → Prog E O α)
-  /-- Emit `o` as the output of the current activation and continue. -/
-  | send (o : O) (k : Prog E O α)
-  /-- Sample a code from `μ` and continue with it. -/
-  | sampleN (μ : SPComp ℕ) (k : ℕ → Prog E O α)
-  /-- Failure. -/
-  | fail
+/-- Programs of a party with input events `E` and outputs `O`: the party language at the
+classical effect, whose operations sample a code. -/
+abbrev Prog (E O : Type) : Type → Type := ProgE (SPComp ℕ) E O
 
 namespace Prog
 
+export ProgE (ret recv send fail bind bind_ret bind_assoc recvE sendE retOr)
+
 variable {E O α β γ σ : Type}
 
-/-- Sequential composition of programs. -/
-def bind : Prog E O α → (α → Prog E O β) → Prog E O β
-  | .ret a, f => f a
-  | .recv k, f => .recv fun e => (k e).bind f
-  | .send o p, f => .send o (p.bind f)
-  | .sampleN μ k, f => .sampleN μ fun n => (k n).bind f
-  | .fail, _ => .fail
-
-instance : Monad (Prog E O) where
-  pure := .ret
-  bind := bind
-
-/-- `bind` returning its argument is the identity. -/
-theorem bind_ret (p : Prog E O α) : p.bind .ret = p := by
-  induction p with
-  | ret a => rfl
-  | recv k ih => simp only [bind, ih]
-  | send o p ih => simp only [bind, ih]
-  | sampleN μ k ih => simp only [bind, ih]
-  | fail => rfl
-
-/-- `bind` is associative. -/
-theorem bind_assoc (p : Prog E O α) (f : α → Prog E O β) (g : β → Prog E O γ) :
-    (p.bind f).bind g = p.bind fun a => (f a).bind g := by
-  induction p with
-  | ret a => rfl
-  | recv k ih => simp only [bind, ih]
-  | send o p ih => simp only [bind, ih]
-  | sampleN μ k ih => simp only [bind, ih]
-  | fail => rfl
-
-instance : LawfulMonad (Prog E O) := LawfulMonad.mk'
-  (id_map := fun p => bind_ret p)
-  (pure_bind := fun _ _ => rfl)
-  (bind_assoc := fun p f g => bind_assoc p f g)
-
-/-- Wait for the next activation and return its event. -/
-def recvE : Prog E O E := .recv .ret
-
-/-- Emit `o` as the output of the current activation. -/
-def sendE (o : O) : Prog E O Unit := .send o (.ret ())
+/-- Sample a code from `μ` and continue with it: the effect operation of the classical
+language. -/
+@[match_pattern] abbrev sampleN (μ : SPComp ℕ) (k : ℕ → Prog E O α) : Prog E O α := .opN μ k
 
 /-- Sample from `μ` on a countable type through the codes of its encoding, and continue with
 the outcome. A code outside the image of the encoding fails. -/
@@ -135,75 +93,123 @@ noncomputable def sampleE {β : Type} [Countable β] (μ : SPComp β) : Prog E O
 
 /-! ## Activations -/
 
+/-- The classical handler: a sample is run in `SPComp`. -/
+noncomputable def handler : Handler (SPComp ℕ) SPComp where
+  pure a := SPComp.pure a
+  bind c f := SPComp.bind c f
+  fail := SPComp.fail
+  run μ := μ
+
+/-- The classical handler is lawful. -/
+theorem handler_lawful : handler.Lawful where
+  pure_bind a f := SPComp.pure_bind a f
+  bind_assoc c f g := SPComp.bind_assoc c f g
+  fail_bind f := SPComp.fail_bind f
+
 /-- The emit phase: perform the samples up to the next `send o` and continue with `s o` at the
 rest; a return continues with `r`; a `recv` or a failure fails. -/
 noncomputable def emitK (s : O → Prog E O α → SPComp γ) (r : α → SPComp γ) :
-    Prog E O α → SPComp γ
-  | .ret a => r a
-  | .recv _ => SPComp.fail
-  | .send o p => s o p
-  | .sampleN μ k => SPComp.bind μ fun n => emitK s r (k n)
-  | .fail => SPComp.fail
+    Prog E O α → SPComp γ :=
+  ProgE.emitK handler s r
+
+/-- Unfolding lemma of `emitK` at a return. -/
+@[simp] theorem emitK_ret (s : O → Prog E O α → SPComp γ) (r : α → SPComp γ) (a : α) :
+    emitK s r (.ret a) = r a := rfl
+
+/-- Unfolding lemma of `emitK` at a receive. -/
+@[simp] theorem emitK_recv (s : O → Prog E O α → SPComp γ) (r : α → SPComp γ)
+    (k : E → Prog E O α) : emitK s r (.recv k) = SPComp.fail := rfl
+
+/-- Unfolding lemma of `emitK` at a send. -/
+@[simp] theorem emitK_send (s : O → Prog E O α → SPComp γ) (r : α → SPComp γ) (o : O)
+    (p : Prog E O α) : emitK s r (.send o p) = s o p := rfl
+
+/-- Unfolding lemma of `emitK` at a sample. -/
+@[simp] theorem emitK_sampleN (s : O → Prog E O α → SPComp γ) (r : α → SPComp γ)
+    (μ : SPComp ℕ) (k : ℕ → Prog E O α) :
+    emitK s r (.opN μ k) = SPComp.bind μ fun n => emitK s r (k n) := rfl
+
+/-- Unfolding lemma of `emitK` at a failure. -/
+@[simp] theorem emitK_fail (s : O → Prog E O α → SPComp γ) (r : α → SPComp γ) :
+    emitK s r .fail = SPComp.fail := rfl
 
 /-- The await phase on the event `e`: perform the samples up to the next `recv`, feed it `e` and
 continue in the emit phase with `s` and `rE`; a return continues with `rA`; a `send` or a
 failure fails. -/
 noncomputable def awaitK (e : E) (s : O → Prog E O α → SPComp γ) (rA rE : α → SPComp γ) :
-    Prog E O α → SPComp γ
-  | .ret a => rA a
-  | .recv k => emitK s rE (k e)
-  | .send _ _ => SPComp.fail
-  | .sampleN μ k => SPComp.bind μ fun n => awaitK e s rA rE (k n)
-  | .fail => SPComp.fail
+    Prog E O α → SPComp γ :=
+  ProgE.awaitK handler e s rA rE
+
+/-- Unfolding lemma of `awaitK` at a return. -/
+@[simp] theorem awaitK_ret (e : E) (s : O → Prog E O α → SPComp γ) (rA rE : α → SPComp γ) (a : α) :
+    awaitK e s rA rE (.ret a) = rA a := rfl
+
+/-- Unfolding lemma of `awaitK` at a receive. -/
+@[simp] theorem awaitK_recv (e : E) (s : O → Prog E O α → SPComp γ) (rA rE : α → SPComp γ)
+    (k : E → Prog E O α) : awaitK e s rA rE (.recv k) = emitK s rE (k e) := rfl
+
+/-- Unfolding lemma of `awaitK` at a send. -/
+@[simp] theorem awaitK_send (e : E) (s : O → Prog E O α → SPComp γ) (rA rE : α → SPComp γ) (o : O)
+    (p : Prog E O α) : awaitK e s rA rE (.send o p) = SPComp.fail := rfl
+
+/-- Unfolding lemma of `awaitK` at a sample. -/
+@[simp] theorem awaitK_sampleN (e : E) (s : O → Prog E O α → SPComp γ) (rA rE : α → SPComp γ)
+    (μ : SPComp ℕ) (k : ℕ → Prog E O α) :
+    awaitK e s rA rE (.opN μ k) = SPComp.bind μ fun n => awaitK e s rA rE (k n) := rfl
+
+/-- Unfolding lemma of `awaitK` at a failure. -/
+@[simp] theorem awaitK_fail (e : E) (s : O → Prog E O α → SPComp γ) (rA rE : α → SPComp γ) :
+    awaitK e s rA rE .fail = SPComp.fail := rfl
 
 /-- The emit phase commutes with `bind`: a return of `p` continues with the emit phase of
 `f`. -/
 theorem emitK_bind (s : O → Prog E O β → SPComp γ) (r : β → SPComp γ) (p : Prog E O α)
     (f : α → Prog E O β) :
-    emitK s r (p.bind f) = emitK (fun o q => s o (q.bind f)) (fun a => emitK s r (f a)) p := by
-  induction p with
-  | ret a => rfl
-  | recv k ih => rfl
-  | send o p ih => rfl
-  | sampleN μ k ih => simp only [bind, emitK, ih]
-  | fail => rfl
+    emitK s r (ProgE.bind p f) =
+      emitK (fun o q => s o (ProgE.bind q f)) (fun a => emitK s r (f a)) p :=
+  ProgE.emitK_bind handler s r p f
 
 /-- The await phase commutes with `bind`: a return of `p` in the await phase continues with the
 await phase of `f`, and in the emit phase with the emit phase of `f`. -/
 theorem awaitK_bind (e : E) (s : O → Prog E O β → SPComp γ) (rA rE : β → SPComp γ)
     (p : Prog E O α) (f : α → Prog E O β) :
-    awaitK e s rA rE (p.bind f) =
-      awaitK e (fun o q => s o (q.bind f)) (fun a => awaitK e s rA rE (f a))
-        (fun a => emitK s rE (f a)) p := by
-  induction p with
-  | ret a => rfl
-  | recv k ih => simp only [bind, awaitK, emitK_bind]
-  | send o p ih => rfl
-  | sampleN μ k ih => simp only [bind, awaitK, ih]
-  | fail => rfl
+    awaitK e s rA rE (ProgE.bind p f) =
+      awaitK e (fun o q => s o (ProgE.bind q f)) (fun a => awaitK e s rA rE (f a))
+        (fun a => emitK s rE (f a)) p :=
+  ProgE.awaitK_bind handler e s rA rE p f
 
 /-- Sampling in the emit phase. -/
 theorem emitK_sample {β : Type} [Countable β] (s : O → Prog E O α → SPComp γ)
     (r : α → SPComp γ) (μ : SPComp β) (k : β → Prog E O α) :
     emitK s r (sample μ k) = SPComp.bind μ fun b => emitK s r (k b) := by
-  simp [sample, emitK, SPComp.map, Encodable.encodek]
+  simp [sample, SPComp.map, Encodable.encodek]
 
 /-- Sampling in the await phase. -/
 theorem awaitK_sample {β : Type} [Countable β] (e : E) (s : O → Prog E O α → SPComp γ)
     (rA rE : α → SPComp γ) (μ : SPComp β) (k : β → Prog E O α) :
     awaitK e s rA rE (sample μ k) = SPComp.bind μ fun b => awaitK e s rA rE (k b) := by
-  simp [sample, awaitK, SPComp.map, Encodable.encodek]
+  simp [sample, SPComp.map, Encodable.encodek]
 
 /-- One activation of the program `p` on the event `e` that continues with `restart a e` when
 `p` returns `a` in the await phase: the residual program after the activation's `send`, and the
 output. -/
 noncomputable def stepWith (restart : α → E → SPComp (Prog E O α × O)) (p : Prog E O α)
     (e : E) : SPComp (Prog E O α × O) :=
-  awaitK e (fun o q => SPComp.pure (q, o)) (fun a => restart a e) (fun _ => SPComp.fail) p
+  ProgE.stepWith handler restart p e
+
+/-- Unfolding lemma of `stepWith`. -/
+theorem stepWith_def (restart : α → E → SPComp (Prog E O α × O)) (p : Prog E O α) (e : E) :
+    stepWith restart p e =
+      awaitK e (fun o q => SPComp.pure (q, o)) (fun a => restart a e) (fun _ => SPComp.fail) p :=
+  rfl
 
 /-- One activation of a program that halts on return: an activation after the return fails. -/
 noncomputable def act (p : Prog E O α) (e : E) : SPComp (Prog E O α × O) :=
-  stepWith (fun _ _ => SPComp.fail) p e
+  ProgE.act handler p e
+
+/-- Unfolding lemma of `act`. -/
+theorem act_def (p : Prog E O α) (e : E) : act p e = stepWith (fun _ _ => SPComp.fail) p e :=
+  rfl
 
 /-- The denotation of a program: the state is the residual program, the step an activation. -/
 noncomputable def toSys (p : Prog E O α) : Sys (Prog E O α) E O where
@@ -217,19 +223,15 @@ noncomputable def loopSys (body : σ → Prog E O σ) (s₀ : σ) : Sys (Prog E 
   init := .ret s₀
   step := stepWith fun s e => act (body s) e
 
-/-- Unfolding lemma of `act`: a receive followed by a send is one step. -/
+/-- A receive followed by a send is one step. -/
 theorem act_recv_send (g : E → O) (p : E → Prog E O α) (e : E) :
-    act (.recv fun e => .send (g e) (p e)) e = SPComp.pure (p e, g e) := rfl
+    act (.recv fun e => .send (g e) (p e)) e = SPComp.pure (p e, g e) :=
+  ProgE.act_recv_send handler g p e
 
 /-- Unfolding lemma of `loopSys`: the step at the return of `s` is the activation of
 `body s`. -/
 theorem loopSys_step_ret (body : σ → Prog E O σ) (s₀ s : σ) (e : E) :
     (loopSys body s₀).step (.ret s) e = act (body s) e := rfl
-
-/-- The returned state, or `d` at a program that is not a return. -/
-def retOr (d : σ) : Prog E O σ → σ
-  | .ret s => s
-  | _ => d
 
 /-- **Loops of one activation.** When the activation of `body s` on every event is the step
 `step s e` followed by a return, the loop of `body` from `s₀` is step-equivalent to the system
