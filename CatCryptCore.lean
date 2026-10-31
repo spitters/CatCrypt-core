@@ -299,6 +299,7 @@ public import CatCryptCore.Quantum.ChoiKraus
 public import CatCryptCore.Quantum.PartialTrace
 public import CatCryptCore.Quantum.OpenSystem
 public import CatCryptCore.Quantum.PauliTwirl
+public import CatCryptCore.Quantum.QRealizes
 public import CatCryptCore.Quantum.Stinespring
 
 -- Quantum distinguishing distance, diamond norm, classical lifts, quantum relational Hoare logic
