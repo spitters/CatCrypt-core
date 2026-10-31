@@ -48,4 +48,8 @@ theorem blsReduction.tree.timeBound_timed (P : PairingGroup) (F : BLSForger P) (
     SPTree.Timed.stepTime (blsReduction.tree.timed P F gx hx u run runCost) ≤ T + a + 1 := by
   time_bound
 
+/-! The costed mirror of the forger structure, for reductions that build a `BLSForger`. -/
+
+derive_timed_structure BLSForger
+
 end CatCryptCore.Crypto.BLSSig
