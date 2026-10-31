@@ -488,6 +488,7 @@ public import CatCryptCore.Crypto.UCFeedbackSquare
 public import CatCryptCore.Crypto.UCLoopbackTrace
 public import CatCryptCore.Crypto.UCLoopbackOmega
 public import CatCryptCore.Crypto.UCLoopbackMonoidal
+public import CatCryptCore.Crypto.UCLoopbackTraced
 public import CatCryptCore.Crypto.UCOpenTheory
 public import CatCryptCore.Crypto.UCWake
 public import CatCryptCore.Crypto.UCWakeTimed
