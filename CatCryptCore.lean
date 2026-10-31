@@ -307,6 +307,7 @@ public import CatCryptCore.Quantum.QOTPReactive
 public import CatCryptCore.Quantum.QOTPInsecure
 public import CatCryptCore.Quantum.QSysCat
 public import CatCryptCore.Quantum.QSysCatTensor
+public import CatCryptCore.Quantum.ClassicalLiftSys
 public import CatCryptCore.Quantum.Stinespring
 
 -- Quantum distinguishing distance, diamond norm, classical lifts, quantum relational Hoare logic
