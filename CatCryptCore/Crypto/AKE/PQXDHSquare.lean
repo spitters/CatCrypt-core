@@ -39,6 +39,9 @@ completes it computes the session's input `ip` and delivers by `deliver`: an exp
 receives the key-derivation value at `ip` through `newKey`; any other session receives the key
 of `F_AKE` by `newKey` when its partner has not completed or completed with the input `ip`,
 and by `newKeyUnlinked` otherwise. The simulator reads no key of `F_AKE` (`simProt_opaque`).
+It is the simulator `pqxdhSimK` over the operations of a KEM as computations (`KemOps`) at the
+operations `kemOps P` of `P`, so that a costed form of `pqxdhSimK` prices key generation,
+encapsulation and decapsulation by parameters.
 
 **Results.** The simulator running with `F_AKE` is at distance `0` from the oracle system of
 the game `simGame G P` (`simWorld_realizes`). The square is the oracle-game bound
@@ -60,6 +63,8 @@ input is again unqueried. Either route bounds the distance at a session.
 * `PInp`: the inputs of the key derivation.
 * `PSt`, `PAEv`, `POut`: the state and the adversary port of the real protocol.
 * `realGame`, `pqxdhReal`: the real protocol as an oracle game and as a system.
+* `KemOps`, `kemOps`: the operations of a KEM as computations, and those of `P`.
+* `simProtK`, `pqxdhSimK`: the simulator over the operations of a KEM.
 * `simProt`, `pqxdhSim`: the simulator.
 * `simGame`: the oracle game of the simulated world.
 
@@ -271,10 +276,39 @@ def simOut {S W K PK C : Type} : Phase S W K PK C → FOut K → OOut S W K PK C
   | .fwd, .inr _ => .inr (.inl .ack)
   | .out r, _ => .inr r
 
+/-- The operations of a key encapsulation mechanism as computations: key generation,
+encapsulation and decapsulation, where key generation and encapsulation neither touch the heap
+nor fail. -/
+structure KemOps (PK SK SS C : Type) where
+  /-- Key generation, returning `(pk, sk)`. -/
+  keygen : SPComp (PK × SK)
+  /-- Encapsulation to a public key, returning `(shared secret, encapsulation)`. -/
+  encaps : PK → SPComp (SS × C)
+  /-- Decapsulation with a secret key, `none` on rejection. -/
+  decaps : SK → C → Option SS
+  /-- Key generation neither touches the heap nor fails. -/
+  keygen_pureNF : PureNF keygen
+  /-- Encapsulation neither touches the heap nor fails. -/
+  encaps_pureNF : ∀ pk, PureNF (encaps pk)
+
+/-- Sampling from a total distribution neither touches the heap nor fails. -/
+theorem pureNF_sampleFrom_ofPMF {α : Type} (p : PMF α) : PureNF (sampleFrom (ofPMF p)) := by
+  rw [sampleFrom_ofPMF_eq_liftPMF]
+  exact ⟨liftPMF_isPure _, liftPMF_noFail _⟩
+
+/-- The operations of the KEM `P`: key generation and encapsulation sample from the
+distributions of `P`, and decapsulation is `P.decaps`. -/
+noncomputable def kemOps {PK SK SS C : Type} (P : Scheme PK SK SS C) : KemOps PK SK SS C where
+  keygen := sampleFrom (ofPMF P.keygen)
+  encaps pk := sampleFrom (ofPMF (P.encaps pk))
+  decaps := P.decaps
+  keygen_pureNF := pureNF_sampleFrom_ofPMF _
+  encaps_pureNF _ := pureNF_sampleFrom_ofPMF _
+
 section Sim
 
 variable {S W K PK SK SS C : Type} [Field S] [Fintype S] [DecidableEq W] [Fintype K]
-  [Nonempty K] [Inhabited K] [DecidableEq SS] (P : Scheme PK SK SS C) (G : DHGroup S W)
+  [Nonempty K] [Inhabited K] [DecidableEq SS] (O : KemOps PK SK SS C) (G : DHGroup S W)
 
 /-- The delivery of the key of the session `x` with record `r` and input `ip`, as in X3DH. An
 exposed session receives the key-derivation value at `ip`, which the simulator samples and
@@ -303,7 +337,7 @@ noncomputable def simComplete (s : SimSt S W K PK SK SS C) (x : Inst) :
     | some opk, some pk =>
       if r.role = .initiator ∧ r.key.isNone then
         SPComp.bind (ltStep s.1.x x.2) fun la => SPComp.bind (ltStep la.2 r.peer) fun lb =>
-          SPComp.bind (sampleFrom (ofPMF (P.encaps pk))) fun kc =>
+          SPComp.bind (O.encaps pk) fun kc =>
             deliver { s.1 with x := lb.2, ct := Function.update s.1.ct x (some kc.2) } s.2.1 x r
               (aliceInp G x.1 x.2 r.peer la.1.1 ek (G.pub lb.1.1) (G.pub lb.1.2) (G.pub opk),
                 kc.1)
@@ -317,7 +351,7 @@ noncomputable def simSend (s : SimSt S W K PK SK SS C) (x : Inst) (e : W) (c : C
     SPComp (SimSt S W K PK SK SS C × Dec S W K PK C) :=
   match s.1.x.st.recs x, s.1.x.eph x, s.1.kem x with
   | some r, some opk, some kp =>
-    match P.decaps kp.2 c with
+    match O.decaps kp.2 c with
     | some ss =>
       if r.role = .responder ∧ r.key.isNone then
         SPComp.bind (ltStep s.1.x x.2) fun lb => SPComp.bind (ltStep lb.2 r.peer) fun la =>
@@ -339,7 +373,7 @@ noncomputable def simCorrupt (s : SimSt S W K PK SK SS C) (pid : PartyId) :
 
 /-- The start of an activation of the simulator. Honest events go to `F_AKE` and update the
 copy as `pqHon` does (a new session draws its Diffie–Hellman secret, and a new responder session
-its KEM key pair from `P.keygen`); `complete`, `send` and `corrupt` are handled as above; every
+its KEM key pair from `O.keygen`); `complete`, `send` and `corrupt` are handled as above; every
 other adversary event is answered as `pqAdv` does on the copy. -/
 noncomputable def simStart (s : SimSt S W K PK SK SS C) :
     OEv W SS C → SPComp (SimSt S W K PK SK SS C × Dec S W K PK C)
@@ -352,7 +386,7 @@ noncomputable def simStart (s : SimSt S W K PK SK SS C) :
                 x := { s.1.x with st := addSession s.1.x.st (sid, pid) peer role,
                                   eph := Function.update s.1.x.eph (sid, pid) (some y) },
                 kem := Function.update s.1.kem (sid, pid) (some kp) }, s.2.1, .fwd),
-              .inl (.inl (.newSession sid pid peer role)))) (sampleFrom (ofPMF P.keygen))
+              .inl (.inl (.newSession sid pid peer role)))) O.keygen
         else
           SPComp.pure
             (({ s.1 with
@@ -373,15 +407,10 @@ noncomputable def simStart (s : SimSt S W K PK SK SS C) :
   | .inr (.pqPub sid pid) =>
     SPComp.pure ((s.1, s.2.1, .fwd), .inr (.inr (.inr (pkOf s.1 sid pid, s.1.ct (sid, pid)))))
   | .inr (.corrupt pid) => simCorrupt s pid
-  | .inr (.complete sid pid) => simComplete P G s (sid, pid)
-  | .inr (.send sid pid e c) => simSend P G s (sid, pid) e c
+  | .inr (.complete sid pid) => simComplete O G s (sid, pid)
+  | .inr (.send sid pid e c) => simSend O G s (sid, pid) e c
   | .inr (.kdf x) => SPComp.map (fun p =>
       (({ s.1 with ro := p.2 }, s.2.1, .fwd), .inr (.inr (.inl (.hash p.1))))) (roStep s.1.ro x)
-
-/-- Sampling from a total distribution neither touches the heap nor fails. -/
-theorem pureNF_sampleFrom_ofPMF {α : Type} (p : PMF α) : PureNF (sampleFrom (ofPMF p)) := by
-  rw [sampleFrom_ofPMF_eq_liftPMF]
-  exact ⟨liftPMF_isPure _, liftPMF_noFail _⟩
 
 omit [Field S] [Fintype S] in
 /-- `deliver` neither touches the heap nor fails. -/
@@ -394,14 +423,14 @@ theorem deliver_pureNF (s : PSt S W K PK SK SS C) (inp : Inst → Option (PInp W
 
 /-- The start of the simulator neither touches the heap nor fails. -/
 theorem simStart_pureNF (s : SimSt S W K PK SK SS C) (e : OEv W SS C) :
-    PureNF (simStart P G s e) := by
+    PureNF (simStart O G s e) := by
   rcases e with (⟨sid, pid, peer, role⟩ | ⟨sid, pid⟩) | (_ | _ | pid | ⟨sid, pid⟩ |
     ⟨sid, pid⟩ | pid | ⟨sid, pid⟩ | ⟨sid, pid, e, c⟩ | x)
   · simp only [simStart]
     split
     · refine (pureNF_sample _).bind fun _ => ?_
       split
-      · exact (pureNF_sampleFrom_ofPMF _).map _
+      · exact O.keygen_pureNF.map _
       · exact pureNF_pure _
     · exact pureNF_pure _
   · exact pureNF_pure _
@@ -419,7 +448,7 @@ theorem simStart_pureNF (s : SimSt S W K PK SK SS C) (e : OEv W SS C) :
     all_goals first
       | exact pureNF_pure _
       | exact (ltStep_pureNF _ _).bind fun _ => (ltStep_pureNF _ _).bind fun _ =>
-          (pureNF_sampleFrom_ofPMF _).bind fun _ => deliver_pureNF _ _ _ _ _
+          (O.encaps_pureNF _).bind fun _ => deliver_pureNF _ _ _ _ _
   · simp only [simStart, simSend]
     repeat' split
     all_goals first
@@ -428,15 +457,16 @@ theorem simStart_pureNF (s : SimSt S W K PK SK SS C) (e : OEv W SS C) :
           deliver_pureNF _ _ _ _ _
   · exact (roStep_pureNF _ _).map _
 
-/-- **The PQXDH simulator** as a multi-call simulator over `F_AKE`, one call per activation. -/
-noncomputable def simProt :
+/-- **The PQXDH simulator over the KEM operations `O`** as a multi-call simulator over `F_AKE`,
+one call per activation. -/
+noncomputable def simProtK :
     MultiHybrid (SimSt S W K PK SK SS C) (OEv W SS C) (OOut S W K PK C) (FEv K) (FOut K) where
   init := (pInit, fun _ => none, .fwd)
   fuel := 0
-  start := simStart P G
+  start := simStart O G
   resume s o := SPComp.pure ((s.1, s.2.1, .fwd), .inr (simOut s.2.2 o))
   finish s o := SPComp.pure ((s.1, s.2.1, .fwd), simOut s.2.2 o)
-  start_noFail s e := (simStart_pureNF P G s e).2
+  start_noFail s e := (simStart_pureNF O G s e).2
   resume_noFail _ _ := CatCrypt.Crypto.SPComp.pure_noFail _
   finish_noFail _ _ := CatCrypt.Crypto.SPComp.pure_noFail _
 
@@ -472,11 +502,13 @@ theorem simOut_rel {S W K PK SS C : Type} (ph : Phase S W K PK C) {o o' : FOut K
 section SimOpaque
 
 variable {S W K PK SK SS C : Type} [Field S] [Fintype S] [DecidableEq W] [Fintype K]
-  [Nonempty K] [Inhabited K] [DecidableEq SS] (P : Scheme PK SK SS C) (G : DHGroup S W)
+  [Nonempty K] [Inhabited K] [DecidableEq SS] (O : KemOps PK SK SS C) (P : Scheme PK SK SS C)
+  (G : DHGroup S W)
 
-/-- **The unwinding condition of the simulator** for the equality of states: its state and its
-decisions depend on its events and not on the answers of `F_AKE` on its honest port. -/
-theorem simProt_unwinding : (simProt (K := K) P G).Unwinding outerView subView Eq := by
+/-- **The unwinding condition of the simulator over the KEM operations `O`** for the equality
+of states: its state and its decisions depend on its events and not on the answers of `F_AKE` on
+its honest port. -/
+theorem simProtK_unwinding : (simProtK (K := K) O G).Unwinding outerView subView Eq := by
   refine ⟨rfl, ?_, ?_, ?_⟩
   · rintro s _ e e' rfl he
     have he' : e = e' := by
@@ -492,14 +524,34 @@ theorem simProt_unwinding : (simProt (K := K) P G).Unwinding outerView subView E
   · rintro s _ o o' rfl ho
     exact rHoare_ret fun _ _ hh => ⟨hh, rfl, simOut_rel _ ho⟩
 
+/-- **Opacity of the simulator over the KEM operations `O`**: it reads no key of `F_AKE`. -/
+theorem simProtK_opaque : (simProtK (K := K) O G).Opaque outerView subView :=
+  ⟨Eq, simProtK_unwinding O G⟩
+
+/-- **The PQXDH simulator over the KEM operations `O`** as a bundled opaque simulator. -/
+noncomputable def pqxdhSimK :
+    Simulator (OEv W SS C) (OOut S W K PK C) (FEv K) (FOut K) outerView subView :=
+  Simulator.ofMultiHybrid (simProtK O G) (simProtK_opaque O G)
+
+/-- **The PQXDH simulator** for the KEM `P`: the simulator over the operations `kemOps P`. -/
+noncomputable def simProt :
+    MultiHybrid (SimSt S W K PK SK SS C) (OEv W SS C) (OOut S W K PK C) (FEv K) (FOut K) :=
+  simProtK (kemOps P) G
+
+/-- **The unwinding condition of the simulator** for the equality of states: its state and its
+decisions depend on its events and not on the answers of `F_AKE` on its honest port. -/
+theorem simProt_unwinding : (simProt (K := K) P G).Unwinding outerView subView Eq :=
+  simProtK_unwinding (kemOps P) G
+
 /-- **Opacity of the simulator**: it reads no key of `F_AKE`. -/
 theorem simProt_opaque : (simProt (K := K) P G).Opaque outerView subView :=
-  ⟨Eq, simProt_unwinding P G⟩
+  simProtK_opaque (kemOps P) G
 
-/-- **The PQXDH simulator** as a bundled opaque simulator. -/
+/-- **The PQXDH simulator** as a bundled opaque simulator: `pqxdhSimK` at the operations
+`kemOps P`. -/
 noncomputable def pqxdhSim :
     Simulator (OEv W SS C) (OOut S W K PK C) (FEv K) (FOut K) outerView subView :=
-  Simulator.ofMultiHybrid (simProt P G) (simProt_opaque P G)
+  pqxdhSimK (kemOps P) G
 
 end SimOpaque
 
@@ -514,7 +566,7 @@ variable {S W K PK SK SS C : Type} [Field S] [Fintype S] [DecidableEq W] [Fintyp
 heap. -/
 theorem simWorld_pureNF :
     ∀ t e, PureNF (((simProt (K := K) P G).withSub (F_AKE (SPComp.sample K) true)).step t e) :=
-  withSub_pureNF _ _ F_AKE_pureNF (simStart_pureNF P G)
+  withSub_pureNF _ _ F_AKE_pureNF (simStart_pureNF (kemOps P) G)
     (fun _ _ => pureNF_pure _) (fun _ _ => pureNF_pure _)
 
 /-- **The simulated PQXDH game**: the oracle game of the simulator running with `F_AKE`. -/
