@@ -48,7 +48,16 @@ tree node is reflected as the D construct of its `SPComp` operation (`DenM.treeS
 
 A parameter `M : Type` is represented by a finite ground type: `f.d` and the theorems take
 `MF : FTy` in its place and state `f` at `M := MF.den`; the instance parameters of `f` are
-then found by instance search at that representation. A parameter `n : ℕ` that occurs in the
+then found by instance search at that representation. An instance parameter that instance search
+does not find there (`CryptoWord MF.den`, `DecidableEq MF.den`, a group class) is a binder of
+the theorems, and its methods are parameters of D: each class method applied in the body, or in
+a definition the translation unfolds, to static parameters and such an instance (`wxor`,
+`mul`, `gen`) is a D value at the innermost end of the context, a function `g` with the
+hypothesis `∀ v, g v = .ret (m v)` (and a cost function, as for a data function parameter) or a
+datum; an equality `a = b` or `a ≠ b` at `MF.den` is decided by the method
+`fun a b => decide (a = b)` of the instance of `DecidableEq MF.den`. A method whose type is not
+data (an associated type, as `CyclicGroup.Exp`) is not represented. A parameter `n : ℕ` that
+occurs in the
 type of a later parameter or of the result (a modulus `Fin (n + 1)`) is a parameter of `f.d`.
 
 ## The cost theorem
@@ -751,6 +760,10 @@ structure Ctx where
   tys : List Expr := []
   rho : Expr
   oracle : Expr := default
+  /-- The class method terms, each with the variable that stands for it. -/
+  methods : List (Expr × Expr) := []
+  /-- The types with an equality method, each with the variable of that method. -/
+  eqMethods : List (Expr × Expr) := []
   deriving Inhabited
 
 /-- A translated subterm: the D-term, its type, its derivation, its source value, its D value
@@ -1026,6 +1039,12 @@ def deltaApp (c : Name) (e : Expr) : M Expr := do
 def isNumeral (e : Expr) : Bool :=
   !e.hasFVar && (e.isRawNatLit || e.isAppOfArity ``OfNat.ofNat 3)
 
+/-- The variable of the equality method of the type `T`, if `T` has one. -/
+def eqMethod? (ctx : Ctx) (T : Expr) : MetaM (Option Expr) := do
+  for (T', x) in ctx.eqMethods do
+    if ← isDefEq T T' then return some x
+  return none
+
 mutual
 
 /-- Translate a pure source term. -/
@@ -1064,6 +1083,11 @@ partial def goP (ctx : Ctx) (e : Expr) : M Res := do
   | _ =>
     let fn := e.getAppFn.consumeMData
     let args := e.getAppArgs
+    for (t, x) in ctx.methods do
+      let k := t.getAppNumArgs
+      if fn == t.getAppFn && k ≤ args.size && mkAppN fn (args.extract 0 k) == t then
+        if k == args.size then return ← goP ctx x
+        return ← applyAll ctx e x (args.extract k args.size) false
     match fn with
     | .const c _ => goConst ctx e c args
     | .fvar _ | .lam .. | .letE .. | .mdata .. =>
@@ -1161,7 +1185,8 @@ partial def applyPR (ctx : Ctx) (rf : Res) (ra : Res) (srcs : Array Expr) : M Re
   | some (.param _ h hc false n) =>
     unless n == srcs.size do fail m!"the partial application of the parameter `{rf.val}`"
     let pf ← mkAppM ``Den.app #[rf.pf, ra.pf, mkApp h ra.dv]
-    let val := if n == 1 then mkApp rf.val ra.val else mkAppN rf.val (srcs.map ctx.subst)
+    let val := (if n == 1 then mkApp rf.val ra.val
+      else mkAppN rf.val (srcs.map ctx.subst)).headBeta
     let cpf ← costPf #[rf.cpf, ra.cpf] fun ys => mkAppM ``CEq.app #[ys[0]!, ys[1]!, mkApp hc ra.dv]
     return { tm, ty := b, pf := ← mkExpectedTypeHint pf (denE ctx.gamma b tm ctx.rho val),
              val, dv := val, cpf }
@@ -1251,12 +1276,22 @@ partial def goDecide (ctx : Ctx) (P : Expr) : M Res := do
       let p := mkApp (mkConst ``Prim.finEq) n
       let tm := mkAppN (mkConst ``Tm.prim) #[Γ, pty, tyBool, p, ptm]
       return ← fin tm (← ifPf (mkAppM ``Den.prim #[p, ppf])) (← primC p pc)
+    if let some xm ← eqMethod? ctx (ctx.subst T) then
+      let r ← applyAll ctx (mkApp2 xm args[1]! args[2]!) xm #[args[1]!, args[2]!] false
+      return ← fin r.tm r.pf r.cpf
     let some k ← numKind (ctx.subst T) | fail m!"the equality `{P}` at a type without a primitive"
     let (pty, ptm, ppf, pc) ← pairR (← goP ctx args[1]!) (← goP ctx args[2]!)
     let p := match k with | none => mkConst ``Prim.natEq | some w => mkApp (mkConst ``Prim.weq) w
     let tm := mkAppN (mkConst ``Tm.prim) #[Γ, pty, tyBool, p, ptm]
     fin tm (← ifPf (mkAppM ``Den.prim #[p, ppf])) (← primC p pc)
   | some ``Ne, 3 =>
+    if let some xm ← eqMethod? ctx (ctx.subst args[0]!) then
+      let r ← applyAll ctx (mkApp2 xm args[1]! args[2]!) xm #[args[1]!, args[2]!] false
+      let pf ← ifPf do
+        let d ← mkDecide (← mkEq (ctx.subst args[1]!) (ctx.subst args[2]!))
+        mkAppM ``Den.decNot #[← mkExpectedTypeHint r.pf (denE Γ tyBool r.tm ctx.rho d)]
+      return ← fin (primB (mkConst ``Prim.bnot) tyBool r) pf
+        (← costPf #[r.cpf] fun ys => mkAppM ``CEq.decNot ys)
     if let some n ← finMod? (ctx.subst args[0]!) then
       let (pty, ptm, ppf, pc) ← pairR (← goP ctx args[1]!) (← goP ctx args[2]!)
       let tm := mkAppN (mkConst ``Tm.prim) #[Γ, tyBool, tyBool, mkConst ``Prim.bnot,
@@ -1935,6 +1970,8 @@ type), the cost parameters of the function parameters, the binders of the denota
 cost theorem, the arguments of the definition, and the D context and environment. -/
 structure Params where
   statics : Array Expr := #[]
+  /-- The instance parameters without an instance at the representation of the parameters. -/
+  insts : Array Expr := #[]
   costStatics : Array Expr := #[]
   dBinders : Array Expr := #[]
   cBinders : Array Expr := #[]
@@ -1944,6 +1981,157 @@ structure Params where
   rho : Expr
   /-- For each binder, whether the body or a later binder type mentions it. -/
   used : Array Bool := #[]
+
+/-- Add the parameter `x : T` named `n` with source value `val` to the D context: a function
+(`funShape`) as a D function value `g` with its hypotheses `hA` (denotation) and `hC` (cost),
+data as itself. A class method (`method`) is no binder of the theorems: `val` is the method,
+and `x` stands for it in the body. -/
+def addParam (O x val : Expr) (n : Name) (T : Expr) (method : Bool) (ps : Params)
+    (k : Params → MetaM Unit) : MetaM Unit := do
+  let i := ps.tys.length
+  let gam := gammaE ps.tys
+  let (doms, cod) ← funShape T
+  let tree := (← treeArg? cod).isSome
+  let eff := (← spcompArg? cod).isSome || tree
+  let fnParam := !doms.isEmpty || eff
+  let dτs ← if fnParam then doms.mapM fun d => return (← tyOf d).1 else pure #[]
+  let (τ, isOpt) ← if fnParam then do
+      let a := tupleTy dτs.toList
+      let some γ ← (do if let some γ ← spcompArg? cod then return some γ
+                        else treeArg? cod) | pure (tyC `arr #[a, (← tyOf cod).1], false)
+      pure (tyC `arr #[a, (← tyOf γ).1], false)
+    else tyOf T
+  let own := if method then #[] else #[x]
+  if let some (a, bt) := (if fnParam then tyArgs2 `arr τ else none) then
+    let nArgs := doms.size
+    let srcApp (v : Expr) : Expr := (mkAppN val (tupleProjs dτs.toList v)).headBeta
+    withLocalDeclD `g (valE τ) fun g => do
+      let hT ← withLocalDeclD `v (valE a) fun v => do
+        if eff then
+          let rhs ← if tree then mkAppM ``SPTree.compile #[srcApp v]
+            else pure (srcApp v)
+          mkForallFVars #[v] (← mkEq (mkApp3 (mkConst ``CTree.run) (valE bt) O
+            (mkApp g v)) rhs)
+        else
+          mkForallFVars #[v] (← mkEq (mkApp g v) (mkApp2 (mkConst ``CTree.ret)
+            (valE bt) (srcApp v)))
+      let csT ← if eff then pure (mkConst ``Nat)
+        else mkArrow (valE a) (mkConst ``Nat)
+      withLocalDeclD (n.appendAfter "Cost") csT fun cs => do
+        let hcT ← withLocalDeclD `v (valE a) fun v => do
+          if eff then
+            mkForallFVars #[v] (← mkAppM ``LE.le
+              #[mkApp2 (mkConst ``CTree.cost) (valE bt) (mkApp g v), cs])
+          else
+            mkForallFVars #[v] (← mkEq (mkApp g v) (← mkAppM ``stepN
+              #[mkConst ``CTree.tick, mkApp cs v,
+                mkApp2 (mkConst ``CTree.ret) (valE bt) (srcApp v)]))
+        withLocalDeclD `hA hT fun hA => withLocalDeclD `hC hcT fun hC => do
+          let en : Entry := { fvar := x.fvarId!, level := i, path := [], baseTy := τ,
+                              val, dval := g, fn := some (.param g hA hC eff nArgs) }
+          k { ps with costStatics := ps.costStatics.push cs,
+                      dBinders := ps.dBinders ++ own ++ #[g, hA],
+                      cBinders := ps.cBinders ++ own ++ #[g, hC],
+                      args := ps.args ++ own, entries := en :: ps.entries,
+                      tys := τ :: ps.tys,
+                      rho := mkAppN (mkConst ``Env.cons) #[gam, τ, g, ps.rho] }
+  else
+    let v ← if isOpt then encode T val else pure val
+    let en : Entry :=
+      { fvar := x.fvarId!, level := i, path := [], baseTy := τ, val, dval := v }
+    k { ps with dBinders := ps.dBinders ++ own, cBinders := ps.cBinders ++ own,
+                args := ps.args ++ own, entries := en :: ps.entries,
+                tys := τ :: ps.tys,
+                rho := mkAppN (mkConst ``Env.cons) #[gam, τ, v, ps.rho] }
+
+/-- Whether `t` is a class method term: it mentions an instance of `insts`, its free variables
+are static parameters or instances, and its type is data or a function on data. -/
+def isMethodTerm (stat insts : Array Expr) (t : Expr) : MetaM Bool := do
+  if t.hasLooseBVars then return false
+  unless t.hasAnyFVar (fun fv => insts.any (·.fvarId! == fv)) do return false
+  if t.hasAnyFVar (fun fv => !stat.any (·.fvarId! == fv) && !insts.any (·.fvarId! == fv)) then
+    return false
+  try
+    let T ← inferType t
+    if T.containsConst (fun c => c == ``SPComp || c == ``SPTree) then return false
+    let (doms, cod) ← funShape T
+    if (← spcompArg? cod).isSome || (← treeArg? cod).isSome then return false
+    for d in doms do discard <| tyOf d
+    discard <| tyOf cod
+    return true
+  catch _ => return false
+
+/-- The class method terms of `e` (`isMethodTerm`), each the longest such prefix of an
+application of a class projection or of a constant that is not unfolded, and the types
+`FTy.den F` of a static `F` at which `e` states an equality; the definitions that the
+translation unfolds (`unfoldable`, outside `CatCrypt.Core` and D) are scanned to the depth
+`depth`. -/
+partial def scanMethods (stat insts : Array Expr) (e : Expr) (depth : Nat)
+    (acc : Array Expr × Array Expr) : MetaM (Array Expr × Array Expr) := do
+  let go (x : Expr) (a : Array Expr × Array Expr) := scanMethods stat insts x depth a
+  match e with
+  | .app .. =>
+    let fn := e.getAppFn
+    let args := e.getAppArgs
+    let mut acc := acc
+    if fn.isConstOf ``Eq && args.size == 3 then
+      let T := args[0]!.consumeMData
+      if T.isAppOfArity ``FTy.den 1 && stat.contains T.appArg! && !acc.2.contains T then
+        acc := (acc.1, acc.2.push T)
+    if let .const c lvls := fn then
+      let proj := (← getProjectionFnInfo? c).any (·.fromClass)
+      let heads := proj || !(← unfoldable c)
+      for k' in [0:if heads then args.size else 0] do
+        let k := args.size - k'
+        let t := mkAppN fn (args.extract 0 k)
+        if ← isMethodTerm stat insts t then
+          let acc' := if acc.1.contains t then acc else (acc.1.push t, acc.2)
+          return ← (args.extract k args.size).foldlM (fun a x => go x a) acc'
+      acc ← args.foldlM (fun a x => go x a) acc
+      let native := (`CatCrypt.Core).isPrefixOf c || (`CatCrypt.Complexity).isPrefixOf c
+      if depth > 0 && !native && (← unfoldable c) then
+        let info ← getConstInfo c
+        if info.hasValue then
+          let v ← instantiateValueLevelParams info lvls
+          acc ← scanMethods stat insts (v.beta args) (depth - 1) acc
+      return acc
+    args.foldlM (fun a x => go x a) (← go fn acc)
+  | .lam _ _ b _ | .forallE _ _ b _ => go b acc
+  | .letE _ _ v b _ => go b (← go v acc)
+  | .mdata _ b => go b acc
+  | .proj _ _ s => go s acc
+  | _ => return acc
+
+/-- The name of a method term: the last component of its head constant. -/
+def methodName (t : Expr) : Name :=
+  match t.getAppFn.constName? with
+  | some (.str _ s) => .mkSimple s
+  | _ => `method
+
+/-- Add the class methods `ms` and the equality methods of the types `eqTys` to the D context,
+innermost; `k` receives the parameters, the methods and the equality methods, each with the
+variable that stands for it. -/
+partial def addMethods (O : Expr) (ms eqTys : List Expr) (ps : Params)
+    (methods eqs : List (Expr × Expr))
+    (k : Params → List (Expr × Expr) → List (Expr × Expr) → MetaM Unit) : MetaM Unit := do
+  match ms, eqTys with
+  | t :: ms, _ =>
+    let T ← inferType t
+    let n := methodName t
+    withLocalDeclD n T fun x =>
+      addParam O x t n T true ps fun ps' =>
+        addMethods O ms eqTys ps' ((t, x) :: methods) eqs k
+  | [], T :: eqTys =>
+    let dec ← synthInstance? (← mkAppM ``DecidableEq #[T])
+    let some inst := dec | addMethods O [] eqTys ps methods eqs k
+    let t ← withLocalDeclD `a T fun a => withLocalDeclD `b T fun b => do
+      mkLambdaFVars #[a, b] (mkApp2 (mkConst ``Decidable.decide)
+        (← mkEq a b) (mkApp2 inst a b))
+    let T2 ← inferType t
+    withLocalDeclD `eq T2 fun x =>
+      addParam O x t `eq T2 true ps fun ps' =>
+        addMethods O [] eqTys ps' methods ((T, x) :: eqs) k
+  | [], [] => k ps methods eqs
 
 /-- Reflect the definition `c`: define `c.d`, prove `c.d_den` and, when every construct is in
 the costed fragment, `c.d_cost`. -/
@@ -1967,9 +2155,15 @@ def reflect (c : Name) : Term.TermElabM Unit := do
           let ps' := { ps with statics := ps.statics.push f, args := ps.args.push a }
           params fuel (b.instantiate1 a) ps' k
       else if bi.isInstImplicit then
-        let some inst ← synthInstance? T
-          | throwError "reflect_d: no instance `{T}` at the representation of the parameters"
-        params fuel (b.instantiate1 inst) { ps with args := ps.args.push inst } k
+        if let some inst ← synthInstance? T then
+          params fuel (b.instantiate1 inst) { ps with args := ps.args.push inst } k
+        else
+          unless T.hasAnyFVar (fun fv => ps.statics.any (·.fvarId! == fv)) do
+            throwError "reflect_d: no instance `{T}` at the representation of the parameters"
+          withLocalDecl n .instImplicit T fun i =>
+            params fuel (b.instantiate1 i)
+              { ps with insts := ps.insts.push i, dBinders := ps.dBinders.push i,
+                        cBinders := ps.cBinders.push i, args := ps.args.push i } k
       else if b.hasLooseBVar 0 || !bi.isExplicit then
         unless (← isDefEq T (mkConst ``Nat)) || (← isDefEq T (mkConst ``FTy)) do
           throwError "reflect_d: the parameter `{n}` of `{c}` occurs in a type and is not a \
@@ -1983,65 +2177,8 @@ def reflect (c : Name) : Term.TermElabM Unit := do
             { ps with dBinders := ps.dBinders.push x, cBinders := ps.cBinders.push x,
                       args := ps.args.push x } k
       else
-        withLocalDeclD n T fun x => do
-          let i := ps.tys.length
-          let gam := gammaE ps.tys
-          let (doms, cod) ← funShape T
-          let tree := (← treeArg? cod).isSome
-          let eff := (← spcompArg? cod).isSome || tree
-          let fnParam := !doms.isEmpty || eff
-          let dτs ← if fnParam then doms.mapM fun d => return (← tyOf d).1 else pure #[]
-          let (τ, isOpt) ← if fnParam then do
-              let a := tupleTy dτs.toList
-              let some γ ← (do if let some γ ← spcompArg? cod then return some γ
-                                else treeArg? cod) | pure (tyC `arr #[a, (← tyOf cod).1], false)
-              pure (tyC `arr #[a, (← tyOf γ).1], false)
-            else tyOf T
-          if let some (a, bt) := (if fnParam then tyArgs2 `arr τ else none) then
-            let nArgs := doms.size
-            let srcApp (v : Expr) : Expr := mkAppN x (tupleProjs dτs.toList v)
-            let _ := a
-            withLocalDeclD `g (valE τ) fun g => do
-              let hT ← withLocalDeclD `v (valE a) fun v => do
-                if eff then
-                  let rhs ← if tree then mkAppM ``SPTree.compile #[srcApp v]
-                    else pure (srcApp v)
-                  mkForallFVars #[v] (← mkEq (mkApp3 (mkConst ``CTree.run) (valE bt) O
-                    (mkApp g v)) rhs)
-                else
-                  mkForallFVars #[v] (← mkEq (mkApp g v) (mkApp2 (mkConst ``CTree.ret)
-                    (valE bt) (srcApp v)))
-              let csT ← if eff then pure (mkConst ``Nat)
-                else mkArrow (valE a) (mkConst ``Nat)
-              withLocalDeclD (n.appendAfter "Cost") csT fun cs => do
-                let hcT ← withLocalDeclD `v (valE a) fun v => do
-                  if eff then
-                    mkForallFVars #[v] (← mkAppM ``LE.le
-                      #[mkApp2 (mkConst ``CTree.cost) (valE bt) (mkApp g v), cs])
-                  else
-                    mkForallFVars #[v] (← mkEq (mkApp g v) (← mkAppM ``stepN
-                      #[mkConst ``CTree.tick, mkApp cs v,
-                        mkApp2 (mkConst ``CTree.ret) (valE bt) (srcApp v)]))
-                withLocalDeclD `hA hT fun hA => withLocalDeclD `hC hcT fun hC => do
-                  let en : Entry := { fvar := x.fvarId!, level := i, path := [], baseTy := τ,
-                                      val := x, dval := g,
-                                      fn := some (.param g hA hC eff nArgs) }
-                  params fuel (b.instantiate1 x)
-                    { ps with costStatics := ps.costStatics.push cs,
-                              dBinders := ps.dBinders ++ #[x, g, hA],
-                              cBinders := ps.cBinders ++ #[x, g, hC],
-                              args := ps.args.push x, entries := en :: ps.entries,
-                              tys := τ :: ps.tys,
-                              rho := mkAppN (mkConst ``Env.cons) #[gam, τ, g, ps.rho] } k
-          else
-            let v ← if isOpt then encode T x else pure x
-            let en : Entry :=
-              { fvar := x.fvarId!, level := i, path := [], baseTy := τ, val := x, dval := v }
-            params fuel (b.instantiate1 x)
-              { ps with dBinders := ps.dBinders.push x, cBinders := ps.cBinders.push x,
-                        args := ps.args.push x, entries := en :: ps.entries,
-                        tys := τ :: ps.tys,
-                        rho := mkAppN (mkConst ``Env.cons) #[gam, τ, v, ps.rho] } k
+        withLocalDeclD n T fun x =>
+          addParam O x x n T false ps fun ps' => params fuel (b.instantiate1 x) ps' k
     let used ← lambdaTelescope info.value fun xs body => do
       let mut us : Array Bool := #[]
       for h : j in [0:xs.size] do
@@ -2053,7 +2190,12 @@ def reflect (c : Name) : Term.TermElabM Unit := do
       return us
     params 1024 info.type { rho := mkConst ``Env.nil, used } fun ps bodyT => do
       let body := info.value.beta ps.args
-      let ctx : Ctx := { entries := ps.entries, tys := ps.tys, rho := ps.rho, oracle := O }
+      let (ms, eqTys) ← if ps.insts.isEmpty then pure (#[], #[])
+        else scanMethods ps.statics ps.insts body 8 (#[], #[])
+      let ms := ms.qsort (fun a b => a.approxDepth.toNat > b.approxDepth.toNat)
+      addMethods O ms.toList eqTys.toList ps [] [] fun ps methods eqs => do
+      let ctx : Ctx := { entries := ps.entries, tys := ps.tys, rho := ps.rho, oracle := O,
+                         methods, eqMethods := eqs }
       let tree := (← treeArg? bodyT).isSome
       let eff := (← spcompArg? bodyT).isSome
       let go := if tree then goT ctx body else if eff then goM ctx body else goP ctx body

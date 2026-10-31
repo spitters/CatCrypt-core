@@ -35,7 +35,11 @@ statement, and aligned with the binders of `R.tree.timed`:
   its D value `gA` and `hA : ∀ v, TimedSim (fun a w => a = w) 1 0 (ACost …, A …) (gA v)`,
   which `CTree.timedSim_costTree` discharges for the costed tree of a D value;
 * a tree `p` without arguments is replaced by the costed tree `p`, its D value `gp` and
-  `hp : TimedSim (fun a w => a = w) 1 0 (0, p) (gp ())`.
+  `hp : TimedSim (fun a w => a = w) 1 0 (0, p) (gp ())`;
+* a class method of `reflect_d` (the D value `gm` of a method `m` of a local instance, after
+  the binders of the source) gets a cost function `mDCost`, the step equation `hm` and the
+  bound `hmCost : ∀ v, mDCost v ≤ 0`: the method costs the unit step of its application, as
+  `derive_timed` charges a method of a local instance.
 
 ## The walk
 
@@ -480,7 +484,7 @@ def linkTimed (R : Name) : TermElabM Unit := do
         let xn ← a.fvarId!.getUserName
         let triple ← if i + 2 < dBs.size then do
             let gT ← whnfR (← inferType dBs[i+1]!)
-            pure (gT.isAppOf ``Val)
+            pure (gT.isAppOf ``Val && (← inferType dBs[i+2]!).containsFVar a.fvarId!)
           else pure false
         if !triple then
           unless ← isDefEq T xT do
@@ -542,6 +546,36 @@ def linkTimed (R : Name) : TermElabM Unit := do
             withLocalDeclD ((xn.appendAfter "Cost").appendBefore "h") hFCT fun hFC =>
               go (j + 1) (i + 3) (cb.instantiate1 fc) (tArgs ++ #[a, fc])
                 (binders ++ #[a, fc, g, FC, hg, hFC]) (kinds.insert g.fvarId! (.dataFn hg hFC))
+      else if i + 1 < dBs.size then
+        -- A class method of `reflect_d`: a data function value `g` without a source binder,
+        -- priced at the unit step of its application (cost `0` beyond it).
+        let g := dBs[i]!
+        let hden := dBs[i+1]!
+        let gT ← whnfR (← inferType g)
+        let τg := gT.appArg!
+        unless gT.isAppOf ``Val && τg.isAppOfArity ``Ty.arr 2 do
+          throwError "link_timed: the binder `{g}` of `{denN}` is not a method value"
+        let aτ := τg.getArg! 0
+        let (hgT, hFCT, mn) ← withLocalDeclD `FC
+            (← mkArrow (mkApp (mkConst ``Val) aτ) (mkConst ``Nat)) fun FC => do
+          forallTelescope (← inferType hden) fun vs eq => do
+            let some (_, _, r) := eq.eq? | throwError "link_timed: `{hden}`"
+            let v := vs[0]!
+            let e1 ← mkEq (mkApp g v) (← mkAppM ``stepN #[mkConst ``CTree.tick, mkApp FC v, r])
+            let e2 ← mkAppM ``LE.le #[mkApp FC v, mkNatLit 0]
+            let mn := match r.appArg!.getAppFn.constName? with
+              | some (.str _ s) => Name.mkSimple s
+              | _ => `method
+            return (← mkLambdaFVars #[FC] (← mkForallFVars vs e1),
+              ← mkLambdaFVars #[FC] (← mkForallFVars vs e2), mn)
+        let lctx := (← getLCtx).setUserName g.fvarId! (mn.appendBefore "g")
+        withLCtx lctx (← getLocalInstances) do
+        withLocalDeclD (mn.appendAfter "DCost")
+            (← mkArrow (mkApp (mkConst ``Val) aτ) (mkConst ``Nat)) fun FC =>
+        withLocalDeclD (mn.appendBefore "h") (hgT.beta #[FC]) fun hg =>
+        withLocalDeclD ((mn.appendAfter "Cost").appendBefore "h") (hFCT.beta #[FC]) fun hFC =>
+          go j (i + 2) tty tArgs (binders ++ #[g, FC, hg, hFC])
+            (kinds.insert g.fvarId! (.dataFn hg hFC))
       else
         let timedApp := mkAppN (mkConst timedN) tArgs
         let dC := mkAppN (mkConst dN) statics
