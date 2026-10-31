@@ -150,8 +150,9 @@ def handlerType (n : Name) (pos : Nat) : MetaM Expr := do
       throwError "derive_timed_structure: the handler cost of `{n}` has a dependent type `{t}`"
     return t
 
-/-- The kind of a field of type `t`. -/
-def fieldKind (t : Expr) : MetaM FieldKind := do
+/-- The kind of a field `f` of type `t`. A field whose type is a distribution (`SDistr β` or
+`PMF β`) under binders has no cost structure and is refused. -/
+def fieldKind (t : Expr) (f : Name := .anonymous) : MetaM FieldKind := do
   if ← isProp t then return .prop
   if ← isTypeFormerType t then return .type
   forallTelescope (← whnfR t) fun ys b => do
@@ -159,6 +160,9 @@ def fieldKind (t : Expr) : MetaM FieldKind := do
     if ← isSPCompType b then return .comp ys.size
     if let some hh ← handlerHead? b then
       return if hh.circuit then .circuit ys.size hh.head else .bounded ys.size hh.head
+    if b.isAppOf ``CatCrypt.Prob.SDistr || (← whnfR b).isAppOf ``PMF then
+      throwError "derive_timed_structure: distribution-valued field `{f}`: no cost structure; \
+        state the adversary as SPComp or exclude it with a reason"
     return .data
 
 /-- The mirrored type of a field of type `t` and kind `k`; `gs` is the gate set of a field of a
@@ -247,7 +251,7 @@ def gateSetTypes (ps : Array Expr) (rest : Expr) (fields : Array Name) :
     let mut acc := #[]
     for x in xs, f in fields do
       let d ← inferType x
-      match ← fieldKind d with
+      match ← fieldKind d f with
       | .circuit _ H =>
         let g ← forallTelescope (← whnfR d) fun _ b => do
           let some hh ← handlerHead? b
@@ -298,7 +302,7 @@ def mirrorText (S : Name) : TermElabM String :=
       let mut gi := 0
       for x in xs, f in fields do
         let d ← inferType x
-        let k ← fieldKind d
+        let k ← fieldKind d f
         if !(k matches .prop) && hidden.any (d.containsFVar ·.fvarId!) then
           throwError "derive_timed_structure: the type of the field `{f}` depends on a proof \
             or a computation field"
@@ -329,7 +333,7 @@ def defineErases (S : Name) (lvls : List Level) (lps : List Name) : TermElabM Un
           let f := fields[i]
           let .forallE nm d b _ ← whnf ty
             | throwError "derive_timed_structure: unexpected constructor type"
-          match ← fieldKind d with
+          match ← fieldKind d f with
           | .prop =>
             withLocalDeclD nm d fun p =>
               go (i + 1) (b.instantiate1 p) (vals.push p) (proofs.push p) conjs
@@ -366,7 +370,7 @@ def defineTimeBound (S : Name) (lvls : List Level) (lps : List Name) : TermElabM
       let fs ← forallBoundedTelescope rest fields.size fun xs _ =>
         (xs.zip fields).mapM fun (x, f) => do
           let d ← inferType x
-          return (f, d, ← fieldKind d)
+          return (f, d, ← fieldKind d f)
       let rec go (i : Nat) (bounds conj : Array Expr) : TermElabM (Expr × Expr) := do
         if h : i < fs.size then
           let (f, _, k) := fs[i]

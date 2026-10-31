@@ -416,6 +416,13 @@ theorem _root_.CatCrypt.Tactics.DeriveTimed.erase_ite_oracle {D R α : Type} (c 
     (if c then x else y).erase = if c then x.erase else y.erase := by
   split <;> rfl
 
+/-- `Sum.map` of two identity functions is the identity; stated with the functions as
+abstractions, so that it applies to the round trip `fun x => (ι x).1` of erasure and lift, which
+is an identity up to eta. -/
+theorem _root_.CatCrypt.Tactics.DeriveTimed.sum_map_id_fun {α β : Type _} (x : α ⊕ β) :
+    Sum.map (fun a => a) (fun b => b) x = x := by
+  cases x <;> rfl
+
 /-- The recursor of `Bool` at a constant motive is the `if` on its major premise. -/
 theorem _root_.CatCrypt.Tactics.DeriveTimed.boolRec_eq_ite {α : Sort _} (f t : α) (b : Bool) :
     Bool.rec (motive := fun _ => α) f t b = if b = true then t else f := by
@@ -3875,6 +3882,25 @@ partial def deriveTimed (ctx : Ctx) (c : Name) : TermElabM Unit := do
         (try rfl)))
   let close ← mkClose lemmas recursive
   let closeDisch ← mkClose lemmas true
+  -- A case of a match on an event whose constructor carries a function: the costed match is on
+  -- the erasure of the lifted event, so that a case of one match within a case of the other
+  -- carries an equation between constructors under `Sum.map` and `Option.map`. The equations
+  -- are reduced at the constructors (`simp_all`): a case of distinct constructors closes, an
+  -- equation of a variable is substituted, and the round trip of erasure and lift on a variable
+  -- is the identity (`sum_map_id_fun`, `Option.map_id_fun'`).
+  let crossNames := #[``Sum.map_inl, ``Sum.map_inr, ``Option.map_some, ``Option.map_none,
+    ``Sum.inl.injEq, ``Sum.inr.injEq, ``Option.some.injEq, ``imp_false, ``forall_eq',
+    ``forall_eq, ``forall_apply_eq_imp_iff, ``forall_eq_apply_imp_iff,
+    ``forall_apply_eq_imp_iff₂, ``not_true_eq_false]
+  let crossLemmas : Array (TSyntax `Lean.Parser.Tactic.simpLemma) ←
+    crossNames.mapM fun n => `(Lean.Parser.Tactic.simpLemma| $(mkIdent n):ident)
+  let roundNames := #[``Sum.map_map, ``Option.map_map, ``Function.comp_def,
+    ``CatCrypt.Tactics.DeriveTimed.sum_map_id_fun, ``Option.map_id_fun']
+  let roundLemmas : Array (TSyntax `Lean.Parser.Tactic.simpLemma) ←
+    roundNames.mapM fun n => `(Lean.Parser.Tactic.simpLemma| $(mkIdent n):ident)
+  let closeRound ← mkClose (lemmas ++ roundLemmas) false
+  let closeCross ← `(tactic| ((try simp_all only [$crossLemmas,*, reduceCtorEq]) <;>
+    (try subst_vars) <;> $closeRound))
   -- A callee whose body is a match (an auxiliary definition `B.tree.match_i` of
   -- `derive_reduction`) called at a discriminant built from a constructor, where its erasure
   -- theorem does not close the goal: the callee and its costed form are unfolded, the
@@ -4046,6 +4072,13 @@ partial def deriveTimed (ctx : Ctx) (c : Name) : TermElabM Unit := do
     -- A goal left with a structure rebuilt from the projections of a state, one of which a case
     -- hypothesis rewrote (`{ cur := k + 1, env := s.cfg.env } = s.cfg` with `s.cfg.cur = k + 1`).
     let rem ← rem.filterM fun g => return !(← closeByCaseHypsRev g)
+    -- A case of a match on an event whose constructor carries a function (`closeCross`); a
+    -- goal it does not close is reported as it was.
+    let rem ← rem.filterM fun g => do
+      let s ← saveState
+      if (← Tactic.run g (Tactic.evalTactic closeCross)).isEmpty then return false
+      s.restore
+      return true
     unless rem.isEmpty do
       fail m!"the erasure theorem `{eraseName}` is not closed by unfolding and the erasure \
         lemmas; goals left:{indentD (MessageData.joinSep (rem.map (.ofGoal ·)) "\n")}"
