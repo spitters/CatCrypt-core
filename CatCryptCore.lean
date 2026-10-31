@@ -477,6 +477,7 @@ public import CatCryptCore.Crypto.UCSquare
 public import CatCryptCore.Crypto.UCInterleave
 public import CatCryptCore.Crypto.UCInterleaveCost
 public import CatCryptCore.Crypto.UCSimulatorCost
+public import CatCryptCore.Crypto.UCSimulatorCostGraded
 public import CatCryptCore.Crypto.UCFuelPad
 public import CatCryptCore.Crypto.UCFuelPadTimed
 public import CatCryptCore.Crypto.UCOneShot
