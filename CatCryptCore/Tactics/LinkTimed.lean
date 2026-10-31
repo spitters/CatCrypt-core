@@ -35,7 +35,8 @@ statement, and aligned with the binders of `T.timed`:
 * a record that `reflect_d` unbundles is the constructor applied to its fields, and the fields
   that are not types are binders kept in place;
 * a data binder, a proof binder and an unused binder are kept, an unused function binder with
-  its companion of `derive_timed`;
+  its companion of `derive_timed`; an unused binder whose costed form has another type (a tree
+  function `O' → SPTree.Timed O`) is the binder of the costed form;
 * a data function `f` is kept with its companion `fCost` of `derive_timed`, its D value `gf`, a
   cost function `fDCost`, the step equation `hf : ∀ v, gf v = stepN CTree.tick (fDCost v)
   (.ret (f …))` and the bound `hfCost : ∀ v, fDCost v ≤ fCost …`;
@@ -59,7 +60,10 @@ data term (`TSim.letE`) or of a computation (`TSim.bind`), a call of a tree func
 arguments (`TSim.call`) or on `unit` (`TSim.call0`), `ite`, `fail`, and a data leaf
 (`TSim.ret`); data terms by `DSim.var`, `lit`, `natLit`, `pair`, `fst`, `snd`, `inl`, `inr`,
 `letE`, `prim` (and `decide` for the atom of a condition), `app` of a data function value and
-`appFree` of a projection or re-pairing value. The two branches of an `ite` are derived each
+`appFree` of a projection or re-pairing value. A costed bind whose continuation returns a
+projection or re-pairing of its argument at zero cost (the projection of a costed table onto its
+plain value) is removed by `TSim.bindRet`, the leaves then related through that map. The two
+branches of an `ite` are derived each
 at its own allowance and lifted to the larger one by `TSim.mono`.
 
 At each tree node the costed tree of the goal is replaced by its tree under a fresh step cost
@@ -76,6 +80,8 @@ whose type differs from their D representation (`Option`).
 ## Main results
 
 * `TimedLink.TSim.conv`: the costed tree of a goal against its tree under a smaller step cost.
+* `TimedLink.TSim.bindRet`: a costed bind with a zero-cost returning continuation against the
+  D term of its tree.
 * `TimedLink.DSim.appFree`: an application that the costed form charges nothing for, paid by the
   allowance.
 * `TimedLink.DSim.inl`, `TimedLink.DSim.inr`: the injections into a sum.
@@ -89,7 +95,7 @@ namespace CatCrypt.Complexity.D.TimedLink
 
 open CatCrypt.Core
 
-variable {Γ : List Ty} {ρ : Env Γ} {α : Type} {τ : Ty} {K : ℕ}
+variable {Γ : List Ty} {ρ : Env Γ} {α γ : Type} {τ : Ty} {K : ℕ}
 
 /-- A costed tree `X` simulates whatever its tree simulates under a step cost at most that of
 `X`. -/
@@ -105,6 +111,42 @@ theorem DSim.appFree {a b : Ty} {F : Tm Γ (.arr a b)} {x : Tm Γ a} {g : Val (.
     DSim K (n + (1 + d)) c (.app F x) ρ w := by
   obtain ⟨mx, hmx, l⟩ := hx
   exact ⟨0 + mx + (m + 1), Reflect.CEq.app hF hmx hg, by omega⟩
+
+/-- A costed bind whose continuation returns `h y` at zero cost relates to what its tree relates
+to, the leaves related through `h`. -/
+theorem timedSimTree_bindRet {β : Type} {E : α → β → Prop} {h : γ → α} {n : ℕ}
+    {A : SPTree.Timed γ} {t : CTree β} (hA : TimedSimTree (fun a w => E (h a) w) K n A t) :
+    TimedSimTree E K n (A.bind fun y => (0, .ret (h y))).2 t := by
+  induction hA with
+  | ret hR => exact .ret hR
+  | tick _ hm ih => exact .tick ih hm
+  | sample f e mb _ hmb ih =>
+    refine .sample f e mb ih fun b => ?_
+    simp only [SPTree.Timed.bind_ret_fst, Nat.add_zero]
+    exact hmb b
+  | get i f mb _ hmb ih =>
+    refine .get i f mb ih fun x => ?_
+    simp only [SPTree.Timed.bind_ret_fst, Nat.add_zero]
+    exact hmb x
+  | set i f v mb _ hmb ih =>
+    refine .set i f v mb ih ?_
+    simp only [SPTree.Timed.bind_ret_fst, Nat.add_zero]
+    exact hmb
+  | fail => exact .fail
+  | query d r x mb _ hmb ih =>
+    refine .query d r x mb ih fun y => ?_
+    simp only [SPTree.Timed.bind_ret_fst, Nat.add_zero]
+    exact hmb y
+
+/-- A costed bind whose continuation returns `h y` at zero cost (the projection of a costed value
+of `derive_timed` onto its plain value) against the D term of its tree, the leaves related
+through `h`. -/
+theorem TSim.bindRet {E : α → Val τ → Prop} {h : γ → α} {x : ℕ × SPTree.Timed γ} {t : Tm Γ τ}
+    {n : ℕ} (hx : TSim (fun a w => E (h a) w) K n x t ρ) :
+    TSim E K n (SPTree.Timed.delay x.1 (x.2.bind fun y => (0, .ret (h y)))) t ρ := by
+  unfold TSim TimedSim
+  simp only [SPTree.Timed.delay, SPTree.Timed.bind_ret_fst, Nat.add_zero]
+  exact timedSimTree_bindRet hx
 
 /-- The left injection of a data term into a sum costs nothing beyond the term. -/
 theorem DSim.inl {a b : Ty} {x : Tm Γ a} {v : Val a} {n c : ℕ} (h : DSim K n c x ρ v) :
@@ -426,6 +468,33 @@ def joinBranches (n : Expr) (bs : Array (Expr × Expr × Expr)) : LinkM Unit := 
     let hn ← mkDecideProof (← mkAppM ``LE.le #[← instantiateMVars nB, mkNatLit k])
     closeWith h (← mkAppM ``TSim.mono #[hn, g])
 
+/-- Whether `e` is built from the variable `v` by `Prod.fst`, `Prod.snd` and `Prod.mk` alone: a
+projection or re-pairing of a pair argument, which `derive_timed` charges nothing for. -/
+partial def isPairMap (v e : Expr) : MetaM Bool := do
+  let e := (← instantiateMVars e).headBeta
+  if e == v then return true
+  if e.isAppOfArity ``Prod.fst 3 || e.isAppOfArity ``Prod.snd 3 then
+    return ← isPairMap v e.appArg!
+  if e.isAppOfArity ``Prod.mk 4 then
+    return (← isPairMap v (e.getArg! 2)) && (← isPairMap v (e.getArg! 3))
+  return false
+
+/-- Whether the costed tree `X` is `delay x.1 (x.2.bind fun y => (0, ret (h y)))` for a
+projection or re-pairing `h` (`isPairMap`): the projection of the costed values of `x` onto their
+plain values, which `TSim.bindRet` removes. -/
+def isBindRet (X : Expr) : MetaM Bool := do
+  let X := (← instantiateMVars X).headBeta
+  unless X.isAppOfArity ``SPTree.Timed.delay 3 do return false
+  let x := X.getArg! 2
+  unless x.isAppOfArity ``SPTree.Timed.bind 4 do return false
+  let .lam n T body _ := x.getArg! 3 | return false
+  withLocalDeclD n T fun y => do
+    let b := (body.instantiate1 y).headBeta
+    unless b.isAppOfArity ``Prod.mk 4 do return false
+    let r := b.getArg! 3
+    unless r.isAppOfArity ``SPTree.Timed.ret 2 do return false
+    isPairMap y r.appArg!
+
 /-- Derive the `TSim` goal `g` construct by construct. -/
 partial def solveT (g : MVarId) : LinkM Unit := g.withContext do
   let as ← tsimArgs (← g.getType)
@@ -436,7 +505,13 @@ partial def solveT (g : MVarId) : LinkM Unit := g.withContext do
   let ret (g : MVarId) : LinkM Unit := do
     let m ← applyRule (← conv g) ``TSim.ret
     solveD (← arg m `ht).mvarId!
-    closeWith (← arg m `hE) (← mkEqRefl (← instantiateMVars (← arg m `a)))
+    let hE ← arg m `hE
+    let some (_, l, _) := (← whnfR (← instantiateMVars (← inferType hE))).eq? |
+      failL m!"the leaf relation{indentExpr (← inferType hE)}\nis not an equation"
+    closeWith hE (← mkEqRefl l)
+  if ← isBindRet as[6]! then
+    let m ← applyRule g ``TSim.bindRet
+    return ← solveT (← arg m `hx).mvarId!
   match t.getAppFn.constName?, t.getAppNumArgs with
   | some ``Tm.letE, 5 =>
     let e ← instantiateMVars (t.getArg! 3)
@@ -576,17 +651,6 @@ def eqRel (γ vτ : Expr) : MetaM Expr := do
 def leafTy (T : Expr) : MetaM Expr :=
   forallTelescope T fun _ c => return c.appArg!
 
-/-- Whether `e` is built from the variable `v` by `Prod.fst`, `Prod.snd` and `Prod.mk` alone: a
-projection or re-pairing of a pair argument, which `derive_timed` charges nothing for. -/
-partial def isPairMap (v e : Expr) : MetaM Bool := do
-  let e := (← instantiateMVars e).headBeta
-  if e == v then return true
-  if e.isAppOfArity ``Prod.fst 3 || e.isAppOfArity ``Prod.snd 3 then
-    return ← isPairMap v e.appArg!
-  if e.isAppOfArity ``Prod.mk 4 then
-    return (← isPairMap v (e.getArg! 2)) && (← isPairMap v (e.getArg! 3))
-  return false
-
 /-- The tree `T` that `link_timed x` links, a constant with the costed form `T.timed`, the D-term
 `T.d` and its denotation theorem `T.d_den`: `x.tree` when it has the three (a reduction of
 `derive_reduction`, a field `R.f` of a structure-valued reduction with its tree `R.f.tree`, a
@@ -644,6 +708,17 @@ partial def linkTimed (tree : Name) : TermElabM Unit := do
             pure (gT.isAppOf ``Val && (← inferType dBs[i+2]!).containsFVar a.fvarId!)
           else pure false
         if !triple then
+          -- A binder that the D-term does not read (outside `ρ`), as a tree function whose
+          -- costed form has another type, is the binder of the costed form.
+          if !(← isDefEq T xT) && !(← instantiateMVars rho).containsFVar a.fvarId! then
+            return ← withLocalDeclD tn T fun a' => do
+              let tb := tb.instantiate1 a'
+              if let .forallE cn cT cb _ := tb then
+                if cn == tn.appendAfter "Cost" then
+                  return ← withLocalDeclD cn cT fun fc =>
+                    go (j + 1) (i + 1) (cb.instantiate1 fc) (tArgs ++ #[a', fc])
+                      (binders ++ #[a', fc]) kinds
+              go (j + 1) (i + 1) tb (tArgs.push a') (binders.push a') kinds
           unless ← isDefEq T xT do
             throwError "link_timed: the binder `{tn}` of `{timedN}` does not match `{xn}`"
           let tb := tb.instantiate1 a

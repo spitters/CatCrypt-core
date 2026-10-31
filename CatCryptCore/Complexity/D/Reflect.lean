@@ -75,7 +75,7 @@ the theorems apply to every record whose type fields are finite ground types.
 ## The cost theorem
 
 When every construct of the body is in the costed fragment (all of the above except λ-terms
-applied in the body, matches on sums and lists, `foldl`, `iter` and `Option` constructors),
+applied to functions in the body, matches on sums and lists, `foldl`, `iter` and `Option` constructors),
 the command also proves `f.d_cost`: `f.d.cost ρ = c` for data and `f.d.cost ρ ≤ B` for a
 computation, `c` and `B` expressions in the parameters. A data function parameter `A` takes a
 cost function `ACost : Val a → ℕ` with `∀ v, g v = stepN CTree.tick (ACost v) (.ret (A v))`;
@@ -92,7 +92,8 @@ type `R` (the finite ground type `FTy.tab q f`), products, sums and lists of the
 `Option α` as `α`'s sum with `Unit`, at the parameters, the result and the scrutinees of
 matches; functions as parameters, `let`-bound values and arguments of λ-terms.
 
-Terms: variables, `fun`, application, `let`, numerals and the literals `true`, `false`, `()`
+Terms: variables, `fun`, application (a λ-term applied to a datum is the `let` of the
+datum), `let`, numerals and the literals `true`, `false`, `()`
 and `BitVec.ofNat w n`; the operations `+ - * / %` on `ℕ`, `+ - * &&& ||| ^^^ ~~~ <<< >>>` on
 words, `+ - *` and numerals on `Fin m` and `ZMod m`, `&&`, `||`, `!`, `^^` on `Bool`,
 `BitVec.ofNat`, `BitVec.toNat`, `BitVec.setWidth`, `Fin.val`, `ZMod.val` and the cast of a
@@ -1136,7 +1137,14 @@ partial def goP (ctx : Ctx) (e : Expr) : M Res := do
       return ← applyAll ctx e x rest false
     match fn with
     | .const c _ => goConst ctx e c args
-    | .fvar _ | .lam .. | .letE .. | .mdata .. =>
+    | .lam n T body _ =>
+      -- A λ-term applied to a datum (not a function) is a `let` of the datum.
+      if !args.isEmpty && !(← whnf (ctx.subst T)).isForall then
+        let rest := args.extract 1 args.size
+        return ← goP ctx (.letE n T args[0]! (mkAppN body (rest.map (·.liftLooseBVars 0 1)))
+          false)
+      applyAll ctx e fn args false
+    | .fvar _ | .letE .. | .mdata .. =>
       if args.isEmpty then fail m!"the term `{e}`"
       applyAll ctx e fn args false
     | _ => fail m!"the term `{e}`"
