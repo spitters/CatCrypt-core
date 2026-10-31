@@ -3901,6 +3901,18 @@ partial def deriveTimed (ctx : Ctx) (c : Name) : TermElabM Unit := do
   let closeRound ← mkClose (lemmas ++ roundLemmas) false
   let closeCross ← `(tactic| ((try simp_all only [$crossLemmas,*, reduceCtorEq]) <;>
     (try subst_vars) <;> $closeRound))
+  -- The round trip of erasure and lift on a variable inside an equation between constructors
+  -- (`Sum.map ε (Sum.map ι x) = Sum.inl y`): the round-trip lemmas and `id_eq` in the
+  -- reduction of the hypotheses; an equation of two constructors of another inductive type,
+  -- also under binders, by `grind`.
+  let crossRoundLemmas : Array (TSyntax `Lean.Parser.Tactic.simpLemma) ←
+    (crossNames ++ roundNames ++ #[``id_eq]).mapM fun n =>
+      `(Lean.Parser.Tactic.simpLemma| $(mkIdent n):ident)
+  let closeRoundId ← mkClose (lemmas ++ roundLemmas ++
+    #[← `(Lean.Parser.Tactic.simpLemma| $(mkIdent ``id_eq):ident)]) false
+  let closeCrossRound ← `(tactic|
+    ((try simp_all only [$crossRoundLemmas,*, reduceCtorEq]) <;> (try subst_vars) <;>
+      $closeRoundId <;> (try grind)))
   -- A callee whose body is a match (an auxiliary definition `B.tree.match_i` of
   -- `derive_reduction`) called at a discriminant built from a constructor, where its erasure
   -- theorem does not close the goal: the callee and its costed form are unfolded, the
@@ -4077,6 +4089,8 @@ partial def deriveTimed (ctx : Ctx) (c : Name) : TermElabM Unit := do
     let rem ← rem.filterM fun g => do
       let s ← saveState
       if (← Tactic.run g (Tactic.evalTactic closeCross)).isEmpty then return false
+      s.restore
+      if (← Tactic.run g (Tactic.evalTactic closeCrossRound)).isEmpty then return false
       s.restore
       return true
     unless rem.isEmpty do

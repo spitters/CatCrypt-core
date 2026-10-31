@@ -826,7 +826,9 @@ def hoist (ctx : RCtx) (name : Name) (e α : Expr) : TermElabM Expr := do
   let type ← mkForallFVars xs (mkApp (mkConst ``CatCrypt.Core.SPTree) α)
   let lps := (collectLevelParams (collectLevelParams {} value) type).params.toList
   CatCrypt.Tactics.DeriveTimed.addTimedDef name lps type value
-  return mkAppN (mkConst name (lps.map mkLevelParam)) xs
+  -- A `let` local among `xs` is a `let` of the definition, not a binder.
+  let args ← xs.filterM fun x => return !(← x.fvarId!.isLetVar)
+  return mkAppN (mkConst name (lps.map mkLevelParam)) args
 
 /-- The trailing binders `ys` of a function `k` applied to fresh locals named `n`, and the
 body `k ys` with the head beta-reduced. -/
@@ -1880,6 +1882,41 @@ def closeEpsGoal (g : MVarId) : TermElabM Unit := do
         | (simp only [Sum.map_id_id, id_eq]; done)))
   unless gs.isEmpty do fail m!"internal: an erasure map is not closed"
 
+/-- The arguments of the costed form `c.f.treeHat.timed` at the values `yh` of the costed state
+for the binders `ys` of the field: a binder that is a function (`Kind.fn`) has the costed
+closure `(f, fCost)` as its value and is passed as the function and its cost companion. -/
+def hatFieldArgs (ys yh : Array Expr) : TermElabM (Array Expr) := do
+  let mut out := #[]
+  for y in ys, z in yh do
+    if (← CatCrypt.Tactics.DeriveTimed.classify (← inferType y)) matches .fn then
+      out := out.push (← mkAppM ``Prod.fst #[z]) |>.push (← mkAppM ``Prod.snd #[z])
+    else out := out.push z
+  return out
+
+/-- The binders of the costed state for the binders `ys` of a field, read off the costed form
+`tcT` of its hat tree: a function binder (`Kind.fn`) and its cost companion are one binder of
+the costed closure type (`hatTy?`). Continued with the binders and the arguments of `tcT`. -/
+partial def withHatFieldBinders {γ : Type} (ys : Array Expr) (tcT : Expr)
+    (k : Array Expr → Array Expr → TermElabM γ) : TermElabM γ :=
+  go 0 tcT #[] #[]
+where
+  go (i : Nat) (ty : Expr) (zs args : Array Expr) : TermElabM γ := do
+    if h : i < ys.size then
+      let .forallE n t b _ ← whnf ty
+        | fail m!"the costed form of a field takes fewer arguments than the field"
+      if (← CatCrypt.Tactics.DeriveTimed.classify (← inferType ys[i])) matches .fn then
+        let some ht ← CatCrypt.Tactics.DeriveTimed.hatTy? t
+          | fail m!"internal: the function binder `{ys[i]}` has no costed closure type"
+        withLocalDeclD n ht fun z => do
+          let f ← mkAppM ``Prod.fst #[z]
+          let c ← mkAppM ``Prod.snd #[z]
+          let .forallE _ _ b' _ ← whnf (b.instantiate1 f)
+            | fail m!"internal: the function binder `{ys[i]}` has no cost companion"
+          go (i + 1) (b'.instantiate1 c) (zs.push z) (args.push f |>.push c)
+      else
+        withLocalDeclD n t fun z => go (i + 1) (b.instantiate1 z) (zs.push z) (args.push z)
+    else k zs args
+
 /-- Define `c.timed` at the costed parameters of `S` from the costed forms `c.f.treeHat.timed`
 of the computation fields, whose binders hold functions, and prove
 `c.erase_timed : S.Timed.ErasesHat qs q̂s εs (c.timed …) (c …)`, with `q̂ = hatTy? q` and
@@ -1993,10 +2030,8 @@ partial def assembleStructHat (c : Name) (levels : List Level) (levelParams : Li
       let tc := Lean.mkConst (hatName fd ++ `timed) levels
       let fcs := compsOf fd.name
       let tcT ← instantiateForall (← inferType tc) bs
-      let (fv, cv) ← forallBoundedTelescope tcT fd.ys.size fun yh _ => do
-        unless yh.size == fd.ys.size do
-          fail m!"the costed form of the field `{fd.name}` takes fewer arguments than the field"
-        let call := mkAppN tc (bs ++ yh ++ fcs)
+      let (fv, cv) ← withHatFieldBinders fd.ys tcT fun yh args => do
+        let call := mkAppN tc (bs ++ args ++ fcs)
         return (← mkLambdaFVars yh (← mkAppM ``Prod.snd #[call]),
           ← mkLambdaFVars yh (← mkAppM ``Prod.fst #[call]))
       let .forallE _ d b _ ← whnf mty | fail m!"internal: the mirror of `{S}`"
@@ -2069,8 +2104,9 @@ partial def assembleStructHat (c : Name) (levels : List Level) (levelParams : Li
         let .lam yn yt kb ybi := kf | fail m!"internal: the conjunct of `{fd.name}`"
         let ε' := Expr.lam yn yt kb.appArg! ybi
         let some β ← spCompArg? (← inferType fd.body) | fail m!"internal: `{fd.name}`"
+        let yArgs ← hatFieldArgs fd.ys yh
         let call := mkAppN (Lean.mkConst (hatName fd ++ `timed) levels)
-          (bsInst ++ yh ++ compsOf fd.name)
+          (bsInst ++ yArgs ++ compsOf fd.name)
         let X ← mkAppM ``Prod.snd #[call]
         let α := (← whnfR (← inferType X)).appArg!
         let ε ← CatCrypt.Tactics.DeriveTimed.epsFun β
@@ -2079,7 +2115,7 @@ partial def assembleStructHat (c : Name) (levels : List Level) (levelParams : Li
         closeEpsGoal hεM.mvarId!
         let hε ← instantiateMVars hεM
         let h1 := mkAppN (Lean.mkConst (hatName fd ++ `erase_timed) levels)
-          (bsInst ++ yh ++ compsOf fd.name)
+          (bsInst ++ yArgs ++ compsOf fd.name)
         let some (_, _, t) := (← inferType h1).eq? | fail m!"internal: `{hatName fd}`"
         let εy ← (fd.ys.zip yh).mapM fun (y, z) => do
           CatCrypt.Tactics.DeriveTimed.epsE (← inferType y) z
