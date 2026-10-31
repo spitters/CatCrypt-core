@@ -463,6 +463,7 @@ public import CatCryptCore.Crypto.OT.FOTSched
 -- Transparent functionalities, hybrid composition, the clock and the network
 public import CatCryptCore.Crypto.UCTransparent
 public import CatCryptCore.Crypto.Party.Prog
+public import CatCryptCore.Crypto.Party.Compose
 public import CatCryptCore.Crypto.UCTransparentSquare
 public import CatCryptCore.Crypto.UCCoupling
 public import CatCryptCore.Crypto.UCCompiled
