@@ -52,7 +52,7 @@ require QuantumFoundations from git
 -- and the charge fold; `SPTree` and `OracleAdv` are related to `FreeM` by equivalences.
 -- Pinned to the revision VCVio uses.
 require PolyFun from git
-  "https://github.com/Verified-zkEVM/PolyFun" @ "ef4c157b3c6775fb55864303d96f9b400428d5f0"
+  "https://github.com/Verified-zkEVM/PolyFun" @ "4181c82238142d9b73403fbf4c4b13e1a801e400"
 
 -- mathlib LAST so its proofwidgets/aesop versions win on conflicts;
 -- this is required for `lake exe cache get` to find oleans.
