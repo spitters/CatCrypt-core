@@ -11,13 +11,14 @@ public import CatCryptCore.Crypto.PAKE.CPaceSquare
 /-!
 # X3DH against the authenticated key-exchange functionality
 
-**Ideal functionality.** `F_AKE (SPComp.sample K)` of `CatCryptCore.Crypto.AKE.FAKESys`: the
-multi-session authenticated key exchange of Canetti and Krawczyk with adversarial key delivery
-and corruption of parties, with uniform keys in `K`. Its adversary port has the unlinked
-delivery `newKeyUnlinked`, which gives a session a key independent of its partner's: an attacker
-that replaces the initiator's ephemeral key on its way to the responder causes the two to derive
-different keys. Corruption in `F_AKE` is adaptive; the real protocol and the simulator use it
-statically.
+**Ideal functionality.** `F_AKE (SPComp.sample K) true` of `CatCryptCore.Crypto.AKE.FAKESys`:
+the multi-session authenticated key exchange of Canetti and Krawczyk with adversarial key
+delivery and corruption of parties, with uniform keys in `K`, in its variant `unlinked` for
+implicitly authenticated key exchange without key confirmation. In that variant the unlinked
+delivery `newKeyUnlinked` gives a session a key independent of its partner's: an attacker that
+replaces the initiator's ephemeral key on its way to the responder causes the two to derive
+different keys. Below, `F_AKE` names this variant. Corruption in `F_AKE` is adaptive; the real
+protocol and the simulator use it statically.
 
 **Real protocol.** `x3dhReal G` runs X3DH (Marlinspike and Perrin, *The X3DH Key Agreement
 Protocol*, 2016) for every session, over the group `G : DHGroup S W` and with the key-derivation
@@ -564,8 +565,8 @@ end SimOpaque
 /-! ## The square in oracle-game form -/
 
 /-- The steps of `F_AKE` with uniform keys do not touch the heap. -/
-theorem F_AKE_pureNF {K : Type} [Fintype K] [Nonempty K] (t : St K) (e : FEv K) :
-    PureNF ((F_AKE (SPComp.sample K)).step t e) := by
+theorem F_AKE_pureNF {K : Type} [Fintype K] [Nonempty K] {unlinked : Bool} (t : St K)
+    (e : FEv K) : PureNF ((F_AKE (SPComp.sample K) unlinked).step t e) := by
   rcases e with h | a
   · simp only [F_AKE, Sys.ofPorts_step_inl, honSys]
     exact (pureNF_pure _).map _
@@ -581,19 +582,19 @@ variable {S W K : Type} [Field S] [Fintype S] [DecidableEq W] [Fintype K]
 /-- The steps of the simulated world, the simulator running with `F_AKE`, do not touch the
 heap. -/
 theorem simWorld_pureNF :
-    ∀ t e, PureNF (((simProt (K := K) G).withSub (F_AKE (SPComp.sample K))).step t e) :=
+    ∀ t e, PureNF (((simProt (K := K) G).withSub (F_AKE (SPComp.sample K) true)).step t e) :=
   withSub_pureNF _ _ F_AKE_pureNF (simStart_pureNF G)
     (fun _ _ => pureNF_pure _) (fun _ _ => pureNF_pure _)
 
 /-- **The simulated X3DH game**: the oracle game of the simulator running with `F_AKE`. -/
 noncomputable def simGame : KeyedGame (OEv W) (OOut S W K) :=
-  pureGame ((simProt (K := K) G).withSub (F_AKE (SPComp.sample K))) (simWorld_pureNF G)
+  pureGame ((simProt (K := K) G).withSub (F_AKE (SPComp.sample K) true)) (simWorld_pureNF G)
 
 /-- **The simulated world as an oracle game**: the oracle system of `simGame G` realizes the
 simulator running with `F_AKE` at distance `0`. -/
 theorem simWorld_realizes :
     Realizes ((OProt.oracle (Q := OEv W) (A := OOut S W K)).sys (simGame G))
-      ((simProt (K := K) G).withSub (F_AKE (SPComp.sample K))) (fun _ _ => 0) :=
+      ((simProt (K := K) G).withSub (F_AKE (SPComp.sample K) true)) (fun _ _ => 0) :=
   pureGame_realizes _ _
 
 /-- **X3DH realizes `F_AKE` behind `x3dhSim`, in oracle-game form.** For every environment `Z`,
@@ -601,7 +602,7 @@ the distance between the real X3DH protocol and the simulator running with `F_AK
 the advantage of the oracle adversary `OProt.oracle.reduction Z` between the real game
 `realGame G` and the simulated game `simGame G`. -/
 theorem x3dh_realizesSim_oracleGame :
-    RealizesSim (x3dhReal (K := K) G) (F_AKE (SPComp.sample K)) (x3dhSim G)
+    RealizesSim (x3dhReal (K := K) G) (F_AKE (SPComp.sample K) true) (x3dhSim G)
       (fun _ Z => KeyedGame.advantage (realGame G) (simGame G) (OProt.oracle.reduction Z)) :=
   fun ζ Z => le_of_le_of_eq
     ((Realizes.trans (Realizes.ofOracleGame OProt.oracle (realGame G) (simGame G))

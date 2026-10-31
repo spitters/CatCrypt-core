@@ -11,8 +11,9 @@ public import CatCryptCore.Crypto.KEM.Games
 /-!
 # PQXDH against the authenticated key-exchange functionality
 
-**Ideal functionality.** `F_AKE (SPComp.sample K)` of `CatCryptCore.Crypto.AKE.FAKESys`, as for
-X3DH (`CatCryptCore.Crypto.AKE.X3DHSquare`): the multi-session authenticated key exchange with
+**Ideal functionality.** `F_AKE (SPComp.sample K) true` of `CatCryptCore.Crypto.AKE.FAKESys`
+(the variant for implicitly authenticated key exchange without key confirmation), as for X3DH
+(`CatCryptCore.Crypto.AKE.X3DHSquare`): the multi-session authenticated key exchange with
 adversarial key delivery, the unlinked delivery `newKeyUnlinked`, corruption of parties, and
 uniform keys in `K`.
 
@@ -512,19 +513,19 @@ variable {S W K PK SK SS C : Type} [Field S] [Fintype S] [DecidableEq W] [Fintyp
 /-- The steps of the simulated world, the simulator running with `F_AKE`, do not touch the
 heap. -/
 theorem simWorld_pureNF :
-    ∀ t e, PureNF (((simProt (K := K) P G).withSub (F_AKE (SPComp.sample K))).step t e) :=
+    ∀ t e, PureNF (((simProt (K := K) P G).withSub (F_AKE (SPComp.sample K) true)).step t e) :=
   withSub_pureNF _ _ F_AKE_pureNF (simStart_pureNF P G)
     (fun _ _ => pureNF_pure _) (fun _ _ => pureNF_pure _)
 
 /-- **The simulated PQXDH game**: the oracle game of the simulator running with `F_AKE`. -/
 noncomputable def simGame : KeyedGame (OEv W SS C) (OOut S W K PK C) :=
-  pureGame ((simProt (K := K) P G).withSub (F_AKE (SPComp.sample K))) (simWorld_pureNF P G)
+  pureGame ((simProt (K := K) P G).withSub (F_AKE (SPComp.sample K) true)) (simWorld_pureNF P G)
 
 /-- **The simulated world as an oracle game**: the oracle system of `simGame P G` realizes the
 simulator running with `F_AKE` at distance `0`. -/
 theorem simWorld_realizes :
     Realizes ((OProt.oracle (Q := OEv W SS C) (A := OOut S W K PK C)).sys (simGame P G))
-      ((simProt (K := K) P G).withSub (F_AKE (SPComp.sample K))) (fun _ _ => 0) :=
+      ((simProt (K := K) P G).withSub (F_AKE (SPComp.sample K) true)) (fun _ _ => 0) :=
   pureGame_realizes _ _
 
 /-- **PQXDH realizes `F_AKE` behind `pqxdhSim`, in oracle-game form.** For every environment
@@ -532,7 +533,7 @@ theorem simWorld_realizes :
 most the advantage of the oracle adversary `OProt.oracle.reduction Z` between the real game
 `realGame P G` and the simulated game `simGame P G`. -/
 theorem pqxdh_realizesSim_oracleGame :
-    RealizesSim (pqxdhReal (K := K) P G) (F_AKE (SPComp.sample K)) (pqxdhSim P G)
+    RealizesSim (pqxdhReal (K := K) P G) (F_AKE (SPComp.sample K) true) (pqxdhSim P G)
       (fun _ Z => KeyedGame.advantage (realGame P G) (simGame P G) (OProt.oracle.reduction Z)) :=
   fun ζ Z => le_of_le_of_eq
     ((Realizes.trans (Realizes.ofOracleGame OProt.oracle (realGame P G) (simGame P G))
