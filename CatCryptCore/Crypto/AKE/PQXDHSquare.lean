@@ -79,10 +79,11 @@ namespace CatCrypt.Crypto.AKE.PQXDHSquare
 open CatCrypt.Core CatCrypt.Prob CatCrypt.Crypto CatCrypt.Relational
 open CatCrypt.Crypto.UCConcrete CatCrypt.Crypto.UCTransparent CatCrypt.Crypto.UCTransparent.FAKE
 open CatCrypt.Crypto.PAKE.DHExtract
-open CatCrypt.Crypto.PAKE.CPaceSquare (roAt PureNF pureNF_pure withSub_pureNF pureGame
-  pureGame_realizes)
+open CatCrypt.Crypto.PAKE.CPaceSquare (roAt PureNF pureNF_pure pureNF_sample PureNF.map
+  PureNF.bind withSub_pureNF pureGame pureGame_realizes sampleFrom_ofPMF_eq_liftPMF)
 open CatCrypt.Crypto.AKE.X3DHSquare (Inp aliceInp bobInp RSt ROut RAEv ltAt Named keyed realHon
-  ephPubOf opkOf corruptRStep realAdv rInit FEv FOut subView F_AKE_pureNF)
+  ephPubOf opkOf corruptRStep realAdv rInit FEv FOut subView F_AKE_pureNF ltStep ltStep_pureNF)
+open CatCrypt.NonUniform (sampleFrom ofPMF)
 open CatCrypt.Crypto.KEM.Games (Scheme)
 open PubView (eqView)
 open scoped ENNReal
@@ -273,6 +274,14 @@ section Sim
 variable {S W K PK SK SS C : Type} [Field S] [Fintype S] [DecidableEq W] [Fintype K]
   [Nonempty K] [Inhabited K] [DecidableEq SS] (P : Scheme PK SK SS C) (G : DHGroup S W)
 
+/-- The key derivation on the simulator's copy of the table `tb` at `x`, as in `roAt`: the
+recorded value, or a uniform value that is recorded. -/
+noncomputable def roStep (tb : List (PInp W SS × K)) (x : PInp W SS) :
+    SPComp (K × List (PInp W SS × K)) :=
+  match tb.lookup x with
+  | some v => SPComp.pure (v, tb)
+  | none => SPComp.map (fun v => (v, (x, v) :: tb)) (SPComp.sample K)
+
 /-- The delivery of the key of the session `x` with record `r` and input `ip`, as in X3DH. An
 exposed session receives the key-derivation value at `ip`, which the simulator samples and
 passes to `newKey`. Any other session receives the key of `F_AKE`: `newKey` when its partner
@@ -280,80 +289,168 @@ has not completed or completed with the same input, `newKeyUnlinked` otherwise; 
 key-derivation table is unchanged. -/
 noncomputable def deliver (s : PSt S W K PK SK SS C) (inp : Inst → Option (PInp W SS))
     (x : Inst) (r : Rec K) (ip : PInp W SS) :
-    PMF (SimSt S W K PK SK SS C × Dec S W K PK C) :=
+    SPComp (SimSt S W K PK SK SS C × Dec S W K PK C) :=
   if Exposed s.x.st x r then
-    (roAt s.ro ip).map fun p =>
+    SPComp.map (fun p =>
       ((pKeyed s x r p.1 p.2, Function.update inp x (some ip), .out (.inl .ack)),
-        .inl (.inr (.newKey x.1 x.2 p.1)))
+        .inl (.inr (.newKey x.1 x.2 p.1)))) (roStep s.ro ip)
   else
-    PMF.pure ((pKeyed s x r default s.ro, Function.update inp x (some ip), .out (.inl .ack)),
+    SPComp.pure ((pKeyed s x r default s.ro, Function.update inp x (some ip), .out (.inl .ack)),
       .inl (.inr (if (inp (x.1, r.peer)).all (· = ip) then .newKey x.1 x.2 default
         else .newKeyUnlinked x.1 x.2 default)))
 
 /-- The simulator on `complete sid pid`: the computation of `pqComplete` on its copy, with its
 own encapsulation, and the delivery by `deliver`. -/
 noncomputable def simComplete (s : SimSt S W K PK SK SS C) (x : Inst) :
-    PMF (SimSt S W K PK SK SS C × Dec S W K PK C) :=
+    SPComp (SimSt S W K PK SK SS C × Dec S W K PK C) :=
   match s.1.x.st.recs x, s.1.x.eph x with
   | some r, some ek =>
     match opkOf s.1.x x.1 r.peer, pkOf s.1 x.1 r.peer with
     | some opk, some pk =>
       if r.role = .initiator ∧ r.key.isNone then
-        (ltAt s.1.x x.2).bind fun la => (ltAt la.2 r.peer).bind fun lb =>
-          (P.encaps pk).bind fun kc =>
+        SPComp.bind (ltStep s.1.x x.2) fun la => SPComp.bind (ltStep la.2 r.peer) fun lb =>
+          SPComp.bind (sampleFrom (ofPMF (P.encaps pk))) fun kc =>
             deliver { s.1 with x := lb.2, ct := Function.update s.1.ct x (some kc.2) } s.2.1 x r
               (aliceInp G x.1 x.2 r.peer la.1.1 ek (G.pub lb.1.1) (G.pub lb.1.2) (G.pub opk),
                 kc.1)
-      else PMF.pure ((s.1, s.2.1, .fwd), .inr (.inr (.inl .ack)))
-    | _, _ => PMF.pure ((s.1, s.2.1, .fwd), .inr (.inr (.inl .ack)))
-  | _, _ => PMF.pure ((s.1, s.2.1, .fwd), .inr (.inr (.inl .ack)))
+      else SPComp.pure ((s.1, s.2.1, .fwd), .inr (.inr (.inl .ack)))
+    | _, _ => SPComp.pure ((s.1, s.2.1, .fwd), .inr (.inr (.inl .ack)))
+  | _, _ => SPComp.pure ((s.1, s.2.1, .fwd), .inr (.inr (.inl .ack)))
 
 /-- The simulator on `send sid pid e c`: the computation of `pqSend` on its copy, and the
 delivery by `deliver`. -/
 noncomputable def simSend (s : SimSt S W K PK SK SS C) (x : Inst) (e : W) (c : C) :
-    PMF (SimSt S W K PK SK SS C × Dec S W K PK C) :=
+    SPComp (SimSt S W K PK SK SS C × Dec S W K PK C) :=
   match s.1.x.st.recs x, s.1.x.eph x, s.1.kem x with
   | some r, some opk, some kp =>
     match P.decaps kp.2 c with
     | some ss =>
       if r.role = .responder ∧ r.key.isNone then
-        (ltAt s.1.x x.2).bind fun lb => (ltAt lb.2 r.peer).bind fun la =>
+        SPComp.bind (ltStep s.1.x x.2) fun lb => SPComp.bind (ltStep lb.2 r.peer) fun la =>
           deliver { s.1 with x := la.2 } s.2.1 x r
             (bobInp G x.1 r.peer x.2 (G.pub la.1.1) e lb.1.1 lb.1.2 opk, ss)
-      else PMF.pure ((s.1, s.2.1, .fwd), .inr (.inr (.inl .ack)))
-    | none => PMF.pure ((s.1, s.2.1, .fwd), .inr (.inr (.inl .ack)))
-  | _, _, _ => PMF.pure ((s.1, s.2.1, .fwd), .inr (.inr (.inl .ack)))
+      else SPComp.pure ((s.1, s.2.1, .fwd), .inr (.inr (.inl .ack)))
+    | none => SPComp.pure ((s.1, s.2.1, .fwd), .inr (.inr (.inl .ack)))
+  | _, _, _ => SPComp.pure ((s.1, s.2.1, .fwd), .inr (.inr (.inl .ack)))
 
 /-- The simulator on `corrupt pid`: refused as in the real protocol when a session names `pid`;
 otherwise the secrets of its copy are output and `pid` is corrupted in `F_AKE`. -/
 noncomputable def simCorrupt (s : SimSt S W K PK SK SS C) (pid : PartyId) :
-    PMF (SimSt S W K PK SK SS C × Dec S W K PK C) :=
-  if Named s.1.x.st pid then PMF.pure ((s.1, s.2.1, .fwd), .inr (.inr (.inl (.secret none))))
+    SPComp (SimSt S W K PK SK SS C × Dec S W K PK C) :=
+  if Named s.1.x.st pid then SPComp.pure ((s.1, s.2.1, .fwd), .inr (.inr (.inl (.secret none))))
   else
-    (ltAt s.1.x pid).map fun l =>
+    SPComp.map (fun l =>
       (({ s.1 with x := { l.2 with st := corruptStep l.2.st pid } }, s.2.1,
-        .out (.inl (.secret (some l.1)))), .inl (.inr (.corrupt pid)))
+        .out (.inl (.secret (some l.1)))), .inl (.inr (.corrupt pid)))) (ltStep s.1.x pid)
 
 /-- The start of an activation of the simulator. Honest events go to `F_AKE` and update the
-copy (a new session draws its secrets); `complete`, `send` and `corrupt` are handled as above;
-every other adversary event is answered by the real protocol on the copy. -/
-noncomputable def simStartP (s : SimSt S W K PK SK SS C) :
-    OEv W SS C → PMF (SimSt S W K PK SK SS C × Dec S W K PK C)
-  | .inl h => (pqHon P s.1 h).map fun p => ((p.2, s.2.1, .fwd), .inl (.inl h))
+copy as `pqHon` does (a new session draws its Diffie–Hellman secret, and a new responder session
+its KEM key pair from `P.keygen`); `complete`, `send` and `corrupt` are handled as above; every
+other adversary event is answered as `pqAdv` does on the copy. -/
+noncomputable def simStart (s : SimSt S W K PK SK SS C) :
+    OEv W SS C → SPComp (SimSt S W K PK SK SS C × Dec S W K PK C)
+  | .inl (.newSession sid pid peer role) =>
+    if (s.1.x.st.recs (sid, pid)).isNone then
+      SPComp.bind (SPComp.sample S) fun y =>
+        if role = .responder then
+          SPComp.map (fun kp =>
+            (({ s.1 with
+                x := { s.1.x with st := addSession s.1.x.st (sid, pid) peer role,
+                                  eph := Function.update s.1.x.eph (sid, pid) (some y) },
+                kem := Function.update s.1.kem (sid, pid) (some kp) }, s.2.1, .fwd),
+              .inl (.inl (.newSession sid pid peer role)))) (sampleFrom (ofPMF P.keygen))
+        else
+          SPComp.pure
+            (({ s.1 with
+                x := { s.1.x with st := addSession s.1.x.st (sid, pid) peer role,
+                                  eph := Function.update s.1.x.eph (sid, pid) (some y) } },
+                s.2.1, .fwd), .inl (.inl (.newSession sid pid peer role)))
+    else SPComp.pure ((s.1, s.2.1, .fwd), .inl (.inl (.newSession sid pid peer role)))
+  | .inl (.getKey sid pid) => SPComp.pure ((s.1, s.2.1, .fwd), .inl (.inl (.getKey sid pid)))
+  | .inr .idle => SPComp.pure ((s.1, s.2.1, .fwd), .inr (.inr (.inl .ack)))
+  | .inr .poll =>
+    SPComp.pure (({ s.1 with x := { s.1.x with st := (pollStep s.1.x.st).1 } }, s.2.1, .fwd),
+      .inr (.inr (.inl (.notice (pollStep s.1.x.st).2))))
+  | .inr (.pub pid) => SPComp.map (fun l =>
+      (({ s.1 with x := l.2 }, s.2.1, .fwd),
+        .inr (.inr (.inl (.pub (G.pub l.1.1) (G.pub l.1.2)))))) (ltStep s.1.x pid)
+  | .inr (.ephPub sid pid) =>
+    SPComp.pure ((s.1, s.2.1, .fwd), .inr (.inr (.inl (.eph (ephPubOf G s.1.x (sid, pid))))))
+  | .inr (.pqPub sid pid) =>
+    SPComp.pure ((s.1, s.2.1, .fwd), .inr (.inr (.inr (pkOf s.1 sid pid, s.1.ct (sid, pid)))))
+  | .inr (.corrupt pid) => simCorrupt s pid
   | .inr (.complete sid pid) => simComplete P G s (sid, pid)
   | .inr (.send sid pid e c) => simSend P G s (sid, pid) e c
-  | .inr (.corrupt pid) => simCorrupt s pid
-  | .inr a => (pqAdv P G s.1 a).map fun p => ((p.2, s.2.1, .fwd), .inr (.inr p.1))
+  | .inr (.kdf x) => SPComp.map (fun p =>
+      (({ s.1 with ro := p.2 }, s.2.1, .fwd), .inr (.inr (.inl (.hash p.1))))) (roStep s.1.ro x)
+
+/-- Sampling from a total distribution neither touches the heap nor fails. -/
+theorem pureNF_sampleFrom_ofPMF {α : Type} (p : PMF α) : PureNF (sampleFrom (ofPMF p)) := by
+  rw [sampleFrom_ofPMF_eq_liftPMF]
+  exact ⟨liftPMF_isPure _, liftPMF_noFail _⟩
+
+omit [Inhabited K] in
+/-- `roStep` neither touches the heap nor fails. -/
+theorem roStep_pureNF (tb : List (PInp W SS × K)) (x : PInp W SS) : PureNF (roStep tb x) := by
+  unfold roStep
+  split
+  · exact pureNF_pure _
+  · exact (pureNF_sample _).map _
+
+omit [Field S] [Fintype S] in
+/-- `deliver` neither touches the heap nor fails. -/
+theorem deliver_pureNF (s : PSt S W K PK SK SS C) (inp : Inst → Option (PInp W SS)) (x : Inst)
+    (r : Rec K) (ip : PInp W SS) : PureNF (deliver s inp x r ip) := by
+  unfold deliver
+  split
+  · exact (roStep_pureNF _ _).map _
+  · exact pureNF_pure _
+
+/-- The start of the simulator neither touches the heap nor fails. -/
+theorem simStart_pureNF (s : SimSt S W K PK SK SS C) (e : OEv W SS C) :
+    PureNF (simStart P G s e) := by
+  rcases e with (⟨sid, pid, peer, role⟩ | ⟨sid, pid⟩) | (_ | _ | pid | ⟨sid, pid⟩ |
+    ⟨sid, pid⟩ | pid | ⟨sid, pid⟩ | ⟨sid, pid, e, c⟩ | x)
+  · simp only [simStart]
+    split
+    · refine (pureNF_sample _).bind fun _ => ?_
+      split
+      · exact (pureNF_sampleFrom_ofPMF _).map _
+      · exact pureNF_pure _
+    · exact pureNF_pure _
+  · exact pureNF_pure _
+  · exact pureNF_pure _
+  · exact pureNF_pure _
+  · exact (ltStep_pureNF _ _).map _
+  · exact pureNF_pure _
+  · exact pureNF_pure _
+  · simp only [simStart, simCorrupt]
+    split
+    · exact pureNF_pure _
+    · exact (ltStep_pureNF _ _).map _
+  · simp only [simStart, simComplete]
+    repeat' split
+    all_goals first
+      | exact pureNF_pure _
+      | exact (ltStep_pureNF _ _).bind fun _ => (ltStep_pureNF _ _).bind fun _ =>
+          (pureNF_sampleFrom_ofPMF _).bind fun _ => deliver_pureNF _ _ _ _ _
+  · simp only [simStart, simSend]
+    repeat' split
+    all_goals first
+      | exact pureNF_pure _
+      | exact (ltStep_pureNF _ _).bind fun _ => (ltStep_pureNF _ _).bind fun _ =>
+          deliver_pureNF _ _ _ _ _
+  · exact (roStep_pureNF _ _).map _
 
 /-- **The PQXDH simulator** as a multi-call simulator over `F_AKE`, one call per activation. -/
 noncomputable def simProt :
     MultiHybrid (SimSt S W K PK SK SS C) (OEv W SS C) (OOut S W K PK C) (FEv K) (FOut K) where
   init := (pInit, fun _ => none, .fwd)
   fuel := 0
-  start s e := liftPMF (simStartP P G s e)
+  start := simStart P G
   resume s o := SPComp.pure ((s.1, s.2.1, .fwd), .inr (simOut s.2.2 o))
   finish s o := SPComp.pure ((s.1, s.2.1, .fwd), simOut s.2.2 o)
-  start_noFail _ _ := liftPMF_noFail _
+  start_noFail s e := (simStart_pureNF P G s e).2
   resume_noFail _ _ := CatCrypt.Crypto.SPComp.pure_noFail _
   finish_noFail _ _ := CatCrypt.Crypto.SPComp.pure_noFail _
 
@@ -431,7 +528,7 @@ variable {S W K PK SK SS C : Type} [Field S] [Fintype S] [DecidableEq W] [Fintyp
 heap. -/
 theorem simWorld_pureNF :
     ∀ t e, PureNF (((simProt (K := K) P G).withSub (F_AKE (SPComp.sample K))).step t e) :=
-  withSub_pureNF _ _ F_AKE_pureNF (fun _ _ => ⟨liftPMF_isPure _, liftPMF_noFail _⟩)
+  withSub_pureNF _ _ F_AKE_pureNF (simStart_pureNF P G)
     (fun _ _ => pureNF_pure _) (fun _ _ => pureNF_pure _)
 
 /-- **The simulated PQXDH game**: the oracle game of the simulator running with `F_AKE`. -/
