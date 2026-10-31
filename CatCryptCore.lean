@@ -468,6 +468,7 @@ public import CatCryptCore.Crypto.UCRoundHybridTimed
 public import CatCryptCore.Crypto.UCTransparentHybrid
 public import CatCryptCore.Crypto.UCOpen
 public import CatCryptCore.Crypto.UCSimulator
+public import CatCryptCore.Crypto.UCSimulatorMapPorts
 public import CatCryptCore.Crypto.UCSquare
 public import CatCryptCore.Crypto.UCInterleave
 public import CatCryptCore.Crypto.UCInterleaveCost

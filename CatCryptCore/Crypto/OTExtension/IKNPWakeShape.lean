@@ -7,6 +7,7 @@ module
 
 public import CatCryptCore.Crypto.OTExtension.IKNPWake
 public import CatCryptCore.Crypto.UCGlobal
+public import CatCryptCore.Crypto.UCSimulatorMapPorts
 public import CatCryptCore.Examples.GroupParam
 
 /-!
@@ -40,7 +41,6 @@ when `2 ^ m` is at most the number of scalars (`bitsEmb_nonempty`).
 
 * `MultiHybrid.lazyKey`: a keyed family of hybrids with the key drawn in the hybrid's state.
 * `MultiHybrid.keyedWithSub`: the keyed family running with a subroutine, as a keyed system.
-* `Simulator.mapPorts`: a simulator on relabelled outer ports.
 * `IKNPWake.partyLazy`, `IKNPWake.realLazyW`: the IKNP parties with their own draw, and the
   protocol over them.
 * `bitsCode`, `bitsDecode`: the encoding of columns into the group.
@@ -239,34 +239,7 @@ theorem mapPorts_stepMap {X : Sys τ EG OG} {Y : Sys υ EG OG} (F : τ → υ)
       (Y.mapPorts f g).step (F t) e := by
   simp only [mapPorts, relabel, ← hstep, SPComp.map, SPComp.bind_assoc, SPComp.pure_bind]
 
-/-- A system opaque for `W` is opaque for `V` on ports relabelled by `f` and `g`, when `f` sends
-events related by `V` to events related by `W` and `g` sends outputs related by `W` to outputs
-related by `V`. -/
-theorem Opaque.mapPorts {X : Sys τ EG OG} {V : PubView E O} {W : PubView EG OG}
-    (h : X.Opaque W) (f : E → EG) (g : OG → O) (hf : ∀ e e', V.ev e e' → W.ev (f e) (f e'))
-    (hg : ∀ o o', W.out o o' → V.out (g o) (g o')) : (X.mapPorts f g).Opaque V := by
-  obtain ⟨T, hT⟩ := h
-  refine ⟨T, hT.init, fun t t' e e' ht he => ?_⟩
-  simp only [Sys.mapPorts, Sys.relabel, SPComp.map]
-  exact rHoare_bind (hT.step t t' (f e) (f e') ht (hf e e' he)) fun _ _ =>
-    rHoare_ret fun _ _ hp => ⟨hp.1, hp.2.1, hg _ _ hp.2.2⟩
-
 end Sys
-
-namespace Simulator
-
-variable {E O EM OM EG OG : Type} {V : PubView E O} {U : PubView EM OM} {W : PubView EG OG}
-
-/-- **A simulator on relabelled outer ports**: `S` running with the subroutine, on outer ports
-relabelled by `f` and `g`. -/
-noncomputable def mapPorts (S : Simulator EM OM EG OG U W) (f : E → EM) (g : OM → O)
-    (hf : ∀ e e', V.ev e e' → U.ev (f e) (f e'))
-    (hg : ∀ o o', U.out o o' → V.out (g o) (g o')) : Simulator E O EG OG V W where
-  St := S.St
-  withSub X := (S.withSub X).mapPorts f g
-  isOpaque X hX := (S.isOpaque X hX).mapPorts f g hf hg
-
-end Simulator
 
 namespace RealizesSim
 

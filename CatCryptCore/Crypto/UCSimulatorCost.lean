@@ -6,6 +6,7 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Crypto.UCSimulator
+public import CatCryptCore.Crypto.UCSimulatorMapPorts
 public import CatCryptCore.Crypto.UCTransparentMultiTimed
 public import CatCryptCore.Crypto.UCInterleaveCost
 
@@ -50,47 +51,100 @@ set_option autoImplicit false
 
 namespace CatCrypt.Crypto.UCTransparent
 
+open CatCrypt.Core
+
+/-- The time bound of a costed multi-call simulator on the states of the invariant `Inv`: the
+initial state satisfies `Inv`, every step from a state of `Inv` returns states of `Inv`, and
+its `start`, `resume` and `finish` steps from a state of `Inv` cost at most `a`, `b`, `c`. -/
+def MultiHybrid.Timed.TimeBoundInv {σ E O EG OG : Type} (A : MultiHybrid.Timed σ E O EG OG)
+    (Inv : σ → Prop) (a b c : ℕ) : Prop :=
+  Inv A.init ∧
+  (∀ s e, Inv s → SPTree.Timed.stepTime (A.startCost s e, A.start s e) ≤ a ∧
+    SPTree.Timed.AllRet (fun y => Inv y.1) (A.start s e)) ∧
+  (∀ s o, Inv s → SPTree.Timed.stepTime (A.resumeCost s o, A.resume s o) ≤ b ∧
+    SPTree.Timed.AllRet (fun y => Inv y.1) (A.resume s o)) ∧
+  (∀ s o, Inv s → SPTree.Timed.stepTime (A.finishCost s o, A.finish s o) ≤ c ∧
+    SPTree.Timed.AllRet (fun y => Inv y.1) (A.finish s o))
+
+/-- A time bound on every state is a time bound on the states of the invariant `True`. -/
+theorem MultiHybrid.Timed.TimeBoundInv.of_timeBound {σ E O EG OG : Type}
+    {A : MultiHybrid.Timed σ E O EG OG} {a b c : ℕ} (h : A.TimeBound a b c) :
+    A.TimeBoundInv (fun _ => True) a b c :=
+  ⟨trivial, fun s e _ => ⟨h.1 s e, SPTree.Timed.allRet_of_forall (fun _ => trivial) _⟩,
+    fun s o _ => ⟨h.2.1 s o, SPTree.Timed.allRet_of_forall (fun _ => trivial) _⟩,
+    fun s o _ => ⟨h.2.2 s o, SPTree.Timed.allRet_of_forall (fun _ => trivial) _⟩⟩
+
 /-- A costed simulator from `(EG, OG)` with view `W` to `(E, O)` with view `V`: a costed
-multi-call simulator, or the composite of two costed simulators through a middle interface with
-view `U`. -/
+multi-call simulator, a costed multi-call simulator on costed states and events with the erasure
+maps of its state and ports, the composite of two costed simulators through a middle interface
+with view `U`, or a costed simulator on outer ports relabelled by `f` and `g`. -/
 inductive Simulator.Timed : (E O EG OG : Type) → PubView E O → PubView EG OG → Type 1
   /-- A costed multi-call simulator. -/
   | ofMultiHybrid {σ E O EG OG : Type} {V : PubView E O} {W : PubView EG OG}
       (πT : MultiHybrid.Timed σ E O EG OG) : Simulator.Timed E O EG OG V W
+  /-- A costed multi-call simulator on the costed state `σHat` and costed events, with the
+  erasure maps of the state and of the four ports. -/
+  | ofMultiHybridHat {σ σHat E EHat O OHat EG EGHat OG OGHat : Type} {V : PubView E O}
+      {W : PubView EG OG} (εσ : σHat → σ) (εE : EHat → E) (εO : OHat → O) (εEG : EGHat → EG)
+      (εOG : OGHat → OG) (πT : MultiHybrid.Timed σHat EHat OHat EGHat OGHat) :
+      Simulator.Timed E O EG OG V W
   /-- The composite of the costed simulators `T₁` and `T₂`. -/
   | comp {E O EM OM EG OG : Type} {V : PubView E O} {U : PubView EM OM} {W : PubView EG OG}
       (T₁ : Simulator.Timed E O EM OM V U) (T₂ : Simulator.Timed EM OM EG OG U W) :
       Simulator.Timed E O EG OG V W
+  /-- The costed simulator `T` on outer ports relabelled by `f` and `g`. -/
+  | mapPorts {E O EM OM EG OG : Type} {V : PubView E O} {U : PubView EM OM} {W : PubView EG OG}
+      (T : Simulator.Timed EM OM EG OG U W) (f : E → EM) (g : OM → O) :
+      Simulator.Timed E O EG OG V W
 
 namespace Simulator.Timed
 
-/-- Erasure of a costed simulator: a costed multi-call simulator erases to
-`Simulator.ofMultiHybrid π h` for each `π` it erases to and each opacity proof `h`; a costed
-composite erases to the composite of erasures of its parts. -/
+/-- Erasure of a costed simulator. A costed multi-call simulator erases to
+`Simulator.ofMultiHybrid π h` for each `π` it erases to and each opacity proof `h`, through the
+erasure maps for one on costed states; a costed composite erases to the composite of erasures
+of its parts; a relabelled one to the relabelling of an erasure of its simulator. -/
 def Erases : {E O EG OG : Type} → {V : PubView E O} → {W : PubView EG OG} →
     Simulator.Timed E O EG OG V W → Simulator E O EG OG V W → Prop
   | _, _, _, _, V, W, .ofMultiHybrid (σ := σ) πT, S =>
     ∃ (π : MultiHybrid σ _ _ _ _) (h : π.Opaque V W), πT.Erases π ∧
       S = Simulator.ofMultiHybrid π h
+  | _, _, _, _, V, W, .ofMultiHybridHat (σ := σ) (σHat := σHat) (EHat := EHat) (OHat := OHat)
+      (EGHat := EGHat) (OGHat := OGHat) εσ εE εO εEG εOG πT, S =>
+    ∃ (π : MultiHybrid σ _ _ _ _) (h : π.Opaque V W),
+      MultiHybrid.Timed.ErasesHat σHat EHat OHat EGHat OGHat εσ εE εO εEG εOG πT π ∧
+      S = Simulator.ofMultiHybrid π h
   | _, _, _, _, _, _, .comp T₁ T₂, S =>
     ∃ S₁ S₂, Erases T₁ S₁ ∧ Erases T₂ S₂ ∧ S = S₁.comp S₂
+  | _, _, _, _, V, _, .mapPorts (U := U) T f g, S =>
+    ∃ S₀ hf hg, Erases T S₀ ∧ S = Simulator.mapPorts (V := V) (U := U) S₀ f g hf hg
 
 /-- The time bound `t` of a costed simulator: each step of a costed multi-call simulator costs
-at most `t`, and the parts of a costed composite have time bounds whose sum is at most `t`. -/
+at most `t`, from every state, or from the states of an invariant for one on costed states;
+the parts of a costed composite have time bounds whose sum is at most `t`; a relabelled
+simulator has the time bound of its simulator. -/
 def TimeBound : {E O EG OG : Type} → {V : PubView E O} → {W : PubView EG OG} →
     Simulator.Timed E O EG OG V W → ℕ → Prop
   | _, _, _, _, _, _, .ofMultiHybrid πT, t => πT.TimeBound t t t
+  | _, _, _, _, _, _, .ofMultiHybridHat (σHat := σHat) _ _ _ _ _ πT, t =>
+    ∃ Inv : σHat → Prop, πT.TimeBoundInv Inv t t t
   | _, _, _, _, _, _, .comp T₁ T₂, t => ∃ t₁ t₂, TimeBound T₁ t₁ ∧ TimeBound T₂ t₂ ∧ t₁ + t₂ ≤ t
+  | _, _, _, _, _, _, .mapPorts T _ _, t => TimeBound T t
 
 /-- A time bound of a costed simulator is a time bound of every larger time. -/
 theorem TimeBound.mono {E O EG OG : Type} {V : PubView E O} {W : PubView EG OG}
     {T : Simulator.Timed E O EG OG V W} {t t' : ℕ} (h : T.TimeBound t) (ht : t ≤ t') :
     T.TimeBound t' := by
-  cases T with
+  induction T generalizing t t' with
   | ofMultiHybrid πT =>
     exact ⟨fun s e => le_trans (h.1 s e) ht, fun s o => le_trans (h.2.1 s o) ht,
       fun s o => le_trans (h.2.2 s o) ht⟩
-  | comp T₁ T₂ =>
+  | ofMultiHybridHat εσ εE εO εEG εOG πT =>
+    obtain ⟨Inv, h0, h1, h2, h3⟩ := h
+    exact ⟨Inv, h0, fun s e hs => ⟨le_trans (h1 s e hs).1 ht, (h1 s e hs).2⟩,
+      fun s o hs => ⟨le_trans (h2 s o hs).1 ht, (h2 s o hs).2⟩,
+      fun s o hs => ⟨le_trans (h3 s o hs).1 ht, (h3 s o hs).2⟩⟩
+  | mapPorts T f g ih => exact ih h ht
+  | comp T₁ T₂ _ _ =>
     obtain ⟨t₁, t₂, h₁, h₂, hle⟩ := h
     exact ⟨t₁, t₂, h₁, h₂, by omega⟩
 
@@ -117,6 +171,49 @@ theorem ofMultiHybrid.timeBound_timed {πT : MultiHybrid.Timed σ E O EG OG} {a 
       (max a (max b c)) :=
   ⟨fun s e => le_trans (hT.1 s e) (by omega), fun s o => le_trans (hT.2.1 s o) (by omega),
     fun s o => le_trans (hT.2.2 s o) (by omega)⟩
+
+section Hat
+
+variable {σHat EHat OHat EGHat OGHat : Type}
+
+/-- **Erasure of a costed multi-call simulator on costed states**: one that erases to `π`
+through the erasure maps erases to the bundled simulator `Simulator.ofMultiHybrid π h`. -/
+theorem ofMultiHybridHat.erase_timed {π : MultiHybrid σ E O EG OG}
+    {εσ : σHat → σ} {εE : EHat → E} {εO : OHat → O} {εEG : EGHat → EG} {εOG : OGHat → OG}
+    {πT : MultiHybrid.Timed σHat EHat OHat EGHat OGHat}
+    (hT : MultiHybrid.Timed.ErasesHat σHat EHat OHat EGHat OGHat εσ εE εO εEG εOG πT π)
+    (h : π.Opaque V W) :
+    (Simulator.Timed.ofMultiHybridHat εσ εE εO εEG εOG πT : Simulator.Timed E O EG OG V W).Erases
+      (Simulator.ofMultiHybrid π h) :=
+  ⟨π, h, hT, rfl⟩
+
+/-- **Running time of a costed multi-call simulator on costed states**: if its steps cost at
+most `a`, `b`, `c` from the states of an invariant, it has the time bound `max a (max b c)`. -/
+theorem ofMultiHybridHat.timeBound_timed {εσ : σHat → σ} {εE : EHat → E} {εO : OHat → O}
+    {εEG : EGHat → EG} {εOG : OGHat → OG} {πT : MultiHybrid.Timed σHat EHat OHat EGHat OGHat}
+    {Inv : σHat → Prop} {a b c : ℕ} (hT : πT.TimeBoundInv Inv a b c) :
+    (Simulator.Timed.ofMultiHybridHat εσ εE εO εEG εOG πT : Simulator.Timed E O EG OG V W).TimeBound
+      (max a (max b c)) :=
+  ⟨Inv, hT.1, fun s e hs => ⟨le_trans (hT.2.1 s e hs).1 (by omega), (hT.2.1 s e hs).2⟩,
+    fun s o hs => ⟨le_trans (hT.2.2.1 s o hs).1 (by omega), (hT.2.2.1 s o hs).2⟩,
+    fun s o hs => ⟨le_trans (hT.2.2.2 s o hs).1 (by omega), (hT.2.2.2 s o hs).2⟩⟩
+
+end Hat
+
+/-- **Erasure of a relabelled costed simulator**: a costed simulator that erases to `S`,
+relabelled by `f` and `g`, erases to `S.mapPorts f g hf hg`. -/
+theorem mapPorts.erase_timed {S : Simulator EM OM EG OG U W} {T : Simulator.Timed EM OM EG OG U W}
+    (hT : T.Erases S) (f : E → EM) (g : OM → O) (hf : ∀ e e', V.ev e e' → U.ev (f e) (f e'))
+    (hg : ∀ o o', U.out o o' → V.out (g o) (g o')) :
+    (Simulator.Timed.mapPorts T f g : Simulator.Timed E O EG OG V W).Erases
+      (S.mapPorts f g hf hg) :=
+  ⟨S, hf, hg, hT, rfl⟩
+
+/-- **Running time of a relabelled costed simulator**: the time of its simulator. -/
+theorem mapPorts.timeBound_timed {T : Simulator.Timed EM OM EG OG U W} {t : ℕ}
+    (hT : T.TimeBound t) (f : E → EM) (g : OM → O) :
+    (Simulator.Timed.mapPorts T f g : Simulator.Timed E O EG OG V W).TimeBound t :=
+  hT
 
 /-- **Erasure of a costed composite**: the composite of costed simulators that erase to `S₁`
 and `S₂` erases to `S₁.comp S₂`. -/
