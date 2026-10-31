@@ -8,6 +8,7 @@ module
 
 -- Lemmas for Mathlib (the upstream queue)
 public import CatCryptCore.ForMathlib
+public import CatCryptCore.ForMathlib.Order.ScottInduction
 
 -- Probability and core computation
 public import CatCryptCore.Prob.SDistr
@@ -135,6 +136,7 @@ public import CatCryptCore.Tactics.VC
 public import CatCryptCore.Tactics.StdCosts
 public import CatCryptCore.Tactics.StdCostsPoly
 public import CatCryptCore.Tactics.DeriveTimedStructure
+public import CatCryptCore.Tactics.ScottInduction
 
 -- Crypto foundation
 public import CatCryptCore.Crypto.Game
