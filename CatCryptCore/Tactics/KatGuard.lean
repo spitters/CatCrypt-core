@@ -23,7 +23,10 @@ fails the build at its own line when the budget is exceeded.
 
 The budgets are the options `kat.ms` (default 200) and `kat.heartbeats` (default 20000,
 in thousands of heartbeats), set per check with `set_option … in`, for instance
-`set_option kat.ms 50 in #kat f 3 == 9`.
+`set_option kat.ms 50 in #kat f 3 == 9`. The millisecond budget is multiplied by the
+positive integer in the environment variable `CATCRYPT_KAT_MS_SCALE` (default 1; a value
+that is not a positive integer is ignored), so that a slower machine scales every wall-clock
+budget at once; the heartbeat budget is machine-independent and is not scaled.
 
 The millisecond budget is measured, not enforced during evaluation: compiled code does
 not poll for cancellation, so an evaluation that exceeds it runs to completion and the
@@ -62,11 +65,22 @@ syntax (name := kat) "#kat " term : command
 `kat.heartbeats` budgets. -/
 syntax (name := katKernel) "#kat_kernel " term : command
 
+/-- The scale of the wall-clock budget: the positive integer in `CATCRYPT_KAT_MS_SCALE`,
+and 1 when the variable is unset or not a positive integer. -/
+def msScale : IO Nat := do
+  match (← IO.getEnv "CATCRYPT_KAT_MS_SCALE").bind String.toNat? with
+  | some k => return if k = 0 then 1 else k
+  | none => return 1
+
+/-- The wall-clock budget of a check: `kat.ms` times `msScale`. -/
+def msBudget (opts : Options) : IO Nat := do
+  return kat.ms.get opts * (← msScale)
+
 /-- Run a command with `maxHeartbeats` set to the `kat.heartbeats` budget, and fail when it
-takes longer than the `kat.ms` budget. -/
+takes longer than the scaled `kat.ms` budget. -/
 def runBudgeted (cmd : Syntax) : CommandElabM Unit := do
   let opts ← getOptions
-  let ms := kat.ms.get opts
+  let ms ← msBudget opts
   let hb := kat.heartbeats.get opts
   let t0 ← IO.monoMsNow
   withScope (fun s => { s with opts := maxHeartbeats.set s.opts hb }) do

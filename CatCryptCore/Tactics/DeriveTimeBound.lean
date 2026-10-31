@@ -34,6 +34,15 @@ replaced by the right side of `f.timedCost_eq` at `a`, or by the bound of `f.tim
 value (`rewriteCosts`). Since every operation of a bound is monotone, the replaced bound bounds
 the original one, and `time_bound` uses the same lemmas at its arithmetic leaves.
 
+The continuation of a bind `A.bind f` whose bound mentions the bound value `b` only through
+lengths `(π b).length` (a fold over a list returned by a callee) is bounded at the values of
+the length invariants of `A`: for each local hypothesis or theorem `N.allRet_length` of a callee
+`N.timed` concluding `AllRet (fun a => (π a).length ≤ n) A` (`AutoTime.lengthInvs`), each
+`(π b).length` in the bound, and in the closed forms of the registered costs, is replaced by
+`n` (`withFreshLen`). This is tried only when the bound at every value fails, so a bound found
+without it is unchanged. `time_bound` assumes the same invariants at the bind
+(`st_bind_inv`).
+
 A `match` in a step cost whose alternatives have bounds that mention their pattern variables
 is bounded by the same `match` on the same discriminants, each alternative replaced by its
 bound (`matchBound`). When no bound of an alternative mentions its pattern variables, the
@@ -94,6 +103,7 @@ same name.
 ## Main definitions
 
 * `rewriteCosts` — the registered costs that mention a bound value, replaced by closed forms
+* `withFreshLen` — the bound of a continuation at the values of the length invariants of a tree
 * `matchBound` — the bound of a `match` by cases
 * `calleeBound?` — the bound of a call from the time theorem of the callee
 * `emitTimeBound` — the procedure by `time_bound`; it returns the reason when the theorem is
@@ -152,8 +162,10 @@ def mkMaxN (a b : Expr) : MetaM Expr := mkAppM ``Max.max #[a, b]
 
 /-- The closed form of the registered cost `s = f.timedCost a` that does not mention `b`: the
 right side of `f.timedCost_eq` at `a`, or the bound of `f.timedCost_le` at `a`, with the
-propositional premises closed from the context by `closeByContext`. -/
-def costClosedForm? (b : FVarId) (s : Expr) : MetaM (Option Expr) := do
+propositional premises closed from the context by `closeByContext`, and `subst` applied to the
+result before it is checked to be free of `b`. -/
+def costClosedForm? (b : FVarId) (s : Expr) (subst : Expr → MetaM Expr := pure) :
+    MetaM (Option Expr) := do
   let some n := s.getAppFn.constName? | return none
   for c in ← CatCrypt.Tactics.AutoTime.costLemmas n do
     let st ← saveState
@@ -167,19 +179,19 @@ def costClosedForm? (b : FVarId) (s : Expr) : MetaM (Option Expr) := do
         if ← mid.isAssigned then return true
         unless ← isProp (← mid.getType) do return true
         CatCrypt.Tactics.AutoTime.closeByContext mid
-      let r ← instantiateMVars r
+      let r ← subst (← instantiateMVars r)
       if ok && !r.hasExprMVar && !r.containsFVar b then return some r
     st.restore
   return none
 
 /-- `e` with every registered cost `f.timedCost a` that mentions `b` replaced by its closed
-form free of `b` (`costClosedForm?`), where one exists. -/
-def rewriteCosts (b : FVarId) (e : Expr) : MetaM Expr :=
+form free of `b` after `subst` (`costClosedForm?`), where one exists. -/
+def rewriteCosts (b : FVarId) (e : Expr) (subst : Expr → MetaM Expr := pure) : MetaM Expr :=
   Meta.transform e (pre := fun s => do
     unless s.containsFVar b do return .done s
     let some n := s.getAppFn.constName? | return .continue
     unless n.lastComponentAsString == "timedCost" do return .continue
-    match ← costClosedForm? b s with
+    match ← costClosedForm? b s subst with
     | some r => return .done r
     | none => return .continue)
 
@@ -193,6 +205,26 @@ def withFresh (γ : Expr) (k : Expr → MetaM Expr) : MetaM Expr :=
     if r.containsFVar b.fvarId! then
       throwError "the bound depends on a bound value{indentExpr r}"
     return r
+
+/-- The bound `k b` of the continuation of a bind `A.bind f` at a fresh `b : γ`, the registered
+costs that mention `b` replaced by their closed forms (`rewriteCosts`) and each length
+`(π b).length` of a length invariant `AllRet (fun a => (π a).length ≤ n) A` of the tree `A`
+(`AutoTime.lengthInvs`) replaced by its bound `n`; `none` when `A` has no length invariant or
+the result mentions `b`. -/
+def withFreshLen (A γ : Expr) (k : Expr → MetaM Expr) : MetaM (Option Expr) := do
+  let invs ← CatCrypt.Tactics.AutoTime.lengthInvs A
+  if invs.isEmpty then return none
+  withLocalDeclD `b γ fun b => do
+    let subst (r : Expr) : MetaM Expr := do
+      let mut r := r
+      for (_, len, n) in invs do
+        let l ← instantiateMVars (len.beta #[b]).headBeta
+        r := (← kabstract r l).instantiate1 n
+      return r
+    let r ← instantiateMVars (← k b)
+    let r ← subst (← rewriteCosts b.fvarId! r (subst := subst))
+    if r.containsFVar b.fvarId! then return none
+    return some r
 
 /-- The head-reduced form of a tree or pair: `whnfR`, then the unfolding of a non-recursive
 head definition, at most eight times. -/
@@ -364,7 +396,16 @@ partial def boundStep (bs : Bounds) (x : Expr) : MetaM Expr := do
     let a := x.getArg! 2
     let f := x.getArg! 3
     let α := x.getArg! 0
-    return mkAddN (← boundTree bs a) (← withFresh α fun v => boundStep bs (f.beta #[v]))
+    let ta ← boundTree bs a
+    -- the continuation at every value, else at the values of the length invariants of `a`
+    let k ← try withFresh α fun v => boundStep bs (f.beta #[v])
+      catch e => do
+        let r? ← try withFreshLen a α fun v => boundStep bs (f.beta #[v])
+          catch _ => pure none
+        match r? with
+        | some r => pure r
+        | none => throw e
+    return mkAddN ta k
   if x.isAppOfArity ``ite 5 then
     return ← mkMaxN (← boundStep bs (x.getArg! 3)) (← boundStep bs (x.getArg! 4))
   if x.isAppOfArity ``dite 5 then

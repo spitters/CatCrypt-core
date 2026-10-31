@@ -52,7 +52,7 @@ own wall time exceeds `kat.ms`: a trivial synchronous command elaborated first a
 the wait for pending asynchronous kernel checks, so the timed region holds `cmd` alone. -/
 def runBudgetedSync (cmd : Syntax) : CommandElabM Unit := do
   let opts ← getOptions
-  let ms := kat.ms.get opts
+  let ms ← msBudget opts
   let hb := kat.heartbeats.get opts
   withScope (fun s => { s with opts := Elab.async.set s.opts false }) do
     elabCommand (← `(example : True := trivial))

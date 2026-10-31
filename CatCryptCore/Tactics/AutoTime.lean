@@ -48,7 +48,9 @@ traversed. Each node of the tree is consumed by one rule lemma of this module:
   `∀ u, π a u ≤ c + N` with the least slack `N` of `invSlack` is proved at every leaf of `A`
   by a traversal of its visible structure (`ar_*` rules, definitions unfolded, a tree without
   visible leaves by `ar_any`, each leaf closed by `omega` after its `if`s and Boolean locals
-  are split); the invariants found are conjoined and assumed by the continuation;
+  are split); with these, the length invariants `AllRet (fun a => (π a).length ≤ n) A` of a
+  local hypothesis or of the theorem `N.allRet_length` of a callee `N.timed` (`lengthInvs`);
+  the invariants found are conjoined and assumed by the continuation;
 * a heap reset `load h c t` adds `1 + |keys h| + c` to `P`;
 * `if`, `if h :` and `match` are split, and a recursor or `casesOn` on a local variable is
   split by `cases` on the variable; a tree with an `if b = true` on a Boolean local `b` below a
@@ -1833,6 +1835,52 @@ def invCandidates (α f : Expr) : MetaM (Array (Array Expr)) := do
         out := out.push ladder
     return out
 
+/-- The theorems `N.allRet_length` of the definition `N.timed` whose pair `y` gives the tree
+`t = y.2`, resolved as `envSources` resolves time theorems. -/
+def lengthInvSources (t : Expr) : MetaM (Array Expr) := do
+  let some y := sndOf? t | return #[]
+  let y ← zetaReduce y
+  let some n := y.getAppFn.constName? | return #[]
+  unless n.lastComponentAsString == "timed" do return #[]
+  let env ← getEnv
+  let mut out : List Name := [n.getPrefix ++ `allRet_length].filter env.contains
+  for c in ← resolvedCompanions n.getPrefix [`allRet_length] do
+    unless out.contains c do out := out ++ [c]
+  out.toArray.mapM mkConstWithFreshMVarLevels
+
+/-- The length invariants of the tree `t`: each local hypothesis, and each theorem of
+`lengthInvSources`, whose conclusion `AllRet (fun a => (π a).length ≤ n) t` unifies at `t`, with
+its propositional premises closed from the context (`closeByContext`) and `n` free of `a`; the
+proof, the function `fun a => (π a).length` and the bound `n`. -/
+def lengthInvs (t : Expr) : MetaM (Array (Expr × Expr × Expr)) := do
+  let locals ← (← getLCtx).getFVars.filterM fun f => do
+    let d ← f.fvarId!.getDecl
+    if d.isImplementationDetail then return false
+    isProp d.type
+  let mut out := #[]
+  for c in locals ++ (← lengthInvSources t) do
+    let s ← saveState
+    let (ms, _, body) ← forallMetaTelescopeReducing (← inferType c)
+    unless body.isAppOfArity ``SPTree.Timed.AllRet 3 do s.restore; continue
+    unless ← withReducible (isDefEq (body.getArg! 2) t) do s.restore; continue
+    let ok ← ms.allM fun m => do
+      let mid := m.mvarId!
+      if ← mid.isAssigned then return true
+      unless ← isProp (← mid.getType) do return true
+      closeByContext mid
+    let q ← instantiateMVars (body.getArg! 1)
+    let pf ← instantiateMVars (mkAppN c ms)
+    if !ok || q.hasExprMVar || pf.hasExprMVar then s.restore; continue
+    let r? ← withLocalDeclD `a (← instantiateMVars (body.getArg! 0)) fun a => do
+      let some (l, n) := natLe? (q.beta #[a]).headBeta | return none
+      unless l.isAppOfArity ``List.length 2 do return none
+      if n.containsFVar a.fvarId! then return none
+      return some (← mkLambdaFVars #[a] l, n)
+    match r? with
+    | some (len, n) => out := out.push (pf, len, n)
+    | none => s.restore
+  return out
+
 /-- The proposition `a ≤ b` over `ℕ`. -/
 def mkNatLe (a b : Expr) : Expr :=
   mkApp4 (mkConst ``LE.le [Level.zero]) (mkConst ``Nat) (mkConst ``instLENat) a b
@@ -2395,18 +2443,19 @@ partial def arSolve (g : MVarId) (env : Bool) (fuel : Nat) : TacticM Unit := do
   let some gs ← applyRule g ``ar_any | throwError "time_bound: no leaf invariant"
   for g' in gs do arSolve g' env (fuel - 1)
 
-/-- A bind `A.bind f` whose continuation is not bounded at every value: for each companion
-that `f` reads and each hypothesis bounding a companion of its type (`invCandidates`), the
-least slack of the ladder at which `arSolve` proves the leaf invariant of `A`; the invariants
-found are conjoined and `st_bind_inv` applied. -/
+/-- A bind `A.bind f` whose continuation is not bounded at every value: the length invariants
+of `A` (`lengthInvs`), and, for each companion that `f` reads and each hypothesis bounding a
+companion of its type (`invCandidates`), the least slack of the ladder at which `arSolve` proves
+the leaf invariant of `A`; the invariants found are conjoined and `st_bind_inv` applied. -/
 partial def bindInv (g : MVarId) (x : Expr) (env : Bool) (fuel : Nat) : TacticM Bool :=
     g.withContext do
   let α := x.getArg! 0
   let A := x.getArg! 2
   let f := x.getArg! 3
   let cands ← invCandidates α f
-  if cands.isEmpty then return false
-  let mut proofs : Array Expr := #[]
+  let lens ← lengthInvs A
+  if cands.isEmpty && lens.isEmpty then return false
+  let mut proofs : Array Expr := lens.map (·.1)
   for ladder in cands do
     for q in ladder do
       let s ← saveState
