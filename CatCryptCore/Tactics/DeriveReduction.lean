@@ -1673,14 +1673,18 @@ def reduceProjCtor (e : Expr) : MetaM Expr :=
             return .visit (mkAppN r (args.extract (info.numParams + 1) args.size)).headBeta
     return .continue)
 
-/-- A field of a structure-valued reduction: its name, its kind, its value in the body, the
-binders `ys` of a tree or computation field, the field's body at `ys`, and its result type. -/
+/-- A field of a structure-valued reduction: its name, its kind, its value in the body, its type
+in the constructor, the binders `ys` of a tree or computation field, the field's body at `ys`,
+and its result type at `ys` read off the constructor (a body `fun _ => c h₀` resetting the heap
+has a function type, not `SPComp α`). -/
 structure SField where
   name : Name
   kind : CatCrypt.Tactics.DeriveTimedStructure.FieldKind
   value : Expr
+  fty : Expr := default
   ys : Array Expr := #[]
   body : Expr := default
+  ty : Expr := default
   deriving Inhabited
 
 /-- The arguments of an equation `rhs` under the existential quantifiers of `e`, continued in
@@ -1692,6 +1696,19 @@ partial def withExistsBody {γ : Type} (e : Expr) (k : Array Expr → Expr → T
     | .lam n t b _ => withLocalDeclD n t fun h => withExistsBody (b.instantiate1 h) k (acc.push h)
     | _ => fail m!"internal: an existential quantifier over a non-lambda"
   else k acc e
+
+/-- The arguments of the costed form `c.f.tree.timed` at the binders `ys` of a field: a binder
+that is a function (`Kind.fn`, an oracle `o : X → Y` the mirror keeps as plain data) is passed
+with the cost companion zero, as a table (an application costs one). -/
+def plainFieldArgs (ys : Array Expr) : TermElabM (Array Expr) := do
+  let mut out := #[]
+  for y in ys do
+    let t ← inferType y
+    out := out.push y
+    if (← CatCrypt.Tactics.DeriveTimed.classify t) matches .fn then
+      out := out.push (← forallTelescope (← whnfR t) fun zs _ =>
+        mkLambdaFVars zs (mkNatLit 0))
+  return out
 
 /-- Define `c.timed` from the costed forms `c.f.tree.timed` of the fields, and prove
 `c.erase_timed`. `xs` are the binders of `c`, `bsOrig` the same with each adversary replaced by
@@ -1769,11 +1786,12 @@ partial def assembleStruct (c : Name) (levels : List Level) (levelParams : List 
       let tc := Lean.mkConst (c ++ fd.name ++ `tree ++ `timed) levels
       let ar ← forallTelescope (← inferType tc) fun zs _ => pure zs.size
       let fcs := compsOf fd.name
-      unless ar == bs.size + fd.ys.size + fcs.size do
+      let yArgs ← plainFieldArgs fd.ys
+      unless ar == bs.size + yArgs.size + fcs.size do
         fail m!"the costed form of the field `{fd.name}` takes {ar} arguments, and \
-          {bs.size + fd.ys.size + fcs.size} are its binders, those of the field and its field \
-          costs"
-      let call := mkAppN tc (bs ++ fd.ys ++ fcs)
+          {bs.size + yArgs.size + fcs.size} are its binders, those of the field with the cost \
+          companions of its function binders, and its field costs"
+      let call := mkAppN tc (bs ++ yArgs ++ fcs)
       mvals := mvals.push (← mkLambdaFVars fd.ys (← mkAppM ``Prod.snd #[call]))
       if mirrorFields.contains (fd.name.appendAfter "Cost") then
         mvals := mvals.push (← mkLambdaFVars fd.ys (← mkAppM ``Prod.fst #[call]))
@@ -1822,10 +1840,10 @@ partial def assembleStruct (c : Name) (levels : List Level) (levelParams : List 
     let treeName := c ++ fd.name ++ `tree
     let rhsY := mkAppN (← mkProjection rhsA fd.name) fd.ys
     let h1 := mkAppN (mkConst (treeName ++ `erase_timed) levels)
-      (bsInst ++ fd.ys ++ compsOf fd.name)
+      (bsInst ++ (← plainFieldArgs fd.ys) ++ compsOf fd.name)
     let pf ← match fd.kind with
       | .comp _ =>
-        let some α ← spCompArg? (← inferType fd.body) | fail m!"internal: `{fd.name}`"
+        let some α ← spCompArg? fd.ty | fail m!"internal: `{fd.name}`"
         let h1c ← mkCongrArg (mkApp (mkConst ``CatCrypt.Core.SPTree.compile) α) h1
         let compArgs ← bsOrig.mapM fun b => do
           match advs.find? (·.tree == b) with
@@ -2103,7 +2121,7 @@ partial def assembleStructHat (c : Name) (levels : List Level) (levelParams : Li
         let kf := lhs.appArg!
         let .lam yn yt kb ybi := kf | fail m!"internal: the conjunct of `{fd.name}`"
         let ε' := Expr.lam yn yt kb.appArg! ybi
-        let some β ← spCompArg? (← inferType fd.body) | fail m!"internal: `{fd.name}`"
+        let some β ← spCompArg? fd.ty | fail m!"internal: `{fd.name}`"
         let yArgs ← hatFieldArgs fd.ys yh
         let call := mkAppN (Lean.mkConst (hatName fd ++ `timed) levels)
           (bsInst ++ yArgs ++ compsOf fd.name)
@@ -2180,7 +2198,8 @@ partial def deriveStructReduction (c : Name) (advNames : Array Name) (unfold : B
     for f in sinfo.fieldNames, v in vals do
       let .forallE _ d body _ ← whnf ty | fail m!"internal: the constructor of `{S}`"
       fields := fields.push
-        { name := f, kind := ← CatCrypt.Tactics.DeriveTimedStructure.fieldKind d, value := v }
+        { name := f, kind := ← CatCrypt.Tactics.DeriveTimedStructure.fieldKind d, value := v,
+          fty := d }
       ty := body.instantiate1 v
     -- The binders of each tree and computation field, and its body.
     let rec withFieldBodies (i : Nat) (acc : Array SField) (k : Array SField → TermElabM Unit) :
@@ -2191,8 +2210,9 @@ partial def deriveStructReduction (c : Name) (advNames : Array Name) (unfold : B
         | .tree n | .comp n =>
           forallBoundedTelescope (← whnfR (← inferType fd.value)) n fun ys _ => do
             unless ys.size == n do fail m!"internal: the field `{fd.name}`"
-            withFieldBodies (i + 1) (acc.push { fd with ys, body := (mkAppN fd.value ys).headBeta })
-              k
+            let ty ← instantiateForall fd.fty ys
+            withFieldBodies (i + 1)
+              (acc.push { fd with ys, body := (mkAppN fd.value ys).headBeta, ty }) k
         | _ => withFieldBodies (i + 1) (acc.push fd) k
       else k acc
     withFieldBodies 0 #[] fun fields => do
@@ -2272,7 +2292,7 @@ partial def deriveStructReduction (c : Name) (advNames : Array Name) (unfold : B
           if let some t := t then
             roots := roots.push t
             for y in fd.ys do roots := roots.push (← inferType y)
-            roots := roots.push (← inferType fd.body)
+            roots := roots.push fd.ty
           else if !(fd.kind matches .prop) then
             roots := roots.push fd.value
             -- An adversary called in a type or data field (a handler in an oracle program):
@@ -2298,7 +2318,7 @@ partial def deriveStructReduction (c : Name) (advNames : Array Name) (unfold : B
             (← mkForallFVars (tBs ++ fd.ys) ft)
             (← mkLambdaFVars (tBs ++ fd.ys) t)
           if fd.kind matches .comp _ then
-            let some α ← spCompArg? (← inferType fd.body) | fail m!"internal: `{fd.name}`"
+            let some α ← spCompArg? fd.ty | fail m!"internal: `{fd.name}`"
             let rhs := mkAppN (← mkProjection rhsC fd.name) fd.ys
             let tI := (t.replaceFVars dFvs (dps.map (·.key))).replaceFVars tFvs tKeys
             let goalTy ← mkEq (mkCompile α tI) rhs
@@ -2478,13 +2498,13 @@ def recursiveTree (c : Name) (levels : List Level) (levelParams : List Name)
       (← mkEq (mkCompile α (mkAppN treeC tBs)) rhs)
   let n ← forallTelescope stmt fun ys _ => pure ys.size
   let ids : Array (TSyntax `ident) := (Array.range n).map fun i => mkIdent (Name.mkSimple s!"x{i}")
-  let explicit ← forallTelescope stmt fun ys _ =>
-    (ys.extract 0 tBs.size).mapM fun y => return (← y.fvarId!.getBinderInfo).isExplicit
-  let argIds := ((ids.extract 0 tBs.size).zip explicit).filterMap fun (i, e) =>
-    if e then some i else none
+  -- The call of the tree at every binder, implicit ones included: a type parameter fixed only
+  -- by the result type (`{W} [SampleableType W] (n : ℕ) → SPComp (Fin n → W)`) is not
+  -- determined by the explicit arguments.
+  let call ← `(@$(mkIdent treeName) $(ids.extract 0 tBs.size)*)
   let mv ← mkFreshExprSyntheticOpaqueMVar stmt
   let gs ← Term.withoutErrToSorry <| Tactic.run mv.mvarId! (Tactic.evalTactic (← `(tactic|
-    (intro $ids*; fun_induction $(mkIdent treeName):ident $argIds* <;> (try subst_vars)))))
+    (intro $ids*; fun_induction $call:term <;> (try subst_vars)))))
   for g in gs do
     proveRecCase c g
   let sProof ← instantiateMVars mv

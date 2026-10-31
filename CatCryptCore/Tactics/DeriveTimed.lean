@@ -2460,7 +2460,9 @@ built; a pair, an `if` and a call of a definition are translated componentwise, 
 by unfolding. -/
 partial def tv (ctx : Ctx) (e : Expr) : TermElabM (Expr × Expr) := do
   let e := pushLetApp e.consumeMData.headBeta
-  let t ← inferType e
+  -- The type beta-reduced: an unfolded dependent function (`Function.update f a v`, of type
+  -- `(a : α) → (fun _ => β) a`) is recognized as a function holding data (`hatTy?`).
+  let t ← Core.betaReduce (← inferType e)
   let some ht ← hatTy? t | return (← costOf ctx e, e)
   if let some v ← hatOf? ctx e (record := true) then return (← costOf ctx e, v)
   let tw ← whnfR t
@@ -3523,6 +3525,9 @@ partial def hatFieldCompanion? (ctx : Ctx) (p : Expr) : TermElabM (Option Expr) 
     | _ => false
   unless p.hasAnyFVar isHat do return none
   let (_, v) ← tv ctx p
+  -- A data path (a structure holding functions, `x.2 : RSt`): its companion is its costed
+  -- value (`pathCompanionType`), not the second component of that value.
+  if ← isDataPath p then return some v
   unless (← whnfR (← inferType v)).isAppOfArity ``Prod 2 do return none
   return some (← mkAppM ``Prod.snd #[v])
 
@@ -3855,7 +3860,9 @@ partial def deriveTimed (ctx : Ctx) (c : Name) : TermElabM Unit := do
   let (nBinders, srcPos) := nBinders
   let ids : Array (TSyntax `ident) := (Array.range nBinders.size).map fun i =>
     mkIdent (Name.mkSimple s!"x{i}")
-  let explicitIds := (ids.zip nBinders).filterMap fun (i, e) => if e then some i else none
+  -- The functional induction on the costed form at every binder, implicit ones included: a type
+  -- parameter fixed only by the result type is not determined by the explicit arguments.
+  let indTerm ← `(@$(mkIdent timedName) $ids*)
   let srcIds? : Option (Array (TSyntax `ident)) := srcPos.map (·.filterMap (ids[·]?))
   -- The functional induction on the source `c`: at the binders of the costed form that are
   -- binders of `c`, or, when an argument of `c` is the erasure of a costed binder (a tree or a
@@ -3938,7 +3945,7 @@ partial def deriveTimed (ctx : Ctx) (c : Name) : TermElabM Unit := do
   let tac ← if recursive && wfC then
       -- The induction hypotheses of a recursion through `if` are conditional on the case's
       -- hypothesis, discharged by `assumption`.
-      `(tactic| ($intros; fun_induction $(mkIdent timedName):ident $explicitIds* <;>
+      `(tactic| ($intros; fun_induction $indTerm:term <;>
         (try unfold $(mkIdent c):ident) <;>
         (try simp (disch := assumption) only [$lemmas,*, *]) <;> $close))
     else if recursive then
@@ -3947,7 +3954,7 @@ partial def deriveTimed (ctx : Ctx) (c : Name) : TermElabM Unit := do
       -- to the carried companions); it has the recursion of `c`, whose functional induction
       -- generalizes the companions in the induction hypotheses.
       `(tactic| ($intros; first
-        | (fun_induction $(mkIdent timedName):ident $explicitIds* <;> $close)
+        | (fun_induction $indTerm:term <;> $close)
         | ($srcInd <;> $close)))
     else if treeRec then
       `(tactic| ($intros; $close))
@@ -4029,7 +4036,7 @@ partial def deriveTimed (ctx : Ctx) (c : Name) : TermElabM Unit := do
         let s ← saveState
         let byTimed ← try
             some <$> Tactic.run mv.mvarId! (Tactic.evalTactic (← `(tactic|
-              ($intros; fun_induction $(mkIdent timedName):ident $explicitIds* <;>
+              ($intros; fun_induction $indTerm:term <;>
                 (try unfold $(mkIdent c):ident) <;>
                 (try simp only [$lemmas,*]) <;> (try (repeat' split))))))
           catch _ =>
