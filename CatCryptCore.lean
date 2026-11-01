@@ -491,6 +491,7 @@ public import CatCryptCore.Crypto.Party.LoopTimed
 public import CatCryptCore.Container.Code
 public import CatCryptCore.Container.QuotientFree
 public import CatCryptCore.Container.CodeCost
+public import CatCryptCore.Crypto.Party.ProgECost
 public import CatCryptCore.Container.PolyPiSigma
 public import CatCryptCore.Container.PolyNaturalModel
 public import CatCryptCore.Crypto.Party.CompileFunctor
