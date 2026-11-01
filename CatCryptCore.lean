@@ -481,6 +481,8 @@ public import CatCryptCore.Crypto.Party.Category
 public import CatCryptCore.Crypto.Party.Derived
 public import CatCryptCore.Crypto.Party.GuardCoupling
 public import CatCryptCore.Crypto.Party.Timed
+public import CatCryptCore.Crypto.Party.Relational
+public import CatCryptCore.Crypto.Party.UnwindingTransfer
 public import CatCryptCore.Crypto.UCTransparentSquare
 public import CatCryptCore.Crypto.UCCoupling
 public import CatCryptCore.Crypto.UCCompiled
