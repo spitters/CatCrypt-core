@@ -40,6 +40,7 @@ public import CatCryptCore.NonUniform
 -- Relational logic (pRHL)
 public import CatCryptCore.Relational.Basic
 public import CatCryptCore.Relational.Judgment
+public import CatCryptCore.Relational.CouplingMass
 public import CatCryptCore.Relational.DeadSample
 public import CatCryptCore.Relational.Rules
 public import CatCryptCore.Relational.Sync
@@ -477,6 +478,7 @@ public import CatCryptCore.Crypto.Party.Call
 public import CatCryptCore.Crypto.Party.QProg
 public import CatCryptCore.Crypto.Party.Category
 public import CatCryptCore.Crypto.Party.Derived
+public import CatCryptCore.Crypto.Party.GuardCoupling
 public import CatCryptCore.Crypto.UCTransparentSquare
 public import CatCryptCore.Crypto.UCCoupling
 public import CatCryptCore.Crypto.UCCompiled
