@@ -366,9 +366,15 @@ def readSig (desc : IndDesc) : TermElabM SigData := do
       dirSort := dirSort?.getD "Type", lvls := iv.levelParams
       isMeta := isMarkedMeta (← getEnv) T, freshNames := freshNames }
 
+/-- The number of leading commands of `sigSource` that define `N.Op`, `N.Op.dir` and `N.Sig`;
+they do not depend on the universe argument of `sigSource`. -/
+def sigHeadSize : Nat := 3
+
 /-- The source of the declarations of `derive_free_sig T` in the namespace `N`, one command for
-each declaration. -/
-def sigSource (d : SigData) (N : Name) (bind? : Option Name) : Array String := Id.run do
+each declaration. The positions of `N.Sig` lie in `Type lA`; the summand of an operation without
+fields has the position type `PUnit.{lA + 1}`. -/
+def sigSource (d : SigData) (N : Name) (bind? : Option Name) (lA : String) :
+    Array String := Id.run do
   let k := d.freshNames[0]!.toString
   let dv := d.freshNames[1]!.toString
   let sv := d.freshNames[2]!.toString
@@ -481,7 +487,7 @@ def sigSource (d : SigData) (N : Name) (bind? : Option Name) : Array String := I
     | _ => "⟨" ++ ", ".intercalate ns ++ "⟩"
   for o in d.ops do
     let pos := match o.fields.toList with
-      | [] => "PUnit"
+      | [] => s!"PUnit.\{({lA}) + 1}"
       | [f] => f.type
       | fs =>
         let init := fs.dropLast
@@ -680,17 +686,20 @@ def elabDeriveFreeSig : CommandElab := fun stx => do
       code := val.getId == `true
     | _ => throwErrorAt opt "derive_free_sig: unknown option `{key}`"
   let d ← liftTermElabM do readSig (← toIndDesc T)
-  let cmds := sigSource d N bind?
-  for c in cmds do
+  -- `N.Op`, `N.Op.dir` and `N.Sig` first: the later declarations use the universes of `N.Sig`
+  for c in (sigSource d N bind? "0").extract 0 sigHeadSize do
+    elabText stx c
+  let sigTy := (← getConstInfo (N ++ `Sig)).type
+  let lvls ← liftTermElabM <| forallTelescope sigTy fun _ body => do
+    let .const ``PFunctor [lA, lB] := body
+      | throwError "derive_free_sig: `{N ++ `Sig}` is not a `PFunctor`"
+    return (toString (format lA), toString (format lB))
+  let cmds := sigSource d N bind? lvls.1
+  for c in cmds.extract sigHeadSize cmds.size do
     elabText stx c
   let mut shown := cmds
   if code then
     -- the universes of the fields and of the directions are those of `N.Sig`
-    let sigTy := (← getConstInfo (N ++ `Sig)).type
-    let lvls ← liftTermElabM <| forallTelescope sigTy fun _ body => do
-      let .const ``PFunctor [lA, lB] := body
-        | throwError "derive_free_sig: `{N ++ `Sig}` is not a `PFunctor`"
-      return (toString (format lA), toString (format lB))
     let ccmds := codeSource d N lvls.1 lvls.2
     for c in ccmds do
       elabText stx c

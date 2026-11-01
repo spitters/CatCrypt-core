@@ -18,7 +18,8 @@ run on `SPTree` without the option is the signature of `CatCryptCore.Core.SPTree
 
 * `Party.ProgE Op E O`, whose parameters precede the result type, with its bind;
 * `SPTree.Timed`, a type in `Type 1` declared in a `meta section`;
-* `SPTree`, with a type field, a proof field (`Nonempty β`) and dependent directions.
+* `SPTree`, with a type field, a proof field (`Nonempty β`) and dependent directions;
+* `FieldlessTree`, a type in `Type 1` with operations without fields.
 
 Search words: polynomial functor, signature, free monad, deriving, tests.
 -/
@@ -85,6 +86,36 @@ example : PFunctor.{1, 0} := TimedGen.Sig
 /-- The generated equivalence of `SPTree.Timed` with the free monad over its signature. -/
 noncomputable example (α : Type) : SPTree.Timed α ≃ PFunctor.FreeM TimedGen.Sig α :=
   TimedGen.equivFreeM
+
+/-! ## A type in `Type 1` with operations without fields -/
+
+/-- A program-tree type in `Type 1`: a type field with an `Inhabited` instance and a `Nonempty`
+proof, a dependent direction `Fin (n + 1)`, a direction `PUnit` and an operation without
+fields or continuation. -/
+inductive FieldlessTree (α : Type) : Type 1 where
+  /-- Return a value. -/
+  | ret (a : α)
+  /-- Choose an element of an inhabited type. -/
+  | pick (β : Type) [Inhabited β] (h : Nonempty β) (k : β → FieldlessTree α)
+  /-- Draw an element of `Fin (n + 1)`. -/
+  | roll (n : Nat) (k : Fin (n + 1) → FieldlessTree α)
+  /-- A step with one continuation. -/
+  | tick (k : FieldlessTree α)
+  /-- Stop. -/
+  | stop
+
+derive_free_sig FieldlessTree (namespace := FieldlessGen) (code := true)
+
+/-- The generated signature of `FieldlessTree` is the sum of its summands. -/
+example : PFunctor.Equiv FieldlessGen.Sig FieldlessGen.SigSum := FieldlessGen.sigEquivSum
+
+/-- The summand of an operation without fields has positions in the universe of the signature. -/
+example : PFunctor.{1, 0} := FieldlessGen.Sig.stop
+
+/-- The generated equivalence of `FieldlessTree` with the free monad over its code. -/
+example (α : Type) : FieldlessTree α ≃
+    PFunctor.FreeM (CatCrypt.Container.Code.interp FieldlessGen.code) α :=
+  FieldlessGen.equivCode
 
 end CatCrypt.Tactics.DeriveFreeSigTest
 
