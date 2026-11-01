@@ -136,6 +136,13 @@ a first-order domain of the typed measures of Forster and Kunze):
   function is a table; functions in the results of a closure are tables; so
   `Function.update f a v`, unfolded, has companion
   `fun x => 2 + (if x = a then 0 else 1 + fCost x)`;
+* a call of a non-recursive definition without a registered cost, applied to as many
+  arguments as its value has leading binders, whose result is a function (`evalStep … E`, a
+  body that updates `E` under an `if` or a dependent `if`) and whose body is not a closure
+  after its `let`s, is unfolded (`unfoldFnCall?`): the values its body computes are priced
+  once, when the closure is built, at one unit for the call, and a read of the result after
+  `k` updates is a chain of `k` lookups; the erasure theorem unfolds the definition and the
+  definitions whose bodies contain such a call;
 * applying a costed closure `p` to `x` costs `1 + p.2 x` plus the cost of `x`;
 * a function sampled by a `rand` or `sample` node, answered by a query, or returned by a tree
   binder (the adversary), is a table: its companion is zero (`ι`), so an application costs
@@ -712,6 +719,40 @@ theorem compile_sampleDist_ret {β : Type} {μ : Prob.SDistr β} :
   simp only [SPTree.compile]
   exact SPComp.bind_pure _
 
+/-- **A read after an update.** The companion of the costed closure of `Function.update f a v`,
+a lookup, exceeds a bound `B` of the companion `fCost` of `f` by at most three. -/
+theorem updateCompanion_le {α : Type} [DecidableEq α] (fCost : α → ℕ) {B : ℕ}
+    (h : ∀ x, fCost x ≤ B) (a x : α) :
+    2 + (if x = a then 0 else 1 + fCost x) ≤ B + 3 := by
+  have := h x
+  split <;> omega
+
+/-- **Reads after `k` updates.** Companions `c k` bounded by `B` at `k = 0`, each of which is
+bounded by `M + d` wherever the one before is bounded by `M` (an update, `updateCompanion_le`
+with `d = 3`), are bounded by `B + d k`. -/
+theorem companion_le_of_step {α : Type} (c : ℕ → α → ℕ) {B d : ℕ} (h0 : ∀ x, c 0 x ≤ B)
+    (hs : ∀ k M, (∀ x, c k x ≤ M) → ∀ x, c (k + 1) x ≤ M + d) :
+    ∀ k x, c k x ≤ B + d * k := by
+  intro k
+  induction k with
+  | zero => simpa using h0
+  | succ k ih =>
+    intro x
+    have := hs k _ ih x
+    grind
+
+/-- **Total cost of the reads after updates.** At most `r` reads after each of `g` updates, a
+read after `i` updates costing at most `B + d i`, cost at most `g r B + d r g²`: the cost is
+quadratic in the number of updates. -/
+theorem sum_companion_le (g r B d : ℕ) (cost : ℕ → ℕ) (h : ∀ i, cost i ≤ r * (B + d * i)) :
+    ((List.range g).map cost).sum ≤ g * r * B + d * r * (g * g) := by
+  induction g with
+  | zero => simp
+  | succ g ih =>
+    rw [List.range_succ, List.map_append, List.sum_append]
+    have hg := h g
+    grind
+
 end CatCrypt.Tactics.DeriveTimed
 
 meta section
@@ -774,6 +815,10 @@ structure Ctx where
   /-- The data definitions unfolded in the costed value whose body is a match: unfolded by the
   erasure theorem, so that the hypotheses of its case split rewrite their discriminants. -/
   unfolded? : Option (IO.Ref (Array Name)) := none
+  /-- The number of calls with a function result unfolded by `unfoldFnCall?`: a definition
+  whose body contains such a call is unfolded by the erasure theorem as well, which then
+  reduces the `if`s on decided conditions. -/
+  fnUnfolded? : Option (IO.Ref Nat) := none
   /-- The naturality lemmas `c.bind_ret` of the registered callees `c` called at a costed
   instance of the type parameter that is the result type of a tree argument (`callTimed`):
   rewriting lemmas of the erasure theorem. -/
@@ -2641,7 +2686,22 @@ partial def tv (ctx : Ctx) (e : Expr) : TermElabM (Expr × Expr) := do
       return (add (natE 1) (add (← propCost ctx args[1]!)
           (iteNatE args[1]! args[2]! ca cb)),
         mkApp5 (mkConst ``ite [lvl]) ht args[1]! args[2]! va vb)
+    if f.isConstOf ``dite && args.size == 5 then
+      -- A dependent `if` holding functions: the dependent `if` of the costed values of its
+      -- branches, priced as a data-valued dependent `if`.
+      let branch (b : Expr) : TermElabM (Expr × Expr) := withEta b 1 fun hs body => do
+        let (c, v) ← tv ctx body
+        return (← mkLambdaFVars hs c, ← mkLambdaFVars hs v)
+      let (ct, vt) ← branch args[3]!
+      let (ce, ve) ← branch args[4]!
+      let lvl ← getLevel ht
+      return (add (natE 1) (add (← propCost ctx args[1]!)
+          (mkApp5 (mkConst ``dite [Level.one]) (mkConst ``Nat) args[1]! args[2]! ct ce)),
+        mkApp5 (mkConst ``dite [lvl]) ht args[1]! args[2]! vt ve)
     if tw.isForall then
+      -- A call of a non-recursive definition applied to all the binders of its value, whose
+      -- result is a function: its body, priced once when the closure is built.
+      if let some r ← unfoldFnCall? ctx e then return r
       -- A partial application of a constant or of a local function with a cost companion:
       -- the arguments are evaluated when the closure is built; the companion prices the call
       -- with them as values. A partial application of any other local function is a table,
@@ -2708,10 +2768,57 @@ partial def tv (ctx : Ctx) (e : Expr) : TermElabM (Expr × Expr) := do
         let headed ← lambdaTelescope dv.value fun _ b =>
           pure (isCaseHead env (letBody b).getAppFn.constName)
         if headed then r.modify fun a => if a.contains c then a else a.push c
+    let n₀ ← ctx.fnUnfolded?.mapM (·.get)
     let (cb, vb) ← tv { ctx with depth := ctx.depth + 1 } e'
+    -- A body with a call unfolded by `unfoldFnCall?`: the erasure theorem unfolds `c` too.
+    if let (some r, some n, some n₀) := (ctx.unfolded?, ctx.fnUnfolded?, n₀) then
+      if (← n.get) > n₀ then r.modify fun a => if a.contains c then a else a.push c
     let callCost := if ← isReducible c then natE 0 else natE 1
     return (add callCost cb, vb)
   | _ => fail m!"a function bound in data: the value `{e}` of type `{t}` has no costed form"
+
+/-- The cost and the costed value of the call `e = c args` of a non-recursive definition `c`
+without a registered cost, applied to as many arguments as its value has leading binders, whose
+result is a function (`evalStep … E : Fin m → W`, whose body updates `E`): the body, unfolded
+and translated by `tv`, so that the values it computes are priced once, when the closure is
+built, and the companion of the result is that of the body; for a body that is
+`Function.update f a v`, the lookup `fun x => 2 + (if x = a then 0 else 1 + fCost x)`. `none`
+when `e` is not such a call or its body has no costed form. -/
+partial def unfoldFnCall? (ctx : Ctx) (e : Expr) : TermElabM (Option (Expr × Expr)) := do
+  let .const c lvls := e.getAppFn | return none
+  let args := e.getAppArgs
+  let env ← getEnv
+  let some (.defnInfo dv) := env.find? c | return none
+  if env.contains (c ++ `timedCost) || freeConstants.contains c then return none
+  if (Structural.eqnInfoExt.find? env c).isSome || (WF.eqnInfoExt.find? env c).isSome then
+    return none
+  if isCaseHead env c || isCasesOnRecursor env c then return none
+  if (← getProjectionFnInfo? c).isSome then return none
+  unless lvls.length == dv.levelParams.length do return none
+  unless args.size == dv.value.getNumHeadLambdas do return none
+  -- A body that is a closure after its `let`s (`let g := …; fun i => …`) computes nothing when
+  -- it is built: the rule for partial applications prices it.
+  let body := (List.range args.size).foldl (fun b _ => match b.consumeMData with
+    | .lam _ _ b' _ => b'
+    | b' => b') dv.value
+  if (letBody body).isLambda then return none
+  if ctx.depth ≥ (← maxDepth) then return none
+  let s ← saveState
+  let unf ← ctx.unfolded?.mapM (·.get)
+  let fnu ← ctx.fnUnfolded?.mapM (·.get)
+  try
+    let e' ← bindArgsShared (dv.value.instantiateLevelParams dv.levelParams lvls) args
+    let (cb, vb) ← tv { ctx with depth := ctx.depth + 1 } e'
+    -- The erasure theorem unfolds `c`, so that its body meets the unfolded costed value.
+    if let some r := ctx.unfolded? then r.modify fun a => if a.contains c then a else a.push c
+    if let some n := ctx.fnUnfolded? then n.modify (· + 1)
+    let callCost := if ← isReducible c then natE 0 else natE 1
+    return some (add callCost cb, vb)
+  catch _ =>
+    s.restore
+    if let (some r, some a) := (ctx.unfolded?, unf) then r.set a
+    if let (some r, some a) := (ctx.fnUnfolded?, fnu) then r.set a
+    return none
 
 /-- The companion of the closure `e = f args` of type `tw`: the cost of `f args ys` at fresh
 arguments `ys`, with each data argument that is not a variable, a literal or a closure
@@ -3192,10 +3299,12 @@ partial def tr (ctx : Ctx) (e : Expr) : TermElabM Expr := do
       let s ← saveState
       let recs ← ctx.fieldRec?.mapM (·.get)
       let unf ← ctx.unfolded?.mapM (·.get)
+      let fnu ← ctx.fnUnfolded?.mapM (·.get)
       let tvd? ← try some <$> tv ctx v catch _ => do
         s.restore
         if let (some r, some a) := (ctx.fieldRec?, recs) then r.set a
         if let (some r, some a) := (ctx.unfolded?, unf) then r.set a
+        if let (some r, some a) := (ctx.fnUnfolded?, fnu) then r.set a
         pure none
       if let some (cv, vh) := tvd? then
         return ← withLetDecl n t v fun x => withLetDecl (n.appendAfter "Hat") ht vh fun xh => do
@@ -3819,7 +3928,9 @@ partial def deriveTimed (ctx : Ctx) (c : Name) : TermElabM Unit := do
   let plain ← if ctx.plain then pure true else fieldTree
   let unfoldedRef ← IO.mkRef (#[] : Array Name)
   let naturalRef ← IO.mkRef (#[] : Array Name)
+  let fnUnfoldedRef ← IO.mkRef (0 : Nat)
   let ctx := { ctx with plain, unfolded? := some unfoldedRef, natural? := some naturalRef }
+  let ctx := { ctx with fnUnfolded? := some fnUnfoldedRef }
   -- A plain interface around data holding functions: the erasure lemmas of costed closures.
   let plainHat ← if !plain then pure false else lambdaTelescope value fun xs b => do
     if ← xs.anyM fun x => do return (← hatTy? (← inferType x)).isSome then return true
@@ -3968,6 +4079,11 @@ partial def deriveTimed (ctx : Ctx) (c : Name) : TermElabM Unit := do
   let simpLemmas : Array Name :=
     ((if treeRec then #[c] else #[timedName, c]).filter (!wf ·)) ++ kindLemmas ++ hatLemmas ++
       matchLemmas ++ callees ++ naturalLemmas ++ unfoldedDefs ++
+      -- Calls with a function result unfolded (`unfoldFnCall?`): the source, unfolded, has
+      -- `if`s on the conditions that the case split decided.
+      (if (← fnUnfoldedRef.get) > 0 then
+        #[``dite_true, ``dite_false, ``ite_true, ``ite_false, ``Bool.false_eq_true]
+      else #[]) ++
       (if used.contains ``ite then #[``CatCrypt.Tactics.DeriveTimed.boolRec_eq_ite] else #[]) ++
       -- A dispatch on an optional value (`optionDispatch?`): the source keeps `Option.elim`,
       -- which the case split of the costed match reduces at a constructor.
