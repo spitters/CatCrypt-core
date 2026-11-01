@@ -16,16 +16,17 @@ import all CatCryptCore.Unary.ExpectedCost
 # Costed `SPTree`s as free monads with a tick operation
 
 `SPTree.Timed α` translates to the free monad `PFunctor.FreeM SPSigT α` of the polynomial
-functor `SPSigT = SPSig + TickSig`, whose extra positions `tick n` charge `n` units and have one
-direction. The translation `SPTree.Timed.toFreeMT` follows each direction `x` of a node with step
-cost `c` by the tick `c x`.
+functor `SPSigT = SPTree.Sig + TickSig`, whose extra positions `tick n` charge `n` units and have
+one direction. The translation `SPTree.Timed.toFreeMT` follows each direction `x` of a node with
+step cost `c` by the tick `c x`.
 
 ## Main definitions
 
 * `SPTree.TickSig`, `SPTree.SPSigT` — the tick polynomial and the ticked signature
-* `SPTree.tickCost` — `opCost` at an operation of `SPSig`, `n` at `tick n`
+* `SPTree.tickCost` — `opCost` at an operation of `SPTree.Sig`, `n` at `tick n`
 * `SPTree.Timed.toFreeMT` — the tick tree of a costed tree
-* `SPTree.eraseHandler` — the handler into `FreeM SPSig` that keeps operations and drops ticks
+* `SPTree.eraseHandler` — the handler into `FreeM SPTree.Sig` that keeps operations and drops
+  ticks
 * `SPTree.costHandler` — the handler into `CostComp` that charges `opCost` per operation and
   `n` per tick
 
@@ -56,17 +57,18 @@ namespace SPTree
 /-- The tick polynomial: a position `n : ℕ` charges `n` units and has one direction. -/
 abbrev TickSig : PFunctor.{0, 0} := ⟨ℕ, fun _ => PUnit⟩
 
-/-- The polynomial functor of costed `SPTree`s: `SPSig` with tick positions. -/
-abbrev SPSigT : PFunctor.{1, 0} := SPSig + TickSig
+/-- The polynomial functor of costed `SPTree`s: `SPTree.Sig` with tick positions. -/
+abbrev SPSigT : PFunctor.{1, 0} := SPTree.Sig + TickSig
 
 /-- The charge of a position of `SPSigT`: `opCost a` at an operation `a`, `n` at `tick n`. -/
 def tickCost : SPSigT.A → ℕ
   | .inl a => opCost a
   | .inr n => n
 
-/-- The handler into `FreeM SPSig` that keeps each operation and answers each tick with `()`. -/
-def eraseHandler : Handler (FreeM SPSig) SPSigT :=
-  Handler.sum (Handler.id SPSig) fun _ => FreeM.pure PUnit.unit
+/-- The handler into `FreeM SPTree.Sig` that keeps each operation and answers each tick with
+`()`. -/
+def eraseHandler : Handler (FreeM SPTree.Sig) SPSigT :=
+  Handler.sum (Handler.id SPTree.Sig) fun _ => FreeM.pure PUnit.unit
 
 /-- The `Pure` structure of `CostComp`: return at zero cost. -/
 @[instance_reducible] noncomputable def costPure : Pure CostComp := ⟨CostComp.pure⟩
@@ -112,7 +114,7 @@ theorem liftM_eraseHandler_toFreeMT (s : SPTree.Timed α) :
   induction s with
   | ret a => rfl
   | fail =>
-    change FreeM.bind (FreeM.lift (P := SPSig) SPOp.fail) _ = _
+    change FreeM.bind (FreeM.lift (P := SPTree.Sig) SPTree.Op.fail) _ = _
     simp only [FreeM.lift, FreeM.bind, erase, SPTree.toFreeM]
     congr 1; funext b; exact b.elim
   | set l v c t ih => exact congrArg (FreeM.liftBind _) (funext fun _ => ih)
@@ -197,7 +199,7 @@ theorem time_eq_wpFold (s : SPTree.Timed α) (hs : s.TimeBdd) :
     simp only [time, toFreeMT, wpFold_liftBind, OpSpec.charge_apply, iSup_const, tickCost,
       opCost, Nat.cast_add, Nat.cast_one, ih hs]
   | fail =>
-    have : IsEmpty (SPSigT.B (.inl SPOp.fail)) := inferInstanceAs (IsEmpty PEmpty)
+    have : IsEmpty (SPSigT.B (.inl SPTree.Op.fail)) := inferInstanceAs (IsEmpty PEmpty)
     simp only [time, toFreeMT, wpFold, Nat.cast_zero]
     unfold OpSpec.charge
     simp only [tickCost, opCost, iSup_of_empty, Nat.cast_zero, bot_eq_zero, add_zero]
