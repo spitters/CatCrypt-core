@@ -141,6 +141,7 @@ public import CatCryptCore.Tactics.ScottInduction
 public import CatCryptCore.Tactics.LoopRewriteAttr
 public import CatCryptCore.Tactics.LoopRewrite
 public import CatCryptCore.Tactics.TransportAlong
+public import CatCryptCore.Tactics.PortCoherence
 
 -- Crypto foundation
 public import CatCryptCore.Crypto.Game
