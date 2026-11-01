@@ -144,4 +144,18 @@ open CatCrypt.Core CatCrypt.Crypto.UCTransparent CatCrypt.Crypto.Party.X3DHProg
 
 derive_simulator x3dhSimP
 
+variable {S W K : Type} [Field S] [Fintype S] [DecidableEq W] [Fintype K]
+  [Nonempty K] [Inhabited K] (G : CatCrypt.Crypto.PAKE.DHExtract.DHGroup S W)
+
+/-- **Time certificate of the X3DH program simulator.** The costed simulator on the costed
+program `simBodyT G` erases to `x3dhSimP G`, and its `j`-th activation costs at most `15 + 2 j`:
+the key-derivation table grows by at most one entry per iteration, and a lookup costs its
+length. -/
+theorem x3dhSimP_timeCertificate :
+    (x3dhSimP.timed G _ ProgE.sampleTree (simBodyT (K := K) G)).Erases (x3dhSimP G) ∧
+      (x3dhSimP.timed G _ ProgE.sampleTree (simBodyT (K := K) G)).TimeBoundGraded 15 2 :=
+  ⟨x3dhSimP.erase_timed G _ _ _ (simBodyT_eraseT G),
+    x3dhSimP.timeBoundGraded_timed G _ _ _
+      (ProgE.LoopBoundGraded.sampleTree (simBodyT_loopBoundGraded G))⟩
+
 end CatCrypt.Crypto.Party.Protocols.X3DH
