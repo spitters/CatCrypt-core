@@ -7,6 +7,7 @@ module
 
 public import CatCryptCore.Crypto.Party.UnwindingTransfer
 public import CatCryptCore.Crypto.Party.Timed
+public import CatCryptCore.Crypto.Party.Protocols.FAKE
 
 /-!
 # X3DH in the party language
@@ -101,5 +102,12 @@ theorem x3dh_realizesSim_prog :
   fun ζ Z => le_of_le_of_eq (((x3dh_realizesSim_oracleGame G).trans
     (Sys.StepEq.realizes (simProt_stepEq_simLoop G (F_AKE (SPComp.sample K) true))).1) ζ Z)
     (add_zero _)
+
+/-- **X3DH realizes the program form of `F_AKE` behind the program simulator**, with the bound of
+`x3dh_realizesSim_prog`. -/
+theorem x3dh_realizesSim_progFAKE :
+    RealizesSim (x3dhReal (K := K) G) (FAKEProg.sys (SPComp.sample K) true) (x3dhSimP G)
+      (fun _ Z => KeyedGame.advantage (realGame G) (simGame G) (OProt.oracle.reduction Z)) :=
+  FAKEProg.realizesSim_sys (x3dh_realizesSim_prog G)
 
 end CatCrypt.Crypto.Party.Protocols.X3DH
