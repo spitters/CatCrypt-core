@@ -9,6 +9,7 @@ public import CatCryptCore.Core.SPTreeTimedOps
 public import CatCryptCore.Crypto.OracleAdversaryTimed
 public import CatCryptCore.Tactics.AutoDispatchCore
 public import Mathlib.Tactic.Linarith
+public import Mathlib.Tactic.Ring.RingNF
 public import CatCryptCore.XDijkstra.XTimedMonad
 /-!
 # The time-bound procedure `time_bound`
@@ -128,7 +129,11 @@ alternative comparing the alternatives of `m₁` and `m₂` at its pattern (`cmp
 nested `match` of the same discriminants, `add_le_add`, `max_le_max`, an `if` against the `if`
 or the maximum of its branches, else `omega` with the bounded atoms), and `omega` is tried first
 on the leaf with the compared matches replaced by variables bounded by these facts. The leaf is
-then closed by `omega`. When `omega` fails, the case distinctions of the
+then closed by substitution (`closeBySubst`): each summand of its left side is replaced by a
+bound from the hypotheses that mentions only variables of the right side, the products of both
+sides are put in polynomial normal form by `ring_nf` (`addRingFacts`), and `omega` compares the
+two sides with every hypothesis cleared. Otherwise the leaf is closed by `omega` with all the
+hypotheses. When `omega` fails, the case distinctions of the
 leaf are split before `linarith` and `nlinarith` are tried, each case solved again: an
 `if b = true` on a Boolean local `b` by cases on `b`; a recursor or `casesOn` on a local
 variable or a pair projection of one (the answer cost `Sum.rec (fun _ => 0) (fun _ => 0) r`) by
@@ -136,7 +141,9 @@ cases on the variable (`recCases?`); an `if` or a `match` on its condition or sc
 without case distinctions is closed by `omega`, then `linarith`, then `nlinarith`; when these
 fail, a summand `t.time` of a tree that the rules consume (a second projection, a definition
 with a visible body) is read with the rest of the leaf as its path (`arith_time`). A summand
-`y.1` on the path is sought as it stands before the step costs of the path are reduced.
+`y.1` on the path is sought as it stands before the step costs of the path are reduced. The
+equation `e = c + y.1` that reads such a summand is closed by `omega` with the hypotheses
+cleared (`closeEqAC`), its two sides being equal as linear forms of their atoms.
 
 Every reduction to weak head normal form, unfolding and case split runs under its own
 heartbeat budget (`stepHeartbeats`); a step that exceeds it is not taken, and the subtree is
@@ -1069,19 +1076,21 @@ def addProductFacts (g : MVarId) : MetaM MVarId := g.withContext do
 arithmetic leaf. -/
 def arithHeartbeats : Nat := 20000
 
-/-- Close an arithmetic leaf by `omega`, then (unless `omegaOnly`) `linarith`, then
-`nlinarith`, after adding the bounded atoms, the invariants of subtype values and the products
-bounded by length invariants (`addProductFacts`). `linarith` and `nlinarith` run under their own
-budget of `arithHeartbeats` heartbeats each, so that a leaf they do not close (a leaf that needs
-an invariant of `st_bind_inv`) fails and the procedure goes on. -/
-def closeArithCore (g : MVarId) (omegaOnly : Bool := false) : TacticM Unit := do
+/-- Close an arithmetic leaf by `omega` (unless `withOmega` is false, for a leaf on which it has
+already failed), then (unless `omegaOnly`) `linarith`, then `nlinarith`, after adding the
+bounded atoms, the invariants of subtype values and the products bounded by length invariants
+(`addProductFacts`). `linarith` and `nlinarith` run under their own budget of `arithHeartbeats`
+heartbeats each, so that a leaf they do not close (a leaf that needs an invariant of
+`st_bind_inv`) fails and the procedure goes on. -/
+def closeArithCore (g : MVarId) (omegaOnly : Bool := false) (withOmega : Bool := true) :
+    TacticM Unit := do
   let g ← addBoundedAtoms g
   let g ← addSubtypeFacts g
   let g ← addProductFacts g
   let om ← `(tactic| omega)
   let li ← `(tactic| linarith)
   let nl ← `(tactic| nlinarith)
-  let tacs := if omegaOnly then #[om] else #[om, li, nl]
+  let tacs := if omegaOnly then #[om] else if withOmega then #[om, li, nl] else #[li, nl]
   let cap (c : Core.Context) : Core.Context :=
     let m := if c.maxHeartbeats == 0 then arithHeartbeats * 1000
       else min c.maxHeartbeats (arithHeartbeats * 1000)
@@ -1100,6 +1109,133 @@ def closeArithCore (g : MVarId) (omegaOnly : Bool := false) : TacticM Unit := do
     if ok then return
     s.restore
   throwError "time_bound: arithmetic leaf not closed{indentExpr (← g.getType)}"
+
+/-- The products `p * q` over `ℕ` of two factors that are not numerals, in the arithmetic
+structure of `e` (sums, products, differences, quotients, maxima and minima, comparisons and
+connectives), outside binders and atoms. -/
+partial def arithProducts (e : Expr) (acc : Array Expr) : Array Expr :=
+  let ops2 := [``HAdd.hAdd, ``HSub.hSub, ``HDiv.hDiv, ``HMod.hMod]
+  if e.isAppOfArity ``HMul.hMul 6 && (e.getArg! 0).isConstOf ``Nat then
+    let p := e.getArg! 4
+    let q := e.getArg! 5
+    let numeral (x : Expr) : Bool := x.rawNatLit?.isSome || x.nat?.isSome
+    if numeral p then arithProducts q acc
+    else if numeral q then arithProducts p acc
+    else if acc.contains e then acc else acc.push e
+  else if ops2.any (e.isAppOfArity · 6) then
+    arithProducts (e.getArg! 5) (arithProducts (e.getArg! 4) acc)
+  else if e.isAppOfArity ``Max.max 4 || e.isAppOfArity ``Min.min 4 then
+    arithProducts (e.getArg! 3) (arithProducts (e.getArg! 2) acc)
+  else if e.isAppOfArity ``LE.le 4 || e.isAppOfArity ``LT.lt 4 then
+    arithProducts (e.getArg! 3) (arithProducts (e.getArg! 2) acc)
+  else if e.isAppOfArity ``Eq 3 then
+    arithProducts (e.getArg! 2) (arithProducts (e.getArg! 1) acc)
+  else if e.isAppOfArity ``And 2 || e.isAppOfArity ``Or 2 || e.isAppOfArity ``Iff 2 then
+    arithProducts (e.getArg! 1) (arithProducts (e.getArg! 0) acc)
+  else if e.isAppOfArity ``Not 1 then arithProducts (e.getArg! 0) acc
+  else acc
+
+/-- The polynomial normal forms of the products of the goal `g`: for each product `p * q` of
+two non-numerals over `ℕ` in its target or in a hypothesis (`arithProducts`), the equation
+`p * q = r` with `r` its normal form by `ring_nf` (a sum of monomials, the atoms normalized
+recursively and ordered once for all the products). `omega` reads a product of two non-numerals
+as an atom; with these equations it compares products by their monomials. -/
+def addRingFacts (g : MVarId) : MetaM MVarId := g.withContext do
+  let mut prods : Array Expr := arithProducts (← instantiateMVars (← g.getType)) #[]
+  for d in ← getLCtx do
+    if d.isImplementationDetail || d.isLet then continue
+    let ty ← instantiateMVars d.type
+    unless ← isProp ty do continue
+    prods := arithProducts ty prods
+  if prods.isEmpty then return g
+  let s ← IO.mkRef {}
+  let mut g := g
+  for e in prods do
+    let r ← try
+        Mathlib.Tactic.AtomM.recurse s {} true Mathlib.Tactic.RingNF.evalExpr
+          (Mathlib.Tactic.RingNF.cleanup {}) e
+      catch _ => continue
+    if r.expr == e then continue
+    let (_, g') ← (← g.assert `hr (← mkEq e r.expr) (← r.getProof)).intro1P
+    g := g'
+  return g
+
+/-- A bound of the sum `e` whose variables are all `closed`, with a proof of `e ≤ bound`: `e`
+itself when it is closed; a sum or a product part by part (`Nat.add_le_add`,
+`Nat.mul_le_mul`); any other part by a hypothesis `e ≤ r` or `e = r` among `facts`, one with `r`
+closed first, else one whose right side is bounded in turn (at most `fuel` times). `none` when a
+part has no such bound. -/
+partial def closedBound (closed : Expr → Bool) (facts : Array (Expr × Expr × Expr × Bool))
+    (e : Expr) (fuel : Nat := 4) : MetaM (Option (Expr × Expr)) := do
+  if closed e then return some (e, ← mkAppM ``Nat.le_refl #[e])
+  if e.isAppOfArity ``HAdd.hAdd 6 || e.isAppOfArity ``HMul.hMul 6 then
+    let some (a, pa) ← closedBound closed facts (e.getArg! 4) fuel | return none
+    let some (b, pb) ← closedBound closed facts (e.getArg! 5) fuel | return none
+    if e.isAppOfArity ``HAdd.hAdd 6 then
+      return some (← mkAppM ``HAdd.hAdd #[a, b], ← mkAppM ``Nat.add_le_add #[pa, pb])
+    return some (← mkAppM ``HMul.hMul #[a, b], ← mkAppM ``Nat.mul_le_mul #[pa, pb])
+  for pass in [true, false] do
+    for (h, t, r, isEq) in facts do
+      unless t == e && closed r == pass do continue
+      let pf ← if isEq then mkAppM ``Nat.le_of_eq #[h] else pure h
+      if pass then return some (r, pf)
+      if fuel == 0 then continue
+      if let some (r', pr) ← closedBound closed facts r (fuel - 1) then
+        return some (r', ← mkAppM ``Nat.le_trans #[pf, pr])
+  return none
+
+/-- An arithmetic leaf `l ≤ B` by substitution: each part of `l` bounded by the hypotheses in
+terms of the variables of `B` alone (`closedBound`: the bounds of the step costs, of the
+registered costs and of the cost companions that `derive_time_bound` states), and the resulting
+inequality between two expressions in the variables of `B` closed by `omega` with every
+hypothesis cleared, after the products of both sides are put in polynomial normal form
+(`addRingFacts`). With the hypotheses that do not bear on it gone, `omega` compares the two
+sides monomial by monomial. -/
+def closeBySubst (g : MVarId) : TacticM Bool := g.withContext do
+  let tgt ← instantiateMVars (← g.getType)
+  let some (l, b) := natLe? tgt | return false
+  let keep := (collectFVars {} b).fvarSet
+  let closed (e : Expr) : Bool := (collectFVars {} e).fvarIds.all keep.contains
+  let mut facts : Array (Expr × Expr × Expr × Bool) := #[]
+  for d in ← getLCtx do
+    if d.isImplementationDetail || d.isLet then continue
+    let ty ← instantiateMVars d.type
+    unless ← isProp ty do continue
+    if ty.isAppOfArity ``Eq 3 && (ty.getArg! 0).isConstOf ``Nat then
+      facts := facts.push (d.toExpr, ty.getArg! 1, ty.getArg! 2, true)
+    else if let some (t, r) := natLe? ty then
+      facts := facts.push (d.toExpr, t, r, false)
+  let s ← saveState
+  let some (l', pl) ← closedBound closed facts l | return false
+  try
+    let m ← mkFreshExprMVar (← mkAppM ``LE.le #[l', b])
+    let pf ← mkAppM ``Nat.le_trans #[pl, m]
+    let mut hs : Array FVarId := #[]
+    for d in ← getLCtx do
+      if d.isImplementationDetail || d.isLet then continue
+      if ← isProp d.type then hs := hs.push d.fvarId
+    let g1 ← addRingFacts (← m.mvarId!.tryClearMany hs)
+    setGoals [g1]
+    evalTactic (← `(tactic| omega))
+    unless (← getUnsolvedGoals).isEmpty do throwError "time_bound: substitution leaf"
+    g.assign pf
+    return true
+  catch _ =>
+    s.restore
+    return false
+
+/-- An equation `a = b` over `ℕ`, the premise `e = c + y.1` of a rule that reads a summand
+`y.1` of a path (`st_pair_fst`, `time_snd_fst`, `st_snd_bind_fst`, `stb_pair_fst`): by `omega`
+with the hypotheses of the context cleared, the two sides being equal as linear forms of their
+atoms. -/
+def closeEqAC (g : MVarId) : TacticM Unit := g.withContext do
+  let mut hs : Array FVarId := #[]
+  for d in ← getLCtx do
+    if d.isImplementationDetail || d.isLet then continue
+    if ← isProp d.type then hs := hs.push d.fvarId
+  setGoals [← g.tryClearMany hs]
+  evalTactic (← `(tactic| omega))
+  unless (← getUnsolvedGoals).isEmpty do throwError "time_bound: equation not closed"
 
 /-- The constants `s.t` for the tags `t` and the trailing parts `s` of the name `p` (its last
 component, its last two, and so on), each resolved in the current namespaces and the open
@@ -2393,6 +2529,10 @@ partial def closeArith (g : MVarId) (env : Bool) (fuel : Nat) : TacticM Unit := 
       return
     catch _ => sm.restore
   let gc ← addCaseFacts g
+  -- each part bounded in the variables of the bound, compared by monomials
+  let sb ← saveState
+  if ← closeBySubst (← addBoundedAtoms gc) then return
+  sb.restore
   let s ← saveState
   try
     closeArithCore gc (omegaOnly := true)
@@ -2416,7 +2556,7 @@ partial def closeArith (g : MVarId) (env : Bool) (fuel : Nat) : TacticM Unit := 
       return
     let s2 ← saveState
     try
-      closeArithCore gc
+      closeArithCore gc (withOmega := false)
     catch e =>
       s2.restore
       -- the time of a tree that the rules consume, with the rest of the leaf as its path (on
@@ -2864,6 +3004,12 @@ partial def solve (g : MVarId) (env : Bool) (fuel : Nat) : TacticM Unit := do
     else rule g ``stb_start (env || (← structuralRoot (tgt.getArg! 3))) fuel
   else
     let s ← saveState
+    -- an equation over `ℕ` between sums of atoms, without the hypotheses first
+    if tgt.isAppOfArity ``Eq 3 && (tgt.getArg! 0).isConstOf ``Nat then
+      try
+        closeEqAC g
+        return
+      catch _ => s.restore
     try
       g.assumption
     catch _ =>
