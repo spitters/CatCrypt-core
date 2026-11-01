@@ -6,7 +6,7 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Crypto.Party.Timed
-public import CatCryptCore.Crypto.UCSimulatorCostGraded
+public import CatCryptCore.Crypto.UCSimulatorCostSized
 
 /-!
 # Costed loops of party programs
@@ -37,8 +37,16 @@ next one up to its first output, so each step from a state of `ActInv j` costs a
 this is the invariant time bound `MultiHybrid.Timed.TimeBoundInv` with the bound `2 * a` of
 each step (`Prog.loopMulti.timeBoundInv_timed`).
 
+A body whose work depends on the data it receives (a sample of the length of a message) has the
+size-graded bound `ProgE.BoundSz w sz p t u P`: besides the remaining time `t`, each activation
+has the budget `u`, set to `sz e` by the `recv` of `e` and spent before `t`, which ends with the
+activation. Under `ProgE.LoopBoundSized (weightT ι) bodyT s₀ Inv a b sz` each step on `x` from a
+state of `ActInvSized j` costs at most `(2 * a + b) + 2 * b * j + sz x`, so that the costed loop
+simulator has the size-graded time bound `MultiHybrid.Timed.TimeBoundSized`
+(`Prog.loopMulti.timeBoundSized_timed`).
+
 Search words: party language, costed loop, simulator cost, loop simulator, time certificate,
-graded bound, lazily sampled table.
+graded bound, lazily sampled table, size of the event, message length.
 
 ## Main definitions
 
@@ -50,6 +58,9 @@ graded bound, lazily sampled table.
 * `Party.Prog.loopMulti.timed`: the costed multi-call simulator of a loop.
 * `Party.Prog.loopMulti.IterInv`, `Party.Prog.loopMulti.ActInv`: the invariants of the
   residual programs, by iteration and by activation.
+* `Party.ProgE.BoundSz`, `Party.ProgE.LoopBoundSized`: size-graded bounds of programs and loops.
+* `Party.Prog.loopMulti.IterInvSized`, `Party.Prog.loopMulti.ActInvSized`: their invariants of
+  the residual programs.
 
 ## Main results
 
@@ -63,6 +74,11 @@ graded bound, lazily sampled table.
   `Party.Prog.loopMulti.finish_time`: the graded bounds of the steps.
 * `Party.Prog.loopMulti.timeBoundInv_timed`: the invariant time bound under a constant bound.
 * `Party.Prog.loopMulti.timeBoundGraded_timed`: the graded time bound `2 * a + b`, `2 * b`.
+* `Party.ProgE.BoundSz.bind`, `Party.ProgE.Bound.boundSz`, `Party.ProgE.emitT_timeSz`,
+  `Party.ProgE.awaitT_timeSz`: composition, the constant bound as a size-graded one, and the
+  size-graded time of the phases.
+* `Party.Prog.loopMulti.timeBoundSized_timed`: the size-graded time bound `2 * a + b`, `2 * b`,
+  `c` of the costed loop simulator under the size budget `c * s x`.
 * `Party.ProgE.eraseT_sampleTree_priced`, `Party.ProgE.LoopBoundGraded.sampleTree`: a priced
   body whose operations are distribution samples (`ProgE.AllOps ProgE.IsSample`) is a costed
   body under the tree interpretation `ProgE.sampleTree`, with the graded bound it has at the
@@ -291,6 +307,160 @@ theorem awaitT_time (ι : Op → ℕ × SPTree.Timed ℕ) {P : α → Prop} {R :
     have hb := SPTree.Timed.stepTime_bind_le (runT ι q).2 (fun n => awaitT ι e s rA rE (k n))
       (t - weightT ι q + D) fun n => (hk n).1
     have hw : weightT ι q ≤ t := hp.1
+    simp only [weightT, SPTree.Timed.stepTime] at hw hb
+    refine ⟨?_, SPTree.Timed.allRet_bind_of
+      (SPTree.Timed.allRet_of_forall (fun n => (hk n).2) _)⟩
+    simp only [awaitT, SPTree.Timed.stepTime, SPTree.Timed.delay] at hb ⊢
+    omega
+  | fail => exact ⟨by simp only [awaitT, stepTime_fail]; omega, trivial⟩
+
+/-! ## Time bounds with a budget by the size of the event -/
+
+/-- The size-graded time bound of a program at the weight `w` with the size budget `sz`: the
+remaining time `t`, and the budget `u` of the current activation, spent first. A `recv` of `e`
+costs one unit and sets the budget to `sz e`; a `send` costs one unit and ends the activation,
+with the budget `0`; an operation `q` weighs `w q`. Every return reached satisfies `P`. -/
+def BoundSz (w : Op → ℕ) (sz : E → ℕ) : ProgE Op E O α → ℕ → ℕ → (α → Prop) → Prop
+  | .ret a, _, _, P => P a
+  | .recv k, t, _, P => 1 ≤ t ∧ ∀ e, BoundSz w sz (k e) (t - 1) (sz e) P
+  | .send _ p, t, _, P => 1 ≤ t ∧ BoundSz w sz p (t - 1) 0 P
+  | .opN q k, t, u, P => w q ≤ t + u ∧ ∀ n, BoundSz w sz (k n) (t - (w q - u)) (u - w q) P
+  | .fail, _, _, _ => True
+
+/-- A size-graded time bound is one of every larger time, budget and weaker predicate. -/
+theorem BoundSz.mono {w : Op → ℕ} {sz : E → ℕ} {p : ProgE Op E O α} {t t' u u' : ℕ}
+    {P P' : α → Prop} (h : BoundSz w sz p t u P) (ht : t ≤ t') (hu : u ≤ u')
+    (hP : ∀ a, P a → P' a) : BoundSz w sz p t' u' P' := by
+  induction p generalizing t t' u u' with
+  | ret a => exact hP a h
+  | recv k ih =>
+    simp only [BoundSz] at h ⊢
+    exact ⟨by omega, fun e => ih e (h.2 e) (by omega) le_rfl⟩
+  | send o p ih =>
+    simp only [BoundSz] at h ⊢
+    exact ⟨by omega, ih h.2 (by omega) le_rfl⟩
+  | opN q k ih =>
+    simp only [BoundSz] at h ⊢
+    exact ⟨by omega, fun n => ih n (h.2 n) (by omega) (by omega)⟩
+  | fail => trivial
+
+/-- A time bound is a size-graded time bound of every size budget. -/
+theorem Bound.boundSz {w : Op → ℕ} (sz : E → ℕ) {p : ProgE Op E O α} {t : ℕ} {P : α → Prop}
+    (h : Bound w p t P) (u : ℕ) : BoundSz w sz p t u P := by
+  induction p generalizing t u with
+  | ret a => exact h
+  | recv k ih =>
+    simp only [Bound] at h
+    exact ⟨h.1, fun e => ih e (h.2 e) _⟩
+  | send o p ih =>
+    simp only [Bound] at h
+    exact ⟨h.1, ih h.2 _⟩
+  | opN q k ih =>
+    simp only [Bound] at h
+    exact ⟨by omega, fun n => (ih n (h.2 n) (u - w q)).mono (by omega) le_rfl fun _ => id⟩
+  | fail => trivial
+
+/-- **Size-graded time bounds compose along `bind`**: the continuation runs on the remaining
+time and budget of the first program. -/
+theorem BoundSz.bind {β : Type} {w : Op → ℕ} {sz : E → ℕ} {p : ProgE Op E O α}
+    {f : α → ProgE Op E O β} {t t₂ u : ℕ} {P : β → Prop}
+    (h : BoundSz w sz p t u fun a => BoundSz w sz (f a) t₂ 0 P) :
+    BoundSz w sz (p.bind f) (t + t₂) u P := by
+  induction p generalizing t u with
+  | ret a => exact BoundSz.mono h (by omega) (Nat.zero_le _) fun _ => id
+  | recv k ih =>
+    simp only [BoundSz, ProgE.bind] at h ⊢
+    exact ⟨by omega, fun e => (ih e (h.2 e)).mono (by omega) le_rfl fun _ => id⟩
+  | send o p ih =>
+    simp only [BoundSz, ProgE.bind] at h ⊢
+    exact ⟨by omega, (ih h.2).mono (by omega) le_rfl fun _ => id⟩
+  | opN q k ih =>
+    simp only [BoundSz, ProgE.bind] at h ⊢
+    exact ⟨by omega, fun n => (ih n (h.2 n)).mono (by omega) le_rfl fun _ => id⟩
+  | fail => trivial
+
+/-- The size-graded time bound `a`, `b` of the loop of `body` from `s₀` on the invariant `Inv`
+with the size budget `sz`: the initial state satisfies `Inv 0`, and the body at a state of
+`Inv i` has the size-graded time bound `a + b * i` from the budget `0` and returns states of
+`Inv (i + 1)`. -/
+def LoopBoundSized {σ : Type} (w : Op → ℕ) (body : σ → ProgE Op E O σ) (s₀ : σ)
+    (Inv : ℕ → σ → Prop) (a b : ℕ) (sz : E → ℕ) : Prop :=
+  Inv 0 s₀ ∧ ∀ i s, Inv i s → BoundSz w sz (body s) (a + b * i) 0 (Inv (i + 1))
+
+/-- A graded bound of a loop is a size-graded bound of every size budget. -/
+theorem LoopBoundGraded.loopBoundSized {σ : Type} {w : Op → ℕ} {body : σ → ProgE Op E O σ}
+    {s₀ : σ} {Inv : ℕ → σ → Prop} {a b : ℕ} (h : LoopBoundGraded w body s₀ Inv a b)
+    (sz : E → ℕ) : LoopBoundSized w body s₀ Inv a b sz :=
+  ⟨h.1, fun i s hs => (h.2 i s hs).boundSz sz 0⟩
+
+/-- **Size-graded time of the emit phase.** When `p` has the size-graded bound `t ≤ T` from
+the budget `u` and returns values of `P`, and the continuations at outputs (with residuals of
+bound at most `T` from the budget `0`) and at returns of `P` cost at most `D` and return values
+of `R`, the emit phase in costed trees costs at most `t + u + D` and returns values of `R`. -/
+theorem emitT_timeSz (ι : Op → ℕ × SPTree.Timed ℕ) {sz : E → ℕ} {P : α → Prop}
+    {R : γ → Prop} {T D : ℕ} (s : O → ProgE (Costed Op) E O α → ℕ × SPTree.Timed γ)
+    (r : α → ℕ × SPTree.Timed γ)
+    (hs : ∀ o q u, u ≤ T → BoundSz (weightT ι) sz q u 0 P →
+      SPTree.Timed.stepTime (s o q) ≤ D ∧ SPTree.Timed.AllRet R (s o q).2)
+    (hr : ∀ a, P a → SPTree.Timed.stepTime (r a) ≤ D ∧ SPTree.Timed.AllRet R (r a).2)
+    (p : ProgE (Costed Op) E O α) (t u : ℕ) (ht : t ≤ T)
+    (hp : BoundSz (weightT ι) sz p t u P) :
+    SPTree.Timed.stepTime (emitT ι s r p) ≤ t + u + D ∧
+      SPTree.Timed.AllRet R (emitT ι s r p).2 := by
+  induction p generalizing t u with
+  | ret a =>
+    have := hr a hp
+    exact ⟨by simp only [emitT]; omega, this.2⟩
+  | recv k ih => exact ⟨by simp only [emitT, stepTime_fail]; omega, trivial⟩
+  | send o p ih =>
+    have := hs o p (t - 1) (by omega) hp.2
+    exact ⟨by simp only [emitT]; omega, this.2⟩
+  | opN q k ih =>
+    have hw : weightT ι q ≤ t + u := hp.1
+    have hk : ∀ n, SPTree.Timed.stepTime (emitT ι s r (k n)) ≤
+        t - (weightT ι q - u) + (u - weightT ι q) + D ∧
+        SPTree.Timed.AllRet R (emitT ι s r (k n)).2 :=
+      fun n => ih n _ _ (by omega) (hp.2 n)
+    have hb := SPTree.Timed.stepTime_bind_le (runT ι q).2 (fun n => emitT ι s r (k n))
+      (t - (weightT ι q - u) + (u - weightT ι q) + D) fun n => (hk n).1
+    simp only [weightT, SPTree.Timed.stepTime] at hw hb
+    refine ⟨?_, SPTree.Timed.allRet_bind_of
+      (SPTree.Timed.allRet_of_forall (fun n => (hk n).2) _)⟩
+    simp only [emitT, SPTree.Timed.stepTime, SPTree.Timed.delay] at hb ⊢
+    omega
+  | fail => exact ⟨by simp only [emitT, stepTime_fail]; omega, trivial⟩
+
+/-- **Size-graded time of the await phase on `e`.** When `p` has the size-graded bound
+`t ≤ T` from the budget `u` and returns values of `P`, the continuation at a return before the
+`recv` costs at most `D`, and the continuations after it cost at most `DE` with
+`sz e + DE ≤ D`, the await phase in costed trees costs at most `t + u + D`. -/
+theorem awaitT_timeSz (ι : Op → ℕ × SPTree.Timed ℕ) {sz : E → ℕ} {P : α → Prop}
+    {R : γ → Prop} {T D DE : ℕ} (e : E) (s : O → ProgE (Costed Op) E O α → ℕ × SPTree.Timed γ)
+    (rA rE : α → ℕ × SPTree.Timed γ)
+    (hs : ∀ o q u, u ≤ T → BoundSz (weightT ι) sz q u 0 P →
+      SPTree.Timed.stepTime (s o q) ≤ DE ∧ SPTree.Timed.AllRet R (s o q).2)
+    (hA : ∀ a, P a → SPTree.Timed.stepTime (rA a) ≤ D ∧ SPTree.Timed.AllRet R (rA a).2)
+    (hE : ∀ a, P a → SPTree.Timed.stepTime (rE a) ≤ DE ∧ SPTree.Timed.AllRet R (rE a).2)
+    (hD : sz e + DE ≤ D) (p : ProgE (Costed Op) E O α) (t u : ℕ) (ht : t ≤ T)
+    (hp : BoundSz (weightT ι) sz p t u P) :
+    SPTree.Timed.stepTime (awaitT ι e s rA rE p) ≤ t + u + D ∧
+      SPTree.Timed.AllRet R (awaitT ι e s rA rE p).2 := by
+  induction p generalizing t u with
+  | ret a =>
+    have := hA a hp
+    exact ⟨by simp only [awaitT]; omega, this.2⟩
+  | recv k ih =>
+    have := emitT_timeSz ι s rE hs hE (k e) (t - 1) (sz e) (by omega) (hp.2 e)
+    exact ⟨by simp only [awaitT]; omega, this.2⟩
+  | send o p ih => exact ⟨by simp only [awaitT, stepTime_fail]; omega, trivial⟩
+  | opN q k ih =>
+    have hw : weightT ι q ≤ t + u := hp.1
+    have hk : ∀ n, SPTree.Timed.stepTime (awaitT ι e s rA rE (k n)) ≤
+        t - (weightT ι q - u) + (u - weightT ι q) + D ∧
+        SPTree.Timed.AllRet R (awaitT ι e s rA rE (k n)).2 :=
+      fun n => ih n _ _ (by omega) (hp.2 n)
+    have hb := SPTree.Timed.stepTime_bind_le (runT ι q).2 (fun n => awaitT ι e s rA rE (k n))
+      (t - (weightT ι q - u) + (u - weightT ι q) + D) fun n => (hk n).1
     simp only [weightT, SPTree.Timed.stepTime] at hw hb
     refine ⟨?_, SPTree.Timed.allRet_bind_of
       (SPTree.Timed.allRet_of_forall (fun n => (hk n).2) _)⟩
@@ -602,6 +772,149 @@ theorem loopMulti.timeBoundGraded_timed [Inhabited O] (ι : Op → ℕ × SPTree
     exact this
   · have := loopMulti.finish_time ι bodyT s₀ n h hp x
     exact this
+
+/-! ## The time of the costed loop by the size of the events -/
+
+/-- The invariant of a residual program in the `k`-th iteration of a loop with the graded
+invariant `Inv` and the size budget `sz`: the return of a state of `Inv k`, before the
+iteration, or a suffix of the iteration of size-graded bound `a + b * k` from the budget `0`
+that returns states of `Inv (k + 1)`. -/
+def loopMulti.IterInvSized (ι : Op → ℕ × SPTree.Timed ℕ) (sz : E → ℕ) (Inv : ℕ → σ → Prop)
+    (a b k : ℕ) (p : ProgE (Costed Op) E O σ) : Prop :=
+  (∃ s, p = .ret s ∧ Inv k s) ∨ ProgE.BoundSz (ProgE.weightT ι) sz p (a + b * k) 0 (Inv (k + 1))
+
+/-- The invariant of a residual program after `j` activations, with the size budget `sz`: the
+invariant of the `k`-th iteration for some `k ≤ j`. -/
+def loopMulti.ActInvSized (ι : Op → ℕ × SPTree.Timed ℕ) (sz : E → ℕ) (Inv : ℕ → σ → Prop)
+    (a b j : ℕ) (p : ProgE (Costed Op) E O σ) : Prop :=
+  ∃ k ≤ j, loopMulti.IterInvSized ι sz Inv a b k p
+
+/-- An iteration from a state of `Inv i` with the size-graded bound `a + b * i`, run up to its
+first output on `e`, costs at most `a + b * i + sz e` and leaves a residual of the `i`-th
+iteration. -/
+theorem loopSys.actT_timeSz (ι : Op → ℕ × SPTree.Timed ℕ) (bodyT : σ → ProgE (Costed Op) E O σ)
+    {sz : E → ℕ} {Inv : ℕ → σ → Prop} {a b : ℕ}
+    (h : ∀ i s, Inv i s →
+      ProgE.BoundSz (ProgE.weightT ι) sz (bodyT s) (a + b * i) 0 (Inv (i + 1)))
+    {i : ℕ} {s : σ} (hs : Inv i s) (e : E) :
+    SPTree.Timed.stepTime (ProgE.actT ι (bodyT s) e) ≤ a + b * i + sz e ∧
+      SPTree.Timed.AllRet (fun y => loopMulti.IterInvSized ι sz Inv a b i y.1)
+        (ProgE.actT ι (bodyT s) e).2 := by
+  have := ProgE.awaitT_timeSz ι (P := Inv (i + 1))
+    (R := fun y : ProgE (Costed Op) E O σ × O => loopMulti.IterInvSized ι sz Inv a b i y.1)
+    (T := a + b * i) (D := sz e) (DE := 0) e (fun o q => (0, .ret (q, o)))
+    (fun _ => (0, .fail)) (fun _ => (0, .fail))
+    (fun o q u hu hq => ⟨by simp [SPTree.Timed.stepTime, SPTree.Timed.time_ret],
+      Or.inr (hq.mono hu le_rfl fun _ => id)⟩)
+    (fun _ _ => ⟨by simp [ProgE.stepTime_fail], trivial⟩)
+    (fun _ _ => ⟨by simp [ProgE.stepTime_fail], trivial⟩) (by omega) (bodyT s) (a + b * i) 0
+    le_rfl (h i s hs)
+  exact ⟨(Nat.add_zero (a + b * i)) ▸ this.1, this.2⟩
+
+/-- **Size-graded time of a costed loop step.** From a residual of the `k`-th iteration, a step
+on `e` costs at most `2 * a + b + 2 * b * k + sz e` and leaves a residual of the `k`-th or the
+`(k + 1)`-th iteration. -/
+theorem loopSys.timed_timeSz (ι : Op → ℕ × SPTree.Timed ℕ)
+    (bodyT : σ → ProgE (Costed Op) E O σ) {sz : E → ℕ} {Inv : ℕ → σ → Prop} {a b : ℕ}
+    (h : ∀ i s, Inv i s →
+      ProgE.BoundSz (ProgE.weightT ι) sz (bodyT s) (a + b * i) 0 (Inv (i + 1)))
+    {k : ℕ} {p : ProgE (Costed Op) E O σ} (hp : loopMulti.IterInvSized ι sz Inv a b k p)
+    (e : E) :
+    SPTree.Timed.stepTime (loopSys.timed ι bodyT p e) ≤ 2 * a + b + 2 * b * k + sz e ∧
+      SPTree.Timed.AllRet (fun y => loopMulti.IterInvSized ι sz Inv a b k y.1 ∨
+        loopMulti.IterInvSized ι sz Inv a b (k + 1) y.1) (loopSys.timed ι bodyT p e).2 := by
+  have hk : b * (k + 1) = b * k + b := by ring
+  rcases hp with ⟨s, rfl, hs⟩ | hp
+  · have := loopSys.actT_timeSz ι bodyT h hs e
+    refine ⟨?_, SPTree.Timed.allRet_mono (fun _ hy => Or.inl hy) _ this.2⟩
+    have h1 := this.1
+    change SPTree.Timed.stepTime (ProgE.actT ι (bodyT s) e) ≤ _
+    nlinarith
+  · have := ProgE.awaitT_timeSz ι (P := Inv (k + 1))
+      (R := fun y : ProgE (Costed Op) E O σ × O => loopMulti.IterInvSized ι sz Inv a b k y.1 ∨
+        loopMulti.IterInvSized ι sz Inv a b (k + 1) y.1)
+      (T := a + b * k) (D := a + b * (k + 1) + sz e) (DE := 0) e (fun o q => (0, .ret (q, o)))
+      (fun s' => ProgE.actT ι (bodyT s') e) (fun _ => (0, .fail))
+      (fun o q u hu hq => ⟨by simp [SPTree.Timed.stepTime, SPTree.Timed.time_ret],
+        Or.inl (Or.inr (hq.mono hu le_rfl fun _ => id))⟩)
+      (fun s' hs' => ⟨(loopSys.actT_timeSz ι bodyT h hs' e).1,
+        SPTree.Timed.allRet_mono (fun _ hy => Or.inr hy) _
+          (loopSys.actT_timeSz ι bodyT h hs' e).2⟩)
+      (fun _ _ => ⟨by simp [ProgE.stepTime_fail], trivial⟩) (by omega) p (a + b * k) 0 le_rfl hp
+    refine ⟨?_, this.2⟩
+    have h1 := this.1
+    change SPTree.Timed.stepTime (ProgE.awaitT ι e _ _ _ p) ≤ _
+    nlinarith
+
+/-- A guarded costed loop step on `x` from a state of `ActInvSized j` costs at most
+`(2 * a + b) + 2 * b * j + sz x` and returns states of `ActInvSized (j + 1)`. -/
+theorem loopMulti.startT_timeSz [Inhabited O] (ι : Op → ℕ × SPTree.Timed ℕ)
+    (bodyT : σ → ProgE (Costed Op) (E ⊕ A) (Q ⊕ O) σ) {sz : E ⊕ A → ℕ}
+    {Inv : ℕ → σ → Prop} {a b : ℕ}
+    (h : ∀ i s, Inv i s →
+      ProgE.BoundSz (ProgE.weightT ι) sz (bodyT s) (a + b * i) 0 (Inv (i + 1)))
+    {j : ℕ} {p : ProgE (Costed Op) (E ⊕ A) (Q ⊕ O) σ}
+    (hp : loopMulti.ActInvSized ι sz Inv a b j p) (x : E ⊕ A) :
+    SPTree.Timed.stepTime (loopMulti.startT ι bodyT p x) ≤ (2 * a + b) + 2 * b * j + sz x ∧
+      SPTree.Timed.AllRet (fun y => loopMulti.ActInvSized ι sz Inv a b (j + 1) y.1)
+        (loopMulti.startT ι bodyT p x).2 := by
+  obtain ⟨k, hkj, hk⟩ := hp
+  have := loopSys.timed_timeSz ι bodyT h hk x
+  refine guardT_time _ _ _ ⟨le_trans this.1 ?_, SPTree.Timed.allRet_mono
+    (fun y hy => hy.elim (fun h' => ⟨k, by omega, h'⟩) fun h' => ⟨k + 1, by omega, h'⟩) _
+    this.2⟩ ⟨k, by omega, hk⟩
+  have : 2 * b * k ≤ 2 * b * j := Nat.mul_le_mul_left _ hkj
+  omega
+
+/-- The guarded costed `finish` step on `x` from a state of `ActInvSized j` costs at most
+`(2 * a + b) + 2 * b * j + sz (.inr x)` and returns states of `ActInvSized (j + 1)`. -/
+theorem loopMulti.finishT_timeSz [Inhabited O] (ι : Op → ℕ × SPTree.Timed ℕ)
+    (bodyT : σ → ProgE (Costed Op) (E ⊕ A) (Q ⊕ O) σ) {sz : E ⊕ A → ℕ}
+    {Inv : ℕ → σ → Prop} {a b : ℕ}
+    (h : ∀ i s, Inv i s →
+      ProgE.BoundSz (ProgE.weightT ι) sz (bodyT s) (a + b * i) 0 (Inv (i + 1)))
+    {j : ℕ} {p : ProgE (Costed Op) (E ⊕ A) (Q ⊕ O) σ}
+    (hp : loopMulti.ActInvSized ι sz Inv a b j p) (x : A) :
+    SPTree.Timed.stepTime (loopMulti.finishT ι bodyT p x) ≤
+        (2 * a + b) + 2 * b * j + sz (.inr x) ∧
+      SPTree.Timed.AllRet (fun y => loopMulti.ActInvSized ι sz Inv a b (j + 1) y.1)
+        (loopMulti.finishT ι bodyT p x).2 := by
+  obtain ⟨k, hkj, hk⟩ := hp
+  have := loopSys.timed_timeSz ι bodyT h hk (.inr x)
+  have hout : ∀ y : ProgE (Costed Op) (E ⊕ A) (Q ⊕ O) σ × (Q ⊕ O),
+      SPTree.Timed.stepTime (toOutT y) ≤ 0 := by
+    rintro ⟨t, q | o⟩
+    · exact (ProgE.stepTime_fail 0).le
+    · simp [toOutT, SPTree.Timed.stepTime, SPTree.Timed.time_ret]
+  have hb := SPTree.Timed.stepTime_bind_le (loopSys.timed ι bodyT p (.inr x)).2 toOutT 0 hout
+  have hmono : 2 * b * k ≤ 2 * b * j := Nat.mul_le_mul_left _ hkj
+  refine guardT_time _ _ _ ⟨?_, SPTree.Timed.allRet_bind_of (SPTree.Timed.allRet_mono
+    (fun y hy => ?_) _ this.2)⟩ ⟨k, by omega, hk⟩
+  · have h1 := this.1
+    simp only [SPTree.Timed.stepTime_delay]
+    simp only [SPTree.Timed.stepTime] at h1 hb ⊢
+    omega
+  · rcases y with ⟨t, q | o⟩
+    · trivial
+    · exact hy.elim (fun h' => ⟨k, by omega, h'⟩) fun h' => ⟨k + 1, by omega, h'⟩
+
+/-- **Size-graded time certificate of the costed loop simulator.** Under the size-graded bound
+`a`, `b` of the costed body with the budget `c * sE e` on an outer event `e` and `c * sA x` on an
+answer `x`, the costed loop simulator has the size-graded time bound `2 * a + b`, `2 * b`, `c`
+with the sizes `sE`, `sA` on the invariant `ActInvSized`: the `j`-th activation on `x` costs at
+most `(2 * a + b) + 2 * b * j + c * s x`. -/
+theorem loopMulti.timeBoundSized_timed [Inhabited O] (ι : Op → ℕ × SPTree.Timed ℕ)
+    (bodyT : σ → ProgE (Costed Op) (E ⊕ A) (Q ⊕ O) σ) (s₀ : σ) (n : ℕ) {Inv : ℕ → σ → Prop}
+    {sE : E → ℕ} {sA : A → ℕ} {a b c : ℕ}
+    (h : ProgE.LoopBoundSized (ProgE.weightT ι) bodyT s₀ Inv a b
+      (Sum.elim (fun e => c * sE e) (fun x => c * sA x))) :
+    (loopMulti.timed ι bodyT s₀ n).TimeBoundSized
+      (loopMulti.ActInvSized ι (Sum.elim (fun e => c * sE e) (fun x => c * sA x)) Inv a b)
+      sE sA (2 * a + b) (2 * b) c :=
+  ⟨⟨0, le_rfl, Or.inl ⟨s₀, rfl, h.1⟩⟩,
+    fun _ _ e hp => loopMulti.startT_timeSz ι bodyT h.2 hp (.inl e),
+    fun _ _ x hp => loopMulti.startT_timeSz ι bodyT h.2 hp (.inr x),
+    fun _ _ x hp => loopMulti.finishT_timeSz ι bodyT h.2 hp x⟩
 
 end Prog
 
