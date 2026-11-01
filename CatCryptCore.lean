@@ -490,6 +490,7 @@ public import CatCryptCore.Crypto.Party.UnwindingTransfer
 public import CatCryptCore.Crypto.Party.QProgWP
 public import CatCryptCore.Crypto.Party.Refinement
 public import CatCryptCore.Crypto.Party.Protocols.FAKE
+public import CatCryptCore.Crypto.Party.Protocols.IKNP
 public import CatCryptCore.Crypto.Party.Protocols.X3DH
 public import CatCryptCore.Crypto.Party.Protocols.PQXDH
 public import CatCryptCore.Crypto.UCTransparentSquare
