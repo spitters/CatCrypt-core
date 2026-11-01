@@ -82,6 +82,22 @@ The X3DH simulator written as a program is step-equivalent to the hand-written s
 every subroutine
 ([`X3DHProg.simProt_stepEq_simLoop`](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/Crypto/Party/Call.lean)).
 
+## Derived structure: port typing, opacity, unwinding
+
+The structural facts of a party are theorems over the syntax of programs
+([`Derived`](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/Crypto/Party/Derived.lean)).
+The activation unfolds along each constructor and along `bind` (`Prog.act_bind`). Port typing
+`ProgE.Ports Pe Po p` (outputs in `Po`; events outside `Pe` fail) is kept by the states of the
+denotation, which emits only outputs of `Po` and has no outcome on other events
+(`Prog.toSys_ports`, `Prog.loopSys_ports`). Information flow for a public view `V` is the
+relation `ProgE.ViewRel V RA` on programs; a program related to itself has this relation as an
+unwinding relation of its denotation (`Sys.Unwinding`), so the denotation is opaque for `V`
+(`Prog.toSys_opaque`, `Prog.loopSys_opaque`). A program whose continuations read each event only
+through a projection `f` has equal activations on events with equal images and is
+step-equivalent to a program on the projected events (`Prog.toSys_stepEq_of_readsVia`). The loop
+of the X3DH simulator program is opaque from the view of `F_AKE` to the view of the real
+interface (`X3DHProg.simLoopSys_opaque`).
+
 ## Quantum programs and qubit ports
 
 A quantum party on the register `R` has the classical ports of `Party.Prog`, and its operation
