@@ -34,8 +34,9 @@ Quantum UC emulation `EmulatesΩ` compares open systems through the bit boundary
 `obsBit` is the subinstrument on the register `R` of the first activation on the start packet
 with the returned bit as outcome. Every test is composition with a morphism of the Int
 construction (`runTest_eq`), so emulation is preserved by composition (`EmulatesΩ.comp`), and
-the composition theorems for `map`, `par` and `wire` (the feedback of the open theory) follow
-from the open-theory laws `wire_comm'` and `par_comm'`.
+tests of `map`, `par` and `wire` composites factor through tests of the component
+(`testFactorization`); the closure theorems of `EmulatesΩ` are those of
+`OpenTheoryObs.EmulatesObs`.
 
 The development is the quantum counterpart of `UCLoopbackInt`, `UCLoopbackOpenTheory` and
 `UCLoopbackObservation` for the classical category `SysCat`.
@@ -47,7 +48,11 @@ The development is the quantum counterpart of `UCLoopbackInt`, `UCLoopbackOpenTh
 * `IntQSys.cup`, `IntQSys.cap`, `IntQSys.nameEquiv`: the forwarding pairing and names.
 * `QOpenTheory.bObj`, `QOpenTheory.bMap`, `QOpenTheory.bMu`: port boundaries as objects.
 * `QOpenTheory.qOpenTheory`: the quantum open theory.
-* `QOpenTheory.obsBit`, `QOpenTheory.runTest`, `QOpenTheory.EmulatesΩ`: quantum emulation.
+* `QOpenTheory.obsBit`, `QOpenTheory.runTest`, `QOpenTheory.EmulatesΩ`: quantum emulation, the
+  instance of `OpenTheoryObs.EmulatesObs` at `0` for the discrete distance on `obsBit`, with the
+  run `OpenTheoryObs.seq`.
+* `QOpenTheory.testFactorization`: tests of `map`, `par` and `wire` composites factor through
+  tests of the component (`OpenTheoryObs.TestFactorization`).
 
 ## Main results
 
@@ -707,6 +712,8 @@ theorem firstOut_stepEq {E O : Type} {A B : QRSys.Obj R E O} (h : QRSys.StepEq A
 /-! ## The bit boundary and the observation -/
 
 open CatCrypt.Crypto.UCLoopbackObservation (bitBoundary startPkt)
+open CatCrypt.Crypto (ObsDist)
+open CatCrypt.Crypto.OpenTheoryObs (seq EmulatesObs TestFactorization)
 
 /-- The bit of an output of a system on the bit boundary. -/
 def bitOf : ((bObj R bitBoundary).pos ⊗ (𝟙_ (IntConstruction (QSysCat R))).neg).P → Bool :=
@@ -732,9 +739,7 @@ noncomputable def testHom {Δ : PortBoundary}
 wired with `K` along `Δ`, on the bit boundary. -/
 noncomputable def runTest {Δ : PortBoundary} (W : (qOpenTheory R).Obj Δ)
     (K : (qOpenTheory R).Obj (Δ.swap.tensor bitBoundary)) : (qOpenTheory R).Obj bitBoundary :=
-  (qOpenTheory R).map (PortBoundary.Equiv.tensorEmptyLeft bitBoundary).toHom
-    ((qOpenTheory R).wire
-      ((qOpenTheory R).par (OpenTheory.HasUnit.unit (T := qOpenTheory R)) W) K)
+  seq (qOpenTheory R) W K
 
 /-- The run against a test is composition with the morphism the test names. -/
 theorem runTest_eq {Δ : PortBoundary} (W : (qOpenTheory R).Obj Δ)
@@ -748,25 +753,65 @@ theorem runTest_eq {Δ : PortBoundary} (W : (qOpenTheory R).Obj Δ)
     Iso.inv_hom_id_assoc]
   rfl
 
+/-- The quantum test named by a morphism into the bit boundary names that morphism. -/
+theorem testHom_name {Δ : PortBoundary} (h : bObj R Δ ⟶ bObj R bitBoundary) :
+    testHom (nameEquiv (bObj R Δ) (bObj R bitBoundary) h ≫ (bMu R Δ.swap bitBoundary).hom) =
+      h := by
+  simp [testHom]
+
+/-- Tests of `W ≫ g` factor through tests of `W`. -/
+theorem seq_comp {Δ Δ' : PortBoundary} (g : bObj R Δ ⟶ bObj R Δ')
+    (K : (qOpenTheory R).Obj (Δ'.swap.tensor bitBoundary)) :
+    ∃ K' : (qOpenTheory R).Obj (Δ.swap.tensor bitBoundary), ∀ W : (qOpenTheory R).Obj Δ,
+      seq (qOpenTheory R) (Δ := Δ') (W ≫ g) K = seq (qOpenTheory R) W K' :=
+  ⟨nameEquiv _ _ (g ≫ testHom K) ≫ (bMu R Δ.swap bitBoundary).hom, fun W => by
+    change runTest _ _ = runTest _ _
+    rw [runTest_eq, runTest_eq, testHom_name, Category.assoc]⟩
+
+/-- Tests of composites in `qOpenTheory R` factor through tests of the component. -/
+instance testFactorization : TestFactorization (qOpenTheory R) bitBoundary where
+  map f K := seq_comp (bMap (R := R) f) K
+  par_left {Δ₁ Δ₂} C K := by
+    obtain ⟨K', hK'⟩ :=
+      seq_comp ((ρ_ (bObj R Δ₁)).inv ≫ bObj R Δ₁ ◁ C ≫ (bMu R Δ₁ Δ₂).hom) K
+    refine ⟨K', fun W => ?_⟩
+    have hp : (qOpenTheory R).par W C =
+        W ≫ ((ρ_ (bObj R Δ₁)).inv ≫ bObj R Δ₁ ◁ C ≫ (bMu R Δ₁ Δ₂).hom) := by
+      change (λ_ _).inv ≫ (W ⊗ₘ C) ≫ (bMu R Δ₁ Δ₂).hom = _
+      rw [MonoidalCategory.tensorHom_def, unitors_inv_equal, Category.assoc,
+        ← rightUnitor_inv_naturality_assoc]
+    rw [hp]
+    exact hK' W
+  wire_left {Δ₁ Γ Δ₂} C K := by
+    obtain ⟨K', hK'⟩ := seq_comp ((bMu R Δ₁ Γ).inv ≫ bObj R Δ₁ ◁
+      (nameEquiv (bObj R Γ) (bObj R Δ₂)).symm (C ≫ (bMu R Γ.swap Δ₂).inv) ≫
+        (bMu R Δ₁ Δ₂).hom) K
+    refine ⟨K', fun W => ?_⟩
+    have hw : (qOpenTheory R).wire W C =
+        W ≫ ((bMu R Δ₁ Γ).inv ≫ bObj R Δ₁ ◁ (nameEquiv (bObj R Γ) (bObj R Δ₂)).symm
+          (C ≫ (bMu R Γ.swap Δ₂).inv) ≫ (bMu R Δ₁ Δ₂).hom) := by
+      simp only [wireHom, Category.assoc]
+    rw [hw]
+    exact hK' W
+
 /-! ## Quantum emulation against every test -/
 
 /-- The quantum open system `real` emulates `ideal` when every test observes the same
-subinstrument on the register with the same bit outcomes. -/
+subinstrument on the register with the same bit outcomes: quantitative emulation at `0` for the
+discrete distance on `obsBit`. -/
 def EmulatesΩ {Δ : PortBoundary} (real ideal : (qOpenTheory R).Obj Δ) : Prop :=
-  ∀ K : (qOpenTheory R).Obj (Δ.swap.tensor bitBoundary),
-    obsBit (runTest real K) = obsBit (runTest ideal K)
+  EmulatesObs (ObsDist.discrete _) obsBit 0 real ideal
 
 /-- Emulation is equality of the observations after every morphism into `bObj R bitBoundary`. -/
 theorem emulatesΩ_iff {Δ : PortBoundary} {real ideal : (qOpenTheory R).Obj Δ} :
     EmulatesΩ real ideal ↔
       ∀ h : bObj R Δ ⟶ bObj R bitBoundary, obsBit (real ≫ h) = obsBit (ideal ≫ h) := by
+  simp only [EmulatesΩ, EmulatesObs, ObsDist.discrete_le_zero]
+  change (∀ K, obsBit (runTest real K) = obsBit (runTest ideal K)) ↔ _
   constructor
   · intro H h
-    have hK : testHom (nameEquiv (bObj R Δ) (bObj R bitBoundary) h ≫
-        (bMu R Δ.swap bitBoundary).hom) = h := by
-      simp [testHom]
     have := H (nameEquiv (bObj R Δ) (bObj R bitBoundary) h ≫ (bMu R Δ.swap bitBoundary).hom)
-    rwa [runTest_eq, runTest_eq, hK] at this
+    rwa [runTest_eq, runTest_eq, testHom_name] at this
   · intro H K
     rw [runTest_eq, runTest_eq]
     exact H _
@@ -777,16 +822,16 @@ variable {Δ : PortBoundary}
 
 /-- Every quantum open system emulates itself. -/
 theorem refl (W : (qOpenTheory R).Obj Δ) : EmulatesΩ W W :=
-  fun _ => rfl
+  EmulatesObs.refl W
 
 /-- Emulation is symmetric. -/
 theorem symm {W₁ W₂ : (qOpenTheory R).Obj Δ} (h : EmulatesΩ W₁ W₂) : EmulatesΩ W₂ W₁ :=
-  fun K => (h K).symm
+  EmulatesObs.symm h
 
 /-- Emulation is transitive. -/
 theorem trans {W₁ W₂ W₃ : (qOpenTheory R).Obj Δ} (h₁₂ : EmulatesΩ W₁ W₂)
     (h₂₃ : EmulatesΩ W₂ W₃) : EmulatesΩ W₁ W₃ :=
-  fun K => (h₁₂ K).trans (h₂₃ K)
+  (EmulatesObs.trans h₁₂ h₂₃).mono (add_zero 0).le
 
 /-- **Sequential composition.** Emulation is preserved by composition with a morphism of the
 Int construction. -/
@@ -801,44 +846,31 @@ theorem comp {Δ' : PortBoundary} {real ideal : (qOpenTheory R).Obj Δ}
 theorem map {Δ' : PortBoundary} (f : PortBoundary.Hom Δ Δ')
     {real ideal : (qOpenTheory R).Obj Δ} (h : EmulatesΩ real ideal) :
     EmulatesΩ ((qOpenTheory R).map f real) ((qOpenTheory R).map f ideal) :=
-  h.comp (bMap f)
+  EmulatesObs.map f h
 
 /-- Wiring a context `C` on the right preserves emulation. -/
 theorem wire_left {Δ₁ Γ Δ₂ : PortBoundary} {real ideal : (qOpenTheory R).Obj (Δ₁.tensor Γ)}
     (h : EmulatesΩ real ideal) (C : (qOpenTheory R).Obj (Γ.swap.tensor Δ₂)) :
-    EmulatesΩ ((qOpenTheory R).wire real C) ((qOpenTheory R).wire ideal C) := by
-  have hw : ∀ W : (qOpenTheory R).Obj (Δ₁.tensor Γ), (qOpenTheory R).wire W C =
-      W ≫ ((bMu R Δ₁ Γ).inv ≫ bObj R Δ₁ ◁ (nameEquiv (bObj R Γ) (bObj R Δ₂)).symm
-        (C ≫ (bMu R Γ.swap Δ₂).inv) ≫ (bMu R Δ₁ Δ₂).hom) := fun W => by
-    simp only [wireHom, Category.assoc]
-  rw [hw, hw]
-  exact h.comp _
+    EmulatesΩ ((qOpenTheory R).wire real C) ((qOpenTheory R).wire ideal C) :=
+  EmulatesObs.wire_left h C
 
 /-- Wiring a context `C` on the left preserves emulation. -/
 theorem wire_right {Δ₁ Γ Δ₂ : PortBoundary} (C : (qOpenTheory R).Obj (Δ₁.tensor Γ))
     {real ideal : (qOpenTheory R).Obj (Γ.swap.tensor Δ₂)} (h : EmulatesΩ real ideal) :
-    EmulatesΩ ((qOpenTheory R).wire C real) ((qOpenTheory R).wire C ideal) := by
-  rw [wire_comm' C real, wire_comm' C ideal]
-  exact ((h.map _).wire_left _).map _
+    EmulatesΩ ((qOpenTheory R).wire C real) ((qOpenTheory R).wire C ideal) :=
+  EmulatesObs.wire_right C h
 
 /-- Putting a context `C` in parallel on the right preserves emulation. -/
 theorem par_left {Δ₁ Δ₂ : PortBoundary} {real ideal : (qOpenTheory R).Obj Δ₁}
     (h : EmulatesΩ real ideal) (C : (qOpenTheory R).Obj Δ₂) :
-    EmulatesΩ ((qOpenTheory R).par real C) ((qOpenTheory R).par ideal C) := by
-  have hp : ∀ W : (qOpenTheory R).Obj Δ₁, (qOpenTheory R).par W C =
-      W ≫ ((ρ_ (bObj R Δ₁)).inv ≫ bObj R Δ₁ ◁ C ≫ (bMu R Δ₁ Δ₂).hom) := fun W => by
-    change (λ_ _).inv ≫ (W ⊗ₘ C) ≫ (bMu R Δ₁ Δ₂).hom = _
-    rw [MonoidalCategory.tensorHom_def, unitors_inv_equal, Category.assoc,
-      ← rightUnitor_inv_naturality_assoc]
-  rw [hp, hp]
-  exact h.comp _
+    EmulatesΩ ((qOpenTheory R).par real C) ((qOpenTheory R).par ideal C) :=
+  EmulatesObs.par_left h C
 
 /-- Putting a context `C` in parallel on the left preserves emulation. -/
 theorem par_right {Δ₁ Δ₂ : PortBoundary} (C : (qOpenTheory R).Obj Δ₁)
     {real ideal : (qOpenTheory R).Obj Δ₂} (h : EmulatesΩ real ideal) :
-    EmulatesΩ ((qOpenTheory R).par C real) ((qOpenTheory R).par C ideal) := by
-  rw [← par_comm' real C, ← par_comm' ideal C]
-  exact (h.par_left C).map _
+    EmulatesΩ ((qOpenTheory R).par C real) ((qOpenTheory R).par C ideal) :=
+  EmulatesObs.par_right C h
 
 /-- **Composition theorem for `wire`.** If each factor emulates its ideal, the wiring of the
 factors emulates the wiring of the ideals. -/

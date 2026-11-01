@@ -5,8 +5,7 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import CatCryptCore.Crypto.UCLoopbackObservation
-public import CatCryptCore.Quantum.QSysCatOpenTheory
+public import CatCryptCore.Crypto.UCOpenTheory
 
 /-!
 # Quantitative emulation over a PolyFun open theory
@@ -26,10 +25,12 @@ the bounds added. It is closed under sequential composition for every traced ope
 `TestFactorization T Ω`: a test of a composite is a test of the component, uniformly in the
 component. The right-hand forms follow from the commutativity laws of `par` and `wire`.
 
-The classical open theory `loopOpenTheory` and the quantum open theory `qOpenTheory R` on the
-Int construction both satisfy `TestFactorization` over the bit boundary, and their testing
-equivalences `EmulatesΩ` (classical and quantum UC emulation) are `EmulatesObs` at `0` for the
-discrete distance on the bit observation `obsBit`.
+The classical open theory `loopOpenTheory` (`UCLoopbackObservation`) and the quantum open theory
+`qOpenTheory R` (`QSysCatOpenTheory`) satisfy `TestFactorization` over the bit boundary. Their
+testing equivalences `EmulatesΩ` are equivalent to `EmulatesObs` at `0` for the discrete
+distance on the bit observation `obsBit`, and the classical bias bound `EmulatesΩε`
+(`UCLoopbackObservationBridge`) to `EmulatesObs` for the supremum over initial heaps of the
+difference of acceptance probabilities.
 
 ## Main definitions
 
@@ -48,8 +49,6 @@ discrete distance on the bit observation `obsBit`.
   `EmulatesObs.wire_right`: closure with the same `ε`.
 * `EmulatesObs.par_compose`, `EmulatesObs.wire_compose`, `EmulatesObs.seq_compose`: the
   composition theorems, with the bounds added.
-* `loop_testFactorization`, `emulatesΩ_iff_emulatesObs`: the classical instance.
-* `q_testFactorization`, `qEmulatesΩ_iff_emulatesObs`: the quantum UC instance.
 -/
 
 set_option autoImplicit false
@@ -291,125 +290,6 @@ end Traced
 end EmulatesObs
 
 end Generic
-
-/-! ## The classical instance -/
-
-section Loop
-
-open CatCrypt.Core CategoryTheory MonoidalCategory
-open CatCrypt.Crypto.UCTransparent CatCrypt.Crypto.UCTransparent.SysCat
-open CatCrypt.Crypto.UCTransparent.IntSys CatCrypt.Crypto.UCLoopbackOpenTheory
-open CatCrypt.Crypto.UCLoopbackObservation
-
-/-- The test named by a morphism into the bit boundary names that morphism. -/
-theorem loop_testHom_name {Δ : PortBoundary} (h : bObj Δ ⟶ bObj bitBoundary) :
-    testHom (nameEquiv (bObj Δ) (bObj bitBoundary) h ≫ (bMu Δ.swap bitBoundary).hom) = h := by
-  simp [testHom]
-
-/-- Tests of `W ≫ g` factor through tests of `W`. -/
-theorem loop_seq_comp {Δ Δ' : PortBoundary} (g : bObj Δ ⟶ bObj Δ')
-    (K : loopOpenTheory.Obj (Δ'.swap.tensor bitBoundary)) :
-    ∃ K' : loopOpenTheory.Obj (Δ.swap.tensor bitBoundary), ∀ W : loopOpenTheory.Obj Δ,
-      seq loopOpenTheory (Δ := Δ') (W ≫ g) K = seq loopOpenTheory W K' :=
-  ⟨nameEquiv _ _ (g ≫ testHom K) ≫ (bMu Δ.swap bitBoundary).hom, fun W => by
-    change runTest _ _ = runTest _ _
-    rw [runTest_eq, runTest_eq, loop_testHom_name, Category.assoc]⟩
-
-/-- Tests of composites in `loopOpenTheory` factor through tests of the component. -/
-instance loop_testFactorization : TestFactorization loopOpenTheory bitBoundary where
-  map f K := loop_seq_comp (bMap f) K
-  par_left {Δ₁ Δ₂} C K := by
-    obtain ⟨K', hK'⟩ := loop_seq_comp ((ρ_ (bObj Δ₁)).inv ≫ bObj Δ₁ ◁ C ≫ (bMu Δ₁ Δ₂).hom) K
-    refine ⟨K', fun W => ?_⟩
-    have hp : loopOpenTheory.par W C =
-        W ≫ ((ρ_ (bObj Δ₁)).inv ≫ bObj Δ₁ ◁ C ≫ (bMu Δ₁ Δ₂).hom) := by
-      change (λ_ _).inv ≫ (W ⊗ₘ C) ≫ (bMu Δ₁ Δ₂).hom = _
-      rw [MonoidalCategory.tensorHom_def, unitors_inv_equal, Category.assoc,
-        ← rightUnitor_inv_naturality_assoc]
-    rw [hp]
-    exact hK' W
-  wire_left {Δ₁ Γ Δ₂} C K := by
-    obtain ⟨K', hK'⟩ := loop_seq_comp ((bMu Δ₁ Γ).inv ≫ bObj Δ₁ ◁
-      (nameEquiv (bObj Γ) (bObj Δ₂)).symm (C ≫ (bMu Γ.swap Δ₂).inv) ≫ (bMu Δ₁ Δ₂).hom) K
-    refine ⟨K', fun W => ?_⟩
-    have hw : loopOpenTheory.wire W C =
-        W ≫ ((bMu Δ₁ Γ).inv ≫ bObj Δ₁ ◁ (nameEquiv (bObj Γ) (bObj Δ₂)).symm
-          (C ≫ (bMu Γ.swap Δ₂).inv) ≫ (bMu Δ₁ Δ₂).hom) := by
-      simp only [wireHom, Category.assoc]
-    rw [hw]
-    exact hK' W
-
-/-- Classical testing equivalence `EmulatesΩ` is quantitative emulation at `0` for the discrete
-distance on the bit observation. -/
-theorem emulatesΩ_iff_emulatesObs {Δ : PortBoundary} {real ideal : loopOpenTheory.Obj Δ} :
-    EmulatesΩ real ideal ↔ EmulatesObs (ObsDist.discrete _) obsBit 0 real ideal := by
-  simp only [EmulatesΩ, EmulatesObs, ObsDist.discrete_le_zero]
-  rfl
-
-end Loop
-
-/-! ## The quantum instance -/
-
-section Quantum
-
-open CategoryTheory MonoidalCategory
-open CatCrypt.Quantum.ReactiveUC CatCrypt.Quantum.ReactiveUC.QSysCat
-open CatCrypt.Quantum.ReactiveUC.IntQSys CatCrypt.Quantum.ReactiveUC.QOpenTheory
-open CatCrypt.Crypto.UCOpenTheory CatCrypt.Crypto.UCLoopbackOpenTheory
-open CatCrypt.Crypto.UCLoopbackObservation (bitBoundary)
-
-variable {R : Type} [Fintype R]
-
-/-- The quantum test named by a morphism into the bit boundary names that morphism. -/
-theorem q_testHom_name {Δ : PortBoundary} (h : bObj R Δ ⟶ bObj R bitBoundary) :
-    QOpenTheory.testHom
-      (nameEquiv (bObj R Δ) (bObj R bitBoundary) h ≫ (bMu R Δ.swap bitBoundary).hom) = h := by
-  simp [QOpenTheory.testHom]
-
-/-- Tests of `W ≫ g` factor through tests of `W`, in `qOpenTheory R`. -/
-theorem q_seq_comp {Δ Δ' : PortBoundary} (g : bObj R Δ ⟶ bObj R Δ')
-    (K : (qOpenTheory R).Obj (Δ'.swap.tensor bitBoundary)) :
-    ∃ K' : (qOpenTheory R).Obj (Δ.swap.tensor bitBoundary), ∀ W : (qOpenTheory R).Obj Δ,
-      seq (qOpenTheory R) (Δ := Δ') (W ≫ g) K = seq (qOpenTheory R) W K' :=
-  ⟨nameEquiv _ _ (g ≫ QOpenTheory.testHom K) ≫ (bMu R Δ.swap bitBoundary).hom, fun W => by
-    change QOpenTheory.runTest _ _ = QOpenTheory.runTest _ _
-    rw [QOpenTheory.runTest_eq, QOpenTheory.runTest_eq, q_testHom_name, Category.assoc]⟩
-
-/-- Tests of composites in `qOpenTheory R` factor through tests of the component. -/
-instance q_testFactorization : TestFactorization (qOpenTheory R) bitBoundary where
-  map f K := q_seq_comp (QOpenTheory.bMap (R := R) f) K
-  par_left {Δ₁ Δ₂} C K := by
-    obtain ⟨K', hK'⟩ :=
-      q_seq_comp ((ρ_ (bObj R Δ₁)).inv ≫ bObj R Δ₁ ◁ C ≫ (bMu R Δ₁ Δ₂).hom) K
-    refine ⟨K', fun W => ?_⟩
-    have hp : (qOpenTheory R).par W C =
-        W ≫ ((ρ_ (bObj R Δ₁)).inv ≫ bObj R Δ₁ ◁ C ≫ (bMu R Δ₁ Δ₂).hom) := by
-      change (λ_ _).inv ≫ (W ⊗ₘ C) ≫ (bMu R Δ₁ Δ₂).hom = _
-      rw [MonoidalCategory.tensorHom_def, unitors_inv_equal, Category.assoc,
-        ← rightUnitor_inv_naturality_assoc]
-    rw [hp]
-    exact hK' W
-  wire_left {Δ₁ Γ Δ₂} C K := by
-    obtain ⟨K', hK'⟩ := q_seq_comp ((bMu R Δ₁ Γ).inv ≫ bObj R Δ₁ ◁
-      (nameEquiv (bObj R Γ) (bObj R Δ₂)).symm (C ≫ (bMu R Γ.swap Δ₂).inv) ≫
-        (bMu R Δ₁ Δ₂).hom) K
-    refine ⟨K', fun W => ?_⟩
-    have hw : (qOpenTheory R).wire W C =
-        W ≫ ((bMu R Δ₁ Γ).inv ≫ bObj R Δ₁ ◁ (nameEquiv (bObj R Γ) (bObj R Δ₂)).symm
-          (C ≫ (bMu R Γ.swap Δ₂).inv) ≫ (bMu R Δ₁ Δ₂).hom) := by
-      simp only [QOpenTheory.wireHom, Category.assoc]
-    rw [hw]
-    exact hK' W
-
-/-- Quantum UC emulation `EmulatesΩ` is quantitative emulation at `0` for the discrete distance
-on the quantum bit observation. -/
-theorem qEmulatesΩ_iff_emulatesObs {Δ : PortBoundary} {real ideal : (qOpenTheory R).Obj Δ} :
-    QOpenTheory.EmulatesΩ real ideal ↔
-      EmulatesObs (ObsDist.discrete _) QOpenTheory.obsBit 0 real ideal := by
-  simp only [QOpenTheory.EmulatesΩ, EmulatesObs, ObsDist.discrete_le_zero]
-  rfl
-
-end Quantum
 
 end OpenTheoryObs
 

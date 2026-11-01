@@ -24,7 +24,10 @@ the run of `Z` against `R` followed by `D` (`obsBit_sysObj_comp_stratHom`).
   same bit distribution on `sysObj R` and on `sysObj I`.
 * `EmulatesΩε`: the quantitative form, a bound `ε` on the bias of every test at every initial
   heap, with its triangle inequality, its composition theorems and its agreement with the bound
-  of `Realizes` (`EmulatesΩε.realizes`).
+  of `Realizes` (`EmulatesΩε.realizes`). It is equivalent to `OpenTheoryObs.EmulatesObs` for the
+  bias distance `biasDist`, the supremum over initial heaps of the difference of the
+  probabilities of `true` (`emulatesΩε_iff_emulatesObs`), and its closure theorems are instances
+  of those of `EmulatesObs`.
 -/
 
 set_option autoImplicit false
@@ -484,29 +487,49 @@ theorem EmulatesΩ.emulatesΩε {Δ : PortBoundary} {real ideal : loopOpenTheory
     (h : EmulatesΩ real ideal) : EmulatesΩε 0 real ideal := fun K h₀ => by
   rw [h K, absDiff_self]
 
+/-- The bias distance of two bit computations: the supremum over initial heaps of the
+difference of their probabilities of `true`. -/
+noncomputable def biasDist : ObsDist (SPComp Bool) where
+  dist c c' := ⨆ h₀ : Heap, absDiff (prTrue c h₀) (prTrue c' h₀)
+  dist_self c := by simp
+  dist_comm c c' := iSup_congr fun _ => absDiff_comm _ _
+  dist_triangle c₁ c₂ c₃ := iSup_le fun h₀ => (absDiff_triangle _ _ _).trans
+    (add_le_add (le_iSup (fun h => absDiff (prTrue c₁ h) (prTrue c₂ h)) h₀)
+      (le_iSup (fun h => absDiff (prTrue c₂ h) (prTrue c₃ h)) h₀))
+
+/-- Emulation up to `ε` is quantitative emulation up to `ε` for the bias distance on the bit
+observation. -/
+theorem emulatesΩε_iff_emulatesObs {Δ : PortBoundary} {ε : ℝ≥0∞}
+    {real ideal : loopOpenTheory.Obj Δ} :
+    EmulatesΩε ε real ideal ↔ OpenTheoryObs.EmulatesObs biasDist obsBit ε real ideal := by
+  simp only [EmulatesΩε, OpenTheoryObs.EmulatesObs, biasDist, iSup_le_iff]
+  rfl
+
 namespace EmulatesΩε
+
+open OpenTheoryObs
 
 variable {Δ : PortBoundary}
 
 /-- Every open system emulates itself up to `0`. -/
 theorem refl (W : loopOpenTheory.Obj Δ) : EmulatesΩε 0 W W :=
-  (EmulatesΩ.refl W).emulatesΩε
+  emulatesΩε_iff_emulatesObs.mpr (EmulatesObs.refl W)
 
 /-- Emulation up to `ε` is symmetric. -/
 theorem symm {ε : ℝ≥0∞} {W₁ W₂ : loopOpenTheory.Obj Δ} (h : EmulatesΩε ε W₁ W₂) :
-    EmulatesΩε ε W₂ W₁ := fun K h₀ => by
-  rw [absDiff_comm]
-  exact h K h₀
+    EmulatesΩε ε W₂ W₁ :=
+  emulatesΩε_iff_emulatesObs.mpr (emulatesΩε_iff_emulatesObs.mp h).symm
 
 /-- Emulation up to `ε` is monotone in `ε`. -/
 theorem mono {ε ε' : ℝ≥0∞} {W₁ W₂ : loopOpenTheory.Obj Δ} (h : EmulatesΩε ε W₁ W₂)
     (hε : ε ≤ ε') : EmulatesΩε ε' W₁ W₂ :=
-  fun K h₀ => (h K h₀).trans hε
+  emulatesΩε_iff_emulatesObs.mpr ((emulatesΩε_iff_emulatesObs.mp h).mono hε)
 
 /-- **Triangle inequality.** -/
 theorem trans {ε₁ ε₂ : ℝ≥0∞} {W₁ W₂ W₃ : loopOpenTheory.Obj Δ} (h₁₂ : EmulatesΩε ε₁ W₁ W₂)
-    (h₂₃ : EmulatesΩε ε₂ W₂ W₃) : EmulatesΩε (ε₁ + ε₂) W₁ W₃ := fun K h₀ =>
-  (absDiff_triangle _ _ _).trans (add_le_add (h₁₂ K h₀) (h₂₃ K h₀))
+    (h₂₃ : EmulatesΩε ε₂ W₂ W₃) : EmulatesΩε (ε₁ + ε₂) W₁ W₃ :=
+  emulatesΩε_iff_emulatesObs.mpr
+    ((emulatesΩε_iff_emulatesObs.mp h₁₂).trans (emulatesΩε_iff_emulatesObs.mp h₂₃))
 
 /-- Emulation up to `ε` is preserved by composition with a morphism of the Int construction. -/
 theorem comp {Δ' : PortBoundary} {ε : ℝ≥0∞} {real ideal : loopOpenTheory.Obj Δ}
@@ -520,45 +543,32 @@ theorem comp {Δ' : PortBoundary} {ε : ℝ≥0∞} {real ideal : loopOpenTheory
 theorem map {Δ' : PortBoundary} {ε : ℝ≥0∞} (f : PortBoundary.Hom Δ Δ')
     {real ideal : loopOpenTheory.Obj Δ} (h : EmulatesΩε ε real ideal) :
     EmulatesΩε ε (loopOpenTheory.map f real) (loopOpenTheory.map f ideal) :=
-  h.comp (bMap f)
+  emulatesΩε_iff_emulatesObs.mpr ((emulatesΩε_iff_emulatesObs.mp h).map f)
 
 /-- Wiring a context `C` on the right preserves emulation up to `ε`. -/
 theorem wire_left {Δ₁ Γ Δ₂ : PortBoundary} {ε : ℝ≥0∞}
     {real ideal : loopOpenTheory.Obj (Δ₁.tensor Γ)} (h : EmulatesΩε ε real ideal)
     (C : loopOpenTheory.Obj (Γ.swap.tensor Δ₂)) :
-    EmulatesΩε ε (loopOpenTheory.wire real C) (loopOpenTheory.wire ideal C) := by
-  have hw : ∀ W : loopOpenTheory.Obj (Δ₁.tensor Γ), loopOpenTheory.wire W C =
-      W ≫ ((bMu Δ₁ Γ).inv ≫ bObj Δ₁ ◁ (nameEquiv (bObj Γ) (bObj Δ₂)).symm
-        (C ≫ (bMu Γ.swap Δ₂).inv) ≫ (bMu Δ₁ Δ₂).hom) := fun W => by
-    simp only [wireHom, Category.assoc]
-  rw [hw, hw]
-  exact h.comp _
+    EmulatesΩε ε (loopOpenTheory.wire real C) (loopOpenTheory.wire ideal C) :=
+  emulatesΩε_iff_emulatesObs.mpr ((emulatesΩε_iff_emulatesObs.mp h).wire_left C)
 
 /-- Wiring a context `C` on the left preserves emulation up to `ε`. -/
 theorem wire_right {Δ₁ Γ Δ₂ : PortBoundary} {ε : ℝ≥0∞} (C : loopOpenTheory.Obj (Δ₁.tensor Γ))
     {real ideal : loopOpenTheory.Obj (Γ.swap.tensor Δ₂)} (h : EmulatesΩε ε real ideal) :
-    EmulatesΩε ε (loopOpenTheory.wire C real) (loopOpenTheory.wire C ideal) := by
-  rw [wire_comm' C real, wire_comm' C ideal]
-  exact ((h.map _).wire_left _).map _
+    EmulatesΩε ε (loopOpenTheory.wire C real) (loopOpenTheory.wire C ideal) :=
+  emulatesΩε_iff_emulatesObs.mpr ((emulatesΩε_iff_emulatesObs.mp h).wire_right C)
 
 /-- Putting a context `C` in parallel on the right preserves emulation up to `ε`. -/
 theorem par_left {Δ₁ Δ₂ : PortBoundary} {ε : ℝ≥0∞} {real ideal : loopOpenTheory.Obj Δ₁}
     (h : EmulatesΩε ε real ideal) (C : loopOpenTheory.Obj Δ₂) :
-    EmulatesΩε ε (loopOpenTheory.par real C) (loopOpenTheory.par ideal C) := by
-  have hp : ∀ W : loopOpenTheory.Obj Δ₁, loopOpenTheory.par W C =
-      W ≫ ((ρ_ (bObj Δ₁)).inv ≫ bObj Δ₁ ◁ C ≫ (bMu Δ₁ Δ₂).hom) := fun W => by
-    change (λ_ _).inv ≫ (W ⊗ₘ C) ≫ (bMu Δ₁ Δ₂).hom = _
-    rw [MonoidalCategory.tensorHom_def, unitors_inv_equal, Category.assoc,
-      ← rightUnitor_inv_naturality_assoc]
-  rw [hp, hp]
-  exact h.comp _
+    EmulatesΩε ε (loopOpenTheory.par real C) (loopOpenTheory.par ideal C) :=
+  emulatesΩε_iff_emulatesObs.mpr ((emulatesΩε_iff_emulatesObs.mp h).par_left C)
 
 /-- Putting a context `C` in parallel on the left preserves emulation up to `ε`. -/
 theorem par_right {Δ₁ Δ₂ : PortBoundary} {ε : ℝ≥0∞} (C : loopOpenTheory.Obj Δ₁)
     {real ideal : loopOpenTheory.Obj Δ₂} (h : EmulatesΩε ε real ideal) :
-    EmulatesΩε ε (loopOpenTheory.par C real) (loopOpenTheory.par C ideal) := by
-  rw [← par_comm' real C, ← par_comm' ideal C]
-  exact (h.par_left C).map _
+    EmulatesΩε ε (loopOpenTheory.par C real) (loopOpenTheory.par C ideal) :=
+  emulatesΩε_iff_emulatesObs.mpr ((emulatesΩε_iff_emulatesObs.mp h).par_right C)
 
 /-- **Composition theorem for `wire`**, with the sum of the bounds. -/
 theorem wire_compose {Δ₁ Γ Δ₂ : PortBoundary} {ε₁ ε₂ : ℝ≥0∞}

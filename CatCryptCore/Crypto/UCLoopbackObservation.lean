@@ -7,6 +7,7 @@ module
 
 public import CatCryptCore.Crypto.UCLoopbackOpenTheory
 public import CatCryptCore.Crypto.UCLoopbackOmega
+public import CatCryptCore.Crypto.OpenTheoryObs
 
 /-!
 # Testing equivalence of open systems through a bitBoundary boundary
@@ -22,11 +23,19 @@ result is the bit returned by its first activation on the start packet, a comput
 
 * `obsBit`: the observation of an open system on `bitBoundary`, well defined on step-equivalence
   classes (`obsBit_stepEq`).
-* `EmulatesΩ real ideal`: every test observes the same bit distribution.
-* `EmulatesΩ.refl`, `EmulatesΩ.symm`, `EmulatesΩ.trans`, `EmulatesΩ.map`.
+* `runTest`: the run of a system against a test, the sequential composite
+  `OpenTheoryObs.seq loopOpenTheory`.
+* `testFactorization`: tests of `map`, `par` and `wire` composites factor through tests of the
+  component (`OpenTheoryObs.TestFactorization`).
+* `EmulatesΩ real ideal`: every test observes the same bit distribution; it is equivalent to
+  `OpenTheoryObs.EmulatesObs` at `0` for the discrete distance on `obsBit`
+  (`emulatesΩ_iff_emulatesObs`).
+* `EmulatesΩ.refl`, `EmulatesΩ.symm`, `EmulatesΩ.trans`, `EmulatesΩ.map`, `EmulatesΩ.wire_left`,
+  `EmulatesΩ.wire_right`, `EmulatesΩ.par_left`, `EmulatesΩ.par_right`: instances of the
+  corresponding theorems on `EmulatesObs`; the composition theorems `EmulatesΩ.wire_compose` and
+  `EmulatesΩ.par_compose`.
 * `EmulatesΩ.comp`: emulation is preserved by composition with any morphism of the Int
-  construction; the composition theorems `EmulatesΩ.wire_compose` and
-  `EmulatesΩ.par_compose` follow by moving the context into the test.
+  construction.
 -/
 
 set_option autoImplicit false
@@ -39,6 +48,7 @@ open CatCrypt.Core CategoryTheory MonoidalCategory
 open CatCrypt.Crypto.UCTransparent CatCrypt.Crypto.UCTransparent.SysCat
 open CatCrypt.Crypto.UCTransparent.IntSys CatCrypt.Crypto.UCLoopbackOpenTheory
 open Interaction Interaction.Open
+open CatCrypt.Crypto.OpenTheoryObs
 
 /-! ## The first activation of a bundled system -/
 
@@ -100,9 +110,7 @@ noncomputable def testHom {Δ : PortBoundary}
 `K` along `Δ`, on the boundary `bitBoundary`. -/
 noncomputable def runTest {Δ : PortBoundary} (W : loopOpenTheory.Obj Δ)
     (K : loopOpenTheory.Obj (Δ.swap.tensor bitBoundary)) : loopOpenTheory.Obj bitBoundary :=
-  loopOpenTheory.map (PortBoundary.Equiv.tensorEmptyLeft bitBoundary).toHom
-    (loopOpenTheory.wire (loopOpenTheory.par (OpenTheory.HasUnit.unit (T := loopOpenTheory)) W)
-      K)
+  seq loopOpenTheory W K
 
 /-- The run against a test is composition with the morphism the test names. -/
 theorem runTest_eq {Δ : PortBoundary} (W : loopOpenTheory.Obj Δ)
@@ -115,6 +123,44 @@ theorem runTest_eq {Δ : PortBoundary} (W : loopOpenTheory.Obj Δ)
     bMu_leftUnit, ← MonoidalCategory.whiskerLeft_comp_assoc, leftUnitor_naturality,
     Iso.inv_hom_id_assoc]
   rfl
+
+/-- The test named by a morphism into the bit boundary names that morphism. -/
+theorem testHom_name {Δ : PortBoundary} (h : bObj Δ ⟶ bObj bitBoundary) :
+    testHom (nameEquiv (bObj Δ) (bObj bitBoundary) h ≫ (bMu Δ.swap bitBoundary).hom) = h := by
+  simp [testHom]
+
+/-- Tests of `W ≫ g` factor through tests of `W`. -/
+theorem seq_comp {Δ Δ' : PortBoundary} (g : bObj Δ ⟶ bObj Δ')
+    (K : loopOpenTheory.Obj (Δ'.swap.tensor bitBoundary)) :
+    ∃ K' : loopOpenTheory.Obj (Δ.swap.tensor bitBoundary), ∀ W : loopOpenTheory.Obj Δ,
+      seq loopOpenTheory (Δ := Δ') (W ≫ g) K = seq loopOpenTheory W K' :=
+  ⟨nameEquiv _ _ (g ≫ testHom K) ≫ (bMu Δ.swap bitBoundary).hom, fun W => by
+    change runTest _ _ = runTest _ _
+    rw [runTest_eq, runTest_eq, testHom_name, Category.assoc]⟩
+
+/-- Tests of composites in `loopOpenTheory` factor through tests of the component. -/
+instance testFactorization : TestFactorization loopOpenTheory bitBoundary where
+  map f K := seq_comp (bMap f) K
+  par_left {Δ₁ Δ₂} C K := by
+    obtain ⟨K', hK'⟩ := seq_comp ((ρ_ (bObj Δ₁)).inv ≫ bObj Δ₁ ◁ C ≫ (bMu Δ₁ Δ₂).hom) K
+    refine ⟨K', fun W => ?_⟩
+    have hp : loopOpenTheory.par W C =
+        W ≫ ((ρ_ (bObj Δ₁)).inv ≫ bObj Δ₁ ◁ C ≫ (bMu Δ₁ Δ₂).hom) := by
+      change (λ_ _).inv ≫ (W ⊗ₘ C) ≫ (bMu Δ₁ Δ₂).hom = _
+      rw [MonoidalCategory.tensorHom_def, unitors_inv_equal, Category.assoc,
+        ← rightUnitor_inv_naturality_assoc]
+    rw [hp]
+    exact hK' W
+  wire_left {Δ₁ Γ Δ₂} C K := by
+    obtain ⟨K', hK'⟩ := seq_comp ((bMu Δ₁ Γ).inv ≫ bObj Δ₁ ◁
+      (nameEquiv (bObj Γ) (bObj Δ₂)).symm (C ≫ (bMu Γ.swap Δ₂).inv) ≫ (bMu Δ₁ Δ₂).hom) K
+    refine ⟨K', fun W => ?_⟩
+    have hw : loopOpenTheory.wire W C =
+        W ≫ ((bMu Δ₁ Γ).inv ≫ bObj Δ₁ ◁ (nameEquiv (bObj Γ) (bObj Δ₂)).symm
+          (C ≫ (bMu Γ.swap Δ₂).inv) ≫ (bMu Δ₁ Δ₂).hom) := by
+      simp only [wireHom, Category.assoc]
+    rw [hw]
+    exact hK' W
 
 /-! ## Emulation against every test -/
 
@@ -129,14 +175,18 @@ theorem emulatesΩ_iff {Δ : PortBoundary} {real ideal : loopOpenTheory.Obj Δ} 
       ∀ h : bObj Δ ⟶ bObj bitBoundary, obsBit (real ≫ h) = obsBit (ideal ≫ h) := by
   constructor
   · intro H h
-    have hK : testHom (nameEquiv (bObj Δ) (bObj bitBoundary) h ≫
-        (bMu Δ.swap bitBoundary).hom) = h := by
-      simp [testHom]
     have := H (nameEquiv (bObj Δ) (bObj bitBoundary) h ≫ (bMu Δ.swap bitBoundary).hom)
-    rwa [runTest_eq, runTest_eq, hK] at this
+    rwa [runTest_eq, runTest_eq, testHom_name] at this
   · intro H K
     rw [runTest_eq, runTest_eq]
     exact H _
+
+/-- Testing equivalence is quantitative emulation at `0` for the discrete distance on the bit
+observation. -/
+theorem emulatesΩ_iff_emulatesObs {Δ : PortBoundary} {real ideal : loopOpenTheory.Obj Δ} :
+    EmulatesΩ real ideal ↔ EmulatesObs (ObsDist.discrete _) obsBit 0 real ideal := by
+  simp only [EmulatesΩ, EmulatesObs, ObsDist.discrete_le_zero]
+  rfl
 
 namespace EmulatesΩ
 
@@ -144,16 +194,17 @@ variable {Δ : PortBoundary}
 
 /-- Every open system emulates itself. -/
 theorem refl (W : loopOpenTheory.Obj Δ) : EmulatesΩ W W :=
-  fun _ => rfl
+  emulatesΩ_iff_emulatesObs.mpr (EmulatesObs.refl W)
 
 /-- Emulation is symmetric. -/
 theorem symm {W₁ W₂ : loopOpenTheory.Obj Δ} (h : EmulatesΩ W₁ W₂) : EmulatesΩ W₂ W₁ :=
-  fun K => (h K).symm
+  emulatesΩ_iff_emulatesObs.mpr (emulatesΩ_iff_emulatesObs.mp h).symm
 
 /-- Emulation is transitive. -/
 theorem trans {W₁ W₂ W₃ : loopOpenTheory.Obj Δ} (h₁₂ : EmulatesΩ W₁ W₂)
     (h₂₃ : EmulatesΩ W₂ W₃) : EmulatesΩ W₁ W₃ :=
-  fun K => (h₁₂ K).trans (h₂₃ K)
+  emulatesΩ_iff_emulatesObs.mpr (((emulatesΩ_iff_emulatesObs.mp h₁₂).trans
+    (emulatesΩ_iff_emulatesObs.mp h₂₃)).mono (add_zero 0).le)
 
 /-- Emulation is preserved by composition with a morphism of the Int construction. -/
 theorem comp {Δ' : PortBoundary} {real ideal : loopOpenTheory.Obj Δ} (h : EmulatesΩ real ideal)
@@ -166,44 +217,31 @@ theorem comp {Δ' : PortBoundary} {real ideal : loopOpenTheory.Obj Δ} (h : Emul
 theorem map {Δ' : PortBoundary} (f : PortBoundary.Hom Δ Δ') {real ideal : loopOpenTheory.Obj Δ}
     (h : EmulatesΩ real ideal) :
     EmulatesΩ (loopOpenTheory.map f real) (loopOpenTheory.map f ideal) :=
-  h.comp (bMap f)
+  emulatesΩ_iff_emulatesObs.mpr ((emulatesΩ_iff_emulatesObs.mp h).map f)
 
 /-- Wiring a context `C` on the right preserves emulation. -/
 theorem wire_left {Δ₁ Γ Δ₂ : PortBoundary} {real ideal : loopOpenTheory.Obj (Δ₁.tensor Γ)}
     (h : EmulatesΩ real ideal) (C : loopOpenTheory.Obj (Γ.swap.tensor Δ₂)) :
-    EmulatesΩ (loopOpenTheory.wire real C) (loopOpenTheory.wire ideal C) := by
-  have hw : ∀ W : loopOpenTheory.Obj (Δ₁.tensor Γ), loopOpenTheory.wire W C =
-      W ≫ ((bMu Δ₁ Γ).inv ≫ bObj Δ₁ ◁ (nameEquiv (bObj Γ) (bObj Δ₂)).symm
-        (C ≫ (bMu Γ.swap Δ₂).inv) ≫ (bMu Δ₁ Δ₂).hom) := fun W => by
-    simp only [wireHom, Category.assoc]
-  rw [hw, hw]
-  exact h.comp _
+    EmulatesΩ (loopOpenTheory.wire real C) (loopOpenTheory.wire ideal C) :=
+  emulatesΩ_iff_emulatesObs.mpr ((emulatesΩ_iff_emulatesObs.mp h).wire_left C)
 
 /-- Wiring a context `C` on the left preserves emulation. -/
 theorem wire_right {Δ₁ Γ Δ₂ : PortBoundary} (C : loopOpenTheory.Obj (Δ₁.tensor Γ))
     {real ideal : loopOpenTheory.Obj (Γ.swap.tensor Δ₂)} (h : EmulatesΩ real ideal) :
-    EmulatesΩ (loopOpenTheory.wire C real) (loopOpenTheory.wire C ideal) := by
-  rw [wire_comm' C real, wire_comm' C ideal]
-  exact ((h.map _).wire_left _).map _
+    EmulatesΩ (loopOpenTheory.wire C real) (loopOpenTheory.wire C ideal) :=
+  emulatesΩ_iff_emulatesObs.mpr ((emulatesΩ_iff_emulatesObs.mp h).wire_right C)
 
 /-- Putting a context `C` in parallel on the right preserves emulation. -/
 theorem par_left {Δ₁ Δ₂ : PortBoundary} {real ideal : loopOpenTheory.Obj Δ₁}
     (h : EmulatesΩ real ideal) (C : loopOpenTheory.Obj Δ₂) :
-    EmulatesΩ (loopOpenTheory.par real C) (loopOpenTheory.par ideal C) := by
-  have hp : ∀ W : loopOpenTheory.Obj Δ₁, loopOpenTheory.par W C =
-      W ≫ ((ρ_ (bObj Δ₁)).inv ≫ bObj Δ₁ ◁ C ≫ (bMu Δ₁ Δ₂).hom) := fun W => by
-    change (λ_ _).inv ≫ (W ⊗ₘ C) ≫ (bMu Δ₁ Δ₂).hom = _
-    rw [MonoidalCategory.tensorHom_def, unitors_inv_equal, Category.assoc,
-      ← rightUnitor_inv_naturality_assoc]
-  rw [hp, hp]
-  exact h.comp _
+    EmulatesΩ (loopOpenTheory.par real C) (loopOpenTheory.par ideal C) :=
+  emulatesΩ_iff_emulatesObs.mpr ((emulatesΩ_iff_emulatesObs.mp h).par_left C)
 
 /-- Putting a context `C` in parallel on the left preserves emulation. -/
 theorem par_right {Δ₁ Δ₂ : PortBoundary} (C : loopOpenTheory.Obj Δ₁)
     {real ideal : loopOpenTheory.Obj Δ₂} (h : EmulatesΩ real ideal) :
-    EmulatesΩ (loopOpenTheory.par C real) (loopOpenTheory.par C ideal) := by
-  rw [← par_comm' real C, ← par_comm' ideal C]
-  exact (h.par_left C).map _
+    EmulatesΩ (loopOpenTheory.par C real) (loopOpenTheory.par C ideal) :=
+  emulatesΩ_iff_emulatesObs.mpr ((emulatesΩ_iff_emulatesObs.mp h).par_right C)
 
 /-- **Composition theorem for `wire`.** If each factor emulates its ideal, the wiring of the
 factors emulates the wiring of the ideals. -/
