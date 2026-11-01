@@ -41,7 +41,8 @@ traversed. Each node of the tree is consumed by one rule lemma of this module:
 * `bind A f` with `A` a node is pushed into the node; with `A` not a node, the time of `A` is
   added to `P` (`stepTime_bind_le`, `timeBound_bind`) and the continuation is bounded for
   every value;
-* when that continuation bound fails, it is bounded only at the values `A` can return
+* when that continuation bound fails, or first when `A` has a length invariant of a local
+  hypothesis or of a theorem `N.allRet_length`, it is bounded only at the values `A` can return
   (`st_bind_inv`, from `stepTime_bind_le_of_allRet`): for each cost companion `π a : X → ℕ`
   of the bound value that the continuation reads (a chain of pair projections of `a`) and each
   local hypothesis `∀ x : X, h x ≤ c` on a companion binder `h`, the invariant
@@ -49,10 +50,11 @@ traversed. Each node of the tree is consumed by one rule lemma of this module:
   by a traversal of its visible structure (`ar_*` rules, definitions unfolded, a tree without
   visible leaves by `ar_any`, each leaf closed by `omega` after its `if`s and Boolean locals
   are split); with these, the length invariants `AllRet (fun a => (π a).length ≤ n) A` of a
-  local hypothesis or of the theorem `N.allRet_length` of a callee `N.timed`
-  (`lengthInvsDirect`); the invariants found are conjoined and assumed by the continuation;
-* `lengthInvs`, read by `derive_time_bound` (`DeriveTimeBound.withFreshLen`), also derives the
-  length invariant of a tree whose structure is visible, such as a callee inlined by
+  local hypothesis or of the theorem `N.allRet_length` of a callee `N.timed`, or of the
+  structure of the tree (`lengthInvs`); the invariants found are conjoined and assumed by the
+  continuation;
+* `lengthInvs`, read there and by `derive_time_bound` (`DeriveTimeBound.withFreshLen`), also
+  derives the length invariant of a tree whose structure is visible, such as a callee inlined by
   `derive_reduction` (`lengthInvsStruct`): through `sample`, `sampleDist`, `get`, `set` and
   `load` nodes, a bind `(A.bind f).2` whose continuation returns, under an invariant
   `len x ≤ m` of `A`, a value whose component is the bounded list (`allRet_mono`, `ar_bind`),
@@ -115,8 +117,12 @@ number-valued application of a definition to a constructor is reduced to its num
 every subterm `f a` of the leaf and every local hypothesis `∀ x, f x ≤ b`, the instance
 `f a ≤ b[a/x]`; for every subtype value `↑m`, its invariant `m.property`; for every registered
 cost `f.timedCost a`, the instance of `f.timedCost_eq` or `f.timedCost_le` (premises by the
-context). A summand `m₁` of the left side that is a `match` and a summand `m₂` of the right side
-that is a `match` of the same matcher on the same discriminants are compared by cases
+context), and, when it mentions variables that the right side does not (a bound value, a cost
+companion), its bound free of them (`boundFree?`: a premise `∀ x y, fCost x y ≤ ?k` closed by
+the bound of the companion at fresh arguments, a value of `Fin n` by `n`, the length of a list
+built by `List.ofFn`, `map` or `zip` by its equation, a length by an invariant). A summand
+`m₁` of the left side that is a `match` and a summand `m₂` of the right side that is a `match`
+of the same matcher on the same discriminants are compared by cases
 (`matchFacts`): the matcher proves `m₁ ≤ m₂` with the motive `fun ds => m₁[ds] ≤ m₂[ds]`, each
 alternative comparing the alternatives of `m₁` and `m₂` at its pattern (`cmpLe`: reflexivity, a
 nested `match` of the same discriminants, `add_le_add`, `max_le_max`, an `if` against the `if`
@@ -1025,22 +1031,73 @@ def addSubtypeFacts (g : MVarId) : MetaM MVarId := g.withContext do
     g := g'
   return g
 
+/-- For every product `l.length * c` (or `c * l.length`) over `ℕ` in the target or in a local
+hypothesis and every local hypothesis `l.length ≤ n`, the instance `l.length * c ≤ n * c`
+(`c * l.length ≤ c * n`): `omega` reads a product as an atom, and a length invariant bounds the
+cost `l.length * c` of a callee by the product `n * c` of the bound. -/
+def addProductFacts (g : MVarId) : MetaM MVarId := g.withContext do
+  let mut les : Array (Expr × Expr) := #[]
+  let mut srcs : Array Expr := #[← instantiateMVars (← g.getType)]
+  for ld in (← getLCtx) do
+    if ld.isImplementationDetail then continue
+    let ty ← instantiateMVars ld.type
+    unless ← isProp ty do continue
+    srcs := srcs.push ty
+    if let some (l, _) := natLe? ty then
+      if l.isAppOfArity ``List.length 2 then les := les.push (ld.toExpr, l)
+  if les.isEmpty then return g
+  let mut g := g
+  let mut added : Array Expr := #[]
+  for src in srcs do
+    for s in appsOf src #[] do
+      unless s.isAppOfArity ``HMul.hMul 6 && (s.getArg! 0).isConstOf ``Nat do continue
+      let a := s.getArg! 4
+      let c := s.getArg! 5
+      for (h, l) in les do
+        let pf? ← if l == a then some <$> mkAppM ``Nat.mul_le_mul_right #[c, h]
+          else if l == c then some <$> mkAppM ``Nat.mul_le_mul_left #[a, h]
+          else pure none
+        let some pf := pf? | continue
+        let pty ← instantiateMVars (← inferType pf)
+        if added.contains pty then continue
+        added := added.push pty
+        let (_, g') ← (← g.assert `hm pty pf).intro1P
+        g := g'
+  return g
+
+/-- The heartbeat budget, in thousands, of one call of `linarith` or `nlinarith` at an
+arithmetic leaf. -/
+def arithHeartbeats : Nat := 20000
+
 /-- Close an arithmetic leaf by `omega`, then (unless `omegaOnly`) `linarith`, then
-`nlinarith`, after adding the bounded atoms and the invariants of subtype values. -/
+`nlinarith`, after adding the bounded atoms, the invariants of subtype values and the products
+bounded by length invariants (`addProductFacts`). `linarith` and `nlinarith` run under their own
+budget of `arithHeartbeats` heartbeats each, so that a leaf they do not close (a leaf that needs
+an invariant of `st_bind_inv`) fails and the procedure goes on. -/
 def closeArithCore (g : MVarId) (omegaOnly : Bool := false) : TacticM Unit := do
   let g ← addBoundedAtoms g
   let g ← addSubtypeFacts g
+  let g ← addProductFacts g
   let om ← `(tactic| omega)
   let li ← `(tactic| linarith)
   let nl ← `(tactic| nlinarith)
   let tacs := if omegaOnly then #[om] else #[om, li, nl]
+  let cap (c : Core.Context) : Core.Context :=
+    let m := if c.maxHeartbeats == 0 then arithHeartbeats * 1000
+      else min c.maxHeartbeats (arithHeartbeats * 1000)
+    { c with maxHeartbeats := m }
   for tac in tacs do
     let s ← saveState
-    try
+    let run : TacticM Bool := do
       setGoals [g]
       evalTactic tac
-      if (← getUnsolvedGoals).isEmpty then return
-    catch _ => pure ()
+      return (← getUnsolvedGoals).isEmpty
+    let onErr (e : Exception) : TacticM Bool := do
+      if e.isInterrupt then throw e
+      return false
+    let ok ← if tac == om then (try run catch _ => pure false)
+      else tryCatchRuntimeEx (withCurrHeartbeats <| withTheReader Core.Context cap run) onErr
+    if ok then return
     s.restore
   throwError "time_bound: arithmetic leaf not closed{indentExpr (← g.getType)}"
 
@@ -1086,14 +1143,36 @@ def costLemmas (n : Name) : MetaM (Array Expr) := do
       |>.toArray.mapM mkConstWithFreshMVarLevels
   | _ => return #[]
 
+/-- The instance of the equation lemma `lem : l = r` whose left side unifies with `e`: the
+right side `r` and the proof of `e = r`. -/
+def eqAt? (lem : Name) (e : Expr) : MetaM (Option (Expr × Expr)) := do
+  let s ← saveState
+  try
+    let c ← mkConstWithFreshMVarLevels lem
+    let (ms, _, ty) ← forallMetaTelescopeReducing (← inferType c)
+    unless ty.isAppOfArity ``Eq 3 do s.restore; return none
+    unless ← isDefEq (ty.getArg! 1) e do s.restore; return none
+    let pf ← instantiateMVars (mkAppN c ms)
+    let r ← instantiateMVars (ty.getArg! 2)
+    if pf.hasExprMVar || r.hasExprMVar then s.restore; return none
+    return some (r, pf)
+  catch _ =>
+    s.restore
+    return none
+
+/-- The equations of the length of a list built by a list function, read by `boundFree?`. -/
+def lengthEqLemmas : List Name := [``List.length_ofFn, ``List.length_map, ``List.length_zip,
+  ``List.length_zipWith, ``List.length_range, ``List.length_replicate, ``List.length_cons,
+  ``List.length_append, ``List.length_reverse]
+
 mutual
 
 /-- Close the proposition `mid` from the context: a local hypothesis whose type unifies with
 it, or, for `∀ x, l ≤ ?r` with `?r` unassigned, `?r := l` by reflexivity when `l` does not
-mention `x`, and (when `deep`) `?r` the bound of `l` free of `x` with its proof
-(`boundFree?`). -/
-partial def closeByContext (mid : MVarId) (fuel : Nat := 32) (deep : Bool := true) :
-    MetaM Bool := mid.withContext do
+mention `x`, and (when `deep`) `?r` the bound of `l` free of `x` and of the variables `outer`
+with its proof (`boundFree?`). -/
+partial def closeByContext (mid : MVarId) (fuel : Nat := 32) (deep : Bool := true)
+    (outer : Array FVarId := #[]) : MetaM Bool := mid.withContext do
   let ty ← instantiateMVars (← mid.getType)
   for ld in (← getLCtx) do
     if ld.isImplementationDetail then continue
@@ -1111,7 +1190,7 @@ partial def closeByContext (mid : MVarId) (fuel : Nat := 32) (deep : Bool := tru
           unless ← isDefEq r l do return false
           mid.assign (← mkLambdaFVars xs (← mkAppM ``Nat.le_refl #[l]))
           return true
-        let some (b, pf) ← boundFree? (xs.map (·.fvarId!)) l fuel | return false
+        let some (b, pf) ← boundFree? (xs.map (·.fvarId!) ++ outer) l fuel | return false
         unless ← isDefEq r b do return false
         mid.assign (← mkLambdaFVars xs pf)
         return true
@@ -1122,11 +1201,16 @@ partial def closeByContext (mid : MVarId) (fuel : Nat := 32) (deep : Bool := tru
 /-- A bound of the natural number `e` that does not mention the variables `xs`, with a proof
 of `e ≤ bound`: `e` with `Nat.le_refl` when it does not mention them; a sum, product, maximum
 or `if` part by part (`Nat.add_le_add`, `Nat.mul_le_mul`, `max_le_max`, `ite_le_max_of`); a
-registered cost `f.timedCost a` by the instance of `f.timedCost_eq` or `f.timedCost_le` at `a`,
-its premises closed by `closeByContext` (a premise `∀ y, fCost y ≤ ?k` on a cost companion
-argument by the bound of the body of `fCost` at fresh `y`), followed by the bound of its right
-side; an atom by a local hypothesis `∀ y, g y ≤ c`. `none` when no clause gives a bound free of
-`xs`. -/
+minimum by the bound of one operand (`min_le_left`, `min_le_right`); a value `↑i` of `i : Fin n`
+by `n` (`Fin.isLt`); a length `l.length` by the bound of the right side of its equation in
+`lengthEqLemmas` (`(List.ofFn f).length = n`, the length of a `map`, `zip`, `zipWith`, `range`,
+`replicate`, `cons`, `append`, `reverse`); a registered cost `f.timedCost a` by the instance of
+`f.timedCost_eq` or `f.timedCost_le` at `a`, its premises closed by `closeByContext` (a premise
+`∀ y, fCost y ≤ ?k` on a cost companion argument by the bound of the body of `fCost` at fresh
+`y`; when the bound of the instance is not free of `xs`, again with the premise bound free of
+`xs` as well), followed by the bound of its right side; an atom by a local hypothesis
+`∀ y, g y ≤ c` (a cost companion, or a length bounded by an invariant). `none` when no clause
+gives a bound free of `xs`. -/
 partial def boundFree? (xs : Array FVarId) (e : Expr) (fuel : Nat) :
     MetaM (Option (Expr × Expr)) := do
   if fuel == 0 then return none
@@ -1146,14 +1230,30 @@ partial def boundFree? (xs : Array FVarId) (e : Expr) (fuel : Nat) :
     if e.isAppOfArity ``HMul.hMul 6 then
       return some (← mkAppM ``HMul.hMul #[a, b], ← mkAppM ``Nat.mul_le_mul #[pa, pb])
     return some (← mkAppM ``Max.max #[a, b], ← mkAppM ``max_le_max #[pa, pb])
+  if e.isAppOfArity ``Min.min 4 then
+    for (i, lem) in [(2, ``min_le_left), (3, ``min_le_right)] do
+      if let some (a, pa) ← boundFree? xs (e.getArg! i) (fuel - 1) then
+        let up ← mkAppM lem #[e.getArg! 2, e.getArg! 3]
+        return some (a, ← mkAppM ``Nat.le_trans #[up, pa])
+    return none
   if e.isAppOfArity ``ite 5 then
     let some (a, pa) ← boundFree? xs (e.getArg! 3) (fuel - 1) | return none
     let some (b, pb) ← boundFree? xs (e.getArg! 4) (fuel - 1) | return none
     let pf := mkAppN (mkConst ``CatCrypt.Tactics.AutoTime.ite_le_max_of)
       #[e.getArg! 1, e.getArg! 2, e.getArg! 3, e.getArg! 4, a, b, pa, pb]
     return some (← mkAppM ``Max.max #[a, b], pf)
+  if e.isAppOfArity ``Fin.val 2 then
+    let n := e.getArg! 0
+    unless xs.any n.containsFVar do
+      return some (n, ← mkAppM ``Nat.le_of_lt #[← mkAppM ``Fin.isLt #[e.appArg!]])
+  if e.isAppOfArity ``List.length 2 then
+    for lem in lengthEqLemmas do
+      if let some (r, eq) ← eqAt? lem e then
+        if let some (b, pb) ← boundFree? xs r (fuel - 1) then
+          return some (b, ← mkAppM ``Nat.le_trans #[← mkAppM ``Nat.le_of_eq #[eq], pb])
   if let some n := e.getAppFn.constName? then
     if n.lastComponentAsString == "timedCost" then
+      for useOuter in [false, true] do
       for c in ← costLemmas n do
         let st ← saveState
         let (ms, _, body) ← forallMetaTelescopeReducing (← inferType c)
@@ -1165,7 +1265,7 @@ partial def boundFree? (xs : Array FVarId) (e : Expr) (fuel : Nat) :
             let mid := m.mvarId!
             if ← mid.isAssigned then return true
             unless ← isProp (← mid.getType) do return true
-            closeByContext mid (fuel - 1)
+            closeByContext mid (fuel - 1) (outer := if useOuter then xs else #[])
           let r ← instantiateMVars r
           let pf ← instantiateMVars (mkAppN c ms)
           if ok && !r.hasExprMVar && !pf.hasExprMVar then
@@ -1231,7 +1331,10 @@ def queryBoundSource (body A : Expr) (deep : Bool := true) : MetaM (Option Expr)
 
 /-- Registered costs: for every subterm `f.timedCost a` of the target, the instance at `a` of
 `f.timedCost_eq` (an equation) or `f.timedCost_le` (a bound), with its premises closed by
-`closeByContext`, is added to the context. -/
+`closeByContext`, is added to the context. For a target `l ≤ B`, each such cost that mentions
+a variable not occurring in `B` (a bound value, a cost companion, a function of the scheme;
+types and instances excepted) also gets its bound free of those variables (`boundFree?`), the
+form in which `derive_time_bound` states it. -/
 def addCostFacts (g : MVarId) : MetaM MVarId := g.withContext do
   let tgt ← instantiateMVars (← g.getType)
   let mut g := g
@@ -1265,6 +1368,26 @@ def addCostFacts (g : MVarId) : MetaM MVarId := g.withContext do
       added := added.push pty
       let (_, g') ← (← g.assert `hc pty pf).intro1P
       g := g'
+  -- each registered cost bounded free of the variables that the bound does not mention
+  let some (_, rhs) := natLe? tgt | return g
+  let keep := (collectFVars {} (← instantiateMVars rhs)).fvarSet
+  for s in appsOf tgt #[] do
+    let some n := s.getAppFn.constName? | continue
+    unless n.lastComponentAsString == "timedCost" do continue
+    let avoid ← (collectFVars {} s).fvarIds.filterM fun f => do
+      if keep.contains f then return false
+      let ty ← whnfR (← instantiateMVars (← f.getType))
+      if ty.isSort then return false
+      return (← isClass? ty).isNone
+    if avoid.isEmpty then continue
+    let st ← saveState
+    let some (r, pf) ← boundFree? avoid s 64 | st.restore; continue
+    if avoid.any r.containsFVar then st.restore; continue
+    let pty ← instantiateMVars (← inferType pf)
+    if added.contains pty then continue
+    added := added.push pty
+    let (_, g') ← (← g.assert `hc pty pf).intro1P
+    g := g'
   return g
 
 /-- The costed bind `(ret a).bind f` reduced by the first equation of `SPTree.Timed.bind` to
@@ -2509,6 +2632,13 @@ partial def stepCase (g : MVarId) (x : Expr) (env : Bool) (fuel : Nat) : TacticM
             let s ← saveState
             if ← fstSummand (← replaceIn g a b) y ``st_snd_bind_fst env fuel then return
             s.restore
+      -- a tree with a length invariant of a local hypothesis or of a theorem `N.allRet_length`:
+      -- the continuation is first bounded under its invariants, so that a leaf that needs the
+      -- invariant does not first fail at every value
+      if !(← lengthInvsDirect a).isEmpty then
+        let s ← saveState
+        if ← bindInv g x' env fuel then return
+        s.restore
       let s ← saveState
       try
         rule g ``st_bind env fuel
@@ -2580,7 +2710,7 @@ partial def bindInv (g : MVarId) (x : Expr) (env : Bool) (fuel : Nat) : TacticM 
   let A := x.getArg! 2
   let f := x.getArg! 3
   let cands ← invCandidates α f
-  let lens ← lengthInvsDirect A
+  let lens ← lengthInvs A
   if cands.isEmpty && lens.isEmpty then return false
   let mut proofs : Array Expr := lens.map (·.1)
   for ladder in cands do
