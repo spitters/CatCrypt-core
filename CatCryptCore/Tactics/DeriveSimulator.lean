@@ -43,7 +43,9 @@ A multi-call simulator `π` is costed by its head constant:
   when they are missing;
 * when `f.erase_timed` states `MultiHybrid.Timed.ErasesHat` (the state of `f` holds functions,
   so its costed form runs on costed states and events), the leaf is
-  `Simulator.Timed.ofMultiHybridHat` with the erasure maps of that statement; its time is
+  `Simulator.Timed.ofMultiHybridHat` with the erasure maps of that statement, also when `π` is
+  a definition that unfolds to an application of `f` (a protocol simulator defined as a loop
+  `Prog.loopMulti` of a party program, costed by `Prog.loopMulti.timed`); its time is
   `f.timeBoundInv_timed` (a time bound on the states of an invariant) when it exists, else the
   time theorem from the step theorems `f.step.treeHat.timeBound_timed` when their bounds do not
   depend on the state, else a hypothesis of the time theorem; such a leaf is not accepted
@@ -291,6 +293,20 @@ partial def costHybrid (prims hyps : IO.Ref (Array (MVarId × BinderInfo))) (π 
     let (_, A, pf) ← instErasure prims hyps (f ++ `erase_timed) π
     return (A, pf)
 
+/-- The multi-call simulator `π`, unfolded until its head constant `f` has a costed form, when
+that costed form runs on costed states (`isHat f`): `f` and the unfolded term. A loop of a
+party program (`Prog.loopMulti`, costed by `Prog.loopMulti.timed`) behind the definitions of a
+protocol is read this way. -/
+partial def hatLeaf? (π : Expr) : MetaM (Option (Name × Expr)) := do
+  let π := (← instantiateMVars π).consumeMData.headBeta
+  let .const f _ := π.getAppFn | return none
+  if (← getEnv).contains (f ++ `timed) then
+    return if ← isHat f then some (f, π) else none
+  if f == ``MultiHybrid.tensor then return none
+  match ← unfoldDefinition? π with
+  | some e => hatLeaf? e
+  | none => return none
+
 /-- The type of costed simulators of the type of the simulator `S`. -/
 def timedTy (S : Expr) : MetaM Expr := do
   let ty ← whnfR (← inferType S)
@@ -303,13 +319,7 @@ partial def costNode (prims hyps : IO.Ref (Array (MVarId × BinderInfo))) :
     let (_, T, pf) ← instErasure prims hyps (c ++ `erase_timed) S
     return (T, pf)
   | .leaf S π h => do
-    let π' := (← instantiateMVars π).consumeMData.headBeta
-    let hat ← match π'.getAppFn with
-      | .const f _ => do
-        if (← getEnv).contains (f ++ `timed) then isHat f else pure false
-      | _ => pure false
-    if hat then
-      let .const f _ := π'.getAppFn | unreachable!
+    if let some (f, π') ← hatLeaf? π then
       let (concl, A, pA) ← instErasure prims hyps (f ++ `erase_timed) π'
       let a := concl.getAppArgs
       let (T, _) ← applyConst ``Simulator.Timed.ofMultiHybridHat
@@ -343,28 +353,61 @@ partial def costNode (prims hyps : IO.Ref (Array (MVarId × BinderInfo))) :
       (← mkAppM ``Simulator.Timed.Erases #[T, S])
     return (T, pf)
 
+/-- The binder names of the head constant of `A` at its arguments, without macro scopes. -/
+def argNames (A : Expr) : MetaM (Array Name) := do
+  let .const c _ := A.getAppFn | return #[]
+  let ci ← getConstInfo c
+  return (ci.type.getForallBinderNames.toArray.extract 0 A.getAppNumArgs).map
+    (·.eraseMacroScopes)
+
+/-- Assign to the binders `ms` of the theorem `thm` (with binder names `thmNames`) the arguments
+`targs` of a costed machine (with binder names `tNames`), each to the binder of the same name,
+or to the binder at the same position when no binder of `thm` has that name: the indices of
+the binders assigned. -/
+def matchArgs (thm : Expr) (tNames : Array Name) (thmNames : List Name) (ms targs : Array Expr) :
+    MetaM (Array Nat) := do
+  let thmNames := thmNames.toArray.map (·.eraseMacroScopes)
+  let mut used : Array Nat := #[]
+  for i in [0:targs.size] do
+    let byName := match tNames[i]? with
+      | some n => (List.range (min thmNames.size ms.size)).find? fun j =>
+          thmNames[j]! == n && !used.contains j
+      | none => none
+    let j := byName.getD i
+    if used.contains j || ms.size ≤ j then
+      throwError "derive_simulator: `{thm}` does not take the arguments of the costed machine"
+    unless ← isDefEq ms[j]! targs[i]! do
+      throwError "derive_simulator: `{thm}` does not take the argument `{targs[i]!}`"
+    used := used.push j
+  return used
+
 /-- The time bound `tb A B₁ ⋯ Bₙ` of the costed machine `A`, an application of `f.timed`, from
 the step theorems `f.st.tr.timeBound_timed` (`tr` is `tree` or `treeHat`) of the steps `sts`,
-each a bound `∀ s a, … ≤ Bᵢ` that does not depend on the state or the input of the step; their
-binders after the arguments of `A` and the inputs are recorded in `bounds` and `hyps`. -/
+each a bound `∀ s a, … ≤ Bᵢ` that does not depend on the state or the input of the step. The
+arguments of `A` go to the binders of the step theorem of the same names (`matchArgs`), the
+state and the input to the first two binders left; the other binders are recorded in `bounds`
+and `hyps`. -/
 def stepsTimeBound (bounds hyps : IO.Ref (Array (MVarId × BinderInfo))) (tb f : Name)
     (sts : Array Name) (A : Expr) : MetaM Expr := do
   let targs := A.getAppArgs
   let tr ← treeName f
+  let tNames ← argNames A
   let mut pfs := #[]
   let mut bs := #[]
   for st in sts do
     let thm ← mkConstWithFreshMVarLevels (f ++ st ++ tr ++ `timeBound_timed)
-    let (ms, _, concl) ← forallMetaTelescopeReducing (← inferType thm)
+    let thmTy ← inferType thm
+    let (ms, _, concl) ← forallMetaTelescopeReducing thmTy
     unless targs.size + 2 ≤ ms.size do
       throwError "derive_simulator: `{thm}` does not take the arguments of `{A}` and the \
         inputs of the step"
-    for i in [0:targs.size] do
-      unless ← isDefEq ms[i]! targs[i]! do
-        throwError "derive_simulator: `{thm}` does not take the arguments of `{A}`"
-    let sM := ms[targs.size]!
-    let aM := ms[targs.size + 1]!
-    recordOpen bounds hyps .implicit (ms.extract (targs.size + 2) ms.size)
+    let used ← matchArgs thm tNames thmTy.getForallBinderNames ms targs
+    let free := (List.range ms.size).filter (!used.contains ·)
+    let (some si, some ai) := (free[0]?, free[1]?)
+      | throwError "derive_simulator: `{thm}` does not take the inputs of the step"
+    let sM := ms[si]!
+    let aM := ms[ai]!
+    recordOpen bounds hyps .implicit ((free.drop 2).toArray.map (ms[·]!))
     let B ← instantiateMVars concl.appArg!
     if B.findMVar? (fun m => m == sM.mvarId! || m == aM.mvarId!) |>.isSome then
       throwError "derive_simulator: the bound of `{thm}` depends on the state or the input of \

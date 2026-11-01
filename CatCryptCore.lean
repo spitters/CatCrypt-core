@@ -486,6 +486,7 @@ public import CatCryptCore.Crypto.Party.Category
 public import CatCryptCore.Crypto.Party.SyntacticCategory
 public import CatCryptCore.Crypto.Party.StoreHybrid
 public import CatCryptCore.Crypto.Party.SecretStateHybrid
+public import CatCryptCore.Crypto.Party.LoopTimed
 public import CatCryptCore.Crypto.Party.CompileFunctor
 public import CatCryptCore.Crypto.Party.Derived
 public import CatCryptCore.Crypto.Party.GuardCoupling
