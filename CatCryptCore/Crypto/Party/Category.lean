@@ -5,6 +5,7 @@ Authors: CatCrypt Contributors
 -/
 module
 
+public import CatCryptCore.Category.TracedTerm
 public import CatCryptCore.Crypto.Party.Compose
 public import CatCryptCore.Crypto.Party.QProg
 public import CatCryptCore.Crypto.UCLoopbackTraced
@@ -13,9 +14,10 @@ public import CatCryptCore.Quantum.QSysCat
 /-!
 # The traced symmetric monoidal category of party programs
 
-A wiring diagram of party programs is a term `WTerm Gen X Y` built from generators `Gen X Y`
-by identities, sequence, tensor, the structure maps of a symmetric monoidal category
-(associators, unitors, symmetry) and the trace. Given a traced symmetric monoidal category `C`
+A wiring diagram of party programs is a term `WTerm Gen X Y` (the term syntax of
+`CatCryptCore.Category.TracedTerm`) built from generators `Gen X Y` by identities, sequence,
+tensor, the structure maps of a symmetric monoidal category (associators, unitors, symmetry)
+and the trace. Given a traced symmetric monoidal category `C`
 and a denotation `g` of the generators, a term denotes the morphism `WTerm.den g t` of `C`. The
 category `Diag g` has the objects of `C` and, as morphisms, terms modulo equality of their
 denotations; its composition, tensor and trace are the term constructors. It is a traced
@@ -40,8 +42,7 @@ wiring diagram, syntactic category.
 
 ## Main definitions
 
-* `Party.WTerm Gen X Y`: wiring-diagram terms over generators.
-* `Party.WTerm.den g t`: the denotation of a term in a traced symmetric monoidal category.
+* `Party.WTerm.setoid g`: equality of denotations `TracedTerm.WTerm.den g` as a setoid on terms.
 * `Party.Diag g`: the category of terms modulo equality of denotations, with
   `MonoidalCategory`, `SymmetricCategory` and `TracedCategory` instances.
 * `Party.Diag.functor g`: the denotation functor, with a `Functor.Braided` instance.
@@ -74,60 +75,16 @@ open CategoryTheory MonoidalCategory
 
 universe u v w
 
-/-- Wiring-diagram terms over the generators `Gen`: generators, identities, sequence, tensor,
-the structure maps of a symmetric monoidal category and the trace along `U`. -/
-inductive WTerm {C : Type u} [Category.{v} C] [MonoidalCategory C] (Gen : C → C → Type w) :
-    C → C → Type (max u w) where
-  /-- A generator. -/
-  | gen {X Y : C} (a : Gen X Y) : WTerm Gen X Y
-  /-- The identity on `X`. -/
-  | id (X : C) : WTerm Gen X X
-  /-- Sequential composition: `t` then `t'`. -/
-  | comp {X Y Z : C} (t : WTerm Gen X Y) (t' : WTerm Gen Y Z) : WTerm Gen X Z
-  /-- Parallel composition. -/
-  | tensor {X₁ Y₁ X₂ Y₂ : C} (t₁ : WTerm Gen X₁ Y₁) (t₂ : WTerm Gen X₂ Y₂) :
-      WTerm Gen (X₁ ⊗ X₂) (Y₁ ⊗ Y₂)
-  /-- The associator. -/
-  | assoc (X Y Z : C) : WTerm Gen ((X ⊗ Y) ⊗ Z) (X ⊗ (Y ⊗ Z))
-  /-- The inverse associator. -/
-  | assocInv (X Y Z : C) : WTerm Gen (X ⊗ (Y ⊗ Z)) ((X ⊗ Y) ⊗ Z)
-  /-- The left unitor. -/
-  | lunit (X : C) : WTerm Gen (𝟙_ C ⊗ X) X
-  /-- The inverse left unitor. -/
-  | lunitInv (X : C) : WTerm Gen X (𝟙_ C ⊗ X)
-  /-- The right unitor. -/
-  | runit (X : C) : WTerm Gen (X ⊗ 𝟙_ C) X
-  /-- The inverse right unitor. -/
-  | runitInv (X : C) : WTerm Gen X (X ⊗ 𝟙_ C)
-  /-- The symmetry. -/
-  | braid (X Y : C) : WTerm Gen (X ⊗ Y) (Y ⊗ X)
-  /-- The trace along `U`. -/
-  | trace (U : C) {X Y : C} (t : WTerm Gen (X ⊗ U) (Y ⊗ U)) : WTerm Gen X Y
+open CatCrypt.Category.TracedTerm
 
 namespace WTerm
 
 variable {C : Type u} [Category.{v} C] [MonoidalCategory C] [SymmetricCategory C]
   [TracedCategory C] {Gen : C → C → Type w}
 
-/-- The denotation of a term: the generators by `g`, the constructors by the operations of the
-traced symmetric monoidal category `C`. -/
-def den (g : ∀ {X Y : C}, Gen X Y → (X ⟶ Y)) : {X Y : C} → WTerm Gen X Y → (X ⟶ Y)
-  | _, _, .gen a => g a
-  | _, _, .id X => 𝟙 X
-  | _, _, .comp t t' => den g t ≫ den g t'
-  | _, _, .tensor t₁ t₂ => den g t₁ ⊗ₘ den g t₂
-  | _, _, .assoc X Y Z => (α_ X Y Z).hom
-  | _, _, .assocInv X Y Z => (α_ X Y Z).inv
-  | _, _, .lunit X => (λ_ X).hom
-  | _, _, .lunitInv X => (λ_ X).inv
-  | _, _, .runit X => (ρ_ X).hom
-  | _, _, .runitInv X => (ρ_ X).inv
-  | _, _, .braid X Y => (β_ X Y).hom
-  | _, _, .trace U t => TracedCategory.trace U (den g t)
-
 /-- Equality of denotations as a setoid on terms. -/
 def setoid (g : ∀ {X Y : C}, Gen X Y → (X ⟶ Y)) (X Y : C) : Setoid (WTerm Gen X Y) :=
-  Setoid.ker (den g)
+  Setoid.ker (WTerm.den g)
 
 end WTerm
 
@@ -149,7 +106,7 @@ composition is sequence and the identity is the identity term. -/
 instance category : Category.{max u w} (Diag g) where
   Hom X Y := Quotient (WTerm.setoid g X.obj Y.obj)
   id X := ⟦.id X.obj⟧
-  comp := Quotient.map₂ WTerm.comp fun _ _ h₁ _ _ h₂ =>
+  comp := Quotient.map₂ Term.seq fun _ _ h₁ _ _ h₂ =>
     show _ ≫ _ = _ ≫ _ from congrArg₂ (· ≫ ·) h₁ h₂
   id_comp := by
     rintro X Y ⟨t⟩
@@ -194,7 +151,7 @@ instance faithful : (functor g).Faithful where
 /-- The tensor product of morphisms: the tensor of terms. -/
 def tensorHom {X₁ Y₁ X₂ Y₂ : Diag g} (f₁ : X₁ ⟶ Y₁) (f₂ : X₂ ⟶ Y₂) :
     (⟨X₁.obj ⊗ X₂.obj⟩ : Diag g) ⟶ ⟨Y₁.obj ⊗ Y₂.obj⟩ :=
-  Quotient.map₂ WTerm.tensor (fun _ _ h₁ _ _ h₂ =>
+  Quotient.map₂ Term.tensor (fun _ _ h₁ _ _ h₂ =>
     show _ ⊗ₘ _ = _ ⊗ₘ _ from congrArg₂ (· ⊗ₘ ·) h₁ h₂) f₁ f₂
 
 /-- The isomorphism of `Diag g` given by two terms that denote an isomorphism of `C`. -/
@@ -214,9 +171,10 @@ instance monoidalCategoryStruct : MonoidalCategoryStruct (Diag g) where
   whiskerLeft X _ _ f := tensorHom (𝟙 X) f
   whiskerRight f Y := tensorHom f (𝟙 Y)
   tensorUnit := ⟨𝟙_ C⟩
-  associator X Y Z := isoOfTerms (α_ X.obj Y.obj Z.obj) (.assoc _ _ _) (.assocInv _ _ _) rfl rfl
-  leftUnitor X := isoOfTerms (λ_ X.obj) (.lunit _) (.lunitInv _) rfl rfl
-  rightUnitor X := isoOfTerms (ρ_ X.obj) (.runit _) (.runitInv _) rfl rfl
+  associator X Y Z :=
+    isoOfTerms (α_ X.obj Y.obj Z.obj) (.gen (.assoc _ _ _)) (.gen (.assocInv _ _ _)) rfl rfl
+  leftUnitor X := isoOfTerms (λ_ X.obj) (.gen (.lunit _)) (.gen (.lunitInv _)) rfl rfl
+  rightUnitor X := isoOfTerms (ρ_ X.obj) (.gen (.runit _)) (.gen (.runitInv _)) rfl rfl
 
 /-- Unfolding lemma of the tensor product of objects. -/
 @[simp] theorem tensorObj_obj (X Y : Diag g) : (X ⊗ Y).obj = X.obj ⊗ Y.obj :=
@@ -300,7 +258,8 @@ instance monoidalCategory : MonoidalCategory (Diag g) where
 
 /-- The symmetry of the category of wiring diagrams: the symmetry term. -/
 def braiding (X Y : Diag g) : X ⊗ Y ≅ Y ⊗ X :=
-  isoOfTerms (X := X ⊗ Y) (Y := Y ⊗ X) (β_ X.obj Y.obj) (.braid _ _) (.braid _ _) rfl
+  isoOfTerms (X := X ⊗ Y) (Y := Y ⊗ X) (β_ X.obj Y.obj) (.gen (.braid _ _))
+    (.gen (.braid _ _)) rfl
     (SymmetricCategory.braiding_swap_eq_inv_braiding X.obj Y.obj)
 
 /-- Unfolding lemma of the denotation of the symmetry. -/
@@ -333,7 +292,7 @@ instance symmetricCategory : SymmetricCategory (Diag g) where
 
 /-- The trace of the category of wiring diagrams: the trace term. -/
 def trace (U : Diag g) {X Y : Diag g} (f : X ⊗ U ⟶ Y ⊗ U) : X ⟶ Y :=
-  Quotient.map (WTerm.trace U.obj) (fun _ _ h =>
+  Quotient.map (WTerm.traceAlong U.obj) (fun _ _ h =>
     show TracedCategory.trace _ _ = TracedCategory.trace _ _ from
       congrArg (TracedCategory.trace U.obj) h) f
 
@@ -432,11 +391,11 @@ abbrev port (E : Type) : PartyCat :=
 
 /-- The morphism of a party program. -/
 noncomputable def ofProg (p : Prog E O α) : port E ⟶ port O :=
-  ⟦.gen (.prog p)⟧
+  ⟦WTerm.ofGen (.prog p)⟧
 
 /-- The morphism of the loop of a party program. -/
 noncomputable def ofLoop (body : σ → Prog E O σ) (s₀ : σ) : port E ⟶ port O :=
-  ⟦.gen (.loop body s₀)⟧
+  ⟦WTerm.ofGen (.loop body s₀)⟧
 
 /-- Unfolding lemma of `toSys` at a program. -/
 @[simp] theorem toSys_map_ofProg (p : Prog E O α) :
@@ -533,11 +492,11 @@ abbrev port (E : Type) : QPartyCat R :=
 
 /-- The morphism of a quantum party program. -/
 noncomputable def ofProg (p : QProg R E O α) : port R E ⟶ port R O :=
-  ⟦.gen (.prog p)⟧
+  ⟦WTerm.ofGen (.prog p)⟧
 
 /-- The morphism of the loop of a quantum party program. -/
 noncomputable def ofLoop (body : σ → QProg R E O σ) (s₀ : σ) : port R E ⟶ port R O :=
-  ⟦.gen (.loop body s₀)⟧
+  ⟦WTerm.ofGen (.loop body s₀)⟧
 
 /-- Unfolding lemma of `toQRSys` at a program. -/
 @[simp] theorem toQRSys_map_ofProg (p : QProg R E O α) :
