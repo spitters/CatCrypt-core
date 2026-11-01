@@ -39,6 +39,7 @@ re-express.
 
 * `Party.Prog.sampleBody`: the loop body of a system that samples and then updates
   deterministically.
+* `Party.Prog.detBody`: the loop body of a deterministic step function.
 * `Party.Prog.chanBody`: the ideal channel `FChan` as the loop body of a program.
 
 ## Main results
@@ -50,6 +51,9 @@ re-express.
   of the system with the iteration as its step.
 * `Party.Prog.sampleBody_stepEq`: a system that samples and updates deterministically is the loop
   of a program.
+* `Party.Prog.detBody_act`: an activation of `detBody step s` is the point mass on `step s`
+  followed by a return.
+* `Party.Prog.detBody_stepEq`: a deterministic system is the loop of a program.
 * `Party.Prog.chanBody_stepEq`: the loop of `chanBody` is step-equivalent to `FChan`.
 -/
 
@@ -187,6 +191,25 @@ theorem sampleBody_stepEq {ρ : Type} [Countable ρ] (rand : σ → E → SPComp
   loopSys_stepEq _ _ _ fun s e => by
     simp [sampleBody, act_def, stepWith_def, ProgE.recvE, sampleE, ProgE.sendE, ProgE.bind,
       emitK_bind, emitK_sample, SPComp.map, SPComp.bind_assoc]
+
+/-- The loop body of the deterministic step function `step`: receive `e`, emit the output of
+`step s e` and return its state. -/
+def detBody (step : σ → E → σ × O) (s : σ) : Prog E O σ := do
+  let e ← recvE
+  sendE (step s e).2
+  pure (step s e).1
+
+/-- An activation of `detBody step s` on `e` is the point mass on the output of `step s e`, the
+residual program returning its state. -/
+theorem detBody_act (step : σ → E → σ × O) (s : σ) (e : E) :
+    act (detBody step s) e = SPComp.pure (ProgE.ret (step s e).1, (step s e).2) := by
+  simp [detBody, act_def, stepWith_def, ProgE.recvE, ProgE.sendE, ProgE.bind]
+
+/-- **A deterministic system is the loop of a program.** The loop of `detBody step` from `s₀`
+is step-equivalent to the system with state `s₀` and the point mass on `step` as its step. -/
+theorem detBody_stepEq (step : σ → E → σ × O) (s₀ : σ) :
+    Sys.StepEq ⟨_, loopSys (detBody step) s₀⟩ ⟨σ, ⟨s₀, fun s e => SPComp.pure (step s e)⟩⟩ :=
+  loopSys_stepEq _ _ _ fun s e => by rw [detBody_act, SPComp.map_pure]
 
 /-! ## Example: the ideal channel -/
 
