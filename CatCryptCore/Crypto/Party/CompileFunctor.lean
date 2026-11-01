@@ -6,7 +6,6 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Crypto.Party.Category
-public import CatCryptCore.Crypto.Party.Protocols.QOTP
 public import CatCryptCore.Crypto.UCTransport
 
 /-!

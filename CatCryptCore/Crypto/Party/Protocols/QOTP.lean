@@ -43,8 +43,8 @@ the Bell basis and forwards the Pauli index.
 
 Each program is related to the hand-written system by a step map at the embedding of states as
 returned programs (`QProg.loopQSys_stepMap`, `QProg.simView_loopQSim`,
-`QProg.simViewQ_loopQSimQ`); views are invariant under step maps (`QProg.qview_eq_of_stepMap`,
-`QProg.qviewQ_eq_of_stepMap`), so the realizations transfer to the program forms. The loops
+`QProg.simViewQ_loopQSimQ`); views are invariant under step maps (`QProg.qview_eq_of_stepMap`
+of `Quantum/QSysCat.lean`, `QProg.qviewQ_eq_of_stepMap`), so the realizations transfer to the program forms. The loops
 denote the hand-written systems in the category of quantum party programs `QPartyCat`.
 
 Search words: party language, quantum one-time pad, quantum UC, quantum party program,
@@ -61,8 +61,8 @@ simulator, secure quantum channel, EPR simulator, step map.
 
 ## Main results
 
-* `QProg.qview_eq_of_stepMap`, `QProg.qviewQ_eq_of_stepMap`: a step map with the same initial
-  private basis state keeps the view of every environment.
+* `QProg.qviewQ_eq_of_stepMap`: a step map with the same initial private basis state keeps the
+  view of every environment with memory.
 * `QProg.simView_loopQSim`, `QProg.simViewQ_loopQSimQ`: a simulator program whose activations
   are the steps of a hand-written simulator gives the same simulated view.
 * `QOTP.Reactive.ofLoop_realBody`, `QOTP.Reactive.ofLoop_idealBody`,
@@ -109,28 +109,6 @@ def loopQSysP (body : σ → QProg (Fin d × H) E O σ) (s₀ : σ) (h₀ : H) :
   init := .ret s₀
   initReg := h₀
   step := (loopQSys body s₀).step
-
-omit [DecidableEq H] in
-/-- A state map that commutes with the steps of two systems commutes with their joint runs
-against an environment. -/
-theorem qloop_stepMap {S₁ : QSys H τ E O d} {S₂ : QSys H υ E O d} {f : τ → υ}
-    (hf : ∀ t e, (S₁.step t e).bind (fun p => SubInstrument.pure (f p.1, p.2)) = S₂.step (f t) e)
-    (Z : QStrat ζ E O d) (n : ℕ) (z : ζ) (t : τ) :
-    (qloop S₁ Z n (z, t)).bind (fun c => SubInstrument.pure (c.1, f c.2)) =
-      qloop S₂ Z n (z, f t) := by
-  induction n generalizing z t with
-  | zero => exact SubInstrument.pure_bind _ _
-  | succ n ih =>
-    simp only [qloop, ← hf, SubInstrument.bind_assoc, SubInstrument.pure_bind, ih]
-
-/-- **Views are invariant under step maps.** A step map between two systems with the same
-initial private basis state keeps the view of every environment. -/
-theorem qview_eq_of_stepMap {S₁ : QSys H τ E O d} {S₂ : QSys H υ E O d} {f : τ → υ}
-    (hr : S₁.initReg = S₂.initReg) (hf : QRSys.StepMap S₁.toQRSys S₂.toQRSys f)
-    (Z : QStrat ζ E O d) : qview S₁ Z = qview S₂ Z := by
-  have hi : S₂.init = f S₁.init := hf.init_map.symm
-  simp only [qview, hr, hi, ← qloop_stepMap hf.step, SubInstrument.bind_assoc,
-    SubInstrument.pure_bind]
 
 omit [DecidableEq H] in
 /-- A state map that commutes with the steps of two systems commutes with their joint runs

@@ -54,6 +54,8 @@ The development follows the classical one (`UCLoopbackTrace`, `UCLoopbackMonoida
 * `QRSys.loopbackω_empty`, `QRSys.loopbackω_loopbackω`: vanishing.
 * `QRSys.loopbackω_par_left`: superposing.
 * `QRSys.loopbackω_swap`: yanking.
+* `Party.QProg.qloop_stepMap`, `Party.QProg.qview_eq_of_stepMap`: a step map between core
+  quantum systems with the same initial private basis state keeps their views.
 -/
 
 @[expose] public section
@@ -1152,3 +1154,34 @@ noncomputable instance tracedCategory : TracedCategory (QSysCat R) where
 end QSysCat
 
 end CatCrypt.Quantum.ReactiveUC
+
+/-! ## Views under step maps -/
+
+namespace CatCrypt.Crypto.Party.QProg
+
+open _root_.Quantum CatCrypt.Quantum.ReactiveUC
+
+variable {H : Type} [Fintype H] {τ υ ζ E O : Type} {d : ℕ}
+
+/-- A state map that commutes with the steps of two systems commutes with their joint runs
+against an environment. -/
+theorem qloop_stepMap {S₁ : QSys H τ E O d} {S₂ : QSys H υ E O d} {f : τ → υ}
+    (hf : ∀ t e, (S₁.step t e).bind (fun p => SubInstrument.pure (f p.1, p.2)) = S₂.step (f t) e)
+    (Z : QStrat ζ E O d) (n : ℕ) (z : ζ) (t : τ) :
+    (qloop S₁ Z n (z, t)).bind (fun c => SubInstrument.pure (c.1, f c.2)) =
+      qloop S₂ Z n (z, f t) := by
+  induction n generalizing z t with
+  | zero => exact SubInstrument.pure_bind _ _
+  | succ n ih =>
+    simp only [qloop, ← hf, SubInstrument.bind_assoc, SubInstrument.pure_bind, ih]
+
+/-- **Views are invariant under step maps.** A step map between two systems with the same
+initial private basis state keeps the view of every environment. -/
+theorem qview_eq_of_stepMap [DecidableEq H] {S₁ : QSys H τ E O d} {S₂ : QSys H υ E O d}
+    {f : τ → υ} (hr : S₁.initReg = S₂.initReg) (hf : QRSys.StepMap S₁.toQRSys S₂.toQRSys f)
+    (Z : QStrat ζ E O d) : qview S₁ Z = qview S₂ Z := by
+  have hi : S₂.init = f S₁.init := hf.init_map.symm
+  simp only [qview, hr, hi, ← qloop_stepMap hf.step, SubInstrument.bind_assoc,
+    SubInstrument.pure_bind]
+
+end CatCrypt.Crypto.Party.QProg
