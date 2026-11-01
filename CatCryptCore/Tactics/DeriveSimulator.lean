@@ -5,7 +5,7 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import CatCryptCore.Crypto.UCSimulatorCostGraded
+public import CatCryptCore.Crypto.UCSimulatorCostSized
 public import CatCryptCore.Tactics.DeriveReduction
 public import CatCryptCore.Tactics.DeriveTimeBound
 
@@ -78,9 +78,20 @@ theorem is the graded one, `S.timeBoundGraded_timed : … → (S.timed …).Time
 graded rules of `UCSimulatorCostGraded.lean` for leaves, composites and relabellings, and the
 time bound with no growth for the other nodes (`Simulator.Timed.TimeBound.timeBoundGraded`).
 
+When a leaf also has a size-graded time theorem `f.timeBoundSized_timed` (its step on `x` costs
+at most `a + b * j + c * s x`, as for a loop whose body works on data of the size of the event,
+`Prog.loopMulti.timeBoundSized_timed`), the command proves in addition
+`S.timeBoundSized_timed : … → (S.timed …).TimeBoundSized sE sO a b c`, with the sizes `sE` of
+the outer events and `sO` of the answers as implicit binders: the size-graded rules of
+`UCSimulatorCostSized.lean` for leaves, composites (size `0` on the middle interface) and
+relabellings, and the graded bound with the constant `0` of the size for the other nodes
+(`Simulator.Timed.TimeBoundGraded.timeBoundSized`).
+
 ## Main definitions
 
 * `derive_simulator S` — define `S.timed`, prove `S.erase_timed` and `S.timeBound_timed`
+  (or `S.timeBoundGraded_timed`, and `S.timeBoundSized_timed` for a leaf with a size-graded
+  time theorem)
 * `derive_hybrid_time R` — prove `R.timeBound_timed` for the costed form `R.timed` of a hybrid
   machine (`Hybrid.Timed` or `MultiHybrid.Timed`) from the time theorems of its steps, the trees
   `R.st.tree` or, for a costed form on costed states, `R.st.treeHat`
@@ -626,6 +637,149 @@ def simplifyGraded (pf a b : Expr) : MetaM (Expr × Expr × Expr) := do
   let (hb, b') ← simpLe b
   return (← mkAppM ``Simulator.Timed.TimeBoundGraded.mono #[pf, ha, hb], a', b')
 
+/-- The size-graded time theorem `f.timeBoundSized_timed` of the costed multi-call simulator of
+a leaf `T` (`Simulator.Timed.ofMultiHybrid A` or `ofMultiHybridHat … A`, `A` an application of
+`f.timed`), when it exists. -/
+def sizedThm? (T : Expr) : MetaM (Option Name) := do
+  let T ← instantiateMVars T
+  unless T.isAppOf ``Simulator.Timed.ofMultiHybridHat ||
+      T.isAppOf ``Simulator.Timed.ofMultiHybrid do return none
+  let .const ft _ := T.appArg!.getAppFn | return none
+  let g := ft.getPrefix ++ `timeBoundSized_timed
+  return if (← getEnv).contains g then some g else none
+
+/-- Whether a leaf of the costed simulator `T` of the node has a size-graded time theorem. -/
+partial def nodeSized (T : Expr) : Node → MetaM Bool
+  | .leaf .. => return (← sizedThm? T).isSome
+  | .comp _ n₁ n₂ => do
+    let T ← instantiateMVars T
+    return (← nodeSized T.appFn!.appArg! n₁) || (← nodeSized T.appArg! n₂)
+  | .mapPorts _ n .. => do
+    let T ← instantiateMVars T
+    let args := T.getAppArgs
+    nodeSized args[args.size - 3]! n
+  | _ => return false
+
+/-- The port types `E O EG OG V W` of the costed simulator `T`. -/
+def portTypes (T : Expr) : MetaM (Array Expr) := do
+  return (← whnf (← inferType T)).getAppArgs
+
+/-- The function `fun _ => 0` on `ty`. -/
+def constZero (ty : Expr) : MetaM Expr :=
+  withLocalDeclD `x ty fun x => mkLambdaFVars #[x] (mkNatLit 0)
+
+/-- The proof of `∀ x, s x ≤ s x` for `s` on `ty`. -/
+def leSelf (s ty : Expr) : MetaM Expr :=
+  withLocalDeclD `x ty fun x => do mkLambdaFVars #[x] (← mkAppM ``le_refl #[mkApp s x])
+
+/-- The size-graded time-bound proof `T.TimeBoundSized sE sO a b c` of the costed simulator `T`
+of the node: a leaf with a size-graded time theorem `f.timeBoundSized_timed` by it, a composite
+by its rule with the size `0` on the middle interface, a relabelling by its rule, any other node
+by its graded time bound with the constant `0` of the size. -/
+partial def timeNodeSized (bounds hyps : IO.Ref (Array (MVarId × BinderInfo)))
+    (T sE sO : Expr) (n : Node) : MetaM Expr := do
+  let T ← instantiateMVars T
+  let lift : MetaM Expr := do
+    return (← applyConst ``Simulator.Timed.TimeBoundGraded.timeBoundSized
+      #[← timeNodeGraded bounds hyps T n, sE, sO]).1
+  match n with
+  | .leaf .. =>
+    let some g ← sizedThm? T | lift
+    let A := T.appArg!
+    let thm ← mkConstWithFreshMVarLevels g
+    let (ms, _, concl) ← forallMetaTelescopeReducing (← inferType thm)
+    let concl ← instantiateMVars concl
+    unless ← isDefEq (concl.getArg! 5) A do
+      throwError "derive_simulator: `{g}` does not bound{indentExpr A}"
+    let rule := if T.isAppOf ``Simulator.Timed.ofMultiHybridHat then
+      ``Simulator.ofMultiHybridHat.timeBoundSized_timed
+      else ``Simulator.ofMultiHybrid.timeBoundSized_timed
+    let a ← mkFreshExprMVar (mkConst ``Nat)
+    let b ← mkFreshExprMVar (mkConst ``Nat)
+    let c ← mkFreshExprMVar (mkConst ``Nat) .natural `c
+    let (pf, _) ← applyConst rule #[← instantiateMVars (mkAppN thm ms)]
+      (← mkAppM ``Simulator.Timed.TimeBoundSized #[T, sE, sO, a, b, c])
+    recordOpen bounds hyps .implicit ms
+    return pf
+  | .comp _ n₁ n₂ =>
+    let T₁ := T.appFn!.appArg!
+    let ts ← portTypes T₁
+    let p₁ ← timeNodeSized bounds hyps T₁ sE (← constZero ts[3]!) n₁
+    let p₂ ← timeNodeSized bounds hyps T.appArg! (← constZero ts[2]!) sO n₂
+    return (← applyConst ``Simulator.comp.timeBoundSized_timed #[p₁, p₂]).1
+  | .mapPorts _ n₀ f g _ _ =>
+    let args := T.getAppArgs
+    let T₀ := args[args.size - 3]!
+    let sM ← mkFreshExprMVar (← mkArrow (← portTypes T₀)[0]! (mkConst ``Nat)) .natural `sM
+    let p ← timeNodeSized bounds hyps T₀ sM sO n₀
+    let sE' ← mkFreshExprMVar (← inferType sE)
+    let a ← mkFreshExprMVar (mkConst ``Nat)
+    let b ← mkFreshExprMVar (mkConst ``Nat)
+    let c ← mkFreshExprMVar (mkConst ``Nat)
+    let (pf, _) ← applyConst ``Simulator.mapPorts.timeBoundSized_timed #[p, f, g]
+      (← mkAppM ``Simulator.Timed.TimeBoundSized #[T, sE', sO, a, b, c])
+    unless ← isDefEq sE' sE do
+      throwError "derive_simulator: the size of the relabelled events{indentExpr sE'}\n\
+        is not the size{indentExpr sE}"
+    return pf
+  | _ => lift
+
+/-- The constants `a`, `b`, `c` of the size-graded time proof `pf` of `T` at the sizes `sE`, `sO`
+simplified, with the proof of the simplified bound. -/
+def simplifySized (pf T sE sO a b c : Expr) : MetaM (Expr × Expr × Expr × Expr) := do
+  let ctx ← Simp.Context.ofNames [``Nat.zero_max, ``Nat.max_zero, ``max_self, ``Nat.add_assoc,
+    ``max_eq_left, ``max_eq_right, ``Nat.add_zero, ``Nat.zero_add] true
+  let simpLe (x : Expr) : MetaM (Expr × Expr) := do
+    let (r, _) ← simp x ctx (simprocs := #[← Simp.getSimprocs])
+    match r.proof? with
+    | some p => return (← mkAppM ``le_of_eq #[p], r.expr)
+    | none => return (← mkAppM ``le_refl #[x], x)
+  let (ha, a') ← simpLe a
+  let (hb, b') ← simpLe b
+  let (hc, c') ← simpLe c
+  let ts ← portTypes T
+  return (← mkAppM ``Simulator.Timed.TimeBoundSized.mono
+    #[pf, ha, hb, hc, ← leSelf sE ts[0]!, ← leSelf sO ts[3]!], a', b', c')
+
+/-- Prove `c.timeBoundSized_timed` for the costed form `Tc` (the costed simulator `T` with the
+binders `timedBs`) of the simulator `c` of the node, when a leaf has a size-graded time
+theorem: the sizes of the outer events and answers and the open binders of the leaf theorems
+become implicit binders, their propositions hypotheses. -/
+def deriveSized (c : Name) (levelParams : List Name) (T Tc : Expr) (timedBs : Array Expr)
+    (node : Node) : TermElabM Unit := do
+  unless ← nodeSized T node do return
+  let ts ← portTypes T
+  let sE ← mkFreshExprMVar (← mkArrow ts[0]! (mkConst ``Nat)) .natural `sE
+  let sO ← mkFreshExprMVar (← mkArrow ts[3]! (mkConst ``Nat)) .natural `sO
+  let bounds ← IO.mkRef #[]
+  let thyps ← IO.mkRef #[]
+  let tpf ← timeNodeSized bounds thyps T sE sO node
+  let ty ← instantiateMVars (← inferType tpf)
+  let args := ty.getAppArgs
+  let (tpf, a, b, k) ← simplifySized tpf T (← instantiateMVars sE) (← instantiateMVars sO)
+    args[args.size - 3]! args[args.size - 2]! args[args.size - 1]!
+  let tpf ← instantiateMVars tpf
+  let mut recorded := #[]
+  for (m, bi) in (← bounds.get) ++ (← thyps.get) do
+    unless ← m.isAssigned do recorded := recorded.push (m, bi)
+  let mut data := #[]
+  let mut props := #[]
+  for m in ← getMVars tpf do
+    unless recorded.any (·.1 == m) do
+      if ← isProp (← m.getType) then props := props.push (m, BinderInfo.default)
+      else data := data.push (m, BinderInfo.implicit)
+  withMVarsAsFVars (data ++ recorded ++ props) 0 #[] fun tFvs => do
+    let tpf ← instantiateMVars tpf
+    if tpf.hasExprMVar then throwError "derive_simulator: the sized time proof is incomplete"
+    let tBs := timedBs ++ tFvs
+    let concl ← mkAppM ``Simulator.Timed.TimeBoundSized #[Tc, ← instantiateMVars sE,
+      ← instantiateMVars sO, ← instantiateMVars a, ← instantiateMVars b, ← instantiateMVars k]
+    let tty := (← mkForallFVars tBs concl).replace fun e =>
+      if e.isAppOfArity ``id 2 then some e.appArg! else none
+    addDecl (Declaration.thmDecl
+      { name := c ++ `timeBoundSized_timed, levelParams, type := tty,
+        value := ← mkLambdaFVars tBs tpf })
+
 /-- Define `c.timed` and prove `c.erase_timed` and `c.timeBound_timed` for a simulator `c`
 whose costed multi-call simulators have their costed forms and step theorems; when a leaf has a
 graded time theorem (`f.timeBoundGraded_timed`, a step from a state after `j` activations
@@ -673,6 +827,7 @@ def deriveSimulator (c : Name) : TermElabM Unit := do
         addDecl (Declaration.thmDecl
           { name := c ++ `timeBoundGraded_timed, levelParams := info.levelParams, type := tty,
             value := ← mkLambdaFVars tBs tpf })
+      deriveSized c info.levelParams T Tc timedBs node
       return
     let tpf ← timeNode bounds thyps T node
     let (tpf, B) ← simplifyBound tpf (← instantiateMVars (← inferType tpf)).appArg!

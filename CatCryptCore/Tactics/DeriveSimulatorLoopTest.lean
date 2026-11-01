@@ -20,6 +20,12 @@ the subroutine twice and emits an outer output. The command reads the leaf as th
 
 A second fixture, `logSim`, is a loop whose state grows with the activations: each iteration
 records the event in a list.
+
+A third fixture, `echoSim`, is a loop whose work in an activation is the size of the answer it
+receives: each iteration calls with the event and, on the answer `a`, works `a` units before it
+outputs `a`. The command also proves the size-graded time theorem
+`echoSim.timeBoundSized_timed`, and `echoSim_certificate` bounds each activation by `8` plus the
+answer it handles.
 -/
 
 @[expose] public section
@@ -98,5 +104,68 @@ theorem logSim_certificate (V W : PubView ℕ ℕ) (h : logProt.Opaque V W) :
       (logSim.timed V W _ ProgE.sampleTree logBodyT).TimeBoundGraded 9 2 :=
   ⟨logSim.erase_timed V W h _ _ _ logBodyT_erase,
     logSim.timeBoundGraded_timed V W _ _ _ logBodyT_loopBoundGraded⟩
+
+/-- An iteration of the sized fixture: receive `e`, call with `e`, and output the answer. -/
+def echoBody (s : Unit) : Prog (ℕ ⊕ ℕ) (ℕ ⊕ ℕ) Unit :=
+  ProgE.bind recvO fun e => call e fun a => ProgE.bind (outE a) fun _ => .ret s
+
+/-- The sized fixture loop as a multi-call simulator with fuel `1`. -/
+noncomputable def echoProt : MultiHybrid (Prog (ℕ ⊕ ℕ) (ℕ ⊕ ℕ) Unit) ℕ ℕ ℕ ℕ :=
+  loopMulti echoBody () 1
+
+/-- The sized fixture simulator. -/
+noncomputable def echoSim (V W : PubView ℕ ℕ) (h : echoProt.Opaque V W) :
+    Simulator ℕ ℕ ℕ ℕ V W :=
+  Simulator.ofMultiHybrid echoProt h
+
+derive_simulator echoSim
+
+/-- The costed body of the sized fixture: on the answer `a`, a tick of `a` units before the
+output. -/
+def echoBodyT (s : Unit) : ProgE (Costed (SPComp ℕ)) (ℕ ⊕ ℕ) (ℕ ⊕ ℕ) Unit :=
+  .recv fun
+    | .inl e => .send (.inl e) (.recv fun
+        | .inr a => ProgE.tick a (.send (.inr a) (.ret s))
+        | .inl _ => .fail)
+    | .inr _ => .fail
+
+/-- The costed body of the sized fixture erases to `echoBody`. -/
+theorem echoBodyT_erase (s : Unit) :
+    ProgE.eraseT ProgE.sampleTree (echoBodyT s) = echoBody s := by
+  simp only [ProgE.eraseT, echoBodyT, echoBody, recvO, call, callK, outE, ProgE.bind,
+    ProgE.erase, ProgE.tick, ProgE.mapOp]
+  congr 1
+  funext x
+  rcases x with e | e
+  · simp only [ProgE.bind, ProgE.erase, ProgE.mapOp]
+    congr 2
+    funext y
+    rcases y with a | a <;> rfl
+  · rfl
+
+/-- The size-graded bound of the sized fixture: an iteration costs four units and, on the answer
+`a`, the budget `a` of its activation. -/
+theorem echoBodyT_loopBoundSized :
+    ProgE.LoopBoundSized (ProgE.weightT ProgE.sampleTree) echoBodyT () (fun _ _ => True) 4 0
+      (Sum.elim (fun e => 1 * (fun _ => 0) e) (fun x => 1 * (fun a => a) x)) := by
+  refine ⟨trivial, fun i s _ => ?_⟩
+  refine ⟨by omega, fun x => ?_⟩
+  rcases x with e | e
+  · refine ⟨by omega, by omega, fun y => ?_⟩
+    rcases y with a | a
+    · trivial
+    · refine ⟨?_, fun _ => ⟨?_, trivial⟩⟩
+      · simp [ProgE.weightT, ProgE.runT, SPTree.Timed.stepTime, SPTree.Timed.time_ret]
+      · simp [ProgE.weightT, ProgE.runT, SPTree.Timed.stepTime, SPTree.Timed.time_ret]
+  · trivial
+
+/-- **Time certificate of the sized fixture**: its costed form erases to `echoSim`, and an
+activation on an outer event costs at most `8`, one on the answer `a` at most `8 + a`. -/
+theorem echoSim_certificate (V W : PubView ℕ ℕ) (h : echoProt.Opaque V W) :
+    (echoSim.timed V W _ ProgE.sampleTree echoBodyT).Erases (echoSim V W h) ∧
+      (echoSim.timed V W _ ProgE.sampleTree echoBodyT).TimeBoundSized (fun _ => 0) (fun a => a)
+        8 0 1 :=
+  ⟨echoSim.erase_timed V W h _ _ _ echoBodyT_erase,
+    echoSim.timeBoundSized_timed V W _ _ _ echoBodyT_loopBoundSized⟩
 
 end CatCrypt.Tactics.DeriveSimulatorLoopTest
