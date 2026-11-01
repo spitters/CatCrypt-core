@@ -48,6 +48,9 @@ the extractor is `(z₁ − z₂)/(c₁ − c₂)` per scalar.
   generator supported on the relation), `linearSigma_uniqueResp` (for injective maps)
 * `linearSigma_simVerifies`, `linearSigma_relHVZK` — simulated transcripts verify, and HVZK
   holds at every pair of the relation: the hypotheses of the OR composition `orSigma`
+* `linearSigma_commitBoundAt` — for an injective linear map, each commitment has probability at
+  most `1/|Scalar^n|`; `dleqSigma_commitBoundAt` — each DLEQ commitment has probability at most
+  `1/|Scalar|`
 * `LinearRelation.map_and`, `LinearRelation.image_and`, `LinearRelation.holds_and_iff`,
   `LinearRelation.indexValid_and`, `LinearRelation.map_and_injective` — the map, image,
   witnesses, index ranges and injectivity of an AND composition are those of its parts
@@ -443,6 +446,23 @@ theorem linearSigma_relHVZK : (linearSigma gp n m toRel gen).RelHVZK := fun s w 
     obtain ⟨rfl, rfl⟩ := Prod.mk.inj h
     exact hw) s w ((PMF.mem_support_pure_iff _ _).mpr rfl) c
 
+open scoped ENNReal in
+/-- **Commitment bound of a linear Σ-protocol.** When the linear map of `toRel s` is injective,
+each commitment `map r` at `s` has probability at most `1/|Scalar^n|` under uniform nonces `r`:
+it determines `r`. -/
+theorem linearSigma_commitBoundAt {s : S} (hinj : Function.Injective (toRel s).map)
+    (w : Fin n → gp.Scalar) :
+    (linearSigma gp n m toRel gen).CommitBoundAt s w (1 / Fintype.card (Fin n → gp.Scalar)) := by
+  classical
+  intro a
+  change (PMF.uniformFintype (Fin n → gp.Scalar)).toOuterMeasure {r | (toRel s).map r = a} ≤ _
+  rw [PMF.toOuterMeasure_uniformFintype_apply]
+  have h1 : Fintype.card {r | (toRel s).map r = a} ≤ 1 :=
+    Fintype.card_le_one_iff.mpr fun u v => Subtype.ext (hinj
+      ((u.2 : (toRel s).map u.1 = a).trans (v.2 : (toRel s).map v.1 = a).symm))
+  gcongr
+  exact_mod_cast h1
+
 /-- The verifier of a batchable proof `(a, z)` for the challenge function `H`: the
 transcript `(a, H s a, z)` verifies. -/
 noncomputable def linearBatchVerify (H : S → (Fin m → gp.G) → gp.Scalar) (s : S)
@@ -825,6 +845,17 @@ noncomputable def dleqSigma (gen : PMF ((gp.G × gp.G × gp.G) × (Fin 1 → gp.
 theorem dleqSigma_uniqueResp (gen : PMF ((gp.G × gp.G × gp.G) × (Fin 1 → gp.Scalar))) :
     (dleqSigma gp gen).UniqueResp :=
   linearSigma_uniqueResp _ _ fun s => dleqRelation_map_injective s.1 s.2.1 s.2.2
+
+open scoped ENNReal in
+/-- **Commitment bound of the DLEQ Σ-protocol.** At every statement and witness, each
+commitment has probability at most `1/|Scalar|` under a uniform nonce `u`: its first component
+`g^u` determines `u`. -/
+theorem dleqSigma_commitBoundAt (gen : PMF ((gp.G × gp.G × gp.G) × (Fin 1 → gp.Scalar)))
+    (s : gp.G × gp.G × gp.G) (w : Fin 1 → gp.Scalar) :
+    (dleqSigma gp gen).CommitBoundAt s w (1 / Fintype.card gp.Scalar) := by
+  have h := linearSigma_commitBoundAt (fun s : gp.G × gp.G × gp.G =>
+    dleqRelation gp s.1 s.2.1 s.2.2) gen (dleqRelation_map_injective s.1 s.2.1 s.2.2) w
+  rwa [Fintype.card_fun, Fintype.card_fin, pow_one] at h
 
 /-- The ElGamal plaintext-knowledge Σ-protocol on statements `(pk, C₁, C₂)`. -/
 noncomputable def elgamalSigma (gen : PMF ((gp.G × gp.G × gp.G) × (Fin 2 → gp.Scalar))) :
