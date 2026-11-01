@@ -1,7 +1,8 @@
 # Quantum systems, Selinger's order and quantum UC
 
 The modules of this directory added on 2026-10-31 (Selinger's order, the quantum system category
-and its tensor, the classical lift, the quantum one-time pad over an insecure channel) are
+and its tensor, private registers, the open theory, the classical lift and its functor, the
+quantum one-time pad over an insecure channel) are
 not yet pushed, so some links below resolve only after the next push.
 
 The foundations (instruments, completely positive maps, trace and diamond norms, partial trace,
@@ -38,6 +39,12 @@ The quantum while loop is the supremum of its bounded unfoldings in this order, 
 circuit's loop is the least fixed point of its unfolding
 ([`CPComp.qwhile_eq_ωSup`](https://github.com/spitters/CatCrypt/blob/master/CatCrypt/Quantum/Loop/WhileOmega.lean),
 [`DCircuit.denoteCP_whileBit_le_of_prefixed`](https://github.com/spitters/CatCrypt/blob/master/CatCrypt/Quantum/DynCircuit.lean)).
+Properties of such suprema are proved by Scott induction for predicates closed under suprema of
+chains
+([`ωSup_iterateChain_induction`, `OrderHom.lfp_scott_induction`](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/ForMathlib/Order/ScottInduction.lean)),
+also for the unbounded activation of a loopback
+([`QRSys.fbRunω_scott_induction`](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/Tactics/ScottInduction.lean)),
+driven by the tactic `scott_induction`.
 
 ## The quantum system category: `⊕` traced by the ω-supremum
 
@@ -82,6 +89,40 @@ satisfies the interchange laws with composition and with `⊕` and distributes o
 A register equivalence relabels systems functorially
 ([`QSysCat.relabel`](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/Quantum/QSysCatTensor.lean)).
 
+## Private registers
+
+In `QSysPriv` every morphism carries a finite nonempty private register `K` of its own (`PObj`),
+modulo placement in a register `K'` along an equivalence `K × N ≃ K'` followed by a step map;
+this covers relabelling and extension by a nonempty register
+([`PObj.privEq_extend`](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/Quantum/QSysCatPrivate.lean)).
+The cascade runs on the product of the two registers, each system framed by the identity on the
+other. The parallel composition `⊕` and the paired activation `⊗` (the first system on the first
+event, then the second on the second) are symmetric monoidal structures
+([`QSysPriv.sumMonoidal`, `QSysPriv.sumSymmetric`, `QSysPrivMul.monoidalCategory`, `QSysPrivMul.symmetricCategory`](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/Quantum/QSysCatPrivate.lean)),
+with a distributor `QSysPriv.distrib` natural in the two summands and an annihilator
+`QSysPriv.annihilator`. Two systems with no events are equivalent
+([`PObj.privEq_of_isEmpty`](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/Quantum/QSysCatPrivate.lean)),
+so the annihilator is natural.
+
+## The Int construction as an open theory
+
+The Int construction `IntConstruction (QSysCat R)` carries a PolyFun open theory
+`QOpenTheory.qOpenTheory R`, whose open systems on a port boundary `Δ` are quantum reactive systems
+receiving the packets of `Δ.In` and emitting those of `Δ.Out`; it satisfies `HasPlugWireFactor`
+([`QOpenTheory.qOpenTheory_hasPlugWireFactor`](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/Quantum/QSysCatOpenTheory.lean)),
+and equality of closed systems is step equivalence
+([`QOpenTheory.closed_mk_eq_iff`](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/Quantum/QSysCatOpenTheory.lean)).
+Quantum UC emulation `EmulatesΩ` compares open systems through tests on the bit boundary,
+observed by the subinstrument of the first activation; every test is composition with a morphism
+of the Int construction
+([`QOpenTheory.runTest_eq`](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/Quantum/QSysCatOpenTheory.lean)),
+so emulation is preserved by composition, parallel composition and wiring
+([`QOpenTheory.EmulatesΩ.comp`, `QOpenTheory.EmulatesΩ.par_compose`, `QOpenTheory.EmulatesΩ.wire_compose`](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/Quantum/QSysCatOpenTheory.lean)).
+`EmulatesΩ` is the instance at distance `0` of the quantitative emulation `EmulatesObs` over any
+open theory with test factorization, which is reflexive, symmetric, satisfies the triangle
+inequality and is closed under composition with the bounds added
+([`EmulatesObs.trans`, `EmulatesObs.par_compose`, `EmulatesObs.wire_compose`](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/Crypto/OpenTheoryObs.lean)).
+
 ## The classical lift
 
 A sub-distribution is the diagonal subinstrument
@@ -103,6 +144,31 @@ that lift ([`qAct_eq_toQSys_step`](https://github.com/spitters/CatCrypt-core/blo
 A classical realization at distance `0` gives equal quantum views against environments of the
 classical-lift form
 ([`qview_liftQSys_eq_of_realizes`](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/Quantum/ClassicalLiftSys.lean)).
+
+The traced symmetric monoidal structure of `PSysCat` is induced along its faithful inclusion into
+`SysCat`, and the lift `liftFunctor R` is a strong monoidal functor with identity structure
+isomorphisms, braided, and preserves the trace in the form `F (Tr_U f) = Tr_{F U} (μ ≫ F f ≫ δ)`
+([`liftCoreMonoidal`, `liftFunctor_map_traceC`](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/Quantum/ClassicalLiftFunctor.lean)).
+A classical realization of heap-independent systems at distance `ε` bounds the diamond distance of
+the quantum views of their lifts by the same `ε` against every environment of the classical-lift
+form
+([`quc_liftQSys_of_realizes_le`](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/Quantum/ClassicalLiftFunctor.lean)),
+since the diamond distance of two classical embeddings is at most their statistical distance.
+
+## Transport along observation-preserving maps
+
+A map of systems and of environment tests between two observation settings that preserves the
+cascade with a test and the observation carries every statement about observations to the image
+systems
+([`ObsPreserving.transport`](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/Crypto/UCTransport.lean)),
+after Broadbent and Karvonen: classical realization with a simulator, quantum realization and
+testing equivalence through the bit boundary
+([`RealizesSim.transport`, `QRealizes.transport`, `EmulatesΩ.transport`](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/Crypto/UCTransport.lean)).
+The instances are the compiled-step map of classical systems, the classical lift into quantum
+systems ([`liftObsPreserving`](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/Tactics/TransportAlong.lean))
+and the quantum compiled step
+([`qcompiledObsPreserving`](https://github.com/spitters/CatCrypt/blob/master/CatCrypt/Quantum/QCompiledStepTransport.lean)).
+The tactic `transport_along P` reduces a goal about the images to the goal about the sources.
 
 ## Quantum UC
 
