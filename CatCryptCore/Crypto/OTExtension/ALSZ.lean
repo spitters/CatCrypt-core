@@ -5,18 +5,66 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import CatCryptCore.Crypto.OTExtension.IKNPPVW
-public import CatCryptCore.Crypto.Assumptions.OWF
+public import CatCryptCore.Crypto.OTExtension.ALSZPull
 public import CatCryptCore.Crypto.GeneralForkingLemma
 
 /-!
 # ALSZ: IKNP with the base OTs on seeds
 
-**Draft header; completed with the module.**
+**Ideal system.** The IKNP wake parties of `OTExtension/IKNPWake.lean` with their own draw
+(`IKNPWake.partyLazy`) over the `κ` scheduled column OTs `baseG κ m` beside the secure channel
+for the masked messages (`iknpOver`), the real system of `IKNPPVW.iknpLazy_realizesSim`, which
+`IKNPWake` relates to `FOTSched otChoose` and `FOTSchedSH otChoose leak`.
+
+**Real protocol.** ALSZ (Asharov, Lindell, Schneider and Zohner, CCS 2013): the IKNP wake
+parties whose randomness is a seed pair `(k₀ᵢ, k₁ᵢ)` per base OT and the sender's secret `s`,
+drawn at the first input of a party (`alszLazy`). The matrix `T` of the receiver has the column
+`i` equal to `G k₀ᵢ` for the PRG `G : PRGDef Seed (Fin m → Bool)`; the receiver gives the seed
+pair and its choices `r` to the base OT `i` (`alszPartyW`, the IKNP parties with relabelled
+calls), which transfers the seeds through a scheduled seed OT and the correction string
+`G k₀ᵢ + G k₁ᵢ + r` on a secure channel (`ALSZPull.lean`); the sender obtains the column
+`G k_{sᵢ} + sᵢ · u = Tᵢ + sᵢ · r`. A corruption event is answered by the IKNP view of the party,
+with the matrix of PRG outputs (`alszSeed`).
+
+**Simulator.** `simALSZ`: the forwarding of the parties' port beside the indexed copies of the
+simulator `simA` of one base OT and the forwarding of the IKNP channel's adversary port.
+
+**Bound.** The sum over the columns `i < κ` of the PRG advantage of the explicit reduction
+`alszPrgRed G i`, at the environment reduced through the extended simulator
+(`alsz_realizes_iknpWake`).
+
+**Proof.** With the key `K`, the ALSZ parties over the functionality of the base OTs
+`FOTSchedPar (Fin κ) (alszOut G)` are the IKNP parties with the key `tOf G K` over the column OTs,
+by a state map that replaces each input by its column pair (`view_alszK`, through
+`MultiHybrid.withSub_callMap_on`: the IKNP parties call a base OT only with the column of their
+matrix). Both systems with their own draw are the average over the key of the systems with the
+key (`MultiHybrid.view_lazyKey_tensor`), so the distance is that of `κ` PRG outputs from `κ`
+uniform columns, at most the sum of `κ` PRG advantages (`prg_pi_hybrid`, the hybrid argument
+over the columns). Modular composition with the channel (`RealizesSim.modular_withChan`)
+substitutes the base OTs of ALSZ, which realize their functionality at distance `0`
+(`alszBase_realizesSim`).
+
+## Main definitions
+
+* `prgHybRed`: the reduction of the hop `i` of the PRG hybrids.
+* `MultiHybrid.mapCalls`: a multi-call hybrid with relabelled calls.
+* `AKey`, `tOf`, `liftCall`, `alszPartyW`, `alszLazy`: the ALSZ key, its IKNP matrix, the
+  relabelled calls and the parties.
+* `alszOver`, `iknpOver`, `alszSeed`: ALSZ over the functionality of its base OTs, IKNP over the
+  column OTs, and ALSZ over the seed OTs.
+* `alszWorld`, `alszDist`, `alszRed`, `alszPrgRed`: the reduction to the PRG.
+* `simALSZ`: the simulator.
 
 ## Main results
 
-* `prg_pi_hybrid`: `κ` independent PRG outputs against `κ` uniform values, by `κ` hops.
+* `prg_pi_hybrid`: `κ` PRG outputs against `κ` uniform values, by `κ` hops.
+* `MultiHybrid.withSub_callMap_on`, `MultiHybrid.view_lazyKey_tensor`: relabelled calls under a
+  state map, and the averaging of a drawing hybrid over its key.
+* `view_alszK`: with a fixed key, ALSZ is IKNP with the matrix of PRG outputs.
+* `alszOver_realizes`: ALSZ over the functionality of its base OTs realizes IKNP over the column
+  OTs, with the PRG bound.
+* `alsz_realizes_iknpWake`: ALSZ over the seed OTs realizes IKNP over the column OTs behind
+  `simALSZ`, with the PRG bound.
 -/
 
 @[expose] public section
@@ -173,7 +221,8 @@ end CatCrypt.Crypto.UCTransparent.MultiHybrid
 
 namespace CatCrypt.Crypto.OT.ALSZ
 
-open CatCrypt.Core CatCrypt.Prob CatCrypt.Crypto CatCrypt.Crypto.UCConcrete CatCrypt.Crypto.Assumptions
+open CatCrypt.Core CatCrypt.Prob CatCrypt.Crypto CatCrypt.Crypto.UCConcrete
+open CatCrypt.Crypto.Assumptions
 open scoped ENNReal
 
 /-! ## `κ` PRG outputs against `κ` uniform values -/
@@ -302,41 +351,6 @@ section Parties
 open CatCrypt.Crypto.UCTransparent CatCrypt.Crypto.OT.IKNPWake CatCrypt.Crypto.OT.IKNPSquare
 
 variable {κ m : ℕ} {M Seed : Type}
-
-/-- The input of a base OT of ALSZ: the receiver's seed pair and its choices `r`. -/
-abbrev AIn (Seed : Type) (m : ℕ) := (Seed × Seed) × (Fin m → Bool)
-
-/-- The correction string of ALSZ for the input `x = ((k₀, k₁), r)`: `G k₀ + G k₁ + r`. -/
-def alszU (G : PRGDef Seed (Fin m → Bool)) (x : AIn Seed m) : Fin m → Bool :=
-  G.stretch x.1.1 + G.stretch x.1.2 + x.2
-
-/-- The sender's column from the seed `k` it obtained for the bit `b` and the correction `u`:
-`G k`, plus `u` when `b` is set. -/
-def alszCol (G : PRGDef Seed (Fin m → Bool)) (k : Seed) (b : Bool) (u : Fin m → Bool) :
-    Fin m → Bool :=
-  G.stretch k + cond b u 0
-
-/-- The output of a base OT of ALSZ: the sender's column from the seed of its bit and the
-correction string. -/
-def alszOut (G : PRGDef Seed (Fin m → Bool)) (x : AIn Seed m) (b : Bool) : Fin m → Bool :=
-  alszCol G (cond b x.1.2 x.1.1) b (alszU G x)
-
-/-- The column pair of IKNP that an input of ALSZ stands for: `T = G k₀` and `T + r`. -/
-def colPair (G : PRGDef Seed (Fin m → Bool)) (x : AIn Seed m) : BPair m :=
-  (G.stretch x.1.1, G.stretch x.1.1 + x.2)
-
-/-- **Correctness of the correction string.** The sender's column is the IKNP column of the
-column pair `(G k₀, G k₀ + r)` at its bit. -/
-theorem alszOut_eq (G : PRGDef Seed (Fin m → Bool)) (x : AIn Seed m) (b : Bool) :
-    alszOut G x b = baseOut (colPair G x) b := by
-  funext j
-  cases b <;>
-    simp only [alszOut, alszCol, alszU, baseOut, colPair, Bool.cond_true, Bool.cond_false,
-      Pi.add_apply, Pi.zero_apply, Bool.false_eq_true, ite_true, ite_false] <;>
-    cases G.stretch x.1.1 j <;> cases G.stretch x.1.2 j <;> cases x.2 j <;> decide
-
-/-- The honest events of the ALSZ base OTs: an input to the base OT `i`, or a bit. -/
-abbrev AHEv (κ : ℕ) (Seed : Type) (m : ℕ) := (Fin κ × AIn Seed m) ⊕ (Fin κ × Bool)
 
 /-- The key of the ALSZ parties: the receiver's seed pairs `(k₀, k₁)` and the sender's secret. -/
 abbrev AKey (κ : ℕ) (Seed : Type) := ((Fin κ → Seed) × (Fin κ → Seed)) × (Fin κ → Bool)
@@ -635,23 +649,32 @@ theorem view_iknpOver {ζ : Type}
   rw [NonUniform.ofPMF_uniformFintype, NonUniform.sampleFrom_uniform] at h
   exact h
 
-/-- The distinguisher of the PRG hybrids for the environment `Z`: on the columns `U` of the
-matrix, draw the secret and run `Z`, from its heap, against IKNP with the key of the matrix with
-columns `U` and the secret. -/
-noncomputable def alszD {ζ : Type}
-    (Z : Env (Strat ζ (((InEv m M ⊕ WakeEv κ) ⊕ P) ⊕ AEv κ m M) ((InOut m M ⊕ L) ⊕ AOut m M)) ζ)
-    (U : Fin κ → Fin m → Bool) : SPComp Bool :=
-  SPComp.bind (SPComp.sample (Fin κ → Bool)) fun s =>
-    fixHeap Z.heap (fun k => SPComp.bind (view (iknpK H φS φR ans k) Z.input) Z.dist)
-      (fun j i => U i j, s)
+/-- The world of the environment `Z` with the key `k`: `Z`, from its heap, against IKNP with the
+key `k`, and its distinguisher. -/
+noncomputable def alszWorld {ζ : Type}
+    (Z : Env (Strat ζ (((InEv m M ⊕ WakeEv κ) ⊕ P) ⊕ AEv κ m M) ((InOut m M ⊕ L) ⊕ AOut m M)) ζ) :
+    IKNPKey κ m → SPComp Bool :=
+  fixHeap Z.heap fun k => SPComp.bind (view (iknpK H φS φR ans k) Z.input) Z.dist
 
-/-- **The reduction of ALSZ to the PRG**, for the hop `i`: on a challenge `y`, draw the seeds
-`k₀` and uniform columns, form the columns `U j` uniform for `j < i`, `y` at `i` and `G k₀ⱼ`
-for `j > i`, and run `alszD Z`. -/
+/-- The distinguisher of the PRG hybrids for the keyed world `W`: on the columns `U` of the
+matrix, draw the secret and run `W` with the matrix of columns `U` and the secret. -/
+noncomputable def alszDist (W : IKNPKey κ m → SPComp Bool) (U : Fin κ → Fin m → Bool) :
+    SPComp Bool :=
+  SPComp.bind (SPComp.sample (Fin κ → Bool)) fun s => W (fun j i => U i j, s)
+
+/-- **The reduction of ALSZ to the PRG** for the hop `i`, over the keyed world `W`: on a
+challenge `y`, draw the seeds `k₀` and uniform columns, form the columns `U j` uniform for
+`j < i`, `y` at `i` and `G k₀ⱼ` for `j > i`, and run `alszDist W`. -/
+noncomputable def alszRed (i : Fin κ) (W : IKNPKey κ m → SPComp Bool) :
+    (Fin m → Bool) → SPComp Bool :=
+  prgHybRed G (alszDist W) i
+
+/-- **The reduction of ALSZ to the PRG** for the hop `i` and the environment `Z`: `alszRed` over
+the world of `Z`. -/
 noncomputable def alszPrgRed {ζ : Type} (i : Fin κ)
     (Z : Env (Strat ζ (((InEv m M ⊕ WakeEv κ) ⊕ P) ⊕ AEv κ m M) ((InOut m M ⊕ L) ⊕ AOut m M)) ζ) :
     (Fin m → Bool) → SPComp Bool :=
-  prgHybRed G (alszD H φS φR ans Z) i
+  alszRed G i (alszWorld H φS φR ans Z)
 
 /-- The transposition of a matrix. -/
 def transposeEquiv (κ m : ℕ) : (Fin κ → Fin m → Bool) ≃ (Fin m → Fin κ → Bool) where
@@ -679,20 +702,98 @@ theorem alszOver_realizes :
   have hA : SPComp.bind (SPComp.sample (AKey κ Seed))
       (fixHeap Z.heap fun K => SPComp.bind (view (iknpK H φS φR ans (tOf G K)) Z.input) Z.dist) =
       SPComp.bind (SPComp.sample (Fin κ → Seed)) fun k₀ =>
-        alszD H φS φR ans Z (G.stretch ∘ k₀) := by
+        alszDist (alszWorld H φS φR ans Z) (G.stretch ∘ k₀) := by
     simp only [SPComp.sample_prod_eq, SPComp.bind_assoc, SPComp.pure_bind]
     congr 1
     funext k₀
-    exact Relational.dead_sample (α := Fin κ → Seed) (alszD H φS φR ans Z (G.stretch ∘ k₀))
+    exact Relational.dead_sample (α := Fin κ → Seed)
+      (alszDist (alszWorld H φS φR ans Z) (G.stretch ∘ k₀))
   have hI : SPComp.bind (SPComp.sample (IKNPKey κ m))
       (fixHeap Z.heap fun k => SPComp.bind (view (iknpK H φS φR ans k) Z.input) Z.dist) =
-      SPComp.bind (SPComp.sample (Fin κ → Fin m → Bool)) (alszD H φS φR ans Z) := by
+      SPComp.bind (SPComp.sample (Fin κ → Fin m → Bool))
+        (alszDist (alszWorld H φS φR ans Z)) := by
     simp only [SPComp.sample_prod_eq, SPComp.bind_assoc, SPComp.pure_bind]
     exact (SPComp.sample_bind_equiv (transposeEquiv κ m) _).symm
   rw [hA, hI]
-  exact prg_pi_hybrid G (alszD H φS φR ans Z)
+  exact prg_pi_hybrid G (alszDist (alszWorld H φS φR ans Z))
 
 end Lazy
+
+/-! ## ALSZ over the seed OTs -/
+
+section Compose
+
+open CatCrypt.Crypto.OT.IKNPPVW
+
+/-- The adversary events of the ALSZ base OTs beside the IKNP channel. -/
+abbrev AEvA (κ m : ℕ) (M : Type) := (Fin κ × OAEv m) ⊕ ChanAEv (Msg m M)
+
+/-- The adversary outputs of the ALSZ base OTs beside the IKNP channel. -/
+abbrev AOutA (m : ℕ) (M : Type) := OAOut m ⊕ ChanAOut (Msg m M) Unit
+
+variable [AddCommGroup M] (H : Fin m → (Fin κ → Bool) → M) {P L LS LR : Type}
+  (φS : IKNPSenderView κ m Unit → LS) (φR : IKNPReceiverView κ m M Unit × (Fin m → M) → LR)
+  (ans : Option LS → Option LR → P → L) (G : PRGDef Seed (Fin m → Bool)) [NeZero κ]
+  [Fintype Seed] [Inhabited Seed]
+
+/-- **ALSZ over the `κ` scheduled seed OTs**: the ALSZ parties with their own draw over the `κ`
+base OTs of ALSZ (each a scheduled seed OT beside the secure channel for its correction string)
+beside the IKNP channel, the adversary ports forwarded. -/
+noncomputable abbrev alszSeed :=
+  ((alszLazy H φS φR ans G).tensor (MultiHybrid.idSim (AEvA κ m M) (AOutA m M))).withSub
+    ((alszBase κ G).withChan (chanC m M))
+
+variable (κ m M P L) in
+/-- **The simulator of ALSZ over the seed OTs**: the forwarding of the parties' port beside the
+indexed copies `simKeepA` of the simulator of one base OT and the forwarding of the IKNP
+channel's adversary port, over the IKNP parties over the column OTs. -/
+noncomputable def simALSZ :
+    Simulator (((InEv m M ⊕ WakeEv κ) ⊕ P) ⊕ AEvA κ m M) ((InOut m M ⊕ L) ⊕ AOutA m M)
+      (((InEv m M ⊕ WakeEv κ) ⊕ P) ⊕ AEv κ m M) ((InOut m M ⊕ L) ⊕ AOut m M)
+      ((vF κ m M P L).sum (((PubView.eqView : PubView (OAEv m) (OAOut m)).indexed (Fin κ)).sum
+        PubView.eqView))
+      ((vF κ m M P L).sum (((PubView.eqView : PubView SchedEv SchedOut).indexed (Fin κ)).sum
+        PubView.eqView)) :=
+  Simulator.ofMultiHybrid
+    (MultiHybrid.extendFwd ((InEv m M ⊕ WakeEv κ) ⊕ P) (InOut m M ⊕ L)
+      ((simKeepA κ m).tensor (MultiHybrid.idSim (ChanAEv (Msg m M)) (ChanAOut (Msg m M) Unit))))
+    (MultiHybrid.Opaque.extendFwd (vF κ m M P L)
+      (((MultiHybrid.opaque_eqView (simA m)).indexedKeep (ι := Fin κ)).tensor
+        (MultiHybrid.idSim_opaque PubView.eqView)))
+
+/-- **ALSZ realizes the IKNP wake parties over the column OTs** (genuine UC). Over the `κ`
+scheduled seed OTs (`FOTSched seedOut`, each beside the secure channel for its correction
+string), the ALSZ parties with their own draw realize the IKNP wake parties with their own draw
+over the `κ` scheduled column OTs `baseG κ m`, both beside the IKNP channel, behind `simALSZ`,
+which simulates each base OT of ALSZ from the scheduler of the column OT (`simA`). The bound is
+the sum over the columns `i < κ` of the PRG advantage of the explicit reduction
+`alszPrgRed G i`, at the environment reduced through the extended simulator: the base OTs of
+ALSZ realize `FOTSchedPar (Fin κ) (alszOut G)` at distance `0` (`alszBase_realizesSim`), and the
+ALSZ parties over them realize the IKNP parties over the column OTs with the PRG bound
+(`alszOver_realizes`), composed by `RealizesSim.modular_withChan`. The corruption events of
+both are answered by the IKNP views of the parties, in which the matrix has the columns
+`G k₀ᵢ`. -/
+theorem alsz_realizes_iknpWake :
+    RealizesSim (alszSeed H φS φR ans G) (iknpOver H φS φR ans) (simALSZ κ m M P L)
+      (fun _ Z => ∑ i : Fin κ, PRG_Advantage G (alszPrgRed H φS φR ans G i
+        ((MultiHybrid.extendFwd ((InEv m M ⊕ WakeEv κ) ⊕ P) (InOut m M ⊕ L)
+          ((simKeepA κ m).tensor
+            (MultiHybrid.idSim (ChanAEv (Msg m M)) (ChanAOut (Msg m M) Unit)))).reduceEnv
+          (.inr (.inr .idle)) Z))) := by
+  have hmod := RealizesSim.modular_withChan (VF := vF κ m M P L) (VC := PubView.eqView)
+    (VD := PubView.eqView) (alszLazy H φS φR ans G) (simKeepA κ m)
+    ((MultiHybrid.opaque_eqView _).indexedKeep) (alszBase κ G) (FOTSchedPar (Fin κ) (alszOut G))
+    (FOTSchedPar_portTyped _) (chanC m M) (FChan_portTyped _ _) (FChan_noFail _ _)
+    (iknpOver H φS φR ans) (Simulator.id _ _ _) (.inr (default, .inl .idle))
+    (.inr (.inr .idle)) (.inr (.inr .idle)) (.inr (.inr .idle)) ⟨_, alszBase_idleAt G⟩
+    ⟨_, simKeepA_idleAt G⟩ ⟨_, fun t => withChan_idle _ t⟩
+    ⟨_, idleAt_tensor_tensor_fwd _ _ _ _ _ fun t => withChan_idle _ t⟩
+    ⟨_, idleAt_tensor_fwd _ _ _ _ fun t => withChan_idle _ t⟩
+    ⟨_, idleAt_tensor_fwd _ _ _ _ fun t => withChan_idle _ t⟩ (alszBase_realizesSim G)
+    (alszOver_realizes H φS φR ans G)
+  exact fun ζ Z => le_of_le_of_eq (hmod ζ Z) (zero_add _)
+
+end Compose
 
 end Parties
 
