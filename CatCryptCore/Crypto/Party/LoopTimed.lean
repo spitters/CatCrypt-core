@@ -718,6 +718,108 @@ theorem LoopBoundGraded.sampleTree {σ : Type} {body : σ → ProgE (Costed (SPC
     LoopBoundGraded (weightT sampleTree) body s₀ Inv a b :=
   h.mono_weight weightT_sampleTree_le
 
+/-! ### Interpretation by a family of costed trees -/
+
+/-- The operation `q` is the compiled tree of a member of the family `F` of costed trees. -/
+def InFamily (F : ℕ × SPTree.Timed ℕ → Prop) (q : SPComp ℕ) : Prop :=
+  ∃ x, F x ∧ x.2.erase.compile = q
+
+/-- The tree interpretation by the family `F` of costed trees: an operation that is the compiled
+tree of a member of `F` is interpreted by that member, any other operation by `sampleTree`. An
+inner simulator with a costed tree (its tree encoded by `encTree`) is interpreted this way. -/
+noncomputable def treeBy (F : ℕ × SPTree.Timed ℕ → Prop) (q : SPComp ℕ) :
+    ℕ × SPTree.Timed ℕ := by
+  classical
+  exact if h : InFamily F q then h.choose else sampleTree q
+
+/-- The tree interpretation by a family compiles each operation of the family and each
+distribution sample to itself. -/
+theorem opComp_treeBy {F : ℕ × SPTree.Timed ℕ → Prop} {q : SPComp ℕ}
+    (h : InFamily F q ∨ IsSample q) : opComp (treeBy F) q = q := by
+  unfold opComp treeBy
+  by_cases hq : InFamily F q
+  · simp only [hq, ↓reduceDIte]
+    exact hq.choose_spec.2
+  · simp only [hq, ↓reduceDIte]
+    exact opComp_sampleTree (h.resolve_left hq)
+
+/-- When every member of `F` costs at most `T`, each operation of the tree interpretation by `F`
+weighs at most `T + 1` times its unit weight. -/
+theorem weightT_treeBy_le {F : ℕ × SPTree.Timed ℕ → Prop} {T : ℕ}
+    (hF : ∀ x, F x → SPTree.Timed.stepTime x ≤ T) (q : Costed (SPComp ℕ)) :
+    weightT (treeBy F) q ≤ (T + 1) * Costed.weight q := by
+  rcases q with q | c
+  · have hs := weightT_sampleTree_le (.op q)
+    simp only [weightT, runT, Costed.weight, treeBy, Nat.mul_one] at hs ⊢
+    split
+    · next h =>
+      have := hF _ h.choose_spec.1
+      omega
+    · omega
+  · simp only [weightT, runT, Costed.weight, SPTree.Timed.stepTime, SPTree.Timed.time_ret]
+    nlinarith
+
+/-- A time bound scales with the weight: at `k` times the weight, `k ≥ 1` times the time. -/
+theorem Bound.scale {Op' : Type} {w : Op' → ℕ} {k : ℕ} (hk : 1 ≤ k) {p : ProgE Op' E O α}
+    {t : ℕ} {P : α → Prop} (h : Bound w p t P) : Bound (fun q => k * w q) p (k * t) P := by
+  induction p generalizing t with
+  | ret a => exact h
+  | recv k' ih =>
+    refine ⟨by nlinarith [h.1], fun e => (ih e (h.2 e)).mono ?_ fun _ => id⟩
+    rw [Nat.mul_sub_one]
+    omega
+  | send o p ih =>
+    refine ⟨by nlinarith [h.1], (ih h.2).mono ?_ fun _ => id⟩
+    rw [Nat.mul_sub_one]
+    omega
+  | opN q k' ih =>
+    refine ⟨Nat.mul_le_mul_left k h.1, fun n => (ih n (h.2 n)).mono ?_ fun _ => id⟩
+    rw [Nat.mul_sub]
+  | fail => trivial
+
+/-- **Graded bound of a body under the tree interpretation by a family.** When every member of
+`F` costs at most `T`, a graded bound `a`, `b` at the weight `Costed.weight` is the graded bound
+`(T + 1) * a`, `(T + 1) * b` at the weight `weightT (treeBy F)`. -/
+theorem LoopBoundGraded.treeBy {σ : Type} {F : ℕ × SPTree.Timed ℕ → Prop} {T : ℕ}
+    (hF : ∀ x, F x → SPTree.Timed.stepTime x ≤ T) {body : σ → ProgE (Costed (SPComp ℕ)) E O σ}
+    {s₀ : σ} {Inv : ℕ → σ → Prop} {a b : ℕ}
+    (h : LoopBoundGraded Costed.weight body s₀ Inv a b) :
+    LoopBoundGraded (weightT (ProgE.treeBy F)) body s₀ Inv ((T + 1) * a) ((T + 1) * b) :=
+  ⟨h.1, fun i s hs => (((h.2 i s hs).scale (k := T + 1) (by omega)).mono_weight
+    (weightT_treeBy_le hF)).mono (le_of_eq (by ring)) fun _ => id⟩
+
+/-- **Erasure of a priced body under the tree interpretation by a family.** When every operation
+of `body s` is the compiled tree of a member of `F` or a distribution sample, the priced form
+erases under `treeBy F` to `body s`. -/
+theorem eraseT_treeBy_priced {σ : Type} (F : ℕ × SPTree.Timed ℕ → Prop) (price : σ → ℕ)
+    (body : σ → Prog E O σ) (s : σ) (h : AllOps (fun q => InFamily F q ∨ IsSample q) (body s)) :
+    eraseT (treeBy F) (priced price body s) = body s := by
+  rw [eraseT, erase_priced]
+  exact mapOp_eq_self _ _ (h.mono fun _ hq => opComp_treeBy hq)
+
+/-- The costed tree of codes of a costed tree on a countable type: its leaves encoded, as the
+operation `Prog.sample` performs. -/
+noncomputable def encTree {γ : Type} [Countable γ] (x : ℕ × SPTree.Timed γ) :
+    ℕ × SPTree.Timed ℕ :=
+  letI := Encodable.ofCountable γ
+  SPTree.Timed.delay x.1 (x.2.map Encodable.encode fun _ => 0)
+
+/-- The encoded costed tree compiles to the encoded computation. -/
+theorem encTree_compile {γ : Type} [Countable γ] (x : ℕ × SPTree.Timed γ) :
+    (encTree x).2.erase.compile =
+      (letI := Encodable.ofCountable γ; SPComp.map Encodable.encode x.2.erase.compile) := by
+  simp only [encTree, SPTree.Timed.delay, SPTree.Timed.erase_map, SPTree.compile_map]
+  rfl
+
+/-- Encoding the leaves adds no time. -/
+theorem stepTime_encTree_le {γ : Type} [Countable γ] (x : ℕ × SPTree.Timed γ) :
+    SPTree.Timed.stepTime (encTree x) ≤ SPTree.Timed.stepTime x := by
+  have := SPTree.Timed.stepTime_map_le (letI := Encodable.ofCountable γ; Encodable.encode)
+    (fun _ => 0) x.2 0 fun _ => le_rfl
+  simp only [encTree, SPTree.Timed.stepTime_delay]
+  simp only [SPTree.Timed.stepTime] at this ⊢
+  omega
+
 end ProgE
 
 namespace Prog

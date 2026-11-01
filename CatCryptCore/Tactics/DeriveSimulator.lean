@@ -5,7 +5,7 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import CatCryptCore.Crypto.UCSimulatorCost
+public import CatCryptCore.Crypto.UCSimulatorCostGraded
 public import CatCryptCore.Tactics.DeriveReduction
 public import CatCryptCore.Tactics.DeriveTimeBound
 
@@ -71,6 +71,12 @@ steps for a costed multi-call simulator, the sum of the bounds for a composite, 
 simulator for a relabelled one; it is simplified by `max 0 a = a`, `max a a = a`, associativity
 of `+`, numeral arithmetic and the maxima of comparable numerals, with the monotonicity of the
 time bound (`Simulator.Timed.TimeBound.mono`).
+
+When a leaf has a graded time theorem `f.timeBoundGraded_timed` (its `j`-th step costs at most
+`a + b * j`, as for a loop whose state grows with the activations, `Prog.loopMulti`), the time
+theorem is the graded one, `S.timeBoundGraded_timed : … → (S.timed …).TimeBoundGraded a b`: the
+graded rules of `UCSimulatorCostGraded.lean` for leaves, composites and relabellings, and the
+time bound with no growth for the other nodes (`Simulator.Timed.TimeBound.timeBoundGraded`).
 
 ## Main definitions
 
@@ -545,8 +551,85 @@ def simplifyBound (pf B : Expr) : MetaM (Expr × Expr) := do
     return (← mkAppM ``Simulator.Timed.TimeBound.mono #[pf, ← mkAppM ``le_of_eq #[p]], r.expr)
   | none => return (pf, r.expr)
 
+/-- The graded time theorem `f.timeBoundGraded_timed` of the costed multi-call simulator of a
+leaf `T` (`Simulator.Timed.ofMultiHybrid A` or `ofMultiHybridHat … A`, `A` an application of
+`f.timed`), when it exists. -/
+def gradedThm? (T : Expr) : MetaM (Option Name) := do
+  let T ← instantiateMVars T
+  unless T.isAppOf ``Simulator.Timed.ofMultiHybridHat ||
+      T.isAppOf ``Simulator.Timed.ofMultiHybrid do return none
+  let .const ft _ := T.appArg!.getAppFn | return none
+  let g := ft.getPrefix ++ `timeBoundGraded_timed
+  return if (← getEnv).contains g then some g else none
+
+/-- Whether a leaf of the costed simulator `T` of the node has a graded time theorem. -/
+partial def nodeGraded (T : Expr) : Node → MetaM Bool
+  | .leaf .. => return (← gradedThm? T).isSome
+  | .comp _ n₁ n₂ => do
+    let T ← instantiateMVars T
+    return (← nodeGraded T.appFn!.appArg! n₁) || (← nodeGraded T.appArg! n₂)
+  | .mapPorts _ n .. => do
+    let T ← instantiateMVars T
+    let args := T.getAppArgs
+    nodeGraded args[args.size - 3]! n
+  | _ => return false
+
+/-- The graded time-bound proof `T.TimeBoundGraded a b` of the costed simulator `T` of the
+node: a leaf with a graded time theorem `f.timeBoundGraded_timed` by it, a composite and a
+relabelling by their graded rules, any other node by its time bound with no growth. -/
+partial def timeNodeGraded (bounds hyps : IO.Ref (Array (MVarId × BinderInfo))) (T : Expr) :
+    Node → MetaM Expr
+  | n@(.leaf ..) => do
+    let T ← instantiateMVars T
+    let some g ← gradedThm? T
+      | return (← applyConst ``Simulator.Timed.TimeBound.timeBoundGraded
+          #[← timeNode bounds hyps T n]).1
+    let A := T.appArg!
+    let thm ← mkConstWithFreshMVarLevels g
+    let (ms, _, concl) ← forallMetaTelescopeReducing (← inferType thm)
+    let concl ← instantiateMVars concl
+    unless ← isDefEq (concl.getArg! 5) A do
+      throwError "derive_simulator: `{g}` does not bound{indentExpr A}"
+    recordOpen bounds hyps .implicit ms
+    let pA ← instantiateMVars (mkAppN thm ms)
+    let rule := if T.isAppOf ``Simulator.Timed.ofMultiHybridHat then
+      ``Simulator.ofMultiHybridHat.timeBoundGraded_timed
+      else ``Simulator.ofMultiHybrid.timeBoundGraded_timed
+    let a ← mkFreshExprMVar (mkConst ``Nat)
+    let b ← mkFreshExprMVar (mkConst ``Nat)
+    return (← applyConst rule #[pA] (← mkAppM ``Simulator.Timed.TimeBoundGraded #[T, a, b])).1
+  | .comp _ n₁ n₂ => do
+    let T ← instantiateMVars T
+    let p₁ ← timeNodeGraded bounds hyps T.appFn!.appArg! n₁
+    let p₂ ← timeNodeGraded bounds hyps T.appArg! n₂
+    return (← applyConst ``Simulator.comp.timeBoundGraded_timed #[p₁, p₂]).1
+  | .mapPorts _ n f g _ _ => do
+    let T ← instantiateMVars T
+    let args := T.getAppArgs
+    let p ← timeNodeGraded bounds hyps args[args.size - 3]! n
+    return (← applyConst ``Simulator.mapPorts.timeBoundGraded_timed #[p, f, g]).1
+  | n => do
+    return (← applyConst ``Simulator.Timed.TimeBound.timeBoundGraded
+      #[← timeNode bounds hyps T n]).1
+
+/-- The constants `a`, `b` of the graded time proof `pf` simplified, with the proof of the
+simplified bound. -/
+def simplifyGraded (pf a b : Expr) : MetaM (Expr × Expr × Expr) := do
+  let ctx ← Simp.Context.ofNames [``Nat.zero_max, ``Nat.max_zero, ``max_self, ``Nat.add_assoc,
+    ``max_eq_left, ``max_eq_right, ``Nat.add_zero, ``Nat.zero_add] true
+  let simpLe (x : Expr) : MetaM (Expr × Expr) := do
+    let (r, _) ← simp x ctx (simprocs := #[← Simp.getSimprocs])
+    match r.proof? with
+    | some p => return (← mkAppM ``le_of_eq #[p], r.expr)
+    | none => return (← mkAppM ``le_refl #[x], x)
+  let (ha, a') ← simpLe a
+  let (hb, b') ← simpLe b
+  return (← mkAppM ``Simulator.Timed.TimeBoundGraded.mono #[pf, ha, hb], a', b')
+
 /-- Define `c.timed` and prove `c.erase_timed` and `c.timeBound_timed` for a simulator `c`
-whose costed multi-call simulators have their costed forms and step theorems. -/
+whose costed multi-call simulators have their costed forms and step theorems; when a leaf has a
+graded time theorem (`f.timeBoundGraded_timed`, a step from a state after `j` activations
+costing at most `a + b * j`), the time theorem is the graded one, `c.timeBoundGraded_timed`. -/
 def deriveSimulator (c : Name) : TermElabM Unit := do
   let info ← getConstInfoDefn c
   let lvls := info.levelParams.map mkLevelParam
@@ -577,6 +660,20 @@ def deriveSimulator (c : Name) : TermElabM Unit := do
         { name := eName, levelParams := info.levelParams, type := ety, value := evalue })
     let bounds ← IO.mkRef #[]
     let thyps ← IO.mkRef #[]
+    if ← nodeGraded T node then
+      let tpf ← timeNodeGraded bounds thyps T node
+      let ty ← instantiateMVars (← inferType tpf)
+      let (tpf, a, b) ← simplifyGraded tpf ty.appFn!.appArg! ty.appArg!
+      withMVarsAsFVars ((← bounds.get) ++ (← thyps.get)) 0 #[] fun tFvs => do
+        let tpf ← instantiateMVars tpf
+        if tpf.hasExprMVar then throwError "derive_simulator: the time proof is incomplete"
+        let tBs := timedBs ++ tFvs
+        let tty ← mkForallFVars tBs (← mkAppM ``Simulator.Timed.TimeBoundGraded
+          #[Tc, ← instantiateMVars a, ← instantiateMVars b])
+        addDecl (Declaration.thmDecl
+          { name := c ++ `timeBoundGraded_timed, levelParams := info.levelParams, type := tty,
+            value := ← mkLambdaFVars tBs tpf })
+      return
     let tpf ← timeNode bounds thyps T node
     let (tpf, B) ← simplifyBound tpf (← instantiateMVars (← inferType tpf)).appArg!
     withMVarsAsFVars ((← bounds.get) ++ (← thyps.get)) 0 #[] fun tFvs => do
