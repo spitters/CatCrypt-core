@@ -35,6 +35,8 @@ response `(c₀, z₀, z₁)` carries the challenge `c₀` of branch 0; the chal
   `RelHVZK` of both branches, by the uniform-product identities
   `PMF.map_uniform_prod_pair_congr` and `PMF.map_uniform_prod_dep_congr` of
   `CatCryptCore.ForMathlib.PMFUniform`
+* `orSigma_commitBoundAt_inl`, `orSigma_commitBoundAt_inr` — a commitment bound of the branch
+  the prover knows is a commitment bound of the OR composition
 
 ## References
 
@@ -195,6 +197,46 @@ theorem orSigma_perfectHVZK (h₀ : P₀.RelHVZK) (h₁ : P₁.RelHVZK)
     (hgen : ∀ s w, (s, w) ∈ gen.support → orRel P₀ P₁ s w) :
     (orSigma P₀ P₁ e gen).PerfectHVZK :=
   (orSigma_relHVZK e gen h₀ h₁).perfectHVZK hgen
+
+/-! ### Commitment bounds
+
+The prover of `orSigma` commits honestly in the branch whose witness it holds, so a commitment
+bound of that branch bounds the commitments of the composition. -/
+
+open scoped ENNReal
+
+variable {e gen}
+
+/-- **Commitment bound of an OR composition, branch 0.** With a witness of branch 0, each
+commitment of `orSigma` has probability at most a commitment bound of `P₀` at that witness: the
+branch-0 part of the commitment is the honest commitment of `P₀` on its own nonce. -/
+theorem orSigma_commitBoundAt_inl {s : P₀.Stmt × P₁.Stmt} {w₀ : P₀.Wit} {γ : ℝ≥0∞}
+    (h : P₀.CommitBoundAt s.1 w₀ γ) : (orSigma P₀ P₁ e gen).CommitBoundAt s (.inl w₀) γ := by
+  intro a
+  calc (PMF.uniformFintype (orSigma P₀ P₁ e gen).Rand).toOuterMeasure
+        {r | (orSigma P₀ P₁ e gen).commit s (.inl w₀) r = a}
+      ≤ (PMF.uniformFintype
+            (P₀.Ch × (P₀.Rand × P₁.SimRand) × (P₀.SimRand × P₁.Rand))).toOuterMeasure
+          {r | r.2 ∈ {q | q.1 ∈ {p | p.1 ∈ {u | P₀.commit s.1 w₀ u = a.1}}}} :=
+        MeasureTheory.measure_mono fun r hr => congrArg Prod.fst hr
+    _ = (PMF.uniformFintype P₀.Rand).toOuterMeasure {u | P₀.commit s.1 w₀ u = a.1} := by
+        rw [PMF.uniform_prod_snd_apply, PMF.uniform_prod_fst_apply, PMF.uniform_prod_fst_apply]
+    _ ≤ γ := h a.1
+
+/-- **Commitment bound of an OR composition, branch 1.** With a witness of branch 1, each
+commitment of `orSigma` has probability at most a commitment bound of `P₁` at that witness. -/
+theorem orSigma_commitBoundAt_inr {s : P₀.Stmt × P₁.Stmt} {w₁ : P₁.Wit} {γ : ℝ≥0∞}
+    (h : P₁.CommitBoundAt s.2 w₁ γ) : (orSigma P₀ P₁ e gen).CommitBoundAt s (.inr w₁) γ := by
+  intro a
+  calc (PMF.uniformFintype (orSigma P₀ P₁ e gen).Rand).toOuterMeasure
+        {r | (orSigma P₀ P₁ e gen).commit s (.inr w₁) r = a}
+      ≤ (PMF.uniformFintype
+            (P₀.Ch × (P₀.Rand × P₁.SimRand) × (P₀.SimRand × P₁.Rand))).toOuterMeasure
+          {r | r.2 ∈ {q | q.2 ∈ {p | p.2 ∈ {u | P₁.commit s.2 w₁ u = a.2}}}} :=
+        MeasureTheory.measure_mono fun r hr => congrArg Prod.snd hr
+    _ = (PMF.uniformFintype P₁.Rand).toOuterMeasure {u | P₁.commit s.2 w₁ u = a.2} := by
+        rw [PMF.uniform_prod_snd_apply, PMF.uniform_prod_snd_apply, PMF.uniform_prod_snd_apply]
+    _ ≤ γ := h a.2
 
 end Or
 
