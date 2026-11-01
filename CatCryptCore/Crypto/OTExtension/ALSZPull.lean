@@ -52,11 +52,66 @@ OTs `FOTSchedPar (Fin κ) (alszOut G)` at distance `0` (`alszBase_realizesSim`, 
 * `alszOne_realizesSim`: one base OT realizes `FOTSched (alszOut G)` at distance `0`.
 * `alszBase_realizesSim`: the `κ` base OTs realize `FOTSchedPar (Fin κ) (alszOut G)` at
   distance `0`.
+* `realizes_self`, `portTyped_tensor_idSim`, `withChan_noFail`, `withFChan_idle`: a system
+  realizes itself; a hybrid forwarding the adversary port over a port-typed subroutine is
+  port-typed; a system beside a channel never fails, and is idle at the channel's `idle`.
 -/
 
 @[expose] public section
 
 set_option autoImplicit false
+
+/-! ## A hybrid forwarding the adversary port, and a system beside a channel -/
+
+namespace CatCrypt.Crypto.UCTransparent
+
+open CatCrypt.Core CatCrypt.Prob CatCrypt.Crypto
+open CatCrypt.Crypto.Choreography (ChannelCap)
+
+variable {σ τ υ E O EG OG EA OA EH EC ED OH OC OD : Type}
+
+/-- A system realizes itself at distance `0`. -/
+theorem realizes_self (X : Sys τ E O) : Realizes X X (fun _ _ => 0) :=
+  realizes_zero_of_stepMap X X id rfl fun t e => by
+    simp [SPComp.map, Prod.mk.eta, SPComp.bind_pure]
+
+/-- A hybrid beside the forwarding of the adversary port, over a subroutine that answers each
+event on its port, answers each event on its port. -/
+theorem portTyped_tensor_idSim (π : MultiHybrid σ E O EG OG) (K : Sys τ (EG ⊕ EA) (OG ⊕ OA))
+    (hK : K.PortTyped) : ((π.tensor (MultiHybrid.idSim EA OA)).withSub K).PortTyped := by
+  obtain ⟨KL, KR, hL, hR⟩ := hK
+  refine ⟨⟨((π.init, ()), K.init), fun t e => SPComp.map (fun p => (((p.1.1, t.1.2), p.1.2), p.2))
+      (π.stepFuel KL (max π.fuel (MultiHybrid.idSim EA OA).fuel) (t.1.1, t.2) e)⟩,
+    ⟨((π.init, ()), K.init), fun t a => SPComp.map (fun p => (((t.1.1, p.1.1), p.1.2), p.2))
+      ((MultiHybrid.idSim EA OA).stepFuel KR (max π.fuel (MultiHybrid.idSim EA OA).fuel)
+        (t.1.2, t.2) a)⟩, ?_, ?_⟩
+  · rintro ⟨⟨s, s'⟩, t⟩ e
+    rw [MultiHybrid.tensor_withSub_step_inl _ _ K KL hL]
+    simp [SPComp.map, SPComp.bind_assoc, SPComp.pure_bind]
+  · rintro ⟨⟨s, s'⟩, t⟩ a
+    rw [MultiHybrid.tensor_withSub_step_inr _ _ K KR hR]
+    simp [SPComp.map, SPComp.bind_assoc, SPComp.pure_bind]
+
+/-- A system beside a channel never fails when neither fails. -/
+theorem withChan_noFail (X : Sys τ (EH ⊕ EA) (OH ⊕ OA)) (C : Sys υ (EC ⊕ ED) (OC ⊕ OD))
+    (hX : ∀ t e, SPComp.NoFail (X.step t e)) (hC : ∀ u e, SPComp.NoFail (C.step u e)) :
+    ∀ t e, SPComp.NoFail ((X.withChan C).step t e) := by
+  rintro ⟨t, u⟩ e
+  simp only [Sys.withChan, Sys.mapPorts, Sys.relabel, SPComp.map]
+  refine Assumptions.SPComp.bind_noFail ?_ fun _ => SPComp.pure_noFail _
+  rcases chanEv e with e | e <;> simp only [Sys.par_step_inl, Sys.par_step_inr, SPComp.map]
+  · exact Assumptions.SPComp.bind_noFail (hX _ _) fun _ => SPComp.pure_noFail _
+  · exact Assumptions.SPComp.bind_noFail (hC _ _) fun _ => SPComp.pure_noFail _
+
+/-- A system beside an ideal channel is idle at the channel's `idle`. -/
+theorem withFChan_idle {V Leak : Type} (X : Sys τ (EH ⊕ EA) (OH ⊕ OA)) (cap : ChannelCap)
+    (ℓ : V → Leak) (t : τ × ChanSt V) :
+    (X.withChan (FChan cap ℓ)).step t (.inr (.inr .idle)) = SPComp.pure (t, .inr (.inr .ack)) := by
+  obtain ⟨t, u⟩ := t
+  simp [Sys.withChan, Sys.mapPorts, Sys.relabel, chanEv, chanOut, FChan, FChan.advSys,
+    FChan.advStep, SPComp.map, SPComp.pure_bind]
+
+end CatCrypt.Crypto.UCTransparent
 
 namespace CatCrypt.Crypto.OT.ALSZ
 
@@ -692,8 +747,8 @@ theorem stepA_chan (xo : Option (AIn Seed m)) (bo : Option Bool) (kd kr : Bool) 
         simp_all [idealOf, idealA_step_inr, MultiHybrid.stepFuel, sStart, sResume,
           MultiHybrid.drive, FOTSched.schedSys, FOTSched.schedStep, SPComp.map, SPComp.pure_bind,
           outOf]
-    · rcases xo with _ | x <;> cases ug <;> cases ur <;> cases kr <;> cases done <;>
-        simp_all [WF, uLen]
+    · refine ⟨h1, h2, ?_, ?_, h5, ?_⟩ <;> rcases xo with _ | x <;> cases ug <;> cases ur <;>
+        simp_all [uLen]
   | drop =>
     refine couple_eq
       (realOf G xo bo kd kr (if xo.isSome && decide (ug = .wait) then .lost else ug) ur (cur - 1)
@@ -707,8 +762,8 @@ theorem stepA_chan (xo : Option (AIn Seed m)) (bo : Option Bool) (kd kr : Bool) 
     · rcases xo with _ | x <;> cases ug <;>
         simp_all [idealOf, idealA_step_inr, MultiHybrid.stepFuel, sStart, sResume,
           MultiHybrid.drive, FOTSched.schedSys, FOTSched.schedStep, SPComp.map, SPComp.pure_bind]
-    · rcases xo with _ | x <;> cases ug <;> cases ur <;> cases kr <;> cases done <;>
-        simp_all [WF, uLen]
+    · refine ⟨h1, h2, ?_, ?_, h5, ?_⟩ <;> rcases xo with _ | x <;> cases ug <;> cases ur <;>
+        simp_all [uLen]
 
 /-- **One base OT of ALSZ realizes `FOTSched alszOut`** (genuine UC). Ideal functionality:
 `FOTSched (alszOut G)`, the scheduled transfer whose receiver obtains the column `G k_b + b · u`
