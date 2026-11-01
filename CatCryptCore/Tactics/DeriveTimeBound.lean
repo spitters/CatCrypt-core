@@ -144,7 +144,8 @@ A step cost is bounded free of the cost companions and of the values bound insid
 adversary by `bfree?`, the clauses of `AutoTime.boundFree?` with a dependent `if` bounded by the
 maximum of its branches (`dite_le_max_of`) and the premise of a registered cost lemma
 `f.timedCost_le` (the step cost of a loop) closed by the same procedure. The bound is
-normalised by `normalizeSum` when `omega` proves the normalised bound above it.
+normalised by `normalizeSum` when `omega`, alone or after `ring_nf`, proves the normalised bound
+above it.
 
 ## Main definitions
 
@@ -1525,7 +1526,8 @@ def isOracleTimed (c : Name) : MetaM Bool := do
 /-- State and prove `name`, the time theorem `StepTimeBound (c xs) B` of the costed oracle
 adversary `c`, along its bound (`oaStep`): every binder into costed oracle adversaries and
 every cost companion gets a bound and its hypothesis (`withBounds`); the bound is normalised
-(`normalizeSum`) when `omega` proves the normalised bound above the computed one. Returns the
+(`normalizeSum`) when `omega`, alone or after `ring_nf`, proves the normalised bound above the
+computed one. Returns the
 reason when the bound is not computed or the proof is not accepted. -/
 def emitOracleTimeBound (c name : Name) : TermElabM (Option MessageData) := do
   let info ← getConstInfo c
@@ -1559,7 +1561,9 @@ def emitOracleTimeBound (c name : Name) : TermElabM (Option MessageData) := do
       catch e => return some m!"the proof is not accepted: {e.toMessageData}"
       return none
 where
-  /-- A proof of `l ≤ r` over `ℕ` by `omega`, with the hypotheses of the context cleared. -/
+  /-- A proof of `l ≤ r` over `ℕ` by `omega`, else by `omega` after `ring_nf` (products of
+  sums, whose factors `normalizeSum` normalises, are atoms of `omega`), with the hypotheses of
+  the context cleared. -/
   omegaLe (l r : Expr) : TermElabM Expr := do
     let mv ← mkFreshExprSyntheticOpaqueMVar (mkNatLe l r)
     let mut hs : Array FVarId := #[]
@@ -1567,7 +1571,7 @@ where
       if d.isImplementationDetail then continue
       if ← isProp d.type then hs := hs.push d.fvarId
     let g ← mv.mvarId!.tryClearMany hs
-    let gs ← Tactic.run g (Tactic.evalTactic (← `(tactic| omega)))
+    let gs ← Tactic.run g (Tactic.evalTactic (← `(tactic| first | omega | (ring_nf <;> omega))))
     unless gs.isEmpty do throwError "omegaLe"
     instantiateMVars mv
 
