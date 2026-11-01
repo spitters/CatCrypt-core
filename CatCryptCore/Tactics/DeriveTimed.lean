@@ -85,12 +85,18 @@ companion is built where the function is created and read where the function is 
 * the costed type of a sum `A ⊕ B` is `Â ⊕ B̂`, erased and lifted componentwise by `Sum.map`,
   and the costed type of an optional function `Option F` is `Option F̂`, erased and lifted by
   `Option.map`;
+* an inductive type `I` without indices that is neither recursive nor a structure, one of whose
+  constructors has a function field (a phase `| idle | sub (r : P → E)`), has as costed type
+  the right-nested sum `F̂₀ ⊕ (F̂₁ ⊕ … ⊕ F̂ₙ₋₁)` of the tuples of the costed types of the
+  fields of its constructors, `Unit` for a constructor without fields (`sumInduct?`); `ε` is
+  the `Sum.elim` of the constructors applied to the erased fields, `ι` the case analysis of
+  `I` into the injections of the lifted fields;
 * a structure `S` whose fields are data of types independent of the other fields, one of
   which holds functions, has as costed value its mirror (`mirrorStruct?`, `mirrorType`): the
   tuple `ĥ₀ × (ĥ₁ × … × ĥₙ₋₁)` of the costed values of its fields; `ε` applies the constructor
   to the erased components, `ι` lifts each field;
-* a constructor application `S.mk a₁ … aₙ`, `Sum.inl a`, `some a` or `none` is translated
-  componentwise; a
+* a constructor application `S.mk a₁ … aₙ`, `Sum.inl a`, `some a`, `none` or a constructor of
+  such an inductive type is translated componentwise; a
   field `s.f` of such a structure is the component of the costed value of `s`, and a
   function field applied, `s.f x`, costs one plus the companion of that component at `x`
   (`costConst`); a `let` of a structure stays a `let`, and its costed value is that of its
@@ -98,8 +104,10 @@ companion is built where the function is created and read where the function is 
 * a field of a pattern of a match on a discriminant with a costed value (the block `a` of
   `| .inl a`, a field of `| ⟨f, g⟩`) keeps its function and reads its companion from the
   discriminant's costed value (`patternHats`, `refillE`): a component of a pair or a mirror,
-  or, under `Sum.inl`/`Sum.inr`, the component selected by `Sum.elim`; under `some`, the
-  content of the costed option `ô`, read as `Option.elim ô (ι a) id`;
+  or, under `Sum.inl`/`Sum.inr` and under a constructor of an inductive type encoded as a sum,
+  the component selected by `Sum.elim`; under `some`, the content of the costed option `ô`,
+  read as `Option.elim ô (ι a) id`; a discriminant that is a projection path into a costed
+  value (`t.2` of a costed state `t`) has the component of that value as its costed value;
 * a dispatch on an optional value, `Option.elim o y f`, `Option.casesOn o y f` or
   `Option.rec y f o`, whose result is a tree or a computation, is the match of
   `optionDispatch` on `o` (`optionDispatch?`): the function `f` is an alternative of the match
@@ -1243,11 +1251,104 @@ def mirrorProj (n i : Nat) (v : Expr) : MetaM Expr := do
   for _ in [0:i] do cur ← proj false cur
   if i + 1 < n then proj true cur else return cur
 
+/-- An inductive type whose costed value is a sum of the costed tuples of the fields of its
+constructors: its name, constructors, universe levels and parameters at a type, and the types
+of the fields of each constructor. -/
+structure SumInduct where
+  induct : Name
+  ctors : Array Name
+  levels : List Level
+  params : Array Expr
+  fieldTypes : Array (Array Expr)
+
+/-- The inductive type `I ps` of the type `tw` (in weak head normal form) whose costed value is
+a sum (`hatTy?`): an inductive type without indices that is neither recursive, nor a structure,
+nor a class, nor `Sum`, `PSum` or `Option`, with at least one constructor, whose fields are data
+of types that do not depend on the other fields. Whether a field holds a function is decided by
+`hatTy?`. -/
+def sumInduct? (tw : Expr) : MetaM (Option SumInduct) := do
+  let .const I lvls := tw.getAppFn | return none
+  if I == ``Sum || I == ``PSum || I == ``Option then return none
+  let env ← getEnv
+  let some (.inductInfo ii) := env.find? I | return none
+  if ii.isRec || ii.isUnsafe || ii.all.length != 1 || ii.numIndices != 0 then return none
+  unless tw.getAppNumArgs == ii.numParams do return none
+  if ii.ctors.isEmpty || isStructure env I || isClass env I then return none
+  let mut fts := #[]
+  for ctor in ii.ctors do
+    let some (.ctorInfo ci) := env.find? ctor | return none
+    let cty ← instantiateForall (ci.type.instantiateLevelParams ci.levelParams lvls)
+      tw.getAppArgs
+    let some tys ← forallTelescope cty fun fs _ => do
+        unless fs.size == ci.numFields do return none
+        let mut tys := #[]
+        for f in fs do
+          let ft ← inferType f
+          if ft.hasAnyFVar fun x => fs.any (·.fvarId! == x) then return none
+          if ← isProp ft then return none
+          if ← isTypeFormerType ft then return none
+          if (← isClass? ft).isSome then return none
+          tys := tys.push ft
+        return some tys
+      | return none
+    fts := fts.push tys
+  return some { induct := I, ctors := ii.ctors.toArray, levels := lvls,
+                params := tw.getAppArgs, fieldTypes := fts }
+
+/-- The tuple type of the costed field types `hs` of a constructor: their mirror type
+(`mirrorType`), and `Unit` for a constructor without fields. -/
+def fieldsType (hs : Array Expr) : MetaM Expr :=
+  if hs.isEmpty then return mkConst ``Unit else mirrorType hs
+
+/-- The tuple of the costed field values `vs` of a constructor (`fieldsType`). -/
+def fieldsMk (vs : Array Expr) : MetaM Expr :=
+  if vs.isEmpty then return mkConst ``Unit.unit else mirrorMk vs
+
+/-- The right-nested sum `c₀ ⊕ (c₁ ⊕ … ⊕ cₙ₋₁)` of the types `cs` (`c₀` for one type). -/
+def sumNest (cs : Array Expr) : MetaM Expr := do
+  let some last := cs.back? | throwError "derive_timed: internal: a sum of no type"
+  cs.pop.foldrM (fun c acc => mkAppM ``Sum #[c, acc]) last
+
+/-- The injection of `v : cs[k]` into the right-nested sum `sumNest cs`: `inr (… (inr (inl v)))`,
+with `k` times `inr`, and without the `inl` for the last component. -/
+def sumInj (cs : Array Expr) (k : Nat) (v : Expr) : MetaM Expr := do
+  let n := cs.size
+  let suffix (j : Nat) : MetaM Expr := sumNest (cs.extract (j + 1) n)
+  let mut acc ← if k + 1 < n then mkAppOptM ``Sum.inl #[cs[k]!, ← suffix k, v] else pure v
+  for j in (List.range k).reverse do
+    acc ← mkAppOptM ``Sum.inr #[cs[j]!, ← suffix j, acc]
+  return acc
+
+/-- The case analysis of `v : sumNest (cs.extract j cs.size)` by `Sum.elim`, with the branch
+`f k z` at the component `k`. -/
+partial def sumElimE (cs : Array Expr) (v : Expr) (f : Nat → Expr → MetaM Expr) (j : Nat := 0) :
+    MetaM Expr := do
+  if j + 1 ≥ cs.size then return ← f j v
+  let l ← withLocalDeclD `z cs[j]! fun z => do mkLambdaFVars #[z] (← f j z)
+  let r ← withLocalDeclD `z (← sumNest (cs.extract (j + 1) cs.size)) fun z => do
+    mkLambdaFVars #[z] (← sumElimE cs z f (j + 1))
+  mkAppM ``Sum.elim #[l, r, v]
+
+/-- The component `k` of `v : sumNest (cs.extract j cs.size)`, read by `Sum.elim`, with `dflt`
+in the other components. -/
+partial def sumGetE (cs : Array Expr) (k : Nat) (v dflt : Expr) (j : Nat := 0) :
+    MetaM Expr := do
+  if j + 1 ≥ cs.size then return v
+  let rest ← sumNest (cs.extract (j + 1) cs.size)
+  let (l, r) ← if j == k then
+      pure (← withLocalDeclD `z cs[j]! fun z => mkLambdaFVars #[z] z,
+        ← withLocalDeclD `z rest fun z => mkLambdaFVars #[z] dflt)
+    else
+      pure (← withLocalDeclD `z cs[j]! fun z => mkLambdaFVars #[z] dflt,
+        ← withLocalDeclD `z rest fun z => do mkLambdaFVars #[z] (← sumGetE cs k z dflt (j + 1)))
+  mkAppM ``Sum.elim #[l, r, v]
+
 /-- The costed type of a type `t` of data holding functions: a function `X → Y` with a
 first-order domain becomes the costed closure `(X → Ŷ) × (X → ℕ)`, a pair the pair of the
-costed types of its components; `none` when `t` holds no such function, whose costed type is
-`t` itself. With `mirror := false` a structure is not mirrored: the result is `none` for a
-type whose functions are all in fields of structures. -/
+costed types of its components, an inductive type of `sumInduct?` with a function field the
+sum of the costed tuples of the fields of its constructors; `none` when `t` holds no such
+function, whose costed type is `t` itself. With `mirror := false` a structure is not
+mirrored: the result is `none` for a type whose functions are all in fields of structures. -/
 partial def hatTy? (t : Expr) (seen : List Name := []) (mirror : Bool := true) :
     MetaM (Option Expr) := do
   let t ← instantiateMVars t
@@ -1281,6 +1382,20 @@ partial def hatTy? (t : Expr) (seen : List Name := []) (mirror : Bool := true) :
     let hs ← m.fieldTypes.mapM (hatTy? · (m.struct :: seen))
     if hs.all (·.isNone) then return none
     return some (← mirrorType ((m.fieldTypes.zip hs).map fun (f, h) => h.getD f))
+  if let some si ← sumInduct? tw then
+    if seen.contains si.induct then return none
+    let seen' := si.induct :: seen
+    let mut fnField := false
+    let mut comps := #[]
+    for fts in si.fieldTypes do
+      let mut hs := #[]
+      for ft in fts do
+        let h ← hatTy? ft seen' mirror
+        if h.isSome && (← whnfR ft).isForall then fnField := true
+        hs := hs.push (h.getD ft)
+      comps := comps.push (← fieldsType hs)
+    unless fnField do return none
+    return some (← sumNest comps)
   unless tw.isForall do return none
   forallTelescope tw fun ys body => do
     if body.hasAnyFVar fun f => ys.any (·.fvarId! == f) then return none
@@ -1299,6 +1414,11 @@ partial def hatTy? (t : Expr) (seen : List Name := []) (mirror : Bool := true) :
     let fnT ← mkForallFVars ys (hb.getD body)
     let cT ← mkForallFVars ys (mkConst ``Nat)
     return some (← mkAppM ``Prod #[fnT, cT])
+
+/-- The components of the costed value of the inductive type `si` (`hatTy?`): for each
+constructor, the tuple of the costed types of its fields (`fieldsType`). -/
+def sumComps (si : SumInduct) : MetaM (Array Expr) :=
+  si.fieldTypes.mapM fun fts => do fieldsType (← fts.mapM fun ft => return (← hatTy? ft).getD ft)
 
 /-- `Sum.map` of `f` at the components of the sum `a ⊕ b` applied to `v`: with `f = epsE` from
 the costed sum to `a ⊕ b`, with `f = iotaE` from `a ⊕ b` to the costed sum. -/
@@ -1334,6 +1454,15 @@ partial def epsE (t v : Expr) : MetaM Expr := do
     for i in [0:n] do
       fs := fs.push (← epsE m.fieldTypes[i]! (← mirrorProj n i v))
     return mkAppN (mkConst m.ctor m.levels) (m.params ++ fs)
+  if let some si ← sumInduct? tw then
+    -- An inductive type whose costed value is a sum: the constructor of the component, applied
+    -- to the erased fields.
+    return ← sumElimE (← sumComps si) v fun k z => do
+      let fts := si.fieldTypes[k]!
+      let mut fs := #[]
+      for i in [0:fts.size] do
+        fs := fs.push (← epsE fts[i]! (← mirrorProj fts.size i z))
+      return mkAppN (mkConst si.ctors[k]! si.levels) (si.params ++ fs)
   let f ← mkAppM ``Prod.fst #[v]
   forallTelescope tw fun ys body => do
     if (← hatTy? body).isNone then return f
@@ -1358,6 +1487,21 @@ partial def iotaE (t v : Expr) : MetaM Expr := do
       let pf := mkAppN (mkConst m.projs[i]! m.levels) (m.params.push v)
       fs := fs.push (← iotaE m.fieldTypes[i]! pf)
     return ← mirrorMk fs
+  if let some si ← sumInduct? tw then
+    -- An inductive type whose costed value is a sum: by cases on `v`, the injection of the
+    -- lifted fields of its constructor.
+    let comps ← sumComps si
+    let ht ← sumNest comps
+    let motive ← withLocalDeclD `x t fun x => mkLambdaFVars #[x] ht
+    let mut minors := #[]
+    for k in [0:si.ctors.size] do
+      let fts := si.fieldTypes[k]!
+      let decls := fts.map fun ft => (`a, fun (_ : Array Expr) => pure ft)
+      minors := minors.push (← withLocalDeclsD decls fun fs => do
+        let vs ← (fts.zip fs).mapM fun (ft, f) => iotaE ft f
+        mkLambdaFVars fs (← sumInj comps k (← fieldsMk vs)))
+    return mkAppN (mkConst (si.induct ++ `casesOn) ((← getLevel ht) :: si.levels))
+      (si.params ++ #[motive, v] ++ minors)
   forallTelescope tw fun ys body => do
     let f ← mkLambdaFVars ys (← iotaE body (mkAppN v ys).headBeta)
     let c ← mkLambdaFVars ys (mkNatLit 0)
@@ -1385,6 +1529,7 @@ partial def epsLeaves (t v x : Expr) : MetaM (Array (Expr × Expr)) := do
     let b ← epsLeaves (tw.getArg! 1) (← mkAppM ``Prod.snd #[v]) (← mkAppM ``Prod.snd #[x])
     return a ++ b
   if tw.isAppOfArity ``Sum 2 || tw.isAppOfArity ``Option 1 then return #[]
+  if (← sumInduct? tw).isSome then return #[]
   if let some m ← mirrorStruct? tw then
     let n := m.fieldTypes.size
     let mut out := #[]
@@ -1407,6 +1552,7 @@ partial def refillE (t x c : Expr) : MetaM Expr := do
     let b ← refillE (tw.getArg! 1) (← mkAppM ``Prod.snd #[x]) (← mkAppM ``Prod.snd #[c])
     return ← mkAppM ``Prod.mk #[a, b]
   if tw.isAppOfArity ``Sum 2 || tw.isAppOfArity ``Option 1 then return ← iotaE t x
+  if (← sumInduct? tw).isSome then return ← iotaE t x
   if let some m ← mirrorStruct? tw then
     let n := m.fieldTypes.size
     let mut fs := #[]
@@ -1454,7 +1600,24 @@ partial def patternHats (p v : Expr) : MetaM (Array (Expr × Expr)) := do
     let dflt ← iotaE args[0]! args[1]!
     let get ← withLocalDeclD `z (vt.getArg! 0) fun z => mkLambdaFVars #[z] z
     return ← patternHats args[1]! (← mkAppM ``Option.elim #[v, dflt, get])
-  let some m ← mirrorStruct? (← whnfR (← inferType p)) | return #[]
+  let pt ← whnfR (← inferType p)
+  if let some si ← sumInduct? pt then
+    -- A constructor of an inductive type whose costed value is a sum: its fields are read from
+    -- the component of the constructor, selected by `Sum.elim`, with `ι` of the pattern's fields
+    -- in the other components.
+    if (← hatTy? pt).isNone then return #[]
+    let some k := si.ctors.idxOf? c | return #[]
+    let fts := si.fieldTypes[k]!
+    let np := si.params.size
+    unless args.size == np + fts.size do return #[]
+    let fields := args.extract np args.size
+    let dflt ← fieldsMk (← (fts.zip fields).mapM fun (ft, a) => iotaE ft a)
+    let comp ← sumGetE (← sumComps si) k v dflt
+    let mut out := #[]
+    for i in [0:fts.size] do
+      out := out ++ (← patternHats fields[i]! (← mirrorProj fts.size i comp))
+    return out
+  let some m ← mirrorStruct? pt | return #[]
   unless c == m.ctor && args.size == m.params.size + m.fieldTypes.size do return #[]
   let mut out := #[]
   for i in [0:m.fieldTypes.size] do
@@ -2650,6 +2813,18 @@ partial def tv (ctx : Ctx) (e : Expr) : TermElabM (Expr × Expr) := do
       unless hw.isAppOfArity ``Option 1 do fail m!"internal: `{e}`"
       return (natE 0, ← mkAppOptM ``Option.none #[hw.appArg!])
     if let .const fc _ := f then
+      if let some si ← sumInduct? tw then
+        -- A constructor of an inductive type whose costed value is a sum: the injection of the
+        -- tuple of the costed values of its fields.
+        if let some k := si.ctors.idxOf? fc then
+          if args.size == si.params.size + si.fieldTypes[k]!.size then
+            let mut cs := #[]
+            let mut vs := #[]
+            for a in args.extract si.params.size args.size do
+              let (c, v) ← tv ctx a
+              cs := cs.push c
+              vs := vs.push v
+            return (sum cs, ← sumInj (← sumComps si) k (← fieldsMk vs))
       if let some m ← mirrorStruct? tw then
         -- A structure holding functions built by its constructor: the mirror tuple of the
         -- costed values of its fields.
@@ -3176,15 +3351,20 @@ partial def mapMatch (ctx : Ctx) (e resultType : Expr)
   -- them has the type of its alternative, at which the companion has no type. Each is the
   -- position of the discriminant with its companion.
   let mut convoy : Array (Nat × Expr) := #[]
+  -- The costed value of each discriminant that has one: a local of kind `hat`, or a projection
+  -- path into one (`t.2` of a costed state `t`).
+  let mut hatDiscrs : Array (Option Expr) := #[]
   for d in app.discrs, j in [0:app.discrs.size] do
     if let some Td ← treeTy? (← inferType d) then
       fail m!"a recursion over an {Td.kind.noun}: a match on the {Td.kind.noun} `{d}`; register \
         a costed form written by hand"
+    hatDiscrs := hatDiscrs.push none
     match d.consumeMData with
     | .fvar id =>
       match ctx.locals.get? id with
       | some info =>
         let dt ← inferType d
+        if info.kind == .hat then hatDiscrs := hatDiscrs.set! j (some info.value)
         if info.kind == .fn then discrs := discrs.push d
         else discrs := discrs.push (← erasure info.kind dt info.value)
         match info.kind, info.companion? with
@@ -3193,12 +3373,21 @@ partial def mapMatch (ctx : Ctx) (e resultType : Expr)
           else trDiscrs := trDiscrs.push (dt, info)
         | _, _ => trDiscrs := trDiscrs.push (dt, info)
       | none => discrs := discrs.push d
-    | _ =>
+    | d' =>
+      let dt ← inferType d
+      -- A projection path into a costed value: the erasure of the costed value of the path,
+      -- which costs nothing.
+      let pathHat ← if (← isLocalProjPath d') && (← hatTy? dt).isSome then
+          hatOf? ctx d' (record := true)
+        else pure none
+      if let some v := pathHat then
+        discrs := discrs.push (← epsE dt v)
+        hatDiscrs := hatDiscrs.set! j (some v)
+        continue
       discrs := discrs.push d
       cost := add cost (← costOf ctx d)
       -- A function passed as a discriminant (`Option.bind o f` matches on `f`): the field
       -- that binds it is a local function with the companion of the function.
-      let dt ← inferType d
       if (← isDataExpr d) && (← whnfR dt).isForall && (← treeTy? dt).isNone then
         let c ← companionOf ctx d
         if dependsOnDiscr dt then convoy := convoy.push (j, c)
@@ -3247,9 +3436,8 @@ partial def mapMatch (ctx : Ctx) (e resultType : Expr)
       -- function field of a state): its costed value keeps the field's functions and reads
       -- their cost companions from the discriminant's costed value.
       if let some pats ← altPatterns app alts.size fs then
-        for d in app.discrs, p in pats do
-          let .fvar id := d.consumeMData | continue
-          let some { kind := .hat, value := v, .. } := ctx.locals.get? id | continue
+        for h? in hatDiscrs, p in pats do
+          let some v := h? | continue
           for (fv, c) in ← patternHats p v do
             unless fs.contains fv && (ctx'.locals.get? fv.fvarId!).isNone do continue
             let ft ← inferType fv
@@ -4085,6 +4273,11 @@ partial def deriveTimed (ctx : Ctx) (c : Name) : TermElabM Unit := do
         #[``dite_true, ``dite_false, ``ite_true, ``ite_false, ``Bool.false_eq_true]
       else #[]) ++
       (if used.contains ``ite then #[``CatCrypt.Tactics.DeriveTimed.boolRec_eq_ite] else #[]) ++
+      -- The erasure of a costed value of an inductive type encoded as a sum (`sumInduct?`) and
+      -- the fields of its patterns read by `Sum.elim`, reduced at a constructor.
+      (if (used ++ eType.getUsedConstants).contains ``Sum.elim then
+        #[``Sum.elim_inl, ``Sum.elim_inr]
+      else #[]) ++
       -- A dispatch on an optional value (`optionDispatch?`): the source keeps `Option.elim`,
       -- which the case split of the costed match reduces at a constructor.
       (if used.any (·.getPrefix == ``optionDispatch) then
