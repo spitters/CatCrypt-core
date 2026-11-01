@@ -484,6 +484,7 @@ public import CatCryptCore.Crypto.Party.QProg
 public import CatCryptCore.Category.TracedTerm
 public import CatCryptCore.Crypto.Party.Category
 public import CatCryptCore.Crypto.Party.SyntacticCategory
+public import CatCryptCore.Crypto.Party.StoreHybrid
 public import CatCryptCore.Crypto.Party.Derived
 public import CatCryptCore.Crypto.Party.GuardCoupling
 public import CatCryptCore.Crypto.Party.Timed
