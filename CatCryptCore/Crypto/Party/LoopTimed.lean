@@ -6,7 +6,7 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Crypto.Party.Timed
-public import CatCryptCore.Crypto.UCSimulatorCost
+public import CatCryptCore.Crypto.UCSimulatorCostGraded
 
 /-!
 # Costed loops of party programs
@@ -62,6 +62,11 @@ graded bound, lazily sampled table.
 * `Party.Prog.loopMulti.start_time`, `Party.Prog.loopMulti.resume_time`,
   `Party.Prog.loopMulti.finish_time`: the graded bounds of the steps.
 * `Party.Prog.loopMulti.timeBoundInv_timed`: the invariant time bound under a constant bound.
+* `Party.Prog.loopMulti.timeBoundGraded_timed`: the graded time bound `2 * a + b`, `2 * b`.
+* `Party.ProgE.eraseT_sampleTree_priced`, `Party.ProgE.LoopBoundGraded.sampleTree`: a priced
+  body whose operations are distribution samples (`ProgE.AllOps ProgE.IsSample`) is a costed
+  body under the tree interpretation `ProgE.sampleTree`, with the graded bound it has at the
+  weight `Costed.weight`.
 -/
 
 @[expose] public section
@@ -580,6 +585,176 @@ theorem loopMulti.timeBoundInv_timed [Inhabited O] (ι : Op → ℕ × SPTree.Ti
     exact ⟨by simpa using this.1, SPTree.Timed.allRet_mono (fun _ hy => ⟨j + 1, hy⟩) _ this.2⟩
   · have := loopMulti.finish_time ι bodyT s₀ n hg hp x
     exact ⟨by simpa using this.1, SPTree.Timed.allRet_mono (fun _ hy => ⟨j + 1, hy⟩) _ this.2⟩
+
+/-- **Graded time certificate of the costed loop simulator.** Under the graded bound `a`, `b`
+of the costed body, the costed loop simulator has the graded time bound `2 * a + b`, `2 * b` on
+the invariant `ActInv`: the `j`-th activation costs at most `(2 * a + b) + 2 * b * j`. -/
+theorem loopMulti.timeBoundGraded_timed [Inhabited O] (ι : Op → ℕ × SPTree.Timed ℕ)
+    (bodyT : σ → ProgE (Costed Op) (E ⊕ A) (Q ⊕ O) σ) (s₀ : σ) (n : ℕ) {Inv : ℕ → σ → Prop}
+    {a b : ℕ} (h : ProgE.LoopBoundGraded (ProgE.weightT ι) bodyT s₀ Inv a b) :
+    (loopMulti.timed ι bodyT s₀ n).TimeBoundGraded (loopMulti.ActInv ι Inv a b)
+      (2 * a + b) (2 * b) := by
+  refine ⟨loopMulti.init_actInv ι bodyT s₀ n h, fun j p e hp => ?_, fun j p x hp => ?_,
+    fun j p x hp => ?_⟩
+  · have := loopMulti.start_time ι bodyT s₀ n h hp e
+    exact this
+  · have := loopMulti.resume_time ι bodyT s₀ n h hp x
+    exact this
+  · have := loopMulti.finish_time ι bodyT s₀ n h hp x
+    exact this
+
+end Prog
+
+/-! ## Bodies whose operations are distribution samples -/
+
+namespace ProgE
+
+variable {Op E O α β : Type}
+
+/-- Every effect operation of `p` satisfies `P`. -/
+def AllOps (P : Op → Prop) : ProgE Op E O α → Prop
+  | .ret _ => True
+  | .recv k => ∀ e, AllOps P (k e)
+  | .send _ p => AllOps P p
+  | .opN q k => P q ∧ ∀ n, AllOps P (k n)
+  | .fail => True
+
+/-- `AllOps` along `bind`. -/
+theorem allOps_bind {P : Op → Prop} {p : ProgE Op E O α} {f : α → ProgE Op E O β}
+    (hp : AllOps P p) (hf : ∀ a, AllOps P (f a)) : AllOps P (p.bind f) := by
+  induction p with
+  | ret a => exact hf a
+  | recv k ih => exact fun e => ih e (hp e)
+  | send o p ih => exact ih hp
+  | opN q k ih => exact ⟨hp.1, fun n => ih n (hp.2 n)⟩
+  | fail => trivial
+
+/-- A map of effect operations that fixes every operation of `p` fixes `p`. -/
+theorem mapOp_eq_self (f : Op → Op) (p : ProgE Op E O α) (h : AllOps (fun q => f q = q) p) :
+    mapOp f p = p := by
+  induction p with
+  | ret a => rfl
+  | recv k ih => simp only [mapOp, fun e => ih e (h e)]
+  | send o p ih => simp only [mapOp, ih h]
+  | opN q k ih => simp only [mapOp, h.1, fun n => ih n (h.2 n)]
+  | fail => rfl
+
+/-- A time bound at a weight is a time bound at every smaller weight. -/
+theorem Bound.mono_weight {w w' : Op → ℕ} (hw : ∀ q, w' q ≤ w q) {p : ProgE Op E O α} {t : ℕ}
+    {P : α → Prop} (h : Bound w p t P) : Bound w' p t P := by
+  induction p generalizing t with
+  | ret a => exact h
+  | recv k ih => exact ⟨h.1, fun e => ih e (h.2 e)⟩
+  | send o p ih => exact ⟨h.1, ih h.2⟩
+  | opN q k ih =>
+    refine ⟨le_trans (hw q) h.1, fun n => (ih n (h.2 n)).mono ?_ fun _ => id⟩
+    have := hw q
+    omega
+  | fail => trivial
+
+/-- A graded loop bound at a weight is a graded loop bound at every smaller weight. -/
+theorem LoopBoundGraded.mono_weight {σ : Type} {w w' : Op → ℕ} (hw : ∀ q, w' q ≤ w q)
+    {body : σ → ProgE Op E O σ} {s₀ : σ} {Inv : ℕ → σ → Prop} {a b : ℕ}
+    (h : LoopBoundGraded w body s₀ Inv a b) : LoopBoundGraded w' body s₀ Inv a b :=
+  ⟨h.1, fun i s hs => (h.2 i s hs).mono_weight hw⟩
+
+/-- A classical operation is a distribution sample: the lift of a sub-distribution, which does
+not read or write the heap. -/
+def IsSample (q : SPComp ℕ) : Prop := ∃ μ : Prob.SDistr ℕ, q = liftSDistr μ
+
+/-- The tree interpretation of distribution samples: a sample of a sub-distribution `μ` is the
+one-node tree sampling `μ`; any other operation is the failing tree. -/
+noncomputable def sampleTree (q : SPComp ℕ) : ℕ × SPTree.Timed ℕ := by
+  classical
+  exact if h : IsSample q then (0, .sampleDist ℕ h.choose (fun _ => 0) .ret) else (0, .fail)
+
+/-- The tree interpretation of a distribution sample compiles to the sample. -/
+theorem opComp_sampleTree {q : SPComp ℕ} (h : IsSample q) : opComp sampleTree q = q := by
+  unfold opComp sampleTree
+  simp only [h, ↓reduceDIte, SPTree.Timed.erase_sampleDist, SPTree.Timed.erase_ret,
+    SPTree.compile, SPComp.bind_pure]
+  exact h.choose_spec.symm
+
+/-- Each operation of the tree interpretation of samples weighs at most one unit. -/
+theorem weightT_sampleTree_le (q : Costed (SPComp ℕ)) :
+    weightT sampleTree q ≤ Costed.weight q := by
+  rcases q with q | c
+  · simp only [weightT, runT, Costed.weight, sampleTree]
+    split
+    · simp [SPTree.Timed.stepTime, SPTree.Timed.time_sampleDist, SPTree.Timed.time_ret]
+    · simp [ProgE.stepTime_fail]
+  · simp [weightT, runT, Costed.weight, SPTree.Timed.stepTime, SPTree.Timed.time_ret]
+
+/-- `AllOps` of a weaker predicate. -/
+theorem AllOps.mono {P P' : Op → Prop} (hP : ∀ q, P q → P' q) {p : ProgE Op E O α}
+    (h : AllOps P p) : AllOps P' p := by
+  induction p with
+  | ret a => trivial
+  | recv k ih => exact fun e => ih e (h e)
+  | send o p ih => exact ih h
+  | opN q k ih => exact ⟨hP q h.1, fun n => ih n (h.2 n)⟩
+  | fail => trivial
+
+/-- A mapped lift of a sub-distribution is a distribution sample. -/
+theorem isSample_map_liftSDistr {γ : Type} (f : γ → ℕ) (d : Prob.SDistr γ) :
+    IsSample (SPComp.map f (liftSDistr d)) :=
+  ⟨d.bind fun b => Prob.SDistr.pure (f b), by
+    funext h
+    simp only [SPComp.map, SPComp.bind, liftSDistr, SPComp.pure, Prob.SDistr.bind_assoc,
+      Prob.SDistr.pure_bind]⟩
+
+/-- **Erasure of a priced body of samples.** When every operation of `body s` is a
+distribution sample, the priced form erases under `sampleTree` to `body s`. -/
+theorem eraseT_sampleTree_priced {σ : Type} (price : σ → ℕ) (body : σ → Prog E O σ) (s : σ)
+    (h : AllOps IsSample (body s)) : eraseT sampleTree (priced price body s) = body s := by
+  rw [eraseT, erase_priced]
+  exact mapOp_eq_self _ _ (h.mono fun _ hq => opComp_sampleTree hq)
+
+/-- **Graded bound of a priced body under the tree interpretation of samples.** A graded bound
+at the weight `Costed.weight` is a graded bound at the weight `weightT sampleTree`. -/
+theorem LoopBoundGraded.sampleTree {σ : Type} {body : σ → ProgE (Costed (SPComp ℕ)) E O σ}
+    {s₀ : σ} {Inv : ℕ → σ → Prop} {a b : ℕ}
+    (h : LoopBoundGraded Costed.weight body s₀ Inv a b) :
+    LoopBoundGraded (weightT sampleTree) body s₀ Inv a b :=
+  h.mono_weight weightT_sampleTree_le
+
+end ProgE
+
+namespace Prog
+
+variable {E O Q A α β : Type} {P : SPComp ℕ → Prop}
+
+/-- `AllOps` of a sample from a countable type. -/
+theorem allOps_sample [Countable β] {μ : SPComp β} {k : β → Prog E O α}
+    (hμ : letI := Encodable.ofCountable β; P (SPComp.map Encodable.encode μ))
+    (hk : ∀ b, ProgE.AllOps P (k b)) : ProgE.AllOps P (Prog.sample μ k) := by
+  simp only [Prog.sample, sampleN, ProgE.AllOps]
+  refine ⟨hμ, fun n => ?_⟩
+  split
+  · exact hk _
+  · trivial
+
+/-- The samples of a sample from a lifted sub-distribution are distribution samples. -/
+theorem allOps_sample_liftSDistr [Countable β] {d : Prob.SDistr β} {k : β → Prog E O α}
+    (hk : ∀ b, ProgE.AllOps ProgE.IsSample (k b)) :
+    ProgE.AllOps ProgE.IsSample (Prog.sample (liftSDistr d) k) :=
+  allOps_sample (ProgE.isSample_map_liftSDistr _ d) hk
+
+/-- `recvO` has no operation. -/
+theorem allOps_recvO : ProgE.AllOps P (recvO : Prog (E ⊕ A) (Q ⊕ O) E) := by
+  intro x
+  rcases x with e | a <;> trivial
+
+/-- `call` has the operations of its continuation. -/
+theorem allOps_call {q : Q} {k : A → Prog (E ⊕ A) (Q ⊕ O) α}
+    (hk : ∀ a, ProgE.AllOps P (k a)) : ProgE.AllOps P (call (O := O) (E := E) q k) := by
+  intro x
+  rcases x with e | a
+  · trivial
+  · exact hk a
+
+/-- `outE` has no operation. -/
+theorem allOps_outE {o : O} : ProgE.AllOps P (outE (E := E) (A := A) (Q := Q) o) := trivial
 
 end Prog
 
