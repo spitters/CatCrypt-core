@@ -7,6 +7,7 @@ module
 
 public import CatCryptCore.Crypto.Party.LoopTimed
 public import CatCryptCore.Tactics.DeriveSimulator
+public import CatCryptCore.Tactics.PartyDerive
 
 /-!
 # `derive_simulator` on a loop simulator
@@ -27,7 +28,7 @@ set_option autoImplicit false
 
 namespace CatCrypt.Tactics.DeriveSimulatorLoopTest
 
-open CatCrypt.Crypto.Party CatCrypt.Crypto.UCTransparent Prog
+open CatCrypt.Core CatCrypt.Crypto.Party CatCrypt.Crypto.UCTransparent Prog
 
 /-- An iteration of the fixture: receive `e`, call with `e` and with `e + a₁`, and output
 `f e a₁ a₂`. -/
@@ -63,5 +64,39 @@ noncomputable def logSim (V W : PubView ℕ ℕ) (h : logProt.Opaque V W) :
   Simulator.ofMultiHybrid logProt h
 
 derive_simulator logSim
+
+/-- The costed body of the growing fixture: an iteration charges the length of the list. -/
+noncomputable def logBodyT : List ℕ → ProgE (Costed (SPComp ℕ)) (ℕ ⊕ ℕ) (ℕ ⊕ ℕ) (List ℕ) :=
+  ProgE.priced List.length logBody
+
+/-- An iteration of the growing fixture takes four units and records one event. -/
+theorem logBody_bound (s : List ℕ) :
+    ProgE.Bound (fun _ => 1) (logBody s) 4 (fun s' => s'.length ≤ s.length + 1) := by
+  party_derive
+
+/-- The costed body of the growing fixture erases to `logBody`. -/
+theorem logBodyT_erase (s : List ℕ) : ProgE.eraseT ProgE.sampleTree (logBodyT s) = logBody s :=
+  ProgE.eraseT_sampleTree_priced _ _ s (by
+    unfold logBody
+    exact ProgE.allOps_bind allOps_recvO fun _ => allOps_call fun _ =>
+      ProgE.allOps_bind allOps_outE fun _ => trivial)
+
+/-- The graded bound of the growing fixture: after `i` iterations the list holds at most `i`
+events, and the `i`-th iteration costs at most `4 + i`. -/
+theorem logBodyT_loopBoundGraded :
+    ProgE.LoopBoundGraded (ProgE.weightT ProgE.sampleTree) logBodyT []
+      (fun i s => s.length ≤ i) 4 1 :=
+  ProgE.LoopBoundGraded.sampleTree
+    (ProgE.priced_loopBoundGraded List.length logBody [] (fun i s => s.length ≤ i) 4 1 0
+      (by simp) (fun i s hs => by omega)
+      (fun i s hs => (logBody_bound s).mono le_rfl fun s' hs' => by omega))
+
+/-- **Time certificate of the growing fixture**: its costed form erases to `logSim` and its
+`j`-th activation costs at most `9 + 2 j`. -/
+theorem logSim_certificate (V W : PubView ℕ ℕ) (h : logProt.Opaque V W) :
+    (logSim.timed V W _ ProgE.sampleTree logBodyT).Erases (logSim V W h) ∧
+      (logSim.timed V W _ ProgE.sampleTree logBodyT).TimeBoundGraded 9 2 :=
+  ⟨logSim.erase_timed V W h _ _ _ logBodyT_erase,
+    logSim.timeBoundGraded_timed V W _ _ _ logBodyT_loopBoundGraded⟩
 
 end CatCrypt.Tactics.DeriveSimulatorLoopTest
