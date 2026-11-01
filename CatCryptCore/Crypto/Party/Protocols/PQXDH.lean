@@ -8,6 +8,7 @@ module
 public import CatCryptCore.Crypto.Party.UnwindingTransfer
 public import CatCryptCore.Crypto.Party.Timed
 public import CatCryptCore.Crypto.AKE.PQXDHSquare
+import CatCryptCore.Tactics.PartyDerive
 
 /-!
 # PQXDH in the party language
@@ -86,15 +87,6 @@ instance {S W K PK C : Type} : Inhabited (OOut S W K PK C) := ⟨.inr (.inl .ack
 /-- Programs that neither receive nor send. -/
 abbrev NoIO {E O α : Type} (p : Prog E O α) : Prop :=
   ProgE.Ports (fun _ => False) (fun _ => False) p
-
-/-- Sampling from a countable type keeps a program free of receives and sends. -/
-theorem noIO_sample {E O α β : Type} [Countable β] {μ : SPComp β} {k : β → Prog E O α}
-    (hk : ∀ b, NoIO (k b)) : NoIO (Prog.sample μ k) := by
-  unfold Prog.sample
-  refine ProgE.Ports.opN _ _ fun n => ?_
-  split
-  · exact hk _
-  · exact ProgE.Ports.fail
 
 section Prog
 
@@ -235,99 +227,10 @@ noncomputable def simLoop :
 
 /-! ## The program samples the hand-written simulator -/
 
-omit [DecidableEq W] [Fintype K] [Nonempty K] [Inhabited K] in
-/-- `ltP` samples `ltStep`. -/
-theorem ltP_samples {E O : Type} (s : RSt S W K) (pid : PartyId) :
-    Samples (ltP s pid : Prog E O _) (ltStep s pid) := by
-  unfold ltP ltStep
-  cases s.lt pid with
-  | some l => exact Samples.ret _
-  | none => exact Samples.sample_map _ _
-
-omit [Inhabited K] in
-/-- `roP` samples `roStep`. -/
-theorem roP_samples {E O D : Type} [DecidableEq D] (tb : List (D × K)) (x : D) :
-    Samples (roP tb x : Prog E O _) (roStep tb x) := by
-  unfold roP roStep
-  cases tb.lookup x with
-  | some v => exact Samples.ret _
-  | none => exact Samples.sample_map _ _
-
-omit [Field S] [Fintype S] [Countable PK] [Countable SK] [Countable SS] [Countable C] in
-/-- `deliverP` samples `deliver`. -/
-theorem deliverP_samples (s : PSt S W K PK SK SS C) (inp : Inst → Option (PInp W SS))
-    (x : Inst) (r : Rec K) (ip : PInp W SS) :
-    Samples (deliverP s inp x r ip) (deliver s inp x r ip) := by
-  unfold deliverP deliver
-  exact Samples.ite ((roP_samples _ _).map _) (Samples.ret _)
-
-omit [Countable PK] [Countable SK] in
-/-- `simCompleteP` samples `simComplete`. -/
-theorem simCompleteP_samples (s : SimSt S W K PK SK SS C) (x : Inst) :
-    Samples (simCompleteP O G s x) (simComplete O G s x) := by
-  unfold simCompleteP simComplete
-  cases s.1.x.st.recs x with
-  | none => exact Samples.ret _
-  | some r =>
-    cases s.1.x.eph x with
-    | none => exact Samples.ret _
-    | some ek =>
-      dsimp only
-      cases opkOf s.1.x x.1 r.peer with
-      | none => exact Samples.ret _
-      | some opk =>
-        cases pkOf s.1 x.1 r.peer with
-        | none => exact Samples.ret _
-        | some pk =>
-          exact Samples.ite ((ltP_samples _ _).bind fun _ => (ltP_samples _ _).bind fun _ =>
-            Samples.sample fun _ => deliverP_samples _ _ _ _ _) (Samples.ret _)
-
-omit [Countable PK] [Countable SK] [Countable SS] [Countable C] in
-/-- `simSendP` samples `simSend`. -/
-theorem simSendP_samples (s : SimSt S W K PK SK SS C) (x : Inst) (e : W) (c : C) :
-    Samples (simSendP O G s x e c) (simSend O G s x e c) := by
-  unfold simSendP simSend
-  cases s.1.x.st.recs x with
-  | none => exact Samples.ret _
-  | some r =>
-    cases s.1.x.eph x with
-    | none => exact Samples.ret _
-    | some opk =>
-      cases s.1.kem x with
-      | none => exact Samples.ret _
-      | some kp =>
-        dsimp only
-        cases O.decaps kp.2 c with
-        | none => exact Samples.ret _
-        | some ss =>
-          exact Samples.ite ((ltP_samples _ _).bind fun _ => (ltP_samples _ _).bind fun _ =>
-            deliverP_samples _ _ _ _ _) (Samples.ret _)
-
-omit [DecidableEq W] [Fintype K] [Nonempty K] [Inhabited K] [DecidableEq SS] [Countable PK]
-  [Countable SK] [Countable SS] [Countable C] in
-/-- `simCorruptP` samples `simCorrupt`. -/
-theorem simCorruptP_samples (s : SimSt S W K PK SK SS C) (pid : PartyId) :
-    Samples (simCorruptP s pid : P S W K PK SS C _) (simCorrupt s pid) := by
-  unfold simCorruptP simCorrupt
-  exact Samples.ite (Samples.ret _) ((ltP_samples _ _).map _)
-
 /-- **`simStartP` samples `simStart`.** -/
 theorem simStartP_samples (s : SimSt S W K PK SK SS C) (e : OEv W SS C) :
     Samples (simStartP O G s e) (simStart O G s e) := by
-  rcases e with (⟨sid, pid, peer, role⟩ | ⟨sid, pid⟩) | (_ | _ | pid | ⟨sid, pid⟩ |
-    ⟨sid, pid⟩ | pid | ⟨sid, pid⟩ | ⟨sid, pid, e, c⟩ | x)
-  · exact Samples.ite (Samples.sample fun _ =>
-      Samples.ite (Samples.sample_map _ _) (Samples.ret _)) (Samples.ret _)
-  · exact Samples.ret _
-  · exact Samples.ret _
-  · exact Samples.ret _
-  · exact (ltP_samples _ _).map _
-  · exact Samples.ret _
-  · exact Samples.ret _
-  · exact simCorruptP_samples _ _
-  · exact simCompleteP_samples O G _ _
-  · exact simSendP_samples O G _ _ _ _
-  · exact (roP_samples _ _).map _
+  party_derive
 
 omit [Field S] [Fintype S] [DecidableEq W] [Fintype K] [Nonempty K] [Inhabited K]
   [DecidableEq SS] [Countable PK] [Countable SK] [Countable SS] [Countable C] in
@@ -356,113 +259,10 @@ theorem simProtK_stepEq_simLoop {τ : Type} (X : Sys τ (FEv K) (FOut K)) :
 
 /-! ## Opacity from information flow -/
 
-omit [DecidableEq W] [Fintype K] [Nonempty K] [Inhabited K] in
-/-- `ltP` neither receives nor sends. -/
-theorem ltP_noIO {E O : Type} (s : RSt S W K) (pid : PartyId) :
-    NoIO (ltP s pid : Prog E O _) := by
-  unfold ltP
-  split
-  · exact ProgE.Ports.ret _
-  · exact noIO_sample fun _ => ProgE.Ports.ret _
-
-omit [Inhabited K] in
-/-- `roP` neither receives nor sends. -/
-theorem roP_noIO {E O D : Type} [DecidableEq D] (tb : List (D × K)) (x : D) :
-    NoIO (roP tb x : Prog E O _) := by
-  unfold roP
-  split
-  · exact ProgE.Ports.ret _
-  · exact noIO_sample fun _ => ProgE.Ports.ret _
-
-omit [Field S] [Fintype S] [Countable PK] [Countable SK] [Countable SS] [Countable C] in
-/-- `deliverP` neither receives nor sends. -/
-theorem deliverP_noIO (s : PSt S W K PK SK SS C) (inp : Inst → Option (PInp W SS)) (x : Inst)
-    (r : Rec K) (ip : PInp W SS) : NoIO (deliverP s inp x r ip) := by
-  unfold deliverP
-  split
-  · exact ProgE.Ports.bind (roP_noIO _ _) fun _ => ProgE.Ports.ret _
-  · exact ProgE.Ports.ret _
-
-omit [Countable PK] [Countable SK] in
-/-- `simCompleteP` neither receives nor sends. -/
-theorem simCompleteP_noIO (s : SimSt S W K PK SK SS C) (x : Inst) :
-    NoIO (simCompleteP O G s x) := by
-  unfold simCompleteP
-  cases s.1.x.st.recs x with
-  | none => exact ProgE.Ports.ret _
-  | some r =>
-    cases s.1.x.eph x with
-    | none => exact ProgE.Ports.ret _
-    | some ek =>
-      dsimp only
-      cases opkOf s.1.x x.1 r.peer with
-      | none => exact ProgE.Ports.ret _
-      | some opk =>
-        cases pkOf s.1 x.1 r.peer with
-        | none => exact ProgE.Ports.ret _
-        | some pk =>
-          dsimp only
-          split
-          · exact ProgE.Ports.bind (ltP_noIO _ _) fun _ => ProgE.Ports.bind (ltP_noIO _ _)
-              fun _ => noIO_sample fun _ => deliverP_noIO _ _ _ _ _
-          · exact ProgE.Ports.ret _
-
-omit [Countable PK] [Countable SK] [Countable SS] [Countable C] in
-/-- `simSendP` neither receives nor sends. -/
-theorem simSendP_noIO (s : SimSt S W K PK SK SS C) (x : Inst) (e : W) (c : C) :
-    NoIO (simSendP O G s x e c) := by
-  unfold simSendP
-  cases s.1.x.st.recs x with
-  | none => exact ProgE.Ports.ret _
-  | some r =>
-    cases s.1.x.eph x with
-    | none => exact ProgE.Ports.ret _
-    | some opk =>
-      cases s.1.kem x with
-      | none => exact ProgE.Ports.ret _
-      | some kp =>
-        dsimp only
-        cases O.decaps kp.2 c with
-        | none => exact ProgE.Ports.ret _
-        | some ss =>
-          dsimp only
-          split
-          · exact ProgE.Ports.bind (ltP_noIO _ _) fun _ => ProgE.Ports.bind (ltP_noIO _ _)
-              fun _ => deliverP_noIO _ _ _ _ _
-          · exact ProgE.Ports.ret _
-
-omit [DecidableEq W] [Fintype K] [Nonempty K] [Inhabited K] [DecidableEq SS] [Countable PK]
-  [Countable SK] [Countable SS] [Countable C] in
-/-- `simCorruptP` neither receives nor sends. -/
-theorem simCorruptP_noIO (s : SimSt S W K PK SK SS C) (pid : PartyId) :
-    NoIO (simCorruptP s pid : P S W K PK SS C _) := by
-  unfold simCorruptP
-  split
-  · exact ProgE.Ports.ret _
-  · exact ProgE.Ports.bind (ltP_noIO _ _) fun _ => ProgE.Ports.ret _
-
 /-- `simStartP` neither receives nor sends. -/
 theorem simStartP_noIO (s : SimSt S W K PK SK SS C) (e : OEv W SS C) :
     NoIO (simStartP O G s e) := by
-  rcases e with (⟨sid, pid, peer, role⟩ | ⟨sid, pid⟩) | (_ | _ | pid | ⟨sid, pid⟩ |
-    ⟨sid, pid⟩ | pid | ⟨sid, pid⟩ | ⟨sid, pid, e, c⟩ | x)
-  · simp only [simStartP]
-    split
-    · refine noIO_sample fun _ => ?_
-      split
-      · exact noIO_sample fun _ => ProgE.Ports.ret _
-      · exact ProgE.Ports.ret _
-    · exact ProgE.Ports.ret _
-  · exact ProgE.Ports.ret _
-  · exact ProgE.Ports.ret _
-  · exact ProgE.Ports.ret _
-  · exact ProgE.Ports.bind (ltP_noIO _ _) fun _ => ProgE.Ports.ret _
-  · exact ProgE.Ports.ret _
-  · exact ProgE.Ports.ret _
-  · exact simCorruptP_noIO _ _
-  · exact simCompleteP_noIO O G _ _
-  · exact simSendP_noIO O G _ _ _ _
-  · exact ProgE.Ports.bind (roP_noIO _ _) fun _ => ProgE.Ports.ret _
+  party_derive
 
 omit [Field S] [Fintype S] [DecidableEq W] [Fintype K] [Nonempty K] [Inhabited K]
   [DecidableEq SS] [Countable PK] [Countable SK] [Countable SS] [Countable C] in
@@ -521,142 +321,25 @@ noncomputable def pqxdhSimKP :
 
 /-! ## Time certificate -/
 
-omit [DecidableEq W] [Fintype K] [Nonempty K] [Inhabited K] in
-/-- `ltP` takes one unit. -/
-theorem ltP_bound {E O : Type} (s : RSt S W K) (pid : PartyId) :
-    ProgE.Bound (fun _ => 1) (ltP s pid : Prog E O _) 1 (fun _ => True) := by
-  unfold ltP
-  split
-  · trivial
-  · exact X3DHProg.bound_sample le_rfl fun _ => trivial
-
-omit [Inhabited K] in
-/-- `roP` takes one unit and grows the table by at most one entry. -/
-theorem roP_bound {E O D : Type} [DecidableEq D] (tb : List (D × K)) (x : D) :
-    ProgE.Bound (fun _ => 1) (roP tb x : Prog E O _) 1
-      (fun r => r.2.length ≤ tb.length + 1) := by
-  unfold roP
-  split
-  · simp [ProgE.Bound]
-  · exact X3DHProg.bound_sample le_rfl fun _ => by simp [ProgE.Bound]
-
-omit [Field S] [Fintype S] [Countable PK] [Countable SK] [Countable SS] [Countable C] in
-/-- `deliverP` takes one unit and grows the table by at most one entry. -/
-theorem deliverP_bound (s : PSt S W K PK SK SS C) (inp : Inst → Option (PInp W SS)) (x : Inst)
-    (r : Rec K) (ip : PInp W SS) :
-    ProgE.Bound (fun _ => 1) (deliverP s inp x r ip) 1
-      (fun q => q.1.1.ro.length ≤ s.ro.length + 1) := by
-  unfold deliverP
-  split
-  · refine ProgE.Bound.bind (t := 1) (u := 0) ((roP_bound s.ro ip).mono le_rfl fun p hp => ?_)
-    simpa [ProgE.Bound, pKeyed] using hp
-  · simp [ProgE.Bound, pKeyed]
-
-omit [Countable PK] [Countable SK] in
-/-- `simCompleteP` takes at most four units and grows the table by at most one entry. -/
-theorem simCompleteP_bound (s : SimSt S W K PK SK SS C) (x : Inst) :
-    ProgE.Bound (fun _ => 1) (simCompleteP O G s x) 4
-      (fun q => q.1.1.ro.length ≤ s.1.ro.length + 1) := by
-  unfold simCompleteP
-  cases s.1.x.st.recs x with
-  | none => simp [ProgE.Bound]
-  | some r =>
-    cases s.1.x.eph x with
-    | none => simp [ProgE.Bound]
-    | some ek =>
-      dsimp only
-      cases opkOf s.1.x x.1 r.peer with
-      | none => simp [ProgE.Bound]
-      | some opk =>
-        cases pkOf s.1 x.1 r.peer with
-        | none => simp [ProgE.Bound]
-        | some pk =>
-          dsimp only
-          split
-          · refine ProgE.Bound.bind (t := 1) (u := 3) ((ltP_bound _ _).mono le_rfl fun _ _ => ?_)
-            refine ProgE.Bound.bind (t := 1) (u := 2) ((ltP_bound _ _).mono le_rfl fun _ _ => ?_)
-            exact X3DHProg.bound_sample (by omega) fun _ =>
-              (deliverP_bound _ _ _ _ _).mono le_rfl fun _ hq => hq
-          · simp [ProgE.Bound]
-
-omit [Countable PK] [Countable SK] [Countable SS] [Countable C] in
-/-- `simSendP` takes at most three units and grows the table by at most one entry. -/
-theorem simSendP_bound (s : SimSt S W K PK SK SS C) (x : Inst) (e : W) (c : C) :
-    ProgE.Bound (fun _ => 1) (simSendP O G s x e c) 3
-      (fun q => q.1.1.ro.length ≤ s.1.ro.length + 1) := by
-  unfold simSendP
-  cases s.1.x.st.recs x with
-  | none => simp [ProgE.Bound]
-  | some r =>
-    cases s.1.x.eph x with
-    | none => simp [ProgE.Bound]
-    | some opk =>
-      cases s.1.kem x with
-      | none => simp [ProgE.Bound]
-      | some kp =>
-        dsimp only
-        cases O.decaps kp.2 c with
-        | none => simp [ProgE.Bound]
-        | some ss =>
-          dsimp only
-          split
-          · refine ProgE.Bound.bind (t := 1) (u := 2) ((ltP_bound _ _).mono le_rfl fun _ _ => ?_)
-            refine ProgE.Bound.bind (t := 1) (u := 1) ((ltP_bound _ _).mono le_rfl fun _ _ => ?_)
-            exact (deliverP_bound _ _ _ _ _).mono le_rfl fun _ hq => hq
-          · simp [ProgE.Bound]
-
 /-- `simStartP` takes at most four units and grows the table by at most one entry. -/
 theorem simStartP_bound (s : SimSt S W K PK SK SS C) (e : OEv W SS C) :
     ProgE.Bound (fun _ => 1) (simStartP O G s e) 4
       (fun q => q.1.1.ro.length ≤ s.1.ro.length + 1) := by
-  rcases e with (⟨sid, pid, peer, role⟩ | ⟨sid, pid⟩) | (_ | _ | pid | ⟨sid, pid⟩ |
-    ⟨sid, pid⟩ | pid | ⟨sid, pid⟩ | ⟨sid, pid, e, c⟩ | x)
-  · simp only [simStartP]
-    split
-    · refine X3DHProg.bound_sample (by omega) fun _ => ?_
-      split
-      · exact X3DHProg.bound_sample (by omega) fun _ => by simp [ProgE.Bound]
-      · simp [ProgE.Bound]
-    · simp [ProgE.Bound]
-  · simp [simStartP, ProgE.Bound]
-  · simp [simStartP, ProgE.Bound]
-  · simp [simStartP, ProgE.Bound]
-  · simp only [simStartP]
-    refine ProgE.Bound.bind (t := 1) (u := 3) ((ltP_bound _ _).mono le_rfl fun _ _ => ?_)
-    simp [ProgE.Bound]
-  · simp [simStartP, ProgE.Bound]
-  · simp [simStartP, ProgE.Bound]
-  · simp only [simStartP, simCorruptP]
-    split
-    · simp [ProgE.Bound]
-    · refine ProgE.Bound.bind (t := 1) (u := 3) ((ltP_bound _ _).mono le_rfl fun _ _ => ?_)
-      simp [ProgE.Bound]
-  · exact simCompleteP_bound O G s (sid, pid)
-  · exact (simSendP_bound O G s (sid, pid) e c).mono (by omega) fun _ h => h
-  · simp only [simStartP]
-    refine ProgE.Bound.bind (t := 1) (u := 3) ((roP_bound _ _).mono le_rfl fun p hp => ?_)
-    simpa [ProgE.Bound] using hp
+  party_derive [pKeyed]
 
 omit [Field S] [Fintype S] [DecidableEq W] [Fintype K] [Nonempty K] [Inhabited K]
   [DecidableEq SS] [Countable PK] [Countable SK] [Countable SS] [Countable C] in
 /-- `simDecide` takes at most three units and keeps the table. -/
 theorem simDecide_bound (q : SimSt S W K PK SK SS C × Dec S W K PK C) :
     ProgE.Bound (fun _ => 1) (simDecide q) 3 (fun s => s.1.ro = q.1.1.ro) := by
-  unfold simDecide
-  split
-  · simp [call, callK, simK, outE, ProgE.Bound, ProgE.bind]
-  · simp [outE, ProgE.Bound, ProgE.bind]
+  party_derive
 
 /-- An iteration of the PQXDH simulator program takes at most eight units and grows the
 key-derivation table by at most one entry. -/
 theorem simBody_bound (s : SimSt S W K PK SK SS C) :
     ProgE.Bound (fun _ => 1) (simBody O G s) 8
       (fun s' => s'.1.ro.length ≤ s.1.ro.length + 1) := by
-  unfold simBody
-  refine ProgE.Bound.bind (t := 1) (u := 7) (X3DHProg.bound_recvO fun e => ?_)
-  refine ProgE.Bound.bind (t := 4) (u := 3)
-    ((simStartP_bound O G s e).mono le_rfl fun q hq => ?_)
-  exact (simDecide_bound q).mono le_rfl fun s' hs' => by rw [hs']; exact hq
+  party_derive [pKeyed]
 
 /-- **The costed form of the PQXDH simulator program**: an iteration from `s` charges the length
 of the key-derivation table, the cost of a lookup in it, before the unit-cost form of
