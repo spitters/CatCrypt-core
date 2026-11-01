@@ -8,6 +8,7 @@ module
 public import Lean.Elab.Command
 public import Cslib.Foundations.Data.PFunctor.Free
 public import PolyFun.PFunctor.Basic
+public import CatCryptCore.Container.Code
 
 /-!
 # The polynomial-functor signature of an inductive program type
@@ -45,6 +46,15 @@ For `derive_free_sig T`, with the generated names in the namespace `N` (by defau
   polynomial functors;
 * `N.sigEquivSum : PFunctor.Equiv (N.Sig p₁ ⋯ pₘ) (N.SigSum p₁ ⋯ pₘ)`.
 
+With the option `(code := true)`, also:
+
+* `N.code p₁ ⋯ pₘ : CatCrypt.Container.Code` — the code of the signature, one operation code
+  for each operation, its fields under `ULift` (and `PLift` for a proof field) in the universe of
+  the positions of `N.Sig`;
+* `N.sigEquivCode : PFunctor.Equiv (N.Sig p₁ ⋯ pₘ) (Code.interp (N.code p₁ ⋯ pₘ))`;
+* `N.equivCode : T p₁ ⋯ pₘ α ≃ PFunctor.FreeM (Code.interp (N.code p₁ ⋯ pₘ)) α`, so that the
+  relational lift `Code.Rel` and its theorems in `CatCryptCore.Container.Code` apply to `T`.
+
 ## Main results
 
 * `N.ofFreeM_toFreeM`, `N.toFreeM_ofFreeM` — the two round trips;
@@ -68,6 +78,7 @@ kernel.
 ```
 derive_free_sig SPTree
 derive_free_sig SPTree (namespace := SPTreeGen) (bind := SPTree.bind)
+derive_free_sig SPTree (namespace := SPTreeCode) (code := true)
 derive_free_sig? SPTree
 ```
 
@@ -107,6 +118,10 @@ structure OpField where
   type : String
   /-- Whether the direction type mentions the field. -/
   inDir : Bool
+  /-- Whether the field is a proof (its type is a proposition). -/
+  isProp : Bool
+  /-- Whether the direction or a later field type mentions the field. -/
+  used : Bool
   deriving Inhabited
 
 /-- An operation constructor of `T`. -/
@@ -313,8 +328,14 @@ def readSig (desc : IndDesc) : TermElabM SigData := do
           let inDir := match cont? with
             | some (_, .fn _, D) => D.containsFVar fs[i]!.fvarId!
             | _ => false
+          let mut used := inDir
+          for j in [i + 1:fs.size] do
+            if cont?.map (·.1) != some j then
+              used := used || (← inferType fs[j]!).containsFVar fs[i]!.fvarId!
+          let pr ← Meta.isProp fty
           fields := fields.push
-            { name := (← fs[i]!.fvarId!.getUserName), type := ← ppText fty, inDir }
+            { name := (← fs[i]!.fvarId!.getUserName), type := ← ppText fty, inDir
+              isProp := pr, used }
         if let some (_, .fn _, D) := cont? then
           sort? := some (← ppText (← inferType D))
         let dir := match cont? with
@@ -522,6 +543,83 @@ def sigSource (d : SigData) (N : Name) (bind? : Option Name) : Array String := I
       s!"    (congr 1; funext {dv}; first | exact {dv}.elim | (rename_i ih; exact ih {dv}))")
   return cmds
 
+/-- The source of the code declarations of `derive_free_sig T (code := true)` in the namespace
+`N`: the code `N.code` of the signature, the equivalence `N.sigEquivCode` of `N.Sig` with the
+interpretation of the code, and `N.equivCode`. The fields of the code lie in the universe
+`lA` and its directions in `lB`, the universes of `N.Sig`. -/
+def codeSource (d : SigData) (N : Name) (lA lB : String) : Array String := Id.run do
+  let ov := d.freshNames[4]!.toString
+  let qv := d.freshNames[5]!.toString
+  let T := d.T.toString
+  let mk := if d.isMeta then "noncomputable " else ""
+  let nm (s : String) := s!"{N}.{s}"
+  let lv := if d.lvls.isEmpty then "" else ".{" ++ ", ".intercalate (d.lvls.map toString) ++ "}"
+  let decl (s : String) := s!"_root_.{nm s}{lv}"
+  let pExpl := String.join (d.params.toList.map fun (n, t) => s!" ({n} : {t})")
+  let pImpl := String.join (d.params.toList.map fun (n, t) => s!" \{{n} : {t}}")
+  let pArgs := String.join (d.params.toList.map fun (n, _) => s!" {n}")
+  let (a, aTy) := d.alpha
+  let short (o : OpData) := o.short.toString
+  let interp := s!"(CatCrypt.Container.Code.interp ({nm "code"}{pArgs}))"
+  -- the code of an operation: one `field` for each field, then the direction
+  let opCode (o : OpData) : String :=
+    let dir := match o.dir with
+      | .empty => "PEmpty"
+      | .unit => "PUnit"
+      | .fn D => s!"({D})"
+    o.fields.foldr (init := s!".dir {dir}") fun f rest =>
+      let ty := if f.isProp then s!"(PLift ({f.type}))" else s!"({f.type})"
+      let down := if f.isProp then "down.down" else "down"
+      if f.used then
+        s!".field (ULift.\{{lA}} {ty}) fun {f.name} => let {f.name} := {f.name}.{down};\n    {rest}"
+      else s!".field (ULift.\{{lA}} {ty}) fun _ =>\n    {rest}"
+  let ops := ",\n  ".intercalate (d.ops.toList.map opCode)
+  let mut cmds := #[]
+  cmds := cmds.push (s!"/-- The code of the signature of `{T}`. -/\n" ++
+    s!"def {decl "code"}{pExpl} : CatCrypt.Container.Code.\{{lA}, {lB}} := ⟨[\n  {ops}]⟩")
+  -- the position of the code at an operation, as a term and as patterns
+  let posTerm (o : OpData) : String :=
+    o.fields.foldr (init := "PUnit.unit") fun f rest =>
+      let x := if f.isProp then s!"(PLift.up {f.name})" else f.name.toString
+      s!"(Sigma.mk (ULift.up {x}) {rest})"
+  let posPat (o : OpData) (last : String) : String :=
+    let fs := o.fields.toList.map fun f =>
+      if f.isProp then s!"⟨⟨{f.name}⟩⟩" else s!"⟨{f.name}⟩"
+    match fs with
+    | [] => last
+    | _ => "⟨" ++ ", ".intercalate (fs ++ [last]) ++ "⟩"
+  let n := d.ops.size
+  let inj (i : Nat) (x : String) : String := Id.run do
+    let mut s := if i + 1 == n then x else s!"Sum.inl {x}"
+    for _ in [:i] do
+      s := s!"Sum.inr ({s})"
+    return s
+  let fieldArgs (o : OpData) := String.join (o.fields.toList.map fun f => s!" {f.name}")
+  let toA := String.join ((List.range n).map fun i =>
+    let o := d.ops[i]!
+    s!"\n        | .{short o}{fieldArgs o} => {inj i (posTerm o)}")
+  let ofA := String.join ((List.range n).map fun i =>
+    let o := d.ops[i]!
+    s!"\n        | {inj i (posPat o "_")} => .{short o}{fieldArgs o}")
+  let rcasesPat := " | ".intercalate (d.ops.toList.map fun o => posPat o "⟨⟩")
+  cmds := cmds.push (s!"/-- `{nm "Sig"}` is the interpretation of the code `{nm "code"}`. -/\n" ++
+    s!"def {decl "sigEquivCode"}{pExpl} :\n" ++
+    s!"    PFunctor.Equiv ({nm "Sig"}{pArgs}) {interp} where\n" ++
+    s!"  equivA :=\n" ++
+    s!"    \{ toFun := fun{toA}\n" ++
+    s!"      invFun := fun{ofA}\n" ++
+    s!"      left_inv := fun {ov} => by cases {ov} <;> rfl\n" ++
+    s!"      right_inv := fun {qv} => by rcases {qv} with {rcasesPat} <;> rfl }\n" ++
+    s!"  equivB := fun {ov} => by cases {ov} <;> exact _root_.Equiv.refl _")
+  cmds := cmds.push (s!"/-- `{T}` is equivalent to the free monad over the interpretation of " ++
+    s!"`{nm "code"}`. -/\n" ++
+    s!"{mk}def {decl "equivCode"}{pImpl} \{{a} : {aTy}} :\n" ++
+    s!"    {T}{pArgs} {a} ≃ PFunctor.FreeM {interp} {a} :=\n" ++
+    s!"  {nm "equivFreeM"}.trans\n" ++
+    s!"    (CatCrypt.Container.freeMCongr " ++
+    s!"(PFunctor.Equiv.toLensEquiv ({nm "sigEquivCode"}{pArgs})))")
+  return cmds
+
 /-- `stx` with every source position replaced by the synthetic position of `ref`. -/
 partial def withRefInfo (info : SourceInfo) : Syntax → Syntax
   | .node _ kind args => .node info kind (args.map (withRefInfo info))
@@ -536,27 +634,68 @@ def elabText (ref : Syntax) (text : String) : CommandElabM Unit := do
     | .error e => throwError "derive_free_sig: the generated source does not parse: {e}\n{text}"
   elabCommand (withRefInfo (SourceInfo.fromRef ref) stx)
 
+/-- An option of `derive_free_sig`: `(namespace := N)`, `(bind := f)` or `(code := true)`. -/
+syntax deriveFreeSigOpt := " (" ("namespace" <|> &"bind" <|> &"code") " := " ident ")"
+
 /-- `derive_free_sig T (namespace := N) (bind := f)` defines the operations `N.Op`, the
 polynomial functor `N.Sig`, the equivalence `N.equivFreeM` between `T` and the free monad over
 `N.Sig`, and the decomposition `N.sigEquivSum` of `N.Sig` as a sum of one-operation summands;
-see the module documentation. `derive_free_sig?` also prints the generated source. -/
+see the module documentation. `derive_free_sig?` also prints the generated source. The
+options are each optional and may be given in any order. -/
 syntax (name := deriveFreeSigCmd) ("derive_free_sig " <|> "derive_free_sig? ") ident
-  (" (" "namespace" " := " ident ")")? (" (" &"bind" " := " ident ")")? : command
+  deriveFreeSigOpt* : command
 
 @[command_elab deriveFreeSigCmd]
 def elabDeriveFreeSig : CommandElab := fun stx => do
   let show? := stx[0].getAtomVal.contains '?'
   let T ← liftCoreM <| realizeGlobalConstNoOverloadWithInfo stx[1]
   let ns ← getCurrNamespace
-  let N := if stx[2].getNumArgs > 0 then ns ++ stx[2][3].getId else T
-  let bind? ← if stx[3].getNumArgs > 0 then
-      some <$> liftCoreM (realizeGlobalConstNoOverloadWithInfo stx[3][3])
-    else pure none
+  let mut N := T
+  let mut bind? : Option Name := none
+  let mut code := false
+  -- the options, each at most once, in any order
+  let mut seen : Array String := #[]
+  for opt in stx[2].getArgs do
+    -- the key is the atom after the opening parenthesis and the value the identifier, read off
+    -- the atoms and identifiers of the option in order, whatever nodes wrap them
+    let mut atoms : Array String := #[]
+    let mut val? : Option Syntax := none
+    for s in opt.topDown do
+      if s.isAtom then
+        atoms := atoms.push s.getAtomVal.trimAscii.toString
+      else if s.isIdent && val?.isNone then
+        val? := some s
+    let key := (atoms.filter (fun a => a != "(" && a != ":=" && a != ")"))[0]?.getD ""
+    let some val := val?
+      | throwErrorAt opt "derive_free_sig: the option has no value"
+    if seen.contains key then
+      throwErrorAt opt "derive_free_sig: the option `{key}` is given twice"
+    seen := seen.push key
+    match key with
+    | "namespace" => N := ns ++ val.getId
+    | "bind" => bind? := some (← liftCoreM (realizeGlobalConstNoOverloadWithInfo val))
+    | "code" =>
+      unless val.getId == `true || val.getId == `false do
+        throwErrorAt val "derive_free_sig: the option `code` takes `true` or `false`"
+      code := val.getId == `true
+    | _ => throwErrorAt opt "derive_free_sig: unknown option `{key}`"
   let d ← liftTermElabM do readSig (← toIndDesc T)
   let cmds := sigSource d N bind?
-  if show? then logInfo m!"{"\n\n".intercalate cmds.toList}"
   for c in cmds do
     elabText stx c
+  let mut shown := cmds
+  if code then
+    -- the universes of the fields and of the directions are those of `N.Sig`
+    let sigTy := (← getConstInfo (N ++ `Sig)).type
+    let lvls ← liftTermElabM <| forallTelescope sigTy fun _ body => do
+      let .const ``PFunctor [lA, lB] := body
+        | throwError "derive_free_sig: `{N ++ `Sig}` is not a `PFunctor`"
+      return (toString (format lA), toString (format lB))
+    let ccmds := codeSource d N lvls.1 lvls.2
+    for c in ccmds do
+      elabText stx c
+    shown := shown ++ ccmds
+  if show? then logInfo m!"{"\n\n".intercalate shown.toList}"
 
 end CatCrypt.Tactics.DeriveFreeSig
 
