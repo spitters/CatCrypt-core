@@ -49,8 +49,14 @@ traversed. Each node of the tree is consumed by one rule lemma of this module:
   by a traversal of its visible structure (`ar_*` rules, definitions unfolded, a tree without
   visible leaves by `ar_any`, each leaf closed by `omega` after its `if`s and Boolean locals
   are split); with these, the length invariants `AllRet (fun a => (π a).length ≤ n) A` of a
-  local hypothesis or of the theorem `N.allRet_length` of a callee `N.timed` (`lengthInvs`);
-  the invariants found are conjoined and assumed by the continuation;
+  local hypothesis or of the theorem `N.allRet_length` of a callee `N.timed`
+  (`lengthInvsDirect`); the invariants found are conjoined and assumed by the continuation;
+* `lengthInvs`, read by `derive_time_bound` (`DeriveTimeBound.withFreshLen`), also derives the
+  length invariant of a tree whose structure is visible, such as a callee inlined by
+  `derive_reduction` (`lengthInvsStruct`): through `sample`, `sampleDist`, `get`, `set` and
+  `load` nodes, a bind `(A.bind f).2` whose continuation returns, under an invariant
+  `len x ≤ m` of `A`, a value whose component is the bounded list (`allRet_mono`, `ar_bind`),
+  and a leaf `ret v` whose component `c` has a local hypothesis `c.length ≤ n`;
 * a heap reset `load h c t` adds `1 + |keys h| + c` to `P`;
 * `if`, `if h :` and `match` are split, and a recursor or `casesOn` on a local variable is
   split by `cases` on the variable; a tree with an `if b = true` on a Boolean local `b` below a
@@ -1848,11 +1854,9 @@ def lengthInvSources (t : Expr) : MetaM (Array Expr) := do
     unless out.contains c do out := out ++ [c]
   out.toArray.mapM mkConstWithFreshMVarLevels
 
-/-- The length invariants of the tree `t`: each local hypothesis, and each theorem of
-`lengthInvSources`, whose conclusion `AllRet (fun a => (π a).length ≤ n) t` unifies at `t`, with
-its propositional premises closed from the context (`closeByContext`) and `n` free of `a`; the
-proof, the function `fun a => (π a).length` and the bound `n`. -/
-def lengthInvs (t : Expr) : MetaM (Array (Expr × Expr × Expr)) := do
+/-- The length invariants of the tree `t` given by a local hypothesis or a theorem of
+`lengthInvSources` (`lengthInvs`). -/
+def lengthInvsDirect (t : Expr) : MetaM (Array (Expr × Expr × Expr)) := do
   let locals ← (← getLCtx).getFVars.filterM fun f => do
     let d ← f.fvarId!.getDecl
     if d.isImplementationDetail then return false
@@ -1884,6 +1888,128 @@ def lengthInvs (t : Expr) : MetaM (Array (Expr × Expr × Expr)) := do
 /-- The proposition `a ≤ b` over `ℕ`. -/
 def mkNatLe (a b : Expr) : Expr :=
   mkApp4 (mkConst ``LE.le [Level.zero]) (mkConst ``Nat) (mkConst ``instLENat) a b
+
+/-- The components of a value built from nested pairs, each with its path of projections
+(`false` for `Prod.fst`, `true` for `Prod.snd`): the value itself, and the components of `a` and
+`b` for `(a, b)`. -/
+partial def pairPaths (v : Expr) (path : Array Bool := #[]) : Array (Expr × Array Bool) :=
+  let w := v.consumeMData.headBeta
+  let here := #[(v, path)]
+  if w.isAppOfArity ``Prod.mk 4 then
+    here ++ pairPaths (w.getArg! 2) (path.push false) ++ pairPaths (w.getArg! 3) (path.push true)
+  else here
+
+/-- The projections `path` applied to `a`. -/
+def applyPath (a : Expr) (path : Array Bool) : MetaM Expr :=
+  path.foldlM (fun e b => mkAppM (if b then ``Prod.snd else ``Prod.fst) #[e]) a
+
+/-- The invariant `AllRet (fun a => len a ≤ n) t` with the proof `pf`, its type stated at `t`. -/
+def lengthInvAt (t len n pf : Expr) : MetaM (Expr × Expr × Expr) := do
+  let α := (← whnfR (← inferType t)).getArg! 0
+  let q ← withLocalDeclD `a α fun a => do mkLambdaFVars #[a] (mkNatLe (len.beta #[a]) n)
+  let ty ← mkAppM ``SPTree.Timed.AllRet #[q, t]
+  return (← mkExpectedTypeHint pf ty, len, n)
+
+/-- The length invariants of the leaf `ret v`: for each component `c` of `v` (`pairPaths`) and
+each local hypothesis `c.length ≤ n`, the invariant `AllRet (fun a => (π a).length ≤ n)` with `π`
+the projections to `c`. -/
+def lengthInvsRet (t v : Expr) : MetaM (Array (Expr × Expr × Expr)) := do
+  let α := (← whnfR (← inferType t)).getArg! 0
+  let hyps ← (← getLCtx).getFVars.filterM fun f => do
+    let d ← f.fvarId!.getDecl
+    if d.isImplementationDetail then return false
+    let some (l, _) := natLe? (← instantiateMVars d.type) | return false
+    return l.isAppOfArity ``List.length 2
+  let mut out := #[]
+  for (c, path) in pairPaths v do
+    for h in hyps do
+      let some (l, n) := natLe? (← instantiateMVars (← inferType h)) | continue
+      let s ← saveState
+      unless ← isDefEq l.appArg! c do s.restore; continue
+      let len ← withLocalDeclD `a α fun a => do
+        mkLambdaFVars #[a] (← mkAppM ``List.length #[← applyPath a path])
+      out := out.push (← lengthInvAt t len n h)
+  return out
+
+mutual
+
+/-- The length invariants of the tree `t`: each local hypothesis, and each theorem of
+`lengthInvSources`, whose conclusion `AllRet (fun a => (π a).length ≤ n) t` unifies at `t`, with
+its propositional premises closed from the context (`closeByContext`) and `n` free of `a`; the
+proof, the function `fun a => (π a).length` and the bound `n`. A tree without such an invariant
+whose structure is visible (a tree inlined by `derive_reduction`) gets the invariants of its
+structure (`lengthInvsStruct`). -/
+partial def lengthInvs (t : Expr) (fuel : Nat := 8) : MetaM (Array (Expr × Expr × Expr)) := do
+  let out ← lengthInvsDirect t
+  if !out.isEmpty || fuel == 0 then return out
+  lengthInvsStruct t (fuel - 1)
+
+/-- The length invariants of a tree by its structure, through the `AllRet` rules of its nodes:
+a `sample` or `get` node has the invariants of its continuation at a fresh value whose bound does
+not mention the value; a `set` or `load` node those of its subtree; a leaf `ret v` those of the
+components of `v` bounded by a local hypothesis (`lengthInvsRet`); a bind `(A.bind f).2` the
+invariants of `(f x).2` at a fresh `x` satisfying an invariant `len x ≤ m` of `A`, whose bound
+does not mention `x` (`allRet_mono`, `ar_bind`); a step prefix `(delay c p).2` those of `p.2`. -/
+partial def lengthInvsStruct (t : Expr) (fuel : Nat) :
+    MetaM (Array (Expr × Expr × Expr)) := do
+  let t ← instantiateMVars t
+  let w ← whnfR (← zetaReduce t)
+  let mut out := #[]
+  if let some p := sndOf? w then
+    let p := p.consumeMData.headBeta
+    if p.isAppOfArity ``SPTree.Timed.delay 3 then
+      for (pf, len, n) in ← lengthInvs (← mkAppM ``Prod.snd #[p.appArg!]) fuel do
+        out := out.push (← lengthInvAt t len n pf)
+      return out
+    unless p.isAppOfArity ``SPTree.Timed.bind 4 do return out
+    let A := p.getArg! 2
+    let f := p.getArg! 3
+    let α := p.getArg! 0
+    for (pfA, lenA, nA) in ← lengthInvs A fuel do
+      let r ← withLocalDeclD `x α fun x => do
+        withLocalDeclD `hx (mkNatLe (lenA.beta #[x]) nA) fun hx => do
+          let inner ← mkAppM ``Prod.snd #[(mkApp f x).headBeta]
+          let mut acc := #[]
+          for (pfI, lenI, nI) in ← lengthInvs inner fuel do
+            if nI.containsFVar x.fvarId! || nI.containsFVar hx.fvarId! then continue
+            let h ← mkLambdaFVars #[x, hx] pfI
+            let mono ← mkAppM ``SPTree.Timed.allRet_mono #[h, A, pfA]
+            acc := acc.push (← mkAppM ``ar_bind #[mono], lenI, nI)
+          return acc
+      for (pf, len, n) in r do out := out.push (← lengthInvAt t len n pf)
+    return out
+  let w := w.consumeMData
+  -- A node with a continuation `k` over a fresh value; `AllRet Q` of the node unfolds to
+  -- `∀ b, AllRet Q (k b)` (`ar_sample`, `ar_get`), and of a `set` or `load` node to `AllRet Q`
+  -- of its subtree (`ar_set`, `ar_load`), so the proofs are typed at `t` by `lengthInvAt`.
+  let cont? : Option Expr :=
+    if w.isAppOfArity ``SPTree.Timed.sample 6 then some (w.getArg! 5)
+    else if w.isAppOfArity ``SPTree.Timed.sampleDist 5 then some (w.getArg! 4)
+    else if w.isAppOfArity ``SPTree.Timed.get 4 then some (w.getArg! 3)
+    else none
+  if let some k := cont? then
+    let kt ← whnfR (← inferType k)
+    unless kt.isForall do return out
+    let r ← withLocalDeclD `b kt.bindingDomain! fun b => do
+      let mut acc := #[]
+      for (pf, len, n) in ← lengthInvs (mkApp k b).headBeta fuel do
+        if n.containsFVar b.fvarId! then continue
+        acc := acc.push (← mkLambdaFVars #[b] pf, len, n)
+      return acc
+    for (pf, len, n) in r do out := out.push (← lengthInvAt t len n pf)
+    return out
+  let sub? : Option Expr :=
+    if w.isAppOfArity ``SPTree.Timed.set 5 then some (w.getArg! 4)
+    else if w.isAppOfArity ``SPTree.Timed.load 4 then some (w.getArg! 3)
+    else none
+  if let some s := sub? then
+    for (pf, len, n) in ← lengthInvs s fuel do
+      out := out.push (← lengthInvAt t len n pf)
+    return out
+  if w.isAppOfArity ``SPTree.Timed.ret 2 then return ← lengthInvsRet t w.appArg!
+  return out
+
+end
 
 /-- Whether `m₁` and `m₂` are applications of the same matcher to the same discriminants,
 without arguments after their alternatives. -/
@@ -2444,16 +2570,17 @@ partial def arSolve (g : MVarId) (env : Bool) (fuel : Nat) : TacticM Unit := do
   for g' in gs do arSolve g' env (fuel - 1)
 
 /-- A bind `A.bind f` whose continuation is not bounded at every value: the length invariants
-of `A` (`lengthInvs`), and, for each companion that `f` reads and each hypothesis bounding a
-companion of its type (`invCandidates`), the least slack of the ladder at which `arSolve` proves
-the leaf invariant of `A`; the invariants found are conjoined and `st_bind_inv` applied. -/
+of `A` from local hypotheses and theorems (`lengthInvsDirect`), and, for each companion that
+`f` reads and each hypothesis bounding a companion of its type (`invCandidates`), the least
+slack of the ladder at which `arSolve` proves the leaf invariant of `A`; the invariants found
+are conjoined and `st_bind_inv` applied. -/
 partial def bindInv (g : MVarId) (x : Expr) (env : Bool) (fuel : Nat) : TacticM Bool :=
     g.withContext do
   let α := x.getArg! 0
   let A := x.getArg! 2
   let f := x.getArg! 3
   let cands ← invCandidates α f
-  let lens ← lengthInvs A
+  let lens ← lengthInvsDirect A
   if cands.isEmpty && lens.isEmpty then return false
   let mut proofs : Array Expr := lens.map (·.1)
   for ladder in cands do

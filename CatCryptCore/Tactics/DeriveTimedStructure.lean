@@ -26,8 +26,8 @@ trees of a registered tree kind (`CatCryptCore.Tactics.DeriveTimed`), computatio
   function;
 * the time bound `S.Timed.TimeBound A' Ts`: for each tree or computation field `f` one bound
   `T_f` on the time of its step-prefixed costed trees `(A'.fCost ys, A'.f ys)`, the cost of
-  computing the tree followed by its run (`OracleAdv.Timed.StepTimeBound` or
-  `SPTree.Timed.stepTime`). The stages of a multi-stage adversary run separately, so their
+  computing the tree followed by its run (the bound `TreeKind.stepTimeBound` of its tree kind,
+  `OracleAdv.Timed.StepTimeBound` for oracle trees, or `SPTree.Timed.stepTime`). The stages of a multi-stage adversary run separately, so their
   bounds are separate parameters and are not added.
 
 This is the translation of a structure type in the call-by-value writer translation of the
@@ -384,9 +384,11 @@ def defineTimeBound (S : Name) (lvls : List Level) (lps : List Name) : TermElabM
               let tb ← forallBoundedTelescope (← whnfR vt) n fun ys b => do
                 let b ← whnfR b
                 let p ← mkAppM ``Prod.mk #[mkAppN cv ys, mkAppN v ys]
-                let c ← if b.isAppOf ``CatCrypt.Crypto.OracleAdv.Timed then
-                    mkAppM ``CatCrypt.Crypto.OracleAdv.Timed.StepTimeBound #[p, T]
-                  else
+                let bound := (← treeKinds).findSome? fun k =>
+                  if b.isAppOf k.timed then k.stepTimeBound else none
+                let c ← match bound with
+                  | some B => mkAppM B #[p, T]
+                  | none =>
                     mkAppM ``LE.le #[← mkAppM ``CatCrypt.Core.SPTree.Timed.stepTime #[p], T]
                 mkForallFVars ys c
               go (i + 1) (bounds.push T) (conj.push tb)

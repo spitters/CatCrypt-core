@@ -24,18 +24,36 @@ functional induction on `R.timed` when `R` is recursive, and is checked by the k
 
 The translation is driven by a table of tree kinds (`treeKinds`). An entry gives the tree type
 and its costed type, their erasure and step prefix, the nodes and combinators with their costed
-forms and the role of each argument (`ArgRole`), and the lemmas that prove the erasure theorems.
-The table has two entries:
+forms and the role of each argument (`ArgRole`), the lemmas that prove the erasure theorems,
+and the time bound of a step-prefixed costed tree (`TreeKind.stepTimeBound`), read by the costed
+mirror of a structure with a tree field (`S.Timed.TimeBound`). The table is open: it is the two
+built-in kinds
 
 * oracle trees `OracleAdv D R α`, costed by `OracleAdv.Timed D R α`
   (`CatCryptCore.Crypto.OracleAdversaryTimed`);
 * syntactic computation trees `SPTree α`, costed by `SPTree.Timed α`
   (`CatCryptCore.Core.SPTreeTimed`, `CatCryptCore.Core.SPTreeTimedOps`): the nodes `ret`,
   `sample`, `sampleDist` (sampling from a sub-distribution), `get`, `set`, `fail` and the heap
-  reset `load`, and the combinators `SPTree.bind` and `SPTree.map`.
+  reset `load`, and the combinators `SPTree.bind` and `SPTree.map`;
+
+followed by the kinds registered in the environment extension `treeKindExt`. A kind is
+registered by `register_tree_kind k`, where `k : TreeKind` is a constant of a module that
+imports this one; the module defining a tree type, or a module above it, registers its kind, so
+that this module does not import the tree type (oracle programs `OracleProg I O α`,
+`CatCryptCore.Crypto.Signatures.OracleProgTimed`).
 
 Below, "tree" means a tree of a kind in the table, and the rules for oracle trees apply to
 every kind.
+
+## Computation arguments of nodes
+
+A node argument of role `ArgRole.comp` is a computation `c : SPComp β` whose time counts in the
+costed node: its costed form is a costed computation tree `SPTree.Timed β`, erased by
+`SPTree.compile ∘ SPTree.Timed.erase`. The argument `SPTree.compile t` of a computation tree `t`
+is translated as the tree `t`: the costed node takes the costed tree of `t`, and the step cost
+of `t` is charged in front of the node (`trComp`). A computation without a computation tree (a
+constant, a binder or a field of a binder of type `SPComp β`) is refused: it has no syntax from
+which its time is derived.
 
 ## Binders
 
@@ -317,6 +335,7 @@ one unit for each arithmetic operation (`CatCryptCore/Crypto/ConcreteSecurity.md
   `R.erase_timed` (or `R.erase_s`)
 * `timed_cost f := e` — register the cost `e` of the primitive `f`
 * `treeKinds` — the table of tree kinds
+* `treeKindExt`, `register_tree_kind k` — the registered tree kinds
 * `optionDispatch` — the case analysis of an optional value, written as a `match`
 
 ## Main results
@@ -898,6 +917,9 @@ inductive ArgRole where
   /-- A data function of `n` arguments: kept and followed by its cost per call, `extra` plus the
   cost of evaluating it. -/
   | perCall (extra n : Nat)
+  /-- A computation `SPComp β` of a node: replaced by its costed computation tree
+  `SPTree.Timed β`, with the step cost of the tree charged in front of the node. -/
+  | comp
   deriving Inhabited, BEq, Repr
 
 /-- A node of a tree kind: the constructor `src` and the costed constructor `tgt`, which takes
@@ -933,6 +955,9 @@ structure TreeKind where
   eraseLemmas : Array Name
   /-- The lemmas that push the erasure `ε` of a result holding functions to the leaves. -/
   hatLemmas : Array Name := #[]
+  /-- The time bound `B x T : Prop` of a step-prefixed costed tree `x : ℕ × timed ps` by a
+  number `T`; `none` for the bound `SPTree.Timed.stepTime x ≤ T` of computation trees. -/
+  stepTimeBound : Option Name := none
   deriving Inhabited
 
 /-- Oracle trees `OracleAdv D R α`: `ret`, `rand` and `query` nodes, and the combinators
@@ -971,6 +996,7 @@ def oracleKind : TreeKind where
     ``CatCrypt.Crypto.OracleAdv.Timed.bind_ret_eq,
     ``CatCrypt.Tactics.DeriveTimed.fst_ite, ``CatCrypt.Tactics.DeriveTimed.snd_ite,
     ``CatCrypt.Tactics.DeriveTimed.ite_prod_mk, ``CatCrypt.Tactics.DeriveTimed.erase_ite_oracle]
+  stepTimeBound := some ``CatCrypt.Crypto.OracleAdv.Timed.StepTimeBound
 
 /-- Syntactic computation trees `SPTree α`: `ret`, `sample`, `sampleDist` (its distribution kept
 and not priced), `get`, `set`, `fail` and `load` nodes, and the combinators `SPTree.bind` and
@@ -1011,8 +1037,44 @@ def spTreeKind : TreeKind where
     ``CatCrypt.Tactics.DeriveTimed.snd_ite, ``CatCrypt.Tactics.DeriveTimed.ite_prod_mk,
     ``CatCrypt.Tactics.DeriveTimed.erase_ite_spTree]
 
-/-- The table of tree kinds. -/
-def treeKinds : Array TreeKind := #[oracleKind, spTreeKind]
+/-- The tree kinds registered by `register_tree_kind`, in the order of registration, the kinds
+of imported modules first. -/
+initialize treeKindExt : SimplePersistentEnvExtension TreeKind (Array TreeKind) ←
+  registerSimplePersistentEnvExtension {
+    addEntryFn := Array.push
+    addImportedFn := fun as => as.foldl (· ++ ·) #[]
+  }
+
+/-- The table of tree kinds: the built-in kinds `oracleKind` and `spTreeKind`, followed by the
+registered kinds. -/
+def treeKinds : CoreM (Array TreeKind) :=
+  return #[oracleKind, spTreeKind] ++ treeKindExt.getState (← getEnv)
+
+/-- Whether a term whose constants are `used` mentions the kind `k`: its costed tree type, or
+one of its costed nodes or combinators (a costed computation tree embedded in a node of another
+kind mentions only its constructors). -/
+def kindUsed (used : Array Name) (k : TreeKind) : Bool :=
+  used.contains k.timed || k.nodes.any (used.contains ·.tgt) ||
+    k.combinators.any (used.contains ·.tgt)
+
+/-- The tree kind of the constant `n`, evaluated. -/
+unsafe def evalTreeKindUnsafe (n : Name) : CoreM TreeKind := do
+  ofExcept <| (← getEnv).evalConstCheck TreeKind (← getOptions) ``TreeKind n
+
+@[implemented_by evalTreeKindUnsafe]
+opaque evalTreeKind (n : Name) : CoreM TreeKind
+
+/-- `register_tree_kind k` adds the tree kind `k : TreeKind`, a constant, to the table of tree
+kinds of the modules that import the current one. -/
+syntax (name := registerTreeKindCmd) "register_tree_kind " ident : command
+
+@[command_elab registerTreeKindCmd]
+def elabRegisterTreeKind : CommandElab := fun stx => do
+  let n ← liftCoreM <| realizeGlobalConstNoOverload stx[1]
+  let k ← liftCoreM <| evalTreeKind n
+  if (← liftCoreM treeKinds).any (·.tree == k.tree) then
+    throwError "register_tree_kind: the tree type `{k.tree}` already has a kind"
+  modifyEnv (treeKindExt.addEntry · k)
 
 /-- A tree type: its kind and its parameters. -/
 structure TreeTy where
@@ -1023,7 +1085,7 @@ structure TreeTy where
 /-- Whether `t` is the tree type of a kind in the table. -/
 def treeTy? (t : Expr) : MetaM (Option TreeTy) := do
   let t ← whnfR (← instantiateMVars t)
-  for k in treeKinds do
+  for k in ← treeKinds do
     if t.isAppOfArity k.tree k.nParams then return some ⟨k, t.getAppArgs⟩
   return none
 
@@ -2325,23 +2387,24 @@ def closeByCaseHypsRev (g : MVarId) : MetaM Bool := g.withContext do
   return false
 
 /-- The result types, free of loose bound variables, of the computations bound by the `bind`
-nodes of the tree kinds in `e` (the third argument from the end of a full application of
-`T.bind`). -/
-partial def bindTypes (e : Expr) (acc : Array Expr := #[]) : Array Expr :=
+nodes of the tree kinds `kinds` in `e` (the third argument from the end of a full application
+of `T.bind`). -/
+partial def bindTypes (kinds : Array TreeKind) (e : Expr) (acc : Array Expr := #[]) :
+    Array Expr :=
   let acc := match e.getAppFn with
     | .const n _ =>
       let args := e.getAppArgs
-      if treeKinds.any (fun k => n == k.tree ++ `bind) && args.size ≥ 4 &&
+      if kinds.any (fun k => n == k.tree ++ `bind) && args.size ≥ 4 &&
           !args[args.size - 4]!.hasLooseBVars then acc.push args[args.size - 4]!
       else acc
     | _ => acc
   match e with
-  | .app f a => bindTypes a (bindTypes f acc)
-  | .lam _ t b _ => bindTypes b (bindTypes t acc)
-  | .forallE _ t b _ => bindTypes b (bindTypes t acc)
-  | .letE _ t v b _ => bindTypes b (bindTypes v (bindTypes t acc))
-  | .mdata _ b => bindTypes b acc
-  | .proj _ _ b => bindTypes b acc
+  | .app f a => bindTypes kinds a (bindTypes kinds f acc)
+  | .lam _ t b _ => bindTypes kinds b (bindTypes kinds t acc)
+  | .forallE _ t b _ => bindTypes kinds b (bindTypes kinds t acc)
+  | .letE _ t v b _ => bindTypes kinds b (bindTypes kinds v (bindTypes kinds t acc))
+  | .mdata _ b => bindTypes kinds b acc
+  | .proj _ _ b => bindTypes kinds b acc
   | _ => acc
 
 mutual
@@ -3232,9 +3295,28 @@ partial def trNode (ctx : Ctx) (e : Expr) (nd : Node) (args : Array Expr) (T : T
       let (c, v) ← tv ctx xs[i]
       outs := outs.push v
       cost := add cost c
+    | .comp, _ =>
+      let (c, v) ← trComp ctx xs[i]
+      outs := outs.push v
+      cost := add cost c
     | _, _ => outs := outs.push xs[i]
   let node ← mkAppM' (mkAppN (mkConst nd.tgt) T.params) outs
   return T.mkPair cost node
+
+/-- The translation of a computation argument `c : SPComp β` of a node: the step cost and the
+costed computation tree of `t` when `c` is `SPTree.compile t`. Any other computation has no
+syntax from which its time is derived, and is refused. -/
+partial def trComp (ctx : Ctx) (c : Expr) : TermElabM (Expr × Expr) := do
+  let c' := c.consumeMData.headBeta
+  if c'.isAppOfArity ``CatCrypt.Core.SPTree.compile 2 then
+    let t := c'.appArg!
+    let some Ta ← treeTy? (← inferType t)
+      | fail m!"the computation tree `{t}` has an unexpected type"
+    let p ← tr ctx t
+    return (Ta.fstOf p, Ta.sndOf p)
+  fail m!"the computation `{c}` of a node has no computation tree: its time is the time of \
+    a computation tree `t` written as `SPTree.compile t`, and a computation given by a \
+    constant, a binder or a field of a binder has no syntax from which it is derived"
 
 /-- The translation of a combinator: its costed form applied to the translated arguments, with
 the step costs of the tree arguments and the costs of the data arguments in front. The tree
@@ -3271,6 +3353,7 @@ partial def trComb (ctx : Ctx) (e : Expr) (cb : Comb) (args : Array Expr) (T : T
       outs := outs.push v
       dataCost := add dataCost c
     | .keep | .cont _ => outs := outs.push a
+    | .comp => fail m!"internal: a combinator argument of role `comp` in `{e}`"
   -- A simulation whose state holds functions: its costed form carries the erasure and the
   -- lift of the state, which state its erasure theorem.
   if cb.src == ``CatCrypt.Crypto.OracleAdv.simulate then
@@ -3746,8 +3829,9 @@ partial def deriveTimed (ctx : Ctx) (c : Name) : TermElabM Unit := do
   -- in the return of a record with function fields, followed by a continuation): its costed
   -- result is a tuple of costed closures, which the erasure proof moves along the chain
   -- (`bind_assoc`, `bind`) to the continuation that reads it.
+  let kinds ← treeKinds
   let innerHat ← lambdaTelescope value fun _ b =>
-    (bindTypes b).anyM fun t => return (← hatTy? t).isSome
+    (bindTypes kinds b).anyM fun t => return (← hatTy? t).isSome
   let (tType, tValue, eType, nBinders, hatted, dataHat, fp?) ←
       lambdaTelescope value fun xs b => do
     let some T ← treeTyH? (← inferType b)
@@ -3851,21 +3935,23 @@ partial def deriveTimed (ctx : Ctx) (c : Name) : TermElabM Unit := do
   let callees := collectTimed (← getEnv) ctx.suffix tValue timedName
   -- The erasure lemmas of the tree kinds whose costed trees occur in the costed form.
   let used := tType.getUsedConstants ++ tValue.getUsedConstants
-  let kindLemmas := (treeKinds.filter fun k => used.contains k.timed).flatMap (·.eraseLemmas)
+  let kindLemmas := ((← treeKinds).filter (kindUsed used)).flatMap (·.eraseLemmas)
   -- The naturality lemmas `c.bind_ret` of registered callees called at a costed instance of
   -- their type parameter (`callTimed`), oriented left to right: the erasure of the results
   -- moves inside the callee, onto the erasure theorem of its tree argument.
   let naturalLemmas ← naturalRef.get
   -- A costed form by recursion over an oracle tree has a case analysis as its only equation,
   -- which `fun_induction` unfolds; as a simp lemma it would loop.
-  let treeRec := tValue.getUsedConstants.contains ``CatCrypt.Crypto.OracleAdv.Timed.casesOn
+  let kinds ← treeKinds
+  let treeRec := ((kinds.map (·.timed)).filter (· != spTreeKind.timed)).any fun n =>
+    tValue.getUsedConstants.contains (n ++ `casesOn)
   -- Costed closures in a result or in a simulation state: the lemmas that push `ε` to the
   -- leaves and the erasure of a simulation with a costed state.
   let hatLemmas : Array Name :=
     if hatted || binderHat || plainHat || dataHat || innerHat ||
         used.contains ``CatCrypt.Crypto.OracleAdv.Timed.simulateHat ||
         callees.any (fun n => n.toString.endsWith "_bind") || !naturalLemmas.isEmpty then
-      (treeKinds.filter fun k => used.contains k.timed).flatMap (·.hatLemmas)
+      (kinds.filter (kindUsed used)).flatMap (·.hatLemmas)
     else #[]
   -- A definition by well-founded recursion has an unconditional equation, which loops as a
   -- simp lemma: it is unfolded once by `unfold`, and `fun_induction` unfolds its costed form.
@@ -3876,7 +3962,7 @@ partial def deriveTimed (ctx : Ctx) (c : Name) : TermElabM Unit := do
   -- where `split` does not reach: the erasure lemma of its matcher.
   let mut matchLemmas : Array Name := #[]
   for m in tValue.getUsedConstants.filter (isMatcherCore envNow ·) do
-    for k in treeKinds.filter fun k => used.contains k.timed do
+    for k in kinds.filter (kindUsed used) do
       if let some n ← matchEraseLemma k m then matchLemmas := matchLemmas.push n
   let unfoldedDefs := (← unfoldedRef.get).filter (fun n => n != c)
   let simpLemmas : Array Name :=
@@ -4014,7 +4100,7 @@ partial def deriveTimed (ctx : Ctx) (c : Name) : TermElabM Unit := do
   -- whose branches rebuild a state holding functions, followed by the erasure `ε` of the
   -- result): the bind lemmas of `if`, dependent `if` and the matchers of both sides push the
   -- bind into the branches. The stage runs without the discharger, then with it.
-  let usedKinds := treeKinds.filter fun k => used.contains k.timed
+  let usedKinds := (← treeKinds).filter (kindUsed used)
   let mut bindNames : Array Name := #[]
   for k in usedKinds do
     if k.tree == ``CatCrypt.Crypto.OracleAdv then

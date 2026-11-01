@@ -31,7 +31,9 @@ their definitions through `Array.toList`, so their costs are linear in the size.
   `List.replicate.timedCost_le`, `List.range.timedCost_le`, `List.zip.timedCost_le` — linear
   bounds in the length
 * `List.map.timedCost_le`, `List.foldl.timedCost_le`, `List.foldr.timedCost_le`,
-  `List.zipWith.timedCost_le` — `(k + c) * l.length + 1` for function costs at most `k`
+  `List.zipWith.timedCost_le`, `List.any.timedCost_le` — `(k + c) * l.length + 1` for function
+  costs at most `k`; `List.any.timedCost_const` — `(c + 5) * l.length + 1` for a predicate of
+  constant cost `c`
 * `List.flatten.timedCost_le` — `(2 w + 4) * L.length + 1` for lists of length at most `w`
 * `Fin.foldr.loop.timedCost_le` — the loop of `Fin.foldr` from index `i` costs at most
   `(k + 3) * i + 4` for step costs at most `k`
@@ -92,6 +94,7 @@ derive_cost List.range.loop
 derive_cost List.range
 derive_cost Fin.foldr.loop
 derive_cost List.flatten
+derive_cost List.any
 
 section
 
@@ -197,6 +200,24 @@ theorem List.foldr.timedCost_le (f : α → β → β) (fCost : α → β → �
   | cons a l ih =>
     have := hf a (List.foldr f init l)
     simp [List.foldr.timedCost, Nat.mul_succ]; omega
+
+/-- `List.any` with a predicate of cost at most `k` costs at most `k + 5` units per element and
+one more. -/
+theorem List.any.timedCost_le (l : List α) (p : α → Bool) (pCost : α → ℕ) {k : ℕ}
+    (hp : ∀ a, pCost a ≤ k) : List.any.timedCost l p pCost ≤ (k + 5) * l.length + 1 := by
+  induction l with
+  | nil => simp [List.any.timedCost]
+  | cons a l ih =>
+    have := hp a
+    simp only [List.any.timedCost, List.length_cons] at ih ⊢
+    rw [Nat.mul_add, Nat.mul_one]
+    omega
+
+/-- `List.any` with a predicate of constant cost `c` costs at most `c + 5` units per element and
+one more. -/
+theorem List.any.timedCost_const (l : List α) (p : α → Bool) (c : ℕ) :
+    List.any.timedCost l p (fun _ => c) ≤ (c + 5) * l.length + 1 :=
+  List.any.timedCost_le l p _ fun _ => le_rfl
 
 /-- Reversing onto an accumulator costs two units per element and one more. -/
 theorem List.reverseAux.timedCost_eq (l r : List α) :

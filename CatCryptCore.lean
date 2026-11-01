@@ -234,6 +234,7 @@ public import CatCryptCore.Crypto.Signatures.FSigSys
 public import CatCryptCore.Crypto.Signatures.FSigReduction
 public import CatCryptCore.Crypto.Signatures.FSigReductionTimed
 public import CatCryptCore.Crypto.Signatures.FSigSysTimed
+public import CatCryptCore.Crypto.Signatures.OracleProgTimed
 public import CatCryptCore.Crypto.BLSSig.Security
 
 -- Fujisaki–Okamoto transforms, FIPS 203 KEM, total variation
