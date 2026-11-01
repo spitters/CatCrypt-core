@@ -108,6 +108,44 @@ close the goal, nothing is declared and the command fails with the
 reason. The command is written once per reduction, in place of a hand-stated theorem of the
 same name.
 
+## Costed oracle adversaries
+
+A costed tree `R.tree.timed` returning a step-prefixed costed oracle adversary
+`ℕ × OracleAdv.Timed D R α` gets the theorem `StepTimeBound (R.tree.timed xs) B`, stated and
+proved together by a recursion over the structure of the adversary (`oaStep`, `oaTree`); every
+binder into costed oracle adversaries `A : X → OracleAdv.Timed D R β` gets a bound `T_A` and the
+hypothesis `∀ x, (A x).TimeBound T_A`, and every cost companion its bound as above. Each node
+yields its bound and the proof by one rule lemma (`oa_*`):
+
+* a pair `(c, t)`: the bound of `c` plus the bound of `t` (`oa_stb_pair`); a pair
+  `(c + y.1, y.2)` or `delay c y`: the bound of `c` plus the bound of `y` (`oa_stb_pair_snd`,
+  `oa_stb_delay`);
+* a `rand` or `query` node: one plus the bound of its step-prefixed continuation at a fresh
+  value (`oa_tb_rand`, `oa_tb_query`); a leaf: zero; a bounded binder: its bound;
+* a bind `A.bind f`: the bound of `A` plus the bound of `f` at a fresh value (`oa_stb_bind`,
+  `OracleAdv.Timed.timeBound_bind_of_allRet`); a pair `(c + S.1 + (S.2.bind f).1,
+  (S.2.bind f).2)`, the adversary `S` followed by `f`, by the bound of `c`, of `S` and of `f`
+  (`oa_stb_pair_bind`), each step cost read once. When the bound of `A` (or `S`) comes from a
+  time theorem whose conclusion carries a leaf invariant `AllRet Q`, the continuation is bounded
+  under `Q a`, its conjuncts and the bounds of its unfolded definitions local hypotheses
+  (`withInvHyps`): the cost companions of a state returned by a fold are bounded by the
+  invariant of the fold;
+* an `if` or `if h :`: the maximum of the bounds of its branches (`oa_stb_ite`, `oa_stb_dite`,
+  `oa_tb_ite`);
+* a call that no rule reads (a recursive callee, a fold): the bound of the time theorem of the
+  callee (`oaCallee?`), `StepTimeBound x B`, `x.TimeBound B`, or either in conjunction with a
+  leaf invariant. Its premises are closed by `closePremises`: a premise whose leaves (its
+  conjuncts, definitions unfolded) are bounds `∀ ys, l ≤ ?M` at a free `?M` (a bound shared by
+  several cost companions, the bound of the cost companions of a state passed to the callee)
+  has `?M` assigned the maximum of the bounds of its leaves; any other premise is closed from
+  the context.
+
+A step cost is bounded free of the cost companions and of the values bound inside the
+adversary by `bfree?`, the clauses of `AutoTime.boundFree?` with a dependent `if` bounded by the
+maximum of its branches (`dite_le_max_of`) and the premise of a registered cost lemma
+`f.timedCost_le` (the step cost of a loop) closed by the same procedure. The bound is
+normalised by `normalizeSum` when `omega` proves the normalised bound above it.
+
 ## Main definitions
 
 * `rewriteCosts` — the registered costs that mention a bound value, replaced by closed forms
@@ -119,6 +157,9 @@ same name.
   not proved
 * `mirrorCost` — the bound of a step cost with its proof
 * `mirrorTimeBound` — the procedure for a pure step, along the bound
+* `oaStep`, `oaTree` — the bound of a costed oracle adversary with its proof
+* `closePremises` — the premises of the time theorem of a callee, bound families by maxima
+* `emitOracleTimeBound` — the procedure for a costed oracle adversary
 * `derive_time_bound R.tree` — the command
 -/
 
@@ -127,6 +168,126 @@ public section
 set_option autoImplicit false
 
 namespace CatCrypt.Tactics.DeriveTimeBound
+
+/-! ## Rule lemmas of the bound of a costed oracle adversary -/
+
+section OracleRules
+
+open CatCrypt.Crypto.OracleAdv.Timed
+
+variable {D R α β : Type}
+
+/-- A `dite` over `ℕ` is at most the maximum of the bounds of its branches. -/
+theorem dite_le_max_of {c : Prop} [Decidable c] {t : c → ℕ} {f : ¬c → ℕ} {a b : ℕ}
+    (ht : ∀ h, t h ≤ a) (hf : ∀ h, f h ≤ b) : dite c t f ≤ max a b := by
+  by_cases h : c
+  · rw [dite_eq_left h]
+    exact le_max_of_le_left (ht h)
+  · rw [dite_eq_right h]
+    exact le_max_of_le_right (hf h)
+
+/-- Every leaf of a costed oracle adversary satisfies the trivial predicate. -/
+theorem oa_allRet_true (A : CatCrypt.Crypto.OracleAdv.Timed D R α) :
+    AllRet (fun _ => True) A := by
+  induction A with
+  | ret a => trivial
+  | rand p c k ih => exact ih
+  | query d c k ih => exact ih
+
+/-- A leaf takes no time. -/
+theorem oa_tb_ret (a : α) (n : ℕ) :
+    (CatCrypt.Crypto.OracleAdv.Timed.ret a : CatCrypt.Crypto.OracleAdv.Timed D R α).TimeBound n :=
+  trivial
+
+/-- A sample node costs one unit and the bound of its step-prefixed continuations. -/
+theorem oa_tb_rand {γ : Type} {p : PMF γ} {c : γ → ℕ}
+    {k : γ → CatCrypt.Crypto.OracleAdv.Timed D R α} {n : ℕ}
+    (h : ∀ b, StepTimeBound (c b, k b) n) :
+    (CatCrypt.Crypto.OracleAdv.Timed.rand p c k).TimeBound (1 + n) :=
+  (timeBound_rand_iff p c k (1 + n)).2 ⟨by omega, fun b => by
+    rw [Nat.add_sub_cancel_left]
+    exact h b⟩
+
+/-- A query node costs one unit and the bound of its step-prefixed continuations. -/
+theorem oa_tb_query {d : D} {c : R → ℕ} {k : R → CatCrypt.Crypto.OracleAdv.Timed D R α}
+    {n : ℕ} (h : ∀ r, StepTimeBound (c r, k r) n) :
+    (CatCrypt.Crypto.OracleAdv.Timed.query d c k).TimeBound (1 + n) :=
+  (timeBound_query_iff d c k (1 + n)).2 ⟨by omega, fun r => by
+    rw [Nat.add_sub_cancel_left]
+    exact h r⟩
+
+/-- A pair `(c, t)` is bounded by a bound of `c` plus a bound of `t`. -/
+theorem oa_stb_pair {c m n : ℕ} {t : CatCrypt.Crypto.OracleAdv.Timed D R α} (hc : c ≤ m)
+    (ht : t.TimeBound n) : StepTimeBound (c, t) (m + n) :=
+  ⟨by omega, ht.mono (by omega)⟩
+
+/-- A pair `(c + y.1, y.2)`, the step-prefixed tree `y` after `c`. -/
+theorem oa_stb_pair_snd {e c m n : ℕ} {y : ℕ × CatCrypt.Crypto.OracleAdv.Timed D R α}
+    (he : e = c + y.1) (hc : c ≤ m) (hy : StepTimeBound y n) :
+    StepTimeBound (e, y.2) (m + n) := by
+  obtain ⟨h1, h2⟩ := hy
+  subst he
+  exact ⟨by omega, h2.mono (by omega)⟩
+
+/-- A pair `(c + S.1 + (S.2.bind f).1, (S.2.bind f).2)`: the step-prefixed tree `S` followed
+by `f`, after `c`, with `f` bounded at the leaves of `S.2` that satisfy `Q`. -/
+theorem oa_stb_pair_bind {e c k m n : ℕ} {S : ℕ × CatCrypt.Crypto.OracleAdv.Timed D R α}
+    {f : α → ℕ × CatCrypt.Crypto.OracleAdv.Timed D R β} {Q : α → Prop}
+    (he : e = c + S.1 + (S.2.bind f).1) (hc : c ≤ k) (hS : StepTimeBound S m)
+    (hQ : AllRet Q S.2) (hf : ∀ a, Q a → StepTimeBound (f a) n) :
+    StepTimeBound (e, (S.2.bind f).2) (k + (m + n)) := by
+  obtain ⟨h1, h2⟩ := timeBound_bind_of_allRet hS.2 hQ hf
+  have := hS.1
+  subst he
+  exact ⟨by omega, h2.mono (by omega)⟩
+
+/-- A bind is bounded by the bound of its tree plus the bound of its continuation at the leaves
+of the tree that satisfy `Q`. -/
+theorem oa_stb_bind {m n : ℕ} {A : CatCrypt.Crypto.OracleAdv.Timed D R α}
+    {f : α → ℕ × CatCrypt.Crypto.OracleAdv.Timed D R β} {Q : α → Prop} (hA : A.TimeBound m)
+    (hQ : AllRet Q A) (hf : ∀ a, Q a → StepTimeBound (f a) n) :
+    StepTimeBound (A.bind f) (m + n) :=
+  timeBound_bind_of_allRet hA hQ hf
+
+/-- The tree of a step-prefixed tree is bounded by the bound of the pair. -/
+theorem oa_tb_snd {n : ℕ} {y : ℕ × CatCrypt.Crypto.OracleAdv.Timed D R α}
+    (h : StepTimeBound y n) : y.2.TimeBound n :=
+  h.2.mono (Nat.sub_le _ _)
+
+/-- A pair is bounded by the time bound of its tree after its step cost. -/
+theorem oa_stb_delay {c m n : ℕ} {y : ℕ × CatCrypt.Crypto.OracleAdv.Timed D R α} (hc : c ≤ m)
+    (hy : StepTimeBound y n) : StepTimeBound (delay c y) (m + n) :=
+  (stepTimeBound_delay hy).mono (by omega)
+
+/-- An `if` of step-prefixed trees is bounded by the maximum of the bounds of its branches. -/
+theorem oa_stb_ite {c : Prop} [Decidable c] {m n : ℕ}
+    {x y : ℕ × CatCrypt.Crypto.OracleAdv.Timed D R α} (hx : StepTimeBound x m)
+    (hy : StepTimeBound y n) : StepTimeBound (if c then x else y) (max m n) := by
+  split
+  · exact hx.mono (le_max_left _ _)
+  · exact hy.mono (le_max_right _ _)
+
+/-- A dependent `if` of step-prefixed trees is bounded by the maximum of the bounds of its
+branches. -/
+theorem oa_stb_dite {c : Prop} [Decidable c] {m n : ℕ}
+    {x : c → ℕ × CatCrypt.Crypto.OracleAdv.Timed D R α}
+    {y : ¬c → ℕ × CatCrypt.Crypto.OracleAdv.Timed D R α} (hx : ∀ h, StepTimeBound (x h) m)
+    (hy : ∀ h, StepTimeBound (y h) n) : StepTimeBound (dite c x y) (max m n) := by
+  by_cases h : c
+  · rw [dite_eq_left h]
+    exact (hx h).mono (le_max_left _ _)
+  · rw [dite_eq_right h]
+    exact (hy h).mono (le_max_right _ _)
+
+/-- An `if` of trees is bounded by the maximum of the bounds of its branches. -/
+theorem oa_tb_ite {c : Prop} [Decidable c] {m n : ℕ}
+    {x y : CatCrypt.Crypto.OracleAdv.Timed D R α} (hx : x.TimeBound m)
+    (hy : y.TimeBound n) : (if c then x else y).TimeBound (max m n) := by
+  split
+  · exact hx.mono (le_max_left _ _)
+  · exact hy.mono (le_max_right _ _)
+
+end OracleRules
 
 open Lean Meta Elab Term Command CatCrypt.Core
 
@@ -140,11 +301,15 @@ inductive Role where
   | key
   /-- A cost companion: bounded pointwise. -/
   | cost
+  /-- A function into costed oracle adversaries: its time bound holds pointwise. -/
+  | oadv
 
-/-- The role of a binder of type `t`. -/
-def roleOf (t : Expr) : MetaM (Option Role) := do
+/-- The role of a binder of type `t`; with `oadv`, a function into (or a value of) costed
+oracle adversaries `OracleAdv.Timed D R β` is bounded as well. -/
+def roleOf (t : Expr) (oadv : Bool := false) : MetaM (Option Role) := do
   forallTelescopeReducing t fun ys b => do
     let b ← whnfR b
+    if oadv && b.isAppOf ``CatCrypt.Crypto.OracleAdv.Timed then return some .oadv
     if b.isAppOf ``SPTree.Timed then
       return some (if ys.isEmpty then .key else .tree)
     if b.isConstOf ``Nat && !ys.isEmpty then return some .cost
@@ -484,13 +649,13 @@ partial def boundTree (bs : Bounds) (t : Expr) : MetaM Expr := do
     if let some (_, v, r) := bs.find? (·.1 == f) then
       match r with
       | .tree | .key => return v
-      | .cost => pure ()
+      | .cost | .oadv => pure ()
   let t ← reduceHead t
   if let .fvar f := t.getAppFn then
     if let some (_, v, r) := bs.find? (·.1 == f) then
       match r with
       | .tree | .key => return v
-      | .cost => pure ()
+      | .cost | .oadv => pure ()
   if t.isAppOf ``SPTree.Timed.ret then return mkNatLit 0
   if t.isAppOf ``SPTree.Timed.fail then return mkNatLit 0
   if t.isAppOfArity ``SPTree.Timed.sample 6 then
@@ -568,27 +733,29 @@ partial def normalizeSum (e : Expr) : MetaM Expr := do
 /-- The bound variables and hypotheses of the bounded binders `xs`, in order, passed to `k`
 with the bounds. -/
 partial def withBounds {γ : Type} (xs : Array Expr) (i : Nat) (bs : Bounds)
-    (vars hyps : Array Expr) (k : Bounds → Array Expr → Array Expr → TermElabM γ) :
-    TermElabM γ := do
+    (vars hyps : Array Expr) (k : Bounds → Array Expr → Array Expr → TermElabM γ)
+    (oadv : Bool := false) : TermElabM γ := do
   if h : i < xs.size then
     let x := xs[i]
     let t ← inferType x
-    match ← roleOf t with
-    | none => withBounds xs (i + 1) bs vars hyps k
+    match ← roleOf t oadv with
+    | none => withBounds xs (i + 1) bs vars hyps k oadv
     | some r =>
       let n := (← x.fvarId!.getUserName).eraseMacroScopes
       let vName := match r with
-        | .tree => Name.mkSimple ("T_" ++ n.toString)
+        | .tree | .oadv => Name.mkSimple ("T_" ++ n.toString)
         | .key => Name.mkSimple ("G_" ++ n.toString)
         | .cost => Name.mkSimple ("t_" ++ n.toString)
       withLocalDecl vName .implicit natE fun v => do
         let hTy ← forallTelescopeReducing t fun ys _ => do
-          let lhs ← match r with
-            | .cost => pure (mkAppN x ys)
-            | _ => mkAppM ``SPTree.Timed.time #[mkAppN x ys]
-          mkForallFVars ys (← mkAppM ``LE.le #[lhs, v])
+          let concl ← match r with
+            | .cost => mkAppM ``LE.le #[mkAppN x ys, v]
+            | .oadv => mkAppM ``CatCrypt.Crypto.OracleAdv.Timed.TimeBound #[mkAppN x ys, v]
+            | _ => do mkAppM ``LE.le #[← mkAppM ``SPTree.Timed.time #[mkAppN x ys], v]
+          mkForallFVars ys concl
         withLocalDeclD (Name.mkSimple ("h_" ++ n.toString)) hTy fun hx =>
           withBounds xs (i + 1) (bs.push (x.fvarId!, v, r)) (vars.push v) (hyps.push hx) k
+            oadv
   else k bs vars hyps
 
 /-- The heartbeat budget, in thousands, of the proof of one time theorem by `time_bound`. -/
@@ -889,6 +1056,521 @@ def mirrorTimeBound (c name : Name) : TermElabM MirrorResult := do
         { name, levelParams := info.levelParams, type := ty, value := v })
       return .proved
 
+/-! ## The bound of a costed oracle adversary -/
+
+/-- A bound of a costed oracle adversary or of a step-prefixed one, its proof, and, when the
+leaves of the tree are known to satisfy a predicate `Q` (from the time theorem of a callee),
+`Q` with the proof of `AllRet Q t`. -/
+structure OABound where
+  /-- The bound. -/
+  bound : Expr
+  /-- The proof of `t.TimeBound bound` or of `StepTimeBound x bound`. -/
+  proof : Expr
+  /-- The leaf invariant `Q` of the tree and the proof of `AllRet Q t`. -/
+  inv : Option (Expr × Expr) := none
+
+/-- The context of the bound of a costed oracle adversary: the bounded binders with their
+hypotheses, and the variables that no bound may mention (the cost companions and the values
+bound inside the tree). -/
+structure OACtx where
+  /-- The bounded binders, with their bound variables, roles and hypotheses. -/
+  hs : HBounds
+  /-- The variables eliminated from every bound. -/
+  avoid : Array FVarId
+
+/-- A proof of `l = r` over `ℕ` by `omega`, with the hypotheses of the context cleared. -/
+def omegaEq (l r : Expr) : TermElabM Expr := do
+  let mv ← mkFreshExprSyntheticOpaqueMVar (← mkEq l r)
+  let mut hs : Array FVarId := #[]
+  for d in ← getLCtx do
+    if d.isImplementationDetail then continue
+    if ← isProp d.type then hs := hs.push d.fvarId
+  let g ← mv.mvarId!.tryClearMany hs
+  let gs ← Tactic.run g (Tactic.evalTactic (← `(tactic| omega)))
+  unless gs.isEmpty do throwError "the step cost is not{indentExpr r}"
+  instantiateMVars mv
+
+mutual
+
+/-- A bound of `e : ℕ` free of the variables `xs`, with a proof of `e ≤ bound`: the clauses of
+`AutoTime.boundFree?`, with a dependent `if` bounded by the maximum of the bounds of its
+branches (`dite_le_max_of`), and the premise `∀ y, fCost y ≤ ?k` of the lemma `f.timedCost_le`
+of a registered cost closed by the bound of `fCost y` free of `y` and of `xs`
+(`closeBound`). -/
+partial def bfree? (xs : Array FVarId) (e : Expr) (fuel : Nat := 64) :
+    MetaM (Option (Expr × Expr)) := do
+  if fuel == 0 then return none
+  let e := (← instantiateMVars e).headBeta
+  match e with
+  | .letE _ _ v b _ => return ← bfree? xs (b.instantiate1 v) (fuel - 1)
+  | .mdata _ b => return ← bfree? xs b (fuel - 1)
+  | _ => pure ()
+  unless xs.any e.containsFVar do return some (e, ← mkAppM ``Nat.le_refl #[e])
+  if e.isAppOfArity ``HAdd.hAdd 6 || e.isAppOfArity ``HMul.hMul 6 ||
+      e.isAppOfArity ``Max.max 4 then
+    let n := e.getAppNumArgs
+    let some (a, pa) ← bfree? xs (e.getArg! (n - 2)) (fuel - 1) | return none
+    let some (b, pb) ← bfree? xs (e.getArg! (n - 1)) (fuel - 1) | return none
+    if e.isAppOfArity ``HAdd.hAdd 6 then
+      return some (mkAddN a b, ← mkAppM ``Nat.add_le_add #[pa, pb])
+    if e.isAppOfArity ``HMul.hMul 6 then
+      return some (mkMulN a b, ← mkAppM ``Nat.mul_le_mul #[pa, pb])
+    return some (← mkMaxN a b, ← mkAppM ``max_le_max #[pa, pb])
+  if e.isAppOfArity ``ite 5 then
+    let some (a, pa) ← bfree? xs (e.getArg! 3) (fuel - 1) | return none
+    let some (b, pb) ← bfree? xs (e.getArg! 4) (fuel - 1) | return none
+    let pf := mkAppN (mkConst ``CatCrypt.Tactics.AutoTime.ite_le_max_of)
+      #[e.getArg! 1, e.getArg! 2, e.getArg! 3, e.getArg! 4, a, b, pa, pb]
+    return some (← mkMaxN a b, pf)
+  if e.isAppOfArity ``dite 5 then
+    let c := e.getArg! 1
+    let branch (ty br : Expr) : MetaM (Option (Expr × Expr)) :=
+      withLocalDeclD `h ty fun h => do
+        let some (a, pa) ← bfree? (xs.push h.fvarId!) (br.beta #[h]) (fuel - 1)
+          | return none
+        return some (a, ← mkLambdaFVars #[h] pa)
+    let some (a, pa) ← branch c (e.getArg! 3) | return none
+    let some (b, pb) ← branch (mkNot c) (e.getArg! 4) | return none
+    let pf := mkAppN (mkConst ``dite_le_max_of)
+      #[c, e.getArg! 2, e.getArg! 3, e.getArg! 4, a, b, pa, pb]
+    return some (← mkMaxN a b, pf)
+  if let some n := e.getAppFn.constName? then
+    if n.lastComponentAsString == "timedCost" then
+      for c in ← CatCrypt.Tactics.AutoTime.costLemmas n do
+        let st ← saveState
+        let (ms, _, body) ← forallMetaTelescopeReducing (← inferType c)
+        let isEq := body.isAppOfArity ``Eq 3
+        let side? := if isEq then some (body.getArg! 1, body.getArg! 2)
+          else CatCrypt.Tactics.AutoTime.natLe? body
+        let some (l, r) := side? | st.restore; continue
+        if ← isDefEq l e then
+          let ok ← ms.allM fun m => do
+            let mid := m.mvarId!
+            if ← mid.isAssigned then return true
+            unless ← isProp (← mid.getType) do return true
+            closeBound xs mid (fuel - 1)
+          let r ← instantiateMVars r
+          let pf ← instantiateMVars (mkAppN c ms)
+          if ok && !r.hasExprMVar && !pf.hasExprMVar then
+            let pf ← if isEq then mkAppM ``Nat.le_of_eq #[pf] else pure pf
+            if let some (b, pb) ← bfree? xs r (fuel - 1) then
+              return some (b, ← mkAppM ``Nat.le_trans #[pf, pb])
+        st.restore
+  CatCrypt.Tactics.AutoTime.boundFree? xs e fuel
+
+/-- Close the premise `mid`: `∀ ys, l ≤ ?r` with `?r` unassigned by `?r` the bound of `l` free
+of `ys` and `xs` (`bfree?`), any other premise by `AutoTime.closeByContext`. -/
+partial def closeBound (xs : Array FVarId) (mid : MVarId) (fuel : Nat) : MetaM Bool :=
+  mid.withContext do
+    let ty ← instantiateMVars (← mid.getType)
+    let s ← saveState
+    let ok ← try
+        forallTelescopeReducing ty fun ys body => do
+          let some (l, r) := CatCrypt.Tactics.AutoTime.natLe? body | return false
+          unless (← instantiateMVars r).getAppFn.isMVar do return false
+          let some (b, pf) ← bfree? (xs ++ ys.map (·.fvarId!)) l fuel | return false
+          unless ← isDefEq r b do return false
+          mid.assign (← mkLambdaFVars ys pf)
+          return true
+      catch _ => pure false
+    if ok then return true
+    s.restore
+    CatCrypt.Tactics.AutoTime.closeByContext mid fuel
+
+end
+
+/-- Whether `ty` (under its binders) is an inequality over `ℕ`. -/
+def isNatLeLeaf (ty : Expr) : MetaM Bool :=
+  forallTelescopeReducing ty fun _ body =>
+    pure (CatCrypt.Tactics.AutoTime.natLe? body).isSome
+
+/-- The proposition `ty` one step unfolded: `whnfCore`, else the unfolding of its head
+definition; `none` when neither changes it. -/
+def unfoldProp? (ty : Expr) : MetaM (Option Expr) := do
+  let ty' ← whnfCore ty
+  if ty' != ty then return some ty'
+  return (← unfoldDefinition? ty).map (·.headBeta)
+
+/-- The leaves of a premise `ty`: its conjuncts, each head definition unfolded, down to
+inequalities `∀ ys, l ≤ r` over `ℕ`; `none` when a conjunct is not one. -/
+partial def premLeaves (ty : Expr) (fuel : Nat := 8) : MetaM (Option (Array Expr)) := do
+  let ty ← instantiateMVars ty
+  if ← isNatLeLeaf ty then return some #[ty]
+  if ty.isAppOfArity ``And 2 then
+    let some a ← premLeaves (ty.getArg! 0) fuel | return none
+    let some b ← premLeaves (ty.getArg! 1) fuel | return none
+    return some (a ++ b)
+  if fuel == 0 then return none
+  let some ty' ← unfoldProp? ty | return none
+  premLeaves ty' (fuel - 1)
+
+/-- The proof of the premise `ty` from the proofs `pfs` of its leaves from index `k`, along the
+traversal of `premLeaves`, with the index after its last leaf. -/
+partial def premProof (ty : Expr) (pfs : Array Expr) (k : Nat) (fuel : Nat := 8) :
+    MetaM (Expr × Nat) := do
+  let ty ← instantiateMVars ty
+  if ← isNatLeLeaf ty then return (pfs[k]!, k + 1)
+  if ty.isAppOfArity ``And 2 then
+    let (a, k) ← premProof (ty.getArg! 0) pfs k fuel
+    let (b, k) ← premProof (ty.getArg! 1) pfs k fuel
+    return (← mkAppM ``And.intro #[a, b], k)
+  if fuel == 0 then throwError "premProof: premise{indentExpr ty}"
+  let some ty' ← unfoldProp? ty | throwError "premProof: premise{indentExpr ty}"
+  premProof ty' pfs k (fuel - 1)
+
+/-- The bound of a leaf `∀ ys, l ≤ ?M` whose right side is an unassigned metavariable: `?M`, the
+bound of `l` free of `ys` and `xs` (its projections of constructors reduced), and the proof of
+`∀ ys, l ≤ bound` as a function of `ys`. -/
+def leafBound? (xs : Array FVarId) (leaf : Expr) : MetaM (Option (MVarId × Expr × Expr)) :=
+  forallTelescopeReducing leaf fun ys body => do
+    let some (l, r) := CatCrypt.Tactics.AutoTime.natLe? body | return none
+    let r ← instantiateMVars r
+    let .mvar m := r | return none
+    if ← m.isAssigned then return none
+    let l ← CatCrypt.Tactics.DeriveReduction.reduceProjCtor (← instantiateMVars l)
+    let some (b, pf) ← bfree? (xs ++ ys.map (·.fvarId!)) l | return none
+    if ys.any fun y => b.containsFVar y.fvarId! then return none
+    return some (m, b, ← mkLambdaFVars ys pf)
+
+/-- Whether the numeral `e` is zero. -/
+def isZeroNat (e : Expr) : Bool :=
+  e.nat? == some 0 || e.rawNatLit? == some 0
+
+/-- Close the premises `ms` of the time theorem of a callee. A premise whose leaves
+(`premLeaves`: its conjuncts, head definitions unfolded) are all bounds `∀ ys, l ≤ ?M` at an
+unassigned `?M` (a cost bound shared by several companions, the bound of the cost companions of
+a state passed to the callee) is a family: each `?M` is assigned the maximum of the bounds of
+its leaves free of `ys` and `xs` (`leafBound?`), zero bounds left out, and each leaf is proved
+through `le_max_left` and `le_max_right` (`maxChain`). The other premises are closed by
+`AutoTime.closeByContext`. -/
+def closePremises (xs : Array FVarId) (ms : Array Expr) : MetaM Bool := do
+  let mut fam : Array (MVarId × Array Expr) := #[]
+  for m in ms do
+    let mid := m.mvarId!
+    if ← mid.isAssigned then continue
+    unless ← isProp (← mid.getType) do continue
+    let some ls ← premLeaves (← mid.getType) | continue
+    let isFam ← ls.allM fun l => forallTelescopeReducing l fun _ body => do
+      let some (_, r) := CatCrypt.Tactics.AutoTime.natLe? body | return false
+      match ← instantiateMVars r with
+      | .mvar m => return !(← m.isAssigned)
+      | _ => return false
+    if isFam && !ls.isEmpty then fam := fam.push (mid, ls)
+  let mut data : Array (MVarId × Expr × Expr) := #[]
+  for (_, ls) in fam do
+    for l in ls do
+      let some d ← leafBound? xs l | return false
+      data := data.push d
+  -- each `?M` is assigned the maximum of the bounds of its leaves
+  let mut ups : Array Expr := Array.replicate data.size (default : Expr)
+  let mut done : Array MVarId := #[]
+  for (mv, _, _) in data do
+    if done.contains mv then continue
+    done := done.push mv
+    let idx := (List.range data.size).filter fun i => data[i]!.1 == mv
+    let mut uniq : Array Expr := #[]
+    for i in idx do
+      let b := data[i]!.2.1
+      unless isZeroNat b || uniq.contains b do uniq := uniq.push b
+    let (M, pfs) ← if uniq.isEmpty then pure (mkNatLit 0, #[]) else maxChain uniq
+    unless ← isDefEq (mkMVar mv) M do return false
+    for i in idx do
+      let b := data[i]!.2.1
+      let up ← match uniq.idxOf? b with
+        | some j => pure pfs[j]!
+        | none => mkAppM ``Nat.zero_le #[M]
+      ups := ups.set! i up
+  -- the proofs of the leaves, then of the premises
+  let mut leafPfs : Array Expr := #[]
+  let mut i := 0
+  for (_, ls) in fam do
+    for l in ls do
+      let pf := data[i]!.2.2
+      let up := ups[i]!
+      leafPfs := leafPfs.push (← forallTelescopeReducing (← instantiateMVars l) fun ys _ => do
+        mkLambdaFVars ys (← mkAppM ``Nat.le_trans #[pf.beta ys, up]))
+      i := i + 1
+  let mut k := 0
+  for (mid, _) in fam do
+    let (p, k') ← premProof (← mid.getType) leafPfs k
+    mid.assign p
+    k := k'
+  for m in ms do
+    let mid := m.mvarId!
+    if ← mid.isAssigned then continue
+    unless ← isProp (← mid.getType) do continue
+    unless ← CatCrypt.Tactics.AutoTime.closeByContext mid do return false
+  return true
+
+/-- The bound of a call `x` (`step`: a step-prefixed adversary, else an adversary) from the time
+theorem of the callee (`AutoTime.envSources`): its conclusion `StepTimeBound x B` (or
+`x.TimeBound B`), or the conjunction of it with a leaf invariant `AllRet Q x.2` (`AllRet Q x`),
+unified at `x`, its premises closed by `closePremises`. -/
+def oaCallee? (xs : Array FVarId) (x : Expr) (step : Bool) : MetaM (Option OABound) := do
+  let head := if step then ``CatCrypt.Crypto.OracleAdv.Timed.StepTimeBound
+    else ``CatCrypt.Crypto.OracleAdv.Timed.TimeBound
+  for c in ← CatCrypt.Tactics.AutoTime.envSources x do
+    let st ← saveState
+    try
+      let (ms, _, body) ← forallMetaTelescopeReducing (← inferType c)
+      let isAnd := body.isAppOfArity ``And 2
+      let core := if isAnd then body.getArg! 0 else body
+      unless core.isAppOfArity head 5 do st.restore; continue
+      unless ← isDefEq (core.getArg! 3) x do st.restore; continue
+      unless ← closePremises xs ms do st.restore; continue
+      let pf ← instantiateMVars (mkAppN c ms)
+      let B ← instantiateMVars (core.getArg! 4)
+      if pf.hasExprMVar || B.hasExprMVar then st.restore; continue
+      unless isAnd do return some { bound := B, proof := pf }
+      let inv ← instantiateMVars (body.getArg! 1)
+      let p ← mkAppM ``And.left #[pf]
+      if inv.isAppOfArity ``CatCrypt.Crypto.OracleAdv.Timed.AllRet 5 then
+        let q ← mkAppM ``And.right #[pf]
+        return some { bound := B, proof := p, inv := some (inv.getArg! 3, q) }
+      return some { bound := B, proof := p }
+    catch _ => st.restore
+  return none
+
+/-- `k` under let-bound local hypotheses for the parts of the hypothesis `h : ty`: its
+conjuncts, each head definition unfolded, so that their bounds `∀ a, π a ≤ c` are local
+hypotheses of `bfree?`; `k` receives the let-bound variables in the order of the context. -/
+partial def withInvHyps {γ : Type} (h ty : Expr) (k : Array Expr → TermElabM γ)
+    (fuel : Nat := 8) : TermElabM γ := do
+  let ty ← instantiateMVars ty
+  if ty.isAppOfArity ``And 2 then
+    let a := ty.getArg! 0
+    let b := ty.getArg! 1
+    let pa ← mkAppM ``And.left #[h]
+    let pb ← mkAppM ``And.right #[h]
+    withLetDecl `hl a pa fun h₁ =>
+      withLetDecl `hr b pb fun h₂ =>
+        withInvHyps h₁ a (fuel := fuel) fun l₁ =>
+          withInvHyps h₂ b (fuel := fuel) fun l₂ => k (#[h₁, h₂] ++ l₁ ++ l₂)
+  else if fuel == 0 || (← isNatLeLeaf ty) then k #[]
+  else
+    match ← unfoldProp? ty with
+    | some ty' => withLetDecl `hu ty' h fun h' =>
+        withInvHyps h' ty' (fuel := fuel - 1) fun l => k (#[h'] ++ l)
+    | none => k #[]
+
+/-- The first projection `y.1` among the subterms of `e`. -/
+def findFst (e y : Expr) : Option Expr :=
+  (CatCrypt.Tactics.AutoTime.appsOf e #[]).find? fun o =>
+    match CatCrypt.Tactics.AutoTime.fstOf? o with
+    | some y' => y' == y
+    | none => false
+
+/-- The type arguments `D`, `R`, `α` of `ℕ × OracleAdv.Timed D R α` (`pair`) or of
+`OracleAdv.Timed D R α`. -/
+def oaArgs (x : Expr) (pair : Bool) : MetaM (Expr × Expr × Expr) := do
+  let mut t ← whnfR (← inferType x)
+  if pair then t ← whnfR (t.getArg! 1)
+  unless t.isAppOfArity ``CatCrypt.Crypto.OracleAdv.Timed 3 do
+    throwError "not a costed oracle adversary{indentExpr x}"
+  return (t.getArg! 0, t.getArg! 1, t.getArg! 2)
+
+/-- The bound of a step cost, free of the variables to avoid. -/
+def oaCost (cx : OACtx) (e : Expr) : MetaM (Expr × Expr) := do
+  let some r ← bfree? cx.avoid e | throwError "no bound for the step cost{indentExpr e}"
+  return r
+
+mutual
+
+/-- The bound of the step-prefixed adversary `x : ℕ × OracleAdv.Timed D R α`: a pair, a `delay`,
+a bind, an `if` or `if h :` of pairs, or a call bounded by the time theorem of the callee. -/
+partial def oaStep (cx : OACtx) (x : Expr) : TermElabM OABound := do
+  let x' ← reduceHead x
+  if x'.isAppOfArity ``Prod.mk 4 then return ← oaPair cx (x'.getArg! 2) (x'.getArg! 3)
+  if x'.isAppOfArity ``CatCrypt.Crypto.OracleAdv.Timed.delay 5 then
+    let (bc, pc) ← oaCost cx (x'.getArg! 3)
+    let r ← oaStep cx (x'.getArg! 4)
+    return { bound := mkAddN bc r.bound, proof := ← mkAppM ``oa_stb_delay #[pc, r.proof],
+             inv := r.inv }
+  if x'.isAppOfArity ``CatCrypt.Crypto.OracleAdv.Timed.bind 6 then
+    let A := x'.getArg! 4
+    let rA ← oaTree cx A
+    let (_, hQ, n, hf) ← oaCont cx (x'.getArg! 2) rA.inv A (x'.getArg! 5)
+    return { bound := mkAddN rA.bound n, proof := ← mkAppM ``oa_stb_bind #[rA.proof, hQ, hf] }
+  if x'.isAppOfArity ``ite 5 || x'.isAppOfArity ``dite 5 then
+    let (D, R, α) ← oaArgs x' true
+    let c := x'.getArg! 1
+    if x'.isAppOfArity ``ite 5 then
+      let a ← oaStep cx (x'.getArg! 3)
+      let b ← oaStep cx (x'.getArg! 4)
+      return { bound := ← mkMaxN a.bound b.bound,
+               proof := mkAppN (mkConst ``oa_stb_ite) #[D, R, α, c, x'.getArg! 2, a.bound,
+                 b.bound, x'.getArg! 3, x'.getArg! 4, a.proof, b.proof] }
+    let branch (ty br : Expr) : TermElabM (Expr × Expr) :=
+      withLocalDeclD `h ty fun h => do
+        let r ← oaStep { cx with avoid := cx.avoid.push h.fvarId! } (br.beta #[h])
+        let b ← instantiateMVars r.bound
+        if b.containsFVar h.fvarId! then throwError "the bound of a branch mentions its proof"
+        return (b, ← mkLambdaFVars #[h] r.proof)
+    let (a, pa) ← branch c (x'.getArg! 3)
+    let (b, pb) ← branch (mkNot c) (x'.getArg! 4)
+    return { bound := ← mkMaxN a b,
+             proof := mkAppN (mkConst ``oa_stb_dite) #[D, R, α, c, x'.getArg! 2, a, b,
+               x'.getArg! 3, x'.getArg! 4, pa, pb] }
+  if let some r ← oaCallee? cx.avoid x true then return r
+  if let some r ← oaCallee? cx.avoid x' true then return r
+  throwError "no bound for the step-prefixed adversary{indentExpr x'}"
+
+/-- The bound of the pair `(e, t)`: the tree `y` after `c` when `t = y.2` and `e = c + y.1`; with
+`y = S.2.bind f` and `c = c₀ + S.1`, the step-prefixed adversary `S` followed by `f` after `c₀`,
+`f` bounded at the leaves of `S.2` under the leaf invariant of `S` (`oa_stb_pair_bind`); else
+the bound of `e` plus the bound of `t`. -/
+partial def oaPair (cx : OACtx) (e t : Expr) : TermElabM OABound := do
+  let t' ← reduceHead t
+  if let some y := CatCrypt.Tactics.AutoTime.sndOf? t' then
+    if let some o := findFst e y then
+      let c := e.replace fun s => if s == o then some (mkNatLit 0) else none
+      if y.isAppOfArity ``CatCrypt.Crypto.OracleAdv.Timed.bind 6 then
+        if let some S := CatCrypt.Tactics.AutoTime.sndOf? (y.getArg! 4) then
+          if let some oS := findFst c S then
+            let c₀ := c.replace fun s => if s == oS then some (mkNatLit 0) else none
+            let he ← omegaEq e (mkAddN (mkAddN c₀ oS) o)
+            let (bc, pc) ← oaCost cx c₀
+            let rS ← oaStep cx S
+            let (_, hQ, n, hf) ← oaCont cx (y.getArg! 2) rS.inv (y.getArg! 4) (y.getArg! 5)
+            return { bound := mkAddN bc (mkAddN rS.bound n),
+                     proof := ← mkAppM ``oa_stb_pair_bind #[he, pc, rS.proof, hQ, hf] }
+      let he ← omegaEq e (mkAddN c o)
+      let (bc, pc) ← oaCost cx c
+      let ry ← oaStep cx y
+      return { bound := mkAddN bc ry.bound,
+               proof := ← mkAppM ``oa_stb_pair_snd #[he, pc, ry.proof], inv := ry.inv }
+  let (bc, pc) ← oaCost cx e
+  let rt ← oaTree cx t
+  return { bound := mkAddN bc rt.bound, proof := ← mkAppM ``oa_stb_pair #[pc, rt.proof],
+           inv := rt.inv }
+
+/-- The bound `n` of the continuation `f` of a bind of the tree `A` at a fresh value `a`, under
+the leaf invariant `Q a` of `A` (`fun _ => True` without one) taken apart by `withInvHyps`: the
+invariant `Q`, the proof of `AllRet Q A`, `n`, and the proof of
+`∀ a, Q a → StepTimeBound (f a) n`. -/
+partial def oaCont (cx : OACtx) (α : Expr) (inv : Option (Expr × Expr)) (A f : Expr) :
+    TermElabM (Expr × Expr × Expr × Expr) := do
+  let (Q, hQ) ← match inv with
+    | some p => pure p
+    | none => do
+      pure (Expr.lam `a α (mkConst ``True) .default, ← mkAppM ``oa_allRet_true #[A])
+  withLocalDeclD `a α fun a => do
+    let qa := (Q.beta #[a]).headBeta
+    withLocalDeclD `ha qa fun ha => do
+      withInvHyps ha qa fun lets => do
+        let r ← oaStep { cx with avoid := cx.avoid.push a.fvarId! } (f.beta #[a])
+        let n ← instantiateMVars r.bound
+        if n.containsFVar a.fvarId! || n.containsFVar ha.fvarId! ||
+            lets.any fun l => n.containsFVar l.fvarId! then
+          throwError "the bound of the continuation depends on the bound value{indentExpr n}"
+        return (Q, hQ, n, ← mkLambdaFVars (#[a, ha] ++ lets) r.proof)
+
+/-- The bound of the costed oracle adversary `t`: a bounded binder, a leaf, a `rand` or `query`
+node (one unit, then the bound of its step-prefixed continuations at a fresh value), the tree
+`y.2` of a step-prefixed adversary, an `if`, or a call bounded by the time theorem of the
+callee. -/
+partial def oaTree (cx : OACtx) (t : Expr) : TermElabM OABound := do
+  let binder? (t : Expr) : Option OABound := do
+    let .fvar f := t.getAppFn | none
+    let (_, v, r, h) ← cx.hs.find? (·.1 == f)
+    match r with
+    | .oadv => some { bound := v, proof := mkAppN h t.getAppArgs }
+    | _ => none
+  if let some r := binder? t then return r
+  let t' ← reduceHead t
+  if let some r := binder? t' then return r
+  if t'.isAppOfArity ``CatCrypt.Crypto.OracleAdv.Timed.ret 4 then
+    return { bound := mkNatLit 0,
+             proof := mkAppN (mkConst ``oa_tb_ret)
+               #[t'.getArg! 0, t'.getArg! 1, t'.getArg! 2, t'.getArg! 3, mkNatLit 0] }
+  let node (rand : Bool) : TermElabM OABound := do
+    let (D, R, α) := (t'.getArg! 0, t'.getArg! 1, t'.getArg! 2)
+    let (γ, c, k) := if rand then (t'.getArg! 3, t'.getArg! 5, t'.getArg! 6)
+      else (R, t'.getArg! 4, t'.getArg! 5)
+    withLocalDeclD `b γ fun b => do
+      let r ← oaPair { cx with avoid := cx.avoid.push b.fvarId! } (c.beta #[b]) (k.beta #[b])
+      let n ← instantiateMVars r.bound
+      if n.containsFVar b.fvarId! then
+        throwError "the bound of a node depends on its value{indentExpr n}"
+      let h ← mkLambdaFVars #[b] r.proof
+      let pf := if rand then
+          mkAppN (mkConst ``oa_tb_rand) #[D, R, α, γ, t'.getArg! 4, c, k, n, h]
+        else mkAppN (mkConst ``oa_tb_query) #[D, R, α, t'.getArg! 3, c, k, n, h]
+      return { bound := mkAddN (mkNatLit 1) n, proof := pf }
+  if t'.isAppOfArity ``CatCrypt.Crypto.OracleAdv.Timed.rand 7 then return ← node true
+  if t'.isAppOfArity ``CatCrypt.Crypto.OracleAdv.Timed.query 6 then return ← node false
+  if let some y := CatCrypt.Tactics.AutoTime.sndOf? t' then
+    let r ← oaStep cx y
+    return { bound := r.bound, proof := ← mkAppM ``oa_tb_snd #[r.proof], inv := r.inv }
+  if t'.isAppOfArity ``ite 5 then
+    let (D, R, α) ← oaArgs t' false
+    let a ← oaTree cx (t'.getArg! 3)
+    let b ← oaTree cx (t'.getArg! 4)
+    return { bound := ← mkMaxN a.bound b.bound,
+             proof := mkAppN (mkConst ``oa_tb_ite) #[D, R, α, t'.getArg! 1, t'.getArg! 2,
+               a.bound, b.bound, t'.getArg! 3, t'.getArg! 4, a.proof, b.proof] }
+  if let some r ← oaCallee? cx.avoid t false then return r
+  if let some r ← oaCallee? cx.avoid t' false then return r
+  throwError "no bound for the costed oracle adversary{indentExpr t'}"
+
+end
+
+/-- Whether the costed tree `c` returns a step-prefixed costed oracle adversary. -/
+def isOracleTimed (c : Name) : MetaM Bool := do
+  forallTelescope (← getConstInfo c).type fun _ body => do
+    let body ← whnfR body
+    unless body.isAppOfArity ``Prod 2 do return false
+    return (← whnfR (body.getArg! 1)).isAppOf ``CatCrypt.Crypto.OracleAdv.Timed
+
+/-- State and prove `name`, the time theorem `StepTimeBound (c xs) B` of the costed oracle
+adversary `c`, along its bound (`oaStep`): every binder into costed oracle adversaries and
+every cost companion gets a bound and its hypothesis (`withBounds`); the bound is normalised
+(`normalizeSum`) when `omega` proves the normalised bound above the computed one. Returns the
+reason when the bound is not computed or the proof is not accepted. -/
+def emitOracleTimeBound (c name : Name) : TermElabM (Option MessageData) := do
+  let info ← getConstInfo c
+  let lvls := info.levelParams.map mkLevelParam
+  forallTelescope info.type fun xs _ => do
+    withBounds xs 0 #[] #[] #[] (oadv := true) fun bs vars hyps => do
+      let hs : HBounds := (bs.zip hyps).map fun ((f, v, r), h) => (f, v, r, h)
+      let avoid := bs.filterMap fun (f, _, r) => match r with
+        | .cost => some f
+        | _ => none
+      let x := mkAppN (Lean.mkConst c lvls) xs
+      let r ← try oaStep { hs, avoid } x
+        catch e => return some m!"no bound: {e.toMessageData}"
+      let B ← instantiateMVars r.bound
+      let Bn ← normalizeSum B
+      let mut bound := B
+      let mut pf ← instantiateMVars r.proof
+      if Bn != B then
+        try
+          let le ← omegaLe B Bn
+          pf ← mkAppM ``CatCrypt.Crypto.OracleAdv.Timed.StepTimeBound.mono #[pf, le]
+          bound := Bn
+        catch _ => pure ()
+      if pf.hasSorry || pf.hasExprMVar then return some m!"the proof is incomplete"
+      let goal ← mkAppM ``CatCrypt.Crypto.OracleAdv.Timed.StepTimeBound #[x, bound]
+      let ty ← mkForallFVars (xs ++ vars ++ hyps) goal
+      let val ← mkLambdaFVars (xs ++ vars ++ hyps) pf
+      try
+        addDecl (Declaration.thmDecl
+          { name, levelParams := info.levelParams, type := ty, value := val })
+      catch e => return some m!"the proof is not accepted: {e.toMessageData}"
+      return none
+where
+  /-- A proof of `l ≤ r` over `ℕ` by `omega`, with the hypotheses of the context cleared. -/
+  omegaLe (l r : Expr) : TermElabM Expr := do
+    let mv ← mkFreshExprSyntheticOpaqueMVar (mkNatLe l r)
+    let mut hs : Array FVarId := #[]
+    for d in ← getLCtx do
+      if d.isImplementationDetail then continue
+      if ← isProp d.type then hs := hs.push d.fvarId
+    let g ← mv.mvarId!.tryClearMany hs
+    let gs ← Tactic.run g (Tactic.evalTactic (← `(tactic| omega)))
+    unless gs.isEmpty do throwError "omegaLe"
+    instantiateMVars mv
+
 /-- `derive_time_bound R.tree` states and proves `R.tree.timeBound_timed`, the time theorem of
 `R.tree.timed` (see the module docstring): along its bound for a pure step body
 (`mirrorTimeBound`), else by `time_bound` (`emitTimeBound`); it fails with the reason when the
@@ -900,6 +1582,10 @@ def elabDeriveTimeBound : CommandElab := fun stx => do
   liftTermElabM do
     let t ← realizeGlobalConstNoOverloadWithInfo stx[1]
     let name := t ++ `timeBound_timed
+    if ← isOracleTimed (t ++ `timed) then
+      if let some why ← emitOracleTimeBound (t ++ `timed) name then
+        throwError "`{name}` is not proved: {why}"
+      return
     let r ← mirrorTimeBound (t ++ `timed) name
     if let .proved := r then return
     if let some why ← emitTimeBound (t ++ `timed) name then
