@@ -140,6 +140,7 @@ public import CatCryptCore.Tactics.DeriveTimedStructure
 public import CatCryptCore.Tactics.ScottInduction
 public import CatCryptCore.Tactics.LoopRewriteAttr
 public import CatCryptCore.Tactics.LoopRewrite
+public import CatCryptCore.Tactics.TransportAlong
 
 -- Crypto foundation
 public import CatCryptCore.Crypto.Game
