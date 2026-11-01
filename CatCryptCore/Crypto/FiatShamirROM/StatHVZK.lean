@@ -8,6 +8,7 @@ module
 public import CatCryptCore.Crypto.FiatShamirROM.Game
 public import CatCryptCore.Crypto.OracleBadDraw
 public import CatCryptCore.Crypto.Constructions.ECBCPRFFlag
+public import CatCryptCore.Crypto.SigmaProtocol.OrComposition
 
 /-!
 # Fiat–Shamir in the random-oracle model: the signing-oracle simulation
@@ -65,6 +66,8 @@ attempt without its commitment; such a protocol is the instance
   `qS·(qH + 1 + qS)·γ`
 * `Sigma.PerfectHVZK.statHVZK` — perfect HVZK is statistical HVZK with distance
   `0`
+* `Sigma.RelHVZK.statHVZKAt` — honest-verifier zero knowledge on the relation is
+  statistical HVZK with distance `0` at every pair of the relation
 * `Sigma.hvzkDistAt_le_on_add_on`, `Sigma.hvzkDistOn_eq_zero_of_eq`,
   `Sigma.hvzkDistOn_reject_eq_zero` — splitting the HVZK distance of a Σ-protocol
   by an event on the response
@@ -209,6 +212,15 @@ variable {P}
 /-- Perfect HVZK is statistical HVZK with distance `0`. -/
 theorem PerfectHVZK.statHVZK (h : P.PerfectHVZK) : P.StatHVZK 0 := by
   intro x w hxw e g _ _
+  have := congrArg (fun p : PMF (P.Com × P.Resp) => ∑' y, p y * g y) (h x w hxw e)
+  simp only [tsum_map_mul'] at this
+  rw [this, add_zero]
+
+/-- Honest-verifier zero knowledge on the relation gives statistical HVZK with distance `0` at
+every pair of the relation. -/
+theorem RelHVZK.statHVZKAt (h : P.RelHVZK) {x : P.Stmt} {w : P.Wit} (hxw : P.rel x w) :
+    P.StatHVZKAt x w 0 := by
+  intro e g _ _
   have := congrArg (fun p : PMF (P.Com × P.Resp) => ∑' y, p y * g y) (h x w hxw e)
   simp only [tsum_map_mul'] at this
   rw [this, add_zero]
