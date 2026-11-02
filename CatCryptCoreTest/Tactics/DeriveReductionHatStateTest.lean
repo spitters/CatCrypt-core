@@ -19,13 +19,17 @@ state. `phaseSim` has the state `ℕ × Phase`, with `Phase` an inductive type t
 constructors store a function; its costed state is `ℕ × (Unit ⊕ (P̂ ⊕ (P̂ ⊕ Unit)))` with
 `P̂ = (ℕ → ℕ) × (ℕ → ℕ)`, and its steps match on the phase `t.2` and apply the stored function.
 `kitSim` uses a structure value `kitOf G` with a proof field stated over the function field
-`G.pub` of its binder. No module imports this file.
+`G.pub` of its binder. `lawSim` passes the structure value `lawKitOf G`, whose proof field is the
+proof field `G.pub_inv` of its binder, to the definition `LawKit.trip`, and applies `G.pub`
+directly: the consumer is unfolded and the projections of the value are reduced to its fields.
+No module imports this file.
 
 ## Main results
 
 * `miniSim.timed` and `miniSim.erase_timed`, emitted by `derive_reduction`; the relation
   `MultiHybrid.Timed.ErasesHat` is generated in `CatCryptCore.Crypto.UCTransparentMultiTimed`
 * `phaseSim.timed`, `phaseSim.erase_timed`, `kitSim.timed` and `kitSim.erase_timed`
+* `lawSim.timed` and `lawSim.erase_timed`
 -/
 
 @[expose] public section
@@ -159,5 +163,46 @@ noncomputable def kitSim (G : Grp) (A : ℕ → SPComp ℕ) (hA : ∀ n, SPComp.
   finish_noFail _ _ := SPComp.pure_noFail _
 
 derive_reduction kitSim
+
+/-! ## A structure value whose proof field is a proof field of the binder -/
+
+/-- A pair of maps with a law. -/
+structure LawKit where
+  /-- The first map. -/
+  f : ℕ → ℕ
+  /-- The second map. -/
+  g : ℕ → ℕ
+  /-- The first map inverts the second. -/
+  f_g : ∀ n, f (g n) = n
+
+/-- A binder structure with two maps and a law. -/
+structure LawGrp where
+  /-- The public map. -/
+  pub : ℕ → ℕ
+  /-- Its inverse. -/
+  inv : ℕ → ℕ
+  /-- The public map inverts the inverse. -/
+  pub_inv : ∀ n, pub (inv n) = n
+
+/-- The kit of `G`, whose law is the law of `G`. -/
+def lawKitOf (G : LawGrp) : LawKit := ⟨G.pub, G.inv, G.pub_inv⟩
+
+/-- The round trip of a kit. -/
+def LawKit.trip (k : LawKit) (n : ℕ) : ℕ := k.f (k.g n)
+
+/-- A hybrid machine that passes the kit of `G` to `LawKit.trip` and applies the public map of
+`G`. -/
+noncomputable def lawSim (G : LawGrp) (A : ℕ → SPComp ℕ) (hA : ∀ n, SPComp.NoFail (A n)) :
+    MultiHybrid ℕ ℕ ℕ ℕ ℕ where
+  init := 0
+  fuel := 0
+  start s e := SPComp.bind (A e) fun a => SPComp.pure (s, .inr (G.pub ((lawKitOf G).trip a)))
+  resume s o := SPComp.pure (s, .inr o)
+  finish s o := SPComp.pure (s, o)
+  start_noFail _ e := Assumptions.SPComp.bind_noFail (hA e) fun _ => SPComp.pure_noFail _
+  resume_noFail _ _ := SPComp.pure_noFail _
+  finish_noFail _ _ := SPComp.pure_noFail _
+
+derive_reduction lawSim
 
 end CatCrypt.Tactics.DeriveReductionHatStateTest

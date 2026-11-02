@@ -727,6 +727,66 @@ def projForm (env : Environment) (F : Expr) : Expr := Id.run do
   unless F.getAppNumArgs == info.numParams + 1 do return F
   return .proj info.ctorName.getPrefix info.i s
 
+/-- Whether the structure `S` has a field whose type is a proposition. -/
+def hasProofField (S : Name) : MetaM Bool := do
+  let env ← getEnv
+  unless isStructure env S do return false
+  let ctor := getStructureCtor env S
+  forallTelescopeReducing ctor.type fun ys _ => do
+    for y in ys.extract ctor.numParams ys.size do
+      if ← isProp (← inferType y) then return true
+    return false
+
+/-- Whether `e` is a structure value built from the binders `top` (not a binder itself) whose
+structure, not a class, has a proof field: abstracting the data fields of such a value would
+leave its proof fields stated over the original fields. -/
+def isProofStructVal (top : Array FVarId) (e : Expr) : MetaM Bool := do
+  if e.hasLooseBVars || e.isFVar then return false
+  unless (collectFVars {} e).fvarIds.any top.contains do return false
+  let t ← whnfR (← inferType e)
+  let .const S _ := t.getAppFn | return false
+  unless isStructure (← getEnv) S do return false
+  if (← isClass? t).isSome then return false
+  hasProofField S
+
+/-- The field `fᵢ a₁ … aₙ` of a projection `S.f ps s a₁ … aₙ` (or `s.i a₁ … aₙ`) whose structure
+`s` is a value of `isProofStructVal` that reduces by `whnf` to a constructor application
+`S.mk ps f₁ … fₘ`. -/
+def projOfProofStruct? (top : Array FVarId) (x : Expr) : MetaM (Option Expr) := do
+  let env ← getEnv
+  let args := x.getAppArgs
+  let (S, i, s, rest) ← match x.getAppFn with
+    | .proj S i s => pure (S, i, s, args)
+    | .const c _ =>
+      let some info := env.getProjectionFnInfo? c | return none
+      let n := info.numParams
+      unless n < args.size do return none
+      pure (info.ctorName.getPrefix, info.i, args[n]!, args.extract (n + 1) args.size)
+    | _ => return none
+  unless ← isProofStructVal top s do return none
+  let ctor := getStructureCtor env S
+  let s' ← whnf s
+  unless s'.isAppOfArity ctor.name (ctor.numParams + ctor.numFields) do return none
+  return some (mkAppN (s'.getArg! (ctor.numParams + i)) rest).headBeta
+
+/-- Whether the data term `x = c a₁ … aₙ` is unfolded because some `aᵢ` is a value of
+`isProofStructVal`: `c` is a non-recursive definition that is not a projection, an instance, a
+matcher or a reduction with a costed form, and `x` is not a proof. Unfolded, the value reaches
+the projections of its fields, which `projOfProofStruct?` reduces. -/
+def unfoldsProofStructArg (top : Array FVarId) (x : Expr) : MetaM Bool := do
+  let .const c _ := x.getAppFn | return false
+  let env ← getEnv
+  let some (.defnInfo _) := env.find? c | return false
+  if (env.getProjectionFnInfo? c).isSome then return false
+  if ← isMatcher c then return false
+  if ← isInstance c then return false
+  if (Structural.eqnInfoExt.find? env c).isSome then return false
+  if (WF.eqnInfoExt.find? env c).isSome then return false
+  if env.contains (c ++ `timedCost) then return false
+  if env.contains (c ++ `timed) then return false
+  if ← isProof x then return false
+  x.getAppArgs.anyM (isProofStructVal top)
+
 /-- Replace each data-function field of `e` by its binder (second pass), or record it (first
 pass). A data definition applied to a structure binder is unfolded first, by `unfoldShared?`,
 when its body applies a data-function primitive found by the first pass (so that the field has
@@ -749,6 +809,11 @@ partial def abstractData (ctx : RCtx) (e : Expr) : MetaM Expr := do
     let rest ← (xs.extract info.numParams xs.size).mapM (abstractData ctx)
     return .done (mkAppN f (xs.extract 0 info.numParams ++ rest))
   Meta.transform e (pre := fun x => do
+    -- A structure value with proof fields is not rewritten: its consumers are unfolded and its
+    -- projections reduced to its fields.
+    if let some x' ← projOfProofStruct? ctx.top x then return .visit x'
+    if ← unfoldsProofStructArg ctx.top x then
+      if let some x' ← unfoldDefinition? x then return .visit x'.headBeta
     let some (F, args) ← fieldKey? ctx.top x | do
       if ← unfoldsData ctx.top x then
         let unfold ← if ctx.unfold then pure true
@@ -1236,6 +1301,17 @@ partial def mkFunExtN (ys : Array Expr) (pf : Expr) : MetaM Expr := do
   let inner ← mkFunExtN (ys.extract 1 ys.size) pf
   mkFunExt (← mkLambdaFVars #[ys[0]!] inner)
 
+/-- The goal `g : (t).compile = r` at a match `t` of the tree and a match `r` of the
+computation whose discriminants are definitionally equal but not syntactically (an implicit
+instance argument reached through another path of parent projections): the goal with the
+discriminants of `r` replaced by those of `t`, so that `split` generalizes both. -/
+def alignMatchDiscrs (g : MVarId) (α t r : Expr) : MetaM MVarId := do
+  let some mt ← matchMatcherApp? t | return g
+  let some mr ← matchMatcherApp? r | return g
+  if mt.discrs.size != mr.discrs.size || mt.discrs == mr.discrs then return g
+  unless ← (mt.discrs.zip mr.discrs).allM fun (a, b) => isDefEq a b do return g
+  g.replaceTargetDefEq (← mkEq (mkCompile α t) { mr with discrs := mt.discrs }.toExpr)
+
 mutual
 
 /-- Prove the goal `SPTree.compile t = r`, where `t` is the tree of the computation `r`; `hs`
@@ -1325,6 +1401,7 @@ partial def prove (hs : Array (Expr × Expr)) (g : MVarId) : TermElabM Unit := g
       return ← close g (mkAppN (core `compile_dite_eq)
         #[α, targs[1]!, targs[2]!, targs[3]!, targs[4]!, rargs[3]!, rargs[4]!, h₁, h₂])
     if ← isMatcher c then
+      let g ← alignMatchDiscrs g α t r
       let gs ← Tactic.run g (Tactic.evalTactic (← `(tactic| split)))
       if gs.isEmpty then return
       for g' in gs do prove hs g'
