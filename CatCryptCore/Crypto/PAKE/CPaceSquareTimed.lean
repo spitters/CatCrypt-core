@@ -36,6 +36,8 @@ No module imports this file.
 * `simProt.timeBoundGraded_timed`: its graded time bound on the invariant `SimInv`.
 * `cpaceSim.timed`, `cpaceSim.erase_timed`, `cpaceSim.timeBoundGraded_timed`: the costed bundled
   simulator, its erasure, and its graded time bound.
+* `simProt.timeBoundGraded_timed_len`, `cpaceSim.timeBoundGraded_timed_len`: the graded time bound
+  for an append of cost linear in the length of its first argument, at most `card Pw` by `SimInv`.
 -/
 
 @[expose] public section
@@ -191,10 +193,11 @@ theorem send_time (x : ((Pw → Sˣ) × (Pw → ℕ)) × CoreHat S W Pw K) (pid 
 
 omit [DecidableEq S] in
 /-- The core step from a core state of the invariant `CoreInv i`, with the zero cost companion
-of the table of `H1`, costs at most `60 + 10 t_coe + t_app + 2 F + 30 i + F i`. -/
-theorem core_time (e : OEv Pw W) (i : ℕ) (x : ((Pw → Sˣ) × (Pw → ℕ)) × CoreHat S W Pw K)
+of the table of `H1`, costs at most `60 + 10 t_coe + t_app + 2 F + 30 i + F i`, for an append of
+cost at most `t_app` on a first argument without duplicates. -/
+theorem core_time_nodup (e : OEv Pw W) (i : ℕ) (x : ((Pw → Sˣ) × (Pw → ℕ)) × CoreHat S W Pw K)
     (hx0 : x.1.2 = fun _ => 0) (hx : CoreInv i x.2) {tc th te : ℕ}
-    (hc : ∀ a b, coeCost a b ≤ tc) (hh : ∀ a b, hAppendCost a b ≤ th)
+    (hc : ∀ a b, coeCost a b ≤ tc) (hh : ∀ a b, a.Nodup → hAppendCost a b ≤ th)
     (he : ∀ a b, expCost a b ≤ te) {F : ℕ} (hF : (15 + tc + te) * Fintype.card Pw + 1 ≤ F) :
     SPTree.Timed.stepTime (simProt.start.tree.match_13.timed G e DFunLike.coe coeCost
         HAppend.hAppend hAppendCost x expCost) ≤
@@ -229,7 +232,7 @@ theorem core_time (e : OEv Pw W) (i : ℕ) (x : ((Pw → Sˣ) × (Pw → ℕ)) �
         grind
     | h1 pw =>
       have := hc (G.pub) (x.1.1 pw)
-      have := hh x.2.2.1 [pw]
+      have := hh x.2.2.1 [pw] hn
       simp only [simProt.start.tree.match_12.timed, hx0]
       split_ifs <;> simp [SPTree.Timed.stepTime, SPTree.Timed.delay, SPTree.Timed.time_ret] <;>
         omega
@@ -267,6 +270,18 @@ theorem core_time (e : OEv Pw W) (i : ℕ) (x : ((Pw → Sˣ) × (Pw → ℕ)) �
       simp only [Nat.add_mul] at this hm
       simp only [SPTree.Timed.stepTime, SPTree.Timed.delay] at this ⊢
       omega
+
+omit [DecidableEq S] in
+/-- The core step from a core state of the invariant `CoreInv i`, with the zero cost companion
+of the table of `H1`, costs at most `60 + 10 t_coe + t_app + 2 F + 30 i + F i`. -/
+theorem core_time (e : OEv Pw W) (i : ℕ) (x : ((Pw → Sˣ) × (Pw → ℕ)) × CoreHat S W Pw K)
+    (hx0 : x.1.2 = fun _ => 0) (hx : CoreInv i x.2) {tc th te : ℕ}
+    (hc : ∀ a b, coeCost a b ≤ tc) (hh : ∀ a b, hAppendCost a b ≤ th)
+    (he : ∀ a b, expCost a b ≤ te) {F : ℕ} (hF : (15 + tc + te) * Fintype.card Pw + 1 ≤ F) :
+    SPTree.Timed.stepTime (simProt.start.tree.match_13.timed G e DFunLike.coe coeCost
+        HAppend.hAppend hAppendCost x expCost) ≤
+      60 + 10 * tc + th + 2 * F + 30 * i + F * i :=
+  core_time_nodup G coeCost hAppendCost expCost e i x hx0 hx hc (fun a b _ => hh a b) he hF
 
 /-- The updated cost companion of a table of the parties stays within `3 (i + 1)`. -/
 theorem update_cost_le {c : UCTransparent.FPAKE.PartyId → ℕ} {i : ℕ} (h : ∀ p, c p ≤ 3 * i)
@@ -365,10 +380,10 @@ theorem tdStep_time (s : CoreHat S W Pw K × List (Inp W × K)) :
 
 /-- The `start` step from a state of `SimInv i` costs at most `70 + 10 t_coe + t_app + 2 F +
 35 i + F i`: the lookup of the programmed inputs, the sampling step of the table of `H1` and the
-core step. -/
-theorem start_time (s : CoreHat S W Pw K × List (Inp W × K)) (e : OEv Pw W) (i : ℕ)
+core step, for an append of cost at most `t_app` on a first argument without duplicates. -/
+theorem start_time_nodup (s : CoreHat S W Pw K × List (Inp W × K)) (e : OEv Pw W) (i : ℕ)
     (hs : SimInv i s) {tc th te : ℕ}
-    (hc : ∀ a b, coeCost a b ≤ tc) (hh : ∀ a b, hAppendCost a b ≤ th)
+    (hc : ∀ a b, coeCost a b ≤ tc) (hh : ∀ a b, a.Nodup → hAppendCost a b ≤ th)
     (he : ∀ a b, expCost a b ≤ te) {F : ℕ} (hF : (15 + tc + te) * Fintype.card Pw + 1 ≤ F) :
     SPTree.Timed.stepTime
       ((simProt.timed G DFunLike.coe coeCost HAppend.hAppend hAppendCost expCost).startCost s e,
@@ -382,7 +397,7 @@ theorem start_time (s : CoreHat S W Pw K × List (Inp W × K)) (e : OEv Pw W) (i
         DFunLike.coe coeCost HAppend.hAppend hAppendCost x expCost)) ≤
         1 + (60 + 10 * tc + th + 2 * F + 30 * i + F * i) := fun e x hx => by
     rw [SPTree.Timed.stepTime_delay]
-    have := core_time G coeCost hAppendCost expCost e i x hx.1 hx.2 hc hh he hF
+    have := core_time_nodup G coeCost hAppendCost expCost e i x hx.1 hx.2 hc hh he hF
     omega
   have hgen := fun e => stepTime_bind_bind_ret_le 1 _ _ (fun x => ((x.1, s.2), x.2))
     (tdStep_allRet s hc0) (hcore e)
@@ -429,6 +444,19 @@ theorem start_time (s : CoreHat S W Pw K × List (Inp W × K)) (e : OEv Pw W) (i
       have := hgen (.inr (.send pid m))
       dsimp only
       grind only [SPTree.Timed.stepTime_delay]
+
+/-- The `start` step from a state of `SimInv i` costs at most `70 + 10 t_coe + t_app + 2 F +
+35 i + F i`: the lookup of the programmed inputs, the sampling step of the table of `H1` and the
+core step. -/
+theorem start_time (s : CoreHat S W Pw K × List (Inp W × K)) (e : OEv Pw W) (i : ℕ)
+    (hs : SimInv i s) {tc th te : ℕ}
+    (hc : ∀ a b, coeCost a b ≤ tc) (hh : ∀ a b, hAppendCost a b ≤ th)
+    (he : ∀ a b, expCost a b ≤ te) {F : ℕ} (hF : (15 + tc + te) * Fintype.card Pw + 1 ≤ F) :
+    SPTree.Timed.stepTime
+      ((simProt.timed G DFunLike.coe coeCost HAppend.hAppend hAppendCost expCost).startCost s e,
+        (simProt.timed G DFunLike.coe coeCost HAppend.hAppend hAppendCost expCost).start s e) ≤
+      70 + 10 * tc + th + 2 * F + 35 * i + F * i :=
+  start_time_nodup G coeCost hAppendCost expCost s e i hs hc (fun a b _ => hh a b) he hF
 
 /-- The `start` step preserves the invariant of the simulator, one activation later. -/
 theorem start_allRet (s : CoreHat S W Pw K × List (Inp W × K)) (e : OEv Pw W) (i : ℕ)
@@ -490,22 +518,26 @@ theorem finish_allRet (s : CoreHat S W Pw K × List (Inp W × K)) (o : FOut K) (
     | exact ⟨⟨hn, hl, hi, hz, hk, hp, h01⟩, by dsimp only; omega⟩
     | exact ⟨⟨hn, hl, hi, hz, hk, hp, h01⟩, by dsimp only; simp only [List.length_cons]; omega⟩
 
-/-- **Graded running time of the costed CPace simulator** on the invariant `SimInv`: after `i`
-activations every step costs at most `a + b i`, the growth `b` coming from the table of `H2`,
-searched at each `send` and each fresh `H2` query, and the programmed inputs, the search of a
-candidate password costing at most `15 + t_coe + t_exp` per password. -/
-theorem simProt.timeBoundGraded_timed {tc th te : ℕ} (hc : ∀ a b, coeCost a b ≤ tc)
-    (hh : ∀ a b, hAppendCost a b ≤ th) (he : ∀ a b, expCost a b ≤ te) :
+/-- **Graded running time of the costed CPace simulator** for an append of cost at most `t_app`
+on a first argument without duplicates: on the invariant `SimInv`, after `i` activations every
+step costs at most `a + b i`. The queried passwords are the only first argument of an append, and
+`SimInv` keeps them distinct. -/
+theorem simProt.timeBoundGraded_timed_nodup {tc th te : ℕ} (hc : ∀ a b, coeCost a b ≤ tc)
+    (hh : ∀ a b, a.Nodup → hAppendCost a b ≤ th) (he : ∀ a b, expCost a b ≤ te) :
     (simProt.timed (K := K) G DFunLike.coe coeCost HAppend.hAppend hAppendCost
       expCost).TimeBoundGraded SimInv
       (70 + 10 * tc + th + 2 * ((15 + tc + te) * Fintype.card Pw + 1))
       (35 + ((15 + tc + te) * Fintype.card Pw + 1)) := by
-  have hr := fun (s : CoreHat S W Pw K × List (Inp W × K)) (o : FOut K) =>
-    simProt.resume.treeHat.timeBound_timed G DFunLike.coe coeCost HAppend.hAppend hAppendCost
-      s o hc hh
-  have hf := fun (s : CoreHat S W Pw K × List (Inp W × K)) (o : FOut K) =>
-    simProt.finish.treeHat.timeBound_timed G DFunLike.coe coeCost HAppend.hAppend hAppendCost
-      s o hc hh
+  have hr : ∀ (s : CoreHat S W Pw K × List (Inp W × K)) (o : FOut K),
+      SPTree.Timed.stepTime (simProt.resume.treeHat.timed G DFunLike.coe coeCost HAppend.hAppend
+        hAppendCost s o) ≤ max 0 (2 * max (max (max 4 0) 2) 0 + 4) + 2 := fun s o =>
+    simProt.resume.treeHat.timeBound_timed G DFunLike.coe coeCost HAppend.hAppend (fun _ _ => 0)
+      s o (t_hAppendCost := 0) hc fun _ _ => le_rfl
+  have hf : ∀ (s : CoreHat S W Pw K × List (Inp W × K)) (o : FOut K),
+      SPTree.Timed.stepTime (simProt.finish.treeHat.timed G DFunLike.coe coeCost HAppend.hAppend
+        hAppendCost s o) ≤ max (max (max 4 0) 2) 0 + 2 := fun s o =>
+    simProt.finish.treeHat.timeBound_timed G DFunLike.coe coeCost HAppend.hAppend (fun _ _ => 0)
+      s o (t_hAppendCost := 0) hc fun _ _ => le_rfl
   have hinit : SimInv 0 (simProt.timed (K := K) G DFunLike.coe coeCost HAppend.hAppend
       hAppendCost expCost).init := by
     simp [SimInv, CoreInv, simProt.timed]
@@ -513,7 +545,7 @@ theorem simProt.timeBoundGraded_timed {tc th te : ℕ} (hc : ∀ a b, coeCost a 
       start_allRet G coeCost hAppendCost expCost s e i hs⟩, fun i s o hs => ⟨?_,
       resume_allRet G coeCost hAppendCost expCost s o i hs⟩, fun i s o hs => ⟨?_,
       finish_allRet G coeCost hAppendCost expCost s o i hs⟩⟩
-  · have := start_time G coeCost hAppendCost expCost s e i hs hc hh he le_rfl
+  · have := start_time_nodup G coeCost hAppendCost expCost s e i hs hc hh he le_rfl
     have e1 := Nat.add_mul 35 ((15 + tc + te) * Fintype.card Pw + 1) i
     omega
   · have := hr s o
@@ -525,8 +557,47 @@ theorem simProt.timeBoundGraded_timed {tc th te : ℕ} (hc : ∀ a b, coeCost a 
     simp at this
     omega
 
+/-- **Graded running time of the costed CPace simulator** on the invariant `SimInv`: after `i`
+activations every step costs at most `a + b i`, the growth `b` coming from the table of `H2`,
+searched at each `send` and each fresh `H2` query, and the programmed inputs, the search of a
+candidate password costing at most `15 + t_coe + t_exp` per password. -/
+theorem simProt.timeBoundGraded_timed {tc th te : ℕ} (hc : ∀ a b, coeCost a b ≤ tc)
+    (hh : ∀ a b, hAppendCost a b ≤ th) (he : ∀ a b, expCost a b ≤ te) :
+    (simProt.timed (K := K) G DFunLike.coe coeCost HAppend.hAppend hAppendCost
+      expCost).TimeBoundGraded SimInv
+      (70 + 10 * tc + th + 2 * ((15 + tc + te) * Fintype.card Pw + 1))
+      (35 + ((15 + tc + te) * Fintype.card Pw + 1)) :=
+  simProt.timeBoundGraded_timed_nodup G coeCost hAppendCost expCost hc (fun a b _ => hh a b) he
+
+/-- **Graded running time of the costed CPace simulator for an append linear in length.** With
+an append of cost at most `ac * a.length + bc`, the bound of `simProt.timeBoundGraded_timed` holds
+with `t_app = ac * card Pw + bc`: the queried passwords are distinct, so an append reads at most
+`card Pw` of them. The cost `hAppendCost a b = a.length` satisfies the hypothesis. -/
+theorem simProt.timeBoundGraded_timed_len {tc ac bc te : ℕ} (hc : ∀ a b, coeCost a b ≤ tc)
+    (hh : ∀ a b, hAppendCost a b ≤ ac * a.length + bc) (he : ∀ a b, expCost a b ≤ te) :
+    (simProt.timed (K := K) G DFunLike.coe coeCost HAppend.hAppend hAppendCost
+      expCost).TimeBoundGraded SimInv
+      (70 + 10 * tc + (ac * Fintype.card Pw + bc) + 2 * ((15 + tc + te) * Fintype.card Pw + 1))
+      (35 + ((15 + tc + te) * Fintype.card Pw + 1)) :=
+  simProt.timeBoundGraded_timed_nodup G coeCost hAppendCost expCost hc
+    (fun a b ha => (hh a b).trans (Nat.add_le_add_right
+      (Nat.mul_le_mul_left ac ha.length_le_card) bc)) he
+
 end Time
 
 derive_simulator cpaceSim
+
+/-- **Graded running time of the costed CPace simulator for an append linear in length**: the
+lift of `simProt.timeBoundGraded_timed_len` to the bundled simulator. -/
+theorem cpaceSim.timeBoundGraded_timed_len {S W Pw K : Type} [Field S] [Fintype S] [DecidableEq S]
+    [DecidableEq W] [Fintype Pw] [DecidableEq Pw] [Fintype K] [Nonempty K] [Inhabited K]
+    (G : DHExtract.DHGroup S W) (coeCost : S ≃ W → S → ℕ) (hAppendCost : List Pw → List Pw → ℕ)
+    (expCost : W → S → ℕ) {tc ac bc te : ℕ} (hc : ∀ a b, coeCost a b ≤ tc)
+    (hh : ∀ a b, hAppendCost a b ≤ ac * a.length + bc) (he : ∀ a b, expCost a b ≤ te) :
+    (cpaceSim.timed (K := K) G coeCost hAppendCost expCost).TimeBoundGraded
+      (70 + 10 * tc + (ac * Fintype.card Pw + bc) + 2 * ((15 + tc + te) * Fintype.card Pw + 1))
+      (35 + ((15 + tc + te) * Fintype.card Pw + 1)) :=
+  UCTransparent.Simulator.ofMultiHybridHat.timeBoundGraded_timed
+    (simProt.timeBoundGraded_timed_len (K := K) G coeCost hAppendCost expCost hc hh he)
 
 end CatCrypt.Crypto.PAKE.CPaceSquare
