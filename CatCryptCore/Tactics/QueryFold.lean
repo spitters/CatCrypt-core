@@ -9,9 +9,10 @@ public import Lean
 public meta import Lean
 
 /-!
-# The tactic `query_fold`
+# The tactic `query_bound`
 
-`query_fold [names]` proves a query bound by rewriting it to the budget-passing fold
+`query_bound` proves `A.IsQueryBoundBy c n`, `A.IsQueryBound n`, `IsQueryBound₂ A h q`,
+`MayOnlyCall S A` and `IsQueryProfile A a b n` by rewriting the goal to the budget-passing fold
 `OracleAdv.Within` of `CatCryptCore.Crypto.OracleProfile`, in three steps.
 
 * The equations of the fold (`within_ret`, `within_rand`, `within_query`, `within_bind`,
@@ -20,29 +21,39 @@ public meta import Lean
   applied by `simp`. A sequential composition needs no estimate of the budget of its first part:
   the fold of the second part is the postcondition of the first.
 * At a tree with no equation, a known bound enters the fold by `within_of_bound` or `within_of_add`.
-  The known bounds are the hypotheses, the theorems with the attribute `@[query_fold]` and the names
-  listed, and the theorems for `simulate` and `subst`. A premise of a known bound is a goal of the
-  same procedure, and a choice of known bound is undone when one of its premises fails. A branch is
-  split, a defined head is rewritten by its equations and a variable of a sum type is split when no
-  known bound applies.
+  The known bounds are the hypotheses, the theorems with the attribute `@[query_fold]`, the names
+  listed, the theorems for `simulate` and `subst`, and the other fields of the structure at a
+  projection head (`ROM2INDCCAAdversary.isQueryBoundRO` of `B.run pk c k`). A premise of a known
+  bound is a goal of the same procedure, and a choice of known bound is undone when one of its
+  premises fails. An unknown number that nothing determines is taken as `0`. A branch is split, a
+  projection of a structure that reduces to a constructor is reduced, a defined head is rewritten
+  by its equations and a variable of a sum type is split when no known bound applies.
 * An arithmetic goal is closed by `assumption`, `omega`, `simp` or `grind`.
 
-A theorem or definition with the attribute `@[query_fold]`, or a name listed, whose statement is an
-equation or an equivalence or which is a definition is used as a rewrite law; any other is used as
-a known bound.
+`query_bound only` leaves out the theorems with the attribute, and `query_bound [names]` adds the
+names listed. A theorem or definition with the attribute `@[query_fold]`, or a name listed, whose
+statement is an equation or an equivalence or which is a definition is used as a rewrite law; any
+other is used as a known bound. A defined charge takes its definition as a law. A law that is a
+predicate is unfolded at arithmetic goals only, so that a branch condition stays as written.
 
-An induction stays with the user: the tactic fails at a recursive definition applied to a variable
-without a known bound, and it reports the goal it reached.
+Hypotheses at `ret`, `rand` and `query` are unfolded before the search. A hypothesis that charges
+several queries jointly, `∀ m q, c (inl m) + c (inr q) ≤ 1`, is not instantiated: the proof states
+the bounds of the leaves by `have`. An induction stays with the user: the tactic fails at a
+recursive definition applied to a variable without a known bound, and it reports the deepest goal
+it reached. A run has a budget of `searchBudget` heartbeats and fails with a named error from any
+depth of the search when it exceeds it.
 
-The module names the theory of `CatCryptCore.Crypto.OracleProfile` by `Name` and imports none of it,
-so a user imports that module together with this one.
+The module names the theory of `CatCryptCore.Crypto.OracleProfile` by `Name` and imports none of
+it, so that a module of the theory can carry the attribute; a user of the tactic imports
+`CatCryptCore.Tactics.QueryBound`, which adds the theory.
 
 ## References
 
 * T. J. Green, G. Karvounarakis, V. Tannen, *Provenance semirings*, PODS 2007.
 * S. Moss, T. von Glehn, *Dialectica models of type theory*, LICS 2018.
 
-Search words: query bound, cost bound, fold, budget, provenance, tactic.
+Search words: query bound, cost bound, query count, per-oracle count, fold, budget, provenance,
+tactic.
 -/
 
 set_option autoImplicit false
@@ -53,7 +64,7 @@ public meta section
 
 open Lean Meta Elab Tactic
 
-/-- The attribute of the laws and the known bounds of `query_fold`. -/
+/-- The attribute of the laws and the known bounds of `query_bound`. -/
 register_label_attr query_fold
 
 /-- The name `CatCrypt.Crypto.OracleAdv.s`. -/
@@ -82,8 +93,8 @@ structure Cfg where
   ctx : Simp.Context
   /-- The known bounds among the constants. -/
   bounds : Array Name
-  /-- The goal at which the search failed last. -/
-  lastOpen : IO.Ref MessageData
+  /-- The remaining depth and the goal of the deepest failure of the search. -/
+  lastOpen : IO.Ref (Nat × MessageData)
   /-- The laws tagged or listed by the user. -/
   userLaws : Array Name
 
@@ -127,7 +138,7 @@ def leaf (cfg : Cfg) (g : MVarId) : TacticM Unit := do
     | (simp; omega)
     | (simp [*]; done)
     | grind [$[$ps:grindParam],*]))
-  unless gs.isEmpty do throwError "query_fold: arithmetic goal left open"
+  unless gs.isEmpty do throwError "query_bound: arithmetic goal left open"
 
 /-- A local variable of a sum type occurring in the target of `g`. -/
 def sumVar? (g : MVarId) : MetaM (Option FVarId) := g.withContext do
@@ -145,22 +156,48 @@ def boundForms (c pf : Expr) : MetaM (Array Expr) := do
   if n == adv `IsQueryBound then
     return #[pf, ← one pf]
   if n == twoKind then
-    let p ← mkAppM ``Iff.mp #[← mkConstWithFreshMVarLevels (adv `isQueryBound₂_iff), pf]
+    let i ← mkConstWithFreshMVarLevels (adv `isQueryBound₂_iff)
+    let (ms, _, concl) ← forallMetaTelescope (← inferType i)
+    let some (lhs, _) := concl.iff? | return #[pf]
+    unless ← isDefEq lhs c do return #[pf]
+    let p ← mkAppM ``Iff.mp #[← instantiateMVars (mkAppN i ms), pf]
     return #[pf, ← mkAppM ``And.left #[p], ← mkAppM ``And.right #[p]]
   if n == adv `IsQueryProfile then
     return #[pf, ← mkAppM (adv `IsQueryProfile.inl) #[pf], ← mkAppM (adv `IsQueryProfile.inr) #[pf],
       ← one (← mkAppM (adv `IsQueryProfile.total) #[pf])]
   return #[pf]
 
+/-- The other fields of the structure of a projection at the head of the tree `tr`. -/
+def fieldBounds (tr : Expr) : MetaM (Array Name) := do
+  let some n := tr.getAppFn.constName? | return #[]
+  let some info ← getProjectionFnInfo? n | return #[]
+  let s := info.ctorName.getPrefix
+  return (getStructureFields (← getEnv) s).filterMap fun f =>
+    if s ++ f != n then some (s ++ f) else none
+
+/-- The tree `tr` with a projection at its head reduced, when its structure argument reduces to a
+constructor. -/
+def reduceProjection? (tr : Expr) : MetaM (Option Expr) := do
+  let some n := tr.getAppFn.constName? | return none
+  let some info ← getProjectionFnInfo? n | return none
+  if info.fromClass then return none
+  let args := tr.getAppArgs
+  let some s := args[info.numParams]? | return none
+  let s ← withDefault (whnf s)
+  let some _ ← isConstructorApp? s | return none
+  let some v := s.getAppArgs[info.numParams + info.i]? | return none
+  return some (v.beta (args.extract (info.numParams + 1)))
+
 mutual
 
 /-- Closes the goals `gs` in the order: a bound with an unknown charge or budget, by a known bound;
 a goal without metavariables; a premise with an unknown term, from the local context or, under its
-binders, by a known bound; an inequality with an unknown side, by unifying its sides; an unknown number, as `0`. -/
+binders, by a known bound; an inequality with an unknown side, by unifying its sides; an unknown
+number, as `0`. -/
 partial def solve (cfg : Cfg) (fuel : Nat) (gs : List MVarId) : TacticM Unit := do
   let gs ← gs.filterM fun g => return !(← g.isAssigned)
   if gs.isEmpty then return
-  if fuel == 0 then throwError "query_fold: search depth reached"
+  if fuel == 0 then throwError "query_bound: search depth reached"
   let info ← gs.mapM fun g => do
     let t ← instantiateMVars (← g.getType)
     return (g, t, ← isProp t, t.hasExprMVar)
@@ -184,30 +221,32 @@ partial def solve (cfg : Cfg) (fuel : Nat) (gs : List MVarId) : TacticM Unit := 
     if ← isDefEq args[2]! args[3]! then
       g.assign (mkApp (.const ``Nat.le_refl []) args[2]!)
       return ← solve cfg fuel (gs.erase g)
-    throwError "query_fold: unknown budget:{indentExpr t}"
+    unless info.any fun (_, t, p, _) => !p && t.isConstOf ``Nat do
+      throwError "query_bound: unknown budget:{indentExpr t}"
   if let some (g, t, _, _) := info.find? fun (_, _, p, _) => !p then
     if t.isConstOf ``Nat then
       g.assign (mkNatLit 0)
       return ← solve cfg fuel (gs.erase g)
-    throwError "query_fold: unknown term of type{indentExpr t}"
-  throwError "query_fold: unresolved goals"
+    throwError "query_bound: unknown term of type{indentExpr t}"
+  throwError "query_bound: unresolved goals"
 
 /-- Resolves the bound `t` with an unknown charge or budget against the local context and the known
 bounds, undoing a choice when the goals `rest` fail after it. -/
 partial def resolve (cfg : Cfg) (fuel : Nat) (g : MVarId) (t : Expr) (rest : List MVarId) :
     TacticM Unit := g.withContext do
-  let some tr := tree? t | throwError "query_fold: no tree"
+  let some tr := tree? t | throwError "query_bound: no tree"
   let locals := (← getLCtx).foldl (init := #[]) fun acc d =>
     if d.isImplementationDetail then acc else acc.push d.toExpr
   let env ← getEnv
-  let consts ← (cfg.bounds.filter env.contains).mapM fun n => mkConstWithFreshMVarLevels n
+  let names := cfg.bounds ++ (← fieldBounds tr)
+  let consts ← (names.filter env.contains).mapM fun n => mkConstWithFreshMVarLevels n
   for e in locals.reverse ++ consts do
     let s ← saveState
     try
       if ← tryBound cfg fuel g t tr e rest then return
     catch _ => pure ()
     s.restore
-  throwError "query_fold: no known bound of{indentExpr tr}"
+  throwError "query_bound: no known bound of{indentExpr tr}"
 
 /-- Resolves the bound `t` of the tree `tr` against the known bound `e`. -/
 partial def tryBound (cfg : Cfg) (fuel : Nat) (g : MVarId) (t tr e : Expr) (rest : List MVarId) :
@@ -260,11 +299,11 @@ partial def closeAlone (cfg : Cfg) (fuel : Nat) (g : MVarId) : TacticM Unit := d
       let e ← mkConstWithFreshMVarLevels n
       let ty ← inferType e
       let (ms, _, c) ← forallMetaTelescope ty
-      unless ← isDefEq c t do throwError "query_fold: rule"
+      unless ← isDefEq c t do throwError "query_bound: rule"
       if same then
         let names := ty.getForallBinderNames
-        let some i := names.findIdx? (· == `c₀) | throwError "query_fold: rule"
-        let some j := names.findIdx? (· == `c) | throwError "query_fold: rule"
+        let some i := names.findIdx? (· == `c₀) | throwError "query_bound: rule"
+        let some j := names.findIdx? (· == `c) | throwError "query_bound: rule"
         ms[i]!.mvarId!.assign (← instantiateMVars ms[j]!)
       g.assign (mkAppN e ms)
       solve cfg (fuel - 1) (ms.toList.map (·.mvarId!))
@@ -272,28 +311,40 @@ partial def closeAlone (cfg : Cfg) (fuel : Nat) (g : MVarId) : TacticM Unit := d
     if ← attempt (rule (adv `within_of_bound)) then return
     if ← attempt (rule (adv `within_of_add)) then return
     if ← attempt (do solve cfg (fuel - 1) (← runAt g (← `(tactic| split)))) then return
+    if let some v ← reduceProjection? tr then
+      let t' := t.replace fun e => if e == tr then some v else none
+      if ← attempt (do solve cfg (fuel - 1) [← g.replaceTargetDefEq t']) then return
     if let some f := tr.getAppFn.constName? then
       if !(← isProjectionFn f) && ((← getEnv).find? f).any (·.isDefinition) then
         if ← attempt (do solve cfg (fuel - 1) (← runAt g (← simpOnly #[f]))) then return
-    if ← attempt (do unless ← splitSum do throwError "query_fold: no sum") then return
+    if ← attempt (do unless ← splitSum do throwError "query_bound: no sum") then return
   | none =>
     if ← attempt (leaf cfg g) then return
-    if ← attempt (do unless ← splitSum do throwError "query_fold: no sum") then return
-  cfg.lastOpen.set (← addMessageContextFull (toMessageData g))
-  throwError "query_fold: goal left open"
+    if ← attempt (do unless ← splitSum do throwError "query_bound: no sum") then return
+  let (depth, _) ← cfg.lastOpen.get
+  if fuel ≤ depth then
+    cfg.lastOpen.set (fuel, ← addMessageContextFull (toMessageData g))
+  throwError "query_bound: goal left open"
 
 end
 
-/-- `query_fold [names]` proves a query bound through the budget-passing fold `OracleAdv.Within`:
-the equations of the fold, the known bounds (hypotheses, `@[query_fold]`, the names listed) and
-arithmetic. -/
-syntax (name := queryFoldTac) "query_fold" (" [" Lean.Parser.Term.ident,* "]")? : tactic
+/-- The depth bound of a run. -/
+def maxDepth : Nat := 256
 
-/-- The elaborator of `query_fold`. -/
-@[tactic queryFoldTac] def evalQueryFold : Tactic := fun stx => do
-  let ids := if stx[1].isNone then #[] else stx[1][1].getSepArgs
-  let listed ← ids.mapM fun i => resolveGlobalConstNoOverload i
-  let tagged ← labelled `query_fold
+/-- The heartbeats, in the unit of `maxHeartbeats`, that one run may use. -/
+def searchBudget : Nat := 60000
+
+/-- `query_bound [names]` proves a query bound through the budget-passing fold `OracleAdv.Within`:
+the equations of the fold, the known bounds (hypotheses, `@[query_fold]`, the names listed) and
+arithmetic. `query_bound only [names]` leaves out the theorems with the attribute. See the module
+docstring. -/
+syntax (name := queryBoundTac) "query_bound" (" only")? (" [" Lean.Parser.Term.ident,* "]")? : tactic
+
+/-- The elaborator of `query_bound`. -/
+@[tactic queryBoundTac] def evalQueryBound : Tactic := fun stx => do
+  let ids := if stx[2].isNone then #[] else stx[2][1].getSepArgs
+  let listed ← ids.mapM fun i => realizeGlobalConstNoOverloadWithInfo i
+  let tagged ← if stx[1].isNone then labelled `query_fold else pure #[]
   let names := tagged ++ listed
   let env ← getEnv
   let isLaw (n : Name) : TacticM Bool := do
@@ -308,22 +359,33 @@ syntax (name := queryFoldTac) "query_fold" (" [" Lean.Parser.Term.ident,* "]")? 
     let some ci := env.find? n | continue
     if ci.isDefinition then
       -- a predicate is unfolded at arithmetic goals only: a branch condition stays as written
-      unless ← forallTelescope ci.type fun _ c => return c.isProp do
+      unless !foldLaws.contains n && (← forallTelescope ci.type fun _ c => return c.isProp) do
         thms ← thms.addDeclToUnfold n
     else thms ← thms.addConst n
   let ctx ← Simp.mkContext (simpTheorems := #[thms]) (congrTheorems := ← getSimpCongrTheorems)
-  let r ← IO.mkRef m!"none"
+  let r ← IO.mkRef (maxDepth, m!"none")
   let cfg : Cfg := ⟨laws, ctx, bounds ++ constructionBounds, r, userLaws⟩
-  evalTactic (← `(tactic| try simp only [CatCrypt.Crypto.OracleAdv.IsQueryBound,
-    CatCrypt.Crypto.OracleAdv.IsQueryBoundBy] at *))
-  let mut split : List MVarId := []
-  for g in ← getGoals do split := split ++ [← g.casesAnd]
-  let g :: rest := split | return
-  try
-    solve cfg 256 [g]
-    setGoals rest
-  catch e =>
-    throwError "{e.toMessageData}\nlast goal left open:\n{← r.get}"
+  let c ← readThe Core.Context
+  let used := (← IO.getNumHeartbeats) - c.initHeartbeats
+  let cap := used + searchBudget * 1000
+  let cap := if c.maxHeartbeats == 0 then cap else min c.maxHeartbeats cap
+  tryCatchRuntimeEx
+    (withTheReader Core.Context (fun c => { c with maxHeartbeats := cap }) do
+      let env ← getEnv
+      let lems ← (#[adv `IsQueryBound, adv `IsQueryBoundBy, twoKind].filter env.contains).mapM
+        fun n => `(Lean.Parser.Tactic.simpLemma| $(mkCIdent n):term)
+      evalTactic (← `(tactic| try simp only [$[$lems:simpLemma],*] at *))
+      let mut split : List MVarId := []
+      for g in ← getGoals do split := split ++ [← g.casesAnd]
+      let g :: rest := split | return
+      solve cfg maxDepth [g]
+      setGoals rest)
+    fun e => do
+      if e.isRuntime && !e.isInterrupt then
+        throwError "query_bound: the search exceeded its budget of {cap / 1000} heartbeats; \
+          list the bounds of the callees or state the bound of the costly subterm\n\
+          deepest goal left open:\n{(← r.get).2}"
+      throwError "{e.toMessageData}\ndeepest goal left open:\n{(← r.get).2}"
 
 end
 

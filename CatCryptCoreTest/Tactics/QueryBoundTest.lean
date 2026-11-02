@@ -18,8 +18,8 @@ public import CatCryptCore.Tactics.QueryBound
 
 The goals are the hand-proved query bounds of `FOTransform`, `FOTransformU`, `FIPS203Security`,
 `SignerHybrid`, `FiatShamirROM.Game` and `PoSNSB.Prob.ROM`, restated. `query_bound only [names]` is
-used so that a test does not find the theorem it restates: the names listed are the bounds of the callees. A `fail_if_success` records a
-goal that the variant it runs does not close.
+used so that a test does not find the theorem it restates: the names listed are the bounds of the
+callees. A `fail_if_success` records a goal that the variant it runs does not close.
 -/
 
 set_option autoImplicit false
@@ -141,20 +141,18 @@ example (m : M) :
     OracleAdv.MayOnlyCall (Set.range Sum.inl) (gQ (C := C) (K := K) (R := R) m) := by
   query_bound only
 
-/-- The erased costed handler has the theorem `simImpl.isQueryBound_erase` in an open namespace.
-Its erasure theorem has a map of the result on its left side, so it does not rewrite this goal. -/
+/-- The erased costed handler at its listed theorem `simImpl.isQueryBound_erase`. -/
 example (cstar : C) (kstar : K) (st : SimState M C K) (d : (M × C) ⊕ C) (LDCost : C → ℕ)
     (LQCost : M × C → ℕ) :
     (CatCrypt.Crypto.KEM.FOTransformU.simImpl.timed cstar kstar st d LDCost
       LQCost).2.erase.IsQueryBound (Sum.elim (fun _ => 1) (fun _ => 0) d) := by
-  fail_if_success query_bound only
-  query_bound
+  query_bound only [CatCrypt.Crypto.KEM.FOTransform.simImpl.isQueryBound_erase]
 
-/-- The erased form of `liftP.timed` is rewritten along `liftP.erase_timed` to `liftP`. -/
+/-- The erased form of `liftP.timed` is rewritten along the listed `liftP.erase_timed`. -/
 example {α : Type} (cost : M ⊕ (M × C) → ℕ) (hc : ∀ q, cost (.inr q) ≤ 1)
     {A : OracleAdv.Timed (M × C) Bool α} {n : ℕ} (hA : A.erase.IsQueryBound n) :
     (liftP.timed (R := R) A).2.erase.IsQueryBoundBy cost n := by
-  query_bound only [isQueryBoundBy_liftP]
+  query_bound only [isQueryBoundBy_liftP, liftP.erase_timed]
 
 end FOTransform
 
@@ -180,13 +178,19 @@ example (P : Scheme PK SK M C R) (hpk : PK → Hash) (f : M → R) (pk : PK) (cs
       (Sum.elim (fun _ => 1) (fun _ => 0) d) := by
   query_bound only
 
-/-- `isQueryBoundBy_simImplF` has a charge hypothesis joining the two oracles, whose witness for
-the first query of a path is not in the goal. -/
+/-- `isQueryBoundBy_simImplF` has a charge hypothesis joining the two oracles: the proof states the
+bounds of the first and the second query of a path. -/
 example (P : Scheme PK SK M C R) (hpk : PK → Hash) (pk : PK) (cstar : C)
     (kstar : K) (cost : M ⊕ (M × C) → ℕ) (hc : ∀ m q, cost (.inl m) + cost (.inr q) ≤ 1)
     (st : SimStateF M C R K Hash Z) (d : ((M × Hash) ⊕ (Z × C)) ⊕ C) :
     (simImplF P hpk pk cstar kstar st d).IsQueryBoundBy cost
       (Sum.elim (fun _ => 1) (fun _ => 0) d) := by
+  have hl : ∀ m, cost (.inl m) ≤ 1 := fun m => by
+    have := hc m (m, cstar)
+    omega
+  have hj : ∀ m q, cost (.inr q) ≤ 1 - cost (.inl m) := fun m q => by
+    have := hc m q
+    omega
   query_bound only
 
 /-- `isQueryBoundBy_redRun`. -/
@@ -234,14 +238,7 @@ example {D R : Type} (ds : List D) : (queryAll (R := R) ds).IsQueryBound ds.leng
   | nil => query_bound only
   | cons d ds ih => query_bound only
 
-/-- A budget left as a metavariable is assigned by the estimator. -/
-example {D R : Type} (d : D) : ∃ n, (OracleAdv.query d fun _ : R =>
-    OracleAdv.ret ()).IsQueryBound n := by
-  refine ⟨?_, ?_⟩
-  swap
-  · query_bound only
-
-/-- The estimator takes the maximum over branches. -/
+/-- A branch followed by a branch: each path takes its own budget. -/
 example {D R : Type} (b : Bool) (o : Option D) (d : D) :
     ((if b then OracleAdv.query d fun _ : R => OracleAdv.ret () else OracleAdv.ret ()).bind
       fun _ => (match o with
@@ -299,16 +296,16 @@ def costOne : ℕ → ℕ := fun _ => 1
 
 theorem isQueryBoundBy_queryList_one (l : List ℕ) :
     (queryList l).IsQueryBoundBy costOne l.length := by
-  induction l <;> query_bound
+  induction l <;> query_bound only [costOne]
 
-/-- The theorem named after the head with a suffix is looked up at its charge. -/
+/-- A listed theorem at its charge. -/
 example (l : List ℕ) : (queryList l).IsQueryBoundBy costOne l.length := by
-  query_bound
+  query_bound only [isQueryBoundBy_queryList_one]
 
-/-- The same lookup for the first part of a bind. -/
+/-- A listed theorem at the first part of a bind. -/
 example (l : List ℕ) :
     ((queryList l).bind fun _ => .ret 0).IsQueryBoundBy costOne l.length := by
-  query_bound
+  query_bound only [isQueryBoundBy_queryList_one]
 
 /-- The projection of a simulation, a definition that the tactic unfolds. -/
 def simFst {D D' R R' α S : Type} (impl : S → D → OracleAdv D' R' (R × S)) (A : OracleAdv D R α)
@@ -348,11 +345,11 @@ section DefinedCharge
 
 open CatCrypt.Crypto CatCrypt.Crypto.KEM.FIPS203
 
-/-- The charge `keyCost keyJ` of `tsum_bad_le` is a defined function. -/
+/-- The charge `keyCost keyJ` of `tsum_bad_le` is a defined function, listed as a law. -/
 example {M Hash Z C R' α : Type} (A : OracleAdv (((M × Hash) ⊕ (Z × C)) ⊕ C) R' α) (n : ℕ)
     (hA : A.IsQueryBoundBy (Sum.elim (fun _ => 1) fun _ => 0) n) :
     A.IsQueryBoundBy (keyCost keyJ) n := by
-  query_bound only
+  query_bound only [keyCost, keyJ]
 
 end DefinedCharge
 
@@ -390,8 +387,7 @@ example (x : G.Stmt) (m : G.Msg) (σ : G.Sig) (n : ℕ) (acc : List G.Ch) :
     (verifyQueries x m σ n acc).IsQueryBoundBy OracleAdv.chargeInl n := by
   query_bound only [isQueryBound₂_verifyQueries]
 
-/-- `isQueryBound₂_withVerify` without `cases` on the budgets or a specialized hypothesis: the
-induction hypothesis takes `hA r`. -/
+/-- `isQueryBound₂_withVerify`: the induction hypothesis takes the unfolded hypothesis `hA`. -/
 example (x : G.Stmt) (A : OracleAdv G.Query G.Answer G.Forgery)
     (h q : ℕ) (hA : IsQueryBound₂ A h q) : IsQueryBound₂ (withVerify x A) (h + G.V) q := by
   induction A generalizing h q with
@@ -399,7 +395,10 @@ example (x : G.Stmt) (A : OracleAdv G.Query G.Answer G.Forgery)
     obtain ⟨m, σ⟩ := y
     query_bound only [isQueryBound₂_verifyQueries]
   | rand p k ih => query_bound only
-  | query d k ih => query_bound only
+  | query d k ih =>
+    rcases d with d | d
+    · cases h <;> query_bound only
+    · cases q <;> query_bound only
 
 end FiatShamirTwoKind
 

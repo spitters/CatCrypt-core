@@ -456,9 +456,9 @@ def liftP {α : Type} : OracleAdv (M × C) Bool α → OracleAdv (M ⊕ (M × C)
   | .query q k => .query (.inr q) fun a => liftP (k (a.elim (fun _ => false) id))
 
 omit [Fintype R] [Nonempty R] [Fintype M] [Nonempty M] [DecidableEq M] [DecidableEq C] in
-theorem isQueryBoundBy_liftP {α : Type} (cost : M ⊕ (M × C) → ℕ) (hc : ∀ q, cost (.inr q) ≤ 1)
-    {A : OracleAdv (M × C) Bool α} {n : ℕ} (hA : A.IsQueryBound n) :
-    (liftP (R := R) A).IsQueryBoundBy cost n := by
+@[query_fold] theorem isQueryBoundBy_liftP {α : Type} (cost : M ⊕ (M × C) → ℕ)
+    (hc : ∀ q, cost (.inr q) ≤ 1) {A : OracleAdv (M × C) Bool α} {n : ℕ}
+    (hA : A.IsQueryBound n) : (liftP (R := R) A).IsQueryBoundBy cost n := by
   induction A generalizing n with
   | ret a => query_bound
   | rand p k ih => query_bound
@@ -481,12 +481,12 @@ noncomputable def simImplFO (cstar : C) (kstar : K) (st : SimState M C K) :
       .ret (.inr (x.1.elim (fun _ => none) id), x.2)
 
 omit [Fintype R] [Fintype M] [Nonempty M] in
-theorem isQueryBoundBy_simImplFO (cost : M ⊕ (M × C) → ℕ) (hc₁ : ∀ m, cost (.inl m) ≤ 1)
-    (hc₂ : ∀ q, cost (.inr q) ≤ 1) (cstar : C) (kstar : K) (st : SimState M C K)
-    (d : (M ⊕ (M × C)) ⊕ C) :
+@[query_fold] theorem isQueryBoundBy_simImplFO (cost : M ⊕ (M × C) → ℕ)
+    (hc₁ : ∀ m, cost (.inl m) ≤ 1) (hc₂ : ∀ q, cost (.inr q) ≤ 1) (cstar : C) (kstar : K)
+    (st : SimState M C K) (d : (M ⊕ (M × C)) ⊕ C) :
     (simImplFO (R := R) cstar kstar st d).IsQueryBoundBy cost
       (Sum.elim (fun _ => 1) (fun _ => 0) d) := by
-  query_bound
+  query_bound [isQueryBound_simImpl]
 
 /-- The run of the OW-PCA adversary against `T[P, G]` built from `B`. -/
 noncomputable def uRedRun {qRO qD : ℕ} (B : ROM2INDCCAAdversary PK K C M R (M × C) K qRO qD)

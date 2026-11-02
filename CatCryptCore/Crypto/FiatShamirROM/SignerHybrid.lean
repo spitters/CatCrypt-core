@@ -663,7 +663,7 @@ noncomputable def hybGameByOf (sgn : G.SignStep)
 
 /-- The distinguisher `hybRunOf` from the signing query `j` asks at most one query, and
 none after the `k`-th signing query. -/
-theorem isQueryBound_hybRunOf (sgn : G.SignStep) (D D' : G.Sampler) (k : ℕ)
+@[query_fold] theorem isQueryBound_hybRunOf (sgn : G.SignStep) (D D' : G.Sampler) (k : ℕ)
     (xw : G.Stmt × G.Wit) {α β : Type} (f : α × (G.Tables × Bool) → β)
     (A : OracleAdv G.Query G.Answer α) (j : ℕ) (s : G.Tables × Bool) :
     (hybRunOf sgn D D' k xw f j A s).IsQueryBound (if j ≤ k then 1 else 0) := by

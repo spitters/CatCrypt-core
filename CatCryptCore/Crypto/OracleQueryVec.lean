@@ -95,63 +95,6 @@ theorem isQueryBoundBy_sum {ι : Type} (s : Finset ι) {c : ι → D → ℕ} {v
     exact (h i (Finset.mem_insert_self i s)).add
       (ih fun j hj => h j (Finset.mem_insert_of_mem hj))
 
-/-! ## The rules of `query_bound` -/
-
-/-- The rule of `query_bound` at a leaf. -/
-theorem isQueryBoundBy_ret (c : D → ℕ) (a : α) (n : ℕ) :
-    (ret a : OracleAdv D R α).IsQueryBoundBy c n :=
-  trivial
-
-/-- The rule of `query_bound` at a sampling node. -/
-theorem isQueryBoundBy_rand {c : D → ℕ} {γ : Type} {p : PMF γ} {k : γ → OracleAdv D R α} {n : ℕ}
-    (hk : ∀ b, (k b).IsQueryBoundBy c n) : (rand p k).IsQueryBoundBy c n :=
-  hk
-
-/-- The rule of `query_bound` at a query node. -/
-theorem isQueryBoundBy_query {c : D → ℕ} {d : D} {k : R → OracleAdv D R α} {n : ℕ}
-    (hd : c d ≤ n) (hk : ∀ r, (k r).IsQueryBoundBy c (n - c d)) :
-    (query d k).IsQueryBoundBy c n :=
-  ⟨hd, hk⟩
-
-/-- The rule of `query_bound` at a sequential composition: the budget `a` of the first part is
-subtracted from the budget of the continuation. -/
-theorem isQueryBoundBy_bind_sub {c : D → ℕ} {A : OracleAdv D R α} {f : α → OracleAdv D R β}
-    {n : ℕ} (a : ℕ) (hA : A.IsQueryBoundBy c a) (ha : a ≤ n)
-    (hf : ∀ x, (f x).IsQueryBoundBy c (n - a)) : (A.bind f).IsQueryBoundBy c n :=
-  (isQueryBoundBy_bind hA hf).mono (by omega)
-
-/-- The rule of `query_bound` at a known bound: a bound at a pointwise larger charge and a
-smaller budget. -/
-theorem isQueryBoundBy_of_le {c c₀ : D → ℕ} {A : OracleAdv D R α} {n₀ n : ℕ}
-    (h : A.IsQueryBoundBy c₀ n₀) (hc : ∀ d, c d ≤ c₀ d) (hn : n₀ ≤ n) : A.IsQueryBoundBy c n :=
-  (h.of_cost_le hc).mono hn
-
-/-- The rule of `query_bound` at two known bounds whose charges sum to at least the goal charge:
-per-oracle counts sum to a total count. -/
-theorem isQueryBoundBy_of_add {c c₁ c₂ : D → ℕ} {A : OracleAdv D R α} {a b n : ℕ}
-    (h₁ : A.IsQueryBoundBy c₁ a) (h₂ : A.IsQueryBoundBy c₂ b) (hc : ∀ d, c d ≤ c₁ d + c₂ d)
-    (hn : a + b ≤ n) : A.IsQueryBoundBy c n :=
-  ((h₁.add h₂).of_cost_le hc).mono hn
-
-/-- The rule of `query_bound` at a simulation, from a bound of the simulated adversary at the
-source charge `c₀`. -/
-theorem isQueryBoundBy_simulate_le {S : Type} {impl : S → D → OracleAdv D' R' (R × S)}
-    {c₀ : D → ℕ} {c : D' → ℕ} {A : OracleAdv D R α} {n₀ n : ℕ} {s : S}
-    (hA : A.IsQueryBoundBy c₀ n₀) (hn : n₀ ≤ n)
-    (himpl : ∀ s d, (impl s d).IsQueryBoundBy c (c₀ d)) :
-    (simulate impl A s).IsQueryBoundBy c n :=
-  (isQueryBoundBy_simulate impl c₀ c himpl hA s).mono hn
-
-/-- The rule of `query_bound` at a renaming of queries. -/
-theorem isQueryBoundBy_mapQuery_comp {g : D → D'} {c : D' → ℕ} {A : OracleAdv D R α} {n : ℕ}
-    (h : A.IsQueryBoundBy (fun d => c (g d)) n) : (mapQuery g A).IsQueryBoundBy c n :=
-  isQueryBoundBy_mapQuery g (fun _ => le_rfl) h
-
-/-- The rule of `query_bound` turning a query bound into a bound at the charge `1`. -/
-theorem isQueryBound_of_one {A : OracleAdv D R α} {n : ℕ}
-    (h : A.IsQueryBoundBy (fun _ => 1) n) : A.IsQueryBound n :=
-  isQueryBound_iff_isQueryBoundBy_one.mpr h
-
 /-! ## The cost fold -/
 
 /-- A query bound at the charge `c` is a bound on the cost fold of the tree of the adversary at
@@ -220,12 +163,6 @@ theorem isQueryBound₂_iff {D₁ D₂ : Type} {A : OracleAdv (D₁ ⊕ D₂) R 
         · simp only [OracleForking.IsQueryBound₂, IsQueryBoundBy, ih, Sum.elim_inr,
             Nat.le_add_left, true_and, Nat.add_sub_cancel, Nat.zero_le, Nat.sub_zero]
           exact forall_and
-
-/-- The rule of `query_bound` splitting a two-kind bound into the counts of the summands. -/
-theorem isQueryBound₂_of {D₁ D₂ : Type} {A : OracleAdv (D₁ ⊕ D₂) R α} {h q : ℕ}
-    (h₁ : A.IsQueryBoundBy chargeInl h) (h₂ : A.IsQueryBoundBy chargeInr q) :
-    OracleForking.IsQueryBound₂ A h q :=
-  isQueryBound₂_iff.mpr ⟨h₁, h₂⟩
 
 /-- Counts at the two summands sum to a total count. -/
 theorem isQueryBound_of_inl_inr {D₁ D₂ : Type} {A : OracleAdv (D₁ ⊕ D₂) R α} {a b : ℕ}

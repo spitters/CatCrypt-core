@@ -911,14 +911,14 @@ section Bound
 
 variable {qc : ℕ}
 
-theorem isQueryBound_phaseO (hOF : OF.Bounded qc m) (log : List (LogEvOf X Tx Hash np Hz))
-    (s : HStE Hz IP h0 GB U S L) :
+@[query_fold] theorem isQueryBound_phaseO (hOF : OF.Bounded qc m)
+    (log : List (LogEvOf X Tx Hash np Hz)) (s : HStE Hz IP h0 GB U S L) :
     (phaseO Sch IP h0 GB U OF x₀ dt L ks m log s).IsQueryBound (IP.length * (qc + m + 1)) :=
   isQueryBound_hPhase Sch IP h0 GB U (txOf dt log) L ks (OF.atO (scriptOfD x₀ log)) m
     (hOF _).1.1 (hOF _).1.2 s
 
-theorem isQueryBound_phasesO (hOF : OF.Bounded qc m) (log : List (LogEvOf X Tx Hash np Hz))
-    (k : ℕ) (s : HStE Hz IP h0 GB U S L) :
+@[query_fold] theorem isQueryBound_phasesO (hOF : OF.Bounded qc m)
+    (log : List (LogEvOf X Tx Hash np Hz)) (k : ℕ) (s : HStE Hz IP h0 GB U S L) :
     (phasesO Sch IP h0 GB U OF x₀ dt L ks m log k s).IsQueryBound
       (k * (IP.length * (qc + m + 1))) := by
   induction k with
@@ -947,7 +947,7 @@ theorem isQueryBound_hEv (hOF : OF.Bounded qc m) {β : Type}
       query_bound
   · query_bound
 
-theorem isQueryBound_hLoop (hOF : OF.Bounded qc m) {ζ : Type}
+@[query_fold] theorem isQueryBound_hLoop (hOF : OF.Bounded qc m) {ζ : Type}
     (Z : Strat ζ (EnvEv Tx Hash np Hz X) (EnvOut Tx Hash np)) (r : ℕ) :
     ∀ z h log j v q s,
       (hLoop Sch IP h0 GB U UT OF x₀ dt L ks m K Δ Z r z h log j v q s).IsQueryBound

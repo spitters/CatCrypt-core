@@ -345,11 +345,18 @@ noncomputable def simImplF (P : Scheme PK SK M C R) (hpk : PK → Hash) (pk : PK
 omit [Fintype M] [Nonempty M] [Fintype Z] [Nonempty Z] in
 /-- Each query of the simulation costs at most one random-oracle query and one
 plaintext-checking query, both on a `G`-query. -/
-theorem isQueryBoundBy_simImplF (P : Scheme PK SK M C R) (hpk : PK → Hash) (pk : PK) (cstar : C)
-    (kstar : K) (cost : M ⊕ (M × C) → ℕ) (hc : ∀ m q, cost (.inl m) + cost (.inr q) ≤ 1)
+@[query_fold] theorem isQueryBoundBy_simImplF (P : Scheme PK SK M C R) (hpk : PK → Hash) (pk : PK)
+    (cstar : C) (kstar : K) (cost : M ⊕ (M × C) → ℕ)
+    (hc : ∀ m q, cost (.inl m) + cost (.inr q) ≤ 1)
     (st : SimStateF M C R K Hash Z) (d : ((M × Hash) ⊕ (Z × C)) ⊕ C) :
     (simImplF P hpk pk cstar kstar st d).IsQueryBoundBy cost
       (Sum.elim (fun _ => 1) (fun _ => 0) d) := by
+  have hl : ∀ m, cost (.inl m) ≤ 1 := fun m => by
+    have := hc m (m, cstar)
+    omega
+  have hj : ∀ m q, cost (.inr q) ≤ 1 - cost (.inl m) := fun m q => by
+    have := hc m q
+    omega
   query_bound
 
 /-- The run of the OW-PCA adversary against `tTransform P` built from `B`. -/

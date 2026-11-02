@@ -170,7 +170,7 @@ theorem evalOn_logBlocks_fst (f : BlockDom Tx Hash np Hz → Hash)
         exact hd.resolve_left h |> Or.inl
       · exact Or.inr ((Function.update_of_ne h _ _).trans hd)
 
-theorem isQueryBound_logBlocks (bs : List (Block Tx Hash (Fin np)))
+@[query_fold] theorem isQueryBound_logBlocks (bs : List (Block Tx Hash (Fin np)))
     (tbl : BlockDom Tx Hash np Hz → Hash) : (logBlocks bs tbl).IsQueryBound bs.length := by
   induction bs generalizing tbl with
   | nil => query_bound
@@ -288,7 +288,7 @@ section Bound
 
 variable {qc : ℕ}
 
-theorem isQueryBound_hRcv
+@[query_fold] theorem isQueryBound_hRcv
     (hq : ∀ pub ms sl hist tbl mb st, (A.rcv pub ms sl hist tbl mb st).IsQueryBound qc)
     (p : Fin np) (s : HState IP h0 GB U L A) :
     (hRcv Sch IP h0 GB U L ks A m p s).IsQueryBound (qc + m) := by
@@ -296,7 +296,7 @@ theorem isQueryBound_hRcv
       (A.rcv pub ms sl hist tbl mb st).IsQueryBound qc := hq
   query_bound
 
-theorem isQueryBound_hBake
+@[query_fold] theorem isQueryBound_hBake
     (hq : ∀ pub sl hist tbl mb st, (A.bake pub sl hist tbl mb st).IsQueryBound qc)
     (p : Fin np) (s : HState IP h0 GB U L A) :
     (hBake Sch IP h0 GB U txSel L ks A m p s).IsQueryBound (qc + m + 1) := by
@@ -304,7 +304,7 @@ theorem isQueryBound_hBake
       (A.bake pub sl hist tbl mb st).IsQueryBound qc := hq
   query_bound
 
-theorem isQueryBound_hFold {S : Type}
+@[query_fold] theorem isQueryBound_hFold {S : Type}
     {step : Fin np → S → OracleAdv (BlockDom Tx Hash np Hz) Hash S} {c : ℕ}
     (h : ∀ p s, (step p s).IsQueryBound c) (l : List (Fin np)) (s : S) :
     (hFold step l s).IsQueryBound (l.length * c) := by
@@ -314,7 +314,7 @@ theorem isQueryBound_hFold {S : Type}
     rw [List.length_cons, Nat.succ_mul]
     query_bound
 
-theorem isQueryBound_hPhase
+@[query_fold] theorem isQueryBound_hPhase
     (hb : ∀ pub sl hist tbl mb st, (A.bake pub sl hist tbl mb st).IsQueryBound qc)
     (hr : ∀ pub ms sl hist tbl mb st, (A.rcv pub ms sl hist tbl mb st).IsQueryBound qc)
     (s : HState IP h0 GB U L A) :
@@ -323,7 +323,7 @@ theorem isQueryBound_hPhase
   have h₂ := isQueryBound_hFold (isQueryBound_hBake Sch IP h0 GB U txSel L ks A m hb) IP s
   query_bound
 
-theorem isQueryBound_hTrace
+@[query_fold] theorem isQueryBound_hTrace
     (hb : ∀ pub sl hist tbl mb st, (A.bake pub sl hist tbl mb st).IsQueryBound qc)
     (hr : ∀ pub ms sl hist tbl mb st, (A.rcv pub ms sl hist tbl mb st).IsQueryBound qc)
     (j : ℕ) :
