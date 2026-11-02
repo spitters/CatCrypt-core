@@ -1681,6 +1681,19 @@ where
     if tw.isForall then return ← forallTelescope tw fun _ b => go b acc
     return acc
 
+/-- Whether `d` is a value of a recursive inductive type, whose functions have no costed encoding
+(`sumInduct?` refuses a recursive type). -/
+def isRecInductiveValue (d : Expr) : MetaM Bool := do
+  let .const I _ := (← whnfR (← inferType d)).getAppFn | return false
+  let some (.inductInfo ii) := (← getEnv).find? I | return false
+  return ii.isRec
+
+/-- Whether `d` applies a table: a local function whose cost companion is zero. -/
+def isTableReadOf (locals : FVarIdMap LocalInfo) (d : Expr) : MetaM Bool := do
+  let .fvar id := d.consumeMData.getAppFn | return false
+  let some { kind := .fn, companion? := some c, .. } := locals.get? id | return false
+  lambdaTelescope c fun _ b => return b == natE 0
+
 /-- The tree type of `t` with its result type replaced by its costed type (`hatTy?`). -/
 def treeTyH? (t : Expr) : MetaM (Option TreeTy) := do
   let some T ← treeTy? t | return none
@@ -3150,6 +3163,9 @@ partial def costApp (ctx : Ctx) (e : Expr) : TermElabM Expr := do
     | some _ => fail m!"the oracle tree `{f}` occurs in a data position in `{e}`"
     | none =>
       if args.isEmpty then return natE 0
+      -- A function under a non-reducible name (`def T := A → B`) held in data is a table.
+      unless (← whnfR (← inferType f)).isForall do
+        return add (natE 1) (← argsCost ctx args)
       fail m!"a function bound in data: the local `{f}` in `{e}` has no cost companion"
   | .const c _ => costConst ctx e c args
   | .proj S i s =>
@@ -3548,6 +3564,18 @@ partial def mapMatch (ctx : Ctx) (e resultType : Expr)
             if (← hatTy? ft).isNone then continue
             ctx' := { ctx' with
               locals := ctx'.locals.insert fv.fvarId! ⟨.hat, ← refillE ft fv c, none⟩ }
+      -- A function field of a pattern of a recursive inductive value, or of a value read from a
+      -- table, is a table: its application costs one plus its arguments (`isTableReadOf`).
+      if let some pats ← altPatterns app alts.size fs then
+        for d in app.discrs, p in pats do
+          unless (← isRecInductiveValue d) || (← isTableReadOf ctx.locals d) do continue
+          for fv in fs do
+            unless p.containsFVar fv.fvarId! && !p.consumeMData.isFVar do continue
+            if (ctx'.locals.get? fv.fvarId!).isSome then continue
+            let ft ← inferType fv
+            unless (← classify ft) matches .fn do continue
+            let zero ← forallTelescope (← whnfR ft) fun ys _ => mkLambdaFVars ys (natE 0)
+            ctx' := { ctx' with locals := ctx'.locals.insert fv.fvarId! ⟨.fn, fv, some zero⟩ }
       if convoy.isEmpty then return ← mkLambdaFVars fs (← alt ctx' b)
       -- The carried companions at the types of this alternative: each is the companion of
       -- the field that the alternative's pattern binds to its discriminant.
@@ -3569,8 +3597,19 @@ partial def mapMatch (ctx : Ctx) (e resultType : Expr)
     (app.params ++ #[motive] ++ discrs ++ alts ++ convoy.map (·.2))
   return (e', cost)
 
+/-- The cost of a data-valued match applied to further arguments, a match that selects a function
+(`(o.getD f) x`): one, the discriminants, the arguments, and the branch taken at the arguments. -/
+partial def costMatchApplied (ctx : Ctx) (app : MatcherApp) : TermElabM Expr := do
+  let rest := app.remaining
+  let e₀ := { app with remaining := #[] }.toExpr
+  let (e', cd) ← mapMatch ctx e₀ (mkConst ``Nat)
+    (fun c b => costOf c (mkAppN b rest).headBeta) (some fun _ => pure (mkConst ``Nat))
+  return add (natE 1) (add cd (add ((← constAlts? e').getD e') (← argsCost ctx rest)))
+
 /-- The cost of a data-valued match: one, the discriminants, and the branch taken. -/
 partial def costMatch (ctx : Ctx) (e : Expr) : TermElabM Expr := do
+  if let some app ← matchMatcherApp? e then
+    unless app.remaining.isEmpty do return ← costMatchApplied ctx app
   let (e', cd) ← mapMatch ctx e (mkConst ``Nat) costOf (some fun _ => pure (mkConst ``Nat))
   return add (natE 1) (add cd ((← constAlts? e').getD e'))
 

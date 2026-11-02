@@ -779,6 +779,10 @@ def projOfProofStruct? (top : Array FVarId) (x : Expr) : MetaM (Option Expr) := 
       pure (info.ctorName.getPrefix, info.i, args[n]!, args.extract (n + 1) args.size)
     | _ => return none
   unless ← isProofStructVal top s do return none
+  -- Only a data-function field is rewritten by abstraction; a type or an instance read from the
+  -- value stays a projection, as in the types of the binders and of the result.
+  let field := mkAppN x.getAppFn (args.extract 0 (args.size - rest.size))
+  unless ← isDataFnType (← inferType field) do return none
   let ctor := getStructureCtor env S
   let s' ← whnf s
   unless s'.isAppOfArity ctor.name (ctor.numParams + ctor.numFields) do return none
@@ -800,6 +804,7 @@ def unfoldsProofStructArg (top : Array FVarId) (x : Expr) : MetaM Bool := do
   if env.contains (c ++ `timedCost) then return false
   if env.contains (c ++ `timed) then return false
   if ← isProof x then return false
+  if ← isTypeFormerType (← inferType x) then return false
   x.getAppArgs.anyM (isProofStructVal top)
 
 /-- Replace each data-function field of `e` by its binder (second pass), or record it (first
