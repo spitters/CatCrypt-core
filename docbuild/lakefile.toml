@@ -16,7 +16,7 @@ scope = "leanprover"
 name = "doc-gen4"
 # doc-gen4 is tagged per Lean release; this tag must name the release in
 # ../lean-toolchain.
-rev = "v4.33.1"
+rev = "v4.35.0"
 
 # mathlib last: its pinned transitive deps must win over doc-gen4's to match the
 # published olean cache.
@@ -24,4 +24,4 @@ rev = "v4.33.1"
 name = "mathlib"
 git = "https://github.com/leanprover-community/mathlib4"
 # The same tag as the library's own lakefile.
-rev = "v4.33.1"
+rev = "v4.35.0"
