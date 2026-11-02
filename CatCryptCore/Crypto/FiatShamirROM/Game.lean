@@ -7,6 +7,8 @@ module
 
 public import CatCryptCore.Crypto.OracleForkingLemma
 public import CatCryptCore.Crypto.OracleSimulation
+public import CatCryptCore.Crypto.OracleQueryVec
+public import CatCryptCore.Tactics.QueryBound
 
 /-!
 # EUF-CMA security of Fiat–Shamir signatures in the random-oracle model: the game
@@ -2587,13 +2589,7 @@ variable {G : Protocol}
 
 theorem isQueryBound₂_verifyQueries (x : G.Stmt) (m : G.Msg) (σ : G.Sig) (h q n : ℕ)
     (acc : List G.Ch) : IsQueryBound₂ (verifyQueries x m σ n acc) (h + n) q := by
-  induction n generalizing acc with
-  | zero => trivial
-  | succ n ih =>
-    intro a
-    cases a with
-    | inl e => exact ih _
-    | inr _ => trivial
+  induction n generalizing acc <;> query_bound
 
 theorem isQueryBound₂_withVerify (x : G.Stmt) (A : OracleAdv G.Query G.Answer G.Forgery)
     (h q : ℕ) (hA : IsQueryBound₂ A h q) : IsQueryBound₂ (withVerify x A) (h + G.V) q := by
@@ -2603,16 +2599,11 @@ theorem isQueryBound₂_withVerify (x : G.Stmt) (A : OracleAdv G.Query G.Answer 
     exact isQueryBound₂_verifyQueries x m σ h q G.V []
   | rand p k ih => exact fun b => ih b h q (hA b)
   | query d k ih =>
-    cases d with
-    | inl key =>
-      cases h with
+    rcases d with key | m
+    · cases h with
       | zero => exact hA.elim
-      | succ h =>
-        have : h + 1 + G.V = h + G.V + 1 := by omega
-        rw [this]
-        exact fun r => ih r h q (hA r)
-    | inr m =>
-      cases q with
+      | succ h => have := fun r => ih r h q (hA r); query_bound
+    · cases q with
       | zero => exact hA.elim
       | succ q => exact fun r => ih r h q (hA r)
 

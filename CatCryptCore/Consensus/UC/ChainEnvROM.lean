@@ -6,6 +6,8 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Crypto.OracleCollision
+public import CatCryptCore.Crypto.OracleQueryVec
+public import CatCryptCore.Tactics.QueryBound
 public import CatCryptCore.Consensus.UC.ChainEnv
 public import CatCryptCore.Consensus.UC.StackEnv
 public import CatCryptCore.Consensus.PoSNSB.Prob.ROM
@@ -112,13 +114,7 @@ theorem evalOn_derand (f : D → R) (A : OracleAdv D R α) : evalOn f A.derand =
 
 theorem IsQueryBound.derand {A : OracleAdv D R α} {q : ℕ} (hA : A.IsQueryBound q) :
     A.derand.IsQueryBound q := by
-  induction A generalizing q with
-  | ret a => trivial
-  | rand p k ih => exact ih _ (hA _)
-  | query d k ih =>
-    cases q with
-    | zero => exact hA.elim
-    | succ q => exact fun r => ih r (hA r)
+  induction A generalizing q <;> cases q <;> first | exact hA.elim | query_bound
 
 end CatCrypt.Crypto.OracleAdv
 
@@ -926,11 +922,8 @@ theorem isQueryBound_phasesO (hOF : OF.Bounded qc m) (log : List (LogEvOf X Tx H
     (phasesO Sch IP h0 GB U OF x₀ dt L ks m log k s).IsQueryBound
       (k * (IP.length * (qc + m + 1))) := by
   induction k with
-  | zero => trivial
-  | succ k ih =>
-    refine (OracleAdv.isQueryBound_bind ih
-      (isQueryBound_phaseO Sch IP h0 GB U OF x₀ dt L ks m hOF log)).mono (le_of_eq ?_)
-    ring
+  | zero => query_bound
+  | succ k ih => query_bound
 
 theorem isQueryBound_hEv (hOF : OF.Bounded qc m) {β : Type}
     (log : List (LogEvOf X Tx Hash np Hz)) (j : ℕ)
@@ -941,25 +934,18 @@ theorem isQueryBound_hEv (hOF : OF.Bounded qc m) {β : Type}
     (hk : ∀ v s lk, (k v s lk).IsQueryBound (N + (K - phaseNext j e) * (IP.length * (qc + m + 1)))) :
     (hEv Sch IP h0 GB U UT OF x₀ dt L ks m K log j v s e k).IsQueryBound
       (N + 1 + (K - j) * (IP.length * (qc + m + 1))) := by
-  rcases e with e | (x | d)
-  · exact (hk _ _ _).mono (by simp [phaseNext])
+  rcases e with e | (x | d) <;> simp only [phaseNext] at hk
+  · query_bound
   · simp only [hEv]
     split
-    · next hj =>
-      refine (OracleAdv.isQueryBound_bind
-        (isQueryBound_phaseO Sch IP h0 GB U OF x₀ dt L ks m hOF _ s)
-        fun s' => hk _ _ _).mono ?_
-      simp only [phaseNext]
-      obtain ⟨t, ht⟩ : ∃ t, K - j = t + 1 := ⟨K - j - 1, by omega⟩
-      rw [ht, show K - (j + 1) = t by omega]
-      nlinarith
-    · next hj =>
-      refine (hk _ _ _).mono ?_
-      simp only [phaseNext]
-      rw [show K - (j + 1) = 0 by omega, show K - j = 0 by omega]
-      omega
-  · exact OracleAdv.IsQueryBound.mono (m := N + (K - j) * (IP.length * (qc + m + 1)) + 1)
-      (fun r => (hk _ _ _).mono (by simp [phaseNext])) (by omega)
+    · obtain ⟨t, ht⟩ : ∃ t, K - j = t + 1 := ⟨K - j - 1, by omega⟩
+      rw [show K - (j + 1) = t by omega] at hk
+      rw [ht]
+      query_bound
+    · rw [show K - (j + 1) = 0 by omega] at hk
+      rw [show K - j = 0 by omega]
+      query_bound
+  · query_bound
 
 theorem isQueryBound_hLoop (hOF : OF.Bounded qc m) {ζ : Type}
     (Z : Strat ζ (EnvEv Tx Hash np Hz X) (EnvOut Tx Hash np)) (r : ℕ) :
@@ -967,20 +953,14 @@ theorem isQueryBound_hLoop (hOF : OF.Bounded qc m) {ζ : Type}
       (hLoop Sch IP h0 GB U UT OF x₀ dt L ks m K Δ Z r z h log j v q s).IsQueryBound
         (r + (K - j) * (IP.length * (qc + m + 1))) := by
   induction r with
-  | zero =>
-    intro z h log j v q s
-    exact (OracleAdv.isQueryBound_bind (n := 0)
-      (isQueryBound_phasesO Sch IP h0 GB U OF x₀ dt L ks m hOF log (K - j) s)
-      fun _ => by trivial).mono (by omega)
+  | zero => query_bound
   | succ r ih =>
     intro z h log j v q s o
     rcases o with _ | ⟨⟨z₁, e⟩, h₁⟩
-    · trivial
+    · query_bound
     · refine isQueryBound_hEv Sch IP h0 GB U UT OF x₀ dt L ks m K hOF log j v s e
-        fun v' s' lk o' => ?_
-      rcases o' with _ | ⟨z₂, h₂⟩
-      · trivial
-      · exact ih _ _ _ _ _ _ _
+        fun v' s' lk => ?_
+      query_bound
 
 /-- **The query bound of the hash program of an environment.** For an oracle adversary family
 whose calls ask at most `qc` queries and output at most `m` messages, the hash program asks at
@@ -991,10 +971,7 @@ theorem isQueryBound_hashProgE (hOF : OF.Bounded qc m) {ζ : Type}
     (Z : Env (Strat ζ (EnvEv Tx Hash np Hz X) (EnvOut Tx Hash np)) ζ) :
     (hashProgE Sch IP h0 GB U UT OF x₀ dt L ks m K Δ Z).IsQueryBound
       (1 + Z.input.rounds + K * (IP.length * (qc + m + 1))) := by
-  refine OracleAdv.IsQueryBound.mono
-    (m := Z.input.rounds + (K - 0) * (IP.length * (qc + m + 1)) + 1)
-    (fun r => isQueryBound_hLoop Sch IP h0 GB U UT OF x₀ dt L ks m K Δ hOF Z.input _ _ _ _ _ _ _
-      _) (by rw [Nat.sub_zero]; omega)
+  query_bound
 
 end Bound
 
