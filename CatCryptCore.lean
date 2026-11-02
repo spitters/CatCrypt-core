@@ -242,6 +242,7 @@ public import CatCryptCore.Crypto.BLSSig.Security
 -- Fujisaki–Okamoto transforms, FIPS 203 KEM, total variation
 public import CatCryptCore.Crypto.OracleSimulation
 public import CatCryptCore.Crypto.OracleQueryVec
+public import CatCryptCore.Crypto.OracleProfile
 public import CatCryptCore.Crypto.OracleSubst
 public import CatCryptCore.Crypto.OracleEval
 public import CatCryptCore.Crypto.OracleCollision
