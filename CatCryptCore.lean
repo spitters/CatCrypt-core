@@ -530,6 +530,7 @@ public import CatCryptCore.Crypto.UCInterleave
 public import CatCryptCore.Crypto.UCInterleaveCost
 public import CatCryptCore.Crypto.UCSimulatorCost
 public import CatCryptCore.Crypto.UCSimulatorCostGraded
+public import CatCryptCore.Crypto.UCConcreteTimed
 public import CatCryptCore.Crypto.UCSimulatorCostMono
 public import CatCryptCore.Crypto.UCSimulatorCostSized
 public import CatCryptCore.Crypto.HybridWithSubTimed
