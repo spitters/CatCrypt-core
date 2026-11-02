@@ -54,8 +54,9 @@ The panics `panicWithPosWithDecl` and `panicWithPos` (the failing branch of `l[i
 registered at cost zero beyond the call: the message they build is a diagnostic, not part of
 the computation.
 
-The costs of `List.findIdx`, `List.idxOf` and `List.elem` are derived; the last two with
-`BEq.beq` at one unit.
+The costs of `List.findIdx`, `List.idxOf`, `List.elem` and `List.beq` are derived; the last three
+with `BEq.beq` at one unit. `List.elem.timedCost_le` and `List.beq.timedCost_le` bound the last
+two linearly in the lengths; they price a condition under the option `derive_timed.priceProps`.
 -/
 
 @[expose] public section
@@ -418,6 +419,30 @@ derive_cost List.findIdx.go
 derive_cost List.findIdx
 derive_cost (unit := BEq.beq) List.idxOf
 derive_cost (unit := BEq.beq) List.elem
+derive_cost (unit := BEq.beq) List.beq
+
+/-- Testing membership in `l` costs at most four units per element and one more, with each
+comparison at one unit. -/
+theorem List.elem.timedCost_le {α : Type*} [BEq α] (a : α) (l : List α) :
+    List.elem.timedCost a l ≤ 4 * l.length + 1 := by
+  induction l with
+  | nil => simp [List.elem.timedCost]
+  | cons b l ih =>
+    simp only [List.elem.timedCost, List.length_cons]
+    grind
+
+/-- Comparing two lists costs at most five units per element of the shorter and one more, with
+each comparison of elements at one unit. -/
+theorem List.beq.timedCost_le {α : Type*} [BEq α] (l₁ l₂ : List α) :
+    List.beq.timedCost l₁ l₂ ≤ 5 * min l₁.length l₂.length + 1 := by
+  induction l₁ generalizing l₂ with
+  | nil => cases l₂ <;> simp [List.beq.timedCost]
+  | cons b l ih =>
+    cases l₂ with
+    | nil => simp [List.beq.timedCost]
+    | cons c l₂ =>
+      simp only [List.beq.timedCost, List.length_cons]
+      grind
 
 timed_cost Finset.toList := fun (α : Type _) (s : Finset α) => s.card + 1
 

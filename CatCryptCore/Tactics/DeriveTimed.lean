@@ -263,6 +263,13 @@ A call `b` of which two projections `b.1`, `b.2` occur among the arguments of an
 definition is bound by one `let` and priced once (`bindArgsShared`). Unfolding is bounded by
 the option `derive_timed.maxDepth` (default 16) nested definitions.
 
+A condition costs its data arguments, through `¬`, `∧` and `∨` without short-circuit; its
+`Decidable` instance is not read. With the option `derive_timed.priceProps` (default `false`),
+a condition is also priced by what decides it (`pricedProp?`): `x ∈ l` on a list as the call
+`List.elem x l`, `l₁ = l₂` and `l₁ ≠ l₂` on lists as the call `List.beq l₁ l₂`, at one unit per
+comparison of elements, and a definition valued in `Prop` as one plus its unfolded body, each
+argument priced once. The list costs are registered in `CatCryptCore.Tactics.StdCosts`.
+
 A registered primitive `f` has a cost `f.timedCost`, a definition taking the arguments of
 `f`, each function-typed argument followed by its cost companion, and returning `ℕ`; the
 command `timed_cost f := e` defines it. A registered cost is a trusted statement about the
@@ -849,6 +856,14 @@ register_option derive_timed.maxDepth : Nat := {
     derive_reduction unfold to price a call"
 }
 
+/-- Whether a condition is priced by what decides it (option `derive_timed.priceProps`). -/
+register_option derive_timed.priceProps : Bool := {
+  defValue := false
+  descr := "derive_timed, derive_cost and derive_reduction price a condition by what decides \
+    it: membership and equality on lists by List.elem and List.beq, and a definition valued in \
+    Prop by its unfolded body"
+}
+
 /-- Whether the constant `n` is a case analysis: a matcher, `ite` or `dite`. A data definition
 whose body is headed by one is unfolded by the erasure theorem, so that its cases meet the
 cases of the costed value. -/
@@ -866,6 +881,9 @@ partial def letBody (e : Expr) : Expr :=
 by its name, so that a command of this module runs before the option's initializer has (the
 tests of the module). -/
 def maxDepth : CoreM Nat := return (← getOptions).get `derive_timed.maxDepth (16 : Nat)
+
+/-- The option `derive_timed.priceProps`, read by its name as `maxDepth` reads its option. -/
+def priceProps : CoreM Bool := return (← getOptions).get `derive_timed.priceProps false
 
 /-- Constants that cost nothing beyond their arguments. -/
 def freeConstants : Array Name :=
@@ -2732,6 +2750,13 @@ partial def bindTypes (kinds : Array TreeKind) (e : Expr) (acc : Array Expr := #
   | .proj _ _ b => bindTypes kinds b acc
   | _ => acc
 
+/-- A `BEq` instance on `α` for pricing a comparison in a condition: the instance found by
+synthesis, otherwise that of the classical decidable equality. -/
+def condBEqInst (α : Expr) : MetaM Expr := do
+  if let some i ← synthInstance? (← mkAppM ``BEq #[α]) then return i
+  mkAppOptM ``instBEqOfDecidableEq
+    #[some α, some (← mkAppOptM ``Classical.typeDecidableEq #[some α])]
+
 mutual
 
 /-- The cost of evaluating the data term `e`. -/
@@ -2758,13 +2783,60 @@ partial def argsCost (ctx : Ctx) (args : Array Expr) : TermElabM Expr := do
     if ← isDataExpr a then cs := cs.push (← costOf ctx a)
   return sum cs
 
-/-- The cost of a condition: the costs of the data arguments of the proposition. -/
+/-- The cost of a condition: the costs of the data arguments of the proposition, or, with the
+option `derive_timed.priceProps`, the cost `pricedProp?` gives it. -/
 partial def propCost (ctx : Ctx) (p : Expr) : TermElabM Expr := do
   let p := p.consumeMData
   if p.isAppOf ``Not then return ← propCost ctx p.appArg!
   if p.isAppOf ``And || p.isAppOf ``Or then
     return add (← propCost ctx (p.getArg! 0)) (← propCost ctx (p.getArg! 1))
+  if ← priceProps then
+    if let some c ← pricedProp? ctx p then return c
   argsCost ctx p.getAppArgs
+
+/-- The cost of the condition `p` by what decides it: for `x ∈ l` on a list, of the call
+`List.elem x l`; for `l₁ = l₂` or `l₁ ≠ l₂` on lists, of the call `List.beq l₁ l₂`; for a
+non-reducible, non-recursive definition valued in `Prop`, one plus the cost of its body, with
+the arguments bound by `let`s (priced once by the arm for `let`). `none` for any other
+proposition, which costs its data arguments. -/
+partial def pricedProp? (ctx : Ctx) (p : Expr) : TermElabM (Option Expr) := do
+  let p := pushLetApp p.headBeta
+  if let .letE n t v b _ := p then
+    unless ← keepsLet t v do return some (← propCost ctx (b.instantiate1 v))
+    let cv ← costOf ctx v
+    return some (← withLetDecl n t v fun x => do
+      let cb ← propCost ctx (b.instantiate1 x)
+      return add cv (cb.replaceFVar x v))
+  let .const c lvls := p.getAppFn | return none
+  let args := p.getAppArgs
+  if c == ``Ne && args.size == 3 then
+    return some (← propCost ctx (mkApp3 (mkConst ``Eq lvls) args[0]! args[1]! args[2]!))
+  if c == ``Eq && args.size == 3 then
+    let t ← whnfR args[0]!
+    unless t.isAppOfArity ``List 1 do return none
+    let α := t.appArg!
+    return some (← costOf ctx (← mkAppOptM ``List.beq
+      #[some α, some (← condBEqInst α), some args[1]!, some args[2]!]))
+  if c == ``Membership.mem && args.size == 5 then
+    let t ← whnfR args[1]!
+    unless t.isAppOfArity ``List 1 do return none
+    let α := t.appArg!
+    return some (← costOf ctx (← mkAppOptM ``List.elem
+      #[some α, some (← condBEqInst α), some args[4]!, some args[3]!]))
+  let env ← getEnv
+  let some (.defnInfo dv) := env.find? c | return none
+  if ← isReducible c then return none
+  if (Structural.eqnInfoExt.find? env c).isSome || (WF.eqnInfoExt.find? env c).isSome then
+    return none
+  if isMatcherCore env c || isCasesOnRecursor env c then return none
+  if (← getProjectionFnInfo? c).isSome then return none
+  unless lvls.length == dv.levelParams.length do return none
+  let depthLimit ← maxDepth
+  if ctx.depth ≥ depthLimit then
+    fail m!"needs a registered primitive: the condition `{c}` unfolds deeper than {depthLimit} \
+      definitions (option `derive_timed.maxDepth`)"
+  let e' ← bindArgsShared (dv.value.instantiateLevelParams dv.levelParams lvls) args
+  return some (add (natE 1) (← propCost { ctx with depth := ctx.depth + 1 } e'))
 
 /-- The cost companion of the function-valued argument `a`: the companion of a local function,
 the second component of the costed closure that a path into a costed value denotes, and
