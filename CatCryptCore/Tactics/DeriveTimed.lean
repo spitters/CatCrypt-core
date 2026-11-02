@@ -1272,10 +1272,16 @@ structure SumInduct where
 a sum (`hatTy?`): an inductive type without indices that is neither recursive, nor a structure,
 nor a class, nor `Sum`, `PSum` or `Option`, with at least one constructor, whose fields are data
 of types that do not depend on the other fields. Whether a field holds a function is decided by
-`hatTy?`. -/
+`hatTy?`. Only the inductive types named by the option `derive_timed.sumInducts` (names
+separated by spaces, or `*` for all) are encoded: those of the state of a structure-valued
+reduction (`sumInductsOf`), set by `derive_reduction`; elsewhere the functions of an inductive
+value are tables. -/
 def sumInduct? (tw : Expr) : MetaM (Option SumInduct) := do
   let .const I lvls := tw.getAppFn | return none
   if I == ``Sum || I == ``PSum || I == ``Option then return none
+  let allowed := (← getOptions).get `derive_timed.sumInducts ""
+  unless allowed == "*" || (allowed.splitOn " ").contains (I.toString (escape := false)) do
+    return none
   let env ← getEnv
   let some (.inductInfo ii) := env.find? I | return none
   if ii.isRec || ii.isUnsafe || ii.all.length != 1 || ii.numIndices != 0 then return none
@@ -1645,6 +1651,35 @@ def altPatterns (app : MatcherApp) (i : Nat) (fs : Array Expr) : MetaM (Option (
         let pats := body.getAppArgs
         unless pats.size == app.discrs.size do return none
         return some (pats.map (·.replaceFVars gs fs))
+
+/-- The inductive types encoded as sums (`sumInduct?`) in the costed type of `t`, with every
+inductive type admitted: those reached from `t` through the components that hold functions, the
+names of the structures passed on the way included. -/
+partial def sumInductsOf (t : Expr) : MetaM (Array Name) :=
+  withTheReader Core.Context
+    (fun c => { c with options := c.options.set `derive_timed.sumInducts "*" })
+    (go t #[])
+where
+  /-- The names reached from `t`, added to `acc`. -/
+  go (t : Expr) (acc : Array Name) : MetaM (Array Name) := do
+    if (← hatTy? t).isNone then return acc
+    let tw ← whnfR t
+    if tw.isAppOfArity ``Prod 2 || tw.isAppOfArity ``Sum 2 then
+      return ← go (tw.getArg! 1) (← go (tw.getArg! 0) acc)
+    if tw.isAppOfArity ``Option 1 then return ← go (tw.getArg! 0) acc
+    if let some m ← mirrorStruct? tw then
+      if acc.contains m.struct then return acc
+      let mut acc := acc.push m.struct
+      for ft in m.fieldTypes do acc ← go ft acc
+      return acc
+    if let some si ← sumInduct? tw then
+      if acc.contains si.induct then return acc
+      let mut acc := acc.push si.induct
+      for fts in si.fieldTypes do
+        for ft in fts do acc ← go ft acc
+      return acc
+    if tw.isForall then return ← forallTelescope tw fun _ b => go b acc
+    return acc
 
 /-- The tree type of `t` with its result type replaced by its costed type (`hatTy?`). -/
 def treeTyH? (t : Expr) : MetaM (Option TreeTy) := do

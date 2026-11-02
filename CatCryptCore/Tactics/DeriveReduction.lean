@@ -2420,6 +2420,17 @@ partial def deriveStructReduction (c : Name) (advNames : Array Name) (unfold : B
               { name := c ++ fd.name ++ `compile_tree, levelParams,
                 type := ← mkForallFVars eBs (← mkEq lhs rhs),
                 value := ← mkLambdaFVars eBs pf })
+        -- The inductive types whose costed values are sums (`DeriveTimed.sumInduct?`): those of
+        -- the types of the data fields, the state of a machine (`init : σ`), and of the values
+        -- reached from them; an inductive type of an event or an output keeps its functions as
+        -- tables.
+        let sums ← fields.foldlM (init := #[]) fun acc fd => do
+          unless fd.kind matches .data do return acc
+          return acc ++ (← CatCrypt.Tactics.DeriveTimed.sumInductsOf fd.fty)
+        let sumOpt := " ".intercalate (sums.toList.map (·.toString (escape := false)))
+        withTheReader Core.Context
+          (fun ctx => { ctx with options := ctx.options.set `derive_timed.sumInducts sumOpt })
+          do
         -- The costed forms of the trees at the plain interface, and the assembly.
         let plainPath : TermElabM Unit := do
           for fd in fields, t in trees do
