@@ -10,6 +10,7 @@ public import CatCryptCore.Crypto.FiatShamirROM.SignerHybrid
 public import CatCryptCore.Crypto.KEM.FIPS203Security
 public import CatCryptCore.Crypto.KEM.FOTransformTimed
 public import CatCryptCore.Crypto.OracleQueryVec
+public import CatCryptCore.Crypto.OracleSubst
 public import CatCryptCore.Tactics.QueryBound
 
 /-!
@@ -288,6 +289,59 @@ example {D R α : Type} {d : D} {k : R → OracleAdv D R α} {B : OracleAdv D R 
     (hA : (OracleAdv.query d k).IsQueryBound 0) : B.IsQueryBound 0 := by
   query_bound only
 
+/-- A recursive program, whose bound is stated per charge. -/
+def queryList : List ℕ → OracleAdv ℕ ℕ Unit
+  | [] => .ret ()
+  | d :: ds => .query d fun _ => queryList ds
+
+/-- A charge of one on each query. -/
+def costOne : ℕ → ℕ := fun _ => 1
+
+theorem isQueryBoundBy_queryList_one (l : List ℕ) :
+    (queryList l).IsQueryBoundBy costOne l.length := by
+  induction l <;> query_bound
+
+/-- The theorem named after the head with a suffix is looked up at its charge. -/
+example (l : List ℕ) : (queryList l).IsQueryBoundBy costOne l.length := by
+  query_bound
+
+/-- The same lookup for the first part of a bind. -/
+example (l : List ℕ) :
+    ((queryList l).bind fun _ => .ret 0).IsQueryBoundBy costOne l.length := by
+  query_bound
+
+/-- The projection of a simulation, a definition that the tactic unfolds. -/
+def simFst {D D' R R' α S : Type} (impl : S → D → OracleAdv D' R' (R × S)) (A : OracleAdv D R α)
+    (s : S) : OracleAdv D' R' α :=
+  (OracleAdv.simulate impl A s).bind fun x => .ret x.1
+
+/-- The goal after `have` unfolds `simFst`, and the hypothesis on the simulation comes before the
+simulation rule. -/
+example {D D' R R' α S : Type} {impl : S → D → OracleAdv D' R' (R × S)} {c₀ : D → ℕ} {c : D' → ℕ}
+    (himpl : ∀ s d, (impl s d).IsQueryBoundBy c (c₀ d)) {A : OracleAdv D R α} {n : ℕ}
+    (hA : A.IsQueryBoundBy c₀ n) (s : S) : (simFst impl A s).IsQueryBoundBy c n := by
+  have h := OracleAdv.isQueryBoundBy_simulate _ _ _ himpl hA s
+  query_bound only
+
+/-- `q` queries replaced by programs of at most `c` queries cost `q * c` queries. -/
+example {D D' R R' α : Type} {impl : D → OracleAdv D' R' R} {c q : ℕ}
+    (himpl : ∀ d, (impl d).IsQueryBound c) {A : OracleAdv D R α} (hA : A.IsQueryBound q) :
+    (OracleAdv.subst impl A).IsQueryBound (q * c) := by
+  query_bound only
+
+/-- A substitution takes the source charge of the adversary as the budget of its programs. -/
+example {D D' R R' α : Type} {impl : D → OracleAdv D' R' R} (cost : D → ℕ)
+    (himpl : ∀ d, (impl d).IsQueryBound (cost d)) {A : OracleAdv D R α} {n : ℕ}
+    (hA : A.IsQueryBoundBy cost n) : (OracleAdv.subst impl A).IsQueryBound n := by
+  query_bound only
+
+/-- The program premise of a substitution splits its query over a sum signature. -/
+example {D' D₁ D₂ R' R α : Type} (i₁ : D₁ → OracleAdv D' R' R) (i₂ : D₂ → OracleAdv D' R' R)
+    (h₁ : ∀ d, (i₁ d).IsQueryBound 1) (h₂ : ∀ d, (i₂ d).IsQueryBound 0)
+    {A : OracleAdv (D₁ ⊕ D₂) R α} {n : ℕ} (hA : A.IsQueryBoundBy OracleAdv.chargeInl n) :
+    (OracleAdv.subst (Sum.elim i₁ i₂) A).IsQueryBound n := by
+  query_bound only
+
 end Constructs
 
 section DefinedCharge
@@ -324,6 +378,28 @@ example (x : G.Stmt) (A : OracleAdv G.Query G.Answer G.Forgery) (h q : ℕ)
     (hA : IsQueryBound₂ A h q) :
     (withVerify x A).IsQueryBound (h + G.V + q) := by
   query_bound only [isQueryBound₂_withVerify]
+
+/-- The binder `h` of `isQueryBound₂_verifyQueries` occurs only in the budget: it is matched
+against the goal budget, and the binder `q` is taken as `0`. -/
+example (x : G.Stmt) (m : G.Msg) (σ : G.Sig) (a n : ℕ) (acc : List G.Ch) :
+    (verifyQueries x m σ n acc).IsQueryBoundBy OracleAdv.chargeInl (a + n) := by
+  query_bound only [isQueryBound₂_verifyQueries]
+
+/-- The same binder, in a goal budget that does not show it. -/
+example (x : G.Stmt) (m : G.Msg) (σ : G.Sig) (n : ℕ) (acc : List G.Ch) :
+    (verifyQueries x m σ n acc).IsQueryBoundBy OracleAdv.chargeInl n := by
+  query_bound only [isQueryBound₂_verifyQueries]
+
+/-- `isQueryBound₂_withVerify` without `cases` on the budgets or a specialized hypothesis: the
+induction hypothesis takes `hA r`. -/
+example (x : G.Stmt) (A : OracleAdv G.Query G.Answer G.Forgery)
+    (h q : ℕ) (hA : IsQueryBound₂ A h q) : IsQueryBound₂ (withVerify x A) (h + G.V) q := by
+  induction A generalizing h q with
+  | ret y =>
+    obtain ⟨m, σ⟩ := y
+    query_bound only [isQueryBound₂_verifyQueries]
+  | rand p k ih => query_bound only
+  | query d k ih => query_bound only
 
 end FiatShamirTwoKind
 
