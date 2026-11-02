@@ -125,26 +125,8 @@ noncomputable def absorb (f : M → R) {qRO qD : ℕ}
     (B : ROM2INDCCAAdversary PK K C M R (M × C) K qRO qD) :
     ROMINDCCAAdversary PK K C (M × C) K qRO qD where
   run pk c k := (OracleAdv.simulate (absImpl f) (B.run pk c k) ()).bind fun x => .ret x.1
-  isQueryBoundH pk c k := by
-    have h := OracleAdv.isQueryBoundBy_simulate (absImpl (C := C) (K := K) f)
-      (Sum.elim (fun _ => 1) fun _ => 0) (Sum.elim (fun _ => 1) fun _ => 0)
-      (fun u d => by
-        rcases d with (m | q) | c
-        · trivial
-        · exact ⟨le_rfl, fun _ => trivial⟩
-        · exact ⟨le_rfl, fun _ => trivial⟩) (B.isQueryBoundRO pk c k) ()
-    simpa using OracleAdv.isQueryBoundBy_bind h (b := 0)
-      (f := fun x : Bool × Unit => OracleAdv.ret x.1) fun _ => trivial
-  isQueryBoundD pk c k := by
-    have h := OracleAdv.isQueryBoundBy_simulate (absImpl (C := C) (K := K) f)
-      (Sum.elim (fun _ => 0) fun _ => 1) (Sum.elim (fun _ => 0) fun _ => 1)
-      (fun u d => by
-        rcases d with (m | q) | c
-        · trivial
-        · exact ⟨le_rfl, fun _ => trivial⟩
-        · exact ⟨le_rfl, fun _ => trivial⟩) (B.isQueryBoundD pk c k) ()
-    simpa using OracleAdv.isQueryBoundBy_bind h (b := 0)
-      (f := fun x : Bool × Unit => OracleAdv.ret x.1) fun _ => trivial
+  isQueryBoundH pk c k := by query_bound
+  isQueryBoundD pk c k := by query_bound
 
 /-! ## The oracle `H` as simulator state -/
 
@@ -478,14 +460,12 @@ theorem isQueryBoundBy_liftP {α : Type} (cost : M ⊕ (M × C) → ℕ) (hc : �
     {A : OracleAdv (M × C) Bool α} {n : ℕ} (hA : A.IsQueryBound n) :
     (liftP (R := R) A).IsQueryBoundBy cost n := by
   induction A generalizing n with
-  | ret a => trivial
-  | rand p k ih => exact fun b => ih b (hA b)
+  | ret a => query_bound
+  | rand p k ih => query_bound
   | query q k ih =>
     cases n with
     | zero => exact hA.elim
-    | succ n =>
-      refine ⟨(hc q).trans (Nat.le_add_left 1 n), fun a => ?_⟩
-      exact (ih _ (hA _)).mono (by have := hc q; omega)
+    | succ n => query_bound
 
 /-- The simulation of `B`'s oracles by the OW-PCA adversary against `T[P, G]`: queries
 to `G` are forwarded, queries to `H` and decapsulation queries are answered as in
@@ -506,22 +486,7 @@ theorem isQueryBoundBy_simImplFO (cost : M ⊕ (M × C) → ℕ) (hc₁ : ∀ m,
     (d : (M ⊕ (M × C)) ⊕ C) :
     (simImplFO (R := R) cstar kstar st d).IsQueryBoundBy cost
       (Sum.elim (fun _ => 1) (fun _ => 0) d) := by
-  rcases d with (m | q) | c
-  · exact ⟨hc₁ m, fun _ => trivial⟩
-  · have h := OracleAdv.isQueryBoundBy_bind (isQueryBoundBy_liftP (R := R) cost hc₂
-      (isQueryBound_simImpl cstar kstar st (.inl q))) (b := 0)
-      (f := fun x : (K ⊕ Option K) × SimState M C K =>
-        (OracleAdv.ret (.inl (.inr (x.1.elim id fun _ => Classical.arbitrary K)), x.2) :
-          OracleAdv (M ⊕ (M × C)) (R ⊕ Bool) (((R ⊕ K) ⊕ Option K) × SimState M C K)))
-      fun _ => trivial
-    exact h
-  · have h := OracleAdv.isQueryBoundBy_bind (isQueryBoundBy_liftP (R := R) cost hc₂
-      (isQueryBound_simImpl cstar kstar st (.inr c))) (b := 0)
-      (f := fun x : (K ⊕ Option K) × SimState M C K =>
-        (OracleAdv.ret (.inr (x.1.elim (fun _ => none) id), x.2) :
-          OracleAdv (M ⊕ (M × C)) (R ⊕ Bool) (((R ⊕ K) ⊕ Option K) × SimState M C K)))
-      fun _ => trivial
-    exact h
+  query_bound
 
 /-- The run of the OW-PCA adversary against `T[P, G]` built from `B`. -/
 noncomputable def uRedRun {qRO qD : ℕ} (B : ROM2INDCCAAdversary PK K C M R (M × C) K qRO qD)
@@ -534,13 +499,7 @@ omit [Fintype R] [Fintype M] in
 theorem isQueryBoundBy_uRedRun {qRO qD : ℕ} (B : ROM2INDCCAAdversary PK K C M R (M × C) K qRO qD)
     (cost : M ⊕ (M × C) → ℕ) (hc₁ : ∀ m, cost (.inl m) ≤ 1) (hc₂ : ∀ q, cost (.inr q) ≤ 1)
     (pk : PK) (c : C) : (uRedRun B pk c).IsQueryBoundBy cost qRO := by
-  intro kstar
-  have h := OracleAdv.isQueryBoundBy_bind (OracleAdv.isQueryBoundBy_simulate _ _ cost
-    (isQueryBoundBy_simImplFO cost hc₁ hc₂ c kstar) (B.isQueryBoundRO pk c kstar) SimState.init)
-    (b := 0) (f := fun x : Bool × SimState M C K =>
-      (OracleAdv.ret (x.2.found.getD (Classical.arbitrary M)) :
-        OracleAdv (M ⊕ (M × C)) (R ⊕ Bool) M)) fun _ => trivial
-  simpa using h
+  query_bound
 
 /-- The OW-PCA adversary against `tTransform P` built from an IND-CCA adversary `B`
 against `foNotBot P`. It samples a key `k*`, runs `B` once on `(pk, c*, k*)`,
