@@ -5,6 +5,7 @@ Authors: CatCrypt Contributors
 -/
 module
 
+public import CatCryptCore.Consensus.PoSNSB.Prob.ROM
 public import CatCryptCore.Crypto.FiatShamirROM.SignerHybrid
 public import CatCryptCore.Crypto.KEM.FIPS203Security
 public import CatCryptCore.Crypto.KEM.FOTransformTimed
@@ -14,9 +15,9 @@ public import CatCryptCore.Tactics.QueryBound
 /-!
 # Tests of `query_bound`
 
-The goals are the hand-proved query bounds of `FOTransform`, `FOTransformU`, `FIPS203Security` and
-`SignerHybrid`, restated. `query_bound only [names]` is used so that a test does not find the
-theorem it restates: the names listed are the bounds of the callees. A `fail_if_success` records a
+The goals are the hand-proved query bounds of `FOTransform`, `FOTransformU`, `FIPS203Security`,
+`SignerHybrid`, `FiatShamirROM.Game` and `PoSNSB.Prob.ROM`, restated. `query_bound only [names]` is
+used so that a test does not find the theorem it restates: the names listed are the bounds of the callees. A `fail_if_success` records a
 goal that the variant it runs does not close.
 -/
 
@@ -89,7 +90,7 @@ example {α : Type} (cost : M ⊕ (M × C) → ℕ) (hc : ∀ q, cost (.inr q) �
   | rand p k ih => query_bound only
   | query q k ih =>
     cases n with
-    | zero => exact hA.elim
+    | zero => query_bound only
     | succ n => query_bound only
 
 /-- `isQueryBound_lazyDProg`. -/
@@ -253,4 +254,119 @@ example {D R : Type} (d₁ d₂ : D) (g : R → R → Bool) :
       OracleAdv.ret (g r₁ r₂)).IsQueryBound 2 := by
   query_bound only
 
+/-- `q` queries, each answered by a program of at most `c` queries, cost `q * c` queries. -/
+example {D D' R R' α S : Type} {impl : S → D → OracleAdv D' R' (R × S)} {c q : ℕ}
+    (himpl : ∀ s d, (impl s d).IsQueryBound c) {A : OracleAdv D R α} (hA : A.IsQueryBound q)
+    (s : S) : (OracleAdv.simulate impl A s).IsQueryBound (q * c) := by
+  query_bound only
+
+/-- The rule of `q * c` under a bind, with the budget of the first part proposed. -/
+example {D D' R R' α S : Type} {impl : S → D → OracleAdv D' R' (R × S)} {c q : ℕ}
+    (himpl : ∀ s d, (impl s d).IsQueryBound c) {A : OracleAdv D R α} (hA : A.IsQueryBound q)
+    (s : S) : ((OracleAdv.simulate impl A s).bind fun x => .ret x.1).IsQueryBound (q * c) := by
+  query_bound only
+
+/-- A two-kind bound of a hypothesis gives the count of each summand. -/
+example {D₁ D₂ R α : Type} {A : OracleAdv (D₁ ⊕ D₂) R α} {a b : ℕ}
+    (hA : OracleForking.IsQueryBound₂ A a b) : A.IsQueryBoundBy OracleAdv.chargeInr b := by
+  query_bound only
+
+/-- A two-kind bound of a hypothesis gives a two-kind bound of a composition. -/
+example {D₁ D₂ R α : Type} {A : ℕ → OracleAdv (D₁ ⊕ D₂) R α} {a b : ℕ}
+    (hA : ∀ i, OracleForking.IsQueryBound₂ (A i) a b) (d : D₁) :
+    OracleForking.IsQueryBound₂ ((A 0).bind fun _ => .query (.inl d) fun _ => A 1)
+      (a + 1 + a) (b + b) := by
+  query_bound only
+
+/-- A two-kind bound of a hypothesis gives a total count. -/
+example {D₁ D₂ R α : Type} {A : OracleAdv (D₁ ⊕ D₂) R α} {a b : ℕ}
+    (hA : OracleForking.IsQueryBound₂ A a b) : A.IsQueryBound (a + b) := by
+  query_bound only
+
+/-- A query at the budget `0` refutes its hypothesis. -/
+example {D R α : Type} {d : D} {k : R → OracleAdv D R α} {B : OracleAdv D R α}
+    (hA : (OracleAdv.query d k).IsQueryBound 0) : B.IsQueryBound 0 := by
+  query_bound only
+
 end Constructs
+
+section DefinedCharge
+
+open CatCrypt.Crypto CatCrypt.Crypto.KEM.FIPS203
+
+/-- The charge `keyCost keyJ` of `tsum_bad_le` is a defined function. -/
+example {M Hash Z C R' α : Type} (A : OracleAdv (((M × Hash) ⊕ (Z × C)) ⊕ C) R' α) (n : ℕ)
+    (hA : A.IsQueryBoundBy (Sum.elim (fun _ => 1) fun _ => 0) n) :
+    A.IsQueryBoundBy (keyCost keyJ) n := by
+  query_bound only
+
+end DefinedCharge
+
+section FiatShamirTwoKind
+
+open CatCrypt.Crypto CatCrypt.Crypto.FiatShamirROM CatCrypt.Crypto.OracleForking
+
+variable {G : Protocol}
+
+/-- The field `isQueryBound` of an adversary of the Fiat-Shamir game is a two-kind bound. -/
+example {qH qS : ℕ} (A : G.Adversary qH qS) (x : G.Stmt) :
+    (A.run x).IsQueryBoundBy OracleAdv.chargeInr qS := by
+  query_bound only
+
+/-- A listed two-kind bound, whose premise is a two-kind hypothesis. -/
+example (x : G.Stmt) (A : OracleAdv G.Query G.Answer G.Forgery) (h q : ℕ)
+    (hA : IsQueryBound₂ A h q) :
+    (withVerify x A).IsQueryBoundBy OracleAdv.chargeInl (h + G.V) := by
+  query_bound only [isQueryBound₂_withVerify]
+
+/-- A listed two-kind bound, summed to a total count. -/
+example (x : G.Stmt) (A : OracleAdv G.Query G.Answer G.Forgery) (h q : ℕ)
+    (hA : IsQueryBound₂ A h q) :
+    (withVerify x A).IsQueryBound (h + G.V + q) := by
+  query_bound only [isQueryBound₂_withVerify]
+
+end FiatShamirTwoKind
+
+section HashProgram
+
+open CatCryptCore.Consensus.PoSNSB
+open Parameters BlockParameters Corruption Execution
+open CatCrypt.Crypto CatCrypt.Crypto.Signatures
+
+variable {Tx Hash : Type} [DecidableEq Tx] [DecidableEq Hash] {np : ℕ} [Corruption (Fin np)]
+  {n Hz : ℕ} {PK SK Sig : Type}
+  (Sch : PSigScheme (Block Tx Hash (Fin np)) PK SK Sig) [Sch.Deterministic]
+  (IP : List (Fin np)) (h0 : Fin np) (GB : Block Tx Hash (Fin np))
+  (U : (L : Fin n → Option (Fin np)) → Fin np →
+    @UTreeType Tx Hash (Fin np) (leaderParams IP h0 L) GB)
+  (txSel : Slot → Fin np → Tx) (L : Fin n → Option (Fin np)) (ks : Fin np → PK × SK)
+  (A : OAdversary Tx Hash np n Hz PK Sig) (m : ℕ) {qc : ℕ}
+
+/-- A hypothesis over `A.AdvState` applies to an argument of type `A.toAdversary.AdvState`. -/
+example (hq : ∀ pub ms sl hist tbl mb st, (A.rcv pub ms sl hist tbl mb st).IsQueryBound qc)
+    (p : Fin np) (s : HState IP h0 GB U L A) :
+    (hRcv Sch IP h0 GB U L ks A m p s).IsQueryBound (qc + m) := by
+  query_bound only [isQueryBound_logBlocks]
+
+/-- A hypothesis over `A.AdvState` applies to an argument of type `A.toAdversary.AdvState`. -/
+example (hq : ∀ pub sl hist tbl mb st, (A.bake pub sl hist tbl mb st).IsQueryBound qc)
+    (p : Fin np) (s : HState IP h0 GB U L A) :
+    (hBake Sch IP h0 GB U txSel L ks A m p s).IsQueryBound (qc + m + 1) := by
+  query_bound only [isQueryBound_logBlocks]
+
+/-- The product of a list length and a count, distributed at the cons case. -/
+example {S : Type} {step : Fin np → S → OracleAdv (BlockDom Tx Hash np Hz) Hash S} {c : ℕ}
+    (h : ∀ p s, (step p s).IsQueryBound c) (l : List (Fin np)) (s : S) :
+    (hFold step l s).IsQueryBound (l.length * c) := by
+  induction l with
+  | nil => query_bound only
+  | cons p ps ih => query_bound only
+
+/-- The instance binders of a listed theorem that its tree does not determine are synthesized. -/
+example (hb : ∀ pub sl hist tbl mb st, (A.bake pub sl hist tbl mb st).IsQueryBound qc)
+    (hr : ∀ pub ms sl hist tbl mb st, (A.rcv pub ms sl hist tbl mb st).IsQueryBound qc)
+    (s : HState IP h0 GB U L A) :
+    (hPhase Sch IP h0 GB U txSel L ks A m s).IsQueryBound (IP.length * (qc + m + 1)) := by
+  query_bound only [isQueryBound_hFold, isQueryBound_hRcv, isQueryBound_hBake]
+
+end HashProgram

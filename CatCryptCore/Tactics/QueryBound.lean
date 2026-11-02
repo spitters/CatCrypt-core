@@ -21,27 +21,35 @@ public meta import Lean
 * A branch (`if`, `match`) is split; a definition is unfolded, and a recursive definition at a
   constructor is rewritten by its equations.
 * A simulation `simulate impl A s` takes each known bound of `A` at a charge `c₀`, whose value at
-  `d` is the budget of the program `impl s d`, until the programs fit that budget.
+  `d` is the budget of the program `impl s d`, until the programs fit that budget. A count `q` of
+  `A` with a count `e` of each program gives `q * e` (`isQueryBound_simulate_mul`).
 * Known bounds of a subterm are found in this order: the local context (induction hypotheses
   included), the names listed in `query_bound [names]`, the proposition fields of a structure at
   a projection head (`ROM2INDCCAAdversary.isQueryBoundRO` of `B.run pk c k`), and the theorems
-  `Ns.isQueryBoundBy_f`, `Ns.isQueryBound_f`, `Ns.f.isQueryBoundBy`, `Ns.f.isQueryBound` of a head
-  `Ns.f`, and `N.isQueryBound_erase` of `(N.timed …).2.erase`, in the namespace of `N` or resolved
-  in the open namespaces. `query_bound only [names]` leaves out the last family. A known bound
-  applies at any pointwise larger charge and any larger budget, and its premises are closed in
-  turn by this procedure or by the arithmetic leaf. Two known bounds whose charges sum to at least
-  the goal charge give a bound at the sum of their budgets, so per-oracle counts close a total
-  count.
+  `Ns.isQueryBoundBy_f`, `Ns.isQueryBound_f`, `Ns.isQueryBound₂_f`, `Ns.f.isQueryBoundBy`,
+  `Ns.f.isQueryBound` of a head `Ns.f`, and `N.isQueryBound_erase` of `(N.timed …).2.erase`, in the
+  namespace of `N` or resolved in the open namespaces. `query_bound only [names]` leaves out the
+  last family. A known bound applies at any pointwise larger charge and any larger budget, and its
+  premises are closed in turn by this procedure or by the arithmetic leaf; its instance binders are
+  synthesized. Two known bounds whose charges sum to at least the goal charge give a bound at the
+  sum of their budgets, so per-oracle counts close a total count.
+* A known bound concluding `IsQueryBound₂ A h q` counts as its two components at `chargeInl` and
+  `chargeInr` (`isQueryBound₂_iff`).
+* A known bound matches its tree up to reducible unfolding, except that a binder of the bound
+  matches an argument whose type agrees with its own at default transparency.
 * An erased costed form `(N.timed …).2.erase` with no known bound is rewritten along
   `N.erase_timed` to its uncosted form, when that theorem states an equation with this left side.
+* A hypothesis `(query d k).IsQueryBound 0` is `False` and closes any goal.
 
 A budget left as a metavariable is assigned the first proposal that the proof accepts.
 
-An arithmetic leaf is closed by `assumption`, `omega`, `simp` or `grind`; a side condition
-`∀ d, c d ≤ c₀ d` splits `d` over a sum signature first. A hypothesis that charges several queries
-jointly, `∀ m q, c (inl m) + c (inr q) ≤ 1`, is instantiated at the charges of the leaf, a binder
-that none of them assigns taking a term of its type from the context or an instance; so the first
-query of a path closes although the second query's argument is not in the goal.
+An arithmetic leaf is closed by `assumption`, `omega`, `simp` or `grind`, a product with a factor
+`l + 1` or `(p :: ps).length` being distributed first; a side condition `∀ d, c d ≤ c₀ d` splits `d`
+over a sum signature first. A hypothesis that charges several queries jointly,
+`∀ m q, c (inl m) + c (inr q) ≤ 1`, is instantiated at the charges of the leaf, a binder that none
+of them assigns taking a term of its type from the context or an instance; so the first query of a
+path closes although the second query's argument is not in the goal. A charge given by a defined
+function of the project (`keyCost keyJ`) is unfolded at a leaf that the other arms leave open.
 
 The tactic fails with a named error at a recursive definition applied to a variable, whose bound
 takes an induction, and at an adversary variable with no known bound.
@@ -204,8 +212,35 @@ def addJointInstances (g : MVarId) : MetaM MVarId := g.withContext do
       (_, g) ← g.note `joint pf
   return g
 
+/-- The function definitions of the project among the constants of `t`, instances, projections
+and matchers left out: the defined functions a charge of `t` may be given by. -/
+def chargeDefs (t : Expr) : MetaM (Array Name) := do
+  let env ← getEnv
+  let inLibrary (n : Name) : Bool := match env.getModuleIdxFor? n with
+    | some i =>
+      let r := (env.header.moduleNames[i.toNat]!).getRoot
+      r == `Init || r == `Std || r == `Lean || r == `Mathlib
+    | none => false
+  t.getUsedConstants.filterM fun n => do
+    let some (.defnInfo info) := env.find? n | return false
+    if (privateToUserName n).isInternal || inLibrary n || isMatcherCore env n ||
+        (← isInstance n) || (← isProjectionFn n) then
+      return false
+    forallTelescopeReducing info.type fun _ r => return !r.isSort
+
+/-- Closes `g` by the arithmetic arms with the definitions `chargeDefs` of its target unfolded. -/
+def unfoldedLeaf (g : MVarId) : TacticM Unit := do
+  let names ← chargeDefs (← instantiateMVars (← g.getType))
+  if names.isEmpty then throwError "query_bound: no defined charge"
+  let lems ← names.mapM fun n => `(Lean.Parser.Tactic.simpLemma| $(mkCIdent n):term)
+  setGoals [g]
+  evalTactic (← `(tactic| first
+    | (simp [$[$lems:simpLemma],*]; done)
+    | (simp [$[$lems:simpLemma],*]; omega)
+    | (simp only [$[$lems:simpLemma],*]; split <;> omega)))
+
 /-- Closes an arithmetic goal. A goal the first arms leave open is tried with the instances of
-`addJointInstances` in its context, then by `grind`. -/
+`addJointInstances` in its context, with its defined charges unfolded, then by `grind`. -/
 def leaf (g : MVarId) : TacticM Unit := do
   let (_, g) ← g.intros
   let rest ← getGoals
@@ -217,6 +252,7 @@ def leaf (g : MVarId) : TacticM Unit := do
         | assumption
         | omega
         | (simp only [Sum.elim_inl, Sum.elim_inr, Function.comp]; omega)
+        | (simp only [List.length_cons, Nat.succ_mul, Nat.add_mul, Nat.one_mul]; omega)
         | (simp; done)
         | (simp; omega)
         | (simp [*]; done)))
@@ -230,7 +266,11 @@ def leaf (g : MVarId) : TacticM Unit := do
           | (simp; omega)))
       catch _ =>
         s.restore
-        evalTactic (← `(tactic| grind [Sum.elim]))
+        try
+          g.withContext (unfoldedLeaf g)
+        catch _ =>
+          s.restore
+          evalTactic (← `(tactic| grind [Sum.elim]))
     unless (← getGoals).isEmpty do throwError "query_bound: arithmetic leaf left open"
   finally
     setGoals rest
@@ -290,6 +330,22 @@ def eraseTimed? (A : Expr) : MetaM (Option Expr) := do
   s.restore
   return none
 
+/-- The two components `A.IsQueryBoundBy chargeInl h` and `A.IsQueryBoundBy chargeInr q`, under
+the binders of `e`, when `e` concludes the two-kind bound `IsQueryBound₂ A h q`; otherwise empty. -/
+def twoKindBounds (e : Expr) : MetaM (Array Expr) := do
+  let name := adv `isQueryBound₂_iff
+  unless (← getEnv).contains name do return #[]
+  forallTelescopeReducing (← inferType e) fun xs c => do
+    let c ← whnfR c
+    unless c.isAppOf isQueryBound₂Name do return #[]
+    let thm ← mkConstWithFreshMVarLevels name
+    let (ms, _, concl) ← forallMetaTelescope (← inferType thm)
+    let some (lhs, _) := (← instantiateMVars concl).iff? | return #[]
+    unless ← isDefEq lhs c do return #[]
+    let p ← mkAppM ``Iff.mp #[← instantiateMVars (mkAppN thm ms), mkAppN e xs]
+    return #[← mkLambdaFVars xs (← mkAppM ``And.left #[p]),
+      ← mkLambdaFVars xs (← mkAppM ``And.right #[p])]
+
 /-- The candidate theorems named after the head definition of `A`. -/
 def namedSources (A : Expr) : MetaM (List Name) := do
   let some n := A.getAppFn.constName? | return []
@@ -302,7 +358,8 @@ def namedSources (A : Expr) : MetaM (List Name) := do
         if let some t := A.appArg!.appArg!.getAppFn.constName? then
           cs := (t.getPrefix ++ `isQueryBound_erase) :: (← eraseCompanions t.getPrefix)
   cs := cs ++ [Name.str n.getPrefix ("isQueryBoundBy_" ++ last),
-    Name.str n.getPrefix ("isQueryBound_" ++ last), n ++ `isQueryBoundBy, n ++ `isQueryBound]
+    Name.str n.getPrefix ("isQueryBound_" ++ last),
+    Name.str n.getPrefix ("isQueryBound₂_" ++ last), n ++ `isQueryBoundBy, n ++ `isQueryBound]
   return cs.filter env.contains
 
 /-- The fields of the structure of a projection at the head of `A`. -/
@@ -317,16 +374,19 @@ def fieldSources (A : Expr) : MetaM (List Name) := do
 
 /-- The known bound terms of `A`: hypotheses, listed names, structure fields and named theorems. -/
 def sources (cfg : Cfg) (A : Expr) : MetaM (Array Expr) := do
-  let mut out : Array Expr := #[]
+  let mut es : Array Expr := #[]
   for d in ← getLCtx do
     if d.isImplementationDetail then continue
     let (_, _, c) ← forallMetaTelescopeReducing d.type
-    if (parseBound? (← whnfR c)).isSome then out := out.push d.toExpr
-  for n in cfg.extra do out := out.push (← mkConstWithFreshMVarLevels n)
-  for n in ← fieldSources A do out := out.push (← mkConstWithFreshMVarLevels n)
+    let c ← whnfR c
+    if (parseBound? c).isSome || c.isAppOf isQueryBound₂Name then es := es.push d.toExpr
+  for n in cfg.extra do es := es.push (← mkConstWithFreshMVarLevels n)
+  for n in ← fieldSources A do es := es.push (← mkConstWithFreshMVarLevels n)
   if cfg.named then
-    for n in ← namedSources A do out := out.push (← mkConstWithFreshMVarLevels n)
-  return out
+    for n in ← namedSources A do es := es.push (← mkConstWithFreshMVarLevels n)
+  es.foldlM (init := #[]) fun out e => do
+    let parts ← twoKindBounds e
+    return if parts.isEmpty then out.push e else out ++ parts
 
 /-- The constant at the head of a tree. -/
 def headName (A : Expr) : Option Name := A.getAppFn.constName?
@@ -352,6 +412,35 @@ def unfoldHead? (A : Expr) : MetaM (Option Expr) := do
       prove its bound by induction and name the theorem"
   return some e
 
+/-- Unifies the tree `X` of a known bound with the tree `A`: reducibly, and when that fails, by
+the same head and arguments, with a metavariable argument assigned when its type agrees at default
+transparency. So `A.bake … ?st` with `?st : A.AdvState` takes `st : A.toAdversary.AdvState`. -/
+partial def unifyTree (X A : Expr) : MetaM Bool := do
+  if ← withReducible (isDefEq X A) then return true
+  let X ← instantiateMVars X
+  if X.isMVar then
+    unless ← withDefault (isDefEq (← inferType X) (← inferType A)) do return false
+    return ← X.mvarId!.checkedAssign A
+  let xs := X.getAppArgs
+  let ys := A.getAppArgs
+  if xs.isEmpty || xs.size != ys.size || X.getAppFn.isMVar then return false
+  unless ← withReducible (isDefEq X.getAppFn A.getAppFn) do return false
+  for x in xs, y in ys do
+    unless ← unifyTree x y do return false
+  return true
+
+/-- Closes `g` from a hypothesis `(query d k).IsQueryBound 0`, which is `False`. -/
+def refuteZeroBudget (g : MVarId) : MetaM Bool := g.withContext do
+  for d in ← getLCtx do
+    if d.isImplementationDetail then continue
+    let some (none, X, n) := parseBound? (← whnfR (← instantiateMVars d.type)) | continue
+    unless (← whnfCore X).isAppOf (adv `query) do continue
+    unless (← whnfD n).nat? == some 0 || (← whnfD n).rawNatLit? == some 0 do continue
+    unless (← whnfD d.type).isFalse do continue
+    g.assign (← mkFalseElim (← g.getType) d.toExpr)
+    return true
+  return false
+
 mutual
 
 /-- A proof of a known bound of `A` from the source term `h`, with its charge and budget. The
@@ -359,13 +448,17 @@ charge of the source is the goal charge `c` when it is left free. -/
 partial def instSource (cfg : Cfg) (h A c : Expr) (fuel : Nat) :
     TacticM (Option (Expr × Expr × Expr)) := do
   let t ← inferType h
-  let (ms, _, concl) ← forallMetaTelescopeReducing t
+  let (ms, bis, concl) ← forallMetaTelescopeReducing t
   let concl ← whnfR (← instantiateMVars concl)
   let some (cs?, X, m) := parseBound? concl | return none
-  unless ← withReducible (isDefEq X A) do return none
+  unless ← unifyTree X A do return none
   if let some cs := cs? then
     if (← instantiateMVars cs).isMVar then
       unless ← isDefEq cs c do return none
+  for mv in ms, bi in bis do
+    if bi.isInstImplicit && !(← mv.mvarId!.isAssigned) then
+      let some i ← synthInstance? (← instantiateMVars (← mv.mvarId!.getType)) | return none
+      mv.mvarId!.assign i
   for mv in ms do
     let mid := mv.mvarId!
     if ← mid.isAssigned then continue
@@ -430,7 +523,16 @@ partial def estimates (cfg : Cfg) (c A : Expr) (fuel : Nat) : TacticM (List Expr
       s.restore
       if let some b := b then
         unless b.hasExprMVar || out.contains b do out := out ++ [b]
-    return out
+    let impl := args[args.size - 3]!
+    let cs ← try
+        forallBoundedTelescope (← inferType impl) (some 2) fun xs _ => do
+          let r ← estimates cfg c (mkAppN impl xs).headBeta (fuel - 1)
+          return r.filter fun e => !xs.any fun x => e.containsFVar x.fvarId!
+      catch _ => pure []
+    let mut products := []
+    for b in out do
+      for e in cs do products := products ++ [← mkAppM ``HMul.hMul #[b, e]]
+    return out ++ products
   if fn == some (adv `mapQuery) then
     return ← estimates cfg c args.back! (fuel - 1)
   if A.isAppOf ``ite then
@@ -513,11 +615,33 @@ partial def trySourcePairs (cfg : Cfg) (g : MVarId) (c A : Expr) (fuel : Nat) : 
       s.restore
   return false
 
+/-- Closes a bound goal of the simulation `A` at a charge at most `1`, by
+`isQueryBound_simulate_mul`: `q` queries, each answered by a program of at most `e` queries, cost
+`q * e` queries. -/
+partial def simulateMul (cfg : Cfg) (g : MVarId) (A n : Expr) (fuel : Nat) : TacticM Unit := do
+  let b ← mkFreshExprMVar (mkConst ``Nat)
+  let m ← mkFreshExprMVar (← mkAppM (adv `IsQueryBound) #[A, b])
+  match ← applyRule m.mvarId! (adv `isQueryBound_simulate_mul) with
+  | [himpl, hA] =>
+    solve cfg hA (fuel - 1)
+    solve cfg himpl (fuel - 1)
+  | _ => throwError "query_bound: unexpected goals of the product rule"
+  let pf ← mkAppM (adv `IsQueryBound.isQueryBoundBy_one) #[← instantiateMVars m]
+  let n₀ ← instantiateMVars b
+  if (← instantiateMVars n).isMVar then
+    unless ← (← instantiateMVars n).mvarId!.checkedAssign n₀ do throwError "budget"
+  match ← applyRule g (adv `isQueryBoundBy_of_le) [(`h, pf), (`c₀, ← chargeOne A), (`n₀, n₀)] with
+  | [hc, hn] =>
+    chargeLeaf hc
+    leaf hn
+  | _ => throwError "query_bound: unexpected goals of the known-bound rule"
+
 /-- Solves a goal `IsQueryBoundBy`, `IsQueryBound`, `MayOnlyCall` or `IsQueryBound₂`. -/
 partial def solve (cfg : Cfg) (g : MVarId) (fuel : Nat) : TacticM Unit := do
   if fuel == 0 then throwError "query_bound: depth bound reached"
   let (_, g) ← g.intros
   g.withContext do
+    if ← refuteZeroBudget g then return
     let t ← whnfR (← instantiateMVars (← g.getType))
     if t.isAppOf (adv `IsQueryBound) then
       match ← applyRule g (adv `isQueryBound_of_one) with
@@ -596,6 +720,10 @@ partial def solveTree (cfg : Cfg) (g : MVarId) (c A n : Expr) (fuel : Nat) : Tac
           | _ => throwError "query_bound: unexpected goals"
       catch e => err? := some e
       s.restore
+    let s ← saveState
+    try
+      return ← simulateMul cfg g A' n fuel
+    catch _ => s.restore
     if let some e := err? then throw e
     throwError "query_bound: the simulated adversary has no known bound:{indentExpr X}"
   else if fn == some (adv `mapQuery) then
