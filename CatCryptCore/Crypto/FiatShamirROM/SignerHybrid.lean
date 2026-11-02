@@ -8,6 +8,8 @@ module
 public import CatCryptCore.Crypto.FiatShamirROM.StatHVZK
 public import CatCryptCore.Crypto.HybridArgument
 public import CatCryptCore.ForMathlib.PMFSupport
+public import CatCryptCore.Crypto.OracleQueryVec
+public import CatCryptCore.Tactics.QueryBound
 
 /-!
 # Fiat–Shamir in the random-oracle model: signers that sample the challenges first
@@ -666,22 +668,9 @@ theorem isQueryBound_hybRunOf (sgn : G.SignStep) (D D' : G.Sampler) (k : ℕ)
     (A : OracleAdv G.Query G.Answer α) (j : ℕ) (s : G.Tables × Bool) :
     (hybRunOf sgn D D' k xw f j A s).IsQueryBound (if j ≤ k then 1 else 0) := by
   induction A generalizing j s with
-  | ret a => trivial
-  | rand p c ih => exact fun b => ih b j s
-  | query d c ih =>
-    cases d with
-    | inl key => exact fun o => ih o.1 j o.2
-    | inr m =>
-      by_cases hj : j = k
-      · subst hj
-        simp only [hybRunOf, ite_true, le_refl]
-        intro o
-        have := ih o.1 (j + 1) o.2
-        simpa using this
-      · simp only [hybRunOf, hj, ite_false]
-        intro o
-        refine (ih o.1 (j + 1) o.2).mono ?_
-        split_ifs <;> omega
+  | ret a => query_bound
+  | rand p c ih => query_bound
+  | query d c ih => cases d <;> query_bound
 
 /-- The `k`-th hybrid distinguisher of a signing step asks the challenge oracle at most
 once. -/
@@ -689,10 +678,7 @@ theorem isQueryBound_hybDistByOf (sgn : G.SignStep)
     (P : G.Stmt → G.Forgery × (G.Tables × Bool) → Bool) (D D' : G.Sampler) (k : ℕ)
     {qH qS : ℕ} (A : G.Adversary qH qS) (xw : G.Stmt × G.Wit) :
     (hybDistByOf sgn P D D' k A xw).IsQueryBound 1 := by
-  have := isQueryBound_hybRunOf sgn D D' k xw (P xw.1) (withVerify xw.1 (A.run xw.1)) 0
-    (Protocol.Tables.empty, false)
-  unfold hybDistByOf
-  simpa using this
+  query_bound
 
 /-- A hash query keeps the signed messages. -/
 theorem realStep_signed_inl (xw : G.Stmt × G.Wit) (s : G.Tables × Bool) (k : G.Key)

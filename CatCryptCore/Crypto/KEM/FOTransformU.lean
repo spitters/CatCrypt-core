@@ -8,6 +8,8 @@ module
 public import CatCryptCore.Crypto.PKE.Games
 public import CatCryptCore.Crypto.KEM.Games
 public import CatCryptCore.Crypto.Constructions.ECBCPRFFlag
+public import CatCryptCore.Crypto.OracleQueryVec
+public import CatCryptCore.Tactics.QueryBound
 
 /-!
 # The U-transforms of Hofheinz–Hövelmanns–Kiltz in the random-oracle model
@@ -142,33 +144,17 @@ noncomputable def simImpl (cstar : C) (kstar : K) (st : SimState M C K) :
 omit [Fintype M] [Nonempty M] [DecidableEq M] in
 theorem isQueryBound_lazyDProg {A : Type} (st : SimState M C K) (c : C) (w : K → A) :
     (lazyDProg st c w).IsQueryBound 0 := by
-  unfold lazyDProg; split
-  · trivial
-  · exact fun _ => trivial
+  query_bound
 
 omit [Fintype M] [Nonempty M] in
 theorem isQueryBound_lazyQProg {A : Type} (st : SimState M C K) (q : M × C) (w : K → A) :
     (lazyQProg st q w).IsQueryBound 0 := by
-  unfold lazyQProg; split
-  · trivial
-  · exact fun _ => trivial
+  query_bound
 
 omit [Fintype M] [Nonempty M] in
 theorem isQueryBound_simImpl (cstar : C) (kstar : K) (st : SimState M C K) (d : (M × C) ⊕ C) :
     (simImpl cstar kstar st d).IsQueryBound (Sum.elim (fun _ => 1) (fun _ => 0) d) := by
-  cases d with
-  | inl q =>
-    intro b
-    dsimp only
-    split
-    · split
-      · trivial
-      · exact isQueryBound_lazyDProg _ _ _
-    · exact isQueryBound_lazyQProg _ _ _
-  | inr c =>
-    dsimp only [simImpl, Sum.elim_inr]; split
-    · trivial
-    · exact isQueryBound_lazyDProg _ _ _
+  query_bound
 
 /-- The OW-PCA adversary built from an IND-CCA adversary `B` against `uNotBot P`. It
 runs `B` once on `(pk, c*, k*)` for a uniform key `k*`, asks one
@@ -179,12 +165,7 @@ noncomputable def uReduction {qH qD : ℕ} (B : ROMINDCCAAdversary PK K C (M × 
   run pk cstar := .rand (PMF.uniformFintype K) fun kstar =>
     (OracleAdv.simulate (simImpl cstar kstar) (B.run pk cstar kstar) SimState.init).bind
       fun x => .ret (x.2.found.getD (Classical.arbitrary M))
-  isQueryBound pk cstar kstar := by
-    have h := OracleAdv.isQueryBound_bind
-      (OracleAdv.isQueryBound_simulate (simImpl cstar kstar) _ (isQueryBound_simImpl cstar kstar)
-        (B.isQueryBoundH pk cstar kstar) SimState.init)
-      (f := fun x => .ret (x.2.found.getD (Classical.arbitrary M))) (n := 0) fun _ => trivial
-    simpa using h
+  isQueryBound pk cstar kstar := by query_bound
 
 /-! ## The challenge hop -/
 
