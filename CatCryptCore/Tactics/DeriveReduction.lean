@@ -5,6 +5,7 @@ Authors: CatCrypt Contributors
 -/
 module
 
+public import CatCryptCore.Core.CodeSequenceTimed
 public import CatCryptCore.Core.SPTree
 public import CatCryptCore.Crypto.SDist
 public import CatCryptCore.Tactics.DeriveTimed
@@ -174,6 +175,13 @@ recursion) is reflected; a match on an adversary binds it in each alternative. A
 primitives of `c` at the arguments and the binders of `B` for its computation primitives,
 which must be fields of binders of `B`; its compile equation is `c.compile_tree`, with the
 adversary arguments related by the traversal.
+
+A recursive computation whose tree, compile equation and costed form are registered by hand
+(`c.tree`, `c.compile_tree`, `c.tree.timed`, `c.tree.erase_timed`) is called through them
+without a derivation. The sequence of a family of computations `SPComp.seqFin n β g` (and
+`SPComp.seqVec n f`, which unfolds to it), whose family is a binder whose type depends on the
+recursion, is registered in `CatCryptCore.Core.CodeSequenceTimed`: the family is reflected
+pointwise and the time is the sum over the positions of one plus the component's time.
 
 ## Structure-valued reductions
 

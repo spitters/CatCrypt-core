@@ -267,7 +267,10 @@ A registered primitive `f` has a cost `f.timedCost`, a definition taking the arg
 `f`, each function-typed argument followed by its cost companion, and returning `ℕ`; the
 command `timed_cost f := e` defines it. A registered cost is a trusted statement about the
 cost of `f`. A reduction whose costed form is written by hand is registered by defining
-`R.timed` and `R.erase_timed` in the binder convention above.
+`R.timed` and `R.erase_timed` in the binder convention above. A registered costed form generic
+in its result type returns plain results (`SPComp.seqFin.tree.timed`,
+`CatCryptCore.Core.CodeSequenceTimed`); called at a result type holding functions, its results
+are lifted to costed closures of companion zero (`ι`), as the results of a tree binder are.
 
 A field `m` of a computed structure `g b₁ … bₖ`, where `g` is a field path (`kit.aead`) or a
 local function with a cost companion, applied as `(g b₁ … bₖ).m x₁ … xₙ`, is priced as the
@@ -4132,7 +4135,16 @@ partial def callTimed (ctx : Ctx) (e target : Expr) (args : Array Expr) (T : Tre
   unless out.size == arity do
     fail m!"the costed form of the callee `{e.getAppFn}` takes the costs of fields of local \
       structures or instances; register its costed form at the call"
-  return T.delayE (add (natE 1) cost) (mkAppN target out)
+  let call := mkAppN target out
+  -- A registered costed form whose results are plain (a combinator generic in its result type,
+  -- `SPComp.seqFin.tree.timed`), called where the results hold functions: its results are
+  -- lifted to costed closures of companion zero (`ι`).
+  let callTy ← whnfR (← inferType call)
+  if callTy.isAppOfArity ``Prod 2 && !(← isDefEq callTy T.pairType) then
+    if let some raw ← treeTy? (← inferType e) then
+      if ← isDefEq callTy raw.pairType then
+        return T.delayE (add (natE 1) cost) (← liftBinderE T raw call)
+  return T.delayE (add (natE 1) cost) call
 
 /-- Derive and add the costed form `c.timed` and the erasure theorem `c.erase_timed` of the
 reduction `c`. -/

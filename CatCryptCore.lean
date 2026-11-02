@@ -25,6 +25,7 @@ public import CatCryptCore.Core.Location
 public import CatCryptCore.Core.Heap
 public import CatCryptCore.Core.Code
 public import CatCryptCore.Core.CodeSequence
+public import CatCryptCore.Core.CodeSequenceTimed
 public import CatCryptCore.Core.SPTree
 public import CatCryptCore.Core.SPTreeTimed
 public import CatCryptCore.Core.SPTreeFree
