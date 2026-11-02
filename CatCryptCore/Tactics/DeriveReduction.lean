@@ -814,7 +814,15 @@ one binder and one cost companion), and with `ctx.unfold` always, so that the fi
 its body are found. The search `mentionsKey` runs only when there are such primitives. The
 parameters `ps` of a field `S.f ps s` of a binder are the arguments of the type of `s` and are
 kept as they are (`keepParams`): a field abstracted in them would give `S.f` a structure of
-another type than that of `s`. -/
+another type than that of `s`.
+
+Proof-carrying data rule: a term whose type is a structure with a proof field and a data-function
+field (`isProofStructVal`: an `Equiv`, a record of functions with a law, a transcript with a
+degree proof) is opaque under abstraction. Rewriting its data fields would leave its proof fields
+stated over the original functions, an application type mismatch at the abstracted proof
+(`_proof_n`, `autoParam`) when the tree is defined. Such a value is neither unfolded nor rewritten;
+a function applied to it (`⇑e x`) is a data-function primitive taking the value as an argument,
+and a projection of its data-function field is reduced to the field. -/
 partial def abstractData (ctx : RCtx) (e : Expr) : MetaM Expr := do
   let keys := (ctx.prims.filter (·.data)).map (·.key)
   let neg ← IO.mkRef ({} : Std.HashMap Expr Nat)
@@ -829,9 +837,10 @@ partial def abstractData (ctx : RCtx) (e : Expr) : MetaM Expr := do
     let rest ← (xs.extract info.numParams xs.size).mapM (abstractData ctx)
     return .done (mkAppN f (xs.extract 0 info.numParams ++ rest))
   Meta.transform e (pre := fun x => do
-    -- A structure value with proof fields is not rewritten: its consumers are unfolded and its
-    -- projections reduced to its fields.
+    -- A structure value with proof fields is not rewritten: its projections are reduced to its
+    -- fields, the value itself is kept as one term, and its consumers are unfolded.
     if let some x' ← projOfProofStruct? ctx.top x then return .visit x'
+    if ← isProofStructVal ctx.top x then return .done x
     if ← unfoldsProofStructArg ctx.top x then
       if let some x' ← unfoldDefinition? x then return .visit x'.headBeta
     let some (F, args) ← fieldKey? ctx.top x | do

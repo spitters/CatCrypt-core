@@ -2670,7 +2670,9 @@ def closeByCaseHypsRev (g : MVarId) : MetaM Bool := g.withContext do
 /-- Close the goal `g` of the form `t.bind f = t`, for a bind of a registered tree kind with a
 right unit law (`SPTree.bind_ret`, `OracleAdv.Timed.bind_ret_eq`), when the continuation `f` is
 definitionally the unit: a continuation that rebuilds its argument field by field
-(`fun a => ret { L := fun x => a.L x, … }`) is the unit up to structure eta. -/
+(`fun a => ret { L := fun x => a.L x, … }`) is the unit up to structure eta, and the tree `t` on
+the two sides is the same up to definitional equality (a result type written through a type
+definition). -/
 def closeByBindRetEta (g : MVarId) : MetaM Bool := g.withContext do
   let ty ← instantiateMVars (← g.getType)
   let some (_, lhs, rhs) := ty.eq? | return false
@@ -2680,7 +2682,8 @@ def closeByBindRetEta (g : MVarId) : MetaM Bool := g.withContext do
       some ``CatCrypt.Crypto.OracleAdv.Timed.bind_ret_eq
     else none
   let some lem := lem? | return false
-  unless lhs.getAppArgs[lhs.getAppNumArgs - 2]! == rhs do return false
+  let t := lhs.getAppArgs[lhs.getAppNumArgs - 2]!
+  unless t == rhs || (← isDefEq t rhs) do return false
   let s ← saveState
   try
     let pf ← mkAppM lem #[rhs]
