@@ -332,8 +332,12 @@ The erasure proof unfolds the data definitions whose bodies are headed by a case
 matcher, `if` or dependent `if`; `isCaseHead`). After the `if` closer it runs a stage with the
 bind lemmas of `if`, of dependent `if` (`OracleAdv.ite_bind`, `SPTree.dite_bind`) and of the
 matchers of the costed form (`matchBindLemma`), first without the discharger, then with it. A
-costed form whose value uses a declaration private to the module is not exposed, since its
-equation lemmas could not be stated in the exported environment.
+goal left that holds up to structure eta is closed last, under a heartbeat cap: the right unit
+law of a bind whose continuation rebuilds its argument field by field (`closeByBindRetEta`); the
+erasure theorems of the costed forms in the goal with the round trip of erasure and lift; and a
+case hypothesis of a second match on a matched projection reduced by the first
+(`closeByCaseHypsEta`). A costed form whose value uses a declaration private to the module is
+not exposed, since its equation lemmas could not be stated in the exported environment.
 
 ## Attribution
 
@@ -2594,6 +2598,68 @@ def closeByCaseHypsRev (g : MVarId) : MetaM Bool := g.withContext do
       catch _ => s.restore
   return false
 
+/-- Close the goal `g` of the form `t.bind f = t`, for a bind of a registered tree kind with a
+right unit law (`SPTree.bind_ret`, `OracleAdv.Timed.bind_ret_eq`), when the continuation `f` is
+definitionally the unit: a continuation that rebuilds its argument field by field
+(`fun a => ret { L := fun x => a.L x, … }`) is the unit up to structure eta. -/
+def closeByBindRetEta (g : MVarId) : MetaM Bool := g.withContext do
+  let ty ← instantiateMVars (← g.getType)
+  let some (_, lhs, rhs) := ty.eq? | return false
+  let lem? := if lhs.isAppOfArity ``CatCrypt.Core.SPTree.bind 4 then
+      some ``CatCrypt.Core.SPTree.bind_ret
+    else if lhs.isAppOfArity ``CatCrypt.Crypto.OracleAdv.bind 6 then
+      some ``CatCrypt.Crypto.OracleAdv.Timed.bind_ret_eq
+    else none
+  let some lem := lem? | return false
+  unless lhs.getAppArgs[lhs.getAppNumArgs - 2]! == rhs do return false
+  let s ← saveState
+  try
+    let pf ← mkAppM lem #[rhs]
+    if ← isDefEq (← inferType pf) ty then
+      g.assign pf
+      return true
+  catch _ => pure ()
+  s.restore
+  return false
+
+/-- Run the tactic `t` on the goal `g` under a cap of `hb` thousand heartbeats counted from the
+call; exceeding the cap is an ordinary error, which `try` catches. -/
+def runBounded (g : MVarId) (t : Syntax) (hb : Nat := 50000) : TermElabM (List MVarId) :=
+  withCurrHeartbeats <|
+    withTheReader Core.Context (fun c => { c with maxHeartbeats := hb * 1000 }) <|
+      tryCatchRuntimeEx (Tactic.run g (Tactic.evalTactic t)) fun e =>
+        throwError "the closing tactic exceeds its heartbeat cap: {e.toMessageData}"
+
+/-- Close the goal `g` through two case hypotheses: `d : a = C as` (a constructor application,
+`a` not a variable) and an equation `d'` that mentions `a`, the case hypothesis of a second
+match on a value computed from `a` (`Option.map f a = some y`). The equation `d'` is rewritten
+with `d`, the hypotheses are reduced by `tac`, which substitutes the variables that the reduced
+`d'` equates, and each goal left is closed by `finish`. The goal is unchanged when no pair
+closes it. -/
+def closeByCaseHypsEta (g : MVarId) (tac : Syntax) (finish : MVarId → TermElabM Bool) :
+    TermElabM Bool := g.withContext do
+  let decls := (← getLCtx).foldl (init := #[]) fun acc d =>
+    if d.isImplementationDetail then acc else acc.push d
+  for d in decls do
+    let some (_, lhs, rhs) := (← instantiateMVars d.type).eq? | continue
+    if lhs.isFVar then continue
+    unless (← isConstructorApp? rhs).isSome do continue
+    for d' in decls do
+      if d'.fvarId == d.fvarId then continue
+      let ty' ← instantiateMVars d'.type
+      let some (_, _, rhs') := ty'.eq? | continue
+      unless (← isConstructorApp? rhs').isSome do continue
+      let s ← saveState
+      try
+        let r ← g.rewrite ty' d.toExpr
+        let g1 := (← g.replaceLocalDecl d'.fvarId r.eNew r.eqProof).mvarId
+        let gs ← runBounded g1 tac
+        if ← gs.allM finish then return true
+        s.restore
+      catch _ =>
+        s.restore
+  return false
+
 /-- The result types, free of loose bound variables, of the computations bound by the `bind`
 nodes of the tree kinds `kinds` in `e` (the third argument from the end of a full application
 of `T.bind`). -/
@@ -4550,6 +4616,54 @@ partial def deriveTimed (ctx : Ctx) (c : Name) : TermElabM Unit := do
       if (← Tactic.run g (Tactic.evalTactic closeCross)).isEmpty then return false
       s.restore
       if (← Tactic.run g (Tactic.evalTactic closeCrossRound)).isEmpty then return false
+      s.restore
+      return true
+    -- A goal that holds up to structure eta, closed by the stages below, each tried only on a
+    -- goal the stages above leave. A bind whose continuation rebuilds its argument field by
+    -- field (`t.bind (fun a => ret { L := fun x => a.L x, … }) = t`) is the right unit law of
+    -- the bind (`closeByBindRetEta`). A bind of a costed callee, of the callees of an unfolded
+    -- callee included, followed by the erasure of its result (`(R.timed ys).2.erase.bind k`)
+    -- is rewritten by the erasure theorems `R.erase_timed_bind` of the costed forms in the goal,
+    -- their side conditions discharged by the round trip of erasure and lift (`finish`); a
+    -- structure left rebuilt from the projections of a state, one of which a case hypothesis
+    -- rewrote, is closed by `closeByCaseHypsRev`. A case hypothesis of a second match on a value
+    -- computed from a matched projection (`Option.map f (Option.map g s.td) = some y` beside
+    -- `s.td = some x`) is rewritten with the first and reduced, the equal values substituted
+    -- (`closeByCaseHypsEta`), before `finish`. Each tactic runs under a heartbeat cap.
+    let closeEtaCase ← `(tactic|
+      ((try simp only [$crossRoundLemmas,*] at *) <;> (try subst_vars)))
+    let allRound := allBind ++ roundLemmas
+    let finish (g : MVarId) : TermElabM Bool := do
+      if ← closeByCaseHypsRev g then return true
+      let envG ← getEnv
+      let mut extra : Array Name := #[]
+      for n in (← instantiateMVars (← g.getType)).getUsedConstants do
+        let .str p s := n | continue
+        unless s == ctx.suffix.toString do continue
+        let e := p ++ Name.mkSimple ("erase_" ++ ctx.suffix.toString)
+        for l in #[e, e.appendAfter "_bind"] do
+          if envG.contains l && !allRound.any (·.raw.getId == l) && !extra.contains l then
+            extra := extra.push l
+      let extraLemmas : Array (TSyntax `Lean.Parser.Tactic.simpLemma) ←
+        extra.mapM fun n => `(Lean.Parser.Tactic.simpLemma| $(mkIdent n):ident)
+      let allG := allRound ++ extraLemmas
+      let tacG ← `(tactic|
+        (simp (disch := (intros; simp only [$roundLemmas,*, id_eq])) only [$allG,*, id_eq] <;>
+          (try with_reducible rfl)))
+      let s ← saveState
+      try
+        let gs ← runBounded g tacG
+        if ← gs.allM (fun g' => closeByCaseHypsRev g') then return true
+      catch _ => pure ()
+      s.restore
+      return false
+    let rem ← rem.filterM fun g => do
+      let s ← saveState
+      if ← closeByBindRetEta g then return false
+      s.restore
+      if ← finish g then return false
+      s.restore
+      if ← closeByCaseHypsEta g closeEtaCase finish then return false
       s.restore
       return true
     unless rem.isEmpty do

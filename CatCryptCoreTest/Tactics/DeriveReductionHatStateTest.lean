@@ -22,6 +22,11 @@ constructors store a function; its costed state is `ℕ × (Unit ⊕ (P̂ ⊕ (P
 `G.pub` of its binder. `lawSim` passes the structure value `lawKitOf G`, whose proof field is the
 proof field `G.pub_inv` of its binder, to the definition `LawKit.trip`, and applies `G.pub`
 directly: the consumer is unfolded and the projections of the value are reduced to its fields.
+`seedSim` draws a structure of functions and keeps it in its state; the erasure theorem of the
+case without seed is the right unit law of the bind up to structure eta. `tdSim` matches on an
+optional function in the first component of its state, and its costed form matches on the
+erasure of the costed value; the case hypotheses of the two matches are reduced into each
+other and the rebuilt state closes by structure eta.
 No module imports this file.
 
 ## Main results
@@ -30,6 +35,7 @@ No module imports this file.
   `MultiHybrid.Timed.ErasesHat` is generated in `CatCryptCore.Crypto.UCTransparentMultiTimed`
 * `phaseSim.timed`, `phaseSim.erase_timed`, `kitSim.timed` and `kitSim.erase_timed`
 * `lawSim.timed` and `lawSim.erase_timed`
+* `seedSim.timed`, `seedSim.erase_timed`, `tdSim.timed` and `tdSim.erase_timed`
 -/
 
 @[expose] public section
@@ -204,5 +210,99 @@ noncomputable def lawSim (G : LawGrp) (A : ℕ → SPComp ℕ) (hA : ∀ n, SPCo
   finish_noFail _ _ := SPComp.pure_noFail _
 
 derive_reduction lawSim
+
+/-! ## A drawn structure of functions kept in the state -/
+
+/-- A seed of two functions. -/
+structure FnSeed where
+  /-- The first function. -/
+  f : ℕ → ℕ
+  /-- The second function. -/
+  g : ℕ → ℕ
+
+/-- The seed of a state: the seed drawn from `c` for a state without seed. -/
+noncomputable def seedPick (c : SPComp FnSeed) (s : Option FnSeed × ℕ) : SPComp FnSeed :=
+  match s.1 with
+  | none => c
+  | some ω => SPComp.pure ω
+
+/-- `seedPick` does not fail when `c` does not. -/
+theorem seedPick_noFail (c : SPComp FnSeed) (hc : SPComp.NoFail c) (s : Option FnSeed × ℕ) :
+    SPComp.NoFail (seedPick c s) := by
+  unfold seedPick; split
+  · exact hc
+  · exact SPComp.pure_noFail _
+
+/-- A hybrid machine that draws a seed of functions at its first activation and keeps it: the
+costed form rebuilds the drawn seed field by field, and the erasure theorem of the case without
+seed is the right unit law of the bind up to structure eta. -/
+noncomputable def seedSim (c : SPComp FnSeed) (hc : SPComp.NoFail c) :
+    MultiHybrid (Option FnSeed × ℕ) ℕ ℕ ℕ ℕ where
+  init := (none, 0)
+  fuel := 0
+  start s e := SPComp.bind (seedPick c s) fun ω =>
+    SPComp.pure ((some ω, s.2 + 1), .inr (ω.f e))
+  resume s o := SPComp.pure (s, .inr o)
+  finish s o := SPComp.pure (s, o)
+  start_noFail s _ := Assumptions.SPComp.bind_noFail (seedPick_noFail c hc s) fun _ =>
+    SPComp.pure_noFail _
+  resume_noFail _ _ := SPComp.pure_noFail _
+  finish_noFail _ _ := SPComp.pure_noFail _
+
+derive_reduction seedSim
+
+/-! ## A match on an optional function in a projection of the state -/
+
+/-- A state with an optional table, sampled on first use, and a table with a counter. -/
+structure TdCore where
+  /-- The optional table. -/
+  td : Option (Bool → Bool)
+  /-- A second table. -/
+  tab : Bool → ℕ
+  /-- A counter. -/
+  cnt : ℕ
+
+/-- The table of `c`, sampled and stored when absent. -/
+noncomputable def tdPick (c : TdCore) : SPComp ((Bool → Bool) × TdCore) :=
+  match c.td with
+  | some td => SPComp.pure (td, c)
+  | none => SPComp.bind (SPComp.sample (Bool → Bool)) fun td =>
+      SPComp.pure (td, { c with td := some td })
+
+/-- `tdPick` does not fail. -/
+theorem tdPick_noFail (c : TdCore) : SPComp.NoFail (tdPick c) := by
+  unfold tdPick; split
+  · exact SPComp.pure_noFail _
+  · exact Assumptions.SPComp.bind_noFail Assumptions.SPComp.sample_noFail fun _ =>
+      SPComp.pure_noFail _
+
+/-- The table of `c` applied at the test of the second table at `e`. -/
+noncomputable def tdCore (c : TdCore) (e : Bool) : SPComp (TdCore × Bool) :=
+  SPComp.bind (tdPick c) fun p => SPComp.pure (p.2, p.1 (decide (p.2.tab e = 0)))
+
+/-- `tdCore` does not fail. -/
+theorem tdCore_noFail (c : TdCore) (e : Bool) : SPComp.NoFail (tdCore c e) :=
+  Assumptions.SPComp.bind_noFail (tdPick_noFail c) fun _ => SPComp.pure_noFail _
+
+/-- A hybrid machine that answers from a log or from `tdCore` on the first component of its
+state: in the costed form the match on the optional table is a match on the erasure of its
+costed value, whose case hypothesis is reduced by the case hypothesis of the source match, and
+the rebuilt state is the state by structure eta. -/
+noncomputable def tdSim : MultiHybrid (TdCore × List (Bool × Bool)) Bool Bool Bool Bool where
+  init := (⟨none, fun _ => 0, 0⟩, [])
+  fuel := 0
+  start s e := match s.2.lookup e with
+    | some b => SPComp.pure (s, .inr b)
+    | none => SPComp.map (fun q => ((q.1, (e, q.2) :: s.2), .inr q.2)) (tdCore s.1 e)
+  resume s o := SPComp.pure (s, .inr o)
+  finish s o := SPComp.pure (s, o)
+  start_noFail s e := by
+    split
+    · exact SPComp.pure_noFail _
+    · exact Assumptions.SPComp.bind_noFail (tdCore_noFail s.1 e) fun _ => SPComp.pure_noFail _
+  resume_noFail _ _ := SPComp.pure_noFail _
+  finish_noFail _ _ := SPComp.pure_noFail _
+
+derive_reduction tdSim
 
 end CatCrypt.Tactics.DeriveReductionHatStateTest
