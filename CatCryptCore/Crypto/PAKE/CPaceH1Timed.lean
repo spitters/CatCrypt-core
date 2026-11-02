@@ -17,8 +17,6 @@ experiment to the double-match game (`CatCryptCore.Crypto.PAKE.CPaceH1`).
 
 ## Main results
 
-* `List.find?.timedCost_le` — a search with a test of cost at most `k` costs at most `k + 4`
-  per element and one more
 * `matchWrap.timeBound_timed` — with the CPace adversary of time at most `T`, at most `q`
   queries and call cost at most `a`, and generator lookups of cost at most `h`: time at most
   `1 + a + (T + q (h + 4)) + 12 (q + 1)²`
@@ -33,20 +31,6 @@ costs of the list operations of the log search.
 @[expose] public section
 
 set_option autoImplicit false
-
-/-! ## The cost of a list search
-
-This section belongs upstream, in `CatCryptCore.Tactics.StdCosts`. -/
-
-derive_cost List.find?
-
-/-- A search with a test of cost at most `k` costs at most `k + 4` per element and one more. -/
-theorem List.find?.timedCost_le {β : Type} (p : β → Bool) (pCost : β → ℕ) {k : ℕ}
-    (hp : ∀ b, pCost b ≤ k) (l : List β) :
-    List.find?.timedCost p pCost l ≤ (k + 4) * l.length + 1 := by
-  induction l with
-  | nil => simp [List.find?.timedCost]
-  | cons b l ih => have := hp b; simp [List.find?.timedCost, Nat.mul_succ]; split <;> omega
 
 namespace CatCrypt.Crypto.PAKE.CPaceH1
 

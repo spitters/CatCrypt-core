@@ -16,8 +16,8 @@ derived by `derive_cost` from the bodies Lean keeps for their equation lemmas, s
 in the length of the list or the size of the array; for a function with a function argument
 the bound assumes a constant bound `k` on the cost companion of that argument.
 
-`List.lookup` is derived with `BEq.beq` on its local instance at one unit (`derive_cost
-(unit := BEq.beq)`), a trusted statement about the equality test of the keys.
+`List.lookup` and `List.erase` are derived with `BEq.beq` on their local instances at one unit
+(`derive_cost (unit := BEq.beq)`), a trusted statement about the equality test of the keys.
 
 An array is its list of elements: `Array.size`, `Array.push` and `Array.getD` are priced by
 their definitions through `Array.toList`, so their costs are linear in the size.
@@ -34,6 +34,11 @@ their definitions through `Array.toList`, so their costs are linear in the size.
   `List.zipWith.timedCost_le`, `List.any.timedCost_le` — `(k + c) * l.length + 1` for function
   costs at most `k`; `List.any.timedCost_const` — `(c + 5) * l.length + 1` for a predicate of
   constant cost `c`
+* `List.find?.timedCost_le`, `List.findSome?.timedCost_le`, `List.filter.timedCost_le`,
+  `List.filterMap.timedCost_le` — `(k + 4) * l.length + 1` for function costs at most `k`
+* `List.countP.go.timedCost_le`, `List.countP.timedCost_le` — `(k + 5) * l.length` plus one and
+  two units, for predicate costs at most `k`
+* `List.erase.timedCost_le` — `5 * l.length + 1`, with each comparison at one unit
 * `List.flatten.timedCost_le` — `(2 w + 4) * L.length + 1` for lists of length at most `w`
 * `Fin.foldr.loop.timedCost_le` — the loop of `Fin.foldr` from index `i` costs at most
   `(k + 3) * i + 4` for step costs at most `k`
@@ -96,6 +101,13 @@ derive_cost List.range
 derive_cost Fin.foldr.loop
 derive_cost List.flatten
 derive_cost List.any
+derive_cost List.find?
+derive_cost List.findSome?
+derive_cost List.filter
+derive_cost List.filterMap
+derive_cost List.countP.go
+derive_cost List.countP
+derive_cost (unit := BEq.beq) List.erase
 
 section
 
@@ -219,6 +231,76 @@ one more. -/
 theorem List.any.timedCost_const (l : List α) (p : α → Bool) (c : ℕ) :
     List.any.timedCost l p (fun _ => c) ≤ (c + 5) * l.length + 1 :=
   List.any.timedCost_le l p _ fun _ => le_rfl
+
+/-- A search with a test of cost at most `k` costs at most `k + 4` per element and one more. -/
+theorem List.find?.timedCost_le (p : α → Bool) (pCost : α → ℕ) {k : ℕ}
+    (hp : ∀ a, pCost a ≤ k) (l : List α) :
+    List.find?.timedCost p pCost l ≤ (k + 4) * l.length + 1 := by
+  induction l with
+  | nil => simp [List.find?.timedCost]
+  | cons a l ih => have := hp a; simp [List.find?.timedCost, Nat.mul_succ]; split <;> omega
+
+/-- `List.findSome?` with a function of cost at most `k` costs at most `k + 4` per element and
+one more. -/
+theorem List.findSome?.timedCost_le (f : α → Option β) (fCost : α → ℕ) {k : ℕ}
+    (hf : ∀ a, fCost a ≤ k) (l : List α) :
+    List.findSome?.timedCost f fCost l ≤ (k + 4) * l.length + 1 := by
+  induction l with
+  | nil => simp [List.findSome?.timedCost]
+  | cons a l ih => have := hf a; simp [List.findSome?.timedCost, Nat.mul_succ]; split <;> omega
+
+/-- Filtering with a predicate of cost at most `k` costs at most `k + 4` per element and one
+more. -/
+theorem List.filter.timedCost_le (p : α → Bool) (pCost : α → ℕ) {k : ℕ}
+    (hp : ∀ a, pCost a ≤ k) (l : List α) :
+    List.filter.timedCost p pCost l ≤ (k + 4) * l.length + 1 := by
+  induction l with
+  | nil => simp [List.filter.timedCost]
+  | cons a l ih => have := hp a; simp [List.filter.timedCost, Nat.mul_succ]; grind
+
+/-- `List.filterMap` with a function of cost at most `k` costs at most `k + 4` per element and
+one more. -/
+theorem List.filterMap.timedCost_le (f : α → Option β) (fCost : α → ℕ) {k : ℕ}
+    (hf : ∀ a, fCost a ≤ k) (l : List α) :
+    List.filterMap.timedCost f fCost l ≤ (k + 4) * l.length + 1 := by
+  induction l with
+  | nil => simp [List.filterMap.timedCost]
+  | cons a l ih => have := hf a; simp [List.filterMap.timedCost, Nat.mul_succ]; grind
+
+/-- The counting loop with a predicate of cost at most `k` costs at most `k + 5` per element and
+one more. -/
+theorem List.countP.go.timedCost_le (p : α → Bool) (pCost : α → ℕ) {k : ℕ}
+    (hp : ∀ a, pCost a ≤ k) (l : List α) (n : ℕ) :
+    List.countP.go.timedCost p pCost l n ≤ (k + 5) * l.length + 1 := by
+  induction l generalizing n with
+  | nil => simp [List.countP.go.timedCost]
+  | cons a l ih =>
+    have := hp a
+    simp only [List.countP.go.timedCost, List.length_cons, Nat.mul_succ]
+    split
+    · have := ih (n + 1)
+      omega
+    · have := ih n
+      omega
+
+/-- Counting with a predicate of cost at most `k` costs at most `k + 5` per element and two
+more. -/
+theorem List.countP.timedCost_le (p : α → Bool) (pCost : α → ℕ) {k : ℕ}
+    (hp : ∀ a, pCost a ≤ k) (l : List α) :
+    List.countP.timedCost p pCost l ≤ (k + 5) * l.length + 2 := by
+  have := List.countP.go.timedCost_le p pCost hp l 0
+  simp only [List.countP.timedCost]
+  omega
+
+/-- Removing the first occurrence costs at most five units per element and one more, with each
+comparison at one unit. -/
+theorem List.erase.timedCost_le [BEq α] (l : List α) (a : α) :
+    List.erase.timedCost l a ≤ 5 * l.length + 1 := by
+  induction l with
+  | nil => simp [List.erase.timedCost]
+  | cons b l ih =>
+    simp only [List.erase.timedCost, List.length_cons]
+    grind
 
 /-- Reversing onto an accumulator costs two units per element and one more. -/
 theorem List.reverseAux.timedCost_eq (l r : List α) :

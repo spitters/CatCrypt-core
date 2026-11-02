@@ -54,30 +54,6 @@ derive_time_bound simProt.finish.treeHat
 
 derive_time_bound simProt.resume.treeHat
 
-/-- The search `List.find?` costs at most `4 + B` units per element and one more when the
-predicate costs at most `B`. -/
-theorem find?_timedCost_le {α : Type} (p : α → Bool) (pc : α → ℕ) {B : ℕ}
-    (h : ∀ a, pc a ≤ B) (l : List α) :
-    List.find?.timedCost p pc l ≤ (4 + B) * l.length + 1 := by
-  induction l with
-  | nil => simp [List.find?.timedCost.eq_1]
-  | cons a l ih =>
-    rw [List.find?.timedCost.eq_2]
-    have := h a
-    split <;> simp only [List.length_cons, Nat.mul_succ] <;> omega
-
-/-- The search `List.findSome?` costs at most `4 + B` units per element and one more when the
-function costs at most `B`. -/
-theorem findSome?_timedCost_le {α β : Type} (f : α → Option β) (fc : α → ℕ) {B : ℕ}
-    (h : ∀ a, fc a ≤ B) (l : List α) :
-    List.findSome?.timedCost f fc l ≤ (4 + B) * l.length + 1 := by
-  induction l with
-  | nil => simp [List.findSome?.timedCost.eq_1]
-  | cons a l ih =>
-    rw [List.findSome?.timedCost.eq_2]
-    have := h a
-    split <;> simp only [List.length_cons, Nat.mul_succ] <;> omega
-
 /-- The subtraction `1 - p` costs at most five units at `p ≤ 1`. -/
 theorem sub_one_timedCost_le {p : ℕ} (hp : p ≤ 1) : Nat.sub.timedCost 1 p ≤ 5 := by
   rcases Nat.le_one_iff_eq_zero_or_eq_one.mp hp with rfl | rfl <;>
@@ -185,13 +161,13 @@ theorem send_time (x : ((Pw → Sˣ) × (Pw → ℕ)) × CoreHat S W Pw K) (pid 
           (2 + (expCost (w e) (z * (↑(x.1.1 pw))⁻¹) + (4 + 0)) + 1))) x.2.2.1 + 1) else 0)
         x.2.2.2.2.2.2.2.1 ≤ (9 + F) * x.2.2.2.2.2.2.2.1.length + 1 := by
     intro f pp w z T'
-    have := findSome?_timedCost_le f (fun e => 2 + if e.1.tr = T' then 1 + (1 +
+    have := List.findSome?.timedCost_le f (fun e => 2 + if e.1.tr = T' then 1 + (1 +
         List.find?.timedCost (pp e) (fun pw => 1 + (3 + coeCost G.pub 0 +
           (2 + (expCost (w e) (z * (↑(x.1.1 pw))⁻¹) + (4 + 0)) + 1))) x.2.2.1 + 1) else 0)
-      (B := 5 + F) (fun e => by
+      (k := 5 + F) (fun e => by
         have := key (pp e) (fun pw => expCost (w e) (z * (↑(x.1.1 pw))⁻¹)) (fun _ => he _ _)
         split_ifs <;> omega) x.2.2.2.2.2.2.2.1
-    rw [show 4 + (5 + F) = 9 + F by omega] at this
+    rw [show 5 + F + 4 = 9 + F by omega] at this
     exact this
   have := hz pid
   have := hz (1 - pid)
@@ -263,10 +239,10 @@ theorem core_time (e : OEv Pw W) (i : ℕ) (x : ((Pw → Sˣ) × (Pw → ℕ)) �
       have key : ∀ (p : Pw → Bool) (g : Pw → ℕ), (∀ a, g a ≤ te) →
           List.find?.timedCost p (fun pw => 1 + (3 + coeCost G.pub 0 + (2 + (g pw + (4 + 0)) + 1)))
             x.2.2.1 ≤ F := fun p g hg => by
-        have := find?_timedCost_le p
-          (fun pw => 1 + (3 + coeCost G.pub 0 + (2 + (g pw + (4 + 0)) + 1))) (B := 11 + tc + te)
+        have := List.find?.timedCost_le p
+          (fun pw => 1 + (3 + coeCost G.pub 0 + (2 + (g pw + (4 + 0)) + 1))) (k := 11 + tc + te)
           (fun a => by have := hg a; have := hc G.pub 0; omega) x.2.2.1
-        rw [show 4 + (11 + tc + te) = 15 + tc + te by omega] at this
+        rw [show 11 + tc + te + 4 = 15 + tc + te by omega] at this
         omega
       simp only [simProt.start.tree.match_12.timed, simProt.start.tree.match_11.timed]
       split
@@ -279,11 +255,11 @@ theorem core_time (e : OEv Pw W) (i : ℕ) (x : ((Pw → Sˣ) × (Pw → ℕ)) �
       have key : ∀ (p : Pw → Bool) (g : Pw → ℕ), (∀ a, g a ≤ te) →
           List.find?.timedCost p (fun pw => 1 + (3 + coeCost G.pub 0 + (2 + (g pw + (4 + 0)) + 1)))
             x.2.2.1 ≤ F := fun p g hg => by
-        have := find?_timedCost_le p
-          (fun pw => 1 + (3 + coeCost G.pub 0 + (2 + (g pw + (4 + 0)) + 1))) (B := 11 + tc + te)
+        have := List.find?.timedCost_le p
+          (fun pw => 1 + (3 + coeCost G.pub 0 + (2 + (g pw + (4 + 0)) + 1))) (k := 11 + tc + te)
           (fun a => by have := hg a; have := hc G.pub 0; omega) x.2.2.1
         have hcands := Nat.mul_le_mul_left (15 + tc + te) hn.length_le_card
-        rw [show 4 + (11 + tc + te) = 15 + tc + te by omega] at this
+        rw [show 11 + tc + te + 4 = 15 + tc + te by omega] at this
         omega
       have := send_time G coeCost hAppendCost expCost x pid m hx0 h01 hc he key
         (pc := x.2.2.2.2.2.2.1.2) hz hi hk
