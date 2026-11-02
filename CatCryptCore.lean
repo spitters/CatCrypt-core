@@ -494,6 +494,7 @@ public import CatCryptCore.Container.Code
 public import CatCryptCore.Container.QuotientFree
 public import CatCryptCore.Container.CodeCost
 public import CatCryptCore.Container.CodeRel
+public import CatCryptCore.Container.DillerNahm
 public import CatCryptCore.Crypto.Party.ProgECost
 public import CatCryptCore.Crypto.Party.ViewRelCode
 public import CatCryptCore.Container.PolyPiSigma
