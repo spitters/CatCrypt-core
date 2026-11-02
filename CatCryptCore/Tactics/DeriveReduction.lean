@@ -735,19 +735,26 @@ def projForm (env : Environment) (F : Expr) : Expr := Id.run do
   unless F.getAppNumArgs == info.numParams + 1 do return F
   return .proj info.ctorName.getPrefix info.i s
 
-/-- Whether the structure `S` has a field whose type is a proposition. -/
-def hasProofField (S : Name) : MetaM Bool := do
+/-- Whether the structure `S` has a field whose type is a proposition and a field whose type is
+the type of a data function (`isDataFnType`), the only fields that abstraction rewrites. -/
+def hasProofAndDataFnField (S : Name) : MetaM Bool := do
   let env ← getEnv
   unless isStructure env S do return false
   let ctor := getStructureCtor env S
   forallTelescopeReducing ctor.type fun ys _ => do
+    let mut prf := false
+    let mut fn := false
     for y in ys.extract ctor.numParams ys.size do
-      if ← isProp (← inferType y) then return true
-    return false
+      let t ← inferType y
+      if ← isProp t then prf := true
+      else if ← isDataFnType t then fn := true
+    return prf && fn
 
 /-- Whether `e` is a structure value built from the binders `top` (not a binder itself) whose
-structure, not a class, has a proof field: abstracting the data fields of such a value would
-leave its proof fields stated over the original fields. -/
+structure, not a class, has a proof field and a data-function field: abstracting the data
+fields of such a value would leave its proof fields stated over the original fields. A structure
+of sets with a law relating them (`Finset`, a record of `Finset` fields) is not one, so its
+consumers keep their costed forms. -/
 def isProofStructVal (top : Array FVarId) (e : Expr) : MetaM Bool := do
   if e.hasLooseBVars || e.isFVar then return false
   unless (collectFVars {} e).fvarIds.any top.contains do return false
@@ -755,7 +762,7 @@ def isProofStructVal (top : Array FVarId) (e : Expr) : MetaM Bool := do
   let .const S _ := t.getAppFn | return false
   unless isStructure (← getEnv) S do return false
   if (← isClass? t).isSome then return false
-  hasProofField S
+  hasProofAndDataFnField S
 
 /-- The field `fᵢ a₁ … aₙ` of a projection `S.f ps s a₁ … aₙ` (or `s.i a₁ … aₙ`) whose structure
 `s` is a value of `isProofStructVal` that reduces by `whnf` to a constructor application
