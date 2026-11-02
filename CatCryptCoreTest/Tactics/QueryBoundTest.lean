@@ -16,10 +16,8 @@ public import CatCryptCore.Tactics.QueryBound
 
 The goals are the hand-proved query bounds of `FOTransform`, `FOTransformU`, `FIPS203Security` and
 `SignerHybrid`, restated. `query_bound only [names]` is used so that a test does not find the
-theorem it restates: the names listed are the bounds of the callees.
-
-The two tests under `fail_if_success` record the constructs the tactic does not close: the erased
-form of a costed handler and a joint charge hypothesis whose witness is not in the goal.
+theorem it restates: the names listed are the bounds of the callees. A `fail_if_success` records a
+goal that the variant it runs does not close.
 -/
 
 set_option autoImplicit false
@@ -141,13 +139,20 @@ example (m : M) :
     OracleAdv.MayOnlyCall (Set.range Sum.inl) (gQ (C := C) (K := K) (R := R) m) := by
   query_bound only
 
-/-- The erased costed handler has the theorem `simImpl.isQueryBound_erase`, by name. -/
+/-- The erased costed handler has the theorem `simImpl.isQueryBound_erase` in an open namespace.
+Its erasure theorem has a map of the result on its left side, so it does not rewrite this goal. -/
 example (cstar : C) (kstar : K) (st : SimState M C K) (d : (M × C) ⊕ C) (LDCost : C → ℕ)
     (LQCost : M × C → ℕ) :
     (CatCrypt.Crypto.KEM.FOTransformU.simImpl.timed cstar kstar st d LDCost
       LQCost).2.erase.IsQueryBound (Sum.elim (fun _ => 1) (fun _ => 0) d) := by
   fail_if_success query_bound only
-  exact CatCrypt.Crypto.KEM.FOTransform.simImpl.isQueryBound_erase cstar kstar st d LDCost LQCost
+  query_bound
+
+/-- The erased form of `liftP.timed` is rewritten along `liftP.erase_timed` to `liftP`. -/
+example {α : Type} (cost : M ⊕ (M × C) → ℕ) (hc : ∀ q, cost (.inr q) ≤ 1)
+    {A : OracleAdv.Timed (M × C) Bool α} {n : ℕ} (hA : A.erase.IsQueryBound n) :
+    (liftP.timed (R := R) A).2.erase.IsQueryBoundBy cost n := by
+  query_bound only [isQueryBoundBy_liftP]
 
 end FOTransform
 
@@ -180,8 +185,7 @@ example (P : Scheme PK SK M C R) (hpk : PK → Hash) (pk : PK) (cstar : C)
     (st : SimStateF M C R K Hash Z) (d : ((M × Hash) ⊕ (Z × C)) ⊕ C) :
     (simImplF P hpk pk cstar kstar st d).IsQueryBoundBy cost
       (Sum.elim (fun _ => 1) (fun _ => 0) d) := by
-  fail_if_success query_bound only
-  exact isQueryBoundBy_simImplF P hpk pk cstar kstar cost hc st d
+  query_bound only
 
 /-- `isQueryBoundBy_redRun`. -/
 example (P : Scheme PK SK M C R) (hpk : PK → Hash) {qRO qD : ℕ}

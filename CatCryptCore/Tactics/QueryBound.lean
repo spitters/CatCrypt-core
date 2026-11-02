@@ -26,16 +26,22 @@ public meta import Lean
   included), the names listed in `query_bound [names]`, the proposition fields of a structure at
   a projection head (`ROM2INDCCAAdversary.isQueryBoundRO` of `B.run pk c k`), and the theorems
   `Ns.isQueryBoundBy_f`, `Ns.isQueryBound_f`, `Ns.f.isQueryBoundBy`, `Ns.f.isQueryBound` of a head
-  `Ns.f`, and `N.isQueryBound_erase` of `(N.timed …).2.erase`. `query_bound only [names]` leaves
-  out the last family. A known bound applies at any pointwise larger charge and any larger
-  budget, and its premises are closed in turn by this procedure or by the arithmetic leaf. Two
-  known bounds whose charges sum to at least the goal charge give a bound at the sum of their
-  budgets, so per-oracle counts close a total count.
+  `Ns.f`, and `N.isQueryBound_erase` of `(N.timed …).2.erase`, in the namespace of `N` or resolved
+  in the open namespaces. `query_bound only [names]` leaves out the last family. A known bound
+  applies at any pointwise larger charge and any larger budget, and its premises are closed in
+  turn by this procedure or by the arithmetic leaf. Two known bounds whose charges sum to at least
+  the goal charge give a bound at the sum of their budgets, so per-oracle counts close a total
+  count.
+* An erased costed form `(N.timed …).2.erase` with no known bound is rewritten along
+  `N.erase_timed` to its uncosted form, when that theorem states an equation with this left side.
 
 A budget left as a metavariable is assigned the first proposal that the proof accepts.
 
 An arithmetic leaf is closed by `assumption`, `omega`, `simp` or `grind`; a side condition
-`∀ d, c d ≤ c₀ d` splits `d` over a sum signature first.
+`∀ d, c d ≤ c₀ d` splits `d` over a sum signature first. A hypothesis that charges several queries
+jointly, `∀ m q, c (inl m) + c (inr q) ≤ 1`, is instantiated at the charges of the leaf, a binder
+that none of them assigns taking a term of its type from the context or an instance; so the first
+query of a path closes although the second query's argument is not in the goal.
 
 The tactic fails with a named error at a recursive definition applied to a variable, whose bound
 takes an induction, and at an adversary variable with no known bound.
@@ -103,20 +109,128 @@ def applyRule (g : MVarId) (name : Name) (args : List (Name × Expr) := []) :
     if !(← mid.isAssigned) && (← isProp (← mid.getType)) then out := out ++ [mid]
   return out
 
-/-- Closes an arithmetic goal. -/
+/-- The closed subterms of `e`. -/
+partial def closedSubterms (e : Expr) (acc : Array Expr := #[]) : Array Expr :=
+  if e.hasLooseBVars || acc.contains e then acc else
+    let acc := if e.isApp || e.isFVar then acc.push e else acc
+    e.getAppArgs.foldl (fun a x => closedSubterms x a) acc
+
+/-- The applications of natural-number type among `es`, arithmetic operations and literals left
+out: the charges a goal mentions. -/
+def chargeAtoms (es : Array Expr) : MetaM (Array Expr) :=
+  es.filterM fun e => do
+    if !e.isApp || e.isAppOf ``HAdd.hAdd || e.isAppOf ``HSub.hSub || e.isAppOf ``OfNat.ofNat ||
+        e.isAppOf ``HMul.hMul then
+      return false
+    return (← whnfR (← inferType e)).isConstOf ``Nat
+
+/-- A term of type `T` from `pool`, a pair of two such terms, or a term from an instance
+`Inhabited T` or `Nonempty T`. -/
+partial def inhabitant? (pool : Array Expr) (T : Expr) (fuel : Nat := 3) : MetaM (Option Expr) := do
+  for x in pool do
+    if ← withReducible (isDefEq (← inferType x) T) then return some x
+  let T' ← whnfR T
+  if T'.isAppOfArity ``Prod 2 && fuel > 0 then
+    if let some a ← inhabitant? pool T'.getAppArgs[0]! (fuel - 1) then
+      if let some b ← inhabitant? pool T'.getAppArgs[1]! (fuel - 1) then
+        return some (← mkAppM ``Prod.mk #[a, b])
+  if let some i ← synthInstance? (← mkAppM ``Inhabited #[T]) then
+    return some (← mkAppOptM ``Inhabited.default #[T, i])
+  if let some i ← synthInstance? (← mkAppM ``Nonempty #[T]) then
+    return some (← mkAppOptM ``Classical.choice #[T, i])
+  return none
+
+/-- The summands of a sum of natural numbers. -/
+partial def summands (e : Expr) : List Expr :=
+  if e.isAppOfArity ``HAdd.hAdd 6 then summands e.getAppArgs[4]! ++ summands e.getAppArgs[5]!
+  else [e]
+
+/-- The instances of a universally quantified hypothesis `h : ∀ xs, s₁ + … + sₖ ≤ b` at the
+charges `atoms`. Each summand is matched to an atom or left out, at least one being matched, and
+a binder that no match assigns is given a term of its type by `inhabitant?`. -/
+def jointInstancesOf (h : Expr) (atoms pool : Array Expr) : MetaM (Array Expr) := do
+  let saved ← saveState
+  let (ms, _, concl) ← forallMetaTelescopeReducing (← inferType h)
+  let concl ← whnfR (← instantiateMVars concl)
+  let isBound := concl.isAppOfArity ``LE.le 4 || concl.isAppOfArity ``LT.lt 4
+  if ms.isEmpty || !isBound || !concl.getAppArgs[0]!.isConstOf ``Nat then
+    saved.restore
+    return #[]
+  let out ← IO.mkRef (#[] : Array Expr)
+  let finish : MetaM Unit := do
+    let s ← saveState
+    for m in ms do
+      let mid := m.mvarId!
+      unless ← mid.isAssigned do
+        let some x ← inhabitant? pool (← instantiateMVars (← mid.getType)) | continue
+        mid.assign x
+    let pf ← instantiateMVars (mkAppN h ms)
+    s.restore
+    unless pf.hasExprMVar do out.modify (·.push pf)
+  let rec go : List Expr → Bool → MetaM Unit
+    | [], matched => if matched then finish else pure ()
+    | x :: xs, matched => do
+      if x.hasExprMVar && !x.getAppFn.isMVar then
+        for a in atoms do
+          let s ← saveState
+          if ← withReducible (isDefEq x a) then go xs true
+          s.restore
+      go xs matched
+  go (summands concl.getAppArgs[2]!) false
+  let r ← out.get
+  saved.restore
+  return r
+
+/-- `g` with the instances of `jointInstancesOf` added to its context, for each hypothesis of
+the context. A hypothesis `∀ m q, c (inl m) + c (inr q) ≤ 1` charges two queries of one path
+jointly; its instance at the charge of the first query has as `q` any term of that type. -/
+def addJointInstances (g : MVarId) : MetaM MVarId := g.withContext do
+  let tgt ← instantiateMVars (← g.getType)
+  let sub := closedSubterms tgt
+  let atoms ← chargeAtoms sub
+  let mut pool : Array Expr := sub.filter fun e => !e.hasExprMVar
+  let lctx ← getLCtx
+  for d in lctx do
+    if d.isImplementationDetail then continue
+    unless ← isProp d.type do
+      pool := pool.push d.toExpr
+      let T ← whnfR d.type
+      if T.isAppOfArity ``Prod 2 then
+        pool := (pool.push (← mkAppM ``Prod.fst #[d.toExpr])).push (← mkAppM ``Prod.snd #[d.toExpr])
+  let mut g := g
+  for d in lctx do
+    if d.isImplementationDetail || !d.type.isForall then continue
+    for pf in ← jointInstancesOf d.toExpr atoms pool do
+      (_, g) ← g.note `joint pf
+  return g
+
+/-- Closes an arithmetic goal. A goal the first arms leave open is tried with the instances of
+`addJointInstances` in its context, then by `grind`. -/
 def leaf (g : MVarId) : TacticM Unit := do
   let (_, g) ← g.intros
   let rest ← getGoals
   setGoals [g]
   try
-    evalTactic (← `(tactic| first
-      | assumption
-      | omega
-      | (simp only [Sum.elim_inl, Sum.elim_inr, Function.comp]; omega)
-      | (simp; done)
-      | (simp; omega)
-      | (simp [*]; done)
-      | grind [Sum.elim]))
+    let s ← saveState
+    try
+      evalTactic (← `(tactic| first
+        | assumption
+        | omega
+        | (simp only [Sum.elim_inl, Sum.elim_inr, Function.comp]; omega)
+        | (simp; done)
+        | (simp; omega)
+        | (simp [*]; done)))
+    catch _ =>
+      s.restore
+      try
+        setGoals [← addJointInstances g]
+        evalTactic (← `(tactic| first
+          | omega
+          | (simp only [Sum.elim_inl, Sum.elim_inr, Function.comp]; omega)
+          | (simp; omega)))
+      catch _ =>
+        s.restore
+        evalTactic (← `(tactic| grind [Sum.elim]))
     unless (← getGoals).isEmpty do throwError "query_bound: arithmetic leaf left open"
   finally
     setGoals rest
@@ -142,6 +256,40 @@ def lastStr : Name → String
   | .str _ s => s
   | _ => ""
 
+/-- The constants `s.isQueryBound_erase` for the trailing parts `s` of the name `p`, resolved in
+the current namespaces and open declarations: the query bound of the erased form of `p` stated in
+another namespace than `p`. -/
+def eraseCompanions (p : Name) : CoreM (List Name) := do
+  let comps := p.components
+  let mut out : List Name := []
+  for i in [0:comps.length] do
+    let s := (comps.drop (comps.length - 1 - i)).foldl (· ++ ·) Name.anonymous
+    for (c, fields) in ← resolveGlobalName (s ++ `isQueryBound_erase) do
+      if fields.isEmpty && !out.contains c then out := out ++ [c]
+  return out
+
+/-- A proof of `A = A'` by the theorem `N.erase_timed`, for `A` the erased form
+`(N.timed …).2.erase` of a costed definition and `A'` its uncosted form. An erasure theorem of
+another shape gives `none`: one whose left side is `A` followed by a map of the result, and one
+stating `Erases`. -/
+def eraseTimed? (A : Expr) : MetaM (Option Expr) := do
+  let some n := A.getAppFn.constName? | return none
+  unless lastStr n == "erase" && A.isApp do return none
+  let y := if A.appArg!.isAppOf ``Prod.snd then A.appArg!.appArg! else A.appArg!
+  let some t := y.getAppFn.constName? | return none
+  unless lastStr t == "timed" do return none
+  let thm := t.getPrefix ++ `erase_timed
+  unless (← getEnv).contains thm do return none
+  let s ← saveState
+  let e ← mkConstWithFreshMVarLevels thm
+  let (ms, _, concl) ← forallMetaTelescopeReducing (← inferType e)
+  if let some (_, lhs, _) := (← instantiateMVars concl).eq? then
+    if ← withReducible (isDefEq lhs A) then
+      let pf ← instantiateMVars (mkAppN e ms)
+      unless pf.hasExprMVar do return some pf
+  s.restore
+  return none
+
 /-- The candidate theorems named after the head definition of `A`. -/
 def namedSources (A : Expr) : MetaM (List Name) := do
   let some n := A.getAppFn.constName? | return []
@@ -152,7 +300,7 @@ def namedSources (A : Expr) : MetaM (List Name) := do
     if let some y := A.appArg!.getAppFn.constName? then
       if y == ``Prod.snd then
         if let some t := A.appArg!.appArg!.getAppFn.constName? then
-          cs := [t.getPrefix ++ `isQueryBound_erase]
+          cs := (t.getPrefix ++ `isQueryBound_erase) :: (← eraseCompanions t.getPrefix)
   cs := cs ++ [Name.str n.getPrefix ("isQueryBoundBy_" ++ last),
     Name.str n.getPrefix ("isQueryBound_" ++ last), n ++ `isQueryBoundBy, n ++ `isQueryBound]
   return cs.filter env.contains
@@ -301,6 +449,9 @@ partial def estimates (cfg : Cfg) (c A : Expr) (fuel : Nat) : TacticM (List Expr
         return r.filter fun e => !xs.any fun x => e.containsFVar x.fvarId!
       cur ← if i == 0 then pure ys else maxes cur ys
     return cur
+  if let some pf ← eraseTimed? A then
+    let some (_, _, rhs) := (← inferType pf).eq? | return []
+    return ← estimates cfg c rhs (fuel - 1)
   match ← unfoldHead? A with
   | some e => estimates cfg c e (fuel - 1)
   | none => return []
@@ -456,6 +607,13 @@ partial def solveTree (cfg : Cfg) (g : MVarId) (c A n : Expr) (fuel : Nat) : Tac
     if ← isBranch A' then
       let some gs ← splitTarget? g | throwError "query_bound: the branch does not split"
       for g' in gs do solve cfg g' (fuel - 1)
+    else if let some pf ← eraseTimed? A' then
+      let some (ty, _, rhs) := (← inferType pf).eq? | throwError "query_bound: not an equation"
+      let t ← g.getType
+      let motive := Expr.lam `x ty (mkAppN t.getAppFn (t.getAppArgs.set! 4 (.bvar 0))) .default
+      let g' ← g.replaceTargetEq (mkAppN t.getAppFn (t.getAppArgs.set! 4 rhs))
+        (← mkCongrArg motive pf)
+      solve cfg g' (fuel - 1)
     else
       match ← try Except.ok <$> unfoldHead? A' catch e => pure (.error e) with
       | .ok (some e) =>
