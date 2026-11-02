@@ -9,6 +9,8 @@ public import CatCryptCore.Quantum.ClassicalDiamondLift
 public import CatCryptCore.Quantum.CPInstrument
 public import CatCryptCore.Crypto.OracleAdversaryTimed
 public import CatCryptCore.Crypto.Assumptions.CDH
+public import CatCryptCore.Crypto.OracleQueryVec
+public import CatCryptCore.Tactics.QueryBound
 
 @[expose] public section
 
@@ -585,10 +587,7 @@ theorem ddhIdeal_eq_outRunD (D : DDHDef W) (f : W × W → SDistr W) :
 
 theorem isQueryBound_bindD {μ : SDistr β} {k : β → OracleAdv X Y Bool} {n : ℕ}
     (hk : ∀ a, (k a).IsQueryBound n) : (bindD μ k).IsQueryBound n := by
-  intro o
-  cases o with
-  | none => trivial
-  | some a => exact hk a
+  query_bound
 
 /-- **CDH from DDH against quantum adversaries.** For every quantum CDH adversary `A` with a
 classical interface and every initial state `ρ`, the probability that `A` computes `g^{ab}` is
@@ -608,18 +607,12 @@ theorem cdh_le_ddh_quantum (D : DDHDef W) (A : W × W → CPComp d W) (ρ : Dens
     rw [cdhAdvantage_eq_outRunD, DDH_Advantage, CatCrypt.Crypto.Advantage,
       ddhReal_eq_outRunD, ddhIdeal_eq_outRunD] at h
     simpa [cGap, absDiff, outRunD_ret, SDistr.pure_apply_some] using h
-  have hP : (cdhTree D).IsQueryBound 1 :=
-    isQueryBound_bindD fun _ => isQueryBound_bindD fun _ => fun _ => trivial
+  have hP : (cdhTree D).IsQueryBound 1 := by query_bound
   have h0 : (interpQ A (.ret false : OracleAdv (W × W) W Bool)).outProb ρ true = 0 := by
     simp [interpQ, CPComp.outProb_qpure, SDistr.pure_apply_some]
   have h := qGap_le_of_cGap_le_of_isQueryBound_one (P₁ := .ret false) hP trivial
-    (by rw [ddhRealTree, substQ_bindD]
-        exact isQueryBound_bindD fun _ => by
-          rw [substQ_bindD]; exact isQueryBound_bindD fun _ => fun _ => trivial)
-    (by rw [ddhIdealTree, substQ_bindD]
-        exact isQueryBound_bindD fun _ => by
-          rw [substQ_bindD]; exact isQueryBound_bindD fun _ => by
-            rw [substQ_bindD]; exact isQueryBound_bindD fun _ => fun _ => trivial)
+    (by simp only [ddhRealTree, substQ_bindD]; query_bound)
+    (by simp only [ddhIdealTree, substQ_bindD]; query_bound)
     hcl A ρ
   simpa [qGap, interpQ_substQ, absDiff, h0] using h
 

@@ -8,6 +8,8 @@ module
 public import CatCryptCore.Crypto.OracleEval
 public import CatCryptCore.Consensus.PoSNSB.Prob.Hash
 public import CatCryptCore.Consensus.PoSNSB.Prob.Erasure
+public import CatCryptCore.Crypto.OracleQueryVec
+public import CatCryptCore.Tactics.QueryBound
 
 /-!
 # PoS-NSB: oracle adversaries as queriers
@@ -171,8 +173,8 @@ theorem evalOn_logBlocks_fst (f : BlockDom Tx Hash np Hz → Hash)
 theorem isQueryBound_logBlocks (bs : List (Block Tx Hash (Fin np)))
     (tbl : BlockDom Tx Hash np Hz → Hash) : (logBlocks bs tbl).IsQueryBound bs.length := by
   induction bs generalizing tbl with
-  | nil => trivial
-  | cons b bs ih => exact fun _ => ih _
+  | nil => query_bound
+  | cons b bs ih => query_bound
 
 end LogBlocks
 
@@ -290,58 +292,36 @@ theorem isQueryBound_hRcv
     (hq : ∀ pub ms sl hist tbl mb st, (A.rcv pub ms sl hist tbl mb st).IsQueryBound qc)
     (p : Fin np) (s : HState IP h0 GB U L A) :
     (hRcv Sch IP h0 GB U L ks A m p s).IsQueryBound (qc + m) := by
-  unfold hRcv
-  split
-  · split
-    · trivial
-    · refine OracleAdv.isQueryBound_bind (hq _ _ _ _ _ _ _) fun o => ?_
-      refine (OracleAdv.isQueryBound_bind (n := 0) (isQueryBound_logBlocks _ _)
-        fun _ => by trivial).mono ?_
-      simp
-  · trivial
+  have hq' : ∀ pub ms sl hist tbl mb (st : A.toAdversary.AdvState),
+      (A.rcv pub ms sl hist tbl mb st).IsQueryBound qc := hq
+  query_bound
 
 theorem isQueryBound_hBake
     (hq : ∀ pub sl hist tbl mb st, (A.bake pub sl hist tbl mb st).IsQueryBound qc)
     (p : Fin np) (s : HState IP h0 GB U L A) :
     (hBake Sch IP h0 GB U txSel L ks A m p s).IsQueryBound (qc + m + 1) := by
-  unfold hBake
-  split
-  · split
-    · split
-      · exact fun _ => trivial
-      · trivial
-    · refine (OracleAdv.isQueryBound_bind (n := m) (hq _ _ _ _ _ _) fun o => ?_).mono
-        (by omega)
-      refine (OracleAdv.isQueryBound_bind (n := 0) (isQueryBound_logBlocks _ _)
-        fun _ => by trivial).mono ?_
-      simp
-  · trivial
+  have hq' : ∀ pub sl hist tbl mb (st : A.toAdversary.AdvState),
+      (A.bake pub sl hist tbl mb st).IsQueryBound qc := hq
+  query_bound
 
 theorem isQueryBound_hFold {S : Type}
     {step : Fin np → S → OracleAdv (BlockDom Tx Hash np Hz) Hash S} {c : ℕ}
     (h : ∀ p s, (step p s).IsQueryBound c) (l : List (Fin np)) (s : S) :
     (hFold step l s).IsQueryBound (l.length * c) := by
   induction l with
-  | nil => trivial
+  | nil => query_bound
   | cons p ps ih =>
-    refine (OracleAdv.isQueryBound_bind ih (h p)).mono ?_
     rw [List.length_cons, Nat.succ_mul]
+    query_bound
 
 theorem isQueryBound_hPhase
     (hb : ∀ pub sl hist tbl mb st, (A.bake pub sl hist tbl mb st).IsQueryBound qc)
     (hr : ∀ pub ms sl hist tbl mb st, (A.rcv pub ms sl hist tbl mb st).IsQueryBound qc)
     (s : HState IP h0 GB U L A) :
     (hPhase Sch IP h0 GB U txSel L ks A m s).IsQueryBound (IP.length * (qc + m + 1)) := by
-  unfold hPhase
-  split
-  · exact (OracleAdv.isQueryBound_bind (n := 0) (isQueryBound_hFold
-      (fun p s => (isQueryBound_hRcv Sch IP h0 GB U L ks A m hr p s).mono
-        (n := qc + m + 1) (by omega)) IP s)
-      fun _ => by trivial).mono (by omega)
-  · exact (OracleAdv.isQueryBound_bind (n := 0) (isQueryBound_hFold
-      (isQueryBound_hBake Sch IP h0 GB U txSel L ks A m hb) IP s)
-      fun _ => by trivial).mono (by omega)
-  · trivial
+  have h₁ := isQueryBound_hFold (isQueryBound_hRcv Sch IP h0 GB U L ks A m hr) IP s
+  have h₂ := isQueryBound_hFold (isQueryBound_hBake Sch IP h0 GB U txSel L ks A m hb) IP s
+  query_bound
 
 theorem isQueryBound_hTrace
     (hb : ∀ pub sl hist tbl mb st, (A.bake pub sl hist tbl mb st).IsQueryBound qc)
@@ -350,21 +330,17 @@ theorem isQueryBound_hTrace
     (hTrace Sch IP h0 GB U txSel L ks A m j).IsQueryBound
       (1 + j * (IP.length * (qc + m + 1))) := by
   induction j with
-  | zero => exact OracleAdv.IsQueryBound.mono (m := 1) (fun _ => trivial) (by simp)
-  | succ j ih =>
-    refine (OracleAdv.isQueryBound_bind ih
-      (isQueryBound_hPhase Sch IP h0 GB U txSel L ks A m hb hr)).mono (le_of_eq ?_)
-    ring
+  | zero => query_bound
+  | succ j ih => query_bound
 
 /-- **The query bound of the hash program.** For an oracle adversary whose calls ask at most
 `qc` queries and output at most `m` messages, the hash program for `K` phases asks at most
 `1 + K * (|IP| * (qc + m + 1))` queries. -/
 theorem isQueryBound_hashProg (hA : A.Bounded qc m) (K : ℕ) :
     (hashProg Sch IP h0 GB U txSel L ks A m K).IsQueryBound
-      (1 + K * (IP.length * (qc + m + 1))) :=
-  (OracleAdv.isQueryBound_bind (n := 0)
-    (isQueryBound_hTrace Sch IP h0 GB U txSel L ks A m hA.1.1 hA.1.2 K)
-    fun _ => by trivial).mono (by omega)
+      (1 + K * (IP.length * (qc + m + 1))) := by
+  obtain ⟨⟨hb, hr⟩, -⟩ := hA
+  query_bound
 
 end Bound
 

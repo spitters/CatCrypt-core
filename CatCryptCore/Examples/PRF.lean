@@ -16,6 +16,8 @@ public import CatCryptCore.Examples.OneTimePad
 public import CatCryptCore.Tactics
 public import CatCryptCore.Tactics.AutoMetrics
 public import CatCryptCore.ForMathlib.PMFSupport
+public import CatCryptCore.Crypto.OracleQueryVec
+public import CatCryptCore.Tactics.QueryBound
 
 /-!
 # Bijection-Family PRF: Perfect Security
@@ -229,13 +231,7 @@ theorem run_mapAns {S : Type} (f : R → R') (O : S → D → PMF (R × S))
 /-- `mapAns f A` satisfies every query bound of `A`. -/
 theorem isQueryBound_mapAns (f : R → R') {A : OracleAdv D R' α} {q : ℕ}
     (hA : A.IsQueryBound q) : (mapAns f A).IsQueryBound q := by
-  induction A generalizing q with
-  | ret a => trivial
-  | rand p k ih => exact fun b => ih b (hA b)
-  | query d k ih =>
-    cases q with
-    | zero => exact hA.elim
-    | succ q => exact fun r => ih (f r) (hA (f r))
+  induction A generalizing q <;> cases q <;> first | exact hA.elim | query_bound
 
 end MapAns
 
@@ -383,17 +379,7 @@ theorem run_simRP {α S : Type} (O : S → D → PMF (D × S)) (A : OracleAdv D 
 /-- `simRP t A` satisfies every query bound of `A`. -/
 theorem isQueryBound_simRP {α : Type} {A : OracleAdv D D α} {q : ℕ} (hA : A.IsQueryBound q)
     (t : List (D × D)) : (simRP t A).IsQueryBound q := by
-  induction A generalizing q t with
-  | ret a => trivial
-  | rand p k ih => exact fun b => ih b (hA b) t
-  | query x k ih =>
-    cases q with
-    | zero => exact hA.elim
-    | succ q =>
-      unfold simRP
-      split
-      · exact fun y => ih y (hA y) t
-      · exact fun r y => ih y (hA y) _
+  induction A generalizing q t <;> cases q <;> first | exact hA.elim | query_bound
 
 /-! ## A random function composed with a random injection is a random function -/
 
