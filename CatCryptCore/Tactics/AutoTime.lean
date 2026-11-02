@@ -1465,6 +1465,38 @@ def queryBoundSource (body A : Expr) (deep : Bool := true) : MetaM (Option Expr)
     s.restore
   return none
 
+/-- Lengths of built lists: for every subterm `l.length` of the target or of a propositional
+hypothesis, the instance of its equation in `lengthEqLemmas` or of `List.length_nil`
+(`[].length = 0`) is added to the context, and the same for the lengths on the right sides of
+the added equations, at most `fuel` equations in all. `omega` reads a length as an atom; with
+these equations it relates the length of `l₁ ++ [a]` in a registered cost to the length of `l₁`
+in the bound, which `boundFree?` states as `l₁.length + ([].length + 1)` and `derive_time_bound`
+as `l₁.length + 0 + 1`. -/
+def addLengthFacts (g : MVarId) (fuel : Nat := 64) : MetaM MVarId := g.withContext do
+  let mut work : Array Expr := appsOf (← instantiateMVars (← g.getType)) #[]
+  for d in ← getLCtx do
+    if d.isImplementationDetail || d.isLet then continue
+    let ty ← instantiateMVars d.type
+    unless ← isProp ty do continue
+    work := appsOf ty work
+  let mut g := g
+  let mut seen : Array Expr := #[]
+  let mut n := 0
+  while n < fuel do
+    let some e := work.back? | break
+    work := work.pop
+    unless e.isAppOfArity ``List.length 2 do continue
+    if seen.contains e then continue
+    seen := seen.push e
+    for lem in ``List.length_nil :: lengthEqLemmas do
+      let some (r, pf) ← g.withContext (eqAt? lem e) | continue
+      let (_, g') ← (← g.assert `hl (← g.withContext (inferType pf)) pf).intro1P
+      g := g'
+      n := n + 1
+      work := appsOf r work
+      break
+  return g
+
 /-- Registered costs: for every subterm `f.timedCost a` of the target, the instance at `a` of
 `f.timedCost_eq` (an equation) or `f.timedCost_le` (a bound), with its premises closed by
 `closeByContext`, is added to the context. For a target `l ≤ B`, each such cost that mentions
@@ -2351,7 +2383,7 @@ partial def cmpLe (g : MVarId) (fuel : Nat) : TacticM Unit := g.withContext do
           return
       catch _ => pure ()
       s.restore
-  closeArithCore (← addCostFacts g) (omegaOnly := true)
+  closeArithCore (← addLengthFacts (← addCostFacts g)) (omegaOnly := true)
 
 /-- `m₁ ≤ b` by the matcher of `m₁`: with the motive `fun ds => m₁[ds] ≤ m₂[ds]` when `b` is
 the match `m₂` of the same matcher on the same discriminants, else `fun ds => m₁[ds] ≤ b`; at
@@ -2520,7 +2552,7 @@ partial def closeArith (g : MVarId) (env : Bool) (fuel : Nat) : TacticM Unit := 
         let (_, g') ← (← g0.assert `hx (← inferType fact) fact).intro1P
         pure (some g')
     if let some g' := r then g := g'
-  g ← addCostFacts g
+  g ← addLengthFacts (← addCostFacts g)
   -- the matches of the same discriminants on the two sides, compared by cases
   let sm ← saveState
   if let some gm ← matchFacts g then
