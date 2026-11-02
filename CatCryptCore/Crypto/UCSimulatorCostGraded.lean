@@ -27,6 +27,10 @@ invariant bound `MultiHybrid.Timed.TimeBoundInv`.
 
 ## Main results
 
+* `SPTree.Timed.stepTime_bind_bind_ret_le`, `SPTree.Timed.allRet_bind_bind_ret`,
+  `SPTree.Timed.stepTime_bind_bind_le`, `SPTree.Timed.stepTime_delay_bind_const_le`,
+  `SPTree.Timed.stepTime_cost_le`, `SPTree.Timed.stepTime_pair`: the time and the leaf invariants
+  of the sequences of costed trees in the steps of such a simulator.
 * `MultiHybrid.Timed.TimeBoundGraded.of_timeBoundInv`,
   `MultiHybrid.Timed.TimeBoundGraded.timeBoundInv`: the case `b = 0`.
 * `MultiHybrid.Timed.TimeBoundGraded.actRun_time_le`: the time of `q` activations from the
@@ -39,6 +43,80 @@ invariant bound `MultiHybrid.Timed.TimeBoundInv`.
 @[expose] public section
 
 set_option autoImplicit false
+
+namespace CatCrypt.Core.SPTree.Timed
+
+/-- A costed tree `A` followed by a costed bind `f`, bounded by `B` at the leaves of `A` that
+satisfy `Q`, and a return at zero cost, with the step costs moved in front. -/
+theorem stepTime_bind_bind_ret_le {α β γ : Type} (c : ℕ) (A : ℕ × SPTree.Timed α)
+    (f : α → ℕ × SPTree.Timed β) (h : β → γ) {Q : α → Prop} (hA : SPTree.Timed.AllRet Q A.2)
+    {B : ℕ} (hf : ∀ a, Q a → SPTree.Timed.stepTime (f a) ≤ B) :
+    SPTree.Timed.stepTime (SPTree.Timed.delay (c + A.1 + (A.2.bind f).1)
+      ((A.2.bind f).2.bind fun y => (0, SPTree.Timed.ret (h y)))) ≤
+      c + SPTree.Timed.stepTime A + B := by
+  have h1 := SPTree.Timed.bind_ret_stepTime_le (A.2.bind f) h
+  have h2 := SPTree.Timed.stepTime_bind_le_of_allRet A.2 f B hA hf
+  simp only [SPTree.Timed.stepTime, SPTree.Timed.delay] at h1 h2 ⊢
+  omega
+
+/-- The leaves of a costed tree `A` followed by a costed bind `f` and a return `h` satisfy `P`
+when the leaves of `f` at the leaves of `A` satisfying `Q` are mapped by `h` into `P`. -/
+theorem allRet_bind_bind_ret {α β γ : Type} (c : ℕ) (A : ℕ × SPTree.Timed α)
+    (f : α → ℕ × SPTree.Timed β) (h : β → γ) {Q : α → Prop} {P : γ → Prop}
+    (hA : SPTree.Timed.AllRet Q A.2)
+    (hf : ∀ a, Q a → SPTree.Timed.AllRet (fun y => P (h y)) (f a).2) :
+    SPTree.Timed.AllRet P (SPTree.Timed.delay (c + A.1 + (A.2.bind f).1)
+      ((A.2.bind f).2.bind fun y => (0, SPTree.Timed.ret (h y)))).2 := by
+  simp only [SPTree.Timed.delay, SPTree.Timed.allRet_bind]
+  exact SPTree.Timed.allRet_mono (fun a ha => hf a ha) _ hA
+
+/-- Two costed trees `A` and `B a` in sequence followed by a continuation `F a b`, with step
+costs `c₁` and `c₂` in front: its time is at most the step costs and the bounds of the three
+parts, each bound at the leaves of the parts before it that satisfy their invariants. -/
+theorem stepTime_bind_bind_le {α β γ : Type} (c₁ c₂ : ℕ) (A : ℕ × SPTree.Timed α)
+    (B : α → ℕ × SPTree.Timed β) (F : α → β → ℕ × SPTree.Timed γ) {QA : α → Prop}
+    {QB : α → β → Prop} {TA TB TF : ℕ} (hA : SPTree.Timed.stepTime A ≤ TA)
+    (hAr : SPTree.Timed.AllRet QA A.2) (hB : ∀ a, QA a → SPTree.Timed.stepTime (B a) ≤ TB)
+    (hBr : ∀ a, QA a → SPTree.Timed.AllRet (QB a) (B a).2)
+    (hF : ∀ a b, QA a → QB a b → SPTree.Timed.stepTime (F a b) ≤ TF) :
+    SPTree.Timed.stepTime (SPTree.Timed.delay (c₁ + A.1)
+      (A.2.bind fun a => SPTree.Timed.delay (c₂ + (B a).1) ((B a).2.bind (F a)))) ≤
+      c₁ + TA + c₂ + TB + TF := by
+  have h1 := SPTree.Timed.stepTime_bind_le_of_allRet A.2
+    (fun a => SPTree.Timed.delay (c₂ + (B a).1) ((B a).2.bind (F a))) (c₂ + TB + TF) hAr
+    fun a ha => by
+      have h2 := SPTree.Timed.stepTime_bind_le_of_allRet (B a).2 (F a) TF (hBr a ha)
+        fun b hb => hF a b ha hb
+      have := hB a ha
+      simp only [SPTree.Timed.stepTime, SPTree.Timed.delay] at h2 this ⊢
+      omega
+  simp only [SPTree.Timed.stepTime, SPTree.Timed.delay] at h1 hA ⊢
+  omega
+
+/-- A step cost `a` in front of a costed tree: its time is `a` plus the time of the tree. -/
+theorem stepTime_pair {α : Type} (a : ℕ) (p : ℕ × SPTree.Timed α) :
+    SPTree.Timed.stepTime (a + p.1, p.2) = a + SPTree.Timed.stepTime p :=
+  SPTree.Timed.stepTime_delay a p
+
+/-- A costed tree `A` followed by a return at step cost `d`, with step cost `c` in front: its
+time is at most `c`, the time of `A` and `d`. -/
+theorem stepTime_delay_bind_const_le {α β : Type} (c d : ℕ) (A : ℕ × SPTree.Timed α)
+    (h : α → β) {T : ℕ} (hA : SPTree.Timed.stepTime A ≤ T) :
+    SPTree.Timed.stepTime (SPTree.Timed.delay (c + A.1)
+      (A.2.bind fun y => (d, SPTree.Timed.ret (h y)))) ≤ c + T + d := by
+  have := SPTree.Timed.stepTime_bind_le A.2 (fun y => (d, SPTree.Timed.ret (h y))) d
+    fun _ => by simp [SPTree.Timed.stepTime, SPTree.Timed.time_ret]
+  simp only [SPTree.Timed.stepTime, SPTree.Timed.delay] at this hA ⊢
+  omega
+
+/-- A step cost `C` and one unit in front of a costed tree `D`. -/
+theorem stepTime_cost_le {γ : Type} (C : ℕ) (D : ℕ × SPTree.Timed γ) {TC TD : ℕ}
+    (hC : C ≤ TC) (hD : SPTree.Timed.stepTime D ≤ TD) :
+    SPTree.Timed.stepTime (C + (1 + D.1), D.2) ≤ TC + 1 + TD := by
+  simp only [SPTree.Timed.stepTime] at hD ⊢
+  omega
+
+end CatCrypt.Core.SPTree.Timed
 
 namespace CatCrypt.Crypto.UCTransparent
 

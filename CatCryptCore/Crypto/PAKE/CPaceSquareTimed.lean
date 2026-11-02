@@ -125,6 +125,7 @@ theorem CoreInv.succ {S W Pw K : Type} [Monoid S] {i : ℕ} {c : CoreHat S W Pw 
 section Time
 
 open CatCrypt.Core
+open SPTree.Timed (stepTime_bind_bind_ret_le allRet_bind_bind_ret)
 
 -- The costed steps of `simProt` are compiled through the auxiliary matchers of its source, and
 -- the bounds below unfold them by name.
@@ -290,30 +291,6 @@ theorem core_time (e : OEv Pw W) (i : ℕ) (x : ((Pw → Sˣ) × (Pw → ℕ)) �
       simp only [Nat.add_mul] at this hm
       simp only [SPTree.Timed.stepTime, SPTree.Timed.delay] at this ⊢
       omega
-
-/-- A costed tree `A` followed by a costed bind `f`, bounded by `B` at the leaves of `A` that
-satisfy `Q`, and a return at zero cost, with the step costs moved in front. -/
-theorem stepTime_bind_bind_ret_le {α β γ : Type} (c : ℕ) (A : ℕ × SPTree.Timed α)
-    (f : α → ℕ × SPTree.Timed β) (h : β → γ) {Q : α → Prop} (hA : SPTree.Timed.AllRet Q A.2)
-    {B : ℕ} (hf : ∀ a, Q a → SPTree.Timed.stepTime (f a) ≤ B) :
-    SPTree.Timed.stepTime (SPTree.Timed.delay (c + A.1 + (A.2.bind f).1)
-      ((A.2.bind f).2.bind fun y => (0, SPTree.Timed.ret (h y)))) ≤
-      c + SPTree.Timed.stepTime A + B := by
-  have h1 := SPTree.Timed.bind_ret_stepTime_le (A.2.bind f) h
-  have h2 := SPTree.Timed.stepTime_bind_le_of_allRet A.2 f B hA hf
-  simp only [SPTree.Timed.stepTime, SPTree.Timed.delay] at h1 h2 ⊢
-  omega
-
-/-- The leaves of a costed tree `A` followed by a costed bind `f` and a return `h` satisfy `P`
-when the leaves of `f` at the leaves of `A` satisfying `Q` are mapped by `h` into `P`. -/
-theorem allRet_bind_bind_ret {α β γ : Type} (c : ℕ) (A : ℕ × SPTree.Timed α)
-    (f : α → ℕ × SPTree.Timed β) (h : β → γ) {Q : α → Prop} {P : γ → Prop}
-    (hA : SPTree.Timed.AllRet Q A.2)
-    (hf : ∀ a, Q a → SPTree.Timed.AllRet (fun y => P (h y)) (f a).2) :
-    SPTree.Timed.AllRet P (SPTree.Timed.delay (c + A.1 + (A.2.bind f).1)
-      ((A.2.bind f).2.bind fun y => (0, SPTree.Timed.ret (h y)))).2 := by
-  simp only [SPTree.Timed.delay, SPTree.Timed.allRet_bind]
-  exact SPTree.Timed.allRet_mono (fun a ha => hf a ha) _ hA
 
 /-- The updated cost companion of a table of the parties stays within `3 (i + 1)`. -/
 theorem update_cost_le {c : UCTransparent.FPAKE.PartyId → ℕ} {i : ℕ} (h : ∀ p, c p ≤ 3 * i)
