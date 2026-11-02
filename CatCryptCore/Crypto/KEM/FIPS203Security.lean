@@ -312,9 +312,7 @@ omit [Fintype M] [Nonempty M] [Fintype Z] [Nonempty Z] [Nonempty R] [Nonempty K]
 theorem isQueryBoundBy_lazyTab {D' R' I V S A : Type} [DecidableEq I] [Fintype V] [Nonempty V]
     (cost : D' → ℕ) (tab : I → Option V) (i : I) (set : (I → Option V) → S) (w : V → A) (n : ℕ) :
     (lazyTab (D' := D') (R' := R') tab i set w).IsQueryBoundBy cost n := by
-  unfold lazyTab; split
-  · trivial
-  · exact fun _ => trivial
+  query_bound
 
 /-- The simulation of `G`, `J` and decapsulation by the OW-PCA adversary against
 `tTransform P`, from the challenge `c*` and the key `k*`. A `G`-query `(m, hpk pk)` is
@@ -352,25 +350,7 @@ theorem isQueryBoundBy_simImplF (P : Scheme PK SK M C R) (hpk : PK → Hash) (pk
     (st : SimStateF M C R K Hash Z) (d : ((M × Hash) ⊕ (Z × C)) ⊕ C) :
     (simImplF P hpk pk cstar kstar st d).IsQueryBoundBy cost
       (Sum.elim (fun _ => 1) (fun _ => 0) d) := by
-  rcases d with (q | q) | c
-  · simp only [simImplF, Sum.elim_inl]
-    split_ifs
-    · refine ⟨(Nat.le_add_right _ _).trans (hc q.1 (q.1, cstar)), fun a => ?_⟩
-      dsimp only
-      have h2 := hc q.1 (q.1, P.enc pk q.1 (a.elim id fun _ => Classical.arbitrary R))
-      refine ⟨by omega, fun b => ?_⟩
-      dsimp only
-      split_ifs
-      · trivial
-      · exact isQueryBoundBy_lazyTab _ _ _ _ _ _
-      · exact isQueryBoundBy_lazyTab _ _ _ _ _ _
-    · exact isQueryBoundBy_lazyTab _ _ _ _ _ _
-  · simp only [simImplF]
-    exact isQueryBoundBy_lazyTab _ _ _ _ _ _
-  · simp only [simImplF, Sum.elim_inr]
-    split_ifs
-    · trivial
-    · exact isQueryBoundBy_lazyTab _ _ _ _ _ _
+  query_bound
 
 /-- The run of the OW-PCA adversary against `tTransform P` built from `B`. -/
 noncomputable def redRun (P : Scheme PK SK M C R) (hpk : PK → Hash) {qRO qD : ℕ}
@@ -385,13 +365,7 @@ theorem isQueryBoundBy_redRun (P : Scheme PK SK M C R) (hpk : PK → Hash) {qRO 
     (B : ROM2INDCCAAdversary PK K C (M × Hash) (K × R) (Z × C) K qRO qD)
     (cost : M ⊕ (M × C) → ℕ) (hc : ∀ m q, cost (.inl m) + cost (.inr q) ≤ 1) (pk : PK) (c : C) :
     (redRun P hpk B pk c).IsQueryBoundBy cost qRO := by
-  intro kstar
-  have h := OracleAdv.isQueryBoundBy_bind (OracleAdv.isQueryBoundBy_simulate _ _ cost
-    (isQueryBoundBy_simImplF P hpk pk c kstar cost hc) (B.isQueryBoundRO pk c kstar)
-    SimStateF.init) (b := 0) (f := fun x : Bool × SimStateF M C R K Hash Z =>
-      (OracleAdv.ret (x.2.found.getD (Classical.arbitrary M)) :
-        OracleAdv (M ⊕ (M × C)) (R ⊕ Bool) M)) fun _ => trivial
-  simpa using h
+  query_bound
 
 /-- The OW-PCA adversary against `tTransform P` built from an IND-CCA adversary `B`
 against `fips203 P hpk`. It samples a key `k*`, runs `B` once on `(pk, c*, k*)` with
@@ -1227,12 +1201,7 @@ omit [Fintype M] [Nonempty M] [Fintype Z] [Nonempty Z] [Nonempty R] [Nonempty K]
 /-- A query bound for a cost dominates the bound for a smaller cost. -/
 theorem isQueryBoundBy_of_cost_le {D A α : Type} {cost cost' : D → ℕ} (hc : ∀ d, cost' d ≤ cost d)
     {B : OracleAdv D A α} {n : ℕ} (hB : B.IsQueryBoundBy cost n) : B.IsQueryBoundBy cost' n := by
-  induction B generalizing n with
-  | ret a => trivial
-  | rand p k ih => exact fun b => ih b (hB b)
-  | query d k ih =>
-    obtain ⟨hle, hk⟩ := hB
-    exact ⟨(hc d).trans hle, fun r => (ih r (hk r)).mono (by have := hc d; omega)⟩
+  query_bound
 
 omit [Fintype M] [Nonempty M] in
 /-- **Guessing the seed.** Averaged over a uniform seed `z`, a run with at most `n`
@@ -1287,33 +1256,13 @@ omit [Fintype M] [Nonempty M] [Fintype Z] [Nonempty Z] [Nonempty R] [Nonempty K]
 theorem isQueryBound_lazyTab {D' R' I V S A : Type} [DecidableEq I] [Fintype V] [Nonempty V]
     (tab : I → Option V) (i : I) (set : (I → Option V) → S) (w : V → A) (n : ℕ) :
     (lazyTab (D' := D') (R' := R') tab i set w).IsQueryBound n := by
-  unfold lazyTab; split
-  · trivial
-  · exact fun _ => trivial
+  query_bound
 
 omit [Fintype M] [Nonempty M] [Fintype Z] [Nonempty Z] in
 theorem isQueryBound_simImplFix (pk : PK) (cstar : C) (kstar : K) (st : SimStateF M C R K Hash Z)
     (d : ((M × Hash) ⊕ (Z × C)) ⊕ C) :
     (simImplFix P hpk f pk cstar kstar st d).IsQueryBound (Sum.elim (fun _ => 1) (fun _ => 0) d) := by
-  rcases d with (q | q) | c
-  · simp only [simImplFix, Sum.elim_inl]
-    by_cases hh : q.2 = hpk pk
-    · rw [ite_eq_left hh]
-      intro b
-      dsimp only
-      by_cases hb : b = true
-      · rw [ite_eq_left hb]
-        by_cases hc : cOf P f pk q.1 = cstar
-        · rw [ite_eq_left hc]; trivial
-        · rw [ite_eq_right hc]; apply isQueryBound_lazyTab
-      · rw [ite_eq_right hb]; apply isQueryBound_lazyTab
-    · rw [ite_eq_right hh]; apply isQueryBound_lazyTab
-  · simp only [simImplFix, Sum.elim_inl]
-    apply isQueryBound_lazyTab
-  · simp only [simImplFix, Sum.elim_inr]
-    by_cases hc : c = cstar
-    · rw [ite_eq_left hc]; trivial
-    · rw [ite_eq_right hc]; apply isQueryBound_lazyTab
+  query_bound
 
 /-- The OW-PCA adversary against `fixedT P f` built from an IND-CCA adversary `B`
 against `fips203 P hpk`, with the coins at prefix `hpk pk` given by `f`. -/
@@ -1323,13 +1272,7 @@ noncomputable def redFix {qRO qD : ℕ}
   run pk cstar := .rand (PMF.uniformFintype K) fun kstar =>
     (OracleAdv.simulate (simImplFix P hpk f pk cstar kstar) (B.run pk cstar kstar)
       SimStateF.init).bind fun x => .ret (x.2.found.getD (Classical.arbitrary M))
-  isQueryBound pk cstar kstar := by
-    have h := OracleAdv.isQueryBound_bind
-      (OracleAdv.isQueryBound_simulate (simImplFix P hpk f pk cstar kstar) _
-        (isQueryBound_simImplFix P hpk f pk cstar kstar) (B.isQueryBoundRO pk cstar kstar)
-        SimStateF.init)
-      (f := fun x => .ret (x.2.found.getD (Classical.arbitrary M))) (n := 0) fun _ => trivial
-    simpa using h
+  isQueryBound pk cstar kstar := by query_bound
 
 omit [Fintype M] [Nonempty M] [Fintype Z] [Nonempty Z] [Nonempty R] [Nonempty K] [DecidableEq Hash]
   [DecidableEq Z] [Fintype R] [Fintype K] in
@@ -2339,11 +2282,7 @@ queries, hence at most `2 · qRO` queries in total. -/
 theorem isQueryBoundBy_redROM_total {qRO qD : ℕ}
     (B : ROM2INDCCAAdversary PK K C (M × Hash) (K × R) (Z × C) K qRO qD) (pk : PK) (c : C) :
     ((redROM P hpk B).run pk c).IsQueryBoundBy (fun _ => 1) (qRO + qRO) := by
-  have hcost : (fun d : M ⊕ (M × C) => Sum.elim (fun _ => 1) (fun _ => 0) d +
-      Sum.elim (fun _ => 0) (fun _ => 1) d) = fun _ => 1 := by
-    funext d; cases d <;> rfl
-  have h := ((redROM P hpk B).isQueryBoundG pk c).add ((redROM P hpk B).isQueryBoundP pk c)
-  rwa [hcost] at h
+  query_bound
 
 /-- **ML-KEM's transform is IND-CCA secure in the random-oracle model.** For every
 public-key encryption scheme `P`, every `hpk : PK → Hash` and every IND-CCA adversary
