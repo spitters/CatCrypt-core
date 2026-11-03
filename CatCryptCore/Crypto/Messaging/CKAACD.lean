@@ -10,7 +10,88 @@ public import CatCryptCore.Crypto.Messaging.CKACorrupt
 /-!
 # The Diffie–Hellman CKA of Alwen, Coretti and Dodis
 
-DOCSTRING
+The continuous key agreement of Alwen, Coretti and Dodis (§4.1) over a cyclic group. A party
+state alternates between two forms: the next sender holds the public value `h = g^y` of its
+peer, the next receiver holds its own exponent `x`. Sending from `h` samples `x`, sends
+`g^x` with the key `h^x` and keeps `x`; receiving `T` with `x` derives `T^x` and keeps `T`,
+so that the own exponent is erased by the receive. The scheme `dhCKA` of
+`CatCryptCore.Crypto.Messaging.CKA` keeps the own exponent next to the peer's public value
+until the next send, and has forward-secrecy delay `2`.
+
+## Security
+
+In the corruption game of `CatCryptCore.Crypto.Messaging.CKACorrupt` with forward-secrecy
+delay `1` and post-compromise delay `2`, the advantage of every adversary `A` equals the DDH
+advantage of the reduction `acdDDHRed A` (`acdCKA_corrupt_advantage_eq_ddh`). The reduction
+draws the challenge epoch `t` from the adversary's distribution, embeds `g^a` as the message of
+epoch `t - 1` and `(g^b, z)` as the challenge message and key, and answers every other query
+honestly. The proof follows that of `dhCKA_corrupt_advantage_eq_ddh`: the oracle is in normal
+form (`acdCKA_oracle_eq`), two eager hops draw the exponent of epoch `t - 1` and the challenge
+exponent and key in advance (`OracleAdv.run_nf_eq_eager`), and the eager game and the
+simulator give equal outputs under the simulation relation `ACDRel` (`acdRel_step`,
+`OracleAdv.run_nf_map_fst_eq_of_rel`). The exponents unknown to the simulator are held only in
+short windows (`acdHidden`): `b` by the challenged party `ckaSender t` at counter `t`, until it
+receives the message of epoch `t + 1`, and `a` by its peer at counter `t - 1`, until it receives
+the challenge message. The gates with `ΔFS = 1`, `ΔPCS = 2` refuse every corruption in these
+windows (`not_acdHidden_of_allowCorr`), and the leakage gate refuses the sends of the epochs
+`t - 1` and `t`.
+
+Both delays are tight for `acdCKA`: with `ΔFS = 0` the challenged party may be corrupted at
+counter `t` and reveals `b`, from which the challenge key is `(g^a)^b`; with `ΔPCS = 1` its
+peer may be corrupted after the send of epoch `t - 1` and reveals `a`, and the send of epoch
+`t - 1` may leak `a`. In both cases the adversary computes the real key from the transcript
+and distinguishes with advantage `1 - 1/|G|`.
+
+The passive game of `CatCryptCore.Crypto.Messaging.CKA` is the corruption game of
+`ckaPassiveAdv k m`, so the passive CKA advantage of `acdCKA` is a DDH advantage
+(`acdCKA_advantage_eq_ddh`).
+
+## Comparison with the formalisation of the Beneficial AI Foundation
+
+The theorem `ddhCKA.security` of `SecureMessaging/CKA/FromDDH/Security.lean`
+(github.com/Beneficial-AI-Foundation/secure-messaging, commit `08ae2d4`) states, for the same
+alternating scheme over a module `G` over a finite field `F` with a generator whose scalar
+multiplication is bijective, and for game parameters with `ΔFS = 1` and `ΔPCS = 2`,
+`|Pr[b' = b] - 1/2| ≤ ddhAdvantage ℬ / 2`. In a bit-guessing game
+`|Pr[b' = b] - 1/2|` is half the distance between the games with the real and with the
+uniform key, so the two statements bound the same quantity by the same DDH advantage. The
+differences:
+
+* the bound here is an equality, `CKA_Corrupt_Advantage (acdCKA G) 1 2 A =
+  DDH_Advantage G (acdDDHRed A)`, of which `acdCKA_corrupt_advantage_le` is the inequality;
+* the challenge epoch and the challenged party are game parameters fixed before the game in
+  the BAIF statement; here the adversary draws the challenge epoch from its own distribution
+  before the initialisation and the challenged party is the sender of that epoch, and the
+  reduction draws the epoch from the same distribution, without a guess;
+* the group is a `CyclicGroup` with an exponent type here, an `F`-module there;
+* the reduction here is costed: `derive_timed` derives `acdDDHTreeOf.timed` and its erasure
+  theorem, and `acdDDHTreeOf.timeBound_timed` bounds its time by the time of the adversary plus
+  a sum over its queries of the cost `acdSimQueryTime` of a simulated query; the BAIF
+  efficiency statement `time(ℬ) = time(𝒜) + O(q_𝒜)` is informal.
+
+## Main definitions
+
+* `acdCKA`, `acdCKACoins` — the scheme and its sending algorithm with explicit randomness
+* `acdStepOf`, `acdEagerStepOf`, `acdSimStepOf` — the steps of the oracle, of the eager game and
+  of the simulator
+* `acdHidden`, `ACDRel` — the hidden windows and the simulation relation
+* `acdSimImplOf`, `acdDDHTreeOf`, `acdDDHRed`, `acdDDHRedA` — the DDH reduction
+
+## Main results
+
+* `acdCKACoins_sound`, `acdCKA_recv` — soundness of the explicit randomness, correctness
+* `acdRel_step` — the simulation step
+* `acdCKA_corrupt_advantage_eq_ddh`, `acdCKA_corrupt_advantageA_eq_ddh`,
+  `acdCKA_corrupt_advantage_le` — the corruption advantage with `ΔFS = 1`, `ΔPCS = 2` is the DDH
+  advantage of the reduction
+* `acdCKA_advantage_eq_ddh` — the passive CKA advantage as a DDH advantage
+* `acdDDHTreeOf.erase_timed`, `acdDDHTreeOf.timeBound_timed` — the costed reduction and its
+  time
+
+## References
+
+* J. Alwen, S. Coretti, Y. Dodis, *The Double Ratchet: Security Notions, Proofs, and
+  Modularization for the Signal Protocol*, EUROCRYPT 2019, §4.1 and Theorem 3
 -/
 
 set_option autoImplicit false
@@ -703,6 +784,144 @@ end ACDRed
 /-! ## The costed reduction -/
 
 derive_timed acdDDHTreeOf
+
+/-- The time of the `i`-th simulated query of `acdSimImplOf`, with exponentiations of costs at
+most `P` and `X`. -/
+def acdSimQueryTime (P X i : ℕ) : ℕ := 3 * P + X + 21 * i + 51
+
+section ACDTime
+
+variable {E Gr : Type} [Fintype E] [Nonempty E] [Fintype Gr] [Nonempty Gr] {α : Type}
+
+/-- **Time of a simulated query.** From a costed state within the bound `ckaSimCostInv i`, the
+costed simulator answers in time at most `acdSimQueryTime P X i` and returns a costed state
+within the bound `ckaSimCostInv (i + 1)`. -/
+theorem acdSimImplOf.timed_bound (pow : E → Gr) (powCost : E → ℕ) (epow : Gr → E → Gr)
+    (epowCost : Gr → E → ℕ) (ΔFS ΔPCS t : ℕ) (ga gb z : Gr) {P X : ℕ}
+    (hP : ∀ x, powCost x ≤ P) (hX : ∀ g x, epowCost g x ≤ X) (i : ℕ)
+    (σ : CKAGameSt (Gr ⊕ E) Gr) (q : CKAQuery) (stCost tCost : CKAParty → ℕ)
+    (hS : ∀ p, stCost p ≤ 1 + 3 * i) (hT : ∀ p, tCost p ≤ 3 * i) :
+    OracleAdv.Timed.StepTimeBound
+        (OracleAdv.Timed.delay 1 (acdSimImplOf.timed pow powCost epow epowCost ΔFS ΔPCS t
+          ga gb z σ q stCost tCost)) (acdSimQueryTime P X i) ∧
+      OracleAdv.Timed.AllRet (fun y => ckaSimCostInv (i + 1) y.2)
+        (acdSimImplOf.timed pow powCost epow epowCost ΔFS ΔPCS t ga gb z σ q stCost
+          tCost).2 := by
+  refine ⟨?_, ?_⟩
+  · unfold acdSimQueryTime
+    refine ⟨by simp [OracleAdv.Timed.delay, acdSimImplOf.timed], ?_⟩
+    simp only [OracleAdv.Timed.delay, acdSimImplOf.timed, Nat.add_zero]
+    refine ⟨by omega, fun x => ⟨Nat.zero_le _, by dsimp only; omega,
+      fun u => ⟨?_, trivial⟩⟩⟩
+    have := hP x
+    have hpub : ∀ y : Gr ⊕ E, (match y with
+        | .inl _ => 0
+        | .inr x => 1 + powCost x) ≤ 1 + P := fun y => by
+      cases y with
+      | inl _ => exact Nat.zero_le _
+      | inr x => exact Nat.add_le_add_left (hP x) 1
+    cases q with
+    | send p =>
+      have := hS p; have := hS p.other; have := hT p; have := hT .A; have := hT .B
+      have := hX ga (acdExpOr x (σ.st p.other)); have := hX (acdPubOf pow (σ.st p)) x
+      have := hpub (σ.st p)
+      dsimp only
+      split
+      · split <;> omega
+      · omega
+    | recv p =>
+      have := hS p; have := hT p; have := hT p.other
+      dsimp only
+      split <;> omega
+    | chall p =>
+      have := hS p; have := hT p; have := hT .A; have := hT .B
+      dsimp only
+      split
+      · split <;> omega
+      · omega
+    | corrupt p =>
+      have := hS p; have := hT p; have := hT .A; have := hT .B
+      dsimp only
+      split <;> omega
+    | sendLeak p =>
+      have := hS p; have := hT p; have := hT .A; have := hT .B
+      have := hX (acdPubOf pow (σ.st p)) x
+      have := hpub (σ.st p)
+      dsimp only
+      split <;> omega
+  · intro x u
+    have hS' : ∀ p, stCost p ≤ 1 + 3 * (i + 1) := fun p => by have := hS p; omega
+    have hT' : ∀ p, tCost p ≤ 3 * (i + 1) := fun p => by have := hT p; omega
+    have hU : ∀ p : CKAParty, (fun a => 2 + if a = p then 0 else 1 + stCost a) =
+        (fun a => 2 + if a = p then 0 else 1 + stCost a) := fun _ => rfl
+    have hSu : ∀ p a, (2 + if _ : a = p then 0 else 1 + stCost a) ≤ 1 + 3 * (i + 1) :=
+      fun p a => by have := hS a; split <;> omega
+    have hTu : ∀ p a, (2 + if _ : a = p then 0 else 1 + tCost a) ≤ 3 * (i + 1) :=
+      fun p a => by have := hT a; split <;> omega
+    cases q with
+    | send p =>
+      dsimp only [OracleAdv.Timed.AllRet]
+      split
+      · split
+        · exact ⟨hSu p, hTu p⟩
+        · exact ⟨hSu p, hTu p⟩
+      · exact ⟨hS', hT'⟩
+    | recv p =>
+      dsimp only [OracleAdv.Timed.AllRet]
+      split
+      · exact ⟨hSu p, hTu p⟩
+      · exact ⟨hS', hT'⟩
+    | chall p =>
+      dsimp only [OracleAdv.Timed.AllRet]
+      split
+      · split
+        · exact ⟨hSu p, hTu p⟩
+        · exact ⟨hS', hT'⟩
+      · exact ⟨hS', hT'⟩
+    | corrupt p => exact ⟨hS', hT'⟩
+    | sendLeak p =>
+      dsimp only [OracleAdv.Timed.AllRet]
+      split
+      · exact ⟨hSu p, hTu p⟩
+      · exact ⟨hS', hT'⟩
+
+end ACDTime
+
+/-- **Time of the DDH reduction.** For an adversary whose costed trees have time at most `T`,
+at most `q` queries and call cost at most `a`, and exponentiations of costs at most `P` (of the
+generator) and `X` (of a group element), the costed reduction tree has time at most
+`T + ∑_{j < q} (3 P + X + 21 j + 51) + a + 4 P + 12`: the adversary, one simulated query per
+query, whose cost grows with the closure layers of the simulator state, and the choice of the
+initial exponent. -/
+theorem acdDDHTreeOf.timeBound_timed {E Gr α : Type} [Fintype E] [Nonempty E] [Fintype Gr]
+    [Nonempty Gr] (pow : E → Gr) (powCost : E → ℕ) (epow : Gr → E → Gr)
+    (epowCost : Gr → E → ℕ) (ΔFS ΔPCS : ℕ) (tStar : PMF ℕ)
+    (play : ℕ → Gr → OracleAdv.Timed CKAQuery (CKAAns (Gr ⊕ E) Gr Gr E) α)
+    (playCost : ℕ → Gr → ℕ) (ga gb z : Gr) {T q a P X : ℕ}
+    (hA : ∀ t g, (play t g).TimeBound T) (hq : ∀ t g, (play t g).erase.IsQueryBound q)
+    (ha : ∀ t g, playCost t g ≤ a) (hP : ∀ x, powCost x ≤ P)
+    (hX : ∀ g x, epowCost g x ≤ X) :
+    OracleAdv.Timed.StepTimeBound
+      (acdDDHTreeOf.timed pow powCost epow epowCost ΔFS ΔPCS tStar play playCost ga gb z)
+      (T + ∑ j ∈ Finset.range q, acdSimQueryTime P X j + a + 4 * P + 12) := by
+  unfold acdDDHTreeOf.timed
+  refine (timeBound_rand_rand_bind (K := 10 + a + 4 * P)
+    (B := T + ∑ j ∈ Finset.range q, acdSimQueryTime P X j) _ _ _ _ ?_ ?_).mono (by omega)
+  · intro t x₀
+    have := ha t ga
+    have := ha t (pow x₀)
+    have := hP x₀
+    split <;> omega
+  · intro t x₀
+    refine (OracleAdv.Timed.timeBound_simulateHat_inv _ _ _ ckaSimCostInv
+      (acdSimQueryTime P X)
+      (fun i ŝ d h => by
+        exact acdSimImplOf.timed_bound pow powCost epow epowCost ΔFS ΔPCS t ga gb z
+          hP hX i _ d _ _ h.1 h.2) (hA t (if t = 1 then ga else pow x₀))
+      (hq t (if t = 1 then ga else pow x₀)) 0 _ ?_).mono ?_
+    · exact ⟨fun p => le_refl _, fun p => Nat.zero_le _⟩
+    · simp only [Nat.zero_add, le_refl]
+
 
 /-- **The DDH reduction** `acdDDHRed A`: the tree `acdDDHTreeOf` with the exponentiations of
 the group and the delays `ΔFS = 1`, `ΔPCS = 2`, run as a distribution. -/
