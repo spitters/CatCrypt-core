@@ -15,7 +15,9 @@ public import CatCryptCore.Crypto.OracleLazyMulti
 `x3dh_realizesSim_oracleGame` (`CatCryptCore.Crypto.AKE.X3DHSquare`) bounds the X3DH square by
 the advantage of an oracle adversary between the real game `realGame G` and the simulated game
 `simGame G`. This file bounds that advantage by the probability of one bad event in a joint run
-of the two worlds on one state.
+of the two worlds on one state: a query of the key derivation at an input whose `DH1` is the
+Diffie–Hellman value of the identity key of an uncorrupt initiator and the signed prekey of an
+uncorrupt responder.
 
 ## Steps as functions of one draw
 
@@ -23,35 +25,66 @@ A step of the real world draws at most a secret of a new session, the long-term 
 parties and one value of the key derivation; it is the image of a uniform draw `Draw S K` under
 `realD` (`realGame_oracle_eq`). A step of the simulated world draws the same at the start of the
 simulator and one key at its call to `F_AKE`; it is the image of a uniform pair in
-`Draw S K × K` under `simWorldD` (`simGame_oracle_eq`).
+`Draw S K × K` under `simWorldD` (`simGame_oracle_eq`). The simulated game is thus given by a
+probability mass function.
 
 ## The joint world
 
-`jointD` runs both worlds on one draw `(r, kf)`. When the simulator delivers a key of `F_AKE` to
-an unexposed session (`FKeyAt`), the real world reads the fresh value of the key derivation from
-`kf`, the slot from which `F_AKE` draws the key; otherwise it reads `r` (`cpl`). With this
-coupling a completing session has the same key in both worlds unless the real table of the key
-derivation already holds its input, and an answer of `kdf` is the same in both worlds unless it
-is asked at the input of a session that received a key of `F_AKE`: the outputs of the two worlds
-differ only after the adversary queries the key derivation at the input of such a session. The
-state of the joint world records whether the outputs differed at the last step. Answering with
-the real outputs (`jointReal`), its real part is the real game; answering with the simulated
-outputs (`jointSim`), its simulated part is the simulated game. The two answers agree on every
-transition whose outputs agree, so the advantage is at most the probability `badGame G B` that
-the outputs differ at some step of the run against `jointSim` (`x3dh_advantage_le_badGame`).
+`jointD` runs both worlds on one draw `(r, kf)`. When the simulator completes a session that is
+not exposed (`FKeyAt`), the real world reads the fresh value of the key derivation from `kf`, the
+slot from which `F_AKE` draws the key; otherwise it reads `r` (`cpl`). The state of the joint
+world records whether the outputs differed at the last step. Answering with the real outputs
+(`jointReal`), its real part is the real game; answering with the simulated outputs
+(`jointSim`), its simulated part is the simulated game. The two answers agree on every transition
+whose outputs agree, so the advantage is at most the probability `diffGame G B` that the outputs
+differ at some step of the run against `jointSim` (`x3dh_advantage_le_diffGame`).
+
+## The bad event
+
+`DH1Hit` holds in a state of the simulated world when the table of the key derivation holds an
+input `ip` whose initiator `a = ip.ini` and responder `b = ip.res` are uncorrupt and whose `DH1`
+is `g^{ik_a · spk_b}`, for the recorded identity secret `ik_a` of `a` and signed-prekey secret
+`spk_b` of `b`. The simulator writes to that table only on a query of the adversary and on the
+completion of an exposed session, whose party or peer is corrupt; so the event is a query of the
+adversary that contains the computational Diffie–Hellman value of the public keys `IK_a`,
+`SPK_b` of two uncorrupt parties. Corruption is static and no session state is revealed; for a
+responder that receives an ephemeral key chosen by the adversary, `DH1` is the only component of
+its input that the adversary cannot compute, and the bad event asks for `DH1` only.
+
+The invariant `Inv` relates the simulator's copy of the real state, its recorded inputs, the
+state of `F_AKE`, and the real state: the long-term and session secrets, the notices and the
+corruptions agree; the session records agree up to their keys and the status in `F_AKE`; the key
+of a session is the same in the real world and in `F_AKE`; a completed session has a recorded
+input of the right shape whose `DH1` is the Diffie–Hellman value of the recorded long-term
+secrets; the real table of the key derivation is the simulator's table together with the inputs
+and keys of the completed unexposed sessions. Under `Inv`, a step of the joint world either
+makes `DH1Hit` hold or gives equal outputs and keeps `Inv` (`step_inv`): a query at the input of
+an unexposed session, or the completion of an unexposed session at an input already queried, is
+the bad event; a partner with the same input receives in `F_AKE` the key that the real world
+reads from its table. Hence differing outputs imply the bad event (`diffGame_le_badGame`).
 
 ## Main definitions
 
 * `Draw`, `ltD`, `realD`: a draw and the step of the real world as a function of it.
 * `simStartD`, `fStepD`, `simWorldD`: the step of the simulated world as a function of a draw.
 * `FKeyAt`, `cpl`, `jointD`, `jointReal`, `jointSim`: the joint world.
+* `diffGame`: the experiment of differing outputs.
+* `DH1Hit`: the bad event.
+* `Inv`, `InvJ`: the invariant of the joint world.
 * `badGame`: the bad-event experiment.
 
 ## Main results
 
 * `realGame_oracle_eq`, `simGame_oracle_eq`: the oracles as images of uniform draws.
+* `x3dh_advantage_le_diffGame`: the advantage is at most the probability of differing outputs.
+* `step_inv`: a step under the invariant is bad or keeps the invariant with equal outputs.
+* `diffGame_le_badGame`: differing outputs imply the bad event.
 * `x3dh_advantage_le_badGame`: the advantage between `realGame G` and `simGame G` is at most the
-  probability of the bad event.
+  probability of the bad event `DH1Hit`.
+
+The protocol-independent lemmas `pmf_eq_of_eq_liftPMF`, `drive0D`, `driveP_zero_eq`,
+`withSubP_zero_eq`, `uniform_bind_map`, `lookup_cons`, `roDet_of_some` and `roDet_of_none` are
+candidates for `CatCryptCore.Crypto.OracleGameUpToBad`.
 -/
 
 @[expose] public section
@@ -255,9 +288,11 @@ def realD (s : RSt S W K) (e : OEv W) (r : Draw S K) : OOut S W K × RSt S W K :
     if Named s.st pid then (.inr (.secret none), s) else
       (.inr (.secret (some (ltD s pid r.2.1).1)),
         { (ltD s pid r.2.1).2 with st := corruptStep (ltD s pid r.2.1).2.st pid })
-  | .inr (.complete sid pid) => (.inr (completeD G s (sid, pid) r).1, (completeD G s (sid, pid) r).2)
+  | .inr (.complete sid pid) =>
+    (.inr (completeD G s (sid, pid) r).1, (completeD G s (sid, pid) r).2)
   | .inr (.send sid pid e) => (.inr (sendD G s (sid, pid) e r).1, (sendD G s (sid, pid) e r).2)
-  | .inr (.kdf x) => (.inr (.hash (roDet s.ro x r.2.2.2).1), { s with ro := (roDet s.ro x r.2.2.2).2 })
+  | .inr (.kdf x) =>
+    (.inr (.hash (roDet s.ro x r.2.2.2).1), { s with ro := (roDet s.ro x r.2.2.2).2 })
 
 /-- `completeStep` is the image of a uniform draw under `completeD`. -/
 theorem completeStep_eq_map (s : RSt S W K) (x : Inst) :
@@ -276,7 +311,8 @@ theorem completeStep_eq_map (s : RSt S W K) (x : Inst) :
       | none => simp only [completeStep, completeD, hr, he, ho, hP]
       | some opk =>
         by_cases hc : rc.role = .initiator ∧ rc.key.isNone
-        · simp only [completeStep, completeD, hr, he, ho, hc, and_self, ↓reduceIte, roAt_eq_map, PMF.map_comp]
+        · simp only [completeStep, completeD, hr, he, ho, hc, and_self, ↓reduceIte, roAt_eq_map,
+            PMF.map_comp]
           exact ltAt_bind_ltAt_eq s x.2 rc.peer _
         · simp only [completeStep, completeD, hr, he, ho, hc, ↓reduceIte, hP]
 
@@ -687,18 +723,18 @@ instance (s : JSt S W K) (e : OEv W) (x : OOut S W K × JSt S W K) :
 def jointInit : JSt S W K :=
   ((((rInit, fun _ => none, .fwd), initSt), rInit), false)
 
-/-- **The bad-event experiment**: the adversary runs against the joint world answering with the
-outputs of the simulated world, and the experiment outputs whether the outputs of the real and
-of the simulated world differed at some step. -/
-noncomputable def badGame (B : OracleAdv (OEv W) (OOut S W K) Bool) : PMF Bool :=
+/-- **The experiment of differing outputs**: the adversary runs against the joint world
+answering with the outputs of the simulated world, and the experiment outputs whether the outputs
+of the real and of the simulated world differed at some step. -/
+noncomputable def diffGame (B : OracleAdv (OEv W) (OOut S W K) Bool) : PMF Bool :=
   (OracleAdv.run (OracleAdv.flagWhen JointBad (jointSim G)) B (jointInit, false)).map
     fun y => y.2.2
 
-/-- **Real versus simulated X3DH, up to the bad event.** For every oracle adversary `B`, the
-advantage of `B` between the real game and the simulated game is at most the probability of the
-bad event of the joint world. -/
-theorem x3dh_advantage_le_badGame (B : OracleAdv (OEv W) (OOut S W K) Bool) :
-    KeyedGame.advantage (realGame G) (simGame G) B ≤ badGame G B true := by
+/-- **Real versus simulated X3DH, up to differing outputs.** For every oracle adversary `B`, the
+advantage of `B` between the real game and the simulated game is at most the probability that
+the outputs of the two worlds differ at some step of the joint world. -/
+theorem x3dh_advantage_le_diffGame (B : OracleAdv (OEv W) (OOut S W K) Bool) :
+    KeyedGame.advantage (realGame G) (simGame G) B ≤ diffGame G B true := by
   have hagree : ∀ (s : JSt S W K) (e : OEv W) (x : OOut S W K × JSt S W K), ¬ JointBad s e x →
       jointReal G s e x = jointSim G s e x :=
     fun s e x hx => jointReal_apply_eq G s e x (by simpa [JointBad] using hx)
@@ -723,12 +759,12 @@ theorem x3dh_advantage_le_badGame (B : OracleAdv (OEv W) (OOut S W K) Bool) :
     rw [← PMF.toOuterMeasure_apply_singleton, PMF.toOuterMeasure_map_apply]
     rfl
   have h₁ : ((OracleAdv.run (jointReal G) B jointInit).map Prod.fst) true ≤
-      ((OracleAdv.run (jointSim G) B jointInit).map Prod.fst) true + badGame G B true := by
-    rw [map_fst_apply_true, map_fst_apply_true, badGame, hF]
+      ((OracleAdv.run (jointSim G) B jointInit).map Prod.fst) true + diffGame G B true := by
+    rw [map_fst_apply_true, map_fst_apply_true, diffGame, hF]
     exact OracleAdv.run_toOuterMeasure_le_add_flagWhen JointBad _ _ hagree B _ _
   have h₂ : ((OracleAdv.run (jointSim G) B jointInit).map Prod.fst) true ≤
-      ((OracleAdv.run (jointReal G) B jointInit).map Prod.fst) true + badGame G B true := by
-    rw [map_fst_apply_true, map_fst_apply_true, badGame, hF,
+      ((OracleAdv.run (jointReal G) B jointInit).map Prod.fst) true + diffGame G B true := by
+    rw [map_fst_apply_true, map_fst_apply_true, diffGame, hF,
       ← OracleAdv.run_flagWhen_prob_eq JointBad _ _ hagree B]
     exact OracleAdv.run_toOuterMeasure_le_add_flagWhen JointBad _ _
       (fun s e x hx => (hagree s e x hx).symm) B _ _
@@ -1110,24 +1146,26 @@ theorem Inv.corrupt_step {rs rl : RSt S W K} {inp : Inst → Option (Inp W)} {f 
 
 /-! ### Tables and inputs -/
 
-omit [Field S] [Fintype S] [Fintype K] [Nonempty K] [Inhabited K] in
+omit [Field S] [Fintype S] [DecidableEq W] [Fintype K] [Nonempty K] [Inhabited K] in
 /-- A lookup in a table with a new first entry. -/
-theorem lookup_cons {x y : Inp W} {k : K} {l : List (Inp W × K)} :
+theorem lookup_cons {D : Type} [DecidableEq D] {x y : D} {k : K} {l : List (D × K)} :
     ((x, k) :: l).lookup y = if y = x then some k else l.lookup y := by
   by_cases h : y = x
   · subst h; simp [List.lookup]
   · have hb : (y == x) = false := by simpa using h
     simp only [List.lookup, hb, h, ite_false]
 
-omit [Field S] [Fintype S] [Fintype K] [Nonempty K] [Inhabited K] in
+omit [Field S] [Fintype S] [DecidableEq W] [Fintype K] [Nonempty K] [Inhabited K] in
 /-- `roDet` at a recorded input. -/
-theorem roDet_of_some {tb : List (Inp W × K)} {x : Inp W} {v : K} (h : tb.lookup x = some v)
+theorem roDet_of_some {D : Type} [DecidableEq D] {tb : List (D × K)} {x : D} {v : K}
+    (h : tb.lookup x = some v)
     (k : K) : roDet tb x k = (v, tb) := by
   simp [roDet, h]
 
-omit [Field S] [Fintype S] [Fintype K] [Nonempty K] [Inhabited K] in
+omit [Field S] [Fintype S] [DecidableEq W] [Fintype K] [Nonempty K] [Inhabited K] in
 /-- `roDet` at a new input. -/
-theorem roDet_of_none {tb : List (Inp W × K)} {x : Inp W} (h : tb.lookup x = none) (k : K) :
+theorem roDet_of_none {D : Type} [DecidableEq D] {tb : List (D × K)} {x : D}
+    (h : tb.lookup x = none) (k : K) :
     roDet tb x k = (k, (x, k) :: tb) := by
   simp [roDet, h]
 
@@ -1198,7 +1236,8 @@ theorem Inv.kdf {rs rl : RSt S W K} {inp : Inst → Option (Inp W)} {f : St K}
     (hI : Inv G rs inp f rl) (x : Inp W) (k : K) (ph : Phase S W K) :
     DH1Hit G ({ rs with ro := (roDet rs.ro x k).2 }, inp, ph) ∨
       ((roDet rl.ro x k).1 = (roDet rs.ro x k).1 ∧
-        Inv G { rs with ro := (roDet rs.ro x k).2 } inp f { rl with ro := (roDet rl.ro x k).2 }) := by
+        Inv G { rs with ro := (roDet rs.ro x k).2 } inp f
+          { rl with ro := (roDet rl.ro x k).2 }) := by
   cases hs : rs.ro.lookup x with
   | some v =>
     rw [roDet_of_some hs, roDet_of_some (hI.roSim x v hs)]
@@ -1259,7 +1298,8 @@ theorem Inv.keyed_step {rs rl : RSt S W K} {inp : Inst → Option (Inp W)} {f : 
     (hroSim : ∀ ip' v, ros.lookup ip' = some v → rol.lookup ip' = some v)
     (hroSess : ∀ y ip' r, Function.update inp x (some ip) y = some ip' →
       (setRec rs.st x { rcs with key := some ks }).recs y = some r →
-      ¬ Exp rs.st.corrupt y r.peer → rol.lookup ip' = keyOf (setRec rl.st x { rcl with key := some kr }) y)
+      ¬ Exp rs.st.corrupt y r.peer →
+        rol.lookup ip' = keyOf (setRec rl.st x { rcl with key := some kr }) y)
     (hroReal : ∀ ip' v, rol.lookup ip' = some v → ros.lookup ip' = some v ∨
       ∃ y r, Function.update inp x (some ip) y = some ip' ∧
         (setRec rs.st x { rcs with key := some ks }).recs y = some r ∧
@@ -1427,7 +1467,8 @@ theorem Inv.deliver_exp {rs rl : RSt S W K} {inp : Inst → Option (Inp W)} {f :
   | some v =>
     have hll := hI.roSim ip v hls
     rw [roDet_of_some hls, roDet_of_some hll]
-    refine hI.keyed_step G hs hl hf hsh hd v v rs.ro rl.ro _ (by simp only [he, ↓reduceIte]) hI.roSim ?_ ?_
+    refine hI.keyed_step G hs hl hf hsh hd v v rs.ro rl.ro _ (by simp only [he, ↓reduceIte])
+      hI.roSim ?_ ?_
     · intro y ip' r hy hr hey
       have hne := hexp _ y r hr hey
       rw [setRec_recs_ne hne] at hr
@@ -1862,5 +1903,53 @@ theorem step_inv (s : (SimSt S W K × St K) × RSt S W K) (hI : InvJ G s) (e : O
     · exact Or.inr ⟨by rw [h1], h2⟩
 
 end Bad
+
+/-! ## The main bound -/
+
+section Main
+
+variable {S W K : Type} [Field S] [Fintype S] [DecidableEq W] [Fintype K]
+  [Nonempty K] [Inhabited K] (G : DHGroup S W)
+
+open Classical in
+/-- **The bad-event experiment**: the adversary runs against the joint world answering with the
+outputs of the simulated world, and the experiment outputs whether the bad event `DH1Hit` held
+in the simulated world after some step: the table of the key derivation holds an input whose
+initiator and responder are uncorrupt and whose `DH1` is the Diffie–Hellman value of the
+initiator's identity key and the responder's signed prekey. -/
+noncomputable def badGame (B : OracleAdv (OEv W) (OOut S W K) Bool) : PMF Bool :=
+  (OracleAdv.run (OracleAdv.flagWhen (fun _ _ x => DH1Hit G x.2.1.1.1) (jointSim G)) B
+    (jointInit, false)).map fun y => y.2.2
+
+open Classical in
+/-- **Differing outputs imply the bad event.** For every oracle adversary `B`, the probability
+that the outputs of the two worlds differ at some step is at most the probability of the bad
+event `DH1Hit`. -/
+theorem diffGame_le_badGame (B : OracleAdv (OEv W) (OOut S W K) Bool) :
+    diffGame G B true ≤ badGame G B true := by
+  have hstep : ∀ (s : JSt S W K) e, InvJ G s.1 → ∀ x ∈ (jointSim G s e).support,
+      DH1Hit G x.2.1.1.1 ∨ (¬ JointBad s e x ∧ InvJ G x.2.1) := by
+    intro s e hs x hx
+    simp only [jointSim, PMF.support_map, Set.mem_image] at hx
+    obtain ⟨r, -, rfl⟩ := hx
+    rcases step_inv G s.1 hs e r with h | ⟨h1, h2⟩
+    · exact Or.inl h
+    · refine Or.inr ⟨?_, h2⟩
+      simp [JointBad, h1]
+  unfold diffGame badGame
+  simp only [map_flag_apply]
+  exact OracleAdv.run_flagWhen_le_of_inv (jointSim G) JointBad
+    (fun _ _ x => DH1Hit G x.2.1.1.1) (fun s => InvJ G s.1) hstep B jointInit (inv_init G)
+
+/-- **Real versus simulated X3DH, up to the bad event.** For every oracle adversary `B`, the
+advantage of `B` between the real game and the simulated game is at most the probability of the
+bad event of the joint world: a query of the key derivation at an input whose `DH1` is the
+Diffie–Hellman value `g^{ik_a · spk_b}` of the identity key of an uncorrupt initiator `a` and the
+signed prekey of an uncorrupt responder `b`. -/
+theorem x3dh_advantage_le_badGame (B : OracleAdv (OEv W) (OOut S W K) Bool) :
+    KeyedGame.advantage (realGame G) (simGame G) B ≤ badGame G B true :=
+  (x3dh_advantage_le_diffGame G B).trans (diffGame_le_badGame G B)
+
+end Main
 
 end CatCrypt.Crypto.AKE.X3DHSquareHops
