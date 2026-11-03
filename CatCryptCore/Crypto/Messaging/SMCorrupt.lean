@@ -3104,7 +3104,8 @@ noncomputable def smAdOracle (C : CKADef Sc Msg Key) [CKACoins C Rand]
   | .chall p m =>
     match x.1.loc.snd p with
     | some sa =>
-      if x.1.loc.done = false ∧ x.2.lo ≤ x.1.ck.t p ∧ ckaSender (x.1.ck.t p) = p then
+      if x.2.cE = none ∧ x.1.loc.done = false ∧ x.2.lo ≤ x.1.ck.t p ∧
+          ckaSender (x.1.ck.t p) = p then
         (challCt D ideal (G.stretch sa).1 m).bind fun c =>
           PMF.pure (.ct c, (⟨x.1.ck, { x.1.loc.advanced p (G.stretch sa).2 with done := true }⟩,
             ⟨some (x.1.ck.t p), x.2.lo⟩))
@@ -3178,7 +3179,8 @@ noncomputable def guessRecv (w : GuessSt) (p : CKAParty) :
 /-- The adaptive game answers the challenge of party `p`: no challenge yet, the epoch of `p` is
 allowed, `p` sends in its epoch and holds a sending chain. -/
 def guessOk (w : GuessSt) (p : CKAParty) : Bool :=
-  !w.dn && decide (w.ad.lo ≤ w.sh.t p) && (ckaSender (w.sh.t p) == p) && w.hs p
+  (w.ad.cE == none) && !w.dn && decide (w.ad.lo ≤ w.sh.t p) && (ckaSender (w.sh.t p) == p) &&
+    w.hs p
 
 /-- The challenge in the guessing reduction with the guess `e`: a challenge that the adaptive
 game answers is forwarded at the epoch `e`; at another epoch it is recorded and not
@@ -3239,5 +3241,198 @@ noncomputable def smGuessAdv (ΔFS ΔPCS : ℕ)
   play _ pub := guessTreeOf ΔFS ΔPCS e A pub
 
 end Guess
+
+/-! ## The guess of the challenge epoch: the simulation -/
+
+section GuessSim
+
+variable {Sc Msg Key Rand RK Sa W Ct : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
+  [SampleableType Ct]
+
+/-- The epoch `e` can no longer be the epoch of the challenge: a challenge at another epoch has
+been answered, or the corruptions before the challenge exclude `e`. -/
+def adBad (e : ℕ) (ad : SMAdRec) : Bool :=
+  match ad.cE with
+  | none => decide (e < ad.lo)
+  | some e' => !(e' == e)
+
+/-- The state of the guessing reduction that mirrors the state `s` with the record `ad`. -/
+def guessMir (s : SMSt Sc Msg RK Sa) (ad : SMAdRec) : GuessSt :=
+  ⟨ckaShadow s.ck, fun p => (s.loc.snd p).isSome, s.loc.done, ad⟩
+
+/-- The states of the guessing reduction and of the game with announced challenge epoch that a
+state of the adaptive game corresponds to. -/
+def guessEmb (x : SMSt Sc Msg RK Sa × SMAdRec) : GuessSt × SMSt Sc Msg RK Sa :=
+  (guessMir x.1 x.2, x.1)
+
+@[simp] theorem SMLoc.received_snd {RK Sa : Type} (l : SMLoc RK Sa) (p : CKAParty) :
+    (l.received p).snd = l.snd := by
+  unfold SMLoc.received; split <;> rfl
+
+@[simp] theorem SMLoc.received_done {RK Sa : Type} (l : SMLoc RK Sa) (p : CKAParty) :
+    (l.received p).done = l.done := by
+  unfold SMLoc.received; split <;> rfl
+
+theorem guessMir_advanced (s : SMSt Sc Msg RK Sa) (ad : SMAdRec) (p : CKAParty) (sa sa' : Sa)
+    (h : s.loc.snd p = some sa) :
+    guessMir (Sc := Sc) (Msg := Msg) ⟨s.ck, s.loc.advanced p sa'⟩ ad = guessMir s ad := by
+  simp only [guessMir, SMLoc.advanced, GuessSt.mk.injEq, and_true, true_and]
+  funext q
+  by_cases hq : q = p
+  · subst hq; simp [h]
+  · simp [hq]
+
+/-- With the root KDF at every epoch, the oracle does not depend on the challenge epoch for the
+openings of epochs. -/
+theorem smOracleOf_realRoot_ratchet (C : CKADef Sc Msg Key) [CKACoins C Rand]
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (ΔFS ΔPCS t t' : ℕ) (ideal : Bool) (s : SMSt Sc Msg RK Sa) (p : CKAParty) :
+    smOracleOf C R G D ΔFS ΔPCS t ideal (realRoot R) s (.ratchet p) =
+      smOracleOf C R G D ΔFS ΔPCS t' ideal (realRoot R) s (.ratchet p) := by
+  simp only [smOracleOf, realRoot, ite_self]
+
+/-- **One step of the guessing reduction.** From a state of the adaptive game in which `e` can
+still be the challenge epoch, the simulator against the game with the announced epoch `e`
+either answers as the adaptive oracle, with mirrored states, or both lead only to states in
+which `e` can no longer be the challenge epoch. -/
+theorem guess_step (C : CKADef Sc Msg Key) [CKACoins C Rand] (R : PRGDef (RK × Key) (RK × Sa))
+    (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (ΔFS ΔPCS e : ℕ) (hPCS : 1 ≤ ΔPCS)
+    (ideal : Bool) (s : SMSt Sc Msg RK Sa) (ad : SMAdRec) (hb : adBad e ad = false)
+    (q : SMQuery W) :
+    OracleAdv.simOracle (guessImplOf ΔFS ΔPCS e)
+        (smOracleOf C R G D ΔFS ΔPCS e ideal (realRoot R)) (guessEmb (s, ad)) q =
+      (smAdOracle C R G D ΔFS ΔPCS ideal (s, ad) q).map (Prod.map id guessEmb) ∨
+    ((∀ z ∈ (OracleAdv.simOracle (guessImplOf ΔFS ΔPCS e)
+        (smOracleOf C R G D ΔFS ΔPCS e ideal (realRoot R)) (guessEmb (s, ad)) q).support,
+        adBad e z.2.1.ad = true) ∧
+      ∀ z ∈ (smAdOracle C R G D ΔFS ΔPCS ideal (s, ad) q).support, adBad e z.2.2 = true) := by
+  cases q with
+  | ratchet p =>
+    left
+    simp only [OracleAdv.simOracle, guessEmb, guessMir, guessImplOf, guessRatchet,
+      ckaShadow_canSend, smAdOracle]
+    rw [smOracleOf_realRoot_ratchet C R G D ΔFS ΔPCS 0 e]
+    by_cases hc : s.ck.canSend p = true
+    · simp only [hc, ite_true, OracleAdv.run_query, OracleAdv.run_ret, smOracleOf, PMF.map_bind,
+        PMF.bind_bind, PMF.pure_bind, PMF.pure_map, realRoot, ite_self]
+      refine congrArg _ (funext fun r => ?_)
+      simp only [Prod.map_apply, id_eq, guessEmb, guessMir, ckaShadow_sent, SMLoc.opened]
+      congr 4
+      funext q
+      by_cases hq : q = p
+      · subst hq; simp
+      · simp [hq]
+    · have hc' : s.ck.canSend p = false := by simpa using hc
+      simp [hc', OracleAdv.run_query, smOracleOf, PMF.pure_bind, PMF.pure_map, guessEmb,
+        guessMir]
+  | recv p =>
+    left
+    simp only [OracleAdv.simOracle, guessEmb, guessMir, guessImplOf, guessRecv,
+      ckaShadow_canRecv, smAdOracle]
+    by_cases hc : s.ck.canRecv p = true
+    · simp [hc, OracleAdv.run_query, smOracleOf, PMF.pure_bind, PMF.pure_map, guessEmb,
+        guessMir, ckaShadow_recvd]
+    · have hc' : s.ck.canRecv p = false := by simpa using hc
+      simp [hc', OracleAdv.run_query, smOracleOf, PMF.pure_bind, PMF.pure_map, guessEmb,
+        guessMir]
+  | send p m =>
+    left
+    simp only [OracleAdv.simOracle, guessEmb, guessImplOf, smAdOracle, OracleAdv.run_query,
+      OracleAdv.run_ret, PMF.map_bind, PMF.map_comp]
+    rw [← PMF.bind_pure_comp]
+    simp only [smOracleOf]
+    cases hsnd : s.loc.snd p with
+    | none => simp [PMF.pure_bind, PMF.pure_map, guessEmb]
+    | some sa =>
+      by_cases hsd : ckaSender (s.ck.t p) = p
+      · simp only [hsd, beq_self_eq_true, ite_true, PMF.pure_bind, PMF.pure_map,
+          Function.comp_apply, Prod.map_apply, id_eq, guessEmb]
+        rw [guessMir_advanced s ad p sa _ hsnd]
+      · have hsd' : (ckaSender (s.ck.t p) == p) = false := by simpa using hsd
+        simp [hsd', PMF.pure_bind, PMF.pure_map, guessEmb]
+  | chall p m =>
+    simp only [OracleAdv.simOracle, guessEmb, guessImplOf, guessChall, smAdOracle]
+    cases hsnd : s.loc.snd p with
+    | none =>
+      left
+      have hg : guessOk (guessMir s ad) p = false := by simp [guessOk, guessMir, hsnd]
+      simp [hg, PMF.pure_map, guessEmb]
+    | some sa =>
+      by_cases hok : ad.cE = none ∧ s.loc.done = false ∧ ad.lo ≤ s.ck.t p ∧
+          ckaSender (s.ck.t p) = p
+      · obtain ⟨hcE, hdone, hlo, hsd⟩ := hok
+        have hg : guessOk (guessMir s ad) p = true := by
+          simp [guessOk, guessMir, hsnd, hcE, hdone, hlo, hsd, ckaShadow_t]
+        dsimp only
+        simp only [hcE, hdone, hlo, hsd, and_self, ite_true, hg]
+        by_cases ht : s.ck.t p = e
+        · left
+          have hte : ((guessMir s ad).sh.t p == e) = true := by simp [guessMir, ckaShadow_t, ht]
+          have hco : challOk s.loc e (s.ck.t p) p = true := by
+            simp only [challOk, hdone, hsd, Bool.not_false, beq_self_eq_true, Bool.true_and,
+              beq_iff_eq]
+            exact ht
+          have hann : smOracleOf C R G D ΔFS ΔPCS e ideal (realRoot R) s (.chall p m) =
+              (challCt D ideal (G.stretch sa).1 m).bind fun c =>
+                PMF.pure (.ct c, ⟨s.ck, { s.loc.advanced p (G.stretch sa).2 with done := true }⟩) := by
+            simp only [smOracleOf, hsnd, hco, ite_true]
+          simp only [hte, ite_true, OracleAdv.run_query, OracleAdv.run_ret, hann, PMF.bind_bind,
+            PMF.pure_bind, PMF.map_bind, PMF.pure_map]
+          refine congrArg _ (funext fun c => ?_)
+          simp only [Prod.map_apply, id_eq, guessEmb, guessMir, ht, SMLoc.advanced]
+          congr 4
+          funext q
+          by_cases hq : q = p
+          · subst hq; simp [hsnd]
+          · simp [hq]
+        · right
+          have hte : ((guessMir s ad).sh.t p == e) = false := by simp [guessMir, ckaShadow_t, ht]
+          simp only [hte, Bool.false_eq_true, ite_false, OracleAdv.run_ret, PMF.pure_map]
+          constructor
+          · intro z hz
+            simp only [PMF.support_pure, Set.mem_singleton_iff] at hz
+            subst hz
+            simp [adBad, guessMir, ckaShadow_t, ht]
+          · intro z hz
+            simp only [PMF.support_bind, PMF.support_pure, Set.mem_iUnion, Set.mem_singleton_iff]
+              at hz
+            obtain ⟨c, -, rfl⟩ := hz
+            simp [adBad, ht]
+      · left
+        have hg : guessOk (guessMir s ad) p = false := by
+          by_contra h
+          have h' : guessOk (guessMir s ad) p = true := by simpa using h
+          simp only [guessOk, guessMir, ckaShadow_t, Bool.and_eq_true, Bool.not_eq_true',
+            beq_iff_eq] at h'
+          exact hok ⟨by simpa using h'.1.1.1.1, h'.1.1.1.2, of_decide_eq_true h'.1.1.2, h'.1.2⟩
+        dsimp only
+        simp only [hok, ite_false, hg, Bool.false_eq_true, OracleAdv.run_ret, PMF.pure_map,
+          Prod.map_apply, id_eq, guessEmb]
+  | corrupt p =>
+    simp only [OracleAdv.simOracle, guessEmb, guessImplOf, guessCorr, smAdOracle, guessMir,
+      ckaShadow_t]
+    cases hcE : ad.cE with
+    | none =>
+      by_cases hm : max (s.ck.t .A) (s.ck.t .B) + ΔPCS ≤ e
+      · left
+        have hac : ckaAllowCorr ΔFS ΔPCS e s.ck p = true := by simp [ckaAllowCorr, hm]
+        simp [hm, hac, OracleAdv.run_query, smOracleOf, PMF.pure_bind, PMF.pure_map, guessEmb,
+          guessMir]
+      · right
+        have hlt : e < max ad.lo (max (s.ck.t .A) (s.ck.t .B) + ΔPCS) := by omega
+        simp only [hm, ite_false, OracleAdv.run_ret, PMF.pure_map, PMF.support_pure,
+          Set.mem_singleton_iff, forall_eq, adBad, decide_eq_true_eq]
+        exact ⟨hlt, hlt⟩
+    | some e' =>
+      left
+      have he : e' = e := by simpa [adBad, hcE] using hb
+      subst he
+      by_cases hf : e' + ΔFS ≤ s.ck.t p
+      · have hac : ckaAllowCorr ΔFS ΔPCS e' s.ck p = true := by simp [ckaAllowCorr, hf]
+        simp [hf, hac, OracleAdv.run_query, smOracleOf, PMF.pure_bind, PMF.pure_map, guessEmb,
+          guessMir]
+      · simp [hf, PMF.pure_map, guessEmb, guessMir]
+
+end GuessSim
 
 end CatCrypt.Crypto.Messaging
