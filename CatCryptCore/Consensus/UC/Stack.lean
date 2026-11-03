@@ -179,9 +179,15 @@ theorem treeF_eq_chainF (c : Cfg (Option (Fin np)) (Block Tx Hash (Fin np))) (K 
     (hH : ∀ o, o ∈ c.H ↔ honestP o) :
     treeF c (chainSim P Sch A Tree H cd K μ W Δ) stView (chainP P (kindLaw μ) d w ε) (exC Tx Hash np) =
       chainF P Δ (kindLaw μ) d w ε := by
-  have h : (fun o => o ∈ c.H) = honestP := funext fun o => propext (hH o)
+  obtain ⟨T, w', H', sl, E, cut, Δ', st, v₀, ancDec⟩ := c
+  dsimp only at hT hH
+  subst hT
+  have h : (fun o => o ∈ H') = honestP := funext fun o => propext (hH o)
+  have hd : ancDec = (fun a b => Nat.decLe a.sl b.sl : DecidableRel (slotTree P).anc) :=
+    Subsingleton.elim _ _
+  subst hd
   unfold treeF chainF
-  rw [hT, h]
+  simp only [h]
   rfl
 
 /-- Every step of the PoS-NSB simulator outputs `chainOut` of its new state. -/
@@ -248,14 +254,14 @@ theorem chainP_guard_init (K : ℕ) (μ : PMF (Option (Fin np))) (W Δ d w : ℕ
   · rintro p q t t' b b' i j _ _ ⟨C, hC, -⟩
     simp [TreeTrace.finChains, hst, startView] at hC
 
-omit [DecidableEq Tx] [DecidableEq Hash] in
 /-- **The guard of `chainF` settles the pruned positions**: every tree trace that satisfies
 the guard of `F_Tree^P` with `P = chainP` has settled pruned positions `slotCut Block.sl d`. -/
 theorem settled_of_chainGuard (ν : PMF SlotKind) (d w : ℕ) (ε : ℝ)
     (T : BlockTree (Block Tx Hash (Fin np)))
     (X : TreeTrace (Option (Fin np)) (Block Tx Hash (Fin np)))
     (hX : FTreeGuard T (chainP P ν d w ε) X) : Settled (slotCut Block.sl d) X :=
-  settled_slotCut (hX.2.1 _ (by simp [chainP])) (hX.2.1 _ (by simp [chainP]))
+  settled_slotCut (hX.2.1 (.ofProp (SlotCommonPrefix Block.sl d)) (by simp [chainP]))
+    (hX.2.1 (.ofProp PosNonemptyPersists) (by simp [chainP]))
 
 variable (μ : PMF (Option (Fin np))) (W K d w : ℕ) (ε : ℝ) (Δ : ℕ)
   (c : Cfg (Option (Fin np)) (Block Tx Hash (Fin np)))
@@ -309,7 +315,7 @@ theorem stack_realizes (hP : ProtocolHyp P) (hTree : Tree.Longest)
     fun X hX => by rw [hcut]; exact settled_of_chainGuard P (kindLaw μ) d w ε c.T X hX
   have hLive : ∀ X, FTreeGuard c.T (chainP P (kindLaw μ) d w ε) X → LiveHyp c (d + 2) X :=
     fun X hX => by
-      have h := hX.2.1 (fun X => X.LiveTrace (slotTree P) Block.sl (d + 2)) (by simp [chainP])
+      have h := hX.2.1 (.liveTrace (slotTree P) Block.sl (d + 2)) (by simp [chainP])
       show X.LiveTrace c.T c.slot (d + 2)
       rw [hT, hsl]
       exact h
@@ -371,7 +377,7 @@ the pruned positions `slotCut Block.sl 3`, delivery bound `1`, and the schedule 
 `10 = 2 E + (3 + 2) + 3` read off the position of `some 0`. -/
 noncomputable def cfg : Cfg (Option (Fin 1)) (Block Unit Unit (Fin 1)) :=
   ⟨slotTree P, fun o => o.elim 0 fun _ => 1, {some 0}, Block.sl, 1, slotCut Block.sl 3, 1, 10,
-    some 0⟩
+    some 0, inferInstance⟩
 
 theorem cfg_honest (o : Option (Fin 1)) : o ∈ cfg.H ↔ honestP o := by
   rcases o with _ | p
@@ -546,7 +552,7 @@ theorem runS_run : Run cfg runS where
   settled := settled_of_chainGuard P ν 3 1 0 _ _ guard_runS
 
 theorem runS_live : LiveHyp cfg 5 (posTT cfg runS) :=
-  guard_runS.2.1 (fun X => X.LiveTrace (slotTree P) Block.sl (3 + 2)) (by simp [chainP])
+  guard_runS.2.1 (.liveTrace (slotTree P) Block.sl (3 + 2)) (by simp [chainP])
 
 /-- **Non-vacuity of the conclusion.** The run `runS` of the gadget of the instance, in which
 the gadget casts the honest votes itself, has views admitted by the guard of `chainF`; its
@@ -559,7 +565,7 @@ theorem run_finalizes :
       (∀ t, 11 ≤ t → ∃ b ∈ ((finTT cfg runS).st t).fin (some 0), t ≤ b.sl + 16) ∧
       ∃ b ∈ ((finTT cfg runS).st 17).fin (some 0), b ≠ P.GB := by
   have hA : 3 * stake cfg.w (Finset.univ \ cfg.H) < totalStake cfg.w := by decide
-  have hP : ∀ φ ∈ chainP P ν 3 1 0, PosOnly φ := by
+  have hP : ∀ φ ∈ chainP P ν 3 1 0, PosOnly φ.prop := by
     simp only [chainP, List.mem_cons, List.not_mem_nil, or_false]
     rintro φ (rfl | rfl | rfl | rfl | rfl)
     · exact fun X f h => h

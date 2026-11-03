@@ -123,7 +123,7 @@ noncomputable def gout (c : Cfg Party Blk) (exF : TreeView Party Blk) (g : GSt P
   if g.dead = true then exF else finView c g.core
 
 variable (c : Cfg Party Blk) (ST : Sys σT ET OT) (vwT : σT → TreeView Party Blk)
-  (P : List (TreeTrace Party Blk → Prop)) (exT : OT) (ov : OT → TreeView Party Blk)
+  (P : List (TreeProp Party Blk)) (exT : OT) (ov : OT → TreeView Party Blk)
   (exF : TreeView Party Blk) (σ d : ℕ)
 
 /-- **The FFG gadget as a hybrid protocol** over `F_Tree`, with initial view `v₀`: an outer
@@ -163,9 +163,9 @@ def suppF (X : TreeTrace Party Blk) : Prop :=
 round `2 E + σ + d + Δ` with lag `3 E + 2 σ + d + Δ - 1`, finality-respecting positions,
 final blocks on the honest positions (`FinalOnHonestPos`), and the properties `P` of
 `F_Tree`. -/
-def finP : List (TreeTrace Party Blk → Prop) :=
-  (fun X => X.UpdatedWithin c.slot (2 * c.E + σ + d + c.Δ) (3 * c.E + 2 * σ + d + c.Δ - 1)) ::
-    (fun X => X.FinalityRespectingPos) :: FinalOnHonestPos :: P
+def finP : List (TreeProp Party Blk) :=
+  .updatedWithin c.slot (2 * c.E + σ + d + c.Δ) (3 * c.E + 2 * σ + d + c.Δ - 1) ::
+    .finalityRespectingPos :: finalOnHonestPosP :: P
 
 /-- **The functionality** `F_FinTree^P'` over the states of the simulator: view `finView` of
 the gadget component, honest parties `H`, `P' = finP c P σ d` (finality liveness,
@@ -196,7 +196,7 @@ section Invariant
 variable {Party Blk : Type} [Fintype Party] [DecidableEq Party] [DecidableEq Blk]
 variable {σT ET OT : Type}
 variable {c : Cfg Party Blk} {ST : Sys σT ET OT} {vwT : σT → TreeView Party Blk}
-  {P : List (TreeTrace Party Blk → Prop)} {exT : OT} {ov : OT → TreeView Party Blk}
+  {P : List (TreeProp Party Blk)} {exT : OT} {ov : OT → TreeView Party Blk}
   {exF : TreeView Party Blk} {σ d : ℕ}
 
 /-- The state after `t` entries of a trace that extends `tr` by one entry. -/
@@ -238,7 +238,7 @@ def RunSteps (c : Cfg Party Blk) (G : ℕ → GCore Party Blk) : Prop :=
 trace `trT`, the views of the gadget states `G` are the views of that trace, and `G` makes
 gadget steps, then the tree trace reported by the gadget satisfies the guard of
 `F_FinTree^P'` with `P' = finP c P σ d` (`finTreeGuard_of_run`, `Run.updatedWithin`). -/
-theorem guard_of_live (hP : ∀ φ ∈ P, PosOnly φ)
+theorem guard_of_live (hP : ∀ φ ∈ P, PosOnly φ.prop)
     (hset : ∀ X, FTreeGuard c.T P X → Settled c.cut X) (hΔ : 1 ≤ c.Δ)
     (hA : 3 * stake c.w (Finset.univ \ c.H) < totalStake c.w)
     (hlive : ∀ X, FTreeGuard c.T P X → LiveHyp c σ X)
@@ -338,7 +338,7 @@ theorem gpost_cases (c : Cfg Party Blk) (exT : OT) (ov : OT → TreeView Party B
 variable (hST : ∀ s e, SPComp.NoFail (ST.step s e)) (out : σT → OT)
   (hov : ∀ s, ov (out s) = vwT s)
   (hinit : FTreeGuard c.T P (traceOf vwT (· ∈ c.H) ST.init ([] : Trace σT ET OT)))
-  (hP : ∀ φ ∈ P, PosOnly φ) (hset : ∀ X, FTreeGuard c.T P X → Settled c.cut X) (hΔ : 1 ≤ c.Δ)
+  (hP : ∀ φ ∈ P, PosOnly φ.prop) (hset : ∀ X, FTreeGuard c.T P X → Settled c.cut X) (hΔ : 1 ≤ c.Δ)
   (hA : 3 * stake c.w (Finset.univ \ c.H) < totalStake c.w)
   (hLive : ∀ X, FTreeGuard c.T P X → LiveHyp c σ X)
   (hcut : ∀ v p, c.cut v p = (v.pos p).filter fun b => decide (c.slot b + d ≤ v.round))
@@ -535,12 +535,13 @@ depth `0`), delivery bound `1`, and the schedule from round `3` read off the pos
 validator `0`. -/
 def cfg : Cfg (Fin 1) ℕ :=
   ⟨lineTree, fun _ => 1, Finset.univ, id, 1, fun v p => (v.pos p).filter fun b => decide (b ≤ v.round),
-    1, 3, 0⟩
+    1, 3, 0, inferInstance⟩
 
-/-- The tree properties: common prefix `0` and the liveness hypotheses with window `1`. -/
-def lineP : List (TreeTrace (Fin 1) ℕ → Prop) := [fun X => X.CommonPrefix 0, LiveHyp cfg 1]
+/-- The tree properties: common prefix `0` and the liveness hypotheses with window `1` (decided
+classically). -/
+noncomputable def lineP : List (TreeProp (Fin 1) ℕ) := [.commonPrefix 0, .ofProp (LiveHyp cfg 1)]
 
-theorem lineP_posOnly : ∀ φ ∈ lineP, PosOnly φ := by
+theorem lineP_posOnly : ∀ φ ∈ lineP, PosOnly φ.prop := by
   simp only [lineP, List.mem_cons, List.not_mem_nil, or_false]
   rintro φ (rfl | rfl)
   · exact fun X f h => h
@@ -548,7 +549,7 @@ theorem lineP_posOnly : ∀ φ ∈ lineP, PosOnly φ := by
 
 theorem lineP_settled : ∀ X, FTreeGuard cfg.T lineP X → Settled cfg.cut X := by
   intro X hX p q t t' hp hq h
-  have hL : LiveHyp cfg 1 X := hX.2.1 _ (by simp [lineP])
+  have hL : LiveHyp cfg 1 X := hX.2.1 (.ofProp (LiveHyp cfg 1)) (by simp [lineP])
   exact (filter_slot_suffix (slot := id) (hL.decreasing p t hp) _).trans
     (hX.2.1 _ List.mem_cons_self p q t t' hp hq h)
 
@@ -561,14 +562,15 @@ theorem instance_hyps :
       (∀ s, id (lv s) = lv s) ∧
       FTreeGuard cfg.T lineP
         (traceOf lv (· ∈ cfg.H) lineST.init ([] : Trace ℕ Unit (TreeView (Fin 1) ℕ))) ∧
-      (∀ φ ∈ lineP, PosOnly φ) ∧ (∀ X, FTreeGuard cfg.T lineP X → Settled cfg.cut X) ∧
+      (∀ φ ∈ lineP, PosOnly φ.prop) ∧ (∀ X, FTreeGuard cfg.T lineP X → Settled cfg.cut X) ∧
       1 ≤ cfg.Δ ∧ 3 * stake cfg.w (Finset.univ \ cfg.H) < totalStake cfg.w ∧
       (∀ X, FTreeGuard cfg.T lineP X → LiveHyp cfg 1 X) ∧
       (∀ v p, cfg.cut v p = (v.pos p).filter fun b => decide (cfg.slot b + 0 ≤ v.round)) ∧
       1 ≤ cfg.E ∧ cfg.v₀ ∈ cfg.H ∧ cfg.start = 2 * cfg.E + 1 + 0 := by
   refine ⟨fun _ _ => SPComp.pure_noFail _, fun n _ => ⟨SPComp.pure (n + 1), by rw [SPComp.pure_bind]; rfl⟩,
     fun _ => rfl, ?_, lineP_posOnly, lineP_settled, le_rfl, by decide,
-    fun X hX => hX.2.1 _ (by simp [lineP]), fun _ _ => rfl, le_rfl, Finset.mem_univ _, rfl⟩
+    fun X hX => hX.2.1 (.ofProp (LiveHyp cfg 1)) (by simp [lineP]), fun _ _ => rfl, le_rfl,
+    Finset.mem_univ _, rfl⟩
   refine ⟨⟨?_, ?_, ?_, ?_⟩, ?_, ?_⟩
   · intro p t t' _ _; simp [traceOf, stAt_nil]
   · intro p t _; simp [traceOf, stAt_nil, lv]
@@ -710,14 +712,14 @@ validators `0, 1, 2`, slots equal to block numbers, epochs of one slot, voting o
 position, delivery bound `1`, and the schedule from round `1` read off the position of the
 validator `0`. -/
 def cfg : Cfg (Fin 4) (Fin 3) :=
-  ⟨forkTree, unitStake, {0, 1, 2}, blockSlot, 1, fun v p => v.pos p, 1, 1, 0⟩
+  ⟨forkTree, unitStake, {0, 1, 2}, blockSlot, 1, fun v p => v.pos p, 1, 1, 0, inferInstance⟩
 
 /-- The tree property: common prefix `0`. -/
-def forkP : List (TreeTrace (Fin 4) (Fin 3) → Prop) := [fun X => X.CommonPrefix 0]
+def forkP : List (TreeProp (Fin 4) (Fin 3)) := [.commonPrefix 0]
 
 theorem cfg_hA : 3 * stake cfg.w (Finset.univ \ cfg.H) < totalStake cfg.w := by decide
 
-theorem forkP_posOnly : ∀ φ ∈ forkP, PosOnly φ := by
+theorem forkP_posOnly : ∀ φ ∈ forkP, PosOnly φ.prop := by
   simp only [forkP, List.mem_singleton, forall_eq]
   exact fun X f h => h
 
@@ -869,7 +871,7 @@ honest party `0` at time `2`, and at every time no two checkpoints finalized by 
 lie on conflicting blocks (`Run.anc_of_finalized`, from `FFG.anc_of_kFinalized_of_justified`). -/
 theorem run_accountable :
     Run cfg runF ∧
-      FinTreeGuard cfg.T ((fun X => X.FinalityRespectingPos) :: FinalOnHonestPos :: forkP) cfg.Δ
+      FinTreeGuard cfg.T (.finalityRespectingPos :: finalOnHonestPosP :: forkP) cfg.Δ
         (suppF cfg) (finTT cfg runF) ∧
       cfg.T.Conflicting 1 2 ∧ vote 3 0 0 2 1 ∈ (runF 2).votes ∧
       slashable (runF 2).votes = {3} ∧

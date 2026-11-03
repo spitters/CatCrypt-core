@@ -40,9 +40,16 @@ Kamp, Nielsen, Thomsen and Tschudi, *Enig* (ePrint 2022/201), §3:
 * `traceOf vw honest s₀ tr` — the tree trace of a trace `tr` whose states are mapped
   to views by `vw`; time `t` is the state after `t` activations, and times beyond the end
   of `tr` see the last state.
-* `treeFunc vw honest G s₀ ex` — the transparent functionality with guard `G` on tree
-  traces. Its state type `σ` is the state of the simulator; the functionality's own
-  state is `vw s`. The guard depends on the trace only through the views.
+* `TreeProp` — a trace property with a Boolean checker on finite traces (`check_iff`: the
+  checker decides the property on the trace truncated at its last time). The properties of
+  this file have checkers over the times `0, …, n` and the finitely many parties
+  (`TreeProp.commonPrefix`, `TreeProp.wellFormed`, `TreeProp.agreement`, …);
+  `TreeProp.ofProp` decides a property classically.
+* `treeFunc vw honest G s₀ ex` — the transparent functionality with guard `G : TreeProp` on
+  tree traces, run by the checker of `G` on the views of the trace. Its state type `σ` is the
+  state of the simulator; the functionality's own state is `vw s`. The guard depends on the
+  trace only through the views. The guard of `F_Tree^P` (`fTreeProp`) is executable; the
+  guard of `F_FinTree^P'` is decided classically.
 
 ## Trace properties
 
@@ -360,6 +367,293 @@ theorem stable_all {P : List (TreeTrace Party Blk → Prop)} (hP : ∀ φ ∈ P,
 
 end Stable
 
+/-! ## Properties with checkers on finite traces -/
+
+section Checker
+
+variable {Party Blk : Type}
+
+/-- A property of tree traces with a Boolean checker on finite traces: `check h st n` decides
+the property on the tree trace with honest parties `h` and views `st`, truncated at time `n`
+(`TreeTrace.clamp`). -/
+structure TreeProp (Party Blk : Type) where
+  /-- The property. -/
+  prop : TreeTrace Party Blk → Prop
+  /-- The checker, on the honest parties, the views and the last time. -/
+  check : (Party → Bool) → (ℕ → TreeView Party Blk) → ℕ → Bool
+  /-- The checker decides the property on the truncated trace. -/
+  check_iff : ∀ h st n,
+    check h st n = true ↔ prop (TreeTrace.clamp ⟨fun p => h p = true, st⟩ n)
+
+instance : CoeFun (TreeProp Party Blk) (fun _ => TreeTrace Party Blk → Prop) :=
+  ⟨TreeProp.prop⟩
+
+/-- A time of the range `0, …, n` is not moved by truncation at `n`. -/
+theorem min_eq_of_mem_range {t n : ℕ} (h : t ∈ List.range (n + 1)) : min t n = t := by
+  rw [List.mem_range] at h
+  omega
+
+/-- A truncated time lies in the range `0, …, n`. -/
+theorem min_mem_range (t n : ℕ) : min t n ∈ List.range (n + 1) := by
+  rw [List.mem_range]
+  omega
+
+/-- The view at a time of the range `0, …, n` of a trace truncated at `n`. -/
+theorem clamp_st_of_mem {h : Party → Bool} {st : ℕ → TreeView Party Blk} {n t : ℕ}
+    (ht : t ∈ List.range (n + 1)) :
+    (TreeTrace.clamp ⟨fun p => h p = true, st⟩ n).st t = st t := by
+  simp [TreeTrace.clamp, min_eq_of_mem_range ht]
+
+/-- A block is final for `p` at `t`, at some height, iff it is in the final list of `p`. -/
+theorem TreeTrace.exists_finalized_iff (X : TreeTrace Party Blk) (t : ℕ) (p : Party) (b : Blk) :
+    (∃ i, X.finalized t p b i) ↔ b ∈ (X.st t).fin p := by
+  constructor
+  · rintro ⟨i, C, hC, -⟩
+    exact (hC.trans (List.drop_suffix _ _)).subset List.mem_cons_self
+  · intro hb
+    obtain ⟨s, l, hsl⟩ := List.append_of_mem hb
+    refine ⟨l.length, l, ?_, rfl⟩
+    change b :: l <:+ ((X.st t).fin p).drop 0
+    rw [List.drop_zero, hsl]
+    exact List.suffix_append s _
+
+namespace TreeProp
+
+/-- A property with a decidable finite form `F`: `F h st n` holds iff the property holds on the
+truncated trace. -/
+def ofIff (φ : TreeTrace Party Blk → Prop)
+    (F : (Party → Bool) → (ℕ → TreeView Party Blk) → ℕ → Prop)
+    (dec : ∀ h st n, Decidable (F h st n))
+    (hF : ∀ h st n, F h st n ↔ φ (TreeTrace.clamp ⟨fun p => h p = true, st⟩ n)) :
+    TreeProp Party Blk :=
+  ⟨φ, fun h st n => @decide (F h st n) (dec h st n), fun h st n => by
+    rw [@decide_eq_true_iff _ (dec h st n), hF]⟩
+
+open Classical in
+/-- A property decided classically: its checker is not executable. -/
+noncomputable def ofProp (φ : TreeTrace Party Blk → Prop) : TreeProp Party Blk :=
+  ofIff φ (fun h st n => φ (TreeTrace.clamp ⟨fun p => h p = true, st⟩ n))
+    (fun _ _ _ => inferInstance) fun _ _ _ => Iff.rfl
+
+/-- The conjunction of two properties, checked by the conjunction of the checkers. -/
+def and (φ ψ : TreeProp Party Blk) : TreeProp Party Blk :=
+  ⟨fun X => φ X ∧ ψ X, fun h st n => φ.check h st n && ψ.check h st n, fun h st n => by
+    rw [Bool.and_eq_true, φ.check_iff, ψ.check_iff]⟩
+
+/-- The conjunction of a list of properties, checked by `List.all`. -/
+def all (P : List (TreeProp Party Blk)) : TreeProp Party Blk :=
+  ⟨fun X => ∀ φ ∈ P, φ X, fun h st n => P.all fun φ => φ.check h st n, fun h st n => by
+    simp only [List.all_eq_true, check_iff]⟩
+
+/-- The conjunction of a list of stable properties is stable. -/
+theorem stable_all {P : List (TreeProp Party Blk)} (hP : ∀ φ ∈ P, Stable φ.prop) :
+    Stable (all P).prop :=
+  fun X n h φ hφ => hP φ hφ X n (h φ hφ)
+
+/-- Well-formedness (`TreeTrace.WellFormed`), checked over the times `0, …, n`. -/
+def wellFormed [Fintype Party] [DecidableEq Blk] (T : BlockTree Blk) [DecidableRel T.anc] :
+    TreeProp Party Blk :=
+  ofIff (fun X => X.WellFormed T)
+    (fun (h : Party → Bool) st n =>
+      (∀ p, h p = true → ∀ t ∈ List.range (n + 1), ∀ t' ∈ List.range (n + 1), t ≤ t' →
+        (st t).tree p ⊆ (st t').tree p) ∧
+      (∀ p, h p = true → ∀ t ∈ List.range (n + 1), (st t).pos p ⊆ (st t).tree p) ∧
+      (∀ p, h p = true → ∀ t ∈ List.range (n + 1),
+        ((st t).pos p).Pairwise fun b b' => T.anc b' b) ∧
+      (∀ t ∈ List.range (n + 1), ∀ t' ∈ List.range (n + 1), t ≤ t' →
+        (st t).round ≤ (st t').round))
+    (fun _ _ _ => by infer_instance) fun h st n => by
+      constructor
+      · rintro ⟨h1, h2, h3, h4⟩
+        exact ⟨fun p t t' hp htt => h1 p hp _ (min_mem_range t n) _ (min_mem_range t' n)
+            (min_le_min_right n htt),
+          fun p t hp => h2 p hp _ (min_mem_range t n),
+          fun p t hp => h3 p hp _ (min_mem_range t n),
+          fun t t' htt => h4 _ (min_mem_range t n) _ (min_mem_range t' n)
+            (min_le_min_right n htt)⟩
+      · rintro ⟨h1, h2, h3, h4⟩
+        refine ⟨fun p hp t ht t' ht' htt => ?_, fun p hp t ht => ?_, fun p hp t ht => ?_,
+          fun t ht t' ht' htt => ?_⟩
+        · have := h1 p t t' hp htt
+          rwa [clamp_st_of_mem ht, clamp_st_of_mem ht'] at this
+        · have := h2 p t hp
+          rwa [clamp_st_of_mem ht] at this
+        · have := h3 p t hp
+          change (((TreeTrace.clamp ⟨fun p => h p = true, st⟩ n).st t).pos p).Pairwise _ at this
+          rwa [clamp_st_of_mem ht] at this
+        · have := h4 t t' htt
+          rwa [clamp_st_of_mem ht, clamp_st_of_mem ht'] at this
+
+/-- Agreement of the final blocks (`TreeTrace.Agreement`), checked over the final lists at the
+times `0, …, n`. -/
+def agreement [Fintype Party] [DecidableEq Blk] (T : BlockTree Blk) [DecidableRel T.anc] :
+    TreeProp Party Blk :=
+  ofIff (fun X => X.Agreement T)
+    (fun (h : Party → Bool) st n => ∀ p q, h p = true → h q = true →
+      ∀ t ∈ List.range (n + 1), ∀ t' ∈ List.range (n + 1),
+        ∀ b ∈ (st t).fin p, ∀ b' ∈ (st t').fin q, T.anc b b' ∨ T.anc b' b)
+    (fun _ _ _ => by infer_instance) fun h st n => by
+      constructor
+      · intro H p q t t' b b' i j hp hq hb hb'
+        exact H p q hp hq _ (min_mem_range t n) _ (min_mem_range t' n) b
+          ((TreeTrace.exists_finalized_iff _ t p b).1 ⟨i, hb⟩) b'
+          ((TreeTrace.exists_finalized_iff _ t' q b').1 ⟨j, hb'⟩)
+      · intro H p q hp hq t ht t' ht' b hb b' hb'
+        obtain ⟨i, hi⟩ := (TreeTrace.exists_finalized_iff
+          (TreeTrace.clamp ⟨fun p => h p = true, st⟩ n) t p b).2 (by rwa [clamp_st_of_mem ht])
+        obtain ⟨j, hj⟩ := (TreeTrace.exists_finalized_iff
+          (TreeTrace.clamp ⟨fun p => h p = true, st⟩ n) t' q b').2 (by rwa [clamp_st_of_mem ht'])
+        exact H p q t t' b b' i j hp hq hi hj
+
+/-- Common prefix `k` (`TreeTrace.CommonPrefix`), checked over the times `0, …, n`. -/
+def commonPrefix [Fintype Party] [DecidableEq Blk] (k : ℕ) : TreeProp Party Blk :=
+  ofIff (fun X => X.CommonPrefix k)
+    (fun (h : Party → Bool) st n => ∀ p q, h p = true → h q = true →
+      ∀ t ∈ List.range (n + 1), ∀ t' ∈ List.range (n + 1), t ≤ t' →
+        ((st t).pos p).drop k <:+ (st t').pos q)
+    (fun _ _ _ => by infer_instance) fun h st n => by
+      constructor
+      · intro H p q t t' hp hq htt
+        exact H p q hp hq _ (min_mem_range t n) _ (min_mem_range t' n) (min_le_min_right n htt)
+      · intro H p q hp hq t ht t' ht' htt
+        have := H p q t t' hp hq htt
+        change (((TreeTrace.clamp ⟨fun p => h p = true, st⟩ n).st t).pos p).drop k <:+
+          ((TreeTrace.clamp ⟨fun p => h p = true, st⟩ n).st t').pos q at this
+        rwa [clamp_st_of_mem ht, clamp_st_of_mem ht'] at this
+
+/-- Chain growth `(s, g)` in rounds (`TreeTrace.ChainGrowth`), checked over the times
+`0, …, n`. -/
+def chainGrowth [Fintype Party] (s g : ℕ) : TreeProp Party Blk :=
+  ofIff (fun X => X.ChainGrowth s g)
+    (fun (h : Party → Bool) st n => ∀ p q, h p = true → h q = true →
+      ∀ t ∈ List.range (n + 1), ∀ t' ∈ List.range (n + 1), (st t).round + s ≤ (st t').round →
+        ((st t).pos p).length + g ≤ ((st t').pos q).length)
+    (fun _ _ _ => by infer_instance) fun h st n => by
+      constructor
+      · intro H p q t t' hp hq hr
+        exact H p q hp hq _ (min_mem_range t n) _ (min_mem_range t' n) hr
+      · intro H p q hp hq t ht t' ht' hr
+        have := H p q t t' hp hq
+        rw [clamp_st_of_mem ht, clamp_st_of_mem ht'] at this
+        exact this hr
+
+/-- Chain quality `(hb, ℓ, μ)` (`TreeTrace.ChainQuality`), checked over the times `0, …, n` and
+the windows of each position. -/
+def chainQuality [Fintype Party] (hb : Blk → Bool) (ℓ μ : ℕ) : TreeProp Party Blk :=
+  ofIff (fun X => X.ChainQuality hb ℓ μ)
+    (fun (h : Party → Bool) st n => ∀ p, h p = true → ∀ t ∈ List.range (n + 1),
+      ∀ i ∈ List.range (((st t).pos p).length + 1), i + ℓ ≤ ((st t).pos p).length →
+        μ ≤ ((((st t).pos p).drop i).take ℓ).countP hb)
+    (fun _ _ _ => by infer_instance) fun h st n => by
+      constructor
+      · intro H p t i hp hi
+        exact H p hp _ (min_mem_range t n) i (List.mem_range.2 (by
+          change i + ℓ ≤ ((st (min t n)).pos p).length at hi
+          omega)) hi
+      · intro H p hp t ht i _ hi
+        have := H p t i hp
+        change i + ℓ ≤ (((TreeTrace.clamp ⟨fun p => h p = true, st⟩ n).st t).pos p).length →
+          μ ≤ (((((TreeTrace.clamp ⟨fun p => h p = true, st⟩ n).st t).pos p).drop i).take
+            ℓ).countP hb at this
+        rw [clamp_st_of_mem ht] at this
+        exact this hi
+
+/-- Finality-respecting positions (`TreeTrace.FinalityRespectingPos`), checked over the final
+lists and positions at the times `0, …, n`. -/
+def finalityRespectingPos [Fintype Party] [DecidableEq Blk] : TreeProp Party Blk :=
+  ofIff (fun X => X.FinalityRespectingPos)
+    (fun (h : Party → Bool) st n => ∀ p, h p = true →
+      ∀ t ∈ List.range (n + 1), ∀ t' ∈ List.range (n + 1), t ≤ t' →
+        ∀ b ∈ (st t).fin p, b ∈ (st t').pos p)
+    (fun _ _ _ => by infer_instance) fun h st n => by
+      constructor
+      · intro H p t t' b i hp htt hb
+        exact H p hp _ (min_mem_range t n) _ (min_mem_range t' n) (min_le_min_right n htt) b
+          ((TreeTrace.exists_finalized_iff _ t p b).1 ⟨i, hb⟩)
+      · intro H p hp t ht t' ht' htt b hb
+        obtain ⟨i, hi⟩ := (TreeTrace.exists_finalized_iff
+          (TreeTrace.clamp ⟨fun p => h p = true, st⟩ n) t p b).2 (by rwa [clamp_st_of_mem ht])
+        have := H p t t' b i hp htt hi
+        change b ∈ ((TreeTrace.clamp ⟨fun p => h p = true, st⟩ n).st t').pos p at this
+        rwa [clamp_st_of_mem ht'] at this
+
+/-- Finality liveness from round `τ` with lag `L` (`TreeTrace.UpdatedWithin`), checked over the
+final lists at the times `0, …, n`. -/
+def updatedWithin [Fintype Party] (sl : Blk → ℕ) (τ L : ℕ) : TreeProp Party Blk :=
+  ofIff (fun X => X.UpdatedWithin sl τ L)
+    (fun (h : Party → Bool) st n => ∀ p, h p = true → ∀ t ∈ List.range (n + 1),
+      τ ≤ (st t).round → ∃ b ∈ (st t).fin p, (st t).round ≤ sl b + L)
+    (fun _ _ _ => by infer_instance) fun h st n => by
+      constructor
+      · intro H p t hp hτ
+        exact H p hp _ (min_mem_range t n) hτ
+      · intro H p hp t ht hτ
+        have := H p t hp
+        rw [clamp_st_of_mem ht] at this
+        exact this hτ
+
+/-- The positions of finality liveness (`TreeTrace.LiveTrace`), checked over the times
+`0, …, n` and the slot windows below each round. -/
+def liveTrace [Fintype Party] [DecidableEq Blk] (T : BlockTree Blk) [DecidableRel T.anc]
+    (sl : Blk → ℕ) (σ : ℕ) : TreeProp Party Blk :=
+  ofIff (fun X => X.LiveTrace T sl σ)
+    (fun (h : Party → Bool) st n =>
+      (∀ p, h p = true → ∀ t ∈ List.range (n + 1), ∀ a ∈ List.range ((st t).round + 1),
+        a + σ ≤ (st t).round → ∃ b ∈ (st t).pos p, a < sl b ∧ sl b ≤ a + σ) ∧
+      (∀ p, h p = true → ∀ t ∈ List.range (n + 1),
+        ((st t).pos p).Pairwise fun b b' => sl b' < sl b) ∧
+      (∀ p, h p = true → ∀ t ∈ List.range (n + 1), T.genesis ∈ (st t).pos p) ∧
+      sl T.genesis = 0 ∧
+      (∀ p, h p = true → ∀ t ∈ List.range (n + 1),
+        ((st t).pos p).Pairwise fun b b' => T.anc b' b) ∧
+      (st 0).round = 0 ∧
+      (∀ t ∈ List.range n, (st (t + 1)).round ≤ (st t).round + 1))
+    (fun _ _ _ => by infer_instance) fun h st n => by
+      constructor
+      · rintro ⟨h1, h2, h3, h4, h5, h6, h7⟩
+        exact
+          { growth := fun p t a hp ha => h1 p hp _ (min_mem_range t n) a
+              (List.mem_range.2 (by change a + σ ≤ (st (min t n)).round at ha; omega)) ha
+            decreasing := fun p t hp => h2 p hp _ (min_mem_range t n)
+            genesis_mem := fun p t hp => h3 p hp _ (min_mem_range t n)
+            genesis_slot := h4
+            inTree := fun p t hp => h5 p hp _ (min_mem_range t n)
+            round_zero := by
+              change (st (min 0 n)).round = 0
+              rw [Nat.zero_min]
+              exact h6
+            round_step := fun t => by
+              change (st (min (t + 1) n)).round ≤ (st (min t n)).round + 1
+              rcases Nat.lt_or_ge t n with ht | ht
+              · rw [min_eq_left (show t + 1 ≤ n by omega), min_eq_left ht.le]
+                exact h7 t (List.mem_range.2 ht)
+              · rw [min_eq_right (show n ≤ t + 1 by omega), min_eq_right ht]
+                omega }
+      · intro H
+        refine ⟨fun p hp t ht a _ ha => ?_, fun p hp t ht => ?_, fun p hp t ht => ?_,
+          H.genesis_slot, fun p hp t ht => ?_, ?_, fun t ht => ?_⟩
+        · have := H.growth p t a hp
+          rw [clamp_st_of_mem ht] at this
+          exact this ha
+        · have := H.decreasing p t hp
+          rwa [clamp_st_of_mem ht] at this
+        · have := H.genesis_mem p t hp
+          rwa [clamp_st_of_mem ht] at this
+        · have := H.inTree p t hp
+          change (((TreeTrace.clamp ⟨fun p => h p = true, st⟩ n).st t).pos p).Pairwise _ at this
+          rwa [clamp_st_of_mem ht] at this
+        · have := H.round_zero
+          change (st (min 0 n)).round = 0 at this
+          rwa [Nat.zero_min] at this
+        · have := H.round_step t
+          rw [List.mem_range] at ht
+          change (st (min (t + 1) n)).round ≤ (st (min t n)).round + 1 at this
+          rwa [min_eq_left (show t + 1 ≤ n by omega), min_eq_left ht.le] at this
+
+end TreeProp
+
+end Checker
+
 /-! ## Tree traces of transparent traces and the functionalities -/
 
 section Func
@@ -376,77 +670,6 @@ def traceOf (vw : σ → TreeView Party Blk) (honest : Party → Prop) (s₀ : �
     (tr : Trace σ E O) : TreeTrace Party Blk :=
   ⟨honest, fun t => vw (stAt s₀ tr t)⟩
 
-/-- The transparent functionality with guard `G` on tree traces: initial state `s₀`,
-exploded output `ex`. The guard is `G` on the tree trace (decided classically). -/
-noncomputable def treeFunc (vw : σ → TreeView Party Blk) (honest : Party → Prop)
-    (G : TreeTrace Party Blk → Prop) (s₀ : σ) (ex : O) : TFunc σ E O where
-  init := s₀
-  guard tr := @decide (G (traceOf vw honest s₀ tr)) (Classical.propDecidable _)
-  exploded := ex
-
-/-- The guard of `F_Tree^P`: well-formedness, every property of `P`, and agreement of the
-final blocks (its failure is Enig's `Exploded`). -/
-def FTreeGuard (T : BlockTree Blk) (P : List (TreeTrace Party Blk → Prop))
-    (X : TreeTrace Party Blk) : Prop :=
-  X.WellFormed T ∧ (∀ φ ∈ P, φ X) ∧ X.Agreement T
-
-/-- The guard of `F_FinTree^P'`: well-formedness, every tree property of `P`,
-chain-forming, agreement, propagation within `Δ` rounds, and the support guard `supp`. -/
-def FinTreeGuard (T : BlockTree Blk) (P : List (TreeTrace Party Blk → Prop)) (Δ : ℕ)
-    (supp : TreeTrace Party Blk → Prop) (X : TreeTrace Party Blk) : Prop :=
-  X.WellFormed T ∧ (∀ φ ∈ P, φ X) ∧ X.ChainForming T ∧ X.Agreement T ∧
-    X.DeltaPropagated T Δ ∧ supp X
-
-/-- `F_Tree^P` as a transparent functionality. -/
-noncomputable def fTree (vw : σ → TreeView Party Blk) (honest : Party → Prop)
-    (T : BlockTree Blk) (P : List (TreeTrace Party Blk → Prop)) (s₀ : σ) (ex : O) :
-    TFunc σ E O :=
-  treeFunc vw honest (FTreeGuard T P) s₀ ex
-
-/-- `F_FinTree^P'` as a transparent functionality, with support guard `supp`. -/
-noncomputable def finTree (vw : σ → TreeView Party Blk) (honest : Party → Prop)
-    (T : BlockTree Blk) (P : List (TreeTrace Party Blk → Prop)) (Δ : ℕ)
-    (supp : TreeTrace Party Blk → Prop) (s₀ : σ) (ex : O) : TFunc σ E O :=
-  treeFunc vw honest (FinTreeGuard T P Δ supp) s₀ ex
-
-/-- `F_FinTree^P'` with `k`-support. -/
-noncomputable abbrev finTreeK (vw : σ → TreeView Party Blk) (honest : Party → Prop)
-    (T : BlockTree Blk) (P : List (TreeTrace Party Blk → Prop)) (Δ k : ℕ) (s₀ : σ)
-    (ex : O) : TFunc σ E O :=
-  finTree vw honest T P Δ (fun X => X.KSupport k) s₀ ex
-
-/-- `F_FinTree^P'` with `v`-validity. -/
-noncomputable abbrev finTreeV (vw : σ → TreeView Party Blk) (honest : Party → Prop)
-    (T : BlockTree Blk) (P : List (TreeTrace Party Blk → Prop)) (Δ v : ℕ) (s₀ : σ)
-    (ex : O) : TFunc σ E O :=
-  finTree vw honest T P Δ (fun X => X.Validity v) s₀ ex
-
-theorem treeFunc_guard_iff (vw : σ → TreeView Party Blk) (honest : Party → Prop)
-    (G : TreeTrace Party Blk → Prop) (s₀ : σ) (ex : O) (tr : Trace σ E O) :
-    (treeFunc vw honest G s₀ ex).guard tr = true ↔ G (traceOf vw honest s₀ tr) := by
-  simp [treeFunc]
-
-/-- The guard of `F_Tree^P` holds on `tr` iff its tree trace is well formed, satisfies every
-property of `P`, and the final blocks of honest parties agree. -/
-theorem fTree_guard_iff (vw : σ → TreeView Party Blk) (honest : Party → Prop)
-    (T : BlockTree Blk) (P : List (TreeTrace Party Blk → Prop)) (s₀ : σ) (ex : O)
-    (tr : Trace σ E O) :
-    (fTree vw honest T P s₀ ex).guard tr = true ↔
-      (traceOf vw honest s₀ tr).WellFormed T ∧ (∀ φ ∈ P, φ (traceOf vw honest s₀ tr)) ∧
-        (traceOf vw honest s₀ tr).Agreement T :=
-  treeFunc_guard_iff _ _ _ _ _ _
-
-/-- The guard of `F_FinTree^P'` holds on `tr` iff its tree trace is well formed, satisfies
-every property of `P`, and is chain-forming, in agreement, propagates final blocks within `Δ` rounds and is supported. -/
-theorem finTree_guard_iff (vw : σ → TreeView Party Blk) (honest : Party → Prop)
-    (T : BlockTree Blk) (P : List (TreeTrace Party Blk → Prop)) (Δ : ℕ)
-    (supp : TreeTrace Party Blk → Prop) (s₀ : σ) (ex : O) (tr : Trace σ E O) :
-    (finTree vw honest T P Δ supp s₀ ex).guard tr = true ↔
-      FinTreeGuard T P Δ supp (traceOf vw honest s₀ tr) :=
-  treeFunc_guard_iff _ _ _ _ _ _
-
-/-! ### Prefixes -/
-
 /-- Appending entries does not change the states at times up to the old length. -/
 theorem stAt_append_of_le (s₀ : σ) (tr l : Trace σ E O) {t : ℕ} (ht : t ≤ tr.length) :
     stAt s₀ (tr ++ l) t = stAt s₀ tr t := by
@@ -460,6 +683,97 @@ theorem stAt_min_length (s₀ : σ) (tr : Trace σ E O) (t : ℕ) :
   · rw [min_eq_right h]
     simp [stAt, List.take_of_length_le h]
 
+/-- The tree trace of `tr` is its truncation at the length of `tr`, with the honest parties
+given by their decision procedure. -/
+theorem clamp_eq_traceOf (vw : σ → TreeView Party Blk) (honest : Party → Prop)
+    [DecidablePred honest] (s₀ : σ) (tr : Trace σ E O) :
+    TreeTrace.clamp ⟨fun p => decide (honest p) = true, fun t => vw (stAt s₀ tr t)⟩ tr.length =
+      traceOf vw honest s₀ tr := by
+  simp only [TreeTrace.clamp, traceOf, decide_eq_true_eq, stAt_min_length]
+
+/-- The transparent functionality with guard `G` on tree traces: initial state `s₀`,
+exploded output `ex`. The guard runs the checker of `G` on the views of the trace, up to its
+length. -/
+def treeFunc (vw : σ → TreeView Party Blk) (honest : Party → Prop) [DecidablePred honest]
+    (G : TreeProp Party Blk) (s₀ : σ) (ex : O) : TFunc σ E O where
+  init := s₀
+  guard tr := G.check (fun p => decide (honest p)) (fun t => vw (stAt s₀ tr t)) tr.length
+  exploded := ex
+
+/-- The guard of `F_Tree^P`: well-formedness, every property of `P`, and agreement of the
+final blocks (its failure is Enig's `Exploded`). -/
+def FTreeGuard (T : BlockTree Blk) (P : List (TreeProp Party Blk))
+    (X : TreeTrace Party Blk) : Prop :=
+  X.WellFormed T ∧ (∀ φ ∈ P, φ X) ∧ X.Agreement T
+
+/-- The guard of `F_FinTree^P'`: well-formedness, every tree property of `P`,
+chain-forming, agreement, propagation within `Δ` rounds, and the support guard `supp`. -/
+def FinTreeGuard (T : BlockTree Blk) (P : List (TreeProp Party Blk)) (Δ : ℕ)
+    (supp : TreeTrace Party Blk → Prop) (X : TreeTrace Party Blk) : Prop :=
+  X.WellFormed T ∧ (∀ φ ∈ P, φ X) ∧ X.ChainForming T ∧ X.Agreement T ∧
+    X.DeltaPropagated T Δ ∧ supp X
+
+/-- The guard of `F_Tree^P` with its checker: the checkers of well-formedness, of every property
+of `P`, and of agreement. -/
+def fTreeProp [Fintype Party] [DecidableEq Blk] (T : BlockTree Blk) [DecidableRel T.anc]
+    (P : List (TreeProp Party Blk)) : TreeProp Party Blk :=
+  ⟨FTreeGuard T P,
+    ((TreeProp.wellFormed T).and ((TreeProp.all P).and (TreeProp.agreement T))).check,
+    ((TreeProp.wellFormed T).and ((TreeProp.all P).and (TreeProp.agreement T))).check_iff⟩
+
+/-- `F_Tree^P` as a transparent functionality. -/
+def fTree [Fintype Party] [DecidableEq Blk] (vw : σ → TreeView Party Blk)
+    (honest : Party → Prop) [DecidablePred honest] (T : BlockTree Blk) [DecidableRel T.anc]
+    (P : List (TreeProp Party Blk)) (s₀ : σ) (ex : O) : TFunc σ E O :=
+  treeFunc vw honest (fTreeProp T P) s₀ ex
+
+/-- `F_FinTree^P'` as a transparent functionality, with support guard `supp`; its guard is
+decided classically. -/
+noncomputable def finTree (vw : σ → TreeView Party Blk) (honest : Party → Prop)
+    [DecidablePred honest] (T : BlockTree Blk) (P : List (TreeProp Party Blk)) (Δ : ℕ)
+    (supp : TreeTrace Party Blk → Prop) (s₀ : σ) (ex : O) : TFunc σ E O :=
+  treeFunc vw honest (TreeProp.ofProp (FinTreeGuard T P Δ supp)) s₀ ex
+
+/-- `F_FinTree^P'` with `k`-support. -/
+noncomputable abbrev finTreeK (vw : σ → TreeView Party Blk) (honest : Party → Prop)
+    [DecidablePred honest] (T : BlockTree Blk) (P : List (TreeProp Party Blk)) (Δ k : ℕ)
+    (s₀ : σ) (ex : O) : TFunc σ E O :=
+  finTree vw honest T P Δ (fun X => X.KSupport k) s₀ ex
+
+/-- `F_FinTree^P'` with `v`-validity. -/
+noncomputable abbrev finTreeV (vw : σ → TreeView Party Blk) (honest : Party → Prop)
+    [DecidablePred honest] (T : BlockTree Blk) (P : List (TreeProp Party Blk)) (Δ v : ℕ)
+    (s₀ : σ) (ex : O) : TFunc σ E O :=
+  finTree vw honest T P Δ (fun X => X.Validity v) s₀ ex
+
+theorem treeFunc_guard_iff (vw : σ → TreeView Party Blk) (honest : Party → Prop)
+    [DecidablePred honest] (G : TreeProp Party Blk) (s₀ : σ) (ex : O) (tr : Trace σ E O) :
+    (treeFunc vw honest G s₀ ex).guard tr = true ↔ G (traceOf vw honest s₀ tr) := by
+  change G.check _ _ _ = true ↔ _
+  rw [G.check_iff, clamp_eq_traceOf]
+
+/-- The guard of `F_Tree^P` holds on `tr` iff its tree trace is well formed, satisfies every
+property of `P`, and the final blocks of honest parties agree. -/
+theorem fTree_guard_iff [Fintype Party] [DecidableEq Blk] (vw : σ → TreeView Party Blk)
+    (honest : Party → Prop) [DecidablePred honest] (T : BlockTree Blk) [DecidableRel T.anc]
+    (P : List (TreeProp Party Blk)) (s₀ : σ) (ex : O) (tr : Trace σ E O) :
+    (fTree vw honest T P s₀ ex).guard tr = true ↔
+      (traceOf vw honest s₀ tr).WellFormed T ∧ (∀ φ ∈ P, φ (traceOf vw honest s₀ tr)) ∧
+        (traceOf vw honest s₀ tr).Agreement T :=
+  treeFunc_guard_iff _ _ _ _ _ _
+
+/-- The guard of `F_FinTree^P'` holds on `tr` iff its tree trace is well formed, satisfies
+every property of `P`, and is chain-forming, in agreement, propagates final blocks within `Δ`
+rounds and is supported. -/
+theorem finTree_guard_iff (vw : σ → TreeView Party Blk) (honest : Party → Prop)
+    [DecidablePred honest] (T : BlockTree Blk) (P : List (TreeProp Party Blk)) (Δ : ℕ)
+    (supp : TreeTrace Party Blk → Prop) (s₀ : σ) (ex : O) (tr : Trace σ E O) :
+    (finTree vw honest T P Δ supp s₀ ex).guard tr = true ↔
+      FinTreeGuard T P Δ supp (traceOf vw honest s₀ tr) :=
+  treeFunc_guard_iff _ _ _ _ _ _
+
+/-! ### Prefixes -/
+
 /-- The tree trace of a prefix is the truncation of the tree trace of the whole trace. -/
 theorem traceOf_prefix (vw : σ → TreeView Party Blk) (honest : Party → Prop) (s₀ : σ)
     (tr l : Trace σ E O) :
@@ -471,7 +785,7 @@ theorem traceOf_prefix (vw : σ → TreeView Party Blk) (honest : Party → Prop
 /-- For a stable guard `G`, the guard of `treeFunc` holds on every prefix of a trace on
 which it holds. -/
 theorem treeFunc_guard_prefix (vw : σ → TreeView Party Blk) (honest : Party → Prop)
-    {G : TreeTrace Party Blk → Prop} (hG : Stable G) (s₀ : σ) (ex : O)
+    [DecidablePred honest] {G : TreeProp Party Blk} (hG : Stable G.prop) (s₀ : σ) (ex : O)
     {tr tr' : Trace σ E O} (hpre : tr <+: tr')
     (h : (treeFunc vw honest G s₀ ex).guard tr' = true) :
     (treeFunc vw honest G s₀ ex).guard tr = true := by
@@ -482,24 +796,26 @@ theorem treeFunc_guard_prefix (vw : σ → TreeView Party Blk) (honest : Party �
 
 /-- The guard of `F_Tree^P` is a safety property: if every property of `P` is stable, the
 guard holds on every prefix of a trace on which it holds. -/
-theorem fTree_guard_prefix (vw : σ → TreeView Party Blk) (honest : Party → Prop)
-    (T : BlockTree Blk) {P : List (TreeTrace Party Blk → Prop)} (hP : ∀ φ ∈ P, Stable φ)
+theorem fTree_guard_prefix [Fintype Party] [DecidableEq Blk] (vw : σ → TreeView Party Blk)
+    (honest : Party → Prop) [DecidablePred honest] (T : BlockTree Blk) [DecidableRel T.anc]
+    {P : List (TreeProp Party Blk)} (hP : ∀ φ ∈ P, Stable φ.prop)
     (s₀ : σ) (ex : O) {tr tr' : Trace σ E O} (hpre : tr <+: tr')
     (h : (fTree vw honest T P s₀ ex).guard tr' = true) :
     (fTree vw honest T P s₀ ex).guard tr = true :=
-  treeFunc_guard_prefix vw honest
-    ((stable_wellFormed T).and ((stable_all hP).and (stable_agreement T))) s₀ ex hpre h
+  treeFunc_guard_prefix vw honest (G := fTreeProp T P)
+    ((stable_wellFormed T).and ((TreeProp.stable_all hP).and (stable_agreement T))) s₀ ex hpre h
 
 /-- The guard of `F_FinTree^P'` is a safety property: if every property of `P` and the
 support guard are stable, the guard holds on every prefix of a trace on which it holds. -/
 theorem finTree_guard_prefix (vw : σ → TreeView Party Blk) (honest : Party → Prop)
-    (T : BlockTree Blk) {P : List (TreeTrace Party Blk → Prop)} (hP : ∀ φ ∈ P, Stable φ)
+    [DecidablePred honest] (T : BlockTree Blk) {P : List (TreeProp Party Blk)}
+    (hP : ∀ φ ∈ P, Stable φ.prop)
     (Δ : ℕ) {supp : TreeTrace Party Blk → Prop} (hsupp : Stable supp)
     (s₀ : σ) (ex : O) {tr tr' : Trace σ E O} (hpre : tr <+: tr')
     (h : (finTree vw honest T P Δ supp s₀ ex).guard tr' = true) :
     (finTree vw honest T P Δ supp s₀ ex).guard tr = true :=
-  treeFunc_guard_prefix vw honest
-    ((stable_wellFormed T).and ((stable_all hP).and ((stable_chainForming T).and
+  treeFunc_guard_prefix vw honest (G := TreeProp.ofProp (FinTreeGuard T P Δ supp))
+    ((stable_wellFormed T).and ((TreeProp.stable_all hP).and ((stable_chainForming T).and
       ((stable_agreement T).and ((stable_deltaPropagated T Δ).and hsupp))))) s₀ ex hpre h
 
 end Func
@@ -534,7 +850,7 @@ theorem ideal_step_exploded (F : TFunc σ E O) (S : Sys σ E O) (s : σ) (tr : T
 trace satisfies the guard of `treeFunc` with probability `1` has advantage `0` between `π`
 and the ideal world with the copy simulator (`realizesBound_of_guardFail`). -/
 theorem treeFunc_adv_eq_zero (π : Sys σ E O) (vw : σ → TreeView Party Blk)
-    (honest : Party → Prop) (G : TreeTrace Party Blk → Prop) (ex : O)
+    (honest : Party → Prop) [DecidablePred honest] (G : TreeProp Party Blk) (ex : O)
     (hπ : ∀ s e, SPComp.NoFail (π.step s e)) (Z : Env (Strat ζ E O) ζ)
     (hZ : guardFail π (treeFunc vw honest G π.init ex).guard Z = 0) :
     adv π (ideal (treeFunc vw honest G π.init ex) π) Z = 0 :=
@@ -545,9 +861,10 @@ theorem treeFunc_adv_eq_zero (π : Sys σ E O) (vw : σ → TreeView Party Blk)
 
 /-- Perfect realization of `F_Tree^P` under every environment for
 which the real trace satisfies the guard with probability `1`. -/
-theorem fTree_adv_eq_zero (π : Sys σ E O) (vw : σ → TreeView Party Blk)
-    (honest : Party → Prop) (T : BlockTree Blk) (P : List (TreeTrace Party Blk → Prop))
-    (ex : O) (hπ : ∀ s e, SPComp.NoFail (π.step s e)) (Z : Env (Strat ζ E O) ζ)
+theorem fTree_adv_eq_zero [Fintype Party] [DecidableEq Blk] (π : Sys σ E O)
+    (vw : σ → TreeView Party Blk) (honest : Party → Prop) [DecidablePred honest]
+    (T : BlockTree Blk) [DecidableRel T.anc] (P : List (TreeProp Party Blk)) (ex : O)
+    (hπ : ∀ s e, SPComp.NoFail (π.step s e)) (Z : Env (Strat ζ E O) ζ)
     (hZ : guardFail π (fTree vw honest T P π.init ex).guard Z = 0) :
     adv π (ideal (fTree vw honest T P π.init ex) π) Z = 0 :=
   treeFunc_adv_eq_zero π vw honest _ ex hπ Z hZ
@@ -555,7 +872,8 @@ theorem fTree_adv_eq_zero (π : Sys σ E O) (vw : σ → TreeView Party Blk)
 /-- Perfect realization of `F_FinTree^P'` under every environment
 for which the real trace satisfies the guard with probability `1`. -/
 theorem finTree_adv_eq_zero (π : Sys σ E O) (vw : σ → TreeView Party Blk)
-    (honest : Party → Prop) (T : BlockTree Blk) (P : List (TreeTrace Party Blk → Prop))
+    (honest : Party → Prop) [DecidablePred honest] (T : BlockTree Blk)
+    (P : List (TreeProp Party Blk))
     (Δ : ℕ) (supp : TreeTrace Party Blk → Prop) (ex : O)
     (hπ : ∀ s e, SPComp.NoFail (π.step s e)) (Z : Env (Strat ζ E O) ζ)
     (hZ : guardFail π (finTree vw honest T P Δ supp π.init ex).guard Z = 0) :
@@ -650,11 +968,13 @@ theorem drop_two_line_suffix {t t' : ℕ} (h : t ≤ t') : (line t).drop 2 <:+ (
 
 /-- The tree properties: common prefix `2`, chain growth of one block per round, chain
 quality `(evenBlock, 2, 1)`, and finality-respecting positions. -/
-def lineP : List (TreeTrace Unit ℕ → Prop) :=
-  [fun X => X.CommonPrefix 2, fun X => X.ChainGrowth 1 1, fun X => X.ChainQuality evenBlock 2 1,
-    fun X => X.FinalityRespectingPos]
+def lineP : List (TreeProp Unit ℕ) :=
+  [.commonPrefix 2, .chainGrowth 1 1, .chainQuality evenBlock 2 1, .finalityRespectingPos]
 
-theorem lineP_stable : ∀ φ ∈ lineP, Stable φ := by
+/-- Ancestry in `lineTree` is the order of `ℕ`, decided by `Nat.decLe`. -/
+instance : DecidableRel lineTree.anc := fun a b => Nat.decLe a b
+
+theorem lineP_stable : ∀ φ ∈ lineP, Stable φ.prop := by
   simp only [lineP, List.mem_cons, List.not_mem_nil, or_false]
   rintro φ (rfl | rfl | rfl | rfl)
   exacts [stable_commonPrefix 2, stable_chainGrowth 1 1, stable_chainQuality _ 2 1,
@@ -730,7 +1050,7 @@ def LineInv (m : ℕ × Trace ℕ Ev (List ℕ) × Bool) : Prop :=
 
 /-- For a stable guard `G` that holds on `lineTT`, the guard of `treeFunc` fails on the real
 trace of `lineProto` with probability `0` under every environment. -/
-theorem line_guardFail {ζ : Type} {G : TreeTrace Unit ℕ → Prop} (hG : Stable G)
+theorem line_guardFail {ζ : Type} {G : TreeProp Unit ℕ} (hG : Stable G.prop)
     (hl : G lineTT) (ex : List ℕ) (Z : Env (Strat ζ Ev (List ℕ)) ζ) :
     guardFail lineProto (treeFunc lineView (fun _ => True) G lineProto.init ex).guard Z = 0 := by
   unfold guardFail
@@ -768,7 +1088,8 @@ theorem lineProto_fTree_adv :
           lineProto) Z = 0 :=
   ⟨lineProto_noFail, ⟨[2, 1, 0], by decide, rfl⟩, lineTT_fTreeGuard, fun _ Z =>
     fTree_adv_eq_zero lineProto _ _ _ _ _ lineProto_noFail Z
-      (line_guardFail ((stable_wellFormed _).and ((stable_all lineP_stable).and
+      (line_guardFail (G := fTreeProp lineTree lineP)
+        ((stable_wellFormed _).and ((TreeProp.stable_all lineP_stable).and
         (stable_agreement _))) lineTT_fTreeGuard [] Z)⟩
 
 /-- **Non-vacuity of `F_FinTree^P'`.** For every `Δ`, the guards of `F_FinTree^P'` with
@@ -785,7 +1106,7 @@ theorem lineProto_finTree_adv (Δ : ℕ) :
           lineProto.init []) lineProto) Z = 0 := by
   have hst : ∀ {supp : TreeTrace Unit ℕ → Prop}, Stable supp →
       Stable (FinTreeGuard lineTree lineP Δ supp) := fun hs =>
-    (stable_wellFormed _).and ((stable_all lineP_stable).and ((stable_chainForming _).and
+    (stable_wellFormed _).and ((TreeProp.stable_all lineP_stable).and ((stable_chainForming _).and
       ((stable_agreement _).and ((stable_deltaPropagated _ Δ).and hs))))
   exact ⟨lineTT_finTreeGuardK Δ, lineTT_finTreeGuardV Δ,
     fun _ Z => finTree_adv_eq_zero lineProto _ _ _ _ _ _ _ lineProto_noFail Z

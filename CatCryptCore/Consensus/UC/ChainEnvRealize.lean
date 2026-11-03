@@ -287,7 +287,8 @@ theorem guard_trueE (K Δ : ℕ) (ν : PMF SlotKind) (d w : ℕ) (ε : ℝ)
   set f : ℕ → ℕ := fun t => if t = 0 then 0 else (steps (log.take t)).length + 1 with hfdef
   have hU : FTreeGuard (slotTree P) (chainP P ν d w ε) U :=
     guard_of_good P' Sch A' Tree K ν d w ε hIP hGB hw4 ω hG (by omega)
-  have hLU : U.LiveTrace (slotTree P) Block.sl (d + 2) := hU.2.1 (fun X => X.LiveTrace (slotTree P) Block.sl (d + 2)) (by simp [chainP])
+  have hLU : U.LiveTrace (slotTree P) Block.sl (d + 2) :=
+    hU.2.1 (.liveTrace (slotTree P) Block.sl (d + 2)) (by simp [chainP])
   have hU0 : U.st 0 = startView P := by simp only [hUdef, XT, ite_true]; rfl
   have hUs : ∀ j ≤ tr.length, U.st (j + 1) = phaseView P' Sch A' Tree K ω j := by
     intro j hj

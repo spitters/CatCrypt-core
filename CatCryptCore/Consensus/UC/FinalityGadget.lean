@@ -132,6 +132,23 @@ theorem stable_finalOnHonestPos :
     Stable (fun X : TreeTrace Party Blk => FinalOnHonestPos X) :=
   fun _ n h p q _ _ b i hp hq htt hb => h p q _ _ b i hp hq (min_le_min_right n htt) hb
 
+/-- `FinalOnHonestPos`, checked over the final lists and positions at the times `0, …, n`. -/
+def finalOnHonestPosP [Fintype Party] [DecidableEq Blk] : TreeProp Party Blk :=
+  TreeProp.ofIff FinalOnHonestPos
+    (fun (h : Party → Bool) st n => ∀ p q, h p = true → h q = true →
+      ∀ t ∈ List.range (n + 1), ∀ t' ∈ List.range (n + 1), t ≤ t' →
+        ∀ b ∈ (st t).fin p, b ∈ (st t').pos q)
+    (fun _ _ _ => by infer_instance) fun h st n => by
+      constructor
+      · intro H p q t t' b i hp hq htt hb
+        exact H p q hp hq _ (min_mem_range t n) _ (min_mem_range t' n) (min_le_min_right n htt) b
+          ((TreeTrace.exists_finalized_iff _ t p b).1 ⟨i, hb⟩)
+      · intro H p q hp hq t ht t' ht' htt b hb
+        obtain ⟨i, hi⟩ := (TreeTrace.exists_finalized_iff
+          (TreeTrace.clamp ⟨fun p => h p = true, st⟩ n) t p b).2 (by rwa [clamp_st_of_mem ht])
+        have := H p q t t' b i hp hq htt hi
+        rwa [clamp_st_of_mem ht'] at this
+
 /-- Final blocks on the honest positions are finality-respecting positions. -/
 theorem FinalOnHonestPos.finalityRespectingPos {X : TreeTrace Party Blk}
     (h : FinalOnHonestPos X) : X.FinalityRespectingPos :=
@@ -203,6 +220,10 @@ structure Cfg (Party Blk : Type) where
   start : ℕ
   /-- The validator whose pruned position supplies the checkpoints of the schedule. -/
   v₀ : Party
+  /-- Ancestry in the block tree is decidable. -/
+  ancDec : DecidableRel T.anc
+
+attribute [instance] Cfg.ancDec
 
 variable {Party Blk : Type} [Fintype Party] [DecidableEq Party] [DecidableEq Blk]
 
@@ -489,31 +510,237 @@ theorem not_mem_slashable_insert {S : Finset (Vote Party Blk)} {x : Vote Party B
     · exact hx hzv
     exact hv (Or.inr ⟨y, hy, z, hz, hyv, hzv, h₁, h₂, h₃⟩)
 
+/-! ## Decidable justification and finalization
+
+`Justified` and `Finalized` quantify over all checkpoints. For a finite set of votes they are
+equivalent to searches over finite sets: the source of a supermajority link into a justified
+checkpoint can be taken to be the genesis checkpoint or a source of a vote, and the target of the
+link that finalizes `c` can be taken to be a target of a vote or `⟨c.block, c.epoch + 1⟩` (the
+latter needed only for total stake `0`). -/
+
+section Decide
+
+variable (T : BlockTree Blk) [DecidableRel T.anc] (w : Party → ℕ) (votes : Finset (Vote Party Blk))
+
+instance (s t : Checkpoint Blk) : Decidable (SupermajorityLink T w votes s t) := by
+  unfold SupermajorityLink
+  infer_instance
+
+/-- Justification with fuel `n`: `c` is the genesis checkpoint, or the target of a supermajority
+link from the genesis checkpoint or a source of `votes` that is justified with fuel `n - 1`. -/
+def justB : ℕ → Checkpoint Blk → Bool
+  | 0, c => decide (c = genesisCheckpoint T)
+  | n + 1, c => decide (c = genesisCheckpoint T) ||
+      decide (∃ s ∈ insert (genesisCheckpoint T) (votes.image Vote.source),
+        SupermajorityLink T w votes s c ∧ justB n s = true)
+
+variable {T w votes}
+
+theorem justified_of_justB : ∀ (n : ℕ) (c : Checkpoint Blk),
+    justB T w votes n c = true → Justified T w votes c
+  | 0, c, h => by
+    simp only [justB, decide_eq_true_eq] at h
+    subst h
+    exact .genesis
+  | n + 1, c, h => by
+    simp only [justB, Bool.or_eq_true, decide_eq_true_eq] at h
+    rcases h with rfl | ⟨s, -, hl, hs⟩
+    · exact .genesis
+    · exact .link (justified_of_justB n s hs) hl
+
+omit [DecidableRel T.anc] in
+/-- The genesis block is an ancestor of every justified checkpoint. -/
+theorem anc_genesis_of_justified {c : Checkpoint Blk} (h : Justified T w votes c) :
+    T.anc T.genesis c.block := by
+  induction h with
+  | genesis => exact T.anc_refl _
+  | link _ hl ih => exact T.anc_trans ih hl.2.1
+
+theorem justB_of_justified {c : Checkpoint Blk} (h : Justified T w votes c) :
+    ∀ n, c.epoch ≤ n → justB T w votes n c = true := by
+  induction h with
+  | genesis => intro n _; cases n <;> simp [justB]
+  | @link s t hs hl ih =>
+    intro n hn
+    have he := hl.1
+    obtain ⟨m, rfl⟩ : ∃ m, n = m + 1 := ⟨n - 1, by omega⟩
+    simp only [justB, Bool.or_eq_true, decide_eq_true_eq]
+    right
+    rcases (voters votes s t).eq_empty_or_nonempty with h0 | ⟨v, hv⟩
+    · have hW : totalStake w = 0 := by
+        have := hl.2.2
+        rw [h0] at this
+        simp only [stake, Finset.sum_empty] at this
+        omega
+      refine ⟨genesisCheckpoint T, Finset.mem_insert_self _ _,
+        ⟨?_, T.anc_trans (anc_genesis_of_justified hs) hl.2.1, by rw [hW]; omega⟩, ?_⟩
+      · change 0 < t.epoch
+        omega
+      · cases m <;> simp [justB]
+    · exact ⟨s, Finset.mem_insert_of_mem (Finset.mem_image.2 ⟨_, mem_voters.1 hv, rfl⟩), hl,
+        ih m (by omega)⟩
+
+/-- Justification is decided by `justB` with fuel the epoch of the checkpoint. -/
+theorem justB_iff (c : Checkpoint Blk) :
+    justB T w votes c.epoch c = true ↔ Justified T w votes c :=
+  ⟨justified_of_justB _ c, fun h => justB_of_justified h _ le_rfl⟩
+
+instance (c : Checkpoint Blk) : Decidable (Justified T w votes c) :=
+  decidable_of_iff _ (justB_iff c)
+
+omit [DecidableRel T.anc] in
+/-- Finalization with the target of the finalizing link among the targets of the votes and
+`⟨c.block, c.epoch + 1⟩`. -/
+theorem finalized_iff_exists_mem (c : Checkpoint Blk) :
+    Finalized T w votes c ↔ Justified T w votes c ∧
+      ∃ c' ∈ insert ⟨c.block, c.epoch + 1⟩ (votes.image Vote.target),
+        c'.epoch = c.epoch + 1 ∧ SupermajorityLink T w votes c c' := by
+  constructor
+  · rintro ⟨hJ, c', he, hl⟩
+    refine ⟨hJ, ?_⟩
+    rcases (voters votes c c').eq_empty_or_nonempty with h0 | ⟨v, hv⟩
+    · have hW : totalStake w = 0 := by
+        have := hl.2.2
+        rw [h0] at this
+        simp only [stake, Finset.sum_empty] at this
+        omega
+      refine ⟨⟨c.block, c.epoch + 1⟩, Finset.mem_insert_self _ _, rfl, ?_, T.anc_refl _, ?_⟩
+      · change c.epoch < c.epoch + 1
+        omega
+      · rw [hW]
+        omega
+    · exact ⟨c', Finset.mem_insert_of_mem (Finset.mem_image.2 ⟨_, mem_voters.1 hv, rfl⟩), he, hl⟩
+  · rintro ⟨hJ, c', -, he, hl⟩
+    exact ⟨hJ, c', he, hl⟩
+
+instance (c : Checkpoint Blk) : Decidable (Finalized T w votes c) :=
+  decidable_of_iff _ (finalized_iff_exists_mem c).symm
+
+omit [DecidableRel T.anc] in
+/-- For positive total stake, a justified checkpoint is the genesis checkpoint or the target of a
+vote. -/
+theorem mem_of_justified (hW : 0 < totalStake w) {c : Checkpoint Blk}
+    (h : Justified T w votes c) :
+    c ∈ insert (genesisCheckpoint T) (votes.image Vote.target) := by
+  cases h with
+  | genesis => exact Finset.mem_insert_self _ _
+  | @link s _ _ hl =>
+    rcases (voters votes s c).eq_empty_or_nonempty with h0 | ⟨v, hv⟩
+    · have := hl.2.2
+      rw [h0] at this
+      simp only [stake, Finset.sum_empty] at this
+      omega
+    · exact Finset.mem_insert_of_mem (Finset.mem_image.2 ⟨_, mem_voters.1 hv, rfl⟩)
+
+end Decide
+
 /-! ## Final lists -/
 
 /-- The largest target epoch of the votes `S`. -/
 def maxEp (S : Finset (Vote Party Blk)) : ℕ := S.sup fun x => x.target.epoch
 
-open Classical in
-/-- The block finalized by `S` at epoch `e`, if any (chosen when there are several). -/
-noncomputable def finAt (c : Cfg Party Blk) (S : Finset (Vote Party Blk)) (e : ℕ) : Option Blk :=
-  if h : ∃ b, Finalized c.T c.w S ⟨b, e⟩ then some h.choose else none
+/-- The checkpoints at epoch `e` finalized by `S` among the genesis checkpoint and the targets
+of `S`; for positive total stake, these are all checkpoints at epoch `e` finalized by `S`. -/
+def finCands (c : Cfg Party Blk) (S : Finset (Vote Party Blk)) (e : ℕ) :
+    Finset (Checkpoint Blk) :=
+  (insert (genesisCheckpoint c.T) (S.image Vote.target)).filter fun cp =>
+    cp.epoch = e ∧ Finalized c.T c.w S cp
+
+theorem mem_finCands {c : Cfg Party Blk} {S : Finset (Vote Party Blk)} {e : ℕ}
+    (hW : 0 < totalStake c.w) {cp : Checkpoint Blk} :
+    cp ∈ finCands c S e ↔ cp.epoch = e ∧ Finalized c.T c.w S cp := by
+  unfold finCands
+  rw [Finset.mem_filter]
+  exact ⟨fun h => h.2, fun h => ⟨mem_of_justified hW h.2.1, h⟩⟩
+
+/-- A finset of one element has a unique element. -/
+theorem existsUnique_of_card_eq_one {α : Type} {s : Finset α} (h : s.card = 1) :
+    ∃! a, a ∈ s ∧ True := by
+  obtain ⟨a, rfl⟩ := Finset.card_eq_one.1 h
+  exact ⟨a, by simp, fun y hy => by simpa using hy.1⟩
+
+/-- The element chosen from a singleton is its element. -/
+theorem choose_true_eq {α : Type} {s : Finset α} (h : ∃! a, a ∈ s ∧ True) {a : α}
+    (ha : s = {a}) : Finset.choose (fun _ => True) s h = a := by
+  subst ha
+  simpa using (Finset.choose_spec (fun _ => True) _ h).1
+
+/-- The block finalized by `S` at epoch `e`, if it is the only one among the genesis checkpoint
+and the targets of `S` (`finCands`). -/
+def finAt (c : Cfg Party Blk) (S : Finset (Vote Party Blk)) (e : ℕ) : Option Blk :=
+  if h : (finCands c S e).card = 1 then
+    some (Finset.choose (fun _ => True) (finCands c S e) (existsUnique_of_card_eq_one h)).block
+  else none
 
 /-- The final list of a party that has received the votes `S`: the blocks finalized by `S`,
 by epoch, newest first. -/
-noncomputable def finList (c : Cfg Party Blk) (S : Finset (Vote Party Blk)) : List Blk :=
+def finList (c : Cfg Party Blk) (S : Finset (Vote Party Blk)) : List Blk :=
   (List.range (maxEp S + 1)).reverse.filterMap (finAt c S)
 
 /-- The view reported to `F_FinTree`: the tree view of `g` with the final lists of the gadget. -/
-noncomputable def finView (c : Cfg Party Blk) (g : GCore Party Blk) : TreeView Party Blk :=
+def finView (c : Cfg Party Blk) (g : GCore Party Blk) : TreeView Party Blk :=
   { g.view with fin := fun p => finList c (g.seen p) }
+
+/-- The checkpoint chosen by `finAt` is a candidate. -/
+theorem finAt_eq_some_iff_card {c : Cfg Party Blk} {S : Finset (Vote Party Blk)} {e : ℕ}
+    {b : Blk} : finAt c S e = some b ↔ finCands c S e = {⟨b, e⟩} := by
+  unfold finAt
+  constructor
+  · intro h
+    split_ifs at h with hc
+    cases h
+    obtain ⟨a, ha⟩ := Finset.card_eq_one.1 hc
+    have he : a.epoch = e := by
+      have : a ∈ finCands c S e := by rw [ha]; exact Finset.mem_singleton_self a
+      exact (Finset.mem_filter.1 this).2.1
+    rw [choose_true_eq _ ha]
+    obtain ⟨bl, ep⟩ := a
+    simp only at he
+    subst he
+    exact ha
+  · intro h
+    have hc : (finCands c S e).card = 1 := by rw [h]; rfl
+    rw [dite_eq_left hc, choose_true_eq _ h]
 
 theorem finAt_some {c : Cfg Party Blk} {S : Finset (Vote Party Blk)} {e : ℕ} {b : Blk}
     (h : finAt c S e = some b) : Finalized c.T c.w S ⟨b, e⟩ := by
-  unfold finAt at h
-  split_ifs at h with hb
-  cases h
-  exact hb.choose_spec
+  have hm : (⟨b, e⟩ : Checkpoint Blk) ∈ finCands c S e := by
+    rw [finAt_eq_some_iff_card.1 h]
+    exact Finset.mem_singleton_self _
+  exact (Finset.mem_filter.1 hm).2.2
+
+/-- **Characterisation of `finAt`.** For positive total stake, `finAt c S e = some b` iff `b` is
+the only block finalized by `S` at epoch `e`. -/
+theorem finAt_eq_some_iff {c : Cfg Party Blk} {S : Finset (Vote Party Blk)} {e : ℕ} {b : Blk}
+    (hW : 0 < totalStake c.w) :
+    finAt c S e = some b ↔
+      Finalized c.T c.w S ⟨b, e⟩ ∧ ∀ b', Finalized c.T c.w S ⟨b', e⟩ → b' = b := by
+  rw [finAt_eq_some_iff_card]
+  constructor
+  · intro h
+    refine ⟨finAt_some (finAt_eq_some_iff_card.2 h), fun b' hb' => ?_⟩
+    have : (⟨b', e⟩ : Checkpoint Blk) ∈ finCands c S e := (mem_finCands hW).2 ⟨rfl, hb'⟩
+    rw [h, Finset.mem_singleton] at this
+    exact congrArg Checkpoint.block this
+  · rintro ⟨hb, hu⟩
+    refine Finset.eq_singleton_iff_unique_mem.2 ⟨(mem_finCands hW).2 ⟨rfl, hb⟩, fun cp hcp => ?_⟩
+    obtain ⟨he, hf⟩ := (mem_finCands hW).1 hcp
+    obtain ⟨bl, ep⟩ := cp
+    simp only at he
+    subst he
+    rw [hu bl hf]
+
+/-- For positive total stake, `finAt c S e` is defined iff exactly one block is finalized by `S`
+at epoch `e`. -/
+theorem finAt_isSome_iff {c : Cfg Party Blk} {S : Finset (Vote Party Blk)} {e : ℕ}
+    (hW : 0 < totalStake c.w) :
+    (finAt c S e).isSome ↔ ∃! b, Finalized c.T c.w S ⟨b, e⟩ := by
+  rw [Option.isSome_iff_exists]
+  constructor
+  · rintro ⟨b, hb⟩
+    exact ⟨b, ((finAt_eq_some_iff hW).1 hb).1, ((finAt_eq_some_iff hW).1 hb).2⟩
+  · rintro ⟨b, hb, hu⟩
+    exact ⟨b, (finAt_eq_some_iff hW).2 ⟨hb, hu⟩⟩
 
 theorem finalized_of_mem_finList {c : Cfg Party Blk} {S : Finset (Vote Party Blk)} {b : Blk}
     (h : b ∈ finList c S) : ∃ e, Finalized c.T c.w S ⟨b, e⟩ := by
@@ -542,8 +769,7 @@ theorem mem_finList {c : Cfg Party Blk} {S : Finset (Vote Party Blk)} {b : Blk} 
   refine List.mem_filterMap.2 ⟨e, ?_, ?_⟩
   · rw [List.mem_reverse, List.mem_range]
     exact epoch_lt_maxEp hW h
-  · have hex : ∃ b, Finalized c.T c.w S ⟨b, e⟩ := ⟨b, h⟩
-    rw [finAt, dite_eq_left hex, huniq _ hex.choose_spec]
+  · exact (finAt_eq_some_iff hW).2 ⟨h, huniq⟩
 
 /-- If finalized blocks are ordered by ancestry as by epoch, the final list is a chain: every
 block is an ancestor of the blocks before it. -/
@@ -786,9 +1012,9 @@ the gadget satisfies the guard of `F_FinTree^P'` with
 support guard `1`-validity together with stake validity for the adversarial stake. -/
 theorem finTreeGuard_of_run {c : Cfg Party Blk} {G : ℕ → GCore Party Blk} (h : Run c G)
     (hΔ : 1 ≤ c.Δ) (hA : 3 * stake c.w (Finset.univ \ c.H) < totalStake c.w)
-    {P : List (TreeTrace Party Blk → Prop)} (hP : ∀ φ ∈ P, PosOnly φ)
+    {P : List (TreeProp Party Blk)} (hP : ∀ φ ∈ P, PosOnly φ.prop)
     (hwf : (posTT c G).WellFormed c.T) (hPG : ∀ φ ∈ P, φ (posTT c G)) :
-    FinTreeGuard c.T ((fun X => X.FinalityRespectingPos) :: FinalOnHonestPos :: P) c.Δ
+    FinTreeGuard c.T (.finalityRespectingPos :: finalOnHonestPosP :: P) c.Δ
       (fun X => X.Validity 1 ∧ StakeValidity c.w (stake c.w (Finset.univ \ c.H)) X)
       (finTT c G) := by
   have hW : 0 < totalStake c.w := by omega

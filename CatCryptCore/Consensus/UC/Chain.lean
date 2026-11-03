@@ -398,18 +398,27 @@ def hbB (b : Block Tx Hash (Fin np)) : Bool := decide (CorruptionStatus b.bid = 
 def slotTree : BlockTree (Block Tx Hash (Fin np)) :=
   ⟨fun a b => a.sl ≤ b.sl, P.GB, fun _ => le_rfl, fun h h' => h.trans h'⟩
 
+instance (o : Option (Fin np)) : Decidable (honestP o) := by
+  unfold honestP
+  infer_instance
+
+/-- Ancestry in the slot tree is the order of the slots. -/
+instance : DecidableRel (slotTree P).anc := fun a b => Nat.decLe a.sl b.sl
+
 /-- The trace properties of `F_Tree`: the chain growth of `PoSNSB.Good` (of the observer, rate
 `pH ν - ε`), chain quality and common prefix, the persistence of nonempty honest positions, and
 the positions on which finality liveness rests (`TreeTrace.LiveTrace` for the slot tree, with
-chain-growth window `d + 2`). -/
-def chainP (ν : PMF SlotKind) (d w : ℕ) (ε : ℝ) :
-    List (TreeTrace (Option (Fin np)) (Block Tx Hash (Fin np)) → Prop) :=
-  [SlotChainGrowth none (pH ν - ε) d, SlotChainQuality Block.sl (hbB Tx Hash) d w,
-    SlotCommonPrefix Block.sl d, PosNonemptyPersists,
-    fun X => X.LiveTrace (slotTree P) Block.sl (d + 2)]
+chain-growth window `d + 2`). The first four are decided classically (`TreeProp.ofProp`); the
+real rate `pH ν - ε` has no executable comparison. -/
+noncomputable def chainP (ν : PMF SlotKind) (d w : ℕ) (ε : ℝ) :
+    List (TreeProp (Option (Fin np)) (Block Tx Hash (Fin np))) :=
+  [.ofProp (SlotChainGrowth none (pH ν - ε) d),
+    .ofProp (SlotChainQuality Block.sl (hbB Tx Hash) d w),
+    .ofProp (SlotCommonPrefix Block.sl d), .ofProp PosNonemptyPersists,
+    .liveTrace (slotTree P) Block.sl (d + 2)]
 
 theorem chainP_stable (ν : PMF SlotKind) (d w : ℕ) (ε : ℝ) :
-    ∀ φ ∈ chainP P ν d w ε, Stable φ := by
+    ∀ φ ∈ chainP P ν d w ε, Stable φ.prop := by
   simp only [chainP, List.mem_cons, List.not_mem_nil, or_false]
   rintro φ (rfl | rfl | rfl | rfl | rfl)
   exacts [stable_slotChainGrowth _ _ _, stable_slotChainQuality _ _ _ _,

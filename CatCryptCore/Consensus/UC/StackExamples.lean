@@ -52,7 +52,7 @@ the pruned positions `slotCut Block.sl 1000`, delivery bound `1`, and the schedu
 `2004 = 2 E + (1000 + 2) + 1000` read off the position of `some 0`. -/
 noncomputable def cfg : Cfg (Option (Fin 1)) (Block Unit (Fin M) (Fin 1)) :=
   ⟨slotTree (P M Hz), fun o => o.elim 0 fun _ => 1, {some 0}, Block.sl, 1,
-    slotCut Block.sl 1000, 1, 2004, some 0⟩
+    slotCut Block.sl 1000, 1, 2004, some 0, inferInstance⟩
 
 theorem cfg_honest (o : Option (Fin 1)) : o ∈ (cfg M Hz).H ↔ honestP o := by
   rcases o with _ | p

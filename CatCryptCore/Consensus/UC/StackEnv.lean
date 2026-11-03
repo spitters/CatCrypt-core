@@ -120,9 +120,15 @@ theorem treeF_eq_chainFE (c : Cfg (Option (Fin np)) (Block Tx Hash (Fin np))) (K
     treeF c (chainSimE P Sch F x₀ dt Tree H cd K μ W Δ) stViewE (chainP P (kindLaw μ) d w ε)
         (exCE Tx Hash np) =
       chainFE P Δ (kindLaw μ) d w ε := by
-  have h : (fun o => o ∈ c.H) = honestP := funext fun o => propext (hH o)
+  obtain ⟨T, w', H', sl, E, cut, Δ', st, v₀, ancDec⟩ := c
+  dsimp only at hT hH
+  subst hT
+  have h : (fun o => o ∈ H') = honestP := funext fun o => propext (hH o)
+  have hd : ancDec = (fun a b => Nat.decLe a.sl b.sl : DecidableRel (slotTree P).anc) :=
+    Subsingleton.elim _ _
+  subst hd
   unfold treeF chainFE
-  rw [hT, h]
+  simp only [h]
   rfl
 
 /-- Every step of `chainSimE` outputs `chainOutE` of its new state. -/
@@ -216,7 +222,7 @@ theorem stack_realizesE (hP : ProtocolHyp P) (hTree : Tree.Longest)
     fun X hX => by rw [hcut]; exact settled_of_chainGuard P (kindLaw μ) d w ε c.T X hX
   have hLive : ∀ X, FTreeGuard c.T (chainP P (kindLaw μ) d w ε) X → LiveHyp c (d + 2) X :=
     fun X hX => by
-      have h := hX.2.1 (fun X => X.LiveTrace (slotTree P) Block.sl (d + 2)) (by simp [chainP])
+      have h := hX.2.1 (.liveTrace (slotTree P) Block.sl (d + 2)) (by simp [chainP])
       show X.LiveTrace c.T c.slot (d + 2)
       rw [hT, hsl]
       exact h
