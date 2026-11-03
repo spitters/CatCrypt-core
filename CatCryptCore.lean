@@ -259,6 +259,7 @@ public import CatCryptCore.Crypto.AKE.ChannelSquare
 public import CatCryptCore.Crypto.AKE.FAKESys
 public import CatCryptCore.Crypto.AKE.X3DHSquare
 public import CatCryptCore.Crypto.AKE.X3DHSquareHops
+public import CatCryptCore.Crypto.AKE.X3DHSquareGDH
 public import CatCryptCore.Crypto.AKE.PQXDHSquare
 public import CatCryptCore.Crypto.AKE.PQXDHSquareHops
 public import CatCryptCore.Crypto.AKE.ChannelSquareTimed
