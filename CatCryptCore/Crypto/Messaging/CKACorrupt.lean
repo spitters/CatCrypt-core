@@ -10,6 +10,7 @@ public import CatCryptCore.Crypto.Messaging.DoubleRatchet
 public import CatCryptCore.Crypto.OracleSimulation
 public import CatCryptCore.Crypto.SPCompPMF
 public import CatCryptCore.ForMathlib.PMFUniform
+public import CatCryptCore.ForMathlib.PMFSupport
 
 /-!
 # Continuous key agreement with state corruption and randomness leakage
@@ -1817,5 +1818,109 @@ theorem sm_dh_advantage_le_corrupt (G : Type) [CG : CyclicGroup G]
   exact h
 
 end SM
+
+/-! ## The forward-secrecy delay `1` fails for `dhCKA`
+
+The state of `dhCKA` keeps the own last exponent after a receive. The adversary
+`dhFSAttack` challenges epoch `2`, lets `A` send epoch `3` and `B` receive it, and corrupts `B`
+at `t_B = 3 = t* + 1`, which the gate with `ΔFS = 1` allows. The state of `B` holds the
+challenge exponent `x₂`, and the challenge key is `(g^{x₁})^{x₂}` for the message `g^{x₁}` of
+epoch `1`. -/
+
+section Attack
+
+variable {G : Type} [CG : CyclicGroup G] [DecidableEq G]
+
+/-- The message of a send answer, or `d`. -/
+def ckaAnsMsg {St Msg Key Rand : Type} (d : Msg) : CKAAns St Msg Key Rand → Msg
+  | .out T _ => T
+  | _ => d
+
+/-- The key of a send answer, or `d`. -/
+def ckaAnsKey {St Msg Key Rand : Type} (d : Key) : CKAAns St Msg Key Rand → Key
+  | .out _ I => I
+  | _ => d
+
+/-- The state of a corruption answer, or `d`. -/
+def ckaAnsState {St Msg Key Rand : Type} (d : St) : CKAAns St Msg Key Rand → St
+  | .state s => s
+  | _ => d
+
+/-- The interaction of the attack: epochs `1` and `2` (the challenge) and `3`, then the
+corruption of `B`; the output tests the challenge key against the message of epoch `1` raised
+to the exponent in the state of `B`. -/
+noncomputable def dhFSAttackPlay (pub : G) :
+    OracleAdv CKAQuery (CKAAns (G × CG.Exp) G G CG.Exp) Bool :=
+  .query (.send .A) fun r₁ => .query (.recv .B) fun _ => .query (.chall .B) fun r₂ =>
+    .query (.recv .A) fun _ => .query (.send .A) fun _ => .query (.recv .B) fun _ =>
+      .query (.corrupt .B) fun r₃ =>
+        .ret (decide (CyclicGroup.elemPow (ckaAnsMsg pub r₁)
+          (ckaAnsState (pub, Classical.arbitrary CG.Exp) r₃).2 = ckaAnsKey pub r₂))
+
+/-- The attack against the forward-secrecy delay `1`, with challenge epoch `2`. -/
+noncomputable def dhFSAttack : CKACorruptAdv (G × CG.Exp) G G CG.Exp Bool where
+  tStar := PMF.pure 2
+  play _ pub := dhFSAttackPlay pub
+
+theorem PMF.bind_apply_eq_of_forall {X Y : Type} (p : PMF X) (f : X → PMF Y) (y : Y)
+    (c : ℝ≥0∞) (h : ∀ x, f x y = c) : (p.bind f) y = c := by
+  rw [PMF.bind_apply]
+  simp only [h, ENNReal.tsum_mul_right, PMF.tsum_coe, one_mul]
+
+theorem dhFSAttack_real (ΔPCS : ℕ) :
+    dhCKAGamePMF 1 ΔPCS 2 false ((dhFSAttack (G := G)).play 2) = PMF.pure true := by
+  unfold dhCKAGamePMF
+  simp [dhFSAttack, dhFSAttackPlay, OracleAdv.run_query, OracleAdv.run_ret, OracleAdv.nfOracle,
+    PMF.bind_map, dhCKAStepOf, CKAGameSt.init, CKAGameSt.canSend, CKAGameSt.canRecv,
+    ckaAllowCorr, ckaSender, ckaAnsMsg, ckaAnsKey, ckaAnsState, Function.comp_def, PMF.map_bind,
+    PMF.pure_map, PMF.bind_const]
+
+theorem uniform_bind_decide_eq (c : G) :
+    ((PMF.uniformFintype G).bind fun u => PMF.pure (decide (c = u))) true =
+      (Fintype.card G : ℝ≥0∞)⁻¹ := by
+  change ((PMF.uniformFintype G).bind (PMF.pure ∘ fun u => decide (c = u))) true = _
+  rw [PMF.bind_pure_comp, PMF.map_uniformFintype_apply]
+  have h : (Finset.univ.filter fun u : G => decide (c = u) = true) = {c} := by
+    ext u; simp [eq_comm]
+  rw [h, Finset.card_singleton, Nat.cast_one, one_div]
+
+theorem dhFSAttack_ideal_eq (ΔPCS : ℕ) :
+    dhCKAGamePMF 1 ΔPCS 2 true ((dhFSAttack (G := G)).play 2) =
+      (dhDraw G).bind fun v => (dhDraw G).bind fun w =>
+        PMF.pure (decide (CyclicGroup.elemPow (CG.pow v.1) w.1 = w.2)) := by
+  unfold dhCKAGamePMF
+  simp [dhFSAttack, dhFSAttackPlay, OracleAdv.run_query, OracleAdv.run_ret, OracleAdv.nfOracle,
+    PMF.bind_map, dhCKAStepOf, CKAGameSt.init, CKAGameSt.canSend, CKAGameSt.canRecv,
+    ckaAllowCorr, ckaSender, ckaAnsMsg, ckaAnsKey, ckaAnsState, Function.comp_def, PMF.map_bind,
+    PMF.pure_map, PMF.bind_const]
+
+theorem dhFSAttack_ideal (ΔPCS : ℕ) :
+    dhCKAGamePMF 1 ΔPCS 2 true ((dhFSAttack (G := G)).play 2) true =
+      (Fintype.card G : ℝ≥0∞)⁻¹ := by
+  rw [dhFSAttack_ideal_eq]
+  refine PMF.bind_apply_eq_of_forall _ _ _ _ fun v => ?_
+  rw [dhDraw_bind]
+  refine PMF.bind_apply_eq_of_forall _ _ _ _ fun x => ?_
+  exact uniform_bind_decide_eq (G := G) (CyclicGroup.elemPow (CG.pow v.1) x)
+
+/-- **The forward-secrecy delay `1` fails for `dhCKA`.** For every post-compromise delay, the
+attack `dhFSAttack` has corruption advantage `1 - 1/|G|` against `dhCKA` with `ΔFS = 1`. -/
+theorem dhCKA_corrupt_advantage_FS1 (ΔPCS : ℕ) :
+    CKA_Corrupt_Advantage (dhCKA G) 1 ΔPCS (dhFSAttack (G := G)) =
+      1 - (Fintype.card G : ℝ≥0∞)⁻¹ := by
+  unfold CKA_Corrupt_Advantage cka_corrupt_real cka_corrupt_ideal Advantage
+  rw [dhCKA_game_eq, dhCKA_game_eq]
+  simp only [dhFSAttack, PMF.pure_bind, prTrue_liftPMF]
+  have h1 := dhFSAttack_real (G := G) ΔPCS
+  have h2 := dhFSAttack_ideal (G := G) ΔPCS
+  simp only [dhFSAttack] at h1 h2
+  rw [h1, h2]
+  simp only [PMF.pure_apply, if_true]
+  have h : (Fintype.card G : ℝ≥0∞)⁻¹ ≤ 1 :=
+    ENNReal.inv_le_one.2 (by exact_mod_cast Fintype.card_pos)
+  rw [tsub_eq_zero_of_le h]
+  exact max_eq_left zero_le
+
+end Attack
 
 end CatCrypt.Crypto.Messaging
