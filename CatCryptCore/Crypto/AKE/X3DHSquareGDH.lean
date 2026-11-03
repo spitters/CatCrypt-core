@@ -1078,9 +1078,9 @@ def Bad2 (t : RSim S W K × St K) : Prop :=
     p.1.dh1 = .inl (G.pub ((x + off1 a t.1.1) * (y + off2 b t.1.1)))
 
 omit [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K] in
-theorem stop_drive0D {τ EG OG Rf O' : Type} (stepD : τ → EG → Rf → τ × OG)
-    (fin : SimSt S W K → OG → SimSt S W K × O') (hfin : ∀ s o, (fin s o).1.1 = s.1)
-    (s : SimSt S W K) (d : EG ⊕ O') (t : τ) (k : Rf) :
+theorem stop_drive0D {α β τ EG OG Rf O' : Type} (stepD : τ → EG → Rf → τ × OG)
+    (fin : α × β → OG → (α × β) × O') (hfin : ∀ s o, (fin s o).1.1 = s.1)
+    (s : α × β) (d : EG ⊕ O') (t : τ) (k : Rf) :
     (drive0D stepD fin s d t k).1.1 = s.1 := by
   unfold drive0D
   split
@@ -1177,6 +1177,206 @@ theorem bad2_of_rel {t₁ : SimSt S W K × St K} {t₂ : RSim S W K × St K}
         rw [← h1, hd, hik, hspk]
       · rw [hq] at hL; cases hL
 
+theorem deliverD_corrupt (rs : RSt S W K) (inp : Inst → Option (Inp W)) (z : Inst) (rc : Rec K)
+    (ip : Inp W) (k : K) : (deliverD rs inp z rc ip k).1.1.st.corrupt = rs.st.corrupt := by
+  unfold deliverD
+  split <;> rfl
+
+theorem addSession_corrupt (t : St K) (z : Inst) (peer : PartyId) (role : Role) :
+    (addSession t z peer role).corrupt = t.corrupt := by
+  unfold addSession
+  split <;> rfl
+
+/-- The start of the simulator never clears a corruption. -/
+theorem simStartD_corrupt (s : SimSt S W K) (e : OEv W) (r : Draw S K) (p : PartyId)
+    (h : s.1.st.corrupt p = true) : (simStartD G s e r).1.1.st.corrupt p = true := by
+  rcases e with (⟨sid, pid, peer, role⟩ | ⟨sid, pid⟩) | (_ | _ | pid | ⟨sid, pid⟩ | pid |
+    ⟨sid, pid⟩ | ⟨sid, pid, e⟩ | q)
+  all_goals simp only [simStartD, simCompleteD, simSendD]
+  all_goals repeat' split
+  all_goals simp_all [deliverD_corrupt, addSession_corrupt, (pollStep_fst _).2.1, corruptStep,
+    ltD_st, Function.update_apply]
+  all_goals grind
+
+/-- A step of the simulated world never clears a corruption of `a` or `b`. -/
+theorem stop_simWorldD (t : SimSt S W K × St K) (e : OEv W) (r : Draw S K × K)
+    (h : Stop a b t.1) : Stop a b (simWorldD G t e r).1.1 := by
+  simp only [Stop, simWorldD]
+  rw [stop_drive0D _ _ (fun _ _ => rfl)]
+  rcases h with h | h
+  · exact Or.inl (simStartD_corrupt G _ _ _ _ h)
+  · exact Or.inr (simStartD_corrupt G _ _ _ _ h)
+
+/-- The tables of the world of the reduction grow and its long-term secrets stay. -/
+def Mono (rs rs' : RSt S (W ⊕ W) K) : Prop :=
+  (∀ p ∈ rs.ro, p ∈ rs'.ro) ∧ (∀ q v, rs.lt q = some v → rs'.lt q = some v)
+
+theorem Mono.trans {rs rs' rs'' : RSt S (W ⊕ W) K} (h : Mono rs rs') (h' : Mono rs' rs'') :
+    Mono rs rs'' :=
+  ⟨fun p hp => h'.1 p (h.1 p hp), fun q v hq => h'.2 q v (h.2 q v hq)⟩
+
+theorem mono_refl (rs : RSt S (W ⊕ W) K) : Mono rs rs := ⟨fun _ h => h, fun _ _ h => h⟩
+
+theorem mono_ltD (rs : RSt S (W ⊕ W) K) (p : PartyId) (l : S × S) : Mono rs (ltD rs p l).2 :=
+  ⟨fun q hq => by rw [ltD_ro]; exact hq, ltD_lt_mono rs p l⟩
+
+theorem mono_deliverR (O : W → W → W → Bool) (X Y : W) (rs : RSt S (W ⊕ W) K)
+    (inp : Inst → Option (Inp (W ⊕ W))) (z : Inst) (rc : Rec K) (ip : Inp (W ⊕ W)) (k : K) :
+    Mono rs (deliverR G a b O X Y rs inp z rc ip k).1.1 := by
+  unfold deliverR
+  split
+  · refine ⟨fun q hq => ?_, fun _ _ h => h⟩
+    rcases sroDet_snd G O (keyA G a X rs) (keyB G b Y rs) rs.ro ip k with he | he <;>
+      simp only [X3DHSquare.keyed, he]
+    · exact hq
+    · exact List.mem_cons_of_mem _ hq
+  · exact mono_refl _
+
+/-- **The start of the simulator of the reduction** keeps the entries of the table and the drawn
+secrets. -/
+theorem mono_startR (O : W → W → W → Bool) (X Y : W) (s : RSim S W K) (e : OEv W)
+    (r : Draw S K) : Mono s.1 (startR G a b O X Y s e r).1.1 := by
+  rcases e with (⟨sid, pid, peer, role⟩ | ⟨sid, pid⟩) | (_ | _ | pid | ⟨sid, pid⟩ | pid |
+    ⟨sid, pid⟩ | ⟨sid, pid, e⟩ | q)
+  · simp only [startR]
+    split
+    · exact mono_refl _
+    · exact mono_refl _
+  · exact mono_refl _
+  · exact mono_refl _
+  · exact mono_refl _
+  · exact mono_ltD _ _ _
+  · exact mono_refl _
+  · simp only [startR]
+    split
+    · exact mono_refl _
+    · exact mono_ltD _ _ _
+  · simp only [startR, completeR]
+    repeat' split
+    all_goals first
+      | exact mono_refl _
+      | exact ((mono_ltD _ _ _).trans (mono_ltD _ _ _)).trans (mono_deliverR G a b O X Y _ _ _ _ _ _)
+  · simp only [startR, sendR]
+    repeat' split
+    all_goals first
+      | exact mono_refl _
+      | exact ((mono_ltD _ _ _).trans (mono_ltD _ _ _)).trans (mono_deliverR G a b O X Y _ _ _ _ _ _)
+  · simp only [startR]
+    refine ⟨fun p hp => ?_, fun _ _ h => h⟩
+    rcases sroDet_snd G O (keyA G a X s.1) (keyB G b Y s.1) s.1.ro (ofInp q) r.2.2.2 with he | he <;>
+      simp only [he]
+    · exact hp
+    · exact List.mem_cons_of_mem _ hp
+
+theorem mono_stepR (O : W → W → W → Bool) (X Y : W) (t : RSim S W K × St K) (e : OEv W)
+    (r : Draw S K × K) : Mono t.1.1 (stepR G a b O X Y t e r).1.1.1 := by
+  simp only [stepR]
+  rw [stop_drive0D _ _ (fun _ _ => rfl)]
+  exact mono_startR G a b O X Y t.1 e r.1
+
+theorem Bad2.mono {t t' : RSim S W K × St K} (h : Mono t.1.1 t'.1.1) (hb : Bad2 G a b x y t) :
+    Bad2 G a b x y t' := by
+  obtain ⟨p, hp, h1, h2, ha, hb', hd⟩ := hb
+  obtain ⟨la, hla⟩ := Option.isSome_iff_exists.mp ha
+  obtain ⟨lb, hlb⟩ := Option.isSome_iff_exists.mp hb'
+  have hoff1 : off1 a t'.1.1 = off1 a t.1.1 := by simp only [off1, hla, h.2 a la hla]
+  have hoff2 : off2 b t'.1.1 = off2 b t.1.1 := by simp only [off2, hlb, h.2 b lb hlb]
+  refine ⟨p, h.1 p hp, h1, h2, by rw [h.2 a la hla]; rfl, by rw [h.2 b lb hlb]; rfl, ?_⟩
+  rw [hoff1, hoff2]
+  exact hd
+
+/-- **The extraction on the event `Bad2`** outputs the Diffie–Hellman value of the challenge. -/
+theorem extractR_of_bad2 {t : RSim S W K × St K} (h : Bad2 G a b x y t) :
+    extractR G a b (ddhOracle (gapDHDef G)) (G.pub x) (G.pub y) t.1.1 = G.pub (x * y) := by
+  obtain ⟨p, hp, h1, h2, -, -, hd⟩ := h
+  unfold extractR hitR
+  rw [keyA_pub, keyB_pub]
+  set f : Inp (W ⊕ W) × K → Option W := fun p =>
+    if p.1.ini = a ∧ p.1.res = b then
+      match p.1.dh1 with
+      | .inl w => if ddhOracle (gapDHDef G) (G.pub (x + off1 a t.1.1)) (G.pub (y + off2 b t.1.1)) w
+          then some w else none
+      | .inr _ => none
+    else none with hf
+  have hacc : ∀ q w, f q = some w → w = G.pub ((x + off1 a t.1.1) * (y + off2 b t.1.1)) := by
+    intro q w hq
+    simp only [hf] at hq
+    split_ifs at hq with hq1
+    split at hq
+    · split_ifs at hq with hq2
+      simp only [Option.some.injEq] at hq
+      subst hq
+      rw [ddhOracle_pub, decide_eq_true_eq, G.exp_pub] at hq2
+      rw [hq2, mul_comm]
+    · cases hq
+  have hpf : f p = some (G.pub ((x + off1 a t.1.1) * (y + off2 b t.1.1))) := by
+    simp only [hf, h1, h2, and_self, ↓reduceIte, hd, ddhOracle_pub, G.exp_pub, mul_comm,
+      decide_true]
+  cases hs : t.1.1.ro.findSome? f with
+  | none =>
+    rw [List.findSome?_eq_none_iff] at hs
+    rw [hs p hp] at hpf
+    cases hpf
+  | some w =>
+    obtain ⟨q, -, hq⟩ := List.exists_of_findSome?_eq_some hs
+    rw [hacc q w hq]
+    simp only [G.exp_pub, G.mul_pub]
+    congr 1
+    ring
+
 end World
+
+/-! ## The output of the reduction -/
+
+section Output
+
+variable {S W K : Type} [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K]
+  [Inhabited K] (G : DHGroup S W) (a b : PartyId)
+
+/-- **The output distribution of the reduction** is the extraction from the final state of a run
+of `B` against the world of the reduction. -/
+theorem redPMF_eq (O : W → W → W → Bool) (X Y : W) (B : OracleAdv (OEv W) (OOut S W K) Bool) :
+    redPMF G a b O X Y B =
+      (OracleAdv.run (oracleR G a b O X Y) B rInitR).map fun z => extractR G a b O X Y z.2.1.1 := by
+  have hO : ∀ (t : RSim S W K × St K) (e : OEv W),
+      (oracleR G a b O X Y t e).map (Prod.map id fun t => (t, ())) =
+        OracleAdv.simOracle (implR G a b O X Y) (fun (_ : Unit) (q : Empty) => q.elim) (t, ()) e := by
+    intro t e
+    simp only [OracleAdv.simOracle, implR, oracleR, OracleAdv.run_rand, OracleAdv.run_ret,
+      PMF.map_comp, PMF.map_bind, PMF.pure_map]
+    exact (PMF.bind_pure_comp _ _).symm
+  unfold redPMF redTree
+  rw [OracleAdv.run_bind, OracleAdv.run_simulate,
+    ← OracleAdv.run_map_state _ _ (fun t => (t, ())) hO]
+  simp only [PMF.map_comp, PMF.bind_map, OracleAdv.run_ret, PMF.map_bind, Function.comp_def,
+    PMF.pure_map]
+  exact PMF.bind_pure_comp _ _
+
+/-- **The advantage of the reduction** as a probability over the challenge exponents. -/
+theorem gapDH_advantage_gdhRed (B : OracleAdv (OEv W) (OOut S W K) Bool) :
+    GapDH_Advantage (gapDHDef G) (gdhRed G a b B) =
+      ((PMF.uniformFintype S).bind fun x => (PMF.uniformFintype S).bind fun y =>
+        (redPMF G a b (ddhOracle (gapDHDef G)) (G.pub x) (G.pub y) B).map
+          fun c => decide (c = G.pub (x * y))) true := by
+  unfold GapDH_Advantage
+  rw [← prTrue_liftPMF _ Heap.empty]
+  congr 1
+  funext h
+  unfold GapDH_Game
+  have hk : (gapDHDef G).keygen = liftPMF ((PMF.uniformFintype S).map fun s => (G.pub s, G.pub s)) :=
+    rfl
+  simp only [SPComp.monad_bind_eq, gdhRed, hk]
+  rw [liftPMF_bind_apply, PMF.bind_map]
+  conv_rhs => unfold liftPMF
+  rw [PMF.map_bind]
+  refine congrArg _ (funext fun x => ?_)
+  simp only [Function.comp_apply]
+  rw [liftPMF_bind_apply, PMF.bind_map, PMF.map_bind]
+  refine congrArg _ (funext fun y => ?_)
+  simp only [Function.comp_apply]
+  rw [liftPMF_bind_apply, PMF.map_comp, cdh_pub]
+  exact PMF.bind_pure_comp _ _
+
+end Output
 
 end CatCrypt.Crypto.AKE.X3DHSquareGDH
