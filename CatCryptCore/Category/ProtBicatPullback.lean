@@ -155,14 +155,25 @@ theorem oneShotTheory_realizes_iff {hon α : Type} {π₁ π₂ : hon → SPComp
 
 /-! ## The stateless semantics -/
 
+open CatCrypt.Relational CatCrypt.Crypto.UCCoupling in
 /-- The advantage of an environment `Z` between stateless systems is at most `Z.input.rounds`
-times the supremum of the advantages of the one-shot tests. -/
+times the supremum of the advantages of the one-shot tests: each round is coupled up to the
+one-shot distance (`realizes_of_couplingApprox`). -/
 theorem adv_stateless_le_rounds_iSup {hon α ζ : Type} (π₁ π₂ : hon → SPComp α)
     (Z : Env (Strat ζ hon (Option α)) ζ) :
     adv (Sys.stateless π₁) (Sys.stateless π₂) Z ≤
       Z.input.rounds * ⨆ t, (oneShotTheory hon α).adv π₁ π₂ t := by
   rw [oneShotTheory_iSup_adv]
-  exact envTheory_realizes_iff.2 (realizes_stateless_of_sdist le_rfl) ⟨ζ, Z⟩
+  refine realizes_of_couplingApprox (Sys.stateless π₁) (Sys.stateless π₂) (fun _ _ => True)
+    (sdist π₁ π₂) trivial (fun t u x _ => ?_) ζ Z
+  have hx : sdist (fun _ : Unit => π₁ x) (fun _ : Unit => π₂ x) ≤ sdist π₁ π₂ := by
+    unfold sdist
+    exact iSup_mono fun D => iSup_le fun _ => le_iSup_of_le x le_rfl
+  rw [Sys.stateless_step, Sys.stateless_step]
+  unfold SPComp.map
+  refine rHoareApprox_mono_eps (le_of_eq (add_zero _)) (rHoareApprox_bind
+    (rHoareApprox_of_sdist hx) fun r r' => rHoareApprox_of_rHoare ?_)
+  exact rHoare_ret fun _ _ hh => ⟨hh.2, trivial, by rw [hh.1]⟩
 
 /-- The stateless semantics of one-shot protocols as a rounds-graded pullback into the
 environment theory: `π` is related to every system step equivalent to `Sys.stateless π`; an
@@ -175,7 +186,7 @@ noncomputable def statelessPullback (hon α : Type) :
   pull _ s := s
   adv_rel := by
     rintro π₁ ⟨_, X⟩ π₂ ⟨_, Y⟩ hX hY ⟨ζ, Z⟩
-    exact ((compilePullback hon (Option α)).adv_rel (x := ⟨Unit, Sys.stateless π₁⟩)
+    exact ((stepEqPullback hon (Option α)).adv_rel (x := ⟨Unit, Sys.stateless π₁⟩)
       (y := ⟨Unit, Sys.stateless π₂⟩) hX hY ⟨ζ, Z⟩).trans_le
       (adv_stateless_le_rounds_iSup π₁ π₂ Z)
 

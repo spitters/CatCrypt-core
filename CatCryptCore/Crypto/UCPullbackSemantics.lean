@@ -28,8 +28,8 @@ Instances of this change of semantics:
 * `EnvPullback.toAdvPullback`: every environment pullback of `UCPullback` is a pullback of the
   environment theory `envTheory E O` (reactive systems tested by environments) into itself; the
   law there is `EnvPullback.realizes_map`.
-* `compilePullback E O`: compilation of party diagrams. Its relation is step equivalence and
-  its pull is the identity: the system representing the source of a compilable diagram and the
+* `stepEqPullback E O`: step equivalence of systems, with the identity as pull; compilation of
+  party diagrams is an instance: the system representing the source of a compilable diagram and the
   system representing its compiled image represent the same morphism of `SysCat`
   (`compilePullback_rel`). Compilation is a relation, not a map of systems, since a system
   represents a diagram only up to step equivalence; this is the difference to `EnvPullback`.
@@ -42,24 +42,28 @@ Instances of this change of semantics:
   of `G₀` by `G₁` with bound the game advantage.
 
 Adversary absorption is an action on environments up to advantage: absorbing `A` and then `S`
-gives the advantage of absorbing a composite adversary `C` whose attachment has the views of
-attaching `S` and then `A` (`AdvSys.adv_absorb_absorb`, `AdvSys.view_absorb_absorb`); at the level
-of pullbacks, the composite `S.toEnvPullback.comp A.toEnvPullback` pulls back environments with
-the advantages of `C.toEnvPullback`. Absorbing an adversary whose attachment does not change views
-leaves advantages unchanged (`AdvSys.adv_absorb_of_view`).
+gives the advantage of absorbing the composite adversary `S.comp A`, whose attachment has the
+views of attaching `S` and then `A` (`AdvSys.view_attach_comp`, `AdvSys.adv_absorb_absorb`,
+`AdvSys.view_absorb_absorb`); at the level of pullbacks, the composite
+`S.toEnvPullback.comp A.toEnvPullback` pulls back environments with the advantages of
+`(S.comp A).toEnvPullback`. Absorbing the forwarding adversary `AdvSys.dummy` leaves advantages
+unchanged (`AdvSys.adv_absorb_dummy`).
 
 ## Main definitions
 
 * `AdvTheory`, `AdvTheory.Realizes`, `envTheory`, `gameTheory`
 * `AdvPullback`, `AdvPullback.id`, `AdvPullback.comp`
-* `EnvPullback.toAdvPullback`, `compilePullback`, `OProt.toAdvPullback`
+* `EnvPullback.toAdvPullback`, `stepEqPullback`, `OProt.toAdvPullback`
+* `AdvSys.dummy`, `AdvSys.comp`: the forwarding adversary and the composite of adversaries.
 
 ## Main results
 
 * `AdvPullback.realizes_rel`: the pullback law.
 * `envTheory_realizes_iff`: realization in `envTheory` is `Realizes`.
 * `compilePullback_rel`: source and compiled image of a compilable diagram are related.
-* `AdvSys.adv_absorb_absorb`, `AdvSys.view_absorb_absorb`, `AdvSys.adv_absorb_of_view`:
+* `AdvSys.view_attach_dummy`, `AdvSys.view_attach_comp`: views of the attached forwarding and
+  composite adversaries.
+* `AdvSys.adv_absorb_absorb`, `AdvSys.view_absorb_absorb`, `AdvSys.adv_absorb_dummy`:
   absorption as an action.
 -/
 
@@ -168,9 +172,10 @@ example {τ υ E O E' O' : Type} (F : EnvPullback E O E' O') {X : Sys τ E O} {Y
 
 /-! ## Compilation -/
 
-/-- Compilation as a pullback of the environment theory into itself: related systems are step
-equivalent, and the pull is the identity on environments. -/
-noncomputable def compilePullback (E O : Type) :
+/-- Step equivalence as a pullback of the environment theory into itself: related systems are
+step equivalent, and the pull is the identity on environments. Compilation of party diagrams
+relates source and image by it (`compilePullback_rel`). -/
+noncomputable def stepEqPullback (E O : Type) :
     AdvPullback (envTheory E O) (envTheory E O) where
   Rel X X' := Sys.StepEq ⟨X.1, X.2⟩ ⟨X'.1, X'.2⟩
   pull Z := Z
@@ -193,19 +198,19 @@ variable {E O : Type}
 
 /-- **Compilation relates source and image.** The system `A` representing the source of a
 compilable party diagram `f` and the system `B` representing its compiled image are related by
-`compilePullback`. -/
+`stepEqPullback`. -/
 theorem compilePullback_rel {f : (⟨⟨E⟩⟩ : CompiledPartyCat) ⟶ ⟨⟨O⟩⟩} {A B : SysObj E O}
     (hA : PartyCat.toSys.map (sourceFunctor.map f) = (⟦A⟧ : (⟨E⟩ : SysCat) ⟶ ⟨O⟩))
     (hB : (Diag.functor fun {X Y} => @CodeGen.den X Y).map (compileFunctor.map f) =
       (⟦B⟧ : (⟨E⟩ : SysCat) ⟶ ⟨O⟩)) :
-    (compilePullback E O).Rel ⟨A.St, A.sys⟩ ⟨B.St, B.sys⟩ :=
+    (stepEqPullback E O).Rel ⟨A.St, A.sys⟩ ⟨B.St, B.sys⟩ :=
   Quotient.exact (hA.symm.trans ((Diag.functor_map_relabel
     (g := CompGen.den (fun {X Y} => @PartyGen.den X Y) (fun {X Y} => @Compiles X Y))
     (fun x => x.src) (fun _ => rfl) f).trans ((Diag.functor_map_relabel
     (g := CompGen.den (fun {X Y} => @PartyGen.den X Y) (fun {X Y} => @Compiles X Y))
     (fun x => x.code) (fun x => x.compiles.den_eq) f).symm.trans hB)))
 
-/-- `realizesSim_compile` is the law of `compilePullback`. -/
+/-- `realizesSim_compile` is the law of `stepEqPullback`. -/
 example {υ EG OG : Type} {V : PubView E O} {VG : PubView EG OG}
     {f : (⟨⟨E⟩⟩ : CompiledPartyCat) ⟶ ⟨⟨O⟩⟩} {A B : SysObj E O}
     (hA : PartyCat.toSys.map (sourceFunctor.map f) = (⟦A⟧ : (⟨E⟩ : SysCat) ⟶ ⟨O⟩))
@@ -214,11 +219,11 @@ example {υ EG OG : Type} {V : PubView E O} {VG : PubView EG OG}
     {I : Sys υ EG OG} {S : Simulator E O EG OG V VG}
     {b : (ζ : Type) → Env (Strat ζ E O) ζ → ℝ≥0∞}
     (hs : RealizesSim A.sys I S b) : RealizesSim B.sys I S b :=
-  fun ζ Z => (compilePullback E O).realizes_rel (x := ⟨A.St, A.sys⟩) (x' := ⟨B.St, B.sys⟩)
+  fun ζ Z => (stepEqPullback E O).realizes_rel (x := ⟨A.St, A.sys⟩) (x' := ⟨B.St, B.sys⟩)
     (y := ⟨_, S.withSub I⟩) (y' := ⟨_, S.withSub I⟩) (compilePullback_rel hA hB)
     (Relation.EqvGen.refl _) (b := fun Z => b Z.1 Z.2) (fun Z => hs Z.1 Z.2) ⟨ζ, Z⟩
 
-/-- `RealizesSim.ofCompiled` is the law of `compilePullback` at a compiled step. -/
+/-- `RealizesSim.ofCompiled` is the law of `stepEqPullback` at a compiled step. -/
 example {τ Cn : Type} {init : τ} {coins : τ → E → SPComp Cn} {δ : τ → E → Cn → τ × O}
     {code : τ → E → Cn → Option (τ × O)} {Inv : τ → Prop}
     (hc : CompiledStep δ code Inv) (h0 : Inv init) {υ EG OG : Type}
@@ -226,7 +231,7 @@ example {τ Cn : Type} {init : τ} {coins : τ → E → SPComp Cn} {δ : τ →
     {b : (ζ : Type) → Env (Strat ζ E O) ζ → ℝ≥0∞}
     (hs : RealizesSim (Sys.ofCore init coins δ) I S b) :
     RealizesSim (Sys.ofCode init coins code) I S b :=
-  fun ζ Z => (compilePullback E O).realizes_rel (x := ⟨τ, Sys.ofCore init coins δ⟩)
+  fun ζ Z => (stepEqPullback E O).realizes_rel (x := ⟨τ, Sys.ofCore init coins δ⟩)
     (x' := ⟨τ, Sys.ofCode init coins code⟩) (y := ⟨_, S.withSub I⟩) (y' := ⟨_, S.withSub I⟩)
     (compiledStep_stepEq hc h0) (Relation.EqvGen.refl _) (b := fun Z => b Z.1 Z.2)
     (fun Z => hs Z.1 Z.2) ⟨ζ, Z⟩
@@ -283,43 +288,84 @@ namespace AdvSys
 
 variable {α σ γ τ υ ζ AI AM AF LF LM Lk' P Oh : Type}
 
-/-- **Absorption is an action, at the level of advantages.** If attaching `C` has the views of
-attaching `S` and then `A`, then absorbing `A` and then `S` (the composite pullback
-`S.toEnvPullback.comp A.toEnvPullback`) gives every pair of systems the advantage of absorbing
-`C`. -/
+/-- The forwarding (dummy) adversary: it relays each adversary event and each leakage
+unchanged. -/
+noncomputable def dummy (AP Lk : Type) : AdvSys Unit AP AP Lk Lk where
+  init := ()
+  act a i := SPComp.pure (a, i)
+  out a l := SPComp.pure (a, l)
+  act_noFail _ _ := SPComp.pure_noFail _
+  out_noFail _ _ := SPComp.pure_noFail _
+
+/-- The composite adversary system: `A` faces the environment, `S` faces the system, and the
+system interface `AM`/`LM` of `A` is the environment interface of `S`. -/
+noncomputable def comp (S : AdvSys σ AM AF LF LM) (A : AdvSys α AI AM LM Lk') :
+    AdvSys (α × σ) AI AF LF Lk' where
+  init := (A.init, S.init)
+  act s i :=
+    SPComp.bind (A.act s.1 i) fun a =>
+      SPComp.bind (S.act s.2 a.2) fun b => SPComp.pure ((a.1, b.1), b.2)
+  out s l :=
+    SPComp.bind (S.out s.2 l) fun b =>
+      SPComp.bind (A.out s.1 b.2) fun a => SPComp.pure ((a.1, b.1), a.2)
+  act_noFail _ _ :=
+    Assumptions.SPComp.bind_noFail (A.act_noFail _ _) fun _ =>
+      Assumptions.SPComp.bind_noFail (S.act_noFail _ _) fun _ => SPComp.pure_noFail _
+  out_noFail _ _ :=
+    Assumptions.SPComp.bind_noFail (S.out_noFail _ _) fun _ =>
+      Assumptions.SPComp.bind_noFail (A.out_noFail _ _) fun _ => SPComp.pure_noFail _
+
+/-- Attaching the forwarding adversary does not change the view. -/
+theorem view_attach_dummy (R : Sys τ (Event P AF) (Oh × LF))
+    (Z : Strat ζ (Event P AF) (Oh × LF)) :
+    view (R.attach (dummy AF LF)) Z = view R Z := by
+  refine view_eq_of_stepMap _ R Prod.snd rfl ?_ Z
+  intro t e
+  cases e <;>
+    simp [Sys.attach, Hybrid.withSub, AdvSys.toHybrid, AdvSys.pre, AdvSys.post, dummy,
+      SPComp.map, SPComp.bind_assoc, SPComp.pure_bind, SPComp.bind_pure]
+
+/-- Attaching `S` and then `A` has the view of attaching the composite `S.comp A`. -/
+theorem view_attach_comp (R : Sys τ (Event P AF) (Oh × LF))
+    (S : AdvSys σ AM AF LF LM) (A : AdvSys α AI AM LM Lk')
+    (Z : Strat ζ (Event P AI) (Oh × Lk')) :
+    view ((R.attach S).attach A) Z = view (R.attach (S.comp A)) Z := by
+  refine view_eq_of_stepMap _ _ (fun t => ((t.1, t.2.1), t.2.2)) rfl ?_ Z
+  intro t e
+  cases e <;>
+    simp [Sys.attach, Hybrid.withSub, AdvSys.toHybrid, AdvSys.pre, AdvSys.post, comp,
+      SPComp.map, SPComp.bind_assoc, SPComp.pure_bind]
+
+/-- **Absorption is an action, at the level of advantages.** Absorbing `A` and then `S` (the
+composite pullback `S.toEnvPullback.comp A.toEnvPullback`) gives every pair of systems the
+advantage of absorbing the composite adversary `S.comp A`. -/
 theorem adv_absorb_absorb (S : AdvSys σ AM AF LF LM) (A : AdvSys α AI AM LM Lk')
-    (C : AdvSys γ AI AF LF Lk')
-    (hC : ∀ {τ' : Type} (R : Sys τ' (Event P AF) (Oh × LF)) (Z : Strat ζ (Event P AI) (Oh × Lk')),
-      view ((R.attach S).attach A) Z = view (R.attach C) Z)
     (R : Sys τ (Event P AF) (Oh × LF)) (I : Sys υ (Event P AF) (Oh × LF))
     (Z : Env (Strat ζ (Event P AI) (Oh × Lk')) ζ) :
-    adv R I ((S.toEnvPullback.comp A.toEnvPullback).pull Z) = adv R I (C.toEnvPullback.pull Z) := by
-  change adv R I ((Z.absorb A).absorb S) = adv R I (Z.absorb C)
-  rw [← adv_attach R I S, ← adv_attach _ _ A, ← adv_attach R I C, adv_eq, adv_eq, hC R, hC I]
+    adv R I ((S.toEnvPullback.comp A.toEnvPullback).pull Z) =
+      adv R I ((S.comp A).toEnvPullback.pull Z) := by
+  change adv R I ((Z.absorb A).absorb S) = adv R I (Z.absorb (S.comp A))
+  rw [← adv_attach R I S, ← adv_attach _ _ A, ← adv_attach R I (S.comp A), adv_eq, adv_eq,
+    view_attach_comp R S A, view_attach_comp I S A]
 
-/-- **Absorption is an action, at the level of views.** If attaching `C` has the views of
-attaching `S` and then `A`, the view of `R` against `Z` with `A` and then `S` absorbed, projected
-to the state of `Z`, is the view against `Z` with `C` absorbed, projected likewise. -/
+/-- **Absorption is an action, at the level of views.** The view of `R` against `Z` with `A` and
+then `S` absorbed, projected to the state of `Z`, is the view against `Z` with the composite
+`S.comp A` absorbed, projected likewise. -/
 theorem view_absorb_absorb (S : AdvSys σ AM AF LF LM) (A : AdvSys α AI AM LM Lk')
-    (C : AdvSys γ AI AF LF Lk')
-    (hC : ∀ (R : Sys τ (Event P AF) (Oh × LF)) (Z : Strat ζ (Event P AI) (Oh × Lk')),
-      view ((R.attach S).attach A) Z = view (R.attach C) Z)
     (R : Sys τ (Event P AF) (Oh × LF)) (Z : Strat ζ (Event P AI) (Oh × Lk')) :
     SPComp.map (fun c => c.1.1) (view R ((Z.absorb A).absorb S)) =
-      SPComp.map Prod.fst (view R (Z.absorb C)) := by
-  rw [← view_attach R C, ← hC, view_attach, view_attach, SPComp.map_comp]
+      SPComp.map Prod.fst (view R (Z.absorb (S.comp A))) := by
+  rw [← view_attach R (S.comp A), ← view_attach_comp R S A, view_attach, view_attach,
+    SPComp.map_comp]
   rfl
 
-/-- **Unit of the action.** If attaching `D` does not change views, absorbing `D` does not change
-the advantage of any pair of systems. -/
-theorem adv_absorb_of_view (D : AdvSys γ AF AF LF LF)
-    (hD : ∀ {τ' : Type} (R : Sys τ' (Event P AF) (Oh × LF)) (Z : Strat ζ (Event P AF) (Oh × LF)),
-      view (R.attach D) Z = view R Z)
-    (R : Sys τ (Event P AF) (Oh × LF)) (I : Sys υ (Event P AF) (Oh × LF))
+/-- **Unit of the action.** Absorbing the forwarding adversary does not change the advantage of
+any pair of systems. -/
+theorem adv_absorb_dummy (R : Sys τ (Event P AF) (Oh × LF)) (I : Sys υ (Event P AF) (Oh × LF))
     (Z : Env (Strat ζ (Event P AF) (Oh × LF)) ζ) :
-    adv R I (D.toEnvPullback.pull Z) = adv R I Z := by
-  change adv R I (Z.absorb D) = adv R I Z
-  rw [← adv_attach R I D, adv_eq, adv_eq, hD R, hD I]
+    adv R I ((dummy AF LF).toEnvPullback.pull Z) = adv R I Z := by
+  change adv R I (Z.absorb (dummy AF LF)) = adv R I Z
+  rw [← adv_attach R I (dummy AF LF), adv_eq, adv_eq, view_attach_dummy R, view_attach_dummy I]
 
 end AdvSys
 

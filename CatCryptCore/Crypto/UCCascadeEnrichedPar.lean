@@ -28,8 +28,8 @@ one-hole contexts whose environment reduction runs the hole for a fixed number o
 pads the rounds in which the hole is not activated with the idle event (`realizes_par`,
 `Realizes.loopback`); a system that changes its state or its output on every event has no such
 padding. The condition is a property of the class, invariant under step equivalence by
-construction, so the classes idle at given events form a subcategory of each hom-type on which
-the operations are non-expansive maps of Lawvere metric spaces. Each operation of a parallel
+construction, so the classes idle at given events form a subspace of each hom-object, and the
+operations restricted to these subspaces are non-expansive maps of Lawvere metric spaces. Each operation of a parallel
 composition carries one idle event per factor, shared by the two classes compared; the feedback
 carries one idle event on its full interface `E ⊕ X`.
 
