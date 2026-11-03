@@ -2144,4 +2144,76 @@ theorem smFS_game_eq (C : CKADef Sc Msg Key) [CKACoins C Rand]
 
 end FSHop
 
+/-! ## The composition theorem -/
+
+section Main
+
+variable {Sc Msg Key Rand RK Sa W Ct : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
+  [SampleableType Ct] [Fintype RK] [Nonempty RK] [Fintype Key] [Nonempty Key] [Fintype Sa]
+  [Nonempty Sa] [DecidableEq RK] [DecidableEq Key]
+
+/-- **Secure messaging with state corruption from CKA, PRF-PRNG and FS-AEAD security.** Let the
+CKA `C` have a sound explicit-randomness sending algorithm and an initialisation that is the
+lift of `initP`, and let the corruption delays satisfy `2 ≤ ΔFS` and `1 ≤ ΔPCS`. For every
+secure-messaging adversary `A`, the advantage of `A` against the double ratchet of `C`, the root
+KDF `R`, the chain generator `G` and the AEAD `D` is at most
+
+* the CKA corruption advantages (with the same delays) of the reductions `smcCKARed R G D b A`,
+* the PRF-PRNG advantages of `R` at the reductions `smcRootRed C R G D ΔFS ΔPCS b initP A`,
+
+for the two challenge modes `b`, plus the FS-AEAD advantage with corruption of `G` and `D` at
+the reduction `smcFSRed C R G D ΔFS ΔPCS initP A`. -/
+theorem sm_corrupt_advantage_le (C : CKADef Sc Msg Key) [CKACoins C Rand]
+    (hS : CKACoins.Sound C) (initP : PMF (Msg × Sc × Sc)) (hinit : C.init = liftPMF initP)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    {ΔFS ΔPCS : ℕ} (hFS : 2 ≤ ΔFS) (hPCS : 1 ≤ ΔPCS) (A : SMCorruptAdv Sc Msg RK Sa W Ct) :
+    SM_Corrupt_Advantage C R G D ΔFS ΔPCS A ≤
+      ∑ b : Bool, CKA_Corrupt_Advantage C ΔFS ΔPCS (smcCKARed R G D b A) +
+        ∑ b : Bool, PRFPRNG_Advantage R (smcRootRed C R G D ΔFS ΔPCS b initP A) +
+        FSAEAD_Corrupt_Advantage G D (smcFSRed C R G D ΔFS ΔPCS initP A) := by
+  have e0 : ∀ b, sm_corrupt_game C R G D ΔFS ΔPCS b A =
+      cka_corrupt_real C ΔFS ΔPCS (smcCKARed R G D b A) := fun b =>
+    (smCKA_game_eq C hS initP hinit R G D ΔFS ΔPCS b false A).symm
+  have e1 : ∀ b, cka_corrupt_ideal C ΔFS ΔPCS (smcCKARed R G D b A) =
+      pp_game (rootFn R) false false (smcRootRed C R G D ΔFS ΔPCS b initP A) := fun b =>
+    (smCKA_game_eq C hS initP hinit R G D ΔFS ΔPCS b true A).trans
+      (smRoot_real_eq C initP hinit R G D ΔFS ΔPCS b A).symm
+  have e2 : ∀ b, pp_game (rootFn R) true true (smcRootRed C R G D ΔFS ΔPCS b initP A) =
+      fsaead_corrupt_game G D b (smcFSRed C R G D ΔFS ΔPCS initP A) := fun b =>
+    (smRoot_ideal_eq C initP hinit R G D ΔFS ΔPCS b A).trans
+      (smFS_game_eq C initP hinit R G D hFS hPCS b A).symm
+  have hK : ∀ b, Advantage (sm_corrupt_game C R G D ΔFS ΔPCS b A)
+      (pp_game (rootFn R) false false (smcRootRed C R G D ΔFS ΔPCS b initP A)) =
+      CKA_Corrupt_Advantage C ΔFS ΔPCS (smcCKARed R G D b A) := fun b => by
+    rw [e0, ← e1]; rfl
+  have hP : ∀ b, Advantage (pp_game (rootFn R) false false (smcRootRed C R G D ΔFS ΔPCS b initP A))
+      (fsaead_corrupt_game G D b (smcFSRed C R G D ΔFS ΔPCS initP A)) =
+      PRFPRNG_Advantage R (smcRootRed C R G D ΔFS ΔPCS b initP A) := fun b => by
+    rw [← e2]; rfl
+  unfold SM_Corrupt_Advantage
+  simp only [Fintype.sum_bool]
+  set G0 := sm_corrupt_game C R G D ΔFS ΔPCS false A
+  set G1 := sm_corrupt_game C R G D ΔFS ΔPCS true A
+  set H0 := pp_game (rootFn R) false false (smcRootRed C R G D ΔFS ΔPCS false initP A)
+  set H1 := pp_game (rootFn R) false false (smcRootRed C R G D ΔFS ΔPCS true initP A)
+  set F0 := fsaead_corrupt_game G D false (smcFSRed C R G D ΔFS ΔPCS initP A)
+  set F1 := fsaead_corrupt_game G D true (smcFSRed C R G D ΔFS ΔPCS initP A)
+  have hF : Advantage F0 F1 = FSAEAD_Corrupt_Advantage G D (smcFSRed C R G D ΔFS ΔPCS initP A) :=
+    rfl
+  calc Advantage G0 G1
+      ≤ Advantage G0 H0 + Advantage H0 G1 := advantage_triangle _ _ _
+    _ ≤ Advantage G0 H0 + (Advantage H0 F0 + Advantage F0 G1) := by
+        gcongr; exact advantage_triangle _ _ _
+    _ ≤ Advantage G0 H0 + (Advantage H0 F0 + (Advantage F0 F1 + Advantage F1 G1)) := by
+        gcongr; exact advantage_triangle _ _ _
+    _ ≤ Advantage G0 H0 + (Advantage H0 F0 + (Advantage F0 F1 +
+          (Advantage F1 H1 + Advantage H1 G1))) := by
+        gcongr; exact advantage_triangle _ _ _
+    _ = (Advantage G0 H0 + Advantage G1 H1) + (Advantage H0 F0 + Advantage H1 F1) +
+          Advantage F0 F1 := by
+        rw [Advantage_sym F1 H1, Advantage_sym H1 G1]; ring
+    _ = _ := by rw [hK, hK, hP, hP, hF]; ring
+
+end Main
+
 end CatCrypt.Crypto.Messaging
