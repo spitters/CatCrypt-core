@@ -297,6 +297,7 @@ theorem redTimed_erase (B : OracleAdv.Timed (OEv W) (OOut S W K) Bool) :
       redTree G a b O X Y B.erase :=
   redLoop_erase G a b O OCost X Y coeCost mulCost toFunCost expCost B rInitR
 
+omit [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K] in
 theorem extTime_le (rs : RSt S (W ⊕ W) K) {tO tm tf te : ℕ} (hO : ∀ x y z, OCost x y z ≤ tO)
     (hm : ∀ x y, mulCost x y ≤ tm) (hf : ∀ x, toFunCost x ≤ tf) (he : ∀ x y, expCost x y ≤ te) :
     extTime G a b O OCost X Y mulCost toFunCost expCost rs ≤
@@ -333,6 +334,7 @@ theorem extTime_le (rs : RSt S (W ⊕ W) K) {tO tm tf te : ℕ} (hO : ∀ x y z,
     · have := hf 0
       omega
 
+omit [Inhabited K] in
 theorem otherC_time (s : RSim S W K) (e : OEv W) {tO tm tf te tc : ℕ}
     (hO : ∀ x y z, OCost x y z ≤ tO) (hm : ∀ x y, mulCost x y ≤ tm) (hf : ∀ x, toFunCost x ≤ tf)
     (he : ∀ x y, expCost x y ≤ te) (hc : ∀ x y, coeCost x y ≤ tc) :
@@ -343,15 +345,18 @@ theorem otherC_time (s : RSim S W K) (e : OEv W) {tO tm tf te tc : ℕ}
         10 * s.1.st.notices.length := by
   time_bound
 
+omit [Field S] [Fintype S] [SampleableType W] [Inhabited K] in
 theorem finishC_time (p : RSim S W K × Dec S W K) (t : St K) :
     SPTree.Timed.stepTime (finishC.tree.timed (liftR p.1, p.2) t (fun _ => 0) (fun _ => 0)) ≤
       100 + 10 * t.notices.length := by
   time_bound
 
+omit [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K] in
 theorem ltTime_le (rs : RSt S (W ⊕ W) K) (pid : PartyId) : ltTime rs pid ≤ 4 := by
   unfold ltTime
   time_bound
 
+omit [Fintype S] in
 theorem delTime_le (rs : RSt S (W ⊕ W) K) (inp : Inst → Option (Inp (W ⊕ W))) (x : Inst)
     (r : Rec K) (ip : Inp (W ⊕ W)) {tO tm tf te : ℕ}
     (hO : ∀ x y z, OCost x y z ≤ tO) (hm : ∀ x y, mulCost x y ≤ tm) (hf : ∀ x, toFunCost x ≤ tf)
@@ -361,14 +366,290 @@ theorem delTime_le (rs : RSt S (W ⊕ W) K) (inp : Inst → Option (Inp (W ⊕ W
   unfold delTime
   time_bound
 
+omit [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K] in
 theorem cguard_time (s : RSim S W K) (sid : SessionId) (pid : PartyId) :
     SPTree.Timed.stepTime (cguardC.tree.timed (liftR s) sid pid (fun _ => 0) (fun _ => 0)) ≤ 20 := by
   time_bound
 
+omit [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K] in
 theorem sguard_time (s : RSim S W K) (sid : SessionId) (pid : PartyId) :
     SPTree.Timed.stepTime (sguardC.tree.timed (liftR s) sid pid (fun _ => 0) (fun _ => 0)) ≤ 20 := by
   time_bound
 
 end Costed
+
+/-! ## The sizes of the state -/
+
+section Size
+
+variable {S W K : Type} [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K]
+  [Inhabited K] (G : DHGroup S W) (a b : PartyId) (O : W → W → W → Bool) (X Y : W)
+
+/-- The sizes of a state of the world of the reduction after `i` steps: the table and the two
+lists of notices have at most `i` entries. -/
+def Sz (i : ℕ) (t : RSim S W K × St K) : Prop :=
+  t.1.1.ro.length ≤ i ∧ t.1.1.st.notices.length ≤ i ∧ t.2.notices.length ≤ i
+
+omit [Fintype S] [Fintype K] [Nonempty K] [Inhabited K] in
+theorem sroDet_length (ZA ZB : W) (tb : List (Inp (W ⊕ W) × K)) (j : Inp (W ⊕ W)) (k : K) :
+    (sroDet G O ZA ZB tb j k).2.length ≤ tb.length + 1 := by
+  rcases sroDet_snd G O ZA ZB tb j k with h | h <;> rw [h] <;> simp
+
+omit [Fintype K] [Nonempty K] [Inhabited K] in
+theorem addSession_notices (t : St K) (z : Inst) (peer : PartyId) (role : Role) :
+    (addSession t z peer role).notices.length ≤ t.notices.length + 1 := by
+  unfold addSession
+  split <;> simp
+
+omit [Fintype K] [Nonempty K] [Inhabited K] in
+theorem setRec_notices (t : St K) (z : Inst) (r : Rec K) : (setRec t z r).notices = t.notices :=
+  rfl
+
+omit [Fintype S] [Fintype K] [Nonempty K] in
+theorem deliverR_len (rs : RSt S (W ⊕ W) K) (inp : Inst → Option (Inp (W ⊕ W))) (z : Inst)
+    (rc : Rec K) (ip : Inp (W ⊕ W)) (k : K) :
+    (deliverR G a b O X Y rs inp z rc ip k).1.1.ro.length ≤ rs.ro.length + 1 ∧
+      (deliverR G a b O X Y rs inp z rc ip k).1.1.st.notices.length ≤ rs.st.notices.length := by
+  unfold deliverR
+  split
+  · exact ⟨sroDet_length G O _ _ _ _ _, le_rfl⟩
+  · exact ⟨Nat.le_succ _, le_rfl⟩
+
+omit [Fintype S] [Fintype K] [Nonempty K] in
+/-- **A start of the simulator of the reduction adds at most one entry** to the table and to the
+notices. -/
+theorem startR_len (s : RSim S W K) (e : OEv W) (r : Draw S K) :
+    (startR G a b O X Y s e r).1.1.ro.length ≤ s.1.ro.length + 1 ∧
+      (startR G a b O X Y s e r).1.1.st.notices.length ≤ s.1.st.notices.length + 1 := by
+  rcases e with (⟨sid, pid, peer, role⟩ | ⟨sid, pid⟩) | (_ | _ | pid | ⟨sid, pid⟩ | pid |
+    ⟨sid, pid⟩ | ⟨sid, pid, e⟩ | q)
+  · simp only [startR]
+    split
+    · exact ⟨Nat.le_succ _, addSession_notices _ _ _ _⟩
+    · exact ⟨Nat.le_succ _, Nat.le_succ _⟩
+  · exact ⟨Nat.le_succ _, Nat.le_succ _⟩
+  · exact ⟨Nat.le_succ _, Nat.le_succ _⟩
+  · simp only [startR, (pollStep_fst _).2.2]
+    exact ⟨Nat.le_succ _, Nat.le_succ _⟩
+  · simp only [startR, ltD_ro, ltD_st]
+    exact ⟨Nat.le_succ _, Nat.le_succ _⟩
+  · exact ⟨Nat.le_succ _, Nat.le_succ _⟩
+  · simp only [startR]
+    split
+    · exact ⟨Nat.le_succ _, Nat.le_succ _⟩
+    · simp only [corruptStep, ltD_ro, ltD_st]
+      exact ⟨Nat.le_succ _, Nat.le_succ _⟩
+  · simp only [startR, completeR]
+    repeat' split
+    all_goals first
+      | exact ⟨Nat.le_succ _, Nat.le_succ _⟩
+      | refine ⟨(deliverR_len G a b O X Y _ _ _ _ _ _).1.trans ?_,
+          (deliverR_len G a b O X Y _ _ _ _ _ _).2.trans ?_⟩ <;> simp only [ltD_ro, ltD_st] <;> omega
+  · simp only [startR, sendR]
+    repeat' split
+    all_goals first
+      | exact ⟨Nat.le_succ _, Nat.le_succ _⟩
+      | refine ⟨(deliverR_len G a b O X Y _ _ _ _ _ _).1.trans ?_,
+          (deliverR_len G a b O X Y _ _ _ _ _ _).2.trans ?_⟩ <;> simp only [ltD_ro, ltD_st] <;> omega
+  · simp only [startR]
+    exact ⟨sroDet_length G O _ _ _ _ _, Nat.le_succ _⟩
+
+omit [Fintype K] [Nonempty K] [Inhabited K] in
+/-- A step of `F_AKE` adds at most one notice. -/
+theorem fStepD_len (t : St K) (g : FEv K) (kf : K) :
+    (fStepD t g kf).1.notices.length ≤ t.notices.length + 1 := by
+  rcases g with (⟨sid, pid, peer, role⟩ | ⟨sid, pid⟩) | (_ | _ | pid | ⟨sid, pid⟩ | ⟨sid, pid, k⟩ |
+    ⟨sid, pid, k⟩)
+  · exact addSession_notices _ _ _ _
+  · exact Nat.le_succ _
+  · exact Nat.le_succ _
+  · simp only [fStepD, advD, (pollStep_fst _).2.2]
+    exact Nat.le_succ _
+  · exact Nat.le_succ _
+  · exact Nat.le_succ _
+  · simp only [fStepD, advD, newKeyStep]
+    repeat' split
+    all_goals exact Nat.le_succ _
+  · simp only [fStepD, advD, newKeyFreshStep]
+    repeat' split
+    all_goals exact Nat.le_succ _
+
+omit [Fintype S] [Fintype K] [Nonempty K] in
+/-- **A step of the world of the reduction keeps the sizes** after one more step. -/
+theorem sz_stepR {i : ℕ} {t : RSim S W K × St K} (h : Sz i t) (e : OEv W) (r : Draw S K × K) :
+    Sz (i + 1) (stepR G a b O X Y t e r).1 := by
+  obtain ⟨hs1, hs2⟩ := startR_len G a b O X Y t.1 e r.1
+  obtain ⟨h1, h2, h3⟩ := h
+  simp only [Sz, stepR]
+  rw [stop_drive0D _ _ (fun _ _ => rfl)]
+  refine ⟨by omega, by omega, ?_⟩
+  unfold drive0D
+  split
+  · dsimp only
+    omega
+  · have := fStepD_len t.2 ‹_› r.2
+    dsimp only
+    omega
+
+end Size
+
+/-! ## The time of the reduction -/
+
+section Time
+
+variable {S W K : Type} [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K]
+  [Inhabited K] (G : DHGroup S W) (a b : PartyId) (O : W → W → W → Bool)
+  (OCost : W → W → W → ℕ) (X Y : W) (coeCost : S ≃ W → S → ℕ) (mulCost : W → W → ℕ)
+  (toFunCost : S → ℕ) (expCost : W → S → ℕ)
+
+/-- The bound of a step after `i` steps, for primitive costs at most `tO` (decision oracle),
+`tm` (group operation), `te` (exponentiation), `tf` and `tc` (public value of an exponent). -/
+def stepBound (tO tm te tf tc i : ℕ) : ℕ :=
+  1000 + 50 * (tO + tm + te + tf + tc) + (3 * (tO + tm + te + tf) + 60) * i + 20 * i
+
+/-- The bound of the extraction after `i` steps. -/
+def extBound (tO tm te tf i : ℕ) : ℕ :=
+  100 + 4 * tm + 3 * te + 3 * tf + (tO + 2 * tm + 2 * tf + 40) * i
+
+/-- **The time of a step** of the world of the reduction after `i` steps is at most
+`stepBound … i`. -/
+theorem stepTime_le {i : ℕ} {t : RSim S W K × St K} (hsz : Sz i t) (e : OEv W)
+    (r : Draw S K × K) {tO tm tf te tc : ℕ}
+    (hO : ∀ x y z, OCost x y z ≤ tO) (hm : ∀ x y, mulCost x y ≤ tm) (hf : ∀ x, toFunCost x ≤ tf)
+    (he : ∀ x y, expCost x y ≤ te) (hc : ∀ x y, coeCost x y ≤ tc) :
+    stepTime G a b O OCost X Y coeCost mulCost toFunCost expCost t e r ≤
+      stepBound tO tm te tf tc i := by
+  obtain ⟨h1, h2, h3⟩ := hsz
+  have hfin := finishC_time (startR G a b O X Y t.1 e r.1) t.2
+  have hL : (3 * (tO + tm + te + tf) + 60) * t.1.1.ro.length ≤
+      (3 * (tO + tm + te + tf) + 60) * i := Nat.mul_le_mul_left _ h1
+  have hdel : ∀ (rs : RSt S (W ⊕ W) K) (inp : Inst → Option (Inp (W ⊕ W))) (z : Inst)
+      (rc : Rec K) (ip : Inp (W ⊕ W)),
+      delTime G a b O OCost X Y mulCost toFunCost expCost rs inp z rc ip ≤
+        200 + 20 * (tO + tm + te + tf) + (3 * (tO + tm + te + tf) + 60) * rs.ro.length :=
+    fun rs inp z rc ip => delTime_le G a b O OCost X Y mulCost toFunCost expCost rs inp z rc ip
+      hO hm hf he
+  unfold stepTime finTime stepBound
+  rcases e with (⟨sid, pid, peer, role⟩ | ⟨sid, pid⟩) | (_ | _ | pid | ⟨sid, pid⟩ | pid |
+    ⟨sid, pid⟩ | ⟨sid, pid, e⟩ | q)
+  rotate_left 7
+  · simp only [startTime, completeTime]
+    have := cguard_time t.1 sid pid
+    split
+    · rename_i rc ek opk _
+      have := ltTime_le t.1.1 pid
+      have := ltTime_le (ltD t.1.1 pid r.1.2.1).2 rc.peer
+      refine le_trans (Nat.add_le_add_right (Nat.add_le_add_left (Nat.add_le_add_left
+        (Nat.add_le_add_left (hdel _ _ _ _ _) _) _) _) _) ?_
+      simp only [ltD_ro]
+      generalize (3 * (tO + tm + te + tf) + 60) * t.1.1.ro.length = P₁ at hL ⊢
+      generalize (3 * (tO + tm + te + tf) + 60) * i = P₂ at hL ⊢
+      omega
+    · omega
+  · simp only [startTime, sendTime]
+    have := sguard_time t.1 sid pid
+    split
+    · rename_i rc opk _
+      have := ltTime_le t.1.1 pid
+      have := ltTime_le (ltD t.1.1 pid r.1.2.1).2 rc.peer
+      refine le_trans (Nat.add_le_add_right (Nat.add_le_add_left (Nat.add_le_add_left
+        (Nat.add_le_add_left (hdel _ _ _ _ _) _) _) _) _) ?_
+      simp only [ltD_ro]
+      generalize (3 * (tO + tm + te + tf) + 60) * t.1.1.ro.length = P₁ at hL ⊢
+      generalize (3 * (tO + tm + te + tf) + 60) * i = P₂ at hL ⊢
+      omega
+    · omega
+  all_goals
+    simp only [startTime]
+    refine le_trans (Nat.add_le_add_right (Nat.add_le_add_left
+      (otherC_time G a b O OCost X Y coeCost mulCost toFunCost expCost t.1 _ hO hm hf he hc) _) _) ?_
+    generalize (3 * (tO + tm + te + tf) + 60) * t.1.1.ro.length = P₁ at hL ⊢
+    generalize (3 * (tO + tm + te + tf) + 60) * i = P₂ at hL ⊢
+    omega
+
+theorem stepBound_mono (tO tm te tf tc : ℕ) {i j : ℕ} (h : i ≤ j) :
+    stepBound tO tm te tf tc i ≤ stepBound tO tm te tf tc j := by
+  unfold stepBound
+  have := Nat.mul_le_mul_left (3 * (tO + tm + te + tf) + 60) h
+  omega
+
+theorem extBound_mono (tO tm te tf : ℕ) {i j : ℕ} (h : i ≤ j) :
+    extBound tO tm te tf i ≤ extBound tO tm te tf j := by
+  unfold extBound
+  have := Nat.mul_le_mul_left (tO + 2 * tm + 2 * tf + 40) h
+  omega
+
+/-- **The time of the costed reduction loop**: from a state of sizes at most `i`, a costed
+adversary of time `T` with at most `q` queries runs in time at most
+`T + q · stepBound … (i + q) + extBound … (i + q)`. -/
+theorem redLoop_timeBound {tO tm tf te tc : ℕ}
+    (hO : ∀ x y z, OCost x y z ≤ tO) (hm : ∀ x y, mulCost x y ≤ tm) (hf : ∀ x, toFunCost x ≤ tf)
+    (he : ∀ x y, expCost x y ≤ te) (hc : ∀ x y, coeCost x y ≤ tc) :
+    ∀ (B : OracleAdv.Timed (OEv W) (OOut S W K) Bool) (T q i : ℕ) (t : RSim S W K × St K),
+      Sz i t → B.TimeBound T → B.erase.IsQueryBound q →
+      OracleAdv.Timed.StepTimeBound
+        (redLoop G a b O OCost X Y coeCost mulCost toFunCost expCost B t)
+        (T + q * stepBound tO tm te tf tc (i + q) + extBound tO tm te tf (i + q)) := by
+  intro B
+  induction B with
+  | ret o =>
+    intro T q i t hsz _ _
+    refine ⟨?_, trivial⟩
+    have h1 := extTime_le G a b O OCost X Y mulCost toFunCost expCost t.1.1 hO hm hf he
+    have h2 := Nat.mul_le_mul_left (tO + 2 * tm + 2 * tf + 40) hsz.1
+    have h3 := extBound_mono tO tm te tf (Nat.le_add_right i q)
+    simp only [redLoop, extBound] at h1 h3 ⊢
+    omega
+  | rand p c k ih =>
+    intro T q i t hsz hB hq
+    simp only [redLoop]
+    have h0 := hB.1
+    refine ⟨Nat.zero_le _, by omega, fun x => ?_⟩
+    have hx := (hB.2 x).1
+    obtain ⟨h1, h2⟩ := ih x (T - 1 - c x) q i t hsz (hB.2 x).2 (hq x)
+    dsimp only
+    refine ⟨by omega, h2.mono (by omega)⟩
+  | query d c k ih =>
+    intro T q i t hsz hB hq
+    cases q with
+    | zero => exact (hq : False).elim
+    | succ q =>
+      simp only [redLoop]
+      refine ⟨Nat.zero_le _, by have := hB.1; omega, fun r => ?_⟩
+      have hx := (hB.2 (stepR G a b O X Y t d r).2).1
+      obtain ⟨h1, h2⟩ := ih (stepR G a b O X Y t d r).2 (T - 1 - c (stepR G a b O X Y t d r).2) q
+        (i + 1) (stepR G a b O X Y t d r).1 (sz_stepR G a b O X Y hsz d r)
+        (hB.2 (stepR G a b O X Y t d r).2).2 (hq (stepR G a b O X Y t d r).2)
+      have hs := stepTime_le G a b O OCost X Y coeCost mulCost toFunCost expCost hsz d r hO hm hf he
+        hc
+      have hmono := stepBound_mono tO tm te tf tc (show i ≤ i + (q + 1) by omega)
+      have h0 := hB.1
+      rw [show i + 1 + q = i + (q + 1) by omega] at h1 h2
+      generalize stepBound tO tm te tf tc (i + (q + 1)) = F at h1 h2 hmono ⊢
+      generalize extBound tO tm te tf (i + (q + 1)) = E at h1 h2 ⊢
+      rw [Nat.succ_mul]
+      generalize q * F = P at h1 h2 ⊢
+      dsimp only
+      refine ⟨by omega, h2.mono (by omega)⟩
+
+/-- **The time of the gap Diffie–Hellman reduction.** For a costed oracle adversary `B` of time
+`T` with at most `q` queries and primitive costs at most `tO` (decision oracle), `tm` (group
+operation), `te` (exponentiation), `tf` and `tc` (public value of an exponent), the costed
+reduction `redTimed`, whose erasure is the program `redTree` of `gdhRed G a b`, runs in time at
+most `T + q · stepBound … q + extBound … q`, the time of the adversary plus a polynomial of degree
+two in its number of queries. -/
+theorem redTimed_timeBound (B : OracleAdv.Timed (OEv W) (OOut S W K) Bool) {T q : ℕ}
+    (hB : B.TimeBound T) (hq : B.erase.IsQueryBound q) {tO tm tf te tc : ℕ}
+    (hO : ∀ x y z, OCost x y z ≤ tO) (hm : ∀ x y, mulCost x y ≤ tm) (hf : ∀ x, toFunCost x ≤ tf)
+    (he : ∀ x y, expCost x y ≤ te) (hc : ∀ x y, coeCost x y ≤ tc) :
+    OracleAdv.Timed.StepTimeBound
+      (redTimed G a b O OCost X Y coeCost mulCost toFunCost expCost B)
+      (T + q * stepBound tO tm te tf tc q + extBound tO tm te tf q) := by
+  have h := redLoop_timeBound G a b O OCost X Y coeCost mulCost toFunCost expCost hO hm hf he hc B
+    T q 0 rInitR ⟨le_rfl, le_rfl, le_rfl⟩ hB hq
+  unfold redTimed
+  simpa only [Nat.zero_add] using h
+
+end Time
 
 end CatCrypt.Crypto.AKE.X3DHSquareGDH
