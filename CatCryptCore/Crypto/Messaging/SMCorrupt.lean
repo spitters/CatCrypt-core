@@ -383,6 +383,366 @@ noncomputable def SM_Corrupt_Advantage (C : CKADef Sc Msg Key) [CKACoins C Rand]
 
 end Game
 
+/-! ## The structure of the game: monotone counters and the opening of the challenge epoch -/
+
+section Structure
+
+variable {Sc Msg Key Rand RK Sa W Ct : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
+  [SampleableType Ct]
+
+/-- The opening of the challenge epoch `t`: a new epoch by a party that may send, whose counter
+is one before `t`. -/
+def smCrit (t : ℕ) (s : SMSt Sc Msg RK Sa) : SMQuery W → Bool
+  | .ratchet p => s.ck.canSend p && (s.ck.t p + 1 == t)
+  | _ => false
+
+/-- The challenge epoch `t` has been opened: a counter has reached `t`. -/
+def smOpened (t : ℕ) (s : SMSt Sc Msg RK Sa) : Prop := t ≤ s.ck.t .A ∨ t ≤ s.ck.t .B
+
+/-- **Monotone counters.** Every oracle call leaves every epoch counter at least as large. -/
+theorem smOracleOf_t_mono (C : CKADef Sc Msg Key) [CKACoins C Rand]
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (ΔFS ΔPCS t : ℕ) (ideal : Bool) (root : RK → Key → PMF (RK × Sa)) (s : SMSt Sc Msg RK Sa)
+    (q : SMQuery W) (x) (hx : x ∈ (smOracleOf C R G D ΔFS ΔPCS t ideal root s q).support)
+    (P : CKAParty) : s.ck.t P ≤ x.2.ck.t P := by
+  cases q with
+  | ratchet p =>
+    simp only [smOracleOf] at hx
+    split at hx
+    · simp only [PMF.support_bind, Set.mem_iUnion, PMF.support_pure, Set.mem_singleton_iff]
+        at hx
+      obtain ⟨r, -, y, -, rfl⟩ := hx
+      exact CKAGameSt.le_sent _ _ _ _ _
+    · simp only [PMF.support_pure, Set.mem_singleton_iff] at hx
+      rw [hx]
+  | recv p =>
+    simp only [smOracleOf] at hx
+    split at hx <;> simp only [PMF.support_pure, Set.mem_singleton_iff] at hx <;> rw [hx]
+    exact CKAGameSt.le_recvd _ _ _ _
+  | send p m =>
+    simp only [smOracleOf] at hx
+    split at hx
+    · split at hx <;> simp only [PMF.support_pure, Set.mem_singleton_iff] at hx <;> rw [hx]
+    · simp only [PMF.support_pure, Set.mem_singleton_iff] at hx
+      rw [hx]
+  | chall p m =>
+    simp only [smOracleOf] at hx
+    split at hx
+    · split at hx
+      · simp only [PMF.support_bind, Set.mem_iUnion, PMF.support_pure, Set.mem_singleton_iff]
+          at hx
+        obtain ⟨c, -, rfl⟩ := hx
+        exact le_refl _
+      · simp only [PMF.support_pure, Set.mem_singleton_iff] at hx
+        rw [hx]
+    · simp only [PMF.support_pure, Set.mem_singleton_iff] at hx
+      rw [hx]
+  | corrupt p =>
+    simp only [smOracleOf, PMF.support_pure, Set.mem_singleton_iff] at hx
+    rw [hx]
+
+/-- The opening of the challenge epoch leads to an opened state. -/
+theorem smOracleOf_opened_of_crit (C : CKADef Sc Msg Key) [CKACoins C Rand]
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (ΔFS ΔPCS t : ℕ) (ideal : Bool) (root : RK → Key → PMF (RK × Sa)) (s : SMSt Sc Msg RK Sa)
+    (q : SMQuery W) (hc : smCrit t s q = true) (x)
+    (hx : x ∈ (smOracleOf C R G D ΔFS ΔPCS t ideal root s q).support) : smOpened t x.2 := by
+  cases q with
+  | ratchet p =>
+    simp only [smCrit, Bool.and_eq_true, beq_iff_eq] at hc
+    simp only [smOracleOf, hc.1, ite_true] at hx
+    simp only [PMF.support_bind, Set.mem_iUnion, PMF.support_pure, Set.mem_singleton_iff] at hx
+    obtain ⟨r, -, y, -, rfl⟩ := hx
+    cases p
+    · exact Or.inl (by simp [CKAGameSt.sent_t, hc.2])
+    · exact Or.inr (by simp [CKAGameSt.sent_t, hc.2])
+  | _ => simp [smCrit] at hc
+
+/-- An opened state stays opened. -/
+theorem smOracleOf_opened (C : CKADef Sc Msg Key) [CKACoins C Rand]
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (ΔFS ΔPCS t : ℕ) (ideal : Bool) (root : RK → Key → PMF (RK × Sa)) (s : SMSt Sc Msg RK Sa)
+    (q : SMQuery W) (hs : smOpened t s) (x)
+    (hx : x ∈ (smOracleOf C R G D ΔFS ΔPCS t ideal root s q).support) : smOpened t x.2 := by
+  rcases hs with h | h
+  · exact Or.inl (h.trans (smOracleOf_t_mono C R G D ΔFS ΔPCS t ideal root s q x hx .A))
+  · exact Or.inr (h.trans (smOracleOf_t_mono C R G D ΔFS ΔPCS t ideal root s q x hx .B))
+
+/-- An opened state admits no opening of the challenge epoch. -/
+theorem smCrit_of_opened (t : ℕ) (s : SMSt Sc Msg RK Sa) (hs : smOpened t s) (q : SMQuery W) :
+    smCrit t s q = false := by
+  cases q with
+  | ratchet p =>
+    simp only [smCrit, Bool.and_eq_false_iff, beq_eq_false_iff_ne]
+    by_cases hc : s.ck.canSend p = true
+    · right
+      simp only [CKAGameSt.canSend, Bool.and_eq_true, beq_iff_eq] at hc
+      have := hc.1
+      cases p <;> rcases hs with h | h <;> omega
+    · left; simpa using hc
+  | _ => rfl
+
+/-- Away from the opening of the challenge epoch, the oracle does not depend on the root step
+at the challenge epoch. -/
+theorem smOracleOf_root_congr (C : CKADef Sc Msg Key) [CKACoins C Rand]
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (ΔFS ΔPCS t : ℕ) (ideal : Bool) (root root' : RK → Key → PMF (RK × Sa))
+    (s : SMSt Sc Msg RK Sa) (q : SMQuery W) (hc : smCrit t s q = false) :
+    smOracleOf C R G D ΔFS ΔPCS t ideal root s q = smOracleOf C R G D ΔFS ΔPCS t ideal root' s q := by
+  cases q with
+  | ratchet p =>
+    simp only [smCrit, Bool.and_eq_false_iff] at hc
+    simp only [smOracleOf]
+    rcases hc with h | h
+    · simp [h]
+    · simp [h]
+  | _ => rfl
+
+/-- **Eager sampling of the root step at the challenge epoch.** If the root step at the challenge
+epoch draws `v` from `μ` and continues as `rootv v`, the run equals the run with `v` drawn in
+advance. -/
+theorem sm_run_eager (C : CKADef Sc Msg Key) [CKACoins C Rand]
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (ΔFS ΔPCS t : ℕ) (ideal : Bool) {V : Type} (μ : PMF V) (root : RK → Key → PMF (RK × Sa))
+    (rootv : V → RK → Key → PMF (RK × Sa))
+    (hroot : ∀ rk I, root rk I = μ.bind fun v => rootv v rk I) {α : Type}
+    (A : OracleAdv (SMQuery W) (SMAns Sc Msg RK Sa Ct) α) (s : SMSt Sc Msg RK Sa) :
+    OracleAdv.run (smOracleOf C R G D ΔFS ΔPCS t ideal root) A s =
+      μ.bind fun v => OracleAdv.run (smOracleOf C R G D ΔFS ΔPCS t ideal (rootv v)) A s := by
+  refine OracleAdv.run_eq_bind_eager _ _ μ (smCrit t) ?_ ?_ (smOpened t) ?_ ?_ ?_ A s
+  · intro s q hc
+    cases q with
+    | ratchet p =>
+      simp only [smCrit, Bool.and_eq_true] at hc
+      simp only [smOracleOf, hc.1, hc.2, ite_true, hroot, PMF.bind_bind]
+      exact PMF.bind_comm _ _ _
+    | _ => simp [smCrit] at hc
+  · intro v s q hc
+    exact smOracleOf_root_congr C R G D ΔFS ΔPCS t ideal _ _ s q hc
+  · intro v s q hc x hx
+    exact smOracleOf_opened_of_crit C R G D ΔFS ΔPCS t ideal _ s q hc x hx
+  · intro s q hs x hx
+    exact smOracleOf_opened C R G D ΔFS ΔPCS t ideal _ s q hs x hx
+  · intro s q hs
+    exact smCrit_of_opened t s hs q
+
+end Structure
+
+/-! ## PRF-PRNGs -/
+
+section PRFPRNG
+
+variable {RK Key Out : Type}
+
+/-- The queries of the PRF-PRNG adversary. -/
+inductive PPQuery (RK Key : Type) where
+  /-- The root step on the hidden root state and the input `I` of the adversary. -/
+  | prng (I : Key)
+  /-- The root step on the root state `rk` of the adversary and the hidden input. -/
+  | prf (rk : RK)
+
+/-- The state of the PRF-PRNG game: the hidden root state, the hidden input, and the tables of
+the two random functions of the ideal game. -/
+structure PPSt (RK Key Out : Type) where
+  /-- The hidden root state. -/
+  rk : RK
+  /-- The hidden input. -/
+  key : Key
+  /-- The table of the random function of the inputs. -/
+  tL : List (Key × Out)
+  /-- The table of the random function of the root states. -/
+  tR : List (RK × Out)
+
+variable [Fintype Out] [Nonempty Out] [DecidableEq RK] [DecidableEq Key]
+
+/-- The oracle of the PRF-PRNG game of the root step `F`: `prng I` is `F rk I` on the hidden
+root state `rk` (a lazily sampled random function of `I` if `idealL`), `prf rk'` is `F rk' I`
+on the hidden input `I` (a lazily sampled random function of `rk'` if `idealR`). -/
+noncomputable def ppOracle (F : RK → Key → Out) (idealL idealR : Bool) (s : PPSt RK Key Out) :
+    PPQuery RK Key → PMF (Out × PPSt RK Key Out)
+  | .prng I =>
+    if idealL then (rfOracle s.tL I).map fun x => (x.1, { s with tL := x.2 })
+    else PMF.pure (F s.rk I, s)
+  | .prf rk =>
+    if idealR then (rfOracle s.tR rk).map fun x => (x.1, { s with tR := x.2 })
+    else PMF.pure (F rk s.key, s)
+
+variable [Fintype RK] [Nonempty RK] [Fintype Key] [Nonempty Key]
+
+/-- The PRF-PRNG game: a uniform hidden root state and a uniform hidden input, and the run of
+the adversary against `ppOracle`. -/
+noncomputable def pp_game (F : RK → Key → Out) (idealL idealR : Bool)
+    (A : OracleAdv (PPQuery RK Key) Out Bool) : SPComp Bool :=
+  liftPMF ((PMF.uniformFintype RK).bind fun rk => (PMF.uniformFintype Key).bind fun k =>
+    (OracleAdv.run (ppOracle F idealL idealR) A ⟨rk, k, [], []⟩).map Prod.fst)
+
+/-- The root step of the root KDF `R` as a function of the root state and the input. -/
+def rootFn (R : PRGDef (RK × Key) Out) (rk : RK) (I : Key) : Out := R.stretch (rk, I)
+
+/-- **PRF-PRNG advantage** of the root KDF `R` (Alwen, Coretti and Dodis, §4.2): the distance
+between the real game and the game in which both oracles are random functions. The `prng`
+oracle is the PRNG property with adversarial inputs (a uniform root state gives pseudorandom
+outputs whatever the inputs), the `prf` oracle the PRF property (a uniform input gives
+pseudorandom outputs whatever the root state). -/
+noncomputable def PRFPRNG_Advantage (R : PRGDef (RK × Key) Out)
+    (A : OracleAdv (PPQuery RK Key) Out Bool) : ℝ≥0∞ :=
+  Advantage (pp_game (rootFn R) false false A) (pp_game (rootFn R) true true A)
+
+/-- The HKDF-shaped root step: the next root state and the output are `F rk I`, the KDF keyed
+by the root state (the HKDF salt) applied to the input (the input keying material). -/
+def hkdfRoot (F : RK → Key → Out) : PRGDef (RK × Key) Out where
+  stretch x := F x.1 x.2
+
+/-- The simulator of the right dual-PRF reduction with the root state `rk`: `prng` queries are
+answered with `F rk`, `prf` queries are forwarded. -/
+noncomputable def ppImplR (F : RK → Key → Out) (rk : RK) (u : Unit) (q : PPQuery RK Key) :
+    OracleAdv RK Out (Out × Unit) :=
+  match q with
+  | .prng I => .ret (F rk I, u)
+  | .prf r => .query r fun y => .ret (y, u)
+
+/-- **The right dual-PRF reduction** of the PRF-PRNG game: a uniform root state, the `prng`
+oracle computed with it, the `prf` oracle forwarded to the dual-PRF game keyed by the input. -/
+noncomputable def ppRedR (F : RK → Key → Out) (A : OracleAdv (PPQuery RK Key) Out Bool) :
+    OracleAdv RK Out Bool :=
+  .rand (PMF.uniformFintype RK) fun rk =>
+    (OracleAdv.simulate (ppImplR F rk) A ()).bind fun r => .ret r.1
+
+/-- The simulator of the left dual-PRF reduction, with the table of a random function of the
+root states: `prng` queries are forwarded, `prf` queries are answered by the table. -/
+noncomputable def ppImplL (σ : List (RK × Out)) (q : PPQuery RK Key) :
+    OracleAdv Key Out (Out × List (RK × Out)) :=
+  match q with
+  | .prng I => .query I fun y => .ret (y, σ)
+  | .prf r =>
+    match List.lookup r σ with
+    | some y => .ret (y, σ)
+    | none => .rand (PMF.uniformFintype Out) fun y => .ret (y, (r, y) :: σ)
+
+/-- **The left dual-PRF reduction** of the PRF-PRNG game: the `prng` oracle forwarded to the
+dual-PRF game keyed by the root state, the `prf` oracle a lazily sampled random function. -/
+noncomputable def ppRedL (A : OracleAdv (PPQuery RK Key) Out Bool) : OracleAdv Key Out Bool :=
+  (OracleAdv.simulate (ppImplL (Key := Key)) A []).bind fun r => .ret r.1
+
+derive_timed ppRedR
+
+derive_timed ppRedL
+
+/-- The real PRF-PRNG game is the real right dual-PRF game of `ppRedR`. -/
+theorem pp_real_eq (F : RK → Key → Out) (A : OracleAdv (PPQuery RK Key) Out Bool) :
+    pp_game F false false A = realGame (Function.swap F) (ppRedR F A) := by
+  unfold pp_game realGame ppRedR
+  congr 1
+  simp only [OracleAdv.run_rand, PMF.map_bind]
+  rw [PMF.bind_comm]
+  refine congrArg _ (funext fun k => congrArg _ (funext fun rk => ?_))
+  rw [OracleAdv.run_simulate_fst]
+  refine (OracleAdv.run_map_fst_of_map_state_inv _ _ (fun _ => (⟨rk, k, [], []⟩ : PPSt RK Key Out))
+    (fun _ => True) (fun _ _ _ _ _ => trivial) ?_ A ((), ()) trivial).symm
+  intro x q _
+  cases q with
+  | prng I => simp [OracleAdv.simOracle, ppImplR, ppOracle, PMF.pure_map]
+  | prf r => simp [OracleAdv.simOracle, ppImplR, ppOracle, keyedOracle, PMF.pure_map]
+
+/-- The PRF-PRNG game with a random function for `prf` is the ideal right dual-PRF game of
+`ppRedR`. -/
+theorem pp_mid_eq_rf (F : RK → Key → Out) (A : OracleAdv (PPQuery RK Key) Out Bool) :
+    pp_game F false true A = rfGame (ppRedR F A) := by
+  unfold pp_game rfGame ppRedR
+  congr 1
+  simp only [OracleAdv.run_rand, PMF.map_bind]
+  refine congrArg _ (funext fun rk => ?_)
+  rw [OracleAdv.run_simulate_fst]
+  have h : ∀ k : Key, (OracleAdv.run (ppOracle F false true) A ⟨rk, k, [], []⟩).map Prod.fst =
+      (OracleAdv.run (OracleAdv.simOracle (ppImplR F rk) rfOracle) A ((), [])).map Prod.fst := by
+    intro k
+    refine (OracleAdv.run_map_fst_of_map_state_inv _ _ (fun x => (⟨rk, k, [], x.2⟩ : PPSt RK Key Out))
+      (fun _ => True) (fun _ _ _ _ _ => trivial) ?_ A ((), []) trivial).symm
+    intro x q _
+    cases q with
+    | prng I => simp [OracleAdv.simOracle, ppImplR, ppOracle, PMF.pure_map]
+    | prf r =>
+      simp only [OracleAdv.simOracle, ppImplR, ppOracle, OracleAdv.run_query,
+        OracleAdv.run_ret, ite_true, PMF.map_bind, PMF.bind_map, PMF.pure_map]
+      rw [← PMF.bind_pure_comp]
+      rfl
+  simp only [h, PMF.bind_const]
+
+/-- The PRF-PRNG game with a random function for `prf` is the real left dual-PRF game of
+`ppRedL`. -/
+theorem pp_mid_eq_real (F : RK → Key → Out) (A : OracleAdv (PPQuery RK Key) Out Bool) :
+    pp_game F false true A = realGame F (ppRedL (Key := Key) A) := by
+  unfold pp_game realGame ppRedL
+  congr 1
+  refine congrArg _ (funext fun rk => ?_)
+  rw [OracleAdv.run_simulate_fst]
+  have h : ∀ k : Key, (OracleAdv.run (ppOracle F false true) A ⟨rk, k, [], []⟩).map Prod.fst =
+      (OracleAdv.run (OracleAdv.simOracle ppImplL (keyedOracle F rk)) A ([], ())).map
+        Prod.fst := by
+    intro k
+    refine (OracleAdv.run_map_fst_of_map_state_inv _ _ (fun x => (⟨rk, k, [], x.1⟩ : PPSt RK Key Out))
+      (fun _ => True) (fun _ _ _ _ _ => trivial) ?_ A ([], ()) trivial).symm
+    intro x q _
+    cases q with
+    | prng I => simp [OracleAdv.simOracle, ppImplL, ppOracle, keyedOracle, PMF.pure_map]
+    | prf r =>
+      simp only [OracleAdv.simOracle, ppImplL, ppOracle, rfOracle, ite_true]
+      cases List.lookup r x.1 with
+      | some y => simp [PMF.pure_map]
+      | none =>
+        simp only [OracleAdv.run_rand, OracleAdv.run_ret, PMF.map_bind, PMF.pure_map,
+          PMF.map_comp]
+        rw [← PMF.bind_pure_comp]
+        rfl
+  simp only [h, PMF.bind_const]
+
+/-- The ideal PRF-PRNG game is the ideal left dual-PRF game of `ppRedL`. -/
+theorem pp_ideal_eq_rf (F : RK → Key → Out) (A : OracleAdv (PPQuery RK Key) Out Bool) :
+    pp_game F true true A = rfGame (ppRedL (Key := Key) A) := by
+  unfold pp_game rfGame ppRedL
+  congr 1
+  rw [OracleAdv.run_simulate_fst]
+  have h : ∀ (rk : RK) (k : Key),
+      (OracleAdv.run (ppOracle F true true) A ⟨rk, k, [], []⟩).map Prod.fst =
+      (OracleAdv.run (OracleAdv.simOracle ppImplL rfOracle) A ([], [])).map Prod.fst := by
+    intro rk k
+    refine (OracleAdv.run_map_fst_of_map_state_inv _ _ (fun x => (⟨rk, k, x.2, x.1⟩ : PPSt RK Key Out))
+      (fun _ => True) (fun _ _ _ _ _ => trivial) ?_ A ([], []) trivial).symm
+    intro x q _
+    cases q with
+    | prng I =>
+      simp only [OracleAdv.simOracle, ppImplL, ppOracle, OracleAdv.run_query,
+        OracleAdv.run_ret, ite_true, PMF.map_bind, PMF.bind_map, PMF.pure_map]
+      rw [← PMF.bind_pure_comp]
+      rfl
+    | prf r =>
+      simp only [OracleAdv.simOracle, ppImplL, ppOracle, rfOracle, ite_true]
+      cases List.lookup r x.1 with
+      | some y => simp [PMF.pure_map]
+      | none =>
+        simp only [OracleAdv.run_rand, OracleAdv.run_ret, PMF.map_bind, PMF.pure_map,
+          PMF.map_comp]
+        rw [← PMF.bind_pure_comp]
+        rfl
+  simp only [h, PMF.bind_const]
+
+/-- **The HKDF-shaped root step is a PRF-PRNG under the dual-PRF assumption.** For every
+adversary `A`, the PRF-PRNG advantage of `hkdfRoot F` is at most the dual-PRF advantage of `F`
+keyed by its right argument at `ppRedR F A` plus the dual-PRF advantage keyed by its left
+argument at `ppRedL A`. -/
+theorem hkdfRoot_prfprng_le (F : RK → Key → Out) (A : OracleAdv (PPQuery RK Key) Out Bool) :
+    PRFPRNG_Advantage (hkdfRoot F) A ≤
+      DualPRF_Right_Advantage F (ppRedR F A) + DualPRF_Left_Advantage F (ppRedL (Key := Key) A) := by
+  have hF : rootFn (hkdfRoot F) = F := funext fun _ => funext fun _ => rfl
+  unfold PRFPRNG_Advantage DualPRF_Right_Advantage DualPRF_Left_Advantage PRF_q_Advantage
+  rw [hF]
+  refine (advantage_triangle _ (pp_game F false true A) _).trans (add_le_add (le_of_eq ?_)
+    (le_of_eq ?_))
+  · rw [pp_real_eq, pp_mid_eq_rf]
+  · rw [pp_mid_eq_real, pp_ideal_eq_rf]
+
+end PRFPRNG
+
 /-! ## The CKA reduction -/
 
 section CKARed
