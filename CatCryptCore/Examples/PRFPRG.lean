@@ -11,6 +11,7 @@ public import CatCryptCore.Crypto.Advantage
 public import CatCryptCore.Relational.Rules
 public import CatCryptCore.Examples.PRF
 public import CatCryptCore.Crypto.PRPPRFSwitching
+public import CatCryptCore.Crypto.PRGFromPRF
 public import CatCryptCore.Tactics.Basic
 public import CatCryptCore.Prob.XorBij
 public import CatCryptCore.Tactics.AutoMetrics
@@ -41,6 +42,9 @@ and the ideal PRG game is its random-function world. For every adversary `A`,
     `prg_advantage F A = PRF_q_Advantage F.f (prgOracleAdv A)`,
 
 where `prgOracleAdv A` queries the counters `zero` and `one` and runs `A`.
+It is the instance of `PRGFromPRF.prg_advantage_twoPointPRG_eq` at the counters
+`zero` and `one`: `counterPRG F` is `twoPointPRG F.f zero one` and `prgOracleAdv A`
+is `twoPointRed zero one A`.
 
 The earlier statement `prg_decomp_security_bound` bounded the game
 `gen_hyb_decomp 0`, which uses independent seeds for the two counters, and not
@@ -155,13 +159,17 @@ instance : Fintype PRGOutput := inferInstance
 instance : Nonempty PRGOutput := ⟨(false, false)⟩
 instance : DecidableEq PRGOutput := inferInstance
 
+/-- The counter-mode generator `s ↦ (F(s, zero), F(s, one))`: the two-point generator of
+`CatCrypt.Crypto.PRGFromPRF` at the counters `zero` and `one`. -/
+def counterPRG (F : PRFPRG_PRFDef) : Assumptions.PRGDef Word PRGOutput :=
+  PRGFromPRF.twoPointPRG F.f zero one
+
 /-- Real PRG game (GEN_real):
     Sample a seed s uniformly, output (F(s, 0), F(s, 1)).
 
-    This is the "counter mode" PRG construction. -/
-noncomputable def gen_real (F : PRFPRG_PRFDef) : SPComp PRGOutput := do
-  let s ← SPComp.sample Word
-  SPComp.pure (F.f s zero, F.f s one)
+    This is the real PRG game of the counter-mode generator. -/
+noncomputable def gen_real (F : PRFPRG_PRFDef) : SPComp PRGOutput :=
+  Assumptions.prg_real (counterPRG F)
 
 /-- Ideal PRG game (GEN_ideal):
     Sample two independent random Words.
@@ -704,78 +712,32 @@ the random-function world is `gen_ideal` against `A`, because the two counters
 are distinct (`prg_advantage_eq_prf_q`).
 -/
 
-/-- The output bit of a run of a Boolean computation: `b` for `some (b, h)`, and
-`false` for a failed run. -/
-def outBit : Option (Bool × Heap) → Bool
-  | some (b, _) => b
-  | none => false
-
-/-- The adaptive PRF distinguisher built from a PRG adversary `A`: query the
-oracle at `zero` and at `one`, run `A` on the two answers from the empty heap,
-and return its output bit. -/
+/-- The adaptive PRF distinguisher built from a PRG adversary `A`: the two-point reduction of
+`CatCrypt.Crypto.PRGFromPRF` at the counters `zero` and `one`. It queries the oracle at `zero`
+and at `one`, runs `A` on the two answers from the empty heap and returns its output bit. -/
 noncomputable def prgOracleAdv (A : PRGOutput → SPComp Bool) : OracleAdv Word Word Bool :=
-  OracleAdv.query zero fun y₀ => OracleAdv.query one fun y₁ =>
-    OracleAdv.rand (A (y₀, y₁) Heap.empty) fun o => OracleAdv.ret (outBit o)
+  PRGFromPRF.twoPointRed zero one A
 
-/-- The probability that `outBit` is `true` is the probability of a run ending
-with output `true`, summed over final heaps. -/
-theorem map_outBit_apply_true (p : PMF (Option (Bool × Heap))) :
-    (p.map outBit) true = ∑' h, p (some (true, h)) := by
-  rw [PMF.map_apply, SDistr.tsum_option_eq_add, ENNReal.tsum_prod', tsum_fintype,
-    Fintype.sum_bool]
-  simp [outBit]
-
-/-- Recording the output bit together with a final oracle state and projecting
-the state away is `map outBit`. -/
-theorem map_fst_bind_outBit {σ : Type} (p : PMF (Option (Bool × Heap))) (t : σ) :
-    (p.bind fun o => PMF.pure (outBit o, t)).map Prod.fst = p.map outBit := by
-  rw [PMF.map_bind]
-  simp only [PMF.pure_map]
-  exact PMF.bind_pure_comp _ _
-
-/-- The real adaptive PRF game against `prgOracleAdv A` accepts with the same
-probability as `gen_real F` against `A`. -/
-theorem prTrue_realGame_prgOracleAdv (F : PRFPRG_PRFDef) (A : PRGOutput → SPComp Bool) :
-    prTrue (CatCrypt.Crypto.PRPPRF.realGame F.f (prgOracleAdv A)) Heap.empty =
-      prTrue ((gen_real F).bind A) Heap.empty := by
-  rw [CatCrypt.Crypto.PRPPRF.realGame, CatCrypt.Crypto.prTrue_liftPMF]
-  simp only [gen_real, SPComp.monad_bind_eq, SPComp.bind_assoc, SPComp.pure_bind,
-    prTrue_bind_sample]
-  rw [PMF.bind_apply, tsum_fintype]
-  refine Finset.sum_congr rfl fun k _ => ?_
-  simp only [PMF.uniformFintype_apply, prgOracleAdv, OracleAdv.run_query, OracleAdv.run_rand,
-    OracleAdv.run_ret, CatCrypt.Crypto.PRPPRF.keyedOracle, PMF.pure_bind, map_fst_bind_outBit,
-    map_outBit_apply_true]
+/-- The ideal game `gen_ideal`, which samples the two components one after the other, is the
+ideal PRG game on pairs, which samples a pair uniformly. -/
+theorem gen_ideal_eq_prg_ideal : gen_ideal = Assumptions.prg_ideal (Output := PRGOutput) := by
+  rw [Assumptions.prg_ideal, SPComp.sample_prod_eq]
   rfl
 
-/-- The run of `prgOracleAdv A` against the lazily sampled random function: two
-independent uniform answers, since the counters `zero` and `one` differ. -/
-theorem run_rfOracle_prgOracleAdv (A : PRGOutput → SPComp Bool) :
-    OracleAdv.run CatCrypt.Crypto.PRPPRF.rfOracle (prgOracleAdv A) [] =
-      (PMF.uniformFintype Word).bind fun y₀ => (PMF.uniformFintype Word).bind fun y₁ =>
-        PMF.bind (A (y₀, y₁) Heap.empty) fun o => PMF.pure (outBit o, [(one, y₁), (zero, y₀)]) := by
-  simp [prgOracleAdv, CatCrypt.Crypto.PRPPRF.rfOracle, List.lookup, zero, one, PMF.bind_map,
-    Function.comp_def]
-
-/-- The random-function adaptive PRF game against `prgOracleAdv A` accepts with
-the same probability as `gen_ideal` against `A`. -/
-theorem prTrue_rfGame_prgOracleAdv (A : PRGOutput → SPComp Bool) :
-    prTrue (CatCrypt.Crypto.PRPPRF.rfGame (prgOracleAdv A)) Heap.empty =
-      prTrue (gen_ideal.bind A) Heap.empty := by
-  rw [CatCrypt.Crypto.PRPPRF.rfGame, CatCrypt.Crypto.prTrue_liftPMF, run_rfOracle_prgOracleAdv]
-  simp only [↓map_fst_bind_outBit, PMF.map_bind]
-  simp only [gen_ideal, SPComp.monad_bind_eq, SPComp.bind_assoc, SPComp.pure_bind,
-    prTrue_bind_sample, PMF.bind_apply, tsum_fintype, PMF.uniformFintype_apply,
-    ← Finset.mul_sum, map_outBit_apply_true]
+/-- The advantage `prg_advantage F A` is the PRG advantage of `A` against `counterPRG F`. -/
+theorem prg_advantage_eq_counterPRG (F : PRFPRG_PRFDef) (A : PRGOutput → SPComp Bool) :
+    prg_advantage F A = Assumptions.PRG_Advantage (counterPRG F) A := by
+  rw [prg_advantage, gen_ideal_eq_prg_ideal]
   rfl
 
 /-- **The PRG advantage is an adaptive PRF advantage.** For every adversary `A`
 against the counter-mode generator `G(s) = (F(s, zero), F(s, one))`, the PRG
-advantage equals the adaptive (two-query) PRF advantage of `prgOracleAdv A`. -/
+advantage equals the adaptive (two-query) PRF advantage of `prgOracleAdv A`. This is
+`PRGFromPRF.prg_advantage_twoPointPRG_eq` at the distinct counters `zero` and `one`. -/
 theorem prg_advantage_eq_prf_q (F : PRFPRG_PRFDef) (A : PRGOutput → SPComp Bool) :
     prg_advantage F A = CatCrypt.Crypto.PRPPRF.PRF_q_Advantage F.f (prgOracleAdv A) := by
-  simp only [prg_advantage, AdvantageA, CatCrypt.Crypto.PRPPRF.PRF_q_Advantage, Advantage,
-    prTrue_realGame_prgOracleAdv, prTrue_rfGame_prgOracleAdv]
+  rw [prg_advantage_eq_counterPRG]
+  exact PRGFromPRF.prg_advantage_twoPointPRG_eq F.f (b₁ := zero) (b₂ := one) (by decide) A
 
 /-! ## Package Definitions -/
 
