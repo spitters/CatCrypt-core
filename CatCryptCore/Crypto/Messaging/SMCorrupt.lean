@@ -494,4 +494,144 @@ derive_timed smCKATreeOf
 
 end CKARed
 
+/-! ## The CKA hop -/
+
+section CKAHop
+
+variable {Sc Msg Key Rand RK Sa W Ct : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
+  [SampleableType Ct] [Fintype RK] [Nonempty RK] [Fintype Key] [Nonempty Key]
+
+/-- The root step at the challenge epoch of the first hybrid: the root KDF on a uniform key. -/
+noncomputable def unifKeyRoot (R : PRGDef (RK × Key) (RK × Sa)) (rk : RK) (_ : Key) :
+    PMF (RK × Sa) :=
+  (PMF.uniformFintype Key).bind fun k => PMF.pure (R.stretch (rk, k))
+
+/-- The root step at the challenge epoch of the game simulated by the CKA reduction: the real
+root step against the real CKA game, the root step on a uniform key against the ideal one. -/
+noncomputable def ckaHopRoot (R : PRGDef (RK × Key) (RK × Sa)) (idealK : Bool) :
+    RK → Key → PMF (RK × Sa) :=
+  if idealK then unifKeyRoot R else realRoot R
+
+/-- The shadow of a CKA game state, which keeps its epoch counters. -/
+def ckaShadow (s : CKAGameSt Sc Msg) : CKAGameSt Unit Unit := ⟨fun _ => (), s.t, ()⟩
+
+/-- The state of the CKA reduction and of the CKA game that a secure-messaging state
+corresponds to. -/
+def smCKAEmb (s : SMSt Sc Msg RK Sa) :
+    (SMLoc RK Sa × CKAGameSt Unit Unit) × CKAGameSt Sc Msg :=
+  ((s.loc, ckaShadow s.ck), s.ck)
+
+theorem ckaShadow_sent (s : CKAGameSt Sc Msg) (p : CKAParty) (x : Sc) (T : Msg) :
+    ckaShadow (s.sent p x T) = (ckaShadow s).sent p () () := by
+  simp only [ckaShadow, CKAGameSt.sent]
+
+theorem ckaShadow_recvd (s : CKAGameSt Sc Msg) (p : CKAParty) (x : Sc) :
+    ckaShadow (s.recvd p x) = (ckaShadow s).recvd p () := by
+  simp only [ckaShadow, CKAGameSt.recvd]
+
+@[simp] theorem ckaShadow_canSend (s : CKAGameSt Sc Msg) (p : CKAParty) :
+    (ckaShadow s).canSend p = s.canSend p :=
+  CKAGameSt.canSend_eq_of_t rfl p
+
+@[simp] theorem ckaShadow_canRecv (s : CKAGameSt Sc Msg) (p : CKAParty) :
+    (ckaShadow s).canRecv p = s.canRecv p :=
+  CKAGameSt.canRecv_eq_of_t rfl p
+
+@[simp] theorem ckaShadow_t (s : CKAGameSt Sc Msg) : (ckaShadow s).t = s.t := rfl
+
+/-- **The CKA simulator is the secure-messaging oracle.** Each oracle call of the hybrid game
+with the root step `ckaHopRoot R idealK`, mapped to the states of the reduction and of the CKA
+game, is the call of the simulator `smCKAImplOf` against the CKA oracle with the challenge mode
+`idealK`. -/
+theorem smCKA_step (C : CKADef Sc Msg Key) [CKACoins C Rand] (R : PRGDef (RK × Key) (RK × Sa))
+    (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (ΔFS ΔPCS t : ℕ) (ideal idealK : Bool)
+    (s : SMSt Sc Msg RK Sa) (q : SMQuery W) :
+    (smOracleOf C R G D ΔFS ΔPCS t ideal (ckaHopRoot R idealK) s q).map
+        (Prod.map id smCKAEmb) =
+      OracleAdv.simOracle (smCKAImplOf R G D t ideal) (ckaOracleP C ΔFS ΔPCS t idealK)
+        (smCKAEmb s) q := by
+  cases q with
+  | ratchet p =>
+    simp only [smOracleOf, OracleAdv.simOracle, smCKAEmb, smCKAImplOf, smCKARatchet]
+    by_cases h1 : s.ck.canSend p = true
+    · by_cases h2 : (s.ck.t p + 1 == t) = true
+      · cases idealK <;> simp [h1, h2, ckaHopRoot, realRoot, unifKeyRoot, ckaOracleP,
+          OracleAdv.run_query, PMF.map_bind, PMF.bind_bind, PMF.pure_bind, PMF.pure_map,
+          ckaShadow_sent, smCKAEmb]
+      · simp [h1, h2, ckaOracleP, OracleAdv.run_query, PMF.map_bind, PMF.bind_bind,
+          PMF.pure_bind, PMF.pure_map, ckaShadow_sent, smCKAEmb]
+    · simp [h1, PMF.pure_map, smCKAEmb]
+  | recv p =>
+    simp only [smOracleOf, OracleAdv.simOracle, smCKAEmb, smCKAImplOf, smCKARecvT]
+    by_cases h1 : s.ck.canRecv p = true
+    · cases ho : s.loc.out <;>
+        simp [h1, ho, ckaOracleP, SMLoc.received, PMF.pure_map, ckaShadow_recvd, smCKAEmb]
+    · simp [h1, PMF.pure_map, smCKAEmb]
+  | send p m =>
+    simp only [smOracleOf, OracleAdv.simOracle, smCKAEmb, smCKAImplOf, smCKASendT]
+    cases h : s.loc.snd p
+    · simp [PMF.pure_map, smCKAEmb]
+    · by_cases hc : ckaSender (s.ck.t p) = p <;> simp [hc, PMF.pure_map, smCKAEmb]
+  | chall p m =>
+    simp only [smOracleOf, OracleAdv.simOracle, smCKAEmb, smCKAImplOf, smCKAChallT]
+    cases h : s.loc.snd p
+    · simp [PMF.pure_map, smCKAEmb]
+    · by_cases hc : challOk s.loc t (s.ck.t p) p = true <;>
+        simp [hc, PMF.pure_map, PMF.map_bind, smCKAEmb]
+  | corrupt p =>
+    simp only [smOracleOf, OracleAdv.simOracle, smCKAEmb, smCKAImplOf, smCKACorrT]
+    by_cases h1 : ckaAllowCorr ΔFS ΔPCS t s.ck p = true <;>
+      simp [h1, ckaOracleP, PMF.pure_map, smCKAEmb]
+
+theorem ckaShadow_init (pub : Msg) (sA sB : Sc) :
+    ckaShadow (CKAGameSt.init pub sA sB) = CKAGameSt.init () () () := by
+  simp only [ckaShadow, CKAGameSt.init]
+
+/-- **The CKA reduction** `smcCKARed R G D ideal A`: the CKA adversary that keeps the challenge
+epoch of `A` and plays the tree `smCKATreeOf`. -/
+noncomputable def smcCKARed (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa))
+    (D : AEADDef W Ct) (ideal : Bool) (A : SMCorruptAdv Sc Msg RK Sa W Ct) :
+    CKACorruptAdv Sc Msg Key Rand Bool where
+  tStar := A.tStar
+  play := smCKATreeOf R G D ideal A.play
+
+omit [Fintype Key] [Nonempty Key] in
+/-- The secure-messaging game with the root step `root` at the challenge epoch, as a lifted
+distribution when the CKA initialisation is the lift of `initP`. -/
+theorem sm_corrupt_gameOf_eq_liftPMF (C : CKADef Sc Msg Key) [CKACoins C Rand]
+    (initP : PMF (Msg × Sc × Sc)) (hinit : C.init = liftPMF initP)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (ΔFS ΔPCS : ℕ) (ideal : Bool) (root : RK → Key → PMF (RK × Sa))
+    (A : SMCorruptAdv Sc Msg RK Sa W Ct) :
+    sm_corrupt_gameOf C R G D ΔFS ΔPCS ideal root A =
+      liftPMF (A.tStar.bind fun t => initP.bind fun i => (PMF.uniformFintype RK).bind fun rk =>
+        (OracleAdv.run (smOracleOf C R G D ΔFS ΔPCS t ideal root) (A.play t i.1)
+          (smInit i rk)).map Prod.fst) := by
+  unfold sm_corrupt_gameOf
+  simp only [hinit, sample_eq_liftPMF, liftPMF_bind_liftPMF]
+
+/-- **The CKA hop.** The CKA game with challenge mode `idealK` of the reduction `smcCKARed` is
+the secure-messaging game with the root step `ckaHopRoot R idealK` at the challenge epoch: the
+real game for the real CKA key, the first hybrid for the uniform one. -/
+theorem smCKA_game_eq (C : CKADef Sc Msg Key) [CKACoins C Rand] (hS : CKACoins.Sound C)
+    (initP : PMF (Msg × Sc × Sc)) (hinit : C.init = liftPMF initP)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (ΔFS ΔPCS : ℕ) (ideal idealK : Bool) (A : SMCorruptAdv Sc Msg RK Sa W Ct) :
+    cka_corrupt_game C ΔFS ΔPCS idealK (smcCKARed R G D ideal A) =
+      sm_corrupt_gameOf C R G D ΔFS ΔPCS ideal (ckaHopRoot R idealK) A := by
+  rw [cka_corrupt_game_eq_liftPMF C hS initP hinit, sm_corrupt_gameOf_eq_liftPMF C initP hinit]
+  congr 1
+  refine congrArg _ (funext fun t => congrArg _ (funext fun i => ?_))
+  simp only [smcCKARed, smCKATreeOf, OracleAdv.run_rand, PMF.map_bind]
+  refine congrArg _ (funext fun rk => ?_)
+  rw [OracleAdv.run_simulate_fst]
+  have he : smCKAEmb (smInit (Sa := Sa) i rk) =
+      ((SMLoc.init rk, CKAGameSt.init () () ()), CKAGameSt.init i.1 i.2.1 i.2.2) := by
+    simp only [smCKAEmb, smInit, ckaShadow_init]
+  rw [← he, ← OracleAdv.run_map_state _ _ smCKAEmb (smCKA_step C R G D ΔFS ΔPCS t ideal idealK),
+    PMF.map_comp]
+  rfl
+
+end CKAHop
+
 end CatCrypt.Crypto.Messaging
