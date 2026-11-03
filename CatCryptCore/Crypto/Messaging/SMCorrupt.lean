@@ -1297,4 +1297,213 @@ theorem smRoot_ideal_eq (C : CKADef Sc Msg Key) [CKACoins C Rand]
 
 end RootHop
 
+/-! ## Forward-secure AEAD with corruption -/
+
+section FSAEADGame
+
+variable {Sa W Ct : Type} [SampleableType W] [SampleableType Ct]
+
+/-- The queries of the FS-AEAD adversary. -/
+inductive FSQuery (W : Type) where
+  /-- The sender encrypts the message `m` under the next key of its chain. -/
+  | enc (m : W × W)
+  /-- As `enc`, once, with a uniform ciphertext in the ideal game. -/
+  | chall (m : W × W)
+  /-- The state of the sender is returned. -/
+  | corrupt
+
+/-- The answers of the FS-AEAD oracles. -/
+inductive FSAns (Sa Ct : Type) where
+  /-- A refused query. -/
+  | none
+  /-- A ciphertext. -/
+  | ct (c : Ct)
+  /-- The state of the sender. -/
+  | state (s : Sa)
+
+/-- The state of the FS-AEAD game: the current state of the sender's chain, the initial state
+of the epoch (the state of the receiver, which has no oracle in this confidentiality game), and
+the flags of the challenge and of the corruption. -/
+structure FSSt (Sa : Type) where
+  /-- The current state of the sender. -/
+  cur : Sa
+  /-- The initial state of the epoch, held by the receiver. -/
+  init : Sa
+  /-- The challenge has been asked. -/
+  done : Bool
+  /-- The sender has been corrupted. -/
+  corr : Bool
+
+/-- The oracle of the FS-AEAD game of the generator `G` and the AEAD `D` (Alwen, Coretti and
+Dodis, §4.3): `enc m` encrypts under the next key `(G cur).1` and moves the state to
+`(G cur).2`; `chall m` does the same once, with a uniform ciphertext if `ideal`, and is refused
+after a corruption; `corrupt` returns the current state. A corruption after the challenge is
+allowed: the state has moved past the challenge key (forward secrecy). -/
+noncomputable def fsOracle (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (ideal : Bool)
+    (s : FSSt Sa) : FSQuery W → PMF (FSAns Sa Ct × FSSt Sa)
+  | .enc m => PMF.pure (.ct (D.encrypt (G.stretch s.cur).1 m.1 m.2), { s with cur := (G.stretch s.cur).2 })
+  | .chall m =>
+    if !s.done && !s.corr then
+      (challCt D ideal (G.stretch s.cur).1 m).bind fun c =>
+        PMF.pure (.ct c, { s with cur := (G.stretch s.cur).2, done := true })
+    else PMF.pure (.none, s)
+  | .corrupt => PMF.pure (.state s.cur, { s with corr := true })
+
+variable [Fintype Sa] [Nonempty Sa]
+
+/-- The FS-AEAD game with corruption: a uniform initial state of the epoch, and the run of the
+adversary against `fsOracle`. -/
+noncomputable def fsaead_corrupt_game (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (ideal : Bool)
+    (A : OracleAdv (FSQuery W) (FSAns Sa Ct) Bool) : SPComp Bool :=
+  liftPMF ((PMF.uniformFintype Sa).bind fun sa =>
+    (OracleAdv.run (fsOracle G D ideal) A ⟨sa, sa, false, false⟩).map Prod.fst)
+
+/-- **FS-AEAD advantage with corruption** of the adversary `A`. -/
+noncomputable def FSAEAD_Corrupt_Advantage (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (A : OracleAdv (FSQuery W) (FSAns Sa Ct) Bool) : ℝ≥0∞ :=
+  Advantage (fsaead_corrupt_game G D false A) (fsaead_corrupt_game G D true A)
+
+end FSAEADGame
+
+/-! ## The FS-AEAD reduction -/
+
+section FSRed
+
+variable {Sc Msg Key Rand RK Sa W Ct : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
+  [SampleableType Ct]
+
+/-- Party `p` opened the challenge epoch with the next root key `rk`; its sending chain and the
+root output in transit are held by the FS-AEAD game. -/
+def SMLoc.openedX (l : SMLoc RK Sa) (p : CKAParty) (rk : RK) : SMLoc RK Sa :=
+  { l with rk := Function.update l.rk p rk, snd := Function.update l.snd p none, out := none }
+
+/-- Party `p` received the challenge epoch with the root key `rk`; its receiving chain is held
+by the FS-AEAD game. -/
+def SMLoc.recvX (l : SMLoc RK Sa) (p : CKAParty) (rk : RK) : SMLoc RK Sa :=
+  { l with rk := Function.update l.rk p rk, rcv := Function.update l.rcv p none }
+
+/-- The state of the FS-AEAD reduction: a secure-messaging state, and the marks of the chains
+and of the root output that are held by the FS-AEAD game (those of the challenge epoch). -/
+structure FSSim (Sc Msg RK Sa : Type) where
+  /-- The secure-messaging state, with the held values left out. -/
+  s : SMSt Sc Msg RK Sa
+  /-- The sending chain of the party is the FS-AEAD sender. -/
+  sndX : CKAParty → Bool
+  /-- The receiving chain of the party is the initial state of the FS-AEAD game. -/
+  rcvX : CKAParty → Bool
+  /-- The root output in transit is the root key `rk⋆` with the initial FS-AEAD state. -/
+  outX : Bool
+
+/-- The opening of an epoch by party `p` in the FS-AEAD simulator; at the challenge epoch the
+next root key is `rkS` and the chain is the FS-AEAD game's. -/
+noncomputable def smFSRatchet (C : CKADef Sc Msg Key) [CKACoins C Rand]
+    (R : PRGDef (RK × Key) (RK × Sa)) (t : ℕ) (rkS : RK) (x : FSSim Sc Msg RK Sa) (p : CKAParty) :
+    OracleAdv (FSQuery W) (FSAns Sa Ct) (SMAns Sc Msg RK Sa Ct × FSSim Sc Msg RK Sa) :=
+  if x.s.ck.canSend p then
+    .rand (PMF.uniformFintype Rand) fun r =>
+      if x.s.ck.t p + 1 == t then
+        .ret (.msg (CKACoins.sendR (C := C) (x.s.ck.st p) r).2.1,
+          ⟨⟨x.s.ck.sent p (CKACoins.sendR (C := C) (x.s.ck.st p) r).1
+            (CKACoins.sendR (C := C) (x.s.ck.st p) r).2.1, x.s.loc.openedX p rkS⟩,
+            Function.update x.sndX p true, x.rcvX, true⟩)
+      else
+        .ret (.msg (CKACoins.sendR (C := C) (x.s.ck.st p) r).2.1,
+          ⟨⟨x.s.ck.sent p (CKACoins.sendR (C := C) (x.s.ck.st p) r).1
+            (CKACoins.sendR (C := C) (x.s.ck.st p) r).2.1,
+            x.s.loc.opened p (R.stretch (x.s.loc.rk p, (CKACoins.sendR (C := C) (x.s.ck.st p) r).2.2))⟩,
+            Function.update x.sndX p false, x.rcvX, false⟩)
+  else .ret (.none, x)
+
+/-- The receive of party `p` in the FS-AEAD simulator. -/
+noncomputable def smFSRecv (C : CKADef Sc Msg Key) (rkS : RK) (x : FSSim Sc Msg RK Sa)
+    (p : CKAParty) :
+    OracleAdv (FSQuery W) (FSAns Sa Ct) (SMAns Sc Msg RK Sa Ct × FSSim Sc Msg RK Sa) :=
+  if x.s.ck.canRecv p then
+    if x.outX then
+      .ret (.none, ⟨⟨x.s.ck.recvd p (C.recv (x.s.ck.st p) x.s.ck.msg).1, x.s.loc.recvX p rkS⟩,
+        x.sndX, Function.update x.rcvX p true, x.outX⟩)
+    else
+      match x.s.loc.out with
+      | some y =>
+        .ret (.none, ⟨⟨x.s.ck.recvd p (C.recv (x.s.ck.st p) x.s.ck.msg).1, x.s.loc.recvY p y⟩,
+          x.sndX, Function.update x.rcvX p false, x.outX⟩)
+      | none =>
+        .ret (.none, ⟨⟨x.s.ck.recvd p (C.recv (x.s.ck.st p) x.s.ck.msg).1, x.s.loc⟩,
+          x.sndX, x.rcvX, x.outX⟩)
+  else .ret (.none, x)
+
+/-- The send of party `p` in the FS-AEAD simulator: forwarded to the FS-AEAD game on the chain
+of the challenge epoch, computed locally otherwise. -/
+noncomputable def smFSSend (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (x : FSSim Sc Msg RK Sa)
+    (p : CKAParty) (m : W × W) :
+    OracleAdv (FSQuery W) (FSAns Sa Ct) (SMAns Sc Msg RK Sa Ct × FSSim Sc Msg RK Sa) :=
+  if x.sndX p then
+    if ckaSender (x.s.ck.t p) == p then
+      .query (.enc m) fun a =>
+        match a with
+        | .ct c => .ret (.ct c, x)
+        | .none => .ret (.none, x)
+        | .state _ => .ret (.none, x)
+    else .ret (.none, x)
+  else
+    match x.s.loc.snd p with
+    | some sa =>
+      if ckaSender (x.s.ck.t p) == p then
+        .ret (.ct (D.encrypt (G.stretch sa).1 m.1 m.2),
+          { x with s := ⟨x.s.ck, x.s.loc.advanced p (G.stretch sa).2⟩ })
+      else .ret (.none, x)
+    | none => .ret (.none, x)
+
+/-- The challenge of party `p` in the FS-AEAD simulator: forwarded to the FS-AEAD game. -/
+noncomputable def smFSChall (t : ℕ) (x : FSSim Sc Msg RK Sa) (p : CKAParty) (m : W × W) :
+    OracleAdv (FSQuery W) (FSAns Sa Ct) (SMAns Sc Msg RK Sa Ct × FSSim Sc Msg RK Sa) :=
+  if x.sndX p && challOk x.s.loc t (x.s.ck.t p) p then
+    .query (.chall m) fun a =>
+      match a with
+      | .ct c => .ret (.ct c, { x with s := ⟨x.s.ck, { x.s.loc with done := true }⟩ })
+      | .none => .ret (.none, x)
+      | .state _ => .ret (.none, x)
+  else .ret (.none, x)
+
+/-- The corruption of party `p` in the FS-AEAD simulator. -/
+noncomputable def smFSCorr (ΔFS ΔPCS t : ℕ) (x : FSSim Sc Msg RK Sa) (p : CKAParty) :
+    OracleAdv (FSQuery W) (FSAns Sa Ct) (SMAns Sc Msg RK Sa Ct × FSSim Sc Msg RK Sa) :=
+  if ckaAllowCorr ΔFS ΔPCS t x.s.ck p then
+    .ret (.state (x.s.ck.st p) (x.s.loc.rk p) (x.s.loc.snd p) (x.s.loc.rcv p), x)
+  else .ret (.none, x)
+
+/-- The simulator of the FS-AEAD reduction with the challenge epoch `t` and the root key `rkS`
+of the challenge epoch: the secure-messaging oracle of the second hybrid with the root output
+`(rkS, sa)` at the challenge epoch, where the FS-AEAD instance of the challenge epoch, from the
+initial state `sa`, is the FS-AEAD game's. -/
+noncomputable def smFSImplOf (C : CKADef Sc Msg Key) [CKACoins C Rand]
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (ΔFS ΔPCS t : ℕ) (rkS : RK) (x : FSSim Sc Msg RK Sa) (q : SMQuery W) :
+    OracleAdv (FSQuery W) (FSAns Sa Ct) (SMAns Sc Msg RK Sa Ct × FSSim Sc Msg RK Sa) :=
+  match q with
+  | .ratchet p => smFSRatchet C R t rkS x p
+  | .recv p => smFSRecv C rkS x p
+  | .send p m => smFSSend G D x p m
+  | .chall p m => smFSChall t x p m
+  | .corrupt p => smFSCorr ΔFS ΔPCS t x p
+
+/-- **The FS-AEAD reduction** as an oracle tree: it draws the challenge epoch, the CKA
+initialisation, the initial root key and the root key of the challenge epoch, and runs the
+adversary against the simulator `smFSImplOf`. -/
+noncomputable def smFSTreeOf (C : CKADef Sc Msg Key) [CKACoins C Rand] [Fintype RK]
+    [Nonempty RK] (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (ΔFS ΔPCS : ℕ) (initP : PMF (Msg × Sc × Sc)) (tStar : PMF ℕ)
+    (play : ℕ → Msg → OracleAdv (SMQuery W) (SMAns Sc Msg RK Sa Ct) Bool) :
+    OracleAdv (FSQuery W) (FSAns Sa Ct) Bool :=
+  .rand tStar fun t =>
+    .rand initP fun i =>
+      .rand (PMF.uniformFintype RK) fun rk =>
+        .rand (PMF.uniformFintype RK) fun rkS =>
+          (OracleAdv.simulate (smFSImplOf C R G D ΔFS ΔPCS t rkS) (play t i.1)
+            ⟨smInit i rk, fun _ => false, fun _ => false, false⟩).bind fun r => .ret r.1
+
+derive_timed smFSTreeOf
+
+end FSRed
+
 end CatCrypt.Crypto.Messaging
