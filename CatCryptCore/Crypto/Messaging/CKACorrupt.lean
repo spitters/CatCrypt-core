@@ -668,7 +668,8 @@ def dhCKASimStepOf (pow : E → Gr) (epow : Gr → E → Gr) (ΔFS ΔPCS t : ℕ
     else (.none, s)
   | .recv p => if s.canRecv p then (.none, s.recvd p (s.msg, (s.st p).2)) else (.none, s)
   | .chall p =>
-    if s.canSend p && s.t p + 1 == t then (.out gb z, s.sent p ((s.st p).1, e.1) gb)
+    if s.canSend p then
+      if s.t p + 1 == t then (.out gb z, s.sent p ((s.st p).1, e.1) gb) else (.none, s)
     else (.none, s)
   | .corrupt p => (if ckaAllowCorr ΔFS ΔPCS t s p then .state (s.st p) else .none, s)
   | .sendLeak p =>
@@ -1169,8 +1170,13 @@ theorem dhRel_step (t : ℕ) (ideal : Bool) (va vb : CG.Exp × G) (z : G)
     simp only [dhCKAEagerStepOf, OracleAdv.eagerStep, dhCritA, dhCritB, Bool.false_eq_true,
       ite_false, dhCKAStepOf, dhCKASimStepOf, hcs, hσt]
     rcases (Bool.eq_false_or_eq_true (s.canSend p && s.t p + 1 == t)).symm with hcb | hcb
-    · simp only [hcb, ite_false, Bool.false_eq_true]; exact ⟨by trivial, h⟩
-    · simp only [hcb, ite_true]
+    · rcases (Bool.eq_false_or_eq_true (s.canSend p)).symm with hc | hc
+      · simp only [hc, ite_false, Bool.false_eq_true]; exact ⟨by trivial, h⟩
+      · have ht : (s.t p + 1 == t) = false := by simpa [hc] using hcb
+        simp only [hc, ht, ite_true, ite_false, Bool.false_eq_true]; exact ⟨by trivial, h⟩
+    · have hcb' := hcb
+      simp only [Bool.and_eq_true] at hcb'
+      simp only [hcb'.1, hcb'.2, Bool.and_self, ite_true]
       simp only [Bool.and_eq_true, beq_iff_eq] at hcb
       obtain ⟨hc, ht1⟩ := hcb
       obtain ⟨hAB, hp⟩ := (CKAGameSt.canSend_iff s p).1 hc
@@ -1424,7 +1430,9 @@ theorem ckaCorruptSimImplOf.timed_bound (pow : E → Gr) (powCost : E → ℕ) (
     | chall p =>
       have := hS p; have := hT p; have := hT .A; have := hT .B
       dsimp only
-      split <;> omega
+      split
+      · split <;> omega
+      · omega
     | corrupt p =>
       have := hS p; have := hT p; have := hT .A; have := hT .B
       dsimp only
@@ -1458,7 +1466,9 @@ theorem ckaCorruptSimImplOf.timed_bound (pow : E → Gr) (powCost : E → ℕ) (
     | chall p =>
       dsimp only [OracleAdv.Timed.AllRet]
       split
-      · exact ⟨hSu p, hTu p⟩
+      · split
+        · exact ⟨hSu p, hTu p⟩
+        · exact ⟨hS', hT'⟩
       · exact ⟨hS', hT'⟩
     | corrupt p => exact ⟨hS', hT'⟩
     | sendLeak p =>
