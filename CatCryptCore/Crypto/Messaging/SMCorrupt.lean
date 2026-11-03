@@ -1506,4 +1506,563 @@ derive_timed smFSTreeOf
 
 end FSRed
 
+/-! ## The FS-AEAD hop: invariants of the simulation -/
+
+section FSInvSec
+
+variable {Sc Msg RK Sa : Type}
+
+/-- The epoch counters of a reachable CKA game state: equal, or the party ahead by one is the
+sender of its epoch. -/
+def ckaReach {St M : Type} (s : CKAGameSt St M) : Prop :=
+  s.t .A = s.t .B ∨ (s.t .A = s.t .B + 1 ∧ ckaSender (s.t .A) = .A) ∨
+    (s.t .B = s.t .A + 1 ∧ ckaSender (s.t .B) = .B)
+
+theorem ckaReach_init {St M : Type} (pub : M) (sA sB : St) :
+    ckaReach (CKAGameSt.init pub sA sB) := Or.inl rfl
+
+theorem ckaSender_ne_succ (e : ℕ) : ckaSender (e + 1) ≠ ckaSender e := by
+  rw [ckaSender_succ]; exact CKAParty.other_ne _
+
+theorem ckaReach_sent {St M : Type} {s : CKAGameSt St M} (h : ckaReach s) {p : CKAParty}
+    (hc : s.canSend p = true) (x : St) (T : M) : ckaReach (s.sent p x T) := by
+  simp only [CKAGameSt.canSend, Bool.and_eq_true, beq_iff_eq] at hc
+  obtain ⟨h1, h2⟩ := hc
+  unfold ckaReach
+  cases p
+  · right; left
+    simp only [CKAGameSt.sent_t, ite_true, reduceCtorEq, ite_false]
+    exact ⟨by omega, h2⟩
+  · right; right
+    simp only [CKAGameSt.sent_t, ite_true, reduceCtorEq, ite_false]
+    exact ⟨by omega, by rw [← h1]; exact h2⟩
+
+theorem ckaReach_recvd {St M : Type} {s : CKAGameSt St M} {p : CKAParty}
+    (hc : s.canRecv p = true) (x : St) : ckaReach (s.recvd p x) := by
+  simp only [CKAGameSt.canRecv, beq_iff_eq] at hc
+  left
+  cases p <;> simp at hc ⊢ <;> omega
+
+/-- In a reachable state, a party that may receive is one epoch behind its peer, and the peer
+is the sender of its epoch. -/
+theorem ckaReach_recv {St M : Type} {s : CKAGameSt St M} (h : ckaReach s) {p : CKAParty}
+    (hc : s.canRecv p = true) : s.t p.other = s.t p + 1 ∧ ckaSender (s.t p.other) = p.other := by
+  simp only [CKAGameSt.canRecv, beq_iff_eq] at hc
+  refine ⟨hc.symm, ?_⟩
+  unfold ckaReach at h
+  cases p
+  · simp only [CKAParty.other_A] at hc ⊢
+    rcases h with h | ⟨h1, -⟩ | ⟨-, h2⟩
+    · omega
+    · omega
+    · exact h2
+  · simp only [CKAParty.other_B] at hc ⊢
+    rcases h with h | ⟨-, h2⟩ | ⟨h1, -⟩
+    · omega
+    · exact h2
+    · omega
+
+/-- In a reachable state, a party that may send opens the epoch of its counter plus one, and
+both counters are equal. -/
+theorem ckaSend_spec {St M : Type} {s : CKAGameSt St M} {p : CKAParty}
+    (hc : s.canSend p = true) : s.t p.other = s.t p ∧ ckaSender (s.t p + 1) = p := by
+  simp only [CKAGameSt.canSend, Bool.and_eq_true, beq_iff_eq] at hc
+  cases p
+  · exact ⟨hc.1.symm, hc.2⟩
+  · exact ⟨hc.1, by rw [← hc.1]; exact hc.2⟩
+
+/-- **The corruption gates keep the chains of the challenge epoch hidden.** With
+`2 ≤ ΔFS` and `1 ≤ ΔPCS`, a party whose counter is the challenge epoch or the one after it
+cannot be corrupted. -/
+theorem not_allowCorr_of_window {St M : Type} {ΔFS ΔPCS t : ℕ} (hFS : 2 ≤ ΔFS)
+    (hPCS : 1 ≤ ΔPCS) {s : CKAGameSt St M} {p : CKAParty} (h1 : t ≤ s.t p)
+    (h2 : s.t p ≤ t + 1) : ckaAllowCorr ΔFS ΔPCS t s p = false := by
+  simp only [ckaAllowCorr, Bool.or_eq_false_iff, decide_eq_false_iff_not, not_le]
+  constructor
+  · have : s.t p ≤ max (s.t .A) (s.t .B) := by cases p <;> simp
+    omega
+  · omega
+
+/-- The invariant of the FS-AEAD simulation with the challenge epoch `t` and the initial
+FS-AEAD state `sa`. -/
+structure FSInv (t : ℕ) (sa : Sa) (x : FSSim Sc Msg RK Sa × FSSt Sa) : Prop where
+  corr : x.2.corr = false
+  done : x.2.done = x.1.s.loc.done
+  init : x.2.init = sa
+  fresh : ¬ smOpened t x.1.s → x.2.cur = x.2.init
+  reach : ckaReach x.1.s.ck
+  snd : ∀ p, x.1.sndX p = true → p = ckaSender t ∧ t ≤ x.1.s.ck.t p ∧ x.1.s.ck.t p ≤ t + 1
+  rcv : ∀ p, x.1.rcvX p = true → p ≠ ckaSender t ∧ t ≤ x.1.s.ck.t p ∧ x.1.s.ck.t p ≤ t + 1
+  out : x.1.outX = true →
+    x.1.s.ck.t .A ≤ t ∧ x.1.s.ck.t .B ≤ t ∧ x.1.s.ck.t (ckaSender t) = t
+  empty : x.1.outX = false → x.1.s.loc.out = none → x.1.s.ck.t .A = 0 ∧ x.1.s.ck.t .B = 0
+  chal : ∀ p, ckaSender (x.1.s.ck.t p) = p → x.1.s.ck.t p = t → x.1.s.loc.snd p = none
+
+/-- The secure-messaging state that a state of the FS-AEAD simulation stands for: the held
+chains are the current and the initial FS-AEAD state, the held root output is `(rkS, init)`. -/
+def fsAbs (rkS : RK) (x : FSSim Sc Msg RK Sa × FSSt Sa) : SMSt Sc Msg RK Sa :=
+  ⟨x.1.s.ck, { x.1.s.loc with
+    snd := fun p => if x.1.sndX p then some x.2.cur else x.1.s.loc.snd p
+    rcv := fun p => if x.1.rcvX p then some x.2.init else x.1.s.loc.rcv p
+    out := if x.1.outX then some (rkS, x.2.init) else x.1.s.loc.out }⟩
+
+end FSInvSec
+
+section FSHop
+
+variable {Sc Msg Key Rand RK Sa W Ct : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
+  [SampleableType Ct]
+
+/-- The root step at the challenge epoch with the output `y` fixed in advance. -/
+noncomputable def constRoot (y : RK × Sa) (_ : RK) (_ : Key) : PMF (RK × Sa) := PMF.pure y
+
+theorem fsAbs_ck (rkS : RK) (x : FSSim Sc Msg RK Sa × FSSt Sa) : (fsAbs rkS x).ck = x.1.s.ck :=
+  rfl
+
+/-- **The FS-AEAD simulator is the secure-messaging oracle.** Under the invariant, each call of
+the simulator against the FS-AEAD oracle, mapped by `fsAbs`, is the call of the game with the
+root output `(rkS, sa)` at the challenge epoch. -/
+theorem smFS_step (C : CKADef Sc Msg Key) [CKACoins C Rand] (R : PRGDef (RK × Key) (RK × Sa))
+    (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) {ΔFS ΔPCS : ℕ} (hFS : 2 ≤ ΔFS)
+    (hPCS : 1 ≤ ΔPCS) (t : ℕ) (ideal : Bool) (rkS : RK) (sa : Sa)
+    (x : FSSim Sc Msg RK Sa × FSSt Sa) (hx : FSInv t sa x) (q : SMQuery W) :
+    (OracleAdv.simOracle (smFSImplOf C R G D ΔFS ΔPCS t rkS) (fsOracle G D ideal) x q).map
+        (Prod.map id (fsAbs rkS)) =
+      smOracleOf C R G D ΔFS ΔPCS t ideal (constRoot (Key := Key) (rkS, sa)) (fsAbs rkS x) q := by
+  obtain ⟨⟨⟨ck, l⟩, sX, rX, oX⟩, u⟩ := x
+  have hsXw : ∀ q, sX q = true → t ≤ ck.t q ∧ ck.t q ≤ t + 1 := fun q h => (hx.snd q h).2
+  have hrXw : ∀ q, rX q = true → t ≤ ck.t q ∧ ck.t q ≤ t + 1 := fun q h => (hx.rcv q h).2
+  have hinit : u.init = sa := hx.init
+  cases q with
+  | ratchet p =>
+    simp only [OracleAdv.simOracle, smFSImplOf, smFSRatchet, smOracleOf, fsAbs]
+    by_cases hc : ck.canSend p = true
+    · have hsp := ckaSend_spec hc
+      by_cases ht : ck.t p + 1 = t
+      · have hno : ∀ q, ck.t q < t := fun q => by
+          rcases CKAParty.eq_or_eq_other q p with rfl | rfl <;> omega
+        have hsX : ∀ q, sX q = false := fun q => by
+          by_contra h; have := hsXw q (by simpa using h); have := hno q; omega
+        have hrX : ∀ q, rX q = false := fun q => by
+          by_contra h; have := hrXw q (by simpa using h); have := hno q; omega
+        have hoX : oX = false := by
+          by_contra h
+          have h3 : ck.t (ckaSender t) = t := (hx.out (by simpa using h)).2.2
+          have := hno (ckaSender t); omega
+        have hcur : u.cur = sa := by
+          refine (hx.fresh ?_).trans hx.init
+          simp only [smOpened, not_or, not_le]
+          exact ⟨hno .A, hno .B⟩
+        simp only [hc, ht, beq_self_eq_true, ite_true, hsX, hrX, hoX, Bool.false_eq_true,
+          ite_false, OracleAdv.run_rand, OracleAdv.run_ret, PMF.map_bind, PMF.pure_map,
+          constRoot, PMF.pure_bind]
+        refine congrArg _ (funext fun r => ?_)
+        simp only [Prod.map_apply, id_eq, fsAbs, SMLoc.openedX, SMLoc.opened, hcur, hinit, hrX,
+          Bool.false_eq_true, ite_false, ite_true]
+        congr 4
+        funext q
+        by_cases hq : q = p
+        · subst hq; simp
+        · simp [hq, hsX]
+      · have ht' : (ck.t p + 1 == t) = false := by simpa using ht
+        simp only [hc, ht', ite_true, Bool.false_eq_true, ite_false, OracleAdv.run_rand,
+          OracleAdv.run_ret, PMF.map_bind, PMF.pure_map, PMF.pure_bind]
+        refine congrArg _ (funext fun r => ?_)
+        simp only [Prod.map_apply, id_eq, fsAbs, SMLoc.opened, Bool.false_eq_true, ite_false]
+        congr 4
+        funext q
+        by_cases hq : q = p
+        · subst hq; simp
+        · simp [hq]
+    · simp [hc, PMF.pure_map, fsAbs]
+  | recv p =>
+    simp only [OracleAdv.simOracle, smFSImplOf, smFSRecv, smOracleOf]
+    by_cases hc : ck.canRecv p = true
+    · by_cases ho : oX = true
+      · simp only [hc, ho, ite_true, OracleAdv.run_ret, PMF.pure_map, Prod.map_apply, id_eq,
+          fsAbs, SMLoc.received, SMLoc.recvX, SMLoc.recvY, hinit]
+        congr 4
+        funext q
+        by_cases hq : q = p
+        · subst hq; simp
+        · simp [hq]
+      · have ho' : oX = false := by simpa using ho
+        cases hl : l.out with
+        | none =>
+          have h0 := hx.empty ho' hl
+          simp only [CKAGameSt.canRecv, beq_iff_eq] at hc
+          cases p <;> simp_all
+        | some y =>
+          simp only [hc, ho', Bool.false_eq_true, ite_true, ite_false, hl, OracleAdv.run_ret,
+            PMF.pure_map, Prod.map_apply, id_eq, fsAbs, SMLoc.received, SMLoc.recvY]
+          congr 4
+          funext q
+          by_cases hq : q = p
+          · subst hq; simp
+          · simp [hq]
+    · simp [hc, PMF.pure_map, fsAbs]
+  | send p m =>
+    simp only [OracleAdv.simOracle, smFSImplOf, smFSSend, smOracleOf]
+    by_cases hs : sX p = true
+    · have huniq : ∀ q, q ≠ p → sX q = false := fun q hq => by
+        by_contra h
+        exact hq ((hx.snd q (by simpa using h)).1.trans (hx.snd p hs).1.symm)
+      by_cases hsd : ckaSender (ck.t p) = p
+      · simp only [hs, hsd, beq_self_eq_true, ite_true, fsAbs, OracleAdv.run_query, fsOracle,
+          PMF.pure_bind, OracleAdv.run_ret, PMF.pure_map, Prod.map_apply, id_eq,
+          SMLoc.advanced]
+        congr 4
+        funext q
+        by_cases hq : q = p
+        · subst hq; simp [hs]
+        · simp [hq, huniq q hq]
+      · have hsd' : (ckaSender (ck.t p) == p) = false := by simpa using hsd
+        simp [hs, hsd', hsd, fsAbs, PMF.pure_map]
+    · have hs' : sX p = false := by simpa using hs
+      cases hl : l.snd p with
+      | none => simp [hs', hl, fsAbs, PMF.pure_map]
+      | some sa' =>
+        by_cases hsd : ckaSender (ck.t p) = p
+        · simp only [hs', hl, hsd, beq_self_eq_true, Bool.false_eq_true, ite_true, ite_false,
+            fsAbs, OracleAdv.run_ret, PMF.pure_map, Prod.map_apply, id_eq, SMLoc.advanced]
+          congr 4
+          funext q
+          by_cases hq : q = p
+          · subst hq; simp [hs']
+          · simp [hq]
+        · have hsd' : (ckaSender (ck.t p) == p) = false := by simpa using hsd
+          simp [hs', hl, hsd', hsd, fsAbs, PMF.pure_map]
+  | chall p m =>
+    simp only [OracleAdv.simOracle, smFSImplOf, smFSChall, smOracleOf, challOk]
+    by_cases hs : sX p = true
+    · have huniq : ∀ q, q ≠ p → sX q = false := fun q hq => by
+        by_contra h
+        exact hq ((hx.snd q (by simpa using h)).1.trans (hx.snd p hs).1.symm)
+      by_cases hok : (!l.done && (ckaSender (ck.t p) == p) && (ck.t p == t)) = true
+      · have hd : l.done = false := by
+          simp only [Bool.and_eq_true, Bool.not_eq_true'] at hok
+          exact hok.1.1
+        have hfs : (!u.done && !u.corr) = true := by
+          simp [show u.done = l.done from hx.done, hd, show u.corr = false from hx.corr]
+        simp only [hs, hok, Bool.and_self, ite_true, fsAbs, OracleAdv.run_query, fsOracle, hfs,
+          PMF.bind_bind, PMF.pure_bind, OracleAdv.run_ret, PMF.map_bind, PMF.pure_map,
+          Prod.map_apply, id_eq, SMLoc.advanced, Bool.true_and]
+        refine congrArg _ (funext fun c => ?_)
+        congr 4
+        funext q
+        by_cases hq : q = p
+        · subst hq; simp [hs]
+        · simp [hq, huniq q hq]
+      · have hok' : (!l.done && (ckaSender (ck.t p) == p) && (ck.t p == t)) = false := by
+          simpa using hok
+        simp only [hs, hok', Bool.and_false, Bool.true_and, Bool.false_eq_true, ite_true,
+          ite_false, fsAbs, OracleAdv.run_ret, PMF.pure_map, Prod.map_apply, id_eq]
+    · have hs' : sX p = false := by simpa using hs
+      cases hl : l.snd p with
+      | none => simp [hs', hl, fsAbs, PMF.pure_map]
+      | some sa' =>
+        have hok : (!l.done && (ckaSender (ck.t p) == p) && (ck.t p == t)) = false := by
+          by_contra h
+          simp only [Bool.not_eq_false, Bool.and_eq_true, beq_iff_eq] at h
+          have := hx.chal p h.1.2 h.2
+          simp only at this
+          rw [hl] at this
+          exact absurd this (by simp)
+        simp only [hs', hl, hok, Bool.false_and, Bool.false_eq_true, ite_false, fsAbs,
+          OracleAdv.run_ret, PMF.pure_map, Prod.map_apply, id_eq]
+  | corrupt p =>
+    simp only [OracleAdv.simOracle, smFSImplOf, smFSCorr, smOracleOf]
+    by_cases hc : ckaAllowCorr ΔFS ΔPCS t ck p = true
+    · have hs : sX p = false := by
+        by_contra h
+        have hw := hsXw p (by simpa using h)
+        rw [not_allowCorr_of_window hFS hPCS hw.1 hw.2] at hc
+        exact absurd hc (by decide)
+      have hr : rX p = false := by
+        by_contra h
+        have hw := hrXw p (by simpa using h)
+        rw [not_allowCorr_of_window hFS hPCS hw.1 hw.2] at hc
+        exact absurd hc (by decide)
+      simp [hc, hs, hr, fsAbs, PMF.pure_map]
+    · simp [hc, fsAbs, PMF.pure_map]
+
+theorem smOpened_of_le {t : ℕ} {s : SMSt Sc Msg RK Sa} {p : CKAParty} (h : t ≤ s.ck.t p) :
+    smOpened t s := by
+  cases p
+  · exact Or.inl h
+  · exact Or.inr h
+
+/-- The invariant of the FS-AEAD simulation holds for a state whose secure-messaging part, marks
+and FS-AEAD flags are those of a state with the invariant, when the FS-AEAD chain has only
+moved after the opening of the challenge epoch. -/
+theorem FSInv.of_cur {t : ℕ} {sa : Sa} {x : FSSim Sc Msg RK Sa × FSSt Sa} (hx : FSInv t sa x)
+    (u : FSSt Sa) (hc : u.corr = false) (hd : u.done = x.2.done) (hi : u.init = x.2.init)
+    (ho : smOpened t x.1.s) : FSInv t sa (x.1, u) :=
+  ⟨hc, hd.trans hx.done, hi.trans hx.init, fun h => absurd ho h, hx.reach, hx.snd, hx.rcv, hx.out,
+    hx.empty, hx.chal⟩
+
+/-- **The invariant of the FS-AEAD simulation is kept** by every call of the simulator against
+the FS-AEAD oracle. -/
+theorem smFS_inv (C : CKADef Sc Msg Key) [CKACoins C Rand] (R : PRGDef (RK × Key) (RK × Sa))
+    (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (ΔFS ΔPCS t : ℕ) (ideal : Bool) (rkS : RK)
+    (sa : Sa) (x : FSSim Sc Msg RK Sa × FSSt Sa) (hx : FSInv t sa x) (q : SMQuery W) (y)
+    (hy : y ∈ (OracleAdv.simOracle (smFSImplOf C R G D ΔFS ΔPCS t rkS) (fsOracle G D ideal)
+      x q).support) : FSInv t sa y.2 := by
+  obtain ⟨⟨⟨ck, l⟩, sX, rX, oX⟩, u⟩ := x
+  simp only [OracleAdv.simOracle, PMF.support_map, Set.mem_image] at hy
+  obtain ⟨z, hz, rfl⟩ := hy
+  have hsXw : ∀ q, sX q = true → q = ckaSender t ∧ t ≤ ck.t q ∧ ck.t q ≤ t + 1 :=
+    fun q h => hx.snd q h
+  have hrXw : ∀ q, rX q = true → q ≠ ckaSender t ∧ t ≤ ck.t q ∧ ck.t q ≤ t + 1 :=
+    fun q h => hx.rcv q h
+  have hreach : ckaReach ck := hx.reach
+  have hout : oX = true → ck.t .A ≤ t ∧ ck.t .B ≤ t ∧ ck.t (ckaSender t) = t := hx.out
+  have hempty : oX = false → l.out = none → ck.t .A = 0 ∧ ck.t .B = 0 := hx.empty
+  cases q with
+  | ratchet p =>
+    simp only [smFSImplOf, smFSRatchet] at hz
+    by_cases hc : ck.canSend p = true
+    · obtain ⟨hso, hsp⟩ := ckaSend_spec hc
+      simp only [hc, ite_true, OracleAdv.run_rand, PMF.support_bind, Set.mem_iUnion] at hz
+      obtain ⟨r, -, hz⟩ := hz
+      by_cases ht : ck.t p + 1 = t
+      · simp only [ht, beq_self_eq_true, ite_true, OracleAdv.run_ret, PMF.support_pure,
+          Set.mem_singleton_iff] at hz
+        subst hz
+        have hsp' : ckaSender t = p := ht ▸ hsp
+        refine ⟨hx.corr, hx.done, hx.init, ?_, ckaReach_sent hx.reach hc _ _, ?_, ?_, ?_, ?_, ?_⟩
+        · intro h; exfalso; apply h
+          cases p <;> simp [smOpened, CKAGameSt.sent_t] <;> omega
+        · intro q hq
+          by_cases hqp : q = p
+          · subst hqp; simp only [CKAGameSt.sent_t, ite_true]; exact ⟨hsp'.symm, by omega, by omega⟩
+          · have hq' : sX q = true := by simpa [Function.update_apply, hqp] using hq
+            have := (hsXw q hq').2.1
+            have : q = p.other := (CKAParty.eq_or_eq_other q p).resolve_left hqp
+            subst this; omega
+        · intro q hq
+          have hq' : rX q = true := hq
+          have h1 := (hrXw q hq').2.1
+          by_cases hqp : q = p
+          · subst hqp; omega
+          · have : q = p.other := (CKAParty.eq_or_eq_other q p).resolve_left hqp
+            subst this; omega
+        · intro _
+          simp only [CKAGameSt.sent_t, hsp']
+          cases p <;> simp at hso ⊢ <;> omega
+        · intro h; exact absurd h (by simp)
+        · intro q _ hq2
+          by_cases hqp : q = p
+          · subst hqp; simp [SMLoc.openedX]
+          · have : q = p.other := (CKAParty.eq_or_eq_other q p).resolve_left hqp
+            subst this
+            simp only [CKAGameSt.sent_t, hqp, ite_false] at hq2
+            omega
+      · have ht' : (ck.t p + 1 == t) = false := by simpa using ht
+        simp only [ht', Bool.false_eq_true, ite_false, OracleAdv.run_ret, PMF.support_pure,
+          Set.mem_singleton_iff] at hz
+        subst hz
+        refine ⟨hx.corr, hx.done, hx.init, ?_, ckaReach_sent hx.reach hc _ _, ?_, ?_, ?_, ?_, ?_⟩
+        · intro h
+          refine hx.fresh fun h' => h ?_
+          rcases h' with h' | h'
+          · exact Or.inl (h'.trans (CKAGameSt.le_sent _ _ _ _ _))
+          · exact Or.inr (h'.trans (CKAGameSt.le_sent _ _ _ _ _))
+        · intro q hq
+          by_cases hqp : q = p
+          · subst hqp; simp at hq
+          · have hq' : sX q = true := by simpa [Function.update_apply, hqp] using hq
+            simp only [CKAGameSt.sent_t, hqp, ite_false]
+            exact hsXw q hq'
+        · intro q hq
+          have hq' : rX q = true := hq
+          obtain ⟨h1, h2, h3⟩ := hrXw q hq'
+          by_cases hqp : q = p
+          · subst hqp
+            simp only [CKAGameSt.sent_t, ite_true]
+            refine ⟨h1, by omega, ?_⟩
+            by_contra hlt
+            have he : ck.t q = t + 1 := by omega
+            rw [he, ckaSender_add_two] at hsp
+            exact h1 hsp.symm
+          · simp only [CKAGameSt.sent_t, hqp, ite_false]
+            exact ⟨h1, h2, h3⟩
+        · intro h; exact absurd h (by simp)
+        · intro _ h; exact absurd h (by simp [SMLoc.opened])
+        · intro q hq1 hq2
+          by_cases hqp : q = p
+          · subst hqp
+            simp only [CKAGameSt.sent_t, ite_true] at hq2
+            exact absurd hq2 ht
+          · simp only [CKAGameSt.sent_t, hqp, ite_false] at hq1 hq2
+            simp only [SMLoc.opened, Function.update_apply, hqp, ite_false]
+            exact hx.chal q hq1 hq2
+    · simp only [hc, Bool.false_eq_true, ite_false, OracleAdv.run_ret, PMF.support_pure,
+        Set.mem_singleton_iff] at hz
+      subst hz; exact hx
+  | recv p =>
+    simp only [smFSImplOf, smFSRecv] at hz
+    by_cases hc : ck.canRecv p = true
+    · obtain ⟨hto, hso⟩ := ckaReach_recv hreach hc
+      by_cases ho : oX = true
+      · simp only [hc, ho, ite_true, OracleAdv.run_ret, PMF.support_pure,
+          Set.mem_singleton_iff] at hz
+        subst hz
+        obtain ⟨hA, hB, hS⟩ := hout ho
+        have hle : ∀ q, ck.t q ≤ t := fun q => by
+          cases q
+          · exact hA
+          · exact hB
+        have hpo : ckaSender t = p.other := by
+          rcases CKAParty.eq_or_eq_other (ckaSender t) p with h | h
+          · exfalso; rw [h] at hS
+            have := hle p.other
+            omega
+          · exact h
+        have htt : ck.t p.other = t := by rw [← hpo]; exact hS
+        refine ⟨hx.corr, hx.done, hx.init, ?_, ckaReach_recvd hc _, ?_, ?_, ?_, ?_, ?_⟩
+        · intro h; exfalso; apply h
+          refine smOpened_of_le (p := p.other) ?_
+          simp only [CKAGameSt.recvd_t, CKAParty.other_ne, ite_false]
+          omega
+        · intro q hq
+          have hq' : sX q = true := hq
+          obtain ⟨h1, h2, h3⟩ := hsXw q hq'
+          by_cases hqp : q = p
+          · subst hqp; rw [hpo] at h1; exact absurd h1 (CKAParty.ne_other q)
+          · simp only [CKAGameSt.recvd_t, hqp, ite_false]; exact ⟨h1, h2, h3⟩
+        · intro q hq
+          by_cases hqp : q = p
+          · subst hqp
+            simp only [CKAGameSt.recvd_t, ite_true]
+            exact ⟨by rw [hpo]; exact CKAParty.ne_other q, by omega, by omega⟩
+          · have hq' : rX q = true := by simpa [Function.update_apply, hqp] using hq
+            simp only [CKAGameSt.recvd_t, hqp, ite_false]
+            exact hrXw q hq'
+        · intro _
+          have hpA := hle .A; have hpB := hle .B
+          simp only [CKAGameSt.recvd_t, hpo, CKAParty.other_ne, ite_false]
+          refine ⟨?_, ?_, htt⟩ <;> split <;> omega
+        · intro h; exact absurd h (by simp [ho])
+        · intro q hq1 hq2
+          by_cases hqp : q = p
+          · subst hqp
+            simp only [CKAGameSt.recvd_t, ite_true] at hq1
+            rw [← hto, hso] at hq1
+            exact absurd hq1 (CKAParty.other_ne q)
+          · simp only [CKAGameSt.recvd_t, hqp, ite_false] at hq1 hq2
+            simp only [SMLoc.recvX]
+            exact hx.chal q hq1 hq2
+      · have ho' : oX = false := by simpa using ho
+        cases hl : l.out with
+        | none =>
+          have h0 := hempty ho' hl
+          cases p <;> simp at hto <;> omega
+        | some y =>
+          simp only [hc, ho', Bool.false_eq_true, ite_true, ite_false, hl, OracleAdv.run_ret,
+            PMF.support_pure, Set.mem_singleton_iff] at hz
+          subst hz
+          refine ⟨hx.corr, hx.done, hx.init, ?_, ckaReach_recvd hc _, ?_, ?_, ?_, ?_, ?_⟩
+          · intro h
+            refine hx.fresh fun h' => h ?_
+            rcases h' with h' | h'
+            · exact Or.inl (h'.trans (CKAGameSt.le_recvd _ _ _ _))
+            · exact Or.inr (h'.trans (CKAGameSt.le_recvd _ _ _ _))
+          · intro q hq
+            have hq' : sX q = true := hq
+            obtain ⟨h1, h2, h3⟩ := hsXw q hq'
+            by_cases hqp : q = p
+            · subst hqp
+              simp only [CKAGameSt.recvd_t, ite_true]
+              refine ⟨h1, by omega, ?_⟩
+              by_contra hlt
+              have he : ck.t q.other = t + 2 := by omega
+              rw [he, ckaSender_add_two, ← h1] at hso
+              exact CKAParty.ne_other q hso
+            · simp only [CKAGameSt.recvd_t, hqp, ite_false]; exact ⟨h1, h2, h3⟩
+          · intro q hq
+            by_cases hqp : q = p
+            · subst hqp; simp at hq
+            · have hq' : rX q = true := by simpa [Function.update_apply, hqp] using hq
+              simp only [CKAGameSt.recvd_t, hqp, ite_false]
+              exact hrXw q hq'
+          · intro h; exact absurd h (by simp [ho'])
+          · intro _ h; exact absurd h (by simp [SMLoc.recvY, hl])
+          · intro q hq1 hq2
+            by_cases hqp : q = p
+            · subst hqp
+              simp only [CKAGameSt.recvd_t, ite_true] at hq1
+              rw [← hto, hso] at hq1
+              exact absurd hq1 (CKAParty.other_ne q)
+            · simp only [CKAGameSt.recvd_t, hqp, ite_false] at hq1 hq2
+              simp only [SMLoc.recvY]
+              exact hx.chal q hq1 hq2
+    · simp only [hc, Bool.false_eq_true, ite_false, OracleAdv.run_ret, PMF.support_pure,
+        Set.mem_singleton_iff] at hz
+      subst hz; exact hx
+  | send p m =>
+    simp only [smFSImplOf, smFSSend] at hz
+    by_cases hs : sX p = true
+    · by_cases hsd : ckaSender (ck.t p) = p
+      · simp only [hs, hsd, beq_self_eq_true, ite_true, OracleAdv.run_query, fsOracle,
+          PMF.pure_bind, OracleAdv.run_ret, PMF.support_pure, Set.mem_singleton_iff] at hz
+        subst hz
+        exact FSInv.of_cur hx _ hx.corr rfl rfl (smOpened_of_le (hsXw p hs).2.1)
+      · have hsd' : (ckaSender (ck.t p) == p) = false := by simpa using hsd
+        simp only [hs, hsd', Bool.false_eq_true, ite_true, ite_false, OracleAdv.run_ret,
+          PMF.support_pure, Set.mem_singleton_iff] at hz
+        subst hz; exact hx
+    · have hs' : sX p = false := by simpa using hs
+      cases hl : l.snd p with
+      | none =>
+        simp only [hs', hl, Bool.false_eq_true, ite_false, OracleAdv.run_ret, PMF.support_pure,
+          Set.mem_singleton_iff] at hz
+        subst hz; exact hx
+      | some sa' =>
+        by_cases hsd : ckaSender (ck.t p) = p
+        · simp only [hs', hl, hsd, beq_self_eq_true, Bool.false_eq_true, ite_true, ite_false,
+            OracleAdv.run_ret, PMF.support_pure, Set.mem_singleton_iff] at hz
+          subst hz
+          refine ⟨hx.corr, hx.done, hx.init, hx.fresh, hx.reach, hx.snd, hx.rcv, hx.out,
+            hx.empty, ?_⟩
+          intro q hq1 hq2
+          by_cases hqp : q = p
+          · subst hqp
+            have := hx.chal q hq1 hq2
+            simp only at this
+            rw [hl] at this; exact absurd this (by simp)
+          · simp only [SMLoc.advanced, Function.update_apply, hqp, ite_false]
+            exact hx.chal q hq1 hq2
+        · have hsd' : (ckaSender (ck.t p) == p) = false := by simpa using hsd
+          simp only [hs', hl, hsd', Bool.false_eq_true, ite_false, OracleAdv.run_ret,
+            PMF.support_pure, Set.mem_singleton_iff] at hz
+          subst hz; exact hx
+  | chall p m =>
+    simp only [smFSImplOf, smFSChall] at hz
+    by_cases hok : (sX p && challOk l t (ck.t p) p) = true
+    · simp only [Bool.and_eq_true] at hok
+      have hd : l.done = false := by
+        have := hok.2
+        simp only [challOk, Bool.and_eq_true, Bool.not_eq_true'] at this
+        exact this.1.1
+      have hfs : (!u.done && !u.corr) = true := by
+        simp [show u.done = l.done from hx.done, hd, show u.corr = false from hx.corr]
+      simp only [hok, Bool.and_self, ite_true, OracleAdv.run_query, fsOracle, hfs,
+        PMF.bind_bind, PMF.pure_bind, PMF.support_bind, Set.mem_iUnion, OracleAdv.run_ret,
+        PMF.support_pure, Set.mem_singleton_iff] at hz
+      obtain ⟨c, -, rfl⟩ := hz
+      have hop : smOpened t ⟨ck, l⟩ := smOpened_of_le (hsXw p hok.1).2.1
+      exact ⟨hx.corr, rfl, hx.init, fun h => absurd hop h, hx.reach, hx.snd, hx.rcv, hx.out,
+        hx.empty, hx.chal⟩
+    · have hok' : (sX p && challOk l t (ck.t p) p) = false := by simpa using hok
+      simp only [hok', Bool.false_eq_true, ite_false, OracleAdv.run_ret, PMF.support_pure,
+        Set.mem_singleton_iff] at hz
+      subst hz; exact hx
+  | corrupt p =>
+    simp only [smFSImplOf, smFSCorr] at hz
+    split at hz <;> simp only [OracleAdv.run_ret, PMF.support_pure, Set.mem_singleton_iff] at hz <;>
+      subst hz <;> exact hx
+
+end FSHop
+
 end CatCrypt.Crypto.Messaging
