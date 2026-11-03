@@ -288,6 +288,7 @@ public import CatCryptCore.Crypto.PRPPRFPmfGame
 public import CatCryptCore.Crypto.FiatShamirROM.Verification
 public import CatCryptCore.Crypto.ROProgramming
 public import CatCryptCore.Crypto.Messaging.KEMCKA
+public import CatCryptCore.Crypto.Messaging.TripleRatchet
 public import CatCryptCore.Crypto.HashThenRF
 public import CatCryptCore.Crypto.EagerLazyRF
 public import CatCryptCore.Crypto.OracleLazyMulti
