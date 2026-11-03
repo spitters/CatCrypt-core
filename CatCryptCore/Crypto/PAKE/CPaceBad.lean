@@ -44,7 +44,6 @@ message `M pid` received by each keyed party:
 
 * `step_good`: from `Good`, a step of the joint world either is bad or gives equal outputs and
   reaches a state satisfying `Good`.
-* `run_flagWhen_or_le`: the union bound for bad flags.
 * `badGame_le`: `badGame G B true` is at most the sum of the probabilities of the experiments
   `dmExp`, `uqExp`, `psExp` and `collExp`, each the probability that the run of the joint world
   makes a transition of the named kind.
@@ -59,7 +58,9 @@ namespace CatCrypt.Crypto.PAKE.CPaceBad
 open CatCrypt.Core CatCrypt.Prob CatCrypt.Crypto CatCrypt.Relational
 open CatCrypt.Crypto.UCConcrete CatCrypt.Crypto.UCTransparent CatCrypt.Crypto.UCTransparent.FPAKE
 open CatCrypt.Crypto.PAKE.DHExtract CatCrypt.Crypto.PAKE.CPaceSquare
-open CatCrypt.Crypto.PAKE.CPaceHops CatCrypt.NonUniform
+open CatCrypt.Crypto.PAKE.CPaceHops CatCrypt.NonUniform CatCrypt.Crypto.OracleGameUpToBad
+open CatCrypt.Crypto.OracleAdv
+  (run_flagWhen_le_of_inv run_flagWhen_mono run_flagWhen_or_le run_flagWhen_inst)
 open scoped ENNReal
 
 /-- The state of the joint world without its flag. -/
@@ -2133,81 +2134,6 @@ theorem step_good (td : Pw → Sˣ) (s : JS S W Pw K) (hG : Good G td s) (e : OE
   · exact step_send G td M s hG r pid m
 
 end Step
-
-/-! ## Unions of bad flags
-
-This section belongs upstream, in `CatCryptCore.Crypto.OracleLazyMulti` beside `flagWhen`. -/
-
-section FlagUnion
-
-variable {D R α σ : Type}
-
-/-- **A weaker bad event sets its flag at most as often.** -/
-theorem run_flagWhen_mono (O : σ → D → PMF (R × σ)) (bad₁ bad₂ : σ → D → R × σ → Prop)
-    [∀ s d x, Decidable (bad₁ s d x)] [∀ s d x, Decidable (bad₂ s d x)]
-    (h : ∀ s d x, bad₁ s d x → bad₂ s d x) (A : OracleAdv D R α) (s : σ) :
-    (OracleAdv.run (OracleAdv.flagWhen bad₁ O) A (s, false)).toOuterMeasure
-        {y | y.2.2 = true} ≤
-      (OracleAdv.run (OracleAdv.flagWhen bad₂ O) A (s, false)).toOuterMeasure
-        {y | y.2.2 = true} :=
-  run_flagWhen_le_of_inv O bad₁ bad₂ (fun _ => True)
-    (fun s d _ x _ => (em (bad₁ s d x)).elim (fun hb => Or.inl (h s d x hb))
-      (fun hb => Or.inr ⟨hb, trivial⟩)) A s trivial
-
-/-- **The union bound for bad flags**: the flag of `bad₁ ∨ bad₂` is set with at most the sum
-of the probabilities that the flags of `bad₁` and of `bad₂` are set. -/
-theorem run_flagWhen_or_le (O : σ → D → PMF (R × σ)) (bad₁ bad₂ : σ → D → R × σ → Prop)
-    [∀ s d x, Decidable (bad₁ s d x)] [∀ s d x, Decidable (bad₂ s d x)]
-    (A : OracleAdv D R α) (s : σ) :
-    (OracleAdv.run (OracleAdv.flagWhen (fun s d x => bad₁ s d x ∨ bad₂ s d x) O) A
-        (s, false)).toOuterMeasure {y | y.2.2 = true} ≤
-      (OracleAdv.run (OracleAdv.flagWhen bad₁ O) A (s, false)).toOuterMeasure
-          {y | y.2.2 = true} +
-        (OracleAdv.run (OracleAdv.flagWhen bad₂ O) A (s, false)).toOuterMeasure
-          {y | y.2.2 = true} := by
-  let bad₂' : σ × Bool → D → R × (σ × Bool) → Prop := fun st d x => bad₂ st.1 d (x.1, x.2.1)
-  let O₂ := OracleAdv.flagWhen bad₂' (OracleAdv.flagWhen bad₁ O)
-  have h₁ : (OracleAdv.run O₂ A ((s, false), false)).map (Prod.map id Prod.fst) =
-      OracleAdv.run (OracleAdv.flagWhen bad₁ O) A (s, false) :=
-    OracleAdv.run_flagWhen_map bad₂' _ A _ false
-  have h₂ : (OracleAdv.run O₂ A ((s, false), false)).map
-      (Prod.map id fun st => (st.1.1, st.2)) =
-        OracleAdv.run (OracleAdv.flagWhen bad₂ O) A (s, false) :=
-    OracleAdv.run_map_state _ _ _ (fun st d => by
-      simp only [O₂, bad₂', OracleAdv.flagWhen, PMF.map_comp]
-      rfl) A _
-  have h₃ : (OracleAdv.run O₂ A ((s, false), false)).map
-      (Prod.map id fun st => (st.1.1, st.1.2 || st.2)) =
-        OracleAdv.run (OracleAdv.flagWhen (fun s d x => bad₁ s d x ∨ bad₂ s d x) O) A
-          (s, false) :=
-    OracleAdv.run_map_state _ _ _ (fun st d => by
-      simp only [O₂, bad₂', OracleAdv.flagWhen, PMF.map_comp]
-      congr 1
-      funext x
-      simp only [Function.comp_apply, Prod.map_apply, id_eq, Bool.decide_or]
-      cases st.1.2 <;> cases st.2 <;> simp) A _
-  rw [← h₁, ← h₂, ← h₃, PMF.toOuterMeasure_map_apply, PMF.toOuterMeasure_map_apply,
-    PMF.toOuterMeasure_map_apply]
-  refine (MeasureTheory.measure_mono ?_).trans (MeasureTheory.measure_union_le _ _)
-  intro y hy
-  simp only [Set.mem_preimage, Set.mem_ofPred_eq] at hy ⊢
-  simp only [Set.mem_union, Set.mem_preimage, Set.mem_ofPred_eq]
-  grind
-
-/-- A flagged run does not depend on the decision procedure of the bad event. -/
-theorem run_flagWhen_inst (O : σ → D → PMF (R × σ)) (bad : σ → D → R × σ → Prop)
-    (i j : ∀ s d x, Decidable (bad s d x)) (A : OracleAdv D R α) (s : σ × Bool) :
-    OracleAdv.run (@OracleAdv.flagWhen D R σ bad i O) A s =
-      OracleAdv.run (@OracleAdv.flagWhen D R σ bad j O) A s := by
-  rw [Subsingleton.elim i j]
-
-/-- The output flag of a flagged run, at `true`, as an outer measure. -/
-theorem map_flag_apply {β : Type} (p : PMF (β × (σ × Bool))) :
-    (p.map fun y => y.2.2) true = p.toOuterMeasure {y | y.2.2 = true} := by
-  rw [← PMF.toOuterMeasure_apply_singleton, PMF.toOuterMeasure_map_apply]
-  rfl
-
-end FlagUnion
 
 /-! ## The bad-event experiments -/
 

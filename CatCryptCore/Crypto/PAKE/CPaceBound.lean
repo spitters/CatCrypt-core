@@ -52,6 +52,8 @@ open CatCrypt.Core CatCrypt.Prob CatCrypt.Crypto CatCrypt.Relational
 open CatCrypt.Crypto.UCConcrete CatCrypt.Crypto.UCTransparent CatCrypt.Crypto.UCTransparent.FPAKE
 open CatCrypt.Crypto.PAKE.DHExtract CatCrypt.Crypto.PAKE.CPaceSquare
 open CatCrypt.Crypto.PAKE.CPaceHops CatCrypt.Crypto.PAKE.CPaceBad CatCrypt.NonUniform
+open CatCrypt.Crypto.OracleGameUpToBad
+open CatCrypt.Crypto.OracleAdv (run_flagWhen_mono run_flagWhen_inst)
 open scoped ENNReal
 
 /-! ## Collisions of a uniform function -/
