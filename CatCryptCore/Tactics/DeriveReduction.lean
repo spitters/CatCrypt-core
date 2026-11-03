@@ -1902,6 +1902,20 @@ def reduceProjCtor (e : Expr) : MetaM Expr :=
             return .visit (mkAppN r (args.extract (info.numParams + 1) args.size)).headBeta
     return .continue)
 
+/-- `e` with each projection of a structure that `whnf` brings to a constructor application (a
+field `(g b₁ … bₘ).f` of a structure computed by a definition `g`) replaced by the field, applied
+to the remaining arguments; a projection of a binder is kept. -/
+def reduceProjDef (e : Expr) : MetaM Expr :=
+  Meta.transform e (post := fun e => do
+    let .const m _ := e.getAppFn | return .continue
+    let some info ← getProjectionFnInfo? m | return .continue
+    if info.fromClass then return .continue
+    let args := e.getAppArgs
+    let some s := args[info.numParams]? | return .continue
+    unless s.getAppFn.consumeMData.isConst do return .continue
+    let some r ← ctorField? (← whnf s) info.i | return .continue
+    return .visit (mkAppN r (args.extract (info.numParams + 1) args.size)).headBeta)
+
 /-- A field of a structure-valued reduction: its name, its kind, its value in the body, its type
 in the constructor, the binders `ys` of a tree or computation field, the field's body at `ys`,
 and its result type at `ys` read off the constructor (a body `fun _ => c h₀` resetting the heap
@@ -1935,7 +1949,7 @@ def plainFieldArgs (ys : Array Expr) : TermElabM (Array Expr) := do
     let t ← inferType y
     out := out.push y
     if (← CatCrypt.Tactics.DeriveTimed.classify t) matches .fn then
-      out := out.push (← forallTelescope (← whnfR t) fun zs _ =>
+      out := out.push (← forallTelescope (← CatCrypt.Tactics.DeriveTimed.whnfFnR t) fun zs _ =>
         mkLambdaFVars zs (mkNatLit 0))
   return out
 
@@ -2235,6 +2249,24 @@ partial def assembleStructHat (c : Name) (levels : List Level) (levelParams : Li
     for p in paths do
       unless allPaths.contains p do allPaths := allPaths.push p
     fieldPaths := fieldPaths.push (fd.name, paths)
+  -- The field paths of the binders that a data field holding functions applies (the field
+  -- `π.init` of a structure binder `π`), recorded by a first pass of the costed translation:
+  -- they take cost companions, as the field paths of the computation fields do. A field of a
+  -- structure computed by a definition (`(g b).init`) is read as its value (`reduceProjDef`).
+  -- Both under the option `derive_reduction.costedState`.
+  let dataComps := derive_reduction.costedState.get (← getOptions)
+  let top := tBs.map (·.fvarId!)
+  let dataRec ← IO.mkRef (#[] : Array Expr)
+  for fd in fields do
+    unless dataComps do continue
+    unless fd.kind matches .data do continue
+    let v ← reduceProjDef (← Core.betaReduce fd.value)
+    if (← CatCrypt.Tactics.DeriveTimed.hatTy? (← inferType v)).isNone then continue
+    try
+      discard <| CatCrypt.Tactics.DeriveTimed.tv { tctx with top, fieldRec? := some dataRec } v
+    catch _ => pure ()
+  for p in ← dataRec.get do
+    unless allPaths.contains p do allPaths := allPaths.push p
   let compDecls ← allPaths.mapM fun p => do
     return (← CatCrypt.Tactics.DeriveTimed.fieldCostName p,
       fun _ => do CatCrypt.Tactics.DeriveTimed.companionType (← inferType p))
@@ -2268,7 +2300,10 @@ partial def assembleStructHat (c : Name) (levels : List Level) (levelParams : Li
             does not take"
       let .forallE _ d b _ ← whnf mty | fail m!"internal: the mirror of `{S}`"
       unless ← isDefEq (← inferType v) d do
-        v := (← CatCrypt.Tactics.DeriveTimed.tv tctx v).2
+        v := (← if dataComps then
+            CatCrypt.Tactics.DeriveTimed.tv { tctx with top, fields := allPaths.zip comps }
+              (← reduceProjDef v)
+          else CatCrypt.Tactics.DeriveTimed.tv tctx v).2
         unless ← isDefEq (← inferType v) d do
           fail m!"the costed value of the field `{fd.name}` has type{indentExpr (← inferType v)}\n\
             and the mirror at the costed parameters takes{indentExpr d}"

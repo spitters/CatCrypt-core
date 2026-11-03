@@ -872,6 +872,15 @@ register_option derive_timed.priceProps : Bool := {
     Prop by its unfolded body"
 }
 
+/-- Whether a function type is read through the reducible aliases of its codomains (option
+`derive_timed.reduceFnAliases`). -/
+register_option derive_timed.reduceFnAliases : Bool := {
+  defValue := false
+  descr := "derive_timed, derive_cost and derive_reduction read a function type with the \
+    reducible aliases of its codomains unfolded (X → ShareVec cfg as X → Fin n → MPCShare cfg), \
+    so that its costed closure takes all its binders however the type is spelled"
+}
+
 /-- Whether the constant `n` is a case analysis: a matcher, `ite` or `dite`. A data definition
 whose body is headed by one is unfolded by the erasure theorem, so that its cases meet the
 cases of the costed value. -/
@@ -892,6 +901,10 @@ def maxDepth : CoreM Nat := return (← getOptions).get `derive_timed.maxDepth (
 
 /-- The option `derive_timed.priceProps`, read by its name as `maxDepth` reads its option. -/
 def priceProps : CoreM Bool := return (← getOptions).get `derive_timed.priceProps false
+
+/-- The option `derive_timed.reduceFnAliases`, read by its name as `maxDepth` reads its option. -/
+def reduceFnAliases : CoreM Bool :=
+  return (← getOptions).get `derive_timed.reduceFnAliases false
 
 /-- Constants that cost nothing beyond their arguments. -/
 def freeConstants : Array Name :=
@@ -1382,6 +1395,19 @@ partial def sumGetE (cs : Array Expr) (k : Nat) (v dflt : Expr) (j : Nat := 0) :
         ← withLocalDeclD `z rest fun z => do mkLambdaFVars #[z] (← sumGetE cs k z dflt (j + 1)))
   mkAppM ``Sum.elim #[l, r, v]
 
+/-- The type `t` with each codomain of its function types that is a reducible alias of a function
+type unfolded (`whnfR` at each codomain), so that a function type reads with all its binders
+however its codomain is spelled: `X → ShareVec cfg` reads as `X → Fin n → MPCShare cfg`. A
+codomain that is not a function type at reducible transparency keeps its spelling. -/
+partial def whnfFnRAll (t : Expr) : MetaM Expr := do
+  let .forallE n d b bi ← whnfR t | return t
+  withLocalDecl n bi d fun x => do mkForallFVars #[x] (← whnfFnRAll (b.instantiate1 x))
+
+/-- The type `t` as the costed translation of functions reads it: `whnfFnRAll t` under the
+option `derive_timed.reduceFnAliases`, `whnfR t` without it. -/
+def whnfFnR (t : Expr) : MetaM Expr := do
+  if ← reduceFnAliases then whnfFnRAll t else whnfR t
+
 /-- The costed type of a type `t` of data holding functions: a function `X → Y` with a
 first-order domain becomes the costed closure `(X → Ŷ) × (X → ℕ)`, a pair the pair of the
 costed types of its components, an inductive type of `sumInduct?` with a function field the
@@ -1436,7 +1462,7 @@ partial def hatTy? (t : Expr) (seen : List Name := []) (mirror : Bool := true) :
     unless fnField do return none
     return some (← sumNest comps)
   unless tw.isForall do return none
-  forallTelescope tw fun ys body => do
+  forallTelescope (← whnfFnR tw) fun ys body => do
     if body.hasAnyFVar fun f => ys.any (·.fvarId! == f) then return none
     for y in ys do
       let yt ← inferType y
@@ -1503,7 +1529,7 @@ partial def epsE (t v : Expr) : MetaM Expr := do
         fs := fs.push (← epsE fts[i]! (← mirrorProj fts.size i z))
       return mkAppN (mkConst si.ctors[k]! si.levels) (si.params ++ fs)
   let f ← mkAppM ``Prod.fst #[v]
-  forallTelescope tw fun ys body => do
+  forallTelescope (← whnfFnR tw) fun ys body => do
     if (← hatTy? body).isNone then return f
     mkLambdaFVars ys (← epsE body (mkAppN f ys))
 
@@ -1541,7 +1567,7 @@ partial def iotaE (t v : Expr) : MetaM Expr := do
         mkLambdaFVars fs (← sumInj comps k (← fieldsMk vs)))
     return mkAppN (mkConst (si.induct ++ `casesOn) ((← getLevel ht) :: si.levels))
       (si.params ++ #[motive, v] ++ minors)
-  forallTelescope tw fun ys body => do
+  forallTelescope (← whnfFnR tw) fun ys body => do
     let f ← mkLambdaFVars ys (← iotaE body (mkAppN v ys).headBeta)
     let c ← mkLambdaFVars ys (mkNatLit 0)
     mkAppM ``Prod.mk #[f, c]
@@ -1576,7 +1602,7 @@ partial def epsLeaves (t v x : Expr) : MetaM (Array (Expr × Expr)) := do
       let xi := mkAppN (mkConst m.projs[i]! m.levels) (m.params.push x)
       out := out ++ (← epsLeaves m.fieldTypes[i]! (← mirrorProj n i v) xi)
     return out
-  forallTelescope tw fun _ body => do
+  forallTelescope (← whnfFnR tw) fun _ body => do
     if (← hatTy? body).isSome then return #[]
     return #[(← mkAppM ``Prod.fst #[v], x)]
 
@@ -1601,7 +1627,7 @@ partial def refillE (t x c : Expr) : MetaM Expr := do
     return ← mirrorMk fs
   let comp ← mkAppM ``Prod.snd #[c]
   let fn ← mkAppM ``Prod.fst #[c]
-  let f ← forallTelescope tw fun ys body => do
+  let f ← forallTelescope (← whnfFnR tw) fun ys body => do
     if (← hatTy? body).isNone then return x
     mkLambdaFVars ys (← refillE body (mkAppN x ys).headBeta (mkAppN fn ys).headBeta)
   mkAppM ``Prod.mk #[f, comp]
@@ -1843,6 +1869,28 @@ partial def pushLetApp (e : Expr) : Expr :=
     .letE n t v (pushLetApp (mkAppN b args').headBeta) nd
   | _ => e
 
+/-- `e` with the arguments of an `if` or a dependent `if` applied to more arguments than it
+takes pushed into its branches: `(if c then f else g) x` is `if c then f x else g x`, so that a
+function read with all its binders (`whnfFnR`) after an update `Function.update f a v` is a
+case analysis on its data. -/
+partial def pushIteApp (e : Expr) : MetaM Expr := do
+  let f := e.getAppFn.consumeMData
+  let args := e.getAppArgs
+  unless (f.isConstOf ``ite || f.isConstOf ``dite) && args.size > 5 do return e
+  let extra := args.extract 5 args.size
+  let ty ← inferType e
+  let lvl ← getLevel ty
+  if f.isConstOf ``ite then
+    let t ← pushIteApp (mkAppN args[3]! extra).headBeta
+    let el ← pushIteApp (mkAppN args[4]! extra).headBeta
+    return mkApp5 (mkConst ``ite [lvl]) ty args[1]! args[2]! t el
+  let branch (b : Expr) : MetaM Expr := do
+    let .forallE n d _ bi ← whnf (← inferType b) | return mkAppN b extra
+    withLocalDecl n bi d fun h => do
+      mkLambdaFVars #[h] (← pushIteApp (mkAppN (mkApp b h) extra).headBeta)
+  return mkApp5 (mkConst ``dite [lvl]) ty args[1]! args[2]! (← branch args[3]!)
+    (← branch args[4]!)
+
 /-- The binders of the type `t`, which is reduced at default transparency before each binder,
 up to a computation type `SPComp α`, a tree type or a type that is not a function type: `k`
 receives the binders and the remaining type. A binder introduced by a type definition (an
@@ -1928,7 +1976,7 @@ def bindArgsShared (v : Expr) (args : Array Expr) : MetaM Expr := do
 
 /-- The cost companion type `X → ℕ` of a function of type `X → Y`. -/
 def companionType (t : Expr) : MetaM Expr := do
-  forallTelescope (← whnfR t) fun ys _ => mkForallFVars ys (mkConst ``Nat)
+  forallTelescope (← whnfFnR t) fun ys _ => mkForallFVars ys (mkConst ``Nat)
 
 /-- The costed type of a binder of type `t` and kind `k`. -/
 def costedType (t : Expr) : MetaM Expr := do
@@ -2176,7 +2224,7 @@ where
 /-- The leading binders of `f` applied to `n` fresh locals, with its body beta-reduced. -/
 def withEta {β : Type} (f : Expr) (n : Nat) (k : Array Expr → Expr → TermElabM β) :
     TermElabM β := do
-  forallBoundedTelescope (← whnfR (← inferType f)) n fun ys _ => do
+  forallBoundedTelescope (← whnfFnR (← inferType f)) n fun ys _ => do
     unless ys.size == n do fail m!"`{f}` takes fewer than {n} arguments"
     k ys (mkAppN f ys).headBeta
 
@@ -2529,7 +2577,7 @@ partial def iotaPathE (ctx : Ctx) (t v : Expr) : TermElabM Expr := do
           if !v.hasLooseBVars && v.getAppFn.isConst && (← isFieldPath ctx v) then
             unless (← r.get).contains v do r.modify (·.push v)
         return ← iotaE t v
-    let f ← forallTelescope tw fun ys body => do
+    let f ← forallTelescope (← whnfFnR tw) fun ys body => do
       mkLambdaFVars ys (← iotaE body (mkAppN v ys).headBeta)
     return ← mkAppM ``Prod.mk #[f, cc]
   if let some h ← pathHat? ctx v (record := true) then return h
@@ -2908,7 +2956,7 @@ partial def hatOf? (ctx : Ctx) (e : Expr) (record : Bool := false) :
     match ctx.locals.get? id with
     | some { kind := .hat, value, .. } => return some value
     | some { kind := .fn, value, companion? := some c } =>
-      let f ← forallTelescope (← whnfR (← inferType value)) fun ys body => do
+      let f ← forallTelescope (← whnfFnR (← inferType value)) fun ys body => do
         if (← hatTy? body).isNone then return value
         mkLambdaFVars ys (← iotaE body (mkAppN value ys))
       return some (← mkAppM ``Prod.mk #[f, c])
@@ -2993,6 +3041,7 @@ built; a pair, an `if` and a call of a definition are translated componentwise, 
 by unfolding. -/
 partial def tv (ctx : Ctx) (e : Expr) : TermElabM (Expr × Expr) := do
   let e := pushLetApp e.consumeMData.headBeta
+  let e ← if ← reduceFnAliases then pushIteApp e else pure e
   -- The type beta-reduced: an unfolded dependent function (`Function.update f a v`, of type
   -- `(a : α) → (fun _ => β) a`) is recognized as a function holding data (`hatTy?`).
   let t ← Core.betaReduce (← inferType e)
@@ -3007,7 +3056,7 @@ partial def tv (ctx : Ctx) (e : Expr) : TermElabM (Expr × Expr) := do
       let (cb, vb) ← tv ctx (b.instantiate1 x)
       return (add cv (cb.replaceFVar x v), vb.replaceFVar x v)
   | .lam .. =>
-    let n ← forallTelescope tw fun ys _ => pure ys.size
+    let n ← forallTelescope (← whnfFnR tw) fun ys _ => pure ys.size
     withEta e n fun ys b => do
       let (cb, vb) ← tv ctx b
       return (natE 0, ← mkAppM ``Prod.mk #[← mkLambdaFVars ys vb, ← mkLambdaFVars ys cb])
@@ -3122,7 +3171,7 @@ partial def tv (ctx : Ctx) (e : Expr) : TermElabM (Expr × Expr) := do
       -- applied at unit cost.
       -- Functions in the closure's results are tables (`ι`).
       let cargs ← argsCost ctx args
-      let val ← forallTelescope tw fun ys body => do
+      let val ← forallTelescope (← whnfFnR tw) fun ys body => do
         if (← hatTy? body).isNone then return e
         mkLambdaFVars ys (← iotaE body (mkAppN e ys))
       match f with
@@ -3131,7 +3180,7 @@ partial def tv (ctx : Ctx) (e : Expr) : TermElabM (Expr × Expr) := do
         match ctx.locals.get? id with
         | some { kind := .fn, companion? := some _, .. } => pure ()
         | _ =>
-          let z ← forallTelescope tw fun ys _ => mkLambdaFVars ys (natE 0)
+          let z ← forallTelescope (← whnfFnR tw) fun ys _ => mkLambdaFVars ys (natE 0)
           return (cargs, ← mkAppM ``Prod.mk #[val, z])
       | _ => fail m!"a function bound in data: the closure `{e}` is not a partial application \
           of a constant or a local function"
@@ -3246,7 +3295,7 @@ partial def partialAppCompanion (ctx : Ctx) (e tw f : Expr) (args : Array Expr) 
         partialAppCompanion ctx e tw f args (i + 1) (vals.push z) (zs.push (z, a))
     else partialAppCompanion ctx e tw f args (i + 1) (vals.push a) zs
   else
-    let c ← forallTelescope tw fun ys _ => do
+    let c ← forallTelescope (← whnfFnR tw) fun ys _ => do
       mkLambdaFVars ys (← costOf ctx (mkAppN (mkAppN f vals) ys))
     return c.replaceFVars (zs.map (·.1)) (zs.map (·.2))
 
@@ -3700,7 +3749,7 @@ partial def mapMatch (ctx : Ctx) (e resultType : Expr)
             if (ctx'.locals.get? fv.fvarId!).isSome then continue
             let ft ← inferType fv
             unless (← classify ft) matches .fn do continue
-            let zero ← forallTelescope (← whnfR ft) fun ys _ => mkLambdaFVars ys (natE 0)
+            let zero ← forallTelescope (← whnfFnR ft) fun ys _ => mkLambdaFVars ys (natE 0)
             ctx' := { ctx' with locals := ctx'.locals.insert fv.fvarId! ⟨.fn, fv, some zero⟩ }
       if convoy.isEmpty then return ← mkLambdaFVars fs (← alt ctx' b)
       -- The carried companions at the types of this alternative: each is the companion of
@@ -4988,7 +5037,7 @@ partial def costWithUnits (ctx : Ctx) (ps : Array Expr) (b : Expr) : TermElabM E
       let p := ps[i]
       let t ← inferType p
       withLocalDeclD `unitMethod t fun u => do
-        let zero ← forallTelescope (← whnfR t) fun ys _ => mkLambdaFVars ys (mkNatLit 0)
+        let zero ← forallTelescope (← whnfFnR t) fun ys _ => mkLambdaFVars ys (mkNatLit 0)
         let ctx := { ctx with locals := ctx.locals.insert u.fvarId! ⟨.fn, u, some zero⟩ }
         go (i + 1) ctx (b.replace fun s => if s == p then some u else none) (us.push (u, p))
     else
