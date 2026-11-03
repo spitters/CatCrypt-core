@@ -2063,6 +2063,85 @@ theorem smFS_inv (C : CKADef Sc Msg Key) [CKACoins C Rand] (R : PRGDef (RK × Ke
     split at hz <;> simp only [OracleAdv.run_ret, PMF.support_pure, Set.mem_singleton_iff] at hz <;>
       subst hz <;> exact hx
 
+/-- **The FS-AEAD reduction** `smcFSRed C R G D ΔFS ΔPCS initP A`: the tree `smFSTreeOf` at the
+challenge epoch and the interaction of `A`. -/
+noncomputable def smcFSRed [Fintype RK] [Nonempty RK] (C : CKADef Sc Msg Key) [CKACoins C Rand]
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (ΔFS ΔPCS : ℕ) (initP : PMF (Msg × Sc × Sc)) (A : SMCorruptAdv Sc Msg RK Sa W Ct) :
+    OracleAdv (FSQuery W) (FSAns Sa Ct) Bool :=
+  smFSTreeOf C R G D ΔFS ΔPCS initP A.tStar A.play
+
+theorem fsAbs_init (rkS rk : RK) (i : Msg × Sc × Sc) (sa : Sa) :
+    fsAbs rkS ((⟨smInit i rk, fun _ => false, fun _ => false, false⟩ : FSSim Sc Msg RK Sa),
+      (⟨sa, sa, false, false⟩ : FSSt Sa)) = smInit i rk := by
+  simp [fsAbs, smInit]
+
+theorem fsInv_init (t : ℕ) (rk : RK) (i : Msg × Sc × Sc) (sa : Sa) :
+    FSInv t sa ((⟨smInit i rk, fun _ => false, fun _ => false, false⟩ : FSSim Sc Msg RK Sa),
+      (⟨sa, sa, false, false⟩ : FSSt Sa)) where
+  corr := rfl
+  done := rfl
+  init := rfl
+  fresh _ := rfl
+  reach := ckaReach_init _ _ _
+  snd p h := absurd h (by simp)
+  rcv p h := absurd h (by simp)
+  out h := absurd h (by simp)
+  empty _ _ := ⟨rfl, rfl⟩
+  chal _ _ _ := rfl
+
+variable [Fintype RK] [Nonempty RK] [Fintype Sa] [Nonempty Sa]
+
+/-- **The FS-AEAD hop.** With `2 ≤ ΔFS` and `1 ≤ ΔPCS`, the FS-AEAD game with corruption of the
+reduction `smcFSRed`, with the challenge mode `ideal`, is the second hybrid with the same
+challenge mode: a uniform root output at the challenge epoch. -/
+theorem smFS_game_eq (C : CKADef Sc Msg Key) [CKACoins C Rand]
+    (initP : PMF (Msg × Sc × Sc)) (hinit : C.init = liftPMF initP)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    {ΔFS ΔPCS : ℕ} (hFS : 2 ≤ ΔFS) (hPCS : 1 ≤ ΔPCS) (ideal : Bool)
+    (A : SMCorruptAdv Sc Msg RK Sa W Ct) :
+    fsaead_corrupt_game G D ideal (smcFSRed C R G D ΔFS ΔPCS initP A) =
+      sm_corrupt_gameOf C R G D ΔFS ΔPCS ideal unifRoot A := by
+  rw [sm_corrupt_gameOf_eq_liftPMF C initP hinit]
+  unfold fsaead_corrupt_game
+  congr 1
+  have h1 : ∀ sa : Sa,
+      (OracleAdv.run (fsOracle G D ideal) (smcFSRed C R G D ΔFS ΔPCS initP A)
+        ⟨sa, sa, false, false⟩).map Prod.fst =
+      A.tStar.bind fun t => initP.bind fun i => (PMF.uniformFintype RK).bind fun rk =>
+        (PMF.uniformFintype RK).bind fun rkS =>
+          (OracleAdv.run (smOracleOf C R G D ΔFS ΔPCS t ideal (constRoot (Key := Key) (rkS, sa)))
+            (A.play t i.1) (smInit i rk)).map Prod.fst := by
+    intro sa
+    simp only [smcFSRed, smFSTreeOf, OracleAdv.run_rand, PMF.map_bind, OracleAdv.run_simulate_fst]
+    refine congrArg _ (funext fun t => congrArg _ (funext fun i => congrArg _ (funext fun rk =>
+      congrArg _ (funext fun rkS => ?_))))
+    rw [OracleAdv.run_map_fst_of_map_state_inv _ _ (fsAbs rkS) (FSInv t sa)
+      (fun x q hx => smFS_inv C R G D ΔFS ΔPCS t ideal rkS sa x hx q)
+      (fun x q hx => smFS_step C R G D hFS hPCS t ideal rkS sa x hx q) _ _
+      (fsInv_init t rk i sa), fsAbs_init]
+  simp only [h1]
+  have h2 : ∀ (t : ℕ) (i : Msg × Sc × Sc) (rk : RK),
+      (OracleAdv.run (smOracleOf C R G D ΔFS ΔPCS t ideal unifRoot) (A.play t i.1)
+        (smInit i rk)).map Prod.fst =
+      (PMF.uniformFintype RK).bind fun rkS => (PMF.uniformFintype Sa).bind fun sa =>
+        (OracleAdv.run (smOracleOf C R G D ΔFS ΔPCS t ideal (constRoot (Key := Key) (rkS, sa)))
+          (A.play t i.1) (smInit i rk)).map Prod.fst := by
+    intro t i rk
+    rw [sm_run_eager C R G D ΔFS ΔPCS t ideal (PMF.uniformFintype (RK × Sa)) unifRoot constRoot
+      (fun _ _ => (PMF.bind_pure _).symm), PMF.map_bind, PMF.uniform_prod_eq_bind, PMF.bind_bind]
+    refine congrArg _ (funext fun rkS => ?_)
+    rw [PMF.bind_map]
+    rfl
+  simp only [h2]
+  rw [PMF.bind_comm]
+  refine congrArg _ (funext fun t => ?_)
+  rw [PMF.bind_comm]
+  refine congrArg _ (funext fun i => ?_)
+  rw [PMF.bind_comm]
+  refine congrArg _ (funext fun rk => ?_)
+  rw [PMF.bind_comm]
+
 end FSHop
 
 end CatCrypt.Crypto.Messaging
