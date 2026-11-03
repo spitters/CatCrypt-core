@@ -79,7 +79,8 @@ bound `sm_advantage_le` are therefore corruption-game advantages (`sm_advantage_
 * `ckaPassiveAdv` — the adversary of the passive game
 * `dhCKAStepOf`, `dhCKAEagerStepOf`, `dhCKASimStepOf` — the steps of the oracle of `dhCKA`, of
   the eager game and of the simulator
-* `ckaCorruptDDHTreeOf`, `ckaCorruptDDHRed`, `ckaCorruptDDHRedA` — the DDH reduction
+* `ckaCorruptDDHTreeOf`, `ckaCorruptDDHRedA.tree`, `ckaCorruptDDHRed.tree`, `ckaCorruptDDHRed`,
+  `ckaCorruptDDHRedA` — the DDH reduction
 
 ## Main results
 
@@ -94,6 +95,10 @@ bound `sm_advantage_le` are therefore corruption-game advantages (`sm_advantage_
   passive and the double-ratchet bounds as special cases
 * `ckaCorruptDDHTreeOf.erase_timed`, `ckaCorruptDDHTreeOf.timeBound_timed` — the costed
   reduction (`derive_timed`) and its time
+* `ckaCorruptDDHRed.compile_tree`, `ckaCorruptDDHRed.timeBound_timed`,
+  `ckaCorruptDDHRedA.compile_tree`, `ckaCorruptDDHRedA.timeBound_timed` — the costed trees
+  `ckaCorruptDDHRed.tree.timed`, `ckaCorruptDDHRedA.tree.timed` of the two DDH reductions
+  (`derive_timed`), their runs and their times
 
 ## References
 
@@ -1533,23 +1538,114 @@ theorem ckaCorruptDDHTreeOf.timeBound_timed {E Gr : Type} [Fintype E] [Nonempty 
     · exact ⟨fun p => le_refl _, fun p => Nat.zero_le _⟩
     · simp only [Nat.zero_add, le_refl]
 
+/-- The oracle tree without queries of the DDH reduction for an adversary with output in `α`:
+on the triple `tr`, the tree `ckaCorruptDDHTreeOf` with the delays `ΔFS = 2`, `ΔPCS = 2`. The
+exponentiations `pow` and `epow` are parameters, so that their costs are parameters of the
+derived costed tree. -/
+noncomputable def ckaCorruptDDHRedA.tree {E Gr : Type} [Fintype E] [Nonempty E] [Fintype Gr]
+    [Nonempty Gr] (pow : E → Gr) (epow : Gr → E → Gr) (tStar : PMF ℕ)
+    (play : ℕ → Gr → OracleAdv CKAQuery (CKAAns (Gr × E) Gr Gr E) α) (tr : Gr × Gr × Gr) :
+    OracleAdv Empty Unit α :=
+  ckaCorruptDDHTreeOf pow epow 2 2 tStar play tr.1 tr.2.1 tr.2.2
+
+derive_timed ckaCorruptDDHRedA.tree
+
+/-- The oracle tree without queries of the DDH reduction for a Boolean adversary: the tree
+`ckaCorruptDDHRedA.tree` with output in `Bool`. -/
+noncomputable def ckaCorruptDDHRed.tree {E Gr : Type} [Fintype E] [Nonempty E] [Fintype Gr]
+    [Nonempty Gr] (pow : E → Gr) (epow : Gr → E → Gr) (tStar : PMF ℕ)
+    (play : ℕ → Gr → OracleAdv CKAQuery (CKAAns (Gr × E) Gr Gr E) Bool) (tr : Gr × Gr × Gr) :
+    OracleAdv Empty Unit Bool :=
+  ckaCorruptDDHRedA.tree pow epow tStar play tr
+
+derive_timed ckaCorruptDDHRed.tree
+
 /-- The oracle of a tree without queries. -/
 def emptyOracle (_ : Unit) (d : Empty) : PMF (Unit × Unit) := d.elim
 
-/-- **The DDH reduction** `ckaCorruptDDHRed A`: the tree `ckaCorruptDDHTreeOf` with the
-exponentiations of the group and the delays `ΔFS = 2`, `ΔPCS = 2`, run as a distribution. -/
+/-- **The DDH reduction** `ckaCorruptDDHRed A`: the tree `ckaCorruptDDHRed.tree` with the
+exponentiations of the group, run as a distribution. -/
 noncomputable def ckaCorruptDDHRed {G : Type} [CG : CyclicGroup G]
     (A : CKACorruptAdv (G × CG.Exp) G G CG.Exp Bool) : G × G × G → SPComp Bool := fun tr =>
-  liftPMF ((OracleAdv.run emptyOracle (ckaCorruptDDHTreeOf CG.pow CyclicGroup.elemPow 2 2
-    A.tStar A.play tr.1 tr.2.1 tr.2.2) ()).map Prod.fst)
+  liftPMF ((OracleAdv.run emptyOracle
+    (ckaCorruptDDHRed.tree CG.pow CyclicGroup.elemPow A.tStar A.play tr) ()).map Prod.fst)
 
 /-- The DDH reduction for an adversary with output in `α` followed by the distinguisher `D`:
-the run of the tree `ckaCorruptDDHTreeOf`, then `D` on its output. -/
+the run of the tree `ckaCorruptDDHRedA.tree`, then `D` on its output. -/
 noncomputable def ckaCorruptDDHRedA {G : Type} [CG : CyclicGroup G]
     (A : CKACorruptAdv (G × CG.Exp) G G CG.Exp α) (D : α → SPComp Bool) :
     G × G × G → SPComp Bool := fun tr =>
-  SPComp.bind (liftPMF ((OracleAdv.run emptyOracle (ckaCorruptDDHTreeOf CG.pow
-    CyclicGroup.elemPow 2 2 A.tStar A.play tr.1 tr.2.1 tr.2.2) ()).map Prod.fst)) D
+  SPComp.bind (liftPMF ((OracleAdv.run emptyOracle
+    (ckaCorruptDDHRedA.tree CG.pow CyclicGroup.elemPow A.tStar A.play tr) ()).map Prod.fst)) D
+
+/-- The derived costed tree of `ckaCorruptDDHRed`, at a costed adversary `play` that erases to
+the interaction of `A`, runs to `ckaCorruptDDHRed A`. -/
+theorem ckaCorruptDDHRed.compile_tree {G : Type} [CG : CyclicGroup G]
+    (A : CKACorruptAdv (G × CG.Exp) G G CG.Exp Bool) (powCost : CG.Exp → ℕ)
+    (epowCost : G → CG.Exp → ℕ)
+    (play : ℕ → G → OracleAdv.Timed CKAQuery (CKAAns (G × CG.Exp) G G CG.Exp) Bool)
+    (playCost : ℕ → G → ℕ) (hplay : ∀ t g, (play t g).erase = A.play t g) (tr : G × G × G) :
+    liftPMF ((OracleAdv.run emptyOracle (ckaCorruptDDHRed.tree.timed CG.pow powCost
+      CyclicGroup.elemPow epowCost A.tStar play playCost tr).2.erase ()).map Prod.fst) =
+      ckaCorruptDDHRed A tr := by
+  rw [ckaCorruptDDHRed.tree.erase_timed]
+  have h : (fun t g => (play t g).erase) = A.play := funext fun t => funext (hplay t)
+  rw [h]
+  rfl
+
+/-- **Time of `ckaCorruptDDHRed`.** For a costed adversary of time at most `T`, at most `q`
+queries and call cost at most `a`, and exponentiations of costs at most `P` and `X`, the
+derived costed tree of the reduction has time at most
+`T + ∑_{j < q} (2 P + X + 21 j + 50) + a + 4 P + 14`: the bound of
+`ckaCorruptDDHTreeOf.timeBound_timed` and two units for the two calls in front. -/
+theorem ckaCorruptDDHRed.timeBound_timed {E Gr : Type} [Fintype E] [Nonempty E] [Fintype Gr]
+    [Nonempty Gr] (pow : E → Gr) (powCost : E → ℕ) (epow : Gr → E → Gr)
+    (epowCost : Gr → E → ℕ) (tStar : PMF ℕ)
+    (play : ℕ → Gr → OracleAdv.Timed CKAQuery (CKAAns (Gr × E) Gr Gr E) Bool)
+    (playCost : ℕ → Gr → ℕ) (tr : Gr × Gr × Gr) {T q a P X : ℕ}
+    (hA : ∀ t g, (play t g).TimeBound T) (hq : ∀ t g, (play t g).erase.IsQueryBound q)
+    (ha : ∀ t g, playCost t g ≤ a) (hP : ∀ x, powCost x ≤ P) (hX : ∀ g x, epowCost g x ≤ X) :
+    OracleAdv.Timed.StepTimeBound
+      (ckaCorruptDDHRed.tree.timed pow powCost epow epowCost tStar play playCost tr)
+      (T + ∑ j ∈ Finset.range q, ckaSimQueryTime P X j + a + 4 * P + 14) := by
+  unfold ckaCorruptDDHRed.tree.timed ckaCorruptDDHRedA.tree.timed
+  exact (OracleAdv.Timed.stepTimeBound_delay (OracleAdv.Timed.stepTimeBound_delay
+    (ckaCorruptDDHTreeOf.timeBound_timed pow powCost epow epowCost 2 2 tStar play playCost
+      tr.1 tr.2.1 tr.2.2 hA hq ha hP hX))).mono (by omega)
+
+/-- The derived costed tree of `ckaCorruptDDHRedA`, at a costed adversary `play` that erases to
+the interaction of `A`, runs and continues with `D` to `ckaCorruptDDHRedA A D`. -/
+theorem ckaCorruptDDHRedA.compile_tree {G : Type} [CG : CyclicGroup G]
+    (A : CKACorruptAdv (G × CG.Exp) G G CG.Exp α) (D : α → SPComp Bool)
+    (powCost : CG.Exp → ℕ) (epowCost : G → CG.Exp → ℕ)
+    (play : ℕ → G → OracleAdv.Timed CKAQuery (CKAAns (G × CG.Exp) G G CG.Exp) α)
+    (playCost : ℕ → G → ℕ) (hplay : ∀ t g, (play t g).erase = A.play t g) (tr : G × G × G) :
+    SPComp.bind (liftPMF ((OracleAdv.run emptyOracle (ckaCorruptDDHRedA.tree.timed CG.pow
+      powCost CyclicGroup.elemPow epowCost A.tStar play playCost tr).2.erase ()).map
+        Prod.fst)) D = ckaCorruptDDHRedA A D tr := by
+  rw [ckaCorruptDDHRedA.tree.erase_timed]
+  have h : (fun t g => (play t g).erase) = A.play := funext fun t => funext (hplay t)
+  rw [h]
+  rfl
+
+/-- **Time of `ckaCorruptDDHRedA`.** For a costed adversary of time at most `T`, at most `q`
+queries and call cost at most `a`, and exponentiations of costs at most `P` and `X`, the
+derived costed tree of the reduction, which the distinguisher `D` follows, has time at most
+`T + ∑_{j < q} (2 P + X + 21 j + 50) + a + 4 P + 13`. -/
+theorem ckaCorruptDDHRedA.timeBound_timed {E Gr : Type} [Fintype E] [Nonempty E] [Fintype Gr]
+    [Nonempty Gr] (pow : E → Gr) (powCost : E → ℕ) (epow : Gr → E → Gr)
+    (epowCost : Gr → E → ℕ) (tStar : PMF ℕ)
+    (play : ℕ → Gr → OracleAdv.Timed CKAQuery (CKAAns (Gr × E) Gr Gr E) α)
+    (playCost : ℕ → Gr → ℕ) (tr : Gr × Gr × Gr) {T q a P X : ℕ}
+    (hA : ∀ t g, (play t g).TimeBound T) (hq : ∀ t g, (play t g).erase.IsQueryBound q)
+    (ha : ∀ t g, playCost t g ≤ a) (hP : ∀ x, powCost x ≤ P) (hX : ∀ g x, epowCost g x ≤ X) :
+    OracleAdv.Timed.StepTimeBound
+      (ckaCorruptDDHRedA.tree.timed pow powCost epow epowCost tStar play playCost tr)
+      (T + ∑ j ∈ Finset.range q, ckaSimQueryTime P X j + a + 4 * P + 13) := by
+  unfold ckaCorruptDDHRedA.tree.timed
+  exact (OracleAdv.Timed.stepTimeBound_delay
+    (ckaCorruptDDHTreeOf.timeBound_timed pow powCost epow epowCost 2 2 tStar play playCost
+      tr.1 tr.2.1 tr.2.2 hA hq ha hP hX)).mono (by omega)
 
 section DHProof
 
@@ -1772,7 +1868,7 @@ theorem dhCKA_corrupt_advantageA_eq_ddh (A : CKACorruptAdv (G × CG.Exp) G G CG.
     (D : α → SPComp Bool) :
     CKA_Corrupt_AdvantageA (dhCKA G) 2 2 A D = DDH_Advantage G (ckaCorruptDDHRedA A D) := by
   unfold CKA_Corrupt_AdvantageA DDH_Advantage AdvantageA cka_corrupt_real cka_corrupt_ideal
-    ckaCorruptDDHRedA
+    ckaCorruptDDHRedA ckaCorruptDDHRedA.tree
   rw [dhCKA_game_eq, dhCKA_game_eq, dhCKA_real_pmf, dhCKA_ideal_pmf, DDH_real_eq_liftPMF,
     DDH_ideal_eq_liftPMF]
   simp only [← SPComp.bind_assoc, liftPMF_bind_liftPMF]
@@ -1783,7 +1879,7 @@ post-compromise delay `2` equals the DDH advantage of the reduction `ckaCorruptD
 theorem dhCKA_corrupt_advantage_eq_ddh (A : CKACorruptAdv (G × CG.Exp) G G CG.Exp Bool) :
     CKA_Corrupt_Advantage (dhCKA G) 2 2 A = DDH_Advantage G (ckaCorruptDDHRed A) := by
   unfold CKA_Corrupt_Advantage DDH_Advantage AdvantageA cka_corrupt_real cka_corrupt_ideal
-    ckaCorruptDDHRed
+    ckaCorruptDDHRed ckaCorruptDDHRed.tree ckaCorruptDDHRedA.tree
   rw [dhCKA_game_eq, dhCKA_game_eq, dhCKA_real_pmf, dhCKA_ideal_pmf, DDH_real_eq_liftPMF,
     DDH_ideal_eq_liftPMF]
   simp only [liftPMF_bind_liftPMF]
