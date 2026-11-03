@@ -509,6 +509,7 @@ public import CatCryptCore.Container.PolyNaturalModel
 public import CatCryptCore.Crypto.Party.CompileFunctor
 public import CatCryptCore.Crypto.Party.Derived
 public import CatCryptCore.Crypto.Party.Lifting
+public import CatCryptCore.Crypto.Party.Relator
 public import CatCryptCore.Crypto.Party.Typed
 public import CatCryptCore.Crypto.Party.GuardCoupling
 public import CatCryptCore.Crypto.Party.Timed
