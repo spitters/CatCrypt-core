@@ -7,6 +7,7 @@ module
 
 public import CatCryptCore.Crypto.OracleAdversaryTimed
 public import CatCryptCore.Core.SPTreeTimedOps
+public import CatCryptCore.Tactics.ClassicalCostAudit
 public import Lean
 
 /-!
@@ -269,6 +270,13 @@ a condition is also priced by what decides it (`pricedProp?`): `x ∈ l` on a li
 `List.elem x l`, `l₁ = l₂` and `l₁ ≠ l₂` on lists as the call `List.beq l₁ l₂`, at one unit per
 comparison of elements, and a definition valued in `Prop` as one plus its unfolded body, each
 argument priced once. The list costs are registered in `CatCryptCore.Tactics.StdCosts`.
+
+A decision (`ite`, `dite`, `Decidable.decide`) whose `Decidable` instance is classical
+(`classicalIn?`: it mentions `Classical.choice` or a `noncomputable` constant in a data
+position) and a data term headed by a choice constant (`choiceConstants`: `Exists.choose`,
+`Classical.choose`, `Classical.epsilon`, …) are derived as before and reported by a warning
+naming the declaration whose cost is derived: the time bound charges no algorithm for them.
+`#classical_cost_audit` reports the same occurrences in the costed forms of an environment.
 
 A registered primitive `f` has a cost `f.timedCost`, a definition taking the arguments of
 `f`, each function-typed argument followed by its cost companion, and returning `ℕ`; the
@@ -2760,6 +2768,39 @@ def condBEqInst (α : Expr) : MetaM Expr := do
   mkAppOptM ``instBEqOfDecidableEq
     #[some α, some (← mkAppOptM ``Classical.typeDecidableEq #[some α])]
 
+/-- The declaration whose cost a translation derives, named in its warnings: the data function
+whose cost is derived, otherwise the reduction. -/
+def Ctx.subject (ctx : Ctx) : MessageData :=
+  match ctx.selfCosts[0]?, ctx.self? with
+  | some (c, _), _ => m!"`{c}`"
+  | none, some (c, _) => m!"`{c}`"
+  | none, none => m!"the derivation"
+
+/-- Logs the warning `msg` unless the message log of the command holds a message starting with
+`key` (by default the text of `msg`): the two passes of a derivation report an occurrence once. -/
+def warnOnce (msg : MessageData) (key? : Option String := none) : MetaM Unit := do
+  let md ← addMessageContext msg
+  let s ← md.toString
+  let key := key?.getD s
+  for m in (← Core.getMessageLog).toList do
+    if (← m.data.toString).startsWith key then return
+  logWarning md
+
+/-- Warns when the decision of the condition `p` by the instance `inst` is classical. -/
+def warnClassicalDecision (ctx : Ctx) (p inst : Expr) : MetaM Unit := do
+  let some h ← ClassicalCostAudit.classicalIn? inst | return
+  warnOnce m!"derive_timed: {ctx.subject} decides `{p}` by a classical instance (`{h}`); \
+    its time bound does not charge this decision"
+
+/-- Warns when the data term `e`, an application of the constant `c`, is computed by choice.
+One warning per declaration: the unfolding of `Exists.choose` reaches the further choice
+constants of its definition. -/
+def warnChoice (ctx : Ctx) (e : Expr) (c : Name) : MetaM Unit := do
+  unless ClassicalCostAudit.choiceConstants.contains c do return
+  let head := s!"derive_timed: {← (← addMessageContext ctx.subject).toString} computes"
+  warnOnce m!"derive_timed: {ctx.subject} computes `{e}` by Classical.choice; it has no \
+    running time" (some head)
+
 mutual
 
 /-- The cost of evaluating the data term `e`. -/
@@ -3046,6 +3087,8 @@ partial def tv (ctx : Ctx) (e : Expr) : TermElabM (Expr × Expr) := do
       let (cb, vb) ← tv ctx args[3]!
       return (add ca cb, ← mkAppM ``Prod.mk #[va, vb])
     if let some e' ← boolRecIte? e then return ← tv ctx e'
+    if (f.isConstOf ``ite || f.isConstOf ``dite) && args.size == 5 then
+      warnClassicalDecision ctx args[1]! args[2]!
     if f.isConstOf ``ite && args.size == 5 then
       let (ca, va) ← tv ctx args[3]!
       let (cb, vb) ← tv ctx args[4]!
@@ -3257,6 +3300,7 @@ partial def costConst (ctx : Ctx) (e : Expr) (c : Name) (args : Array Expr) :
     TermElabM Expr := do
   let env ← getEnv
   let f := e.getAppFn
+  warnChoice ctx e c
   if let some (.ctorInfo ci) := env.find? c then
     -- The parameters of the inductive type are not arguments of the call.
     return ← argsCost ctx (args.extract ci.numParams args.size)
@@ -3335,8 +3379,11 @@ partial def costConst (ctx : Ctx) (e : Expr) (c : Name) (args : Array Expr) :
   -- A comparison of words decided at one unit: `decide (a < b)` is priced by the rule for
   -- `Decidable.decide` below.
   if c == ``Decidable.decide && args.size == 2 then
+    warnClassicalDecision ctx args[0]! args[1]!
     return add (natE 1) (← propCost ctx args[0]!)
   if let some e' ← boolRecIte? e then return ← costOf ctx e'
+  if (c == ``ite || c == ``dite) && args.size == 5 then
+    warnClassicalDecision ctx args[1]! args[2]!
   if c == ``ite && args.size == 5 then
     return add (natE 1) (add (← propCost ctx args[1]!)
       (iteNatE args[1]! args[2]! (← costOf ctx args[3]!) (← costOf ctx args[4]!)))
@@ -3893,6 +3940,8 @@ partial def trConst (ctx : Ctx) (e : Expr) (c : Name) (args : Array Expr) (T : T
   -- A dispatch on an optional value: the match of `optionDispatch`, whose alternative on
   -- `some` is a branch and not a function discriminant.
   if let some e' ← optionDispatch? e then return ← tr ctx e'
+  if (c == ``ite || c == ``dite) && n == 5 then
+    warnClassicalDecision ctx args[1]! args[2]!
   if c == ``ite && n == 5 then
     let pt ← tr ctx args[3]!
     let pe ← tr ctx args[4]!
