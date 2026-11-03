@@ -562,6 +562,7 @@ public import CatCryptCore.Crypto.UCFuelPadTimed
 public import CatCryptCore.Crypto.UCOneShot
 public import CatCryptCore.Crypto.UCParallel
 public import CatCryptCore.Crypto.UCPullback
+public import CatCryptCore.Crypto.UCPullbackSemantics
 public import CatCryptCore.Crypto.UCIndexed
 public import CatCryptCore.Crypto.UCGlobal
 public import CatCryptCore.Crypto.ChannelCap
