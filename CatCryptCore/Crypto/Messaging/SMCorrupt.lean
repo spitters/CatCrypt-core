@@ -3476,6 +3476,7 @@ theorem smAd_bad_sticky (C : CKADef Sc Msg Key) [CKACoins C Rand]
     · simp only [PMF.support_pure, Set.mem_singleton_iff] at hz
       rw [hz]; exact hx
 
+omit [SampleableType W] [SampleableType Ct] in
 /-- The guessing reduction keeps the exclusion of the epoch `e`, whatever it is run against. -/
 theorem guess_bad_sticky (ΔFS ΔPCS e : ℕ)
     (O' : SMSt Sc Msg RK Sa → SMQuery W → PMF (SMAns Sc Msg RK Sa Ct × SMSt Sc Msg RK Sa))
@@ -3605,6 +3606,198 @@ theorem guess_run_eq (C : CKADef Sc Msg Key) [CKACoins C Rand]
           rw [this] at hby; exact absurd hby (by decide)
   · rfl
 
+/-- The adaptive game keeps the challenge once asked. -/
+theorem smAd_chall_sticky (C : CKADef Sc Msg Key) [CKACoins C Rand]
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (ΔFS ΔPCS : ℕ) (ideal : Bool) (x : SMSt Sc Msg RK Sa × SMAdRec)
+    (hx : x.2.cE.isSome = true) (q : SMQuery W) (z)
+    (hz : z ∈ (smAdOracle C R G D ΔFS ΔPCS ideal x q).support) : z.2.2.cE.isSome = true := by
+  cases q with
+  | ratchet p =>
+    simp only [smAdOracle, PMF.support_map, Set.mem_image] at hz
+    obtain ⟨y, -, rfl⟩ := hz; exact hx
+  | recv p =>
+    simp only [smAdOracle, PMF.support_map, Set.mem_image] at hz
+    obtain ⟨y, -, rfl⟩ := hz; exact hx
+  | send p m =>
+    simp only [smAdOracle, PMF.support_map, Set.mem_image] at hz
+    obtain ⟨y, -, rfl⟩ := hz; exact hx
+  | chall p m =>
+    simp only [smAdOracle] at hz
+    split at hz
+    · split at hz
+      · simp only [PMF.support_bind, PMF.support_pure, Set.mem_iUnion, Set.mem_singleton_iff]
+          at hz
+        obtain ⟨c, -, rfl⟩ := hz
+        rfl
+      · simp only [PMF.support_pure, Set.mem_singleton_iff] at hz
+        rw [hz]; exact hx
+    · simp only [PMF.support_pure, Set.mem_singleton_iff] at hz
+      rw [hz]; exact hx
+  | corrupt p =>
+    simp only [smAdOracle] at hz
+    split at hz
+    · rename_i hcE; rw [hcE] at hx; exact absurd hx (by decide)
+    · simp only [PMF.support_pure, Set.mem_singleton_iff] at hz
+      rw [hz]; exact hx
+
+/-- **Identical until the challenge.** Without a challenge the two challenge modes of the
+adaptive game agree: the probability that the adversary accepts without having been answered a
+challenge is the same in both. -/
+theorem smAd_nochall_eq (C : CKADef Sc Msg Key) [CKACoins C Rand]
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (ΔFS ΔPCS : ℕ) (A : OracleAdv (SMQuery W) (SMAns Sc Msg RK Sa Ct) Bool)
+    (s₀ : SMSt Sc Msg RK Sa) :
+    ((OracleAdv.run (smAdOracle C R G D ΔFS ΔPCS true) A (s₀, ⟨none, 0⟩)).map fun z =>
+        z.1 && z.2.2.cE.isNone) true =
+      ((OracleAdv.run (smAdOracle C R G D ΔFS ΔPCS false) A (s₀, ⟨none, 0⟩)).map fun z =>
+        z.1 && z.2.2.cE.isNone) true := by
+  rw [PMF.map_apply, PMF.map_apply]
+  refine tsum_congr fun z => ?_
+  split
+  · rename_i hz
+    have hbz : z.2.2.cE.isSome = false := by
+      cases h : z.2.2.cE <;> simp_all
+    have h := OracleAdv.run_map_apply_eq_of_agree (smAdOracle C R G D ΔFS ΔPCS false)
+      (smAdOracle C R G D ΔFS ΔPCS true) id (fun x => x.2.cE.isSome) (fun x => x.2.cE.isSome)
+      (fun _ => True) (fun _ => rfl)
+      (fun x q hx z hz => smAd_chall_sticky C R G D ΔFS ΔPCS false x hx q z hz)
+      (fun x q hx z hz => smAd_chall_sticky C R G D ΔFS ΔPCS true x hx q z hz)
+      (fun _ _ _ _ _ _ _ => trivial) ?_ A (s₀, ⟨none, 0⟩) trivial z hbz
+    · rw [Prod.map_id, PMF.map_id] at h
+      exact h
+    · intro x q _ hbx y hby
+      rw [Prod.map_id, PMF.map_id]
+      cases q with
+      | chall p m =>
+        simp only [id_eq, smAdOracle]
+        split
+        · split
+          · rename_i hc
+            rw [(PMF.apply_eq_zero_iff _ _).mpr, (PMF.apply_eq_zero_iff _ _).mpr]
+            all_goals
+              intro hy
+              simp only [PMF.support_bind, PMF.support_pure, Set.mem_iUnion,
+                Set.mem_singleton_iff] at hy
+              obtain ⟨c, -, rfl⟩ := hy
+              simp at hby
+          · rfl
+        · rfl
+      | _ => rfl
+  · rfl
+
+/-- The probability that the adversary accepts is the sum over the epochs `e` of the
+probability that it accepts with the challenge at `e`, and the probability that it accepts
+without a challenge. -/
+theorem accept_eq_tsum_chall (P : PMF (Bool × SMSt Sc Msg RK Sa × SMAdRec)) :
+    (P.map Prod.fst) true =
+      (∑' e : ℕ, (P.map fun z => z.1 && (z.2.2.cE == some e)) true) +
+        (P.map fun z => z.1 && z.2.2.cE.isNone) true := by
+  simp only [PMF.map_apply]
+  rw [ENNReal.tsum_comm, ← ENNReal.tsum_add]
+  refine tsum_congr fun z => ?_
+  rcases z with ⟨b, s, ⟨cE, lo⟩⟩
+  cases b with
+  | false => simp
+  | true =>
+    cases cE with
+    | none => simp
+    | some e₀ =>
+      simp only [Bool.true_and, Option.isNone_some]
+      rw [tsum_eq_single e₀]
+      · simp
+      · intro e he
+        simp [Ne.symm he]
+
 end GuessSim
+
+/-! ## The adaptive game from the game with an announced challenge epoch -/
+
+section AdaptiveMain
+
+variable {Sc Msg Key Rand RK Sa W Ct : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
+  [SampleableType Ct] [Fintype RK] [Nonempty RK]
+
+theorem guessMir_init (i : Msg × Sc × Sc) (rk : RK) :
+    guessMir (smInit (Sa := Sa) i rk) ⟨none, 0⟩ = guessInit := by
+  simp only [guessMir, smInit, ckaShadow_init, guessInit, SMLoc.init, Option.isSome_none]
+
+/-- The probability that the adaptive game accepts, given the initialisation and the root key. -/
+theorem sm_adaptive_game_eq (C : CKADef Sc Msg Key) [CKACoins C Rand]
+    (initP : PMF (Msg × Sc × Sc)) (hinit : C.init = liftPMF initP)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (ΔFS ΔPCS : ℕ) (ideal : Bool) (A : Msg → OracleAdv (SMQuery W) (SMAns Sc Msg RK Sa Ct) Bool) :
+    prTrue (sm_adaptive_game C R G D ΔFS ΔPCS ideal A) Heap.empty =
+      ∑' i, initP i * ∑' rk, PMF.uniformFintype RK rk *
+        ((OracleAdv.run (smAdOracle C R G D ΔFS ΔPCS ideal) (A i.1)
+          (smInit i rk, ⟨none, 0⟩)).map Prod.fst) true := by
+  unfold sm_adaptive_game
+  simp only [hinit, sample_eq_liftPMF, liftPMF_bind_liftPMF, prTrue_liftPMF, PMF.bind_apply]
+
+/-- The probability that the game with the announced epoch `e` accepts the guessing reduction,
+given the initialisation and the root key. -/
+theorem sm_guess_game_eq (C : CKADef Sc Msg Key) [CKACoins C Rand]
+    (initP : PMF (Msg × Sc × Sc)) (hinit : C.init = liftPMF initP)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (ΔFS ΔPCS : ℕ) (ideal : Bool) (A : Msg → OracleAdv (SMQuery W) (SMAns Sc Msg RK Sa Ct) Bool)
+    (e : ℕ) :
+    prTrue (sm_corrupt_game C R G D ΔFS ΔPCS ideal (smGuessAdv ΔFS ΔPCS A e)) Heap.empty =
+      ∑' i, initP i * ∑' rk, PMF.uniformFintype RK rk *
+        ((OracleAdv.run (smAdOracle C R G D ΔFS ΔPCS ideal) (A i.1)
+          (smInit i rk, ⟨none, 0⟩)).map fun z => z.1 && (z.2.2.cE == some e)) true := by
+  rw [sm_corrupt_game, sm_corrupt_gameOf_eq_liftPMF C initP hinit, prTrue_liftPMF]
+  simp only [smGuessAdv, PMF.pure_bind, PMF.bind_apply]
+  refine tsum_congr fun i => congrArg _ (tsum_congr fun rk => congrArg _ ?_)
+  rw [guessTreeOf, ← guessMir_init i rk]
+  exact guess_run_eq C R G D ΔFS ΔPCS e ideal (A i.1) (smInit i rk)
+
+/-- **The adaptive challenge epoch from the announced one.** For every adversary `A` of the
+game with an adaptive challenge epoch, the advantage is at most the sum over the epochs `e` of
+the advantages, in the game with the announced challenge epoch, of the guessing reductions
+`smGuessAdv ΔFS ΔPCS A e`. -/
+theorem sm_adaptive_advantage_le (C : CKADef Sc Msg Key) [CKACoins C Rand]
+    (initP : PMF (Msg × Sc × Sc)) (hinit : C.init = liftPMF initP)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (ΔFS ΔPCS : ℕ) (A : Msg → OracleAdv (SMQuery W) (SMAns Sc Msg RK Sa Ct) Bool) :
+    SM_Adaptive_Advantage C R G D ΔFS ΔPCS A ≤
+      ∑' e, SM_Corrupt_Advantage C R G D ΔFS ΔPCS (smGuessAdv ΔFS ΔPCS A e) := by
+  set w : (Msg × Sc × Sc) → RK → ℝ≥0∞ := fun i rk => initP i * PMF.uniformFintype RK rk
+  set X : Bool → (Msg × Sc × Sc) → RK → PMF (Bool × SMSt Sc Msg RK Sa × SMAdRec) := fun b i rk =>
+    OracleAdv.run (smAdOracle C R G D ΔFS ΔPCS b) (A i.1) (smInit i rk, ⟨none, 0⟩)
+  have hP : ∀ b, prTrue (sm_adaptive_game C R G D ΔFS ΔPCS b A) Heap.empty =
+      (∑' e, prTrue (sm_corrupt_game C R G D ΔFS ΔPCS b (smGuessAdv ΔFS ΔPCS A e)) Heap.empty) +
+        ∑' i, initP i * ∑' rk, PMF.uniformFintype RK rk *
+          ((X b i rk).map fun z => z.1 && z.2.2.cE.isNone) true := by
+    intro b
+    rw [sm_adaptive_game_eq C initP hinit]
+    simp only [sm_guess_game_eq C initP hinit]
+    simp only [X, accept_eq_tsum_chall, mul_add, ENNReal.tsum_add]
+    congr 1
+    simp_rw [← ENNReal.tsum_mul_left]
+    conv_lhs => arg 1; ext i; rw [ENNReal.tsum_comm]
+    rw [ENNReal.tsum_comm]
+  have hc : (∑' i, initP i * ∑' rk, PMF.uniformFintype RK rk *
+        ((X true i rk).map fun z => z.1 && z.2.2.cE.isNone) true) =
+      ∑' i, initP i * ∑' rk, PMF.uniformFintype RK rk *
+        ((X false i rk).map fun z => z.1 && z.2.2.cE.isNone) true := by
+    refine tsum_congr fun i => congrArg _ (tsum_congr fun rk => congrArg _ ?_)
+    exact smAd_nochall_eq C R G D ΔFS ΔPCS (A i.1) (smInit i rk)
+  have key : ∀ (a b : ℕ → ℝ≥0∞) (c : ℝ≥0∞),
+      ((∑' e, a e) + c) - ((∑' e, b e) + c) ≤ ∑' e, ((a e - b e) ⊔ (b e - a e)) := by
+    intro a b c
+    rw [tsub_le_iff_right]
+    calc (∑' e, a e) + c ≤ (∑' e, ((a e - b e) ⊔ (b e - a e) + b e)) + c := by
+          gcongr with e
+          exact le_tsub_add.trans (add_le_add le_sup_left le_rfl)
+      _ = (∑' e, ((a e - b e) ⊔ (b e - a e))) + ((∑' e, b e) + c) := by
+          rw [ENNReal.tsum_add, add_assoc]
+  unfold SM_Adaptive_Advantage SM_Corrupt_Advantage Advantage
+  rw [hP false, hP true, hc]
+  refine sup_le ?_ ?_
+  · exact key _ _ _
+  · refine (key _ _ _).trans (le_of_eq (tsum_congr fun e => ?_))
+    exact sup_comm _ _
+
+end AdaptiveMain
 
 end CatCrypt.Crypto.Messaging
