@@ -750,6 +750,24 @@ def hasProofAndDataFnField (S : Name) : MetaM Bool := do
       else if ← isDataFnType t then fn := true
     return prf && fn
 
+/-- Whether a proof field of the structure `S` is stated over a data-function field: its type
+mentions such a field or a field whose type depends on one. A proof field that mentions only
+types and data of other kinds (`Nonempty Key`, `s.card ≤ t`) is not, and stays valid when the
+function fields of a value are abstracted. -/
+def hasProofOverDataFnField (S : Name) : MetaM Bool := do
+  let env ← getEnv
+  unless isStructure env S do return false
+  let ctor := getStructureCtor env S
+  forallTelescopeReducing ctor.type fun ys _ => do
+    let mut dep : Array Expr := #[]
+    for y in ys.extract ctor.numParams ys.size do
+      let t ← inferType y
+      let over := t.hasAnyFVar fun v => dep.contains (mkFVar v)
+      if ← isProp t then
+        if over then return true
+      else if over || (← isDataFnType t) then dep := dep.push y
+    return false
+
 /-- Whether `e` is a structure value built from the binders `top` (not a binder itself) whose
 structure, not a class, has a proof field and a data-function field: abstracting the data
 fields of such a value would leave its proof fields stated over the original fields. A structure
@@ -763,6 +781,13 @@ def isProofStructVal (top : Array FVarId) (e : Expr) : MetaM Bool := do
   unless isStructure (← getEnv) S do return false
   if (← isClass? t).isSome then return false
   hasProofAndDataFnField S
+
+/-- Whether `e` is a value of `isProofStructVal` with a proof field stated over a data-function
+field (`hasProofOverDataFnField`): the values that stay opaque under abstraction. -/
+def isLawStructVal (top : Array FVarId) (e : Expr) : MetaM Bool := do
+  unless ← isProofStructVal top e do return false
+  let .const S _ := (← whnfR (← inferType e)).getAppFn | return false
+  hasProofOverDataFnField S
 
 /-- The field `fᵢ a₁ … aₙ` of a projection `S.f ps s a₁ … aₙ` (or `s.i a₁ … aₙ`) whose structure
 `s` is a value of `isProofStructVal` that reduces by `whnf` to a constructor application
@@ -816,13 +841,15 @@ parameters `ps` of a field `S.f ps s` of a binder are the arguments of the type 
 kept as they are (`keepParams`): a field abstracted in them would give `S.f` a structure of
 another type than that of `s`.
 
-Proof-carrying data rule: a term whose type is a structure with a proof field and a data-function
-field (`isProofStructVal`: an `Equiv`, a record of functions with a law, a transcript with a
-degree proof) is opaque under abstraction. Rewriting its data fields would leave its proof fields
-stated over the original functions, an application type mismatch at the abstracted proof
-(`_proof_n`, `autoParam`) when the tree is defined. Such a value is neither unfolded nor rewritten;
-a function applied to it (`⇑e x`) is a data-function primitive taking the value as an argument,
-and a projection of its data-function field is reduced to the field. -/
+Proof-carrying data rule: a term whose type is a structure with a proof field stated over a
+data-function field (`isLawStructVal`: an `Equiv`, a record of functions with a law) is opaque
+under abstraction. Rewriting its data fields would leave its proof fields stated over the original
+functions, an application type mismatch at the abstracted proof (`_proof_n`, `autoParam`) when the
+tree is defined. Such a value is neither unfolded nor rewritten; a function applied to it (`⇑e x`)
+is a data-function primitive taking the value as an argument. A value whose proof fields do not
+mention its function fields (a scheme with `Nonempty Key`, a state with `s.card ≤ t`) is unfolded
+and rewritten like other data. A projection of the data-function field of either kind of value is
+reduced to the field. -/
 partial def abstractData (ctx : RCtx) (e : Expr) : MetaM Expr := do
   let keys := (ctx.prims.filter (·.data)).map (·.key)
   let neg ← IO.mkRef ({} : Std.HashMap Expr Nat)
@@ -837,10 +864,10 @@ partial def abstractData (ctx : RCtx) (e : Expr) : MetaM Expr := do
     let rest ← (xs.extract info.numParams xs.size).mapM (abstractData ctx)
     return .done (mkAppN f (xs.extract 0 info.numParams ++ rest))
   Meta.transform e (pre := fun x => do
-    -- A structure value with proof fields is not rewritten: its projections are reduced to its
-    -- fields, the value itself is kept as one term, and its consumers are unfolded.
+    -- The projections of a structure value with proof fields are reduced to its fields; a value
+    -- whose proofs are stated over its functions is kept as one term; consumers are unfolded.
     if let some x' ← projOfProofStruct? ctx.top x then return .visit x'
-    if ← isProofStructVal ctx.top x then return .done x
+    if ← isLawStructVal ctx.top x then return .done x
     if ← unfoldsProofStructArg ctx.top x then
       if let some x' ← unfoldDefinition? x then return .visit x'.headBeta
     let some (F, args) ← fieldKey? ctx.top x | do
