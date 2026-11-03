@@ -402,64 +402,75 @@ partial def costNode (prims hyps : IO.Ref (Array (MVarId × BinderInfo))) :
       (← mkAppM ``Simulator.Timed.Erases #[T, S])
     return (T, pf)
 
-/-- The binder names of the head constant of `A` at its arguments, without macro scopes. -/
-def argNames (A : Expr) : MetaM (Array Name) := do
-  let .const c _ := A.getAppFn | return #[]
-  let ci ← getConstInfo c
-  return (ci.type.getForallBinderNames.toArray.extract 0 A.getAppNumArgs).map
-    (·.eraseMacroScopes)
+/-- Whether `a` and `b` are definitionally equal with the constant `c` kept folded. -/
+def isDefEqFolding (c : Name) (a b : Expr) : MetaM Bool :=
+  withCanUnfoldPred (fun cfg info => if info.name == c then pure false
+    else canUnfoldDefault cfg info) (isDefEq a b)
 
-/-- Assign to the binders `ms` of the theorem `thm` (with binder names `thmNames`) the arguments
-`targs` of a costed machine (with binder names `tNames`), each to the binder of the same name,
-or to the binder at the same position when no binder of `thm` has that name: the indices of
-the binders assigned. -/
-def matchArgs (thm : Expr) (tNames : Array Name) (thmNames : List Name) (ms targs : Array Expr) :
-    MetaM (Array Nat) := do
-  let thmNames := thmNames.toArray.map (·.eraseMacroScopes)
-  let mut used : Array Nat := #[]
-  for i in [0:targs.size] do
-    let byName := match tNames[i]? with
-      | some n => (List.range (min thmNames.size ms.size)).find? fun j =>
-          thmNames[j]! == n && !used.contains j
-      | none => none
-    let j := byName.getD i
-    if used.contains j || ms.size ≤ j then
-      throwError "derive_simulator: `{thm}` does not take the arguments of the costed machine"
-    unless ← isDefEq ms[j]! targs[i]! do
-      throwError "derive_simulator: `{thm}` does not take the argument `{targs[i]!}`"
-    used := used.push j
-  return used
+/-- Close the hypothesis `m` of the form `∀ xs, L ≤ t`, where `t` is an open bound and `L` does
+not depend on `xs`, by `t := L` and `fun xs => le_refl L`: the least bound of a cost that the
+machine fixes to a constant. Other hypotheses are left open. -/
+def closeConstBound (m : MVarId) : MetaM Unit := do
+  if ← m.isAssigned then return
+  let ty ← instantiateMVars (← m.getType)
+  forallTelescopeReducing ty fun xs body => do
+    let some (_, L, t) := body.headBeta.le? | return
+    let L ← instantiateMVars L.headBeta
+    let .mvar tm ← instantiateMVars t | return
+    if ← tm.isAssigned then return
+    if L.hasAnyFVar (xs.contains <| .fvar ·) then return
+    if (L.findMVar? (· == tm)).isSome then return
+    let s ← saveState
+    unless ← isDefEq (.mvar tm) L do s.restore; return
+    let pf ← mkLambdaFVars xs (← mkAppM ``le_refl #[L])
+    unless ← isDefEq (← inferType pf) ty do s.restore; return
+    m.assign pf
 
 /-- The time bound `tb A B₁ ⋯ Bₙ` of the costed machine `A`, an application of `f.timed`, from
-the step theorems `f.st.tr.timeBound_timed` (`tr` is `tree` or `treeHat`) of the steps `sts`,
-each a bound `∀ s a, … ≤ Bᵢ` that does not depend on the state or the input of the step, nor do
-its hypotheses. The arguments of `A` go to the binders of the step theorem of the same names
-(`matchArgs`), the state and the input to the first two binders left; the other binders are
-recorded in `bounds` and `hyps`. -/
+the step theorems `f.st.tr.timeBound_timed` (`tr` is `tree` or `treeHat`) of the steps `sts`.
+The conclusion of each step theorem is unified with the component of `tb A` of its step at a
+fresh state and input, with the step tree `f.st.tr.timed` kept folded: the binders of the step
+theorem take the arguments that the machine passes to its step tree, and the state and the
+input are the binders unified with the fresh ones. A hypothesis `∀ xs, L ≤ t` with `L`
+constant closes by `t := L` (`closeConstBound`); the other binders left open are recorded in
+`bounds` and `hyps`. The bound and these binders do not depend on the state or the input. -/
 def stepsTimeBound (bounds hyps : IO.Ref (Array (MVarId × BinderInfo))) (tb f : Name)
     (sts : Array Name) (A : Expr) : MetaM Expr := do
-  let targs := A.getAppArgs
   let tr ← treeName f
-  let tNames ← argNames A
+  let tbA ← mkAppM tb #[A]
+  let (bms, _, _) ← forallMetaTelescopeReducing (← inferType tbA)
+  unless bms.size == sts.size do
+    throwError "derive_simulator: `{tb}` does not take one bound per step"
+  let mut P ← whnfD (mkAppN tbA bms)
   let mut pfs := #[]
-  let mut bs := #[]
-  for st in sts do
+  for st in sts, i in [0:sts.size] do
+    let comp ← if i + 1 < sts.size then
+        let some (p, q) := P.and? | throwError "derive_simulator: `{tb}` is not a conjunction"
+        P ← whnfD q
+        pure p
+      else pure P
+    let (sa, _, body) ← forallMetaTelescopeReducing comp (some 2)
+    let (some sM, some aM) := (sa[0]?, sa[1]?)
+      | throwError "derive_simulator: the step `{st}` of `{tb}` takes no state and input"
     let thm ← mkConstWithFreshMVarLevels (f ++ st ++ tr ++ (← sfxName "timeBound"))
-    let thmTy ← inferType thm
-    let (ms, _, concl) ← forallMetaTelescopeReducing thmTy
-    unless targs.size + 2 ≤ ms.size do
-      throwError "derive_simulator: `{thm}` does not take the arguments of `{A}` and the \
-        inputs of the step"
-    let used ← matchArgs thm tNames thmTy.getForallBinderNames ms targs
-    let free := (List.range ms.size).filter (!used.contains ·)
-    let (some si, some ai) := (free[0]?, free[1]?)
-      | throwError "derive_simulator: `{thm}` does not take the inputs of the step"
-    let sM := ms[si]!
-    let aM := ms[ai]!
-    let onStep (e : Expr) : Bool :=
-      (e.findMVar? fun m => m == sM.mvarId! || m == aM.mvarId!).isSome
-    let rest := (free.drop 2).toArray.map (ms[·]!)
-    let B ← instantiateMVars concl.appArg!
+    let (ms, bis, concl) ← forallMetaTelescopeReducing (← inferType thm)
+    unless ← isDefEqFolding (f ++ st ++ tr ++ (← sfx)) (← instantiateMVars concl) body do
+      throwError "derive_simulator: `{thm}` does not bound the step `{st}` of{indentExpr A}"
+    let (.mvar sm, .mvar am) := (← instantiateMVars sM, ← instantiateMVars aM)
+      | throwError "derive_simulator: `{thm}` bounds the step `{st}` only at some states or \
+          inputs"
+    if sm == am then
+      throwError "derive_simulator: `{thm}` bounds the step `{st}` only at some states or inputs"
+    for m in ms, bi in bis do
+      if bi.isInstImplicit && !(← m.mvarId!.isAssigned) then
+        if let some inst ← synthInstance? (← instantiateMVars (← inferType m)) then
+          discard <| isDefEq m inst
+    for m in ms do closeConstBound m.mvarId!
+    let onStep (e : Expr) : Bool := (e.findMVar? fun m => m == sm || m == am).isSome
+    let rest ← ms.filterM fun m => do
+      let m' ← instantiateMVars m
+      return m'.isMVar && m'.mvarId! != sm && m'.mvarId! != am
+    let B ← instantiateMVars bms[i]!
     let mut stateDep := onStep B
     for m in rest do
       if onStep (← instantiateMVars (← inferType m)) then stateDep := true
@@ -467,18 +478,17 @@ def stepsTimeBound (bounds hyps : IO.Ref (Array (MVarId × BinderInfo))) (tb f :
       throwError "derive_simulator: the bound of `{thm}` or a hypothesis of it depends on the \
         state or the input of the step"
     recordOpen bounds hyps .implicit rest
-    let sTy ← instantiateMVars (← inferType sM)
-    let aTy ← instantiateMVars (← inferType aM)
+    let sTy ← instantiateMVars (← sm.getType)
+    let aTy ← instantiateMVars (← am.getType)
     let pf ← withLocalDeclD `s sTy fun s =>
       withLocalDeclD `a aTy fun a => do
-        sM.mvarId!.assign s
-        aM.mvarId!.assign a
+        sm.assign s
+        am.assign a
         mkLambdaFVars #[s, a] (← instantiateMVars (mkAppN thm ms))
     pfs := pfs.push pf
-    bs := bs.push B
   let some last := pfs.back? | throwError "derive_simulator: no steps"
   let pf ← pfs.pop.foldrM (fun p acc => mkAppM ``And.intro #[p, acc]) last
-  mkExpectedTypeHint pf (← mkAppM tb (#[A] ++ bs))
+  mkExpectedTypeHint pf (← instantiateMVars (mkAppN tbA bms))
 
 /-- A proof of `A.TimeBound a b c` for the costed multi-call simulator `A` on plain states: from
 the step theorems of a costed form `f.timed`, from `MultiHybrid.Timed.tensor_timeBound` for a
