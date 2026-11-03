@@ -175,6 +175,47 @@ theorem flag_le_of_coupling (f₁ : σ₁ → D → Ω → R × σ₁) (f₂ : �
         · rw [decide_eq_false hb₂, ho]
           exact ih _ _ _ hr
 
+/-- The support of a run flagged by an event that the oracle keeps: a set flag means that the
+event holds at the final state. -/
+theorem run_flag_support (O : σ → D → PMF (R × σ)) (P : σ → Prop) [DecidablePred P]
+    (hmono : ∀ s d, P s → ∀ x ∈ (O s d).support, P x.2) (A : OracleAdv D R α) (s : σ) (b : Bool)
+    (hb : b = true → P s) :
+    ∀ z ∈ (OracleAdv.run (OracleAdv.flagWhen (fun _ _ x => P x.2) O) A (s, b)).support,
+      z.2.2 = true → P z.2.1 := by
+  induction A generalizing s b with
+  | ret a =>
+    intro z hz hf
+    rw [OracleAdv.run_ret, PMF.support_pure, Set.mem_singleton_iff] at hz
+    subst hz
+    exact hb hf
+  | rand p k ih =>
+    intro z hz
+    rw [OracleAdv.run_rand, PMF.mem_support_bind_iff] at hz
+    obtain ⟨c, -, hc⟩ := hz
+    exact ih c s b hb z hc
+  | query d k ih =>
+    intro z hz
+    rw [OracleAdv.run_query, PMF.mem_support_bind_iff] at hz
+    obtain ⟨x, hx, hz⟩ := hz
+    simp only [OracleAdv.flagWhen, PMF.support_map, Set.mem_image] at hx
+    obtain ⟨w, hw, rfl⟩ := hx
+    refine ih w.1 w.2 _ ?_ z hz
+    intro h
+    rcases Bool.or_eq_true_iff.mp h with h | h
+    · exact hmono s d (hb h) w hw
+    · exact of_decide_eq_true h
+
+/-- **A flag of an event that the oracle keeps** is set at most with the probability of the event
+at the final state. -/
+theorem run_flag_le_final (O : σ → D → PMF (R × σ)) (P : σ → Prop) [DecidablePred P]
+    (hmono : ∀ s d, P s → ∀ x ∈ (O s d).support, P x.2) (A : OracleAdv D R α) (s : σ) :
+    (OracleAdv.run (OracleAdv.flagWhen (fun _ _ x => P x.2) O) A (s, false)).toOuterMeasure
+        {y | y.2.2 = true} ≤ (OracleAdv.run O A s).toOuterMeasure {y | P y.2} := by
+  rw [← OracleAdv.run_flagWhen_map (fun _ _ x => P x.2) O A s false,
+    PMF.toOuterMeasure_map_apply]
+  refine PMF.toOuterMeasure_mono _ fun z hz => ?_
+  exact run_flag_support O P hmono A s false (fun h => by cases h) z hz.2 hz.1
+
 end FlagCoupling
 
 /-! ## Symbolic Diffie–Hellman values -/
@@ -1196,7 +1237,6 @@ theorem simStartD_corrupt (s : SimSt S W K) (e : OEv W) (r : Draw S K) (p : Part
   all_goals repeat' split
   all_goals simp_all [deliverD_corrupt, addSession_corrupt, (pollStep_fst _).2.1, corruptStep,
     ltD_st, Function.update_apply]
-  all_goals grind
 
 /-- A step of the simulated world never clears a corruption of `a` or `b`. -/
 theorem stop_simWorldD (t : SimSt S W K × St K) (e : OEv W) (r : Draw S K × K)
@@ -1378,5 +1418,78 @@ theorem gapDH_advantage_gdhRed (B : OracleAdv (OEv W) (OOut S W K) Bool) :
   exact PMF.bind_pure_comp _ _
 
 end Output
+
+/-! ## The bad event of a pair under the gap Diffie–Hellman assumption -/
+
+section Pair
+
+variable {S W K : Type} [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K]
+  [Inhabited K] (G : DHGroup S W) (a b : PartyId)
+
+/-- The initial state of the simulated world. -/
+def simInit : SimSt S W K × St K := ((rInit, fun _ => none, .fwd), initSt)
+
+open Classical in
+/-- **The bad event of the pair `(a, b)` in the simulated world**: the probability that the
+table of the simulated world comes to hold an input with initiator `a` and responder `b`, both
+uncorrupt, whose `DH1` is `g^{ik_a · spk_b}`. -/
+noncomputable def pairBad (B : OracleAdv (OEv W) (OOut S W K) Bool) : ℝ≥0∞ :=
+  (OracleAdv.run (OracleAdv.flagWhen (fun _ _ z => DH1HitAB G a b z.2.1) ((simGame G).oracle ()))
+    B (simInit, false)).toOuterMeasure {y | y.2.2 = true}
+
+omit [Fintype S] [Fintype K] [Nonempty K] [Inhabited K] in
+theorem relW_init (x y : S) : RelW G a b x y (simInit (K := K)) rInitR :=
+  ⟨⟨rfl, rfl, fun _ => rfl, rfl, fun _ => rfl, rfl, (fun _ h => by cases h),
+    (fun _ _ h => by cases h), (fun _ h => by cases h), (fun _ _ h => by cases h), rfl, rfl⟩, rfl⟩
+
+open Classical in
+/-- **The bad event of a pair at fixed challenge exponents** is at most the probability that the
+reduction outputs the Diffie–Hellman value. -/
+theorem pairBad_le_red (B : OracleAdv (OEv W) (OOut S W K) Bool) (x y : S) :
+    pairBad G a b B ≤ ((redPMF G a b (ddhOracle (gapDHDef G)) (G.pub x) (G.pub y) B).map
+      fun c => decide (c = G.pub (x * y))) true := by
+  have hO : (simGame G).oracle () = fun t e => (PMF.uniformFintype (Draw S K × K)).map
+      fun r => (simWorldD G t e (transW a b x y t e r)).swap :=
+    funext fun t => funext fun e => simGame_oracle_eq_trans G a b x y t e
+  have h₁ := flag_le_of_coupling
+    (fun t e r => (simWorldD G t e (transW a b x y t e r)).swap)
+    (fun t e r => (stepR G a b (ddhOracle (gapDHDef G)) (G.pub x) (G.pub y) t e r).swap)
+    (RelW G a b x y) (fun t => Stop a b t.1) (fun t => DH1HitAB G a b t.1) (Bad2 G a b x y)
+    (fun t e r h => stop_simWorldD G a b t e _ h)
+    (fun t h hb => by
+      obtain ⟨_, _, _, _, _, _, _, _, _, ha, hb', _⟩ := hb
+      rcases h with h | h <;> simp_all)
+    (fun t₁ t₂ h hb => bad2_of_rel G a b x y h hb)
+    (fun t₁ t₂ e r h => step_rel G a b x y h e r) B simInit rInitR (relW_init G a b x y)
+  have h₂ := run_flag_le_final (oracleR G a b (ddhOracle (gapDHDef G)) (G.pub x) (G.pub y))
+    (Bad2 G a b x y) (fun t e hb z hz => by
+      simp only [oracleR, PMF.support_map, Set.mem_image] at hz
+      obtain ⟨r, -, rfl⟩ := hz
+      exact hb.mono G a b x y (mono_stepR G a b _ _ _ t e r)) B rInitR
+  unfold pairBad
+  rw [hO]
+  refine h₁.trans (h₂.trans ?_)
+  rw [redPMF_eq, PMF.map_comp, ← PMF.toOuterMeasure_apply_singleton, PMF.toOuterMeasure_map_apply]
+  refine PMF.toOuterMeasure_mono _ fun z hz => ?_
+  simp only [Set.mem_preimage, Function.comp_apply, Set.mem_singleton_iff, decide_eq_true_eq]
+  exact extractR_of_bad2 G a b x y hz.1
+
+/-- **The bad event of a pair is a gap Diffie–Hellman problem**: its probability is at most the
+advantage of the reduction `gdhRed G a b B`. -/
+theorem pairBad_le_gapDH (B : OracleAdv (OEv W) (OOut S W K) Bool) :
+    pairBad G a b B ≤ GapDH_Advantage (gapDHDef G) (gdhRed G a b B) := by
+  rw [gapDH_advantage_gdhRed, PMF.bind_apply]
+  calc pairBad G a b B = ∑' x : S, PMF.uniformFintype S x *
+        ∑' y : S, PMF.uniformFintype S y * pairBad G a b B := by
+        simp only [ENNReal.tsum_mul_right, PMF.tsum_coe, one_mul]
+    _ ≤ _ := by
+      refine ENNReal.tsum_le_tsum fun x => ?_
+      gcongr
+      rw [PMF.bind_apply]
+      refine ENNReal.tsum_le_tsum fun y => ?_
+      gcongr
+      exact pairBad_le_red G a b B x y
+
+end Pair
 
 end CatCrypt.Crypto.AKE.X3DHSquareGDH
