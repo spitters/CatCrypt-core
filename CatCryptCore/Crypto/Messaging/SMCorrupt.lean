@@ -2216,4 +2216,56 @@ theorem sm_corrupt_advantage_le (C : CKADef Sc Msg Key) [CKACoins C Rand]
 
 end Main
 
+/-! ## The Diffie–Hellman double ratchet -/
+
+section DH
+
+variable {RK Sa W Ct : Type} [SampleableType W] [SampleableType Ct] [Fintype RK] [Nonempty RK]
+  [Fintype Sa] [Nonempty Sa] [DecidableEq RK]
+
+/-- The distribution of the initialisation of `dhCKA`. -/
+noncomputable def dhInitP (G : Type) [CG : CyclicGroup G] : PMF (G × (G × CG.Exp) × (G × CG.Exp)) :=
+  (PMF.uniformFintype CG.Exp).map fun x => (CG.pow x, (CG.pow x, x), (CG.pow x, x))
+
+theorem dhCKA_init_eq (G : Type) [CG : CyclicGroup G] :
+    (dhCKA G).init = liftPMF (dhInitP G) := by
+  simp only [dhCKA, dhInitP, sample_eq_liftPMF, liftPMF_bind_pure]
+
+variable (G : Type) [CG : CyclicGroup G] [DecidableEq G]
+
+/-- **Secure messaging with state corruption for the Diffie–Hellman double ratchet.** With the
+CKA `dhCKA` and the delays `ΔFS = 2`, `ΔPCS = 2`, the CKA terms of `sm_corrupt_advantage_le`
+are the DDH advantages of the reductions `ckaCorruptDDHRed (smcCKARed R F D b A)`
+(`dhCKA_corrupt_advantage_eq_ddh`). -/
+theorem sm_dh_corrupt_advantage_le (R : PRGDef (RK × G) (RK × Sa)) (F : PRGDef Sa (W × Sa))
+    (D : AEADDef W Ct) (A : SMCorruptAdv (G × CG.Exp) G RK Sa W Ct) :
+    SM_Corrupt_Advantage (dhCKA G) R F D 2 2 A ≤
+      ∑ b : Bool, DDH_Advantage G (ckaCorruptDDHRed (smcCKARed (Rand := CG.Exp) R F D b A)) +
+        ∑ b : Bool, PRFPRNG_Advantage R (smcRootRed (dhCKA G) R F D 2 2 b (dhInitP G) A) +
+        FSAEAD_Corrupt_Advantage F D (smcFSRed (dhCKA G) R F D 2 2 (dhInitP G) A) := by
+  have h := sm_corrupt_advantage_le (dhCKA G) (dhCKACoins_sound G) (dhInitP G)
+    (dhCKA_init_eq G) R F D (ΔFS := 2) (ΔPCS := 2) (le_refl 2) (by norm_num) A
+  simp only [dhCKA_corrupt_advantage_eq_ddh] at h
+  exact h
+
+/-- **The Diffie–Hellman double ratchet with the HKDF-shaped root step.** With the root step
+`hkdfRoot H` of a dual PRF `H`, the PRF-PRNG terms of `sm_dh_corrupt_advantage_le` are at most
+the dual-PRF advantages of `H` at the reductions `ppRedR` and `ppRedL`
+(`hkdfRoot_prfprng_le`). -/
+theorem sm_dh_hkdf_corrupt_advantage_le (H : RK → G → RK × Sa) (F : PRGDef Sa (W × Sa))
+    (D : AEADDef W Ct) (A : SMCorruptAdv (G × CG.Exp) G RK Sa W Ct) :
+    SM_Corrupt_Advantage (dhCKA G) (hkdfRoot H) F D 2 2 A ≤
+      ∑ b : Bool, DDH_Advantage G
+          (ckaCorruptDDHRed (smcCKARed (Rand := CG.Exp) (hkdfRoot H) F D b A)) +
+        ∑ b : Bool, (DualPRF_Right_Advantage H
+            (ppRedR H (smcRootRed (dhCKA G) (hkdfRoot H) F D 2 2 b (dhInitP G) A)) +
+          DualPRF_Left_Advantage H
+            (ppRedL (Key := G) (smcRootRed (dhCKA G) (hkdfRoot H) F D 2 2 b (dhInitP G) A))) +
+        FSAEAD_Corrupt_Advantage F D (smcFSRed (dhCKA G) (hkdfRoot H) F D 2 2 (dhInitP G) A) := by
+  refine (sm_dh_corrupt_advantage_le G (hkdfRoot H) F D A).trans ?_
+  gcongr with b
+  exact hkdfRoot_prfprng_le H _
+
+end DH
+
 end CatCrypt.Crypto.Messaging
