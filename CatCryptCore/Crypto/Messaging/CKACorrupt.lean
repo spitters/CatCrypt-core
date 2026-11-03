@@ -921,4 +921,276 @@ theorem recvd (h : DHRel a t s σ) {p : CKAParty} (hc : s.canRecv p = true) :
 
 end DHRel
 
+namespace CKAGameSt
+
+variable {St Msg St' Msg' : Type}
+
+theorem canSend_eq_of_t {s : CKAGameSt St Msg} {s' : CKAGameSt St' Msg'} (h : s.t = s'.t)
+    (p : CKAParty) : s'.canSend p = s.canSend p := by
+  simp only [canSend, h]
+
+theorem canRecv_eq_of_t {s : CKAGameSt St Msg} {s' : CKAGameSt St' Msg'} (h : s.t = s'.t)
+    (p : CKAParty) : s'.canRecv p = s.canRecv p := by
+  simp only [canRecv, h]
+
+theorem allowCorr_eq_of_t {s : CKAGameSt St Msg} {s' : CKAGameSt St' Msg'} (h : s.t = s'.t)
+    (ΔFS ΔPCS t : ℕ) (p : CKAParty) : ckaAllowCorr ΔFS ΔPCS t s' p = ckaAllowCorr ΔFS ΔPCS t s p := by
+  simp only [ckaAllowCorr, h]
+
+theorem allowLeak_eq_of_t {s : CKAGameSt St Msg} {s' : CKAGameSt St' Msg'} (h : s.t = s'.t)
+    (ΔPCS t : ℕ) (p : CKAParty) : ckaAllowLeak ΔPCS t s' p = ckaAllowLeak ΔPCS t s p := by
+  simp only [ckaAllowLeak, canSend_eq_of_t h, h]
+
+theorem sum_sent (s : CKAGameSt St Msg) (p : CKAParty) (x : St) (T : Msg) :
+    (s.sent p x T).t .A + (s.sent p x T).t .B = s.t .A + s.t .B + 1 := by
+  cases p <;> simp <;> omega
+
+theorem le_sent (s : CKAGameSt St Msg) (p q : CKAParty) (x : St) (T : Msg) :
+    s.t q ≤ (s.sent p x T).t q := by
+  by_cases h : q = p
+  · subst h; simp
+  · simp [h]
+
+theorem le_recvd (s : CKAGameSt St Msg) (p q : CKAParty) (x : St) :
+    s.t q ≤ (s.recvd p x).t q := by
+  by_cases h : q = p
+  · subst h; simp
+  · simp [h]
+
+end CKAGameSt
+
+section DHStepLemmas
+
+variable {E Gr : Type}
+
+/-- The steps of the Diffie–Hellman game do not decrease the counters. -/
+theorem dhCKAStepOf_t_le (pow : E → Gr) (epow : Gr → E → Gr) (ΔFS ΔPCS t : ℕ) (ideal : Bool)
+    (s : CKAGameSt (Gr × E) Gr) (q : CKAQuery) (e : E × Gr) (r : CKAParty) :
+    s.t r ≤ (dhCKAStepOf pow epow ΔFS ΔPCS t ideal s q e).2.t r := by
+  cases q with
+  | send p =>
+    simp only [dhCKAStepOf]; split
+    · exact CKAGameSt.le_sent _ _ _ _ _
+    · exact le_refl _
+  | recv p =>
+    simp only [dhCKAStepOf]; split
+    · exact CKAGameSt.le_recvd _ _ _ _
+    · exact le_refl _
+  | chall p =>
+    simp only [dhCKAStepOf]; split
+    · exact CKAGameSt.le_sent _ _ _ _ _
+    · exact le_refl _
+  | corrupt p => exact le_refl _
+  | sendLeak p =>
+    simp only [dhCKAStepOf]; split
+    · exact CKAGameSt.le_sent _ _ _ _ _
+    · exact le_refl _
+
+theorem dhDoneA_step (pow : E → Gr) (epow : Gr → E → Gr) (ΔFS ΔPCS t : ℕ) (ideal : Bool)
+    (s : CKAGameSt (Gr × E) Gr) (q : CKAQuery) (e : E × Gr) (h : dhDoneA t s) :
+    dhDoneA t (dhCKAStepOf pow epow ΔFS ΔPCS t ideal s q e).2 := by
+  have := dhCKAStepOf_t_le pow epow ΔFS ΔPCS t ideal s q e .A
+  have := dhCKAStepOf_t_le pow epow ΔFS ΔPCS t ideal s q e .B
+  unfold dhDoneA at *; omega
+
+theorem dhDoneB_step (pow : E → Gr) (epow : Gr → E → Gr) (ΔFS ΔPCS t : ℕ) (ideal : Bool)
+    (s : CKAGameSt (Gr × E) Gr) (q : CKAQuery) (e : E × Gr) (h : dhDoneB t s) :
+    dhDoneB t (dhCKAStepOf pow epow ΔFS ΔPCS t ideal s q e).2 := by
+  have := dhCKAStepOf_t_le pow epow ΔFS ΔPCS t ideal s q e .A
+  have := dhCKAStepOf_t_le pow epow ΔFS ΔPCS t ideal s q e .B
+  unfold dhDoneB at *; omega
+
+theorem dhDoneA_crit (pow : E → Gr) (epow : Gr → E → Gr) (ΔFS ΔPCS t : ℕ) (ideal : Bool)
+    (s : CKAGameSt (Gr × E) Gr) (q : CKAQuery) (e : E × Gr) (h : dhCritA t s q = true) :
+    dhDoneA t (dhCKAStepOf pow epow ΔFS ΔPCS t ideal s q e).2 := by
+  cases q with
+  | send p =>
+    simp only [dhCritA, Bool.and_eq_true, beq_iff_eq] at h
+    obtain ⟨hc, ht⟩ := h
+    simp only [dhCKAStepOf, hc, if_true]
+    have hs := CKAGameSt.sum_t s p
+    have hAB := ((CKAGameSt.canSend_iff s p).1 hc).1
+    have h1 := CKAGameSt.t_eq_of_eq hAB p
+    have := CKAGameSt.sum_sent s p ((s.st p).1, e.1) (pow e.1)
+    unfold dhDoneA; omega
+  | _ => simp [dhCritA] at h
+
+theorem dhDoneA_noCrit {St Msg : Type} (t : ℕ) (s : CKAGameSt St Msg) (q : CKAQuery)
+    (h : dhDoneA t s) : dhCritA t s q = false := by
+  cases q with
+  | send p =>
+    simp only [dhCritA, Bool.and_eq_false_iff, beq_eq_false_iff_ne]
+    by_cases hc : s.canSend p = true
+    · right
+      have hAB := ((CKAGameSt.canSend_iff s p).1 hc).1
+      have h1 := CKAGameSt.t_eq_of_eq hAB p
+      unfold dhDoneA at h; omega
+    · left; simpa using hc
+  | _ => rfl
+
+theorem dhDoneB_noCrit {St Msg : Type} (t : ℕ) (s : CKAGameSt St Msg) (q : CKAQuery)
+    (h : dhDoneB t s) : dhCritB t s q = false := by
+  cases q with
+  | chall p =>
+    simp only [dhCritB, Bool.and_eq_false_iff, beq_eq_false_iff_ne]
+    by_cases hc : s.canSend p = true
+    · right
+      have hAB := ((CKAGameSt.canSend_iff s p).1 hc).1
+      have h1 := CKAGameSt.t_eq_of_eq hAB p
+      unfold dhDoneB at h; omega
+    · left; simpa using hc
+  | _ => rfl
+
+/-- The step of the eager game: the send of epoch `t - 1` uses the exponent of `va`, the
+challenge the exponent and the group element of `vb`. -/
+def dhCKAEagerStepOf (pow : E → Gr) (epow : Gr → E → Gr) (ΔFS ΔPCS t : ℕ) (ideal : Bool)
+    (va vb : E × Gr) : CKAGameSt (Gr × E) Gr → CKAQuery → E × Gr →
+      CKAAns (Gr × E) Gr Gr E × CKAGameSt (Gr × E) Gr :=
+  OracleAdv.eagerStep (OracleAdv.eagerStep (dhCKAStepOf pow epow ΔFS ΔPCS t ideal) (dhCritA t)
+    va) (dhCritB t) vb
+
+theorem dhDoneB_crit (pow : E → Gr) (epow : Gr → E → Gr) (ΔFS ΔPCS t : ℕ) (ideal : Bool)
+    (va : E × Gr) (s : CKAGameSt (Gr × E) Gr) (q : CKAQuery) (e : E × Gr)
+    (h : dhCritB t s q = true) :
+    dhDoneB t (OracleAdv.eagerStep (dhCKAStepOf pow epow ΔFS ΔPCS t ideal) (dhCritA t) va
+      s q e).2 := by
+  cases q with
+  | chall p =>
+    simp only [dhCritB, Bool.and_eq_true, beq_iff_eq] at h
+    obtain ⟨hc, ht⟩ := h
+    simp only [OracleAdv.eagerStep, dhCritA, Bool.false_eq_true, if_false, dhCKAStepOf, hc, ht,
+      beq_self_eq_true, Bool.and_self, if_true]
+    have hs := CKAGameSt.sum_t s p
+    have hAB := ((CKAGameSt.canSend_iff s p).1 hc).1
+    have h1 := CKAGameSt.t_eq_of_eq hAB p
+    have := CKAGameSt.sum_sent s p ((s.st p).1, e.1) (pow e.1)
+    unfold dhDoneB; omega
+  | _ => simp [dhCritB] at h
+
+theorem dhDoneB_eager (pow : E → Gr) (epow : Gr → E → Gr) (ΔFS ΔPCS t : ℕ) (ideal : Bool)
+    (va : E × Gr) (s : CKAGameSt (Gr × E) Gr) (q : CKAQuery) (e : E × Gr) (h : dhDoneB t s) :
+    dhDoneB t (OracleAdv.eagerStep (dhCKAStepOf pow epow ΔFS ΔPCS t ideal) (dhCritA t) va
+      s q e).2 := by
+  obtain ⟨e', he⟩ := OracleAdv.eagerStep_exists (dhCKAStepOf pow epow ΔFS ΔPCS t ideal)
+    (dhCritA t) va s q e
+  rw [he]
+  exact dhDoneB_step pow epow ΔFS ΔPCS t ideal s q e' h
+
+end DHStepLemmas
+
+section DHSim
+
+variable {G : Type} [CG : CyclicGroup G]
+
+/-- **The simulation step.** From related states, the eager game with the exponents `a = va.1`,
+`b = vb.1` and the group element `vb.2`, and the simulator with the triple
+`(g^a, g^b, z)`, where `z` is `vb.2` in the ideal game and `g^{ab}` in the real one, give equal
+answers and related states. -/
+theorem dhRel_step (t : ℕ) (ideal : Bool) (va vb : CG.Exp × G) (z : G)
+    (hz : z = if ideal then vb.2 else CG.pow (CG.expMul va.1 vb.1))
+    (s σ : CKAGameSt (G × CG.Exp) G) (h : DHRel va.1 t s σ) (q : CKAQuery)
+    (e : CG.Exp × G) :
+    (dhCKAEagerStepOf CG.pow CyclicGroup.elemPow 2 2 t ideal va vb s q e).1 =
+        (dhCKASimStepOf CG.pow CyclicGroup.elemPow 2 2 t (CG.pow va.1) (CG.pow vb.1) z σ q
+          e).1 ∧
+      DHRel va.1 t (dhCKAEagerStepOf CG.pow CyclicGroup.elemPow 2 2 t ideal va vb s q e).2
+        (dhCKASimStepOf CG.pow CyclicGroup.elemPow 2 2 t (CG.pow va.1) (CG.pow vb.1) z σ q
+          e).2 := by
+  have hcs := CKAGameSt.canSend_eq_of_t h.t_eq
+  have hcr := CKAGameSt.canRecv_eq_of_t h.t_eq
+  have hco := CKAGameSt.allowCorr_eq_of_t h.t_eq
+  have hcl := CKAGameSt.allowLeak_eq_of_t h.t_eq
+  have hσt : σ.t = s.t := h.t_eq.symm
+  cases q with
+  | send p =>
+    simp only [dhCKAEagerStepOf, OracleAdv.eagerStep, dhCritA, dhCritB, Bool.false_eq_true,
+      if_false, dhCKAStepOf, dhCKASimStepOf, hcs, hσt]
+    rcases (Bool.eq_false_or_eq_true (s.canSend p)).symm with hc | hc
+    · simp only [hc, if_false, Bool.false_eq_true]; exact ⟨by trivial, h⟩
+    · simp only [hc, if_true]
+      obtain ⟨hAB, hp⟩ := (CKAGameSt.canSend_iff s p).1 hc
+      have htp := CKAGameSt.t_eq_of_eq hAB p
+      have hto := CKAGameSt.t_other_eq_of_eq hAB p
+      by_cases ht2 : s.t p + 2 = t
+      · simp only [ht2, beq_self_eq_true, Bool.and_self, if_true]
+        have hP : ckaSender t = p.other := by
+          rw [← ht2, show s.t p + 2 = s.t .A + 1 + 1 by omega, ckaSender_succ, hp]
+        have hnh : ¬ dhHidden t s p.other := by
+          rintro ⟨h1, -⟩; omega
+        refine ⟨?_, h.sent hc va.1 e.1 _ rfl ?_ fun _ _ _ _ => rfl⟩
+        · have h1 := h.inv1 hAB
+          rw [hp] at h1
+          rw [h1, ← h.y_eq _ hnh, elemPow_pow_comm]
+        · intro hh; exfalso; apply hh
+          refine ⟨by simp; omega, ?_⟩
+          rw [if_neg (by rw [hP]; exact CKAParty.ne_other p)]
+          simp; omega
+      · have hne : (s.t p + 2 == t) = false := by simpa using ht2
+        simp only [hne, Bool.and_false, Bool.false_eq_true, if_false]
+        refine ⟨by rw [h.h_eq p], h.sent hc e.1 e.1 _ rfl (fun _ => rfl) ?_⟩
+        intro hpP h1 hlo hhi
+        exfalso
+        have hpt : s.t p + 1 = t := by omega
+        have : ckaSender t = p := by rw [← hpt, htp, hp]
+        rw [this] at hpP
+        exact CKAParty.ne_other p hpP
+  | recv p =>
+    simp only [dhCKAEagerStepOf, OracleAdv.eagerStep, dhCritA, dhCritB, Bool.false_eq_true,
+      if_false, dhCKAStepOf, dhCKASimStepOf, hcr]
+    rcases (Bool.eq_false_or_eq_true (s.canRecv p)).symm with hc | hc
+    · simp only [hc, if_false, Bool.false_eq_true]; exact ⟨by trivial, h⟩
+    · simp only [hc, if_true]; exact ⟨by trivial, h.recvd hc⟩
+  | chall p =>
+    simp only [dhCKAEagerStepOf, OracleAdv.eagerStep, dhCritA, dhCritB, Bool.false_eq_true,
+      if_false, dhCKAStepOf, dhCKASimStepOf, hcs, hσt]
+    rcases (Bool.eq_false_or_eq_true (s.canSend p && s.t p + 1 == t)).symm with hcb | hcb
+    · simp only [hcb, if_false, Bool.false_eq_true]; exact ⟨by trivial, h⟩
+    · simp only [hcb, if_true]
+      simp only [Bool.and_eq_true, beq_iff_eq] at hcb
+      obtain ⟨hc, ht1⟩ := hcb
+      obtain ⟨hAB, hp⟩ := (CKAGameSt.canSend_iff s p).1 hc
+      have htp := CKAGameSt.t_eq_of_eq hAB p
+      have hto := CKAGameSt.t_other_eq_of_eq hAB p
+      have hP : ckaSender t = p := by rw [← ht1, htp, hp]
+      refine ⟨?_, h.sent hc vb.1 e.1 _ rfl ?_ ?_⟩
+      · rw [hz]
+        cases ideal with
+        | true => rfl
+        | false =>
+          simp only [Bool.false_eq_true, if_false]
+          have h1 := h.inv1 hAB
+          rw [hp] at h1
+          have h3 := h.inv3 (by omega) (by rw [hP]; omega) (by rw [hP]; omega)
+          rw [hP] at h3
+          rw [h1, h3, CyclicGroup.elemPow_pow]
+      · intro hh; exfalso; apply hh
+        refine ⟨by simp; omega, ?_⟩
+        rw [if_pos (by rw [hP])]
+        simp; omega
+      · intro hpP
+        exfalso
+        rw [hP] at hpP
+        exact CKAParty.ne_other p hpP
+  | corrupt p =>
+    simp only [dhCKAEagerStepOf, OracleAdv.eagerStep, dhCritA, dhCritB, Bool.false_eq_true,
+      if_false, dhCKAStepOf, dhCKASimStepOf, hco]
+    rcases (Bool.eq_false_or_eq_true (ckaAllowCorr 2 2 t s p)).symm with hg | hg
+    · simp only [hg, if_false, Bool.false_eq_true]; exact ⟨by trivial, h⟩
+    · simp only [hg, if_true]
+      refine ⟨?_, h⟩
+      rw [Prod.ext (h.h_eq p) (h.y_eq p (not_dhHidden_of_allowCorr hg))]
+  | sendLeak p =>
+    simp only [dhCKAEagerStepOf, OracleAdv.eagerStep, dhCritA, dhCritB, Bool.false_eq_true,
+      if_false, dhCKAStepOf, dhCKASimStepOf, hcl]
+    rcases (Bool.eq_false_or_eq_true (ckaAllowLeak 2 t s p)).symm with hl | hl
+    · simp only [hl, if_false, Bool.false_eq_true]; exact ⟨by trivial, h⟩
+    · simp only [hl, if_true]
+      simp only [ckaAllowLeak, Bool.and_eq_true, decide_eq_true_eq] at hl
+      obtain ⟨hc, ht3⟩ := hl
+      refine ⟨by rw [h.h_eq p], h.sent hc e.1 e.1 _ rfl (fun _ => rfl) ?_⟩
+      intro _ _ hlo _
+      omega
+
+end DHSim
+
 end CatCrypt.Crypto.Messaging
