@@ -1332,8 +1332,8 @@ draws the challenge epoch `t` of the adversary and an exponent `x₀`; the publi
 initialisation is `ga` if `t = 1` and `g^{x₀}` otherwise; it runs the adversary against the
 simulator `ckaCorruptSimImplOf` and returns its output. -/
 noncomputable def ckaCorruptDDHTreeOf (pow : E → Gr) (epow : Gr → E → Gr) (ΔFS ΔPCS : ℕ)
-    (tStar : PMF ℕ) (play : ℕ → Gr → OracleAdv CKAQuery (CKAAns (Gr × E) Gr Gr E) Bool)
-    (ga gb z : Gr) : OracleAdv Empty Unit Bool :=
+    (tStar : PMF ℕ) (play : ℕ → Gr → OracleAdv CKAQuery (CKAAns (Gr × E) Gr Gr E) α)
+    (ga gb z : Gr) : OracleAdv Empty Unit α :=
   .rand tStar fun t =>
     .rand (PMF.uniformFintype E) fun x₀ =>
       (OracleAdv.simulate (ckaCorruptSimImplOf pow epow ΔFS ΔPCS t ga gb z)
@@ -1444,7 +1444,7 @@ theorem ckaCorruptSimImplOf.timed_bound (pow : E → Gr) (powCost : E → ℕ) (
 then runs a step-prefixed tree `S t x₀` of time at most `B` and returns the first component of
 its output. -/
 theorem timeBound_rand_rand_bind {D R Ŝ : Type} (τ : PMF ℕ) (μ : PMF E) (c : ℕ → E → ℕ)
-    (S : ℕ → E → ℕ × OracleAdv.Timed D R (Bool × Ŝ)) {K B : ℕ} (hc : ∀ t x₀, c t x₀ ≤ K)
+    (S : ℕ → E → ℕ × OracleAdv.Timed D R (α × Ŝ)) {K B : ℕ} (hc : ∀ t x₀, c t x₀ ≤ K)
     (hS : ∀ t x₀, OracleAdv.Timed.StepTimeBound (S t x₀) B) :
     OracleAdv.Timed.StepTimeBound (0, OracleAdv.Timed.rand τ (fun _ => 0) fun t =>
       OracleAdv.Timed.rand μ (fun x₀ => c t x₀ + (S t x₀).1 +
@@ -1470,7 +1470,7 @@ initial exponent. -/
 theorem ckaCorruptDDHTreeOf.timeBound_timed {E Gr : Type} [Fintype E] [Nonempty E] [Fintype Gr]
     [Nonempty Gr] (pow : E → Gr) (powCost : E → ℕ) (epow : Gr → E → Gr)
     (epowCost : Gr → E → ℕ) (ΔFS ΔPCS : ℕ) (tStar : PMF ℕ)
-    (play : ℕ → Gr → OracleAdv.Timed CKAQuery (CKAAns (Gr × E) Gr Gr E) Bool)
+    (play : ℕ → Gr → OracleAdv.Timed CKAQuery (CKAAns (Gr × E) Gr Gr E) α)
     (playCost : ℕ → Gr → ℕ) (ga gb z : Gr) {T q a P X : ℕ}
     (hA : ∀ t g, (play t g).TimeBound T) (hq : ∀ t g, (play t g).erase.IsQueryBound q)
     (ha : ∀ t g, playCost t g ≤ a) (hP : ∀ x, powCost x ≤ P) (hX : ∀ g x, epowCost g x ≤ X) :
@@ -1499,11 +1499,19 @@ theorem ckaCorruptDDHTreeOf.timeBound_timed {E Gr : Type} [Fintype E] [Nonempty 
 def emptyOracle (_ : Unit) (d : Empty) : PMF (Unit × Unit) := d.elim
 
 /-- **The DDH reduction** `ckaCorruptDDHRed A`: the tree `ckaCorruptDDHTreeOf` with the
-exponentiations of the group, run as a distribution. -/
+exponentiations of the group and the delays `ΔFS = 2`, `ΔPCS = 2`, run as a distribution. -/
 noncomputable def ckaCorruptDDHRed {G : Type} [CG : CyclicGroup G]
     (A : CKACorruptAdv (G × CG.Exp) G G CG.Exp Bool) : G × G × G → SPComp Bool := fun tr =>
   liftPMF ((OracleAdv.run emptyOracle (ckaCorruptDDHTreeOf CG.pow CyclicGroup.elemPow 2 2
     A.tStar A.play tr.1 tr.2.1 tr.2.2) ()).map Prod.fst)
+
+/-- The DDH reduction for an adversary with output in `α` followed by the distinguisher `D`:
+the run of the tree `ckaCorruptDDHTreeOf`, then `D` on its output. -/
+noncomputable def ckaCorruptDDHRedA {G : Type} [CG : CyclicGroup G]
+    (A : CKACorruptAdv (G × CG.Exp) G G CG.Exp α) (D : α → SPComp Bool) :
+    G × G × G → SPComp Bool := fun tr =>
+  SPComp.bind (liftPMF ((OracleAdv.run emptyOracle (ckaCorruptDDHTreeOf CG.pow
+    CyclicGroup.elemPow 2 2 A.tStar A.play tr.1 tr.2.1 tr.2.2) ()).map Prod.fst)) D
 
 section DHProof
 
@@ -1605,7 +1613,7 @@ theorem dhCKA_eager_eq_sim (t : ℕ) (ideal : Bool) (va vb : CG.Exp × G) (x₀ 
 
 /-- The run of the reduction tree is the run of the adversary against the simulation step. -/
 theorem ckaCorruptDDHTreeOf_run (ΔFS ΔPCS : ℕ) (tStar : PMF ℕ)
-    (play : ℕ → G → OracleAdv CKAQuery (CKAAns (G × CG.Exp) G G CG.Exp) Bool) (ga gb z : G) :
+    (play : ℕ → G → OracleAdv CKAQuery (CKAAns (G × CG.Exp) G G CG.Exp) α) (ga gb z : G) :
     (OracleAdv.run emptyOracle (ckaCorruptDDHTreeOf CG.pow CyclicGroup.elemPow ΔFS ΔPCS tStar
         play ga gb z) ()).map Prod.fst =
       tStar.bind fun t => (PMF.uniformFintype CG.Exp).bind fun x₀ =>
@@ -1689,22 +1697,73 @@ theorem bind_reorder_ideal {β : Type} (τ : PMF ℕ) (F : ℕ → CG.Exp → CG
   simp only [h]
   exact (bind_reorder _ _ _).symm
 
+/-- The real game of `dhCKA` with the delays `(2, 2)`, as a distribution, is the real DDH
+distribution followed by the reduction tree. -/
+theorem dhCKA_real_pmf (A : CKACorruptAdv (G × CG.Exp) G G CG.Exp α) :
+    (A.tStar.bind fun t => dhCKAGamePMF 2 2 t false (A.play t)) =
+      ((PMF.uniformFintype CG.Exp).bind fun a => (PMF.uniformFintype CG.Exp).bind fun b =>
+        PMF.pure (CG.pow a, CG.pow b, CG.pow (CG.expMul a b))).bind fun tr =>
+          (OracleAdv.run emptyOracle (ckaCorruptDDHTreeOf CG.pow CyclicGroup.elemPow 2 2
+            A.tStar A.play tr.1 tr.2.1 tr.2.2) ()).map Prod.fst := by
+  simp only [dhCKAGamePMF_eager]
+  simp only [dhCKA_eager_eq_sim]
+  simp only [PMF.bind_bind, PMF.pure_bind, ckaCorruptDDHTreeOf_run, pow_dhX0, dhDraw_bind,
+    PMF.bind_const, Bool.false_eq_true, if_false]
+  exact (bind_reorder _ _ _).symm
+
+/-- The ideal game of `dhCKA` with the delays `(2, 2)`, as a distribution, is the ideal DDH
+distribution followed by the reduction tree. -/
+theorem dhCKA_ideal_pmf (A : CKACorruptAdv (G × CG.Exp) G G CG.Exp α) :
+    (A.tStar.bind fun t => dhCKAGamePMF 2 2 t true (A.play t)) =
+      ((PMF.uniformFintype CG.Exp).bind fun a => (PMF.uniformFintype CG.Exp).bind fun b =>
+        (PMF.uniformFintype CG.Exp).bind fun c =>
+          PMF.pure (CG.pow a, CG.pow b, CG.pow c)).bind fun tr =>
+          (OracleAdv.run emptyOracle (ckaCorruptDDHTreeOf CG.pow CyclicGroup.elemPow 2 2
+            A.tStar A.play tr.1 tr.2.1 tr.2.2) ()).map Prod.fst := by
+  simp only [dhCKAGamePMF_eager]
+  simp only [dhCKA_eager_eq_sim]
+  simp only [PMF.bind_bind, PMF.pure_bind, ckaCorruptDDHTreeOf_run, pow_dhX0, dhDraw_bind,
+    PMF.bind_const, if_true]
+  exact bind_reorder_ideal _ _
+
+/-- **CKA security of `dhCKA` with state corruption and randomness leakage, with a
+distinguisher.** For every adversary `A` with output in `α` and every distinguisher `D`, the
+corruption advantage of `dhCKA` with forward-secrecy delay `2` and post-compromise delay `2`
+equals the DDH advantage of the reduction `ckaCorruptDDHRedA A D`. -/
+theorem dhCKA_corrupt_advantageA_eq_ddh (A : CKACorruptAdv (G × CG.Exp) G G CG.Exp α)
+    (D : α → SPComp Bool) :
+    CKA_Corrupt_AdvantageA (dhCKA G) 2 2 A D = DDH_Advantage G (ckaCorruptDDHRedA A D) := by
+  unfold CKA_Corrupt_AdvantageA DDH_Advantage AdvantageA cka_corrupt_real cka_corrupt_ideal
+    ckaCorruptDDHRedA
+  rw [dhCKA_game_eq, dhCKA_game_eq, dhCKA_real_pmf, dhCKA_ideal_pmf, DDH_real_eq_liftPMF,
+    DDH_ideal_eq_liftPMF]
+  simp only [← SPComp.bind_assoc, liftPMF_bind_liftPMF]
+
 /-- **CKA security of `dhCKA` with state corruption and randomness leakage.** For every
 adversary `A`, the corruption advantage of `dhCKA` with forward-secrecy delay `2` and
 post-compromise delay `2` equals the DDH advantage of the reduction `ckaCorruptDDHRed A`. -/
 theorem dhCKA_corrupt_advantage_eq_ddh (A : CKACorruptAdv (G × CG.Exp) G G CG.Exp Bool) :
     CKA_Corrupt_Advantage (dhCKA G) 2 2 A = DDH_Advantage G (ckaCorruptDDHRed A) := by
   unfold CKA_Corrupt_Advantage DDH_Advantage AdvantageA cka_corrupt_real cka_corrupt_ideal
-  rw [dhCKA_game_eq, dhCKA_game_eq, DDH_real_eq_liftPMF, DDH_ideal_eq_liftPMF]
-  simp only [dhCKAGamePMF_eager]
-  simp only [dhCKA_eager_eq_sim]
-  unfold ckaCorruptDDHRed
-  simp only [liftPMF_bind_liftPMF, PMF.bind_bind, PMF.pure_bind,
-    ckaCorruptDDHTreeOf_run, pow_dhX0, dhDraw_bind, PMF.bind_const, Bool.false_eq_true, if_false,
-    if_true]
-  congr 2
-  · exact (bind_reorder _ _ _).symm
-  · exact bind_reorder_ideal _ _
+    ckaCorruptDDHRed
+  rw [dhCKA_game_eq, dhCKA_game_eq, dhCKA_real_pmf, dhCKA_ideal_pmf, DDH_real_eq_liftPMF,
+    DDH_ideal_eq_liftPMF]
+  simp only [liftPMF_bind_liftPMF]
+
+/-- **CKA security of `dhCKA` with state corruption and randomness leakage**, as a bound: the
+corruption advantage with forward-secrecy delay `2` and post-compromise delay `2` is at most
+the DDH advantage of `ckaCorruptDDHRed A`. -/
+theorem dhCKA_corrupt_advantage_le (A : CKACorruptAdv (G × CG.Exp) G G CG.Exp Bool) :
+    CKA_Corrupt_Advantage (dhCKA G) 2 2 A ≤ DDH_Advantage G (ckaCorruptDDHRed A) :=
+  le_of_eq (dhCKA_corrupt_advantage_eq_ddh A)
+
+/-- The passive CKA advantage of `dhCKA` is the DDH advantage of the corruption reduction at
+the passive adversary: the passive game is the corruption game of `ckaPassiveAdv k m`, which
+neither corrupts nor leaks. -/
+theorem cka_advantage_dh_eq_corrupt (k m : ℕ) (D : CKAView G G → SPComp Bool) :
+    CKA_Advantage (dhCKA G) k m D =
+      DDH_Advantage G (ckaCorruptDDHRedA (ckaPassiveAdv (Rand := CG.Exp) k m) D) :=
+  (cka_advantage_eq_corrupt (dhCKA G) 2 2 k m D).trans (dhCKA_corrupt_advantageA_eq_ddh _ D)
 
 end DHProof
 
