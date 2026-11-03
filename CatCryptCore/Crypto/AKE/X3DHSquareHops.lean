@@ -1635,6 +1635,84 @@ theorem Inv.deliver_unexp {rs rl : RSt S W K} {inp : Inst → Option (Inp W)} {f
           exact Or.inr ⟨y', r', by rw [Function.update_of_ne hne]; exact hy',
             by rw [setRec_recs_ne hne]; exact hr', hey'⟩
 
+/-! ### The steps of the joint world -/
+
+omit [Fintype S] [Fintype K] [Nonempty K] in
+/-- **A step of the joint world under the invariant**: either the bad event holds after the step,
+or the outputs of the two worlds are equal and the invariant holds after the step. -/
+theorem step_inv (s : (SimSt S W K × St K) × RSt S W K) (hI : InvJ G s) (e : OEv W)
+    (r : Draw S K × K) :
+    DH1Hit G (jointD G s e r).2.1.1 ∨
+      ((jointD G s e r).1.1 = (jointD G s e r).1.2 ∧ InvJ G (jointD G s e r).2) := by
+  obtain ⟨⟨⟨rs, inp, ph⟩, f⟩, rl⟩ := s
+  obtain ⟨⟨y, l₁, l₂, k₀⟩, kf⟩ := r
+  simp only [InvJ] at hI ⊢
+  rcases e with (⟨sid, pid, peer, role⟩ | ⟨sid, pid⟩) | (_ | _ | pid | ⟨sid, pid⟩ | pid |
+    ⟨sid, pid⟩ | ⟨sid, pid, e⟩ | x)
+  · -- newSession
+    right
+    simp only [jointD, realD, simWorldD, simStartD, drive0D, fStepD, finV, cpl, FKeyAt,
+      Bool.false_eq_true, ↓reduceIte]
+    by_cases h : (rs.st.recs (sid, pid)).isNone = true
+    · have hn : rs.st.recs (sid, pid) = none := Option.isNone_iff_eq_none.mp h
+      have hl : (rl.st.recs (sid, pid)).isNone = true := by
+        have h0 := sk_none (hI.recs (sid, pid)) hn
+        rw [h0]; rfl
+      simp only [h, hl, ↓reduceIte, honStep, simOut]
+      exact ⟨trivial, hI.newSession G (sid, pid) hn peer role y⟩
+    · obtain ⟨rc, hrc⟩ : ∃ rc, rs.st.recs (sid, pid) = some rc := by
+        cases hc : rs.st.recs (sid, pid) with
+        | none => simp [hc] at h
+        | some rc => exact ⟨rc, rfl⟩
+      obtain ⟨rcl, hrl, -⟩ := sk_some (hI.recs _) hrc
+      obtain ⟨rcf, hrf, -⟩ := sk_some (hI.frecs _) hrc
+      have hl : (rl.st.recs (sid, pid)).isNone = false := by rw [hrl]; rfl
+      simp only [h, hl, Bool.false_eq_true, ↓reduceIte, honStep, simOut,
+        addSession_of_isSome (t := f) (x := (sid, pid)) (by rw [hrf]; rfl)]
+      exact ⟨trivial, hI⟩
+  · -- getKey
+    right
+    simp only [jointD, realD, simWorldD, simStartD, drive0D, fStepD, finV, honStep, simOut,
+      hI.key]
+    exact ⟨trivial, hI⟩
+  · -- idle
+    right
+    simp only [jointD, realD, simWorldD, simStartD, drive0D]
+    exact ⟨trivial, hI⟩
+  · -- poll
+    right
+    simp only [jointD, realD, simWorldD, simStartD, drive0D, (hI.poll G).1]
+    exact ⟨trivial, (hI.poll G).2⟩
+  · -- pub
+    right
+    simp only [jointD, realD, simWorldD, simStartD, drive0D, cpl, FKeyAt, Bool.false_eq_true,
+      ↓reduceIte, (hI.lt_step G pid l₁).1]
+    exact ⟨trivial, (hI.lt_step G pid l₁).2⟩
+  · -- ephPub
+    right
+    simp only [jointD, realD, simWorldD, simStartD, drive0D, ephPubOf, hI.eph]
+    exact ⟨trivial, hI⟩
+  · -- corrupt
+    right
+    have hN : Named rl.st pid = Named rs.st pid := by simp only [Named, hI.notices]
+    simp only [jointD, realD, simWorldD, simStartD, drive0D, cpl, FKeyAt, Bool.false_eq_true,
+      ↓reduceIte, hN]
+    by_cases h : Named rs.st pid = true
+    · simp only [h, ↓reduceIte]
+      exact ⟨trivial, hI⟩
+    · have h' : Named rs.st pid = false := by simpa using h
+      obtain ⟨h1, h2⟩ := hI.lt_step G pid l₁
+      simp only [h', Bool.false_eq_true, ↓reduceIte, fStepD, advD, finV, simOut, h1]
+      refine ⟨trivial, h2.corrupt_step G (by rw [ltD_st]; exact h')⟩
+  · sorry
+  · sorry
+  · -- kdf
+    simp only [jointD, realD, simWorldD, simStartD, drive0D, cpl, FKeyAt, Bool.false_eq_true,
+      ↓reduceIte]
+    rcases hI.kdf G x k₀ .fwd with h | ⟨h1, h2⟩
+    · exact Or.inl h
+    · exact Or.inr ⟨by rw [h1], h2⟩
+
 end Bad
 
 end CatCrypt.Crypto.AKE.X3DHSquareHops
