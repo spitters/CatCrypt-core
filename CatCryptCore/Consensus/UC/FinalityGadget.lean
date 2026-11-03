@@ -149,6 +149,22 @@ def finalOnHonestPosP [Fintype Party] [DecidableEq Blk] : TreeProp Party Blk :=
         have := H p q t t' b i hp hq htt hi
         rwa [clamp_st_of_mem ht'] at this
 
+/-- The incremental checker of `FinalOnHonestPos`: the final blocks of each earlier view and of
+the new view lie on the new positions of the honest parties. -/
+def finalOnHonestPosInc [Fintype Party] [DecidableEq Blk] :
+    (finalOnHonestPosP (Party := Party) (Blk := Blk)).Inc :=
+  TreeProp.Inc.ofIff (fun h hs v => ∀ p q, h p = true → h q = true →
+      ∀ u ∈ v :: hs, ∀ b ∈ u.fin p, b ∈ v.pos q)
+    (fun _ _ _ => by infer_instance) fun h st n => by
+      simp only [finalOnHonestPosP, TreeProp.ofIff, decide_eq_true_eq,
+        ← TreeProp.hist_succ, TreeProp.forall_mem_hist]
+      simp only [List.mem_range]
+      constructor
+      · intro H m hm p q hp hq t ht
+        exact H p q hp hq t (by omega) m hm (by omega)
+      · intro H p q hp hq t _ t' ht' htt
+        exact H t' ht' p q hp hq t (by omega)
+
 /-- Final blocks on the honest positions are finality-respecting positions. -/
 theorem FinalOnHonestPos.finalityRespectingPos {X : TreeTrace Party Blk}
     (h : FinalOnHonestPos X) : X.FinalityRespectingPos :=

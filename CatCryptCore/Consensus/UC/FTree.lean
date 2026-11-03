@@ -81,6 +81,15 @@ party's position extends its final blocks) is `Finality.FinalityRespecting`.
   `P` is stable under truncation (`Stable`); all properties defined here are
   (`stable_*`). Hence explosion in `UCTransparent.ideal` is permanent exactly as the trace
   property is violated permanently.
+* `TreeProp.Inc`, `TreeProp.Inc.run_eq` — an incremental checker tests each new view against
+  the earlier views; run over the views at the times `0, …, n` it returns the result of the
+  checker. Incremental checkers of well-formedness, agreement, common prefix, chain growth,
+  chain quality, finality-respecting positions and finality liveness (`TreeProp.*Inc`), of
+  conjunctions (`Inc.and`, `Inc.all`) and of the guard of `F_Tree^P` (`fTreePropInc`).
+* `incGuard_snoc`, `ideal_treeFuncInc_step` — the incremental guard (`incGuard`), which tests
+  the last view of a trace against the earlier ones, is the guard of `treeFunc` on a trace
+  grown from a trace satisfying the guard, so the ideal world of `treeFuncInc` steps as the
+  ideal world of `treeFunc` on its reachable states.
 * `ideal_step_live`, `ideal_step_exploded` — one step of the ideal world: before
   explosion it outputs the simulator's output iff the extended trace satisfies the
   guard, and the designated exploded output otherwise.
@@ -650,6 +659,244 @@ def liveTrace [Fintype Party] [DecidableEq Blk] (T : BlockTree Blk) [DecidableRe
           change (st (min (t + 1) n)).round ≤ (st (min t n)).round + 1 at this
           rwa [min_eq_left (show t + 1 ≤ n by omega), min_eq_left ht.le] at this
 
+/-- The checker of a property reads the views only at the times `0, …, n`. -/
+theorem check_congr (G : TreeProp Party Blk) (h : Party → Bool) {st st' : ℕ → TreeView Party Blk}
+    {n : ℕ} (hst : ∀ t ≤ n, st t = st' t) : G.check h st n = G.check h st' n := by
+  have e : TreeTrace.clamp ⟨fun p => h p = true, st⟩ n =
+      TreeTrace.clamp ⟨fun p => h p = true, st'⟩ n := by
+    simp only [TreeTrace.clamp, TreeTrace.mk.injEq, true_and]
+    funext t
+    exact hst _ (min_le_right _ _)
+  rw [Bool.eq_iff_iff, G.check_iff, G.check_iff, e]
+
+/-! ### Incremental checkers -/
+
+/-- The views at the times `0, …, m - 1`, newest first. -/
+def hist (st : ℕ → TreeView Party Blk) (m : ℕ) : List (TreeView Party Blk) :=
+  ((List.range m).map st).reverse
+
+/-- Unfolding of `hist` at `0`: no views. -/
+@[simp] theorem hist_zero (st : ℕ → TreeView Party Blk) : hist st 0 = [] := rfl
+
+/-- The views before `m + 1` are the view at `m` followed by the views before `m`. -/
+theorem hist_succ (st : ℕ → TreeView Party Blk) (m : ℕ) :
+    hist st (m + 1) = st m :: hist st m := by
+  simp [hist, List.range_succ]
+
+/-- A condition on the views before `m` is a condition on the times `0, …, m - 1`. -/
+theorem forall_mem_hist {st : ℕ → TreeView Party Blk} {m : ℕ} {Q : TreeView Party Blk → Prop} :
+    (∀ u ∈ hist st m, Q u) ↔ ∀ t ∈ List.range m, Q (st t) := by
+  simp [hist]
+
+/-- The views before `m` depend only on the views at the times before `m`. -/
+theorem hist_congr {st st' : ℕ → TreeView Party Blk} {m : ℕ} (hst : ∀ t < m, st t = st' t) :
+    hist st m = hist st' m := by
+  simp only [hist]
+  congr 1
+  exact List.map_congr_left fun t ht => hst t (List.mem_range.1 ht)
+
+/-- Pairs of ordered times up to `n` are the pairs of a time `m ≤ n` and a time `t ≤ m`. -/
+theorem forall_le_pairs {R : ℕ → ℕ → Prop} {n : ℕ} :
+    (∀ t ∈ List.range (n + 1), ∀ t' ∈ List.range (n + 1), t ≤ t' → R t t') ↔
+      ∀ m ∈ List.range (n + 1), ∀ t ∈ List.range (m + 1), R t m := by
+  simp only [List.mem_range]
+  constructor
+  · intro H m hm t ht
+    exact H t (by omega) m hm (by omega)
+  · intro H t _ t' ht' htt
+    exact H t' ht' t (by omega)
+
+/-- An incremental checker of `G`: a test `step h hs v` of a new view `v` against the earlier
+views `hs` (newest first), such that the checker of `G` accepts the trace truncated at `n` iff
+the test passes at each time `m ≤ n` against the views before `m`. Each test reads the earlier
+views once, so the checker of a trace grown by one view costs one test. -/
+structure Inc (G : TreeProp Party Blk) where
+  /-- The test of a new view against the earlier views, newest first. -/
+  step : (Party → Bool) → List (TreeView Party Blk) → TreeView Party Blk → Bool
+  /-- The checker of `G` is the conjunction of the tests at the times `0, …, n`. -/
+  check_iff_step : ∀ h st n,
+    G.check h st n = true ↔ ∀ m ∈ List.range (n + 1), step h (hist st m) (st m) = true
+
+namespace Inc
+
+variable {G : TreeProp Party Blk}
+
+/-- An incremental checker whose test decides the condition `S`. -/
+def ofIff (S : (Party → Bool) → List (TreeView Party Blk) → TreeView Party Blk → Prop)
+    (dec : ∀ h hs v, Decidable (S h hs v))
+    (hS : ∀ h st n,
+      G.check h st n = true ↔ ∀ m ∈ List.range (n + 1), S h (hist st m) (st m)) : G.Inc :=
+  ⟨fun h hs v => @decide (S h hs v) (dec h hs v), fun h st n => by
+    simp only [decide_eq_true_eq]
+    exact hS h st n⟩
+
+variable (I : G.Inc)
+
+/-- At time `0` the checker is the test of the initial view. -/
+theorem check_zero (h : Party → Bool) (st : ℕ → TreeView Party Blk) :
+    G.check h st 0 = I.step h [] (st 0) := by
+  rw [Bool.eq_iff_iff, I.check_iff_step]
+  simp
+
+/-- The checker at time `n + 1` is the checker at `n` and the test of the view at `n + 1`. -/
+theorem check_succ (h : Party → Bool) (st : ℕ → TreeView Party Blk) (n : ℕ) :
+    G.check h st (n + 1) = (G.check h st n && I.step h (hist st (n + 1)) (st (n + 1))) := by
+  rw [Bool.eq_iff_iff, Bool.and_eq_true, I.check_iff_step, I.check_iff_step,
+    List.range_succ (n := n + 1)]
+  simp only [List.mem_append, List.mem_singleton]
+  constructor
+  · intro H
+    exact ⟨fun m hm => H m (Or.inl hm), H _ (Or.inr rfl)⟩
+  · rintro ⟨H, H'⟩ m (hm | rfl)
+    exacts [H m hm, H']
+
+/-- One step of the incremental checker on its state: the views so far (newest first) and the
+conjunction of the tests so far. -/
+def push (h : Party → Bool) (s : List (TreeView Party Blk) × Bool) (v : TreeView Party Blk) :
+    List (TreeView Party Blk) × Bool :=
+  (v :: s.1, s.2 && I.step h s.1 v)
+
+/-- The incremental checker run on the views at the times `0, …, n`. -/
+def run (h : Party → Bool) (st : ℕ → TreeView Party Blk) : ℕ → List (TreeView Party Blk) × Bool
+  | 0 => I.push h ([], true) (st 0)
+  | n + 1 => I.push h (run h st n) (st (n + 1))
+
+/-- **Correctness of the incremental checker**: after the views at the times `0, …, n` it holds
+those views, newest first, and the result of the checker of `G` on the trace truncated at
+`n`. -/
+theorem run_eq (h : Party → Bool) (st : ℕ → TreeView Party Blk) (n : ℕ) :
+    I.run h st n = (hist st (n + 1), G.check h st n) := by
+  induction n with
+  | zero => simp [run, push, hist_succ, I.check_zero h st]
+  | succ n ih => rw [run, ih, push, check_succ, hist_succ st (n + 1)]
+
+/-- The incremental checker of a conjunction. -/
+def and {φ ψ : TreeProp Party Blk} (I : φ.Inc) (J : ψ.Inc) : (φ.and ψ).Inc :=
+  ⟨fun h hs v => I.step h hs v && J.step h hs v, fun h st n => by
+    change (φ.check h st n && ψ.check h st n) = true ↔ _
+    rw [Bool.and_eq_true, I.check_iff_step, J.check_iff_step]
+    simp only [Bool.and_eq_true]
+    exact ⟨fun ⟨a, b⟩ m hm => ⟨a m hm, b m hm⟩,
+      fun H => ⟨fun m hm => (H m hm).1, fun m hm => (H m hm).2⟩⟩⟩
+
+/-- The incremental checker of the conjunction of a list of properties with incremental
+checkers. -/
+def all {P : List (TreeProp Party Blk)} (I : ∀ φ ∈ P, φ.Inc) : (TreeProp.all P).Inc :=
+  ⟨fun h hs v => P.attach.all fun φ => (I φ.1 φ.2).step h hs v, fun h st n => by
+    change (P.all fun φ => φ.check h st n) = true ↔ _
+    simp only [List.all_eq_true, List.mem_attach, true_implies, Subtype.forall]
+    constructor
+    · intro H m hm φ hφ
+      exact ((I φ hφ).check_iff_step h st n).1 (H φ hφ) m hm
+    · intro H φ hφ
+      exact ((I φ hφ).check_iff_step h st n).2 fun m hm => H m hm φ hφ⟩
+
+end Inc
+
+/-- The incremental checker of well-formedness: the trees of earlier views are contained in
+the new tree, the new positions lie in the new tree and are chains, and earlier rounds are at
+most the new round. -/
+def wellFormedInc [Fintype Party] [DecidableEq Blk] (T : BlockTree Blk) [DecidableRel T.anc] :
+    (wellFormed (Party := Party) T).Inc :=
+  Inc.ofIff (fun h hs v =>
+      (∀ p, h p = true → ∀ u ∈ v :: hs, u.tree p ⊆ v.tree p) ∧
+      (∀ p, h p = true → v.pos p ⊆ v.tree p) ∧
+      (∀ p, h p = true → (v.pos p).Pairwise fun b b' => T.anc b' b) ∧
+      (∀ u ∈ v :: hs, u.round ≤ v.round))
+    (fun _ _ _ => by infer_instance) fun h st n => by
+      simp only [wellFormed, ofIff, decide_eq_true_eq, ← hist_succ, forall_mem_hist]
+      simp only [List.mem_range]
+      constructor
+      · rintro ⟨h1, h2, h3, h4⟩ m hm
+        exact ⟨fun p hp t ht => h1 p hp t (by omega) m hm (by omega), fun p hp => h2 p hp m hm,
+          fun p hp => h3 p hp m hm, fun t ht => h4 t (by omega) m hm (by omega)⟩
+      · intro H
+        exact ⟨fun p hp t _ t' ht' htt => (H t' ht').1 p hp t (by omega),
+          fun p hp t ht => (H t ht).2.1 p hp, fun p hp t ht => (H t ht).2.2.1 p hp,
+          fun t _ t' ht' htt => (H t' ht').2.2.2 t (by omega)⟩
+
+/-- The incremental checker of agreement: the final blocks of the earlier views and of the new
+view are on one chain with the final blocks of the new view. -/
+def agreementInc [Fintype Party] [DecidableEq Blk] (T : BlockTree Blk) [DecidableRel T.anc] :
+    (agreement (Party := Party) T).Inc :=
+  Inc.ofIff (fun h hs v => ∀ p q, h p = true → h q = true →
+      ∀ u ∈ v :: hs, ∀ b ∈ u.fin p, ∀ b' ∈ v.fin q, T.anc b b' ∨ T.anc b' b)
+    (fun _ _ _ => by infer_instance) fun h st n => by
+      simp only [agreement, ofIff, decide_eq_true_eq, ← hist_succ, forall_mem_hist]
+      simp only [List.mem_range]
+      constructor
+      · intro H m hm p q hp hq t ht
+        exact H p q hp hq t (by omega) m hm
+      · intro H p q hp hq t ht t' ht' b hb b' hb'
+        rcases le_total t t' with htt | htt
+        · exact H t' ht' p q hp hq t (by omega) b hb b' hb'
+        · exact (H t ht q p hq hp t' (by omega) b' hb' b hb).symm
+
+/-- The incremental checker of common prefix `k`: the pruned positions of the earlier views are
+suffixes of the new positions. -/
+def commonPrefixInc [Fintype Party] [DecidableEq Blk] (k : ℕ) :
+    (commonPrefix (Party := Party) (Blk := Blk) k).Inc :=
+  Inc.ofIff (fun h hs v => ∀ p q, h p = true → h q = true →
+      ∀ u ∈ v :: hs, (u.pos p).drop k <:+ v.pos q)
+    (fun _ _ _ => by infer_instance) fun h st n => by
+      simp only [commonPrefix, ofIff, decide_eq_true_eq, ← hist_succ, forall_mem_hist]
+      simp only [List.mem_range]
+      constructor
+      · intro H m hm p q hp hq t ht
+        exact H p q hp hq t (by omega) m hm (by omega)
+      · intro H p q hp hq t _ t' ht' htt
+        exact H t' ht' p q hp hq t (by omega)
+
+/-- The incremental checker of chain growth `(s, g)`: the growth condition in both directions
+between each earlier view and the new view. -/
+def chainGrowthInc [Fintype Party] (s g : ℕ) :
+    (chainGrowth (Party := Party) (Blk := Blk) s g).Inc :=
+  Inc.ofIff (fun h hs v => ∀ p q, h p = true → h q = true → ∀ u ∈ v :: hs,
+      (u.round + s ≤ v.round → (u.pos p).length + g ≤ (v.pos q).length) ∧
+      (v.round + s ≤ u.round → (v.pos p).length + g ≤ (u.pos q).length))
+    (fun _ _ _ => by infer_instance) fun h st n => by
+      simp only [chainGrowth, ofIff, decide_eq_true_eq, ← hist_succ, forall_mem_hist]
+      simp only [List.mem_range]
+      constructor
+      · intro H m hm p q hp hq t ht
+        exact ⟨H p q hp hq t (by omega) m hm, H p q hp hq m hm t (by omega)⟩
+      · intro H p q hp hq t ht t' ht'
+        rcases le_total t t' with htt | htt
+        · exact (H t' ht' p q hp hq t (by omega)).1
+        · exact (H t ht p q hp hq t' (by omega)).2
+
+/-- The incremental checker of chain quality `(hb, ℓ, μ)`: the windows of the new positions. -/
+def chainQualityInc [Fintype Party] (hb : Blk → Bool) (ℓ μ : ℕ) :
+    (chainQuality (Party := Party) hb ℓ μ).Inc :=
+  Inc.ofIff (fun h _ v => ∀ p, h p = true → ∀ i ∈ List.range ((v.pos p).length + 1),
+      i + ℓ ≤ (v.pos p).length → μ ≤ (((v.pos p).drop i).take ℓ).countP hb)
+    (fun _ _ _ => by infer_instance) fun h st n => by
+      simp only [chainQuality, ofIff, decide_eq_true_eq]
+      exact ⟨fun H m hm p hp => H p hp m hm, fun H p hp t ht => H t ht p hp⟩
+
+/-- The incremental checker of finality-respecting positions: the final blocks of each earlier
+view lie on the new position of the same party. -/
+def finalityRespectingPosInc [Fintype Party] [DecidableEq Blk] :
+    (finalityRespectingPos (Party := Party) (Blk := Blk)).Inc :=
+  Inc.ofIff (fun h hs v => ∀ p, h p = true → ∀ u ∈ v :: hs, ∀ b ∈ u.fin p, b ∈ v.pos p)
+    (fun _ _ _ => by infer_instance) fun h st n => by
+      simp only [finalityRespectingPos, ofIff, decide_eq_true_eq, ← hist_succ, forall_mem_hist]
+      simp only [List.mem_range]
+      constructor
+      · intro H m hm p hp t ht
+        exact H p hp t (by omega) m hm (by omega)
+      · intro H p hp t _ t' ht' htt
+        exact H t' ht' p hp t (by omega)
+
+/-- The incremental checker of finality liveness from round `τ` with lag `L`: the final lists
+of the new view. -/
+def updatedWithinInc [Fintype Party] (sl : Blk → ℕ) (τ L : ℕ) :
+    (updatedWithin (Party := Party) sl τ L).Inc :=
+  Inc.ofIff (fun h _ v => ∀ p, h p = true → τ ≤ v.round → ∃ b ∈ v.fin p, v.round ≤ sl b + L)
+    (fun _ _ _ => by infer_instance) fun h st n => by
+      simp only [updatedWithin, ofIff, decide_eq_true_eq]
+      exact ⟨fun H m hm p hp => H p hp m hm, fun H p hp t ht => H t ht p hp⟩
+
 end TreeProp
 
 end Checker
@@ -817,6 +1064,107 @@ theorem finTree_guard_prefix (vw : σ → TreeView Party Blk) (honest : Party �
   treeFunc_guard_prefix vw honest (G := TreeProp.ofProp (FinTreeGuard T P Δ supp))
     ((stable_wellFormed T).and ((TreeProp.stable_all hP).and ((stable_chainForming T).and
       ((stable_agreement T).and ((stable_deltaPropagated T Δ).and hsupp))))) s₀ ex hpre h
+
+/-! ### The incremental guard -/
+
+/-- The incremental checker of the guard of `F_Tree^P`, from incremental checkers of the
+properties of `P`. -/
+def fTreePropInc [Fintype Party] [DecidableEq Blk] (T : BlockTree Blk) [DecidableRel T.anc]
+    {P : List (TreeProp Party Blk)} (IP : ∀ φ ∈ P, φ.Inc) : (fTreeProp T P).Inc :=
+  ⟨((TreeProp.wellFormedInc T).and ((TreeProp.Inc.all IP).and (TreeProp.agreementInc T))).step,
+    ((TreeProp.wellFormedInc T).and
+      ((TreeProp.Inc.all IP).and (TreeProp.agreementInc T))).check_iff_step⟩
+
+/-- The views of the trace `tr` from the initial state `s₀`, newest first: the view of the
+last state first and the initial view last. -/
+def viewsRev (vw : σ → TreeView Party Blk) (s₀ : σ) (tr : Trace σ E O) :
+    List (TreeView Party Blk) :=
+  (tr.map fun x => vw x.2.2).reverse ++ [vw s₀]
+
+/-- The state after all entries of a trace with one more entry is the state of that entry. -/
+theorem stAt_length_snoc (s₀ : σ) (tr : Trace σ E O) (x : E × O × σ) :
+    stAt s₀ (tr ++ [x]) (tr.length + 1) = x.2.2 := by
+  rw [stAt, List.take_of_length_le (by simp)]
+  simp
+
+/-- The views of the tree trace of `tr` at the times `0, …, |tr|`, newest first, are
+`viewsRev vw s₀ tr`. -/
+theorem hist_traceOf (vw : σ → TreeView Party Blk) (s₀ : σ) (tr : Trace σ E O) :
+    TreeProp.hist (fun t => vw (stAt s₀ tr t)) (tr.length + 1) = viewsRev vw s₀ tr := by
+  induction tr using List.reverseRecOn with
+  | nil => simp [TreeProp.hist, viewsRev, stAt]
+  | append_singleton tr x ih =>
+    rw [List.length_append, List.length_singleton, TreeProp.hist_succ, stAt_length_snoc,
+      TreeProp.hist_congr (st' := fun t => vw (stAt s₀ tr t))
+        (fun t ht => by rw [stAt_append_of_le _ _ _ (by omega)]), ih]
+    simp [viewsRev]
+
+variable (vw : σ → TreeView Party Blk) (honest : Party → Prop) [DecidablePred honest]
+
+/-- **The incremental guard** of `treeFunc vw honest G s₀ ex`, by the incremental checker `I` of
+`G`: the test of the view of the last state against the earlier views of the trace, and on a
+trace of at most one entry also the test of the initial view. It reads each view of the
+trace once. -/
+def incGuard {G : TreeProp Party Blk} (I : G.Inc) (s₀ : σ) (tr : Trace σ E O) : Bool :=
+  let vs := viewsRev vw s₀ tr
+  (!decide (tr.length ≤ 1) || I.step (fun p => decide (honest p)) [] (vw s₀)) &&
+    I.step (fun p => decide (honest p)) vs.tail (vs.headD (vw s₀))
+
+/-- **The incremental guard is the guard on a grown trace**: on the trace `tr` extended by one
+entry, the incremental guard agrees with the guard of `treeFunc` whenever `tr` is empty or the
+guard holds on `tr`. -/
+theorem incGuard_snoc {G : TreeProp Party Blk} (I : G.Inc) (s₀ : σ) (ex : O) (tr : Trace σ E O)
+    (x : E × O × σ) (htr : tr = [] ∨ (treeFunc vw honest G s₀ ex).guard tr = true) :
+    incGuard vw honest I s₀ (tr ++ [x]) = (treeFunc vw honest G s₀ ex).guard (tr ++ [x]) := by
+  have hst : ∀ t ≤ tr.length, vw (stAt s₀ (tr ++ [x]) t) = vw (stAt s₀ tr t) := fun t ht => by
+    rw [stAt_append_of_le _ _ _ ht]
+  have hh : TreeProp.hist (fun t => vw (stAt s₀ (tr ++ [x]) t)) (tr.length + 1) =
+      viewsRev vw s₀ tr := by
+    rw [TreeProp.hist_congr (st' := fun t => vw (stAt s₀ tr t)) fun t ht => hst t (by omega),
+      hist_traceOf]
+  have hc : G.check (fun p => decide (honest p)) (fun t => vw (stAt s₀ (tr ++ [x]) t))
+      tr.length = G.check (fun p => decide (honest p)) (fun t => vw (stAt s₀ tr t)) tr.length :=
+    G.check_congr _ hst
+  change _ = G.check _ _ (tr ++ [x]).length
+  rw [List.length_append, List.length_singleton, I.check_succ, hh, hc, stAt_length_snoc]
+  simp only [incGuard, viewsRev, List.map_append, List.map_cons, List.map_nil,
+    List.reverse_append, List.reverse_cons, List.reverse_nil, List.nil_append, List.cons_append,
+    List.tail_cons, List.headD_cons, List.length_append, List.length_singleton]
+  congr 1
+  rcases htr with rfl | htr
+  · simp [I.check_zero, stAt]
+  · rcases Nat.eq_zero_or_pos tr.length with h0 | h0
+    · simp [List.length_eq_zero_iff.1 h0, I.check_zero, stAt]
+    · change G.check _ _ tr.length = true at htr
+      rw [htr]
+      grind
+
+/-- `treeFunc vw honest G s₀ ex` with the incremental guard of the incremental checker `I` of
+`G`. -/
+def treeFuncInc {G : TreeProp Party Blk} (I : G.Inc) (s₀ : σ) (ex : O) : TFunc σ E O where
+  init := s₀
+  guard := incGuard vw honest I s₀
+  exploded := ex
+
+/-- **The ideal world with the incremental guard steps as the ideal world with the guard** from
+every state whose trace is empty or satisfies the guard unless the functionality has exploded.
+Every initial state and every state that a step of either ideal world returns is of this
+kind. -/
+theorem ideal_treeFuncInc_step {G : TreeProp Party Blk} (I : G.Inc) (s₀ : σ) (ex : O)
+    (S : Sys σ E O) (t : σ × Trace σ E O × Bool) (e : E)
+    (ht : t.2.2 = false → t.2.1 = [] ∨ (treeFunc vw honest G s₀ ex).guard t.2.1 = true) :
+    (ideal (treeFuncInc vw honest I s₀ ex) S).step t e =
+      (ideal (treeFunc vw honest G s₀ ex) S).step t e := by
+  obtain ⟨s, tr, b⟩ := t
+  simp only [ideal]
+  congr 1
+  funext p
+  cases b
+  · have := incGuard_snoc vw honest I s₀ ex tr (e, p.2, p.1) (ht rfl)
+    change incGuard vw honest I s₀ _ = _ at this
+    simp only [treeFuncInc, this]
+    rfl
+  · rfl
 
 end Func
 /-! ## The ideal world and realization by the copy simulator -/
