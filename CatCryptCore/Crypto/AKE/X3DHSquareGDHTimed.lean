@@ -13,6 +13,44 @@ public import CatCryptCore.Crypto.UCSimulatorCostGraded
 
 /-!
 # Running time of the gap Diffie–Hellman reduction of the X3DH square
+
+The reduction `gdhRed G a b B` of `X3DHSquareGDH.lean` runs the oracle adversary `B` against the
+world of the reduction and extracts its output from the final state (`redTree`). This module gives
+its costed form and its running time.
+
+**The step programs.** A step of the world of the reduction is written as computations over
+`sample` nodes, and `derive_reduction` builds the costed tree of each and its erasure theorem:
+* `otherC`: the start of the simulator on the events other than `complete` and `send`;
+* `cguardC`, `sguardC`: the guards of `complete` and `send`; `ltC`: a draw of long-term
+  secrets; `deliverC`: the delivery of a key, with the symbolic lookup `sroStep`;
+* `finishC`: the call to `F_AKE` (`fakeC`) and the finish of the simulator;
+* `extractC`: the extraction.
+These programs compute the step (`ltC_eq`, `sroStep_eq`, `deliverC_eq`, `completeR_eq`,
+`sendR_eq`, `otherC_eq`, `finishC_eq`): each is the lift of the image of a uniform draw under the
+corresponding part of `stepR`.
+
+**The costed reduction.** `redLoop` runs a costed adversary `B : OracleAdv.Timed` against the world
+of the reduction: a query is one `rand` node over the draw of the step, with the step cost
+`stepTime` of the draw, the time of the start (one unit for the dispatch on the event and the
+times of the costed trees of the programs on the states they read) and the time of the finish; the
+leaf is the extraction at the time `extTime`. Each costed tree is read with the tables of its
+input state at unit cost (zero cost companions), the convention of the costed simulators of
+`UCSimulatorCostGraded`. Erasing the costs gives `redTree` (`redTimed_erase`).
+
+**The time.** The derived trees are bounded by `time_bound`, linearly in the length of the
+key-derivation table and of the lists of notices, given bounds `tO` on the decision oracle, `tm`
+on the group operation, `te` on exponentiation and `tf`, `tc` on the public value of an exponent
+(`otherC_time`, `delTime_le`, `finishC_time`, `extTime_le`, `slookup.timedCost_le`). A step adds
+at most one entry to the table and to each list of notices (`sz_stepR`), so a step after `i` steps
+costs at most `stepBound … i` (`stepTime_le`), and an adversary of time `T` with at most `q`
+queries gives a reduction of time at most `T + q · stepBound … q + extBound … q`
+(`redTimed_timeBound`): the time of the adversary plus a polynomial of degree two in its number of
+queries.
+
+## Main results
+
+* `redTimed_erase`: the costed reduction erases to the program of `gdhRed`.
+* `redTimed_timeBound`: its time bound.
 -/
 
 @[expose] public section

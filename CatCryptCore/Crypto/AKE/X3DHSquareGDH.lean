@@ -11,7 +11,76 @@ public import CatCryptCore.Crypto.Assumptions.GapDH
 /-!
 # The bad event of the X3DH square under the gap Diffie–Hellman assumption
 
-PLACEHOLDER DOCSTRING
+`X3DHSquareHops.x3dh_advantage_le_badGame` bounds the advantage of an oracle adversary `B`
+between the real and the simulated X3DH game by the probability `badGame G B true` of the bad
+event `DH1Hit`: the key-derivation table of the simulated world comes to hold an input whose
+initiator `a` and responder `b` are uncorrupt and whose `DH1` is `g^{ik_a · spk_b}`. This module
+bounds that probability by gap Diffie–Hellman advantages of explicit reductions, and composes the
+bound into the UC statement of X3DH against `F_AKE`.
+
+**The problem.** `gapDHDef G` is the gap Diffie–Hellman problem of the group `G : DHGroup S W`
+as an instance of `Assumptions.GapDHDef`: `cdh X Y = Y^{dlog X}`, key generation of a uniform
+exponent, and the decision oracle `ddhOracle (gapDHDef G)`, which accepts `(g^x, Y, Z)` when
+`Z = Y^x`.
+
+**The finite-party predicate.** `NamesIn P B`: on every path, the oracle adversary `B` starts
+sessions only between parties of the finite set `P` and queries the key derivation only at inputs
+whose initiator and responder are in `P`. Party identifiers are natural numbers and a public key
+may be read before the party is corrupted, so the reduction guesses the pair `(a, b)`; the bound
+is a sum over the pairs of `P`.
+
+**The reduction.** `gdhRed G a b B`, on the challenge `(X, Y)` with the decision oracle `O`, runs
+`B` against the world of the reduction (`stepR`), a copy of the simulated world in which
+* the long-term secrets of every party are drawn as in the simulator, and the identity key of `a`
+  is `IK_a = X · g^u` and the signed prekey of `b` is `SPK_b = Y · g^v` for the drawn `u`, `v`;
+* the Diffie–Hellman values that need `ik_a = x + u` or `spk_b = y + v` are symbolic: in an input
+  `Inp (W ⊕ W)`, `inr E` stands for `E^{ik_a}` in `DH1` and `DH2` and for `E^{spk_b}` in `DH3`;
+* the lookups in the key-derivation table and the comparisons with the partner's recorded input
+  are decided with `O` (`symEq`: `w = E^k` is the triple `(g^k, E, w)` and `E^k = E'^k` the
+  triple `(g^k, E · E'^{-1}, 1)`);
+* `F_AKE` runs as in the simulated world.
+At the end it outputs `w · (X^v Y^u g^{uv})^{-1}` for the first `DH1 = w` of an input with
+initiator `a` and responder `b` that `O` accepts for `(IK_a, SPK_b)` (`extractR`).
+
+**The proof.**
+1. *Shifted draws.* The simulated world whose draws of `ik_a` and `spk_b` are shifted by `x` and
+   `y` is the simulated world, since a shift is a bijection of the draws
+   (`simGame_oracle_eq_trans`).
+2. *Coupling.* On the same draw, the shifted simulated world and the world of the reduction give
+   the same answer and reach states of the relation `Rel`, unless the step corrupts `a` or `b`
+   (`rel_start`, `step_rel`). Corruption is never undone, and `DH1HitAB` requires `a` and `b`
+   uncorrupt.
+3. *Bad flags under the coupling* (`flag_le_of_coupling`): the flag of `DH1HitAB` in the simulated
+   world is set at most as often as the flag of `Bad2`, the same input in the symbolic table with
+   a known `DH1`, in the world of the reduction (`pairBad_le_red`).
+4. *Extraction.* `Bad2` persists along the steps (`Mono`), and on `Bad2` the extraction outputs
+   `g^{xy}` (`extractR_of_bad2`); averaging over `x`, `y` gives the advantage of `gdhRed`
+   (`pairBad_le_gapDH`).
+5. *Union bound* over the pairs of `P`, under the invariant `InvP` that the table and the records
+   name parties of `P` (`badGame_le_gapDH`).
+
+## Main definitions
+
+* `gapDHDef`: the gap Diffie–Hellman problem of a `DHGroup`.
+* `symEq`, `inpEq`, `slookup`, `sroDet`: symbolic values and their equality by the decision
+  oracle.
+* `startR`, `stepR`, `oracleR`, `extractR`: the world of the reduction.
+* `redTree`, `redPMF`, `gdhRed`: the reduction as a program, its output, and the GDH adversary.
+* `NamesIn`: the finite-party predicate.
+* `gdhBound`: the bound of the square.
+
+## Main results
+
+* `symEq_ddh`, `inpEq_ddh`, `slookup_ddh`, `sroDet_ddh`: correctness of the symbolic equality.
+* `simGame_oracle_eq_trans`: the shifted simulated world is the simulated world.
+* `rel_start`, `step_rel`: the coupling of a step.
+* `flag_le_of_coupling`, `run_flag_le_final`, `run_flag_union_le`, `run_flag_le_of_inv_on`:
+  bad flags under a coupling, at the final state, over a finite union, and along an invariant on a
+  class of queries.
+* `pairBad_le_gapDH`: the bad event of a pair is at most the GDH advantage of `gdhRed`.
+* `badGame_le_gapDH`: `badGame G B true ≤ ∑ a ∈ P, ∑ b ∈ P, GapDH_Advantage (gapDHDef G)
+  (gdhRed G a b B)` for `B` naming only parties of `P`.
+* `x3dh_realizesSim_gapDH`: X3DH realizes `F_AKE` behind `x3dhSim` with the bound `gdhBound`.
 -/
 
 @[expose] public section
