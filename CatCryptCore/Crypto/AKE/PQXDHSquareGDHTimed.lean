@@ -12,7 +12,52 @@ public import CatCryptCore.Tactics.DeriveTimeBound
 public import CatCryptCore.Tactics.AutoTime
 
 /-!
-# Test
+# Running time of the gap Diffie–Hellman reduction of the PQXDH square
+
+The reduction `pqGdhRed G P a b B` of `PQXDHSquareGDH.lean` runs the oracle adversary `B` against
+the world of the reduction and extracts its output from the final state (`redTreeP`). This module
+gives its costed form and its running time, as `X3DHSquareGDHTimed` does for X3DH.
+
+**The step programs.** A step of the world of the reduction is written as computations, over the
+KEM operations `Ko : KemOps PK SK SS C` (`PQXDHSquare.KemOps`), and `derive_reduction` builds the
+costed tree of each and its erasure theorem:
+* `otherCP`: the start of the simulator on the events other than `complete` and `send`, with the
+  key generation `Ko.keygen` of a new responder session;
+* `cguardCP`, `sguardCP`: the guards of `complete` and `send`, the second with the
+  decapsulation `Ko.decaps`; `encCP`: the encapsulation `Ko.encaps`; `deliverCP`: the delivery of
+  a key, with the symbolic lookup `psroStep`; the draws of long-term secrets are the program
+  `X3DHSquareGDH.ltC`;
+* `finishCP`: the call to `F_AKE` and the finish of the simulator; `extractCP`: the extraction.
+At the KEM operations `kemOps P` of `P` these programs compute the step (`psroStep_eq`,
+`deliverCP_eq`, `completeRP_eq`, `sendRP_eq`, `encCP_eq`, `otherCP_eq`, `finishCP_eq`): each is the
+lift of the image of a draw under the corresponding part of `stepRP`.
+
+**The costed reduction.** `derive_timed` does not derive the costed form of the oracle of the
+world of the reduction as one tree: the oracle unfolds the step of PQXDH through the
+long-term-secret draw `ltD` beyond the unfolding depth of `derive_timed`, and at a larger depth the
+derivation exceeds the default heartbeat budget. As for X3DH, `redLoopP` runs a costed adversary
+`B : OracleAdv.Timed` against the world of the reduction: a query is one `rand` node over the
+draw of the step from `simDist P`, with the step cost `stepTimeP` of the draw, the time of the
+start (one unit for the dispatch and the times of the derived costed trees of the step programs on
+the states they read) and the time of the finish; the leaf is the extraction at the time
+`extTimeP`. Each costed tree is read with the tables of its input state at unit cost (zero cost
+companions). Erasing the costs gives `redTreeP` (`pqGdhRed.erase_timed`).
+
+**The time.** The derived trees are bounded by `time_bound`, linearly in the length of the
+key-derivation table and of the lists of notices, given bounds `tO` on the decision oracle, `tm`
+on the group operation, `te` on exponentiation, `tf`, `tc` on the public value of an exponent,
+`tK` on the costed key generation, `tE` on the costed encapsulation and `tD` on decapsulation
+(`otherTimeP_le`, `delTimeP_le`, `encTimeP_le`, `sguardP_time`, `finTimeP_le`, `extTimeP_le`,
+`pslookup.timedCost_le`). A step adds at most one entry to the table and to each list of notices
+(`sz_stepRP`), so a step after `i` steps costs at most `stepBoundP … i` (`stepTimeP_le`), and an
+adversary of time `T` with at most `q` queries gives a reduction of time at most
+`T + q · stepBoundP … q + extBoundP … q` (`pqGdhRed.timeBound_timed`): the time of the adversary
+plus a polynomial of degree two in its number of queries.
+
+## Main results
+
+* `pqGdhRed.erase_timed`: the costed reduction erases to the program of `pqGdhRed`.
+* `pqGdhRed.timeBound_timed`: its time bound.
 -/
 
 @[expose] public section
@@ -25,11 +70,13 @@ open CatCrypt.Core CatCrypt.Prob CatCrypt.Crypto
 open CatCrypt.Crypto.UCTransparent CatCrypt.Crypto.UCTransparent.FAKE
 open CatCrypt.Crypto.PAKE.DHExtract
 open CatCrypt.Crypto.AKE.X3DHSquare (Inp RSt Named opkOf ltStep)
+open CatCrypt.Crypto.AKE.X3DHSquareHops (ltStep_eq ltAt_map_eq)
 open CatCrypt.Crypto.AKE.X3DHSquareHops (drive0D Draw ltD fStepD)
 open CatCrypt.Crypto.AKE.X3DHSquareGDH (keyA keyB pubIK pubSPK aliceS bobS ofInp off1 off2 ltC fakeC)
 open CatCrypt.Crypto.AKE.PQXDHSquare
 open CatCrypt.Crypto.AKE.PQXDHSquareHops
 open CatCrypt.Crypto.KEM.Games (Scheme)
+open CatCrypt.Crypto.OracleGameUpToBad (map_uniform_eq_map_prod_fst map_uniform_eq_map_prod_snd)
 
 section Prog
 
@@ -459,6 +506,202 @@ theorem extTimeP_le (rs : PSt S (W ⊕ W) K PK SK SS C) {tO tm tf te : ℕ}
       omega
 
 end Bounds
+
+/-! ## The step programs compute the step of the reduction -/
+
+section Correct
+
+variable {S W K PK SK SS C : Type} [Field S] [Fintype S] [SampleableType W] [Fintype K]
+  [Nonempty K] [Inhabited K] [DecidableEq SS] (P : Scheme PK SK SS C) (G : DHGroup S W)
+  (a b : PartyId) (O : W → W → W → Bool) (X Y : W)
+
+omit [Fintype S] [Inhabited K] in
+/-- `psroStep` draws the fresh value of `psroDet` uniformly. -/
+theorem psroStep_eq (ZA ZB : W) (tb : List (PInp (W ⊕ W) SS × K)) (j : PInp (W ⊕ W) SS) :
+    psroStep G O ZA ZB tb j = liftPMF ((PMF.uniformFintype K).map (psroDet G O ZA ZB tb j)) := by
+  unfold psroStep psroDet
+  cases h : pslookup G O ZA ZB j tb with
+  | some v =>
+    simp only [liftPMF_pure]
+    exact congrArg liftPMF (PMF.map_const _ _).symm
+  | none =>
+    simp only [sample_eq_liftPMF, map_liftPMF]
+
+omit [Fintype S] in
+/-- `deliverCP` draws the fresh value of `deliverRP` uniformly. -/
+theorem deliverCP_eq (rs : PSt S (W ⊕ W) K PK SK SS C) (inp : Inst → Option (PInp (W ⊕ W) SS))
+    (x : Inst) (r : Rec K) (ip : PInp (W ⊕ W) SS) :
+    deliverCP G a b O X Y rs inp x r ip =
+      liftPMF ((PMF.uniformFintype K).map (deliverRP G a b O X Y rs inp x r ip)) := by
+  change _ = liftPMF ((PMF.uniformFintype K).map fun k => deliverRP G a b O X Y rs inp x r ip k)
+  by_cases h : Exposed rs.x.st x r
+  · simp only [deliverCP, h, ↓reduceIte, psroStep_eq, map_liftPMF, PMF.map_comp]
+    congr 2
+    funext k
+    simp only [deliverRP, h, ↓reduceIte, Function.comp_apply]
+  · simp only [deliverCP, h, ↓reduceIte, liftPMF_pure]
+    congr 1
+    rw [← PMF.map_const (PMF.uniformFintype K)]
+    congr 1
+    funext k
+    simp only [deliverRP, h, ↓reduceIte, Function.const_apply]
+
+omit [Fintype S] [Fintype K] [Nonempty K] in
+/-- **`complete` through its guard**: `completeRP` is the delivery at the input of the
+initiator after the two draws of long-term secrets and the encapsulation, when the guard
+`cguardP` holds. -/
+theorem completeRP_eq (s : RSimP S W K PK SK SS C) (sid : SessionId) (pid : PartyId)
+    (d : Draw S K) (kc : Option (SS × C)) :
+    completeRP G a b O X Y s (sid, pid) d kc =
+      match cguardP s sid pid, kc with
+      | some (rc, ek, opk, _), some kc =>
+        deliverRP G a b O X Y
+          { s.1 with x := (ltD (ltD s.1.x pid d.2.1).2 rc.peer d.2.2.1).2,
+                     ct := Function.update s.1.ct (sid, pid) (some kc.2) } s.2.1 (sid, pid) rc
+          (aliceS G a b X Y sid pid rc.peer (ltD s.1.x pid d.2.1).1
+            (ltD (ltD s.1.x pid d.2.1).2 rc.peer d.2.2.1).1 ek opk, kc.1) d.2.2.2
+      | _, _ => ((s.1, s.2.1, .fwd), .inr (.inr (.inl .ack))) := by
+  unfold completeRP cguardP
+  cases hr : s.1.x.st.recs (sid, pid) with
+  | none => rfl
+  | some rc =>
+    cases he : s.1.x.eph (sid, pid) with
+    | none => rfl
+    | some ek =>
+      dsimp only
+      cases ho : opkOf s.1.x sid rc.peer with
+      | none => rfl
+      | some opk =>
+        cases hk : pkOf s.1 sid rc.peer with
+        | none => rfl
+        | some pk =>
+          by_cases hc : rc.role = .initiator ∧ rc.key.isNone = true
+          · cases kc <;> simp only [hc, and_self, ↓reduceIte]
+          · cases kc <;> simp only [hc, ↓reduceIte]
+
+omit [Fintype S] [Fintype K] [Nonempty K] in
+/-- **`send` through its guard**, at the KEM operations of `P`. -/
+theorem sendRP_eq (s : RSimP S W K PK SK SS C) (sid : SessionId) (pid : PartyId) (e : W) (c : C)
+    (d : Draw S K) :
+    sendRP P G a b O X Y s (sid, pid) e c d =
+      match sguardP (kemOps P) s sid pid c with
+      | some (rc, opk, ss) =>
+        deliverRP G a b O X Y { s.1 with x := (ltD (ltD s.1.x pid d.2.1).2 rc.peer d.2.2.1).2 }
+          s.2.1 (sid, pid) rc
+          (bobS G a b X Y sid rc.peer pid e (ltD s.1.x pid d.2.1).1
+            (ltD (ltD s.1.x pid d.2.1).2 rc.peer d.2.2.1).1 opk, ss) d.2.2.2
+      | none => ((s.1, s.2.1, .fwd), .inr (.inr (.inl .ack))) := by
+  unfold sendRP sguardP
+  cases hr : s.1.x.st.recs (sid, pid) with
+  | none => rfl
+  | some rc =>
+    cases he : s.1.x.eph (sid, pid) with
+    | none => rfl
+    | some opk =>
+      cases hk : s.1.kem (sid, pid) with
+      | none => rfl
+      | some kp =>
+        dsimp only
+        cases hd : P.decaps kp.2 c with
+        | none => simp only [kemOps, hd]
+        | some ss =>
+          by_cases hc : rc.role = .responder ∧ rc.key.isNone = true
+          · simp only [kemOps, hd, hc, and_self, ↓reduceIte]
+          · simp only [kemOps, hd, hc, ↓reduceIte]
+
+omit [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K]
+  [DecidableEq SS] in
+/-- `encCP` at the KEM operations of `P` is the encapsulation of `P`. -/
+theorem encCP_eq (pk : PK) : encCP (kemOps P) pk = liftPMF (P.encaps pk) :=
+  kemOps_encaps P pk
+
+/-- **`otherCP` computes `startRP`** on the events other than `complete` and `send`, at the KEM
+operations of `P`, with the draw of a step without an encapsulation. -/
+theorem otherCP_eq (s : RSimP S W K PK SK SS C) (e : OEv W SS C)
+    (hc : ∀ sid pid, e ≠ .inr (.complete sid pid))
+    (hs : ∀ sid pid E c, e ≠ .inr (.send sid pid E c)) :
+    otherCP (kemOps P) G a b O X Y s e =
+      liftPMF ((pDist P none).map (startRP P G a b O X Y s e)) := by
+  have hP : ∀ p : RSimP S W K PK SK SS C × Dec S W K PK C,
+      (SPComp.pure p : SPComp _) = liftPMF ((pDist (S := S) (K := K) P none).map fun _ => p) :=
+    fun p => by rw [liftPMF_pure]; exact congrArg liftPMF (map_fun_const _ _).symm
+  change _ = liftPMF ((pDist P none).map fun d => startRP P G a b O X Y s e d)
+  rcases e with (⟨sid, pid, peer, role⟩ | ⟨sid, pid⟩) | (_ | _ | pid | ⟨sid, pid⟩ |
+    ⟨sid, pid⟩ | pid | ⟨sid, pid⟩ | ⟨sid, pid, E, c⟩ | q)
+  · by_cases h : (s.1.x.st.recs (sid, pid)).isNone = true
+    · by_cases hr : role = .responder
+      · simp only [otherCP, startRP, h, hr, ↓reduceIte, sample_eq_liftPMF, kemOps_keygen,
+          map_liftPMF, liftPMF_bind_liftPMF]
+        rw [pDist_map_kp (γ := RSimP S W K PK SK SS C × Dec S W K PK C) P _ _ (fun r kp =>
+            (({ s.1 with
+            x := { s.1.x with st := addSession s.1.x.st (sid, pid) peer .responder,
+                              eph := Function.update s.1.x.eph (sid, pid) (some r.1) },
+            kem := Function.update s.1.kem (sid, pid) (some kp) }, s.2.1, Phase.fwd),
+          .inl (.inl (.newSession sid pid peer .responder)))) (fun _ => rfl)]
+        exact congrArg liftPMF (uniform_draw_bind_fst
+          (γ := RSimP S W K PK SK SS C × Dec S W K PK C) (K := K) (fun y => P.keygen.map fun kp =>
+            (({ s.1 with
+              x := { s.1.x with st := addSession s.1.x.st (sid, pid) peer .responder,
+                                eph := Function.update s.1.x.eph (sid, pid) (some y) },
+              kem := Function.update s.1.kem (sid, pid) (some kp) }, s.2.1, Phase.fwd),
+            (.inl (.inl (.newSession sid pid peer .responder)) : Dec S W K PK C)))).symm
+      · simp only [otherCP, startRP, h, hr, ↓reduceIte, sample_eq_liftPMF, liftPMF_bind_pure]
+        rw [pDist_map_fst (γ := RSimP S W K PK SK SS C × Dec S W K PK C) P _ _ (fun r =>
+            (({ s.1 with
+            x := { s.1.x with st := addSession s.1.x.st (sid, pid) peer role,
+                              eph := Function.update s.1.x.eph (sid, pid) (some r.1) } },
+            s.2.1, Phase.fwd), (.inl (.inl (.newSession sid pid peer role)) : Dec S W K PK C)))
+                (fun _ => rfl),
+          map_uniform_eq_map_prod_fst (B := (S × S) × (S × S) × K)]
+    · simp only [otherCP, startRP, h, Bool.false_eq_true, ↓reduceIte, map_fun_const,
+        liftPMF_pure]
+  · simp only [otherCP, startRP, map_fun_const, liftPMF_pure]
+  · simp only [otherCP, startRP, map_fun_const, liftPMF_pure]
+  · simp only [otherCP, startRP, map_fun_const, liftPMF_pure]
+  · simp only [otherCP, startRP, ltStep_eq, map_liftPMF]
+    rw [pDist_map_fst (γ := RSimP S W K PK SK SS C × Dec S W K PK C) P _ _ (fun r =>
+        (({ s.1 with x := (ltD s.1.x pid r.2.1).2 }, s.2.1, Phase.fwd),
+      (.inr (.inr (.inl (.pub (pubIK G a X pid (ltD s.1.x pid r.2.1).1)
+        (pubSPK G b Y pid (ltD s.1.x pid r.2.1).1)))) : Dec S W K PK C))) (fun _ => rfl)]
+    exact congrArg liftPMF (ltAt_map_eq s.1.x pid _)
+  · simp only [otherCP, startRP, map_fun_const, liftPMF_pure]
+  · simp only [otherCP, startRP, map_fun_const, liftPMF_pure]
+  · by_cases h : Named s.1.x.st pid = true
+    · simp only [otherCP, startRP, h, ↓reduceIte, map_fun_const, liftPMF_pure]
+    · simp only [otherCP, startRP, h, Bool.false_eq_true, ↓reduceIte, ltStep_eq, map_liftPMF]
+      rw [pDist_map_fst (γ := RSimP S W K PK SK SS C × Dec S W K PK C) P _ _ (fun r =>
+          (({ s.1 with x := { (ltD s.1.x pid r.2.1).2 with
+                            st := corruptStep (ltD s.1.x pid r.2.1).2.st pid } }, s.2.1,
+          .out (.inl (.secret (some (ltD s.1.x pid r.2.1).1)))),
+          (.inl (.inr (.corrupt pid)) : Dec S W K PK C))) (fun _ => rfl)]
+      exact congrArg liftPMF (ltAt_map_eq s.1.x pid _)
+  · exact absurd rfl (hc sid pid)
+  · exact absurd rfl (hs sid pid E c)
+  · simp only [otherCP, startRP, psroStep_eq, map_liftPMF, PMF.map_comp]
+    rw [pDist_map_fst (γ := RSimP S W K PK SK SS C × Dec S W K PK C) P _ _ (fun r =>
+        (({ s.1 with ro := (psroDet G O (keyA G a X s.1.x) (keyB G b Y s.1.x) s.1.ro
+          (ofInp q.1, q.2) r.2.2.2).2 }, s.2.1, Phase.fwd),
+      (.inr (.inr (.inl (.hash (psroDet G O (keyA G a X s.1.x) (keyB G b Y s.1.x) s.1.ro
+          (ofInp q.1, q.2) r.2.2.2).1))) : Dec S W K PK C))) (fun _ => rfl),
+      map_uniform_eq_map_prod_snd (A := S × S), map_uniform_eq_map_prod_snd (A := S × S),
+      map_uniform_eq_map_prod_snd (A := S)]
+    rfl
+
+omit [Field S] [Fintype S] [SampleableType W] [Inhabited K] [DecidableEq SS] in
+/-- **`finishCP` computes the finish of a step**, `F_AKE` with a uniform fresh key and `finRP`,
+as in `stepRP`. -/
+theorem finishCP_eq (p : RSimP S W K PK SK SS C × Dec S W K PK C) (t : St K) :
+    finishCP p t = liftPMF ((PMF.uniformFintype K).map fun kf =>
+      (((drive0D fStepD finRP p.1 p.2 t kf).1, (drive0D fStepD finRP p.1 p.2 t kf).2.1),
+        (drive0D fStepD finRP p.1 p.2 t kf).2.2)) := by
+  obtain ⟨s, d⟩ := p
+  rcases d with g | o
+  · simp only [finishCP, fakeC, sample_eq_liftPMF, map_liftPMF, PMF.map_comp]
+    rfl
+  · simp only [finishCP, liftPMF_pure]
+    exact congrArg liftPMF (PMF.map_const _ _).symm
+
+end Correct
 
 /-! ## The sizes of the state -/
 
