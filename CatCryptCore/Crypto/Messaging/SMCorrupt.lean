@@ -3718,6 +3718,7 @@ section AdaptiveMain
 variable {Sc Msg Key Rand RK Sa W Ct : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
   [SampleableType Ct] [Fintype RK] [Nonempty RK]
 
+omit [Fintype RK] [Nonempty RK] in
 theorem guessMir_init (i : Msg × Sc × Sc) (rk : RK) :
     guessMir (smInit (Sa := Sa) i rk) ⟨none, 0⟩ = guessInit := by
   simp only [guessMir, smInit, ckaShadow_init, guessInit, SMLoc.init, Option.isSome_none]
@@ -3761,7 +3762,6 @@ theorem sm_adaptive_advantage_le (C : CKADef Sc Msg Key) [CKACoins C Rand]
     (ΔFS ΔPCS : ℕ) (A : Msg → OracleAdv (SMQuery W) (SMAns Sc Msg RK Sa Ct) Bool) :
     SM_Adaptive_Advantage C R G D ΔFS ΔPCS A ≤
       ∑' e, SM_Corrupt_Advantage C R G D ΔFS ΔPCS (smGuessAdv ΔFS ΔPCS A e) := by
-  set w : (Msg × Sc × Sc) → RK → ℝ≥0∞ := fun i rk => initP i * PMF.uniformFintype RK rk
   set X : Bool → (Msg × Sc × Sc) → RK → PMF (Bool × SMSt Sc Msg RK Sa × SMAdRec) := fun b i rk =>
     OracleAdv.run (smAdOracle C R G D ΔFS ΔPCS b) (A i.1) (smInit i rk, ⟨none, 0⟩)
   have hP : ∀ b, prTrue (sm_adaptive_game C R G D ΔFS ΔPCS b A) Heap.empty =
@@ -3798,6 +3798,64 @@ theorem sm_adaptive_advantage_le (C : CKADef Sc Msg Key) [CKACoins C Rand]
   · refine (key _ _ _).trans (le_of_eq (tsum_congr fun e => ?_))
     exact sup_comm _ _
 
+/-- **Secure messaging with an adaptive challenge epoch from CKA, PRF-PRNG and FS-AEAD
+security.** With `2 ≤ ΔFS` and `1 ≤ ΔPCS`, the advantage of every adversary `A` in the game with
+an adaptive challenge epoch is at most the sum over the epochs `e` of the bound of
+`sm_corrupt_advantage_le` at the guessing reduction `smGuessAdv ΔFS ΔPCS A e`. -/
+theorem sm_adaptive_corrupt_advantage_le [Fintype Key] [Nonempty Key] [Fintype Sa] [Nonempty Sa]
+    [DecidableEq RK] [DecidableEq Key] (C : CKADef Sc Msg Key) [CKACoins C Rand]
+    (hS : CKACoins.Sound C) (initP : PMF (Msg × Sc × Sc)) (hinit : C.init = liftPMF initP)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    {ΔFS ΔPCS : ℕ} (hFS : 2 ≤ ΔFS) (hPCS : 1 ≤ ΔPCS)
+    (A : Msg → OracleAdv (SMQuery W) (SMAns Sc Msg RK Sa Ct) Bool) :
+    SM_Adaptive_Advantage C R G D ΔFS ΔPCS A ≤
+      ∑' e, (∑ b : Bool,
+          CKA_Corrupt_Advantage C ΔFS ΔPCS (smcCKARed R G D b (smGuessAdv ΔFS ΔPCS A e)) +
+        ∑ b : Bool,
+          PRFPRNG_Advantage R (smcRootRed C R G D ΔFS ΔPCS b initP (smGuessAdv ΔFS ΔPCS A e)) +
+        FSAEAD_Corrupt_Advantage G D (smcFSRed C R G D ΔFS ΔPCS initP (smGuessAdv ΔFS ΔPCS A e))) :=
+  (sm_adaptive_advantage_le C initP hinit R G D ΔFS ΔPCS A).trans
+    (ENNReal.tsum_le_tsum fun _ => sm_corrupt_advantage_le C hS initP hinit R G D hFS hPCS _)
+
 end AdaptiveMain
+
+section AdaptiveDH
+
+variable {RK Sa W Ct : Type} [SampleableType W] [SampleableType Ct] [Fintype RK] [Nonempty RK]
+  [Fintype Sa] [Nonempty Sa] [DecidableEq RK] (G : Type) [CG : CyclicGroup G] [DecidableEq G]
+
+/-- **The Diffie–Hellman double ratchet with an adaptive challenge epoch.** With `dhCKA` and
+`ΔFS = ΔPCS = 2`, the advantage is at most the sum over the epochs `e` of the DDH advantages of
+the CKA reductions, the PRF-PRNG advantages of the root reductions and the FS-AEAD advantage of
+the FS-AEAD reduction, all at the guessing reduction `smGuessAdv 2 2 A e`. -/
+theorem sm_dh_adaptive_advantage_le (R : PRGDef (RK × G) (RK × Sa)) (F : PRGDef Sa (W × Sa))
+    (D : AEADDef W Ct) (A : G → OracleAdv (SMQuery W) (SMAns (G × CG.Exp) G RK Sa Ct) Bool) :
+    SM_Adaptive_Advantage (dhCKA G) R F D 2 2 A ≤
+      ∑' e, (∑ b : Bool, DDH_Advantage G
+          (ckaCorruptDDHRed (smcCKARed (Rand := CG.Exp) R F D b (smGuessAdv 2 2 A e))) +
+        ∑ b : Bool,
+          PRFPRNG_Advantage R (smcRootRed (dhCKA G) R F D 2 2 b (dhInitP G) (smGuessAdv 2 2 A e)) +
+        FSAEAD_Corrupt_Advantage F D
+          (smcFSRed (dhCKA G) R F D 2 2 (dhInitP G) (smGuessAdv 2 2 A e))) :=
+  (sm_adaptive_advantage_le (dhCKA G) (dhInitP G) (dhCKA_init_eq G) R F D 2 2 A).trans
+    (ENNReal.tsum_le_tsum fun _ => sm_dh_corrupt_advantage_le G R F D _)
+
+/-- **The Diffie–Hellman double ratchet with the HKDF-shaped root step and an adaptive challenge
+epoch**, from DDH, the dual-PRF assumption and FS-AEAD security. -/
+theorem sm_dh_hkdf_adaptive_advantage_le (H : RK → G → RK × Sa) (F : PRGDef Sa (W × Sa))
+    (D : AEADDef W Ct) (A : G → OracleAdv (SMQuery W) (SMAns (G × CG.Exp) G RK Sa Ct) Bool) :
+    SM_Adaptive_Advantage (dhCKA G) (hkdfRoot H) F D 2 2 A ≤
+      ∑' e, (∑ b : Bool, DDH_Advantage G (ckaCorruptDDHRed
+            (smcCKARed (Rand := CG.Exp) (hkdfRoot H) F D b (smGuessAdv 2 2 A e))) +
+        ∑ b : Bool, (DualPRF_Right_Advantage H (ppRedR H
+              (smcRootRed (dhCKA G) (hkdfRoot H) F D 2 2 b (dhInitP G) (smGuessAdv 2 2 A e))) +
+            DualPRF_Left_Advantage H (ppRedL (Key := G)
+              (smcRootRed (dhCKA G) (hkdfRoot H) F D 2 2 b (dhInitP G) (smGuessAdv 2 2 A e)))) +
+        FSAEAD_Corrupt_Advantage F D
+          (smcFSRed (dhCKA G) (hkdfRoot H) F D 2 2 (dhInitP G) (smGuessAdv 2 2 A e))) :=
+  (sm_adaptive_advantage_le (dhCKA G) (dhInitP G) (dhCKA_init_eq G) (hkdfRoot H) F D 2 2 A).trans
+    (ENNReal.tsum_le_tsum fun _ => sm_dh_hkdf_corrupt_advantage_le G H F D _)
+
+end AdaptiveDH
 
 end CatCrypt.Crypto.Messaging
