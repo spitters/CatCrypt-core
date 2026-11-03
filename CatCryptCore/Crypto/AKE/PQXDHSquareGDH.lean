@@ -11,7 +11,76 @@ public import CatCryptCore.Crypto.AKE.X3DHSquareGDH
 /-!
 # The bad event of the PQXDH square under the gap Diffie–Hellman assumption
 
-DOCSTRING
+`PQXDHSquareHops.pqxdh_advantage_le_badGame` bounds the advantage of an oracle adversary `B`
+between the real and the simulated PQXDH game by the probability `badGame P G B true` of the bad
+event `PQHit`: the key-derivation table of the simulated world comes to hold the recorded input
+`ip` of a session whose party and peer are uncorrupt, where `ip` has the shape of the session,
+its `DH1` is the Diffie–Hellman value of the identity key of the initiator and the signed prekey
+of the responder (`DhOk`), and its shared secret is that of the KEM route (`KemOk`). This module
+bounds that probability by gap Diffie–Hellman advantages of explicit reductions, and composes the
+bound into the UC statement of PQXDH against `F_AKE`.
+
+**The Diffie–Hellman part of the bad event.** `PQHit` is a conjunction, and its conjunct `DhOk`
+alone gives the event `PQDH1Hit` (`pqHit_dh1`): the table holds an input whose initiator and
+responder are uncorrupt and whose `DH1` is `g^{ik_a · spk_b}`. This is the bad event `DH1Hit` of
+X3DH (`X3DHSquareGDH`) on the state of PQXDH, and it is bounded as there. The KEM part of the
+event (`KemOk`) is not needed for this bound.
+
+**The finite-party predicate.** `NamesInP N B`: on every path, the oracle adversary `B` starts
+sessions only between parties of the finite set `N` and queries the key derivation only at
+inputs whose initiator and responder are in `N`; it is `X3DHSquareGDH.NamesIn` for the events of
+PQXDH. The bound is a sum over the pairs of `N`.
+
+**The reduction.** `pqGdhRed G P a b B`, on the challenge `(X, Y)` with the decision oracle `O`,
+runs `B` against the world of the reduction (`stepRP`), a copy of the simulated world of PQXDH in
+which, as for X3DH (`X3DHSquareGDH.gdhRed`),
+* the identity key of `a` is `IK_a = X · g^u` and the signed prekey of `b` is `SPK_b = Y · g^v`
+  for the drawn `u`, `v`;
+* the Diffie–Hellman values that need `ik_a = x + u` or `spk_b = y + v` are symbolic, in inputs
+  `PInp (W ⊕ W) SS`, and the lookups in the key-derivation table and the comparisons with the
+  partner's recorded input are decided with `O` (`pinpEq`, `pslookup`, `psroDet`);
+* the KEM key pairs of the responder sessions and the encapsulations of the initiators are drawn
+  by the reduction itself from `P.keygen` and `P.encaps`, and the responders decapsulate with
+  `P.decaps` under the key pairs that the reduction drew;
+* `F_AKE` runs as in the simulated world.
+At the end it outputs `w · (X^v Y^u g^{uv})^{-1}` for the first `DH1 = w` of an input with
+initiator `a` and responder `b` that `O` accepts for `(IK_a, SPK_b)` (`extractRP`).
+
+**The proof** follows `X3DHSquareGDH`. A step of the simulated world of PQXDH is the image of a
+draw from a distribution that depends on the state (the encapsulation is to the public key of the
+peer's session), so the coupling of the two worlds is stated for draws from such distributions
+(`flag_le_of_couplingD`): the two worlds draw from the same distribution on related states
+(`encPk_rel`).
+1. *Shifted draws.* The simulated world whose draws of `ik_a` and `spk_b` are shifted by `x` and
+   `y` is the simulated world (`simGame_oracle_eq_transP`).
+2. *Coupling.* On the same draw, the shifted simulated world and the world of the reduction give
+   the same answer and reach states of the relation `RelP`, unless the step corrupts `a` or `b`
+   (`rel_startP`, `step_relP`).
+3. *Bad flags under the coupling*: the flag of `PQDH1HitAB` in the simulated world is set at most
+   as often as the flag of `Bad2P` in the world of the reduction (`pairBad_le_redP`).
+4. *Extraction.* On `Bad2P` the extraction outputs `g^{xy}` (`extractRP_of_bad2`), and averaging
+   over `x`, `y` gives the advantage of `pqGdhRed` (`pairBad_le_gapDHP`).
+5. *Union bound* over the pairs of `N` (`badGame_le_gapDH`).
+
+## Main definitions
+
+* `pinterp`, `pinpEq`, `pslookup`, `psroDet`: symbolic inputs of PQXDH.
+* `startRP`, `stepRP`, `oracleRP`, `extractRP`: the world of the reduction.
+* `redTreeP`, `redPMFP`, `pqGdhRed`: the reduction as a program, its output, and the GDH
+  adversary.
+* `PQDH1Hit`: the Diffie–Hellman part of the bad event.
+* `NamesInP`: the finite-party predicate.
+* `gdhBoundP`: the bound of the square.
+
+## Main results
+
+* `flag_le_of_couplingD`: bad flags under a coupling of draws from a distribution of the state.
+* `pqHit_dh1`: the bad event implies its Diffie–Hellman part.
+* `pairBad_le_gapDHP`: the bad event of a pair is at most the GDH advantage of `pqGdhRed`.
+* `badGame_le_gapDH`: `badGame P G B true ≤ ∑ a ∈ N, ∑ b ∈ N, GapDH_Advantage (gapDHDef G)
+  (pqGdhRed G P a b B)` for `B` naming only parties of `N`.
+* `pqxdh_realizesSim_gapDH`: PQXDH realizes `F_AKE` behind `pqxdhSim` with the bound
+  `gdhBoundP`.
 -/
 
 @[expose] public section
@@ -946,5 +1015,686 @@ theorem rel_startP {s₁ : SimSt S W K PK SK SS C} {s₂ : RSimP S W K PK SK SS 
         · exact h'.abL p hp
 
 end Coupling
+
+/-! ## The coupling of the worlds -/
+
+section World
+
+variable {S W K PK SK SS C : Type} [Field S] [Fintype S] [SampleableType W] [Fintype K]
+  [Nonempty K] [Inhabited K] [DecidableEq SS] (P : Scheme PK SK SS C) (G : DHGroup S W)
+  (a b : PartyId) (x y : S)
+
+/-- The coupling relation on the states of the worlds: related simulators and the same state of
+`F_AKE`. -/
+def RelWP (t₁ : SimSt S W K PK SK SS C × St K) (t₂ : RSimP S W K PK SK SS C × St K) : Prop :=
+  RelP G a b x y t₁.1 t₂.1 ∧ t₁.2 = t₂.2
+
+omit [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K] [DecidableEq SS] in
+/-- The bad event for the pair `(a, b)`: the table of the simulated world holds an input with
+initiator `a` and responder `b`, both uncorrupt, whose `DH1` is `g^{ik_a · spk_b}`. -/
+def PQDH1HitAB (s : SimSt S W K PK SK SS C) : Prop :=
+  ∃ ip v ikA spkA ikB spkB, s.1.ro.lookup ip = some v ∧ ip.1.ini = a ∧ ip.1.res = b ∧
+    s.1.x.st.corrupt a = false ∧ s.1.x.st.corrupt b = false ∧ s.1.x.lt a = some (ikA, spkA) ∧
+    s.1.x.lt b = some (ikB, spkB) ∧ ip.1.dh1 = G.pub (ikA * spkB)
+
+omit [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K] [DecidableEq SS] in
+/-- The event of the world of the reduction that answers `PQDH1HitAB`: the symbolic table holds
+an input with initiator `a` and responder `b` whose `DH1` is the known value
+`g^{(x + u)(y + v)}`, with the long-term secrets of `a` and `b` drawn. -/
+def Bad2P (t : RSimP S W K PK SK SS C × St K) : Prop :=
+  ∃ p ∈ t.1.1.ro, p.1.1.ini = a ∧ p.1.1.res = b ∧ (t.1.1.x.lt a).isSome = true ∧
+    (t.1.1.x.lt b).isSome = true ∧
+    p.1.1.dh1 = .inl (G.pub ((x + off1 a t.1.1.x) * (y + off2 b t.1.1.x)))
+
+omit [Fintype K] [Nonempty K] in
+/-- **The coupling of a step of the worlds**: from related states, the simulated world with the
+shifted draw and the world of the reduction give the same answer and reach related states,
+unless the step corrupts `a` or `b`. -/
+theorem step_relP {t₁ : SimSt S W K PK SK SS C × St K} {t₂ : RSimP S W K PK SK SS C × St K}
+    (h : RelWP G a b x y t₁ t₂) (e : OEv W SS C) (r : PDraw S K PK SK SS C × K) :
+    StopP a b (simWorldD P G t₁ e (transWP a b x y t₁ e r)).1.1 ∨
+      ((simWorldD P G t₁ e (transWP a b x y t₁ e r)).2 =
+          (stepRP P G a b (ddhOracle (gapDHDef G)) (G.pub x) (G.pub y) t₂ e r).2 ∧
+        RelWP G a b x y (simWorldD P G t₁ e (transWP a b x y t₁ e r)).1
+          (stepRP P G a b (ddhOracle (gapDHDef G)) (G.pub x) (G.pub y) t₂ e r).1) := by
+  have htr : transWP a b x y t₁ e r = (transPD a b x y t₁.1 e r.1, r.2) := rfl
+  rw [htr]
+  rcases rel_startP P G a b x y h.1 e r.1 with hs | ⟨hd, hr⟩
+  · left
+    simp only [StopP, simWorldD] at hs ⊢
+    rw [stop_drive0D _ _ (fun _ _ => rfl)]
+    exact hs
+  · right
+    simp only [simWorldD, stepRP]
+    rw [hd, h.2]
+    generalize (simStartD P G t₁.1 e (transPD a b x y t₁.1 e r.1)).1 = s₁ at hr
+    generalize (startRP P G a b (ddhOracle (gapDHDef G)) (G.pub x) (G.pub y) t₂.1 e r.1).1 = s₂
+      at hr
+    obtain ⟨rs₁, inp₁, ph₁⟩ := s₁
+    obtain ⟨rs₂, inp₂, ph₂⟩ := s₂
+    have hr' : RelCP G a b x y rs₁ inp₁ ph₁ rs₂ inp₂ ph₂ := hr
+    cases (startRP P G a b (ddhOracle (gapDHDef G)) (G.pub x) (G.pub y) t₂.1 e r.1).2 with
+    | inr o => exact ⟨rfl, hr, rfl⟩
+    | inl g =>
+      simp only [drive0D, finV, finRP]
+      rw [hr'.ph]
+      exact ⟨rfl, hr'.setPh G a b x y _, rfl⟩
+
+omit [Fintype S] [Fintype K] [Nonempty K] [Inhabited K] in
+/-- **The bad event of the pair, on related states,** is the event `Bad2P` of the world of the
+reduction. -/
+theorem bad2P_of_rel {t₁ : SimSt S W K PK SK SS C × St K} {t₂ : RSimP S W K PK SK SS C × St K}
+    (h : RelWP G a b x y t₁ t₂) (hb : PQDH1HitAB G a b t₁.1) : Bad2P G a b x y t₂ := by
+  obtain ⟨ip, v, ikA, spkA, ikB, spkB, hl, hia, hrb, -, -, hla, hlb, hd⟩ := hb
+  have hR : RelCP G a b x y t₁.1.1 t₁.1.2.1 t₁.1.2.2 t₂.1.1 t₂.1.2.1 t₂.1.2.2 := h.1
+  have hm := lookup_mem hl
+  rw [hR.ro, List.mem_map] at hm
+  obtain ⟨p, hp, hpe⟩ := hm
+  simp only [pinterpE, Prod.mk.injEq] at hpe
+  obtain ⟨hpi, -⟩ := hpe
+  have hpa : p.1.1.ini = a := by rw [← hia, ← hpi]; rfl
+  have hpb : p.1.1.res = b := by rw [← hrb, ← hpi]; rfl
+  have hlA := hR.lt a
+  have hlB := hR.lt b
+  rw [hla] at hlA
+  rw [hlb] at hlB
+  cases hA : t₂.1.1.x.lt a with
+  | none => rw [hA] at hlA; cases hlA
+  | some la =>
+    cases hB : t₂.1.1.x.lt b with
+    | none => rw [hB] at hlB; cases hlB
+    | some lb =>
+      rw [hA, Option.map_some, Option.some.injEq] at hlA
+      rw [hB, Option.map_some, Option.some.injEq] at hlB
+      have hik : ikA = x + off1 a t₂.1.1.x := by
+        simp only [off1, hA, Option.map_some, Option.getD_some]
+        have := congrArg Prod.fst hlA
+        simp only [sh, ↓reduceIte] at this
+        exact this
+      have hspk : spkB = y + off2 b t₂.1.1.x := by
+        simp only [off2, hB, Option.map_some, Option.getD_some]
+        have := congrArg Prod.snd hlB
+        simp only [sh, ↓reduceIte] at this
+        exact this
+      refine ⟨p, hp, hpa, hpb, by rw [hA]; rfl, by rw [hB]; rfl, ?_⟩
+      have hL := hR.abL p hp hpa hpb
+      rcases hq : p.1.1.dh1 with w | E
+      · have h1 : ip.1.dh1 = w := by rw [← hpi]; simp only [pinterp, interp, hq, ev]
+        rw [← h1, hd, hik, hspk]
+      · rw [hq] at hL; cases hL
+
+omit [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [DecidableEq SS] in
+theorem deliverD_corruptP (rs : PSt S W K PK SK SS C) (inp : Inst → Option (PInp W SS))
+    (z : Inst) (rc : Rec K) (ip : PInp W SS) (k : K) [DecidableEq W] [DecidableEq SS] :
+    (deliverD rs inp z rc ip k).1.1.x.st.corrupt = rs.x.st.corrupt := by
+  unfold deliverD
+  split <;> rfl
+
+omit [Fintype S] [Fintype K] [Nonempty K] in
+/-- The start of the simulator never clears a corruption. -/
+theorem simStartD_corruptP (s : SimSt S W K PK SK SS C) (e : OEv W SS C)
+    (d : PDraw S K PK SK SS C) (p : PartyId) (h : s.1.x.st.corrupt p = true) :
+    (simStartD P G s e d).1.1.x.st.corrupt p = true := by
+  rcases e with (⟨sid, pid, peer, role⟩ | ⟨sid, pid⟩) | (_ | _ | pid | ⟨sid, pid⟩ |
+    ⟨sid, pid⟩ | pid | ⟨sid, pid⟩ | ⟨sid, pid, e, c⟩ | q)
+  all_goals simp only [simStartD, simCompleteD, simSendD]
+  all_goals repeat' split
+  all_goals simp_all [deliverD_corruptP, addSession_corrupt, (pollStep_fst _).2.1, corruptStep,
+    ltD_st, Function.update_apply]
+
+omit [Fintype S] [Fintype K] [Nonempty K] in
+/-- A step of the simulated world never clears a corruption of `a` or `b`. -/
+theorem stop_simWorldDP (t : SimSt S W K PK SK SS C × St K) (e : OEv W SS C)
+    (r : PDraw S K PK SK SS C × K) (h : StopP a b t.1) : StopP a b (simWorldD P G t e r).1.1 := by
+  simp only [StopP, simWorldD]
+  rw [stop_drive0D _ _ (fun _ _ => rfl)]
+  rcases h with h | h
+  · exact Or.inl (simStartD_corruptP P G _ _ _ _ h)
+  · exact Or.inr (simStartD_corruptP P G _ _ _ _ h)
+
+omit [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K]
+  [DecidableEq SS] in
+/-- The tables of the world of the reduction grow and its long-term secrets stay. -/
+def MonoP (rs rs' : PSt S (W ⊕ W) K PK SK SS C) : Prop :=
+  (∀ p ∈ rs.ro, p ∈ rs'.ro) ∧ (∀ q v, rs.x.lt q = some v → rs'.x.lt q = some v)
+
+omit [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K]
+  [DecidableEq SS] in
+theorem MonoP.trans {rs rs' rs'' : PSt S (W ⊕ W) K PK SK SS C} (h : MonoP rs rs')
+    (h' : MonoP rs' rs'') : MonoP rs rs'' :=
+  ⟨fun p hp => h'.1 p (h.1 p hp), fun q v hq => h'.2 q v (h.2 q v hq)⟩
+
+omit [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K]
+  [DecidableEq SS] in
+theorem monoP_refl (rs : PSt S (W ⊕ W) K PK SK SS C) : MonoP rs rs :=
+  ⟨fun _ h => h, fun _ _ h => h⟩
+
+omit [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K]
+  [DecidableEq SS] in
+theorem monoP_ltD (rs : PSt S (W ⊕ W) K PK SK SS C) (p : PartyId) (l : S × S) :
+    MonoP rs { rs with x := (ltD rs.x p l).2 } :=
+  ⟨fun _ hq => hq, ltD_lt_mono rs.x p l⟩
+
+omit [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K]
+  [DecidableEq SS] in
+theorem MonoP.of_lt {rs rs' : PSt S (W ⊕ W) K PK SK SS C} (hro : rs'.ro = rs.ro)
+    (hlt : ∀ q v, rs.x.lt q = some v → rs'.x.lt q = some v) : MonoP rs rs' :=
+  ⟨fun _ h => hro ▸ h, hlt⟩
+
+omit [Fintype S] [Fintype K] [Nonempty K] in
+theorem monoP_deliverRP (O : W → W → W → Bool) (X Y : W) (rs : PSt S (W ⊕ W) K PK SK SS C)
+    (inp : Inst → Option (PInp (W ⊕ W) SS)) (z : Inst) (rc : Rec K) (ip : PInp (W ⊕ W) SS)
+    (k : K) : MonoP rs (deliverRP G a b O X Y rs inp z rc ip k).1.1 := by
+  unfold deliverRP
+  split
+  · refine ⟨fun q hq => ?_, fun _ _ h => h⟩
+    rcases psroDet_snd G O (keyA G a X rs.x) (keyB G b Y rs.x) rs.ro ip k with he | he <;>
+      simp only [pKeyed, he]
+    · exact hq
+    · exact List.mem_cons_of_mem _ hq
+  · exact monoP_refl _
+
+omit [Fintype S] [Fintype K] [Nonempty K] in
+/-- **The start of the simulator of the reduction** keeps the entries of the table and the drawn
+secrets. -/
+theorem monoP_startRP (O : W → W → W → Bool) (X Y : W) (s : RSimP S W K PK SK SS C)
+    (e : OEv W SS C) (d : PDraw S K PK SK SS C) : MonoP s.1 (startRP P G a b O X Y s e d).1.1 := by
+  rcases e with (⟨sid, pid, peer, role⟩ | ⟨sid, pid⟩) | (_ | _ | pid | ⟨sid, pid⟩ |
+    ⟨sid, pid⟩ | pid | ⟨sid, pid⟩ | ⟨sid, pid, e, c⟩ | q)
+  · simp only [startRP]
+    split
+    · split
+      · exact monoP_refl _
+      · exact monoP_refl _
+    · exact monoP_refl _
+  · exact monoP_refl _
+  · exact monoP_refl _
+  · exact monoP_refl _
+  · exact monoP_ltD _ _ _
+  · exact monoP_refl _
+  · exact monoP_refl _
+  · simp only [startRP]
+    split
+    · exact monoP_refl _
+    · exact monoP_ltD _ _ _
+  · simp only [startRP, completeRP]
+    repeat' split
+    all_goals first
+      | exact monoP_refl _
+      | (refine MonoP.trans ?_ (monoP_deliverRP G a b O X Y _ _ _ _ _ _)
+         exact MonoP.of_lt rfl fun _ _ h => ltD_lt_mono _ _ _ _ _ (ltD_lt_mono _ _ _ _ _ h))
+  · simp only [startRP, sendRP]
+    repeat' split
+    all_goals first
+      | exact monoP_refl _
+      | (refine MonoP.trans ?_ (monoP_deliverRP G a b O X Y _ _ _ _ _ _)
+         exact MonoP.of_lt rfl fun _ _ h => ltD_lt_mono _ _ _ _ _ (ltD_lt_mono _ _ _ _ _ h))
+  · simp only [startRP]
+    refine ⟨fun p hp => ?_, fun _ _ h => h⟩
+    rcases psroDet_snd G O (keyA G a X s.1.x) (keyB G b Y s.1.x) s.1.ro (ofInp q.1, q.2)
+      d.1.2.2.2 with he | he <;> simp only [he]
+    · exact hp
+    · exact List.mem_cons_of_mem _ hp
+
+omit [Fintype S] [Fintype K] [Nonempty K] in
+theorem monoP_stepRP (O : W → W → W → Bool) (X Y : W) (t : RSimP S W K PK SK SS C × St K)
+    (e : OEv W SS C) (r : PDraw S K PK SK SS C × K) :
+    MonoP t.1.1 (stepRP P G a b O X Y t e r).1.1.1 := by
+  simp only [stepRP]
+  rw [stop_drive0D _ _ (fun _ _ => rfl)]
+  exact monoP_startRP P G a b O X Y t.1 e r.1
+
+omit [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K] [DecidableEq SS] in
+theorem Bad2P.mono {t t' : RSimP S W K PK SK SS C × St K} (h : MonoP t.1.1 t'.1.1)
+    (hb : Bad2P G a b x y t) : Bad2P G a b x y t' := by
+  obtain ⟨p, hp, h1, h2, ha, hb', hd⟩ := hb
+  obtain ⟨la, hla⟩ := Option.isSome_iff_exists.mp ha
+  obtain ⟨lb, hlb⟩ := Option.isSome_iff_exists.mp hb'
+  have hoff1 : off1 a t'.1.1.x = off1 a t.1.1.x := by simp only [off1, hla, h.2 a la hla]
+  have hoff2 : off2 b t'.1.1.x = off2 b t.1.1.x := by simp only [off2, hlb, h.2 b lb hlb]
+  refine ⟨p, h.1 p hp, h1, h2, by rw [h.2 a la hla]; rfl, by rw [h.2 b lb hlb]; rfl, ?_⟩
+  rw [hoff1, hoff2]
+  exact hd
+
+omit [Fintype K] [Nonempty K] [Inhabited K] [DecidableEq SS] in
+/-- **The extraction on the event `Bad2P`** outputs the Diffie–Hellman value of the challenge. -/
+theorem extractRP_of_bad2 {t : RSimP S W K PK SK SS C × St K} (h : Bad2P G a b x y t) :
+    extractRP G a b (ddhOracle (gapDHDef G)) (G.pub x) (G.pub y) t.1.1 = G.pub (x * y) := by
+  obtain ⟨p, hp, h1, h2, -, -, hd⟩ := h
+  unfold extractRP hitRP
+  rw [keyA_pub, keyB_pub]
+  set f : PInp (W ⊕ W) SS × K → Option W := fun p =>
+    if p.1.1.ini = a ∧ p.1.1.res = b then
+      match p.1.1.dh1 with
+      | .inl w => if ddhOracle (gapDHDef G) (G.pub (x + off1 a t.1.1.x))
+          (G.pub (y + off2 b t.1.1.x)) w then some w else none
+      | .inr _ => none
+    else none with hf
+  have hacc : ∀ q w, f q = some w → w = G.pub ((x + off1 a t.1.1.x) * (y + off2 b t.1.1.x)) := by
+    intro q w hq
+    simp only [hf] at hq
+    split_ifs at hq with hq1
+    split at hq
+    · split_ifs at hq with hq2
+      simp only [Option.some.injEq] at hq
+      subst hq
+      rw [ddhOracle_pub, decide_eq_true_eq, G.exp_pub] at hq2
+      rw [hq2, mul_comm]
+    · cases hq
+  have hpf : f p = some (G.pub ((x + off1 a t.1.1.x) * (y + off2 b t.1.1.x))) := by
+    simp only [hf, h1, h2, and_self, ↓reduceIte, hd, ddhOracle_pub, G.exp_pub, mul_comm,
+      decide_true]
+  cases hs : t.1.1.ro.findSome? f with
+  | none =>
+    rw [List.findSome?_eq_none_iff] at hs
+    rw [hs p hp] at hpf
+    cases hpf
+  | some w =>
+    obtain ⟨q, -, hq⟩ := List.exists_of_findSome?_eq_some hs
+    rw [hacc q w hq]
+    simp only [G.exp_pub, G.mul_pub]
+    congr 1
+    ring
+
+end World
+
+/-! ## The output of the reduction -/
+
+section Output
+
+variable {S W K PK SK SS C : Type} [Field S] [Fintype S] [SampleableType W] [Fintype K]
+  [Nonempty K] [Inhabited K] [DecidableEq SS] (P : Scheme PK SK SS C) (G : DHGroup S W)
+  (a b : PartyId)
+
+/-- **The output distribution of the reduction** is the extraction from the final state of a run
+of `B` against the world of the reduction. -/
+theorem redPMFP_eq (O : W → W → W → Bool) (X Y : W)
+    (B : OracleAdv (OEv W SS C) (OOut S W K PK C) Bool) :
+    redPMFP P G a b O X Y B =
+      (OracleAdv.run (oracleRP P G a b O X Y) B rInitRP).map
+        fun z => extractRP G a b O X Y z.2.1.1 := by
+  have hO : ∀ (t : RSimP S W K PK SK SS C × St K) (e : OEv W SS C),
+      (oracleRP P G a b O X Y t e).map (Prod.map id fun t => (t, ())) =
+        OracleAdv.simOracle (implRP P G a b O X Y) (fun (_ : Unit) (q : Empty) => q.elim) (t, ())
+          e := by
+    intro t e
+    simp only [OracleAdv.simOracle, implRP, oracleRP, OracleAdv.run_rand, OracleAdv.run_ret,
+      PMF.map_comp, PMF.map_bind, PMF.pure_map]
+    exact (PMF.bind_pure_comp _ _).symm
+  unfold redPMFP redTreeP
+  rw [OracleAdv.run_bind, OracleAdv.run_simulate,
+    ← OracleAdv.run_map_state _ _ (fun t => (t, ())) hO]
+  simp only [PMF.map_comp, PMF.bind_map, OracleAdv.run_ret, PMF.map_bind, Function.comp_def,
+    PMF.pure_map]
+  exact PMF.bind_pure_comp _ _
+
+/-- **The advantage of the reduction** as a probability over the challenge exponents. -/
+theorem gapDH_advantage_pqGdhRed (B : OracleAdv (OEv W SS C) (OOut S W K PK C) Bool) :
+    GapDH_Advantage (gapDHDef G) (pqGdhRed G P a b B) =
+      ((PMF.uniformFintype S).bind fun x => (PMF.uniformFintype S).bind fun y =>
+        (redPMFP P G a b (ddhOracle (gapDHDef G)) (G.pub x) (G.pub y) B).map
+          fun c => decide (c = G.pub (x * y))) true := by
+  unfold GapDH_Advantage
+  rw [← prTrue_liftPMF _ Heap.empty]
+  congr 1
+  funext h
+  unfold GapDH_Game
+  have hk : (gapDHDef G).keygen =
+      liftPMF ((PMF.uniformFintype S).map fun s => (G.pub s, G.pub s)) :=
+    rfl
+  simp only [SPComp.monad_bind_eq, pqGdhRed, hk]
+  rw [liftPMF_bind_apply, PMF.bind_map]
+  conv_rhs => unfold liftPMF
+  rw [PMF.map_bind]
+  refine congrArg _ (funext fun x => ?_)
+  simp only [Function.comp_apply]
+  rw [liftPMF_bind_apply, PMF.bind_map, PMF.map_bind]
+  refine congrArg _ (funext fun y => ?_)
+  simp only [Function.comp_apply]
+  rw [liftPMF_bind_apply, PMF.map_comp, cdh_pub]
+  exact PMF.bind_pure_comp _ _
+
+end Output
+
+/-! ## The bad event of a pair under the gap Diffie–Hellman assumption -/
+
+section Pair
+
+variable {S W K PK SK SS C : Type} [Field S] [Fintype S] [SampleableType W] [Fintype K]
+  [Nonempty K] [Inhabited K] [DecidableEq SS] (P : Scheme PK SK SS C) (G : DHGroup S W)
+  (a b : PartyId)
+
+omit [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K]
+  [DecidableEq SS] in
+/-- The initial state of the simulated world. -/
+def simInitP : SimSt S W K PK SK SS C × St K := ((pInit, fun _ => none, .fwd), initSt)
+
+/-- The oracle of the simulated game on the states of the simulated world. -/
+noncomputable def simOP (t : SimSt S W K PK SK SS C × St K) (e : OEv W SS C) :
+    PMF (OOut S W K PK C × (SimSt S W K PK SK SS C × St K)) :=
+  (simGame (K := K) P G).oracle () t e
+
+open Classical in
+/-- **The bad event of the pair `(a, b)` in the simulated world**: the probability that the
+table of the simulated world comes to hold an input with initiator `a` and responder `b`, both
+uncorrupt, whose `DH1` is `g^{ik_a · spk_b}`. -/
+noncomputable def pairBadP (B : OracleAdv (OEv W SS C) (OOut S W K PK C) Bool) : ℝ≥0∞ :=
+  (OracleAdv.run (OracleAdv.flagWhen (fun _ _ z => PQDH1HitAB G a b z.2.1) (simOP P G)) B
+    (simInitP, false)).toOuterMeasure {y | y.2.2 = true}
+
+omit [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K] [DecidableEq SS] in
+theorem relWP_init (x y : S) :
+    RelWP G a b x y (simInitP (S := S) (W := W) (K := K) (PK := PK) (SK := SK) (SS := SS)
+      (C := C)) rInitRP :=
+  ⟨⟨rfl, rfl, fun _ => rfl, rfl, fun _ => rfl, rfl, rfl, rfl, (fun _ h => by cases h),
+    (fun _ _ h => by cases h), (fun _ h => by cases h), (fun _ _ h => by cases h), rfl, rfl⟩,
+    rfl⟩
+
+omit [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K] [DecidableEq SS] in
+/-- The public key of an encapsulation is the same in related states. -/
+theorem encPk_rel {x y : S} {rs₁ : PSt S W K PK SK SS C} {inp₁ : Inst → Option (PInp W SS)}
+    {ph₁ : Phase S W K PK C} {rs₂ : PSt S (W ⊕ W) K PK SK SS C}
+    {inp₂ : Inst → Option (PInp (W ⊕ W) SS)} {ph₂ : Phase S W K PK C}
+    (h : RelCP G a b x y rs₁ inp₁ ph₁ rs₂ inp₂ ph₂) (e : OEv W SS C) :
+    encPk rs₁ e = encPkR rs₂ e := by
+  rcases e with _ | (_ | _ | _ | _ | _ | _ | ⟨sid, pid⟩ | _ | _)
+  all_goals first
+    | rfl
+    | (simp only [encPk, encPkR, h.st, pkOf_congr h.kem]
+       cases rs₂.x.st.recs (sid, pid) <;> rfl)
+
+open Classical in
+/-- **The bad event of a pair at fixed challenge exponents** is at most the probability that the
+reduction outputs the Diffie–Hellman value. -/
+theorem pairBad_le_redP (B : OracleAdv (OEv W SS C) (OOut S W K PK C) Bool) (x y : S) :
+    pairBadP P G a b B ≤ ((redPMFP P G a b (ddhOracle (gapDHDef G)) (G.pub x) (G.pub y) B).map
+      fun c => decide (c = G.pub (x * y))) true := by
+  have hO : simOP (K := K) P G = fun t e => (simDist P (encPk t.1.1 e)).map
+      fun r => (simWorldD P G t e (transWP a b x y t e r)).swap :=
+    funext fun t => funext fun e => simGame_oracle_eq_transP P G a b x y t e
+  have h₁ := flag_le_of_couplingD (fun t e => simDist P (encPk t.1.1 e))
+    (fun t e => simDist P (encPkR t.1.1 e))
+    (fun t e r => (simWorldD P G t e (transWP a b x y t e r)).swap)
+    (fun t e r => (stepRP P G a b (ddhOracle (gapDHDef G)) (G.pub x) (G.pub y) t e r).swap)
+    (RelWP G a b x y) (fun t => StopP a b t.1) (fun t => PQDH1HitAB G a b t.1) (Bad2P G a b x y)
+    (fun t₁ t₂ e h => by simp only [encPk_rel G a b h.1 e])
+    (fun t e r h => stop_simWorldDP P G a b t e _ h)
+    (fun t h hb => by
+      obtain ⟨_, _, _, _, _, _, _, _, _, ha, hb', _⟩ := hb
+      rcases h with h | h <;> simp_all)
+    (fun t₁ t₂ h hb => bad2P_of_rel G a b x y h hb)
+    (fun t₁ t₂ e r h => step_relP P G a b x y h e r) B simInitP rInitRP (relWP_init G a b x y)
+  have h₂ := run_flag_le_final (oracleRP P G a b (ddhOracle (gapDHDef G)) (G.pub x) (G.pub y))
+    (Bad2P G a b x y) (fun t e hb z hz => by
+      simp only [oracleRP, PMF.support_map, Set.mem_image] at hz
+      obtain ⟨r, -, rfl⟩ := hz
+      exact hb.mono G a b x y (monoP_stepRP P G a b _ _ _ t e r)) B rInitRP
+  unfold pairBadP
+  rw [hO]
+  refine h₁.trans (h₂.trans ?_)
+  rw [redPMFP_eq, PMF.map_comp, ← PMF.toOuterMeasure_apply_singleton,
+    PMF.toOuterMeasure_map_apply]
+  refine PMF.toOuterMeasure_mono _ fun z hz => ?_
+  simp only [Set.mem_preimage, Function.comp_apply, Set.mem_singleton_iff, decide_eq_true_eq]
+  exact extractRP_of_bad2 G a b x y hz.1
+
+/-- **The bad event of a pair is a gap Diffie–Hellman problem**: its probability is at most the
+advantage of the reduction `pqGdhRed G P a b B`. -/
+theorem pairBad_le_gapDHP (B : OracleAdv (OEv W SS C) (OOut S W K PK C) Bool) :
+    pairBadP P G a b B ≤ GapDH_Advantage (gapDHDef G) (pqGdhRed G P a b B) := by
+  rw [gapDH_advantage_pqGdhRed, PMF.bind_apply]
+  calc pairBadP P G a b B = ∑' x : S, PMF.uniformFintype S x *
+        ∑' y : S, PMF.uniformFintype S y * pairBadP P G a b B := by
+        simp only [ENNReal.tsum_mul_right, PMF.tsum_coe, one_mul]
+    _ ≤ _ := by
+      refine ENNReal.tsum_le_tsum fun x => ?_
+      gcongr
+      rw [PMF.bind_apply]
+      refine ENNReal.tsum_le_tsum fun y => ?_
+      gcongr
+      exact pairBad_le_redP P G a b B x y
+
+end Pair
+
+/-! ## Finitely many parties -/
+
+section Names
+
+variable {S W K PK SK SS C : Type} [Field S] [Fintype S] [SampleableType W] [Fintype K]
+  [Nonempty K] [Inhabited K] [DecidableEq SS] (P : Scheme PK SK SS C) (G : DHGroup S W)
+
+omit [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K]
+  [DecidableEq SS] in
+/-- An event names parties of `N` where it names parties of a session or of a key-derivation
+input: the party and the peer of a new session, the initiator and the responder of a query of the
+key derivation. The other events are unconstrained. -/
+def EvInP (N : Finset PartyId) : OEv W SS C → Prop
+  | .inl (.newSession _ pid peer _) => pid ∈ N ∧ peer ∈ N
+  | .inr (.kdf q) => q.1.ini ∈ N ∧ q.1.res ∈ N
+  | _ => True
+
+omit [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K]
+  [DecidableEq SS] in
+/-- **The finite-party predicate**: on every path, the oracle adversary `B` starts sessions only
+between parties of `N` and queries the key derivation only at inputs whose initiator and
+responder are in `N`. -/
+def NamesInP {α : Type} (N : Finset PartyId) (B : OracleAdv (OEv W SS C) (OOut S W K PK C) α) :
+    Prop :=
+  AllQ (EvInP N) B
+
+omit [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K]
+  [DecidableEq SS] in
+/-- The invariant of the parties: the inputs of the table of the simulator's copy and the
+sessions of its records name parties of `N`. -/
+def InvPP (N : Finset PartyId) (rs : PSt S W K PK SK SS C) : Prop :=
+  (∀ e ∈ rs.ro, e.1.1.ini ∈ N ∧ e.1.1.res ∈ N) ∧
+    ∀ z r, rs.x.st.recs z = some r → z.2 ∈ N ∧ r.peer ∈ N
+
+omit [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K]
+  [DecidableEq SS] in
+theorem InvPP.of_eq {N : Finset PartyId} {rs rs' : PSt S W K PK SK SS C} (h : InvPP N rs)
+    (hro : rs'.ro = rs.ro) (hst : rs'.x.st = rs.x.st) : InvPP N rs' := by
+  simp only [InvPP, hro, hst]
+  exact h
+
+omit [Field S] [Fintype S] [Fintype K] [Nonempty K] in
+theorem InvPP.deliverD {N : Finset PartyId} {rs : PSt S W K PK SK SS C} (h : InvPP N rs)
+    (inp : Inst → Option (PInp W SS)) {z : Inst} {rc : Rec K} (hz : rs.x.st.recs z = some rc)
+    {ip : PInp W SS} (hip : ip.1.ini ∈ N ∧ ip.1.res ∈ N) (k : K) :
+    InvPP N (PQXDHSquareHops.deliverD rs inp z rc ip k).1.1 := by
+  have hrecs' : ∀ (v : K) z' r, (setRec rs.x.st z { rc with key := some v }).recs z' = some r →
+      z'.2 ∈ N ∧ r.peer ∈ N := fun v z' r hr => by
+    simp only [setRec] at hr
+    by_cases hz' : z' = z
+    · subst hz'
+      simp only [Function.update_self, Option.some.injEq] at hr
+      subst hr
+      exact h.2 _ rc hz
+    · simp only [Function.update_of_ne hz'] at hr
+      exact h.2 z' r hr
+  unfold PQXDHSquareHops.deliverD
+  split
+  · refine ⟨fun e he => ?_, hrecs' _⟩
+    rcases roDet_mem rs.ro ip k e he with he | rfl
+    · exact h.1 e he
+    · exact hip
+  · exact ⟨h.1, hrecs' _⟩
+
+omit [Fintype S] [Fintype K] [Nonempty K] in
+/-- **The start of the simulator keeps the invariant of the parties** on the events that name
+parties of `N`. -/
+theorem invPP_simStartD {N : Finset PartyId} (s : SimSt S W K PK SK SS C) (e : OEv W SS C)
+    (d : PDraw S K PK SK SS C) (h : InvPP N s.1) (he : EvInP N e) :
+    InvPP N (simStartD P G s e d).1.1 := by
+  have hadd : ∀ (sid : SessionId) (pid peer : PartyId) (role : Role), pid ∈ N ∧ peer ∈ N →
+      ∀ z rz, (addSession s.1.x.st (sid, pid) peer role).recs z = some rz →
+        z.2 ∈ N ∧ rz.peer ∈ N := by
+    intro sid pid peer role hm z rz hz
+    simp only [addSession] at hz
+    split at hz
+    · exact h.2 z rz hz
+    · by_cases hzx : z = (sid, pid)
+      · subst hzx
+        simp only [Function.update_self, Option.some.injEq] at hz
+        subst hz
+        exact hm
+      · simp only [Function.update_of_ne hzx] at hz
+        exact h.2 z rz hz
+  rcases e with (⟨sid, pid, peer, role⟩ | ⟨sid, pid⟩) | (_ | _ | pid | ⟨sid, pid⟩ |
+    ⟨sid, pid⟩ | pid | ⟨sid, pid⟩ | ⟨sid, pid, e, c⟩ | q)
+  · simp only [simStartD]
+    split
+    · split
+      · exact ⟨h.1, hadd sid pid peer role he⟩
+      · exact ⟨h.1, hadd sid pid peer role he⟩
+    · exact h
+  · exact h
+  · exact h
+  · exact ⟨h.1, fun z rz hz => h.2 z rz (by rw [← (pollStep_fst _).1]; exact hz)⟩
+  · exact h.of_eq rfl (ltD_st _ _ _)
+  · exact h
+  · exact h
+  · simp only [simStartD]
+    split
+    · exact h
+    · exact (h.of_eq rfl (ltD_st _ _ _) : InvPP N { s.1 with x := (ltD s.1.x pid d.1.2.1).2 })
+  · simp only [simStartD, simCompleteD]
+    repeat' split
+    all_goals first
+      | exact h
+      | (refine InvPP.deliverD ?_ _ (by simp only [ltD_st]; assumption) ?_ _
+         · exact h.of_eq rfl (by simp only [ltD_st])
+         · exact h.2 _ _ (by assumption))
+  · simp only [simStartD, simSendD]
+    repeat' split
+    all_goals first
+      | exact h
+      | (refine InvPP.deliverD ?_ _ (by simp only [ltD_st]; assumption) ?_ _
+         · exact h.of_eq rfl (by simp only [ltD_st])
+         · exact ⟨(h.2 _ _ (by assumption)).2, (h.2 _ _ (by assumption)).1⟩)
+  · simp only [simStartD]
+    refine ⟨fun e' he' => ?_, h.2⟩
+    rcases roDet_mem s.1.ro q d.1.2.2.2 e' he' with he' | rfl
+    · exact h.1 e' he'
+    · exact he
+
+omit [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K]
+  [DecidableEq SS] in
+theorem invPP_init (N : Finset PartyId) :
+    InvPP N (simInitP (S := S) (W := W) (K := K) (PK := PK) (SK := SK) (SS := SS) (C := C)).1.1 :=
+  ⟨(fun _ h => by cases h), (fun _ _ h => by cases h)⟩
+
+omit [Fintype S] [Fintype K] [Nonempty K] [Inhabited K] [DecidableEq SS] in
+/-- **The Diffie–Hellman part of the bad event**: the table of the simulated world holds an input
+whose initiator and responder are uncorrupt and whose `DH1` is the Diffie–Hellman value of the
+identity key of the initiator and the signed prekey of the responder. -/
+def PQDH1Hit (s : SimSt S W K PK SK SS C) : Prop :=
+  ∃ ip v ikA spkA ikB spkB, s.1.ro.lookup ip = some v ∧ s.1.x.st.corrupt ip.1.ini = false ∧
+    s.1.x.st.corrupt ip.1.res = false ∧ s.1.x.lt ip.1.ini = some (ikA, spkA) ∧
+    s.1.x.lt ip.1.res = some (ikB, spkB) ∧ ip.1.dh1 = G.pub (ikA * spkB)
+
+omit [Fintype S] [Fintype K] [Nonempty K] [Inhabited K] in
+/-- **The bad event `PQHit` implies its Diffie–Hellman part**: the recorded input of a session
+whose party and peer are uncorrupt names them as initiator and responder, and its `DH1` is the
+Diffie–Hellman value of their long-term keys. -/
+theorem pqHit_dh1 {t : SimSt S W K PK SK SS C} {dlv : Inst → Option C}
+    (h : PQHit P G t dlv) : PQDH1Hit G t := by
+  obtain ⟨y, r, ip, v, -, -, hl, hc1, hc2, hsh, ⟨ikA, spkA, ikB, spkB, ha, hb, hd⟩, -⟩ := h
+  obtain ⟨-, ⟨-, h1, h2⟩ | ⟨-, h1, h2⟩⟩ := hsh
+  · exact ⟨ip, v, ikA, spkA, ikB, spkB, hl, by rw [h1]; exact hc1, by rw [h2]; exact hc2, ha,
+      hb, hd⟩
+  · exact ⟨ip, v, ikA, spkA, ikB, spkB, hl, by rw [h2]; exact hc2, by rw [h1]; exact hc1, ha,
+      hb, hd⟩
+
+omit [Fintype S] [Fintype K] [Nonempty K] [Inhabited K] in
+/-- On the invariant of the parties, the Diffie–Hellman part of the bad event is the bad event
+of a pair of `N`. -/
+theorem pqdh1Hit_pair {N : Finset PartyId} {s : SimSt S W K PK SK SS C} (h : InvPP N s.1)
+    (hd : PQDH1Hit G s) : ∃ ab ∈ N ×ˢ N, PQDH1HitAB G ab.1 ab.2 s := by
+  obtain ⟨ip, v, ikA, spkA, ikB, spkB, hl, hi, hr, hla, hlb, hd⟩ := hd
+  have hm := h.1 _ (lookup_mem hl)
+  exact ⟨(ip.1.ini, ip.1.res), Finset.mem_product.mpr hm, ip, v, ikA, spkA, ikB, spkB, hl, rfl,
+    rfl, hi, hr, hla, hlb, hd⟩
+
+open Classical in
+/-- The bad-event experiment of `PQXDHSquareHops` is at most the flag of the Diffie–Hellman part
+`PQDH1Hit` in the simulated world. -/
+theorem badGame_le_sim (B : OracleAdv (OEv W SS C) (OOut S W K PK C) Bool) :
+    badGame P G B true ≤
+      (OracleAdv.run (OracleAdv.flagWhen (fun _ _ z => PQDH1Hit G z.2.1) (simOP (K := K) P G))
+        B (simInitP, false)).toOuterMeasure {y | y.2.2 = true} := by
+  have hJ : ∀ (s : JSt S W K PK SK SS C) (e : OEv W SS C),
+      (jointSim P G s e).map (Prod.map id fun s' => s'.1.1) = simOP P G s.1.1 e :=
+    jointSim_map P G
+  have hO : ∀ (st : JSt S W K PK SK SS C × Bool) (d : OEv W SS C),
+      (OracleAdv.flagWhen (fun _ _ x => PQDH1Hit G x.2.1.1.1) (jointSim P G) st d).map
+          (Prod.map id fun st => (st.1.1.1, st.2)) =
+        OracleAdv.flagWhen (fun _ _ z => PQDH1Hit G z.2.1) (simOP P G) (st.1.1.1, st.2) d := by
+    intro st d
+    simp only [OracleAdv.flagWhen]
+    rw [← hJ st.1 d, PMF.map_comp, PMF.map_comp]
+    rfl
+  unfold badGame
+  rw [map_flag_apply]
+  refine (OracleAdv.run_flagWhen_mono (jointSim P G) _ (fun _ _ x => PQDH1Hit G x.2.1.1.1)
+    (fun _ _ x hx => pqHit_dh1 P G hx) B _).trans (le_of_eq ?_)
+  have h := congrArg (fun p => PMF.toOuterMeasure p {y | y.2.2 = true})
+    (OracleAdv.run_map_state _ _ _ hO B (jointInit, false))
+  simp only [PMF.toOuterMeasure_map_apply] at h
+  exact h
+
+open Classical in
+/-- **The bad event of the PQXDH square under the gap Diffie–Hellman assumption.** For an oracle
+adversary `B` that names only parties of the finite set `N`, the probability of the bad event
+`PQHit` is at most the sum over the pairs `(a, b)` of `N` of the gap Diffie–Hellman advantages of
+the reductions `pqGdhRed G P a b B`. -/
+theorem badGame_le_gapDH (N : Finset PartyId) (B : OracleAdv (OEv W SS C) (OOut S W K PK C) Bool)
+    (hB : NamesInP N B) :
+    badGame P G B true ≤ ∑ a ∈ N, ∑ b ∈ N, GapDH_Advantage (gapDHDef G) (pqGdhRed G P a b B) := by
+  have hI : ∀ (t : SimSt S W K PK SK SS C × St K) (e : OEv W SS C), InvPP N t.1.1 → EvInP N e →
+      ∀ x ∈ (simOP P G t e).support, InvPP N x.2.1.1 := by
+    intro t e ht he x hx
+    rw [simOP, simGame_oracle_eq] at hx
+    obtain ⟨r, -, hr⟩ := (PMF.mem_support_map_iff _ _ _).mp hx
+    rw [← hr]
+    simp only [Prod.snd_swap, simWorldD]
+    rw [stop_drive0D _ _ (fun _ _ => rfl)]
+    exact invPP_simStartD P G t.1 e r.1 ht he
+  have h₁ := run_flag_le_of_inv_on (simOP P G) (EvInP N) (fun t => InvPP N t.1.1)
+    (fun t => PQDH1Hit G t.1) (fun t => ∃ ab ∈ N ×ˢ N, PQDH1HitAB G ab.1 ab.2 t.1) hI
+    (fun t ht hd => pqdh1Hit_pair G ht hd) B hB simInitP (invPP_init N)
+  have h₂ := run_flag_union_le (simOP P G) (fun ab t => PQDH1HitAB G ab.1 ab.2 t.1) (N ×ˢ N) B
+    simInitP
+  have h₃ : ∑ ab ∈ N ×ˢ N, pairBadP P G ab.1 ab.2 B ≤
+      ∑ ab ∈ N ×ˢ N, GapDH_Advantage (gapDHDef G) (pqGdhRed G P ab.1 ab.2 B) :=
+    Finset.sum_le_sum fun ab _ => pairBad_le_gapDHP P G ab.1 ab.2 B
+  exact (badGame_le_sim P G B).trans ((h₁.trans (h₂.trans h₃)).trans_eq (Finset.sum_product _ _ _))
+
+open Classical in
+/-- The gap Diffie–Hellman bound of the PQXDH square at the oracle adversary `B` and the finite
+set of parties `N`: the sum over the pairs of `N` of the gap Diffie–Hellman advantages of
+`pqGdhRed`, when `B` names only parties of `N`, and `⊤` otherwise. -/
+noncomputable def gdhBoundP (N : Finset PartyId) (B : OracleAdv (OEv W SS C) (OOut S W K PK C) Bool) :
+    ℝ≥0∞ :=
+  if NamesInP N B then ∑ a ∈ N, ∑ b ∈ N, GapDH_Advantage (gapDHDef G) (pqGdhRed G P a b B) else ⊤
+
+/-- **PQXDH realizes `F_AKE` behind `pqxdhSim` under the gap Diffie–Hellman assumption.** For
+every finite set of parties `N` and every environment `Z` whose oracle reduction
+`OProt.oracle.reduction Z` names only parties of `N`, the distance between the real PQXDH
+protocol and the simulator running with `F_AKE` is at most the sum over the pairs `(a, b)` of `N`
+of the gap Diffie–Hellman advantages of the reductions
+`pqGdhRed G P a b (OProt.oracle.reduction Z)`; the bound is `⊤` for the other environments. -/
+theorem pqxdh_realizesSim_gapDH (N : Finset PartyId) :
+    RealizesSim (pqxdhReal (K := K) P G) (F_AKE (SPComp.sample K) true) (pqxdhSim P G)
+      (fun _ Z => gdhBoundP P G N
+        ((OProt.oracle (Q := OEv W SS C) (A := OOut S W K PK C)).reduction Z)) :=
+  fun ζ Z => (pqxdh_realizesSim_oracleGame P G ζ Z).trans (by
+    by_cases hN : NamesInP N ((OProt.oracle (Q := OEv W SS C) (A := OOut S W K PK C)).reduction Z)
+    · simp only [gdhBoundP, hN, ↓reduceIte]
+      exact (pqxdh_advantage_le_badGame P G _).trans (badGame_le_gapDH P G N _ hN)
+    · simp only [gdhBoundP, hN, ↓reduceIte]
+      exact le_top)
+
+end Names
 
 end CatCrypt.Crypto.AKE.PQXDHSquareGDH
