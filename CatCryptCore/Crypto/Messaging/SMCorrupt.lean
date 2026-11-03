@@ -2725,4 +2725,126 @@ theorem pasEpochs_run (C : CKADef Sc Msg Key) [CKACoins C Rand]
 
 end Passive
 
+/-! ## The passive game as the instance without corruption -/
+
+section PassiveMain
+
+variable {Sc Msg Key Rand RK Sa W Ct : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
+  [SampleableType Ct] [Fintype RK] [Nonempty RK] [Fintype Key] [Nonempty Key] [Fintype Sa]
+  [Nonempty Sa]
+
+/-- The views of the passive game with the messages of global index below `k` replaced by
+uniform ciphertexts. -/
+noncomputable def smPasDist (C : CKADef Sc Msg Key) [CKACoins C Rand]
+    (initP : PMF (Msg × Sc × Sc)) (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa))
+    (D : AEADDef W Ct) (msgs : List (List (W × W))) (k : ℕ) : PMF (SMView Msg Ct) :=
+  initP.bind fun i => (ckaRunP C msgs.length i.2.1 i.2.2).bind fun q =>
+    (PMF.uniformFintype RK).bind fun rk =>
+      (ctsDistAll G D k 0 (rootRun R rk (q.1.map Prod.snd)) msgs).map fun cts =>
+        ((i.1, q.1.map Prod.fst), cts)
+
+theorem sm_real_eq_pas (C : CKADef Sc Msg Key) [CKACoins C Rand] (hS : CKACoins.Sound C)
+    (initP : PMF (Msg × Sc × Sc)) (hinit : C.init = liftPMF initP)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (msgs : List (List (W × W))) :
+    sm_real C R G D msgs = liftPMF (smPasDist C initP R G D msgs 0) := by
+  unfold sm_real smPasDist
+  simp only [hinit, ckaRun_eq_liftPMF C hS, sample_eq_liftPMF, liftPMF_bind_pure,
+    liftPMF_bind_liftPMF, ctsDistAll_zero, PMF.pure_map]
+  rfl
+
+theorem rootRun_length (R : PRGDef (RK × Key) (RK × Sa)) (rk : RK) (Is : List Key) :
+    (rootRun R rk Is).length = Is.length := by
+  induction Is generalizing rk with
+  | nil => rfl
+  | cons I Is ih => simp only [rootRun, List.length_cons, ih]
+
+theorem sm_ideal_eq_pas (C : CKADef Sc Msg Key) [CKACoins C Rand] (hS : CKACoins.Sound C)
+    (initP : PMF (Msg × Sc × Sc)) (hinit : C.init = liftPMF initP)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (msgs : List (List (W × W))) :
+    sm_ideal C msgs = liftPMF (smPasDist C initP R G D msgs (msgs.map List.length).sum) := by
+  unfold sm_ideal ckaPub smPasDist
+  simp only [hinit, ckaRun_eq_liftPMF C hS, sample_eq_liftPMF, liftPMF_bind_pure,
+    liftPMF_bind_liftPMF]
+  congr 1
+  rw [PMF.bind_bind]
+  refine congrArg _ (funext fun i => ?_)
+  rw [PMF.bind_map]
+  refine PMF.bind_congr_support _ _ _ fun q hq => ?_
+  have hl := ckaRunP_length C msgs.length i.2.1 i.2.2 q hq
+  have h : ∀ rk : RK, (ctsDistAll G D (msgs.map List.length).sum 0
+      (rootRun R rk (q.1.map Prod.snd)) msgs) =
+      (PMF.uniformFintype (IdealCts Ct msgs msgs.length)).map ctsOf := fun rk =>
+    ctsDistAll_unif G D _ 0 _ msgs (by omega) (by rw [rootRun_length, List.length_map, hl])
+  simp only [h, PMF.bind_const, PMF.map_comp]
+  rw [← PMF.bind_pure_comp]
+  rfl
+
+theorem outBool_eq_optBit {α : Type} (A : α → SPComp Bool) (a : α) :
+    outBool A a = (A a Heap.empty).map optBit := by
+  unfold outBool
+  congr 1
+
+/-- **The game of the passive adversary.** The corruption game of `smPassiveAdv msgs A k` with
+the challenge mode `ideal` accepts with the probability that `A` accepts on the passive views
+with the messages below the threshold `pasThr ideal k` uniform. -/
+theorem smPassive_game_eq (C : CKADef Sc Msg Key) [CKACoins C Rand]
+    (initP : PMF (Msg × Sc × Sc)) (hinit : C.init = liftPMF initP)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (ΔFS ΔPCS : ℕ) (ideal : Bool) (msgs : List (List (W × W)))
+    (A : SMView Msg Ct → SPComp Bool) (k : ℕ) :
+    prTrue (sm_corrupt_game C R G D ΔFS ΔPCS ideal (smPassiveAdv msgs A k)) Heap.empty =
+      prTrue ((liftPMF (smPasDist C initP R G D msgs (pasThr ideal k))).bind A) Heap.empty := by
+  rw [sm_corrupt_game, sm_corrupt_gameOf_eq_liftPMF C initP hinit, prTrue_liftPMF,
+    prTrue_liftPMF_bind]
+  congr 1
+  simp only [smPassiveAdv, PMF.pure_bind, smPasDist, PMF.bind_bind]
+  refine congrArg _ (funext fun i => ?_)
+  rw [PMF.bind_comm]
+  refine congrArg _ (funext fun rk => ?_)
+  rw [OracleAdv.run_bind, PMF.map_bind]
+  simp only [OracleAdv.run_rand, OracleAdv.run_ret]
+  have hrun := pasEpochs_run C R G D ΔFS ΔPCS (msgEpoch 0 0 msgs k + 1) ideal k i.1 msgs 0 0
+    i.2.1 i.2.2 rk (smInit i rk) rfl rfl rfl rfl rfl rfl (fun _ _ => rfl)
+  have h : ∀ x : (List Msg × List (List Ct)) × SMSt Sc Msg RK Sa,
+      PMF.map Prod.fst (PMF.bind (A ((i.1, x.1.1), x.1.2) Heap.empty) fun o =>
+        PMF.pure (optBit o, x.2)) = (A ((i.1, x.1.1), x.1.2) Heap.empty).map optBit := by
+    intro x
+    rw [PMF.map_bind]
+    simp only [PMF.pure_map]
+    exact PMF.bind_pure_comp _ _
+  simp only [h]
+  rw [show (fun x : (List Msg × List (List Ct)) × SMSt Sc Msg RK Sa =>
+      (A ((i.1, x.1.1), x.1.2) Heap.empty).map optBit) =
+      (fun r : List Msg × List (List Ct) => (A ((i.1, r.1), r.2) Heap.empty).map optBit) ∘
+        Prod.fst from rfl, ← PMF.bind_map, hrun]
+  simp only [PMF.bind_bind, PMF.bind_map]
+  refine congrArg _ (funext fun q => congrArg _ (funext fun cts => ?_))
+  simp only [Function.comp_apply, outBool_eq_optBit]
+
+/-- **The passive secure-messaging game from the game with corruption.** For every passive
+distinguisher `A` of the double-ratchet game `sm_real`/`sm_ideal` over the epochs `msgs`, and
+any corruption delays, the passive advantage is at most the sum over the messages `k` (in the
+order of the epochs) of the advantages with corruption of the adversaries
+`smPassiveAdv msgs A k`, which never corrupt: hybrid `k` has the first `k` ciphertexts uniform,
+and the adversary of message `k` challenges it. -/
+theorem sm_advantage_le_corrupt_passive (C : CKADef Sc Msg Key) [CKACoins C Rand]
+    (hS : CKACoins.Sound C) (initP : PMF (Msg × Sc × Sc)) (hinit : C.init = liftPMF initP)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (ΔFS ΔPCS : ℕ) (msgs : List (List (W × W))) (A : SMView Msg Ct → SPComp Bool) :
+    SM_Advantage C R G D msgs A ≤
+      ∑ k ∈ Finset.range (msgs.map List.length).sum,
+        SM_Corrupt_Advantage C R G D ΔFS ΔPCS (smPassiveAdv msgs A k) := by
+  unfold SM_Advantage
+  rw [sm_real_eq_pas C hS initP hinit R G D msgs, sm_ideal_eq_pas C hS initP hinit R G D msgs]
+  refine (HybridArgument.advantage_hybrid_dep (fun k => liftPMF (smPasDist C initP R G D msgs k))
+    A _).trans (Finset.sum_le_sum fun k _ => le_of_eq ?_)
+  unfold AdvantageA SM_Corrupt_Advantage Advantage
+  rw [smPassive_game_eq C initP hinit R G D ΔFS ΔPCS false msgs A k,
+    smPassive_game_eq C initP hinit R G D ΔFS ΔPCS true msgs A k]
+  simp only [pasThr, Bool.false_eq_true, ite_false, ite_true]
+
+end PassiveMain
+
 end CatCrypt.Crypto.Messaging
