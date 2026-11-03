@@ -10,6 +10,7 @@ public import CatCryptCore.ForMathlib.GradeQuantale
 public import CatCryptCore.ForMathlib.GaloisRing
 public import CatCryptCore.ForMathlib.Matrix.Hermitian
 public import CatCryptCore.ForMathlib.Matrix.ProjectorRewinding
+public import CatCryptCore.ForMathlib.Matrix.SimultaneousDiag
 public import CatCryptCore.ForMathlib.PMFSupport
 public import CatCryptCore.ForMathlib.PMFPi
 public import CatCryptCore.ForMathlib.PMFUniform
