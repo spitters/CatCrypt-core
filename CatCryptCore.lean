@@ -507,6 +507,7 @@ public import CatCryptCore.Container.PolyPiSigma
 public import CatCryptCore.Container.PolyNaturalModel
 public import CatCryptCore.Crypto.Party.CompileFunctor
 public import CatCryptCore.Crypto.Party.Derived
+public import CatCryptCore.Crypto.Party.Typed
 public import CatCryptCore.Crypto.Party.GuardCoupling
 public import CatCryptCore.Crypto.Party.Timed
 public import CatCryptCore.Crypto.Party.Relational
