@@ -326,6 +326,7 @@ public import CatCryptCore.Quantum.PauliTwirl
 public import CatCryptCore.Quantum.QRealizes
 public import CatCryptCore.Quantum.QRealizesMem
 public import CatCryptCore.Quantum.QRealizesMemReset
+public import CatCryptCore.Quantum.QPullback
 public import CatCryptCore.Quantum.QRealizesStep
 public import CatCryptCore.Quantum.QSimTimed
 public import CatCryptCore.Quantum.QOTPReactive
