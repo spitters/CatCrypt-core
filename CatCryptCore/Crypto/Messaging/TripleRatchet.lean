@@ -72,8 +72,9 @@ the distance between two computations.
 
 * `mixKeys`, `cka_mix`, `mixLeft`, `mixRight` — partial replacement of CKA keys
 * `prodCKARedR` — the CKA reduction of the second component with the real game of the first
-* `trHybK`, `trCKAView`, `trCKARed` — the CKA phase with partial replacement
-* `trHybP`, `trRootPub`, `trRootView`, `trRoot_real`, `trRoot_ideal` — the root phase
+* `trHybK`, `trCKAViewL`, `trCKAView`, `trCKARed` — the CKA phase with partial replacement
+* `trHybP`, `trRootPub`, `trRootViewL`, `trRootView`, `trRoot_real`, `trRoot_ideal` — the root
+  phase
 * `runBit`, `oneQueryAdv`, `rootOracleRedOf` — one-query oracle adversaries
 * `trRoot` — the root step from a dual PRF
 * `trRootPreL`, `trRootRedL`, `trRootPreR`, `trRootRedR` — the dual-PRF reductions
@@ -87,7 +88,10 @@ the distance between two computations.
 * `tr_advantage_le_min` — the advantage is at most the minimum of the two chains
 * `oneQueryAdv.timeBound_timed`, `rootOracleRedOf.tree.timeBound_timed`,
   `trRootRedL.timeBound_timed`, `trRootRedR.timeBound_timed`, `trCKARed.timeBound_timed`,
-  `prodCKARedR.timeBound_timed` — the times of the costed reductions
+  `prodCKARedR.timeBound_timed`, `ckaRun.tree.timeBound_timed` — the times of the costed
+  reductions; the costed forms `trRootRedL.timed`, `trRootRedR.timed` (`derive_timed`) and
+  `trCKARed.tree.timed`, `prodCKARedR.tree.timed` (`derive_reduction`) and the costs of the
+  views `trCKAViewL.timedCost`, `trRootViewL.timedCost` (`derive_cost`) are derived
 
 ## References
 
@@ -297,14 +301,22 @@ noncomputable def trHybK (C : CKADef Sc Msg Key) (mix : X → Key → Key)
           SPComp.pure ((i.1, p.1.map Prod.fst),
             smCts G D (rootRun R rk (mixKeys mix (List.ofFn u) (p.1.map Prod.snd))) msgs)
 
+/-- The view of the CKA reduction with the replacement `mix`, from the list `us` of the
+uniform values of the epochs before the challenge epoch, the root key `rk` and the CKA view
+`v`. Its arguments are first-order data, so that its cost `trCKAViewL.timedCost` is derived. -/
+def trCKAViewL (mix : X → Key → Key) (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa))
+    (D : AEADDef W Ct) (msgs : List (List (W × W))) (us : List X) (rk : RK)
+    (v : CKAView Msg Key) : SMView Msg Ct :=
+  ((v.1, v.2.1.map Prod.fst ++ v.2.2.1.1 :: v.2.2.2.map Prod.fst),
+    smCts G D (rootRun R rk (mixKeys mix us (v.2.1.map Prod.snd) ++
+      v.2.2.1.2 :: v.2.2.2.map Prod.snd)) msgs)
+
 /-- The view of the CKA reduction at epoch `t` with the replacement `mix`, from the uniform
 values `x.1` of the epochs before `t`, the root key `x.2` and the CKA view `v`. -/
 def trCKAView (mix : X → Key → Key) (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa))
     (D : AEADDef W Ct) (msgs : List (List (W × W))) (t : ℕ) (x : (Fin t → X) × RK)
     (v : CKAView Msg Key) : SMView Msg Ct :=
-  ((v.1, v.2.1.map Prod.fst ++ v.2.2.1.1 :: v.2.2.2.map Prod.fst),
-    smCts G D (rootRun R x.2 (mixKeys mix (List.ofFn x.1) (v.2.1.map Prod.snd) ++
-      v.2.2.1.2 :: v.2.2.2.map Prod.snd)) msgs)
+  trCKAViewL mix R G D msgs (List.ofFn x.1) x.2 v
 
 /-- The CKA distinguisher of epoch `t` with the replacement `mix`: replaced keys for the epochs
 before `t`, the challenge key for epoch `t`, the real keys after it. -/
@@ -329,7 +341,8 @@ theorem trHybK_bind_eq_real (C : CKADef Sc Msg Key) (mix : X → Key → Key)
     (A : SMView Msg Ct → SPComp Bool) :
     (trHybK C mix R G D msgs t).bind A =
       (cka_real C t m).bind (trCKARed mix R G D msgs t A) := by
-  simp only [trHybK, cka_real, trCKARed, smSampleRedOf, trCKAView, SPComp.monad_bind_eq,
+  simp only [trHybK, cka_real, trCKARed, smSampleRedOf, trCKAView, trCKAViewL,
+    SPComp.monad_bind_eq,
     SPComp.bind_assoc, SPComp.pure_bind]
   congr 1; funext i
   rw [hm, ckaRun_add_bind]
@@ -350,7 +363,8 @@ theorem trHybK_succ_bind_eq_mix (C : CKADef Sc Msg Key) (mix : X → Key → Key
     (A : SMView Msg Ct → SPComp Bool) :
     (trHybK C mix R G D msgs (t + 1)).bind A =
       (cka_mix C mix t m).bind (trCKARed mix R G D msgs t A) := by
-  simp only [trHybK, cka_mix, trCKARed, smSampleRedOf, trCKAView, SPComp.monad_bind_eq,
+  simp only [trHybK, cka_mix, trCKARed, smSampleRedOf, trCKAView, trCKAViewL,
+    SPComp.monad_bind_eq,
     SPComp.bind_assoc, SPComp.pure_bind]
   congr 1; funext i
   rw [hm, ckaRun_add_bind]
@@ -397,6 +411,15 @@ noncomputable def trRootPub (C : CKADef Sc Msg Key) (t r : ℕ) :
           SPComp.pure ((i.1, p.1.map Prod.fst ++ o.2.1 :: q.1.map Prod.fst),
             q.1.map Prod.snd, o.2.2)
 
+/-- The view of the root hop, from the list `x.1` of the FS-AEAD states of the epochs before
+the hop, the list `x.2` of the values of the replacement after it, the public part `c` and the
+next root key and FS-AEAD state `y` of the epoch of the hop. Its arguments are first-order
+data, so that its cost `trRootViewL.timedCost` is derived. -/
+def trRootViewL (mix : X → Key → Key) (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa))
+    (D : AEADDef W Ct) (msgs : List (List (W × W))) (x : List Sa × List X)
+    (c : (Msg × List Msg) × List Key × Key) (y : RK × Sa) : SMView Msg Ct :=
+  (c.1, smCts G D (x.1 ++ y.2 :: rootRun R y.1 (mixKeys mix x.2 c.2.1)) msgs)
+
 /-- The view of the root hop at epoch `t` with `r` epochs after it, from the uniform FS-AEAD
 states `x.1` of the epochs before `t`, the uniform values `x.2` of the replacement after it,
 the public part `c` and the next root key and FS-AEAD state `y` of epoch `t`. -/
@@ -404,8 +427,7 @@ def trRootView (mix : X → Key → Key) (R : PRGDef (RK × Key) (RK × Sa)) (G 
     (D : AEADDef W Ct) (msgs : List (List (W × W))) (t r : ℕ)
     (x : (Fin t → Sa) × (Fin r → X)) (c : (Msg × List Msg) × List Key × Key) (y : RK × Sa) :
     SMView Msg Ct :=
-  (c.1, smCts G D (List.ofFn x.1 ++ y.2 :: rootRun R y.1 (mixKeys mix (List.ofFn x.2) c.2.1))
-    msgs)
+  trRootViewL mix R G D msgs (List.ofFn x.1, List.ofFn x.2) c y
 
 /-- The root hop at epoch `t`, real side: the root step on a uniform root key and the key of
 epoch `t` with `mix` applied to a uniform value. -/
@@ -442,7 +464,8 @@ theorem trHybP_bind_eq_real (C : CKADef Sc Msg Key) (mix : X → Key → Key)
     (msgs : List (List (W × W))) (t r : ℕ) (hm : msgs.length = t + (r + 1))
     (A : SMView Msg Ct → SPComp Bool) :
     (trHybP C mix R G D msgs t (r + 1)).bind A = (trRoot_real C mix R G D msgs t r).bind A := by
-  simp only [trHybP, trRoot_real, trRootPub, trRootView, SPComp.bind_assoc, SPComp.pure_bind]
+  simp only [trHybP, trRoot_real, trRootPub, trRootView, trRootViewL, SPComp.bind_assoc,
+    SPComp.pure_bind]
   congr 1; funext i
   rw [hm, ckaRun_add_bind]
   apply ckaRun_bind_congr; intro p hp
@@ -468,7 +491,8 @@ theorem trHybP_succ_bind_eq_ideal (C : CKADef Sc Msg Key) (mix : X → Key → K
     (A : SMView Msg Ct → SPComp Bool) :
     (trHybP C mix R G D msgs (t + 1) r).bind A =
       (trRoot_ideal C mix R G D msgs t r).bind A := by
-  simp only [trHybP, trRoot_ideal, trRootPub, trRootView, SPComp.bind_assoc, SPComp.pure_bind]
+  simp only [trHybP, trRoot_ideal, trRootPub, trRootView, trRootViewL, SPComp.bind_assoc,
+    SPComp.pure_bind]
   congr 1; funext i
   rw [hm, ckaRun_add_bind]
   apply ckaRun_bind_congr; intro p hp
@@ -660,41 +684,60 @@ def trRoot (F : RK × K₁ → K₂ → RK × Sa) : PRGDef (RK × (K₁ × K₂)
   stretch x := F (x.1, x.2.1) x.2.2
 
 /-- The computation of the left root reduction before its query: the public part of the root
-hop and the uniform values of the epochs before and after `t`. -/
+hop and the lists of the uniform values of the epochs before and after `t`. -/
 noncomputable def trRootPreL (C : CKADef (S₁ × S₂) (M₁ × M₂) (K₁ × K₂)) (t r : ℕ) :
     SPComp ((((M₁ × M₂) × List (M₁ × M₂)) × List (K₁ × K₂) × (K₁ × K₂)) ×
-      ((Fin t → Sa) × (Fin r → K₁))) :=
+      (List Sa × List K₁)) :=
   SPComp.bind (trRootPub C t r) fun c =>
-    SPComp.bind (SPComp.sample ((Fin t → Sa) × (Fin r → K₁))) fun x => SPComp.pure (c, x)
+    SPComp.bind (SPComp.sample ((Fin t → Sa) × (Fin r → K₁))) fun x =>
+      SPComp.pure (c, (List.ofFn x.1, List.ofFn x.2))
 
 /-- **The dual-PRF reduction of the root hop, Diffie–Hellman side.** The left key of `F` is the
 root key and the Diffie–Hellman key of epoch `t`; the reduction queries the KEM key of epoch
-`t` and runs the secure-messaging adversary on the view built from the answer. -/
+`t` and runs the secure-messaging adversary on the view built from the answer. The view reads
+the first `t` FS-AEAD states and the first `r` keys of its input, all of them on the support
+of `trRootPreL`, so that its cost is bounded on every input. -/
 noncomputable def trRootRedL (C : CKADef (S₁ × S₂) (M₁ × M₂) (K₁ × K₂))
     (F : RK × K₁ → K₂ → RK × Sa) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
     (msgs : List (List (W × W))) (t r : ℕ) (A : SMView (M₁ × M₂) Ct → SPComp Bool) :
     OracleAdv K₂ (RK × Sa) Bool :=
   oneQueryAdv (trRootPreL C t r) (fun z => z.1.2.2.2)
-    (fun z y => A (trRootView mixLeft (trRoot F) G D msgs t r z.2 z.1 y))
+    (fun z y => A (trRootViewL mixLeft (trRoot F) G D msgs (z.2.1.take t, z.2.2)
+      (z.1.1, z.1.2.1.take r, z.1.2.2) y))
 
 /-- The computation of the right root reduction before its query: the public part of the root
-hop, the uniform values of the epochs before and after `t`, and a uniform root key. -/
+hop, the lists of the uniform values of the epochs before and after `t`, and a uniform root
+key. -/
 noncomputable def trRootPreR (C : CKADef (S₁ × S₂) (M₁ × M₂) (K₁ × K₂)) (t r : ℕ) :
     SPComp ((((M₁ × M₂) × List (M₁ × M₂)) × List (K₁ × K₂) × (K₁ × K₂)) ×
-      ((Fin t → Sa) × (Fin r → K₂)) × RK) :=
+      (List Sa × List K₂) × RK) :=
   SPComp.bind (trRootPub C t r) fun c =>
     SPComp.bind (SPComp.sample ((Fin t → Sa) × (Fin r → K₂))) fun x =>
-      SPComp.bind (SPComp.sample RK) fun rk => SPComp.pure (c, x, rk)
+      SPComp.bind (SPComp.sample RK) fun rk => SPComp.pure (c, (List.ofFn x.1, List.ofFn x.2), rk)
 
 /-- **The dual-PRF reduction of the root hop, KEM side.** The right key of `F` is the KEM key
 of epoch `t`; the reduction samples the root key, queries it with the Diffie–Hellman key of
-epoch `t`, and runs the secure-messaging adversary on the view built from the answer. -/
+epoch `t`, and runs the secure-messaging adversary on the view built from the answer. As in
+`trRootRedL`, the view reads the first `t` FS-AEAD states and the first `r` keys. -/
 noncomputable def trRootRedR (C : CKADef (S₁ × S₂) (M₁ × M₂) (K₁ × K₂))
     (F : RK × K₁ → K₂ → RK × Sa) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
     (msgs : List (List (W × W))) (t r : ℕ) (A : SMView (M₁ × M₂) Ct → SPComp Bool) :
     OracleAdv (RK × K₁) (RK × Sa) Bool :=
   oneQueryAdv (trRootPreR C t r) (fun z => (z.2.2, z.1.2.2.1))
-    (fun z y => A (trRootView mixRight (trRoot F) G D msgs t r z.2.1 z.1 y))
+    (fun z y => A (trRootViewL mixRight (trRoot F) G D msgs (z.2.1.1.take t, z.2.1.2)
+      (z.1.1, z.1.2.1.take r, z.1.2.2) y))
+
+omit [Fintype K₁] [Nonempty K₁] [Fintype K₂] [Nonempty K₂] [Fintype RK] [Nonempty RK]
+  [Fintype Sa] [Nonempty Sa] [SampleableType W] [SampleableType Ct] in
+/-- The keys of the epochs after `t` in the public part of the root hop are `r` keys: two
+continuations that agree on such public parts agree after `trRootPub`. -/
+theorem trRootPub_bind_congr {β : Type} (C : CKADef (S₁ × S₂) (M₁ × M₂) (K₁ × K₂)) (t r : ℕ)
+    (K K' : ((M₁ × M₂) × List (M₁ × M₂)) × List (K₁ × K₂) × (K₁ × K₂) → SPComp β)
+    (h : ∀ c, c.2.1.length = r → K c = K' c) :
+    SPComp.bind (trRootPub C t r) K = SPComp.bind (trRootPub C t r) K' := by
+  simp only [trRootPub, SPComp.bind_assoc, SPComp.pure_bind]
+  congr 1; funext i; congr 1; funext p; congr 1; funext o
+  exact ckaRun_bind_congr C r _ _ _ _ fun q hq => h _ (by simp [hq])
 
 omit [Fintype K₂] [Nonempty K₂] [SampleableType Ct] in
 /-- The root hop of the Diffie–Hellman side is the dual-PRF game of `F` keyed by its left
@@ -709,6 +752,8 @@ theorem trRoot_left_advantage_eq [DecidableEq RK] [DecidableEq K₁] [DecidableE
   unfold DualPRF_Left_Advantage trRootRedL AdvantageA
   rw [← advantage_oneQuery_eq]
   simp only [trRoot_real, trRoot_ideal, trRootPreL, SPComp.bind_assoc, SPComp.pure_bind]
+  congr 1 <;> apply trRootPub_bind_congr <;> intro c hc <;>
+    simp only [trRootView, List.length_ofFn, List.take_of_length_le, le_refl, hc]
   rfl
 
 omit [Fintype K₁] [Nonempty K₁] [SampleableType Ct] in
@@ -725,6 +770,8 @@ theorem trRoot_right_advantage_eq [DecidableEq RK] [DecidableEq K₁] [Decidable
   rw [← advantage_oneQuery_eq]
   simp only [trRoot_real, trRoot_ideal, trRootPreR, SPComp.bind_assoc, SPComp.pure_bind,
     SPComp.sample_prod_eq (RK) (K₂), sample_bind_const]
+  congr 1 <;> apply trRootPub_bind_congr <;> intro c hc <;>
+    simp only [trRootView, List.length_ofFn, List.take_of_length_le, le_refl, hc]
   rfl
 
 end Root
@@ -995,83 +1042,83 @@ variable {S₁ M₁ K₁ S₂ M₂ K₂ RK Sa W Ct : Type} [Fintype K₁] [Nonem
   [Nonempty K₂] [Fintype RK] [Nonempty RK] [Fintype Sa] [Nonempty Sa] [SampleableType W]
   [SampleableType Ct]
 
-/-- The costed form of `trRootRedL`: the costed `oneQueryAdv` with the query cost `qCost` and
-the cost `BCost` of the call of the adversary on the view. -/
-noncomputable def trRootRedL.timed (C : CKADef (S₁ × S₂) (M₁ × M₂) (K₁ × K₂))
-    (F : RK × K₁ → K₂ → RK × Sa) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
-    (msgs : List (List (W × W))) (t r : ℕ) (A : SMView (M₁ × M₂) Ct → SPComp Bool)
-    (qCost : (((M₁ × M₂) × List (M₁ × M₂)) × List (K₁ × K₂) × (K₁ × K₂)) ×
-      ((Fin t → Sa) × (Fin r → K₁)) → ℕ)
-    (BCost : (((M₁ × M₂) × List (M₁ × M₂)) × List (K₁ × K₂) × (K₁ × K₂)) ×
-      ((Fin t → Sa) × (Fin r → K₁)) → RK × Sa → ℕ) :
-    ℕ × OracleAdv.Timed K₂ (RK × Sa) Bool :=
-  oneQueryAdv.timed (trRootPreL C t r) (fun z => z.1.2.2.2) qCost
-    (fun z y => A (trRootView mixLeft (trRoot F) G D msgs t r z.2 z.1 y)) BCost
+/-- A prefix of length at most `n` costs at most two units per element and one more. -/
+theorem take_timedCost_le {α : Type} (n : ℕ) (l : List α) :
+    List.take.timedCost n l ≤ 2 * n + 1 := by
+  induction l generalizing n with
+  | nil => cases n <;> simp [List.take.timedCost]
+  | cons a l ih =>
+    cases n
+    · simp [List.take.timedCost]
+    · have := ih ‹_›; simp [List.take.timedCost]; omega
+
+derive_cost trRootViewL
+
+derive_timed trRootRedL
 
 omit [Fintype K₂] [Nonempty K₂] [Fintype RK] [Nonempty RK] [SampleableType Ct] in
-/-- The costed form of `trRootRedL` erases to `trRootRedL`. -/
-theorem trRootRedL.erase_timed (C : CKADef (S₁ × S₂) (M₁ × M₂) (K₁ × K₂))
-    (F : RK × K₁ → K₂ → RK × Sa) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
-    (msgs : List (List (W × W))) (t r : ℕ) (A : SMView (M₁ × M₂) Ct → SPComp Bool)
-    (qCost : (((M₁ × M₂) × List (M₁ × M₂)) × List (K₁ × K₂) × (K₁ × K₂)) ×
-      ((Fin t → Sa) × (Fin r → K₁)) → ℕ)
-    (BCost : (((M₁ × M₂) × List (M₁ × M₂)) × List (K₁ × K₂) × (K₁ × K₂)) ×
-      ((Fin t → Sa) × (Fin r → K₁)) → RK × Sa → ℕ) :
-    (trRootRedL.timed C F G D msgs t r A qCost BCost).2.erase = trRootRedL C F G D msgs t r A :=
-  oneQueryAdv.erase_timed ..
-
-omit [Fintype K₂] [Nonempty K₂] [Fintype RK] [Nonempty RK] [SampleableType Ct] in
-/-- **Time of `trRootRedL`**, the bound of `oneQueryAdv.timeBound_timed`. -/
+/-- **Time of `trRootRedL`.** With the call cost of the adversary at most `a` and the derived
+cost `trRootViewL.timedCost` of the view at most `tv` on every input, the derived costed
+reduction has time at most `a + tv + 2 t + 2 r + 21`: the bound `qc + b + 11` of
+`oneQueryAdv.timeBound_timed` with the query free and the call of the adversary on the view of
+cost at most `a + tv + 2 t + 2 r + 7` (the two prefixes of lengths `t` and `r`), and three
+units in front. -/
 theorem trRootRedL.timeBound_timed (C : CKADef (S₁ × S₂) (M₁ × M₂) (K₁ × K₂))
-    (F : RK × K₁ → K₂ → RK × Sa) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
-    (msgs : List (List (W × W))) (t r : ℕ) (A : SMView (M₁ × M₂) Ct → SPComp Bool)
-    (qCost : (((M₁ × M₂) × List (M₁ × M₂)) × List (K₁ × K₂) × (K₁ × K₂)) ×
-      ((Fin t → Sa) × (Fin r → K₁)) → ℕ)
-    (BCost : (((M₁ × M₂) × List (M₁ × M₂)) × List (K₁ × K₂) × (K₁ × K₂)) ×
-      ((Fin t → Sa) × (Fin r → K₁)) → RK × Sa → ℕ) {qc b : ℕ}
-    (hq : ∀ x, qCost x ≤ qc) (hB : ∀ x y, BCost x y ≤ b) :
-    OracleAdv.Timed.StepTimeBound (trRootRedL.timed C F G D msgs t r A qCost BCost)
-      (qc + b + 11) :=
-  oneQueryAdv.timeBound_timed _ _ qCost _ BCost hq hB
+    (F : RK × K₁ → K₂ → RK × Sa) (FCost : RK × K₁ → K₂ → ℕ) (G : PRGDef Sa (W × Sa))
+    (D : AEADDef W Ct) (msgs : List (List (W × W))) (t r : ℕ)
+    (A : SMView (M₁ × M₂) Ct → SPComp Bool) (ACost : SMView (M₁ × M₂) Ct → ℕ)
+    (trRoot_stretchCost : (RK × K₁ → K₂ → RK × Sa) → RK × K₁ × K₂ → ℕ)
+    (stretchCost : Sa → ℕ) (encryptCost : W → W → W → ℕ) {a tv : ℕ}
+    (hA : ∀ x, ACost x ≤ a)
+    (hv : ∀ (z : (((M₁ × M₂) × List (M₁ × M₂)) × List (K₁ × K₂) × (K₁ × K₂)) ×
+        (List Sa × List K₁)) (y : RK × Sa),
+      trRootViewL.timedCost mixLeft (fun _ _ => 1) (trRoot F) G D msgs (z.2.1.take t, z.2.2)
+        (z.1.1, z.1.2.1.take r, z.1.2.2) y (trRoot_stretchCost F) stretchCost encryptCost ≤ tv) :
+    OracleAdv.Timed.StepTimeBound
+      (trRootRedL.timed C F FCost G D msgs t r A ACost trRoot_stretchCost stretchCost
+        encryptCost) (a + tv + 2 * t + 2 * r + 21) := by
+  unfold trRootRedL.timed
+  refine (OracleAdv.Timed.stepTimeBound_delay (oneQueryAdv.timeBound_timed _ _ _ _ _
+    (qc := 0) (b := a + tv + 2 * t + 2 * r + 7) (fun _ => le_rfl) fun z y => ?_)).mono
+    (by omega)
+  have := hA (trRootViewL mixLeft (trRoot F) G D msgs (z.2.1.take t, z.2.2)
+    (z.1.1, z.1.2.1.take r, z.1.2.2) y)
+  have := hv z y
+  have := take_timedCost_le t z.2.1
+  have := take_timedCost_le r z.1.2.1
+  omega
 
-/-- The costed form of `trRootRedR`: the costed `oneQueryAdv` with the query cost `qCost` and
-the cost `BCost` of the call of the adversary on the view. -/
-noncomputable def trRootRedR.timed (C : CKADef (S₁ × S₂) (M₁ × M₂) (K₁ × K₂))
-    (F : RK × K₁ → K₂ → RK × Sa) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
-    (msgs : List (List (W × W))) (t r : ℕ) (A : SMView (M₁ × M₂) Ct → SPComp Bool)
-    (qCost : (((M₁ × M₂) × List (M₁ × M₂)) × List (K₁ × K₂) × (K₁ × K₂)) ×
-      ((Fin t → Sa) × (Fin r → K₂)) × RK → ℕ)
-    (BCost : (((M₁ × M₂) × List (M₁ × M₂)) × List (K₁ × K₂) × (K₁ × K₂)) ×
-      ((Fin t → Sa) × (Fin r → K₂)) × RK → RK × Sa → ℕ) :
-    ℕ × OracleAdv.Timed (RK × K₁) (RK × Sa) Bool :=
-  oneQueryAdv.timed (trRootPreR C t r) (fun z => (z.2.2, z.1.2.2.1)) qCost
-    (fun z y => A (trRootView mixRight (trRoot F) G D msgs t r z.2.1 z.1 y)) BCost
-
-omit [Fintype K₁] [Nonempty K₁] [SampleableType Ct] in
-/-- The costed form of `trRootRedR` erases to `trRootRedR`. -/
-theorem trRootRedR.erase_timed (C : CKADef (S₁ × S₂) (M₁ × M₂) (K₁ × K₂))
-    (F : RK × K₁ → K₂ → RK × Sa) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
-    (msgs : List (List (W × W))) (t r : ℕ) (A : SMView (M₁ × M₂) Ct → SPComp Bool)
-    (qCost : (((M₁ × M₂) × List (M₁ × M₂)) × List (K₁ × K₂) × (K₁ × K₂)) ×
-      ((Fin t → Sa) × (Fin r → K₂)) × RK → ℕ)
-    (BCost : (((M₁ × M₂) × List (M₁ × M₂)) × List (K₁ × K₂) × (K₁ × K₂)) ×
-      ((Fin t → Sa) × (Fin r → K₂)) × RK → RK × Sa → ℕ) :
-    (trRootRedR.timed C F G D msgs t r A qCost BCost).2.erase = trRootRedR C F G D msgs t r A :=
-  oneQueryAdv.erase_timed ..
+derive_timed trRootRedR
 
 omit [Fintype K₁] [Nonempty K₁] [SampleableType Ct] in
-/-- **Time of `trRootRedR`**, the bound of `oneQueryAdv.timeBound_timed`. -/
+/-- **Time of `trRootRedR`.** With the call cost of the adversary at most `a` and the derived
+cost `trRootViewL.timedCost` of the view at most `tv` on every input, the derived costed
+reduction has time at most `a + tv + 2 t + 2 r + 21`, as for `trRootRedL`. -/
 theorem trRootRedR.timeBound_timed (C : CKADef (S₁ × S₂) (M₁ × M₂) (K₁ × K₂))
-    (F : RK × K₁ → K₂ → RK × Sa) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
-    (msgs : List (List (W × W))) (t r : ℕ) (A : SMView (M₁ × M₂) Ct → SPComp Bool)
-    (qCost : (((M₁ × M₂) × List (M₁ × M₂)) × List (K₁ × K₂) × (K₁ × K₂)) ×
-      ((Fin t → Sa) × (Fin r → K₂)) × RK → ℕ)
-    (BCost : (((M₁ × M₂) × List (M₁ × M₂)) × List (K₁ × K₂) × (K₁ × K₂)) ×
-      ((Fin t → Sa) × (Fin r → K₂)) × RK → RK × Sa → ℕ) {qc b : ℕ}
-    (hq : ∀ x, qCost x ≤ qc) (hB : ∀ x y, BCost x y ≤ b) :
-    OracleAdv.Timed.StepTimeBound (trRootRedR.timed C F G D msgs t r A qCost BCost)
-      (qc + b + 11) :=
-  oneQueryAdv.timeBound_timed _ _ qCost _ BCost hq hB
+    (F : RK × K₁ → K₂ → RK × Sa) (FCost : RK × K₁ → K₂ → ℕ) (G : PRGDef Sa (W × Sa))
+    (D : AEADDef W Ct) (msgs : List (List (W × W))) (t r : ℕ)
+    (A : SMView (M₁ × M₂) Ct → SPComp Bool) (ACost : SMView (M₁ × M₂) Ct → ℕ)
+    (trRoot_stretchCost : (RK × K₁ → K₂ → RK × Sa) → RK × K₁ × K₂ → ℕ)
+    (stretchCost : Sa → ℕ) (encryptCost : W → W → W → ℕ) {a tv : ℕ}
+    (hA : ∀ x, ACost x ≤ a)
+    (hv : ∀ (z : (((M₁ × M₂) × List (M₁ × M₂)) × List (K₁ × K₂) × (K₁ × K₂)) ×
+        (List Sa × List K₂) × RK) (y : RK × Sa),
+      trRootViewL.timedCost mixRight (fun _ _ => 1) (trRoot F) G D msgs
+        (z.2.1.1.take t, z.2.1.2) (z.1.1, z.1.2.1.take r, z.1.2.2) y (trRoot_stretchCost F)
+        stretchCost encryptCost ≤ tv) :
+    OracleAdv.Timed.StepTimeBound
+      (trRootRedR.timed C F FCost G D msgs t r A ACost trRoot_stretchCost stretchCost
+        encryptCost) (a + tv + 2 * t + 2 * r + 21) := by
+  unfold trRootRedR.timed
+  refine (OracleAdv.Timed.stepTimeBound_delay (oneQueryAdv.timeBound_timed _ _ _ _ _
+    (qc := 0) (b := a + tv + 2 * t + 2 * r + 7) (fun _ => le_rfl) fun z y => ?_)).mono
+    (by omega)
+  have := hA (trRootViewL mixRight (trRoot F) G D msgs (z.2.1.1.take t, z.2.1.2)
+    (z.1.1, z.1.2.1.take r, z.1.2.2) y)
+  have := hv z y
+  have := take_timedCost_le t z.2.1.1
+  have := take_timedCost_le r z.1.2.1
+  omega
 
 end Timed
 
@@ -1080,37 +1127,45 @@ section TimedCKA
 variable {Sc Msg Key X RK Sa W Ct : Type} [Fintype X] [Nonempty X] [Fintype RK]
   [Nonempty RK] [SampleableType W]
 
-/-- The costed form of `trCKARed`: the costed tree of `smSampleRedOf` at the view `trCKAView`
-of cost `viewCost`. -/
-noncomputable def trCKARed.timed (mix : X → Key → Key) (R : PRGDef (RK × Key) (RK × Sa))
-    (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (msgs : List (List (W × W))) (t : ℕ)
-    (viewCost : (Fin t → X) × RK → CKAView Msg Key → ℕ)
-    (A : SMView Msg Ct → SPTree.Timed Bool) (ACost : SMView Msg Ct → ℕ) (v : CKAView Msg Key) :
-    ℕ × SPTree.Timed Bool :=
-  smSampleRedOf.tree.timed (trCKAView mix R G D msgs t) viewCost A ACost v
+derive_cost trCKAViewL
 
-/-- The costed form of `trCKARed` erases and compiles to `trCKARed` at the erased
+derive_reduction trCKARed (adv := A)
+
+/-- The derived costed form of `trCKARed` erases and compiles to `trCKARed` at the erased
 adversary. -/
-theorem trCKARed.erase_timed (mix : X → Key → Key) (R : PRGDef (RK × Key) (RK × Sa))
-    (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (msgs : List (List (W × W))) (t : ℕ)
-    (viewCost : (Fin t → X) × RK → CKAView Msg Key → ℕ)
-    (A : SMView Msg Ct → SPTree.Timed Bool) (ACost : SMView Msg Ct → ℕ) (v : CKAView Msg Key) :
-    (trCKARed.timed mix R G D msgs t viewCost A ACost v).2.erase.compile =
+theorem trCKARed.erase_timed (mix : X → Key → Key) (mixCost : X → Key → ℕ)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (msgs : List (List (W × W))) (t : ℕ) (A : SMView Msg Ct → SPTree.Timed Bool)
+    (ACost : SMView Msg Ct → ℕ) (v : CKAView Msg Key) (stretchCost : RK × Key → ℕ)
+    (stretchCost' : Sa → ℕ) (encryptCost : W → W → W → ℕ) :
+    (trCKARed.tree.timed mix mixCost R G D msgs t A ACost v stretchCost stretchCost'
+        encryptCost).2.erase.compile =
       trCKARed mix R G D msgs t (fun x => (A x).erase.compile) v := by
-  rw [trCKARed.timed, smSampleRedOf.tree.erase_timed, smSampleRedOf.compile_tree]
-  rfl
+  rw [trCKARed.tree.erase_timed, trCKARed.compile_tree]
 
-/-- **Time of `trCKARed`**, the bound of `smSampleRedOf.tree.timeBound_timed` at the view
-`trCKAView` of cost at most `tv`. -/
-theorem trCKARed.timeBound_timed (mix : X → Key → Key) (R : PRGDef (RK × Key) (RK × Sa))
-    (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (msgs : List (List (W × W))) (t : ℕ)
-    (viewCost : (Fin t → X) × RK → CKAView Msg Key → ℕ)
-    (A : SMView Msg Ct → SPTree.Timed Bool) (ACost : SMView Msg Ct → ℕ) {T a tv : ℕ}
-    (hA : ∀ x, (A x).time ≤ T) (hAc : ∀ x, ACost x ≤ a) (hv : ∀ x v, viewCost x v ≤ tv)
-    (v : CKAView Msg Key) :
-    SPTree.Timed.stepTime (trCKARed.timed mix R G D msgs t viewCost A ACost v) ≤
-      T + a + tv + 3 :=
-  smSampleRedOf.tree.timeBound_timed _ viewCost A ACost hA hAc hv v
+/-- **Time of `trCKARed`.** With the costed adversary of time at most `T` and call cost at
+most `a`, and the derived cost `trCKAViewL.timedCost` of the view of `v` at most `tv` for every
+uniform value, the derived costed reduction at `v` has time at most `T + a + tv + 4 t + 11`:
+one sample, the list of the `t` uniform values, the view and the adversary call. -/
+theorem trCKARed.timeBound_timed (mix : X → Key → Key) (mixCost : X → Key → ℕ)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (msgs : List (List (W × W))) (t : ℕ) (A : SMView Msg Ct → SPTree.Timed Bool)
+    (ACost : SMView Msg Ct → ℕ) (v : CKAView Msg Key) (stretchCost : RK × Key → ℕ)
+    (stretchCost' : Sa → ℕ) (encryptCost : W → W → W → ℕ) {T a tv : ℕ}
+    (hA : ∀ x, (A x).time ≤ T) (hAc : ∀ x, ACost x ≤ a)
+    (hv : ∀ x : (Fin t → X) × RK, trCKAViewL.timedCost mix mixCost R G D msgs (List.ofFn x.1)
+      x.2 v stretchCost stretchCost' encryptCost ≤ tv) :
+    SPTree.Timed.stepTime (trCKARed.tree.timed mix mixCost R G D msgs t A ACost v stretchCost
+      stretchCost' encryptCost) ≤ T + a + tv + 4 * t + 11 := by
+  simp only [SPTree.Timed.stepTime, trCKARed.tree.timed, SPTree.Timed.time_sample]
+  refine le_trans (Nat.add_le_add_left (Nat.add_le_add_left
+    (Finset.sup_le (a := T + a + tv + 4 * t + 10) fun b _ => ?_) 1) 0) (by omega)
+  have := hA (trCKAView mix R G D msgs t b v)
+  have := hAc (trCKAView mix R G D msgs t b v)
+  have := hv b
+  have := Fin.foldr.loop.timedCost_le t (fun i l => b.1 i :: l) (fun _ _ => 1) (k := 1)
+    (fun _ _ => le_rfl) t le_rfl []
+  omega
 
 end TimedCKA
 
@@ -1118,38 +1173,138 @@ section TimedProd
 
 variable {S₁ M₁ K₁ S₂ M₂ K₂ : Type}
 
-/-- The costed form of `prodCKARedR`, with the costed real game `pubT` of `C₁`. -/
-noncomputable def prodCKARedR.timed (C₁ : CKADef S₁ M₁ K₁) (k m : ℕ)
-    (viewCost : CKAView M₁ K₁ → CKAView M₂ K₂ → ℕ)
-    (A : CKAView (M₁ × M₂) (K₁ × K₂) → SPTree.Timed Bool)
-    (ACost : CKAView (M₁ × M₂) (K₁ × K₂) → ℕ) (pubT : SPTree.Timed (CKAView M₁ K₁))
-    (y : CKAView M₂ K₂) : ℕ × SPTree.Timed Bool :=
-  ckaPubRedOf.tree.timed (cka_real C₁ k m) (fun v₁ v₂ => zipView v₁ v₂) viewCost A ACost y pubT
+/-- Zipping costs at most `k + 3` units per element of the second list and one more. -/
+theorem zipWith_timedCost_le_right {α β γ : Type} (f : α → β → γ) (fCost : α → β → ℕ)
+    {k : ℕ} (hf : ∀ a b, fCost a b ≤ k) (l₁ : List α) (l₂ : List β) :
+    List.zipWith.timedCost f fCost l₁ l₂ ≤ (k + 3) * l₂.length + 1 := by
+  induction l₂ generalizing l₁ with
+  | nil => cases l₁ <;> simp [List.zipWith.timedCost]
+  | cons b l₂ ih =>
+    cases l₁ with
+    | nil => simp [List.zipWith.timedCost]
+    | cons a l₁ =>
+      have := hf a b; have := ih l₁
+      simp [List.zipWith.timedCost, Nat.mul_succ]; omega
 
-/-- The costed form of `prodCKARedR` with a costed game that compiles to `cka_real C₁ k m`
-erases and compiles to `prodCKARedR` at the erased adversary. -/
+/-- The step time of a step-prefixed costed tree `P` followed by `g`, with the step cost of `P`
+in front, is at most the step time of `P` plus a bound on the step times of `g`. -/
+theorem stepTime_delay_fst_bind_le {α β : Type} (P : ℕ × SPTree.Timed α)
+    (g : α → ℕ × SPTree.Timed β) {G : ℕ} (hg : ∀ x, SPTree.Timed.stepTime (g x) ≤ G) :
+    SPTree.Timed.stepTime (SPTree.Timed.delay P.1 (P.2.bind g)) ≤
+      SPTree.Timed.stepTime P + G := by
+  have := SPTree.Timed.stepTime_bind_le P.2 g G hg
+  simp only [SPTree.Timed.stepTime, SPTree.Timed.delay] at this ⊢
+  omega
+
+/-- As `stepTime_delay_fst_bind_le`, with `c` further units in front. -/
+theorem stepTime_delay_add_fst_bind_le {α β : Type} (c : ℕ) (P : ℕ × SPTree.Timed α)
+    (g : α → ℕ × SPTree.Timed β) {G : ℕ} (hg : ∀ x, SPTree.Timed.stepTime (g x) ≤ G) :
+    SPTree.Timed.stepTime (SPTree.Timed.delay (c + P.1) (P.2.bind g)) ≤
+      c + SPTree.Timed.stepTime P + G := by
+  have := SPTree.Timed.stepTime_bind_le P.2 g G hg
+  simp only [SPTree.Timed.stepTime, SPTree.Timed.delay] at this ⊢
+  omega
+
+/-- The step time of a costed tree `A` followed by `g`, with `c` units in front, is at most
+`c` plus the time of `A` plus a bound on the step times of `g`. -/
+theorem stepTime_delay_bind_le_of {α β : Type} (c : ℕ) (A : SPTree.Timed α)
+    (g : α → ℕ × SPTree.Timed β) {G : ℕ} (hg : ∀ x, SPTree.Timed.stepTime (g x) ≤ G) :
+    SPTree.Timed.stepTime (SPTree.Timed.delay c (A.bind g)) ≤ c + A.time + G := by
+  have := SPTree.Timed.stepTime_bind_le A g G hg
+  rw [SPTree.Timed.stepTime_delay]
+  omega
+
+derive_reduction prodCKARedR (adv := A)
+
+/-- **Time of the derived CKA run.** With the costed sending of time at most `ts` and call cost
+at most `cs`, and the receiving of cost at most `cr`, the derived costed run of `n` epochs has
+time at most `n (ts + cs + cr + 4) + 1`. -/
+theorem ckaRun.tree.timeBound_timed {St Msg Key : Type} (C : CKADef St Msg Key)
+    (recv : St → Msg → St × Key) (recvCost : St → Msg → ℕ)
+    (send : St → SPTree.Timed (St × Msg × Key)) (sendCost : St → ℕ) {ts cs cr : ℕ}
+    (hs : ∀ s, (send s).time ≤ ts) (hsc : ∀ s, sendCost s ≤ cs)
+    (hrc : ∀ s m, recvCost s m ≤ cr) (n : ℕ) (s r : St) :
+    SPTree.Timed.stepTime (ckaRun.tree.timed C n s r recv recvCost send sendCost) ≤
+      n * (ts + cs + cr + 4) + 1 := by
+  induction n generalizing s r with
+  | zero =>
+    simp [ckaRun.tree.timed, SPTree.Timed.delay, SPTree.Timed.stepTime, SPTree.Timed.time_ret]
+  | succ n ih =>
+    simp only [ckaRun.tree.timed]
+    rw [SPTree.Timed.stepTime_delay]
+    refine (Nat.add_le_add_left (stepTime_delay_bind_le_of _ _ _
+      (G := n * (ts + cs + cr + 4) + cr + 3) fun x => ?_) 1).trans ?_
+    · refine (stepTime_delay_add_fst_bind_le _ _ _ (G := 0) fun _ => by
+        simp [SPTree.Timed.stepTime, SPTree.Timed.time_ret]).trans ?_
+      have := ih (recv r x.2.1).1 x.1
+      have := hrc r x.2.1
+      omega
+    · have := hs s; have := hsc s
+      rw [Nat.succ_mul]
+      omega
+
+/-- The derived costed form of `prodCKARedR`, with a costed initialisation and sending of `C₁`
+that compile to those of `C₁`, erases and compiles to `prodCKARedR` at the erased
+adversary. -/
 theorem prodCKARedR.erase_timed (C₁ : CKADef S₁ M₁ K₁) (k m : ℕ)
-    (viewCost : CKAView M₁ K₁ → CKAView M₂ K₂ → ℕ)
     (A : CKAView (M₁ × M₂) (K₁ × K₂) → SPTree.Timed Bool)
-    (ACost : CKAView (M₁ × M₂) (K₁ × K₂) → ℕ) (pubT : SPTree.Timed (CKAView M₁ K₁))
-    (hpub : pubT.erase.compile = cka_real C₁ k m) (y : CKAView M₂ K₂) :
-    (prodCKARedR.timed C₁ k m viewCost A ACost pubT y).2.erase.compile =
+    (ACost : CKAView (M₁ × M₂) (K₁ × K₂) → ℕ) (y : CKAView M₂ K₂)
+    (recvCost : S₁ → M₁ → ℕ) (init : SPTree.Timed (M₁ × S₁ × S₁))
+    (send : S₁ → SPTree.Timed (S₁ × M₁ × K₁)) (sendCost : S₁ → ℕ)
+    (hinit : init.erase.compile = C₁.init) (hsend : ∀ s, (send s).erase.compile = C₁.send s) :
+    (prodCKARedR.tree.timed C₁ k m A ACost y C₁.recv recvCost init send sendCost).2.erase.compile =
       prodCKARedR C₁ k m (fun x => (A x).erase.compile) y := by
-  rw [prodCKARedR.timed, ckaPubRedOf.tree.erase_timed, ckaPubRedOf.compile_tree _ _ _ _ _ hpub]
-  rfl
+  rw [prodCKARedR.tree.erase_timed, prodCKARedR.compile_tree _ _ _ _ _ _ _ hinit hsend]
 
-/-- **Time of `prodCKARedR`**: with the costed adversary of time at most `T` and call cost at
-most `a`, the view of cost at most `tv` and the costed real game of `C₁` of time at most `tp`,
-at most `T + a + tv + tp + 2`. -/
+/-- **Time of `prodCKARedR`.** With the costed adversary of time at most `T` and call cost at
+most `a`, the costed initialisation of `C₁` of time at most `ti`, the costed sending of time at
+most `ts` and call cost at most `cs`, and the receiving of cost at most `cr`, the derived
+costed reduction at `y` has time at most
+`T + a + ti + (k + m + 1) (ts + cs + cr + 4) + 3 (ℓ₁ + ℓ₂) + 10`, where `ℓ₁` and `ℓ₂` are the
+numbers of epochs of `y` before and after its challenge epoch: the real game of `C₁`, the view
+zipped with `y`, and the adversary call. -/
 theorem prodCKARedR.timeBound_timed (C₁ : CKADef S₁ M₁ K₁) (k m : ℕ)
-    (viewCost : CKAView M₁ K₁ → CKAView M₂ K₂ → ℕ)
     (A : CKAView (M₁ × M₂) (K₁ × K₂) → SPTree.Timed Bool)
-    (ACost : CKAView (M₁ × M₂) (K₁ × K₂) → ℕ) (pubT : SPTree.Timed (CKAView M₁ K₁))
-    {T a tv tp : ℕ} (hA : ∀ x, (A x).time ≤ T) (hAc : ∀ x, ACost x ≤ a)
-    (hv : ∀ c y, viewCost c y ≤ tv) (hp : pubT.time ≤ tp) (y : CKAView M₂ K₂) :
-    SPTree.Timed.stepTime (prodCKARedR.timed C₁ k m viewCost A ACost pubT y) ≤
-      T + a + tv + tp + 2 :=
-  ckaPubRedOf.tree.timeBound_timed _ _ viewCost A ACost hA hAc hv pubT hp y
+    (ACost : CKAView (M₁ × M₂) (K₁ × K₂) → ℕ) (y : CKAView M₂ K₂)
+    (recv : S₁ → M₁ → S₁ × K₁) (recvCost : S₁ → M₁ → ℕ) (init : SPTree.Timed (M₁ × S₁ × S₁))
+    (send : S₁ → SPTree.Timed (S₁ × M₁ × K₁)) (sendCost : S₁ → ℕ) {T a ti ts cs cr : ℕ}
+    (hA : ∀ x, (A x).time ≤ T) (hAc : ∀ x, ACost x ≤ a) (hi : init.time ≤ ti)
+    (hs : ∀ s, (send s).time ≤ ts) (hsc : ∀ s, sendCost s ≤ cs)
+    (hrc : ∀ s m, recvCost s m ≤ cr) :
+    SPTree.Timed.stepTime
+        (prodCKARedR.tree.timed C₁ k m A ACost y recv recvCost init send sendCost) ≤
+      T + a + ti + (k + m + 1) * (ts + cs + cr + 4) + 3 * (y.2.1.length + y.2.2.2.length) +
+        10 := by
+  have hk := ckaRun.tree.timeBound_timed C₁ recv recvCost send sendCost hs hsc hrc k
+  have hm := ckaRun.tree.timeBound_timed C₁ recv recvCost send sendCost hs hsc hrc m
+  unfold prodCKARedR.tree.timed
+  refine (stepTime_delay_fst_bind_le _ _
+    (G := T + a + 3 * (y.2.1.length + y.2.2.2.length) + 8) fun x => ?_).trans ?_
+  · have := hA (zipView x y); have := hAc (zipView x y)
+    have := zipWith_timedCost_le_right (fun a b => ((a.1, b.1), a.2, b.2))
+      (fun _ _ => 0) (k := 0) (fun _ _ => le_rfl) x.2.1 y.2.1
+    have := zipWith_timedCost_le_right (fun a b => ((a.1, b.1), a.2, b.2))
+      (fun _ _ => 0) (k := 0) (fun _ _ => le_rfl) x.2.2.2 y.2.2.2
+    simp only [SPTree.Timed.stepTime]
+    omega
+  · refine le_trans (Nat.add_le_add_right (SPTree.Timed.stepTime_bind_le init _
+      (k * (ts + cs + cr + 4) + m * (ts + cs + cr + 4) + ts + cs + cr + 6) fun x => ?_) _) ?_
+    · refine (stepTime_delay_add_fst_bind_le 1 _ _
+        (G := m * (ts + cs + cr + 4) + ts + cs + cr + 4) fun x₁ => ?_).trans ?_
+      · refine (stepTime_delay_bind_le_of _ _ _
+          (G := m * (ts + cs + cr + 4) + cr + 3) fun x₂ => ?_).trans ?_
+        · refine (stepTime_delay_add_fst_bind_le _ _ _ (G := 0) fun _ => by
+            simp [SPTree.Timed.stepTime, SPTree.Timed.time_ret]).trans ?_
+          have := hm (recv x₁.2.2 x₂.2.1).1 x₂.1
+          have := hrc x₁.2.2 x₂.2.1
+          omega
+        · have := hs x₁.2.1; have := hsc x₁.2.1
+          omega
+      · have := hk x.2.1 x.2.2
+        omega
+    · have e : (k + m + 1) * (ts + cs + cr + 4) =
+          k * (ts + cs + cr + 4) + m * (ts + cs + cr + 4) + (ts + cs + cr + 4) := by ring
+      omega
 
 end TimedProd
 
