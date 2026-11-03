@@ -657,35 +657,62 @@ section Coupling
 variable {S K PK SK SS C : Type} [Field S] [Fintype S] [Fintype K] [Nonempty K]
   (P : Scheme PK SK SS C)
 
+omit [Field S] [Fintype S] [Fintype K] [Nonempty K] in
 /-- Two draws in either order. -/
 theorem bind_map_comm {α β γ : Type} (p : PMF α) (q : PMF β) (f : α → β → γ) :
     (p.bind fun a => q.map (f a)) = q.bind fun b => p.map fun a => f a b :=
   PMF.bind_comm p q fun a b => PMF.pure (f a b)
 
 open Classical in
-/-- The coupling of the encapsulations of the two worlds, with the public keys `oR` and `oS`:
-one encapsulation for both when the keys agree, independent encapsulations otherwise. -/
-noncomputable def encPair (oR oS : Option PK) : PMF (Option (SS × C) × Option (SS × C)) :=
-  if oR = oS then (encD P oR).map fun c => (c, c)
-  else (encD P oR).bind fun a => (encD P oS).map fun b => (a, b)
+/-- **The diagonal coupling** of two draws from the family `g` at the parameters `a` and `b`: one
+draw for both when the parameters agree, independent draws otherwise. -/
+noncomputable def diagPair {α β : Type} (g : β → PMF α) (a b : β) : PMF (α × α) :=
+  if a = b then (g a).map fun c => (c, c) else (g a).bind fun x => (g b).map fun y => (x, y)
 
-/-- The encapsulation of the real world in the coupling. -/
-theorem encPair_map_fst (oR oS : Option PK) : (encPair P oR oS).map Prod.fst = encD P oR := by
-  unfold encPair
+omit [Field S] [Fintype S] [Fintype K] [Nonempty K] in
+/-- The first draw of the diagonal coupling is a draw at the first parameter. -/
+theorem diagPair_map_fst {α β : Type} (g : β → PMF α) (a b : β) :
+    (diagPair g a b).map Prod.fst = g a := by
+  unfold diagPair
   split_ifs
   · rw [PMF.map_comp]
     exact PMF.map_id _
   · simp only [PMF.map_bind, PMF.map_comp, Function.comp_def, map_fun_const]
     exact PMF.bind_pure _
 
-/-- The encapsulation of the simulated world in the coupling. -/
-theorem encPair_map_snd (oR oS : Option PK) : (encPair P oR oS).map Prod.snd = encD P oS := by
-  unfold encPair
+omit [Field S] [Fintype S] [Fintype K] [Nonempty K] in
+/-- The second draw of the diagonal coupling is a draw at the second parameter. -/
+theorem diagPair_map_snd {α β : Type} (g : β → PMF α) (a b : β) :
+    (diagPair g a b).map Prod.snd = g b := by
+  unfold diagPair
   split_ifs with h
   · rw [PMF.map_comp, h]
     exact PMF.map_id _
   · simp only [PMF.map_bind, PMF.map_comp, Function.comp_def, PMF.bind_const]
     exact PMF.map_id _
+
+omit [Field S] [Fintype S] [Fintype K] [Nonempty K] in
+/-- At equal parameters the two draws of the diagonal coupling are equal. -/
+theorem mem_support_diagPair_self {α β : Type} {g : β → PMF α} {a : β} {z : α × α}
+    (h : z ∈ (diagPair g a a).support) : z.1 = z.2 ∧ z.2 ∈ (g a).support := by
+  simp only [diagPair, ↓reduceIte, PMF.support_map, Set.mem_image] at h
+  obtain ⟨c, hc, rfl⟩ := h
+  exact ⟨rfl, hc⟩
+
+/-- The coupling of the encapsulations of the two worlds, with the public keys `oR` and `oS`:
+one encapsulation for both when the keys agree, independent encapsulations otherwise. -/
+noncomputable def encPair (oR oS : Option PK) : PMF (Option (SS × C) × Option (SS × C)) :=
+  diagPair (encD P) oR oS
+
+omit [Field S] [Fintype S] [Fintype K] [Nonempty K] in
+/-- The encapsulation of the real world in the coupling. -/
+theorem encPair_map_fst (oR oS : Option PK) : (encPair P oR oS).map Prod.fst = encD P oR :=
+  diagPair_map_fst _ _ _
+
+omit [Field S] [Fintype S] [Fintype K] [Nonempty K] in
+/-- The encapsulation of the simulated world in the coupling. -/
+theorem encPair_map_snd (oR oS : Option PK) : (encPair P oR oS).map Prod.snd = encD P oS :=
+  diagPair_map_snd _ _ _
 
 /-- A draw of the joint world: the draw of X3DH and the key of `F_AKE`, a KEM key pair, and the
 coupled encapsulations of the two worlds. -/
@@ -1739,6 +1766,390 @@ theorem PInv.pkOf_eq {rs rl : PSt S W K PK SK SS C} {inp : Inst → Option (PInp
     (b : PartyId) : pkOf rl sid b = pkOf rs sid b := by
   simp only [pkOf, hI.kem]
 
+omit [DecidableEq W] [Inhabited K] [DecidableEq SS] in
+/-- A draw in the support of the joint world has a key pair of `P.keygen` and, when the public
+keys of the two worlds agree, one encapsulation for both in the support of its distribution. -/
+theorem mem_support_jDist {oR oS : Option PK} {j : JDraw S K PK SK SS C}
+    (hj : j ∈ (jDist (S := S) (K := K) P oR oS).support) :
+    j.2.1 ∈ P.keygen.support ∧ (oR = oS → j.2.2.1 = j.2.2.2 ∧ j.2.2.2 ∈ (encD P oS).support) := by
+  simp only [jDist, PMF.mem_support_bind_iff, PMF.support_map, Set.mem_image] at hj
+  obtain ⟨rk, -, kp, hkp, kc, hkc, rfl⟩ := hj
+  refine ⟨hkp, fun h => ?_⟩
+  subst h
+  exact mem_support_diagPair_self hkc
+
+omit [Field S] [Fintype S] [DecidableEq W] [Fintype K] [Nonempty K] [Inhabited K]
+  [DecidableEq SS] in
+/-- An encapsulation in the support of its distribution at a public key. -/
+theorem mem_support_encD {pk : PK} {kc : Option (SS × C)} (h : kc ∈ (encD P (some pk)).support) :
+    ∃ c, kc = some c ∧ c ∈ (P.encaps pk).support := by
+  simp only [encD, PMF.support_map, Set.mem_image] at h
+  obtain ⟨c, hc, rfl⟩ := h
+  exact ⟨c, rfl, hc⟩
+
+omit [Fintype S] [Fintype K] [Nonempty K] in
+/-- The public keys to which the two copies encapsulate agree. -/
+theorem PInv.encPk_eq {rs rl : PSt S W K PK SK SS C} {inp : Inst → Option (PInp W SS)}
+    {dlv : Inst → Option C} {f : St K} (hI : PInv P G rs inp dlv f rl) (e : OEv W SS C) :
+    encPk rl e = encPk rs e := by
+  rcases e with (⟨sid, pid, peer, role⟩ | ⟨sid, pid⟩) | (_ | _ | pid | ⟨sid, pid⟩ |
+    ⟨sid, pid⟩ | pid | ⟨sid, pid⟩ | ⟨sid, pid, e, c⟩ | x) <;> try rfl
+  simp only [encPk]
+  cases h : rs.x.st.recs (sid, pid) with
+  | none => rw [sk_none (hI.recs (sid, pid)) h]
+  | some p =>
+    obtain ⟨q, hq, hp, -, -⟩ := sk_some (hI.recs (sid, pid)) h
+    rw [hq]
+    simp only [hp, hI.pkOf_eq P G]
+
+/-! ### The steps of the joint world -/
+
+/-- **A step of the joint world under the invariant**, with a draw in the support of its
+distribution: either the bad event holds after the step, or the outputs of the two worlds are
+equal and the invariant holds after the step. -/
+theorem step_inv (s : JS S W K PK SK SS C) (hI : InvJ P G s) (e : OEv W SS C)
+    (j : JDraw S K PK SK SS C) (hj : j ∈ (jDistAt P s e).support) :
+    PQHit P G (jointD P G s e j).2.1.1 (jointD P G s e j).2.2.2 ∨
+      ((jointD P G s e j).1.1 = (jointD P G s e j).1.2 ∧ InvJ P G (jointD P G s e j).2) := by
+  obtain ⟨⟨⟨rs, inp, ph⟩, f⟩, rl, dlv⟩ := s
+  obtain ⟨⟨⟨y, l₁, l₂, k₀⟩, kf⟩, kp, kcR, kcS⟩ := j
+  simp only [InvJ] at hI ⊢
+  have hsupp := mem_support_jDist P hj
+  simp only [hI.encPk_eq P G e, true_implies] at hsupp
+  obtain ⟨hkp, hkc, hkcS⟩ := hsupp
+  subst hkc
+  rcases e with (⟨sid, pid, peer, role⟩ | ⟨sid, pid⟩) | (_ | _ | pid | ⟨sid, pid⟩ |
+    ⟨sid, pid⟩ | pid | ⟨sid, pid⟩ | ⟨sid, pid, e, c⟩ | x)
+  · -- newSession
+    right
+    simp only [jointD, realD, simWorldD, simStartD, drive0D, fStepD, finV, realOf, simOf, cpl,
+      FKeyAt, dlvStep, Bool.false_eq_true, ↓reduceIte]
+    by_cases h : (rs.x.st.recs (sid, pid)).isNone = true
+    · have hn : rs.x.st.recs (sid, pid) = none := Option.isNone_iff_eq_none.mp h
+      have hl : (rl.x.st.recs (sid, pid)).isNone = true := by
+        have h0 := sk_none (hI.recs (sid, pid)) hn
+        rw [h0]; rfl
+      by_cases hr : role = .responder
+      · simp only [h, hl, hr, ↓reduceIte, honStep, simOut]
+        refine ⟨trivial, hI.newSession P G (sid, pid) hn peer _ y _ _ (by rw [hI.kem])
+          (fun z hz => Function.update_of_ne hz _ _) (fun kp' h' => ?_)⟩
+        simp only [Function.update_self, Option.some.injEq] at h'
+        subst h'
+        exact hkp
+      · simp only [h, hl, hr, ↓reduceIte, honStep, simOut]
+        exact ⟨trivial, hI.newSession P G (sid, pid) hn peer role y rs.kem rl.kem hI.kem
+          (fun _ _ => rfl) (hI.kemSupp (sid, pid))⟩
+    · obtain ⟨rc, hrc⟩ : ∃ rc, rs.x.st.recs (sid, pid) = some rc := by
+        cases hc : rs.x.st.recs (sid, pid) with
+        | none => simp [hc] at h
+        | some rc => exact ⟨rc, rfl⟩
+      obtain ⟨rcl, hrl, -⟩ := sk_some (hI.recs _) hrc
+      obtain ⟨rcf, hrf, -⟩ := sk_some (hI.frecs _) hrc
+      have hl : (rl.x.st.recs (sid, pid)).isNone = false := by rw [hrl]; rfl
+      simp only [h, hl, Bool.false_eq_true, ↓reduceIte, honStep, simOut,
+        addSession_of_isSome (t := f) (x := (sid, pid)) (by rw [hrf]; rfl)]
+      exact ⟨trivial, hI⟩
+  · -- getKey
+    right
+    simp only [jointD, realD, simWorldD, simStartD, drive0D, fStepD, finV, honStep, simOut,
+      dlvStep, hI.key]
+    exact ⟨trivial, hI⟩
+  · -- idle
+    right
+    simp only [jointD, realD, simWorldD, simStartD, drive0D, dlvStep]
+    exact ⟨trivial, hI⟩
+  · -- poll
+    right
+    simp only [jointD, realD, simWorldD, simStartD, drive0D, dlvStep, (hI.poll P G).1]
+    exact ⟨trivial, (hI.poll P G).2⟩
+  · -- pub
+    right
+    simp only [jointD, realD, simWorldD, simStartD, drive0D, realOf, simOf, cpl, FKeyAt,
+      dlvStep, Bool.false_eq_true, ↓reduceIte, (hI.lt_step P G pid l₁).1]
+    exact ⟨trivial, (hI.lt_step P G pid l₁).2⟩
+  · -- ephPub
+    right
+    simp only [jointD, realD, simWorldD, simStartD, drive0D, dlvStep, ephPubOf, hI.eph]
+    exact ⟨trivial, hI⟩
+  · -- pqPub
+    right
+    simp only [jointD, realD, simWorldD, simStartD, drive0D, dlvStep, hI.pkOf_eq P G, hI.ct]
+    exact ⟨trivial, hI⟩
+  · -- corrupt
+    right
+    have hN : Named rl.x.st pid = Named rs.x.st pid := by simp only [Named, hI.notices]
+    simp only [jointD, realD, simWorldD, simStartD, drive0D, realOf, simOf, cpl, FKeyAt,
+      dlvStep, Bool.false_eq_true, ↓reduceIte, hN]
+    by_cases h : Named rs.x.st pid = true
+    · simp only [h, ↓reduceIte]
+      exact ⟨trivial, hI⟩
+    · have h' : Named rs.x.st pid = false := by simpa using h
+      obtain ⟨h1, h2⟩ := hI.lt_step P G pid l₁
+      simp only [h', Bool.false_eq_true, ↓reduceIte, fStepD, advD, finV, simOut, h1]
+      exact ⟨trivial, h2.corrupt_step P G (by simp only [ltD_st]; exact h')⟩
+  · -- complete
+    cases hrs : rs.x.st.recs (sid, pid) with
+    | none =>
+      have hrl := sk_none (hI.recs (sid, pid)) hrs
+      right
+      simp only [jointD, realD, pqCompleteD, simWorldD, simStartD, simCompleteD, drive0D, dlvStep,
+        hrs, hrl]
+      exact ⟨trivial, hI⟩
+    | some rcs =>
+      obtain ⟨rcl, hrl, hp, hr, hk⟩ := sk_some (hI.recs (sid, pid)) hrs
+      cases hes : rs.x.eph (sid, pid) with
+      | none =>
+        have hel : rl.x.eph (sid, pid) = none := by rw [hI.eph]; exact hes
+        right
+        simp only [jointD, realD, pqCompleteD, simWorldD, simStartD, simCompleteD, drive0D,
+          dlvStep, hrs, hrl, hes, hel]
+        exact ⟨trivial, hI⟩
+      | some ek =>
+        have hel : rl.x.eph (sid, pid) = some ek := by rw [hI.eph]; exact hes
+        have hopk : opkOf rl.x sid rcs.peer = opkOf rs.x sid rcs.peer := hI.opkOf_eq P G sid _
+        have hpkl : pkOf rl sid rcs.peer = pkOf rs sid rcs.peer := hI.pkOf_eq P G sid _
+        cases hos : opkOf rs.x sid rcs.peer with
+        | none =>
+          right
+          simp only [jointD, realD, pqCompleteD, simWorldD, simStartD, simCompleteD, drive0D,
+            dlvStep, hrs, hrl, hes, hel, hp, hopk, hos]
+          exact ⟨trivial, hI⟩
+        | some opk =>
+          cases hks : pkOf rs sid rcs.peer with
+          | none =>
+            right
+            simp only [jointD, realD, pqCompleteD, simWorldD, simStartD, simCompleteD, drive0D,
+              dlvStep, hrs, hrl, hes, hel, hp, hopk, hos, hpkl, hks]
+            exact ⟨trivial, hI⟩
+          | some pk =>
+            have hoS : encPk rs (.inr (.complete sid pid)) = some pk := by
+              simp only [encPk, hrs, hks]
+            rw [hoS] at hkcS
+            obtain ⟨c, rfl, hc⟩ := mem_support_encD P hkcS
+            obtain ⟨sk, hsk⟩ : ∃ sk, rs.kem (sid, rcs.peer) = some (pk, sk) := by
+              cases h : rs.kem (sid, rcs.peer) with
+              | none => simp [pkOf, h] at hks
+              | some kp' =>
+                simp only [pkOf, h, Option.map_some, Option.some.injEq] at hks
+                exact ⟨kp'.2, by rw [← hks]⟩
+            by_cases hcd : rcs.role = .initiator ∧ rcs.key.isNone = true
+            · have hcl : rcl.role = .initiator ∧ rcl.key.isNone = true := by
+                rw [hr, ← Option.not_isSome, hk, Option.not_isSome]; exact hcd
+              have hkey : rcs.key = none := Option.isNone_iff_eq_none.mp hcd.2
+              have hix : inp (sid, pid) = none := (hI.recs_of P G hrs hkey).1
+              obtain ⟨h1, hI1⟩ := hI.lt_step P G pid l₁
+              obtain ⟨h2, hI2⟩ := hI1.lt_step P G rcs.peer l₂
+              dsimp only at h2 hI2
+              have hI3 := hI2.ct_step P G hix c.2
+              dsimp only at hI3
+              have hrs2 : (ltD (ltD rs.x pid l₁).2 rcs.peer l₂).2.st.recs (sid, pid) =
+                  some rcs := by simp only [ltD_st, hrs]
+              have hrl2 : (ltD (ltD rl.x pid l₁).2 rcs.peer l₂).2.st.recs (sid, pid) =
+                  some rcl := by simp only [ltD_st, hrl]
+              have hsh : InpShape (sid, pid) rcs (aliceInp G sid pid rcs.peer
+                  (ltD rs.x pid l₁).1.1 ek (G.pub (ltD (ltD rs.x pid l₁).2 rcs.peer l₂).1.1)
+                  (G.pub (ltD (ltD rs.x pid l₁).2 rcs.peer l₂).1.2) (G.pub opk)) :=
+                ⟨rfl, Or.inl ⟨hcd.1, rfl, rfl⟩⟩
+              have hd : DhOk G (ltD (ltD rs.x pid l₁).2 rcs.peer l₂).2.lt
+                  (aliceInp G sid pid rcs.peer (ltD rs.x pid l₁).1.1 ek
+                    (G.pub (ltD (ltD rs.x pid l₁).2 rcs.peer l₂).1.1)
+                    (G.pub (ltD (ltD rs.x pid l₁).2 rcs.peer l₂).1.2) (G.pub opk)) :=
+                ⟨_, _, _, _, ltD_lt_mono _ _ _ _ _ (ltD_lt_self rs.x pid l₁), ltD_lt_self _ _ _,
+                  by simp only [aliceInp, G.exp_pub, mul_comm]⟩
+              have hkem : KemOk P
+                  { rs with x := (ltD (ltD rs.x pid l₁).2 rcs.peer l₂).2,
+                            ct := Function.update rs.ct (sid, pid) (some c.2) } dlv (sid, pid) rcs
+                  (aliceInp G sid pid rcs.peer (ltD rs.x pid l₁).1.1 ek
+                    (G.pub (ltD (ltD rs.x pid l₁).2 rcs.peer l₂).1.1)
+                    (G.pub (ltD (ltD rs.x pid l₁).2 rcs.peer l₂).1.2) (G.pub opk), c.1) :=
+                Or.inl ⟨hcd.1, c.2, pk, sk, Function.update_self _ _ _, hsk,
+                  hI.kemSupp _ _ hsk, hc⟩
+              have hx2 : Exposed (ltD (ltD rs.x pid l₁).2 rcs.peer l₂).2.st (sid, pid) rcs ↔
+                  Exp (ltD (ltD rs.x pid l₁).2 rcs.peer l₂).2.st.corrupt (sid, pid) rcs.peer := by
+                simp only [Exposed, Exp, ltD_st, hI.fresh _ _ hrs, reduceCtorEq, or_false]
+              by_cases hx : Exposed rs.x.st (sid, pid) rcs
+              · have hx' : Exposed (ltD (ltD rs.x pid l₁).2 rcs.peer l₂).2.st (sid, pid) rcs := by
+                  simpa only [ltD_st] using hx
+                right
+                simp only [jointD, realD, pqCompleteD, simWorldD, simStartD, simCompleteD,
+                  drive0D, dlvStep, FKeyAt, realOf, simOf, cpl, hrs, hrl, hes, hel, hp, hopk,
+                  hos, hpkl, hks, hcd, hcl, hx, hx', h1, h2, and_self, ↓reduceIte, decide_true,
+                  Bool.not_true, Bool.false_eq_true, deliverD, fStepD, finV, simOut]
+                exact ⟨trivial, hI3.deliver_exp P G hrs2 hkey hrl2 hsh hd hkem (hx2.mp hx') k₀ kf⟩
+              · have hx' : ¬ Exposed (ltD (ltD rs.x pid l₁).2 rcs.peer l₂).2.st (sid, pid) rcs := by
+                  simpa only [ltD_st] using hx
+                simp only [jointD, realD, pqCompleteD, simWorldD, simStartD, simCompleteD,
+                  drive0D, dlvStep, FKeyAt, realOf, simOf, cpl, hrs, hrl, hes, hel, hp, hopk,
+                  hos, hpkl, hks, hcd, hcl, hx, hx', h1, h2, and_self, ↓reduceIte, decide_false,
+                  Bool.not_false, deliverD, fStepD, finV, simOut]
+                rcases hI3.deliver_unexp P G hrs2 hkey hrl2 hsh hd hkem (fun h => hx' (hx2.mpr h))
+                  kf .fwd with h | h
+                · exact Or.inl h
+                · exact Or.inr ⟨trivial, h⟩
+            · have hcl : ¬ (rcl.role = .initiator ∧ rcl.key.isNone = true) := by
+                rw [hr, ← Option.not_isSome, hk, Option.not_isSome]; exact hcd
+              right
+              simp only [jointD, realD, pqCompleteD, simWorldD, simStartD, simCompleteD, drive0D,
+                dlvStep, realOf, simOf, hrs, hrl, hes, hel, hp, hopk, hos, hpkl, hks, hcd, hcl,
+                ↓reduceIte]
+              exact ⟨trivial, hI⟩
+  · -- send
+    have hD : PInv P G rs inp (if (keyOf rs.x.st (sid, pid)).isNone then
+        Function.update dlv (sid, pid) (some c) else dlv) f rl := by
+      split_ifs with h
+      · exact hI.dlv_step P G h c
+      · exact hI
+    cases hrs : rs.x.st.recs (sid, pid) with
+    | none =>
+      have hrl := sk_none (hI.recs (sid, pid)) hrs
+      right
+      simp only [jointD, realD, pqSendD, simWorldD, simStartD, simSendD, drive0D, dlvStep, hrs,
+        hrl]
+      exact ⟨trivial, hD⟩
+    | some rcs =>
+      obtain ⟨rcl, hrl, hp, hr, hk⟩ := sk_some (hI.recs (sid, pid)) hrs
+      cases hes : rs.x.eph (sid, pid) with
+      | none =>
+        have hel : rl.x.eph (sid, pid) = none := by rw [hI.eph]; exact hes
+        right
+        simp only [jointD, realD, pqSendD, simWorldD, simStartD, simSendD, drive0D, dlvStep, hrs,
+          hrl, hes, hel]
+        exact ⟨trivial, hD⟩
+      | some opk =>
+        have hel : rl.x.eph (sid, pid) = some opk := by rw [hI.eph]; exact hes
+        cases hkm : rs.kem (sid, pid) with
+        | none =>
+          have hkml : rl.kem (sid, pid) = none := by rw [hI.kem]; exact hkm
+          right
+          simp only [jointD, realD, pqSendD, simWorldD, simStartD, simSendD, drive0D, dlvStep,
+            hrs, hrl, hes, hel, hkm, hkml]
+          exact ⟨trivial, hD⟩
+        | some kq =>
+          have hkml : rl.kem (sid, pid) = some kq := by rw [hI.kem]; exact hkm
+          cases hdc : P.decaps kq.2 c with
+          | none =>
+            right
+            simp only [jointD, realD, pqSendD, simWorldD, simStartD, simSendD, drive0D, dlvStep,
+              hrs, hrl, hes, hel, hkm, hkml, hdc]
+            exact ⟨trivial, hD⟩
+          | some ss =>
+            by_cases hcd : rcs.role = .responder ∧ rcs.key.isNone = true
+            · have hcl : rcl.role = .responder ∧ rcl.key.isNone = true := by
+                rw [hr, ← Option.not_isSome, hk, Option.not_isSome]; exact hcd
+              have hkey : rcs.key = none := Option.isNone_iff_eq_none.mp hcd.2
+              have hkN : (keyOf rs.x.st (sid, pid)).isNone = true := by
+                simp only [keyOf, hrs, Option.bind_some, hkey, Option.isNone_none]
+              have hD' := hI.dlv_step P G hkN c
+              obtain ⟨h1, hI1⟩ := hD'.lt_step P G pid l₁
+              obtain ⟨h2, hI2⟩ := hI1.lt_step P G rcs.peer l₂
+              dsimp only at h2 hI2
+              have hrs2 : (ltD (ltD rs.x pid l₁).2 rcs.peer l₂).2.st.recs (sid, pid) =
+                  some rcs := by simp only [ltD_st, hrs]
+              have hrl2 : (ltD (ltD rl.x pid l₁).2 rcs.peer l₂).2.st.recs (sid, pid) =
+                  some rcl := by simp only [ltD_st, hrl]
+              have hsh : InpShape (sid, pid) rcs (bobInp G sid rcs.peer pid
+                  (G.pub (ltD (ltD rs.x pid l₁).2 rcs.peer l₂).1.1) e (ltD rs.x pid l₁).1.1
+                  (ltD rs.x pid l₁).1.2 opk) :=
+                ⟨rfl, Or.inr ⟨hcd.1, rfl, rfl⟩⟩
+              have hd : DhOk G (ltD (ltD rs.x pid l₁).2 rcs.peer l₂).2.lt
+                  (bobInp G sid rcs.peer pid (G.pub (ltD (ltD rs.x pid l₁).2 rcs.peer l₂).1.1) e
+                    (ltD rs.x pid l₁).1.1 (ltD rs.x pid l₁).1.2 opk) :=
+                ⟨_, _, _, _, ltD_lt_self _ _ _, ltD_lt_mono _ _ _ _ _ (ltD_lt_self rs.x pid l₁),
+                  by simp only [bobInp, G.exp_pub]⟩
+              have hkem : KemOk P { rs with x := (ltD (ltD rs.x pid l₁).2 rcs.peer l₂).2 }
+                  (Function.update dlv (sid, pid) (some c)) (sid, pid) rcs
+                  (bobInp G sid rcs.peer pid (G.pub (ltD (ltD rs.x pid l₁).2 rcs.peer l₂).1.1) e
+                    (ltD rs.x pid l₁).1.1 (ltD rs.x pid l₁).1.2 opk, ss) :=
+                Or.inr ⟨hcd.1, c, kq.1, kq.2, Function.update_self _ _ _, hkm,
+                  hI.kemSupp _ _ hkm, hdc⟩
+              have hx2 : Exposed (ltD (ltD rs.x pid l₁).2 rcs.peer l₂).2.st (sid, pid) rcs ↔
+                  Exp (ltD (ltD rs.x pid l₁).2 rcs.peer l₂).2.st.corrupt (sid, pid) rcs.peer := by
+                simp only [Exposed, Exp, ltD_st, hI.fresh _ _ hrs, reduceCtorEq, or_false]
+              by_cases hx : Exposed rs.x.st (sid, pid) rcs
+              · have hx' : Exposed (ltD (ltD rs.x pid l₁).2 rcs.peer l₂).2.st (sid, pid) rcs := by
+                  simpa only [ltD_st] using hx
+                right
+                simp only [jointD, realD, pqSendD, simWorldD, simStartD, simSendD, drive0D,
+                  dlvStep, FKeyAt, realOf, simOf, cpl, hrs, hrl, hes, hel, hkm, hkml, hdc, hcd,
+                  hcl, hx, hx', hkN, hp, h1, h2, and_self, ↓reduceIte, decide_true, Bool.not_true,
+                  Bool.false_eq_true, deliverD, fStepD, finV, simOut]
+                exact ⟨trivial, hI2.deliver_exp P G hrs2 hkey hrl2 hsh hd hkem (hx2.mp hx') k₀ kf⟩
+              · have hx' : ¬ Exposed (ltD (ltD rs.x pid l₁).2 rcs.peer l₂).2.st (sid, pid) rcs := by
+                  simpa only [ltD_st] using hx
+                simp only [jointD, realD, pqSendD, simWorldD, simStartD, simSendD, drive0D,
+                  dlvStep, FKeyAt, realOf, simOf, cpl, hrs, hrl, hes, hel, hkm, hkml, hdc, hcd,
+                  hcl, hx, hx', hkN, hp, h1, h2, and_self, ↓reduceIte, decide_false,
+                  Bool.not_false, deliverD, fStepD, finV, simOut]
+                rcases hI2.deliver_unexp P G hrs2 hkey hrl2 hsh hd hkem (fun h => hx' (hx2.mpr h))
+                  kf .fwd with h | h
+                · exact Or.inl h
+                · exact Or.inr ⟨trivial, h⟩
+            · have hcl : ¬ (rcl.role = .responder ∧ rcl.key.isNone = true) := by
+                rw [hr, ← Option.not_isSome, hk, Option.not_isSome]; exact hcd
+              right
+              simp only [jointD, realD, pqSendD, simWorldD, simStartD, simSendD, drive0D,
+                dlvStep, hrs, hrl, hes, hel, hkm, hkml, hdc, hcd, hcl, ↓reduceIte]
+              exact ⟨trivial, hD⟩
+  · -- kdf
+    simp only [jointD, realD, simWorldD, simStartD, drive0D, realOf, simOf, cpl, FKeyAt,
+      dlvStep, Bool.false_eq_true, ↓reduceIte]
+    rcases hI.kdf P G x k₀ .fwd with h | ⟨h1, h2⟩
+    · exact Or.inl h
+    · exact Or.inr ⟨by rw [h1], h2⟩
+
 end Bad
 
+/-! ## The main bound -/
+
+section Main
+
+variable {S W K PK SK SS C : Type} [Field S] [Fintype S] [DecidableEq W] [Fintype K]
+  [Nonempty K] [Inhabited K] [DecidableEq SS] (P : Scheme PK SK SS C) (G : DHGroup S W)
+
+open Classical in
+/-- **The bad-event experiment**: the adversary runs against the joint world answering with the
+outputs of the simulated world, and the experiment outputs whether the bad event `PQHit` held
+after some step: the table of the key derivation of the simulated world holds the recorded input
+of a session whose party and peer are uncorrupt, with the route of Diffie–Hellman and the route
+of the KEM. -/
+noncomputable def badGame (B : OracleAdv (OEv W SS C) (OOut S W K PK C) Bool) : PMF Bool :=
+  (OracleAdv.run (OracleAdv.flagWhen (fun _ _ x => PQHit P G x.2.1.1.1 x.2.1.2.2)
+    (jointSim P G)) B (jointInit, false)).map fun y => y.2.2
+
+open Classical in
+/-- **Differing outputs imply the bad event.** For every oracle adversary `B`, the probability
+that the outputs of the two worlds differ at some step is at most the probability of the bad
+event `PQHit`. -/
+theorem diffGame_le_badGame (B : OracleAdv (OEv W SS C) (OOut S W K PK C) Bool) :
+    diffGame P G B true ≤ badGame P G B true := by
+  have hstep : ∀ (s : JSt S W K PK SK SS C) e, InvJ P G s.1 →
+      ∀ x ∈ (jointSim P G s e).support,
+        PQHit P G x.2.1.1.1 x.2.1.2.2 ∨ (¬ JointBad s e x ∧ InvJ P G x.2.1) := by
+    intro s e hs x hx
+    simp only [jointSim, PMF.support_map, Set.mem_image] at hx
+    obtain ⟨j, hj, rfl⟩ := hx
+    rcases step_inv P G s.1 hs e j hj with h | ⟨h1, h2⟩
+    · exact Or.inl h
+    · refine Or.inr ⟨?_, h2⟩
+      simp [JointBad, h1]
+  unfold diffGame badGame
+  simp only [map_flag_apply]
+  exact OracleAdv.run_flagWhen_le_of_inv (jointSim P G) JointBad
+    (fun _ _ x => PQHit P G x.2.1.1.1 x.2.1.2.2) (fun s => InvJ P G s.1) hstep B jointInit
+    (inv_init P G)
+
+/-- **Real versus simulated PQXDH, up to the bad event.** For every oracle adversary `B`, the
+advantage of `B` between the real game and the simulated game is at most the probability of the
+bad event of the joint world: a query of the key derivation at the recorded input of a session
+that received a key of `F_AKE`, whose `DH1` is the Diffie–Hellman value `g^{ik_a · spk_b}` of
+the identity key of an uncorrupt initiator `a` and the signed prekey of an uncorrupt responder
+`b`, and whose shared secret is that of an encapsulation to, or a decapsulation under, a KEM key
+pair of a responder session. -/
+theorem pqxdh_advantage_le_badGame (B : OracleAdv (OEv W SS C) (OOut S W K PK C) Bool) :
+    KeyedGame.advantage (realGame P G) (simGame P G) B ≤ badGame P G B true :=
+  (pqxdh_advantage_le_diffGame P G B).trans (diffGame_le_badGame P G B)
+
+end Main
+
 end CatCrypt.Crypto.AKE.PQXDHSquareHops
+
