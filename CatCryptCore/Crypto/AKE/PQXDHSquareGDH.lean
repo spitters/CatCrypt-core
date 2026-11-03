@@ -20,11 +20,27 @@ of the responder (`DhOk`), and its shared secret is that of the KEM route (`KemO
 bounds that probability by gap Diffie–Hellman advantages of explicit reductions, and composes the
 bound into the UC statement of PQXDH against `F_AKE`.
 
-**The Diffie–Hellman part of the bad event.** `PQHit` is a conjunction, and its conjunct `DhOk`
-alone gives the event `PQDH1Hit` (`pqHit_dh1`): the table holds an input whose initiator and
+**The Diffie–Hellman conjunct of the bad event.** `PQHit` is a conjunction, and its conjunct
+`DhOk` alone gives the event `PQDH1Hit` (`pqHit_dh1`): the table holds an input whose initiator and
 responder are uncorrupt and whose `DH1` is `g^{ik_a · spk_b}`. This is the bad event `DH1Hit` of
 X3DH (`X3DHSquareGDH`) on the state of PQXDH, and it is bounded as there. The KEM part of the
 event (`KemOk`) is not needed for this bound.
+
+**The two routes.** The bad event splits into its KEM part `PQHitKem`, at a session that attacks
+an encapsulation the adversary did not create (an initiator, or a responder whose delivered
+encapsulation is that of its partner, `HonestEnc`), and its Diffie–Hellman part `PQHitDh`, at a
+responder whose delivered encapsulation is another one (`pqHit_split`, `badGame_le_split`). Both
+parts contain `DhOk`, so both are bounded by the gap Diffie–Hellman sum (`partBad_le_gapDH`). The
+KEM part is not bounded here by IND-CCA advantages, and it is not bounded by them alone: for a KEM
+whose shared secrets form a single point every IND-CCA advantage is zero, while an oracle
+adversary, which is not computationally bounded, computes the discrete logarithms of the public
+keys of a session between uncorrupt parties and queries the key derivation at the input of that
+session, so that the KEM part, and with it the minimum over the two routes of a session, has
+probability one. A bound by the route of the KEM needs, besides the IND-CCA advantage of a
+reduction that embeds the challenge at a guessed session, the correctness error of the KEM (the
+reduction answers the decapsulation of the challenge encapsulation with the challenge key) and
+the probability that the adversary hits the independent uniform key of the random case, at most
+its number of queries over the number of shared secrets.
 
 **The finite-party predicate.** `NamesInP N B`: on every path, the oracle adversary `B` starts
 sessions only between parties of the finite set `N` and queries the key derivation only at
@@ -68,14 +84,20 @@ peer's session), so the coupling of the two worlds is stated for draws from such
 * `startRP`, `stepRP`, `oracleRP`, `extractRP`: the world of the reduction.
 * `redTreeP`, `redPMFP`, `pqGdhRed`: the reduction as a program, its output, and the GDH
   adversary.
-* `PQDH1Hit`: the Diffie–Hellman part of the bad event.
+* `PQDH1Hit`: the event implied by the bad event through its conjunct `DhOk`.
+* `HonestEnc`, `PQHitKem`, `PQHitDh`, `partBad`: the two routes of a session and the two parts of
+  the bad event.
 * `NamesInP`: the finite-party predicate.
 * `gdhBoundP`: the bound of the square.
 
 ## Main results
 
 * `flag_le_of_couplingD`: bad flags under a coupling of draws from a distribution of the state.
-* `pqHit_dh1`: the bad event implies its Diffie–Hellman part.
+* `pqHit_dh1`: the bad event implies `PQDH1Hit`.
+* `pqHit_split`, `badGame_le_split`: the bad event is at most its KEM part plus its
+  Diffie–Hellman part.
+* `jointFlag_le_gapDH`, `partBad_le_gapDH`: an event of the joint world implying `PQDH1Hit`, in
+  particular each part of the bad event, is at most the gap Diffie–Hellman sum.
 * `pairBad_le_gapDHP`: the bad event of a pair is at most the GDH advantage of `pqGdhRed`.
 * `badGame_le_gapDH`: `badGame P G B true ≤ ∑ a ∈ N, ∑ b ∈ N, GapDH_Advantage (gapDHDef G)
   (pqGdhRed G P a b B)` for `B` naming only parties of `N`.
@@ -1585,7 +1607,7 @@ theorem invPP_init (N : Finset PartyId) :
   ⟨(fun _ h => by cases h), (fun _ _ h => by cases h)⟩
 
 omit [Fintype S] [Fintype K] [Nonempty K] [Inhabited K] [DecidableEq SS] in
-/-- **The Diffie–Hellman part of the bad event**: the table of the simulated world holds an input
+/-- **The Diffie–Hellman conjunct of the bad event**: the table of the simulated world holds an input
 whose initiator and responder are uncorrupt and whose `DH1` is the Diffie–Hellman value of the
 identity key of the initiator and the signed prekey of the responder. -/
 def PQDH1Hit (s : SimSt S W K PK SK SS C) : Prop :=
@@ -1594,7 +1616,7 @@ def PQDH1Hit (s : SimSt S W K PK SK SS C) : Prop :=
     s.1.x.lt ip.1.res = some (ikB, spkB) ∧ ip.1.dh1 = G.pub (ikA * spkB)
 
 omit [Fintype S] [Fintype K] [Nonempty K] [Inhabited K] in
-/-- **The bad event `PQHit` implies its Diffie–Hellman part**: the recorded input of a session
+/-- **The bad event `PQHit` implies `PQDH1Hit`**: the recorded input of a session
 whose party and peer are uncorrupt names them as initiator and responder, and its `DH1` is the
 Diffie–Hellman value of their long-term keys. -/
 theorem pqHit_dh1 {t : SimSt S W K PK SK SS C} {dlv : Inst → Option C}
@@ -1607,8 +1629,7 @@ theorem pqHit_dh1 {t : SimSt S W K PK SK SS C} {dlv : Inst → Option C}
       hb, hd⟩
 
 omit [Fintype S] [Fintype K] [Nonempty K] [Inhabited K] in
-/-- On the invariant of the parties, the Diffie–Hellman part of the bad event is the bad event
-of a pair of `N`. -/
+/-- On the invariant of the parties, `PQDH1Hit` is the bad event of a pair of `N`. -/
 theorem pqdh1Hit_pair {N : Finset PartyId} {s : SimSt S W K PK SK SS C} (h : InvPP N s.1)
     (hd : PQDH1Hit G s) : ∃ ab ∈ N ×ˢ N, PQDH1HitAB G ab.1 ab.2 s := by
   obtain ⟨ip, v, ikA, spkA, ikB, spkB, hl, hi, hr, hla, hlb, hd⟩ := hd
@@ -1617,10 +1638,14 @@ theorem pqdh1Hit_pair {N : Finset PartyId} {s : SimSt S W K PK SK SS C} (h : Inv
     rfl, hi, hr, hla, hlb, hd⟩
 
 open Classical in
-/-- The bad-event experiment of `PQXDHSquareHops` is at most the flag of the Diffie–Hellman part
-`PQDH1Hit` in the simulated world. -/
-theorem badGame_le_sim (B : OracleAdv (OEv W SS C) (OOut S W K PK C) Bool) :
-    badGame P G B true ≤
+/-- The flag of an event `E` of the simulated world and the record of delivered encapsulations in
+the joint world, for an event that implies the event `PQDH1Hit`, is at most the
+flag of `PQDH1Hit` in the simulated world. -/
+theorem jointFlag_le_sim (E : SimSt S W K PK SK SS C → (Inst → Option C) → Prop)
+    (hE : ∀ t dlv, E t dlv → PQDH1Hit G t)
+    (B : OracleAdv (OEv W SS C) (OOut S W K PK C) Bool) :
+    (OracleAdv.run (OracleAdv.flagWhen (fun _ _ x => E x.2.1.1.1 x.2.1.2.2) (jointSim P G)) B
+        (jointInit, false)).toOuterMeasure {y | y.2.2 = true} ≤
       (OracleAdv.run (OracleAdv.flagWhen (fun _ _ z => PQDH1Hit G z.2.1) (simOP (K := K) P G))
         B (simInitP, false)).toOuterMeasure {y | y.2.2 = true} := by
   have hJ : ∀ (s : JSt S W K PK SK SS C) (e : OEv W SS C),
@@ -1634,23 +1659,25 @@ theorem badGame_le_sim (B : OracleAdv (OEv W SS C) (OOut S W K PK C) Bool) :
     simp only [OracleAdv.flagWhen]
     rw [← hJ st.1 d, PMF.map_comp, PMF.map_comp]
     rfl
-  unfold badGame
-  rw [map_flag_apply]
   refine (OracleAdv.run_flagWhen_mono (jointSim P G) _ (fun _ _ x => PQDH1Hit G x.2.1.1.1)
-    (fun _ _ x hx => pqHit_dh1 P G hx) B _).trans (le_of_eq ?_)
+    (fun _ _ x hx => hE _ _ hx) B _).trans (le_of_eq ?_)
   have h := congrArg (fun p => PMF.toOuterMeasure p {y | y.2.2 = true})
     (OracleAdv.run_map_state _ _ _ hO B (jointInit, false))
   simp only [PMF.toOuterMeasure_map_apply] at h
   exact h
 
 open Classical in
-/-- **The bad event of the PQXDH square under the gap Diffie–Hellman assumption.** For an oracle
-adversary `B` that names only parties of the finite set `N`, the probability of the bad event
-`PQHit` is at most the sum over the pairs `(a, b)` of `N` of the gap Diffie–Hellman advantages of
+/-- **The flag of an event implying `PQDH1Hit` under the gap Diffie–Hellman
+assumption.** For an oracle adversary `B` that names only parties of the finite set `N` and an
+event `E` of the joint world that implies `PQDH1Hit`, the probability that `E` holds after some
+step is at most the sum over the pairs `(a, b)` of `N` of the gap Diffie–Hellman advantages of
 the reductions `pqGdhRed G P a b B`. -/
-theorem badGame_le_gapDH (N : Finset PartyId) (B : OracleAdv (OEv W SS C) (OOut S W K PK C) Bool)
-    (hB : NamesInP N B) :
-    badGame P G B true ≤ ∑ a ∈ N, ∑ b ∈ N, GapDH_Advantage (gapDHDef G) (pqGdhRed G P a b B) := by
+theorem jointFlag_le_gapDH (E : SimSt S W K PK SK SS C → (Inst → Option C) → Prop)
+    (hE : ∀ t dlv, E t dlv → PQDH1Hit G t) (N : Finset PartyId)
+    (B : OracleAdv (OEv W SS C) (OOut S W K PK C) Bool) (hB : NamesInP N B) :
+    (OracleAdv.run (OracleAdv.flagWhen (fun _ _ x => E x.2.1.1.1 x.2.1.2.2) (jointSim P G)) B
+        (jointInit, false)).toOuterMeasure {y | y.2.2 = true} ≤
+      ∑ a ∈ N, ∑ b ∈ N, GapDH_Advantage (gapDHDef G) (pqGdhRed G P a b B) := by
   have hI : ∀ (t : SimSt S W K PK SK SS C × St K) (e : OEv W SS C), InvPP N t.1.1 → EvInP N e →
       ∀ x ∈ (simOP P G t e).support, InvPP N x.2.1.1 := by
     intro t e ht he x hx
@@ -1668,7 +1695,102 @@ theorem badGame_le_gapDH (N : Finset PartyId) (B : OracleAdv (OEv W SS C) (OOut 
   have h₃ : ∑ ab ∈ N ×ˢ N, pairBadP P G ab.1 ab.2 B ≤
       ∑ ab ∈ N ×ˢ N, GapDH_Advantage (gapDHDef G) (pqGdhRed G P ab.1 ab.2 B) :=
     Finset.sum_le_sum fun ab _ => pairBad_le_gapDHP P G ab.1 ab.2 B
-  exact (badGame_le_sim P G B).trans ((h₁.trans (h₂.trans h₃)).trans_eq (Finset.sum_product _ _ _))
+  exact (jointFlag_le_sim P G E hE B).trans
+    ((h₁.trans (h₂.trans h₃)).trans_eq (Finset.sum_product _ _ _))
+
+open Classical in
+/-- **The bad event of the PQXDH square under the gap Diffie–Hellman assumption.** For an oracle
+adversary `B` that names only parties of the finite set `N`, the probability of the bad event
+`PQHit` is at most the sum over the pairs `(a, b)` of `N` of the gap Diffie–Hellman advantages of
+the reductions `pqGdhRed G P a b B`. -/
+theorem badGame_le_gapDH (N : Finset PartyId) (B : OracleAdv (OEv W SS C) (OOut S W K PK C) Bool)
+    (hB : NamesInP N B) :
+    badGame P G B true ≤ ∑ a ∈ N, ∑ b ∈ N, GapDH_Advantage (gapDHDef G) (pqGdhRed G P a b B) := by
+  unfold badGame
+  rw [map_flag_apply]
+  exact jointFlag_le_gapDH P G (PQHit P G) (fun _ _ h => pqHit_dh1 P G h) N B hB
+
+/-! ### The two routes of a session -/
+
+omit [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K] [DecidableEq SS] in
+/-- The session `y` with record `r` attacks an encapsulation that the adversary did not create:
+`y` is an initiator, which encapsulates itself, or a responder whose delivered encapsulation is
+the encapsulation of its partner, the initiator `(y.1, r.peer)`. This is the condition of the
+route of the KEM. -/
+def HonestEnc (t : SimSt S W K PK SK SS C) (dlv : Inst → Option C) (y : Inst) (r : Rec K) :
+    Prop :=
+  r.role = .initiator ∨ (r.role = .responder ∧ dlv y = t.1.ct (y.1, r.peer))
+
+omit [Fintype S] [Fintype K] [Nonempty K] [Inhabited K] in
+/-- **The KEM part of the bad event**: `PQHit` at a session whose encapsulation the adversary did
+not create (`HonestEnc`), where both routes apply. -/
+def PQHitKem (t : SimSt S W K PK SK SS C) (dlv : Inst → Option C) : Prop :=
+  ∃ y r ip v, t.1.x.st.recs y = some r ∧ t.2.1 y = some ip ∧ t.1.ro.lookup ip = some v ∧
+    t.1.x.st.corrupt y.2 = false ∧ t.1.x.st.corrupt r.peer = false ∧ InpShape y r ip.1 ∧
+    DhOk G t.1.x.lt ip.1 ∧ KemOk P t.1 dlv y r ip ∧ HonestEnc t dlv y r
+
+omit [Fintype S] [Fintype K] [Nonempty K] [Inhabited K] in
+/-- **The Diffie–Hellman part of the bad event**: `PQHit` at a responder session whose delivered
+encapsulation is not the encapsulation of its partner, where only the route of Diffie–Hellman
+applies. -/
+def PQHitDh (t : SimSt S W K PK SK SS C) (dlv : Inst → Option C) : Prop :=
+  ∃ y r ip v, t.1.x.st.recs y = some r ∧ t.2.1 y = some ip ∧ t.1.ro.lookup ip = some v ∧
+    t.1.x.st.corrupt y.2 = false ∧ t.1.x.st.corrupt r.peer = false ∧ InpShape y r ip.1 ∧
+    DhOk G t.1.x.lt ip.1 ∧ KemOk P t.1 dlv y r ip ∧ ¬ HonestEnc t dlv y r
+
+omit [Fintype S] [Fintype K] [Nonempty K] [Inhabited K] in
+/-- **The bad event splits into its KEM part and its Diffie–Hellman part.** -/
+theorem pqHit_split {t : SimSt S W K PK SK SS C} {dlv : Inst → Option C} (h : PQHit P G t dlv) :
+    PQHitKem P G t dlv ∨ PQHitDh P G t dlv := by
+  obtain ⟨y, r, ip, v, h₁, h₂, h₃, h₄, h₅, h₆, h₇, h₈⟩ := h
+  by_cases hk : HonestEnc t dlv y r
+  · exact Or.inl ⟨y, r, ip, v, h₁, h₂, h₃, h₄, h₅, h₆, h₇, h₈, hk⟩
+  · exact Or.inr ⟨y, r, ip, v, h₁, h₂, h₃, h₄, h₅, h₆, h₇, h₈, hk⟩
+
+omit [Fintype S] [Fintype K] [Nonempty K] [Inhabited K] in
+theorem pqHitKem_pqHit {t : SimSt S W K PK SK SS C} {dlv : Inst → Option C}
+    (h : PQHitKem P G t dlv) : PQHit P G t dlv := by
+  obtain ⟨y, r, ip, v, h₁, h₂, h₃, h₄, h₅, h₆, h₇, h₈, -⟩ := h
+  exact ⟨y, r, ip, v, h₁, h₂, h₃, h₄, h₅, h₆, h₇, h₈⟩
+
+omit [Fintype S] [Fintype K] [Nonempty K] [Inhabited K] in
+theorem pqHitDh_pqHit {t : SimSt S W K PK SK SS C} {dlv : Inst → Option C}
+    (h : PQHitDh P G t dlv) : PQHit P G t dlv := by
+  obtain ⟨y, r, ip, v, h₁, h₂, h₃, h₄, h₅, h₆, h₇, h₈, -⟩ := h
+  exact ⟨y, r, ip, v, h₁, h₂, h₃, h₄, h₅, h₆, h₇, h₈⟩
+
+open Classical in
+/-- The probability that the event `E` of the joint world holds after some step. -/
+noncomputable def partBad (E : SimSt S W K PK SK SS C → (Inst → Option C) → Prop)
+    (B : OracleAdv (OEv W SS C) (OOut S W K PK C) Bool) : ℝ≥0∞ :=
+  (OracleAdv.run (OracleAdv.flagWhen (fun _ _ x => E x.2.1.1.1 x.2.1.2.2) (jointSim P G)) B
+    (jointInit, false)).toOuterMeasure {y | y.2.2 = true}
+
+open Classical in
+/-- **The bad event is at most its KEM part plus its Diffie–Hellman part.** -/
+theorem badGame_le_split (B : OracleAdv (OEv W SS C) (OOut S W K PK C) Bool) :
+    badGame P G B true ≤ partBad P G (PQHitKem P G) B + partBad P G (PQHitDh P G) B := by
+  unfold badGame partBad
+  rw [map_flag_apply]
+  refine (OracleAdv.run_flagWhen_mono (jointSim P G) _
+    (fun _ _ x => PQHitKem P G x.2.1.1.1 x.2.1.2.2 ∨ PQHitDh P G x.2.1.1.1 x.2.1.2.2)
+    (fun _ _ _ h => pqHit_split P G h) B _).trans ?_
+  exact OracleAdv.run_flagWhen_or_le (jointSim P G) _ _ B _
+
+open Classical in
+/-- **Both parts of the bad event under the gap Diffie–Hellman assumption**: each is at most the
+sum over the pairs of `N` of the gap Diffie–Hellman advantages of `pqGdhRed`. -/
+theorem partBad_le_gapDH (N : Finset PartyId) (B : OracleAdv (OEv W SS C) (OOut S W K PK C) Bool)
+    (hB : NamesInP N B) :
+    partBad P G (PQHitKem P G) B ≤
+        ∑ a ∈ N, ∑ b ∈ N, GapDH_Advantage (gapDHDef G) (pqGdhRed G P a b B) ∧
+      partBad P G (PQHitDh P G) B ≤
+        ∑ a ∈ N, ∑ b ∈ N, GapDH_Advantage (gapDHDef G) (pqGdhRed G P a b B) := by
+  have h₁ := jointFlag_le_gapDH P G (PQHitKem P G)
+    (fun _ _ h => pqHit_dh1 P G (pqHitKem_pqHit P G h)) N B hB
+  have h₂ := jointFlag_le_gapDH P G (PQHitDh P G)
+    (fun _ _ h => pqHit_dh1 P G (pqHitDh_pqHit P G h)) N B hB
+  exact ⟨h₁, h₂⟩
 
 open Classical in
 /-- The gap Diffie–Hellman bound of the PQXDH square at the oracle adversary `B` and the finite
