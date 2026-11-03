@@ -533,6 +533,7 @@ public import CatCryptCore.Crypto.Party.Protocols.PQXDH
 public import CatCryptCore.Crypto.UCTransparentSquare
 public import CatCryptCore.Crypto.UCCascade
 public import CatCryptCore.Crypto.UCCascadeEnriched
+public import CatCryptCore.Crypto.UCCascadeEnrichedPar
 public import CatCryptCore.Crypto.TraceEquiv
 public import CatCryptCore.Crypto.TraceSemantics
 public import CatCryptCore.Crypto.UCCoupling
