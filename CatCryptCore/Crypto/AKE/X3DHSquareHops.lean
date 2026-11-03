@@ -1472,6 +1472,169 @@ theorem Inv.deliver_exp {rs rl : RSt S W K} {inp : Inst → Option (Inp W)} {f :
           exact Or.inr ⟨y, r, by rw [Function.update_of_ne hne]; exact hy,
             by rw [setRec_recs_ne hne]; exact hr, hey⟩
 
+omit [Fintype S] [Fintype K] [Nonempty K] in
+/-- **The completion of an unexposed session** either is the bad event, when the simulator's
+table holds its input, or keeps the invariant: the real world reads the key of `F_AKE`, which
+is the key of the partner with the same input or the fresh value `kf`. -/
+theorem Inv.deliver_unexp {rs rl : RSt S W K} {inp : Inst → Option (Inp W)} {f : St K}
+    (hI : Inv G rs inp f rl) {x : Inst} {rcs rcl : Rec K} (hs : rs.st.recs x = some rcs)
+    (hk : rcs.key = none) (hl : rl.st.recs x = some rcl) {ip : Inp W}
+    (hsh : InpShape x rcs ip) (hd : DhOk G rs.lt ip) (he : ¬ Exp rs.st.corrupt x rcs.peer)
+    (kf : K) (ph : Phase S W K) :
+    DH1Hit G (keyed rs x rcs default rs.ro, Function.update inp x (some ip), ph) ∨
+      Inv G (keyed rs x rcs default rs.ro) (Function.update inp x (some ip))
+        (advD f (if (inp (x.1, rcs.peer)).all (· = ip) then .newKey x.1 x.2 default
+          else .newKeyUnlinked x.1 x.2 default) kf).1
+        (keyed rl x rcl (roDet rl.ro ip kf).1 (roDet rl.ro ip kf).2) := by
+  obtain ⟨hix, ⟨rcl', hl', -⟩, rcf, hf, hpf, hrf, hkf, hexf⟩ := hI.recs_of G hs hk
+  rw [hl] at hl'; cases hl'
+  have hunc := (exp_iff_of_shape (c := rs.st.corrupt) hsh).not.mp he
+  simp only [not_or, Bool.not_eq_true] at hunc
+  cases hls : rs.ro.lookup ip with
+  | some v =>
+    exact Or.inl (dh1Hit_of G (rs := keyed rs x rcs default rs.ro) (by simp [keyed, hls])
+      hunc.1 hunc.2 hd)
+  | none =>
+  refine Or.inr ?_
+  have hnf : ¬ Exposed f x rcf := fun h => he (hexf.mp h)
+  have hux : ∀ y ip', Function.update inp x (some ip) y = some ip' → y ≠ x →
+      inp y = some ip' := fun y ip' h hne => by rwa [Function.update_of_ne hne] at h
+  -- a session with the input `ip` is the partner `(x.1, rcs.peer)`, unexposed
+  have hpart : ∀ y r, inp y = some ip → rs.st.recs y = some r →
+      y = (x.1, rcs.peer) ∧ r.peer = x.2 ∧ r.role ≠ rcs.role ∧ ¬ Exp rs.st.corrupt y r.peer := by
+    intro y r hy hr
+    have hne : y ≠ x := fun hc => by subst hc; rw [hix] at hy; cases hy
+    have hsy := hI.inpShape y ip r hy hr
+    obtain ⟨h₁, h₂, h₃⟩ := shape_partner hsh hsy hne
+    exact ⟨h₁, h₂, h₃, fun h => he ((exp_iff_of_shape hsh).mpr ((exp_iff_of_shape hsy).mp h))⟩
+  have hrec : ∀ y, inp y = some ip → ∃ r, rs.st.recs y = some r := by
+    intro y hy
+    have h := hI.inpSome y
+    rw [hy, Option.isSome_some] at h
+    cases hr : rs.st.recs y with
+    | none => simp [keyOf, hr] at h
+    | some r => exact ⟨r, rfl⟩
+  have hexp : ∀ (kk : K) y r, (setRec rs.st x { rcs with key := some kk }).recs y = some r →
+      y ≠ x → rs.st.recs y = some r := fun kk y r hr hne => by
+    rwa [setRec_recs_ne hne] at hr
+  have hcomp : (if Exposed f x rcf then Status.compromised else Status.completed) =
+      (if Exp rs.st.corrupt x rcs.peer then .compromised else .completed) := by
+    simp only [hnf, he, ↓reduceIte]
+  cases hll : rl.ro.lookup ip with
+  | some v =>
+    obtain ⟨y, r, hy, hr, hey⟩ := (hI.roReal ip v hll).resolve_left (by rw [hls]; simp)
+    obtain ⟨rfl, hpe, hro, -⟩ := hpart y r hy hr
+    have hc : (inp (x.1, rcs.peer)).all (· = ip) = true := by simp [hy]
+    obtain ⟨p, hp, hpp, hpr, hpk⟩ := sk_some (hI.frecs (x.1, rcs.peer)) hr
+    have hkr : (keyOf rl.st (x.1, rcs.peer)) = some v := by rw [← hI.roSess _ ip r hy hr hey, hll]
+    have hkp : p.key = some v := by
+      have := hI.key (x.1, rcs.peer)
+      rw [hkr] at this
+      simpa [keyOf, hp] using this.symm
+    have hps : p.status = .completed := by
+      have h := hI.fstatus _ p hp
+      rw [hkp, hpp] at h
+      simpa [hey] using h
+    have hval : newKeyVal f x rcf default kf = v := by
+      simp only [newKeyVal, hnf, ↓reduceIte, hpf, hp]
+      have hP : Partner x rcf p := ⟨hpp.trans hpe, by rw [hpr, hrf]; exact hro, hps⟩
+      simp [hP, hkp]
+    simp only [hc, ↓reduceIte, advD]
+    rw [show ((x.1, x.2) : Inst) = x from rfl, newKeyStep_of hf hkf, hval, roDet_of_some hll,
+      hcomp]
+    refine hI.keyed_step G hs hl hf hsh hd default v rs.ro rl.ro _ rfl hI.roSim ?_ ?_
+    · intro y' ip' r' hy' hr' hey'
+      by_cases hne : y' = x
+      · subst hne
+        simp only [Function.update_self, Option.some.injEq] at hy'
+        subst hy'
+        simp [hll, keyOf, setRec]
+      · rw [keyOf_setRec_ne hne]
+        exact hI.roSess y' ip' r' (hux y' ip' hy' hne) (hexp _ y' r' hr' hne) hey'
+    · intro ip' v' hv
+      rcases hI.roReal ip' v' hv with h | ⟨y', r', hy', hr', hey'⟩
+      · exact Or.inl h
+      · have hne : y' ≠ x := fun hc => by subst hc; rw [hix] at hy'; cases hy'
+        exact Or.inr ⟨y', r', by rw [Function.update_of_ne hne]; exact hy',
+          by rw [setRec_recs_ne hne]; exact hr', hey'⟩
+  | none =>
+    -- no session has the input `ip`
+    have hnone : ∀ y, inp y ≠ some ip := by
+      intro y hy
+      obtain ⟨r, hr⟩ := hrec y hy
+      obtain ⟨-, -, -, hey⟩ := hpart y r hy hr
+      have h := hI.key_isSome G hy
+      rw [← hI.roSess y ip r hy hr hey, hll] at h
+      cases h
+    have hfx : (advD f (if (inp (x.1, rcs.peer)).all (· = ip) then .newKey x.1 x.2 default
+        else .newKeyUnlinked x.1 x.2 default) kf).1 =
+        setRec f x
+          { rcf with
+            key := some kf
+            status := if Exp rs.st.corrupt x rcs.peer then .compromised else .completed } := by
+      split_ifs with hc
+      · have hin : inp (x.1, rcs.peer) = none := by
+          cases h : inp (x.1, rcs.peer) with
+          | none => rfl
+          | some ip' =>
+            rw [h] at hc
+            simp only [Option.all_some, decide_eq_true_eq] at hc
+            subst hc
+            exact absurd h (hnone _)
+        have hval : newKeyVal f x rcf default kf = kf := by
+          simp only [newKeyVal, hnf, ↓reduceIte, hpf]
+          cases hp : f.recs (x.1, rcs.peer) with
+          | none => rfl
+          | some p =>
+            simp only
+            split_ifs with hP
+            · exfalso
+              obtain ⟨r0, hr0, -, -, hk0⟩ := sk_some (hI.frecs (x.1, rcs.peer)).symm hp
+              have h := hI.fstatus _ p hp
+              rw [hP.2.2] at h
+              have hpk : p.key.isSome = true := by
+                cases hpk : p.key.isSome
+                · rw [hpk] at h; simp at h
+                · rfl
+              have h1 := hI.inpSome (x.1, rcs.peer)
+              rw [hin] at h1
+              simp [keyOf, hr0, hk0, hpk] at h1
+            · rfl
+        simp only [advD]
+        rw [show ((x.1, x.2) : Inst) = x from rfl, newKeyStep_of hf hkf, hval, hcomp]
+        simp only [he, ↓reduceIte]
+      · simp only [advD]
+        rw [show ((x.1, x.2) : Inst) = x from rfl, newKeyFreshStep_of hf hkf]
+        simp only [hnf, ↓reduceIte]
+    rw [hfx, roDet_of_none hll]
+    refine hI.keyed_step G hs hl hf hsh hd default kf rs.ro _ _ rfl ?_ ?_ ?_
+    · intro ip' v h
+      have hne : ip' ≠ ip := fun hc => by subst hc; rw [hls] at h; cases h
+      simp only [lookup_cons, hne, ite_false]
+      exact hI.roSim ip' v h
+    · intro y' ip' r' hy' hr' hey'
+      by_cases hne : y' = x
+      · subst hne
+        simp only [Function.update_self, Option.some.injEq] at hy'
+        subst hy'
+        simp [keyOf, setRec]
+      · rw [keyOf_setRec_ne hne]
+        have hy'' := hux y' ip' hy' hne
+        have hip : ip' ≠ ip := fun hc => by subst hc; exact hnone y' hy''
+        simp only [lookup_cons, hip, ite_false]
+        exact hI.roSess y' ip' r' hy'' (hexp _ y' r' hr' hne) hey'
+    · intro ip' v h
+      simp only [lookup_cons] at h
+      split_ifs at h with hc
+      · subst hc
+        exact Or.inr ⟨x, { rcs with key := some default }, Function.update_self _ _ _,
+          by simp [setRec], he⟩
+      · rcases hI.roReal ip' v h with h' | ⟨y', r', hy', hr', hey'⟩
+        · exact Or.inl h'
+        · have hne : y' ≠ x := fun hc => by subst hc; rw [hix] at hy'; cases hy'
+          exact Or.inr ⟨y', r', by rw [Function.update_of_ne hne]; exact hy',
+            by rw [setRec_recs_ne hne]; exact hr', hey'⟩
+
 end Bad
 
 end CatCrypt.Crypto.AKE.X3DHSquareHops
