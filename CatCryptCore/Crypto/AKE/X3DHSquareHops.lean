@@ -68,6 +68,13 @@ open CatCrypt.Crypto.AKE.X3DHSquare
 open CatCrypt.Crypto.OracleGameUpToBad
 open scoped ENNReal
 
+/-! ## Computations given by probability mass functions -/
+
+/-- The distribution of a computation that is the lift of `p` is `p`. -/
+theorem pmf_eq_of_eq_liftPMF {α : Type} {c : SPComp α} (hc : PureNF c) {p : PMF α}
+    (h : c = liftPMF p) : hc.pmf = p :=
+  liftPMF_injective (hc.eq_liftPMF.symm.trans h)
+
 /-! ## Activations with one call as functions of draws -/
 
 section Drive0
@@ -92,7 +99,6 @@ theorem driveP_zero_eq (step : τ → EG → PMF (τ × OG)) (res : σ → OG �
       (PMF.uniformFintype Rf).map (drive0D stepD finV s d t) := by
   rcases d with g | o
   · simp only [driveP, hstep, hfin, PMF.bind_map, PMF.pure_map, Function.comp_def]
-    rw [PMF.bind_pure_comp]
     rfl
   · simp only [driveP]
     rw [← PMF.map_const (PMF.uniformFintype Rf)]
@@ -156,10 +162,18 @@ omit [DecidableEq W] [Fintype K] [Nonempty K] in
 /-- `ltAt` is the image of a uniform pair under `ltD`. -/
 theorem ltAt_eq_map (s : RSt S W K) (pid : PartyId) :
     ltAt s pid = (PMF.uniformFintype (S × S)).map (ltD s pid) := by
-  unfold ltAt ltD
-  split
-  · exact (PMF.map_const _ _).symm
-  · rfl
+  cases h : s.lt pid with
+  | some l =>
+    simp only [ltAt, h]
+    rw [← PMF.map_const (PMF.uniformFintype (S × S))]
+    congr 1
+    funext l'
+    simp only [ltD, h, Function.const_apply]
+  | none =>
+    simp only [ltAt, h]
+    congr 1
+    funext l'
+    simp only [ltD, h]
 
 /-- The lazily sampled random function is the image of a uniform value under `roDet`. -/
 theorem roAt_eq_map {D : Type} [DecidableEq D] (tb : List (D × K)) (x : D) :
@@ -185,7 +199,6 @@ theorem ltAt_bind_ltAt_eq {γ : Type} (s : RSt S W K) (p q : PartyId)
           g (ltD s p r.2.1) (ltD (ltD s p r.2.1).2 q r.2.2.1) r.2.2.2 := by
   simp only [ltAt_eq_map, PMF.bind_map, Function.comp_def, uniform_bind_map]
   rw [map_uniform_eq_map_prod_snd (A := S)]
-  rfl
 
 variable (G : DHGroup S W)
 
@@ -249,17 +262,90 @@ def realD (s : RSt S W K) (e : OEv W) (r : Draw S K) : OOut S W K × RSt S W K :
 /-- `completeStep` is the image of a uniform draw under `completeD`. -/
 theorem completeStep_eq_map (s : RSt S W K) (x : Inst) :
     completeStep G s x = (PMF.uniformFintype (Draw S K)).map (completeD G s x) := by
-  sorry
+  have hP : ∀ b : ROut S W K × RSt S W K,
+      PMF.pure b = (PMF.uniformFintype (Draw S K)).map fun _ => b := fun b =>
+    (PMF.map_const _ _).symm
+  change _ = (PMF.uniformFintype (Draw S K)).map fun r => completeD G s x r
+  cases hr : s.st.recs x with
+  | none => simp only [completeStep, completeD, hr, hP]
+  | some rc =>
+    cases he : s.eph x with
+    | none => simp only [completeStep, completeD, hr, he, hP]
+    | some ek =>
+      cases ho : opkOf s x.1 rc.peer with
+      | none => simp only [completeStep, completeD, hr, he, ho, hP]
+      | some opk =>
+        by_cases hc : rc.role = .initiator ∧ rc.key.isNone
+        · simp only [completeStep, completeD, hr, he, ho, hc, and_self, ↓reduceIte, roAt_eq_map, PMF.map_comp]
+          exact ltAt_bind_ltAt_eq s x.2 rc.peer _
+        · simp only [completeStep, completeD, hr, he, ho, hc, ↓reduceIte, hP]
 
 /-- `sendStep` is the image of a uniform draw under `sendD`. -/
 theorem sendStep_eq_map (s : RSt S W K) (x : Inst) (e : W) :
     sendStep G s x e = (PMF.uniformFintype (Draw S K)).map (sendD G s x e) := by
-  sorry
+  have hP : ∀ b : ROut S W K × RSt S W K,
+      PMF.pure b = (PMF.uniformFintype (Draw S K)).map fun _ => b := fun b =>
+    (PMF.map_const _ _).symm
+  change _ = (PMF.uniformFintype (Draw S K)).map fun r => sendD G s x e r
+  cases hr : s.st.recs x with
+  | none => simp only [sendStep, sendD, hr, hP]
+  | some rc =>
+    cases he : s.eph x with
+    | none => simp only [sendStep, sendD, hr, he, hP]
+    | some opk =>
+      by_cases hc : rc.role = .responder ∧ rc.key.isNone
+      · simp only [sendStep, sendD, hr, he, hc, and_self, ↓reduceIte, roAt_eq_map, PMF.map_comp]
+        exact ltAt_bind_ltAt_eq s x.2 rc.peer _
+      · simp only [sendStep, sendD, hr, he, hc, ↓reduceIte, hP]
 
 /-- **The oracle of the real game** is the image of a uniform draw under `realD`. -/
 theorem realGame_oracle_eq (s : RSt S W K) (e : OEv W) :
     (realGame G).oracle () s e = (PMF.uniformFintype (Draw S K)).map (realD G s e) := by
-  sorry
+  have hP : ∀ b : OOut S W K × RSt S W K,
+      PMF.pure b = (PMF.uniformFintype (Draw S K)).map fun _ => b := fun b =>
+    (PMF.map_const _ _).symm
+  change _ = (PMF.uniformFintype (Draw S K)).map fun r => realD G s e r
+  rcases e with (⟨sid, pid, peer, role⟩ | ⟨sid, pid⟩) | (_ | _ | pid | ⟨sid, pid⟩ | pid |
+    ⟨sid, pid⟩ | ⟨sid, pid, e⟩ | x)
+  · simp only [realGame, realHon]
+    split_ifs with h
+    · rw [PMF.map_comp, map_uniform_eq_map_prod_fst (B := (S × S) × (S × S) × K)]
+      congr 1
+      funext r
+      simp only [realD, h, ite_true, Function.comp_apply]
+    · rw [PMF.pure_map, hP]
+      congr 1
+      funext r
+      simp only [realD, h, Bool.false_eq_true, ite_false]
+  · simp only [realGame, realHon, PMF.pure_map, hP]
+    rfl
+  · simp only [realGame, realAdv, PMF.pure_map, hP]
+    rfl
+  · simp only [realGame, realAdv, PMF.pure_map, hP]
+    rfl
+  · simp only [realGame, realAdv, PMF.map_comp]
+    exact ltAt_map_eq s pid _
+  · simp only [realGame, realAdv, PMF.pure_map, hP]
+    rfl
+  · simp only [realGame, realAdv, corruptRStep]
+    by_cases h : Named s.st pid = true
+    · simp only [h, ite_true, PMF.pure_map, hP]
+      congr 1
+      funext r
+      simp only [realD, h, ite_true]
+    · simp only [h, Bool.false_eq_true, ite_false, PMF.map_comp]
+      refine (ltAt_map_eq s pid _).trans ?_
+      congr 1
+      funext r
+      simp only [realD, h, Bool.false_eq_true, ite_false, Function.comp_apply]
+  · simp only [realGame, realAdv, completeStep_eq_map, PMF.map_comp]
+    rfl
+  · simp only [realGame, realAdv, sendStep_eq_map, PMF.map_comp]
+    rfl
+  · simp only [realGame, realAdv, roAt_eq_map, PMF.map_comp]
+    rw [map_uniform_eq_map_prod_snd (A := S × S), map_uniform_eq_map_prod_snd (A := S × S),
+      map_uniform_eq_map_prod_snd (A := S)]
+    rfl
 
 end RealDraw
 
@@ -280,8 +366,8 @@ omit [Inhabited K] in
 /-- `roStep` is the lift of `roAt`. -/
 theorem roStep_eq {D : Type} [DecidableEq D] (tb : List (D × K)) (x : D) :
     roStep tb x = liftPMF (roAt tb x) := by
-  unfold roStep roAt
-  split <;> simp only [liftPMF_pure, sample_eq_liftPMF, map_liftPMF]
+  cases h : tb.lookup x <;>
+    simp only [roStep, roAt, h, liftPMF_pure, sample_eq_liftPMF, map_liftPMF]
 
 /-- `deliver` with the value `k` of the key derivation. -/
 def deliverD (rs : RSt S W K) (inp : Inst → Option (Inp W)) (x : Inst) (r : Rec K)
@@ -299,7 +385,18 @@ omit [Field S] [Fintype S] in
 theorem deliver_eq (rs : RSt S W K) (inp : Inst → Option (Inp W)) (x : Inst) (r : Rec K)
     (ip : Inp W) :
     deliver rs inp x r ip = liftPMF ((PMF.uniformFintype K).map (deliverD rs inp x r ip)) := by
-  sorry
+  change _ = liftPMF ((PMF.uniformFintype K).map fun k => deliverD rs inp x r ip k)
+  by_cases h : Exposed rs.st x r
+  · simp only [deliver, h, ↓reduceIte, roStep_eq, map_liftPMF, roAt_eq_map, PMF.map_comp]
+    congr 2
+    funext k
+    simp only [deliverD, h, ↓reduceIte, Function.comp_apply]
+  · simp only [deliver, h, ↓reduceIte, liftPMF_pure]
+    congr 1
+    rw [← PMF.map_const (PMF.uniformFintype K)]
+    congr 1
+    funext k
+    simp only [deliverD, h, ↓reduceIte, Function.const_apply]
 
 /-- `simComplete` with the draw `r`. -/
 def simCompleteD (s : SimSt S W K) (x : Inst) (r : Draw S K) : SimSt S W K × Dec S W K :=
@@ -359,7 +456,72 @@ def simStartD (s : SimSt S W K) (e : OEv W) (r : Draw S K) : SimSt S W K × Dec 
 of a uniform draw under `simStartD`. -/
 theorem simStart_eq (s : SimSt S W K) (e : OEv W) :
     simStart G s e = liftPMF ((PMF.uniformFintype (Draw S K)).map (simStartD G s e)) := by
-  sorry
+  have hP : ∀ b : SimSt S W K × Dec S W K,
+      (SPComp.pure b : SPComp _) = liftPMF ((PMF.uniformFintype (Draw S K)).map fun _ => b) :=
+    fun b => by rw [liftPMF_pure]; exact congrArg liftPMF (PMF.map_const _ _).symm
+  change _ = liftPMF ((PMF.uniformFintype (Draw S K)).map fun r => simStartD G s e r)
+  rcases e with (⟨sid, pid, peer, role⟩ | ⟨sid, pid⟩) | (_ | _ | pid | ⟨sid, pid⟩ | pid |
+    ⟨sid, pid⟩ | ⟨sid, pid, e⟩ | x)
+  · by_cases h : (s.1.st.recs (sid, pid)).isNone = true
+    · simp only [simStart, h, ↓reduceIte, sample_eq_liftPMF, map_liftPMF]
+      rw [map_uniform_eq_map_prod_fst (B := (S × S) × (S × S) × K)]
+      congr 2
+      funext r
+      simp only [simStartD, h, ↓reduceIte]
+    · simp only [simStart, h, Bool.false_eq_true, ↓reduceIte, hP]
+      congr 3
+      funext r
+      simp only [simStartD, h, Bool.false_eq_true, ↓reduceIte]
+  · simp only [simStart, hP]
+    rfl
+  · simp only [simStart, hP]
+    rfl
+  · simp only [simStart, hP]
+    rfl
+  · simp only [simStart, ltStep_eq, map_liftPMF]
+    exact congrArg liftPMF (ltAt_map_eq s.1 pid _)
+  · simp only [simStart, hP]
+    rfl
+  · by_cases h : Named s.1.st pid = true
+    · simp only [simStart, simCorrupt, h, ↓reduceIte, hP]
+      congr 3
+      funext r
+      simp only [simStartD, h, ↓reduceIte]
+    · simp only [simStart, simCorrupt, h, Bool.false_eq_true, ↓reduceIte, ltStep_eq,
+        map_liftPMF]
+      refine congrArg liftPMF ((ltAt_map_eq s.1 pid _).trans ?_)
+      congr 1
+      funext r
+      simp only [simStartD, h, Bool.false_eq_true, ↓reduceIte]
+  · simp only [simStart, simComplete, simStartD, simCompleteD]
+    cases hr : s.1.st.recs (sid, pid) with
+    | none => simp only [hP]
+    | some rc =>
+      cases he : s.1.eph (sid, pid) with
+      | none => simp only [hP]
+      | some ek =>
+        cases ho : opkOf s.1 sid rc.peer with
+        | none => simp only [ho, hP]
+        | some opk =>
+          by_cases hc : rc.role = .initiator ∧ rc.key.isNone
+          · simp only [ho, hc, and_self, ↓reduceIte, ltStep_eq, deliver_eq, liftPMF_bind_liftPMF]
+            exact congrArg liftPMF (ltAt_bind_ltAt_eq s.1 pid rc.peer _)
+          · simp only [ho, hc, ↓reduceIte, hP]
+  · simp only [simStart, simSend, simStartD, simSendD]
+    cases hr : s.1.st.recs (sid, pid) with
+    | none => simp only [hP]
+    | some rc =>
+      cases he : s.1.eph (sid, pid) with
+      | none => simp only [hP]
+      | some opk =>
+        by_cases hc : rc.role = .responder ∧ rc.key.isNone
+        · simp only [hc, and_self, ↓reduceIte, ltStep_eq, deliver_eq, liftPMF_bind_liftPMF]
+          exact congrArg liftPMF (ltAt_bind_ltAt_eq s.1 pid rc.peer _)
+        · simp only [hc, ↓reduceIte, hP]
+  · simp only [simStart, roStep_eq, map_liftPMF, roAt_eq_map, PMF.map_comp]
+    rw [map_uniform_eq_map_prod_snd (A := S × S), map_uniform_eq_map_prod_snd (A := S × S),
+      map_uniform_eq_map_prod_snd (A := S)]
+    rfl
 
 /-- A step of the adversary port of `F_AKE` with uniform keys, with the fresh key `kf`. -/
 def advD (t : St K) (a : AEv K) (kf : K) : St K × AOut :=
@@ -383,7 +545,17 @@ omit [Inhabited K] in
 theorem fStep_eq (t : St K) (g : FEv K) :
     (F_AKE (SPComp.sample K) true).step t g =
       liftPMF ((PMF.uniformFintype K).map (fStepD t g)) := by
-  sorry
+  change _ = liftPMF ((PMF.uniformFintype K).map fun kf => fStepD t g kf)
+  rcases g with h | a
+  · simp only [F_AKE, Sys.ofPorts_step_inl, honSys, liftPMF_pure, map_liftPMF, PMF.pure_map]
+    exact congrArg liftPMF (PMF.map_const _ _).symm
+  · simp only [F_AKE, Sys.ofPorts_step_inr, advSys]
+    cases a <;>
+      simp only [liftPMF_pure, sample_eq_liftPMF, map_liftPMF, PMF.pure_map, PMF.map_comp,
+        ↓reduceIte] <;>
+      first
+      | exact congrArg liftPMF (PMF.map_const _ _).symm
+      | rfl
 
 /-- The finish of the simulator. -/
 def finV (s : SimSt S W K) (o : FOut K) : SimSt S W K × OOut S W K :=
@@ -401,7 +573,18 @@ def simWorldD (t : SimSt S W K × St K) (e : OEv W) (r : Draw S K × K) :
 theorem simGame_oracle_eq (t : SimSt S W K × St K) (e : OEv W) :
     (simGame G).oracle () t e =
       (PMF.uniformFintype (Draw S K × K)).map fun r => (simWorldD G t e r).swap := by
-  sorry
+  have hstep : ((simProt (K := K) G).withSub (F_AKE (SPComp.sample K) true)).step t e =
+      liftPMF (withSubP (fun s e => (PMF.uniformFintype (Draw S K)).map (simStartD G s e))
+        (fun t g => (PMF.uniformFintype K).map (fStepD t g))
+        (fun s o => PMF.pure ((s.1, s.2.1, .fwd), .inr (simOut s.2.2 o)))
+        (fun s o => PMF.pure (finV s o)) 0 t e) :=
+    withSub_step_eq_liftPMF _ _ _ _ _ _ (simStart_eq G) fStep_eq (fun _ _ => liftPMF_pure _)
+      (fun _ _ => liftPMF_pure _) t e
+  change (simWorld_pureNF G t e).pmf.map Prod.swap = _
+  rw [pmf_eq_of_eq_liftPMF (simWorld_pureNF G t e) hstep,
+    withSubP_zero_eq _ _ _ _ (simStartD G) fStepD finV t e rfl (fun _ _ => rfl) (fun _ _ => rfl),
+    PMF.map_comp]
+  rfl
 
 end SimDraw
 
@@ -431,7 +614,15 @@ omit [DecidableEq W] [Inhabited K] in
 world. -/
 theorem map_uniform_cpl (b : Bool) :
     (PMF.uniformFintype (Draw S K × K)).map (cpl b) = PMF.uniformFintype (Draw S K) := by
-  sorry
+  cases b
+  · exact PMF.map_uniform_fst
+  · let e : (Draw S K × K) ≃ (Draw S K × K) :=
+      { toFun := fun r => ((r.1.1, r.1.2.1, r.1.2.2.1, r.2), r.1.2.2.2)
+        invFun := fun r => ((r.1.1, r.1.2.1, r.1.2.2.1, r.2), r.1.2.2.2)
+        left_inv := fun _ => rfl
+        right_inv := fun _ => rfl }
+    have h : cpl (S := S) (K := K) true = Prod.fst ∘ e := rfl
+    rw [h, ← PMF.map_comp, PMF.uniformFintype_map_equiv, PMF.map_uniform_fst]
 
 /-- The state of the joint world: the simulated world, the real world, and whether the outputs
 differed at the last step. -/
@@ -508,7 +699,51 @@ advantage of `B` between the real game and the simulated game is at most the pro
 bad event of the joint world. -/
 theorem x3dh_advantage_le_badGame (B : OracleAdv (OEv W) (OOut S W K) Bool) :
     KeyedGame.advantage (realGame G) (simGame G) B ≤ badGame G B true := by
-  sorry
+  have hagree : ∀ (s : JSt S W K) (e : OEv W) (x : OOut S W K × JSt S W K), ¬ JointBad s e x →
+      jointReal G s e x = jointSim G s e x :=
+    fun s e x hx => jointReal_apply_eq G s e x (by simpa [JointBad] using hx)
+  have hR : (OracleAdv.run ((realGame G).oracle ()) B (realGame G).init).map Prod.fst =
+      (OracleAdv.run (jointReal G) B jointInit).map Prod.fst := by
+    have h := OracleAdv.run_map_state (jointReal G) ((realGame G).oracle ())
+      (fun s' => s'.1.2) (fun s e => jointReal_map G s e) B jointInit
+    calc _ = ((OracleAdv.run (jointReal G) B jointInit).map
+          (Prod.map id fun s' => s'.1.2)).map Prod.fst := (congrArg (PMF.map Prod.fst) h).symm
+      _ = _ := by rw [PMF.map_comp]; rfl
+  have hS : (OracleAdv.run ((simGame (K := K) G).oracle ()) B (simGame G).init).map Prod.fst =
+      (OracleAdv.run (jointSim G) B jointInit).map Prod.fst := by
+    have h := OracleAdv.run_map_state (jointSim G) ((simGame G).oracle ())
+      (fun s' => s'.1.1) (fun s e => jointSim_map G s e) B jointInit
+    calc _ = ((OracleAdv.run (jointSim G) B jointInit).map
+          (Prod.map id fun s' => s'.1.1)).map Prod.fst := (congrArg (PMF.map Prod.fst) h).symm
+      _ = _ := by rw [PMF.map_comp]; rfl
+  have hF : ((OracleAdv.run (OracleAdv.flagWhen JointBad (jointSim G)) B
+      (jointInit, false)).map fun y => y.2.2) true =
+      (OracleAdv.run (OracleAdv.flagWhen JointBad (jointSim G)) B
+        (jointInit, false)).toOuterMeasure {y | y.2.2 = true} := by
+    rw [← PMF.toOuterMeasure_apply_singleton, PMF.toOuterMeasure_map_apply]
+    rfl
+  have h₁ : ((OracleAdv.run (jointReal G) B jointInit).map Prod.fst) true ≤
+      ((OracleAdv.run (jointSim G) B jointInit).map Prod.fst) true + badGame G B true := by
+    rw [map_fst_apply_true, map_fst_apply_true, badGame, hF]
+    exact OracleAdv.run_toOuterMeasure_le_add_flagWhen JointBad _ _ hagree B _ _
+  have h₂ : ((OracleAdv.run (jointSim G) B jointInit).map Prod.fst) true ≤
+      ((OracleAdv.run (jointReal G) B jointInit).map Prod.fst) true + badGame G B true := by
+    rw [map_fst_apply_true, map_fst_apply_true, badGame, hF,
+      ← OracleAdv.run_flagWhen_prob_eq JointBad _ _ hagree B]
+    exact OracleAdv.run_toOuterMeasure_le_add_flagWhen JointBad _ _
+      (fun s e x hx => (hagree s e x hx).symm) B _ _
+  have hacc₁ : (realGame G).accept B =
+      ((OracleAdv.run (jointReal G) B jointInit).map Prod.fst) true := by
+    unfold KeyedGame.accept
+    erw [PMF.pure_bind]
+    rw [hR]
+  have hacc₂ : (simGame (K := K) G).accept B =
+      ((OracleAdv.run (jointSim G) B jointInit).map Prod.fst) true := by
+    unfold KeyedGame.accept
+    erw [PMF.pure_bind]
+    rw [hS]
+  rw [KeyedGame.advantage, hacc₁, hacc₂]
+  exact max_le (tsub_le_iff_left.mpr h₁) (tsub_le_iff_left.mpr h₂)
 
 end Joint
 
