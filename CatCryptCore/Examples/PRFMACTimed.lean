@@ -7,6 +7,7 @@ module
 
 public import CatCryptCore.Examples.PRFMAC
 public import CatCryptCore.Tactics.DeriveTimed
+public import CatCryptCore.Tactics.StdCosts
 
 /-!
 # Time of the PRF-to-MAC reduction
@@ -29,6 +30,16 @@ the tag).
   `4 * T + 5`
 * `prfMacRed.timeBound_timed` — a forger of time `T` gives a distinguisher of time
   `4 * T + 6`
+
+## The priced condition
+
+The forms `.timed` do not charge the test `m ∈ log`. The forms `.priced`, derived under the option
+`derive_timed.priceProps`, charge it by a walk of the log at one unit per comparison of messages.
+The log grows by one message per query and each query costs one unit of the time of the forger.
+
+* `prfMacRedAux.timeBound_priced` — from a log `log`, a forger of time `T` is run in time
+  `8 * T + 4 * |log| + 6`
+* `prfMacRed.timeBound_priced` — a forger of time `T` gives a distinguisher of time `8 * T + 7`
 -/
 
 @[expose] public section
@@ -76,5 +87,51 @@ theorem prfMacRed.timeBound_timed {D T : Type} [DecidableEq D] [DecidableEq T]
     OracleAdv.Timed.StepTimeBound (prfMacRed.timed A) (4 * n + 6) :=
   (OracleAdv.Timed.stepTimeBound_delay (c := 1) (prfMacRedAux.timeBound_timed hA [])).mono
     (by omega)
+
+set_option derive_timed.priceProps true in
+derive_timed (suffix := priced) prfMacRedAux
+
+set_option derive_timed.priceProps true in
+derive_timed (suffix := priced) prfMacRed
+
+open OracleAdv.Timed in
+/-- From a log `log`, a forger of time `T` is run with its final test of the forged message against
+the log, at most `8 T + 4 |log| + 6`: each query of the forger costs one unit of `T` and adds one
+message to the log, which the final test walks. -/
+theorem prfMacRedAux.timeBound_priced {D T : Type} [DecidableEq D] [DecidableEq T]
+    {A : OracleAdv.Timed D T (D × T)} {n : ℕ} (hA : A.TimeBound n) (log : List D) :
+    StepTimeBound (prfMacRedAux.priced A log) (8 * n + 4 * log.length + 6) := by
+  induction A generalizing n log with
+  | ret a =>
+    have he := List.elem.timedCost_le a.1 log
+    simp only [prfMacRedAux.priced, delay]
+    split <;> simp only [StepTimeBound, OracleAdv.Timed.TimeBound, and_true, Nat.add_zero]
+    · omega
+    · exact ⟨by omega, by omega, fun _ => by omega⟩
+  | rand p c k ih =>
+    obtain ⟨h0, hk⟩ := hA
+    rw [prfMacRedAux.priced]
+    simp only [StepTimeBound, OracleAdv.Timed.TimeBound]
+    refine ⟨by omega, by omega, fun b => ?_⟩
+    have h1 := hk b
+    have h2 := ih b h1.2 log
+    exact ⟨by have := h2.1; have := h1.1; omega, h2.2.mono (by have := h1.1; omega)⟩
+  | query d c k ih =>
+    obtain ⟨h0, hk⟩ := hA
+    rw [prfMacRedAux.priced]
+    simp only [StepTimeBound, OracleAdv.Timed.TimeBound]
+    refine ⟨by omega, by omega, fun b => ?_⟩
+    have h1 := hk b
+    have h2 := ih b h1.2 (d :: log)
+    simp only [List.length_cons] at h2
+    exact ⟨by have := h2.1; have := h1.1; omega, h2.2.mono (by have := h1.1; omega)⟩
+
+open OracleAdv.Timed in
+/-- **Time of the PRF-to-MAC reduction with its test.** A forger of time `T` gives a PRF
+distinguisher of time at most `8 T + 7`. -/
+theorem prfMacRed.timeBound_priced {D T : Type} [DecidableEq D] [DecidableEq T]
+    {A : OracleAdv.Timed D T (D × T)} {n : ℕ} (hA : A.TimeBound n) :
+    StepTimeBound (prfMacRed.priced A) (8 * n + 7) :=
+  (stepTimeBound_delay (c := 1) (prfMacRedAux.timeBound_priced hA [])).mono (by simp; omega)
 
 end CatCrypt.Examples.PRFMAC
