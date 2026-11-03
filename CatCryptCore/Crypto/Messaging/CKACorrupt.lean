@@ -6,6 +6,7 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Crypto.Messaging.CKA
+public import CatCryptCore.Crypto.Messaging.DoubleRatchet
 public import CatCryptCore.Crypto.OracleSimulation
 public import CatCryptCore.Crypto.SPCompPMF
 public import CatCryptCore.ForMathlib.PMFUniform
@@ -1766,5 +1767,55 @@ theorem cka_advantage_dh_eq_corrupt (k m : ℕ) (D : CKAView G G → SPComp Bool
   (cka_advantage_eq_corrupt (dhCKA G) 2 2 k m D).trans (dhCKA_corrupt_advantageA_eq_ddh _ D)
 
 end DHProof
+
+/-! ## The double ratchet bound as a special case -/
+
+section SM
+
+open CatCrypt.Crypto.Assumptions
+
+variable {Sc Msg Key RK Sa W Ct Rand : Type} [Fintype Key] [Nonempty Key] [Fintype RK]
+  [Nonempty RK] [Fintype Sa] [Nonempty Sa] [SampleableType W] [SampleableType Ct]
+  [Fintype Rand] [Nonempty Rand]
+
+/-- **The double-ratchet bound with corruption-game CKA terms.** The CKA terms of
+`sm_advantage_le` are corruption-game advantages, for any delays `ΔFS`, `ΔPCS`, of the passive
+adversaries `ckaPassiveAdv t (n - (t + 1))`, which never corrupt and never leak. -/
+theorem sm_advantage_le_corrupt (C : CKADef Sc Msg Key) [CKACoins C Rand] (ΔFS ΔPCS : ℕ)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (msgs : List (List (W × W))) (A : SMView Msg Ct → SPComp Bool) :
+    SM_Advantage C R G D msgs A ≤
+      ∑ t ∈ Finset.range msgs.length,
+          CKA_Corrupt_AdvantageA C ΔFS ΔPCS
+            (ckaPassiveAdv (Rand := Rand) t (msgs.length - (t + 1))) (smCKARed R G D msgs t A) +
+        ∑ t ∈ Finset.range msgs.length,
+          PRG_Advantage R (smRootRed C R G D msgs t (msgs.length - (t + 1)) A) +
+        ∑ t ∈ Finset.range msgs.length,
+          FSAEAD_Advantage G D (msgs.getD t [])
+            (smAEADRed C G D msgs t (msgs.length - (t + 1)) A) := by
+  have h := sm_advantage_le C R G D msgs A
+  simp only [cka_advantage_eq_corrupt C ΔFS ΔPCS] at h
+  exact h
+
+/-- **The Diffie–Hellman double-ratchet bound through the corruption reduction.** The DDH terms
+are those of the corruption reduction `ckaCorruptDDHRedA` at the passive adversaries; the bound
+`sm_dh_advantage_le` is its instance with the passive reduction `ckaDDHRed`. -/
+theorem sm_dh_advantage_le_corrupt (G : Type) [CG : CyclicGroup G]
+    (R : PRGDef (RK × G) (RK × Sa)) (F : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (msgs : List (List (W × W))) (A : SMView G Ct → SPComp Bool) :
+    SM_Advantage (dhCKA G) R F D msgs A ≤
+      ∑ t ∈ Finset.range msgs.length,
+          DDH_Advantage G (ckaCorruptDDHRedA (ckaPassiveAdv (Rand := CG.Exp) t
+            (msgs.length - (t + 1))) (smCKARed R F D msgs t A)) +
+        ∑ t ∈ Finset.range msgs.length,
+          PRG_Advantage R (smRootRed (dhCKA G) R F D msgs t (msgs.length - (t + 1)) A) +
+        ∑ t ∈ Finset.range msgs.length,
+          FSAEAD_Advantage F D (msgs.getD t [])
+            (smAEADRed (dhCKA G) F D msgs t (msgs.length - (t + 1)) A) := by
+  have h := sm_advantage_le (dhCKA G) R F D msgs A
+  simp only [cka_advantage_dh_eq_corrupt] at h
+  exact h
+
+end SM
 
 end CatCrypt.Crypto.Messaging
