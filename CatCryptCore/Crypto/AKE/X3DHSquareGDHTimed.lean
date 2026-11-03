@@ -110,12 +110,117 @@ noncomputable def otherC (s : RSim S W K) : OEv W → SPComp (RSim S W K × Dec 
 noncomputable def fakeC (t : St K) (g : FEv K) : SPComp (St K × FOut K) :=
   SPComp.map (fStepD t g) (SPComp.sample K)
 
+/-- The finish of a step of the world of the reduction as a computation: the decision of the
+start is passed to `F_AKE` with a uniform fresh key, and its answer to `finR`. -/
+noncomputable def finishC (p : RSim S W K × Dec S W K) (t : St K) :
+    SPComp ((RSim S W K × St K) × OOut S W K) :=
+  match p.2 with
+  | .inr o => SPComp.pure ((p.1, t), o)
+  | .inl g => SPComp.map (fun q => (((finR p.1 q.2).1, q.1), (finR p.1 q.2).2)) (fakeC t g)
+
+/-- The extraction of the reduction as a computation. -/
+noncomputable def extractC (rs : RSt S (W ⊕ W) K) : SPComp W :=
+  SPComp.pure (extractR G a b O X Y rs)
+
 end Prog
 
 derive_reduction completeC
 derive_reduction sendC
 derive_reduction otherC
 derive_reduction fakeC
+derive_reduction finishC
+derive_reduction extractC
 
+/-! ## The costed reduction -/
+
+/-- The costed state of the simulator of the reduction: its tables with their cost companions. -/
+abbrev RSimHat (S W K : Type) : Type :=
+  ((((Inst → Option (Rec K)) × (Inst → ℕ)) × ((PartyId → Bool) × (PartyId → ℕ)) ×
+      List Notice × ℕ) × ((PartyId → Option (S × S)) × (PartyId → ℕ)) ×
+      ((Inst → Option S) × (Inst → ℕ)) × List (Inp (W ⊕ W) × K)) ×
+    ((Inst → Option (Inp (W ⊕ W))) × (Inst → ℕ)) × Phase S W K
+
+/-- A state of the simulator of the reduction with its tables read at unit cost: every cost
+companion is zero. -/
+def liftR {S W K : Type} (s : RSim S W K) : RSimHat S W K :=
+  ((((s.1.st.recs, fun _ => 0), (s.1.st.corrupt, fun _ => 0), s.1.st.notices, s.1.st.cursor),
+    (s.1.lt, fun _ => 0), (s.1.eph, fun _ => 0), s.1.ro), (s.2.1, fun _ => 0), s.2.2)
+
+section Costed
+
+variable {S W K : Type} [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K]
+  [Inhabited K] (G : DHGroup S W) (a b : PartyId) (O : W → W → W → Bool)
+  (OCost : W → W → W → ℕ) (X Y : W) (coeCost : S ≃ W → S → ℕ) (mulCost : W → W → ℕ)
+  (toFunCost : S → ℕ) (expCost : W → S → ℕ)
+
+/-- **The time of the start** of the simulator of the reduction on the event `e`: one unit for
+the dispatch on the event and the time of the costed tree of `completeC`, `sendC` or `otherC`. -/
+noncomputable def startTime (s : RSim S W K) (e : OEv W) : ℕ :=
+  1 + match e with
+    | .inr (.complete sid pid) => SPTree.Timed.stepTime (completeC.tree.timed G a b O OCost X Y
+        (liftR s) sid pid s.1.lt (fun _ => 0) s.1.eph (fun _ => 0) s.2.1 (fun _ => 0)
+        s.1.st.recs (fun _ => 0) mulCost toFunCost expCost)
+    | .inr (.send sid pid e') => SPTree.Timed.stepTime (sendC.tree.timed G a b O OCost X Y
+        (liftR s) sid pid e' s.1.lt (fun _ => 0) s.1.eph (fun _ => 0) s.1.st.recs (fun _ => 0)
+        s.2.1 (fun _ => 0) mulCost toFunCost expCost)
+    | e => SPTree.Timed.stepTime (otherC.tree.timed G a b O OCost X Y (liftR s) e s.1.lt
+        (fun _ => 0) s.1.eph (fun _ => 0) s.1.st.recs (fun _ => 0) s.2.1 (fun _ => 0)
+        DFunLike.coe coeCost mulCost toFunCost expCost)
+
+/-- The time of the finish of a step: the costed tree of `finishC`. -/
+noncomputable def finTime (p : RSim S W K × Dec S W K) (t : St K) : ℕ :=
+  SPTree.Timed.stepTime (finishC.tree.timed (liftR p.1, p.2) t (fun _ => 0) (fun _ => 0))
+
+/-- **The time of a step** of the world of the reduction with the draw `r`: the time of the
+start and the time of the finish at the decision of the start. -/
+noncomputable def stepTime (t : RSim S W K × St K) (e : OEv W) (r : Draw S K × K) : ℕ :=
+  startTime G a b O OCost X Y coeCost mulCost toFunCost expCost t.1 e +
+    finTime (startR G a b O X Y t.1 e r.1) t.2
+
+/-- The time of the extraction: the costed tree of `extractC`. -/
+noncomputable def extTime (rs : RSt S (W ⊕ W) K) : ℕ :=
+  SPTree.Timed.stepTime (extractC.tree.timed G a b O OCost X Y rs mulCost toFunCost (fun _ => 0)
+    expCost)
+
+/-- **The costed reduction**: the costed adversary `B` run against the world of the reduction,
+each query answered by one draw at the time `stepTime` of the step, followed by the extraction
+at the time `extTime`. -/
+noncomputable def redLoop : OracleAdv.Timed (OEv W) (OOut S W K) Bool → RSim S W K × St K →
+    ℕ × OracleAdv.Timed Empty Empty W
+  | .ret _, t => (extTime G a b O OCost X Y mulCost toFunCost expCost t.1.1,
+      .ret (extractR G a b O X Y t.1.1))
+  | .rand p c k, t => (0, .rand p (fun x => c x + (redLoop (k x) t).1) fun x => (redLoop (k x) t).2)
+  | .query d c k, t => (0, .rand (PMF.uniformFintype (Draw S K × K))
+      (fun r => stepTime G a b O OCost X Y coeCost mulCost toFunCost expCost t d r +
+        c (stepR G a b O X Y t d r).2 +
+        (redLoop (k (stepR G a b O X Y t d r).2) (stepR G a b O X Y t d r).1).1)
+      fun r => (redLoop (k (stepR G a b O X Y t d r).2) (stepR G a b O X Y t d r).1).2)
+
+/-- The erasure of the costed reduction loop. -/
+theorem redLoop_erase (B : OracleAdv.Timed (OEv W) (OOut S W K) Bool) (t : RSim S W K × St K) :
+    (redLoop G a b O OCost X Y coeCost mulCost toFunCost expCost B t).2.erase =
+      (OracleAdv.simulate (implR G a b O X Y) B.erase t).bind
+        fun p => .ret (extractR G a b O X Y p.2.1.1) := by
+  induction B generalizing t with
+  | ret o => rfl
+  | rand p c k ih =>
+    simp only [redLoop, OracleAdv.Timed.erase, OracleAdv.simulate, OracleAdv.bind, ih]
+  | query d c k ih =>
+    simp only [redLoop, OracleAdv.Timed.erase, OracleAdv.simulate, implR, OracleAdv.bind, ih]
+
+/-- **The costed gap Diffie–Hellman reduction** of the pair `(a, b)` for the costed adversary
+`B`. -/
+noncomputable def redTimed (B : OracleAdv.Timed (OEv W) (OOut S W K) Bool) :
+    ℕ × OracleAdv.Timed Empty Empty W :=
+  redLoop G a b O OCost X Y coeCost mulCost toFunCost expCost B rInitR
+
+/-- **Erasure of the costed reduction**: erasing the costs gives the program `redTree` of the
+reduction `gdhRed G a b`, for the erased adversary. -/
+theorem redTimed_erase (B : OracleAdv.Timed (OEv W) (OOut S W K) Bool) :
+    (redTimed G a b O OCost X Y coeCost mulCost toFunCost expCost B).2.erase =
+      redTree G a b O X Y B.erase :=
+  redLoop_erase G a b O OCost X Y coeCost mulCost toFunCost expCost B rInitR
+
+end Costed
 
 end CatCrypt.Crypto.AKE.X3DHSquareGDH
