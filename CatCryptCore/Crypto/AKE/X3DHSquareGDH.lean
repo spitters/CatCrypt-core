@@ -725,6 +725,208 @@ theorem bobS_symOk {lt : PartyId → Option (S × S)} {sid : SessionId} {p q : P
   · have hqb : q ≠ b := fun hc => by subst hc; rw [hq] at hb; cases hb
     simp only [bobS, hqb, ↓reduceIte, Sum.isLeft_inl]
 
+omit [Fintype K] [Nonempty K] in
+/-- **`complete` on both sides** gives the same decision and keeps the relation. -/
+theorem rel_complete {s₁ : SimSt S W K} {s₂ : RSim S W K} (h : Rel G a b x y s₁ s₂)
+    (sid : SessionId) (pid : PartyId) (r : Draw S K) :
+    (simCompleteD G s₁ (sid, pid) (transD a b x y s₁ (.inr (.complete sid pid)) r)).2 =
+        (completeR G a b (ddhOracle (gapDHDef G)) (G.pub x) (G.pub y) s₂ (sid, pid) r).2 ∧
+      Rel G a b x y (simCompleteD G s₁ (sid, pid) (transD a b x y s₁ (.inr (.complete sid pid)) r)).1
+        (completeR G a b (ddhOracle (gapDHDef G)) (G.pub x) (G.pub y) s₂ (sid, pid) r).1 := by
+  obtain ⟨rs₁, inp₁, ph₁⟩ := s₁
+  obtain ⟨rs₂, inp₂, ph₂⟩ := s₂
+  have h' : RelC G a b x y rs₁ inp₁ ph₁ rs₂ inp₂ ph₂ := h
+  simp only [simCompleteD, completeR, transD_apply, ev1, ev2]
+  rw [h'.st, h'.eph]
+  simp only [opkOf_congr h'.st h'.eph]
+  cases hr : rs₂.st.recs (sid, pid) with
+  | none => dsimp only; exact ⟨rfl, h'.setPh G a b x y _⟩
+  | some rc =>
+    cases he : rs₂.eph (sid, pid) with
+    | none => dsimp only; exact ⟨rfl, h'.setPh G a b x y _⟩
+    | some ek =>
+      cases ho : opkOf rs₂ sid rc.peer with
+      | none => dsimp only; rw [ho]; exact ⟨rfl, h'.setPh G a b x y _⟩
+      | some opk =>
+        dsimp only
+        rw [ho]
+        by_cases hc : rc.role = .initiator ∧ rc.key.isNone
+        · simp only [hc, and_self, ↓reduceIte, Option.map_some, shO_some]
+          obtain ⟨e₁, h₁⟩ := rel_ltD G a b x y h' pid r.2.1
+          obtain ⟨e₂, h₂⟩ := rel_ltD G a b x y h₁ rc.peer r.2.2.1
+          rw [e₁, e₂]
+          have hp : (ltD (ltD rs₂ pid r.2.1).2 rc.peer r.2.2.1).2.lt pid =
+              some (ltD rs₂ pid r.2.1).1 :=
+            ltD_lt_mono _ _ _ _ _ (ltD_lt_self rs₂ pid r.2.1)
+          rw [← aliceS_interp G a b x y hp]
+          refine rel_deliver G a b x y h₂ ?_ (aliceS_symOk G a b x y hp ek opk) (Or.inl ⟨rfl, rfl⟩) _
+          simp only [ltD_st, hr]
+        · simp only [hc, ↓reduceIte, true_and]
+          exact h'.setPh G a b x y _
+
+omit [Fintype K] [Nonempty K] in
+/-- **`send` on both sides** gives the same decision and keeps the relation. -/
+theorem rel_send {s₁ : SimSt S W K} {s₂ : RSim S W K} (h : Rel G a b x y s₁ s₂)
+    (sid : SessionId) (pid : PartyId) (e : W) (r : Draw S K) :
+    (simSendD G s₁ (sid, pid) e (transD a b x y s₁ (.inr (.send sid pid e)) r)).2 =
+        (sendR G a b (ddhOracle (gapDHDef G)) (G.pub x) (G.pub y) s₂ (sid, pid) e r).2 ∧
+      Rel G a b x y (simSendD G s₁ (sid, pid) e (transD a b x y s₁ (.inr (.send sid pid e)) r)).1
+        (sendR G a b (ddhOracle (gapDHDef G)) (G.pub x) (G.pub y) s₂ (sid, pid) e r).1 := by
+  obtain ⟨rs₁, inp₁, ph₁⟩ := s₁
+  obtain ⟨rs₂, inp₂, ph₂⟩ := s₂
+  have h' : RelC G a b x y rs₁ inp₁ ph₁ rs₂ inp₂ ph₂ := h
+  simp only [simSendD, sendR, transD_apply, ev1, ev2]
+  rw [h'.st, h'.eph]
+  cases hr : rs₂.st.recs (sid, pid) with
+  | none => dsimp only; exact ⟨rfl, h'.setPh G a b x y _⟩
+  | some rc =>
+    cases he : rs₂.eph (sid, pid) with
+    | none => dsimp only; exact ⟨rfl, h'.setPh G a b x y _⟩
+    | some opk =>
+      dsimp only
+      by_cases hc : rc.role = .responder ∧ rc.key.isNone
+      · simp only [hc, and_self, ↓reduceIte, Option.map_some, shO_some]
+        obtain ⟨e₁, h₁⟩ := rel_ltD G a b x y h' pid r.2.1
+        obtain ⟨e₂, h₂⟩ := rel_ltD G a b x y h₁ rc.peer r.2.2.1
+        rw [e₁, e₂]
+        have hq : (ltD (ltD rs₂ pid r.2.1).2 rc.peer r.2.2.1).2.lt pid =
+            some (ltD rs₂ pid r.2.1).1 :=
+          ltD_lt_mono _ _ _ _ _ (ltD_lt_self rs₂ pid r.2.1)
+        have hp : (ltD (ltD rs₂ pid r.2.1).2 rc.peer r.2.2.1).2.lt rc.peer =
+            some (ltD (ltD rs₂ pid r.2.1).2 rc.peer r.2.2.1).1 := ltD_lt_self _ _ _
+        rw [← bobS_interp G a b x y hq hp]
+        refine rel_deliver G a b x y h₂ ?_ (bobS_symOk G a b x y hq hp e opk)
+          (Or.inr ⟨rfl, rfl⟩) _
+        simp only [ltD_st, hr]
+      · simp only [hc, ↓reduceIte, true_and]
+        exact h'.setPh G a b x y _
+
+omit [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K] in
+/-- The relation after the same update of the records, corruptions, notices and session secrets
+on both sides, with fresh records and `a`, `b` uncorrupt. -/
+theorem RelC.upd {rs₁ : RSt S W K} {inp₁ : Inst → Option (Inp W)} {ph₁ : Phase S W K}
+    {rs₂ : RSt S (W ⊕ W) K} {inp₂ : Inst → Option (Inp (W ⊕ W))} {ph₂ : Phase S W K}
+    (h : RelC G a b x y rs₁ inp₁ ph₁ rs₂ inp₂ ph₂) {t₁ t₂ : St K} (ht : t₁ = t₂)
+    {eph₁ eph₂ : Inst → Option S} (he : eph₁ = eph₂)
+    (hf : ∀ z r, t₂.recs z = some r → r.status = .fresh) (ha : t₂.corrupt a = false)
+    (hb : t₂.corrupt b = false) (ph : Phase S W K) :
+    RelC G a b x y { rs₁ with st := t₁, eph := eph₁ } inp₁ ph { rs₂ with st := t₂, eph := eph₂ }
+      inp₂ ph :=
+  ⟨ht, he, h.lt, h.ro, h.inp, rfl, h.symRo, h.symInp, h.abL, hf, ha, hb⟩
+
+omit [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K] in
+/-- The relation after a new entry of the tables. -/
+theorem RelC.roUpd {rs₁ : RSt S W K} {inp₁ : Inst → Option (Inp W)} {ph₁ : Phase S W K}
+    {rs₂ : RSt S (W ⊕ W) K} {inp₂ : Inst → Option (Inp (W ⊕ W))} {ph₂ : Phase S W K}
+    (h : RelC G a b x y rs₁ inp₁ ph₁ rs₂ inp₂ ph₂) {ro₁ : List (Inp W × K)}
+    {ro₂ : List (Inp (W ⊕ W) × K)}
+    (hro : ro₁ = ro₂.map (interpE G (x + off1 a rs₂) (y + off2 b rs₂)))
+    (hsym : ∀ p ∈ ro₂, SymOk a b rs₂.lt p.1)
+    (hab : ∀ p ∈ ro₂, p.1.ini = a → p.1.res = b → p.1.dh1.isLeft = true) (ph : Phase S W K) :
+    RelC G a b x y { rs₁ with ro := ro₁ } inp₁ ph { rs₂ with ro := ro₂ } inp₂ ph :=
+  ⟨h.st, h.eph, h.lt, hro, h.inp, rfl, hsym, h.symInp, hab, h.fresh, h.uncA, h.uncB⟩
+
+omit [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K] in
+theorem interp_ofInp (ik spk : S) (q : Inp W) : interp G ik spk (ofInp q) = q := by
+  cases q; rfl
+
+omit [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K] in
+theorem sh_of_ne {p : PartyId} (ha : p ≠ a) (hb : p ≠ b) (l : S × S) : sh a b x y p l = l := by
+  simp only [sh, ha, hb, ↓reduceIte]
+
+omit [Fintype K] [Nonempty K] in
+/-- **The coupling of a start of the simulator**: from related states, the simulator with the
+shifted draw and the simulator of the reduction make the same decision and reach related
+states, unless the step corrupts `a` or `b`. -/
+theorem rel_start {s₁ : SimSt S W K} {s₂ : RSim S W K} (h : Rel G a b x y s₁ s₂) (e : OEv W)
+    (r : Draw S K) :
+    Stop a b (simStartD G s₁ e (transD a b x y s₁ e r)).1 ∨
+      ((simStartD G s₁ e (transD a b x y s₁ e r)).2 =
+          (startR G a b (ddhOracle (gapDHDef G)) (G.pub x) (G.pub y) s₂ e r).2 ∧
+        Rel G a b x y (simStartD G s₁ e (transD a b x y s₁ e r)).1
+          (startR G a b (ddhOracle (gapDHDef G)) (G.pub x) (G.pub y) s₂ e r).1) := by
+  obtain ⟨rs₁, inp₁, ph₁⟩ := s₁
+  obtain ⟨rs₂, inp₂, ph₂⟩ := s₂
+  have h' : RelC G a b x y rs₁ inp₁ ph₁ rs₂ inp₂ ph₂ := h
+  rcases e with (⟨sid, pid, peer, role⟩ | ⟨sid, pid⟩) | (_ | _ | pid | ⟨sid, pid⟩ | pid |
+    ⟨sid, pid⟩ | ⟨sid, pid, e⟩ | q)
+  · right
+    have hn : (rs₁.st.recs (sid, pid)).isNone = (rs₂.st.recs (sid, pid)).isNone := by rw [h'.st]
+    dsimp only [simStartD, startR, transD_apply]
+    by_cases hc : (rs₂.st.recs (sid, pid)).isNone = true
+    · rw [ite_eq_left (hn.trans hc), ite_eq_left hc]
+      refine ⟨rfl, h'.upd G a b x y (by rw [h'.st]) (by rw [h'.eph]) ?_ ?_ ?_ _⟩
+      · intro z rz hz
+        unfold addSession at hz
+        split at hz
+        · exact h'.fresh z rz hz
+        · by_cases hzx : z = (sid, pid)
+          · subst hzx; simp only [Function.update_self, Option.some.injEq] at hz; rw [← hz]
+          · simp only [Function.update_of_ne hzx] at hz; exact h'.fresh z rz hz
+      · unfold addSession; split <;> exact h'.uncA
+      · unfold addSession; split <;> exact h'.uncB
+    · rw [ite_eq_right (hn ▸ hc), ite_eq_right hc]
+      exact ⟨rfl, h'.setPh G a b x y _⟩
+  · exact Or.inr ⟨rfl, h'.setPh G a b x y _⟩
+  · exact Or.inr ⟨rfl, h'.setPh G a b x y _⟩
+  · right
+    dsimp only [simStartD, startR]
+    rw [h'.st]
+    refine ⟨rfl, h'.upd G a b x y rfl h'.eph ?_ ?_ ?_ _⟩
+    · rw [(pollStep_fst _).1]; exact h'.fresh
+    · rw [(pollStep_fst _).2.1]; exact h'.uncA
+    · rw [(pollStep_fst _).2.1]; exact h'.uncB
+  · right
+    obtain ⟨e₁, h₁⟩ := rel_ltD G a b x y h' pid r.2.1
+    dsimp only [simStartD, startR, transD_apply, ev1, shO_some]
+    rw [e₁, pubIK_pub G a b x y, pubSPK_pub G a b x y]
+    exact ⟨rfl, h₁.setPh G a b x y _⟩
+  · right
+    dsimp only [simStartD, startR, ephPubOf]
+    rw [h'.eph]
+    exact ⟨rfl, h'.setPh G a b x y _⟩
+  · have hn : Named rs₁.st pid = Named rs₂.st pid := by rw [h'.st]
+    dsimp only [simStartD, startR, transD_apply, ev1, shO_some]
+    by_cases hc : Named rs₂.st pid = true
+    · rw [ite_eq_left (hn.trans hc), ite_eq_left hc]
+      exact Or.inr ⟨rfl, h'.setPh G a b x y _⟩
+    · rw [ite_eq_right (hn ▸ hc), ite_eq_right hc]
+      obtain ⟨e₁, h₁⟩ := rel_ltD G a b x y h' pid r.2.1
+      by_cases hab : pid = a ∨ pid = b
+      · left
+        simp only [Stop, corruptStep, ltD_st]
+        rcases hab with rfl | rfl <;> simp
+      · right
+        have hpa : pid ≠ a := fun hc => hab (Or.inl hc)
+        have hpb : pid ≠ b := fun hc => hab (Or.inr hc)
+        simp only [sh_of_ne a b x y hpa hpb] at e₁ h₁
+        rw [sh_of_ne a b x y hpa hpb, e₁]
+        refine ⟨rfl, h₁.upd G a b x y (t₁ := corruptStep (ltD rs₁ pid r.2.1).2.st pid)
+          (t₂ := corruptStep (ltD rs₂ pid r.2.1).2.st pid) (by rw [h₁.st]) h₁.eph h₁.fresh ?_ ?_ _⟩
+        · simp only [corruptStep, Function.update_of_ne hpa.symm]; exact h₁.uncA
+        · simp only [corruptStep, Function.update_of_ne hpb.symm]; exact h₁.uncB
+  · exact Or.inr (rel_complete G a b x y h sid pid r)
+  · exact Or.inr (rel_send G a b x y h sid pid e r)
+  · right
+    dsimp only [simStartD, startR, transD_apply]
+    rw [h'.ro, keyA_pub, keyB_pub, ← interp_ofInp G (x + off1 a rs₂) (y + off2 b rs₂) q,
+      sroDet_ddh]
+    refine ⟨rfl, h'.roUpd G a b x y rfl ?_ ?_ _⟩
+    · rcases sroDet_snd G (ddhOracle (gapDHDef G)) (G.pub (x + off1 a rs₂))
+        (G.pub (y + off2 b rs₂)) rs₂.ro (ofInp q) r.2.2.2 with he | he <;> rw [he]
+      · exact h'.symRo
+      · intro p hp
+        rcases List.mem_cons.mp hp with rfl | hp
+        · exact ⟨fun _ => ⟨rfl, rfl⟩, fun _ => rfl⟩
+        · exact h'.symRo p hp
+    · rcases sroDet_snd G (ddhOracle (gapDHDef G)) (G.pub (x + off1 a rs₂))
+        (G.pub (y + off2 b rs₂)) rs₂.ro (ofInp q) r.2.2.2 with he | he <;> rw [he]
+      · exact h'.abL
+      · intro p hp
+        rcases List.mem_cons.mp hp with rfl | hp
+        · exact fun _ _ => rfl
+        · exact h'.abL p hp
+
 end Coupling
 
 end CatCrypt.Crypto.AKE.X3DHSquareGDH
