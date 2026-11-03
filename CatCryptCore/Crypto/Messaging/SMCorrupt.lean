@@ -11,11 +11,134 @@ public import CatCryptCore.Crypto.Assumptions.DualPRF
 /-!
 # Secure messaging with state corruption
 
-The secure-messaging game of the double ratchet with state corruption, in the style of the
-CKA game with corruption of `CatCryptCore.Crypto.Messaging.CKACorrupt`, and its reduction to the
-CKA game with corruption, a PRF-PRNG root step and a forward-secure AEAD (Alwen, Coretti and
-Dodis, EUROCRYPT 2019, Sections 4 and 5). The module is in progress; this docstring is completed
-with the main theorem.
+The confidentiality game of secure messaging with state corruption for the double ratchet of
+Alwen, Coretti and Dodis (EUROCRYPT 2019), over a CKA `C`, the root KDF
+`R : PRGDef (RK × Key) (RK × Sa)`, the chain generator `G : PRGDef Sa (W × Sa)` and the AEAD
+`D : AEADDef W Ct`, and its modular proof from the CKA game with corruption of
+`CatCryptCore.Crypto.Messaging.CKACorrupt`, a PRF-PRNG root step and a forward-secure AEAD
+(ACD, Sections 4 and 5).
+
+## The game
+
+The parties alternate epochs as in the CKA game: `A` opens the odd epochs, `B` the even ones,
+and each party has an epoch counter `t_P` (the CKA game state `CKAGameSt`). The state of a party
+is its CKA state, its root key, its sending chain and its receiving chain (`SMSt`). The
+adversary first draws the challenge epoch `t⋆`, then receives the public value of the CKA
+initialisation and asks, adaptively,
+
+* `ratchet P` — `P` opens a new epoch: the CKA sending algorithm gives the message `T` (returned)
+  and the key `I`; the root step `(rk', sa) = R (rk_P, I)` gives the next root key of `P` and the
+  sending chain `sa` of the epoch; `(rk', sa)` is in transit to the peer;
+* `recv P` — `P` receives the epoch in transit: the CKA receiving algorithm on `T`, and the root
+  key `rk'` and the receiving chain `sa` (the values that the receiver derives with its own CKA key
+  and root key, by the correctness of the CKA and of the root chain);
+* `send P m` — `P`, in its own epoch, encrypts the message `m` (a plaintext and associated data,
+  chosen by the adversary) under the next key of its sending chain, and the chain moves on;
+* `chall P m` — as `send P m`, once, by the sender of the challenge epoch while its counter is
+  `t⋆`; in the ideal game the ciphertext is uniform;
+* `corrupt P` — the full state of `P` (CKA state, root key, sending and receiving chain).
+
+The advantage `SM_Corrupt_Advantage C R G D ΔFS ΔPCS A` is the distance between the real and the
+ideal game.
+
+## The windows
+
+The corruption of `P` is answered exactly when the CKA corruption gate `ckaAllowCorr ΔFS ΔPCS t⋆`
+allows it on the epoch counters:
+
+* `max(t_A, t_B) + ΔPCS ≤ t⋆` — both parties are at least `ΔPCS` epochs before the challenge
+  epoch (post-compromise security: the epochs between the corruption and the challenge heal the
+  state), or
+* `t⋆ + ΔFS ≤ t_P` — `P` is at least `ΔFS` epochs past the challenge epoch (forward secrecy).
+
+The FS-AEAD epoch structure fixes the other window: the chains of the challenge epoch are held
+by its sender from its opening until the sender opens the epoch `t⋆ + 2` (counters `t⋆` and
+`t⋆ + 1`), and by its receiver from the receipt until it receives the epoch `t⋆ + 2` (counters
+`t⋆` and `t⋆ + 1`). With `2 ≤ ΔFS` and `1 ≤ ΔPCS` the CKA windows contain the FS-AEAD windows: a
+corruption that the gate allows never reveals a chain of the challenge epoch
+(`not_allowCorr_of_window`). For `dhCKA` the delays are `ΔFS = ΔPCS = 2`
+(`dhCKA_corrupt_advantage_eq_ddh`).
+
+## Comparison with ACD, Definition 13
+
+ACD's secure-messaging game has oracles for sending and delivering messages of both parties,
+with immediate decryption of messages delivered out of order, injection of ciphertexts
+(authenticity), corruption of the parties' states, sending with adversarial randomness, and
+left-or-right challenges on any number of messages, whose epoch the adversary chooses
+adaptively; trivial attacks are excluded by safety predicates with the parameter `Δ_SM`. The
+game here is the confidentiality part, restricted as follows:
+
+* the challenge epoch is announced before the interaction (the tree of `SMCorruptAdv` is chosen
+  after `tStar`, as in the CKA game of `CKACorrupt`); an adaptive choice of the challenge epoch
+  reduces to this game by guessing it, at the cost of the number of epochs (not formalised);
+* one real-or-random challenge instead of left-or-right challenges on several messages;
+* in-order delivery of the CKA messages; the receiver keeps the receiving chain of the epoch it
+  received, and ciphertexts are not delivered (no decryption, no injection, no authenticity);
+* no sending with adversarial or leaked randomness;
+* the windows are those of the CKA game on the epoch counters, given above; in ACD's terms the
+  game is `Δ`-secure with the delays `ΔFS` and `ΔPCS` of the CKA.
+
+These restrictions are forced by the bookkeeping of the windows only in the first item: with the
+challenge epoch announced, the corruption gate is decided at the time of the corruption, as in
+the CKA game, and the reduction announces the same epoch to the CKA game.
+
+## The proof
+
+The real game, the hybrid with a uniform CKA key at the challenge epoch, the hybrid with a
+uniform root output at the challenge epoch, and the ideal game:
+
+1. the CKA hop: the reduction `smcCKARed` plays the CKA game with corruption; the CKA corruption
+   answers the secure-messaging corruptions, the reduction keeps the root keys and the chains
+   (`smCKA_game_eq`);
+2. the root hop: the reduction `smcRootRed` asks the root step of the challenge epoch to the `prf`
+   oracle of the PRF-PRNG game; the PRF-PRNG game draws its key at the start, the hybrid at the
+   opening of the challenge epoch (`sm_run_eager`, `smRoot_real_eq`, `smRoot_ideal_eq`);
+3. the FS-AEAD hop: the reduction `smcFSRed` holds the chains of the challenge epoch in the FS-AEAD
+   game with corruption; the invariant `FSInv` of the simulation keeps them away from every
+   allowed corruption (`smFS_step`, `smFS_inv`, `smFS_game_eq`);
+
+and the hops 2 and 1 back with the uniform challenge ciphertext.
+
+## Main definitions
+
+* `SMQuery`, `SMAns`, `SMLoc`, `SMSt`, `smOracleOf`, `SMCorruptAdv`, `sm_corrupt_game`,
+  `SM_Corrupt_Advantage` — the game with corruption
+* `PPQuery`, `ppOracle`, `pp_game`, `PRFPRNG_Advantage` — the PRF-PRNG game of the root step: a
+  `prng` oracle (a uniform root state, inputs of the adversary) and a `prf` oracle (a uniform
+  input, root states of the adversary)
+* `hkdfRoot` — the HKDF-shaped root step `F rk I` of a dual PRF `F`
+* `FSQuery`, `fsOracle`, `fsaead_corrupt_game`, `FSAEAD_Corrupt_Advantage` — the FS-AEAD game
+  with corruption
+* `smcCKARed`, `smcRootRed`, `smcFSRed` — the reductions, from the oracle trees `smCKATreeOf`,
+  `smRootTreeOf`, `smFSTreeOf` (costed forms by `derive_timed`); `ppRedR`, `ppRedL` — the
+  dual-PRF reductions of the PRF-PRNG game
+* `smPassiveAdv` — the passive adversary of one message, from the tree `pasEpochs`
+
+## Main results
+
+* `sm_corrupt_advantage_le` — with `2 ≤ ΔFS`, `1 ≤ ΔPCS`, the advantage with corruption is at most
+  the CKA corruption advantages of `smcCKARed`, the PRF-PRNG advantages of `smcRootRed` (both for
+  the two challenge modes) and the FS-AEAD advantage of `smcFSRed`
+* `sm_dh_corrupt_advantage_le` — for `dhCKA` with `ΔFS = ΔPCS = 2`, the CKA terms are DDH
+  advantages of `ckaCorruptDDHRed`
+* `hkdfRoot_prfprng_le` — the HKDF-shaped root step is a PRF-PRNG under the dual-PRF assumption;
+  `sm_dh_hkdf_corrupt_advantage_le` — the double ratchet with `dhCKA` and `hkdfRoot` from DDH,
+  the dual-PRF assumption and FS-AEAD
+* `sm_advantage_le_corrupt_passive` — the passive game `sm_real`/`sm_ideal` of
+  `CatCryptCore.Crypto.Messaging.DoubleRatchet` from the game with corruption: the passive
+  advantage is at most the sum over the messages of the advantages of the adversaries
+  `smPassiveAdv`, which never corrupt
+* `smCKATreeOf.erase_timed`, `smRootTreeOf.erase_timed`, `smFSTreeOf.erase_timed`,
+  `ppRedR.erase_timed`, `ppRedL.erase_timed`, `pasEpochs.erase_timed` — the costed reductions
+
+## References
+
+* J. Alwen, S. Coretti, Y. Dodis, *The Double Ratchet: Security Notions, Proofs, and
+  Modularization for the Signal Protocol*, EUROCRYPT 2019, Sections 4 and 5
+* M. Bellare, *New Proofs for NMAC and HMAC: Security without Collision-Resistance*, CRYPTO 2006
+  (HMAC as a dual PRF)
+* M. Backendal, M. Bellare, F. Günther, M. Scarlata, *When Messages Are Keys: Is HMAC a
+  Dual-PRF?*, CRYPTO 2023
 -/
 
 set_option autoImplicit false
