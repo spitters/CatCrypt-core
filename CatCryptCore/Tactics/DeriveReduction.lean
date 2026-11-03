@@ -123,8 +123,14 @@ that the field has one binder and one cost companion in the costed form. A funct
 command derives again with the
 data definitions applied to a structure binder or a local instance (`kit.expandPair p`, a
 helper `f kit x`) unfolded in the tree, so that the fields and methods used in their bodies
-become data-function primitives. Each attempt (the first derivation, the derivation with the
-unfolding, and the plain and costed-state interfaces of a structure-valued reduction) runs with a
+become data-function primitives. When both fail, the command derives again with the types of the
+value read through their definitions (`unfoldTypeDefs`): a type headed by a definition that
+unfolds to a computation type, as `RoundM 1 α` at a numeral by its equation, or to a type holding
+functions, as a definition of a function type or of a structure with a function field, and a
+definition of a record of parameters with a type field, reduced to its constructor application.
+Each attempt (the first derivation, the derivation with the
+unfolding, the derivations with the types read through their definitions, and the plain and
+costed-state interfaces of a structure-valued reduction) runs with a
 fresh heartbeat budget; a failure of an attempt, a runtime exception such as a heartbeat timeout
 or the maximal recursion depth included, restores the state before it, and the error of the last
 attempt names the failure of every attempt. An interrupt is rethrown.
@@ -456,6 +462,60 @@ def monadOps : Array Name :=
 def spCompArg? (t : Expr) : MetaM (Option Expr) := do
   let t ← whnfR (← instantiateMVars t)
   if t.isAppOfArity ``CatCrypt.Core.SPComp 1 then return some t.appArg! else return none
+
+mutual
+
+/-- The type `e` read through the definition at its head: `e` is a type headed by a definition
+other than `SPComp`, not a class, unfolded (a definition by structural recursion at a numeral, by
+its equation) until the translation reads the result, which is a computation type (`spCompArg?`)
+or a type holding functions (`hatTy?`). `none` when no unfolding gives such a type. -/
+partial def typeDefBody? (e : Expr) (fuel : Nat := 16) : MetaM (Option Expr) := do
+  if fuel == 0 then return none
+  let .const n _ := e.getAppFn | return none
+  if n == ``CatCrypt.Core.SPComp then return none
+  unless (← getEnv).find? n matches some (.defnInfo _) do return none
+  if e.hasLooseBVars || e.hasExprMVar then return none
+  unless ← isType e do return none
+  if (← isClass? e).isSome then return none
+  let some u ← unfoldDefinition? e | return none
+  let u := u.headBeta
+  let r ← unfoldTypeDefs u
+  if (← spCompArg? r).isSome then return some r
+  if (← CatCrypt.Tactics.DeriveTimed.hatTy? r).isSome then return some r
+  typeDefBody? u (fuel - 1)
+
+/-- The constructor application of `e`, when `e` is an application of a definition whose type is
+a structure with a type field, not a class: a record of parameters such as a definition of the
+parameters of a scheme. Its fields then reduce under reducible transparency, so that the field
+types read at `e` agree with the types of the values that its definition gives. -/
+partial def paramRecordBody? (e : Expr) : MetaM (Option Expr) := do
+  let .const n _ := e.getAppFn | return none
+  unless (← getEnv).find? n matches some (.defnInfo _) do return none
+  if e.hasLooseBVars || e.hasExprMVar then return none
+  let t ← whnfR (← inferType e)
+  let .const S _ := t.getAppFn | return none
+  let env ← getEnv
+  unless isStructure env S && !isClass env S do return none
+  let some (.inductInfo ii) := env.find? S | return none
+  let [ctor] := ii.ctors | return none
+  let hasTy ← forallTelescope (← getConstInfo ctor).type fun xs _ =>
+    (xs.extract ii.numParams xs.size).anyM fun x => do return (← inferType x).isSort
+  unless hasTy do return none
+  let w ← whnfD e
+  return if (← isConstructorApp? w).isSome then some w else none
+
+/-- The term `e` with each type read through its definition (`typeDefBody?`) and each record of
+parameters through its definition (`paramRecordBody?`). Proofs are left as they are. The result
+is definitionally equal to `e`. -/
+partial def unfoldTypeDefs (e : Expr) : MetaM Expr :=
+  Meta.transform e (pre := fun s => do
+    if s.isApp || s.isConst then
+      if ← isProof s then return .done s
+      if let some r ← typeDefBody? s then return .done r
+      if let some r ← paramRecordBody? s then return .done r
+    return .continue)
+
+end
 
 /-- Whether `c` is defined by structural or well-founded recursion. -/
 def isRecursive (env : Environment) (c : Name) : Bool :=
@@ -2662,9 +2722,10 @@ def recursiveTree (c : Name) (levels : List Level) (levelParams : List Name)
 
 /-- Define `c.tree`, prove `c.compile_tree`, and run `derive_timed c.tree`. The adversaries
 are the binders named in `advNames`, or every binder whose type ends in `SPComp` when it is
-empty; `unfold` is the unfolding of data definitions of `RCtx`. -/
+empty; `unfold` is the unfolding of data definitions of `RCtx`; `typeDefs` reads the types of the
+value through their definitions (`unfoldTypeDefs`). -/
 partial def deriveReduction (c : Name) (advNames : Array Name) (unfold : Bool := false)
-    (visiting : NameSet := {}) : TermElabM Unit := do
+    (visiting : NameSet := {}) (typeDefs : Bool := false) : TermElabM Unit := do
   let env ← getEnv
   let some info := env.find? c | fail m!"unknown constant `{c}`"
   let .defnInfo d := info | fail m!"`{c}` is not a definition"
@@ -2681,8 +2742,11 @@ partial def deriveReduction (c : Name) (advNames : Array Name) (unfold : Bool :=
     | _, _ => d.value
   -- Eta-expand to all binders of the type.
   let value ← lambdaTelescope body fun xs b => do
-    CatCrypt.Tactics.DeriveTimed.withTypeBinders (← instantiateForall d.type xs) fun ys _ =>
+    let ty ← instantiateForall d.type xs
+    let ty ← if typeDefs then unfoldTypeDefs ty else pure ty
+    CatCrypt.Tactics.DeriveTimed.withTypeBinders ty fun ys _ =>
       mkLambdaFVars (xs ++ ys) (mkAppN b ys).headBeta
+  let value ← if typeDefs then unfoldTypeDefs value else pure value
   -- A carrier in a universe other than `Type`: `SPTree` is a tree over `Type`.
   lambdaTelescope value fun xs _ => do
     for x in xs do
@@ -2691,7 +2755,7 @@ partial def deriveReduction (c : Name) (advNames : Array Name) (unfold : Bool :=
           fail m!"the carrier `{x}` is in a universe other than `Type`; computation trees \
             `SPTree` are over `Type`: derive the reduction at carriers in `Type`"
   let deriveRec : Name → NameSet → TermElabM Unit := fun g vis =>
-    deriveReduction g #[] (visiting := vis)
+    deriveReduction g #[] (visiting := vis) (typeDefs := typeDefs)
   -- A tree-valued reduction (`PK → OracleAdv D R α`): the reduction is a tree of a registered
   -- kind after its binders, with the leading binders of its result among them, and its costed
   -- form is that of `derive_timed`.
@@ -2845,14 +2909,18 @@ def elabDeriveReduction : CommandElab := fun stx => do
   liftTermElabM do
     let c ← realizeGlobalConstNoOverloadWithInfo stx[1]
     -- The first attempt, then the attempt that unfolds the data definitions applied to a
-    -- structure binder (`attempt`); the error names the failures of both, or the one failure
-    -- when both attempts fail with the same message.
+    -- structure binder (`attempt`), then the two attempts with the types of the value read
+    -- through their definitions (`unfoldTypeDefs`); the error names the failures of the first
+    -- two, or the one failure when they fail with the same message.
     match ← attempt (deriveReduction c advs) with
     | .ok () => pure ()
     | .error e₁ =>
       match ← attempt (deriveReduction c advs (unfold := true)) with
       | .ok () => pure ()
       | .error e₂ =>
+        for u in [false, true] do
+          if let .ok () ← attempt (deriveReduction c advs (unfold := u) (typeDefs := true)) then
+            return
         if (← e₁.toMessageData.toString) == (← e₂.toMessageData.toString) then throw e₁
         throwError "derive_reduction: the first attempt fails:{indentD e₁.toMessageData}\n\
           with the data definitions applied to a structure binder unfolded:\

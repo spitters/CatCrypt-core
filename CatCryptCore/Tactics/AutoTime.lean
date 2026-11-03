@@ -983,8 +983,10 @@ def withFstArg (o y : Expr) : Expr :=
   | _ => mkApp3 o.getAppFn (o.getArg! 0) (o.getArg! 1) y
 
 /-- Bounded atoms: for every subterm `f a` of the target and every local hypothesis
-`∀ x, f x ≤ b` without propositional premises, the instance `f a ≤ b[a/x]` is added to the
-context. -/
+`∀ x, f x ≤ b`, the instance `f a ≤ b[a/x]` is added to the context. A propositional premise of
+the hypothesis (a guard `∀ x, G x → (A x).time ≤ T` of an adversary bounded only on the values
+a tree returns) is closed at `a` by a local hypothesis, such as a conjunct of the leaf invariant
+that `st_bind_inv` assumes; the instance is added only when every premise closes. -/
 def addBoundedAtoms (g : MVarId) : MetaM MVarId := g.withContext do
   let tgt ← instantiateMVars (← g.getType)
   let subs := appsOf tgt #[]
@@ -999,15 +1001,28 @@ def addBoundedAtoms (g : MVarId) : MetaM MVarId := g.withContext do
     let some (pat, _) := natLe? body0 | s0.restore; continue
     let hd := pat.getAppFn
     let nargs := pat.getAppNumArgs
-    let hasProp ← ms0.anyM fun m => do isProp (← inferType m)
     s0.restore
-    if hasProp || !(hd.isConst || hd.isFVar || hd.isProj) then continue
+    unless hd.isConst || hd.isFVar || hd.isProj do continue
     for s in subs do
       unless s.getAppNumArgs == nargs && s.getAppFn == hd do continue
       let s1 ← saveState
       let (ms, _, body) ← forallMetaTelescopeReducing ty
       let some (l, _) := natLe? body | s1.restore; continue
       if ← isDefEq l s then
+        -- a guard of the hypothesis (`∀ a, G a → (A a).time ≤ T`) closed by a local
+        -- hypothesis, such as a conjunct of the leaf invariant assumed by `st_bind_inv`
+        for m in ms do
+          let mid := m.mvarId!
+          if ← mid.isAssigned then continue
+          let mty ← instantiateMVars (← mid.getType)
+          unless ← isProp mty do continue
+          for ld' in (← getLCtx) do
+            if ld'.isImplementationDetail then continue
+            let s2 ← saveState
+            if ← isDefEq mty ld'.type then
+              mid.assign ld'.toExpr
+              break
+            s2.restore
         let pf ← instantiateMVars (mkAppN ld.toExpr ms)
         if pf.hasExprMVar then
           s1.restore
