@@ -179,7 +179,7 @@ theorem ckaCorruptOracle_eq_liftPMF (C : CKADef St Msg Key) [CKACoins C Rand] [F
   | sendLeak p =>
     simp only [ckaCorruptOracle, ckaOracleP]
     split
-    · simp only [sample_eq_liftPMF, liftPMF_pure, liftPMF_bind_liftPMF, PMF.bind_bind, PMF.pure_bind]
+    · simp only [sample_eq_liftPMF, liftPMF_pure, liftPMF_bind_liftPMF]
     · exact liftPMF_pure _
 
 /-- **The CKA corruption game as a lifted distribution.** With an initialisation that is the
@@ -196,7 +196,7 @@ theorem cka_corrupt_game_eq_liftPMF (C : CKADef St Msg Key) [CKACoins C Rand] [F
           (CKAGameSt.init i.1 i.2.1 i.2.2)).map Prod.fst) := by
   unfold cka_corrupt_game
   simp only [hinit, OracleAdv.runSP_eq_liftPMF _ _ (ckaCorruptOracle_eq_liftPMF C hS ΔFS ΔPCS _
-    ideal), liftPMF_bind_pure, liftPMF_bind_liftPMF, PMF.bind_bind, PMF.pure_bind]
+    ideal), liftPMF_bind_pure, liftPMF_bind_liftPMF]
 
 end CKAPMF
 
@@ -468,6 +468,7 @@ theorem smOracleOf_opened (C : CKADef Sc Msg Key) [CKACoins C Rand]
   · exact Or.inl (h.trans (smOracleOf_t_mono C R G D ΔFS ΔPCS t ideal root s q x hx .A))
   · exact Or.inr (h.trans (smOracleOf_t_mono C R G D ΔFS ΔPCS t ideal root s q x hx .B))
 
+omit [SampleableType W] in
 /-- An opened state admits no opening of the challenge epoch. -/
 theorem smCrit_of_opened (t : ℕ) (s : SMSt Sc Msg RK Sa) (hs : smOpened t s) (q : SMQuery W) :
     smCrit t s q = false := by
@@ -663,7 +664,7 @@ theorem pp_mid_eq_rf (F : RK → Key → Out) (A : OracleAdv (PPQuery RK Key) Ou
     | prng I => simp [OracleAdv.simOracle, ppImplR, ppOracle, PMF.pure_map]
     | prf r =>
       simp only [OracleAdv.simOracle, ppImplR, ppOracle, OracleAdv.run_query,
-        OracleAdv.run_ret, ite_true, PMF.map_bind, PMF.bind_map, PMF.pure_map]
+        OracleAdv.run_ret, ite_true, PMF.map_bind, PMF.pure_map]
       rw [← PMF.bind_pure_comp]
       rfl
   simp only [h, PMF.bind_const]
@@ -712,7 +713,7 @@ theorem pp_ideal_eq_rf (F : RK → Key → Out) (A : OracleAdv (PPQuery RK Key) 
     cases q with
     | prng I =>
       simp only [OracleAdv.simOracle, ppImplL, ppOracle, OracleAdv.run_query,
-        OracleAdv.run_ret, ite_true, PMF.map_bind, PMF.bind_map, PMF.pure_map]
+        OracleAdv.run_ret, ite_true, PMF.map_bind, PMF.pure_map]
       rw [← PMF.bind_pure_comp]
       rfl
     | prf r =>
@@ -899,6 +900,7 @@ theorem ckaShadow_recvd (s : CKAGameSt Sc Msg) (p : CKAParty) (x : Sc) :
 
 @[simp] theorem ckaShadow_t (s : CKAGameSt Sc Msg) : (ckaShadow s).t = s.t := rfl
 
+omit [Fintype RK] [Nonempty RK] in
 /-- **The CKA simulator is the secure-messaging oracle.** Each oracle call of the hybrid game
 with the root step `ckaHopRoot R idealK`, mapped to the states of the reduction and of the CKA
 game, is the call of the simulator `smCKAImplOf` against the CKA oracle with the challenge mode
@@ -1148,6 +1150,7 @@ noncomputable def fixedKeyRoot (R : PRGDef (RK × Key) (RK × Sa)) (k : Key) (rk
 /-- The root step at the challenge epoch of the second hybrid: a uniform output. -/
 noncomputable def unifRoot (_ : RK) (_ : Key) : PMF (RK × Sa) := PMF.uniformFintype (RK × Sa)
 
+omit [Fintype Key] [Nonempty Key] in
 /-- **The simulator against the real PRF-PRNG game.** With the hidden input `k`, each call of
 the game with the root step `fixedKeyRoot R k` at the challenge epoch, with the PRF-PRNG state
 attached, is the call of the simulator against the real PRF-PRNG oracle. -/
@@ -1169,6 +1172,7 @@ theorem smRoot_step_real (C : CKADef Sc Msg Key) [CKACoins C Rand]
         fixedKeyRoot, ppOracle, rootFn, PMF.map_bind, PMF.pure_bind, PMF.pure_map]
     | _ => simp [smCrit] at hc
 
+omit [Fintype Key] [Nonempty Key] in
 /-- **The simulator against the ideal PRF-PRNG game.** From a state whose table of the `prf`
 oracle is empty unless the challenge epoch has been opened, each call of the simulator against
 the ideal PRF-PRNG oracle, with the PRF-PRNG state dropped, is the call of the game with a
@@ -1192,7 +1196,7 @@ theorem smRoot_step_ideal (C : CKADef Sc Msg Key) [CKACoins C Rand]
       simp only [smCrit, Bool.and_eq_true] at hc
       simp only [OracleAdv.simOracle, smRootImplOf, smRootRatchet, smOracleOf, hc.1, hc.2,
         ite_true, ppOracle, rfOracle, hu', List.lookup, OracleAdv.run_rand, OracleAdv.run_query,
-        OracleAdv.run_ret, PMF.map_bind, PMF.bind_map, PMF.pure_map, unifRoot]
+        OracleAdv.run_ret, PMF.map_bind, PMF.bind_map, unifRoot]
       simp [Function.comp_def, PMF.pure_map]
     | _ => simp [smCrit] at hc
 
@@ -1204,6 +1208,7 @@ noncomputable def smcRootRed (C : CKADef Sc Msg Key) [CKACoins C Rand]
     (A : SMCorruptAdv Sc Msg RK Sa W Ct) : OracleAdv (PPQuery RK Key) (RK × Sa) Bool :=
   smRootTreeOf C R G D ΔFS ΔPCS ideal initP A.tStar A.play
 
+omit [Fintype Key] [Nonempty Key] [Fintype Sa] [Nonempty Sa] [DecidableEq RK] [DecidableEq Key] in
 /-- Running the PRF-PRNG reduction against an oracle is running the adversary against the
 composed oracle from the drawn initial state. -/
 theorem smcRootRed_run (C : CKADef Sc Msg Key) [CKACoins C Rand]
@@ -1457,12 +1462,14 @@ noncomputable def smFSSend (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (x : FSS
 /-- The challenge of party `p` in the FS-AEAD simulator: forwarded to the FS-AEAD game. -/
 noncomputable def smFSChall (t : ℕ) (x : FSSim Sc Msg RK Sa) (p : CKAParty) (m : W × W) :
     OracleAdv (FSQuery W) (FSAns Sa Ct) (SMAns Sc Msg RK Sa Ct × FSSim Sc Msg RK Sa) :=
-  if x.sndX p && challOk x.s.loc t (x.s.ck.t p) p then
-    .query (.chall m) fun a =>
-      match a with
-      | .ct c => .ret (.ct c, { x with s := ⟨x.s.ck, { x.s.loc with done := true }⟩ })
-      | .none => .ret (.none, x)
-      | .state _ => .ret (.none, x)
+  if x.sndX p then
+    if challOk x.s.loc t (x.s.ck.t p) p then
+      .query (.chall m) fun a =>
+        match a with
+        | .ct c => .ret (.ct c, { x with s := ⟨x.s.ck, { x.s.loc with done := true }⟩ })
+        | .none => .ret (.none, x)
+        | .state _ => .ret (.none, x)
+    else .ret (.none, x)
   else .ret (.none, x)
 
 /-- The corruption of party `p` in the FS-AEAD simulator. -/
@@ -1524,7 +1531,7 @@ theorem ckaReach_init {St M : Type} (pub : M) (sA sB : St) :
 theorem ckaSender_ne_succ (e : ℕ) : ckaSender (e + 1) ≠ ckaSender e := by
   rw [ckaSender_succ]; exact CKAParty.other_ne _
 
-theorem ckaReach_sent {St M : Type} {s : CKAGameSt St M} (h : ckaReach s) {p : CKAParty}
+theorem ckaReach_sent {St M : Type} {s : CKAGameSt St M} {p : CKAParty}
     (hc : s.canSend p = true) (x : St) (T : M) : ckaReach (s.sent p x T) := by
   simp only [CKAGameSt.canSend, Bool.and_eq_true, beq_iff_eq] at hc
   obtain ⟨h1, h2⟩ := hc
@@ -1717,7 +1724,7 @@ theorem smFS_step (C : CKADef Sc Msg Key) [CKACoins C Rand] (R : PRGDef (RK × K
         · subst hq; simp [hs]
         · simp [hq, huniq q hq]
       · have hsd' : (ckaSender (ck.t p) == p) = false := by simpa using hsd
-        simp [hs, hsd', hsd, fsAbs, PMF.pure_map]
+        simp [hs, hsd', fsAbs, PMF.pure_map]
     · have hs' : sX p = false := by simpa using hs
       cases hl : l.snd p with
       | none => simp [hs', hl, fsAbs, PMF.pure_map]
@@ -1731,7 +1738,7 @@ theorem smFS_step (C : CKADef Sc Msg Key) [CKACoins C Rand] (R : PRGDef (RK × K
           · subst hq; simp [hs']
           · simp [hq]
         · have hsd' : (ckaSender (ck.t p) == p) = false := by simpa using hsd
-          simp [hs', hl, hsd', hsd, fsAbs, PMF.pure_map]
+          simp [hs', hl, hsd', fsAbs, PMF.pure_map]
   | chall p m =>
     simp only [OracleAdv.simOracle, smFSImplOf, smFSChall, smOracleOf, challOk]
     by_cases hs : sX p = true
@@ -1744,9 +1751,9 @@ theorem smFS_step (C : CKADef Sc Msg Key) [CKACoins C Rand] (R : PRGDef (RK × K
           exact hok.1.1
         have hfs : (!u.done && !u.corr) = true := by
           simp [show u.done = l.done from hx.done, hd, show u.corr = false from hx.corr]
-        simp only [hs, hok, Bool.and_self, ite_true, fsAbs, OracleAdv.run_query, fsOracle, hfs,
+        simp only [hs, hok, ite_true, fsAbs, OracleAdv.run_query, fsOracle, hfs,
           PMF.bind_bind, PMF.pure_bind, OracleAdv.run_ret, PMF.map_bind, PMF.pure_map,
-          Prod.map_apply, id_eq, SMLoc.advanced, Bool.true_and]
+          Prod.map_apply, id_eq, SMLoc.advanced]
         refine congrArg _ (funext fun c => ?_)
         congr 4
         funext q
@@ -1755,7 +1762,7 @@ theorem smFS_step (C : CKADef Sc Msg Key) [CKACoins C Rand] (R : PRGDef (RK × K
         · simp [hq, huniq q hq]
       · have hok' : (!l.done && (ckaSender (ck.t p) == p) && (ck.t p == t)) = false := by
           simpa using hok
-        simp only [hs, hok', Bool.and_false, Bool.true_and, Bool.false_eq_true, ite_true,
+        simp only [hs, hok', Bool.false_eq_true, ite_true,
           ite_false, fsAbs, OracleAdv.run_ret, PMF.pure_map, Prod.map_apply, id_eq]
     · have hs' : sX p = false := by simpa using hs
       cases hl : l.snd p with
@@ -1768,7 +1775,7 @@ theorem smFS_step (C : CKADef Sc Msg Key) [CKACoins C Rand] (R : PRGDef (RK × K
           simp only at this
           rw [hl] at this
           exact absurd this (by simp)
-        simp only [hs', hl, hok, Bool.false_and, Bool.false_eq_true, ite_false, fsAbs,
+        simp only [hs', hl, hok, Bool.false_eq_true, ite_false, fsAbs,
           OracleAdv.run_ret, PMF.pure_map, Prod.map_apply, id_eq]
   | corrupt p =>
     simp only [OracleAdv.simOracle, smFSImplOf, smFSCorr, smOracleOf]
@@ -1830,7 +1837,7 @@ theorem smFS_inv (C : CKADef Sc Msg Key) [CKACoins C Rand] (R : PRGDef (RK × Ke
           Set.mem_singleton_iff] at hz
         subst hz
         have hsp' : ckaSender t = p := ht ▸ hsp
-        refine ⟨hx.corr, hx.done, hx.init, ?_, ckaReach_sent hx.reach hc _ _, ?_, ?_, ?_, ?_, ?_⟩
+        refine ⟨hx.corr, hx.done, hx.init, ?_, ckaReach_sent hc _ _, ?_, ?_, ?_, ?_, ?_⟩
         · intro h; exfalso; apply h
           cases p <;> simp [smOpened, CKAGameSt.sent_t] <;> omega
         · intro q hq
@@ -1862,7 +1869,7 @@ theorem smFS_inv (C : CKADef Sc Msg Key) [CKACoins C Rand] (R : PRGDef (RK × Ke
         simp only [ht', Bool.false_eq_true, ite_false, OracleAdv.run_ret, PMF.support_pure,
           Set.mem_singleton_iff] at hz
         subst hz
-        refine ⟨hx.corr, hx.done, hx.init, ?_, ckaReach_sent hx.reach hc _ _, ?_, ?_, ?_, ?_, ?_⟩
+        refine ⟨hx.corr, hx.done, hx.init, ?_, ckaReach_sent hc _ _, ?_, ?_, ?_, ?_, ?_⟩
         · intro h
           refine hx.fresh fun h' => h ?_
           rcases h' with h' | h'
@@ -1943,7 +1950,7 @@ theorem smFS_inv (C : CKADef Sc Msg Key) [CKACoins C Rand] (R : PRGDef (RK × Ke
           have hpA := hle .A; have hpB := hle .B
           simp only [CKAGameSt.recvd_t, hpo, CKAParty.other_ne, ite_false]
           refine ⟨?_, ?_, htt⟩ <;> split <;> omega
-        · intro h; exact absurd h (by simp [ho])
+        · intro h; exact absurd h (by simp)
         · intro q hq1 hq2
           by_cases hqp : q = p
           · subst hqp
@@ -1986,7 +1993,7 @@ theorem smFS_inv (C : CKADef Sc Msg Key) [CKACoins C Rand] (R : PRGDef (RK × Ke
             · have hq' : rX q = true := by simpa [Function.update_apply, hqp] using hq
               simp only [CKAGameSt.recvd_t, hqp, ite_false]
               exact hrXw q hq'
-          · intro h; exact absurd h (by simp [ho'])
+          · intro h; exact absurd h (by simp)
           · intro _ h; exact absurd h (by simp [SMLoc.recvY, hl])
           · intro q hq1 hq2
             by_cases hqp : q = p
@@ -2041,13 +2048,14 @@ theorem smFS_inv (C : CKADef Sc Msg Key) [CKACoins C Rand] (R : PRGDef (RK × Ke
     simp only [smFSImplOf, smFSChall] at hz
     by_cases hok : (sX p && challOk l t (ck.t p) p) = true
     · simp only [Bool.and_eq_true] at hok
+      simp only [hok.1, hok.2, ite_true] at hz
       have hd : l.done = false := by
         have := hok.2
         simp only [challOk, Bool.and_eq_true, Bool.not_eq_true'] at this
         exact this.1.1
       have hfs : (!u.done && !u.corr) = true := by
         simp [show u.done = l.done from hx.done, hd, show u.corr = false from hx.corr]
-      simp only [hok, Bool.and_self, ite_true, OracleAdv.run_query, fsOracle, hfs,
+      simp only [OracleAdv.run_query, fsOracle, hfs, ite_true,
         PMF.bind_bind, PMF.pure_bind, PMF.support_bind, Set.mem_iUnion, OracleAdv.run_ret,
         PMF.support_pure, Set.mem_singleton_iff] at hz
       obtain ⟨c, -, rfl⟩ := hz
@@ -2055,9 +2063,13 @@ theorem smFS_inv (C : CKADef Sc Msg Key) [CKACoins C Rand] (R : PRGDef (RK × Ke
       exact ⟨hx.corr, rfl, hx.init, fun h => absurd hop h, hx.reach, hx.snd, hx.rcv, hx.out,
         hx.empty, hx.chal⟩
     · have hok' : (sX p && challOk l t (ck.t p) p) = false := by simpa using hok
-      simp only [hok', Bool.false_eq_true, ite_false, OracleAdv.run_ret, PMF.support_pure,
-        Set.mem_singleton_iff] at hz
-      subst hz; exact hx
+      have hz' : z = ((SMAns.none, (⟨⟨ck, l⟩, sX, rX, oX⟩ : FSSim Sc Msg RK Sa)), u) := by
+        by_cases hs : sX p = true
+        · have hc : challOk l t (ck.t p) p = false := by simpa [hs] using hok
+          simpa [hs, hc, OracleAdv.run_ret, PMF.support_pure] using hz
+        · have hs' : sX p = false := by simpa using hs
+          simpa [hs', OracleAdv.run_ret, PMF.support_pure] using hz
+      subst hz'; exact hx
   | corrupt p =>
     simp only [smFSImplOf, smFSCorr] at hz
     split at hz <;> simp only [OracleAdv.run_ret, PMF.support_pure, Set.mem_singleton_iff] at hz <;>
@@ -2292,7 +2304,7 @@ theorem ckaRun_eq_liftPMF (C : CKADef Sc Msg Key) [CKACoins C Rand] (hS : CKACoi
   induction n generalizing s r with
   | zero => exact liftPMF_pure _
   | succ n ih =>
-    simp only [ckaRun, ckaRunP, SPComp.bind_assoc, SPComp.pure_bind, ih, liftPMF_bind_pure]
+    simp only [ckaRun, ckaRunP, ih, liftPMF_bind_pure]
     rw [hS]
     simp only [SPComp.bind_assoc, SPComp.pure_bind, sample_eq_liftPMF, liftPMF_bind_liftPMF]
 
@@ -2349,6 +2361,7 @@ theorem ctsDistAll_zero (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (g : ℕ) (
       simp only [ctsDistAll, epochCtsDist_zero, PMF.pure_bind, ih, PMF.pure_map, smCts,
         List.zipWith_cons_cons, encEpoch]
 
+omit [SampleableType W] in
 theorem fsprgRun_length (G : PRGDef Sa (W × Sa)) (n : ℕ) (s : Sa) :
     (fsprgRun G n s).1.length = n := by
   induction n generalizing s with
@@ -2361,6 +2374,7 @@ def idealCtsCons (ms : List (W × W)) (msgs : List (List (W × W))) (n : ℕ) :
     (Fin ms.length → Ct) × IdealCts Ct msgs n ≃ IdealCts Ct (ms :: msgs) (n + 1) :=
   Fin.consEquiv fun j : Fin (n + 1) => Fin (epochLen (ms :: msgs) j) → Ct
 
+omit [SampleableType W] [SampleableType Ct] in
 theorem ctsOf_idealCtsCons (ms : List (W × W)) (msgs : List (List (W × W))) (n : ℕ)
     (x : (Fin ms.length → Ct) × IdealCts Ct msgs n) :
     ctsOf (idealCtsCons ms msgs n x) = List.ofFn x.1 :: ctsOf x.2 := by
@@ -2391,7 +2405,7 @@ theorem epochCtsDist_unif (D : AEADDef W Ct) (k g : ℕ) (keys : List W) (ms : L
       rw [PMF.map_comp, PMF.map_comp]
       congr 1
       funext v
-      simp only [Function.comp_apply, Fin.consEquiv_apply]
+      simp only [Function.comp_apply]
       exact (ofFn_cons v c).symm
 
 /-- When every message is below the threshold, the ciphertexts of the epochs are uniform. -/
@@ -2590,7 +2604,7 @@ theorem pasMsgs_run (C : CKADef Sc Msg Key) [CKACoins C Rand] (R : PRGDef (RK ×
       have hng : ¬ g < k := by omega
       simp only [pasMsgs, hng, hne, ite_false, OracleAdv.run_query, smOracleOf, hsa, hP',
         ite_true, PMF.pure_bind, List.length_cons, fsprgRun_succ, epochCtsDist, hthr,
-        PMF.map_bind, SMAns.ctOr]
+        SMAns.ctOr]
       rw [hcont _ (s.loc.advanced P (G.stretch sa).2) rfl rfl (by simp [SMLoc.advanced])
         (by rw [show (s.loc.advanced P (G.stretch sa).2).done = s.loc.done from rfl, hd]; simp; omega),
         PMF.map_comp]
@@ -2743,6 +2757,7 @@ noncomputable def smPasDist (C : CKADef Sc Msg Key) [CKACoins C Rand]
       (ctsDistAll G D k 0 (rootRun R rk (q.1.map Prod.snd)) msgs).map fun cts =>
         ((i.1, q.1.map Prod.fst), cts)
 
+omit [Fintype Key] [Nonempty Key] [Fintype Sa] [Nonempty Sa] in
 theorem sm_real_eq_pas (C : CKADef Sc Msg Key) [CKACoins C Rand] (hS : CKACoins.Sound C)
     (initP : PMF (Msg × Sc × Sc)) (hinit : C.init = liftPMF initP)
     (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
@@ -2753,12 +2768,14 @@ theorem sm_real_eq_pas (C : CKADef Sc Msg Key) [CKACoins C Rand] (hS : CKACoins.
     liftPMF_bind_liftPMF, ctsDistAll_zero, PMF.pure_map]
   rfl
 
+omit [Fintype RK] [Nonempty RK] [Fintype Key] [Nonempty Key] [Fintype Sa] [Nonempty Sa] in
 theorem rootRun_length (R : PRGDef (RK × Key) (RK × Sa)) (rk : RK) (Is : List Key) :
     (rootRun R rk Is).length = Is.length := by
   induction Is generalizing rk with
   | nil => rfl
   | cons I Is ih => simp only [rootRun, List.length_cons, ih]
 
+omit [Fintype Key] [Nonempty Key] [Fintype Sa] [Nonempty Sa] in
 theorem sm_ideal_eq_pas (C : CKADef Sc Msg Key) [CKACoins C Rand] (hS : CKACoins.Sound C)
     (initP : PMF (Msg × Sc × Sc)) (hinit : C.init = liftPMF initP)
     (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
@@ -2786,6 +2803,7 @@ theorem outBool_eq_optBit {α : Type} (A : α → SPComp Bool) (a : α) :
   unfold outBool
   congr 1
 
+omit [Fintype Key] [Nonempty Key] [Fintype Sa] [Nonempty Sa] in
 /-- **The game of the passive adversary.** The corruption game of `smPassiveAdv msgs A k` with
 the challenge mode `ideal` accepts with the probability that `A` accepts on the passive views
 with the messages below the threshold `pasThr ideal k` uniform. -/
@@ -2823,6 +2841,7 @@ theorem smPassive_game_eq (C : CKADef Sc Msg Key) [CKACoins C Rand]
   refine congrArg _ (funext fun q => congrArg _ (funext fun cts => ?_))
   simp only [Function.comp_apply, outBool_eq_optBit]
 
+omit [Fintype Key] [Nonempty Key] [Fintype Sa] [Nonempty Sa] in
 /-- **The passive secure-messaging game from the game with corruption.** For every passive
 distinguisher `A` of the double-ratchet game `sm_real`/`sm_ideal` over the epochs `msgs`, and
 any corruption delays, the passive advantage is at most the sum over the messages `k` (in the
