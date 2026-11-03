@@ -960,12 +960,6 @@ omit [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K] in
     transD a b x y s e r = (r.1, shO a b x y (ev1 e) r.2.1, shO a b x y (ev2 s e) r.2.2.1,
       r.2.2.2) := rfl
 
-omit [Fintype S] in
-@[simp] theorem shO_some (p : PartyId) (l : S × S) : shO a b x y (some p) l = sh a b x y p l := rfl
-
-omit [Fintype S] in
-@[simp] theorem shO_none (l : S × S) : shO a b x y none l = l := rfl
-
 omit [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K] in
 /-- The value of the symbolic input of an initiator is its input in the simulator. -/
 theorem aliceS_interp {rs : RSt S (W ⊕ W) K} {sid : SessionId} {p q : PartyId} {la lb : S × S}
@@ -1052,7 +1046,7 @@ theorem rel_complete {s₁ : SimSt S W K} {s₂ : RSim S W K} (h : Rel G a b x y
         dsimp only
         rw [ho]
         by_cases hc : rc.role = .initiator ∧ rc.key.isNone
-        · simp only [hc, and_self, ↓reduceIte, Option.map_some, shO_some]
+        · simp only [hc, and_self, ↓reduceIte, Option.map_some, shO, shEquiv, Equiv.coe_fn_mk]
           obtain ⟨e₁, h₁⟩ := rel_ltD G a b x y h' pid r.2.1
           obtain ⟨e₂, h₂⟩ := rel_ltD G a b x y h₁ rc.peer r.2.2.1
           rw [e₁, e₂]
@@ -1086,7 +1080,7 @@ theorem rel_send {s₁ : SimSt S W K} {s₂ : RSim S W K} (h : Rel G a b x y s�
     | some opk =>
       dsimp only
       by_cases hc : rc.role = .responder ∧ rc.key.isNone
-      · simp only [hc, and_self, ↓reduceIte, Option.map_some, shO_some]
+      · simp only [hc, and_self, ↓reduceIte, Option.map_some, shO, shEquiv, Equiv.coe_fn_mk]
         obtain ⟨e₁, h₁⟩ := rel_ltD G a b x y h' pid r.2.1
         obtain ⟨e₂, h₂⟩ := rel_ltD G a b x y h₁ rc.peer r.2.2.1
         rw [e₁, e₂]
@@ -1179,7 +1173,7 @@ theorem rel_start {s₁ : SimSt S W K} {s₂ : RSim S W K} (h : Rel G a b x y s�
     · rw [(pollStep_fst _).2.1]; exact h'.uncB
   · right
     obtain ⟨e₁, h₁⟩ := rel_ltD G a b x y h' pid r.2.1
-    dsimp only [simStartD, startR, transD_apply, ev1, shO_some]
+    dsimp only [simStartD, startR, transD_apply, ev1, shO, shEquiv, Equiv.coe_fn_mk]
     rw [e₁, pubIK_pub G a b x y, pubSPK_pub G a b x y]
     exact ⟨rfl, h₁.setPh G a b x y _⟩
   · right
@@ -1187,7 +1181,7 @@ theorem rel_start {s₁ : SimSt S W K} {s₂ : RSim S W K} (h : Rel G a b x y s�
     rw [h'.eph]
     exact ⟨rfl, h'.setPh G a b x y _⟩
   · have hn : Named rs₁.st pid = Named rs₂.st pid := by rw [h'.st]
-    dsimp only [simStartD, startR, transD_apply, ev1, shO_some]
+    dsimp only [simStartD, startR, transD_apply, ev1, shO, shEquiv, Equiv.coe_fn_mk]
     by_cases hc : Named rs₂.st pid = true
     · rw [ite_eq_left (hn.trans hc), ite_eq_left hc]
       exact Or.inr ⟨rfl, h'.setPh G a b x y _⟩
