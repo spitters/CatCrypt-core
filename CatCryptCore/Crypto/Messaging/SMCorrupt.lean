@@ -2268,4 +2268,326 @@ theorem sm_dh_hkdf_corrupt_advantage_le (H : RK → G → RK × Sa) (F : PRGDef 
 
 end DH
 
+/-! ## The passive game as the instance without corruption: distributions -/
+
+section PassiveDist
+
+variable {Sc Msg Key Rand RK Sa W Ct : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
+  [SampleableType Ct]
+
+/-- `n` epochs of the CKA `C` as a probability mass function, with the sending algorithm on
+drawn randomness. -/
+noncomputable def ckaRunP (C : CKADef Sc Msg Key) [CKACoins C Rand] :
+    ℕ → Sc → Sc → PMF (List (Msg × Key) × Sc × Sc)
+  | 0, s, r => PMF.pure ([], s, r)
+  | n + 1, s, r =>
+    (PMF.uniformFintype Rand).bind fun x =>
+      (ckaRunP C n (C.recv r (CKACoins.sendR (C := C) s x).2.1).1
+        (CKACoins.sendR (C := C) s x).1).map fun p =>
+        (((CKACoins.sendR (C := C) s x).2.1, (CKACoins.sendR (C := C) s x).2.2) :: p.1, p.2)
+
+/-- With a sound explicit-randomness sending algorithm, the CKA run is the lift of `ckaRunP`. -/
+theorem ckaRun_eq_liftPMF (C : CKADef Sc Msg Key) [CKACoins C Rand] (hS : CKACoins.Sound C)
+    (n : ℕ) (s r : Sc) : ckaRun C n s r = liftPMF (ckaRunP C n s r) := by
+  induction n generalizing s r with
+  | zero => exact liftPMF_pure _
+  | succ n ih =>
+    simp only [ckaRun, ckaRunP, SPComp.bind_assoc, SPComp.pure_bind, ih, liftPMF_bind_pure]
+    rw [hS]
+    simp only [SPComp.bind_assoc, SPComp.pure_bind, sample_eq_liftPMF, liftPMF_bind_liftPMF]
+
+/-- The transcript of a CKA run of `n` epochs has length `n`. -/
+theorem ckaRunP_length (C : CKADef Sc Msg Key) [CKACoins C Rand] (n : ℕ) (s r : Sc) (q)
+    (hq : q ∈ (ckaRunP (Rand := Rand) C n s r).support) : q.1.length = n := by
+  induction n generalizing s r q with
+  | zero =>
+    simp only [ckaRunP, PMF.support_pure, Set.mem_singleton_iff] at hq
+    rw [hq]; rfl
+  | succ n ih =>
+    simp only [ckaRunP, PMF.support_bind, PMF.support_map, Set.mem_iUnion, Set.mem_image] at hq
+    obtain ⟨x, -, p, hp, rfl⟩ := hq
+    simp only [List.length_cons, ih _ _ _ hp]
+
+/-- The ciphertexts of the messages `ms` of one epoch under the keys `keys`, the message of
+global index `g` first: uniform below the threshold `k`, the encryption otherwise. -/
+noncomputable def epochCtsDist (D : AEADDef W Ct) (k : ℕ) :
+    ℕ → List W → List (W × W) → PMF (List Ct)
+  | g, key :: keys, m :: ms =>
+    (if g < k then PMF.uniformFintype Ct else PMF.pure (D.encrypt key m.1 m.2)).bind fun c =>
+      (epochCtsDist D k (g + 1) keys ms).map (c :: ·)
+  | _, _, _ => PMF.pure []
+
+/-- The ciphertexts of the epochs with the FS-AEAD states `sas` and the messages `msgs`, the
+first message of global index `g`: the messages of global index below `k` are uniform. -/
+noncomputable def ctsDistAll (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (k : ℕ) :
+    ℕ → List Sa → List (List (W × W)) → PMF (List (List Ct))
+  | g, sa :: sas, ms :: msgs =>
+    (epochCtsDist D k g (fsprgRun G ms.length sa).1 ms).bind fun cs =>
+      (ctsDistAll G D k (g + ms.length) sas msgs).map (cs :: ·)
+  | _, _, _ => PMF.pure []
+
+theorem epochCtsDist_zero (D : AEADDef W Ct) (g : ℕ) (keys : List W) (ms : List (W × W)) :
+    epochCtsDist D 0 g keys ms = PMF.pure (encAll D keys ms) := by
+  induction keys generalizing g ms with
+  | nil => cases ms <;> rfl
+  | cons key keys ih =>
+    cases ms with
+    | nil => rfl
+    | cons m ms =>
+      simp only [epochCtsDist, Nat.not_lt_zero, ite_false, PMF.pure_bind, ih, PMF.pure_map,
+        encAll, List.zipWith_cons_cons]
+
+/-- Without uniform messages the ciphertexts are those of the double ratchet. -/
+theorem ctsDistAll_zero (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (g : ℕ) (sas : List Sa)
+    (msgs : List (List (W × W))) : ctsDistAll G D 0 g sas msgs = PMF.pure (smCts G D sas msgs) := by
+  induction sas generalizing g msgs with
+  | nil => cases msgs <;> rfl
+  | cons sa sas ih =>
+    cases msgs with
+    | nil => rfl
+    | cons ms msgs =>
+      simp only [ctsDistAll, epochCtsDist_zero, PMF.pure_bind, ih, PMF.pure_map, smCts,
+        List.zipWith_cons_cons, encEpoch]
+
+theorem fsprgRun_length (G : PRGDef Sa (W × Sa)) (n : ℕ) (s : Sa) :
+    (fsprgRun G n s).1.length = n := by
+  induction n generalizing s with
+  | zero => rfl
+  | succ n ih => simp only [fsprgRun, List.length_cons, ih]
+
+/-- Uniform ciphertexts of the epochs `ms :: msgs` are uniform ciphertexts of `ms` and of
+`msgs`. -/
+def idealCtsCons (ms : List (W × W)) (msgs : List (List (W × W))) (n : ℕ) :
+    (Fin ms.length → Ct) × IdealCts Ct msgs n ≃ IdealCts Ct (ms :: msgs) (n + 1) :=
+  Fin.consEquiv fun j : Fin (n + 1) => Fin (epochLen (ms :: msgs) j) → Ct
+
+theorem ctsOf_idealCtsCons (ms : List (W × W)) (msgs : List (List (W × W))) (n : ℕ)
+    (x : (Fin ms.length → Ct) × IdealCts Ct msgs n) :
+    ctsOf (idealCtsCons ms msgs n x) = List.ofFn x.1 :: ctsOf x.2 := by
+  simp only [ctsOf, idealCtsCons, List.ofFn_succ]
+  rfl
+
+/-- When every message of the epoch is below the threshold, its ciphertexts are uniform. -/
+theorem epochCtsDist_unif (D : AEADDef W Ct) (k g : ℕ) (keys : List W) (ms : List (W × W))
+    (hk : g + ms.length ≤ k) (hl : keys.length = ms.length) :
+    epochCtsDist D k g keys ms = (PMF.uniformFintype (Fin ms.length → Ct)).map List.ofFn := by
+  induction ms generalizing g keys with
+  | nil =>
+    simp only [List.length_nil]
+    rw [show (PMF.uniformFintype (Fin 0 → Ct)).map List.ofFn = PMF.pure [] by
+      rw [show (List.ofFn : (Fin 0 → Ct) → List Ct) = fun _ => [] from funext fun _ => rfl]
+      exact PMF.map_const _ _]
+    cases keys <;> rfl
+  | cons m ms ih =>
+    cases keys with
+    | nil => simp at hl
+    | cons key keys =>
+      simp only [List.length_cons] at hk hl
+      have hg : g < k := by omega
+      simp only [epochCtsDist, hg, ite_true, ih (g + 1) keys (by omega) (by omega)]
+      rw [List.length_cons, ← PMF.uniformFintype_map_equiv (Fin.consEquiv fun _ => Ct), PMF.map_comp,
+        PMF.uniform_prod_eq_bind, PMF.map_bind]
+      refine congrArg _ (funext fun c => ?_)
+      rw [PMF.map_comp, PMF.map_comp]
+      congr 1
+      funext v
+      simp only [Function.comp_apply, Fin.consEquiv_apply]
+      exact (ofFn_cons v c).symm
+
+/-- When every message is below the threshold, the ciphertexts of the epochs are uniform. -/
+theorem ctsDistAll_unif (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (k g : ℕ) (sas : List Sa)
+    (msgs : List (List (W × W))) (hk : g + (msgs.map List.length).sum ≤ k)
+    (hl : sas.length = msgs.length) :
+    ctsDistAll G D k g sas msgs =
+      (PMF.uniformFintype (IdealCts Ct msgs msgs.length)).map ctsOf := by
+  induction msgs generalizing g sas with
+  | nil =>
+    cases sas with
+    | nil =>
+      simp only [ctsDistAll, List.length_nil]
+      rw [show (ctsOf : IdealCts Ct ([] : List (List (W × W))) 0 → List (List Ct)) = fun _ => []
+        from funext fun _ => rfl]
+      exact (PMF.map_const _ _).symm
+    | cons sa sas => simp at hl
+  | cons ms msgs ih =>
+    cases sas with
+    | nil => simp at hl
+    | cons sa sas =>
+      simp only [List.map_cons, List.sum_cons, List.length_cons] at hk hl
+      simp only [ctsDistAll, epochCtsDist_unif D k g _ ms (by omega) (fsprgRun_length G _ sa),
+        ih (g + ms.length) sas (by omega) (by omega), List.length_cons]
+      rw [← PMF.uniformFintype_map_equiv (idealCtsCons ms msgs msgs.length), PMF.map_comp,
+        PMF.uniform_prod_eq_bind, PMF.map_bind, PMF.bind_map]
+      refine congrArg _ (funext fun v => ?_)
+      rw [Function.comp_apply, PMF.map_comp, PMF.map_comp]
+      refine congrArg (fun f => PMF.map f (PMF.uniformFintype (IdealCts Ct msgs msgs.length)))
+        (funext fun w => ?_)
+      simp only [Function.comp_apply, ctsOf_idealCtsCons]
+
+end PassiveDist
+
+/-! ## The passive adversaries -/
+
+section Passive
+
+variable {Sc Msg Key Rand RK Sa W Ct : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
+  [SampleableType Ct]
+
+/-- The CKA message of an answer, or `d`. -/
+def SMAns.msgOr (d : Msg) : SMAns Sc Msg RK Sa Ct → Msg
+  | .msg T => T
+  | _ => d
+
+/-- The ciphertext of an answer, or the default ciphertext. -/
+def SMAns.ctOr : SMAns Sc Msg RK Sa Ct → Ct
+  | .ct c => c
+  | _ => default
+
+/-- The sends of party `P` of the messages `ms`, the first of global index `g`: the messages of
+index below `k` are sent and their ciphertexts replaced by uniform ones, the message of index
+`k` is the challenge, the others are sent. -/
+noncomputable def pasMsgs (k : ℕ) (P : CKAParty) :
+    ℕ → List (W × W) → OracleAdv (SMQuery W) (SMAns Sc Msg RK Sa Ct) (List Ct)
+  | _, [] => .ret []
+  | g, m :: ms =>
+    if g < k then
+      .query (.send P m) fun _ => .rand (PMF.uniformFintype Ct) fun c =>
+        (pasMsgs k P (g + 1) ms).bind fun cs => .ret (c :: cs)
+    else if g = k then
+      .query (.chall P m) fun a => (pasMsgs k P (g + 1) ms).bind fun cs => .ret (a.ctOr :: cs)
+    else
+      .query (.send P m) fun a => (pasMsgs k P (g + 1) ms).bind fun cs => .ret (a.ctOr :: cs)
+
+/-- The epochs `msgs` from the epoch `e`, the first message of global index `g`: the sender
+opens the epoch, sends the messages, and the peer receives. The CKA messages and the
+ciphertexts are collected. -/
+noncomputable def pasEpochs (k : ℕ) (d : Msg) :
+    ℕ → ℕ → List (List (W × W)) →
+      OracleAdv (SMQuery W) (SMAns Sc Msg RK Sa Ct) (List Msg × List (List Ct))
+  | _, _, [] => .ret ([], [])
+  | e, g, ms :: msgs =>
+    .query (.ratchet (ckaSender (e + 1))) fun a =>
+      (pasMsgs k (ckaSender (e + 1)) g ms).bind fun cs =>
+        .query (.recv (ckaSender (e + 1)).other) fun _ =>
+          (pasEpochs k d (e + 1) (g + ms.length) msgs).bind fun r =>
+            .ret (a.msgOr d :: r.1, cs :: r.2)
+
+/-- The epoch (counted from `e`) of the message of global index `k`, the first message of the
+epochs `msgs` having index `g`. -/
+def msgEpoch : ℕ → ℕ → List (List (W × W)) → ℕ → ℕ
+  | e, _, [], _ => e
+  | e, g, ms :: msgs, k => if k < g + ms.length then e else msgEpoch (e + 1) (g + ms.length) msgs k
+
+/-- The bit of a run of a computation: its output, or `false` if it fails. -/
+def optBit : Option (Bool × Heap) → Bool
+  | some (b, _) => b
+  | none => false
+
+/-- **The passive adversary** of the message of global index `k` against the corruption game:
+the challenge epoch is the epoch of the message `k`; it runs the epochs `msgs` with the
+messages before `k` replaced by uniform ciphertexts, the challenge at `k` and the messages after
+it sent, and runs the passive distinguisher `A` on the CKA messages and the ciphertexts. It never
+corrupts. -/
+noncomputable def smPassiveAdv (msgs : List (List (W × W))) (A : SMView Msg Ct → SPComp Bool)
+    (k : ℕ) : SMCorruptAdv Sc Msg RK Sa W Ct where
+  tStar := PMF.pure (msgEpoch 0 0 msgs k + 1)
+  play _ pub :=
+    (pasEpochs k pub 0 0 msgs).bind fun r =>
+      .rand (A ((pub, r.1), r.2) Heap.empty) fun o => .ret (optBit o)
+
+derive_timed pasEpochs
+
+/-- The threshold of the uniform messages after the challenge of the message `k`: `k` in the
+real game, `k + 1` in the ideal one. -/
+def pasThr (ideal : Bool) (k : ℕ) : ℕ := if ideal then k + 1 else k
+
+/-- The part of a state that the passive adversary's later steps depend on. -/
+def pasProj {α : Type} (x : α × SMSt Sc Msg RK Sa) :
+    α × CKAGameSt Sc Msg × (CKAParty → RK) × Option (RK × Sa) × Bool :=
+  (x.1, x.2.ck, x.2.loc.rk, x.2.loc.out, x.2.loc.done)
+
+theorem run_bind_ret_cons {D' R' S α : Type} (O : S → D' → PMF (R' × S))
+    (A : OracleAdv D' R' (List α)) (c : α) (s : S) :
+    OracleAdv.run O (A.bind fun cs => .ret (c :: cs)) s =
+      (OracleAdv.run O A s).map fun x => (c :: x.1, x.2) := by
+  rw [OracleAdv.run_bind]
+  simp only [OracleAdv.run_ret]
+  exact PMF.bind_pure_comp _ _
+
+/-- **The sends of an epoch.** From a state in which party `P` sends in its epoch with the
+sending chain `sa`, the run of `pasMsgs` gives the ciphertexts of `epochCtsDist` with the
+threshold of the challenge mode; the CKA state, the root keys and the root output in transit
+are unchanged, and the challenge flag records whether the message `k` has been reached. -/
+theorem pasMsgs_run (C : CKADef Sc Msg Key) [CKACoins C Rand] (R : PRGDef (RK × Key) (RK × Sa))
+    (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (ΔFS ΔPCS t : ℕ) (ideal : Bool)
+    (root : RK → Key → PMF (RK × Sa)) (k : ℕ) (P : CKAParty) (ms : List (W × W)) (g : ℕ)
+    (sa : Sa) (s : SMSt Sc Msg RK Sa) (hsa : s.loc.snd P = some sa)
+    (hP : ckaSender (s.ck.t P) = P) (hd : s.loc.done = decide (k < g))
+    (ht : g ≤ k → k < g + ms.length → s.ck.t P = t) :
+    (OracleAdv.run (smOracleOf C R G D ΔFS ΔPCS t ideal root) (pasMsgs k P g ms) s).map pasProj =
+      (epochCtsDist D (pasThr ideal k) g (fsprgRun G ms.length sa).1 ms).map fun cs =>
+        (cs, s.ck, s.loc.rk, s.loc.out, decide (k < g + ms.length)) := by
+  induction ms generalizing g sa s with
+  | nil =>
+    simp only [pasMsgs, OracleAdv.run_ret, PMF.pure_map, pasProj, hd, List.length_nil,
+      Nat.add_zero, fsprgRun, epochCtsDist]
+  | cons m ms ih =>
+    have hP' : (ckaSender (s.ck.t P) == P) = true := by simpa using hP
+    have hlen : g + (ms.length + 1) = g + 1 + ms.length := by omega
+    have hcont : ∀ (c : Ct) (l : SMLoc RK Sa), l.rk = s.loc.rk → l.out = s.loc.out →
+        l.snd P = some (G.stretch sa).2 → l.done = decide (k < g + 1) →
+        (OracleAdv.run (smOracleOf C R G D ΔFS ΔPCS t ideal root)
+          ((pasMsgs k P (g + 1) ms).bind fun cs => .ret (c :: cs)) ⟨s.ck, l⟩).map pasProj =
+        (epochCtsDist D (pasThr ideal k) (g + 1) (fsprgRun G ms.length (G.stretch sa).2).1
+          ms).map fun cs => (c :: cs, s.ck, s.loc.rk, s.loc.out,
+            decide (k < g + (ms.length + 1))) := by
+      intro c l hrk hout hsnd hdone
+      rw [run_bind_ret_cons, PMF.map_comp]
+      have h := ih (g + 1) (G.stretch sa).2 ⟨s.ck, l⟩ hsnd hP hdone
+        (fun h1 h2 => ht (by omega) (by simp only [List.length_cons]; omega))
+      have hc : (pasProj ∘ fun x : List Ct × SMSt Sc Msg RK Sa => (c :: x.1, x.2)) =
+          (fun y => (c :: y.1, y.2)) ∘ pasProj := funext fun _ => rfl
+      rw [hc, ← PMF.map_comp, h, PMF.map_comp]
+      refine congrArg (fun f => PMF.map f _) (funext fun cs => ?_)
+      simp only [Function.comp_apply, hrk, hout, hlen]
+    rcases Nat.lt_trichotomy g k with hg | hg | hg
+    · have hthr : g < pasThr ideal k := by unfold pasThr; split <;> omega
+      simp only [pasMsgs, hg, ite_true, OracleAdv.run_query, OracleAdv.run_rand, smOracleOf,
+        hsa, hP', PMF.pure_bind, List.length_cons, fsprgRun_succ, epochCtsDist, hthr, PMF.map_bind]
+      refine congrArg _ (funext fun c => ?_)
+      rw [hcont c (s.loc.advanced P (G.stretch sa).2) rfl rfl (by simp [SMLoc.advanced])
+        (by rw [show (s.loc.advanced P (G.stretch sa).2).done = s.loc.done from rfl, hd]; simp; omega),
+        PMF.map_comp]
+      rfl
+    · subst hg
+      have hthr : (g < pasThr ideal g) = ideal := by unfold pasThr; cases ideal <;> simp
+      have hok : challOk s.loc t (s.ck.t P) P = true := by
+        simp only [challOk, hd, lt_self_iff_false, decide_false, Bool.not_false, hP', Bool.true_and,
+          beq_iff_eq]
+        exact ht le_rfl (by simp)
+      simp only [pasMsgs, lt_self_iff_false, ite_false, ite_true, OracleAdv.run_query, smOracleOf,
+        hsa, hok, List.length_cons, fsprgRun_succ, epochCtsDist, PMF.bind_bind, PMF.pure_bind,
+        PMF.map_bind]
+      have hcc : (if g < pasThr ideal g then PMF.uniformFintype Ct
+          else PMF.pure (D.encrypt (G.stretch sa).1 m.1 m.2)) = challCt D ideal (G.stretch sa).1 m := by
+        unfold pasThr challCt; cases ideal <;> simp
+      rw [hcc]
+      refine congrArg _ (funext fun c => ?_)
+      simp only [SMAns.ctOr]
+      rw [hcont c { s.loc.advanced P (G.stretch sa).2 with done := true } rfl rfl
+        (by simp [SMLoc.advanced]) (by simp), PMF.map_comp]
+      rfl
+    · have hthr : ¬ g < pasThr ideal k := by unfold pasThr; split <;> omega
+      have hne : g ≠ k := by omega
+      have hng : ¬ g < k := by omega
+      simp only [pasMsgs, hng, hne, ite_false, OracleAdv.run_query, smOracleOf, hsa, hP',
+        ite_true, PMF.pure_bind, List.length_cons, fsprgRun_succ, epochCtsDist, hthr,
+        PMF.map_bind, SMAns.ctOr]
+      rw [hcont _ (s.loc.advanced P (G.stretch sa).2) rfl rfl (by simp [SMLoc.advanced])
+        (by rw [show (s.loc.advanced P (G.stretch sa).2).done = s.loc.done from rfl, hd]; simp; omega),
+        PMF.map_comp]
+      rfl
+
+end Passive
+
 end CatCrypt.Crypto.Messaging
