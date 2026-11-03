@@ -295,10 +295,15 @@ def ev (k : S) : W ⊕ W → W
   | .inl w => w
   | .inr E => G.exp E k
 
+/-- The value of the fourth position of a symbolic input, which is always known. -/
+def val4 : W ⊕ W → W
+  | .inl w => w
+  | .inr E => E
+
 /-- The value of a symbolic input at the identity secret `ik` (positions `DH1` and `DH2`) and the
 signed-prekey secret `spk` (position `DH3`). -/
 def interp (ik spk : S) (i : Inp (W ⊕ W)) : Inp W :=
-  ⟨i.sid, i.ini, i.res, ev G ik i.dh1, ev G ik i.dh2, ev G spk i.dh3, i.dh4.elim id id⟩
+  ⟨i.sid, i.ini, i.res, ev G ik i.dh1, ev G ik i.dh2, ev G spk i.dh3, val4 i.dh4⟩
 
 /-- A symbolic input as a table entry with its value. -/
 def interpE (ik spk : S) (p : Inp (W ⊕ W) × K) : Inp W × K := (interp G ik spk p.1, p.2)
@@ -319,7 +324,7 @@ prekey `ZB` of the positions. -/
 def inpEq (ZA ZB : W) (i j : Inp (W ⊕ W)) : Bool :=
   decide (i.sid = j.sid) && decide (i.ini = j.ini) && decide (i.res = j.res) &&
     symEq G O ZA i.dh1 j.dh1 && symEq G O ZA i.dh2 j.dh2 && symEq G O ZB i.dh3 j.dh3 &&
-    decide (i.dh4.elim id id = j.dh4.elim id id)
+    decide (val4 i.dh4 = val4 j.dh4)
 
 /-- The lookup of a symbolic input in a symbolic table. -/
 def slookup (ZA ZB : W) (j : Inp (W ⊕ W)) : List (Inp (W ⊕ W) × K) → Option K
@@ -903,9 +908,9 @@ theorem aliceS_interp {rs : RSt S (W ⊕ W) K} {sid : SessionId} {p q : PartyId}
   by_cases hpa : p = a
   · subst hpa
     simp only [interp, aliceInp, ev, pubIK_pub G p b x y, pubSPK_pub G p b x y, off1, hp, sh,
-      ↓reduceIte, Option.map_some, Option.getD_some, Sum.elim_inl, id]
+      ↓reduceIte, Option.map_some, Option.getD_some, val4]
   · simp only [interp, aliceInp, ev, pubIK_pub G a b x y, pubSPK_pub G a b x y, sh, hpa,
-      ↓reduceIte, Sum.elim_inl, id]
+      ↓reduceIte, val4]
 
 omit [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K] in
 /-- The value of the symbolic input of a responder is its input in the simulator. -/
