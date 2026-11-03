@@ -3296,7 +3296,7 @@ still be the challenge epoch, the simulator against the game with the announced 
 either answers as the adaptive oracle, with mirrored states, or both lead only to states in
 which `e` can no longer be the challenge epoch. -/
 theorem guess_step (C : CKADef Sc Msg Key) [CKACoins C Rand] (R : PRGDef (RK × Key) (RK × Sa))
-    (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (ΔFS ΔPCS e : ℕ) (hPCS : 1 ≤ ΔPCS)
+    (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (ΔFS ΔPCS e : ℕ)
     (ideal : Bool) (s : SMSt Sc Msg RK Sa) (ad : SMAdRec) (hb : adBad e ad = false)
     (q : SMQuery W) :
     OracleAdv.simOracle (guessImplOf ΔFS ΔPCS e)
@@ -3432,6 +3432,178 @@ theorem guess_step (C : CKADef Sc Msg Key) [CKACoins C Rand] (R : PRGDef (RK × 
         simp [hf, hac, OracleAdv.run_query, smOracleOf, PMF.pure_bind, PMF.pure_map, guessEmb,
           guessMir]
       · simp [hf, PMF.pure_map, guessEmb, guessMir]
+
+/-- The adaptive game keeps the exclusion of the epoch `e`. -/
+theorem smAd_bad_sticky (C : CKADef Sc Msg Key) [CKACoins C Rand]
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (ΔFS ΔPCS e : ℕ) (ideal : Bool) (x : SMSt Sc Msg RK Sa × SMAdRec)
+    (hx : adBad e x.2 = true) (q : SMQuery W) (z)
+    (hz : z ∈ (smAdOracle C R G D ΔFS ΔPCS ideal x q).support) : adBad e z.2.2 = true := by
+  cases q with
+  | ratchet p =>
+    simp only [smAdOracle, PMF.support_map, Set.mem_image] at hz
+    obtain ⟨y, -, rfl⟩ := hz; exact hx
+  | recv p =>
+    simp only [smAdOracle, PMF.support_map, Set.mem_image] at hz
+    obtain ⟨y, -, rfl⟩ := hz; exact hx
+  | send p m =>
+    simp only [smAdOracle, PMF.support_map, Set.mem_image] at hz
+    obtain ⟨y, -, rfl⟩ := hz; exact hx
+  | chall p m =>
+    simp only [smAdOracle] at hz
+    split at hz
+    · split at hz
+      · rename_i hc
+        simp only [PMF.support_bind, PMF.support_pure, Set.mem_iUnion, Set.mem_singleton_iff]
+          at hz
+        obtain ⟨c, -, rfl⟩ := hz
+        obtain ⟨hcE, -, hlo, -⟩ := hc
+        simp only [adBad, hcE, decide_eq_true_eq] at hx
+        simp only [adBad, Bool.not_eq_true', beq_eq_false_iff_ne]
+        omega
+      · simp only [PMF.support_pure, Set.mem_singleton_iff] at hz
+        rw [hz]; exact hx
+    · simp only [PMF.support_pure, Set.mem_singleton_iff] at hz
+      rw [hz]; exact hx
+  | corrupt p =>
+    simp only [smAdOracle] at hz
+    split at hz
+    · rename_i hcE
+      simp only [PMF.support_pure, Set.mem_singleton_iff] at hz
+      rw [hz]
+      simp only [adBad, hcE, decide_eq_true_eq] at hx ⊢
+      omega
+    · simp only [PMF.support_pure, Set.mem_singleton_iff] at hz
+      rw [hz]; exact hx
+
+/-- The guessing reduction keeps the exclusion of the epoch `e`, whatever it is run against. -/
+theorem guess_bad_sticky (ΔFS ΔPCS e : ℕ)
+    (O' : SMSt Sc Msg RK Sa → SMQuery W → PMF (SMAns Sc Msg RK Sa Ct × SMSt Sc Msg RK Sa))
+    (x : GuessSt × SMSt Sc Msg RK Sa) (hx : adBad e x.1.ad = true) (q : SMQuery W) (z)
+    (hz : z ∈ (OracleAdv.simOracle (guessImplOf ΔFS ΔPCS e) O' x q).support) :
+    adBad e z.2.1.ad = true := by
+  simp only [OracleAdv.simOracle, PMF.support_map, Set.mem_image] at hz
+  obtain ⟨y, hy, rfl⟩ := hz
+  cases q with
+  | ratchet p =>
+    simp only [guessImplOf, guessRatchet] at hy
+    split at hy <;>
+    · simp only [OracleAdv.run_query, OracleAdv.run_ret, PMF.support_bind, PMF.support_pure,
+        Set.mem_iUnion, Set.mem_singleton_iff] at hy
+      obtain ⟨a, -, rfl⟩ := hy; exact hx
+  | recv p =>
+    simp only [guessImplOf, guessRecv] at hy
+    split at hy <;>
+    · simp only [OracleAdv.run_query, OracleAdv.run_ret, PMF.support_bind, PMF.support_pure,
+        Set.mem_iUnion, Set.mem_singleton_iff] at hy
+      obtain ⟨a, -, rfl⟩ := hy; exact hx
+  | send p m =>
+    simp only [guessImplOf, OracleAdv.run_query, OracleAdv.run_ret, PMF.support_bind,
+      PMF.support_pure, Set.mem_iUnion, Set.mem_singleton_iff] at hy
+    obtain ⟨a, -, rfl⟩ := hy; exact hx
+  | chall p m =>
+    simp only [guessImplOf, guessChall] at hy
+    split at hy
+    · rename_i hg
+      simp only [guessOk, Bool.and_eq_true, beq_iff_eq, Bool.not_eq_true',
+        decide_eq_true_eq] at hg
+      obtain ⟨⟨⟨⟨hcE, -⟩, hlo⟩, -⟩, -⟩ := hg
+      simp only [adBad, hcE, decide_eq_true_eq] at hx
+      split at hy
+      · rename_i ht
+        simp only [beq_iff_eq] at ht
+        omega
+      · simp only [OracleAdv.run_ret, PMF.support_pure, Set.mem_singleton_iff] at hy
+        rw [hy]
+        simp only [adBad, Bool.not_eq_true', beq_eq_false_iff_ne]
+        omega
+    · simp only [OracleAdv.run_ret, PMF.support_pure, Set.mem_singleton_iff] at hy
+      rw [hy]; exact hx
+  | corrupt p =>
+    simp only [guessImplOf, guessCorr] at hy
+    split at hy
+    · rename_i hcE
+      simp only [adBad, hcE, decide_eq_true_eq] at hx
+      split at hy
+      · simp only [OracleAdv.run_query, OracleAdv.run_ret, PMF.support_bind, PMF.support_pure,
+          Set.mem_iUnion, Set.mem_singleton_iff] at hy
+        obtain ⟨a, -, rfl⟩ := hy
+        simp only [adBad, decide_eq_true_eq]
+        omega
+      · simp only [OracleAdv.run_ret, PMF.support_pure, Set.mem_singleton_iff] at hy
+        rw [hy]
+        simp only [adBad, decide_eq_true_eq]
+        omega
+    · split at hy
+      · simp only [OracleAdv.run_query, OracleAdv.run_ret, PMF.support_bind, PMF.support_pure,
+          Set.mem_iUnion, Set.mem_singleton_iff] at hy
+        obtain ⟨a, -, rfl⟩ := hy; exact hx
+      · simp only [OracleAdv.run_ret, PMF.support_pure, Set.mem_singleton_iff] at hy
+        rw [hy]; exact hx
+
+/-- **The guessing reduction against the game with the announced epoch `e`.** It accepts with
+the probability that the adversary accepts in the adaptive game and its challenge is at the
+epoch `e`. -/
+theorem guess_run_eq (C : CKADef Sc Msg Key) [CKACoins C Rand]
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (ΔFS ΔPCS e : ℕ) (ideal : Bool) (A : OracleAdv (SMQuery W) (SMAns Sc Msg RK Sa Ct) Bool)
+    (s₀ : SMSt Sc Msg RK Sa) :
+    ((OracleAdv.run (smOracleOf C R G D ΔFS ΔPCS e ideal (realRoot R))
+        ((OracleAdv.simulate (guessImplOf ΔFS ΔPCS e) A (guessMir s₀ ⟨none, 0⟩)).bind fun r =>
+          .ret (r.1 && (r.2.ad.cE == some e))) s₀).map Prod.fst) true =
+      ((OracleAdv.run (smAdOracle C R G D ΔFS ΔPCS ideal) A (s₀, ⟨none, 0⟩)).map fun z =>
+        z.1 && (z.2.2.cE == some e)) true := by
+  have hL : (OracleAdv.run (smOracleOf C R G D ΔFS ΔPCS e ideal (realRoot R))
+      ((OracleAdv.simulate (guessImplOf ΔFS ΔPCS e) A (guessMir s₀ ⟨none, 0⟩)).bind fun r =>
+        .ret (r.1 && (r.2.ad.cE == some e))) s₀).map Prod.fst =
+      ((OracleAdv.run (OracleAdv.simOracle (guessImplOf ΔFS ΔPCS e)
+        (smOracleOf C R G D ΔFS ΔPCS e ideal (realRoot R))) A (guessEmb (s₀, ⟨none, 0⟩))).map
+          (Prod.map id fun x : GuessSt × SMSt Sc Msg RK Sa => (x.2, x.1.ad))).map
+        fun z : Bool × SMSt Sc Msg RK Sa × SMAdRec => z.1 && (z.2.2.cE == some e) := by
+    rw [run_bind_ret, OracleAdv.run_simulate, PMF.map_comp, PMF.map_comp, PMF.map_comp]
+    rfl
+  rw [hL, PMF.map_apply, PMF.map_apply]
+  refine tsum_congr fun z => ?_
+  split
+  · rename_i hz
+    have hbz : adBad e z.2.2 = false := by
+      have : (z.2.2.cE == some e) = true := by
+        cases h : z.1 <;> simp_all
+      simp only [beq_iff_eq] at this
+      simp [adBad, this]
+    refine OracleAdv.run_map_apply_eq_of_agree (smAdOracle C R G D ΔFS ΔPCS ideal)
+      (OracleAdv.simOracle (guessImplOf ΔFS ΔPCS e)
+        (smOracleOf C R G D ΔFS ΔPCS e ideal (realRoot R))) (fun x => (x.2, x.1.ad))
+      (fun x => adBad e x.2) (fun x => adBad e x.1.ad) (fun x => x.1 = guessMir x.2 x.1.ad)
+      (fun _ => rfl) (fun x q hx z hz => smAd_bad_sticky C R G D ΔFS ΔPCS e ideal x hx q z hz)
+      (fun x q hx z hz => guess_bad_sticky ΔFS ΔPCS e _ x hx q z hz) ?_ ?_ A _ rfl z hbz
+    · intro x q hx hbx y hy hby
+      have hxe : x = guessEmb (x.2, x.1.ad) := Prod.ext hx rfl
+      rcases guess_step C R G D ΔFS ΔPCS e ideal x.2 x.1.ad hbx q with h | ⟨h1, -⟩
+      · rw [hxe, h, PMF.support_map] at hy
+        obtain ⟨y', -, rfl⟩ := hy
+        rfl
+      · rw [hxe] at hy
+        rw [h1 y hy] at hby; exact absurd hby (by decide)
+    · intro x q hx hbx y hby
+      have hxe : x = guessEmb (x.2, x.1.ad) := Prod.ext hx rfl
+      rcases guess_step C R G D ΔFS ΔPCS e ideal x.2 x.1.ad hbx q with h | ⟨h1, h2⟩
+      · rw [hxe, h, PMF.map_comp]
+        rw [show (Prod.map id (fun x : GuessSt × SMSt Sc Msg RK Sa => (x.2, x.1.ad)) ∘
+            Prod.map (id : SMAns Sc Msg RK Sa Ct → SMAns Sc Msg RK Sa Ct) guessEmb) = id from
+          funext fun _ => rfl, PMF.map_id]
+        rfl
+      · rw [hxe]
+        rw [(PMF.apply_eq_zero_iff _ _).mpr, (PMF.apply_eq_zero_iff _ _).mpr]
+        · intro hy
+          rw [h2 y hy] at hby; exact absurd hby (by decide)
+        · intro hy
+          rw [PMF.support_map] at hy
+          obtain ⟨y', hy', rfl⟩ := hy
+          have := h1 y' hy'
+          simp only [Prod.map_snd] at hby
+          rw [this] at hby; exact absurd hby (by decide)
+  · rfl
 
 end GuessSim
 
