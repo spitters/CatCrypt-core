@@ -994,4 +994,307 @@ theorem smCKA_game_eq (C : CKADef Sc Msg Key) [CKACoins C Rand] (hS : CKACoins.S
 
 end CKAHop
 
+/-! ## The root hop -/
+
+section RootRed
+
+variable {Sc Msg Key Rand RK Sa W Ct : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
+  [SampleableType Ct]
+
+/-- The opening of an epoch by party `p` in the simulator of the root hop: the CKA sending
+algorithm on drawn randomness, and the root step, which at the challenge epoch `t` is a `prf`
+query of the PRF-PRNG game at the root key of `p`. -/
+noncomputable def smRootRatchet (C : CKADef Sc Msg Key) [CKACoins C Rand]
+    (R : PRGDef (RK × Key) (RK × Sa)) (t : ℕ) (s : SMSt Sc Msg RK Sa) (p : CKAParty) :
+    OracleAdv (PPQuery RK Key) (RK × Sa) (SMAns Sc Msg RK Sa Ct × SMSt Sc Msg RK Sa) :=
+  if s.ck.canSend p then
+    if s.ck.t p + 1 == t then
+      .rand (PMF.uniformFintype Rand) fun r =>
+        .query (.prf (s.loc.rk p)) fun y =>
+          .ret (.msg (CKACoins.sendR (C := C) (s.ck.st p) r).2.1,
+            ⟨s.ck.sent p (CKACoins.sendR (C := C) (s.ck.st p) r).1
+              (CKACoins.sendR (C := C) (s.ck.st p) r).2.1, s.loc.opened p y⟩)
+    else
+      .rand (PMF.uniformFintype Rand) fun r =>
+        .ret (.msg (CKACoins.sendR (C := C) (s.ck.st p) r).2.1,
+          ⟨s.ck.sent p (CKACoins.sendR (C := C) (s.ck.st p) r).1
+            (CKACoins.sendR (C := C) (s.ck.st p) r).2.1,
+            s.loc.opened p (R.stretch (s.loc.rk p, (CKACoins.sendR (C := C) (s.ck.st p) r).2.2))⟩)
+  else .ret (.none, s)
+
+/-- The receive of party `p` in the simulator of the root hop. -/
+noncomputable def smRootRecv {D' R' : Type} (C : CKADef Sc Msg Key) (s : SMSt Sc Msg RK Sa)
+    (p : CKAParty) : OracleAdv D' R' (SMAns Sc Msg RK Sa Ct × SMSt Sc Msg RK Sa) :=
+  if s.ck.canRecv p then
+    match s.loc.out with
+    | some y => .ret (.none, ⟨s.ck.recvd p (C.recv (s.ck.st p) s.ck.msg).1, s.loc.recvY p y⟩)
+    | none => .ret (.none, ⟨s.ck.recvd p (C.recv (s.ck.st p) s.ck.msg).1, s.loc⟩)
+  else .ret (.none, s)
+
+/-- The send of party `p` in a simulator with the full state. -/
+noncomputable def smFullSend {D' R' : Type} (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (s : SMSt Sc Msg RK Sa) (p : CKAParty) (m : W × W) :
+    OracleAdv D' R' (SMAns Sc Msg RK Sa Ct × SMSt Sc Msg RK Sa) :=
+  match s.loc.snd p with
+  | some sa =>
+    if ckaSender (s.ck.t p) == p then
+      .ret (.ct (D.encrypt (G.stretch sa).1 m.1 m.2), ⟨s.ck, s.loc.advanced p (G.stretch sa).2⟩)
+    else .ret (.none, s)
+  | none => .ret (.none, s)
+
+/-- The challenge of party `p` in a simulator with the full state. -/
+noncomputable def smFullChall {D' R' : Type} (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (t : ℕ) (ideal : Bool) (s : SMSt Sc Msg RK Sa) (p : CKAParty) (m : W × W) :
+    OracleAdv D' R' (SMAns Sc Msg RK Sa Ct × SMSt Sc Msg RK Sa) :=
+  match s.loc.snd p with
+  | some sa =>
+    if challOk s.loc t (s.ck.t p) p then
+      .rand (challCt D ideal (G.stretch sa).1 m) fun c =>
+        .ret (.ct c, ⟨s.ck, { s.loc.advanced p (G.stretch sa).2 with done := true }⟩)
+    else .ret (.none, s)
+  | none => .ret (.none, s)
+
+/-- The corruption of party `p` in a simulator with the full state. -/
+noncomputable def smFullCorr {D' R' : Type} (ΔFS ΔPCS t : ℕ) (s : SMSt Sc Msg RK Sa)
+    (p : CKAParty) : OracleAdv D' R' (SMAns Sc Msg RK Sa Ct × SMSt Sc Msg RK Sa) :=
+  if ckaAllowCorr ΔFS ΔPCS t s.ck p then
+    .ret (.state (s.ck.st p) (s.loc.rk p) (s.loc.snd p) (s.loc.rcv p), s)
+  else .ret (.none, s)
+
+/-- The simulator of the root hop with the challenge epoch `t`: the secure-messaging oracle of
+the first hybrid, with the root step at the challenge epoch asked to the `prf` oracle of the
+PRF-PRNG game. -/
+noncomputable def smRootImplOf (C : CKADef Sc Msg Key) [CKACoins C Rand]
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (ΔFS ΔPCS t : ℕ) (ideal : Bool) (s : SMSt Sc Msg RK Sa) (q : SMQuery W) :
+    OracleAdv (PPQuery RK Key) (RK × Sa) (SMAns Sc Msg RK Sa Ct × SMSt Sc Msg RK Sa) :=
+  match q with
+  | .ratchet p => smRootRatchet C R t s p
+  | .recv p => smRootRecv C s p
+  | .send p m => smFullSend G D s p m
+  | .chall p m => smFullChall G D t ideal s p m
+  | .corrupt p => smFullCorr ΔFS ΔPCS t s p
+
+/-- **The PRF-PRNG reduction** as an oracle tree: it draws the challenge epoch of the adversary,
+the CKA initialisation from `initP` and a uniform root key, and runs the adversary against the
+simulator `smRootImplOf`. -/
+noncomputable def smRootTreeOf (C : CKADef Sc Msg Key) [CKACoins C Rand] [Fintype RK]
+    [Nonempty RK] (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (ΔFS ΔPCS : ℕ) (ideal : Bool) (initP : PMF (Msg × Sc × Sc)) (tStar : PMF ℕ)
+    (play : ℕ → Msg → OracleAdv (SMQuery W) (SMAns Sc Msg RK Sa Ct) Bool) :
+    OracleAdv (PPQuery RK Key) (RK × Sa) Bool :=
+  .rand tStar fun t =>
+    .rand initP fun i =>
+      .rand (PMF.uniformFintype RK) fun rk =>
+        (OracleAdv.simulate (smRootImplOf C R G D ΔFS ΔPCS t ideal) (play t i.1)
+          (smInit i rk)).bind fun r => .ret r.1
+
+derive_timed smRootTreeOf
+
+end RootRed
+
+/-! ## The root hop: the game simulated by the PRF-PRNG reduction -/
+
+section RootHop
+
+variable {Sc Msg Key Rand RK Sa W Ct : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
+  [SampleableType Ct]
+
+/-- Away from the opening of the challenge epoch, the simulator of the root hop asks no query
+and answers as the secure-messaging oracle with any root step at the challenge epoch. -/
+theorem smRoot_step_noncrit (C : CKADef Sc Msg Key) [CKACoins C Rand]
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (ΔFS ΔPCS t : ℕ) (ideal : Bool) (root : RK → Key → PMF (RK × Sa)) {U : Type}
+    (O' : U → PPQuery RK Key → PMF ((RK × Sa) × U)) (s : SMSt Sc Msg RK Sa) (u : U)
+    (q : SMQuery W) (hc : smCrit t s q = false) :
+    OracleAdv.simOracle (smRootImplOf C R G D ΔFS ΔPCS t ideal) O' (s, u) q =
+      (smOracleOf C R G D ΔFS ΔPCS t ideal root s q).map fun y => (y.1, (y.2, u)) := by
+  cases q with
+  | ratchet p =>
+    simp only [smCrit, Bool.and_eq_false_iff] at hc
+    simp only [OracleAdv.simOracle, smRootImplOf, smRootRatchet, smOracleOf]
+    rcases hc with h | h
+    · simp [h, PMF.pure_map]
+    · by_cases hs : s.ck.canSend p = true <;>
+        simp [hs, h, PMF.map_bind, PMF.pure_bind, PMF.pure_map]
+  | recv p =>
+    simp only [OracleAdv.simOracle, smRootImplOf, smRootRecv, smOracleOf]
+    by_cases h : s.ck.canRecv p = true
+    · cases ho : s.loc.out <;> simp [h, ho, SMLoc.received, PMF.pure_map]
+    · simp [h, PMF.pure_map]
+  | send p m =>
+    simp only [OracleAdv.simOracle, smRootImplOf, smFullSend, smOracleOf]
+    cases h : s.loc.snd p
+    · simp [PMF.pure_map]
+    · by_cases hc : ckaSender (s.ck.t p) = p <;> simp [hc, PMF.pure_map]
+  | chall p m =>
+    simp only [OracleAdv.simOracle, smRootImplOf, smFullChall, smOracleOf]
+    cases h : s.loc.snd p
+    · simp [PMF.pure_map]
+    · by_cases hc : challOk s.loc t (s.ck.t p) p = true <;>
+        simp [hc, PMF.pure_map, PMF.map_bind]
+  | corrupt p =>
+    simp only [OracleAdv.simOracle, smRootImplOf, smFullCorr, smOracleOf]
+    by_cases h : ckaAllowCorr ΔFS ΔPCS t s.ck p = true <;> simp [h, PMF.pure_map]
+
+variable [Fintype RK] [Nonempty RK] [Fintype Key] [Nonempty Key] [Fintype Sa] [Nonempty Sa]
+  [DecidableEq RK] [DecidableEq Key]
+
+/-- The root step at the challenge epoch with the input `k` fixed in advance. -/
+noncomputable def fixedKeyRoot (R : PRGDef (RK × Key) (RK × Sa)) (k : Key) (rk : RK) (_ : Key) :
+    PMF (RK × Sa) :=
+  PMF.pure (R.stretch (rk, k))
+
+/-- The root step at the challenge epoch of the second hybrid: a uniform output. -/
+noncomputable def unifRoot (_ : RK) (_ : Key) : PMF (RK × Sa) := PMF.uniformFintype (RK × Sa)
+
+/-- **The simulator against the real PRF-PRNG game.** With the hidden input `k`, each call of
+the game with the root step `fixedKeyRoot R k` at the challenge epoch, with the PRF-PRNG state
+attached, is the call of the simulator against the real PRF-PRNG oracle. -/
+theorem smRoot_step_real (C : CKADef Sc Msg Key) [CKACoins C Rand]
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (ΔFS ΔPCS t : ℕ) (ideal : Bool) (rk' : RK) (k : Key) (s : SMSt Sc Msg RK Sa)
+    (q : SMQuery W) :
+    (smOracleOf C R G D ΔFS ΔPCS t ideal (fixedKeyRoot R k) s q).map
+        (Prod.map id fun s => (s, (⟨rk', k, [], []⟩ : PPSt RK Key (RK × Sa)))) =
+      OracleAdv.simOracle (smRootImplOf C R G D ΔFS ΔPCS t ideal)
+        (ppOracle (rootFn R) false false) (s, ⟨rk', k, [], []⟩) q := by
+  cases hc : smCrit t s q
+  · rw [smRoot_step_noncrit C R G D ΔFS ΔPCS t ideal (fixedKeyRoot R k) _ s _ q hc]
+    rfl
+  · cases q with
+    | ratchet p =>
+      simp only [smCrit, Bool.and_eq_true] at hc
+      simp [OracleAdv.simOracle, smRootImplOf, smRootRatchet, smOracleOf, hc.1, hc.2,
+        fixedKeyRoot, ppOracle, rootFn, PMF.map_bind, PMF.pure_bind, PMF.pure_map]
+    | _ => simp [smCrit] at hc
+
+/-- **The simulator against the ideal PRF-PRNG game.** From a state whose table of the `prf`
+oracle is empty unless the challenge epoch has been opened, each call of the simulator against
+the ideal PRF-PRNG oracle, with the PRF-PRNG state dropped, is the call of the game with a
+uniform root output at the challenge epoch. -/
+theorem smRoot_step_ideal (C : CKADef Sc Msg Key) [CKACoins C Rand]
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (ΔFS ΔPCS t : ℕ) (ideal : Bool) (s : SMSt Sc Msg RK Sa) (u : PPSt RK Key (RK × Sa))
+    (hu : u.tR = [] ∨ smOpened t s) (q : SMQuery W) :
+    (OracleAdv.simOracle (smRootImplOf C R G D ΔFS ΔPCS t ideal)
+        (ppOracle (rootFn R) true true) (s, u) q).map (Prod.map id Prod.fst) =
+      smOracleOf C R G D ΔFS ΔPCS t ideal unifRoot s q := by
+  cases hc : smCrit t s q
+  · rw [smRoot_step_noncrit C R G D ΔFS ΔPCS t ideal unifRoot _ s _ q hc, PMF.map_comp]
+    exact PMF.map_id _
+  · have hu' : u.tR = [] := by
+      rcases hu with h | h
+      · exact h
+      · rw [smCrit_of_opened t s h q] at hc; exact absurd hc (by decide)
+    cases q with
+    | ratchet p =>
+      simp only [smCrit, Bool.and_eq_true] at hc
+      simp only [OracleAdv.simOracle, smRootImplOf, smRootRatchet, smOracleOf, hc.1, hc.2,
+        ite_true, ppOracle, rfOracle, hu', List.lookup, OracleAdv.run_rand, OracleAdv.run_query,
+        OracleAdv.run_ret, PMF.map_bind, PMF.bind_map, PMF.pure_map, unifRoot]
+      simp [Function.comp_def, PMF.pure_map]
+    | _ => simp [smCrit] at hc
+
+/-- **The PRF-PRNG reduction** `smcRootRed C R G D ΔFS ΔPCS ideal initP A`: the tree
+`smRootTreeOf` at the challenge epoch and the interaction of `A`. -/
+noncomputable def smcRootRed (C : CKADef Sc Msg Key) [CKACoins C Rand]
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (ΔFS ΔPCS : ℕ) (ideal : Bool) (initP : PMF (Msg × Sc × Sc))
+    (A : SMCorruptAdv Sc Msg RK Sa W Ct) : OracleAdv (PPQuery RK Key) (RK × Sa) Bool :=
+  smRootTreeOf C R G D ΔFS ΔPCS ideal initP A.tStar A.play
+
+/-- Running the PRF-PRNG reduction against an oracle is running the adversary against the
+composed oracle from the drawn initial state. -/
+theorem smcRootRed_run (C : CKADef Sc Msg Key) [CKACoins C Rand]
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (ΔFS ΔPCS : ℕ) (ideal : Bool) (initP : PMF (Msg × Sc × Sc))
+    (A : SMCorruptAdv Sc Msg RK Sa W Ct) {U : Type}
+    (O' : U → PPQuery RK Key → PMF ((RK × Sa) × U)) (u : U) :
+    (OracleAdv.run O' (smcRootRed C R G D ΔFS ΔPCS ideal initP A) u).map Prod.fst =
+      A.tStar.bind fun t => initP.bind fun i => (PMF.uniformFintype RK).bind fun rk =>
+        (OracleAdv.run (OracleAdv.simOracle (smRootImplOf C R G D ΔFS ΔPCS t ideal) O')
+          (A.play t i.1) (smInit i rk, u)).map Prod.fst := by
+  simp only [smcRootRed, smRootTreeOf, OracleAdv.run_rand, PMF.map_bind,
+    OracleAdv.run_simulate_fst]
+
+/-- **The real side of the root hop.** The real PRF-PRNG game of `smcRootRed` is the first
+hybrid: the root step at the challenge epoch on a uniform key. -/
+theorem smRoot_real_eq (C : CKADef Sc Msg Key) [CKACoins C Rand]
+    (initP : PMF (Msg × Sc × Sc)) (hinit : C.init = liftPMF initP)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (ΔFS ΔPCS : ℕ) (ideal : Bool) (A : SMCorruptAdv Sc Msg RK Sa W Ct) :
+    pp_game (rootFn R) false false (smcRootRed C R G D ΔFS ΔPCS ideal initP A) =
+      sm_corrupt_gameOf C R G D ΔFS ΔPCS ideal (unifKeyRoot R) A := by
+  rw [sm_corrupt_gameOf_eq_liftPMF C initP hinit]
+  unfold pp_game
+  congr 1
+  have h1 : ∀ (rk' : RK) (k : Key),
+      (OracleAdv.run (ppOracle (rootFn R) false false) (smcRootRed C R G D ΔFS ΔPCS ideal initP A)
+        ⟨rk', k, [], []⟩).map Prod.fst =
+      A.tStar.bind fun t => initP.bind fun i => (PMF.uniformFintype RK).bind fun rk =>
+        (OracleAdv.run (smOracleOf C R G D ΔFS ΔPCS t ideal (fixedKeyRoot R k)) (A.play t i.1)
+          (smInit i rk)).map Prod.fst := by
+    intro rk' k
+    rw [smcRootRed_run]
+    refine congrArg _ (funext fun t => congrArg _ (funext fun i => congrArg _ (funext fun rk => ?_)))
+    rw [← OracleAdv.run_map_state _ _ (fun s => (s, (⟨rk', k, [], []⟩ : PPSt RK Key (RK × Sa))))
+      (smRoot_step_real C R G D ΔFS ΔPCS t ideal rk' k), PMF.map_comp]
+    rfl
+  simp only [h1, PMF.bind_const]
+  have h2 : ∀ (t : ℕ) (i : Msg × Sc × Sc) (rk : RK),
+      (OracleAdv.run (smOracleOf C R G D ΔFS ΔPCS t ideal (unifKeyRoot R)) (A.play t i.1)
+        (smInit i rk)).map Prod.fst =
+      (PMF.uniformFintype Key).bind fun k =>
+        (OracleAdv.run (smOracleOf C R G D ΔFS ΔPCS t ideal (fixedKeyRoot R k)) (A.play t i.1)
+          (smInit i rk)).map Prod.fst := by
+    intro t i rk
+    rw [sm_run_eager C R G D ΔFS ΔPCS t ideal (PMF.uniformFintype Key) (unifKeyRoot R)
+      (fixedKeyRoot R) (fun _ _ => rfl), PMF.map_bind]
+  simp only [h2]
+  rw [PMF.bind_comm]
+  refine congrArg _ (funext fun t => ?_)
+  rw [PMF.bind_comm]
+  refine congrArg _ (funext fun i => ?_)
+  rw [PMF.bind_comm]
+
+/-- **The ideal side of the root hop.** The ideal PRF-PRNG game of `smcRootRed` is the second
+hybrid: a uniform root output at the challenge epoch. -/
+theorem smRoot_ideal_eq (C : CKADef Sc Msg Key) [CKACoins C Rand]
+    (initP : PMF (Msg × Sc × Sc)) (hinit : C.init = liftPMF initP)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (ΔFS ΔPCS : ℕ) (ideal : Bool) (A : SMCorruptAdv Sc Msg RK Sa W Ct) :
+    pp_game (rootFn R) true true (smcRootRed C R G D ΔFS ΔPCS ideal initP A) =
+      sm_corrupt_gameOf C R G D ΔFS ΔPCS ideal unifRoot A := by
+  rw [sm_corrupt_gameOf_eq_liftPMF C initP hinit]
+  unfold pp_game
+  congr 1
+  have h1 : ∀ (rk' : RK) (k : Key),
+      (OracleAdv.run (ppOracle (rootFn R) true true) (smcRootRed C R G D ΔFS ΔPCS ideal initP A)
+        ⟨rk', k, [], []⟩).map Prod.fst =
+      A.tStar.bind fun t => initP.bind fun i => (PMF.uniformFintype RK).bind fun rk =>
+        (OracleAdv.run (smOracleOf C R G D ΔFS ΔPCS t ideal unifRoot) (A.play t i.1)
+          (smInit i rk)).map Prod.fst := by
+    intro rk' k
+    rw [smcRootRed_run]
+    refine congrArg _ (funext fun t => congrArg _ (funext fun i => congrArg _ (funext fun rk => ?_)))
+    refine OracleAdv.run_map_fst_of_map_state_inv _ _ Prod.fst
+      (fun x => x.2.tR = [] ∨ smOpened t x.1) ?_
+      (fun x q hx => smRoot_step_ideal C R G D ΔFS ΔPCS t ideal x.1 x.2 hx q) _ _ (Or.inl rfl)
+    intro x q hx y hy
+    cases hc : smCrit t x.1 q
+    · rw [smRoot_step_noncrit C R G D ΔFS ΔPCS t ideal unifRoot _ x.1 x.2 q hc] at hy
+      simp only [PMF.support_map, Set.mem_image] at hy
+      obtain ⟨z, hz, rfl⟩ := hy
+      rcases hx with h | h
+      · exact Or.inl h
+      · exact Or.inr (smOracleOf_opened C R G D ΔFS ΔPCS t ideal _ x.1 q h z hz)
+    · have hm : (y.1, y.2.1) ∈ (smOracleOf C R G D ΔFS ΔPCS t ideal unifRoot x.1 q).support := by
+        rw [← smRoot_step_ideal C R G D ΔFS ΔPCS t ideal x.1 x.2 hx q, PMF.support_map]
+        exact ⟨y, hy, rfl⟩
+      exact Or.inr (smOracleOf_opened_of_crit C R G D ΔFS ΔPCS t ideal _ x.1 q hc _ hm)
+  simp only [h1, PMF.bind_const]
+
+end RootHop
+
 end CatCrypt.Crypto.Messaging
