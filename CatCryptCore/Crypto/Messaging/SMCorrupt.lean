@@ -41,6 +41,11 @@ initialisation and asks, adaptively,
 The advantage `SM_Corrupt_Advantage C R G D ΔFS ΔPCS A` is the distance between the real and the
 ideal game.
 
+In the game with an adaptive challenge epoch (`smAdOracle`, `sm_adaptive_game`,
+`SM_Adaptive_Advantage`) the adversary does not announce the epoch: the challenge is answered
+for the sender of any epoch `e` while its counter is `e`, once, and its epoch is recorded; the
+windows are decided online from the record, as below.
+
 ## The windows
 
 The corruption of `P` is answered exactly when the CKA corruption gate `ckaAllowCorr ΔFS ΔPCS t⋆`
@@ -50,6 +55,11 @@ allows it on the epoch counters:
   epoch (post-compromise security: the epochs between the corruption and the challenge heal the
   state), or
 * `t⋆ + ΔFS ≤ t_P` — `P` is at least `ΔFS` epochs past the challenge epoch (forward secrecy).
+
+In the game with an adaptive challenge epoch the same windows are decided online: a corruption
+before the challenge is answered and raises the least allowed challenge epoch to
+`max(t_A, t_B) + ΔPCS`; the challenge at the epoch `e` is answered only if `e` is at least this
+bound; a corruption of `P` after a challenge at `e` is answered if `e + ΔFS ≤ t_P`.
 
 The FS-AEAD epoch structure fixes the other window: the chains of the challenge epoch are held
 by its sender from its opening until the sender opens the epoch `t⋆ + 2` (counters `t⋆` and
@@ -68,9 +78,11 @@ left-or-right challenges on any number of messages, whose epoch the adversary ch
 adaptively; trivial attacks are excluded by safety predicates with the parameter `Δ_SM`. The
 game here is the confidentiality part, restricted as follows:
 
-* the challenge epoch is announced before the interaction (the tree of `SMCorruptAdv` is chosen
-  after `tStar`, as in the CKA game of `CKACorrupt`); an adaptive choice of the challenge epoch
-  reduces to this game by guessing it, at the cost of the number of epochs (not formalised);
+* the main game announces the challenge epoch before the interaction (the tree of
+  `SMCorruptAdv` is chosen after `tStar`, as in the CKA game of `CKACorrupt`); the game with an
+  adaptive challenge epoch reduces to it by guessing the epoch: its advantage is at most the sum
+  over the epochs `e` of the advantages of the guessing reductions `smGuessAdv ΔFS ΔPCS A e`
+  (`sm_adaptive_advantage_le`), the sum over the epochs of ACD's bound;
 * one real-or-random challenge instead of left-or-right challenges on several messages;
 * in-order delivery of the CKA messages; the receiver keeps the receiving chain of the epoch it
   received, and ciphertexts are not delivered (no decryption, no injection, no authenticity);
@@ -78,9 +90,11 @@ game here is the confidentiality part, restricted as follows:
 * the windows are those of the CKA game on the epoch counters, given above; in ACD's terms the
   game is `Δ`-secure with the delays `ΔFS` and `ΔPCS` of the CKA.
 
-These restrictions are forced by the bookkeeping of the windows only in the first item: with the
-challenge epoch announced, the corruption gate is decided at the time of the corruption, as in
-the CKA game, and the reduction announces the same epoch to the CKA game.
+None of these restrictions is forced by the bookkeeping of the windows: the announced epoch of
+the main game lets the corruption gate be decided at the time of the corruption, as in the CKA
+game, and the reduction announces the same epoch to the CKA game; the adaptive game is recovered
+by the guess, and the other items restrict the functionality (no authenticity, no immediate
+decryption, no bad randomness, one challenge).
 
 ## The proof
 
@@ -112,7 +126,10 @@ and the hops 2 and 1 back with the uniform challenge ciphertext.
 * `smcCKARed`, `smcRootRed`, `smcFSRed` — the reductions, from the oracle trees `smCKATreeOf`,
   `smRootTreeOf`, `smFSTreeOf` (costed forms by `derive_timed`); `ppRedR`, `ppRedL` — the
   dual-PRF reductions of the PRF-PRNG game
-* `smPassiveAdv` — the passive adversary of one message, from the tree `pasEpochs`
+* `smPassiveAdv` — the passive adversary of one message, from the tree `smPassiveTreeOf`
+* `SMAdRec`, `smAdOracle`, `sm_adaptive_game`, `SM_Adaptive_Advantage` — the game with an
+  adaptive challenge epoch
+* `guessImplOf`, `guessTreeOf`, `smGuessAdv` — the guessing reduction
 
 ## Main results
 
@@ -128,8 +145,15 @@ and the hops 2 and 1 back with the uniform challenge ciphertext.
   `CatCryptCore.Crypto.Messaging.DoubleRatchet` from the game with corruption: the passive
   advantage is at most the sum over the messages of the advantages of the adversaries
   `smPassiveAdv`, which never corrupt
+* `sm_adaptive_advantage_le` — the game with an adaptive challenge epoch from the game with an
+  announced one, by guessing the epoch (identical until the guessed epoch is excluded,
+  `OracleAdv.run_map_apply_eq_of_agree`; identical until the challenge, `smAd_nochall_eq`)
+* `sm_adaptive_corrupt_advantage_le`, `sm_dh_adaptive_advantage_le`,
+  `sm_dh_hkdf_adaptive_advantage_le` — the adaptive game: the sum over the epochs of the CKA
+  (DDH), PRF-PRNG (dual-PRF) and FS-AEAD terms
 * `smCKATreeOf.erase_timed`, `smRootTreeOf.erase_timed`, `smFSTreeOf.erase_timed`,
-  `ppRedR.erase_timed`, `ppRedL.erase_timed`, `pasEpochs.erase_timed` — the costed reductions
+  `ppRedR.erase_timed`, `ppRedL.erase_timed`, `smPassiveTreeOf.erase_timed`,
+  `guessTreeOf.erase_timed` — the costed reductions (`derive_timed`)
 
 ## References
 
@@ -1824,9 +1848,6 @@ variable {Sc Msg Key Rand RK Sa W Ct : Type} [Fintype Rand] [Nonempty Rand] [Sam
 /-- The root step at the challenge epoch with the output `y` fixed in advance. -/
 noncomputable def constRoot (y : RK × Sa) (_ : RK) (_ : Key) : PMF (RK × Sa) := PMF.pure y
 
-theorem fsAbs_ck (rkS : RK) (x : FSSim Sc Msg RK Sa × FSSt Sa) : (fsAbs rkS x).ck = x.1.s.ck :=
-  rfl
-
 /-- **The FS-AEAD simulator is the secure-messaging oracle.** Under the invariant, each call of
 the simulator against the FS-AEAD oracle, mapped by `fsAbs`, is the call of the game with the
 root output `(rkS, sa)` at the challenge epoch. -/
@@ -2698,6 +2719,15 @@ def optBit : Option (Bool × Heap) → Bool
   | some (b, _) => b
   | none => false
 
+/-- The tree of the passive adversary of the message of global index `k`: the epochs `msgs`,
+then the passive distinguisher `A` on the CKA messages and the ciphertexts. -/
+noncomputable def smPassiveTreeOf (msgs : List (List (W × W))) (A : SMView Msg Ct → SPComp Bool)
+    (k : ℕ) (pub : Msg) : OracleAdv (SMQuery W) (SMAns Sc Msg RK Sa Ct) Bool :=
+  (pasEpochs k pub 0 0 msgs).bind fun r =>
+    .rand (A ((pub, r.1), r.2) Heap.empty) fun o => .ret (optBit o)
+
+derive_timed smPassiveTreeOf
+
 /-- **The passive adversary** of the message of global index `k` against the corruption game:
 the challenge epoch is the epoch of the message `k`; it runs the epochs `msgs` with the
 messages before `k` replaced by uniform ciphertexts, the challenge at `k` and the messages after
@@ -2706,11 +2736,7 @@ corrupts. -/
 noncomputable def smPassiveAdv (msgs : List (List (W × W))) (A : SMView Msg Ct → SPComp Bool)
     (k : ℕ) : SMCorruptAdv Sc Msg RK Sa W Ct where
   tStar := PMF.pure (msgEpoch 0 0 msgs k + 1)
-  play _ pub :=
-    (pasEpochs k pub 0 0 msgs).bind fun r =>
-      .rand (A ((pub, r.1), r.2) Heap.empty) fun o => .ret (optBit o)
-
-derive_timed pasEpochs
+  play _ pub := smPassiveTreeOf msgs A k pub
 
 /-- The threshold of the uniform messages after the challenge of the message `k`: `k` in the
 real game, `k + 1` in the ideal one. -/
@@ -3018,7 +3044,7 @@ theorem smPassive_game_eq (C : CKADef Sc Msg Key) [CKACoins C Rand]
   rw [sm_corrupt_game, sm_corrupt_gameOf_eq_liftPMF C initP hinit, prTrue_liftPMF,
     prTrue_liftPMF_bind]
   congr 1
-  simp only [smPassiveAdv, PMF.pure_bind, smPasDist, PMF.bind_bind]
+  simp only [smPassiveAdv, smPassiveTreeOf, PMF.pure_bind, smPasDist, PMF.bind_bind]
   refine congrArg _ (funext fun i => ?_)
   rw [PMF.bind_comm]
   refine congrArg _ (funext fun rk => ?_)
