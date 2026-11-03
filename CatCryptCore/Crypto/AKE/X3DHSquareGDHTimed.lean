@@ -25,6 +25,7 @@ open CatCrypt.Core CatCrypt.Prob CatCrypt.Crypto
 open CatCrypt.Crypto.UCTransparent CatCrypt.Crypto.UCTransparent.FAKE
 open CatCrypt.Crypto.PAKE.DHExtract
 open CatCrypt.Crypto.AKE.X3DHSquare CatCrypt.Crypto.AKE.X3DHSquareHops
+open CatCrypt.Crypto.OracleGameUpToBad
 
 section Prog
 
@@ -378,6 +379,162 @@ theorem sguard_time (s : RSim S W K) (sid : SessionId) (pid : PartyId) :
 
 end Costed
 
+/-! ## The step programs compute the step of the reduction -/
+
+section Correct
+
+variable {S W K : Type} [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K]
+  [Inhabited K] (G : DHGroup S W) (a b : PartyId) (O : W → W → W → Bool) (X Y : W)
+
+omit [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K] in
+/-- `ltC` draws the long-term secrets of `ltD` uniformly. -/
+theorem ltC_eq (rs : RSt S (W ⊕ W) K) (pid : PartyId) :
+    ltC rs pid = liftPMF ((PMF.uniformFintype (S × S)).map (ltD rs pid)) := by
+  rw [ltC, ltStep_eq, ltAt_eq_map]
+
+omit [Fintype S] [Inhabited K] in
+/-- `sroStep` draws the fresh value of `sroDet` uniformly. -/
+theorem sroStep_eq (ZA ZB : W) (tb : List (Inp (W ⊕ W) × K)) (j : Inp (W ⊕ W)) :
+    sroStep G O ZA ZB tb j = liftPMF ((PMF.uniformFintype K).map (sroDet G O ZA ZB tb j)) := by
+  unfold sroStep sroDet
+  cases h : slookup G O ZA ZB j tb with
+  | some v =>
+    simp only [liftPMF_pure]
+    exact congrArg liftPMF (PMF.map_const _ _).symm
+  | none =>
+    simp only [sample_eq_liftPMF, map_liftPMF]
+
+omit [Fintype S] in
+/-- `deliverC` draws the fresh value of `deliverR` uniformly. -/
+theorem deliverC_eq (rs : RSt S (W ⊕ W) K) (inp : Inst → Option (Inp (W ⊕ W))) (x : Inst)
+    (r : Rec K) (ip : Inp (W ⊕ W)) :
+    deliverC G a b O X Y rs inp x r ip =
+      liftPMF ((PMF.uniformFintype K).map (deliverR G a b O X Y rs inp x r ip)) := by
+  change _ = liftPMF ((PMF.uniformFintype K).map fun k => deliverR G a b O X Y rs inp x r ip k)
+  by_cases h : Exposed rs.st x r
+  · simp only [deliverC, h, ↓reduceIte, sroStep_eq, map_liftPMF, PMF.map_comp]
+    congr 2
+    funext k
+    simp only [deliverR, h, ↓reduceIte, Function.comp_apply]
+  · simp only [deliverC, h, ↓reduceIte, liftPMF_pure]
+    congr 1
+    rw [← PMF.map_const (PMF.uniformFintype K)]
+    congr 1
+    funext k
+    simp only [deliverR, h, ↓reduceIte, Function.const_apply]
+
+omit [Fintype S] [Fintype K] [Nonempty K] in
+/-- **`complete` through its guard**: `completeR` is the delivery at the input of the initiator
+after the two draws of long-term secrets, when the guard `cguard` holds. -/
+theorem completeR_eq (s : RSim S W K) (sid : SessionId) (pid : PartyId) (r : Draw S K) :
+    completeR G a b O X Y s (sid, pid) r =
+      match cguard s sid pid with
+      | some (rc, ek, opk) =>
+        deliverR G a b O X Y (ltD (ltD s.1 pid r.2.1).2 rc.peer r.2.2.1).2 s.2.1 (sid, pid) rc
+          (aliceS G a b X Y sid pid rc.peer (ltD s.1 pid r.2.1).1
+            (ltD (ltD s.1 pid r.2.1).2 rc.peer r.2.2.1).1 ek opk) r.2.2.2
+      | none => ((s.1, s.2.1, .fwd), .inr (.inr .ack)) := by
+  unfold completeR cguard
+  cases hr : s.1.st.recs (sid, pid) with
+  | none => rfl
+  | some rc =>
+    cases he : s.1.eph (sid, pid) with
+    | none => rfl
+    | some ek =>
+      dsimp only
+      cases ho : opkOf s.1 sid rc.peer with
+      | none => rfl
+      | some opk =>
+        by_cases hc : rc.role = .initiator ∧ rc.key.isNone = true
+        · simp only [hc, and_self, ↓reduceIte]
+        · simp only [hc, ↓reduceIte]
+
+omit [Fintype S] [Fintype K] [Nonempty K] in
+/-- **`send` through its guard.** -/
+theorem sendR_eq (s : RSim S W K) (sid : SessionId) (pid : PartyId) (e : W) (r : Draw S K) :
+    sendR G a b O X Y s (sid, pid) e r =
+      match sguard s sid pid with
+      | some (rc, opk) =>
+        deliverR G a b O X Y (ltD (ltD s.1 pid r.2.1).2 rc.peer r.2.2.1).2 s.2.1 (sid, pid) rc
+          (bobS G a b X Y sid rc.peer pid e (ltD s.1 pid r.2.1).1
+            (ltD (ltD s.1 pid r.2.1).2 rc.peer r.2.2.1).1 opk) r.2.2.2
+      | none => ((s.1, s.2.1, .fwd), .inr (.inr .ack)) := by
+  unfold sendR sguard
+  cases hr : s.1.st.recs (sid, pid) with
+  | none => rfl
+  | some rc =>
+    cases he : s.1.eph (sid, pid) with
+    | none => rfl
+    | some opk =>
+      by_cases hc : rc.role = .responder ∧ rc.key.isNone = true
+      · simp only [hc, and_self, ↓reduceIte]
+      · simp only [hc, ↓reduceIte]
+
+/-- **`otherC` computes `startR`** on the events other than `complete` and `send`, with the draw
+uniform. -/
+theorem otherC_eq (s : RSim S W K) (e : OEv W)
+    (hc : ∀ sid pid, e ≠ .inr (.complete sid pid)) (hs : ∀ sid pid E, e ≠ .inr (.send sid pid E)) :
+    otherC G a b O X Y s e =
+      liftPMF ((PMF.uniformFintype (Draw S K)).map (startR G a b O X Y s e)) := by
+  have hP : ∀ p : RSim S W K × Dec S W K,
+      (SPComp.pure p : SPComp _) = liftPMF ((PMF.uniformFintype (Draw S K)).map fun _ => p) :=
+    fun p => by rw [liftPMF_pure]; exact congrArg liftPMF (PMF.map_const _ _).symm
+  change _ = liftPMF ((PMF.uniformFintype (Draw S K)).map fun r => startR G a b O X Y s e r)
+  rcases e with (⟨sid, pid, peer, role⟩ | ⟨sid, pid⟩) | (_ | _ | pid | ⟨sid, pid⟩ | pid |
+    ⟨sid, pid⟩ | ⟨sid, pid, E⟩ | q)
+  · by_cases h : (s.1.st.recs (sid, pid)).isNone = true
+    · simp only [otherC, h, ↓reduceIte, sample_eq_liftPMF, map_liftPMF]
+      rw [map_uniform_eq_map_prod_fst (B := (S × S) × (S × S) × K)]
+      congr 2
+      funext r
+      simp only [startR, h, ↓reduceIte]
+    · simp only [otherC, h, Bool.false_eq_true, ↓reduceIte, hP]
+      congr 3
+      funext r
+      simp only [startR, h, Bool.false_eq_true, ↓reduceIte]
+  · simp only [otherC, hP]
+    rfl
+  · simp only [otherC, hP]
+    rfl
+  · simp only [otherC, hP]
+    rfl
+  · simp only [otherC, ltStep_eq, map_liftPMF]
+    exact congrArg liftPMF (ltAt_map_eq s.1 pid _)
+  · simp only [otherC, hP]
+    rfl
+  · by_cases h : Named s.1.st pid = true
+    · simp only [otherC, h, ↓reduceIte, hP]
+      congr 3
+      funext r
+      simp only [startR, h, ↓reduceIte]
+    · simp only [otherC, h, Bool.false_eq_true, ↓reduceIte, ltStep_eq, map_liftPMF]
+      refine congrArg liftPMF ((ltAt_map_eq s.1 pid _).trans ?_)
+      congr 1
+      funext r
+      simp only [startR, h, Bool.false_eq_true, ↓reduceIte]
+  · exact absurd rfl (hc sid pid)
+  · exact absurd rfl (hs sid pid E)
+  · simp only [otherC, sroStep_eq, map_liftPMF, PMF.map_comp]
+    rw [map_uniform_eq_map_prod_snd (A := S × S), map_uniform_eq_map_prod_snd (A := S × S),
+      map_uniform_eq_map_prod_snd (A := S)]
+    rfl
+
+omit [Field S] [Fintype S] [SampleableType W] [Inhabited K] in
+/-- **`finishC` computes the finish of a step**, `F_AKE` with a uniform fresh key and `finR`,
+as in `stepR`. -/
+theorem finishC_eq (p : RSim S W K × Dec S W K) (t : St K) :
+    finishC p t = liftPMF ((PMF.uniformFintype K).map fun kf =>
+      (((drive0D fStepD finR p.1 p.2 t kf).1, (drive0D fStepD finR p.1 p.2 t kf).2.1),
+        (drive0D fStepD finR p.1 p.2 t kf).2.2)) := by
+  obtain ⟨s, d⟩ := p
+  rcases d with g | o
+  · simp only [finishC, fakeC, sample_eq_liftPMF, map_liftPMF, PMF.map_comp]
+    rfl
+  · simp only [finishC, liftPMF_pure]
+    exact congrArg liftPMF (PMF.map_const _ _).symm
+
+end Correct
+
 /-! ## The sizes of the state -/
 
 section Size
@@ -400,10 +557,6 @@ theorem addSession_notices (t : St K) (z : Inst) (peer : PartyId) (role : Role) 
     (addSession t z peer role).notices.length ≤ t.notices.length + 1 := by
   unfold addSession
   split <;> simp
-
-omit [Fintype K] [Nonempty K] [Inhabited K] in
-theorem setRec_notices (t : St K) (z : Inst) (r : Rec K) : (setRec t z r).notices = t.notices :=
-  rfl
 
 omit [Fintype S] [Fintype K] [Nonempty K] in
 theorem deliverR_len (rs : RSt S (W ⊕ W) K) (inp : Inst → Option (Inp (W ⊕ W))) (z : Inst)
