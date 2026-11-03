@@ -1869,11 +1869,30 @@ partial def pushLetApp (e : Expr) : Expr :=
     .letE n t v (pushLetApp (mkAppN b args').headBeta) nd
   | _ => e
 
+/-- `v args` for a cast of `v` applied to `args` whose motive does not depend on its index: an
+`Eq.rec` or `Eq.ndrec` with a constant motive, or a `cast` or `Eq.mpr` between one type and
+itself (the new value `h ▸ v` of `Function.update f a v`); `none` for any other term. The
+erasure theorems close the cast by `eq_rec_constant` and `cast_eq`. -/
+def constCast? (e : Expr) : MetaM (Option Expr) := do
+  let .const c _ := e.getAppFn.consumeMData | return none
+  let args := e.getAppArgs
+  if (c == ``Eq.rec || c == ``Eq.ndrec) && args.size ≥ 6 then
+    let mot ← instantiateMVars args[2]!
+    let constant ← lambdaTelescope mot fun xs b => do
+      return !xs.isEmpty && !b.hasAnyFVar fun v => xs.any (·.fvarId! == v)
+    unless constant do return none
+    return some (mkAppN args[3]! (args.extract 6 args.size)).headBeta
+  if (c == ``cast || c == ``Eq.mpr) && args.size ≥ 4 then
+    unless (← instantiateMVars args[0]!) == (← instantiateMVars args[1]!) do return none
+    return some (mkAppN args[3]! (args.extract 4 args.size)).headBeta
+  return none
+
 /-- `e` with the arguments of an `if` or a dependent `if` applied to more arguments than it
 takes pushed into its branches: `(if c then f else g) x` is `if c then f x else g x`, so that a
 function read with all its binders (`whnfFnR`) after an update `Function.update f a v` is a
-case analysis on its data. -/
+case analysis on its data. A cast with a constant motive is read as its value (`constCast?`). -/
 partial def pushIteApp (e : Expr) : MetaM Expr := do
+  if let some e' ← constCast? e then return ← pushIteApp e'
   let f := e.getAppFn.consumeMData
   let args := e.getAppArgs
   unless (f.isConstOf ``ite || f.isConstOf ``dite) && args.size > 5 do return e
@@ -3311,6 +3330,9 @@ partial def costArgs (ctx : Ctx) (f : Expr) (args : Array Expr) : TermElabM (Arr
 
 /-- The cost of the application `e` of a constant or a local. -/
 partial def costApp (ctx : Ctx) (e : Expr) : TermElabM Expr := do
+  -- A cast with a constant motive costs what its value applied to the arguments costs.
+  if ← reduceFnAliases then
+    if let some e' ← constCast? e then return ← costOf ctx e'
   let f := e.getAppFn
   let args := e.getAppArgs
   -- An application of a costed closure held in data.
@@ -4201,7 +4223,9 @@ partial def deriveHatValue (ctx : Ctx) (c : Name) : TermElabM Unit := do
   let envNow ← getEnv
   let wfC := (WF.eqnInfoExt.find? envNow c).isSome
   let callees := collectTimed envNow ctx.suffix hValue name
-  let simpLemmas : Array Name := (if wfC then #[] else #[name, c]) ++ callees ++
+  let castLemmas : Array Name :=
+    if ← reduceFnAliases then #[`eq_rec_constant, ``cast_eq] else #[]
+  let simpLemmas : Array Name := (if wfC then #[] else #[name, c]) ++ callees ++ castLemmas ++
     (if hValue.getUsedConstants.contains ``ite then
       #[``CatCrypt.Tactics.DeriveTimed.boolRec_eq_ite] else #[])
   let lemmas : Array (TSyntax `Lean.Parser.Tactic.simpLemma) ←
@@ -4593,8 +4617,11 @@ partial def deriveTimed (ctx : Ctx) (c : Name) : TermElabM Unit := do
     for k in kinds.filter (kindUsed used) do
       if let some n ← matchEraseLemma k m then matchLemmas := matchLemmas.push n
   let unfoldedDefs := (← unfoldedRef.get).filter (fun n => n != c)
+  let castLemmas : Array Name :=
+    if ← reduceFnAliases then #[`eq_rec_constant, ``cast_eq] else #[]
   let simpLemmas : Array Name :=
     ((if treeRec then #[c] else #[timedName, c]).filter (!wf ·)) ++ kindLemmas ++ hatLemmas ++
+      castLemmas ++
       matchLemmas ++ callees ++ naturalLemmas ++ unfoldedDefs ++
       -- Calls with a function result unfolded (`unfoldFnCall?`): the source, unfolded, has
       -- `if`s on the conditions that the case split decided.
