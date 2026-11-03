@@ -65,7 +65,9 @@ initiator `a` and responder `b` that `O` accepts for `(IK_a, SPK_b)` (`extractR`
 * `symEq`, `inpEq`, `slookup`, `sroDet`: symbolic values and their equality by the decision
   oracle.
 * `startR`, `stepR`, `oracleR`, `extractR`: the world of the reduction.
-* `redTree`, `redPMF`, `gdhRed`: the reduction as a program, its output, and the GDH adversary.
+* `stepRed`: an oracle adversary run against a world stepped by one uniform draw per query.
+* `gdhOut`, `gdhRed`: the output distribution of the reduction (`stepRed` at the step `stepR`)
+  and the GDH adversary.
 * `NamesIn`: the finite-party predicate.
 * `gdhBound`: the bound of the square.
 
@@ -459,6 +461,16 @@ table of symbolic inputs and the draws of the long-term secrets, its symbolic re
 and its phase. -/
 abbrev RSim (S W K : Type) := RSt S (W ⊕ W) K × (Inst → Option (Inp (W ⊕ W))) × Phase S W K
 
+/-- **A reduction that runs an oracle adversary against a stepped world.** The oracle adversary
+`B` is run from the state `s₀` against the oracle that answers a query `e` in the state `t` with
+one uniform draw `r` and the step `step t e r` (the new state and the answer); the output is
+`ext` of the final state. -/
+noncomputable def stepRed {σ E A V Out : Type} [Fintype V] [Nonempty V]
+    (step : σ → E → V → σ × A) (ext : σ → Out) (B : OracleAdv E A Bool) (s₀ : σ) :
+    OracleAdv Empty Empty Out :=
+  (OracleAdv.simulate (fun t e => .rand (PMF.uniformFintype V) fun r =>
+      let p := step t e r; .ret (p.2, p.1)) B s₀).bind fun p => .ret (ext p.2)
+
 section Red
 
 variable {S W K : Type} [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K]
@@ -628,24 +640,22 @@ noncomputable def implR (t : RSim S W K × St K) (e : OEv W) :
   .rand (PMF.uniformFintype (Draw S K × K)) fun r =>
     .ret ((stepR G a b O X Y t e r).2, (stepR G a b O X Y t e r).1)
 
-/-- **The reduction as a program**: the oracle adversary `B` run against the world of the
-reduction, followed by the extraction from the final state. -/
-noncomputable def redTree (B : OracleAdv (OEv W) (OOut S W K) Bool) : OracleAdv Empty Empty W :=
-  (OracleAdv.simulate (implR G a b O X Y) B rInitR).bind fun p => .ret (extractR G a b O X Y p.2.1.1)
-
-/-- The output distribution of the reduction. -/
-noncomputable def redPMF (B : OracleAdv (OEv W) (OOut S W K) Bool) : PMF W :=
-  (OracleAdv.run (fun (_ : Unit) (q : Empty) => q.elim) (redTree G a b O X Y B) ()).map Prod.fst
+/-- **The output distribution of the reduction**: the extraction from the final state of a run
+of the oracle adversary `B` against the world of the reduction, the program `stepRed` at the step
+`stepR` and the extraction `extractR`. -/
+noncomputable def gdhOut (B : OracleAdv (OEv W) (OOut S W K) Bool) : PMF W :=
+  (OracleAdv.run (fun (_ : Unit) (q : Empty) => q.elim)
+    (stepRed (stepR G a b O X Y) (fun t => extractR G a b O X Y t.1.1) B rInitR) ()).map Prod.fst
 
 end Red
 
 /-- **The gap Diffie–Hellman reduction** for the pair `(a, b)`: on the challenge `(X, Y)` with
 the decision oracle `O`, it runs the oracle adversary `B` against the world of the reduction and
-outputs `extractR`. -/
+outputs `extractR`; its output distribution is `gdhOut`. -/
 noncomputable def gdhRed {S W K : Type} [Field S] [Fintype S] [SampleableType W] [Fintype K]
     [Nonempty K] [Inhabited K] (G : DHGroup S W) (a b : PartyId)
     (B : OracleAdv (OEv W) (OOut S W K) Bool) : GapDH_Adversary W :=
-  fun O X Y => liftPMF (redPMF G a b O X Y B)
+  fun O X Y => liftPMF (gdhOut G a b O X Y B)
 
 /-! ## The simulated world with shifted draws -/
 
@@ -1520,8 +1530,8 @@ variable {S W K : Type} [Field S] [Fintype S] [SampleableType W] [Fintype K] [No
 
 /-- **The output distribution of the reduction** is the extraction from the final state of a run
 of `B` against the world of the reduction. -/
-theorem redPMF_eq (O : W → W → W → Bool) (X Y : W) (B : OracleAdv (OEv W) (OOut S W K) Bool) :
-    redPMF G a b O X Y B =
+theorem gdhOut_eq (O : W → W → W → Bool) (X Y : W) (B : OracleAdv (OEv W) (OOut S W K) Bool) :
+    gdhOut G a b O X Y B =
       (OracleAdv.run (oracleR G a b O X Y) B rInitR).map fun z => extractR G a b O X Y z.2.1.1 := by
   have hO : ∀ (t : RSim S W K × St K) (e : OEv W),
       (oracleR G a b O X Y t e).map (Prod.map id fun t => (t, ())) =
@@ -1530,7 +1540,9 @@ theorem redPMF_eq (O : W → W → W → Bool) (X Y : W) (B : OracleAdv (OEv W) 
     simp only [OracleAdv.simOracle, implR, oracleR, OracleAdv.run_rand, OracleAdv.run_ret,
       PMF.map_comp, PMF.map_bind, PMF.pure_map]
     exact (PMF.bind_pure_comp _ _).symm
-  unfold redPMF redTree
+  unfold gdhOut stepRed
+  change (OracleAdv.run _ ((OracleAdv.simulate (implR G a b O X Y) B rInitR).bind
+    fun p => .ret (extractR G a b O X Y p.2.1.1)) ()).map Prod.fst = _
   rw [OracleAdv.run_bind, OracleAdv.run_simulate,
     ← OracleAdv.run_map_state _ _ (fun t => (t, ())) hO]
   simp only [PMF.map_comp, PMF.bind_map, OracleAdv.run_ret, PMF.map_bind, Function.comp_def,
@@ -1541,7 +1553,7 @@ theorem redPMF_eq (O : W → W → W → Bool) (X Y : W) (B : OracleAdv (OEv W) 
 theorem gapDH_advantage_gdhRed (B : OracleAdv (OEv W) (OOut S W K) Bool) :
     GapDH_Advantage (gapDHDef G) (gdhRed G a b B) =
       ((PMF.uniformFintype S).bind fun x => (PMF.uniformFintype S).bind fun y =>
-        (redPMF G a b (ddhOracle (gapDHDef G)) (G.pub x) (G.pub y) B).map
+        (gdhOut G a b (ddhOracle (gapDHDef G)) (G.pub x) (G.pub y) B).map
           fun c => decide (c = G.pub (x * y))) true := by
   unfold GapDH_Advantage
   rw [← prTrue_liftPMF _ Heap.empty]
@@ -1596,7 +1608,7 @@ open Classical in
 /-- **The bad event of a pair at fixed challenge exponents** is at most the probability that the
 reduction outputs the Diffie–Hellman value. -/
 theorem pairBad_le_red (B : OracleAdv (OEv W) (OOut S W K) Bool) (x y : S) :
-    pairBad G a b B ≤ ((redPMF G a b (ddhOracle (gapDHDef G)) (G.pub x) (G.pub y) B).map
+    pairBad G a b B ≤ ((gdhOut G a b (ddhOracle (gapDHDef G)) (G.pub x) (G.pub y) B).map
       fun c => decide (c = G.pub (x * y))) true := by
   have hO : simO G = fun t e => (PMF.uniformFintype (Draw S K × K)).map
       fun r => (simWorldD G t e (transW a b x y t e r)).swap :=
@@ -1619,7 +1631,7 @@ theorem pairBad_le_red (B : OracleAdv (OEv W) (OOut S W K) Bool) (x y : S) :
   unfold pairBad
   rw [hO]
   refine h₁.trans (h₂.trans ?_)
-  rw [redPMF_eq, PMF.map_comp, ← PMF.toOuterMeasure_apply_singleton, PMF.toOuterMeasure_map_apply]
+  rw [gdhOut_eq, PMF.map_comp, ← PMF.toOuterMeasure_apply_singleton, PMF.toOuterMeasure_map_apply]
   refine PMF.toOuterMeasure_mono _ fun z hz => ?_
   simp only [Set.mem_preimage, Function.comp_apply, Set.mem_singleton_iff, decide_eq_true_eq]
   exact extractR_of_bad2 G a b x y hz.1

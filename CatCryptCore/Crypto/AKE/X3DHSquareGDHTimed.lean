@@ -14,9 +14,11 @@ public import CatCryptCore.Crypto.UCSimulatorCostGraded
 /-!
 # Running time of the gap Diffie–Hellman reduction of the X3DH square
 
-The reduction `gdhRed G a b B` of `X3DHSquareGDH.lean` runs the oracle adversary `B` against the
-world of the reduction and extracts its output from the final state (`redTree`). This module gives
-its costed form and its running time.
+The reduction `gdhRed G a b B` of `X3DHSquareGDH.lean` outputs the distribution `gdhOut`: the
+program `stepRed (stepR …) (extractR …) B rInitR` runs the oracle adversary `B` against the world
+of the reduction and extracts its output from the final state. This module gives the costed form
+of `stepRed`, derived by `derive_timed`, and its running time at the step of the world of the
+reduction.
 
 **The step programs.** A step of the world of the reduction is written as computations over
 `sample` nodes, and `derive_reduction` builds the costed tree of each and its erasure theorem:
@@ -29,13 +31,16 @@ These programs compute the step (`ltC_eq`, `sroStep_eq`, `deliverC_eq`, `complet
 `sendR_eq`, `otherC_eq`, `finishC_eq`): each is the lift of the image of a uniform draw under the
 corresponding part of `stepR`.
 
-**The costed reduction.** `redLoop` runs a costed adversary `B : OracleAdv.Timed` against the world
-of the reduction: a query is one `rand` node over the draw of the step, with the step cost
-`stepTime` of the draw, the time of the start (one unit for the dispatch on the event and the
-times of the costed trees of the programs on the states they read) and the time of the finish; the
-leaf is the extraction at the time `extTime`. Each costed tree is read with the tables of its
-input state at unit cost (zero cost companions), the convention of the costed simulators of
-`UCSimulatorCostGraded`. Erasing the costs gives `redTree` (`redTimed_erase`).
+**The costed reduction.** `derive_timed stepRed` defines `stepRed.timed`, generic in the state,
+the step and the extraction, which become binders with cost companions, and proves
+`stepRed.erase_timed`. A query is one `rand` node over the draw of the step, with the cost of the
+step; the leaf is the extraction with its cost. At the world of the reduction the cost of the step
+is `stepTime`: one unit for the dispatch on the event, the times of the costed trees of the
+programs on the states they read, and the time of the finish; the cost of the extraction is
+`extTime`. Each costed tree is read with the tables of its input state at unit cost (zero cost
+companions), the convention of the costed simulators of `UCSimulatorCostGraded`. The derivation
+does not price `stepR` itself: unfolding it exceeds the unfolding depth of `derive_timed` at
+`ltD`, which is why the step is a binder of `stepRed`.
 
 **The time.** The derived trees are bounded by `time_bound`, linearly in the length of the
 key-derivation table and of the lists of notices, given bounds `tO` on the decision oracle, `tm`
@@ -43,14 +48,17 @@ on the group operation, `te` on exponentiation and `tf`, `tc` on the public valu
 (`otherC_time`, `delTime_le`, `finishC_time`, `extTime_le`, `slookup.timedCost_le`). A step adds
 at most one entry to the table and to each list of notices (`sz_stepR`), so a step after `i` steps
 costs at most `stepBound … i` (`stepTime_le`), and an adversary of time `T` with at most `q`
-queries gives a reduction of time at most `T + q · stepBound … q + extBound … q`
-(`redTimed_timeBound`): the time of the adversary plus a polynomial of degree two in its number of
-queries.
+queries gives a reduction of time at most `T + q · (stepBound … q + 2) + extBound … q + 1`
+(`gdhOut_timeBound`, from the generic bound `stepRed.timeBound_timed`): the time of the adversary
+plus a polynomial of degree two in its number of queries.
 
 ## Main results
 
-* `redTimed_erase`: the costed reduction erases to the program of `gdhRed`.
-* `redTimed_timeBound`: its time bound.
+* `stepRed.erase_timed` (derived): the costed form of `stepRed` erases to `stepRed`.
+* `stepRed.timeBound_timed`: its time under a state invariant bounding the step and the
+  extraction.
+* `gdhOut_erase_timed`, `gdhOut_timeBound`: the costed reduction of the X3DH square erases to the
+  program of `gdhRed` and its time bound.
 -/
 
 @[expose] public section
@@ -296,45 +304,6 @@ noncomputable def stepTime (t : RSim S W K × St K) (e : OEv W) (r : Draw S K ×
 noncomputable def extTime (rs : RSt S (W ⊕ W) K) : ℕ :=
   SPTree.Timed.stepTime (extractC.tree.timed G a b O OCost X Y rs mulCost toFunCost (fun _ => 0)
     expCost)
-
-/-- **The costed reduction**: the costed adversary `B` run against the world of the reduction,
-each query answered by one draw at the time `stepTime` of the step, followed by the extraction
-at the time `extTime`. -/
-noncomputable def redLoop : OracleAdv.Timed (OEv W) (OOut S W K) Bool → RSim S W K × St K →
-    ℕ × OracleAdv.Timed Empty Empty W
-  | .ret _, t => (extTime G a b O OCost X Y mulCost toFunCost expCost t.1.1,
-      .ret (extractR G a b O X Y t.1.1))
-  | .rand p c k, t => (0, .rand p (fun x => c x + (redLoop (k x) t).1) fun x => (redLoop (k x) t).2)
-  | .query d c k, t => (0, .rand (PMF.uniformFintype (Draw S K × K))
-      (fun r => stepTime G a b O OCost X Y coeCost mulCost toFunCost expCost t d r +
-        c (stepR G a b O X Y t d r).2 +
-        (redLoop (k (stepR G a b O X Y t d r).2) (stepR G a b O X Y t d r).1).1)
-      fun r => (redLoop (k (stepR G a b O X Y t d r).2) (stepR G a b O X Y t d r).1).2)
-
-/-- The erasure of the costed reduction loop. -/
-theorem redLoop_erase (B : OracleAdv.Timed (OEv W) (OOut S W K) Bool) (t : RSim S W K × St K) :
-    (redLoop G a b O OCost X Y coeCost mulCost toFunCost expCost B t).2.erase =
-      (OracleAdv.simulate (implR G a b O X Y) B.erase t).bind
-        fun p => .ret (extractR G a b O X Y p.2.1.1) := by
-  induction B generalizing t with
-  | ret o => rfl
-  | rand p c k ih =>
-    simp only [redLoop, OracleAdv.Timed.erase, OracleAdv.simulate, OracleAdv.bind, ih]
-  | query d c k ih =>
-    simp only [redLoop, OracleAdv.Timed.erase, OracleAdv.simulate, implR, OracleAdv.bind, ih]
-
-/-- **The costed gap Diffie–Hellman reduction** of the pair `(a, b)` for the costed adversary
-`B`. -/
-noncomputable def redTimed (B : OracleAdv.Timed (OEv W) (OOut S W K) Bool) :
-    ℕ × OracleAdv.Timed Empty Empty W :=
-  redLoop G a b O OCost X Y coeCost mulCost toFunCost expCost B rInitR
-
-/-- **Erasure of the costed reduction**: erasing the costs gives the program `redTree` of the
-reduction `gdhRed G a b`, for the erased adversary. -/
-theorem redTimed_erase (B : OracleAdv.Timed (OEv W) (OOut S W K) Bool) :
-    (redTimed G a b O OCost X Y coeCost mulCost toFunCost expCost B).2.erase =
-      redTree G a b O X Y B.erase :=
-  redLoop_erase G a b O OCost X Y coeCost mulCost toFunCost expCost B rInitR
 
 omit [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K] in
 theorem extTime_le (rs : RSt S (W ⊕ W) K) {tO tm tf te : ℕ} (hO : ∀ x y z, OCost x y z ≤ tO)
@@ -770,77 +739,111 @@ theorem extBound_mono (tO tm te tf : ℕ) {i j : ℕ} (h : i ≤ j) :
   have := Nat.mul_le_mul_left (tO + 2 * tm + 2 * tf + 40) h
   omega
 
-/-- **The time of the costed reduction loop**: from a state of sizes at most `i`, a costed
-adversary of time `T` with at most `q` queries runs in time at most
-`T + q · stepBound … (i + q) + extBound … (i + q)`. -/
-theorem redLoop_timeBound {tO tm tf te tc : ℕ}
-    (hO : ∀ x y z, OCost x y z ≤ tO) (hm : ∀ x y, mulCost x y ≤ tm) (hf : ∀ x, toFunCost x ≤ tf)
-    (he : ∀ x y, expCost x y ≤ te) (hc : ∀ x y, coeCost x y ≤ tc) :
-    ∀ (B : OracleAdv.Timed (OEv W) (OOut S W K) Bool) (T q i : ℕ) (t : RSim S W K × St K),
-      Sz i t → B.TimeBound T → B.erase.IsQueryBound q →
-      OracleAdv.Timed.StepTimeBound
-        (redLoop G a b O OCost X Y coeCost mulCost toFunCost expCost B t)
-        (T + q * stepBound tO tm te tf tc (i + q) + extBound tO tm te tf (i + q)) := by
-  intro B
-  induction B with
-  | ret o =>
-    intro T q i t hsz _ _
-    refine ⟨?_, trivial⟩
-    have h1 := extTime_le G a b O OCost X Y mulCost toFunCost expCost t.1.1 hO hm hf he
-    have h2 := Nat.mul_le_mul_left (tO + 2 * tm + 2 * tf + 40) hsz.1
-    have h3 := extBound_mono tO tm te tf (Nat.le_add_right i q)
-    simp only [redLoop, extBound] at h1 h3 ⊢
+end Time
+
+/-! ## The derived costed reduction -/
+
+derive_timed stepRed
+
+section Generic
+
+variable {σ E A V Out : Type} [Fintype V] [Nonempty V]
+
+/-- **The time of `stepRed`.** Let `Inv i` hold of the states reached after `i` steps, with a
+step from a state of `Inv i` of cost at most `F i` (`F` monotone) and an extraction from a state
+of `Inv i` of cost at most `Ext i`. Then a costed adversary `B` of time `T` with at most `q`
+queries gives a costed reduction of time at most `T + q · (F q + 2) + Ext q + 1`: per query one
+`rand` node and the step, and at the end the extraction. -/
+theorem stepRed.timeBound_timed (step : σ → E → V → σ × A) (stepCost : σ → E → V → ℕ)
+    (ext : σ → Out) (extCost : σ → ℕ) (Inv : ℕ → σ → Prop) (F Ext : ℕ → ℕ) (hF : Monotone F)
+    (hmono : ∀ i t, Inv i t → Inv (i + 1) t)
+    (hstep : ∀ i t e r, Inv i t → Inv (i + 1) (step t e r).1)
+    (hcost : ∀ i t e r, Inv i t → stepCost t e r ≤ F i)
+    (hext : ∀ i t, Inv i t → extCost t ≤ Ext i)
+    (B : OracleAdv.Timed E A Bool) {T q : ℕ} (hB : B.TimeBound T) (hq : B.erase.IsQueryBound q)
+    (s₀ : σ) (h0 : Inv 0 s₀) :
+    OracleAdv.Timed.StepTimeBound (stepRed.timed step stepCost ext extCost B s₀)
+      (T + q * (F q + 2) + (Ext q + 1)) := by
+  unfold stepRed.timed
+  generalize hI : (fun (t : σ) (e : E) => ((0 : ℕ), OracleAdv.Timed.rand (PMF.uniformFintype V)
+    (fun r => 1 + stepCost t e r) fun r =>
+      have p := step t e r; OracleAdv.Timed.ret (p.2, p.1))) = impl
+  have himpl : ∀ i s d, Inv i s →
+      OracleAdv.Timed.StepTimeBound (impl s d) (F i + 2) ∧
+        OracleAdv.Timed.AllRet (fun y => Inv (i + 1) y.2) (impl s d).2 := by
+    intro i s d hs
+    subst hI
+    beta_reduce
+    refine ⟨⟨Nat.zero_le _, by omega, fun r => ⟨?_, trivial⟩⟩, fun r => hstep i s d r hs⟩
+    have := hcost i s d r hs
+    beta_reduce
     omega
-  | rand p c k ih =>
-    intro T q i t hsz hB hq
-    simp only [redLoop]
-    have h0 := hB.1
-    refine ⟨Nat.zero_le _, by omega, fun x => ?_⟩
-    have hx := (hB.2 x).1
-    obtain ⟨h1, h2⟩ := ih x (T - 1 - c x) q i t hsz (hB.2 x).2 (hq x)
-    dsimp only
-    refine ⟨by omega, h2.mono (by omega)⟩
-  | query d c k ih =>
-    intro T q i t hsz hB hq
-    cases q with
-    | zero => exact (hq : False).elim
-    | succ q =>
-      simp only [redLoop]
-      refine ⟨Nat.zero_le _, by have := hB.1; omega, fun r => ?_⟩
-      have hx := (hB.2 (stepR G a b O X Y t d r).2).1
-      obtain ⟨h1, h2⟩ := ih (stepR G a b O X Y t d r).2 (T - 1 - c (stepR G a b O X Y t d r).2) q
-        (i + 1) (stepR G a b O X Y t d r).1 (sz_stepR G a b O X Y hsz d r)
-        (hB.2 (stepR G a b O X Y t d r).2).2 (hq (stepR G a b O X Y t d r).2)
-      have hs := stepTime_le G a b O OCost X Y coeCost mulCost toFunCost expCost hsz d r hO hm hf he
-        hc
-      have hmono := stepBound_mono tO tm te tf tc (show i ≤ i + (q + 1) by omega)
-      have h0 := hB.1
-      rw [show i + 1 + q = i + (q + 1) by omega] at h1 h2
-      generalize stepBound tO tm te tf tc (i + (q + 1)) = F at h1 h2 hmono ⊢
-      generalize extBound tO tm te tf (i + (q + 1)) = E at h1 h2 ⊢
-      rw [Nat.succ_mul]
-      generalize q * F = P at h1 h2 ⊢
-      dsimp only
-      refine ⟨by omega, h2.mono (by omega)⟩
+  have hsim := OracleAdv.Timed.timeBound_simulateHat_inv id id impl Inv (fun i => F i + 2) himpl
+    hB hq 0 s₀ h0
+  have hall := OracleAdv.Timed.allRet_simulateHat_inv id id impl Inv (fun i s d h => (himpl i s d h).2)
+    hmono hq 0 s₀ h0
+  unfold OracleAdv.Timed.simulateHat at hsim hall
+  simp only [Nat.zero_add] at hsim hall
+  have hsum : ∑ j ∈ Finset.range q, (F j + 2) ≤ q * (F q + 2) := by
+    calc ∑ j ∈ Finset.range q, (F j + 2) ≤ ∑ _j ∈ Finset.range q, (F q + 2) :=
+          Finset.sum_le_sum fun j hj => by
+            have := hF (le_of_lt (Finset.mem_range.mp hj)); omega
+      _ = q * (F q + 2) := by rw [Finset.sum_const, Finset.card_range, smul_eq_mul]
+  have hbind := OracleAdv.Timed.timeBound_bind_of_allRet (n := Ext q + 1)
+    (f := fun p => (1 + extCost p.2, OracleAdv.Timed.ret (ext p.2))) hsim.2 hall
+    fun y hy => ⟨by have := hext q y.2 hy; dsimp only; omega, trivial⟩
+  refine (OracleAdv.Timed.stepTimeBound_delay hbind).mono ?_
+  have := hsim.1
+  omega
+
+end Generic
+
+section Instance
+
+variable {S W K : Type} [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K]
+  [Inhabited K] (G : DHGroup S W) (a b : PartyId) (O : W → W → W → Bool)
+  (OCost : W → W → W → ℕ) (X Y : W) (coeCost : S ≃ W → S → ℕ) (mulCost : W → W → ℕ)
+  (toFunCost : S → ℕ) (expCost : W → S → ℕ)
+
+/-- **Erasure of the costed reduction of the X3DH square**: the derived costed form of `stepRed`
+at the step `stepR`, of cost `stepTime`, and the extraction `extractR`, of cost `extTime`, erases
+to the program whose output distribution is `gdhOut`, the output of `gdhRed G a b`. -/
+theorem gdhOut_erase_timed (B : OracleAdv.Timed (OEv W) (OOut S W K) Bool) :
+    (stepRed.timed (stepR G a b O X Y) (stepTime G a b O OCost X Y coeCost mulCost toFunCost expCost)
+        (fun t => extractR G a b O X Y t.1.1)
+        (fun t => extTime G a b O OCost X Y mulCost toFunCost expCost t.1.1) B rInitR).2.erase =
+      stepRed (stepR G a b O X Y) (fun t => extractR G a b O X Y t.1.1) B.erase rInitR :=
+  stepRed.erase_timed _ _ _ _ B rInitR
 
 /-- **The time of the gap Diffie–Hellman reduction.** For a costed oracle adversary `B` of time
 `T` with at most `q` queries and primitive costs at most `tO` (decision oracle), `tm` (group
-operation), `te` (exponentiation), `tf` and `tc` (public value of an exponent), the costed
-reduction `redTimed`, whose erasure is the program `redTree` of `gdhRed G a b`, runs in time at
-most `T + q · stepBound … q + extBound … q`, the time of the adversary plus a polynomial of degree
-two in its number of queries. -/
-theorem redTimed_timeBound (B : OracleAdv.Timed (OEv W) (OOut S W K) Bool) {T q : ℕ}
+operation), `te` (exponentiation), `tf` and `tc` (public value of an exponent), the derived costed
+form of `stepRed` at the step `stepR` (of cost `stepTime`) and the extraction `extractR` (of cost
+`extTime`), whose erasure is the program of `gdhRed G a b`, runs in time at most
+`T + q · (stepBound … q + 2) + extBound … q + 1`, the time of the adversary plus a polynomial of
+degree two in its number of queries. -/
+theorem gdhOut_timeBound (B : OracleAdv.Timed (OEv W) (OOut S W K) Bool) {T q : ℕ}
     (hB : B.TimeBound T) (hq : B.erase.IsQueryBound q) {tO tm tf te tc : ℕ}
     (hO : ∀ x y z, OCost x y z ≤ tO) (hm : ∀ x y, mulCost x y ≤ tm) (hf : ∀ x, toFunCost x ≤ tf)
     (he : ∀ x y, expCost x y ≤ te) (hc : ∀ x y, coeCost x y ≤ tc) :
     OracleAdv.Timed.StepTimeBound
-      (redTimed G a b O OCost X Y coeCost mulCost toFunCost expCost B)
-      (T + q * stepBound tO tm te tf tc q + extBound tO tm te tf q) := by
-  have h := redLoop_timeBound G a b O OCost X Y coeCost mulCost toFunCost expCost hO hm hf he hc B
-    T q 0 rInitR ⟨le_rfl, le_rfl, le_rfl⟩ hB hq
-  unfold redTimed
-  simpa only [Nat.zero_add] using h
+      (stepRed.timed (stepR G a b O X Y) (stepTime G a b O OCost X Y coeCost mulCost toFunCost expCost)
+        (fun t => extractR G a b O X Y t.1.1)
+        (fun t => extTime G a b O OCost X Y mulCost toFunCost expCost t.1.1) B rInitR)
+      (T + q * (stepBound tO tm te tf tc q + 2) + (extBound tO tm te tf q + 1)) := by
+  refine stepRed.timeBound_timed _ _ _ _ Sz (stepBound tO tm te tf tc) (extBound tO tm te tf)
+    (fun _ _ h => stepBound_mono tO tm te tf tc h) (fun i t h => ?_)
+    (fun i t e r h => sz_stepR G a b O X Y h e r)
+    (fun i t e r h => stepTime_le G a b O OCost X Y coeCost mulCost toFunCost expCost h e r hO hm
+      hf he hc) (fun i t h => ?_) B hB hq rInitR ⟨le_rfl, le_rfl, le_rfl⟩
+  · obtain ⟨h1, h2, h3⟩ := h
+    exact ⟨by omega, by omega, by omega⟩
+  · have h1 := extTime_le G a b O OCost X Y mulCost toFunCost expCost t.1.1 hO hm hf he
+    have h2 := Nat.mul_le_mul_left (tO + 2 * tm + 2 * tf + 40) h.1
+    unfold extBound
+    omega
 
-end Time
+end Instance
+
 
 end CatCrypt.Crypto.AKE.X3DHSquareGDH
