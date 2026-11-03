@@ -11,7 +11,91 @@ public import CatCryptCore.Crypto.AKE.X3DHSquareHops
 /-!
 # The hops of the PQXDH square
 
-Work in progress: the steps of the real and the simulated PQXDH worlds as images of draws.
+`pqxdh_realizesSim_oracleGame` (`CatCryptCore.Crypto.AKE.PQXDHSquare`) bounds the PQXDH square
+by the advantage of an oracle adversary between the real game `realGame P G` and the simulated
+game `simGame P G`. This file bounds that advantage by the probability of one bad event in a
+joint run of the two worlds on one state: a query of the key derivation at the input of a
+session that receives a key of `F_AKE`. The proof follows the proof for X3DH
+(`CatCryptCore.Crypto.AKE.X3DHSquareHops`) and reuses its lemmas on the state of X3DH.
+
+## Steps as functions of one draw
+
+A step of the real world draws at most a secret of a new session, the long-term secrets of two
+parties and one value of the key derivation (a draw of X3DH, `Draw S K`), a KEM key pair of
+`P.keygen`, and an encapsulation of `P.encaps pk` to the public key `pk` of the peer's session
+when the step completes an initiator (`encPk`). The last two draws are not uniform, and the
+encapsulation depends on the state. A step is the image under `realD` of a draw from
+`pDist P (encPk s e)`, the independent product of the three (`realGame_oracle_eq`). A step of
+the simulated world draws the same at the start of the simulator and one key at its call to
+`F_AKE`; it is the image under `simWorldD` of a draw from `simDist` (`simGame_oracle_eq`).
+
+## The joint world
+
+`jointD` runs both worlds on one draw from `jDist`: the draw of X3DH and the key of `F_AKE`
+uniform, one KEM key pair, and the encapsulations of the two worlds coupled by `diagPair`, one
+encapsulation for both when the public keys of the two worlds agree and independent ones
+otherwise. The keys agree in every state reached under the invariant; the independent branch
+makes the two marginals exact at every state (`jDist_map_realOf`, `jDist_map_simOf`). As for
+X3DH, when the simulator completes a session that is not exposed (`FKeyAt`), the real world reads
+the fresh value of the key derivation from the slot from which `F_AKE` draws the key (`cpl`). The
+joint state also records the encapsulation delivered to each session without a key
+(`dlvStep`); no output reads this record, and it serves the statement of the bad event. The two
+answers of the joint world agree on every transition whose outputs agree, so the advantage is at
+most the probability `diffGame P G B` that the outputs differ at some step
+(`pqxdh_advantage_le_diffGame`).
+
+## The bad event
+
+`PQHit` holds in a state of the simulated world, with the record of delivered encapsulations,
+when the table of the key derivation holds the recorded input `ip` of a session `y` whose party
+and peer are uncorrupt, that is of a session that received a key of `F_AKE` in `deliver`. The
+simulator writes to that table only on a query of the adversary and on the completion of an
+exposed session, so the event is a query of the adversary at such an input. The event states
+the two routes for the later reductions:
+* the route of gap Diffie–Hellman: `ip` has the shape of `y`, and its `DH1` is
+  `g^{ik_a · spk_b}` for the initiator `a` and the responder `b` of `ip`, both uncorrupt
+  (`InpShape`, `DhOk`), the computational Diffie–Hellman value of `IK_a` and `SPK_b`;
+* the route of IND-CCA (`KemOk`): for an initiator `y`, the shared secret of `ip` and the
+  encapsulation that `y` sent form an encapsulation of `P.encaps pk`, for the public key `pk` of
+  the KEM key pair of the responder's session, a key pair of `P.keygen`; for a responder `y`, the
+  shared secret of `ip` is the decapsulation of the encapsulation `c` delivered to `y` under its
+  own KEM key pair, a key pair of `P.keygen`. When `c` is the encapsulation sent by the
+  initiator of the session, the shared secret is that of an encapsulation that the adversary did
+  not create; otherwise only the route of Diffie–Hellman applies.
+
+The invariant `PInv` is the invariant of X3DH on the state of X3DH within the state of PQXDH,
+with the KEM key pairs and the encapsulations of the two copies equal, every KEM key pair a key
+pair of `P.keygen` at a session with a record, and every recorded input satisfying `KemOk`.
+Under `PInv`, a step of the joint world with a draw in the support of its distribution either
+makes `PQHit` hold or gives equal outputs and keeps `PInv` (`step_inv`). Hence differing outputs
+imply the bad event (`diffGame_le_badGame`).
+
+## Main definitions
+
+* `PDraw`, `encD`, `pDist`, `encPk`, `realD`: a draw and the step of the real world as a function
+  of it.
+* `simStartD`, `simWorldD`, `simDist`: the step of the simulated world as a function of a draw.
+* `diagPair`, `encPair`, `jDist`, `FKeyAt`, `dlvStep`, `jointD`, `jointReal`, `jointSim`: the
+  joint world.
+* `diffGame`: the experiment of differing outputs.
+* `KemOk`, `PQHit`: the bad event.
+* `PInv`, `InvJ`: the invariant of the joint world.
+* `badGame`: the bad-event experiment.
+
+## Main results
+
+* `realGame_oracle_eq`, `simGame_oracle_eq`: the oracles as images of draws.
+* `jDist_map_realOf`, `jDist_map_simOf`: the marginals of the joint draw.
+* `pqxdh_advantage_le_diffGame`: the advantage is at most the probability of differing outputs.
+* `step_inv`: a step under the invariant is bad or keeps the invariant with equal outputs.
+* `diffGame_le_badGame`: differing outputs imply the bad event.
+* `pqxdh_advantage_le_badGame`: the advantage between `realGame P G` and `simGame P G` is at
+  most the probability of the bad event `PQHit`.
+
+The protocol-independent lemmas `withSubP_zero_eq_bind` (the general form of
+`X3DHSquareHops.withSubP_zero_eq`, for a start given by any distribution), `map_fun_const`,
+`bind_map_comm`, `diagPair`, `diagPair_map_fst`, `diagPair_map_snd` and
+`mem_support_diagPair_self` are candidates for `CatCryptCore.Crypto.OracleGameUpToBad`.
 -/
 
 @[expose] public section
@@ -27,8 +111,9 @@ open CatCrypt.Crypto.PAKE.CPaceSquare (roAt PureNF pureGame sampleFrom_ofPMF_eq_
 open CatCrypt.Crypto.AKE.X3DHSquare (Inp aliceInp bobInp RSt ROut ltAt Named keyed realHon
   ephPubOf opkOf corruptRStep realAdv rInit FEv FOut ltStep roStep subView)
 open CatCrypt.Crypto.AKE.X3DHSquareHops (pmf_eq_of_eq_liftPMF drive0D driveP_zero_eq
-  uniform_bind_map Draw ltD ltAt_eq_map ltAt_map_eq roAt_eq_map ltStep_eq roStep_eq advD fStepD fStep_eq cpl
-  map_uniform_cpl Exp skRec InpShape DhOk DhOk.mono ltD_lt_mono ltD_lt_self ltD_st ltD_eph ltD_ro
+  uniform_bind_map Draw ltD ltAt_eq_map ltAt_map_eq roAt_eq_map ltStep_eq roStep_eq advD fStepD
+  fStep_eq cpl map_uniform_cpl Exp skRec InpShape DhOk DhOk.mono ltD_lt_mono ltD_lt_self ltD_st
+  ltD_eph ltD_ro
   pollStep_fst addSession_of_isSome addSession_of_isNone sk_some sk_none exp_update lookup_cons
   roDet_of_some roDet_of_none exp_iff_of_shape shape_partner skRec_ext setRec_recs_ne
   keyOf_setRec_ne newKeyStep_of newKeyFreshStep_of)
@@ -190,11 +275,13 @@ def realD (s : PSt S W K PK SK SS C) (e : OEv W SS C) (d : PDraw S K PK SK SS C)
     if (s.x.st.recs (sid, pid)).isNone then
       if role = .responder then
         (.inl .ok, { s with x := { s.x with st := addSession s.x.st (sid, pid) peer role,
-                                            eph := Function.update s.x.eph (sid, pid) (some d.1.1) },
+                                            eph := Function.update s.x.eph (sid, pid)
+                                                (some d.1.1) },
                             kem := Function.update s.kem (sid, pid) (some d.2.1) })
       else
         (.inl .ok, { s with x := { s.x with st := addSession s.x.st (sid, pid) peer role,
-                                            eph := Function.update s.x.eph (sid, pid) (some d.1.1) } })
+                                            eph := Function.update s.x.eph (sid, pid)
+                                                (some d.1.1) } })
     else (.inl .ok, s)
   | .inl (.getKey sid pid) => (.inl (.key (keyOf s.x.st (sid, pid))), s)
   | .inr .idle => (.inr (.inl .ack), s)
@@ -254,7 +341,8 @@ theorem pqComplete_eq_map (s : PSt S W K PK SK SS C) (x : Inst) :
     pqComplete P G s x =
       (pDist P (encPk s (.inr (.complete x.1 x.2)))).map fun d => pqCompleteD G s x d.1 d.2.2 := by
   have hP : ∀ (o : Option PK) (b : POut S W K PK C × PSt S W K PK SK SS C),
-      PMF.pure b = (pDist (S := S) (K := K) P o).map fun _ => b := fun o b => (map_fun_const _ _).symm
+      PMF.pure b = (pDist (S := S) (K := K) P o).map fun _ => b := fun o b =>
+          (map_fun_const _ _).symm
   cases hr : s.x.st.recs x with
   | none => simp only [pqComplete, pqCompleteD, hr, map_fun_const]
   | some rc =>
@@ -306,7 +394,8 @@ theorem pqSend_eq_map (s : PSt S W K PK SK SS C) (x : Inst) (e : W) (c : C) :
 theorem realGame_oracle_eq (s : PSt S W K PK SK SS C) (e : OEv W SS C) :
     (realGame P G).oracle () s e = (pDist P (encPk s e)).map (realD P G s e) := by
   have hP : ∀ (o : Option PK) (b : OOut S W K PK C × PSt S W K PK SK SS C),
-      PMF.pure b = (pDist (S := S) (K := K) P o).map fun _ => b := fun o b => (map_fun_const _ _).symm
+      PMF.pure b = (pDist (S := S) (K := K) P o).map fun _ => b := fun o b =>
+          (map_fun_const _ _).symm
   change _ = (pDist P _).map fun d => realD P G s e d
   rcases e with (⟨sid, pid, peer, role⟩ | ⟨sid, pid⟩) | (_ | _ | pid | ⟨sid, pid⟩ |
     ⟨sid, pid⟩ | pid | ⟨sid, pid⟩ | ⟨sid, pid, e, c⟩ | x)
@@ -340,8 +429,10 @@ theorem realGame_oracle_eq (s : PSt S W K PK SK SS C) (e : OEv W SS C) :
   · simp only [realGame, pqAdv, onX, realAdv, realD, PMF.pure_map, map_fun_const]
   · simp only [realGame, pqAdv, onX, realAdv, realD, PMF.pure_map, map_fun_const]
   · simp only [realGame, pqAdv, onX, realAdv, realD, PMF.map_comp]
-    rw [pDist_map_fst (γ := OOut S W K PK C × PSt S W K PK SK SS C) P _ _ (fun r => ((Sum.inr (Sum.inl (ROut.pub (G.pub (ltD s.x pid r.2.1).1.1)
-      (G.pub (ltD s.x pid r.2.1).1.2))) : OOut S W K PK C), { s with x := (ltD s.x pid r.2.1).2 })) (fun _ => rfl)]
+    rw [pDist_map_fst (γ := OOut S W K PK C × PSt S W K PK SK SS C) P _ _ (fun r => ((Sum.inr
+        (Sum.inl (ROut.pub (G.pub (ltD s.x pid r.2.1).1.1)
+      (G.pub (ltD s.x pid r.2.1).1.2))) : OOut S W K PK C), { s with x := (ltD s.x pid r.2.1).2 }))
+          (fun _ => rfl)]
     exact ltAt_map_eq s.x pid _
   · simp only [realGame, pqAdv, onX, realAdv, realD, PMF.pure_map, map_fun_const]
   · simp only [realGame, pqAdv, realD, PMF.pure_map, map_fun_const]
@@ -349,7 +440,8 @@ theorem realGame_oracle_eq (s : PSt S W K PK SK SS C) (e : OEv W SS C) :
     by_cases h : Named s.x.st pid = true
     · simp only [realD, h, ↓reduceIte, PMF.pure_map, map_fun_const]
     · simp only [realD, h, Bool.false_eq_true, ↓reduceIte, PMF.map_comp]
-      rw [pDist_map_fst (γ := OOut S W K PK C × PSt S W K PK SK SS C) P _ _ (fun r => ((Sum.inr (Sum.inl (ROut.secret
+      rw [pDist_map_fst (γ := OOut S W K PK C × PSt S W K PK SK SS C) P _ _ (fun r => ((Sum.inr
+          (Sum.inl (ROut.secret
           (some (ltD s.x pid r.2.1).1))) : OOut S W K PK C),
         { s with x := { (ltD s.x pid r.2.1).2 with
                           st := corruptStep (ltD s.x pid r.2.1).2.st pid } })) (fun _ => rfl)]
@@ -357,11 +449,13 @@ theorem realGame_oracle_eq (s : PSt S W K PK SK SS C) (e : OEv W SS C) :
   · simp only [realGame, pqAdv, realD, pqComplete_eq_map, PMF.map_comp]
     rfl
   · simp only [realGame, pqAdv, realD, pqSend_eq_map, PMF.map_comp]
-    rw [pDist_map_fst (γ := OOut S W K PK C × PSt S W K PK SK SS C) P _ _ (fun r => ((Sum.inr (pqSendD P G s (sid, pid) e c r).1 :
+    rw [pDist_map_fst (γ := OOut S W K PK C × PSt S W K PK SK SS C) P _ _ (fun r => ((Sum.inr
+        (pqSendD P G s (sid, pid) e c r).1 :
       OOut S W K PK C), (pqSendD P G s (sid, pid) e c r).2)) (fun _ => rfl)]
     rfl
   · simp only [realGame, pqAdv, realD, roAt_eq_map, PMF.map_comp]
-    rw [pDist_map_fst (γ := OOut S W K PK C × PSt S W K PK SK SS C) P _ _ (fun r => ((Sum.inr (Sum.inl (ROut.hash (roDet s.ro x r.2.2.2).1)) :
+    rw [pDist_map_fst (γ := OOut S W K PK C × PSt S W K PK SK SS C) P _ _ (fun r => ((Sum.inr
+        (Sum.inl (ROut.hash (roDet s.ro x r.2.2.2).1)) :
       OOut S W K PK C), { s with ro := (roDet s.ro x r.2.2.2).2 })) (fun _ => rfl),
       map_uniform_eq_map_prod_snd (A := S × S), map_uniform_eq_map_prod_snd (A := S × S),
       map_uniform_eq_map_prod_snd (A := S)]
@@ -504,7 +598,8 @@ theorem simStart_eq (s : SimSt S W K PK SK SS C) (e : OEv W SS C) :
     · by_cases hr : role = .responder
       · simp only [simStart, simStartD, h, hr, ↓reduceIte, sample_eq_liftPMF, kemOps_keygen,
           map_liftPMF, liftPMF_bind_liftPMF]
-        rw [pDist_map_kp (γ := SimSt S W K PK SK SS C × Dec S W K PK C) P _ _ (fun r kp => (({ s.1 with
+        rw [pDist_map_kp (γ := SimSt S W K PK SK SS C × Dec S W K PK C) P _ _ (fun r kp =>
+            (({ s.1 with
             x := { s.1.x with st := addSession s.1.x.st (sid, pid) peer .responder,
                               eph := Function.update s.1.x.eph (sid, pid) (some r.1) },
             kem := Function.update s.1.kem (sid, pid) (some kp) }, s.2.1, Phase.fwd),
@@ -517,17 +612,21 @@ theorem simStart_eq (s : SimSt S W K PK SK SS C) (e : OEv W SS C) :
               kem := Function.update s.1.kem (sid, pid) (some kp) }, s.2.1, Phase.fwd),
             (.inl (.inl (.newSession sid pid peer .responder)) : Dec S W K PK C)))).symm
       · simp only [simStart, simStartD, h, hr, ↓reduceIte, sample_eq_liftPMF, liftPMF_bind_pure]
-        rw [pDist_map_fst (γ := SimSt S W K PK SK SS C × Dec S W K PK C) P _ _ (fun r => (({ s.1 with
+        rw [pDist_map_fst (γ := SimSt S W K PK SK SS C × Dec S W K PK C) P _ _ (fun r =>
+            (({ s.1 with
             x := { s.1.x with st := addSession s.1.x.st (sid, pid) peer role,
                               eph := Function.update s.1.x.eph (sid, pid) (some r.1) } },
-            s.2.1, Phase.fwd), (.inl (.inl (.newSession sid pid peer role)) : Dec S W K PK C))) (fun _ => rfl),
+            s.2.1, Phase.fwd), (.inl (.inl (.newSession sid pid peer role)) : Dec S W K PK C)))
+                (fun _ => rfl),
           map_uniform_eq_map_prod_fst (B := (S × S) × (S × S) × K)]
-    · simp only [simStart, simStartD, h, Bool.false_eq_true, ↓reduceIte, map_fun_const, liftPMF_pure]
+    · simp only [simStart, simStartD, h, Bool.false_eq_true, ↓reduceIte, map_fun_const,
+        liftPMF_pure]
   · simp only [simStart, simStartD, map_fun_const, liftPMF_pure]
   · simp only [simStart, simStartD, map_fun_const, liftPMF_pure]
   · simp only [simStart, simStartD, map_fun_const, liftPMF_pure]
   · simp only [simStart, simStartD, ltStep_eq, map_liftPMF]
-    rw [pDist_map_fst (γ := SimSt S W K PK SK SS C × Dec S W K PK C) P _ _ (fun r => (({ s.1 with x := (ltD s.1.x pid r.2.1).2 }, s.2.1, Phase.fwd),
+    rw [pDist_map_fst (γ := SimSt S W K PK SK SS C × Dec S W K PK C) P _ _ (fun r =>
+        (({ s.1 with x := (ltD s.1.x pid r.2.1).2 }, s.2.1, Phase.fwd),
       (.inr (.inr (.inl (.pub (G.pub (ltD s.1.x pid r.2.1).1.1)
         (G.pub (ltD s.1.x pid r.2.1).1.2)))) : Dec S W K PK C))) (fun _ => rfl)]
     exact congrArg liftPMF (ltAt_map_eq s.1.x pid _)
@@ -537,7 +636,8 @@ theorem simStart_eq (s : SimSt S W K PK SK SS C) (e : OEv W SS C) :
     · simp only [simStart, simStartD, simCorrupt, h, ↓reduceIte, map_fun_const, liftPMF_pure]
     · simp only [simStart, simCorrupt, simStartD, h, Bool.false_eq_true, ↓reduceIte, ltStep_eq,
         map_liftPMF]
-      rw [pDist_map_fst (γ := SimSt S W K PK SK SS C × Dec S W K PK C) P _ _ (fun r => (({ s.1 with x := { (ltD s.1.x pid r.2.1).2 with
+      rw [pDist_map_fst (γ := SimSt S W K PK SK SS C × Dec S W K PK C) P _ _ (fun r =>
+          (({ s.1 with x := { (ltD s.1.x pid r.2.1).2 with
                             st := corruptStep (ltD s.1.x pid r.2.1).2.st pid } }, s.2.1,
           .out (.inl (.secret (some (ltD s.1.x pid r.2.1).1)))),
           (.inl (.inr (.corrupt pid)) : Dec S W K PK C))) (fun _ => rfl)]
@@ -594,7 +694,8 @@ theorem simStart_eq (s : SimSt S W K PK SK SS C) (e : OEv W SS C) :
             · simp only [simStart, simSend, simSendD, kemOps, hr, he, hk, hd, hc, ↓reduceIte,
                 map_fun_const, liftPMF_pure]
   · simp only [simStart, simStartD, roStep_eq, map_liftPMF, roAt_eq_map, PMF.map_comp]
-    rw [pDist_map_fst (γ := SimSt S W K PK SK SS C × Dec S W K PK C) P _ _ (fun r => (({ s.1 with ro := (roDet s.1.ro x r.2.2.2).2 }, s.2.1, Phase.fwd),
+    rw [pDist_map_fst (γ := SimSt S W K PK SK SS C × Dec S W K PK C) P _ _ (fun r =>
+        (({ s.1 with ro := (roDet s.1.ro x r.2.2.2).2 }, s.2.1, Phase.fwd),
       (.inr (.inr (.inl (.hash (roDet s.1.ro x r.2.2.2).1))) : Dec S W K PK C))) (fun _ => rfl),
       map_uniform_eq_map_prod_snd (A := S × S), map_uniform_eq_map_prod_snd (A := S × S),
       map_uniform_eq_map_prod_snd (A := S)]
@@ -1091,7 +1192,8 @@ theorem PInv.lt_step {rs rl : PSt S W K PK SK SS C} {inp : Inst → Option (PInp
     {dlv : Inst → Option C} {f : St K} (hI : PInv P G rs inp dlv f rl) (pid : PartyId)
     (l : S × S) :
     (ltD rl.x pid l).1 = (ltD rs.x pid l).1 ∧
-      PInv P G { rs with x := (ltD rs.x pid l).2 } inp dlv f { rl with x := (ltD rl.x pid l).2 } := by
+      PInv P G { rs with x := (ltD rs.x pid l).2 } inp dlv f
+        { rl with x := (ltD rl.x pid l).2 } := by
   have hlt : (ltD rl.x pid l).2.lt = (ltD rs.x pid l).2.lt ∧
       (ltD rl.x pid l).1 = (ltD rs.x pid l).1 := by
     unfold ltD
@@ -1372,11 +1474,13 @@ omit [Fintype S] [Fintype K] [Nonempty K] in
 invariant holds after the completion. -/
 theorem PInv.keyed_step {rs rl : PSt S W K PK SK SS C} {inp : Inst → Option (PInp W SS)}
     {dlv : Inst → Option C} {f : St K}
-    (hI : PInv P G rs inp dlv f rl) {x : Inst} {rcs rcl rcf : Rec K} (hs : rs.x.st.recs x = some rcs)
+    (hI : PInv P G rs inp dlv f rl) {x : Inst} {rcs rcl rcf : Rec K}
+        (hs : rs.x.st.recs x = some rcs)
     (hl : rl.x.st.recs x = some rcl) (hf : f.recs x = some rcf) {ip : PInp W SS}
     (hsh : InpShape x rcs ip.1) (hd : DhOk G rs.x.lt ip.1) (hkem : KemOk P rs dlv x rcs ip)
     (ks kr : K) (ros rol : List (PInp W SS × K))
-    (stf : Status) (hstf : stf = if Exp rs.x.st.corrupt x rcs.peer then .compromised else .completed)
+    (stf : Status)
+    (hstf : stf = if Exp rs.x.st.corrupt x rcs.peer then .compromised else .completed)
     (hroSim : ∀ ip' v, ros.lookup ip' = some v → rol.lookup ip' = some v)
     (hroSess : ∀ y ip' r, Function.update inp x (some ip) y = some ip' →
       (setRec rs.x.st x { rcs with key := some ks }).recs y = some r →
@@ -1484,7 +1588,8 @@ theorem PInv.recs_of {rs rl : PSt S W K PK SK SS C} {inp : Inst → Option (PInp
     (hk : rcs.key = none) :
     inp x = none ∧ (∃ rcl, rl.x.st.recs x = some rcl ∧ rcl.peer = rcs.peer ∧ rcl.role = rcs.role ∧
       rcl.key = none) ∧ ∃ rcf, f.recs x = some rcf ∧ rcf.peer = rcs.peer ∧
-      rcf.role = rcs.role ∧ rcf.key = none ∧ (Exposed f x rcf ↔ Exp rs.x.st.corrupt x rcs.peer) := by
+      rcf.role = rcs.role ∧ rcf.key = none ∧
+          (Exposed f x rcf ↔ Exp rs.x.st.corrupt x rcs.peer) := by
   refine ⟨?_, ?_, ?_⟩
   · have h := hI.inpSome x
     simp only [keyOf, hs, Option.bind_some, hk, Option.isSome_none] at h
@@ -1505,7 +1610,8 @@ theorem PInv.deliver_exp {rs rl : PSt S W K PK SK SS C} {inp : Inst → Option (
     {dlv : Inst → Option C} {f : St K}
     (hI : PInv P G rs inp dlv f rl) {x : Inst} {rcs rcl : Rec K} (hs : rs.x.st.recs x = some rcs)
     (hk : rcs.key = none) (hl : rl.x.st.recs x = some rcl) {ip : PInp W SS}
-    (hsh : InpShape x rcs ip.1) (hd : DhOk G rs.x.lt ip.1) (hkem : KemOk P rs dlv x rcs ip) (he : Exp rs.x.st.corrupt x rcs.peer)
+    (hsh : InpShape x rcs ip.1) (hd : DhOk G rs.x.lt ip.1) (hkem : KemOk P rs dlv x rcs ip)
+        (he : Exp rs.x.st.corrupt x rcs.peer)
     (k kf : K) :
     PInv P G (pKeyed rs x rcs (roDet rs.ro ip k).1 (roDet rs.ro ip k).2)
       (Function.update inp x (some ip)) dlv (newKeyStep f x (roDet rs.ro ip k).1 kf)
@@ -1586,7 +1692,8 @@ theorem PInv.deliver_unexp {rs rl : PSt S W K PK SK SS C} {inp : Inst → Option
     {dlv : Inst → Option C} {f : St K}
     (hI : PInv P G rs inp dlv f rl) {x : Inst} {rcs rcl : Rec K} (hs : rs.x.st.recs x = some rcs)
     (hk : rcs.key = none) (hl : rl.x.st.recs x = some rcl) {ip : PInp W SS}
-    (hsh : InpShape x rcs ip.1) (hd : DhOk G rs.x.lt ip.1) (hkem : KemOk P rs dlv x rcs ip) (he : ¬ Exp rs.x.st.corrupt x rcs.peer)
+    (hsh : InpShape x rcs ip.1) (hd : DhOk G rs.x.lt ip.1) (hkem : KemOk P rs dlv x rcs ip)
+        (he : ¬ Exp rs.x.st.corrupt x rcs.peer)
     (kf : K) (ph : Phase S W K PK C) :
     PQHit P G (pKeyed rs x rcs default rs.ro, Function.update inp x (some ip), ph) dlv ∨
       PInv P G (pKeyed rs x rcs default rs.ro) (Function.update inp x (some ip)) dlv
