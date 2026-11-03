@@ -346,4 +346,385 @@ noncomputable def gdhRed {S W K : Type} [Field S] [Fintype S] [SampleableType W]
     (B : OracleAdv (OEv W) (OOut S W K) Bool) : GapDH_Adversary W :=
   fun O X Y => liftPMF (redPMF G a b O X Y B)
 
+/-! ## The simulated world with shifted draws -/
+
+section Shift
+
+variable {S W K : Type} [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K]
+  [Inhabited K] (G : DHGroup S W) (a b : PartyId) (x y : S)
+
+/-- The long-term secrets of the party `p` from the drawn pair `l`: the identity secret of `a` is
+shifted by `x` and the signed-prekey secret of `b` by `y`. -/
+def sh (p : PartyId) (l : S × S) : S × S :=
+  (if p = a then x + l.1 else l.1, if p = b then y + l.2 else l.2)
+
+/-- `sh` as a bijection of the pairs. -/
+def shEquiv (p : PartyId) : (S × S) ≃ (S × S) where
+  toFun := sh a b x y p
+  invFun := sh a b (-x) (-y) p
+  left_inv l := by
+    simp only [sh]
+    ext <;> split_ifs <;> simp
+  right_inv l := by
+    simp only [sh]
+    ext <;> split_ifs <;> simp
+
+/-- The shift of an optional party: the identity without a party. -/
+def shO : Option PartyId → (S × S) ≃ (S × S)
+  | none => Equiv.refl _
+  | some p => shEquiv a b x y p
+
+/-- The party whose long-term secrets an event draws first: the party of `pub`, `corrupt`,
+`complete` and `send`. -/
+def ev1 : OEv W → Option PartyId
+  | .inr (.pub p) | .inr (.corrupt p) | .inr (.complete _ p) | .inr (.send _ p _) => some p
+  | _ => none
+
+/-- The party whose long-term secrets an event draws second: the peer of the session of
+`complete` and `send`. -/
+def ev2 (s : SimSt S W K) : OEv W → Option PartyId
+  | .inr (.complete sid p) | .inr (.send sid p _) => (s.1.st.recs (sid, p)).map Rec.peer
+  | _ => none
+
+/-- The shifted draw of a step from the state `s` on the event `e`. -/
+def transD (s : SimSt S W K) (e : OEv W) : Draw S K ≃ Draw S K :=
+  Equiv.prodCongr (Equiv.refl S) (Equiv.prodCongr (shO a b x y (ev1 e))
+    (Equiv.prodCongr (shO a b x y (ev2 s e)) (Equiv.refl K)))
+
+/-- The shifted draw of a step of the simulated world. -/
+def transW (t : SimSt S W K × St K) (e : OEv W) : (Draw S K × K) ≃ (Draw S K × K) :=
+  Equiv.prodCongr (transD a b x y t.1 e) (Equiv.refl K)
+
+/-- **The simulated world with shifted draws is the simulated world**: the oracle of `simGame G`
+is the image of a uniform draw under `simWorldD` at the shifted draw. -/
+theorem simGame_oracle_eq_trans (t : SimSt S W K × St K) (e : OEv W) :
+    (simGame G).oracle () t e = (PMF.uniformFintype (Draw S K × K)).map
+      fun r => (simWorldD G t e (transW a b x y t e r)).swap := by
+  rw [simGame_oracle_eq]
+  conv_lhs => rw [← PMF.uniformFintype_map_equiv (transW a b x y t e), PMF.map_comp]
+  rfl
+
+end Shift
+
+/-! ## The coupling of the simulated world and the world of the reduction -/
+
+section Coupling
+
+variable {S W K : Type} [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K]
+  [Inhabited K] (G : DHGroup S W) (a b : PartyId) (x y : S)
+
+/-- The symbols of a symbolic input name only drawn secrets: `DH1` and `DH2` are known while `a`
+has no long-term secrets, and `DH3` while `b` has none. -/
+def SymOk (lt : PartyId → Option (S × S)) (i : Inp (W ⊕ W)) : Prop :=
+  (lt a = none → i.dh1.isLeft = true ∧ i.dh2.isLeft = true) ∧ (lt b = none → i.dh3.isLeft = true)
+
+/-- **The coupling relation** between a state `s₁` of the simulator with shifted draws and a
+state `s₂` of the simulator in the world of the reduction: equal records, corruptions, notices,
+session secrets and phases; the long-term secrets of `s₁` are the shifted draws of `s₂`; the
+tables and the recorded inputs of `s₁` are the values of the symbolic ones of `s₂` at
+`ik_a = x + u` and `spk_b = y + v`; the symbols name drawn secrets; the inputs of the table with
+initiator `a` and responder `b` have a known `DH1`; the records are fresh; `a` and `b` are
+uncorrupt. -/
+structure RelC (rs₁ : RSt S W K) (inp₁ : Inst → Option (Inp W)) (ph₁ : Phase S W K)
+    (rs₂ : RSt S (W ⊕ W) K) (inp₂ : Inst → Option (Inp (W ⊕ W))) (ph₂ : Phase S W K) : Prop where
+  st : rs₁.st = rs₂.st
+  eph : rs₁.eph = rs₂.eph
+  lt : ∀ q, rs₁.lt q = (rs₂.lt q).map (sh a b x y q)
+  ro : rs₁.ro = rs₂.ro.map (interpE G (x + off1 a rs₂) (y + off2 b rs₂))
+  inp : ∀ z, inp₁ z = (inp₂ z).map (interp G (x + off1 a rs₂) (y + off2 b rs₂))
+  ph : ph₁ = ph₂
+  symRo : ∀ p ∈ rs₂.ro, SymOk a b rs₂.lt p.1
+  symInp : ∀ z i, inp₂ z = some i → SymOk a b rs₂.lt i
+  abL : ∀ p ∈ rs₂.ro, p.1.ini = a → p.1.res = b → p.1.dh1.isLeft = true
+  fresh : ∀ z r, rs₂.st.recs z = some r → r.status = .fresh
+  uncA : rs₂.st.corrupt a = false
+  uncB : rs₂.st.corrupt b = false
+
+/-- The coupling relation on the states of the simulators. -/
+def Rel (s₁ : SimSt S W K) (s₂ : RSim S W K) : Prop :=
+  RelC G a b x y s₁.1 s₁.2.1 s₁.2.2 s₂.1 s₂.2.1 s₂.2.2
+
+/-- The parties `a` and `b`: one of them is corrupt in the simulator's copy. -/
+def Stop (s : SimSt S W K) : Prop := s.1.st.corrupt a = true ∨ s.1.st.corrupt b = true
+
+omit [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K] in
+/-- The public identity key of the reduction is the public value of the shifted secret. -/
+theorem pubIK_pub (p : PartyId) (l : S × S) :
+    pubIK G a (G.pub x) p l = G.pub (sh a b x y p l).1 := by
+  unfold pubIK sh
+  split_ifs <;> simp [G.mul_pub]
+
+omit [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K] in
+/-- The public signed prekey of the reduction is the public value of the shifted secret. -/
+theorem pubSPK_pub (p : PartyId) (l : S × S) :
+    pubSPK G b (G.pub y) p l = G.pub (sh a b x y p l).2 := by
+  unfold pubSPK sh
+  split_ifs <;> simp [G.mul_pub]
+
+omit [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K] in
+theorem keyA_pub (rs : RSt S (W ⊕ W) K) : keyA G a (G.pub x) rs = G.pub (x + off1 a rs) := by
+  simp only [keyA, G.mul_pub]
+
+omit [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K] in
+theorem keyB_pub (rs : RSt S (W ⊕ W) K) : keyB G b (G.pub y) rs = G.pub (y + off2 b rs) := by
+  simp only [keyB, G.mul_pub]
+
+omit [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K] in
+/-- A known value does not depend on the exponent. -/
+theorem ev_of_isLeft {s : W ⊕ W} (h : s.isLeft = true) (k k' : S) : ev G k s = ev G k' s := by
+  rcases s with w | E
+  · rfl
+  · cases h
+
+omit [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K] in
+/-- `SymOk` holds for larger sets of drawn secrets. -/
+theorem SymOk.mono {lt lt' : PartyId → Option (S × S)} {i : Inp (W ⊕ W)}
+    (h : ∀ q v, lt q = some v → lt' q = some v) (hs : SymOk a b lt i) : SymOk a b lt' i := by
+  refine ⟨fun ha => hs.1 ?_, fun hb => hs.2 ?_⟩
+  · cases hq : lt a with
+    | none => rfl
+    | some v => rw [h a v hq] at ha; cases ha
+  · cases hq : lt b with
+    | none => rfl
+    | some v => rw [h b v hq] at hb; cases hb
+
+omit [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K] in
+/-- The value of a symbolic input whose symbols name drawn secrets does not change when more
+secrets are drawn. -/
+theorem interp_stable {rs rs' : RSt S (W ⊕ W) K} (h : ∀ q v, rs.lt q = some v → rs'.lt q = some v)
+    {i : Inp (W ⊕ W)} (hs : SymOk a b rs.lt i) :
+    interp G (x + off1 a rs') (y + off2 b rs') i = interp G (x + off1 a rs) (y + off2 b rs) i := by
+  have h1 : ev G (x + off1 a rs') i.dh1 = ev G (x + off1 a rs) i.dh1 ∧
+      ev G (x + off1 a rs') i.dh2 = ev G (x + off1 a rs) i.dh2 := by
+    cases hq : rs.lt a with
+    | none => exact ⟨ev_of_isLeft G (hs.1 hq).1 _ _, ev_of_isLeft G (hs.1 hq).2 _ _⟩
+    | some v => simp only [off1, hq, h a v hq, and_self]
+  have h2 : ev G (y + off2 b rs') i.dh3 = ev G (y + off2 b rs) i.dh3 := by
+    cases hq : rs.lt b with
+    | none => exact ev_of_isLeft G (hs.2 hq) _ _
+    | some v => simp only [off2, hq, h b v hq]
+  simp only [interp, h1, h2]
+
+omit [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K] in
+/-- The table of values of a symbolic table whose symbols name drawn secrets does not change when
+more secrets are drawn. -/
+theorem map_interpE_stable {rs rs' : RSt S (W ⊕ W) K}
+    (h : ∀ q v, rs.lt q = some v → rs'.lt q = some v) {tb : List (Inp (W ⊕ W) × K)}
+    (hs : ∀ p ∈ tb, SymOk a b rs.lt p.1) :
+    tb.map (interpE G (x + off1 a rs') (y + off2 b rs')) =
+      tb.map (interpE G (x + off1 a rs) (y + off2 b rs)) :=
+  List.map_congr_left fun p hp => by
+    simp only [interpE, interp_stable G a b x y h (hs p hp)]
+
+omit [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K] in
+/-- **Drawing long-term secrets** on both sides: the simulator with the shifted draw obtains the
+shifted secrets, and the relation is kept. -/
+theorem rel_ltD {rs₁ : RSt S W K} {inp₁ : Inst → Option (Inp W)} {ph₁ : Phase S W K}
+    {rs₂ : RSt S (W ⊕ W) K} {inp₂ : Inst → Option (Inp (W ⊕ W))} {ph₂ : Phase S W K}
+    (h : RelC G a b x y rs₁ inp₁ ph₁ rs₂ inp₂ ph₂) (p : PartyId) (l : S × S) :
+    (ltD rs₁ p (sh a b x y p l)).1 = sh a b x y p (ltD rs₂ p l).1 ∧
+      RelC G a b x y (ltD rs₁ p (sh a b x y p l)).2 inp₁ ph₁ (ltD rs₂ p l).2 inp₂ ph₂ := by
+  have hl : rs₁.lt p = (rs₂.lt p).map (sh a b x y p) := h.lt p
+  cases hq : rs₂.lt p with
+  | some l' =>
+    rw [hq] at hl
+    simp only [ltD, hq, hl, Option.map_some, true_and]
+    exact h
+  | none =>
+    rw [hq] at hl
+    have hext : ∀ q v, rs₂.lt q = some v → (Function.update rs₂.lt p (some l)) q = some v := by
+      intro q v hv
+      have hne : q ≠ p := fun hc => by subst hc; rw [hq] at hv; cases hv
+      rw [Function.update_of_ne hne, hv]
+    have hext' : ∀ q v, rs₂.lt q = some v →
+        ({ rs₂ with lt := Function.update rs₂.lt p (some l) } : RSt S (W ⊕ W) K).lt q = some v :=
+      hext
+    simp only [ltD, hq, hl, Option.map_none, true_and]
+    refine ⟨h.st, h.eph, fun q => ?_, ?_, fun z => ?_, h.ph, fun e he =>
+      (h.symRo e he).mono a b hext, fun z i hi => (h.symInp z i hi).mono a b hext, h.abL, h.fresh,
+      h.uncA, h.uncB⟩
+    · by_cases hqp : q = p
+      · subst hqp; simp only [Function.update_self, Option.map_some]
+      · simp only [Function.update_of_ne hqp]; exact h.lt q
+    · exact h.ro.trans (map_interpE_stable G a b x y hext' h.symRo).symm
+    · rw [h.inp z]
+      cases hz : inp₂ z with
+      | none => rfl
+      | some i =>
+        simp only [Option.map_some]
+        exact congrArg some (interp_stable G a b x y hext' (h.symInp z i hz)).symm
+
+omit [Fintype S] [Fintype K] [Nonempty K] [Inhabited K] in
+/-- The symbolic key derivation keeps its table or adds the new input. -/
+theorem sroDet_snd (O : W → W → W → Bool) (ZA ZB : W) (tb : List (Inp (W ⊕ W) × K))
+    (j : Inp (W ⊕ W)) (k : K) :
+    (sroDet G O ZA ZB tb j k).2 = tb ∨ (sroDet G O ZA ZB tb j k).2 = (j, k) :: tb := by
+  unfold sroDet
+  split
+  · exact Or.inl rfl
+  · exact Or.inr rfl
+
+omit [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K] in
+/-- **A key on both sides**: the relation holds after the same record update, related tables and
+the same recorded input. -/
+theorem RelC.keyedR {rs₁ : RSt S W K} {inp₁ : Inst → Option (Inp W)} {ph₁ : Phase S W K}
+    {rs₂ : RSt S (W ⊕ W) K} {inp₂ : Inst → Option (Inp (W ⊕ W))} {ph₂ : Phase S W K}
+    (h : RelC G a b x y rs₁ inp₁ ph₁ rs₂ inp₂ ph₂) {z : Inst} {rc : Rec K}
+    (hrc : rs₂.st.recs z = some rc) (v : K) {ro₁ : List (Inp W × K)}
+    {ro₂ : List (Inp (W ⊕ W) × K)}
+    (hro : ro₁ = ro₂.map (interpE G (x + off1 a rs₂) (y + off2 b rs₂)))
+    (hsym : ∀ p ∈ ro₂, SymOk a b rs₂.lt p.1)
+    (hab : ∀ p ∈ ro₂, p.1.ini = a → p.1.res = b → p.1.dh1.isLeft = true)
+    {ip : Inp (W ⊕ W)} (hs : SymOk a b rs₂.lt ip) (ph : Phase S W K) :
+    RelC G a b x y (keyed rs₁ z rc v ro₁)
+      (Function.update inp₁ z (some (interp G (x + off1 a rs₂) (y + off2 b rs₂) ip))) ph
+      (keyed rs₂ z rc v ro₂) (Function.update inp₂ z (some ip)) ph := by
+  refine ⟨by simp only [X3DHSquare.keyed]; rw [h.st], h.eph, h.lt, hro, fun z' => ?_, rfl, hsym, fun z' i hi => ?_,
+    hab, fun z' r hr => ?_, h.uncA, h.uncB⟩
+  · by_cases hz : z' = z
+    · subst hz; simp only [Function.update_self, Option.map_some]; rfl
+    · simp only [Function.update_of_ne hz]; exact h.inp z'
+  · by_cases hz : z' = z
+    · subst hz; simp only [Function.update_self, Option.some.injEq] at hi; subst hi; exact hs
+    · simp only [Function.update_of_ne hz] at hi; exact h.symInp z' i hi
+  · simp only [X3DHSquare.keyed, setRec] at hr
+    by_cases hz : z' = z
+    · subst hz
+      simp only [Function.update_self, Option.some.injEq] at hr
+      subst hr
+      exact h.fresh _ rc hrc
+    · simp only [Function.update_of_ne hz] at hr; exact h.fresh z' r hr
+
+omit [Fintype K] [Nonempty K] in
+/-- **The delivery of a key** on both sides gives the same decision and keeps the relation. -/
+theorem rel_deliver {rs₁ : RSt S W K} {inp₁ : Inst → Option (Inp W)} {ph₁ : Phase S W K}
+    {rs₂ : RSt S (W ⊕ W) K} {inp₂ : Inst → Option (Inp (W ⊕ W))} {ph₂ : Phase S W K}
+    (h : RelC G a b x y rs₁ inp₁ ph₁ rs₂ inp₂ ph₂) {z : Inst} {rc : Rec K}
+    (hrc : rs₂.st.recs z = some rc) {ip : Inp (W ⊕ W)} (hs : SymOk a b rs₂.lt ip)
+    (hsh : (ip.ini = z.2 ∧ ip.res = rc.peer) ∨ (ip.ini = rc.peer ∧ ip.res = z.2)) (k : K) :
+    (deliverD rs₁ inp₁ z rc (interp G (x + off1 a rs₂) (y + off2 b rs₂) ip) k).2 =
+        (deliverR G a b (ddhOracle (gapDHDef G)) (G.pub x) (G.pub y) rs₂ inp₂ z rc ip k).2 ∧
+      Rel G a b x y (deliverD rs₁ inp₁ z rc (interp G (x + off1 a rs₂) (y + off2 b rs₂) ip) k).1
+        (deliverR G a b (ddhOracle (gapDHDef G)) (G.pub x) (G.pub y) rs₂ inp₂ z rc ip k).1 := by
+  have hE1 : Exposed rs₁.st z rc ↔ Exposed rs₂.st z rc := by rw [h.st]
+  unfold deliverD deliverR
+  rw [keyA_pub, keyB_pub]
+  by_cases hE : Exposed rs₂.st z rc
+  · simp only [hE, hE1, ↓reduceIte]
+    rw [h.ro, sroDet_ddh]
+    refine ⟨rfl, h.keyedR G a b x y hrc _ rfl ?_ ?_ hs _⟩
+    · rcases sroDet_snd G (ddhOracle (gapDHDef G)) (G.pub (x + off1 a rs₂)) (G.pub (y + off2 b rs₂))
+        rs₂.ro ip k with he | he <;> rw [he]
+      · exact h.symRo
+      · intro p hp
+        rcases List.mem_cons.mp hp with rfl | hp
+        · exact hs
+        · exact h.symRo p hp
+    · rcases sroDet_snd G (ddhOracle (gapDHDef G)) (G.pub (x + off1 a rs₂)) (G.pub (y + off2 b rs₂))
+        rs₂.ro ip k with he | he <;> rw [he]
+      · exact h.abL
+      · intro p hp hpa hpb
+        rcases List.mem_cons.mp hp with rfl | hp
+        · exfalso
+          have hf := h.fresh z rc hrc
+          have ha := h.uncA
+          have hb := h.uncB
+          simp only [Exposed] at hE
+          rcases hsh with ⟨h1, h2⟩ | ⟨h1, h2⟩ <;> grind
+        · exact h.abL p hp hpa hpb
+  · simp only [hE, hE1, ↓reduceIte]
+    refine ⟨?_, h.keyedR G a b x y hrc _ h.ro h.symRo h.abL hs _⟩
+    rw [h.inp]
+    cases inp₂ (z.1, rc.peer) with
+    | none => rfl
+    | some j => simp only [Option.map_some, Option.all_some, inpEq_ddh]
+
+omit [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K] in
+/-- The relation does not depend on the phases beyond their equality. -/
+theorem RelC.setPh {rs₁ : RSt S W K} {inp₁ : Inst → Option (Inp W)} {ph₁ : Phase S W K}
+    {rs₂ : RSt S (W ⊕ W) K} {inp₂ : Inst → Option (Inp (W ⊕ W))} {ph₂ : Phase S W K}
+    (h : RelC G a b x y rs₁ inp₁ ph₁ rs₂ inp₂ ph₂) (ph : Phase S W K) :
+    RelC G a b x y rs₁ inp₁ ph rs₂ inp₂ ph :=
+  ⟨h.st, h.eph, h.lt, h.ro, h.inp, rfl, h.symRo, h.symInp, h.abL, h.fresh, h.uncA, h.uncB⟩
+
+omit [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K] in
+/-- `opkOf` reads the records and the session secrets. -/
+theorem opkOf_congr {W' : Type} {rs₁ : RSt S W K} {rs₂ : RSt S W' K} (hst : rs₁.st = rs₂.st)
+    (heph : rs₁.eph = rs₂.eph) (sid : SessionId) (q : PartyId) :
+    opkOf rs₁ sid q = opkOf rs₂ sid q := by
+  simp only [opkOf, hst, heph]
+
+omit [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K] in
+@[simp] theorem transD_apply (s : SimSt S W K) (e : OEv W) (r : Draw S K) :
+    transD a b x y s e r = (r.1, shO a b x y (ev1 e) r.2.1, shO a b x y (ev2 s e) r.2.2.1,
+      r.2.2.2) := rfl
+
+omit [Fintype S] in
+@[simp] theorem shO_some (p : PartyId) (l : S × S) : shO a b x y (some p) l = sh a b x y p l := rfl
+
+omit [Fintype S] in
+@[simp] theorem shO_none (l : S × S) : shO a b x y none l = l := rfl
+
+omit [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K] in
+/-- The value of the symbolic input of an initiator is its input in the simulator. -/
+theorem aliceS_interp {rs : RSt S (W ⊕ W) K} {sid : SessionId} {p q : PartyId} {la lb : S × S}
+    (hp : rs.lt p = some la) (ek opk : S) :
+    interp G (x + off1 a rs) (y + off2 b rs) (aliceS G a b (G.pub x) (G.pub y) sid p q la lb ek opk) =
+      aliceInp G sid p q (sh a b x y p la).1 ek (G.pub (sh a b x y q lb).1)
+        (G.pub (sh a b x y q lb).2) (G.pub opk) := by
+  unfold aliceS
+  by_cases hpa : p = a
+  · subst hpa
+    simp only [interp, aliceInp, ev, pubIK_pub G p b x y, pubSPK_pub G p b x y, off1, hp, sh,
+      ↓reduceIte, Option.map_some, Option.getD_some, Sum.elim_inl, id]
+  · simp only [interp, aliceInp, ev, pubIK_pub G a b x y, pubSPK_pub G a b x y, sh, hpa,
+      ↓reduceIte, Sum.elim_inl, id]
+
+omit [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K] in
+/-- The value of the symbolic input of a responder is its input in the simulator. -/
+theorem bobS_interp {rs : RSt S (W ⊕ W) K} {sid : SessionId} {p q : PartyId} {lq lp : S × S}
+    (hq : rs.lt q = some lq) (hp : rs.lt p = some lp) (E : W) (opk : S) :
+    interp G (x + off1 a rs) (y + off2 b rs) (bobS G a b (G.pub x) (G.pub y) sid p q E lq lp opk) =
+      bobInp G sid p q (G.pub (sh a b x y p lp).1) E (sh a b x y q lq).1 (sh a b x y q lq).2 opk := by
+  unfold bobS
+  simp only [interp, bobInp, Inp.mk.injEq, true_and]
+  refine ⟨?_, ?_, ?_, rfl⟩
+  · by_cases hqb : q = b
+    · subst hqb
+      by_cases hpa : p = a
+      · subst hpa
+        simp only [ev, pubSPK_pub G p q x y, off1, hp, sh, ↓reduceIte, Option.map_some,
+          Option.getD_some, G.exp_pub, mul_comm]
+      · simp only [ev, pubSPK_pub G a q x y, sh, hpa, ↓reduceIte, G.exp_pub, mul_comm]
+    · simp only [ev, pubIK_pub G a b x y, sh, hqb, ↓reduceIte, G.exp_pub]
+  · by_cases hqa : q = a
+    · subst hqa; simp only [ev, off1, hq, sh, ↓reduceIte, Option.map_some, Option.getD_some]
+    · simp only [ev, sh, hqa, ↓reduceIte]
+  · by_cases hqb : q = b
+    · subst hqb; simp only [ev, off2, hq, sh, ↓reduceIte, Option.map_some, Option.getD_some]
+    · simp only [ev, sh, hqb, ↓reduceIte]
+
+omit [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K] in
+theorem aliceS_symOk {lt : PartyId → Option (S × S)} {sid : SessionId} {p q : PartyId}
+    {la lb : S × S} (hp : lt p = some la) (ek opk : S) :
+    SymOk a b lt (aliceS G a b (G.pub x) (G.pub y) sid p q la lb ek opk) := by
+  refine ⟨fun ha => ⟨?_, rfl⟩, fun _ => rfl⟩
+  have hpa : p ≠ a := fun hc => by subst hc; rw [hp] at ha; cases ha
+  simp only [aliceS, hpa, ↓reduceIte, Sum.isLeft_inl]
+
+omit [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K] in
+theorem bobS_symOk {lt : PartyId → Option (S × S)} {sid : SessionId} {p q : PartyId}
+    {lq lp : S × S} (hq : lt q = some lq) (hp : lt p = some lp) (E : W) (opk : S) :
+    SymOk a b lt (bobS G a b (G.pub x) (G.pub y) sid p q E lq lp opk) := by
+  refine ⟨fun ha => ⟨?_, ?_⟩, fun hb => ?_⟩
+  · have hpa : p ≠ a := fun hc => by subst hc; rw [hp] at ha; cases ha
+    simp only [bobS, hpa, ↓reduceIte]
+    split_ifs <;> rfl
+  · have hqa : q ≠ a := fun hc => by subst hc; rw [hq] at ha; cases ha
+    simp only [bobS, hqa, ↓reduceIte, Sum.isLeft_inl]
+  · have hqb : q ≠ b := fun hc => by subst hc; rw [hq] at hb; cases hb
+    simp only [bobS, hqb, ↓reduceIte, Sum.isLeft_inl]
+
+end Coupling
+
 end CatCrypt.Crypto.AKE.X3DHSquareGDH
