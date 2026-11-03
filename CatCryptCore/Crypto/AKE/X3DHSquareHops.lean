@@ -747,4 +747,367 @@ theorem x3dh_advantage_le_badGame (B : OracleAdv (OEv W) (OOut S W K) Bool) :
 
 end Joint
 
+/-! ## The bad event of a query at `DH1`
+
+The bad event `DH1Hit` is a predicate of the simulated world: the table of the key derivation
+holds an input whose initiator and responder are uncorrupt and whose `DH1` is the Diffie–Hellman
+value `g^{ik_a · spk_b}` of the initiator's identity key and the responder's signed prekey. Every
+input of that table was queried by the adversary or is the input of an exposed session, whose
+party or peer is corrupt; so the event is a query of the adversary that solves the
+computational Diffie–Hellman problem on the public keys `IK_a`, `SPK_b` of two uncorrupt parties.
+
+The invariant `Inv` relates the four components of the joint state: the simulator's copy `rs`
+of the real state with its recorded inputs `inp`, the state `f` of `F_AKE`, and the real state
+`rl`. Under `Inv`, a step either makes `DH1Hit` hold or gives equal outputs and keeps `Inv`
+(`step_inv`). -/
+
+section Bad
+
+variable {S W K : Type} [Field S] [Fintype S] [DecidableEq W] [Fintype K]
+  [Nonempty K] [Inhabited K] (G : DHGroup S W)
+
+/-- **The bad event**: the table of the key derivation of the simulated world holds an input
+whose initiator and responder are uncorrupt and whose `DH1` is `g^{ik_a · spk_b}`, for the
+identity secret `ik_a` of the initiator and the signed-prekey secret `spk_b` of the
+responder. -/
+def DH1Hit (s : SimSt S W K) : Prop :=
+  ∃ ip v ikA spkA ikB spkB, s.1.ro.lookup ip = some v ∧ s.1.st.corrupt ip.ini = false ∧
+    s.1.st.corrupt ip.res = false ∧ s.1.lt ip.ini = some (ikA, spkA) ∧
+    s.1.lt ip.res = some (ikB, spkB) ∧ ip.dh1 = G.pub (ikA * spkB)
+
+/-- The party or the peer of a session is corrupt in the corruption map `c`. -/
+def Exp (c : PartyId → Bool) (y : Inst) (p : PartyId) : Prop := c y.2 = true ∨ c p = true
+
+instance (c : PartyId → Bool) (y : Inst) (p : PartyId) : Decidable (Exp c y p) :=
+  inferInstanceAs (Decidable (_ ∨ _))
+
+/-- A record without its status, and with its key replaced by `default`. -/
+def skRec (r : Rec K) : Rec K := { r with status := .fresh, key := r.key.map fun _ => default }
+
+/-- The shape of a recorded input of the session `y` with record `r`: the session, and the
+party and the peer as initiator and responder according to the role. -/
+def InpShape (y : Inst) (r : Rec K) (ip : Inp W) : Prop :=
+  ip.sid = y.1 ∧ (r.role = .initiator ∧ ip.ini = y.2 ∧ ip.res = r.peer ∨
+    r.role = .responder ∧ ip.res = y.2 ∧ ip.ini = r.peer)
+
+/-- `DH1` of an input is the Diffie–Hellman value of the long-term keys `lt`. -/
+def DhOk (lt : PartyId → Option (S × S)) (ip : Inp W) : Prop :=
+  ∃ ikA spkA ikB spkB, lt ip.ini = some (ikA, spkA) ∧ lt ip.res = some (ikB, spkB) ∧
+    ip.dh1 = G.pub (ikA * spkB)
+
+/-- **The invariant of the joint world** between the simulator's copy `rs`, its recorded
+inputs `inp`, the state `f` of `F_AKE` and the real state `rl`. -/
+structure Inv (rs : RSt S W K) (inp : Inst → Option (Inp W)) (f : St K) (rl : RSt S W K) :
+    Prop where
+  lt : rl.lt = rs.lt
+  eph : rl.eph = rs.eph
+  corrupt : rl.st.corrupt = rs.st.corrupt
+  notices : rl.st.notices = rs.st.notices
+  cursor : rl.st.cursor = rs.st.cursor
+  recs : ∀ y, (rl.st.recs y).map skRec = (rs.st.recs y).map skRec
+  fcorrupt : f.corrupt = rs.st.corrupt
+  frecs : ∀ y, (f.recs y).map skRec = (rs.st.recs y).map skRec
+  key : ∀ y, keyOf rl.st y = keyOf f y
+  fresh : ∀ y r, rs.st.recs y = some r → r.status = .fresh
+  fstatus : ∀ y r, f.recs y = some r →
+    r.status = if r.key.isSome then (if Exp rs.st.corrupt y r.peer then .compromised
+      else .completed) else .fresh
+  inpSome : ∀ y, (inp y).isSome = (keyOf rs.st y).isSome
+  inpShape : ∀ y ip r, inp y = some ip → rs.st.recs y = some r → InpShape y r ip
+  inpDh : ∀ y ip, inp y = some ip → DhOk G rs.lt ip
+  named : ∀ y r, rs.st.recs y = some r → Named rs.st y.2 = true ∧ Named rs.st r.peer = true
+  roSim : ∀ ip v, rs.ro.lookup ip = some v → rl.ro.lookup ip = some v
+  roSess : ∀ y ip r, inp y = some ip → rs.st.recs y = some r → ¬ Exp rs.st.corrupt y r.peer →
+    rl.ro.lookup ip = keyOf rl.st y
+  roReal : ∀ ip v, rl.ro.lookup ip = some v → rs.ro.lookup ip = some v ∨
+    ∃ y r, inp y = some ip ∧ rs.st.recs y = some r ∧ ¬ Exp rs.st.corrupt y r.peer
+
+/-- The invariant on a joint state. -/
+def InvJ (s : (SimSt S W K × St K) × RSt S W K) : Prop := Inv G s.1.1.1 s.1.1.2.1 s.1.2 s.2
+
+omit [Fintype S] [Fintype K] [Nonempty K] in
+/-- The invariant holds at the start. -/
+theorem inv_init : Inv G (rInit : RSt S W K) (fun _ => none) initSt rInit := by
+  refine ⟨rfl, rfl, rfl, rfl, rfl, fun _ => rfl, rfl, fun _ => rfl, fun _ => rfl, ?_, ?_,
+    fun _ => rfl, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;>
+    simp [rInit, initSt]
+
+omit [Fintype S] [DecidableEq W] [Fintype K] [Nonempty K] [Inhabited K] in
+/-- `DH1` stays the Diffie–Hellman value of long-term keys that are kept. -/
+theorem DhOk.mono {lt lt' : PartyId → Option (S × S)} {ip : Inp W}
+    (h : ∀ q v, lt q = some v → lt' q = some v) (hd : DhOk G lt ip) : DhOk G lt' ip := by
+  obtain ⟨a, b, c, d, h₁, h₂, h₃⟩ := hd
+  exact ⟨a, b, c, d, h _ _ h₁, h _ _ h₂, h₃⟩
+
+omit [Field S] [Fintype S] [DecidableEq W] [Fintype K] [Nonempty K] [Inhabited K] in
+/-- `ltD` keeps the recorded long-term secrets. -/
+theorem ltD_lt_mono (s : RSt S W K) (pid : PartyId) (l : S × S) :
+    ∀ q v, s.lt q = some v → (ltD s pid l).2.lt q = some v := by
+  intro q v hq
+  unfold ltD
+  cases h : s.lt pid with
+  | some l' => exact hq
+  | none =>
+    have hne : q ≠ pid := fun hc => by subst hc; rw [h] at hq; cases hq
+    simp only [Function.update_of_ne hne, hq]
+
+omit [Field S] [Fintype S] [DecidableEq W] [Fintype K] [Nonempty K] [Inhabited K] in
+/-- After `ltD`, the party has the long-term secrets that `ltD` outputs. -/
+theorem ltD_lt_self (s : RSt S W K) (pid : PartyId) (l : S × S) :
+    (ltD s pid l).2.lt pid = some (ltD s pid l).1 := by
+  unfold ltD
+  cases h : s.lt pid with
+  | some l' => exact h
+  | none => simp only [Function.update_self]
+
+omit [Field S] [Fintype S] [DecidableEq W] [Fintype K] [Nonempty K] [Inhabited K] in
+/-- `ltD` changes the long-term secrets only. -/
+@[simp] theorem ltD_st (s : RSt S W K) (pid : PartyId) (l : S × S) : (ltD s pid l).2.st = s.st := by
+  unfold ltD
+  cases s.lt pid <;> rfl
+
+omit [Field S] [Fintype S] [DecidableEq W] [Fintype K] [Nonempty K] [Inhabited K] in
+@[simp] theorem ltD_eph (s : RSt S W K) (pid : PartyId) (l : S × S) :
+    (ltD s pid l).2.eph = s.eph := by
+  unfold ltD
+  cases s.lt pid <;> rfl
+
+omit [Field S] [Fintype S] [DecidableEq W] [Fintype K] [Nonempty K] [Inhabited K] in
+@[simp] theorem ltD_ro (s : RSt S W K) (pid : PartyId) (l : S × S) : (ltD s pid l).2.ro = s.ro := by
+  unfold ltD
+  cases s.lt pid <;> rfl
+
+omit [Fintype S] [Fintype K] [Nonempty K] in
+/-- The invariant depends on the components of the states that it names. -/
+theorem Inv.of_eq {rs rs' rl rl' : RSt S W K} {inp : Inst → Option (Inp W)} {f : St K}
+    (hI : Inv G rs inp f rl) (h₁ : ∀ q v, rs.lt q = some v → rs'.lt q = some v)
+    (h₂ : rs'.eph = rs.eph) (h₃ : rs'.ro = rs.ro)
+    (h₄ : rs'.st.recs = rs.st.recs) (h₅ : rs'.st.corrupt = rs.st.corrupt)
+    (h₆ : rs'.st.notices = rs.st.notices) (h₁' : rl'.lt = rs'.lt) (h₂' : rl'.eph = rl.eph)
+    (h₃' : rl'.ro = rl.ro) (h₄' : rl'.st.recs = rl.st.recs)
+    (h₅' : rl'.st.corrupt = rl.st.corrupt) (h₆' : rl'.st.notices = rl.st.notices)
+    (h₇ : rl'.st.cursor = rs'.st.cursor) : Inv G rs' inp f rl' := by
+  have hk : ∀ y, keyOf rs'.st y = keyOf rs.st y := fun y => by simp only [keyOf, h₄]
+  have hk' : ∀ y, keyOf rl'.st y = keyOf rl.st y := fun y => by simp only [keyOf, h₄']
+  have hn : ∀ p, Named rs'.st p = Named rs.st p := fun p => by simp only [Named, h₆]
+  refine ⟨?_, ?_, ?_, ?_, h₇, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · exact h₁'
+  · rw [h₂, h₂', hI.eph]
+  · rw [h₅, h₅', hI.corrupt]
+  · rw [h₆, h₆', hI.notices]
+  · intro y; rw [h₄, h₄', hI.recs]
+  · rw [h₅, hI.fcorrupt]
+  · intro y; rw [h₄, hI.frecs]
+  · intro y; rw [hk', hI.key]
+  · intro y r hr; rw [h₄] at hr; exact hI.fresh y r hr
+  · intro y r hr; rw [h₅]; exact hI.fstatus y r hr
+  · intro y; rw [hk, hI.inpSome]
+  · intro y ip r hy hr; rw [h₄] at hr; exact hI.inpShape y ip r hy hr
+  · intro y ip hy; exact (hI.inpDh y ip hy).mono G h₁
+  · intro y r hr; rw [h₄] at hr; rw [hn, hn]; exact hI.named y r hr
+  · intro ip v h; rw [h₃] at h; rw [h₃']; exact hI.roSim ip v h
+  · intro y ip r hy hr hx; rw [h₄] at hr; rw [h₅] at hx; rw [h₃', hk']
+    exact hI.roSess y ip r hy hr hx
+  · intro ip v h; rw [h₃'] at h; rw [h₃, h₄, h₅]; exact hI.roReal ip v h
+
+omit [Fintype S] [Fintype K] [Nonempty K] in
+/-- `ltD` on both copies keeps the invariant, and outputs the same secrets. -/
+theorem Inv.lt_step {rs rl : RSt S W K} {inp : Inst → Option (Inp W)} {f : St K}
+    (hI : Inv G rs inp f rl) (pid : PartyId) (l : S × S) :
+    (ltD rl pid l).1 = (ltD rs pid l).1 ∧ Inv G (ltD rs pid l).2 inp f (ltD rl pid l).2 := by
+  have hlt : (ltD rl pid l).2.lt = (ltD rs pid l).2.lt ∧ (ltD rl pid l).1 = (ltD rs pid l).1 := by
+    unfold ltD
+    cases h : rs.lt pid <;> simp [hI.lt, h]
+  refine ⟨hlt.2, hI.of_eq G (ltD_lt_mono rs pid l) ?_ ?_ ?_ ?_ ?_ hlt.1 ?_ ?_ ?_ ?_ ?_ ?_⟩ <;>
+    simp only [ltD_st, ltD_eph, ltD_ro, hI.cursor]
+
+omit [Fintype K] [Nonempty K] [Inhabited K] in
+/-- `pollStep` moves the cursor only. -/
+theorem pollStep_fst (t : St K) :
+    (pollStep t).1.recs = t.recs ∧ (pollStep t).1.corrupt = t.corrupt ∧
+      (pollStep t).1.notices = t.notices := by
+  unfold pollStep
+  split <;> exact ⟨rfl, rfl, rfl⟩
+
+omit [Fintype S] [Fintype K] [Nonempty K] in
+/-- `poll` on both copies keeps the invariant and gives the same notice. -/
+theorem Inv.poll {rs rl : RSt S W K} {inp : Inst → Option (Inp W)} {f : St K}
+    (hI : Inv G rs inp f rl) :
+    (pollStep rl.st).2 = (pollStep rs.st).2 ∧
+      Inv G { rs with st := (pollStep rs.st).1 } inp f { rl with st := (pollStep rl.st).1 } := by
+  have hc : (pollStep rl.st).1.cursor = (pollStep rs.st).1.cursor ∧
+      (pollStep rl.st).2 = (pollStep rs.st).2 := by
+    unfold pollStep
+    rw [hI.notices, hI.cursor]
+    split <;> first | exact ⟨rfl, rfl⟩ | exact ⟨hI.cursor, rfl⟩
+  refine ⟨hc.2, hI.of_eq G (fun _ _ h => h) rfl rfl (pollStep_fst _).1 (pollStep_fst _).2.1
+    (pollStep_fst _).2.2 hI.lt rfl rfl (pollStep_fst _).1 (pollStep_fst _).2.1
+    (pollStep_fst _).2.2 hc.1⟩
+
+omit [Fintype K] [Nonempty K] [Inhabited K] in
+/-- `addSession` at a session with a record changes nothing. -/
+theorem addSession_of_isSome {t : St K} {x : Inst} (h : (t.recs x).isSome = true)
+    (peer : PartyId) (role : Role) : addSession t x peer role = t := by
+  simp [addSession, h]
+
+omit [Fintype K] [Nonempty K] [Inhabited K] in
+/-- The fields of `addSession` at a session without a record. -/
+theorem addSession_of_isNone {t : St K} {x : Inst} (h : t.recs x = none) (peer : PartyId)
+    (role : Role) : addSession t x peer role =
+      { t with recs := Function.update t.recs x (some ⟨peer, role, .fresh, none⟩),
+               notices := t.notices ++ [⟨x.1, x.2, peer, role⟩] } := by
+  simp [addSession, h]
+
+omit [Fintype S] [Fintype K] [Nonempty K] in
+/-- A new session on both copies and in `F_AKE` keeps the invariant. -/
+theorem Inv.newSession {rs rl : RSt S W K} {inp : Inst → Option (Inp W)} {f : St K}
+    (hI : Inv G rs inp f rl) (x : Inst) (hx : rs.st.recs x = none) (peer : PartyId)
+    (role : Role) (y : S) :
+    Inv G { rs with st := addSession rs.st x peer role, eph := Function.update rs.eph x (some y) }
+      inp (addSession f x peer role)
+      { rl with st := addSession rl.st x peer role, eph := Function.update rl.eph x (some y) } := by
+  have hxl : rl.st.recs x = none := by
+    have h := hI.recs x
+    rw [hx] at h
+    cases h' : rl.st.recs x <;> simp_all
+  have hxf : f.recs x = none := by
+    have h := hI.frecs x
+    rw [hx] at h
+    cases h' : f.recs x <;> simp_all
+  have hix : inp x = none := by
+    have h := hI.inpSome x
+    simp only [keyOf, hx, Option.bind_none, Option.isSome_none] at h
+    exact Option.not_isSome_iff_eq_none.mp (by simp [h])
+  rw [addSession_of_isNone hx, addSession_of_isNone hxl, addSession_of_isNone hxf]
+  have hrec : ∀ (t : St K) y', y' ≠ x →
+      (Function.update t.recs x (some (⟨peer, role, .fresh, none⟩ : Rec K))) y' = t.recs y' :=
+    fun t y' h => Function.update_of_ne h _ _
+  have hny : ∀ y' ip, inp y' = some ip → y' ≠ x := fun y' ip h hc => by
+    subst hc; rw [hix] at h; cases h
+  constructor
+  · exact hI.lt
+  · simp only [hI.eph]
+  · exact hI.corrupt
+  · simp only [hI.notices]
+  · exact hI.cursor
+  · intro y'
+    by_cases h : y' = x
+    · subst h; simp only [Function.update_self]
+    · simp only [hrec _ _ h, hI.recs y']
+  · exact hI.fcorrupt
+  · intro y'
+    by_cases h : y' = x
+    · subst h; simp only [Function.update_self]
+    · simp only [hrec _ _ h, hI.frecs y']
+  · intro y'
+    by_cases h : y' = x
+    · subst h; simp [keyOf]
+    · simpa [keyOf, hrec _ _ h] using hI.key y'
+  · intro y' r hr
+    by_cases h : y' = x
+    · subst h; simp only [Function.update_self, Option.some.injEq] at hr; subst hr; rfl
+    · simp only [hrec _ _ h] at hr; exact hI.fresh y' r hr
+  · intro y' r hr
+    by_cases h : y' = x
+    · subst h; simp only [Function.update_self, Option.some.injEq] at hr; subst hr; simp
+    · simp only [hrec _ _ h] at hr; exact hI.fstatus y' r hr
+  · intro y'
+    by_cases h : y' = x
+    · subst h; simp [keyOf, hix]
+    · simpa [keyOf, hrec _ _ h] using hI.inpSome y'
+  · intro y' ip r hy hr
+    simp only [hrec _ _ (hny y' ip hy)] at hr
+    exact hI.inpShape y' ip r hy hr
+  · exact hI.inpDh
+  · intro y' r hr
+    have hn : ∀ p, Named rs.st p = true → Named { rs.st with
+        recs := Function.update rs.st.recs x (some ⟨peer, role, .fresh, none⟩),
+        notices := rs.st.notices ++ [⟨x.1, x.2, peer, role⟩] } p = true := fun p hp => by
+      simp only [Named] at hp ⊢
+      simp [List.any_append, hp]
+    by_cases h : y' = x
+    · subst h
+      simp only [Function.update_self, Option.some.injEq] at hr
+      subst hr
+      simp [Named]
+    · simp only [hrec _ _ h] at hr
+      exact ⟨hn _ (hI.named y' r hr).1, hn _ (hI.named y' r hr).2⟩
+  · exact hI.roSim
+  · intro y' ip r hy hr he
+    have h := hny y' ip hy
+    simp only [hrec _ _ h] at hr
+    simpa [keyOf, hrec _ _ h] using hI.roSess y' ip r hy hr he
+  · intro ip v hv
+    rcases hI.roReal ip v hv with h | ⟨y', r, hy, hr, he⟩
+    · exact Or.inl h
+    · exact Or.inr ⟨y', r, hy, by simpa [hrec _ _ (hny y' ip hy)] using hr, he⟩
+
+omit [Fintype K] [Nonempty K] in
+/-- Records equal up to `skRec` have the same peer, role, and presence of a key. -/
+theorem sk_some {a b : Option (Rec K)} (h : a.map skRec = b.map skRec) {rb : Rec K}
+    (hb : b = some rb) :
+    ∃ ra, a = some ra ∧ ra.peer = rb.peer ∧ ra.role = rb.role ∧ ra.key.isSome = rb.key.isSome := by
+  subst hb
+  cases a with
+  | none => simp at h
+  | some ra =>
+    simp only [Option.map_some, Option.some.injEq] at h
+    have h₁ := congrArg Rec.peer h
+    have h₂ := congrArg Rec.role h
+    refine ⟨ra, rfl, h₁, h₂, ?_⟩
+    have := congrArg (fun r : Rec K => r.key.isSome) h
+    simpa [skRec] using this
+
+omit [Fintype K] [Nonempty K] in
+/-- Records equal up to `skRec` are both absent or both present. -/
+theorem sk_none {a b : Option (Rec K)} (h : a.map skRec = b.map skRec) (hb : b = none) :
+    a = none := by
+  subst hb
+  cases a <;> simp_all
+
+omit [Fintype K] [Nonempty K] [Inhabited K] in
+/-- Corrupting a party that no session names leaves exposure unchanged. -/
+theorem exp_update {c : PartyId → Bool} {pid : PartyId} {y : Inst} {p : PartyId}
+    (h₁ : y.2 ≠ pid) (h₂ : p ≠ pid) :
+    Exp (Function.update c pid true) y p ↔ Exp c y p := by
+  simp only [Exp, Function.update_of_ne h₁, Function.update_of_ne h₂]
+
+omit [Fintype S] [Fintype K] [Nonempty K] in
+/-- A party that no session names is neither the party nor the peer of a session. -/
+theorem Inv.not_named {rs rl : RSt S W K} {inp : Inst → Option (Inp W)} {f : St K}
+    (hI : Inv G rs inp f rl) {pid : PartyId} (hn : Named rs.st pid = false) {y : Inst} {r : Rec K}
+    (hr : rs.st.recs y = some r) : y.2 ≠ pid ∧ r.peer ≠ pid := by
+  constructor
+  · intro hc; have := (hI.named y r hr).1; rw [hc, hn] at this; cases this
+  · intro hc; have := (hI.named y r hr).2; rw [hc, hn] at this; cases this
+
+omit [Fintype S] [Fintype K] [Nonempty K] in
+/-- Corrupting a party that no session names, on both copies and in `F_AKE`, keeps the
+invariant. -/
+theorem Inv.corrupt_step {rs rl : RSt S W K} {inp : Inst → Option (Inp W)} {f : St K}
+    (hI : Inv G rs inp f rl) {pid : PartyId} (hn : Named rs.st pid = false) :
+    Inv G { rs with st := corruptStep rs.st pid } inp (corruptStep f pid)
+      { rl with st := corruptStep rl.st pid } := by
+  have hE : ∀ y r, rs.st.recs y = some r →
+      (Exp (Function.update rs.st.corrupt pid true) y r.peer ↔ Exp rs.st.corrupt y r.peer) :=
+    fun y r hr => exp_update (hI.not_named G hn hr).1 (hI.not_named G hn hr).2
+  refine ⟨hI.lt, hI.eph, ?_, hI.notices, hI.cursor, hI.recs, ?_, hI.frecs, hI.key, hI.fresh,
+    ?_, hI.inpSome, hI.inpShape, hI.inpDh, hI.named, hI.roSim, ?_, ?_⟩
+  · simp only [corruptStep, hI.corrupt]
+  · simp only [corruptStep, hI.fcorrupt]
+  · intro y r hr
+    obtain ⟨r0, hr0, hp, -, -⟩ := sk_some (hI.frecs y).symm hr
+    have h := hI.fstatus y r hr
+    have hEx : Exp (Function.update rs.st.corrupt pid true) y r.peer ↔
+        Exp rs.st.corrupt y r.peer := by rw [← hp]; exact hE y r0 hr0
+    simpa only [corruptStep, hEx] using h
+  · intro y ip r hy hr he
+    exact hI.roSess y ip r hy hr (fun h => he ((hE y r hr).mpr h))
+  · intro ip v hv
+    rcases hI.roReal ip v hv with h | ⟨y, r, hy, hr, he⟩
+    · exact Or.inl h
+    · exact Or.inr ⟨y, r, hy, hr, fun h => he ((hE y r hr).mp h)⟩
+
+end Bad
+
 end CatCrypt.Crypto.AKE.X3DHSquareHops
