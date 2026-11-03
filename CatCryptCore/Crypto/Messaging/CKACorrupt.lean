@@ -1193,4 +1193,367 @@ theorem dhRel_step (t : ℕ) (ideal : Bool) (va vb : CG.Exp × G) (z : G)
 
 end DHSim
 
+/-! ### The game of `dhCKA` as a probability mass function -/
+
+/-- A run against an oracle whose computations are lifted distributions is the lifted run. -/
+theorem OracleAdv.runSP_eq_liftPMF {S D R : Type} (O : S → D → SPComp (R × S))
+    (O' : S → D → PMF (R × S)) (hO : ∀ s d, O s d = liftPMF (O' s d))
+    (A : OracleAdv D R α) (s : S) :
+    OracleAdv.runSP O A s = liftPMF (OracleAdv.run O' A s) := by
+  induction A generalizing s with
+  | ret a => exact liftPMF_pure _
+  | rand p k ih =>
+    simp only [OracleAdv.runSP, ih, liftPMF_bind_liftPMF, OracleAdv.run_rand]
+  | query d k ih =>
+    simp only [OracleAdv.runSP, hO, ih, liftPMF_bind_liftPMF, OracleAdv.run_query]
+
+section DHGame
+
+variable (G : Type) [CG : CyclicGroup G]
+
+/-- The sending algorithm of `dhCKA` with its exponent as explicit randomness. -/
+noncomputable instance dhCKACoins : CKACoins (dhCKA G) CG.Exp where
+  sendR s x := ((s.1, x), CG.pow x, CyclicGroup.elemPow s.1 x)
+
+/-- The explicit-randomness sending algorithm of `dhCKA` is its sending algorithm. -/
+theorem dhCKACoins_sound : CKACoins.Sound (dhCKA G) := fun _ => rfl
+
+/-- The value drawn at each query of the game of `dhCKA`: a uniform exponent and an
+independent uniform group element. -/
+noncomputable def dhDraw : PMF (CG.Exp × G) :=
+  (PMF.uniformFintype CG.Exp).bind fun x => (PMF.uniformFintype G).map fun u => (x, u)
+
+variable {G}
+
+theorem dhDraw_bind {β : Type} (f : CG.Exp × G → PMF β) :
+    (dhDraw G).bind f =
+      (PMF.uniformFintype CG.Exp).bind fun x => (PMF.uniformFintype G).bind fun u => f (x, u) := by
+  unfold dhDraw
+  rw [PMF.bind_bind]
+  congr 1; funext x
+  rw [PMF.bind_map]; rfl
+
+theorem dhDraw_bind_fst {β : Type} (f : CG.Exp → PMF β) :
+    (dhDraw G).bind (fun v => f v.1) = (PMF.uniformFintype CG.Exp).bind f := by
+  rw [dhDraw_bind]
+  simp only [PMF.bind_const]
+
+theorem dhDraw_map {β : Type} (g : CG.Exp × G → β) :
+    (dhDraw G).map g = (PMF.uniformFintype CG.Exp).bind fun x =>
+      (PMF.uniformFintype G).bind fun u => PMF.pure (g (x, u)) := by
+  rw [← PMF.bind_pure_comp, dhDraw_bind]; rfl
+
+/-- **The oracle of `dhCKA` in normal form.** Each oracle computation of the game of `dhCKA`
+is the lifted distribution of the step `dhCKAStepOf` on a draw of `dhDraw`. -/
+theorem dhCKA_oracle_eq (ΔFS ΔPCS t : ℕ) (ideal : Bool) (s : CKAGameSt (G × CG.Exp) G)
+    (q : CKAQuery) :
+    ckaCorruptOracle (dhCKA G) ΔFS ΔPCS t ideal s q =
+      liftPMF ((dhDraw G).map (dhCKAStepOf CG.pow CyclicGroup.elemPow ΔFS ΔPCS t ideal s q)) := by
+  rw [dhDraw_map]
+  cases q with
+  | send p =>
+    simp only [ckaCorruptOracle, dhCKAStepOf]
+    rcases (Bool.eq_false_or_eq_true (s.canSend p)).symm with hc | hc
+    · simp only [hc, Bool.false_eq_true, if_false, PMF.bind_const, liftPMF_pure]
+    · simp only [hc, if_true, dhCKA, SPComp.bind_assoc, SPComp.pure_bind, PMF.bind_const,
+        sample_eq_liftPMF, liftPMF_pure, liftPMF_bind_liftPMF, PMF.bind_bind, PMF.pure_bind]
+  | recv p =>
+    simp only [ckaCorruptOracle, dhCKAStepOf, dhCKA]
+    rcases (Bool.eq_false_or_eq_true (s.canRecv p)).symm with hc | hc
+    · simp only [hc, Bool.false_eq_true, if_false, PMF.bind_const, liftPMF_pure]
+    · simp only [hc, if_true, PMF.bind_const, liftPMF_pure]
+  | chall p =>
+    simp only [ckaCorruptOracle, dhCKAStepOf]
+    rcases (Bool.eq_false_or_eq_true (s.canSend p && s.t p + 1 == t)).symm with hc | hc
+    · simp only [hc, Bool.false_eq_true, if_false, PMF.bind_const, liftPMF_pure]
+    · cases ideal with
+      | true =>
+        simp only [hc, if_true, dhCKA, SPComp.bind_assoc, SPComp.pure_bind,
+          sample_eq_liftPMF, liftPMF_pure, liftPMF_bind_liftPMF, PMF.bind_bind, PMF.pure_bind]
+      | false =>
+        simp only [hc, if_true, Bool.false_eq_true, if_false, dhCKA, SPComp.bind_assoc,
+          SPComp.pure_bind, PMF.bind_const, sample_eq_liftPMF, liftPMF_pure,
+          liftPMF_bind_liftPMF, PMF.bind_bind, PMF.pure_bind]
+  | corrupt p =>
+    simp only [ckaCorruptOracle, dhCKAStepOf, PMF.bind_const, liftPMF_pure]
+  | sendLeak p =>
+    simp only [ckaCorruptOracle, dhCKAStepOf]
+    rcases (Bool.eq_false_or_eq_true (ckaAllowLeak ΔPCS t s p)).symm with hc | hc
+    · simp only [hc, Bool.false_eq_true, if_false, PMF.bind_const, liftPMF_pure]
+    · simp only [hc, if_true, CKACoins.sendR, PMF.bind_const, sample_eq_liftPMF, liftPMF_pure,
+        liftPMF_bind_liftPMF]
+
+theorem runSP_dhCKA (ΔFS ΔPCS t : ℕ) (ideal : Bool)
+    (A : OracleAdv CKAQuery (CKAAns (G × CG.Exp) G G CG.Exp) α) (s : CKAGameSt (G × CG.Exp) G) :
+    OracleAdv.runSP (ckaCorruptOracle (dhCKA G) ΔFS ΔPCS t ideal) A s =
+      liftPMF (OracleAdv.run (OracleAdv.nfOracle (dhDraw G)
+        (dhCKAStepOf CG.pow CyclicGroup.elemPow ΔFS ΔPCS t ideal)) A s) :=
+  OracleAdv.runSP_eq_liftPMF _ _ (dhCKA_oracle_eq ΔFS ΔPCS t ideal) A s
+
+/-- The distribution of the output of the game of `dhCKA` with the challenge epoch `t`. -/
+noncomputable def dhCKAGamePMF (ΔFS ΔPCS t : ℕ) (ideal : Bool)
+    (play : G → OracleAdv CKAQuery (CKAAns (G × CG.Exp) G G CG.Exp) α) : PMF α :=
+  (PMF.uniformFintype CG.Exp).bind fun x₀ =>
+    (OracleAdv.run (OracleAdv.nfOracle (dhDraw G)
+      (dhCKAStepOf CG.pow CyclicGroup.elemPow ΔFS ΔPCS t ideal)) (play (CG.pow x₀))
+      (CKAGameSt.init (CG.pow x₀) (CG.pow x₀, x₀) (CG.pow x₀, x₀))).map Prod.fst
+
+/-- The corruption game of `dhCKA` is the lifted distribution `dhCKAGamePMF` after the choice
+of the challenge epoch. -/
+theorem dhCKA_game_eq (ΔFS ΔPCS : ℕ) (ideal : Bool)
+    (A : CKACorruptAdv (G × CG.Exp) G G CG.Exp α) :
+    cka_corrupt_game (dhCKA G) ΔFS ΔPCS ideal A =
+      liftPMF (A.tStar.bind fun t => dhCKAGamePMF ΔFS ΔPCS t ideal (A.play t)) := by
+  unfold cka_corrupt_game dhCKAGamePMF
+  simp only [runSP_dhCKA]
+  simp only [dhCKA, SPComp.bind_assoc, SPComp.pure_bind, sample_eq_liftPMF, liftPMF_bind_pure,
+    liftPMF_bind_liftPMF, PMF.bind_map]
+  rfl
+
+end DHGame
+
+/-! ### The reduction -/
+
+section DHRed
+
+variable {E Gr : Type} [Fintype E] [Nonempty E] [Fintype Gr] [Nonempty Gr]
+
+/-- The simulator answers a query by drawing an exponent and a group element and running the
+simulation step. -/
+noncomputable def ckaCorruptSimImplOf (pow : E → Gr) (epow : Gr → E → Gr) (ΔFS ΔPCS t : ℕ)
+    (ga gb z : Gr) (σ : CKAGameSt (Gr × E) Gr) (q : CKAQuery) :
+    OracleAdv Empty Unit (CKAAns (Gr × E) Gr Gr E × CKAGameSt (Gr × E) Gr) :=
+  .rand (PMF.uniformFintype E) fun x =>
+    .rand (PMF.uniformFintype Gr) fun u =>
+      .ret (dhCKASimStepOf pow epow ΔFS ΔPCS t ga gb z σ q (x, u))
+
+/-- **The DDH reduction** as an oracle tree without queries. On the triple `(ga, gb, z)` it
+draws the challenge epoch `t` of the adversary and an exponent `x₀`; the public value of the
+initialisation is `ga` if `t = 1` and `g^{x₀}` otherwise; it runs the adversary against the
+simulator `ckaCorruptSimImplOf` and returns its output. -/
+noncomputable def ckaCorruptDDHTreeOf (pow : E → Gr) (epow : Gr → E → Gr) (ΔFS ΔPCS : ℕ)
+    (tStar : PMF ℕ) (play : ℕ → Gr → OracleAdv CKAQuery (CKAAns (Gr × E) Gr Gr E) Bool)
+    (ga gb z : Gr) : OracleAdv Empty Unit Bool :=
+  .rand tStar fun t =>
+    .rand (PMF.uniformFintype E) fun x₀ =>
+      (OracleAdv.simulate (ckaCorruptSimImplOf pow epow ΔFS ΔPCS t ga gb z)
+        (play t (if t = 1 then ga else pow x₀))
+        (CKAGameSt.init (if t = 1 then ga else pow x₀) (if t = 1 then ga else pow x₀, x₀)
+          (if t = 1 then ga else pow x₀, x₀))).bind fun r => .ret r.1
+
+end DHRed
+
+/-- The oracle of a tree without queries. -/
+def emptyOracle (_ : Unit) (d : Empty) : PMF (Unit × Unit) := d.elim
+
+/-- **The DDH reduction** `ckaCorruptDDHRed A`: the tree `ckaCorruptDDHTreeOf` with the
+exponentiations of the group, run as a distribution. -/
+noncomputable def ckaCorruptDDHRed {G : Type} [CG : CyclicGroup G]
+    (A : CKACorruptAdv (G × CG.Exp) G G CG.Exp Bool) : G × G × G → SPComp Bool := fun tr =>
+  liftPMF ((OracleAdv.run emptyOracle (ckaCorruptDDHTreeOf CG.pow CyclicGroup.elemPow 2 2
+    A.tStar A.play tr.1 tr.2.1 tr.2.2) ()).map Prod.fst)
+
+section DHProof
+
+variable {G : Type} [CG : CyclicGroup G]
+
+theorem dhCritA_one {St Msg : Type} (s : CKAGameSt St Msg) (q : CKAQuery) :
+    dhCritA 1 s q = false := by
+  cases q <;> simp [dhCritA]
+
+/-- The two eager hops: the exponent of the send of epoch `t - 1` and the exponent and the
+group element of the challenge are drawn in advance. -/
+theorem run_dhCKAStep_eager (t : ℕ) (ideal : Bool)
+    (A : OracleAdv CKAQuery (CKAAns (G × CG.Exp) G G CG.Exp) α) (s : CKAGameSt (G × CG.Exp) G) :
+    OracleAdv.run (OracleAdv.nfOracle (dhDraw G)
+        (dhCKAStepOf CG.pow CyclicGroup.elemPow 2 2 t ideal)) A s =
+      (dhDraw G).bind fun va => (dhDraw G).bind fun vb =>
+        OracleAdv.run (OracleAdv.nfOracle (dhDraw G)
+          (dhCKAEagerStepOf CG.pow CyclicGroup.elemPow 2 2 t ideal va vb)) A s := by
+  rw [OracleAdv.run_nf_eq_eager (dhDraw G) _ (dhCritA t) (dhDoneA t)
+    (dhDoneA_crit _ _ _ _ _ _) (dhDoneA_step _ _ _ _ _ _) (dhDoneA_noCrit t)]
+  congr 1; funext va
+  exact OracleAdv.run_nf_eq_eager (dhDraw G) _ (dhCritB t) (dhDoneB t)
+    (dhDoneB_crit _ _ _ _ _ _ va) (dhDoneB_eager _ _ _ _ _ _ va) (dhDoneB_noCrit t) A s
+
+/-- The initial exponent of the eager game: the exponent `a` of the DDH triple at the
+challenge epoch `1`, a fresh exponent otherwise. -/
+def dhX0 {X : Type} (t : ℕ) (a x₀ : X) : X := if t = 1 then a else x₀
+
+/-- The game of `dhCKA` as the eager game, with the initial exponent `dhX0 t va.1 x₀`. -/
+theorem dhCKAGamePMF_eager (t : ℕ) (ideal : Bool)
+    (play : G → OracleAdv CKAQuery (CKAAns (G × CG.Exp) G G CG.Exp) α) :
+    dhCKAGamePMF 2 2 t ideal play =
+      (PMF.uniformFintype CG.Exp).bind fun x₀ => (dhDraw G).bind fun va => (dhDraw G).bind fun vb =>
+        (OracleAdv.run (OracleAdv.nfOracle (dhDraw G)
+          (dhCKAEagerStepOf CG.pow CyclicGroup.elemPow 2 2 t ideal va vb))
+          (play (CG.pow (dhX0 t va.1 x₀)))
+          (CKAGameSt.init (CG.pow (dhX0 t va.1 x₀)) (CG.pow (dhX0 t va.1 x₀), dhX0 t va.1 x₀)
+            (CG.pow (dhX0 t va.1 x₀), dhX0 t va.1 x₀))).map Prod.fst := by
+  unfold dhCKAGamePMF
+  by_cases ht : t = 1
+  · subst ht
+    have hA : ∀ va : CG.Exp × G,
+        OracleAdv.eagerStep (dhCKAStepOf CG.pow CyclicGroup.elemPow 2 2 1 ideal) (dhCritA 1) va =
+          dhCKAStepOf CG.pow CyclicGroup.elemPow 2 2 1 ideal := by
+      intro va; funext s q e
+      simp only [OracleAdv.eagerStep, dhCritA_one, Bool.false_eq_true, if_false]
+    simp only [dhCKAEagerStepOf, hA, dhX0, if_true, PMF.bind_const]
+    rw [dhDraw_bind]
+    simp only [PMF.bind_const]
+    congr 1; funext x₀
+    rw [OracleAdv.run_nf_eq_eager (dhDraw G) _ (dhCritB 1) (dhDoneB 1)
+      (fun s q e h => by
+        have := dhDoneB_crit CG.pow CyclicGroup.elemPow 2 2 1 ideal (Classical.arbitrary _) s q e h
+        rwa [hA] at this)
+      (dhDoneB_step _ _ _ _ _ _) (dhDoneB_noCrit 1), PMF.map_bind]
+  · simp only [dhX0, ht, if_false, run_dhCKAStep_eager, PMF.map_bind]
+
+/-- The initial states of the eager game and of the simulator are related. -/
+theorem dhRel_init (t : ℕ) (a x₀ : CG.Exp) :
+    DHRel a t (CKAGameSt.init (CG.pow (dhX0 t a x₀)) (CG.pow (dhX0 t a x₀), dhX0 t a x₀)
+        (CG.pow (dhX0 t a x₀), dhX0 t a x₀))
+      (CKAGameSt.init (CG.pow (dhX0 t a x₀)) (CG.pow (dhX0 t a x₀), x₀)
+        (CG.pow (dhX0 t a x₀), x₀)) := by
+  refine ⟨rfl, rfl, fun p => by cases p <;> rfl, ?_, Or.inl rfl, fun _ => rfl, ?_, ?_⟩
+  · intro p hp
+    by_cases ht : t = 1
+    · exfalso; apply hp
+      subst ht
+      refine ⟨by simp [CKAGameSt.init], ?_⟩
+      split <;> simp [CKAGameSt.init]
+    · cases p <;> simp [CKAGameSt.init, dhX0, ht]
+  · intro p hp
+    cases p <;> simp [CKAGameSt.init] at hp
+  · intro h1 hlo _
+    have ht : t = 1 := by
+      have : (CKAGameSt.init (CG.pow (dhX0 t a x₀)) (CG.pow (dhX0 t a x₀), dhX0 t a x₀)
+          (CG.pow (dhX0 t a x₀), dhX0 t a x₀) : CKAGameSt (G × CG.Exp) G).t
+          (ckaSender t).other = 0 := rfl
+      omega
+    subst ht
+    rfl
+
+/-- **The eager game is the simulation.** -/
+theorem dhCKA_eager_eq_sim (t : ℕ) (ideal : Bool) (va vb : CG.Exp × G) (x₀ : CG.Exp)
+    (play : G → OracleAdv CKAQuery (CKAAns (G × CG.Exp) G G CG.Exp) α) :
+    (OracleAdv.run (OracleAdv.nfOracle (dhDraw G)
+        (dhCKAEagerStepOf CG.pow CyclicGroup.elemPow 2 2 t ideal va vb))
+        (play (CG.pow (dhX0 t va.1 x₀)))
+        (CKAGameSt.init (CG.pow (dhX0 t va.1 x₀)) (CG.pow (dhX0 t va.1 x₀), dhX0 t va.1 x₀)
+          (CG.pow (dhX0 t va.1 x₀), dhX0 t va.1 x₀))).map Prod.fst =
+      (OracleAdv.run (OracleAdv.nfOracle (dhDraw G)
+        (dhCKASimStepOf CG.pow CyclicGroup.elemPow 2 2 t (CG.pow va.1) (CG.pow vb.1)
+          (if ideal then vb.2 else CG.pow (CG.expMul va.1 vb.1))))
+        (play (CG.pow (dhX0 t va.1 x₀)))
+        (CKAGameSt.init (CG.pow (dhX0 t va.1 x₀)) (CG.pow (dhX0 t va.1 x₀), x₀)
+          (CG.pow (dhX0 t va.1 x₀), x₀))).map Prod.fst :=
+  OracleAdv.run_nf_map_fst_eq_of_rel (dhDraw G) _ _ (DHRel va.1 t)
+    (fun s σ h q e => dhRel_step t ideal va vb _ rfl s σ h q e) _ _ _ (dhRel_init t va.1 x₀)
+
+/-- The run of the reduction tree is the run of the adversary against the simulation step. -/
+theorem ckaCorruptDDHTreeOf_run (ΔFS ΔPCS : ℕ) (tStar : PMF ℕ)
+    (play : ℕ → G → OracleAdv CKAQuery (CKAAns (G × CG.Exp) G G CG.Exp) Bool) (ga gb z : G) :
+    (OracleAdv.run emptyOracle (ckaCorruptDDHTreeOf CG.pow CyclicGroup.elemPow ΔFS ΔPCS tStar
+        play ga gb z) ()).map Prod.fst =
+      tStar.bind fun t => (PMF.uniformFintype CG.Exp).bind fun x₀ =>
+        (OracleAdv.run (OracleAdv.nfOracle (dhDraw G)
+          (dhCKASimStepOf CG.pow CyclicGroup.elemPow ΔFS ΔPCS t ga gb z))
+          (play t (if t = 1 then ga else CG.pow x₀))
+          (CKAGameSt.init (if t = 1 then ga else CG.pow x₀) (if t = 1 then ga else CG.pow x₀, x₀)
+            (if t = 1 then ga else CG.pow x₀, x₀))).map Prod.fst := by
+  unfold ckaCorruptDDHTreeOf
+  simp only [OracleAdv.run_rand, PMF.map_bind]
+  congr 1; funext t; congr 1; funext x₀
+  rw [OracleAdv.run_simulate_fst]
+  have hsim : OracleAdv.simOracle (ckaCorruptSimImplOf CG.pow CyclicGroup.elemPow ΔFS ΔPCS t ga
+      gb z) emptyOracle = OracleAdv.nfOracle (dhDraw G) (fun σu q e =>
+        ((dhCKASimStepOf CG.pow CyclicGroup.elemPow ΔFS ΔPCS t ga gb z σu.1 q e).1,
+          ((dhCKASimStepOf CG.pow CyclicGroup.elemPow ΔFS ΔPCS t ga gb z σu.1 q e).2, ()))) := by
+    funext σu q
+    simp only [OracleAdv.simOracle, ckaCorruptSimImplOf, OracleAdv.run_rand, OracleAdv.run_ret,
+      OracleAdv.nfOracle, dhDraw_map, PMF.map_bind, PMF.pure_map]
+  rw [hsim]
+  exact OracleAdv.run_nf_map_fst_eq_of_rel (dhDraw G) _ _ (fun σu σ => σu.1 = σ)
+    (fun σu σ h q e => by subst h; exact ⟨rfl, rfl⟩) _ _ _ rfl
+
+theorem DDH_real_eq_liftPMF :
+    DDH_real G = liftPMF ((PMF.uniformFintype CG.Exp).bind fun a =>
+      (PMF.uniformFintype CG.Exp).bind fun b =>
+        PMF.pure (CG.pow a, CG.pow b, CG.pow (CG.expMul a b))) := by
+  simp only [DDH_real, SPComp.monad_bind_eq, SPComp.monad_pure_eq, sample_eq_liftPMF,
+    liftPMF_pure, liftPMF_bind_liftPMF]
+
+theorem DDH_ideal_eq_liftPMF :
+    DDH_ideal G = liftPMF ((PMF.uniformFintype CG.Exp).bind fun a =>
+      (PMF.uniformFintype CG.Exp).bind fun b => (PMF.uniformFintype CG.Exp).bind fun c =>
+        PMF.pure (CG.pow a, CG.pow b, CG.pow c)) := by
+  simp only [DDH_ideal, SPComp.monad_bind_eq, SPComp.monad_pure_eq, sample_eq_liftPMF,
+    liftPMF_pure, liftPMF_bind_liftPMF]
+
+/-- A uniform exponent raised as a power of the generator is a uniform group element. -/
+theorem bind_uniform_pow {β : Type} (K : G → PMF β) :
+    (PMF.uniformFintype CG.Exp).bind (fun c => K (CG.pow c)) = (PMF.uniformFintype G).bind K := by
+  rw [← PMF.uniformFintype_map_equiv (Equiv.ofBijective CG.pow CG.pow_bij), PMF.bind_map]
+  rfl
+
+theorem pow_dhX0 (t : ℕ) (a x₀ : CG.Exp) :
+    CG.pow (dhX0 t a x₀) = if t = 1 then CG.pow a else CG.pow x₀ := by
+  unfold dhX0; split <;> rfl
+
+/-- Reordering of four draws. -/
+theorem bind_reorder {X β : Type} (μ : PMF X) (τ : PMF ℕ) (F : ℕ → X → X → X → PMF β) :
+    (μ.bind fun a => μ.bind fun b => τ.bind fun t => μ.bind fun x₀ => F t x₀ a b) =
+      τ.bind fun t => μ.bind fun x₀ => μ.bind fun a => μ.bind fun b => F t x₀ a b := by
+  have h1 : ∀ a, (μ.bind fun b => τ.bind fun t => μ.bind fun x₀ => F t x₀ a b) =
+      τ.bind fun t => μ.bind fun x₀ => μ.bind fun b => F t x₀ a b := by
+    intro a
+    rw [PMF.bind_comm μ τ]
+    congr 1; funext t
+    exact PMF.bind_comm _ _ _
+  simp only [h1]
+  rw [PMF.bind_comm μ τ]
+  congr 1; funext t
+  rw [PMF.bind_comm μ μ]
+
+/-- Reordering of the draws of the ideal games. -/
+theorem bind_reorder_ideal {β : Type} (τ : PMF ℕ) (F : ℕ → CG.Exp → CG.Exp → CG.Exp → G → PMF β) :
+    (τ.bind fun t => (PMF.uniformFintype CG.Exp).bind fun x₀ =>
+      (PMF.uniformFintype CG.Exp).bind fun a => (PMF.uniformFintype CG.Exp).bind fun b =>
+        (PMF.uniformFintype G).bind fun u => F t x₀ a b u) =
+      (PMF.uniformFintype CG.Exp).bind fun a => (PMF.uniformFintype CG.Exp).bind fun b =>
+        (PMF.uniformFintype CG.Exp).bind fun c => τ.bind fun t =>
+          (PMF.uniformFintype CG.Exp).bind fun x₀ => F t x₀ a b (CG.pow c) := by
+  have h : ∀ a b, ((PMF.uniformFintype CG.Exp).bind fun c => τ.bind fun t =>
+      (PMF.uniformFintype CG.Exp).bind fun x₀ => F t x₀ a b (CG.pow c)) =
+      τ.bind fun t => (PMF.uniformFintype CG.Exp).bind fun x₀ =>
+        (PMF.uniformFintype G).bind fun u => F t x₀ a b u := by
+    intro a b
+    rw [PMF.bind_comm (PMF.uniformFintype CG.Exp) τ]
+    congr 1; funext t
+    rw [PMF.bind_comm (PMF.uniformFintype CG.Exp) (PMF.uniformFintype CG.Exp)]
+    congr 1; funext x₀
+    exact bind_uniform_pow _
+  simp only [h]
+  exact (bind_reorder _ _ _).symm
+
+/-- **CKA security of `dhCKA` with state corruption and randomness leakage.** For every
+adversary `A`, the corruption advantage of `dhCKA` with forward-secrecy delay `2` and
+post-compromise delay `2` equals the DDH advantage of the reduction `ckaCorruptDDHRed A`. -/
+theorem dhCKA_corrupt_advantage_eq_ddh (A : CKACorruptAdv (G × CG.Exp) G G CG.Exp Bool) :
+    CKA_Corrupt_Advantage (dhCKA G) 2 2 A = DDH_Advantage G (ckaCorruptDDHRed A) := by
+  unfold CKA_Corrupt_Advantage DDH_Advantage AdvantageA cka_corrupt_real cka_corrupt_ideal
+  rw [dhCKA_game_eq, dhCKA_game_eq, DDH_real_eq_liftPMF, DDH_ideal_eq_liftPMF]
+  simp only [dhCKAGamePMF_eager]
+  simp only [dhCKA_eager_eq_sim]
+  unfold ckaCorruptDDHRed
+  simp only [liftPMF_bind_liftPMF, PMF.bind_bind, PMF.pure_bind,
+    ckaCorruptDDHTreeOf_run, pow_dhX0, dhDraw_bind, PMF.bind_const, Bool.false_eq_true, if_false,
+    if_true]
+  congr 2
+  · exact (bind_reorder _ _ _).symm
+  · exact bind_reorder_ideal _ _
+
+end DHProof
+
 end CatCrypt.Crypto.Messaging
