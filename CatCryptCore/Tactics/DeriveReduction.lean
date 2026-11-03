@@ -269,6 +269,11 @@ costed states, as `OracleAdv.Timed.simulateHat` does for oracle trees.
   `B.compile_tree`, and run `derive_timed B.tree`; for a structure-valued `B`, define
   `B.f.tree` for each tree and computation field, `B.timed`, and prove `B.erase_timed`; for a
   tree-valued `B`, run `derive_timed B`
+* `derive_reduction (suffix := s) B` — the same with the costed forms and erasure theorems
+  named by `s` in place of `timed` (`B.tree.s`, `B.tree.erase_s`, `B.s`, `B.erase_s`), as
+  `derive_timed (suffix := s)` names them; the trees `B.tree`, `B.f.tree`, `B.f.treeHat`, their
+  hoisted matches and compile theorems that exist are reused, so that a costed form priced
+  under `derive_timed.priceProps` sits beside the one of `derive_reduction B`
 * `derive_erases_hat S` — define `S.Timed.ErasesHat`
 
 ## Main results
@@ -396,6 +401,11 @@ open Lean Elab Meta Term Command
 /-- Fail with the reason a derivation does not go through. -/
 def fail {γ : Type} (what : MessageData) : MetaM γ :=
   throwError m!"derive_reduction: {what}"
+
+/-- The last component `erase_s` of the erasure theorem of a costed form named by the suffix
+`s` (`erase_timed` for `timed`), as `derive_timed (suffix := s)` names it. -/
+def eraseSuffix (s : Name) : Name :=
+  Name.mkSimple ("erase_" ++ s.toString)
 
 /-- The attempt `x` run with a fresh heartbeat budget: its result, or its error with the state
 before it restored. A runtime exception (a heartbeat timeout, the maximal recursion depth) is an
@@ -1250,20 +1260,25 @@ partial def reifyRecCall (ctx : RCtx) (e : Expr) (c : Name) (args : Array Expr) 
       if zs.any (k.containsFVar ·.fvarId!) then
         fail m!"internal: a primitive of `{c}` depends on another primitive"
     return (dKeys, cKeys)
+  -- A computation argument of `c` that is a binder of the reduction or a field of one is a
+  -- primitive; any other (a field of a structure the reduction builds, `(S k).step`) is part of
+  -- the reduction, and is passed to `c.tree` as its own tree `fun ys => tree (k ys)`.
+  let isPrim (k : Expr) : MetaM Bool := do
+    match k.getAppFn with
+    | .fvar id => return ctx.top.contains id
+    | _ => return (← fieldKey? ctx.top k).isSome
   match ctx.found? with
   | some r =>
     for a in args' ++ dKeys do discard <| abstractData ctx a
     for (k, ar) in cKeys do
-      let isPrim := match k.getAppFn with
-        | .fvar id => ctx.top.contains id
-        | _ => true
-      unless isPrim && (k.getAppFn.isFVar || (← fieldKey? ctx.top k).isSome) do
-        fail m!"the computation `{k}` of the recursive computation `{c}` is not a field of a \
-          binder of the reduction"
-      recordPrim r { key := k, arity := ar, data := false }
+      if ← isPrim k then
+        recordPrim r { key := k, arity := ar, data := false }
+      else
+        discard <| reifyAdvArg ctx k ar
     return mkApp (mkConst ``CatCrypt.Core.SPTree.fail) α
   | none =>
     let cArgs ← cKeys.mapM fun (k, ar) => do
+      unless ← isPrim k do return ← reifyAdvArg ctx k ar
       let some p ← findPrim? ctx.prims k ar false
         | fail m!"internal: the computation `{k}` of `{c}` has no binder"
       return p.fv
@@ -1585,6 +1600,17 @@ partial def proveRecLeaf (hs : Array (Expr × Expr)) (g : MVarId) (c : Name) (α
               m.mvarId!.assign d.toExpr
               found := true
               break
+          -- The hypothesis of a computation argument passed as its own tree (`reifyRecCall`):
+          -- proved as the compile equation of that tree.
+          if !found && !mty.hasExprMVar then
+            let n ← forallTelescope mty fun ys _ => pure ys.size
+            let h ← mkFreshExprSyntheticOpaqueMVar mty
+            let (_, g') ← h.mvarId!.introNP n
+            prove hs g'
+            let h ← instantiateMVars h
+            unless h.hasSorry || h.hasExprMVar do
+              m.mvarId!.assign h
+              found := true
           unless found do
             fail m!"the hypothesis{indentExpr mty}\nof `{c ++ `compile_tree}` is not among \
               the hypotheses of the reduction"
@@ -1909,14 +1935,14 @@ its tree-valued binder, `kept` those the trees take, and `ps` the primitives. -/
 partial def assembleStruct (c : Name) (levels : List Level) (levelParams : List Name) (S : Name)
     (lvlsS : List Level) (qs : Array Expr) (mirrorFields : Array Name) (fields : Array SField)
     (xs bsOrig : Array Expr) (advs : Array Adv)
-    (kept : Array Expr) (ps : Array Prim) : TermElabM Unit := do
+    (kept : Array Expr) (ps : Array Prim) (suffix : Name := `timed) : TermElabM Unit := do
   let env ← getEnv
   let timedS := S ++ `Timed
   let dps := ps.filter (·.data)
   let pps := ps.filter fun p => !p.data
   let cps := pps.filter fun p => !p.tree
   let tBs := kept ++ dps.map (·.fv) ++ pps.map (·.fv)
-  CatCrypt.Tactics.DeriveTimed.withBinders {} tBs fun tctx bs _ => do
+  CatCrypt.Tactics.DeriveTimed.withBinders { suffix } tBs fun tctx bs _ => do
   let costed (fv : Expr) : TermElabM Expr := do
     let some info := tctx.locals.get? fv.fvarId! | fail m!"internal: `{fv}` has no costed form"
     return info.value
@@ -1926,7 +1952,7 @@ partial def assembleStruct (c : Name) (levels : List Level) (levelParams : List 
   let mut fieldPaths : Array (Name × Array Expr) := #[]
   for fd in fields do
     unless fd.kind matches .tree _ | .comp _ do continue
-    let fpName := c ++ fd.name ++ `tree ++ `timed ++ `fieldPaths
+    let fpName := c ++ fd.name ++ `tree ++ suffix ++ `fieldPaths
     unless env.contains fpName do continue
     let some fp ← unfoldDefinition? (mkAppN (Lean.mkConst fpName levels) (tBs ++ fd.ys))
       | fail m!"internal: `{fpName}` does not unfold"
@@ -1976,7 +2002,7 @@ partial def assembleStruct (c : Name) (levels : List Level) (levelParams : List 
             does not take"
       mvals := mvals.push v
     | _ =>
-      let tc := Lean.mkConst (c ++ fd.name ++ `tree ++ `timed) levels
+      let tc := Lean.mkConst (c ++ fd.name ++ `tree ++ suffix) levels
       let ar ← forallTelescope (← inferType tc) fun zs _ => pure zs.size
       let fcs := compsOf fd.name
       let yArgs ← plainFieldArgs fd.ys
@@ -1990,7 +2016,8 @@ partial def assembleStruct (c : Name) (levels : List Level) (levelParams : List 
         mvals := mvals.push (← mkLambdaFVars fd.ys (← mkAppM ``Prod.fst #[call]))
   let mirrorCtor := (getStructureCtor env timedS).name
   let resT := mkAppN (mkConst timedS lvlsS) qs
-  let timedName := c ++ `timed
+  let timedName := c ++ suffix
+  let eraseName := c ++ eraseSuffix suffix
   CatCrypt.Tactics.DeriveTimed.addTimedDef timedName levelParams
     (← mkForallFVars (bs ++ comps) resT)
     (← mkLambdaFVars (bs ++ comps) (mkAppN (mkConst mirrorCtor lvlsS) (qs ++ mvals)))
@@ -2032,7 +2059,7 @@ partial def assembleStruct (c : Name) (levels : List Level) (levelParams : List 
     let some (some W) := mkArgs[j]? | fail m!"internal: the erased field `{fd.name}`"
     let treeName := c ++ fd.name ++ `tree
     let rhsY := mkAppN (← mkProjection rhsA fd.name) fd.ys
-    let h1 := mkAppN (mkConst (treeName ++ `erase_timed) levels)
+    let h1 := mkAppN (mkConst (treeName ++ eraseSuffix suffix) levels)
       (bsInst ++ (← plainFieldArgs fd.ys) ++ compsOf fd.name)
     let pf ← match fd.kind with
       | .comp _ =>
@@ -2075,12 +2102,12 @@ partial def assembleStruct (c : Name) (levels : List Level) (levelParams : List 
   g.refl
   let pf ← instantiateMVars mv
   if pf.hasSorry || pf.hasExprMVar then
-    fail m!"the erasure theorem `{c ++ `erase_timed}` is not proved"
+    fail m!"the erasure theorem `{eraseName}` is not proved"
   let newBs := bs.filter fun b => !tBs.contains b
   let eBs := xs.filter (fun x => (advs.find? (·.orig == x.fvarId!)).isNone) ++ newBs ++ comps ++
     hs
   addDecl (Declaration.thmDecl
-    { name := c ++ `erase_timed, levelParams,
+    { name := eraseName, levelParams,
       type := ← mkForallFVars eBs goalTy, value := ← mkLambdaFVars eBs pf })
 
 /-- Close the goal `g` by `rfl`, or else by rewriting with `Sum.map id id = id`. -/
@@ -2136,7 +2163,7 @@ arguments are those of `assembleStruct`. -/
 partial def assembleStructHat (c : Name) (levels : List Level) (levelParams : List Name)
     (S : Name) (lvlsS : List Level) (qs : Array Expr) (mirrorFields : Array Name)
     (fields : Array SField) (xs bsOrig : Array Expr) (advs : Array Adv)
-    (kept : Array Expr) (ps : Array Prim) : TermElabM Unit := do
+    (kept : Array Expr) (ps : Array Prim) (suffix : Name := `timed) : TermElabM Unit := do
   let env ← getEnv
   let timedS := S ++ `Timed
   let ehName := timedS ++ `ErasesHat
@@ -2169,7 +2196,7 @@ partial def assembleStructHat (c : Name) (levels : List Level) (levelParams : Li
   let pps := ps.filter fun p => !p.data
   let cps := pps.filter fun p => !p.tree
   let tBs := kept ++ dps.map (·.fv) ++ pps.map (·.fv)
-  CatCrypt.Tactics.DeriveTimed.withBinders {} tBs fun tctx bs _ => do
+  CatCrypt.Tactics.DeriveTimed.withBinders { suffix } tBs fun tctx bs _ => do
   let costed (fv : Expr) : TermElabM Expr := do
     let some info := tctx.locals.get? fv.fvarId! | fail m!"internal: `{fv}` has no costed form"
     return info.value
@@ -2179,7 +2206,7 @@ partial def assembleStructHat (c : Name) (levels : List Level) (levelParams : Li
   let mut fieldPaths : Array (Name × Array Expr) := #[]
   for fd in fields do
     unless fd.kind matches .comp _ do continue
-    let fpName := hatName fd ++ `timed ++ `fieldPaths
+    let fpName := hatName fd ++ suffix ++ `fieldPaths
     unless env.contains fpName do continue
     let paths ← withFlatBinders fd.ys fun ys' _ => do
       let some fp ← unfoldDefinition? (mkAppN (Lean.mkConst fpName levels) (tBs ++ ys'))
@@ -2238,7 +2265,7 @@ partial def assembleStructHat (c : Name) (levels : List Level) (levelParams : Li
       mvals := mvals.push v
       mty := b.instantiate1 v
     | _ =>
-      let tc := Lean.mkConst (hatName fd ++ `timed) levels
+      let tc := Lean.mkConst (hatName fd ++ suffix) levels
       let fcs := compsOf fd.name
       let tcT ← instantiateForall (← inferType tc) bs
       let (fv, cv) ← withHatFieldBinders fd.ys tcT fun yh args => do
@@ -2256,7 +2283,8 @@ partial def assembleStructHat (c : Name) (levels : List Level) (levelParams : Li
         mvals := mvals.push cv
         mty := b'.instantiate1 cv
   let resT := mkAppN (mkConst timedS lvlsS) qsHat
-  let timedName := c ++ `timed
+  let timedName := c ++ suffix
+  let eraseName := c ++ eraseSuffix suffix
   CatCrypt.Tactics.DeriveTimed.addTimedDef timedName levelParams
     (← mkForallFVars (bs ++ comps) resT)
     (← mkLambdaFVars (bs ++ comps) (mkAppN (mkConst mirrorCtor lvlsS) (qsHat ++ mvals)))
@@ -2316,7 +2344,7 @@ partial def assembleStructHat (c : Name) (levels : List Level) (levelParams : Li
         let ε' := Expr.lam yn yt kb.appArg! ybi
         let some β ← spCompArg? fd.ty | fail m!"internal: `{fd.name}`"
         let yArgs ← hatFieldArgs fd.ys yh
-        let call := mkAppN (Lean.mkConst (hatName fd ++ `timed) levels)
+        let call := mkAppN (Lean.mkConst (hatName fd ++ suffix) levels)
           (bsInst ++ yArgs ++ compsOf fd.name)
         let X ← mkAppM ``Prod.snd #[call]
         let α := (← whnfR (← inferType X)).appArg!
@@ -2325,7 +2353,7 @@ partial def assembleStructHat (c : Name) (levels : List Level) (levelParams : Li
         let hεM ← mkFreshExprSyntheticOpaqueMVar hεT
         closeEpsGoal hεM.mvarId!
         let hε ← instantiateMVars hεM
-        let h1 := mkAppN (Lean.mkConst (hatName fd ++ `erase_timed) levels)
+        let h1 := mkAppN (Lean.mkConst (hatName fd ++ eraseSuffix suffix) levels)
           (bsInst ++ yArgs ++ compsOf fd.name)
         let some (_, _, t) := (← inferType h1).eq? | fail m!"internal: `{hatName fd}`"
         let εy ← (fd.ys.zip yh).mapM fun (y, z) => do
@@ -2348,12 +2376,12 @@ partial def assembleStructHat (c : Name) (levels : List Level) (levelParams : Li
         (mkAndN (conjs.extract (i + 1) conjs.size).toList) proofs[i]! pf
   pf ← mkExpectedTypeHint pf goalTy
   if pf.hasSorry || pf.hasExprMVar then
-    fail m!"the erasure theorem `{c ++ `erase_timed}` is not proved"
+    fail m!"the erasure theorem `{eraseName}` is not proved"
   let newBs := bs.filter fun b => !tBs.contains b
   let eBs := xs.filter (fun x => (advs.find? (·.orig == x.fvarId!)).isNone) ++ newBs ++ comps ++
     hs
   addDecl (Declaration.thmDecl
-    { name := c ++ `erase_timed, levelParams,
+    { name := eraseName, levelParams,
       type := ← mkForallFVars eBs goalTy, value := ← mkLambdaFVars eBs pf })
 
 /-- Derive the costed form of the reduction `c` with the value `value`, whose result is a
@@ -2363,8 +2391,8 @@ structure `S qs` with a costed mirror `S.Timed`: for each computation field `f` 
 `c.erase_timed : … → S.Timed.Erases (c.timed …) (c …)`. -/
 partial def deriveStructReduction (c : Name) (advNames : Array Name) (unfold : Bool)
     (value : Expr) (levelParams : List Name)
-    (deriveRec : Name → NameSet → TermElabM Unit := fun _ _ => pure ()) :
-    TermElabM Unit := do
+    (deriveRec : Name → NameSet → TermElabM Unit := fun _ _ => pure ())
+    (suffix : Name := `timed) : TermElabM Unit := do
   let levels := levelParams.map mkLevelParam
   lambdaTelescope value fun xs b => do
     let env ← getEnv
@@ -2449,9 +2477,13 @@ partial def deriveStructReduction (c : Name) (advNames : Array Name) (unfold : B
         withPrims found 0 used #[] fun ps => do
         -- Second pass: the tree of each field over the binders of the primitives.
         let mut trees : Array (Option Expr) := #[]
+        -- The trees of a derivation under another suffix exist and are reused: the trees
+        -- reflected now keep their matches, and serve only to find the binders they take.
+        let reuse ← fields.anyM fun fd => return (← getEnv).contains (c ++ fd.name ++ `tree)
         for fd in fields do
           let ctx : RCtx :=
-            { advs, base := c ++ fd.name ++ `tree, top, prims := ps, unfold, deriveRec }
+            { advs, base := c ++ fd.name ++ `tree, top, prims := ps, unfold, deriveRec,
+              hoist := !reuse }
           match fd.kind with
           | .comp _ => trees := trees.push (some (← abstractData ctx
               (← instantiateMVars (← reify ctx fd.body))))
@@ -2506,11 +2538,17 @@ partial def deriveStructReduction (c : Name) (advNames : Array Name) (unfold : B
         for fd in fields, t in trees do
           let some t := t | continue
           let treeName := c ++ fd.name ++ `tree
-          let ft ← inferType t
-          CatCrypt.Tactics.DeriveTimed.addTimedDef treeName levelParams
-            (← mkForallFVars (tBs ++ fd.ys) ft)
-            (← mkLambdaFVars (tBs ++ fd.ys) t)
-          if fd.kind matches .comp _ then
+          -- An existing tree (a derivation under another suffix) is reused when it takes the
+          -- binders of the tree reflected now.
+          if let some ci := (← getEnv).find? treeName then
+            let n ← forallTelescope ci.type fun zs _ => pure zs.size
+            unless n == tBs.size + fd.ys.size do
+              fail m!"`{treeName}` exists and takes {n} arguments, and the tree of the field \
+                `{fd.name}` takes {tBs.size + fd.ys.size}"
+          else
+            CatCrypt.Tactics.DeriveTimed.addTimedDef treeName levelParams
+              (← mkForallFVars (tBs ++ fd.ys) (← inferType t)) (← mkLambdaFVars (tBs ++ fd.ys) t)
+          if fd.kind matches .comp _ && !(← getEnv).contains (c ++ fd.name ++ `compile_tree) then
             let some α ← spCompArg? fd.ty | fail m!"internal: `{fd.name}`"
             let rhs := mkAppN (← mkProjection rhsC fd.name) fd.ys
             let tI := (t.replaceFVars dFvs (dps.map (·.key))).replaceFVars tFvs tKeys
@@ -2543,8 +2581,9 @@ partial def deriveStructReduction (c : Name) (advNames : Array Name) (unfold : B
         let plainPath : TermElabM Unit := do
           for fd in fields, t in trees do
             let some _ := t | continue
-            CatCrypt.Tactics.DeriveTimed.deriveTimed {} (c ++ fd.name ++ `tree)
+            CatCrypt.Tactics.DeriveTimed.deriveTimed { suffix } (c ++ fd.name ++ `tree)
           assembleStruct c levels levelParams S lvlsS qs mirrorFields fields xs bs advs kept ps
+            suffix
         -- A computation field whose binders hold functions: the costed state, through the
         -- tree `c.f.treeHat` over flat binders, when the structure has the erasure relation
         -- `S.Timed.ErasesHat` (`derive_erases_hat`) and the plain interface fails; a reduction
@@ -2563,15 +2602,17 @@ partial def deriveStructReduction (c : Name) (advNames : Array Name) (unfold : B
             -- `CatCryptCore.Tactics.DeriveTimed`), so `c.f.treeHat.timed` takes the costed
             -- values of its flat binders.
             let hatName := c ++ fd.name ++ `treeHat
-            withFlatBinders fd.ys fun ys' us => do
-              let tH ← reduceProjCtor (t.replaceFVars fd.ys us)
-              CatCrypt.Tactics.DeriveTimed.addTimedDef hatName levelParams
-                (← mkForallFVars (tBs ++ ys') (← inferType tH))
-                (← mkLambdaFVars (tBs ++ ys') tH)
-            CatCrypt.Tactics.DeriveTimed.deriveTimed {} hatName
+            unless (← getEnv).contains hatName do
+              withFlatBinders fd.ys fun ys' us => do
+                let tH ← reduceProjCtor (t.replaceFVars fd.ys us)
+                CatCrypt.Tactics.DeriveTimed.addTimedDef hatName levelParams
+                  (← mkForallFVars (tBs ++ ys') (← inferType tH))
+                  (← mkLambdaFVars (tBs ++ ys') tH)
+            CatCrypt.Tactics.DeriveTimed.deriveTimed { suffix } hatName
           else
-            CatCrypt.Tactics.DeriveTimed.deriveTimed {} (c ++ fd.name ++ `tree)
+            CatCrypt.Tactics.DeriveTimed.deriveTimed { suffix } (c ++ fd.name ++ `tree)
          assembleStructHat c levels levelParams S lvlsS qs mirrorFields fields xs bs advs kept ps
+           suffix
         if hatCapable && (← getEnv).contains (S ++ `Timed ++ `ErasesHat) then
           -- Each interface is an attempt (`attempt`): a runtime exception of the plain
           -- interface leads to the costed state, and the error names both failures.
@@ -2723,16 +2764,22 @@ def recursiveTree (c : Name) (levels : List Level) (levelParams : List Name)
 /-- Define `c.tree`, prove `c.compile_tree`, and run `derive_timed c.tree`. The adversaries
 are the binders named in `advNames`, or every binder whose type ends in `SPComp` when it is
 empty; `unfold` is the unfolding of data definitions of `RCtx`; `typeDefs` reads the types of the
-value through their definitions (`unfoldTypeDefs`). -/
+value through their definitions (`unfoldTypeDefs`). The costed forms are named by `suffix`
+(`c.tree.suffix`, `c.suffix`); when `c.tree` and `c.compile_tree` exist, only the costed form
+`c.tree.suffix` is derived. -/
 partial def deriveReduction (c : Name) (advNames : Array Name) (unfold : Bool := false)
-    (visiting : NameSet := {}) (typeDefs : Bool := false) : TermElabM Unit := do
+    (visiting : NameSet := {}) (typeDefs : Bool := false) (suffix : Name := `timed) :
+    TermElabM Unit := do
   let env ← getEnv
   let some info := env.find? c | fail m!"unknown constant `{c}`"
   let .defnInfo d := info | fail m!"`{c}` is not a definition"
   let recursive := isRecursive env c
   let treeName := c ++ `tree
   let thmName := c ++ `compile_tree
-  if env.contains treeName then fail m!"`{treeName}` already exists"
+  if env.contains treeName then
+    if env.contains (treeName ++ suffix) then fail m!"`{treeName ++ suffix}` already exists"
+    unless env.contains thmName do fail m!"`{treeName}` exists without `{thmName}`"
+    return ← CatCrypt.Tactics.DeriveTimed.deriveTimed { suffix } treeName
   let levels := info.levelParams.map mkLevelParam
   -- The body: the value of the definition, or for a recursive definition the body of its
   -- equations, in which the recursive calls are calls of `c`.
@@ -2755,19 +2802,19 @@ partial def deriveReduction (c : Name) (advNames : Array Name) (unfold : Bool :=
           fail m!"the carrier `{x}` is in a universe other than `Type`; computation trees \
             `SPTree` are over `Type`: derive the reduction at carriers in `Type`"
   let deriveRec : Name → NameSet → TermElabM Unit := fun g vis =>
-    deriveReduction g #[] (visiting := vis) (typeDefs := typeDefs)
+    deriveReduction g #[] (visiting := vis) (typeDefs := typeDefs) (suffix := suffix)
   -- A tree-valued reduction (`PK → OracleAdv D R α`): the reduction is a tree of a registered
   -- kind after its binders, with the leading binders of its result among them, and its costed
   -- form is that of `derive_timed`.
   if ← lambdaTelescope value fun _ b => do
       return (← CatCrypt.Tactics.DeriveTimed.treeTy? (← inferType b)).isSome then
-    if env.contains (c ++ `timed) then fail m!"`{c ++ `timed}` already exists"
-    return ← CatCrypt.Tactics.DeriveTimed.deriveTimed {} c
+    if env.contains (c ++ suffix) then fail m!"`{c ++ suffix}` already exists"
+    return ← CatCrypt.Tactics.DeriveTimed.deriveTimed { suffix } c
   -- A structure-valued reduction: field by field.
   if ← lambdaTelescope value fun _ b => do return (← spCompArg? (← inferType b)).isNone then
     if recursive then fail m!"`{c}` is recursive and its result is not a computation"
-    if env.contains (c ++ `timed) then fail m!"`{c ++ `timed}` already exists"
-    return ← deriveStructReduction c advNames unfold value info.levelParams deriveRec
+    if env.contains (c ++ suffix) then fail m!"`{c ++ suffix}` already exists"
+    return ← deriveStructReduction c advNames unfold value info.levelParams deriveRec suffix
   let (tType, tValue, eType, eValue) ← lambdaTelescope value fun xs b => do
     let some α ← spCompArg? (← inferType b)
       | fail m!"the result of `{c}` is not a computation `SPComp α`"
@@ -2884,13 +2931,15 @@ partial def deriveReduction (c : Name) (advNames : Array Name) (unfold : Bool :=
     CatCrypt.Tactics.DeriveTimed.addTimedDef treeName info.levelParams tType tValue
   addDecl (Declaration.thmDecl
     { name := thmName, levelParams := info.levelParams, type := eType, value := eValue })
-  CatCrypt.Tactics.DeriveTimed.deriveTimed {} treeName
+  CatCrypt.Tactics.DeriveTimed.deriveTimed { suffix } treeName
 
 /-- `derive_reduction B` defines the computation tree `B.tree` of the reduction `B`, proves
 `B.compile_tree`, and runs `derive_timed B.tree`; `derive_reduction B (adv := A₁ … Aₖ)` takes
-the adversaries to be the binders `A₁ … Aₖ`. -/
-syntax (name := deriveReductionCmd) "derive_reduction " ident
-  (" (" &"adv" " := " ident+ ")")? : command
+the adversaries to be the binders `A₁ … Aₖ`; `derive_reduction (suffix := s) B` names the costed
+forms and erasure theorems by `s` in place of `timed`, as `derive_timed (suffix := s)` does, and
+reuses the trees of `B` that exist. -/
+syntax (name := deriveReductionCmd) "derive_reduction " ("(" &"suffix" " := " ident ") ")?
+  ident (" (" &"adv" " := " ident+ ")")? : command
 
 /-- `derive_erases_hat S` defines `S.Timed.ErasesHat`, the erasure relation of the costed mirror
 of `S` at costed types of its type parameters, through erasure maps. -/
@@ -2904,22 +2953,25 @@ def elabDeriveErasesHat : CommandElab := fun stx => do
 
 @[command_elab deriveReductionCmd]
 def elabDeriveReduction : CommandElab := fun stx => do
+  -- The optional group `(suffix := s)` is a node of five children when present.
+  let suffix := if stx[1].getNumArgs == 5 then stx[1][3].getId else `timed
   let advs : Array Name :=
-    if stx[2].getNumArgs > 3 then stx[2][3].getArgs.map (·.getId) else #[]
+    if stx[3].getNumArgs > 3 then stx[3][3].getArgs.map (·.getId) else #[]
   liftTermElabM do
-    let c ← realizeGlobalConstNoOverloadWithInfo stx[1]
+    let c ← realizeGlobalConstNoOverloadWithInfo stx[2]
     -- The first attempt, then the attempt that unfolds the data definitions applied to a
     -- structure binder (`attempt`), then the two attempts with the types of the value read
     -- through their definitions (`unfoldTypeDefs`); the error names the failures of the first
     -- two, or the one failure when they fail with the same message.
-    match ← attempt (deriveReduction c advs) with
+    match ← attempt (deriveReduction c advs (suffix := suffix)) with
     | .ok () => pure ()
     | .error e₁ =>
-      match ← attempt (deriveReduction c advs (unfold := true)) with
+      match ← attempt (deriveReduction c advs (unfold := true) (suffix := suffix)) with
       | .ok () => pure ()
       | .error e₂ =>
         for u in [false, true] do
-          if let .ok () ← attempt (deriveReduction c advs (unfold := u) (typeDefs := true)) then
+          if let .ok () ← attempt
+              (deriveReduction c advs (unfold := u) (typeDefs := true) (suffix := suffix)) then
             return
         if (← e₁.toMessageData.toString) == (← e₂.toMessageData.toString) then throw e₁
         throwError "derive_reduction: the first attempt fails:{indentD e₁.toMessageData}\n\

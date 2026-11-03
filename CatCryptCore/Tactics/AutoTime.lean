@@ -982,11 +982,78 @@ def withFstArg (o y : Expr) : Expr :=
   | .proj n i _ => .proj n i y
   | _ => mkApp3 o.getAppFn (o.getArg! 0) (o.getArg! 1) y
 
+/-- The heartbeat budget, in thousands, of the `omega` call that closes a guard premise of a
+bounded atom (`closeGuard`). -/
+def guardHeartbeats : Nat := 2000
+
+/-- `e` with every projection of a constructor application replaced by the field it projects
+(`{ a := x, b := y }.a` by `x`), for projection functions and primitive projections. -/
+def reduceCtorProjs (e : Expr) : MetaM Expr := do
+  let env ← getEnv
+  let field (c : Expr) (i : Nat) : Option Expr := do
+    let some (.ctorInfo ci) := c.getAppFn.constName?.bind env.find? | none
+    unless c.getAppNumArgs == ci.numParams + ci.numFields do none
+    c.getArg? (ci.numParams + i)
+  Meta.transform e (post := fun s => do
+    let r? : Option Expr ← match s with
+      | .proj _ i c => pure (field c i)
+      | _ => do
+        let some f := s.getAppFn.constName? | pure none
+        let some pi ← getProjectionFnInfo? f | pure none
+        unless s.getAppNumArgs == pi.numParams + 1 do return .continue
+        pure (field s.appArg! pi.i)
+    match r? with
+    | some x => return .visit x
+    | none => return .continue)
+
+/-- Close the guard premise `mid` of a bounded atom: by a local hypothesis of its type, or, for
+a guard `a ≤ b` over `ℕ` (`πs.length ≤ n` from `πs.length ≤ cts.length` and `cts.length ≤ n`),
+by `omega` over the local hypotheses, read with the local definitions unfolded and the
+projections of constructor applications reduced (`reduceCtorProjs`), under a budget of
+`guardHeartbeats` heartbeats. -/
+def closeGuard (mid : MVarId) : MetaM Bool := do
+  let mty ← instantiateMVars (← mid.getType)
+  for ld' in (← getLCtx) do
+    if ld'.isImplementationDetail then continue
+    let s2 ← saveState
+    if ← isDefEq mty ld'.type then
+      mid.assign ld'.toExpr
+      return true
+    s2.restore
+  unless (natLe? mty).isSome && !mty.hasExprMVar do return false
+  let s ← saveState
+  let cap (c : Core.Context) : Core.Context :=
+    let m := if c.maxHeartbeats == 0 then guardHeartbeats * 1000
+      else min c.maxHeartbeats (guardHeartbeats * 1000)
+    { c with maxHeartbeats := m }
+  let run : MetaM Bool := do
+    let norm (e : Expr) : MetaM Expr := do
+      reduceCtorProjs (← zetaReduce (← reduceCtorProjs e))
+    let gl ← mkFreshExprMVar (some (← norm mty))
+    let some g' ← gl.mvarId!.falseOrByContra | return false
+    g'.withContext do
+      let mut facts : List Expr := []
+      for h in ← getLocalHyps do
+        let t ← instantiateMVars (← inferType h)
+        unless ← isProp t do continue
+        if t.isForall then continue
+        let t' ← norm t
+        facts := (← if t' == t then pure h else mkExpectedTypeHint h t') :: facts
+      Lean.Elab.Tactic.Omega.omega facts g'
+    mid.assign (← instantiateMVars gl)
+    return true
+  tryCatchRuntimeEx (withCurrHeartbeats <| withTheReader Core.Context cap run) fun e => do
+    if e.isInterrupt then throw e
+    s.restore
+    return false
+
 /-- Bounded atoms: for every subterm `f a` of the target and every local hypothesis
 `∀ x, f x ≤ b`, the instance `f a ≤ b[a/x]` is added to the context. A propositional premise of
 the hypothesis (a guard `∀ x, G x → (A x).time ≤ T` of an adversary bounded only on the values
-a tree returns) is closed at `a` by a local hypothesis, such as a conjunct of the leaf invariant
-that `st_bind_inv` assumes; the instance is added only when every premise closes. -/
+a tree returns) is closed at `a` by `closeGuard`: by a local hypothesis, such as a conjunct of
+the leaf invariant that `st_bind_inv` assumes, or by `omega` over the context (a guard
+`πs.length ≤ n` from the invariants `πs.length ≤ cts.length` and `cts.length ≤ n`); the
+instance is added only when every premise closes. -/
 def addBoundedAtoms (g : MVarId) : MetaM MVarId := g.withContext do
   let tgt ← instantiateMVars (← g.getType)
   let subs := appsOf tgt #[]
@@ -1016,13 +1083,7 @@ def addBoundedAtoms (g : MVarId) : MetaM MVarId := g.withContext do
           if ← mid.isAssigned then continue
           let mty ← instantiateMVars (← mid.getType)
           unless ← isProp mty do continue
-          for ld' in (← getLCtx) do
-            if ld'.isImplementationDetail then continue
-            let s2 ← saveState
-            if ← isDefEq mty ld'.type then
-              mid.assign ld'.toExpr
-              break
-            s2.restore
+          discard <| closeGuard mid
         let pf ← instantiateMVars (mkAppN ld.toExpr ms)
         if pf.hasExprMVar then
           s1.restore
@@ -1094,11 +1155,12 @@ def arithHeartbeats : Nat := 20000
 /-- Close an arithmetic leaf by `omega` (unless `withOmega` is false, for a leaf on which it has
 already failed), then (unless `omegaOnly`) `linarith`, then `nlinarith`, after adding the
 bounded atoms, the invariants of subtype values and the products bounded by length invariants
-(`addProductFacts`). `linarith` and `nlinarith` run under their own budget of `arithHeartbeats`
-heartbeats each, so that a leaf they do not close (a leaf that needs an invariant of
-`st_bind_inv`) fails and the procedure goes on. -/
-def closeArithCore (g : MVarId) (omegaOnly : Bool := false) (withOmega : Bool := true) :
-    TacticM Unit := do
+(`addProductFacts`). `linarith` and `nlinarith` (unless `withNlinarith` is false) run under
+their own budget of `arithHeartbeats` heartbeats each, and `omega` too when `omegaCap` is set,
+so that a leaf they do not close (a leaf that needs an invariant of `st_bind_inv`, or a time
+atom consumed by the rules) fails and the procedure goes on. -/
+def closeArithCore (g : MVarId) (omegaOnly : Bool := false) (withOmega : Bool := true)
+    (omegaCap : Bool := false) (withNlinarith : Bool := true) : TacticM Unit := do
   let g ← addBoundedAtoms g
   let g ← addSubtypeFacts g
   let g ← addProductFacts g
@@ -1106,6 +1168,7 @@ def closeArithCore (g : MVarId) (omegaOnly : Bool := false) (withOmega : Bool :=
   let li ← `(tactic| linarith)
   let nl ← `(tactic| nlinarith)
   let tacs := if omegaOnly then #[om] else if withOmega then #[om, li, nl] else #[li, nl]
+  let tacs := if withNlinarith then tacs else tacs.filter (· != nl)
   let cap (c : Core.Context) : Core.Context :=
     let m := if c.maxHeartbeats == 0 then arithHeartbeats * 1000
       else min c.maxHeartbeats (arithHeartbeats * 1000)
@@ -1119,7 +1182,7 @@ def closeArithCore (g : MVarId) (omegaOnly : Bool := false) (withOmega : Bool :=
     let onErr (e : Exception) : TacticM Bool := do
       if e.isInterrupt then throw e
       return false
-    let ok ← if tac == om then (try run catch _ => pure false)
+    let ok ← if tac == om && !omegaCap then (try run catch _ => pure false)
       else tryCatchRuntimeEx (withCurrHeartbeats <| withTheReader Core.Context cap run) onErr
     if ok then return
     s.restore
@@ -2581,6 +2644,25 @@ partial def closeArith (g : MVarId) (env : Bool) (fuel : Nat) : TacticM Unit := 
   if ← closeBySubst (← addBoundedAtoms gc) then return
   sb.restore
   let s ← saveState
+  -- a leaf with the time of a tree that the rules consume (`timeAtom?`): `omega` and
+  -- `linarith` under their budgets, then the tree consumed; the full sequence below only when
+  -- this fails, so that the failed searches of `omega` and `nlinarith` on a leaf that the
+  -- consumption closes are not paid
+  s0.restore
+  let atom := (← timeAtom? g0).isSome
+  s.restore
+  if atom then
+    try
+      closeArithCore gc (omegaCap := true) (withNlinarith := false)
+      return
+    catch _ =>
+      s0.restore
+      if let some g' ← timeAtom? g0 then
+        try
+          solve g' env (fuel - 1)
+          return
+        catch _ => pure ()
+      s.restore
   try
     closeArithCore gc (omegaOnly := true)
   catch _ =>
@@ -2609,6 +2691,7 @@ partial def closeArith (g : MVarId) (env : Bool) (fuel : Nat) : TacticM Unit := 
       -- the time of a tree that the rules consume, with the rest of the leaf as its path (on
       -- the leaf before its step costs are reduced, so that `fstSummand` finds them)
       s0.restore
+      if atom then throw e
       let some g' ← timeAtom? g0 | throw e
       solve g' env (fuel - 1)
 

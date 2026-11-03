@@ -99,6 +99,11 @@ relabellings, and the graded bound with the constant `0` of the size for the oth
 * `derive_hybrid_time R` — prove `R.timeBound_timed` for the costed form `R.timed` of a hybrid
   machine (`Hybrid.Timed` or `MultiHybrid.Timed`) from the time theorems of its steps, the trees
   `R.st.tree` or, for a costed form on costed states, `R.st.treeHat`
+* `derive_simulator (suffix := s) S` — the same with the costed forms and theorems named by `s`
+  in place of `timed` (`S.s`, `S.erase_s`, `S.timeBoundGraded_s`), reading those of its
+  multi-call simulators and deriving the missing ones by `derive_reduction (suffix := s)`; a leaf
+  takes a graded or invariant time theorem (`f.timeBoundGraded_s`, `f.timeBoundInv_s`) or step
+  theorems `f.st.tree.timeBound_s`, which `derive_time_bound` does not state
 -/
 
 public section
@@ -109,6 +114,17 @@ open Lean Meta Elab Term Command
 open CatCrypt.Crypto.UCTransparent
 
 meta section
+
+/-- The suffix `s` of the costed forms that `derive_simulator` reads and defines (`c.s`,
+`c.erase_s`, `c.timeBound_s`), the option `derive_simulator.suffix` that
+`derive_simulator (suffix := s)` sets; `timed` by default. -/
+def sfx : CoreM Name :=
+  return (← getOptions).get `derive_simulator.suffix `timed
+
+/-- The name `pre_s` of a theorem about the costed form of suffix `s = sfx` (`erase_timed`,
+`timeBound_timed` at the default suffix). -/
+def sfxName (pre : String) : CoreM Name :=
+  return Name.mkSimple (pre ++ "_" ++ (← sfx).toString)
 
 /-- A bundled simulator read as a term of the constructions of the costed mirror. -/
 inductive Node where
@@ -145,8 +161,8 @@ partial def parse (e : Expr) : MetaM Node := do
     if n == ``Simulator.mono && args.size == 13 then
       return .mono e (← parse args[6]!) args[9]! args[10]! args[11]! args[12]!
     let env ← getEnv
-    if env.contains (n ++ `timed) && env.contains (n ++ `erase_timed) &&
-        env.contains (n ++ `timeBound_timed) then
+    if env.contains (n ++ (← sfx)) && env.contains (n ++ (← sfxName "erase")) &&
+        env.contains (n ++ (← sfxName "timeBound")) then
       return .derived e n
     match ← unfoldDefinition? e with
     | some e' => parse e'
@@ -179,14 +195,14 @@ inductive HView where
 /-- Whether the erasure theorem `f.erase_timed` states `MultiHybrid.Timed.ErasesHat`: the
 costed form of `f` runs on costed states and events. -/
 def isHat (f : Name) : MetaM Bool := do
-  let some ci := (← getEnv).find? (f ++ `erase_timed) | return false
+  let some ci := (← getEnv).find? (f ++ (← sfxName "erase")) | return false
   forallTelescopeReducing ci.type fun _ concl =>
     return concl.getAppFn.isConstOf ``MultiHybrid.Timed.ErasesHat
 
 /-- The steps of the costed form of `f` are the trees `f.st.treeHat` when it runs on costed
 states, `f.st.tree` otherwise. -/
 def treeName (f : Name) : MetaM Name := do
-  if (← getEnv).contains (f ++ `start ++ `treeHat ++ `timed) then return `treeHat
+  if (← getEnv).contains (f ++ `start ++ `treeHat ++ (← sfx)) then return `treeHat
   return `tree
 
 /-- How the multi-call simulator `π` is read. -/
@@ -195,7 +211,7 @@ def hview (π : Expr) : MetaM HView := do
   let .const f _ := π.getAppFn | return .opaque
   if f == ``MultiHybrid.tensor && π.getAppNumArgs == 12 then
     return .tensor π.getAppArgs[10]! π.getAppArgs[11]!
-  if (← getEnv).contains (f ++ `timed) then return .leaf f
+  if (← getEnv).contains (f ++ (← sfx)) then return .leaf f
   let some e ← unfoldDefinition? π
     | throwError "derive_simulator: `{π}` has no costed form and cannot be unfolded"
   let e := e.consumeMData.headBeta
@@ -316,7 +332,7 @@ partial def costHybrid (prims hyps : IO.Ref (Array (MVarId × BinderInfo))) (π 
     if ← isHat f then
       throwError "derive_simulator: the costed form of `{f}` runs on costed states; it is \
         accepted at a leaf `Simulator.ofMultiHybrid`, not inside a tensor"
-    let (_, A, pf) ← instErasure prims hyps (f ++ `erase_timed) π
+    let (_, A, pf) ← instErasure prims hyps (f ++ (← sfxName "erase")) π
     return (A, pf)
 
 /-- The multi-call simulator `π`, unfolded until its head constant `f` has a costed form, when
@@ -326,7 +342,7 @@ protocol is read this way. -/
 partial def hatLeaf? (π : Expr) : MetaM (Option (Name × Expr)) := do
   let π := (← instantiateMVars π).consumeMData.headBeta
   let .const f _ := π.getAppFn | return none
-  if (← getEnv).contains (f ++ `timed) then
+  if (← getEnv).contains (f ++ (← sfx)) then
     return if ← isHat f then some (f, π) else none
   if f == ``MultiHybrid.tensor then return none
   match ← unfoldDefinition? π with
@@ -342,11 +358,11 @@ def timedTy (S : Expr) : MetaM Expr := do
 partial def costNode (prims hyps : IO.Ref (Array (MVarId × BinderInfo))) :
     Node → MetaM (Expr × Expr)
   | .derived S c => do
-    let (_, T, pf) ← instErasure prims hyps (c ++ `erase_timed) S
+    let (_, T, pf) ← instErasure prims hyps (c ++ (← sfxName "erase")) S
     return (T, pf)
   | .leaf S π h => do
     if let some (f, π') ← hatLeaf? π then
-      let (concl, A, pA) ← instErasure prims hyps (f ++ `erase_timed) π'
+      let (concl, A, pA) ← instErasure prims hyps (f ++ (← sfxName "erase")) π'
       let a := concl.getAppArgs
       let (T, _) ← applyConst ``Simulator.Timed.ofMultiHybridHat
         #[a[10]!, a[11]!, a[12]!, a[13]!, a[14]!, A] (← timedTy S)
@@ -428,7 +444,7 @@ def stepsTimeBound (bounds hyps : IO.Ref (Array (MVarId × BinderInfo))) (tb f :
   let mut pfs := #[]
   let mut bs := #[]
   for st in sts do
-    let thm ← mkConstWithFreshMVarLevels (f ++ st ++ tr ++ `timeBound_timed)
+    let thm ← mkConstWithFreshMVarLevels (f ++ st ++ tr ++ (← sfxName "timeBound"))
     let thmTy ← inferType thm
     let (ms, _, concl) ← forallMetaTelescopeReducing thmTy
     unless targs.size + 2 ≤ ms.size do
@@ -494,8 +510,8 @@ partial def timeHybrid (bounds hyps : IO.Ref (Array (MVarId × BinderInfo))) (A 
     stepsTimeBound bounds hyps ``MultiHybrid.Timed.TimeBound f steps A
   catch e =>
     throwError "derive_simulator: the costed form of `{f}` has no time bound independent of the \
-      state. Prove `{f ++ `timeBoundGraded_timed}` (a step after `i` activations costs at most \
-      `a + b * i`) before this command:{indentD e.toMessageData}"
+      state. Prove `{f ++ (← sfxName "timeBoundGraded")}` (a step after `i` activations costs at \
+      most `a + b * i`) before this command:{indentD e.toMessageData}"
 
 /-- A proof of `A.TimeBoundInv Inv a b c` for the costed multi-call simulator `A` on costed
 states, an application of `f.timed`: the theorem `f.timeBoundInv_timed` when it exists; else
@@ -508,12 +524,13 @@ def timeHybridHat (bounds hyps : IO.Ref (Array (MVarId × BinderInfo))) (A : Exp
   let .const ft _ := A.getAppFn | throwError "derive_simulator: `{A}` is not a costed form"
   let f := ft.getPrefix
   let env ← getEnv
-  if env.contains (f ++ `timeBoundInv_timed) then
-    let thm ← mkConstWithFreshMVarLevels (f ++ `timeBoundInv_timed)
+  let inv := f ++ (← sfxName "timeBoundInv")
+  if env.contains inv then
+    let thm ← mkConstWithFreshMVarLevels inv
     let (ms, _, concl) ← forallMetaTelescopeReducing (← inferType thm)
     let concl ← instantiateMVars concl
     unless ← isDefEq (concl.getArg! 5) A do
-      throwError "derive_simulator: `{f ++ `timeBoundInv_timed}` does not bound{indentExpr A}"
+      throwError "derive_simulator: `{inv}` does not bound{indentExpr A}"
     recordOpen bounds hyps .implicit ms
     return ← instantiateMVars (mkAppN thm ms)
   try
@@ -521,8 +538,8 @@ def timeHybridHat (bounds hyps : IO.Ref (Array (MVarId × BinderInfo))) (A : Exp
     mkAppM ``MultiHybrid.Timed.TimeBoundInv.of_timeBound #[pf]
   catch e =>
     throwError "derive_simulator: the costed form of `{f}` runs on costed states and has no time \
-      bound on them. Prove `{f ++ `timeBoundGraded_timed}` (a step after `i` activations costs at \
-      most `a + b * i`) or `{f ++ `timeBoundInv_timed}` (a bound on the states of an invariant) \
+      bound on them. Prove `{f ++ (← sfxName "timeBoundGraded")}` (a step after `i` activations \
+      costs at most `a + b * i`) or `{inv}` (a bound on the states of an invariant) \
       before this command:{indentD e.toMessageData}"
 
 /-- The time-bound predicates of costed machines, with the position of the machine among their
@@ -546,19 +563,20 @@ def refuseAssumedBounds (c : Name) (hyps : Array (MVarId × BinderInfo)) : MetaM
       let .const ft _ := (ty.getArg! i).getAppFn | continue
       let f := ft.getPrefix
       throwError "derive_simulator: the time theorem of `{c}` would assume the time bound of its \
-        own costed form:{indentExpr ty}\nProve `{f ++ `timeBoundGraded_timed}` or \
-        `{f ++ `timeBoundInv_timed}` before this command, or the bound of the simulator that \
-        contains it."
+        own costed form:{indentExpr ty}\nProve `{f ++ (← sfxName "timeBoundGraded")}` or \
+        `{f ++ (← sfxName "timeBoundInv")}` before this command, or the bound of the simulator \
+        that contains it."
 
 /-- The time-bound proof of the costed simulator `T` of the node. -/
 partial def timeNode (bounds hyps : IO.Ref (Array (MVarId × BinderInfo))) (T : Expr) :
     Node → MetaM Expr
   | .derived _ c => do
-    let thm ← mkConstWithFreshMVarLevels (c ++ `timeBound_timed)
+    let tb := c ++ (← sfxName "timeBound")
+    let thm ← mkConstWithFreshMVarLevels tb
     let (ms, _, concl) ← forallMetaTelescopeReducing (← inferType thm)
     let concl ← instantiateMVars concl
     unless ← isDefEq concl.appFn!.appArg! (← instantiateMVars T) do
-      throwError "derive_simulator: the time theorem `{c ++ `timeBound_timed}` does not \
+      throwError "derive_simulator: the time theorem `{tb}` does not \
         bound{indentExpr T}"
     recordOpen bounds hyps .implicit ms
     instantiateMVars (mkAppN thm ms)
@@ -619,7 +637,7 @@ def gradedThm? (T : Expr) : MetaM (Option Name) := do
   unless T.isAppOf ``Simulator.Timed.ofMultiHybridHat ||
       T.isAppOf ``Simulator.Timed.ofMultiHybrid do return none
   let .const ft _ := T.appArg!.getAppFn | return none
-  let g := ft.getPrefix ++ `timeBoundGraded_timed
+  let g := ft.getPrefix ++ (← sfxName "timeBoundGraded")
   return if (← getEnv).contains g then some g else none
 
 /-- Whether a leaf of the costed simulator `T` of the node has a graded time theorem. -/
@@ -701,7 +719,7 @@ def sizedThm? (T : Expr) : MetaM (Option Name) := do
   unless T.isAppOf ``Simulator.Timed.ofMultiHybridHat ||
       T.isAppOf ``Simulator.Timed.ofMultiHybrid do return none
   let .const ft _ := T.appArg!.getAppFn | return none
-  let g := ft.getPrefix ++ `timeBoundSized_timed
+  let g := ft.getPrefix ++ (← sfxName "timeBoundSized")
   return if (← getEnv).contains g then some g else none
 
 /-- Whether a leaf of the costed simulator `T` of the node has a size-graded time theorem. -/
@@ -839,7 +857,7 @@ def deriveSized (c : Name) (levelParams : List Name) (T Tc : Expr) (timedBs : Ar
     let tty := (← mkForallFVars tBs concl).replace fun e =>
       if e.isAppOfArity ``id 2 then some e.appArg! else none
     addDecl (Declaration.thmDecl
-      { name := c ++ `timeBoundSized_timed, levelParams, type := tty,
+      { name := c ++ (← sfxName "timeBoundSized"), levelParams, type := tty,
         value := ← mkLambdaFVars tBs tpf })
 
 /-- Define `c.timed` and prove `c.erase_timed` and `c.timeBound_timed` for a simulator `c`
@@ -861,7 +879,7 @@ def deriveSimulator (c : Name) : TermElabM Unit := do
     for b in bnds do
       if !(← isProp (← inferType b)) || T.containsFVar b.fvarId! then kept := kept.push b
     let timedBs := kept ++ primFvs
-    let tName := c ++ `timed
+    let tName := c ++ (← sfx)
     CatCrypt.Tactics.DeriveTimed.addTimedDef tName info.levelParams
       (← mkForallFVars timedBs (← inferType T)) (← mkLambdaFVars timedBs T)
     let Tc := mkAppN (mkConst tName lvls) timedBs
@@ -871,7 +889,7 @@ def deriveSimulator (c : Name) : TermElabM Unit := do
       let eBs := bnds ++ primFvs ++ hypFvs
       let ety ← mkForallFVars eBs (← mkAppM ``Simulator.Timed.Erases #[Tc, S])
       let evalue ← mkLambdaFVars eBs epf
-      let eName := c ++ `erase_timed
+      let eName := c ++ (← sfxName "erase")
       addDecl (Declaration.thmDecl
         { name := eName, levelParams := info.levelParams, type := ety, value := evalue })
     let bounds ← IO.mkRef #[]
@@ -888,7 +906,8 @@ def deriveSimulator (c : Name) : TermElabM Unit := do
         let tty ← mkForallFVars tBs (← mkAppM ``Simulator.Timed.TimeBoundGraded
           #[Tc, ← instantiateMVars a, ← instantiateMVars b])
         addDecl (Declaration.thmDecl
-          { name := c ++ `timeBoundGraded_timed, levelParams := info.levelParams, type := tty,
+          { name := c ++ (← sfxName "timeBoundGraded"), levelParams := info.levelParams,
+            type := tty,
             value := ← mkLambdaFVars tBs tpf })
       deriveSized c info.levelParams T Tc timedBs node
       return
@@ -902,7 +921,7 @@ def deriveSimulator (c : Name) : TermElabM Unit := do
       let tBs := timedBs ++ tFvs
       let tty ← mkForallFVars tBs (← mkAppM ``Simulator.Timed.TimeBound #[Tc, B])
       let tvalue ← mkLambdaFVars tBs tpf
-      let bName := c ++ `timeBound_timed
+      let bName := c ++ (← sfxName "timeBound")
       addDecl (Declaration.thmDecl
         { name := bName, levelParams := info.levelParams, type := tty, value := tvalue })
 
@@ -960,8 +979,13 @@ meta def elabDeriveHybridTime : CommandElab := fun stx => do
 
 /-- `derive_simulator S` defines the costed form `S.timed` of a bundled simulator `S` built
 from `Simulator.ofMultiHybrid`, `Simulator.comp`, `Simulator.tensor`, `Simulator.mapPorts` and
-`Simulator.mono`, and proves its erasure theorem `S.erase_timed` and its time theorem `S.timeBound_timed`. -/
-syntax (name := deriveSimulatorCmd) "derive_simulator " ident : command
+`Simulator.mono`, and proves its erasure theorem `S.erase_timed` and its time theorem
+`S.timeBound_timed`. `derive_simulator (suffix := s) S` reads and defines the costed forms named
+by `s` in place of `timed` (`S.s`, `S.erase_s`, `S.timeBound_s`, `f.timeBoundGraded_s`), and
+derives the missing costed forms of its multi-call simulators by
+`derive_reduction (suffix := s)`. -/
+syntax (name := deriveSimulatorCmd) "derive_simulator " ("(" &"suffix" " := " ident ") ")?
+  ident : command
 
 /-- Elaborate `derive_simulator S`: derive the costed forms and step theorems of the costed
 multi-call simulators of `S` that are missing, then the costed form of `S`. The step theorems of
@@ -970,24 +994,32 @@ a leaf are not required when it runs on costed states, whose time comes from
 time theorem `f.timeBoundGraded_timed`. -/
 @[command_elab deriveSimulatorCmd]
 meta def elabDeriveSimulator : CommandElab := fun stx => do
-  let c ← liftTermElabM <| realizeGlobalConstNoOverloadWithInfo stx[1]
+  -- The optional group `(suffix := s)` is a node of five children when present.
+  let s := if stx[1].getNumArgs == 5 then stx[1][3].getId else `timed
+  withScope (fun sc => { sc with opts := sc.opts.set `derive_simulator.suffix s }) do
+  let c ← liftTermElabM <| realizeGlobalConstNoOverloadWithInfo stx[2]
   let heads ← liftTermElabM <| hybridHeads c
+  let erase := Name.mkSimple ("erase_" ++ s.toString)
+  let tb := Name.mkSimple ("timeBound_" ++ s.toString)
+  let graded := Name.mkSimple ("timeBoundGraded_" ++ s.toString)
   for f in heads do
-    unless (← getEnv).contains (f ++ `timed) do
-      elabCommand (← `(command| derive_reduction $(mkCIdent f)))
+    unless (← getEnv).contains (f ++ s) do
+      elabCommand (← `(command| derive_reduction (suffix := $(mkIdent s)) $(mkCIdent f)))
     let hat ← liftTermElabM <| isHat f
-    let graded := (← getEnv).contains (f ++ `timeBoundGraded_timed)
+    let isGraded := (← getEnv).contains (f ++ graded)
     let tr ← liftTermElabM <| treeName f
-    for st in steps do
-      let t := f ++ st ++ tr
-      unless (← getEnv).contains (t ++ `timeBound_timed) || hat || graded do
-        elabCommand (← `(command| derive_time_bound $(mkCIdent t)))
+    -- `derive_time_bound` states the time theorems of the costed forms `timed`.
+    if s == `timed then
+      for st in steps do
+        let t := f ++ st ++ tr
+        unless (← getEnv).contains (t ++ tb) || hat || isGraded do
+          elabCommand (← `(command| derive_time_bound $(mkCIdent t)))
   let env ← getEnv
   let needed ← heads.filterM fun f => return !(← liftTermElabM <| isHat f)
   let needed := needed.flatMap fun f =>
-    #[f ++ `timed, f ++ `erase_timed] ++
-      (if env.contains (f ++ `timeBoundGraded_timed) then #[]
-       else steps.map (f ++ · ++ `tree ++ `timeBound_timed))
+    #[f ++ s, f ++ erase] ++
+      (if env.contains (f ++ graded) then #[]
+       else steps.map (f ++ · ++ `tree ++ tb))
   let missing := needed.filter (!env.contains ·)
   unless missing.isEmpty do
     throwError "derive_simulator: `{c}` needs the declarations {missing.toList}, which are not \
