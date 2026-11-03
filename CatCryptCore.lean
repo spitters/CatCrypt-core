@@ -330,6 +330,7 @@ public import CatCryptCore.Quantum.QRealizesMemReset
 public import CatCryptCore.Quantum.QPullback
 public import CatCryptCore.Quantum.QPullbackCascade
 public import CatCryptCore.Quantum.QPullbackPar
+public import CatCryptCore.Quantum.QPullbackFeedback
 public import CatCryptCore.Quantum.QRealizesStep
 public import CatCryptCore.Quantum.QSimTimed
 public import CatCryptCore.Quantum.QOTPReactive
