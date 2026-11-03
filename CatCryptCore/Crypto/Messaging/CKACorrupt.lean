@@ -1343,6 +1343,158 @@ noncomputable def ckaCorruptDDHTreeOf (pow : E → Gr) (epow : Gr → E → Gr) 
 
 end DHRed
 
+/-! ### The costed reduction -/
+
+derive_timed ckaCorruptDDHTreeOf
+
+/-- The bound of the simulator's cost companions after `i` queries: every state companion is
+at most `1 + 3 i`, every counter companion at most `3 i` (each update of a party's state or
+counter adds one closure layer of cost at most `3`). -/
+def ckaSimCostInv {St Msg : Type} (i : ℕ) (ŝ : ((CKAParty → St) × (CKAParty → ℕ)) ×
+    ((CKAParty → ℕ) × (CKAParty → ℕ)) × Msg) : Prop :=
+  (∀ p, ŝ.1.2 p ≤ 1 + 3 * i) ∧ ∀ p, ŝ.2.1.2 p ≤ 3 * i
+
+/-- The time of the `i`-th simulated query, with exponentiations of costs at most `P` and `X`:
+the closure layers of the state cost linearly in `i`. -/
+def ckaSimQueryTime (P X i : ℕ) : ℕ := 2 * P + X + 21 * i + 50
+
+section DHTime
+
+variable {E Gr : Type} [Fintype E] [Nonempty E] [Fintype Gr] [Nonempty Gr]
+
+/-- **Time of a simulated query.** From a costed state within the bound `ckaSimCostInv i`, the
+costed simulator answers in time at most `ckaSimQueryTime P X i` and returns a costed state
+within the bound `ckaSimCostInv (i + 1)`. -/
+theorem ckaCorruptSimImplOf.timed_bound (pow : E → Gr) (powCost : E → ℕ) (epow : Gr → E → Gr)
+    (epowCost : Gr → E → ℕ) (ΔFS ΔPCS t : ℕ) (ga gb z : Gr) {P X : ℕ}
+    (hP : ∀ x, powCost x ≤ P) (hX : ∀ g x, epowCost g x ≤ X) (i : ℕ)
+    (σ : CKAGameSt (Gr × E) Gr) (q : CKAQuery) (stCost tCost : CKAParty → ℕ)
+    (hS : ∀ p, stCost p ≤ 1 + 3 * i) (hT : ∀ p, tCost p ≤ 3 * i) :
+    OracleAdv.Timed.StepTimeBound
+        (OracleAdv.Timed.delay 1 (ckaCorruptSimImplOf.timed pow powCost epow epowCost ΔFS ΔPCS t
+          ga gb z σ q stCost tCost)) (ckaSimQueryTime P X i) ∧
+      OracleAdv.Timed.AllRet (fun y => ckaSimCostInv (i + 1) y.2)
+        (ckaCorruptSimImplOf.timed pow powCost epow epowCost ΔFS ΔPCS t ga gb z σ q stCost
+          tCost).2 := by
+  refine ⟨?_, ?_⟩
+  · unfold ckaSimQueryTime
+    refine ⟨by simp [OracleAdv.Timed.delay, ckaCorruptSimImplOf.timed], ?_⟩
+    simp only [OracleAdv.Timed.delay, ckaCorruptSimImplOf.timed, Nat.add_zero]
+    refine ⟨by omega, fun x => ⟨Nat.zero_le _, by dsimp only; omega, fun u => ⟨?_, trivial⟩⟩⟩
+    have := hP x
+    cases q with
+    | send p =>
+      have := hS p; have := hS p.other; have := hT p; have := hT .A; have := hT .B
+      have := hX ga (σ.st p.other).2; have := hX (σ.st p).1 x
+      dsimp only
+      split
+      · split <;> omega
+      · omega
+    | recv p =>
+      have := hS p; have := hT p; have := hT p.other
+      dsimp only
+      split <;> omega
+    | chall p =>
+      have := hS p; have := hT p; have := hT .A; have := hT .B
+      dsimp only
+      split <;> omega
+    | corrupt p =>
+      have := hS p; have := hT p; have := hT .A; have := hT .B
+      dsimp only
+      split <;> omega
+    | sendLeak p =>
+      have := hS p; have := hT p; have := hT .A; have := hT .B; have := hX (σ.st p).1 x
+      dsimp only
+      split <;> omega
+  · intro x u
+    have hS' : ∀ p, stCost p ≤ 1 + 3 * (i + 1) := fun p => by have := hS p; omega
+    have hT' : ∀ p, tCost p ≤ 3 * (i + 1) := fun p => by have := hT p; omega
+    have hU : ∀ p : CKAParty, (fun a => 2 + if a = p then 0 else 1 + stCost a) =
+        (fun a => 2 + if a = p then 0 else 1 + stCost a) := fun _ => rfl
+    have hSu : ∀ p a, (2 + if _ : a = p then 0 else 1 + stCost a) ≤ 1 + 3 * (i + 1) :=
+      fun p a => by have := hS a; split <;> omega
+    have hTu : ∀ p a, (2 + if _ : a = p then 0 else 1 + tCost a) ≤ 3 * (i + 1) :=
+      fun p a => by have := hT a; split <;> omega
+    cases q with
+    | send p =>
+      dsimp only [OracleAdv.Timed.AllRet]
+      split
+      · split
+        · exact ⟨hSu p, hTu p⟩
+        · exact ⟨hSu p, hTu p⟩
+      · exact ⟨hS', hT'⟩
+    | recv p =>
+      dsimp only [OracleAdv.Timed.AllRet]
+      split
+      · exact ⟨hSu p, hTu p⟩
+      · exact ⟨hS', hT'⟩
+    | chall p =>
+      dsimp only [OracleAdv.Timed.AllRet]
+      split
+      · exact ⟨hSu p, hTu p⟩
+      · exact ⟨hS', hT'⟩
+    | corrupt p => exact ⟨hS', hT'⟩
+    | sendLeak p =>
+      dsimp only [OracleAdv.Timed.AllRet]
+      split
+      · exact ⟨hSu p, hTu p⟩
+      · exact ⟨hS', hT'⟩
+
+/-- The time of a tree that draws `t` from `τ` and `x₀` from `μ` at the step cost `c t x₀`, and
+then runs a step-prefixed tree `S t x₀` of time at most `B` and returns the first component of
+its output. -/
+theorem timeBound_rand_rand_bind {D R Ŝ : Type} (τ : PMF ℕ) (μ : PMF E) (c : ℕ → E → ℕ)
+    (S : ℕ → E → ℕ × OracleAdv.Timed D R (Bool × Ŝ)) {K B : ℕ} (hc : ∀ t x₀, c t x₀ ≤ K)
+    (hS : ∀ t x₀, OracleAdv.Timed.StepTimeBound (S t x₀) B) :
+    OracleAdv.Timed.StepTimeBound (0, OracleAdv.Timed.rand τ (fun _ => 0) fun t =>
+      OracleAdv.Timed.rand μ (fun x₀ => c t x₀ + (S t x₀).1 +
+        ((S t x₀).2.bind fun r => (0, OracleAdv.Timed.ret r.1)).1)
+        fun x₀ => ((S t x₀).2.bind fun r => (0, OracleAdv.Timed.ret r.1)).2) (K + B + 2) := by
+  refine ⟨Nat.zero_le _, by dsimp only; omega, fun t => ⟨Nat.zero_le _, by dsimp only; omega,
+    fun x₀ => ?_⟩⟩
+  obtain ⟨h1, h2⟩ := hS t x₀
+  obtain ⟨h3, h4⟩ := OracleAdv.Timed.timeBound_bind (n := 0) h2
+    (f := fun r => (0, OracleAdv.Timed.ret r.1)) fun _ => ⟨le_refl _, trivial⟩
+  have := hc t x₀
+  refine ⟨by dsimp only; omega, h4.mono ?_⟩
+  dsimp only; omega
+
+end DHTime
+
+/-- **Time of the DDH reduction.** For an adversary whose costed trees have time at most `T`,
+at most `q` queries and call cost at most `a`, and exponentiations of costs at most `P` (of the
+generator) and `X` (of a group element), the costed reduction tree has time at most
+`T + ∑_{j < q} (2 P + X + 21 j + 50) + a + 4 P + 12`: the adversary, one simulated query per
+query, whose cost grows with the closure layers of the simulator state, and the choice of the
+initial exponent. -/
+theorem ckaCorruptDDHTreeOf.timeBound_timed {E Gr : Type} [Fintype E] [Nonempty E] [Fintype Gr]
+    [Nonempty Gr] (pow : E → Gr) (powCost : E → ℕ) (epow : Gr → E → Gr)
+    (epowCost : Gr → E → ℕ) (ΔFS ΔPCS : ℕ) (tStar : PMF ℕ)
+    (play : ℕ → Gr → OracleAdv.Timed CKAQuery (CKAAns (Gr × E) Gr Gr E) Bool)
+    (playCost : ℕ → Gr → ℕ) (ga gb z : Gr) {T q a P X : ℕ}
+    (hA : ∀ t g, (play t g).TimeBound T) (hq : ∀ t g, (play t g).erase.IsQueryBound q)
+    (ha : ∀ t g, playCost t g ≤ a) (hP : ∀ x, powCost x ≤ P) (hX : ∀ g x, epowCost g x ≤ X) :
+    OracleAdv.Timed.StepTimeBound
+      (ckaCorruptDDHTreeOf.timed pow powCost epow epowCost ΔFS ΔPCS tStar play playCost ga gb z)
+      (T + ∑ j ∈ Finset.range q, ckaSimQueryTime P X j + a + 4 * P + 12) := by
+  unfold ckaCorruptDDHTreeOf.timed
+  refine (timeBound_rand_rand_bind (K := 10 + a + 4 * P)
+    (B := T + ∑ j ∈ Finset.range q, ckaSimQueryTime P X j) _ _ _ _ ?_ ?_).mono (by omega)
+  · intro t x₀
+    have := ha t ga
+    have := ha t (pow x₀)
+    have := hP x₀
+    split <;> omega
+  · intro t x₀
+    refine (OracleAdv.Timed.timeBound_simulateHat_inv _ _ _ ckaSimCostInv
+      (ckaSimQueryTime P X)
+      (fun i ŝ d h => by
+        exact ckaCorruptSimImplOf.timed_bound pow powCost epow epowCost ΔFS ΔPCS t ga gb z
+          hP hX i _ d _ _ h.1 h.2) (hA t (if t = 1 then ga else pow x₀))
+      (hq t (if t = 1 then ga else pow x₀)) 0 _ ?_).mono ?_
+    · exact ⟨fun p => le_refl _, fun p => Nat.zero_le _⟩
+    · simp only [Nat.zero_add, le_refl]
+
 /-- The oracle of a tree without queries. -/
 def emptyOracle (_ : Unit) (d : Empty) : PMF (Unit × Unit) := d.elim
 
