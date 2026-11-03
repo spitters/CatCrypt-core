@@ -70,6 +70,7 @@ public import CatCryptCore.Category.ProtBicat
 public import CatCryptCore.Category.ProtBicatApprox
 public import CatCryptCore.Category.ProtBicatReactive
 public import CatCryptCore.Category.ProtBicatSys
+public import CatCryptCore.Category.ProtBicatPullback
 public import CatCryptCore.Category.ProtBicatReactiveTimed
 public import CatCryptCore.Category.CoParaGradedBridge
 public import CatCryptCore.Category.XCategoricalModel
