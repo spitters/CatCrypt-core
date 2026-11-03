@@ -7,6 +7,7 @@ Authors: CatCrypt Contributors
 module
 
 -- Lemmas for Mathlib (the upstream queue)
+public import CatCryptCore.ForMathlib.LawvereMetric
 public import CatCryptCore.ForMathlib
 public import CatCryptCore.ForMathlib.Order.ScottInduction
 

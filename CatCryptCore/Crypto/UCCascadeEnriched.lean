@@ -7,6 +7,7 @@ module
 
 public import CatCryptCore.Crypto.UCCascade
 public import Mathlib.CategoryTheory.Enriched.Basic
+public import CatCryptCore.ForMathlib.LawvereMetric
 
 /-!
 # Reactive systems as a category enriched in Lawvere metric spaces
@@ -27,9 +28,12 @@ category is the part at distance `0`, the 2-cells of bound `0` (`Cell1.dist_eq_z
 Lawvere's value category is `([0,∞], ≥, +, 0)`: the type `LawvereV`, the order dual of `ℝ≥0∞`
 as a thin category with tensor `+` and unit `0` (`LawvereV.monoidal`). Each `Cell1 E O` is a
 category enriched in `LawvereV` in the sense of `CategoryTheory.EnrichedCategory`
-(`Cell1.enriched`). The enrichment of the category of ports in Lawvere metric spaces is stated
-by the theorems on `Cell1.dist`; Mathlib has no monoidal category of Lawvere metric spaces in
-which to state it as an `EnrichedCategory` instance.
+(`Cell1.enriched`). The category of ports is a category enriched in `LawvereMet`, the symmetric
+monoidal category of Lawvere metric spaces with the `ℓ¹` tensor product
+(`RSysBicat.enrichedLawvereMet`): the hom-object from `E` to `O` is `Cell1 E O` with the distance
+`Cell1.dist`, the identity picks the forwarding system and composition is the cascade. The
+per-hom enrichment `Cell1.enriched` is the change of base of a hom-object along its distance:
+the `LawvereV`-category whose hom-object from `f` to `g` is `ldist f g`.
 
 The distance needs bounds independent of the environment. Under the cascade, a bound that
 depends on the environment is evaluated at the environments reduced through the other component
@@ -40,6 +44,8 @@ depends on the environment is evaluated at the environments reduced through the 
 * `LawvereV`, `LawvereV.monoidal`: the monoidal preorder `([0,∞], ≥, +, 0)`.
 * `Cell1.dist`: the realization distance between classes of lossless systems.
 * `Cell1.enriched`: a hom-type of `RSysBicat` as a `LawvereV`-enriched category.
+* `Cell1.lawvereMetricSpace`: a hom-type of `RSysBicat` as a Lawvere metric space.
+* `RSysBicat.enrichedLawvereMet`: the category of ports enriched in `LawvereMet`.
 
 ## Main results
 
@@ -189,6 +195,35 @@ noncomputable instance enriched (E O : Type) : EnrichedCategory LawvereV (Cell1 
 @[simp] theorem enriched_hom_val (f g : Cell1 E O) :
     (EnrichedCategory.Hom (V := LawvereV) f g).val = dist f g := rfl
 
+/-- A hom-type of `RSysBicat` as a Lawvere metric space under the realization distance. -/
+noncomputable instance lawvereMetricSpace (E O : Type) : LawvereMetricSpace (Cell1 E O) where
+  ldist := dist
+  ldist_self := dist_self
+  ldist_triangle := dist_triangle
+
+/-- Unfolding lemma of `Cell1.lawvereMetricSpace`: its distance is the realization distance. -/
+@[simp] theorem ldist_eq (f g : Cell1 E O) : ldist f g = dist f g := rfl
+
 end Cell1
+
+open Cell1 in
+/-- **The category of ports enriched in Lawvere metric spaces.** The hom-object from `a` to `b`
+is `Cell1 a.P b.P` with the realization distance; the identity is the forwarding system and
+composition is the cascade, non-expansive for the `ℓ¹` distance on pairs (`dist_seq_le`). The
+unit and associativity laws are `Cell1.id_seq`, `Cell1.seq_id` and `Cell1.seq_assoc`. -/
+noncomputable instance RSysBicat.enrichedLawvereMet :
+    EnrichedCategory LawvereMet.{1} RSysBicat where
+  Hom a b := LawvereMet.of (Cell1 a.P b.P)
+  id a := ⟨fun _ => ⟦LSysObj.idL a.P⟧, fun _ _ => (ldist_self _).trans_le zero_le⟩
+  comp _ _ _ := ⟨fun p => p.1.seq p.2, fun p q => dist_seq_le _ _ _ _⟩
+  id_comp _ _ := by
+    ext f
+    exact id_seq f
+  comp_id _ _ := by
+    ext f
+    exact seq_id f
+  assoc _ _ _ _ := by
+    ext p
+    exact seq_assoc p.1 p.2.1 p.2.2
 
 end CatCrypt.Crypto.UCTransparent
