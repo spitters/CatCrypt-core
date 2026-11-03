@@ -398,6 +398,16 @@ namespace CatCrypt.Tactics.DeriveReduction
 
 open Lean Elab Meta Term Command
 
+/-- Whether a structure-valued reduction whose computation fields take data holding functions
+takes the costed state without first attempting the plain interface (option
+`derive_reduction.costedState`). -/
+register_option derive_reduction.costedState : Bool := {
+  defValue := false
+  descr := "derive_reduction gives a structure-valued reduction whose computation fields take \
+    data holding functions the costed state (S.Timed.ErasesHat), in which a stored function \
+    keeps its cost companion, without first attempting the plain interface"
+}
+
 /-- Fail with the reason a derivation does not go through. -/
 def fail {γ : Type} (what : MessageData) : MetaM γ :=
   throwError m!"derive_reduction: {what}"
@@ -2613,7 +2623,10 @@ partial def deriveStructReduction (c : Name) (advNames : Array Name) (unfold : B
             CatCrypt.Tactics.DeriveTimed.deriveTimed { suffix } (c ++ fd.name ++ `tree)
          assembleStructHat c levels levelParams S lvlsS qs mirrorFields fields xs bs advs kept ps
            suffix
-        if hatCapable && (← getEnv).contains (S ++ `Timed ++ `ErasesHat) then
+        if hatCapable && (← getEnv).contains (S ++ `Timed ++ `ErasesHat) &&
+            derive_reduction.costedState.get (← getOptions) then
+          hatPath
+        else if hatCapable && (← getEnv).contains (S ++ `Timed ++ `ErasesHat) then
           -- Each interface is an attempt (`attempt`): a runtime exception of the plain
           -- interface leads to the costed state, and the error names both failures.
           match ← attempt plainPath with

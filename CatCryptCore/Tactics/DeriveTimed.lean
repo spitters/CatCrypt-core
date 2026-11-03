@@ -2895,9 +2895,10 @@ partial def companionOf (ctx : Ctx) (a : Expr) : TermElabM Expr := do
     mkLambdaFVars ys (← costOf ctx (mkAppN a ys).headBeta)
 
 /-- The costed value of a path `e` into a costed value: a local of kind `hat` (its costed
-value), a local function with a cost companion (the costed closure of the two), a projection
-of a path, an application of a costed closure whose result holds functions, or a projection
-path of a binder below a data path (`pathHat?`, which records the data path with `record`). -/
+value), a local function with a cost companion (the costed closure of the two, with the
+functions in its results as tables, `ι`, as at a call of it), a projection of a path, an
+application of a costed closure whose result holds functions, or a projection path of a binder
+below a data path (`pathHat?`, which records the data path with `record`). -/
 partial def hatOf? (ctx : Ctx) (e : Expr) (record : Bool := false) :
     TermElabM (Option Expr) := do
   let e := e.consumeMData
@@ -2907,7 +2908,10 @@ partial def hatOf? (ctx : Ctx) (e : Expr) (record : Bool := false) :
     match ctx.locals.get? id with
     | some { kind := .hat, value, .. } => return some value
     | some { kind := .fn, value, companion? := some c } =>
-      return some (← mkAppM ``Prod.mk #[value, c])
+      let f ← forallTelescope (← whnfR (← inferType value)) fun ys body => do
+        if (← hatTy? body).isNone then return value
+        mkLambdaFVars ys (← iotaE body (mkAppN value ys))
+      return some (← mkAppM ``Prod.mk #[f, c])
     | _ => return none
   | .proj ``Prod i s =>
     let some v ← hatOf? ctx s | return none
