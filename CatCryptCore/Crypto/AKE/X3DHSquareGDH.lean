@@ -56,6 +56,127 @@ theorem cdh_pub (x y : S) : (gapDHDef G).cdh (G.pub x) (G.pub y) = G.pub (x * y)
 
 end GDH
 
+/-! ## Bad flags under a coupling of draws -/
+
+section FlagCoupling
+
+variable {σ σ₁ σ₂ D R α Ω : Type} [Fintype Ω] [Nonempty Ω]
+
+theorem toOuterMeasure_le_one {β : Type} (p : PMF β) (T : Set β) : p.toOuterMeasure T ≤ 1 :=
+  (p.toOuterMeasure.mono (Set.subset_univ T)).trans_eq
+    ((PMF.toOuterMeasure_apply_eq_one_iff _ _).mpr (Set.subset_univ _))
+
+/-- A flagged oracle that is the image of a uniform draw. -/
+theorem flagWhen_uniform_map (f : σ → D → Ω → R × σ) (bad : σ → Prop) [DecidablePred bad]
+    (s : σ) (b : Bool) (d : D) :
+    OracleAdv.flagWhen (fun _ _ x => bad x.2) (fun s d => (PMF.uniformFintype Ω).map (f s d))
+        (s, b) d =
+      (PMF.uniformFintype Ω).map fun r => ((f s d r).1, ((f s d r).2, b || decide (bad (f s d r).2))) := by
+  simp only [OracleAdv.flagWhen, PMF.map_comp]
+  rfl
+
+/-- A run from a set flag keeps it. -/
+theorem run_flag_true_one (O : σ → D → PMF (R × σ)) (bad : σ → D → R × σ → Prop)
+    [∀ s d x, Decidable (bad s d x)] (A : OracleAdv D R α) (s : σ) :
+    (OracleAdv.run (OracleAdv.flagWhen bad O) A (s, true)).toOuterMeasure {y | y.2.2 = true} = 1 := by
+  induction A generalizing s with
+  | ret a =>
+    rw [OracleAdv.run_ret, PMF.toOuterMeasure_apply_eq_one_iff]
+    intro y hy
+    rw [PMF.support_pure, Set.mem_singleton_iff] at hy
+    subst hy
+    rfl
+  | rand p k ih =>
+    rw [OracleAdv.run_rand, PMF.toOuterMeasure_bind_apply]
+    simp only [ih, mul_one, PMF.tsum_coe]
+  | query d k ih =>
+    rw [OracleAdv.run_query, PMF.toOuterMeasure_bind_apply]
+    have h : ∀ x ∈ (OracleAdv.flagWhen bad O (s, true) d).support, x.2.2 = true := by
+      intro x hx
+      simp only [OracleAdv.flagWhen, PMF.support_map, Set.mem_image] at hx
+      obtain ⟨z, -, rfl⟩ := hx
+      simp
+    calc _ = ∑' x, (OracleAdv.flagWhen bad O (s, true) d) x * 1 := by
+          refine tsum_congr fun x => ?_
+          by_cases hx : x ∈ (OracleAdv.flagWhen bad O (s, true) d).support
+          · obtain ⟨u, v, w⟩ := x
+            have hw : w = true := h _ hx
+            subst hw
+            rw [ih]
+          · rw [PMF.apply_eq_zero_iff _ _ |>.mpr hx, zero_mul, zero_mul]
+      _ = 1 := by simp only [mul_one, PMF.tsum_coe]
+
+/-- A run from a dead state never sets the flag. -/
+theorem run_flag_dead_zero (f₁ : σ₁ → D → Ω → R × σ₁) (Dead bad₁ : σ₁ → Prop)
+    [DecidablePred bad₁] (hdead : ∀ s d r, Dead s → Dead (f₁ s d r).2)
+    (hdb : ∀ s, Dead s → ¬ bad₁ s) (A : OracleAdv D R α) (s : σ₁) (hs : Dead s) :
+    (OracleAdv.run (OracleAdv.flagWhen (fun _ _ x => bad₁ x.2)
+      (fun s d => (PMF.uniformFintype Ω).map (f₁ s d))) A (s, false)).toOuterMeasure
+        {y | y.2.2 = true} = 0 := by
+  induction A generalizing s with
+  | ret a =>
+    rw [OracleAdv.run_ret, PMF.toOuterMeasure_pure_apply]
+    simp
+  | rand p k ih =>
+    rw [OracleAdv.run_rand, PMF.toOuterMeasure_bind_apply]
+    simp only [fun b => ih b s hs, mul_zero, tsum_zero]
+  | query d k ih =>
+    rw [OracleAdv.run_query, flagWhen_uniform_map, PMF.bind_map, PMF.toOuterMeasure_bind_apply]
+    refine ENNReal.tsum_eq_zero.mpr fun r => ?_
+    simp only [Function.comp_apply, Bool.false_or, decide_eq_false (hdb _ (hdead s d r hs))]
+    rw [ih _ _ (hdead s d r hs), mul_zero]
+
+/-- **A bad flag under a coupling of draws.** Let two oracles be images of the same uniform draw,
+and let every step from related states either reach a dead state of the first oracle, from which
+its bad event never occurs, or give the same answer and reach related states. When the bad event
+of the first oracle on related states implies the bad event of the second, the first run sets its
+flag with at most the probability with which the second does. -/
+theorem flag_le_of_coupling (f₁ : σ₁ → D → Ω → R × σ₁) (f₂ : σ₂ → D → Ω → R × σ₂)
+    (Rel : σ₁ → σ₂ → Prop) (Dead bad₁ : σ₁ → Prop) (bad₂ : σ₂ → Prop) [DecidablePred bad₁]
+    [DecidablePred bad₂] (hdead : ∀ s d r, Dead s → Dead (f₁ s d r).2)
+    (hdb : ∀ s, Dead s → ¬ bad₁ s) (hbad : ∀ s₁ s₂, Rel s₁ s₂ → bad₁ s₁ → bad₂ s₂)
+    (hstep : ∀ s₁ s₂ d r, Rel s₁ s₂ → Dead (f₁ s₁ d r).2 ∨
+      ((f₁ s₁ d r).1 = (f₂ s₂ d r).1 ∧ Rel (f₁ s₁ d r).2 (f₂ s₂ d r).2))
+    (A : OracleAdv D R α) (s₁ : σ₁) (s₂ : σ₂) (h : Rel s₁ s₂) :
+    (OracleAdv.run (OracleAdv.flagWhen (fun _ _ x => bad₁ x.2)
+      (fun s d => (PMF.uniformFintype Ω).map (f₁ s d))) A (s₁, false)).toOuterMeasure
+        {y | y.2.2 = true} ≤
+    (OracleAdv.run (OracleAdv.flagWhen (fun _ _ x => bad₂ x.2)
+      (fun s d => (PMF.uniformFintype Ω).map (f₂ s d))) A (s₂, false)).toOuterMeasure
+        {y | y.2.2 = true} := by
+  induction A generalizing s₁ s₂ with
+  | ret a =>
+    rw [OracleAdv.run_ret, PMF.toOuterMeasure_pure_apply]
+    simp
+  | rand p k ih =>
+    rw [OracleAdv.run_rand, OracleAdv.run_rand, PMF.toOuterMeasure_bind_apply,
+      PMF.toOuterMeasure_bind_apply]
+    refine ENNReal.tsum_le_tsum fun b => ?_
+    gcongr
+    exact ih b s₁ s₂ h
+  | query d k ih =>
+    rw [OracleAdv.run_query, OracleAdv.run_query, flagWhen_uniform_map, flagWhen_uniform_map,
+      PMF.bind_map, PMF.bind_map, PMF.toOuterMeasure_bind_apply, PMF.toOuterMeasure_bind_apply]
+    refine ENNReal.tsum_le_tsum fun r => ?_
+    gcongr
+    simp only [Function.comp_apply, Bool.false_or]
+    by_cases hb : bad₁ (f₁ s₁ d r).2
+    · rcases hstep s₁ s₂ d r h with hd | ⟨-, hr⟩
+      · exact absurd hb (hdb _ hd)
+      · rw [decide_eq_true hb, decide_eq_true (hbad _ _ hr hb), run_flag_true_one,
+          run_flag_true_one]
+    · rw [decide_eq_false hb]
+      rcases hstep s₁ s₂ d r h with hd | ⟨ho, hr⟩
+      · rw [run_flag_dead_zero f₁ Dead bad₁ hdead hdb _ _ hd]
+        exact zero_le
+      · by_cases hb₂ : bad₂ (f₂ s₂ d r).2
+        · rw [decide_eq_true hb₂, run_flag_true_one]
+          exact toOuterMeasure_le_one _ _
+        · rw [decide_eq_false hb₂, ho]
+          exact ih _ _ _ hr
+
+end FlagCoupling
+
 /-! ## Symbolic Diffie–Hellman values -/
 
 section Sym
@@ -928,5 +1049,134 @@ theorem rel_start {s₁ : SimSt S W K} {s₂ : RSim S W K} (h : Rel G a b x y s�
         · exact h'.abL p hp
 
 end Coupling
+
+/-! ## The coupling of the worlds -/
+
+section World
+
+variable {S W K : Type} [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K]
+  [Inhabited K] (G : DHGroup S W) (a b : PartyId) (x y : S)
+
+/-- The coupling relation on the states of the worlds: related simulators and the same state of
+`F_AKE`. -/
+def RelW (t₁ : SimSt S W K × St K) (t₂ : RSim S W K × St K) : Prop :=
+  Rel G a b x y t₁.1 t₂.1 ∧ t₁.2 = t₂.2
+
+/-- The bad event for the pair `(a, b)`: the table of the simulated world holds an input with
+initiator `a` and responder `b`, both uncorrupt, whose `DH1` is `g^{ik_a · spk_b}`. -/
+def DH1HitAB (s : SimSt S W K) : Prop :=
+  ∃ ip v ikA spkA ikB spkB, s.1.ro.lookup ip = some v ∧ ip.ini = a ∧ ip.res = b ∧
+    s.1.st.corrupt a = false ∧ s.1.st.corrupt b = false ∧ s.1.lt a = some (ikA, spkA) ∧
+    s.1.lt b = some (ikB, spkB) ∧ ip.dh1 = G.pub (ikA * spkB)
+
+/-- The event of the world of the reduction that answers `DH1HitAB`: the symbolic table holds an
+input with initiator `a` and responder `b` whose `DH1` is the known value
+`g^{(x + u)(y + v)}`, with the long-term secrets of `a` and `b` drawn. -/
+def Bad2 (t : RSim S W K × St K) : Prop :=
+  ∃ p ∈ t.1.1.ro, p.1.ini = a ∧ p.1.res = b ∧ (t.1.1.lt a).isSome = true ∧
+    (t.1.1.lt b).isSome = true ∧
+    p.1.dh1 = .inl (G.pub ((x + off1 a t.1.1) * (y + off2 b t.1.1)))
+
+omit [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K] in
+theorem stop_drive0D {τ EG OG Rf O' : Type} (stepD : τ → EG → Rf → τ × OG)
+    (fin : SimSt S W K → OG → SimSt S W K × O') (hfin : ∀ s o, (fin s o).1.1 = s.1)
+    (s : SimSt S W K) (d : EG ⊕ O') (t : τ) (k : Rf) :
+    (drive0D stepD fin s d t k).1.1 = s.1 := by
+  unfold drive0D
+  split
+  · rfl
+  · exact hfin _ _
+
+omit [Fintype K] [Nonempty K] in
+/-- **The coupling of a step of the worlds**: from related states, the simulated world with the
+shifted draw and the world of the reduction give the same answer and reach related states,
+unless the step corrupts `a` or `b`. -/
+theorem step_rel {t₁ : SimSt S W K × St K} {t₂ : RSim S W K × St K} (h : RelW G a b x y t₁ t₂)
+    (e : OEv W) (r : Draw S K × K) :
+    Stop a b (simWorldD G t₁ e (transW a b x y t₁ e r)).1.1 ∨
+      ((simWorldD G t₁ e (transW a b x y t₁ e r)).2 =
+          (stepR G a b (ddhOracle (gapDHDef G)) (G.pub x) (G.pub y) t₂ e r).2 ∧
+        RelW G a b x y (simWorldD G t₁ e (transW a b x y t₁ e r)).1
+          (stepR G a b (ddhOracle (gapDHDef G)) (G.pub x) (G.pub y) t₂ e r).1) := by
+  have htr : transW a b x y t₁ e r = (transD a b x y t₁.1 e r.1, r.2) := rfl
+  rw [htr]
+  rcases rel_start G a b x y h.1 e r.1 with hs | ⟨hd, hr⟩
+  · left
+    simp only [Stop, simWorldD] at hs ⊢
+    rw [stop_drive0D _ _ (fun _ _ => rfl)]
+    exact hs
+  · right
+    simp only [simWorldD, stepR]
+    rw [hd, h.2]
+    generalize (simStartD G t₁.1 e (transD a b x y t₁.1 e r.1)).1 = s₁ at hr
+    generalize (startR G a b (ddhOracle (gapDHDef G)) (G.pub x) (G.pub y) t₂.1 e r.1).1 = s₂ at hr
+    obtain ⟨rs₁, inp₁, ph₁⟩ := s₁
+    obtain ⟨rs₂, inp₂, ph₂⟩ := s₂
+    have hr' : RelC G a b x y rs₁ inp₁ ph₁ rs₂ inp₂ ph₂ := hr
+    cases (startR G a b (ddhOracle (gapDHDef G)) (G.pub x) (G.pub y) t₂.1 e r.1).2 with
+    | inr o => exact ⟨rfl, hr, rfl⟩
+    | inl g =>
+      simp only [drive0D, finV, finR]
+      rw [hr'.ph]
+      exact ⟨rfl, hr'.setPh G a b x y _, rfl⟩
+
+omit [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K] in
+theorem lookup_mem {α β : Type} [DecidableEq α] {u : α} {v : β} :
+    ∀ {l : List (α × β)}, l.lookup u = some v → (u, v) ∈ l
+  | [], h => by simp at h
+  | (u', v') :: l, h => by
+    rw [lookup_cons] at h
+    by_cases hu : u = u'
+    · subst hu
+      simp only [↓reduceIte, Option.some.injEq] at h
+      subst h
+      exact List.mem_cons_self
+    · simp only [hu, ↓reduceIte] at h
+      exact List.mem_cons_of_mem _ (lookup_mem h)
+
+omit [Fintype S] [Fintype K] [Nonempty K] [Inhabited K] in
+/-- **The bad event of the pair, on related states,** is the event `Bad2` of the world of the
+reduction. -/
+theorem bad2_of_rel {t₁ : SimSt S W K × St K} {t₂ : RSim S W K × St K}
+    (h : RelW G a b x y t₁ t₂) (hb : DH1HitAB G a b t₁.1) : Bad2 G a b x y t₂ := by
+  obtain ⟨ip, v, ikA, spkA, ikB, spkB, hl, hia, hrb, -, -, hla, hlb, hd⟩ := hb
+  have hR : RelC G a b x y t₁.1.1 t₁.1.2.1 t₁.1.2.2 t₂.1.1 t₂.1.2.1 t₂.1.2.2 := h.1
+  have hm := lookup_mem hl
+  rw [hR.ro, List.mem_map] at hm
+  obtain ⟨p, hp, hpe⟩ := hm
+  simp only [interpE, Prod.mk.injEq] at hpe
+  obtain ⟨hpi, -⟩ := hpe
+  have hpa : p.1.ini = a := by rw [← hia, ← hpi]; rfl
+  have hpb : p.1.res = b := by rw [← hrb, ← hpi]; rfl
+  have hlA := hR.lt a
+  have hlB := hR.lt b
+  rw [hla] at hlA
+  rw [hlb] at hlB
+  cases hA : t₂.1.1.lt a with
+  | none => rw [hA] at hlA; cases hlA
+  | some la =>
+    cases hB : t₂.1.1.lt b with
+    | none => rw [hB] at hlB; cases hlB
+    | some lb =>
+      rw [hA, Option.map_some, Option.some.injEq] at hlA
+      rw [hB, Option.map_some, Option.some.injEq] at hlB
+      have hik : ikA = x + off1 a t₂.1.1 := by
+        simp only [off1, hA, Option.map_some, Option.getD_some]
+        have := congrArg Prod.fst hlA
+        simp only [sh, ↓reduceIte] at this
+        exact this
+      have hspk : spkB = y + off2 b t₂.1.1 := by
+        simp only [off2, hB, Option.map_some, Option.getD_some]
+        have := congrArg Prod.snd hlB
+        simp only [sh, ↓reduceIte] at this
+        exact this
+      refine ⟨p, hp, hpa, hpb, by rw [hA]; rfl, by rw [hB]; rfl, ?_⟩
+      have hL := hR.abL p hp hpa hpb
+      rcases hq : p.1.dh1 with w | E
+      · have h1 : ip.dh1 = w := by rw [← hpi]; simp only [interp, hq, ev]
+        rw [← h1, hd, hik, hspk]
+      · rw [hq] at hL; cases hL
+
+end World
 
 end CatCrypt.Crypto.AKE.X3DHSquareGDH
