@@ -1283,16 +1283,19 @@ theorem bad2_of_rel {t₁ : SimSt S W K × St K} {t₂ : RSim S W K × St K}
         rw [← h1, hd, hik, hspk]
       · rw [hq] at hL; cases hL
 
+omit [Field S] [Fintype S] [Fintype K] [Nonempty K] in
 theorem deliverD_corrupt (rs : RSt S W K) (inp : Inst → Option (Inp W)) (z : Inst) (rc : Rec K)
     (ip : Inp W) (k : K) : (deliverD rs inp z rc ip k).1.1.st.corrupt = rs.st.corrupt := by
   unfold deliverD
   split <;> rfl
 
+omit [Fintype K] [Nonempty K] [Inhabited K] in
 theorem addSession_corrupt (t : St K) (z : Inst) (peer : PartyId) (role : Role) :
     (addSession t z peer role).corrupt = t.corrupt := by
   unfold addSession
   split <;> rfl
 
+omit [Fintype S] [Fintype K] [Nonempty K] in
 /-- The start of the simulator never clears a corruption. -/
 theorem simStartD_corrupt (s : SimSt S W K) (e : OEv W) (r : Draw S K) (p : PartyId)
     (h : s.1.st.corrupt p = true) : (simStartD G s e r).1.1.st.corrupt p = true := by
@@ -1303,6 +1306,7 @@ theorem simStartD_corrupt (s : SimSt S W K) (e : OEv W) (r : Draw S K) (p : Part
   all_goals simp_all [deliverD_corrupt, addSession_corrupt, (pollStep_fst _).2.1, corruptStep,
     ltD_st, Function.update_apply]
 
+omit [Fintype S] [Fintype K] [Nonempty K] in
 /-- A step of the simulated world never clears a corruption of `a` or `b`. -/
 theorem stop_simWorldD (t : SimSt S W K × St K) (e : OEv W) (r : Draw S K × K)
     (h : Stop a b t.1) : Stop a b (simWorldD G t e r).1.1 := by
@@ -1316,15 +1320,19 @@ theorem stop_simWorldD (t : SimSt S W K × St K) (e : OEv W) (r : Draw S K × K)
 def Mono (rs rs' : RSt S (W ⊕ W) K) : Prop :=
   (∀ p ∈ rs.ro, p ∈ rs'.ro) ∧ (∀ q v, rs.lt q = some v → rs'.lt q = some v)
 
+omit [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K] in
 theorem Mono.trans {rs rs' rs'' : RSt S (W ⊕ W) K} (h : Mono rs rs') (h' : Mono rs' rs'') :
     Mono rs rs'' :=
   ⟨fun p hp => h'.1 p (h.1 p hp), fun q v hq => h'.2 q v (h.2 q v hq)⟩
 
+omit [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K] in
 theorem mono_refl (rs : RSt S (W ⊕ W) K) : Mono rs rs := ⟨fun _ h => h, fun _ _ h => h⟩
 
+omit [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K] in
 theorem mono_ltD (rs : RSt S (W ⊕ W) K) (p : PartyId) (l : S × S) : Mono rs (ltD rs p l).2 :=
   ⟨fun q hq => by rw [ltD_ro]; exact hq, ltD_lt_mono rs p l⟩
 
+omit [Fintype S] [Fintype K] [Nonempty K] in
 theorem mono_deliverR (O : W → W → W → Bool) (X Y : W) (rs : RSt S (W ⊕ W) K)
     (inp : Inst → Option (Inp (W ⊕ W))) (z : Inst) (rc : Rec K) (ip : Inp (W ⊕ W)) (k : K) :
     Mono rs (deliverR G a b O X Y rs inp z rc ip k).1.1 := by
@@ -1337,6 +1345,7 @@ theorem mono_deliverR (O : W → W → W → Bool) (X Y : W) (rs : RSt S (W ⊕ 
     · exact List.mem_cons_of_mem _ hq
   · exact mono_refl _
 
+omit [Fintype S] [Fintype K] [Nonempty K] in
 /-- **The start of the simulator of the reduction** keeps the entries of the table and the drawn
 secrets. -/
 theorem mono_startR (O : W → W → W → Bool) (X Y : W) (s : RSim S W K) (e : OEv W)
@@ -1373,12 +1382,14 @@ theorem mono_startR (O : W → W → W → Bool) (X Y : W) (s : RSim S W K) (e :
     · exact hp
     · exact List.mem_cons_of_mem _ hp
 
+omit [Fintype S] [Fintype K] [Nonempty K] in
 theorem mono_stepR (O : W → W → W → Bool) (X Y : W) (t : RSim S W K × St K) (e : OEv W)
     (r : Draw S K × K) : Mono t.1.1 (stepR G a b O X Y t e r).1.1.1 := by
   simp only [stepR]
   rw [stop_drive0D _ _ (fun _ _ => rfl)]
   exact mono_startR G a b O X Y t.1 e r.1
 
+omit [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K] in
 theorem Bad2.mono {t t' : RSim S W K × St K} (h : Mono t.1.1 t'.1.1) (hb : Bad2 G a b x y t) :
     Bad2 G a b x y t' := by
   obtain ⟨p, hp, h1, h2, ha, hb', hd⟩ := hb
@@ -1390,6 +1401,7 @@ theorem Bad2.mono {t t' : RSim S W K × St K} (h : Mono t.1.1 t'.1.1) (hb : Bad2
   rw [hoff1, hoff2]
   exact hd
 
+omit [Fintype K] [Nonempty K] [Inhabited K] in
 /-- **The extraction on the event `Bad2`** outputs the Diffie–Hellman value of the challenge. -/
 theorem extractR_of_bad2 {t : RSim S W K × St K} (h : Bad2 G a b x y t) :
     extractR G a b (ddhOracle (gapDHDef G)) (G.pub x) (G.pub y) t.1.1 = G.pub (x * y) := by
@@ -1507,7 +1519,7 @@ noncomputable def pairBad (B : OracleAdv (OEv W) (OOut S W K) Bool) : ℝ≥0∞
   (OracleAdv.run (OracleAdv.flagWhen (fun _ _ z => DH1HitAB G a b z.2.1) (simO G)) B
     (simInit, false)).toOuterMeasure {y | y.2.2 = true}
 
-omit [Fintype S] [Fintype K] [Nonempty K] [Inhabited K] in
+omit [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K] in
 theorem relW_init (x y : S) : RelW G a b x y (simInit (K := K)) rInitR :=
   ⟨⟨rfl, rfl, fun _ => rfl, rfl, fun _ => rfl, rfl, (fun _ h => by cases h),
     (fun _ _ h => by cases h), (fun _ h => by cases h), (fun _ _ h => by cases h), rfl, rfl⟩, rfl⟩
@@ -1589,6 +1601,7 @@ def InvP (P : Finset PartyId) (rs : RSt S W K) : Prop :=
   (∀ e ∈ rs.ro, e.1.ini ∈ P ∧ e.1.res ∈ P) ∧
     ∀ z r, rs.st.recs z = some r → z.2 ∈ P ∧ r.peer ∈ P
 
+omit [Fintype K] [Nonempty K] [Inhabited K] in
 theorem roDet_mem {D : Type} [DecidableEq D] (tb : List (D × K)) (q : D) (k : K) :
     ∀ e ∈ (roDet tb q k).2, e ∈ tb ∨ e = (q, k) := by
   intro e he
@@ -1599,11 +1612,13 @@ theorem roDet_mem {D : Type} [DecidableEq D] (tb : List (D × K)) (q : D) (k : K
     · exact Or.inr h
     · exact Or.inl h
 
+omit [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K] in
 theorem InvP.ltD {P : Finset PartyId} {rs : RSt S W K} (h : InvP P rs) (p : PartyId)
     (l : S × S) : InvP P (X3DHSquareHops.ltD rs p l).2 := by
   simp only [InvP, ltD_ro, ltD_st]
   exact h
 
+omit [Field S] [Fintype S] [Fintype K] [Nonempty K] in
 theorem InvP.deliverD {P : Finset PartyId} {rs : RSt S W K} (h : InvP P rs)
     (inp : Inst → Option (Inp W)) {z : Inst} {rc : Rec K} (hz : rs.st.recs z = some rc)
     {ip : Inp W} (hip : ip.ini ∈ P ∧ ip.res ∈ P) (k : K) :
@@ -1626,6 +1641,7 @@ theorem InvP.deliverD {P : Finset PartyId} {rs : RSt S W K} (h : InvP P rs)
     · exact hip
   · exact ⟨h.1, hrecs' _⟩
 
+omit [Fintype S] [Fintype K] [Nonempty K] in
 /-- **The start of the simulator keeps the invariant of the parties** on the events that name
 parties of `P`. -/
 theorem invP_simStartD {P : Finset PartyId} (s : SimSt S W K) (e : OEv W) (r : Draw S K)
@@ -1678,9 +1694,11 @@ theorem invP_simStartD {P : Finset PartyId} (s : SimSt S W K) (e : OEv W) (r : D
     · exact h.1 e' he'
     · exact he
 
+omit [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K] in
 theorem invP_init (P : Finset PartyId) : InvP P (simInit (S := S) (W := W) (K := K)).1.1 :=
   ⟨(fun _ h => by cases h), (fun _ _ h => by cases h)⟩
 
+omit [Fintype S] [Fintype K] [Nonempty K] [Inhabited K] in
 /-- On the invariant of the parties, the bad event is the bad event of a pair of `P`. -/
 theorem dh1Hit_pair {P : Finset PartyId} {s : SimSt S W K} (h : InvP P s.1) (hd : DH1Hit G s) :
     ∃ ab ∈ P ×ˢ P, DH1HitAB G ab.1 ab.2 s := by
