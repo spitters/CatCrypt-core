@@ -2506,6 +2506,14 @@ def pasProj {α : Type} (x : α × SMSt Sc Msg RK Sa) :
     α × CKAGameSt Sc Msg × (CKAParty → RK) × Option (RK × Sa) × Bool :=
   (x.1, x.2.ck, x.2.loc.rk, x.2.loc.out, x.2.loc.done)
 
+theorem run_bind_ret {D' R' S α β : Type} (O : S → D' → PMF (R' × S))
+    (A : OracleAdv D' R' α) (f : α → β) (s : S) :
+    OracleAdv.run O (A.bind fun a => .ret (f a)) s =
+      (OracleAdv.run O A s).map fun x => (f x.1, x.2) := by
+  rw [OracleAdv.run_bind]
+  simp only [OracleAdv.run_ret]
+  exact PMF.bind_pure_comp _ _
+
 theorem run_bind_ret_cons {D' R' S α : Type} (O : S → D' → PMF (R' × S))
     (A : OracleAdv D' R' (List α)) (c : α) (s : S) :
     OracleAdv.run O (A.bind fun cs => .ret (c :: cs)) s =
@@ -2587,6 +2595,133 @@ theorem pasMsgs_run (C : CKADef Sc Msg Key) [CKACoins C Rand] (R : PRGDef (RK ×
         (by rw [show (s.loc.advanced P (G.stretch sa).2).done = s.loc.done from rfl, hd]; simp; omega),
         PMF.map_comp]
       rfl
+
+/-- **The epochs of the passive adversary.** From a state after `e` epochs, with both counters
+`e`, the next sender in the CKA state `σ₁` and its peer in `σ₂`, the next sender holding the root
+key `ρ`, the run of `pasEpochs` gives the CKA messages of a CKA run from `(σ₁, σ₂)` and the
+ciphertexts of `ctsDistAll` on the root chain from `ρ`. -/
+theorem pasEpochs_run (C : CKADef Sc Msg Key) [CKACoins C Rand]
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (ΔFS ΔPCS t : ℕ) (ideal : Bool) (k : ℕ) (d : Msg) (msgs : List (List (W × W)))
+    (e g : ℕ) (σ₁ σ₂ : Sc) (ρ : RK) (s : SMSt Sc Msg RK Sa) (hA : s.ck.t .A = e)
+    (hB : s.ck.t .B = e) (h1 : s.ck.st (ckaSender (e + 1)) = σ₁)
+    (h2 : s.ck.st (ckaSender (e + 1)).other = σ₂) (hρ : s.loc.rk (ckaSender (e + 1)) = ρ)
+    (hd : s.loc.done = decide (k < g))
+    (ht : g ≤ k → k < g + (msgs.map List.length).sum → t = msgEpoch e g msgs k + 1) :
+    (OracleAdv.run (smOracleOf C R G D ΔFS ΔPCS t ideal (realRoot R)) (pasEpochs k d e g msgs)
+        s).map Prod.fst =
+      (ckaRunP C msgs.length σ₁ σ₂).bind fun q =>
+        (ctsDistAll G D (pasThr ideal k) g (rootRun R ρ (q.1.map Prod.snd)) msgs).map fun cts =>
+          (q.1.map Prod.fst, cts) := by
+  induction msgs generalizing e g σ₁ σ₂ ρ s with
+  | nil =>
+    simp only [pasEpochs, OracleAdv.run_ret, PMF.pure_map, List.length_nil, ckaRunP,
+      PMF.pure_bind, List.map_nil, rootRun, ctsDistAll]
+  | cons ms msgs ih =>
+    have hcs : s.ck.canSend (ckaSender (e + 1)) = true := by
+      simp [CKAGameSt.canSend, hA, hB]
+    have hroot : ∀ I, (if s.ck.t (ckaSender (e + 1)) + 1 == t then
+        realRoot R (s.loc.rk (ckaSender (e + 1))) I
+        else PMF.pure (R.stretch (s.loc.rk (ckaSender (e + 1)), I))) =
+          PMF.pure (R.stretch (ρ, I)) := by
+      intro I; simp only [realRoot, ite_self, hρ]
+    simp only [pasEpochs, OracleAdv.run_query, smOracleOf, hcs, ite_true, hroot, PMF.bind_bind,
+      PMF.pure_bind, PMF.map_bind, List.length_cons, ckaRunP, h1]
+    refine congrArg _ (funext fun r => ?_)
+    have hP1 : (s.ck.sent (ckaSender (e + 1)) (CKACoins.sendR (C := C) σ₁ r).1
+        (CKACoins.sendR (C := C) σ₁ r).2.1).t (ckaSender (e + 1)) = e + 1 := by
+      simp only [CKAGameSt.sent_t, ite_true]
+      cases h : ckaSender (e + 1)
+      · rw [hA]
+      · rw [hB]
+    have hP2 : (s.ck.sent (ckaSender (e + 1)) (CKACoins.sendR (C := C) σ₁ r).1
+        (CKACoins.sendR (C := C) σ₁ r).2.1).t (ckaSender (e + 1)).other = e := by
+      simp only [CKAGameSt.sent_t, CKAParty.other_ne, ite_false]
+      cases h : ckaSender (e + 1)
+      · rw [CKAParty.other_A, hB]
+      · rw [CKAParty.other_B, hA]
+    have hm := pasMsgs_run C R G D ΔFS ΔPCS t ideal (realRoot R) k (ckaSender (e + 1)) ms g
+      (R.stretch (ρ, (CKACoins.sendR (C := C) σ₁ r).2.2)).2
+      ⟨s.ck.sent (ckaSender (e + 1)) (CKACoins.sendR (C := C) σ₁ r).1
+        (CKACoins.sendR (C := C) σ₁ r).2.1,
+        s.loc.opened (ckaSender (e + 1)) (R.stretch (ρ, (CKACoins.sendR (C := C) σ₁ r).2.2))⟩
+      (by simp [SMLoc.opened]) (by rw [hP1]) hd (fun h1' h2' => by
+        rw [hP1, ht h1' (by simp only [List.map_cons, List.sum_cons]; omega)]
+        simp only [msgEpoch, h2', ite_true])
+    rw [OracleAdv.run_bind, PMF.map_bind]
+    refine (PMF.bind_congr_support _ _ (fun x =>
+      ((ckaRunP C msgs.length (C.recv σ₂ (CKACoins.sendR (C := C) σ₁ r).2.1).1
+          (CKACoins.sendR (C := C) σ₁ r).1).bind fun q =>
+        (ctsDistAll G D (pasThr ideal k) (g + ms.length)
+          (rootRun R (R.stretch (ρ, (CKACoins.sendR (C := C) σ₁ r).2.2)).1 (q.1.map Prod.snd))
+          msgs).map fun cts => (q.1.map Prod.fst, cts)).map fun r' =>
+        ((CKACoins.sendR (C := C) σ₁ r).2.1 :: r'.1, x.1 :: r'.2)) ?_).trans ?_
+    · rintro ⟨cs, st⟩ hx
+      have hpx := (PMF.mem_support_map_iff pasProj _ _).2 ⟨_, hx, rfl⟩
+      rw [hm] at hpx
+      simp only [PMF.mem_support_map_iff, pasProj, Prod.mk.injEq] at hpx
+      obtain ⟨_, -, -, hck, hrk, hout, hdn⟩ := hpx
+      have hcr : st.ck.canRecv (ckaSender (e + 1)).other = true := by
+        rw [← hck]
+        simp only [CKAGameSt.canRecv, CKAParty.other_other, hP1, hP2, beq_self_eq_true]
+      simp only [OracleAdv.run_query, smOracleOf, hcr, ite_true, PMF.pure_bind, SMAns.msgOr]
+      rw [run_bind_ret, PMF.map_comp]
+      have hrecv : st.loc.received (ckaSender (e + 1)).other =
+          st.loc.recvY (ckaSender (e + 1)).other (R.stretch (ρ, (CKACoins.sendR (C := C) σ₁ r).2.2)) := by
+        rw [SMLoc.received, ← hout]; rfl
+      have hs2 : ckaSender (e + 1 + 1) = (ckaSender (e + 1)).other := ckaSender_succ (e + 1)
+      have hcnt : ∀ q, ((s.ck.sent (ckaSender (e + 1)) (CKACoins.sendR (C := C) σ₁ r).1
+          (CKACoins.sendR (C := C) σ₁ r).2.1).recvd (ckaSender (e + 1)).other
+          (C.recv ((s.ck.sent (ckaSender (e + 1)) (CKACoins.sendR (C := C) σ₁ r).1
+            (CKACoins.sendR (C := C) σ₁ r).2.1).st (ckaSender (e + 1)).other)
+            (s.ck.sent (ckaSender (e + 1)) (CKACoins.sendR (C := C) σ₁ r).1
+              (CKACoins.sendR (C := C) σ₁ r).2.1).msg).1).t q = e + 1 := by
+        intro q
+        rw [CKAGameSt.recvd_t]
+        split
+        · rename_i hq; subst hq; rw [hP2]
+        · rename_i hq
+          have : q = ckaSender (e + 1) := (CKAParty.eq_or_eq_other q _).resolve_right hq
+          subst this; exact hP1
+      have hih := ih (e + 1) (g + ms.length) (C.recv σ₂ (CKACoins.sendR (C := C) σ₁ r).2.1).1
+        (CKACoins.sendR (C := C) σ₁ r).1 (R.stretch (ρ, (CKACoins.sendR (C := C) σ₁ r).2.2)).1
+        ⟨st.ck.recvd (ckaSender (e + 1)).other
+          (C.recv (st.ck.st (ckaSender (e + 1)).other) st.ck.msg).1,
+          st.loc.received (ckaSender (e + 1)).other⟩
+        (by rw [← hck]; exact hcnt .A)
+        (by rw [← hck]; exact hcnt .B)
+        (by rw [hs2, ← hck]; simp [h2])
+        (by rw [hs2, ← hck]; simp)
+        (by rw [hs2, hrecv]; simp [SMLoc.recvY])
+        (by rw [show (st.loc.received (ckaSender (e + 1)).other).done = st.loc.done by
+              rw [SMLoc.received]; split <;> rfl, ← hdn])
+        (fun h1' h2' => by
+          have hnk : ¬ k < g + ms.length := by omega
+          rw [ht (by omega) (by simp only [List.map_cons, List.sum_cons]; omega)]
+          simp only [msgEpoch, hnk, ite_false])
+      have hc : (Prod.fst ∘ fun x : (List Msg × List (List Ct)) × SMSt Sc Msg RK Sa =>
+          (((CKACoins.sendR (C := C) σ₁ r).2.1 :: x.1.1, cs :: x.1.2), x.2)) =
+          (fun r' => ((CKACoins.sendR (C := C) σ₁ r).2.1 :: r'.1, cs :: r'.2)) ∘ Prod.fst :=
+        funext fun _ => rfl
+      rw [hc, ← PMF.map_comp, hih]
+    · rw [show (fun x : List Ct × SMSt Sc Msg RK Sa =>
+          ((ckaRunP C msgs.length (C.recv σ₂ (CKACoins.sendR (C := C) σ₁ r).2.1).1
+            (CKACoins.sendR (C := C) σ₁ r).1).bind fun q =>
+            (ctsDistAll G D (pasThr ideal k) (g + ms.length)
+              (rootRun R (R.stretch (ρ, (CKACoins.sendR (C := C) σ₁ r).2.2)).1
+                (q.1.map Prod.snd)) msgs).map fun cts => (q.1.map Prod.fst, cts)).map fun r' =>
+            ((CKACoins.sendR (C := C) σ₁ r).2.1 :: r'.1, x.1 :: r'.2)) =
+          (fun z : List Ct × CKAGameSt Sc Msg × (CKAParty → RK) × Option (RK × Sa) × Bool =>
+          ((ckaRunP C msgs.length (C.recv σ₂ (CKACoins.sendR (C := C) σ₁ r).2.1).1
+            (CKACoins.sendR (C := C) σ₁ r).1).bind fun q =>
+            (ctsDistAll G D (pasThr ideal k) (g + ms.length)
+              (rootRun R (R.stretch (ρ, (CKACoins.sendR (C := C) σ₁ r).2.2)).1
+                (q.1.map Prod.snd)) msgs).map fun cts => (q.1.map Prod.fst, cts)).map fun r' =>
+            ((CKACoins.sendR (C := C) σ₁ r).2.1 :: r'.1, z.1 :: r'.2)) ∘ pasProj from rfl,
+        ← PMF.bind_map, hm, PMF.bind_map]
+      simp only [PMF.bind_map, Function.comp_def, List.map_cons, rootRun, ctsDistAll,
+        PMF.map_bind, PMF.map_comp]
+      rw [PMF.bind_comm]
 
 end Passive
 
