@@ -429,4 +429,372 @@ theorem trHybP_self_bind (C : CKADef Sc Msg Key) (mix : X → Key → Key)
 
 end SM
 
+/-! ## One-query oracle adversaries from distinguishers -/
+
+section Bridge
+
+/-- The output bit of a run of a Boolean computation: `b` for `some (b, h)`, and `false` for a
+failed run. -/
+def runBit : Option (Bool × Heap) → Bool
+  | some (b, _) => b
+  | none => false
+
+/-- The oracle adversary that runs the computation `pre` from the empty heap, queries `q x` on
+its result `x`, and runs the distinguisher `B x` on the answer from the heap left by `pre`. -/
+noncomputable def oneQueryAdv {P Q R : Type} (pre : SPComp P) (q : P → Q)
+    (B : P → R → SPComp Bool) : OracleAdv Q R Bool :=
+  OracleAdv.rand (β := Option (P × Heap)) (pre Heap.empty) fun o => match o with
+    | none => OracleAdv.ret false
+    | some (x, h) => OracleAdv.query (q x) fun y =>
+        OracleAdv.rand (β := Option (Bool × Heap)) (B x y h) fun o' => OracleAdv.ret (runBit o')
+
+/-- The probability of `true` is the probability that `runBit` of a run is `true`. -/
+theorem prTrue_eq_map_runBit (G : SPComp Bool) (h₀ : Heap) :
+    prTrue G h₀ = PMF.map runBit (G h₀) true := by
+  rw [PMF.map_apply, SDistr.tsum_option_eq_add, ENNReal.tsum_prod', tsum_fintype,
+    Fintype.sum_bool]
+  simp [runBit, prTrue]
+
+/-- A run of `oneQueryAdv pre q B` against the oracle `O` from the state `s`, projected to its
+output. -/
+theorem run_oneQueryAdv {P Q R S : Type} (pre : SPComp P) (q : P → Q)
+    (B : P → R → SPComp Bool) (O : S → Q → PMF (R × S)) (s : S) :
+    (OracleAdv.run O (oneQueryAdv pre q B) s).map Prod.fst =
+      PMF.bind (pre Heap.empty) fun o => match o with
+        | none => PMF.pure false
+        | some (x, h) => (O s (q x)).bind fun r => PMF.map runBit (B x r.1 h) := by
+  simp only [oneQueryAdv, OracleAdv.run_rand, PMF.map_bind]
+  congr 1; funext o
+  rcases o with _ | ⟨x, h⟩
+  · simp only [OracleAdv.run_ret, PMF.pure_map]
+  · simp only [OracleAdv.run_query, OracleAdv.run_rand, OracleAdv.run_ret, PMF.map_bind,
+      PMF.pure_map]
+    congr 1
+
+/-- A computation followed by a lifted distribution and a distinguisher, from the empty heap,
+with the output bit. -/
+theorem map_runBit_bind_liftPMF {P K : Type} (pre : SPComp P) (Dx : P → PMF K)
+    (B : P → K → SPComp Bool) :
+    PMF.map runBit ((SPComp.bind pre fun x => SPComp.bind (liftPMF (Dx x)) (B x)) Heap.empty) =
+      PMF.bind (pre Heap.empty) fun o => match o with
+        | none => PMF.pure false
+        | some (x, h) => (Dx x).bind fun k => PMF.map runBit (B x k h) := by
+  rw [SPComp.bind_def]
+  unfold SDistr.bind
+  rw [PMF.map_bind]
+  congr 1; funext o
+  rcases o with _ | ⟨x, h⟩
+  · simp [SDistr.fail, PMF.pure_map, runBit]
+  · simp only [liftPMF_bind_apply, PMF.map_bind]
+
+/-- The real adaptive PRF game against `oneQueryAdv pre q B` accepts with the probability of
+the computation that runs `pre`, samples a key `k` and calls `B x` on `F k (q x)`. -/
+theorem prTrue_realGame_oneQueryAdv {P Q R K : Type} [Fintype K] [Nonempty K]
+    (F : K → Q → R) (pre : SPComp P) (q : P → Q) (B : P → R → SPComp Bool) :
+    prTrue (realGame F (oneQueryAdv pre q B)) Heap.empty =
+      prTrue (SPComp.bind pre fun x => SPComp.bind (SPComp.sample K) fun k => B x (F k (q x)))
+        Heap.empty := by
+  rw [realGame, prTrue_liftPMF, prTrue_eq_map_runBit, sample_eq_liftPMF,
+    map_runBit_bind_liftPMF pre (fun _ => PMF.uniformFintype K) (fun x k => B x (F k (q x)))]
+  simp only [run_oneQueryAdv, keyedOracle, PMF.pure_bind]
+  rw [PMF.bind_comm]
+  congr 2; funext o
+  rcases o with _ | ⟨x, h⟩
+  · simp only [PMF.bind_const]
+  · rfl
+
+/-- The random-function adaptive PRF game against `oneQueryAdv pre q B` accepts with the
+probability of the computation that runs `pre`, samples a uniform answer `y` and calls
+`B x y`. -/
+theorem prTrue_rfGame_oneQueryAdv {P Q R : Type} [DecidableEq Q] [Fintype R] [Nonempty R]
+    (pre : SPComp P) (q : P → Q) (B : P → R → SPComp Bool) :
+    prTrue (rfGame (oneQueryAdv pre q B)) Heap.empty =
+      prTrue (SPComp.bind pre fun x => SPComp.bind (SPComp.sample R) (B x)) Heap.empty := by
+  rw [rfGame, prTrue_liftPMF, prTrue_eq_map_runBit, sample_eq_liftPMF,
+    map_runBit_bind_liftPMF pre (fun _ => PMF.uniformFintype R) B]
+  simp only [run_oneQueryAdv, rfOracle, List.lookup, PMF.bind_map]
+  rfl
+
+/-- **One-query PRF hop.** The distance between running `pre`, sampling a key `k` and calling
+`B x` on `F k (q x)`, and running `pre`, sampling a uniform answer and calling `B x` on it, is
+the adaptive PRF advantage of `F` at `oneQueryAdv pre q B`. -/
+theorem advantage_oneQuery_eq {P Q R K : Type} [Fintype K] [Nonempty K] [DecidableEq Q]
+    [Fintype R] [Nonempty R] (F : K → Q → R) (pre : SPComp P) (q : P → Q)
+    (B : P → R → SPComp Bool) :
+    Advantage (SPComp.bind pre fun x => SPComp.bind (SPComp.sample K) fun k => B x (F k (q x)))
+        (SPComp.bind pre fun x => SPComp.bind (SPComp.sample R) (B x)) =
+      PRF_q_Advantage F (oneQueryAdv pre q B) := by
+  unfold PRF_q_Advantage Advantage
+  rw [prTrue_realGame_oneQueryAdv, prTrue_rfGame_oneQueryAdv]
+
+/-- A uniform sample whose value is not used can be removed. -/
+theorem sample_bind_const {α β : Type} [Fintype α] [Nonempty α] (c : SPComp β) :
+    SPComp.bind (SPComp.sample α) (fun _ => c) = c := by
+  funext h
+  simp only [SPComp.bind_def, SPComp.sample, SDistr.bind_assoc, SDistr.pure_bind,
+    SDistr.uniform_bind_const]
+
+end Bridge
+
+/-! ## The root step from a dual PRF -/
+
+section Root
+
+variable {S₁ M₁ K₁ S₂ M₂ K₂ RK Sa W Ct : Type} [Fintype K₁] [Nonempty K₁] [Fintype K₂]
+  [Nonempty K₂] [Fintype RK] [Nonempty RK] [Fintype Sa] [Nonempty Sa] [SampleableType W]
+  [SampleableType Ct]
+
+/-- The root step of the triple ratchet: from the root key `rk` and the epoch key `(k₁, k₂)`
+of the Diffie–Hellman and the KEM components, the next root key and the FS-AEAD state of the
+epoch are `F (rk, k₁) k₂`. -/
+def trRoot (F : RK × K₁ → K₂ → RK × Sa) : PRGDef (RK × (K₁ × K₂)) (RK × Sa) where
+  stretch x := F (x.1, x.2.1) x.2.2
+
+/-- The computation of the left root reduction before its query: the public part of the root
+hop and the uniform values of the epochs before and after `t`. -/
+noncomputable def trRootPreL (C : CKADef (S₁ × S₂) (M₁ × M₂) (K₁ × K₂)) (t r : ℕ) :
+    SPComp ((((M₁ × M₂) × List (M₁ × M₂)) × List (K₁ × K₂) × (K₁ × K₂)) ×
+      ((Fin t → Sa) × (Fin r → K₁))) :=
+  SPComp.bind (trRootPub C t r) fun c =>
+    SPComp.bind (SPComp.sample ((Fin t → Sa) × (Fin r → K₁))) fun x => SPComp.pure (c, x)
+
+/-- **The dual-PRF reduction of the root hop, Diffie–Hellman side.** The left key of `F` is the
+root key and the Diffie–Hellman key of epoch `t`; the reduction queries the KEM key of epoch
+`t` and runs the secure-messaging adversary on the view built from the answer. -/
+noncomputable def trRootRedL (C : CKADef (S₁ × S₂) (M₁ × M₂) (K₁ × K₂))
+    (F : RK × K₁ → K₂ → RK × Sa) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (msgs : List (List (W × W))) (t r : ℕ) (A : SMView (M₁ × M₂) Ct → SPComp Bool) :
+    OracleAdv K₂ (RK × Sa) Bool :=
+  oneQueryAdv (trRootPreL C t r) (fun z => z.1.2.2.2)
+    (fun z y => A (trRootView mixLeft (trRoot F) G D msgs t r z.2 z.1 y))
+
+/-- The computation of the right root reduction before its query: the public part of the root
+hop, the uniform values of the epochs before and after `t`, and a uniform root key. -/
+noncomputable def trRootPreR (C : CKADef (S₁ × S₂) (M₁ × M₂) (K₁ × K₂)) (t r : ℕ) :
+    SPComp ((((M₁ × M₂) × List (M₁ × M₂)) × List (K₁ × K₂) × (K₁ × K₂)) ×
+      ((Fin t → Sa) × (Fin r → K₂)) × RK) :=
+  SPComp.bind (trRootPub C t r) fun c =>
+    SPComp.bind (SPComp.sample ((Fin t → Sa) × (Fin r → K₂))) fun x =>
+      SPComp.bind (SPComp.sample RK) fun rk => SPComp.pure (c, x, rk)
+
+/-- **The dual-PRF reduction of the root hop, KEM side.** The right key of `F` is the KEM key
+of epoch `t`; the reduction samples the root key, queries it with the Diffie–Hellman key of
+epoch `t`, and runs the secure-messaging adversary on the view built from the answer. -/
+noncomputable def trRootRedR (C : CKADef (S₁ × S₂) (M₁ × M₂) (K₁ × K₂))
+    (F : RK × K₁ → K₂ → RK × Sa) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (msgs : List (List (W × W))) (t r : ℕ) (A : SMView (M₁ × M₂) Ct → SPComp Bool) :
+    OracleAdv (RK × K₁) (RK × Sa) Bool :=
+  oneQueryAdv (trRootPreR C t r) (fun z => (z.2.2, z.1.2.2.1))
+    (fun z y => A (trRootView mixRight (trRoot F) G D msgs t r z.2.1 z.1 y))
+
+omit [Fintype K₂] [Nonempty K₂] [SampleableType Ct] in
+/-- The root hop of the Diffie–Hellman side is the dual-PRF game of `F` keyed by its left
+argument, at `trRootRedL`. -/
+theorem trRoot_left_advantage_eq [DecidableEq RK] [DecidableEq K₁] [DecidableEq K₂]
+    [DecidableEq Sa] (C : CKADef (S₁ × S₂) (M₁ × M₂) (K₁ × K₂))
+    (F : RK × K₁ → K₂ → RK × Sa) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (msgs : List (List (W × W))) (t r : ℕ) (A : SMView (M₁ × M₂) Ct → SPComp Bool) :
+    AdvantageA (trRoot_real C mixLeft (trRoot F) G D msgs t r)
+        (trRoot_ideal C mixLeft (trRoot F) G D msgs t r) A =
+      DualPRF_Left_Advantage F (trRootRedL C F G D msgs t r A) := by
+  unfold DualPRF_Left_Advantage trRootRedL AdvantageA
+  rw [← advantage_oneQuery_eq]
+  simp only [trRoot_real, trRoot_ideal, trRootPreL, SPComp.bind_assoc, SPComp.pure_bind]
+  rfl
+
+omit [Fintype K₁] [Nonempty K₁] [SampleableType Ct] in
+/-- The root hop of the KEM side is the dual-PRF game of `F` keyed by its right argument, at
+`trRootRedR`. -/
+theorem trRoot_right_advantage_eq [DecidableEq RK] [DecidableEq K₁] [DecidableEq K₂]
+    [DecidableEq Sa] (C : CKADef (S₁ × S₂) (M₁ × M₂) (K₁ × K₂))
+    (F : RK × K₁ → K₂ → RK × Sa) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (msgs : List (List (W × W))) (t r : ℕ) (A : SMView (M₁ × M₂) Ct → SPComp Bool) :
+    AdvantageA (trRoot_real C mixRight (trRoot F) G D msgs t r)
+        (trRoot_ideal C mixRight (trRoot F) G D msgs t r) A =
+      DualPRF_Right_Advantage F (trRootRedR C F G D msgs t r A) := by
+  unfold DualPRF_Right_Advantage trRootRedR AdvantageA
+  rw [← advantage_oneQuery_eq]
+  simp only [trRoot_real, trRoot_ideal, trRootPreR, SPComp.bind_assoc, SPComp.pure_bind,
+    SPComp.sample_prod_eq (RK) (K₂), sample_bind_const]
+  rfl
+
+end Root
+
+/-! ## The composition theorems -/
+
+section Compose
+
+variable {Sc Msg Key X RK Sa W Ct : Type} [Fintype Key] [Nonempty Key] [Fintype X] [Nonempty X]
+  [Fintype RK] [Nonempty RK] [Fintype Sa] [Nonempty Sa] [SampleableType W] [SampleableType Ct]
+
+omit [Fintype Key] [Nonempty Key] in
+/-- **Confidentiality with partial key replacement.** For every CKA `C`, replacement `mix` and
+adversary `A`, the secure-messaging advantage is at most the sum over the epochs `t` of the
+distance between the real CKA game and the game `cka_mix` at `trCKARed`, of the root hop at
+epoch `t`, and of the FS-AEAD advantage of epoch `t` at `smAEADRed`. With `mix` replacing one
+component of a product key, the CKA terms are one-sided product hybrids, and the root hops
+need only the uniformity of that component. -/
+theorem sm_mix_advantage_le (C : CKADef Sc Msg Key) (mix : X → Key → Key)
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (msgs : List (List (W × W))) (A : SMView Msg Ct → SPComp Bool) :
+    SM_Advantage C R G D msgs A ≤
+      ∑ t ∈ Finset.range msgs.length,
+          AdvantageA (cka_real C t (msgs.length - (t + 1)))
+            (cka_mix C mix t (msgs.length - (t + 1))) (trCKARed mix R G D msgs t A) +
+        ∑ t ∈ Finset.range msgs.length,
+          AdvantageA (trRoot_real C mix R G D msgs t (msgs.length - (t + 1)))
+            (trRoot_ideal C mix R G D msgs t (msgs.length - (t + 1))) A +
+        ∑ t ∈ Finset.range msgs.length,
+          FSAEAD_Advantage G D (msgs.getD t [])
+            (smAEADRed C G D msgs t (msgs.length - (t + 1)) A) := by
+  have hK : AdvantageA (trHybK C mix R G D msgs 0) (trHybK C mix R G D msgs msgs.length) A ≤
+      ∑ t ∈ Finset.range msgs.length,
+        AdvantageA (cka_real C t (msgs.length - (t + 1)))
+          (cka_mix C mix t (msgs.length - (t + 1))) (trCKARed mix R G D msgs t A) := by
+    refine (HybridArgument.advantage_hybrid_dep (trHybK C mix R G D msgs) A msgs.length).trans
+      (Finset.sum_le_sum fun t ht => le_of_eq ?_)
+    have ht' := Finset.mem_range.mp ht
+    unfold AdvantageA
+    rw [trHybK_bind_eq_real C mix R G D msgs t (msgs.length - (t + 1)) (by omega),
+      trHybK_succ_bind_eq_mix C mix R G D msgs t (msgs.length - (t + 1)) (by omega)]
+  have hP : AdvantageA (trHybP C mix R G D msgs 0 msgs.length)
+      (trHybP C mix R G D msgs msgs.length (msgs.length - msgs.length)) A ≤
+      ∑ t ∈ Finset.range msgs.length,
+        AdvantageA (trRoot_real C mix R G D msgs t (msgs.length - (t + 1)))
+          (trRoot_ideal C mix R G D msgs t (msgs.length - (t + 1))) A := by
+    refine (HybridArgument.advantage_hybrid_dep
+      (fun i => trHybP C mix R G D msgs i (msgs.length - i)) A msgs.length).trans
+      (Finset.sum_le_sum fun t ht => le_of_eq ?_)
+    have ht' := Finset.mem_range.mp ht
+    have hr : msgs.length - t = msgs.length - (t + 1) + 1 := by omega
+    unfold AdvantageA
+    rw [hr, trHybP_bind_eq_real C mix R G D msgs t _ (by omega),
+      trHybP_succ_bind_eq_ideal C mix R G D msgs t _ (by omega)]
+  have hF : AdvantageA (smHybF C G D msgs 0 msgs.length)
+      (smHybF C G D msgs msgs.length (msgs.length - msgs.length)) A ≤
+      ∑ t ∈ Finset.range msgs.length,
+        FSAEAD_Advantage G D (msgs.getD t [])
+          (smAEADRed C G D msgs t (msgs.length - (t + 1)) A) := by
+    refine (HybridArgument.advantage_hybrid_dep
+      (fun i => smHybF C G D msgs i (msgs.length - i)) A msgs.length).trans
+      (Finset.sum_le_sum fun t ht => le_of_eq ?_)
+    have ht' := Finset.mem_range.mp ht
+    have hr : msgs.length - t = msgs.length - (t + 1) + 1 := by omega
+    unfold FSAEAD_Advantage AdvantageA
+    rw [hr, smHybF_bind_eq_real C G D msgs ht', smHybF_succ_bind_eq_ideal]
+  have e2 : (trHybP C mix R G D msgs msgs.length (msgs.length - msgs.length)).bind A =
+      (smHybF C G D msgs 0 msgs.length).bind A := by
+    rw [Nat.sub_self]; exact trHybP_self_bind C mix R G D msgs A
+  have e3 : smHybF C G D msgs msgs.length (msgs.length - msgs.length) = sm_ideal C msgs := by
+    rw [Nat.sub_self]; exact smHybF_self C G D msgs
+  unfold AdvantageA at hK hP hF
+  rw [e3] at hF
+  unfold SM_Advantage AdvantageA
+  rw [← trHybK_zero C mix]
+  refine (advantage_triangle _ ((trHybK C mix R G D msgs msgs.length).bind A) _).trans ?_
+  rw [add_assoc]
+  refine add_le_add hK ?_
+  rw [trHybK_self]
+  exact (advantage_triangle _ _ _).trans (add_le_add hP (e2 ▸ hF))
+
+end Compose
+
+/-! ## The triple ratchet -/
+
+section Triple
+
+variable (G : Type) [CG : CyclicGroup G] [DecidableEq G] {PK SK K E RK Sa W Ct : Type}
+  [Fintype K] [Nonempty K] [Fintype E] [Nonempty E] [Inhabited K] [DecidableEq K]
+  [Fintype RK] [Nonempty RK] [DecidableEq RK] [Fintype Sa] [Nonempty Sa] [DecidableEq Sa]
+  [SampleableType W] [SampleableType Ct]
+
+omit [Fintype K] [Nonempty K] [Fintype E] [Nonempty E] in
+/-- **Confidentiality of the triple ratchet from DDH.** For every adversary `A`, the
+secure-messaging advantage of the triple ratchet with the root step `trRoot F` is at most the
+sum over the epochs of the DDH advantages of `ckaDDHRed` at the one-sided product reductions,
+the dual-PRF advantages of `F` keyed by its left argument (the root key and the
+Diffie–Hellman key) at `trRootRedL`, and the FS-AEAD advantages at `smAEADRed`. The KEM may
+be insecure. -/
+theorem tr_advantage_le_ddh (KEM : KEMScheme PK SK K E) (F : RK × G → K → RK × Sa)
+    (G' : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (msgs : List (List (W × W)))
+    (A : SMView (G × (Option E × PK)) Ct → SPComp Bool) :
+    SM_Advantage (prodCKA (dhCKA G) (kemCKA KEM)) (trRoot F) G' D msgs A ≤
+      ∑ t ∈ Finset.range msgs.length,
+          DDH_Advantage G (ckaDDHRed t (msgs.length - (t + 1))
+            (prodCKARed₁ (kemCKA KEM) t (msgs.length - (t + 1))
+              (trCKARed mixLeft (trRoot F) G' D msgs t A))) +
+        ∑ t ∈ Finset.range msgs.length,
+          DualPRF_Left_Advantage F
+            (trRootRedL (prodCKA (dhCKA G) (kemCKA KEM)) F G' D msgs t (msgs.length - (t + 1)) A) +
+        ∑ t ∈ Finset.range msgs.length,
+          FSAEAD_Advantage G' D (msgs.getD t [])
+            (smAEADRed (prodCKA (dhCKA G) (kemCKA KEM)) G' D msgs t (msgs.length - (t + 1)) A) := by
+  have h := sm_mix_advantage_le (prodCKA (dhCKA G) (kemCKA KEM)) (mixLeft (K₂ := K)) (trRoot F) G' D msgs A
+  simp only [prodCKA_left_advantage_eq _ _ (dhCKA_send_isPure G), cka_advantage_eq_ddh,
+    trRoot_left_advantage_eq] at h
+  exact h
+
+/-- **Confidentiality of the triple ratchet from the KEM.** For a KEM whose key generation and
+encapsulation do not touch the heap and every adversary `A`, the secure-messaging advantage of
+the triple ratchet with the root step `trRoot F` is at most the sum over the epochs of the
+KEM-CPA advantages of `kemCKARed` at the one-sided product reductions, the dual-PRF
+advantages of `F` keyed by its right argument (the KEM key) at `trRootRedR`, and the FS-AEAD
+advantages at `smAEADRed`. The Diffie–Hellman component may be insecure. -/
+theorem tr_advantage_le_kem (KEM : KEMScheme PK SK K E) (hkgen : SPComp.IsPure KEM.kgen)
+    (hencap : ∀ pk, SPComp.IsPure (KEM.encap pk)) (F : RK × G → K → RK × Sa)
+    (G' : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (msgs : List (List (W × W)))
+    (A : SMView (G × (Option E × PK)) Ct → SPComp Bool) :
+    SM_Advantage (prodCKA (dhCKA G) (kemCKA KEM)) (trRoot F) G' D msgs A ≤
+      ∑ t ∈ Finset.range msgs.length,
+          KEM_CPA_Advantage KEM (kemCKARed KEM t (msgs.length - (t + 1))
+            (prodCKARedR (dhCKA G) t (msgs.length - (t + 1))
+              (trCKARed mixRight (trRoot F) G' D msgs t A))) +
+        ∑ t ∈ Finset.range msgs.length,
+          DualPRF_Right_Advantage F
+            (trRootRedR (prodCKA (dhCKA G) (kemCKA KEM)) F G' D msgs t (msgs.length - (t + 1)) A) +
+        ∑ t ∈ Finset.range msgs.length,
+          FSAEAD_Advantage G' D (msgs.getD t [])
+            (smAEADRed (prodCKA (dhCKA G) (kemCKA KEM)) G' D msgs t (msgs.length - (t + 1)) A) := by
+  have h := sm_mix_advantage_le (prodCKA (dhCKA G) (kemCKA KEM)) (mixRight (K₁ := G)) (trRoot F) G' D msgs A
+  simp only [prodCKA_right_advantage_eq _ _ (dhCKA_init_isPure G) (dhCKA_send_isPure G),
+    kemCKA_advantage_eq KEM hkgen hencap, trRoot_right_advantage_eq] at h
+  exact h
+
+/-- **Hybrid confidentiality of the triple ratchet.** For a KEM whose key generation and
+encapsulation do not touch the heap and every adversary `A`, the secure-messaging advantage of
+the triple ratchet is at most the minimum of the DDH chain of `tr_advantage_le_ddh` and the
+KEM chain of `tr_advantage_le_kem`: the protocol is confidential if DDH holds in `G` or the
+KEM is IND-CPA secure, given the dual-PRF security of the root step in the corresponding
+argument and the FS-AEAD security of the symmetric ratchet. -/
+theorem tr_advantage_le_min (KEM : KEMScheme PK SK K E) (hkgen : SPComp.IsPure KEM.kgen)
+    (hencap : ∀ pk, SPComp.IsPure (KEM.encap pk)) (F : RK × G → K → RK × Sa)
+    (G' : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (msgs : List (List (W × W)))
+    (A : SMView (G × (Option E × PK)) Ct → SPComp Bool) :
+    SM_Advantage (prodCKA (dhCKA G) (kemCKA KEM)) (trRoot F) G' D msgs A ≤
+      min
+        (∑ t ∈ Finset.range msgs.length,
+            DDH_Advantage G (ckaDDHRed t (msgs.length - (t + 1))
+              (prodCKARed₁ (kemCKA KEM) t (msgs.length - (t + 1))
+                (trCKARed mixLeft (trRoot F) G' D msgs t A))) +
+          ∑ t ∈ Finset.range msgs.length,
+            DualPRF_Left_Advantage F
+              (trRootRedL (prodCKA (dhCKA G) (kemCKA KEM)) F G' D msgs t (msgs.length - (t + 1)) A) +
+          ∑ t ∈ Finset.range msgs.length,
+            FSAEAD_Advantage G' D (msgs.getD t [])
+              (smAEADRed (prodCKA (dhCKA G) (kemCKA KEM)) G' D msgs t (msgs.length - (t + 1)) A))
+        (∑ t ∈ Finset.range msgs.length,
+            KEM_CPA_Advantage KEM (kemCKARed KEM t (msgs.length - (t + 1))
+              (prodCKARedR (dhCKA G) t (msgs.length - (t + 1))
+                (trCKARed mixRight (trRoot F) G' D msgs t A))) +
+          ∑ t ∈ Finset.range msgs.length,
+            DualPRF_Right_Advantage F
+              (trRootRedR (prodCKA (dhCKA G) (kemCKA KEM)) F G' D msgs t (msgs.length - (t + 1)) A) +
+          ∑ t ∈ Finset.range msgs.length,
+            FSAEAD_Advantage G' D (msgs.getD t [])
+              (smAEADRed (prodCKA (dhCKA G) (kemCKA KEM)) G' D msgs t (msgs.length - (t + 1)) A)) :=
+  le_min (tr_advantage_le_ddh G KEM F G' D msgs A)
+    (tr_advantage_le_kem G KEM hkgen hencap F G' D msgs A)
+
+end Triple
+
 end CatCrypt.Crypto.Messaging
