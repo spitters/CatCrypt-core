@@ -224,6 +224,84 @@ theorem run_eq_bind_eager (O : S → D → PMF (R × S)) (Ov : V → S → D →
       simp only [hnc _ s d hcs, ih]
       exact PMF.bind_comm _ _ _
 
+/-- From a bad state of an oracle whose bad states are kept by every call, a run reaches no
+good outcome. -/
+theorem run_apply_eq_zero_of_bad (O : S → D → PMF (R × S)) (bad : S → Bool)
+    (hO : ∀ s d, bad s = true → ∀ y ∈ (O s d).support, bad y.2 = true)
+    (A : OracleAdv D R α) (s : S) (hs : bad s = true) (y : α × S) (hy : bad y.2 = false) :
+    run O A s y = 0 := by
+  induction A generalizing s with
+  | ret a =>
+    rw [run_ret, PMF.pure_apply]
+    split
+    · rename_i h; rw [h] at hy; rw [hs] at hy; exact absurd hy (by decide)
+    · rfl
+  | rand p k ih =>
+    rw [run_rand, PMF.bind_apply]
+    exact ENNReal.tsum_eq_zero.mpr fun b => by rw [ih b s hs, mul_zero]
+  | query d k ih =>
+    rw [run_query, PMF.bind_apply]
+    refine ENNReal.tsum_eq_zero.mpr fun x => ?_
+    by_cases hx : x ∈ (O s d).support
+    · rw [ih x.1 x.2 (hO s d hs x hx), mul_zero]
+    · rw [(PMF.apply_eq_zero_iff _ _).mpr hx, zero_mul]
+
+/-- **Identical until bad, along a state map.** Let `f` map the states of `O₂` to those of `O₁`,
+with the bad states corresponding, kept by both oracles, and let `O₂` keep the invariant `Inv`.
+If from good states with the invariant the calls of `O₂`, mapped by `f`, and of `O₁` agree on
+every good outcome, then so do the runs. -/
+theorem run_map_apply_eq_of_agree {S₁ S₂ : Type} (O₁ : S₁ → D → PMF (R × S₁))
+    (O₂ : S₂ → D → PMF (R × S₂)) (f : S₂ → S₁) (bad₁ : S₁ → Bool) (bad₂ : S₂ → Bool)
+    (Inv : S₂ → Prop) (hb : ∀ s, bad₁ (f s) = bad₂ s)
+    (h₁ : ∀ s d, bad₁ s = true → ∀ y ∈ (O₁ s d).support, bad₁ y.2 = true)
+    (h₂ : ∀ s d, bad₂ s = true → ∀ y ∈ (O₂ s d).support, bad₂ y.2 = true)
+    (hInv : ∀ s d, Inv s → bad₂ s = false → ∀ y ∈ (O₂ s d).support, bad₂ y.2 = false →
+      Inv y.2)
+    (hagree : ∀ s d, Inv s → bad₂ s = false → ∀ y, bad₁ y.2 = false →
+      (O₂ s d).map (Prod.map id f) y = O₁ (f s) d y)
+    (A : OracleAdv D R α) (s : S₂) (hs : Inv s) (y : α × S₁) (hy : bad₁ y.2 = false) :
+    (run O₂ A s).map (Prod.map id f) y = run O₁ A (f s) y := by
+  have hzero : ∀ (B : OracleAdv D R α) (t : S₂), bad₂ t = true →
+      (run O₂ B t).map (Prod.map id f) y = 0 := by
+    intro B t ht
+    rw [PMF.map_apply]
+    refine ENNReal.tsum_eq_zero.mpr fun x => ?_
+    split
+    · rename_i hxy
+      refine run_apply_eq_zero_of_bad O₂ bad₂ h₂ B t ht x ?_
+      rw [← hb]; rw [hxy] at hy; exact hy
+    · rfl
+  induction A generalizing s with
+  | ret a => simp only [run_ret, PMF.pure_map, Prod.map_apply, id_eq]
+  | rand p k ih =>
+    rw [run_rand, run_rand, PMF.map_bind, PMF.bind_apply, PMF.bind_apply]
+    exact tsum_congr fun b => by rw [ih b s hs]
+  | query d k ih =>
+    by_cases hbs : bad₂ s = true
+    · rw [hzero _ s hbs]
+      exact (run_apply_eq_zero_of_bad O₁ bad₁ h₁ _ (f s) (by rw [hb]; exact hbs) y hy).symm
+    · have hbs' : bad₂ s = false := by simpa using hbs
+      rw [run_query, run_query, PMF.map_bind, PMF.bind_apply, PMF.bind_apply]
+      have hA : ∀ x, O₂ s d x * (run O₂ (k x.1) x.2).map (Prod.map id f) y =
+          O₂ s d x * run O₁ (k x.1) (f x.2) y := by
+        intro x
+        by_cases hx : x ∈ (O₂ s d).support
+        · by_cases hbx : bad₂ x.2 = true
+          · rw [hzero _ x.2 hbx, run_apply_eq_zero_of_bad O₁ bad₁ h₁ _ (f x.2)
+              (by rw [hb]; exact hbx) y hy]
+          · rw [ih x.1 x.2 (hInv s d hs hbs' x hx (by simpa using hbx))]
+        · rw [(PMF.apply_eq_zero_iff _ _).mpr hx, zero_mul, zero_mul]
+      rw [tsum_congr hA]
+      have hB : (∑' x, O₂ s d x * run O₁ (k x.1) (f x.2) y) =
+          ∑' z, (O₂ s d).map (Prod.map id f) z * run O₁ (k z.1) z.2 y := by
+        rw [← PMF.bind_apply, ← PMF.bind_apply, PMF.bind_map]
+        rfl
+      rw [hB]
+      refine tsum_congr fun z => ?_
+      by_cases hz : bad₁ z.2 = true
+      · rw [run_apply_eq_zero_of_bad O₁ bad₁ h₁ _ z.2 hz y hy, mul_zero, mul_zero]
+      · rw [hagree s d hs hbs' z (by simpa using hz)]
+
 end CatCrypt.Crypto.OracleAdv
 
 namespace CatCrypt.Crypto.Messaging
@@ -2988,5 +3066,178 @@ theorem sm_advantage_le_corrupt_passive (C : CKADef Sc Msg Key) [CKACoins C Rand
   simp only [pasThr, Bool.false_eq_true, ite_false, ite_true]
 
 end PassiveMain
+
+/-! ## The game with an adaptive challenge epoch -/
+
+section Adaptive
+
+/-- The record of the game with an adaptive challenge epoch: the epoch of the challenge, once it
+has been answered, and the least epoch at which a challenge is allowed after the corruptions
+before the challenge. -/
+structure SMAdRec where
+  /-- The epoch of the answered challenge. -/
+  cE : Option ℕ
+  /-- The least epoch allowed for the challenge. -/
+  lo : ℕ
+
+variable {Sc Msg Key Rand RK Sa W Ct : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
+  [SampleableType Ct]
+
+/-- The oracle of the secure-messaging game with an adaptive challenge epoch. The epochs, the
+receives and the sends are those of `smOracleOf` with the root KDF `R` at every epoch. The
+challenge is answered by the sender of an epoch `e` while its counter is `e`, once, if `e` is at
+least `lo`; its epoch is recorded. A corruption before the challenge is always answered and
+raises `lo` to `max(t_A, t_B) + ΔPCS` (post-compromise security: a challenge is allowed only
+`ΔPCS` epochs after every earlier corruption); a corruption of `P` after a challenge at `e` is
+answered if `e + ΔFS ≤ t_P` (forward secrecy). -/
+noncomputable def smAdOracle (C : CKADef Sc Msg Key) [CKACoins C Rand]
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (ΔFS ΔPCS : ℕ) (ideal : Bool) (x : SMSt Sc Msg RK Sa × SMAdRec) :
+    SMQuery W → PMF (SMAns Sc Msg RK Sa Ct × (SMSt Sc Msg RK Sa × SMAdRec))
+  | .ratchet p =>
+    (smOracleOf C R G D ΔFS ΔPCS 0 ideal (realRoot R) x.1 (.ratchet p)).map fun y => (y.1, (y.2, x.2))
+  | .recv p =>
+    (smOracleOf C R G D ΔFS ΔPCS 0 ideal (realRoot R) x.1 (.recv p)).map fun y => (y.1, (y.2, x.2))
+  | .send p m =>
+    (smOracleOf C R G D ΔFS ΔPCS 0 ideal (realRoot R) x.1 (.send p m)).map fun y =>
+      (y.1, (y.2, x.2))
+  | .chall p m =>
+    match x.1.loc.snd p with
+    | some sa =>
+      if x.1.loc.done = false ∧ x.2.lo ≤ x.1.ck.t p ∧ ckaSender (x.1.ck.t p) = p then
+        (challCt D ideal (G.stretch sa).1 m).bind fun c =>
+          PMF.pure (.ct c, (⟨x.1.ck, { x.1.loc.advanced p (G.stretch sa).2 with done := true }⟩,
+            ⟨some (x.1.ck.t p), x.2.lo⟩))
+      else PMF.pure (.none, x)
+    | none => PMF.pure (.none, x)
+  | .corrupt p =>
+    match x.2.cE with
+    | none =>
+      PMF.pure (.state (x.1.ck.st p) (x.1.loc.rk p) (x.1.loc.snd p) (x.1.loc.rcv p),
+        (x.1, ⟨none, max x.2.lo (max (x.1.ck.t .A) (x.1.ck.t .B) + ΔPCS)⟩))
+    | some e =>
+      PMF.pure (if e + ΔFS ≤ x.1.ck.t p then
+        .state (x.1.ck.st p) (x.1.loc.rk p) (x.1.loc.snd p) (x.1.loc.rcv p) else .none, x)
+
+variable [Fintype RK] [Nonempty RK]
+
+/-- The secure-messaging game with an adaptive challenge epoch: the CKA is initialised, both
+parties get a uniform root key, and the adversary interacts with `smAdOracle`. -/
+noncomputable def sm_adaptive_game (C : CKADef Sc Msg Key) [CKACoins C Rand]
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (ΔFS ΔPCS : ℕ) (ideal : Bool) (A : Msg → OracleAdv (SMQuery W) (SMAns Sc Msg RK Sa Ct) Bool) :
+    SPComp Bool :=
+  SPComp.bind C.init fun i =>
+    SPComp.bind (SPComp.sample RK) fun rk =>
+      liftPMF ((OracleAdv.run (smAdOracle C R G D ΔFS ΔPCS ideal) (A i.1)
+        (smInit i rk, ⟨none, 0⟩)).map Prod.fst)
+
+/-- **Secure-messaging advantage with state corruption and an adaptive challenge epoch.** -/
+noncomputable def SM_Adaptive_Advantage (C : CKADef Sc Msg Key) [CKACoins C Rand]
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (ΔFS ΔPCS : ℕ) (A : Msg → OracleAdv (SMQuery W) (SMAns Sc Msg RK Sa Ct) Bool) : ℝ≥0∞ :=
+  Advantage (sm_adaptive_game C R G D ΔFS ΔPCS false A) (sm_adaptive_game C R G D ΔFS ΔPCS true A)
+
+end Adaptive
+
+/-! ## The guess of the challenge epoch -/
+
+section Guess
+
+/-- The state of the guessing reduction: the epoch counters (a shadow of the CKA game state),
+whether each party holds a sending chain, whether the challenge has been asked, and the record
+of the adaptive game. -/
+structure GuessSt where
+  /-- The epoch counters. -/
+  sh : CKAGameSt Unit Unit
+  /-- The party holds a sending chain. -/
+  hs : CKAParty → Bool
+  /-- The challenge has been asked. -/
+  dn : Bool
+  /-- The record of the adaptive game. -/
+  ad : SMAdRec
+
+variable {Sc Msg RK Sa W Ct : Type}
+
+/-- The opening of an epoch in the guessing reduction: forwarded, with the counters and the
+sending chain recorded. -/
+noncomputable def guessRatchet (w : GuessSt) (p : CKAParty) :
+    OracleAdv (SMQuery W) (SMAns Sc Msg RK Sa Ct) (SMAns Sc Msg RK Sa Ct × GuessSt) :=
+  if w.sh.canSend p then
+    .query (.ratchet p) fun a =>
+      .ret (a, { w with sh := w.sh.sent p () (), hs := Function.update w.hs p true })
+  else .query (.ratchet p) fun a => .ret (a, w)
+
+/-- The receive in the guessing reduction: forwarded, with the counters recorded. -/
+noncomputable def guessRecv (w : GuessSt) (p : CKAParty) :
+    OracleAdv (SMQuery W) (SMAns Sc Msg RK Sa Ct) (SMAns Sc Msg RK Sa Ct × GuessSt) :=
+  if w.sh.canRecv p then
+    .query (.recv p) fun a => .ret (a, { w with sh := w.sh.recvd p () })
+  else .query (.recv p) fun a => .ret (a, w)
+
+/-- The adaptive game answers the challenge of party `p`: no challenge yet, the epoch of `p` is
+allowed, `p` sends in its epoch and holds a sending chain. -/
+def guessOk (w : GuessSt) (p : CKAParty) : Bool :=
+  !w.dn && decide (w.ad.lo ≤ w.sh.t p) && (ckaSender (w.sh.t p) == p) && w.hs p
+
+/-- The challenge in the guessing reduction with the guess `e`: a challenge that the adaptive
+game answers is forwarded at the epoch `e`; at another epoch it is recorded and not
+answered. -/
+noncomputable def guessChall (e : ℕ) (w : GuessSt) (p : CKAParty) (m : W × W) :
+    OracleAdv (SMQuery W) (SMAns Sc Msg RK Sa Ct) (SMAns Sc Msg RK Sa Ct × GuessSt) :=
+  if guessOk w p then
+    if w.sh.t p == e then
+      .query (.chall p m) fun a => .ret (a, { w with dn := true, ad := ⟨some e, w.ad.lo⟩ })
+    else .ret (.none, { w with dn := true, ad := ⟨some (w.sh.t p), w.ad.lo⟩ })
+  else .ret (.none, w)
+
+/-- The corruption in the guessing reduction with the guess `e`: before the challenge it is
+forwarded if it keeps the epoch `e` allowed, and recorded otherwise; after the challenge it is
+forwarded when the adaptive game answers it. -/
+noncomputable def guessCorr (ΔFS ΔPCS e : ℕ) (w : GuessSt) (p : CKAParty) :
+    OracleAdv (SMQuery W) (SMAns Sc Msg RK Sa Ct) (SMAns Sc Msg RK Sa Ct × GuessSt) :=
+  match w.ad.cE with
+  | none =>
+    if max (w.sh.t .A) (w.sh.t .B) + ΔPCS ≤ e then
+      .query (.corrupt p) fun a =>
+        .ret (a, { w with ad := ⟨none, max w.ad.lo (max (w.sh.t .A) (w.sh.t .B) + ΔPCS)⟩ })
+    else .ret (.none, { w with ad := ⟨none, max w.ad.lo (max (w.sh.t .A) (w.sh.t .B) + ΔPCS)⟩ })
+  | some e' =>
+    if e' + ΔFS ≤ w.sh.t p then .query (.corrupt p) fun a => .ret (a, w)
+    else .ret (.none, w)
+
+/-- The simulator of the guessing reduction with the guess `e`. -/
+noncomputable def guessImplOf (ΔFS ΔPCS e : ℕ) (w : GuessSt) (q : SMQuery W) :
+    OracleAdv (SMQuery W) (SMAns Sc Msg RK Sa Ct) (SMAns Sc Msg RK Sa Ct × GuessSt) :=
+  match q with
+  | .ratchet p => guessRatchet w p
+  | .recv p => guessRecv w p
+  | .send p m => .query (.send p m) fun a => .ret (a, w)
+  | .chall p m => guessChall e w p m
+  | .corrupt p => guessCorr ΔFS ΔPCS e w p
+
+/-- The initial state of the guessing reduction. -/
+def guessInit : GuessSt := ⟨CKAGameSt.init () () (), fun _ => false, false, ⟨none, 0⟩⟩
+
+/-- **The guessing reduction** as an oracle tree: it runs the adaptive adversary against the
+simulator `guessImplOf` and accepts if the adversary accepts and its challenge was at the epoch
+`e`. -/
+noncomputable def guessTreeOf (ΔFS ΔPCS e : ℕ)
+    (A : Msg → OracleAdv (SMQuery W) (SMAns Sc Msg RK Sa Ct) Bool) (pub : Msg) :
+    OracleAdv (SMQuery W) (SMAns Sc Msg RK Sa Ct) Bool :=
+  (OracleAdv.simulate (guessImplOf ΔFS ΔPCS e) (A pub) guessInit).bind fun r =>
+    .ret (r.1 && (r.2.ad.cE == some e))
+
+derive_timed guessTreeOf
+
+/-- **The guessing reduction** `smGuessAdv ΔFS ΔPCS A e`: the adversary of the game with an
+announced challenge epoch that announces `e`. -/
+noncomputable def smGuessAdv (ΔFS ΔPCS : ℕ)
+    (A : Msg → OracleAdv (SMQuery W) (SMAns Sc Msg RK Sa Ct) Bool) (e : ℕ) :
+    SMCorruptAdv Sc Msg RK Sa W Ct where
+  tStar := PMF.pure e
+  play _ pub := guessTreeOf ΔFS ΔPCS e A pub
+
+end Guess
 
 end CatCrypt.Crypto.Messaging
