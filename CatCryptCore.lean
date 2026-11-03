@@ -266,6 +266,7 @@ public import CatCryptCore.Crypto.AKE.ChannelSquareTimed
 public import CatCryptCore.Crypto.Messaging.FSPRG
 public import CatCryptCore.Crypto.Messaging.CKA
 public import CatCryptCore.Crypto.Messaging.CKACorrupt
+public import CatCryptCore.Crypto.Messaging.CKAACD
 public import CatCryptCore.Crypto.Messaging.FSAEAD
 public import CatCryptCore.Crypto.Messaging.DoubleRatchet
 public import CatCryptCore.Crypto.PAKE.DHPAKE
