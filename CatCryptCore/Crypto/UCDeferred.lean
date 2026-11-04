@@ -28,7 +28,7 @@ run. This is the eager–lazy exchange for one value in the runs of reactive sys
 **Reductions with a given heap.** `SPComp.atHeap h c` runs `c` from the heap `h` whatever the
 current heap. For a computation `c` that does not touch the heap, the acceptance probability
 of `c` followed by `f` from the heap `h` is the acceptance probability, from the empty heap, of
-`c` followed by `f` run from `h` (`prTrue_bind_atHeap`); hence the distance between two such
+`c` followed by `f` run from `h` (`prTrue_bind_eq_atHeap_empty`); hence the distance between two such
 games at an environment is an advantage `AdvantageA` of an explicit distinguisher
 (`absDiff_prTrue_bind_eq_advantageA`).
 
@@ -52,7 +52,8 @@ functionality.
   constant continuation, is the continuation.
 * `loop_deferred`, `run_deferred`, `view_deferred`: deferred sampling in runs.
 * `absDiff_prTrue_bind_le_bind`: the distance between mixtures.
-* `prTrue_bind_atHeap`, `absDiff_prTrue_bind_eq_advantageA`: reductions with a given heap.
+* `prTrue_bind_eq_atHeap_empty`, `absDiff_prTrue_bind_eq_advantageA`: reductions with a given
+  heap.
 * `prBad_counter_eq_zero`: a counter bounded by the number of activations.
 * `realizes_seq_right_ctx`, `realizesThrough_seq`: the cascade over a context.
 -/
@@ -244,7 +245,7 @@ theorem bind_atHeap {α β : Type} {c : SPComp α} (hc : SPComp.IsPure c) (f : �
 
 /-- The acceptance probability of `c` followed by `f` from the heap `h` is the acceptance
 probability from the empty heap of `c` followed by `f` run from `h`. -/
-theorem prTrue_bind_atHeap {α : Type} {c : SPComp α} (hc : SPComp.IsPure c)
+theorem prTrue_bind_eq_atHeap_empty {α : Type} {c : SPComp α} (hc : SPComp.IsPure c)
     (f : α → SPComp Bool) (h : Heap) :
     prTrue (SPComp.bind c f) h =
       prTrue (SPComp.bind c fun a => SPComp.atHeap h (f a)) Heap.empty := by
@@ -257,7 +258,7 @@ theorem absDiff_prTrue_bind_eq_advantageA {α : Type} {c₁ c₀ : SPComp α} (h
     (h₀ : SPComp.IsPure c₀) (f : α → SPComp Bool) (h : Heap) :
     absDiff (prTrue (SPComp.bind c₁ f) h) (prTrue (SPComp.bind c₀ f) h) =
       AdvantageA c₁ c₀ (fun a => SPComp.atHeap h (f a)) := by
-  rw [prTrue_bind_atHeap h₁, prTrue_bind_atHeap h₀]
+  rw [prTrue_bind_eq_atHeap_empty h₁, prTrue_bind_eq_atHeap_empty h₀]
   rfl
 
 /-! ## Counters -/
