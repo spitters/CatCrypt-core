@@ -49,6 +49,8 @@ when `2 ^ m` is at most the number of scalars (`bitsEmb_nonempty`).
 
 * `MultiHybrid.withSub_hybMap`: a state map between hybrids commutes with their steps.
 * `MultiHybrid.view_lazyKey_withSub`: the drawing hybrid is the lazily keyed system.
+* `MultiHybrid.view_lazyKey_tensor`: the drawing hybrid beside the forwarding of the adversary
+  port is the average over the key of the hybrids beside the forwarding.
 * `IKNPWake.view_iknpW_eq_lazy`: `iknpW` is the protocol over the drawing parties.
 * `RealizesSim.mapPorts`, `RealizesSim.subst_stepMap`, `RealizesSim.of_mapPorts_sub`.
 * `FOTSched.one_stepMap`, `bitsDecode_bitsCode`, `bitsEmb_nonempty`.
@@ -222,6 +224,48 @@ theorem lazyKey_tensor_withSub_step (π : K → MultiHybrid σ E O EG OG)
   · rintro ⟨⟨ko, s⟩, s'⟩ (o | o) <;>
       simp [tensor, lazyKey, SPComp.map, SPComp.bind_assoc, SPComp.pure_bind]
 
+/-- **The key drawn in the hybrid, averaged.** The drawing hybrid beside the forwarding of the
+adversary port, over a subroutine that answers each event on its port, has the view of the
+average over `k ← μ` of the hybrids `π k` beside the forwarding, when the hybrids of the family
+have the same fuel and initial state, and an activation that does not read the key outputs at
+once, the same for every key. -/
+theorem view_lazyKey_tensor {K : Type} (π : K → MultiHybrid σ E O EG OG) (k₀ : K) (μ : PMF K)
+    (u : σ → E → Bool) {EA OA ζ : Type} (X : Sys τ (EG ⊕ EA) (OG ⊕ OA)) (hX : X.PortTyped)
+    (hfuel : ∀ k, (π k).fuel = (π k₀).fuel) (hinit : ∀ k, (π k).init = (π k₀).init)
+    (hind : ∀ k s e, u s e = false → ∃ r : σ × O,
+      (π k).start s e = SPComp.pure (r.1, .inr r.2) ∧
+        (π k₀).start s e = SPComp.pure (r.1, .inr r.2))
+    (Z : Strat ζ (E ⊕ EA) (O ⊕ OA)) :
+    view (((lazyKey π k₀ μ u).tensor (idSim EA OA)).withSub X) Z =
+      SPComp.bind (sampleFrom (ofPMF μ)) fun k =>
+        view (((π k).tensor (idSim EA OA)).withSub X) Z := by
+  obtain ⟨XL, XR, hL, hR⟩ := hX
+  have h1 : view (((lazyKey π k₀ μ u).tensor (idSim EA OA)).withSub X) Z =
+      view ((lazyKey (fun k => (π k).tensor (idSim EA OA)) k₀ μ (tensorUses u)).withSub X) Z :=
+    view_eq_of_stepMap _ _ (fun t => ((t.1.1.1, (t.1.1.2, t.1.2)), t.2)) rfl
+      (fun t e => lazyKey_tensor_withSub_step π (idSim EA OA) k₀ μ u X t e) Z
+  have hfuel' : ∀ k, ((π k).tensor (idSim EA OA)).fuel = ((π k₀).tensor (idSim EA OA)).fuel :=
+    fun k => by simp only [tensor, hfuel]
+  have hind' : ∀ k t e,
+      (keyedWithSub (fun k => (π k).tensor (idSim EA OA)) k₀ (tensorUses u) X).uses t e = false →
+      (keyedWithSub (fun k => (π k).tensor (idSim EA OA)) k₀ (tensorUses u) X).step k t e =
+        (keyedWithSub (fun k => (π k).tensor (idSim EA OA)) k₀ (tensorUses u) X).step₀ t e := by
+    rintro k ⟨⟨s, ⟨⟩⟩, t⟩ (e | a) hu
+    · obtain ⟨r, hk, hk₀⟩ := hind k s e hu
+      simp only [keyedWithSub]
+      rw [tensor_withSub_step_inl _ _ X XL hL, tensor_withSub_step_inl _ _ X XL hL]
+      simp only [stepFuel, hk, hk₀, SPComp.pure_bind, drive]
+    · simp only [keyedWithSub]
+      rw [tensor_withSub_step_inr _ _ X XR hR, tensor_withSub_step_inr _ _ X XR hR, hfuel]
+  rw [h1, view_lazyKey_withSub _ k₀ μ _ hfuel' X Z, KeyedSys.view_lazy _ μ hind' Z]
+  congr 1
+  funext k
+  exact view_eq_of_stepMap
+    ((keyedWithSub (fun k => (π k).tensor (idSim EA OA)) k₀ (tensorUses u) X).withKey k)
+    (((π k).tensor (idSim EA OA)).withSub X) id
+    (by simp [keyedWithSub, KeyedSys.withKey, withSub, tensor, hinit])
+    (fun t e => by simp [keyedWithSub, KeyedSys.withKey, SPComp.map]) Z
+
 end MultiHybrid
 
 /-! ## Relabelled ports -/
@@ -270,7 +314,7 @@ theorem subst_stepMap {R : Sys τ E O} {X : Sys υ EG OG} {Y : Sys υ' EG OG}
   have hv : (view (π.withSub Y) : Strat ζ E O → SPComp ζ) = view (π.withSub X) :=
     funext fun Z => (view_eq_of_stepMap (π.withSub X) (π.withSub Y) (fun t => (t.1, F t.2))
       (by simp [MultiHybrid.withSub, hinit])
-      (fun t e => MultiHybrid.withSub_stepMap π X Y F hstep t e) Z).symm
+      (fun t e => MultiHybrid.withSub_stepMap π F hstep t e) Z).symm
   change DistC _ (view (π.withSub Y)) _
   rw [hv]
   exact h ζ

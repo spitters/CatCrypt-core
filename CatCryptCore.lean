@@ -563,6 +563,7 @@ public import CatCryptCore.Crypto.UCDeferred
 public import CatCryptCore.Crypto.UCCascadeEnriched
 public import CatCryptCore.Crypto.UCCascadeEnrichedPar
 public import CatCryptCore.Crypto.TraceEquiv
+public import CatCryptCore.Crypto.TraceEqLaws
 public import CatCryptCore.Crypto.TraceSemantics
 public import CatCryptCore.Crypto.UCCoupling
 public import CatCryptCore.Crypto.UCCompiled

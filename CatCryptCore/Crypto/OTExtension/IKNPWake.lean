@@ -9,6 +9,7 @@ public import CatCryptCore.Crypto.UCWake
 public import CatCryptCore.Crypto.OT.FOTSched
 public import CatCryptCore.Crypto.UCChannelLift
 public import CatCryptCore.Crypto.OTExtension.IKNPSquare
+public import CatCryptCore.Crypto.TraceEqLaws
 
 /-!
 # IKNP over scheduled base OTs and a channel, with activation on delivery
@@ -2261,15 +2262,6 @@ def cutW {L : Type} (_ : WakeEv κ) : InOut m M ⊕ (AOut m M ⊕ L) := .inl (.i
 /-- The idle event: the channel's `idle`. -/
 def idleW {P : Type} : (InEv m M ⊕ AEv κ m M ⊕ P) ⊕ WakeEv κ := .inl (.inr (.inl (.inr .idle)))
 
-/-- Realization from equal views. -/
-theorem realizes_of_view_eq {τ τ' υ E O : Type} {R : Sys τ E O} {A : Sys τ' E O}
-    {I : Sys υ E O} {b : (ζ : Type) → Env (Strat ζ E O) ζ → ℝ≥0∞}
-    (hv : ∀ (ζ : Type) (Z : Strat ζ E O), view R Z = view A Z) (h : Realizes A I b) :
-    Realizes R I b := fun ζ => by
-  have : (view R : Strat ζ E O → SPComp ζ) = view A := funext (hv ζ)
-  rw [this]
-  exact h ζ
-
 section Close
 
 variable [AddCommGroup M] (H : Fin m → (Fin κ → Bool) → M) {P L LS LR EGA OGA : Type}
@@ -2365,8 +2357,8 @@ parties over `κ` scheduled base OTs beside the secure channel, inputs and wakes
 port. Simulator: `iknpSimH`. Distance `0`. -/
 theorem iknpH_realizesSim :
     RealizesSim (iknpRealH (κ := κ) H) (FOTSched otChoose) iknpSimH (fun _ _ => 0) := by
-  refine realizes_of_view_eq (fun ζ Z => view_iknpW_eq H _ _ ansH false false
-    (fun _ _ => rfl) (fun _ _ => rfl) Z) ?_
+  refine (Sys.traceEq_iff_view_eq.mpr fun ζ Z => view_iknpW_eq H _ _ ansH false false
+    (fun _ _ => rfl) (fun _ _ => rfl) Z).symm.realizes_left ?_
   exact lazyA_realizes ansH id statSched .poll (fun _ => SPComp.pure ())
     (fun _ => SPComp.pure ()) (fun _ => SPComp.pure_noFail _) (fun _ => SPComp.pure_noFail _)
     (FOTSched.schedSys otChoose) id (fun u => .status u.sent.isSome u.chosen.isSome)
@@ -2500,8 +2492,8 @@ theorem iknpS_realizesSim :
     (fun _ _ => rfl) rfl (fun x r γ G => hSS x r G)
     (fun _ _ _ _ => by simp [SPComp.pure_bind])
   rw [← idealF_shFA]
-  exact realizes_of_view_eq (fun ζ Z => view_iknpW_eq H _ _ ansS true false
-    (fun h => absurd h (by decide)) (fun _ _ => rfl) Z) hA
+  exact (Sys.traceEq_iff_view_eq.mpr fun ζ Z => view_iknpW_eq H _ _ ansS true false
+    (fun h => absurd h (by decide)) (fun _ _ => rfl) Z).symm.realizes_left hA
 
 /-- **IKNP against a semi-honest corrupt sender, with activation on delivery.** Ideal
 functionality: `FOTSchedSH otChoose leakSend`. Real protocol: the wake closure of the IKNP
@@ -2676,8 +2668,8 @@ theorem iknpR_realizesSim :
     (fun h => absurd h (by decide)) rfl (fun _ _ _ _ => by simp [SPComp.pure_bind])
     (fun x r γ G => hRR x r G)
   rw [← idealF_shFA]
-  refine realizes_of_view_eq (fun ζ Z => view_iknpW_eq H _ _ ansR false true
-    (fun _ _ => rfl) (fun h => absurd h (by decide)) Z) ?_
+  refine (Sys.traceEq_iff_view_eq.mpr fun ζ Z => view_iknpW_eq H _ _ ansR false true
+    (fun _ _ => rfl) (fun h => absurd h (by decide)) Z).symm.realizes_left ?_
   exact fun ζ Z => le_of_le_of_eq ((Realizes.trans (lazyR_realizes_cr H) hA) ζ Z) (add_zero _)
 
 /-- **IKNP against a semi-honest corrupt receiver, with activation on delivery.** Ideal

@@ -566,63 +566,6 @@ theorem pvw_realizesSim_corruptReceiver (td : MessyTD crs) (code : M → gp.G) :
 
 end CorruptReceiver
 
-/-! ## Keyed systems on two ports -/
-
-namespace KeyedSys
-
-variable {K τ E O E' O' : Type}
-
-/-- The keyed system with the state of `SL` and `SR`, which steps as `SL` on a left event and as
-`SR` on a right event, the output on the port of the event. -/
-noncomputable def ofPorts (SL : KeyedSys K τ E O) (SR : KeyedSys K τ E' O') :
-    KeyedSys K τ (E ⊕ E') (O ⊕ O') where
-  init := SL.init
-  step k t := Sum.elim (fun e => SPComp.map (fun q => (q.1, .inl q.2)) (SL.step k t e))
-    (fun e => SPComp.map (fun q => (q.1, .inr q.2)) (SR.step k t e))
-  step₀ t := Sum.elim (fun e => SPComp.map (fun q => (q.1, .inl q.2)) (SL.step₀ t e))
-    (fun e => SPComp.map (fun q => (q.1, .inr q.2)) (SR.step₀ t e))
-  uses t := Sum.elim (SL.uses t) (SR.uses t)
-
-/-- Sampling the key lazily commutes with the composition on two ports. -/
-theorem lazy_ofPorts (SL : KeyedSys K τ E O) (SR : KeyedSys K τ E' O')
-    (μ : PMF K) : (ofPorts SL SR).lazy μ = Sys.ofPorts (SL.lazy μ) (SR.lazy μ) := by
-  simp only [KeyedSys.lazy, Sys.ofPorts, ofPorts, Sys.mk.injEq, true_and]
-  funext ⟨ko, t⟩ e
-  rcases ko with _ | k <;> rcases e with e | e
-  all_goals first
-    | (simp [KeyedSys.lazyStep, SPComp.map, SPComp.bind_assoc, SPComp.pure_bind]; done)
-    | (cases hu : SL.uses t e <;>
-        simp [KeyedSys.lazyStep, hu, SPComp.map, SPComp.bind_assoc, SPComp.pure_bind])
-    | (cases hu : SR.uses t e <;>
-        simp [KeyedSys.lazyStep, hu, SPComp.map, SPComp.bind_assoc, SPComp.pure_bind])
-
-/-- A lazily keyed system with deterministic steps `D` preserves an invariant `Inv` when each
-activation does: with the key, at every key when the key is drawn, and without the key
-otherwise. The step is then a draw followed by a point mass into `Inv`. -/
-theorem lazy_pres_det (S : KeyedSys K τ E O) (μ : PMF K) (D : Option K → τ → E → τ × O)
-    (hS : ∀ k t e, S.step k t e = SPComp.pure (D (some k) t e))
-    (hS₀ : ∀ t e, S.step₀ t e = SPComp.pure (D none t e)) (Inv : Option K × τ → Prop)
-    (hsome : ∀ k t e, Inv (some k, t) → Inv (some k, (D (some k) t e).1))
-    (huses : ∀ t e, Inv (none, t) → S.uses t e = true → ∀ k, Inv (some k, (D (some k) t e).1))
-    (hnone : ∀ t e, Inv (none, t) → S.uses t e = false → Inv (none, (D none t e).1))
-    (t : Option K × τ) (e : E) (hI : Inv t) :
-    ∃ (α : Type) (c : SPComp α) (g : α → (Option K × τ) × O),
-      (S.lazy μ).step t e = SPComp.bind c (fun a => SPComp.pure (g a)) ∧ ∀ a, Inv (g a).1 := by
-  obtain ⟨ko, t⟩ := t
-  rcases ko with _ | k
-  · cases hu : S.uses t e
-    · exact ⟨Unit, SPComp.pure (), fun _ => ((none, (D none t e).1), (D none t e).2),
-        by simp [KeyedSys.lazy, KeyedSys.lazyStep, hu, hS₀, SPComp.pure_bind],
-        fun _ => hnone t e hI hu⟩
-    · exact ⟨K, sampleFrom (ofPMF μ), fun k => ((some k, (D (some k) t e).1), (D (some k) t e).2),
-        by simp [KeyedSys.lazy, KeyedSys.lazyStep, hu, hS, SPComp.pure_bind],
-        fun k => huses t e hI hu k⟩
-  · exact ⟨Unit, SPComp.pure (), fun _ => ((some k, (D (some k) t e).1), (D (some k) t e).2),
-      by simp [KeyedSys.lazy, KeyedSys.lazyStep, hS, SPComp.pure_bind],
-      fun _ => hsome k t e hI⟩
-
-end KeyedSys
-
 /-! ## Against a corrupt sender, in decryption mode -/
 
 section CorruptSender

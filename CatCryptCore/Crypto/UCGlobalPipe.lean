@@ -145,35 +145,6 @@ theorem portR_idSim (π : MultiHybrid σ E O EG OG) (XR : Sys τ E' O') :
   obtain ⟨⟨s, ⟨⟩⟩, t⟩ := p
   simp [idSim_stepFuel, SPComp.map, SPComp.bind_assoc, SPComp.pure_bind]
 
-/-- A state map `g` from `X` to `Y` that commutes with single steps commutes with the rest of an
-activation of `π`. -/
-theorem drive_stepMap (π : MultiHybrid σ E O EG OG) (X : Sys τ EG OG) (Y : Sys υ EG OG)
-    (g : τ → υ)
-    (hstep : ∀ t e, SPComp.map (fun p => (g p.1, p.2)) (X.step t e) = Y.step (g t) e) :
-    ∀ n s d t, SPComp.map (fun p => (p.1, g p.2.1, p.2.2)) (π.drive X n s d t) =
-      π.drive Y n s d (g t) := by
-  intro n
-  induction n with
-  | zero =>
-    rintro s (e | o) t
-    · simp [drive, ← hstep, SPComp.map, SPComp.bind_assoc, SPComp.pure_bind]
-    · simp [drive, SPComp.map, SPComp.pure_bind]
-  | succ n ih =>
-    rintro s (e | o) t
-    · simp [drive, ← hstep, ← ih, SPComp.map, SPComp.bind_assoc, SPComp.pure_bind]
-    · simp [drive, SPComp.map, SPComp.pure_bind]
-
-/-- A state map from `X` to `Y` that commutes with single steps commutes with the steps of
-`π.withSub X` and `π.withSub Y`. -/
-theorem withSub_stepMap (π : MultiHybrid σ E O EG OG) (X : Sys τ EG OG) (Y : Sys υ EG OG)
-    (g : τ → υ)
-    (hstep : ∀ t e, SPComp.map (fun p => (g p.1, p.2)) (X.step t e) = Y.step (g t) e)
-    (p : σ × τ) (e : E) :
-    SPComp.map (fun q => ((q.1.1, g q.1.2), q.2)) ((π.withSub X).step p e) =
-      (π.withSub Y).step (p.1, g p.2) e := by
-  simp [withSub, ← drive_stepMap π X Y g hstep, SPComp.map, SPComp.bind_assoc,
-    SPComp.pure_bind]
-
 /-- **State maps under a multi-call hybrid**: a state map from `X` to `Y` that preserves the
 initial state and commutes with single steps gives `π.withSub X` realizing `π.withSub Y` at
 distance `0`. -/
@@ -183,7 +154,7 @@ theorem realizes_withSub_of_stepMap (π : MultiHybrid σ E O EG OG) (X : Sys τ 
     (hinit : g X.init = Y.init) :
     Realizes (π.withSub X) (π.withSub Y) (fun _ _ => 0) :=
   realizes_zero_of_stepMap _ _ (fun p => (p.1, g p.2)) (by simp [withSub, hinit])
-    (withSub_stepMap π X Y g hstep)
+    (withSub_stepMap π g hstep)
 
 end MultiHybrid
 
@@ -580,7 +551,7 @@ theorem realizes_gPar {π₁ : MultiHybrid σ₁ E₁ O₁ EG OG} {π₂ : Multi
   have r₆ := realizes_withSub_of_stepMap (T₁.tensor (idSim (E₂ ⊕ EG) (O₂ ⊕ OG))) _ _
     (fun p : (Unit × (ρ₂ × Unit)) × ((φ₁ × Unit) × ((φ₂ × Unit) × τ)) =>
       (p.1, ((p.2.1.1, p.2.2.1), p.2.2.2)))
-    (withSub_stepMap ((idSim E₁' O₁').tensor (T₂.tensor (idSim EG OG))) _ _
+    (withSub_stepMap ((idSim E₁' O₁').tensor (T₂.tensor (idSim EG OG)))
       (fun q : (φ₁ × Unit) × ((φ₂ × Unit) × τ) => ((q.1.1, q.2.1), q.2.2)) hLP) rfl
   intro ζ Z
   refine le_of_le_of_eq

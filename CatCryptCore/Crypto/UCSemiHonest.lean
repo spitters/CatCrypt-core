@@ -68,7 +68,7 @@ theorem stepFuel_stepMap (π : MultiHybrid σ E O EG OG) (X : Sys τ EG OG) (Y :
     (n : ℕ) (s : σ) (t : τ) (e : E) :
     SPComp.map (fun p => ((p.1.1, g p.1.2), p.2)) (π.stepFuel X n (s, t) e) =
       π.stepFuel Y n (s, g t) e := by
-  simp [stepFuel, ← drive_stepMap π X Y g hstep, SPComp.map, SPComp.bind_assoc,
+  simp [stepFuel, ← drive_stepMap π g hstep, SPComp.map, SPComp.bind_assoc,
     SPComp.pure_bind]
 
 end StepMap
