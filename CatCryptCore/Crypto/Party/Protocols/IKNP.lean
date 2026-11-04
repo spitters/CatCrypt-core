@@ -547,10 +547,10 @@ theorem sub_ans (t : SubSt κ m M) (q : PCall κ m M) (r : SubSt κ m M × PAns 
     (hr : IsOutcome (((baseG κ m).withChan (chanC m M)).step t q) r) : AnsT q r.2 := by
   rcases q with q | q
   · rw [sub_step_inl] at hr
-    obtain ⟨_, _, rfl⟩ := exists_of_isOutcome_map hr
+    obtain ⟨_, _, rfl⟩ := isOutcome_map_iff.mp hr
     trivial
   · rw [sub_step_inr] at hr
-    obtain ⟨_, _, rfl⟩ := exists_of_isOutcome_map hr
+    obtain ⟨_, _, rfl⟩ := isOutcome_map_iff.mp hr
     trivial
 
 /-- The fuel of the hand-written parties. -/
@@ -575,14 +575,14 @@ theorem partyLoop_embeds [NeZero κ] :
     · rw [partyHW_fuel]
       simp only [partyHW, MultiHybrid.tensor, Sum.elim_inl, partyLazy, MultiHybrid.lazyKey,
         partyW_start] at hr
-      obtain ⟨r', hr', rfl⟩ := exists_of_isOutcome_map hr
+      obtain ⟨r', hr', rfl⟩ := isOutcome_map_iff.mp hr
       obtain ⟨k, ko', rfl⟩ : ∃ k ko', r' =
           ((ko', (pStart H φS φR ans k st e).1), (pStart H φS φR ans k st e).2) := by
         split at hr'
         · obtain ⟨k, -, hk⟩ := isOutcome_bind hr'
-          obtain ⟨r'', h1, rfl⟩ := exists_of_isOutcome_map hk
+          obtain ⟨r'', h1, rfl⟩ := isOutcome_map_iff.mp hk
           exact ⟨k, some k, by rw [← isOutcome_pure h1]⟩
-        · obtain ⟨r'', h1, rfl⟩ := exists_of_isOutcome_map hr'
+        · obtain ⟨r'', h1, rfl⟩ := isOutcome_map_iff.mp hr'
           exact ⟨_, ko, by rw [← isOutcome_pure h1]⟩
       obtain ⟨q', hq', rfl⟩ := sumMap_eq_inl hq
       exact pStart_depth H φS φR ans k st e q' hq'
@@ -779,7 +779,7 @@ theorem simLoop_embeds (hS : ∀ a, SPComp.NoFail (simS a)) (hR : ∀ a, SPComp.
     all_goals (try split_ifs at hr)
     all_goals first
       | obtain rfl := isOutcome_pure hr; simp_all [simD]
-      | obtain ⟨v, -, rfl⟩ := exists_of_isOutcome_map hr; simp_all [simD]
+      | obtain ⟨v, -, rfl⟩ := isOutcome_map_iff.mp hr; simp_all [simD]
 
 /-- **The simulator program is step-equivalent to `simW`** over every ideal functionality. -/
 theorem simLoop_stepEq (hS : ∀ a, SPComp.NoFail (simS a)) (hR : ∀ a, SPComp.NoFail (simR a))

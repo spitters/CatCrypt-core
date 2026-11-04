@@ -836,10 +836,25 @@ theorem late_pres (crs : CRS gp) (decode : gp.G → M) (t : Option (Fin m → gp
     (q : (Option (Fin m → gp.Scalar) × SState gp m) × (Option (Fin m → M) ⊕ Option (Key gp m)))
     (hq : IsOutcome (((keyedS crs decode false).lazy (PMF.uniformFintype _)).step t e) q) :
     SInv q.1 := by
-  rcases t with ⟨_ | r, _ | c, _ | _, _ | ct, _ | _⟩ <;> rcases e with c' | (u | ct') <;>
-    simp [SInv, KeyedSys.lazy, KeyedSys.lazyStep, keyedS, KeyedSys.ofPorts, keyedSR, keyedSA,
-      sStepR, sStepA, SPComp.map, SPComp.pure_bind] at hI hq ⊢ <;>
-    obtain ⟨_, -, rfl⟩ := hq <;> simp
+  refine KeyedSys.lazy_pres _ _ SInv ?_ ?_ ?_ t e hI q hq
+  · rintro k t (c' | (u | ct')) hI q hq
+    all_goals
+      simp only [keyedS, KeyedSys.ofPorts, keyedSR, keyedSA, Sum.elim_inl, Sum.elim_inr,
+        isOutcome_map_iff, isOutcome_pure_iff, exists_eq_left'] at hq
+      subst hq
+      rcases t with ⟨_ | c, _ | _, _ | ct, _ | _⟩ <;> simp_all [SInv, sStepR, sStepA]
+  · rintro t (c' | (u | ct')) hI hu k q hq
+    all_goals
+      simp only [keyedS, KeyedSys.ofPorts, keyedSR, keyedSA, Sum.elim_inl, Sum.elim_inr,
+        isOutcome_map_iff, isOutcome_pure_iff, exists_eq_left'] at hq hu
+      subst hq
+      rcases t with ⟨_ | c, _ | _, _ | ct, _ | _⟩ <;> simp_all [SInv, sStepA]
+  · rintro t (c' | (u | ct')) hI hu q hq
+    all_goals
+      simp only [keyedS, KeyedSys.ofPorts, keyedSR, keyedSA, Sum.elim_inl, Sum.elim_inr,
+        isOutcome_map_iff, isOutcome_pure_iff, exists_eq_left'] at hq hu
+      subst hq
+      rcases t with ⟨_ | c, _ | _, _ | ct, _ | _⟩ <;> simp_all [SInv, sStepR, sStepA]
 
 /-- Hop 2: the protocol against a corrupt sender with late randomness is trace equivalent to the
 simulator against a corrupt sender over `FOTSchedS otChoose`, by the step map `sMap` on the

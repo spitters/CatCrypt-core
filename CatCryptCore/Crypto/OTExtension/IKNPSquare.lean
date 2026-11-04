@@ -216,11 +216,17 @@ theorem trigR_lazy_pres {K V : Type} (out : K → (Fin m → M × M) → (Fin m 
     (μ : PMF K) (t : Option K × FOTState m M) (e : (Fin m → M × M) ⊕ (Fin m → Bool))
     (hI : t.1.isSome → t.2.2 = true) (q : (Option K × FOTState m M) × (Bool ⊕ Option V))
     (hq : IsOutcome (((trigR out).lazy μ).step t e) q) : q.1.1.isSome → q.1.2.2 = true := by
-  rcases t with ⟨_ | k, _ | x, _ | _⟩ <;> rcases e with x' | r <;>
-    simp [KeyedSys.lazy, KeyedSys.lazyStep, trigR, fotSend, recvStep, SPComp.pure_bind]
-      at hI hq ⊢ <;>
-    obtain ⟨_, -, rfl⟩ := hq <;> simp
-
+  refine KeyedSys.lazy_pres _ μ (fun t => t.1.isSome → t.2.2 = true) ?_ ?_ ?_ t e hI q hq
+  · rintro k t (x | r) hI q hq
+    all_goals
+      simp only [trigR, Sum.elim_inl, Sum.elim_inr, isOutcome_pure_iff] at hq
+      subst hq
+      rcases t with ⟨_ | _, _ | _⟩ <;> simp_all [fotSend, recvStep]
+  · rintro ⟨_ | _, _ | _⟩ (x | r) - hu k q hq <;> simp [trigR] at hu
+    simp only [trigR, Sum.elim_inr, isOutcome_pure_iff] at hq
+    subst hq
+    simp [recvStep]
+  · simp
 
 variable [AddCommGroup M]
 
@@ -466,10 +472,17 @@ theorem trigS_lazy_pres (H : Fin m → (Fin κ → Bool) → M) (t : Option (IKN
       (Option (Fin m → M) ⊕ Option (IKNPSenderView κ m Unit)))
     (hq : IsOutcome (((trigS H false).lazy (PMF.uniformFintype _)).step t e) q) :
     q.1.1.isSome → q.1.2.2.2 = true := by
-  rcases t with ⟨_ | k, _ | x, _ | r, _ | _⟩ <;> rcases e with r' | x' <;>
-    simp [KeyedSys.lazy, KeyedSys.lazyStep, trigS, sRecv, sSend, iknpROut_eq,
-      SPComp.pure_bind] at hI hq ⊢ <;>
-    obtain ⟨_, _, -, rfl⟩ := hq <;> simp
+  refine KeyedSys.lazy_pres _ _ (fun t => t.1.isSome → t.2.2.2 = true) ?_ ?_ ?_ t e hI q hq
+  · rintro k t (r | x) hI q hq
+    all_goals
+      simp only [trigS, Sum.elim_inl, Sum.elim_inr, isOutcome_pure_iff] at hq
+      subst hq
+      rcases t with ⟨_ | _, _ | _, _ | _⟩ <;> simp_all [sRecv, sSend]
+  · rintro ⟨_, _ | _, _ | _⟩ (r | x) - hu k q hq <;> simp [trigS] at hu
+    simp only [trigS, Sum.elim_inr, isOutcome_pure_iff] at hq
+    subst hq
+    simp [sSend]
+  · simp
 
 /-- Hop 1: drawing `(T, s)` at the receiver activation and at the sender activation that reveals
 the view give trace-equivalent systems: the receiver's output does not depend on `(T, s)`

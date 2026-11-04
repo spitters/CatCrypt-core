@@ -595,6 +595,7 @@ public import CatCryptCore.Crypto.TraceSemantics
 public import CatCryptCore.Crypto.UCCoupling
 public import CatCryptCore.Crypto.UCCompiled
 public import CatCryptCore.Crypto.UCCompiledCT
+public import CatCryptCore.Crypto.UCDelayedDraw
 public import CatCryptCore.Crypto.UCOracleGame
 public import CatCryptCore.Crypto.UCOracleGameTimed
 public import CatCryptCore.Crypto.UCRoundHybrid

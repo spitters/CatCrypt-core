@@ -251,6 +251,21 @@ theorem withSub_stepMap (π : MultiHybrid σ E O EG OG) {X : Sys τ EG OG} {Y : 
       (π.withSub Y).step (t.1, f t.2) e := by
   simp only [withSub, ← drive_stepMap π f hstep, SPComp.map, SPComp.bind_assoc, SPComp.pure_bind]
 
+/-- **The step of a hybrid that makes one call.** With fuel `0`, an activation of `π.withSub X`
+starts `π`, and either outputs at once or makes one call of `X` and finishes `π` on its answer. -/
+theorem withSub_step_of_fuel_eq_zero (π : MultiHybrid σ E O EG OG) (X : Sys τ EG OG)
+    (h : π.fuel = 0) (t : σ × τ) (e : E) :
+    (π.withSub X).step t e = SPComp.bind (π.start t.1 e) fun r =>
+      Sum.elim (fun g => SPComp.bind (X.step t.2 g) fun q =>
+          SPComp.map (fun r' => ((r'.1, q.1), r'.2)) (π.finish r.1 q.2))
+        (fun o => SPComp.pure ((r.1, t.2), o)) r.2 := by
+  simp only [withSub, h]
+  congr 1
+  funext r
+  obtain ⟨s, g | o⟩ := r
+  · simp [drive, SPComp.map, SPComp.bind_assoc, SPComp.pure_bind]
+  · simp [drive, SPComp.pure_bind]
+
 /-- A hybrid protocol as a multi-call hybrid with one call per activation. -/
 noncomputable def ofHybrid (π : Hybrid σ E O EG OG) : MultiHybrid σ E O EG OG where
   init := π.init

@@ -73,26 +73,6 @@ uniform columns for the sender (`iknpSView_sample`), the uniform pads for the re
 
 set_option autoImplicit false
 
-namespace CatCrypt.Crypto.UCTransparent
-
-open CatCrypt.Core CatCrypt.Prob CatCrypt.Crypto CatCrypt.Crypto.UCConcrete
-
-variable {τ υ ζ E O : Type}
-
-/-- Two systems related by a state map `f` have equal views when `f` sends the initial state to
-the initial state and commutes with single steps from the states satisfying an invariant `Inv`,
-which holds initially and at every state a step from a state satisfying it reaches. -/
-theorem view_eq_of_stepMap_on (R : Sys τ E O) (I : Sys υ E O) (Inv : τ → Prop)
-    (f : τ → υ) (hInv : Inv R.init) (hinit : f R.init = I.init)
-    (hpres : ∀ t e, Inv t → ∃ (α : Type) (c : SPComp α) (g : α → τ × O),
-      R.step t e = SPComp.bind c (fun a => SPComp.pure (g a)) ∧ ∀ a, Inv (g a).1)
-    (hstep : ∀ t e, Inv t → SPComp.map (fun p => (f p.1, p.2)) (R.step t e) = I.step (f t) e)
-    (Z : Strat ζ E O) : view R Z = view I Z :=
-  Sys.traceEq_iff_view_eq.mp (Sys.traceEq_iff_realizes_zero.mpr
-    (realizes_zero_of_stepMap_on R I Inv f hInv hinit hpres hstep)) _ Z
-
-end CatCrypt.Crypto.UCTransparent
-
 namespace CatCrypt.Crypto.OT.IKNPWake
 
 open CatCrypt.Core CatCrypt.Prob CatCrypt.Crypto CatCrypt.Crypto.UCConcrete

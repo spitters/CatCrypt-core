@@ -504,7 +504,7 @@ theorem world_outcome {i : ℕ} {cre : SPComp K} {rd1 rd2 : K → SPComp V} {w :
     ∃ kf, IsOutcome (wDraw i cre w e) kf ∧ q.1 = wNext w e kf := by
   simp only [world] at hq
   obtain ⟨kf, hkf, hq'⟩ := isOutcome_bind hq
-  obtain ⟨o, _, rfl⟩ := exists_of_isOutcome_map hq'
+  obtain ⟨o, _, rfl⟩ := isOutcome_map_iff.mp hq'
   exact ⟨kf, hkf, rfl⟩
 
 /-- The steps of a hybrid world keep the invariant. -/
@@ -1641,7 +1641,7 @@ omit [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabite
 theorem noHon_map {α : Type} {c : SPComp α} {f : α → SimSt S W K × Dec S W K}
     (hf : ∀ a, NoHon (f a).2) {q : SimSt S W K × Dec S W K}
     (hq : IsOutcome (SPComp.map f c) q) : NoHon q.2 := by
-  obtain ⟨a, _, rfl⟩ := exists_of_isOutcome_map hq; exact hf a
+  obtain ⟨a, _, rfl⟩ := isOutcome_map_iff.mp hq; exact hf a
 
 omit [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K] in
 /-- The outcomes of a bind whose continuations give no honest output. -/

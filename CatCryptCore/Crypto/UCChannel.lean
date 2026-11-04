@@ -43,7 +43,7 @@ observation into its leakage when `c₁` does not grant reading.
 
 ## Main definitions
 
-* `Sys.ofPorts`: one shared state, one sub-system per port.
+* `Sys.ofPorts` (in `UCTransparent`): one shared state, one sub-system per port.
 * `PubView.eqView`: the equality view.
 * `ChanHEv`, `ChanHOut`, `ChanAEv`, `ChanAOut`, `ChanSt`: the ports and the state of the
   channel.
@@ -75,23 +75,6 @@ open scoped ENNReal
 namespace Sys
 
 variable {τ E O E' O' : Type}
-
-/-- The system with the state of `KL` and `KR`, which steps as `KL` on a left event and as `KR`
-on a right event, the output on the port of the event. The initial state is that of `KL`. -/
-noncomputable def ofPorts (KL : Sys τ E O) (KR : Sys τ E' O') : Sys τ (E ⊕ E') (O ⊕ O') where
-  init := KL.init
-  step t := Sum.elim (fun e => SPComp.map (fun q => (q.1, .inl q.2)) (KL.step t e))
-    (fun e => SPComp.map (fun q => (q.1, .inr q.2)) (KR.step t e))
-
-/-- Unfolding lemma of `Sys.ofPorts`: a step on a left event. -/
-@[simp] theorem ofPorts_step_inl (KL : Sys τ E O) (KR : Sys τ E' O') (t : τ) (e : E) :
-    (ofPorts KL KR).step t (.inl e) = SPComp.map (fun q => (q.1, .inl q.2)) (KL.step t e) :=
-  rfl
-
-/-- Unfolding lemma of `Sys.ofPorts`: a step on a right event. -/
-@[simp] theorem ofPorts_step_inr (KL : Sys τ E O) (KR : Sys τ E' O') (t : τ) (e : E') :
-    (ofPorts KL KR).step t (.inr e) = SPComp.map (fun q => (q.1, .inr q.2)) (KR.step t e) :=
-  rfl
 
 /-- The system of two sub-systems answers every event on the port of the event. -/
 theorem ofPorts_portTyped (KL : Sys τ E O) (KR : Sys τ E' O') : (ofPorts KL KR).PortTyped :=
