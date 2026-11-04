@@ -34,6 +34,8 @@ queries. An adversary runs against a stateful oracle
   query bound
 * `OracleAdv.run_map_state` — an oracle state map that commutes with one
   oracle call commutes with a whole run
+* `OracleAdv.run_support_inv` — an invariant preserved by every oracle transition
+  holds on the support of every run
 * `OracleAdv.run_map_fst_of_isQueryBound_zero` — an adversary without queries
   has an output distribution independent of the oracle
 * `OracleAdv.run_flag_apply_false_of_true` — an oracle whose flag is sticky
@@ -144,6 +146,28 @@ theorem run_map_state (O : S → D → PMF (R × S)) (O' : S' → D → PMF (R �
   | query d k ih =>
     simp only [run_query, PMF.map_bind, ih, ← hO s d, PMF.bind_map]
     rfl
+
+/-- An invariant of the oracle state that every transition preserves holds for
+the final state of every outcome in the support of a run started in it. -/
+theorem run_support_inv (O : S → D → PMF (R × S)) (Inv : S → Prop)
+    (hO : ∀ s d x, Inv s → x ∈ (O s d).support → Inv x.2) (A : OracleAdv D R α) (s : S)
+    (hs : Inv s) : ∀ x ∈ (run O A s).support, Inv x.2 := by
+  induction A generalizing s with
+  | ret a =>
+    intro x hx
+    rw [run_ret, PMF.mem_support_pure_iff] at hx
+    subst hx
+    exact hs
+  | rand p k ih =>
+    intro x hx
+    rw [run_rand, PMF.mem_support_bind_iff] at hx
+    obtain ⟨b, -, hx⟩ := hx
+    exact ih b s hs x hx
+  | query d k ih =>
+    intro x hx
+    rw [run_query, PMF.mem_support_bind_iff] at hx
+    obtain ⟨y, hy, hx⟩ := hx
+    exact ih y.1 y.2 (hO s d y hs hy) x hx
 
 /-- Without queries, the output distribution does not depend on the oracle or
 its initial state. -/
