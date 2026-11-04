@@ -7,6 +7,7 @@ module
 
 public import CatCryptCore.Crypto.Messaging.CKACorrupt
 public import CatCryptCore.Crypto.Assumptions.DualPRF
+import CatCryptCore.Tactics.AutoDispatchExt
 
 /-!
 # Secure messaging with state corruption
@@ -887,11 +888,7 @@ theorem pp_mid_eq_rf (F : RK → Key → Out) (A : OracleAdv (PPQuery RK Key) Ou
     intro x q _
     cases q with
     | prng I => simp [OracleAdv.simOracle, ppImplR, ppOracle, PMF.pure_map]
-    | prf r =>
-      simp only [OracleAdv.simOracle, ppImplR, ppOracle, OracleAdv.run_query,
-        OracleAdv.run_ret, ite_true, PMF.map_bind, PMF.pure_map]
-      rw [← PMF.bind_pure_comp]
-      rfl
+    | prf r => simp [OracleAdv.simOracle, ppImplR, ppOracle, PMF.map, Function.comp_def]
   simp only [h, PMF.bind_const]
 
 /-- The PRF-PRNG game with a random function for `prf` is the real left dual-PRF game of
@@ -913,13 +910,8 @@ theorem pp_mid_eq_real (F : RK → Key → Out) (A : OracleAdv (PPQuery RK Key) 
     | prng I => simp [OracleAdv.simOracle, ppImplL, ppOracle, keyedOracle, PMF.pure_map]
     | prf r =>
       simp only [OracleAdv.simOracle, ppImplL, ppOracle, rfOracle, ite_true]
-      cases List.lookup r x.1 with
-      | some y => simp [PMF.pure_map]
-      | none =>
-        simp only [OracleAdv.run_rand, OracleAdv.run_ret, PMF.map_bind, PMF.pure_map,
-          PMF.map_comp]
-        rw [← PMF.bind_pure_comp]
-        rfl
+      cases List.lookup r x.1 <;>
+        simp [PMF.map, Function.comp_def]
   simp only [h, PMF.bind_const]
 
 /-- The ideal PRF-PRNG game is the ideal left dual-PRF game of `ppRedL`. -/
@@ -936,20 +928,11 @@ theorem pp_ideal_eq_rf (F : RK → Key → Out) (A : OracleAdv (PPQuery RK Key) 
       (fun _ => True) (fun _ _ _ _ _ => trivial) ?_ A ([], []) trivial).symm
     intro x q _
     cases q with
-    | prng I =>
-      simp only [OracleAdv.simOracle, ppImplL, ppOracle, OracleAdv.run_query,
-        OracleAdv.run_ret, ite_true, PMF.map_bind, PMF.pure_map]
-      rw [← PMF.bind_pure_comp]
-      rfl
+    | prng I => simp [OracleAdv.simOracle, ppImplL, ppOracle, PMF.map, Function.comp_def]
     | prf r =>
       simp only [OracleAdv.simOracle, ppImplL, ppOracle, rfOracle, ite_true]
-      cases List.lookup r x.1 with
-      | some y => simp [PMF.pure_map]
-      | none =>
-        simp only [OracleAdv.run_rand, OracleAdv.run_ret, PMF.map_bind, PMF.pure_map,
-          PMF.map_comp]
-        rw [← PMF.bind_pure_comp]
-        rfl
+      cases List.lookup r x.1 <;>
+        simp [PMF.map, Function.comp_def]
   simp only [h, PMF.bind_const]
 
 /-- **The HKDF-shaped root step is a PRF-PRNG under the dual-PRF assumption.** For every
@@ -961,11 +944,8 @@ theorem hkdfRoot_prfprng_le (F : RK → Key → Out) (A : OracleAdv (PPQuery RK 
       DualPRF_Right_Advantage F (ppRedR F A) + DualPRF_Left_Advantage F (ppRedL (Key := Key) A) := by
   have hF : rootFn (hkdfRoot F) = F := funext fun _ => funext fun _ => rfl
   unfold PRFPRNG_Advantage DualPRF_Right_Advantage DualPRF_Left_Advantage PRF_q_Advantage
-  rw [hF]
-  refine (advantage_triangle _ (pp_game F false true A) _).trans (add_le_add (le_of_eq ?_)
-    (le_of_eq ?_))
-  · rw [pp_real_eq, pp_mid_eq_rf]
-  · rw [pp_mid_eq_real, pp_ideal_eq_rf]
+  rw [hF, ← pp_real_eq, ← pp_mid_eq_rf, ← pp_mid_eq_real, ← pp_ideal_eq_rf]
+  exact advantage_triangle _ _ _
 
 end PRFPRNG
 
@@ -1481,12 +1461,7 @@ theorem smRoot_real_eq (C : CKADef Sc Msg Key) [CKACoins C Rand]
     intro t i rk
     rw [sm_run_eager C R G D ΔFS ΔPCS t ideal (PMF.uniformFintype Key) (unifKeyRoot R)
       (fixedKeyRoot R) (fun _ _ => rfl), PMF.map_bind]
-  simp only [h2]
-  rw [PMF.bind_comm]
-  refine congrArg _ (funext fun t => ?_)
-  rw [PMF.bind_comm]
-  refine congrArg _ (funext fun i => ?_)
-  rw [PMF.bind_comm]
+  simp only [h2, PMF.bind_comm (PMF.uniformFintype Key)]
 
 /-- **The ideal side of the root hop.** The ideal PRF-PRNG game of `smcRootRed` is the second
 hybrid: a uniform root output at the challenge epoch. -/
@@ -2367,14 +2342,7 @@ theorem smFS_game_eq (C : CKADef Sc Msg Key) [CKACoins C Rand]
     refine congrArg _ (funext fun rkS => ?_)
     rw [PMF.bind_map]
     rfl
-  simp only [h2]
-  rw [PMF.bind_comm]
-  refine congrArg _ (funext fun t => ?_)
-  rw [PMF.bind_comm]
-  refine congrArg _ (funext fun i => ?_)
-  rw [PMF.bind_comm]
-  refine congrArg _ (funext fun rk => ?_)
-  rw [PMF.bind_comm]
+  simp only [h2, PMF.bind_comm (PMF.uniformFintype Sa)]
 
 end FSHop
 
@@ -2426,27 +2394,9 @@ theorem sm_corrupt_advantage_le (C : CKADef Sc Msg Key) [CKACoins C Rand]
     rw [← e2]; rfl
   unfold SM_Corrupt_Advantage
   simp only [Fintype.sum_bool]
-  set G0 := sm_corrupt_game C R G D ΔFS ΔPCS false A
-  set G1 := sm_corrupt_game C R G D ΔFS ΔPCS true A
-  set H0 := pp_game (rootFn R) false false (smcRootRed C R G D ΔFS ΔPCS false initP A)
-  set H1 := pp_game (rootFn R) false false (smcRootRed C R G D ΔFS ΔPCS true initP A)
-  set F0 := fsaead_corrupt_game G D false (smcFSRed C R G D ΔFS ΔPCS initP A)
-  set F1 := fsaead_corrupt_game G D true (smcFSRed C R G D ΔFS ΔPCS initP A)
-  have hF : Advantage F0 F1 = FSAEAD_Corrupt_Advantage G D (smcFSRed C R G D ΔFS ΔPCS initP A) :=
-    rfl
-  calc Advantage G0 G1
-      ≤ Advantage G0 H0 + Advantage H0 G1 := advantage_triangle _ _ _
-    _ ≤ Advantage G0 H0 + (Advantage H0 F0 + Advantage F0 G1) := by
-        gcongr; exact advantage_triangle _ _ _
-    _ ≤ Advantage G0 H0 + (Advantage H0 F0 + (Advantage F0 F1 + Advantage F1 G1)) := by
-        gcongr; exact advantage_triangle _ _ _
-    _ ≤ Advantage G0 H0 + (Advantage H0 F0 + (Advantage F0 F1 +
-          (Advantage F1 H1 + Advantage H1 G1))) := by
-        gcongr; exact advantage_triangle _ _ _
-    _ = (Advantage G0 H0 + Advantage G1 H1) + (Advantage H0 F0 + Advantage H1 F1) +
-          Advantage F0 F1 := by
-        rw [Advantage_sym F1 H1, Advantage_sym H1 G1]; ring
-    _ = _ := by rw [hK, hK, hP, hP, hF]; ring
+  clear hinit e0 e1 e2
+  hop_chain [hK false, hK true, hP false, hP true,
+    (show Advantage (fsaead_corrupt_game G D false _) _ = FSAEAD_Corrupt_Advantage G D _ from rfl)]
 
 end Main
 
