@@ -34,7 +34,12 @@ per `query` node. The costs `t` and `u` of the two relabellings are parameters.
   the relabelled oracle
 * `OracleAdv.isQueryBound_mapQueryAnswer` — relabelling keeps the query bound
 * `OracleAdv.isQueryBoundBy_mapQueryAnswer` — and a cost bound
+* `OracleAdv.isQueryBoundBy_mapQueryAnswer_of_isQueryBound`,
+  `OracleAdv.isQueryBoundBy_mapQueryAnswer_zero` — cost bounds of a relabelling from a query
+  bound, at query costs at most one and zero
 * `OracleAdv.subst_mapQueryAnswer` — substitution into a relabelled adversary
+* `OracleAdv.mapQueryAnswer_bind`, `OracleAdv.mapQueryAnswer_mapQueryAnswer` — relabelling
+  commutes with `bind`, and two relabellings compose
 * `OracleAdv.Timed.erase_mapQueryAnswer` — erasure commutes with relabelling
 * `OracleAdv.mapQueryAnswer.timed`, `OracleAdv.mapQueryAnswer.erase_timed` — the costed form
   derived by `derive_timed` and its erasure
@@ -93,6 +98,49 @@ theorem isQueryBoundBy_mapQueryAnswer (g : D → D') (h : R' → R) {cost : D �
   | rand p k ih => exact fun b => ih b (hA b)
   | query d k ih =>
     exact ⟨(hc d).trans hA.1, fun r => (ih (h r) (hA.2 (h r))).mono (by have := hc d; omega)⟩
+
+/-- Relabelling commutes with `bind`. -/
+theorem mapQueryAnswer_bind {β : Type} (g : D → D') (h : R' → R) (A : OracleAdv D R α)
+    (f : α → OracleAdv D R β) :
+    mapQueryAnswer g h (A.bind f) =
+      (mapQueryAnswer g h A).bind fun a => mapQueryAnswer g h (f a) := by
+  induction A with
+  | ret a => rfl
+  | rand p k ih => simp only [bind, mapQueryAnswer, ih]
+  | query d k ih => simp only [bind, mapQueryAnswer, ih]
+
+/-- Two relabellings compose: the queries by `g₂ ∘ g₁`, the answers by `h₁ ∘ h₂`. -/
+theorem mapQueryAnswer_mapQueryAnswer {D'' R'' : Type} (g₁ : D → D') (h₁ : R' → R)
+    (g₂ : D' → D'') (h₂ : R'' → R') (A : OracleAdv D R α) :
+    mapQueryAnswer g₂ h₂ (mapQueryAnswer g₁ h₁ A) = mapQueryAnswer (g₂ ∘ g₁) (h₁ ∘ h₂) A := by
+  induction A with
+  | ret a => rfl
+  | rand p k ih => simp only [mapQueryAnswer, ih]
+  | query d k ih => simp only [mapQueryAnswer, ih, Function.comp_apply]
+
+/-- Relabelling an adversary with at most `n` queries into queries of cost at most one gives a
+cost bound `n`. -/
+theorem isQueryBoundBy_mapQueryAnswer_of_isQueryBound (g : D → D') (h : R' → R)
+    {cost' : D' → ℕ} (hc : ∀ d, cost' (g d) ≤ 1) {A : OracleAdv D R α} {n : ℕ}
+    (hA : A.IsQueryBound n) : (mapQueryAnswer g h A).IsQueryBoundBy cost' n := by
+  induction A generalizing n with
+  | ret a => trivial
+  | rand p k ih => exact fun b => ih b (hA b)
+  | query d k ih =>
+    cases n with
+    | zero => exact hA.elim
+    | succ n =>
+      exact ⟨(hc d).trans (Nat.le_add_left 1 n),
+        fun r => (ih (h r) (hA (h r))).mono (by have := hc d; omega)⟩
+
+/-- Relabelling into queries of cost zero gives the cost bound zero. -/
+theorem isQueryBoundBy_mapQueryAnswer_zero (g : D → D') (h : R' → R) {cost' : D' → ℕ}
+    (hc : ∀ d, cost' (g d) = 0) (A : OracleAdv D R α) :
+    (mapQueryAnswer g h A).IsQueryBoundBy cost' 0 := by
+  induction A with
+  | ret a => trivial
+  | rand p k ih => exact fun b => ih b
+  | query d k ih => exact ⟨(hc d).le, fun r => by simpa [hc d] using ih (h r)⟩
 
 /-- Substituting programs into the relabelled adversary substitutes, for each query `d`, the
 program of `g d` followed by the answer relabelling `h`. -/
