@@ -102,8 +102,8 @@ initialize registerTraceClass `sys_step_map
 
 /-- The step equations of the constructions on systems, used by `sys_step_map` beside the
 definitions given to it: the monadic laws of `SPComp`, the ports of `Sys.ofPorts`, the lazily
-keyed systems, the activations of multi-call hybrids and their tensors, and the uniform
-draws. -/
+keyed systems, the activations of multi-call hybrids and their tensors, the uniform draws, and
+the possible outcomes of a uniform draw (`isOutcome_bind_sample_iff`). -/
 def sysStepSimps : Array Name := #[
   ``CatCrypt.Core.SPComp.map, ``CatCrypt.Core.SPComp.pure_bind,
   ``CatCrypt.Core.SPComp.bind_assoc,
@@ -119,7 +119,8 @@ def sysStepSimps : Array Name := #[
   ``CatCrypt.Crypto.UCTransparent.MultiHybrid.tensor_withSub_ofPorts_step_inl,
   ``CatCrypt.Crypto.UCTransparent.MultiHybrid.tensor_withSub_ofPorts_step_inr,
   ``CatCrypt.Crypto.UCTransparent.Simulator.ofMultiHybrid,
-  ``CatCrypt.NonUniform.ofPMF_uniformFintype, ``CatCrypt.NonUniform.sampleFrom_uniform]
+  ``CatCrypt.NonUniform.ofPMF_uniformFintype, ``CatCrypt.NonUniform.sampleFrom_uniform,
+  ``CatCrypt.Crypto.UCTransparent.isOutcome_bind_sample_iff]
 
 /-- The inductive type at the head of `ty` after reducible unfolding. -/
 def inductHead? (ty : Expr) : MetaM (Option InductiveVal) := do
