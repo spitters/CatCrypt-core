@@ -24,6 +24,9 @@ public import CatCryptCore.Tactics.StdCosts
 * `blocksL`: a recursive data function whose cost is quadratic; its bound `blocksL.timedCost_le`
   is used by `derive_time_bound` for the reduction `useBlocks`.
 * `ask`: a costed oracle adversary that queries once per level.
+* `pathView`: a recursion behind a structure binder whose levels fold a compound node
+  `nodeIdeal deps`; `pathChain`: the same with the fold first, of a node below a `have`, whose
+  step cost the caller charges. The induction is on the recursion argument only.
 * A bound too small for `sampleFold`, and a cost of a mutual block, are refused.
 -/
 
@@ -161,6 +164,84 @@ derive_time_rec ask using askTime
 example (n : ℕ) : CatCrypt.Crypto.OracleAdv.Timed.StepTimeBound (ask.timed n) (askTime n) :=
   ask.timeBound_timed n
 
+/-- A record of computations: a key generation. -/
+structure Deps where
+  /-- The key generation. -/
+  keygen : SPComp (ℕ × ℕ)
+
+/-- One ideal node: a key generation and two bits. -/
+noncomputable def nodeIdeal (deps : Deps) : SPComp (ℕ × ℕ × ℕ) :=
+  SPComp.bind deps.keygen fun r => SPComp.bind (SPComp.sample Bool) fun e =>
+    SPComp.bind (SPComp.sample Bool) fun c => SPComp.pure (r.2, e.toNat, c.toNat)
+
+/-- A path of `L` levels, level `i` holding a key and `r i` nodes. -/
+def PathView : (L : ℕ) → (Fin L → ℕ) → Type
+  | 0, _ => Unit
+  | L + 1, r => (ℕ × (Fin (r 0) → ℕ × ℕ × ℕ)) × PathView L (fun i => r i.succ)
+
+/-- The path of no level. -/
+def pathNil (r : Fin 0 → ℕ) : PathView 0 r := ()
+
+/-- The path of a level below a path. -/
+def pathCons {L : ℕ} {r : Fin (L + 1) → ℕ} (k : ℕ) (cts : Fin (r 0) → ℕ × ℕ × ℕ)
+    (rest : PathView L (fun i => r i.succ)) : PathView (L + 1) r :=
+  ((k, cts), rest)
+
+/-- A recursion on `L` behind a structure binder `deps`, with the recursive call first in the
+bind and the fold `fold` of a compound node `nodeIdeal deps` per level. -/
+noncomputable def pathView (deps : Deps) (nodeKey : Bool → ℕ) :
+    (L : ℕ) → (r : Fin L → ℕ) → SPComp (PathView L r)
+  | 0, r => SPComp.pure (pathNil r)
+  | L + 1, r => (pathView deps nodeKey L (fun i => r i.succ)).bind fun rest =>
+      (fold (nodeIdeal deps) (r 0)).bind fun cts =>
+        (SPComp.sample Bool).bind fun ns =>
+          SPComp.pure (pathCons (nodeKey ns) cts rest)
+
+derive_reduction pathView
+
+-- the time premise of `fold.tree.timeBound_timed` at the compound node is bounded in `G_keygen`
+derive_time_rec pathView.tree using fun L G_keygen t_r t_rCost t_nodeKeyCost =>
+  L * (t_r * (G_keygen + 11) + G_keygen + t_nodeKeyCost + 10 + t_rCost + 4 * L) + 2
+
+/-- A record of functions: an expansion. -/
+structure Kdf where
+  /-- The expansion. -/
+  expand : ℕ → ℕ → ℕ
+
+/-- One real node: two key generations and an encryption under `js`. -/
+noncomputable def nodeReal (deps : Deps) (aead : ℕ → ℕ → ℕ) (js : ℕ) : SPComp (ℕ × ℕ × ℕ) :=
+  SPComp.bind deps.keygen fun x => SPComp.bind deps.keygen fun y =>
+    SPComp.pure (x.2, y.2, aead (x.1 + y.1) js)
+
+/-- The path and secret of a level below a path and secret. -/
+def chainCons {L : ℕ} {r : Fin (L + 1) → ℕ} (k : ℕ) (cts : Fin (r 0) → ℕ × ℕ × ℕ)
+    (rest : PathView L (fun i => r i.succ) × ℕ) : PathView (L + 1) r × ℕ :=
+  (((k, cts), rest.1), rest.2)
+
+/-- A recursion on `L` with the fold of the node `nodeReal deps aead (H.expand ps lbl)` first:
+the costed node is a pair whose step cost the caller charges, below a `have` of the value
+`H.expand ps lbl`. -/
+noncomputable def pathChain (deps : Deps) (H : Kdf) (lbl : ℕ) (aead : ℕ → ℕ → ℕ)
+    (nodeKey : ℕ → ℕ) : (L : ℕ) → (r : Fin L → ℕ) → ℕ → SPComp (PathView L r × ℕ)
+  | 0, r, ps => SPComp.pure (pathNil r, H.expand ps lbl)
+  | L + 1, r, ps =>
+      (fold (nodeReal deps aead (H.expand ps lbl)) (r 0)).bind fun cts =>
+        (pathChain deps H lbl aead nodeKey L (fun i => r i.succ) (H.expand ps lbl)).bind
+          fun rest => SPComp.pure (chainCons (nodeKey (H.expand ps 0)) cts rest)
+
+derive_reduction pathChain
+
+-- the strategies are the functional induction and the induction on the recursion argument `L`
+-- (`x7`), the structure binders `deps` (`x0`) and `H` (`x1`) generalized
+/-- * induction x7 generalizing x0 x1 x2 x3 x4 x5 x6 x10 -/
+#guard_msgs (substring := true) in
+derive_time_rec pathChain.tree using fun L => L + 1
+
+-- the step cost of the costed node, a pair below a `have`, is bounded with its tree
+derive_time_rec pathChain.tree using fun L G_keygen t_r t_rCost t_nodeKeyCost t_aeadCost
+    t_expandCost =>
+  L * (t_r * (2 * G_keygen + t_aeadCost + 10) + 2 * G_keygen + t_aeadCost + 3 * t_expandCost +
+    t_nodeKeyCost + 10 + t_rCost + 4 * L) + t_expandCost + 3
 
 mutual
 /-- A size of a natural number, even part. -/

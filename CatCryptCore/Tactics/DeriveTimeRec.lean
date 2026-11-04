@@ -44,11 +44,11 @@ the first of these inductions that closes every case:
 
 * the functional induction of `c` (`fun_induction c xs generalizing vs`, with the bound
   variables `vs` generalized), whose cases have `c` unfolded at the root;
-* structural induction on a binder of `c` of an inductive type, with every other binder
-  generalized that is neither a type nor an instance nor of a type that mentions the binder
-  (those `induction` generalizes itself), and the bound variables; the root occurrence of `c`
-  is rewritten once by its equation lemma at that occurrence, fully instantiated
-  (`time_rec_unfold`).
+* for `c` defined by structural recursion, induction on its recursion argument
+  (`Structural.EqnInfo.recArgPos`), with every other binder generalized that is neither a type
+  nor an instance nor of a type that mentions the argument (those `induction` generalizes
+  itself), and the bound variables; the root occurrence of `c` is rewritten once by its
+  equation lemma at that occurrence, fully instantiated (`time_rec_unfold`).
 
 In each case the root occurrence of `τ` is rewritten once in the same way when `τ` is a constant
 defined by recursion. The recursive calls of `c` stay folded, since `time_bound` unfolds only
@@ -57,10 +57,14 @@ the induction hypotheses being local sources of the recursive calls: a source is
 the subtree at reducible transparency, its generalized binders by the subtree and its
 generalized bound variables by its premises (`AutoTime.findSourceAt`, `closeByContext`), so that
 a cost companion that grows at the recursive call (`fun i => 1 + (rCost i.succ + 3)`) gets the
-bound of its new value. When `time_bound` fails, it is run again after `split_ifs`, which
+bound of its new value. Before `time_bound`, each compound tree passed to a costed callee
+(`fold.tree.timed (keygen.bind g).2 n`) gets its bound in the bound variables of the case
+(`time_rec_trees`), so that the callee's time premise on it is closed by that bound and not by
+reflexivity. When `time_bound` fails, it is run again after `split_ifs`, which
 decides the conditions of the unfolded root that a hypothesis of the case decides (the
-functional induction of a definition by well-founded recursion on a condition). Each case runs
-under the heartbeat budget `DeriveTimeBound.proofHeartbeats`.
+functional induction of a definition by well-founded recursion on a condition). The induction
+and each case run under their own heartbeat budget `DeriveTimeBound.proofHeartbeats`, a
+timeout counted as the failure of the strategy.
 
 For a costed oracle adversary, `time_bound` bounds the step cost `(c xs').1` of a recursive call
 in a continuation and the adversary `(c xs').2` separately by the induction hypothesis, so the
@@ -82,6 +86,7 @@ Mutual recursion is refused.
 
 * `time_rec_unfold f` — rewrite the root occurrence of `f` once by its equation lemma
 * `time_rec_ih f` — instantiate the induction hypotheses at the recursive costs of `f`
+* `time_rec_trees` — bound the compound tree arguments of the costed callees of the goal
 * `derive_time_rec` — the command
 -/
 
@@ -94,6 +99,12 @@ namespace CatCrypt.Tactics.DeriveTimeRec
 open Lean Meta Elab Term Command Tactic
 open CatCrypt.Core
 open CatCrypt.Tactics.DeriveTimeBound (withBounds proofHeartbeats isOracleTimed)
+
+/-- The tree of a step-prefixed tree takes at most its step time. -/
+theorem snd_time_le_of_stepTime {α : Type} {x : ℕ × SPTree.Timed α} {E : ℕ}
+    (h : SPTree.Timed.stepTime x ≤ E) : x.2.time ≤ E := by
+  simp only [SPTree.Timed.stepTime] at h
+  omega
 
 meta section
 
@@ -245,6 +256,93 @@ syntax (name := timeRecIHStx) "time_rec_ih " ident : tactic
   let g ← CatCrypt.Tactics.AutoTime.addCostFacts g
   replaceMainGoal [g]
 
+/-- The bounds of the context: each local `x` with a local hypothesis `∀ ys, (x ys).time ≤ v`
+(a tree, or a key when `ys` is empty) or `∀ ys, x ys ≤ v` with `ys` not empty (a cost
+companion), `v` a local, with `v` and the role of `x`. -/
+def ctxBounds : MetaM DeriveTimeBound.Bounds := do
+  let mut bs : DeriveTimeBound.Bounds := #[]
+  for ld in ← getLCtx do
+    if ld.isImplementationDetail then continue
+    let r? ← forallTelescopeReducing ld.type fun ys body => do
+      let some (l, v) := CatCrypt.Tactics.AutoTime.natLe? body | return none
+      unless v.isFVar do return none
+      if l.isAppOfArity ``SPTree.Timed.time 2 then
+        let t := l.appArg!
+        let .fvar f := t.getAppFn | return none
+        unless t.getAppArgs == ys do return none
+        return some (f, v, if ys.isEmpty then DeriveTimeBound.Role.key else .tree)
+      let .fvar f := l.getAppFn | return none
+      if ys.isEmpty || l.getAppArgs != ys then return none
+      return some (f, v, DeriveTimeBound.Role.cost)
+    if let some b := r? then bs := bs.push b
+  return bs
+
+/-- `e` with its leading `let` and `have` binders instantiated by their values. -/
+partial def zetaHead (e : Expr) : Expr :=
+  match e with
+  | .letE _ _ v b _ => zetaHead (b.instantiate1 v)
+  | .mdata _ b => zetaHead b
+  | _ => e
+
+/-- Add to the context of `g`, for each argument `t` of an application of a costed callee
+`N.timed` in the target that is a tree with no local at its head and no loose bound variable,
+the fact `t.time ≤ B`: the bound `B` computed from the bounds of the context (`ctxBounds`,
+`DeriveTimeBound.boundTree`) and proved by `time_bound`. A time premise `t.time ≤ ?G` of the
+callee's time theorem is then closed by the fact instead of by reflexivity, which would leave
+`t.time` an atom. For the tree `t = y.2` of a pair `y` (below `have` binders, as
+`derive_reduction` emits a node computation), `B` bounds `stepTime y` (`boundStep`), and the
+fact `y.1 ≤ B` is added as well: the step cost `y.1` that the caller charges for the pair. -/
+def treeFacts (g : MVarId) : TacticM MVarId := g.withContext do
+  let tgt ← instantiateMVars (← g.getType)
+  let bs ← ctxBounds
+  let mut g := g
+  let mut seen : Array Expr := #[]
+  for s in CatCrypt.Tactics.AutoTime.appsOf tgt #[] do
+    let some n := s.getAppFn.constName? | continue
+    unless n.lastComponentAsString == "timed" do continue
+    for a in s.getAppArgs do
+      if a.hasLooseBVars || a.hasExprMVar || a.getAppFn.isFVar || seen.contains a then continue
+      unless (← whnfR (← inferType a)).isAppOf ``SPTree.Timed do continue
+      seen := seen.push a
+      let st ← saveState
+      try
+        -- the tree `y.2` of a pair `y`: the bound of `stepTime y`, which also bounds `y.1`
+        let a' := zetaHead a
+        let (lhs, b) ← match CatCrypt.Tactics.AutoTime.sndOf? a' with
+          | some y => do
+            let b ← DeriveTimeBound.boundStep bs y
+            pure (← mkAppM ``SPTree.Timed.stepTime #[y], b)
+          | none => do
+            let b ← DeriveTimeBound.boundTree bs a
+            pure (← mkAppM ``SPTree.Timed.time #[a], b)
+        let b ← DeriveTimeBound.normalizeSum (← instantiateMVars b)
+        let ty ← mkAppM ``LE.le #[lhs, b]
+        let mv ← mkFreshExprSyntheticOpaqueMVar ty
+        let gs ← Tactic.run mv.mvarId! (Tactic.evalTactic (← `(tactic| time_bound)))
+        unless gs.isEmpty do throwError "goals remain"
+        let pf ← instantiateMVars mv
+        -- for a pair `y`, the bounds of `y.2.time` and `y.1`, not of `stepTime y`, which would
+        -- become a source of `y` for `time_bound`
+        -- the fact on `a` as it stands in the target, its `have` binders kept
+        let pfs ← if (CatCrypt.Tactics.AutoTime.sndOf? a').isSome then
+            pure #[(← mkAppM ``LE.le #[← mkAppM ``SPTree.Timed.time #[a], b],
+                ← mkAppM ``snd_time_le_of_stepTime #[pf]),
+              (← inferType (← mkAppM ``CatCrypt.Tactics.AutoTime.fst_le_of_stepTime #[pf]),
+                ← mkAppM ``CatCrypt.Tactics.AutoTime.fst_le_of_stepTime #[pf])]
+          else pure #[(ty, pf)]
+        for (t, p) in pfs do
+          let (_, g') ← (← g.assert `htree t p).intro1P
+          g := g'
+      catch _ => st.restore
+  return g
+
+/-- `time_rec_trees` adds the bounds of the compound tree arguments of the costed callees in
+the goal (`treeFacts`). -/
+syntax (name := timeRecTreesStx) "time_rec_trees" : tactic
+
+@[tactic timeRecTreesStx] def evalTimeRecTrees : Tactic := fun _ => do
+  replaceMainGoal [← treeFacts (← getMainGoal)]
+
 /-- The bound `τ` applied to the binders and bound variables `pool` of the names of its
 binders; `τ` itself when it is a natural number. A binder of `τ` whose name is not in `pool`
 is matched with the next binder of `pool` of an inaccessible name (a binder of a pattern
@@ -294,9 +392,15 @@ where
       .forallE n' d (go b (i + 1)) bi
     | _ => e
 
+/-- The position of the argument on which `c` recurses, when `c` is defined by structural
+recursion (`Structural.EqnInfo.recArgPos`); `none` for well-founded recursion. -/
+def structRecArg? (c : Name) : MetaM (Option Nat) :=
+  return (Structural.eqnInfoExt.find? (← getEnv) c).map (·.recArgPos)
+
 /-- The tactic syntax of the induction strategies: functional induction of `c` at all its
-binders with the bound variables generalized, then structural induction on each binder of an
-inductive type with all other binders generalized that are neither types nor instances. -/
+binders with the bound variables generalized, then, when `c` is defined by structural
+recursion, structural induction on its recursion argument with all other binders generalized
+that are neither types nor instances. -/
 def strategies (c : Name) (xs vars : Array Expr) (ids : Array Ident) :
     TermElabM (Array (TSyntax `tactic × Bool)) := do
   let n := xs.size
@@ -308,7 +412,8 @@ def strategies (c : Name) (xs vars : Array Expr) (ids : Array Ident) :
     out := out.push (← `(tactic| fun_induction @$fn $xIds*), true)
   else
     out := out.push (← `(tactic| fun_induction @$fn $xIds* generalizing $vIds*), true)
-  for i in [0:n] do
+  let some p ← structRecArg? c | return out
+  for i in [p:min (p + 1) n] do
     let x := xs[i]!
     let ty ← whnf (← inferType x)
     let some (.inductInfo _) := (← getEnv).find? (ty.getAppFn.constName?.getD .anonymous)
@@ -338,19 +443,23 @@ def strategies (c : Name) (xs vars : Array Expr) (ids : Array Ident) :
       out := out.push (← `(tactic| induction $xi:ident generalizing $gens*), false)
   return out
 
-/-- Run the tactic `tac` on `g` under the heartbeat budget `proofHeartbeats`; the reason when it
-fails or leaves goals. -/
-def runCapped (g : MVarId) (tac : TSyntax `tactic) : TermElabM (Option MessageData) := do
+/-- Run `k` with a fresh heartbeat count under the budget `proofHeartbeats`; a heartbeat
+timeout and any other exception, runtime ones included, become the reason `.error`. -/
+def capped {γ : Type} (k : TermElabM γ) : TermElabM (Except MessageData γ) := do
   let cap (c : Core.Context) : Core.Context :=
     { c with maxHeartbeats := proofHeartbeats * 1000 }
-  tryCatchRuntimeEx
-    (withCurrHeartbeats <| withTheReader Core.Context cap do
-      let gs ← Tactic.run g (Tactic.evalTactic tac)
-      if gs.isEmpty then return none
-      return some m!"goals remain:{gs.map (MessageData.ofGoal ·)}")
+  tryCatchRuntimeEx (.ok <$> withCurrHeartbeats (withTheReader Core.Context cap k))
     fun e => do
       if e.isInterrupt then throw e
-      return some e.toMessageData
+      return .error e.toMessageData
+
+/-- Run the tactic `tac` on `g` under the heartbeat budget `proofHeartbeats` (`capped`); the
+reason when it fails or leaves goals. -/
+def runCapped (g : MVarId) (tac : TSyntax `tactic) : TermElabM (Option MessageData) := do
+  match ← capped (Tactic.run g (Tactic.evalTactic tac)) with
+  | .error why => return some why
+  | .ok [] => return none
+  | .ok gs => return some m!"goals remain:{gs.map (MessageData.ofGoal ·)}"
 
 /-- The number of error messages logged. -/
 def errCount : CoreM Nat :=
@@ -422,12 +531,13 @@ def emitTimeRec (mode : Mode) (c name : Name) (τStx : Term) (caseTac : Option N
         -- `intro`, and no local of the telescope is visible to the tactics
         let mv ← withLCtx {} {} (mkFreshExprSyntheticOpaqueMVar ty)
         let errs0 ← errCount
-        let gs ← try
-            Tactic.run mv.mvarId! do
+        let r ← capped <| Tactic.run mv.mvarId! do
               Tactic.evalTactic (← `(tactic| intro $ids*))
               Tactic.evalTactic ind
-          catch e =>
-            reasons := reasons.push m!"{ind}: {e.toMessageData}"
+        let gs ← match r with
+          | .ok gs => pure gs
+          | .error why =>
+            reasons := reasons.push m!"{ind}: {why}"
             s.restore
             continue
         if (← errCount) != errs0 then
@@ -496,6 +606,7 @@ def elabDeriveTimeRec : CommandElab := fun stx => do
         let unfoldB ← unfoldBound τHead
         `(tactic| ($unfoldC:tactic
                    $unfoldB:tactic
+                   time_rec_trees
                    first | time_bound | (split_ifs <;> time_bound) | time_bound))
 where
   /-- The root unfolding of the recursive definition, unless the induction unfolded it. -/
