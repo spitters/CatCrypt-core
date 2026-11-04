@@ -506,6 +506,15 @@ theorem simWorldD_fst (t : SimSt S W K PK SK SS C × St K) (e : OEv W SS C)
   simp only [simWorldD]
   rw [stop_drive0D _ _ (fun _ _ => rfl)]
 
+omit [Fintype S] [Fintype K] [Nonempty K] in
+/-- The recorded inputs reached by a step of the simulated world are those reached by the start
+of the simulator. -/
+theorem simWorldD_inp (t : SimSt S W K PK SK SS C × St K) (e : OEv W SS C)
+    (r : PDraw S K PK SK SS C × K) :
+    (simWorldD P G t e r).1.1.2.1 = (simStartD P G t.1 e r.1).1.2.1 := by
+  simp only [simWorldD, drive0D]
+  split <;> rfl
+
 theorem invK_wO {I : Finset SessionId} {N : Finset PartyId} (t : WSt S W K PK SK SS C)
     (e : OEv W SS C) (ht : InvK I N t.1.1) (he : EvInK I N e) :
     ∀ x ∈ (wO P G t e).support, InvK I N x.2.1.1 := by
@@ -1556,6 +1565,121 @@ theorem start_iSim {pk : PK} {sk : SK} {k : SS} {cs : C} (hc : P.decaps sk cs = 
     · rcases roDet_mem rs.ro (q.1, some q.2) _ e he with he | rfl
       · exact hG'.roN e he hn
       · cases hn
+
+omit [Fintype S] [Fintype K] [Nonempty K] in
+/-- **A step of the simulated world commutes with the interpretation.** -/
+theorem world_iSim {pk : PK} {sk : SK} {k : SS} {cs : C} (hc : P.decaps sk cs = some k)
+    (s : SimSt S W K PK (Option SK) (Option SS) C) (f : St K) (hG : Good g pk cs k s.1 s.2.1)
+    (e : OEv W SS C) (r : PDraw S K PK SK SS C × K)
+    (hv : newVal P cs (P.decaps sk) s e r ≠ some k) :
+    simWorldD P G (iSim k sk s, f) e
+        (subKC g pk (k, cs) (iSim k sk s) e (subKP g (pk, sk) (iSim k sk s) e r)) =
+      ((iSim k sk (simWorldD (symP P cs (P.decaps sk)) G (s, f) (liftE e)
+          (liftD g pk cs s e r)).1.1,
+        (simWorldD (symP P cs (P.decaps sk)) G (s, f) (liftE e) (liftD g pk cs s e r)).1.2),
+        (simWorldD (symP P cs (P.decaps sk)) G (s, f) (liftE e) (liftD g pk cs s e r)).2) ∧
+      Good g pk cs k (simWorldD (symP P cs (P.decaps sk)) G (s, f) (liftE e)
+          (liftD g pk cs s e r)).1.1.1
+        (simWorldD (symP P cs (P.decaps sk)) G (s, f) (liftE e) (liftD g pk cs s e r)).1.1.2.1 := by
+  obtain ⟨h₁, h₂⟩ := start_iSim P G g hc s hG e r hv
+  refine ⟨?_, ?_⟩
+  · simp only [simWorldD]
+    rw [h₁]
+    generalize simStartD (symP P cs (P.decaps sk)) G s (liftE e) (liftD g pk cs s e r).1 = q
+    obtain ⟨q₁, q₂ | q₂⟩ := q <;> rfl
+  · rw [simWorldD_fst, simWorldD_inp]
+    exact h₂
+
+omit [Fintype S] [Fintype K] [Nonempty K] [Inhabited K] [DecidableEq C] in
+/-- On states of the invariant and with a correct challenge, the KEM part of the bad event at the
+guess does not hold in the interpreted state. -/
+theorem not_EG_iSim {pk : PK} {sk : SK} {k : SS} {cs : C} (hc : P.decaps sk cs = some k)
+    (s : SimSt S W K PK (Option SK) (Option SS) C) (hG : Good g pk cs k s.1 s.2.1)
+    (dlv : Inst → Option C) : ¬ EG P G g (iSim k sk s) dlv := by
+  rintro ⟨y, r, ip, v, h₁, h₂, h₃, h₄, h₅, h₆, -, h₈, h₉, h₁₀⟩
+  obtain ⟨rs, inp, ph⟩ := s
+  have hG' : Good g pk cs k rs inp := hG
+  simp only [iSim_fst, iSim_snd, iP_x] at h₁ h₂ h₄ h₅ h₈ h₉ h₁₀
+  obtain ⟨ips, hips, rfl⟩ := Option.map_eq_some_iff.mp h₂
+  have hnone : ips.2 = none := by
+    rcases h₁₀ with ⟨rfl, hro, hpe⟩ | ⟨rfl, hro, hpe, ri, hri, hrir, hrip⟩
+    · exact (hG'.encI r h₁ hro hpe).2 ips hips
+    · have hdlv : dlv (gR g) = (iP k sk rs).ct (gI g) := by
+        rcases h₉ with h | ⟨-, h⟩
+        · rw [hro] at h; cases h
+        · rw [h, hpe]; rfl
+      rcases h₈ with ⟨h, -⟩ | ⟨-, c, pk', sk', hc', hk', -, hd⟩
+      · rw [hro] at h; cases h
+      · rw [hdlv, iP_ct] at hc'
+        have hcs : c = cs := (hG'.encI ri hri hrir hrip).1 c hc'
+        subst hcs
+        rw [iP_kem] at hk'
+        obtain ⟨kp, hkp, hkp'⟩ := Option.map_eq_some_iff.mp hk'
+        have hkp₀ := hG'.kemR kp hkp
+        subst hkp₀
+        simp only [Prod.mk.injEq, Option.getD_none] at hkp'
+        rw [← hkp'.2, hc, Option.some.injEq] at hd
+        have hv := hG'.inpV _ _ hips
+        simp only [iInp] at hd
+        cases h : ips.2 with
+        | none => rfl
+        | some v' => rw [h] at hd hv; simp only [Option.getD_some] at hd; subst hd; exact (hv rfl).elim
+  obtain ⟨e, he, hee⟩ : ∃ e ∈ rs.ro, iInp k e.1 = iInp k ips := by
+    have hm := lookup_mem h₃
+    obtain ⟨e, he, hee⟩ := List.mem_map.mp hm
+    exact ⟨e, he, congrArg Prod.fst hee⟩
+  cases h : e.1.2 with
+  | some v' =>
+    have : v' = k := by
+      have := congrArg Prod.snd hee
+      simp only [iInp, h, hnone, Option.getD_some, Option.getD_none] at this
+      exact this
+    exact hG'.roV e he (by rw [h, this])
+  | none =>
+    have hx : e.1.1 = ips.1 := by simpa only [iInp] using congrArg Prod.fst hee
+    have hsh : (ips.1.ini = y.2 ∨ ips.1.ini = r.peer) ∧ (ips.1.res = y.2 ∨ ips.1.res = r.peer) := by
+      obtain ⟨-, ⟨-, hi, hr⟩ | ⟨-, hr, hi⟩⟩ := h₆ <;> simp only [iInp] at hi hr <;>
+        exact ⟨by simp [hi], by simp [hr]⟩
+    rcases hG'.roN e he h with hc' | hc' <;> rw [hx] at hc'
+    · rcases hsh.1 with h' | h' <;> rw [h'] at hc' <;> simp_all
+    · rcases hsh.2 with h' | h' <;> rw [h'] at hc' <;> simp_all
+
+open Classical in
+/-- **The eager world and the world of the reduction are coupled until the challenge key is
+hit.** For a correct challenge, the KEM part of the bad event at the guess `g` in the world with
+the eager challenge is at most the probability that the world of the reduction receives the
+challenge key as a concrete shared secret. -/
+theorem gw_le_y {pk : PK} {sk : SK} {k : SS} {cs : C} (hc : P.decaps sk cs = some k)
+    (B : OracleAdv (OEv W SS C) (OOut S W K PK C) Bool) :
+    (OracleAdv.run (OracleAdv.flagWhen (fun _ _ x => EG P G g x.2.1.1 x.2.2)
+        (gwO P G g (pk, sk) (k, cs))) B (wInit, false)).toOuterMeasure {y | y.2.2 = true} ≤
+      (OracleAdv.run (OracleAdv.flagWhen (fun _ _ x => k ∈ x.2.2)
+        (yO P G g pk cs (P.decaps sk))) B (yInit, false)).toOuterMeasure
+          {y | y.2.2 = true} := by
+  have h := flag_le_of_coupling_hit (fun t e => simDist P (encPk t.1.1.1 e))
+    (fun t e => simDist P (encPk t.1.1.1 (liftE e)))
+    (fun t e r => wStep P G t e (subKC g pk (k, cs) t.1.1 e (subKP g (pk, sk) t.1.1 e r)))
+    (fun t e r => yStep P G g pk cs (P.decaps sk) t e r)
+    (fun t₁ t₂ => t₁.1.1 = iSim k sk t₂.1.1 ∧ t₁.1.2 = t₂.1.2 ∧
+      Good g pk cs k t₂.1.1.1 t₂.1.1.2.1)
+    (fun t => EG P G g t.1.1 t.2) (fun t => k ∈ t.2) ?_ ?_ ?_ B wInit yInit
+    ⟨rfl, rfl, good_init g pk cs k⟩
+  · exact h
+  · rintro t₁ t₂ e ⟨h₁, -, -⟩
+    simp only [h₁, encPk_iSim]
+  · rintro t₁ t₂ ⟨h₁, -, h₃⟩ hb
+    simp only [h₁] at hb
+    exact (not_EG_iSim P G g hc t₂.1.1 h₃ t₁.2 hb).elim
+  · rintro ⟨⟨t₁, f₁⟩, dlv⟩ ⟨⟨t₂, f₂⟩, L⟩ e r ⟨h₁, h₂, h₃⟩
+    dsimp only at h₁ h₂ h₃
+    subst h₁ h₂
+    by_cases hv : newVal P cs (P.decaps sk) t₂ e r = some k
+    · left
+      simp [yStep, hv]
+    · right
+      obtain ⟨he, hg⟩ := world_iSim P G g hc t₂ f₁ h₃ e r hv
+      simp only [wStep, yStep, he, true_and]
+      exact hg
 
 end SymWorld
 
