@@ -347,11 +347,12 @@ theorem uniform_bind_run_setKey (F : K → D → R) (j : ℕ) {α : Type}
     fun v w => by simp only [setKey, Function.update_idem]
   have h := OracleAdv.run_map_fst_eq_bind_run_set_of_trigger (PMF.uniformFintype K)
     (hybOracle F j) (fun k => setKey j (some k)) (fun t => t.2.2 j = none)
-    (fun t q => rank t.1 q.1 = j) (fun t q ht hr => ?_) (fun k t q _ hr => hybOracle_setKey F j _ t q hr)
+    (fun t q => rank t.1 q.1 = j) (fun t q ht hr => ?_)
+    (fun k t q _ hr => hybOracle_setKey F j _ t q hr)
     (fun t q ht hr x hx => ?_) A (setKey j none s) (by simp only [setKey, Function.update_self])
   · simp only [e] at h
     exact h.symm
-  · simp [hybOracle, setKey, hr, ht]
+  · simp only [hybOracle, setKey, hr, lt_self_iff_false, ↓reduceIte, Function.update_self, ht]
     rfl
   · have h0 : setKey j none t = t := by rw [setKey, ← ht, Function.update_eq_self]
     rw [← h0, hybOracle_setKey F j none t q hr] at hx
