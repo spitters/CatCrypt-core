@@ -155,6 +155,77 @@ theorem smCKAImplOf.timed_bound (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef 
       dsimp only [OracleAdv.Timed.StepTimeBound, OracleAdv.Timed.TimeBound,
         OracleAdv.Timed.AllRet] | grind)
 
+variable [Fintype RK] [Nonempty RK]
+
+/-- The oracle tree of the CKA reduction `smcCKARed` at the challenge epoch `t` and the public
+value `pub`, for the interaction `play` of the secure-messaging adversary. -/
+noncomputable def smcCKARed.tree (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa))
+    (D : AEADDef W Ct) (ideal : Bool)
+    (play : ℕ → Msg → OracleAdv (SMQuery W) (SMAns Sc Msg RK Sa Ct) Bool) (t : ℕ) (pub : Msg) :
+    OracleAdv CKAQuery (CKAAns Sc Msg Key Rand) Bool :=
+  smCKATreeOf R G D ideal play t pub
+
+derive_timed smcCKARed.tree
+
+/-- The derived costed tree of `smcCKARed`, at a costed interaction `play` that erases to the
+interaction of `A`, erases to the interaction of the CKA reduction. -/
+theorem smcCKARed.compile_tree [Fintype Rand] [Nonempty Rand] (R : PRGDef (RK × Key) (RK × Sa))
+    (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (ideal : Bool) (A : SMCorruptAdv Sc Msg RK Sa W Ct)
+    (play : ℕ → Msg → OracleAdv.Timed (SMQuery W) (SMAns Sc Msg RK Sa Ct) Bool)
+    (playCost : ℕ → Msg → ℕ) (hplay : ∀ t g, (play t g).erase = A.play t g) (t : ℕ) (pub : Msg)
+    (rCost : RK × Key → ℕ) (eCost : W → W → W → ℕ) (gCost : Sa → ℕ) :
+    (smcCKARed.tree.timed R G D ideal play playCost t pub rCost eCost gCost).2.erase =
+      (smcCKARed (Rand := Rand) (Key := Key) R G D ideal A).play t pub := by
+  rw [smcCKARed.tree.erase_timed]
+  have h : (fun t g => (play t g).erase) = A.play := funext fun t => funext (hplay t)
+  rw [h]
+  rfl
+
+/-- The time of a tree that draws `x` from `μ` at the step cost `c x` and then runs a
+step-prefixed tree `S x` of time at most `B`, returning the first component of its output. -/
+theorem timeBound_rand_cost_bind_fst {D R X Ŝ : Type} (μ : PMF X) (c : X → ℕ)
+    (S : X → ℕ × OracleAdv.Timed D R (Bool × Ŝ)) {K B : ℕ} (hc : ∀ x, c x ≤ K)
+    (hS : ∀ x, OracleAdv.Timed.StepTimeBound (S x) B) :
+    OracleAdv.Timed.StepTimeBound (0, OracleAdv.Timed.rand μ
+      (fun x => c x + (S x).1 + ((S x).2.bind fun r => (0, OracleAdv.Timed.ret r.1)).1)
+      fun x => ((S x).2.bind fun r => (0, OracleAdv.Timed.ret r.1)).2) (K + B + 1) := by
+  refine ⟨Nat.zero_le _, by dsimp only; omega, fun x => ?_⟩
+  obtain ⟨h1, h2⟩ := hS x
+  obtain ⟨h3, h4⟩ := OracleAdv.Timed.timeBound_bind (n := 0) h2
+    (f := fun r => (0, OracleAdv.Timed.ret r.1)) fun _ => ⟨le_refl _, trivial⟩
+  have := hc x
+  refine ⟨by dsimp only; omega, h4.mono ?_⟩
+  dsimp only; omega
+
+/-- **Time of the CKA reduction.** For a costed interaction of time at most `T`, at most `q`
+queries and call cost at most `a`, root steps of cost at most `r`, chain steps of cost at most
+`g` and encryptions of cost at most `e`, the derived costed tree of `smcCKARed` has time at most
+`T + ∑_{j < q} (r + 2 g + e + 6 (1 + 3 j) + 50) + a + 5`: one simulated query per query,
+whose cost grows with the cost companions of the simulator state. -/
+theorem smcCKARed.timeBound_timed (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa))
+    (D : AEADDef W Ct) (ideal : Bool)
+    (play : ℕ → Msg → OracleAdv.Timed (SMQuery W) (SMAns Sc Msg RK Sa Ct) Bool)
+    (playCost : ℕ → Msg → ℕ) (t : ℕ) (pub : Msg) (rCost : RK × Key → ℕ)
+    (eCost : W → W → W → ℕ) (gCost : Sa → ℕ) {T q a r g e : ℕ}
+    (hA : ∀ t g, (play t g).TimeBound T) (hq : ∀ t g, (play t g).erase.IsQueryBound q)
+    (ha : ∀ t g, playCost t g ≤ a) (hr : ∀ x, rCost x ≤ r) (he : ∀ k m a, eCost k m a ≤ e)
+    (hg : ∀ s, gCost s ≤ g) :
+    OracleAdv.Timed.StepTimeBound
+      (smcCKARed.tree.timed (Key := Key) (Rand := Rand) R G D ideal play playCost t pub rCost
+        eCost gCost)
+      (T + ∑ j ∈ Finset.range q, smCKAQueryTime r g e (1 + 3 * j) + a + 5) := by
+  unfold smcCKARed.tree.timed smCKATreeOf.timed
+  refine (OracleAdv.Timed.stepTimeBound_delay (timeBound_rand_cost_bind_fst (K := 3 + a)
+    (B := T + ∑ j ∈ Finset.range q, smCKAQueryTime r g e (1 + 3 * j)) _ _ _
+    (fun _ => by have := ha t pub; omega) fun rk => ?_)).mono (by omega)
+  refine (OracleAdv.Timed.timeBound_simulateHat_inv _ _ _
+    (fun i ŝ => smCKACostInv (1 + 3 * i) ŝ.1 ŝ.2) (fun i => smCKAQueryTime r g e (1 + 3 * i))
+    (fun i ŝ d h => smCKAImplOf.timed_bound R G D t ideal _ d rCost eCost gCost hr he hg i _ _ h)
+    (hA t pub) (hq t pub) 0 _ ?_).mono ?_
+  · refine ⟨fun _ => ?_, fun _ => ?_, fun _ => ?_, fun _ => ?_, fun _ => ?_⟩ <;>
+      dsimp only <;> omega
+  · simp only [Nat.zero_add, le_refl]
+
 end CKATime
 
 end CatCrypt.Crypto.Messaging
