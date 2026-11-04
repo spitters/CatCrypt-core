@@ -265,6 +265,7 @@ public import CatCryptCore.Crypto.AKE.X3DHSquareGDH
 public import CatCryptCore.Crypto.AKE.PQXDHSquare
 public import CatCryptCore.Crypto.AKE.PQXDHSquareHops
 public import CatCryptCore.Crypto.AKE.PQXDHSquareGDH
+public import CatCryptCore.Crypto.AKE.PQXDHSquareKEM
 public import CatCryptCore.Crypto.AKE.ChannelSquareTimed
 public import CatCryptCore.Crypto.Messaging.FSPRG
 public import CatCryptCore.Crypto.Messaging.CKA
