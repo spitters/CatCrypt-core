@@ -331,4 +331,29 @@ error: ord_residual: no step closes
 #guard_msgs in
 example (x S : ℝ≥0∞) : x * S ≤ S := by ord_residual
 
+/-! ## Equations that are not hops
+
+An equation in the context whose sides are not a registered distance is not a candidate
+hop fact; in particular no proof of `≤` is formed from it, so its type need not carry an
+order. -/
+
+/-- An equation between games of type `SPComp Bool`, which has no order, beside the hops. -/
+example {α : Type} (G H I : SPComp α) (A : α → SPComp Bool) (g g' : SPComp Bool)
+    (ε₁ ε₂ : ℝ≥0∞) (_h : g = g') (h₁ : AdvantageA G H A ≤ ε₁) (h₂ : AdvantageA H I A ≤ ε₂) :
+    AdvantageA G I A ≤ ε₁ + ε₂ := by
+  hop_chain
+
+/-- The same goal through `catcrypt_auto`, whose first arms at a distance goal are
+`hop_chain` and `hop_chain!`. -/
+example {α : Type} (G H I : SPComp α) (A : α → SPComp Bool) (g g' : SPComp Bool)
+    (ε₁ ε₂ : ℝ≥0∞) (_h : g = g') (h₁ : AdvantageA G H A ≤ ε₁) (h₂ : AdvantageA H I A ≤ ε₂) :
+    AdvantageA G I A ≤ ε₁ + ε₂ := by
+  catcrypt_auto
+
+/-- An equation over `ℕ`, which has an order but is not a distance, beside the hops. -/
+example {α : Type} (G H I : SPComp α) (A : α → SPComp Bool) (n : ℕ)
+    (ε₁ ε₂ : ℝ≥0∞) (_h : n = 3) (h₁ : AdvantageA G H A ≤ ε₁) (h₂ : AdvantageA H I A ≤ ε₂) :
+    AdvantageA G I A ≤ ε₁ + ε₂ := by
+  hop_chain
+
 end CatCrypt.Tactics.AutoArmsTest
