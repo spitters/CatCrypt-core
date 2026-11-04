@@ -49,6 +49,9 @@ universal statements over them by `forall_isOutcome_pure`, `forall_isOutcome_map
 * `Sys.traceEq_of_step_eq_on`, `Sys.traceEq_of_fst`, `Sys.traceEq_of_equiv`: equal steps on an
   invariant, an unused state component, renamed states.
 * `MultiHybrid.withSub_step_of_fuel_eq_zero`: the step of a hybrid that makes one call.
+* `Sys.DelayedDraw.traceEq`: two delayed draws against the same eager systems are trace
+  equivalent; `Sys.DelayedDraw.withSub`: a delayed draw of the subroutine is one of the multi-call
+  hybrid over it.
 * `KeyedSys.traceEq_lazy`: moving the draw of a key to its first use; `KeyedSys.lazy_pres`:
   invariants of a lazily keyed system.
 -/
@@ -326,6 +329,119 @@ theorem EmulatesΩ.traceEq {R : Sys τ E O} {I : Sys υ E O}
 
 end CatCrypt.Crypto.UCLoopbackObservation
 
+namespace CatCrypt.Crypto.UCTransparent.Sys
+
+open CatCrypt.Core CatCrypt.Prob CatCrypt.Crypto CatCrypt.NonUniform
+
+variable {K σ σ' τ υ E O EG OG ζ : Type}
+
+/-! ## Delayed draws -/
+
+/-- **Delayed draws against the same eager systems are trace equivalent**: two systems that
+delay the draw of a key of distribution `μ` against the same family `W k` both have the view of
+the average over `k ← μ` of the views of `W k` (`Sys.DelayedDraw.view_eq`). -/
+theorem DelayedDraw.traceEq {L₁ : Sys σ E O} {L₂ : Sys σ' E O} {W : K → Sys τ E O}
+    {μ : PMF K} {Inv₁ : σ → Prop} {Inv₂ : σ' → Prop} {D₁ : σ → SDistr (K × τ)}
+    {D₂ : σ' → SDistr (K × τ)} (h₁ : DelayedDraw L₁ W μ Inv₁ D₁)
+    (h₂ : DelayedDraw L₂ W μ Inv₂ D₂) : TraceEq L₁ L₂ :=
+  traceEq_iff_view_eq.mpr fun _ Z => (h₁.view_eq Z).trans (h₂.view_eq Z).symm
+
+/-- The invariant of a delayed draw holds at the possible outcomes of the rest of an activation
+of a multi-call hybrid over the drawing subroutine. -/
+theorem DelayedDraw.drive_pres {X : Sys τ EG OG} {W : K → Sys υ EG OG} {μ : PMF K}
+    {Inv : τ → Prop} {D : τ → SDistr (K × υ)} (h : DelayedDraw X W μ Inv D)
+    (π : MultiHybrid σ E O EG OG) :
+    ∀ n s d x, Inv x → ∀ p, IsOutcome (π.drive X n s d x) p → Inv p.2.1 := by
+  intro n
+  induction n with
+  | zero =>
+    rintro s (g | o) x hx p hp
+    · obtain ⟨q, hq, hp⟩ := isOutcome_bind hp
+      obtain ⟨r, -, hp⟩ := isOutcome_bind hp
+      rw [← isOutcome_pure hp]
+      exact h.pres x g hx q hq
+    · rw [← isOutcome_pure hp]
+      exact hx
+  | succ n ih =>
+    rintro s (g | o) x hx p hp
+    · obtain ⟨q, hq, hp⟩ := isOutcome_bind hp
+      obtain ⟨r, -, hp⟩ := isOutcome_bind hp
+      exact ih _ _ _ (h.pres x g hx q hq) p hp
+    · rw [← isOutcome_pure hp]
+      exact hx
+
+/-- **A delayed draw under a multi-call hybrid, on the rest of an activation.** -/
+theorem DelayedDraw.drive {X : Sys τ EG OG} {W : K → Sys υ EG OG} {μ : PMF K}
+    {Inv : τ → Prop} {D : τ → SDistr (K × υ)} (h : DelayedDraw X W μ Inv D)
+    (π : MultiHybrid σ E O EG OG) :
+    ∀ n s d x, Inv x →
+      SPComp.bind (π.drive X n s d x)
+          (fun p => SPComp.map (fun kt => (kt.1, p.1, kt.2, p.2.2)) (sampleFrom (D p.2.1))) =
+        SPComp.bind (sampleFrom (D x)) fun kt =>
+          SPComp.map (fun p => (kt.1, p)) (π.drive (W kt.1) n s d kt.2) := by
+  have hc : ∀ x, SPComp.IsPure (sampleFrom (D x)) := fun _ => sampleFrom_isPure _
+  have hX : ∀ x g, Inv x → ∀ (F : (K × υ) × OG → SPComp (K × σ × υ × O)),
+      SPComp.bind (X.step x g) (fun q => SPComp.bind (sampleFrom (D q.1)) fun kt =>
+        F (kt, q.2)) =
+      SPComp.bind (sampleFrom (D x)) fun kt =>
+        SPComp.bind ((W kt.1).step kt.2 g) fun p => F ((kt.1, p.1), p.2) := by
+    intro x g hx F
+    have := congrArg (fun c => SPComp.bind c F) (h.step x g hx)
+    simpa only [SPComp.map, SPComp.bind_assoc, SPComp.pure_bind] using this
+  intro n
+  induction n with
+  | zero =>
+    rintro s (g | o) x hx
+    · refine Eq.trans ?_ ((hX x g hx fun y => SPComp.bind (π.finish s y.2) fun r =>
+          SPComp.pure (y.1.1, r.1, y.1.2, r.2)).trans ?_)
+      · simp only [MultiHybrid.drive, SPComp.map, SPComp.bind_assoc, SPComp.pure_bind]
+        congr 1; funext q
+        exact (SPComp.isPure_bind_comm_left _ _ _ (hc _)).symm
+      · simp only [MultiHybrid.drive, SPComp.map, SPComp.bind_assoc, SPComp.pure_bind]
+    · simp only [MultiHybrid.drive, SPComp.map, SPComp.pure_bind]
+  | succ n ih =>
+    rintro s (g | o) x hx
+    · refine Eq.trans ?_ ((hX x g hx fun y => SPComp.bind (π.resume s y.2) fun r =>
+          SPComp.map (fun p => (y.1.1, p)) (π.drive (W y.1.1) n r.1 r.2 y.1.2)).trans ?_)
+      · simp only [MultiHybrid.drive, SPComp.bind_assoc]
+        refine bind_congr_isOutcome fun q hq => ?_
+        simp only [ih _ _ _ (h.pres x g hx q hq)]
+        exact (SPComp.isPure_bind_comm_left _ _ _ (hc _)).symm
+      · simp only [MultiHybrid.drive, SPComp.map, SPComp.bind_assoc]
+    · simp only [MultiHybrid.drive, SPComp.map, SPComp.pure_bind]
+
+/-- **A delayed draw under a multi-call hybrid.** A hybrid over a subroutine that delays the
+draw of a key delays it against the hybrid over the subroutines with the key drawn at the
+start. -/
+theorem DelayedDraw.withSub {X : Sys τ EG OG} {W : K → Sys υ EG OG} {μ : PMF K}
+    {Inv : τ → Prop} {D : τ → SDistr (K × υ)} (h : DelayedDraw X W μ Inv D)
+    (π : MultiHybrid σ E O EG OG) :
+    DelayedDraw (π.withSub X) (fun k => π.withSub (W k)) μ (fun t => Inv t.2)
+      (fun t => (D t.2).bind fun kt => SDistr.pure (kt.1, (t.1, kt.2))) where
+  init_inv := h.init_inv
+  init := by
+    simp only [MultiHybrid.withSub, h.init, SDistr.bind_assoc, SDistr.pure_bind]
+  mass t := by
+    rw [← isLossless_sampleFrom_iff, ← sampleFrom_bind_sampleFrom]
+    exact Unary.lossless_bind ((isLossless_sampleFrom_iff _).mpr (h.mass _)) fun _ =>
+      (isLossless_sampleFrom_iff _).mpr (SDistr.mass_pure _)
+  pres t e ht q hq := by
+    simp only [MultiHybrid.withSub] at hq
+    obtain ⟨r, -, hq⟩ := isOutcome_bind hq
+    obtain ⟨p, hp, hq⟩ := isOutcome_bind hq
+    rw [← isOutcome_pure hq]
+    exact h.drive_pres π _ _ _ _ ht p hp
+  step t e ht := by
+    have hd := fun r : σ × (EG ⊕ O) => congrArg
+      (fun c => SPComp.bind c fun x => SPComp.pure ((x.1, (x.2.1, x.2.2.1)), x.2.2.2))
+      (h.drive π π.fuel r.1 r.2 t.2 ht)
+    simp only [SPComp.map, SPComp.bind_assoc, SPComp.pure_bind] at hd
+    simp only [MultiHybrid.withSub, SPComp.map, SPComp.bind_assoc, SPComp.pure_bind,
+      ← sampleFrom_bind_sampleFrom, sampleFrom_pure, hd]
+    exact SPComp.isPure_bind_comm_left _ _ _ (sampleFrom_isPure _) |>.symm
+
+end CatCrypt.Crypto.UCTransparent.Sys
+
 namespace CatCrypt.Crypto.UCTransparent.KeyedSys
 
 open CatCrypt.Core CatCrypt.Prob CatCrypt.Crypto CatCrypt.NonUniform
@@ -342,11 +458,8 @@ theorem traceEq_lazy (S S' : KeyedSys K τ E O) (μ : PMF K) (hinit : S.init = S
     (hind : ∀ k t e, S.uses t e = false → S.step k t e = S.step₀ t e)
     (hind' : ∀ k t e, S'.uses t e = false → S'.step k t e = S'.step₀ t e) :
     Sys.TraceEq (S.lazy μ) (S'.lazy μ) := by
-  refine Sys.traceEq_iff_view_eq.mpr fun ζ Z => ?_
-  rw [view_lazy S μ hind, view_lazy S' μ hind']
-  have hk : ∀ k, S.withKey k = S'.withKey k := fun k => by
-    simp only [withKey, hinit, hstep]
-  simp only [hk]
+  have hk : S'.withKey = S.withKey := funext fun k => by simp only [withKey, hinit, hstep]
+  exact (delayedDraw_lazy S μ hind).traceEq (hk ▸ delayedDraw_lazy S' μ hind')
 
 /-- **Invariants of a lazily keyed system.** An invariant `Inv` of the states with an optional
 key holds at every possible outcome of a step of `S.lazy μ` from a state satisfying it when it
