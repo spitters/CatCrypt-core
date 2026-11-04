@@ -303,6 +303,12 @@ public import CatCryptCore.Crypto.Messaging.DoubleRatchet
 public import CatCryptCore.Crypto.Signal.Zkgroup.Lizard
 public import CatCryptCore.Crypto.Signal.Zkgroup.PokshoStatements
 public import CatCryptCore.Crypto.Signal.Zkgroup.XEdDSA
+public import CatCryptCore.Crypto.Signal.SenderKeys.Dependencies
+public import CatCryptCore.Crypto.Signal.SenderKeys.Games
+public import CatCryptCore.Crypto.Signal.SenderKeys.Security
+public import CatCryptCore.Crypto.Signal.SenderKeys.SecurityTimed
+public import CatCryptCore.Crypto.Signal.SenderKeys.SecurityTransfer
+public import CatCryptCore.Crypto.Signal.SenderKeys.XEdDSA
 public import CatCryptCore.Crypto.PAKE.DHPAKE
 public import CatCryptCore.Crypto.PAKE.FPAKESys
 public import CatCryptCore.Crypto.PAKE.DHExtractKit

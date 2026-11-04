@@ -2516,13 +2516,6 @@ theorem ctsDistAll_zero (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (g : ℕ) (
       simp only [ctsDistAll, epochCtsDist_zero, PMF.pure_bind, ih, PMF.pure_map, smCts,
         List.zipWith_cons_cons, encEpoch]
 
-omit [SampleableType W] in
-theorem fsprgRun_length (G : PRGDef Sa (W × Sa)) (n : ℕ) (s : Sa) :
-    (fsprgRun G n s).1.length = n := by
-  induction n generalizing s with
-  | zero => rfl
-  | succ n ih => simp only [fsprgRun, List.length_cons, ih]
-
 /-- Uniform ciphertexts of the epochs `ms :: msgs` are uniform ciphertexts of `ms` and of
 `msgs`. -/
 def idealCtsCons (ms : List (W × W)) (msgs : List (List (W × W))) (n : ℕ) :
