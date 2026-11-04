@@ -272,8 +272,7 @@ theorem run_bind_unit (O : Unit → Q' → PMF (A' × Unit)) (W : OracleAdv Q' A
     (g : α → OracleAdv Q' A' β) (u : Unit) :
     OracleAdv.run O (W.bind g) u =
       ((OracleAdv.run O W u).map Prod.fst).bind fun a => OracleAdv.run O (g a) () := by
-  cases u
-  rw [OracleAdv.run_bind, bind_unit]
+  grind [OracleAdv.run_bind, bind_unit]
 
 end UnitRuns
 

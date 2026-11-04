@@ -445,11 +445,7 @@ omit [DecidableEq AD] [CryptoWord Blk] [Fintype HK] [Nonempty HK] [AddCommGroup 
   [Nonempty T] [DecidableEq T] in
 theorem lookup_cons_ne {Blk : Type} (p q : N × ℕ) (u : Blk) (t : List ((N × ℕ) × Blk))
     (h : p ≠ q) : tableLookup p ((q, u) :: t) = tableLookup p t := by
-  unfold tableLookup
-  simp only [List.lookup]
-  split
-  · rename_i hpq; exact absurd (of_decide_eq_true hpq) h
-  · rfl
+  grind
 
 omit [DecidableEq AD] [CryptoWord Blk] [Fintype HK] [Nonempty HK] [AddCommGroup T] [Fintype T]
   [Nonempty T] [DecidableEq T] in
