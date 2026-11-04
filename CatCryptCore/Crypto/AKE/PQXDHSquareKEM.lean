@@ -2017,6 +2017,132 @@ theorem flagEG_le (B : OracleAdv (OEv W SS C) (OOut S W K PK C) Bool) {q : ℕ}
   · refine le_add_left ((toOuterMeasure_le_one _ _).trans_eq ?_)
     simp [hc]
 
+omit [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K] [DecidableEq SS]
+  [Field S] [DecidableEq C] in
+/-- The real case of an IND-CCA game is at most the random case plus the advantage. -/
+theorem indccaGame_true_le [DecidableEq C] {q : ℕ} (A : KEM.Games.INDCCAAdversary PK SS C q) :
+    (KEM.Games.indccaGame P A true) true ≤
+      (KEM.Games.indccaGame P A false) true + KEM.Games.indccaAdvantage P A := by
+  unfold KEM.Games.indccaAdvantage Advantage
+  simp only [prTrue_liftPMF]
+  rw [add_comm]
+  calc (KEM.Games.indccaGame P A true) true
+      ≤ ((KEM.Games.indccaGame P A true) true - (KEM.Games.indccaGame P A false) true) +
+          (KEM.Games.indccaGame P A false) true := le_tsub_add
+    _ ≤ _ := by gcongr; exact le_sup_left
+
+open Classical in
+/-- **The KEM part of the bad event at a guess under IND-CCA.** -/
+theorem flagEG_le_indcca (B : OracleAdv (OEv W SS C) (OOut S W K PK C) Bool) {q : ℕ}
+    (hB : B.IsQueryBound q) :
+    (OracleAdv.run (OracleAdv.flagWhen (fun _ _ x => EG P G g x.2.1.1 x.2.2) (wO P G)) B
+        (wInit, false)).toOuterMeasure {y | y.2.2 = true} ≤
+      KEM.Games.indccaAdvantage P (kemRed P G g B hB) + P.corrErr +
+        (q : ℝ≥0∞) / (Fintype.card SS : ℝ≥0∞) := by
+  refine (flagEG_le P G g B hB).trans ?_
+  have h₁ := indccaGame_true_le P (kemRed P G g B hB)
+  have h₂ := indccaGame_false_le P G g B hB
+  rw [div_eq_mul_inv]
+  calc (KEM.Games.indccaGame P (kemRed P G g B hB) true) true + P.corrErr
+      ≤ (q : ℝ≥0∞) * (Fintype.card SS : ℝ≥0∞)⁻¹ +
+          KEM.Games.indccaAdvantage P (kemRed P G g B hB) + P.corrErr := by
+        gcongr
+        exact h₁.trans (by gcongr)
+    _ = _ := by ring
+
 end Bound
+
+/-! ## The main results -/
+
+section Main
+
+variable {S W K PK SK SS C : Type} [Field S] [Fintype S] [SampleableType W] [Fintype K]
+  [Nonempty K] [Inhabited K] [DecidableEq SS] [Fintype SS] [Nonempty SS] [DecidableEq C]
+  (P : Scheme PK SK SS C) (G : DHGroup S W)
+
+/-- The bound of the KEM route: the sum over the guesses of `I × N × N` of the IND-CCA
+advantage of the reduction at the guess, the correctness error of the KEM, and the number of
+queries over the number of shared secrets. -/
+noncomputable def kemBound (I : Finset SessionId) (N : Finset PartyId)
+    (B : OracleAdv (OEv W SS C) (OOut S W K PK C) Bool) {q : ℕ} (hB : B.IsQueryBound q) :
+    ℝ≥0∞ :=
+  ∑ g ∈ I ×ˢ N ×ˢ N, (KEM.Games.indccaAdvantage P (kemRed P G g B hB) + P.corrErr +
+    (q : ℝ≥0∞) / (Fintype.card SS : ℝ≥0∞))
+
+open Classical in
+/-- **The matched KEM part of the bad event under IND-CCA.** For an oracle adversary `B` that
+starts sessions only with session identifiers of `I` between parties of `N` and asks at most `q`
+queries, the probability of the KEM part of the bad event at matched sessions is at most the sum
+over the guesses `g` of `I × N × N` of the IND-CCA advantage of the reduction `kemRed P G g B`,
+the correctness error of the KEM, and `q` over the number of shared secrets. -/
+theorem partBad_kem_le (I : Finset SessionId) (N : Finset PartyId)
+    (B : OracleAdv (OEv W SS C) (OOut S W K PK C) Bool) (hS : SessInK I N B) {q : ℕ}
+    (hB : B.IsQueryBound q) :
+    partBad P G (PQHitKemM P G) B ≤ kemBound P G I N B hB :=
+  (partBad_le_sum_guess P G I N B hS).trans
+    (Finset.sum_le_sum fun g _ => flagEG_le_indcca P G g B hB)
+
+open Classical in
+/-- **The bad event of the PQXDH square with the minimum over the two routes.** For an oracle
+adversary `B` that names only parties of `N`, starts sessions only with session identifiers of
+`I`, and asks at most `q` queries, the bad event is at most its part at unmatched sessions, which
+only the route of Diffie–Hellman bounds, plus the minimum of the gap Diffie–Hellman sum and the
+KEM bound for its part at matched sessions. -/
+theorem badGame_le_min (I : Finset SessionId) (N : Finset PartyId)
+    (B : OracleAdv (OEv W SS C) (OOut S W K PK C) Bool) (hN : NamesInP N B) (hS : SessInK I N B)
+    {q : ℕ} (hB : B.IsQueryBound q) :
+    badGame P G B true ≤ partBad P G (PQHitDhM P G) B +
+      min (∑ a ∈ N, ∑ b ∈ N, GapDH_Advantage (gapDHDef G) (pqGdhRed G P a b B))
+        (kemBound P G I N B hB) := by
+  refine (badGame_le_splitM P G B).trans ?_
+  rw [add_comm]
+  gcongr
+  exact le_min (partBadM_le_gapDH P G N B hN).1 (partBad_kem_le P G I N B hS hB)
+
+open Classical in
+/-- The same bound with the Diffie–Hellman part bounded by the gap Diffie–Hellman sum. -/
+theorem badGame_le_gapDH_min (I : Finset SessionId) (N : Finset PartyId)
+    (B : OracleAdv (OEv W SS C) (OOut S W K PK C) Bool) (hN : NamesInP N B) (hS : SessInK I N B)
+    {q : ℕ} (hB : B.IsQueryBound q) :
+    badGame P G B true ≤
+      ∑ a ∈ N, ∑ b ∈ N, GapDH_Advantage (gapDHDef G) (pqGdhRed G P a b B) +
+        min (∑ a ∈ N, ∑ b ∈ N, GapDH_Advantage (gapDHDef G) (pqGdhRed G P a b B))
+          (kemBound P G I N B hB) :=
+  (badGame_le_min P G I N B hN hS hB).trans (by gcongr; exact (partBadM_le_gapDH P G N B hN).2)
+
+open Classical in
+/-- The bound of the PQXDH square with the minimum over the two routes at the oracle adversary
+`B`: the gap Diffie–Hellman sum plus the minimum of the gap Diffie–Hellman sum and the KEM bound,
+when `B` names only parties of `N`, starts sessions only with session identifiers of `I` and
+asks at most `q` queries, and `⊤` otherwise. -/
+noncomputable def minBoundP (I : Finset SessionId) (N : Finset PartyId) (q : ℕ)
+    (B : OracleAdv (OEv W SS C) (OOut S W K PK C) Bool) : ℝ≥0∞ :=
+  if h : NamesInP N B ∧ SessInK I N B ∧ B.IsQueryBound q then
+    ∑ a ∈ N, ∑ b ∈ N, GapDH_Advantage (gapDHDef G) (pqGdhRed G P a b B) +
+      min (∑ a ∈ N, ∑ b ∈ N, GapDH_Advantage (gapDHDef G) (pqGdhRed G P a b B))
+        (kemBound P G I N B h.2.2)
+  else ⊤
+
+/-- **PQXDH realizes `F_AKE` behind `pqxdhSim` with the minimum over the two routes.** For every
+finite set of session identifiers `I`, finite set of parties `N` and query bound `q`, and every
+environment `Z` whose oracle reduction names only parties of `N`, starts sessions only with
+session identifiers of `I` and asks at most `q` queries, the distance between the real PQXDH
+protocol and the simulator running with `F_AKE` is at most the gap Diffie–Hellman sum plus the
+minimum of the gap Diffie–Hellman sum and the KEM bound `kemBound`; the bound is `⊤` for the other
+environments. -/
+theorem pqxdh_realizesSim_min (I : Finset SessionId) (N : Finset PartyId) (q : ℕ) :
+    RealizesSim (pqxdhReal (K := K) P G) (F_AKE (SPComp.sample K) true) (pqxdhSim P G)
+      (fun _ Z => minBoundP P G I N q
+        ((OProt.oracle (Q := OEv W SS C) (A := OOut S W K PK C)).reduction Z)) :=
+  fun ζ Z => (pqxdh_realizesSim_oracleGame P G ζ Z).trans (by
+    dsimp only
+    unfold minBoundP
+    split
+    · rename_i h
+      exact (pqxdh_advantage_le_badGame P G _).trans
+        (badGame_le_gapDH_min P G I N _ h.1 h.2.1 h.2.2)
+    · exact le_top)
+
+end Main
 
 end CatCrypt.Crypto.AKE.PQXDHSquareKEM
