@@ -228,4 +228,125 @@ theorem smcCKARed.timeBound_timed (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDe
 
 end CKATime
 
+/-- A tree that draws from `μ` at step cost zero, with continuations of time at most `B`, has
+time at most `B + 1`. -/
+theorem timeBound_rand_zero {D R X α : Type} (μ : PMF X) (k : X → OracleAdv.Timed D R α) {B : ℕ}
+    (h : ∀ x, OracleAdv.Timed.StepTimeBound (0, k x) B) :
+    OracleAdv.Timed.StepTimeBound (0, OracleAdv.Timed.rand μ (fun _ => 0) k) (B + 1) :=
+  ⟨Nat.zero_le _, by dsimp only; omega, fun x => ⟨by dsimp only; omega,
+    ((h x).2).mono (by dsimp only; omega)⟩⟩
+
+/-! ## The PRF-PRNG reduction -/
+
+section RootTime
+
+variable {Sc Msg Key Rand RK Sa W Ct : Type} [Fintype Rand] [Nonempty Rand] [SampleableType W]
+  [SampleableType Ct]
+
+/-- The bound `B` on the cost companions of a costed state of the secure-messaging game: the
+companions of the CKA states and counters (`ck`), and of the root keys, the sending and the
+receiving chains (`loc`). -/
+def smCostInv (B : ℕ)
+    (ck : ((CKAParty → Sc) × (CKAParty → ℕ)) × ((CKAParty → ℕ) × (CKAParty → ℕ)) × Msg)
+    (loc : ((CKAParty → RK) × (CKAParty → ℕ)) × ((CKAParty → Option Sa) × (CKAParty → ℕ)) ×
+      ((CKAParty → Option Sa) × (CKAParty → ℕ)) × Option (RK × Sa) × Bool) : Prop :=
+  (∀ p, ck.1.2 p ≤ B) ∧ (∀ p, ck.2.1.2 p ≤ B) ∧ (∀ p, loc.1.2 p ≤ B) ∧
+    (∀ p, loc.2.1.2 p ≤ B) ∧ ∀ p, loc.2.2.1.2 p ≤ B
+
+/-- The time of a simulated query of a secure-messaging simulator from a state with companions
+at most `B`, with CKA sends of cost at most `s`, CKA receives of cost at most `v`, root steps of
+cost at most `r`, chain steps of cost at most `g` and encryptions of cost at most `e`. -/
+def smQueryTime (s v r g e B : ℕ) : ℕ := 3 * s + 2 * v + r + 2 * g + e + 16 * B + 100
+
+/-- **Time of a query of the PRF-PRNG simulator.** From a costed state with companions at most
+`1 + 3 i`, the costed simulator `smRootImplOf` answers in time at most
+`smQueryTime s v r g e (1 + 3 i)` and returns states with companions at most `1 + 3 (i + 1)`. -/
+theorem smRootImplOf.timed_bound (C : CKADef Sc Msg Key) [CKACoins C Rand]
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (ΔFS ΔPCS t : ℕ) (ideal : Bool) (σ : SMSt Sc Msg RK Sa) (q : SMQuery W)
+    (sCost : Sc → Rand → ℕ) (rCost : RK × Key → ℕ) (vCost : Sc → Msg → ℕ)
+    (eCost : W → W → W → ℕ) (gCost : Sa → ℕ) {s v r g e : ℕ} (hs : ∀ x c, sCost x c ≤ s)
+    (hv : ∀ x m, vCost x m ≤ v) (hr : ∀ x, rCost x ≤ r) (he : ∀ k m a, eCost k m a ≤ e)
+    (hg : ∀ x, gCost x ≤ g) (i : ℕ) (loc ck) (hinv : smCostInv (1 + 3 * i) ck loc) :
+    OracleAdv.Timed.StepTimeBound (OracleAdv.Timed.delay 1
+        (smRootImplOf.timed C R G D ΔFS ΔPCS t ideal σ q sCost rCost loc ck vCost eCost gCost))
+        (smQueryTime s v r g e (1 + 3 * i)) ∧
+      OracleAdv.Timed.AllRet (fun y => smCostInv (1 + 3 * (i + 1)) y.2.1 y.2.2)
+        (smRootImplOf.timed C R G D ΔFS ΔPCS t ideal σ q sCost rCost loc ck vCost eCost
+          gCost).2 := by
+  obtain ⟨h1, h2, h3, h4, h5⟩ := hinv
+  unfold smCostInv smQueryTime
+  cases q <;>
+    simp only [smRootImplOf.timed, smRootRatchet.timed, smRootRecv.timed, smFullSend.timed,
+      smFullChall.timed, smFullCorr.timed, OracleAdv.Timed.delay,
+      OracleAdv.Timed.StepTimeBound] <;>
+    repeat' (first | trivial | apply And.intro | intro _ | split |
+      dsimp only [OracleAdv.Timed.StepTimeBound, OracleAdv.Timed.TimeBound,
+        OracleAdv.Timed.AllRet] | grind)
+
+variable [Fintype RK] [Nonempty RK]
+
+/-- The oracle tree of the PRF-PRNG reduction `smcRootRed`, for the distribution `tStar` of the
+challenge epoch and the interaction `play` of the secure-messaging adversary. -/
+noncomputable def smcRootRed.tree (C : CKADef Sc Msg Key) [CKACoins C Rand]
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (ΔFS ΔPCS : ℕ) (ideal : Bool) (initP : PMF (Msg × Sc × Sc)) (tStar : PMF ℕ)
+    (play : ℕ → Msg → OracleAdv (SMQuery W) (SMAns Sc Msg RK Sa Ct) Bool) :
+    OracleAdv (PPQuery RK Key) (RK × Sa) Bool :=
+  smRootTreeOf C R G D ΔFS ΔPCS ideal initP tStar play
+
+derive_timed smcRootRed.tree
+
+/-- The derived costed tree of `smcRootRed`, at the challenge-epoch distribution of `A` and a
+costed interaction `play` that erases to the interaction of `A`, erases to the PRF-PRNG
+reduction. -/
+theorem smcRootRed.compile_tree (C : CKADef Sc Msg Key) [CKACoins C Rand]
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (ΔFS ΔPCS : ℕ) (ideal : Bool) (initP : PMF (Msg × Sc × Sc))
+    (A : SMCorruptAdv Sc Msg RK Sa W Ct)
+    (play : ℕ → Msg → OracleAdv.Timed (SMQuery W) (SMAns Sc Msg RK Sa Ct) Bool)
+    (playCost : ℕ → Msg → ℕ) (hplay : ∀ t g, (play t g).erase = A.play t g)
+    (sCost : Sc → Rand → ℕ) (rCost : RK × Key → ℕ) (vCost : Sc → Msg → ℕ)
+    (eCost : W → W → W → ℕ) (gCost : Sa → ℕ) :
+    (smcRootRed.tree.timed C R G D ΔFS ΔPCS ideal initP A.tStar play playCost sCost rCost vCost
+      eCost gCost).2.erase = smcRootRed C R G D ΔFS ΔPCS ideal initP A := by
+  rw [smcRootRed.tree.erase_timed]
+  have h : (fun t g => (play t g).erase) = A.play := funext fun t => funext (hplay t)
+  rw [h]
+  rfl
+
+/-- **Time of the PRF-PRNG reduction.** For a costed interaction of time at most `T`, at most
+`q` queries and call cost at most `a`, CKA sends of cost at most `s`, CKA receives of cost at
+most `v`, root steps of cost at most `r`, chain steps of cost at most `g` and encryptions of cost
+at most `e`, the derived costed tree of `smcRootRed` has time at most
+`T + ∑_{j < q} smQueryTime s v r g e (1 + 3 j) + a + 8`. -/
+theorem smcRootRed.timeBound_timed (C : CKADef Sc Msg Key) [CKACoins C Rand]
+    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct)
+    (ΔFS ΔPCS : ℕ) (ideal : Bool) (initP : PMF (Msg × Sc × Sc)) (tStar : PMF ℕ)
+    (play : ℕ → Msg → OracleAdv.Timed (SMQuery W) (SMAns Sc Msg RK Sa Ct) Bool)
+    (playCost : ℕ → Msg → ℕ) (sCost : Sc → Rand → ℕ) (rCost : RK × Key → ℕ)
+    (vCost : Sc → Msg → ℕ) (eCost : W → W → W → ℕ) (gCost : Sa → ℕ) {T q a s v r g e : ℕ}
+    (hA : ∀ t g, (play t g).TimeBound T) (hq : ∀ t g, (play t g).erase.IsQueryBound q)
+    (ha : ∀ t g, playCost t g ≤ a) (hs : ∀ x c, sCost x c ≤ s) (hv : ∀ x m, vCost x m ≤ v)
+    (hr : ∀ x, rCost x ≤ r) (he : ∀ k m a, eCost k m a ≤ e) (hg : ∀ x, gCost x ≤ g) :
+    OracleAdv.Timed.StepTimeBound
+      (smcRootRed.tree.timed C R G D ΔFS ΔPCS ideal initP tStar play playCost sCost rCost vCost
+        eCost gCost)
+      (T + ∑ j ∈ Finset.range q, smQueryTime s v r g e (1 + 3 * j) + a + 8) := by
+  unfold smcRootRed.tree.timed smRootTreeOf.timed
+  refine (OracleAdv.Timed.stepTimeBound_delay (timeBound_rand_zero _ _ fun t =>
+    timeBound_rand_zero _ _ fun i => timeBound_rand_cost_bind_fst (K := 4 + a)
+    (B := T + ∑ j ∈ Finset.range q, smQueryTime s v r g e (1 + 3 * j)) _ _ _
+    (fun _ => by have := ha t i.1; omega) fun rk => ?_)).mono (by omega)
+  refine (OracleAdv.Timed.timeBound_simulateHat_inv _ _ _
+    (fun i ŝ => smCostInv (1 + 3 * i) ŝ.1 ŝ.2) (fun i => smQueryTime s v r g e (1 + 3 * i))
+    (fun i ŝ d h => smRootImplOf.timed_bound C R G D ΔFS ΔPCS t ideal _ d sCost rCost vCost
+      eCost gCost hs hv hr he hg i _ _ h)
+    (hA t i.1) (hq t i.1) 0 _ ?_).mono ?_
+  · refine ⟨fun _ => ?_, fun _ => ?_, fun _ => ?_, fun _ => ?_, fun _ => ?_⟩ <;>
+      dsimp only <;> omega
+  · simp only [Nat.zero_add, le_refl]
+
+end RootTime
+
 end CatCrypt.Crypto.Messaging
