@@ -16,6 +16,10 @@ pattern variables: `decRed` (the cost of `q h ++ [v]` in the alternative `inp h 
 `resumeRed` (a match on a field of a state, nested over the match of `decRed`). Their time
 theorems are bounded by the same matches with each alternative replaced by its bound.
 
+`fireRed` matches a structure answer whose operator alternative folds over the gates of the
+operator: the closed form of the fold keeps their length, which the `@[length_bound]` theorem
+`gatesOf_length_le` bounds, so the time theorem has one bound for every answer.
+
 ## Main results
 
 * `decRed.tree.timeBound_timed` and `resumeRed.tree.timeBound_timed`, emitted by the command
@@ -90,5 +94,55 @@ noncomputable def resumeRed (s : St) (ans : List ℕ) (A : List ℕ → SPComp B
 derive_reduction resumeRed
 
 derive_time_bound resumeRed.tree
+
+/-- A gate: a literal, or an operator `o` with an offset `z`. -/
+inductive Gate where
+  | lit (n : ℕ)
+  | op (z : ℕ) (o : ℕ)
+
+/-- An answer: a gate and a tag. -/
+structure Ans where
+  /-- The gate. -/
+  gate : Gate
+  /-- The tag. -/
+  tag : ℕ
+
+/-- The gates of the operator `o`: one or two. -/
+def gatesOf (o : ℕ) : List ℕ := if o < 2 then [o] else [o, o]
+
+derive_cost gatesOf
+
+/-- Building the gates of an operator costs at most one unit. -/
+theorem gatesOf.timedCost_le (o : ℕ) : gatesOf.timedCost o ≤ 1 := by
+  unfold gatesOf.timedCost; grind
+
+/-- An operator has at most two gates. -/
+@[length_bound] theorem gatesOf_length_le (o : ℕ) : (gatesOf o).length ≤ 2 := by
+  unfold gatesOf; split <;> simp
+
+/-- The value of an answer: the literal, or a fold over the gates of the operator that adds the
+offset and the gate at each position to the tag. -/
+def fire (a : Ans) : ℕ :=
+  match a.gate, a.tag with
+  | .lit n, _ => n
+  | .op z o, t =>
+    let g := gatesOf o
+    Fin.foldr g.length (fun j acc => acc + z + g.getD j.val 0) t
+
+/-- The adversary called at the value of the answer. -/
+noncomputable def fireRed (a : Ans) (A : ℕ → SPComp Bool) : SPComp Bool :=
+  A (fire a)
+
+derive_reduction fireRed
+
+-- the closed form of the fold, free of the offset `z`, keeps the length of the gates of `o`;
+-- `@[length_bound]` on `gatesOf_length_le` bounds it, so the bound is free of the answer
+derive_time_bound fireRed.tree
+
+/-- The time theorem of `fireRed` bounds its step time by one bound for every answer. -/
+example (A : ℕ → SPTree.Timed Bool) (ACost : ℕ → ℕ) {T c : ℕ}
+    (hA : ∀ x, (A x).time ≤ T) (hc : ∀ x, ACost x ≤ c) :
+    ∃ E, ∀ a, SPTree.Timed.stepTime (fireRed.tree.timed a A ACost) ≤ E :=
+  ⟨_, fun a => fireRed.tree.timeBound_timed a A ACost hA hc⟩
 
 end CatCrypt.Tactics.DeriveTimeBoundMatchTest

@@ -402,6 +402,21 @@ def rewriteCosts (b : FVarId) (e : Expr) (subst : Expr → MetaM Expr := pure) :
       if r.containsFVar b then return .continue
       return .done r)
 
+/-- `e` with every length `l.length` that mentions `b` and is not inside a registered cost
+replaced by its bound free of `b` (`AutoTime.boundFree?`: the equation of a list function or a
+theorem tagged `@[length_bound]`), where one exists. A length that a closed form of a registered
+cost leaves in a bound (the number of iterations of a fold over a list built from a matched
+value) is bounded in this way. -/
+def rewriteLengths (b : FVarId) (e : Expr) : MetaM Expr :=
+  Meta.transform e (pre := fun s => do
+    unless s.containsFVar b do return .done s
+    if let some n := s.getAppFn.constName? then
+      if n.lastComponentAsString == "timedCost" then return .done s
+    unless s.isAppOfArity ``List.length 2 do return .continue
+    let some (r, _) ← CatCrypt.Tactics.AutoTime.boundFree? #[b] s 64 | return .done s
+    if r.containsFVar b then return .done s
+    return .done r)
+
 /-- The fresh variable `b : γ` in `k`, which must not occur in the result after the registered
 costs that mention it are replaced by their closed forms (`rewriteCosts`). -/
 def withFresh (γ : Expr) (k : Expr → MetaM Expr) : MetaM Expr :=
@@ -468,7 +483,8 @@ def matchBound (m : MatcherApp) (alts : Array Expr) : MetaM (Option Expr) := do
 
 /-- The bound of the `match` `m` whose alternatives are bounded by `k` (a step cost, a pair or
 a tree): the maximum of the bounds of its alternatives, or, when a bound mentions a pattern
-variable after the registered costs are replaced by closed forms, the `match` of the bounds of
+variable after the registered costs are replaced by closed forms (`rewriteCosts`) and the
+lengths by their bounds (`rewriteLengths`), the `match` of the bounds of
 its alternatives (`matchBound`). The bounds of the alternatives include the cost of the
 dispatch that the costed form charges in each alternative. -/
 def boundMatch (m : MatcherApp) (k : Expr → MetaM Expr) : MetaM Expr := do
@@ -479,6 +495,7 @@ def boundMatch (m : MatcherApp) (k : Expr → MetaM Expr) : MetaM Expr := do
     let (b, lam, d) ← lambdaBoundedTelescope alt n fun ys body => do
       let r ← instantiateMVars (← k body)
       let r ← ys.foldlM (init := r) fun r y => rewriteCosts y.fvarId! r
+      let r ← ys.foldlM (init := r) fun r y => rewriteLengths y.fvarId! r
       let d := ys.any fun y => r.containsFVar y.fvarId!
       return (r, ← mkLambdaFVars ys r, d)
     lams := lams.push lam
@@ -524,6 +541,7 @@ def casesBound? (e : Expr) (k : Expr → MetaM Expr) : MetaM (Option Expr) := do
       if ys.size != cv.numFields then return none
       let r ← instantiateMVars (← k body)
       let r ← ys.foldlM (init := r) fun r y => rewriteCosts y.fvarId! r
+      let r ← ys.foldlM (init := r) fun r y => rewriteLengths y.fvarId! r
       if ys.any fun y => r.containsFVar y.fvarId! then return none
       return some r
     let some b := b? | return none
