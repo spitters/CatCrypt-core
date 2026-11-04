@@ -215,9 +215,7 @@ def comp (F : CostedPullback E O E₁ O₁) (G : CostedPullback E₁ O₁ E₂ O
     rw [Nat.add_assoc, Nat.add_assoc] at this
     exact this
   pullE_dist_le Z ZE tD h w := by
-    have := F.pullE_dist_le (G.pull Z) _ (G.pullE_dist_le Z ZE h) w
-    rw [Nat.add_assoc] at this
-    exact this
+    simpa only [Nat.add_assoc] using F.pullE_dist_le (G.pull Z) _ (G.pullE_dist_le Z ZE h) w
   pull_rounds_le Z := by
     have h1 := F.pull_rounds_le (G.pull Z)
     have h2 := Nat.mul_le_mul_left F.roundsMul (G.pull_rounds_le Z)
@@ -247,10 +245,8 @@ theorem realizesTime_map (F : CostedPullback E O E₁ O₁) {X : Sys τ E O} {Y 
     (hX : F.Adm X) (hY : F.Adm Y) {n o q tD : ℕ} {b : (ζ : Type) → Env (Strat ζ E O) ζ → ℝ≥0∞}
     (h : RealizesTime X Y (n + F.nextC) (o + F.obsC) (F.roundsMul * q + F.roundsAdd)
       (tD + F.distC) b) :
-    RealizesTime (F.map X) (F.map Y) n o q tD (fun ζ Z => b (F.Ctx ζ) (F.pull Z)) := by
-  intro ζ Z ZT ZE hT
-  rw [F.adv_map hX hY Z]
-  exact h _ _ _ _ (F.pull_envTimeBound hT)
+    RealizesTime (F.map X) (F.map Y) n o q tD (fun ζ Z => b (F.Ctx ζ) (F.pull Z)) :=
+  fun _ Z _ _ hT => (F.adv_map hX hY Z).trans_le (h _ _ _ _ (F.pull_envTimeBound hT))
 
 /-- The costed law for a composite: the realization is pulled back through `G` and then `F`,
 and the composite reduction of an environment of time `(n, o, q, tD)` has the time given by
@@ -330,8 +326,7 @@ noncomputable def toCostedPullback (π : Hybrid σ E O EG OG) (πT : Hybrid.Time
     (Hybrid.Timed.reduce_timeBound π Z.input hT h).mono (by omega) (by omega)
   pullE_dist_le Z ZE tD h w := Hybrid.Timed.reduceEnv_dist_le π Z ZE.dist ZE.distCost w (h w.1)
   pull_rounds_le Z := by
-    rw [toEnvPullback_pull]
-    simp [Hybrid.reduceEnv, Hybrid.reduce]
+    simp [toEnvPullback_pull, Hybrid.reduceEnv, Hybrid.reduce]
 
 end Hybrid
 

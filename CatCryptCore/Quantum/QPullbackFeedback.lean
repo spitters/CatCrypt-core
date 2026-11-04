@@ -74,12 +74,7 @@ theorem qloopQ_add (S : QSys H τ E O d) (Z : QStratQ K ζ E O d) :
     ∀ (m k : ℕ) (c : ζ × τ),
       qloopQ S Z (m + k) c = (qloopQ S Z m c).bind (qloopQ S Z k) := by
   intro m
-  induction m with
-  | zero => intro k c; simp only [Nat.zero_add, qloopQ, SubInstrument.pure_bind]
-  | succ m ih =>
-    intro k c
-    rw [Nat.succ_add]
-    simp only [qloopQ, SubInstrument.bind_assoc, ih]
+  induction m <;> intro k c <;> simp_all [Nat.succ_add, qloopQ, SubInstrument.bind_assoc]
 
 end Split
 

@@ -153,16 +153,11 @@ theorem par_stepMap_attachQ (X : QSys H τ E O d) (Y : QSys H' υ E' O' d) (idle
       (fun c => (c.1, (c.2, none))) where
   init_map := rfl
   step c e := by
-    cases e with
-    | inl e =>
-      simp only [toQRSys, par, QRSys.par_step_inl, QSimQ.attachQ_step, parSimL, Sum.elim_inl,
-        placeLeft, placeRight, SubInstrument.frame_pure, relabel_pure,
-        SubInstrument.bind_assoc, SubInstrument.pure_bind, Option.elim_none]
-    | inr e =>
-      simp only [toQRSys, par, QRSys.par_step_inr, QSimQ.attachQ_step, parSimL, Sum.elim_inr,
-        hX c.1, placeLeft, placeRight, SubInstrument.frame_pure, SubInstrument.frame_bind,
-        relabel_pure, relabel_bind, SubInstrument.bind_assoc, SubInstrument.pure_bind,
-        Option.elim_some]
+    cases e <;>
+      simp only [toQRSys, par, QRSys.par_step_inl, QRSys.par_step_inr, QSimQ.attachQ_step,
+        parSimL, Sum.elim_inl, Sum.elim_inr, hX c.1, placeLeft, placeRight,
+        SubInstrument.frame_pure, SubInstrument.frame_bind, relabel_pure, relabel_bind,
+        SubInstrument.bind_assoc, SubInstrument.pure_bind, Option.elim_none, Option.elim_some]
 
 omit [DecidableEq H] [DecidableEq H'] in
 /-- If `Y` is idle at `idle`, adding the empty pending output is a step map from `X.par Y` to
@@ -173,16 +168,11 @@ theorem par_stepMap_attachQL (X : QSys H τ E O d) (Y : QSys H' υ E' O' d) (idl
       (fun c => ((c.1, none), c.2)) where
   init_map := rfl
   step c e := by
-    cases e with
-    | inl e =>
-      simp only [toQRSys, par, QRSys.par_step_inl, QSimQ.attachQL_step, parSimR, Sum.elim_inl,
-        hY c.2, placeLeft, placeRight, SubInstrument.frame_pure, SubInstrument.frame_bind,
-        relabel_pure, relabel_bind, SubInstrument.bind_assoc, SubInstrument.pure_bind,
-        Option.elim_some]
-    | inr e =>
-      simp only [toQRSys, par, QRSys.par_step_inr, QSimQ.attachQL_step, parSimR, Sum.elim_inr,
-        placeLeft, placeRight, SubInstrument.frame_pure, relabel_pure,
-        SubInstrument.bind_assoc, SubInstrument.pure_bind, Option.elim_none]
+    cases e <;>
+      simp only [toQRSys, par, QRSys.par_step_inl, QRSys.par_step_inr, QSimQ.attachQL_step,
+        parSimR, Sum.elim_inl, Sum.elim_inr, hY c.2, placeLeft, placeRight,
+        SubInstrument.frame_pure, SubInstrument.frame_bind, relabel_pure, relabel_bind,
+        SubInstrument.bind_assoc, SubInstrument.pure_bind, Option.elim_none, Option.elim_some]
 
 /-- The parallel context with the hole on the left, `- ∥ Y`, as a pullback over environments
 with memory: the private register of `Y` moves to the environment memory, and the admissible

@@ -73,10 +73,7 @@ related images with bound `b ∘ pull` gives the realization of the sources with
 theorem realizes_of_rel (F : AdvPullback T T') {x y : T.System} {x' y' : T'.System}
     (hx : F.Rel x x') (hy : F.Rel y y') (s : T.Test → T'.Test) (hs : ∀ t, F.pull (s t) = t)
     {b : T.Test → ℝ≥0∞} (h : T'.Realizes x' y' fun t => b (F.pull t)) : T.Realizes x y b :=
-  fun t => by
-    have ht : T'.adv x' y' (s t) ≤ b (F.pull (s t)) := h (s t)
-    rw [F.adv_rel hx hy, hs] at ht
-    exact ht
+  fun t => by simpa only [F.adv_rel hx hy, hs] using h (s t)
 
 end CatCrypt.Crypto.UCTransparent.AdvPullback
 
@@ -161,12 +158,9 @@ theorem liftTheory_realizes_iff (X Y : QSysObj E O d) {ε : ℝ≥0∞} :
         (fun Z : {Z : Strat ζ E O // StratPure Z} => (qview X.sys (liftStrat Z.1)).toQComp)
         (fun Z => (qview Y.sys (liftStrat Z.1)).toQComp)
         (fun Z => CPComp.branch_cp (qview X.sys (liftStrat Z.1)))
-        (fun Z => CPComp.branch_cp (qview Y.sys (liftStrat Z.1))) := by
-  constructor
-  · intro h ζ
-    exact (quc_iff_cpDist _ _).2 fun Z => h ⟨ζ, Z⟩
-  · intro h Z
-    exact (quc_iff_cpDist _ _).1 (h Z.1) Z.2
+        (fun Z => CPComp.branch_cp (qview Y.sys (liftStrat Z.1))) :=
+  ⟨fun h ζ => (quc_iff_cpDist _ _).2 fun Z => h ⟨ζ, Z⟩,
+    fun h Z => (quc_iff_cpDist _ _).1 (h Z.1) Z.2⟩
 
 /-- `quc_liftQSys_of_realizes_le` is the law of `liftPullback`. -/
 example [NeZero d] {S : Sys τ E O} {I : Sys υ E O} (hS : S.HeapPure) (hI : I.HeapPure)

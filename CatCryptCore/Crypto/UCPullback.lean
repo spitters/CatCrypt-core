@@ -90,10 +90,8 @@ realizes `F.map Y` with bound `b` at the pulled-back environment. -/
 theorem realizes_map (F : EnvPullback E O E₁ O₁) {X : Sys τ E O} {Y : Sys υ E O}
     (hX : F.Adm X) (hY : F.Adm Y) {b : (ζ : Type) → Env (Strat ζ E O) ζ → ℝ≥0∞}
     (h : Realizes X Y b) :
-    Realizes (F.map X) (F.map Y) (fun ζ Z => b (F.Ctx ζ) (F.pull Z)) := fun ζ Z => by
-  change adv (F.map X) (F.map Y) Z ≤ _
-  rw [F.adv_map hX hY Z]
-  exact h _ _
+    Realizes (F.map X) (F.map Y) (fun ζ Z => b (F.Ctx ζ) (F.pull Z)) := fun _ Z =>
+  (F.adv_map hX hY Z).trans_le (h _ _)
 
 /-- The pullback law at a bound that does not depend on the environment. -/
 theorem realizes_map_const (F : EnvPullback E O E₁ O₁) {X : Sys τ E O} {Y : Sys υ E O}

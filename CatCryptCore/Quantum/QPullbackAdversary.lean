@@ -148,11 +148,7 @@ def comp (S : QAdvSys N₂ σ AP AF LF Lk d) (A : QAdvSys N₁ α AI AP Lk Lk' d
 theorem toQSimQ_dummy :
     (dummy AP Lk : QAdvSys Unit Unit AP AP Lk Lk d).toQSimQ (P := P) (Oh := Oh) = QSimQ.id := by
   simp only [toQSimQ, QSimQ.id, QSimQ.mk.injEq, true_and]
-  constructor
-  · funext a e
-    cases e <;> simp [pre, dummy]
-  · funext a o
-    simp [post, dummy]
+  constructor <;> funext a e <;> cases e <;> simp [pre, post, dummy]
 
 omit [DecidableEq N₁] [DecidableEq N₂] in
 /-- The simulator of a cascade of adversary systems is the composite of their simulators. -/
@@ -213,9 +209,7 @@ theorem qviewQ_attachAdv_comp (F : QSys H' φ (P ⊕ AF) (Oh × LF) d)
     qviewQ ((F.attachAdv S).attachAdv A) Z = qviewQ (F.attachAdv (S.comp A)) Z := by
   rw [QSys.attachAdv, QSys.attachAdv, QSys.attachAdv, QAdvSys.toQSimQ_comp,
     QSimQ.qviewQ_attachQ, QSimQ.qviewQ_attachQ, simViewQ_comp]
-  simp only [simViewQ]
-  rw [QSimQ.qviewQ_attachQ]
-  rfl
+  simp only [simViewQ, QSimQ.qviewQ_attachQ]
 
 /-- Realization against environments with memory is unchanged by attaching the dummy adversary
 to the real system. -/

@@ -214,12 +214,9 @@ def QRealizesSimQB (R : QSys H τ E O d) (I : QSys H' υ EG OG d) (S : QSimQ M �
 with the constant bound `ε`. -/
 theorem QRealizesSimQ_iff_const (R : QSys H τ E O d) (I : QSys H' υ EG OG d)
     (S : QSimQ M σ E O EG OG d) (ε : ℝ≥0∞) :
-    QRealizesSimQ R I S ε ↔ QRealizesSimQB R I S fun _ _ _ _ _ => ε := by
-  constructor
-  · intro h K _ _ ζ
-    exact (quc_iff_cpDist (fun Z : QStratQ K ζ E O d => qviewQ R Z) _).1 (h K ζ)
-  · intro h K _ _ ζ
-    exact (quc_iff_cpDist (fun Z : QStratQ K ζ E O d => qviewQ R Z) _).2 (h K ζ)
+    QRealizesSimQ R I S ε ↔ QRealizesSimQB R I S fun _ _ _ _ _ => ε :=
+  ⟨fun h K _ _ ζ => (quc_iff_cpDist _ _).1 (h K ζ),
+    fun h K _ _ ζ => (quc_iff_cpDist _ _).2 (h K ζ)⟩
 
 /-- Every system realizes itself behind the identity simulator with the zero bound. -/
 theorem QRealizesSimQB.refl (R : QSys H τ E O d) :

@@ -150,8 +150,7 @@ theorem oneShotTheory_iSup_adv {hon α : Type} (π₁ π₂ : hon → SPComp α)
 /-- Realization in the one-shot theory with a constant bound is a bound on `sdist`. -/
 theorem oneShotTheory_realizes_iff {hon α : Type} {π₁ π₂ : hon → SPComp α} {ε : ℝ≥0∞} :
     (oneShotTheory hon α).Realizes π₁ π₂ (fun _ => ε) ↔ sdist π₁ π₂ ≤ ε := by
-  rw [← oneShotTheory_iSup_adv]
-  exact ⟨iSup_le, fun h t => (le_iSup _ t).trans h⟩
+  simpa only [← oneShotTheory_iSup_adv] using ⟨iSup_le, fun h t => (le_iSup _ t).trans h⟩
 
 /-! ## The stateless semantics -/
 
@@ -244,9 +243,8 @@ example {P Q : ProtObj SPComp hon out} {ε : ℝ≥0∞} (f : ProtMorε P Q ε)
     RealizesSim Q.toSys P.toSys (simWrapSim ev f.sim hsim)
       (fun _ Z => Z.input.rounds * ε) := by
   have hd : (oneShotTheory hon (out ⊕ Q.iface)).Realizes Q.prot
-      (fun a => SPComp.bind (P.prot a) (mapSum SPComp.pure f.sim)) (fun _ => ε) := by
-    rw [oneShotTheory_realizes_iff, sdist_sym]
-    exact f.dist
+      (fun a => SPComp.bind (P.prot a) (mapSum SPComp.pure f.sim)) (fun _ => ε) :=
+    oneShotTheory_realizes_iff.2 ((sdist_sym _ _).trans_le f.dist)
   have h₁ := (envTheory_realizes_iff (b := fun _ Z => Z.input.rounds * ε)).1
     ((statelessPullback hon (out ⊕ Q.iface)).realizes_rel_const
     (x' := ⟨Unit, Q.toSys⟩) (y' := ⟨Unit, Sys.stateless _⟩) (statelessPullback_rel_toSys Q)

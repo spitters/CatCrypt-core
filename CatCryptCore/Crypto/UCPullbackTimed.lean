@@ -177,8 +177,7 @@ theorem reduceEnv_dist_le (π : Hybrid σ E O EG OG) (Z : UCConcrete.Env (Strat 
     (dist : ζ → SPTree.Timed Bool) (distCost : ζ → ℕ) (zs : ζ × σ) {tD : ℕ}
     (hd : SPTree.Timed.stepTime (distCost zs.1, dist zs.1) ≤ tD) :
     SPTree.Timed.stepTime (Hybrid.reduceEnv.dist.tree.timed π Z dist distCost zs) ≤ tD + 1 := by
-  simp only [Hybrid.reduceEnv.dist.tree.timed, SPTree.Timed.stepTime] at hd ⊢
-  omega
+  grind [Hybrid.reduceEnv.dist.tree.timed, SPTree.Timed.stepTime]
 
 end Hybrid.Timed
 

@@ -68,9 +68,7 @@ theorem RelTriple.of_relProg {V : PubView E O} {RA : α → β → Prop} :
   | .opN _ _, _, h => by
     obtain ⟨_, _, Φ, rfl, hμ, h⟩ := h
     exact RelTriple.sample Φ hμ fun n n' hn => RelTriple.of_relProg (h n n' hn)
-  | .fail, _, h => by
-    subst h
-    exact RelTriple.fail
+  | .fail, _, h => h ▸ RelTriple.fail
 
 /-- **The relational judgment is the relation lifting at exact couplings.** Two party programs
 are related by the relational triple `RelTriple V RA` exactly when they are related by the

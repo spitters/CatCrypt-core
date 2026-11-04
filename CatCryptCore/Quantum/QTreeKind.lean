@@ -132,9 +132,8 @@ theorem erase_const (x : QInstrT A α fun _ => A) : x.erase = QTreeT.erase x.toT
 
 /-- Erasure of a return. -/
 @[simp] theorem erase_ret (a : α) :
-    (ret A α (fun _ => A) a).erase = (SubInstrument.pure a : SubInstrument A A α) := by
-  rw [erase_const]
-  rfl
+    (ret A α (fun _ => A) a).erase = (SubInstrument.pure a : SubInstrument A A α) :=
+  erase_const _
 
 /-- Erasure commutes with sequencing. -/
 theorem erase_bind (x : QInstrT A α fun _ => A) (f : α → ℕ × QInstrT A β fun _ => A) :
@@ -184,16 +183,14 @@ theorem bound_place {A' : Type} [Fintype A'] (C : Type) [Fintype C] (e : A × C 
 /-- Erasure commutes with `placeLeft`. -/
 theorem erase_placeLeft {d : ℕ} (B C : Type) [iB : Fintype B] [iC : Fintype C] (α : Type)
     (w : QInstrT (Fin d × B) α fun _ => Fin d × B) :
-    (placeLeft B C iB iC α w).erase = ReactiveUC.placeLeft B C w.erase := by
-  rw [placeLeft, erase_place]
-  rfl
+    (placeLeft B C iB iC α w).erase = ReactiveUC.placeLeft B C w.erase :=
+  erase_place _ _ _
 
 /-- Erasure commutes with `placeRight`. -/
 theorem erase_placeRight {d : ℕ} (B C : Type) [iB : Fintype B] [iC : Fintype C] (α : Type)
     (s : QInstrT (Fin d × C) α fun _ => Fin d × C) :
-    (placeRight B C iB iC α s).erase = ReactiveUC.placeRight B C s.erase := by
-  rw [placeRight, erase_place]
-  rfl
+    (placeRight B C iB iC α s).erase = ReactiveUC.placeRight B C s.erase :=
+  erase_place _ _ _
 
 /-- Erasure of a step-prefixed costed instrument commutes with `if`. -/
 theorem erase_snd_ite {B : α → Type} [∀ a, Fintype (B a)] (c : Prop) [Decidable c]

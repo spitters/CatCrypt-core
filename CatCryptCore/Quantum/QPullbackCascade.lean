@@ -195,13 +195,11 @@ theorem qloopQ_attachQ (S : QSimQ M σ E O EG OG d) (Y : QSys H υ EG OG d)
   have hb : ∀ {α β : Type} (p : SubInstrument (Fin d × (K × M)) (Fin d × (K × M)) α)
       (k : α → SubInstrument (Fin d × (K × M)) (Fin d × (K × M)) β),
       envPlace H (p.bind k) = (envPlace H p).bind fun a => envPlace H (k a) := by
-    intro α β p k
-    simp only [envPlace, SubInstrument.frame_bind, relabel_bind]
+    simp only [envPlace, SubInstrument.frame_bind, relabel_bind, implies_true]
   have hp : ∀ {α : Type} (a : α),
       envPlace H (SubInstrument.pure a : SubInstrument (Fin d × (K × M)) (Fin d × (K × M)) α) =
         SubInstrument.pure a := by
-    intro α a
-    simp only [envPlace, SubInstrument.frame_pure, relabel_pure]
+    simp only [envPlace, SubInstrument.frame_pure, relabel_pure, implies_true]
   have hZ : ∀ {α : Type} (w : SubInstrument (Fin d × K) (Fin d × K) α),
       relabel (transferReg (Fin d) K (Equiv.refl (H × M))) (envPlace (H × M) w) =
         envPlace H (placeLeft K M w) := by
@@ -241,13 +239,11 @@ theorem qloopQ_attachQL (S : QSimQ M σ E O EG OG d) (Y : QSys H υ EG OG d)
   have hb : ∀ {α β : Type} (p : SubInstrument (Fin d × (K × M)) (Fin d × (K × M)) α)
       (k : α → SubInstrument (Fin d × (K × M)) (Fin d × (K × M)) β),
       envPlace H (p.bind k) = (envPlace H p).bind fun a => envPlace H (k a) := by
-    intro α β p k
-    simp only [envPlace, SubInstrument.frame_bind, relabel_bind]
+    simp only [envPlace, SubInstrument.frame_bind, relabel_bind, implies_true]
   have hp : ∀ {α : Type} (a : α),
       envPlace H (SubInstrument.pure a : SubInstrument (Fin d × (K × M)) (Fin d × (K × M)) α) =
         SubInstrument.pure a := by
-    intro α a
-    simp only [envPlace, SubInstrument.frame_pure, relabel_pure]
+    simp only [envPlace, SubInstrument.frame_pure, relabel_pure, implies_true]
   have hZ : ∀ {α : Type} (w : SubInstrument (Fin d × K) (Fin d × K) α),
       relabel (transferReg (Fin d) K (Equiv.prodComm H M)) (envPlace (M × H) w) =
         envPlace H (placeLeft K M w) := by
@@ -347,8 +343,7 @@ theorem QRealizesQB.toQRealizesB {R : QSys H τ E O d} {I : QSys H' υ E O d}
     {b : (K : Type) → [Fintype K] → [DecidableEq K] → (ζ : Type) → QStratQ K ζ E O d →
       ℝ≥0∞}
     (h : QRealizesQB R I b) : QRealizesB R I fun ζ Z => b Unit ζ Z.toQ := fun ζ Z => by
-  rw [← qviewQ_toQ, ← qviewQ_toQ]
-  exact h Unit ζ Z.toQ
+  simpa only [← qviewQ_toQ] using h Unit ζ Z.toQ
 
 /-- Realization behind a simulator with a private register is realization of the system with
 the simulator attached. -/
@@ -538,11 +533,8 @@ omit [DecidableEq H] [DecidableEq H'] in
 /-- The cascade is `Y` with `X` attached behind it as a simulator, its register on the left. -/
 theorem cascade_eq_attachQL (X : QSys H τ E M d) (Y : QSys H' υ M O d) :
     X.cascade Y = (asPreSim O X).attachQL Y := by
-  simp only [cascade, QSimQ.attachQ, QSimQ.attachQL, asPostSim, asPreSim]
-  congr 1
-  funext c e
-  simp only [placeRight, placeLeft, SubInstrument.frame_pure, relabel_pure,
-    SubInstrument.pure_bind]
+  simp [cascade, QSimQ.attachQ, QSimQ.attachQL, asPostSim, asPreSim, placeRight, placeLeft,
+    relabel_pure]
 
 omit [DecidableEq H] [DecidableEq H'] in
 /-- The cascade is the composition `QRSys.seq` of the category of quantum reactive systems on
@@ -552,10 +544,7 @@ theorem cascade_toQRSys (X : QSys H τ E M d) (Y : QSys H' υ M O d) :
     (X.cascade Y).toQRSys = QRSys.seq (R := Fin d × (H × H'))
       ⟨X.init, fun t e => placeLeft H H' (X.step t e)⟩
       ⟨Y.init, fun u m => placeRight H H' (Y.step u m)⟩ := by
-  simp only [toQRSys, cascade, QSimQ.attachQ, asPostSim, QRSys.seq]
-  congr 1
-  funext c e
-  simp only [placeRight, SubInstrument.frame_pure, relabel_pure, SubInstrument.pure_bind]
+  simp [toQRSys, cascade, QSimQ.attachQ, asPostSim, QRSys.seq, placeRight, relabel_pure]
 
 /-- The cascade context with the hole on the left, `- ≫ Y`, as a pullback: the private register
 of `Y` moves to the environment memory. -/
