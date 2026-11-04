@@ -116,14 +116,15 @@ structure Hop where
   deriving Inhabited
 
 /-- Read a proof `h` of `t ≤ b` or `t = b`, with `t` a distance over the goal's metric and
-context arguments, as a hop. -/
+context arguments, as a hop. An equation whose sides are not a registered distance is not a
+candidate: `le_of_eq` is formed only after the metric and the context arguments match. -/
 def hopOf? (goal : DView) (h : Expr) : MetaM (Option Hop) := do
   let ty ← whnfR (← instantiateMVars (← inferType h))
-  let (lhs, rhs, pfLe) ← match leSides? ty, eqSides? ty with
-    | some (l, r), _ => pure (l, r, h)
+  let (lhs, rhs, isEq) ← match leSides? ty, eqSides? ty with
+    | some (l, r), _ => pure (l, r, false)
     | none, some (l, r) =>
       if (← inferType l).isProp then return none
-      pure (l, r, ← mkAppM ``le_of_eq #[h])
+      pure (l, r, true)
     | none, none => return none
   let some v ← distView? lhs | return none
   unless v.entry.decl == goal.entry.decl do return none
@@ -131,6 +132,7 @@ def hopOf? (goal : DView) (h : Expr) : MetaM (Option Hop) := do
   for k in [0:v.args.size] do
     if k != i && k != j then
       unless ← isDefEq v.args[k]! goal.args[k]! do return none
+  let pfLe ← if isEq then mkAppM ``le_of_eq #[h] else pure h
   let pf ← match v.pf with
     | some p => mkAppM ``Eq.trans_le #[← mkEqSymm p, pfLe]
     | none => mkExpectedTypeHint pfLe (← mkAppM ``LE.le #[v.term, rhs])
@@ -486,13 +488,15 @@ def unfoldBoundHead? (e : Expr) : MetaM (Option Expr) := do
     changed := true
   return if changed then some cur else none
 
-/-- The proof `h` of `t ≤ b` or `t = b` as a proof of `t ≤ b`, with `t`. -/
+/-- The proof `h` of `t ≤ b` or `t = b` as a proof of `t ≤ b`, with `t`; `none` for an
+equation over a type without an order. -/
 def leFact? (h : Expr) : MetaM (Option (Expr × Expr)) := do
   let ty ← whnfR (← instantiateMVars (← inferType h))
   if let some (l, _) := leSides? ty then return some (l, h)
   if let some (l, _) := eqSides? ty then
     if (← inferType l).isProp then return none
-    return some (l, ← mkAppM ``le_of_eq #[h])
+    let some pf ← observing? (mkAppM ``le_of_eq #[h]) | return none
+    return some (l, pf)
   return none
 
 /-- The facts over dominated distances obtained from the facts `cands` by the dominance
