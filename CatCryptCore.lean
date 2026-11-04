@@ -288,6 +288,9 @@ public import CatCryptCore.Crypto.AKE.PQXDHSquare
 public import CatCryptCore.Crypto.AKE.PQXDHSquareHops
 public import CatCryptCore.Crypto.AKE.PQXDHSquareGDH
 public import CatCryptCore.Crypto.AKE.PQXDHSquareKEM
+public import CatCryptCore.Crypto.AKE.PQXDHPassive
+public import CatCryptCore.Crypto.AKE.PQXDHPassiveHops
+public import CatCryptCore.Crypto.AKE.PQXDHPassiveHopsTimed
 public import CatCryptCore.Crypto.AKE.ChannelSquareTimed
 public import CatCryptCore.Crypto.Messaging.FSPRG
 public import CatCryptCore.Crypto.Messaging.CKA
