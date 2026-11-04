@@ -7,6 +7,9 @@ module
 
 public import CatCryptCore.Crypto.Signatures.EUFCMA
 public import CatCryptCore.Tactics.DeriveTimed
+public import CatCryptCore.Tactics.DeriveTimedStructure
+public import CatCryptCore.Core.SPTreeTimedOps
+public import CatCryptCore.Tactics.AutoTime
 
 /-!
 # Oracle programs with step costs, a tree kind of `derive_timed`
@@ -29,19 +32,43 @@ is `Timed.StepTimeBound`.
 
 The kind `oracleProgKind` registers oracle programs in the table of tree kinds of
 `CatCryptCore.Tactics.DeriveTimed`: nodes `pure` and `query`, the node `lift` whose
-computation argument has the role `comp`, and the combinator `OracleProg.bind`.
+computation argument has the role `comp`, and the combinators `OracleProg.bind`,
+`OracleProg.bindQueries` and `OracleProg.collectLog`, whose handler programs are step-prefixed
+costed programs (role `pairFn`).
+
+## Handlers
+
+Replacing each query of a program by a handler program, and interpreting a program against an
+oracle, cost the time of the program plus, per query, the time of the handler or oracle
+(`timeBound_bindQueries`, `timeBound_collectLog`, `stepTime_runWith_le`); the query unit of
+the program is not counted twice. Prepending the records of a query to the records of the rest
+costs `2 * l + 1` for records of length `l`, the registered cost of `List.append`.
+
+The costed mirror `Signatures.EUFCMAAdversary.Timed` of EUF-CMA adversaries is derived here by
+`derive_timed_structure`, so that the modules that derive reductions into
+`EUFCMAAdversary` share it.
 
 ## Main definitions
 
 * `OracleProg.Timed I O α` — oracle programs with step costs and costed computation trees
 * `OracleProg.Timed.erase`, `OracleProg.Timed.delay`, `OracleProg.Timed.bind`
-* `OracleProg.Timed.TimeBound`, `OracleProg.Timed.StepTimeBound`
+* `OracleProg.Timed.TimeBound`, `OracleProg.Timed.StepTimeBound`, `OracleProg.Timed.AllRet`
+* `OracleProg.Timed.bindQueries`, `OracleProg.Timed.collectLog` — costed handler combinators
+* `OracleProg.Timed.runWith` — the costed interpretation against a costed oracle
 * `CatCrypt.Crypto.OracleProg.oracleProgKind` — the tree kind
+* `Signatures.EUFCMAAdversary.Timed` — the costed mirror of EUF-CMA adversaries
 
 ## Main results
 
 * `OracleProg.Timed.erase_bind` — erasure commutes with sequencing
 * `OracleProg.Timed.timeBound_bind` — times add under sequencing
+* `OracleProg.Timed.erase_bindQueries`, `OracleProg.Timed.erase_collectLog`,
+  `OracleProg.Timed.erase_runWith` — erasure of the handler combinators and the interpretation
+* `OracleProg.Timed.timeBound_bindQueries` — time `T + q * t`
+* `OracleProg.Timed.timeBound_collectLog` — time `T + q * (t + 2 * ℓ + 1)`
+* `OracleProg.Timed.stepTime_runWith_le` — the cost law of the interpretation: time
+  `T + q * (t + 2 * ℓ + 1)` for a program of time `T` with `q` queries against an oracle of time
+  `t` with log entries of length at most `ℓ`
 -/
 
 @[expose] public section
@@ -167,11 +194,251 @@ theorem erase_ite (c : Prop) [Decidable c] (x y : Timed I O α) :
     (if c then x else y).erase = if c then x.erase else y.erase := by
   split <;> rfl
 
+/-- `AllRet Q p`: `Q` holds at every leaf `pure a` of `p`. -/
+def AllRet (Q : α → Prop) : Timed I O α → Prop
+  | pure a => Q a
+  | query _ _ k => ∀ o, AllRet Q (k o)
+  | lift _ _ _ k => ∀ b, AllRet Q (k b)
+
+/-- Times add under sequencing, with the continuation bounded at the leaves satisfying a leaf
+invariant of the program. -/
+theorem timeBound_bind_of_allRet {Q : α → Prop} {p : Timed I O α}
+    {f : α → ℕ × Timed I O β} {m n : ℕ} (hp : p.TimeBound m) (hQ : p.AllRet Q)
+    (hf : ∀ a, Q a → StepTimeBound (f a) n) : StepTimeBound (p.bind f) (m + n) := by
+  induction p generalizing m with
+  | pure a => exact (hf a hQ).mono (Nat.le_add_left n m)
+  | query i c k ih =>
+    have h1 := hp.1
+    refine ⟨Nat.zero_le _, ?_⟩
+    simp only [bind, Nat.sub_zero]
+    refine ⟨by omega, fun o => ?_⟩
+    have h2 := (hp.2 o).1
+    have h3 := (stepTimeBound_delay (c := c o) (ih o (hp.2 o).2 (hQ o))).mono
+      (n := m + n - 1) (by omega)
+    exact ⟨h3.1, h3.2⟩
+  | lift γ t c k ih =>
+    have h1 := hp.1
+    refine ⟨Nat.zero_le _, ?_⟩
+    simp only [bind, Nat.sub_zero]
+    refine ⟨by omega, fun b => ?_⟩
+    have h2 := (hp.2 b).1
+    have h3 := (stepTimeBound_delay (c := c b) (ih b (hp.2 b).2 (hQ b))).mono
+      (n := m + n - t.time) (by omega)
+    exact ⟨h3.1, h3.2⟩
+
+/-! ### Replacing queries by handler programs -/
+
+section Handlers
+
+variable {I' O' Q R L : Type}
+
+/-- The costed form of `OracleProg.bindQueries`: each query `i` is replaced by the
+step-prefixed handler program `h i`, followed by the step cost of the query's continuation. -/
+def bindQueries (h : I → ℕ × Timed I' O' O) : Timed I O α → ℕ × Timed I' O' α
+  | pure a => (0, pure a)
+  | query i c k => delay (h i).1 ((h i).2.bind fun o => delay (c o) (bindQueries h (k o)))
+  | lift γ t c k =>
+    (0, lift γ t (fun b => c b + (bindQueries h (k b)).1) fun b => (bindQueries h (k b)).2)
+
+/-- Erasure commutes with replacing queries by handler programs. -/
+theorem erase_bindQueries (h : I → ℕ × Timed I' O' O) (p : Timed I O α) :
+    (bindQueries h p).2.erase = OracleProg.bindQueries (fun i => (h i).2.erase) p.erase := by
+  induction p with
+  | pure a => rfl
+  | query i c k ih =>
+    simp only [bindQueries, delay, erase_bind, ih, erase, OracleProg.bindQueries]
+  | lift γ t c k ih => simp only [bindQueries, erase, OracleProg.bindQueries, ih]
+
+/-- **Time of replacing queries by handler programs.** A program of time `T` with at most `q`
+queries, each replaced by a handler program of time at most `t`, runs in time `T + q * t`. -/
+theorem timeBound_bindQueries {h : I → ℕ × Timed I' O' O} {t : ℕ}
+    (hh : ∀ i, StepTimeBound (h i) t) {p : Timed I O α} {T q : ℕ} (hp : p.TimeBound T)
+    (hq : QueryCostLe (fun _ => 1) p.erase q) :
+    StepTimeBound (bindQueries h p) (T + q * t) := by
+  induction p generalizing T q with
+  | pure a => exact ⟨Nat.zero_le _, trivial⟩
+  | query i c k ih =>
+    obtain ⟨hT, hk⟩ := hp
+    obtain ⟨hq1, hqk⟩ := hq
+    simp only at hq1 hqk
+    obtain ⟨q', rfl⟩ : ∃ q', q = q' + 1 := ⟨q - 1, by omega⟩
+    have hb := timeBound_bind (hh i).2 (n := T - 1 + q' * t)
+      (f := fun o => delay (c o) (bindQueries h (k o))) fun o => by
+        have hc := (hk o).1
+        have hi := ih o (hk o).2 (by simpa using hqk o)
+        exact (stepTimeBound_delay hi).mono (by omega)
+    have hh1 := (hh i).1
+    refine (stepTimeBound_delay hb).mono ?_
+    rw [Nat.succ_mul]
+    omega
+  | lift γ u c k ih =>
+    refine ⟨Nat.zero_le _, ?_⟩
+    simp only [bindQueries, Nat.sub_zero]
+    refine ⟨by have := hp.1; omega, fun b => ?_⟩
+    have hc := (hp.2 b).1
+    have hu := hp.1
+    obtain ⟨h1, h2⟩ := ih b (hp.2 b).2 (hq b)
+    dsimp only
+    exact ⟨by omega, h2.mono (by omega)⟩
+
+/-- The costed form of `OracleProg.collectLog`: each query `x` is replaced by the
+step-prefixed handler program `h x`, and the records of the handler are prepended to the
+records of the rest at the cost `2 * l + 1` of appending a list of length `l`, the registered
+cost of `List.append`. -/
+def collectLog (h : Q → ℕ × Timed I O (R × List L)) :
+    Timed Q R α → ℕ × Timed I O (α × List L)
+  | pure a => (0, pure (a, []))
+  | query x c k => delay (h x).1 ((h x).2.bind fun rl =>
+      delay (c rl.1) (delay (collectLog h (k rl.1)).1 ((collectLog h (k rl.1)).2.bind fun al =>
+        (2 * rl.2.length + 1, pure (al.1, rl.2 ++ al.2)))))
+  | lift γ t c k =>
+    (0, lift γ t (fun b => c b + (collectLog h (k b)).1) fun b => (collectLog h (k b)).2)
+
+/-- Erasure commutes with collecting the records of handler programs. -/
+theorem erase_collectLog (h : Q → ℕ × Timed I O (R × List L)) (p : Timed Q R α) :
+    (collectLog h p).2.erase = OracleProg.collectLog (fun x => (h x).2.erase) p.erase := by
+  induction p with
+  | pure a => rfl
+  | query x c k ih =>
+    simp only [collectLog, delay, erase_bind, ih, erase, OracleProg.collectLog]
+  | lift γ t c k ih => simp only [collectLog, erase, OracleProg.collectLog, ih]
+
+/-- **Time of collecting the records of handler programs.** A program of time `T` with at most
+`q` queries, each replaced by a handler program of time at most `t` whose records have length
+at most `ℓ`, runs in time `T + q * (t + 2 * ℓ + 1)`. -/
+theorem timeBound_collectLog {h : Q → ℕ × Timed I O (R × List L)} {t ℓ : ℕ}
+    (hh : ∀ x, StepTimeBound (h x) t) (hl : ∀ x, (h x).2.AllRet fun rl => rl.2.length ≤ ℓ)
+    {p : Timed Q R α} {T q : ℕ} (hp : p.TimeBound T)
+    (hq : QueryCostLe (fun _ => 1) p.erase q) :
+    StepTimeBound (collectLog h p) (T + q * (t + 2 * ℓ + 1)) := by
+  induction p generalizing T q with
+  | pure a => exact ⟨Nat.zero_le _, trivial⟩
+  | query x c k ih =>
+    obtain ⟨hT, hk⟩ := hp
+    obtain ⟨hq1, hqk⟩ := hq
+    simp only at hq1 hqk
+    obtain ⟨q', rfl⟩ : ∃ q', q = q' + 1 := ⟨q - 1, by omega⟩
+    have hb := timeBound_bind_of_allRet (hh x).2 (hl x)
+      (n := T - 1 + q' * (t + 2 * ℓ + 1) + (2 * ℓ + 1))
+      (f := fun rl => delay (c rl.1) (delay (collectLog h (k rl.1)).1
+        ((collectLog h (k rl.1)).2.bind fun al =>
+          (2 * rl.2.length + 1, pure (al.1, rl.2 ++ al.2))))) fun rl hrl => by
+        have hc := (hk rl.1).1
+        have hi := ih rl.1 (hk rl.1).2 (by simpa using hqk rl.1)
+        have hg := timeBound_bind hi.2 (n := 2 * ℓ + 1)
+          (f := fun al => (2 * rl.2.length + 1, pure (al.1, rl.2 ++ al.2)))
+          fun _ => ⟨by omega, trivial⟩
+        have hd := stepTimeBound_delay (c := c rl.1)
+          (stepTimeBound_delay (c := (collectLog h (k rl.1)).1) hg)
+        have hi1 := hi.1
+        exact hd.mono (by omega)
+    have hh1 := (hh x).1
+    refine (stepTimeBound_delay hb).mono ?_
+    rw [Nat.succ_mul q']
+    omega
+  | lift γ u c k ih =>
+    refine ⟨Nat.zero_le _, ?_⟩
+    simp only [collectLog, Nat.sub_zero]
+    refine ⟨by have := hp.1; omega, fun b => ?_⟩
+    have hc := (hp.2 b).1
+    have hu := hp.1
+    obtain ⟨h1, h2⟩ := ih b (hp.2 b).2 (hq b)
+    dsimp only
+    exact ⟨by omega, h2.mono (by omega)⟩
+
+end Handlers
+
+/-! ### Interpretation against an oracle -/
+
+section Interpret
+
+variable {L : Type}
+
+/-- The costed form of `OracleProg.runWith`: each query `i` runs the step-prefixed costed
+oracle `o i`, whose log entries are prepended to the entries of the rest at the cost
+`2 * l + 1` of appending a list of length `l`, the registered cost of `List.append`; each
+`lift` node runs its costed computation tree. -/
+noncomputable def runWith (o : I → ℕ × SPTree.Timed (O × List L)) :
+    Timed I O α → ℕ × SPTree.Timed (α × List L)
+  | pure a => (0, .ret (a, []))
+  | query i c k => SPTree.Timed.delay (o i).1 ((o i).2.bind fun ol =>
+      SPTree.Timed.delay (c ol.1) (SPTree.Timed.delay (runWith o (k ol.1)).1
+        ((runWith o (k ol.1)).2.bind fun al =>
+          (2 * ol.2.length + 1, .ret (al.1, ol.2 ++ al.2)))))
+  | lift _ t c k => t.bind fun b => SPTree.Timed.delay (c b) (runWith o (k b))
+
+/-- The costed interpretation compiles to the interpretation of the erased program against the
+compiled oracle. -/
+theorem erase_runWith (o : I → ℕ × SPTree.Timed (O × List L)) (p : Timed I O α) :
+    (runWith o p).2.erase.compile =
+      OracleProg.runWith (fun i => (o i).2.erase.compile) p.erase := by
+  induction p with
+  | pure a =>
+    simp only [runWith, SPTree.Timed.erase_ret, SPTree.compile_ret, erase,
+      OracleProg.runWith_pure]
+  | query i c k ih =>
+    simp only [runWith, SPTree.Timed.delay, SPTree.Timed.erase_bind, SPTree.compile_bind, ih,
+      SPTree.Timed.erase_ret, SPTree.compile_ret, erase, OracleProg.runWith]
+  | lift β t c k ih =>
+    simp only [runWith, SPTree.Timed.delay, SPTree.Timed.erase_bind, SPTree.compile_bind, ih,
+      erase, OracleProg.runWith]
+
+/-- **Cost of interpreting an oracle program.** A program of time `T` with at most `q` queries,
+run against an oracle of time at most `t` per query whose log entries have length at most `ℓ`,
+runs in time `T + q * (t + 2 * ℓ + 1)`. -/
+theorem stepTime_runWith_le {o : I → ℕ × SPTree.Timed (O × List L)} {t ℓ : ℕ}
+    (ho : ∀ i, SPTree.Timed.stepTime (o i) ≤ t)
+    (hl : ∀ i, SPTree.Timed.AllRet (fun ol => ol.2.length ≤ ℓ) (o i).2)
+    {p : Timed I O α} {T q : ℕ} (hp : p.TimeBound T)
+    (hq : QueryCostLe (fun _ => 1) p.erase q) :
+    SPTree.Timed.stepTime (runWith o p) ≤ T + q * (t + 2 * ℓ + 1) := by
+  induction p generalizing T q with
+  | pure a => simp [runWith, SPTree.Timed.stepTime, SPTree.Timed.time_ret]
+  | query i c k ih =>
+    obtain ⟨hT, hk⟩ := hp
+    obtain ⟨hq1, hqk⟩ := hq
+    simp only at hq1 hqk
+    obtain ⟨q', rfl⟩ : ∃ q', q = q' + 1 := ⟨q - 1, by omega⟩
+    have hb := SPTree.Timed.stepTime_bind_le_of_allRet (o i).2
+      (fun ol => SPTree.Timed.delay (c ol.1) (SPTree.Timed.delay (runWith o (k ol.1)).1
+        ((runWith o (k ol.1)).2.bind fun al =>
+          (2 * ol.2.length + 1, .ret (al.1, ol.2 ++ al.2)))))
+      (T - 1 + q' * (t + 2 * ℓ + 1) + (2 * ℓ + 1)) (hl i) fun ol hol => by
+        have hc := (hk ol.1).1
+        have hi := ih ol.1 (hk ol.1).2 (by simpa using hqk ol.1)
+        have hg := SPTree.Timed.stepTime_bind_le (runWith o (k ol.1)).2
+          (fun al => (2 * ol.2.length + 1, SPTree.Timed.ret (al.1, ol.2 ++ al.2)))
+          (2 * ℓ + 1) fun _ => by
+            simp only [SPTree.Timed.stepTime, SPTree.Timed.time_ret]
+            omega
+        simp only [SPTree.Timed.stepTime_delay]
+        simp only [SPTree.Timed.stepTime] at hi hg ⊢
+        omega
+    have ho' := ho i
+    simp only [runWith, SPTree.Timed.stepTime_delay]
+    simp only [SPTree.Timed.stepTime] at hb ho' ⊢
+    rw [Nat.succ_mul q']
+    omega
+  | lift β u c k ih =>
+    have hu := hp.1
+    have hb := SPTree.Timed.stepTime_bind_le u
+      (fun b => SPTree.Timed.delay (c b) (runWith o (k b))) (T - u.time + q * (t + 2 * ℓ + 1))
+      fun b => by
+        have hc := (hp.2 b).1
+        have hi := ih b (hp.2 b).2 (hq b)
+        rw [SPTree.Timed.stepTime_delay]
+        omega
+    exact hb.trans (by omega)
+
+end Interpret
+
 end Timed
 
 open CatCrypt.Tactics.DeriveTimed in
 /-- Oracle programs `OracleProg I O α`: `pure`, `query` and `lift` nodes, the computation of a
-`lift` node priced by its costed computation tree, and the combinator `OracleProg.bind`. -/
+`lift` node priced by its costed computation tree, and the combinators `OracleProg.bind`,
+`OracleProg.bindQueries` and `OracleProg.collectLog`, the last two with a handler program per
+query. -/
 meta def oracleProgKind : TreeKind where
   noun := "oracle program"
   tree := ``CatCrypt.Crypto.OracleProg
@@ -187,9 +454,15 @@ meta def oracleProgKind : TreeKind where
       #[.keep, .comp, .cont 1]⟩]
   combinators := #[
     ⟨``CatCrypt.Crypto.OracleProg.bind, ``CatCrypt.Crypto.OracleProg.Timed.bind,
-      #[.tree, .pairFn 1], true⟩]
+      #[.tree, .pairFn 1], true⟩,
+    ⟨``CatCrypt.Crypto.OracleProg.bindQueries, ``CatCrypt.Crypto.OracleProg.Timed.bindQueries,
+      #[.pairFn 1, .tree], true⟩,
+    ⟨``CatCrypt.Crypto.OracleProg.collectLog, ``CatCrypt.Crypto.OracleProg.Timed.collectLog,
+      #[.pairFn 1, .tree], true⟩]
   eraseLemmas := #[``CatCrypt.Crypto.OracleProg.Timed.erase,
     ``CatCrypt.Crypto.OracleProg.Timed.delay, ``CatCrypt.Crypto.OracleProg.Timed.erase_bind,
+    ``CatCrypt.Crypto.OracleProg.Timed.erase_bindQueries,
+    ``CatCrypt.Crypto.OracleProg.Timed.erase_collectLog,
     ``CatCrypt.Crypto.OracleProg.Timed.erase_snd_ite,
     ``CatCrypt.Crypto.OracleProg.Timed.erase_snd_dite]
   hatLemmas := #[``CatCrypt.Crypto.OracleProg.bind, ``Prod.mk.eta, ``Sum.map_inl, ``Sum.map_inr,
@@ -202,3 +475,7 @@ end OracleProg
 end CatCrypt.Crypto
 
 register_tree_kind CatCrypt.Crypto.OracleProg.oracleProgKind
+
+/-! The costed mirror of EUF-CMA adversaries, whose field `run` is an oracle program. -/
+
+derive_timed_structure CatCrypt.Crypto.Signatures.EUFCMAAdversary
