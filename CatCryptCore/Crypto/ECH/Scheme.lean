@@ -184,12 +184,8 @@ theorem echChoose.timeBound_timed (encode : I → M) (encodeCost : I → ℕ)
     (f := fun x => (1 + encodeCost x.1 + (1 + encodeCost x.2.1),
       ret (encode x.1, encode x.2.1, x.2.2.1, x.2.2.2))) (hA pk) fun x =>
     ⟨?_, trivial⟩)).mono ?_
-  · have := he x.1
-    have := he x.2.1
-    show 1 + encodeCost x.1 + (1 + encodeCost x.2.1) ≤ 2 + 2 * e
-    omega
-  · have := hc pk
-    omega
+  · grind
+  · grind
 
 end Time
 
