@@ -84,6 +84,10 @@ realize behind a simulator, so the stack theorem keeps the term explicit; it is 
   simulator, with the gap Diffie–Hellman bound at the environment reduced through the ratchet.
 * `stack_advantage_le`: the hybrid argument of the stack game over any two worlds.
 * `signal_stack_advantage_le`: **the Signal stack theorem**.
+* `signal_stack_advantage_le_primitives`, `signal_stack_advantage_le_dh`: the stack theorem
+  with the secure-messaging term expanded to the CKA (or DDH), root-KDF PRG and FS-AEAD
+  advantages of the reductions of `DoubleRatchet` at `stackSMRed`.
+* `dhCKA_pureNF`: the Diffie–Hellman CKA satisfies `CKAPureNF`.
 * `stackSMRed.tree.timeBound_timed`, `stackDist.tree.timeBound_timed`: the time certificates.
 -/
 
@@ -94,7 +98,7 @@ set_option autoImplicit false
 namespace CatCrypt.Crypto.Messaging.SignalStack
 
 open CatCrypt.Core CatCrypt.Prob CatCrypt.Crypto CatCrypt.Crypto.Messaging
-open CatCrypt.Crypto.Assumptions
+open CatCrypt.Crypto.Assumptions CatCryptCore.Examples.CyclicGroupDDH
 open CatCrypt.Crypto.UCConcrete CatCrypt.Crypto.UCTransparent CatCrypt.Crypto.UCTransparent.FAKE
 open CatCrypt.Crypto.PAKE.DHExtract CatCrypt.Crypto.PAKE.CPaceSquare
 open CatCrypt.Crypto.AKE.X3DHSquare CatCrypt.Crypto.AKE.X3DHSquareGDH
@@ -378,6 +382,66 @@ theorem signal_stack_advantage_le (P : Finset PartyId) {C : CKADef Sc Msg Key}
   gcongr
   · exact x3dh_realizesSim_gapDH G P ζ _
   · exact le_of_eq rfl
+
+/-- **The Signal stack theorem at the primitives.** The bound of `signal_stack_advantage_le`
+with the secure-messaging advantage of `stackSMRed` expanded by `sm_advantage_le`: over the
+epochs `t`, the CKA advantages of `smCKARed`, the PRG advantages of the root KDF at
+`smRootRed` and the FS-AEAD advantages of `smAEADRed`, each at the reduction `stackSMRed`. -/
+theorem signal_stack_advantage_le_primitives (P : Finset PartyId) {C : CKADef Sc Msg Key}
+    (hC : CKAPureNF C) (R : PRGDef (K × Key) (K × Sa)) (Gp : PRGDef Sa (M × Sa))
+    (D : AEADDef M Ct) (msgs : List (List (M × M))) {ζ : Type}
+    (Z : Strat ζ (OEv W) (OOut S W K)) (sel : ζ → K)
+    (A : ζ × SMView Msg Ct → SPComp Bool) :
+    AdvantageA (stackGame (x3dhReal (K := K) G) Z fun z => smRealAt C R Gp D msgs (sel z))
+        (stackGame (x3dhIdeal G) Z fun _ => sm_ideal C msgs) A ≤
+      gdhBound G P ((OProt.oracle (Q := OEv W) (A := OOut S W K)).reduction
+          (stackEnv Z (fun z => smRealAt C R Gp D msgs (sel z)) A)) +
+        keyRORAdv (x3dhIdeal G) Z sel (stackRORDist (smRealAt C R Gp D msgs) A) +
+        (∑ t ∈ Finset.range msgs.length,
+            CKA_Advantage C t (msgs.length - (t + 1))
+              (smCKARed R Gp D msgs t (stackSMRed (x3dhIdeal G) Z A)) +
+          ∑ t ∈ Finset.range msgs.length,
+            PRG_Advantage R
+              (smRootRed C R Gp D msgs t (msgs.length - (t + 1)) (stackSMRed (x3dhIdeal G) Z A)) +
+          ∑ t ∈ Finset.range msgs.length,
+            FSAEAD_Advantage Gp D (msgs.getD t [])
+              (smAEADRed C Gp D msgs t (msgs.length - (t + 1))
+                (stackSMRed (x3dhIdeal G) Z A))) :=
+  (signal_stack_advantage_le G P hC R Gp D msgs Z sel A).trans
+    (add_le_add le_rfl (sm_advantage_le C R Gp D msgs _))
+
+omit [Fintype Key] [Nonempty Key] in
+/-- The Diffie–Hellman CKA neither touches the heap nor fails. -/
+theorem dhCKA_pureNF (Gc : Type) [CyclicGroup Gc] : CKAPureNF (dhCKA Gc) := by
+  refine ⟨?_, fun _ => ?_⟩ <;> simp only [dhCKA] <;>
+    exact (pureNF_sample _).bind fun _ => pureNF_pure _
+
+omit [Fintype Key] [Nonempty Key] in
+/-- **The Signal stack theorem with the Diffie–Hellman CKA.** With the CKA `dhCKA Gc` over
+the cyclic group `Gc`, the CKA terms of `signal_stack_advantage_le_primitives` are the DDH
+advantages of `ckaDDHRed` at `smCKARed` (`sm_dh_advantage_le`). -/
+theorem signal_stack_advantage_le_dh (P : Finset PartyId) (Gc : Type) [CyclicGroup Gc]
+    (R : PRGDef (K × Gc) (K × Sa)) (Gp : PRGDef Sa (M × Sa)) (D : AEADDef M Ct)
+    (msgs : List (List (M × M))) {ζ : Type} (Z : Strat ζ (OEv W) (OOut S W K)) (sel : ζ → K)
+    (A : ζ × SMView Gc Ct → SPComp Bool) :
+    AdvantageA
+        (stackGame (x3dhReal (K := K) G) Z fun z => smRealAt (dhCKA Gc) R Gp D msgs (sel z))
+        (stackGame (x3dhIdeal G) Z fun _ => sm_ideal (dhCKA Gc) msgs) A ≤
+      gdhBound G P ((OProt.oracle (Q := OEv W) (A := OOut S W K)).reduction
+          (stackEnv Z (fun z => smRealAt (dhCKA Gc) R Gp D msgs (sel z)) A)) +
+        keyRORAdv (x3dhIdeal G) Z sel (stackRORDist (smRealAt (dhCKA Gc) R Gp D msgs) A) +
+        (∑ t ∈ Finset.range msgs.length,
+            DDH_Advantage Gc (ckaDDHRed t (msgs.length - (t + 1))
+              (smCKARed R Gp D msgs t (stackSMRed (x3dhIdeal G) Z A))) +
+          ∑ t ∈ Finset.range msgs.length,
+            PRG_Advantage R (smRootRed (dhCKA Gc) R Gp D msgs t (msgs.length - (t + 1))
+              (stackSMRed (x3dhIdeal G) Z A)) +
+          ∑ t ∈ Finset.range msgs.length,
+            FSAEAD_Advantage Gp D (msgs.getD t [])
+              (smAEADRed (dhCKA Gc) Gp D msgs t (msgs.length - (t + 1))
+                (stackSMRed (x3dhIdeal G) Z A))) :=
+  (signal_stack_advantage_le G P (dhCKA_pureNF Gc) R Gp D msgs Z sel A).trans
+    (add_le_add le_rfl (sm_dh_advantage_le Gc R Gp D msgs _))
 
 end Stack
 
