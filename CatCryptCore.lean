@@ -525,6 +525,7 @@ public import CatCryptCore.Crypto.MLKEM.PRFCoinWeak
 public import CatCryptCore.Crypto.MLKEM.PRFInstance512
 public import CatCryptCore.Crypto.MLKEM.PRFKEMChain
 public import CatCryptCore.Crypto.MLKEM.PRFMLWE
+public import CatCryptCore.Crypto.MLKEM.PRFMLWETimed
 public import CatCryptCore.Crypto.MLKEM.MLKEM512QROMPrf
 public import CatCryptCore.Crypto.MLKEM.CollisionSpreadIdeal
 
