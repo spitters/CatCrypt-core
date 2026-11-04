@@ -38,7 +38,7 @@ universal statements over them by `forall_isOutcome_pure`, `forall_isOutcome_map
 ## Main results
 
 * `Sys.traceEq_equivalence`, `Sys.TraceEq.trans` and the `Trans` instance: trace equivalence as a
-  `calc` relation.
+  `calc` relation, written `R ≈ₜ I` (scoped in `CatCrypt.Crypto.UCTransparent.Sys`).
 * `Sys.traceEq_iff_view_eq`: trace equivalence is equality of all views.
 * `Sys.StepMapOn.traceEq`, `Sys.traceEq_of_stepMap`, `Sys.StepEq.traceEq`,
   `UCCoupling.CouplingBisim.traceEq`, `UCLoopbackObservation.EmulatesΩ.traceEq`: the bridges.
@@ -116,6 +116,8 @@ namespace Sys
 variable {τ υ ρ τ' υ' E O EG OG X : Type}
 
 /-! ## Trace equivalence as a `calc` relation -/
+
+@[inherit_doc] scoped infix:50 " ≈ₜ " => TraceEq
 
 /-- Trace equivalence is reflexive. -/
 @[refl] theorem TraceEq.refl (R : Sys τ E O) : TraceEq R R := fun _ => rfl

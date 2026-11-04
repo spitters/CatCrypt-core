@@ -11,6 +11,7 @@ public import CatCryptCore.Examples.CyclicGroupDDH
 public import CatCryptCore.Crypto.UCSimulator
 public import CatCryptCore.Crypto.UCChannel
 public import CatCryptCore.Crypto.UCOracleGame
+public import CatCryptCore.Crypto.TraceEqLaws
 public import CatCryptCore.Crypto.OT.FOTSched
 
 /-!
@@ -61,7 +62,7 @@ simulated sender's messages have the same distribution (`senderMsg_sample`): dis
 Against a corrupt sender the receiver's message is the simulated one at the randomness
 `rhoEquiv td c r`, a bijection (`recvMsg_eq_simKey`), and the receiver's output is the chosen
 messages of the extracted pairs (`otChoose_extractS`): distance `0`, after the hop that draws
-the receiver's randomness at delivery (`realS_realizes_late`). The two modes are related by the
+the receiver's randomness at delivery (`realS_traceEq_late`). The two modes are related by the
 DDH game for every system family indexed by the CRS (`crs_ddh_hop`), with the explicit
 reduction `ddhEnvRed`.
 
@@ -83,6 +84,7 @@ namespace CatCrypt.Crypto.OT.PVW
 
 open CatCrypt.Core CatCrypt.Prob CatCrypt.Crypto CatCrypt.Crypto.UCConcrete
 open CatCrypt.Crypto.UCTransparent CatCrypt.NonUniform CatCrypt.Examples
+open scoped CatCrypt.Crypto.UCTransparent.Sys
 open scoped ENNReal
 
 variable (gp : GroupParam)
@@ -514,10 +516,10 @@ other than the extracted choice, the encryption is independent of the message
 theorem pvw_realizesSim_corruptReceiver (td : MessyTD crs) (code : M → gp.G) :
     RealizesSim (realR crs code) (FOTSchedR otChoose) (pvwSimRecv (m := m) td code)
       fun _ _ => 0 := by
-  refine realizes_zero_of_stepMap _ ((simProtR td code).withSub (FOTSchedR otChoose))
+  refine (Sys.traceEq_of_stepMap _ ((simProtR td code).withSub (FOTSchedR otChoose))
     (fun t => (((), (t.1, 0)),
       (⟨t.2.1, t.1.map (fun v => extract td v.1), none, t.2.2, t.2.2⟩ :
-        SchedSt (Fin m → M × M) (Fin m → Bool) (Fin m → M)))) rfl ?_
+        SchedSt (Fin m → M × M) (Fin m → Bool) (Fin m → M)))) rfl ?_).realizesSim
   rintro ⟨ko, xo, d⟩ (x | k)
   · rw [simProtR, MultiHybrid.tensor_withSub_step_inl _ _ (FOTSchedR otChoose) FOTSched.sendSys
       (fun _ _ => rfl), MultiHybrid.idSim_stepFuel]
@@ -651,18 +653,12 @@ theorem keyedS_hind (crs : CRS gp) (decode : gp.G → M) (early : Bool) (r : Fin
   · simp [keyedS, KeyedSys.ofPorts, keyedSA, sStepA]
 
 /-- Hop 1: drawing the receiver's randomness at its first choice and at the delivery of its
-message give the same views: no activation in between reads it. -/
-theorem realS_realizes_late (crs : CRS gp) (decode : gp.G → M) :
-    Realizes (realS (m := m) crs decode)
-      ((keyedS crs decode false).lazy (PMF.uniformFintype _)) fun _ _ => 0 := by
-  intro ζ Z
-  have hv : view (realS (m := m) crs decode) Z.input =
-      view ((keyedS crs decode false).lazy (PMF.uniformFintype _)) Z.input := by
-    rw [realS, ← KeyedSys.lazy_ofPorts, ← keyedS,
-      KeyedSys.view_lazy _ _ (keyedS_hind crs decode true),
-      KeyedSys.view_lazy _ _ (keyedS_hind crs decode false)]
-    rfl
-  simp [Env.gap, hv]
+message give trace-equivalent systems: no activation in between reads it. -/
+theorem realS_traceEq_late (crs : CRS gp) (decode : gp.G → M) :
+    realS (m := m) crs decode ≈ₜ (keyedS crs decode false).lazy (PMF.uniformFintype _) := by
+  rw [realS, ← KeyedSys.lazy_ofPorts, ← keyedS]
+  exact KeyedSys.traceEq_lazy _ _ _ rfl rfl (keyedS_hind crs decode true)
+    (keyedS_hind crs decode false)
 
 variable {crs : CRS gp}
 
@@ -833,107 +829,29 @@ sender's message follows delivery. -/
 def SInv (t : Option (Fin m → gp.Scalar) × SState gp m) : Prop :=
   t.1.isSome = t.2.2.1 ∧ (t.2.2.1 = true → t.2.1.isSome) ∧ (t.2.2.2.1.isSome → t.2.2.1 = true)
 
-/-- The deterministic activation of `keyedS` with the randomness `ro` when it is read. -/
-def sStep (crs : CRS gp) (decode : gp.G → M) (ro : Option (Fin m → gp.Scalar))
-    (t : SState gp m) :
-    (Fin m → Bool) ⊕ (Unit ⊕ Cts gp m) → SState gp m × (Option (Fin m → M) ⊕ Option (Key gp m))
-  | .inl c => ((sStepR decode ro t c).1, .inl (sStepR decode ro t c).2)
-  | .inr e => ((sStepA crs ro t e).1, .inr (sStepA crs ro t e).2)
-
-/-- A receiver activation keeps the delivery flag and the sender's message, and leaves the
-choices set. -/
-theorem sStepR_fst (decode : gp.G → M) (ro : Option (Fin m → gp.Scalar)) (t : SState gp m)
-    (c : Fin m → Bool) :
-    (sStepR decode ro t c).1.1.isSome = true ∧ (sStepR decode ro t c).1.2.1 = t.2.1 ∧
-      (sStepR decode ro t c).1.2.2.1 = t.2.2.1 := by
-  obtain ⟨co, dl, cto, o⟩ := t
-  rcases co with _ | c₀
-  · simp [sStepR]
-  · rcases cto with _ | ct <;> rcases o with _ | _ <;> rcases ro with _ | r <;> simp [sStepR]
-
-/-- A sender activation keeps the choices, never clears the delivery flag, sets it only with
-the randomness and the choices, and stores a sender's message only after delivery. -/
-theorem sStepA_fst (crs : CRS gp) (ro : Option (Fin m → gp.Scalar)) (t : SState gp m)
-    (e : Unit ⊕ Cts gp m) :
-    (sStepA crs ro t e).1.1 = t.1 ∧ (t.2.1 = true → (sStepA crs ro t e).1.2.1 = true) ∧
-      ((sStepA crs ro t e).1.2.1 = true → t.2.1 = true ∨ (ro.isSome ∧ t.1.isSome)) ∧
-      ((sStepA crs ro t e).1.2.2.1.isSome = true →
-        t.2.2.1.isSome = true ∨ (sStepA crs ro t e).1.2.1 = true) := by
-  obtain ⟨co, dl, cto, o⟩ := t
-  rcases e with u | ct
-  · rcases co with _ | c <;> rcases ro with _ | r <;> simp [sStepA, imp_or]
-  · rcases dl with _ | _ <;> rcases cto with _ | ct₀ <;> simp [sStepA]
-
-/-- Every activation of the protocol against a corrupt sender with late randomness preserves
-`SInv`. -/
+/-- Every possible outcome of an activation of the protocol against a corrupt sender with late
+randomness from a state satisfying `SInv` satisfies `SInv`. -/
 theorem late_pres (crs : CRS gp) (decode : gp.G → M) (t : Option (Fin m → gp.Scalar) × SState gp m)
-    (e : (Fin m → Bool) ⊕ (Unit ⊕ Cts gp m)) (hI : SInv t) :
-    ∃ (α : Type) (c : SPComp α)
-      (g : α → (Option (Fin m → gp.Scalar) × SState gp m) ×
-        (Option (Fin m → M) ⊕ Option (Key gp m))),
-      ((keyedS crs decode false).lazy (PMF.uniformFintype _)).step t e =
-          SPComp.bind c (fun a => SPComp.pure (g a)) ∧ ∀ a, SInv (g a).1 := by
-  refine KeyedSys.lazy_pres_det _ _ (sStep crs decode) ?_ ?_ SInv ?_ ?_ ?_ t e hI
-  · intro k t e
-    cases e <;> simp [keyedS, KeyedSys.ofPorts, keyedSR, keyedSA, sStep, SPComp.map,
-      SPComp.pure_bind]
-  · intro t e
-    cases e <;> simp [keyedS, KeyedSys.ofPorts, keyedSR, keyedSA, sStep, SPComp.map,
-      SPComp.pure_bind]
-  · rintro k t (c | e) ⟨h₁, h₂, h₃⟩
-    · obtain ⟨hc, hd, hct⟩ := sStepR_fst decode (some k) t c
-      simp only [SInv, sStep, Option.isSome_some] at h₁ ⊢
-      exact ⟨by rw [hd, ← h₁], fun _ => hc, fun h => by rw [hd, ← h₁]⟩
-    · obtain ⟨hc, hd, _, _⟩ := sStepA_fst crs (some k) t e
-      simp only [SInv, sStep, Option.isSome_some] at h₁ ⊢
-      have hd' := hd h₁.symm
-      exact ⟨hd'.symm, fun _ => hc ▸ h₂ h₁.symm, fun _ => hd'⟩
-  · rintro t (c | e) ⟨h₁, h₂, h₃⟩ hu k
-    · obtain ⟨-, hd, hct⟩ := sStepR_fst decode (some k) t c
-      simp only [Option.isSome_none] at h₁
-      simp only [keyedS, KeyedSys.ofPorts, keyedSR, Sum.elim_inl, Bool.false_and,
-        Bool.false_or, Bool.and_eq_true, Bool.not_eq_eq_eq_not, Bool.not_true] at hu
-      exact absurd (h₃ hu.1.2) (by rw [← h₁]; simp)
-    · obtain ⟨hc, -, hd, -⟩ := sStepA_fst crs (some k) t e
-      rcases e with u | ct
-      · simp only [keyedS, KeyedSys.ofPorts, keyedSA, Sum.elim_inr, Sum.isLeft_inl,
-          Bool.true_and] at hu
-        have hdl : (sStepA crs (some k) t (.inl u)).1.2.1 = true := by
-          obtain ⟨co, dl, cto, o⟩ := t
-          rcases co with _ | c
-          · simp at hu
-          · simp [sStepA]
-        simp only [SInv, sStep, Option.isSome_some]
-        exact ⟨hdl.symm, fun _ => hc ▸ hu, fun _ => hdl⟩
-      · simp [keyedS, KeyedSys.ofPorts, keyedSA] at hu
-  · rintro t (c | e) ⟨h₁, h₂, h₃⟩ _
-    · obtain ⟨-, hd, hct⟩ := sStepR_fst decode none t c
-      simp only [SInv, sStep, Option.isSome_none] at h₁ ⊢
-      exact ⟨by rw [hd, h₁], fun h => absurd (h₁.trans (hd.symm.trans h)) (by simp),
-        fun h => by rw [hct] at h; exact hd ▸ h₃ h⟩
-    · obtain ⟨-, -, hd, hct⟩ := sStepA_fst crs none t e
-      simp only [SInv, sStep, Option.isSome_none] at h₁ ⊢
-      have hdf : (sStepA crs none t e).1.2.1 = false := by
-        cases h : (sStepA crs none t e).1.2.1
-        · rfl
-        · rcases hd h with h' | h'
-          · exact absurd (h₁.trans h') (by simp)
-          · simp at h'
-      refine ⟨hdf.symm, fun h => absurd (hdf.symm.trans h) (by simp), fun h => ?_⟩
-      rcases hct h with h' | h'
-      · exact absurd (h₁.trans (h₃ h')) (by simp)
-      · exact h'
+    (e : (Fin m → Bool) ⊕ (Unit ⊕ Cts gp m)) (hI : SInv t)
+    (q : (Option (Fin m → gp.Scalar) × SState gp m) × (Option (Fin m → M) ⊕ Option (Key gp m)))
+    (hq : IsOutcome (((keyedS crs decode false).lazy (PMF.uniformFintype _)).step t e) q) :
+    SInv q.1 := by
+  rcases t with ⟨_ | r, _ | c, _ | _, _ | ct, _ | _⟩ <;> rcases e with c' | (u | ct') <;>
+    simp [SInv, KeyedSys.lazy, KeyedSys.lazyStep, keyedS, KeyedSys.ofPorts, keyedSR, keyedSA,
+      sStepR, sStepA, SPComp.map, SPComp.pure_bind] at hI hq ⊢ <;>
+    obtain ⟨_, -, rfl⟩ := hq <;> simp
 
-/-- Hop 2: the protocol against a corrupt sender with late randomness realizes the simulator
-against a corrupt sender over `FOTSchedS otChoose` at distance `0`. The receiver's message
-couples with the simulated one at the delivery that draws the randomness (`recvMsg_eq_simKey`),
-and the receiver's output is the chosen messages of the extracted pairs (`otChoose_extractS`). -/
-theorem late_realizes_sim (td : DecTD crs) (decode : gp.G → M) :
-    Realizes ((keyedS (m := m) crs decode false).lazy (PMF.uniformFintype _))
-      ((simProtS td decode).withSub (FOTSchedS otChoose)) fun _ _ => 0 := by
-  refine realizes_zero_of_stepMap_on _ _ SInv (sMap td decode)
-    (by simp [SInv, KeyedSys.lazy, keyedS, KeyedSys.ofPorts, keyedSR]) rfl
-    (fun t e hI => late_pres crs decode t e hI) ?_
+/-- Hop 2: the protocol against a corrupt sender with late randomness is trace equivalent to the
+simulator against a corrupt sender over `FOTSchedS otChoose`, by the step map `sMap` on the
+invariant `SInv`. The receiver's message couples with the simulated one at the delivery that
+draws the randomness (`recvMsg_eq_simKey`), and the receiver's output is the chosen messages of
+the extracted pairs (`otChoose_extractS`). -/
+theorem late_traceEq_sim (td : DecTD crs) (decode : gp.G → M) :
+    (keyedS (m := m) crs decode false).lazy (PMF.uniformFintype _) ≈ₜ
+      (simProtS td decode).withSub (FOTSchedS otChoose) := by
+  refine Sys.StepMapOn.traceEq (Inv := SInv) (f := sMap td decode)
+    ⟨by simp [SInv, KeyedSys.lazy, keyedS, KeyedSys.ofPorts, keyedSR], rfl, late_pres crs decode,
+      ?_⟩
   rintro ⟨ko, co, dl, cto, o⟩ (c' | (u | ct)) ⟨h₁, h₂, h₃⟩
   · rw [simProtS, MultiHybrid.tensor_withSub_step_inl _ _ (FOTSchedS otChoose) FOTSched.recvSys
       (fun _ _ => rfl), MultiHybrid.idSim_stepFuel]
@@ -1027,9 +945,10 @@ transfer of `m` message pairs. -/
 theorem pvw_realizesSim_corruptSender (td : DecTD crs) (decode : gp.G → M) :
     RealizesSim (realS crs decode) (FOTSchedS otChoose) (pvwSimSend (m := m) td decode)
       fun _ _ => 0 :=
-  fun ζ Z =>
-    le_of_le_of_eq ((Realizes.trans (realS_realizes_late crs decode)
-      (late_realizes_sim td decode)) ζ Z) (add_zero _)
+  Sys.TraceEq.realizesSim <| calc
+    realS crs decode ≈ₜ (keyedS crs decode false).lazy (PMF.uniformFintype _) :=
+      realS_traceEq_late crs decode
+    _ ≈ₜ (simProtS td decode).withSub (FOTSchedS otChoose) := late_traceEq_sim td decode
 
 end CorruptSender
 
