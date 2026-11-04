@@ -31,7 +31,8 @@ public import CatCryptCore.Tactics.StdCosts
   by the `@[length_bound]` theorem `pairL_length_le` when the bound is stated and at the
   arithmetic leaves; `usePairOn`: the same over `pairL o` of a value `o` matched from the
   argument `q`, with a bound free of `q`.
-* `ask`: a costed oracle adversary that queries once per level.
+* `ask`: a costed oracle adversary that queries once per level; `askList`: the same over a
+  list on a finite type, with a bound whose binders depend on the type.
 * `pathView`: a recursion behind a structure binder whose levels fold a compound node
   `nodeIdeal deps`; `pathChain`: the same with the fold first, of a node below a `have`, whose
   step cost the caller charges. The induction is on the recursion argument only.
@@ -267,6 +268,28 @@ derive_time_rec ask using askTime
 /-- The time theorem of a costed oracle adversary is a `StepTimeBound`. -/
 example (n : ℕ) : CatCrypt.Crypto.OracleAdv.Timed.StepTimeBound (ask.timed n) (askTime n) :=
   ask.timeBound_timed n
+
+open CatCrypt.Crypto in
+/-- An oracle adversary on a finite type that queries the elements of a list in order. -/
+noncomputable def askList {D : Type} [Fintype D] : List D → OracleAdv D Bool ℕ
+  | [] => .ret 0
+  | d :: l => .query d fun _ => askList l
+
+derive_timed askList
+
+/-- The time bound of `askList`, by the same recursion. -/
+def askListTime {D : Type} : List D → ℕ
+  | [] => 1
+  | _ :: l => 2 * askListTime l + 4
+
+-- the binders of the bound depend on the type `D`: the list binder and the instance binder
+-- are matched with the inaccessible binders of the costed form at the type with `D` replaced
+derive_time_rec askList using fun (D : Type) [Fintype D] (l : List D) => askListTime l
+
+/-- The time theorem of `askList` is stated at the bound of the list. -/
+example {D : Type} [Fintype D] (l : List D) :
+    CatCrypt.Crypto.OracleAdv.Timed.StepTimeBound (askList.timed l) (askListTime l) :=
+  askList.timeBound_timed l
 
 /-- A record of computations: a key generation. -/
 structure Deps where
