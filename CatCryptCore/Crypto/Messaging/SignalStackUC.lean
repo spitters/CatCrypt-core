@@ -25,6 +25,10 @@ open CatCrypt.Core CatCrypt.Prob CatCrypt.Crypto CatCrypt.Crypto.Messaging
 open CatCrypt.Relational
 open CatCrypt.Crypto.UCConcrete CatCrypt.Crypto.UCTransparent CatCrypt.Crypto.UCTransparent.FAKE
 open CatCrypt.Crypto.UCCoupling
+open CatCrypt.Crypto.AKE.X3DHSquare CatCrypt.Crypto.AKE.X3DHSquareGDH
+open CatCrypt.Crypto.Messaging.SignalStack CatCrypt.Crypto.PAKE.DHExtract
+open CatCrypt.Crypto.Assumptions
+open PubView (eqView)
 open scoped ENNReal
 
 /-! ## Channel outputs of the honest port -/
@@ -1429,5 +1433,372 @@ theorem FR_realizes_F_SC (hR : ∀ k, SPComp.IsPure (realV k) ∧ SPComp.NoFail 
   simpa [scBound] using this
 
 end Steps
+
+/-! ## The simulator -/
+
+section Sim
+
+/-- The view of the honest port of the secure channel: equal events, any two outputs. -/
+def scHonView {V : Type} : PubView HEv (HOut V) where
+  ev := Eq
+  out _ _ := True
+
+/-- The outer view of the Signal stack: the view of the honest port and equal adversary
+outputs. -/
+abbrev scOuterView {S W K V : Type} : PubView (OEv W) (HOut V ⊕ ROut S W K) :=
+  scHonView.sum eqView
+
+/-- The view of `F_SC`. -/
+abbrev scSubView {K V : Type} : PubView (FEv K) (HOut V ⊕ AOut) := scHonView.sum eqView
+
+variable {S W K V : Type}
+
+/-- A decision of the X3DH simulator as a decision over `F_SC`: a call passes, an adversary
+output passes, and an honest output (which the X3DH simulator does not produce) is an
+acknowledgement. -/
+def decV : Dec S W K → FEv K ⊕ (HOut V ⊕ ROut S W K)
+  | .inl ev => .inl ev
+  | .inr (.inl _) => .inr (.inl .ok)
+  | .inr (.inr r) => .inr (.inr r)
+
+/-- The answer of the simulator to an answer of `F_SC`: in the phase `fwd`, the answer on the
+honest port, and an acknowledgement for an answer on the adversary port; otherwise the stored
+output. -/
+def simOutV : Phase S W K → HOut V ⊕ AOut → HOut V ⊕ ROut S W K
+  | .fwd, .inl o => .inl o
+  | .fwd, .inr _ => .inr .ack
+  | .out r, _ => .inr r
+
+variable [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K]
+  (G : DHGroup S W)
+
+/-- **The simulator of the Signal stack**: the X3DH simulator `simProt G` over `F_SC`. It keeps
+the copy of the real state of `simProt G`, draws the long-term and session secrets itself,
+forwards the honest events to `F_SC`, answers `poll`, `pub`, `ephPub` and `kdf` on its copy,
+corrupts in `F_SC` under the static rule of X3DH, and delivers keys as `simProt G` does: the
+key-derivation value to an exposed session, `newKey` or `newKeyUnlinked` with a placeholder
+key otherwise. The honest outputs of `F_SC` (the views of the channel) pass unchanged. -/
+noncomputable def simSC :
+    MultiHybrid (SimSt S W K) (OEv W) (HOut V ⊕ ROut S W K) (FEv K) (HOut V ⊕ AOut) where
+  init := (rInit, fun _ => none, .fwd)
+  fuel := 0
+  start s e := SPComp.map (fun q => (q.1, decV q.2)) (simStart G s e)
+  resume s o := SPComp.pure ((s.1, s.2.1, .fwd), .inr (simOutV s.2.2 o))
+  finish s o := SPComp.pure ((s.1, s.2.1, .fwd), simOutV s.2.2 o)
+  start_noFail s e := map_noFail _ (simStart_pureNF G s e).2
+  resume_noFail _ _ := SPComp.pure_noFail _
+  finish_noFail _ _ := SPComp.pure_noFail _
+
+omit [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K] in
+/-- Every decision over `F_SC` is related to itself. -/
+theorem decV_rel (d : FEv K ⊕ (HOut V ⊕ ROut S W K)) :
+    PubView.StepRel (scOuterView (S := S) (W := W) (K := K) (V := V))
+      (scSubView (K := K) (V := V)) d d := by
+  rcases d with (h | a) | (o | o)
+  · exact Sum.LiftRel.inl rfl
+  · exact Sum.LiftRel.inr rfl
+  · exact Sum.LiftRel.inl trivial
+  · exact Sum.LiftRel.inr rfl
+
+omit [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K] in
+/-- The answers of the simulator to related answers of `F_SC` are related. -/
+theorem simOutV_rel (ph : Phase S W K) {o o' : HOut V ⊕ AOut}
+    (h : (scSubView (K := K)).out o o') :
+    (scOuterView (S := S) (W := W) (K := K)).out (simOutV ph o) (simOutV ph o') := by
+  cases ph with
+  | fwd =>
+    cases h with
+    | inl _ => exact Sum.LiftRel.inl trivial
+    | inr _ => exact Sum.LiftRel.inr rfl
+  | out r => exact Sum.LiftRel.inr rfl
+
+/-- **Opacity of the simulator**: its state and its decisions depend on its events and not on
+the honest answers of `F_SC`. -/
+theorem simSC_opaque :
+    (simSC (V := V) G).Opaque (scOuterView (K := K)) scSubView := by
+  refine ⟨Eq, rfl, ?_, ?_, ?_⟩
+  · rintro s _ e e' rfl he
+    have he' : e = e' := by
+      cases he with
+      | inl h => exact congrArg Sum.inl h
+      | inr h => exact congrArg Sum.inr h
+    subst he'
+    exact rHoare_conseq (fun _ _ h => h)
+      (fun _ _ _ _ hp => by obtain ⟨rfl, rfl⟩ := hp; exact ⟨rfl, rfl, decV_rel _⟩)
+      (rHoare_refl _)
+  · rintro s _ o o' rfl ho
+    exact rHoare_ret fun _ _ hh => ⟨hh, rfl, simOutV_rel _ ho⟩
+  · rintro s _ o o' rfl ho
+    exact rHoare_ret fun _ _ hh => ⟨hh, rfl, simOutV_rel _ ho⟩
+
+/-- **The simulator of the Signal stack** as a bundled opaque simulator over `F_SC`. -/
+noncomputable def scSim : Simulator (OEv W) (HOut V ⊕ ROut S W K) (FEv K) (HOut V ⊕ AOut)
+    scOuterView scSubView :=
+  Simulator.ofMultiHybrid (simSC G) (simSC_opaque G)
+
+/-- A decision that is not an honest output. -/
+def NoHon (d : Dec S W K) : Prop := ∀ h, d ≠ .inr (.inl h)
+
+omit [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K] in
+theorem noHon_pure {a : SimSt S W K} {d : Dec S W K} (hd : NoHon d)
+    {q : SimSt S W K × Dec S W K} (hq : IsOutcome (SPComp.pure (a, d)) q) : NoHon q.2 := by
+  rw [← isOutcome_pure hq]; exact hd
+
+omit [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K] in
+theorem noHon_map {α : Type} {c : SPComp α} {f : α → SimSt S W K × Dec S W K}
+    (hf : ∀ a, NoHon (f a).2) {q : SimSt S W K × Dec S W K}
+    (hq : IsOutcome (SPComp.map f c) q) : NoHon q.2 := by
+  obtain ⟨a, _, rfl⟩ := exists_of_isOutcome_map hq; exact hf a
+
+omit [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K] in
+theorem noHon_bind {α : Type} {c : SPComp α} {f : α → SPComp (SimSt S W K × Dec S W K)}
+    (hf : ∀ a q, IsOutcome (f a) q → NoHon q.2) {q : SimSt S W K × Dec S W K}
+    (hq : IsOutcome (SPComp.bind c f) q) : NoHon q.2 := by
+  obtain ⟨a, _, ha⟩ := isOutcome_bind hq; exact hf a q ha
+
+omit [Field S] [Fintype S] in
+theorem deliver_noHon (rs : RSt S W K) (inp : Inst → Option (Inp W)) (x : Inst) (r : Rec K)
+    (ip : Inp W) {q : SimSt S W K × Dec S W K} (hq : IsOutcome (deliver rs inp x r ip) q) :
+    NoHon q.2 := by
+  unfold deliver at hq
+  split at hq
+  · exact noHon_map (fun _ _ h => by simp at h) hq
+  · exact noHon_pure (fun _ h => by simp at h) hq
+
+/-- **The X3DH simulator outputs nothing on the honest port by itself**: every honest output of
+the simulated world is an answer of the functionality. -/
+theorem simStart_noHon (s : SimSt S W K) (e : OEv W) {q : SimSt S W K × Dec S W K}
+    (hq : IsOutcome (simStart G s e) q) : NoHon q.2 := by
+  have hp : ∀ (a : SimSt S W K) (r : ROut S W K) {q : SimSt S W K × Dec S W K},
+      IsOutcome (SPComp.pure (a, (.inr (.inr r) : Dec S W K))) q → NoHon q.2 :=
+    fun _ _ _ hq => noHon_pure (fun _ h => by simp at h) hq
+  have hl : ∀ (a : SimSt S W K) (ev : FEv K) {q : SimSt S W K × Dec S W K},
+      IsOutcome (SPComp.pure (a, (.inl ev : Dec S W K))) q → NoHon q.2 :=
+    fun _ _ _ hq => noHon_pure (fun _ h => by simp at h) hq
+  have hd : ∀ {α β : Type} (c : SPComp α) (c' : α → SPComp β)
+      (f : α → β → SPComp (SimSt S W K × Dec S W K)),
+      (∀ a b q, IsOutcome (f a b) q → NoHon q.2) → ∀ q,
+      IsOutcome (SPComp.bind c fun a => SPComp.bind (c' a) (f a)) q → NoHon q.2 :=
+    fun c c' f hf q hq => noHon_bind (fun a q' hq' => noHon_bind (hf a) hq') hq
+  rcases e with (⟨sid, pid, peer, role⟩ | ⟨sid, pid⟩) |
+    (_ | _ | pid | ⟨sid, pid⟩ | pid | ⟨sid, pid⟩ | ⟨sid, pid, e⟩ | x)
+  · simp only [simStart] at hq
+    split at hq
+    · exact noHon_map (fun _ _ h => by simp at h) hq
+    · exact hl _ _ hq
+  · exact hl _ _ hq
+  · exact hp _ _ hq
+  · exact hp _ _ hq
+  · exact noHon_map (fun _ _ h => by simp at h) hq
+  · exact hp _ _ hq
+  · simp only [simStart, simCorrupt] at hq
+    split at hq
+    · exact hp _ _ hq
+    · exact noHon_map (fun _ _ h => by simp at h) hq
+  · simp only [simStart, simComplete] at hq
+    repeat' split at hq
+    all_goals first
+      | exact hp _ _ hq
+      | exact hd _ _ _ (fun _ _ _ h => deliver_noHon _ _ _ _ _ h) q hq
+  · simp only [simStart, simSend] at hq
+    repeat' split at hq
+    all_goals first
+      | exact hp _ _ hq
+      | exact hd _ _ _ (fun _ _ _ h => deliver_noHon _ _ _ _ _ h) q hq
+  · exact noHon_map (fun _ _ h => by simp at h) hq
+
+omit [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K] in
+/-- The ratchet layer on an answer of the X3DH simulator to an adversary answer of `F_AKE`. -/
+theorem smLayer_simOut_inr (realV : K → SPComp V) (ph : Phase S W K) (a : AOut) :
+    (smLayer (S := S) (W := W) realV).step () (simOut ph (.inr a)) =
+      SPComp.pure ((), simOutV ph (.inr a)) := by
+  cases ph <;> rfl
+
+omit [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K] in
+/-- The ratchet layer on the key of a session is the channel output of the real stack. -/
+theorem smLayer_key (realV : K → SPComp V) (t : St K) (x : Inst) :
+    (smLayer (S := S) (W := W) realV).step () (.inl (.key (keyOf t x))) =
+      SPComp.map (fun o => ((), .inl o)) (chanOut (fun _ k => realV k) t x) := by
+  unfold chanOut keyOf
+  rcases hx : t.recs x with _ | r
+  · simp [smLayer, SPComp.map]
+  · rcases hk : r.key with _ | k
+    · simp [smLayer, hk, SPComp.map]
+    · simp [smLayer, hk, SPComp.map, SPComp.bind_assoc]
+
+omit [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K] in
+/-- The channel output of views that neither touch the heap nor fail neither touches the heap
+nor fails. -/
+theorem chanOut_pureNF {f : Rec K → K → SPComp V}
+    (hf : ∀ r k, SPComp.IsPure (f r k) ∧ SPComp.NoFail (f r k)) (t : St K) (x : Inst) :
+    SPComp.IsPure (chanOut f t x) ∧ SPComp.NoFail (chanOut f t x) := by
+  unfold chanOut
+  split
+  · split
+    · exact ((CatCrypt.Crypto.PAKE.CPaceSquare.PureNF.map _ (hf _ _)))
+    · exact CatCrypt.Crypto.PAKE.CPaceSquare.pureNF_pure _
+  · exact CatCrypt.Crypto.PAKE.CPaceSquare.pureNF_pure _
+
+/-- **The stack over `F_AKE` behind the X3DH simulator is the simulator `simSC` over the real
+stack `FR`** (composition plumbing): the cascade of `x3dhIdeal G` and the ratchet layer and
+`simSC G` running with `FR realV` have the same steps, up to the unit state of the layer. -/
+theorem stack_ideal_stepMap (realV : K → SPComp V)
+    (hR : ∀ k, SPComp.IsPure (realV k) ∧ SPComp.NoFail (realV k)) :
+    Sys.StepMapOn ((simSC (V := V) G).withSub (FR realV)) ((x3dhIdeal G).seq (smLayer realV))
+      (fun _ => True) (fun p => (p, ())) where
+  init_inv := trivial
+  init_map := rfl
+  pres _ _ _ _ _ := trivial
+  step p e _ := by
+    rcases p with ⟨s, t⟩
+    rw [Sys.seq_step]
+    simp only [x3dhIdeal, x3dhSim, Simulator.ofMultiHybrid, MultiHybrid.withSub, simSC, simProt,
+      SPComp.map, SPComp.bind_assoc, SPComp.pure_bind]
+    refine bind_congr_isOutcome fun r hr => ?_
+    have hn := simStart_noHon G s e hr
+    rcases r with ⟨⟨a, b, ph⟩, (ev | (h | ro))⟩
+    · simp only [MultiHybrid.drive, decV, SPComp.bind_assoc, SPComp.pure_bind]
+      rcases ev with (⟨sid, pid, peer, role⟩ | ⟨sid, pid⟩) | ev
+      · cases ph <;> simp [FR, chanHon, F_AKE, honSys, honStep, smLayer, simOut, simOutV,
+          SPComp.map, SPComp.pure_bind]
+      · have hc := chanOut_pureNF (fun _ k => hR k) t (sid, pid)
+        cases ph with
+        | fwd =>
+          simp only [FR, F_AKE, Sys.ofPorts_step_inl, chanHon, honSys, honStep, SPComp.map,
+            SPComp.bind_assoc, SPComp.pure_bind, simOut, simOutV]
+          have hk := smLayer_key (S := S) (W := W) realV t (sid, pid)
+          simp only [SPComp.map] at hk
+          rw [hk]
+          simp only [SPComp.bind_assoc, SPComp.pure_bind]
+        | out r =>
+          simp only [FR, F_AKE, Sys.ofPorts_step_inl, chanHon, honSys, honStep, SPComp.map,
+            SPComp.bind_assoc, SPComp.pure_bind, simOut, simOutV, smLayer]
+          exact bind_const_of_isPure hc.1 hc.2 _
+      · simp only [FR, F_AKE, Sys.ofPorts_step_inr, SPComp.map, SPComp.bind_assoc,
+          SPComp.pure_bind]
+        congr 1; funext q
+        rw [smLayer_simOut_inr]
+        simp only [SPComp.pure_bind]
+    · exact (hn h rfl).elim
+    · simp [MultiHybrid.drive, decV, smLayer, SPComp.map, SPComp.pure_bind]
+
+end Sim
+
+/-! ## The Signal stack realizes the ideal secure channel -/
+
+section Stack
+
+variable {S W K : Type} [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K]
+  [Inhabited K] (G : DHGroup S W)
+
+omit [Inhabited K] in
+/-- `FR` is idle at the idle event of the adversary. -/
+theorem FR_idleAt {V : Type} (realV : K → SPComp V) :
+    MultiHybrid.IdleAt (FR realV) (.inr .idle) (.inr .ack) := fun t => by
+  simp [FR, advSys, SPComp.map]
+
+omit [Fintype K] [Nonempty K] in
+/-- `F_SC` is idle at the idle event of the adversary. -/
+theorem F_SC_idleAt {V : Type} (realV : K → SPComp V) (idealV : SPComp V) :
+    MultiHybrid.IdleAt (F_SC realV idealV) (.inr .idle) (.inr .ack) := fun t => by
+  simp [F_SC, advSys, SPComp.map]
+
+/-- **The simulator over `F_AKE` with the ratchet realizes the simulator over `F_SC`**: for
+views that neither touch the heap nor fail, `simSC G` over `FR realV` realizes `simSC G` over
+`F_SC realV idealV` with `scBound` at the environment reduced through the simulator. -/
+theorem simSC_realizes {V : Type} (realV : K → SPComp V) (idealV : SPComp V)
+    (hR : ∀ k, SPComp.IsPure (realV k) ∧ SPComp.NoFail (realV k))
+    (hI : SPComp.IsPure idealV ∧ SPComp.NoFail idealV) :
+    Realizes ((simSC (V := V) G).withSub (FR realV)) ((simSC G).withSub (F_SC realV idealV))
+      (fun _ Z => scBound realV idealV ((simSC G).reduceEnv (.inr .idle) Z)) := by
+  intro ζ Z
+  have h := MultiHybrid.adv_withSub (simSC (V := V) G) (.inr .idle) (.inr .ack) (.inr .ack)
+    (FR realV) (F_SC realV idealV) (FR_idleAt realV) (F_SC_idleAt realV idealV) Z
+  unfold adv at h
+  change Env.gap _ _ Z ≤ _
+  rw [h]
+  exact FR_realizes_F_SC realV idealV hR hI _ _
+
+variable {Sc Msg Key Sa M Ct : Type} [SampleableType M] [SampleableType Ct] [Fintype Key]
+  [Nonempty Key] [Fintype Sa] [Nonempty Sa]
+
+omit [SampleableType M] [Fintype Key] [Nonempty Key] [Fintype Sa] [Nonempty Sa] in
+/-- The ideal secure-messaging game of a CKA of `CKAPureNF` neither touches the heap nor
+fails. -/
+theorem sm_ideal_pureNF {C : CKADef Sc Msg Key} (hC : CKAPureNF C)
+    (msgs : List (List (M × M))) :
+    SPComp.IsPure (sm_ideal (Ct := Ct) C msgs) ∧ SPComp.NoFail (sm_ideal (Ct := Ct) C msgs) := by
+  unfold sm_ideal ckaPub
+  exact (hC.1.bind fun _ => (ckaRun_pureNF hC _ _ _).bind fun _ =>
+    CatCrypt.Crypto.PAKE.CPaceSquare.pureNF_pure _).bind fun _ =>
+      (CatCrypt.Crypto.PAKE.CPaceSquare.pureNF_sample _).bind fun _ =>
+        CatCrypt.Crypto.PAKE.CPaceSquare.pureNF_pure _
+
+/-- The bound of the Signal stack at an environment `Z` of the stack: the gap Diffie–Hellman
+bound of the X3DH square at the environment reduced through the ratchet layer, and, at the
+environment `Z'` reduced through the simulator, over the keys `i` below the number of
+activations of `Z'`, the secure-messaging advantage of the reduction `hopRed i Z'` and the
+probability that the key `i` is read twice. -/
+noncomputable def signalBound (P : Finset PartyId) (C : CKADef Sc Msg Key)
+    (R : PRGDef (K × Key) (K × Sa)) (Gp : PRGDef Sa (M × Sa)) (D : AEADDef M Ct)
+    (msgs : List (List (M × M))) (hC : CKAPureNF C) (ζ : Type)
+    (Z : Env (Strat ζ (OEv W) (HOut (SMView Msg Ct) ⊕ ROut S W K)) ζ) : ℝ≥0∞ :=
+  gdhBound G P ((OProt.oracle (Q := OEv W) (A := OOut S W K)).reduction
+      ((Hybrid.seqCtxR (E := OEv W) (smLayer (smRealAt C R Gp D msgs))
+        (smLayer_noFail fun k => (smRealAt_pureNF hC R Gp D msgs k).2)).reduceEnv Z)) +
+    ∑ i ∈ Finset.range ((simSC (V := SMView Msg Ct) G).reduceEnv (.inr .idle) Z).input.rounds,
+      (SM_Advantage C R Gp D msgs (hopRed (smRealAt C R Gp D msgs) (sm_ideal C msgs) i
+          ((simSC G).reduceEnv (.inr .idle) Z)) +
+        prBad (hyb (smRealAt C R Gp D msgs) (sm_ideal C msgs) i) (reuse i)
+          ((simSC G).reduceEnv (.inr .idle) Z))
+
+/-- **The Signal stack realizes the ideal secure channel** (genuine UC).
+
+*Ideal functionality.* `F_SC (smRealAt C R Gp D msgs) (sm_ideal C msgs)`: the multi-session
+secure channel built from the authenticated key exchange `F_AKE` with unlinked delivery. Its
+adversary port is the adversary port of `F_AKE` (notices, adaptive corruption, `newKey`,
+`newKeyUnlinked`), except that a session that completes without exposure stores no key. Its
+honest port opens sessions and, on `getKey`, outputs the secure-messaging view of the session:
+for a completed session the ideal view `sm_ideal C msgs` (the public CKA transcript and uniform
+ciphertexts), for a session exposed by corruption the real view `smRealAt C R Gp D msgs k` under
+the adversary key `k`, and nothing for a session without a key.
+
+*Real world.* The real X3DH protocol `x3dhReal G` followed by the double ratchet layer
+`smLayer (smRealAt C R Gp D msgs)`, which keys the ratchet with the session key of every
+`getKey` answer.
+
+*Simulator.* `scSim G`, the X3DH simulator over `F_SC`: it keeps a copy of the real state,
+draws all long-term and session secrets, forwards the honest events, answers `poll`, `pub`,
+`ephPub` and `kdf` on its copy, refuses or forwards `corrupt` under the static rule of X3DH, and
+on `complete` and `send` computes the key-derivation input of the session and calls `newKey` with
+the key-derivation value for an exposed session and `newKey` or `newKeyUnlinked` with a
+placeholder key otherwise. It never reads an honest answer of `F_SC`.
+
+*Bound.* For a CKA that neither touches the heap nor fails, for every finite set of parties `P`
+and every environment `Z`, the distance is at most `signalBound`: the gap Diffie–Hellman bound
+of the X3DH square, and a sum over the keys of the run of the secure-messaging advantages of the
+explicit reductions `hopRed` and of the probability that a key is read twice. The last term is
+the reuse of one root key by two ratchet runs, which `SM_Advantage` does not cover; it is `0`
+for environments that read each session key (with its partner) at most once. No real-or-random
+term of the key appears. -/
+omit [Fintype Key] [Nonempty Key] [Fintype Sa] [Nonempty Sa] in
+theorem signal_stack_realizes_FSC (P : Finset PartyId) {C : CKADef Sc Msg Key}
+    (hC : CKAPureNF C) (R : PRGDef (K × Key) (K × Sa)) (Gp : PRGDef Sa (M × Sa))
+    (D : AEADDef M Ct) (msgs : List (List (M × M))) :
+    RealizesSim ((x3dhReal (K := K) G).seq (smLayer (smRealAt C R Gp D msgs)))
+      (F_SC (smRealAt C R Gp D msgs) (sm_ideal C msgs)) (scSim G)
+      (signalBound G P C R Gp D msgs hC) := by
+  have hR : ∀ k, SPComp.IsPure (smRealAt C R Gp D msgs k) ∧
+      SPComp.NoFail (smRealAt C R Gp D msgs k) := fun k => smRealAt_pureNF hC R Gp D msgs k
+  have hA := signal_stack_realizes G P (smRealAt C R Gp D msgs) fun k => (hR k).2
+  have hB := realizes_symm (stack_ideal_stepMap G (smRealAt C R Gp D msgs) hR).realizes
+  have hC' := simSC_realizes G (smRealAt C R Gp D msgs) (sm_ideal C msgs) hR
+    (sm_ideal_pureNF hC msgs)
+  intro ζ Z
+  have h := ((hA.trans hB).trans hC') ζ Z
+  refine h.trans (le_of_eq ?_)
+  simp only [signalBound, scBound, add_zero, SM_Advantage, sm_real_eq_bind_smRealAt]
+
+end Stack
 
 end CatCrypt.Crypto.Messaging.SignalStackUC
