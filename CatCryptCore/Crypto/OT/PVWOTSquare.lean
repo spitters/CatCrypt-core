@@ -516,55 +516,25 @@ other than the extracted choice, the encryption is independent of the message
 theorem pvw_realizesSim_corruptReceiver (td : MessyTD crs) (code : M → gp.G) :
     RealizesSim (realR crs code) (FOTSchedR otChoose) (pvwSimRecv (m := m) td code)
       fun _ _ => 0 := by
-  refine (Sys.traceEq_of_stepMap _ ((simProtR td code).withSub (FOTSchedR otChoose))
-    (fun t => (((), (t.1, 0)),
+  sys_step_map (fun t => (((), (t.1, 0)),
       (⟨t.2.1, t.1.map (fun v => extract td v.1), none, t.2.2, t.2.2⟩ :
-        SchedSt (Fin m → M × M) (Fin m → Bool) (Fin m → M)))) rfl ?_).realizesSim
-  rintro ⟨ko, xo, d⟩ (x | k)
-  · rw [simProtR, MultiHybrid.tensor_withSub_step_inl _ _ (FOTSchedR otChoose) FOTSched.sendSys
-      (fun _ _ => rfl), MultiHybrid.idSim_stepFuel]
-    simp [realR, realRSend, FOTSched.sendSys, FOTSched.sendStep, SPComp.map, SPComp.pure_bind]
-  · rw [simProtR, MultiHybrid.tensor_withSub_step_inr _ _ (FOTSchedR otChoose)
-      (Sys.ofPorts FOTSched.recvSys (FOTSched.schedSys otChoose)) (fun _ _ => rfl)]
-    have hko : ∀ v₀ : VKey gp m, storeKey (some v₀) k = some v₀ := fun _ => rfl
-    rcases ko with _ | v₀
-    · by_cases hk : KeyOK k
-      · have hs : storeKey none k = some ⟨k, hk⟩ := by simp [storeKey, hk]
-        rcases xo with _ | x <;> rcases d with _ | _
-        case some.false =>
-          simp only [SPComp.map, realR, realRRecv, Sys.ofPorts_step_inr, hs, SPComp.bind_assoc,
-            SPComp.pure_bind, Option.map_subtype, Option.unattach_some, Option.map_some,
-            MultiHybrid.stepFuel, simRAdv, simRStart, simRNext, simRFinish, FOTSched.recvSys,
-            FOTSched.recvStep, Option.or_some, FOTSched.schedSys, FOTSched.schedStep,
-            MultiHybrid.idSim, zero_le, sup_of_le_right, Option.map_none, MultiHybrid.drive,
-            Sys.ofPorts_step_inl, Option.getD_none, Option.getD_some]
-          exact senderMsg_sample td code ⟨k, hk⟩ x fun w =>
-            ((((), some (⟨k, hk⟩ : VKey gp m), 0),
-              (⟨some x, some (extract td k), none, true, true⟩ :
-                SchedSt (Fin m → M × M) (Fin m → Bool) (Fin m → M))),
-              (Sum.inr (some w) : Bool ⊕ Option (Cts gp m)))
-        all_goals simp [realR, realRRecv, hs, simRAdv, simRStart, simRNext, simRFinish,
-          MultiHybrid.stepFuel, MultiHybrid.idSim, MultiHybrid.drive, FOTSched.recvSys,
-          FOTSched.recvStep, FOTSched.schedSys, FOTSched.schedStep, SPComp.map, SPComp.pure_bind]
-      · have hs : storeKey (m := m) none k = none := by simp [storeKey, hk]
-        simp [realR, realRRecv, hs, simRAdv, simRStart, MultiHybrid.stepFuel, MultiHybrid.idSim,
-          MultiHybrid.drive, SPComp.map, SPComp.pure_bind]
-    · rcases xo with _ | x <;> rcases d with _ | _
-      case some.false =>
-        simp only [SPComp.map, realR, realRRecv, Sys.ofPorts_step_inr, hko, SPComp.bind_assoc,
-          SPComp.pure_bind, Option.map_subtype, Option.unattach_some, Option.map_some,
-          MultiHybrid.stepFuel, simRAdv, simRStart, simRNext, simRFinish, FOTSched.recvSys,
-          FOTSched.recvStep, Option.or_some, FOTSched.schedSys, FOTSched.schedStep,
-          MultiHybrid.idSim, zero_le, sup_of_le_right, MultiHybrid.drive,
-          Sys.ofPorts_step_inl, Option.getD_some]
-        exact senderMsg_sample td code v₀ x fun w =>
-          ((((), some v₀, 0),
-            (⟨some x, some (extract td v₀.1), none, true, true⟩ :
-              SchedSt (Fin m → M × M) (Fin m → Bool) (Fin m → M))),
-            (Sum.inr (some w) : Bool ⊕ Option (Cts gp m)))
-      all_goals simp [realR, realRRecv, hko, simRAdv, simRStart, simRNext, simRFinish,
-        MultiHybrid.stepFuel, MultiHybrid.idSim, MultiHybrid.drive, FOTSched.recvSys,
-        FOTSched.recvStep, FOTSched.schedSys, FOTSched.schedStep, SPComp.map, SPComp.pure_bind]
+        SchedSt (Fin m → M × M) (Fin m → Bool) (Fin m → M)))) (fun _ => True)
+    using [realR, realRSend, realRRecv, storeKey, pvwSimRecv, Simulator.ofMultiHybrid, simProtR,
+      simRAdv, simRStart, simRNext, simRFinish, FOTSchedR, FOTSched.sendSys, FOTSched.sendStep,
+      FOTSched.recvSys, FOTSched.recvStep, FOTSched.schedSys, FOTSched.schedStep]
+  -- the two activations at which the sender answers: the simulated message (`senderMsg_sample`)
+  case step.inr.none.pos.some.false k x =>
+    exact senderMsg_sample td code ⟨k, hdec⟩ x fun w =>
+      ((((), some (⟨k, hdec⟩ : VKey gp m), 0),
+        (⟨some x, some (extract td k), none, true, true⟩ :
+          SchedSt (Fin m → M × M) (Fin m → Bool) (Fin m → M))),
+        (Sum.inr (some w) : Bool ⊕ Option (Cts gp m)))
+  case step.inr.some.some.false _ v x =>
+    exact senderMsg_sample td code v x fun w =>
+      ((((), some v, 0),
+        (⟨some x, some (extract td v.1), none, true, true⟩ :
+          SchedSt (Fin m → M × M) (Fin m → Bool) (Fin m → M))),
+        (Sum.inr (some w) : Bool ⊕ Option (Cts gp m)))
 
 end CorruptReceiver
 
@@ -856,96 +826,38 @@ theorem late_pres (crs : CRS gp) (decode : gp.G → M) (t : Option (Fin m → gp
       subst hq
       rcases t with ⟨_ | c, _ | _, _ | ct, _ | _⟩ <;> simp_all [SInv, sStepR, sStepA]
 
+/-- The step obligation of hop 2 on the receiver's port: the receiver's output is the chosen
+messages of the extracted pairs (`otChoose_extractS`). -/
+theorem late_step_recv (td : DecTD crs) (decode : gp.G → M) :
+    Sys.StepPort ((keyedS (m := m) crs decode false).lazy (PMF.uniformFintype _))
+      ((simProtS td decode).withSub (FOTSchedS otChoose)) SInv (sMap td decode) Sum.inl := by
+  sys_step_port using [KeyedSys.lazy, KeyedSys.lazyStep, keyedS, KeyedSys.ofPorts, keyedSR,
+    sStepR, simProtS, FOTSchedS, FOTSched.recvSys, FOTSched.recvStep, sMap, simInbox, simRho,
+    simX, SInv, vector_get_ofFn, otChoose_extractS]
+
+/-- The step obligation of hop 2 on the sender's and the scheduler's port: the receiver's
+message couples with the simulated one at the delivery that draws the randomness
+(`recvMsg_eq_simKey`, `rhoEquiv`). -/
+theorem late_step_adv (td : DecTD crs) (decode : gp.G → M) :
+    Sys.StepPort ((keyedS (m := m) crs decode false).lazy (PMF.uniformFintype _))
+      ((simProtS td decode).withSub (FOTSchedS otChoose)) SInv (sMap td decode) Sum.inr := by
+  sys_step_port using [KeyedSys.lazy, KeyedSys.lazyStep, keyedS, KeyedSys.ofPorts, keyedSA,
+    sStepA, simProtS, simSAdv, simSStart, simSResume, simSKey, FOTSchedS, FOTSched.sendSys,
+    FOTSched.sendStep, FOTSched.schedSys, FOTSched.schedStep, sMap, simInbox, simRho, simX, SInv,
+    vector_get_ofFn, recvMsg_eq_simKey td]
+  -- the delivery that draws the randomness: the draw through `rhoEquiv`
+  symm
+  exact (SPComp.sample_bind_equiv (rhoEquiv td _) _).symm
+
 /-- Hop 2: the protocol against a corrupt sender with late randomness is trace equivalent to the
 simulator against a corrupt sender over `FOTSchedS otChoose`, by the step map `sMap` on the
-invariant `SInv`. The receiver's message couples with the simulated one at the delivery that
-draws the randomness (`recvMsg_eq_simKey`), and the receiver's output is the chosen messages of
-the extracted pairs (`otChoose_extractS`). -/
+invariant `SInv`, port by port (`late_step_recv`, `late_step_adv`). -/
 theorem late_traceEq_sim (td : DecTD crs) (decode : gp.G → M) :
     (keyedS (m := m) crs decode false).lazy (PMF.uniformFintype _) ≈ₜ
       (simProtS td decode).withSub (FOTSchedS otChoose) := by
-  refine Sys.StepMapOn.traceEq (Inv := SInv) (f := sMap td decode)
-    ⟨by simp [SInv, KeyedSys.lazy, keyedS, KeyedSys.ofPorts, keyedSR], rfl, late_pres crs decode,
-      ?_⟩
-  rintro ⟨ko, co, dl, cto, o⟩ (c' | (u | ct)) ⟨h₁, h₂, h₃⟩
-  · rw [simProtS, MultiHybrid.tensor_withSub_step_inl _ _ (FOTSchedS otChoose) FOTSched.recvSys
-      (fun _ _ => rfl), MultiHybrid.idSim_stepFuel]
-    simp only at h₁ h₂ h₃
-    rcases co with _ | c
-    · have hdl : dl = false := by cases dl <;> simp_all
-      subst hdl
-      have hko : ko = none := by cases ko <;> simp_all
-      have hct : cto = none := by cases cto <;> simp_all
-      subst hko hct
-      simp [KeyedSys.lazy, KeyedSys.lazyStep, keyedS, KeyedSys.ofPorts, keyedSR, sStepR,
-        FOTSched.recvSys, FOTSched.recvStep, sMap, simInbox, simRho, simX, SPComp.map,
-        SPComp.pure_bind]
-    · rcases cto with _ | ct
-      · rcases ko with _ | r <;> rcases o with _ | _ <;>
-          simp [KeyedSys.lazy, KeyedSys.lazyStep, keyedS, KeyedSys.ofPorts, keyedSR, sStepR,
-            FOTSched.recvSys, FOTSched.recvStep, sMap, simInbox, simRho, simX, SPComp.map,
-            SPComp.pure_bind]
-      · have hdl : dl = true := h₃ rfl
-        subst hdl
-        obtain ⟨r, rfl⟩ : ∃ r, ko = some r := Option.isSome_iff_exists.mp h₁
-        rcases o with _ | _ <;>
-          simp [KeyedSys.lazy, KeyedSys.lazyStep, keyedS, KeyedSys.ofPorts, keyedSR, sStepR,
-            FOTSched.recvSys, FOTSched.recvStep, sMap, simInbox, simRho, simX, SPComp.map,
-            SPComp.pure_bind, vector_get_ofFn, otChoose_extractS]
-  · rw [simProtS, MultiHybrid.tensor_withSub_step_inr _ _ (FOTSchedS otChoose)
-      (Sys.ofPorts FOTSched.sendSys (FOTSched.schedSys otChoose)) (fun _ _ => rfl)]
-    simp only at h₁ h₂ h₃
-    rcases co with _ | c
-    · have hdl : dl = false := by cases dl <;> simp_all
-      subst hdl
-      have hko : ko = none := by cases ko <;> simp_all
-      subst hko
-      simp [KeyedSys.lazy, KeyedSys.lazyStep, keyedS, KeyedSys.ofPorts, keyedSA, sStepA,
-        simSAdv, simSStart, simSResume, MultiHybrid.stepFuel, MultiHybrid.idSim,
-        MultiHybrid.drive, FOTSched.schedSys, FOTSched.schedStep, sMap, simInbox, simRho, simX,
-        SPComp.map, SPComp.pure_bind]
-    · rcases ko with _ | r
-      · have hdl : dl = false := by cases dl <;> simp_all
-        subst hdl
-        have hct : cto = none := by cases cto <;> simp_all
-        subst hct
-        simp only [SPComp.map, KeyedSys.lazy, keyedS, KeyedSys.ofPorts, keyedSA, sStepA,
-          recvMsg_eq_simKey td, SPComp.pure_bind, KeyedSys.lazyStep, Option.isSome_some,
-          Bool.and_true, Sum.elim_inr, Sum.isLeft_inl, ↓reduceIte, ofPMF_uniformFintype,
-          sampleFrom_uniform, sMap, simRho, simX, simInbox, SPComp.bind_assoc,
-          MultiHybrid.stepFuel, simSAdv, simSStart, simSResume, simSKey, FOTSched.schedSys,
-          FOTSched.schedStep, MultiHybrid.idSim, zero_le, sup_of_le_right, MultiHybrid.drive,
-          Sys.ofPorts_step_inr, Option.isSome_none, Bool.false_or]
-        exact SPComp.sample_bind_equiv (rhoEquiv td c) fun ρ =>
-          SPComp.pure ((((), some (Vector.ofFn ρ), false),
-            (⟨none, some c, none, o, false⟩ :
-              SchedSt (Fin m → M × M) (Fin m → Bool) (Fin m → M))),
-            (Sum.inr (some (simKey crs ρ)) : Option (Fin m → M) ⊕ Option (Key gp m)))
-      · have hdl : dl = true := by cases dl <;> simp_all
-        subst hdl
-        simp [KeyedSys.lazy, KeyedSys.lazyStep, keyedS, KeyedSys.ofPorts, keyedSA, sStepA,
-          simSAdv, simSStart, simSResume, simSKey, MultiHybrid.stepFuel, MultiHybrid.idSim,
-          MultiHybrid.drive, FOTSched.schedSys, FOTSched.schedStep, sMap, simInbox, simRho, simX,
-          vector_get_ofFn,
-          SPComp.map, SPComp.pure_bind, recvMsg_eq_simKey td]
-  · rw [simProtS, MultiHybrid.tensor_withSub_step_inr _ _ (FOTSchedS otChoose)
-      (Sys.ofPorts FOTSched.sendSys (FOTSched.schedSys otChoose)) (fun _ _ => rfl)]
-    simp only at h₁ h₂ h₃
-    rcases dl with _ | _
-    · have hko : ko = none := by cases ko <;> simp_all
-      have hct : cto = none := by cases cto <;> simp_all
-      subst hko hct
-      rcases co with _ | c <;>
-        simp [KeyedSys.lazy, KeyedSys.lazyStep, keyedS, KeyedSys.ofPorts, keyedSA, sStepA,
-          simSAdv, simSStart, MultiHybrid.stepFuel, MultiHybrid.idSim,
-          MultiHybrid.drive, sMap, simInbox, simRho, simX, SPComp.map, SPComp.pure_bind]
-    · obtain ⟨r, rfl⟩ : ∃ r, ko = some r := Option.isSome_iff_exists.mp h₁
-      obtain ⟨c, rfl⟩ : ∃ c, co = some c := Option.isSome_iff_exists.mp (h₂ rfl)
-      rcases cto with _ | ct₀ <;> rcases o with _ | _ <;>
-        simp [KeyedSys.lazy, KeyedSys.lazyStep, keyedS, KeyedSys.ofPorts, keyedSA, sStepA,
-          simSAdv, simSStart, simSResume, MultiHybrid.stepFuel, MultiHybrid.idSim,
-          MultiHybrid.drive, FOTSched.sendSys, FOTSched.sendStep, FOTSched.schedSys,
-          FOTSched.schedStep, sMap, simInbox, simRho, simX, SPComp.map, SPComp.pure_bind]
+  sys_step_map (sMap td decode) SInv (pres := late_pres crs decode)
+    (ports := [late_step_recv td decode, late_step_adv td decode])
+    using [KeyedSys.lazy, keyedS, KeyedSys.ofPorts, keyedSR, sMap, SInv]
 
 /-- **The dual-mode OT against a corrupt sender in decryption mode as a square.** Ideal
 functionality: `FOTSchedS otChoose`, `F_OT` with scheduled delivery for `m` transfers, with the

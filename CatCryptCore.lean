@@ -609,6 +609,7 @@ public import CatCryptCore.Crypto.UCSimulator
 public import CatCryptCore.Crypto.UCSimulatorMapPorts
 public import CatCryptCore.Crypto.UCSquare
 public import CatCryptCore.Crypto.UCInterleave
+public import CatCryptCore.Crypto.UCInterleaveStep
 public import CatCryptCore.Crypto.UCInterleaveCost
 public import CatCryptCore.Crypto.UCSimulatorCost
 public import CatCryptCore.Crypto.UCSimulatorCostGraded
