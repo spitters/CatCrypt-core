@@ -24,10 +24,17 @@ per `query` node. The costs `t` and `u` of the two relabellings are parameters.
 
 * `OracleAdv.mapQueryAnswer g h A` — `A` with queries relabelled by `g`, answers by `h`
 * `OracleAdv.Timed.mapQueryAnswer g t h u A` — its costed form
+* `OracleAdv.mapQueryAnswer.timed` — the costed form registered for `derive_timed`
 
 ## Main results
 
+* `OracleAdv.run_mapQueryAnswer` — running the relabelled adversary is running `A` against
+  the relabelled oracle
+* `OracleAdv.isQueryBound_mapQueryAnswer` — relabelling keeps the query bound
 * `OracleAdv.Timed.erase_mapQueryAnswer` — erasure commutes with relabelling
+* `OracleAdv.mapQueryAnswer.timed`, `OracleAdv.mapQueryAnswer.erase_timed`,
+  `OracleAdv.mapQueryAnswer.timeBound_timed` — the costed form in the binder convention of
+  `derive_timed`, its erasure and its time
 * `OracleAdv.Timed.timeBound_mapQueryAnswer` — relabelling at cost at most `t₀ + u₀` per
   query adds at most `q * (t₀ + u₀)` to the time of an adversary with at most `q` queries
 -/
@@ -48,6 +55,28 @@ def mapQueryAnswer (g : D → D') (h : R' → R) : OracleAdv D R α → OracleAd
   | .ret a => .ret a
   | .rand p k => .rand p fun b => mapQueryAnswer g h (k b)
   | .query d k => .query (g d) fun r => mapQueryAnswer g h (k (h r))
+
+/-- Running the relabelled adversary against `O` is running `A` against the oracle that asks
+`g d` of `O` and reads the answer through `h`. -/
+theorem run_mapQueryAnswer {S : Type} (O : S → D' → PMF (R' × S)) (g : D → D') (h : R' → R)
+    (A : OracleAdv D R α) (s : S) :
+    run O (mapQueryAnswer g h A) s =
+      run (fun s d => (O s (g d)).map fun x => (h x.1, x.2)) A s := by
+  induction A generalizing s with
+  | ret a => rfl
+  | rand p k ih => simp only [mapQueryAnswer, run_rand, ih]
+  | query d k ih => simp only [mapQueryAnswer, run_query, PMF.bind_map, Function.comp_def, ih]
+
+/-- Relabelling keeps the query bound. -/
+theorem isQueryBound_mapQueryAnswer (g : D → D') (h : R' → R) {A : OracleAdv D R α} {q : ℕ}
+    (hA : A.IsQueryBound q) : (mapQueryAnswer g h A).IsQueryBound q := by
+  induction A generalizing q with
+  | ret a => trivial
+  | rand p k ih => exact fun b => ih b (hA b)
+  | query d k ih =>
+    cases q with
+    | zero => exact hA.elim
+    | succ q => exact fun r => ih (h r) (hA (h r))
 
 namespace Timed
 
@@ -97,6 +126,30 @@ theorem timeBound_mapQueryAnswer (g : D → D') (t : D → ℕ) (h : R' → R) (
       exact ⟨by omega, (ih (h r) (hA.2 (h r)).2 (hq (h r))).mono (by omega)⟩
 
 end Timed
+
+/-- The costed form of `mapQueryAnswer` in the binder convention of `derive_timed`: the
+relabellings `g` and `h` come with their cost companions `gCost` and `hCost`, and relabelling
+a query `d` costs one unit plus `gCost d`, an answer `r` one unit plus `hCost r`. -/
+def mapQueryAnswer.timed (g : D → D') (gCost : D → ℕ) (h : R' → R) (hCost : R' → ℕ)
+    (W : Timed D R α) : ℕ × Timed D' R' α :=
+  (0, W.mapQueryAnswer g (fun d => 1 + gCost d) h fun r => 1 + hCost r)
+
+/-- Erasing the step costs of `mapQueryAnswer.timed` gives the relabelling of the erased
+adversary. -/
+theorem mapQueryAnswer.erase_timed (g : D → D') (gCost : D → ℕ) (h : R' → R)
+    (hCost : R' → ℕ) (W : Timed D R α) :
+    (mapQueryAnswer.timed g gCost h hCost W).2.erase = W.erase.mapQueryAnswer g h :=
+  Timed.erase_mapQueryAnswer _ _ _ _ W
+
+/-- Relabellings of cost at most `a` (queries) and `b` (answers) add at most
+`q * ((1 + a) + (1 + b))` to the time of an adversary with at most `q` queries. -/
+theorem mapQueryAnswer.timeBound_timed (g : D → D') {gCost : D → ℕ} (h : R' → R)
+    {hCost : R' → ℕ} {a b : ℕ} (hg : ∀ d, gCost d ≤ a) (hh : ∀ r, hCost r ≤ b)
+    {W : Timed D R α} {T q : ℕ} (hW : W.TimeBound T) (hq : W.erase.IsQueryBound q) :
+    Timed.StepTimeBound (mapQueryAnswer.timed g gCost h hCost W)
+      (T + q * ((1 + a) + (1 + b))) :=
+  Timed.stepTimeBound_zero.2 <| Timed.timeBound_mapQueryAnswer g _ h _
+    (fun d => Nat.add_le_add_left (hg d) 1) (fun r => Nat.add_le_add_left (hh r) 1) hW hq
 
 end OracleAdv
 
