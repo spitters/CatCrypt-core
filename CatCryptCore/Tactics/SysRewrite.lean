@@ -70,7 +70,11 @@ pre-procedures `bindFirst`, `stepFuelStart` and `driveCall` simplify `c` first a
 `k a` when `c` is `SPComp.pure a`; an activation of a multi-call hybrid against a subroutine
 (`MultiHybrid.drive`, `MultiHybrid.stepFuel`) is evaluated one call at a time by the lemmas of
 `UCInterleaveStep`: the start, each call of the subroutine simplified alone, the resumption on
-its answer, and `finish` at the last allowed call. Heartbeats are counted per declaration: an
+its answer, and `finish` at the last allowed call. This needs the fuel as a numeral (`fuelEval`
+evaluates the fuel of a hybrid); at the fuel of an unknown hybrid the activation is not unfolded
+and is rewritten by the equations of its hybrid (the forwarding hybrid `idSim` by its start,
+resumption and one-call activation), or by those given with the definitions. A split by `split`
+substitutes the equations of the `match` it splits. Heartbeats are counted per declaration: an
 obligation whose leaves together exceed the budget is stated as its own declaration
 (`sys_step_pres` for the preservation, `sys_step_port` for the step obligation of a port).
 

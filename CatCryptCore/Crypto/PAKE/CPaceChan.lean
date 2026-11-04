@@ -9,6 +9,7 @@ public import CatCryptCore.Crypto.PAKE.CPaceSquare
 public import CatCryptCore.Crypto.UCWake
 public import CatCryptCore.Crypto.UCChannel
 public import CatCryptCore.Crypto.UCChannelLift
+public import CatCryptCore.Tactics.SysRewrite
 
 /-!
 # CPace with two parties over a channel
@@ -473,8 +474,7 @@ theorem view_bridgeSim {Pw W K τ ζ : Type} (X : Sys τ (OEv Pw W) (OOut W K))
       view (X.relabel bridgeEv bridgeOut) Z := by
   change view ((MultiHybrid.ofHybrid (Hybrid.relabel false bridgeEv bridgeOut)).withSub X) Z = _
   rw [MultiHybrid.ofHybrid_withSub]
-  refine view_eq_of_stepMap _ _ Prod.snd rfl (fun t e => ?_) Z
-  simp [Hybrid.withSub, Hybrid.relabel, Sys.relabel, SPComp.map, SPComp.bind_assoc]
+  sys_step_map Prod.snd (fun _ => True) using [Hybrid.withSub, Hybrid.relabel, Sys.relabel]
 
 section Square
 
