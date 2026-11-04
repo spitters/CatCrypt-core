@@ -548,7 +548,7 @@ def congrFor? (c : Name) : Option (TacticM Unit) :=
       refine CatCrypt.Crypto.UCTransparent.Sys.TraceEq.withSub _ ?idle ?idleX ?idleY ?h))
   else if c == ``CatCrypt.Crypto.UCTransparent.Open.withSub then some do
     evalTactic (← `(tactic|
-      refine CatCrypt.Crypto.UCTransparent.Sys.TraceEq.openWithSub _ ?admX ?admY ?h))
+      refine CatCrypt.Crypto.UCTransparent.Sys.TraceEq.withSub_open _ ?admX ?admY ?h))
   else if c == ``CatCrypt.Crypto.UCTransparent.Sys.mapPorts then some do
     evalTactic (← `(tactic| refine CatCrypt.Crypto.UCTransparent.Sys.TraceEq.mapPorts ?h _ _))
   else if c == ``CatCrypt.Crypto.UCTransparent.Sys.loopback then some do

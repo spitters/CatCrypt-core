@@ -75,8 +75,8 @@ theorem rHoare_of_map {Φ : RPre} {c₁ : SPComp α} {c₂ : SPComp β} {f₁ : 
       (fun a h₁ b h₂ => Ψ (f₁ a) h₁ (f₂ b) h₂) :=
     rHoare_bind (rHoare_and_isOutcome h) fun y y' => rHoare_ret fun h₁ h₂ hp => by
       obtain ⟨hΨ, hy, hy'⟩ := hp
-      obtain ⟨x, -, rfl⟩ := exists_of_isOutcome_map hy
-      obtain ⟨x', -, rfl⟩ := exists_of_isOutcome_map hy'
+      obtain ⟨x, -, rfl⟩ := isOutcome_map_iff.mp hy
+      obtain ⟨x', -, rfl⟩ := isOutcome_map_iff.mp hy'
       simpa only [hg₁ x, hg₂ x'] using hΨ
   rwa [SPComp.map_comp, SPComp.map_comp, hg₁.comp_eq_id, hg₂.comp_eq_id, SPComp.map_id,
     SPComp.map_id] at key

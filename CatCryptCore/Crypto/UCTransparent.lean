@@ -29,6 +29,8 @@ is perfect up to the event that the guard fails on the real trace.
 * `Sys τ E O` — a reactive transition system with state `τ`, input events
   `E` and outputs `O`: one probabilistic step `τ → E → SPComp (τ × O)` per
   activation. Protocols, simulators, and ideal worlds are all `Sys`.
+* `Sys.ofPorts KL KR` — one shared state, the sub-system `KL` on the left
+  port and `KR` on the right port.
 * `Event P A = P ⊕ A` — inputs from honest parties (`P`) and from the
   adversary (`A`).
 * `Strat ζ E O` — an interactive environment with internal state `ζ`: it
@@ -150,6 +152,29 @@ structure Strat (ζ E O : Type) where
   next_noFail : ∀ z, SPComp.NoFail (next z)
   /-- `obs` never fails. -/
   obs_noFail : ∀ z o, SPComp.NoFail (obs z o)
+
+namespace Sys
+
+variable {τ E O E' O' : Type}
+
+/-- The system with the state of `KL` and `KR`, which steps as `KL` on a left event and as `KR`
+on a right event, the output on the port of the event. The initial state is that of `KL`. -/
+noncomputable def ofPorts (KL : Sys τ E O) (KR : Sys τ E' O') : Sys τ (E ⊕ E') (O ⊕ O') where
+  init := KL.init
+  step t := Sum.elim (fun e => SPComp.map (fun q => (q.1, .inl q.2)) (KL.step t e))
+    (fun e => SPComp.map (fun q => (q.1, .inr q.2)) (KR.step t e))
+
+/-- Unfolding lemma of `Sys.ofPorts`: a step on a left event. -/
+@[simp] theorem ofPorts_step_inl (KL : Sys τ E O) (KR : Sys τ E' O') (t : τ) (e : E) :
+    (ofPorts KL KR).step t (.inl e) = SPComp.map (fun q => (q.1, .inl q.2)) (KL.step t e) :=
+  rfl
+
+/-- Unfolding lemma of `Sys.ofPorts`: a step on a right event. -/
+@[simp] theorem ofPorts_step_inr (KL : Sys τ E O) (KR : Sys τ E' O') (t : τ) (e : E') :
+    (ofPorts KL KR).step t (.inr e) = SPComp.map (fun q => (q.1, .inr q.2)) (KR.step t e) :=
+  rfl
+
+end Sys
 
 variable {τ υ σ ζ E O : Type}
 

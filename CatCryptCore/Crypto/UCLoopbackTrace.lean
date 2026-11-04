@@ -67,12 +67,6 @@ namespace CatCrypt.Crypto.UCTransparent
 open CatCrypt.Core CatCrypt.Prob CatCrypt.Crypto CatCrypt.Crypto.UCConcrete
 open scoped ENNReal
 
-/-- A possible outcome of a map is the image of a possible outcome. -/
-theorem exists_of_isOutcome_map {α β : Type} {c : SPComp α} {h : α → β} {b : β}
-    (hb : IsOutcome (SPComp.map h c) b) : ∃ a, IsOutcome c a ∧ h a = b := by
-  obtain ⟨a, ha, hab⟩ := isOutcome_bind hb
-  exact ⟨a, ha, isOutcome_pure hab⟩
-
 namespace Sys
 
 variable {τ υ ρ τ' υ' E O P E' O' EG OG X : Type}
@@ -160,7 +154,7 @@ theorem loopback_stepMap_on {S : Sys τ (E ⊕ X) (O ⊕ X)} {S' : Sys υ (E ⊕
     rw [h.init_map]
   pres u e hu q hq := by
     rw [loopback_step] at hq
-    obtain ⟨p, hp, rfl⟩ := exists_of_isOutcome_map hq
+    obtain ⟨p, hp, rfl⟩ := isOutcome_map_iff.mp hq
     exact (fbRun_stepMap_on h cut n _ _ hu).1 p hp
   step u e hu := by
     rw [loopback_step, loopback_step, Prod.map_snd, ← (fbRun_stepMap_on h cut n _ _ hu).2]
@@ -193,7 +187,7 @@ theorem StepMapOn.seq {S : Sys τ E O} {S' : Sys τ' E O} {T : Sys υ O P} {T' :
   pres s e hs q hq := by
     rw [seq_step] at hq
     obtain ⟨a, ha, hqa⟩ := isOutcome_bind hq
-    obtain ⟨r, hr, rfl⟩ := exists_of_isOutcome_map hqa
+    obtain ⟨r, hr, rfl⟩ := isOutcome_map_iff.mp hqa
     exact ⟨hS.pres _ _ hs.1 a ha, hT.pres _ _ hs.2 r hr⟩
   step s e hs := by
     have hT' : ∀ x, T'.step (g s.2) x = SPComp.map (fun p => (g p.1, p.2)) (T.step s.2 x) :=
@@ -291,9 +285,9 @@ theorem loopback_seq_right {ρ O' : Type} (S : Sys τ (E ⊕ X) (O ⊕ X)) (h : 
   pres := by
     rintro ⟨_, t, c, v⟩ e ht q hq
     rw [loopback_step, fbRun_seq_right S h cut cut' k c v (hex t ht e) hkn] at hq
-    obtain ⟨p, hp, rfl⟩ := exists_of_isOutcome_map hq
+    obtain ⟨p, hp, rfl⟩ := isOutcome_map_iff.mp hq
     obtain ⟨a, ha, hpa⟩ := isOutcome_bind hp
-    obtain ⟨r, -, rfl⟩ := exists_of_isOutcome_map hpa
+    obtain ⟨r, -, rfl⟩ := isOutcome_map_iff.mp hpa
     rw [fbRun_eq_of_exitsBy cut cut k (hex t ht e) hkn] at ha
     exact fbRun_isOutcome_of_exitsBy cut k (hex t ht e) a ha
   step := by
@@ -403,7 +397,7 @@ theorem loopback_seq_slide {γ Y : Type} (S : Sys τ (E ⊕ X) (O ⊕ Y)) (g : S
   rintro ⟨u, t, w, c⟩ e ht q hq
   have hq' := isOutcome_map (fun p => (Prod.map id Prod.swap p.1, p.2)) hq
   rw [hstep _ e ht, loopback_step] at hq'
-  obtain ⟨p, hp, hpq⟩ := exists_of_isOutcome_map hq'
+  obtain ⟨p, hp, hpq⟩ := isOutcome_map_iff.mp hq'
   change IsOutcome (fbRun SR cutR n (.inl e) ((w, c), t)) p at hp
   change Inv ((w, c), t) at ht
   rw [fbRun_eq_of_exitsBy cutR cutR k (hex _ ht e) hkn] at hp
@@ -424,10 +418,10 @@ theorem StepMapOn.par {S : Sys τ E O} {S' : Sys τ' E O} {T : Sys υ E' O'}
   pres s e hs q hq := by
     rcases e with e | e
     · rw [par_step_inl] at hq
-      obtain ⟨r, hr, rfl⟩ := exists_of_isOutcome_map hq
+      obtain ⟨r, hr, rfl⟩ := isOutcome_map_iff.mp hq
       exact ⟨hS.pres _ _ hs.1 r hr, hs.2⟩
     · rw [par_step_inr] at hq
-      obtain ⟨r, hr, rfl⟩ := exists_of_isOutcome_map hq
+      obtain ⟨r, hr, rfl⟩ := isOutcome_map_iff.mp hq
       exact ⟨hs.1, hT.pres _ _ hs.2 r hr⟩
   step s e hs := by
     rcases e with e | e
@@ -444,7 +438,7 @@ theorem StepMapOn.mapPorts {S : Sys τ EG OG} {S' : Sys τ' EG OG} {Inv : τ →
   init_map := h.init_map
   pres t e ht q hq := by
     rw [mapPorts_step] at hq
-    obtain ⟨r, hr, rfl⟩ := exists_of_isOutcome_map hq
+    obtain ⟨r, hr, rfl⟩ := isOutcome_map_iff.mp hq
     exact h.pres _ _ ht r hr
   step t e ht := by
     rw [mapPorts_step, mapPorts_step, ← h.step _ _ ht]

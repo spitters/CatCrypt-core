@@ -38,6 +38,13 @@ outer event from every state satisfying `Inv`. Under it:
 
 The activation of the loopback is the recursion `Sys.fbRun` over the steps of `S`
 (`Sys.loopback_step`).
+
+These laws and the invariants of reactive systems are stated over the possible outcomes
+`IsOutcome c a` of a computation. The possible outcomes of a point mass, a map and a bind with a
+pure head are computed by `isOutcome_pure_iff`, `isOutcome_map_iff`, `isOutcome_bind_pure_iff`
+and `isOutcome_bind_iff_of_isPure` (a uniform draw: `isOutcome_bind_sample_iff`), and the
+universal statements over them by `forall_isOutcome_pure`, `forall_isOutcome_map` and
+`forall_isOutcome_bind_of_forall`.
 -/
 
 @[expose] public section
@@ -68,7 +75,7 @@ theorem isOutcome_pure {a b : α} (h : IsOutcome (SPComp.pure a) b) : a = b := b
 
 /-- A possible outcome of a bind is a possible outcome of the continuation at a possible
 outcome of the head. -/
-theorem isOutcome_bind {c : SPComp α} {f : α → SPComp β} {b : β}
+@[grind →] theorem isOutcome_bind {c : SPComp α} {f : α → SPComp β} {b : β}
     (h : IsOutcome (SPComp.bind c f) b) : ∃ a, IsOutcome c a ∧ IsOutcome (f a) b := by
   obtain ⟨hp, hp', h⟩ := h
   obtain ⟨⟨a, h₁⟩, ha, hb⟩ := SDistr.bind_support_witness h
@@ -112,6 +119,88 @@ theorem exists_bind_pure_of_isOutcome (c : SPComp α) (P : α → Prop)
   obtain ⟨a, h₁⟩ := p
   have ha : P a := h a ⟨hp, h₁, hp₂⟩
   grind
+
+/-- The possible outcomes of a point mass: its value. -/
+@[simp, grind =] theorem isOutcome_pure_iff {a b : α} : IsOutcome (SPComp.pure a) b ↔ a = b := by
+  refine ⟨isOutcome_pure, fun h => ⟨Heap.empty, Heap.empty, ?_⟩⟩
+  subst h
+  simp [SPComp.pure_def, SDistr.pure, PMF.pure_apply]
+
+/-- The possible outcomes of a map: the images of the possible outcomes. -/
+@[simp, grind =] theorem isOutcome_map_iff {c : SPComp α} {f : α → β} {b : β} :
+    IsOutcome (SPComp.map f c) b ↔ ∃ a, IsOutcome c a ∧ f a = b := by
+  refine ⟨fun h => ?_, fun ⟨a, ha, hb⟩ => hb ▸ isOutcome_map f ha⟩
+  obtain ⟨a, ha, hb⟩ := isOutcome_bind h
+  exact ⟨a, ha, isOutcome_pure hb⟩
+
+/-- A possible outcome of a map is the image of a possible outcome. -/
+@[deprecated isOutcome_map_iff +typeChanged (since := "2026-11-04")]
+theorem exists_of_isOutcome_map {c : SPComp α} {h : α → β} {b : β}
+    (hb : IsOutcome (SPComp.map h c) b) : ∃ a, IsOutcome c a ∧ h a = b :=
+  isOutcome_map_iff.mp hb
+
+/-- The possible outcomes of a bind with a point-mass continuation. -/
+@[simp] theorem isOutcome_bind_pure_iff {c : SPComp α} {f : α → β} {b : β} :
+    IsOutcome (SPComp.bind c fun a => SPComp.pure (f a)) b ↔ ∃ a, IsOutcome c a ∧ f a = b :=
+  isOutcome_map_iff
+
+/-- **The possible outcomes of a bind with a pure head**: the possible outcomes of the
+continuation at the possible outcomes of the head. A pure head returns each of its values from
+every heap, so the continuation runs from every heap. -/
+theorem isOutcome_bind_iff_of_isPure {c : SPComp α} {f : α → SPComp β} {b : β}
+    (hc : SPComp.IsPure c) :
+    IsOutcome (SPComp.bind c f) b ↔ ∃ a, IsOutcome c a ∧ IsOutcome (f a) b := by
+  refine ⟨isOutcome_bind, fun ⟨a, ⟨h₀, h₀', ha⟩, ⟨h₁, h₁', hb⟩⟩ => ⟨h₁, h₁', ?_⟩⟩
+  obtain ⟨d, hd⟩ := hc
+  have hne : ∀ {γ δ : Type} {e : SDistr γ} {g : γ → SDistr δ} {x : γ} {y : δ},
+      e (some x) ≠ 0 → g x (some y) ≠ 0 → (e.bind g) (some y) ≠ 0 := by
+    intro γ δ e g x y hx hy
+    unfold SDistr.bind
+    rw [PMF.bind_apply, ne_eq, ENNReal.tsum_eq_zero]
+    push Not
+    exact ⟨some x, mul_ne_zero hx hy⟩
+  rw [hd] at ha
+  obtain ⟨a', hda, hp⟩ := SDistr.bind_support_witness ha
+  obtain ⟨rfl, -⟩ := Prod.mk.inj ((SDistr.mem_support_pure_iff _ _).mp hp)
+  have hc₁ : c h₁ (some (a', h₁)) ≠ 0 := by
+    rw [hd]
+    exact hne hda ((SDistr.mem_support_pure_iff _ _).mpr rfl)
+  exact hne (g := fun p : α × Heap => f p.1 p.2) hc₁ hb
+
+/-- The possible outcomes of a bind with a uniform draw: the possible outcomes of the
+continuation at any value. -/
+theorem isOutcome_bind_sample_iff {γ : Type} [Fintype γ] [Nonempty γ] {f : γ → SPComp β}
+    {b : β} : IsOutcome (SPComp.bind (SPComp.sample γ) f) b ↔ ∃ a, IsOutcome (f a) b := by
+  rw [isOutcome_bind_iff_of_isPure (SPComp.sample_isPure γ)]
+  refine ⟨fun ⟨a, _, h⟩ => ⟨a, h⟩, fun ⟨a, h⟩ => ⟨a, ⟨Heap.empty, Heap.empty, ?_⟩, h⟩⟩
+  simp only [SPComp.sample, SDistr.uniform]
+  unfold SDistr.bind
+  rw [PMF.bind_apply, ne_eq, ENNReal.tsum_eq_zero]
+  push Not
+  refine ⟨some a, mul_ne_zero ?_ ((SDistr.mem_support_pure_iff _ _).mpr rfl)⟩
+  simp [PMF.map_apply]
+
+/-- A property of every possible outcome of a point mass is a property of its value. -/
+theorem forall_isOutcome_pure {P : α → Prop} {a : α} :
+    (∀ b, IsOutcome (SPComp.pure a) b → P b) ↔ P a := by
+  simp
+
+/-- A property of every possible outcome of a map is a property of the image of every possible
+outcome. -/
+theorem forall_isOutcome_map {P : β → Prop} {c : SPComp α} {f : α → β} :
+    (∀ b, IsOutcome (SPComp.map f c) b → P b) ↔ ∀ a, IsOutcome c a → P (f a) := by
+  simp
+
+/-- A property of the possible outcomes of every continuation is a property of the possible
+outcomes of the bind. The converse fails: a continuation may run from a heap the head never
+reaches. -/
+theorem forall_isOutcome_bind_of_forall {P : β → Prop} {c : SPComp α} {f : α → SPComp β}
+    (h : ∀ a, IsOutcome c a → ∀ b, IsOutcome (f a) b → P b) :
+    ∀ b, IsOutcome (SPComp.bind c f) b → P b := fun _ hb => by
+  obtain ⟨a, ha, hab⟩ := isOutcome_bind hb
+  exact h a ha _ hab
+
+@[deprecated (since := "2026-11-04")] alias forall_isOutcome_bind := forall_isOutcome_bind_of_forall
 
 end Outcome
 

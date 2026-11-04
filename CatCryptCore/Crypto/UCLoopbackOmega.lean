@@ -283,7 +283,7 @@ theorem loopback_stepMap_loopbackω (S : Sys τ (E ⊕ X) (O ⊕ X)) (Inv : τ �
   init_map := rfl
   pres u e hu q hq := by
     rw [loopback_step, fbRun_eq_of_exitsBy cut cut k (hex u.2 hu e) hkn] at hq
-    obtain ⟨p, hp, rfl⟩ := exists_of_isOutcome_map hq
+    obtain ⟨p, hp, rfl⟩ := isOutcome_map_iff.mp hq
     exact fbRun_isOutcome_of_exitsBy cut k (hex u.2 hu e) p hp
   step u e hu := by
     rw [loopback_step, loopbackω_step, fbRunω_eq_of_exitsBy cut k (hex u.2 hu e),

@@ -243,7 +243,7 @@ theorem loopSys_stepEq (body : σ → Prog E O σ) (s₀ : σ) (step : σ → E 
   refine ⟨⟨s₀, rfl⟩, rfl, ?_, ?_⟩
   · rintro t e ⟨s, rfl⟩ q hq
     rw [loopSys_step_ret, h] at hq
-    obtain ⟨a, -, rfl⟩ := exists_of_isOutcome_map hq
+    obtain ⟨a, -, rfl⟩ := isOutcome_map_iff.mp hq
     exact ⟨a.1, rfl⟩
   · rintro t e ⟨s, rfl⟩
     rw [loopSys_step_ret, h, SPComp.map_comp]

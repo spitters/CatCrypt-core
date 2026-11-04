@@ -8,7 +8,7 @@ module
 public import CatCryptCore.Crypto.TraceEquiv
 public import CatCryptCore.Crypto.UCLoopbackObservationBridge
 public import CatCryptCore.Crypto.UCCoupling
-public import CatCryptCore.Crypto.UCOracleGame
+public import CatCryptCore.Crypto.UCDelayedDraw
 
 /-!
 # Local rewriting of reactive systems up to trace equivalence
@@ -30,10 +30,8 @@ over subroutines idle at a common event, for the parallel composition, the loopb
 relabelling of ports.
 
 The invariant of a step map is preserved when it holds at every possible outcome of a step
-(`IsOutcome`). The possible outcomes of a point mass, a map and a bind are computed by the simp
-lemmas `isOutcome_pure_iff`, `isOutcome_map_iff` and `isOutcome_bind_pure_iff`, and the
-universal statements over them by `forall_isOutcome_pure`, `forall_isOutcome_map` and
-`forall_isOutcome_bind`.
+(`IsOutcome`); the possible outcomes of point masses, maps and binds are computed by the lemmas
+of `CatCryptCore.Crypto.UCFeedbackLaws`.
 
 ## Main results
 
@@ -42,18 +40,17 @@ universal statements over them by `forall_isOutcome_pure`, `forall_isOutcome_map
 * `Sys.traceEq_iff_view_eq`: trace equivalence is equality of all views.
 * `Sys.StepMapOn.traceEq`, `Sys.traceEq_of_stepMap`, `Sys.StepEq.traceEq`,
   `UCCoupling.CouplingBisim.traceEq`, `UCLoopbackObservation.EmulatesΩ.traceEq`: the bridges.
-* `Sys.TraceEq.realizes_left`, `Sys.TraceEq.realizes_right`, `Sys.TraceEq.realizesSim_left`,
-  `Sys.TraceEq.realizesSim_right`: rewriting either side of a realization.
-* `Sys.TraceEq.openWithSub`, `Sys.TraceEq.withSub`, `Sys.TraceEq.par`, `Sys.TraceEq.loopback`,
+* `Sys.TraceEq.realizes_left`, `Sys.TraceEq.realizes_right`: rewriting either side of a
+  realization.
+* `Sys.TraceEq.withSub_open`, `Sys.TraceEq.withSub`, `Sys.TraceEq.par`, `Sys.TraceEq.loopback`,
   `Sys.TraceEq.mapPorts`: congruences.
-* `Sys.traceEq_of_step_eq_on`, `Sys.traceEq_of_fst`, `Sys.traceEq_of_equiv`: equal steps on an
-  invariant, an unused state component, renamed states.
-* `MultiHybrid.withSub_step_of_fuel_eq_zero`: the step of a hybrid that makes one call.
+* `Sys.traceEq_of_step_eq_on`, `Sys.traceEq_of_map_fst_step`, `Sys.traceEq_of_equiv`: equal
+  steps on an invariant, an unused state component, renamed states.
+* `view_eq_of_stepMap_on`: equal views from a step map on an invariant, in the factored form
+  of the invariant.
 * `Sys.DelayedDraw.traceEq`: two delayed draws against the same eager systems are trace
-  equivalent; `Sys.DelayedDraw.withSub`: a delayed draw of the subroutine is one of the multi-call
-  hybrid over it.
-* `KeyedSys.traceEq_lazy`: moving the draw of a key to its first use; `KeyedSys.lazy_pres`:
-  invariants of a lazily keyed system.
+  equivalent (delayed draws: `CatCryptCore.Crypto.UCDelayedDraw`).
+* `KeyedSys.traceEq_lazy`: moving the draw of a key to its first use.
 -/
 
 @[expose] public section
@@ -65,54 +62,6 @@ namespace CatCrypt.Crypto.UCTransparent
 open CatCrypt.Core CatCrypt.Prob CatCrypt.Crypto CatCrypt.Crypto.UCConcrete
 open CatCrypt.Crypto.UCLoopbackObservation
 open scoped ENNReal
-
-/-! ## Possible outcomes -/
-
-section Outcome
-
-variable {α β : Type}
-
-/-- The possible outcomes of a point mass: its value. -/
-@[simp, grind =] theorem isOutcome_pure_iff {a b : α} : IsOutcome (SPComp.pure a) b ↔ a = b := by
-  refine ⟨isOutcome_pure, fun h => ⟨Heap.empty, Heap.empty, ?_⟩⟩
-  subst h
-  simp [SPComp.pure_def, SDistr.pure, PMF.pure_apply]
-
-/-- The possible outcomes of a map: the images of the possible outcomes. -/
-@[simp, grind =] theorem isOutcome_map_iff {c : SPComp α} {f : α → β} {b : β} :
-    IsOutcome (SPComp.map f c) b ↔ ∃ a, IsOutcome c a ∧ f a = b := by
-  refine ⟨fun h => ?_, fun ⟨a, ha, hb⟩ => hb ▸ isOutcome_map f ha⟩
-  obtain ⟨a, ha, hb⟩ := isOutcome_bind h
-  exact ⟨a, ha, isOutcome_pure hb⟩
-
-/-- The possible outcomes of a bind with a point-mass continuation. -/
-@[simp] theorem isOutcome_bind_pure_iff {c : SPComp α} {f : α → β} {b : β} :
-    IsOutcome (SPComp.bind c fun a => SPComp.pure (f a)) b ↔ ∃ a, IsOutcome c a ∧ f a = b :=
-  isOutcome_map_iff
-
-/-- A property of every possible outcome of a point mass is a property of its value. -/
-@[simp] theorem forall_isOutcome_pure {P : α → Prop} {a : α} :
-    (∀ b, IsOutcome (SPComp.pure a) b → P b) ↔ P a := by
-  simp
-
-/-- A property of every possible outcome of a map is a property of the image of every possible
-outcome. -/
-theorem forall_isOutcome_map {P : β → Prop} {c : SPComp α} {f : α → β} :
-    (∀ b, IsOutcome (SPComp.map f c) b → P b) ↔ ∀ a, IsOutcome c a → P (f a) := by
-  simp
-
-/-- A property of the possible outcomes of every continuation is a property of the possible
-outcomes of the bind. The converse fails: a continuation may run from a heap the head never
-reaches. -/
-theorem forall_isOutcome_bind {P : β → Prop} {c : SPComp α} {f : α → SPComp β}
-    (h : ∀ a, IsOutcome c a → ∀ b, IsOutcome (f a) b → P b) :
-    ∀ b, IsOutcome (SPComp.bind c f) b → P b := fun _ hb => by
-  obtain ⟨a, ha, hab⟩ := isOutcome_bind hb
-  exact h a ha _ hab
-
-attribute [grind →] isOutcome_bind
-
-end Outcome
 
 namespace Sys
 
@@ -189,22 +138,6 @@ theorem TraceEq.realizes_right {R : Sys τ E O} {I : Sys υ E O} {I' : Sys υ' E
   rw [← funext (h.view_eq (ζ := ζ))]
   exact hR ζ
 
-/-- The real system of a realization behind a simulator may be replaced by a trace-equivalent
-one. -/
-theorem TraceEq.realizesSim_left {V : PubView E O} {W : PubView EG OG} {R : Sys τ E O}
-    {R' : Sys τ' E O} {I : Sys υ EG OG} {S : Simulator E O EG OG V W}
-    {b : (ζ : Type) → Env (Strat ζ E O) ζ → ℝ≥0∞} (h : TraceEq R R')
-    (hR : RealizesSim R I S b) : RealizesSim R' I S b :=
-  h.realizes_left hR
-
-/-- The simulated system of a realization behind a simulator may be replaced by a
-trace-equivalent one. -/
-theorem TraceEq.realizesSim_right {V : PubView E O} {W : PubView EG OG} {R : Sys τ E O}
-    {I : Sys υ EG OG} {I' : Sys υ' EG OG} {S : Simulator E O EG OG V W}
-    {b : (ζ : Type) → Env (Strat ζ E O) ζ → ℝ≥0∞} (h : TraceEq (S.withSub I) (S.withSub I'))
-    (hR : RealizesSim R I S b) : RealizesSim R I' S b :=
-  h.realizes_right hR
-
 /-- A realization at distance `0` of a system trace equivalent to the simulated one. -/
 theorem TraceEq.realizesSim {V : PubView E O} {W : PubView EG OG} {R : Sys τ E O}
     {I : Sys υ EG OG} {S : Simulator E O EG OG V W} (h : TraceEq R (S.withSub I)) :
@@ -214,21 +147,23 @@ theorem TraceEq.realizesSim {V : PubView E O} {W : PubView EG OG} {R : Sys τ E 
 /-! ## Congruences -/
 
 /-- **Trace equivalence under an open system**, for admissible subroutines. -/
-theorem TraceEq.openWithSub (P : Open E O EG OG) {X : Sys τ EG OG} {Y : Sys υ EG OG}
+theorem TraceEq.withSub_open (P : Open E O EG OG) {X : Sys τ EG OG} {Y : Sys υ EG OG}
     (hX : P.Adm X) (hY : P.Adm Y) (h : TraceEq X Y) : TraceEq (P.withSub X) (P.withSub Y) :=
   traceEq_iff_realizes_zero.mpr (P.realizes_withSub hX hY h.realizes)
+
+@[deprecated (since := "2026-11-04")] alias TraceEq.openWithSub := TraceEq.withSub_open
 
 /-- Trace equivalence under a multi-call hybrid, for subroutines idle at a common event. -/
 theorem TraceEq.withSub {σ : Type} (π : MultiHybrid σ E O EG OG) {X : Sys τ EG OG}
     {Y : Sys υ EG OG} (idle : EG) {oX oY : OG} (hX : MultiHybrid.IdleAt X idle oX)
     (hY : MultiHybrid.IdleAt Y idle oY) (h : TraceEq X Y) :
     TraceEq (π.withSub X) (π.withSub Y) :=
-  h.openWithSub (Open.ofMultiHybrid π idle) ⟨oX, hX⟩ ⟨oY, hY⟩
+  h.withSub_open (Open.ofMultiHybrid π idle) ⟨oX, hX⟩ ⟨oY, hY⟩
 
 /-- Trace equivalence under the relabelling of ports. -/
 theorem TraceEq.mapPorts {E' O' : Type} {X : Sys τ EG OG} {Y : Sys υ EG OG} (h : TraceEq X Y)
     (fe : E' → EG) (fo : OG → O') : TraceEq (X.mapPorts fe fo) (Y.mapPorts fe fo) :=
-  h.openWithSub (Open.mapPorts fe fo) trivial trivial
+  h.withSub_open (Open.mapPorts fe fo) trivial trivial
 
 /-- Trace equivalence under the loopback, for systems idle at a common event, for every fuel and
 cut-off map. -/
@@ -266,10 +201,12 @@ theorem traceEq_of_step_eq_on (R I : Sys τ E O) (Inv : τ → Prop) (hinit : R.
 
 /-- **An unused state component.** A system on states `τ × υ` whose steps, read on the first
 component, are those of `S` from the first component, is trace equivalent to `S`. -/
-theorem traceEq_of_fst (R : Sys (τ × υ) E O) (S : Sys τ E O) (hinit : R.init.1 = S.init)
+theorem traceEq_of_map_fst_step (R : Sys (τ × υ) E O) (S : Sys τ E O) (hinit : R.init.1 = S.init)
     (hstep : ∀ t u e, SPComp.map (fun p => (p.1.1, p.2)) (R.step (t, u) e) = S.step t e) :
     TraceEq R S :=
   traceEq_of_stepMap R S Prod.fst hinit fun t e => hstep t.1 t.2 e
+
+@[deprecated (since := "2026-11-04")] alias traceEq_of_fst := traceEq_of_map_fst_step
 
 /-- **Renamed states.** A system whose steps are those of `R` on states renamed by the bijection
 `φ` is trace equivalent to `R`. -/
@@ -280,26 +217,19 @@ theorem traceEq_of_equiv (R : Sys τ E O) (I : Sys υ E O) (φ : τ ≃ υ) (hin
 
 end Sys
 
-namespace MultiHybrid
+variable {τ υ ζ E O : Type}
 
-variable {σ τ E O EG OG : Type}
-
-/-- **The step of a hybrid that makes one call.** With fuel `0`, an activation of `π.withSub X`
-starts `π`, and either outputs at once or makes one call of `X` and finishes `π` on its answer. -/
-theorem withSub_step_of_fuel_eq_zero (π : MultiHybrid σ E O EG OG) (X : Sys τ EG OG)
-    (h : π.fuel = 0) (t : σ × τ) (e : E) :
-    (π.withSub X).step t e = SPComp.bind (π.start t.1 e) fun r =>
-      Sum.elim (fun g => SPComp.bind (X.step t.2 g) fun q =>
-          SPComp.map (fun r' => ((r'.1, q.1), r'.2)) (π.finish r.1 q.2))
-        (fun o => SPComp.pure ((r.1, t.2), o)) r.2 := by
-  simp only [withSub, h]
-  congr 1
-  funext r
-  obtain ⟨s, g | o⟩ := r
-  · simp [drive, SPComp.map, SPComp.bind_assoc, SPComp.pure_bind]
-  · simp [drive, SPComp.pure_bind]
-
-end MultiHybrid
+/-- Two systems related by a state map `f` have equal views when `f` sends the initial state to
+the initial state and commutes with single steps from the states satisfying an invariant `Inv`,
+which holds initially and at every state a step from a state satisfying it reaches. -/
+theorem view_eq_of_stepMap_on (R : Sys τ E O) (I : Sys υ E O) (Inv : τ → Prop)
+    (f : τ → υ) (hInv : Inv R.init) (hinit : f R.init = I.init)
+    (hpres : ∀ t e, Inv t → ∃ (α : Type) (c : SPComp α) (g : α → τ × O),
+      R.step t e = SPComp.bind c (fun a => SPComp.pure (g a)) ∧ ∀ a, Inv (g a).1)
+    (hstep : ∀ t e, Inv t → SPComp.map (fun p => (f p.1, p.2)) (R.step t e) = I.step (f t) e)
+    (Z : Strat ζ E O) : view R Z = view I Z :=
+  Sys.traceEq_iff_view_eq.mp (Sys.traceEq_iff_realizes_zero.mpr
+    (realizes_zero_of_stepMap_on R I Inv f hInv hinit hpres hstep)) _ Z
 
 end CatCrypt.Crypto.UCTransparent
 
@@ -346,100 +276,6 @@ theorem DelayedDraw.traceEq {L₁ : Sys σ E O} {L₂ : Sys σ' E O} {W : K → 
     (h₂ : DelayedDraw L₂ W μ Inv₂ D₂) : TraceEq L₁ L₂ :=
   traceEq_iff_view_eq.mpr fun _ Z => (h₁.view_eq Z).trans (h₂.view_eq Z).symm
 
-/-- The invariant of a delayed draw holds at the possible outcomes of the rest of an activation
-of a multi-call hybrid over the drawing subroutine. -/
-theorem DelayedDraw.drive_pres {X : Sys τ EG OG} {W : K → Sys υ EG OG} {μ : PMF K}
-    {Inv : τ → Prop} {D : τ → SDistr (K × υ)} (h : DelayedDraw X W μ Inv D)
-    (π : MultiHybrid σ E O EG OG) :
-    ∀ n s d x, Inv x → ∀ p, IsOutcome (π.drive X n s d x) p → Inv p.2.1 := by
-  intro n
-  induction n with
-  | zero =>
-    rintro s (g | o) x hx p hp
-    · obtain ⟨q, hq, hp⟩ := isOutcome_bind hp
-      obtain ⟨r, -, hp⟩ := isOutcome_bind hp
-      rw [← isOutcome_pure hp]
-      exact h.pres x g hx q hq
-    · rw [← isOutcome_pure hp]
-      exact hx
-  | succ n ih =>
-    rintro s (g | o) x hx p hp
-    · obtain ⟨q, hq, hp⟩ := isOutcome_bind hp
-      obtain ⟨r, -, hp⟩ := isOutcome_bind hp
-      exact ih _ _ _ (h.pres x g hx q hq) p hp
-    · rw [← isOutcome_pure hp]
-      exact hx
-
-/-- **A delayed draw under a multi-call hybrid, on the rest of an activation.** -/
-theorem DelayedDraw.drive {X : Sys τ EG OG} {W : K → Sys υ EG OG} {μ : PMF K}
-    {Inv : τ → Prop} {D : τ → SDistr (K × υ)} (h : DelayedDraw X W μ Inv D)
-    (π : MultiHybrid σ E O EG OG) :
-    ∀ n s d x, Inv x →
-      SPComp.bind (π.drive X n s d x)
-          (fun p => SPComp.map (fun kt => (kt.1, p.1, kt.2, p.2.2)) (sampleFrom (D p.2.1))) =
-        SPComp.bind (sampleFrom (D x)) fun kt =>
-          SPComp.map (fun p => (kt.1, p)) (π.drive (W kt.1) n s d kt.2) := by
-  have hc : ∀ x, SPComp.IsPure (sampleFrom (D x)) := fun _ => sampleFrom_isPure _
-  have hX : ∀ x g, Inv x → ∀ (F : (K × υ) × OG → SPComp (K × σ × υ × O)),
-      SPComp.bind (X.step x g) (fun q => SPComp.bind (sampleFrom (D q.1)) fun kt =>
-        F (kt, q.2)) =
-      SPComp.bind (sampleFrom (D x)) fun kt =>
-        SPComp.bind ((W kt.1).step kt.2 g) fun p => F ((kt.1, p.1), p.2) := by
-    intro x g hx F
-    have := congrArg (fun c => SPComp.bind c F) (h.step x g hx)
-    simpa only [SPComp.map, SPComp.bind_assoc, SPComp.pure_bind] using this
-  intro n
-  induction n with
-  | zero =>
-    rintro s (g | o) x hx
-    · refine Eq.trans ?_ ((hX x g hx fun y => SPComp.bind (π.finish s y.2) fun r =>
-          SPComp.pure (y.1.1, r.1, y.1.2, r.2)).trans ?_)
-      · simp only [MultiHybrid.drive, SPComp.map, SPComp.bind_assoc, SPComp.pure_bind]
-        congr 1; funext q
-        exact (SPComp.isPure_bind_comm_left _ _ _ (hc _)).symm
-      · simp only [MultiHybrid.drive, SPComp.map, SPComp.bind_assoc, SPComp.pure_bind]
-    · simp only [MultiHybrid.drive, SPComp.map, SPComp.pure_bind]
-  | succ n ih =>
-    rintro s (g | o) x hx
-    · refine Eq.trans ?_ ((hX x g hx fun y => SPComp.bind (π.resume s y.2) fun r =>
-          SPComp.map (fun p => (y.1.1, p)) (π.drive (W y.1.1) n r.1 r.2 y.1.2)).trans ?_)
-      · simp only [MultiHybrid.drive, SPComp.bind_assoc]
-        refine bind_congr_isOutcome fun q hq => ?_
-        simp only [ih _ _ _ (h.pres x g hx q hq)]
-        exact (SPComp.isPure_bind_comm_left _ _ _ (hc _)).symm
-      · simp only [MultiHybrid.drive, SPComp.map, SPComp.bind_assoc]
-    · simp only [MultiHybrid.drive, SPComp.map, SPComp.pure_bind]
-
-/-- **A delayed draw under a multi-call hybrid.** A hybrid over a subroutine that delays the
-draw of a key delays it against the hybrid over the subroutines with the key drawn at the
-start. -/
-theorem DelayedDraw.withSub {X : Sys τ EG OG} {W : K → Sys υ EG OG} {μ : PMF K}
-    {Inv : τ → Prop} {D : τ → SDistr (K × υ)} (h : DelayedDraw X W μ Inv D)
-    (π : MultiHybrid σ E O EG OG) :
-    DelayedDraw (π.withSub X) (fun k => π.withSub (W k)) μ (fun t => Inv t.2)
-      (fun t => (D t.2).bind fun kt => SDistr.pure (kt.1, (t.1, kt.2))) where
-  init_inv := h.init_inv
-  init := by
-    simp only [MultiHybrid.withSub, h.init, SDistr.bind_assoc, SDistr.pure_bind]
-  mass t := by
-    rw [← isLossless_sampleFrom_iff, ← sampleFrom_bind_sampleFrom]
-    exact Unary.lossless_bind ((isLossless_sampleFrom_iff _).mpr (h.mass _)) fun _ =>
-      (isLossless_sampleFrom_iff _).mpr (SDistr.mass_pure _)
-  pres t e ht q hq := by
-    simp only [MultiHybrid.withSub] at hq
-    obtain ⟨r, -, hq⟩ := isOutcome_bind hq
-    obtain ⟨p, hp, hq⟩ := isOutcome_bind hq
-    rw [← isOutcome_pure hq]
-    exact h.drive_pres π _ _ _ _ ht p hp
-  step t e ht := by
-    have hd := fun r : σ × (EG ⊕ O) => congrArg
-      (fun c => SPComp.bind c fun x => SPComp.pure ((x.1, (x.2.1, x.2.2.1)), x.2.2.2))
-      (h.drive π π.fuel r.1 r.2 t.2 ht)
-    simp only [SPComp.map, SPComp.bind_assoc, SPComp.pure_bind] at hd
-    simp only [MultiHybrid.withSub, SPComp.map, SPComp.bind_assoc, SPComp.pure_bind,
-      ← sampleFrom_bind_sampleFrom, sampleFrom_pure, hd]
-    exact SPComp.isPure_bind_comm_left _ _ _ (sampleFrom_isPure _) |>.symm
-
 end CatCrypt.Crypto.UCTransparent.Sys
 
 namespace CatCrypt.Crypto.UCTransparent.KeyedSys
@@ -460,29 +296,5 @@ theorem traceEq_lazy (S S' : KeyedSys K τ E O) (μ : PMF K) (hinit : S.init = S
     Sys.TraceEq (S.lazy μ) (S'.lazy μ) := by
   have hk : S'.withKey = S.withKey := funext fun k => by simp only [withKey, hinit, hstep]
   exact (delayedDraw_lazy S μ hind).traceEq (hk ▸ delayedDraw_lazy S' μ hind')
-
-/-- **Invariants of a lazily keyed system.** An invariant `Inv` of the states with an optional
-key holds at every possible outcome of a step of `S.lazy μ` from a state satisfying it when it
-does so with the key, at every key for an activation without the key that reads it, and without
-the key for an activation that does not read it. -/
-theorem lazy_pres (S : KeyedSys K τ E O) (μ : PMF K) (Inv : Option K × τ → Prop)
-    (hsome : ∀ k t e, Inv (some k, t) → ∀ q, IsOutcome (S.step k t e) q → Inv (some k, q.1))
-    (huses : ∀ t e, Inv (none, t) → S.uses t e = true →
-      ∀ k q, IsOutcome (S.step k t e) q → Inv (some k, q.1))
-    (hnone : ∀ t e, Inv (none, t) → S.uses t e = false →
-      ∀ q, IsOutcome (S.step₀ t e) q → Inv (none, q.1)) :
-    ∀ t e, Inv t → ∀ q, IsOutcome ((S.lazy μ).step t e) q → Inv q.1 := by
-  rintro ⟨_ | k, t⟩ e hI q hq
-  · cases hu : S.uses t e
-    · rw [lazy_step_none_of_not_uses S μ hu, isOutcome_bind_pure_iff] at hq
-      obtain ⟨p, hp, rfl⟩ := hq
-      exact hnone t e hI hu p hp
-    · rw [lazy_step_none_of_uses S μ hu] at hq
-      obtain ⟨k, -, hq⟩ := isOutcome_bind hq
-      obtain ⟨p, hp, rfl⟩ := isOutcome_bind_pure_iff.mp hq
-      exact huses t e hI hu k p hp
-  · simp only [lazy, lazyStep, isOutcome_bind_pure_iff] at hq
-    obtain ⟨p, hp, rfl⟩ := hq
-    exact hsome k t e hI p hp
 
 end CatCrypt.Crypto.UCTransparent.KeyedSys

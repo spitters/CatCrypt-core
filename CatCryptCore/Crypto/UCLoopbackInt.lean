@@ -163,7 +163,7 @@ theorem exitsBy_loopSys (π : MultiHybrid σ E O EG OG) (S : Sys τ EG OG) :
     cases m <;>
     · intro q hq
       simp only [loopSys_step, loopStep] at hq
-      obtain ⟨r, -, rfl⟩ := exists_of_isOutcome_map hq
+      obtain ⟨r, -, rfl⟩ := isOutcome_map_iff.mp hq
       trivial
   | succ k ih =>
     intro m hm s o t
@@ -172,7 +172,7 @@ theorem exitsBy_loopSys (π : MultiHybrid σ E O EG OG) (S : Sys τ EG OG) :
     simp only [loopSys_step, loopStep] at hq
     obtain ⟨r, -, hr⟩ := isOutcome_bind hq
     rcases r with ⟨s', g | o'⟩
-    · obtain ⟨q', -, rfl⟩ := exists_of_isOutcome_map hr
+    · obtain ⟨q', -, rfl⟩ := isOutcome_map_iff.mp hr
       exact ih m (by omega) s' q'.2 q'.1
     · obtain rfl := isOutcome_pure hr
       trivial
@@ -186,7 +186,7 @@ theorem exitsWithin_loopSys (π : MultiHybrid σ E O EG OG) (S : Sys τ EG OG) :
     simp only [loopSys_step, loopStep] at hq
     obtain ⟨r, -, hr⟩ := isOutcome_bind hq
     rcases r with ⟨s', g | o'⟩
-    · obtain ⟨q', -, rfl⟩ := exists_of_isOutcome_map hr
+    · obtain ⟨q', -, rfl⟩ := isOutcome_map_iff.mp hr
       exact exitsBy_loopSys π S _ _ le_rfl s' q'.2 q'.1
     · obtain rfl := isOutcome_pure hr
       trivial

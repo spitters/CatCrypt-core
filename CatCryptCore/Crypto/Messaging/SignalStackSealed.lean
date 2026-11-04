@@ -7,7 +7,6 @@ module
 
 public import CatCryptCore.Crypto.Messaging.SignalStack
 public import CatCryptCore.Crypto.UCFeedbackLaws
-public import CatCryptCore.Crypto.TraceEqLaws
 public import CatCryptCore.Unary.Lossless
 
 /-!
@@ -510,13 +509,13 @@ theorem simStart_decOk (sid₀ : SessionId) (s : SimSt S W K) (e : OEv W)
     repeat' split
     all_goals first
       | exact forall_isOutcome_pure.mpr trivial
-      | exact forall_isOutcome_bind fun _ _ => forall_isOutcome_bind fun _ _ =>
+      | exact forall_isOutcome_bind_of_forall fun _ _ => forall_isOutcome_bind_of_forall fun _ _ =>
           deliver_decOk _ _ _ _ _ _
   · simp only [simStart, simSend]
     repeat' split
     all_goals first
       | exact forall_isOutcome_pure.mpr trivial
-      | exact forall_isOutcome_bind fun _ _ => forall_isOutcome_bind fun _ _ =>
+      | exact forall_isOutcome_bind_of_forall fun _ _ => forall_isOutcome_bind_of_forall fun _ _ =>
           deliver_decOk _ _ _ _ _ _
   · exact forall_isOutcome_map.mpr fun _ _ => trivial
 

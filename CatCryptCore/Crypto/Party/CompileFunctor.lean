@@ -302,7 +302,7 @@ theorem compiledStep_stepMapOn {init : τ} {coins : τ → E → SPComp Cn}
   init_inv := h0
   init_map := rfl
   pres t e ht q hq := by
-    obtain ⟨r, -, rfl⟩ := exists_of_isOutcome_map (h := δ t e) (c := coins t e) hq
+    obtain ⟨r, -, rfl⟩ := (isOutcome_map_iff (f := δ t e) (c := coins t e)).mp hq
     exact hc.inv t e r ht
   step t e ht := by
     simp only [Sys.ofCore, Sys.ofCode, id, hc.agree t e _ ht, Option.elim, Prod.mk.eta]
