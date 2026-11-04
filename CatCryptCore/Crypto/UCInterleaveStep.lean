@@ -24,6 +24,12 @@ without simplifying the rest of the activation for an unknown answer first.
 * `MultiHybrid.drive_succ_of_step`, `MultiHybrid.drive_zero_of_step`: a deterministic call.
 * `MultiHybrid.drive_succ_of_step_of_resume`: a deterministic call and resumption.
 * `MultiHybrid.drive_output`: the output ends the activation.
+* `MultiHybrid.idSim_start`, `MultiHybrid.idSim_resume`, `MultiHybrid.idSim_finish`,
+  `MultiHybrid.idSim_drive`: the forwarding hybrid, whose activation is one call at any fuel.
+
+The forwarding hybrid `idSim` is rewritten by its start, resumption and finish rather than
+unfolded, so that its activation at a fuel that is not a numeral (the maximum with the fuel of an
+unknown hybrid beside it in a tensor) is still one call (`idSim_drive`).
 -/
 
 @[expose] public section
@@ -78,5 +84,24 @@ theorem drive_zero_of_step (s : σ) (g : EG) (t : τ) (q : τ × OG)
     π.drive X 0 s (.inl g) t =
       SPComp.bind (π.finish s q.2) fun r => SPComp.pure (r.1, q.1, r.2) := by
   simp only [drive, h, SPComp.pure_bind]
+
+variable {E O : Type}
+
+/-- The start of the forwarding hybrid: the event is passed to the subroutine. -/
+theorem idSim_start (s : Unit) (e : E) :
+    (idSim E O).start s e = SPComp.pure ((), .inl e) := rfl
+
+/-- The resumption of the forwarding hybrid: the answer of the subroutine is the output. -/
+theorem idSim_resume (s : Unit) (o : O) :
+    (idSim E O).resume s o = SPComp.pure ((), .inr o) := rfl
+
+/-- The finish of the forwarding hybrid: the answer of the subroutine is the output. -/
+theorem idSim_finish (s : Unit) (o : O) : (idSim E O).finish s o = SPComp.pure ((), o) := rfl
+
+/-- An activation of the forwarding hybrid is one call of the subroutine, at any fuel. -/
+theorem idSim_drive (X : Sys τ E O) (n : ℕ) (s : Unit) (e : E) (t : τ) :
+    (idSim E O).drive X n s (.inl e) t =
+      SPComp.bind (X.step t e) fun q => SPComp.pure ((), q.1, q.2) := by
+  cases n <;> simp [drive, idSim, SPComp.pure_bind]
 
 end CatCrypt.Crypto.UCTransparent.MultiHybrid

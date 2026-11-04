@@ -19,25 +19,29 @@ an invariant (`Sys.StepMapOn.traceEq`), by the congruences of the constructions 
 a chain of known equivalences. The tactics of this file carry out these three proof methods.
 
 * `sys_step_map f Inv (pres := h) using [d₁, …] with pat` proves `R ≈ₜ I`,
-  `Realizes R I (fun _ _ => 0)` or `RealizesSim R I S (fun _ _ => 0)` by the step map `f` on
-  the invariant `Inv`. It reduces the goal to the four obligations of `Sys.StepMapOn`, closes
-  the two initial ones by `rfl` or `simp`, introduces the state, the event and the invariant in
-  the two per-event obligations (only the step one when `pres` is given), splits the event on
-  the ports (`Sum`) and the state into its components (`Prod`, or by the pattern `pat`), and
-  runs on each branch the loop *prune, split, simplify*: the invariant is simplified, split into
-  its conjuncts and the variables it determines are substituted (a refuted branch is closed);
-  the branch is split on what the real step is stuck on (`blockerOf?`); then the leaf is
-  normalised by `simp only` with the definitions `dᵢ` and the step equations of the
-  constructions on systems (`sysStepSimps`), with the activations evaluated one computation at a
-  time (below), and `simp_all` with the same arguments where that leaves the goal open; a branch
-  still open is split on what its simplified real computation shows stuck (also under the
-  binder of a draw), else by `split`. A leaf that stays open is left as a goal tagged by its
-  obligation and the cases of its branch (`step.inr.none.pos`), in the simplified form;
-  typically the coupling of a sampled value with the simulator's draw. With
+  `Realizes R I (fun _ _ => 0)`, `RealizesSim R I S (fun _ _ => 0)` or an equality of views
+  `view R Z = view I Z` (`Sys.traceEq_iff_view_eq`) by the step map `f` on the invariant `Inv`.
+  It reduces the goal to the four obligations of `Sys.StepMapOn`, closes the two initial ones by
+  `rfl` or `simp`, introduces the state, the event and the invariant in the two per-event
+  obligations (only the step one when `pres` is given), splits the event on the ports (`Sum`)
+  and into its components (`Prod`), the state into its components (`Prod`, or by the pattern
+  `pat`), and runs on each branch the loop *prune, split, simplify*: the invariant is
+  simplified, split into its conjuncts and the variables it determines are substituted (a
+  refuted branch is closed); the branch is split on what the real step is stuck on
+  (`blockerOf?`); then the leaf is normalised by `simp only` with the definitions `dᵢ` and the
+  step equations of the constructions on systems (`sysStepSimps`), with the activations
+  evaluated one computation at a time (below), and `simp_all` with the same arguments where that
+  leaves the goal open; a branch still open is split on what its simplified real computation
+  shows stuck (also under the binder of a draw), else by `split`. A leaf that stays open is left
+  as a goal tagged by its obligation and the cases of its branch (`step.inr.none.pos`), in the
+  simplified form; typically the coupling of a sampled value with the simulator's draw. With
   `(ports := [h₁, …])` the step obligation of a port is the given `hᵢ : Sys.StepPort …`.
 * `sys_step_port using [d₁, …] with pat` proves the step obligation of one port
   (`Sys.StepPort R I Inv f ι`) by the per-event part of `sys_step_map`, so that each port is
-  its own declaration with its own heartbeat budget.
+  its own declaration with its own heartbeat budget; also the step obligation of a step map
+  without invariant, `∀ t e, SPComp.map (fun p => (f p.1, p.2)) (R.step t e) = I.step (f t) e`,
+  as the hypotheses of `Sys.traceEq_of_stepMap`, `view_eq_of_stepMap` and their variants ask
+  it (the invariant is introduced only when the goal has one).
 * `sys_step_pres using [d₁, …] with pat` runs the per-event part alone on a goal
   `∀ t e, Inv t → ∀ q, IsOutcome (R.step t e) q → Inv q.1` (or any goal of the form
   `∀ t e, Inv t → P t e`), so that the preservation of the invariant can be proved in its own
@@ -49,7 +53,7 @@ a chain of known equivalences. The tactics of this file carry out these three pr
   whose sides are equal is closed by reflexivity.
 * `trace_eq_chain` closes `R ≈ₜ I` by a path of local hypotheses `A ≈ₜ B`, each usable in both
   directions, from `R` to `I`, composed by transitivity; also behind `Realizes R I (fun _ _ => 0)`
-  and `RealizesSim R I S (fun _ _ => 0)`.
+  and `RealizesSim R I S (fun _ _ => 0)` and an equality of views.
 * `sys_blocker` reports what the goal is stuck on, as `sys_step_map` reads it.
 
 The case analysis of `sys_step_map` follows the reduction of the real step: a variable is split
@@ -136,7 +140,9 @@ initialize registerTraceClass `sys_step_map
 
 /-- The step equations of the constructions on systems, used by `sys_step_map` beside the
 definitions given to it: the monadic laws of `SPComp`, the ports of `Sys.ofPorts`, the lazily
-keyed systems, the activations of multi-call hybrids and their tensors, the uniform draws, and
+keyed systems, the activations of multi-call hybrids and their tensors (an activation is unfolded
+by `stepFuelStart` at a numeral fuel only; the forwarding hybrid is rewritten by its start,
+resumption, finish and one-call activation, not unfolded), the uniform draws, and
 the possible outcomes of a uniform draw (`isOutcome_bind_sample_iff`). -/
 def sysStepSimps : Array Name := #[
   ``CatCrypt.Core.SPComp.map, ``CatCrypt.Core.SPComp.pure_bind,
@@ -146,9 +152,11 @@ def sysStepSimps : Array Name := #[
   ``CatCrypt.Crypto.UCTransparent.KeyedSys.lazy,
   ``CatCrypt.Crypto.UCTransparent.KeyedSys.lazyStep,
   ``CatCrypt.Crypto.UCTransparent.KeyedSys.ofPorts,
-  ``CatCrypt.Crypto.UCTransparent.MultiHybrid.stepFuel,
   ``CatCrypt.Crypto.UCTransparent.MultiHybrid.drive,
-  ``CatCrypt.Crypto.UCTransparent.MultiHybrid.idSim,
+  ``CatCrypt.Crypto.UCTransparent.MultiHybrid.idSim_start,
+  ``CatCrypt.Crypto.UCTransparent.MultiHybrid.idSim_resume,
+  ``CatCrypt.Crypto.UCTransparent.MultiHybrid.idSim_finish,
+  ``CatCrypt.Crypto.UCTransparent.MultiHybrid.idSim_drive,
   ``CatCrypt.Crypto.UCTransparent.MultiHybrid.idSim_stepFuel,
   ``CatCrypt.Crypto.UCTransparent.MultiHybrid.tensor_withSub_ofPorts_step_inl,
   ``CatCrypt.Crypto.UCTransparent.MultiHybrid.tensor_withSub_ofPorts_step_inr,
@@ -230,22 +238,40 @@ def driveCall : Simp.Simproc := fun e => do
   | k + 1 => visitBy e (← mkAppM ``CatCrypt.Crypto.UCTransparent.MultiHybrid.drive_succ_of_step
       #[π, X, mkNatLit k, s, g, t, q, h])
 
-/-- Pre-procedure on `MultiHybrid.stepFuel π X n (s, t) e`: a start that simplifies to
-`SPComp.pure r` is followed by the rest of the activation from `r` (`stepFuel_of_start`). -/
+/-- Pre-procedure on `MultiHybrid.stepFuel π X n (s, t) e` with a numeral fuel `n`: a start
+that simplifies to `SPComp.pure r` is followed by the rest of the activation from `r`
+(`stepFuel_of_start`); another start is followed by the activation unfolded. At a fuel that is
+not a numeral (the fuel of an unknown hybrid) the calls cannot be counted, and the activation is
+left to the rewriting by the equations of its hybrid (`idSim_stepFuel` for the forwarding hybrid
+at any fuel, or one given with the definitions), which an unfolding would hide. -/
 def stepFuelStart : Simp.Simproc := fun e => do
   unless e.isAppOfArity ``CatCrypt.Crypto.UCTransparent.MultiHybrid.stepFuel 11 do
     return .continue
   let args := e.getAppArgs
   let (π, X, n, st, ev) := (args[6]!, args[7]!, args[8]!, args[9]!, args[10]!)
+  if (← fuelValue? n).isNone then return .continue
   let (s, t) ← match (← whnfR st).app4? ``Prod.mk with
     | some (_, _, s, t) => pure (s, t)
     | none => pure (← mkAppM ``Prod.fst #[st], ← mkAppM ``Prod.snd #[st])
   let some (r, h) ← evalPure? (← mkAppM ``CatCrypt.Crypto.UCTransparent.MultiHybrid.start
-      #[π, s, ev]) | return .continue
+      #[π, s, ev]) | do
+    let some e' ← unfoldDefinition? e | return .continue
+    return .visit { expr := e' }
   visitBy e (← mkAppM ``CatCrypt.Crypto.UCTransparent.MultiHybrid.stepFuel_of_start
     #[π, X, n, s, t, ev, r, h])
 
-/-- The pre-procedures `bindFirst`, `driveCall` and `stepFuelStart`, keyed by their heads. -/
+/-- Pre-procedure on `MultiHybrid.fuel π`: the fuel as a numeral when it reduces to one
+(`fuelValue?`), so that the fuel of a hybrid that is not unfolded (the forwarding hybrid) is
+evaluated beside the fuel of an unknown hybrid in a tensor. -/
+def fuelEval : Simp.Simproc := fun e => do
+  unless e.isAppOfArity ``CatCrypt.Crypto.UCTransparent.MultiHybrid.fuel 6 do
+    return .continue
+  let some k ← fuelValue? e | return .continue
+  if e.nat? == some k then return .continue
+  return .done { expr := mkNatLit k }
+
+/-- The pre-procedures `bindFirst`, `driveCall`, `stepFuelStart` and `fuelEval`, keyed by their
+heads. -/
 def evalSimprocs : MetaM Simp.Simprocs := do
   let key (c : Name) : MetaM (Array SimpTheoremKey) := do
     let f ← mkConstWithFreshMVarLevels c
@@ -255,7 +281,8 @@ def evalSimprocs : MetaM Simp.Simprocs := do
   for (c, n, p) in [(``CatCrypt.Core.SPComp.bind, `sysRewrite.bindFirst, bindFirst),
       (``CatCrypt.Crypto.UCTransparent.MultiHybrid.drive, `sysRewrite.driveCall, driveCall),
       (``CatCrypt.Crypto.UCTransparent.MultiHybrid.stepFuel, `sysRewrite.stepFuelStart,
-        stepFuelStart)] do
+        stepFuelStart),
+      (``CatCrypt.Crypto.UCTransparent.MultiHybrid.fuel, `sysRewrite.fuelEval, fuelEval)] do
     s := s.addCore (← key c) n false (.inl p)
   return s
 
@@ -452,17 +479,18 @@ partial def destruct (g : MVarId) (x : FVarId) : MetaM MVarId := do
     if f.isFVar then g ← destruct g f.fvarId!
   return g
 
-/-- Split the free variable `x` of `g` recursively over sums (the ports of an event). -/
+/-- Split the free variable `x` of `g` recursively over sums (the ports of an event) and pairs
+(an event tagged by a copy, a session or a party); a goal is tagged by the constructors of the
+sums. -/
 partial def splitPorts (g : MVarId) (x : FVarId) : MetaM (List MVarId) := do
-  let isSum ← g.withContext do
-    let some i ← inductHead? (← x.getType) | return false
-    return i.name == ``Sum || i.name == ``PUnit
-  unless isSum do return [g]
+  let some i ← g.withContext do inductHead? (← x.getType) | return [g]
+  unless i.name == ``Sum || i.name == ``PUnit || i.name == ``Prod do return [g]
   let tag ← g.getTag
   let subs ← g.cases x
   let mut out := []
   for s in subs do
-    if let some c := s.ctorName then s.mvarId.setTag (Name.mkStr tag c.getString!)
+    if i.name == ``Prod then s.mvarId.setTag tag
+    else if let some c := s.ctorName then s.mvarId.setTag (Name.mkStr tag c.getString!)
     let mut gs := [s.mvarId]
     for f in s.fields do
       if f.isFVar then
@@ -576,14 +604,16 @@ partial def solveLeaf (st : LeafSteps) (g : MVarId) (depth : Nat) : TacticM (Lis
 def maxDepth : Nat := 12
 
 /-- The per-event obligation `g` (`pres` or `step`): introduce the state, the event and the
-invariant, destructure the state (by `pat`, or over pairs), split the event on its ports, close
-a port by one of the proofs `ports` of its obligation (`Sys.StepPort`), and run `solveLeaf` on
+invariant (when the goal is an implication after the first two), destructure the state (by
+`pat`, or over pairs), split the event on its ports and its components, close a port by one of
+the proofs `ports` of its obligation (`Sys.StepPort`), and run `solveLeaf` on
 each other case. -/
 def perEvent (st : LeafSteps) (pat : Option (TSyntax `Lean.Parser.Tactic.rcasesPatMed))
     (g : MVarId) (ports : Array Term := #[]) : TacticM (List MVarId) := do
   let tag := (← g.getTag).eraseMacroScopes
   let g ← g.deltaTarget (· == ``CatCrypt.Crypto.UCTransparent.Sys.StepPort)
-  let (#[t, _, _], g) ← g.introN 3 [`sysState, `sysEvent, `inv] | failure
+  let (#[t, _], g) ← g.introN 2 [`sysState, `sysEvent] | failure
+  let g ← if (← whnfR (← g.getType)).isArrow then pure (← g.intro `inv).2 else pure g
   g.setTag tag
   let gs ← match pat with
     | some p =>
@@ -606,11 +636,24 @@ def perEvent (st : LeafSteps) (pat : Option (TSyntax `Lean.Parser.Tactic.rcasesP
     unless closed do out := out ++ (← solveLeaf st g maxDepth)
   return out
 
+/-- The left side of an equation `view R Z = view I Z`, or of the body of
+`∀ ζ Z, view R Z = view I Z`, is a view. -/
+def isViewEq (tgt : Expr) : MetaM Bool :=
+  forallTelescope tgt fun _ b => do
+    let some (_, l, _) := b.eq? | return false
+    return l.isAppOf ``CatCrypt.Crypto.UCTransparent.view
+
 /-- Reduce a goal `Realizes R I (fun _ _ => 0)` or `RealizesSim R I S (fun _ _ => 0)` to
-`R ≈ₜ I`, resp. `R ≈ₜ S.withSub I`. -/
+`R ≈ₜ I`, resp. `R ≈ₜ S.withSub I`; and an equality of views `view R Z = view I Z`, for one
+environment or for all (`∀ ζ Z, …`), to `R ≈ₜ I` (`Sys.traceEq_iff_view_eq`). -/
 def toTraceEq : TacticM Unit := do
-  let tgt ← instantiateMVars (← getMainTarget)
-  if tgt.isAppOf ``CatCrypt.Crypto.UCTransparent.RealizesSim then
+  let tgt := (← instantiateMVars (← getMainTarget)).cleanupAnnotations
+  if ← isViewEq tgt then
+    evalTactic (← `(tactic|
+      first
+        | refine CatCrypt.Crypto.UCTransparent.Sys.traceEq_iff_view_eq.mp ?_
+        | refine CatCrypt.Crypto.UCTransparent.Sys.traceEq_iff_view_eq.mp ?_ _ _))
+  else if tgt.isAppOf ``CatCrypt.Crypto.UCTransparent.RealizesSim then
     evalTactic (← `(tactic| refine CatCrypt.Crypto.UCTransparent.Sys.TraceEq.realizesSim ?_))
   else if tgt.isAppOf ``CatCrypt.Crypto.UCTransparent.Realizes then
     evalTactic (← `(tactic| refine CatCrypt.Crypto.UCTransparent.Sys.TraceEq.realizes ?_))
@@ -817,9 +860,10 @@ def chainProof? (es : Array (Expr × Expr × Expr)) (src dst : Expr) : MetaM (Op
     frontier := next
   return none
 
-/-- `trace_eq_chain` closes `R ≈ₜ I`, or `Realizes R I (fun _ _ => 0)`, or
-`RealizesSim R I S (fun _ _ => 0)`, by a path of local hypotheses `A ≈ₜ B` from `R` to `I`, each
-usable in both directions, composed by transitivity (reflexivity for the empty path). -/
+/-- `trace_eq_chain` closes `R ≈ₜ I`, `Realizes R I (fun _ _ => 0)`,
+`RealizesSim R I S (fun _ _ => 0)` or `view R Z = view I Z` by a path of local hypotheses
+`A ≈ₜ B` from `R` to `I`, each usable in both directions, composed by transitivity (reflexivity
+for the empty path). -/
 syntax (name := traceEqChain) "trace_eq_chain" : tactic
 
 @[tactic traceEqChain] def evalTraceEqChain : Tactic := fun _ => do

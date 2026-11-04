@@ -220,23 +220,13 @@ theorem realizes_tensor_mapHon (S : MultiHybrid σ EA OA EA' OA')
   obtain ⟨IL, IR, hL, hR⟩ := hI
   have hJL : ∀ t g, (I.mapPorts (Sum.map a id) (Sum.map c id)).step t (.inl g) =
       SPComp.map (fun q => (q.1, .inl q.2)) ((IL.mapPorts a c).step t g) := by
-    intro t g
-    simp [Sys.mapPorts, Sys.relabel, hL, SPComp.map, SPComp.bind_assoc, SPComp.pure_bind]
+    sys_step_port using [Sys.mapPorts_step, hL]
   have hJR : ∀ t g, (I.mapPorts (Sum.map a id) (Sum.map c id)).step t (.inr g) =
       SPComp.map (fun q => (q.1, .inr q.2)) (IR.step t g) := by
-    intro t g
-    simp [Sys.mapPorts, Sys.relabel, hR, SPComp.map, SPComp.bind_assoc, SPComp.pure_bind]
-  refine realizes_zero_of_stepMap _ _ id rfl ?_
-  rintro ⟨⟨⟨⟩, s⟩, u⟩ (h | e)
-  · rw [id, tensor_withSub_step_inl _ _ _ _ hJL, idSim_stepFuel]
-    simp only [Sys.mapPorts, Sys.relabel, Sum.map_inl, id]
-    rw [tensor_withSub_step_inl _ _ I IL hL, idSim_stepFuel]
-    simp [SPComp.map, SPComp.bind_assoc, SPComp.pure_bind]
-  · rw [id, tensor_withSub_step_inr _ _ _ _ hJR]
-    simp only [Sys.mapPorts, Sys.relabel, Sum.map_inr, id]
-    rw [tensor_withSub_step_inr _ _ I IR hR]
-    simp only [SPComp.map, SPComp.bind_assoc, SPComp.pure_bind]
-    rfl
+    sys_step_port using [Sys.mapPorts_step, hR]
+  sys_step_map id (fun _ => True) using [tensor_withSub_step_inl _ _ _ _ hJL,
+    tensor_withSub_step_inr _ _ _ _ hJR, tensor_withSub_step_inl _ _ I IL hL,
+    tensor_withSub_step_inr _ _ I IR hR, Sys.mapPorts_step]
 
 variable [DecidableEq ι] [Inhabited ι]
 
@@ -252,35 +242,26 @@ theorem realizes_tensor_indexedSplit (S : MultiHybrid σ EA OA EA' OA')
   obtain ⟨IL, IR, hL, hR⟩ := hI
   have hJL : ∀ t g, ((I.indexed (ι := ι)).mapPorts splitIdx id).step t (.inl g) =
       SPComp.map (fun q => (q.1, .inl q.2)) ((IL.indexed (ι := ι)).step t g) := by
-    rintro t ⟨i, h⟩
-    simp [Sys.mapPorts, Sys.relabel, splitIdx, hL, SPComp.map, SPComp.bind_assoc,
-      SPComp.pure_bind]
+    sys_step_port using [Sys.mapPorts_step, splitIdx, hL]
   have hJR : ∀ t g, ((I.indexed (ι := ι)).mapPorts splitIdx id).step t (.inr g) =
       SPComp.map (fun q => (q.1, .inr q.2)) ((IR.indexed (ι := ι)).step t g) := by
-    rintro t ⟨i, a⟩
-    simp [Sys.mapPorts, Sys.relabel, splitIdx, hR, SPComp.map, SPComp.bind_assoc,
-      SPComp.pure_bind]
+    sys_step_port using [Sys.mapPorts_step, splitIdx, hR]
   have hu : ∀ (ss : ι → σ) (us : ι → υ) (i : ι) (x : σ) (y : υ),
       Function.update (fun k => (((), ss k), us k)) i (((), x), y) =
         fun k => (((), Function.update ss i x k), Function.update us i y k) := by
     intro ss us i x y
     funext k
     rcases eq_or_ne k i with rfl | hk <;> simp [*]
-  refine realizes_zero_of_stepMap _ _ (fun s i => (((), s.1.2.1 i), s.2 i)) rfl ?_
-  rintro ⟨⟨⟨⟩, ss, j⟩, us⟩ (⟨i, h⟩ | ⟨i, e⟩)
-  · rw [tensor_withSub_step_inl _ _ _ _ hJL, idSim_stepFuel]
-    simp only [Sys.mapPorts, Sys.relabel, splitIdx, Sys.indexed_step]
-    rw [tensor_withSub_step_inl _ _ I IL hL, idSim_stepFuel]
-    simp only [SPComp.map, SPComp.bind_assoc, SPComp.pure_bind, hu, Function.update_eq_self]
-    rfl
-  · rw [tensor_withSub_step_inr _ _ _ _ hJR]
-    simp only [Sys.mapPorts, Sys.relabel, splitIdx, Sys.indexed_step]
-    rw [tensor_withSub_step_inr _ _ I IR hR]
+  sys_step_map (fun s i => (((), s.1.2.1 i), s.2 i)) (fun _ => True)
+    using [tensor_withSub_step_inl _ _ _ _ hJL, tensor_withSub_step_inr _ _ _ _ hJR,
+      tensor_withSub_step_inl _ _ I IL hL, tensor_withSub_step_inr _ _ I IR hR,
+      Sys.mapPorts_step, splitIdx, hu, Function.update_eq_self]
+  -- the adversary's port: the activation of the active copy (`indexedKeep_stepFuel`)
+  case step.inr us ss j i e =>
     have hk := congrArg (SPComp.map fun q : ((ι → σ) × (ι → υ)) × OA =>
       (fun k => (((), q.1.1 k), q.1.2 k), (Sum.inr q.2 : OH ⊕ OA)))
-      (indexedKeep_stepFuel S IR (max (idSim (ι × EH) OH).fuel (S.indexedKeep (ι := ι)).fuel)
-        ss j i us e)
-    simp only [SPComp.map, SPComp.bind_assoc, SPComp.pure_bind, hu] at hk ⊢
+      (indexedKeep_stepFuel S IR (S.indexedKeep (ι := ι)).fuel ss j i us e)
+    simp only [SPComp.map, SPComp.bind_assoc, SPComp.pure_bind] at hk ⊢
     exact hk
 
 end MultiHybrid
@@ -488,11 +469,10 @@ theorem pvwBase_realizesSim [NeZero κ] (crs : CRS gp) (emb : (Fin m → Bool) �
     (π := (MultiHybrid.idSim (HEv κ m) (HOut m)).tensor
       ((PVWPull.simP gp 1).indexedKeep (ι := Fin κ)))
     (hπ := (MultiHybrid.idSim_opaque (baseHV κ m)).tensor
-      (MultiHybrid.opaque_eqView _).indexedKeep) id rfl (fun t e => ?_) h₂
-  · exact fun ζ Z => le_of_le_of_eq (h₃ ζ Z) Finset.sum_const_zero
-  · rcases e with (⟨i, p⟩ | ⟨i, b⟩) | ⟨i, a⟩ <;>
-      simp [baseG, FOTSchedPar, FOTSched, Sys.mapPorts, Sys.relabel, splitIdx, SPComp.map,
-        SPComp.bind_assoc, SPComp.pure_bind]
+      (MultiHybrid.opaque_eqView _).indexedKeep) id rfl
+      (by sys_step_port using [baseG, FOTSchedPar, FOTSched, Sys.mapPorts, Sys.relabel,
+        splitIdx]) h₂
+  exact fun ζ Z => le_of_le_of_eq (h₃ ζ Z) Finset.sum_const_zero
 
 /-! ## Idle events through forwarding -/
 

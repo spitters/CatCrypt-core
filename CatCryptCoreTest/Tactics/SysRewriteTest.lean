@@ -56,6 +56,14 @@ example : latch₂ ≈ₜ latch := by
   sys_step_map (fun t => if t.1 then some t.2 else none) (fun t => t.1 = false → t.2 = false)
     using [latch, latch₂]
 
+/-- An equality of views, for one environment, by the same step map. -/
+example {ζ : Type} (Z : Strat ζ Bool Bool) : view latch Z = view latch₂ Z := by
+  sys_step_map latchMap (fun _ => True) using [latch, latch₂, latchMap]
+
+/-- An equality of views for all environments, by the same step map. -/
+example : ∀ (ζ : Type) (Z : Strat ζ Bool Bool), view latch Z = view latch₂ Z := by
+  sys_step_map latchMap (fun _ => True) using [latch, latch₂, latchMap]
+
 /-! ## `sys_step_pres` -/
 
 /-- The invariant of the last example, preserved by the steps of `latch₂`. -/
@@ -90,6 +98,11 @@ example : flip ≈ₜ thrice.withSub flip := by
 theorem latch_port : Sys.StepPort latch latch₂ (fun _ => True) latchMap id := by
   sys_step_port using [latch, latch₂, latchMap]
 
+/-- The step obligation of a step map without invariant (`Sys.traceEq_of_stepMap`). -/
+example : ∀ t e, SPComp.map (fun p => (latchMap p.1, p.2)) (latch.step t e) =
+    latch₂.step (latchMap t) e := by
+  sys_step_port using [latch, latch₂, latchMap]
+
 /-- A step map whose step obligation is given port by port. -/
 example : latch ≈ₜ latch₂ := by
   sys_step_map latchMap (fun _ => True) (ports := [latch_port]) using [latch, latch₂, latchMap]
@@ -107,6 +120,11 @@ example (X : Sys τ E O) (Y : Sys υ E O) (h : X ≈ₜ Y) (fe : E' → E) (fo :
 /-- A chain of two hypotheses, one used backwards. -/
 example (X : Sys τ E O) (Y : Sys υ E O) (Z : Sys ρ E O) (h₁ : X ≈ₜ Y) (h₂ : Z ≈ₜ Y) :
     X ≈ₜ Z := by
+  trace_eq_chain
+
+/-- A chain behind an equality of views. -/
+example {ζ : Type} (X : Sys τ E O) (Y : Sys υ E O) (h : Y ≈ₜ X) (Z : Strat ζ E O) :
+    view X Z = view Y Z := by
   trace_eq_chain
 
 /-- A chain behind a realization at distance `0`. -/
