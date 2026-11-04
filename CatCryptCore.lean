@@ -303,6 +303,9 @@ public import CatCryptCore.Crypto.Messaging.FSAEAD
 public import CatCryptCore.Crypto.Messaging.DoubleRatchet
 public import CatCryptCore.Crypto.Signal.FSAEAD
 public import CatCryptCore.Crypto.Signal.DoubleRatchet_CKA
+public import CatCryptCore.Crypto.Signal.DoubleRatchet_UC
+public import CatCryptCore.Crypto.Signal.TripleRatchet
+public import CatCryptCore.Crypto.Signal.TripleRatchet_UC
 public import CatCryptCore.Crypto.Signal.DoubleRatchet.ChainKDF
 public import CatCryptCore.Crypto.Signal.DoubleRatchet.Primitives
 public import CatCryptCore.Crypto.Signal.RatchetChainHybrid
