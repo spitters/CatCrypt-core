@@ -333,6 +333,7 @@ public import CatCryptCore.Quantum.QPullbackPar
 public import CatCryptCore.Quantum.QPullbackFeedback
 public import CatCryptCore.Quantum.QPullbackAdversary
 public import CatCryptCore.Quantum.QPullbackCost
+public import CatCryptCore.Quantum.QTreeKind
 public import CatCryptCore.Quantum.QRealizesStep
 public import CatCryptCore.Quantum.QSimTimed
 public import CatCryptCore.Quantum.QOTPReactive
