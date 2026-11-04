@@ -153,6 +153,7 @@ public import CatCryptCore.Tactics.PartyDerive
 -- Crypto foundation
 public import CatCryptCore.Crypto.Game
 public import CatCryptCore.Crypto.Advantage
+public import CatCryptCore.Crypto.AdvantageMap
 public import CatCryptCore.Crypto.SDist
 public import CatCryptCore.Crypto.SDistrLift
 public import CatCryptCore.Crypto.UC
