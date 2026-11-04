@@ -28,6 +28,16 @@ At the abstract level with `Word : CryptoWord W`, the DDH game becomes:
 * `DDHDef` — a Diffie-Hellman group (ecdh operation + key generation)
 * `DDH_Game_Real` / `DDH_Game_Ideal` — the real/ideal DDH games
 * `DDH_Advantage` — advantage of an adversary in breaking DDH
+* `ECDHSym.ECDHSymmetric` — `keygen` returns pairs `(x, pub x)` and `ecdh` commutes on
+  public keys (`ECDHSym.CommutesOnPub`), the commutativity a protocol proof states over
+  `DDHDef`
+
+## Commutativity on public keys
+
+The law `ecdh x (pub y) = ecdh y (pub x)` mentions a private key and the public key of the
+other party. A law quantified over two independent pairs, `f p₁.1 p₂.2 = f p₂.1 p₁.2` for
+all `p₁ p₂ : W × W`, makes `f` constant (take `p₁ = (a, d)` and `p₂ = (c, b)`), so no
+Diffie-Hellman group satisfies it; `CommutesOnPub` is the form that the groups satisfy.
 
 ## Usage in EDHOC
 
@@ -95,7 +105,7 @@ abbrev DDH_Adversary (W : Type) := W → W → W → SPComp Bool
 The third element is the true DH shared secret. -/
 noncomputable def DDH_Game_Real (D : DDHDef W) (A : DDH_Adversary W) : SPComp Bool := do
   let ⟨a, g_a⟩ ← D.keygen
-  let ⟨b, g_b⟩ ← D.keygen
+  let ⟨_b, g_b⟩ ← D.keygen
   let shared := D.ecdh a g_b  -- = g^{ab}
   A g_a g_b shared
 
@@ -130,3 +140,39 @@ theorem DDH_Game_Ideal_isPure (D : DDHDef W) (A : DDH_Adversary W)
   exact hA g_a g_b c
 
 end CatCrypt.Crypto.Assumptions
+
+namespace CatCrypt.Crypto.Assumptions.ECDHSym
+
+open CatCrypt.Core CatCrypt.Prob CatCrypt.Crypto
+
+/-- `f` commutes on public keys derived by `pub`: pairing a private key with
+the other party's public key gives the same value in either order. -/
+def CommutesOnPub {W : Type} (f : W → W → W) (pub : W → W) : Prop :=
+  ∀ x y : W, f x (pub y) = f y (pub x)
+
+variable {W : Type} [SampleableType W]
+
+/-- `D.ecdh` commutes on the key pairs `D.keygen` produces: some `pub` sends a
+private key to its public key, `D.keygen` samples a private key `x` and
+returns `(x, pub x)`, and `D.ecdh` commutes on public keys. -/
+def ECDHSymmetric (D : DDHDef W) : Prop :=
+  ∃ pub : W → W,
+    D.keygen = (SPComp.sample W).bind (fun x => SPComp.pure (x, pub x)) ∧
+    CommutesOnPub D.ecdh pub
+
+/-- A `keygen` bind rewritten as a bind over private keys, with the key pair
+appearing as the literal `(x, pub x)`. -/
+theorem keygen_bind {D : DDHDef W} {pub : W → W}
+    (hkg : D.keygen = (SPComp.sample W).bind (fun x => SPComp.pure (x, pub x)))
+    {β : Type} (k : W × W → SPComp β) :
+    D.keygen.bind k = (SPComp.sample W).bind (fun x => k (x, pub x)) := by
+  rw [hkg, SPComp.bind_assoc]
+  simp only [SPComp.pure_bind]
+
+/-- Commutativity in the projection shape of key pairs `(x, pub x)`. -/
+theorem ecdh_pair_comm {D : DDHDef W} {pub : W → W}
+    (hsym : CommutesOnPub D.ecdh pub) (x y : W) :
+    D.ecdh (x, pub x).1 (y, pub y).2 = D.ecdh (y, pub y).1 (x, pub x).2 :=
+  hsym x y
+
+end CatCrypt.Crypto.Assumptions.ECDHSym
