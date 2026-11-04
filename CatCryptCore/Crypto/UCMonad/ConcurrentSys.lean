@@ -7,6 +7,7 @@ module
 
 public import CatCryptCore.Crypto.UCPullbackSemantics
 public import CatCryptCore.Crypto.UCParallel
+public import CatCryptCore.Crypto.TraceEqLaws
 
 /-!
 # Concurrent UC emulation with the adversary and the simulator as systems
@@ -57,33 +58,13 @@ variable {α σ φ τ AI AM AP AF Lk LM LF Lk' P Oh : Type}
 
 /-! ## Views -/
 
-/-- Realization depends on the second system only through its views. -/
-theorem realizes_of_view_eq_right {τ υ υ' E O : Type} {R : Sys τ E O} {I : Sys υ E O}
-    {I' : Sys υ' E O} {b : (ζ : Type) → Env (Strat ζ E O) ζ → ℝ≥0∞}
-    (hv : ∀ (ζ : Type) (Z : Strat ζ E O), view I Z = view I' Z) (h : Realizes R I b) :
-    Realizes R I' b := by
-  intro ζ
-  have e : (view I : Strat ζ E O → SPComp ζ) = view I' := funext (hv ζ)
-  rw [← e]
-  exact h ζ
-
-/-- Realization depends on the first system only through its views. -/
-theorem realizes_of_view_eq_left {τ τ' υ E O : Type} {R : Sys τ E O} {R' : Sys τ' E O}
-    {I : Sys υ E O} {b : (ζ : Type) → Env (Strat ζ E O) ζ → ℝ≥0∞}
-    (hv : ∀ (ζ : Type) (Z : Strat ζ E O), view R Z = view R' Z) (h : Realizes R I b) :
-    Realizes R' I b := by
-  intro ζ
-  have e : (view R : Strat ζ E O → SPComp ζ) = view R' := funext (hv ζ)
-  rw [← e]
-  exact h ζ
-
 /-- Realization is unchanged by attaching the forwarding adversary to the first system. -/
 theorem realizes_attach_dummy_iff {υ : Type} (R : Sys τ (Event P AP) (Oh × Lk))
     (I : Sys υ (Event P AP) (Oh × Lk))
     (b : (ζ : Type) → Env (Strat ζ (Event P AP) (Oh × Lk)) ζ → ℝ≥0∞) :
     Realizes (R.attach (AdvSys.dummy AP Lk)) I b ↔ Realizes R I b :=
-  ⟨realizes_of_view_eq_left fun _ Z => AdvSys.view_attach_dummy R Z,
-    realizes_of_view_eq_left fun _ Z => (AdvSys.view_attach_dummy R Z).symm⟩
+  ⟨(Sys.traceEq_iff_view_eq.mpr fun _ Z => AdvSys.view_attach_dummy R Z).realizes_left,
+    (Sys.traceEq_iff_view_eq.mpr fun _ Z => AdvSys.view_attach_dummy R Z).symm.realizes_left⟩
 
 /-! ## Emulation -/
 
@@ -111,7 +92,8 @@ theorem ucEmulatesSys_of_realizes {R : Sys τ (Event P AP) (Oh × Lk)}
     {b : (ζ : Type) → Env (Strat ζ (Event P AP) (Oh × Lk)) ζ → ℝ≥0∞}
     (S : AdvSys σ AP AF LF Lk) (h : Realizes R (F.attach S) b) : UCEmulatesSys R F b :=
   fun _ _ _ A => ⟨_, S.comp A,
-    realizes_of_view_eq_right (fun _ Z => AdvSys.view_attach_comp F S A Z) (h.attach A)⟩
+    (Sys.traceEq_iff_view_eq.mpr fun _ Z => AdvSys.view_attach_comp F S A Z).realizes_right
+      (h.attach A)⟩
 
 /-- Emulation against the forwarding adversary is a realization of `F.attach S` by `R` for
 some simulator `S`. -/

@@ -973,7 +973,8 @@ theorem realizesSim_prog {LS LR EGA OGA : Type} [Countable LS] [Countable LR]
       (Simulator.ofMultiHybrid (simW ans sch stat pkEv simS simR hS hR)
         (simW_opaque ans sch stat pkEv simS simR hS hR)) b) :
     RealizesSim (realP H φS φR ans) I (simP ans sch stat pkEv simS simR) b := by
-  refine realizes_of_view_eq (fun ζ Z => view_realP_eq H φS φR ans Z) ?_
+  refine (Sys.traceEq_iff_view_eq.mpr fun ζ Z =>
+    view_realP_eq H φS φR ans Z).symm.realizes_left ?_
   exact fun ζ Z => le_of_le_of_eq ((Realizes.trans h
     (Sys.StepEq.realizes (simLoop_stepEq ans sch stat pkEv simS simR hS hR I)).1) ζ Z)
     (add_zero _)

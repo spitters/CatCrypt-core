@@ -42,8 +42,6 @@ adversary events related by `VA`.
   the view and the tag, and its output map preserves the view at every tag.
 * `wakeHybrid_opaque`: the relabelling hybrid of the wake closure is opaque from
   `VH.wake W` and `VA` to `VH.sum VA` with the equality view on wakes.
-* `MultiHybrid.drive_stepMap`, `MultiHybrid.withSub_stepMap`: a state map between subroutines
-  that commutes with their steps commutes with a multi-call hybrid running with them.
 * `RealizesSim.wakeClose`: if `R` realizes `I` behind the simulator `S` with bound `b`, then the
   wake closure of `R` realizes `I` behind `Simulator.wakeClose S`, with bound `b` at the reduced
   environment of the feedback hybrid and the relabelling.
@@ -64,34 +62,6 @@ open scoped ENNReal
 namespace MultiHybrid
 
 variable {σ τ υ E O EG OG : Type}
-
-/-- The rest of an activation commutes with a state map `f` between subroutines whose steps
-commute with `f`. -/
-theorem drive_stepMap (π : MultiHybrid σ E O EG OG) {X : Sys τ EG OG} {Y : Sys υ EG OG}
-    (f : τ → υ)
-    (hstep : ∀ t g, SPComp.map (fun p => (f p.1, p.2)) (X.step t g) = Y.step (f t) g) :
-    ∀ (n : ℕ) (s : σ) (d : EG ⊕ O) (t : τ),
-      SPComp.map (fun p => (p.1, f p.2.1, p.2.2)) (π.drive X n s d t) = π.drive Y n s d (f t) := by
-  intro n
-  induction n with
-  | zero =>
-    rintro s (g | o) t
-    · simp only [drive, ← hstep, SPComp.map, SPComp.bind_assoc, SPComp.pure_bind]
-    · simp only [drive, SPComp.map, SPComp.pure_bind]
-  | succ n ih =>
-    rintro s (g | o) t
-    · simp only [drive, ← hstep, ← ih, SPComp.map, SPComp.bind_assoc, SPComp.pure_bind]
-    · simp only [drive, SPComp.map, SPComp.pure_bind]
-
-/-- A step of `π` running with `X` commutes with a state map `f` from `X` to `Y` whose steps
-commute with `f`. -/
-theorem withSub_stepMap (π : MultiHybrid σ E O EG OG) {X : Sys τ EG OG} {Y : Sys υ EG OG}
-    (f : τ → υ)
-    (hstep : ∀ t g, SPComp.map (fun p => (f p.1, p.2)) (X.step t g) = Y.step (f t) g)
-    (t : σ × τ) (e : E) :
-    SPComp.map (fun p => ((p.1.1, f p.1.2), p.2)) ((π.withSub X).step t e) =
-      (π.withSub Y).step (t.1, f t.2) e := by
-  simp only [withSub, ← drive_stepMap π f hstep, SPComp.map, SPComp.bind_assoc, SPComp.pure_bind]
 
 /-- **Opacity of a relabelling.** The relabelling hybrid is opaque from `W` to `V` when the
 event map `fe` sends events related by `V.ev` to equal tags and to events related by `W.ev`,

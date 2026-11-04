@@ -727,15 +727,15 @@ theorem iknpLazy_realizesSim {υ : Type} {I : Sys υ (InEv m M ⊕ EGA) (InOut m
         ((baseG κ m).withChan (chanC m M))) I (simU ans sch stat pkEv simS simR hSf hRf)
       (fun ζ Z => b (ζ × Unit) ((Open.mapPorts unpeekEv unpeekOut).reduceEnv Z)) := by
   have h₁ : Realizes (realLazyW H φS φR ans) _ b :=
-    realizes_of_view_eq (fun ζ Z => (view_iknpW_eq_lazy H φS φR ans Z).symm) h
+    (Sys.traceEq_iff_view_eq.mpr fun ζ Z => view_iknpW_eq_lazy H φS φR ans Z).realizes_left h
   have h₂ := RealizesSim.mapPorts (V := vU κ m M P L)
     (S := Simulator.ofMultiHybrid (simW ans sch stat pkEv simS simR hSf hRf)
       (simW_opaque ans sch stat pkEv simS simR hSf hRf)) unpeekEv unpeekOut unpeekEv_rel
     unpeekOut_rel h₁
-  refine realizes_of_view_eq (A := (realLazyW H φS φR ans).mapPorts unpeekEv unpeekOut)
-    (fun ζ Z => view_eq_of_stepMap (((partyLazy H φS φR ans).tensor
+  refine (Sys.traceEq_of_stepMap (((partyLazy H φS φR ans).tensor
       (MultiHybrid.idSim (AEv κ m M) (AOut m M))).withSub ((baseG κ m).withChan (chanC m M)))
-      ((realLazyW H φS φR ans).mapPorts unpeekEv unpeekOut) id rfl (fun t e => ?_) Z) h₂
+      ((realLazyW H φS φR ans).mapPorts unpeekEv unpeekOut) id rfl fun t e => ?_).symm.realizes_left
+    h₂
   simp only [realLazyW, Sys.mapPorts, Sys.relabel, SPComp.map, SPComp.bind_assoc, SPComp.pure_bind,
     peekEv_unpeekEv, unpeekOut_peekOut, id, Prod.mk.eta, SPComp.bind_pure]
 

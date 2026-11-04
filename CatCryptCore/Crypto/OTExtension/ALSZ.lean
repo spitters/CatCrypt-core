@@ -58,8 +58,7 @@ substitutes the base OTs of ALSZ, which realize their functionality at distance 
 ## Main results
 
 * `prg_pi_hybrid`: `κ` PRG outputs against `κ` uniform values, by `κ` hops.
-* `MultiHybrid.withSub_callMap_on`, `MultiHybrid.view_lazyKey_tensor`: relabelled calls under a
-  state map, and the averaging of a drawing hybrid over its key.
+* `MultiHybrid.withSub_callMap_on`: relabelled calls under a state map.
 * `view_alszK`: with a fixed key, ALSZ is IKNP with the matrix of PRG outputs.
 * `alszOver_realizes`: ALSZ over the functionality of its base OTs realizes IKNP over the column
   OTs, with the PRG bound.
@@ -174,48 +173,6 @@ theorem tensor_mapCalls_resume {σ' E' O' EA OA : Type} (π : MultiHybrid σ E O
     simp only [tensor, mapCalls, Sum.elim_inl, Sum.elim_inr, SPComp.map, SPComp.bind_assoc,
       SPComp.pure_bind] <;>
     congr 1 <;> funext r <;> rcases r with ⟨_, _ | _⟩ <;> rfl
-
-/-- **The key drawn in the hybrid, averaged.** The drawing hybrid beside the forwarding of the
-adversary port, over a subroutine that answers each event on its port, has the view of the
-average over `k ← μ` of the hybrids `π k` beside the forwarding, when the hybrids of the family
-have the same fuel and initial state, and an activation that does not read the key outputs at
-once, the same for every key. -/
-theorem view_lazyKey_tensor {K : Type} (π : K → MultiHybrid σ E O EG OG) (k₀ : K) (μ : PMF K)
-    (u : σ → E → Bool) {EA OA ζ : Type} (X : Sys τ (EG ⊕ EA) (OG ⊕ OA)) (hX : X.PortTyped)
-    (hfuel : ∀ k, (π k).fuel = (π k₀).fuel) (hinit : ∀ k, (π k).init = (π k₀).init)
-    (hind : ∀ k s e, u s e = false → ∃ r : σ × O,
-      (π k).start s e = SPComp.pure (r.1, .inr r.2) ∧
-        (π k₀).start s e = SPComp.pure (r.1, .inr r.2))
-    (Z : Strat ζ (E ⊕ EA) (O ⊕ OA)) :
-    view (((lazyKey π k₀ μ u).tensor (idSim EA OA)).withSub X) Z =
-      SPComp.bind (sampleFrom (ofPMF μ)) fun k =>
-        view (((π k).tensor (idSim EA OA)).withSub X) Z := by
-  obtain ⟨XL, XR, hL, hR⟩ := hX
-  have h1 : view (((lazyKey π k₀ μ u).tensor (idSim EA OA)).withSub X) Z =
-      view ((lazyKey (fun k => (π k).tensor (idSim EA OA)) k₀ μ (tensorUses u)).withSub X) Z :=
-    view_eq_of_stepMap _ _ (fun t => ((t.1.1.1, (t.1.1.2, t.1.2)), t.2)) rfl
-      (fun t e => lazyKey_tensor_withSub_step π (idSim EA OA) k₀ μ u X t e) Z
-  have hfuel' : ∀ k, ((π k).tensor (idSim EA OA)).fuel = ((π k₀).tensor (idSim EA OA)).fuel :=
-    fun k => by simp only [tensor, hfuel]
-  have hind' : ∀ k t e,
-      (keyedWithSub (fun k => (π k).tensor (idSim EA OA)) k₀ (tensorUses u) X).uses t e = false →
-      (keyedWithSub (fun k => (π k).tensor (idSim EA OA)) k₀ (tensorUses u) X).step k t e =
-        (keyedWithSub (fun k => (π k).tensor (idSim EA OA)) k₀ (tensorUses u) X).step₀ t e := by
-    rintro k ⟨⟨s, ⟨⟩⟩, t⟩ (e | a) hu
-    · obtain ⟨r, hk, hk₀⟩ := hind k s e hu
-      simp only [keyedWithSub]
-      rw [tensor_withSub_step_inl _ _ X XL hL, tensor_withSub_step_inl _ _ X XL hL]
-      simp only [stepFuel, hk, hk₀, SPComp.pure_bind, drive]
-    · simp only [keyedWithSub]
-      rw [tensor_withSub_step_inr _ _ X XR hR, tensor_withSub_step_inr _ _ X XR hR, hfuel]
-  rw [h1, view_lazyKey_withSub _ k₀ μ _ hfuel' X Z, KeyedSys.view_lazy _ μ hind' Z]
-  congr 1
-  funext k
-  exact view_eq_of_stepMap
-    ((keyedWithSub (fun k => (π k).tensor (idSim EA OA)) k₀ (tensorUses u) X).withKey k)
-    (((π k).tensor (idSim EA OA)).withSub X) id
-    (by simp [keyedWithSub, KeyedSys.withKey, withSub, tensor, hinit])
-    (fun t e => by simp [keyedWithSub, KeyedSys.withKey, SPComp.map]) Z
 
 end CatCrypt.Crypto.UCTransparent.MultiHybrid
 

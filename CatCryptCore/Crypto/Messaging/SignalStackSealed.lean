@@ -7,6 +7,7 @@ module
 
 public import CatCryptCore.Crypto.Messaging.SignalStack
 public import CatCryptCore.Crypto.UCFeedbackLaws
+public import CatCryptCore.Crypto.TraceEqLaws
 public import CatCryptCore.Unary.Lossless
 
 /-!
@@ -419,25 +420,6 @@ variable {σ τ E O EG OG : Type}
 /-- A decision of a multi-call hybrid satisfies `Ok` when it is a call at an event of `Ok`. -/
 def DecOk (Ok : EG → Prop) : EG ⊕ O → Prop := Sum.elim Ok fun _ => True
 
-theorem isOutcome_map_iff_exists {α β : Type} {c : SPComp α} {f : α → β} {b : β}
-    (h : IsOutcome (SPComp.map f c) b) : ∃ a, IsOutcome c a ∧ f a = b := by
-  obtain ⟨a, ha, hb⟩ := isOutcome_bind h
-  exact ⟨a, ha, isOutcome_pure hb⟩
-
-theorem allOut_pure {α : Type} {P : α → Prop} {a : α} (h : P a) :
-    ∀ b, IsOutcome (SPComp.pure a) b → P b := fun _ hb => isOutcome_pure hb ▸ h
-
-theorem allOut_map {α β : Type} {P : β → Prop} {c : SPComp α} {f : α → β} (h : ∀ a, P (f a)) :
-    ∀ b, IsOutcome (SPComp.map f c) b → P b := fun _ hb => by
-  obtain ⟨a, _, rfl⟩ := isOutcome_map_iff_exists hb
-  exact h a
-
-theorem allOut_bind {α β : Type} {P : β → Prop} {c : SPComp α} {f : α → SPComp β}
-    (h : ∀ a b, IsOutcome (f a) b → P b) : ∀ b, IsOutcome (SPComp.bind c f) b → P b :=
-  fun _ hb => by
-    obtain ⟨a, _, hab⟩ := isOutcome_bind hb
-    exact h a _ hab
-
 /-- The rest of an activation commutes with an equivariant map of the subroutine states, when
 the calls the hybrid makes after an answer satisfy `Ok`. -/
 theorem drive_map_of_equivariant (π : MultiHybrid σ E O EG OG) (X : Sys τ EG OG) (g : τ → τ)
@@ -501,8 +483,8 @@ theorem deliver_decOk (sid₀ : SessionId) (rs : RSt S W K) (inp : Inst → Opti
     ∀ q, IsOutcome (deliver rs inp x r ip) q → DecOk (SealedF sid₀) q.2 := by
   unfold deliver
   split
-  · exact allOut_map fun _ => trivial
-  · exact allOut_pure trivial
+  · exact forall_isOutcome_map.mpr fun _ _ => trivial
+  · exact forall_isOutcome_pure.mpr trivial
 
 /-- The simulator calls `F_AKE` on its honest port only with the honest event of the
 environment: at an event of `SealedEv sid₀` it makes calls of `SealedF sid₀` only. -/
@@ -513,28 +495,30 @@ theorem simStart_decOk (sid₀ : SessionId) (s : SimSt S W K) (e : OEv W)
     ⟨sid, pid⟩ | ⟨sid, pid, e⟩ | x)
   · simp only [simStart]
     split
-    · exact allOut_map fun _ => trivial
-    · exact allOut_pure trivial
-  · exact allOut_pure he
-  · exact allOut_pure trivial
-  · exact allOut_pure trivial
-  · exact allOut_map fun _ => trivial
-  · exact allOut_pure trivial
+    · exact forall_isOutcome_map.mpr fun _ _ => trivial
+    · exact forall_isOutcome_pure.mpr trivial
+  · exact forall_isOutcome_pure.mpr he
+  · exact forall_isOutcome_pure.mpr trivial
+  · exact forall_isOutcome_pure.mpr trivial
+  · exact forall_isOutcome_map.mpr fun _ _ => trivial
+  · exact forall_isOutcome_pure.mpr trivial
   · simp only [simStart, simCorrupt]
     split
-    · exact allOut_pure trivial
-    · exact allOut_map fun _ => trivial
+    · exact forall_isOutcome_pure.mpr trivial
+    · exact forall_isOutcome_map.mpr fun _ _ => trivial
   · simp only [simStart, simComplete]
     repeat' split
     all_goals first
-      | exact allOut_pure trivial
-      | exact allOut_bind fun _ => allOut_bind fun _ => deliver_decOk _ _ _ _ _ _
+      | exact forall_isOutcome_pure.mpr trivial
+      | exact forall_isOutcome_bind fun _ _ => forall_isOutcome_bind fun _ _ =>
+          deliver_decOk _ _ _ _ _ _
   · simp only [simStart, simSend]
     repeat' split
     all_goals first
-      | exact allOut_pure trivial
-      | exact allOut_bind fun _ => allOut_bind fun _ => deliver_decOk _ _ _ _ _ _
-  · exact allOut_map fun _ => trivial
+      | exact forall_isOutcome_pure.mpr trivial
+      | exact forall_isOutcome_bind fun _ _ => forall_isOutcome_bind fun _ _ =>
+          deliver_decOk _ _ _ _ _ _
+  · exact forall_isOutcome_map.mpr fun _ _ => trivial
 
 /-- **Equivariance of the world of `F_AKE`**: at every event of the environment that does not
 read a key of `sid₀`, the permutation of the completed keys of `sid₀` in the state of `F_AKE`
@@ -605,7 +589,7 @@ theorem sealed_of_next_eq {ζ : Type} {sid₀ : SessionId} (Z : Strat ζ (OEv W)
     (hn : ∀ z, Z.next z = SPComp.map (fun z' => (z', ev z)) (c z)) :
     Sealed (K := K) (S := S) sid₀ Z := fun z a ha => by
   rw [hn z] at ha
-  obtain ⟨_, _, rfl⟩ := isOutcome_map_iff_exists ha
+  obtain ⟨_, _, rfl⟩ := isOutcome_map_iff.mp ha
   exact hev z
 
 /-- The game of the selected key: the run of `Z` against `X`, then the final state of `Z` and

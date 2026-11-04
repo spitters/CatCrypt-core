@@ -9,6 +9,7 @@ public import CatCryptCore.Crypto.UCWake
 public import CatCryptCore.Crypto.OT.FOTSched
 public import CatCryptCore.Crypto.UCChannelLift
 public import CatCryptCore.Crypto.OTExtension.IKNPSquare
+public import CatCryptCore.Crypto.TraceEqLaws
 
 /-!
 # IKNP over scheduled base OTs and a channel, with activation on delivery
@@ -78,17 +79,6 @@ open CatCrypt.Core CatCrypt.Prob CatCrypt.Crypto CatCrypt.Crypto.UCConcrete
 
 variable {τ υ ζ E O : Type}
 
-/-- The state `x` with its proof of `Inv` if `Inv x` holds, and `d` otherwise. -/
-private noncomputable def liftInvW (Inv : τ → Prop) (d : {t // Inv t}) (x : τ) : {t // Inv t} := by
-  classical exact if h : Inv x then ⟨x, h⟩ else d
-
-/-- The system `R` on the states satisfying `Inv`: each new state that fails `Inv` is replaced by
-the initial state. -/
-private noncomputable def restrictInvW (R : Sys τ E O) (Inv : τ → Prop) (h : Inv R.init) :
-    Sys {t // Inv t} E O where
-  init := ⟨R.init, h⟩
-  step t e := SPComp.map (fun p => (liftInvW Inv ⟨R.init, h⟩ p.1, p.2)) (R.step t.1 e)
-
 /-- Two systems related by a state map `f` have equal views when `f` sends the initial state to
 the initial state and commutes with single steps from the states satisfying an invariant `Inv`,
 which holds initially and at every state a step from a state satisfying it reaches. -/
@@ -97,23 +87,9 @@ theorem view_eq_of_stepMap_on (R : Sys τ E O) (I : Sys υ E O) (Inv : τ → Pr
     (hpres : ∀ t e, Inv t → ∃ (α : Type) (c : SPComp α) (g : α → τ × O),
       R.step t e = SPComp.bind c (fun a => SPComp.pure (g a)) ∧ ∀ a, Inv (g a).1)
     (hstep : ∀ t e, Inv t → SPComp.map (fun p => (f p.1, p.2)) (R.step t e) = I.step (f t) e)
-    (Z : Strat ζ E O) : view R Z = view I Z := by
-  have hnorm : ∀ (t : {t // Inv t}) e,
-      SPComp.map (fun p => ((liftInvW Inv ⟨R.init, hInv⟩ p.1).1, p.2)) (R.step t.1 e) =
-        R.step t.1 e := by
-    intro t e
-    obtain ⟨α, c, g, hc, hg⟩ := hpres t.1 e t.2
-    rw [hc]
-    simp only [SPComp.map, SPComp.bind_assoc, SPComp.pure_bind, liftInvW, dite_eq_left (hg _)]
-  have h₁ := view_eq_of_stepMap (restrictInvW R Inv hInv) R Subtype.val rfl (fun t e => by
-      have h := hnorm t e
-      simp only [restrictInvW, SPComp.map, SPComp.bind_assoc, SPComp.pure_bind] at h ⊢
-      exact h) Z
-  have h₂ := view_eq_of_stepMap (restrictInvW R Inv hInv) I (fun t => f t.1) hinit (fun t e => by
-      rw [← hstep t.1 e t.2]
-      conv => rhs; rw [← hnorm t e]
-      simp only [restrictInvW, SPComp.map, SPComp.bind_assoc, SPComp.pure_bind]) Z
-  rw [← h₁, h₂]
+    (Z : Strat ζ E O) : view R Z = view I Z :=
+  Sys.traceEq_iff_view_eq.mp (Sys.traceEq_iff_realizes_zero.mpr
+    (realizes_zero_of_stepMap_on R I Inv f hInv hinit hpres hstep)) _ Z
 
 end CatCrypt.Crypto.UCTransparent
 
@@ -2212,29 +2188,18 @@ theorem lazyA_realizes [NeZero κ]
       ((simW ans sch stat pkEv simS simR hSf hRf).withSub (idealF FA)) (fun _ _ => 0) := by
   refine realizes_zero_of_stepMap_on _ _ (KInv uS uR) projA (kinv_init ans μ lS lR uS uR) rfl
     (fun t e hK => ?_) (fun t e hK => ?_)
-  · obtain ⟨ko, a⟩ := t
-    obtain ⟨hI, hk⟩ := hK
-    rcases ko with _ | k
-    · by_cases hu : (aKeyed ans lS lR uS uR).uses a e = true
-      · refine ⟨K, sampleFrom (ofPMF μ), fun k => ((some k, (aStep ans (lS k) (lR k) a e).1),
-          (aStep ans (lS k) (lR k) a e).2), ?_, fun k => ⟨hI.step ans _ _ e, fun _ => ?_⟩⟩
-        · rw [KeyedSys.lazy_step_none_of_uses _ _ hu]
-          simp [aKeyed, SPComp.pure_bind]
-        · exact uses_reveal ans lS lR uS uR a e hu _ _
-      · refine ⟨Unit, SPComp.pure (), fun _ => ((none, (aStep ans (lS default) (lR default) a
-          e).1), (aStep ans (lS default) (lR default) a e).2), ?_,
-          fun _ => ⟨hI.step ans _ _ e, by simp⟩⟩
-        rw [KeyedSys.lazy_step_none_of_not_uses _ _ (by simpa using hu)]
-        simp [aKeyed, SPComp.pure_bind]
-    · refine ⟨Unit, SPComp.pure (), fun _ => ((some k, (aStep ans (lS k) (lR k) a e).1),
-        (aStep ans (lS k) (lR k) a e).2), ?_, fun _ => ⟨hI.step ans _ _ e, fun _ => ?_⟩⟩
-      · simp [KeyedSys.lazy, KeyedSys.lazyStep, aKeyed, SPComp.pure_bind]
-      · have h := hk rfl
-        have hm := aStep_mono ans a (lS k) (lR k) e
-        simp only [Bool.or_eq_true, Bool.and_eq_true] at h ⊢
-        rcases h with ⟨h1, h2⟩ | ⟨h1, h2⟩
-        · exact Or.inl ⟨h1, hm.1 h2⟩
-        · exact Or.inr ⟨h1, hm.2 h2⟩
+  · refine KeyedSys.lazy_pres_det _ μ
+      (fun ko a e => aStep ans (lS (ko.getD default)) (lR (ko.getD default)) a e)
+      (fun _ _ _ => rfl) (fun _ _ => rfl) (KInv uS uR)
+      (fun k a e ⟨hI, hk⟩ => ⟨hI.step ans _ _ e, fun _ => ?_⟩)
+      (fun a e ⟨hI, _⟩ hu _ => ⟨hI.step ans _ _ e, fun _ => uses_reveal ans lS lR uS uR a e hu _ _⟩)
+      (fun a e ⟨hI, _⟩ _ => ⟨hI.step ans _ _ e, by simp⟩) t e hK
+    have h := hk rfl
+    have hm := aStep_mono ans a (lS k) (lR k) e
+    simp only [Bool.or_eq_true, Bool.and_eq_true] at h ⊢
+    rcases h with ⟨h1, h2⟩ | ⟨h1, h2⟩
+    · exact Or.inl ⟨h1, hm.1 h2⟩
+    · exact Or.inr ⟨h1, hm.2 h2⟩
   · rcases e with ((x | r) | (i | _)) | e
     · exact absSim_input ans sch stat pkEv simS simR hSf hRf FA μ lS lR uS uR t (.inl x)
     · exact absSim_input ans sch stat pkEv simS simR hSf hRf FA μ lS lR uS uR t (.inr r)
@@ -2260,15 +2225,6 @@ def cutW {L : Type} (_ : WakeEv κ) : InOut m M ⊕ (AOut m M ⊕ L) := .inl (.i
 
 /-- The idle event: the channel's `idle`. -/
 def idleW {P : Type} : (InEv m M ⊕ AEv κ m M ⊕ P) ⊕ WakeEv κ := .inl (.inr (.inl (.inr .idle)))
-
-/-- Realization from equal views. -/
-theorem realizes_of_view_eq {τ τ' υ E O : Type} {R : Sys τ E O} {A : Sys τ' E O}
-    {I : Sys υ E O} {b : (ζ : Type) → Env (Strat ζ E O) ζ → ℝ≥0∞}
-    (hv : ∀ (ζ : Type) (Z : Strat ζ E O), view R Z = view A Z) (h : Realizes A I b) :
-    Realizes R I b := fun ζ => by
-  have : (view R : Strat ζ E O → SPComp ζ) = view A := funext (hv ζ)
-  rw [this]
-  exact h ζ
 
 section Close
 
@@ -2365,8 +2321,8 @@ parties over `κ` scheduled base OTs beside the secure channel, inputs and wakes
 port. Simulator: `iknpSimH`. Distance `0`. -/
 theorem iknpH_realizesSim :
     RealizesSim (iknpRealH (κ := κ) H) (FOTSched otChoose) iknpSimH (fun _ _ => 0) := by
-  refine realizes_of_view_eq (fun ζ Z => view_iknpW_eq H _ _ ansH false false
-    (fun _ _ => rfl) (fun _ _ => rfl) Z) ?_
+  refine (Sys.traceEq_iff_view_eq.mpr fun ζ Z => view_iknpW_eq H _ _ ansH false false
+    (fun _ _ => rfl) (fun _ _ => rfl) Z).symm.realizes_left ?_
   exact lazyA_realizes ansH id statSched .poll (fun _ => SPComp.pure ())
     (fun _ => SPComp.pure ()) (fun _ => SPComp.pure_noFail _) (fun _ => SPComp.pure_noFail _)
     (FOTSched.schedSys otChoose) id (fun u => .status u.sent.isSome u.chosen.isSome)
@@ -2500,8 +2456,8 @@ theorem iknpS_realizesSim :
     (fun _ _ => rfl) rfl (fun x r γ G => hSS x r G)
     (fun _ _ _ _ => by simp [SPComp.pure_bind])
   rw [← idealF_shFA]
-  exact realizes_of_view_eq (fun ζ Z => view_iknpW_eq H _ _ ansS true false
-    (fun h => absurd h (by decide)) (fun _ _ => rfl) Z) hA
+  exact (Sys.traceEq_iff_view_eq.mpr fun ζ Z => view_iknpW_eq H _ _ ansS true false
+    (fun h => absurd h (by decide)) (fun _ _ => rfl) Z).symm.realizes_left hA
 
 /-- **IKNP against a semi-honest corrupt sender, with activation on delivery.** Ideal
 functionality: `FOTSchedSH otChoose leakSend`. Real protocol: the wake closure of the IKNP
@@ -2676,8 +2632,8 @@ theorem iknpR_realizesSim :
     (fun h => absurd h (by decide)) rfl (fun _ _ _ _ => by simp [SPComp.pure_bind])
     (fun x r γ G => hRR x r G)
   rw [← idealF_shFA]
-  refine realizes_of_view_eq (fun ζ Z => view_iknpW_eq H _ _ ansR false true
-    (fun _ _ => rfl) (fun h => absurd h (by decide)) Z) ?_
+  refine (Sys.traceEq_iff_view_eq.mpr fun ζ Z => view_iknpW_eq H _ _ ansR false true
+    (fun _ _ => rfl) (fun h => absurd h (by decide)) Z).symm.realizes_left ?_
   exact fun ζ Z => le_of_le_of_eq ((Realizes.trans (lazyR_realizes_cr H) hA) ζ Z) (add_zero _)
 
 /-- **IKNP against a semi-honest corrupt receiver, with activation on delivery.** Ideal

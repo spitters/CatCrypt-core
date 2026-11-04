@@ -52,6 +52,8 @@ subroutine on `idle` leaves its state unchanged and outputs a fixed value (`Idle
 * `realizes_zero_of_stepRel` — two systems whose steps from related states are point masses
   with equal outputs and related states, from related initial states, realize each other at
   distance 0.
+* `MultiHybrid.drive_stepMap`, `MultiHybrid.withSub_stepMap` — a state map between subroutines
+  that commutes with their steps commutes with a multi-call hybrid running with them.
 * `MultiHybrid.view_ofHybrid_withSub` — `(ofHybrid π).withSub X` and `π.withSub X` have the
   same view.
 * `MultiHybrid.view_withSub` — the view of `Z` against `π.withSub X` is the first component of
@@ -220,6 +222,34 @@ theorem withSub_noFail (π : MultiHybrid σ E O EG OG) (X : Sys τ EG OG)
   simp only [withSub]
   exact Assumptions.SPComp.bind_noFail (π.start_noFail _ _) fun _ =>
     Assumptions.SPComp.bind_noFail (drive_noFail π X hX _ _ _ _) fun _ => SPComp.pure_noFail _
+
+/-- The rest of an activation commutes with a state map `f` between subroutines whose steps
+commute with `f`. -/
+theorem drive_stepMap (π : MultiHybrid σ E O EG OG) {X : Sys τ EG OG} {Y : Sys υ EG OG}
+    (f : τ → υ)
+    (hstep : ∀ t g, SPComp.map (fun p => (f p.1, p.2)) (X.step t g) = Y.step (f t) g) :
+    ∀ (n : ℕ) (s : σ) (d : EG ⊕ O) (t : τ),
+      SPComp.map (fun p => (p.1, f p.2.1, p.2.2)) (π.drive X n s d t) = π.drive Y n s d (f t) := by
+  intro n
+  induction n with
+  | zero =>
+    rintro s (g | o) t
+    · simp only [drive, ← hstep, SPComp.map, SPComp.bind_assoc, SPComp.pure_bind]
+    · simp only [drive, SPComp.map, SPComp.pure_bind]
+  | succ n ih =>
+    rintro s (g | o) t
+    · simp only [drive, ← hstep, ← ih, SPComp.map, SPComp.bind_assoc, SPComp.pure_bind]
+    · simp only [drive, SPComp.map, SPComp.pure_bind]
+
+/-- A step of `π` running with `X` commutes with a state map `f` from `X` to `Y` whose steps
+commute with `f`. -/
+theorem withSub_stepMap (π : MultiHybrid σ E O EG OG) {X : Sys τ EG OG} {Y : Sys υ EG OG}
+    (f : τ → υ)
+    (hstep : ∀ t g, SPComp.map (fun p => (f p.1, p.2)) (X.step t g) = Y.step (f t) g)
+    (t : σ × τ) (e : E) :
+    SPComp.map (fun p => ((p.1.1, f p.1.2), p.2)) ((π.withSub X).step t e) =
+      (π.withSub Y).step (t.1, f t.2) e := by
+  simp only [withSub, ← drive_stepMap π f hstep, SPComp.map, SPComp.bind_assoc, SPComp.pure_bind]
 
 /-- A hybrid protocol as a multi-call hybrid with one call per activation. -/
 noncomputable def ofHybrid (π : Hybrid σ E O EG OG) : MultiHybrid σ E O EG OG where

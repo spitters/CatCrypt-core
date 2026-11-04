@@ -9,6 +9,7 @@ public import CatCryptCore.Crypto.OTExtension.IKNP
 public import CatCryptCore.Crypto.UCOracleGame
 public import CatCryptCore.Crypto.UCChannel
 public import CatCryptCore.Crypto.UCParallel
+public import CatCryptCore.Crypto.TraceEqLaws
 
 /-!
 # The IKNP OT extension over ideal base OTs as squares against `F_OT^m`
@@ -73,7 +74,7 @@ namespace CatCrypt.Crypto.OT.IKNPSquare
 
 open CatCrypt.Core CatCrypt.Prob CatCrypt.Crypto CatCrypt.Crypto.UCConcrete
 open CatCrypt.Crypto.UCTransparent CatCrypt.NonUniform CatCrypt.Relational
-open scoped ENNReal
+open scoped ENNReal CatCrypt.Crypto.UCTransparent.Sys
 
 variable {κ m : ℕ} {M : Type}
 
@@ -208,35 +209,17 @@ theorem trigR_hind {K V : Type} (out : K → (Fin m → M × M) → (Fin m → B
   · rfl
   · rcases t with ⟨_ | x, _ | _⟩ <;> simp_all [trigR, recvStep]
 
-/-- Every activation of the lazily keyed `trigR out` ends in a state that holds a key only once
-the receiver is served. -/
+/-- Every possible outcome of an activation of the lazily keyed `trigR out` is a state that holds
+a key only once the receiver is served. -/
 theorem trigR_lazy_pres {K V : Type} (out : K → (Fin m → M × M) → (Fin m → Bool) → V)
     (μ : PMF K) (t : Option K × FOTState m M) (e : (Fin m → M × M) ⊕ (Fin m → Bool))
-    (hI : t.1.isSome → t.2.2 = true) :
-    ∃ (α : Type) (c : SPComp α) (g : α → (Option K × FOTState m M) × (Bool ⊕ Option V)),
-      ((trigR out).lazy μ).step t e = SPComp.bind c (fun a => SPComp.pure (g a)) ∧
-        ∀ a, (g a).1.1.isSome → (g a).1.2.2 = true := by
-  obtain ⟨ko, t⟩ := t
-  rcases e with x | r
-  · refine ⟨Unit, SPComp.pure (), fun _ => ((ko, (fotSend t x).1), .inl (fotSend t x).2),
-      ?_, fun _ h => hI h⟩
-    cases ko <;> simp [KeyedSys.lazy, KeyedSys.lazyStep, trigR, SPComp.pure_bind]
-  · rcases t with ⟨_ | x, _ | _⟩ <;> rcases ko with _ | k
-    · exact ⟨Unit, SPComp.pure (), fun _ => ((none, (none, false)), .inr none),
-        by simp [KeyedSys.lazy, KeyedSys.lazyStep, trigR, SPComp.pure_bind], by simp⟩
-    · simp at hI
-    · exact ⟨Unit, SPComp.pure (), fun _ => ((none, (none, true)), .inr none),
-        by simp [KeyedSys.lazy, KeyedSys.lazyStep, trigR, SPComp.pure_bind], by simp⟩
-    · exact ⟨Unit, SPComp.pure (), fun _ => ((some k, (none, true)), .inr none),
-        by simp [KeyedSys.lazy, KeyedSys.lazyStep, trigR, recvStep, SPComp.pure_bind], by simp⟩
-    · exact ⟨K, sampleFrom (ofPMF μ),
-        fun k => ((some k, (some x, true)), .inr (some (out k x r))),
-        by simp [KeyedSys.lazy, KeyedSys.lazyStep, trigR, recvStep, SPComp.pure_bind], by simp⟩
-    · simp at hI
-    · exact ⟨Unit, SPComp.pure (), fun _ => ((none, (some x, true)), .inr none),
-        by simp [KeyedSys.lazy, KeyedSys.lazyStep, trigR, SPComp.pure_bind], by simp⟩
-    · exact ⟨Unit, SPComp.pure (), fun _ => ((some k, (some x, true)), .inr none),
-        by simp [KeyedSys.lazy, KeyedSys.lazyStep, trigR, recvStep, SPComp.pure_bind], by simp⟩
+    (hI : t.1.isSome → t.2.2 = true) (q : (Option K × FOTState m M) × (Bool ⊕ Option V))
+    (hq : IsOutcome (((trigR out).lazy μ).step t e) q) : q.1.1.isSome → q.1.2.2 = true := by
+  rcases t with ⟨_ | k, _ | x, _ | _⟩ <;> rcases e with x' | r <;>
+    simp [KeyedSys.lazy, KeyedSys.lazyStep, trigR, fotSend, recvStep, SPComp.pure_bind]
+      at hI hq ⊢ <;>
+    obtain ⟨_, -, rfl⟩ := hq <;> simp
+
 
 variable [AddCommGroup M]
 
@@ -372,13 +355,13 @@ theorem realR_realizes_crR (H : Fin m → (Fin κ → Bool) → M) :
       _ Z.heap]
   exact le_rfl
 
-/-- Hop 2: `crR` realizes the simulator against a corrupt receiver over `FOTr` at distance `0`:
+/-- Hop 2: `crR` is trace equivalent to the simulator against a corrupt receiver over `FOTr`:
 the uniform pads couple with the draw of `iknpSimR` at the activation that draws them. -/
-theorem crR_realizes_sim (H : Fin m → (Fin κ → Bool) → M) :
-    Realizes (crR H) ((simProtR H).withSub FOTr) fun _ _ => 0 := by
-  refine realizes_zero_of_stepMap_on _ _ (fun t => t.1.isSome → t.2.2 = true)
-    (fun t => (((), ((), none)), t.2)) (by simp [crR, KeyedSys.lazy, trigR]) rfl
-    (fun t e hI => trigR_lazy_pres _ _ t e hI) ?_
+theorem crR_traceEq_sim (H : Fin m → (Fin κ → Bool) → M) :
+    crR H ≈ₜ (simProtR H).withSub FOTr := by
+  refine Sys.StepMapOn.traceEq (Inv := fun t => t.1.isSome → t.2.2 = true)
+    (f := fun t => (((), ((), none)), t.2))
+    ⟨by simp [crR, KeyedSys.lazy, trigR], rfl, trigR_lazy_pres _ _, ?_⟩
   rintro ⟨ko, t⟩ (x | r) hI
   · rw [simProtR, MultiHybrid.tensor_withSub_step_inl _ _ FOTr fotSendSys (fun _ _ => rfl),
       MultiHybrid.idSim_stepFuel]
@@ -408,9 +391,7 @@ advantage of the explicit reduction `iknpEnvCRRed H Z` of the environment. Corru
 one transfer of `m` message pairs. -/
 theorem iknp_realizesSim_corruptReceiver (H : Fin m → (Fin κ → Bool) → M) :
     RealizesSim (realR H) FOTr (iknpSimRecv H) fun _ Z => CRHash_Advantage H (iknpEnvCRRed H Z) :=
-  fun ζ Z =>
-    le_of_le_of_eq ((Realizes.trans (realR_realizes_crR H) (crR_realizes_sim H)) ζ Z)
-      (add_zero _)
+  (crR_traceEq_sim H).realizes_right (realR_realizes_crR H)
 
 end CorruptReceiver
 
@@ -492,51 +473,25 @@ noncomputable def realS (H : Fin m → (Fin κ → Bool) → M) :
       (Option (Fin m → M) ⊕ Option (IKNPSenderView κ m Unit)) :=
   (trigS H true).lazy (PMF.uniformFintype _)
 
-/-- Every activation of the lazily keyed `trigS H false` ends in a state that holds a key only
-once the sender's view is revealed. -/
+/-- Every possible outcome of an activation of the lazily keyed `trigS H false` is a state that
+holds a key only once the sender's view is revealed. -/
 theorem trigS_lazy_pres (H : Fin m → (Fin κ → Bool) → M) (t : Option (IKNPKey κ m) × SState m M)
-    (e : (Fin m → Bool) ⊕ (Fin m → M × M)) (hI : t.1.isSome → t.2.2.2 = true) :
-    ∃ (α : Type) (c : SPComp α)
-      (g : α → (Option (IKNPKey κ m) × SState m M) ×
-        (Option (Fin m → M) ⊕ Option (IKNPSenderView κ m Unit))),
-      ((trigS H false).lazy (PMF.uniformFintype _)).step t e =
-          SPComp.bind c (fun a => SPComp.pure (g a)) ∧
-        ∀ a, (g a).1.1.isSome → (g a).1.2.2.2 = true := by
-  obtain ⟨ko, t⟩ := t
-  rcases e with r | x
-  · refine ⟨Unit, SPComp.pure (), fun _ =>
-      ((ko, (sRecv t r (otChoose · r)).1), .inl (sRecv t r (otChoose · r)).2), ?_, fun _ h => ?_⟩
-    · cases ko <;> simp [KeyedSys.lazy, KeyedSys.lazyStep, trigS, iknpROut_eq, SPComp.pure_bind]
-    · rcases t with ⟨_ | _, _ | _, _⟩ <;> exact hI h
-  · rcases t with ⟨xo, _ | r, _ | _⟩
-    · rcases ko with _ | k
-      · exact ⟨Unit, SPComp.pure (), fun _ => ((none, (some (xo.getD x), none, false)), .inr none),
-          by simp [KeyedSys.lazy, KeyedSys.lazyStep, trigS, SPComp.pure_bind], by simp⟩
-      · simp at hI
-    · exact ⟨Unit, SPComp.pure (), fun _ => ((ko, (some (xo.getD x), none, true)), .inr none),
-        by cases ko <;> simp [KeyedSys.lazy, KeyedSys.lazyStep, trigS, sSend, SPComp.pure_bind],
-        by simp⟩
-    · rcases ko with _ | k
-      · exact ⟨_, sampleFrom (ofPMF (PMF.uniformFintype (IKNPKey κ m))),
-          fun k => ((some k, (some (xo.getD x), some r, true)), .inr (some (iknpSView k r))),
-          by simp [KeyedSys.lazy, KeyedSys.lazyStep, trigS, sSend, SPComp.pure_bind], by simp⟩
-      · simp at hI
-    · exact ⟨Unit, SPComp.pure (), fun _ => ((ko, (some (xo.getD x), some r, true)), .inr none),
-        by cases ko <;> simp [KeyedSys.lazy, KeyedSys.lazyStep, trigS, sSend, SPComp.pure_bind],
-        by simp⟩
+    (e : (Fin m → Bool) ⊕ (Fin m → M × M)) (hI : t.1.isSome → t.2.2.2 = true)
+    (q : (Option (IKNPKey κ m) × SState m M) ×
+      (Option (Fin m → M) ⊕ Option (IKNPSenderView κ m Unit)))
+    (hq : IsOutcome (((trigS H false).lazy (PMF.uniformFintype _)).step t e) q) :
+    q.1.1.isSome → q.1.2.2.2 = true := by
+  rcases t with ⟨_ | k, _ | x, _ | r, _ | _⟩ <;> rcases e with r' | x' <;>
+    simp [KeyedSys.lazy, KeyedSys.lazyStep, trigS, sRecv, sSend, iknpROut_eq,
+      SPComp.pure_bind] at hI hq ⊢ <;>
+    obtain ⟨_, _, -, rfl⟩ := hq <;> simp
 
 /-- Hop 1: drawing `(T, s)` at the receiver activation and at the sender activation that reveals
-the view give the same views: the receiver's output does not depend on `(T, s)`
+the view give trace-equivalent systems: the receiver's output does not depend on `(T, s)`
 (`iknpROut_eq`). -/
-theorem realS_realizes_late (H : Fin m → (Fin κ → Bool) → M) :
-    Realizes (realS H) ((trigS H false).lazy (PMF.uniformFintype _)) fun _ _ => 0 := by
-  intro ζ Z
-  have hv : view (realS H) Z.input =
-      view ((trigS H false).lazy (PMF.uniformFintype _)) Z.input := by
-    rw [realS, KeyedSys.view_lazy _ _ (trigS_hind H true),
-      KeyedSys.view_lazy _ _ (trigS_hind H false)]
-    rfl
-  simp [Env.gap, hv]
+theorem realS_traceEq_late (H : Fin m → (Fin κ → Bool) → M) :
+    realS H ≈ₜ (trigS H false).lazy (PMF.uniformFintype _) :=
+  KeyedSys.traceEq_lazy _ _ _ rfl rfl (trigS_hind H true) (trigS_hind H false)
 
 /-- The adversary-port answer of the simulator against a corrupt sender: at the first sender
 activation after `F_OT^m` reports that the receiver is served, a sender view by `iknpSimS`;
@@ -601,15 +556,14 @@ theorem iknpSView_sample {β : Type} (x : Fin m → M × M) (r : Fin m → Bool)
   exact SPComp.sample_bind_equiv (Equiv.addRight (iknpShift r s))
     fun T => SPComp.pure (G (s, (), fun i j => T j i))
 
-/-- Hop 2: IKNP with `(T, s)` drawn at the sender activation that reveals the view realizes the
-simulator against a corrupt sender over `FOTs` at distance `0`: the receiver's output is
+/-- Hop 2: IKNP with `(T, s)` drawn at the sender activation that reveals the view is trace
+equivalent to the simulator against a corrupt sender over `FOTs`: the receiver's output is
 `otChoose x r`, and the revealed view couples with the draw of `iknpSimS`. -/
-theorem late_realizes_sim (H : Fin m → (Fin κ → Bool) → M) :
-    Realizes ((trigS H false).lazy (PMF.uniformFintype _)) (simProtS.withSub FOTs)
-      fun _ _ => 0 := by
-  refine realizes_zero_of_stepMap_on _ _ (fun t => t.1.isSome → t.2.2.2 = true)
-    (fun t => (((), (t.2.2.2, none)), (t.2.1, t.2.2.1.isSome)))
-    (by simp [KeyedSys.lazy, trigS]) rfl (fun t e hI => trigS_lazy_pres H t e hI) ?_
+theorem late_traceEq_sim (H : Fin m → (Fin κ → Bool) → M) :
+    (trigS H false).lazy (PMF.uniformFintype _) ≈ₜ simProtS.withSub FOTs := by
+  refine Sys.StepMapOn.traceEq (Inv := fun t => t.1.isSome → t.2.2.2 = true)
+    (f := fun t => (((), (t.2.2.2, none)), (t.2.1, t.2.2.1.isSome)))
+    ⟨by simp [KeyedSys.lazy, trigS], rfl, trigS_lazy_pres H, ?_⟩
   rintro ⟨ko, t⟩ (r | x) hI
   · rw [simProtS, MultiHybrid.tensor_withSub_step_inl _ _ FOTs fotRecvSys (fun _ _ => rfl),
       MultiHybrid.idSim_stepFuel]
@@ -641,9 +595,9 @@ receiver is served, and reads no honest value. Distance `0`. Corrupt sender, one
 `m` message pairs. -/
 theorem iknp_realizesSim_corruptSender (H : Fin m → (Fin κ → Bool) → M) :
     RealizesSim (realS H) FOTs iknpSimSend fun _ _ => 0 :=
-  fun ζ Z =>
-    le_of_le_of_eq ((Realizes.trans (realS_realizes_late H) (late_realizes_sim H)) ζ Z)
-      (add_zero _)
+  Sys.TraceEq.realizesSim <| calc
+    realS H ≈ₜ (trigS H false).lazy (PMF.uniformFintype _) := realS_traceEq_late H
+    _ ≈ₜ simProtS.withSub FOTs := late_traceEq_sim H
 
 end CorruptSender
 
