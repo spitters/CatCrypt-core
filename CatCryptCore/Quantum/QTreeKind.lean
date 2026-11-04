@@ -5,7 +5,7 @@ Authors: CatCrypt Contributors
 -/
 module
 
-public import CatCryptCore.Quantum.QPullbackCost
+public import CatCryptCore.Quantum.QRealizesMem
 public import CatCryptCore.Quantum.QSimTimed
 public import CatCryptCore.Tactics.DeriveReduction
 public import CatCryptCore.Tactics.DeriveTimedStructure
@@ -46,6 +46,8 @@ certificate, quantum reduction, costed placement.
 
 * `QInstrT.erase_bind`, `QInstrT.erase_placeLeft`, `QInstrT.erase_placeRight` — erasure
   commutes with sequencing and placement
+* `QInstrT.stepTimeBound_ret`, `QInstrT.stepTimeBound_delay_bind`, `QInstrT.bound_placeLeft`,
+  `QInstrT.bound_placeRight` — step time bounds of returns, sequencing and placement
 -/
 
 @[expose] public section
@@ -210,6 +212,43 @@ theorem erase_ite {B : α → Type} [∀ a, Fintype (B a)] (c : Prop) [Decidable
     (x y : QInstrT A α B) :
     (if c then x else y).erase = if c then x.erase else y.erase := by
   split <;> rfl
+
+/-- A step time bound holds at every larger time. -/
+theorem StepTimeBound.mono {B : α → Type} [∀ a, Fintype (B a)] {x : ℕ × QInstrT A α B}
+    {n n' : ℕ} (h : StepTimeBound x n) (hn : n ≤ n') : StepTimeBound x n' :=
+  ⟨h.1.trans hn, h.2.mono (by omega) fun _ h => h⟩
+
+/-- A return, with step cost `0`, takes time `0`. -/
+theorem stepTimeBound_ret (B : α → Type) [∀ a, Fintype (B a)] (a : α) :
+    StepTimeBound (0, ret A α B a) 0 :=
+  ⟨le_rfl, trivial⟩
+
+/-- The step cost `c` followed by `x` of time at most `t` and then by step-prefixed costed
+instruments `f a` of time at most `u` takes time at most `c + t + u`. -/
+theorem stepTimeBound_delay_bind (c : ℕ) (x : QInstrT A α fun _ => A)
+    (f : α → ℕ × QInstrT A β fun _ => A) {t u : ℕ}
+    (hx : ProgE.Bound Costed.weight x.toTree t fun _ => True)
+    (hf : ∀ a, StepTimeBound (f a) u) : StepTimeBound (delay c (bind x f)) (c + t + u) := by
+  refine ⟨by simp only [delay, bind]; omega, ?_⟩
+  have hb := ProgE.Bound.bind (u := u) (P := fun _ => True) (p := x.toTree)
+    (f := fun a => ProgE.tick (f a).1 (f a).2.toTree)
+    (hx.mono le_rfl fun a _ => ⟨(hf a).1, fun _ => (hf a).2⟩)
+  simp only [delay, bind]
+  exact hb.mono (by omega) fun _ h => h
+
+/-- Placement on the left keeps the time bounds of a costed instrument. -/
+theorem bound_placeLeft {d : ℕ} (B C : Type) [iB : Fintype B] [iC : Fintype C] (α : Type)
+    (w : QInstrT (Fin d × B) α fun _ => Fin d × B) (t : ℕ) (P : α → Prop) :
+    ProgE.Bound Costed.weight (placeLeft B C iB iC α w).toTree t P ↔
+      ProgE.Bound Costed.weight w.toTree t P :=
+  bound_place _ _ _ _ _
+
+/-- Placement on the right keeps the time bounds of a costed instrument. -/
+theorem bound_placeRight {d : ℕ} (B C : Type) [iB : Fintype B] [iC : Fintype C] (α : Type)
+    (s : QInstrT (Fin d × C) α fun _ => Fin d × C) (t : ℕ) (P : α → Prop) :
+    ProgE.Bound Costed.weight (placeRight B C iB iC α s).toTree t P ↔
+      ProgE.Bound Costed.weight s.toTree t P :=
+  bound_place _ _ _ _ _
 
 end QInstrT
 
