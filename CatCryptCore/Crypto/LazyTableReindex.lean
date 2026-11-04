@@ -150,7 +150,8 @@ selected point over `i`. -/
 theorem reindexTable_update_left (sel : J → Bool) (π : J → I) (A : I → Option V)
     (B : J → Option V) {i : I} {j : J} (hj : sel j = true) (hπ : π j = i)
     (hinj : ∀ q, sel q = true → π q = i → q = j) (v : Option V) :
-    reindexTable sel π (Function.update A i v) B = Function.update (reindexTable sel π A B) j v := by
+    reindexTable sel π (Function.update A i v) B =
+      Function.update (reindexTable sel π A B) j v := by
   funext q
   by_cases hq : q = j
   · subst hq; simp [reindexTable, hj, hπ]
@@ -176,7 +177,8 @@ omit [DecidableEq I] in
 /-- Storing at an unselected `j` in `B` stores at `j` in the represented table. -/
 theorem reindexTable_update_right (sel : J → Bool) (π : J → I) (A : I → Option V)
     (B : J → Option V) {j : J} (hj : sel j = false) (v : Option V) :
-    reindexTable sel π A (Function.update B j v) = Function.update (reindexTable sel π A B) j v := by
+    reindexTable sel π A (Function.update B j v) =
+      Function.update (reindexTable sel π A B) j v := by
   funext q
   by_cases hq : q = j
   · subst hq; simp [reindexTable, hj]
