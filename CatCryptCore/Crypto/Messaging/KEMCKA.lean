@@ -47,9 +47,10 @@ component alone does not hold for a pair key: the adversary sees both components
   `prodCKA (dhCKA G) (kemCKA KEM)` is at most the DDH advantage of
   `ckaDDHRed k m (prodCKARed₁ (kemCKA KEM) k m A)` plus the KEM-CPA advantage of
   `kemCKARed KEM k m (prodCKARed₂ (dhCKA G) k m A)`
+* `kemCKA_init_isPure`, `kemCKA_send_isPure`, `prodCKA_init_isPure`, `prodCKA_send_isPure` —
+  the KEM CKA and the product of CKA schemes that do not touch the heap do not touch the heap
 * `ckaRun_kem`, `cka_real_kem`, `cka_ideal_kem`, `ckaRun_prod`, `cka_real_prod`,
   `cka_ideal_prod` — the games of `kemCKA` and of the product
-* `dhCKA_init_isPure`, `dhCKA_send_isPure` — the Diffie–Hellman CKA does not touch the heap
 * `ckaPubRedOf.tree.timeBound_timed`, `kemCKARed.timeBound_timed`,
   `prodCKARed₁.timeBound_timed`, `prodCKARed₂.timeBound_timed` — the times of the costed
   reductions
@@ -95,21 +96,6 @@ theorem ckaPubRedOf.tree.timeBound_timed {Y P V : Type} (pub : SPComp P) (view :
   have := hA (view x y); have := hAc (view x y); have := hv x y
   simp only [SPTree.Timed.stepTime]; omega
 
-/-! ## Runs of CKA schemes that do not touch the heap -/
-
-variable {St Msg Key : Type}
-
-/-- A run of a CKA scheme whose sending does not touch the heap does not touch the heap. -/
-theorem ckaRun_isPure (C : CKADef St Msg Key) (hs : ∀ s, SPComp.IsPure (C.send s)) :
-    ∀ (n : ℕ) (s r : St), SPComp.IsPure (ckaRun C n s r) := by
-  intro n
-  induction n with
-  | zero => intro s r; exact SPComp.pure_isPure _
-  | succ n ih =>
-    intro s r
-    exact SPComp.bind_isPure (hs s) fun o => SPComp.bind_isPure (ih _ _) fun p =>
-      SPComp.pure_isPure _
-
 /-! ## The CKA of a KEM -/
 
 section KEM
@@ -127,6 +113,23 @@ noncomputable def kemCKA [Inhabited K] (KEM : KEMScheme PK SK K E) :
   send s := SPComp.bind (KEM.encap s.1) fun ke => SPComp.bind KEM.kgen fun ks =>
     SPComp.pure ((s.1, ks.2), (some ke.2, ks.1), ke.1)
   recv r T := ((T.2, r.2), T.1.elim default (KEM.decap r.2))
+
+/-- The initialisation of the KEM CKA of a KEM whose key generation does not touch the heap
+does not touch the heap. -/
+theorem kemCKA_init_isPure [Inhabited K] (KEM : KEMScheme PK SK K E)
+    (hk : SPComp.IsPure KEM.kgen) : SPComp.IsPure (kemCKA KEM).init := by
+  unfold kemCKA
+  dsimp only
+  exact SPComp.bind_isPure hk fun _ => SPComp.pure_isPure _
+
+/-- The send step of the KEM CKA of a KEM whose key generation and encapsulation do not touch
+the heap does not touch the heap. -/
+theorem kemCKA_send_isPure [Inhabited K] (KEM : KEMScheme PK SK K E)
+    (hk : SPComp.IsPure KEM.kgen) (he : ∀ pk, SPComp.IsPure (KEM.encap pk)) (s : PK × SK) :
+    SPComp.IsPure ((kemCKA KEM).send s) := by
+  unfold kemCKA
+  dsimp only
+  exact SPComp.bind_isPure (he _) fun _ => SPComp.bind_isPure hk fun _ => SPComp.pure_isPure _
 
 /-- The public transcript of `n` epochs of `kemCKA KEM` from a sender holding the encapsulation
 key `h` of the peer: the messages and keys of the epochs, and the encapsulation key held by the
@@ -357,6 +360,24 @@ noncomputable def prodCKA (C₁ : CKADef S₁ M₁ K₁) (C₂ : CKADef S₂ M�
   recv r T :=
     (((C₁.recv r.1 T.1).1, (C₂.recv r.2 T.2).1), ((C₁.recv r.1 T.1).2, (C₂.recv r.2 T.2).2))
 
+/-- The initialisation of a product CKA whose components initialise without touching the heap
+does not touch the heap. -/
+theorem prodCKA_init_isPure (C₁ : CKADef S₁ M₁ K₁) (C₂ : CKADef S₂ M₂ K₂)
+    (h₁ : SPComp.IsPure C₁.init) (h₂ : SPComp.IsPure C₂.init) :
+    SPComp.IsPure (prodCKA C₁ C₂).init := by
+  unfold prodCKA
+  dsimp only
+  exact SPComp.bind_isPure h₁ fun _ => SPComp.bind_isPure h₂ fun _ => SPComp.pure_isPure _
+
+/-- The send step of a product CKA whose components send without touching the heap does not
+touch the heap. -/
+theorem prodCKA_send_isPure (C₁ : CKADef S₁ M₁ K₁) (C₂ : CKADef S₂ M₂ K₂)
+    (h₁ : ∀ s, SPComp.IsPure (C₁.send s)) (h₂ : ∀ s, SPComp.IsPure (C₂.send s)) (s : S₁ × S₂) :
+    SPComp.IsPure ((prodCKA C₁ C₂).send s) := by
+  unfold prodCKA
+  dsimp only
+  exact SPComp.bind_isPure (h₁ _) fun _ => SPComp.bind_isPure (h₂ _) fun _ => SPComp.pure_isPure _
+
 /-- The transcript of the product from the transcripts of the components. -/
 def zipT (l₁ : List (M₁ × K₁)) (l₂ : List (M₂ × K₂)) : List ((M₁ × M₂) × (K₁ × K₂)) :=
   List.zipWith (fun a b => ((a.1, b.1), (a.2, b.2))) l₁ l₂
@@ -435,15 +456,6 @@ theorem cka_ideal_prod [Fintype K₁] [Nonempty K₁] [Fintype K₂] [Nonempty K
     SPComp.isPure_bind_comm_right _ (C₁.send _) _ (h₁ _)]
   simp only [SPComp.isPure_bind_comm_right _ (SPComp.sample K₁) _ (SPComp.sample_isPure _)]
   rfl
-
-/-- The ideal CKA game of a scheme whose initialisation and sending do not touch the heap does
-not touch the heap. -/
-theorem cka_ideal_isPure [Fintype K₁] [Nonempty K₁] (C₁ : CKADef S₁ M₁ K₁)
-    (h₀ : SPComp.IsPure C₁.init) (h₁ : ∀ s, SPComp.IsPure (C₁.send s)) (k m : ℕ) :
-    SPComp.IsPure (cka_ideal C₁ k m) :=
-  SPComp.bind_isPure h₀ fun _ => SPComp.bind_isPure (ckaRun_isPure C₁ h₁ _ _ _) fun _ =>
-    SPComp.bind_isPure (h₁ _) fun _ => SPComp.bind_isPure (SPComp.sample_isPure _) fun _ =>
-      SPComp.bind_isPure (ckaRun_isPure C₁ h₁ _ _ _) fun _ => SPComp.pure_isPure _
 
 /-- The hybrid game of the product: the ideal game of `C₁` and the real game of `C₂`. -/
 noncomputable def prodHyb [Fintype K₁] [Nonempty K₁] (C₁ : CKADef S₁ M₁ K₁)
@@ -572,16 +584,6 @@ section Hybrid
 open CatCryptCore.Examples.CyclicGroupDDH
 
 variable (G : Type) [CG : CyclicGroup G]
-
-/-- The initialisation of `dhCKA` does not touch the heap. -/
-theorem dhCKA_init_isPure : SPComp.IsPure (dhCKA G).init := by
-  simp only [dhCKA]
-  exact SPComp.bind_isPure (SPComp.sample_isPure CG.Exp) fun _ => SPComp.pure_isPure _
-
-/-- Sending in `dhCKA` does not touch the heap. -/
-theorem dhCKA_send_isPure (s : G × CG.Exp) : SPComp.IsPure ((dhCKA G).send s) := by
-  simp only [dhCKA]
-  exact SPComp.bind_isPure (SPComp.sample_isPure CG.Exp) fun _ => SPComp.pure_isPure _
 
 /-- **CKA security of the hybrid DH and KEM CKA from DDH and KEM-CPA.** For a KEM whose key
 generation and encapsulation do not touch the heap, every adversary `A`, challenge epoch
