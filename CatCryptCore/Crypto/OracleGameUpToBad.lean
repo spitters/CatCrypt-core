@@ -34,6 +34,11 @@ lazily sampled random function with a table is the image of one uniform value un
 
 ## Runs of oracle adversaries
 
+* `OracleAdv.run_eq_bind_run_of_trigger`: a key drawn by the oracle at its first call satisfying
+  a trigger may be drawn up front, for the full run; `OracleAdv.run_eq_run_of_inv` is the step
+  after the draw, oracles agreeing on an invariant.
+* `OracleAdv.run_map_fst_eq_bind_run_set_of_trigger`: the same with the key placed in the start
+  state, for the output.
 * `OracleAdv.run_map_fst_lazyKey`: a key sampled by the oracle at its first query may be sampled
   up front.
 * `OracleAdv.run_flagWhen_le_of_inv`: a bad flag implied by another along an invariant.
@@ -307,6 +312,19 @@ section LazyKey
 
 variable {K σ D R α : Type}
 
+/-- **Runs of oracles agreeing on an invariant.** From a state of an invariant `N` kept by every
+call of `O`, a run against an oracle `O'` agreeing with `O` on `N` is the run against `O`. -/
+theorem run_eq_run_of_inv (O O' : σ → D → PMF (R × σ)) (N : σ → Prop)
+    (hN : ∀ s d, N s → ∀ x ∈ (O s d).support, N x.2) (hO : ∀ s d, N s → O' s d = O s d)
+    (A : OracleAdv D R α) (s : σ) (hs : N s) :
+    OracleAdv.run O' A s = OracleAdv.run O A s := by
+  induction A generalizing s with
+  | ret a => rfl
+  | rand p f ih => simp only [OracleAdv.run_rand, fun b => ih b s hs]
+  | query d f ih =>
+    simp only [OracleAdv.run_query, hO s d hs]
+    exact PMF.bind_congr_support _ _ _ fun x hx => ih x.1 x.2 (hN s d hs x hx)
+
 /-- From a state with the key `k` in place, a run against `O` is the run against `O` with the
 key `k` put in place before every call, when every call from a state with `k` in place leaves
 `k` in place. -/
@@ -314,14 +332,70 @@ theorem run_eq_run_set (O : σ → D → PMF (R × σ)) (set : K → σ → σ) 
     (hpres : ∀ s d, ∀ x ∈ (O (set k s) d).support, set k x.2 = x.2) (A : OracleAdv D R α)
     (t : σ) (ht : set k t = t) :
     OracleAdv.run O A t = OracleAdv.run (fun s d => O (set k s) d) A t := by
-  induction A generalizing t with
-  | ret a => rfl
-  | rand p f ih => simp only [OracleAdv.run_rand, fun b => ih b t ht]
+  refine (run_eq_run_of_inv O _ (fun s => set k s = s) (fun s d hs x hx => ?_)
+    (fun s d hs => by rw [hs]) A t ht).symm
+  exact hpres s d x (by rwa [hs])
+
+/-- **A key drawn at its first triggering call.** Let the oracle `O`, from the states `P` before
+the draw, draw the key `k` from `μ` at the calls satisfying the trigger `c` and continue as the
+oracle `Ok k`, and let `Ok k` agree with `O` on the other calls from `P`, which lead to `P` or to
+states that satisfy `N k` for every key. Let a triggering call of `Ok k` lead to the states
+`N k`, kept by every call of `O`, on which `Ok k` agrees with `O`. Then from a state of `P` the
+run against `O` is the run against `Ok k` with `k` drawn from `μ` before the run, as a statement
+about the output and the final state. -/
+theorem run_eq_bind_run_of_trigger (μ : PMF K) (O : σ → D → PMF (R × σ))
+    (Ok : K → σ → D → PMF (R × σ)) (P : σ → Prop) (c : σ → D → Prop) (N : K → σ → Prop)
+    (hc : ∀ s d, P s → c s d → O s d = μ.bind fun k => Ok k s d)
+    (hnc : ∀ k s d, P s → ¬ c s d → Ok k s d = O s d)
+    (hP : ∀ s d, P s → ¬ c s d → ∀ x ∈ (O s d).support, P x.2 ∨ ∀ k, N k x.2)
+    (hN₀ : ∀ k s d, P s → c s d → ∀ x ∈ (Ok k s d).support, N k x.2)
+    (hN : ∀ k s d, N k s → ∀ x ∈ (O s d).support, N k x.2)
+    (hdone : ∀ k s d, N k s → Ok k s d = O s d) (A : OracleAdv D R α) (s : σ) (hs : P s) :
+    OracleAdv.run O A s = μ.bind fun k => OracleAdv.run (Ok k) A s := by
+  induction A generalizing s with
+  | ret a => simp only [OracleAdv.run_ret, PMF.bind_const]
+  | rand p f ih =>
+    simp only [OracleAdv.run_rand, fun b => ih b s hs]
+    exact PMF.bind_comm _ _ _
   | query d f ih =>
     simp only [OracleAdv.run_query]
-    rw [ht]
-    refine PMF.bind_congr_support _ _ _ fun x hx => ih x.1 x.2 ?_
-    exact hpres t d x (by rwa [ht])
+    by_cases hcs : c s d
+    · rw [hc s d hs hcs, PMF.bind_bind]
+      refine congrArg _ (funext fun k => PMF.bind_congr_support _ _ _ fun x hx => ?_)
+      exact (run_eq_run_of_inv O (Ok k) (N k) (hN k) (hdone k) _ _ (hN₀ k s d hs hcs x hx)).symm
+    · simp only [hnc _ s d hs hcs]
+      rw [PMF.bind_comm]
+      refine PMF.bind_congr_support _ _ _ fun x hx => ?_
+      rcases hP s d hs hcs x hx with h | h
+      · exact ih x.1 x.2 h
+      · simp only [run_eq_run_of_inv O _ _ (hN _) (hdone _) _ _ (h _), PMF.bind_const]
+
+/-- **A key drawn at its first triggering call, placed in the state.** Let the oracle `O`, from
+the states `P` before the draw, draw the key `k` from `μ` at the calls satisfying the trigger `c`
+and continue as from the state `set k s`, and let the other calls from `P` lead to `P` and
+commute with `set k`. Then from a state `s` of `P` the output of a run against `O` is the output
+of the run against `O` from `set k s` with `k` drawn from `μ` before the run. -/
+theorem run_map_fst_eq_bind_run_set_of_trigger (μ : PMF K) (O : σ → D → PMF (R × σ))
+    (set : K → σ → σ) (P : σ → Prop) (c : σ → D → Prop)
+    (hc : ∀ s d, P s → c s d → O s d = μ.bind fun k => O (set k s) d)
+    (hnc : ∀ k s d, P s → ¬ c s d → O (set k s) d = (O s d).map (Prod.map id (set k)))
+    (hP : ∀ s d, P s → ¬ c s d → ∀ x ∈ (O s d).support, P x.2) (A : OracleAdv D R α) (s : σ)
+    (hs : P s) :
+    (OracleAdv.run O A s).map Prod.fst =
+      μ.bind fun k => (OracleAdv.run O A (set k s)).map Prod.fst := by
+  induction A generalizing s with
+  | ret a => simp only [OracleAdv.run_ret, PMF.pure_map, PMF.bind_const]
+  | rand p f ih =>
+    simp only [OracleAdv.run_rand, PMF.map_bind, fun b => ih b s hs]
+    exact PMF.bind_comm _ _ _
+  | query d f ih =>
+    simp only [OracleAdv.run_query, PMF.map_bind]
+    by_cases hcs : c s d
+    · rw [hc s d hs hcs, PMF.bind_bind]
+    · simp only [hnc _ s d hs hcs, PMF.bind_map, Function.comp_def, Prod.map_fst, Prod.map_snd,
+        id_eq]
+      rw [PMF.bind_comm]
+      exact PMF.bind_congr_support _ _ _ fun x hx => ih x.1 x.2 (hP s d hs hcs x hx)
 
 /-- **A key sampled at the first query.** Let `O` sample the key `k` from `μ` at its first call
 from `s₀` and put it in place (`set k`), and let every call from a state with `k` in place leave
@@ -332,15 +406,11 @@ theorem run_map_fst_lazyKey (μ : PMF K) (O : σ → D → PMF (R × σ)) (set :
     (hpres : ∀ k s d, ∀ x ∈ (O (set k s) d).support, set k x.2 = x.2) (A : OracleAdv D R α) :
     (OracleAdv.run O A s₀).map Prod.fst =
       μ.bind fun k => (OracleAdv.run (fun s d => O (set k s) d) A s₀).map Prod.fst := by
-  induction A with
-  | ret a => simp only [OracleAdv.run_ret, PMF.pure_map, PMF.bind_const]
-  | rand p f ih =>
-    simp only [OracleAdv.run_rand, PMF.map_bind, ih]
-    exact PMF.bind_comm _ _ _
-  | query d f ih =>
-    simp only [OracleAdv.run_query, h₀, PMF.bind_bind, PMF.map_bind]
-    refine congrArg _ (funext fun k => PMF.bind_congr_support _ _ _ fun x hx => ?_)
-    rw [run_eq_run_set O set k (hpres k) (f x.1) x.2 (hpres k s₀ d x hx)]
+  rw [run_eq_bind_run_of_trigger μ O (fun k s d => O (set k s) d) (· = s₀) (fun _ _ => True)
+    (fun k s => set k s = s) (fun s d hs _ => hs ▸ h₀ d) (fun _ _ _ _ h => absurd trivial h)
+    (fun _ _ _ h => absurd trivial h) (fun k _ d _ _ x hx => hpres k _ d x hx)
+    (fun k s d hs x hx => hpres k s d x (by rwa [hs])) (fun k s d hs => by rw [hs]) A s₀ rfl,
+    PMF.map_bind]
 
 end LazyKey
 

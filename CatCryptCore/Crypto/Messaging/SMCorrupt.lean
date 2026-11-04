@@ -212,13 +212,8 @@ theorem run_map_fst_of_map_state_inv (O : S → D → PMF (R × S)) (O' : S' →
 theorem run_eager_of_done (O : S → D → PMF (R × S)) (Ov : S → D → PMF (R × S))
     (c : S → D → Bool) (hnc : ∀ s d, c s d = false → Ov s d = O s d) (N : S → Prop)
     (h2 : ∀ s d, N s → ∀ x ∈ (O s d).support, N x.2) (h3 : ∀ s d, N s → c s d = false)
-    (A : OracleAdv D R α) (s : S) (hs : N s) : run Ov A s = run O A s := by
-  induction A generalizing s with
-  | ret a => rfl
-  | rand p k ih => simp only [run_rand, ih _ s hs]
-  | query d k ih =>
-    simp only [run_query, hnc s d (h3 s d hs)]
-    exact PMF.bind_congr_support _ _ _ fun x hx => ih _ _ (h2 s d hs x hx)
+    (A : OracleAdv D R α) (s : S) (hs : N s) : run Ov A s = run O A s :=
+  run_eq_run_of_inv O Ov N h2 (fun s d hs => hnc s d (h3 s d hs)) A s hs
 
 /-- **Eager sampling of a value drawn at a critical step.** Let the oracle `O` draw, at the
 critical steps `c s d`, a value from `μ` and continue as the oracle `Ov v`, and agree with
@@ -231,23 +226,11 @@ theorem run_eq_bind_eager (O : S → D → PMF (R × S)) (Ov : V → S → D →
     (h1 : ∀ v s d, c s d = true → ∀ x ∈ (Ov v s d).support, N x.2)
     (h2 : ∀ s d, N s → ∀ x ∈ (O s d).support, N x.2) (h3 : ∀ s d, N s → c s d = false)
     (A : OracleAdv D R α) (s : S) :
-    run O A s = μ.bind fun v => run (Ov v) A s := by
-  induction A generalizing s with
-  | ret a => simp only [run_ret, PMF.bind_const]
-  | rand p k ih =>
-    simp only [run_rand, ih]
-    exact PMF.bind_comm _ _ _
-  | query d k ih =>
-    simp only [run_query]
-    cases hcs : c s d with
-    | true =>
-      rw [hc s d hcs, PMF.bind_bind]
-      refine congrArg _ (funext fun v => ?_)
-      refine PMF.bind_congr_support _ _ _ fun x hx => ?_
-      exact (run_eager_of_done O (Ov v) c (hnc v) N h2 h3 _ _ (h1 v s d hcs x hx)).symm
-    | false =>
-      simp only [hnc _ s d hcs, ih]
-      exact PMF.bind_comm _ _ _
+    run O A s = μ.bind fun v => run (Ov v) A s :=
+  run_eq_bind_run_of_trigger μ O Ov (fun _ => True) (fun s d => c s d = true) (fun _ => N)
+    (fun s d _ h => hc s d h) (fun v s d _ h => hnc v s d (by simpa using h))
+    (fun _ _ _ _ _ _ => Or.inl trivial) (fun v s d _ h => h1 v s d h) (fun _ => h2)
+    (fun v s d hs => hnc v s d (h3 s d hs)) A s trivial
 
 /-- From a bad state of an oracle whose bad states are kept by every call, a run reaches no
 good outcome. -/
