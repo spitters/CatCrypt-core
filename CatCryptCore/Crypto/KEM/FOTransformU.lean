@@ -8,6 +8,7 @@ module
 public import CatCryptCore.Crypto.PKE.Games
 public import CatCryptCore.Crypto.KEM.Games
 public import CatCryptCore.Crypto.Constructions.ECBCPRFFlag
+public import CatCryptCore.Crypto.LazyTableReindex
 public import CatCryptCore.Crypto.OracleQueryVec
 public import CatCryptCore.Tactics.QueryBound
 
@@ -365,18 +366,12 @@ variable {G : Type}
 /-- Answer from the table indexed by `c` with ghost state `g`. -/
 noncomputable def lazyD {A : Type} (st : SimState M C K) (c : C) (w : K → A) (g : G) :
     PMF (A × (SimState M C K × G)) :=
-  match st.LD c with
-  | some k => PMF.pure (w k, (st, g))
-  | none => (PMF.uniformFintype K).map fun k =>
-      (w k, ({ st with LD := Function.update st.LD c (some k) }, g))
+  lazyRead st.LD c (fun t => { st with LD := t }) w g
 
 /-- Answer from the table indexed by `(m, c)` with ghost state `g`. -/
 noncomputable def lazyQ {A : Type} (st : SimState M C K) (q : M × C) (w : K → A) (g : G) :
     PMF (A × (SimState M C K × G)) :=
-  match st.LQ q with
-  | some k => PMF.pure (w k, (st, g))
-  | none => (PMF.uniformFintype K).map fun k =>
-      (w k, ({ st with LQ := Function.update st.LQ q (some k) }, g))
+  lazyRead st.LQ q (fun t => { st with LQ := t }) w g
 
 /-- The re-indexed oracle with selector `sel`, challenge `c*` and key `v`: a
 random-oracle query `q` with `sel q` is answered from the table indexed by `q.2`
@@ -395,13 +390,13 @@ noncomputable def oTwo (upd : M → G → G) (sel : M × C → Bool) (cstar : C)
 
 omit [Fintype M] [Nonempty M] [DecidableEq M] in
 theorem lazyD_map_ghost {G' A : Type} (f : G → G') (st : SimState M C K) (c : C) (w : K → A)
-    (g : G) : (lazyD st c w g).map (Prod.map id (Prod.map id f)) = lazyD st c w (f g) := by
-  unfold lazyD; split <;> simp [PMF.pure_map, PMF.map_comp, Function.comp_def]
+    (g : G) : (lazyD st c w g).map (Prod.map id (Prod.map id f)) = lazyD st c w (f g) :=
+  lazyRead_map_ghost _ _ _ _ _ _
 
 omit [Fintype M] [Nonempty M] in
 theorem lazyQ_map_ghost {G' A : Type} (f : G → G') (st : SimState M C K) (q : M × C) (w : K → A)
-    (g : G) : (lazyQ st q w g).map (Prod.map id (Prod.map id f)) = lazyQ st q w (f g) := by
-  unfold lazyQ; split <;> simp [PMF.pure_map, PMF.map_comp, Function.comp_def]
+    (g : G) : (lazyQ st q w g).map (Prod.map id (Prod.map id f)) = lazyQ st q w (f g) :=
+  lazyRead_map_ghost _ _ _ _ _ _
 
 omit [Fintype M] [Nonempty M] in
 /-- A map of ghost states that commutes with the ghost updates commutes with the
@@ -423,39 +418,62 @@ theorem oTwo_map_ghost {G' : Type} (upd : M → G → G) (upd' : M → G' → G'
 
 variable (P : Scheme PK SK M C R)
 
+/-- The selector of `table`. -/
+def selIdx (sk : SK) (s : M) (q : M × C) : Bool := decide ((P.dec sk q.2).getD s = q.1)
+
 /-- The random-oracle table represented by a simulation state: the point `(m, c)` is
 read from the table indexed by `c` when `m` is `Dec(sk, c)` (or `s` when decryption
 rejects), and from the table indexed by `(m, c)` otherwise. -/
 def table (sk : SK) (s : M) (st : SimState M C K) : M × C → Option K :=
-  fun q => if (P.dec sk q.2).getD s = q.1 then st.LD q.2 else st.LQ q
+  reindexTable (selIdx P sk s) Prod.snd st.LD st.LQ
 
-/-- The selector of `table`. -/
-def selIdx (sk : SK) (s : M) (q : M × C) : Bool := decide ((P.dec sk q.2).getD s = q.1)
+omit [Fintype R] [Nonempty R] [Fintype M] [Nonempty M] [Fintype K] [Nonempty K]
+  [DecidableEq C] in
+theorem selIdx_decIdx (sk : SK) (s : M) (c : C) : selIdx P sk s (decIdx P sk s c) = true := by
+  simp [selIdx, decIdx]
+
+omit [Fintype R] [Nonempty R] [Fintype M] [Nonempty M] [Fintype K] [Nonempty K]
+  [DecidableEq C] in
+/-- The only point selected by `selIdx` with ciphertext `c` is `decIdx c`. -/
+theorem selIdx_inj (sk : SK) (s : M) (c : C) (q : M × C) (hs : selIdx P sk s q = true)
+    (hc : q.2 = c) : q = decIdx P sk s c := by
+  obtain ⟨m, c'⟩ := q
+  simp only [selIdx, decide_eq_true_eq] at hs hc
+  subst hc hs
+  rfl
 
 omit [Fintype R] [Nonempty R] [Fintype M] [Nonempty M] [Fintype K] [Nonempty K] in
 theorem table_updateLD (sk : SK) (s : M) (st : SimState M C K) (c : C) (k : K) :
     table P sk s { st with LD := Function.update st.LD c (some k) } =
-      Function.update (table P sk s st) (decIdx P sk s c) (some k) := by
-  funext q
-  obtain ⟨m, c'⟩ := q
-  simp only [table, decIdx, Function.update_apply, Prod.mk.injEq]
-  by_cases hc : c' = c
-  · subst hc
-    by_cases hm : (P.dec sk c').getD s = m
-    · simp [hm]
-    · simpa [hm] using fun h => absurd h.symm hm
-  · simp [hc]
+      Function.update (table P sk s st) (decIdx P sk s c) (some k) :=
+  reindexTable_update_left _ _ _ _ (selIdx_decIdx P sk s c) rfl (selIdx_inj P sk s c) _
 
 omit [Fintype R] [Nonempty R] [Fintype M] [Nonempty M] [Fintype K] [Nonempty K] in
 theorem table_updateLQ (sk : SK) (s : M) (st : SimState M C K) (q : M × C) (k : K)
     (hq : (P.dec sk q.2).getD s ≠ q.1) :
     table P sk s { st with LQ := Function.update st.LQ q (some k) } =
-      Function.update (table P sk s st) q (some k) := by
-  funext q'
-  simp only [table, Function.update_apply]
-  by_cases h : q' = q
-  · subst h; simp [hq]
-  · simp [h]
+      Function.update (table P sk s st) q (some k) :=
+  reindexTable_update_right _ _ _ _ (by simpa [selIdx] using hq) _
+
+omit [Fintype R] [Nonempty R] [Fintype M] [Nonempty M] in
+/-- A read of the table indexed by `c` is the random oracle at `decIdx c`. -/
+theorem lazyD_map_table {A : Type} (sk : SK) (s : M) (st : SimState M C K) (c : C) (w : K → A)
+    (g : G) (b : Bool) (F : K × (M × C → Option K) → A × ((M × C → Option K) × Bool))
+    (hF : ∀ k T, F (k, T) = (w k, (T, b))) (hb : st.found.isSome = b) :
+    (lazyD st c w g).map (Prod.map id fun y => (table P sk s y.1, y.1.found.isSome)) =
+      (roOracle (table P sk s st) (decIdx P sk s c)).map F :=
+  lazyRead_map_reindex_left (j := decIdx P sk s c) _ _ _ _ (selIdx_decIdx P sk s c)
+    (selIdx_inj P sk s c) _ _ _ _ _ fun k t => by simp [hF, table, hb]
+
+omit [Fintype R] [Nonempty R] [Fintype M] [Nonempty M] in
+/-- A read of the table indexed by an unselected point `q` is the random oracle at `q`. -/
+theorem lazyQ_map_table {A : Type} (sk : SK) (s : M) (st : SimState M C K) (q : M × C)
+    (w : K → A) (g : G) (hq : selIdx P sk s q = false) (b : Bool)
+    (F : K × (M × C → Option K) → A × ((M × C → Option K) × Bool))
+    (hF : ∀ k T, F (k, T) = (w k, (T, b))) (hb : st.found.isSome = b) :
+    (lazyQ st q w g).map (Prod.map id fun y => (table P sk s y.1, y.1.found.isSome)) =
+      (roOracle (table P sk s st) q).map F :=
+  lazyRead_map_reindex_right _ _ _ _ hq _ _ _ _ _ fun k t => by simp [hF, table, hb]
 
 omit [Fintype R] [Nonempty R] [Fintype M] [Nonempty M] in
 /-- Forgetting the ghost state and reading the table maps the re-indexed oracle with
@@ -478,43 +496,21 @@ theorem oTwo_map_table (sk : SK) (s mstar : M) (cstar : C) (v : K)
         simp [oTwo, oFlag, selIdx, hdec, PMF.pure_map]
         rfl
       · have hq : (m, c) ≠ (mstar, cstar) := fun h => hc (congrArg Prod.snd h)
-        have ht : table P sk s st (m, c) = st.LD c := by simp [table, hsel]
         simp only [oTwo, oFlag, selIdx, hsel, decide_true, ite_true, hc, ite_false, hq]
-        unfold lazyD roOracle
-        rw [ht]
-        cases st.LD c with
-        | some k => simp [PMF.pure_map]
-        | none =>
-          simp only [PMF.map_comp, Function.comp_def, Prod.map_apply, id]
-          congr 1; funext k
-          have := table_updateLD P sk s st c k
-          simp only [decIdx, hsel] at this
-          simp [this]
+        have hm : decIdx P sk s c = (m, c) := by simp [decIdx, hsel]
+        rw [← hm]
+        exact lazyD_map_table P sk s st c _ _ _ _ (fun _ _ => rfl) rfl
     · have hq : (m, c) ≠ (mstar, cstar) := by
         rintro ⟨rfl, rfl⟩; exact hsel (by rw [hdec, Option.getD_some])
-      have ht : table P sk s st (m, c) = st.LQ (m, c) := by simp [table, hsel]
-      simp only [oTwo, oFlag, selIdx, hsel, decide_false, Bool.false_eq_true, ite_false, hq]
-      unfold lazyQ roOracle
-      rw [ht]
-      cases st.LQ (m, c) with
-      | some k => simp [PMF.pure_map]
-      | none =>
-        simp only [PMF.map_comp, Function.comp_def, Prod.map_apply, id]
-        congr 1; funext k
-        simp [table_updateLQ P sk s st (m, c) k hsel]
+      simp only [oTwo, oFlag, hq, ite_false]
+      have hs : selIdx P sk s (m, c) = false := by simpa [selIdx] using hsel
+      simp only [hs, Bool.false_eq_true, ite_false]
+      exact lazyQ_map_table P sk s st _ _ _ hs _ _ (fun _ _ => rfl) rfl
   | inr c =>
     by_cases hc : c = cstar
     · subst hc; simp [oTwo, oFlag, PMF.pure_map]
-    · have ht : table P sk s st (decIdx P sk s c) = st.LD c := by simp [table, decIdx]
-      simp only [oTwo, oFlag, hc, ite_false]
-      unfold lazyD roOracle
-      rw [ht]
-      cases st.LD c with
-      | some k => simp [PMF.pure_map]
-      | none =>
-        simp only [PMF.map_comp, Function.comp_def, Prod.map_apply, id]
-        congr 1; funext k
-        simp [table_updateLD P sk s st c k]
+    · simp only [oTwo, oFlag, hc, ite_false]
+      exact lazyD_map_table P sk s st c _ _ _ _ (fun _ _ => rfl) rfl
 
 end Reindex
 
@@ -539,17 +535,13 @@ theorem selIdx_eq_selPco (P : Scheme PK SK M C R) (sk : SK) (s : M) (q : M × C)
 
 omit [Fintype M] [Nonempty M] [DecidableEq M] in
 theorem lazyD_apply_ghost_ne {G A : Type} (st : SimState M C K) (c : C) (w : K → A) (g : G)
-    (a : A) (st' : SimState M C K) (g' : G) (h : g ≠ g') : lazyD st c w g (a, (st', g')) = 0 := by
-  unfold lazyD; split
-  · simp [PMF.pure_apply, Ne.symm h]
-  · rw [PMF.map_apply]; simp [Ne.symm h]
+    (a : A) (st' : SimState M C K) (g' : G) (h : g ≠ g') : lazyD st c w g (a, (st', g')) = 0 :=
+  lazyRead_apply_ghost_ne _ _ _ _ _ _ _ _ h
 
 omit [Fintype M] [Nonempty M] in
 theorem lazyQ_apply_ghost_ne {G A : Type} (st : SimState M C K) (q : M × C) (w : K → A) (g : G)
-    (a : A) (st' : SimState M C K) (g' : G) (h : g ≠ g') : lazyQ st q w g (a, (st', g')) = 0 := by
-  unfold lazyQ; split
-  · simp [PMF.pure_apply, Ne.symm h]
-  · rw [PMF.map_apply]; simp [Ne.symm h]
+    (a : A) (st' : SimState M C K) (g' : G) (h : g ≠ g') : lazyQ st q w g (a, (st', g')) = 0 :=
+  lazyRead_apply_ghost_ne _ _ _ _ _ _ _ _ h
 
 omit [Fintype M] [Nonempty M] in
 theorem oTwo_bad_apply_true_false (s : M) (sel : M × C → Bool) (cstar : C) (v : K)
@@ -617,17 +609,13 @@ def costH : (M × C) ⊕ C → ℕ := Sum.elim (fun _ => 1) fun _ => 0
 
 omit [Fintype M] [Nonempty M] [DecidableEq M] in
 theorem mem_support_lazyD_ghost {G A : Type} {st : SimState M C K} {c : C} {w : K → A} {g : G}
-    {x : A × (SimState M C K × G)} (hx : x ∈ (lazyD st c w g).support) : x.2.2 = g := by
-  by_contra h
-  obtain ⟨a, st', g'⟩ := x
-  exact (PMF.mem_support_iff _ _).mp hx (lazyD_apply_ghost_ne _ _ _ _ _ _ _ (Ne.symm h))
+    {x : A × (SimState M C K × G)} (hx : x ∈ (lazyD st c w g).support) : x.2.2 = g :=
+  mem_support_lazyRead_ghost hx
 
 omit [Fintype M] [Nonempty M] in
 theorem mem_support_lazyQ_ghost {G A : Type} {st : SimState M C K} {q : M × C} {w : K → A}
-    {g : G} {x : A × (SimState M C K × G)} (hx : x ∈ (lazyQ st q w g).support) : x.2.2 = g := by
-  by_contra h
-  obtain ⟨a, st', g'⟩ := x
-  exact (PMF.mem_support_iff _ _).mp hx (lazyQ_apply_ghost_ne _ _ _ _ _ _ _ (Ne.symm h))
+    {g : G} {x : A × (SimState M C K × G)} (hx : x ∈ (lazyQ st q w g).support) : x.2.2 = g :=
+  mem_support_lazyRead_ghost hx
 
 omit [Fintype M] [Nonempty M] in
 theorem mem_support_oTwo_log {sel : M × C → Bool} {cstar : C} {v : K} {st : SimState M C K}
@@ -738,15 +726,17 @@ omit [Fintype R] [Nonempty R] [Fintype M] [Nonempty M] in
 theorem run_lazyDProg {A : Type} (sk : SK) (st : SimState M C K) (c : C) (w : K → A) :
     (OracleAdv.run (pcoOracle P sk) (lazyDProg st c w) ()).map
       (fun x => (x.1.1, (x.1.2, x.2))) = lazyD st c w () := by
-  unfold lazyDProg lazyD
-  split <;> simp [PMF.pure_map, PMF.map_bind]; rfl
+  unfold lazyDProg lazyD lazyRead
+  split <;> rename_i h <;> simp [h, PMF.pure_map, PMF.map_bind]
+  rfl
 
 omit [Fintype R] [Nonempty R] [Fintype M] [Nonempty M] in
 theorem run_lazyQProg {A : Type} (sk : SK) (st : SimState M C K) (q : M × C) (w : K → A) :
     (OracleAdv.run (pcoOracle P sk) (lazyQProg st q w) ()).map
       (fun x => (x.1.1, (x.1.2, x.2))) = lazyQ st q w () := by
-  unfold lazyQProg lazyQ
-  split <;> simp [PMF.pure_map, PMF.map_bind]; rfl
+  unfold lazyQProg lazyQ lazyRead
+  split <;> rename_i h <;> simp [h, PMF.pure_map, PMF.map_bind]
+  rfl
 
 omit [Fintype R] [Nonempty R] [Fintype M] [Nonempty M] in
 /-- The composite oracle of the reduction is the re-indexed oracle with the
@@ -773,20 +763,14 @@ theorem simOracle_eq_oTwo (sk : SK) (cstar : C) (v : K) (x : SimState M C K × U
 omit [Fintype M] [Nonempty M] [DecidableEq M] in
 theorem found_of_mem_support_lazyD {G A : Type} {st : SimState M C K} {c : C} {w : K → A}
     {g : G} {x : A × (SimState M C K × G)} (hx : x ∈ (lazyD st c w g).support) :
-    x.2.1.found = st.found := by
-  unfold lazyD at hx; split at hx
-  · simp only [PMF.support_pure, Set.mem_singleton_iff] at hx; subst hx; rfl
-  · simp only [PMF.support_map, Set.mem_image] at hx
-    obtain ⟨k, _, rfl⟩ := hx; rfl
+    x.2.1.found = st.found :=
+  eq_of_mem_support_lazyRead SimState.found (fun _ => rfl) hx
 
 omit [Fintype M] [Nonempty M] in
 theorem found_of_mem_support_lazyQ {G A : Type} {st : SimState M C K} {q : M × C} {w : K → A}
     {g : G} {x : A × (SimState M C K × G)} (hx : x ∈ (lazyQ st q w g).support) :
-    x.2.1.found = st.found := by
-  unfold lazyQ at hx; split at hx
-  · simp only [PMF.support_pure, Set.mem_singleton_iff] at hx; subst hx; rfl
-  · simp only [PMF.support_map, Set.mem_image] at hx
-    obtain ⟨k, _, rfl⟩ := hx; rfl
+    x.2.1.found = st.found :=
+  eq_of_mem_support_lazyRead SimState.found (fun _ => rfl) hx
 
 /-- A found message decrypts the challenge. -/
 def FoundValid (sk : SK) (cstar : C) (st : SimState M C K) : Prop :=
@@ -830,7 +814,7 @@ noncomputable def failInd (sk : SK) (m : M) (c : C) : ℝ≥0∞ :=
 omit [Fintype R] [Nonempty R] [Fintype M] [Nonempty M] [DecidableEq C] [Fintype K] [Nonempty K] in
 theorem table_init (sk : SK) (s : M) :
     table P sk s (SimState.init : SimState M C K) = emptyTable := by
-  funext q; simp [table, SimState.init, emptyTable]
+  funext q; simp [table, reindexTable, SimState.init, emptyTable]
 
 omit [Fintype R] [Nonempty R] [Fintype M] in
 /-- **Per-draw bound.** For a fixed draw, the probability that the flagged run hits
