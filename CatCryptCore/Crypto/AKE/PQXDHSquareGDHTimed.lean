@@ -34,12 +34,12 @@ At the KEM operations `kemOps P` of `P` these programs compute the step (`psroSt
 `deliverCP_eq`, `completeRP_eq`, `sendRP_eq`, `encCP_eq`, `otherCP_eq`, `finishCP_eq`): each is the
 lift of the image of a draw under the corresponding part of `stepRP`.
 
-**The costed reduction.** `derive_timed stepRedD` gives the costed form `stepRedD.timed` of the
-generic reduction and its erasure theorem `stepRedD.erase_timed`, and `stepRedD.timeBound_timed`
-bounds its time from an invariant of the states, a bound of the step cost and a bound of the
-extraction cost. At the PQXDH square the step cost is `stepTimeP`: one unit for the dispatch on the
-event, the times of the derived costed trees of the step programs on the states they read, and the
-time of the finish; the extraction costs `extTimeP`. Each costed tree is read with the tables of
+**The costed reduction.** The costed form `stepRedD.timed` of the generic reduction, its erasure
+theorem `stepRedD.erase_timed` and its time bound `stepRedD.timeBound_timed`, from an invariant of
+the states, a bound of the draw and step cost and a bound of the extraction cost, are those of
+`X3DHSquareGDHTimed`. At the PQXDH square the step cost is `stepTimeP`: one unit for the dispatch on
+the event, the times of the derived costed trees of the step programs on the states they read, and
+the time of the finish; the extraction costs `extTimeP`. Each costed tree is read with the tables of
 its input state at unit cost (zero cost companions). Erasing the costs gives the program of
 `pqGdhRed` (`pqGdhOut_erase_timed`).
 
@@ -56,8 +56,6 @@ adversary plus a polynomial of degree two in its number of queries.
 
 ## Main results
 
-* `stepRedD.timed`, `stepRedD.erase_timed`, `stepRedD.timeBound_timed`: the derived costed form
-  of the generic reduction, its erasure and its time.
 * `pqGdhOut_erase_timed`: the costed reduction erases to the program of `pqGdhRed`.
 * `pqGdhOut_timeBound`: its time bound.
 -/
@@ -74,7 +72,8 @@ open CatCrypt.Crypto.PAKE.DHExtract
 open CatCrypt.Crypto.AKE.X3DHSquare (Inp RSt Named opkOf ltStep)
 open CatCrypt.Crypto.AKE.X3DHSquareHops (ltStep_eq ltAt_map_eq)
 open CatCrypt.Crypto.AKE.X3DHSquareHops (drive0D Draw ltD fStepD)
-open CatCrypt.Crypto.AKE.X3DHSquareGDH (keyA keyB pubIK pubSPK aliceS bobS ofInp off1 off2 ltC fakeC)
+open CatCrypt.Crypto.AKE.X3DHSquareGDH (keyA keyB pubIK pubSPK aliceS bobS ofInp off1 off2 ltC fakeC
+  stepRedD stepRedD.timed stepRedD.erase_timed stepRedD.timeBound_timed)
 open CatCrypt.Crypto.AKE.PQXDHSquare
 open CatCrypt.Crypto.AKE.PQXDHSquareHops
 open CatCrypt.Crypto.KEM.Games (Scheme)
@@ -331,69 +330,6 @@ noncomputable def extTimeP (rs : PSt S (W ⊕ W) K PK SK SS C) : ℕ :=
     (fun _ => 0) expCost)
 
 end Costed
-
-/-! ## The derived costed reduction -/
-
-derive_timed stepRedD
-
-section Generic
-
-variable {σ E A V Out : Type}
-
-/-- **The time of `stepRedD`.** Let `Inv i` hold of the states reached after `i` steps, with the
-cost of the draw distribution and of a step from a state of `Inv i` together at most `F i` (`F`
-monotone) and an extraction from a state of `Inv i` of cost at most `Ext i`. Then a costed
-adversary `B` of time `T` with at most `q` queries gives a costed reduction of time at most
-`T + q · (F q + 3) + Ext q + 1`: per query the draw distribution, one `rand` node and the step,
-and at the end the extraction. -/
-theorem stepRedD.timeBound_timed (μ : σ → E → PMF V) (μCost : σ → E → ℕ)
-    (step : σ → E → V → σ × A) (stepCost : σ → E → V → ℕ) (ext : σ → Out) (extCost : σ → ℕ)
-    (Inv : ℕ → σ → Prop) (F Ext : ℕ → ℕ) (hF : Monotone F)
-    (hmono : ∀ i t, Inv i t → Inv (i + 1) t)
-    (hstep : ∀ i t e r, Inv i t → Inv (i + 1) (step t e r).1)
-    (hcost : ∀ i t e r, Inv i t → μCost t e + stepCost t e r ≤ F i)
-    (hext : ∀ i t, Inv i t → extCost t ≤ Ext i)
-    (B : OracleAdv.Timed E A Bool) {T q : ℕ} (hB : B.TimeBound T) (hq : B.erase.IsQueryBound q)
-    (s₀ : σ) (h0 : Inv 0 s₀) :
-    OracleAdv.Timed.StepTimeBound (stepRedD.timed μ μCost step stepCost ext extCost B s₀)
-      (T + q * (F q + 3) + (Ext q + 1)) := by
-  unfold stepRedD.timed
-  generalize hI : (fun (t : σ) (e : E) => (1 + μCost t e, OracleAdv.Timed.rand (μ t e)
-    (fun r => 1 + stepCost t e r) fun r =>
-      have p := step t e r; OracleAdv.Timed.ret (p.2, p.1))) = impl
-  have himpl : ∀ i s d, Inv i s →
-      OracleAdv.Timed.StepTimeBound (impl s d) (F i + 3) ∧
-        OracleAdv.Timed.AllRet (fun y => Inv (i + 1) y.2) (impl s d).2 := by
-    intro i s d hs
-    subst hI
-    beta_reduce
-    have hr : ∀ r, μCost s d + stepCost s d r ≤ F i := fun r => hcost i s d r hs
-    obtain ⟨r₀, -⟩ := (μ s d).support_nonempty
-    have := hr r₀
-    refine ⟨⟨by omega, by dsimp only; omega, fun r => ⟨?_, trivial⟩⟩,
-      fun r => hstep i s d r hs⟩
-    have := hr r
-    dsimp only
-    omega
-  have hsim := OracleAdv.Timed.timeBound_simulateHat_inv id id impl Inv (fun i => F i + 3) himpl
-    hB hq 0 s₀ h0
-  have hall := OracleAdv.Timed.allRet_simulateHat_inv id id impl Inv (fun i s d h => (himpl i s d h).2)
-    hmono hq 0 s₀ h0
-  unfold OracleAdv.Timed.simulateHat at hsim hall
-  simp only [Nat.zero_add] at hsim hall
-  have hsum : ∑ j ∈ Finset.range q, (F j + 3) ≤ q * (F q + 3) := by
-    calc ∑ j ∈ Finset.range q, (F j + 3) ≤ ∑ _j ∈ Finset.range q, (F q + 3) :=
-          Finset.sum_le_sum fun j hj => by
-            have := hF (le_of_lt (Finset.mem_range.mp hj)); omega
-      _ = q * (F q + 3) := by rw [Finset.sum_const, Finset.card_range, smul_eq_mul]
-  have hbind := OracleAdv.Timed.timeBound_bind_of_allRet (n := Ext q + 1)
-    (f := fun p => (1 + extCost p.2, OracleAdv.Timed.ret (ext p.2))) hsim.2 hall
-    fun y hy => ⟨by have := hext q y.2 hy; dsimp only; omega, trivial⟩
-  refine (OracleAdv.Timed.stepTimeBound_delay hbind).mono ?_
-  have := hsim.1
-  omega
-
-end Generic
 
 section Instance
 

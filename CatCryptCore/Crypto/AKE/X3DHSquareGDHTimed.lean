@@ -15,10 +15,12 @@ public import CatCryptCore.Crypto.UCSimulatorCostGraded
 # Running time of the gap Diffie–Hellman reduction of the X3DH square
 
 The reduction `gdhRed G a b B` of `X3DHSquareGDH.lean` outputs the distribution `gdhOut`: the
-program `stepRed (stepR …) (extractR …) B rInitR` runs the oracle adversary `B` against the world
-of the reduction and extracts its output from the final state. This module gives the costed form
-of `stepRed`, derived by `derive_timed`, and its running time at the step of the world of the
-reduction.
+program `stepRedD (fun _ _ => PMF.uniformFintype (Draw S K × K)) (stepR …) (extractR …) B rInitR`
+runs the oracle adversary `B` against the world of the reduction, one uniform draw per query, and
+extracts its output from the final state. This module gives the costed form of the generic
+reduction `stepRedD`, derived by `derive_timed`, its running time for an arbitrary draw
+distribution, step and extraction (used by `PQXDHSquareGDHTimed` as well), and its running time at
+the world of the X3DH reduction.
 
 **The step programs.** A step of the world of the reduction is written as computations over
 `sample` nodes, and `derive_reduction` builds the costed tree of each and its erasure theorem:
@@ -31,32 +33,35 @@ These programs compute the step (`ltC_eq`, `sroStep_eq`, `deliverC_eq`, `complet
 `sendR_eq`, `otherC_eq`, `finishC_eq`): each is the lift of the image of a uniform draw under the
 corresponding part of `stepR`.
 
-**The costed reduction.** `derive_timed stepRed` defines `stepRed.timed`, generic in the state,
-the step and the extraction, which become binders with cost companions, and proves
-`stepRed.erase_timed`. A query is one `rand` node over the draw of the step, with the cost of the
-step; the leaf is the extraction with its cost. At the world of the reduction the cost of the step
-is `stepTime`: one unit for the dispatch on the event, the times of the costed trees of the
-programs on the states they read, and the time of the finish; the cost of the extraction is
-`extTime`. Each costed tree is read with the tables of its input state at unit cost (zero cost
-companions), the convention of the costed simulators of `UCSimulatorCostGraded`. The derivation
-does not price `stepR` itself: unfolding it exceeds the unfolding depth of `derive_timed` at
-`ltD`, which is why the step is a binder of `stepRed`.
+**The costed reduction.** `derive_timed stepRedD` defines `stepRedD.timed`, generic in the state,
+the draw distribution, the step and the extraction, which become binders with cost companions, and
+proves `stepRedD.erase_timed`. A query is the evaluation of the draw distribution, with its cost,
+and one `rand` node over the draw, with the cost of the step; the leaf is the extraction with its
+cost. At the world of the reduction the cost of the step is `stepTime`: one unit for the dispatch on
+the event, the times of the costed trees of the programs on the states they read, and the time of
+the finish; the cost of the extraction is `extTime`. Each costed tree is read with the tables of its
+input state at unit cost (zero cost companions), the convention of the costed simulators of
+`UCSimulatorCostGraded`. The uniform draw of X3DH costs zero beyond the unit of its evaluation. The
+derivation does not price `stepR` itself: unfolding it exceeds the unfolding depth of `derive_timed`
+at `ltD`, which is why the step is a binder of `stepRedD`.
 
 **The time.** The derived trees are bounded by `time_bound`, linearly in the length of the
 key-derivation table and of the lists of notices, given bounds `tO` on the decision oracle, `tm`
 on the group operation, `te` on exponentiation and `tf`, `tc` on the public value of an exponent
 (`otherC_time`, `delTime_le`, `finishC_time`, `extTime_le`, `slookup.timedCost_le`). A step adds
 at most one entry to the table and to each list of notices (`sz_stepR`), so a step after `i` steps
-costs at most `stepBound … i` (`stepTime_le`), and an adversary of time `T` with at most `q`
+costs less than `stepBound … i` (`stepTime_lt`), and an adversary of time `T` with at most `q`
 queries gives a reduction of time at most `T + q · (stepBound … q + 2) + extBound … q + 1`
-(`gdhOut_timeBound`, from the generic bound `stepRed.timeBound_timed`): the time of the adversary
+(`gdhOut_timeBound`, the instance of the generic bound `stepRedD.timeBound_timed` at the uniform
+draw of cost zero and the step bound `stepBound … i - 1`): the time of the adversary
 plus a polynomial of degree two in its number of queries.
 
 ## Main results
 
-* `stepRed.erase_timed` (derived): the costed form of `stepRed` erases to `stepRed`.
-* `stepRed.timeBound_timed`: its time under a state invariant bounding the step and the
-  extraction.
+* `stepRedD.timed`, `stepRedD.erase_timed` (derived): the costed form of the generic reduction
+  `stepRedD` and its erasure to `stepRedD`.
+* `stepRedD.timeBound_timed`: its time under a state invariant bounding the draw and the step and
+  the extraction.
 * `gdhOut_erase_timed`, `gdhOut_timeBound`: the costed reduction of the X3DH square erases to the
   program of `gdhRed` and its time bound.
 -/
@@ -671,13 +676,13 @@ def stepBound (tO tm te tf tc i : ℕ) : ℕ :=
 def extBound (tO tm te tf i : ℕ) : ℕ :=
   100 + 4 * tm + 3 * te + 3 * tf + (tO + 2 * tm + 2 * tf + 40) * i
 
-/-- **The time of a step** of the world of the reduction after `i` steps is at most
-`stepBound … i`. -/
-theorem stepTime_le {i : ℕ} {t : RSim S W K × St K} (hsz : Sz i t) (e : OEv W)
+/-- **The time of a step** of the world of the reduction after `i` steps is less than
+`stepBound … i`; the unit left over is the evaluation of the draw distribution. -/
+theorem stepTime_lt {i : ℕ} {t : RSim S W K × St K} (hsz : Sz i t) (e : OEv W)
     (r : Draw S K × K) {tO tm tf te tc : ℕ}
     (hO : ∀ x y z, OCost x y z ≤ tO) (hm : ∀ x y, mulCost x y ≤ tm) (hf : ∀ x, toFunCost x ≤ tf)
     (he : ∀ x y, expCost x y ≤ te) (hc : ∀ x y, coeCost x y ≤ tc) :
-    stepTime G a b O OCost X Y coeCost mulCost toFunCost expCost t e r ≤
+    stepTime G a b O OCost X Y coeCost mulCost toFunCost expCost t e r <
       stepBound tO tm te tf tc i := by
   obtain ⟨h1, h2, h3⟩ := hsz
   have hfin := finishC_time (startR G a b O X Y t.1 e r.1) t.2
@@ -699,7 +704,7 @@ theorem stepTime_le {i : ℕ} {t : RSim S W K × St K} (hsz : Sz i t) (e : OEv W
     · rename_i rc ek opk _
       have := ltTime_le t.1.1 pid
       have := ltTime_le (ltD t.1.1 pid r.1.2.1).2 rc.peer
-      refine le_trans (Nat.add_le_add_right (Nat.add_le_add_left (Nat.add_le_add_left
+      refine lt_of_le_of_lt (Nat.add_le_add_right (Nat.add_le_add_left (Nat.add_le_add_left
         (Nat.add_le_add_left (hdel _ _ _ _ _) _) _) _) _) ?_
       simp only [ltD_ro]
       generalize (3 * (tO + tm + te + tf) + 60) * t.1.1.ro.length = P₁ at hL ⊢
@@ -712,7 +717,7 @@ theorem stepTime_le {i : ℕ} {t : RSim S W K × St K} (hsz : Sz i t) (e : OEv W
     · rename_i rc opk _
       have := ltTime_le t.1.1 pid
       have := ltTime_le (ltD t.1.1 pid r.1.2.1).2 rc.peer
-      refine le_trans (Nat.add_le_add_right (Nat.add_le_add_left (Nat.add_le_add_left
+      refine lt_of_le_of_lt (Nat.add_le_add_right (Nat.add_le_add_left (Nat.add_le_add_left
         (Nat.add_le_add_left (hdel _ _ _ _ _) _) _) _) _) ?_
       simp only [ltD_ro]
       generalize (3 * (tO + tm + te + tf) + 60) * t.1.1.ro.length = P₁ at hL ⊢
@@ -721,7 +726,7 @@ theorem stepTime_le {i : ℕ} {t : RSim S W K × St K} (hsz : Sz i t) (e : OEv W
     · omega
   all_goals
     simp only [startTime]
-    refine le_trans (Nat.add_le_add_right (Nat.add_le_add_left
+    refine lt_of_le_of_lt (Nat.add_le_add_right (Nat.add_le_add_left
       (otherC_time G a b O OCost X Y coeCost mulCost toFunCost expCost t.1 _ hO hm hf he hc) _) _) ?_
     generalize (3 * (tO + tm + te + tf) + 60) * t.1.1.ro.length = P₁ at hL ⊢
     generalize (3 * (tO + tm + te + tf) + 60) * i = P₂ at hL ⊢
@@ -743,52 +748,58 @@ end Time
 
 /-! ## The derived costed reduction -/
 
-derive_timed stepRed
+derive_timed stepRedD
 
 section Generic
 
-variable {σ E A V Out : Type} [Fintype V] [Nonempty V]
+variable {σ E A V Out : Type}
 
-/-- **The time of `stepRed`.** Let `Inv i` hold of the states reached after `i` steps, with a
-step from a state of `Inv i` of cost at most `F i` (`F` monotone) and an extraction from a state
-of `Inv i` of cost at most `Ext i`. Then a costed adversary `B` of time `T` with at most `q`
-queries gives a costed reduction of time at most `T + q · (F q + 2) + Ext q + 1`: per query one
-`rand` node and the step, and at the end the extraction. -/
-theorem stepRed.timeBound_timed (step : σ → E → V → σ × A) (stepCost : σ → E → V → ℕ)
-    (ext : σ → Out) (extCost : σ → ℕ) (Inv : ℕ → σ → Prop) (F Ext : ℕ → ℕ) (hF : Monotone F)
+/-- **The time of `stepRedD`.** Let `Inv i` hold of the states reached after `i` steps, with the
+cost of the draw distribution and of a step from a state of `Inv i` together at most `F i` (`F`
+monotone) and an extraction from a state of `Inv i` of cost at most `Ext i`. Then a costed
+adversary `B` of time `T` with at most `q` queries gives a costed reduction of time at most
+`T + q · (F q + 3) + Ext q + 1`: per query the draw distribution, one `rand` node and the step,
+and at the end the extraction. -/
+theorem stepRedD.timeBound_timed (μ : σ → E → PMF V) (μCost : σ → E → ℕ)
+    (step : σ → E → V → σ × A) (stepCost : σ → E → V → ℕ) (ext : σ → Out) (extCost : σ → ℕ)
+    (Inv : ℕ → σ → Prop) (F Ext : ℕ → ℕ) (hF : Monotone F)
     (hmono : ∀ i t, Inv i t → Inv (i + 1) t)
     (hstep : ∀ i t e r, Inv i t → Inv (i + 1) (step t e r).1)
-    (hcost : ∀ i t e r, Inv i t → stepCost t e r ≤ F i)
+    (hcost : ∀ i t e r, Inv i t → μCost t e + stepCost t e r ≤ F i)
     (hext : ∀ i t, Inv i t → extCost t ≤ Ext i)
     (B : OracleAdv.Timed E A Bool) {T q : ℕ} (hB : B.TimeBound T) (hq : B.erase.IsQueryBound q)
     (s₀ : σ) (h0 : Inv 0 s₀) :
-    OracleAdv.Timed.StepTimeBound (stepRed.timed step stepCost ext extCost B s₀)
-      (T + q * (F q + 2) + (Ext q + 1)) := by
-  unfold stepRed.timed
-  generalize hI : (fun (t : σ) (e : E) => ((0 : ℕ), OracleAdv.Timed.rand (PMF.uniformFintype V)
+    OracleAdv.Timed.StepTimeBound (stepRedD.timed μ μCost step stepCost ext extCost B s₀)
+      (T + q * (F q + 3) + (Ext q + 1)) := by
+  unfold stepRedD.timed
+  generalize hI : (fun (t : σ) (e : E) => (1 + μCost t e, OracleAdv.Timed.rand (μ t e)
     (fun r => 1 + stepCost t e r) fun r =>
       have p := step t e r; OracleAdv.Timed.ret (p.2, p.1))) = impl
   have himpl : ∀ i s d, Inv i s →
-      OracleAdv.Timed.StepTimeBound (impl s d) (F i + 2) ∧
+      OracleAdv.Timed.StepTimeBound (impl s d) (F i + 3) ∧
         OracleAdv.Timed.AllRet (fun y => Inv (i + 1) y.2) (impl s d).2 := by
     intro i s d hs
     subst hI
     beta_reduce
-    refine ⟨⟨Nat.zero_le _, by omega, fun r => ⟨?_, trivial⟩⟩, fun r => hstep i s d r hs⟩
-    have := hcost i s d r hs
-    beta_reduce
+    have hr : ∀ r, μCost s d + stepCost s d r ≤ F i := fun r => hcost i s d r hs
+    obtain ⟨r₀, -⟩ := (μ s d).support_nonempty
+    have := hr r₀
+    refine ⟨⟨by omega, by dsimp only; omega, fun r => ⟨?_, trivial⟩⟩,
+      fun r => hstep i s d r hs⟩
+    have := hr r
+    dsimp only
     omega
-  have hsim := OracleAdv.Timed.timeBound_simulateHat_inv id id impl Inv (fun i => F i + 2) himpl
+  have hsim := OracleAdv.Timed.timeBound_simulateHat_inv id id impl Inv (fun i => F i + 3) himpl
     hB hq 0 s₀ h0
   have hall := OracleAdv.Timed.allRet_simulateHat_inv id id impl Inv (fun i s d h => (himpl i s d h).2)
     hmono hq 0 s₀ h0
   unfold OracleAdv.Timed.simulateHat at hsim hall
   simp only [Nat.zero_add] at hsim hall
-  have hsum : ∑ j ∈ Finset.range q, (F j + 2) ≤ q * (F q + 2) := by
-    calc ∑ j ∈ Finset.range q, (F j + 2) ≤ ∑ _j ∈ Finset.range q, (F q + 2) :=
+  have hsum : ∑ j ∈ Finset.range q, (F j + 3) ≤ q * (F q + 3) := by
+    calc ∑ j ∈ Finset.range q, (F j + 3) ≤ ∑ _j ∈ Finset.range q, (F q + 3) :=
           Finset.sum_le_sum fun j hj => by
             have := hF (le_of_lt (Finset.mem_range.mp hj)); omega
-      _ = q * (F q + 2) := by rw [Finset.sum_const, Finset.card_range, smul_eq_mul]
+      _ = q * (F q + 3) := by rw [Finset.sum_const, Finset.card_range, smul_eq_mul]
   have hbind := OracleAdv.Timed.timeBound_bind_of_allRet (n := Ext q + 1)
     (f := fun p => (1 + extCost p.2, OracleAdv.Timed.ret (ext p.2))) hsim.2 hall
     fun y hy => ⟨by have := hext q y.2 hy; dsimp only; omega, trivial⟩
@@ -805,42 +816,52 @@ variable {S W K : Type} [Field S] [Fintype S] [SampleableType W] [Fintype K] [No
   (OCost : W → W → W → ℕ) (X Y : W) (coeCost : S ≃ W → S → ℕ) (mulCost : W → W → ℕ)
   (toFunCost : S → ℕ) (expCost : W → S → ℕ)
 
-/-- **Erasure of the costed reduction of the X3DH square**: the derived costed form of `stepRed`
-at the step `stepR`, of cost `stepTime`, and the extraction `extractR`, of cost `extTime`, erases
-to the program whose output distribution is `gdhOut`, the output of `gdhRed G a b`. -/
+/-- **Erasure of the costed reduction of the X3DH square**: the derived costed form of `stepRedD`
+at the uniform draw of `Draw S K × K`, of cost zero, the step `stepR`, of cost `stepTime`, and the
+extraction `extractR`, of cost `extTime`, erases to the program whose output distribution is
+`gdhOut`, the output of `gdhRed G a b`. -/
 theorem gdhOut_erase_timed (B : OracleAdv.Timed (OEv W) (OOut S W K) Bool) :
-    (stepRed.timed (stepR G a b O X Y) (stepTime G a b O OCost X Y coeCost mulCost toFunCost expCost)
+    (stepRedD.timed (fun _ _ => PMF.uniformFintype (Draw S K × K)) (fun _ _ => 0)
+        (stepR G a b O X Y) (stepTime G a b O OCost X Y coeCost mulCost toFunCost expCost)
         (fun t => extractR G a b O X Y t.1.1)
         (fun t => extTime G a b O OCost X Y mulCost toFunCost expCost t.1.1) B rInitR).2.erase =
-      stepRed (stepR G a b O X Y) (fun t => extractR G a b O X Y t.1.1) B.erase rInitR :=
-  stepRed.erase_timed _ _ _ _ B rInitR
+      stepRedD (fun _ _ => PMF.uniformFintype (Draw S K × K)) (stepR G a b O X Y)
+        (fun t => extractR G a b O X Y t.1.1) B.erase rInitR :=
+  stepRedD.erase_timed _ _ _ _ _ _ B rInitR
 
-/-- **The time of the gap Diffie–Hellman reduction.** For a costed oracle adversary `B` of time
-`T` with at most `q` queries and primitive costs at most `tO` (decision oracle), `tm` (group
-operation), `te` (exponentiation), `tf` and `tc` (public value of an exponent), the derived costed
-form of `stepRed` at the step `stepR` (of cost `stepTime`) and the extraction `extractR` (of cost
-`extTime`), whose erasure is the program of `gdhRed G a b`, runs in time at most
-`T + q · (stepBound … q + 2) + extBound … q + 1`, the time of the adversary plus a polynomial of
-degree two in its number of queries. -/
+/-- **The time of the gap Diffie–Hellman reduction.** For a costed oracle adversary `B` of time `T`
+with at most `q` queries and primitive costs at most `tO` (decision oracle), `tm` (group operation),
+`te` (exponentiation), `tf` and `tc` (public value of an exponent), the derived costed form of
+`stepRedD` at the uniform draw of `Draw S K × K` (of cost zero), the step `stepR` (of cost
+`stepTime`) and the extraction `extractR` (of cost `extTime`), whose erasure is the program of
+`gdhRed G a b`, runs in time at most `T + q · (stepBound … q + 2) + extBound … q + 1`, the time of
+the adversary plus a polynomial of degree two in its number of queries. -/
 theorem gdhOut_timeBound (B : OracleAdv.Timed (OEv W) (OOut S W K) Bool) {T q : ℕ}
     (hB : B.TimeBound T) (hq : B.erase.IsQueryBound q) {tO tm tf te tc : ℕ}
     (hO : ∀ x y z, OCost x y z ≤ tO) (hm : ∀ x y, mulCost x y ≤ tm) (hf : ∀ x, toFunCost x ≤ tf)
     (he : ∀ x y, expCost x y ≤ te) (hc : ∀ x y, coeCost x y ≤ tc) :
     OracleAdv.Timed.StepTimeBound
-      (stepRed.timed (stepR G a b O X Y) (stepTime G a b O OCost X Y coeCost mulCost toFunCost expCost)
+      (stepRedD.timed (fun _ _ => PMF.uniformFintype (Draw S K × K)) (fun _ _ => 0)
+        (stepR G a b O X Y) (stepTime G a b O OCost X Y coeCost mulCost toFunCost expCost)
         (fun t => extractR G a b O X Y t.1.1)
         (fun t => extTime G a b O OCost X Y mulCost toFunCost expCost t.1.1) B rInitR)
       (T + q * (stepBound tO tm te tf tc q + 2) + (extBound tO tm te tf q + 1)) := by
-  refine stepRed.timeBound_timed _ _ _ _ Sz (stepBound tO tm te tf tc) (extBound tO tm te tf)
-    (fun _ _ h => stepBound_mono tO tm te tf tc h) (fun i t h => ?_)
-    (fun i t e r h => sz_stepR G a b O X Y h e r)
-    (fun i t e r h => stepTime_le G a b O OCost X Y coeCost mulCost toFunCost expCost h e r hO hm
-      hf he hc) (fun i t h => ?_) B hB hq rInitR ⟨le_rfl, le_rfl, le_rfl⟩
+  have hpos : ∀ i, 1 ≤ stepBound tO tm te tf tc i := fun i => by unfold stepBound; omega
+  refine (stepRedD.timeBound_timed _ _ _ _ _ _ Sz (fun i => stepBound tO tm te tf tc i - 1)
+    (extBound tO tm te tf) (fun _ _ h => Nat.sub_le_sub_right (stepBound_mono tO tm te tf tc h) 1)
+    (fun i t h => ?_) (fun i t e r h => sz_stepR G a b O X Y h e r) (fun i t e r h => ?_)
+    (fun i t h => ?_) B hB hq rInitR ⟨le_rfl, le_rfl, le_rfl⟩).mono ?_
   · obtain ⟨h1, h2, h3⟩ := h
     exact ⟨by omega, by omega, by omega⟩
+  · have := stepTime_lt G a b O OCost X Y coeCost mulCost toFunCost expCost h e r hO hm hf he hc
+    omega
   · have h1 := extTime_le G a b O OCost X Y mulCost toFunCost expCost t.1.1 hO hm hf he
     have h2 := Nat.mul_le_mul_left (tO + 2 * tm + 2 * tf + 40) h.1
     unfold extBound
+    omega
+  · have hq' := Nat.mul_le_mul_left q
+      (show stepBound tO tm te tf tc q - 1 + 3 ≤ stepBound tO tm te tf tc q + 2 by
+        have := hpos q; omega)
     omega
 
 end Instance
