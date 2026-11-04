@@ -149,6 +149,7 @@ public import CatCryptCore.Tactics.LoopRewrite
 public import CatCryptCore.Tactics.TransportAlong
 public import CatCryptCore.Tactics.PortCoherence
 public import CatCryptCore.Tactics.PartyDerive
+public import CatCryptCore.Tactics.SysRewrite
 
 -- Crypto foundation
 public import CatCryptCore.Crypto.Game
