@@ -36,6 +36,8 @@ queries. An adversary runs against a stateful oracle
   oracle call commutes with a whole run
 * `OracleAdv.run_support_inv` — an invariant preserved by every oracle transition
   holds on the support of every run
+* `OracleAdv.run_map_eq_of_fixed` — two oracles that keep their states and answer every
+  query by the same distribution give the same run
 * `OracleAdv.run_map_fst_of_isQueryBound_zero` — an adversary without queries
   has an output distribution independent of the oracle
 * `OracleAdv.run_flag_apply_false_of_true` — an oracle whose flag is sticky
@@ -179,6 +181,20 @@ theorem run_map_fst_of_isQueryBound_zero (O : S → D → PMF (R × S))
   | ret a => simp [PMF.pure_map]
   | rand p k ih => simp only [run_rand, PMF.map_bind, fun b => ih b (hA b)]
   | query d k ih => exact hA.elim
+
+/-- **Runs against oracles with a fixed state.** Two oracles that, at the states `s` and `s'`,
+answer every query `d` by the same distribution `g d` and keep the state give the same output
+distribution: the run of `A` against `O` from `s`, with its final state replaced by `s'`, is
+the run of `A` against `O'` from `s'`. -/
+theorem run_map_eq_of_fixed (O : S → D → PMF (R × S)) (O' : S' → D → PMF (R × S'))
+    (g : D → PMF R) (s : S) (s' : S') (hO : ∀ d, O s d = (g d).map fun r => (r, s))
+    (hO' : ∀ d, O' s' d = (g d).map fun r => (r, s')) (A : OracleAdv D R α) :
+    (run O A s).map (fun x => (x.1, s')) = run O' A s' := by
+  induction A with
+  | ret a => simp [PMF.pure_map]
+  | rand p k ih => simp only [run_rand, PMF.map_bind, ih]
+  | query d k ih =>
+    simp only [run_query, hO, hO', PMF.bind_map, PMF.map_bind, Function.comp_def, ih]
 
 /-! ## Flagged oracle state -/
 

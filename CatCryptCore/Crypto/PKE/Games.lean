@@ -6,6 +6,7 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Crypto.OracleSimulation
+public import CatCryptCore.Crypto.OracleAdversaryRelabelTimed
 public import CatCryptCore.Crypto.PRPPRFSwitching
 public import CatCryptCore.Tactics.AutoHopRegistry
 public meta import CatCryptCore.Tactics.AutoHopRegistry
@@ -53,17 +54,29 @@ quantities of the scheme.
   schemes whose encryption and decryption query a lazily sampled random oracle, and
   their OW-PCA game, in which the challenger, the adversary and the
   plaintext-checking oracle share the table of the random oracle
+* `romLabelDecProg`, `ROMLabelCCAAdversary`, `romLabelCCAGame`, `romLabelCCAAdvantage` —
+  IND-CCA in the random-oracle model for a scheme whose messages are pairs of a label and a
+  message (labelled encryption): the two challenge messages share the label chosen by the
+  adversary, and the decryption oracle returns the message part
+* `Scheme.toROM`, `INDCCAAdversary.toROM` — a scheme as a scheme in the random-oracle model
+  that asks no query, with the label type `Unit`, and an IND-CCA adversary as an adversary of
+  its random-oracle game
 
 ## Main results
 
 * `corrErr_le_corrWorst` — the uniform-message failure probability is at most δ
 * `owcpa_le_indcpa` — for every OW-CPA adversary `A`,
   `owcpaAdvantage P A ≤ indcpaAdvantage P (owToIndcpa A) + 1/|M| + P.corrErr`
+* `run_decOracle_eq_romLabelDecProg` — the run against the stateful decryption oracle is the
+  run against the random oracle of the lifted adversary at `P.toROM`
+* `indccaGame_eq_romLabelCCAGame` — `indccaGame P A b = romLabelCCAGame P.toROM A.toROM b`
 
 ## References
 
 * D. Hofheinz, K. Hövelmanns, E. Kiltz, *A Modular Analysis of the
   Fujisaki–Okamoto Transformation*, TCC 2017, ePrint 2017/604, Section 2.1.
+* V. Shoup, *A Proposal for an ISO Standard for Public Key Encryption*, ePrint 2001/112
+  (labels).
 -/
 
 @[expose] public section
@@ -386,6 +399,146 @@ structure ROMScheme where
   enc : PK → M → OracleAdv D H C
   /-- Decryption; `none` rejects. -/
   dec : SK → C → OracleAdv D H (Option M)
+
+/-! ### IND-CCA in the random-oracle model, with labels -/
+
+section ROMCCA
+
+variable {L : Type} [DecidableEq C]
+
+/-- The program answering one query of an IND-CCA adversary against a scheme in the
+random-oracle model with labelled messages `L × M`, for the secret key `sk` and the challenge
+`chal`: a random-oracle query `inl d` is forwarded; a decryption query `inr c` is answered
+`none` when `c` is the challenge, and otherwise by the message part of the decryption of `c`
+against the random oracle. -/
+def romLabelDecProg (S : ROMScheme PK SK (L × M) C D H) (sk : SK) (chal : Option C) :
+    D ⊕ C → OracleAdv D H (H ⊕ Option M)
+  | .inl d => .query d fun h => .ret (.inl h)
+  | .inr c => if chal = some c then .ret (.inr none) else
+      (S.dec sk c).bind fun r => .ret (.inr (r.map Prod.snd))
+
+/-- A two-stage IND-CCA adversary in the random-oracle model with at most `qH` random-oracle
+queries in each stage, `q₁` decryption queries in the first stage and `q₂` in the second. The
+first stage returns two messages, the label of the challenge and a state. -/
+structure ROMLabelCCAAdversary (PK L M C D H : Type) (qH q₁ q₂ : ℕ) : Type 1 where
+  /-- The state passed from the first to the second stage. -/
+  St : Type
+  /-- The first stage on the public key. -/
+  choose : PK → OracleAdv (D ⊕ C) (H ⊕ Option M) (M × M × L × St)
+  /-- The second stage on the challenge ciphertext. -/
+  guess : St → C → OracleAdv (D ⊕ C) (H ⊕ Option M) Bool
+  /-- The first-stage random-oracle query bound. -/
+  isQueryBoundH₁ : ∀ pk, (choose pk).IsQueryBoundBy (Sum.elim (fun _ => 1) fun _ => 0) qH
+  /-- The first-stage decryption query bound. -/
+  isQueryBoundD₁ : ∀ pk, (choose pk).IsQueryBoundBy (Sum.elim (fun _ => 0) fun _ => 1) q₁
+  /-- The second-stage random-oracle query bound. -/
+  isQueryBoundH₂ : ∀ st c, (guess st c).IsQueryBoundBy (Sum.elim (fun _ => 1) fun _ => 0) qH
+  /-- The second-stage decryption query bound. -/
+  isQueryBoundD₂ : ∀ st c, (guess st c).IsQueryBoundBy (Sum.elim (fun _ => 0) fun _ => 1) q₂
+
+/-- The IND-CCA experiment in the random-oracle model with labels, with challenge bit `b`. The
+first stage runs from the empty random-oracle table and returns `(m₀, m₁, ℓ, st)`; the
+challenger encrypts `(ℓ, m₀)` (`b = true`) or `(ℓ, m₁)` (`b = false`) against the resulting
+table; the second stage continues from the table reached by encryption, and its decryption
+queries on the challenge are answered `none`. Challenger, adversary and decryption share one
+lazily sampled random-oracle table. -/
+noncomputable def romLabelCCAGame (S : ROMScheme PK SK (L × M) C D H) {qH q₁ q₂ : ℕ}
+    (A : ROMLabelCCAAdversary PK L M C D H qH q₁ q₂) (b : Bool) : PMF Bool :=
+  S.keygen.bind fun ks =>
+    (OracleAdv.run roOracle (OracleAdv.subst (romLabelDecProg S ks.2 none) (A.choose ks.1))
+      emptyTable).bind fun x =>
+      (OracleAdv.run roOracle (S.enc ks.1 (x.1.2.2.1, if b then x.1.1 else x.1.2.1))
+        x.2).bind fun c =>
+        (OracleAdv.run roOracle (OracleAdv.subst (romLabelDecProg S ks.2 (some c.1))
+          (A.guess x.1.2.2.2 c.1)) c.2).map Prod.fst
+
+/-- The IND-CCA advantage in the random-oracle model with labels. -/
+noncomputable def romLabelCCAAdvantage (S : ROMScheme PK SK (L × M) C D H) {qH q₁ q₂ : ℕ}
+    (A : ROMLabelCCAAdversary PK L M C D H qH q₁ q₂) : ℝ≥0∞ :=
+  Advantage (liftPMF (romLabelCCAGame S A true)) (liftPMF (romLabelCCAGame S A false))
+
+end ROMCCA
+
+/-! ### A scheme without oracle queries -/
+
+section NoQuery
+
+/-- The scheme `P` in the random-oracle model with the label type `Unit`: encryption samples
+the ciphertext under fresh coins and decryption returns the decryption by `P`; neither asks a
+random-oracle query. -/
+noncomputable def Scheme.toROM (P : Scheme PK SK M C R) : ROMScheme PK SK (Unit × M) C D H where
+  keygen := P.keygen
+  enc pk x := .rand (P.encDist pk x.2) .ret
+  dec sk c := .ret ((P.dec sk c).map (Prod.mk ()))
+
+/-- The answer of the random-oracle IND-CCA game read as an answer of the IND-CCA game: a
+decryption answer is passed on; a random-oracle answer, which the lifted adversary does not
+ask for, is read as `none`. -/
+def decAnswer : H ⊕ Option M → Option M :=
+  Sum.elim (fun _ => none) id
+
+/-- An IND-CCA adversary as an IND-CCA adversary in the random-oracle model with the label
+`()`: each decryption query is asked as a decryption query, and no random-oracle query is
+asked. -/
+def INDCCAAdversary.toROM {q₁ q₂ : ℕ} (A : INDCCAAdversary PK M C q₁ q₂) :
+    ROMLabelCCAAdversary PK Unit M C D H 0 q₁ q₂ where
+  St := A.St
+  choose pk := ((A.choose pk).mapQueryAnswer Sum.inr decAnswer).bind fun x =>
+    .ret (x.1, x.2.1, (), x.2.2)
+  guess st c := (A.guess st c).mapQueryAnswer Sum.inr decAnswer
+  isQueryBoundH₁ pk := by
+    simpa using OracleAdv.isQueryBoundBy_bind (b := 0)
+      (OracleAdv.isQueryBoundBy_mapQueryAnswer_zero Sum.inr decAnswer (fun _ => rfl)
+        (A.choose pk)) (f := fun x => OracleAdv.ret (x.1, x.2.1, (), x.2.2)) fun _ => trivial
+  isQueryBoundD₁ pk := by
+    simpa using OracleAdv.isQueryBoundBy_bind (b := 0)
+      (OracleAdv.isQueryBoundBy_mapQueryAnswer_of_isQueryBound Sum.inr decAnswer
+        (fun _ => le_rfl) (A.isQueryBound₁ pk))
+      (f := fun x => OracleAdv.ret (x.1, x.2.1, (), x.2.2)) fun _ => trivial
+  isQueryBoundH₂ st c :=
+    OracleAdv.isQueryBoundBy_mapQueryAnswer_zero Sum.inr decAnswer (fun _ => rfl) (A.guess st c)
+  isQueryBoundD₂ st c :=
+    OracleAdv.isQueryBoundBy_mapQueryAnswer_of_isQueryBound Sum.inr decAnswer (fun _ => le_rfl)
+      (A.isQueryBound₂ st c)
+
+variable [DecidableEq C] (P : Scheme PK SK M C R)
+
+/-- **The decryption-oracle run is the random-oracle run at a scheme without queries.** For
+every adversary `W` with decryption queries, the run of `W` against the stateful decryption
+oracle of `P` from the challenge state `chal` is, with its final state replaced by the table
+`T`, the run against the random oracle from `T` of `W` lifted to the random-oracle game, with
+its queries answered by `romLabelDecProg` of `P.toROM`. -/
+theorem run_decOracle_eq_romLabelDecProg {α : Type} (sk : SK) (chal : Option C)
+    (W : OracleAdv C (Option M) α) (T : D → Option H) :
+    (OracleAdv.run (decOracle P sk) W chal).map (fun x => (x.1, T)) =
+      OracleAdv.run roOracle
+        (OracleAdv.subst (romLabelDecProg (P.toROM (D := D) (H := H)) sk chal)
+          (W.mapQueryAnswer Sum.inr decAnswer)) T := by
+  rw [OracleAdv.subst_mapQueryAnswer, OracleAdv.run_subst]
+  refine OracleAdv.run_map_eq_of_fixed _ _
+    (fun c => PMF.pure (if chal = some c then none else P.dec sk c)) chal T
+    (fun c => by simp [decOracle, PMF.pure_map]) (fun c => ?_) W
+  simp only [romLabelDecProg, Scheme.toROM]
+  split_ifs <;> simp [decAnswer, PMF.pure_map, Option.map_map, Function.comp_def]
+
+/-- **The IND-CCA game is the random-oracle IND-CCA game at a scheme without queries.** For
+every IND-CCA adversary `A` and bit `b`,
+`indccaGame P A b = romLabelCCAGame P.toROM A.toROM b`. -/
+theorem indccaGame_eq_romLabelCCAGame {q₁ q₂ : ℕ} (A : INDCCAAdversary PK M C q₁ q₂) (b : Bool) :
+    indccaGame P A b = romLabelCCAGame (P.toROM (D := D) (H := H)) A.toROM b := by
+  simp only [romLabelCCAGame, indccaGame, INDCCAAdversary.toROM, OracleAdv.subst_bind,
+    OracleAdv.run_bind, ← run_decOracle_eq_romLabelDecProg, OracleAdv.subst_ret, OracleAdv.run_ret,
+    PMF.bind_map, Function.comp_def]
+  simp only [Scheme.toROM, OracleAdv.run_rand, OracleAdv.run_ret, PMF.bind_bind, PMF.pure_bind,
+    PMF.map_comp]
+  rfl
+
+/-- The IND-CCA advantage is the random-oracle IND-CCA advantage of the lifted adversary. -/
+theorem indccaAdvantage_eq_romLabelCCAAdvantage {q₁ q₂ : ℕ} (A : INDCCAAdversary PK M C q₁ q₂) :
+    indccaAdvantage P A = romLabelCCAAdvantage (P.toROM (D := D) (H := H)) A.toROM := by
+  simp only [indccaAdvantage, romLabelCCAAdvantage, indccaGame_eq_romLabelCCAGame (D := D) (H := H)]
+
+end NoQuery
 
 variable [Fintype M] [Nonempty M] [DecidableEq M]
 

@@ -1087,6 +1087,70 @@ theorem hpke_base_indcca [Fintype K] [Nonempty K] [Fintype D] [Fintype Kd] [None
         · exact le_of_eq rfl
         · exact schedGame_otcpaGame_le S A false
 
+/-! ### HPKE Base mode as a labelled scheme in the random-oracle model -/
+
+section Labelled
+
+/-- HPKE Base mode as a public-key scheme in the random-oracle model with labelled messages
+`(ad, m)`: the label is the associated data, which the ciphertext `(enc, ad, ct)` carries;
+decryption of `(enc, ad, ct)` decapsulates `enc`, opens `ct` with the associated data `ad` and
+returns `ad` with the opened message. -/
+def hpkePKE : PKE.Games.ROMScheme PK SK (AD × M) (C × AD × CT) D H where
+  keygen := S.kem.keygen
+  enc pk x := (S.kem.encaps pk).bind fun e => .ret (e.2, x.1, S.aead.enc (S.sched e.1) x.1 x.2)
+  dec sk c := (S.kem.decaps sk c.1).bind fun ko =>
+    .ret ((ko.bind fun k => S.aead.dec (S.sched k) c.2.1 c.2.2).map (Prod.mk c.2.1))
+
+omit [DecidableEq D] [Fintype H] [Nonempty H] in
+/-- The decryption program of the labelled IND-CCA game at `hpkePKE S` is the decryption
+program `hpkeProg S` of the HPKE game. -/
+theorem romLabelDecProg_hpkePKE (sk : SK) (chal : Option (C × AD × CT)) :
+    PKE.Games.romLabelDecProg (hpkePKE S) sk chal = hpkeProg S sk chal := by
+  funext q
+  cases q with
+  | inl d => rfl
+  | inr q =>
+    simp only [PKE.Games.romLabelDecProg, hpkeProg, hpkePKE, OracleAdv.bind_assoc,
+      OracleAdv.bind_ret, Option.map_map, Function.comp_def, Option.map_id']
+
+/-- **The HPKE adversary of a labelled IND-CCA adversary against `hpkePKE S`.** It runs both
+stages of `B` once with the same queries and answers; the first stage returns the two
+messages and the associated data `ad` of the challenge, and keeps `ad` in the state; the second
+stage passes the challenge `(enc, ct)` to `B` as the ciphertext `(enc, ad, ct)`. -/
+def labelCCAReduction {qH qD : ℕ}
+    (B : PKE.Games.ROMLabelCCAAdversary PK AD M (C × AD × CT) D H qH qD qD) :
+    HPKEAdversary PK C D H AD M CT qH qD where
+  St := AD × B.St
+  choose pk := (B.choose pk).bind fun x => .ret (x.1, x.2.1, x.2.2.1, x.2.2.1, x.2.2.2)
+  guess st c := B.guess st.2 (c.1, st.1, c.2)
+  isQueryBoundH₁ pk := by
+    simpa using OracleAdv.isQueryBoundBy_bind (b := 0) (B.isQueryBoundH₁ pk)
+      (f := fun x => OracleAdv.ret (x.1, x.2.1, x.2.2.1, x.2.2.1, x.2.2.2)) fun _ => trivial
+  isQueryBoundD₁ pk := by
+    simpa using OracleAdv.isQueryBoundBy_bind (b := 0) (B.isQueryBoundD₁ pk)
+      (f := fun x => OracleAdv.ret (x.1, x.2.1, x.2.2.1, x.2.2.1, x.2.2.2)) fun _ => trivial
+  isQueryBoundH₂ st c := B.isQueryBoundH₂ st.2 _
+  isQueryBoundD₂ st c := B.isQueryBoundD₂ st.2 _
+
+/-- **The labelled IND-CCA game at `hpkePKE S` is an HPKE IND-CCA game.** For every labelled
+IND-CCA adversary `B` and bit `b`,
+`romLabelCCAGame (hpkePKE S) B b = hpkeGame S (labelCCAReduction B) b`. -/
+theorem romLabelCCAGame_hpkePKE {qH qD : ℕ}
+    (B : PKE.Games.ROMLabelCCAAdversary PK AD M (C × AD × CT) D H qH qD qD) (b : Bool) :
+    PKE.Games.romLabelCCAGame (hpkePKE S) B b = hpkeGame S (labelCCAReduction B) b := by
+  simp only [PKE.Games.romLabelCCAGame, romLabelDecProg_hpkePKE]
+  simp only [hpkeGame, labelCCAReduction, hpkePKE, OracleAdv.subst_bind, OracleAdv.subst_ret,
+    OracleAdv.run_bind, OracleAdv.run_ret, PMF.bind_bind, PMF.pure_bind, chalCT]
+
+/-- The labelled IND-CCA advantage at `hpkePKE S` is the HPKE IND-CCA advantage of
+`labelCCAReduction B`. -/
+theorem romLabelCCAAdvantage_hpkePKE {qH qD : ℕ}
+    (B : PKE.Games.ROMLabelCCAAdversary PK AD M (C × AD × CT) D H qH qD qD) :
+    PKE.Games.romLabelCCAAdvantage (hpkePKE S) B = hpkeAdvantage S (labelCCAReduction B) := by
+  simp only [PKE.Games.romLabelCCAAdvantage, hpkeAdvantage, romLabelCCAGame_hpkePKE]
+
+end Labelled
+
 end HPKE
 
 end CatCrypt.Crypto.HPKE.BaseCCA
