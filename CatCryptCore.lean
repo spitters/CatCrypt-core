@@ -273,6 +273,7 @@ public import CatCryptCore.Crypto.Messaging.CKAACD
 public import CatCryptCore.Crypto.Messaging.SMCorrupt
 public import CatCryptCore.Crypto.Messaging.FSAEAD
 public import CatCryptCore.Crypto.Messaging.DoubleRatchet
+public import CatCryptCore.Crypto.Messaging.SignalStack
 public import CatCryptCore.Crypto.PAKE.DHPAKE
 public import CatCryptCore.Crypto.PAKE.FPAKESys
 public import CatCryptCore.Crypto.PAKE.DHExtractKit
