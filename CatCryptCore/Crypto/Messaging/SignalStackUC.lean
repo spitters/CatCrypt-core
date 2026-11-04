@@ -912,6 +912,373 @@ theorem world_end_prBad (n : ℕ) {cre : SPComp K} {rd1 rd2 : K → SPComp V} {�
   prBad_counter_eq_zero _ WSt.steps n (fun w e q hq => by
     rw [world_steps realV idealV hq]; split_ifs <;> omega) Z (by simpa [world, WSt.init] using hZ)
 
+/-! ## The first hybrid world and the real stack over `F_AKE` -/
+
+/-- The record of the session `x` with the key of its index. -/
+def fillRec (w : WSt K) (x : Inst) (r : Rec K) : Rec K :=
+  match w.ix x with
+  | some j => { r with key := some (w.kv j) }
+  | none => r
+
+/-- The state of `F_AKE` of a hybrid state: each completed session holds the key of its
+index. -/
+def fill (w : WSt K) : St K := { w.st with recs := fun x => (w.st.recs x).map (fillRec w x) }
+
+omit [Fintype K] [Nonempty K] [Inhabited K] in
+/-- Extensionality of the state of `F_AKE`. -/
+theorem St.ext' {t t' : St K} (h1 : t.recs = t'.recs) (h2 : t.corrupt = t'.corrupt)
+    (h3 : t.notices = t'.notices) (h4 : t.cursor = t'.cursor) : t = t' := by
+  cases t; cases t'; simp only at h1 h2 h3 h4; subst h1 h2 h3 h4; rfl
+
+omit [Fintype K] [Nonempty K] [Inhabited K] in
+/-- `newKeyStep` changes only the records. -/
+theorem newKeyStep_fields (t : St K) (x : Inst) (k kf : K) :
+    (newKeyStep t x k kf).corrupt = t.corrupt ∧ (newKeyStep t x k kf).notices = t.notices ∧
+      (newKeyStep t x k kf).cursor = t.cursor := by
+  unfold newKeyStep
+  split
+  · split_ifs <;> exact ⟨rfl, rfl, rfl⟩
+  · exact ⟨rfl, rfl, rfl⟩
+
+omit [Fintype K] [Nonempty K] [Inhabited K] in
+/-- `newKeyFreshStep` changes only the records. -/
+theorem newKeyFreshStep_fields (t : St K) (x : Inst) (k kf : K) :
+    (newKeyFreshStep t x k kf).corrupt = t.corrupt ∧
+      (newKeyFreshStep t x k kf).notices = t.notices ∧
+      (newKeyFreshStep t x k kf).cursor = t.cursor := by
+  unfold newKeyFreshStep
+  split
+  · split_ifs <;> exact ⟨rfl, rfl, rfl⟩
+  · exact ⟨rfl, rfl, rfl⟩
+
+omit [Fintype K] [Nonempty K] in
+/-- A session without a key has no index. -/
+theorem ix_none_of_key_none {w : WSt K} (hw : WInv w) {x : Inst} {r : Rec K}
+    (hx : w.st.recs x = some r) (hk : r.key = none) : w.ix x = none := by
+  rcases hj : w.ix x with _ | j
+  · rfl
+  · obtain ⟨_, r', hr', hc⟩ := hw.1 x j hj
+    rw [hx] at hr'; cases hr'
+    have := (hw.2 x r hx hc).1
+    rw [hk] at this; cases this
+
+omit [Fintype K] [Nonempty K] [Inhabited K] in
+/-- Filling with keys that agree at the indices below `n` gives the same record. -/
+theorem fillRec_congr {w w' : WSt K} {x : Inst} (hix : w'.ix x = w.ix x)
+    (hkv : ∀ j, w.ix x = some j → w'.kv j = w.kv j) (r : Rec K) :
+    fillRec w' x r = fillRec w x r := by
+  unfold fillRec
+  rw [hix]
+  rcases hj : w.ix x with _ | j
+  · rfl
+  · simp only [hkv j hj]
+
+omit [Fintype K] [Nonempty K] [Inhabited K] in
+/-- The record filled at an index. -/
+theorem fillRec_some {w : WSt K} {x : Inst} {j : ℕ} (h : w.ix x = some j) (r : Rec K) :
+    fillRec w x r = { r with key := some (w.kv j) } := by
+  simp [fillRec, h]
+
+omit [Fintype K] [Nonempty K] [Inhabited K] in
+/-- The record of a session without index is not filled. -/
+theorem fillRec_none {w : WSt K} {x : Inst} (h : w.ix x = none) (r : Rec K) :
+    fillRec w x r = r := by
+  simp [fillRec, h]
+
+omit [Fintype K] [Nonempty K] [Inhabited K] in
+/-- Filling keeps the peer, the role and the status. -/
+theorem fillRec_partner (w : WSt K) (x y : Inst) (r p : Rec K) :
+    Partner x r (fillRec w y p) ↔ Partner x r p := by
+  unfold fillRec; split <;> rfl
+
+omit [Fintype K] [Nonempty K] in
+/-- **Filling commutes with `newKey`.** -/
+theorem fill_newKey {w : WSt K} (hw : WInv w) (sid : SessionId) (pid : PartyId) (k kf : K) :
+    fill (wNext w (.inr (.newKey sid pid k)) kf) = newKeyStep (fill w) (sid, pid) k kf := by
+  have hkv : ∀ y j, w.ix y = some j →
+      (wNext w (.inr (.newKey sid pid k)) kf).kv j = w.kv j := fun y j hj => by
+    have := (hw.1 y j hj).1
+    simp only [wNext, isNewKey, ite_true]
+    rw [Function.update_of_ne (by omega)]
+  have hixw : (wNext w (.inr (.newKey sid pid k)) kf).ix =
+      newKeyIx w.st w.ix w.steps (sid, pid) := rfl
+  obtain ⟨hc1, hn1, hu1⟩ := newKeyStep_fields (fill w) (sid, pid) k kf
+  obtain ⟨hc2, hn2, hu2⟩ := newKeyStep_fields w.st (sid, pid) k default
+  refine St.ext' ?_ (by rw [hc1]; exact hc2) (by rw [hn1]; exact hn2) (by rw [hu1]; exact hu2)
+  funext y
+  show Option.map (fillRec (wNext w (.inr (.newKey sid pid k)) kf) y)
+      ((newKeyStep w.st (sid, pid) k default).recs y) =
+    (newKeyStep (fill w) (sid, pid) k kf).recs y
+  rcases hx : w.st.recs (sid, pid) with _ | r
+  · have hs : newKeyStep w.st (sid, pid) k default = w.st := by simp [newKeyStep, hx]
+    have hf : (fill w).recs (sid, pid) = none := by simp [fill, hx]
+    have hs' : newKeyStep (fill w) (sid, pid) k kf = fill w := by simp [newKeyStep, hf]
+    rw [hs, hs']
+    show _ = Option.map (fillRec w y) (w.st.recs y)
+    congr 1; funext r'
+    exact fillRec_congr (by rw [hixw]; simp [newKeyIx, hx]) (hkv y) r'
+  · have hf : (fill w).recs (sid, pid) = some (fillRec w (sid, pid) r) := by simp [fill, hx]
+    by_cases hk : r.key.isNone
+    · have hk' : r.key = none := Option.isNone_iff_eq_none.mp hk
+      have hix : w.ix (sid, pid) = none := ix_none_of_key_none hw hx hk'
+      rw [fillRec_none hix] at hf
+      rw [newKeyStep_recs (fill w) _ r hf k kf y, newKeyStep_recs w.st _ r hx k default y]
+      by_cases hy : y = (sid, pid)
+      · subst hy
+        simp only [hk, true_and, ite_true, Option.map_some]
+        congr 1
+        by_cases hex : Exposed w.st (sid, pid) r
+        · have hex' : Exposed (fill w) (sid, pid) r := hex
+          have hi' : (wNext w (.inr (.newKey sid pid k)) kf).ix (sid, pid) = none := by
+            rw [hixw]; simp [newKeyIx, hx, hex, hix]
+          rw [fillRec_none hi']
+          simp [newKeyVal, hex, hex']
+        · have hex' : ¬ Exposed (fill w) (sid, pid) r := hex
+          simp only [hex, hex', ite_false]
+          have hpf : (fill w).recs (sid, r.peer) =
+              (w.st.recs (sid, r.peer)).map (fillRec w (sid, r.peer)) := rfl
+          unfold newKeyVal
+          rw [ite_eq_right hex, ite_eq_right hex', hpf]
+          rcases hp : w.st.recs (sid, r.peer) with _ | p
+          · have hi' : (wNext w (.inr (.newKey sid pid k)) kf).ix (sid, pid) = some w.steps := by
+              rw [hixw]; simp [newKeyIx, hx, hk, hex, hp]
+            rw [fillRec_some hi']
+            simp [wNext, isNewKey]
+          · simp only [Option.map_some]
+            by_cases hpp : Partner (sid, pid) r p
+            · have hpi := (hw.2 _ p hp hpp.2.2).2
+              obtain ⟨jp, hjp⟩ := Option.isSome_iff_exists.mp hpi
+              have hlt := (hw.1 _ jp hjp).1
+              have hi' : (wNext w (.inr (.newKey sid pid k)) kf).ix (sid, pid) = some jp := by
+                rw [hixw]; simp [newKeyIx, hx, hk, hex, hp, hpp, hjp]
+              rw [fillRec_some hi', ite_eq_left hpp, ite_eq_left ((fillRec_partner w _ _ r p).mpr hpp),
+                fillRec_some hjp, hkv _ jp hjp]
+              simp
+            · have hi' : (wNext w (.inr (.newKey sid pid k)) kf).ix (sid, pid) = some w.steps := by
+                rw [hixw]; simp [newKeyIx, hx, hk, hex, hp, hpp]
+              rw [fillRec_some hi', ite_eq_right hpp,
+                ite_eq_right (fun h => hpp ((fillRec_partner w _ _ r p).mp h))]
+              simp [wNext, isNewKey]
+      · simp only [hy, and_false, ite_false]
+        show Option.map _ (w.st.recs y) = Option.map (fillRec w y) (w.st.recs y)
+        congr 1; funext r'
+        refine fillRec_congr ?_ (hkv y) r'
+        rw [hixw]
+        simp only [newKeyIx, hx]
+        split_ifs <;> simp [Function.update_of_ne hy]
+    · have hfk : (fillRec w (sid, pid) r).key.isNone = false := by
+        unfold fillRec
+        split
+        · rfl
+        · rcases h : r.key with _ | kk
+          · simp [h] at hk
+          · simp
+      rw [newKeyStep_recs (fill w) _ _ hf k kf y, newKeyStep_recs w.st _ r hx k default y]
+      simp only [hfk, hk, Bool.false_eq_true, false_and, ite_false]
+      show Option.map _ (w.st.recs y) = Option.map (fillRec w y) (w.st.recs y)
+      congr 1; funext r'
+      refine fillRec_congr ?_ (hkv y) r'
+      rw [hixw]
+      simp [newKeyIx, hx, hk]
+
+omit [Fintype K] [Nonempty K] in
+/-- **Filling commutes with `newKeyUnlinked`.** -/
+theorem fill_newKeyFresh {w : WSt K} (hw : WInv w) (sid : SessionId) (pid : PartyId)
+    (k kf : K) :
+    fill (wNext w (.inr (.newKeyUnlinked sid pid k)) kf) =
+      newKeyFreshStep (fill w) (sid, pid) k kf := by
+  have hkv : ∀ y j, w.ix y = some j →
+      (wNext w (.inr (.newKeyUnlinked sid pid k)) kf).kv j = w.kv j := fun y j hj => by
+    have := (hw.1 y j hj).1
+    simp only [wNext, isNewKey, ite_true]
+    rw [Function.update_of_ne (by omega)]
+  have hixw : (wNext w (.inr (.newKeyUnlinked sid pid k)) kf).ix =
+      newKeyFreshIx w.st w.ix w.steps (sid, pid) := rfl
+  obtain ⟨hc1, hn1, hu1⟩ := newKeyFreshStep_fields (fill w) (sid, pid) k kf
+  obtain ⟨hc2, hn2, hu2⟩ := newKeyFreshStep_fields w.st (sid, pid) k default
+  refine St.ext' ?_ (by rw [hc1]; exact hc2) (by rw [hn1]; exact hn2) (by rw [hu1]; exact hu2)
+  funext y
+  show Option.map (fillRec (wNext w (.inr (.newKeyUnlinked sid pid k)) kf) y)
+      ((newKeyFreshStep w.st (sid, pid) k default).recs y) =
+    (newKeyFreshStep (fill w) (sid, pid) k kf).recs y
+  rcases hx : w.st.recs (sid, pid) with _ | r
+  · have hs : newKeyFreshStep w.st (sid, pid) k default = w.st := by
+      simp [newKeyFreshStep, hx]
+    have hf : (fill w).recs (sid, pid) = none := by simp [fill, hx]
+    have hs' : newKeyFreshStep (fill w) (sid, pid) k kf = fill w := by
+      simp [newKeyFreshStep, hf]
+    rw [hs, hs']
+    show _ = Option.map (fillRec w y) (w.st.recs y)
+    congr 1; funext r'
+    exact fillRec_congr (by rw [hixw]; simp [newKeyFreshIx, hx]) (hkv y) r'
+  · have hf : (fill w).recs (sid, pid) = some (fillRec w (sid, pid) r) := by simp [fill, hx]
+    by_cases hk : r.key.isNone
+    · have hk' : r.key = none := Option.isNone_iff_eq_none.mp hk
+      have hix : w.ix (sid, pid) = none := ix_none_of_key_none hw hx hk'
+      rw [fillRec_none hix] at hf
+      rw [newKeyFreshStep_recs (fill w) _ r hf k kf y,
+        newKeyFreshStep_recs w.st _ r hx k default y]
+      by_cases hy : y = (sid, pid)
+      · subst hy
+        simp only [hk, true_and, ite_true, Option.map_some]
+        congr 1
+        by_cases hex : Exposed w.st (sid, pid) r
+        · have hex' : Exposed (fill w) (sid, pid) r := hex
+          have hi' : (wNext w (.inr (.newKeyUnlinked sid pid k)) kf).ix (sid, pid) = none := by
+            rw [hixw]; simp [newKeyFreshIx, hx, hex, hix]
+          rw [fillRec_none hi']
+          simp [hex, hex']
+        · have hex' : ¬ Exposed (fill w) (sid, pid) r := hex
+          have hi' : (wNext w (.inr (.newKeyUnlinked sid pid k)) kf).ix (sid, pid) =
+              some w.steps := by
+            rw [hixw]; simp [newKeyFreshIx, hx, hk, hex]
+          rw [fillRec_some hi']
+          simp [hex, hex', wNext, isNewKey]
+      · simp only [hy, and_false, ite_false]
+        show Option.map _ (w.st.recs y) = Option.map (fillRec w y) (w.st.recs y)
+        congr 1; funext r'
+        refine fillRec_congr ?_ (hkv y) r'
+        rw [hixw]
+        simp only [newKeyFreshIx, hx]
+        split_ifs <;> simp [Function.update_of_ne hy]
+    · have hfk : (fillRec w (sid, pid) r).key.isNone = false := by
+        unfold fillRec
+        split
+        · rfl
+        · rcases h : r.key with _ | kk
+          · simp [h] at hk
+          · simp
+      rw [newKeyFreshStep_recs (fill w) _ _ hf k kf y,
+        newKeyFreshStep_recs w.st _ r hx k default y]
+      simp only [hfk, hk, Bool.false_eq_true, false_and, ite_false]
+      show Option.map _ (w.st.recs y) = Option.map (fillRec w y) (w.st.recs y)
+      congr 1; funext r'
+      refine fillRec_congr ?_ (hkv y) r'
+      rw [hixw]
+      simp [newKeyFreshIx, hx, hk]
+
+omit [Fintype K] [Nonempty K] in
+/-- Filling commutes with `addSession`. -/
+theorem fill_addSession {w : WSt K} (hw : WInv w) (sid : SessionId) (pid peer : PartyId)
+    (role : Role) (kf : K) :
+    fill (wNext w (.inl (.newSession sid pid peer role)) kf) =
+      addSession (fill w) (sid, pid) peer role := by
+  have hS : ((fill w).recs (sid, pid)).isSome = (w.st.recs (sid, pid)).isSome := by
+    simp [fill]
+  by_cases h : (w.st.recs (sid, pid)).isSome
+  · have h' : ((fill w).recs (sid, pid)).isSome := hS ▸ h
+    have e1 : addSession w.st (sid, pid) peer role = w.st := by simp [addSession, h]
+    have e2 : addSession (fill w) (sid, pid) peer role = fill w := by simp [addSession, h']
+    rw [e2]
+    refine St.ext' ?_ (by simp [fill, wNext, stNext, e1]) (by simp [fill, wNext, stNext, e1])
+      (by simp [fill, wNext, stNext, e1])
+    funext y
+    show Option.map (fillRec (wNext w (.inl (.newSession sid pid peer role)) kf) y)
+      ((addSession w.st (sid, pid) peer role).recs y) = Option.map (fillRec w y) (w.st.recs y)
+    rw [e1]
+    rfl
+  · have h' : ¬ ((fill w).recs (sid, pid)).isSome := hS ▸ h
+    have hix : w.ix (sid, pid) = none := by
+      rcases hj : w.ix (sid, pid) with _ | j
+      · rfl
+      · obtain ⟨_, r, hr, _⟩ := hw.1 _ j hj; simp [hr] at h
+    refine St.ext' ?_ (by simp [fill, wNext, stNext, addSession, h])
+      (by simp [fill, wNext, stNext, addSession, h])
+      (by simp [fill, wNext, stNext, addSession, h])
+    funext y
+    show Option.map (fillRec w y) ((addSession w.st (sid, pid) peer role).recs y) =
+      (addSession (fill w) (sid, pid) peer role).recs y
+    rw [addSession_recs, addSession_recs]
+    simp only [h, h', Bool.false_eq_true, ite_false]
+    by_cases hy : y = (sid, pid)
+    · subst hy; simp [fillRec_none hix]
+    · simp only [hy, ite_false]; rfl
+
+omit [Fintype K] [Nonempty K] [Inhabited K] in
+/-- The step of `poll`. -/
+theorem pollStep_eq (t : St K) :
+    pollStep t = ({ t with cursor := if (t.notices[t.cursor]?).isSome then t.cursor + 1
+        else t.cursor }, t.notices[t.cursor]?) := by
+  unfold pollStep
+  split <;> simp_all
+
+omit [Fintype K] [Nonempty K] in
+/-- The real views of the first hybrid world are the views of the real stack at the filled
+state. -/
+theorem chanOut_fill {w : WSt K} (hw : WInv w) (x : Inst) :
+    chanOut (wView realV idealV 0 realV realV w x) w.st x =
+      chanOut (fun _ k => realV k) (fill w) x := by
+  unfold chanOut
+  rw [show (fill w).recs x = (w.st.recs x).map (fillRec w x) from rfl]
+  rcases hx : w.st.recs x with _ | r
+  · rfl
+  · simp only [Option.map_some]
+    rcases hj : w.ix x with _ | j
+    · rw [fillRec_none hj]
+      rcases hk : r.key with _ | k
+      · rfl
+      · simp only [wView, hj]
+    · rw [fillRec_some hj]
+      obtain ⟨_, r', hr', hc⟩ := hw.1 x j hj
+      rw [hx] at hr'; cases hr'
+      rw [(hw.2 x r hx hc).1]
+      simp only [wView, hj, readOut]
+      split_ifs <;> first | omega | (subst_vars; rfl)
+
+/-- **The first hybrid world is the real stack over `F_AKE`**: filling the keys of the indices
+is a step map on the invariant. -/
+theorem world_zero_stepMap :
+    Sys.StepMapOn (world realV idealV 0 (SPComp.sample K) realV realV) (FR realV) WInv fill where
+  init_inv := wInv_init
+  init_map := by
+    refine St.ext' ?_ rfl rfl rfl
+    funext y; rfl
+  pres w e hw q hq := world_inv realV idealV hw hq
+  step w e hw := by
+    rcases e with (⟨sid, pid, peer, role⟩ | ⟨sid, pid⟩) |
+      (_ | _ | pid | ⟨sid, pid⟩ | ⟨sid, pid, k⟩ | ⟨sid, pid, k⟩)
+    · simp only [world, wDraw, isNewKey, Bool.false_eq_true, ite_false, SPComp.pure_bind, wOut,
+        SPComp.map]
+      rw [fill_addSession hw]
+      simp [FR, chanHon, SPComp.map]
+    · simp only [world, wDraw, isNewKey, Bool.false_eq_true, ite_false, SPComp.pure_bind, wOut]
+      rw [chanOut_fill realV idealV hw]
+      simp only [FR, Sys.ofPorts_step_inl, chanHon, SPComp.map, SPComp.bind_assoc,
+        SPComp.pure_bind]
+      rfl
+    · simp only [world, wDraw, isNewKey, Bool.false_eq_true, ite_false, SPComp.pure_bind, wOut,
+        SPComp.map]
+      simp only [FR, Sys.ofPorts_step_inr, advSys, SPComp.map, SPComp.pure_bind]
+      rfl
+    · simp only [world, wDraw, isNewKey, Bool.false_eq_true, ite_false, SPComp.pure_bind, wOut,
+        SPComp.map]
+      simp only [FR, Sys.ofPorts_step_inr, advSys, SPComp.map, SPComp.pure_bind]
+      congr 2
+      · refine St.ext' ?_
+          (by show (pollStep w.st).1.corrupt = _; rw [pollStep_eq, pollStep_eq]; rfl)
+          (by show (pollStep w.st).1.notices = _; rw [pollStep_eq, pollStep_eq]; rfl)
+          (by show (pollStep w.st).1.cursor = _; rw [pollStep_eq, pollStep_eq]; rfl)
+        funext y
+        show Option.map _ ((pollStep w.st).1.recs y) = (pollStep (fill w)).1.recs y
+        rw [pollStep_recs, pollStep_recs]; rfl
+      · rw [pollStep_eq, pollStep_eq]; rfl
+    · simp only [world, wDraw, isNewKey, Bool.false_eq_true, ite_false, SPComp.pure_bind, wOut,
+        SPComp.map]
+      simp only [FR, Sys.ofPorts_step_inr, advSys, SPComp.map, SPComp.pure_bind]
+      rfl
+    · simp only [world, wDraw, isNewKey, Bool.false_eq_true, ite_false, SPComp.pure_bind, wOut,
+        SPComp.map]
+      simp only [FR, Sys.ofPorts_step_inr, advSys, SPComp.map, SPComp.pure_bind, ite_true]
+      rfl
+    · simp only [world, wDraw, isNewKey, ite_true, ite_self, wOut, SPComp.map, SPComp.bind_assoc,
+        SPComp.pure_bind]
+      simp only [FR, Sys.ofPorts_step_inr, advSys, SPComp.map, SPComp.bind_assoc,
+        SPComp.pure_bind, fill_newKey hw]
+    · simp only [world, wDraw, isNewKey, ite_true, ite_self, wOut, SPComp.map, SPComp.bind_assoc,
+        SPComp.pure_bind]
+      simp only [FR, Sys.ofPorts_step_inr, advSys, SPComp.map, SPComp.bind_assoc,
+        SPComp.pure_bind, fill_newKeyFresh hw, ite_true]
+
 end Steps
 
 end CatCrypt.Crypto.Messaging.SignalStackUC
