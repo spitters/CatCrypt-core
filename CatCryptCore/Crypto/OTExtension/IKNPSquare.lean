@@ -10,6 +10,7 @@ public import CatCryptCore.Crypto.UCOracleGame
 public import CatCryptCore.Crypto.UCChannel
 public import CatCryptCore.Crypto.UCParallel
 public import CatCryptCore.Crypto.TraceEqLaws
+public import CatCryptCore.Tactics.SysRewrite
 
 /-!
 # The IKNP OT extension over ideal base OTs as squares against `F_OT^m`
@@ -359,28 +360,12 @@ theorem realR_realizes_crR (H : Fin m → (Fin κ → Bool) → M) :
 the uniform pads couple with the draw of `iknpSimR` at the activation that draws them. -/
 theorem crR_traceEq_sim (H : Fin m → (Fin κ → Bool) → M) :
     crR H ≈ₜ (simProtR H).withSub FOTr := by
-  refine Sys.StepMapOn.traceEq (Inv := fun t => t.1.isSome → t.2.2 = true)
-    (f := fun t => (((), ((), none)), t.2))
-    ⟨by simp [crR, KeyedSys.lazy, trigR], rfl, trigR_lazy_pres _ _, ?_⟩
-  rintro ⟨ko, t⟩ (x | r) hI
-  · rw [simProtR, MultiHybrid.tensor_withSub_step_inl _ _ FOTr fotSendSys (fun _ _ => rfl),
-      MultiHybrid.idSim_stepFuel]
-    cases ko <;> simp [crR, KeyedSys.lazy, KeyedSys.lazyStep, trigR, fotSendSys, SPComp.map,
-      SPComp.pure_bind]
-  · rw [simProtR, MultiHybrid.tensor_withSub_step_inr _ _ FOTr fotRecvSys (fun _ _ => rfl)]
-    change SPComp.map _ _ = SPComp.map _ ((postSim () (simRPost H) _).stepFuel _ 0 _ _)
-    rw [postSim_stepFuel]
-    rcases t with ⟨_ | x, _ | _⟩ <;> rcases ko with _ | k
-    case some.false.none =>
-      simp only [crR, KeyedSys.lazy, KeyedSys.lazyStep, trigR, fotRecvSys, recvStep, simRPost,
-        SPComp.map, SPComp.bind_assoc, SPComp.pure_bind, Sum.isRight_inr, Option.isSome_some,
-        Bool.not_false, Bool.and_self, ite_true, Sum.elim_inr, ofPMF_uniformFintype,
-        sampleFrom_uniform]
-      exact crRView_sample H x r fun w => ((((), (), none), some x, true), Sum.inr (some w))
-    all_goals first
-      | (simp at hI; done)
-      | simp [crR, KeyedSys.lazy, KeyedSys.lazyStep, trigR, fotRecvSys, recvStep, simRPost,
-          SPComp.map, SPComp.pure_bind]
+  sys_step_map (fun t => (((), ((), none)), t.2)) (fun t => t.1.isSome → t.2.2 = true)
+    (pres := trigR_lazy_pres _ _) using [crR, trigR, simProtR, FOTr, fotSendSys, fotRecvSys,
+      recvStep, fotSend, simRPost, postSim]
+  rename_i r x _
+  rw [← crRView_sample H x r fun w => ((((), (), none), some x, true), Sum.inr (some w))]
+  simp [SPComp.sample_prod_eq, SPComp.bind_assoc, SPComp.pure_bind]
 
 /-- **IKNP against a corrupt receiver as a square.** Ideal functionality: `FOTr`, `F_OT^m` with
 the sender on the honest port and the receiver on the adversary port. Real protocol: `realR H`,
@@ -561,30 +546,13 @@ equivalent to the simulator against a corrupt sender over `FOTs`: the receiver's
 `otChoose x r`, and the revealed view couples with the draw of `iknpSimS`. -/
 theorem late_traceEq_sim (H : Fin m → (Fin κ → Bool) → M) :
     (trigS H false).lazy (PMF.uniformFintype _) ≈ₜ simProtS.withSub FOTs := by
-  refine Sys.StepMapOn.traceEq (Inv := fun t => t.1.isSome → t.2.2.2 = true)
-    (f := fun t => (((), (t.2.2.2, none)), (t.2.1, t.2.2.1.isSome)))
-    ⟨by simp [KeyedSys.lazy, trigS], rfl, trigS_lazy_pres H, ?_⟩
-  rintro ⟨ko, t⟩ (r | x) hI
-  · rw [simProtS, MultiHybrid.tensor_withSub_step_inl _ _ FOTs fotRecvSys (fun _ _ => rfl),
-      MultiHybrid.idSim_stepFuel]
-    rcases t with ⟨_ | x, _ | r₀, _ | _⟩ <;> rcases ko with _ | k <;>
-      simp [KeyedSys.lazy, KeyedSys.lazyStep, trigS, sRecv, fotRecvSys, recvStep, iknpROut_eq,
-        SPComp.map, SPComp.pure_bind]
-  · rw [simProtS, MultiHybrid.tensor_withSub_step_inr _ _ FOTs fotSendSys (fun _ _ => rfl)]
-    change SPComp.map _ _ = SPComp.map _ ((postSim false simSPost _).stepFuel _ 0 _ _)
-    rw [postSim_stepFuel]
-    rcases t with ⟨xo, _ | r, _ | _⟩ <;> rcases ko with _ | k
-    case some.false.none =>
-      simp only [KeyedSys.lazy, KeyedSys.lazyStep, trigS, sSend, fotSendSys, fotSend,
-        simSPost, SPComp.map, SPComp.bind_assoc, SPComp.pure_bind, Sum.elim_inr,
-        Option.isSome_some, Bool.not_false, Bool.and_self, ite_true, ofPMF_uniformFintype,
-        sampleFrom_uniform]
-      exact iknpSView_sample x r fun v =>
-        ((((), true, none), some (xo.getD x), true), Sum.inr (some v))
-    all_goals first
-      | (simp at hI; done)
-      | simp [KeyedSys.lazy, KeyedSys.lazyStep, trigS, sSend, fotSendSys, fotSend, simSPost,
-          SPComp.map, SPComp.pure_bind]
+  sys_step_map (fun t => (((), (t.2.2.2, none)), (t.2.1, t.2.2.1.isSome)))
+    (fun t => t.1.isSome → t.2.2.2 = true) (pres := trigS_lazy_pres H)
+    using [trigS, sRecv, sSend, simProtS, FOTs, fotRecvSys, fotSendSys, recvStep, fotSend,
+      simSPost, postSim, iknpROut_eq]
+  all_goals
+    rw [← iknpSView_sample _ ‹Fin m → Bool›]
+    simp [SPComp.sample_prod_eq, SPComp.bind_assoc, SPComp.pure_bind]
 
 /-- **IKNP against a corrupt sender as a square.** Ideal functionality: `FOTs`, `F_OT^m` with
 the receiver on the honest port and the sender on the adversary port. Real protocol:
