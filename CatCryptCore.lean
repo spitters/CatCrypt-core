@@ -265,6 +265,7 @@ public import CatCryptCore.Crypto.AKE.X3DHSquareGDH
 public import CatCryptCore.Crypto.AKE.PQXDHSquare
 public import CatCryptCore.Crypto.AKE.PQXDHSquareHops
 public import CatCryptCore.Crypto.AKE.PQXDHSquareGDH
+public import CatCryptCore.Crypto.AKE.PQXDHSquareKEM
 public import CatCryptCore.Crypto.AKE.ChannelSquareTimed
 public import CatCryptCore.Crypto.Messaging.FSPRG
 public import CatCryptCore.Crypto.Messaging.CKA
@@ -274,6 +275,7 @@ public import CatCryptCore.Crypto.Messaging.SMCorrupt
 public import CatCryptCore.Crypto.Messaging.SignalStack
 public import CatCryptCore.Crypto.Messaging.SealedSender
 public import CatCryptCore.Crypto.Messaging.SignalStackSealed
+public import CatCryptCore.Crypto.Messaging.SignalStackUC
 public import CatCryptCore.Crypto.Messaging.FSAEAD
 public import CatCryptCore.Crypto.Messaging.DoubleRatchet
 public import CatCryptCore.Crypto.PAKE.DHPAKE
@@ -556,6 +558,7 @@ public import CatCryptCore.Crypto.Party.Protocols.X3DH
 public import CatCryptCore.Crypto.Party.Protocols.PQXDH
 public import CatCryptCore.Crypto.UCTransparentSquare
 public import CatCryptCore.Crypto.UCCascade
+public import CatCryptCore.Crypto.UCDeferred
 public import CatCryptCore.Crypto.UCCascadeEnriched
 public import CatCryptCore.Crypto.UCCascadeEnrichedPar
 public import CatCryptCore.Crypto.TraceEquiv
