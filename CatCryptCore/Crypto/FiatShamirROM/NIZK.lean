@@ -764,12 +764,8 @@ omit [DecidableEq S] in
 /-- The Σ-protocol of a linear relation has perfect HVZK at every pair of the
 relation. -/
 theorem linearSigma_statHVZKAt (s : S) (w : Fin n → gp.Scalar) (hw : (toRel s).Holds w) :
-    (linearSigma gp n m toRel gen).StatHVZKAt s w 0 := by
-  have h := (linearSigma_perfectHVZK (gen := PMF.pure (s, w)) toRel fun s' w' hsw => by
-    rw [PMF.support_pure, Set.mem_singleton_iff, Prod.mk.injEq] at hsw
-    obtain ⟨rfl, rfl⟩ := hsw
-    exact hw).statHVZK s w ((PMF.mem_support_pure_iff _ _).mpr rfl)
-  exact h
+    (linearSigma gp n m toRel gen).StatHVZKAt s w 0 :=
+  (linearSigma_relHVZK toRel gen).statHVZKAt hw
 
 /-- **Knowledge soundness of the strong Fiat–Shamir proofs for a linear relation.** For
 every adversary `A` with at most `qH` random-oracle queries that chooses its statement,
