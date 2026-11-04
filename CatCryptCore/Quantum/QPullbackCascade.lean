@@ -7,6 +7,7 @@ module
 
 public import CatCryptCore.Quantum.QPullback
 public import CatCryptCore.Quantum.QRealizesMemReset
+public import CatCryptCore.Quantum.QSysCat
 
 /-!
 # Quantum cascade, register transfer and pullbacks over environments with quantum memory
@@ -27,7 +28,10 @@ system `Y` with events `M` and outputs `O` keeps the two private registers separ
 register is `H × H'`. The system `Y` is a simulator with a private register in front of the hole
 `X` (`QSys.asPostSim`), and `X` is a simulator behind the hole `Y` (`QSys.asPreSim`); the
 cascade is the attachment of the first (`QSys.cascade` is defined as it) and equals the
-attachment of the second (`QSys.cascade_eq_attachQL`).
+attachment of the second (`QSys.cascade_eq_attachQL`). As a quantum reactive system on the joint
+register it is the composition `QRSys.seq` of the category `QSysCat` of `X` placed on the left
+factor and `Y` placed on the right factor (`QSys.cascade_toQRSys`), so the composition theorem
+below is a theorem about composition in that category.
 
 A **quantum pullback over environments with memory** `F : QEnvPullbackQ E O E' O' d` is the
 analogue of `QEnvPullback` for environments with a quantum memory register: the pulled-back
@@ -43,7 +47,8 @@ environment with memory by the environment-dependent bound `b`. The **pullback l
 absorbs `Y` plus `bY` at the environment that absorbs `X'`.
 
 Search words: quantum cascade, private register, register transfer, quantum context, pullback,
-composition theorem, environment with quantum memory, simulator absorption.
+composition theorem, environment with quantum memory, simulator absorption, sequential
+composition.
 
 ## Main definitions
 
@@ -56,6 +61,8 @@ composition theorem, environment with quantum memory, simulator absorption.
 
 * `qloopQ_attachQ`, `qloopQ_attachQL` — register transfer for joint runs
 * `qviewQ_attachQ`, `qviewQ_attachQL` — absorption of a simulator with a private register
+* `QSys.cascade_eq_attachQL`, `QSys.cascade_toQRSys` — the cascade as the other attachment and
+  as `QRSys.seq`
 * `QEnvPullbackQ.realizes_map`, `QEnvPullbackQ.realizes_twoHole`
 * `QRealizesQB.cascade_left`, `QRealizesQB.cascade_right`, `QRealizesQB.cascade`
 -/
@@ -536,6 +543,19 @@ theorem cascade_eq_attachQL (X : QSys H τ E M d) (Y : QSys H' υ M O d) :
   funext c e
   simp only [placeRight, placeLeft, SubInstrument.frame_pure, relabel_pure,
     SubInstrument.pure_bind]
+
+omit [DecidableEq H] [DecidableEq H'] in
+/-- The cascade is the composition `QRSys.seq` of the category of quantum reactive systems on
+the joint register `Fin d × (H × H')`, with `X` placed on the left factor of the private
+register and `Y` on the right factor. -/
+theorem cascade_toQRSys (X : QSys H τ E M d) (Y : QSys H' υ M O d) :
+    (X.cascade Y).toQRSys = QRSys.seq (R := Fin d × (H × H'))
+      ⟨X.init, fun t e => placeLeft H H' (X.step t e)⟩
+      ⟨Y.init, fun u m => placeRight H H' (Y.step u m)⟩ := by
+  simp only [toQRSys, cascade, QSimQ.attachQ, asPostSim, QRSys.seq]
+  congr 1
+  funext c e
+  simp only [placeRight, SubInstrument.frame_pure, relabel_pure, SubInstrument.pure_bind]
 
 /-- The cascade context with the hole on the left, `- ≫ Y`, as a pullback: the private register
 of `Y` moves to the environment memory. -/

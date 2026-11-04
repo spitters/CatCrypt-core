@@ -398,8 +398,7 @@ theorem qloop_attach (S : QSim σ E O EG OG d) (Y : QSys H υ EG OG d) (Z : QStr
     simp only [qloop, attach_step, absorb_next, absorb_obs, ih, SubInstrument.frame_bind,
       SubInstrument.frame_pure, SubInstrument.bind_assoc, SubInstrument.pure_bind]
 
-/-- **Absorption.** The view of `Z` against the system `Y` behind the simulator `S` is the
-view of `Z` against `Y` behind `S`. -/
+/-- **Absorption.** The view of `Z` against `S.attach Y` is `simView Y S Z`. -/
 theorem qview_attach (S : QSim σ E O EG OG d) (Y : QSys H υ EG OG d) (Z : QStrat ζ E O d) :
     qview (S.attach Y) Z = simView Y S Z := by
   simp only [qview, simView, qloop_attach, SubInstrument.bind_assoc, SubInstrument.pure_bind]

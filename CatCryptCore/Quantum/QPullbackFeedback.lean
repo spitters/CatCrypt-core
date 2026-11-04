@@ -15,7 +15,10 @@ the interface `(E ⊕ X, O ⊕ X)` along the wire `X` is a system on `(E, O)` wi
 register: an outer event `e` activates `S` on `inl e`; an output `inr x` of `S` is fed back to
 `S` as the event `inr x`, at most `n` times; the first output `inl o` ends the activation with
 the outer output `o`, and a wire value `x` answered to the last allowed call ends it with the
-output `cut x` (`QSys.fbRun`). It is the quantum analogue of the classical `Sys.loopback`.
+output `cut x` (`QSys.fbRun`). It is the bounded loopback with a cut-off, the quantum analogue
+of the classical `Sys.loopback`. It differs from the unbounded loopback `QRSys.loopbackω` of
+`QSysCat`, the trace of that category, which fails on exhausted fuel and takes the supremum over
+the fuel.
 
 The feedback context `- ↺` is a quantum pullback over environments with memory
 (`QSys.loopbackCtx`). The pulled environment `QSys.fbEnv Z n cut idle` keeps the memory register
@@ -32,7 +35,7 @@ The **composition theorem** for the quantum loopback (`QRealizesQB.loopback`): i
 loopback of `R` realizes the loopback of `I` with the bound `b` at the pulled environment. It is
 the quantum analogue of the classical `Realizes.loopback`.
 
-Search words: quantum feedback, loopback, trace, private register, quantum context, pullback,
+Search words: quantum feedback, bounded loopback, private register, quantum context, pullback,
 composition theorem, idle event, environment with quantum memory, fuel, cut-off.
 
 ## Main definitions
