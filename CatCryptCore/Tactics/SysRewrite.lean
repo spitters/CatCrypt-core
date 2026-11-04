@@ -597,6 +597,13 @@ partial def solveLeaf (st : LeafSteps) (g : MVarId) (depth : Nat) : TacticM (Lis
   let gs ← runOn g (evalTactic (← `(tactic| split)))
   if gs == [g] then return [g]
   trace[sys_step_map] "{tag}: split by `split`"
+  -- the equations of a split `match` on a tuple: split into components, variables substituted
+  let gs ← gs.mapM fun g => do
+    let gs' ← runOn g (evalTactic (← `(tactic|
+      ((try casesm* _ ∧ _); (try simp only [Prod.mk.injEq] at *); (try casesm* _ ∧ _);
+        subst_vars))))
+    return gs'
+  let gs := gs.flatten
   gs.forM fun g => g.setTag tag
   return (← gs.mapM fun g => solveLeaf st g (depth - 1)).flatten
 
