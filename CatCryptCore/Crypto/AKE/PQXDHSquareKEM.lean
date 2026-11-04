@@ -1699,6 +1699,16 @@ def needQ (cs : C) : OEv W SS C → Option C
   | .inr (.send _ _ _ c) => if c = cs then none else some c
   | _ => none
 
+/-- The answer of a stepped oracle program with queries to the query `e` from the state `t`: the
+query to an oracle that the step needs (`need`), one draw of `μ`, and the step with the answer. -/
+noncomputable def stepImplQ {σ E A V Q Ans : Type} (need : σ → E → Option Q)
+    (μ : σ → E → PMF V) (step : Option Ans → σ → E → V → σ × A) (t : σ) (e : E) :
+    OracleAdv Q Ans (A × σ) :=
+  match need t e with
+  | some c => .query c fun a => .rand (μ t e) fun r =>
+      let p := step (some a) t e r; .ret (p.2, p.1)
+  | none => .rand (μ t e) fun r => let p := step none t e r; .ret (p.2, p.1)
+
 /-- **A stepped oracle program with queries**: the oracle adversary `B` runs against a world
 stepped by one draw of `μ` per query, after the query to an oracle that the step needs
 (`need`), whose answer the step reads; the output is the extraction `ext` of the final state.
@@ -1706,11 +1716,7 @@ It is `X3DHSquareGDH.stepRedD` with one oracle query per step. -/
 noncomputable def stepRedQ {σ E A V Q Ans Out : Type} (need : σ → E → Option Q)
     (μ : σ → E → PMF V) (step : Option Ans → σ → E → V → σ × A) (ext : σ → Out)
     (B : OracleAdv E A Bool) (s₀ : σ) : OracleAdv Q Ans Out :=
-  (OracleAdv.simulate (fun t e => match need t e with
-      | some c => .query c fun a => .rand (μ t e) fun r =>
-          let p := step (some a) t e r; .ret (p.2, p.1)
-      | none => .rand (μ t e) fun r => let p := step none t e r; .ret (p.2, p.1)) B s₀).bind
-    fun p => .ret (ext p.2)
+  (OracleAdv.simulate (stepImplQ need μ step) B s₀).bind fun p => .ret (ext p.2)
 
 /-- A step of the world of the reduction with the answer of the decapsulation oracle. -/
 noncomputable def kemStep (pk : PK) (cs : C) (oa : Option (Option SS)) (t : YSt S W K PK SK SS C)
