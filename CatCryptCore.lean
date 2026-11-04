@@ -387,6 +387,7 @@ public import CatCryptCore.Quantum.QPullbackSimLoopback
 public import CatCryptCore.Quantum.QPullbackAdversary
 public import CatCryptCore.Quantum.QPullbackCost
 public import CatCryptCore.Quantum.QTreeKind
+public import CatCryptCore.Quantum.QTreeKindFree
 public import CatCryptCore.Quantum.QRealizesStep
 public import CatCryptCore.Quantum.QSimTimed
 public import CatCryptCore.Quantum.QOTPReactive
@@ -473,6 +474,7 @@ public import CatCryptCore.Quantum.QROM.QOwcpaAux
 public import CatCryptCore.Quantum.QROM.QOwcpaAuxMeasured
 public import CatCryptCore.Quantum.QROM.QuantumOWCPA
 public import CatCryptCore.Quantum.QROM.QAdvTreeKind
+public import CatCryptCore.Quantum.QROM.QAdvTreeKindFree
 public import CatCryptCore.Quantum.QROM.AdversariesTimed
 public import CatCryptCore.Quantum.QROM.QOwcpaAuxTimed
 public import CatCryptCore.Quantum.QROM.QIndcpaAuxTimed
