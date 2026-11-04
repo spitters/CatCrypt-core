@@ -47,6 +47,7 @@ public import CatCryptCore.Examples.ElGamal
 public import CatCryptCore.Examples.MAC
 public import CatCryptCore.Examples.SecretSharing
 public import CatCryptCore.Examples.ShamirSecretSharing
+public import CatCryptCore.Examples.SymmRatchet
 public import CatCryptCore.Examples.Commitment
 public import CatCryptCore.Examples.CPAFromPRF
 public import CatCryptCore.Examples.EtMCCA

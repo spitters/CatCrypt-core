@@ -30,6 +30,8 @@ their definitions through `Array.toList`, so their costs are linear in the size.
   `List.get.timedCost_le`, `List.lookup.timedCost_le`, `List.concat.timedCost_le`,
   `List.replicate.timedCost_le`, `List.range.timedCost_le`, `List.zip.timedCost_le` — linear
   bounds in the length
+* `List.get?Internal.timedCost_le_index`, `List.getD.timedCost_le_index` — linear bounds in
+  the index
 * `List.map.timedCost_le`, `List.foldl.timedCost_le`, `List.foldr.timedCost_le`,
   `List.zipWith.timedCost_le`, `List.any.timedCost_le` — `(k + c) * l.length + 1` for function
   costs at most `k`; `List.any.timedCost_const` — `(c + 5) * l.length + 1` for a predicate of
@@ -161,6 +163,23 @@ theorem List.get?Internal.timedCost_le (l : List α) (i : ℕ) :
 theorem List.getD.timedCost_le (l : List α) (i : ℕ) (d : α) :
     List.getD.timedCost l i d ≤ 2 * l.length + 4 := by
   have := List.get?Internal.timedCost_le l i
+  simp only [List.getD.timedCost]
+  omega
+
+/-- The optional lookup `l[i]?` costs at most two units per index step and one more. -/
+theorem List.get?Internal.timedCost_le_index (l : List α) (i : ℕ) :
+    List.get?Internal.timedCost l i ≤ 2 * i + 1 := by
+  induction l generalizing i with
+  | nil => cases i <;> simp [List.get?Internal.timedCost]
+  | cons a l ih =>
+    cases i
+    · simp [List.get?Internal.timedCost]
+    · have := ih ‹_›; simp [List.get?Internal.timedCost]; omega
+
+/-- The lookup with a default at index `i` costs at most `2 i + 4`. -/
+theorem List.getD.timedCost_le_index (l : List α) (i : ℕ) (d : α) :
+    List.getD.timedCost l i d ≤ 2 * i + 4 := by
+  have := List.get?Internal.timedCost_le_index l i
   simp only [List.getD.timedCost]
   omega
 

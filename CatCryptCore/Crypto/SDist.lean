@@ -27,6 +27,10 @@ and directly reuses the existing `prTrue` infrastructure.
 * `sdist_comp_left` — left post-processing lemma (PPL, pre-composition)
 * `sdist_wkR_le`, `sdist_wkL_le` — tensor doesn't increase distance
 * `sdist_comp_add` — composition of ε-close morphisms
+* `sdist_bind_left_dep`, `sdist_bind_right_dep` — the post-processing lemmas with a shared side
+  that depends on the input
+* `sdist_epoch`, `sdist_epoch3` — one step of a fold that draws one or two secrets, stretches
+  and continues, within the sum of the distances of its parts
 
 `sdist_triangle` and `sdist_sym` are registered with `@[hop_metric]`, so that `hop_chain`
 composes chains over `sdist`.
@@ -527,6 +531,156 @@ noncomputable instance {α β : Type*} : PseudoEMetricSpace (KlMorph α β) wher
   edist_self f := sdist_self f.run
   edist_comm f g := sdist_sym f.run g.run
   edist_triangle f g h := sdist_triangle f.run g.run h.run
+
+/-! ## Dependent bind non-expansiveness
+
+`sdist_comp_right` / `sdist_comp_left` require the shared side of the bind
+to be input-independent. The lemmas below allow a shared side that depends on
+the input, as in a fold whose continuation captures the current state. -/
+
+/-- Swapping the head of a bind under a shared *input-dependent*
+    continuation does not increase sdist: for fixed input `a`, the
+    continuation composes into the distinguisher. -/
+theorem sdist_bind_left_dep {α β γ : Type*}
+    (f₁ f₂ : α → SPComp β) (K : α → β → SPComp γ) {ε : ℝ≥0∞}
+    (hf : sdist f₁ f₂ ≤ ε) :
+    sdist (fun a => SPComp.bind (f₁ a) (K a))
+          (fun a => SPComp.bind (f₂ a) (K a)) ≤ ε := by
+  apply iSup_le; intro D
+  apply iSup_le; intro a
+  apply iSup_le; intro h₀
+  let D' : β → SPComp Bool := fun b => SPComp.bind (K a b) D
+  have eq1 : SPComp.bind (SPComp.bind (f₁ a) (K a)) D =
+      SPComp.bind (f₁ a) D' := by simp [D', SPComp.bind_assoc]
+  have eq2 : SPComp.bind (SPComp.bind (f₂ a) (K a)) D =
+      SPComp.bind (f₂ a) D' := by simp [D', SPComp.bind_assoc]
+  rw [eq1, eq2]
+  calc absDiff (prTrue ((f₁ a).bind D') h₀) (prTrue ((f₂ a).bind D') h₀)
+      ≤ sdist f₁ f₂ := le_iSup₂_of_le D' a (le_iSup_of_le h₀ le_rfl)
+    _ ≤ ε := hf
+
+/-- Swapping an *input-dependent* continuation under a shared prefix does
+    not increase sdist beyond the uniform per-input bound: the prefix's
+    output distribution is a sub-probability weighting of the pointwise
+    continuation distances. -/
+theorem sdist_bind_right_dep {α β γ : Type*}
+    (f : α → SPComp β) (g₁ g₂ : α → β → SPComp γ) {ε : ℝ≥0∞}
+    (hg : ∀ a, sdist (g₁ a) (g₂ a) ≤ ε) :
+    sdist (fun a => SPComp.bind (f a) (g₁ a))
+          (fun a => SPComp.bind (f a) (g₂ a)) ≤ ε := by
+  apply iSup_le; intro D
+  apply iSup_le; intro a
+  apply iSup_le; intro h₀
+  have eq1 : SPComp.bind (SPComp.bind (f a) (g₁ a)) D =
+      SPComp.bind (f a) (fun b => SPComp.bind (g₁ a b) D) := SPComp.bind_assoc _ _ _
+  have eq2 : SPComp.bind (SPComp.bind (f a) (g₂ a)) D =
+      SPComp.bind (f a) (fun b => SPComp.bind (g₂ a b) D) := SPComp.bind_assoc _ _ _
+  rw [eq1, eq2]
+  refine absDiff_prTrue_bind_le (f a) _ _ h₀ ε ?_ ?_
+  · intro b h'
+    refine le_add_of_absDiff_le (le_trans ?_ (hg a))
+    exact le_iSup₂_of_le D b (le_iSup_of_le h' le_rfl)
+  · intro b h'
+    refine le_add_of_absDiff_le (le_trans ?_ (hg a))
+    rw [absDiff_comm]
+    exact le_iSup₂_of_le D b (le_iSup_of_le h' le_rfl)
+
+/-- **One-epoch composition.** Swapping the per-epoch secret sampler
+    (cost `ε₁`), the stretch under the shared swapped prefix (cost `ε₂`),
+    and the tail under both shared prefixes (cost `ε₃`) keeps the composed
+    epoch within `ε₁ + (ε₂ + ε₃)`. Three-hybrid chain via `sdist_triangle`
+    and the dependent bind lemmas, stated abstractly so the induction step of
+    an epoch fold is a single application. -/
+theorem sdist_epoch {α β γ δ : Type*}
+    (c₁ c₂ : α → SPComp β) (s₁ s₂ : α × β → SPComp γ)
+    (M₁ M₂ : γ → SPComp δ) {ε₁ ε₂ ε₃ : ℝ≥0∞}
+    (hc : sdist c₁ c₂ ≤ ε₁) (hs : sdist s₁ s₂ ≤ ε₂) (hM : sdist M₁ M₂ ≤ ε₃) :
+    sdist (fun a => SPComp.bind (c₁ a) fun r => SPComp.bind (s₁ (a, r)) M₁)
+          (fun a => SPComp.bind (c₂ a) fun r => SPComp.bind (s₂ (a, r)) M₂)
+      ≤ ε₁ + (ε₂ + ε₃) := by
+  refine le_trans (sdist_triangle _
+      (fun a => SPComp.bind (c₂ a) fun r => SPComp.bind (s₁ (a, r)) M₁) _)
+    (add_le_add ?_ ?_)
+  · exact sdist_bind_left_dep c₁ c₂ (fun a r => SPComp.bind (s₁ (a, r)) M₁) hc
+  · refine le_trans (sdist_triangle _
+        (fun a => SPComp.bind (c₂ a) fun r => SPComp.bind (s₂ (a, r)) M₁) _)
+      (add_le_add ?_ ?_)
+    · refine sdist_bind_right_dep c₂
+        (fun a r => SPComp.bind (s₁ (a, r)) M₁)
+        (fun a r => SPComp.bind (s₂ (a, r)) M₁) fun a => ?_
+      refine le_trans
+        (sdist_comp_right (fun r => s₁ (a, r)) (fun r => s₂ (a, r)) M₁) ?_
+      exact le_trans (sdist_precomp_le s₁ s₂ fun r => (a, r)) hs
+    · refine sdist_bind_right_dep c₂
+        (fun a r => SPComp.bind (s₂ (a, r)) M₁)
+        (fun a r => SPComp.bind (s₂ (a, r)) M₂) fun a => ?_
+      exact sdist_bind_right_dep (fun r => s₂ (a, r)) (fun _ => M₁)
+        (fun _ => M₂) fun _ => hM
+
+/-- **One-epoch composition, three samplers.** The three-slice analogue of
+    `sdist_epoch` for epochs that draw two independent secrets before the
+    stretch (e.g. a DH secret and a KEM secret): swapping the first sampler
+    costs `ε₁`, the second under the shared swapped prefix costs `ε₂`, the
+    stretch under both shared prefixes costs `ε₃`, and the tail under all
+    three costs `ε₄`. Four-hybrid chain via `sdist_triangle` and the
+    dependent bind lemmas; `sdist_epoch` is the two-sampler special case
+    shape. -/
+theorem sdist_epoch3 {α β β' γ δ : Type*}
+    (c₁ c₂ : α → SPComp β) (d₁ d₂ : α × β → SPComp β')
+    (s₁ s₂ : (α × β) × β' → SPComp γ) (M₁ M₂ : γ → SPComp δ)
+    {ε₁ ε₂ ε₃ ε₄ : ℝ≥0∞}
+    (hc : sdist c₁ c₂ ≤ ε₁) (hd : sdist d₁ d₂ ≤ ε₂)
+    (hs : sdist s₁ s₂ ≤ ε₃) (hM : sdist M₁ M₂ ≤ ε₄) :
+    sdist
+      (fun a => SPComp.bind (c₁ a) fun r =>
+        SPComp.bind (d₁ (a, r)) fun q => SPComp.bind (s₁ ((a, r), q)) M₁)
+      (fun a => SPComp.bind (c₂ a) fun r =>
+        SPComp.bind (d₂ (a, r)) fun q => SPComp.bind (s₂ ((a, r), q)) M₂)
+      ≤ ε₁ + (ε₂ + (ε₃ + ε₄)) := by
+  refine le_trans (sdist_triangle _
+      (fun a => SPComp.bind (c₂ a) fun r =>
+        SPComp.bind (d₁ (a, r)) fun q => SPComp.bind (s₁ ((a, r), q)) M₁) _)
+    (add_le_add ?_ ?_)
+  · exact sdist_bind_left_dep c₁ c₂
+      (fun a r => SPComp.bind (d₁ (a, r)) fun q =>
+        SPComp.bind (s₁ ((a, r), q)) M₁) hc
+  · refine le_trans (sdist_triangle _
+        (fun a => SPComp.bind (c₂ a) fun r =>
+          SPComp.bind (d₂ (a, r)) fun q => SPComp.bind (s₁ ((a, r), q)) M₁) _)
+      (add_le_add ?_ ?_)
+    · refine sdist_bind_right_dep c₂
+        (fun a r => SPComp.bind (d₁ (a, r)) fun q =>
+          SPComp.bind (s₁ ((a, r), q)) M₁)
+        (fun a r => SPComp.bind (d₂ (a, r)) fun q =>
+          SPComp.bind (s₁ ((a, r), q)) M₁) fun a => ?_
+      exact sdist_bind_left_dep (fun r => d₁ (a, r)) (fun r => d₂ (a, r))
+        (fun r q => SPComp.bind (s₁ ((a, r), q)) M₁)
+        (le_trans (sdist_precomp_le d₁ d₂ fun r => (a, r)) hd)
+    · refine le_trans (sdist_triangle _
+          (fun a => SPComp.bind (c₂ a) fun r =>
+            SPComp.bind (d₂ (a, r)) fun q => SPComp.bind (s₂ ((a, r), q)) M₁) _)
+        (add_le_add ?_ ?_)
+      · refine sdist_bind_right_dep c₂
+          (fun a r => SPComp.bind (d₂ (a, r)) fun q =>
+            SPComp.bind (s₁ ((a, r), q)) M₁)
+          (fun a r => SPComp.bind (d₂ (a, r)) fun q =>
+            SPComp.bind (s₂ ((a, r), q)) M₁) fun a => ?_
+        refine sdist_bind_right_dep (fun r => d₂ (a, r))
+          (fun r q => SPComp.bind (s₁ ((a, r), q)) M₁)
+          (fun r q => SPComp.bind (s₂ ((a, r), q)) M₁) fun r => ?_
+        exact sdist_bind_left_dep (fun q => s₁ ((a, r), q))
+          (fun q => s₂ ((a, r), q)) (fun _ k => M₁ k)
+          (le_trans (sdist_precomp_le s₁ s₂ fun q => ((a, r), q)) hs)
+      · refine sdist_bind_right_dep c₂
+          (fun a r => SPComp.bind (d₂ (a, r)) fun q =>
+            SPComp.bind (s₂ ((a, r), q)) M₁)
+          (fun a r => SPComp.bind (d₂ (a, r)) fun q =>
+            SPComp.bind (s₂ ((a, r), q)) M₂) fun a => ?_
+        refine sdist_bind_right_dep (fun r => d₂ (a, r))
+          (fun r q => SPComp.bind (s₂ ((a, r), q)) M₁)
+          (fun r q => SPComp.bind (s₂ ((a, r), q)) M₂) fun r => ?_
+        exact sdist_bind_right_dep (fun q => s₂ ((a, r), q))
+          (fun _ => M₁) (fun _ => M₂) fun _ => hM
 
 end CatCrypt.Crypto
 

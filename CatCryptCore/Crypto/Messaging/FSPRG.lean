@@ -39,6 +39,8 @@ double-ratchet decomposition, Definition 9). The step is a PRG
 * `fsprg_advantage_le` — for every adversary `A`, the FS-PRG advantage is at most the sum of
   the PRG advantages of the `n` reductions `fsprgRed G n i A`
 * `fsprgRedOf.tree.timeBound_timed` — the time of the costed reduction
+* `fsprgRun.timedCost_le` — `n` steps of the generator cost `n (t + 3) + 1` for a step of cost
+  at most `t`
 
 ## References
 
@@ -63,7 +65,9 @@ open scoped ENNReal
 def fsprgRun {St Out : Type} (G : PRGDef St (Out × St)) : ℕ → St → List Out × St
   | 0, s => ([], s)
   | n + 1, s =>
-    ((G.stretch s).1 :: (fsprgRun G n (G.stretch s).2).1, (fsprgRun G n (G.stretch s).2).2)
+    let y := G.stretch s
+    let r := fsprgRun G n y.2
+    (y.1 :: r.1, r.2)
 
 /-- `fsprgRun` of `n + 1` steps is the first output followed by `n` steps from the next
 state. -/
@@ -71,6 +75,27 @@ theorem fsprgRun_succ {St Out : Type} (G : PRGDef St (Out × St)) (n : ℕ) (s :
     fsprgRun G (n + 1) s =
       ((G.stretch s).1 :: (fsprgRun G n (G.stretch s).2).1,
         (fsprgRun G n (G.stretch s).2).2) := rfl
+
+/-- `n` steps of the generator have `n` outputs. -/
+theorem fsprgRun_length {St Out : Type} (G : PRGDef St (Out × St)) (n : ℕ) (s : St) :
+    (fsprgRun G n s).1.length = n := by
+  induction n generalizing s with
+  | zero => rfl
+  | succ n ih => simp only [fsprgRun, List.length_cons, ih]
+
+derive_cost fsprgRun
+
+/-- The cost of `n` steps of the generator, for `G.stretch` of cost at most `t`. -/
+theorem fsprgRun.timedCost_le {St Out : Type} (G : PRGDef St (Out × St))
+    (stretchCost : St → ℕ) {t : ℕ} (h : ∀ s, stretchCost s ≤ t) (n : ℕ) (s : St) :
+    fsprgRun.timedCost G n s stretchCost ≤ n * (t + 3) + 1 := by
+  induction n generalizing s with
+  | zero => simp [fsprgRun.timedCost.eq_1]
+  | succ n ih =>
+    rw [fsprgRun.timedCost.eq_2]
+    have := ih (G.stretch s).2
+    have := h s
+    grind
 
 variable {St Out : Type} [Fintype St] [Nonempty St] [Fintype Out] [Nonempty Out]
 
