@@ -121,7 +121,8 @@ cost `f.timedCost a`, the instance of `f.timedCost_eq` or `f.timedCost_le` (prem
 context), and, when it mentions variables that the right side does not (a bound value, a cost
 companion), its bound free of them (`boundFree?`: a premise `∀ x y, fCost x y ≤ ?k` closed by
 the bound of the companion at fresh arguments, a value of `Fin n` by `n`, the length of a list
-built by `List.ofFn`, `map` or `zip` by its equation, a length by an invariant). A summand
+built by `List.ofFn`, `map` or `zip` by its equation or by a theorem tagged `@[length_bound]`,
+a length by an invariant). A summand
 `m₁` of the left side that is a `match` and a summand `m₂` of the right side that is a `match`
 of the same matcher on the same discriminants are compared by cases
 (`matchFacts`): the matcher proves `m₁ ≤ m₂` with the motive `fun ds => m₁[ds] ≤ m₂[ds]`, each
@@ -173,6 +174,7 @@ the current namespaces.
 * `time_bound` — the procedure
 * `allret_bound` — the leaf invariants of costed oracle adversaries
 * `time_bound_simps` — the simp set of unfolding equations
+* `@[length_bound]` — the registry of bounds `(…).length ≤ b` read by `boundFree?`
 -/
 
 public section
@@ -1374,6 +1376,30 @@ def eqAt? (lem : Name) (e : Expr) : MetaM (Option (Expr × Expr)) := do
     s.restore
     return none
 
+/-- The registry of `@[length_bound]` theorems, bounds of the length of a list read by
+`boundFree?`. -/
+initialize lengthBoundExt : SimpleScopedEnvExtension Name (Array Name) ←
+  registerSimpleScopedEnvExtension { addEntry := Array.push, initial := #[] }
+
+/-- `@[length_bound]` registers a theorem whose conclusion is `l.length ≤ b` or
+`l.length = b`, read by `boundFree?`: a length that unifies with `l.length` is bounded by the
+bound of `b`, the premises of the theorem closed by `closeByContext`. -/
+initialize registerBuiltinAttribute {
+  name := `length_bound
+  descr := "Register a bound `l.length ≤ b` or an equation `l.length = b` for `boundFree?`"
+  add := fun decl _ kind => MetaM.run' do
+    let ok ← forallTelescopeReducing (← getConstInfo decl).type fun _ concl => do
+      let concl ← whnfR concl
+      let lhs? := if concl.isAppOfArity ``Eq 3 then some (concl.getArg! 1)
+        else (natLe? concl).map (·.1)
+      return lhs?.any (·.isAppOfArity ``List.length 2)
+    unless ok do
+      throwError "length_bound: the conclusion of `{decl}` is not `l.length ≤ b` or \
+        `l.length = b`"
+    lengthBoundExt.add decl kind
+  applicationTime := .afterTypeChecking
+}
+
 /-- The equations of the length of a list built by a list function, read by `boundFree?`. -/
 def lengthEqLemmas : List Name := [``List.length_ofFn, ``List.length_map, ``List.length_zip,
   ``List.length_zipWith, ``List.length_range, ``List.length_replicate, ``List.length_cons,
@@ -1418,8 +1444,10 @@ or `if` part by part (`Nat.add_le_add`, `Nat.mul_le_mul`, `max_le_max`, `ite_le_
 minimum by the bound of one operand (`min_le_left`, `min_le_right`); a value `↑i` of `i : Fin n`
 by `n` (`Fin.isLt`); a length `l.length` by the bound of the right side of its equation in
 `lengthEqLemmas` (`(List.ofFn f).length = n`, the length of a `map`, `zip`, `zipWith`, `range`,
-`replicate`, `cons`, `append`, `reverse`); a registered cost `f.timedCost a` by the instance of
-`f.timedCost_eq` or `f.timedCost_le` at `a`, its premises closed by `closeByContext` (a premise
+`replicate`, `cons`, `append`, `reverse`) or by the bound of the right side of a theorem tagged
+`@[length_bound]` at `l`, its premises closed by `closeByContext`; a registered cost
+`f.timedCost a` by the instance of `f.timedCost_eq` or `f.timedCost_le` at `a`, its premises
+closed by `closeByContext` (a premise
 `∀ y, fCost y ≤ ?k` on a cost companion argument by the bound of the body of `fCost` at fresh
 `y`; when the bound of the instance is not free of `xs`, again with the premise bound free of
 `xs` as well), followed by the bound of its right side; an atom by a local hypothesis
@@ -1465,6 +1493,26 @@ partial def boundFree? (xs : Array FVarId) (e : Expr) (fuel : Nat) :
       if let some (r, eq) ← eqAt? lem e then
         if let some (b, pb) ← boundFree? xs r (fuel - 1) then
           return some (b, ← mkAppM ``Nat.le_trans #[← mkAppM ``Nat.le_of_eq #[eq], pb])
+    for lem in lengthBoundExt.getState (← getEnv) do
+      let st ← saveState
+      let c ← mkConstWithFreshMVarLevels lem
+      let (ms, _, body) ← forallMetaTelescopeReducing (← inferType c)
+      let isEq := body.isAppOfArity ``Eq 3
+      let side? := if isEq then some (body.getArg! 1, body.getArg! 2) else natLe? body
+      let some (l, r) := side? | st.restore; continue
+      if ← isDefEq l e then
+        let ok ← ms.allM fun m => do
+          let mid := m.mvarId!
+          if ← mid.isAssigned then return true
+          unless ← isProp (← mid.getType) do return true
+          closeByContext mid (fuel - 1)
+        let r ← instantiateMVars r
+        let pf ← instantiateMVars (mkAppN c ms)
+        if ok && !r.hasExprMVar && !pf.hasExprMVar then
+          let pf ← if isEq then mkAppM ``Nat.le_of_eq #[pf] else pure pf
+          if let some (b, pb) ← boundFree? xs r (fuel - 1) then
+            return some (b, ← mkAppM ``Nat.le_trans #[pf, pb])
+      st.restore
   if let some n := e.getAppFn.constName? then
     if n.lastComponentAsString == "timedCost" then
       for useOuter in [false, true] do

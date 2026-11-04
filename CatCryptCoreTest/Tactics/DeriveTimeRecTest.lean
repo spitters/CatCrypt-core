@@ -23,6 +23,10 @@ public import CatCryptCore.Tactics.StdCosts
   defined by the same recursion.
 * `blocksL`: a recursive data function whose cost is quadratic; its bound `blocksL.timedCost_le`
   is used by `derive_time_bound` for the reduction `useBlocks`.
+* `blocksG`: blocks from a function with a cost companion; the bound of its cost is a closed
+  form, the product of the block count and the length of the blocks.
+* `useNested`: the length of a list built by `blocksL` from a sampled value, bounded free of the
+  value by the `@[length_bound]` theorem `blocksL_length`.
 * `ask`: a costed oracle adversary that queries once per level.
 * `pathView`: a recursion behind a structure binder whose levels fold a compound node
   `nodeIdeal deps`; `pathChain`: the same with the fold first, of a node below a `have`, whose
@@ -128,6 +132,23 @@ derive_cost blocksL
 derive_time_rec blocksL.timedCost using fun k (acc : List ℕ) => k * (2 * acc.length + k + 5) + 1
   with [List.length_append, List.length_singleton]
 
+/-- `k` blocks from position `n`: block `i` is `f i (n + B * i)`, appended at the end. -/
+def blocksG (B : ℕ) (f : ℕ → ℕ → List ℕ) (n : ℕ) : ℕ → List ℕ
+  | 0 => []
+  | k + 1 => blocksG B f n k ++ f k (n + B * k)
+
+derive_cost blocksG
+
+/-- `k + 1` blocks have the elements of the first `k` blocks and of block `k`. -/
+theorem blocksG_length_succ (B : ℕ) (f : ℕ → ℕ → List ℕ) (n k : ℕ) :
+    (blocksG B f n (k + 1)).length = (blocksG B f n k).length + (f k (n + B * k)).length := by
+  rw [blocksG, List.length_append]
+
+-- a closed form, product of the block count and the length of the blocks
+derive_time_rec blocksG.timedCost using fun k t_fCost (f : ℕ → ℕ → List ℕ) B n =>
+  k * (t_fCost + 2 * (blocksG B f n k).length + 7) + 1
+  with [blocksG_length_succ]
+
 /-- Sample a bit and pass the blocks from it to the adversary. -/
 noncomputable def useBlocks (k : ℕ) (A : List ℕ → SPComp Bool) : SPComp Bool := do
   let i ← SPComp.sample (Fin 4)
@@ -144,6 +165,32 @@ example (k : ℕ) (A : List ℕ → SPTree.Timed Bool) (ACost : List ℕ → ℕ
   have h := useBlocks.tree.timeBound_timed k A ACost hA hc
   simp only [List.length_nil, Nat.zero_add, Nat.mul_one] at h
   grind
+
+/-- `blocksL k acc` has the elements of `acc` and `k` more. -/
+@[length_bound] theorem blocksL_length (k : ℕ) (acc : List ℕ) :
+    (blocksL k acc).length = acc.length + k := by
+  induction k generalizing acc with
+  | zero => simp [blocksL]
+  | succ k ih =>
+    simp only [blocksL, ih, List.length_append, List.length_singleton] <;> omega
+
+/-- Sample a number below 4, build that many blocks, and pass `k` blocks more from them to the
+adversary. -/
+noncomputable def useNested (k : ℕ) (A : List ℕ → SPComp Bool) : SPComp Bool := do
+  let i ← SPComp.sample (Fin 4)
+  A (blocksL k (blocksL i.val []))
+
+derive_reduction useNested
+
+-- the cost of the outer `blocksL` mentions the length of the inner list, which mentions the
+-- sampled value; `@[length_bound]` on `blocksL_length` bounds it free of that value
+derive_time_bound useNested.tree
+
+/-- The time theorem of `useNested` bounds its step time free of the sampled value. -/
+example (k : ℕ) (A : List ℕ → SPTree.Timed Bool) (ACost : List ℕ → ℕ) {T c : ℕ}
+    (hA : ∀ x, (A x).time ≤ T) (hc : ∀ x, ACost x ≤ c) :
+    ∃ E, SPTree.Timed.stepTime (useNested.tree.timed k A ACost) ≤ E :=
+  ⟨_, useNested.tree.timeBound_timed k A ACost hA hc⟩
 
 open CatCrypt.Crypto in
 /-- An oracle adversary that queries `n` times. -/

@@ -74,7 +74,9 @@ bound `τ` must allow the step cost twice (`askTime (n + 1) = 2 * askTime n + 4`
 `f.timedCost_le` states `f.timedCost xs ≤ τ …` under the hypotheses of the cost companions
 among the binders. Each case is unfolded at its root as in tree mode; each induction
 hypothesis is instantiated at the recursive costs of the goal that do not mention bound
-variables, its premises closed by `AutoTime.closeByContext` (`time_rec_ih`); the registered
+variables, its premises closed by `AutoTime.closeByContext`, and each bound `∀ ys, xCost ys ≤ t`
+of a cost companion at the applications `xCost bs` of the goal (`time_rec_ih`), so that the
+arithmetic of the case sees the bound of each call of the companion; the registered
 costs of the goal are added (`AutoTime.addCostFacts`), and the case is closed by `omega`, by
 `omega` after `ring_nf`, by `omega` after `simp only [ls]` (and `ring_nf`), or by `grind [ls]`.
 `derive_time_bound` uses the theorem as the bound of the cost (`AutoTime.costLemmas`).
@@ -246,13 +248,48 @@ def instIH (g : MVarId) (f : Name) : MetaM MVarId := g.withContext do
       catch _ => s.restore
   return g
 
+/-- Instantiate the local hypotheses `h : ∀ ys, x ys ≤ v` on a local function `x` (the bound of
+a cost companion) at each application `x bs` of the target without bound variables; the
+instances `x bs ≤ v[bs/ys]` are added to the context. Returns the new goal. -/
+def instCompanions (g : MVarId) : MetaM MVarId := g.withContext do
+  let tgt ← instantiateMVars (← g.getType)
+  let occs := (CatCrypt.Tactics.AutoTime.appsOf tgt #[]).filter fun s =>
+    s.getAppFn.isFVar && s.getAppNumArgs > 0 && !s.hasLooseBVars
+  let mut g := g
+  let mut added : Array Expr := #[]
+  for ld in ← getLCtx do
+    if ld.isImplementationDetail then continue
+    for o in occs do
+      let s ← saveState
+      try
+        let (ms, _, body) ← forallMetaTelescopeReducing ld.type
+        if ms.isEmpty then throwError "no"
+        let some (l, _) := CatCrypt.Tactics.AutoTime.natLe? body | throwError "no"
+        unless l.getAppFn.isFVar && l.getAppFn == o.getAppFn do throwError "no"
+        if ← ms.anyM fun m => do isProp (← inferType m) then throwError "no"
+        unless ← isDefEq l o do throwError "no"
+        let pf ← instantiateMVars (mkAppN ld.toExpr ms)
+        if pf.hasExprMVar then throwError "no"
+        let ty ← instantiateMVars (← inferType pf)
+        if added.contains ty then
+          s.restore
+          continue
+        added := added.push ty
+        let (_, g') ← (← g.assert `hc ty pf).intro1P
+        g := g'
+      catch _ => s.restore
+  return g
+
 /-- `time_rec_ih f` adds the instances of the induction hypotheses at the applications of `f`
-in the goal (`instIH`) and the registered costs of the goal (`AutoTime.addCostFacts`). -/
+in the goal (`instIH`), the instances of the bounds of the cost companions at their
+applications in the goal (`instCompanions`), and the registered costs of the goal
+(`AutoTime.addCostFacts`). -/
 syntax (name := timeRecIHStx) "time_rec_ih " ident : tactic
 
 @[tactic timeRecIHStx] def evalTimeRecIH : Tactic := fun stx => do
   let f ← realizeGlobalConstNoOverloadWithInfo stx[1]
   let g ← instIH (← getMainGoal) f
+  let g ← instCompanions g
   let g ← CatCrypt.Tactics.AutoTime.addCostFacts g
   replaceMainGoal [g]
 
