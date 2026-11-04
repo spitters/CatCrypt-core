@@ -72,7 +72,7 @@ in the world `hyb i`; it is `0` for environments that read each session key at m
 * `WSt`, `world`, `hyb`, `chalWorld`: the hybrid worlds; `WInv` their invariant.
 * `hopRed`: the reduction of a step of the hybrid argument.
 * `scBound`, `signalBound`: the bounds.
-* `simSC`, `scSim`: the simulator.
+* `simSCOver`, `simSC`, `scSim`: the simulator.
 
 ## Main results
 
@@ -83,7 +83,8 @@ in the world `hyb i`; it is `0` for environments that read each session key at m
 * `signal_stack_realizes_FSC`: **the Signal stack realizes `F_SC` behind `scSim G`** with the gap
   Diffie–Hellman bound and the sum over the keys of the secure-messaging advantages of `hopRed`
   and of the reuse probabilities.
-* `hopRed_compile_tree`, `hopRed_timeBound`: the costed tree of `hopRed` and its time.
+* `hopRed.tree`, `hopRed.compile_tree`, `hopRed.tree.timed`, `hopRed.timeBound_timed`: the
+  tree of `hopRed`, its costed form by `derive_timed` and its time.
 
 ## References
 
@@ -1551,6 +1552,21 @@ def simOutV : Phase S W K → HOut V ⊕ AOut → HOut V ⊕ ROut S W K
   | .fwd, .inr _ => .inr .ack
   | .out r, _ => .inr r
 
+/-- **A multi-call simulator over `F_SC`** wrapping a multi-call simulator `π` over `F_AKE`:
+its `start` step is that of `π` with the decision read over `F_SC` (`decV`), and an answer of
+`F_SC` is answered by `simOutV` at the phase of the state. -/
+noncomputable def simSCOver
+    (π : MultiHybrid (SimSt S W K) (OEv W) (OOut S W K) (FEv K) (FOut K)) :
+    MultiHybrid (SimSt S W K) (OEv W) (HOut V ⊕ ROut S W K) (FEv K) (HOut V ⊕ AOut) where
+  init := π.init
+  fuel := 0
+  start s e := SPComp.map (fun q => (q.1, decV q.2)) (π.start s e)
+  resume s o := SPComp.pure ((s.1, s.2.1, .fwd), .inr (simOutV s.2.2 o))
+  finish s o := SPComp.pure ((s.1, s.2.1, .fwd), simOutV s.2.2 o)
+  start_noFail s e := map_noFail _ (π.start_noFail s e)
+  resume_noFail _ _ := SPComp.pure_noFail _
+  finish_noFail _ _ := SPComp.pure_noFail _
+
 variable [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K]
   (G : DHGroup S W)
 
@@ -1561,15 +1577,8 @@ corrupts in `F_SC` under the static rule of X3DH, and delivers keys as `simProt 
 key-derivation value to an exposed session, `newKey` or `newKeyUnlinked` with a placeholder
 key otherwise. The honest outputs of `F_SC` (the views of the channel) pass unchanged. -/
 noncomputable def simSC :
-    MultiHybrid (SimSt S W K) (OEv W) (HOut V ⊕ ROut S W K) (FEv K) (HOut V ⊕ AOut) where
-  init := (rInit, fun _ => none, .fwd)
-  fuel := 0
-  start s e := SPComp.map (fun q => (q.1, decV q.2)) (simStart G s e)
-  resume s o := SPComp.pure ((s.1, s.2.1, .fwd), .inr (simOutV s.2.2 o))
-  finish s o := SPComp.pure ((s.1, s.2.1, .fwd), simOutV s.2.2 o)
-  start_noFail s e := map_noFail _ (simStart_pureNF G s e).2
-  resume_noFail _ _ := SPComp.pure_noFail _
-  finish_noFail _ _ := SPComp.pure_noFail _
+    MultiHybrid (SimSt S W K) (OEv W) (HOut V ⊕ ROut S W K) (FEv K) (HOut V ⊕ AOut) :=
+  simSCOver (simProt G)
 
 omit [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K] in
 /-- Every decision over `F_SC` is related to itself. -/
@@ -1738,8 +1747,8 @@ theorem stack_ideal_stepMap (realV : K → SPComp V)
   step p e _ := by
     rcases p with ⟨s, t⟩
     rw [Sys.seq_step]
-    simp only [x3dhIdeal, x3dhSim, Simulator.ofMultiHybrid, MultiHybrid.withSub, simSC, simProt,
-      SPComp.map, SPComp.bind_assoc, SPComp.pure_bind]
+    simp only [x3dhIdeal, x3dhSim, Simulator.ofMultiHybrid, MultiHybrid.withSub, simSC, simSCOver,
+      simProt, SPComp.map, SPComp.bind_assoc, SPComp.pure_bind]
     refine bind_congr_isOutcome fun r hr => ?_
     have hn := simStart_noHon G s e hr
     rcases r with ⟨⟨a, b, ph⟩, (ev | (h | ro))⟩
@@ -1894,10 +1903,17 @@ section Time
 variable {K V : Type} [Fintype K] [Nonempty K] [Inhabited K]
   (realV : K → SPComp V) (idealV : SPComp V)
 
-/-- **The tree of the reduction of the step `i`**: the environment reduction `sysEnvTree` over
-the family of challenge worlds, which compiles to `hopRed i Z` (`derive_timed sysEnvTree` in
-`UCConcreteTimed` gives its costed form). -/
-theorem hopRed_compile_tree (i : ℕ) {ζ : Type}
+/-- **The tree of the reduction of the step `i`**: the environment reduction `sysEnvTree` of
+`UCConcreteTimed` over the family of challenge worlds, with trees `next`, `obs`, `dist` of the
+strategy and the distinguisher of `Z` and a tree `step` of the step of the challenge world. -/
+noncomputable def hopRed.tree (i : ℕ) {ζ : Type}
+    (Z : Env (Strat ζ (HEv ⊕ AEv K) (HOut V ⊕ AOut)) ζ) (next : ζ → SPTree (ζ × (HEv ⊕ AEv K)))
+    (step : V → WSt K → HEv ⊕ AEv K → SPTree (WSt K × (HOut V ⊕ AOut)))
+    (obs : ζ → HOut V ⊕ AOut → SPTree ζ) (dist : ζ → SPTree Bool) (v : V) : SPTree Bool :=
+  sysEnvTree (chalWorld realV idealV i) Z next step obs dist v
+
+/-- The tree of the reduction of the step `i` compiles to `hopRed i Z`. -/
+theorem hopRed.compile_tree (i : ℕ) {ζ : Type}
     (Z : Env (Strat ζ (HEv ⊕ AEv K) (HOut V ⊕ AOut)) ζ)
     {next : ζ → SPTree (ζ × (HEv ⊕ AEv K))}
     {step : V → WSt K → HEv ⊕ AEv K → SPTree (WSt K × (HOut V ⊕ AOut))}
@@ -1906,18 +1922,18 @@ theorem hopRed_compile_tree (i : ℕ) {ζ : Type}
     (hs : ∀ v t e, (step v t e).compile = (chalWorld realV idealV i v).step t e)
     (ho : ∀ z o, (obs z o).compile = Z.input.obs z o) (hd : ∀ z, (dist z).compile = Z.dist z)
     (v : V) :
-    (sysEnvTree (chalWorld realV idealV i) Z next step obs dist v).compile =
-      hopRed realV idealV i Z v :=
+    (hopRed.tree realV idealV i Z next step obs dist v).compile = hopRed realV idealV i Z v :=
   sysEnvTree_compile _ Z hn hs ho hd v
+
+derive_timed hopRed.tree
 
 /-- **Time of the reduction of the step `i`.** On the challenge `v`, for a costed strategy of
 `Z` and a costed step of the challenge world over the same interface, from initial states of
 their invariants, and a distinguisher of time at most `tD` on the final states, the costed form
 of the tree of `hopRed i Z` takes at most the reset to the heap of `Z`, the time of the strategy
 over its `q = Z.input.rounds` activations, `tD`, the time of `q` steps of the challenge world,
-`9` per activation, the cost `SCost v` and `6`: the time of the environment plus the steps of the
-world. -/
-theorem hopRed_timeBound (i : ℕ) (SCost : V → ℕ) {ζ : Type}
+`9` per activation and `10`: the time of the environment plus the steps of the world. -/
+theorem hopRed.timeBound_timed (realVCost : K → ℕ) (i : ℕ) {ζ : Type}
     (Z : Env (Strat ζ (HEv ⊕ AEv K) (HOut V ⊕ AOut)) ζ)
     {next : ζ → SPTree.Timed (ζ × (HEv ⊕ AEv K))} {nextCost : ζ → ℕ}
     {step : V → WSt K → HEv ⊕ AEv K → SPTree.Timed (WSt K × (HOut V ⊕ AOut))}
@@ -1930,11 +1946,13 @@ theorem hopRed_timeBound (i : ℕ) (SCost : V → ℕ) {ζ : Type}
     (hS : SysRunBound (step v) (stepCost v) InvS Ev Out tS)
     (hz : InvZ 0 Z.input.init) (ht : InvS 0 (chalWorld realV idealV i v).init)
     (hd : ∀ z, InvZ Z.input.rounds z → SPTree.Timed.stepTime (distCost z, dist z) ≤ tD) :
-    SPTree.Timed.stepTime (sysEnvTree.timed (chalWorld realV idealV i) SCost Z next nextCost
-        step stepCost obs obsCost dist distCost v) ≤
+    SPTree.Timed.stepTime (hopRed.tree.timed realV realVCost idealV i Z next nextCost step
+        stepCost obs obsCost dist distCost v) ≤
       Z.heap.data.keys.card + (∑ j ∈ Finset.range Z.input.rounds, (tN j + tO j)) + tD +
-        (∑ j ∈ Finset.range Z.input.rounds, tS j) + 9 * Z.input.rounds + SCost v + 6 :=
-  sysEnvTree.timeBound_timed _ SCost Z v hZ hS hz ht hd
+        (∑ j ∈ Finset.range Z.input.rounds, tS j) + 9 * Z.input.rounds + 10 := by
+  have h := sysEnvTree.timeBound_timed (chalWorld realV idealV i) (fun _ => 3) Z v hZ hS hz ht hd
+  simp only [hopRed.tree.timed, SPTree.Timed.stepTime_delay]
+  omega
 
 end Time
 

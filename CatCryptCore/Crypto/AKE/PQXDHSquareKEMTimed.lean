@@ -7,6 +7,7 @@ module
 
 public import CatCryptCore.Crypto.AKE.PQXDHSquareKEM
 public import CatCryptCore.Crypto.AKE.X3DHSquareGDHTimed
+public import CatCryptCore.Tactics.DeriveReduction
 
 /-!
 # Running time of the KEM reduction of the PQXDH square
@@ -34,6 +35,27 @@ of the adversary plus a polynomial in its queries for polynomial `F` and `Ext`. 
 step and the extraction are companions bounded by hypothesis: the step programs of the world of
 the reduction are not derived here.
 
+**The certificates.** `kemRedRun.tree` is `stepRedQ` at the query decision `needQ`, with the
+draws, the step and the extraction as parameters over a state type `σ`, so that `derive_timed`
+gives the costed form `kemRedRun.tree.timed` with cost companions of the parameters;
+`kemRedRun.compile_tree` erases it, at the draws of the simulated world, the step `kemStep` and
+the membership of the key, to `kemRedRun`, and `kemRedRun.timeBound_timed` gives its time from
+`kemRed_timeBound`. The IND-CCA adversary `kemRed` is certified as a structure-valued reduction:
+`derive_timed_structure` gives the costed mirror `KEM.Games.INDCCAAdversary.Timed`, the
+structure `kemRed.tree` bundles `kemRedRun.tree` with its query bound, `derive_reduction` gives
+`kemRed.tree.timed` and its erasure, `kemRed.compile_tree` erases it to `kemRed`, and
+`kemRed.timeBound_timed` bounds its stage.
+
+`derive_timed kemRedRun` refuses the program of `kemRed` with the step `kemStep` unfolded:
+
+    derive_timed: a function bound in data: the field `Prod.fst` is applied in
+    `t.1.1.2.1 (x.1, r.peer)`
+
+(the table of recorded inputs of the state, applied in the delivery `deliverD`). The
+restatement over a parameter `step` with a cost companion avoids it; at a concrete state type
+the initial state `yInit` is priced as a costed value while `stepRedQ.timed` takes a plain
+state, so the state type is a parameter of the tree as well.
+
 No module imports this file.
 
 ## Main results
@@ -43,6 +65,10 @@ No module imports this file.
 * `simStartD_size`, `sizeY_kemStep`: a step adds at most two to the size of the state.
 * `kemRed_erase_timed`, `kemRed_timeBound`: the erasure of the costed reduction to the program
   of `kemRed` and its time.
+* `kemRedRun.tree`, `kemRedRun.tree.timed`, `kemRedRun.compile_tree`, `kemRedRun.timeBound_timed`:
+  the certificate of `kemRedRun`.
+* `kemRed.tree`, `kemRed.tree.timed`, `kemRed.compile_tree`, `kemRed.timeBound_timed`: the
+  certificate of `kemRed`.
 
 ## References
 
@@ -55,6 +81,12 @@ No module imports this file.
 @[expose] public section
 
 set_option autoImplicit false
+
+namespace CatCrypt.Crypto.KEM.Games
+
+derive_timed_structure INDCCAAdversary
+
+end CatCrypt.Crypto.KEM.Games
 
 namespace CatCrypt.Crypto.AKE.PQXDHSquareKEM
 
@@ -294,5 +326,140 @@ theorem kemRed_timeBound (pk : PK) (cs : C) (k : SS) (needCost : YSt S W K PK SK
     (by simp [sizeY, yInit, pInit, X3DHSquare.rInit, initSt])
 
 end Instance
+
+/-! ## The certificates of the KEM reduction -/
+
+section Certificate
+
+open CatCrypt.Crypto.UCTransparent CatCrypt.Crypto.UCTransparent.FAKE
+open CatCrypt.Crypto.PAKE.DHExtract
+open CatCrypt.Crypto.AKE.PQXDHSquare CatCrypt.Crypto.AKE.PQXDHSquareHops
+open CatCrypt.Crypto.KEM.Games (Scheme)
+
+/-- **The tree of the program of the KEM reduction**: the stepped oracle program `stepRedQ` at
+the query decision `needQ cs` (a decapsulation query on each delivered encapsulation other than
+the challenge `cs`), with the draw distribution `μ`, the step `step pk cs`, the extraction
+`ext k` and the initial state `s₀` as parameters. -/
+noncomputable def kemRedRun.tree {σ V PK SS C A : Type} [DecidableEq C] {W : Type}
+    (μ : σ → OEv W SS C → PMF V) (step : PK → C → Option (Option SS) → σ → OEv W SS C → V → σ × A)
+    (ext : SS → σ → Bool) (s₀ : σ) (B : OracleAdv (OEv W SS C) A Bool) (pk : PK) (cs : C)
+    (k : SS) : OracleAdv C (Option SS) Bool :=
+  stepRedQ (fun _ e => needQ cs e) μ (step pk cs) (ext k) B s₀
+
+derive_timed kemRedRun.tree
+
+/-- The tree asks at most as many decapsulation queries as the adversary asks queries. -/
+theorem kemRedRun.tree_isQueryBound {σ V PK SS C A : Type} [DecidableEq C] {W : Type}
+    (μ : σ → OEv W SS C → PMF V) (step : PK → C → Option (Option SS) → σ → OEv W SS C → V → σ × A)
+    (ext : SS → σ → Bool) (s₀ : σ) {q : ℕ}
+    (B : {B : OracleAdv (OEv W SS C) A Bool // B.IsQueryBound q}) (pk : PK) (cs : C) (k : SS) :
+    (kemRedRun.tree μ step ext s₀ B.1 pk cs k).IsQueryBound q := by
+  have h := OracleAdv.isQueryBound_simulate_mul (c := 1)
+    (impl := stepImplQ (fun _ e => needQ cs e) μ (step pk cs))
+    (fun t e => by
+      unfold stepImplQ
+      split
+      · exact fun _ _ => trivial
+      · exact fun _ => trivial) B.2 s₀
+  rw [Nat.mul_one] at h
+  have h' := OracleAdv.isQueryBound_bind (n := 0)
+    (f := fun x => OracleAdv.ret (ext k x.2)) h fun _ => trivial
+  rw [Nat.add_zero] at h'
+  exact h'
+
+/-- **The tree of the IND-CCA reduction**: the tree `kemRedRun.tree` of the program with its
+query bound, for an adversary bundled with its query bound. -/
+noncomputable def kemRed.tree {σ V PK SS C A : Type} [DecidableEq C] {W : Type}
+    (μ : σ → OEv W SS C → PMF V) (step : PK → C → Option (Option SS) → σ → OEv W SS C → V → σ × A)
+    (ext : SS → σ → Bool) (s₀ : σ) {q : ℕ}
+    (B : {B : OracleAdv (OEv W SS C) A Bool // B.IsQueryBound q}) :
+    KEM.Games.INDCCAAdversary PK SS C q :=
+  ⟨kemRedRun.tree μ step ext s₀ B.1, kemRedRun.tree_isQueryBound μ step ext s₀ B⟩
+
+derive_reduction kemRed.tree
+
+variable {S W K PK SK SS C : Type} [Field S] [Fintype S] [SampleableType W] [Fintype K]
+  [Nonempty K] [Inhabited K] [DecidableEq SS] [DecidableEq C] (P : Scheme PK SK SS C)
+  (G : DHGroup S W) (g : Guess)
+
+/-- **The costed tree of the program erases to `kemRedRun`** at the draws of the simulated
+world, the step `kemStep`, the membership of the key in the received shared secrets and the
+initial state `yInit`, for any cost companions. -/
+theorem kemRedRun.compile_tree (μCost : YSt S W K PK SK SS C → OEv W SS C → ℕ)
+    (stepCost : PK → C → Option (Option SS) → YSt S W K PK SK SS C → OEv W SS C →
+      PDraw S K PK SK SS C × K → ℕ) (extCost : SS → YSt S W K PK SK SS C → ℕ)
+    (B : OracleAdv.Timed (OEv W SS C) (OOut S W K PK C) Bool) (pk : PK) (cs : C) (k : SS) :
+    (kemRedRun.tree.timed (fun t e => simDist P (encPk t.1.1.1 (liftE e))) μCost
+        (kemStep P G g) stepCost (fun k t => decide (k ∈ t.2)) extCost yInit B pk cs k).2.erase =
+      kemRedRun P G g B.erase pk cs k :=
+  kemRedRun.tree.erase_timed _ _ _ _ _ _ _ B pk cs k
+
+/-- **Time of the program of the KEM reduction.** With the costs of the draw and of a step from a
+state of size `n` together at most `F n` and the cost of the extraction at most `Ext n`, `F` and
+`Ext` monotone, a costed oracle adversary `B` of time `T` with at most `q` queries gives the
+costed tree of `kemRedRun` a time of at most `1 + (T + q · (F (2q) + 11) + Ext (2q) + 2)`. -/
+theorem kemRedRun.timeBound_timed (pk : PK) (cs : C) (k : SS)
+    (μCost : YSt S W K PK SK SS C → OEv W SS C → ℕ)
+    (stepCost : PK → C → Option (Option SS) → YSt S W K PK SK SS C → OEv W SS C →
+      PDraw S K PK SK SS C × K → ℕ) (extCost : SS → YSt S W K PK SK SS C → ℕ) (F Ext : ℕ → ℕ)
+    (hF : Monotone F) (hE : Monotone Ext)
+    (hcost : ∀ t e oa r, μCost t e + stepCost pk cs oa t e r ≤ F (sizeY t))
+    (hext : ∀ t, extCost k t ≤ Ext (sizeY t))
+    (B : OracleAdv.Timed (OEv W SS C) (OOut S W K PK C) Bool) {T q : ℕ} (hB : B.TimeBound T)
+    (hq : B.erase.IsQueryBound q) :
+    OracleAdv.Timed.StepTimeBound
+      (kemRedRun.tree.timed (fun t e => simDist P (encPk t.1.1.1 (liftE e))) μCost
+        (kemStep P G g) stepCost (fun k t => decide (k ∈ t.2)) extCost yInit B pk cs k)
+      (1 + (T + q * (F (2 * q) + 11) + (Ext (2 * q) + 2))) := by
+  unfold kemRedRun.tree.timed
+  refine (OracleAdv.Timed.stepTimeBound_delay (kemRed_timeBound P G g pk cs k _ μCost
+    (fun oa t e r => 1 + stepCost pk cs oa t e r) (fun t => 1 + extCost k t) (fun n => F n + 4)
+    (fun n => Ext n + 1) (fun _ _ h => Nat.add_le_add_right (hF h) _)
+    (fun _ _ h => Nat.add_le_add_right (hE h) _) ?_ ?_ B hB hq)).mono ?_
+  · intro t e oa r
+    have := hcost t e oa r
+    split <;> omega
+  · intro t
+    have := hext t
+    omega
+  have : F (2 * q) + 4 + 7 = F (2 * q) + 11 := by omega
+  rw [this]
+
+/-- **The costed IND-CCA reduction erases to `kemRed`**: at a costed adversary `B'` erasing to
+`B`, the derived costed form of `kemRed.tree` erases to `kemRed P G g B hB`. -/
+theorem kemRed.compile_tree (μCost : YSt S W K PK SK SS C → OEv W SS C → ℕ)
+    (stepCost : PK → C → Option (Option SS) → YSt S W K PK SK SS C → OEv W SS C →
+      PDraw S K PK SK SS C × K → ℕ) (extCost : SS → YSt S W K PK SK SS C → ℕ)
+    (B : OracleAdv (OEv W SS C) (OOut S W K PK C) Bool) {q : ℕ} (hB : B.IsQueryBound q)
+    (B' : OracleAdv.Timed (OEv W SS C) (OOut S W K PK C) Bool) (hB' : B'.erase = B) :
+    (kemRed.tree.timed (fun t e => simDist P (encPk t.1.1.1 (liftE e))) μCost
+        (kemStep P G g) stepCost (fun k t => decide (k ∈ t.2)) extCost yInit
+        ⟨B, hB⟩ B').Erases (kemRed P G g B hB) :=
+  kemRed.tree.erase_timed _ _ _ _ _ _ _ _ _ hB'
+
+/-- **Time of the IND-CCA reduction**: under the cost bounds of `kemRedRun.timeBound_timed`
+for every public key and challenge, the stage of the costed reduction takes at most
+`2 + (T + q · (F (2q) + 11) + Ext (2q) + 2)` for a costed adversary of time `T` erasing to an
+adversary with at most `q` queries. -/
+theorem kemRed.timeBound_timed (μCost : YSt S W K PK SK SS C → OEv W SS C → ℕ)
+    (stepCost : PK → C → Option (Option SS) → YSt S W K PK SK SS C → OEv W SS C →
+      PDraw S K PK SK SS C × K → ℕ) (extCost : SS → YSt S W K PK SK SS C → ℕ) (F Ext : ℕ → ℕ)
+    (hF : Monotone F) (hE : Monotone Ext)
+    (hcost : ∀ pk cs t e oa r, μCost t e + stepCost pk cs oa t e r ≤ F (sizeY t))
+    (hext : ∀ k t, extCost k t ≤ Ext (sizeY t))
+    (B : OracleAdv (OEv W SS C) (OOut S W K PK C) Bool) {q : ℕ} (hB : B.IsQueryBound q)
+    (B' : OracleAdv.Timed (OEv W SS C) (OOut S W K PK C) Bool) (hB' : B'.erase = B) {T : ℕ}
+    (hT : B'.TimeBound T) :
+    (kemRed.tree.timed (fun t e => simDist P (encPk t.1.1.1 (liftE e))) μCost
+        (kemStep P G g) stepCost (fun k t => decide (k ∈ t.2)) extCost yInit
+        ⟨B, hB⟩ B').TimeBound (2 + (T + q * (F (2 * q) + 11) + (Ext (2 * q) + 2))) := by
+  intro pk cs k
+  have h := kemRedRun.timeBound_timed P G g pk cs k μCost stepCost extCost F Ext hF hE
+    (hcost pk cs) (hext k) B' hT (hB' ▸ hB)
+  have h' := OracleAdv.Timed.stepTimeBound_delay (c := 1) h
+  simp only [kemRed.tree.timed, kemRed.tree.run.tree.timed]
+  exact h'.mono (by omega)
+
+end Certificate
 
 end CatCrypt.Crypto.AKE.PQXDHSquareKEM
