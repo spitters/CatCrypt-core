@@ -10,9 +10,40 @@ public import CatCryptCore.Crypto.Messaging.SMCorrupt
 /-!
 # Running time of the reductions of secure messaging with state corruption
 
-DOC
+Time certificates for the five reductions of `CatCryptCore.Crypto.Messaging.SMCorrupt`: the
+CKA reduction `smcCKARed`, the PRF-PRNG reduction `smcRootRed`, the FS-AEAD reduction `smcFSRed`
+and the two dual-PRF reductions `ppRedR`, `ppRedL` of the PRF-PRNG game.
+
+The first three are oracle trees built from the interaction of a secure-messaging adversary,
+whose challenge-epoch distribution and interaction are fields of a structure; each gets the tree
+`R.tree` with the interaction as a parameter, its costed form by `derive_timed`, the theorem
+`R.compile_tree` that the erased costed tree is the reduction at a costed interaction erasing
+to the adversary's, and a time bound `R.timeBound_timed` on the costed tree. The costed
+simulators keep cost companions of the stored functions (root keys, chains, CKA states,
+counters, flags), each update of which adds at most three units; the bounds `smCKACostInv`,
+`smCostInv`, `smFSCostInv` of the companions by `1 + 3 i` after `i` queries are the invariant of
+`OracleAdv.Timed.timeBound_simulateHat_inv`, and the time of the `i`-th simulated query is
+linear in `i` (`smCKAQueryTime`, `smQueryTime`). For an adversary of time `T` with at most `q`
+queries (`OracleAdv.IsQueryBound`), each reduction has time `T` plus a sum over `j < q` of
+terms linear in `j` and in the costs of the primitives, which are parameters: a polynomial of
+degree two in `q`. `ppRedR` has a stateless simulator (`timeBound_simulate`); `ppRedL` keeps the
+table of a lazily sampled random function, at most one entry longer per query.
+
+The bounds of a simulated query are proved by taking the costed tree apart into its branches
+(the macro `sm_cost_steps`) and closing each arithmetic goal with `grind`; the FS-AEAD simulator
+is bounded one query kind at a time.
 
 No module imports this file.
+
+## Main results
+
+* `ppRedR.timeBound_timed`, `ppRedL.timeBound_timed` — the times of the dual-PRF reductions
+* `smCKAImplOf.timed_bound`, `smRootImplOf.timed_bound`, `smFSImplOf.timed_bound` — the time of
+  a simulated query under the companion invariant
+* `smcCKARed.tree`, `smcCKARed.compile_tree`, `smcCKARed.timeBound_timed` — the CKA reduction
+* `smcRootRed.tree`, `smcRootRed.compile_tree`, `smcRootRed.timeBound_timed` — the PRF-PRNG
+  reduction
+* `smcFSRed.tree`, `smcFSRed.compile_tree`, `smcFSRed.timeBound_timed` — the FS-AEAD reduction
 -/
 
 set_option autoImplicit false
@@ -143,6 +174,9 @@ def smCKACostInv (B : ℕ)
 cost at most `e`. -/
 def smCKAQueryTime (r g e B : ℕ) : ℕ := r + 2 * g + e + 6 * B + 50
 
+/-- **Time of a query of the CKA simulator.** From a costed state with companions at most
+`1 + 3 i`, the costed simulator `smCKAImplOf` answers in time at most
+`smCKAQueryTime r g e (1 + 3 i)` and returns states with companions at most `1 + 3 (i + 1)`. -/
 theorem smCKAImplOf.timed_bound (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (W × Sa))
     (D : AEADDef W Ct) (t : ℕ) (ideal : Bool) (σ : SMLoc RK Sa × CKAGameSt Unit Unit)
     (q : SMQuery W) (rCost : RK × Key → ℕ) (eCost : W → W → W → ℕ) (gCost : Sa → ℕ)
