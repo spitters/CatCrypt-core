@@ -226,8 +226,7 @@ theorem repFlagOracle_apply_false_eq (s : List (D × R) × Bool) (d : D) (r : R)
     have hmem := mem_keys_of_lookup_eq_some s.1 d r₀ hl
     simp [PMF.pure_apply, PMF.map_apply, hmem]
   | none =>
-    have hmem := notMem_keys_of_lookup_eq_none s.1 d hl
-    simp [hmem]
+    grind
 
 end RepeatFlag
 

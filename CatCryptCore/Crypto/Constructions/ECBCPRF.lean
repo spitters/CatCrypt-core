@@ -258,8 +258,7 @@ theorem cbcIn_update_eq (iv : B) (NP R : Finset (List B)) (hR : R ⊆ NP) (hRc :
   match Q, hQ with
   | [], hQ => exact absurd rfl (hNP _ hQ.1).1
   | c :: t, hQ =>
-    have ht : t ∈ insert [] R := by grind
-    rw [cbcIn.eq_2, cbcIn.eq_2, cbcR_update_eq iv NP R hR hRc P hP hPR f hG y t ht]
+    grind [cbcIn.eq_2, cbcR_update_eq]
 
 theorem good_update (iv : B) (NP R : Finset (List B)) (hR : R ⊆ NP) (hRc : TailClosed R)
     (hNP : TailClosed NP)
@@ -377,20 +376,13 @@ theorem prob_not_good_le (iv : B) (NP : Finset (List B)) (hNP : TailClosed NP) :
       refine ⟨(hRc Q hQR).1, ?_⟩
       rcases (hRc Q hQR).2 with h | h
       · exact Or.inl h
-      · refine Or.inr (Finset.mem_erase.mpr ⟨fun hQP => ?_, h⟩)
-        have h1 := hPmax Q hQR
-        have h2 := hlen Q hQR
-        rw [hQP] at h2
-        omega
+      · grind
     have hPdet : P ∈ det NP (R.erase P) := by
       rw [mem_det_iff]
       refine ⟨hRNP hPR, ?_⟩
       rcases (hRc P hPR).2 with h | h
       · exact Or.inl h
-      · refine Or.inr (Finset.mem_erase.mpr ⟨fun h' => ?_, h⟩)
-        have h2 := hlen P hPR
-        rw [h'] at h2
-        omega
+      · grind
     have hPR' : P ∉ R.erase P := Finset.notMem_erase P R
     have hsub : {f : B → B | ¬ Good iv NP R f} ⊆ {f | ¬ Good iv NP (R.erase P) f} ∪
         {f | Good iv NP (R.erase P) f ∧ f (cbcIn f iv P) ∈ danger iv NP (R.erase P) P f} := by
@@ -437,10 +429,7 @@ theorem prob_not_injOn_cbc_le (iv : B) (S : Finset (List B)) (ℓ : ℕ)
   have hcardNP : NP.card ≤ S.card * ℓ := by
     refine (Finset.card_le_card (t := S.biUnion fun M => M.reverse.tails.toFinset.erase [])
       ?_).trans ?_
-    · intro Q hQ
-      obtain ⟨hne, M, hM, hs⟩ := (hmemNP Q).mp hQ
-      simp only [Finset.mem_biUnion, Finset.mem_erase, List.mem_toFinset, List.mem_tails]
-      exact ⟨M, hM, hne, hs⟩
+    · grind
     · refine Finset.card_biUnion_le.trans (Finset.sum_le_card_nsmul _ _ _ fun M hM => ?_)
       rw [Finset.card_erase_of_mem (by simp [List.mem_tails])]
       have h1 := List.toFinset_card_le M.reverse.tails
