@@ -12,6 +12,7 @@ public import CatCryptCore.Tactics.DeriveReduction
 public import CatCryptCore.Tactics.DeriveSimulator
 public import CatCryptCore.Tactics.DeriveTimeBound
 public import CatCryptCore.Tactics.StdCosts
+public import CatCryptCore.Crypto.UCConcreteTimed
 
 /-!
 # Costed form of the IKNP simulator over the scheduled base OTs
@@ -28,7 +29,14 @@ bounds each cost table by three times the number of set flags and the messages o
 the one message the simulator sends; the initial state satisfies it and every step preserves it.
 On the states of `InvW` the steps cost at most a constant in `κ` and the costs of the
 primitives (`simW.timeBoundInv_timed`). `derive_simulator` then gives the costed form of the
-simulator `iknpSimH` with both parties honest and its time theorem. No module imports this file.
+simulator `iknpSimH` with both parties honest and its time theorem.
+
+The reduction to correlation-robust hashing `iknpWakeCRRed H Z` is the environment reduction of
+`UCConcreteTimed` over the family `(crA H).withKey`: its tree `iknpWakeCRRed.tree` over
+`sysEnvTree` compiles to it, its costed form is derived by `derive_timed`, and its time is the
+time of the environment, the time of one step of the keyed system per activation, the reset to
+the heap of the environment and a constant (`iknpWakeCRRed.tree.timeBound_timed`). No module
+imports this file.
 
 ## Main definitions
 
@@ -41,6 +49,9 @@ simulator `iknpSimH` with both parties honest and its time theorem. No module im
 * `simW.timeBoundInv_timed`: the running time of its steps on the states of `InvW`.
 * `iknpSimH.timed`, `iknpSimH.erase_timed`, `iknpSimH.timeBound_timed`: the costed simulator
   with both parties honest, its erasure and its time.
+* `iknpWakeCRRed.compile_tree`, `iknpWakeCRRed.tree.timed`, `iknpWakeCRRed.tree.erase_timed`,
+  `iknpWakeCRRed.tree.timeBound_timed`: the certificate of the reduction to correlation-robust
+  hashing.
 -/
 
 @[expose] public section
@@ -357,3 +368,80 @@ end Inv
 end CatCrypt.Crypto.OT.IKNPWake
 
 derive_simulator CatCrypt.Crypto.OT.IKNPWake.iknpSimH
+
+namespace CatCrypt.Crypto.OT.IKNPWake
+
+open CatCrypt.Core CatCrypt.Crypto.UCTransparent
+
+section CRRed
+
+/-- The events of the keyed system of the reduction to correlation-robust hashing. -/
+abbrev CREv (κ m : ℕ) (M : Type) := (InEv m M ⊕ WakeEv κ) ⊕ (AEv κ m M ⊕ Unit)
+
+/-- The outputs of the keyed system of the reduction to correlation-robust hashing. -/
+abbrev CROut (κ m : ℕ) (M : Type) := InOut m M ⊕ (AOut m M ⊕ Option (RView κ m M))
+
+/-- The state of the keyed system of the reduction to correlation-robust hashing. -/
+abbrev CRSt (κ m : ℕ) (M : Type) := ASt κ m M Unit (RView κ m M)
+
+variable {κ m : ℕ} {M : Type} [AddCommGroup M] (H : Fin m → (Fin κ → Bool) → M)
+
+/-- The computation tree of `iknpWakeCRRed H Z`, over a family `S` of systems indexed by the key
+(`(crA H).withKey` for the reduction) and a tree `step` of the step of `S` at a key. -/
+noncomputable def iknpWakeCRRed.tree {K : Type}
+    (S : K → Sys (CRSt κ m M) (CREv κ m M) (CROut κ m M)) {ζ : Type}
+    (Z : UCConcrete.Env (Strat ζ (CREv κ m M) (CROut κ m M)) ζ)
+    (next : ζ → SPTree (ζ × CREv κ m M))
+    (step : K → CRSt κ m M → CREv κ m M → SPTree (CRSt κ m M × CROut κ m M))
+    (obs : ζ → CROut κ m M → SPTree ζ) (dist : ζ → SPTree Bool) (k : K) : SPTree Bool :=
+  sysEnvTree S Z next step obs dist k
+
+/-- The tree of `iknpWakeCRRed H Z` compiles to `iknpWakeCRRed H Z`. -/
+theorem iknpWakeCRRed.compile_tree [NeZero κ] [Fintype M] [Nonempty M] {ζ : Type}
+    (Z : UCConcrete.Env (Strat ζ (CREv κ m M) (CROut κ m M)) ζ)
+    {next : ζ → SPTree (ζ × CREv κ m M)}
+    {step : CRKey κ m M → CRSt κ m M → CREv κ m M → SPTree (CRSt κ m M × CROut κ m M)}
+    {obs : ζ → CROut κ m M → SPTree ζ}
+    {dist : ζ → SPTree Bool} (hn : ∀ z, (next z).compile = Z.input.next z)
+    (hs : ∀ th t e, (step th t e).compile = ((crA H).withKey th).step t e)
+    (ho : ∀ z o, (obs z o).compile = Z.input.obs z o) (hd : ∀ z, (dist z).compile = Z.dist z)
+    (th : CRKey κ m M) :
+    (iknpWakeCRRed.tree (crA H).withKey Z next step obs dist th).compile =
+      iknpWakeCRRed H Z th :=
+  sysEnvTree_compile _ Z hn hs ho hd th
+
+derive_timed iknpWakeCRRed.tree
+
+omit [AddCommGroup M] in
+/-- **Time of the reduction to correlation-robust hashing.** On the key `k`, for a costed
+strategy of `Z` and a costed step of `S k`, from initial states of their invariants
+and with a distinguisher of time at most `tD`, the reduction costs at most the reset to the heap
+of `Z`, the time of the strategy over its `q = Z.input.rounds` activations, `tD`, the time of
+`q` steps of the keyed system, `9` per activation and a constant. -/
+theorem iknpWakeCRRed.tree.timeBound_timed {K : Type}
+    (S : K → Sys (CRSt κ m M) (CREv κ m M) (CROut κ m M)) (SCost : K → ℕ) {ζ : Type}
+    (Z : UCConcrete.Env (Strat ζ (CREv κ m M) (CROut κ m M)) ζ)
+    {next : ζ → SPTree.Timed (ζ × CREv κ m M)} {nextCost : ζ → ℕ}
+    {step : K → CRSt κ m M → CREv κ m M → SPTree.Timed (CRSt κ m M × CROut κ m M)}
+    {stepCost : K → CRSt κ m M → CREv κ m M → ℕ}
+    {obs : ζ → CROut κ m M → SPTree.Timed ζ} {obsCost : ζ → CROut κ m M → ℕ}
+    {dist : ζ → SPTree.Timed Bool} {distCost : ζ → ℕ} (k : K)
+    {InvZ MidZ : ℕ → ζ → Prop} {InvS : ℕ → CRSt κ m M → Prop}
+    {Ev : ℕ → CREv κ m M → Prop}
+    {Out : ℕ → CROut κ m M → Prop} {tN tS tO : ℕ → ℕ} {tD : ℕ}
+    (hZ : StratRunBound next nextCost obs obsCost InvZ MidZ Ev Out tN tO)
+    (hS : SysRunBound (step k) (stepCost k) InvS Ev Out tS)
+    (hz : InvZ 0 Z.input.init) (ht : InvS 0 (S k).init)
+    (hd : ∀ z, InvZ Z.input.rounds z → SPTree.Timed.stepTime (distCost z, dist z) ≤ tD) :
+    SPTree.Timed.stepTime
+        (iknpWakeCRRed.tree.timed S SCost Z next nextCost step stepCost obs obsCost dist
+          distCost k) ≤
+      Z.heap.data.keys.card + (∑ i ∈ Finset.range Z.input.rounds, (tN i + tO i)) + tD +
+        (∑ i ∈ Finset.range Z.input.rounds, tS i) + 9 * Z.input.rounds + SCost k + 7 := by
+  have h := sysEnvTree.timeBound_timed S SCost Z k hZ hS hz ht hd
+  simp only [iknpWakeCRRed.tree.timed, SPTree.Timed.stepTime_delay]
+  omega
+
+end CRRed
+
+end CatCrypt.Crypto.OT.IKNPWake
