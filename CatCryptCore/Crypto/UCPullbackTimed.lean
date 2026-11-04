@@ -52,6 +52,7 @@ pullback, context action, activation time, adversary absorption.
 * `Hybrid.Timed.reduce_stratRunBound`: the graded form, `tN i + a + 2` and `c + tO i + 2`.
 * `Hybrid.Timed.reduceEnv_dist_le`: the distinguisher of the reduced environment.
 * `Strat.absorb_timeBound`: absorption of an adversary, `n + a + 4` and `c + o + 2`.
+* `Strat.Timed.TimeBound.mono`: the uniform bound holds at larger bounds.
 * `MultiHybrid.reduce.next.tree.timeBound_timed`, `MultiHybrid.reduce.obs.tree.timeBound_timed`:
   the multi-call reduction.
 -/
@@ -237,5 +238,10 @@ theorem Strat.absorb_timeBound {α AI AP Lk Lk' P Oh ζ : Type}
     simp only [Strat.absorb.timed, Strat.absorb.obs.tree.timed] at this ⊢
     simp only [SPTree.Timed.stepTime] at h3 this ⊢
     grind
+
+/-- A time bound of a costed strategy holds at larger bounds. -/
+theorem Strat.Timed.TimeBound.mono {ζ E O : Type} {ZT : Strat.Timed ζ E O} {n o n' o' : ℕ}
+    (h : ZT.TimeBound n o) (hn : n ≤ n') (ho : o ≤ o') : ZT.TimeBound n' o' :=
+  ⟨fun z => (h.1 z).trans hn, fun z g => (h.2 z g).trans ho⟩
 
 end CatCrypt.Crypto.UCTransparent

@@ -76,11 +76,6 @@ namespace CatCrypt.Crypto.UCTransparent
 open CatCrypt.Core CatCrypt.Prob CatCrypt.Crypto CatCrypt.Crypto.UCConcrete
 open scoped ENNReal
 
-/-- A time bound of a costed strategy holds at larger bounds. -/
-theorem Strat.Timed.TimeBound.mono {ζ E O : Type} {ZT : Strat.Timed ζ E O} {n o n' o' : ℕ}
-    (h : ZT.TimeBound n o) (hn : n ≤ n') (ho : o ≤ o') : ZT.TimeBound n' o' :=
-  ⟨fun z => (h.1 z).trans hn, fun z g => (h.2 z g).trans ho⟩
-
 /-- The environment `Z` has time `(n, o, q, tD)`: the costed strategy `ZT` erases to the strategy
 of `Z` and the costed environment `ZE` erases to `Z`; each `next` activation of `ZT` costs at
 most `n` and each `obs` activation at most `o`; the strategy makes at most `q` activations; and
