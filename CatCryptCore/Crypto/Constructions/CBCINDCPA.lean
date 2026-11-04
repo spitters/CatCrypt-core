@@ -28,6 +28,8 @@ Bellare–Desai–Jokipii–Rogaway (FOCS 1997).
 ## Main definitions
 
 * `cbcBlocks f s M` — the CBC blocks of `M` under `f` from the chaining value `s`
+* `blocksVec cs`, `cbcVec f iv m` — a list of blocks as a vector of `n` blocks, and the CBC
+  encryption of a vector of blocks
 * `cbcEncrypt f M`, `randCiphertext n` — CBC$ encryption and a uniform ciphertext
 * `cbcRealGame E A`, `cbcRandGame A`, `CBC_ROR_Advantage E A` — real-or-random game
 * `cbcLRGame E b A`, `CBC_IND_CPA_Advantage E A` — left-or-right game on pairs of
@@ -241,6 +243,20 @@ end RepeatFlag
 
 /-! ## CBC$ encryption -/
 
+section BlocksVec
+
+variable {B : Type} {n : ℕ} [Inhabited B]
+
+/-- The first `n` entries of a list of blocks, padded with `default`. -/
+def blocksVec (cs : List B) : Fin n → B := fun i => cs.getD i default
+
+/-- The vector of the list of a vector of blocks is that vector. -/
+theorem blocksVec_ofFn (c : Fin n → B) : blocksVec (List.ofFn c) = c := by
+  funext i
+  simp [blocksVec]
+
+end BlocksVec
+
 section CBC
 
 variable {B : Type} [CryptoWord B]
@@ -279,6 +295,27 @@ noncomputable def randBlocks : ℕ → PMF (List B)
 /-- A uniform IV with `n` uniform blocks. -/
 noncomputable def randCiphertext (n : ℕ) : PMF (B × List B) :=
   (PMF.uniformFintype B).bind fun s => (randBlocks n).map (s, ·)
+
+/-- The CBC encryption of the `n` blocks `m` under `f` from the IV `iv`. -/
+def cbcVec {n : ℕ} (f : B → B) (iv : B) (m : Fin n → B) : Fin n → B :=
+  blocksVec (cbcBlocks f iv (List.ofFn m))
+
+/-- A uniform list of `m` blocks is the list of a uniform vector of `m` blocks. -/
+theorem randBlocks_eq_map_ofFn (m : ℕ) :
+    randBlocks (B := B) m = (PMF.uniformFintype (Fin m → B)).map List.ofFn := by
+  induction m with
+  | zero =>
+    have h : (List.ofFn : (Fin 0 → B) → List B) = Function.const _ [] :=
+      funext fun _ => List.ofFn_zero
+    rw [randBlocks, h, PMF.map_const]
+  | succ m ih =>
+    rw [randBlocks, ← PMF.uniformFintype_map_equiv (Fin.consEquiv fun _ : Fin (m + 1) => B),
+      PMF.uniform_prod_eq_bind, PMF.map_comp, PMF.map_bind]
+    refine congrArg _ (funext fun r => ?_)
+    rw [ih, PMF.map_comp, PMF.map_comp]
+    congr 1
+    funext f
+    simp [Fin.consEquiv, List.ofFn_succ]
 
 /-! ### Games -/
 

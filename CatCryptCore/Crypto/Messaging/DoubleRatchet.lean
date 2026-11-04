@@ -30,6 +30,7 @@ uniform ciphertexts (FS-AEAD advantage of `smAEADRed`).
 
 ## Main definitions
 
+* `hkdfRoot` — the HKDF-shaped root step `F rk I` of a keyed function `F`
 * `rootRun`, `encEpoch`, `smCts` — the root chain, and the ciphertexts of the epochs
 * `ckaPub` — the public value and the messages of a CKA run
 * `sm_real`, `sm_ideal`, `SM_Advantage` — the secure-messaging confidentiality game
@@ -66,6 +67,17 @@ open CatCrypt.Core CatCrypt.Prob CatCrypt.Crypto CatCrypt.Crypto.Assumptions
 open scoped ENNReal
 
 /-! ## The deterministic part of the ratchet -/
+
+section HKDFRoot
+
+variable {RK Key Out : Type}
+
+/-- The HKDF-shaped root step: the next root state and the output are `F rk I`, the KDF keyed
+by the root state (the HKDF salt) applied to the input (the input keying material). -/
+def hkdfRoot (F : RK → Key → Out) : PRGDef (RK × Key) Out where
+  stretch x := F x.1 x.2
+
+end HKDFRoot
 
 section Det
 

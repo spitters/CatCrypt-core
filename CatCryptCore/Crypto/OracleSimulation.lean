@@ -158,6 +158,18 @@ theorem IsQueryBoundBy.add {c₁ c₂ : D → ℕ} {A : OracleAdv D R α} {a b :
     rwa [show a + b - (c₁ d + c₂ d) = (a - c₁ d) + (b - c₂ d) by
       have := h₁.1; have := h₂.1; omega]
 
+/-- A bound `a` on the queries to the left oracle and a bound `b` on the queries to the right
+oracle give the bound `a + b` on all queries. -/
+theorem IsQueryBoundBy.sum_elim {Q₁ Q₂ : Type} {A : OracleAdv (Q₁ ⊕ Q₂) R α} {a b : ℕ}
+    (h₁ : A.IsQueryBoundBy (Sum.elim (fun _ => 1) fun _ => 0) a)
+    (h₂ : A.IsQueryBoundBy (Sum.elim (fun _ => 0) fun _ => 1) b) :
+    A.IsQueryBoundBy (fun _ => 1) (a + b) := by
+  have h := h₁.add h₂
+  have e : (fun d : Q₁ ⊕ Q₂ => Sum.elim (fun _ => 1) (fun _ => 0) d +
+      Sum.elim (fun _ => 0) (fun _ => 1) d) = fun _ => 1 :=
+    funext fun d => by cases d <;> rfl
+  rwa [e] at h
+
 theorem IsQueryBoundBy.mono {c : D → ℕ} {A : OracleAdv D R α} {a b : ℕ}
     (h : A.IsQueryBoundBy c a) (hab : a ≤ b) : A.IsQueryBoundBy c b := by
   induction A generalizing a b with

@@ -701,12 +701,8 @@ theorem lazy_bad_le {α : Type} (ks : PK × SK) (A : OracleAdv (M ⊕ (M × C)) 
 
 omit [Fintype M] [Nonempty M] [DecidableEq M] [DecidableEq C] [Fintype R] [Nonempty R] in
 theorem isQueryBoundBy_total {qG qP : ℕ} (B : ROMOWPCAAdversary PK M C M R qG qP) (pk : PK)
-    (c : C) : (B.run pk c).IsQueryBoundBy (fun _ => 1) (qG + qP) := by
-  have h := (B.isQueryBoundG pk c).add (B.isQueryBoundP pk c)
-  have hc : (fun d : M ⊕ (M × C) => Sum.elim (fun _ => 1) (fun _ => 0) d +
-      Sum.elim (fun _ => 0) (fun _ => 1) d) = fun _ => 1 := by
-    funext d; cases d <;> rfl
-  rwa [hc] at h
+    (c : C) : (B.run pk c).IsQueryBoundBy (fun _ => 1) (qG + qP) :=
+  (B.isQueryBoundG pk c).sum_elim (B.isQueryBoundP pk c)
 
 omit [Fintype M] [Nonempty M] [DecidableEq M] [DecidableEq C] [Fintype R] [Nonempty R] in
 theorem isQueryBoundBy_withCheck {qG qP : ℕ} (B : ROMOWPCAAdversary PK M C M R qG qP) (n : ℕ)

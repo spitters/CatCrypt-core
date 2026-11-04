@@ -121,7 +121,6 @@ and the hops 2 and 1 back with the uniform challenge ciphertext.
 * `PPQuery`, `ppOracle`, `pp_game`, `PRFPRNG_Advantage` — the PRF-PRNG game of the root step: a
   `prng` oracle (a uniform root state, inputs of the adversary) and a `prf` oracle (a uniform
   input, root states of the adversary)
-* `hkdfRoot` — the HKDF-shaped root step `F rk I` of a dual PRF `F`
 * `FSQuery`, `fsOracle`, `fsaead_corrupt_game`, `FSAEAD_Corrupt_Advantage` — the FS-AEAD game
   with corruption
 * `smcCKARed`, `smcRootRed`, `smcFSRed` — the reductions, from the oracle trees `smCKATreeOf`,
@@ -797,11 +796,6 @@ pseudorandom outputs whatever the root state). -/
 noncomputable def PRFPRNG_Advantage (R : PRGDef (RK × Key) Out)
     (A : OracleAdv (PPQuery RK Key) Out Bool) : ℝ≥0∞ :=
   Advantage (pp_game (rootFn R) false false A) (pp_game (rootFn R) true true A)
-
-/-- The HKDF-shaped root step: the next root state and the output are `F rk I`, the KDF keyed
-by the root state (the HKDF salt) applied to the input (the input keying material). -/
-def hkdfRoot (F : RK → Key → Out) : PRGDef (RK × Key) Out where
-  stretch x := F x.1 x.2
 
 /-- The simulator of the right dual-PRF reduction with the root state `rk`: `prng` queries are
 answered with `F rk`, `prf` queries are forwarded. -/
@@ -2515,13 +2509,6 @@ theorem ctsDistAll_zero (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (g : ℕ) (
     | cons ms msgs =>
       simp only [ctsDistAll, epochCtsDist_zero, PMF.pure_bind, ih, PMF.pure_map, smCts,
         List.zipWith_cons_cons, encEpoch]
-
-omit [SampleableType W] in
-theorem fsprgRun_length (G : PRGDef Sa (W × Sa)) (n : ℕ) (s : Sa) :
-    (fsprgRun G n s).1.length = n := by
-  induction n generalizing s with
-  | zero => rfl
-  | succ n ih => simp only [fsprgRun, List.length_cons, ih]
 
 /-- Uniform ciphertexts of the epochs `ms :: msgs` are uniform ciphertexts of `ms` and of
 `msgs`. -/
