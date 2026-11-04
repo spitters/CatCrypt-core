@@ -424,6 +424,12 @@ public import CatCryptCore.Quantum.QROM.QIndcpaAux
 public import CatCryptCore.Quantum.QROM.QOwcpaAux
 public import CatCryptCore.Quantum.QROM.QOwcpaAuxMeasured
 public import CatCryptCore.Quantum.QROM.QuantumOWCPA
+public import CatCryptCore.Quantum.QROM.QAdvTreeKind
+public import CatCryptCore.Quantum.QROM.AdversariesTimed
+public import CatCryptCore.Quantum.QROM.QOwcpaAuxTimed
+public import CatCryptCore.Quantum.QROM.QIndcpaAuxTimed
+public import CatCryptCore.Quantum.QROM.QMLWEAuxTimed
+public import CatCryptCore.Quantum.QROM.QuantumOWCPATimed
 public import CatCryptCore.Quantum.QROM.QueryRoundAgreement
 public import CatCryptCore.Quantum.QROM.QueryRoundDeferred
 public import CatCryptCore.Quantum.QROM.QueryRoundPerms
