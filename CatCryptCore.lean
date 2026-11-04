@@ -272,6 +272,7 @@ public import CatCryptCore.Crypto.Messaging.CKACorrupt
 public import CatCryptCore.Crypto.Messaging.CKAACD
 public import CatCryptCore.Crypto.Messaging.SMCorrupt
 public import CatCryptCore.Crypto.Messaging.SignalStack
+public import CatCryptCore.Crypto.Messaging.SignalStackUC
 public import CatCryptCore.Crypto.Messaging.SealedSender
 public import CatCryptCore.Crypto.Messaging.FSAEAD
 public import CatCryptCore.Crypto.Messaging.DoubleRatchet
@@ -555,6 +556,7 @@ public import CatCryptCore.Crypto.Party.Protocols.X3DH
 public import CatCryptCore.Crypto.Party.Protocols.PQXDH
 public import CatCryptCore.Crypto.UCTransparentSquare
 public import CatCryptCore.Crypto.UCCascade
+public import CatCryptCore.Crypto.UCDeferred
 public import CatCryptCore.Crypto.UCCascadeEnriched
 public import CatCryptCore.Crypto.UCCascadeEnrichedPar
 public import CatCryptCore.Crypto.TraceEquiv

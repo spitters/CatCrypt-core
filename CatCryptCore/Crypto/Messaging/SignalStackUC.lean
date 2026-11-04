@@ -12,7 +12,87 @@ public import CatCryptCore.Crypto.UCRoundHybrid
 /-!
 # The Signal stack realizes an ideal secure channel
 
-DOCSTRING
+The Signal stack runs X3DH and keys the double ratchet with the session key of X3DH
+(`SignalStack`). This module proves that the stack realizes an ideal secure-channel
+functionality behind a simulator, in the sense of Canetti and Krawczyk (Eurocrypt 2002, `F_SC`
+from `F_KE`). The secure-messaging step uses that `F_AKE` delivers to a completed, unexposed
+session a key that it samples and that no event reveals, and the adversary key to an exposed
+session; the bound has no real-or-random term of the key.
+
+**The ideal functionality.** `F_SC realV idealV` has the state and the adversary port of
+`F_AKE (SPComp.sample K) true` (notices, adaptive corruption, `newKey`, `newKeyUnlinked`), except
+that a session that completes without exposure stores the placeholder key `default`. Its honest
+port opens sessions and answers `getKey` with the secure-messaging view of the session: the
+ideal view `idealV` (for the ratchet, `sm_ideal C msgs`: the public CKA transcript and uniform
+ciphertexts) for a completed session, the real view `realV k` (for the ratchet,
+`smRealAt C R Gp D msgs k`) under the adversary key `k` for an exposed session, and nothing for a
+session without a key.
+
+**The real world.** `(x3dhReal G).seq (smLayer (smRealAt C R Gp D msgs))`: the real X3DH
+protocol, and the ratchet keyed by the session key of every `getKey` answer.
+
+**The simulator.** `scSim G` is the X3DH simulator `simProt G` running over `F_SC` (`simSC G`):
+it keeps a copy of the real state, draws the long-term and session secrets, forwards the honest
+events, answers `poll`, `pub`, `ephPub` and `kdf` on its copy, refuses or forwards `corrupt`
+under the static rule of X3DH, and on `complete` and `send` passes the key-derivation value to
+`newKey` for an exposed session and a placeholder key to `newKey` or `newKeyUnlinked` otherwise.
+The honest answers of `F_SC` pass unchanged; the simulator never reads them (`simSC_opaque`).
+
+**The proof.** The cascade theorem of the X3DH square (`SignalStack.signal_stack_realizes`)
+replaces `x3dhReal G` by `F_AKE` behind `x3dhSim G`. Behind the simulator, this stack is
+`simSC G` over `FR realV`, the functionality `F_AKE` whose honest port answers `getKey` by the
+ratchet keyed by the stored key (`stack_ideal_stepMap`, distance `0`). Over the simulator, the
+step from `FR realV` to `F_SC realV idealV` is a statement about the subroutine at the reduced
+environment (`MultiHybrid.adv_withSub`), proved by a hybrid argument over the keys of the run
+(`FR_realizes_F_SC`). The hybrid world `hyb i` keeps the keys outside the records of `F_AKE`, by
+index: the key created at the non-idle activation `n` has index `n`; the keys of index below `i`
+are read ideally, the others really. Then
+* `hyb 0` is `FR realV` (`world_zero_stepMap`, filling the keys back into the records);
+* `hyb i` and `hyb (i + 1)` differ in the key `i` (`hyb_step`): its draw moves from its creation
+  to the start of the run (`run_world_create`, deferred sampling, `UCDeferred.run_deferred`),
+  the first ratchet run on it moves to the start of the run (`run_world_read`), the pair is the
+  real secure-messaging game `sm_real`, and the world that answers the first read of the key `i`
+  by the challenge view is the reduction `hopRed i Z`; a later read of the key `i` is the bad
+  event (`world_upto_reuse`);
+* `hyb n` is `F_SC` on runs of at most `n` activations (`world_end`, `world_end_prBad`).
+
+**The reuse of a key.** `smLayer` runs the ratchet afresh at every `getKey`, so a key read twice
+(by the same session or by its partner) keys two ratchet runs with one root key. The
+secure-messaging game `sm_real` uses a root key once, and the views of two runs on one root key
+are not bounded by `SM_Advantage`: a root KDF that is a secure PRG on a uniform seed may give
+correlated outputs on two seeds `(rk, I)`, `(rk, I')` that share `rk`. The bound therefore
+contains, per key `i`, the probability `prBad (hyb i) (reuse i) Z` that the key `i` is read twice
+in the world `hyb i`; it is `0` for environments that read each session key at most once.
+
+## Main definitions
+
+* `chanOut`, `chanHon`: the honest port of a channel over the state of `F_AKE`.
+* `FR`: `F_AKE` followed by the ratchet layer, as one functionality.
+* `F_SC`, `scView`: the ideal secure channel.
+* `WSt`, `world`, `hyb`, `chalWorld`: the hybrid worlds; `WInv` their invariant.
+* `hopRed`: the reduction of a step of the hybrid argument.
+* `scBound`, `signalBound`: the bounds.
+* `simSC`, `scSim`: the simulator.
+
+## Main results
+
+* `FR_realizes_F_SC`: `FR realV` realizes `F_SC realV idealV` with `scBound`.
+* `hyb_step`: one step of the hybrid argument.
+* `stack_ideal_stepMap`: the stack over `F_AKE` behind the X3DH simulator is `simSC G` over `FR`.
+* `simSC_opaque`: opacity of the simulator.
+* `signal_stack_realizes_FSC`: **the Signal stack realizes `F_SC` behind `scSim G`** with the gap
+  Diffie–Hellman bound and the sum over the keys of the secure-messaging advantages of `hopRed`
+  and of the reuse probabilities.
+* `hopRed_compile_tree`, `hopRed_timeBound`: the costed tree of `hopRed` and its time.
+
+## References
+
+* R. Canetti, H. Krawczyk, *Universally composable notions of key exchange and secure
+  channels*, Eurocrypt 2002.
+* M. Marlinspike, T. Perrin, *The X3DH key agreement protocol*, 2016; *The double ratchet
+  algorithm*, 2016.
+* J. Alwen, S. Coretti, Y. Dodis, *The double ratchet: security notions, proofs, and
+  modularization for the Signal protocol*, Eurocrypt 2019.
 -/
 
 @[expose] public section
@@ -820,7 +900,8 @@ omit [Fintype K] [Nonempty K] in
 /-- The steps of `F_SC`: the next state of the functionality with the placeholder key and the
 output `scOut`. -/
 theorem F_SC_step (t : St K) (e : HEv ⊕ AEv K) :
-    (F_SC realV idealV).step t e = SPComp.map (fun o => (stNext t e, o)) (scOut realV idealV t e) := by
+    (F_SC realV idealV).step t e =
+      SPComp.map (fun o => (stNext t e, o)) (scOut realV idealV t e) := by
   rcases e with (⟨sid, pid, peer, role⟩ | ⟨sid, pid⟩) |
     (_ | _ | pid | ⟨sid, pid⟩ | ⟨sid, pid, k⟩ | ⟨sid, pid, k⟩) <;>
     simp [F_SC, chanHon, advSys, stNext, scOut, SPComp.map, SPComp.bind_assoc, SPComp.pure_bind]
@@ -1056,7 +1137,8 @@ theorem fill_newKey {w : WSt K} (hw : WInv w) (sid : SessionId) (pid : PartyId) 
               have hlt := (hw.1 _ jp hjp).1
               have hi' : (wNext w (.inr (.newKey sid pid k)) kf).ix (sid, pid) = some jp := by
                 rw [hixw]; simp [newKeyIx, hx, hk, hex, hp, hpp, hjp]
-              rw [fillRec_some hi', ite_eq_left hpp, ite_eq_left ((fillRec_partner w _ _ r p).mpr hpp),
+              rw [fillRec_some hi', ite_eq_left hpp,
+                ite_eq_left ((fillRec_partner w _ _ r p).mpr hpp),
                 fillRec_some hjp, hkv _ jp hjp]
               simp
             · have hi' : (wNext w (.inr (.newKey sid pid k)) kf).ix (sid, pid) = some w.steps := by
@@ -1298,9 +1380,9 @@ noncomputable abbrev chalWorld (i : ℕ) (v : V) : Sys (WSt K) (HEv ⊕ AEv K) (
 /-- **The reduction of the step `i`**: on the challenge view `v`, it runs the environment `Z`
 from its heap against the world in which the first read of the key `i` returns `v`, and
 applies the distinguisher of `Z`. -/
-noncomputable def hopRed (i : ℕ) {ζ : Type} (Z : Env (Strat ζ (HEv ⊕ AEv K) (HOut V ⊕ AOut)) ζ)
-    (v : V) : SPComp Bool :=
-  SPComp.atHeap Z.heap (SPComp.bind (view (chalWorld realV idealV i v) Z.input) Z.dist)
+noncomputable def hopRed (i : ℕ) {ζ : Type} (Z : Env (Strat ζ (HEv ⊕ AEv K) (HOut V ⊕ AOut)) ζ) :
+    V → SPComp Bool :=
+  fixHeap Z.heap fun v => SPComp.bind (view (chalWorld realV idealV i v) Z.input) Z.dist
 
 omit [Fintype K] [Nonempty K] [Inhabited K] in
 /-- The views of the step `i + 1` from below. -/
@@ -1540,23 +1622,27 @@ noncomputable def scSim : Simulator (OEv W) (HOut V ⊕ ROut S W K) (FEv K) (HOu
 def NoHon (d : Dec S W K) : Prop := ∀ h, d ≠ .inr (.inl h)
 
 omit [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K] in
+/-- A point mass at a decision that is not an honest output. -/
 theorem noHon_pure {a : SimSt S W K} {d : Dec S W K} (hd : NoHon d)
     {q : SimSt S W K × Dec S W K} (hq : IsOutcome (SPComp.pure (a, d)) q) : NoHon q.2 := by
   rw [← isOutcome_pure hq]; exact hd
 
 omit [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K] in
+/-- The outcomes of a map whose values are not honest outputs. -/
 theorem noHon_map {α : Type} {c : SPComp α} {f : α → SimSt S W K × Dec S W K}
     (hf : ∀ a, NoHon (f a).2) {q : SimSt S W K × Dec S W K}
     (hq : IsOutcome (SPComp.map f c) q) : NoHon q.2 := by
   obtain ⟨a, _, rfl⟩ := exists_of_isOutcome_map hq; exact hf a
 
 omit [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K] in
+/-- The outcomes of a bind whose continuations give no honest output. -/
 theorem noHon_bind {α : Type} {c : SPComp α} {f : α → SPComp (SimSt S W K × Dec S W K)}
     (hf : ∀ a q, IsOutcome (f a) q → NoHon q.2) {q : SimSt S W K × Dec S W K}
     (hq : IsOutcome (SPComp.bind c f) q) : NoHon q.2 := by
   obtain ⟨a, _, ha⟩ := isOutcome_bind hq; exact hf a q ha
 
 omit [Field S] [Fintype S] in
+/-- The delivery of a key calls `F_SC`. -/
 theorem deliver_noHon (rs : RSt S W K) (inp : Inst → Option (Inp W)) (x : Inst) (r : Rec K)
     (ip : Inp W) {q : SimSt S W K × Dec S W K} (hq : IsOutcome (deliver rs inp x r ip) q) :
     NoHon q.2 := by
@@ -1752,6 +1838,7 @@ noncomputable def signalBound (P : Finset PartyId) (C : CKADef Sc Msg Key)
         prBad (hyb (smRealAt C R Gp D msgs) (sm_ideal C msgs) i) (reuse i)
           ((simSC G).reduceEnv (.inr .idle) Z))
 
+omit [Fintype Key] [Nonempty Key] [Fintype Sa] [Nonempty Sa] in
 /-- **The Signal stack realizes the ideal secure channel** (genuine UC).
 
 *Ideal functionality.* `F_SC (smRealAt C R Gp D msgs) (sm_ideal C msgs)`: the multi-session
@@ -1781,7 +1868,6 @@ explicit reductions `hopRed` and of the probability that a key is read twice. Th
 the reuse of one root key by two ratchet runs, which `SM_Advantage` does not cover; it is `0`
 for environments that read each session key (with its partner) at most once. No real-or-random
 term of the key appears. -/
-omit [Fintype Key] [Nonempty Key] [Fintype Sa] [Nonempty Sa] in
 theorem signal_stack_realizes_FSC (P : Finset PartyId) {C : CKADef Sc Msg Key}
     (hC : CKAPureNF C) (R : PRGDef (K × Key) (K × Sa)) (Gp : PRGDef Sa (M × Sa))
     (D : AEADDef M Ct) (msgs : List (List (M × M))) :
@@ -1800,5 +1886,56 @@ theorem signal_stack_realizes_FSC (P : Finset PartyId) {C : CKADef Sc Msg Key}
   simp only [signalBound, scBound, add_zero, SM_Advantage, sm_real_eq_bind_smRealAt]
 
 end Stack
+
+/-! ## Time certificates -/
+
+section Time
+
+variable {K V : Type} [Fintype K] [Nonempty K] [Inhabited K]
+  (realV : K → SPComp V) (idealV : SPComp V)
+
+/-- **The tree of the reduction of the step `i`**: the environment reduction `sysEnvTree` over
+the family of challenge worlds, which compiles to `hopRed i Z` (`derive_timed sysEnvTree` in
+`UCConcreteTimed` gives its costed form). -/
+theorem hopRed_compile_tree (i : ℕ) {ζ : Type}
+    (Z : Env (Strat ζ (HEv ⊕ AEv K) (HOut V ⊕ AOut)) ζ)
+    {next : ζ → SPTree (ζ × (HEv ⊕ AEv K))}
+    {step : V → WSt K → HEv ⊕ AEv K → SPTree (WSt K × (HOut V ⊕ AOut))}
+    {obs : ζ → HOut V ⊕ AOut → SPTree ζ} {dist : ζ → SPTree Bool}
+    (hn : ∀ z, (next z).compile = Z.input.next z)
+    (hs : ∀ v t e, (step v t e).compile = (chalWorld realV idealV i v).step t e)
+    (ho : ∀ z o, (obs z o).compile = Z.input.obs z o) (hd : ∀ z, (dist z).compile = Z.dist z)
+    (v : V) :
+    (sysEnvTree (chalWorld realV idealV i) Z next step obs dist v).compile =
+      hopRed realV idealV i Z v :=
+  sysEnvTree_compile _ Z hn hs ho hd v
+
+/-- **Time of the reduction of the step `i`.** On the challenge `v`, for a costed strategy of
+`Z` and a costed step of the challenge world over the same interface, from initial states of
+their invariants, and a distinguisher of time at most `tD` on the final states, the costed form
+of the tree of `hopRed i Z` takes at most the reset to the heap of `Z`, the time of the strategy
+over its `q = Z.input.rounds` activations, `tD`, the time of `q` steps of the challenge world,
+`9` per activation, the cost `SCost v` and `6`: the time of the environment plus the steps of the
+world. -/
+theorem hopRed_timeBound (i : ℕ) (SCost : V → ℕ) {ζ : Type}
+    (Z : Env (Strat ζ (HEv ⊕ AEv K) (HOut V ⊕ AOut)) ζ)
+    {next : ζ → SPTree.Timed (ζ × (HEv ⊕ AEv K))} {nextCost : ζ → ℕ}
+    {step : V → WSt K → HEv ⊕ AEv K → SPTree.Timed (WSt K × (HOut V ⊕ AOut))}
+    {stepCost : V → WSt K → HEv ⊕ AEv K → ℕ}
+    {obs : ζ → HOut V ⊕ AOut → SPTree.Timed ζ} {obsCost : ζ → HOut V ⊕ AOut → ℕ}
+    {dist : ζ → SPTree.Timed Bool} {distCost : ζ → ℕ} (v : V) {InvZ MidZ : ℕ → ζ → Prop}
+    {InvS : ℕ → WSt K → Prop} {Ev : ℕ → HEv ⊕ AEv K → Prop} {Out : ℕ → HOut V ⊕ AOut → Prop}
+    {tN tS tO : ℕ → ℕ} {tD : ℕ}
+    (hZ : StratRunBound next nextCost obs obsCost InvZ MidZ Ev Out tN tO)
+    (hS : SysRunBound (step v) (stepCost v) InvS Ev Out tS)
+    (hz : InvZ 0 Z.input.init) (ht : InvS 0 (chalWorld realV idealV i v).init)
+    (hd : ∀ z, InvZ Z.input.rounds z → SPTree.Timed.stepTime (distCost z, dist z) ≤ tD) :
+    SPTree.Timed.stepTime (sysEnvTree.timed (chalWorld realV idealV i) SCost Z next nextCost
+        step stepCost obs obsCost dist distCost v) ≤
+      Z.heap.data.keys.card + (∑ j ∈ Finset.range Z.input.rounds, (tN j + tO j)) + tD +
+        (∑ j ∈ Finset.range Z.input.rounds, tS j) + 9 * Z.input.rounds + SCost v + 6 :=
+  sysEnvTree.timeBound_timed _ SCost Z v hZ hS hz ht hd
+
+end Time
 
 end CatCrypt.Crypto.Messaging.SignalStackUC
