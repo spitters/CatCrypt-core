@@ -8,13 +8,15 @@ module
 public import CatCryptCore.Tactics.SysRewriteAuto
 
 /-!
-# Tests of `sys_step_map`, `sys_step_pres`, `sys_congr`, `trace_eq_chain` and the `catcrypt_auto`
-shapes of `SysRewriteAuto`
+# Tests of `sys_step_map`, `sys_step_pres`, `sys_step_port`, `sys_congr`, `trace_eq_chain` and
+the `catcrypt_auto` shapes of `SysRewriteAuto`
 
 The systems are a latch on one bit: the first event is stored and answered with `false`, every
 later event is answered with the stored bit. `latch` keeps the bit in an option, `latch₂` in a
 flag and a bit; the state map is `fun t => (t.isSome, t.getD false)`. The proofs by
-`sys_step_map` split the state on the `match` of the real step, as the steps need it.
+`sys_step_map` split the state on the `match` of the real step, as the steps need it. The
+multi-call hybrid `thrice` calls the flipping bit `flip` three times per activation; its
+activations are evaluated one call at a time.
 -/
 
 set_option autoImplicit false
@@ -60,6 +62,37 @@ example : latch₂ ≈ₜ latch := by
 example : ∀ (t : Bool × Bool) (e : Bool), (t.1 = false → t.2 = false) →
     ∀ q, IsOutcome (latch₂.step t e) q → (q.1.1 = false → q.1.2 = false) := by
   sys_step_pres using [latch₂]
+
+/-! ## Activations of multi-call hybrids and ports -/
+
+/-- A bit that is flipped at each event and answered. -/
+noncomputable def flip : Sys Bool Unit Bool where
+  init := false
+  step b _ := SPComp.pure (!b, !b)
+
+/-- A hybrid that calls its subroutine three times per activation and answers the last answer. -/
+noncomputable def thrice : MultiHybrid Unit Unit Bool Unit Bool where
+  init := ()
+  fuel := 2
+  start _ _ := SPComp.pure ((), .inl ())
+  resume _ _ := SPComp.pure ((), .inl ())
+  finish _ o := SPComp.pure ((), o)
+  start_noFail _ _ := CatCrypt.Crypto.SPComp.pure_noFail _
+  resume_noFail _ _ := CatCrypt.Crypto.SPComp.pure_noFail _
+  finish_noFail _ _ := CatCrypt.Crypto.SPComp.pure_noFail _
+
+/-- An activation with three calls, evaluated one call at a time. -/
+example : flip ≈ₜ thrice.withSub flip := by
+  sys_step_map (fun t => ((), t)) (fun _ => True)
+    using [flip, thrice, MultiHybrid.withSub]
+
+/-- The step obligation of a step map on the events of one port, in its own declaration. -/
+theorem latch_port : Sys.StepPort latch latch₂ (fun _ => True) latchMap id := by
+  sys_step_port using [latch, latch₂, latchMap]
+
+/-- A step map whose step obligation is given port by port. -/
+example : latch ≈ₜ latch₂ := by
+  sys_step_map latchMap (fun _ => True) (ports := [latch_port]) using [latch, latch₂, latchMap]
 
 /-! ## `sys_congr` and `trace_eq_chain` -/
 

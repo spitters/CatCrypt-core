@@ -7,6 +7,7 @@ module
 
 public import CatCryptCore.Crypto.TraceEqLaws
 public import CatCryptCore.Crypto.UCInterleave
+public import CatCryptCore.Crypto.UCInterleaveStep
 public import CatCryptCore.NonUniform.Sample
 public meta import Lean
 
@@ -25,12 +26,18 @@ a chain of known equivalences. The tactics of this file carry out these three pr
   the ports (`Sum`) and the state into its components (`Prod`, or by the pattern `pat`), and
   runs on each branch the loop *prune, split, simplify*: the invariant is simplified, split into
   its conjuncts and the variables it determines are substituted (a refuted branch is closed);
-  the branch is split on what the real step is stuck on (`blockerOf?`); then `simp_all` with the
-  definitions `dᵢ` and the step equations of the constructions on systems (`sysStepSimps`); a
-  branch still open is split on what its simplified real computation shows stuck, else by
-  `split`. A leaf that stays open is left as a goal tagged by its obligation and the cases of its
-  branch (`step.inr.none.pos`), in the simplified form; typically the coupling of a sampled
-  value with the simulator's draw.
+  the branch is split on what the real step is stuck on (`blockerOf?`); then the leaf is
+  normalised by `simp only` with the definitions `dᵢ` and the step equations of the
+  constructions on systems (`sysStepSimps`), with the activations evaluated one computation at a
+  time (below), and `simp_all` with the same arguments where that leaves the goal open; a branch
+  still open is split on what its simplified real computation shows stuck (also under the
+  binder of a draw), else by `split`. A leaf that stays open is left as a goal tagged by its
+  obligation and the cases of its branch (`step.inr.none.pos`), in the simplified form;
+  typically the coupling of a sampled value with the simulator's draw. With
+  `(ports := [h₁, …])` the step obligation of a port is the given `hᵢ : Sys.StepPort …`.
+* `sys_step_port using [d₁, …] with pat` proves the step obligation of one port
+  (`Sys.StepPort R I Inv f ι`) by the per-event part of `sys_step_map`, so that each port is
+  its own declaration with its own heartbeat budget.
 * `sys_step_pres using [d₁, …] with pat` runs the per-event part alone on a goal
   `∀ t e, Inv t → ∀ q, IsOutcome (R.step t e) q → Inv q.1` (or any goal of the form
   `∀ t e, Inv t → P t e`), so that the preservation of the invariant can be proved in its own
@@ -50,14 +57,26 @@ only when a constructor at its place lets a `match` of the real step reduce (the
 unfolded to the `casesOn` it is compiled to, so the variable is the one the first case analysis
 needs), and a classical `if` is split by `by_cases` on its proposition. The number of branches
 is the number of reachable branches of the real step, not the product of the state components.
-Heartbeats are counted per declaration: an obligation whose leaves together exceed the budget
-is stated as its own declaration (`sys_step_pres`).
+
+The leaves are evaluated, not simplified symbolically. The congruence of `simp` on a bind
+`SPComp.bind c k` simplifies the continuation `k` for an unknown value before `pure_bind`
+substitutes the value of `c`, so that along an activation of `n` deterministic computations the
+work grows with the number of values substituted in front of each continuation. The
+pre-procedures `bindFirst`, `stepFuelStart` and `driveCall` simplify `c` first and continue with
+`k a` when `c` is `SPComp.pure a`; an activation of a multi-call hybrid against a subroutine
+(`MultiHybrid.drive`, `MultiHybrid.stepFuel`) is evaluated one call at a time by the lemmas of
+`UCInterleaveStep`: the start, each call of the subroutine simplified alone, the resumption on
+its answer, and `finish` at the last allowed call. Heartbeats are counted per declaration: an
+obligation whose leaves together exceed the budget is stated as its own declaration
+(`sys_step_pres` for the preservation, `sys_step_port` for the step obligation of a port).
 
 ## Main results
 
 * `MultiHybrid.tensor_withSub_ofPorts_step_inl`, `MultiHybrid.tensor_withSub_ofPorts_step_inr`:
   the step of a tensor of multi-call hybrids over a system given port by port.
-* `sys_step_map`, `sys_step_pres`, `sys_congr`, `trace_eq_chain`, `sys_blocker`: the tactics.
+* `Sys.StepPort`: the step obligation of a step map on the events of one port.
+* `sys_step_map`, `sys_step_pres`, `sys_step_port`, `sys_congr`, `trace_eq_chain`,
+  `sys_blocker`: the tactics.
 -/
 
 @[expose] public section
@@ -92,6 +111,21 @@ theorem tensor_withSub_ofPorts_step_inr (π : MultiHybrid σ E O EG OG)
 
 end CatCrypt.Crypto.UCTransparent.MultiHybrid
 
+namespace CatCrypt.Crypto.UCTransparent.Sys
+
+open CatCrypt.Core
+
+variable {τ υ E E' O : Type}
+
+/-- The step obligation of a step map `f` on the invariant `Inv` (`Sys.StepMapOn.step`) for the
+events `ι e` of one port: stated as its own declaration, it is proved by `sys_step_port` and
+discharges the branches of that port in `sys_step_map … (ports := [h, …])`. -/
+def StepPort (R : Sys τ E O) (I : Sys υ E O) (Inv : τ → Prop) (f : τ → υ) (ι : E' → E) :
+    Prop :=
+  ∀ t e, Inv t → SPComp.map (fun p => (f p.1, p.2)) (R.step t (ι e)) = I.step (f t) (ι e)
+
+end CatCrypt.Crypto.UCTransparent.Sys
+
 meta section
 
 namespace CatCrypt.Tactics.SysRewrite
@@ -121,6 +155,109 @@ def sysStepSimps : Array Name := #[
   ``CatCrypt.Crypto.UCTransparent.Simulator.ofMultiHybrid,
   ``CatCrypt.NonUniform.ofPMF_uniformFintype, ``CatCrypt.NonUniform.sampleFrom_uniform,
   ``CatCrypt.Crypto.UCTransparent.isOutcome_bind_sample_iff]
+
+/-! ### Evaluation of activations, one computation at a time
+
+The simplification of a bind `SPComp.bind c k` by the congruence of `simp` simplifies the
+continuation `k` under its binder, for an unknown value, before `SPComp.pure_bind` substitutes
+the value of `c`: along an activation of `n` deterministic computations each continuation is
+simplified once for an unknown and once more for each value substituted in front of it. The
+pre-procedures of this section evaluate first: `c` is simplified, and when it is deterministic
+(`SPComp.pure a`) the bind is replaced by `k a` before `k` is visited. The activations of
+multi-call hybrids are evaluated one call at a time in the same way (`UCInterleaveStep`): the
+start, then each call of the subroutine alone, then the resumption on its answer. -/
+
+/-- The value `a` of a deterministic computation `SPComp.pure a`. -/
+def pureValue? (e : Expr) : Option Expr :=
+  if e.isAppOfArity ``CatCrypt.Core.SPComp.pure 2 then some e.appArg! else none
+
+/-- The result `e = rhs` of a pre-procedure, from a proof `pr` of an equation whose left side is
+definitionally `e`; the proof is annotated with the stated equation. -/
+def visitBy (e pr : Expr) : SimpM Simp.Step := do
+  let some (_, _, rhs) := (← instantiateMVars (← inferType pr)).eq? | return .continue
+  let pr ← mkExpectedTypeHint pr (← mkEq e rhs)
+  return .visit { expr := rhs.headBeta, proof? := pr }
+
+/-- The simplification of `c` (`Simp.simp`) when it is deterministic: its value and a proof of
+`c = SPComp.pure a`. -/
+def evalPure? (c : Expr) : SimpM (Option (Expr × Expr)) := do
+  let r ← Simp.simp c
+  let some a := pureValue? r.expr | return none
+  return some (a, ← r.getProof)
+
+/-- Pre-procedure on `SPComp.bind c k`: when `c` simplifies to `SPComp.pure a`, the bind is
+`k a` (`SPComp.pure_bind`), before `k` is simplified. -/
+def bindFirst : Simp.Simproc := fun e => do
+  unless e.isAppOfArity ``CatCrypt.Core.SPComp.bind 4 do return .continue
+  let c := e.appFn!.appArg!
+  let k := e.appArg!
+  let some (a, h) ← evalPure? c | return .continue
+  let hb ← mkCongrFun (← mkCongrArg e.appFn!.appFn! h) k
+  visitBy e (← mkEqTrans hb (← mkAppM ``CatCrypt.Core.SPComp.pure_bind #[a, k]))
+
+/-- The fuel `n` as a numeral, if it reduces to one (by `evalNat`, else by `whnf` with the
+default transparency). -/
+def fuelValue? (n : Expr) : MetaM (Option Nat) := withTransparency .default do
+  let n ← instantiateMVars n
+  if let some k ← (evalNat n).run then return some k
+  let n ← whnf n
+  if let some k := n.rawNatLit? then return some k
+  return n.nat?
+
+/-- Pre-procedure on `MultiHybrid.drive π X n s d t`, one call at a time: an output ends the
+activation (`drive_output`); a call `inl g` whose answer simplifies to `SPComp.pure q` is
+followed by the resumption, or by `finish` at the last call (`drive_succ_of_step`,
+`drive_zero_of_step`). -/
+def driveCall : Simp.Simproc := fun e => do
+  unless e.isAppOfArity ``CatCrypt.Crypto.UCTransparent.MultiHybrid.drive 12 do
+    return .continue
+  let args := e.getAppArgs
+  let (π, X, n, s, d, t) := (args[6]!, args[7]!, args[8]!, args[9]!, args[10]!, args[11]!)
+  let d ← whnfR d
+  if d.isAppOfArity ``Sum.inr 3 then
+    return ← visitBy e (← mkAppM ``CatCrypt.Crypto.UCTransparent.MultiHybrid.drive_output
+      #[π, X, n, s, d.appArg!, t])
+  unless d.isAppOfArity ``Sum.inl 3 do return .continue
+  let g := d.appArg!
+  let some k ← fuelValue? n | do
+    trace[sys_step_map] "drive: fuel {n} is not a numeral"
+    return .continue
+  let some (q, h) ← evalPure? (← mkAppM ``CatCrypt.Crypto.UCTransparent.Sys.step #[X, t, g])
+    | do trace[sys_step_map] "drive: the call is not deterministic"; return .continue
+  match k with
+  | 0 => visitBy e (← mkAppM ``CatCrypt.Crypto.UCTransparent.MultiHybrid.drive_zero_of_step
+      #[π, X, s, g, t, q, h])
+  | k + 1 => visitBy e (← mkAppM ``CatCrypt.Crypto.UCTransparent.MultiHybrid.drive_succ_of_step
+      #[π, X, mkNatLit k, s, g, t, q, h])
+
+/-- Pre-procedure on `MultiHybrid.stepFuel π X n (s, t) e`: a start that simplifies to
+`SPComp.pure r` is followed by the rest of the activation from `r` (`stepFuel_of_start`). -/
+def stepFuelStart : Simp.Simproc := fun e => do
+  unless e.isAppOfArity ``CatCrypt.Crypto.UCTransparent.MultiHybrid.stepFuel 11 do
+    return .continue
+  let args := e.getAppArgs
+  let (π, X, n, st, ev) := (args[6]!, args[7]!, args[8]!, args[9]!, args[10]!)
+  let (s, t) ← match (← whnfR st).app4? ``Prod.mk with
+    | some (_, _, s, t) => pure (s, t)
+    | none => pure (← mkAppM ``Prod.fst #[st], ← mkAppM ``Prod.snd #[st])
+  let some (r, h) ← evalPure? (← mkAppM ``CatCrypt.Crypto.UCTransparent.MultiHybrid.start
+      #[π, s, ev]) | return .continue
+  visitBy e (← mkAppM ``CatCrypt.Crypto.UCTransparent.MultiHybrid.stepFuel_of_start
+    #[π, X, n, s, t, ev, r, h])
+
+/-- The pre-procedures `bindFirst`, `driveCall` and `stepFuelStart`, keyed by their heads. -/
+def evalSimprocs : MetaM Simp.Simprocs := do
+  let key (c : Name) : MetaM (Array SimpTheoremKey) := do
+    let f ← mkConstWithFreshMVarLevels c
+    let (xs, _, _) ← forallMetaTelescope (← inferType f)
+    withSimpGlobalConfig <| DiscrTree.mkPath (mkAppN f xs)
+  let mut s : Simp.Simprocs := {}
+  for (c, n, p) in [(``CatCrypt.Core.SPComp.bind, `sysRewrite.bindFirst, bindFirst),
+      (``CatCrypt.Crypto.UCTransparent.MultiHybrid.drive, `sysRewrite.driveCall, driveCall),
+      (``CatCrypt.Crypto.UCTransparent.MultiHybrid.stepFuel, `sysRewrite.stepFuelStart,
+        stepFuelStart)] do
+    s := s.addCore (← key c) n false (.inl p)
+  return s
 
 /-- The inductive type at the head of `ty` after reducible unfolding. -/
 def inductHead? (ty : Expr) : MetaM (Option InductiveVal) := do
@@ -257,15 +394,6 @@ def isCaseApp (env : Environment) (e : Expr) : Bool :=
       (env.find? c matches some (.recInfo _))
   | _ => false
 
-/-- The closed case applications (`isCaseApp`) of `e`, outermost first, each shared subterm
-visited once. -/
-def caseApps (e : Expr) : MetaM (Array Expr) := do
-  let env ← getEnv
-  let acc ← IO.mkRef #[]
-  e.forEachWhere (fun a => a.isApp && !a.hasLooseBVars && isCaseApp env a)
-    fun a => acc.modify (·.push a)
-  acc.get
-
 /-- The real computation of a per-event goal: the left side of the step equation
 `SPComp.map _ (R.step t e) = I.step (f t) e`, or the computation `c` of `IsOutcome c q` in the
 preservation `∀ q, IsOutcome (R.step t e) q → Inv q.1`; otherwise the goal. -/
@@ -276,15 +404,34 @@ def realComp (tgt : Expr) : Expr :=
     | some a => a.appFn!.appArg!
     | none => tgt
 
+/-- What the first stuck case analysis (`isCaseApp`) of `c`, outermost first, is stuck on,
+also under binders (a `match` in the continuation of a draw): the binders are opened as local
+variables, and a blocker is kept only when it is a variable of the context of the goal or a
+decision that mentions none of the opened binders. -/
+def caseBlocker? (c : Expr) : MetaM (Option Blocker) := do
+  let lctx₀ ← getLCtx
+  let env ← getEnv
+  let found ← IO.mkRef (none : Option Blocker)
+  forEachExpr' c fun a => do
+    if (← found.get).isSome then return false
+    if a.isApp && isCaseApp env a then
+      if let some b ← blockerOf? a 8 then
+        let ok := match b with
+          | .var x => lctx₀.contains x
+          | .decide p => !p.hasAnyFVar fun x => !lctx₀.contains x
+        if ok then
+          found.set (some b)
+          return false
+    return true
+  found.get
+
 /-- What the real computation of `e` (`realComp`) is stuck on: with `eager`, read through its
-definitions (`blockerOf?`); otherwise at the first stuck case analysis (`isCaseApp`) that the
-simplified computation shows, outermost first. -/
+definitions (`blockerOf?`); otherwise at the first stuck case analysis that the simplified
+computation shows (`caseBlocker?`). -/
 def firstBlocker? (e : Expr) (eager : Bool) : MetaM (Option Blocker) := do
   let c := realComp (← instantiateMVars e)
   if eager then return ← blockerOf? c 16
-  for a in ← caseApps c do
-    if let some b ← blockerOf? a 8 then return some b
-  return none
+  caseBlocker? c
 
 /-- Case analysis on `x` in `g`, the new goals tagged by the constructors. -/
 def casesTagged (g : MVarId) (x : FVarId) : MetaM (List MVarId) := do
@@ -410,8 +557,10 @@ partial def solveLeaf (st : LeafSteps) (g : MVarId) (depth : Nat) : TacticM (Lis
     if let some subs ← splitBlocker? g true then
       trace[sys_step_map] "{tag}: split on the real step"
       return (← subs.mapM fun g => solveLeaf st g (depth - 1)).flatten
+  let hb ← IO.getNumHeartbeats
   let gs ← runOn g st.simp
-  trace[sys_step_map] "{tag}: simp, {gs.length} left"
+  let hb := ((← IO.getNumHeartbeats) - hb) / 1000
+  trace[sys_step_map] "{tag}: simp, {gs.length} left, {hb} heartbeats"
   let [g] := gs | return gs
   if depth = 0 then return [g]
   if let some subs ← splitBlocker? g false then
@@ -427,11 +576,13 @@ partial def solveLeaf (st : LeafSteps) (g : MVarId) (depth : Nat) : TacticM (Lis
 def maxDepth : Nat := 12
 
 /-- The per-event obligation `g` (`pres` or `step`): introduce the state, the event and the
-invariant, destructure the state (by `pat`, or over pairs), split the event on its ports, and
-run `solveLeaf` on each case. -/
+invariant, destructure the state (by `pat`, or over pairs), split the event on its ports, close
+a port by one of the proofs `ports` of its obligation (`Sys.StepPort`), and run `solveLeaf` on
+each other case. -/
 def perEvent (st : LeafSteps) (pat : Option (TSyntax `Lean.Parser.Tactic.rcasesPatMed))
-    (g : MVarId) : TacticM (List MVarId) := do
+    (g : MVarId) (ports : Array Term := #[]) : TacticM (List MVarId) := do
   let tag := (← g.getTag).eraseMacroScopes
+  let g ← g.deltaTarget (· == ``CatCrypt.Crypto.UCTransparent.Sys.StepPort)
   let (#[t, _, _], g) ← g.introN 3 [`sysState, `sysEvent, `inv] | failure
   g.setTag tag
   let gs ← match pat with
@@ -445,7 +596,15 @@ def perEvent (st : LeafSteps) (pat : Option (TSyntax `Lean.Parser.Tactic.rcasesP
   let gs ← gs.mapM fun g => do
     let some e := (← g.getDecl).lctx.findFromUserName? `sysEvent | return [g]
     splitPorts g e.fvarId
-  return (← gs.flatten.mapM fun g => solveLeaf st g maxDepth).flatten
+  let mut out := []
+  for g in gs.flatten do
+    let mut closed := false
+    for h in ports do
+      if (← runOn g (evalTactic (← `(tactic| exact $h _ _ ‹_›)))).isEmpty then
+        closed := true
+        break
+    unless closed do out := out ++ (← solveLeaf st g maxDepth)
+  return out
 
 /-- Reduce a goal `Realizes R I (fun _ _ => 0)` or `RealizesSim R I S (fun _ _ => 0)` to
 `R ≈ₜ I`, resp. `R ≈ₜ S.withSub I`. -/
@@ -462,13 +621,31 @@ def simpArgs (args : Array (TSyntax `Lean.Parser.Tactic.simpLemma)) :
   args ++ sysStepSimps.map fun n => ⟨mkNode ``Lean.Parser.Tactic.simpLemma
     #[mkNullNode, mkNullNode, mkIdent n]⟩
 
-/-- The steps of a leaf of `sys_step_map` for the simp arguments `all`: `simp_all` with them,
-and the pruning by the invariant simplified with them. -/
+/-- The steps of a leaf of `sys_step_map` for the simp arguments `all`: the narrow
+normalisation `simp only [all]` of the target with the evaluation pre-procedures
+(`evalSimprocs`); when it leaves the goal open or changes nothing, `simp_all [all]` with them;
+and the pruning by the invariant simplified with `all`. A step that changes nothing fails. -/
 def leafSteps (all : Array (TSyntax `Lean.Parser.Tactic.simpLemma)) : TacticM LeafSteps := do
-  let stx ← `(tactic| simp [$all,*])
-  let { ctx, simprocs, .. } ← mkSimpContext stx (eraseLocal := false)
-  return { simp := evalTactic (← `(tactic| simp_all [$all,*]))
-           prune := pruneInv ctx simprocs }
+  let ev ← evalSimprocs
+  let { ctx := ctxN, simprocs := spN, .. } ←
+    mkSimpContext (← `(tactic| simp only [$all,*])) (eraseLocal := false)
+  let { ctx, simprocs, .. } ← mkSimpContext (← `(tactic| simp [$all,*])) (eraseLocal := false)
+  let spN := spN.push ev
+  let sp := simprocs.push ev
+  let simp : TacticM Unit := do
+    let g ← getMainGoal
+    let r ← try some <$> simpGoal g ctxN spN catch _ => pure none
+    let g₁ ← match r with
+      | some (none, _) => replaceMainGoal []; return
+      | some (some (_, g₁), _) => pure g₁
+      | none => pure g
+    let (r, _) ← simpAll g₁ ctx sp
+    match r with
+    | none => replaceMainGoal []
+    | some g₂ =>
+      if g₂ == g then throwError "sys_step_map: no progress"
+      replaceMainGoal [g₂]
+  return { simp, prune := pruneInv ctx simprocs }
 
 /-- The per-event part of `sys_step_map` on a goal
 `∀ t e, Inv t → ∀ q, IsOutcome (R.step t e) q → Inv q.1` (the preservation of an invariant):
@@ -477,12 +654,21 @@ syntax (name := sysStepPres) "sys_step_pres"
   (" using " "[" Lean.Parser.Tactic.simpLemma,* "]")? (" with " Lean.Parser.Tactic.rcasesPatMed)? :
   tactic
 
+/-- `sys_step_port using [d₁, …] with pat` proves the step obligation of one port
+(`Sys.StepPort R I Inv f ι`) by the per-event part of `sys_step_map`; stated as its own
+declaration, its heartbeats are counted apart from the other ports. -/
+syntax (name := sysStepPort) "sys_step_port"
+  (" using " "[" Lean.Parser.Tactic.simpLemma,* "]")? (" with " Lean.Parser.Tactic.rcasesPatMed)? :
+  tactic
+
 /-- `sys_step_map f Inv using [d₁, …] with pat` proves trace equivalence (or a realization at
 distance `0`) by the step map `f` on the invariant `Inv`; see the module docstring. With
-`(pres := h)`, the preservation of the invariant is `h`. The open leaves are left as goals
-tagged `init_inv`, `init_map`, `pres.…` and `step.…`. -/
+`(pres := h)`, the preservation of the invariant is `h`; with `(ports := [h₁, …])`, the step
+obligation of the ports that `hᵢ : Sys.StepPort R I Inv f ι` covers is `hᵢ`. The open leaves
+are left as goals tagged `init_inv`, `init_map`, `pres.…` and `step.…`. -/
 syntax (name := sysStepMap) "sys_step_map " term:max ppSpace term:max
-  (" (" &"pres" " := " term ")")?
+  (atomic(" (" &"pres") " := " term ")")?
+  (atomic(" (" &"ports") " := " "[" term,* "]" ")")?
   (" using " "[" Lean.Parser.Tactic.simpLemma,* "]")? (" with " Lean.Parser.Tactic.rcasesPatMed)? :
   tactic
 
@@ -502,11 +688,21 @@ def clauses (u w : Syntax) :
   let gs ← perEvent st pat g
   setGoals (gs ++ rest)
 
+@[tactic sysStepPort] def evalSysStepPort : Tactic := fun stx => do
+  let (all, pat) := clauses stx[1] stx[2]
+  let g :: rest ← getGoals | throwError "no goals to be proved"
+  let st ← leafSteps all
+  g.setTag `step
+  let gs ← perEvent st pat g
+  setGoals (gs ++ rest)
+
 @[tactic sysStepMap] def evalSysStepMap : Tactic := fun stx => do
   let f : Term := ⟨stx[1]⟩
   let inv : Term := ⟨stx[2]⟩
   let pres? : Option Term := if stx[3].isNone then none else some ⟨stx[3][3]⟩
-  let (all, pat) := clauses stx[4] stx[5]
+  let ports : Array Term :=
+    if stx[4].isNone then #[] else stx[4][4].getSepArgs.map (⟨·⟩)
+  let (all, pat) := clauses stx[5] stx[6]
   let initTac : TacticM Unit := do
     evalTactic (← `(tactic|
       first | rfl | trivial | (simp [$all,*]; done) | (simp_all [$all,*]; done)))
@@ -530,7 +726,7 @@ def clauses (u w : Syntax) :
   let gi ← runOn gi initTac
   let gm ← runOn gm initTac
   let gp ← gp.mapM fun g => do g.setTag `pres; perEvent st pat g
-  let gst ← perEvent st pat gst
+  let gst ← perEvent st pat gst ports
   setGoals (gi ++ gm ++ gp.flatten ++ gst ++ rest)
 
 /-! ### Congruence and chains -/

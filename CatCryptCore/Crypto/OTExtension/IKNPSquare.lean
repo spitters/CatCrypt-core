@@ -369,7 +369,7 @@ theorem crR_traceEq_sim (H : Fin m → (Fin κ → Bool) → M) :
   sys_step_map (fun t => (((), ((), none)), t.2)) (fun t => t.1.isSome → t.2.2 = true)
     (pres := trigR_lazy_pres _ _) using [crR, trigR, simProtR, FOTr, fotSendSys, fotRecvSys,
       recvStep, fotSend, simRPost, postSim]
-  rename_i r x _
+  rename_i r x
   rw [← crRView_sample H x r fun w => ((((), (), none), some x, true), Sum.inr (some w))]
   simp [SPComp.sample_prod_eq, SPComp.bind_assoc, SPComp.pure_bind]
 
