@@ -303,6 +303,8 @@ public import CatCryptCore.Crypto.Messaging.FSAEAD
 public import CatCryptCore.Crypto.Messaging.DoubleRatchet
 public import CatCryptCore.Crypto.Signal.FSAEAD
 public import CatCryptCore.Crypto.Signal.DoubleRatchet_CKA
+public import CatCryptCore.Crypto.Signal.DoubleRatchet.ChainKDF
+public import CatCryptCore.Crypto.Signal.DoubleRatchet.Primitives
 public import CatCryptCore.Crypto.Signal.Zkgroup.Lizard
 public import CatCryptCore.Crypto.Signal.Zkgroup.PokshoStatements
 public import CatCryptCore.Crypto.Signal.Zkgroup.XEdDSA
