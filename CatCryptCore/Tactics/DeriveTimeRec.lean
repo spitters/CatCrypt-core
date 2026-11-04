@@ -606,6 +606,7 @@ def elabDeriveTimeRec : CommandElab := fun stx => do
         let unfoldB ← unfoldBound τHead
         `(tactic| ($unfoldC:tactic
                    $unfoldB:tactic
+                   try dsimp only
                    time_rec_trees
                    first | time_bound | (split_ifs <;> time_bound) | time_bound))
 where
