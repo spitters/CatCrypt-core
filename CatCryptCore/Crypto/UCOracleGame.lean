@@ -7,6 +7,7 @@ module
 
 public import CatCryptCore.Crypto.UCTransparent
 public import CatCryptCore.Crypto.UCChannel
+public import CatCryptCore.Crypto.UCFeedbackLaws
 public import CatCryptCore.Crypto.OracleSimulation
 public import CatCryptCore.Crypto.Assumptions.AEAD
 public import CatCryptCore.NonUniform.UnaryRules
@@ -24,6 +25,11 @@ at every environment `Z`, the game advantage of the compiled adversary of `Z`.
 
 ## Model
 
+* `Sys.DelayedDraw L W μ Inv D` — the system `L` draws a key of distribution `μ`, or parts of
+  it, later than the systems `W k` with the key `k` drawn at the start; `D s` is the conditional
+  distribution of the key and of the state of `W` given the state `s` of `L`. A draw at the first
+  use, several keys drawn at their own first uses, and a draw through a bijection chosen at the
+  state of the draw are delayed draws.
 * `KeyedSys K τ E O` — a system whose steps read a key of type `K`: `step k` for the
   activations that read the key, `step₀` for those that do not, and `uses t e` saying which.
   `KeyedSys.withKey S k` is the system with the key fixed to `k`; `KeyedSys.lazy S μ` is the
@@ -43,6 +49,10 @@ at every environment `Z`, the game advantage of the compiled adversary of `Z`.
 
 ## Main results
 
+* `Sys.DelayedDraw.view_eq` (delayed draw) — the view of `L` is the average over `k ← μ` of the
+  views of `W k`.
+* `Sys.delayedDraw_ofSlot` — a key drawn into a slot of the state at its first use is a
+  delayed draw; `KeyedSys.delayedDraw_lazy` — so is the lazily keyed system.
 * `KeyedSys.view_lazy` (lazy to eager sampling) — when the activations that do not read the
   key step as `step₀`, the view of the lazily keyed system is the average over `k ← μ` of the
   views of the system with key `k`: the sample moves to the start of the run at distance 0.
@@ -73,6 +83,148 @@ namespace CatCrypt.Crypto.UCTransparent
 
 open CatCrypt.Core CatCrypt.Prob CatCrypt.Crypto CatCrypt.NonUniform CatCrypt.Crypto.UCConcrete
 open scoped ENNReal
+
+/-! ## Delayed draws -/
+
+namespace Sys
+
+variable {K σ τ E O ζ : Type}
+
+/-- **A delayed draw.** The system `L` draws a key of distribution `μ`, or a part of it, later
+than the start of the run, and `W k` is the system with the key `k` drawn at the start. `D s` is
+the distribution of the key and of the state of `W` given the state `s` of `L`: the conditional
+distribution of what `L` has not drawn yet at `s`, the state of `W` being determined by `s` and
+the key. On the states of the invariant `Inv`, drawing from `D` after a step of `L` gives the
+key, the next state of `W` and the output with the distribution of a step of `W` after drawing
+from `D`. A draw at the first use of a key, several keys each drawn at its own first use, and a
+draw through a bijection that depends on the state at the draw are delayed draws. -/
+structure DelayedDraw (L : Sys σ E O) (W : K → Sys τ E O) (μ : PMF K) (Inv : σ → Prop)
+    (D : σ → SDistr (K × τ)) : Prop where
+  /-- The invariant holds initially. -/
+  init_inv : Inv L.init
+  /-- Initially nothing is drawn: the key has distribution `μ`, and `W k` is at its start. -/
+  init : D L.init = (ofPMF μ).bind fun k => SDistr.pure (k, (W k).init)
+  /-- The conditional distributions are total. -/
+  mass : ∀ s, SDistr.mass (D s) = 1
+  /-- The invariant holds at the possible outcomes of every step from a state satisfying it. -/
+  pres : ∀ s e, Inv s → ∀ q, IsOutcome (L.step s e) q → Inv q.1
+  /-- A step of `L` followed by the draw from `D` is the draw from `D` followed by a step of
+  `W`. -/
+  step : ∀ s e, Inv s →
+    SPComp.bind (L.step s e) (fun q => SPComp.map (fun kt => (kt, q.2)) (sampleFrom (D q.1))) =
+      SPComp.bind (sampleFrom (D s)) fun kt =>
+        SPComp.map (fun p => ((kt.1, p.1), p.2)) ((W kt.1).step kt.2 e)
+
+/-- **A delayed draw on loops.** From a state of the invariant, the run of `L` followed by the
+draw from `D` at its last state is the draw from `D` followed by the run of `W` with the key
+drawn. -/
+theorem DelayedDraw.loop {L : Sys σ E O} {W : K → Sys τ E O} {μ : PMF K} {Inv : σ → Prop}
+    {D : σ → SDistr (K × τ)} (h : DelayedDraw L W μ Inv D) (Z : Strat ζ E O) :
+    ∀ (n : ℕ) (z : ζ) (s : σ) (b : Bool), Inv s →
+      SPComp.bind (loop L (fun _ => false) Z n (z, s, b))
+          (fun c => SPComp.map (fun kt => (kt.1, c.1, kt.2, c.2.2)) (sampleFrom (D c.2.1))) =
+        SPComp.bind (sampleFrom (D s)) fun kt =>
+          SPComp.map (fun c => (kt.1, c)) (loop (W kt.1) (fun _ => false) Z n (z, kt.2, b)) := by
+  have hc : ∀ s, SPComp.IsPure (sampleFrom (D s)) := fun s => sampleFrom_isPure _
+  intro n
+  induction n with
+  | zero =>
+    intro z s b _
+    simp only [UCTransparent.loop, SPComp.pure_bind, SPComp.map]
+  | succ n ih =>
+    intro z s b hs
+    have key : ∀ a : ζ × E,
+        SPComp.bind (L.step s a.2) (fun p => SPComp.bind (Z.obs a.1 p.2) fun z' =>
+          SPComp.bind (UCTransparent.loop L (fun _ => false) Z n (z', p.1, b || false))
+            fun c => SPComp.map (fun kt => (kt.1, c.1, kt.2, c.2.2)) (sampleFrom (D c.2.1))) =
+        SPComp.bind (sampleFrom (D s)) fun kt =>
+          SPComp.bind ((W kt.1).step kt.2 a.2) fun p => SPComp.bind (Z.obs a.1 p.2) fun z' =>
+            SPComp.map (fun c => (kt.1, c))
+              (UCTransparent.loop (W kt.1) (fun _ => false) Z n (z', p.1, b || false)) := by
+      intro a
+      calc _ = SPComp.bind (L.step s a.2) (fun p => SPComp.bind (sampleFrom (D p.1)) fun kt =>
+              SPComp.bind (Z.obs a.1 p.2) fun z' => SPComp.map (fun c => (kt.1, c))
+                (UCTransparent.loop (W kt.1) (fun _ => false) Z n (z', kt.2, b || false))) := by
+            refine bind_congr_isOutcome fun p hp => ?_
+            simp only [ih _ _ _ (h.pres s a.2 hs p hp)]
+            exact (SPComp.isPure_bind_comm_left _ _ _ (hc _)).symm
+        _ = SPComp.bind (SPComp.bind (L.step s a.2) fun q =>
+              SPComp.map (fun kt => (kt, q.2)) (sampleFrom (D q.1))) fun x =>
+                SPComp.bind (Z.obs a.1 x.2) fun z' => SPComp.map (fun c => (x.1.1, c))
+                  (UCTransparent.loop (W x.1.1) (fun _ => false) Z n (z', x.1.2, b || false)) := by
+            simp only [SPComp.map, SPComp.bind_assoc, SPComp.pure_bind]
+        _ = _ := by
+            rw [h.step s a.2 hs]
+            simp only [SPComp.map, SPComp.bind_assoc, SPComp.pure_bind]
+    simp only [UCTransparent.loop, SPComp.bind_assoc, key]
+    refine (SPComp.isPure_bind_comm_left _ _ _ (hc _)).symm.trans ?_
+    simp only [SPComp.map, SPComp.bind_assoc]
+
+/-- **Delayed draw.** The view of a system with a delayed draw of a key of distribution `μ` is
+the average over `k ← μ` of the views of the system with the key `k` drawn at the start. -/
+theorem DelayedDraw.view_eq {L : Sys σ E O} {W : K → Sys τ E O} {μ : PMF K} {Inv : σ → Prop}
+    {D : σ → SDistr (K × τ)} (h : DelayedDraw L W μ Inv D) (Z : Strat ζ E O) :
+    view L Z = SPComp.bind (sampleFrom (ofPMF μ)) fun k => view (W k) Z := by
+  have hl := congrArg (SPComp.map fun x => x.2.1)
+    (h.loop Z Z.rounds Z.init L.init false h.init_inv)
+  simp only [SPComp.map, SPComp.bind_assoc, SPComp.pure_bind, dead_sampleFrom (h.mass _), h.init,
+    ← sampleFrom_bind_sampleFrom, sampleFrom_pure] at hl
+  simp only [view, run, SPComp.map, hl]
+
+/-- The conditional distribution of the key and the state given a state with an optional key
+slot: the key in the slot, or a draw from `μ` with an empty slot. -/
+noncomputable def slotCond (μ : PMF K) (slot : σ → Option K) (s : σ) : SDistr (K × σ) :=
+  match slot s with
+  | some k => SDistr.pure (k, s)
+  | none => (ofPMF μ).bind fun k => SDistr.pure (k, s)
+
+/-- **A key drawn into the state is a delayed draw.** The system `L` holds its key in the slot
+`slot` of its state, `W k` is `L` with the key `k` given in place of each draw. With the key `k`
+in the slot, `L` steps as `W k` and keeps `k`; with an empty slot, an activation either draws
+the key from `μ` and steps as `W k` with the key `k` put in the slot, or steps as every `W k`
+and leaves the slot empty. -/
+theorem delayedDraw_ofSlot (L : Sys σ E O) (W : K → Sys σ E O) (μ : PMF K)
+    (slot : σ → Option K) (hinit : ∀ k, (W k).init = L.init)
+    (hsome : ∀ s k e, slot s = some k → L.step s e = (W k).step s e)
+    (hkeep : ∀ s k e, slot s = some k → ∀ q, IsOutcome ((W k).step s e) q → slot q.1 = some k)
+    (hnone : ∀ s e, slot s = none →
+      (L.step s e = SPComp.bind (sampleFrom (ofPMF μ)) (fun k => (W k).step s e) ∧
+        ∀ k q, IsOutcome ((W k).step s e) q → slot q.1 = some k) ∨
+      ((∀ k, L.step s e = (W k).step s e) ∧
+        ∀ q, IsOutcome (L.step s e) q → slot q.1 = none)) (h₀ : slot L.init = none) :
+    DelayedDraw L W μ (fun _ => True) (slotCond μ slot) where
+  init_inv := trivial
+  init := by simp only [slotCond, h₀, hinit]
+  mass s := by
+    unfold slotCond
+    split
+    · exact SDistr.mass_pure _
+    · rw [← isLossless_sampleFrom_iff, ← sampleFrom_bind_sampleFrom]
+      exact Unary.lossless_bind (isLossless_sampleFrom_ofPMF μ) fun _ =>
+        (isLossless_sampleFrom_iff _).mpr (SDistr.mass_pure _)
+  pres _ _ _ _ _ := trivial
+  step s e _ := by
+    rcases hs : slot s with _ | k
+    · rcases hnone s e hs with ⟨hL, hk⟩ | ⟨hL, hk⟩
+      · rw [hL, SPComp.bind_assoc]
+        simp only [slotCond, hs, ← sampleFrom_bind_sampleFrom, sampleFrom_pure, SPComp.map,
+          SPComp.bind_assoc, SPComp.pure_bind]
+        congr 1; funext k
+        exact bind_congr_isOutcome fun q hq => by simp only [hk k q hq, sampleFrom_pure,
+          SPComp.pure_bind]
+      · rw [bind_congr_isOutcome (g := fun q => SPComp.bind (sampleFrom (ofPMF μ)) fun k =>
+            SPComp.pure ((k, q.1), q.2)) fun q hq => by
+          simp only [slotCond, hk q hq, ← sampleFrom_bind_sampleFrom, sampleFrom_pure,
+            SPComp.map, SPComp.bind_assoc, SPComp.pure_bind]]
+        simp only [slotCond, hs, ← sampleFrom_bind_sampleFrom, sampleFrom_pure, SPComp.map,
+          SPComp.bind_assoc, SPComp.pure_bind, ← hL]
+        exact (SPComp.isPure_bind_comm_left _ _ _ (sampleFrom_isPure _)).symm
+    · rw [hsome s k e hs, bind_congr_isOutcome (g := fun q => SPComp.pure ((k, q.1), q.2))
+        fun q hq => by simp only [slotCond, hkeep s k e hs q hq, sampleFrom_pure, SPComp.map,
+          SPComp.pure_bind]]
+      simp only [slotCond, hs, sampleFrom_pure, SPComp.map, SPComp.pure_bind]
+
+end Sys
 
 /-! ## Lazy and eager sampling of a key in a system run -/
 
@@ -133,76 +285,46 @@ theorem lazy_step_none_of_not_uses (S : KeyedSys K τ E O) (μ : PMF K) {t : τ}
       SPComp.bind (S.step₀ t e) fun p => SPComp.pure ((none, p.1), p.2) := by
   simp [lazy, lazyStep, hu]
 
-/-- The configuration of a run of the lazily keyed system without the key. -/
-def forget (c : ζ × (Option K × τ) × Bool) : ζ × τ × Bool := (c.1, c.2.1.2, c.2.2)
+/-- The conditional distribution of the key and the state given a state of the lazily keyed
+system: the key held, or a draw from `μ` without key. -/
+noncomputable def lazyCond (μ : PMF K) : Option K × τ → SDistr (K × τ)
+  | (some k, t) => SDistr.pure (k, t)
+  | (none, t) => (ofPMF μ).bind fun k => SDistr.pure (k, t)
 
-/-- After the key `k` is sampled, the run of the lazily keyed system is the run of the system
-with key `k`. -/
-theorem loop_lazy_some (S : KeyedSys K τ E O) (μ : PMF K) (Z : Strat ζ E O) (k : K) :
-    ∀ (n : ℕ) (z : ζ) (t : τ) (b : Bool),
-      SPComp.bind (loop (S.lazy μ) (fun _ => false) Z n (z, (some k, t), b))
-          (fun c => SPComp.pure (forget c)) =
-        loop (S.withKey k) (fun _ => false) Z n (z, t, b) := by
-  intro n
-  induction n with
-  | zero => intro z t b; simp [loop, forget]
-  | succ n ih =>
-    intro z t b
-    simp only [loop, SPComp.bind_assoc]
-    congr 1; funext a
-    simp only [lazy, lazyStep, withKey, SPComp.bind_assoc, SPComp.pure_bind]
-    congr 1; funext p
-    congr 1; funext z'
-    exact ih _ _ _
-
-/-- **Lazy to eager sampling on loops.** When the activations that do not read the key step as
-`step₀`, the run of the lazily keyed system from a state without key is the average over
-`k ← μ` of the runs of the system with key `k`. -/
-theorem loop_lazy_none (S : KeyedSys K τ E O) (μ : PMF K)
-    (hind : ∀ k t e, S.uses t e = false → S.step k t e = S.step₀ t e) (Z : Strat ζ E O) :
-    ∀ (n : ℕ) (z : ζ) (t : τ) (b : Bool),
-      SPComp.bind (loop (S.lazy μ) (fun _ => false) Z n (z, (none, t), b))
-          (fun c => SPComp.pure (forget c)) =
-        SPComp.bind (sampleFrom (ofPMF μ)) fun k =>
-          loop (S.withKey k) (fun _ => false) Z n (z, t, b) := by
-  have hc : SPComp.IsPure (sampleFrom (ofPMF μ)) := sampleFrom_isPure _
-  intro n
-  induction n with
-  | zero =>
-    intro z t b
-    simp only [loop, SPComp.pure_bind, forget]
-    exact (dead_sampleFrom (mass_ofPMF μ) _).symm
-  | succ n ih =>
-    intro z t b
-    simp only [loop, SPComp.bind_assoc]
-    refine Eq.trans ?_ (SPComp.isPure_bind_comm_left _ _ _ hc).symm
-    congr 1; funext a
-    cases hu : S.uses t a.2
-    · rw [lazy_step_none_of_not_uses S μ hu]
-      simp only [withKey_step, hind _ _ _ hu, SPComp.bind_assoc, SPComp.pure_bind, ih]
-      refine Eq.trans ?_ (SPComp.isPure_bind_comm_left _ _ _ hc).symm
-      congr 1; funext p
-      exact (SPComp.isPure_bind_comm_left _ _ _ hc).symm
-    · rw [lazy_step_none_of_uses S μ hu]
-      simp only [withKey_step, SPComp.bind_assoc, SPComp.pure_bind]
-      congr 1; funext k; congr 1; funext p; congr 1; funext z'
-      exact loop_lazy_some S μ Z k n _ _ _
+/-- **The draw at the first use is a delayed draw**, when the activations that do not read the
+key step as `step₀`. -/
+theorem delayedDraw_lazy (S : KeyedSys K τ E O) (μ : PMF K)
+    (hind : ∀ k t e, S.uses t e = false → S.step k t e = S.step₀ t e) :
+    Sys.DelayedDraw (S.lazy μ) S.withKey μ (fun _ => True) (lazyCond μ) where
+  init_inv := trivial
+  init := rfl
+  mass := by
+    rintro ⟨_ | k, t⟩
+    · rw [lazyCond, ← isLossless_sampleFrom_iff, ← sampleFrom_bind_sampleFrom]
+      exact Unary.lossless_bind (isLossless_sampleFrom_ofPMF μ) fun _ =>
+        (isLossless_sampleFrom_iff _).mpr (SDistr.mass_pure _)
+    · simp [lazyCond]
+  pres _ _ _ _ _ := trivial
+  step := by
+    rintro ⟨_ | k, t⟩ e -
+    · simp only [lazyCond, ← sampleFrom_bind_sampleFrom, sampleFrom_pure, SPComp.map,
+        SPComp.bind_assoc, SPComp.pure_bind, withKey_step]
+      cases hu : S.uses t e
+      · rw [lazy_step_none_of_not_uses S μ hu]
+        simp only [hind _ _ _ hu, SPComp.bind_assoc, SPComp.pure_bind,
+          ← sampleFrom_bind_sampleFrom, sampleFrom_pure]
+        exact (SPComp.isPure_bind_comm_left _ _ _ (sampleFrom_isPure _)).symm
+      · rw [lazy_step_none_of_uses S μ hu]
+        simp only [SPComp.bind_assoc, SPComp.pure_bind, sampleFrom_pure]
+    · simp [lazy, lazyStep, lazyCond, SPComp.map]
 
 /-- **Lazy to eager sampling.** When the activations that do not read the key step as `step₀`,
 the view of the system that samples its key from `μ` at the first activation that reads it is
 the average over `k ← μ` of the views of the system with key `k`. -/
 theorem view_lazy (S : KeyedSys K τ E O) (μ : PMF K)
     (hind : ∀ k t e, S.uses t e = false → S.step k t e = S.step₀ t e) (Z : Strat ζ E O) :
-    view (S.lazy μ) Z = SPComp.bind (sampleFrom (ofPMF μ)) fun k => view (S.withKey k) Z := by
-  have h := loop_lazy_none S μ hind Z Z.rounds Z.init S.init false
-  have hfst : view (S.lazy μ) Z = SPComp.map Prod.fst
-      (SPComp.bind (loop (S.lazy μ) (fun _ => false) Z Z.rounds (Z.init, (none, S.init), false))
-        fun c => SPComp.pure (forget c)) := by
-    simp only [view, run, SPComp.map, SPComp.bind_assoc, SPComp.pure_bind, forget]
-    rfl
-  rw [hfst, h]
-  simp only [view, run, SPComp.map, SPComp.bind_assoc]
-  rfl
+    view (S.lazy μ) Z = SPComp.bind (sampleFrom (ofPMF μ)) fun k => view (S.withKey k) Z :=
+  (delayedDraw_lazy S μ hind).view_eq Z
 
 /-! ### Keyed systems on two ports -/
 
