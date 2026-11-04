@@ -7,6 +7,7 @@ module
 
 public import CatCryptCore.Crypto.KEM.FIPS203KEM
 public import CatCryptCore.Crypto.KEM.FOTransform
+public import CatCryptCore.Crypto.LazyTableReindex
 
 /-!
 # IND-CCA security of the ML-KEM transform in the random-oracle model
@@ -676,56 +677,6 @@ structure SplitTab where
 /-- The empty tables. -/
 def SplitTab.empty : SplitTab M C R K Hash Z := ⟨fun _ => none, fun _ => none, fun _ => none⟩
 
-/-- Answer from the table `tab` at `i` with ghost state `g`, sampling and recording a
-fresh value; `set` stores the table back into the state and `w` shapes the answer. -/
-noncomputable def lazyRead {I V S G A : Type} [DecidableEq I] [Fintype V] [Nonempty V]
-    (tab : I → Option V) (i : I) (set : (I → Option V) → S) (w : V → A) (g : G) :
-    PMF (A × (S × G)) :=
-  match tab i with
-  | some v => PMF.pure (w v, (set tab, g))
-  | none => (PMF.uniformFintype V).map fun v =>
-      (w v, (set (Function.update tab i (some v)), g))
-
-omit [Fintype M] [Nonempty M] [Fintype Z] [Nonempty Z] [Nonempty R] [Nonempty K] [DecidableEq C]
-  [DecidableEq M] [DecidableEq Hash] [DecidableEq Z] [Fintype R] [Fintype K] in
-theorem lazyRead_eq {I V S G A : Type} [DecidableEq I] [Fintype V] [Nonempty V]
-    (tab : I → Option V) (i : I) (set : (I → Option V) → S) (w : V → A) (g : G) :
-    lazyRead tab i set w g = (roOracle tab i).map fun x => (w x.1, (set x.2, g)) := by
-  unfold lazyRead roOracle
-  cases tab i <;> simp [PMF.pure_map, PMF.map_comp, Function.comp_def]
-
-omit [Fintype M] [Nonempty M] [Fintype Z] [Nonempty Z] [Nonempty R] [Nonempty K] [DecidableEq C]
-  [DecidableEq M] [DecidableEq Hash] [DecidableEq Z] [Fintype R] [Fintype K] in
-theorem lazyRead_map_ghost {I V S G G' A : Type} [DecidableEq I] [Fintype V] [Nonempty V]
-    (φ : G → G') (tab : I → Option V) (i : I) (set : (I → Option V) → S) (w : V → A) (g : G) :
-    (lazyRead tab i set w g).map (Prod.map id (Prod.map id φ)) = lazyRead tab i set w (φ g) := by
-  unfold lazyRead; split <;> simp [PMF.pure_map, PMF.map_comp, Function.comp_def]
-
-omit [Fintype M] [Nonempty M] [Fintype Z] [Nonempty Z] [Nonempty R] [Nonempty K] [DecidableEq C]
-  [DecidableEq M] [DecidableEq Hash] [DecidableEq Z] [Fintype R] [Fintype K] in
-theorem lazyRead_map_const {I V S G G' A : Type} [DecidableEq I] [Fintype V] [Nonempty V]
-    (tab : I → Option V) (i : I) (set : (I → Option V) → S) (w : V → A) (g : G) (g' : G') :
-    (lazyRead tab i set w g).map (fun y => (y.1, (y.2.1, g'))) = lazyRead tab i set w g' := by
-  unfold lazyRead; split <;> simp [PMF.pure_map, PMF.map_comp, Function.comp_def]
-
-omit [Fintype M] [Nonempty M] [Fintype Z] [Nonempty Z] [Nonempty R] [Nonempty K] [DecidableEq C]
-  [DecidableEq M] [DecidableEq Hash] [DecidableEq Z] [Fintype R] [Fintype K] in
-theorem lazyRead_apply_ghost_ne {I V S G A : Type} [DecidableEq I] [Fintype V] [Nonempty V]
-    (tab : I → Option V) (i : I) (set : (I → Option V) → S) (w : V → A) (g : G) (a : A) (s : S)
-    (g' : G) (h : g ≠ g') : lazyRead tab i set w g (a, (s, g')) = 0 := by
-  unfold lazyRead; split
-  · simp [PMF.pure_apply, Ne.symm h]
-  · rw [PMF.map_apply]; simp [Ne.symm h]
-
-omit [Fintype M] [Nonempty M] [Fintype Z] [Nonempty Z] [Nonempty R] [Nonempty K] [DecidableEq C]
-  [DecidableEq M] [DecidableEq Hash] [DecidableEq Z] [Fintype R] [Fintype K] in
-theorem mem_support_lazyRead_ghost {I V S G A : Type} [DecidableEq I] [Fintype V] [Nonempty V]
-    {tab : I → Option V} {i : I} {set : (I → Option V) → S} {w : V → A} {g : G}
-    {x : A × (S × G)} (hx : x ∈ (lazyRead tab i set w g).support) : x.2.2 = g := by
-  by_contra h
-  obtain ⟨a, s, g'⟩ := x
-  exact (PMF.mem_support_iff _ _).mp hx (lazyRead_apply_ghost_ne _ _ _ _ _ _ _ _ (Ne.symm h))
-
 omit [Fintype M] [Nonempty M] [Fintype Z] [Nonempty Z] [Nonempty R] [Nonempty K] [DecidableEq C]
   [DecidableEq M] [DecidableEq Hash] [DecidableEq Z] [Fintype R] [Fintype K] in
 /-- A run of `lazyTab` against any oracle is `lazyRead` with the oracle state as
@@ -736,7 +687,8 @@ theorem run_lazyTab {D' R' U I V S A : Type} [DecidableEq I] [Fintype V] [Nonemp
     (OracleAdv.run O (lazyTab tab i set w) u).map (fun x => (x.1.1, (x.1.2, x.2))) =
       lazyRead tab i set w u := by
   unfold lazyTab lazyRead
-  split <;> simp [PMF.pure_map, PMF.map_bind]; rfl
+  split <;> rename_i h <;> simp [h, PMF.pure_map, PMF.map_bind]
+  rfl
 
 variable (P : Scheme PK SK M C R) (hpk : PK → Hash) (f : M → R)
 
@@ -819,8 +771,8 @@ otherwise; `J` at `q` is read from the table indexed by `q.2` when `selJ`, and f
 the table of `J`-queries otherwise. -/
 noncomputable def table (sk : SK) (pk : PK) (z : Z) (st : SimStateF M C R K Hash Z) :
     SplitTab M C R K Hash Z :=
-  ⟨fun m => if selK P f sk pk m then st.LD (cOf P f pk m) else st.LQ m, st.LO,
-    fun q => if selJ P f sk pk z q then st.LD q.2 else st.LJ q⟩
+  ⟨reindexTable (selK P f sk pk) (cOf P f pk) st.LD st.LQ, st.LO,
+    reindexTable (selJ P f sk pk z) Prod.snd st.LD st.LJ⟩
 
 omit [Fintype M] [Nonempty M] [Fintype Z] [Nonempty Z] [Nonempty R] [Nonempty K] [Fintype R]
   [Fintype K] [DecidableEq C] in
@@ -853,30 +805,16 @@ theorem table_updateLD_of_invalid (sk : SK) (pk : PK) (z : Z) (st : SimStateF M 
     (c : C) (k : K) (hc : validB P f sk pk c = false) :
     table P f sk pk z { st with LD := Function.update st.LD c (some k) } =
       { table P f sk pk z st with TJ := Function.update (table P f sk pk z st).TJ (z, c) (some k) } := by
-  simp only [table, SplitTab.mk.injEq]
-  refine ⟨funext fun m => ?_, trivial, funext fun q => ?_⟩
-  · by_cases hs : selK P f sk pk m = true
-    · simp only [hs, ite_true]
-      rw [Function.update_of_ne]
-      intro he
-      have : validB P f sk pk c = true := (validB_eq_true_iff P f sk pk c).mpr
-        ⟨m, by simpa [selK, he] using hs, he⟩
-      exact Bool.noConfusion (this.symm.trans hc)
-    · simp [hs]
-  · obtain ⟨z', c'⟩ := q
-    by_cases hq : (z', c') = (z, c)
-    · simp only [Prod.mk.injEq] at hq
-      obtain ⟨rfl, rfl⟩ := hq
-      simp [selJ, hc]
-    · rw [Function.update_of_ne hq]
-      by_cases hs : selJ P f sk pk z (z', c') = true
-      · simp only [hs, ite_true]
-        rw [Function.update_of_ne]
-        intro he
-        subst he
-        simp only [selJ, Bool.and_eq_true, decide_eq_true_eq] at hs
-        exact hq (by rw [hs.1])
-      · simp [hs]
+  have h1 : reindexTable (selK P f sk pk) (cOf P f pk) (Function.update st.LD c (some k)) st.LQ =
+      reindexTable (selK P f sk pk) (cOf P f pk) st.LD st.LQ :=
+    reindexTable_update_left_of_forall _ _ _ _ (fun m hs he => by
+      have := (validB_eq_true_iff P f sk pk c).mpr ⟨m, by simpa [selK, he] using hs, he⟩
+      simp [this] at hc) _
+  have h2 : reindexTable (selJ P f sk pk z) Prod.snd (Function.update st.LD c (some k)) st.LJ =
+      Function.update (reindexTable (selJ P f sk pk z) Prod.snd st.LD st.LJ) (z, c) (some k) :=
+    reindexTable_update_left (i := c) (j := (z, c)) _ _ _ _ (by simp [selJ, hc]) rfl
+      (fun q hs hq => Prod.ext (by simp [selJ] at hs; exact hs.1) hq) _
+  simp only [table, h1, h2]
 
 omit [Fintype M] [Nonempty M] [Fintype Z] [Nonempty Z] [Nonempty R] [Nonempty K] [Fintype R]
   [Fintype K] [DecidableEq Hash] in
@@ -886,27 +824,18 @@ theorem table_updateLD_of_valid (sk : SK) (pk : PK) (z : Z) (st : SimStateF M C 
     table P f sk pk z { st with LD := Function.update st.LD c (some k) } =
       { table P f sk pk z st with TK := Function.update (table P f sk pk z st).TK m (some k) } := by
   have hv : validB P f sk pk c = true := (validB_eq_true_iff P f sk pk c).mpr ⟨m, hd, hc⟩
-  simp only [table, SplitTab.mk.injEq]
-  refine ⟨funext fun m' => ?_, trivial, funext fun q => ?_⟩
-  · by_cases hm : m' = m
-    · subst hm
-      simp [selK_of_dec P f sk pk m' c hd hc, hc]
-    · rw [Function.update_of_ne hm]
-      by_cases hs : selK P f sk pk m' = true
-      · simp only [hs, ite_true]
-        rw [Function.update_of_ne]
-        intro he
-        simp only [selK, he, hd, Option.some.injEq, decide_eq_true_eq] at hs
-        exact hm hs.symm
-      · simp [hs]
-  · by_cases hs : selJ P f sk pk z q = true
-    · simp only [hs, ite_true]
-      rw [Function.update_of_ne]
-      intro he
+  have h1 : reindexTable (selK P f sk pk) (cOf P f pk) (Function.update st.LD c (some k)) st.LQ =
+      Function.update (reindexTable (selK P f sk pk) (cOf P f pk) st.LD st.LQ) m (some k) :=
+    reindexTable_update_left _ _ _ _ (selK_of_dec P f sk pk m c hd hc) hc (fun m' hs he => by
+      simp only [selK, he, hd, Option.some.injEq, decide_eq_true_eq] at hs
+      exact hs.symm) _
+  have h2 : reindexTable (selJ P f sk pk z) Prod.snd (Function.update st.LD c (some k)) st.LJ =
+      reindexTable (selJ P f sk pk z) Prod.snd st.LD st.LJ :=
+    reindexTable_update_left_of_forall _ _ _ _ (fun q hs he => by
       simp only [selJ, Bool.and_eq_true, Bool.not_eq_eq_eq_not, Bool.not_true] at hs
       rw [he] at hs
-      simp [hv] at hs
-    · simp [hs]
+      simp [hv] at hs) _
+  simp only [table, h1, h2]
 
 omit [Fintype M] [Nonempty M] [Fintype Z] [Nonempty Z] [Nonempty R] [Nonempty K] [Fintype R]
   [Fintype K] [DecidableEq Hash] in
@@ -914,11 +843,7 @@ theorem table_updateLQ (sk : SK) (pk : PK) (z : Z) (st : SimStateF M C R K Hash 
     (k : K) (hs : selK P f sk pk m = false) :
     table P f sk pk z { st with LQ := Function.update st.LQ m (some k) } =
       { table P f sk pk z st with TK := Function.update (table P f sk pk z st).TK m (some k) } := by
-  simp only [table, SplitTab.mk.injEq]
-  refine ⟨funext fun m' => ?_, trivial, trivial⟩
-  by_cases hm : m' = m
-  · subst hm; simp [hs]
-  · simp [Function.update_of_ne hm]
+  simp only [table, reindexTable_update_right _ _ _ _ hs]
 
 omit [Fintype M] [Nonempty M] [Fintype Z] [Nonempty Z] [Nonempty R] [Nonempty K] [Fintype R]
   [Fintype K] in
@@ -934,18 +859,14 @@ theorem table_updateLJ (sk : SK) (pk : PK) (z : Z) (st : SimStateF M C R K Hash 
     (k : K) (hs : selJ P f sk pk z q = false) :
     table P f sk pk z { st with LJ := Function.update st.LJ q (some k) } =
       { table P f sk pk z st with TJ := Function.update (table P f sk pk z st).TJ q (some k) } := by
-  simp only [table, SplitTab.mk.injEq]
-  refine ⟨trivial, trivial, funext fun q' => ?_⟩
-  by_cases hq : q' = q
-  · subst hq; simp [hs]
-  · simp [Function.update_of_ne hq]
+  simp only [table, reindexTable_update_right _ _ _ _ hs]
 
 omit [Fintype M] [Nonempty M] [Fintype Z] [Nonempty Z] [Nonempty R] [Nonempty K] [Fintype R]
   [Fintype K] [DecidableEq Hash] in
 theorem table_init (sk : SK) (pk : PK) (z : Z) :
     table P f sk pk z (SimStateF.init : SimStateF M C R K Hash Z) = SplitTab.empty := by
   simp only [table, SimStateF.init, SplitTab.empty, SplitTab.mk.injEq]
-  refine ⟨funext fun m => ?_, trivial, funext fun q => ?_⟩ <;> split_ifs <;> rfl
+  exact ⟨funext fun m => by simp [reindexTable], trivial, funext fun q => by simp [reindexTable]⟩
 
 omit [Fintype M] [Nonempty M] [Fintype Z] [Nonempty Z] [Nonempty R] [Nonempty K] [Fintype R]
   [Fintype K] [DecidableEq Hash] [DecidableEq Z] [DecidableEq M] in
@@ -965,25 +886,6 @@ omit [Fintype M] [Nonempty M] [Fintype Z] [Nonempty Z] [Nonempty R] [Nonempty K]
 theorem selJ_eq_true_iff (sk : SK) (pk : PK) (z : Z) (q : Z × C) :
     selJ P f sk pk z q = true ↔ q.1 = z ∧ validB P f sk pk q.2 = false := by
   simp [selJ]
-
-omit [Fintype M] [Nonempty M] [Fintype Z] [Nonempty Z] [Nonempty R] [Nonempty K] [DecidableEq C]
-  [DecidableEq M] [DecidableEq Hash] [DecidableEq Z] [Fintype R] [Fintype K] in
-/-- Two lazy reads with the same value and related updates give the same
-distribution after mapping the state. -/
-theorem roOracle_map_eq {I I' V S S' A : Type} [DecidableEq I] [DecidableEq I'] [Fintype V]
-    [Nonempty V] (tab : I → Option V) (i : I) (tab' : I' → Option V) (i' : I')
-    (F : V × (I → Option V) → A × S) (F' : V × (I' → Option V) → A × S') (φ : S → S')
-    (hread : tab' i' = tab i) (h0 : ∀ v, Prod.map id φ (F (v, tab)) = F' (v, tab'))
-    (h1 : ∀ v, Prod.map id φ (F (v, Function.update tab i (some v))) =
-      F' (v, Function.update tab' i' (some v))) :
-    ((roOracle tab i).map F).map (Prod.map id φ) = (roOracle tab' i').map F' := by
-  unfold roOracle
-  rw [hread]
-  cases tab i with
-  | some v => simp [PMF.pure_map, h0]
-  | none =>
-    simp only [PMF.map_comp, Function.comp_def]
-    exact congrArg (fun F => PMF.map F _) (funext h1)
 
 omit [Fintype M] [Nonempty M] [Fintype Z] [Nonempty Z] in
 /-- Forgetting the ghost state and reading the tables maps the re-indexed oracle with
@@ -1012,7 +914,7 @@ theorem oSim_map_table (sk : SK) (pk : PK) (z : Z) (mstar : M) (v : K)
           simp only [hs, ite_true, hne, ite_false]
           rw [lazyRead_eq]
           refine roOracle_map_eq _ _ _ _ _ _ _ ?_ ?_ ?_
-          · simp [table, hs]
+          · simp [table, reindexTable, hs]
           · intro k; rfl
           · intro k
             simp only [Prod.map_apply, id]
@@ -1020,7 +922,7 @@ theorem oSim_map_table (sk : SK) (pk : PK) (z : Z) (mstar : M) (v : K)
         · simp only [hs, Bool.false_eq_true, ite_false]
           rw [lazyRead_eq]
           refine roOracle_map_eq _ _ _ _ _ _ _ ?_ ?_ ?_
-          · simp [table, hs]
+          · simp [table, reindexTable, hs]
           · intro k; rfl
           · intro k
             simp only [Prod.map_apply, id]
@@ -1033,7 +935,7 @@ theorem oSim_map_table (sk : SK) (pk : PK) (z : Z) (mstar : M) (v : K)
       simp only [oSim, oSplit, hs, ite_true]
       rw [lazyRead_eq]
       refine roOracle_map_eq _ _ _ _ _ _ _ ?_ ?_ ?_
-      · simp [table, hs]
+      · simp [table, reindexTable, hs]
       · intro k; rfl
       · intro k
         simp only [Prod.map_apply, id]
@@ -1041,7 +943,7 @@ theorem oSim_map_table (sk : SK) (pk : PK) (z : Z) (mstar : M) (v : K)
     · simp only [oSim, oSplit, hs, Bool.false_eq_true, ite_false]
       rw [lazyRead_eq]
       refine roOracle_map_eq _ _ _ _ _ _ _ ?_ ?_ ?_
-      · simp [table, hs]
+      · simp [table, reindexTable, hs]
       · intro k; rfl
       · intro k
         simp only [Prod.map_apply, id]
@@ -1060,7 +962,7 @@ theorem oSim_map_table (sk : SK) (pk : PK) (z : Z) (mstar : M) (v : K)
         have hsj : selJ P f sk pk z (z, c) = true := (selJ_eq_true_iff P f sk pk z (z, c)).mpr ⟨rfl, hv⟩
         unfold jSplit
         refine roOracle_map_eq _ _ _ _ _ _ _ ?_ ?_ ?_
-        · simp [table, hsj]
+        · simp [table, reindexTable, hsj]
         · intro k; rfl
         · intro k
           simp only [Prod.map_apply, id]
@@ -1077,7 +979,7 @@ theorem oSim_map_table (sk : SK) (pk : PK) (z : Z) (mstar : M) (v : K)
           · rw [ite_eq_left he]
             have hs : selK P f sk pk m = true := selK_of_dec P f sk pk m c hd he
             refine roOracle_map_eq _ _ _ _ _ _ _ ?_ ?_ ?_
-            · simp [table, hs, he]
+            · simp [table, reindexTable, hs, he]
             · intro k; rfl
             · intro k
               simp only [Prod.map_apply, id]
@@ -1329,12 +1231,8 @@ omit [Fintype M] [Nonempty M] [Fintype Z] [Nonempty Z] [Nonempty R] [Nonempty K]
 theorem found_of_mem_support_lazyRead {I V G A : Type} [DecidableEq I] [Fintype V] [Nonempty V]
     {tab : I → Option V} {i : I} {set : (I → Option V) → SimStateF M C R K Hash Z} {w : V → A}
     {g : G} (hset : ∀ t, (set t).found = (set tab).found) {x : A × (SimStateF M C R K Hash Z × G)}
-    (hx : x ∈ (lazyRead tab i set w g).support) : x.2.1.found = (set tab).found := by
-  unfold lazyRead at hx; split at hx
-  · simp only [PMF.support_pure, Set.mem_singleton_iff] at hx; subst hx; rfl
-  · simp only [PMF.support_map, Set.mem_image] at hx
-    obtain ⟨k, _, rfl⟩ := hx
-    exact hset _
+    (hx : x ∈ (lazyRead tab i set w g).support) : x.2.1.found = (set tab).found :=
+  eq_of_mem_support_lazyRead SimStateF.found hset hx
 
 /-- A found message decrypts the challenge under `fixedT P f`. -/
 def FoundValid (sk : SK) (pk : PK) (cstar : C) (st : SimStateF M C R K Hash Z) : Prop :=
