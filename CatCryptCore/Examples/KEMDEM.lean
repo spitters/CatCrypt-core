@@ -78,6 +78,8 @@ support, so equality with a uniform independent key forces `|Key| = 1`.
 
 ## Main results
 
+* `KEM_CPA_real_isPure`, `KEM_CPA_ideal_isPure` — the KEM-CPA games of a KEM whose key
+  generation and encapsulation do not touch the heap do not touch the heap.
 * `hybridPKE_correct` — correctness of the composition from component correctness.
 * `pke_security` — the three-term hybrid bound `Adv_PKE ≤ Adv_KEM + Adv_DEM + Adv_KEM`.
 * `pke_security_of_perfectDEM` — with a perfectly secure DEM,
@@ -275,6 +277,25 @@ noncomputable def KEM_CPA_Advantage
     (KEM : KEMScheme PKey SKey Key EKey)
     (A : PKey × EKey × Key → SPComp Bool) : ℝ≥0∞ :=
   AdvantageA (KEM_CPA_real KEM) (KEM_CPA_ideal KEM) A
+
+omit [Fintype Key] [Nonempty Key] [Fintype EKey] [Nonempty EKey] in
+/-- The real KEM-CPA game of a KEM whose key generation and encapsulation do not touch the heap
+does not touch the heap. -/
+theorem KEM_CPA_real_isPure (KEM : KEMScheme PKey SKey Key EKey) (hk : SPComp.IsPure KEM.kgen)
+    (he : ∀ pk, SPComp.IsPure (KEM.encap pk)) : SPComp.IsPure (KEM_CPA_real KEM) := by
+  unfold KEM_CPA_real
+  simp only [SPComp.monad_bind_eq]
+  exact SPComp.bind_isPure hk fun _ => SPComp.bind_isPure (he _) fun _ => SPComp.pure_isPure _
+
+omit [Fintype EKey] [Nonempty EKey] in
+/-- The ideal KEM-CPA game of a KEM whose key generation and encapsulation do not touch the heap
+does not touch the heap. -/
+theorem KEM_CPA_ideal_isPure (KEM : KEMScheme PKey SKey Key EKey) (hk : SPComp.IsPure KEM.kgen)
+    (he : ∀ pk, SPComp.IsPure (KEM.encap pk)) : SPComp.IsPure (KEM_CPA_ideal KEM) := by
+  unfold KEM_CPA_ideal
+  simp only [SPComp.monad_bind_eq]
+  exact SPComp.bind_isPure hk fun _ => SPComp.bind_isPure (he _) fun _ =>
+    SPComp.bind_isPure (SPComp.sample_isPure _) fun _ => SPComp.pure_isPure _
 
 end KEM_CPA
 
