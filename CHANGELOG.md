@@ -34,6 +34,68 @@
   CI step that rejected it is removed. A proof that uses it depends on the
   axiom `Lean.ofReduceBool`, which `#print axioms` lists. The first users are the
   Pocklington primality certificates of `Crypto/Ristretto255/FinGroup.lean`.
+- `Crypto/UCPullback.lean`: environment pullbacks (`EnvPullback`), a map on
+  systems with a map on environments in the opposite direction and an advantage
+  equation, and the pullback law `EnvPullback.realizes_map`: a realization with
+  bound `b` maps to one with bound `b ∘ pull`. Pullbacks compose; the
+  composition theorem for two holes is `EnvPullback.realizes_twoHole`. Open
+  systems, hybrids, multi-call hybrids, either side of the cascade and
+  adversary absorption are instances.
+- `Crypto/UCPullbackSemantics.lean`: advantage theories and pullbacks between
+  them (`AdvTheory`, `AdvPullback`, `AdvPullback.realizes_rel`), with step
+  equivalence and the compilation of party diagrams (`compilePullback_rel`) and
+  the oracle-game semantics (`OProt.toAdvPullback`) as instances; adversary
+  absorption as an action on environments up to advantage, with the forwarding
+  adversary `AdvSys.dummy` acting as the identity (`AdvSys.adv_absorb_absorb`,
+  `AdvSys.adv_absorb_dummy`).
+- `Crypto/UCPullbackTimed.lean`, `Crypto/UCPullbackCost.lean`: time
+  certificates of the environment reductions of hybrids, multi-call hybrids and
+  adversary absorption (`Hybrid.Timed.reduce_timeBound`,
+  `Strat.absorb_timeBound`), the time of an environment over its whole run
+  (`EnvTimeBound.sysEnvTree_time`), and costed pullbacks (`CostedPullback`),
+  whose reduced environments have the time of the environment plus constants of
+  the pullback (`CostedPullback.pull_envTimeBound`); the costed pullback law, the
+  two-hole law and the cascade composition theorem with these times
+  (`CostedPullback.realizes_map`, `CostedPullback.realizes_twoHole`,
+  `realizes_seq_timed`).
+- `Crypto/UCCascadeEnrichedPar.lean`: parallel composition and bounded
+  feedback of classes of lossless systems; both preserve realization at
+  statistical bounds and are non-expansive for the realization distance on
+  classes idle at given events (`Cell1.dist_par_le`, `Cell1.dist_loopback_le`).
+- `Crypto/Party/RelatorRelational.lean`: the relational judgment of party
+  programs is the relation lifting of programs at exact couplings
+  (`Prog.relTriple_iff_relProg`).
+- `Category/ProtBicatPullback.lean`: rounds-graded pullbacks
+  (`AdvPullbackRounds`, `AdvPullbackRounds.realizes_rel`) and the protocol
+  bicategory in systems as one, from the advantage theory of one-shot protocols,
+  whose supremum is `sdist` (`oneShotTheory_iSup_adv`), with horizontal
+  composition and identities carried by the relation
+  (`UCMonad.statelessPullback_rel_hcomp`, `UCMonad.statelessPullback_rel_hid`).
+- `Quantum/QPullback.lean`: quantum realization with environment-dependent
+  bounds (`QRealizesB`, `QRealizesSimB`, `QRealizesSimQB`), the constant bound as
+  an instance (`QRealizes_iff_const`), quantum environment pullbacks with the
+  pullback law and the two-hole law (`QEnvPullback.realizes_map`,
+  `QEnvPullback.realizes_twoHole`), and simulator absorption as a pullback
+  (`QSim.qview_attach`, `QRealizesSimB_iff_attach`).
+- `Quantum/QPullbackCascade.lean`: register transfer of simulators with a
+  private register (`QSimQ.qviewQ_attachQ`), pullbacks over environments with
+  quantum memory (`QEnvPullbackQ`), the quantum cascade with private registers
+  as composition in `QSysCat` (`QSys.cascade_toQRSys`) and its composition
+  theorem (`QRealizesQB.cascade`).
+- `Quantum/QPullbackPar.lean`, `Quantum/QPullbackFeedback.lean`: quantum
+  parallel composition and bounded loopback with private registers as pullbacks
+  over environments with memory, for components idle at a given event, with the
+  composition theorems `QRealizesQB.par` and `QRealizesQB.loopback`.
+- `Quantum/QPullbackAdversary.lean`: quantum adversary systems (`QAdvSys`),
+  attachment as a pullback (`QRealizesQB.attachAdv`), concurrent quantum UC
+  emulation with environment-dependent bounds (`QUCEmulatesSysB`) and the
+  quantum dummy-adversary theorem (`qucEmulatesSysB_of_realizes`,
+  `QUCEmulatesSysB.realizes_dummy`, `qucEmulatesSysB_iff_realizes_of_le`).
+- `Quantum/ClassicalLiftPullback.lean`: the classical lift as a pullback of
+  advantage theories (`ClassicalLiftSys.liftPullback`), with the advantage
+  equation `ClassicalLiftSys.cpDist_qview_liftQSys` and reflection of
+  realizations along a pullback whose pull of tests has a section
+  (`AdvPullback.realizes_of_rel`).
 
 ## v0.2.0 — 2026-06-10
 
