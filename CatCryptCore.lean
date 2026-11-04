@@ -238,6 +238,7 @@ public import CatCryptCore.Crypto.Assumptions.CyclicGroup
 public import CatCryptCore.Crypto.Assumptions.CRCoins
 public import CatCryptCore.Crypto.Assumptions.LWE
 public import CatCryptCore.Crypto.Assumptions.DualPRF
+public import CatCryptCore.Crypto.Assumptions.HardCore
 public import CatCryptCore.Crypto.Signatures.Scheme
 public import CatCryptCore.Crypto.Signatures.EUFCMA
 public import CatCryptCore.Crypto.Signatures.EUFCMAPMF
@@ -712,6 +713,7 @@ public import CatCryptCore.Crypto.KeyAgreement.MontgomeryAsWeierstrass
 public import CatCryptCore.Crypto.KeyAgreement.MontgomeryXOnly
 public import CatCryptCore.Crypto.KeyAgreement.Curve25519
 public import CatCryptCore.Crypto.Assumptions.OWFTimed
+public import CatCryptCore.Crypto.Assumptions.HardCoreTimed
 public import CatCryptCore.Crypto.BLSSig.SecurityTimed
 public import CatCryptCore.Crypto.Commitment.PedersenUCTimed
 public import CatCryptCore.Crypto.GeneralForkingLemmaTimed
