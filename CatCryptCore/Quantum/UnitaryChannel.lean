@@ -92,4 +92,42 @@ theorem unitaryChannel_compose
   simp only [conjugate_apply, UnitaryGroup.mul_val, Matrix.conjTranspose_mul]
   simp only [← Matrix.mul_assoc]
 
+/-! ## Global-phase invariance -/
+
+/-- Conjugation by a matrix is invariant under a unit global phase:
+    if `c · conj c = 1` then `conjugate (c • M) = conjugate M`. -/
+theorem conjugate_smul_unit (c : ℂ) (hc : c * (starRingEnd ℂ) c = 1) {d : ℕ}
+    (M : Matrix (Fin d) (Fin d) ℂ) :
+    conjugate (c • M) = conjugate M := by
+  apply LinearMap.ext
+  intro ρ
+  simp only [conjugate_apply, conjTranspose_smul, smul_mul_assoc, mul_smul_comm,
+    smul_smul]
+  rw [show (star c * c) = (1 : ℂ) by rw [mul_comm]; exact hc, one_smul]
+
+/-- A unitary channel depends only on its conjugation action: if the underlying
+    conjugations agree, the channels are equal. -/
+theorem unitaryChannel_eq_of_conjugate {d : ℕ}
+    {U V : Matrix.unitaryGroup (Fin d) ℂ}
+    (h : conjugate (U : Matrix (Fin d) (Fin d) ℂ)
+        = conjugate (V : Matrix (Fin d) (Fin d) ℂ)) :
+    unitaryChannel U = unitaryChannel V := by
+  apply QComp.ext_fun
+  intro () ρ
+  change conjugate (U : Matrix (Fin d) (Fin d) ℂ) ρ
+      = conjugate (V : Matrix (Fin d) (Fin d) ℂ) ρ
+  rw [h]
+
+/-- A unitary channel is invariant under a global phase of its matrix:
+    `U = e^{iφ} • V` gives `unitaryChannel U = unitaryChannel V`. -/
+theorem unitaryChannel_eq_of_val_eq_smul {d : ℕ} {U V : Matrix.unitaryGroup (Fin d) ℂ}
+    (φ : ℝ)
+    (h : (U : Matrix (Fin d) (Fin d) ℂ) = Complex.exp (φ * Complex.I) • (V : Matrix _ _ ℂ)) :
+    unitaryChannel U = unitaryChannel V := by
+  have hc : Complex.exp (φ * Complex.I) * (starRingEnd ℂ) (Complex.exp (φ * Complex.I)) = 1 := by
+    rw [Complex.mul_conj, Complex.normSq_eq_norm_sq, Complex.norm_exp_ofReal_mul_I]
+    norm_num
+  apply unitaryChannel_eq_of_conjugate
+  rw [h, conjugate_smul_unit _ hc]
+
 end CatCrypt.Quantum.UnitaryChannel
