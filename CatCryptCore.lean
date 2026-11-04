@@ -232,6 +232,7 @@ public import CatCryptCore.Crypto.PRFAssumption
 public import CatCryptCore.Crypto.PrTrueCover
 public import CatCryptCore.Crypto.Assumptions.Catalog
 public import CatCryptCore.Crypto.Assumptions.DLGroupParam
+public import CatCryptCore.Crypto.Assumptions.CyclicGroup
 public import CatCryptCore.Crypto.Assumptions.CRCoins
 public import CatCryptCore.Crypto.Assumptions.LWE
 public import CatCryptCore.Crypto.Assumptions.DualPRF
