@@ -65,9 +65,10 @@ initiator `a` and responder `b` that `O` accepts for `(IK_a, SPK_b)` (`extractR`
 * `symEq`, `inpEq`, `slookup`, `sroDet`: symbolic values and their equality by the decision
   oracle.
 * `startR`, `stepR`, `oracleR`, `extractR`: the world of the reduction.
-* `stepRed`: an oracle adversary run against a world stepped by one uniform draw per query.
-* `gdhOut`, `gdhRed`: the output distribution of the reduction (`stepRed` at the step `stepR`)
-  and the GDH adversary.
+* `stepRedD`: an oracle adversary run against a world stepped by one draw per query from a
+  distribution of the state and the query; the generic reduction of X3DH and PQXDH.
+* `gdhOut`, `gdhRed`: the output distribution of the reduction (`stepRedD` at the uniform draw
+  and the step `stepR`) and the GDH adversary.
 * `NamesIn`: the finite-party predicate.
 * `gdhBound`: the bound of the square.
 
@@ -461,14 +462,16 @@ table of symbolic inputs and the draws of the long-term secrets, its symbolic re
 and its phase. -/
 abbrev RSim (S W K : Type) := RSt S (W ⊕ W) K × (Inst → Option (Inp (W ⊕ W))) × Phase S W K
 
-/-- **A reduction that runs an oracle adversary against a stepped world.** The oracle adversary
-`B` is run from the state `s₀` against the oracle that answers a query `e` in the state `t` with
-one uniform draw `r` and the step `step t e r` (the new state and the answer); the output is
-`ext` of the final state. -/
-noncomputable def stepRed {σ E A V Out : Type} [Fintype V] [Nonempty V]
-    (step : σ → E → V → σ × A) (ext : σ → Out) (B : OracleAdv E A Bool) (s₀ : σ) :
-    OracleAdv Empty Empty Out :=
-  (OracleAdv.simulate (fun t e => .rand (PMF.uniformFintype V) fun r =>
+/-- **A reduction that runs an oracle adversary against a world stepped by draws of the state.**
+The oracle adversary `B` is run from the state `s₀` against the oracle that answers a query `e`
+in the state `t` with one draw `r` from `μ t e` and the step `step t e r` (the new state and the
+answer); the output is `ext` of the final state. The X3DH reduction is its application to the
+uniform draw `fun _ _ => PMF.uniformFintype V`; the PQXDH reduction (`PQXDHSquareGDH`) draws
+from a distribution of the state and the query, because the encapsulation of a step is to the
+public key of the peer's session. -/
+noncomputable def stepRedD {σ E A V Out : Type} (μ : σ → E → PMF V) (step : σ → E → V → σ × A)
+    (ext : σ → Out) (B : OracleAdv E A Bool) (s₀ : σ) : OracleAdv Empty Empty Out :=
+  (OracleAdv.simulate (fun t e => .rand (μ t e) fun r =>
       let p := step t e r; .ret (p.2, p.1)) B s₀).bind fun p => .ret (ext p.2)
 
 section Red
@@ -641,11 +644,12 @@ noncomputable def implR (t : RSim S W K × St K) (e : OEv W) :
     .ret ((stepR G a b O X Y t e r).2, (stepR G a b O X Y t e r).1)
 
 /-- **The output distribution of the reduction**: the extraction from the final state of a run
-of the oracle adversary `B` against the world of the reduction, the program `stepRed` at the step
-`stepR` and the extraction `extractR`. -/
+of the oracle adversary `B` against the world of the reduction, the program `stepRedD` at the
+uniform draw of `Draw S K × K`, the step `stepR` and the extraction `extractR`. -/
 noncomputable def gdhOut (B : OracleAdv (OEv W) (OOut S W K) Bool) : PMF W :=
   (OracleAdv.run (fun (_ : Unit) (q : Empty) => q.elim)
-    (stepRed (stepR G a b O X Y) (fun t => extractR G a b O X Y t.1.1) B rInitR) ()).map Prod.fst
+    (stepRedD (fun _ _ => PMF.uniformFintype (Draw S K × K)) (stepR G a b O X Y)
+      (fun t => extractR G a b O X Y t.1.1) B rInitR) ()).map Prod.fst
 
 end Red
 
@@ -1540,7 +1544,7 @@ theorem gdhOut_eq (O : W → W → W → Bool) (X Y : W) (B : OracleAdv (OEv W) 
     simp only [OracleAdv.simOracle, implR, oracleR, OracleAdv.run_rand, OracleAdv.run_ret,
       PMF.map_comp, PMF.map_bind, PMF.pure_map]
     exact (PMF.bind_pure_comp _ _).symm
-  unfold gdhOut stepRed
+  unfold gdhOut stepRedD
   change (OracleAdv.run _ ((OracleAdv.simulate (implR G a b O X Y) B rInitR).bind
     fun p => .ret (extractR G a b O X Y p.2.1.1)) ()).map Prod.fst = _
   rw [OracleAdv.run_bind, OracleAdv.run_simulate,

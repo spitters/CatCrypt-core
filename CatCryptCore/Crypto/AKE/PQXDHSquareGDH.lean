@@ -82,10 +82,9 @@ peer's session), so the coupling of the two worlds is stated for draws from such
 
 * `pinterp`, `pinpEq`, `pslookup`, `psroDet`: symbolic inputs of PQXDH.
 * `startRP`, `stepRP`, `oracleRP`, `extractRP`: the world of the reduction.
-* `stepRedD`: an oracle adversary run against a world stepped by one draw per query from a
-  distribution of the state.
-* `pqGdhOut`, `pqGdhRed`: the output distribution of the reduction (`stepRedD` at the step
-  `stepRP`) and the GDH adversary.
+* `pqGdhOut`, `pqGdhRed`: the output distribution of the reduction (the generic reduction
+  `X3DHSquareGDH.stepRedD` at the draws `simDist P (encPkR …)` and the step `stepRP`) and the GDH
+  adversary.
 * `PQDH1Hit`: the event implied by the bad event through its conjunct `DhOk`.
 * `HonestEnc`, `PQHitKem`, `PQHitDh`, `partBad`: the two routes of a session and the two parts of
   the bad event.
@@ -125,7 +124,7 @@ open CatCrypt.Crypto.AKE.X3DHSquareGDH (gapDHDef ddhOracle_pub cdh_pub AllQ toOu
   symEq inpEq inpEq_ddh off1 off2 keyA keyB pubIK pubSPK aliceS bobS ofInp sh shEquiv shO SymOk
   pubIK_pub pubSPK_pub keyA_pub keyB_pub ev_of_isLeft SymOk.mono interp_stable aliceS_interp
   bobS_interp aliceS_symOk bobS_symOk interp_ofInp sh_of_ne stop_drive0D lookup_mem roDet_mem
-  addSession_corrupt opkOf_congr)
+  addSession_corrupt opkOf_congr stepRedD)
 open CatCrypt.Crypto.AKE.PQXDHSquare
 open CatCrypt.Crypto.AKE.PQXDHSquareHops
 open CatCrypt.Crypto.KEM.Games (Scheme)
@@ -302,17 +301,6 @@ end Sym
 table of symbolic inputs, its symbolic recorded inputs, and its phase. -/
 abbrev RSimP (S W K PK SK SS C : Type) :=
   PSt S (W ⊕ W) K PK SK SS C × (Inst → Option (PInp (W ⊕ W) SS)) × Phase S W K PK C
-
-/-- **A reduction that runs an oracle adversary against a world stepped by draws of the state.**
-The oracle adversary `B` is run from the state `s₀` against the oracle that answers a query `e`
-in the state `t` with one draw `r` from `μ t e` and the step `step t e r` (the new state and the
-answer); the output is `ext` of the final state. `X3DHSquareGDH.stepRed` is the case of a
-uniform draw that does not depend on the state; PQXDH needs the general case, because the
-encapsulation of a step is to the public key of the peer's session. -/
-noncomputable def stepRedD {σ E A V Out : Type} (μ : σ → E → PMF V) (step : σ → E → V → σ × A)
-    (ext : σ → Out) (B : OracleAdv E A Bool) (s₀ : σ) : OracleAdv Empty Empty Out :=
-  (OracleAdv.simulate (fun t e => .rand (μ t e) fun r =>
-      let p := step t e r; .ret (p.2, p.1)) B s₀).bind fun p => .ret (ext p.2)
 
 section Red
 
