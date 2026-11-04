@@ -188,15 +188,7 @@ theorem mem_keys_of_lookup_eq_some (t : List (D × R)) (d : D) (r : R)
 omit [Fintype R] [Nonempty R] in
 theorem notMem_keys_of_lookup_eq_none (t : List (D × R)) (d : D)
     (h : List.lookup d t = none) : d ∉ t.map Prod.fst := by
-  induction t with
-  | nil => simp
-  | cons p t ih =>
-    obtain ⟨a, b⟩ := p
-    by_cases hda : d = a
-    · subst hda; simp at h
-    · have h2 : (d == a) = false := by simpa using hda
-      simp only [List.lookup_cons, h2] at h
-      simpa [hda] using ih h
+  grind
 
 theorem repFlagOracle_map (s : List (D × R) × Bool) (d : D) :
     (repFlagOracle s d).map (Prod.map id Prod.fst) = rfOracle s.1 d := by
@@ -250,21 +242,6 @@ with `c₀ = s`, returning `c₁ … cₙ`. -/
 def cbcBlocks (f : B → B) : B → List B → List B
   | _, [] => []
   | s, m :: ms => f (CryptoWord.wxor s m) :: cbcBlocks f (f (CryptoWord.wxor s m)) ms
-
-/-- The last CBC block is the CBC chain value. -/
-theorem getLastD_cbcBlocks (f : B → B) (s : B) (M : List B) :
-    (cbcBlocks f s M).getLastD s = cbc f s M := by
-  induction M generalizing s with
-  | nil => rfl
-  | cons m ms ih =>
-    simp only [cbcBlocks, cbc, List.foldl_cons, List.getLastD_cons]
-    exact ih _
-
-theorem length_cbcBlocks (f : B → B) (s : B) (M : List B) : (cbcBlocks f s M).length =
-    M.length := by
-  induction M generalizing s with
-  | nil => rfl
-  | cons m ms ih => simp [cbcBlocks, ih]
 
 /-- CBC$ encryption of `M` under `f`: a uniform IV `s` with the CBC blocks of `M`
 from `s`. -/

@@ -258,10 +258,7 @@ theorem cbcIn_update_eq (iv : B) (NP R : Finset (List B)) (hR : R ⊆ NP) (hRc :
   match Q, hQ with
   | [], hQ => exact absurd rfl (hNP _ hQ.1).1
   | c :: t, hQ =>
-    have ht : t ∈ insert [] R := by
-      rcases hQ.2 with h | h
-      · simp [show t = [] from h]
-      · simp [show t ∈ R from h]
+    have ht : t ∈ insert [] R := by grind
     rw [cbcIn.eq_2, cbcIn.eq_2, cbcR_update_eq iv NP R hR hRc P hP hPR f hG y t ht]
 
 theorem good_update (iv : B) (NP R : Finset (List B)) (hR : R ⊆ NP) (hRc : TailClosed R)
@@ -456,12 +453,7 @@ theorem prob_not_injOn_cbc_le (iv : B) (S : Finset (List B)) (ℓ : ℕ)
     apply hf
     intro M hM M' hM' heq
     rw [cbc_eq_cbcR, cbc_eq_cbcR] at heq
-    have hmem : ∀ M ∈ S, M.reverse ∈ (↑(insert [] NP) : Set (List B)) := by
-      intro M hM
-      by_cases hMn : M.reverse = []
-      · simp [hMn]
-      · simp only [Finset.coe_insert, Set.mem_insert_iff, Finset.mem_coe]
-        exact Or.inr ((hmemNP _).mpr ⟨hMn, M, hM, List.suffix_refl _⟩)
+    have hmem : ∀ M ∈ S, M.reverse ∈ (↑(insert [] NP) : Set (List B)) := by grind
     exact List.reverse_injective (hG.1 (hmem M hM) (hmem M' hM') heq)
   · refine ENNReal.div_le_div_right (Nat.cast_le.mpr ?_) _
     have h1 : ∑ k ∈ Finset.range NP.card, (k + 1) ≤ NP.card * NP.card := by

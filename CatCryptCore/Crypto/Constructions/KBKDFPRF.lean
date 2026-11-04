@@ -333,10 +333,6 @@ def MsgInjOn (msg : Option K → I → ℕ → D) (n : ℕ) : Prop :=
   ∀ p p' info info' i i', 1 ≤ i → i ≤ n → 1 ≤ i' → i' ≤ n →
     msg p info i = msg p' info' i' → info = info' ∧ i = i'
 
-theorem MsgInj.msgInjOn {msg : Option K → I → ℕ → D} (h : MsgInj msg) (n : ℕ) :
-    MsgInjOn msg n :=
-  fun p p' info info' i i' _ _ _ _ he => h p p' info info' i i' he
-
 /-- An injective map on the messages at the counters `1, …, n` preserves `MsgInjOn`. -/
 theorem MsgInjOn.comp {D' : Type} {msg : Option K → I → ℕ → D} {n : ℕ}
     (h : MsgInjOn msg n) (g : D → D')

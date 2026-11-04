@@ -129,11 +129,6 @@ theorem raw_cbcmac_cons {W : Type} [CryptoWord W]
     raw_cbcmac B k iv (block :: rest) =
     raw_cbcmac B k (B.enc k (CryptoWord.wxor iv block)) rest := rfl
 
-/-- Single-block CBC-MAC: just one block cipher call. -/
-theorem raw_cbcmac_singleton {W : Type} [CryptoWord W]
-    (B : BlockCipherDef W) (k iv block : W) :
-    raw_cbcmac B k iv [block] = B.enc k (CryptoWord.wxor iv block) := rfl
-
 /-! ## ECBC-MAC (Encrypted CBC-MAC)
 
 ECBC-MAC (BS Construction 6.4) adds a final encryption with an
@@ -161,17 +156,6 @@ def ecbc_eval {W : Type} [CryptoWord W]
     (E : ECBCMAC W) (k₁ k₂ : W) (iv : W) (msg : List W) : W :=
   let inner := raw_cbcmac E.cipher k₁ iv msg
   E.cipher.enc k₂ inner
-
-/-- ECBC-MAC on an empty message: just encrypts the IV with k₂. -/
-theorem ecbc_eval_nil {W : Type} [CryptoWord W]
-    (E : ECBCMAC W) (k₁ k₂ iv : W) :
-    ecbc_eval E k₁ k₂ iv [] = E.cipher.enc k₂ iv := rfl
-
-/-- ECBC-MAC on a single block: two block cipher calls. -/
-theorem ecbc_eval_singleton {W : Type} [CryptoWord W]
-    (E : ECBCMAC W) (k₁ k₂ iv block : W) :
-    ecbc_eval E k₁ k₂ iv [block] =
-    E.cipher.enc k₂ (E.cipher.enc k₁ (CryptoWord.wxor iv block)) := rfl
 
 /-! ## ECBC-MAC Security Games -/
 
@@ -217,11 +201,6 @@ def cmac_eval {W : Type} [CryptoWord W]
   | block :: rest =>
     let chained := B.enc k (CryptoWord.wxor iv block)
     cmac_eval B k subkey chained rest
-
-/-- CMAC on empty message: encrypt subkey-XORed IV. -/
-theorem cmac_eval_nil {W : Type} [CryptoWord W]
-    (B : BlockCipherDef W) (k subkey iv : W) :
-    cmac_eval B k subkey iv [] = B.enc k (CryptoWord.wxor iv subkey) := rfl
 
 /-! ## CMAC games
 
