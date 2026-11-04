@@ -37,12 +37,30 @@ was sent by one of the two senders, and accepting it carries no information abou
 model therefore has a decryption-validity oracle, and the reduction is to IND-CCA. Recipient
 anonymity is not modelled: the server routes by recipient.
 
+## Real and ideal worlds
+
+In namespace `F_SealedSender`, the server is an adversary `FAdversary` with the recipient key
+and the acceptance oracle in both stages; its first stage chooses the sender certificate and
+the inner ciphertext, its second stage receives an envelope and outputs a bit. In the real
+world (`sealedSender_real`) the envelope seals the chosen sender; in the ideal world
+(`sealedSender_ideal P valid cert₀`) it seals the fixed sender `cert₀`, so the view of the
+server does not depend on the sender. The ideal world is the envelope of a fixed sender, not
+a uniform envelope: the scheme is not assumed to have pseudorandom ciphertexts. The inner
+ciphertext is chosen by the server and is not hidden by this statement. For the eavesdropping
+server, which asks no acceptance query, `sealedSenderView P cert m` is the view
+`(pk, envelope)`.
+
 ## Main definitions
 
 * `envelope`, `accepts`, `acceptOracle`
 * `SenderAnonAdversary`, `senderAnonGame`, `senderAnonAdvantage`
 * `acceptAnswer`, `senderAnonReduction` — the IND-CCA adversary that runs the sender-anonymity
   adversary and answers each acceptance query by one decryption query
+* `F_SealedSender.FAdversary`, `sealedSenderExp`, `sealedSender_real`, `sealedSender_ideal`
+* `F_SealedSender.fixSenderReduction` — the sender-anonymity adversary that runs an
+  `FAdversary` and names its chosen sender and `cert₀` as the two candidate senders
+* `F_SealedSender.sealedSenderView`, `viewReduction` — the view of an eavesdropping server and
+  the sender-anonymity adversary that runs a distinguisher of two views
 
 ## Main results
 
@@ -51,6 +69,11 @@ anonymity is not modelled: the server routes by recipient.
 * `senderAnon_le_indcca` — for every adversary `A`,
   `senderAnonAdvantage P valid A ≤ indccaAdvantage P (senderAnonReduction valid A)`
   (with equality, `senderAnonAdvantage_eq`)
+* `F_SealedSender.sealedSender_advantage_le` — the distance of the real and ideal worlds is at
+  most `indccaAdvantage P (senderAnonReduction valid (fixSenderReduction cert₀ A))`
+* `F_SealedSender.sealedSenderView_advantage_le` — the distance of the views of the senders
+  `cert` and `cert₀` is at most
+  `indccaAdvantage P (senderAnonReduction valid (viewReduction cert cert₀ m D))`
 
 ## References
 
@@ -202,3 +225,137 @@ theorem senderAnon_le_indcca {q₁ q₂ : ℕ} (A : SenderAnonAdversary PK Cert 
   (senderAnonAdvantage_eq P valid A).le
 
 end CatCrypt.Crypto.Messaging.SealedSender
+
+/-! ## Real and ideal worlds -/
+
+namespace CatCrypt.Crypto.Signal.SealedSender.F_SealedSender
+
+open CatCrypt.Core CatCrypt.Prob CatCrypt.Crypto CatCrypt.Crypto.PKE.Games
+open CatCrypt.Crypto.Messaging.SealedSender
+open scoped ENNReal
+
+variable {PK SK Cert Inner C R : Type} [Fintype R] [Nonempty R]
+
+/-! ## The real and ideal worlds -/
+
+variable (PK Cert Inner C) in
+/-- A two-stage server with at most `q₁` acceptance queries in the first stage and `q₂` in the
+second. The first stage chooses the sender certificate and the inner ciphertext. -/
+structure FAdversary (q₁ q₂ : ℕ) : Type 1 where
+  /-- The state passed from the first to the second stage. -/
+  St : Type
+  /-- The first stage on the recipient key. -/
+  choose : PK → OracleAdv C Bool (Cert × Inner × St)
+  /-- The second stage on the envelope. -/
+  guess : St → C → OracleAdv C Bool Bool
+  /-- The first-stage query bound. -/
+  isQueryBound₁ : ∀ pk, (choose pk).IsQueryBound q₁
+  /-- The second-stage query bound. -/
+  isQueryBound₂ : ∀ st c, (guess st c).IsQueryBound q₂
+
+variable [DecidableEq C] (P : Scheme PK SK (Cert × Inner) C R) (valid : Cert × Inner → Bool)
+
+/-- The experiment of the server `A` in which the envelope seals the sender `sel cert` for the
+chosen sender `cert`. -/
+noncomputable def sealedSenderExp (sel : Cert → Cert) {q₁ q₂ : ℕ}
+    (A : FAdversary PK Cert Inner C q₁ q₂) : PMF Bool :=
+  P.keygen.bind fun ks =>
+    (OracleAdv.run (acceptOracle P valid ks.2) (A.choose ks.1) none).bind fun x =>
+      (envelope P ks.1 (sel x.1.1) x.1.2.1).bind fun c =>
+        (OracleAdv.run (acceptOracle P valid ks.2) (A.guess x.1.2.2 c) (some c)).map Prod.fst
+
+/-- The real world: the envelope seals the chosen sender. -/
+noncomputable abbrev sealedSender_real {q₁ q₂ : ℕ} (A : FAdversary PK Cert Inner C q₁ q₂) :
+    PMF Bool :=
+  sealedSenderExp P valid id A
+
+/-- The ideal world: the envelope seals the fixed sender `cert₀`. -/
+noncomputable abbrev sealedSender_ideal (cert₀ : Cert) {q₁ q₂ : ℕ}
+    (A : FAdversary PK Cert Inner C q₁ q₂) : PMF Bool :=
+  sealedSenderExp P valid (fun _ => cert₀) A
+
+omit [Fintype R] [Nonempty R] [DecidableEq C] in
+/-- The sender-anonymity adversary of the server `A` and the fixed sender `cert₀`: it runs `A`
+and names the sender chosen by `A` and `cert₀` as the two candidate senders. -/
+def fixSenderReduction (cert₀ : Cert) {q₁ q₂ : ℕ} (A : FAdversary PK Cert Inner C q₁ q₂) :
+    SenderAnonAdversary PK Cert Inner C q₁ q₂ where
+  St := A.St
+  choose pk := (A.choose pk).bind fun x => .ret (x.1, cert₀, x.2.1, x.2.2)
+  guess := A.guess
+  isQueryBound₁ pk := by
+    simpa using OracleAdv.isQueryBound_bind (A.isQueryBound₁ pk)
+      (f := fun x => OracleAdv.ret (x.1, cert₀, x.2.1, x.2.2)) (n := 0) fun _ => trivial
+  isQueryBound₂ := A.isQueryBound₂
+
+/-- The experiment is the sender-anonymity game of `fixSenderReduction cert₀ A` with the bit
+selecting the sealed sender. -/
+theorem sealedSenderExp_eq (cert₀ : Cert) {q₁ q₂ : ℕ} (A : FAdversary PK Cert Inner C q₁ q₂)
+    (b : Bool) :
+    sealedSenderExp P valid (fun cert => if b then cert else cert₀) A =
+      senderAnonGame P valid (fixSenderReduction cert₀ A) b := by
+  simp only [sealedSenderExp, senderAnonGame, fixSenderReduction, OracleAdv.run_bind,
+    OracleAdv.run_ret, PMF.bind_bind, PMF.pure_bind]
+
+/-- **The real and ideal worlds of Sealed Sender are indistinguishable if the envelope
+encryption is IND-CCA secure.** For every scheme `P`, recipient check `valid`, fixed sender
+`cert₀` and server `A`, the distance of `sealedSender_real P valid A` and
+`sealedSender_ideal P valid cert₀ A` is at most the IND-CCA advantage of
+`senderAnonReduction valid (fixSenderReduction cert₀ A)`. -/
+theorem sealedSender_advantage_le (cert₀ : Cert) {q₁ q₂ : ℕ}
+    (A : FAdversary PK Cert Inner C q₁ q₂) :
+    Advantage (liftPMF (sealedSender_real P valid A))
+        (liftPMF (sealedSender_ideal P valid cert₀ A)) ≤
+      indccaAdvantage P (senderAnonReduction valid (fixSenderReduction cert₀ A)) := by
+  have h₁ := sealedSenderExp_eq P valid cert₀ A true
+  have h₀ := sealedSenderExp_eq P valid cert₀ A false
+  simp only [ite_true, Bool.false_eq_true, ite_false] at h₁ h₀
+  have e : (fun cert : Cert => cert) = id := rfl
+  rw [e] at h₁
+  rw [sealedSender_real, sealedSender_ideal, h₁, h₀]
+  exact senderAnon_le_indcca P valid _
+
+/-! ## The view of an eavesdropping server -/
+
+/-- The view of a server that asks no acceptance queries: the recipient key and the envelope of
+the sender `cert` and the inner ciphertext `m`. -/
+noncomputable def sealedSenderView (cert : Cert) (m : Inner) : PMF (PK × C) :=
+  P.keygen.bind fun ks => (envelope P ks.1 cert m).map fun c => (ks.1, c)
+
+omit [Fintype R] [Nonempty R] [DecidableEq C] in
+/-- The sender-anonymity adversary of a distinguisher `D` of views: it names `cert` and `cert₀`
+with the inner ciphertext `m`, asks no acceptance query, and outputs `D` on the recipient key
+and the challenge envelope. -/
+def viewReduction (cert cert₀ : Cert) (m : Inner) (D : PK × C → PMF Bool) :
+    SenderAnonAdversary PK Cert Inner C 0 0 where
+  St := PK
+  choose pk := .ret (cert, cert₀, m, pk)
+  guess pk c := .rand (D (pk, c)) .ret
+  isQueryBound₁ _ := trivial
+  isQueryBound₂ _ _ := fun _ => trivial
+
+/-- The sender-anonymity game of `viewReduction` is the view of the selected sender followed
+by the distinguisher. -/
+theorem senderAnonGame_viewReduction (cert cert₀ : Cert) (m : Inner) (D : PK × C → PMF Bool)
+    (b : Bool) :
+    senderAnonGame P valid (viewReduction cert cert₀ m D) b =
+      (sealedSenderView P (if b then cert else cert₀) m).bind D := by
+  simp only [senderAnonGame, sealedSenderView, viewReduction, OracleAdv.run_ret,
+    OracleAdv.run_rand, PMF.pure_bind, PMF.bind_bind, PMF.bind_map, Function.comp_def]
+  refine congrArg _ (funext fun ks => ?_)
+  cases b <;> simp [PMF.map_bind, PMF.pure_map, PMF.bind_pure]
+
+/-- **The views of two senders are indistinguishable if the envelope encryption is IND-CCA
+secure.** For every distinguisher `D`, the distance of the views of the senders `cert` and
+`cert₀` with the inner ciphertext `m` is at most the IND-CCA advantage of
+`senderAnonReduction valid (viewReduction cert cert₀ m D)`. -/
+theorem sealedSenderView_advantage_le (cert cert₀ : Cert) (m : Inner) (D : PK × C → PMF Bool) :
+    Advantage (liftPMF ((sealedSenderView P cert m).bind D))
+        (liftPMF ((sealedSenderView P cert₀ m).bind D)) ≤
+      indccaAdvantage P (senderAnonReduction valid (viewReduction cert cert₀ m D)) := by
+  have h₁ := senderAnonGame_viewReduction P valid cert cert₀ m D true
+  have h₀ := senderAnonGame_viewReduction P valid cert cert₀ m D false
+  simp only [ite_true, Bool.false_eq_true, ite_false] at h₁ h₀
+  rw [← h₁, ← h₀]
+  exact senderAnon_le_indcca P valid _
+
+end CatCrypt.Crypto.Signal.SealedSender.F_SealedSender
