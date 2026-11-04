@@ -39,6 +39,8 @@ uniform ciphertexts (FS-AEAD advantage of `smAEADRed`).
 
 ## Main results
 
+* `ckaPub_isPure`, `sm_real_isPure`, `sm_ideal_isPure` — the secure-messaging games of a CKA
+  whose initialisation and send steps do not touch the heap do not touch the heap
 * `sm_advantage_le` — for every adversary `A`, the secure-messaging advantage is at most the
   sum over the epochs of the CKA advantages of `smCKARed`, the PRG advantages of the root KDF
   at `smRootRed` and the FS-AEAD advantages of `smAEADRed`
@@ -136,6 +138,38 @@ noncomputable def SM_Advantage (C : CKADef Sc Msg Key) (R : PRGDef (RK × Key) (
     (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (msgs : List (List (W × W)))
     (A : SMView Msg Ct → SPComp Bool) : ℝ≥0∞ :=
   AdvantageA (sm_real C R G D msgs) (sm_ideal C msgs) A
+
+/-! ## The games do not touch the heap -/
+
+omit [Fintype Key] [Nonempty Key] [Fintype RK] [Nonempty RK] [Fintype Sa] [Nonempty Sa]
+  [SampleableType W] [SampleableType Ct] in
+/-- The public part of a CKA run whose initialisation and send steps do not touch the heap does
+not touch the heap. -/
+theorem ckaPub_isPure (C : CKADef Sc Msg Key) (hi : SPComp.IsPure C.init)
+    (hs : ∀ s, SPComp.IsPure (C.send s)) (n : ℕ) : SPComp.IsPure (ckaPub C n) :=
+  SPComp.bind_isPure hi fun i =>
+    SPComp.bind_isPure (ckaRun_isPure C hs n i.2.1 i.2.2) fun _ => SPComp.pure_isPure _
+
+omit [Fintype Key] [Nonempty Key] [Fintype Sa] [Nonempty Sa] [SampleableType Ct] in
+/-- The real secure-messaging game of a CKA whose initialisation and send steps do not touch
+the heap does not touch the heap. -/
+theorem sm_real_isPure (C : CKADef Sc Msg Key) (hi : SPComp.IsPure C.init)
+    (hs : ∀ s, SPComp.IsPure (C.send s)) (R : PRGDef (RK × Key) (RK × Sa))
+    (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) (msgs : List (List (W × W))) :
+    SPComp.IsPure (sm_real C R G D msgs) :=
+  SPComp.bind_isPure hi fun i =>
+    SPComp.bind_isPure (ckaRun_isPure C hs msgs.length i.2.1 i.2.2) fun _ =>
+      SPComp.bind_isPure (SPComp.sample_isPure RK) fun _ => SPComp.pure_isPure _
+
+omit [Fintype Key] [Nonempty Key] [Fintype RK] [Nonempty RK] [Fintype Sa] [Nonempty Sa]
+  [SampleableType W] in
+/-- The ideal secure-messaging game of a CKA whose initialisation and send steps do not touch
+the heap does not touch the heap. -/
+theorem sm_ideal_isPure (C : CKADef Sc Msg Key) (hi : SPComp.IsPure C.init)
+    (hs : ∀ s, SPComp.IsPure (C.send s)) (msgs : List (List (W × W))) :
+    SPComp.IsPure (sm_ideal (Ct := Ct) C msgs) :=
+  SPComp.bind_isPure (ckaPub_isPure C hi hs msgs.length) fun _ =>
+    SPComp.bind_isPure (SPComp.sample_isPure _) fun _ => SPComp.pure_isPure _
 
 /-! ## The reductions -/
 

@@ -187,14 +187,6 @@ noncomputable def prodCKARedR (C₁ : CKADef S₁ M₁ K₁) (k m : ℕ)
     (A : CKAView (M₁ × M₂) (K₁ × K₂) → SPComp Bool) : CKAView M₂ K₂ → SPComp Bool :=
   ckaPubRedOf (cka_real C₁ k m) (fun v₁ v₂ => zipView v₁ v₂) A
 
-/-- The real CKA game of a scheme whose initialisation and sending do not touch the heap does
-not touch the heap. -/
-theorem cka_real_isPure (C₁ : CKADef S₁ M₁ K₁) (h₀ : SPComp.IsPure C₁.init)
-    (h₁ : ∀ s, SPComp.IsPure (C₁.send s)) (k m : ℕ) : SPComp.IsPure (cka_real C₁ k m) :=
-  SPComp.bind_isPure h₀ fun _ => SPComp.bind_isPure (ckaRun_isPure C₁ h₁ _ _ _) fun _ =>
-    SPComp.bind_isPure (h₁ _) fun _ =>
-      SPComp.bind_isPure (ckaRun_isPure C₁ h₁ _ _ _) fun _ => SPComp.pure_isPure _
-
 /-- The product game with a uniform first component of the challenge key is the ideal game of
 `C₁` next to the real game of `C₂`, when sending in `C₁` does not touch the heap. -/
 theorem cka_mix_left_prod [Fintype K₁] [Nonempty K₁] (C₁ : CKADef S₁ M₁ K₁)

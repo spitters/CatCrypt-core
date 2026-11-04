@@ -171,23 +171,6 @@ theorem sm_real_eq_bind_smRealAt (C : CKADef Sc Msg Key) (R : PRGDef (RK × Key)
   simp only [h]
   exact SPComp.isPure_bind_comm_right _ _ _ (SPComp.sample_isPure RK)
 
-omit [SampleableType Ct] [Fintype Key] [Nonempty Key] [Fintype Sa] [Nonempty Sa] in
-/-- The real game of a CKA of `CKAPureNF` does not touch the heap. -/
-theorem sm_real_isPure {C : CKADef Sc Msg Key} (hC : CKAPureNF C)
-    (R : PRGDef (RK × Key) (RK × Sa)) (G : PRGDef Sa (M × Sa)) (D : AEADDef M Ct)
-    (msgs : List (List (M × M))) : SPComp.IsPure (sm_real C R G D msgs) := by
-  rw [sm_real_eq_bind_smRealAt]
-  exact SPComp.bind_isPure (SPComp.sample_isPure RK) fun rk => (smRealAt_pureNF hC R G D msgs rk).1
-
-omit [SampleableType M] [Fintype Key] [Nonempty Key] in
-/-- The ideal game of a CKA of `CKAPureNF` does not touch the heap. -/
-theorem sm_ideal_isPure {C : CKADef Sc Msg Key} (hC : CKAPureNF C)
-    (msgs : List (List (M × M))) : SPComp.IsPure (sm_ideal (Ct := Ct) C msgs) :=
-  SPComp.bind_isPure
-    (SPComp.bind_isPure hC.1.1 fun _ =>
-      SPComp.bind_isPure (ckaRun_pureNF hC _ _ _).1 fun _ => SPComp.pure_isPure _)
-    fun _ => SPComp.bind_isPure (SPComp.sample_isPure _) fun _ => SPComp.pure_isPure _
-
 end Keyed
 
 /-! ## The stack game over a world -/
@@ -393,8 +376,9 @@ theorem signal_stack_advantage_le (P : Finset PartyId) {C : CKADef Sc Msg Key}
         keyRORAdv (x3dhIdeal G) Z sel (stackRORDist (smRealAt C R Gp D msgs) A) +
         SM_Advantage C R Gp D msgs (stackSMRed (x3dhIdeal G) Z A) := by
   refine (stack_advantage_le _ _ Z sel (smRealAt C R Gp D msgs)
-    (sm_real_eq_bind_smRealAt C R Gp D msgs) (sm_real_isPure hC R Gp D msgs)
-    (sm_ideal_isPure hC msgs) A).trans ?_
+    (sm_real_eq_bind_smRealAt C R Gp D msgs)
+    (sm_real_isPure C hC.1.1 (fun s => (hC.2 s).1) R Gp D msgs)
+    (sm_ideal_isPure C hC.1.1 (fun s => (hC.2 s).1) msgs) A).trans ?_
   gcongr
   · exact x3dh_realizesSim_gapDH G P ζ _
   · exact le_of_eq rfl
