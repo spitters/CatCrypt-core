@@ -461,4 +461,27 @@ instance ucFromGameC_of_pure_adv {hon leak V : Type}
   ⟨UCEmulatesCSim_of_isPure_advantageA (PureGame.isPure (G := G_real))
     (PureGame.isPure (G := G_ideal)) GameAdvBoundC.bound_le⟩
 
+/-- Concrete distance of a game pair wrapped by `UCProtocol.ofGame` at the game input `x`, on
+    inputs of any type `α`: every environment `Z` is charged the game bound at `x` and at
+    `envReduction SPComp.pure Z`, the distinguisher of `Z` on the adversary channel with the heap
+    fixed to `Z.heap`. -/
+theorem DistC_ofGame {hon leak α : Type} {G_real G_ideal : hon → SPComp leak}
+    {bound : hon → (leak → SPComp Bool) → ℝ≥0∞}
+    [PureGame G_real] [PureGame G_ideal] [GameAdvBoundC G_real G_ideal bound] (x : hon) :
+    DistC (fun _ : α => UCProtocol.ofGame G_real x) (fun _ => UCProtocol.ofGame G_ideal x)
+      (fun Z => bound x (envReduction SPComp.pure Z)) := by
+  have h := DistC_of_isPure_advantageA (α := α)
+    (f := fun _ => UCProtocol.ofGame G_real x) (g := fun _ => UCProtocol.ofGame G_ideal x)
+    (gb := fun _ D => bound x (fun o => D (.inr o)))
+    (fun _ => SPComp.bind_isPure (PureGame.isPure x) fun _ => SPComp.pure_isPure _)
+    (fun _ => SPComp.bind_isPure (PureGame.isPure x) fun _ => SPComp.pure_isPure _)
+    (fun _ D => by
+      simpa only [AdvantageA, UCProtocol.ofGame, SPComp.bind_assoc, SPComp.pure_bind] using
+        GameAdvBoundC.bound_le (G_real := G_real) (G_ideal := G_ideal) x fun o => D (.inr o))
+  intro Z
+  refine (h Z).trans_eq (congrArg (bound x) ?_)
+  funext o
+  simp only [envReduction, SPComp.pure_bind]
+  rfl
+
 end CatCrypt.Crypto.UCConcrete

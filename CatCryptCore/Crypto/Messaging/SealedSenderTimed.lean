@@ -8,6 +8,7 @@ module
 public import CatCryptCore.Crypto.Messaging.SealedSender
 public import CatCryptCore.Crypto.PKE.GamesTimed
 public import CatCryptCore.Tactics.DeriveReduction
+public import CatCryptCore.Crypto.OracleQueryVec
 
 /-!
 # Time of the Sealed Sender reductions
@@ -34,6 +35,11 @@ node of the adversary and the cost of `acceptAnswer` per answer.
   `a₁`, `a₂`, and `valid` of cost at most `v`, the two stages of the reduction take time at
   most `4 + a₁ + 4 T₁ + q₁ (v + 7)` and `3 + a₂ + 4 T₂ + q₂ (v + 7)`: linear in the time of
   `A`, with a constant per acceptance query
+* `SenderAnonROMAdversary.Timed`; `senderAnonROMReduction.timed`,
+  `senderAnonROMReduction.erase_timed`, `senderAnonROMReduction.timeBound_timed` — the
+  reduction in the random-oracle model: for stages of `A` of times `T₁`, `T₂` and call costs
+  `a₁`, `a₂`, at most `4 + a₁ + 4 T₁ + (qH + q₁) (v + 12)` and
+  `3 + a₂ + 4 T₂ + (qH + q₂) (v + 12)`
 * `F_SealedSender.fixSenderReduction.timeBound_timed` — for stages of `A` of times `T₁`, `T₂`
   and call costs `a₁`, `a₂`: at most `1 + a₁ + T₁` and `1 + a₂ + T₂`
 * `F_SealedSender.viewReduction.timeBound_timed` — for the distinguisher `D` of views of cost
@@ -117,6 +123,87 @@ theorem senderAnonReduction.timeBound_timed {PK Cert Inner C : Type}
     rw [hq] at hm
     show StepTimeBound (senderAnonReduction.guess.tree.timed valid validCost A choose chooseCost
       guess guessCost st c) _
+    rw [hdef]
+    refine (stepTimeBound_delay hm).mono ?_
+    have := hgc st c
+    omega
+
+derive_timed_structure SenderAnonROMAdversary
+
+derive_reduction senderAnonROMReduction
+
+/-- **Time of the Sealed Sender reduction in the random-oracle model.** For costed stages
+`choose`, `guess` erasing to the stages of `A`, of times at most `T₁`, `T₂` and call costs at
+most `a₁`, `a₂`, and a recipient check of cost at most `v`, the first stage of the costed
+reduction takes time at most `4 + a₁ + 4 * T₁ + (qH + q₁) * (v + 12)` and the second at most
+`3 + a₂ + 4 * T₂ + (qH + q₂) * (v + 12)`. -/
+theorem senderAnonROMReduction.timeBound_timed {PK L Cert Inner C D H : Type}
+    (valid : Cert × Inner → Bool) (validCost : Cert × Inner → ℕ) {qH q₁ q₂ : ℕ}
+    (A : SenderAnonROMAdversary PK L Cert Inner C D H qH q₁ q₂)
+    (choose : PK → OracleAdv.Timed (D ⊕ C) (H ⊕ Bool) (Cert × Cert × Inner × L × A.St))
+    (chooseCost : PK → ℕ)
+    (guess : A.St → C → OracleAdv.Timed (D ⊕ C) (H ⊕ Bool) Bool)
+    (guessCost : A.St → C → ℕ) {T₁ T₂ a₁ a₂ v : ℕ}
+    (hce : ∀ pk, (choose pk).erase = A.choose pk)
+    (hge : ∀ st c, (guess st c).erase = A.guess st c)
+    (hc : ∀ pk, (choose pk).TimeBound T₁) (hg : ∀ st c, (guess st c).TimeBound T₂)
+    (hcc : ∀ pk, chooseCost pk ≤ a₁) (hgc : ∀ st c, guessCost st c ≤ a₂)
+    (hv : ∀ x, validCost x ≤ v) :
+    (senderAnonROMReduction.timed valid validCost A choose chooseCost guess guessCost).TimeBound
+      (4 + a₁ + 4 * T₁ + (qH + q₁) * (v + 12)) (3 + a₂ + 4 * T₂ + (qH + q₂) * (v + 12)) := by
+  have hq : 0 + (v + 9) + 3 = v + 12 := by omega
+  refine ⟨fun pk => ?_, fun st c => ?_⟩
+  · obtain ⟨F, hdef, hF⟩ : ∃ F : H ⊕ Option (Cert × Inner) → ℕ,
+        senderAnonROMReduction.choose.tree.timed valid validCost A choose chooseCost guess
+          guessCost pk =
+          delay (2 + chooseCost pk +
+            (OracleAdv.mapQueryAnswer.timed id (fun _ => 0) (acceptAnswerRO valid) F
+              (choose pk)).1)
+            ((OracleAdv.mapQueryAnswer.timed id (fun _ => 0) (acceptAnswerRO valid) F
+              (choose pk)).2.bind fun x => (1, OracleAdv.Timed.ret (chalPairRO x))) ∧
+        ∀ r, F r ≤ v + 9 :=
+      ⟨_, rfl, fun r => by
+        rcases r with _ | (_ | x)
+        · simp
+        · simp
+        · have := hv x; simp only; omega⟩
+    have hm := OracleAdv.mapQueryAnswer.timeBound_timed id (gCost := fun _ => 0)
+      (acceptAnswerRO valid) (a := 0) (b := v + 9) (fun _ => le_rfl) hF (hc pk)
+      (q := qH + q₁)
+      (by rw [hce pk]
+          exact OracleAdv.isQueryBound_iff_isQueryBoundBy_one.2
+            ((A.isQueryBoundH₁ pk).sum_elim (A.isQueryBoundD₁ pk)))
+    rw [hq] at hm
+    have hb := timeBound_bind (f := fun x => (1, OracleAdv.Timed.ret (chalPairRO x)))
+      (n := 1) hm.2 fun _ => ⟨le_rfl, trivial⟩
+    show StepTimeBound (senderAnonROMReduction.choose.tree.timed valid validCost A choose
+      chooseCost guess guessCost pk) _
+    rw [hdef]
+    refine (stepTimeBound_delay hb).mono ?_
+    have := hm.1
+    have := hcc pk
+    omega
+  · obtain ⟨F, hdef, hF⟩ : ∃ F : H ⊕ Option (Cert × Inner) → ℕ,
+        senderAnonROMReduction.guess.tree.timed valid validCost A choose chooseCost guess
+          guessCost st c =
+          delay (2 + guessCost st c)
+            (OracleAdv.mapQueryAnswer.timed id (fun _ => 0) (acceptAnswerRO valid) F
+              (guess st c)) ∧
+        ∀ r, F r ≤ v + 9 :=
+      ⟨_, rfl, fun r => by
+        rcases r with _ | (_ | x)
+        · simp
+        · simp
+        · have := hv x; simp only; omega⟩
+    have hm := OracleAdv.mapQueryAnswer.timeBound_timed id (gCost := fun _ => 0)
+      (acceptAnswerRO valid) (a := 0) (b := v + 9) (fun _ => le_rfl) hF (hg st c)
+      (q := qH + q₂)
+      (by rw [hge st c]
+          exact OracleAdv.isQueryBound_iff_isQueryBoundBy_one.2
+            ((A.isQueryBoundH₂ st c).sum_elim (A.isQueryBoundD₂ st c)))
+    rw [hq] at hm
+    show StepTimeBound (senderAnonROMReduction.guess.tree.timed valid validCost A choose
+      chooseCost guess guessCost st c) _
     rw [hdef]
     refine (stepTimeBound_delay hm).mono ?_
     have := hgc st c

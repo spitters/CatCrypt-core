@@ -37,6 +37,19 @@ was sent by one of the two senders, and accepting it carries no information abou
 model therefore has a decryption-validity oracle, and the reduction is to IND-CCA. Recipient
 anonymity is not modelled: the server routes by recipient.
 
+## Schemes in the random-oracle model
+
+`senderAnonROMGame valid S A b` is the same game for a scheme `S` whose key generation is a
+distribution and whose encryption and decryption may query a lazily sampled random oracle
+(`PKE.Games.ROMScheme`), with messages labelled by the associated data of the envelope: the
+server also has the random oracle and chooses the label, and challenger, server and recipient
+share the oracle table. Its bound is the labelled IND-CCA advantage `romLabelCCAAdvantage` of
+`senderAnonROMReduction`. The plain game is its instance at `P.toROM`, the scheme `P` with the
+label type `Unit` and without oracle queries: `run_acceptOracle_eq_acceptProgRO` identifies the
+run against the stateful acceptance oracle with the run against the random oracle, and
+`senderAnonGame_eq` follows from `senderAnonROMGame_eq`. The instance at HPKE Base mode is
+`Signal.SealedSender.Anonymity`.
+
 ## Real and ideal worlds
 
 In namespace `F_SealedSender`, the server is an adversary `FAdversary` with the recipient key
@@ -56,6 +69,11 @@ server, which asks no acceptance query, `sealedSenderView P cert m` is the view
 * `SenderAnonAdversary`, `senderAnonGame`, `senderAnonAdvantage`
 * `acceptAnswer`, `senderAnonReduction` — the IND-CCA adversary that runs the sender-anonymity
   adversary and answers each acceptance query by one decryption query
+* `acceptAnswerRO`, `acceptProgRO`, `SenderAnonROMAdversary`, `senderAnonROMGame`,
+  `senderAnonROMAdvantage`, `senderAnonROMReduction` — the game over a scheme in the
+  random-oracle model and its reduction to labelled IND-CCA
+* `SenderAnonAdversary.toROM` — a sender-anonymity adversary as an adversary of the
+  random-oracle game
 * `F_SealedSender.FAdversary`, `sealedSenderExp`, `sealedSender_real`, `sealedSender_ideal`
 * `F_SealedSender.fixSenderReduction` — the sender-anonymity adversary that runs an
   `FAdversary` and names its chosen sender and `cert₀` as the two candidate senders
@@ -64,6 +82,10 @@ server, which asks no acceptance query, `sealedSenderView P cert m` is the view
 
 ## Main results
 
+* `senderAnonROM_le` — for every scheme `S` in the random-oracle model and adversary `A`,
+  `senderAnonROMAdvantage valid S A ≤ romLabelCCAAdvantage S (senderAnonROMReduction valid A)`
+  (with equality, `senderAnonROMAdvantage_eq`)
+* `senderAnonGame_eq_senderAnonROMGame` — the plain game is the random-oracle game at `P.toROM`
 * `senderAnonGame_eq` — the sender-anonymity game with bit `b` is the IND-CCA game of
   `senderAnonReduction valid A` with bit `b`
 * `senderAnon_le_indcca` — for every adversary `A`,
@@ -155,6 +177,139 @@ noncomputable def senderAnonAdvantage {q₁ q₂ : ℕ}
     (A : SenderAnonAdversary PK Cert Inner C q₁ q₂) : ℝ≥0∞ :=
   Advantage (liftPMF (senderAnonGame P valid A true)) (liftPMF (senderAnonGame P valid A false))
 
+/-! ## Sender anonymity over a scheme in the random-oracle model -/
+
+section ROM
+
+variable {L D H : Type} [DecidableEq D] [Fintype H] [Nonempty H]
+
+omit [Fintype R] [Nonempty R] [DecidableEq C] in
+/-- The answer of the recipient to a query of the decryption program: a random-oracle answer is
+passed on, a decryption result is read as acceptance by `acceptAnswer valid`. -/
+def acceptAnswerRO (valid : Cert × Inner → Bool) (a : H ⊕ Option (Cert × Inner)) : H ⊕ Bool :=
+  Sum.map id (acceptAnswer valid) a
+
+omit [Fintype R] [Nonempty R] in
+/-- The program answering one query of a sender-anonymity adversary against the random oracle,
+for the scheme `S` with labelled messages `L × (Cert × Inner)`, the secret key `sk` and the
+challenge `chal`: the decryption program `romLabelDecProg` with its answer read through
+`acceptAnswerRO valid`. -/
+def acceptProgRO (S : ROMScheme PK SK (L × (Cert × Inner)) C D H) (sk : SK) (chal : Option C)
+    (q : D ⊕ C) : OracleAdv D H (H ⊕ Bool) :=
+  (romLabelDecProg S sk chal q).bind fun r => .ret (acceptAnswerRO valid r)
+
+/-- A two-stage sender-anonymity adversary (the server) against a scheme in the random-oracle
+model with labels `L`, with at most `qH` random-oracle queries in each stage, `q₁` acceptance
+queries in the first stage and `q₂` in the second. The first stage chooses the label of the
+envelope (the associated data). -/
+structure SenderAnonROMAdversary (PK L Cert Inner C D H : Type) (qH q₁ q₂ : ℕ) : Type 1 where
+  /-- The state passed from the first to the second stage. -/
+  St : Type
+  /-- The first stage on the recipient key: two sender certificates, the inner ciphertext, the
+  label and a state. -/
+  choose : PK → OracleAdv (D ⊕ C) (H ⊕ Bool) (Cert × Cert × Inner × L × St)
+  /-- The second stage on the challenge envelope. -/
+  guess : St → C → OracleAdv (D ⊕ C) (H ⊕ Bool) Bool
+  /-- The first-stage random-oracle query bound. -/
+  isQueryBoundH₁ : ∀ pk, (choose pk).IsQueryBoundBy (Sum.elim (fun _ => 1) fun _ => 0) qH
+  /-- The first-stage acceptance query bound. -/
+  isQueryBoundD₁ : ∀ pk, (choose pk).IsQueryBoundBy (Sum.elim (fun _ => 0) fun _ => 1) q₁
+  /-- The second-stage random-oracle query bound. -/
+  isQueryBoundH₂ : ∀ st c, (guess st c).IsQueryBoundBy (Sum.elim (fun _ => 1) fun _ => 0) qH
+  /-- The second-stage acceptance query bound. -/
+  isQueryBoundD₂ : ∀ st c, (guess st c).IsQueryBoundBy (Sum.elim (fun _ => 0) fun _ => 1) q₂
+
+variable (S : ROMScheme PK SK (L × (Cert × Inner)) C D H)
+
+/-- The sender-anonymity experiment in the random-oracle model with challenge bit `b`. The
+first stage runs from the empty random-oracle table; the challenger encrypts the labelled
+message `(ℓ, (cert_b, m))` against the resulting table, with `cert_b` the first certificate
+when `b = true` and the second when `b = false`; the second stage continues from the table
+reached by encryption, and the recipient answers `false` on the challenge envelope.
+Challenger, adversary and recipient share one lazily sampled random-oracle table. -/
+noncomputable def senderAnonROMGame {qH q₁ q₂ : ℕ}
+    (A : SenderAnonROMAdversary PK L Cert Inner C D H qH q₁ q₂) (b : Bool) : PMF Bool :=
+  S.keygen.bind fun ks =>
+    (OracleAdv.run roOracle (OracleAdv.subst (acceptProgRO valid S ks.2 none) (A.choose ks.1))
+      emptyTable).bind fun x =>
+      (OracleAdv.run roOracle
+        (S.enc ks.1 (x.1.2.2.2.1, (if b then x.1.1 else x.1.2.1), x.1.2.2.1)) x.2).bind fun c =>
+        (OracleAdv.run roOracle (OracleAdv.subst (acceptProgRO valid S ks.2 (some c.1))
+          (A.guess x.1.2.2.2.2 c.1)) c.2).map Prod.fst
+
+/-- The sender-anonymity advantage in the random-oracle model. -/
+noncomputable def senderAnonROMAdvantage {qH q₁ q₂ : ℕ}
+    (A : SenderAnonROMAdversary PK L Cert Inner C D H qH q₁ q₂) : ℝ≥0∞ :=
+  Advantage (liftPMF (senderAnonROMGame valid S A true))
+    (liftPMF (senderAnonROMGame valid S A false))
+
+omit [Fintype R] [Nonempty R] [DecidableEq C] in
+/-- The first-stage output of the labelled IND-CCA adversary for the choice
+`x = (cert₀, cert₁, m, ℓ, st)`: the two messages `(cert₀, m)` and `(cert₁, m)`, the label and
+the state. -/
+def chalPairRO {St : Type} (x : Cert × Cert × Inner × L × St) :
+    (Cert × Inner) × (Cert × Inner) × L × St :=
+  ((x.1, x.2.2.1), (x.2.1, x.2.2.1), x.2.2.2.1, x.2.2.2.2)
+
+omit [Fintype R] [Nonempty R] [DecidableEq C] [DecidableEq D] [Fintype H] [Nonempty H] in
+/-- **The labelled IND-CCA adversary of a sender-anonymity adversary.** It runs both stages of
+`A` once, passes the random-oracle queries on, asks each acceptance query as a decryption query
+and answers it by `acceptAnswer valid` of the decryption; the first stage returns the two
+messages `(cert₀, m)` and `(cert₁, m)` with the label. -/
+def senderAnonROMReduction {qH q₁ q₂ : ℕ}
+    (A : SenderAnonROMAdversary PK L Cert Inner C D H qH q₁ q₂) :
+    ROMLabelCCAAdversary PK L (Cert × Inner) C D H qH q₁ q₂ where
+  St := A.St
+  choose pk := ((A.choose pk).mapQueryAnswer id (acceptAnswerRO valid)).bind fun x =>
+    .ret (chalPairRO x)
+  guess st c := (A.guess st c).mapQueryAnswer id (acceptAnswerRO valid)
+  isQueryBoundH₁ pk :=
+    (OracleAdv.isQueryBoundBy_bind (b := 0)
+      (OracleAdv.isQueryBoundBy_mapQueryAnswer id (acceptAnswerRO valid) (fun _ => le_rfl)
+        (A.isQueryBoundH₁ pk)) fun _ => by trivial).mono (Nat.add_zero _).le
+  isQueryBoundD₁ pk :=
+    (OracleAdv.isQueryBoundBy_bind (b := 0)
+      (OracleAdv.isQueryBoundBy_mapQueryAnswer id (acceptAnswerRO valid) (fun _ => le_rfl)
+        (A.isQueryBoundD₁ pk)) fun _ => by trivial).mono (Nat.add_zero _).le
+  isQueryBoundH₂ st c :=
+    OracleAdv.isQueryBoundBy_mapQueryAnswer id (acceptAnswerRO valid) (fun _ => le_rfl)
+      (A.isQueryBoundH₂ st c)
+  isQueryBoundD₂ st c :=
+    OracleAdv.isQueryBoundBy_mapQueryAnswer id (acceptAnswerRO valid) (fun _ => le_rfl)
+      (A.isQueryBoundD₂ st c)
+
+/-- **The sender-anonymity game in the random-oracle model is a labelled IND-CCA game.** For
+every adversary `A` and bit `b`,
+`senderAnonROMGame valid S A b = romLabelCCAGame S (senderAnonROMReduction valid A) b`. -/
+theorem senderAnonROMGame_eq {qH q₁ q₂ : ℕ}
+    (A : SenderAnonROMAdversary PK L Cert Inner C D H qH q₁ q₂) (b : Bool) :
+    senderAnonROMGame valid S A b = romLabelCCAGame S (senderAnonROMReduction valid A) b := by
+  simp only [senderAnonROMGame, romLabelCCAGame, senderAnonROMReduction, OracleAdv.subst_bind,
+    OracleAdv.subst_mapQueryAnswer, OracleAdv.subst_ret, OracleAdv.run_bind, OracleAdv.run_ret,
+    PMF.bind_bind, PMF.pure_bind]
+  refine congrArg _ (funext fun ks => congrArg _ (funext fun x => ?_))
+  cases b <;> rfl
+
+/-- The sender-anonymity advantage in the random-oracle model is the labelled IND-CCA advantage
+of `senderAnonROMReduction`. -/
+theorem senderAnonROMAdvantage_eq {qH q₁ q₂ : ℕ}
+    (A : SenderAnonROMAdversary PK L Cert Inner C D H qH q₁ q₂) :
+    senderAnonROMAdvantage valid S A = romLabelCCAAdvantage S (senderAnonROMReduction valid A) := by
+  simp only [senderAnonROMAdvantage, romLabelCCAAdvantage, senderAnonROMGame_eq]
+
+/-- **Sealed Sender over a scheme in the random-oracle model is sender-anonymous if the scheme
+is labelled IND-CCA secure.** For every scheme `S` whose encryption and decryption may query a
+random oracle, recipient check `valid` and sender-anonymity adversary `A`,
+`senderAnonROMAdvantage valid S A ≤ romLabelCCAAdvantage S (senderAnonROMReduction valid A)`.
+The reduction runs both stages of `A` once and asks one decryption query per acceptance query
+of `A`. -/
+theorem senderAnonROM_le {qH q₁ q₂ : ℕ}
+    (A : SenderAnonROMAdversary PK L Cert Inner C D H qH q₁ q₂) :
+    senderAnonROMAdvantage valid S A ≤ romLabelCCAAdvantage S (senderAnonROMReduction valid A) :=
+  (senderAnonROMAdvantage_eq valid S A).le
+
+end ROM
+
 /-! ## The reduction to IND-CCA -/
 
 /-- The plaintexts of the IND-CCA challenge for the choice `x` of the sender-anonymity
@@ -181,33 +336,99 @@ def senderAnonReduction {q₁ q₂ : ℕ} (A : SenderAnonAdversary PK Cert Inner
   isQueryBound₂ st c :=
     OracleAdv.isQueryBound_mapQueryAnswer id (acceptAnswer valid) (A.isQueryBound₂ st c)
 
-omit [Fintype R] [Nonempty R] in
-/-- The decryption oracle read through `acceptAnswer valid` is the acceptance oracle. -/
-theorem decOracle_map_eq (sk : SK) (st : Option C) (c : C) :
-    (decOracle P sk st (id c)).map (fun x => (acceptAnswer valid x.1, x.2)) =
-      acceptOracle P valid sk st c := by
-  simp only [decOracle, acceptOracle, accepts, PMF.pure_map, id]
-  split_ifs <;> rfl
+/-! ## The scheme without oracle queries -/
 
-omit [Fintype R] [Nonempty R] in
-/-- Running a relabelled stage against the decryption oracle is running it against the
-acceptance oracle. -/
-theorem run_decOracle_mapQueryAnswer {α : Type} (sk : SK) (W : OracleAdv C Bool α)
-    (st : Option C) :
-    OracleAdv.run (decOracle P sk) (W.mapQueryAnswer id (acceptAnswer valid)) st =
-      OracleAdv.run (acceptOracle P valid sk) W st := by
-  rw [OracleAdv.run_mapQueryAnswer]
-  exact congrArg (fun O => OracleAdv.run O W st)
-    (funext fun s => funext fun c => decOracle_map_eq P valid sk s c)
+section NoQuery
+
+variable {D H : Type} [DecidableEq D] [Fintype H] [Nonempty H]
+
+/-- The answer of the random-oracle sender-anonymity game read as an acceptance: an acceptance
+answer is passed on; a random-oracle answer, which the lifted adversary does not ask for, is
+read as `false`. -/
+def acceptAnswerOfRO : H ⊕ Bool → Bool :=
+  Sum.elim (fun _ => false) id
+
+omit [DecidableEq C] in
+/-- A sender-anonymity adversary as an adversary of the random-oracle game with the label `()`:
+each acceptance query is asked as an acceptance query, and no random-oracle query is asked. -/
+def SenderAnonAdversary.toROM {q₁ q₂ : ℕ} (A : SenderAnonAdversary PK Cert Inner C q₁ q₂) :
+    SenderAnonROMAdversary PK Unit Cert Inner C D H 0 q₁ q₂ where
+  St := A.St
+  choose pk := ((A.choose pk).mapQueryAnswer Sum.inr acceptAnswerOfRO).bind fun x =>
+    .ret (x.1, x.2.1, x.2.2.1, (), x.2.2.2)
+  guess st c := (A.guess st c).mapQueryAnswer Sum.inr acceptAnswerOfRO
+  isQueryBoundH₁ pk := by
+    simpa using OracleAdv.isQueryBoundBy_bind (b := 0)
+      (OracleAdv.isQueryBoundBy_mapQueryAnswer_zero Sum.inr acceptAnswerOfRO (fun _ => rfl)
+        (A.choose pk)) (f := fun x => OracleAdv.ret (x.1, x.2.1, x.2.2.1, (), x.2.2.2))
+      fun _ => trivial
+  isQueryBoundD₁ pk := by
+    simpa using OracleAdv.isQueryBoundBy_bind (b := 0)
+      (OracleAdv.isQueryBoundBy_mapQueryAnswer_of_isQueryBound Sum.inr acceptAnswerOfRO
+        (fun _ => le_rfl) (A.isQueryBound₁ pk))
+      (f := fun x => OracleAdv.ret (x.1, x.2.1, x.2.2.1, (), x.2.2.2)) fun _ => trivial
+  isQueryBoundH₂ st c :=
+    OracleAdv.isQueryBoundBy_mapQueryAnswer_zero Sum.inr acceptAnswerOfRO (fun _ => rfl)
+      (A.guess st c)
+  isQueryBoundD₂ st c :=
+    OracleAdv.isQueryBoundBy_mapQueryAnswer_of_isQueryBound Sum.inr acceptAnswerOfRO
+      (fun _ => le_rfl) (A.isQueryBound₂ st c)
+
+/-- The run against the acceptance oracle is the run against the random oracle at `P.toROM`:
+for every stage `W`, the run of `W` against `acceptOracle P valid sk` from the challenge state
+`chal`, with its final state replaced by the table `T`, is the run against the random oracle
+from `T` of `W` lifted to the random-oracle game. -/
+theorem run_acceptOracle_eq_acceptProgRO {α : Type} (sk : SK) (chal : Option C)
+    (W : OracleAdv C Bool α) (T : D → Option H) :
+    (OracleAdv.run (acceptOracle P valid sk) W chal).map (fun x => (x.1, T)) =
+      OracleAdv.run roOracle
+        (OracleAdv.subst (acceptProgRO valid (P.toROM (D := D) (H := H)) sk chal)
+          (W.mapQueryAnswer Sum.inr acceptAnswerOfRO)) T := by
+  rw [OracleAdv.subst_mapQueryAnswer, OracleAdv.run_subst]
+  refine OracleAdv.run_map_eq_of_fixed _ _
+    (fun c => PMF.pure (if chal = some c then false else accepts P valid sk c)) chal T
+    (fun c => by simp [acceptOracle, PMF.pure_map]) (fun c => ?_) W
+  simp only [acceptProgRO, romLabelDecProg, Scheme.toROM]
+  split_ifs <;>
+    simp [acceptAnswerOfRO, acceptAnswerRO, accepts, PMF.pure_map, Option.map_map,
+      Function.comp_def, acceptAnswer]
+
+/-- The sender-anonymity game of `P` is the random-oracle sender-anonymity game of `P.toROM` at
+the lifted adversary. -/
+theorem senderAnonGame_eq_senderAnonROMGame {q₁ q₂ : ℕ}
+    (A : SenderAnonAdversary PK Cert Inner C q₁ q₂) (b : Bool) :
+    senderAnonGame P valid A b =
+      senderAnonROMGame valid (P.toROM (D := D) (H := H)) A.toROM b := by
+  simp only [senderAnonROMGame, senderAnonGame, SenderAnonAdversary.toROM, OracleAdv.subst_bind,
+    OracleAdv.run_bind, ← run_acceptOracle_eq_acceptProgRO, OracleAdv.subst_ret,
+    OracleAdv.run_ret, PMF.bind_map, Function.comp_def]
+  simp only [Scheme.toROM, envelope, OracleAdv.run_rand, OracleAdv.run_ret, PMF.bind_bind,
+    PMF.pure_bind, PMF.map_comp]
+  refine congrArg _ (funext fun ks => congrArg _ (funext fun x => ?_))
+  cases b <;> rfl
+
+/-- The lifted reduction of the random-oracle game is the lift of the IND-CCA reduction. -/
+theorem senderAnonROMReduction_toROM {q₁ q₂ : ℕ} (A : SenderAnonAdversary PK Cert Inner C q₁ q₂)
+    (b : Bool) :
+    romLabelCCAGame (P.toROM (D := D) (H := H)) (senderAnonROMReduction valid A.toROM) b =
+      romLabelCCAGame (P.toROM (D := D) (H := H)) (senderAnonReduction valid A).toROM b := by
+  have e : acceptAnswerOfRO ∘ acceptAnswerRO (H := H) valid = acceptAnswer valid ∘ decAnswer :=
+    funext fun r => by rcases r with _ | _ <;> rfl
+  simp only [romLabelCCAGame, senderAnonROMReduction, SenderAnonAdversary.toROM,
+    senderAnonReduction, INDCCAAdversary.toROM, OracleAdv.mapQueryAnswer_bind,
+    OracleAdv.mapQueryAnswer_mapQueryAnswer, OracleAdv.bind_assoc, OracleAdv.bind_ret,
+    OracleAdv.mapQueryAnswer, Function.comp_id, Function.id_comp, e]
+  rfl
+
+end NoQuery
 
 /-- **The sender-anonymity game is an IND-CCA game.** For every adversary `A` and bit `b`,
 `senderAnonGame P valid A b = indccaGame P (senderAnonReduction valid A) b`. -/
 theorem senderAnonGame_eq {q₁ q₂ : ℕ} (A : SenderAnonAdversary PK Cert Inner C q₁ q₂)
     (b : Bool) : senderAnonGame P valid A b = indccaGame P (senderAnonReduction valid A) b := by
-  simp only [senderAnonGame, indccaGame, senderAnonReduction, OracleAdv.run_bind,
-    OracleAdv.run_ret, run_decOracle_mapQueryAnswer, PMF.bind_bind, PMF.pure_bind]
-  refine congrArg _ (funext fun ks => congrArg _ (funext fun x => ?_))
-  cases b <;> rfl
+  rw [senderAnonGame_eq_senderAnonROMGame (D := Unit) (H := Unit), senderAnonROMGame_eq,
+    senderAnonROMReduction_toROM (D := Unit) (H := Unit),
+    indccaGame_eq_romLabelCCAGame (D := Unit) (H := Unit)]
 
 /-- The sender-anonymity advantage is the IND-CCA advantage of `senderAnonReduction`. -/
 theorem senderAnonAdvantage_eq {q₁ q₂ : ℕ} (A : SenderAnonAdversary PK Cert Inner C q₁ q₂) :
