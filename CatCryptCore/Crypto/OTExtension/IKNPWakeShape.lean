@@ -171,19 +171,9 @@ theorem lazyKey_withSub_step (π : K → MultiHybrid σ E O EG OG) (k₀ : K) (�
     SPComp.map (fun p => ((p.1.1.1, (p.1.1.2, p.1.2)), p.2))
         (((lazyKey π k₀ μ u).withSub X).step t e) =
       ((keyedWithSub π k₀ u X).lazy μ).step (t.1.1, (t.1.2, t.2)) e := by
-  obtain ⟨⟨ko, s⟩, x⟩ := t
+  revert t e
   simp only [withSub, lazyKey_drive]
-  cases ko with
-  | none =>
-    cases hu : u s e
-    · simp [lazyKey, keyedWithSub, withSub, KeyedSys.lazy, KeyedSys.lazyStep, hu, SPComp.map,
-        SPComp.bind_assoc, SPComp.pure_bind]
-    · simp [lazyKey, keyedWithSub, withSub, KeyedSys.lazy, KeyedSys.lazyStep, hu, hfuel,
-        SPComp.map,
-        SPComp.bind_assoc, SPComp.pure_bind]
-  | some k =>
-    simp [lazyKey, keyedWithSub, withSub, KeyedSys.lazy, KeyedSys.lazyStep, hfuel, SPComp.map,
-      SPComp.bind_assoc, SPComp.pure_bind]
+  sys_step_port using [lazyKey, keyedWithSub, withSub, hfuel]
 
 /-- **The key moves into the hybrid.** The drawing hybrid running with `X` has the view of the
 lazily keyed system of the family `π k` running with `X`, when the hybrids of the family have
@@ -260,11 +250,7 @@ theorem view_lazyKey_tensor {K : Type} (π : K → MultiHybrid σ E O EG OG) (k�
   rw [h1, view_lazyKey_withSub _ k₀ μ _ hfuel' X Z, KeyedSys.view_lazy _ μ hind' Z]
   congr 1
   funext k
-  exact view_eq_of_stepMap
-    ((keyedWithSub (fun k => (π k).tensor (idSim EA OA)) k₀ (tensorUses u) X).withKey k)
-    (((π k).tensor (idSim EA OA)).withSub X) id
-    (by simp [keyedWithSub, KeyedSys.withKey, withSub, tensor, hinit])
-    (fun t e => by simp [keyedWithSub, KeyedSys.withKey, SPComp.map]) Z
+  sys_step_map id (fun _ => True) using [keyedWithSub, KeyedSys.withKey, withSub, tensor, hinit]
 
 end MultiHybrid
 

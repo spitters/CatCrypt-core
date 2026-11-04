@@ -71,9 +71,8 @@ open CatCrypt.Crypto.Choreography (ChannelCap)
 variable {σ τ υ E O EG OG EA OA EH EC ED OH OC OD : Type}
 
 /-- A system realizes itself at distance `0`. -/
-theorem realizes_self (X : Sys τ E O) : Realizes X X (fun _ _ => 0) :=
-  realizes_zero_of_stepMap X X id rfl fun t e => by
-    simp [SPComp.map, Prod.mk.eta, SPComp.bind_pure]
+theorem realizes_self (X : Sys τ E O) : Realizes X X (fun _ _ => 0) := by
+  trace_eq_chain
 
 /-- A hybrid beside the forwarding of the adversary port, over a subroutine that answers each
 event on its port, answers each event on its port. -/
@@ -878,11 +877,9 @@ theorem alszBase_realizesSim [NeZero κ] :
       (Sum.map splitIdx id) id)
     (π := (MultiHybrid.idSim (AHEv κ Seed m) (OOut m)).tensor (simKeepA κ m))
     (hπ := (MultiHybrid.idSim_opaque (aBaseHV κ Seed m)).tensor
-      (MultiHybrid.opaque_eqView _).indexedKeep) id rfl (fun t e => ?_) h₂
-  · exact fun ζ Z => le_of_le_of_eq (h₃ ζ Z) Finset.sum_const_zero
-  · rcases e with (⟨i, p⟩ | ⟨i, b⟩) | ⟨i, a⟩ <;>
-      simp [FOTSchedPar, FOTSched, Sys.mapPorts, Sys.relabel, splitIdx, SPComp.map,
-        SPComp.bind_assoc, SPComp.pure_bind]
+      (MultiHybrid.opaque_eqView _).indexedKeep) id rfl
+      (by sys_step_port using [FOTSchedPar, FOTSched, Sys.mapPorts, Sys.relabel, splitIdx]) h₂
+  exact fun ζ Z => le_of_le_of_eq (h₃ ζ Z) Finset.sum_const_zero
 
 /-- The `κ` ALSZ base OTs are idle at the seed OT's `idle` of the first copy. -/
 theorem alszBase_idleAt [NeZero κ] :
