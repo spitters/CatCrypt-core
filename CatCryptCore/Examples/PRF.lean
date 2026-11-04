@@ -16,6 +16,7 @@ public import CatCryptCore.Examples.OneTimePad
 public import CatCryptCore.Tactics
 public import CatCryptCore.Tactics.AutoMetrics
 public import CatCryptCore.ForMathlib.PMFSupport
+public import CatCryptCore.ForMathlib.PMFUniform
 public import CatCryptCore.Crypto.OracleQueryVec
 public import CatCryptCore.Tactics.QueryBound
 
@@ -187,20 +188,6 @@ section Cascade
 
 open CatCrypt.Core CatCrypt.Crypto CatCrypt.Crypto.PRPPRF
 open scoped ENNReal
-
-/-- The uniform distribution on a product is the product of the uniform
-distributions. -/
-theorem uniformFintype_prod {K : Type} [Fintype K] [Nonempty K] :
-    PMF.uniformFintype (K × K) =
-      (PMF.uniformFintype K).bind fun a => (PMF.uniformFintype K).map (a, ·) := by
-  ext ⟨a, b⟩
-  rw [PMF.bind_apply, tsum_eq_single a]
-  · rw [PMF.map_apply, tsum_eq_single b]
-    · simp [ENNReal.mul_inv]
-    · intro y hy; simp [Ne.symm hy]
-  · intro x hx
-    rw [PMF.map_apply]
-    simp [Ne.symm hx]
 
 /-! ## Answer maps and the simulated random injection -/
 
@@ -506,7 +493,7 @@ theorem realGame_cascade_eq (F : K → D → D) (A : OracleAdv D D Bool) :
     realGame (cascade F) A = realGame F (cascadeRedInner F A) := by
   unfold realGame cascadeRedInner
   congr 1
-  rw [uniformFintype_prod, PMF.bind_bind]
+  rw [PMF.uniform_prod_eq_bind, PMF.bind_bind]
   refine congrArg _ (funext fun k₁ => ?_)
   rw [OracleAdv.run_rand, PMF.bind_map, PMF.map_bind]
   refine congrArg _ (funext fun k₂ => ?_)

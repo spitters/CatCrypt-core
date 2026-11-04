@@ -6,6 +6,7 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.ForMathlib.PMFUniformDefs
+public import Mathlib.Data.Fintype.Vector
 
 /-!
 # Expectations under `PMF.bind` and `PMF.map`, and uniform distributions
@@ -35,6 +36,8 @@ an outcome of a bind.
 * `PMF.map_uniform_fst`, `PMF.map_uniform_prod_map`, `PMF.map_uniform_pi_of_map`,
   `PMF.map_uniform_comp_injective` — images of uniform pairs and uniform functions that
   are uniform
+* `PMF.uniformFintype_vector_succ` — a uniform vector of length `m + 1` is a uniform head
+  and an independent uniform tail
 * `PMF.map_uniform_prod_fst`, `PMF.map_uniform_prod_snd`, `PMF.map_uniform_prod_pair_congr`,
   `PMF.map_uniform_prod_dep_congr` — maps of uniform pairs through one component, and their
   congruence under maps with equal image distributions
@@ -439,5 +442,28 @@ theorem map_uniform_prod_dep_congr {X : Type} (Φ : C → X → β) {f : C → A
   rw [h, h, hf]
 
 end UniformProdCongr
+
+section UniformVector
+
+instance _root_.List.Vector.instNonempty (K : Type) [Nonempty K] (m : ℕ) :
+    Nonempty (List.Vector K m) :=
+  ⟨List.Vector.replicate m (Classical.arbitrary K)⟩
+
+/-- A uniform vector of length `m + 1` is a uniform head followed by an independent uniform
+tail. -/
+theorem uniformFintype_vector_succ (K : Type) [Fintype K] [Nonempty K] (m : ℕ) :
+    PMF.uniformFintype (List.Vector K (m + 1)) =
+      (PMF.uniformFintype K).bind fun t =>
+        (PMF.uniformFintype (List.Vector K m)).map fun v => t ::ᵥ v := by
+  let e : K × List.Vector K m ≃ List.Vector K (m + 1) :=
+    { toFun := fun p => p.1 ::ᵥ p.2
+      invFun := fun v => (v.head, v.tail)
+      left_inv := fun p => by simp
+      right_inv := fun v => by simp }
+  rw [← uniformFintype_map_equiv e, uniform_prod_eq_bind, PMF.map_bind]
+  simp only [PMF.map_comp]
+  rfl
+
+end UniformVector
 
 end PMF

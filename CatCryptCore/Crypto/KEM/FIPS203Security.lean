@@ -39,7 +39,6 @@ tables, the `J`-prefix hop and the per-draw bound.
 
 * `tKeyed_enc_eq_fixedT`, `tKeyed_dec_eq_fixedT` — on a key pair `(pk, sk)`,
   `tKeyed P f` is `fixedT P (f pk)`
-* `uniformFintype_prod` — a uniform pair is a pair of independent uniform draws
 * `tsum_uniform_mem_log_le` — averaged over a uniform `z`, a run whose queries carry
   at most `n` keys logs `z` with probability at most `n / |Z|`
 * `advantage_le_flag` — the IND-CCA advantage against `fips203 P hpk` is at most the
@@ -102,7 +101,7 @@ The steps of `FOTransformU.uNotBot_indcca`, and how each maps onto `fips203`:
    `G`-table to an eager pair of functions and keeps the keys lazy on the split side;
    `tKeyed_enc_eq_fixedT` and `tKeyed_dec_eq_fixedT` identify the
    derandomised scheme with `fixedT P (f pk)` on the key pair in play, and
-   `uniformFintype_prod` separates the `K`- and `R`-coordinates of one `G`-value.
+   `PMF.uniform_prod_eq_bind` separates the `K`- and `R`-coordinates of one `G`-value.
 5. Correctness (`failInd`, `corrErr_eq`). Transfers: the challenge decrypts to `m*`
    except with probability `P.corrErr`.
 6. Composition. `tTransform_owpca_of_total` with `n = 2·qRO`, since each `G`-query at
@@ -164,28 +163,6 @@ theorem tKeyed_keygen_eq_fixedT (g : M → R) :
     (tKeyed P f).keygen = (fixedT P g).keygen := rfl
 
 end Bridge
-
-/-! ## A uniform pair -/
-
-omit [Fintype M] [Nonempty M] [Fintype Z] [Nonempty Z] [Nonempty R] [Nonempty K] [DecidableEq C] in
-/-- A uniform pair is a uniform first coordinate followed by an independent uniform
-second coordinate. -/
-theorem uniformFintype_prod {α β : Type} [Fintype α] [Nonempty α] [Fintype β] [Nonempty β] :
-    PMF.uniformFintype (α × β) =
-      (PMF.uniformFintype α).bind fun a => (PMF.uniformFintype β).map fun b => (a, b) := by
-  classical
-  ext ⟨a, b⟩
-  simp only [PMF.uniformFintype_apply, Fintype.card_prod, Nat.cast_mul, PMF.bind_apply,
-    PMF.map_apply, tsum_fintype, Prod.mk.injEq]
-  have hα : (Fintype.card α : ℝ≥0∞) ≠ 0 := by simp
-  rw [Finset.sum_eq_single a]
-  · rw [Finset.sum_eq_single b]
-    · simp [ENNReal.mul_inv (Or.inl hα) (Or.inl (ENNReal.natCast_ne_top _))]
-    · intro b' _ hb; simp [Ne.symm hb]
-    · simp
-  · intro a' _ ha
-    simp [Ne.symm ha]
-  · simp
 
 /-! ## Logged oracles -/
 
@@ -573,7 +550,7 @@ theorem rom2INDCCAGame_fips203 {qRO qD : ℕ}
   have hempty : ∀ q : M × Hash, (emptyTable : M × Hash → Option (K × R)) q = none := fun _ => rfl
   simp only [rom2INDCCAGame, setup, fips203, gQ, PMF.bind_bind, PMF.bind_map, Function.comp_def,
     OracleAdv.run_rand, OracleAdv.run_bind, OracleAdv.run_query, OracleAdv.run_ret, ro2Oracle,
-    roOracle, hempty, PMF.map_bind, PMF.pure_bind, Sum.elim_inl, id, uniformFintype_prod]
+    roOracle, hempty, PMF.map_bind, PMF.pure_bind, Sum.elim_inl, id, PMF.uniform_prod_eq_bind]
   refine congrArg _ (funext fun ks => congrArg _ (funext fun z => congrArg _ (funext fun m =>
     congrArg _ (funext fun k₀ => congrArg _ (funext fun r => ?_)))))
   simp only [PMF.map, Function.comp_def]
@@ -1892,7 +1869,7 @@ theorem uniform_arrow_prod {α β γ : Type} [Fintype α] [DecidableEq α] [Fint
   rw [← PMF.uniformFintype_map_equiv (β := α → β × γ)
       ⟨fun p a => (p.1 a, p.2 a), fun h => (fun a => (h a).1, fun a => (h a).2),
         fun _ => rfl, fun _ => rfl⟩,
-    uniformFintype_prod, PMF.map_bind]
+    PMF.uniform_prod_eq_bind, PMF.map_bind]
   refine congrArg _ (funext fun g => ?_)
   rw [PMF.map_comp]
   rfl
