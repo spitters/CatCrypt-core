@@ -40,6 +40,9 @@ public import CatCryptCore.Examples.EncryptThenMAC
 public import CatCryptCore.Examples.BasicHash
 public import CatCryptCore.Examples.KEMDEM
 public import CatCryptCore.Examples.Schnorr
+public import CatCryptCore.Examples.SchnorrSigma
+public import CatCryptCore.Examples.Schnorr_v2
+public import CatCryptCore.Crypto.SchnorrForking
 public import CatCryptCore.Examples.ElGamal
 public import CatCryptCore.Examples.MAC
 public import CatCryptCore.Examples.SecretSharing

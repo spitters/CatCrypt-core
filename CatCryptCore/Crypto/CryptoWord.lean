@@ -123,6 +123,18 @@ theorem CryptoWord.wxor_left_cancel (a b : W) :
   rw [CryptoWord.wxor_comm a b]
   exact CryptoWord.wxor_cancel b a
 
+/-- `wxor s` is injective. -/
+theorem CryptoWord.wxor_left_injective (s : W) : Function.Injective (CryptoWord.wxor s) := by
+  intro c c' h
+  rw [← CryptoWord.wxor_left_cancel s c, h, CryptoWord.wxor_left_cancel]
+
+/-- `wxor` with a fixed right argument is injective. -/
+theorem CryptoWord.wxor_right_injective (c : W) :
+    Function.Injective fun s : W => CryptoWord.wxor s c := by
+  intro s s' h
+  simp only at h
+  rw [← CryptoWord.wxor_cancel s c, h, CryptoWord.wxor_cancel]
+
 /-! ## XOR Equivalence (Bijection) -/
 
 /-- wxor with a fixed value is an equivalence (bijection).
