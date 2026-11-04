@@ -263,6 +263,10 @@ public import CatCryptCore.Crypto.AKE.FAKESys
 public import CatCryptCore.Crypto.AKE.X3DHSquare
 public import CatCryptCore.Crypto.AKE.X3DHSquareHops
 public import CatCryptCore.Crypto.AKE.X3DHSquareGDH
+public import CatCryptCore.Crypto.AKE.X3DHPassive
+public import CatCryptCore.Crypto.AKE.X3DHPassiveHops
+public import CatCryptCore.Crypto.AKE.X3DHPassiveHopsTimed
+public import CatCryptCore.Crypto.AKE.X3DHDeniability
 public import CatCryptCore.Crypto.AKE.PQXDHSquare
 public import CatCryptCore.Crypto.AKE.PQXDHSquareHops
 public import CatCryptCore.Crypto.AKE.PQXDHSquareGDH
