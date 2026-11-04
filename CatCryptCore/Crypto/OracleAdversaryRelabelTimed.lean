@@ -6,6 +6,7 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Crypto.OracleAdversaryTimed
+public import CatCryptCore.Crypto.OracleSubst
 
 /-!
 # Relabelling the queries and answers of an oracle adversary, with step costs
@@ -31,6 +32,8 @@ per `query` node. The costs `t` and `u` of the two relabellings are parameters.
 * `OracleAdv.run_mapQueryAnswer` — running the relabelled adversary is running `A` against
   the relabelled oracle
 * `OracleAdv.isQueryBound_mapQueryAnswer` — relabelling keeps the query bound
+* `OracleAdv.isQueryBoundBy_mapQueryAnswer` — and a cost bound
+* `OracleAdv.subst_mapQueryAnswer` — substitution into a relabelled adversary
 * `OracleAdv.Timed.erase_mapQueryAnswer` — erasure commutes with relabelling
 * `OracleAdv.mapQueryAnswer.timed`, `OracleAdv.mapQueryAnswer.erase_timed`,
   `OracleAdv.mapQueryAnswer.timeBound_timed` — the costed form in the binder convention of
@@ -77,6 +80,28 @@ theorem isQueryBound_mapQueryAnswer (g : D → D') (h : R' → R) {A : OracleAdv
     cases q with
     | zero => exact hA.elim
     | succ q => exact fun r => ih (h r) (hA (h r))
+
+/-- Relabelling keeps a cost bound when each relabelled query costs at most the original
+one. -/
+theorem isQueryBoundBy_mapQueryAnswer (g : D → D') (h : R' → R) {cost : D → ℕ}
+    {cost' : D' → ℕ} (hc : ∀ d, cost' (g d) ≤ cost d) {A : OracleAdv D R α} {n : ℕ}
+    (hA : A.IsQueryBoundBy cost n) : (mapQueryAnswer g h A).IsQueryBoundBy cost' n := by
+  induction A generalizing n with
+  | ret a => trivial
+  | rand p k ih => exact fun b => ih b (hA b)
+  | query d k ih =>
+    exact ⟨(hc d).trans hA.1, fun r => (ih (h r) (hA.2 (h r))).mono (by have := hc d; omega)⟩
+
+/-- Substituting programs into the relabelled adversary substitutes, for each query `d`, the
+program of `g d` followed by the answer relabelling `h`. -/
+theorem subst_mapQueryAnswer {D'' R'' : Type} (impl : D' → OracleAdv D'' R'' R') (g : D → D')
+    (h : R' → R) (A : OracleAdv D R α) :
+    subst impl (mapQueryAnswer g h A) =
+      subst (fun d => (impl (g d)).bind fun r => ret (h r)) A := by
+  induction A with
+  | ret a => rfl
+  | rand p k ih => simp only [mapQueryAnswer, subst_rand, ih]
+  | query d k ih => simp only [mapQueryAnswer, subst_query, bind_assoc, bind_ret, ih]
 
 namespace Timed
 

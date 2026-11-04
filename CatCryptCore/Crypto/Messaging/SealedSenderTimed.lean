@@ -12,8 +12,9 @@ public import CatCryptCore.Tactics.DeriveReduction
 /-!
 # Time of the Sealed Sender reduction
 
-The costed mirror of the IND-CCA adversary (`INDCCAAdversary.Timed`, by
-`derive_timed_structure`) and the costed form of `senderAnonReduction` (by `derive_reduction`),
+The costed mirrors of the IND-CCA adversary (`INDCCAAdversary.Timed`) and of the
+sender-anonymity adversary (`SenderAnonAdversary.Timed`, the result type of reductions that
+build one), by `derive_timed_structure`, and the costed form of `senderAnonReduction` (by `derive_reduction`),
 with its erasure theorem and its time bound. No module imports this file.
 
 ## Cost model
@@ -46,6 +47,8 @@ end CatCrypt.Crypto.PKE.Games
 namespace CatCrypt.Crypto.Messaging.SealedSender
 
 open CatCrypt.Crypto.PKE.Games OracleAdv.Timed
+
+derive_timed_structure SenderAnonAdversary
 
 derive_reduction senderAnonReduction
 
