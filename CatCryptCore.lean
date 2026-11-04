@@ -260,9 +260,14 @@ public import CatCryptCore.Crypto.Constructions.NMACPRF
 public import CatCryptCore.Crypto.Constructions.HKDFPRF
 public import CatCryptCore.Crypto.Constructions.QueryList
 public import CatCryptCore.Crypto.Constructions.KBKDFPRF
+public import CatCryptCore.Crypto.Constructions.CBCINDCPA
 public import CatCryptCore.Crypto.AEAD.NonceBased
 public import CatCryptCore.Crypto.HKDF_UC
 public import CatCryptCore.Crypto.HKDF.HMACModel
+public import CatCryptCore.Crypto.HPKE.BaseCCA
+public import CatCryptCore.Crypto.HPKE.DHKEM
+public import CatCryptCore.Crypto.HPKE.BaseCCADHKEM
+public import CatCryptCore.Crypto.ECH.Scheme
 public import CatCryptCore.Crypto.PKE.Games
 public import CatCryptCore.Crypto.PKE.FOTransformT
 public import CatCryptCore.Crypto.PKE.LWEPKE
