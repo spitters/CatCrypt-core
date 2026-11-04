@@ -7,6 +7,7 @@ module
 
 public import CatCryptCore.Crypto.HKDF_UC
 public import CatCryptCore.Crypto.Constructions.KBKDFPRF
+public import CatCryptCore.Crypto.PRGFromPRF
 
 /-!
 # HKDF over HMAC with the compression function as primitive
@@ -91,6 +92,18 @@ noncomputable def oneQueryAdv (d : D) (Dist : R → SPComp Bool) : OracleAdv D R
 theorem isQueryBound_oneQueryAdv (d : D) (Dist : R → SPComp Bool) :
     (oneQueryAdv d Dist).IsQueryBound 1 :=
   fun _ _ => trivial
+
+derive_timed oneQueryAdv
+
+open OracleAdv.Timed in
+/-- **Time of the one-query reduction.** With the distinguisher of cost at most `d` on every
+answer, the costed one-query adversary has time at most `8 + d`. -/
+theorem oneQueryAdv.timeBound_timed {D R : Type} (x : D) (Dist : R → SPComp Bool)
+    (DistCost : R → ℕ) {d : ℕ} (hD : ∀ r, DistCost r ≤ d) :
+    StepTimeBound (oneQueryAdv.timed x Dist DistCost) (8 + d) := by
+  unfold oneQueryAdv.timed
+  simp only [stepTimeBound_zero, TimeBound]
+  grind
 
 variable [Fintype K] [Nonempty K]
 
@@ -320,5 +333,75 @@ theorem hkdfExpandGameAdvBoundC {n : ℕ} (hinj : MsgInjOn P.msg n) (q : ℕ) :
   ⟨fun S Dist => ((gameAdvBoundC_expandVar P.mac hinj (fun _ => le_rfl) q).bound_le S Dist).trans
     (prf_mac_le_hmacBound P _ (q * n)
       (isQueryBound_expandVarAdv P.msg (fun _ => le_rfl) (isQueryBound_prfDistAdv q S _)))⟩
+
+section TwoBlocks
+
+open CatCrypt.Crypto.PRGFromPRF
+
+/-! ## The first two blocks of HKDF-Expand
+
+The first two blocks of HKDF-Expand from a uniform pseudorandom key are the PRG `chainPRG` of
+two chained HMAC evaluations, whose input at the second block depends on the first; its PRG
+advantage is the adaptive PRF advantage of HMAC against the two-query reduction `chainRed`
+(`PRGFromPRF.prg_advantage_chainPRG_le`), at most the HMAC bound `hmacBound P 2`. -/
+
+/-- The first two blocks `T(1) = HMAC(prk, msg none info 1)` and
+`T(2) = HMAC(prk, msg T(1) info 2)` of HKDF-Expand of `P` (RFC 5869 §2.3) as a PRG on the
+pseudorandom key. -/
+def twoBlockExpand (info : K) : Assumptions.PRGDef K (K × K) :=
+  chainPRG P.mac (P.msg none info 1) fun t => P.msg (some t) info 2
+
+omit [SampleableType K] [DecidableEq B] [Nontrivial B] in
+/-- The two blocks of `twoBlockExpand P info` are the first two blocks of RFC 5869 HKDF-Expand
+of `P` with output length two blocks. -/
+theorem twoBlockExpand_stretch (info prk : K) :
+    (twoBlockExpand P info).stretch prk =
+      ((Constructions.HKDFPRF.hkdfExpand P.f P.fpad P.iv P.ipad P.opad P.kpad P.ℓ P.msg 2 prk
+          info).head,
+        (Constructions.HKDFPRF.hkdfExpand P.f P.fpad P.iv P.ipad P.opad P.kpad P.ℓ P.msg 2 prk
+          info).tail.head) := by
+  simp [twoBlockExpand, chainPRG, Constructions.HKDFPRF.hkdfExpand, Constructions.HKDFPRF.expand,
+    Constructions.HKDFPRF.expandVec]
+
+/-- The reduction of the two Expand blocks: the two-query HMAC adversary `chainRed` of the
+blocks. -/
+noncomputable def twoBlockExpandRed (info : K) (A : Assumptions.PRG_Adversary (K × K)) :
+    OracleAdv (Msg B P.ℓ) K Bool :=
+  chainRed (P.msg none info 1) (fun t => P.msg (some t) info 2) A
+
+derive_timed twoBlockExpandRed
+
+omit [SampleableType K] [DecidableEq B] [Nontrivial B] in
+open OracleAdv.Timed in
+/-- **Time of the Expand reduction.** With the adversary `A` of cost at most `a` and the Expand
+encoding of cost at most `c`, the costed reduction `twoBlockExpandRed` has time at most
+`12 + 2 c + a`. -/
+theorem twoBlockExpandRed.timeBound_timed (info : K) (A : Assumptions.PRG_Adversary (K × K))
+    (ACost : K × K → ℕ) {a : ℕ} (hA : ∀ y, ACost y ≤ a) (msgCost : Option K → K → ℕ → ℕ)
+    {c : ℕ} (hmsg : ∀ p x i, msgCost p x i ≤ c) :
+    StepTimeBound (twoBlockExpandRed.timed P info A ACost msgCost) (12 + 2 * c + a) := by
+  unfold twoBlockExpandRed.timed chainRed.timed
+  refine (stepTimeBound_delay (n := 10 + c + a) ?_).mono (by grind)
+  simp only [stepTimeBound_zero, TimeBound]
+  grind
+
+omit [SampleableType K] [DecidableEq B] [Nontrivial B] in
+/-- For an Expand encoding injective in the counter on `1, 2`, the second Expand input differs
+from the first. -/
+theorem msg_two_ne_one {info : K} (hinj : MsgInjOn P.msg 2) (t : K) :
+    P.msg (some t) info 2 ≠ P.msg none info 1 := fun h => by
+  have := (hinj (some t) none info info 2 1 (by omega) le_rfl le_rfl (by omega) h).2
+  omega
+
+/-- The PRG advantage of the two Expand blocks is at most the HMAC bound at two queries of the
+Expand reduction. -/
+theorem prg_advantage_twoBlockExpand_le (info : K) (hinj : MsgInjOn P.msg 2)
+    (A : Assumptions.PRG_Adversary (K × K)) :
+    Assumptions.PRG_Advantage (twoBlockExpand P info) A ≤
+      hmacBound P 2 (twoBlockExpandRed P info A) :=
+  (prg_advantage_chainPRG_le P.mac (msg_two_ne_one P hinj) A).trans
+    (prf_mac_le_hmacBound P _ 2 (isQueryBound_chainRed _ _ A))
+
+end TwoBlocks
 
 end CatCrypt.Crypto.HKDF.HMACModel

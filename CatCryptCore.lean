@@ -190,6 +190,7 @@ public import CatCryptCore.Crypto.AGM
 public import CatCryptCore.Crypto.SecurityDefs
 public import CatCryptCore.Crypto.Encryption
 public import CatCryptCore.Crypto.HybridArgument
+public import CatCryptCore.Crypto.HybridArgumentTimed
 public import CatCryptCore.Crypto.NomAdvantage
 public import CatCryptCore.Crypto.EvalComplete
 public import CatCryptCore.Crypto.ExtractedAlgebra
