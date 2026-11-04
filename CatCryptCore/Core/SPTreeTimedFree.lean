@@ -9,6 +9,7 @@ public import CatCryptCore.Core.SPTreeFree
 public import CatCryptCore.Core.SPTreeTimed
 public import PolyFun.PFunctor.Handler.Sum
 public import PolyFun.PFunctor.Handler.Free
+public import CatCryptCore.ForMathlib.PFunctorChargeUnder
 import all CatCryptCore.Core.SPTreeTimed
 import all CatCryptCore.Unary.ExpectedCost
 
@@ -24,6 +25,7 @@ step cost `c` by the tick `c x`.
 
 * `SPTree.TickSig`, `SPTree.SPSigT` — the tick polynomial and the ticked signature
 * `SPTree.tickCost` — `opCost` at an operation of `SPTree.Sig`, `n` at `tick n`
+* `SPTree.spAllows` — the answers a handler can return: the support of `μ` at `sampleDist β μ`
 * `SPTree.Timed.toFreeMT` — the tick tree of a costed tree
 * `SPTree.eraseHandler` — the handler into `FreeM SPTree.Sig` that keeps operations and drops
   ticks
@@ -39,6 +41,8 @@ step cost `c` by the tick `c x`.
 * `SPTree.Timed.timeBound_of_isRollBound`, `SPTree.Timed.timeBound_of_wpFold_le` — the
   subtractive roll bound, equivalently the charge-fold bound, implies `TimeBound`, with no
   boundedness hypothesis
+* `SPTree.Timed.timeBound_iff_wpFold_chargeUnder` — `TimeBound` is the bound on the charge fold
+  of the tick tree over the answers allowed by `spAllows`
 * `SPTree.Timed.liftM_costHandler_toFreeMT` — `compileTimed` is interpretation by `costHandler`
 -/
 
@@ -64,6 +68,12 @@ abbrev SPSigT : PFunctor.{1, 0} := SPTree.Sig + TickSig
 def tickCost : SPSigT.A → ℕ
   | .inl a => opCost a
   | .inr n => n
+
+/-- The answers of a position of `SPSigT` that its handler can return: the support of `μ` at
+`sampleDist β μ`, every answer elsewhere. -/
+def spAllows : (a : SPSigT.A) → SPSigT.B a → Prop
+  | .inl (.sampleDist _ μ), b => b ∈ μ.support
+  | _, _ => True
 
 /-- The handler into `FreeM SPTree.Sig` that keeps each operation and answers each tick with
 `()`. -/
@@ -255,6 +265,55 @@ theorem timeBound_of_wpFold_le (s : SPTree.Timed α) (t : ℕ)
     (h : wpFold (OpSpec.charge fun a => ((tickCost a : ℕ) : ℕ∞)) (toFreeMT s) (fun _ => 0) ≤ t) :
     s.TimeBound t :=
   timeBound_of_isRollBound s t ((FreeM.isRollBound_iff_wpFold_charge _ _ _).2 h)
+
+/-- `TimeBound` is the bound on the charge fold of the tick tree over the answers allowed by
+`spAllows`. -/
+theorem timeBound_iff_wpFold_chargeUnder (s : SPTree.Timed α) (t : ℕ) :
+    s.TimeBound t ↔
+      wpFold (OpSpec.chargeUnder (fun a => ((tickCost a : ℕ) : ℕ∞)) spAllows) (toFreeMT s)
+        (fun _ => 0) ≤ t := by
+  induction s generalizing t with
+  | ret a => simp [TimeBound, toFreeMT]
+  | fail =>
+    exact iff_of_true trivial ((wpFold_chargeUnder_liftBind_le_iff _ _ _ _ _).2
+      ⟨Nat.zero_le _, fun b => PEmpty.elim b⟩)
+  | sample β finβ neβ c k ih =>
+    simp only [TimeBound, toFreeMT, wpFold_chargeUnder_liftBind_le_iff, spAllows,
+      Nat.sub_sub, tickCost, opCost] at ih ⊢
+    simp only [ih]
+    exact and_congr_right fun _ => forall_congr' fun b =>
+      ⟨fun h _ => ⟨by omega, fun _ _ => h.2⟩, fun h => ⟨by have := (h trivial).1; omega,
+        (h trivial).2 PUnit.unit trivial⟩⟩
+  | sampleDist β μ c k ih =>
+    simp only [TimeBound, toFreeMT, wpFold_chargeUnder_liftBind_le_iff, spAllows,
+      Nat.sub_sub, tickCost, opCost] at ih ⊢
+    simp only [ih]
+    exact and_congr_right fun _ => forall_congr' fun b =>
+      ⟨fun h hb => ⟨by have := (h hb).1; omega, fun _ _ => (h hb).2⟩,
+        fun h hb => ⟨by have := (h hb).1; omega, (h hb).2 PUnit.unit trivial⟩⟩
+  | get l c k ih =>
+    simp only [TimeBound, toFreeMT, wpFold_chargeUnder_liftBind_le_iff, spAllows,
+      Nat.sub_sub, tickCost, opCost] at ih ⊢
+    simp only [ih]
+    exact and_congr_right fun _ => forall_congr' fun b =>
+      ⟨fun h _ => ⟨by omega, fun _ _ => h.2⟩, fun h => ⟨by have := (h trivial).1; omega,
+        (h trivial).2 PUnit.unit trivial⟩⟩
+  | set l v c t' ih =>
+    simp only [TimeBound, toFreeMT, wpFold_chargeUnder_liftBind_le_iff, spAllows,
+      Nat.sub_sub, tickCost, opCost] at ih ⊢
+    simp only [ih]
+    exact ⟨fun h => ⟨by have := h.1; omega,
+        fun _ _ => ⟨by have := h.1; omega, fun _ _ => h.2⟩⟩,
+      fun h => ⟨by have := h.1; have := (h.2 PUnit.unit trivial).1; omega,
+        (h.2 PUnit.unit trivial).2 PUnit.unit trivial⟩⟩
+  | load h₀ c t' ih =>
+    simp only [TimeBound, toFreeMT, wpFold_chargeUnder_liftBind_le_iff, spAllows,
+      Nat.sub_sub, tickCost, opCost] at ih ⊢
+    simp only [ih]
+    exact ⟨fun h => ⟨by have := h.1; omega,
+        fun _ _ => ⟨by have := h.1; omega, fun _ _ => h.2⟩⟩,
+      fun h => ⟨by have := h.1; have := (h.2 PUnit.unit trivial).1; omega,
+        (h.2 PUnit.unit trivial).2 PUnit.unit trivial⟩⟩
 
 /-! ## Compilation as a handler -/
 

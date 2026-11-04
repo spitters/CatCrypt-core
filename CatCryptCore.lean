@@ -30,6 +30,7 @@ public import CatCryptCore.Core.CodeSequenceTimed
 public import CatCryptCore.Core.SPTree
 public import CatCryptCore.Core.SPTreeTimed
 public import CatCryptCore.Core.SPTreeFree
+public import CatCryptCore.ForMathlib.PFunctorChargeUnder
 public import CatCryptCore.Core.SPTreeTimedFree
 public import CatCryptCore.Core.SPTreeTimedOps
 public import CatCryptCore.Core.StdDoBridge
@@ -247,6 +248,7 @@ public import CatCryptCore.Crypto.Signatures.FSigReduction
 public import CatCryptCore.Crypto.Signatures.FSigReductionTimed
 public import CatCryptCore.Crypto.Signatures.FSigSysTimed
 public import CatCryptCore.Crypto.Signatures.OracleProgTimed
+public import CatCryptCore.Crypto.Signatures.OracleProgTimedFree
 public import CatCryptCore.Crypto.BLSSig.Security
 
 -- Fujisaki–Okamoto transforms, FIPS 203 KEM, total variation
