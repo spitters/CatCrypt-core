@@ -55,6 +55,8 @@ The costed mirror `Signatures.EUFCMAAdversary.Timed` of EUF-CMA adversaries is d
 * `OracleProg.Timed.TimeBound`, `OracleProg.Timed.StepTimeBound`, `OracleProg.Timed.AllRet`
 * `OracleProg.Timed.bindQueries`, `OracleProg.Timed.collectLog` — costed handler combinators
 * `OracleProg.Timed.runWith` — the costed interpretation against a costed oracle
+* `OracleProg.Timed.runWithTree` — the computation tree of the interpretation, registered with
+  the costed form `runWith` as the interpreter `runWithInterp` of computation trees
 * `CatCrypt.Crypto.OracleProg.oracleProgKind` — the tree kind
 * `Signatures.EUFCMAAdversary.Timed` — the costed mirror of EUF-CMA adversaries
 
@@ -64,6 +66,8 @@ The costed mirror `Signatures.EUFCMAAdversary.Timed` of EUF-CMA adversaries is d
 * `OracleProg.Timed.timeBound_bind` — times add under sequencing
 * `OracleProg.Timed.erase_bindQueries`, `OracleProg.Timed.erase_collectLog`,
   `OracleProg.Timed.erase_runWith` — erasure of the handler combinators and the interpretation
+* `OracleProg.Timed.erase_runWith_eq`, `OracleProg.Timed.compile_runWithTree` — the costed
+  interpretation erases to `runWithTree`, which compiles to `OracleProg.runWith`
 * `OracleProg.Timed.timeBound_bindQueries` — time `T + q * t`
 * `OracleProg.Timed.timeBound_collectLog` — time `T + q * (t + 2 * ℓ + 1)`
 * `OracleProg.Timed.stepTime_runWith_le` — the cost law of the interpretation: time
@@ -430,6 +434,40 @@ theorem stepTime_runWith_le {o : I → ℕ × SPTree.Timed (O × List L)} {t ℓ
         omega
     exact hb.trans (by omega)
 
+/-- The computation tree of the interpretation of the costed program `p` against the oracle
+`o` of computation trees: the tree of `OracleProg.runWith` with the step costs of `p` erased,
+whose `lift` nodes run the erased computation trees of `p`. -/
+noncomputable def runWithTree (o : I → SPTree (O × List L)) :
+    Timed I O α → SPTree (α × List L)
+  | pure a => .ret (a, [])
+  | query i _ k => (o i).bind fun ol =>
+      (runWithTree o (k ol.1)).bind fun al => .ret (al.1, ol.2 ++ al.2)
+  | lift _ t _ k => t.erase.bind fun b => runWithTree o (k b)
+
+/-- The costed interpretation erases to the tree of the interpretation against the erased
+oracle. -/
+theorem erase_runWith_eq (o : I → ℕ × SPTree.Timed (O × List L)) (p : Timed I O α) :
+    (runWith o p).2.erase = runWithTree (fun i => (o i).2.erase) p := by
+  induction p with
+  | pure a => simp only [runWith, runWithTree, SPTree.Timed.erase_ret]
+  | query i c k ih =>
+    simp only [runWith, runWithTree, SPTree.Timed.delay, SPTree.Timed.erase_bind, ih,
+      SPTree.Timed.erase_ret]
+  | lift β t c k ih =>
+    simp only [runWith, runWithTree, SPTree.Timed.delay, SPTree.Timed.erase_bind, ih]
+
+/-- The tree of the interpretation compiles to the interpretation of the erased program against
+the compiled oracle. -/
+theorem compile_runWithTree (o : I → SPTree (O × List L)) (p : Timed I O α) :
+    (runWithTree o p).compile = OracleProg.runWith (fun i => (o i).compile) p.erase := by
+  induction p with
+  | pure a => simp only [runWithTree, SPTree.compile_ret, erase, OracleProg.runWith_pure]
+  | query i c k ih =>
+    simp only [runWithTree, SPTree.compile_bind, ih, SPTree.compile_ret, erase,
+      OracleProg.runWith]
+  | lift β t c k ih =>
+    simp only [runWithTree, SPTree.compile_bind, ih, erase, OracleProg.runWith]
+
 end Interpret
 
 end Timed
@@ -470,11 +508,27 @@ meta def oracleProgKind : TreeKind where
     ``CatCrypt.Tactics.DeriveTimed.ite_prod_mk, ``CatCrypt.Crypto.OracleProg.Timed.erase_ite]
   stepTimeBound := some ``CatCrypt.Crypto.OracleProg.Timed.StepTimeBound
 
+open CatCrypt.Tactics.DeriveTimed in
+/-- The interpretation of a costed oracle program against an oracle of computation trees, a
+combinator of computation trees: the tree `Timed.runWithTree o p` has the costed form
+`Timed.runWith o' p`, with the oracle `o` translated (role `pairFn`) and the costed program `p`
+kept; it compiles to `OracleProg.runWith`, whose program is its second explicit argument. -/
+meta def runWithInterp : Interp where
+  tree := ``CatCrypt.Core.SPTree
+  comb := ⟨``CatCrypt.Crypto.OracleProg.Timed.runWithTree,
+    ``CatCrypt.Crypto.OracleProg.Timed.runWith, #[.pairFn 1, .keep], true⟩
+  eraseLemmas := #[``CatCrypt.Crypto.OracleProg.Timed.erase_runWith_eq]
+  source? := some ``CatCrypt.Crypto.OracleProg.runWith
+  compileLemma? := some ``CatCrypt.Crypto.OracleProg.Timed.compile_runWithTree
+  progArg := 1
+
 end OracleProg
 
 end CatCrypt.Crypto
 
 register_tree_kind CatCrypt.Crypto.OracleProg.oracleProgKind
+
+register_interpreter CatCrypt.Crypto.OracleProg.runWithInterp
 
 /-! The costed mirror of EUF-CMA adversaries, whose field `run` is an oracle program. -/
 

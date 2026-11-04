@@ -41,7 +41,11 @@ followed by the kinds registered in the environment extension `treeKindExt`. A k
 registered by `register_tree_kind k`, where `k : TreeKind` is a constant of a module that
 imports this one; the module defining a tree type, or a module above it, registers its kind, so
 that this module does not import the tree type (oracle programs `OracleProg I O α`,
-`CatCryptCore.Crypto.Signatures.OracleProgTimed`).
+`CatCryptCore.Crypto.Signatures.OracleProgTimed`). An interpreter (`Interp`), registered by
+`register_interpreter i`, adds a combinator to the kind of its tree type: a tree that runs a
+costed tree of another kind (`OracleProg.Timed.runWithTree o p`, the computation tree of
+interpreting an oracle program), whose costed form is the registered costed interpretation
+(`OracleProg.Timed.runWith`) and whose erasure lemmas join the erasure theorem when it is used.
 
 Below, "tree" means a tree of a kind in the table, and the rules for oracle trees apply to
 every kind.
@@ -373,6 +377,7 @@ one unit for each arithmetic operation (`CatCryptCore/Crypto/ConcreteSecurity.md
 * `timed_cost f := e` — register the cost `e` of the primitive `f`
 * `treeKinds` — the table of tree kinds
 * `treeKindExt`, `register_tree_kind k` — the registered tree kinds
+* `Interp`, `interpExt`, `register_interpreter i` — the registered interpreters
 * `optionDispatch` — the case analysis of an optional value, written as a `match`
 
 ## Main results
@@ -1144,10 +1149,43 @@ initialize treeKindExt : SimplePersistentEnvExtension TreeKind (Array TreeKind) 
     addImportedFn := fun as => as.foldl (· ++ ·) #[]
   }
 
+/-- An interpreter: a combinator `comb` of the kind of the tree type `tree` that runs a tree of
+another kind, registered by a module that defines both kinds' costed forms (the computation
+tree `OracleProg.Timed.runWithTree o p` of interpreting an oracle program, with the costed
+form `OracleProg.Timed.runWith`), with the erasure lemmas of its costed form. `source?` is the
+computation that the combinator's tree compiles to (`OracleProg.runWith`), by the lemma
+`compileLemma?`, and `progArg` the position of the interpreted program among the trailing
+arguments of `source?`: the interpretation `derive_reduction` reflects into the combinator. -/
+structure Interp where
+  tree : Name
+  comb : Comb
+  eraseLemmas : Array Name
+  source? : Option Name := none
+  compileLemma? : Option Name := none
+  progArg : Nat := 0
+  deriving Inhabited
+
+/-- The interpreters registered by `register_interpreter`, the interpreters of imported modules
+first. -/
+initialize interpExt : SimplePersistentEnvExtension Interp (Array Interp) ←
+  registerSimplePersistentEnvExtension {
+    addEntryFn := Array.push
+    addImportedFn := fun as => as.foldl (· ++ ·) #[]
+  }
+
+/-- The registered interpreters. -/
+def interps : CoreM (Array Interp) :=
+  return interpExt.getState (← getEnv)
+
 /-- The table of tree kinds: the built-in kinds `oracleKind` and `spTreeKind`, followed by the
-registered kinds. -/
-def treeKinds : CoreM (Array TreeKind) :=
-  return #[oracleKind, spTreeKind] ++ treeKindExt.getState (← getEnv)
+registered kinds, each with the combinators of the interpreters registered for its tree type
+after its own. -/
+def treeKinds : CoreM (Array TreeKind) := do
+  let ks := #[oracleKind, spTreeKind] ++ treeKindExt.getState (← getEnv)
+  let is ← interps
+  if is.isEmpty then return ks
+  return ks.map fun k =>
+    { k with combinators := k.combinators ++ (is.filter (·.tree == k.tree)).map (·.comb) }
 
 /-- Whether a term whose constants are `used` mentions the kind `k`: its costed tree type, or
 one of its costed nodes or combinators (a costed computation tree embedded in a node of another
@@ -1174,6 +1212,28 @@ def elabRegisterTreeKind : CommandElab := fun stx => do
   if (← liftCoreM treeKinds).any (·.tree == k.tree) then
     throwError "register_tree_kind: the tree type `{k.tree}` already has a kind"
   modifyEnv (treeKindExt.addEntry · k)
+
+/-- The interpreter of the constant `n`, evaluated. -/
+unsafe def evalInterpUnsafe (n : Name) : CoreM Interp := do
+  ofExcept <| (← getEnv).evalConstCheck Interp (← getOptions) ``Interp n
+
+@[implemented_by evalInterpUnsafe]
+opaque evalInterp (n : Name) : CoreM Interp
+
+/-- `register_interpreter i` adds the interpreter `i : Interp`, a constant, to the combinators
+of the kind of its tree type, for the modules that import the current one. -/
+syntax (name := registerInterpCmd) "register_interpreter " ident : command
+
+@[command_elab registerInterpCmd]
+def elabRegisterInterp : CommandElab := fun stx => do
+  let n ← liftCoreM <| realizeGlobalConstNoOverload stx[1]
+  let i ← liftCoreM <| evalInterp n
+  let ks ← liftCoreM treeKinds
+  let some k := ks.find? (·.tree == i.tree)
+    | throwError "register_interpreter: the tree type `{i.tree}` has no kind"
+  if k.combinators.any (·.src == i.comb.src) then
+    throwError "register_interpreter: `{i.comb.src}` is already a combinator of the {k.noun} kind"
+  modifyEnv (interpExt.addEntry · i)
 
 /-- A tree type: its kind and its parameters. -/
 structure TreeTy where
@@ -4587,7 +4647,8 @@ partial def deriveTimed (ctx : Ctx) (c : Name) : TermElabM Unit := do
   let callees := collectTimed (← getEnv) ctx.suffix tValue timedName
   -- The erasure lemmas of the tree kinds whose costed trees occur in the costed form.
   let used := tType.getUsedConstants ++ tValue.getUsedConstants
-  let kindLemmas := ((← treeKinds).filter (kindUsed used)).flatMap (·.eraseLemmas)
+  let kindLemmas := ((← treeKinds).filter (kindUsed used)).flatMap (·.eraseLemmas) ++
+    ((← interps).filter (used.contains ·.comb.tgt)).flatMap (·.eraseLemmas)
   -- The naturality lemmas `c.bind_ret` of registered callees called at a costed instance of
   -- their type parameter (`callTimed`), oriented left to right: the erasure of the results
   -- moves inside the callee, onto the erasure theorem of its tree argument.
