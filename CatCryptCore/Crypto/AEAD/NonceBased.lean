@@ -91,8 +91,7 @@ theorem find?_zip_map {α β : Type} (l : List α) (g : α → β) (P : α → B
   induction l with
   | nil => rfl
   | cons a l ih =>
-    simp only [List.map_cons, List.zip_cons_cons, List.find?_cons]
-    cases P a <;> simp [ih]
+    grind
 
 /-- A bind is bounded at `b` by a bound on every continuation from the support. -/
 theorem bind_apply_le_of_support {α β : Type} (p : PMF α) (f : α → PMF β) (b : β) (c : ℝ≥0∞)
@@ -716,8 +715,7 @@ theorem forgeCheck_rf (S : StreamMAC K N AD Blk HK T) (ℓ : ℕ) (fg : Entry N 
         by_contra h; rw [hs.1 _ _ h] at hl; cases hl
       cases hf : st.1.find? (fun e => decide (e.1 = fg.1)) with
       | none =>
-        obtain ⟨e, he, hen⟩ := List.mem_map.mp hmem
-        exact absurd (by simpa using hen) (List.find?_eq_none.mp hf e he)
+        grind
       | some e =>
         have he := List.mem_of_find?_eq_some hf
         have hen : e.1 = fg.1 := by simpa using List.find?_some hf
@@ -802,8 +800,7 @@ theorem tagCheck_le (S : StreamMAC K N AD Blk HK T) (ℓ : ℕ) (ε : ℝ≥0∞
             change _ = _
             rw [hP]; abel
           rw [ite_eq_left (by simp [hP]), Set.indicator_of_mem hmem]
-        · rw [ite_eq_right (by simp [hP])]
-          exact zero_le
+        · simp_all
     · have hstep : ∀ hk : HK, ((unifList HK log.length).bind fun hs =>
           tagCheck S fg (e :: log, hk :: hs)) =
             (unifList HK log.length).bind fun hs => tagCheck S fg (log, hs) := by

@@ -858,8 +858,7 @@ theorem bind_run_apply_flag_false_eq {Q R α β σ : Type} (p₁ p₂ : PMF (α 
   | false =>
     rw [hp, OracleAdv.run_apply_flag_false_eq (O₁ a) (O₂ a) (h₁ a) (h₂ a) (hagree a)]
   | true =>
-    simp only [OracleAdv.run_flag_apply_false_of_true (O₁ a) (h₁ a),
-      OracleAdv.run_flag_apply_false_of_true (O₂ a) (h₂ a), mul_zero]
+    grind [OracleAdv.run_flag_apply_false_of_true, mul_zero]
 
 theorem okDist_apply_false_eq {qH qD : ℕ} (A : HPKEAdversary PK C D H AD M CT qH qD) (b : Bool)
     (kd : Kd) (c : Bool) (t : D → Option H) :
@@ -946,9 +945,7 @@ theorem okOracle_false_map (sk : SK) (cstar : C) (kd : Kd) (chal : Option (AD ×
   | inr q =>
     simp only [okOracle, nOracle]
     by_cases hc : q.1 = cstar
-    · by_cases hch : chal = some q.2
-      · simp [hc, hch, PMF.pure_map]
-      · simp [hc, hch, PMF.pure_map]
+    · grind [PMF.pure_map]
     · simp only [hc, ite_false, PMF.map_comp]; rfl
 
 theorem otcpaGame_eq_okDist {qH qD : ℕ} (A : HPKEAdversary PK C D H AD M CT qH qD) (b : Bool)
