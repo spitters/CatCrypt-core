@@ -8,6 +8,7 @@ module
 public import CatCryptCore.Crypto.Messaging.CKA
 public import CatCryptCore.Crypto.Messaging.DoubleRatchet
 public import CatCryptCore.Crypto.OracleSimulation
+public import CatCryptCore.Crypto.OracleGameUpToBad
 public import CatCryptCore.Crypto.SPCompPMF
 public import CatCryptCore.ForMathlib.PMFUniform
 public import CatCryptCore.ForMathlib.PMFSupport
@@ -584,16 +585,13 @@ theorem run_nf_eager_of_done (μ : PMF E) (δ : S → D → E → R × S) (c : S
     (N : S → Prop) (h2 : ∀ s d e, N s → N (δ s d e).2) (h3 : ∀ s d, N s → c s d = false)
     (v : E) (A : OracleAdv D R β) (s : S) (hs : N s) :
     OracleAdv.run (nfOracle μ (eagerStep δ c v)) A s = OracleAdv.run (nfOracle μ δ) A s := by
-  induction A generalizing s with
-  | ret a => rfl
-  | rand p k ih => simp only [OracleAdv.run_rand, ih _ s hs]
-  | query d k ih =>
-    simp only [OracleAdv.run_query, nfOracle, PMF.bind_map]
-    have he : eagerStep δ c v s d = δ s d := by
+  refine CatCrypt.Crypto.OracleAdv.run_eq_run_of_inv _ _ N (fun s d hs x hx => ?_)
+    (fun s d hs => ?_) A s hs
+  · obtain ⟨e, -, rfl⟩ := (PMF.mem_support_map_iff _ _ _).1 hx
+    exact h2 s d e hs
+  · have he : eagerStep δ c v s d = δ s d := by
       funext e; simp only [eagerStep, h3 s d hs, Bool.false_eq_true, ite_false]
-    rw [he]
-    congr 1; funext e
-    exact ih _ _ (h2 s d e hs)
+    simp only [nfOracle, he]
 
 /-- **Eager sampling.** If the critical steps `c` lead to the states `N`, which are kept by
 every step and admit no critical step, then drawing the value of the critical step in advance
@@ -604,26 +602,25 @@ theorem run_nf_eq_eager (μ : PMF E) (δ : S → D → E → R × S) (c : S → 
     (A : OracleAdv D R β) (s : S) :
     OracleAdv.run (nfOracle μ δ) A s =
       μ.bind fun v => OracleAdv.run (nfOracle μ (eagerStep δ c v)) A s := by
-  induction A generalizing s with
-  | ret a => simp only [OracleAdv.run_ret, PMF.bind_const]
-  | rand p k ih =>
-    simp only [OracleAdv.run_rand, ih]
-    exact PMF.bind_comm _ _ _
-  | query d k ih =>
-    simp only [OracleAdv.run_query, nfOracle, PMF.bind_map]
-    cases hc : c s d with
-    | true =>
-      have he : ∀ v, eagerStep δ c v s d = fun _ => δ s d v := by
-        intro v; funext e; simp only [eagerStep, hc, ite_true]
-      simp only [he]
-      refine congrArg _ (funext fun v => ?_)
-      simp only [Function.comp_def, PMF.bind_const]
-      exact (run_nf_eager_of_done μ δ c N h2 h3 v _ _ (h1 s d v hc)).symm
-    | false =>
-      have he : ∀ v, eagerStep δ c v s d = δ s d := by
-        intro v; funext e; simp only [eagerStep, hc, Bool.false_eq_true, ite_false]
-      simp only [he, Function.comp_def, ih]
-      exact PMF.bind_comm _ _ _
+  refine CatCrypt.Crypto.OracleAdv.run_eq_bind_run_of_trigger μ _ _ (fun _ => True)
+    (fun s d => c s d = true) (fun _ => N) (fun s d _ h => ?_) (fun v s d _ h => ?_)
+    (fun _ _ _ _ _ _ => Or.inl trivial) (fun v s d _ h x hx => ?_) (fun _ s d hs x hx => ?_)
+    (fun v s d hs => ?_) A s trivial
+  · have he : ∀ v, eagerStep δ c v s d = fun _ => δ s d v := fun v => funext fun _ => ite_eq_left h
+    simp only [nfOracle, he]
+    exact (PMF.bind_pure_comp _ _).symm.trans
+      (congrArg _ (funext fun v => (PMF.map_const _ _).symm))
+  · have he : eagerStep δ c v s d = δ s d := by
+      funext e; simp only [eagerStep, h, Bool.false_eq_true, ite_false]
+    simp only [nfOracle, he]
+  · obtain ⟨e, -, rfl⟩ := (PMF.mem_support_map_iff _ _ _).1 hx
+    simp only [eagerStep, h, ite_true]
+    exact h1 s d v h
+  · obtain ⟨e, -, rfl⟩ := (PMF.mem_support_map_iff _ _ _).1 hx
+    exact h2 s d e hs
+  · have he : eagerStep δ c v s d = δ s d := by
+      funext e; simp only [eagerStep, h3 s d hs, Bool.false_eq_true, ite_false]
+    simp only [nfOracle, he]
 
 end OracleAdv
 

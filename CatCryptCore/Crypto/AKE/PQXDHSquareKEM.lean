@@ -156,13 +156,9 @@ theorem run_eager_used (O₁ : σ → D → PMF (R × σ)) (O₂ : X → σ → 
     (U : σ → Prop) (use : σ → D → Prop) (hno : ∀ x s d, ¬ use s d → O₂ x s d = O₁ s d)
     (hpers : ∀ s d, ¬ U s → ∀ y ∈ (O₁ s d).support, ¬ U y.2)
     (hnu : ∀ s d, ¬ U s → ¬ use s d) (x : X) (A : OracleAdv D R α) (s : σ) (hs : ¬ U s) :
-    OracleAdv.run (O₂ x) A s = OracleAdv.run O₁ A s := by
-  induction A generalizing s with
-  | ret a => rfl
-  | rand p k ih => simp only [OracleAdv.run_rand, fun b => ih b s hs]
-  | query d k ih =>
-    rw [OracleAdv.run_query, OracleAdv.run_query, hno x s d (hnu s d hs)]
-    exact PMF.bind_congr_support _ _ _ fun y hy => ih y.1 y.2 (hpers s d hs y hy)
+    OracleAdv.run (O₂ x) A s = OracleAdv.run O₁ A s :=
+  OracleAdv.run_eq_run_of_inv O₁ (O₂ x) (fun s => ¬ U s) hpers
+    (fun s d hs => hno x s d (hnu s d hs)) A s hs
 
 /-- **Eager sampling of a value used at most once.** The lazy oracle `O₁` draws a value of `ν`
 at the step that uses it (`use`), and the oracle `O₂ x` reads the pre-sampled value `x` there
@@ -175,25 +171,10 @@ theorem run_eager (ν : PMF X) (O₁ : σ → D → PMF (R × σ)) (O₂ : X →
     (hnext : ∀ x s d, U s → use s d → ∀ y ∈ (O₂ x s d).support, ¬ U y.2)
     (hpers : ∀ s d, ¬ U s → ∀ y ∈ (O₁ s d).support, ¬ U y.2)
     (hnu : ∀ s d, ¬ U s → ¬ use s d) (A : OracleAdv D R α) (s : σ) (hs : U s) :
-    OracleAdv.run O₁ A s = ν.bind fun x => OracleAdv.run (O₂ x) A s := by
-  induction A generalizing s with
-  | ret a => rw [OracleAdv.run_ret]; simp only [OracleAdv.run_ret, PMF.bind_const]
-  | rand p k ih =>
-    simp only [OracleAdv.run_rand, fun b => ih b s hs]
-    exact PMF.bind_comm _ _ _
-  | query d k ih =>
-    simp only [OracleAdv.run_query]
-    by_cases hu : use s d
-    · rw [huse s d hs hu, PMF.bind_bind]
-      refine PMF.bind_congr_support _ _ _ fun x _ => ?_
-      refine PMF.bind_congr_support _ _ _ fun y hy => ?_
-      exact (run_eager_used O₁ O₂ U use hno hpers hnu x _ _ (hnext x s d hs hu y hy)).symm
-    · simp only [hno _ s d hu]
-      rw [PMF.bind_comm]
-      refine PMF.bind_congr_support _ _ _ fun y _ => ?_
-      by_cases hy : U y.2
-      · exact ih y.1 y.2 hy
-      · simp only [run_eager_used O₁ O₂ U use hno hpers hnu _ _ _ hy, PMF.bind_const]
+    OracleAdv.run O₁ A s = ν.bind fun x => OracleAdv.run (O₂ x) A s :=
+  OracleAdv.run_eq_bind_run_of_trigger ν O₁ O₂ U use (fun _ s => ¬ U s) huse
+    (fun x s d _ hu => hno x s d hu) (fun _ _ _ _ y _ => (em (U y.2)).imp id fun h _ => h)
+    hnext (fun _ => hpers) (fun x s d hs => hno x s d (hnu s d hs)) A s hs
 
 /-- `run_eager` for flagged oracles whose bad event reads the reached state. -/
 theorem run_eager_flag (ν : PMF X) (O₁ : σ → D → PMF (R × σ)) (O₂ : X → σ → D → PMF (R × σ))

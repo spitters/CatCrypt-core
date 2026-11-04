@@ -7,6 +7,7 @@ module
 
 public import CatCryptCore.Crypto.UCTransparentMulti
 public import CatCryptCore.Crypto.UCOracleGame
+public import CatCryptCore.Crypto.OracleGameUpToBad
 
 /-!
 # Hybrid arguments over systems and over sessions
@@ -187,30 +188,22 @@ theorem run_multiOracle_lazy (s₀ : S)
         G.keyDist.bind fun k =>
           (OracleAdv.run (multiOracle orc) B (Function.update m i (emb k G.init))).map
             Prod.fst := by
-  induction B with
-  | ret a => intro m _; simp [PMF.pure_map]
-  | rand p c ih =>
-    intro m hm
-    simp only [OracleAdv.run_rand, PMF.map_bind]
-    rw [PMF.bind_comm]
-    exact congrArg _ (funext fun x => ih x m hm)
-  | query d c ih =>
-    intro m hm
-    obtain ⟨j, q⟩ := d
-    by_cases hj : j = i
-    · subst hj
-      simp only [OracleAdv.run_query, multiOracle, PMF.map_bind, PMF.bind_map, hm, hfresh,
-        PMF.bind_bind, Function.update_self, Function.update_idem, Function.comp_def]
-    · have h1 : ∀ x : A × S,
-          (OracleAdv.run (multiOracle orc) (c x.1) (Function.update m j x.2)).map Prod.fst =
-            G.keyDist.bind fun k => (OracleAdv.run (multiOracle orc) (c x.1)
-              (Function.update (Function.update m j x.2) i (emb k G.init))).map Prod.fst :=
-        fun x => ih x.1 _ (by rw [Function.update_of_ne (Ne.symm hj)]; exact hm)
-      simp only [OracleAdv.run_query, multiOracle, PMF.map_bind, PMF.bind_map,
-        Function.comp_def, Function.update_of_ne hj, h1]
-      refine (PMF.bind_comm _ _ _).trans
-        (congrArg _ (funext fun k => congrArg _ (funext fun x => ?_)))
-      rw [Function.update_comm (Ne.symm hj)]
+  refine fun m hm => OracleAdv.run_map_fst_eq_bind_run_set_of_trigger G.keyDist
+    (multiOracle orc) (fun k m => Function.update m i (emb k G.init)) (fun m => m i = s₀)
+    (fun _ d => d.1 = i) (fun t d ht hd => ?_) (fun k t d _ hd => ?_)
+    (fun t d ht hd x hx => ?_) B m hm
+  · obtain ⟨j, q⟩ := d
+    simp only at hd
+    subst hd
+    simp only [multiOracle, ht, hfresh, PMF.map_bind, Function.update_self, Function.update_idem]
+  · obtain ⟨j, q⟩ := d
+    simp only at hd
+    simp only [multiOracle, PMF.map_comp, Function.comp_def, Prod.map_apply, id_eq,
+      Function.update_of_ne hd, Function.update_comm hd]
+  · obtain ⟨j, q⟩ := d
+    simp only at hd
+    obtain ⟨y, -, rfl⟩ := (PMF.mem_support_map_iff _ _ _).1 hx
+    simpa only [Function.update_of_ne (Ne.symm hd)] using ht
 
 /-- **The multi-session game and one session.** The acceptance probability of `B` in the
 multi-session game is the acceptance probability of `sessRed orc i s₀ B` in the game `G` of

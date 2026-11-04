@@ -7,6 +7,7 @@ module
 
 public import CatCryptCore.Crypto.EagerLazyRF
 public import CatCryptCore.Crypto.HybridArgument
+public import CatCryptCore.Crypto.OracleGameUpToBad
 
 /-!
 # Multi-key PRF security by a hybrid over the queried indices
@@ -342,27 +343,20 @@ theorem uniform_bind_run_setKey (F : K → D → R) (j : ℕ) {α : Type}
     (PMF.uniformFintype K).bind (fun k =>
         (OracleAdv.run (hybOracle F j) A (setKey j (some k) s)).map Prod.fst) =
       (OracleAdv.run (hybOracle F j) A (setKey j none s)).map Prod.fst := by
-  induction A generalizing s with
-  | ret a => simp [PMF.pure_map]
-  | rand p k ih =>
-    simp only [OracleAdv.run_rand, PMF.map_bind]
-    rw [PMF.bind_comm]
-    exact congrArg _ (funext fun b => ih b s)
-  | query q k ih =>
-    by_cases hr : rank s.1 q.1 = j
-    · have h1 : ∀ v, hybOracle F j (setKey j (some v) s) q =
-          PMF.pure (F v q.2, setKey j (some v) (addIdx s.1 q.1, s.2.1, s.2.2)) := by
-        intro v
-        simp [hybOracle, setKey, hr]
-      have h2 : hybOracle F j (setKey j none s) q = (PMF.uniformFintype K).map
-          fun v => (F v q.2, setKey j (some v) (addIdx s.1 q.1, s.2.1, s.2.2)) := by
-        simp [hybOracle, setKey, hr]
-      simp only [OracleAdv.run_query, h1, h2, PMF.pure_bind, PMF.bind_map, PMF.map_bind]
-      rfl
-    · simp only [OracleAdv.run_query, hybOracle_setKey F j _ s q hr, PMF.bind_map, PMF.map_bind]
-      rw [PMF.bind_comm]
-      refine congrArg _ (funext fun x => ?_)
-      exact ih x.1 x.2
+  have e : ∀ v w, setKey (N := N) (D := D) (R := R) j v (setKey j w s) = setKey j v s :=
+    fun v w => by simp only [setKey, Function.update_idem]
+  have h := OracleAdv.run_map_fst_eq_bind_run_set_of_trigger (PMF.uniformFintype K)
+    (hybOracle F j) (fun k => setKey j (some k)) (fun t => t.2.2 j = none)
+    (fun t q => rank t.1 q.1 = j) (fun t q ht hr => ?_) (fun k t q _ hr => hybOracle_setKey F j _ t q hr)
+    (fun t q ht hr x hx => ?_) A (setKey j none s) (by simp only [setKey, Function.update_self])
+  · simp only [e] at h
+    exact h.symm
+  · simp [hybOracle, setKey, hr, ht]
+    rfl
+  · have h0 : setKey j none t = t := by rw [setKey, ← ht, Function.update_eq_self]
+    rw [← h0, hybOracle_setKey F j none t q hr] at hx
+    obtain ⟨y, -, rfl⟩ := (PMF.mem_support_map_iff _ _ _).1 hx
+    simp only [Prod.map_snd, setKey, Function.update_self]
 
 theorem simOracle_keyed_hybImpl (F : K → D → R) (j : ℕ) (k : K) (s : HybState N D R K)
     (q : N × D) :
