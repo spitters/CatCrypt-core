@@ -1683,4 +1683,340 @@ theorem gw_le_y {pk : PK} {sk : SK} {k : SS} {cs : C} (hc : P.decaps sk cs = som
 
 end SymWorld
 
+/-! ## The IND-CCA reduction -/
+
+section Reduction
+
+variable {S W K PK SK SS C : Type} [Field S] [Fintype S] [SampleableType W] [Fintype K]
+  [Nonempty K] [Inhabited K] [DecidableEq SS] [DecidableEq C] (P : Scheme PK SK SS C)
+  (G : DHGroup S W) (g : Guess)
+
+omit [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K]
+  [DecidableEq SS] in
+/-- The encapsulation that the event `e` asks the decapsulation oracle for: the delivered
+encapsulation of a `send`, other than the challenge `cs`. -/
+def needQ (cs : C) : OEv W SS C → Option C
+  | .inr (.send _ _ _ c) => if c = cs then none else some c
+  | _ => none
+
+/-- **The answer of the reduction to an event of the adversary**: the query to the decapsulation
+oracle that the event needs, a draw of the simulated world, and a step of the world of the
+reduction with the answer of the oracle. -/
+noncomputable def implK (pk : PK) (cs : C) (t : YSt S W K PK SK SS C) (e : OEv W SS C) :
+    OracleAdv C (Option SS) (OOut S W K PK C × YSt S W K PK SK SS C) :=
+  match needQ cs e with
+  | some c => .query c fun a => .rand (simDist P (encPk t.1.1.1 (liftE e))) fun r =>
+      .ret (yStep P G g pk cs (fun _ => a) t e r)
+  | none => .rand (simDist P (encPk t.1.1.1 (liftE e))) fun r =>
+      .ret (yStep P G g pk cs (fun _ => none) t e r)
+
+/-- **The program of the IND-CCA reduction at the guess `g`**: on the public key `pk`, the
+challenge encapsulation `cs` and the key `k`, it runs the oracle adversary `B` against the world
+of the reduction, answering each delivered encapsulation other than `cs` with the decapsulation
+oracle, and outputs whether `k` is among the concrete shared secrets of the world. -/
+noncomputable def kemRedRun (B : OracleAdv (OEv W SS C) (OOut S W K PK C) Bool) (pk : PK)
+    (cs : C) (k : SS) : OracleAdv C (Option SS) Bool :=
+  (OracleAdv.simulate (implK P G g pk cs) B yInit).bind fun x => .ret (decide (k ∈ x.2.2))
+
+/-- The reduction asks at most as many decapsulation queries as the adversary asks queries. -/
+theorem kemRedRun_isQueryBound {B : OracleAdv (OEv W SS C) (OOut S W K PK C) Bool} {q : ℕ}
+    (hB : B.IsQueryBound q) (pk : PK) (cs : C) (k : SS) :
+    (kemRedRun P G g B pk cs k).IsQueryBound q := by
+  have h := OracleAdv.isQueryBound_simulate_mul (c := 1) (impl := implK P G g pk cs)
+    (fun t e => by
+      unfold implK
+      split
+      · exact fun _ _ => trivial
+      · exact fun _ => trivial) hB yInit
+  rw [Nat.mul_one] at h
+  have h' := OracleAdv.isQueryBound_bind (n := 0)
+    (f := fun x => OracleAdv.ret (decide (k ∈ x.2.2))) h fun _ => trivial
+  rw [Nat.add_zero] at h'
+  exact h'
+
+/-- **The IND-CCA reduction at the guess `g`**, for an oracle adversary with at most `q`
+queries. -/
+noncomputable def kemRed (B : OracleAdv (OEv W SS C) (OOut S W K PK C) Bool) {q : ℕ}
+    (hB : B.IsQueryBound q) : KEM.Games.INDCCAAdversary PK SS C q :=
+  ⟨kemRedRun P G g B, kemRedRun_isQueryBound P G g hB⟩
+
+omit [Fintype S] [Fintype K] [Nonempty K] in
+/-- A step of the world of the reduction reads the decapsulation oracle only at the delivered
+encapsulation of a `send` other than the challenge. -/
+theorem yStep_congr {pk : PK} {cs : C} {d₁ d₂ : C → Option SS} (t : YSt S W K PK SK SS C)
+    (e : OEv W SS C) (r : PDraw S K PK SK SS C × K)
+    (hd : ∀ sid pid w c, e = .inr (.send sid pid w c) → c ≠ cs → d₁ c = d₂ c) :
+    yStep P G g pk cs d₁ t e r = yStep P G g pk cs d₂ t e r := by
+  rcases e with (_ | _) | (_ | _ | _ | _ | _ | _ | _ | ⟨sid, pid, w, c⟩ | _) <;> try rfl
+  have h : ∀ osk, (symP P cs d₁).decaps osk c = (symP P cs d₂).decaps osk c := by
+    intro osk
+    cases osk with
+    | some _ => rfl
+    | none =>
+      by_cases hc : c = cs
+      · simp [symP, hc]
+      · simp [symP, hc, hd sid pid w c rfl hc]
+  have h' : newVal P cs d₁ t.1.1 (.inr (.send sid pid w c)) r =
+      newVal P cs d₂ t.1.1 (.inr (.send sid pid w c)) r := by
+    simp only [newVal]
+    split
+    · rfl
+    · by_cases hc : c = cs
+      · simp [hc]
+      · simp [hc, hd sid pid w c rfl hc]
+    · rfl
+  simp only [yStep, simWorldD, simStartD, liftE, simSendD, h, h']
+
+omit [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K]
+  [DecidableEq SS] in
+theorem needQ_some {cs : C} {e : OEv W SS C} {c : C} (h : needQ cs e = some c) :
+    ∃ sid pid w, e = .inr (.send sid pid w c) ∧ c ≠ cs := by
+  rcases e with (_ | _) | (_ | _ | _ | _ | _ | _ | _ | ⟨sid, pid, w, c'⟩ | _) <;>
+    simp only [needQ, reduceCtorEq] at h
+  by_cases hc : c' = cs
+  · simp [hc] at h
+  · simp only [hc, ↓reduceIte, Option.some.injEq] at h
+    subst h
+    exact ⟨sid, pid, w, rfl, hc⟩
+
+/-- **The reduction against the decapsulation oracle is the world of the reduction** with the
+decapsulation under the challenge secret key. -/
+theorem simOracle_implK (pk : PK) (cs : C) (sk : SK) (t : YSt S W K PK SK SS C)
+    (e : OEv W SS C) :
+    OracleAdv.simOracle (implK P G g pk cs) (KEM.Games.decapsOracle P sk cs) (t, ()) e =
+      (yO P G g pk cs (P.decaps sk) t e).map fun x => (x.1, (x.2, ())) := by
+  unfold OracleAdv.simOracle implK yO
+  cases h : needQ cs e with
+  | none =>
+    simp only [OracleAdv.run_rand, OracleAdv.run_ret, PMF.map_bind, PMF.pure_map, PMF.map_comp]
+    rw [PMF.map]
+    refine PMF.bind_congr_support _ _ _ fun r _ => ?_
+    rw [yStep_congr P G g t e r (d₂ := P.decaps sk) fun sid pid w c he hc => by
+      subst he; simp [needQ, hc] at h]
+    rfl
+  | some c =>
+    obtain ⟨sid, pid, w, he, hc⟩ := needQ_some h
+    simp only [OracleAdv.run_query, KEM.Games.decapsOracle, hc, ↓reduceIte, PMF.pure_bind,
+      OracleAdv.run_rand, OracleAdv.run_ret, PMF.map_bind, PMF.pure_map, PMF.map_comp]
+    rw [PMF.map]
+    refine PMF.bind_congr_support _ _ _ fun r _ => ?_
+    rw [yStep_congr P G g t e r (d₂ := P.decaps sk) fun sid' pid' w' c' he' _ => by
+      rw [he] at he'
+      simp only [Sum.inr.injEq, PAEv.send.injEq] at he'
+      rw [← he'.2.2.2]]
+    rfl
+
+/-- **The output of the reduction** against the decapsulation oracle of the challenge: whether
+the key is among the concrete shared secrets of the final state of the world of the reduction. -/
+theorem run_kemRedRun (B : OracleAdv (OEv W SS C) (OOut S W K PK C) Bool) (pk : PK) (cs : C)
+    (sk : SK) (k : SS) :
+    (OracleAdv.run (KEM.Games.decapsOracle P sk cs) (kemRedRun P G g B pk cs k) ()).map
+        Prod.fst =
+      (OracleAdv.run (yO P G g pk cs (P.decaps sk)) B yInit).map fun x => decide (k ∈ x.2.2) := by
+  have hm := OracleAdv.run_map_state (yO P G g pk cs (P.decaps sk))
+    (OracleAdv.simOracle (implK P G g pk cs) (KEM.Games.decapsOracle P sk cs)) (fun s => (s, ()))
+    (fun t e => (simOracle_implK P G g pk cs sk t e).symm) B yInit
+  unfold kemRedRun
+  rw [OracleAdv.run_bind, OracleAdv.run_simulate, ← hm]
+  simp only [PMF.map_comp, PMF.bind_map, PMF.map_bind, OracleAdv.run_ret, Function.comp_apply,
+    PMF.pure_map]
+  rfl
+
+end Reduction
+
+/-! ## The bound of the KEM route -/
+
+section Length
+
+variable {σ D R α : Type}
+
+/-- A run of an adversary with at most `q` queries against an oracle whose steps grow a length
+by at most one reaches lengths at most `q` above the start. -/
+theorem run_support_len (O : σ → D → PMF (R × σ)) (len : σ → ℕ)
+    (h : ∀ s d, ∀ x ∈ (O s d).support, len x.2 ≤ len s + 1) (A : OracleAdv D R α) (q : ℕ)
+    (hA : A.IsQueryBound q) (s : σ) : ∀ x ∈ (OracleAdv.run O A s).support, len x.2 ≤ len s + q := by
+  induction A generalizing q s with
+  | ret a =>
+    intro x hx
+    rw [OracleAdv.run_ret, PMF.support_pure, Set.mem_singleton_iff] at hx
+    subst hx
+    exact Nat.le_add_right _ _
+  | rand p k ih =>
+    intro x hx
+    rw [OracleAdv.run_rand, PMF.mem_support_bind_iff] at hx
+    obtain ⟨b, -, hb⟩ := hx
+    exact ih b q (hA b) s x hb
+  | query d k ih =>
+    intro x hx
+    rw [OracleAdv.run_query, PMF.mem_support_bind_iff] at hx
+    obtain ⟨y, hy, hxy⟩ := hx
+    cases q with
+    | zero => exact hA.elim
+    | succ q =>
+      have h₁ := ih y.1 q (hA y.1) y.2 x hxy
+      have h₂ := h s d y hy
+      omega
+
+end Length
+
+section Bound
+
+variable {S W K PK SK SS C : Type} [Field S] [Fintype S] [SampleableType W] [Fintype K]
+  [Nonempty K] [Inhabited K] [DecidableEq SS] [Fintype SS] [Nonempty SS] [DecidableEq C]
+  (P : Scheme PK SK SS C) (G : DHGroup S W) (g : Guess)
+
+omit [Fintype SS] [Nonempty SS] in
+theorem yO_len (pk : PK) (cs : C) (dec : C → Option SS) (t : YSt S W K PK SK SS C)
+    (e : OEv W SS C) : ∀ x ∈ (yO P G g pk cs dec t e).support, x.2.2.length ≤ t.2.length + 1 := by
+  intro x hx
+  simp only [yO, PMF.support_map, Set.mem_image] at hx
+  obtain ⟨r, -, rfl⟩ := hx
+  simp only [yStep, List.length_append]
+  have : (newVal P cs dec t.1.1 e r).toList.length ≤ 1 := by
+    cases newVal P cs dec t.1.1 e r <;> simp
+  omega
+
+omit [DecidableEq SS] in
+/-- A uniform key lies in a list with probability at most its length over the number of keys. -/
+theorem uniform_mem_le [DecidableEq SS] (L : List SS) :
+    ((PMF.uniformFintype SS).map fun k => decide (k ∈ L)) true ≤
+      (L.length : ℝ≥0∞) * (Fintype.card SS : ℝ≥0∞)⁻¹ := by
+  rw [← PMF.toOuterMeasure_apply_singleton, PMF.toOuterMeasure_map_apply]
+  have hs : (fun k => decide (k ∈ L)) ⁻¹' {true} = {k | k ∈ L} := by
+    ext k; simp
+  rw [hs]
+  clear hs
+  induction L with
+  | nil => simp
+  | cons a L ih =>
+    have hu : {k | k ∈ a :: L} = {a} ∪ {k | k ∈ L} := by
+      ext k; simp
+    rw [hu]
+    refine (MeasureTheory.measure_union_le _ _).trans ?_
+    rw [PMF.toOuterMeasure_apply_singleton, PMF.uniformFintype_apply, List.length_cons,
+      Nat.cast_add, Nat.cast_one, add_mul, one_mul, add_comm]
+    gcongr
+
+omit [DecidableEq SS] in
+/-- **The random case**: a uniform key independent of a distribution of lists of length at most
+`q` lies in the list with probability at most `q` over the number of keys. -/
+theorem uniform_bind_mem_le [DecidableEq SS] {α : Type} (Rd : PMF α) (L : α → List SS) (q : ℕ)
+    (hR : ∀ y ∈ Rd.support, (L y).length ≤ q) :
+    ((PMF.uniformFintype SS).bind fun k => Rd.map fun y => decide (k ∈ L y)) true ≤
+      (q : ℝ≥0∞) * (Fintype.card SS : ℝ≥0∞)⁻¹ := by
+  have h : ((PMF.uniformFintype SS).bind fun k => Rd.map fun y => decide (k ∈ L y)) =
+      Rd.bind fun y => (PMF.uniformFintype SS).map fun k => decide (k ∈ L y) := by
+    simp only [PMF.map]
+    exact PMF.bind_comm _ _ _
+  rw [h, PMF.bind_apply]
+  calc ∑' y, Rd y * ((PMF.uniformFintype SS).map fun k => decide (k ∈ L y)) true
+      ≤ ∑' y, Rd y * ((q : ℝ≥0∞) * (Fintype.card SS : ℝ≥0∞)⁻¹) := by
+        refine ENNReal.tsum_le_tsum fun y => ?_
+        by_cases hy : y ∈ Rd.support
+        · gcongr
+          refine (uniform_mem_le (L y)).trans ?_
+          gcongr
+          exact hR y hy
+        · rw [(PMF.apply_eq_zero_iff Rd y).mpr hy, zero_mul, zero_mul]
+    _ = _ := by rw [ENNReal.tsum_mul_right, PMF.tsum_coe, one_mul]
+
+omit [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K]
+  [DecidableEq SS] [Fintype SS] [Nonempty SS] [DecidableEq C] in
+/-- A bind is at most a bound of its continuations. -/
+theorem bind_true_le {α : Type} (p : PMF α) (f : α → PMF Bool) (c : ℝ≥0∞)
+    (h : ∀ a, f a true ≤ c) : (p.bind f) true ≤ c := by
+  rw [PMF.bind_apply]
+  calc ∑' a, p a * f a true ≤ ∑' a, p a * c := ENNReal.tsum_le_tsum fun a => by gcongr; exact h a
+    _ = c := by rw [ENNReal.tsum_mul_right, PMF.tsum_coe, one_mul]
+
+omit [Fintype SS] [Nonempty SS] in
+/-- A run of the world of the reduction by an adversary with at most `q` queries receives at
+most `q` concrete shared secrets. -/
+theorem run_yO_len (pk : PK) (cs : C) (dec : C → Option SS)
+    (B : OracleAdv (OEv W SS C) (OOut S W K PK C) Bool) {q : ℕ} (hB : B.IsQueryBound q) :
+    ∀ x ∈ (OracleAdv.run (yO P G g pk cs dec) B yInit).support, x.2.2.length ≤ q := by
+  intro x hx
+  have := run_support_len (yO P G g pk cs dec) (fun t => t.2.length) (yO_len P G g pk cs dec) B q
+    hB yInit x hx
+  simpa [yInit] using this
+
+/-- **The random case of the IND-CCA game of the reduction**: at most `q` over the number of
+shared secrets, for an adversary with at most `q` queries. -/
+theorem indccaGame_false_le (B : OracleAdv (OEv W SS C) (OOut S W K PK C) Bool) {q : ℕ}
+    (hB : B.IsQueryBound q) :
+    (KEM.Games.indccaGame P (kemRed P G g B hB) false) true ≤
+      (q : ℝ≥0∞) * (Fintype.card SS : ℝ≥0∞)⁻¹ := by
+  unfold KEM.Games.indccaGame
+  simp only [Bool.false_eq_true, ↓reduceIte, kemRed, run_kemRedRun]
+  refine bind_true_le _ _ _ fun ks => bind_true_le _ _ _ fun x => ?_
+  exact uniform_bind_mem_le (OracleAdv.run (yO P G g ks.1 x.2 (P.decaps ks.2)) B yInit)
+    (fun y => y.2.2) q (run_yO_len P G g _ _ _ B hB)
+
+/-- **The real case of the IND-CCA game of the reduction**: the probability that the world of
+the reduction with the challenge receives the encapsulated key. -/
+theorem indccaGame_true_eq (B : OracleAdv (OEv W SS C) (OOut S W K PK C) Bool) {q : ℕ}
+    (hB : B.IsQueryBound q) :
+    (KEM.Games.indccaGame P (kemRed P G g B hB) true) true =
+      ∑' kp, P.keygen kp * ∑' kc, P.encaps kp.1 kc *
+        ((OracleAdv.run (yO P G g kp.1 kc.2 (P.decaps kp.2)) B yInit).map
+          fun x => decide (kc.1 ∈ x.2.2)) true := by
+  unfold KEM.Games.indccaGame
+  simp only [↓reduceIte, kemRed, run_kemRedRun, PMF.bind_const]
+  rw [PMF.bind_apply]
+  refine tsum_congr fun kp => ?_
+  rw [PMF.bind_apply]
+
+omit [Fintype SS] [Nonempty SS] [DecidableEq C] in
+/-- The correctness error as a sum over key pairs and encapsulations. -/
+theorem corrErr_eq :
+    P.corrErr = ∑' kp, P.keygen kp * ∑' kc, P.encaps kp.1 kc *
+      (PMF.pure (decide (P.decaps kp.2 kc.2 ≠ some kc.1))) true := by
+  unfold KEM.Games.Scheme.corrErr
+  rw [PMF.bind_apply]
+  refine tsum_congr fun kp => ?_
+  rw [PMF.map, PMF.bind_apply]
+  rfl
+
+omit [Fintype SS] [Nonempty SS] in
+open Classical in
+/-- The flag of the challenge key in the world of the reduction is the probability that the
+final state holds it. -/
+theorem flag_y_le (pk : PK) (cs : C) (dec : C → Option SS) (k : SS)
+    (B : OracleAdv (OEv W SS C) (OOut S W K PK C) Bool) :
+    (OracleAdv.run (OracleAdv.flagWhen (fun _ _ x => k ∈ x.2.2)
+        (yO P G g pk cs dec)) B (yInit, false)).toOuterMeasure {y | y.2.2 = true} ≤
+      ((OracleAdv.run (yO P G g pk cs dec) B yInit).map fun x => decide (k ∈ x.2.2)) true := by
+  refine (run_flag_le_final (yO P G g pk cs dec) (fun t => k ∈ t.2) (fun t e h x hx => ?_) B
+    yInit).trans ?_
+  · simp only [yO, PMF.support_map, Set.mem_image] at hx
+    obtain ⟨r, -, rfl⟩ := hx
+    simp only [yStep, List.mem_append]
+    exact Or.inl h
+  · rw [← PMF.toOuterMeasure_apply_singleton, PMF.toOuterMeasure_map_apply]
+    refine PMF.toOuterMeasure_mono _ fun y hy => ?_
+    simpa using hy.1
+
+open Classical in
+/-- **The KEM part of the bad event at a guess, under the real case of IND-CCA**: at most the
+real case of the IND-CCA game of the reduction plus the correctness error of the KEM. -/
+theorem flagEG_le (B : OracleAdv (OEv W SS C) (OOut S W K PK C) Bool) {q : ℕ}
+    (hB : B.IsQueryBound q) :
+    (OracleAdv.run (OracleAdv.flagWhen (fun _ _ x => EG P G g x.2.1.1 x.2.2) (wO P G)) B
+        (wInit, false)).toOuterMeasure {y | y.2.2 = true} ≤
+      (KEM.Games.indccaGame P (kemRed P G g B hB) true) true + P.corrErr := by
+  rw [flag_w_eq_gw1 P G g (fun x => EG P G g x.1.1 x.2) B, indccaGame_true_eq, corrErr_eq,
+    ← ENNReal.tsum_add]
+  refine ENNReal.tsum_le_tsum fun kp => ?_
+  rw [← mul_add, ← ENNReal.tsum_add, flag_gw1_eq_gw P G g (fun x => EG P G g x.1.1 x.2) kp B]
+  gcongr with kc
+  rw [← mul_add]
+  gcongr
+  by_cases hc : P.decaps kp.2 kc.2 = some kc.1
+  · exact le_add_right ((gw_le_y P G g (pk := kp.1) (sk := kp.2) hc B).trans
+      (flag_y_le P G g _ _ _ _ B))
+  · refine le_add_left ((toOuterMeasure_le_one _ _).trans_eq ?_)
+    simp [hc]
+
+end Bound
+
 end CatCrypt.Crypto.AKE.PQXDHSquareKEM
