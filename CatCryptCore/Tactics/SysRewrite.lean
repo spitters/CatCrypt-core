@@ -17,20 +17,24 @@ Trace equivalence `R ≈ₜ I` of reactive systems (`TraceEqLaws.lean`) is prove
 an invariant (`Sys.StepMapOn.traceEq`), by the congruences of the constructions on systems, or by
 a chain of known equivalences. The tactics of this file carry out these three proof methods.
 
-* `sys_step_map f Inv using [d₁, …]` proves `R ≈ₜ I`, `Realizes R I (fun _ _ => 0)` or
-  `RealizesSim R I S (fun _ _ => 0)` by the step map `f` on the invariant `Inv`. It reduces the
-  goal to the four obligations of `Sys.StepMapOn`, introduces the state, the event and the
-  invariant in the two per-event obligations, splits the event on the ports (`Sum`) and the state
-  into its components (`Prod`, or by the pattern given after `with`), and runs on each leaf the
-  loop *simplify, then split*: `simp_all` with the definitions `dᵢ` and the step equations of the
-  constructions on systems (`sysStepSimps`); when the leaf stays open, a case analysis on the
-  first free variable of an inductive type that blocks the reduction of the goal (the
-  discriminant of a `match`, the major premise of a `casesOn`, or of the body of a definition
-  unfolded once), else `split` on an `if` or a `match`. The possible outcomes of the steps are
-  computed by the `IsOutcome` simp set, so the preservation of the invariant needs no separate
-  lemma. A leaf that stays open is left as a goal tagged by its obligation (`init_inv`,
-  `init_map`, `pres`, `step`) and the constructors of its case analysis, in the simplified form;
-  typically the coupling of a sampled value with the simulator's draw.
+* `sys_step_map f Inv (pres := h) using [d₁, …] with pat` proves `R ≈ₜ I`,
+  `Realizes R I (fun _ _ => 0)` or `RealizesSim R I S (fun _ _ => 0)` by the step map `f` on
+  the invariant `Inv`. It reduces the goal to the four obligations of `Sys.StepMapOn`, closes
+  the two initial ones by `rfl` or `simp`, introduces the state, the event and the invariant in
+  the two per-event obligations (only the step one when `pres` is given), splits the event on
+  the ports (`Sum`) and the state into its components (`Prod`, or by the pattern `pat`), and
+  runs on each branch the loop *prune, split, simplify*: the invariant is simplified, split into
+  its conjuncts and the variables it determines are substituted (a refuted branch is closed);
+  the branch is split on what the real step is stuck on (`blockerOf?`); then `simp_all` with the
+  definitions `dᵢ` and the step equations of the constructions on systems (`sysStepSimps`); a
+  branch still open is split on what its simplified real computation shows stuck, else by
+  `split`. A leaf that stays open is left as a goal tagged by its obligation and the cases of its
+  branch (`step.inr.none.pos`), in the simplified form; typically the coupling of a sampled
+  value with the simulator's draw.
+* `sys_step_pres using [d₁, …] with pat` runs the per-event part alone on a goal
+  `∀ t e, Inv t → ∀ q, IsOutcome (R.step t e) q → Inv q.1` (or any goal of the form
+  `∀ t e, Inv t → P t e`), so that the preservation of the invariant can be proved in its own
+  declaration and passed to `sys_step_map` as `pres`.
 * `sys_congr` reduces `R ≈ₜ I` with both sides built by the same construction (a multi-call
   hybrid `π.withSub`, an open system `P.withSub`, the parallel composition `par`, the loopback,
   the relabelling `mapPorts`) to the trace equivalence of the components, recursively, with the
@@ -39,17 +43,21 @@ a chain of known equivalences. The tactics of this file carry out these three pr
 * `trace_eq_chain` closes `R ≈ₜ I` by a path of local hypotheses `A ≈ₜ B`, each usable in both
   directions, from `R` to `I`, composed by transitivity; also behind `Realizes R I (fun _ _ => 0)`
   and `RealizesSim R I S (fun _ _ => 0)`.
+* `sys_blocker` reports what the goal is stuck on, as `sys_step_map` reads it.
 
-The case analysis of `sys_step_map` follows the reduction: a free variable is split only when a
-constructor at its place lets a `match` of the goal reduce, so the number of leaves is the number
-of reachable branches of the two steps, not the product of the state components. Each leaf runs
-under its own heartbeat budget, counted from its start (as each arm of `catcrypt_auto`).
+The case analysis of `sys_step_map` follows the reduction of the real step: a variable is split
+only when a constructor at its place lets a `match` of the real step reduce (the `match` is
+unfolded to the `casesOn` it is compiled to, so the variable is the one the first case analysis
+needs), and a classical `if` is split by `by_cases` on its proposition. The number of branches
+is the number of reachable branches of the real step, not the product of the state components.
+Heartbeats are counted per declaration: an obligation whose leaves together exceed the budget
+is stated as its own declaration (`sys_step_pres`).
 
 ## Main results
 
 * `MultiHybrid.tensor_withSub_ofPorts_step_inl`, `MultiHybrid.tensor_withSub_ofPorts_step_inr`:
   the step of a tensor of multi-call hybrids over a system given port by port.
-* `sys_step_map`, `sys_congr`, `trace_eq_chain`: the tactics.
+* `sys_step_map`, `sys_step_pres`, `sys_congr`, `trace_eq_chain`, `sys_blocker`: the tactics.
 -/
 
 @[expose] public section
