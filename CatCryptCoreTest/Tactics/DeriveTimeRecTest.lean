@@ -27,6 +27,10 @@ public import CatCryptCore.Tactics.StdCosts
   form, the product of the block count and the length of the blocks.
 * `useNested`: the length of a list built by `blocksL` from a sampled value, bounded free of the
   value by the `@[length_bound]` theorem `blocksL_length`.
+* `usePair`: a fold over the positions of a list built from a sampled value, its length bounded
+  by the `@[length_bound]` theorem `pairL_length_le` when the bound is stated and at the
+  arithmetic leaves; `usePairOn`: the same over `pairL o` of a value `o` matched from the
+  argument `q`, with a bound free of `q`.
 * `ask`: a costed oracle adversary that queries once per level.
 * `pathView`: a recursion behind a structure binder whose levels fold a compound node
   `nodeIdeal deps`; `pathChain`: the same with the fold first, of a node below a `have`, whose
@@ -191,6 +195,59 @@ example (k : ℕ) (A : List ℕ → SPTree.Timed Bool) (ACost : List ℕ → ℕ
     (hA : ∀ x, (A x).time ≤ T) (hc : ∀ x, ACost x ≤ c) :
     ∃ E, SPTree.Timed.stepTime (useNested.tree.timed k A ACost) ≤ E :=
   ⟨_, useNested.tree.timeBound_timed k A ACost hA hc⟩
+
+/-- One or two copies of `i`. -/
+def pairL (i : ℕ) : List ℕ := if i < 2 then [i] else [i, i]
+
+derive_cost pairL
+
+/-- Building `pairL i` costs at most one unit. -/
+theorem pairL.timedCost_le (i : ℕ) : pairL.timedCost i ≤ 1 := by
+  unfold pairL.timedCost; grind
+
+/-- `pairL i` has at most two elements. -/
+@[length_bound] theorem pairL_length_le (i : ℕ) : (pairL i).length ≤ 2 := by
+  unfold pairL; split <;> simp
+
+/-- Sample a number below 4 and pass to the adversary the sum of the positions of `pairL` of
+it, folded over those positions from its length. -/
+noncomputable def usePair (A : ℕ → SPComp Bool) : SPComp Bool := do
+  let i ← SPComp.sample (Fin 4)
+  let l := pairL i.val
+  A (Fin.foldr l.length (fun j acc => acc + j.val) l.length)
+
+derive_reduction usePair
+
+-- the fold runs over the positions of `pairL` of the sampled value; `@[length_bound]` on
+-- `pairL_length_le` states the bound free of that value and closes its arithmetic leaves
+derive_time_bound usePair.tree
+
+/-- The time theorem of `usePair` bounds its step time free of the sampled value. -/
+example (A : ℕ → SPTree.Timed Bool) (ACost : ℕ → ℕ) {T c : ℕ}
+    (hA : ∀ x, (A x).time ≤ T) (hc : ∀ x, ACost x ≤ c) :
+    ∃ E, SPTree.Timed.stepTime (usePair.tree.timed A ACost) ≤ E :=
+  ⟨_, usePair.tree.timeBound_timed A ACost hA hc⟩
+
+/-- On an answer `some o`, pass to the adversary the sum of the positions of `pairL o`, folded
+over those positions from its length; on `none`, pass `0`. -/
+noncomputable def usePairOn (q : Option ℕ) (A : ℕ → SPComp Bool) : SPComp Bool :=
+  match q with
+  | none => A 0
+  | some o =>
+    let l := pairL o
+    A (Fin.foldr l.length (fun j acc => acc + j.val) l.length)
+
+derive_reduction usePairOn
+
+-- the fold runs over the positions of `pairL` of the matched answer; `@[length_bound]` on
+-- `pairL_length_le` states the bound free of the answer and closes its arithmetic leaves
+derive_time_bound usePairOn.tree
+
+/-- The time theorem of `usePairOn` bounds its step time by one bound for every answer. -/
+example (A : ℕ → SPTree.Timed Bool) (ACost : ℕ → ℕ) {T c : ℕ}
+    (hA : ∀ x, (A x).time ≤ T) (hc : ∀ x, ACost x ≤ c) :
+    ∃ E, ∀ q, SPTree.Timed.stepTime (usePairOn.tree.timed q A ACost) ≤ E :=
+  ⟨_, fun q => usePairOn.tree.timeBound_timed q A ACost hA hc⟩
 
 open CatCrypt.Crypto in
 /-- An oracle adversary that queries `n` times. -/

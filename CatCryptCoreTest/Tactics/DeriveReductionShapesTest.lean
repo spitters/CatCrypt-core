@@ -8,6 +8,7 @@ module
 public import CatCryptCore.Tactics.DeriveReduction
 public import CatCryptCore.Tactics.DeriveTimeBound
 public import CatCryptCore.Crypto.Signatures.EUFCMA
+public import CatCryptCore.Crypto.Signatures.OracleProgTimed
 
 /-!
 # Tests of `derive_reduction` on three reduction shapes
@@ -57,8 +58,6 @@ derive_time_bound letRed.tree
 open CatCrypt.Crypto (OracleProg)
 open CatCrypt.Crypto.Signatures (EUFCMAAdversary)
 
-derive_timed_structure EUFCMAAdversary
-
 /-- The forger that runs `pre`, calls the handler at `true`, and queries the signing oracle at
 the answer plus the public key. -/
 noncomputable def injRed (handler : ∀ b : Bool, SPComp (cond b ℕ Unit)) (pre : SPComp Unit) :
@@ -74,11 +73,16 @@ example (handler : (b : Bool) → SPTree.Timed (cond b ℕ Unit)) (handlerCost :
       (injRed (fun b => (handler b).erase.compile) pre.erase.compile) :=
   injRed.erase_timed handler handlerCost pre
 
-/-- The time bound of `EUFCMAAdversary.Timed`, which has no tree or computation field. -/
+/-- The costed `injRed` runs within the times of `pre` and of the handler at `true`, the
+handler's cost companion, and three units. -/
 theorem injRed.timeBound_timed (handler : (b : Bool) → SPTree.Timed (cond b ℕ Unit))
     (handlerCost : Bool → ℕ) (pre : SPTree.Timed Unit) :
-    (injRed.timed handler handlerCost pre).TimeBound :=
-  trivial
+    (injRed.timed handler handlerCost pre).TimeBound
+      (pre.time + (handler true).time + handlerCost true + 3) := by
+  intro pk
+  simp only [injRed.timed, injRed.run.tree.timed, OracleProg.Timed.StepTimeBound,
+    OracleProg.Timed.TimeBound]
+  grind
 
 /-! ## A function into oracle trees -/
 
@@ -127,8 +131,7 @@ theorem sigRedM.timeBound_timed (A : ℕ → OracleAdv.Timed ℕ Bool Bool) (ACo
   have hc := ha (if b = true then pk else 0)
   have h1 := hs.1
   have h2 := hb.1
-  refine ⟨by simp only [ite_self] at h2 ⊢; omega, hb.2.mono ?_⟩
-  simp only [ite_self]
+  refine ⟨by omega, hb.2.mono ?_⟩
   omega
 
 end CatCrypt.Tactics.DeriveReductionShapesTest

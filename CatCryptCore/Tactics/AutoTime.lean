@@ -122,7 +122,8 @@ context), and, when it mentions variables that the right side does not (a bound 
 companion), its bound free of them (`boundFree?`: a premise `∀ x y, fCost x y ≤ ?k` closed by
 the bound of the companion at fresh arguments, a value of `Fin n` by `n`, the length of a list
 built by `List.ofFn`, `map` or `zip` by its equation or by a theorem tagged `@[length_bound]`,
-a length by an invariant). A summand
+a length by an invariant); for every length `l.length` of the leaf, the instance of each
+theorem tagged `@[length_bound]` at it (`addLengthFacts`). A summand
 `m₁` of the left side that is a `match` and a summand `m₂` of the right side that is a `match`
 of the same matcher on the same discriminants are compared by cases
 (`matchFacts`): the matcher proves `m₁ ≤ m₂` with the motive `fun ds => m₁[ds] ≤ m₂[ds]`, each
@@ -174,7 +175,8 @@ the current namespaces.
 * `time_bound` — the procedure
 * `allret_bound` — the leaf invariants of costed oracle adversaries
 * `time_bound_simps` — the simp set of unfolding equations
-* `@[length_bound]` — the registry of bounds `(…).length ≤ b` read by `boundFree?`
+* `@[length_bound]` — the registry of bounds `(…).length ≤ b` read by `boundFree?` and
+  `addLengthFacts`
 -/
 
 public section
@@ -1377,7 +1379,7 @@ def eqAt? (lem : Name) (e : Expr) : MetaM (Option (Expr × Expr)) := do
     return none
 
 /-- The registry of `@[length_bound]` theorems, bounds of the length of a list read by
-`boundFree?`. -/
+`boundFree?` and `addLengthFacts`. -/
 initialize lengthBoundExt : SimpleScopedEnvExtension Name (Array Name) ←
   registerSimpleScopedEnvExtension { addEntry := Array.push, initial := #[] }
 
@@ -1591,13 +1593,40 @@ def queryBoundSource (body A : Expr) (deep : Bool := true) : MetaM (Option Expr)
     s.restore
   return none
 
+/-- The instance at the length `e` of the theorem `lem` tagged `@[length_bound]`, its left side
+unified with `e` at reducible transparency and its premises closed by `closeByContext`: the
+conclusion `e ≤ b` or `e = b` with its proof. -/
+def lengthBoundAt? (lem : Name) (e : Expr) : MetaM (Option (Expr × Expr)) := do
+  let s ← saveState
+  try
+    let c ← mkConstWithFreshMVarLevels lem
+    let (ms, _, body) ← forallMetaTelescopeReducing (← inferType c)
+    let lhs? := if body.isAppOfArity ``Eq 3 then some (body.getArg! 1)
+      else (natLe? body).map (·.1)
+    let some l := lhs? | s.restore; return none
+    unless ← withReducible (isDefEq l e) do s.restore; return none
+    let ok ← ms.allM fun m => do
+      let mid := m.mvarId!
+      if ← mid.isAssigned then return true
+      unless ← isProp (← mid.getType) do return true
+      closeByContext mid
+    let pf ← instantiateMVars (mkAppN c ms)
+    let ty ← instantiateMVars body
+    if !ok || pf.hasExprMVar || ty.hasExprMVar then s.restore; return none
+    return some (ty, pf)
+  catch _ =>
+    s.restore
+    return none
+
 /-- Lengths of built lists: for every subterm `l.length` of the target or of a propositional
 hypothesis, the instance of its equation in `lengthEqLemmas` or of `List.length_nil`
-(`[].length = 0`) is added to the context, and the same for the lengths on the right sides of
-the added equations, at most `fuel` equations in all. `omega` reads a length as an atom; with
+(`[].length = 0`), and the instance of each theorem tagged `@[length_bound]` at `l.length`
+(`lengthBoundAt?`), are added to the context, and the same for the lengths on the right sides
+of the added facts, at most `fuel` facts in all. `omega` reads a length as an atom; with
 these equations it relates the length of `l₁ ++ [a]` in a registered cost to the length of `l₁`
 in the bound, which `boundFree?` states as `l₁.length + ([].length + 1)` and `derive_time_bound`
-as `l₁.length + 0 + 1`. -/
+as `l₁.length + 0 + 1`; with the registered bounds it relates a length of a list built from a
+variable to the bound free of that variable which `boundFree?` states. -/
 def addLengthFacts (g : MVarId) (fuel : Nat := 64) : MetaM MVarId := g.withContext do
   let mut work : Array Expr := appsOf (← instantiateMVars (← g.getType)) #[]
   for d in ← getLCtx do
@@ -1621,6 +1650,12 @@ def addLengthFacts (g : MVarId) (fuel : Nat := 64) : MetaM MVarId := g.withConte
       n := n + 1
       work := appsOf r work
       break
+    for lem in lengthBoundExt.getState (← getEnv) do
+      let some (ty, pf) ← g.withContext (lengthBoundAt? lem e) | continue
+      let (_, g') ← (← g.assert `hl ty pf).intro1P
+      g := g'
+      n := n + 1
+      work := appsOf ty work
   return g
 
 /-- Registered costs: for every subterm `f.timedCost a` of the target, the instance at `a` of

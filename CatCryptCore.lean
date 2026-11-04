@@ -335,6 +335,7 @@ public import CatCryptCore.Crypto.LazyTableReindex
 public import CatCryptCore.Crypto.OracleLazyMulti
 public import CatCryptCore.Crypto.OracleGameUpToBad
 public import CatCryptCore.Crypto.OracleAdversaryFree
+public import CatCryptCore.Crypto.OracleAdversaryFreeBridge
 public import CatCryptCore.Crypto.KEM.Games
 public import CatCryptCore.Crypto.KEM.FOTransformU
 public import CatCryptCore.Crypto.KEM.FOTransformTimed
