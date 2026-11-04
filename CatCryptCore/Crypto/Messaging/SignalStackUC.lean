@@ -452,41 +452,51 @@ theorem world_idleAt (i : ℕ) (cre : SPComp K) (rd1 rd2 : K → SPComp V) :
     ite_false]
   rfl
 
+omit [Fintype K] [Nonempty K] [Inhabited K] in
+/-- A map of a computation that does not fail does not fail. -/
+theorem map_noFail {α β : Type} (f : α → β) {c : SPComp α} (hc : SPComp.NoFail c) :
+    SPComp.NoFail (SPComp.map f c) :=
+  Assumptions.SPComp.bind_noFail hc fun _ => SPComp.pure_noFail _
+
+omit [Fintype K] [Nonempty K] [Inhabited K] in
+/-- The outputs of a hybrid world do not fail when its views do not fail. -/
+theorem wOut_noFail {i : ℕ} {rd1 rd2 : K → SPComp V}
+    (hR : ∀ k, SPComp.NoFail (realV k)) (hI : SPComp.NoFail idealV)
+    (h1 : ∀ k, SPComp.NoFail (rd1 k)) (h2 : ∀ k, SPComp.NoFail (rd2 k))
+    (w : WSt K) (e : HEv ⊕ AEv K) : SPComp.NoFail (wOut realV idealV i rd1 rd2 w e) := by
+  rcases e with (_ | ⟨sid, pid⟩) | (_ | _ | _ | _ | _ | _)
+  all_goals try exact SPComp.pure_noFail _
+  refine map_noFail _ ?_
+  unfold chanOut
+  split
+  · split
+    · refine map_noFail _ ?_
+      unfold wView
+      split
+      · unfold readOut
+        split_ifs
+        · exact hI
+        · exact h1 _
+        · exact h2 _
+        · exact hR _
+      · exact hR _
+    · exact SPComp.pure_noFail _
+  · exact SPComp.pure_noFail _
+
 /-- The steps of a hybrid world do not fail when its views and its creation do not fail. -/
 theorem world_noFail {i : ℕ} {cre : SPComp K} {rd1 rd2 : K → SPComp V}
     (hR : ∀ k, SPComp.NoFail (realV k)) (hI : SPComp.NoFail idealV)
     (hc : SPComp.NoFail cre) (h1 : ∀ k, SPComp.NoFail (rd1 k)) (h2 : ∀ k, SPComp.NoFail (rd2 k))
     (w : WSt K) (e : HEv ⊕ AEv K) :
     SPComp.NoFail ((world realV idealV i cre rd1 rd2).step w e) := by
-  have hm : ∀ {α β : Type} (f : α → β) (c : SPComp α), SPComp.NoFail c →
-      SPComp.NoFail (SPComp.map f c) := fun _ _ hc =>
-    Assumptions.SPComp.bind_noFail hc fun _ => SPComp.pure_noFail _
   simp only [world]
-  refine Assumptions.SPComp.bind_noFail ?_ fun kf => hm _ _ ?_
-  · unfold wDraw
-    split_ifs
-    · exact hc
-    · exact (CatCrypt.Crypto.PAKE.CPaceSquare.pureNF_sample K).2
-    · exact SPComp.pure_noFail _
-  · rcases e with (_ | ⟨sid, pid⟩) | (_ | _ | _ | _ | _ | _)
-    · exact SPComp.pure_noFail _
-    · refine hm _ _ ?_
-      unfold chanOut
-      split
-      · split
-        · refine hm _ _ ?_
-          unfold wView
-          split
-          · unfold readOut
-            split_ifs
-            · exact hI
-            · exact h1 _
-            · exact h2 _
-            · exact hR _
-          · exact hR _
-        · exact SPComp.pure_noFail _
-      · exact SPComp.pure_noFail _
-    all_goals exact SPComp.pure_noFail _
+  refine Assumptions.SPComp.bind_noFail ?_ fun kf =>
+    map_noFail _ (wOut_noFail realV idealV hR hI h1 h2 w e)
+  unfold wDraw
+  split_ifs
+  · exact hc
+  · exact (CatCrypt.Crypto.PAKE.CPaceSquare.pureNF_sample K).2
+  · exact SPComp.pure_noFail _
 
 /-! ## Deferred sampling at the creation of the key `i` -/
 
@@ -591,27 +601,40 @@ theorem readOut_post {i : ℕ} (rd1 rd1' rd2 : K → SPComp V) {w : WSt K} (h : 
   simp [readOut, h]
 
 omit [Fintype K] [Nonempty K] [Inhabited K] in
+/-- Two states with the same functionality state and indices, and two families of views that
+agree at the index of the session that `e` reads, give the same output at `e`. -/
+theorem wOut_congr₂ {i i' : ℕ} {rd1 rd2 rd1' rd2' : K → SPComp V} {w w' : WSt K}
+    (hst : w.st = w'.st) (hix : w.ix = w'.ix) (e : HEv ⊕ AEv K)
+    (h : ∀ sid pid j, e = .inl (.getKey sid pid) → w.ix (sid, pid) = some j →
+      readOut realV idealV i rd1 rd2 w j = readOut realV idealV i' rd1' rd2' w' j) :
+    wOut realV idealV i rd1 rd2 w e = wOut realV idealV i' rd1' rd2' w' e := by
+  rcases e with (_ | ⟨sid, pid⟩) | (_ | _ | _ | _ | _ | _)
+  all_goals try rfl
+  · simp only [wOut]
+    congr 1
+    unfold chanOut
+    rw [← hst]
+    split
+    · split
+      · congr 1
+        unfold wView
+        rw [← hix]
+        split
+        · next j hj => exact h sid pid j rfl hj
+        · rfl
+      · rfl
+    · rfl
+  · simp only [wOut, hst]
+
+omit [Fintype K] [Nonempty K] [Inhabited K] in
 /-- Two families of views that agree at the index of the session that `e` reads give the
 same output at `e`. -/
 theorem wOut_congr {i i' : ℕ} {rd1 rd2 rd1' rd2' : K → SPComp V} {w : WSt K}
     (e : HEv ⊕ AEv K)
     (h : ∀ sid pid j, e = .inl (.getKey sid pid) → w.ix (sid, pid) = some j →
       readOut realV idealV i rd1 rd2 w j = readOut realV idealV i' rd1' rd2' w j) :
-    wOut realV idealV i rd1 rd2 w e = wOut realV idealV i' rd1' rd2' w e := by
-  rcases e with (_ | ⟨sid, pid⟩) | (_ | _ | _ | _ | _ | _)
-  all_goals try rfl
-  simp only [wOut]
-  congr 1
-  unfold chanOut
-  split
-  · split
-    · congr 1
-      unfold wView
-      split
-      · next j hj => exact h sid pid j rfl hj
-      · rfl
-    · rfl
-  · rfl
+    wOut realV idealV i rd1 rd2 w e = wOut realV idealV i' rd1' rd2' w e :=
+  wOut_congr₂ realV idealV rfl rfl e h
 
 /-- **The first read of the key `i` drawn at the read is the first read drawn before the run.**
 If every key that the creation `cre` may give has the first view `rd1 kf = c`, the run of the
@@ -676,6 +699,218 @@ theorem run_world_read (i : ℕ) (cre : SPComp K) {c : SPComp V} (hc : SPComp.Is
     obtain ⟨sid, pid, rfl, hx⟩ := hu
     rw [world_rd realV idealV hq]
     simp [rdNext, hx]
+
+/-! ## A second read of the key `i` -/
+
+omit [Fintype K] [Nonempty K] [Inhabited K] in
+/-- A judgment at the equality of heaps conjoined with a fact `P` follows from the judgments
+under `P`. -/
+theorem rHoare_eqPre_and_of {α β : Type} {P : Prop} {c₁ : SPComp α} {c₂ : SPComp β}
+    {Ψ : RPost α β} (h : P → rHoare eqPre c₁ c₂ Ψ) :
+    rHoare (fun h₁ h₂ => h₁ = h₂ ∧ P) c₁ c₂ Ψ :=
+  fun h₁ h₂ hp => h hp.2 h₁ h₂ hp.1
+
+/-- The relation of two hybrid worlds that differ only in the key `i`: equal states except at
+the key of the index `i`. -/
+def relExcept (i : ℕ) (a b : WSt K) : Prop :=
+  a.st = b.st ∧ a.ix = b.ix ∧ a.steps = b.steps ∧ a.rd = b.rd ∧ ∀ j, j ≠ i → a.kv j = b.kv j
+
+/-- The bad event of the key `i`: it is read twice. -/
+def reuse (i : ℕ) (w : WSt K) : Bool := decide (2 ≤ w.rd i)
+
+omit [Fintype K] [Nonempty K] in
+/-- The next states of related states are related, for draws that agree unless the activation
+creates the key `i`. -/
+theorem relExcept_next {i : ℕ} {a b : WSt K} (h : relExcept i a b) (e : HEv ⊕ AEv K)
+    {kf kf' : K} (hk : a.steps ≠ i → kf = kf') :
+    relExcept i (wNext a e kf) (wNext b e kf') := by
+  obtain ⟨hst, hix, hs, hrd, hkv⟩ := h
+  refine ⟨?_, ?_, ?_, ?_, fun j hj => ?_⟩
+  · simp only [wNext, hst]
+  · rcases e with _ | (_ | _ | _ | _ | _ | _) <;> simp [wNext, ixNext, hst, hix, hs]
+  · simp only [wNext, hs]
+  · rcases e with (_ | ⟨sid, pid⟩) | _ <;> simp [wNext, rdNext, hix, hrd]
+  · simp only [wNext]
+    split_ifs
+    · by_cases hjs : j = a.steps
+      · subst hjs
+        rw [Function.update_self, hs, Function.update_self]
+        exact hk hj
+      · rw [Function.update_of_ne hjs, ← hs, Function.update_of_ne hjs]; exact hkv j hj
+    · exact hkv j hj
+
+/-- **Up to a second read of the key `i`.** Two hybrid worlds whose key `i` is created as `k`
+and as a uniform key, whose first read of the key `i` does not depend on the key, and whose
+later reads differ, are at distance at most the probability that the key `i` is read twice in
+the first world. -/
+theorem world_upto_reuse (i : ℕ) (k : K) {rd1 rdA rdB : K → SPComp V}
+    (hrd1 : ∀ a b, rd1 a = rd1 b) (hR : ∀ k, SPComp.NoFail (realV k))
+    (hI : SPComp.NoFail idealV) (h1 : ∀ k, SPComp.NoFail (rd1 k))
+    (hA : ∀ k, SPComp.NoFail (rdA k)) (hB : ∀ k, SPComp.NoFail (rdB k)) :
+    Realizes (world realV idealV i (SPComp.pure k) rd1 rdA)
+      (world realV idealV i (SPComp.sample K) rd1 rdB)
+      (fun _ Z => prBad (world realV idealV i (SPComp.pure k) rd1 rdA) (reuse i) Z) := by
+  refine realizes_upto_bad_rel _ _ (relExcept i) (reuse i)
+    ⟨rfl, rfl, rfl, rfl, fun _ _ => rfl⟩
+    (world_noFail realV idealV hR hI (SPComp.pure_noFail k) h1 hA)
+    (world_noFail realV idealV hR hI (CatCrypt.Crypto.PAKE.CPaceSquare.pureNF_sample K).2 h1 hB)
+    fun a b e hab hbad => ?_
+  have hmap : ∀ {α β : Type} (f : α → β) (c : SPComp α),
+      SPComp.map f c = SPComp.bind c fun x => SPComp.pure (f x) := fun _ _ => rfl
+  simp only [world, hmap]
+  -- the draws
+  have hdraw : rHoare eqPre (wDraw i (SPComp.pure k) a e) (wDraw i (SPComp.sample K) b e)
+      (fun kf h kf' h' => h = h' ∧ (a.steps ≠ i → kf = kf')) := by
+    by_cases hc : isNewKey e = true ∧ a.steps = i
+    · have hb : b.steps = i := hab.2.2.1 ▸ hc.2
+      simp only [wDraw, hc.1, hc.2, hb, ite_true]
+      rw [← SPComp.bind_pure (SPComp.sample K)]
+      exact rHoare_sample_r fun kf' => rHoare_ret fun h h' hh => ⟨hh, fun hn => by simp_all⟩
+    · have heq : wDraw i (SPComp.pure k) a e = wDraw i (SPComp.sample K) b e := by
+        simp only [wDraw, ← hab.2.2.1]
+        by_cases hn : isNewKey e = true
+        · have : a.steps ≠ i := fun h => hc ⟨hn, h⟩
+          simp [hn, this]
+        · simp [hn]
+      rw [heq]
+      exact rHoare_conseq (fun _ _ h => h) (fun _ _ _ _ hh => ⟨hh.2, fun _ => hh.1⟩)
+        (rHoare_refl _)
+  refine rHoare_bind hdraw fun kf kf' => ?_
+  refine rHoare_eqPre_and_of (P := a.steps ≠ i → kf = kf') fun hk => ?_
+  have hnext := relExcept_next hab e hk
+  by_cases hbr : ∃ sid pid, e = .inl (.getKey sid pid) ∧ a.ix (sid, pid) = some i ∧
+      a.rd i ≠ 0
+  · -- a second read: the run is bad
+    obtain ⟨sid, pid, rfl, hx, hr⟩ := hbr
+    refine rHoare_bind (rHoare_true_of_noFail (wOut_noFail realV idealV hR hI h1 hA a _)
+      (wOut_noFail realV idealV hR hI h1 hB b _)) fun o o' => rHoare_ret fun _ _ _ => ?_
+    left
+    have hle : 1 ≤ a.rd i := Nat.one_le_iff_ne_zero.mpr hr
+    simp [reuse, wNext, rdNext, hx]
+    omega
+  · have hout : wOut realV idealV i rd1 rdA a e = wOut realV idealV i rd1 rdB b e := by
+      refine wOut_congr₂ realV idealV hab.1 hab.2.1 e fun sid pid j he hj => ?_
+      unfold readOut
+      by_cases hji : j = i
+      · subst hji
+        have hr : a.rd j = 0 := by
+          by_contra hr; exact hbr ⟨sid, pid, he, hj, hr⟩
+        simp [hr, ← hab.2.2.2.1, hrd1 (a.kv j) (b.kv j)]
+      · simp [hji, hab.2.2.2.2 j hji]
+    rw [← hout]
+    refine rHoare_bind (rHoare_refl _) fun o o' => rHoare_ret fun h h' hh => ?_
+    obtain ⟨rfl, rfl⟩ := hh
+    exact Or.inr ⟨rfl, hnext, rfl⟩
+
+/-! ## The last hybrid world and the ideal secure channel -/
+
+/-- The output of `F_SC` at an event. -/
+noncomputable def scOut (t : St K) : HEv ⊕ AEv K → SPComp (HOut V ⊕ AOut)
+  | .inl (.newSession _ _ _ _) => SPComp.pure (.inl .ok)
+  | .inl (.getKey sid pid) => SPComp.map Sum.inl (chanOut (scView realV idealV) t (sid, pid))
+  | .inr .poll => SPComp.pure (.inr (.notice (pollStep t).2))
+  | .inr _ => SPComp.pure (.inr .ack)
+
+omit [Fintype K] [Nonempty K] in
+/-- The steps of `F_SC`: the next state of the functionality with the placeholder key and the
+output `scOut`. -/
+theorem F_SC_step (t : St K) (e : HEv ⊕ AEv K) :
+    (F_SC realV idealV).step t e = SPComp.map (fun o => (stNext t e, o)) (scOut realV idealV t e) := by
+  rcases e with (⟨sid, pid, peer, role⟩ | ⟨sid, pid⟩) |
+    (_ | _ | pid | ⟨sid, pid⟩ | ⟨sid, pid, k⟩ | ⟨sid, pid, k⟩) <;>
+    simp [F_SC, chanHon, advSys, stNext, scOut, SPComp.map, SPComp.bind_assoc, SPComp.pure_bind]
+
+omit [Fintype K] [Nonempty K] [Inhabited K] in
+/-- Two view functions that agree at the record and the key of the session give the same
+channel output. -/
+theorem chanOut_congr {f g : Rec K → K → SPComp V} {t : St K} {x : Inst}
+    (h : ∀ r k, t.recs x = some r → r.key = some k → f r k = g r k) :
+    chanOut f t x = chanOut g t x := by
+  unfold chanOut
+  rcases hx : t.recs x with _ | r
+  · rfl
+  · rcases hk : r.key with _ | k
+    · simp only [hk]
+    · simp only [hk, h r k hx hk]
+
+omit [Fintype K] [Nonempty K] in
+/-- In a state of the invariant whose indices are below `n`, the hybrid world `n` with real
+reads outputs as `F_SC`. -/
+theorem wOut_eq_scOut {n : ℕ} {w : WSt K} (hw : WInv w) (hn : w.steps ≤ n)
+    (e : HEv ⊕ AEv K) :
+    wOut realV idealV n realV realV w e = scOut realV idealV w.st e := by
+  rcases e with (_ | ⟨sid, pid⟩) | (_ | _ | _ | _ | _ | _)
+  all_goals try rfl
+  simp only [wOut, scOut]
+  congr 1
+  refine chanOut_congr fun r k hr _ => ?_
+  unfold wView scView
+  rcases hj : w.ix (sid, pid) with _ | j
+  · have hc : r.status ≠ .completed := fun hc => by
+      have := (hw.2 _ r hr hc).2
+      rw [hj] at this; simp at this
+    simp [hc]
+  · obtain ⟨hlt, r', hr', hc'⟩ := hw.1 _ j hj
+    rw [hr] at hr'; cases hr'
+    simp [readOut, show j < n by omega, hc']
+
+omit [Inhabited K] in
+/-- The draws of a hybrid world neither touch the heap nor fail, for a creation that does
+not. -/
+theorem wDraw_pureNF {i : ℕ} {cre : SPComp K} (hc : SPComp.IsPure cre ∧ SPComp.NoFail cre)
+    [Inhabited K] (w : WSt K) (e : HEv ⊕ AEv K) :
+    SPComp.IsPure (wDraw i cre w e) ∧ SPComp.NoFail (wDraw i cre w e) := by
+  unfold wDraw
+  split_ifs
+  · exact hc
+  · exact CatCrypt.Crypto.PAKE.CPaceSquare.pureNF_sample K
+  · exact CatCrypt.Crypto.PAKE.CPaceSquare.pureNF_pure _
+
+/-- **The last hybrid world is the ideal secure channel up to `n` activations.** The hybrid
+world `n` with real reads realizes `F_SC` with bound the probability that the run exceeds `n`
+non-idle activations. -/
+theorem world_end (n : ℕ) (hR : ∀ k, SPComp.NoFail (realV k)) (hI : SPComp.NoFail idealV) :
+    Realizes (world realV idealV n (SPComp.sample K) realV realV) (F_SC realV idealV)
+      (fun _ Z => prBad (world realV idealV n (SPComp.sample K) realV realV)
+        (fun w => decide (n < w.steps)) Z) := by
+  have hs := CatCrypt.Crypto.PAKE.CPaceSquare.pureNF_sample K
+  refine realizes_upto_bad_rel _ _ (fun w t => w.st = t ∧ WInv w)
+    (fun w => decide (n < w.steps)) ⟨rfl, wInv_init⟩
+    (world_noFail realV idealV hR hI hs.2 hR hR) (fun t e => by
+      rw [F_SC_step]
+      refine map_noFail _ ?_
+      rcases e with (_ | ⟨sid, pid⟩) | (_ | _ | _ | _ | _ | _)
+      all_goals try exact SPComp.pure_noFail _
+      refine map_noFail _ ?_
+      unfold chanOut
+      split
+      · split
+        · refine map_noFail _ ?_
+          unfold scView; split_ifs
+          · exact hI
+          · exact hR _
+        · exact SPComp.pure_noFail _
+      · exact SPComp.pure_noFail _) fun w t e hwt hbad => ?_
+  obtain ⟨rfl, hw⟩ := hwt
+  have hn : w.steps ≤ n := by simpa using hbad
+  have hd := wDraw_pureNF hs (i := n) w e
+  rw [F_SC_step, ← wOut_eq_scOut realV idealV hw hn e,
+    ← bind_const_of_isPure hd.1 hd.2 (SPComp.map _ _)]
+  simp only [world]
+  refine rHoare_bind (rHoare_refl _) fun kf kf' =>
+    rHoare_conseq (Φ := eqPre) (fun _ _ hh => hh.2) (fun _ _ _ _ h => h) ?_
+  simp only [SPComp.map]
+  refine rHoare_bind (rHoare_refl _) fun o o' => rHoare_ret fun _ _ hh => ?_
+  obtain ⟨rfl, rfl⟩ := hh
+  exact Or.inr ⟨rfl, ⟨rfl, wInv_next hw e kf⟩, rfl⟩
+
+/-- **The counter of the last hybrid world.** In a run of at most `n` activations, the hybrid
+world never exceeds `n` non-idle activations. -/
+theorem world_end_prBad (n : ℕ) {cre : SPComp K} {rd1 rd2 : K → SPComp V} {ζ : Type}
+    (Z : Env (Strat ζ (HEv ⊕ AEv K) (HOut V ⊕ AOut)) ζ) (hZ : Z.input.rounds ≤ n) :
+    prBad (world realV idealV n cre rd1 rd2) (fun w => decide (n < w.steps)) Z = 0 :=
+  prBad_counter_eq_zero _ WSt.steps n (fun w e q hq => by
+    rw [world_steps realV idealV hq]; split_ifs <;> omega) Z (by simpa [world, WSt.init] using hZ)
 
 end Steps
 
