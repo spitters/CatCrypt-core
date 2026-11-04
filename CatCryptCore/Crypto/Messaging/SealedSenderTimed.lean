@@ -14,15 +14,16 @@ public import CatCryptCore.Tactics.DeriveReduction
 
 The costed mirrors of the IND-CCA adversary (`INDCCAAdversary.Timed`) and of the
 sender-anonymity adversary (`SenderAnonAdversary.Timed`, the result type of reductions that
-build one), by `derive_timed_structure`, and the costed form of `senderAnonReduction` (by `derive_reduction`),
-with its erasure theorem and its time bound. No module imports this file.
+build one), by `derive_timed_structure`, and the costed form of `senderAnonReduction` (by
+`derive_reduction`), with its erasure theorem and its time bound. Only time companion files
+import this file.
 
 ## Cost model
 
 The rules of `CatCryptCore.Tactics.DeriveTimed`: one unit per `rand` and `query` node and per
 bookkeeping step; the recipient check `valid` is a data function with cost companion
-`validCost`; relabelling an answer costs `OracleAdv.mapQueryAnswer.timed` its registered unit
-plus the cost of `acceptAnswer`.
+`validCost`; the derived relabelling `OracleAdv.mapQueryAnswer.timed` charges a constant per
+node of the adversary and the cost of `acceptAnswer` per answer.
 
 ## Main results
 
@@ -30,8 +31,8 @@ plus the cost of `acceptAnswer`.
   erasure
 * `senderAnonReduction.timeBound_timed` — for stages of `A` of times `T₁`, `T₂` and call costs
   `a₁`, `a₂`, and `valid` of cost at most `v`, the two stages of the reduction take time at
-  most `3 + a₁ + T₁ + q₁ (v + 6)` and `2 + a₂ + T₂ + q₂ (v + 6)`: the time of `A` plus a
-  constant per acceptance query
+  most `4 + a₁ + 4 T₁ + q₁ (v + 7)` and `3 + a₂ + 4 T₂ + q₂ (v + 7)`: linear in the time of
+  `A`, with a constant per acceptance query
 -/
 
 @[expose] public section
@@ -55,7 +56,7 @@ derive_reduction senderAnonReduction
 /-- **Time of the Sealed Sender reduction.** For costed stages `choose`, `guess` erasing to the
 stages of `A`, of times at most `T₁`, `T₂` and call costs at most `a₁`, `a₂`, and a recipient
 check of cost at most `v`, the first stage of the costed reduction takes time at most
-`3 + a₁ + T₁ + q₁ * (v + 6)` and the second at most `2 + a₂ + T₂ + q₂ * (v + 6)`. -/
+`4 + a₁ + 4 * T₁ + q₁ * (v + 7)` and the second at most `3 + a₂ + 4 * T₂ + q₂ * (v + 7)`. -/
 theorem senderAnonReduction.timeBound_timed {PK Cert Inner C : Type}
     (valid : Cert × Inner → Bool) (validCost : Cert × Inner → ℕ) {q₁ q₂ : ℕ}
     (A : SenderAnonAdversary PK Cert Inner C q₁ q₂)
@@ -68,33 +69,52 @@ theorem senderAnonReduction.timeBound_timed {PK Cert Inner C : Type}
     (hcc : ∀ pk, chooseCost pk ≤ a₁) (hgc : ∀ st c, guessCost st c ≤ a₂)
     (hv : ∀ x, validCost x ≤ v) :
     (senderAnonReduction.timed valid validCost A choose chooseCost guess guessCost).TimeBound
-      (3 + a₁ + T₁ + q₁ * (v + 6)) (2 + a₂ + T₂ + q₂ * (v + 6)) := by
-  have hq : (1 + 0) + (1 + (v + 4)) = v + 6 := by omega
+      (4 + a₁ + 4 * T₁ + q₁ * (v + 7)) (3 + a₂ + 4 * T₂ + q₂ * (v + 7)) := by
+  have hq : 0 + (v + 4) + 3 = v + 7 := by omega
   refine ⟨fun pk => ?_, fun st c => ?_⟩
-  · show StepTimeBound (senderAnonReduction.choose.tree.timed valid validCost A choose chooseCost
+  · obtain ⟨H, hdef, hH⟩ : ∃ H : Option (Cert × Inner) → ℕ,
+        senderAnonReduction.choose.tree.timed valid validCost A choose chooseCost guess
+          guessCost pk =
+          delay (2 + chooseCost pk +
+            (OracleAdv.mapQueryAnswer.timed id (fun _ => 0) (acceptAnswer valid) H (choose pk)).1)
+            ((OracleAdv.mapQueryAnswer.timed id (fun _ => 0) (acceptAnswer valid) H
+              (choose pk)).2.bind fun x => (1, OracleAdv.Timed.ret (chalPair x))) ∧
+        ∀ r, H r ≤ v + 4 :=
+      ⟨_, rfl, fun r => by cases r with
+        | none => simp
+        | some x => have := hv x; simp only; omega⟩
+    have hm := OracleAdv.mapQueryAnswer.timeBound_timed id (gCost := fun _ => 0)
+      (acceptAnswer valid) (a := 0) (b := v + 4) (fun _ => le_rfl) hH (hc pk) (q := q₁)
+      (by rw [hce pk]; exact A.isQueryBound₁ pk)
+    rw [hq] at hm
+    have hb := timeBound_bind (f := fun x => (1, OracleAdv.Timed.ret (chalPair x)))
+      (n := 1) hm.2 fun _ => ⟨le_rfl, trivial⟩
+    show StepTimeBound (senderAnonReduction.choose.tree.timed valid validCost A choose chooseCost
       guess guessCost pk) _
-    rw [senderAnonReduction.choose.tree.timed]
-    refine (stepTimeBound_delay (timeBound_bind
-      (f := fun x => (1, OracleAdv.Timed.ret (chalPair x))) (n := 1) (stepTimeBound_zero.1
-      (OracleAdv.mapQueryAnswer.timeBound_timed id (acceptAnswer valid) (a := 0) (b := v + 4)
-        (fun _ => le_rfl) ?_ (hc pk) (q := q₁) ?_)) fun _ => ⟨le_rfl, trivial⟩)).mono ?_
-    · intro r
-      cases r with
-      | none => simp
-      | some x => have := hv x; simp only; omega
-    · rw [hce pk]; exact A.isQueryBound₁ pk
-    · simp only [OracleAdv.mapQueryAnswer.timed]
-      rw [hq]; have := hcc pk; omega
-  · show StepTimeBound (senderAnonReduction.guess.tree.timed valid validCost A choose chooseCost
+    rw [hdef]
+    refine (stepTimeBound_delay hb).mono ?_
+    have := hm.1
+    have := hcc pk
+    omega
+  · obtain ⟨H, hdef, hH⟩ : ∃ H : Option (Cert × Inner) → ℕ,
+        senderAnonReduction.guess.tree.timed valid validCost A choose chooseCost guess
+          guessCost st c =
+          delay (2 + guessCost st c)
+            (OracleAdv.mapQueryAnswer.timed id (fun _ => 0) (acceptAnswer valid) H
+              (guess st c)) ∧
+        ∀ r, H r ≤ v + 4 :=
+      ⟨_, rfl, fun r => by cases r with
+        | none => simp
+        | some x => have := hv x; simp only; omega⟩
+    have hm := OracleAdv.mapQueryAnswer.timeBound_timed id (gCost := fun _ => 0)
+      (acceptAnswer valid) (a := 0) (b := v + 4) (fun _ => le_rfl) hH (hg st c) (q := q₂)
+      (by rw [hge st c]; exact A.isQueryBound₂ st c)
+    rw [hq] at hm
+    show StepTimeBound (senderAnonReduction.guess.tree.timed valid validCost A choose chooseCost
       guess guessCost st c) _
-    refine (stepTimeBound_delay
-      (OracleAdv.mapQueryAnswer.timeBound_timed id (acceptAnswer valid) (a := 0) (b := v + 4)
-        (fun _ => le_rfl) ?_ (hg st c) (q := q₂) ?_)).mono ?_
-    · intro r
-      cases r with
-      | none => simp
-      | some x => have := hv x; simp only; omega
-    · rw [hge st c]; exact A.isQueryBound₂ st c
-    · rw [hq]; have := hgc st c; omega
+    rw [hdef]
+    refine (stepTimeBound_delay hm).mono ?_
+    have := hgc st c
+    omega
 
 end CatCrypt.Crypto.Messaging.SealedSender

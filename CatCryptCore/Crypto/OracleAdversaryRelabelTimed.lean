@@ -7,6 +7,7 @@ module
 
 public import CatCryptCore.Crypto.OracleAdversaryTimed
 public import CatCryptCore.Crypto.OracleSubst
+public import CatCryptCore.Tactics.DeriveTimed
 
 /-!
 # Relabelling the queries and answers of an oracle adversary, with step costs
@@ -25,7 +26,7 @@ per `query` node. The costs `t` and `u` of the two relabellings are parameters.
 
 * `OracleAdv.mapQueryAnswer g h A` — `A` with queries relabelled by `g`, answers by `h`
 * `OracleAdv.Timed.mapQueryAnswer g t h u A` — its costed form
-* `OracleAdv.mapQueryAnswer.timed` — the costed form registered for `derive_timed`
+* `OracleAdv.mapQueryAnswer.timed` — the costed form derived by `derive_timed`
 
 ## Main results
 
@@ -35,9 +36,10 @@ per `query` node. The costs `t` and `u` of the two relabellings are parameters.
 * `OracleAdv.isQueryBoundBy_mapQueryAnswer` — and a cost bound
 * `OracleAdv.subst_mapQueryAnswer` — substitution into a relabelled adversary
 * `OracleAdv.Timed.erase_mapQueryAnswer` — erasure commutes with relabelling
-* `OracleAdv.mapQueryAnswer.timed`, `OracleAdv.mapQueryAnswer.erase_timed`,
-  `OracleAdv.mapQueryAnswer.timeBound_timed` — the costed form in the binder convention of
-  `derive_timed`, its erasure and its time
+* `OracleAdv.mapQueryAnswer.timed`, `OracleAdv.mapQueryAnswer.erase_timed` — the costed form
+  derived by `derive_timed` and its erasure
+* `OracleAdv.mapQueryAnswer.timeBound_timed` — its time: `1 + 4 T + q (a + b + 3)` for an
+  adversary of time `T` with at most `q` queries
 * `OracleAdv.Timed.timeBound_mapQueryAnswer` — relabelling at cost at most `t₀ + u₀` per
   query adds at most `q * (t₀ + u₀)` to the time of an adversary with at most `q` queries
 -/
@@ -152,29 +154,46 @@ theorem timeBound_mapQueryAnswer (g : D → D') (t : D → ℕ) (h : R' → R) (
 
 end Timed
 
-/-- The costed form of `mapQueryAnswer` in the binder convention of `derive_timed`: the
-relabellings `g` and `h` come with their cost companions `gCost` and `hCost`, and relabelling
-a query `d` costs one unit plus `gCost d`, an answer `r` one unit plus `hCost r`. -/
-def mapQueryAnswer.timed (g : D → D') (gCost : D → ℕ) (h : R' → R) (hCost : R' → ℕ)
-    (W : Timed D R α) : ℕ × Timed D' R' α :=
-  (0, W.mapQueryAnswer g (fun d => 1 + gCost d) h fun r => 1 + hCost r)
+derive_timed mapQueryAnswer
 
-/-- Erasing the step costs of `mapQueryAnswer.timed` gives the relabelling of the erased
-adversary. -/
-theorem mapQueryAnswer.erase_timed (g : D → D') (gCost : D → ℕ) (h : R' → R)
-    (hCost : R' → ℕ) (W : Timed D R α) :
-    (mapQueryAnswer.timed g gCost h hCost W).2.erase = W.erase.mapQueryAnswer g h :=
-  Timed.erase_mapQueryAnswer _ _ _ _ W
-
-/-- Relabellings of cost at most `a` (queries) and `b` (answers) add at most
-`q * ((1 + a) + (1 + b))` to the time of an adversary with at most `q` queries. -/
+/-- **Time of the derived relabelling.** With query relabellings of cost at most `a` and answer
+relabellings of cost at most `b`, the derived costed relabelling of an adversary of time `T`
+with at most `q` queries takes time at most `1 + 4 * T + q * (a + b + 3)`: the derived form
+charges a constant per `rand` and `query` node of the adversary and the relabelling costs per
+query. -/
 theorem mapQueryAnswer.timeBound_timed (g : D → D') {gCost : D → ℕ} (h : R' → R)
     {hCost : R' → ℕ} {a b : ℕ} (hg : ∀ d, gCost d ≤ a) (hh : ∀ r, hCost r ≤ b)
     {W : Timed D R α} {T q : ℕ} (hW : W.TimeBound T) (hq : W.erase.IsQueryBound q) :
     Timed.StepTimeBound (mapQueryAnswer.timed g gCost h hCost W)
-      (T + q * ((1 + a) + (1 + b))) :=
-  Timed.stepTimeBound_zero.2 <| Timed.timeBound_mapQueryAnswer g _ h _
-    (fun d => Nat.add_le_add_left (hg d) 1) (fun r => Nat.add_le_add_left (hh r) 1) hW hq
+      (1 + 4 * T + q * (a + b + 3)) := by
+  induction W generalizing T q with
+  | ret x => exact ⟨show 1 ≤ _ by omega, trivial⟩
+  | rand p c k ih =>
+    obtain ⟨h1, hk⟩ := hW
+    show Timed.StepTimeBound (1, Timed.rand p
+      (fun x => 2 + c x + (mapQueryAnswer.timed g gCost h hCost (k x)).1)
+      fun x => (mapQueryAnswer.timed g gCost h hCost (k x)).2) _
+    refine ⟨by omega, (Timed.timeBound_rand_iff _ _ _ _).2 ⟨by omega, fun x => ?_⟩⟩
+    obtain ⟨h2, h3⟩ := ih x (hk x).2 (hq x)
+    have h4 := (hk x).1
+    exact ⟨by simp only; omega, h3.mono (by omega)⟩
+  | query d c k ih =>
+    cases q with
+    | zero => exact (hq : False).elim
+    | succ q =>
+      obtain ⟨h1, hk⟩ := hW
+      have hd := hg d
+      show Timed.StepTimeBound (2 + gCost d, Timed.query (g d)
+        (fun r => 2 + (c (h r) + (1 + hCost r)) +
+          (mapQueryAnswer.timed g gCost h hCost (k (h r))).1)
+        fun r => (mapQueryAnswer.timed g gCost h hCost (k (h r))).2) _
+      have hmul : (q + 1) * (a + b + 3) = q * (a + b + 3) + (a + b + 3) := by
+        rw [Nat.add_mul, Nat.one_mul]
+      refine ⟨by omega, (Timed.timeBound_query_iff _ _ _ _).2 ⟨by omega, fun r => ?_⟩⟩
+      obtain ⟨h2, h3⟩ := ih (h r) (hk (h r)).2 (hq (h r))
+      have h4 := (hk (h r)).1
+      have h5 := hh r
+      exact ⟨by simp only; omega, h3.mono (by omega)⟩
 
 end OracleAdv
 
