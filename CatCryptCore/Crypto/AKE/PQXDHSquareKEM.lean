@@ -1699,16 +1699,24 @@ def needQ (cs : C) : OEv W SS C → Option C
   | .inr (.send _ _ _ c) => if c = cs then none else some c
   | _ => none
 
-/-- **The answer of the reduction to an event of the adversary**: the query to the decapsulation
-oracle that the event needs, a draw of the simulated world, and a step of the world of the
-reduction with the answer of the oracle. -/
-noncomputable def implK (pk : PK) (cs : C) (t : YSt S W K PK SK SS C) (e : OEv W SS C) :
-    OracleAdv C (Option SS) (OOut S W K PK C × YSt S W K PK SK SS C) :=
-  match needQ cs e with
-  | some c => .query c fun a => .rand (simDist P (encPk t.1.1.1 (liftE e))) fun r =>
-      .ret (yStep P G g pk cs (fun _ => a) t e r)
-  | none => .rand (simDist P (encPk t.1.1.1 (liftE e))) fun r =>
-      .ret (yStep P G g pk cs (fun _ => none) t e r)
+/-- **A stepped oracle program with queries**: the oracle adversary `B` runs against a world
+stepped by one draw of `μ` per query, after the query to an oracle that the step needs
+(`need`), whose answer the step reads; the output is the extraction `ext` of the final state.
+It is `X3DHSquareGDH.stepRedD` with one oracle query per step. -/
+noncomputable def stepRedQ {σ E A V Q Ans Out : Type} (need : σ → E → Option Q)
+    (μ : σ → E → PMF V) (step : Option Ans → σ → E → V → σ × A) (ext : σ → Out)
+    (B : OracleAdv E A Bool) (s₀ : σ) : OracleAdv Q Ans Out :=
+  (OracleAdv.simulate (fun t e => match need t e with
+      | some c => .query c fun a => .rand (μ t e) fun r =>
+          let p := step (some a) t e r; .ret (p.2, p.1)
+      | none => .rand (μ t e) fun r => let p := step none t e r; .ret (p.2, p.1)) B s₀).bind
+    fun p => .ret (ext p.2)
+
+/-- A step of the world of the reduction with the answer of the decapsulation oracle. -/
+noncomputable def kemStep (pk : PK) (cs : C) (oa : Option (Option SS)) (t : YSt S W K PK SK SS C)
+    (e : OEv W SS C) (r : PDraw S K PK SK SS C × K) :
+    YSt S W K PK SK SS C × OOut S W K PK C :=
+  let p := yStep P G g pk cs (fun _ => oa.getD none) t e r; (p.2, p.1)
 
 /-- **The program of the IND-CCA reduction at the guess `g`**: on the public key `pk`, the
 challenge encapsulation `cs` and the key `k`, it runs the oracle adversary `B` against the world
@@ -1716,7 +1724,19 @@ of the reduction, answering each delivered encapsulation other than `cs` with th
 oracle, and outputs whether `k` is among the concrete shared secrets of the world. -/
 noncomputable def kemRedRun (B : OracleAdv (OEv W SS C) (OOut S W K PK C) Bool) (pk : PK)
     (cs : C) (k : SS) : OracleAdv C (Option SS) Bool :=
-  (OracleAdv.simulate (implK P G g pk cs) B yInit).bind fun x => .ret (decide (k ∈ x.2.2))
+  stepRedQ (fun _ e => needQ cs e) (fun t e => simDist P (encPk t.1.1.1 (liftE e)))
+    (kemStep P G g pk cs) (fun t => decide (k ∈ t.2)) B yInit
+
+/-- The answer of the reduction to an event of the adversary: the query to the decapsulation
+oracle that the event needs, a draw of the simulated world, and a step of the world of the
+reduction with the answer of the oracle. -/
+noncomputable def implK (pk : PK) (cs : C) (t : YSt S W K PK SK SS C) (e : OEv W SS C) :
+    OracleAdv C (Option SS) (OOut S W K PK C × YSt S W K PK SK SS C) :=
+  match needQ cs e with
+  | some c => .query c fun a => .rand (simDist P (encPk t.1.1.1 (liftE e))) fun r =>
+      let p := kemStep P G g pk cs (some a) t e r; .ret (p.2, p.1)
+  | none => .rand (simDist P (encPk t.1.1.1 (liftE e))) fun r =>
+      let p := kemStep P G g pk cs none t e r; .ret (p.2, p.1)
 
 /-- The reduction asks at most as many decapsulation queries as the adversary asks queries. -/
 theorem kemRedRun_isQueryBound {B : OracleAdv (OEv W SS C) (OOut S W K PK C) Bool} {q : ℕ}
@@ -1785,7 +1805,7 @@ theorem simOracle_implK (pk : PK) (cs : C) (sk : SK) (t : YSt S W K PK SK SS C)
     (e : OEv W SS C) :
     OracleAdv.simOracle (implK P G g pk cs) (KEM.Games.decapsOracle P sk cs) (t, ()) e =
       (yO P G g pk cs (P.decaps sk) t e).map fun x => (x.1, (x.2, ())) := by
-  unfold OracleAdv.simOracle implK yO
+  unfold OracleAdv.simOracle implK yO kemStep
   cases h : needQ cs e with
   | none =>
     simp only [OracleAdv.run_rand, OracleAdv.run_ret, PMF.map_bind, PMF.pure_map, PMF.map_comp]
@@ -1803,7 +1823,8 @@ theorem simOracle_implK (pk : PK) (cs : C) (sk : SK) (t : YSt S W K PK SK SS C)
     rw [yStep_congr P G g t e r (d₂ := P.decaps sk) fun sid' pid' w' c' he' _ => by
       rw [he] at he'
       simp only [Sum.inr.injEq, PAEv.send.injEq] at he'
-      rw [← he'.2.2.2]]
+      rw [← he'.2.2.2]
+      rfl]
     rfl
 
 /-- **The output of the reduction** against the decapsulation oracle of the challenge: whether
@@ -1816,7 +1837,9 @@ theorem run_kemRedRun (B : OracleAdv (OEv W SS C) (OOut S W K PK C) Bool) (pk : 
   have hm := OracleAdv.run_map_state (yO P G g pk cs (P.decaps sk))
     (OracleAdv.simOracle (implK P G g pk cs) (KEM.Games.decapsOracle P sk cs)) (fun s => (s, ()))
     (fun t e => (simOracle_implK P G g pk cs sk t e).symm) B yInit
-  unfold kemRedRun
+  change (OracleAdv.run (KEM.Games.decapsOracle P sk cs)
+    ((OracleAdv.simulate (implK P G g pk cs) B yInit).bind fun x =>
+      .ret (decide (k ∈ x.2.2))) ()).map Prod.fst = _
   rw [OracleAdv.run_bind, OracleAdv.run_simulate, ← hm]
   simp only [PMF.map_comp, PMF.bind_map, PMF.map_bind, OracleAdv.run_ret, Function.comp_apply,
     PMF.pure_map]
