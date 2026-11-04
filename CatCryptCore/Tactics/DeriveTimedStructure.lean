@@ -5,6 +5,7 @@ Authors: CatCrypt Contributors
 -/
 module
 
+public import CatCryptCore.Tactics.ComputationType
 public import CatCryptCore.Tactics.DeriveTimed
 
 /-!
@@ -27,8 +28,9 @@ trees of a registered tree kind (`CatCryptCore.Tactics.DeriveTimed`), computatio
 * the time bound `S.Timed.TimeBound A' Ts`: for each tree or computation field `f` one bound
   `T_f` on the time of its step-prefixed costed trees `(A'.fCost ys, A'.f ys)`, the cost of
   computing the tree followed by its run (the bound `TreeKind.stepTimeBound` of its tree kind,
-  `OracleAdv.Timed.StepTimeBound` for oracle trees, or `SPTree.Timed.stepTime`). The stages of a multi-stage adversary run separately, so their
-  bounds are separate parameters and are not added.
+  `OracleAdv.Timed.StepTimeBound` for oracle trees, or `SPTree.Timed.stepTime`). The stages of
+  a multi-stage adversary run separately, so their bounds are separate parameters and are not
+  added.
 
 This is the translation of a structure type in the call-by-value writer translation of the
 design of `derive_timed`: the translation of a product is the product of the translations.
@@ -36,6 +38,12 @@ design of `derive_timed`: the translation of a product is the product of the tra
 A proposition field may depend on any earlier field (a query bound on a tree field); in the
 erasure relation it is stated about the erased fields. A type, data, tree or computation field
 whose type depends on a proposition field or on a tree or computation field is refused.
+
+A field kept as data has a codomain that is no computation: a field whose codomain unfolds,
+through definitions of any transparency and the codomains of the function types they reach, to a
+computation type (`CatCryptCore.Tactics.ComputationType`), a distribution, or a costed kind
+reached only through a definition that is not reducible, is refused. A structure with no tree,
+computation or handler-kind field is refused, since its time bound would be `True`.
 
 ## Handler kinds
 
@@ -150,8 +158,34 @@ def handlerType (n : Name) (pos : Nat) : MetaM Expr := do
       throwError "derive_timed_structure: the handler cost of `{n}` has a dependent type `{t}`"
     return t
 
-/-- The kind of a field `f` of type `t`. A field whose type is a distribution (`SDistr β` or
-`PMF β`) under binders has no cost structure and is refused. -/
+/-- The first computation along the unfolding of the type `b`, through definitions of any
+transparency and through the codomains of the function types it reaches (at most `fuel`
+unfoldings): the head constant of a type that is a costed kind (a tree of a registered kind,
+`SPComp`, or, when `handlers` holds, a handler kind), with `true`, or of a distribution
+(`SDistr`, `PMF`) or a computation type (`isComputationType`), with `false`. -/
+partial def unfoldedComputation? (b : Expr) (handlers : Bool := true) (fuel : Nat := 64) :
+    MetaM (Option (Name × Bool)) := do
+  let b ← instantiateMVars b
+  let head := b.getAppFn.constName?.getD .anonymous
+  if (← treeTy? b).isSome || (← isSPCompType b) then return some (head, true)
+  if handlers && (← handlerHead? b).isSome then return some (head, true)
+  if b.isAppOf ``CatCrypt.Prob.SDistr || b.isAppOf ``PMF then return some (head, false)
+  if ← CatCrypt.Tactics.ComputationType.isComputationType b then return some (head, false)
+  match fuel with
+  | 0 => return none
+  | fuel + 1 =>
+    let b' ← whnfCore b
+    if b'.isForall then
+      return ← forallTelescope b' fun _ c => unfoldedComputation? c handlers fuel
+    let some b'' ← unfoldDefinition? b' | return none
+    unfoldedComputation? b'' handlers fuel
+
+/-- The kind of a field `f` of type `t`, read from its codomain after reducible unfolding. A
+field whose codomain is no costed kind is data, and is refused when its codomain is a
+computation (`unfoldedComputation?`): a distribution (`SDistr β` or `PMF β`), which has no cost
+structure; a computation type (`StateT σ SPComp β`, `QComp d β`, a type family with a `Monad`
+instance), whose time would be unbounded; or a costed kind reached only by unfolding a
+definition that is not reducible, which the mirror would keep unpriced. -/
 def fieldKind (t : Expr) (f : Name := .anonymous) : MetaM FieldKind := do
   if ← isProp t then return .prop
   if ← isTypeFormerType t then return .type
@@ -163,7 +197,16 @@ def fieldKind (t : Expr) (f : Name := .anonymous) : MetaM FieldKind := do
     if b.isAppOf ``CatCrypt.Prob.SDistr || (← whnfR b).isAppOf ``PMF then
       throwError "derive_timed_structure: distribution-valued field `{f}`: no cost structure; \
         state the adversary as SPComp or exclude it with a reason"
-    return .data
+    match ← unfoldedComputation? b with
+    | some (h, true) =>
+      throwError "derive_timed_structure: the field `{f} : {t}` is a computation of the costed \
+        kind `{h}` only after unfolding a definition that is not reducible; state its type \
+        through reducible definitions"
+    | some (h, false) =>
+      throwError "derive_timed_structure: the field `{f} : {t}` is a computation of `{h}`, \
+        which is no registered costed kind (a tree kind, `SPComp` or a handler kind); its time \
+        would be unbounded"
+    | none => return .data
 
 /-- The mirrored type of a field of type `t` and kind `k`; `gs` is the gate set of a field of a
 circuit kind. -/
@@ -300,6 +343,7 @@ def mirrorText (S : Name) : TermElabM String :=
       let mut text := ""
       let mut hidden : Array Expr := #[]
       let mut gi := 0
+      let mut costed := false
       for x in xs, f in fields do
         let d ← inferType x
         let k ← fieldKind d f
@@ -318,6 +362,10 @@ def mirrorText (S : Name) : TermElabM String :=
           text := text ++ s!"\n  {f.appendAfter "Cost"} : {← typeText (← companionType d)}"
           gi := gi + 1
         | _ => text := text ++ s!"\n  {f} : {← typeText d}"
+        if k matches .tree _ | .comp _ | .circuit _ _ | .bounded _ _ then costed := true
+      unless costed do
+        throwError "derive_timed_structure: `{S}` has no tree, computation or handler-kind \
+          field; its time bound would be `True`"
       return s!"structure {`_root_ ++ S ++ `Timed}{univText}{binders} where{text}"
 
 /-- Define the erasure relation `S.Timed.Erases A' A`: some proofs of the proposition fields of

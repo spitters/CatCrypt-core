@@ -728,7 +728,9 @@ def fieldKey? (top : Array FVarId) (e : Expr) : MetaM (Option (Expr × Array Exp
   | _ => return none
 
 /-- Whether `t` is the type of a data function: a function type whose codomain is not a
-computation, a tree of a registered kind, a type, a proposition or a class. -/
+computation, a tree of a registered kind, a type, a proposition or a class. A codomain that
+unfolds, through definitions of any transparency, to a computation, a tree or a distribution
+(`DeriveTimedStructure.unfoldedComputation?`) is a computation, not data. -/
 def isDataFnType (t : Expr) : MetaM Bool := do
   if ← isTypeFormerType t then return false
   forallTelescope (← whnfR t) fun ys b => do
@@ -737,7 +739,8 @@ def isDataFnType (t : Expr) : MetaM Bool := do
     if (← CatCrypt.Tactics.DeriveTimed.treeTy? b).isSome then return false
     if ← isProp b then return false
     if (← isClass? b).isSome then return false
-    return true
+    let comp ← CatCrypt.Tactics.DeriveTimedStructure.unfoldedComputation? b (handlers := false)
+    return comp.isNone
 
 /-- Whether the data term `x = c a₁ … aₙ` is unfolded before its fields are abstracted: `c` is
 a non-recursive definition that is not a projection, an instance, a matcher or a reduction with
