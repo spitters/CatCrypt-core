@@ -576,6 +576,9 @@ public import CatCryptCore.Crypto.UCPullback
 public import CatCryptCore.Crypto.UCPullbackSemantics
 public import CatCryptCore.Crypto.UCPullbackTimed
 public import CatCryptCore.Crypto.UCPullbackCost
+public import CatCryptCore.Crypto.UCMonad.ConcurrentSys
+public import CatCryptCore.Crypto.UCMonad.ConcurrentSysTimed
+public import CatCryptCore.Crypto.UCMonad.ConcurrentSysPullback
 public import CatCryptCore.Crypto.UCIndexed
 public import CatCryptCore.Crypto.UCGlobal
 public import CatCryptCore.Crypto.ChannelCap
