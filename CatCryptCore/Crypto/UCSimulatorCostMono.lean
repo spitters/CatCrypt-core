@@ -20,6 +20,7 @@ with the same costed machines, its erasure to `S.mono hVev hVout hWev hWout`, an
 * `Simulator.mono.erase_timed`, `Simulator.mono.timeBound_timed`,
   `Simulator.mono.timeBoundGraded_timed`, `Simulator.mono.timeBoundSized_timed`: erasure and
   time of a costed simulator at other views.
+* `Simulator.mono.answerSizeLe`: the sizes of its answers.
 -/
 
 public section
@@ -127,6 +128,17 @@ theorem mono.timeBoundGraded_timed {T : Simulator.Timed E O EG OG V W} {a b : �
     exact ⟨a₁, b₁, a₂, b₂, ih₁ h₁ _ _, ih₂ h₂ _ _, h3, h4⟩
   | mapPorts T f g ih => exact ih hT _ _
 
+/-- The answers of a costed simulator at other views have the sizes bounded by the times of
+its steps that those of the costed simulator have. -/
+theorem mono.answerSizeLe {T : Simulator.Timed E O EG OG V W} {sA : O → ℕ}
+    (hT : T.AnswerSizeLe sA) (V' : PubView E O) (W' : PubView EG OG) :
+    (T.mono V' W').AnswerSizeLe sA := by
+  induction T with
+  | ofMultiHybrid πT => exact hT
+  | ofMultiHybridHat εσ εE εO εEG εOG πT => exact hT
+  | comp T₁ T₂ ih₁ _ => exact ih₁ hT _ _
+  | mapPorts T f g ih => exact ih hT _ _
+
 /-- **Size-graded running time of a costed simulator at other views**: the size-graded time of
 the costed simulator. -/
 theorem mono.timeBoundSized_timed {T : Simulator.Timed E O EG OG V W} {sE : E → ℕ} {sO : OG → ℕ}
@@ -136,8 +148,9 @@ theorem mono.timeBoundSized_timed {T : Simulator.Timed E O EG OG V W} {sE : E �
   | ofMultiHybrid πT => exact hT
   | ofMultiHybridHat εσ εE εO εEG εOG πT => exact hT
   | comp T₁ T₂ ih₁ ih₂ =>
-    obtain ⟨a₁, b₁, c₁, a₂, b₂, c₂, h₁, h₂, h3, h4, h5⟩ := hT
-    exact ⟨a₁, b₁, c₁, a₂, b₂, c₂, ih₁ h₁ _ _, ih₂ h₂ _ _, h3, h4, h5⟩
+    obtain ⟨sM, a₁, b₁, c₁, a₂, b₂, c₂, h₁, h₂, hM, h3, h4, h5⟩ := hT
+    exact ⟨sM, a₁, b₁, c₁, a₂, b₂, c₂, ih₁ h₁ _ _, ih₂ h₂ _ _, mono.answerSizeLe hM _ _, h3, h4,
+      h5⟩
   | mapPorts T f g ih =>
     obtain ⟨sM, hM, h⟩ := hT
     exact ⟨sM, hM, ih h _ _⟩
