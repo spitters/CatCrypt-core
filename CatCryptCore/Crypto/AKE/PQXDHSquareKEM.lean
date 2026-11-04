@@ -812,4 +812,751 @@ theorem flag_gw1_eq_gw (E : WSt S W K PK SK SS C → Prop) (kp : PK × SK)
 
 end EagerWorld
 
+/-! ## The symbolic world
+
+The world of the reduction runs the simulator over shared secrets `Option SS`, in which `none`
+stands for the challenge key, which the reduction does not use: the initiator session of the
+guess encapsulates to `(none, c*)`, and the responder session of the guess decapsulates `c*` to
+`none` and every other encapsulation with the decapsulation oracle. The interpretation `iSim`
+reads `none` as the challenge key `k` and the absent secret key of the responder of the guess
+as `sk`. -/
+
+section Sym
+
+variable {S W K PK SK SS C : Type}
+
+/-- The interpretation of a symbolic shared secret: `none` is the challenge key `k`. -/
+def iInp (k : SS) (p : PInp W (Option SS)) : PInp W SS := (p.1, p.2.getD k)
+
+/-- The interpretation of an entry of the key-derivation table. -/
+def iE (k : SS) (p : PInp W (Option SS) × K) : PInp W SS × K := (iInp k p.1, p.2)
+
+/-- The interpretation of the simulator's copy of the real state: the shared secrets of the
+table, and the absent secret key `sk`. -/
+def iP (k : SS) (sk : SK) (s : PSt S W K PK (Option SK) (Option SS) C) :
+    PSt S W K PK SK SS C :=
+  ⟨s.x, fun y => (s.kem y).map fun kp => (kp.1, kp.2.getD sk), s.ct, s.ro.map (iE k)⟩
+
+/-- The interpretation of a state of the simulator. -/
+def iSim (k : SS) (sk : SK) (s : SimSt S W K PK (Option SK) (Option SS) C) :
+    SimSt S W K PK SK SS C :=
+  (iP k sk s.1, fun y => (s.2.1 y).map (iInp k), s.2.2)
+
+/-- An event of the adversary with a concrete shared secret, as an event over symbolic shared
+secrets. -/
+def liftE : OEv W SS C → OEv W (Option SS) C
+  | .inl h => .inl h
+  | .inr .idle => .inr .idle
+  | .inr .poll => .inr .poll
+  | .inr (.pub pid) => .inr (.pub pid)
+  | .inr (.ephPub sid pid) => .inr (.ephPub sid pid)
+  | .inr (.pqPub sid pid) => .inr (.pqPub sid pid)
+  | .inr (.corrupt pid) => .inr (.corrupt pid)
+  | .inr (.complete sid pid) => .inr (.complete sid pid)
+  | .inr (.send sid pid e c) => .inr (.send sid pid e c)
+  | .inr (.kdf x) => .inr (.kdf (x.1, some x.2))
+
+theorem iInp_inj {k : SS} {a b : PInp W (Option SS)} (ha : a.2 ≠ some k) (hb : b.2 ≠ some k)
+    (h : iInp k a = iInp k b) : a = b := by
+  obtain ⟨a₁, a₂⟩ := a
+  obtain ⟨b₁, b₂⟩ := b
+  simp only [iInp, Prod.mk.injEq] at h
+  obtain ⟨rfl, h⟩ := h
+  cases a₂ <;> cases b₂ <;> simp_all
+
+theorem lookup_map_iE [DecidableEq W] [DecidableEq SS] {k : SS}
+    (tb : List (PInp W (Option SS) × K)) (ip : PInp W (Option SS))
+    (htb : ∀ e ∈ tb, e.1.2 ≠ some k) (hip : ip.2 ≠ some k) :
+    @List.lookup _ _ instBEqOfDecidableEq (iInp k ip) (tb.map (iE k)) =
+      @List.lookup _ _ instBEqOfDecidableEq ip tb := by
+  induction tb with
+  | nil => rfl
+  | cons e tb ih =>
+    obtain ⟨e₁, e₂⟩ := e
+    simp only [List.map_cons, iE, lookup_cons]
+    rw [ih fun e he => htb e (List.mem_cons_of_mem _ he)]
+    by_cases h : ip = e₁
+    · subst h; simp
+    · have h' : iInp k ip ≠ iInp k e₁ := fun hc =>
+        h (iInp_inj hip (htb _ List.mem_cons_self) hc)
+      simp only [h, h', ↓reduceIte]
+
+theorem roDet_map_iE [DecidableEq W] [DecidableEq SS] {k : SS}
+    (tb : List (PInp W (Option SS) × K)) (ip : PInp W (Option SS)) (v : K)
+    (htb : ∀ e ∈ tb, e.1.2 ≠ some k) (hip : ip.2 ≠ some k) :
+    roDet (tb.map (iE k)) (iInp k ip) v =
+      ((roDet tb ip v).1, (roDet tb ip v).2.map (iE k)) := by
+  unfold roDet
+  rw [lookup_map_iE tb ip htb hip]
+  split <;> simp [iE]
+
+theorem update_map_iInp {k : SS} (inp : Inst → Option (PInp W (Option SS))) (x : Inst)
+    (ip : PInp W (Option SS)) :
+    (fun y => (Function.update inp x (some ip) y).map (iInp k)) =
+      Function.update (fun y => (inp y).map (iInp k)) x (some (iInp k ip)) := by
+  funext y
+  by_cases h : y = x
+  · subst h; simp
+  · simp [Function.update_of_ne h]
+
+theorem all_map_iInp [DecidableEq W] [DecidableEq SS] {k : SS} (o : Option (PInp W (Option SS)))
+    (ip : PInp W (Option SS)) (ho : ∀ a, o = some a → a.2 ≠ some k) (hip : ip.2 ≠ some k) :
+    (o.map (iInp k)).all (· = iInp k ip) = o.all (· = ip) := by
+  cases o with
+  | none => rfl
+  | some a =>
+    simp only [Option.map_some, Option.all_some, decide_eq_decide]
+    exact ⟨iInp_inj (ho a rfl) hip, fun h => h ▸ rfl⟩
+
+end Sym
+
+/-! ## The world of the reduction -/
+
+section SymWorld
+
+variable {S W K PK SK SS C : Type} [Field S] [Fintype S] [SampleableType W] [Fintype K]
+  [Nonempty K] [Inhabited K] [DecidableEq SS] [DecidableEq C] (P : Scheme PK SK SS C)
+  (G : DHGroup S W) (g : Guess)
+
+omit [DecidableEq SS] in
+/-- The KEM of the world of the reduction: shared secrets are symbolic, and the absent secret
+key, that of the challenge, decapsulates the challenge encapsulation `cs` to `none` and every
+other encapsulation with the decapsulation oracle `dec`. -/
+noncomputable def symP (cs : C) (dec : C → Option SS) : Scheme PK (Option SK) (Option SS) C where
+  keygen := P.keygen.map fun kp => (kp.1, some kp.2)
+  encaps pk := (P.encaps pk).map fun kc => (some kc.1, kc.2)
+  decaps osk c := match osk with
+    | some sk => (P.decaps sk c).map some
+    | none => if c = cs then some none else (dec c).map some
+
+omit [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K]
+  [DecidableEq SS] [DecidableEq C] in
+/-- The draw of the world of the reduction: the public key `pk` without secret key at the start
+of the responder session of `g`, the encapsulation `(none, cs)` at the completion of its
+initiator session, and the draws of the simulator with concrete shared secrets otherwise. -/
+noncomputable def liftD (pk : PK) (cs : C) (t : SimSt S W K PK (Option SK) (Option SS) C)
+    (e : OEv W SS C) (r : PDraw S K PK SK SS C × K) :
+    PDraw S K PK (Option SK) (Option SS) C × K :=
+  ((r.1.1, if isCreate g t (liftE e) then (pk, none) else (r.1.2.1.1, some r.1.2.1.2),
+    if isEnc g pk t (liftE e) then some (none, cs)
+    else r.1.2.2.map fun kc => (some kc.1, kc.2)), r.2)
+
+omit [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K]
+  [DecidableEq SS] in
+/-- The concrete shared secret that the event `e` with the draw `r` brings into the world of
+the reduction: the shared secret of a query of the key derivation, of the encapsulation of a
+completion, or of a decapsulation. -/
+def newVal (cs : C) (dec : C → Option SS) (t : SimSt S W K PK (Option SK) (Option SS) C)
+    (e : OEv W SS C) (r : PDraw S K PK SK SS C × K) : Option SS :=
+  match e with
+  | .inr (.kdf x) => some x.2
+  | .inr (.complete _ _) => r.1.2.2.map Prod.fst
+  | .inr (.send sid pid _ c) =>
+    match t.1.kem (sid, pid) with
+    | some (_, some sk) => P.decaps sk c
+    | some (_, none) => if c = cs then none else dec c
+    | none => none
+  | _ => none
+
+/-- The state of the world of the reduction: the symbolic simulated world and the list of the
+concrete shared secrets it received. -/
+abbrev YSt (S W K PK SK SS C : Type) :=
+  (SimSt S W K PK (Option SK) (Option SS) C × St K) × List SS
+
+/-- A step of the world of the reduction on the draw `r`. -/
+noncomputable def yStep (pk : PK) (cs : C) (dec : C → Option SS) (t : YSt S W K PK SK SS C)
+    (e : OEv W SS C) (r : PDraw S K PK SK SS C × K) : OOut S W K PK C × YSt S W K PK SK SS C :=
+  ((simWorldD (symP P cs dec) G t.1 (liftE e) (liftD g pk cs t.1.1 e r)).2,
+    ((simWorldD (symP P cs dec) G t.1 (liftE e) (liftD g pk cs t.1.1 e r)).1,
+      t.2 ++ (newVal P cs dec t.1.1 e r).toList))
+
+/-- **The oracle of the world of the reduction.** -/
+noncomputable def yO (pk : PK) (cs : C) (dec : C → Option SS) (t : YSt S W K PK SK SS C)
+    (e : OEv W SS C) : PMF (OOut S W K PK C × YSt S W K PK SK SS C) :=
+  (simDist P (encPk t.1.1.1 (liftE e))).map (yStep P G g pk cs dec t e)
+
+omit [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K]
+  [DecidableEq SS] [DecidableEq C] in
+/-- The initial state of the world of the reduction. -/
+def yInit : YSt S W K PK SK SS C := (((pInit, fun _ => none, .fwd), initSt), [])
+
+omit [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K]
+  [DecidableEq SS] [DecidableEq C] in
+/-- **The invariant of the world of the reduction** at the public key `pk`, the challenge
+encapsulation `cs` and the challenge key `k`: no symbolic shared secret is the concrete `k`;
+the symbolic entries of the table are inputs of exposed sessions; records are fresh; the
+responder session of `g` has the public key `pk` without secret key; encapsulations and inputs
+belong to sessions with records; and the initiator session of `g` with peer the responder of `g`
+encapsulated `cs` to a symbolic shared secret. -/
+structure Good (pk : PK) (cs : C) (k : SS) (s : PSt S W K PK (Option SK) (Option SS) C)
+    (inp : Inst → Option (PInp W (Option SS))) : Prop where
+  roV : ∀ e ∈ s.ro, e.1.2 ≠ some k
+  inpV : ∀ y ip, inp y = some ip → ip.2 ≠ some k
+  roN : ∀ e ∈ s.ro, e.1.2 = none →
+    s.x.st.corrupt e.1.1.ini = true ∨ s.x.st.corrupt e.1.1.res = true
+  fresh : ∀ y r, s.x.st.recs y = some r → r.status = .fresh
+  kemR : ∀ kp, s.kem (gR g) = some kp → kp = (pk, none)
+  noRec : ∀ y, s.x.st.recs y = none → s.ct y = none ∧ inp y = none
+  encI : ∀ ri, s.x.st.recs (gI g) = some ri → ri.role = .initiator → ri.peer = g.2.2 →
+    (∀ c, s.ct (gI g) = some c → c = cs) ∧ (∀ ip, inp (gI g) = some ip → ip.2 = none)
+
+omit [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K]
+  [DecidableEq SS] [DecidableEq C] in
+theorem good_init (pk : PK) (cs : C) (k : SS) :
+    Good g pk cs k (pInit : PSt S W K PK (Option SK) (Option SS) C) (fun _ => none) :=
+  ⟨(fun _ h => by cases h), (fun _ _ h => by cases h), (fun _ h => by cases h),
+    (fun _ _ h => by cases h), (fun _ h => by cases h), (fun _ _ => ⟨rfl, rfl⟩),
+    (fun _ h => by cases h)⟩
+
+omit [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K]
+  [DecidableEq SS] [DecidableEq C] in
+@[simp] theorem iP_x (k : SS) (sk : SK) (s : PSt S W K PK (Option SK) (Option SS) C) :
+    (iP k sk s).x = s.x := rfl
+
+omit [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K]
+  [DecidableEq SS] [DecidableEq C] in
+@[simp] theorem iP_ct (k : SS) (sk : SK) (s : PSt S W K PK (Option SK) (Option SS) C) :
+    (iP k sk s).ct = s.ct := rfl
+
+omit [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K]
+  [DecidableEq SS] [DecidableEq C] in
+theorem pkOf_iP (k : SS) (sk : SK) (s : PSt S W K PK (Option SK) (Option SS) C)
+    (sid : SessionId) (p : PartyId) : pkOf (iP k sk s) sid p = pkOf s sid p := by
+  simp only [pkOf, iP, Option.map_map]
+  rfl
+
+omit [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K]
+  [DecidableEq SS] [DecidableEq C] in
+theorem isCreate_iSim (k : SS) (sk : SK) (s : SimSt S W K PK (Option SK) (Option SS) C)
+    (e : OEv W SS C) : isCreate g (iSim k sk s) e = isCreate g s (liftE e) := by
+  rcases e with (_ | _) | (_ | _ | _ | _ | _ | _ | _ | _ | _) <;> rfl
+
+omit [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K]
+  [DecidableEq SS] [DecidableEq C] in
+theorem isEnc_iSim (k : SS) (sk : SK) (pk : PK) (s : SimSt S W K PK (Option SK) (Option SS) C)
+    (e : OEv W SS C) : isEnc g pk (iSim k sk s) e = isEnc g pk s (liftE e) := by
+  rcases e with _ | (_ | _ | _ | _ | _ | _ | ⟨sid, pid⟩ | _ | _) <;> try rfl
+  simp only [isEnc, liftE, iSim, iP_x]
+  congr 1
+  cases s.1.x.st.recs (sid, pid) <;> cases s.1.x.eph (sid, pid) <;> try rfl
+  exact decide_eq_decide.mpr (by rw [pkOf_iP])
+
+omit [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K]
+  [DecidableEq SS] [DecidableEq C] in
+theorem encPk_iSim (k : SS) (sk : SK) (s : SimSt S W K PK (Option SK) (Option SS) C)
+    (e : OEv W SS C) : encPk (iSim k sk s).1 e = encPk s.1 (liftE e) := by
+  rcases e with _ | (_ | _ | _ | _ | _ | _ | ⟨sid, pid⟩ | _ | _) <;> try rfl
+  simp only [encPk, liftE, iSim, iP_x, pkOf_iP]
+
+omit [Field S] [Fintype S] [Fintype K] [Nonempty K] [DecidableEq C] in
+/-- **The delivery commutes with the interpretation** when the new input and the symbolic
+shared secrets of the state are not the concrete challenge key. -/
+theorem deliverD_iSim {k : SS} (sk : SK)
+    (s : PSt S W K PK (Option SK) (Option SS) C) (inp : Inst → Option (PInp W (Option SS)))
+    (x : Inst) (r : Rec K) (ip : PInp W (Option SS)) (kf : K)
+    (hro : ∀ e ∈ s.ro, e.1.2 ≠ some k) (hinp : ∀ y a, inp y = some a → a.2 ≠ some k)
+    (hip : ip.2 ≠ some k) :
+    deliverD (iP k sk s) (fun y => (inp y).map (iInp k)) x r (iInp k ip) kf =
+      (iSim k sk (deliverD s inp x r ip kf).1, (deliverD s inp x r ip kf).2) := by
+  unfold deliverD
+  by_cases h : Exposed s.x.st x r
+  · have h' : Exposed (iP k sk s).x.st x r := h
+    simp only [h, h', ↓reduceIte]
+    rw [show (iP k sk s).ro = s.ro.map (iE k) from rfl, roDet_map_iE s.ro ip kf hro hip,
+      ← update_map_iInp]
+    rfl
+  · have h' : ¬ Exposed (iP k sk s).x.st x r := h
+    simp only [h, h', ↓reduceIte]
+    rw [all_map_iInp (inp (x.1, r.peer)) ip (hinp _) hip, ← update_map_iInp]
+    rfl
+
+omit [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K]
+  [DecidableEq SS] [DecidableEq C] in
+theorem opkOf_iP (k : SS) (sk : SK) (s : PSt S W K PK (Option SK) (Option SS) C)
+    (sid : SessionId) (p : PartyId) : opkOf (iP k sk s).x sid p = opkOf s.x sid p := rfl
+
+omit [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K]
+  [DecidableEq SS] [DecidableEq C] in
+theorem Good.congr {pk : PK} {cs : C} {k : SS} {s s' : PSt S W K PK (Option SK) (Option SS) C}
+    {inp : Inst → Option (PInp W (Option SS))} (h : Good g pk cs k s inp)
+    (hrecs : s'.x.st.recs = s.x.st.recs)
+    (hcor : ∀ p, s.x.st.corrupt p = true → s'.x.st.corrupt p = true) (hro : s'.ro = s.ro)
+    (hkem : s'.kem = s.kem) (hct : s'.ct = s.ct) : Good g pk cs k s' inp := by
+  refine ⟨?_, h.inpV, ?_, ?_, ?_, ?_, ?_⟩
+  · rw [hro]; exact h.roV
+  · intro e he hn
+    rw [hro] at he
+    rcases h.roN e he hn with h' | h'
+    · exact Or.inl (hcor _ h')
+    · exact Or.inr (hcor _ h')
+  · rw [hrecs]; exact h.fresh
+  · rw [hkem]; exact h.kemR
+  · rw [hrecs, hct]; exact h.noRec
+  · rw [hrecs, hct]; exact h.encI
+
+omit [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K]
+  [DecidableEq SS] [DecidableEq C] in
+/-- Recording the encapsulation `c` of the session `x`. -/
+theorem Good.ct {pk : PK} {cs : C} {k : SS} {s s' : PSt S W K PK (Option SK) (Option SS) C}
+    {inp : Inst → Option (PInp W (Option SS))} (h : Good g pk cs k s inp) {x : Inst}
+    {r : Rec K} {c : C} (hx : s.x.st.recs x = some r)
+    (hc : x = gI g → r.role = .initiator → r.peer = g.2.2 → c = cs)
+    (hrecs : s'.x.st = s.x.st) (hro : s'.ro = s.ro) (hkem : s'.kem = s.kem)
+    (hct : s'.ct = Function.update s.ct x (some c)) : Good g pk cs k s' inp := by
+  refine ⟨?_, h.inpV, ?_, ?_, ?_, ?_, ?_⟩
+  · rw [hro]; exact h.roV
+  · rw [hro, hrecs]; exact h.roN
+  · rw [hrecs]; exact h.fresh
+  · rw [hkem]; exact h.kemR
+  · intro y hy
+    rw [hrecs] at hy
+    have hyx : y ≠ x := fun hc => by rw [hc, hx] at hy; cases hy
+    rw [hct, Function.update_of_ne hyx]
+    exact h.noRec y hy
+  · intro ri hri hro' hpe
+    rw [hrecs] at hri
+    refine ⟨fun c' hc' => ?_, (h.encI ri hri hro' hpe).2⟩
+    rw [hct] at hc'
+    by_cases hgx : gI g = x
+    · subst hgx
+      rw [hx] at hri
+      cases hri
+      simp only [Function.update_self, Option.some.injEq] at hc'
+      rw [← hc']
+      exact hc rfl hro' hpe
+    · rw [Function.update_of_ne hgx] at hc'
+      exact (h.encI ri hri hro' hpe).1 c' hc'
+
+omit [Field S] [Fintype S] [Fintype K] [Nonempty K] [DecidableEq C] in
+/-- **The delivery keeps the invariant** for an input of the shape of the session that is not
+the concrete challenge key, and is symbolic at the initiator session of `g`. -/
+theorem Good.deliverD {pk : PK} {cs : C} {k : SS} {s : PSt S W K PK (Option SK) (Option SS) C}
+    {inp : Inst → Option (PInp W (Option SS))} (h : Good g pk cs k s inp) (x : Inst) (r : Rec K)
+    (hx : s.x.st.recs x = some r) (ip : PInp W (Option SS)) (kf : K)
+    (hip : ip.2 ≠ some k)
+    (hsh : (ip.1.ini = x.2 ∧ ip.1.res = r.peer) ∨ (ip.1.ini = r.peer ∧ ip.1.res = x.2))
+    (hI : x = gI g → r.role = .initiator → r.peer = g.2.2 → ip.2 = none) :
+    Good g pk cs k (PQXDHSquareHops.deliverD s inp x r ip kf).1.1
+      (PQXDHSquareHops.deliverD s inp x r ip kf).1.2.1 := by
+  have hrecs : ∀ y r', (setRec s.x.st x { r with key := some kf }).recs y = some r' →
+      ∃ r'', s.x.st.recs y = some r'' ∧ r'.status = r''.status := by
+    intro y r' hy
+    by_cases hyx : y = x
+    · subst hyx
+      simp only [setRec, Function.update_self, Option.some.injEq] at hy
+      exact ⟨r, hx, by rw [← hy]⟩
+    · simp only [setRec, Function.update_of_ne hyx] at hy
+      exact ⟨r', hy, rfl⟩
+  have hfr : ∀ v : K, ∀ y r', (setRec s.x.st x { r with key := some v }).recs y = some r' →
+      r'.status = .fresh := by
+    intro v y r' hy
+    by_cases hyx : y = x
+    · subst hyx
+      simp only [setRec, Function.update_self, Option.some.injEq] at hy
+      rw [← hy]; exact h.fresh _ r hx
+    · simp only [setRec, Function.update_of_ne hyx] at hy
+      exact h.fresh y r' hy
+  have hnr : ∀ v : K, ∀ y, (setRec s.x.st x { r with key := some v }).recs y = none →
+      s.ct y = none ∧ Function.update inp x (some ip) y = none := by
+    intro v y hy
+    by_cases hyx : y = x
+    · subst hyx; simp [setRec] at hy
+    · simp only [setRec, Function.update_of_ne hyx] at hy
+      rw [Function.update_of_ne hyx]
+      exact h.noRec y hy
+  have hei : ∀ v : K, ∀ ri, (setRec s.x.st x { r with key := some v }).recs (gI g) = some ri →
+      ri.role = .initiator → ri.peer = g.2.2 →
+      (∀ c, s.ct (gI g) = some c → c = cs) ∧
+        (∀ ip', Function.update inp x (some ip) (gI g) = some ip' → ip'.2 = none) := by
+    intro v ri hri hro hpe
+    by_cases hgx : gI g = x
+    · subst hgx
+      simp only [setRec, Function.update_self, Option.some.injEq] at hri
+      subst hri
+      refine ⟨(h.encI r hx hro hpe).1, fun ip' hip' => ?_⟩
+      simp only [Function.update_self, Option.some.injEq] at hip'
+      rw [← hip']
+      exact hI rfl hro hpe
+    · simp only [setRec, Function.update_of_ne hgx] at hri
+      rw [Function.update_of_ne hgx]
+      exact h.encI ri hri hro hpe
+  have hiv : ∀ y ip', Function.update inp x (some ip) y = some ip' → ip'.2 ≠ some k := by
+    intro y ip' hy
+    by_cases hyx : y = x
+    · subst hyx
+      simp only [Function.update_self, Option.some.injEq] at hy
+      rw [← hy]; exact hip
+    · rw [Function.update_of_ne hyx] at hy
+      exact h.inpV y ip' hy
+  unfold PQXDHSquareHops.deliverD
+  split
+  · rename_i hex
+    refine ⟨fun e he => ?_, hiv, fun e he hn => ?_, hfr _, h.kemR, hnr _, hei _⟩
+    · rcases roDet_mem s.ro ip kf e he with he | rfl
+      · exact h.roV e he
+      · exact hip
+    · rcases roDet_mem s.ro ip kf e he with he | rfl
+      · exact h.roN e he hn
+      · have hst : r.status = .fresh := h.fresh x r hx
+        have hex' : s.x.st.corrupt x.2 = true ∨ s.x.st.corrupt r.peer = true := by
+          rcases hex with h' | h' | h'
+          · exact Or.inl h'
+          · exact Or.inr h'
+          · rw [hst] at h'; cases h'
+        simp only [pKeyed, keyed, setRec]
+        rcases hsh with ⟨h₁, h₂⟩ | ⟨h₁, h₂⟩ <;> rw [h₁, h₂] <;> tauto
+  · exact ⟨h.roV, hiv, h.roN, hfr _, h.kemR, hnr _, hei _⟩
+
+omit [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K]
+  [DecidableEq SS] [DecidableEq C] in
+@[simp] theorem iSim_fst (k : SS) (sk : SK) (s : SimSt S W K PK (Option SK) (Option SS) C) :
+    (iSim k sk s).1 = iP k sk s.1 := rfl
+
+omit [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K]
+  [DecidableEq SS] [DecidableEq C] in
+@[simp] theorem iSim_snd (k : SS) (sk : SK) (s : SimSt S W K PK (Option SK) (Option SS) C) :
+    (iSim k sk s).2 = ((fun y => (s.2.1 y).map (iInp k)), s.2.2) := rfl
+
+omit [Field S] [Fintype S] [Fintype K] [Nonempty K] [DecidableEq C] in
+/-- The delivery on a state given by its fields. -/
+theorem deliver_branch {k : SS} (sk : SK) (rs : PSt S W K PK (Option SK) (Option SS) C)
+    (X : RSt S W K) (ct' : Inst → Option C) (inp : Inst → Option (PInp W (Option SS)))
+    (x : Inst) (r : Rec K) (A : Inp W) (o : Option SS) (kf : K)
+    (hro : ∀ e ∈ rs.ro, e.1.2 ≠ some k) (hinp : ∀ y a, inp y = some a → a.2 ≠ some k)
+    (ho : o ≠ some k) :
+    PQXDHSquareHops.deliverD (⟨X, (iP k sk rs).kem, ct', (iP k sk rs).ro⟩ :
+        PSt S W K PK SK SS C) (fun y => (inp y).map (iInp k)) x r (A, o.getD k) kf =
+      (iSim k sk (PQXDHSquareHops.deliverD (⟨X, rs.kem, ct', rs.ro⟩ :
+          PSt S W K PK (Option SK) (Option SS) C) inp x r (A, o) kf).1,
+        (PQXDHSquareHops.deliverD (⟨X, rs.kem, ct', rs.ro⟩ :
+          PSt S W K PK (Option SK) (Option SS) C) inp x r (A, o) kf).2) :=
+  deliverD_iSim sk ⟨X, rs.kem, ct', rs.ro⟩ inp x r (A, o) kf hro hinp ho
+
+omit [Fintype S] [Fintype K] [Nonempty K] [DecidableEq C] in
+open Classical in
+/-- **`complete` commutes with the interpretation.** -/
+theorem complete_iSim {pk : PK} {sk : SK} {k : SS} {cs : C}
+    (s : SimSt S W K PK (Option SK) (Option SS) C) (hG : Good g pk cs k s.1 s.2.1)
+    (sid : SessionId) (pid : PartyId) (d : Draw S K) (kc : Option (SS × C))
+    (hv : kc.map Prod.fst ≠ some k) :
+    simCompleteD G (iSim k sk s) (sid, pid)  d
+        (if isEnc g pk s (.inr (.complete sid pid)) then some (k, cs) else kc) =
+      (iSim k sk (simCompleteD G s (sid, pid) d
+        (if isEnc g pk s (.inr (.complete sid pid)) then some (none, cs)
+          else kc.map fun kc => (some kc.1, kc.2))).1,
+        (simCompleteD G s (sid, pid) d
+        (if isEnc g pk s (.inr (.complete sid pid)) then some (none, cs)
+          else kc.map fun kc => (some kc.1, kc.2))).2) ∧
+      Good g pk cs k (simCompleteD G s (sid, pid) d
+        (if isEnc g pk s (.inr (.complete sid pid)) then some (none, cs)
+          else kc.map fun kc => (some kc.1, kc.2))).1.1
+        (simCompleteD G s (sid, pid) d
+        (if isEnc g pk s (.inr (.complete sid pid)) then some (none, cs)
+          else kc.map fun kc => (some kc.1, kc.2))).1.2.1 := by
+  obtain ⟨rs, inp, ph⟩ := s
+  have hG' : Good g pk cs k rs inp := hG
+  simp only [simCompleteD, iSim_fst, iSim_snd, iP_x, pkOf_iP]
+  cases hr : rs.x.st.recs (sid, pid) with
+  | none => exact ⟨rfl, hG'⟩
+  | some rc =>
+    cases he : rs.x.eph (sid, pid) with
+    | none => exact ⟨rfl, hG'⟩
+    | some ek =>
+      by_cases hE : isEnc g pk (rs, inp, ph) (.inr (.complete sid pid)) = true
+      · have hE' := hE
+        simp only [isEnc, hr, he, Bool.and_eq_true, decide_eq_true_eq] at hE'
+        obtain ⟨⟨rfl, rfl⟩, hpe, ho, hpk, hrole, hkey⟩ := hE'
+        obtain ⟨opk, hopk⟩ := Option.isSome_iff_exists.mp ho
+        simp only [hE, ↓reduceIte, hopk, hpk, hrole, hkey, Option.isNone_none, and_self]
+        refine ⟨deliver_branch sk rs _ _ inp _ rc _ none _ hG'.roV hG'.inpV (by simp), ?_⟩
+        refine Good.deliverD g ?_ (g.1, g.2.1) rc ?_ _ _ ?_ ?_ ?_
+        · exact Good.ct g hG' hr (fun _ _ _ => rfl) (by simp only [ltD_st]) rfl rfl rfl
+        · simp only [ltD_st]; exact hr
+        · simp
+        · exact Or.inl ⟨rfl, rfl⟩
+        · exact fun _ _ _ => rfl
+      · have hEnc : (sid, pid) = gI g → rc.role = .initiator → rc.peer = g.2.2 →
+            (opkOf rs.x sid rc.peer).isSome = true → (pkOf rs sid rc.peer).isSome = true →
+            rc.key = none → False := by
+          intro hx hro hpe hop hpk hkey
+          simp only [gI, Prod.mk.injEq] at hx
+          obtain ⟨rfl, rfl⟩ := hx
+          obtain ⟨pk', hpk'⟩ := Option.isSome_iff_exists.mp hpk
+          have hkem : ∃ osk, rs.kem (gR g) = some (pk', osk) := by
+            simp only [pkOf, gR, ← hpe, Option.map_eq_some_iff] at hpk' ⊢
+            obtain ⟨kp, hkp, rfl⟩ := hpk'
+            exact ⟨kp.2, hkp⟩
+          obtain ⟨osk, hosk⟩ := hkem
+          have hpkpk : pk' = pk := by
+            have := hG'.kemR _ hosk
+            simp only [Prod.mk.injEq] at this
+            exact this.1
+          subst hpkpk
+          apply hE
+          simp only [isEnc, hr, he]
+          rw [Bool.and_eq_true]
+          constructor
+          · apply decide_eq_true; exact ⟨trivial, trivial⟩
+          · apply decide_eq_true; exact ⟨hpe, hop, hpk', hro, hkey⟩
+        simp only [hE, Bool.false_eq_true, ↓reduceIte]
+        cases hopk : opkOf rs.x sid rc.peer with
+        | none => exact ⟨rfl, hG'⟩
+        | some opk =>
+          cases hpk : pkOf rs sid rc.peer with
+          | none => exact ⟨rfl, hG'⟩
+          | some pk' =>
+            cases kc with
+            | none => exact ⟨rfl, hG'⟩
+            | some kc0 =>
+              simp only [Option.map_some]
+              by_cases hc : rc.role = .initiator ∧ rc.key.isNone = true
+              · simp only [hc, and_self, ↓reduceIte]
+                have hv' : some kc0.1 ≠ some k := hv
+                refine ⟨deliver_branch sk rs _ _ inp _ rc _ (some kc0.1) _ hG'.roV hG'.inpV hv',
+                  ?_⟩
+                have hk : rc.key = none := Option.isNone_iff_eq_none.mp hc.2
+                refine Good.deliverD g ?_ (sid, pid) rc ?_ _ _ hv' (Or.inl ⟨rfl, rfl⟩) ?_
+                · exact Good.ct g hG' hr (fun hx hro hpe => (hEnc hx hro hpe (by simp [hopk])
+                    (by simp [hpk]) hk).elim) (by simp only [ltD_st]) rfl rfl rfl
+                · simp only [ltD_st]; exact hr
+                · exact fun hx hro hpe => (hEnc hx hro hpe (by simp [hopk]) (by simp [hpk])
+                    hk).elim
+              · simp only [hc, ↓reduceIte]
+                exact ⟨rfl, hG'⟩
+
+omit [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K]
+  [DecidableEq SS] [DecidableEq C] in
+@[simp] theorem iP_kem (k : SS) (sk : SK) (s : PSt S W K PK (Option SK) (Option SS) C)
+    (y : Inst) : (iP k sk s).kem y = (s.kem y).map fun kp => (kp.1, kp.2.getD sk) := rfl
+
+omit [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K]
+  [DecidableEq SS] in
+/-- The decapsulation of the world of the reduction, interpreted, is the decapsulation under
+the interpreted secret key, when the challenge decapsulates to the challenge key. -/
+theorem decaps_symP {sk : SK} {k : SS} {cs : C} (hc : P.decaps sk cs = some k)
+    (osk : Option SK) (c : C) :
+    P.decaps (osk.getD sk) c = ((symP P cs (P.decaps sk)).decaps osk c).map (·.getD k) := by
+  cases osk with
+  | some sk' => simp [symP]
+  | none =>
+    by_cases h : c = cs
+    · subst h; simp [symP, hc]
+    · simp [symP, h]
+
+omit [Fintype S] [Fintype K] [Nonempty K] in
+/-- **`send` commutes with the interpretation.** -/
+theorem send_iSim {pk : PK} {sk : SK} {k : SS} {cs : C} (hc : P.decaps sk cs = some k)
+    (s : SimSt S W K PK (Option SK) (Option SS) C) (hG : Good g pk cs k s.1 s.2.1)
+    (sid : SessionId) (pid : PartyId) (e : W) (c : C) (d : Draw S K)
+    (hv : ∀ kp, s.1.kem (sid, pid) = some kp →
+      ((symP P cs (P.decaps sk)).decaps kp.2 c).bind id ≠ some k) :
+    simSendD P G (iSim k sk s) (sid, pid) e c d =
+      (iSim k sk (simSendD (symP P cs (P.decaps sk)) G s (sid, pid) e c d).1,
+        (simSendD (symP P cs (P.decaps sk)) G s (sid, pid) e c d).2) ∧
+      Good g pk cs k (simSendD (symP P cs (P.decaps sk)) G s (sid, pid) e c d).1.1
+        (simSendD (symP P cs (P.decaps sk)) G s (sid, pid) e c d).1.2.1 := by
+  obtain ⟨rs, inp, ph⟩ := s
+  have hG' : Good g pk cs k rs inp := hG
+  simp only [simSendD, iSim_fst, iSim_snd, iP_x, iP_kem]
+  cases hr : rs.x.st.recs (sid, pid) with
+  | none => exact ⟨rfl, hG'⟩
+  | some rc =>
+    cases he : rs.x.eph (sid, pid) with
+    | none => exact ⟨rfl, hG'⟩
+    | some opk =>
+      cases hk : rs.kem (sid, pid) with
+      | none => exact ⟨rfl, hG'⟩
+      | some kp =>
+        have hv := hv kp hk
+        simp only [Option.map_some]
+        rw [decaps_symP P hc kp.2 c]
+        cases ho : (symP P cs (P.decaps sk)).decaps kp.2 c with
+        | none => exact ⟨rfl, hG'⟩
+        | some o =>
+          simp only [Option.map_some]
+          simp only [ho, Option.bind_some, id] at hv
+          by_cases hcd : rc.role = .responder ∧ rc.key.isNone = true
+          · simp only [hcd, and_self, ↓reduceIte]
+            refine ⟨deliver_branch sk rs _ _ inp _ rc _ o _ hG'.roV hG'.inpV hv, ?_⟩
+            refine Good.deliverD g ?_ (sid, pid) rc ?_ _ _ hv (Or.inr ⟨rfl, rfl⟩) ?_
+            · exact hG'.congr g (by simp only [ltD_st]) (fun p h => by simpa only [ltD_st] using h)
+                rfl rfl rfl
+            · simp only [ltD_st]; exact hr
+            · intro _ hro; rw [hro] at hcd; cases hcd.1
+          · simp only [hcd, ↓reduceIte]
+            exact ⟨rfl, hG'⟩
+
+omit [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K]
+  [DecidableEq SS] [DecidableEq C] in
+theorem update_map_option {α β : Type} (f : α → β) (m : Inst → Option α) (x : Inst) (a : α) :
+    (fun y => (Function.update m x (some a) y).map f) =
+      Function.update (fun y => (m y).map f) x (some (f a)) := by
+  funext y
+  by_cases h : y = x
+  · subst h; simp
+  · simp [Function.update_of_ne h]
+
+omit [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K]
+  [DecidableEq SS] in
+theorem newVal_send {cs : C} {sk : SK} (s : SimSt S W K PK (Option SK) (Option SS) C)
+    (sid : SessionId) (pid : PartyId) (e : W) (c : C) (r : PDraw S K PK SK SS C × K) (kp)
+    (hk : s.1.kem (sid, pid) = some kp) :
+    ((symP P cs (P.decaps sk)).decaps kp.2 c).bind id =
+      newVal P cs (P.decaps sk) s (.inr (.send sid pid e c)) r := by
+  obtain ⟨pk', osk⟩ := kp
+  simp only [newVal, hk]
+  cases osk with
+  | some sk' => simp only [symP]; cases P.decaps sk' c <;> rfl
+  | none =>
+    by_cases h : c = cs
+    · simp [symP, h]
+    · simp only [symP, h, ↓reduceIte]; cases P.decaps sk c <;> rfl
+
+omit [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K]
+  [DecidableEq SS] [DecidableEq C] in
+/-- A new session keeps the invariant. -/
+theorem Good.addSession {pk : PK} {cs : C} {k : SS}
+    {s s' : PSt S W K PK (Option SK) (Option SS) C} {inp : Inst → Option (PInp W (Option SS))}
+    (h : Good g pk cs k s inp) (x : Inst) (peer : PartyId) (role : Role)
+    (hn : s.x.st.recs x = none) (hst : s'.x.st = addSession s.x.st x peer role)
+    (hro : s'.ro = s.ro) (hct : s'.ct = s.ct)
+    (hkem : ∀ kp, s'.kem (gR g) = some kp → kp = (pk, none)) : Good g pk cs k s' inp := by
+  have hrecs : ∀ y r, s'.x.st.recs y = some r →
+      (y = x ∧ r = ⟨peer, role, .fresh, none⟩) ∨ (y ≠ x ∧ s.x.st.recs y = some r) := by
+    intro y r hy
+    rw [hst] at hy
+    simp only [FAKE.addSession, hn, Option.isSome_none, Bool.false_eq_true, ↓reduceIte] at hy
+    by_cases hyx : y = x
+    · subst hyx
+      simp only [Function.update_self, Option.some.injEq] at hy
+      exact Or.inl ⟨rfl, hy.symm⟩
+    · rw [Function.update_of_ne hyx] at hy
+      exact Or.inr ⟨hyx, hy⟩
+  refine ⟨?_, h.inpV, ?_, ?_, hkem, ?_, ?_⟩
+  · rw [hro]; exact h.roV
+  · intro e he hn'
+    rw [hro] at he
+    rw [hst, addSession_corrupt]
+    exact h.roN e he hn'
+  · intro y r hy
+    rcases hrecs y r hy with ⟨-, rfl⟩ | ⟨-, hy⟩
+    · rfl
+    · exact h.fresh y r hy
+  · intro y hy
+    rw [hct]
+    have hyx : y ≠ x := by
+      intro hc
+      subst hc
+      rw [hst] at hy
+      simp [FAKE.addSession, hn] at hy
+    have hy' : s.x.st.recs y = none := by
+      rw [hst] at hy
+      simpa [FAKE.addSession, hn, Function.update_of_ne hyx] using hy
+    exact h.noRec y hy'
+  · intro ri hri hrole hpe
+    rw [hct]
+    rcases hrecs _ ri hri with ⟨hgx, rfl⟩ | ⟨-, hri⟩
+    · rw [hgx]
+      have := h.noRec x hn
+      exact ⟨(fun c hc => by rw [this.1] at hc; cases hc),
+        (fun ip hip => by rw [this.2] at hip; cases hip)⟩
+    · exact h.encI ri hri hrole hpe
+
+omit [Fintype S] [Fintype K] [Nonempty K] in
+/-- **A start of the simulator commutes with the interpretation**: from a state of the invariant,
+on a draw that brings no concrete challenge key into the world of the reduction, the real start
+with the eager challenge, from the interpreted state, is the interpretation of the start of the
+world of the reduction, which keeps the invariant. -/
+theorem start_iSim {pk : PK} {sk : SK} {k : SS} {cs : C} (hc : P.decaps sk cs = some k)
+    (s : SimSt S W K PK (Option SK) (Option SS) C) (hG : Good g pk cs k s.1 s.2.1)
+    (e : OEv W SS C) (r : PDraw S K PK SK SS C × K)
+    (hv : newVal P cs (P.decaps sk) s e r ≠ some k) :
+    simStartD P G (iSim k sk s) e
+        (subKC g pk (k, cs) (iSim k sk s) e (subKP g (pk, sk) (iSim k sk s) e r)).1 =
+      (iSim k sk (simStartD (symP P cs (P.decaps sk)) G s (liftE e)
+          (liftD g pk cs s e r).1).1,
+        (simStartD (symP P cs (P.decaps sk)) G s (liftE e) (liftD g pk cs s e r).1).2) ∧
+      Good g pk cs k (simStartD (symP P cs (P.decaps sk)) G s (liftE e)
+          (liftD g pk cs s e r).1).1.1
+        (simStartD (symP P cs (P.decaps sk)) G s (liftE e) (liftD g pk cs s e r).1).1.2.1 := by
+  obtain ⟨rs, inp, ph⟩ := s
+  have hG' : Good g pk cs k rs inp := hG
+  rcases e with (⟨sid, pid, peer, role⟩ | ⟨sid, pid⟩) | (_ | _ | pid | ⟨sid, pid⟩ |
+    ⟨sid, pid⟩ | pid | ⟨sid, pid⟩ | ⟨sid, pid, e, c⟩ | q)
+  · simp only [simStartD, liftE, iSim_fst, iSim_snd, iP_x]
+    by_cases hn : (rs.x.st.recs (sid, pid)).isNone = true
+    · simp only [hn, ↓reduceIte]
+      have hn' : rs.x.st.recs (sid, pid) = none := Option.isNone_iff_eq_none.mp hn
+      by_cases hro : role = .responder
+      · simp only [hro, ↓reduceIte]
+        refine ⟨?_, ?_⟩
+        · simp only [subKC, subKP, liftD]
+          rw [isCreate_iSim]
+          simp only [iSim, iP, update_map_option]
+          cases isCreate g (rs, inp, ph) (liftE (Sum.inl (HEv.newSession sid pid peer .responder)))
+            <;> rfl
+        · refine hG'.addSession g (sid, pid) peer .responder hn' rfl rfl rfl fun kp hkp => ?_
+          dsimp only at hkp
+          by_cases hx : (sid, pid) = gR g
+          · rw [← hx, Function.update_self, Option.some.injEq] at hkp
+            have hc : isCreate g (rs, inp, ph) (liftE (Sum.inl (HEv.newSession sid pid peer
+                .responder))) = true := by
+              simp only [gR, Prod.mk.injEq] at hx
+              obtain ⟨rfl, rfl⟩ := hx
+              simp [isCreate, liftE, hn']
+            simp only [liftD, hc, ↓reduceIte] at hkp
+            exact hkp.symm
+          · rw [Function.update_of_ne (Ne.symm hx)] at hkp
+            exact hG'.kemR kp hkp
+      · simp only [hro, ↓reduceIte]
+        exact ⟨rfl, hG'.addSession g (sid, pid) peer role hn' rfl rfl rfl hG'.kemR⟩
+    · simp only [hn, Bool.false_eq_true, ↓reduceIte]
+      exact ⟨rfl, hG'⟩
+  · exact ⟨rfl, hG'⟩
+  · exact ⟨rfl, hG'⟩
+  · simp only [simStartD, liftE]
+    refine ⟨rfl, hG'.congr g ?_ ?_ rfl rfl rfl⟩
+    · exact (pollStep_fst _).1
+    · intro p hp; rw [(pollStep_fst _).2.1]; exact hp
+  · simp only [simStartD, liftE]
+    exact ⟨rfl, hG'.congr g (by simp only [ltD_st]) (fun p h => by simpa only [ltD_st] using h)
+      rfl rfl rfl⟩
+  · exact ⟨rfl, hG'⟩
+  · refine ⟨?_, hG'⟩
+    simp only [simStartD, liftE, iSim_fst, iSim_snd, pkOf_iP, iP_ct]
+    rfl
+  · simp only [simStartD, liftE, iSim_fst, iSim_snd, iP_x]
+    by_cases hN : Named rs.x.st pid = true
+    · simp only [hN, ↓reduceIte]; exact ⟨rfl, hG'⟩
+    · simp only [hN, Bool.false_eq_true, ↓reduceIte]
+      refine ⟨rfl, hG'.congr g (by simp [corruptStep]) (fun p hp => ?_) rfl rfl rfl⟩
+      simp only [corruptStep, ltD_st]
+      by_cases hp' : p = pid
+      · subst hp'; simp
+      · rw [Function.update_of_ne hp']; exact hp
+  · have h := complete_iSim G g (sk := sk) (rs, inp, ph) hG sid pid r.1.1 r.1.2.2 hv
+    simp only [simStartD, liftE, subKC, subKP, liftD]
+    rw [isEnc_iSim]
+    exact h
+  · have h := send_iSim P G g hc (rs, inp, ph) hG sid pid e c r.1.1
+      (fun kp hk => (newVal_send P (rs, inp, ph) sid pid e c r kp hk).symm ▸ hv)
+    simp only [simStartD, liftE, subKC, subKP, liftD]
+    exact h
+  · have hq : (some q.2 : Option SS) ≠ some k := hv
+    simp only [simStartD, liftE, iSim_fst, iSim_snd]
+    refine ⟨?_, ⟨fun e he => ?_, hG'.inpV, fun e he hn => ?_, hG'.fresh, hG'.kemR, hG'.noRec,
+      hG'.encI⟩⟩
+    · rw [show (iP k sk rs).ro = rs.ro.map (iE k) from rfl,
+        show q = iInp k (q.1, some q.2) from rfl,
+        roDet_map_iE rs.ro (q.1, some q.2) _ hG'.roV hq]
+      rfl
+    · rcases roDet_mem rs.ro (q.1, some q.2) _ e he with he | rfl
+      · exact hG'.roV e he
+      · exact hq
+    · rcases roDet_mem rs.ro (q.1, some q.2) _ e he with he | rfl
+      · exact hG'.roN e he hn
+      · cases hn
+
+end SymWorld
+
 end CatCrypt.Crypto.AKE.PQXDHSquareKEM
