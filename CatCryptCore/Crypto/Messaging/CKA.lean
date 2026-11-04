@@ -34,6 +34,9 @@ the sender samples an exponent `x`, sends `g^x` and derives `h^x` from the last 
 
 ## Main results
 
+* `ckaRun_isPure`, `cka_real_isPure`, `cka_ideal_isPure` — the runs and the games of a CKA
+  whose initialisation and sending do not touch the heap do not touch the heap
+* `dhCKA_init_isPure`, `dhCKA_send_isPure` — the Diffie–Hellman CKA does not touch the heap
 * `dhCKA_recv_key` — correctness: the receiver derives the key of the sender
 * `ckaRun_dh_pre`, `ckaRun_dh_tail` — runs of `dhCKA` sample one exponent per epoch
 * `cka_real_dh`, `cka_ideal_dh` — the games of `dhCKA` sample the exponents of all epochs
@@ -116,6 +119,36 @@ noncomputable def CKA_Advantage [Fintype Key] [Nonempty Key] (C : CKADef St Msg 
     (k m : ℕ) (A : CKAView Msg Key → SPComp Bool) : ℝ≥0∞ :=
   AdvantageA (cka_real C k m) (cka_ideal C k m) A
 
+/-! ## Games of CKA schemes that do not touch the heap -/
+
+/-- A run of a CKA scheme whose sending does not touch the heap does not touch the heap. -/
+theorem ckaRun_isPure (C : CKADef St Msg Key) (hs : ∀ s, SPComp.IsPure (C.send s)) :
+    ∀ (n : ℕ) (s r : St), SPComp.IsPure (ckaRun C n s r) := by
+  intro n
+  induction n with
+  | zero => intro s r; exact SPComp.pure_isPure _
+  | succ n ih =>
+    intro s r
+    exact SPComp.bind_isPure (hs s) fun o => SPComp.bind_isPure (ih _ _) fun p =>
+      SPComp.pure_isPure _
+
+/-- The real CKA game of a scheme whose initialisation and sending do not touch the heap does
+not touch the heap. -/
+theorem cka_real_isPure (C : CKADef St Msg Key) (h₀ : SPComp.IsPure C.init)
+    (h₁ : ∀ s, SPComp.IsPure (C.send s)) (k m : ℕ) : SPComp.IsPure (cka_real C k m) :=
+  SPComp.bind_isPure h₀ fun _ => SPComp.bind_isPure (ckaRun_isPure C h₁ _ _ _) fun _ =>
+    SPComp.bind_isPure (h₁ _) fun _ =>
+      SPComp.bind_isPure (ckaRun_isPure C h₁ _ _ _) fun _ => SPComp.pure_isPure _
+
+/-- The ideal CKA game of a scheme whose initialisation and sending do not touch the heap does
+not touch the heap. -/
+theorem cka_ideal_isPure [Fintype Key] [Nonempty Key] (C : CKADef St Msg Key)
+    (h₀ : SPComp.IsPure C.init) (h₁ : ∀ s, SPComp.IsPure (C.send s)) (k m : ℕ) :
+    SPComp.IsPure (cka_ideal C k m) :=
+  SPComp.bind_isPure h₀ fun _ => SPComp.bind_isPure (ckaRun_isPure C h₁ _ _ _) fun _ =>
+    SPComp.bind_isPure (h₁ _) fun _ => SPComp.bind_isPure (SPComp.sample_isPure _) fun _ =>
+      SPComp.bind_isPure (ckaRun_isPure C h₁ _ _ _) fun _ => SPComp.pure_isPure _
+
 /-! ## The Diffie–Hellman instance -/
 
 section DH
@@ -131,6 +164,16 @@ noncomputable def dhCKA : CKADef (G × CG.Exp) G G where
   send s := SPComp.bind (SPComp.sample CG.Exp) fun x =>
     SPComp.pure ((s.1, x), CG.pow x, CyclicGroup.elemPow s.1 x)
   recv r T := ((T, r.2), CyclicGroup.elemPow T r.2)
+
+/-- The initialisation of `dhCKA` does not touch the heap. -/
+theorem dhCKA_init_isPure : SPComp.IsPure (dhCKA G).init := by
+  simp only [dhCKA]
+  exact SPComp.bind_isPure (SPComp.sample_isPure CG.Exp) fun _ => SPComp.pure_isPure _
+
+/-- Sending in `dhCKA` does not touch the heap. -/
+theorem dhCKA_send_isPure (s : G × CG.Exp) : SPComp.IsPure ((dhCKA G).send s) := by
+  simp only [dhCKA]
+  exact SPComp.bind_isPure (SPComp.sample_isPure CG.Exp) fun _ => SPComp.pure_isPure _
 
 variable {G}
 
