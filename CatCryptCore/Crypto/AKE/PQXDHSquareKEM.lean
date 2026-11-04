@@ -13,7 +13,113 @@ public import CatCryptCore.Tactics.AutoDispatchExt
 /-!
 # The KEM route of the PQXDH square
 
-Draft.
+`PQXDHSquareGDH` splits the bad event `PQHit` of the PQXDH square into its KEM part `PQHitKem`
+(a session whose encapsulation the adversary did not create, `HonestEnc`) and its
+Diffie–Hellman part, and bounds both by gap Diffie–Hellman advantages. This module bounds the
+KEM part by the IND-CCA security of the KEM, without any Diffie–Hellman assumption: a session
+whose shared secret comes from an honestly generated encapsulation stays secure against an
+adversary that computes discrete logarithms (security against harvest-now-decrypt-later
+attacks), and the bound of the square becomes a minimum over the two routes.
+
+**The IND-CCA game.** The game is that of `CatCryptCore.Crypto.KEM.Games`: `indccaGame` and
+`indccaAdvantage` over `Scheme PK SK SS C`, the KEM interface of the PQXDH square, in
+real-or-random form, with a decapsulation oracle that answers `none` on the challenge
+encapsulation; the correctness error is `Scheme.corrErr`.
+
+**The matched KEM part.** The KEM part `PQHitKem` contains sessions on which IND-CCA says
+nothing: a responder `y` whose delivered encapsulation is that of its partner initiator
+`(y.1, r.peer)`, where that initiator has another peer and encapsulated to the public key of
+another session. The shared secret of `y` is then the decapsulation, under the secret key of
+`y`, of an encapsulation to another key, which an IND-CCA secure KEM may map to a known value
+(a KEM whose encapsulations carry the public key and whose decapsulation of an encapsulation to
+another key returns a constant is IND-CCA secure when the underlying KEM is). The bound is
+therefore stated for the matched KEM part `PQHitKemM` (`Matched`: the session is an initiator,
+or its partner is an initiator whose peer is the session's party); the unmatched sessions join
+the Diffie–Hellman part `PQHitDhM`, and both parts are bounded by the gap Diffie–Hellman sum as
+before (`badGame_le_splitM`, `partBadM_le_gapDH`).
+
+**The guess.** For an adversary that starts sessions only with session identifiers of a finite
+set `I` between parties of a finite set `N` (`SessInK`), the matched KEM part is at most the sum
+over the guesses `g = (sid, a, b)` of `I × N × N` of the KEM part at the initiator session
+`(sid, a)` with peer `b` and the responder session `(sid, b)` with peer `a` (`EG`,
+`partBad_le_sum_guess`).
+
+**Eager sampling.** The simulated world draws a KEM key pair at every step and an encapsulation
+at every completion. The world `gwO kp kc` uses the key pair `kp` at the start of the responder
+session of the guess and the encapsulation `kc` at the completion of its initiator session. Each
+is used at most once, so drawing them first gives the same probability (`run_eager`,
+`flag_w_eq_gw1`, `flag_gw1_eq_gw`).
+
+**The world of the reduction.** The reduction does not know the secret key of the challenge
+and must not use the challenge key `k*` except to test it. Its world `yO` runs the simulator over
+symbolic shared secrets `Option SS` (`symP`, `liftD`), in which `none` stands for `k*`: the
+initiator of the guess encapsulates to `(none, c*)`; the responder of the guess decapsulates
+`c*` to `none` and every other encapsulation with the decapsulation oracle; the world records the
+list of the concrete shared secrets it receives (`newVal`). The interpretation `iSim` reads `none`
+as `k*` and the absent secret key as the challenge secret key. On the invariant `Good` (no
+symbolic shared secret is the concrete `k*`, the symbolic entries of the key-derivation table
+are inputs of exposed sessions, the initiator of the guess encapsulated to `none`), a step of the
+eager world from the interpreted state is the interpretation of the step of the world of the
+reduction (`start_iSim`, `world_iSim`), unless the step brings `k*` as a concrete shared secret,
+and under the correctness of the challenge (`decaps sk* c* = some k*`) the KEM part at the guess
+does not hold on the interpreted states (`not_EG_iSim`). Hence the eager world reaches the KEM
+part at most as often as the world of the reduction receives `k*` (`gw_le_y`,
+`flag_le_of_coupling_hit`).
+
+**The reduction.** `kemRed P G g B` is the stepped oracle program `stepRedQ` (one decapsulation
+query per `send` of an encapsulation other than `c*`, one draw per event) that runs `B` against
+the world of the reduction and outputs whether the given key is among the received concrete
+shared secrets. Against the decapsulation oracle it is the world of the reduction with the
+decapsulation under the challenge secret key (`simOracle_implK`, `run_kemRedRun`). In the real
+case the key is `k*` (`indccaGame_true_eq`); in the random case the key is uniform and
+independent of the run, which receives at most `q` concrete shared secrets for an adversary with
+at most `q` queries, so the output is true with probability at most `q / |SS|`
+(`indccaGame_false_le`). The three terms of the bound: the IND-CCA advantage, the correctness
+error (the challenges with `decaps sk* c* ≠ some k*`), and `q / |SS|` (`flagEG_le`,
+`flagEG_le_indcca`).
+
+**The random term.** The term `q / |SS|` counts the queries of the key derivation and the
+completions and deliveries: the world of the reduction compares the challenge key with the shared
+secrets of the partner of a session of the guess, and each such comparison, like each query of
+the key derivation, tests one value against the uniform key of the random case. A bound by the
+number of queries of the key derivation alone does not cover these tests.
+
+**The bound.** `badGame P G B ≤ partBad PQHitDhM + min (gap Diffie–Hellman sum) (kemBound)`
+(`badGame_le_min`), with the Diffie–Hellman part at most the gap Diffie–Hellman sum
+(`badGame_le_gapDH_min`), and the square `pqxdh_realizesSim_min`. For a one-element `SS`, an
+adversary that computes discrete logarithms makes the bad event hold with probability one, and
+`kemBound` contains `q / 1 ≥ 1`.
+
+## Main definitions
+
+* `Matched`, `PQHitKemM`, `PQHitDhM`: the matched KEM part of the bad event and the rest.
+* `Guess`, `AtGuess`, `EG`, `SessInK`: the guess and the KEM part at the guess.
+* `wO`, `gw1O`, `gwO`: the simulated world with the record of delivered encapsulations, and the
+  worlds with the challenge key pair and encapsulation sampled eagerly.
+* `symP`, `liftD`, `newVal`, `yO`, `iSim`, `Good`: the world of the reduction, its
+  interpretation and its invariant.
+* `stepRedQ`, `kemStep`, `kemRedRun`, `kemRed`: the IND-CCA reduction.
+* `kemBound`, `minBoundP`: the KEM bound and the bound of the square with the minimum.
+
+## Main results
+
+* `run_eager`, `flag_le_of_coupling_hit`: eager sampling of a value used once, and bad flags
+  under a coupling up to a bad event of the second oracle.
+* `badGame_le_splitM`, `partBadM_le_gapDH`: the split into the matched KEM part and the rest, and
+  the gap Diffie–Hellman bounds of both.
+* `gw_le_y`: the coupling of the eager world with the world of the reduction.
+* `indccaGame_false_le`, `flagEG_le_indcca`: the random case and the KEM part at a guess.
+* `partBad_kem_le`: `partBad P G (PQHitKemM P G) B ≤ kemBound P G I N B hB`, the sum over the
+  guesses of `I × N × N` of `indccaAdvantage P (kemRed P G g B hB) + P.corrErr + q / |SS|`.
+* `badGame_le_min`, `badGame_le_gapDH_min`: the bad event with the minimum over the two routes.
+* `pqxdh_realizesSim_min`: PQXDH realizes `F_AKE` behind `pqxdhSim` with the bound `minBoundP`.
+
+## References
+
+* K. Bhargavan, C. Jacomme, F. Kiefer, R. Schmidt, *Formal verification of the PQXDH
+  post-quantum key agreement protocol for end-to-end secure messaging*, USENIX Security 2024.
+* D. Hofheinz, K. Hövelmanns, E. Kiltz, *A Modular Analysis of the Fujisaki–Okamoto
+  Transformation*, TCC 2017 (the correctness error of a KEM).
 -/
 
 @[expose] public section
@@ -1623,7 +1729,11 @@ theorem not_EG_iSim {pk : PK} {sk : SK} {k : SS} {cs : C} (hc : P.decaps sk cs =
         simp only [iInp] at hd
         cases h : ips.2 with
         | none => rfl
-        | some v' => rw [h] at hd hv; simp only [Option.getD_some] at hd; subst hd; exact (hv rfl).elim
+        | some v' =>
+          rw [h] at hd hv
+          simp only [Option.getD_some] at hd
+          subst hd
+          exact (hv rfl).elim
   obtain ⟨e, he, hee⟩ : ∃ e ∈ rs.ro, iInp k e.1 = iInp k ips := by
     have hm := lookup_mem h₃
     obtain ⟨e, he, hee⟩ := List.mem_map.mp hm

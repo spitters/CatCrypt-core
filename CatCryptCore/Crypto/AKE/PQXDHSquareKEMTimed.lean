@@ -11,7 +11,45 @@ public import CatCryptCore.Crypto.AKE.X3DHSquareGDHTimed
 /-!
 # Running time of the KEM reduction of the PQXDH square
 
-Draft.
+The IND-CCA reduction `kemRed P G g B` of `PQXDHSquareKEM.lean` is the stepped oracle program
+`stepRedQ` at the query decision `needQ` (a decapsulation query on each delivered encapsulation
+other than the challenge), the draws of the simulated world, the step `kemStep` of the world of
+the reduction and the extraction of the membership of the key in the received shared secrets.
+`stepRedQ` is the program `X3DHSquareGDH.stepRedD` with one oracle query per step.
+
+**The costed reduction.** `derive_timed stepImplQ` and `derive_timed stepRedQ` define the costed
+forms `stepImplQ.timed` (the answer to one query: a query node, a draw node and the step, with
+the costs of the query decision, the draw distribution and the step as companions) and
+`stepRedQ.timed`, generic in the state, the decision, the draw distribution, the step and the
+extraction, with their erasure theorems.
+
+**The time.** `stepRedQ.timeBound_timed`: under a state invariant `Inv i` with the costs of the
+decision, the draw and the step at most `F i` and the extraction at most `Ext i`, an adversary of
+time `T` with at most `q` queries gives a reduction of time at most `T + q · (F q + 7) + Ext q + 1`.
+A step of the world of the reduction adds at most two to the size of its state, the lengths of its
+key-derivation table, its notices and its received shared secrets (`simStartD_size`,
+`sizeY_kemStep`), so that for costs bounded by monotone functions `F`, `Ext` of the size the
+reduction runs in time at most `T + q · (F (2q) + 7) + Ext (2q) + 1` (`kemRed_timeBound`), the time
+of the adversary plus a polynomial in its queries for polynomial `F` and `Ext`. The costs of the
+step and the extraction are companions bounded by hypothesis: the step programs of the world of
+the reduction are not derived here.
+
+No module imports this file.
+
+## Main results
+
+* `stepImplQ.timed`, `stepRedQ.timed`, `stepRedQ.erase_timed` (derived): the costed forms.
+* `stepRedQ.timeBound_timed`: the time of the costed stepped program with queries.
+* `simStartD_size`, `sizeY_kemStep`: a step adds at most two to the size of the state.
+* `kemRed_erase_timed`, `kemRed_timeBound`: the erasure of the costed reduction to the program
+  of `kemRed` and its time.
+
+## References
+
+* K. Bhargavan, C. Jacomme, F. Kiefer, R. Schmidt, *Formal verification of the PQXDH
+  post-quantum key agreement protocol for end-to-end secure messaging*, USENIX Security 2024.
+* D. Hofheinz, K. Hövelmanns, E. Kiltz, *A Modular Analysis of the Fujisaki–Okamoto
+  Transformation*, TCC 2017.
 -/
 
 @[expose] public section
@@ -252,7 +290,8 @@ theorem kemRed_timeBound (pk : PK) (cs : C) (k : SS) (needCost : YSt S W K PK SK
     (fun i => Ext (2 * i)) (fun _ _ h => hF (by omega)) (fun _ _ h => by omega)
     (fun i t e oa r h => by have := sizeY_kemStep P G g pk cs oa t e r; omega)
     (fun i t e oa r h => (hcost t e oa r).trans (hF h))
-    (fun i t h => (hext t).trans (hE h)) B hB hq yInit (by simp [sizeY, yInit, pInit, X3DHSquare.rInit, initSt])
+    (fun i t h => (hext t).trans (hE h)) B hB hq yInit
+    (by simp [sizeY, yInit, pInit, X3DHSquare.rInit, initSt])
 
 end Instance
 
