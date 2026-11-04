@@ -44,8 +44,9 @@ environment, selection and distinguisher, by three explicit terms (the hybrids o
    of `F_AKE` and calls `A` on its final state and the challenge view.
 
 The second term is information-theoretic: it compares two games over the ideal functionality and
-the simulator, with no computational assumption. It is the composition gap of the stack: core has
-no theorem that bounds it, see the section *The composition gap*.
+the simulator, with no computational assumption. It is the composition gap of the stack, see the
+section *The composition gap*; `SignalStackSealed.signal_stack_advantage_le_sealed` is the stack
+theorem without it, for a sealed environment.
 
 **Time.** `stackSMRed` and the distinguisher `stackDist` of `stackEnv` have costed trees
 (`stackSMRed.tree`, `stackDist.tree`), compile theorems, costed forms derived by `derive_timed`
@@ -60,12 +61,25 @@ priced by `X3DHSquareGDHTimed.gdhOut_timeBound`.
 
 The ideal stack of a Signal session is `F_AKE` followed by the ratchet keyed by a uniform key
 independent of the view of the environment. The step from the key of `F_AKE` to such a key is
-`keyRORAdv (x3dhIdeal G) Z sel (stackRORDist f A)`. For an environment that does not read the
-key of the selected session from the honest port and selects a session that `F_AKE` completed
-without exposure (`FAKE.Exposed`), the key is a fresh sample of `F_AKE` that neither the
-simulator nor the outputs of the adversary port reveal, and the term is `0`. Core states no
-key-secrecy theorem of `F_AKE` behind `x3dhSim`, and no secure-messaging functionality to
-realize behind a simulator, so the stack theorem keeps the term explicit; it is not assumed small.
+`keyRORAdv (x3dhIdeal G) Z sel (stackRORDist f A)`. For a selection `sel` from the final state of
+the environment, which the distinguisher sees, the term is not `0` in general: a distinguisher
+that compares the key with `sel z` tells the two games apart. The module
+`CatCryptCore.Crypto.Messaging.SignalStackSealed` proves the precise statement.
+* `x3dhIdeal_key_secrecy`: for an environment `Z` that never chooses `getKey sid₀ pid` for the
+  protocol session `sid₀` of the selected session `x₀` (`Sealed sid₀ Z`, a condition on the
+  possible outcomes of every choice of `Z`, with the decidable event predicate `SealedEv`), the
+  final state of `Z` and the key of `x₀` when `F_AKE` completed it have the law of the final
+  state of `Z` and a fresh uniform key. The proof is a coupling: every permutation of the keys,
+  applied to the completed keys of `sid₀`, commutes with the steps of `F_AKE` behind `x3dhSim`
+  at the events of a sealed environment.
+* `keyRORAdv_readKey_eq_zero`: for the environment `readKey Z x₀`, which runs a sealed `Z` and
+  then reads the key of `x₀` on the honest port, the selection of the key it reads, and a
+  distinguisher that sees the final state of `Z` and the key, `keyRORAdv` is `0` when every run
+  of `Z` against the world of `F_AKE` completes `x₀` (`CompletesAt G x₀ Z`: `x₀` received a key
+  chosen by `F_AKE`, not exposed at delivery).
+* `signal_stack_advantage_le_sealed` (with `_primitives` and `_dh`): the stack theorem for
+  `readKey Z x₀` under these two conditions, with the gap Diffie–Hellman term and the
+  secure-messaging term only.
 
 ## Main definitions
 
@@ -364,7 +378,9 @@ the view of the ratchet, the distance between
 is at most the gap Diffie–Hellman bound of the X3DH square at the environment `stackEnv`, the
 real-or-random advantage of the key `sel z` in the world of `F_AKE` (the composition gap, an
 information-theoretic term of the ideal functionality), and the secure-messaging advantage of the
-reduction `stackSMRed`, which runs `Z` against the world of `F_AKE`. -/
+reduction `stackSMRed`, which runs `Z` against the world of `F_AKE`. For an environment that reads
+the key of the selected session only at the end and a selection of that key,
+`SignalStackSealed.signal_stack_advantage_le_sealed` removes the second term. -/
 theorem signal_stack_advantage_le (P : Finset PartyId) {C : CKADef Sc Msg Key}
     (hC : CKAPureNF C) (R : PRGDef (K × Key) (K × Sa)) (Gp : PRGDef Sa (M × Sa))
     (D : AEADDef M Ct) (msgs : List (List (M × M))) {ζ : Type}
