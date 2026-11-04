@@ -51,6 +51,8 @@ core FS-AEAD games (`Ratchet_Advantage_eq_fsaead`); the bound is core
 
 @[expose] public section
 
+set_option autoImplicit false
+
 namespace CatCrypt.Crypto.Signal.FSAEAD
 
 open CatCrypt.Core CatCrypt.Crypto CatCrypt.Prob
@@ -99,35 +101,19 @@ noncomputable def FSAEAD_Advantage (cfg : FSAEADConfig W) (msgs : List W)
 
 /-! ## IsPure Proofs -/
 
-/-- FS-AEAD real game (with random initial key) is heap-independent.
-
-Proof: `attack_real` is built from `sample` (for initial key) and `mapLoop`
-with a step that is just `pure` (PRG stretch + encrypt are both deterministic).
-All components are IsPure. -/
+/-- FS-AEAD real game (with random initial key) is heap-independent: `attack_real` is a
+`sample` followed by a `mapLoop` of deterministic steps. -/
 theorem fsaead_real_isPure (cfg : FSAEADConfig W) (msgs : List W) :
     SPComp.IsPure (fsaead_real' cfg msgs) := by
   unfold fsaead_real' attack_real
-  simp only [SPComp.monad_bind_eq]
-  apply SPComp.bind_isPure (SPComp.sample_isPure _)
-  intro s₀
-  exact mapLoop_isPure msgs s₀ _ (fun _ _ => SPComp.pure_isPure _)
+  aesop (rule_sets := [CatCryptRel]) (add safe apply mapLoop_isPure)
 
-/-- FS-AEAD ideal game is heap-independent.
-
-Proof: `attack_ideal` is built from `mapLoop` with sampling + `pure`, then
-one final `sample` + `pure`. All components are IsPure. -/
+/-- FS-AEAD ideal game is heap-independent: `attack_ideal` is a `mapLoop` of samples followed
+by a `sample`. -/
 theorem fsaead_ideal_isPure (msgs : List W) :
     SPComp.IsPure (fsaead_ideal msgs) := by
   unfold fsaead_ideal attack_ideal
-  simp only [SPComp.monad_bind_eq]
-  apply SPComp.bind_isPure
-  · exact mapLoop_isPure msgs () _ (fun _ _ => by
-      apply SPComp.bind_isPure (SPComp.sample_isPure _)
-      intro _; exact SPComp.pure_isPure _)
-  intro ⟨cs, _⟩
-  apply SPComp.bind_isPure (SPComp.sample_isPure _)
-  intro sn
-  exact SPComp.pure_isPure _
+  aesop (rule_sets := [CatCryptRel]) (add safe apply mapLoop_isPure)
 
 /-! ## Security Theorems -/
 

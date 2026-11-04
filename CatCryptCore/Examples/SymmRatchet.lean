@@ -67,6 +67,8 @@ The ratchet game is the forward-secure AEAD game of core `Messaging.FSAEAD` at t
 
 @[expose] public section
 
+set_option autoImplicit false
+
 namespace CatCrypt.Examples.SymmRatchet
 
 open CatCrypt.Core
@@ -616,20 +618,13 @@ noncomputable def cpa_adv_single (A : List W × W → SPComp Bool) (c : W) : SPC
 /-- For single message, attack_hyb factors through ctxt_real -/
 lemma attack_hyb_single (E : EncDef W) (m : W) :
     attack_hyb E [m] = (ctxt_real E m).bind wrap_single := by
-  unfold attack_hyb mapLoop ctxt_real wrap_single
-  simp only [SPComp.monad_bind_eq, SPComp.pure_bind, SPComp.bind_assoc]
-  funext h
-  simp only [SPComp.bind_def, SPComp.pure_def, SPComp.sample, SDistr.bind_assoc, SDistr.pure_bind]
-  simp only [mapLoop, SPComp.pure_def, SDistr.pure_bind]
+  simp [attack_hyb, mapLoop, ctxt_real, wrap_single, SPComp.monad_bind_eq, SPComp.bind_assoc]
 
 /-- For single message, attack_ideal factors through ctxt_ideal -/
 lemma attack_ideal_single (m : W) :
     attack_ideal [m] = (ctxt_ideal m).bind wrap_single := by
-  unfold attack_ideal mapLoop ctxt_ideal wrap_single
-  simp only [SPComp.monad_bind_eq, SPComp.pure_bind, SPComp.bind_assoc]
-  funext h
-  simp only [SPComp.bind_def, SPComp.pure_def, SPComp.sample, SDistr.bind_assoc, SDistr.pure_bind]
-  simp only [mapLoop, SPComp.pure_def, SDistr.pure_bind]
+  unfold wrap_single
+  simp [attack_ideal, mapLoop, ctxt_ideal, SPComp.monad_bind_eq, SPComp.bind_assoc]
 
 /-- Wrapping with wrap_single then binding A equals cpa_adv_single -/
 lemma wrap_single_bind_eq (A : List W × W → SPComp Bool) (c : W) :
