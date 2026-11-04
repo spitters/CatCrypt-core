@@ -320,35 +320,6 @@ noncomputable def fsigSim (S : SigScheme Msg PK SK Sig) (hkg : SPComp.NoFail S.k
       (SigEv Msg PK Sig ⊕ SigAlg Msg PK Sig) (SigOut PK Sig ⊕ Unit) outerView fsigView :=
   Simulator.ofMultiHybrid (fsigSimπ S hkg hsg) (fsigSimπ_opaque S hkg hsg)
 
-/-! ## Losslessness -/
-
-/-- The rest of an activation of a multi-call simulator over a lossless subroutine never
-fails. -/
-theorem drive_noFail {σ τ E O EG OG : Type} (π : MultiHybrid σ E O EG OG) (X : Sys τ EG OG)
-    (hX : ∀ t g, SPComp.NoFail (X.step t g)) :
-    ∀ n s d t, SPComp.NoFail (π.drive X n s d t) := by
-  intro n
-  induction n with
-  | zero =>
-    rintro s (g | o) t
-    · exact Assumptions.SPComp.bind_noFail (hX _ _) fun _ =>
-        Assumptions.SPComp.bind_noFail (π.finish_noFail _ _) fun _ => SPComp.pure_noFail _
-    · exact SPComp.pure_noFail _
-  | succ n ih =>
-    rintro s (g | o) t
-    · exact Assumptions.SPComp.bind_noFail (hX _ _) fun _ =>
-        Assumptions.SPComp.bind_noFail (π.resume_noFail _ _) fun _ => ih _ _ _
-    · exact SPComp.pure_noFail _
-
-/-- Single steps of a multi-call simulator over a lossless subroutine never fail. -/
-theorem withSub_noFail {σ τ E O EG OG : Type} (π : MultiHybrid σ E O EG OG) (X : Sys τ EG OG)
-    (hX : ∀ t g, SPComp.NoFail (X.step t g)) :
-    ∀ t e, SPComp.NoFail ((π.withSub X).step t e) := by
-  intro t e
-  simp only [MultiHybrid.withSub]
-  exact Assumptions.SPComp.bind_noFail (π.start_noFail _ _) fun _ =>
-    Assumptions.SPComp.bind_noFail (drive_noFail π X hX _ _ _ _) fun _ => SPComp.pure_noFail _
-
 section Realization
 
 variable [DecidableEq Msg] [DecidableEq PK] [DecidableEq Sig]
@@ -445,7 +416,7 @@ theorem realSig_realizesSim_fsig (S : SigScheme Msg PK SK Sig) (hkg : SPComp.NoF
       (fun _ Z => prBad (realSig S) (fun t => t.forged) Z) := by
   refine realizes_upto_bad_rel (realSig S) ((fsigSimπ S hkg hsg).withSub fsig) (simRel S hsg ok)
     (fun t => t.forged) ⟨rfl, rfl, rfl, rfl⟩ (realSig_noFail S hkg hsg)
-    (withSub_noFail _ _ fsig_noFail) ?_
+    (MultiHybrid.withSub_noFail _ _ fsig_noFail) ?_
   rintro ⟨keys, signed, forged⟩ ⟨s, alg, signed'⟩ e hrel hf
   obtain ⟨hsig, hrel⟩ := hrel
   simp only at hsig hf

@@ -6,6 +6,7 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Quantum.QRealizes
+public import CatCryptCore.Quantum.QRealizesMem
 public import CatCryptCore.Quantum.SubInstrumentOrder
 public import CatCryptCore.ForMathlib.CategoryTheory.Monoidal.Traced
 
@@ -56,6 +57,7 @@ The development follows the classical one (`UCLoopbackTrace`, `UCLoopbackMonoida
 * `QRSys.loopbackω_swap`: yanking.
 * `Party.QProg.qloop_stepMap`, `Party.QProg.qview_eq_of_stepMap`: a step map between core
   quantum systems with the same initial private basis state keeps their views.
+* `ReactiveUC.qviewQ_eq_of_stepMap`: the same for the views of environments with memory.
 -/
 
 @[expose] public section
@@ -1153,6 +1155,18 @@ noncomputable instance tracedCategory : TracedCategory (QSysCat R) where
 
 end QSysCat
 
+/-- **Views of environments with memory are invariant under step maps.** A step map between two
+systems with the same initial private basis state keeps the view of every environment with
+memory. -/
+theorem qviewQ_eq_of_stepMap {H K τ υ ζ E O : Type} [Fintype H] [DecidableEq H] [Fintype K]
+    [DecidableEq K]
+    {d : ℕ} {S₁ : QSys H τ E O d} {S₂ : QSys H υ E O d} {f : τ → υ}
+    (hf : QRSys.StepMap S₁.toQRSys S₂.toQRSys f) (hr : S₁.initReg = S₂.initReg)
+    (Z : QStratQ K ζ E O d) : qviewQ S₁ Z = qviewQ S₂ Z := by
+  have hi : S₂.init = f S₁.init := hf.init_map.symm
+  simp only [qviewQ, hr, hi, ← qloopQ_stepMap hf.step, SubInstrument.bind_assoc,
+    SubInstrument.pure_bind]
+
 end CatCrypt.Quantum.ReactiveUC
 
 /-! ## Views under step maps -/
@@ -1170,10 +1184,12 @@ theorem qloop_stepMap {S₁ : QSys H τ E O d} {S₂ : QSys H υ E O d} {f : τ 
     (Z : QStrat ζ E O d) (n : ℕ) (z : ζ) (t : τ) :
     (qloop S₁ Z n (z, t)).bind (fun c => SubInstrument.pure (c.1, f c.2)) =
       qloop S₂ Z n (z, f t) := by
-  induction n generalizing z t with
-  | zero => exact SubInstrument.pure_bind _ _
-  | succ n ih =>
-    simp only [qloop, ← hf, SubInstrument.bind_assoc, SubInstrument.pure_bind, ih]
+  have hq : ∀ {σ : Type} (S : QSys H σ E O d) (c : ζ × σ),
+      qloop S Z n c = relabel (Equiv.prodPUnit (Fin d × H)) (qloopQ S Z.toQ n c) := by
+    intro σ S c
+    rw [qloopQ_toQ, relabel_relabel, Equiv.symm_trans_self, relabel_refl]
+  rw [hq, hq, ← qloopQ_stepMap hf, relabel_bind]
+  simp only [relabel_pure]
 
 /-- **Views are invariant under step maps.** A step map between two systems with the same
 initial private basis state keeps the view of every environment. -/

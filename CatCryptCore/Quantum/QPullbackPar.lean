@@ -46,7 +46,6 @@ composition theorem, idle event, environment with quantum memory, simulator abso
 
 ## Main results
 
-* `qloopQ_stepMap`, `qviewQ_eq_of_stepMap` — views of environments with memory under step maps
 * `QSys.par_stepMap_attachQ`, `QSys.par_stepMap_attachQL`
 * `QRealizesQB.par_left`, `QRealizesQB.par_right`, `QRealizesQB.par`
 -/
@@ -62,39 +61,6 @@ namespace CatCrypt.Quantum.ReactiveUC
 open _root_.Quantum
 open CatCrypt.Crypto.UCTransport (QSysObj)
 open scoped ENNReal
-
-/-! ## Views of environments with memory under step maps -/
-
-section StepMap
-
-variable {H K : Type} [Fintype H] [DecidableEq H] [Fintype K] [DecidableEq K]
-variable {τ υ ζ E O : Type} {d : ℕ}
-
-omit [DecidableEq H] [DecidableEq K] in
-/-- A state map that commutes with the steps of two systems commutes with their joint runs
-against an environment with memory. -/
-theorem qloopQ_stepMap {S₁ : QSys H τ E O d} {S₂ : QSys H υ E O d} {f : τ → υ}
-    (hf : ∀ t e, (S₁.step t e).bind (fun p => SubInstrument.pure (f p.1, p.2)) = S₂.step (f t) e)
-    (Z : QStratQ K ζ E O d) (n : ℕ) (z : ζ) (t : τ) :
-    (qloopQ S₁ Z n (z, t)).bind (fun c => SubInstrument.pure (c.1, f c.2)) =
-      qloopQ S₂ Z n (z, f t) := by
-  induction n generalizing z t with
-  | zero => simp only [qloopQ, SubInstrument.pure_bind]
-  | succ n ih =>
-    simp only [qloopQ, ← hf, SubInstrument.frame_bind, SubInstrument.frame_pure,
-      SubInstrument.bind_assoc, SubInstrument.pure_bind, ih]
-
-/-- **Views of environments with memory are invariant under step maps.** A step map between two
-systems with the same initial private basis state keeps the view of every environment with
-memory. -/
-theorem qviewQ_eq_of_stepMap {S₁ : QSys H τ E O d} {S₂ : QSys H υ E O d} {f : τ → υ}
-    (hf : QRSys.StepMap S₁.toQRSys S₂.toQRSys f) (hr : S₁.initReg = S₂.initReg)
-    (Z : QStratQ K ζ E O d) : qviewQ S₁ Z = qviewQ S₂ Z := by
-  have hi : S₂.init = f S₁.init := hf.init_map.symm
-  simp only [qviewQ, hr, hi, ← qloopQ_stepMap hf.step, SubInstrument.bind_assoc,
-    SubInstrument.pure_bind]
-
-end StepMap
 
 /-! ## The quantum parallel composition and its simulators -/
 

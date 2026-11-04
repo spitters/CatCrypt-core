@@ -61,23 +61,6 @@ namespace LSysObj
 
 variable {E O E' O' X : Type}
 
-/-- The rest of an activation of a multi-call hybrid over a lossless subroutine never fails. -/
-private theorem drive_noFail {σ τ EG OG : Type} (π : MultiHybrid σ E O EG OG)
-    (S : Sys τ EG OG) (hS : ∀ t g, SPComp.NoFail (S.step t g)) :
-    ∀ n s d t, SPComp.NoFail (π.drive S n s d t) := by
-  intro n
-  induction n with
-  | zero =>
-    rintro s (g | o) t
-    · exact Assumptions.SPComp.bind_noFail (hS _ _) fun _ =>
-        Assumptions.SPComp.bind_noFail (π.finish_noFail _ _) fun _ => SPComp.pure_noFail _
-    · exact SPComp.pure_noFail _
-  | succ n ih =>
-    rintro s (g | o) t
-    · exact Assumptions.SPComp.bind_noFail (hS _ _) fun _ =>
-        Assumptions.SPComp.bind_noFail (π.resume_noFail _ _) fun _ => ih _ _ _
-    · exact SPComp.pure_noFail _
-
 /-- The parallel composition of lossless systems. -/
 noncomputable def par (A : LSysObj E O) (B : LSysObj E' O') : LSysObj (E ⊕ E') (O ⊕ O') where
   obj := A.obj.par B.obj
@@ -96,10 +79,7 @@ noncomputable def loopback (A : LSysObj (E ⊕ X) (O ⊕ X)) (n : ℕ) (cut : X 
   obj := A.obj.loopback n cut
   noFail t e := by
     change SPComp.NoFail (((MultiHybrid.fbHybrid n cut).withSub A.obj.sys).step t e)
-    simp only [MultiHybrid.withSub]
-    exact Assumptions.SPComp.bind_noFail ((MultiHybrid.fbHybrid n cut).start_noFail _ _)
-      fun _ => Assumptions.SPComp.bind_noFail (drive_noFail _ _ A.noFail _ _ _ _) fun _ =>
-        SPComp.pure_noFail _
+    exact MultiHybrid.withSub_noFail _ _ A.noFail t e
 
 end LSysObj
 

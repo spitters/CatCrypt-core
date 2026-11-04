@@ -313,6 +313,20 @@ def envPlace (H : Type) [Fintype H] {α : Type} (w : SubInstrument (Fin d × K) 
   relabel (midSwap (Fin d) K H) (w.frame H)
 
 omit [DecidableEq H] [DecidableEq K] in
+/-- Placing a sequencing on the joint register places its parts. -/
+theorem envPlace_bind {α β : Type} (p : SubInstrument (Fin d × K) (Fin d × K) α)
+    (k : α → SubInstrument (Fin d × K) (Fin d × K) β) :
+    envPlace H (p.bind k) = (envPlace H p).bind fun a => envPlace H (k a) := by
+  simp only [envPlace, SubInstrument.frame_bind, relabel_bind]
+
+omit [DecidableEq H] [DecidableEq K] in
+/-- Placing `pure` on the joint register gives `pure`. -/
+theorem envPlace_pure {α : Type} (a : α) :
+    envPlace H (SubInstrument.pure a : SubInstrument (Fin d × K) (Fin d × K) α) =
+      SubInstrument.pure a := by
+  simp only [envPlace, SubInstrument.frame_pure, relabel_pure]
+
+omit [DecidableEq H] [DecidableEq K] in
 /-- The joint run of the environment `Z` with memory `K` and the system `S` for `n` activations,
 on the register `(Fin d × H) × K`. -/
 def qloopQ (S : QSys H τ E O d) (Z : QStratQ K ζ E O d) :
@@ -332,6 +346,20 @@ def qviewQ (S : QSys H τ E O d) (Z : QStratQ K ζ E O d) : CPComp d ζ :=
     (appendBasis Z.initReg).bind fun _ =>
       (qloopQ S Z Z.rounds (Z.init, S.init)).bind fun c =>
         discardRight.bind fun _ => discardRight.bind fun _ => SubInstrument.pure c.1
+
+omit [DecidableEq H] [DecidableEq K] in
+/-- A state map that commutes with the steps of two systems commutes with their joint runs
+against an environment with memory. -/
+theorem qloopQ_stepMap {S₁ : QSys H τ E O d} {S₂ : QSys H υ E O d} {f : τ → υ}
+    (hf : ∀ t e, (S₁.step t e).bind (fun p => SubInstrument.pure (f p.1, p.2)) = S₂.step (f t) e)
+    (Z : QStratQ K ζ E O d) (n : ℕ) (z : ζ) (t : τ) :
+    (qloopQ S₁ Z n (z, t)).bind (fun c => SubInstrument.pure (c.1, f c.2)) =
+      qloopQ S₂ Z n (z, f t) := by
+  induction n generalizing z t with
+  | zero => exact SubInstrument.pure_bind _ _
+  | succ n ih =>
+    simp only [qloopQ, ← hf, SubInstrument.frame_bind, SubInstrument.frame_pure,
+      SubInstrument.bind_assoc, SubInstrument.pure_bind, ih]
 
 omit [DecidableEq H] [DecidableEq K] [DecidableEq K'] in
 /-- Relabelling the memory register commutes with placing an environment operation. -/

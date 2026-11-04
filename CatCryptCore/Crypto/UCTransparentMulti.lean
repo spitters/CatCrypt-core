@@ -195,6 +195,32 @@ noncomputable def withSub (π : MultiHybrid σ E O EG OG) (X : Sys τ EG OG) :
     SPComp.bind (π.start t.1 e) fun r =>
       SPComp.bind (π.drive X π.fuel r.1 r.2 t.2) fun p => SPComp.pure ((p.1, p.2.1), p.2.2)
 
+/-- The rest of an activation of a multi-call hybrid over a lossless subroutine never fails. -/
+theorem drive_noFail (π : MultiHybrid σ E O EG OG) (X : Sys τ EG OG)
+    (hX : ∀ t g, SPComp.NoFail (X.step t g)) :
+    ∀ n s d t, SPComp.NoFail (π.drive X n s d t) := by
+  intro n
+  induction n with
+  | zero =>
+    rintro s (g | o) t
+    · exact Assumptions.SPComp.bind_noFail (hX _ _) fun _ =>
+        Assumptions.SPComp.bind_noFail (π.finish_noFail _ _) fun _ => SPComp.pure_noFail _
+    · exact SPComp.pure_noFail _
+  | succ n ih =>
+    rintro s (g | o) t
+    · exact Assumptions.SPComp.bind_noFail (hX _ _) fun _ =>
+        Assumptions.SPComp.bind_noFail (π.resume_noFail _ _) fun _ => ih _ _ _
+    · exact SPComp.pure_noFail _
+
+/-- Single steps of a multi-call hybrid over a lossless subroutine never fail. -/
+theorem withSub_noFail (π : MultiHybrid σ E O EG OG) (X : Sys τ EG OG)
+    (hX : ∀ t g, SPComp.NoFail (X.step t g)) :
+    ∀ t e, SPComp.NoFail ((π.withSub X).step t e) := by
+  intro t e
+  simp only [withSub]
+  exact Assumptions.SPComp.bind_noFail (π.start_noFail _ _) fun _ =>
+    Assumptions.SPComp.bind_noFail (drive_noFail π X hX _ _ _ _) fun _ => SPComp.pure_noFail _
+
 /-- A hybrid protocol as a multi-call hybrid with one call per activation. -/
 noncomputable def ofHybrid (π : Hybrid σ E O EG OG) : MultiHybrid σ E O EG OG where
   init := π.init

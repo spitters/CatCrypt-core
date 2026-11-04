@@ -935,19 +935,6 @@ section Runs
 
 variable {K ζ : Type} [Fintype K] [DecidableEq K]
 
-/-- Placing a sequencing on the joint register places its parts. -/
-theorem envPlace_bind {d : ℕ} {H M : Type} [Fintype H] [Fintype M] {α β : Type}
-    (p : SubInstrument (Fin d × M) (Fin d × M) α)
-    (k : α → SubInstrument (Fin d × M) (Fin d × M) β) :
-    envPlace H (p.bind k) = (envPlace H p).bind fun a => envPlace H (k a) := by
-  simp only [envPlace, SubInstrument.frame_bind, relabel_bind]
-
-/-- Placing `pure` on the joint register gives `pure`. -/
-theorem envPlace_pure {d : ℕ} {H M : Type} [Fintype H] [Fintype M] {α : Type} (a : α) :
-    envPlace H (SubInstrument.pure a : SubInstrument (Fin d × M) (Fin d × M) α) =
-      SubInstrument.pure a := by
-  simp only [envPlace, SubInstrument.frame_pure, relabel_pure]
-
 /-- The basis state in which the buffer and the simulator register are prepared. -/
 abbrev reg₀ (n : ℕ) : Reg n := ⟨0, Nat.two_pow_pos n⟩
 
