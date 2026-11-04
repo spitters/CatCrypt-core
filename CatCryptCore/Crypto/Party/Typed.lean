@@ -23,7 +23,9 @@ events outside the accepted set.
 
 Port typing of erased programs is a theorem. The interface-indexed port typing
 `Party.ProgE.PortsAt I p` says that `p` follows the protocol from the state `I`; every erased
-program satisfies it (`Party.TProg.erase_portsAt`), and it implies the global port typing
+program satisfies it (`Party.TProg.erase_portsAt`), every program that satisfies it is the
+erasure of the typed program `Party.ProgE.PortsAt.toTProg` (`Party.ProgE.PortsAt.erase_toTProg`,
+`Party.ProgE.portsAt_iff_exists_erase`), and it implies the global port typing
 `ProgE.Ports` at the events and outputs that occur in the interface (`Party.ProgE.PortsAt.ports`).
 The denotation `Prog.toSys` keeps the interface-indexed typing along every activation: the
 residual after an activation on `e` with output `o` follows the protocol from the state that `I`
@@ -36,12 +38,15 @@ reaches by the move `e`, `o` (`Party.Prog.toSys_portsAt`).
   `Party.Iface.dual`: the interface of the environment.
 * `Party.ProgE.PortsAt`: interface-indexed port typing of programs.
 * `Party.TProg Op α I`: programs typed by the interface `I`; `Party.TProg.erase`.
+* `Party.ProgE.PortsAt.toTProg`: the typed program of a program that follows the protocol.
 
 ## Main results
 
 * `Party.ProgE.Ports.mono`: port typing is monotone in the port predicates.
 * `Party.ProgE.PortsAt.ports`: interface-indexed port typing implies port typing.
 * `Party.TProg.erase_portsAt`, `Party.TProg.erase_ports`: port typing of erased programs.
+* `Party.ProgE.PortsAt.erase_toTProg`, `Party.ProgE.portsAt_iff_exists_erase`: a program
+  follows the protocol from `I` exactly when it is the erasure of a program typed by `I`.
 * `Party.Prog.toSys_portsAt`, `Party.TProg.toSys_erase_ports`: the typing of the denotation.
 * `Party.Iface.dual_dual`: duality is an involution.
 -/
@@ -212,6 +217,54 @@ theorem erase_ports {I : Iface E O} (t : TProg Op α I) : t.erase.Ports I.Acc I.
   t.erase_portsAt.ports
 
 end TProg
+
+namespace ProgE
+
+variable {Op E O α : Type}
+
+/-- The typed program of a program that follows the protocol from `I`: a receive keeps its
+continuations at the accepted events, a send carries the proof that its output is allowed. -/
+def PortsAt.toTProg : {I : Iface E O} → {p : ProgE Op E O α} → PortsAt I p → TProg Op α I
+  | _, .ret a, _ => .ret a
+  | _, .fail, _ => .fail
+  | _, .opN q k, hp =>
+    .opN q fun n => PortsAt.toTProg (p := k n) (by cases hp with | opN _ _ hk => exact hk n)
+  | .recvAt _ _, .recv k, hp =>
+    .recv fun e he =>
+      PortsAt.toTProg (p := k e) (by cases hp with | recv _ hacc _ => exact hacc e he)
+  | .sendAt _ _, .send o p, hp =>
+    .send o (by cases hp with | send _ _ ho _ => exact ho)
+      (PortsAt.toTProg (p := p) (by cases hp with | send _ _ _ hp => exact hp))
+  | .stop, .recv _, hp => False.elim (by cases hp)
+  | .sendAt _ _, .recv _, hp => False.elim (by cases hp)
+  | .stop, .send _ _, hp => False.elim (by cases hp)
+  | .recvAt _ _, .send _ _, hp => False.elim (by cases hp)
+
+/-- The erasure of the typed program of a program that follows the protocol is the program. -/
+theorem PortsAt.erase_toTProg {I : Iface E O} {p : ProgE Op E O α} (hp : PortsAt I p) :
+    hp.toTProg.erase = p := by
+  induction p generalizing I with
+  | ret a => cases I <;> rfl
+  | recv k ih =>
+    cases hp with
+    | recv _ hacc hrej =>
+      simp only [PortsAt.toTProg, TProg.erase]
+      congr 1
+      funext e
+      grind
+  | send o p ih =>
+    cases hp with
+    | send _ _ ho hp => simp only [PortsAt.toTProg, TProg.erase, ih]
+  | opN q k ih => cases I <;> simp only [PortsAt.toTProg, TProg.erase, ih]
+  | fail => cases I <;> rfl
+
+/-- **Port typing is erasure.** A program follows the protocol from `I` exactly when it is the
+erasure of a program typed by `I`. -/
+theorem portsAt_iff_exists_erase {I : Iface E O} {p : ProgE Op E O α} :
+    p.PortsAt I ↔ ∃ t : TProg Op α I, t.erase = p :=
+  ⟨fun hp => ⟨hp.toTProg, hp.erase_toTProg⟩, fun ⟨t, ht⟩ => ht ▸ t.erase_portsAt⟩
+
+end ProgE
 
 namespace Prog
 
