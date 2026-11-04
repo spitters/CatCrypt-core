@@ -7,6 +7,7 @@ module
 
 public import CatCryptCore.Crypto.Messaging.SignalStack
 public import CatCryptCore.Crypto.UCDeferred
+public import CatCryptCore.Crypto.UCRoundHybrid
 
 /-!
 # The Signal stack realizes an ideal secure channel
@@ -1278,6 +1279,154 @@ theorem world_zero_stepMap :
         SPComp.pure_bind]
       simp only [FR, Sys.ofPorts_step_inr, advSys, SPComp.map, SPComp.bind_assoc,
         SPComp.pure_bind, fill_newKeyFresh hw, ite_true]
+
+/-! ## One step of the hybrid argument -/
+
+/-- The hybrid world `i`: the keys below `i` read ideally, the keys from `i` on read really. -/
+noncomputable abbrev hyb (i : ℕ) : Sys (WSt K) (HEv ⊕ AEv K) (HOut V ⊕ AOut) :=
+  world realV idealV i (SPComp.sample K) realV realV
+
+/-- The world of the reduction of the step `i`: the first read of the key `i` returns the
+challenge `v`, its later reads are ideal. -/
+noncomputable abbrev chalWorld (i : ℕ) (v : V) : Sys (WSt K) (HEv ⊕ AEv K) (HOut V ⊕ AOut) :=
+  world realV idealV i (SPComp.sample K) (fun _ => SPComp.pure v) (fun _ => idealV)
+
+/-- **The reduction of the step `i`**: on the challenge view `v`, it runs the environment `Z`
+from its heap against the world in which the first read of the key `i` returns `v`, and
+applies the distinguisher of `Z`. -/
+noncomputable def hopRed (i : ℕ) {ζ : Type} (Z : Env (Strat ζ (HEv ⊕ AEv K) (HOut V ⊕ AOut)) ζ)
+    (v : V) : SPComp Bool :=
+  SPComp.atHeap Z.heap (SPComp.bind (view (chalWorld realV idealV i v) Z.input) Z.dist)
+
+omit [Fintype K] [Nonempty K] [Inhabited K] in
+/-- The views of the step `i + 1` from below. -/
+theorem readOut_succ (i : ℕ) (w : WSt K) (j : ℕ) :
+    readOut realV idealV i (fun _ => idealV) (fun _ => idealV) w j =
+      readOut realV idealV (i + 1) realV realV w j := by
+  rcases lt_trichotomy j i with h | rfl | h
+  · simp [readOut, h, show j < i + 1 by omega]
+  · simp [readOut]
+  · rcases Nat.eq_or_lt_of_le (Nat.succ_le_of_lt h) with h' | h'
+    · subst h'; simp [readOut]
+    · simp [readOut, show ¬ j < i by omega, show j ≠ i by omega, show ¬ j < i + 1 by omega,
+        show j ≠ i + 1 by omega]
+
+/-- The challenge world at the ideal view is the hybrid world `i + 1`. -/
+theorem chalWorld_ideal (i : ℕ) :
+    world realV idealV i (SPComp.sample K) (fun _ => idealV) (fun _ => idealV) =
+      hyb realV idealV (i + 1) := by
+  simp only [hyb, world]
+  congr 1
+  funext w e
+  have hd : wDraw i (SPComp.sample K) w e = wDraw (i + 1) (SPComp.sample K) w e := by
+    simp [wDraw]
+  rw [hd, wOut_congr realV idealV e fun _ _ j _ _ => readOut_succ realV idealV i w j]
+
+/-- **One step of the hybrid argument.** For views `realV k` and `idealV` that neither touch
+the heap nor fail, the distance between the hybrid worlds `i` and `i + 1` at the environment
+`Z` is at most the advantage of the reduction `hopRed i Z` between the real game (a uniform key
+`k`, then `realV k`) and the ideal game `idealV`, plus the probability that the key `i` is read
+twice in the world `i`. -/
+theorem hyb_step (hR : ∀ k, SPComp.IsPure (realV k) ∧ SPComp.NoFail (realV k))
+    (hI : SPComp.IsPure idealV ∧ SPComp.NoFail idealV) (i : ℕ) {ζ : Type}
+    (Z : Env (Strat ζ (HEv ⊕ AEv K) (HOut V ⊕ AOut)) ζ) :
+    Env.gap (view (hyb realV idealV i)) (view (hyb realV idealV (i + 1))) Z ≤
+      AdvantageA (SPComp.bind (SPComp.sample K) realV) idealV (hopRed realV idealV i Z) +
+        prBad (hyb realV idealV i) (reuse i) Z := by
+  have hs := CatCrypt.Crypto.PAKE.CPaceSquare.pureNF_sample K
+  set Y : K → V → Sys (WSt K) (HEv ⊕ AEv K) (HOut V ⊕ AOut) := fun k v =>
+    world realV idealV i (SPComp.pure k) (fun _ => SPComp.pure v) realV
+  -- the two deferrals, for any flag
+  have hmix : ∀ bad : WSt K → Bool,
+      SPComp.bind (SPComp.sample K) (fun k => SPComp.bind (realV k) fun v =>
+        run (Y k v) bad Z.input) = run (hyb realV idealV i) bad Z.input := fun bad => by
+    rw [← run_world_create realV idealV i hs.1 hs.2 realV realV bad Z.input]
+    congr 1; funext k
+    exact run_world_read realV idealV i (SPComp.pure k) (hR k).1 (hR k).2 realV realV
+      (fun kf hkf => by rw [← isOutcome_pure hkf]) bad Z.input
+  have hideal : SPComp.bind idealV (fun v => view (chalWorld realV idealV i v) Z.input) =
+      view (hyb realV idealV (i + 1)) Z.input := by
+    rw [← chalWorld_ideal realV idealV i]
+    have h := run_world_read realV idealV i (SPComp.sample K) hI.1 hI.2 (fun _ => idealV)
+      (fun _ => idealV) (fun _ _ => rfl) (fun _ => false) Z.input
+    simp only [view, SPComp.map] at h ⊢
+    rw [← h, SPComp.bind_assoc]
+  -- the pair of the key and the view
+  set c : SPComp (K × V) := SPComp.bind (SPComp.sample K) fun k =>
+    SPComp.map (fun v => (k, v)) (realV k)
+  have hc : ∀ {β : Type} (f : K → V → SPComp β),
+      SPComp.bind c (fun p => f p.1 p.2) =
+        SPComp.bind (SPComp.sample K) fun k => SPComp.bind (realV k) fun v => f k v := by
+    intro β f
+    simp only [c, SPComp.map, SPComp.bind_assoc, SPComp.pure_bind]
+  have h1 : prTrue (SPComp.bind (view (hyb realV idealV i) Z.input) Z.dist) Z.heap =
+      prTrue (SPComp.bind c fun p => SPComp.bind (view (Y p.1 p.2) Z.input) Z.dist) Z.heap := by
+    rw [hc (fun k v => SPComp.bind (view (Y k v) Z.input) Z.dist)]
+    simp only [view, ← hmix, SPComp.map, SPComp.bind_assoc]
+  have h2 : prBad (hyb realV idealV i) (reuse i) Z =
+      prTrue (SPComp.bind c fun p => SPComp.bind (run (Y p.1 p.2) (reuse i) Z.input)
+        fun q => SPComp.pure q.2.2) Z.heap := by
+    rw [hc (fun k v => SPComp.bind (run (Y k v) (reuse i) Z.input) fun q => SPComp.pure q.2.2)]
+    simp only [prBad, ← hmix, SPComp.bind_assoc]
+  have h3 : prTrue (SPComp.bind c fun p =>
+        SPComp.bind (view (chalWorld realV idealV i p.2) Z.input) Z.dist) Z.heap =
+      prTrue (SPComp.bind (SPComp.bind (SPComp.sample K) realV)
+        fun v => SPComp.bind (view (chalWorld realV idealV i v) Z.input) Z.dist) Z.heap := by
+    rw [hc (fun _ v => SPComp.bind (view (chalWorld realV idealV i v) Z.input) Z.dist),
+      SPComp.bind_assoc]
+  have hreal : SPComp.IsPure (SPComp.bind (SPComp.sample K) realV) :=
+    SPComp.bind_isPure hs.1 fun k => (hR k).1
+  have h4 := absDiff_prTrue_bind_eq_advantageA hreal hI.1
+    (fun v => SPComp.bind (view (chalWorld realV idealV i v) Z.input) Z.dist) Z.heap
+  have h5 : prTrue (SPComp.bind idealV fun v =>
+        SPComp.bind (view (chalWorld realV idealV i v) Z.input) Z.dist) Z.heap =
+      prTrue (SPComp.bind (view (hyb realV idealV (i + 1)) Z.input) Z.dist) Z.heap := by
+    rw [← hideal, SPComp.bind_assoc]
+  have hupto := absDiff_prTrue_bind_le_bind c
+    (fun p => SPComp.bind (view (Y p.1 p.2) Z.input) Z.dist)
+    (fun p => SPComp.bind (view (chalWorld realV idealV i p.2) Z.input) Z.dist)
+    (fun p => SPComp.bind (run (Y p.1 p.2) (reuse i) Z.input) fun q => SPComp.pure q.2.2)
+    Z.heap fun p h => world_upto_reuse realV idealV i p.1 (fun _ _ => rfl)
+      (fun k => (hR k).2) hI.2 (fun _ => SPComp.pure_noFail _) (fun k => (hR k).2)
+      (fun _ => hI.2) ζ ⟨Z.input, h, Z.dist⟩
+  unfold Env.gap
+  rw [h1, h2, ← h5]
+  rw [h3] at hupto
+  refine le_trans (absDiff_triangle _ (prTrue (SPComp.bind (SPComp.bind (SPComp.sample K) realV)
+    fun v => SPComp.bind (view (chalWorld realV idealV i v) Z.input) Z.dist) Z.heap) _) ?_
+  exact (add_le_add hupto (le_of_eq h4)).trans (le_of_eq (add_comm _ _))
+
+/-! ## The secure channel over `F_AKE` -/
+
+/-- The bound of the hybrid argument at an environment `Z` of the functionality: over the
+keys `i` below the number of activations of `Z`, the advantage of the reduction `hopRed i Z`
+between the real and the ideal secure-messaging games, plus the probability that the key `i`
+is read twice. -/
+noncomputable def scBound {ζ : Type} (Z : Env (Strat ζ (HEv ⊕ AEv K) (HOut V ⊕ AOut)) ζ) :
+    ℝ≥0∞ :=
+  ∑ i ∈ Finset.range Z.input.rounds,
+    (AdvantageA (SPComp.bind (SPComp.sample K) realV) idealV (hopRed realV idealV i Z) +
+      prBad (hyb realV idealV i) (reuse i) Z)
+
+/-- **`F_AKE` followed by the ratchet realizes the ideal secure channel.** For views `realV k`
+and `idealV` that neither touch the heap nor fail, `FR realV` realizes `F_SC realV idealV`
+with the bound `scBound`: a hybrid argument over the keys that the run creates (one per
+activation), each step bounded by `hyb_step`. -/
+theorem FR_realizes_F_SC (hR : ∀ k, SPComp.IsPure (realV k) ∧ SPComp.NoFail (realV k))
+    (hI : SPComp.IsPure idealV ∧ SPComp.NoFail idealV) :
+    Realizes (FR realV) (F_SC realV idealV) (fun _ Z => scBound realV idealV Z) := by
+  have h0 : Realizes (FR realV) (hyb realV idealV 0) (fun _ _ => 0) :=
+    realizes_symm (world_zero_stepMap realV idealV).realizes
+  have hH := Realizes.hybrid_rounds (hyb realV idealV) (F_SC realV idealV)
+    (fun i _ Z => AdvantageA (SPComp.bind (SPComp.sample K) realV) idealV
+      (hopRed realV idealV i Z) + prBad (hyb realV idealV i) (reuse i) Z)
+    (fun _ _ => 0) (fun i _ Z => hyb_step realV idealV hR hI i Z) fun _ Z => by
+      have h := world_end realV idealV Z.input.rounds (fun k => (hR k).2) hI.2 _ Z
+      dsimp only at h
+      rwa [world_end_prBad realV idealV _ Z le_rfl] at h
+  intro ζ Z
+  have := (h0.trans hH) ζ Z
+  simpa [scBound] using this
 
 end Steps
 
