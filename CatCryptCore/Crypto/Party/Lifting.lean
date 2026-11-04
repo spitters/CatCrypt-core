@@ -54,6 +54,9 @@ lifting, fibration, port typing, information flow, unwinding, time bound, soundn
   `ProgE.PhaseLift.stepWith_sound`: soundness of a judgment for the phases of an activation.
 * `ProgE.ports_iff`, `ProgE.viewRel_iff`, `ProgE.bound_iff`, `ProgE.boundSz_iff`: the instances
   are the judgments of `Derived`, `Timed` and `LoopTimed`.
+* `ProgE.Bound'.stepTime_actT_le`, `ProgE.LoopBoundGraded'.timeBoundGraded_timed`: the time
+  bound through `boundL` bounds the time of an activation in costed trees and of the costed
+  loop simulator.
 * `ProgE.ports_stepWith`, `ProgE.Lifting.toSys_ports`, `ProgE.Lifting.loopSys_ports`,
   `ProgE.viewRel_stepWith`, `ProgE.Lifting.toSys_unwinding`, `ProgE.Lifting.loopSys_unwinding`:
   the soundness theorems of port typing and information flow from the generic one.
@@ -309,6 +312,32 @@ theorem loopBoundGraded_iff {σ : Type} (w : Op → ℕ) (body : σ → ProgE Op
     (Inv : ℕ → σ → Prop) (a b : ℕ) :
     LoopBoundGraded' w body s₀ Inv a b ↔ LoopBoundGraded w body s₀ Inv a b := by
   simp only [LoopBoundGraded', LoopBoundGraded, bound_iff]
+
+/-- **Time of an activation from the graded lifting.** When the judgment of `boundL` holds of a
+costed program at the weight `weightT ι` with the time `t`, every activation of the program in
+costed trees costs at most `t`. -/
+theorem Bound'.stepTime_actT_le (ι : Op → ℕ × SPTree.Timed ℕ) {p : ProgE (Costed Op) E O α}
+    {t : ℕ} {P : α → Prop} (h : Bound' (weightT ι) p t P) (e : E) :
+    SPTree.Timed.stepTime (actT ι p e) ≤ t := by
+  have := awaitT_time (R := fun _ => True) (D := 0) ι e (fun o q => (0, .ret (q, o)))
+    (fun _ => (0, .fail)) (fun _ => (0, .fail))
+    (fun _ _ _ _ _ => ⟨by simp only [SPTree.Timed.stepTime, SPTree.Timed.time_ret, le_refl],
+      trivial⟩)
+    (fun _ _ => ⟨by simp only [stepTime_fail, le_refl], trivial⟩)
+    (fun _ _ => ⟨by simp only [stepTime_fail, le_refl], trivial⟩) p t le_rfl
+    ((bound_iff _ p t P).1 h)
+  exact this.1
+
+/-- **Graded time certificate of the costed loop simulator from the graded lifting.** Under the
+graded bound `a`, `b` of the costed body through `boundL`, the costed loop simulator has the
+graded time bound `2 * a + b`, `2 * b` on the invariant `Prog.loopMulti.ActInv`. -/
+theorem LoopBoundGraded'.timeBoundGraded_timed {σ A Q : Type} [Inhabited O]
+    (ι : Op → ℕ × SPTree.Timed ℕ) {bodyT : σ → ProgE (Costed Op) (E ⊕ A) (Q ⊕ O) σ} {s₀ : σ}
+    (n : ℕ) {Inv : ℕ → σ → Prop} {a b : ℕ}
+    (h : LoopBoundGraded' (weightT ι) bodyT s₀ Inv a b) :
+    (Prog.loopMulti.timed ι bodyT s₀ n).TimeBoundGraded (Prog.loopMulti.ActInv ι Inv a b)
+      (2 * a + b) (2 * b) :=
+  Prog.loopMulti.timeBoundGraded_timed ι bodyT s₀ n ((loopBoundGraded_iff _ _ _ _ _ _).1 h)
 
 /-! ## Port typing of the denotation from the generic soundness -/
 
