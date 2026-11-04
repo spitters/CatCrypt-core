@@ -1363,17 +1363,8 @@ theorem gapDH_advantage_pqGdhRed (B : OracleAdv (OEv W SS C) (OOut S W K PK C) B
   have hk : (gapDHDef G).keygen =
       liftPMF ((PMF.uniformFintype S).map fun s => (G.pub s, G.pub s)) :=
     rfl
-  simp only [SPComp.monad_bind_eq, pqGdhRed, hk]
-  rw [liftPMF_bind_apply, PMF.bind_map]
-  conv_rhs => unfold liftPMF
-  rw [PMF.map_bind]
-  refine congrArg _ (funext fun x => ?_)
-  simp only [Function.comp_apply]
-  rw [liftPMF_bind_apply, PMF.bind_map, PMF.map_bind]
-  refine congrArg _ (funext fun y => ?_)
-  simp only [Function.comp_apply]
-  rw [liftPMF_bind_apply, PMF.map_comp, cdh_pub]
-  exact PMF.bind_pure_comp _ _
+  simp only [SPComp.monad_bind_eq, SPComp.monad_pure_eq, pqGdhRed, hk, liftPMF_bind_pure,
+    liftPMF_bind_liftPMF, PMF.bind_map, Function.comp_def, cdh_pub]
 
 end Output
 
@@ -1468,11 +1459,9 @@ theorem pairBad_le_gapDHP (B : OracleAdv (OEv W SS C) (OOut S W K PK C) Bool) :
         ∑' y : S, PMF.uniformFintype S y * pairBadP P G a b B := by
         simp only [ENNReal.tsum_mul_right, PMF.tsum_coe, one_mul]
     _ ≤ _ := by
-      refine ENNReal.tsum_le_tsum fun x => ?_
-      gcongr
+      gcongr with x
       rw [PMF.bind_apply]
-      refine ENNReal.tsum_le_tsum fun y => ?_
-      gcongr
+      gcongr with y
       exact pairBad_le_redP P G a b B x y
 
 end Pair
