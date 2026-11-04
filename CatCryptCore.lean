@@ -142,6 +142,7 @@ public import CatCryptCore.Tactics.StdCosts
 public import CatCryptCore.Tactics.StdCostsPoly
 public import CatCryptCore.Tactics.ComputationType
 public import CatCryptCore.Tactics.DeriveTimedStructure
+public import CatCryptCore.Tactics.DeriveTimeRec
 public import CatCryptCore.Tactics.ScottInduction
 public import CatCryptCore.Tactics.LoopRewriteAttr
 public import CatCryptCore.Tactics.LoopRewrite
