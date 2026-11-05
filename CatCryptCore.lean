@@ -660,6 +660,7 @@ public import CatCryptCore.Crypto.UCSimulatorCostGraded
 public import CatCryptCore.Crypto.UCConcreteTimed
 public import CatCryptCore.Crypto.UCSimulatorCostMono
 public import CatCryptCore.Crypto.UCSimulatorCostSized
+public import CatCryptCore.Crypto.UCSimulatorCostPot
 public import CatCryptCore.Crypto.HybridWithSubTimed
 public import CatCryptCore.Crypto.UCTransport
 public import CatCryptCore.Crypto.UCFuelPad
