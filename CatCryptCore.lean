@@ -613,6 +613,7 @@ public import CatCryptCore.Container.CodeCost
 public import CatCryptCore.Container.CodeRel
 public import CatCryptCore.Container.DillerNahm
 public import CatCryptCore.Container.DNCert
+public import CatCryptCore.Crypto.Signatures.OracleProgUseBound
 public import CatCryptCore.Container.CwF
 public import CatCryptCore.Container.CwFPi
 public import CatCryptCore.Crypto.Party.ProgECost
