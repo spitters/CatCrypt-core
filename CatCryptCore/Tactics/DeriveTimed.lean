@@ -291,6 +291,20 @@ proved by induction with each induction hypothesis
 `(R.timed ys).2.erase.bind (fun y => ret (ε y)) = R ys` used from right to left
 (`rewriteRecHyps`), so that the recursive call becomes the erased costed call followed by `ε`.
 
+Rule (f), erasure along changing companions. On the class of structural or well-founded
+recursions whose arguments or results hold functions and whose recursive calls pass computed
+companions (an accumulator updated by `Function.update` at a value bound by a node or decided by
+an `if`, outputs collected by `Fin.cons` or `Fin.snoc` around the recursive call), the erasure
+induction is over the costed form at every binder, companions included, so each induction
+hypothesis is stated at the companion that the recursive call passes, whatever expression of
+the incoming companions it is. Before the hypotheses are used, each one that is a match of the
+recursion's arguments on their constructors or a conjunction is reduced to its conjuncts, a
+conjunct quantified over the value bound by a node being kept quantified so that `simp`
+rewrites the recursive call under the node's binder, and the conjuncts are rewritten with the
+case hypotheses that the case split of the goal introduced (`normRecHyps`); a recursive call is
+found in the goal up to instances (`kabstract`), and a hypothesis that is a copy of a used one
+(one per occurrence of the call: its step cost and its costed tree) is cleared with it.
+
 A recursive data function without a registered cost is priced by its cost derived on demand
 with `derive_cost` (`deriveCostCore`), by its own recursion. A derived cost takes, after the
 arguments, the cost companions of the field paths of its binders that its body applies
@@ -2718,18 +2732,101 @@ def rewriteRecHyps (c : Name) (g : MVarId) : MetaM MVarId := g.withContext do
       let some (ty, lhs, rhs) := (← instantiateMVars (← inferType pf)).eq? | continue
       unless rhs.isAppOf c do continue
       let gt ← instantiateMVars (← g.getType)
-      unless (gt.find? (· == rhs)).isSome do continue
+      -- The occurrences of `rhs` up to instances (`kabstract`): the recursive call in the goal,
+      -- from the equation lemma, and in the hypothesis, from the induction, may spell the
+      -- arguments of a constructor pattern (`n + 1`) with different instances.
+      let abst ← kabstract gt rhs
+      unless abst.hasLooseBVars do continue
       -- The occurrences of `rhs` replaced by `lhs`, by congruence with the motive that
       -- abstracts them.
-      let motive ← withLocalDeclD `z ty fun z => do
-        mkLambdaFVars #[z] (gt.replace fun s => if s == rhs then some z else none)
+      let motive := Expr.lam `z ty abst .default
       unless ← isTypeCorrect motive do continue
       let gNew := (mkApp motive lhs).headBeta
       g ← g.replaceTargetEq gNew (← mkEqSymm (← mkCongrArg motive pf))
       used := used.push d.fvarId
-  -- A used hypothesis is cleared, so that a later `simp [*]` does not rewrite back.
-  for h in used do g ← g.tryClear h
+  -- A used hypothesis is cleared, so that a later `simp [*]` does not rewrite back; so is a
+  -- copy of it (functional induction states one hypothesis per occurrence of the recursive
+  -- call, and the step cost and the costed tree of one call are two occurrences).
+  let usedTys ← g.withContext do used.mapM fun h => do instantiateMVars (← h.getType)
+  let copies ← g.withContext do
+    (← getLCtx).foldlM (init := #[]) fun acc d => do
+      if d.isImplementationDetail || used.contains d.fvarId then return acc
+      let ty ← instantiateMVars d.type
+      return if usedTys.contains ty then acc.push d.fvarId else acc
+  for h in used ++ copies do g ← g.tryClear h
   return g
+
+/-- The conjuncts of the proof `pf` of `ty`, each with its type: a type headed by a matcher on
+constructors is reduced (at default transparency), a conjunction is split, `True` is dropped,
+and any other proposition (an equation, or one quantified over the values bound by a node or
+over companions) is a conjunct. -/
+partial def recConjuncts (pf ty : Expr) : MetaM (Array (Expr × Expr)) := do
+  let ty' ← whnf (← instantiateMVars ty)
+  if ty'.isAppOfArity ``And 2 then
+    return (← recConjuncts (mkApp3 (mkConst ``And.left) (ty'.getArg! 0) (ty'.getArg! 1) pf)
+        (ty'.getArg! 0)) ++
+      (← recConjuncts (mkApp3 (mkConst ``And.right) (ty'.getArg! 0) (ty'.getArg! 1) pf)
+        (ty'.getArg! 1))
+  if ty'.isConstOf ``True then return #[]
+  return #[(pf, ty')]
+
+/-- The induction hypotheses of an erasure theorem by functional induction, in the form in which
+`simp` rewrites with them (rule (f)): each hypothesis that mentions the source `c` or its costed
+form `t` and whose type is a match of the recursion's arguments on their constructors or a
+conjunction is replaced by its conjuncts (`recConjuncts`), and the conjuncts are rewritten with
+the case hypotheses of the goal (the hypotheses that mention neither `c` nor `t`: the condition
+of an `if` that a case split decided) and the reductions of `if` at a decided condition, so that
+they read as the goal reads after the split. A conjunct quantified over the value bound by a
+node (`∀ b, (t … (g' b) (gc' b)).2.erase … = c … (g' b)`) rewrites the recursive call under the
+node's binder, at the companion that the costed form passes, whatever expression of the
+incoming companions it is: the hypothesis is stated at the call of the costed form, so the
+companion is not fixed by the induction. Returns `none` when the rewriting closes the goal (a
+case hypothesis contradicts a conjunct). -/
+def normRecHyps (c t : Name) (g : MVarId) : MetaM (Option MVarId) := g.withContext do
+  let mut g := g
+  let mut news : Array Name := #[]
+  let mentions (e : Expr) : Bool := e.containsConst fun n => n == c || n == t
+  for d in ← getLCtx do
+    if d.isImplementationDetail then continue
+    let ty ← instantiateMVars d.type
+    unless ← isProp ty do continue
+    unless mentions ty do continue
+    let ty' ← whnf ty
+    let matchHead := isMatcherCore (← getEnv) ty.consumeMData.getAppFn.constName
+    unless ty'.isAppOfArity ``And 2 || ty'.isConstOf ``True || matchHead do continue
+    let cs ← recConjuncts d.toExpr ty
+    let mut g' := g
+    for (pf, cty) in cs do
+      let (_, g'') ← (← g'.assert d.userName cty pf).intro1P
+      g' := g''
+    g := (← g'.tryClear d.fvarId)
+    news := news.push d.userName
+  if news.isEmpty then return some g
+  g.withContext do
+    let lctx ← getLCtx
+    let mut thms : SimpTheorems := {}
+    for n in #[``ite_true, ``ite_false, ``dite_true, ``dite_false, ``Bool.false_eq_true,
+        ``eq_self_iff_true, ``not_false_eq_true, ``not_true_eq_false] do
+      thms ← thms.addConst n
+    let mut targets : Array FVarId := #[]
+    for d in lctx do
+      if d.isImplementationDetail then continue
+      let ty ← instantiateMVars d.type
+      unless ← isProp ty do continue
+      if mentions ty then
+        if news.contains d.userName then targets := targets.push d.fvarId
+      else
+        thms ← thms.add (.fvar d.fvarId) #[] d.toExpr
+    if targets.isEmpty then return some g
+    let ctx ← Simp.mkContext (simpTheorems := #[thms])
+      (congrTheorems := ← getSimpCongrTheorems)
+    let s ← saveState
+    try
+      let (r, _) ← simpGoal g ctx (simplifyTarget := false) (fvarIdsToSimp := targets)
+      return r.map (·.2)
+    catch _ =>
+      s.restore
+      return some g
 
 /-- The applications of the constant `t` in `e`, outermost first. -/
 partial def appsOfConst (t : Name) (e : Expr) (acc : Array Expr := #[]) : Array Expr :=
@@ -5292,11 +5389,18 @@ partial def deriveTimed (ctx : Ctx) (c : Name) : TermElabM Unit := do
         -- so that the recursive call of `R` becomes the erased costed call followed by `ε`,
         -- which the continuation's lemmas (`bind_assoc`, `bind_ret`) absorb.
         let s ← saveState
+        -- Each case's induction hypotheses are first reduced to their conjuncts
+        -- (`normRecHyps`), so that `simp` rewrites a recursive call under a node's binder.
+        let afterInd ← `(tactic| ((try simp only [$lemmas,*]) <;> (try (repeat' split))))
         let byTimed ← try
-            some <$> Tactic.run mv.mvarId! (Tactic.evalTactic (← `(tactic|
+            let gs ← Tactic.run mv.mvarId! (Tactic.evalTactic (← `(tactic|
               ($intros; fun_induction $indTerm:term <;>
-                (try unfold $(mkIdent c):ident) <;>
-                (try simp only [$lemmas,*]) <;> (try (repeat' split))))))
+                (try unfold $(mkIdent c):ident)))))
+            let mut gs' := []
+            for g in gs do
+              let some g ← normRecHyps c timedName g | continue
+              gs' := gs' ++ (← Tactic.run g (Tactic.evalTactic afterInd))
+            pure (some gs')
           catch _ =>
             s.restore
             pure none
@@ -5305,12 +5409,15 @@ partial def deriveTimed (ctx : Ctx) (c : Name) : TermElabM Unit := do
         let (gs, bySource) ← match byTimed with
           | some gs => pure (gs, false)
           | none => do
-            let gs ← Tactic.run mv.mvarId! (Tactic.evalTactic (← `(tactic|
-              ($intros; $srcInd <;>
-                (try simp only [$lemmas,*]) <;> (try (repeat' split))))))
-            pure (gs, true)
+            let gs ← Tactic.run mv.mvarId! (Tactic.evalTactic (← `(tactic| ($intros; $srcInd))))
+            let mut gs' := []
+            for g in gs do
+              let some g ← normRecHyps c timedName g | continue
+              gs' := gs' ++ (← Tactic.run g (Tactic.evalTactic afterInd))
+            pure (gs', true)
         let mut rem := []
         for g in gs do
+          let some g ← normRecHyps c timedName g | continue
           let g ← if bySource then instRecHyps timedName g else pure g
           let g ← rewriteRecHyps c g
           rem := rem ++ (← Tactic.run g (Tactic.evalTactic close))
