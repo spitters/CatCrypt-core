@@ -11,17 +11,20 @@ public import CatCryptCore.Crypto.UCSimulatorCostMono
 /-!
 # Potential time bounds of costed simulators under composition
 
-The potential time bound `Simulator.Timed.TimeBoundPot T gE gO hEG hO a b` of a costed
+The potential time bound `Simulator.Timed.TimeBoundPot T gE gO hEG hO a b d` of a costed
 simulator, by recursion on `T`: a costed multi-call simulator has a potential time bound
 (`MultiHybrid.Timed.PotentialBound`) with the imports `gE`, `gO` received and `hEG`, `hO`
 passed on; the factors of a costed composite have potential time bounds that conserve import at
 the middle interface up to `κ` per message, the composite potential being the sum of the
 potentials of the factors; a relabelled simulator has the potential time bound of its simulator
-at imports the relabelling does not increase. One outer activation of a composite passes at most
-`Simulator.Timed.msgBound` messages across its inner interfaces, so its potential grows by at
-most `κ * msgBound` beyond the import received, which enters the constant `a`.
+at imports the relabelling does not increase. The import `κ` that a middle message may carry
+beyond what was passed on stays in the potential of the receiving factor, so it is import
+created by the composite: `d` bounds the import created per activation of the reduced
+environment, `d₁ + d₂ + κ` for a composite, and the time constants of the factors add. Over a
+run of `q` activations the potential grows by `q * d` beyond the import received
+(`MultiHybrid.Timed.reduce_reduce_runBound_import`, `UCPullbackCostPot.lean`).
 
-The certificate `Simulator.Timed.PotCert T a b c` is a potential time bound with no import
+The certificate `Simulator.Timed.PotCert T a b c d` is a potential time bound with no import
 passed on at the outer ports and import measures linear in the size (`ImportLinear`). The
 constant, graded and size-graded time bounds of costed simulators are potential time bounds,
 the size-graded one when the composites are built with the size `0` on the middle answers
@@ -41,6 +44,7 @@ bounded by the potential clause of `A`.
 * `Simulator.Timed.calls`, `Simulator.Timed.msgBound`, `Simulator.Timed.msgSum`: the number of
   inner events per activation, the number of messages across inner interfaces per activation,
   and the sum of the latter over the composites of a costed simulator.
+* `Simulator.Timed.compCount`: the number of composites of a costed simulator.
 * `Simulator.Timed.TimeBoundPot`, `Simulator.Timed.PotCert`: the potential time bound and the
   potential certificate of a costed simulator.
 * `Simulator.Timed.TimeBoundSizedZero`: the size-graded time bound with the size `0` on the
@@ -152,48 +156,59 @@ def msgSum : {E O EG OG : Type} → {V : PubView E O} → {W : PubView EG OG} �
   | _, _, _, _, _, _, .comp T₁ T₂ => msgSum T₁ + msgSum T₂ + msgBound (T₁.comp T₂)
   | _, _, _, _, _, _, .mapPorts T _ _ => msgSum T
 
+/-- The number of composites in a costed simulator. -/
+def compCount : {E O EG OG : Type} → {V : PubView E O} → {W : PubView EG OG} →
+    Simulator.Timed E O EG OG V W → ℕ
+  | _, _, _, _, _, _, .ofMultiHybrid _ => 0
+  | _, _, _, _, _, _, .ofMultiHybridHat _ _ _ _ _ _ => 0
+  | _, _, _, _, _, _, .comp T₁ T₂ => compCount T₁ + compCount T₂ + 1
+  | _, _, _, _, _, _, .mapPorts T _ _ => compCount T
+
 /-- The potential time bound of a costed simulator with the import `gE` of its outer events and
 `gO` of the answers it receives, the import `hEG` of its inner events and `hO` of its outer
-outputs passed on, and the constants `a`, `b`. A costed multi-call simulator has a potential time
-bound, through the erasure maps of the ports for one on costed events. The outer factor of a
-composite has a potential time bound with the import `gM` of the middle answers it receives and
-`hEM` of the middle events it passes on, the inner factor one with the import `gEM` of the
-middle events it receives and `hM` of the middle answers it passes on; the middle interface
-conserves import up to `κ` per message (`gEM ≤ hEM + κ`, `gM ≤ hM + κ`), and the constants
-satisfy `a₁ + a₂ + (b₁ + b₂) * κ * msgBound ≤ a` and `b₁ + b₂ ≤ b`. A relabelled simulator has
-the potential time bound of its simulator at imports the relabelling does not increase. -/
+outputs passed on, the constants `a`, `b`, and the import `d` created per activation at its
+inner interfaces. A costed multi-call simulator has a potential time bound, through the erasure
+maps of the ports for one on costed events, for every `d`. The outer factor of a composite has a
+potential time bound with the import `gM` of the middle answers it receives and `hEM` of the
+middle events it passes on, the inner factor one with the import `gEM` of the middle events it
+receives and `hM` of the middle answers it passes on; the middle interface conserves import up
+to `κ` per message (`gEM ≤ hEM + κ`, `gM ≤ hM + κ`), so that `κ` is import created per
+activation, and the constants satisfy `a₁ + a₂ ≤ a`, `b₁ + b₂ ≤ b` and `d₁ + d₂ + κ ≤ d`. A
+relabelled simulator has the potential time bound of its simulator at imports the relabelling
+does not increase. -/
 def TimeBoundPot : {E O EG OG : Type} → {V : PubView E O} → {W : PubView EG OG} →
-    Simulator.Timed E O EG OG V W → (E → ℕ) → (OG → ℕ) → (EG → ℕ) → (O → ℕ) → ℕ → ℕ → Prop
-  | _, _, _, _, _, _, .ofMultiHybrid πT, gE, gO, hEG, hO, a, b =>
+    Simulator.Timed E O EG OG V W → (E → ℕ) → (OG → ℕ) → (EG → ℕ) → (O → ℕ) → ℕ → ℕ → ℕ →
+      Prop
+  | _, _, _, _, _, _, .ofMultiHybrid πT, gE, gO, hEG, hO, a, b, _ =>
     Nonempty (πT.PotentialBound gE gO hEG hO a b)
-  | _, _, _, _, _, _, .ofMultiHybridHat _ εE εO εEG εOG πT, gE, gO, hEG, hO, a, b =>
+  | _, _, _, _, _, _, .ofMultiHybridHat _ εE εO εEG εOG πT, gE, gO, hEG, hO, a, b, _ =>
     Nonempty (πT.PotentialBound (fun e => gE (εE e)) (fun o => gO (εOG o))
       (fun g => hEG (εEG g)) (fun o => hO (εO o)) a b)
-  | _, _, _, _, _, _, .comp (EM := EM) (OM := OM) T₁ T₂, gE, gO, hEG, hO, a, b =>
-    ∃ (κ : ℕ) (gM hM : OM → ℕ) (gEM hEM : EM → ℕ) (a₁ b₁ a₂ b₂ : ℕ),
-      TimeBoundPot T₁ gE gM hEM hO a₁ b₁ ∧ TimeBoundPot T₂ gEM gO hEG hM a₂ b₂ ∧
+  | _, _, _, _, _, _, .comp (EM := EM) (OM := OM) T₁ T₂, gE, gO, hEG, hO, a, b, d =>
+    ∃ (κ : ℕ) (gM hM : OM → ℕ) (gEM hEM : EM → ℕ) (a₁ b₁ d₁ a₂ b₂ d₂ : ℕ),
+      TimeBoundPot T₁ gE gM hEM hO a₁ b₁ d₁ ∧ TimeBoundPot T₂ gEM gO hEG hM a₂ b₂ d₂ ∧
       (∀ m, gEM m ≤ hEM m + κ) ∧ (∀ o, gM o ≤ hM o + κ) ∧
-      a₁ + a₂ + (b₁ + b₂) * κ * msgBound (T₁.comp T₂) ≤ a ∧ b₁ + b₂ ≤ b
-  | _, _, _, _, _, _, .mapPorts (EM := EM) (OM := OM) T f g, gE, gO, hEG, hO, a, b =>
+      a₁ + a₂ ≤ a ∧ b₁ + b₂ ≤ b ∧ d₁ + d₂ + κ ≤ d
+  | _, _, _, _, _, _, .mapPorts (EM := EM) (OM := OM) T f g, gE, gO, hEG, hO, a, b, d =>
     ∃ (gM : EM → ℕ) (hM : OM → ℕ), (∀ e, gM (f e) ≤ gE e) ∧ (∀ o, hO (g o) ≤ hM o) ∧
-      TimeBoundPot T gM gO hEG hM a b
+      TimeBoundPot T gM gO hEG hM a b d
 
-/-- The potential certificate `a`, `b`, `c` of a costed simulator: a potential time bound with
-constants `a`, `b`, no import passed on at the outer ports, and import measures at most `c` times
-the size of the message. -/
+/-- The potential certificate `a`, `b`, `c`, `d` of a costed simulator: a potential time bound
+with constants `a`, `b`, import `d` created per activation, no import passed on at the outer
+ports, and import measures at most `c` times the size of the message. -/
 def PotCert {E O EG OG : Type} {V : PubView E O} {W : PubView EG OG} [ImportSize E]
-    [ImportSize OG] (T : Simulator.Timed E O EG OG V W) (a b c : ℕ) : Prop :=
-  ∃ (gE : E → ℕ) (gO : OG → ℕ), T.TimeBoundPot gE gO 0 0 a b ∧ ImportLinear gE gO c
+    [ImportSize OG] (T : Simulator.Timed E O EG OG V W) (a b c d : ℕ) : Prop :=
+  ∃ (gE : E → ℕ) (gO : OG → ℕ), T.TimeBoundPot gE gO 0 0 a b d ∧ ImportLinear gE gO c
 
 /-- A potential time bound of a costed simulator is a potential time bound at larger constants,
 larger imports received and smaller imports passed on. -/
 theorem TimeBoundPot.mono {E O EG OG : Type} {V : PubView E O} {W : PubView EG OG}
     {T : Simulator.Timed E O EG OG V W} {gE gE' : E → ℕ} {gO gO' : OG → ℕ} {hEG hEG' : EG → ℕ}
-    {hO hO' : O → ℕ} {a b a' b' : ℕ} (h : T.TimeBoundPot gE gO hEG hO a b) (ha : a ≤ a')
-    (hb : b ≤ b') (hgE : ∀ e, gE e ≤ gE' e) (hgO : ∀ o, gO o ≤ gO' o)
+    {hO hO' : O → ℕ} {a b d a' b' d' : ℕ} (h : T.TimeBoundPot gE gO hEG hO a b d) (ha : a ≤ a')
+    (hb : b ≤ b') (hd : d ≤ d') (hgE : ∀ e, gE e ≤ gE' e) (hgO : ∀ o, gO o ≤ gO' o)
     (hhEG : ∀ g, hEG' g ≤ hEG g) (hhO : ∀ o, hO' o ≤ hO o) :
-    T.TimeBoundPot gE' gO' hEG' hO' a' b' := by
-  induction T generalizing a b a' b' with
+    T.TimeBoundPot gE' gO' hEG' hO' a' b' d' := by
+  induction T generalizing a b d a' b' d' with
   | ofMultiHybrid πT =>
     obtain ⟨P⟩ := h
     exact ⟨P.mono ha hb hgE hgO hhEG hhO⟩
@@ -204,19 +219,19 @@ theorem TimeBoundPot.mono {E O EG OG : Type} {V : PubView E O} {W : PubView EG O
   | mapPorts T f g ih =>
     obtain ⟨gM, hM, hf, hg, hT⟩ := h
     exact ⟨gM, hM, fun e => (hf e).trans (hgE e), fun o => (hhO (g o)).trans (hg o),
-      ih hT ha hb (fun _ => le_rfl) hgO hhEG (fun _ => le_rfl)⟩
+      ih hT ha hb hd (fun _ => le_rfl) hgO hhEG (fun _ => le_rfl)⟩
   | comp T₁ T₂ ih₁ ih₂ =>
-    obtain ⟨κ, gM, hM, gEM, hEM, a₁, b₁, a₂, b₂, h₁, h₂, hE, hA, h3, h4⟩ := h
-    exact ⟨κ, gM, hM, gEM, hEM, a₁, b₁, a₂, b₂,
-      ih₁ h₁ le_rfl le_rfl hgE (fun _ => le_rfl) (fun _ => le_rfl) hhO,
-      ih₂ h₂ le_rfl le_rfl (fun _ => le_rfl) hgO hhEG (fun _ => le_rfl), hE, hA, by omega,
-      by omega⟩
+    obtain ⟨κ, gM, hM, gEM, hEM, a₁, b₁, d₁, a₂, b₂, d₂, h₁, h₂, hE, hA, h3, h4, h5⟩ := h
+    exact ⟨κ, gM, hM, gEM, hEM, a₁, b₁, d₁, a₂, b₂, d₂,
+      ih₁ h₁ le_rfl le_rfl le_rfl hgE (fun _ => le_rfl) (fun _ => le_rfl) hhO,
+      ih₂ h₂ le_rfl le_rfl le_rfl (fun _ => le_rfl) hgO hhEG (fun _ => le_rfl), hE, hA,
+      by omega, by omega, by omega⟩
 
 /-- A time bound `t` of a costed simulator is a potential time bound with no import, the
-constant `t` and no growth. -/
+constant `t`, no growth and no import created. -/
 theorem TimeBound.timeBoundPot {E O EG OG : Type} {V : PubView E O} {W : PubView EG OG}
     {T : Simulator.Timed E O EG OG V W} {t : ℕ} (h : T.TimeBound t) :
-    T.TimeBoundPot 0 0 0 0 t 0 := by
+    T.TimeBoundPot 0 0 0 0 t 0 0 := by
   induction T generalizing t with
   | ofMultiHybrid πT =>
     exact ⟨(MultiHybrid.Timed.TimeBoundInv.of_timeBound h).potentialBound.mono (by omega)
@@ -228,34 +243,27 @@ theorem TimeBound.timeBoundPot {E O EG OG : Type} {V : PubView E O} {W : PubView
   | mapPorts T f g ih => exact ⟨0, 0, fun _ => le_rfl, fun _ => le_rfl, ih h⟩
   | comp T₁ T₂ ih₁ ih₂ =>
     obtain ⟨t₁, t₂, h₁, h₂, hle⟩ := h
-    exact ⟨0, 0, 0, 0, 0, t₁, 0, t₂, 0, ih₁ h₁, ih₂ h₂, fun _ => le_rfl, fun _ => le_rfl,
-      by simpa using hle, le_rfl⟩
+    exact ⟨0, 0, 0, 0, 0, t₁, 0, 0, t₂, 0, 0, ih₁ h₁, ih₂ h₂, fun _ => le_rfl,
+      fun _ => le_rfl, hle, le_rfl, le_rfl⟩
 
 /-- A graded time bound `a`, `b` of a costed simulator is a potential time bound with the import
-`1` of every message, the constants `a + b * msgSum` and `b`, and the composites conserving
-import up to `1` per message. -/
+`1` of every message, the constants `a` and `b`, the composites conserving import up to `1` per
+message, and the import `compCount` created per activation. -/
 theorem TimeBoundGraded.timeBoundPot {E O EG OG : Type} {V : PubView E O} {W : PubView EG OG}
     {T : Simulator.Timed E O EG OG V W} {a b : ℕ} (h : T.TimeBoundGraded a b) :
-    T.TimeBoundPot 1 1 0 0 (a + b * T.msgSum) b := by
+    T.TimeBoundPot 1 1 0 0 a b T.compCount := by
   induction T generalizing a b with
   | ofMultiHybrid πT =>
     obtain ⟨Inv, hI⟩ := h
-    exact ⟨hI.potentialBound.mono (Nat.le_add_right _ _) le_rfl (fun _ => le_rfl)
-      (fun _ => le_rfl) (fun _ => le_rfl) (fun _ => le_rfl)⟩
+    exact ⟨hI.potentialBound⟩
   | ofMultiHybridHat εσ εE εO εEG εOG πT =>
     obtain ⟨Inv, hI⟩ := h
-    exact ⟨hI.potentialBound.mono (Nat.le_add_right _ _) le_rfl (fun _ => le_rfl)
-      (fun _ => le_rfl) (fun _ => le_rfl) (fun _ => le_rfl)⟩
+    exact ⟨hI.potentialBound⟩
   | mapPorts T f g ih => exact ⟨1, 0, fun _ => le_rfl, fun _ => le_rfl, ih h⟩
   | comp T₁ T₂ ih₁ ih₂ =>
     obtain ⟨a₁, b₁, a₂, b₂, h₁, h₂, h3, h4⟩ := h
-    refine ⟨1, 1, 0, 1, 0, _, _, _, _, ih₁ h₁, ih₂ h₂, fun _ => le_rfl, fun _ => le_rfl, ?_,
-      h4⟩
-    have := Nat.mul_le_mul_right T₁.msgSum (show b₁ ≤ b by omega)
-    have := Nat.mul_le_mul_right T₂.msgSum (show b₂ ≤ b by omega)
-    have := Nat.mul_le_mul_right (T₁.comp T₂).msgBound h4
-    simp only [msgSum, Nat.mul_one, Nat.mul_add] at *
-    omega
+    exact ⟨1, 1, 0, 1, 0, _, _, _, _, _, _, ih₁ h₁, ih₂ h₂, fun _ => le_rfl, fun _ => le_rfl,
+      h3, h4, le_rfl⟩
 
 /-- The size-graded time bound `a`, `b`, `c` of a costed simulator built with the size `0` on
 the answers of the inner factor of every composite: as `TimeBoundSized`, with the outer factor
@@ -290,57 +298,51 @@ theorem TimeBoundSizedZero.timeBoundSized {E O EG OG : Type} {V : PubView E O}
 
 /-- A size-graded time bound `a`, `b`, `c` of a costed simulator built with the size `0` on the
 middle answers is a potential time bound with the import `1 + sE e` of an event and `1 + sO o`
-of an answer, the constants `a + (b + c) * msgSum` and `b + c`, and the composites conserving
-import up to `1` per message. -/
+of an answer, the constants `a` and `b + c`, the composites conserving import up to `1` per
+message, and the import `compCount` created per activation. -/
 theorem TimeBoundSizedZero.timeBoundPot {E O EG OG : Type} {V : PubView E O}
     {W : PubView EG OG} {T : Simulator.Timed E O EG OG V W} {sE : E → ℕ} {sO : OG → ℕ}
     {a b c : ℕ} (h : T.TimeBoundSizedZero sE sO a b c) :
-    T.TimeBoundPot (fun e => 1 + sE e) (fun o => 1 + sO o) 0 0 (a + (b + c) * T.msgSum)
-      (b + c) := by
+    T.TimeBoundPot (fun e => 1 + sE e) (fun o => 1 + sO o) 0 0 a (b + c) T.compCount := by
   induction T generalizing a b c with
   | ofMultiHybrid πT =>
     obtain ⟨Inv, hI⟩ := h
-    exact ⟨hI.potentialBound.mono (Nat.le_add_right _ _) (by omega) (fun _ => le_rfl)
+    exact ⟨hI.potentialBound.mono le_rfl (by omega) (fun _ => le_rfl)
       (fun _ => le_rfl) (fun _ => le_rfl) (fun _ => le_rfl)⟩
   | ofMultiHybridHat εσ εE εO εEG εOG πT =>
     obtain ⟨Inv, hI⟩ := h
-    exact ⟨hI.potentialBound.mono (Nat.le_add_right _ _) (by omega) (fun _ => le_rfl)
+    exact ⟨hI.potentialBound.mono le_rfl (by omega) (fun _ => le_rfl)
       (fun _ => le_rfl) (fun _ => le_rfl) (fun _ => le_rfl)⟩
   | mapPorts T f g ih =>
     obtain ⟨sM, hM, hT⟩ := h
     exact ⟨fun e => 1 + sM e, 0, fun e => Nat.add_le_add_left (hM e) 1, fun _ => le_rfl, ih hT⟩
   | comp T₁ T₂ ih₁ ih₂ =>
     obtain ⟨a₁, b₁, c₁, a₂, b₂, c₂, h₁, h₂, h3, h4, h5⟩ := h
-    refine ⟨1, _, 0, _, 0, _, _, _, _, ih₁ h₁, ih₂ h₂, fun _ => le_rfl, fun _ => le_rfl, ?_,
-      by omega⟩
-    have := Nat.mul_le_mul_right T₁.msgSum (show b₁ + c₁ ≤ b + c by omega)
-    have := Nat.mul_le_mul_right T₂.msgSum (show b₂ + c₂ ≤ b + c by omega)
-    have := Nat.mul_le_mul_right (T₁.comp T₂).msgBound
-      (show b₁ + c₁ + (b₂ + c₂) ≤ b + c by omega)
-    simp only [msgSum, Nat.mul_one, Nat.mul_add] at *
-    omega
+    exact ⟨1, _, 0, _, 0, _, _, _, _, _, _, ih₁ h₁, ih₂ h₂, fun _ => le_rfl,
+      fun _ => le_rfl, h3, by omega, le_rfl⟩
 
-/-- The potential certificate of a time bound `t`: the constants `t`, `0`, for every `c`. -/
+/-- The potential certificate of a time bound `t`: the constants `t`, `0`, for every `c`, and
+no import created. -/
 theorem TimeBound.potCert {E O EG OG : Type} {V : PubView E O} {W : PubView EG OG}
     [ImportSize E] [ImportSize OG] {T : Simulator.Timed E O EG OG V W} {t : ℕ}
-    (h : T.TimeBound t) (c : ℕ) : T.PotCert t 0 c :=
+    (h : T.TimeBound t) (c : ℕ) : T.PotCert t 0 c 0 :=
   ⟨0, 0, h.timeBoundPot, fun _ => Nat.zero_le _, fun _ => Nat.zero_le _⟩
 
-/-- The potential certificate of a graded time bound `a`, `b`: the constants `a + b * msgSum`,
-`b` and `1`. -/
+/-- The potential certificate of a graded time bound `a`, `b`: the constants `a`, `b`, `1` and
+the import `compCount` created per activation. -/
 theorem TimeBoundGraded.potCert {E O EG OG : Type} {V : PubView E O} {W : PubView EG OG}
     [ImportSize E] [ImportSize OG] {T : Simulator.Timed E O EG OG V W} {a b : ℕ}
-    (h : T.TimeBoundGraded a b) : T.PotCert (a + b * T.msgSum) b 1 :=
+    (h : T.TimeBoundGraded a b) : T.PotCert a b 1 T.compCount :=
   ⟨1, 1, h.timeBoundPot, ImportLinear.one⟩
 
 /-- The potential certificate of a size-graded time bound built with the size `0` on the middle
-answers, with sizes `sE`, `sO` at most `c₀` times the message size: the constants
-`a + (b + c) * msgSum`, `b + c` and `1 + c₀`. -/
+answers, with sizes `sE`, `sO` at most `c₀` times the message size: the constants `a`, `b + c`,
+`1 + c₀` and the import `compCount` created per activation. -/
 theorem TimeBoundSizedZero.potCert {E O EG OG : Type} {V : PubView E O} {W : PubView EG OG}
     [ImportSize E] [ImportSize OG] {T : Simulator.Timed E O EG OG V W} {sE : E → ℕ}
     {sO : OG → ℕ} {a b c c₀ : ℕ} (h : T.TimeBoundSizedZero sE sO a b c)
     (hE : ∀ e, sE e ≤ c₀ * ImportSize.size e) (hO : ∀ o, sO o ≤ c₀ * ImportSize.size o) :
-    T.PotCert (a + (b + c) * T.msgSum) (b + c) (1 + c₀) :=
+    T.PotCert a (b + c) (1 + c₀) T.compCount :=
   ⟨_, _, h.timeBoundPot, ImportLinear.one_add hE hO⟩
 
 end Simulator.Timed
@@ -351,12 +353,12 @@ variable {σ σ' E O E' O' EM OM EG OG EG' OG' : Type} {V : PubView E O} {U : Pu
   {W : PubView EG OG} {V' : PubView E' O'} {W' : PubView EG' OG'}
 
 /-- **Potential running time of a costed multi-call simulator**: a potential time bound of its
-steps is a potential time bound of the costed simulator. -/
+steps is a potential time bound of the costed simulator, at every import created. -/
 theorem ofMultiHybrid.timeBoundPot_timed {πT : MultiHybrid.Timed σ E O EG OG} {gE : E → ℕ}
-    {gO : OG → ℕ} {hEG : EG → ℕ} {hO : O → ℕ} {a b : ℕ}
+    {gO : OG → ℕ} {hEG : EG → ℕ} {hO : O → ℕ} {a b d : ℕ}
     (P : πT.PotentialBound gE gO hEG hO a b) :
     (Simulator.Timed.ofMultiHybrid πT : Simulator.Timed E O EG OG V W).TimeBoundPot gE gO hEG hO
-      a b :=
+      a b d :=
   ⟨P⟩
 
 /-- **Potential running time of a costed multi-call simulator on costed states**: a potential
@@ -365,35 +367,34 @@ bound of the costed simulator. -/
 theorem ofMultiHybridHat.timeBoundPot_timed {σHat EHat OHat EGHat OGHat : Type}
     {εσ : σHat → σ} {εE : EHat → E} {εO : OHat → O} {εEG : EGHat → EG} {εOG : OGHat → OG}
     {πT : MultiHybrid.Timed σHat EHat OHat EGHat OGHat} {gE : E → ℕ} {gO : OG → ℕ}
-    {hEG : EG → ℕ} {hO : O → ℕ} {a b : ℕ}
+    {hEG : EG → ℕ} {hO : O → ℕ} {a b d : ℕ}
     (P : πT.PotentialBound (fun e => gE (εE e)) (fun o => gO (εOG o)) (fun g => hEG (εEG g))
       (fun o => hO (εO o)) a b) :
     (Simulator.Timed.ofMultiHybridHat εσ εE εO εEG εOG πT :
-      Simulator.Timed E O EG OG V W).TimeBoundPot gE gO hEG hO a b :=
+      Simulator.Timed E O EG OG V W).TimeBoundPot gE gO hEG hO a b d :=
   ⟨P⟩
 
 /-- **Potential running time of a costed composite**: if the middle interface conserves import
 up to `κ` per message, the composite has the potential time bound with the constants
-`a₁ + a₂ + (b₁ + b₂) * κ * msgBound` and `b₁ + b₂`, and the sum of the potentials of its
-factors. -/
+`a₁ + a₂` and `b₁ + b₂`, the import `d₁ + d₂ + κ` created per activation, and the sum of the
+potentials of its factors. -/
 theorem comp.timeBoundPot_timed {T₁ : Simulator.Timed E O EM OM V U}
     {T₂ : Simulator.Timed EM OM EG OG U W} {gE : E → ℕ} {gM hM : OM → ℕ} {gEM hEM : EM → ℕ}
-    {gO : OG → ℕ} {hEG : EG → ℕ} {hO : O → ℕ} {κ a₁ b₁ a₂ b₂ : ℕ}
-    (h₁ : T₁.TimeBoundPot gE gM hEM hO a₁ b₁) (h₂ : T₂.TimeBoundPot gEM gO hEG hM a₂ b₂)
+    {gO : OG → ℕ} {hEG : EG → ℕ} {hO : O → ℕ} {κ a₁ b₁ d₁ a₂ b₂ d₂ : ℕ}
+    (h₁ : T₁.TimeBoundPot gE gM hEM hO a₁ b₁ d₁) (h₂ : T₂.TimeBoundPot gEM gO hEG hM a₂ b₂ d₂)
     (hE : ∀ m, gEM m ≤ hEM m + κ) (hA : ∀ o, gM o ≤ hM o + κ) :
-    (T₁.comp T₂).TimeBoundPot gE gO hEG hO (a₁ + a₂ + (b₁ + b₂) * κ * (T₁.comp T₂).msgBound)
-      (b₁ + b₂) :=
-  ⟨κ, gM, hM, gEM, hEM, a₁, b₁, a₂, b₂, h₁, h₂, hE, hA, le_rfl, le_rfl⟩
+    (T₁.comp T₂).TimeBoundPot gE gO hEG hO (a₁ + a₂) (b₁ + b₂) (d₁ + d₂ + κ) :=
+  ⟨κ, gM, hM, gEM, hEM, a₁, b₁, d₁, a₂, b₂, d₂, h₁, h₂, hE, hA, le_rfl, le_rfl, le_rfl⟩
 
 /-- **Potential running time of a relabelled costed simulator**: that of its simulator, at an
 import of the events that the relabelling does not increase and an import of the outputs that
 it does not increase. -/
 theorem mapPorts.timeBoundPot_timed {T : Simulator.Timed EM OM EG OG U W} {gM : EM → ℕ}
-    {gO : OG → ℕ} {hEG : EG → ℕ} {hM : OM → ℕ} {a b : ℕ}
-    (hT : T.TimeBoundPot gM gO hEG hM a b) (f : E → EM) (g : OM → O) {gE : E → ℕ} {hO : O → ℕ}
-    (hf : ∀ e, gM (f e) ≤ gE e) (hg : ∀ o, hO (g o) ≤ hM o) :
+    {gO : OG → ℕ} {hEG : EG → ℕ} {hM : OM → ℕ} {a b d : ℕ}
+    (hT : T.TimeBoundPot gM gO hEG hM a b d) (f : E → EM) (g : OM → O) {gE : E → ℕ}
+    {hO : O → ℕ} (hf : ∀ e, gM (f e) ≤ gE e) (hg : ∀ o, hO (g o) ≤ hM o) :
     (Simulator.Timed.mapPorts T f g : Simulator.Timed E O EG OG V W).TimeBoundPot gE gO hEG hO
-      a b :=
+      a b d :=
   ⟨gM, hM, hf, hg, hT⟩
 
 /-- **Potential running time of the costed tensor**: if `πT` and `π'T` erase to `π` and `π'` and
@@ -404,11 +405,11 @@ theorem tensor.timeBoundPot_timed {π : MultiHybrid σ E O EG OG}
     {π' : MultiHybrid σ' E' O' EG' OG'} {πT : MultiHybrid.Timed σ E O EG OG}
     {π'T : MultiHybrid.Timed σ' E' O' EG' OG'} {gE : E → ℕ} {gO : OG → ℕ} {hEG : EG → ℕ}
     {hO : O → ℕ} {gE' : E' → ℕ} {gO' : OG' → ℕ} {hEG' : EG' → ℕ} {hO' : O' → ℕ}
-    {a b a' b' : ℕ} (hE : πT.Erases π) (hE' : π'T.Erases π')
+    {a b a' b' d : ℕ} (hE : πT.Erases π) (hE' : π'T.Erases π')
     (P : πT.PotentialBound gE gO hEG hO a b) (P' : π'T.PotentialBound gE' gO' hEG' hO' a' b') :
     (tensor.timed (V := V) (W := W) (V' := V') (W' := W') π π' πT π'T).TimeBoundPot
       (Sum.elim gE gE') (Sum.elim gO gO') (Sum.elim hEG hEG') (Sum.elim hO hO') (max a a' + 7)
-      (max b b') := by
+      (max b b') d := by
   obtain ⟨_, _, _, rfl⟩ := hE
   obtain ⟨_, _, _, rfl⟩ := hE'
   exact ofMultiHybrid.timeBoundPot_timed (MultiHybrid.Timed.PotentialBound.tensor _ _ rfl rfl P P')
@@ -437,17 +438,16 @@ theorem mono.msgBound (T : Simulator.Timed E O EG OG V W) (V' : PubView E O)
 /-- **Potential running time of a costed simulator at other views**: the potential time bound
 of the costed simulator. -/
 theorem mono.timeBoundPot_timed {T : Simulator.Timed E O EG OG V W} {gE : E → ℕ}
-    {gO : OG → ℕ} {hEG : EG → ℕ} {hO : O → ℕ} {a b : ℕ} (hT : T.TimeBoundPot gE gO hEG hO a b)
-    (V' : PubView E O) (W' : PubView EG OG) :
-    (T.mono V' W').TimeBoundPot gE gO hEG hO a b := by
-  induction T generalizing a b with
+    {gO : OG → ℕ} {hEG : EG → ℕ} {hO : O → ℕ} {a b d : ℕ}
+    (hT : T.TimeBoundPot gE gO hEG hO a b d) (V' : PubView E O) (W' : PubView EG OG) :
+    (T.mono V' W').TimeBoundPot gE gO hEG hO a b d := by
+  induction T generalizing a b d with
   | ofMultiHybrid πT => exact hT
   | ofMultiHybridHat εσ εE εO εEG εOG πT => exact hT
   | comp T₁ T₂ ih₁ ih₂ =>
-    obtain ⟨κ, gM, hM, gEM, hEM, a₁, b₁, a₂, b₂, h₁, h₂, hE, hA, h3, h4⟩ := hT
-    refine ⟨κ, gM, hM, gEM, hEM, a₁, b₁, a₂, b₂, ih₁ h₁ _ _, ih₂ h₂ _ _, hE, hA, ?_, h4⟩
-    simp only [Simulator.Timed.msgBound] at h3 ⊢
-    simpa only [mono.calls, mono.msgBound] using h3
+    obtain ⟨κ, gM, hM, gEM, hEM, a₁, b₁, d₁, a₂, b₂, d₂, h₁, h₂, hE, hA, h3, h4, h5⟩ := hT
+    exact ⟨κ, gM, hM, gEM, hEM, a₁, b₁, d₁, a₂, b₂, d₂, ih₁ h₁ _ _, ih₂ h₂ _ _, hE, hA, h3, h4,
+      h5⟩
   | mapPorts T f g ih =>
     obtain ⟨gM, hM, hf, hg, h⟩ := hT
     exact ⟨gM, hM, hf, hg, ih h _ _⟩
