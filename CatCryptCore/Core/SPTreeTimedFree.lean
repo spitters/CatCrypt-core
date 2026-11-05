@@ -45,6 +45,13 @@ step cost `c` by the tick `c x`.
   boundedness hypothesis
 * `SPTree.Timed.timeBound_iff_wpFold_chargeUnder` — `TimeBound` is the bound on the charge fold
   of the tick tree over the answers allowed by `spAllows`
+* `SPTree.Timed.le_and_timeBound_iff_wpFold_chargeUnder` — the step cost followed by a time
+  bound is the bound on the charge fold of the step-prefixed tick tree `stepToFreeMT`
+* `SPTree.Timed.wpFold_stepToFreeMT_bind` — the charge fold of a costed bind is the charge fold
+  of the bind of the tick trees
+* `SPTree.Timed.allRet_iff_wpFold_demonicUnder` — `AllRet` is the demonic fold of the tick tree
+  with every answer allowed; `SPTree.Timed.wpFold_demonicUnder_spAllows_of_allRet` restricts it
+  to the answers allowed by `spAllows`
 * `SPTree.Timed.liftM_costHandler_toFreeMT` — `compileTimed` is interpretation by `costHandler`
 -/
 
@@ -432,6 +439,12 @@ theorem allRet_iff_wpFold_demonicUnder (Q : α → Prop) (s : SPTree.Timed α) :
     exact ⟨fun h _ _ _ _ => ih.1 h, fun h => ih.2 (h PUnit.unit trivial PUnit.unit trivial)⟩
   | load _ _ t ih =>
     exact ⟨fun h _ _ _ _ => ih.1 h, fun h => ih.2 (h PUnit.unit trivial PUnit.unit trivial)⟩
+
+/-- Every leaf invariant of `s` holds at the returns of its tick tree reachable under the
+answers allowed by `spAllows`. -/
+theorem wpFold_demonicUnder_spAllows_of_allRet {Q : α → Prop} {s : SPTree.Timed α}
+    (h : AllRet Q s) : wpFold (OpSpec.demonicUnder spAllows) (toFreeMT s) Q :=
+  wpFold_demonicUnder_of_le (fun _ _ _ => trivial) ((allRet_iff_wpFold_demonicUnder Q s).1 h)
 
 /-! ## Compilation as a handler -/
 
