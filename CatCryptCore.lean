@@ -308,6 +308,7 @@ public import CatCryptCore.Crypto.AKE.PQXDHSquareGDH
 public import CatCryptCore.Crypto.AKE.PQXDHSquareKEM
 public import CatCryptCore.Crypto.AKE.PQXDHPassive
 public import CatCryptCore.Crypto.AKE.PQXDHPassiveHops
+public import CatCryptCore.Crypto.AKE.PQXDHPassiveKeygen
 public import CatCryptCore.Crypto.AKE.PQXDHPassiveHopsTimed
 public import CatCryptCore.Crypto.AKE.ChannelSquareTimed
 public import CatCryptCore.Crypto.Libcrux.Extraction.Libcrux_specs
@@ -326,6 +327,7 @@ public import CatCryptCore.Crypto.AKE.X3DH.SurfaceDeps
 public import CatCryptCore.Crypto.AKE.X3DH.SquareCorrespondence
 public import CatCryptCore.Crypto.AKE.PQXDH.Extraction.Pqxdh_haxpipe
 public import CatCryptCore.Crypto.AKE.PQXDH.ExtractedCorrespondence
+public import CatCryptCore.Crypto.AKE.PQXDH.PassiveG25519
 public import CatCryptCore.Crypto.AKE.PQXDH.SurfaceDeps
 public import CatCryptCore.Crypto.Messaging.FSPRG
 public import CatCryptCore.Crypto.Messaging.CKA
