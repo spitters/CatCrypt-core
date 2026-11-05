@@ -126,4 +126,96 @@ example (s : Store) (t : s.T) (x : ℕ) (D : ℕ → SPTree.Timed Bool) (DCost :
       storeStep s t x fun a => (D a).erase :=
   storeStep.erase_timed s t x D DCost getCost insCost
 
+/-! ## Carrier records along computed records (rule (g))
+
+A record `Loc` holding a store `st : Store` and a tree `tree : st.T` of its carrier has no
+mirror (a field's type depends on another field). Its store's fields, applied through a record
+computed from a binder, are priced by the binder's companions:
+
+* `locRed1`: through a structure update in a non-recursive definition (`Loc.add`), by reduction
+  to the binder's path `l.st`;
+* `locRed2`: through a recursion that keeps the store (`Loc.addAll`), by the equation
+  `(Loc.addAll l xs).st = l.st`, proved by functional induction, along which the companion is
+  cast;
+* `rebaseRed`: a recursion that replaces the store is refused.
+-/
+
+/-- A party: a store, an identity and a tree of the store's carrier. -/
+structure Loc where
+  /-- The store. -/
+  st : Store
+  /-- The identity. -/
+  me : ℕ
+  /-- The tree. -/
+  tree : st.T
+
+/-- Insert a key into the tree. -/
+def Loc.add (l : Loc) (x : ℕ) : Loc := { l with tree := l.st.ins l.tree x }
+
+/-- Insert the keys of a list in order. -/
+def Loc.addAll (l : Loc) : List ℕ → Loc
+  | [] => l
+  | x :: xs => (l.add x).addAll xs
+
+/-- Read the tree at a key. -/
+def Loc.read (l : Loc) (x : ℕ) : ℕ := l.st.get l.tree x
+
+/-- Insert a key and read. -/
+noncomputable def locRed1 (l : Loc) (x : ℕ) (D : ℕ → SPTree Bool) : SPTree Bool :=
+  D ((l.add x).read 0)
+
+derive_timed locRed1
+
+example (l : Loc) (x : ℕ) (D : ℕ → SPTree.Timed Bool) (DCost : ℕ → ℕ)
+    (insCost getCost : l.st.T → ℕ → ℕ) :
+    (locRed1.timed l x D DCost insCost getCost).2.erase = locRed1 l x fun a => (D a).erase :=
+  locRed1.erase_timed l x D DCost insCost getCost
+
+/-- The insertion and the read are priced by the companions of the binder's store. -/
+example (l : Loc) (x : ℕ) (D : ℕ → SPTree.Timed Bool) (DCost : ℕ → ℕ)
+    (insCost getCost : l.st.T → ℕ → ℕ) :
+    (locRed1.timed l x D DCost insCost getCost).1 =
+      1 + (DCost ((l.add x).read 0) +
+        (1 + (2 + insCost l.tree x + (1 + getCost (l.add x).tree 0)))) :=
+  rfl
+
+/-- Insert the keys of a list into a fresh party of the store `st`, and read. -/
+noncomputable def locRed2 (st : Store) (t : st.T) (xs : List ℕ) (D : ℕ → SPTree Bool) :
+    SPTree Bool :=
+  D ((Loc.addAll ⟨st, 0, t⟩ xs).read 0)
+
+derive_timed locRed2
+
+example (st : Store) (t : st.T) (xs : List ℕ) (D : ℕ → SPTree.Timed Bool) (DCost : ℕ → ℕ)
+    (insCost getCost : st.T → ℕ → ℕ) :
+    (locRed2.timed st t xs D DCost insCost getCost).2.erase =
+      locRed2 st t xs fun a => (D a).erase :=
+  locRed2.erase_timed st t xs D DCost insCost getCost
+
+/-- The cost of the recursion takes the companion of the insertion of the store it keeps. -/
+noncomputable example (l : Loc) (xs : List ℕ) (insCost : l.st.T → ℕ → ℕ) : ℕ :=
+  Loc.addAll.timedCost l xs insCost
+
+/-- Move to the store `s` at each key. -/
+def Loc.rebase (s : Store) (t : s.T) (l : Loc) : List ℕ → Loc
+  | [] => l
+  | x :: xs => Loc.rebase s t ⟨s, x, s.ins t (l.st.get l.tree x)⟩ xs
+
+/-- The rebased party read. -/
+noncomputable def rebaseRed (s : Store) (t : s.T) (l : Loc) (xs : List ℕ)
+    (D : ℕ → SPTree Bool) : SPTree Bool :=
+  D ((Loc.rebase s t l xs).read 0)
+
+/--
+error: derive_timed: needs a registered primitive:
+`CatCrypt.Tactics.DeriveTimedRecordTest.Loc.rebase` is recursive and has no registered cost
+`CatCrypt.Tactics.DeriveTimedRecordTest.Loc.rebase.timedCost`, and `derive_cost
+CatCrypt.Tactics.DeriveTimedRecordTest.Loc.rebase` fails:
+  derive_cost: the recursive call `Loc.rebase s t { st := s, me := #1, tree := s.ins t (l.st.get
+  l.tree #1) }
+    #0` changes a structure whose applied fields are priced by cost companions
+-/
+#guard_msgs (whitespace := lax) in
+derive_timed rebaseRed
+
 end CatCrypt.Tactics.DeriveTimedRecordTest

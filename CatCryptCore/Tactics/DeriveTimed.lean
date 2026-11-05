@@ -122,6 +122,25 @@ companion is built where the function is created and read where the function is 
   any other constructor (`List`) hold tables (`ι`), as
   the functions received from a tree do.
 
+Rule (g), carrier records. A structure with a carrier-type field (`T : Type` with functions
+over `T`, a tree type), or with a field whose type depends on another field (a record holding
+such a structure and a value of its carrier), has no mirror. On the class of programs in which
+each such record reaching a field application comes from a binder (or a field path of one)
+along computed records that keep it, its function fields are field paths of that binder, priced
+by their companions over the binder's carrier:
+
+* a record computed by a `let`, a structure update or a non-recursive definition reduces, by
+  unfolding to a constructor application and projecting, to the binder's path (`carrierPath?`);
+* a record returned by a structural or well-founded recursion that keeps the path (each
+  recursive call passes a record whose path reduces to the same path of the parameter,
+  `keepsPaths`) has the path of the argument it was called with, by the equation of the paths
+  proved by functional induction on the recursion, along which the binder's companion is cast
+  (`carrierPathRec?`); the cost of the recursion takes the same companions at every call.
+
+A recursion that replaces such a record (a call at a record whose path is another path) is
+refused, and a record built in the program from functions that are not fields of a binder is
+outside the class.
+
 A binder of the reduction whose type is such a structure keeps the convention of field paths
 (below), so that a scheme or a kit passed as a binder has the cost companions of its applied
 fields as further binders; a binder whose type is a sum holding functions is a costed value.
@@ -3033,6 +3052,107 @@ def reduceFieldArg (e : Expr) : MetaM Expr := do
   if s' == s.consumeMData then return e
   return replaceProjArg e s'
 
+/-- Rule (g), carrier records along computed records: the structure argument `s` of a field
+reduced to a field path of the binders, when one is reached by taking the values of `let`s,
+unfolding definitions at default transparency to a constructor application and projecting:
+`(l.add x).st` and `l'.st` with `l' := l.add x` are `l.st` when `Loc.add l x` unfolds to
+`{ l with tree := … }`. A record with a carrier-type field (`Store` with `T : Type` and
+functions over `T`) has no mirror (its fields depend on the carrier); when it is a field of a
+record that the program updates elsewhere (`Loc` with `st : Store` and `tree : st.T`), its
+function fields are priced by the cost companions of the binder's path that it reduces to. -/
+partial def carrierPath? (ctx : Ctx) (s : Expr) (fuel : Nat := 16) : MetaM (Option Expr) := do
+  let s := s.consumeMData
+  if ← isFieldPath ctx s then return some s
+  if fuel == 0 then return none
+  let some (_, i, s₀) ← projStep? s | return none
+  let mut v := s₀.consumeMData
+  for _ in [0:8] do
+    let .fvar id := v | break
+    let some val ← id.getValue? | break
+    v := val.consumeMData
+  if let some f ← projectCore? (← whnf v) i then
+    return ← carrierPath? ctx f (fuel - 1)
+  let some s₀' ← carrierPath? ctx s₀ (fuel - 1) | return none
+  let s' := replaceProjArg s s₀'
+  if ← isFieldPath ctx s' then return some s' else return none
+
+/-- Whether a recursive call keeps the field paths `paths` of the binder `x` at its argument
+`a` (rule (g)): `a` is `x`, or each path of `x`, at `a`, reduces by `carrierPath?` to the same
+path of `x`, so that the recursive call passes the same cost companions. The bound variables of
+`a` (the variables of the case of the recursion) are instantiated by metavariables. -/
+def keepsPaths (ctx : Ctx) (paths : Array Expr) (x a : Expr) : MetaM Bool := do
+  if a == x then return true
+  let s ← saveState
+  try
+    let ms ← (List.range a.looseBVarRange).toArray.mapM fun _ => mkFreshExprMVar none
+    let a := a.instantiate ms
+    for p in paths do
+      unless p.containsFVar x.fvarId! do continue
+      let p' := p.replaceFVar x a
+      let some (_, _, sa) ← projStep? p' | s.restore; return false
+      let some s' ← carrierPath? ctx sa | s.restore; return false
+      unless (← instantiateMVars (replaceProjArg p' s')) == p do
+        s.restore
+        return false
+    s.restore
+    return true
+  catch _ =>
+    s.restore
+    return false
+
+/-- Rule (g), carrier records along recursions: the structure argument `s` of a field, a
+projection path `π r` whose root `r` is, through `let`s, a call `g as` of a recursive
+definition, when the recursion keeps the path: for an argument `as[j]` of the type of `g as`,
+`π as[j]` reduces to a field path `s'` of the binders (`carrierPath?`) and `π (g ys) = π ys[j]`
+is proved for all `ys` by functional induction on `g` (each case by the equations of `g`, the
+induction hypotheses and `rfl`). Returns `s'` and the proof of `s = s'`. -/
+def carrierPathRec? (ctx : Ctx) (s : Expr) : TermElabM (Option (Expr × Expr)) := do
+  let s := s.consumeMData
+  if s.hasLooseBVars then return none
+  let root ← pathRoot s
+  if root == s then return none
+  let mut v := root
+  for _ in [0:8] do
+    let .fvar id := v | break
+    let some val ← id.getValue? | break
+    v := val.consumeMData
+  let .const g lvls := v.getAppFn | return none
+  let env ← getEnv
+  unless (Structural.eqnInfoExt.find? env g).isSome || (WF.eqnInfoExt.find? env g).isSome do
+    return none
+  let vargs := v.getAppArgs
+  let vt ← inferType v
+  let π ← withLocalDeclD `r vt fun r => do
+    mkLambdaFVars #[r] (s.replace fun e => if e.consumeMData == root then some r else none)
+  for j in [0:vargs.size] do
+    let st ← saveState
+    try
+      unless ← isDefEq (← inferType vargs[j]!) vt do
+        st.restore
+        continue
+      let some s' ← carrierPath? ctx (mkApp π vargs[j]!).headBeta | st.restore; continue
+      let gc := Lean.mkConst g lvls
+      let stmt ← forallTelescope (← inferType gc) fun ys _ => do
+        unless ys.size == vargs.size do throwError "arity"
+        let lhs := (mkApp π (mkAppN gc ys)).headBeta
+        let rhs := (mkApp π ys[j]!).headBeta
+        mkForallFVars ys (← mkEq lhs rhs)
+      let mv ← mkFreshExprMVar stmt
+      let rem ← Tactic.run mv.mvarId! (Tactic.evalTactic (← `(tactic|
+        (intros; fun_induction $(mkIdent g):ident <;>
+          (try simp only [$(mkIdent g):ident, *]) <;> (try rfl)))))
+      unless rem.isEmpty do
+        st.restore
+        continue
+      let pf ← instantiateMVars (mkAppN mv vargs)
+      if pf.hasExprMVar then
+        st.restore
+        continue
+      return some (s', ← mkExpectedTypeHint pf (← mkEq s s'))
+    catch _ =>
+      st.restore
+  return none
+
 /-- The key of the field path `p = S.f ps s` of a callee at a structure `s` computed by a
 definition: `s`, or the value of the `let` that binds it, is an application `g as bs` of a
 definition `g` that is not a projection, whose value is not a constructor application up to
@@ -4019,6 +4139,29 @@ partial def costConst (ctx : Ctx) (e : Expr) (c : Name) (args : Array Expr) :
         let p' ← reduceFieldArg p
         if p' != p then
           return add (← costOf ctx args[info.numParams]!) (← costOf ctx (mkAppN p' rest))
+      -- A field of a carrier record below a computed record that reduces to a field path of
+      -- the binders (rule (g), `carrierPath?`): the structure is priced, and the field is
+      -- priced at the binder's path.
+      if !info.fromClass && !p.hasLooseBVars then
+        let s := args[info.numParams]!
+        unless ← isFieldPath ctx s do
+          if let some s' ← carrierPath? ctx s then
+            return add (← costOf ctx s) (← costOf ctx (mkAppN (replaceProjArg p s') rest))
+          -- Below a record returned by a recursion that keeps the path (`carrierPathRec?`): the
+          -- companion of the binder's path, cast along the proved equation of the paths.
+          if let some (s', h) ← carrierPathRec? ctx s then
+            let p' := replaceProjArg p s'
+            if let some r := ctx.fieldRec? then
+              unless (← r.get).contains p' do r.modify (·.push p')
+              return add (← costOf ctx s) (add (natE 1) (← argsCost ctx rest))
+            if let some (_, cc) := ctx.fields.find? (·.1 == p') then
+              let ccT ← inferType cc
+              let body ← kabstract ccT s'
+              let motive := Expr.lam `z (← inferType s) body .default
+              let heq ← mkCongrArg motive (← mkEqSymm h)
+              let cc' ← mkAppM ``cast #[heq, cc]
+              return add (← costOf ctx s)
+                (add (natE 1) (add (mkAppN cc' rest) (← argsCost ctx rest)))
       -- A function field of a structure below a data path with a binder (`Z.input.2.f x`):
       -- the costed closure of the field in the costed value of the data path, applied.
       if !info.fromClass then
@@ -5094,11 +5237,16 @@ partial def deriveTimed (ctx : Ctx) (c : Name) : TermElabM Unit := do
           let fixed := (List.range xs.size).filter fun i =>
             used.any fun (p, _) => p.containsFVar xs[i]!.fvarId!
           let need := fixed.foldl (fun m i => max m (i + 1)) 0
-          let bad := b.find? fun s => s.isAppOf c && s.getAppNumArgs ≥ need &&
+          -- A recursive call that changes such a structure keeps its priced paths when they
+          -- reduce to the same paths at the new argument (`keepsPaths`, rule (g)).
+          let pathsU := used.map (·.1)
+          let calls := (appsOfConst c b).filter fun s => s.getAppNumArgs ≥ need &&
             fixed.any fun i => s.getArg! i != xs[i]!
-          if let some s := bad then
-            fail m!"the recursive call `{s}` changes a structure or instance whose applied \
-              fields are priced by cost companions"
+          for s in calls do
+            for i in fixed do
+              unless ← keepsPaths ctx pathsU xs[i]! (s.getArg! i) do
+                fail m!"the recursive call `{s}` changes a structure or instance whose applied \
+                  fields are priced by cost companions"
         let (tType, tValue, _) ← build used
         let bs := bs ++ used.map (·.2)
         for x in xs do
@@ -5672,11 +5820,13 @@ partial def deriveCostCore (units : Array Name) (c : Name) : TermElabM Unit := d
           let fixed := (List.range xs.size).filter fun i =>
             paths.any fun p => p.containsFVar xs[i]!.fvarId!
           let need := fixed.foldl (fun m i => max m (i + 1)) 0
-          let bad := b.find? fun s => s.isAppOf c && s.getAppNumArgs ≥ need &&
+          let calls := (appsOfConst c b).filter fun s => s.getAppNumArgs ≥ need &&
             fixed.any fun i => s.getArg! i != xs[i]!
-          if let some s := bad then
-            throwError "derive_cost: the recursive call `{s}` changes a structure whose applied \
-              fields are priced by cost companions"
+          for s in calls do
+            for i in fixed do
+              unless ← keepsPaths ctx paths xs[i]! (s.getArg! i) do
+                throwError "derive_cost: the recursive call `{s}` changes a structure whose \
+                  applied fields are priced by cost companions"
         let cType ← mkForallFVars (bs ++ cs) (mkConst ``Nat)
         let ps ← unitPrefixes units b
         withLocalDeclD `rec (← mkForallFVars bs (mkConst ``Nat)) fun recF => do
