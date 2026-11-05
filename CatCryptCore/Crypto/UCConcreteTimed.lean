@@ -57,6 +57,9 @@ derive_reduction CatCrypt.Crypto.UCTransparent.loop
 
 derive_reduction CatCrypt.Crypto.UCTransparent.run
 
+-- `view` keeps the tree that inlines `run` (calls `loop.tree` directly): the time theorem
+-- `view.tree.timeBound_timed` and its users are stated for that form
+set_option derive_reduction.certifiedCalls false in
 derive_reduction CatCrypt.Crypto.UCTransparent.view
 
 namespace CatCrypt.Crypto.UCTransparent

@@ -55,12 +55,11 @@ theorem stepsFx.timeBound_timed (fCost hCost : ℕ → ℕ) (st : ℕ × (Fin 4 
         have := hst.2
         dsimp only
         omega⟩
-    obtain ⟨⟨ih1, ih2⟩, ih3⟩ := ih (st.1 + 1, fun a => st.2 a + 1) hs'
+    obtain ⟨ih1, ih3⟩ := ih (st.1 + 1, fun a => st.2 a + 1) hs'
     have h0 := hst.1 0
     have hn := hf n
     have hn' := hh n
-    refine ⟨(CatCrypt.Tactics.DeriveTimeBound.oa_stb_pair (m := 2 * c + M) (by omega)
-      (CatCrypt.Tactics.DeriveTimeBound.oa_tb_query fun _ => ⟨ih1, ih2⟩)).mono (by grind), ?_⟩
+    refine ⟨by time_fold, ?_⟩
     simp only [stepsFx.timed, AllRet]
     intro _
     simpa only [Nat.add_assoc, Nat.add_comm 1 n] using ih3
