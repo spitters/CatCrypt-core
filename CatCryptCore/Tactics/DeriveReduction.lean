@@ -214,7 +214,12 @@ The compile equation of the call is `c.compile_tree`, instantiated as for a recu
 (`proveRecLeaf`); a binder of `c` that its tree does not keep (a function binder that the body
 does not mention) is fixed by the computation called. A computation that is not certified is
 unfolded as before, and `isRecursive` keeps its meaning: the recursion of a definition by the
-equation compiler.
+equation compiler. When every attempt of the command fails, it derives again with the calls of
+certified computations unfolded (the option `derive_reduction.certifiedCalls` set to `false`),
+as before the registry: the costed form of a certified callee whose binder is a structure with
+function fields takes the cost companions of the field paths of that binder
+(`R.timed.fieldPaths`), and a call at a structure computed in the caller (a state returned by a
+match) has no such companions.
 
 ## Structure-valued reductions
 
@@ -586,15 +591,26 @@ end
 def isRecursive (env : Environment) (c : Name) : Bool :=
   (Structural.eqnInfoExt.find? env c).isSome || (WF.eqnInfoExt.find? env c).isSome
 
+/-- Whether calls of certified computations are reflected as calls of their trees: the option
+`derive_reduction.certifiedCalls` (default `true`), turned off by the last attempts of
+`derive_reduction`. -/
+def certifiedCalls : CoreM Bool :=
+  return (← getOptions).get `derive_reduction.certifiedCalls true
+
 /-- Whether a call of `c` is reflected as the call of its tree `c.tree` rather than unfolded:
-`c` is recursive (`isRecursive`) or certified (`DeriveTimed.isCertified`). -/
-def selectsTree (env : Environment) (c : Name) : Bool :=
-  isRecursive env c || CatCrypt.Tactics.DeriveTimed.isCertified env c
+`c` is recursive (`isRecursive`) or certified (`DeriveTimed.isCertified`, under
+`certifiedCalls`). -/
+def selectsTree (c : Name) : CoreM Bool := do
+  let env ← getEnv
+  return isRecursive env c ||
+    ((← certifiedCalls) && CatCrypt.Tactics.DeriveTimed.isCertified env c)
 
 /-- Whether the tree constant `t` is kept as a call and not unfolded in a proof: `t` is
-recursive, or the tree `c.tree` of a certified computation `c`. -/
-def stopsTree (env : Environment) (t : Name) : Bool :=
-  isRecursive env t || CatCrypt.Tactics.DeriveTimed.isCertifiedTree env t
+recursive, or the tree `c.tree` of a certified computation `c` (under `certifiedCalls`). -/
+def stopsTree (t : Name) : CoreM Bool := do
+  let env ← getEnv
+  return isRecursive env t ||
+    ((← certifiedCalls) && CatCrypt.Tactics.DeriveTimed.isCertifiedTree env t)
 
 /-- The definition `c` applied to `args` unfolded with each argument priced once, by
 `CatCrypt.Tactics.DeriveTimed.bindArgsShared`: the non-atomic first-order data arguments are
@@ -604,7 +620,7 @@ def unfoldShared? (e : Expr) : MetaM (Option Expr) := do
   let .const c lvls := e.getAppFn | return none
   let env ← getEnv
   let some (.defnInfo dv) := env.find? c | return none
-  if selectsTree env c then return none
+  if ← selectsTree c then return none
   unless lvls.length == dv.levelParams.length do return none
   unless dv.value.isLambda do return none
   let v := dv.value.instantiateLevelParams dv.levelParams lvls
@@ -661,7 +677,7 @@ definition is unfolded by `unfoldShared?`, so that its arguments stay `let`s pri
 partial def normalize (e : Expr) : MetaM Expr := do
   let e ← instantiateMVars e
   if let .const c _ := e.getAppFn then
-    if selectsTree (← getEnv) c then return e
+    if ← selectsTree c then return e
   let e ← withConfig (fun c => { c with zeta := false }) <| whnfR e
   if e.isLet then return e
   if e.getAppFn.consumeMData.isLet && !e.hasLooseBVars then
@@ -670,7 +686,7 @@ partial def normalize (e : Expr) : MetaM Expr := do
   | .const c _ =>
     if normalizeStops.contains c then return e
     if ← isMatcher c then return e
-    if selectsTree (← getEnv) c then return e
+    if ← selectsTree c then return e
     if monadOps.contains c then
       let e' ← withTransparency .instances (whnf e)
       if e' == e then return e
@@ -1267,7 +1283,7 @@ partial def reify (ctx : RCtx) (e : Expr) : TermElabM Expr := do
       return mkApp5 (mkConst ``dite [Level.one.succ]) (treeTy α) args[1]! args[2]! t f
     if ← isMatcher c then
       return ← reifyMatch ctx e α
-    if selectsTree (← getEnv) c then
+    if ← selectsTree c then
       return ← reifyRecCall ctx e c args α
     leafOrFail ctx orig e α
   | _ => leafOrFail ctx orig e α
@@ -1485,7 +1501,7 @@ def unfoldsCompCall (nds : Array (CatCrypt.Tactics.DeriveTimed.Node × Nat)) (e 
   let some (.defnInfo d) := env.find? c | return false
   -- The body applies a node with a computation argument: a cheap test first.
   unless d.value.getUsedConstants.any (fun n => nds.any (·.1.src == n)) do return false
-  if selectsTree env c || (← isMatcher c) || (env.getProjectionFnInfo? c).isSome then
+  if (← selectsTree c) || (← isMatcher c) || (env.getProjectionFnInfo? c).isSome then
     return false
   if env.contains (c ++ `timed) then return false
   for k in ← CatCrypt.Tactics.DeriveTimed.treeKinds do
@@ -1564,13 +1580,13 @@ matcher or a local; the auxiliary definitions of matches are unfolded. -/
 partial def treeHead (t : Expr) : MetaM Expr := do
   let t ← instantiateMVars t
   if let .const c _ := t.getAppFn then
-    if stopsTree (← getEnv) c then return t
+    if ← stopsTree c then return t
   let t ← whnfR t
   match t.getAppFn with
   | .const c _ =>
     if treeStops.contains c then return t
     if ← isMatcher c then return t
-    if stopsTree (← getEnv) c then return t
+    if ← stopsTree c then return t
     match ← unfoldDefinition? t with
     | some t' => treeHead t'.headBeta
     | none => return t
@@ -1689,7 +1705,7 @@ partial def prove (hs : Array (Expr × Expr)) (g : MVarId) : TermElabM Unit := g
       for g' in gs do prove hs g'
       return
     if let .str c' "tree" := c then
-      if stopsTree (← getEnv) c then
+      if ← stopsTree c then
         return ← proveRecLeaf hs g c' α t r
     g.refl
   | f@(.fvar _) =>
@@ -3297,6 +3313,13 @@ def elabDeriveReduction : CommandElab := fun stx => do
         for u in [false, true] do
           if let .ok () ← attempt
               (deriveReduction c advs (unfold := u) (typeDefs := true) (suffix := suffix)) then
+            return ← certify c suffix
+        -- The calls of certified computations unfolded, as for a computation that is not
+        -- certified: a callee whose costed form takes companions that the call cannot supply.
+        for u in [false, true] do
+          if let .ok () ← attempt (withOptions
+              (·.set `derive_reduction.certifiedCalls false)
+              (deriveReduction c advs (unfold := u) (suffix := suffix))) then
             return ← certify c suffix
         if (← e₁.toMessageData.toString) == (← e₂.toMessageData.toString) then throw e₁
         throwError "derive_reduction: the first attempt fails:{indentD e₁.toMessageData}\n\

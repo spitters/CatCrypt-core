@@ -979,6 +979,12 @@ register_option derive_timed.maxDepth : Nat := {
 }
 
 /-- Whether a condition is priced by what decides it (option `derive_timed.priceProps`). -/
+register_option derive_reduction.certifiedCalls : Bool := {
+  defValue := true
+  descr := "derive_reduction reflects a call of a certified computation as the call of its \
+    tree; when false, the call is unfolded"
+}
+
 register_option derive_timed.priceProps : Bool := {
   defValue := false
   descr := "derive_timed, derive_cost and derive_reduction price a condition by what decides \
