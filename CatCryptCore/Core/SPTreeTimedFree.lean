@@ -352,7 +352,7 @@ theorem le_and_timeBound_iff_wpFold_chargeUnder (x : ℕ × SPTree.Timed α) (n 
       wpFold (OpSpec.chargeUnder (fun a => ((tickCost a : ℕ) : ℕ∞)) spAllows) (stepToFreeMT x)
         (fun _ => 0) ≤ n := by
   rw [stepToFreeMT, wpFold_chargeUnder_liftBind_le_iff, timeBound_iff_wpFold_chargeUnder]
-  simp only [tickCost, spAllows, forall_const]
+  exact and_congr_right fun _ => ⟨fun h _ _ => h, fun h => h PUnit.unit trivial⟩
 
 /-- The bind clause of the tick tree: the charge fold of a costed bind is the charge fold of the
 FreeM bind of the tick tree with the step-prefixed tick trees of the continuation, for every
@@ -365,17 +365,55 @@ theorem wpFold_stepToFreeMT_bind {β : Type} (allows : (a : SPSigT.A) → SPSigT
         (stepToFreeMT (A.bind f)) post =
       wpFold (OpSpec.chargeUnder (fun a => ((tickCost a : ℕ) : ℕ∞)) allows)
         ((toFreeMT A).bind (stepToFreeMT ∘ f)) post := by
+  have hstep : ∀ y : ℕ × SPTree.Timed β,
+      wpFold (OpSpec.chargeUnder (fun a => ((tickCost a : ℕ) : ℕ∞)) allows) (stepToFreeMT y)
+        post =
+      y.1 + wpFold (OpSpec.chargeUnder (fun a => ((tickCost a : ℕ) : ℕ∞)) allows)
+        (toFreeMT y.2) post :=
+    fun y => wpFold_chargeUnder_stepToFreeMT allows hA y post
+  have htick : ∀ {γ : Type} (n : ℕ) (y : FreeM SPSigT γ) (q : γ → ℕ∞),
+      wpFold (OpSpec.chargeUnder (fun a => ((tickCost a : ℕ) : ℕ∞)) allows)
+        (FreeM.liftBind (P := SPSigT) (.inr n) fun _ => y) q =
+      n + wpFold (OpSpec.chargeUnder (fun a => ((tickCost a : ℕ) : ℕ∞)) allows) y q :=
+    fun n y q => wpFold_chargeUnder_liftBind_const _ allows (.inr n) (hA n) y q
   rw [wpFold_bind']
   induction A with
   | ret a => rfl
   | fail =>
-    rw [wpFold_chargeUnder_stepToFreeMT allows hA]
-    simp only [bind, toFreeMT, wpFold_liftBind, Nat.cast_zero, zero_add]
-    exact congrArg _ (funext fun b => b.elim)
-  | _ =>
-    simp_all only [bind, wpFold_chargeUnder_stepToFreeMT allows hA, toFreeMT, wpFold_liftBind,
-      OpSpec.chargeUnder_apply, wpFold_chargeUnder_liftBind_const _ allows _ (hA _), tickCost,
-      Nat.cast_add, Nat.cast_zero, zero_add, add_assoc]
+    rw [hstep]
+    simp only [bind, Nat.cast_zero, zero_add]
+    simp only [toFreeMT]
+    exact congrArg _ (funext fun b => PEmpty.elim b)
+  | sample γ finγ neγ c k ih =>
+    rw [hstep]
+    simp only [bind, toFreeMT, wpFold_liftBind, OpSpec.chargeUnder_apply, htick, Nat.cast_zero,
+      zero_add]
+    refine congrArg _ (iSup_congr fun b => iSup_congr fun _ => ?_)
+    rw [← ih b, hstep, Nat.cast_add, add_assoc]
+  | sampleDist γ μ c k ih =>
+    rw [hstep]
+    simp only [bind, toFreeMT, wpFold_liftBind, OpSpec.chargeUnder_apply, htick, Nat.cast_zero,
+      zero_add]
+    refine congrArg _ (iSup_congr fun b => iSup_congr fun _ => ?_)
+    rw [← ih b, hstep, Nat.cast_add, add_assoc]
+  | get l c k ih =>
+    rw [hstep]
+    simp only [bind, toFreeMT, wpFold_liftBind, OpSpec.chargeUnder_apply, htick, Nat.cast_zero,
+      zero_add]
+    refine congrArg _ (iSup_congr fun b => iSup_congr fun _ => ?_)
+    rw [← ih b, hstep, Nat.cast_add, add_assoc]
+  | set l v c t ih =>
+    rw [hstep]
+    simp only [bind, toFreeMT, wpFold_liftBind, OpSpec.chargeUnder_apply, htick, Nat.cast_zero,
+      zero_add]
+    refine congrArg _ (iSup_congr fun _ => iSup_congr fun _ => ?_)
+    rw [← ih, hstep, Nat.cast_add, add_assoc]
+  | load h₀ c t ih =>
+    rw [hstep]
+    simp only [bind, toFreeMT, wpFold_liftBind, OpSpec.chargeUnder_apply, htick, Nat.cast_zero,
+      zero_add]
+    refine congrArg _ (iSup_congr fun _ => iSup_congr fun _ => ?_)
+    rw [← ih, hstep, Nat.cast_add, add_assoc]
 
 /-- `AllRet Q s` is the demonic fold of `Q` over the tick tree of `s` with every answer
 allowed. -/
@@ -383,8 +421,17 @@ theorem allRet_iff_wpFold_demonicUnder (Q : α → Prop) (s : SPTree.Timed α) :
     AllRet Q s ↔ wpFold (OpSpec.demonicUnder fun _ _ => True) (toFreeMT s) Q := by
   induction s with
   | ret a => rfl
-  | fail => exact iff_of_true trivial fun b => b.elim
-  | _ => simp_all [AllRet, toFreeMT, wpFold_liftBind, OpSpec.demonicUnder]
+  | fail => exact iff_of_true trivial fun b => PEmpty.elim b
+  | sample _ _ _ _ k ih =>
+    exact ⟨fun h b _ _ _ => (ih b).1 (h b), fun h b => (ih b).2 (h b trivial PUnit.unit trivial)⟩
+  | sampleDist _ _ _ k ih =>
+    exact ⟨fun h b _ _ _ => (ih b).1 (h b), fun h b => (ih b).2 (h b trivial PUnit.unit trivial)⟩
+  | get _ _ k ih =>
+    exact ⟨fun h b _ _ _ => (ih b).1 (h b), fun h b => (ih b).2 (h b trivial PUnit.unit trivial)⟩
+  | set _ _ _ t ih =>
+    exact ⟨fun h _ _ _ _ => ih.1 h, fun h => ih.2 (h PUnit.unit trivial PUnit.unit trivial)⟩
+  | load _ _ t ih =>
+    exact ⟨fun h _ _ _ _ => ih.1 h, fun h => ih.2 (h PUnit.unit trivial PUnit.unit trivial)⟩
 
 /-! ## Compilation as a handler -/
 
