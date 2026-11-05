@@ -8,6 +8,7 @@ module
 public import CatCryptCore.Crypto.UCSimulatorCostPotComp
 public import CatCryptCore.Crypto.UCPullbackCost
 public import CatCryptCore.Crypto.UCConcreteTimed
+public import CatCryptCore.Crypto.UCParallelTimed
 
 /-!
 # Costed pullbacks through simulators with potential time bounds
@@ -50,7 +51,10 @@ realization against the environments of time `(n, o, q, tD)` and import `M`
 (`RealizesTimeImport`). The costed reduction of a strategy of import `M` by a multi-call
 simulator with a potential time bound whose import of the outer events is at most `c` times
 their size has the graded time bound of such a pullback
-(`MultiHybrid.Timed.reduce_runBound_import`).
+(`MultiHybrid.Timed.reduce_runBound_import`), and the multi-call simulator is a costed import
+pullback (`MultiHybrid.toImportPullback`). The potential certificate of a composite
+(`Simulator.Timed.PotCert`, with the import `d` created per activation) gives the time bound of
+the twice reduced strategy (`MultiHybrid.Timed.potCert_comp_runBound_import`).
 
 Search words: potential, import, Canetti polynomial time, costed pullback, environment
 reduction, activation time, time certificate, simulator, composition.
@@ -63,6 +67,8 @@ reduction, activation time, time certificate, simulator, composition.
 * `RealizesTimeInv`, `RealizesTimeImport`: realization against those environments.
 * `ImportPullback`: costed import pullbacks.
 * `MultiHybrid.Timed.reducePot`: the potential bound of the costed multi-call reduction.
+* `MultiHybrid.toImportPullback`: a multi-call simulator with a potential time bound as a costed
+  import pullback.
 
 ## Main results
 
@@ -76,6 +82,8 @@ reduction, activation time, time certificate, simulator, composition.
   multi-call simulator with a potential time bound.
 * `MultiHybrid.Timed.reduce_reduce_runBound_import`: the same for two multi-call simulators in
   sequence.
+* `MultiHybrid.Timed.potCert_comp_runBound_import`: the same from the potential certificate of
+  their composite.
 -/
 
 @[expose] public section
@@ -572,6 +580,98 @@ theorem reduce_reduce_runBound_import [ImportSize E] {σ₁ σ₂ EM OM : Type}
   obtain ⟨h4, h5⟩ := h3 i hi
   exact ⟨h4.trans (le_of_eq (by ring)), h5.trans (le_of_eq (by ring))⟩
 
+/-- **Run bound of a composite from its potential certificate.** If the composite of two costed
+multi-call simulators, erasing to `π₁` and `π₂`, has the potential certificate `a`, `b`, `c`,
+`d`, then the strategy of import `M` reduced by `π₁` and then by `π₂` has a graded time bound
+against the answers of size at most `A / c`, at most `n + a + 12 + b * (ι + d) + b * B` in
+`next` and `o + a + 8 + b * d + b * (B + ι + d + A)` in `obs` for the first `q` activations,
+with `B = c * M + Φ₀ + q * (2 * (ι + d) + A)`, for the initial potential `Φ₀` of the two
+simulators and the import `ι` of the idle middle event. -/
+theorem potCert_comp_runBound_import {σ₁ σ₂ ζ E O EM OM EG OG : Type} [ImportSize E]
+    [ImportSize OG] {V : PubView E O} {U : PubView EM OM} {W : PubView EG OG}
+    (π₁ : MultiHybrid σ₁ E O EM OM) (idle₁ : EM) (π₂ : MultiHybrid σ₂ EM OM EG OG)
+    (idle₂ : EG) (Z : Strat ζ E O) {π₁T : MultiHybrid.Timed σ₁ E O EM OM}
+    {π₂T : MultiHybrid.Timed σ₂ EM OM EG OG} {ZT : Strat.Timed ζ E O} (hT₁ : π₁T.Erases π₁)
+    (hT₂ : π₂T.Erases π₂) (hZ : ZT.Erases Z) {a b c d n o M : ℕ}
+    (h : ((Simulator.Timed.ofMultiHybrid π₁T : Simulator.Timed E O EM OM V U).comp
+      (Simulator.Timed.ofMultiHybrid π₂T : Simulator.Timed EM OM EG OG U W)).PotCert a b c d)
+    (PZ : ZT.PotBound ImportSize.size (fun _ => 0) n o 0 0) (hM : PZ.Ψ ZT.init ≤ M)
+    (q A : ℕ) :
+    let RT₁ := MultiHybrid.reduce.timed π₁ idle₁ Z ZT.next ZT.nextCost π₁T.start
+      π₁T.startCost π₁T.finish π₁T.finishCost ZT.obs ZT.obsCost π₁T.resume π₁T.resumeCost
+    let RT₂ := MultiHybrid.reduce.timed π₂ idle₂ (π₁.reduce idle₁ Z) RT₁.next RT₁.nextCost
+      π₂T.start π₂T.startCost π₂T.finish π₂T.finishCost RT₁.obs RT₁.obsCost π₂T.resume
+      π₂T.resumeCost
+    ∃ (Φ₀ ι : ℕ) (Inv Mid : ℕ → RState σ₂ (RState σ₁ ζ EM O) EG OM → Prop) (tN tO : ℕ → ℕ),
+      StratRunBound RT₂.next RT₂.nextCost RT₂.obs RT₂.obsCost Inv Mid (fun _ _ => True)
+        (fun _ g => c * ImportSize.size g ≤ A) tN tO ∧
+      Inv 0 RT₂.init ∧
+      ∀ i < q, tN i ≤ n + a + 12 + b * (ι + d) + b * (c * M + Φ₀ + q * (2 * (ι + d) + A)) ∧
+        tO i ≤ o + a + 8 + b * d + b * (c * M + Φ₀ + q * (2 * (ι + d) + A) + (ι + d) + A) := by
+  intro RT₁ RT₂
+  obtain ⟨gE, gO, ⟨κ, gM, hM', gEM, hEM, a₁, b₁, d₁, a₂, b₂, d₂, ⟨P₁⟩, ⟨P₂⟩, hκE, hκO, ha, hb,
+    hd⟩, hlinE, hlinO⟩ := h
+  have hR := reduce_reduce_runBound_import π₁ idle₁ π₂ idle₂ Z hT₁ hT₂ hZ P₁ P₂ hlinE hκE hκO
+    PZ hM q A
+  obtain ⟨Inv, Mid, tN, tO, h1, h2, h3⟩ := hR
+  refine ⟨P₁.Φ π₁T.init + P₂.Φ π₂T.init, hEM idle₁, Inv, Mid, tN, tO,
+    ⟨h1.next_time, h1.next_ret, fun i z g hz hg => h1.obs_time i z g hz ((hlinO g).trans hg),
+      fun i z g hz hg => h1.obs_ret i z g hz ((hlinO g).trans hg)⟩, h2, fun i hi => ?_⟩
+  obtain ⟨h4, h5⟩ := h3 i hi
+  simp only [Pi.zero_apply, Nat.add_zero] at h4 h5
+  have hq : q * (2 * (hEM idle₁ + κ) + A) ≤ q * (2 * (hEM idle₁ + d) + A) :=
+    Nat.mul_le_mul_left q (by omega)
+  have k1 : b₂ * (hEM idle₁ + κ) ≤ b * (hEM idle₁ + d) := Nat.mul_le_mul (by omega) (by omega)
+  have k2 : (b₁ + b₂) * (c * M + P₁.Φ π₁T.init + P₂.Φ π₂T.init +
+      q * (2 * (hEM idle₁ + κ) + A)) ≤
+      b * (c * M + (P₁.Φ π₁T.init + P₂.Φ π₂T.init) + q * (2 * (hEM idle₁ + d) + A)) :=
+    Nat.mul_le_mul hb (by omega)
+  have k3 : b₁ * κ ≤ b * d := Nat.mul_le_mul (by omega) (by omega)
+  have k4 : (b₁ + b₂) * (c * M + P₁.Φ π₁T.init + P₂.Φ π₂T.init +
+      q * (2 * (hEM idle₁ + κ) + A) + (hEM idle₁ + κ) + A) ≤
+      b * (c * M + (P₁.Φ π₁T.init + P₂.Φ π₂T.init) + q * (2 * (hEM idle₁ + d) + A) +
+        (hEM idle₁ + d) + A) :=
+    Nat.mul_le_mul hb (by omega)
+  exact ⟨by omega, by omega⟩
+
 end MultiHybrid.Timed
+
+/-- A multi-call simulator `π` with a costed machine `πT` erasing to it that has a potential
+time bound whose import of an outer event is at most `c` times its size, as a costed import
+pullback against the answers of import at most `A`: the costed reductions are
+`MultiHybrid.Timed.reduce` and `MultiHybrid.reduceEnv.timed`, the activation count is
+multiplied by `π.fuel + 1`, and the constants are `a + 6 + b * B` and
+`a + 4 + b * (B + hEG idle + A)` with `B = c * M + Φ₀ + (π.fuel + 1) * q * (2 * hEG idle + A)`
+and `1`. -/
+noncomputable def MultiHybrid.toImportPullback {σ E O EG OG : Type} [ImportSize E]
+    (π : MultiHybrid σ E O EG OG) (idle : EG) {πT : MultiHybrid.Timed σ E O EG OG}
+    (hE : πT.Erases π) {gE : E → ℕ} {gO : OG → ℕ} {hEG : EG → ℕ} {hO : O → ℕ} {a b c : ℕ}
+    (P : πT.PotentialBound gE gO hEG hO a b) (hlin : ∀ e, gE e ≤ c * ImportSize.size e)
+    (A : ℕ) : ImportPullback EG OG E O where
+  toEnvPullback := π.toEnvPullback idle
+  pullT Z ZT := MultiHybrid.Timed.reduce π idle Z.input πT ZT
+  pullE Z ZE := MultiHybrid.reduceEnv.timed π idle Z ZE.dist ZE.distCost
+  Out _ g := gO g ≤ A
+  nextC q M := a + 6 + b * (c * M + P.Φ πT.init + (π.fuel + 1) * q * (2 * hEG idle + A))
+  obsC q M := a + 4 +
+    b * (c * M + P.Φ πT.init + (π.fuel + 1) * q * (2 * hEG idle + A) + hEG idle + A)
+  distC := 1
+  roundsMul := π.fuel + 1
+  pull_import Z ZT ZE n o q tD M h := by
+    obtain ⟨PZ, hM⟩ := h.pot
+    obtain ⟨Inv, Mid, tN, tO, h1, h2, h3⟩ := MultiHybrid.Timed.reduce_runBound_import π idle
+      Z.input hE h.strat_erases P hlin PZ hM ((π.fuel + 1) * q) A
+    rw [MultiHybrid.toEnvPullback_pull]
+    refine ⟨MultiHybrid.Timed.reduce_erases hE h.strat_erases,
+      MultiHybrid.reduceEnv.erase_timed π idle Z _ _ fun _ => by rw [h.env_erases],
+      ⟨Inv, Mid, tN, tO, h1, h2, fun i hi => ⟨(h3 i hi).1.trans (by omega),
+        (h3 i hi).2.trans (by omega)⟩⟩, ?_, fun w => ?_⟩
+    · have := Nat.mul_le_mul_left (π.fuel + 1) h.rounds_le
+      simp only [MultiHybrid.reduceEnv, MultiHybrid.reduce, MultiHybrid.calls]
+      linarith
+    · have := h.dist_le w.1
+      simp only [MultiHybrid.reduceEnv.timed, MultiHybrid.reduceEnv.dist.tree.timed,
+        SPTree.Timed.stepTime] at this ⊢
+      omega
 
 end CatCrypt.Crypto.UCTransparent
