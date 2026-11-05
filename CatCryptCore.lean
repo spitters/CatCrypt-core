@@ -296,6 +296,18 @@ public import CatCryptCore.Crypto.AKE.PQXDHPassive
 public import CatCryptCore.Crypto.AKE.PQXDHPassiveHops
 public import CatCryptCore.Crypto.AKE.PQXDHPassiveHopsTimed
 public import CatCryptCore.Crypto.AKE.ChannelSquareTimed
+public import CatCryptCore.Crypto.Libcrux.Extraction.Libcrux_specs
+public import CatCryptCore.Crypto.Libcrux.ConcreteInstances
+public import CatCryptCore.Crypto.Libcrux.GroupOps
+public import CatCryptCore.Crypto.Libcrux.Bridge_X25519
+public import CatCryptCore.Crypto.Libcrux.Bridge_HKDF
+public import CatCryptCore.Crypto.Libcrux.Bridge_MLKEM
+public import CatCryptCore.Crypto.EdDSA.Extraction.Eddsa_haxpipe
+public import CatCryptCore.Crypto.EdDSA.Bridge
+public import CatCryptCore.Crypto.AKE.X3DH.Extraction.X3dh_haxpipe
+public import CatCryptCore.Crypto.AKE.X3DH.EdDSA_Bridge
+public import CatCryptCore.Crypto.AKE.X3DH.ExtractedCorrespondence
+public import CatCryptCore.Crypto.AKE.X3DH.SurfaceDeps
 public import CatCryptCore.Crypto.Messaging.FSPRG
 public import CatCryptCore.Crypto.Messaging.CKA
 public import CatCryptCore.Crypto.Messaging.CKACorrupt
@@ -503,6 +515,7 @@ public import CatCryptCore.Quantum.QROM.QMLWEAux
 
 -- Machine types, the field Z/3329Z and the number-theoretic transform
 public import CatCryptCore.Hax.CType
+public import CatCryptCore.Hax.ReprBridge
 public import CatCryptCore.Crypto.Util.ZMod3329
 public import CatCryptCore.Crypto.Lattice.Negacyclic
 public import CatCryptCore.Crypto.Lattice.BitReversalGeneric

@@ -7,6 +7,7 @@ and are not redistributed here:
 
 - Mathlib (https://github.com/leanprover-community/mathlib4), Apache License 2.0.
 - nominal-lean (https://github.com/spitters/nominal-lean), MIT License.
+- hax-lean (https://github.com/spitters/hax-lean), MIT License.
 
 The library follows the design of SSProve (https://github.com/SSProve/ssprove,
 MIT License), and several game definitions mirror EasyCrypt developments
