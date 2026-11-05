@@ -10,6 +10,8 @@ public import CatCryptCore.Core.SPTreeTimed
 public import PolyFun.PFunctor.Handler.Sum
 public import PolyFun.PFunctor.Handler.Free
 public import CatCryptCore.ForMathlib.PFunctorChargeUnder
+public import CatCryptCore.Core.SPTreeTimedOps
+public import CatCryptCore.XDijkstra.XTimedMonad
 import all CatCryptCore.Core.SPTreeTimed
 import all CatCryptCore.Unary.ExpectedCost
 
@@ -314,6 +316,75 @@ theorem timeBound_iff_wpFold_chargeUnder (s : SPTree.Timed α) (t : ℕ) :
         fun _ _ => ⟨by have := h.1; omega, fun _ _ => h.2⟩⟩,
       fun h => ⟨by have := h.1; have := (h.2 PUnit.unit trivial).1; omega,
         (h.2 PUnit.unit trivial).2 PUnit.unit trivial⟩⟩
+
+/-! ## Step-prefixed trees, sequencing and leaves -/
+
+/-- The step-prefixed tree `(c, s)` as a tree of `SPSigT`: the tick `c` followed by the tick
+tree of `s`. -/
+def stepToFreeMT (x : ℕ × SPTree.Timed α) : FreeM SPSigT α :=
+  .liftBind (P := SPSigT) (.inr x.1) fun _ => toFreeMT x.2
+
+/-- The charge fold of a step-prefixed tree, with every tick answer allowed, is its step cost
+plus the charge fold of its tree. -/
+theorem wpFold_chargeUnder_stepToFreeMT (allows : (a : SPSigT.A) → SPSigT.B a → Prop)
+    (hA : ∀ n, allows (.inr n) PUnit.unit) (x : ℕ × SPTree.Timed α) (post : α → ℕ∞) :
+    wpFold (OpSpec.chargeUnder (fun a => ((tickCost a : ℕ) : ℕ∞)) allows) (stepToFreeMT x) post =
+      x.1 + wpFold (OpSpec.chargeUnder (fun a => ((tickCost a : ℕ) : ℕ∞)) allows)
+        (toFreeMT x.2) post :=
+  wpFold_chargeUnder_liftBind_const _ allows _ (hA x.1) _ post
+
+/-- A bound `n` on the charge fold of the tick tree of `x` bounds `stepTime x`. -/
+theorem stepTime_le_of_wpFold_le (x : ℕ × SPTree.Timed α) (n : ℕ)
+    (h : wpFold (OpSpec.charge fun a => ((tickCost a : ℕ) : ℕ∞)) (stepToFreeMT x)
+      (fun _ => 0) ≤ n) :
+    stepTime x ≤ n := by
+  rw [← OpSpec.chargeUnder_true, wpFold_chargeUnder_stepToFreeMT _ (fun _ => trivial),
+    OpSpec.chargeUnder_true] at h
+  have : ((x.1 + x.2.time : ℕ) : ℕ∞) ≤ n := by
+    rw [Nat.cast_add]
+    exact (add_le_add le_rfl (time_le_wpFold x.2)).trans h
+  exact_mod_cast this
+
+/-- The step cost followed by a time bound on the tree is the bound on the charge fold of the
+step-prefixed tick tree over the answers allowed by `spAllows`. -/
+theorem le_and_timeBound_iff_wpFold_chargeUnder (x : ℕ × SPTree.Timed α) (n : ℕ) :
+    (x.1 ≤ n ∧ x.2.TimeBound (n - x.1)) ↔
+      wpFold (OpSpec.chargeUnder (fun a => ((tickCost a : ℕ) : ℕ∞)) spAllows) (stepToFreeMT x)
+        (fun _ => 0) ≤ n := by
+  rw [stepToFreeMT, wpFold_chargeUnder_liftBind_le_iff, timeBound_iff_wpFold_chargeUnder]
+  simp only [tickCost, spAllows, forall_const]
+
+/-- The bind clause of the tick tree: the charge fold of a costed bind is the charge fold of the
+FreeM bind of the tick tree with the step-prefixed tick trees of the continuation, for every
+`allows` admitting the tick answers. The costed bind merges the tick `c b` of an edge with the
+step cost of the continuation, so this is an equation of folds. -/
+theorem wpFold_stepToFreeMT_bind {β : Type} (allows : (a : SPSigT.A) → SPSigT.B a → Prop)
+    (hA : ∀ n, allows (.inr n) PUnit.unit) (A : SPTree.Timed α) (f : α → ℕ × SPTree.Timed β)
+    (post : β → ℕ∞) :
+    wpFold (OpSpec.chargeUnder (fun a => ((tickCost a : ℕ) : ℕ∞)) allows)
+        (stepToFreeMT (A.bind f)) post =
+      wpFold (OpSpec.chargeUnder (fun a => ((tickCost a : ℕ) : ℕ∞)) allows)
+        ((toFreeMT A).bind (stepToFreeMT ∘ f)) post := by
+  rw [wpFold_bind']
+  induction A with
+  | ret a => rfl
+  | fail =>
+    rw [wpFold_chargeUnder_stepToFreeMT allows hA]
+    simp only [bind, toFreeMT, wpFold_liftBind, Nat.cast_zero, zero_add]
+    exact congrArg _ (funext fun b => b.elim)
+  | _ =>
+    simp_all only [bind, wpFold_chargeUnder_stepToFreeMT allows hA, toFreeMT, wpFold_liftBind,
+      OpSpec.chargeUnder_apply, wpFold_chargeUnder_liftBind_const _ allows _ (hA _), tickCost,
+      Nat.cast_add, Nat.cast_zero, zero_add, add_assoc]
+
+/-- `AllRet Q s` is the demonic fold of `Q` over the tick tree of `s` with every answer
+allowed. -/
+theorem allRet_iff_wpFold_demonicUnder (Q : α → Prop) (s : SPTree.Timed α) :
+    AllRet Q s ↔ wpFold (OpSpec.demonicUnder fun _ _ => True) (toFreeMT s) Q := by
+  induction s with
+  | ret a => rfl
+  | fail => exact iff_of_true trivial fun b => b.elim
+  | _ => simp_all [AllRet, toFreeMT, wpFold_liftBind, OpSpec.demonicUnder]
 
 /-! ## Compilation as a handler -/
 
