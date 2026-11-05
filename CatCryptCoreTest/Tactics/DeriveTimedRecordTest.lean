@@ -23,7 +23,9 @@ along the recursion:
 * `chainOut`: the outputs of a chain of steps, each holding a table, collected by `Fin.cons`
   after the recursive call; `snocOut`: tables collected by `Fin.snoc`;
 * `storeStep`: a record with a carrier-type field (`Store.T`) given as a binder, whose function
-  fields over the carrier are applied as field paths.
+  fields over the carrier are applied as field paths;
+* carrier records along computed records (rule (g)) and records with function fields in the
+  result of a joint costed recursion (R15), in the sections below.
 
 Each erasure theorem is pinned by an `example`.
 -/
@@ -217,5 +219,56 @@ CatCrypt.Tactics.DeriveTimedRecordTest.Loc.rebase` fails:
 -/
 #guard_msgs (whitespace := lax) in
 derive_timed rebaseRed
+
+/-! ## Records with function fields in the result of a joint costed recursion (R15)
+
+`runP` runs a process against a router `Nt` (two tables) until it blocks, returning the residual,
+the router and a count; its costed value is joint (rule (d)), and the erasure of its result
+rebuilds the router field by field. Its erasure theorem closes with the induction hypotheses
+split into their component equations.
+-/
+
+/-- A process: done, a receive from a channel, or a send. -/
+inductive Pr where
+  | done
+  | recv (s : ℕ) (k : ℕ → Pr)
+  | send (t m : ℕ) (k : Pr)
+
+/-- A router: the queue and the inbox of each channel. -/
+structure Nt where
+  /-- Sent, not delivered. -/
+  queue : ℕ → List ℕ
+  /-- Delivered, not received. -/
+  inbox : ℕ → List ℕ
+
+/-- Send `m` on the channel `t`. -/
+def Nt.send (n : Nt) (t m : ℕ) : Nt :=
+  { n with queue := Function.update n.queue t (n.queue t ++ [m]) }
+
+/-- Run the process until it blocks on an empty inbox or ends, counting the receives. -/
+def runP : Pr → Nt → Pr × Nt × ℕ
+  | .done, n => (.done, n, 0)
+  | .send t m k, n => runP k (n.send t m)
+  | .recv s k, n =>
+    match n.inbox s with
+    | [] => (.recv s k, n, 0)
+    | m :: ms =>
+      let x := runP (k m) { n with inbox := Function.update n.inbox s ms }
+      (x.1, x.2.1, x.2.2 + 1)
+
+/-- The queue of channel `0` after the run, measured by a distinguisher. -/
+noncomputable def runRed (p : Pr) (n : Nt) (D : ℕ → SPTree Bool) : SPTree Bool :=
+  D ((runP p n).2.1.queue 0).length
+
+derive_timed runRed
+
+example (p : Pr) (n : Nt) :
+    ((runP.timed p n).1, { queue := (runP.timed p n).2.1.1.1, inbox := (runP.timed p n).2.1.2.1 },
+      (runP.timed p n).2.2) = runP p n :=
+  runP.erase_timed p n
+
+example (p : Pr) (n : Nt) (D : ℕ → SPTree.Timed Bool) (DCost : ℕ → ℕ) :
+    (runRed.timed p n D DCost).2.erase = runRed p n fun a => (D a).erase :=
+  runRed.erase_timed p n D DCost
 
 end CatCrypt.Tactics.DeriveTimedRecordTest

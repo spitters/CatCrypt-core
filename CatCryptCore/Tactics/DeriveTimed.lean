@@ -323,6 +323,10 @@ rewrites the recursive call under the node's binder, and the conjuncts are rewri
 case hypotheses that the case split of the goal introduced (`normRecHyps`); a recursive call is
 found in the goal up to instances (`kabstract`), and a hypothesis that is a copy of a used one
 (one per occurrence of the call: its step cost and its costed tree) is cleared with it.
+The erasure theorem of a joint costed value (rule (d)) whose result holds a record with
+function fields, which the erasure `ε` rebuilds field by field, is closed with the induction
+hypotheses split into their component equations (`splitCtorHyps`, R15), so that a goal that
+holds up to the structure eta of that record is rewritten by the record's component.
 
 A recursive data function without a registered cost is priced by its cost derived on demand
 with `derive_cost` (`deriveCostCore`), by its own recursion. A derived cost takes, after the
@@ -2847,6 +2851,54 @@ def normRecHyps (c t : Name) (g : MVarId) : MetaM (Option MVarId) := g.withConte
       s.restore
       return some g
 
+/-- The component equations of `pf : lhs = rhs` when `lhs` is a constructor application of a
+structure (a pair, a record with function fields as the erasure `ε` rebuilds it field by
+field): `aᵢ = S.fᵢ rhs` for each data field `aᵢ` of `lhs`, by congruence with the projection,
+and recursively the components of each `aᵢ` that is itself a constructor application. -/
+partial def ctorComponents (pf lhs rhs : Expr) (acc : Array (Expr × Expr) := #[]) :
+    MetaM (Array (Expr × Expr)) := do
+  let l := lhs.consumeMData
+  let some cv ← isConstructorApp? l | return acc
+  let env ← getEnv
+  unless isStructure env cv.induct do return acc
+  unless l.getAppNumArgs == cv.numParams + cv.numFields do return acc
+  let fields := getStructureFields env cv.induct
+  let lt ← inferType l
+  let mut acc := acc
+  for i in [0:fields.size] do
+    let fi := l.getArg! (cv.numParams + i)
+    if ← isProp (← inferType fi) then continue
+    if ← isTypeFormerType (← inferType fi) then continue
+    let projFn := cv.induct ++ fields[i]!
+    let st ← saveState
+    try
+      let f ← withLocalDeclD `z lt fun z => do mkLambdaFVars #[z] (← mkAppM projFn #[z])
+      let rhsI ← mkAppM projFn #[rhs]
+      let eqT ← mkEq fi rhsI
+      let pfI ← mkExpectedTypeHint (← mkCongrArg f pf) eqT
+      acc := acc.push (pfI, eqT)
+      acc ← ctorComponents pfI fi rhsI acc
+    catch _ => st.restore
+  return acc
+
+/-- The induction hypotheses `(c.timed ys)…` `= c ys` of an erasure theorem whose left side is a
+constructor application (R15: the erasure `ε` of a joint costed value rebuilds a tuple and the
+records with function fields in it field by field) split into their component equations
+(`ctorComponents`), so that a goal that holds only up to structure eta, with a record rebuilt
+from the projections of the costed call on one side and the projection of the call of `c` on
+the other, is rewritten by the component of that record. -/
+def splitCtorHyps (c : Name) (g : MVarId) : MetaM MVarId := g.withContext do
+  let mut g := g
+  for d in ← getLCtx do
+    if d.isImplementationDetail then continue
+    let ty ← instantiateMVars d.type
+    let some (_, lhs, rhs) := ty.consumeMData.eq? | continue
+    unless rhs.isAppOf c do continue
+    for (pf, ety) in ← ctorComponents d.toExpr lhs rhs do
+      let (_, g') ← (← g.assert d.userName ety pf).intro1P
+      g := g'
+  return g
+
 /-- The applications of the constant `t` in `e`, outermost first. -/
 partial def appsOfConst (t : Name) (e : Expr) (acc : Array Expr := #[]) : Array Expr :=
   let acc := if e.isAppOf t then acc.push e else acc
@@ -4944,6 +4996,12 @@ partial def deriveHatValue (ctx : Ctx) (c : Name) (joint : Bool := false) :
   let proof ← Term.withoutErrToSorry do
     let mv ← mkFreshExprMVar eType
     let rem ← Tactic.run mv.mvarId! (Tactic.evalTactic tac)
+    -- A goal left up to structure eta of a record in the result: the induction hypotheses
+    -- split into their component equations, and the closer again (R15).
+    let rem ← rem.flatMapM fun g => do
+      let g' ← splitCtorHyps c g
+      if g' == g then return [g]
+      Tactic.run g' (Tactic.evalTactic close)
     unless rem.isEmpty do
       fail m!"the erasure theorem `{eraseName}` is not closed by functional induction and \
         unfolding; goals left:{indentD (MessageData.joinSep (rem.map (.ofGoal ·)) "\n")}"
