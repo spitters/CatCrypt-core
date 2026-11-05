@@ -24,7 +24,7 @@ pair states the erasure identity `f_texpr.erase = f_impExpr`.
 * `X3dhDeps`: the operations the crate calls and does not define. Every
   definition below stands under `variable [X3dhDeps]`, so each is
   parametric in an instance of it, which the consuming side supplies.
-* `f`, `f_impExpr` and `f_texpr` for each of the 13 extracted functions: the
+* `f`, `f_impExpr` and `f_texpr` for each of the 12 extracted functions: the
   surface definition, the literal of its erased body, and the typed literal.
 
 This file is generated. Extracting the crate again overwrites it, so an edit
@@ -101,10 +101,11 @@ class X3dhDeps where
   verify (a : Array (Int)) (b : Array (Int)) (c : Array (Int)) : Bool
   dh (a : Array (Int)) (b : Array (Int)) : Array (Int)
   kdf (a : Array (Int)) (b : Array (Int)) (c : Array (Int)) (d : Array (Int)) : Array (Int)
+  kdf3 (a : Array (Int)) (b : Array (Int)) (c : Array (Int)) : Array (Int)
   event (a : Array (Int)) (b : Int) (c : Array (Int)) : Array Int
   send_init (a : Array (Int)) (b : Array (Int) × Array (Int) × Array (Int)) : Array Int
 
-export X3dhDeps (dh_pub sign verify dh kdf event send_init)
+export X3dhDeps (dh_pub sign verify dh kdf kdf3 event send_init)
 
 variable [X3dhDeps]
 
@@ -153,9 +154,6 @@ def xor_32 (a : Array (Int)) (b : Array (Int)) : Array (Int) :=
   Hax.foldRange (0 : Int) (32 : Int) out fun i out =>
     (Hax.array_update out i (Hax.bitxor_w 8 (Hax.index a i) (Hax.index b i)) : Array (Int))
 
-def ZERO : Array (Int) :=
-ZERO_KEY
-
 def create_bundle (ik_secret : Array (Int)) (spk_secret : Array (Int)) (opk_secret : Array (Int)) : Array (Int) × Array (Int) × Array (Int) × Array (Int) :=
   let ik_pub := (dh_pub ik_secret : Array (Int))
   let spk_pub := (dh_pub spk_secret : Array (Int))
@@ -170,12 +168,12 @@ def initiate (ik_a_secret : Array (Int)) (ek_a_secret : Array (Int)) (bundle : A
   let dh1 := (dh ik_a_secret («.spk» bundle) : Array (Int))
   let dh2 := (dh ek_a_secret («.ik» bundle) : Array (Int))
   let dh3 := (dh ek_a_secret («.spk» bundle) : Array (Int))
-  let dh4 := (  if Hax.bne use_opk 0 then
-    dh ek_a_secret («.opk» bundle)
+  let sk := (  if use_opk then
+    let dh4 := (dh ek_a_secret («.opk» bundle) : Array (Int))
+    kdf dh1 dh2 dh3 dh4
   else
-    ZERO : Array (Int))
-  let sk := (kdf dh1 dh2 dh3 dh4 : Array (Int))
-  let msg := (X3dhInitMessage ik_a_pub ek_a_pub (  if Hax.bne use_opk 0 then
+    kdf3 dh1 dh2 dh3 : Array (Int))
+  let msg := (X3dhInitMessage ik_a_pub ek_a_pub (  if use_opk then
     #[(0 : Int), (0 : Int), (0 : Int), (1 : Int)]
   else
     #[(0 : Int), (0 : Int), (0 : Int), (0 : Int)]) : Array (Int) × Array (Int) × Array (Int))
@@ -185,11 +183,11 @@ def respond (ik_b_secret : Array (Int)) (spk_b_secret : Array (Int)) (opk_b_secr
   let dh1 := (dh spk_b_secret («.ik_a» msg) : Array (Int))
   let dh2 := (dh ik_b_secret («.ek_a» msg) : Array (Int))
   let dh3 := (dh spk_b_secret («.ek_a» msg) : Array (Int))
-  let dh4 := (  if Hax.bne use_opk 0 then
-    dh opk_b_secret («.ek_a» msg)
+  if use_opk then
+    let dh4 := (dh opk_b_secret («.ek_a» msg) : Array (Int))
+    kdf dh1 dh2 dh3 dh4
   else
-    ZERO : Array (Int))
-  kdf dh1 dh2 dh3 dh4
+    kdf3 dh1 dh2 dh3
 
 def Start_receive_bundle (self : Start_T) (ghost : Array (Int)) (bundle : Array (Int) × Array (Int) × Array (Int) × Array (Int)) :=
   let ghost := event ghost (0 : Int) («.ik» bundle)
@@ -230,17 +228,14 @@ def ZERO_SESSION_KEY_impExpr : ImpExpr :=
 def xor_32_impExpr : ImpExpr :=
   (.letBind "a" (.var "a") (.letBind "b" (.var "b") (.letBind "out" (.app "repeat" [(.lit (ImpLit.int 0)), (.lit (ImpLit.int 32))]) (.seq (.forFold "i" (.lit (ImpLit.int 0)) (.lit (ImpLit.int 32)) (.seq (.seq (.letBind "out" (.app "array_update" [(.var "out"), (.var "i"), (.app "BitXor#8" [(.app "index" [(.var "a"), (.var "i")]), (.app "index" [(.var "b"), (.var "i")])])]) (.var "out")) .unitVal) .unitVal)) (.var "out")))))
 
-def ZERO_impExpr : ImpExpr :=
-  (.var "ZERO_KEY")
-
 def create_bundle_impExpr : ImpExpr :=
   (.letBind "ik_secret" (.var "ik_secret") (.letBind "spk_secret" (.var "spk_secret") (.letBind "opk_secret" (.var "opk_secret") (.letBind "ik_pub" (.app "dh_pub" [(.var "ik_secret")]) (.letBind "spk_pub" (.app "dh_pub" [(.var "spk_secret")]) (.letBind "opk_pub" (.app "dh_pub" [(.var "opk_secret")]) (.letBind "sig" (.app "sign" [(.var "ik_secret"), (.var "spk_pub")]) (.app "X3dhPreKeyBundle" [(.var "ik_pub"), (.var "spk_pub"), (.var "opk_pub"), (.var "sig")]))))))))
 
 def initiate_impExpr : ImpExpr :=
-  (.letBind "ik_a_secret" (.var "ik_a_secret") (.letBind "ek_a_secret" (.var "ek_a_secret") (.letBind "bundle" (.var "bundle") (.letBind "use_opk" (.var "use_opk") (.letBind "sig_valid" (.app "verify" [(.app ".ik" [(.var "bundle")]), (.app ".spk" [(.var "bundle")]), (.app ".sig" [(.var "bundle")])]) (.letBind "ik_a_pub" (.app "dh_pub" [(.var "ik_a_secret")]) (.letBind "ek_a_pub" (.app "dh_pub" [(.var "ek_a_secret")]) (.letBind "dh1" (.app "dh" [(.var "ik_a_secret"), (.app ".spk" [(.var "bundle")])]) (.letBind "dh2" (.app "dh" [(.var "ek_a_secret"), (.app ".ik" [(.var "bundle")])]) (.letBind "dh3" (.app "dh" [(.var "ek_a_secret"), (.app ".spk" [(.var "bundle")])]) (.letBind "dh4" (.ifThenElse (.var "use_opk") (.app "dh" [(.var "ek_a_secret"), (.app ".opk" [(.var "bundle")])]) (.var "ZERO")) (.letBind "sk" (.app "kdf" [(.var "dh1"), (.var "dh2"), (.var "dh3"), (.var "dh4")]) (.letBind "msg" (.app "X3dhInitMessage" [(.var "ik_a_pub"), (.var "ek_a_pub"), (.ifThenElse (.var "use_opk") (.app "array_lit" [(.lit (ImpLit.int 0)), (.lit (ImpLit.int 0)), (.lit (ImpLit.int 0)), (.lit (ImpLit.int 1))]) (.app "array_lit" [(.lit (ImpLit.int 0)), (.lit (ImpLit.int 0)), (.lit (ImpLit.int 0)), (.lit (ImpLit.int 0))]))]) (.tuple [(.var "sk"), (.var "msg"), (.var "sig_valid")]))))))))))))))
+  (.letBind "ik_a_secret" (.var "ik_a_secret") (.letBind "ek_a_secret" (.var "ek_a_secret") (.letBind "bundle" (.var "bundle") (.letBind "use_opk" (.var "use_opk") (.letBind "sig_valid" (.app "verify" [(.app ".ik" [(.var "bundle")]), (.app ".spk" [(.var "bundle")]), (.app ".sig" [(.var "bundle")])]) (.letBind "ik_a_pub" (.app "dh_pub" [(.var "ik_a_secret")]) (.letBind "ek_a_pub" (.app "dh_pub" [(.var "ek_a_secret")]) (.letBind "dh1" (.app "dh" [(.var "ik_a_secret"), (.app ".spk" [(.var "bundle")])]) (.letBind "dh2" (.app "dh" [(.var "ek_a_secret"), (.app ".ik" [(.var "bundle")])]) (.letBind "dh3" (.app "dh" [(.var "ek_a_secret"), (.app ".spk" [(.var "bundle")])]) (.letBind "sk" (.ifThenElse (.var "use_opk") (.letBind "dh4" (.app "dh" [(.var "ek_a_secret"), (.app ".opk" [(.var "bundle")])]) (.app "kdf" [(.var "dh1"), (.var "dh2"), (.var "dh3"), (.var "dh4")])) (.app "kdf3" [(.var "dh1"), (.var "dh2"), (.var "dh3")])) (.letBind "msg" (.app "X3dhInitMessage" [(.var "ik_a_pub"), (.var "ek_a_pub"), (.ifThenElse (.var "use_opk") (.app "array_lit" [(.lit (ImpLit.int 0)), (.lit (ImpLit.int 0)), (.lit (ImpLit.int 0)), (.lit (ImpLit.int 1))]) (.app "array_lit" [(.lit (ImpLit.int 0)), (.lit (ImpLit.int 0)), (.lit (ImpLit.int 0)), (.lit (ImpLit.int 0))]))]) (.tuple [(.var "sk"), (.var "msg"), (.var "sig_valid")])))))))))))))
 
 def respond_impExpr : ImpExpr :=
-  (.letBind "ik_b_secret" (.var "ik_b_secret") (.letBind "spk_b_secret" (.var "spk_b_secret") (.letBind "opk_b_secret" (.var "opk_b_secret") (.letBind "msg" (.var "msg") (.letBind "use_opk" (.var "use_opk") (.letBind "dh1" (.app "dh" [(.var "spk_b_secret"), (.app ".ik_a" [(.var "msg")])]) (.letBind "dh2" (.app "dh" [(.var "ik_b_secret"), (.app ".ek_a" [(.var "msg")])]) (.letBind "dh3" (.app "dh" [(.var "spk_b_secret"), (.app ".ek_a" [(.var "msg")])]) (.letBind "dh4" (.ifThenElse (.var "use_opk") (.app "dh" [(.var "opk_b_secret"), (.app ".ek_a" [(.var "msg")])]) (.var "ZERO")) (.app "kdf" [(.var "dh1"), (.var "dh2"), (.var "dh3"), (.var "dh4")]))))))))))
+  (.letBind "ik_b_secret" (.var "ik_b_secret") (.letBind "spk_b_secret" (.var "spk_b_secret") (.letBind "opk_b_secret" (.var "opk_b_secret") (.letBind "msg" (.var "msg") (.letBind "use_opk" (.var "use_opk") (.letBind "dh1" (.app "dh" [(.var "spk_b_secret"), (.app ".ik_a" [(.var "msg")])]) (.letBind "dh2" (.app "dh" [(.var "ik_b_secret"), (.app ".ek_a" [(.var "msg")])]) (.letBind "dh3" (.app "dh" [(.var "spk_b_secret"), (.app ".ek_a" [(.var "msg")])]) (.ifThenElse (.var "use_opk") (.letBind "dh4" (.app "dh" [(.var "opk_b_secret"), (.app ".ek_a" [(.var "msg")])]) (.app "kdf" [(.var "dh1"), (.var "dh2"), (.var "dh3"), (.var "dh4")])) (.app "kdf3" [(.var "dh1"), (.var "dh2"), (.var "dh3")]))))))))))
 
 def Start_receive_bundle_impExpr : ImpExpr :=
   (.letBind "self" (.var "self") (.letBind "ghost" (.var "ghost") (.letBind "bundle" (.var "bundle") (.seq (.seq (.letBind "ghost" (.app "event" [(.var "ghost"), (.lit (ImpLit.int 0)), (.app ".ik" [(.var "bundle")])]) (.var "ghost")) .unitVal) (.tuple [(.app "BundleReceived" [(.var "bundle")]), (.var "ghost")])))))
@@ -269,17 +264,14 @@ def ZERO_SESSION_KEY_texpr : TExpr :=
 def xor_32_texpr : TExpr :=
   (.mk (.letBind "a" (.mk (.var "a") ty_11) (.mk (.letBind "b" (.mk (.var "b") ty_11) (.mk (.letBind "out" (.mk (.app "repeat" [(.mk (.lit (ImpLit.int 0)) ty_17), (.mk (.lit (ImpLit.int 32)) ty_18)]) ty_5) (.mk (.seq (.mk (.forFold "i" (.mk (.lit (ImpLit.int 0)) ty_18) (.mk (.lit (ImpLit.int 32)) ty_18) (.mk (.seq (.mk (.seq (.mk (.letBind "out" (.mk (.app "array_update" [(.mk (.var "out") ty_5), (.mk (.var "i") ty_18), (.mk (.app "BitXor#8" [(.mk (.app "index" [(.mk (.var "a") ty_11), (.mk (.var "i") ty_18)]) ty_17), (.mk (.app "index" [(.mk (.var "b") ty_11), (.mk (.var "i") ty_18)]) ty_17)]) ty_17)]) ty_17) (.mk (.var "out") ty_17)) ty_17) (.mk .unitVal .unit)) .unit) (.mk .unitVal .unit)) .unit)) .unit) (.mk (.var "out") ty_5)) ty_5)) ty_5)) ty_5)) ty_5)
 
-def ZERO_texpr : TExpr :=
-  (.mk (.var "ZERO_KEY") ty_5)
-
 def create_bundle_texpr : TExpr :=
   (.mk (.letBind "ik_secret" (.mk (.var "ik_secret") ty_11) (.mk (.letBind "spk_secret" (.mk (.var "spk_secret") ty_11) (.mk (.letBind "opk_secret" (.mk (.var "opk_secret") ty_11) (.mk (.letBind "ik_pub" (.mk (.app "dh_pub" [(.mk (.var "ik_secret") ty_11)]) ty_5) (.mk (.letBind "spk_pub" (.mk (.app "dh_pub" [(.mk (.var "spk_secret") ty_11)]) ty_5) (.mk (.letBind "opk_pub" (.mk (.app "dh_pub" [(.mk (.var "opk_secret") ty_11)]) ty_5) (.mk (.letBind "sig" (.mk (.app "sign" [(.mk (.var "ik_secret") ty_11), (.mk (.var "spk_pub") ty_5)]) ty_7) (.mk (.app "X3dhPreKeyBundle" [(.mk (.var "ik_pub") ty_5), (.mk (.var "spk_pub") ty_5), (.mk (.var "opk_pub") ty_5), (.mk (.var "sig") ty_7)]) ty_4)) ty_19)) ty_19)) ty_19)) ty_4)) ty_4)) ty_4)) ty_4)
 
 def initiate_texpr : TExpr :=
-  (.mk (.letBind "ik_a_secret" (.mk (.var "ik_a_secret") ty_11) (.mk (.letBind "ek_a_secret" (.mk (.var "ek_a_secret") ty_11) (.mk (.letBind "bundle" (.mk (.var "bundle") ty_10) (.mk (.letBind "use_opk" (.mk (.var "use_opk") .bool) (.mk (.letBind "sig_valid" (.mk (.app "verify" [(.mk (.app ".ik" [(.mk (.var "bundle") ty_10)]) ty_5), (.mk (.app ".spk" [(.mk (.var "bundle") ty_10)]) ty_5), (.mk (.app ".sig" [(.mk (.var "bundle") ty_10)]) ty_7)]) .bool) (.mk (.letBind "ik_a_pub" (.mk (.app "dh_pub" [(.mk (.var "ik_a_secret") ty_11)]) ty_5) (.mk (.letBind "ek_a_pub" (.mk (.app "dh_pub" [(.mk (.var "ek_a_secret") ty_11)]) ty_5) (.mk (.letBind "dh1" (.mk (.app "dh" [(.mk (.var "ik_a_secret") ty_11), (.mk (.app ".spk" [(.mk (.var "bundle") ty_10)]) ty_5)]) ty_5) (.mk (.letBind "dh2" (.mk (.app "dh" [(.mk (.var "ek_a_secret") ty_11), (.mk (.app ".ik" [(.mk (.var "bundle") ty_10)]) ty_5)]) ty_5) (.mk (.letBind "dh3" (.mk (.app "dh" [(.mk (.var "ek_a_secret") ty_11), (.mk (.app ".spk" [(.mk (.var "bundle") ty_10)]) ty_5)]) ty_5) (.mk (.letBind "dh4" (.mk (.ifThenElse (.mk (.var "use_opk") .bool) (.mk (.app "dh" [(.mk (.var "ek_a_secret") ty_11), (.mk (.app ".opk" [(.mk (.var "bundle") ty_10)]) ty_5)]) ty_5) (.mk (.var "ZERO") ty_5)) ty_5) (.mk (.letBind "sk" (.mk (.app "kdf" [(.mk (.var "dh1") ty_5), (.mk (.var "dh2") ty_5), (.mk (.var "dh3") ty_5), (.mk (.var "dh4") ty_5)]) ty_5) (.mk (.letBind "msg" (.mk (.app "X3dhInitMessage" [(.mk (.var "ik_a_pub") ty_5), (.mk (.var "ek_a_pub") ty_5), (.mk (.ifThenElse (.mk (.var "use_opk") .bool) (.mk (.app "array_lit" [(.mk (.lit (ImpLit.int 0)) ty_17), (.mk (.lit (ImpLit.int 0)) ty_17), (.mk (.lit (ImpLit.int 0)) ty_17), (.mk (.lit (ImpLit.int 1)) ty_17)]) ty_6) (.mk (.app "array_lit" [(.mk (.lit (ImpLit.int 0)) ty_17), (.mk (.lit (ImpLit.int 0)) ty_17), (.mk (.lit (ImpLit.int 0)) ty_17), (.mk (.lit (ImpLit.int 0)) ty_17)]) ty_6)) ty_6)]) ty_3) (.mk (.tuple [(.mk (.var "sk") ty_5), (.mk (.var "msg") ty_3), (.mk (.var "sig_valid") .bool)]) ty_14)) ty_19)) ty_19)) ty_19)) ty_19)) ty_19)) ty_19)) ty_19)) ty_19)) ty_14)) ty_14)) ty_14)) ty_14)) ty_14)
+  (.mk (.letBind "ik_a_secret" (.mk (.var "ik_a_secret") ty_11) (.mk (.letBind "ek_a_secret" (.mk (.var "ek_a_secret") ty_11) (.mk (.letBind "bundle" (.mk (.var "bundle") ty_10) (.mk (.letBind "use_opk" (.mk (.var "use_opk") .bool) (.mk (.letBind "sig_valid" (.mk (.app "verify" [(.mk (.app ".ik" [(.mk (.var "bundle") ty_10)]) ty_5), (.mk (.app ".spk" [(.mk (.var "bundle") ty_10)]) ty_5), (.mk (.app ".sig" [(.mk (.var "bundle") ty_10)]) ty_7)]) .bool) (.mk (.letBind "ik_a_pub" (.mk (.app "dh_pub" [(.mk (.var "ik_a_secret") ty_11)]) ty_5) (.mk (.letBind "ek_a_pub" (.mk (.app "dh_pub" [(.mk (.var "ek_a_secret") ty_11)]) ty_5) (.mk (.letBind "dh1" (.mk (.app "dh" [(.mk (.var "ik_a_secret") ty_11), (.mk (.app ".spk" [(.mk (.var "bundle") ty_10)]) ty_5)]) ty_5) (.mk (.letBind "dh2" (.mk (.app "dh" [(.mk (.var "ek_a_secret") ty_11), (.mk (.app ".ik" [(.mk (.var "bundle") ty_10)]) ty_5)]) ty_5) (.mk (.letBind "dh3" (.mk (.app "dh" [(.mk (.var "ek_a_secret") ty_11), (.mk (.app ".spk" [(.mk (.var "bundle") ty_10)]) ty_5)]) ty_5) (.mk (.letBind "sk" (.mk (.ifThenElse (.mk (.var "use_opk") .bool) (.mk (.letBind "dh4" (.mk (.app "dh" [(.mk (.var "ek_a_secret") ty_11), (.mk (.app ".opk" [(.mk (.var "bundle") ty_10)]) ty_5)]) ty_5) (.mk (.app "kdf" [(.mk (.var "dh1") ty_5), (.mk (.var "dh2") ty_5), (.mk (.var "dh3") ty_5), (.mk (.var "dh4") ty_5)]) ty_5)) ty_5) (.mk (.app "kdf3" [(.mk (.var "dh1") ty_5), (.mk (.var "dh2") ty_5), (.mk (.var "dh3") ty_5)]) ty_5)) ty_5) (.mk (.letBind "msg" (.mk (.app "X3dhInitMessage" [(.mk (.var "ik_a_pub") ty_5), (.mk (.var "ek_a_pub") ty_5), (.mk (.ifThenElse (.mk (.var "use_opk") .bool) (.mk (.app "array_lit" [(.mk (.lit (ImpLit.int 0)) ty_17), (.mk (.lit (ImpLit.int 0)) ty_17), (.mk (.lit (ImpLit.int 0)) ty_17), (.mk (.lit (ImpLit.int 1)) ty_17)]) ty_6) (.mk (.app "array_lit" [(.mk (.lit (ImpLit.int 0)) ty_17), (.mk (.lit (ImpLit.int 0)) ty_17), (.mk (.lit (ImpLit.int 0)) ty_17), (.mk (.lit (ImpLit.int 0)) ty_17)]) ty_6)) ty_6)]) ty_3) (.mk (.tuple [(.mk (.var "sk") ty_5), (.mk (.var "msg") ty_3), (.mk (.var "sig_valid") .bool)]) ty_14)) ty_19)) ty_19)) ty_19)) ty_19)) ty_19)) ty_19)) ty_19)) ty_14)) ty_14)) ty_14)) ty_14)) ty_14)
 
 def respond_texpr : TExpr :=
-  (.mk (.letBind "ik_b_secret" (.mk (.var "ik_b_secret") ty_11) (.mk (.letBind "spk_b_secret" (.mk (.var "spk_b_secret") ty_11) (.mk (.letBind "opk_b_secret" (.mk (.var "opk_b_secret") ty_11) (.mk (.letBind "msg" (.mk (.var "msg") ty_9) (.mk (.letBind "use_opk" (.mk (.var "use_opk") .bool) (.mk (.letBind "dh1" (.mk (.app "dh" [(.mk (.var "spk_b_secret") ty_11), (.mk (.app ".ik_a" [(.mk (.var "msg") ty_9)]) ty_5)]) ty_5) (.mk (.letBind "dh2" (.mk (.app "dh" [(.mk (.var "ik_b_secret") ty_11), (.mk (.app ".ek_a" [(.mk (.var "msg") ty_9)]) ty_5)]) ty_5) (.mk (.letBind "dh3" (.mk (.app "dh" [(.mk (.var "spk_b_secret") ty_11), (.mk (.app ".ek_a" [(.mk (.var "msg") ty_9)]) ty_5)]) ty_5) (.mk (.letBind "dh4" (.mk (.ifThenElse (.mk (.var "use_opk") .bool) (.mk (.app "dh" [(.mk (.var "opk_b_secret") ty_11), (.mk (.app ".ek_a" [(.mk (.var "msg") ty_9)]) ty_5)]) ty_5) (.mk (.var "ZERO") ty_5)) ty_5) (.mk (.app "kdf" [(.mk (.var "dh1") ty_5), (.mk (.var "dh2") ty_5), (.mk (.var "dh3") ty_5), (.mk (.var "dh4") ty_5)]) ty_5)) ty_19)) ty_19)) ty_19)) ty_5)) ty_5)) ty_5)) ty_5)) ty_5)) ty_5)
+  (.mk (.letBind "ik_b_secret" (.mk (.var "ik_b_secret") ty_11) (.mk (.letBind "spk_b_secret" (.mk (.var "spk_b_secret") ty_11) (.mk (.letBind "opk_b_secret" (.mk (.var "opk_b_secret") ty_11) (.mk (.letBind "msg" (.mk (.var "msg") ty_9) (.mk (.letBind "use_opk" (.mk (.var "use_opk") .bool) (.mk (.letBind "dh1" (.mk (.app "dh" [(.mk (.var "spk_b_secret") ty_11), (.mk (.app ".ik_a" [(.mk (.var "msg") ty_9)]) ty_5)]) ty_5) (.mk (.letBind "dh2" (.mk (.app "dh" [(.mk (.var "ik_b_secret") ty_11), (.mk (.app ".ek_a" [(.mk (.var "msg") ty_9)]) ty_5)]) ty_5) (.mk (.letBind "dh3" (.mk (.app "dh" [(.mk (.var "spk_b_secret") ty_11), (.mk (.app ".ek_a" [(.mk (.var "msg") ty_9)]) ty_5)]) ty_5) (.mk (.ifThenElse (.mk (.var "use_opk") .bool) (.mk (.letBind "dh4" (.mk (.app "dh" [(.mk (.var "opk_b_secret") ty_11), (.mk (.app ".ek_a" [(.mk (.var "msg") ty_9)]) ty_5)]) ty_5) (.mk (.app "kdf" [(.mk (.var "dh1") ty_5), (.mk (.var "dh2") ty_5), (.mk (.var "dh3") ty_5), (.mk (.var "dh4") ty_5)]) ty_5)) ty_5) (.mk (.app "kdf3" [(.mk (.var "dh1") ty_5), (.mk (.var "dh2") ty_5), (.mk (.var "dh3") ty_5)]) ty_5)) ty_5)) ty_19)) ty_19)) ty_5)) ty_5)) ty_5)) ty_5)) ty_5)) ty_5)
 
 def Start_receive_bundle_texpr : TExpr :=
   (.mk (.letBind "self" (.mk (.var "self") ty_2) (.mk (.letBind "ghost" (.mk (.var "ghost") ty_12) (.mk (.letBind "bundle" (.mk (.var "bundle") ty_4) (.mk (.seq (.mk (.seq (.mk (.letBind "ghost" (.mk (.app "event" [(.mk (.var "ghost") ty_12), (.mk (.lit (ImpLit.int 0)) ty_17), (.mk (.app ".ik" [(.mk (.var "bundle") ty_4)]) ty_5)]) ty_13) (.mk (.var "ghost") ty_13)) ty_13) (.mk .unitVal .unit)) ty_13) (.mk (.tuple [(.mk (.app "BundleReceived" [(.mk (.var "bundle") ty_4)]) ty_0), (.mk (.var "ghost") ty_19)]) ty_19)) ty_0)) ty_0)) ty_0)) ty_0)
@@ -300,7 +292,6 @@ example : ZERO_KEY_texpr.erase = ZERO_KEY_impExpr := rfl
 example : ZERO_SIGNATURE_texpr.erase = ZERO_SIGNATURE_impExpr := rfl
 example : ZERO_SESSION_KEY_texpr.erase = ZERO_SESSION_KEY_impExpr := rfl
 example : xor_32_texpr.erase = xor_32_impExpr := rfl
-example : ZERO_texpr.erase = ZERO_impExpr := rfl
 example : create_bundle_texpr.erase = create_bundle_impExpr := rfl
 example : initiate_texpr.erase = initiate_impExpr := rfl
 example : respond_texpr.erase = respond_impExpr := rfl
@@ -319,4 +310,3 @@ result holding a secret value, with the secrecy of each parameter and of the res
 A function not listed has no secret parameter and a public result. -/
 def X3dh_fnSecrecy : List Hax.FnSecrecy :=
   []
-

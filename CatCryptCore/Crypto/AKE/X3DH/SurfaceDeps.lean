@@ -108,6 +108,11 @@ noncomputable def x3dhKdf
     (concreteHKDF.extract dh1 dh2)
     (concreteHKDF.extract dh3 dh4)
 
+/-- The X3DH KDF without the one-time prekey: the three Diffie-Hellman values `DH1`, `DH2`,
+`DH3` combined by a tree of HKDF-Extract operations, in the form of `x3dhKdf`. -/
+noncomputable def x3dhKdf3 (dh1 dh2 dh3 : Vector UInt8 32) : Vector UInt8 32 :=
+  concreteHKDF.extract (concreteHKDF.extract dh1 dh2) dh3
+
 /-! ## Parameter Record -/
 
 /-- Concrete X3DH parameters using libcrux-specs X25519 + HKDF-SHA256.
@@ -132,6 +137,7 @@ noncomputable instance defaultX3dhDeps : X3dh.X3dhDeps where
   dh a b := vecToArrayInt (x25519_scalarmult (decodeKey a) (decodeKey b))
   kdf a b c d :=
     vecToArrayInt (x3dhKdf (decodeKey a) (decodeKey b) (decodeKey c) (decodeKey d))
+  kdf3 a b c := vecToArrayInt (x3dhKdf3 (decodeKey a) (decodeKey b) (decodeKey c))
   event := x3dhGhostRecord 2
   send_init ghost msg := x3dhGhostRecord 0 ghost 0 (msg.1 ++ msg.2.1 ++ msg.2.2)
 
@@ -152,6 +158,13 @@ theorem defaultX3dhHom :
       (decodeKey (vecToArrayInt c)) (decodeKey (vecToArrayInt d))) = _
     simp only [decodeKey_vecToArrayInt]
     rfl
+
+/-- `vecToArrayInt` carries `kdf3` of `defaultX3dhDeps` to `x3dhKdf3`. -/
+theorem defaultX3dhKdf3Hom : ExtractedCorrespondence.X3dhKdf3Hom vecToArrayInt x3dhKdf3 := by
+  intro a b c
+  change vecToArrayInt (x3dhKdf3 (decodeKey (vecToArrayInt a)) (decodeKey (vecToArrayInt b))
+    (decodeKey (vecToArrayInt c))) = _
+  simp only [decodeKey_vecToArrayInt]
 
 /-! ## End-to-end security of the extracted handshake -/
 
@@ -174,5 +187,26 @@ theorem x3dh_extracted_e2e_secure (hX : X25519Commutes)
         (Session.X3DHHops.kiAdversaryOfDistinguisher toX3DHParams
           (D ∘ ExtractedCorrespondence.encOut vecToArrayInt)) :=
   ExtractedCorrespondence.x3dh_extracted_advantage_le defaultX3dhHom rfl hX D
+
+/-- **X3DH end-to-end security of the extracted handshake without the one-time prekey**, with
+libcrux X25519 and HKDF-SHA256.
+
+Given `X25519Commutes`, the advantage of every distinguisher `D` between the session computed
+by the extracted `create_bundle` and `initiate` at `use_opk = false` and the encoded ideal
+session is at most `x3dhKIReductionBound` of `noOpkParams toX3DHParams x3dhKdf3`, the
+parameters whose KDF is `x3dhKdf3` of the first three Diffie-Hellman values, at the KI
+adversary of `D` precomposed with the encoding. The statement is an advantage bound between two
+distributions, not a UC emulation. -/
+theorem x3dh_extracted_noOpk_e2e_secure (hX : X25519Commutes)
+    (D : Array Int × X3DHTranscript (Array Int) → SPComp Bool) :
+    AdvantageA (ExtractedCorrespondence.x3dh_extractedAt toX3DHParams vecToArrayInt false)
+        ((x3dh_ideal toX3DHParams).map (ExtractedCorrespondence.encOut vecToArrayInt)) D ≤
+      Session.X3DHHops.x3dhKIReductionBound
+        (ExtractedCorrespondence.noOpkParams toX3DHParams x3dhKdf3)
+        (Session.X3DHHops.kiAdversaryOfDistinguisher
+          (ExtractedCorrespondence.noOpkParams toX3DHParams x3dhKdf3)
+          (D ∘ ExtractedCorrespondence.encOut vecToArrayInt)) :=
+  ExtractedCorrespondence.x3dh_extracted_noOpk_advantage_le defaultX3dhHom defaultX3dhKdf3Hom
+    rfl hX D
 
 end CatCrypt.Crypto.Signal.X3DH.SurfaceDeps
