@@ -34,6 +34,8 @@ decodes the answer of the adversary by a left inverse `decS` of `encS`.
 
 * `sampleFrom_replicateFin_zero_bind`, `sampleFrom_replicateFin_succ_bind` — `n` draws from
   `μ` are one draw followed by `n - 1` draws
+* `sampleFrom_uniform_map_bind`, `sampleFrom_replicateFin_uniform_map_bind` — draws from the
+  image of the uniform sampler on `S` under `f` are uniform draws from `S` followed by `f`
 * `SampledGame.advAt_map` — `(G.map enc).advAt μ A = G.advAt μ (encodedRed enc A)`
 * `Realizes.advantageA_eq` — the advantage of `A` between a realized pair is the advantage of
   `encodedRed enc A` against the game
@@ -68,6 +70,37 @@ theorem sampleFrom_replicateFin_succ_bind {X V : Type} (n : ℕ) (μ : SDistr X)
   funext h
   simp only [sampleFrom_bind_apply, replicateFin, piFin_succ, SDistr.bind_assoc,
     SDistr.pure_bind]
+
+/-- One draw from the image of the uniform sampler on `S` under `f` is a uniform draw from `S`
+followed by `f`. -/
+theorem sampleFrom_uniform_map_bind {S X V : Type} [Fintype S] [Nonempty S] (f : S → X)
+    (k : X → SPComp V) :
+    (sampleFrom ((SDistr.uniform S).bind fun s => SDistr.pure (f s))).bind k =
+      (SPComp.sample S).bind fun s => k (f s) := by
+  rw [← sampleFrom_bind_sampleFrom, sampleFrom_uniform, SPComp.bind_assoc]
+  simp only [sampleFrom_pure, SPComp.pure_bind]
+
+/-- `n` draws from the image of the uniform sampler on `S` under `f` are a uniform draw from
+`Fin n → S` followed by `f` at each draw. -/
+theorem sampleFrom_replicateFin_uniform_map_bind {S X V : Type} [Fintype S] [Nonempty S]
+    (f : S → X) : ∀ (n : ℕ) (k : (Fin n → X) → SPComp V),
+    (sampleFrom (replicateFin n ((SDistr.uniform S).bind fun s => SDistr.pure (f s)))).bind k =
+      (SPComp.sample (Fin n → S)).bind fun v => k (f ∘ v)
+  | 0, k => by
+    have hk : (fun v : Fin 0 → S => k (f ∘ v)) = fun _ => k Fin.elim0 :=
+      funext fun _ => congrArg k (funext fun i => i.elim0)
+    rw [sampleFrom_replicateFin_zero_bind, hk]
+    funext h
+    simp only [SPComp.bind_def, SPComp.sample, SDistr.bind_assoc, SDistr.pure_bind,
+      SDistr.uniform_bind_const]
+  | n + 1, k => by
+    rw [sampleFrom_replicateFin_succ_bind, sampleFrom_uniform_map_bind,
+      ← SPComp.sample_bind_equiv (Fin.consEquiv fun _ => S), SPComp.sample_prod_eq]
+    simp only [SPComp.bind_assoc, SPComp.pure_bind]
+    congr 1; funext s
+    rw [sampleFrom_replicateFin_uniform_map_bind f n]
+    congr 1; funext v
+    exact congrArg k (funext fun i => Fin.cases rfl (fun _ => rfl) i)
 
 /-! ## Decisional games over a sampler -/
 
