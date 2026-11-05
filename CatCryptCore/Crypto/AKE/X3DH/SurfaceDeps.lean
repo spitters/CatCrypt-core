@@ -57,7 +57,7 @@ adversary of the distinguisher precomposed with the encoding.
 ## References
 
 * Marlinspike, Perrin — *The X3DH Key Agreement Protocol*, 2016
-* the Rust crate `x3dh-hax` — protocol source
+* the Rust crate `x3dh-hax` of https://github.com/spitters/signal-hax — protocol source
 * `X3DH/ExtractedCorrespondence.lean` — the extracted session and its bound
 -/
 

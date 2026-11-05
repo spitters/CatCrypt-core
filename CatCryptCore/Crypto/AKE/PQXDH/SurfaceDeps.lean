@@ -72,7 +72,7 @@ The statement is an advantage bound between two distributions, not a UC emulatio
 ## References
 
 * Signal — *The PQXDH Key Agreement Protocol*, September 2023
-* the Rust crate `pqxdh-hax` — protocol source
+* the Rust crate `pqxdh-hax` of https://github.com/spitters/signal-hax — protocol source
 * `PQXDH/ExtractedCorrespondence.lean` — the extracted session and its bound
 -/
 
