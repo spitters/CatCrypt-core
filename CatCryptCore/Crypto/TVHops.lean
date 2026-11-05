@@ -7,6 +7,7 @@ module
 
 public import CatCryptCore.Crypto.SDistTV
 public import CatCryptCore.NonUniform.Product
+public import CatCryptCore.ForMathlib.PMFUniform
 
 /-!
 # Statistical hops through the total variation distance
@@ -25,6 +26,9 @@ of any distinguisher by at most `tvDist μ ν`.
 * `tvDist_bind_le` — `tvDist (d₁.bind K) (d₂.bind K) ≤ tvDist d₁ d₂`
 * `tvDist_bind_right_le` — a common prefix and continuations at distance at most `ε`
 * `tvDist_bind_bind_le` — both together, `tvDist d₁ d₂ + ε`
+* `SDistr.uniform_bind_pure_apply` — the mass of an image of the uniform distribution at a
+  point, by counting preimages
+* `tvDist_le_of_le_off` — `tvDist P Q` is at most the `Q`-mass of a set off which `Q ≤ P`
 * `tvDist_replicateFin_le` — `tvDist (replicateFin n μ) (replicateFin n ν) ≤ n * tvDist μ ν`
 * `advantageA_sampleFrom_swap_le` — one draw from `μ` after a common prefix replaced by a draw
   from `ν`, at the cost `tvDist μ ν`
@@ -116,6 +120,51 @@ theorem tvDist_bind_bind_le {α β : Type*} (d₁ d₂ : SDistr α) (K₁ K₂ :
     tvDist (d₁.bind K₁) (d₂.bind K₂) ≤ tvDist d₁ d₂ + ε :=
   (tvDist_triangle _ (d₂.bind K₁) _).trans
     (add_le_add (tvDist_bind_le d₁ d₂ K₁) (tvDist_bind_right_le d₂ K₁ K₂ ε h))
+
+/-- The image of the uniform distribution under `f` puts on `c` the number of preimages of `c`
+over the size of the domain. -/
+theorem SDistr.uniform_bind_pure_apply {A C : Type} [Fintype A] [Nonempty A] [DecidableEq C]
+    (f : A → C) (c : C) :
+    ((SDistr.uniform A).bind fun a => SDistr.pure (f a)) (some c) =
+      ((Finset.univ.filter fun a => f a = c).card : ℝ≥0∞) * (Fintype.card A : ℝ≥0∞)⁻¹ := by
+  have h : ((SDistr.uniform A).bind fun a => SDistr.pure (f a)) =
+      (PMF.uniformFintype A).map (fun a => some (f a)) := by
+    simp only [SDistr.uniform, SDistr.bind, SDistr.pure, PMF.bind_map]
+    exact PMF.bind_pure_comp _ _
+  rw [h, PMF.map_uniform_apply]
+  simp
+
+/-- An expectation under `Q` is at most the expectation under `P` plus the `Q`-mass of a set
+`Z` off which `Q` is pointwise below `P`. -/
+private theorem tsum_mul_le_add_indicator {α : Type*} (P Q : SDistr α) (Z : Set (Option α))
+    (h : ∀ x ∉ Z, Q x ≤ P x) (g : Option α → ℝ≥0∞) (hg : ∀ x, g x ≤ 1) :
+    ∑' x, Q x * g x ≤ ∑' x, P x * g x + ∑' x, Z.indicator Q x := by
+  rw [← ENNReal.tsum_add]
+  refine ENNReal.tsum_le_tsum fun x => ?_
+  by_cases hx : x ∈ Z
+  · rw [Set.indicator_of_mem hx]
+    exact le_add_left (mul_le_of_le_one_right' (hg x))
+  · exact le_add_right (mul_le_mul_left (h x hx) _)
+
+/-- The total variation distance from `P` to `Q` is at most the `Q`-mass of a set `Z` off
+which `Q` is pointwise below `P`. -/
+theorem tvDist_le_of_le_off {α : Type*} (P Q : SDistr α) (Z : Set (Option α))
+    (h : ∀ x ∉ Z, Q x ≤ P x) : tvDist P Q ≤ ∑' x, Z.indicator Q x := by
+  refine iSup₂_le fun f hf => absDiff_le_of_le_add ?_
+    (tsum_mul_le_add_indicator P Q Z h f hf)
+  have hf' : ∀ x, 1 - f x ≤ 1 := fun _ => tsub_le_self
+  have hsplit : ∀ R : SDistr α, ∑' x, R x * f x + ∑' x, R x * (1 - f x) = 1 := fun R => by
+    rw [← ENNReal.tsum_add]
+    conv_rhs => rw [← R.tsum_coe]
+    exact tsum_congr fun x => by rw [← mul_add, add_tsub_cancel_of_le (hf x), mul_one]
+  have h' := tsum_mul_le_add_indicator P Q Z h (fun x => 1 - f x) hf'
+  have hne : ∑' x, P x * (1 - f x) ≠ ⊤ := ne_top_of_le_ne_top ENNReal.one_ne_top
+    (tsum_mul_le_one P _ hf')
+  refine (ENNReal.add_le_add_iff_right hne).1 ?_
+  calc ∑' x, P x * f x + ∑' x, P x * (1 - f x) = 1 := hsplit P
+    _ = ∑' x, Q x * f x + ∑' x, Q x * (1 - f x) := (hsplit Q).symm
+    _ ≤ ∑' x, Q x * f x + (∑' x, P x * (1 - f x) + ∑' x, Z.indicator Q x) := by gcongr
+    _ = ∑' x, Q x * f x + ∑' x, Z.indicator Q x + ∑' x, P x * (1 - f x) := by ring
 
 /-- `n` independent draws from `μ` and from `ν` are at total variation distance at most
 `n * tvDist μ ν`. -/
