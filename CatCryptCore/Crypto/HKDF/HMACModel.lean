@@ -193,13 +193,6 @@ noncomputable def hmacBound (q : ℕ) (R : OracleAdv (Msg B P.ℓ) K Bool) : ℝ
         ∑ m ∈ Finset.range (2 * P.ℓ + 1), PRF_q_Advantage P.f (cascadeAdv P.f R i j m) +
       ((q * (q - 1) / 2 : ℕ) : ℝ≥0∞) / Fintype.card K)
 
-/-- For one query the cascade and collision terms of `hmacBound` vanish. -/
-theorem hmacBound_one (R : OracleAdv (Msg B P.ℓ) K Bool) :
-    hmacBound P 1 R =
-      PRF_q_Advantage (hmacKeyFamily P.f P.iv P.kpad) (hmacKeyAdv P.f P.fpad P.ipad P.opad R) +
-        PRF_q_Advantage P.f (nmacOuterAdv P.f P.fpad R) := by
-  simp_all [hmacBound]
-
 theorem prf_mac_le_hmacBound (R : OracleAdv (Msg B P.ℓ) K Bool) (q : ℕ)
     (hR : R.IsQueryBound q) : PRF_q_Advantage P.mac R ≤ hmacBound P q R :=
   hmac_prf_bound P.f P.fpad_injective P.iv P.ipad_ne_opad P.kpad R q hR
@@ -273,22 +266,16 @@ theorem msgInjOn_extractOne : MsgInjOn (extractOne P) 1 :=
   fun _ _ _ _ i i' h1 h2 h3 h4 he => ⟨he, by omega⟩
 
 /-- HKDF-Extract with adaptive input keying material as a variable-length PRF with one
-block per query. -/
-def hkdfExtractL (salt : K) (ikm : Msg B P.ℓ) : List K :=
-  [hkdfExtract P.f P.fpad P.iv P.ipad P.opad P.kpad P.ℓ salt ikm]
-
-omit [SampleableType K] [DecidableEq B] [Nontrivial B] in
-theorem hkdfExtractL_eq : hkdfExtractL P = expandVar P.mac (extractOne P) (fun _ => 1) :=
-  rfl
+block per query: the chain of `P.mac` with one block, whose value at `salt` and `ikm` is
+`[hkdfExtract P.f P.fpad P.iv P.ipad P.opad P.kpad P.ℓ salt ikm]`. -/
+def hkdfExtractL : K → Msg B P.ℓ → List K :=
+  expandVar P.mac (extractOne P) (fun _ => 1)
 
 /-- HKDF-Expand with adaptive contexts as a variable-length PRF with `n` blocks per
-context. -/
-def hkdfExpandL (n : ℕ) (prk info : K) : List K :=
-  (hkdfExpand P.f P.fpad P.iv P.ipad P.opad P.kpad P.ℓ P.msg n prk info).toList
-
-omit [SampleableType K] [DecidableEq B] [Nontrivial B] in
-theorem hkdfExpandL_eq (n : ℕ) : hkdfExpandL P n = expandVar P.mac P.msg (fun _ => n) :=
-  rfl
+context: the chain of `P.mac` with `n` blocks, whose value at `prk` and `info` is
+`(hkdfExpand P.f P.fpad P.iv P.ipad P.opad P.kpad P.ℓ P.msg n prk info).toList`. -/
+def hkdfExpandL (n : ℕ) : K → K → List K :=
+  expandVar P.mac P.msg (fun _ => n)
 
 /-- Game bound of HKDF-Extract keyed by the salt on strategies asking at most `q` input
 keying materials: the HMAC bound at `q` queries for the reduction

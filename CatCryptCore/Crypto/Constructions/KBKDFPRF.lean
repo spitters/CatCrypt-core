@@ -245,9 +245,7 @@ theorem lenInv_rfVarOracle (len : I → ℕ) (s : List (I × List K)) (d : I)
     (hx : x ∈ (rfVarOracle len s d).support) : LenInv len x.2 := by
   unfold rfVarOracle at hx
   split at hx
-  · simp only [PMF.support_pure, Set.mem_singleton_iff] at hx
-    subst hx
-    exact hs
+  · grind [PMF.support_pure]
   · simp only [PMF.support_map, Set.mem_image] at hx
     obtain ⟨v, -, rfl⟩ := hx
     intro p hp
@@ -332,10 +330,6 @@ variable {K D I Kp : Type}
 def MsgInjOn (msg : Option K → I → ℕ → D) (n : ℕ) : Prop :=
   ∀ p p' info info' i i', 1 ≤ i → i ≤ n → 1 ≤ i' → i' ≤ n →
     msg p info i = msg p' info' i' → info = info' ∧ i = i'
-
-theorem MsgInj.msgInjOn {msg : Option K → I → ℕ → D} (h : MsgInj msg) (n : ℕ) :
-    MsgInjOn msg n :=
-  fun p p' info info' i i' _ _ _ _ he => h p p' info info' i i' he
 
 /-- An injective map on the messages at the counters `1, …, n` preserves `MsgInjOn`. -/
 theorem MsgInjOn.comp {D' : Type} {msg : Option K → I → ℕ → D} {n : ℕ}
@@ -494,19 +488,13 @@ theorem append_zero_cons_inj {l l' r r' : List UInt8} (hl : (0 : UInt8) ∉ l)
     cases l' with
     | nil => simpa using h
     | cons b l' =>
-      simp only [List.nil_append, List.cons_append, List.cons.injEq] at h
-      exact absurd (h.1 ▸ List.mem_cons_self ..) hl'
+      grind
   | cons a l ih =>
     cases l' with
     | nil =>
-      simp only [List.nil_append, List.cons_append, List.cons.injEq] at h
-      exact absurd (h.1 ▸ List.mem_cons_self ..) hl
+      grind
     | cons b l' =>
-      simp only [List.cons_append, List.cons.injEq] at h
-      obtain ⟨rfl, h⟩ := h
-      obtain ⟨h1, h2⟩ := ih (fun hm => hl (List.mem_cons_of_mem _ hm))
-        (fun hm => hl' (List.mem_cons_of_mem _ hm)) h
-      exact ⟨by rw [h1], h2⟩
+      grind
 
 /-- A KBKDF query of SP 800-108: a label without a zero byte of at most `lmax` bytes, a
 context of at most `cmax` bytes, and the output length `L` in bits. -/

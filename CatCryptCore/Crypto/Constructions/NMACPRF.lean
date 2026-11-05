@@ -420,8 +420,7 @@ theorem collPMF_terminal (f : K → B → K) :
     exact PMF.bind_const _ _
   rw [h, PMF.map_apply, tsum_fintype, Finset.sum_eq_single a₀]
   · simp
-  · intro b _ hb
-    simp [Ne.symm hb]
+  · grind
   · simp
 
 omit [DecidableEq K] [DecidableEq B] in
@@ -588,10 +587,7 @@ theorem length_le_of_mem_support_run_rfOracle {D α : Type} [DecidableEq D]
     ∀ x ∈ (OracleAdv.run rfOracle A t).support, x.2.length ≤ t.length + n := by
   induction A generalizing n t with
   | ret a =>
-    intro x hx
-    simp only [OracleAdv.run_ret, PMF.support_pure, Set.mem_singleton_iff] at hx
-    subst hx
-    simp
+    simp_all
   | rand p k ih =>
     intro x hx
     simp only [OracleAdv.run_rand, PMF.mem_support_bind_iff] at hx
@@ -608,10 +604,7 @@ theorem length_le_of_mem_support_run_rfOracle {D α : Type} [DecidableEq D]
       unfold rfOracle at hy
       cases hl : List.lookup d t with
       | some r =>
-        rw [hl] at hy
-        simp only [PMF.support_pure, Set.mem_singleton_iff] at hy
-        subst hy
-        simp
+        grind [PMF.support_pure]
       | none =>
         rw [hl] at hy
         simp only [PMF.support_map, Set.mem_image] at hy
