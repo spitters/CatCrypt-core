@@ -359,6 +359,7 @@ public import CatCryptCore.Crypto.Signal.SenderKeys.XEdDSA
 public import CatCryptCore.Crypto.Signal.SealedSender.Anonymity
 public import CatCryptCore.Crypto.Signal.SealedSender.AnonymityTimed
 public import CatCryptCore.Crypto.PAKE.DHPAKE
+public import CatCryptCore.Crypto.PAKE.DHPAKEHidden
 public import CatCryptCore.Crypto.PAKE.FPAKESys
 public import CatCryptCore.Crypto.PAKE.DHExtractKit
 public import CatCryptCore.Crypto.PAKE.CPaceH1

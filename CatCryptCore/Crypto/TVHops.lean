@@ -33,6 +33,9 @@ of any distinguisher by at most `tvDist μ ν`.
 * `advantageA_sampleFrom_swap_le` — one draw from `μ` after a common prefix replaced by a draw
   from `ν`, at the cost `tvDist μ ν`
 * `advantageA_sampleFrom_le` — the same for a draw made first
+* `bind_apply_le_add_tvDist` — a common continuation of two distributions gives an
+  outcome a probability that differs by at most their total variation distance
+* `tvDist_map_map_some_le` — the images under a common function are no farther apart
 -/
 
 @[expose] public section
@@ -207,5 +210,35 @@ theorem advantageA_sampleFrom_le {X V : Type} (k : X → SPComp V) (H : SPComp V
       AdvantageA ((sampleFrom ν).bind k) H A + tvDist μ ν := by
   have h := advantageA_sampleFrom_swap_le (SPComp.pure ()) (fun _ => k) H A μ ν
   simpa only [SPComp.pure_bind] using h
+
+/-- A common continuation `K` of two distributions `p`, `q` gives the outcome `b` probabilities
+that differ by at most the total variation distance of `p` and `q`. -/
+theorem bind_apply_le_add_tvDist {α β : Type*} (p q : PMF α) (K : α → PMF β) (b : β) :
+    (p.bind K) b ≤ (q.bind K) b + tvDist (p.map some) (q.map some) := by
+  let f : Option α → ℝ≥0∞ := fun x => x.elim 0 fun a => K a b
+  have hf : ∀ x, f x ≤ 1 := fun x => by
+    cases x with
+    | none => exact zero_le_one
+    | some a => exact PMF.coe_le_one _ _
+  have hs : ∀ (r : PMF α) (a : α), (r.map some) (some a) = r a := fun r a => by
+    rw [PMF.map_apply, tsum_eq_single a (fun c hc => by simp [Ne.symm hc])]
+    simp
+  have e : ∀ r : PMF α, (r.bind K) b = ∑' x, (r.map some) x * f x := fun r => by
+    rw [SDistr.tsum_option_eq_add, PMF.bind_apply]
+    simp only [f, Option.elim_none, mul_zero, zero_add, Option.elim_some, hs]
+  rw [e p, e q]
+  exact le_add_of_absDiff_le (le_iSup₂_of_le f hf le_rfl)
+
+/-- The images of two distributions under a common function are at total variation distance
+at most that of the distributions. -/
+theorem tvDist_map_map_some_le {α β : Type*} (p q : PMF α) (g : α → β) :
+    tvDist ((p.map g).map some) ((q.map g).map some) ≤ tvDist (p.map some) (q.map some) := by
+  have e : ∀ r : PMF α,
+      (r.map g).map some = SDistr.bind (r.map some) fun a => SDistr.pure (g a) := fun r => by
+    simp only [SDistr.bind, SDistr.pure, PMF.bind_map, PMF.map_comp]
+    rw [← PMF.bind_pure_comp]
+    rfl
+  rw [e p, e q]
+  exact tvDist_bind_le _ _ _
 
 end CatCrypt.Crypto
