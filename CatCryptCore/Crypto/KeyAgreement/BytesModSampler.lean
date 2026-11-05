@@ -20,11 +20,16 @@ distribution on `ZMod q` is at least `(1 - β)` times `bytesModLaw q` pointwise 
 At the order `ℓ = 2^252 + δ₀` of the ristretto255 group, `k = 16` and `β = δ₀ / ℓ`, which is
 at most `2^-127`.
 
+A key drawn uniformly among the strings whose value lies in `[1, q - 1]` has the uniform law on
+the nonzero residues, at total variation distance at most `1 / q` from uniform.
+
 ## Main definitions
 
 * `bytesModLaw q` — the law of `natOfLeBytes v mod q` for uniform `v : Vector UInt8 32`
 * `δR255` — `δ₀ / ℓ` with `δ₀ = ℓ - 2^252`
 * `bytesModLCert` — the sampler certificate of `bytesModLaw ℓ` against uniform, bound `δR255`
+* `nonzeroLaw q`, `nonzeroCert q` — the uniform law on the nonzero residues modulo `q` and its
+  certificate against uniform, bound `1 / q`
 
 ## Main results
 
@@ -35,6 +40,7 @@ at most `2^-127`.
   `(1 - β) · k · q ≤ 2^256`
 * `tvDist_bytesModL_le` — `tvDist (bytesModLaw ℓ) uniform ≤ δR255`
 * `δR255_le` — `δR255 ≤ 2^-127`
+* `tvDist_nonzeroLaw_le` — `tvDist (nonzeroLaw q) uniform ≤ 1 / q`
 -/
 
 @[expose] public section
@@ -128,6 +134,10 @@ theorem tvDist_bytesModLaw_le (k : ℕ) (β : ℝ≥0∞) (hk : 2 ^ 256 ≤ k * 
 
 /-! ## The order of the ristretto255 group -/
 
+/-- `ℓ ≠ 0`, by evaluation of the literal. -/
+instance (priority := high) neZero_curve25519_l : NeZero curve25519_l :=
+  ⟨by unfold curve25519_l; norm_num⟩
+
 /-- `δ₀ / ℓ`, with `δ₀ = ℓ - 2^252` and `ℓ` the order of the ristretto255 group. -/
 noncomputable def δR255 : ℝ≥0∞ := ((curve25519_l - 2 ^ 252 : ℕ) : ℝ≥0∞) / curve25519_l
 
@@ -172,5 +182,59 @@ noncomputable def bytesModLCert : SamplerCert (ZMod curve25519_l) where
   mass_μ := mass_bytesModLaw _
   mass_ν := SDistr.mass_uniform
   tv_le := tvDist_bytesModL_le
+
+/-! ## Nonzero residues -/
+
+section Nonzero
+
+variable (q : ℕ) [NeZero q] [Fact (1 < q)]
+
+instance nonempty_ne_zero : Nonempty {e : ZMod q // e ≠ 0} := ⟨⟨1, one_ne_zero⟩⟩
+
+/-- The uniform law on the nonzero residues modulo `q`. -/
+noncomputable def nonzeroLaw : SDistr (ZMod q) :=
+  (SDistr.uniform {e : ZMod q // e ≠ 0}).bind fun e => SDistr.pure e.1
+
+/-- A draw from `nonzeroLaw q` is a uniform nonzero residue. -/
+theorem sampleFrom_nonzeroLaw_bind {β : Type} (k : ZMod q → SPComp β) :
+    (sampleFrom (nonzeroLaw q)).bind k =
+      (SPComp.sample {e : ZMod q // e ≠ 0}).bind fun e => k e.1 :=
+  sampleFrom_uniform_map_bind _ k
+
+/-- **The uniform law on nonzero residues** is at total variation distance at most `1 / q`
+from uniform on `ZMod q`. -/
+theorem tvDist_nonzeroLaw_le :
+    tvDist (nonzeroLaw q) (SDistr.uniform (ZMod q)) ≤ (q : ℝ≥0∞)⁻¹ := by
+  refine (tvDist_le_of_le_off _ _ {some 0} ?_).trans ?_
+  · rintro (_ | y) hy
+    · rw [SDistr.uniform_apply_none]
+      exact zero_le
+    · have hy0 : y ≠ 0 := fun h => hy (by rw [h]; rfl)
+      rw [SDistr.uniform_apply_some, ZMod.card, nonzeroLaw, SDistr.uniform_bind_pure_apply]
+      have h1 : 1 ≤ (Finset.univ.filter fun e : {e : ZMod q // e ≠ 0} => e.1 = y).card :=
+        Finset.card_pos.2 ⟨⟨y, hy0⟩, by simp⟩
+      have h2 : Fintype.card {e : ZMod q // e ≠ 0} ≤ q :=
+        (Fintype.card_subtype_le _).trans_eq (ZMod.card q)
+      calc (q : ℝ≥0∞)⁻¹ ≤ 1 * (Fintype.card {e : ZMod q // e ≠ 0} : ℝ≥0∞)⁻¹ := by
+            rw [one_mul]
+            gcongr
+        _ ≤ _ := by gcongr; exact_mod_cast h1
+  · have h : ∀ x ≠ some (0 : ZMod q),
+        ({some 0} : Set (Option (ZMod q))).indicator (SDistr.uniform (ZMod q)) x = 0 :=
+      fun x hx => Set.indicator_of_notMem (Set.mem_singleton_iff.not.2 hx) _
+    rw [tsum_eq_single _ h, Set.indicator_of_mem (Set.mem_singleton _), SDistr.uniform_apply_some,
+      ZMod.card]
+
+/-- **The sampler certificate of nonzero residues**: the law `nonzeroLaw q` against the uniform
+distribution on `ZMod q`, with bound `1 / q`. -/
+noncomputable def nonzeroCert : SamplerCert (ZMod q) where
+  μ := nonzeroLaw q
+  ν := SDistr.uniform _
+  δ := (q : ℝ≥0∞)⁻¹
+  mass_μ := mass_bind_of_mass_one SDistr.mass_uniform fun _ => SDistr.mass_pure _
+  mass_ν := SDistr.mass_uniform
+  tv_le := tvDist_nonzeroLaw_le q
+
+end Nonzero
 
 end CatCrypt.Crypto.ECC
