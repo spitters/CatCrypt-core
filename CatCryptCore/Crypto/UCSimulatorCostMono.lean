@@ -66,7 +66,7 @@ theorem MultiHybrid.Opaque.mono {σ E O EG OG : Type} {π : MultiHybrid σ E O E
 /-- A costed simulator at the outer view `V'` and the subroutine view `W'`. The views index the
 type and constrain only the erasure, so the costed machines are unchanged; the middle view of a
 composite and the inner view of a relabelling are kept. -/
-def Simulator.Timed.mono : {E O EG OG : Type} → {V : PubView E O} → {W : PubView EG OG} →
+@[expose] def Simulator.Timed.mono : {E O EG OG : Type} → {V : PubView E O} → {W : PubView EG OG} →
     Simulator.Timed E O EG OG V W → (V' : PubView E O) → (W' : PubView EG OG) →
     Simulator.Timed E O EG OG V' W'
   | _, _, _, _, _, _, .ofMultiHybrid πT, _, _ => .ofMultiHybrid πT
