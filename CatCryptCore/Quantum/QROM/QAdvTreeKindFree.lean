@@ -8,6 +8,7 @@ module
 public import CatCryptCore.Quantum.QROM.QAdvTreeKind
 public import CatCryptCore.Core.SPTreeTimedFree
 public import CatCryptCore.Container.CodeCost
+public import CatCryptCore.Tactics.TimeFoldRegistry
 
 /-!
 # Costed QROM circuits as free monads with tick nodes
@@ -47,6 +48,13 @@ roll bound, charge fold, budget.
 * `QAdvMRT.timeBound_iff_wpFold_charge`, `QAdvMRT.timeBound_iff_isRollBound`,
   `QAdvMRT.stepTimeBound_iff_wpFold_charge`, `QAdvMRT.stepTimeBound_iff_isRollBound` — the same
   for multi-round circuits
+* `QAdvT.wpFold_chargeUnder_stepToFreeMT`, `QAdvMRT.wpFold_chargeUnder_stepToFreeMT` — the
+  charge fold of a step-prefixed costed circuit is its step cost plus the charge fold of its
+  circuit
+* `QAdvT.wpFold_toFreeMT_absorb_le` — oracle absorption keeps the bounds on the charge fold,
+  the combinator law of the fold rule
+* `QAdvT.qAdvFold`, `QAdvMRT.qAdvMRFold` — the records of the kinds for the fold rule
+  (`register_time_fold`)
 -/
 
 @[expose] public section
@@ -208,6 +216,26 @@ theorem stepTimeBound_iff_isRollBound (x : ℕ × QAdvT m n w q) (T : ℕ) :
         (fun a b => b - CircOp.tickCost x.2.S.weight a) := by
   rw [stepTimeBound_iff_wpFold_charge, FreeM.isRollBound_iff_wpFold_charge]
 
+/-- The charge fold of a step-prefixed costed circuit, with every tick answer allowed, is its
+step cost plus the charge fold of its circuit. -/
+theorem wpFold_chargeUnder_stepToFreeMT (x : ℕ × QAdvT m n w q)
+    (allows : (a : (CircSigT x.2.S.G Empty).A) → (CircSigT x.2.S.G Empty).B a → Prop)
+    (hA : ∀ n, allows (.inr n) PUnit.unit) (post : Unit → ℕ∞) :
+    FreeM.wpFold (OpSpec.chargeUnder (fun a => ((CircOp.tickCost x.2.S.weight a : ℕ) : ℕ∞))
+        allows) (stepToFreeMT x) post =
+      x.1 + FreeM.wpFold (OpSpec.chargeUnder (fun a =>
+        ((CircOp.tickCost x.2.S.weight a : ℕ) : ℕ∞)) allows) (toFreeMT x.2) post :=
+  FreeM.wpFold_chargeUnder_liftBind_const _ allows _ (hA x.1) _ post
+
+/-- Oracle absorption keeps the bounds on the charge fold of the image. -/
+theorem wpFold_toFreeMT_absorb_le [NeZero n] (A : QAdvT m n w q) (G : Fin m → Fin n) {T : ℕ}
+    (h : FreeM.wpFold (OpSpec.charge fun a => ((CircOp.tickCost A.S.weight a : ℕ) : ℕ∞))
+      (toFreeMT A) (fun _ => 0) ≤ T) :
+    FreeM.wpFold (OpSpec.charge fun a => ((CircOp.tickCost (absorb A G).S.weight a : ℕ) : ℕ∞))
+      (toFreeMT (absorb A G)) (fun _ => 0) ≤ T :=
+  (timeBound_iff_wpFold_charge (absorb A G) T).1
+    ((time_absorb A G).symm ▸ (timeBound_iff_wpFold_charge A T).2 h)
+
 end QAdvT
 
 /-! ## Costed multi-round circuits -/
@@ -271,6 +299,50 @@ theorem stepTimeBound_iff_isRollBound (x : ℕ × QAdvMRT m n w q k c a) (T : �
         (fun a b => b - CircOp.tickCost x.2.S.weight a) := by
   rw [stepTimeBound_iff_wpFold_charge, FreeM.isRollBound_iff_wpFold_charge]
 
+/-- The charge fold of a step-prefixed costed multi-round circuit, with every tick answer
+allowed, is its step cost plus the charge fold of its circuit. -/
+theorem wpFold_chargeUnder_stepToFreeMT (x : ℕ × QAdvMRT m n w q k c a)
+    (allows : (b : (CircSigT x.2.S.G (ClassicalRound (m * n * w) c a)).A) →
+      (CircSigT x.2.S.G (ClassicalRound (m * n * w) c a)).B b → Prop)
+    (hA : ∀ n, allows (.inr n) PUnit.unit) (post : Unit → ℕ∞) :
+    FreeM.wpFold (OpSpec.chargeUnder (fun b => ((CircOp.tickCost x.2.S.weight b : ℕ) : ℕ∞))
+        allows) (stepToFreeMT x) post =
+      x.1 + FreeM.wpFold (OpSpec.chargeUnder (fun b =>
+        ((CircOp.tickCost x.2.S.weight b : ℕ) : ℕ∞)) allows) (toFreeMT x.2) post :=
+  FreeM.wpFold_chargeUnder_liftBind_const _ allows _ (hA x.1) _ post
+
 end QAdvMRT
 
 end CatCrypt.Quantum.QROM
+
+open CatCrypt.Tactics.TimeFold in
+/-- The record of costed single-run circuits for the fold rule: the images in `CircSigT`, the
+charge `CircOp.tickCost` of the weight of the gate set, every answer allowed, and the law of
+oracle absorption. -/
+meta def CatCrypt.Quantum.QROM.QAdvT.qAdvFold : FoldKind where
+  timed := ``CatCrypt.Quantum.QROM.QAdvT
+  sig := ``CatCrypt.Quantum.QROM.CircSigT
+  charge := ``CatCrypt.Quantum.QROM.CircOp.tickCost
+  toFreeMT := ``CatCrypt.Quantum.QROM.QAdvT.toFreeMT
+  stepToFreeMT := ``CatCrypt.Quantum.QROM.QAdvT.stepToFreeMT
+  timeBoundIff := ``CatCrypt.Quantum.QROM.QAdvT.timeBound_iff_wpFold_charge
+  stepTimeBoundIff := ``CatCrypt.Quantum.QROM.QAdvT.stepTimeBound_iff_wpFold_charge
+  stepFold := some ``CatCrypt.Quantum.QROM.QAdvT.wpFold_chargeUnder_stepToFreeMT
+  laws := #[``CatCrypt.Quantum.QROM.QAdvT.wpFold_toFreeMT_absorb_le]
+
+open CatCrypt.Tactics.TimeFold in
+/-- The record of costed multi-round circuits for the fold rule: the images in `CircSigT`, the
+charge `CircOp.tickCost` of the weight of the gate set and every answer allowed. -/
+meta def CatCrypt.Quantum.QROM.QAdvMRT.qAdvMRFold : FoldKind where
+  timed := ``CatCrypt.Quantum.QROM.QAdvMRT
+  sig := ``CatCrypt.Quantum.QROM.CircSigT
+  charge := ``CatCrypt.Quantum.QROM.CircOp.tickCost
+  toFreeMT := ``CatCrypt.Quantum.QROM.QAdvMRT.toFreeMT
+  stepToFreeMT := ``CatCrypt.Quantum.QROM.QAdvMRT.stepToFreeMT
+  timeBoundIff := ``CatCrypt.Quantum.QROM.QAdvMRT.timeBound_iff_wpFold_charge
+  stepTimeBoundIff := ``CatCrypt.Quantum.QROM.QAdvMRT.stepTimeBound_iff_wpFold_charge
+  stepFold := some ``CatCrypt.Quantum.QROM.QAdvMRT.wpFold_chargeUnder_stepToFreeMT
+
+register_time_fold CatCrypt.Quantum.QROM.QAdvT.qAdvFold
+
+register_time_fold CatCrypt.Quantum.QROM.QAdvMRT.qAdvMRFold

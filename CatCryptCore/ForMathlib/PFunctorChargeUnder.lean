@@ -33,8 +33,8 @@ public import PolyFun.PFunctor.Free.WP.Charge
   bound is the subtractive roll bound
 * `PFunctor.FreeM.wpFold_chargeUnder_pure_le`, `PFunctor.FreeM.wpFold_chargeUnder_liftBind_le`,
   `PFunctor.FreeM.wpFold_chargeUnder_bind_le_add`, `PFunctor.FreeM.wpFold_ite_le_max_enat`,
-  `PFunctor.FreeM.wpFold_dite_le_max_enat` — the clauses of the fold rule of `derive_time_bound`, each
-  bound a natural number cast to `ℕ∞`
+  `PFunctor.FreeM.wpFold_dite_le_max_enat` — the clauses of the fold rule of
+  `derive_time_bound`, each bound a natural number cast to `ℕ∞`
 * `PFunctor.FreeM.wpFold_demonicUnder_true` — the trivial leaf invariant
 -/
 
@@ -250,6 +250,19 @@ theorem wpFold_dite_le_max_enat (Φ : OpSpec P ℕ∞) (p : Prop) [Decidable p] 
 theorem natCast_le_of_le_trans {a m : ℕ} {w' : ℕ∞} (h₁ : (a : ℕ∞) ≤ w') (h₂ : w' ≤ (m : ℕ∞)) :
     a ≤ m := by
   exact_mod_cast h₁.trans h₂
+
+/-- A summand of a fold bounded by `n` is bounded by `n`: `s = d + w` and `s ≤ n` give `w ≤ n`
+(the charge fold of the tree of a step-prefixed tree is at most the charge fold of the step-prefixed
+tree). -/
+theorem enat_le_of_add_eq {s w' : ℕ∞} {d n : ℕ} (hs : s = (d : ℕ∞) + w') (h : s ≤ (n : ℕ∞)) :
+    w' ≤ (n : ℕ∞) :=
+  le_trans (by rw [hs]; exact le_add_self) h
+
+/-- The arithmetic of a step: `X = ca + w` with `ca ≤ m` and `w ≤ n` gives `X ≤ m + n`. -/
+theorem enat_eq_add_le {X' w' : ℕ∞} {ca m n : ℕ} (hX : X' = (ca : ℕ∞) + w') (hc : ca ≤ m)
+    (hn : w' ≤ (n : ℕ∞)) : X' ≤ ((m + n : ℕ) : ℕ∞) := by
+  rw [hX, Nat.cast_add]
+  exact add_le_add (enat_natCast_le hc) hn
 
 /-- A bound `m ≤ n` weakens a bound of a fold. -/
 theorem wpFold_le_natCast_of_le {w' : ℕ∞} {m n : ℕ} (h : w' ≤ (m : ℕ∞))
