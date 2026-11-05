@@ -48,11 +48,14 @@ The query bound of an erased oracle program is a charge fold of its free tree
   tree of the program
 * `OracleProg.Timed.queryCostLe_erase_iff_wpFold_charge` — the same over the tick tree
 * `OracleProg.Timed.useBound_iff_timeBound_and_queryCostLe`,
-  `OracleProg.Timed.useBound_step_iff` — a use bound at `budget q T` is a time bound and a query
-  bound
+  `OracleProg.Timed.useBound_step_iff`, `OracleProg.Timed.useBound_of_useBound_step` — a use
+  bound at `budget q T` is a time bound and a query bound
 * `OracleProg.Timed.wpFold_stepToFreeMT_bindQueries`,
   `OracleProg.Timed.wpFold_stepToFreeMT_collectLog_le` — the costed combinators are
   interpretations of the tick tree, on charge folds
+* `OracleProg.Timed.useBound_step_bind`, `OracleProg.Timed.useBound_step_delay`,
+  `OracleProg.Timed.useBound_step_delay_bind`, `OracleProg.Timed.useBound_step_lift` — the bind,
+  delay and computation-node clauses on vectors
 * `OracleProg.Timed.useBound_bindQueries`, `OracleProg.Timed.useBound_collectLog` — the
   composition rule at `{query, tick}` for general vectors
 * `OracleProg.Timed.stepTimeBound_bindQueries_queryCostLe`,
@@ -158,7 +161,7 @@ def budget (q T : ℕ∞) : Bool → ℕ∞
 
 /-- The use vector of a costed function with constant use counts `q` and cost `T` is
 `budget q T`. -/
-theorem Clocked.useVec_const (q T : ℕ) :
+theorem useVec_const_eq_budget (q T : ℕ) :
     (⟨fun _ => (), fun _ => q, fun _ => T⟩ : Clocked Unit Unit).useVec () = budget q T := by
   funext b
   cases b <;> rfl
@@ -211,6 +214,15 @@ theorem useBound_step_iff (cost : I → ℕ) (x : ℕ × Timed I O α) (q T : �
   simp only [useCharge_false, budget_false, stepToFreeMT]
   rw [wpFold_chargeUnder_liftBind_const _ _ _ (b := PUnit.unit) trivial]
   simp [queryCharge]
+
+/-- The use bound of a step-prefixed program splits into its step cost and a use bound of its
+program. -/
+theorem useBound_of_useBound_step (cost : I → ℕ) {x : ℕ × Timed I O α} {q T : ℕ}
+    (hx : UseBound (useCharge cost) (fun _ _ => True) (stepToFreeMT x) (budget q T)) :
+    x.1 ≤ T ∧ UseBound (useCharge cost) (fun _ _ => True) (toFreeMT x.2)
+      (budget q ((T - x.1 : ℕ) : ℕ∞)) := by
+  obtain ⟨⟨h1, h2⟩, h3⟩ := (useBound_step_iff cost x q T).1 hx
+  exact ⟨h1, (useBound_iff_timeBound_and_queryCostLe cost x.2 q (T - x.1)).2 ⟨h2, h3⟩⟩
 
 /-! ## The handlers of `bindQueries` and `collectLog` -/
 
@@ -441,6 +453,84 @@ theorem tickAdditive_useCharge (cost : I → ℕ) (j : Bool) :
   · exact tickAdditive_queryCharge cost
   · exact tickAdditive_tickCost
 
+/-- **The bind clause on vectors.** If the tick tree of `p` has use bound `u` and each
+continuation `f a` has use bound `v`, then `p.bind f` has use bound `u + v`. -/
+theorem useBound_step_bind (cost : I → ℕ) {β : Type} {p : Timed I O α}
+    {f : α → ℕ × Timed I O β} {u v : Bool → ℕ∞}
+    (hp : UseBound (useCharge cost) (fun _ _ => True) (toFreeMT p) u)
+    (hf : ∀ a, UseBound (useCharge cost) (fun _ _ => True) (stepToFreeMT (f a)) v) :
+    UseBound (useCharge cost) (fun _ _ => True) (stepToFreeMT (p.bind f)) (u + v) := by
+  rw [useBound_iff] at hp ⊢
+  intro j
+  rw [wpFold_stepToFreeMT_bind_of_tickAdditive (tickAdditive_useCharge cost j)]
+  refine (wpFold_chargeUnder_le_add_of_demonicUnder _ _ (FreeM.wpFold_demonicUnder_true _ _)
+    (k := v j) fun a _ => (useBound_iff _ _ _ _).1 (hf a) j).trans ?_
+  exact add_le_add (hp j) le_rfl
+
+/-- **The delay clause on vectors.** A step cost `c` in front of a step-prefixed program adds
+`c` ticks to its use bound. -/
+theorem useBound_step_delay (cost : I → ℕ) {x : ℕ × Timed I O α} {u : Bool → ℕ∞} (c : ℕ)
+    (hx : UseBound (useCharge cost) (fun _ _ => True) (stepToFreeMT x) u) :
+    UseBound (useCharge cost) (fun _ _ => True) (stepToFreeMT (delay c x))
+      (budget 0 (c : ℕ∞) + u) := by
+  rw [useBound_iff] at hx ⊢
+  intro j
+  have hadd : useCharge cost (.inr (c + x.1) : (SigT I O).A) j =
+      useCharge cost (.inr c) j + useCharge cost (.inr x.1) j :=
+    (tickAdditive_useCharge cost j).2 c x.1
+  rw [wpFold_stepToFreeMT_eq, delay]
+  simp only [hadd, add_assoc]
+  refine add_le_add ?_ ((wpFold_stepToFreeMT_eq (fun a => useCharge cost a j) x _).symm.le.trans
+    (hx j))
+  cases j <;> simp [queryCharge, tickCost]
+
+/-- **Sequencing step-prefixed programs on vectors.** If `x` has use bound `u` and each
+continuation `f a` has use bound `v`, then `x` followed by `f`, behind a step cost `c₀`, has use
+bound `budget 0 c₀ + (u + v)`. -/
+theorem useBound_step_delay_bind (cost : I → ℕ) {β : Type} {x : ℕ × Timed I O α}
+    {f : α → ℕ × Timed I O β} {u v : Bool → ℕ∞} (c₀ : ℕ)
+    (hx : UseBound (useCharge cost) (fun _ _ => True) (stepToFreeMT x) u)
+    (hf : ∀ a, UseBound (useCharge cost) (fun _ _ => True) (stepToFreeMT (f a)) v) :
+    UseBound (useCharge cost) (fun _ _ => True) (stepToFreeMT (delay (c₀ + x.1) (x.2.bind f)))
+      (budget 0 (c₀ : ℕ∞) + (u + v)) := by
+  rw [useBound_iff] at hx ⊢
+  intro j
+  have hadd : ∀ m n, useCharge cost (.inr (m + n) : (SigT I O).A) j =
+      useCharge cost (.inr m) j + useCharge cost (.inr n) j :=
+    (tickAdditive_useCharge cost j).2
+  have e₁ := wpFold_stepToFreeMT_eq (fun a => useCharge cost a j) (x.2.bind f) (fun _ => 0)
+  have e₂ := wpFold_stepToFreeMT_eq (fun a => useCharge cost a j) x (fun _ => 0)
+  simp only at e₁ e₂
+  rw [wpFold_stepToFreeMT_eq, delay]
+  simp only [hadd, add_assoc]
+  rw [← e₁, wpFold_stepToFreeMT_bind_of_tickAdditive (tickAdditive_useCharge cost j),
+    Pi.add_apply, Pi.add_apply]
+  refine add_le_add (by cases j <;> simp [queryCharge, tickCost]) ?_
+  refine (add_le_add le_rfl (wpFold_chargeUnder_le_add_of_demonicUnder _ _
+    (FreeM.wpFold_demonicUnder_true _ _) (k := v j)
+    fun a _ => (useBound_iff _ _ _ _).1 (hf a) j)).trans ?_
+  rw [← add_assoc, ← e₂]
+  exact add_le_add (hx j) le_rfl
+
+/-- **The computation-node clause on vectors.** A computation node running `t`, whose
+continuation from each result `b` with step cost `c b` has use bound `w`, has use bound
+`budget 0 t.time + w`. -/
+theorem useBound_step_lift (cost : I → ℕ) {β : Type} {t : SPTree.Timed β} {c : β → ℕ}
+    {k : β → Timed I O α} {w : Bool → ℕ∞}
+    (hk : ∀ b, UseBound (useCharge cost) (fun _ _ => True) (stepToFreeMT (c b, k b)) w) :
+    UseBound (useCharge cost) (fun _ _ => True) (stepToFreeMT (0, lift β t c k))
+      (budget 0 (t.time : ℕ∞) + w) := by
+  rw [useBound_iff]
+  intro j
+  have h0 : useCharge cost (.inr 0 : (SigT I O).A) j = 0 := (tickAdditive_useCharge cost j).1
+  rw [wpFold_stepToFreeMT_eq]
+  simp only [h0, zero_add]
+  rw [wpFold_toFreeMT_lift, Pi.add_apply]
+  refine add_le_add (by cases j <;> simp [queryCharge, tickCost]) (iSup_le fun b => ?_)
+  have e := wpFold_stepToFreeMT_eq (fun a => useCharge cost a j) (c b, k b) (fun _ => 0)
+  simp only at e
+  exact e.symm.le.trans ((useBound_iff _ _ _ _).1 (hk b) j)
+
 /-- The demand of one call of a query handler of use vector `d`: a query demands `d`, a tick
 demands one tick. At `d = f.useVec a` this is `Clocked.callDemand f a`. -/
 def queryDemand (d : Bool → ℕ∞) : Bool → Bool → ℕ∞
@@ -514,10 +604,10 @@ theorem stepTimeBound_bindQueries_queryCostLe (cost' : I' → ℕ) {h : I → �
   let f : Clocked Unit Unit := ⟨fun _ => (), fun _ => q', fun _ => t⟩
   have hx : UseBound (useCharge (fun _ => 1)) (fun _ _ => True) (toFreeMT p)
       (g.useVec (f.fn ())) := by
-    rw [Clocked.useVec_const]
+    rw [useVec_const_eq_budget]
     exact (useBound_iff_timeBound_and_queryCostLe _ p q T).2 ⟨hp, hq⟩
   have hl := useBound_liftM_clocked g f () hx (fun a => by
-    rw [← queryDemand_useVec, Clocked.useVec_const]
+    rw [← queryDemand_useVec, useVec_const_eq_budget]
     exact useBound_bqHandler cost' (fun i => (useBound_step_iff _ _ q' t).2 (hh i)) a)
     (fun _ => FreeM.wpFold_demonicUnder_true _ _)
   have hc : (Clocked.comp g f).useVec () = budget ((q * q' : ℕ) : ℕ∞) ((T + q * t : ℕ) : ℕ∞) := by
@@ -624,7 +714,7 @@ theorem stepTimeBound_collectLog_queryCostLe (cost : I → ℕ)
   let f : Clocked Unit Unit := ⟨fun _ => (), fun _ => q', fun _ => t + 2 * ℓ + 1⟩
   have hx : UseBound (useCharge (fun _ => 1)) (fun _ _ => True) (toFreeMT p)
       (g.useVec (f.fn ())) := by
-    rw [Clocked.useVec_const]
+    rw [useVec_const_eq_budget]
     exact (useBound_iff_timeBound_and_queryCostLe _ p q T).2 ⟨hp, hq⟩
   have hd : budget (q' : ℕ∞) (t : ℕ∞) + budget 0 ((2 * ℓ + 1 : ℕ) : ℕ∞) = f.useVec () := by
     funext j

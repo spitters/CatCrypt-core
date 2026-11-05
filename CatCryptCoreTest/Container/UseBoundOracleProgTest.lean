@@ -87,6 +87,35 @@ example (x : ℕ) :
 example (x : ℕ) : Timed.StepTimeBound (Timed.bindQueries hd (twoQ x)) 9 :=
   Timed.timeBound_bindQueries (fun i => (hd_bound i).1) (twoQ_timeBound x) (twoQ_queryCostLe x)
 
+/-- Sequencing behind a step cost: `bindQueries hd (twoQ x)` followed by a continuation of
+time `1`, behind `3` units, has time `3 + 9 + 1` and still two queries. -/
+example (x : ℕ) :
+    Timed.StepTimeBound (Timed.delay (3 + (Timed.bindQueries hd (twoQ x)).1)
+        ((Timed.bindQueries hd (twoQ x)).2.bind fun o => (1, .pure o))) 13 ∧
+      QueryCostLe (fun _ => 1) (Timed.delay (3 + (Timed.bindQueries hd (twoQ x)).1)
+        ((Timed.bindQueries hd (twoQ x)).2.bind fun o => (1, .pure o))).2.erase 2 := by
+  refine (Timed.useBound_step_iff _ _ 2 13).1 ((Timed.useBound_step_delay_bind _ 3
+    ((Timed.useBound_step_iff _ _ 2 9).2 (Timed.stepTimeBound_bindQueries_queryCostLe _ hd_bound
+      (twoQ_timeBound x) (twoQ_queryCostLe x)))
+    (v := budget ((0 : ℕ) : ℕ∞) ((1 : ℕ) : ℕ∞)) fun _ => ?_).mono ?_)
+  · exact (Timed.useBound_step_iff _ _ 0 1).2 ⟨⟨le_rfl, trivial⟩, trivial⟩
+  · intro j
+    cases j <;> norm_num
+
+/-- A computation node in front: running a costed tree of time `0` and then `twoQ`, at step
+cost `4`, has time `0 + 4 + 5` and two queries, by the computation-node clause and the split of
+a step-prefixed bound. -/
+example (x : ℕ) :
+    Timed.StepTimeBound (0, Timed.lift ℕ (CatCrypt.Core.SPTree.Timed.ret x) (fun _ => 4) twoQ) 9 ∧
+      QueryCostLe (fun _ => 1)
+        (0, Timed.lift ℕ (CatCrypt.Core.SPTree.Timed.ret x) (fun _ => 4) twoQ).2.erase 2 := by
+  refine (Timed.useBound_step_iff _ _ 2 9).1 ((Timed.useBound_step_lift _
+    (w := budget ((2 : ℕ) : ℕ∞) ((9 : ℕ) : ℕ∞)) fun b => ?_).mono ?_)
+  · exact (Timed.useBound_step_iff _ _ 2 9).2 ⟨⟨by omega, (twoQ_timeBound b).mono (by omega)⟩,
+      twoQ_queryCostLe b⟩
+  · intro j
+    cases j <;> simp [CatCrypt.Core.SPTree.Timed.time_ret]
+
 /-- A vector bound with a price: at ten units per query and one per tick, the priced charge of
 `twoQ` folds to at most `10 * 2 + 5`. -/
 example (x : ℕ) :
