@@ -13,6 +13,7 @@ public import CatCryptCore.ForMathlib.PFunctorChargeUnder
 public import CatCryptCore.ForMathlib.PFunctorRestrict
 public import CatCryptCore.Core.SPTreeTimedOps
 public import CatCryptCore.XDijkstra.XTimedMonad
+public import CatCryptCore.Tactics.TimeFoldRegistry
 import all CatCryptCore.Core.SPTreeTimed
 import all CatCryptCore.Unary.ExpectedCost
 
@@ -492,3 +493,28 @@ end Timed
 end SPTree
 
 end CatCrypt.Core
+
+open CatCrypt.Tactics.TimeFold in
+/-- The record of costed `SPTree`s for the fold rule: the tick trees over `SPSigT` with the
+charge `tickCost` and the answers allowed by `spAllows`; `TimeBound` and the step time bound
+`x.1 ≤ n ∧ x.2.TimeBound (n - x.1)` are the fold bounds, and a fold bound with every answer
+allowed bounds `stepTime` and gives `TimeBound`. -/
+meta def CatCrypt.Core.SPTree.Timed.spTreeFold : FoldKind where
+  timed := ``CatCrypt.Core.SPTree.Timed
+  sig := ``CatCrypt.Core.SPTree.SPSigT
+  charge := ``CatCrypt.Core.SPTree.tickCost
+  allows := some ``CatCrypt.Core.SPTree.spAllows
+  toFreeMT := ``CatCrypt.Core.SPTree.Timed.toFreeMT
+  stepToFreeMT := ``CatCrypt.Core.SPTree.Timed.stepToFreeMT
+  timeBoundIff := ``CatCrypt.Core.SPTree.Timed.timeBound_iff_wpFold_chargeUnder
+  stepTimeBoundIff := ``CatCrypt.Core.SPTree.Timed.le_and_timeBound_iff_wpFold_chargeUnder
+  concls := #[``CatCrypt.Core.SPTree.Timed.stepTime_le_of_wpFold_le,
+    ``CatCrypt.Core.SPTree.Timed.timeBound_of_wpFold_le]
+  stepFold := some ``CatCrypt.Core.SPTree.Timed.wpFold_chargeUnder_stepToFreeMT
+  bind := some ``CatCrypt.Core.SPTree.Timed.bind
+  bindFold := some ``CatCrypt.Core.SPTree.Timed.wpFold_stepToFreeMT_bind
+  allRet := some ``CatCrypt.Core.SPTree.Timed.AllRet
+  allRetFold := some ``CatCrypt.Core.SPTree.Timed.wpFold_demonicUnder_spAllows_of_allRet
+  timeLe := some ``CatCrypt.Core.SPTree.Timed.time_le_wpFold
+
+register_time_fold CatCrypt.Core.SPTree.Timed.spTreeFold

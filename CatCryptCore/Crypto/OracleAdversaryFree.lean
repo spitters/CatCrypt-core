@@ -10,6 +10,7 @@ public import CatCryptCore.Crypto.OracleForkingLemma
 public import PolyFun.PFunctor.Free.WP.Charge
 public import CatCryptCore.ForMathlib.PFunctorChargeUnder
 public import CatCryptCore.Tactics.DeriveTimed
+public import CatCryptCore.Tactics.TimeFoldRegistry
 
 /-!
 # Oracle adversaries as free monads of a polynomial functor
@@ -352,3 +353,23 @@ end Timed
 end OracleAdv
 
 end CatCrypt.Crypto
+
+open CatCrypt.Tactics.TimeFold in
+/-- The record of costed oracle adversaries for the fold rule: the tick trees over `AdvSigT`
+with the charge `tickCost` and every answer allowed (`TimeBound` quantifies over every sample
+and every answer). -/
+meta def CatCrypt.Crypto.OracleAdv.Timed.oracleFold : FoldKind where
+  timed := ``CatCrypt.Crypto.OracleAdv.Timed
+  sig := ``CatCrypt.Crypto.OracleAdv.Timed.AdvSigT
+  charge := ``CatCrypt.Crypto.OracleAdv.Timed.tickCost
+  toFreeMT := ``CatCrypt.Crypto.OracleAdv.Timed.toFreeMT
+  stepToFreeMT := ``CatCrypt.Crypto.OracleAdv.Timed.stepToFreeMT
+  timeBoundIff := ``CatCrypt.Crypto.OracleAdv.Timed.timeBound_iff_wpFold_chargeUnder
+  stepTimeBoundIff := ``CatCrypt.Crypto.OracleAdv.Timed.stepTimeBound_iff_wpFold_chargeUnder
+  stepFold := some ``CatCrypt.Crypto.OracleAdv.Timed.wpFold_chargeUnder_stepToFreeMT
+  bind := some ``CatCrypt.Crypto.OracleAdv.Timed.bind
+  bindFold := some ``CatCrypt.Crypto.OracleAdv.Timed.wpFold_stepToFreeMT_bind
+  allRet := some ``CatCrypt.Crypto.OracleAdv.Timed.AllRet
+  allRetFold := some ``CatCrypt.Crypto.OracleAdv.Timed.allRet_iff_wpFold_demonicUnder
+
+register_time_fold CatCrypt.Crypto.OracleAdv.Timed.oracleFold

@@ -7,6 +7,9 @@ module
 
 public import CatCryptCore.Tactics.AutoTime
 public import CatCryptCore.Tactics.DeriveReduction
+public import CatCryptCore.Tactics.TimeFoldRegistry
+public import CatCryptCore.Core.SPTreeTimedFree
+public import CatCryptCore.Crypto.OracleAdversaryFree
 
 /-!
 # The time theorem of a costed computation tree
@@ -170,13 +173,7 @@ set_option autoImplicit false
 
 namespace CatCrypt.Tactics.DeriveTimeBound
 
-/-! ## Rule lemmas of the bound of a costed oracle adversary -/
-
-section OracleRules
-
-open CatCrypt.Crypto.OracleAdv.Timed
-
-variable {D R α β : Type}
+/-! ## Rule lemmas -/
 
 /-- A `dite` over `ℕ` is at most the maximum of the bounds of its branches. -/
 theorem dite_le_max_of {c : Prop} [Decidable c] {t : c → ℕ} {f : ¬c → ℕ} {a b : ℕ}
@@ -187,110 +184,7 @@ theorem dite_le_max_of {c : Prop} [Decidable c] {t : c → ℕ} {f : ¬c → ℕ
   · rw [dite_eq_right h]
     exact le_max_of_le_right (hf h)
 
-/-- Every leaf of a costed oracle adversary satisfies the trivial predicate. -/
-theorem oa_allRet_true (A : CatCrypt.Crypto.OracleAdv.Timed D R α) :
-    AllRet (fun _ => True) A := by
-  induction A with
-  | ret a => trivial
-  | rand p c k ih => exact ih
-  | query d c k ih => exact ih
-
-/-- A leaf takes no time. -/
-theorem oa_tb_ret (a : α) (n : ℕ) :
-    (CatCrypt.Crypto.OracleAdv.Timed.ret a : CatCrypt.Crypto.OracleAdv.Timed D R α).TimeBound n :=
-  trivial
-
-/-- A sample node costs one unit and the bound of its step-prefixed continuations. -/
-theorem oa_tb_rand {γ : Type} {p : PMF γ} {c : γ → ℕ}
-    {k : γ → CatCrypt.Crypto.OracleAdv.Timed D R α} {n : ℕ}
-    (h : ∀ b, StepTimeBound (c b, k b) n) :
-    (CatCrypt.Crypto.OracleAdv.Timed.rand p c k).TimeBound (1 + n) :=
-  (timeBound_rand_iff p c k (1 + n)).2 ⟨by omega, fun b => by
-    rw [Nat.add_sub_cancel_left]
-    exact h b⟩
-
-/-- A query node costs one unit and the bound of its step-prefixed continuations. -/
-theorem oa_tb_query {d : D} {c : R → ℕ} {k : R → CatCrypt.Crypto.OracleAdv.Timed D R α}
-    {n : ℕ} (h : ∀ r, StepTimeBound (c r, k r) n) :
-    (CatCrypt.Crypto.OracleAdv.Timed.query d c k).TimeBound (1 + n) :=
-  (timeBound_query_iff d c k (1 + n)).2 ⟨by omega, fun r => by
-    rw [Nat.add_sub_cancel_left]
-    exact h r⟩
-
-/-- A pair `(c, t)` is bounded by a bound of `c` plus a bound of `t`. -/
-theorem oa_stb_pair {c m n : ℕ} {t : CatCrypt.Crypto.OracleAdv.Timed D R α} (hc : c ≤ m)
-    (ht : t.TimeBound n) : StepTimeBound (c, t) (m + n) :=
-  ⟨by omega, ht.mono (by omega)⟩
-
-/-- A pair `(c + y.1, y.2)`, the step-prefixed tree `y` after `c`. -/
-theorem oa_stb_pair_snd {e c m n : ℕ} {y : ℕ × CatCrypt.Crypto.OracleAdv.Timed D R α}
-    (he : e = c + y.1) (hc : c ≤ m) (hy : StepTimeBound y n) :
-    StepTimeBound (e, y.2) (m + n) := by
-  obtain ⟨h1, h2⟩ := hy
-  subst he
-  exact ⟨by omega, h2.mono (by omega)⟩
-
-/-- A pair `(c + S.1 + (S.2.bind f).1, (S.2.bind f).2)`: the step-prefixed tree `S` followed
-by `f`, after `c`, with `f` bounded at the leaves of `S.2` that satisfy `Q`. -/
-theorem oa_stb_pair_bind {e c k m n : ℕ} {S : ℕ × CatCrypt.Crypto.OracleAdv.Timed D R α}
-    {f : α → ℕ × CatCrypt.Crypto.OracleAdv.Timed D R β} {Q : α → Prop}
-    (he : e = c + S.1 + (S.2.bind f).1) (hc : c ≤ k) (hS : StepTimeBound S m)
-    (hQ : AllRet Q S.2) (hf : ∀ a, Q a → StepTimeBound (f a) n) :
-    StepTimeBound (e, (S.2.bind f).2) (k + (m + n)) := by
-  obtain ⟨h1, h2⟩ := timeBound_bind_of_allRet hS.2 hQ hf
-  have := hS.1
-  subst he
-  exact ⟨by omega, h2.mono (by omega)⟩
-
-/-- A bind is bounded by the bound of its tree plus the bound of its continuation at the leaves
-of the tree that satisfy `Q`. -/
-theorem oa_stb_bind {m n : ℕ} {A : CatCrypt.Crypto.OracleAdv.Timed D R α}
-    {f : α → ℕ × CatCrypt.Crypto.OracleAdv.Timed D R β} {Q : α → Prop} (hA : A.TimeBound m)
-    (hQ : AllRet Q A) (hf : ∀ a, Q a → StepTimeBound (f a) n) :
-    StepTimeBound (A.bind f) (m + n) :=
-  timeBound_bind_of_allRet hA hQ hf
-
-/-- The tree of a step-prefixed tree is bounded by the bound of the pair. -/
-theorem oa_tb_snd {n : ℕ} {y : ℕ × CatCrypt.Crypto.OracleAdv.Timed D R α}
-    (h : StepTimeBound y n) : y.2.TimeBound n :=
-  h.2.mono (Nat.sub_le _ _)
-
-/-- A pair is bounded by the time bound of its tree after its step cost. -/
-theorem oa_stb_delay {c m n : ℕ} {y : ℕ × CatCrypt.Crypto.OracleAdv.Timed D R α} (hc : c ≤ m)
-    (hy : StepTimeBound y n) : StepTimeBound (delay c y) (m + n) :=
-  (stepTimeBound_delay hy).mono (by omega)
-
-/-- An `if` of step-prefixed trees is bounded by the maximum of the bounds of its branches. -/
-theorem oa_stb_ite {c : Prop} [Decidable c] {m n : ℕ}
-    {x y : ℕ × CatCrypt.Crypto.OracleAdv.Timed D R α} (hx : StepTimeBound x m)
-    (hy : StepTimeBound y n) : StepTimeBound (if c then x else y) (max m n) := by
-  split
-  · exact hx.mono (le_max_left _ _)
-  · exact hy.mono (le_max_right _ _)
-
-/-- A dependent `if` of step-prefixed trees is bounded by the maximum of the bounds of its
-branches. -/
-theorem oa_stb_dite {c : Prop} [Decidable c] {m n : ℕ}
-    {x : c → ℕ × CatCrypt.Crypto.OracleAdv.Timed D R α}
-    {y : ¬c → ℕ × CatCrypt.Crypto.OracleAdv.Timed D R α} (hx : ∀ h, StepTimeBound (x h) m)
-    (hy : ∀ h, StepTimeBound (y h) n) : StepTimeBound (dite c x y) (max m n) := by
-  by_cases h : c
-  · rw [dite_eq_left h]
-    exact (hx h).mono (le_max_left _ _)
-  · rw [dite_eq_right h]
-    exact (hy h).mono (le_max_right _ _)
-
-/-- An `if` of trees is bounded by the maximum of the bounds of its branches. -/
-theorem oa_tb_ite {c : Prop} [Decidable c] {m n : ℕ}
-    {x y : CatCrypt.Crypto.OracleAdv.Timed D R α} (hx : x.TimeBound m)
-    (hy : y.TimeBound n) : (if c then x else y).TimeBound (max m n) := by
-  split
-  · exact hx.mono (le_max_left _ _)
-  · exact hy.mono (le_max_right _ _)
-
-end OracleRules
-
-open Lean Meta Elab Term Command CatCrypt.Core
+open Lean Meta Elab Term Command CatCrypt.Core CatCrypt.Tactics.TimeFold
 
 meta section
 
@@ -302,15 +196,45 @@ inductive Role where
   | key
   /-- A cost companion: bounded pointwise. -/
   | cost
-  /-- A function into costed oracle adversaries: its time bound holds pointwise. -/
-  | oadv
+  /-- A function into costed trees of a kind registered by `register_time_fold` other than
+  `SPTree`, or a value of one: its time bound (the left side of `FoldKind.timeBoundIff`, or of
+  `FoldKind.stepTimeBoundIff` for a step-prefixed tree) holds pointwise. -/
+  | kind
 
-/-- The role of a binder of type `t`; with `oadv`, a function into (or a value of) costed
-oracle adversaries `OracleAdv.Timed D R β` is bounded as well. -/
+/-- The left side of the registered equivalence `L` at the tree `x` and the bound `n` (the last
+two explicit arguments of `L`), with the proof of the left side from a bound on the charge fold
+of its right side, and the right side. -/
+def iffAt (L : Name) (x n : Expr) : MetaM (Expr × Expr × (Expr → MetaM Expr)) := do
+  let cL ← mkConstWithFreshMVarLevels L
+  let (ls, bis, lt) ← forallMetaTelescopeReducing (← inferType cL)
+  let ex := (Array.range ls.size).filter fun i => bis[i]! == .default
+  unless ex.size ≥ 2 && lt.isAppOfArity ``Iff 2 do
+    throwError "`{L}` is not an equivalence of a tree and a bound"
+  unless ← isDefEq ls[ex[ex.size - 2]!]! x do
+    throwError "`{L}` does not apply to{indentExpr x}"
+  unless ← isDefEq ls[ex[ex.size - 1]!]! n do throwError "`{L}`: the bound"
+  let pL ← instantiateMVars (mkAppN cL ls)
+  let lt ← instantiateMVars lt
+  return (lt.getArg! 0, lt.getArg! 1, fun pf => mkAppM ``Iff.mpr #[pL, pf])
+
+/-- The kind registered for the costed tree type `ty` (under its binders, a pair `ℕ × T` read as
+the step-prefixed tree `T`), with whether it is step-prefixed. -/
+def kindOfType? (ty : Expr) : MetaM (Option (FoldKind × Bool)) := do
+  forallTelescopeReducing ty fun _ b => do
+    let b ← whnfR b
+    let (b, step) := if b.isAppOfArity ``Prod 2 then (b.getArg! 1, true) else (b, false)
+    let b ← whnfR b
+    let some n := b.getAppFn.constName? | return none
+    if n == ``SPTree.Timed then return none
+    return (← foldKindOf? n).map (·, step)
+
+/-- The role of a binder of type `t`; with `oadv`, a function into (or a value of) costed trees
+of a kind registered by `register_time_fold` other than `SPTree` is bounded as well. -/
 def roleOf (t : Expr) (oadv : Bool := false) : MetaM (Option Role) := do
+  if oadv then
+    if (← kindOfType? t).isSome then return some .kind
   forallTelescopeReducing t fun ys b => do
     let b ← whnfR b
-    if oadv && b.isAppOf ``CatCrypt.Crypto.OracleAdv.Timed then return some .oadv
     if b.isAppOf ``SPTree.Timed then
       return some (if ys.isEmpty then .key else .tree)
     if b.isConstOf ``Nat && !ys.isEmpty then return some .cost
@@ -668,13 +592,13 @@ partial def boundTree (bs : Bounds) (t : Expr) : MetaM Expr := do
     if let some (_, v, r) := bs.find? (·.1 == f) then
       match r with
       | .tree | .key => return v
-      | .cost | .oadv => pure ()
+      | .cost | .kind => pure ()
   let t ← reduceHead t
   if let .fvar f := t.getAppFn then
     if let some (_, v, r) := bs.find? (·.1 == f) then
       match r with
       | .tree | .key => return v
-      | .cost | .oadv => pure ()
+      | .cost | .kind => pure ()
   if t.isAppOf ``SPTree.Timed.ret then return mkNatLit 0
   if t.isAppOf ``SPTree.Timed.fail then return mkNatLit 0
   if t.isAppOfArity ``SPTree.Timed.sample 6 then
@@ -762,14 +686,18 @@ partial def withBounds {γ : Type} (xs : Array Expr) (i : Nat) (bs : Bounds)
     | some r =>
       let n := (← x.fvarId!.getUserName).eraseMacroScopes
       let vName := match r with
-        | .tree | .oadv => Name.mkSimple ("T_" ++ n.toString)
+        | .tree | .kind => Name.mkSimple ("T_" ++ n.toString)
         | .key => Name.mkSimple ("G_" ++ n.toString)
         | .cost => Name.mkSimple ("t_" ++ n.toString)
       withLocalDecl vName .implicit natE fun v => do
         let hTy ← forallTelescopeReducing t fun ys _ => do
           let concl ← match r with
             | .cost => mkAppM ``LE.le #[mkAppN x ys, v]
-            | .oadv => mkAppM ``CatCrypt.Crypto.OracleAdv.Timed.TimeBound #[mkAppN x ys, v]
+            | .kind => do
+              let some (k, step) ← kindOfType? t | throwError "withBounds: kind"
+              let L := if step then k.stepTimeBoundIff else k.timeBoundIff
+              let (lhs, _, _) ← iffAt L (mkAppN x ys) v
+              pure lhs
             | _ => do mkAppM ``LE.le #[← mkAppM ``SPTree.Timed.time #[mkAppN x ys], v]
           mkForallFVars ys concl
         withLocalDeclD (Name.mkSimple ("h_" ++ n.toString)) hTy fun hx =>
@@ -1077,26 +1005,6 @@ def mirrorTimeBound (c name : Name) : TermElabM MirrorResult := do
 
 /-! ## The bound of a costed oracle adversary -/
 
-/-- A bound of a costed oracle adversary or of a step-prefixed one, its proof, and, when the
-leaves of the tree are known to satisfy a predicate `Q` (from the time theorem of a callee),
-`Q` with the proof of `AllRet Q t`. -/
-structure OABound where
-  /-- The bound. -/
-  bound : Expr
-  /-- The proof of `t.TimeBound bound` or of `StepTimeBound x bound`. -/
-  proof : Expr
-  /-- The leaf invariant `Q` of the tree and the proof of `AllRet Q t`. -/
-  inv : Option (Expr × Expr) := none
-
-/-- The context of the bound of a costed oracle adversary: the bounded binders with their
-hypotheses, and the variables that no bound may mention (the cost companions and the values
-bound inside the tree). -/
-structure OACtx where
-  /-- The bounded binders, with their bound variables, roles and hypotheses. -/
-  hs : HBounds
-  /-- The variables eliminated from every bound. -/
-  avoid : Array FVarId
-
 /-- A proof of `l = r` over `ℕ` by `omega`, with the hypotheses of the context cleared. -/
 def omegaEq (l r : Expr) : TermElabM Expr := do
   let mv ← mkFreshExprSyntheticOpaqueMVar (← mkEq l r)
@@ -1321,35 +1229,6 @@ def closePremises (xs : Array FVarId) (ms : Array Expr) : MetaM Bool := do
     unless ← CatCrypt.Tactics.AutoTime.closeByContext mid do return false
   return true
 
-/-- The bound of a call `x` (`step`: a step-prefixed adversary, else an adversary) from the time
-theorem of the callee (`AutoTime.envSources`): its conclusion `StepTimeBound x B` (or
-`x.TimeBound B`), or the conjunction of it with a leaf invariant `AllRet Q x.2` (`AllRet Q x`),
-unified at `x`, its premises closed by `closePremises`. -/
-def oaCallee? (xs : Array FVarId) (x : Expr) (step : Bool) : MetaM (Option OABound) := do
-  let head := if step then ``CatCrypt.Crypto.OracleAdv.Timed.StepTimeBound
-    else ``CatCrypt.Crypto.OracleAdv.Timed.TimeBound
-  for c in ← CatCrypt.Tactics.AutoTime.envSources x do
-    let st ← saveState
-    try
-      let (ms, _, body) ← forallMetaTelescopeReducing (← inferType c)
-      let isAnd := body.isAppOfArity ``And 2
-      let core := if isAnd then body.getArg! 0 else body
-      unless core.isAppOfArity head 5 do st.restore; continue
-      unless ← isDefEq (core.getArg! 3) x do st.restore; continue
-      unless ← closePremises xs ms do st.restore; continue
-      let pf ← instantiateMVars (mkAppN c ms)
-      let B ← instantiateMVars (core.getArg! 4)
-      if pf.hasExprMVar || B.hasExprMVar then st.restore; continue
-      unless isAnd do return some { bound := B, proof := pf }
-      let inv ← instantiateMVars (body.getArg! 1)
-      let p ← mkAppM ``And.left #[pf]
-      if inv.isAppOfArity ``CatCrypt.Crypto.OracleAdv.Timed.AllRet 5 then
-        let q ← mkAppM ``And.right #[pf]
-        return some { bound := B, proof := p, inv := some (inv.getArg! 3, q) }
-      return some { bound := B, proof := p }
-    catch _ => st.restore
-  return none
-
 /-- `k` under let-bound local hypotheses for the parts of the hypothesis `h : ty`: its
 conjuncts, each head definition unfolded, so that their bounds `∀ a, π a ≤ c` are local
 hypotheses of `bfree?`; `k` receives the let-bound variables in the order of the context. -/
@@ -1379,198 +1258,879 @@ def findFst (e y : Expr) : Option Expr :=
     | some y' => y' == y
     | none => false
 
-/-- The type arguments `D`, `R`, `α` of `ℕ × OracleAdv.Timed D R α` (`pair`) or of
-`OracleAdv.Timed D R α`. -/
-def oaArgs (x : Expr) (pair : Bool) : MetaM (Expr × Expr × Expr) := do
-  let mut t ← whnfR (← inferType x)
-  if pair then t ← whnfR (t.getArg! 1)
-  unless t.isAppOfArity ``CatCrypt.Crypto.OracleAdv.Timed 3 do
-    throwError "not a costed oracle adversary{indentExpr x}"
-  return (t.getArg! 0, t.getArg! 1, t.getArg! 2)
+/-! ## The fold rule -/
 
-/-- The bound of a step cost, free of the variables to avoid. -/
-def oaCost (cx : OACtx) (e : Expr) : MetaM (Expr × Expr) := do
-  let some r ← bfree? cx.avoid e | throwError "no bound for the step cost{indentExpr e}"
-  return r
+
+/-- A bound of the charge fold of a program with its proof
+`wpFold Φ x (fun _ => 0) ≤ ↑bound` and, when the leaves of `x` are known to satisfy a
+predicate `Q` (from the time theorem of a callee), `Q` with the proof of the demonic fold
+`wpFold (OpSpec.demonicUnder allows) x Q`. -/
+structure FoldB where
+  /-- The bound, a natural number. -/
+  bound : Expr
+  /-- The proof of the bound. -/
+  proof : Expr
+  /-- The leaf invariant and its demonic fold. -/
+  inv : Option (Expr × Expr) := none
+
+/-- The context of the fold rule: the fold facts (`∀ ys, wpFold Φ x (fun _ => 0) ≤ ↑n`, the
+time-bound hypotheses of binder trees read through the registered equivalences, and the fold
+bounds of the local context), and the variables that no bound may mention. -/
+structure FoldCx where
+  /-- The proofs of the fold facts. -/
+  facts : Array Expr := #[]
+  /-- The variables eliminated from every bound. -/
+  avoid : Array FVarId := #[]
+
+/-- `ℕ∞`. -/
+def enatE : Expr := mkConst ``ENat
+
+/-- `(n : ℕ∞)`. -/
+def enatCast (n : Expr) : MetaM Expr :=
+  mkAppOptM ``Nat.cast #[some enatE, none, some n]
+
+/-- The parts `(Φ, x, post, r)` of `wpFold Φ x post ≤ r`. -/
+def foldLe? (e : Expr) : Option (Expr × Expr × Expr × Expr) := do
+  guard (e.isAppOfArity ``LE.le 4)
+  let w := e.getArg! 2
+  guard (w.isAppOfArity ``PFunctor.FreeM.wpFold 6)
+  return (w.getArg! 3, w.getArg! 4, w.getArg! 5, e.getArg! 3)
+
+/-- The natural number `n` of the cast `(n : ℕ∞)`. -/
+def natOfCast? (e : Expr) : Option Expr :=
+  if e.isAppOfArity ``Nat.cast 3 then some (e.getArg! 2) else none
+
+/-- The charge `c : P.A → ℕ` and the answer relation of `OpSpec.chargeUnder (fun a => ↑(c a))
+allows`; `OpSpec.charge` reads as every answer allowed. -/
+def chargeOf? (Φ : Expr) : MetaM (Option (Expr × Expr × Bool)) := do
+  let Φ ← instantiateMVars Φ
+  let fn := Φ.getAppFn
+  let args := Φ.getAppArgs
+  let (cf, allows?, under) ← match fn.constName? with
+    | some ``PFunctor.OpSpec.chargeUnder =>
+      if args.size == 6 then pure (args[4]!, some args[5]!, true) else return none
+    | some ``PFunctor.OpSpec.charge =>
+      if args.size == 5 then pure (args[4]!, none, false) else return none
+    | _ => return none
+  let P := args[0]!
+  let c ← match cf.eta with
+    | .lam n ty b bi =>
+      if let some m := natOfCast? b then pure (Expr.lam n ty m bi)
+      else return none
+    | _ => return none
+  let allows ← match allows? with
+    | some a => pure a
+    | none => do
+      let pa ← mkAppM ``PFunctor.A #[P]
+      withLocalDeclD `a pa fun a => do
+        let pb ← mkAppM ``PFunctor.B #[P, a]
+        withLocalDeclD `b pb fun b => mkLambdaFVars #[a, b] (mkConst ``True)
+  return some (c, allows, under)
+
+/-- `fun a => ((c a : ℕ) : ℕ∞)`. -/
+def chargeFn (c : Expr) : MetaM Expr := do
+  let .lam n ty b bi := c | throwError "chargeFn: {c}"
+  withLocalDecl n bi ty fun a => do
+    mkLambdaFVars #[a] (← enatCast (b.instantiate1 a))
+
+/-- The charge reading `Φ` over the allowed answers: `OpSpec.charge c` read as
+`OpSpec.chargeUnder c (fun _ _ => True)`. -/
+def normSpec (Φ : Expr) : MetaM Expr := do
+  unless Φ.isAppOfArity ``PFunctor.OpSpec.charge 5 do return Φ
+  let some (c, allows, _) ← chargeOf? Φ | return Φ
+  mkAppOptM ``PFunctor.OpSpec.chargeUnder
+    #[none, none, none, none, some (← chargeFn c), some allows]
+
+/-- The proof `pf : wpFold Φ x post ≤ r` restated over `OpSpec.chargeUnder c (fun _ _ => True)`
+when `Φ` is `OpSpec.charge c`. -/
+def normFold (pf : Expr) : MetaM Expr := do
+  let ty ← whnfR (← instantiateMVars (← inferType pf))
+  let some (Φ, x, post, _) := foldLe? ty | return pf
+  unless Φ.isAppOfArity ``PFunctor.OpSpec.charge 5 do return pf
+  let eq ← mkAppM ``PFunctor.FreeM.wpFold_charge_eq_chargeUnder_true #[Φ.getArg! 4, x, post]
+  mkAppM ``Eq.trans_le #[← mkEqSymm eq, pf]
+
+/-- The proof `pf` over `OpSpec.chargeUnder c (fun _ _ => True)` restated over `Φ`, when `Φ` is
+`OpSpec.charge c`. -/
+def denormFold (Φ pf : Expr) : MetaM Expr := do
+  unless Φ.isAppOfArity ``PFunctor.OpSpec.charge 5 do return pf
+  let ty ← instantiateMVars (← inferType pf)
+  let some (_, x, post, _) := foldLe? ty | return pf
+  let eq ← mkAppM ``PFunctor.FreeM.wpFold_charge_eq_chargeUnder_true #[Φ.getArg! 4, x, post]
+  mkAppM ``Eq.trans_le #[eq, pf]
+
+/-- The statement `wpFold Φ x (fun _ => 0) ≤ ↑n`. -/
+def foldGoal (Φ x n : Expr) : MetaM Expr := do
+  let xt ← whnfR (← inferType x)
+  let α := xt.appArg!
+  let z ← mkNumeral enatE 0
+  let post ← withLocalDeclD `a α fun a => mkLambdaFVars #[a] z
+  mkAppM ``LE.le #[← mkAppM ``PFunctor.FreeM.wpFold #[Φ, x, post], ← enatCast n]
+
+/-- The proof of `B₀ ≤ B` over `ℕ` by `omega`, after the facts of `AutoTime.addCostFacts` and
+`AutoTime.addLengthFacts`, and else by `omega` after `ring_nf`. -/
+def arithLe (l r : Expr) : TermElabM Expr := do
+  let mv ← mkFreshExprSyntheticOpaqueMVar (mkNatLe l r)
+  let g ← CatCrypt.Tactics.AutoTime.addCostFacts mv.mvarId!
+  let g ← CatCrypt.Tactics.AutoTime.addLengthFacts g
+  let gs ← Tactic.run g (Tactic.evalTactic
+    (← `(tactic| first | omega | (ring_nf <;> omega) | (simp only [Nat.cast_id] at * <;> omega))))
+  unless gs.isEmpty do throwError "arithLe"
+  instantiateMVars mv
+
+/-- `e` with its head definition unfolded and its matchers reduced while the head is not an
+arithmetic operation, a numeral, a registered cost or a projection, at most `fuel` times: the
+charge `tickCost (.inr n)` of a position read as `n`. -/
+partial def reduceCharge (e : Expr) (fuel : Nat := 8) : MetaM Expr := do
+  let e ← whnfR e.headBeta
+  if fuel == 0 then return e
+  let stop := [``HAdd.hAdd, ``HMul.hMul, ``HSub.hSub, ``Max.max, ``ite, ``dite, ``OfNat.ofNat,
+    ``Nat.succ, ``List.length, ``CatCrypt.Core.SPTree.Timed.time]
+  match e.getAppFn with
+  | .const n _ =>
+    if stop.contains n || n.lastComponentAsString == "timedCost" then return e
+    let some e' ← withDefault (unfoldDefinition? e) | return e
+    let e'' ← whnfCore e'.headBeta
+    if e'' == e then return e
+    reduceCharge e'' (fuel - 1)
+  | _ => return e
+
+/-- The proposition `allows a b` reduced; `none` when it reduces to `True`. -/
+def reduceAllows (p : Expr) : MetaM (Option Expr) := do
+  let p' ← reduceCharge p
+  if p'.isConstOf ``True then return none
+  return some p'
+
+/-- A proof of `p` or of `¬p` in the local context. -/
+def decided? (p : Expr) : MetaM (Option (Bool × Expr)) := do
+  for d in ← getLCtx do
+    if d.isImplementationDetail then continue
+    unless ← isProp d.type do continue
+    if ← withNewMCtxDepth (isDefEq d.type p) then return some (true, d.toExpr)
+    if ← withNewMCtxDepth (isDefEq d.type (mkNot p)) then return some (false, d.toExpr)
+  return none
+
+/-- The instance of the lemma `L` at fresh metavariables read as an implication `A → B`: an
+equivalence `A ↔ B` from left to right (`rev`: from right to left), or an implication whose
+last premise is `A`, read forwards only; with the metavariables and the map from a proof of `A`
+to a proof of `B`. -/
+def lemmaImp (L : Name) (rev : Bool) :
+    MetaM (Option (Array Expr × Expr × Expr × (Expr → MetaM Expr))) := do
+  let cL ← mkConstWithFreshMVarLevels L
+  let (ls, _, lt) ← forallMetaTelescopeReducing (← inferType cL)
+  if lt.isAppOfArity ``Iff 2 then
+    let pL := mkAppN cL ls
+    if rev then
+      return some (ls, lt.getArg! 1, lt.getArg! 0, fun p => mkAppM ``Iff.mpr #[pL, p])
+    return some (ls, lt.getArg! 0, lt.getArg! 1, fun p => mkAppM ``Iff.mp #[pL, p])
+  if rev || ls.isEmpty then return none
+  let A ← instantiateMVars (← inferType ls.back!)
+  let pL := mkAppN cL ls.pop
+  return some (ls.pop, A, lt, fun p => pure (mkApp pL p))
+
+/-- The fold facts of the proof `h : ∀ ys, body`: `body` a bound on a charge fold, or the left
+side of a registered equivalence or implication from a time-bound predicate to a bound on a
+charge fold (`FoldKind.timeBoundIff`, `FoldKind.stepTimeBoundIff`, `FoldKind.hypIffs`). -/
+def toFoldFact? (h : Expr) : MetaM (Option Expr) := do
+  let ty ← instantiateMVars (← inferType h)
+  forallTelescopeReducing ty fun ys body => do
+    let hb := mkAppN h ys
+    if (foldLe? body).isSome then
+      let some (Φ, _, _, r) := foldLe? body | return none
+      unless (natOfCast? r).isSome do return none
+      unless (← chargeOf? Φ).isSome do return none
+      return some (← mkLambdaFVars ys (← normFold hb))
+    for k in ← foldKinds do
+      for L in #[k.timeBoundIff, k.stepTimeBoundIff] ++ k.hypIffs do
+        let st ← saveState
+        try
+          if let some (_, lhs, rhs, mk) ← lemmaImp L false then
+            if (foldLe? rhs).isSome then
+              if ← isDefEq lhs body then
+                let pf ← instantiateMVars (← mk hb)
+                let pty ← instantiateMVars (← inferType pf)
+                if !pf.hasExprMVar && (foldLe? pty).isSome then
+                  return some (← mkLambdaFVars ys (← normFold pf))
+        catch _ => pure ()
+        st.restore
+    return none
+
+/-- The bound of the program `x` from a fold fact of `cx` whose program unifies with `x`. -/
+def factAt? (cx : FoldCx) (Φ x : Expr) : MetaM (Option FoldB) := do
+  for f in cx.facts do
+    let st ← saveState
+    let (ms, _, body) ← forallMetaTelescopeReducing (← inferType f)
+    let some (Φf, xf, _, r) := foldLe? body | st.restore; continue
+    if (← isDefEq xf x) && (← isDefEq Φf Φ) then
+      let pf ← instantiateMVars (mkAppN f ms)
+      let some n := natOfCast? (← instantiateMVars r) | st.restore; continue
+      let n ← instantiateMVars n
+      unless pf.hasExprMVar || n.hasExprMVar do return some { bound := n, proof := pf }
+    st.restore
+  return none
+
+/-- The record, the image (`false`: `toFreeMT`, `true`: `stepToFreeMT`) and the tree of the
+image `x` of a costed tree of a registered kind. -/
+def imageOf? (x : Expr) : MetaM (Option (FoldKind × Bool × Expr)) := do
+  let some n := x.getAppFn.constName? | return none
+  if x.getAppNumArgs == 0 then return none
+  for k in ← foldKinds do
+    if n == k.toFreeMT then return some (k, false, x.appArg!)
+    if n == k.stepToFreeMT then return some (k, true, x.appArg!)
+  return none
+
+/-- The lemma `n` applied to `args` at its explicit binders in order (`none`: left to
+unification), its implicit arguments by unification and its instances synthesized; each
+remaining propositional argument whose statement reduces to `True` under its binders (the tick
+answers of `FoldKind.stepFold` and `FoldKind.bindFold`) is closed by `True.intro`. -/
+def appTrivial (n : Name) (args : Array (Option Expr)) : MetaM Expr := do
+  let c ← mkConstWithFreshMVarLevels n
+  let (ms, bis, _) ← forallMetaTelescopeReducing (← inferType c)
+  let mut j : Nat := 0
+  for i in [0:ms.size] do
+    if bis[i]! == .default then
+      if let some (some a) := args[j]? then
+        unless ← isDefEq ms[i]! a do
+          throwError "appTrivial: argument {j} of `{n}`{indentExpr a}"
+      j := j + 1
+  for i in [0:ms.size] do
+    if bis[i]! == .instImplicit then
+      let m := ms[i]!.mvarId!
+      unless ← m.isAssigned do
+        m.assign (← synthInstance (← instantiateMVars (← m.getType)))
+  for m in ms do
+    let mid := m.mvarId!
+    if ← mid.isAssigned then continue
+    let ty ← instantiateMVars (← mid.getType)
+    unless ← isProp ty do continue
+    let pf ← forallTelescopeReducing ty fun ys b => do
+      let b' ← reduceCharge b
+      unless b'.isConstOf ``True do throwError "appTrivial: the premise{indentExpr ty}"
+      mkLambdaFVars ys (mkConst ``True.intro)
+    mid.assign pf
+  let e ← instantiateMVars (mkAppN c ms)
+  if e.hasExprMVar then throwError "appTrivial: `{n}` is not determined by its arguments"
+  return e
+
+/-- The constant `post = fun _ => 0` of the charge folds of programs `x`. -/
+def zeroPost (x : Expr) : MetaM Expr := do
+  let xt ← whnfR (← inferType x)
+  let z ← mkNumeral enatE 0
+  withLocalDeclD `a xt.appArg! fun a => mkLambdaFVars #[a] z
+
+/-- The bound of the program `x` from the bound `r` of the program `x'` and a proof
+`eq : x = x'`. -/
+def transportFold (Φ x eq : Expr) (r : FoldB) : MetaM FoldB := do
+  let post ← zeroPost x
+  let xt ← inferType x
+  let f ← withLocalDeclD `z xt fun z => do
+    mkLambdaFVars #[z] (← mkAppM ``PFunctor.FreeM.wpFold #[Φ, z, post])
+  let feq ← mkCongrArg f eq
+  return { bound := r.bound, proof := ← mkAppM ``Eq.trans_le #[feq, r.proof] }
+
+/-- The leaf invariant `Q` and the proof of `wpFold (OpSpec.demonicUnder allows) x Q` from the
+proof `q : AllRet Q t` of the leaf invariant of the tree `t` of the image `x`, by
+`FoldKind.allRetFold`; for a step-prefixed image, lifted over its first tick. -/
+def invFold? (k : FoldKind) (step : Bool) (allows x q : Expr) :
+    MetaM (Option (Expr × Expr)) := do
+  let some arf := k.allRetFold | return none
+  let st ← saveState
+  try
+    let qty ← instantiateMVars (← inferType q)
+    let cF ← mkConstWithFreshMVarLevels arf
+    let (fs, _, ft) ← forallMetaTelescopeReducing (← inferType cF)
+    let (fl, isIff) :=
+      if ft.isAppOfArity ``Iff 2 then (ft.getArg! 0, true) else (ft.bindingDomain!, false)
+    unless ← isDefEq fl qty do st.restore; return none
+    let pF := mkAppN cF fs
+    let d ← if isIff then mkAppM ``Iff.mp #[pF, q] else pure (mkApp pF q)
+    let d ← instantiateMVars d
+    let dty ← whnfR (← instantiateMVars (← inferType d))
+    unless dty.isAppOfArity ``PFunctor.FreeM.wpFold 6 do st.restore; return none
+    let Q := dty.getArg! 5
+    if !step then return some (Q, d)
+    let x' ← whnfD x
+    unless x'.isAppOfArity ``PFunctor.FreeM.liftBind 4 do st.restore; return none
+    let d' ← mkAppM ``PFunctor.FreeM.wpFold_demonicUnder_liftBind_const
+      #[allows, x'.getArg! 2, d]
+    return some (Q, d')
+  catch _ =>
+    st.restore
+    return none
+
+/-- The bound of the image `x` of the tree `t` from the time theorem of a callee
+(`AutoTime.envSources` of `t`): a conclusion, or the left conjunct of a conclusion, read as a
+bound on the charge fold of `x` by the registered equivalences of the kind `k`, its premises
+closed by `closePremises`; a right conjunct `AllRet Q t'` (`FoldKind.allRet`) is the leaf
+invariant (`invFold?`). -/
+def calleeFold? (cx : FoldCx) (k : FoldKind) (step : Bool) (Φ allows x t : Expr) :
+    MetaM (Option FoldB) := do
+  for c in ← CatCrypt.Tactics.AutoTime.envSources t do
+    let st ← saveState
+    try
+      let (ms, _, body) ← forallMetaTelescopeReducing (← inferType c)
+      let isAnd := body.isAppOfArity ``And 2
+      let core := if isAnd then body.getArg! 0 else body
+      let pc0 := mkAppN c ms
+      let pcore ← if isAnd then mkAppM ``And.left #[pc0] else pure pc0
+      let mut found : Option (Expr × Expr) := none
+      for L in #[if step then k.stepTimeBoundIff else k.timeBoundIff] ++ k.hypIffs do
+        let st' ← saveState
+        if let some (_, lhs, rhs, mk) ← lemmaImp L false then
+          if let some (_, xr, _, r) := foldLe? rhs then
+            if (← isDefEq lhs core) && (← isDefEq xr x) then
+              found := some (← mk pcore, r)
+              break
+        st'.restore
+      let some (pf, r) := found | st.restore; continue
+      unless ← closePremises cx.avoid ms do st.restore; continue
+      let pf ← normFold (← instantiateMVars pf)
+      let some (Φp, _, _, _) := foldLe? (← whnfR (← instantiateMVars (← inferType pf)))
+        | st.restore; continue
+      unless ← isDefEq Φp Φ do st.restore; continue
+      let some n := natOfCast? (← instantiateMVars r) | st.restore; continue
+      let n ← instantiateMVars n
+      if pf.hasExprMVar || n.hasExprMVar then st.restore; continue
+      let mut inv : Option (Expr × Expr) := none
+      if isAnd then
+        let i ← instantiateMVars (body.getArg! 1)
+        if let some ar := k.allRet then
+          if i.getAppFn.isConstOf ar then
+            inv ← invFold? k step allows x (← mkAppM ``And.right #[pc0])
+      return some { bound := n, proof := pf, inv }
+    catch _ => st.restore
+  return none
+
+/-- A bound of the charge `e`, free of the variables to avoid: the time `t.time` of a costed
+tree of a kind with `FoldKind.timeLe`, by the fold rule on its image; else by `bfree?`. -/
+def costBoundWith (foldOf : FoldCx → Expr → Expr → TermElabM FoldB) (cx : FoldCx) (e : Expr) :
+    TermElabM (Expr × Expr) := do
+  for k in ← foldKinds do
+    let some L := k.timeLe | continue
+    let st ← saveState
+    try
+      let cL ← mkConstWithFreshMVarLevels L
+      let (ls, _, lt) ← forallMetaTelescopeReducing (← inferType cL)
+      unless lt.isAppOfArity ``LE.le 4 do st.restore; continue
+      let lhs := lt.getArg! 2
+      if let some a := natOfCast? lhs then
+        if ← isDefEq a e then
+          let w := lt.getArg! 3
+          if w.isAppOfArity ``PFunctor.FreeM.wpFold 6 then
+            let pL ← instantiateMVars (mkAppN cL ls)
+            let Φc := w.getArg! 3
+            let some (c, allows, _) ← chargeOf? Φc | throwError "timeLe"
+            let Φn ← mkAppOptM ``PFunctor.OpSpec.chargeUnder
+              #[none, none, none, none, some (← chargeFn c), some allows]
+            let r ← foldOf cx Φn (← instantiateMVars (w.getArg! 4))
+            let pr ← denormFold Φc r.proof
+            let pf ← mkAppM ``PFunctor.FreeM.natCast_le_of_le_trans #[pL, pr]
+            return (r.bound, pf)
+    catch _ => pure ()
+    st.restore
+  match ← bfree? cx.avoid e with
+  | some r => return r
+  | none => throwError "no bound of the charge{indentExpr e}\nfree of the values bound in the \
+      program"
+
+
+/-- The tick tree of the image `x` of a costed tree unfolded one step, when this exposes a node of
+the free monad (`FreeM.pure` or `FreeM.liftBind`): the node equations of the image. -/
+def unfoldImage? (x : Expr) : MetaM (Option Expr) := do
+  let x' ← whnfD x
+  if x'.isAppOfArity ``PFunctor.FreeM.pure 3 || x'.isAppOfArity ``PFunctor.FreeM.liftBind 4 then
+    return some x'
+  return none
+
+/-- The tree `t` in weak head normal form when this exposes a constructor (a pair, or a node of
+the tree type): the step of a recursive definition at a constructor of its argument. A bind of
+the kind, a combinator with a law, an `if` and a `match` are kept. -/
+def exposeTree (k : FoldKind) (t : Expr) : MetaM Expr := do
+  if t.isAppOfArity ``ite 5 || t.isAppOfArity ``dite 5 then return t
+  if (← matchMatcherApp? t).isSome then return t
+  if let some n := t.getAppFn.constName? then
+    if k.bind == some n then return t
+    if (← getEnv).isConstructor n then return t
+  let t' ← whnfD t
+  if let some n := t'.getAppFn.constName? then
+    if (← getEnv).isConstructor n then return t'
+  return t
+
+/-- The variables of the local context `l` that are not in `l₀`. -/
+def newFVars (l₀ l : LocalContext) : Array FVarId :=
+  l.foldl (init := #[]) fun acc d =>
+    if l₀.contains d.fvarId || d.isImplementationDetail then acc else acc.push d.fvarId
 
 mutual
 
-/-- The bound of the step-prefixed adversary `x : ℕ × OracleAdv.Timed D R α`: a pair, a `delay`,
-a bind, an `if` or `if h :` of pairs, or a call bounded by the time theorem of the callee. -/
-partial def oaStep (cx : OACtx) (x : Expr) : TermElabM OABound := do
-  let x' ← reduceHead x
-  if x'.isAppOfArity ``Prod.mk 4 then return ← oaPair cx (x'.getArg! 2) (x'.getArg! 3)
-  if x'.isAppOfArity ``CatCrypt.Crypto.OracleAdv.Timed.delay 5 then
-    let (bc, pc) ← oaCost cx (x'.getArg! 3)
-    let r ← oaStep cx (x'.getArg! 4)
-    return { bound := mkAddN bc r.bound, proof := ← mkAppM ``oa_stb_delay #[pc, r.proof],
-             inv := r.inv }
-  if x'.isAppOfArity ``CatCrypt.Crypto.OracleAdv.Timed.bind 6 then
-    let A := x'.getArg! 4
-    let rA ← oaTree cx A
-    let (_, hQ, n, hf) ← oaCont cx (x'.getArg! 2) rA.inv A (x'.getArg! 5)
-    return { bound := mkAddN rA.bound n, proof := ← mkAppM ``oa_stb_bind #[rA.proof, hQ, hf] }
+/-- **The fold rule.** The bound of the charge fold `wpFold Φ x (fun _ => 0)` of the program `x`,
+`Φ = OpSpec.chargeUnder (fun a => ↑(c a)) allows`, by structural recursion over `x`; see the
+module docstring for the clauses and the fragment they decide. -/
+partial def foldBound (cx : FoldCx) (Φ x : Expr) (fuel : Nat := 256) : TermElabM FoldB := do
+  if fuel == 0 then throwError "the fold rule exhausted its depth at{indentExpr x}"
+  let mut x := (← instantiateMVars x).headBeta
+  -- a composite `(f ∘ g) a` (the continuation of `FreeM.bind A (stepToFreeMT ∘ f)`) is `f (g a)`
+  if x.isAppOfArity ``Function.comp 6 then
+    x := mkApp (x.getArg! 3) (mkApp (x.getArg! 4) (x.getArg! 5)).headBeta
+  if let some r ← factAt? cx Φ x then return r
+  let some (c, allows, _) ← chargeOf? Φ
+    | throwError "not a charge fold over the natural numbers{indentExpr Φ}"
+  if let some (k, step, t) ← imageOf? x then
+    return ← foldImage cx Φ c allows k step x t fuel
+  let x' ← whnfR x
+  if x' != x then
+    if let some r ← factAt? cx Φ x' then return r
+    if let some (k, step, t) ← imageOf? x' then
+      return ← foldImage cx Φ c allows k step x' t.headBeta fuel
+  if x'.isAppOfArity ``PFunctor.FreeM.pure 3 then
+    let pf ← mkAppM ``PFunctor.FreeM.wpFold_chargeUnder_pure_le
+      #[c, allows, x'.getArg! 2, mkNatLit 0]
+    return { bound := mkNatLit 0, proof := pf }
+  if x'.isAppOfArity ``PFunctor.FreeM.liftBind 4 then
+    return ← foldNode cx Φ c allows (x'.getArg! 2) (x'.getArg! 3) fuel
+  if x'.isAppOfArity ``PFunctor.FreeM.bind 5 then
+    return ← foldBind cx Φ c allows x' fuel
   if x'.isAppOfArity ``ite 5 || x'.isAppOfArity ``dite 5 then
-    let (D, R, α) ← oaArgs x' true
-    let c := x'.getArg! 1
-    if x'.isAppOfArity ``ite 5 then
-      let a ← oaStep cx (x'.getArg! 3)
-      let b ← oaStep cx (x'.getArg! 4)
-      return { bound := ← mkMaxN a.bound b.bound,
-               proof := mkAppN (mkConst ``oa_stb_ite) #[D, R, α, c, x'.getArg! 2, a.bound,
-                 b.bound, x'.getArg! 3, x'.getArg! 4, a.proof, b.proof] }
-    let branch (ty br : Expr) : TermElabM (Expr × Expr) :=
-      withLocalDeclD `h ty fun h => do
-        let r ← oaStep { cx with avoid := cx.avoid.push h.fvarId! } (br.beta #[h])
-        let b ← instantiateMVars r.bound
-        if b.containsFVar h.fvarId! then throwError "the bound of a branch mentions its proof"
-        return (b, ← mkLambdaFVars #[h] r.proof)
-    let (a, pa) ← branch c (x'.getArg! 3)
-    let (b, pb) ← branch (mkNot c) (x'.getArg! 4)
-    return { bound := ← mkMaxN a b,
-             proof := mkAppN (mkConst ``oa_stb_dite) #[D, R, α, c, x'.getArg! 2, a, b,
-               x'.getArg! 3, x'.getArg! 4, pa, pb] }
-  if let some r ← oaCallee? cx.avoid x true then return r
-  if let some r ← oaCallee? cx.avoid x' true then return r
-  throwError "no bound for the step-prefixed adversary{indentExpr x'}"
+    return ← foldIf cx Φ x' fuel
+  if (← matchMatcherApp? x').isSome then
+    return ← foldMatch cx Φ x' x' fuel
+  let x'' ← reduceHead x'
+  if x'' != x' then return ← foldBound cx Φ x'' (fuel - 1)
+  throwError "the fold rule reads no clause at the program{indentExpr x'}"
 
-/-- The bound of the pair `(e, t)`: the tree `y` after `c` when `t = y.2` and `e = c + y.1`; with
-`y = S.2.bind f` and `c = c₀ + S.1`, the step-prefixed adversary `S` followed by `f` after `c₀`,
-`f` bounded at the leaves of `S.2` under the leaf invariant of `S` (`oa_stb_pair_bind`); else
-the bound of `e` plus the bound of `t`. -/
-partial def oaPair (cx : OACtx) (e t : Expr) : TermElabM OABound := do
+/-- The call clause: a call at `a` with continuation `r`. The charge `c a` is reduced
+(`reduceCharge`) and bounded free of the values bound in the program (`costBound`); the
+continuation is bounded at a fresh answer `b` under `allows a b` (dropped when it reduces to
+`True`), and its bound must not mention `b`. A tick whose charge has a summand `y.1` and whose
+continuation is the image of `y.2` is read as the image of the step-prefixed tree `y`
+(`splitTick?`). -/
+partial def foldNode (cx : FoldCx) (Φ c allows a r : Expr) (fuel : Nat) : TermElabM FoldB := do
+  let ca ← CatCrypt.Tactics.DeriveReduction.reduceProjCtor (← reduceCharge (c.beta #[a]))
+  if let some res ← splitTick? cx Φ c allows a r ca fuel then return res
+  let (m, pc) ← costBoundWith (fun cx Φ x => foldBound cx Φ x (fuel - 1)) cx ca
+  let rty ← whnf (← inferType r)
+  let .forallE bn dom _ _ := rty | throwError "foldNode: continuation{indentExpr r}"
+  withLocalDeclD bn dom fun b => do
+    let al := (allows.beta #[a, b]).headBeta
+    let red ← reduceAllows al
+    let hty := red.getD al
+    withLocalDeclD `hb hty fun hb => do
+      let avoid := cx.avoid.push b.fvarId! |>.push hb.fvarId!
+      let res ← foldBound { cx with avoid } Φ (r.beta #[b]).headBeta (fuel - 1)
+      let n ← instantiateMVars res.bound
+      if n.containsFVar b.fvarId! || n.containsFVar hb.fvarId! then
+        throwError "the bound of the continuation of the call{indentExpr a}\nmentions its \
+          answer:{indentExpr n}"
+      let hr ← mkLambdaFVars #[b, hb] res.proof
+      let pf ← mkAppM ``PFunctor.FreeM.wpFold_chargeUnder_liftBind_le #[c, allows, a, r, m, n, pc, hr]
+      return { bound := mkAddN m n, proof := pf }
+
+/-- The tick split: a call at `a` whose continuation ignores its answer and is the image
+`toFreeMT y.2` of the tree of a step-prefixed tree `y`, with charge `ca = e + y.1`, is bounded by
+the bound of `e` plus the bound of `stepToFreeMT y` (`FoldKind.stepFold`). When moreover `y` is
+`A.bind f` with `A = S.2` and `e = e₀ + S.1`, the bound is that of `e₀` plus the bound of
+`(stepToFreeMT S).bind (stepToFreeMT ∘ f)` (`FoldKind.bindFold`), so that the step cost `S.1` of
+a callee and its tree are bounded together by its time theorem. -/
+partial def splitTick? (cx : FoldCx) (Φ c allows a r ca : Expr) (fuel : Nat) :
+    TermElabM (Option FoldB) := do
+  let .lam _ _ body _ := r | return none
+  if body.hasLooseBVars then return none
+  let some (k, false, t) ← imageOf? body | return none
+  let some sf := k.stepFold | return none
   let t' ← reduceHead t
-  if let some y := CatCrypt.Tactics.AutoTime.sndOf? t' then
-    if let some o := findFst e y then
-      let c := e.replace fun s => if s == o then some (mkNatLit 0) else none
-      if y.isAppOfArity ``CatCrypt.Crypto.OracleAdv.Timed.bind 6 then
-        if let some S := CatCrypt.Tactics.AutoTime.sndOf? (y.getArg! 4) then
-          if let some oS := findFst c S then
-            let c₀ := c.replace fun s => if s == oS then some (mkNatLit 0) else none
-            let he ← omegaEq e (mkAddN (mkAddN c₀ oS) o)
-            let (bc, pc) ← oaCost cx c₀
-            let rS ← oaStep cx S
-            let (_, hQ, n, hf) ← oaCont cx (y.getArg! 2) rS.inv (y.getArg! 4) (y.getArg! 5)
-            return { bound := mkAddN bc (mkAddN rS.bound n),
-                     proof := ← mkAppM ``oa_stb_pair_bind #[he, pc, rS.proof, hQ, hf] }
-      let he ← omegaEq e (mkAddN c o)
-      let (bc, pc) ← oaCost cx c
-      let ry ← oaStep cx y
-      return { bound := mkAddN bc ry.bound,
-               proof := ← mkAppM ``oa_stb_pair_snd #[he, pc, ry.proof], inv := ry.inv }
-  let (bc, pc) ← oaCost cx e
-  let rt ← oaTree cx t
-  return { bound := mkAddN bc rt.bound, proof := ← mkAppM ``oa_stb_pair #[pc, rt.proof],
-           inv := rt.inv }
+  let some y := CatCrypt.Tactics.AutoTime.sndOf? t' | return none
+  let some o := findFst ca y | return none
+  if ca == o then return none
+  let e := ca.replace fun s => if s == o then some (mkNatLit 0) else none
+  let post ← zeroPost body
+  let st ← saveState
+  try
+    let rty ← whnf (← inferType r)
+    let .forallE _ dom _ _ := rty | return none
+    let dom ← whnf dom
+    unless dom.isConstOf ``PUnit do return none
+    let some u := dom.constLevels!.head? | return none
+    let unit := Lean.mkConst ``PUnit.unit [u]
+    let p ← reduceCharge (allows.beta #[a, unit])
+    unless p.isConstOf ``True do return none
+    let hb := Lean.mkConst ``True.intro
+    let cE ← chargeFn c
+    let fm ← whnfR (← inferType body)
+    let (P, α) := (fm.getArg! 0, fm.getArg! 1)
+    let hX ← mkAppOptM ``PFunctor.FreeM.wpFold_chargeUnder_liftBind_const
+      #[some P, some α, none, none, none, some cE, some allows, some a, some unit, some hb,
+        some body, some post]
+    let hs ← appTrivial sf #[some allows, none, some y, some post]
+    -- `y = A.bind f` with `A = S.2` and `S.1` a summand of `e`: the callee `S` and `f` together
+    if let (some bnd, some bf) := (k.bind, k.bindFold) then
+      let y' ← reduceHead y
+      if y'.getAppFn.isConstOf bnd && y'.getAppNumArgs ≥ 2 then
+        let A := y'.getArg! (y'.getAppNumArgs - 2)
+        let f := y'.getArg! (y'.getAppNumArgs - 1)
+        if let some S := CatCrypt.Tactics.AutoTime.sndOf? (← reduceHead A) then
+          if let some oS := findFst e S then
+            let e₀ := e.replace fun s => if s == oS then some (mkNatLit 0) else none
+            let hc ← omegaEq ca (mkAddN (mkAddN e₀ oS) o)
+            let (m, pe) ← costBoundWith (fun cx Φ x => foldBound cx Φ x (fuel - 1)) cx e₀
+            let hsu ← appTrivial bf #[some allows, none, some A, some f, some post]
+            let hsuTy ← instantiateMVars (← inferType hsu)
+            let bindProg := (hsuTy.getArg! 2).getArg! 4
+            let stepS ← mkAppM k.stepToFreeMT #[S]
+            let g := bindProg.getArg! 4
+            let v ← mkAppM ``PFunctor.FreeM.bind #[stepS, g]
+            let rv ← foldBound cx Φ v (fuel - 1)
+            let vs ← whnfD stepS
+            unless vs.isAppOfArity ``PFunctor.FreeM.liftBind 4 do
+              throwError "splitTick: the step-prefixed image"
 
-/-- The bound `n` of the continuation `f` of a bind of the tree `A` at a fresh value `a`, under
-the leaf invariant `Q a` of `A` (`fun _ => True` without one) taken apart by `withInvHyps`: the
-invariant `Q`, the proof of `AllRet Q A`, `n`, and the proof of
-`∀ a, Q a → StepTimeBound (f a) n`. -/
-partial def oaCont (cx : OACtx) (α : Expr) (inv : Option (Expr × Expr)) (A f : Expr) :
-    TermElabM (Expr × Expr × Expr × Expr) := do
-  let (Q, hQ) ← match inv with
+            let hv ← mkAppOptM ``PFunctor.FreeM.wpFold_chargeUnder_liftBind_const
+              #[some P, none, none, none, none, some cE, some allows, some (vs.getArg! 2),
+                some unit, some hb, some bindProg, some post]
+            let pf ← mkAppM ``PFunctor.FreeM.enat_split₂_le #[hX, hs, hsu, hv, hc, pe, rv.proof]
+            return some { bound := mkAddN m rv.bound, proof := pf }
+    let hc ← omegaEq ca (mkAddN e o)
+    let (m, pe) ← costBoundWith (fun cx Φ x => foldBound cx Φ x (fuel - 1)) cx e
+    let ry ← foldBound cx Φ (← mkAppM k.stepToFreeMT #[y]) (fuel - 1)
+    let pf ← mkAppM ``PFunctor.FreeM.enat_split_le #[hX, hs, hc, pe, ry.proof]
+    return some { bound := mkAddN m ry.bound, proof := pf, inv := ry.inv }
+  catch ex =>
+    if ex.isInterrupt || ex.isRuntime then throw ex
+    st.restore
+    return none
+
+/-- The bind clause: `x.bind f` is bounded by the bound of `x` plus the bound of `f a` at a fresh
+return `a`, under the leaf invariant `Q a` of `x` when its bound carries one (taken apart by
+`withInvHyps`); the bound of `f a` must not mention `a`. A bind whose first program is a node is
+first reassociated (`FreeM.bind` on `pure` and `liftBind`). -/
+partial def foldBind (cx : FoldCx) (Φ c allows x : Expr) (fuel : Nat) : TermElabM FoldB := do
+  let x0 := x.getArg! 3
+  let f := x.getArg! 4
+  let leaf? : Option FoldB ← do
+    if let some r ← factAt? cx Φ x0 then pure (some r)
+    else match ← imageOf? x0 with
+      | some (k, step, t) => calleeFold? cx k step Φ allows x0 t
+      | none => pure none
+  if leaf?.isNone then
+    let mut x0' ← whnfR x0
+    if (← imageOf? x0').isSome then
+      if let some u ← unfoldImage? x0' then x0' := u
+    if x0'.isAppOfArity ``PFunctor.FreeM.pure 3 then
+      return ← foldBound cx Φ (f.beta #[x0'.getArg! 2]).headBeta (fuel - 1)
+    if x0'.isAppOfArity ``PFunctor.FreeM.liftBind 4 then
+      let x' ← whnfCore (← mkAppM ``PFunctor.FreeM.bind #[x0', f])
+      return ← foldBound cx Φ x' (fuel - 1)
+  let r0 ← match leaf? with
+    | some r => pure r
+    | none => foldBound cx Φ x0 (fuel - 1)
+  let fty ← whnf (← inferType f)
+  let .forallE an α _ _ := fty | throwError "foldBind: continuation{indentExpr f}"
+  let (Q, hI) ← match r0.inv with
     | some p => pure p
     | none => do
-      pure (Expr.lam `a α (mkConst ``True) .default, ← mkAppM ``oa_allRet_true #[A])
-  withLocalDeclD `a α fun a => do
+      let Q ← withLocalDeclD an α fun a => mkLambdaFVars #[a] (mkConst ``True)
+      pure (Q, ← mkAppM ``PFunctor.FreeM.wpFold_demonicUnder_true #[allows, x0])
+  withLocalDeclD an α fun a => do
     let qa := (Q.beta #[a]).headBeta
     withLocalDeclD `ha qa fun ha => do
       withInvHyps ha qa fun lets => do
-        let r ← oaStep { cx with avoid := cx.avoid.push a.fvarId! } (f.beta #[a])
+        let avoid := cx.avoid ++ #[a.fvarId!, ha.fvarId!] ++ lets.map (·.fvarId!)
+        let r ← foldBound { cx with avoid } Φ (f.beta #[a]).headBeta (fuel - 1)
         let n ← instantiateMVars r.bound
         if n.containsFVar a.fvarId! || n.containsFVar ha.fvarId! ||
             lets.any fun l => n.containsFVar l.fvarId! then
-          throwError "the bound of the continuation depends on the bound value{indentExpr n}"
-        return (Q, hQ, n, ← mkLambdaFVars (#[a, ha] ++ lets) r.proof)
+          throwError "the bound of the continuation of a bind mentions the bound value{indentExpr n}"
+        let hf ← mkLambdaFVars (#[a, ha] ++ lets) r.proof
+        let pf ← mkAppM ``PFunctor.FreeM.wpFold_chargeUnder_bind_le_add
+          #[c, allows, x0, f, Q, r0.bound, n, r0.proof, hf, hI]
+        return { bound := mkAddN r0.bound n, proof := pf }
 
-/-- The bound of the costed oracle adversary `t`: a bounded binder, a leaf, a `rand` or `query`
-node (one unit, then the bound of its step-prefixed continuations at a fresh value), the tree
-`y.2` of a step-prefixed adversary, an `if`, or a call bounded by the time theorem of the
-callee. -/
-partial def oaTree (cx : OACtx) (t : Expr) : TermElabM OABound := do
-  let binder? (t : Expr) : Option OABound := do
-    let .fvar f := t.getAppFn | none
-    let (_, v, r, h) ← cx.hs.find? (·.1 == f)
-    match r with
-    | .oadv => some { bound := v, proof := mkAppN h t.getAppArgs }
-    | _ => none
-  if let some r := binder? t then return r
-  let t' ← reduceHead t
-  if let some r := binder? t' then return r
-  if t'.isAppOfArity ``CatCrypt.Crypto.OracleAdv.Timed.ret 4 then
-    return { bound := mkNatLit 0,
-             proof := mkAppN (mkConst ``oa_tb_ret)
-               #[t'.getArg! 0, t'.getArg! 1, t'.getArg! 2, t'.getArg! 3, mkNatLit 0] }
-  let node (rand : Bool) : TermElabM OABound := do
-    let (D, R, α) := (t'.getArg! 0, t'.getArg! 1, t'.getArg! 2)
-    let (γ, c, k) := if rand then (t'.getArg! 3, t'.getArg! 5, t'.getArg! 6)
-      else (R, t'.getArg! 4, t'.getArg! 5)
-    withLocalDeclD `b γ fun b => do
-      let r ← oaPair { cx with avoid := cx.avoid.push b.fvarId! } (c.beta #[b]) (k.beta #[b])
+/-- The `if` clause: an `if` or `if h :` decided by a hypothesis of the context (the answer
+relation at a sampling node, `b ∈ μ.support`) is its branch; else the maximum of the bounds of
+its branches, a branch of `if h :` bounded under its hypothesis and free of it. -/
+partial def foldIf (cx : FoldCx) (Φ x : Expr) (fuel : Nat) : TermElabM FoldB := do
+  let isD := x.isAppOfArity ``dite 5
+  let (α, p, inst, t, e) := (x.getArg! 0, x.getArg! 1, x.getArg! 2, x.getArg! 3, x.getArg! 4)
+  let post ← zeroPost x
+  if let some (pos, h) ← decided? p then
+    let lem := if isD then (if pos then ``dif_pos else ``dif_neg)
+      else (if pos then ``if_pos else ``if_neg)
+    let eq ← mkAppOptM lem #[some p, some inst, some h, some α, some t, some e]
+    let x' := (← instantiateMVars (← inferType eq)).getArg! 2
+    let r ← foldBound cx Φ x'.headBeta (fuel - 1)
+    return ← transportFold Φ x eq r
+  if !isD then
+    let r1 ← foldBound cx Φ t (fuel - 1)
+    let r2 ← foldBound cx Φ e (fuel - 1)
+    let pf ← mkAppOptM ``PFunctor.FreeM.wpFold_ite_le_max_enat
+      #[none, none, some Φ, some p, some inst, some t, some e, some post, none, none,
+        some r1.proof, some r2.proof]
+    return { bound := ← mkMaxN r1.bound r2.bound, proof := pf }
+  let branch (ty br : Expr) : TermElabM (Expr × Expr) :=
+    withLocalDeclD `h ty fun h => do
+      let r ← foldBound { cx with avoid := cx.avoid.push h.fvarId! } Φ (br.beta #[h]).headBeta
+        (fuel - 1)
+      let b ← instantiateMVars r.bound
+      if b.containsFVar h.fvarId! then throwError "the bound of a branch mentions its proof"
+      return (b, ← mkLambdaFVars #[h] r.proof)
+  let (m, pt) ← branch p t
+  let (n, pe) ← branch (mkNot p) e
+  let pf ← mkAppOptM ``PFunctor.FreeM.wpFold_dite_le_max_enat
+    #[none, none, some Φ, some p, some inst, some t, some e, some post, none, none, some pt,
+      some pe]
+  return { bound := ← mkMaxN m n, proof := pf }
+
+/-- The `match` clause: the goal `wpFold Φ x (fun _ => 0) ≤ ↑?B` is split on the match `me`
+(`Split.splitMatch`); each alternative is bounded under its pattern variables, free of them, and
+`?B` is the maximum of the bounds of the alternatives. -/
+partial def foldMatch (cx : FoldCx) (Φ x me : Expr) (fuel : Nat) : TermElabM FoldB := do
+  let B ← mkFreshExprMVar natE
+  let g ← mkFreshExprSyntheticOpaqueMVar (← foldGoal Φ x B)
+  let l₀ ← getLCtx
+  let gs ← Split.splitMatch g.mvarId! me
+  let mut rs : Array (MVarId × FoldB) := #[]
+  for gi in gs do
+    let r ← gi.withContext do
+      let ty ← instantiateMVars (← gi.getType)
+      let some (Φi, xi, _, _) := foldLe? ty | throwError "foldMatch: alternative{indentExpr ty}"
+      let nv := newFVars l₀ (← getLCtx)
+      let r ← foldBound { cx with avoid := cx.avoid ++ nv } Φi xi (fuel - 1)
       let n ← instantiateMVars r.bound
-      if n.containsFVar b.fvarId! then
-        throwError "the bound of a node depends on its value{indentExpr n}"
-      let h ← mkLambdaFVars #[b] r.proof
-      let pf := if rand then
-          mkAppN (mkConst ``oa_tb_rand) #[D, R, α, γ, t'.getArg! 4, c, k, n, h]
-        else mkAppN (mkConst ``oa_tb_query) #[D, R, α, t'.getArg! 3, c, k, n, h]
-      return { bound := mkAddN (mkNatLit 1) n, proof := pf }
-  if t'.isAppOfArity ``CatCrypt.Crypto.OracleAdv.Timed.rand 7 then return ← node true
-  if t'.isAppOfArity ``CatCrypt.Crypto.OracleAdv.Timed.query 6 then return ← node false
-  if let some y := CatCrypt.Tactics.AutoTime.sndOf? t' then
-    let r ← oaStep cx y
-    return { bound := r.bound, proof := ← mkAppM ``oa_tb_snd #[r.proof], inv := r.inv }
-  if t'.isAppOfArity ``ite 5 then
-    let (D, R, α) ← oaArgs t' false
-    let a ← oaTree cx (t'.getArg! 3)
-    let b ← oaTree cx (t'.getArg! 4)
-    return { bound := ← mkMaxN a.bound b.bound,
-             proof := mkAppN (mkConst ``oa_tb_ite) #[D, R, α, t'.getArg! 1, t'.getArg! 2,
-               a.bound, b.bound, t'.getArg! 3, t'.getArg! 4, a.proof, b.proof] }
-  if let some r ← oaCallee? cx.avoid t false then return r
-  if let some r ← oaCallee? cx.avoid t' false then return r
-  throwError "no bound for the costed oracle adversary{indentExpr t'}"
+      if nv.any n.containsFVar then
+        throwError "the bound of an alternative of a match mentions its pattern \
+          variables{indentExpr n}"
+      pure r
+    rs := rs.push (gi, r)
+  let (M, ups) ← maxChain (← rs.mapM fun (_, r) => instantiateMVars r.bound)
+  unless ← isDefEq B M do throwError "foldMatch: bound"
+  for h : i in [0:rs.size] do
+    let (gi, r) := rs[i]'h.2.1
+    gi.withContext do
+      gi.assign (← mkAppM ``PFunctor.FreeM.wpFold_le_natCast_of_le #[r.proof, ups[i]!])
+  return { bound := M, proof := ← instantiateMVars g }
+
+/-- The clauses of an image `x` of a costed tree `t` of the kind `k` (`step`: the step-prefixed
+image): the time theorem of a callee (`calleeFold?`); an `if` or `if h :` of trees, the image
+pushed into its branches; a `match` of trees; a bind of the kind under the step-prefixed image,
+by `FoldKind.bindFold`; a registered combinator law (`FoldKind.laws`); else the node equations
+of the image. -/
+partial def foldImage (cx : FoldCx) (Φ c allows : Expr) (k : FoldKind) (step : Bool)
+    (x t : Expr) (fuel : Nat) : TermElabM FoldB := do
+  let _ := c
+  if let some r ← calleeFold? cx k step Φ allows x t then return r
+  let t' ← reduceHead t
+  let x' := mkApp x.appFn! t'
+  if t' != t then
+    if let some r ← factAt? cx Φ x' then return r
+    if let some r ← calleeFold? cx k step Φ allows x' t' then return r
+  if t'.isAppOfArity ``ite 5 || t'.isAppOfArity ``dite 5 then
+    let lem := if t'.isAppOfArity ``ite 5 then ``apply_ite else ``apply_dite
+    let eq ← mkAppM lem #[x.appFn!, t'.getArg! 1, t'.getArg! 3, t'.getArg! 4]
+    let x'' := (← instantiateMVars (← inferType eq)).getArg! 2
+    let r ← foldBound cx Φ x'' (fuel - 1)
+    return ← transportFold Φ x' eq r
+  if (← matchMatcherApp? t').isSome then
+    return ← foldMatch cx Φ x' t' fuel
+  if step then
+    if let (some bnd, some bf) := (k.bind, k.bindFold) then
+      if t'.getAppFn.isConstOf bnd && t'.getAppNumArgs ≥ 2 then
+        let A := t'.getArg! (t'.getAppNumArgs - 2)
+        let f := t'.getArg! (t'.getAppNumArgs - 1)
+        let post ← zeroPost x
+        let eq ← appTrivial bf #[some allows, none, some A, some f, some post]
+        let eqTy ← instantiateMVars (← inferType eq)
+        let r ← foldBound cx Φ ((eqTy.getArg! 2).getArg! 4) (fuel - 1)
+        return { bound := r.bound, proof := ← mkAppM ``Eq.trans_le #[eq, r.proof] }
+  for L in k.laws do
+    if let some r ← lawFold? cx Φ x' L fuel then return r
+  let t'' ← exposeTree k t'
+  if t'' != t' then return ← foldBound cx Φ (mkApp x.appFn! t'') (fuel - 1)
+  if let some x'' ← unfoldImage? x' then return ← foldBound cx Φ x'' (fuel - 1)
+  throwError "the fold rule reads no clause at the costed tree{indentExpr t'}"
+
+/-- A combinator law `L`: a theorem concluding `wpFold Φ' x' (fun _ => 0) ≤ ↑B` whose program
+unifies with `x`; each premise that bounds a charge fold (under binders) is proved by the fold
+rule, its bound assigned to the metavariable of the premise, and the other premises are closed
+by `closePremises`. -/
+partial def lawFold? (cx : FoldCx) (Φ x : Expr) (L : Name) (fuel : Nat) :
+    TermElabM (Option FoldB) := do
+  let st ← saveState
+  try
+    let cL ← mkConstWithFreshMVarLevels L
+    let (ms, _, concl) ← forallMetaTelescopeReducing (← inferType cL)
+    let some (Φl, xl, _, r) := foldLe? (← whnfR concl) | st.restore; return none
+    unless ← isDefEq xl x do st.restore; return none
+    unless ← isDefEq (← normSpec Φl) Φ do st.restore; return none
+    for m in ms do
+      let mid := m.mvarId!
+      if ← mid.isAssigned then continue
+      let ty ← instantiateMVars (← mid.getType)
+      unless ← isProp ty do continue
+      forallTelescopeReducing ty fun ys body => do
+        let some (Φp, xp, _, rp) := foldLe? body | return
+        let some np := natOfCast? rp | return
+        let rr ← foldBound { cx with avoid := cx.avoid ++ ys.map (·.fvarId!) } (← normSpec Φp)
+          xp (fuel - 1)
+        unless ← isDefEq np rr.bound do
+          throwError "the bound of an argument of a combinator mentions its binders"
+        mid.assign (← mkLambdaFVars ys (← denormFold Φp rr.proof))
+    unless ← closePremises cx.avoid ms do st.restore; return none
+    let pf ← normFold (← instantiateMVars (mkAppN cL ms))
+    let some n := natOfCast? (← instantiateMVars r) | st.restore; return none
+    let n ← instantiateMVars n
+    if pf.hasExprMVar || n.hasExprMVar then st.restore; return none
+    return some { bound := n, proof := pf }
+  catch ex =>
+    if ex.isInterrupt || ex.isRuntime then throw ex
+    st.restore
+    return none
 
 end
 
-/-- Whether the costed tree `c` returns a step-prefixed costed oracle adversary. -/
-def isOracleTimed (c : Name) : MetaM Bool := do
-  forallTelescope (← getConstInfo c).type fun _ body => do
-    let body ← whnfR body
-    unless body.isAppOfArity ``Prod 2 do return false
-    return (← whnfR (body.getArg! 1)).isAppOf ``CatCrypt.Crypto.OracleAdv.Timed
+/-- The fold facts of the local context: its propositions read by `toFoldFact?`. -/
+def contextFacts : MetaM (Array Expr) := do
+  let mut out := #[]
+  for d in ← getLCtx do
+    if d.isImplementationDetail then continue
+    unless ← isProp d.type do continue
+    if let some f ← toFoldFact? d.toExpr then out := out.push f
+  return out
 
-/-- State and prove `name`, the time theorem `StepTimeBound (c xs) B` of the costed oracle
-adversary `c`, along its bound (`oaStep`): every binder into costed oracle adversaries and
-every cost companion gets a bound and its hypothesis (`withBounds`); the bound is normalised
-(`normalizeSum`) when `omega`, alone or after `ring_nf`, proves the normalised bound above the
-computed one. Returns the
-reason when the bound is not computed or the proof is not accepted. -/
-def emitOracleTimeBound (c name : Name) : TermElabM (Option MessageData) := do
+/-- A goal read as a bound on a charge fold: the program `x`, the reading `Φ` (normalised by
+`normSpec`), the bound `B : ℕ∞` of the goal, and the map from a proof of
+`wpFold Φ x (fun _ => 0) ≤ B` to a proof of the goal. The goal is a bound on a charge fold, or
+the left side of a registered equivalence (`FoldKind.timeBoundIff`, `FoldKind.stepTimeBoundIff`)
+or the conclusion of a registered implication (`FoldKind.hypIffs`) from such a bound. -/
+structure FoldGoal where
+  /-- The reading. -/
+  spec : Expr
+  /-- The program. -/
+  prog : Expr
+  /-- The bound of the goal, in `ℕ∞`. -/
+  rhs : Expr
+  /-- The proof of the goal from a proof of the bound. -/
+  close : Expr → MetaM Expr
+
+/-- The goal `tgt` read as a bound on a charge fold; see `FoldGoal`. -/
+def readGoal (tgt : Expr) : MetaM (Option FoldGoal) := do
+  let tgt ← instantiateMVars tgt
+  if let some (Φ, x, _, r) := foldLe? (← whnfR tgt) then
+    if (← chargeOf? Φ).isSome then
+      return some { spec := ← normSpec Φ, prog := x, rhs := r, close := denormFold Φ }
+  for k in ← foldKinds do
+    for L in #[k.timeBoundIff, k.stepTimeBoundIff] ++ k.concls do
+      let st ← saveState
+      try
+        let isConcl := k.concls.contains L
+        if let some (_, prem, concl, mk) ← lemmaImp L (rev := !isConcl) then
+          if let some (Φ, x, _, r) := foldLe? prem then
+            if (← chargeOf? Φ).isSome then
+              if ← isDefEq concl tgt then
+                let x ← instantiateMVars x
+                let r ← instantiateMVars r
+                let Φ ← instantiateMVars Φ
+                unless x.hasExprMVar || r.hasExprMVar do
+                  let close (pf : Expr) : MetaM Expr := do mk (← denormFold Φ pf)
+                  return some { spec := ← normSpec Φ, prog := x, rhs := r, close }
+      catch _ => pure ()
+      st.restore
+  return none
+
+/-- The proof of `wpFold Φ x (fun _ => 0) ≤ rhs` from the bound `r` of the fold rule: through
+`B₀ ≤ n` (`arithLe`) when `rhs` is the cast of `n`, else by `norm_cast` and `omega`. -/
+def closeRhs (r : FoldB) (rhs : Expr) : TermElabM Expr := do
+  let B₀ ← instantiateMVars r.bound
+  if let some n := natOfCast? rhs then
+    let le ← try arithLe B₀ n
+      catch _ => throwError "the computed bound{indentExpr B₀}\nis not below the stated \
+        bound{indentExpr n}"
+    return ← mkAppM ``PFunctor.FreeM.wpFold_le_natCast_of_le #[r.proof, le]
+  let mv ← mkFreshExprSyntheticOpaqueMVar (← mkAppM ``LE.le #[← enatCast B₀, rhs])
+  let gs ← try Tactic.run mv.mvarId! (Tactic.evalTactic
+      (← `(tactic| first | (norm_cast; omega) | (norm_num) | (simp; omega))))
+    catch _ => pure [mv.mvarId!]
+  unless gs.isEmpty do
+    throwError "the computed bound{indentExpr B₀}\nis not below the stated bound{indentExpr rhs}"
+  mkAppM ``le_trans #[r.proof, ← instantiateMVars mv]
+
+/-- `time_fold` proves a goal `wpFold Φ x (fun _ => 0) ≤ B` with
+`Φ = OpSpec.chargeUnder (fun a => ↑(c a)) allows` or `Φ = OpSpec.charge (fun a => ↑(c a))` over a
+program `x` of a free monad (written in `FreeM` or the image of a costed tree), or a time-bound
+goal of a registered kind (`register_time_fold`), by the fold rule (`foldBound`): the bound
+`B₀` computed clause by clause from the structure of `x`, the hypotheses of the context read as
+fold bounds and the time theorems of callees, followed by `B₀ ≤ B` over `ℕ`. -/
+syntax (name := timeFoldStx) "time_fold" : tactic
+
+@[tactic timeFoldStx] def evalTimeFold : Tactic.Tactic := fun _ => do
+  let g ← Tactic.getMainGoal
+  let rest := (← Tactic.getGoals).tail
+  g.withContext do
+    let some fg ← readGoal (← g.getType)
+      | throwError "time_fold: the goal is neither a bound on a charge fold nor a registered \
+          time bound{indentExpr (← g.getType)}"
+    let cx : FoldCx := { facts := ← contextFacts }
+    let r ← foldBound cx fg.spec fg.prog
+    let pf ← fg.close (← closeRhs r fg.rhs)
+    let pf ← instantiateMVars pf
+    if pf.hasSyntheticSorry then throwError "time_fold: the proof is incomplete"
+    g.assign pf
+  Tactic.setGoals rest
+
+/-- The record of the costed tree `c` (a definition returning `ℕ × T` with `T` of a registered
+kind other than `SPTree.Timed`). -/
+def foldKindOfTimed? (c : Name) : MetaM (Option FoldKind) := do
+  match ← kindOfType? (← getConstInfo c).type with
+  | some (k, true) => return some k
+  | _ => return none
+
+/-- The file named by the environment variable `CATCRYPT_FOLD_REPORT`, to which
+`derive_time_bound` appends a line for each time theorem of a costed `SPTree` proved by the
+fallback (`emitTimeBound` or `mirrorTimeBound`) with the reason of the fold rule. -/
+def reportFallback (name : Name) (why : MessageData) : TermElabM Unit := do
+  let some path ← IO.getEnv "CATCRYPT_FOLD_REPORT" | return
+  let w ← why.toString
+  let line := s!"{name}\t{(w.replace "\n" " ").take 300}\n"
+  let h ← IO.FS.Handle.mk path .append
+  h.putStr line
+
+/-- State and prove `name`, the time theorem of the costed tree `c` of the registered kind `k`:
+the left side of `k.stepTimeBoundIff` at `c xs` and the bound `B` computed by the fold rule
+(`foldBound`) on the step-prefixed image of `c xs`, every binder tree of a registered kind with
+its time-bound hypothesis read as a fold fact (`toFoldFact?`) and every cost companion with its
+bound (`withBounds`); `B` is normalised (`normalizeSum`) when `arithLe` proves the normalised
+bound above the computed one. Returns the reason when the bound is not computed or the proof is
+not accepted. -/
+def emitFoldTimeBound (k : FoldKind) (c name : Name) : TermElabM (Option MessageData) := do
   let info ← getConstInfo c
   let lvls := info.levelParams.map mkLevelParam
   forallTelescope info.type fun xs _ => do
     withBounds xs 0 #[] #[] #[] (oadv := true) fun bs vars hyps => do
-      let hs : HBounds := (bs.zip hyps).map fun ((f, v, r), h) => (f, v, r, h)
+      let mut facts := #[]
+      for h in hyps do
+        if let some f ← toFoldFact? h then facts := facts.push f
       let avoid := bs.filterMap fun (f, _, r) => match r with
         | .cost => some f
         | _ => none
       let x := mkAppN (Lean.mkConst c lvls) xs
-      let r ← try oaStep { hs, avoid } x
+      let Bm ← mkFreshExprMVar natE
+      let (goal, rhs, close) ← try iffAt k.stepTimeBoundIff x Bm
+        catch e => return some e.toMessageData
+      let some (Φ, xr, _, _) := foldLe? rhs | return some m!"`{k.stepTimeBoundIff}`: the fold"
+      let r ← try foldBound { facts, avoid } (← normSpec Φ) xr
         catch e => return some m!"no bound: {e.toMessageData}"
       let B ← instantiateMVars r.bound
       let Bn ← normalizeSum B
       let mut bound := B
-      let mut pf ← instantiateMVars r.proof
+      let mut pf0 := r.proof
       if Bn != B then
         try
-          let le ← omegaLe B Bn
-          pf ← mkAppM ``CatCrypt.Crypto.OracleAdv.Timed.StepTimeBound.mono #[pf, le]
+          let le ← arithLe B Bn
+          pf0 ← mkAppM ``PFunctor.FreeM.wpFold_le_natCast_of_le #[pf0, le]
           bound := Bn
         catch _ => pure ()
+      unless ← isDefEq Bm bound do return some m!"the bound"
+      let pf ← instantiateMVars (← close pf0)
       if pf.hasSorry || pf.hasExprMVar then return some m!"the proof is incomplete"
-      let goal ← mkAppM ``CatCrypt.Crypto.OracleAdv.Timed.StepTimeBound #[x, bound]
+      let goal ← instantiateMVars goal
       let ty ← mkForallFVars (xs ++ vars ++ hyps) goal
       let val ← mkLambdaFVars (xs ++ vars ++ hyps) pf
       try
@@ -1578,20 +2138,56 @@ def emitOracleTimeBound (c name : Name) : TermElabM (Option MessageData) := do
           { name, levelParams := info.levelParams, type := ty, value := val })
       catch e => return some m!"the proof is not accepted: {e.toMessageData}"
       return none
-where
-  /-- A proof of `l ≤ r` over `ℕ` by `omega`, else by `omega` after `ring_nf` (products of
-  sums, whose factors `normalizeSum` normalises, are atoms of `omega`), with the hypotheses of
-  the context cleared. -/
-  omegaLe (l r : Expr) : TermElabM Expr := do
-    let mv ← mkFreshExprSyntheticOpaqueMVar (mkNatLe l r)
-    let mut hs : Array FVarId := #[]
-    for d in ← getLCtx do
-      if d.isImplementationDetail then continue
-      if ← isProp d.type then hs := hs.push d.fvarId
-    let g ← mv.mvarId!.tryClearMany hs
-    let gs ← Tactic.run g (Tactic.evalTactic (← `(tactic| first | omega | (ring_nf <;> omega))))
-    unless gs.isEmpty do throwError "omegaLe"
-    instantiateMVars mv
+
+/-- State and prove `name`, the time theorem `stepTime (c xs) ≤ B` of a costed `SPTree`, by the
+fold rule: `B` is the bound of `boundStep` (the statement of `emitTimeBound`), and the bound of
+the fold rule on the charge fold of `stepToFreeMT (c xs)` with every answer allowed is proved
+below it by `arithLe`; `SPTree.Timed.stepTime_le_of_wpFold_le` concludes. A binder tree has the
+hypothesis `(A x).time ≤ T_A`, which bounds no charge fold (a sampling node with an unbounded
+family of continuation times has time `0`), so a tree with a binder tree is refused. Returns
+the reason when the theorem is not proved. -/
+def foldSPTreeTimeBound (c name : Name) : TermElabM (Option MessageData) := do
+  let info ← getConstInfo c
+  let lvls := info.levelParams.map mkLevelParam
+  forallTelescope info.type fun xs body => do
+    unless (← whnfR body).isAppOfArity ``Prod 2 do
+      return some m!"`{c}` is not a step-prefixed tree"
+    withBounds xs 0 #[] #[] #[] fun bs vars hyps => do
+      if bs.any fun (_, _, r) => match r with | .tree | .key => true | _ => false then
+        return some m!"a binder tree has the hypothesis `time ≤ T`, which bounds no charge fold"
+      let avoid := bs.filterMap fun (f, _, r) => match r with
+        | .cost => some f
+        | _ => none
+      let x := mkAppN (Lean.mkConst c lvls) xs
+      let bound ← try normalizeSum (← instantiateMVars (← boundStep bs x))
+        catch e => return some m!"no bound: {e.toMessageData}"
+      let img ← mkAppM ``SPTree.Timed.stepToFreeMT #[x]
+      let Φ ← mkAppM ``PFunctor.OpSpec.charge
+        #[← chargeFn (← withLocalDeclD `a (← mkAppM ``PFunctor.A
+          #[mkConst ``SPTree.SPSigT]) fun a => do
+            mkLambdaFVars #[a] (← mkAppM ``SPTree.tickCost #[a]))]
+      let r ← try foldBound { avoid } (← normSpec Φ) img
+        catch e => return some m!"{e.toMessageData}"
+      let le ← try arithLe (← instantiateMVars r.bound) bound
+        catch _ => return some m!"the bound of the fold rule{indentExpr r.bound}\nis not \
+          below{indentExpr bound}"
+      let pf ← mkAppM ``PFunctor.FreeM.wpFold_le_natCast_of_le #[r.proof, le]
+      let pf ← mkAppM ``SPTree.Timed.stepTime_le_of_wpFold_le #[x, bound, ← denormFold Φ pf]
+      let pf ← instantiateMVars pf
+      if pf.hasSorry || pf.hasExprMVar then return some m!"the proof is incomplete"
+      let goal ← mkAppM ``LE.le #[← mkAppM ``SPTree.Timed.stepTime #[x], bound]
+      let ty ← mkForallFVars (xs ++ vars ++ hyps) goal
+      let val ← mkLambdaFVars (xs ++ vars ++ hyps) pf
+      try
+        addDecl (Declaration.thmDecl
+          { name, levelParams := info.levelParams, type := ty, value := val })
+      catch e => return some m!"the proof is not accepted: {e.toMessageData}"
+      return none
+
+/-- Whether the costed tree `c` returns a step-prefixed costed oracle adversary: the record of
+its codomain (`foldKindOfTimed?`) is that of `OracleAdv.Timed`. -/
+def isOracleTimed (c : Name) : MetaM Bool := do
+  return (← foldKindOfTimed? c).any (·.timed == ``CatCrypt.Crypto.OracleAdv.Timed)
 
 /-- `derive_time_bound R.tree` states and proves `R.tree.timeBound_timed`, the time theorem of
 `R.tree.timed` (see the module docstring): along its bound for a pure step body
@@ -1604,16 +2200,27 @@ def elabDeriveTimeBound : CommandElab := fun stx => do
   liftTermElabM do
     let t ← realizeGlobalConstNoOverloadWithInfo stx[1]
     let name := t ++ `timeBound_timed
-    if ← isOracleTimed (t ++ `timed) then
-      if let some why ← emitOracleTimeBound (t ++ `timed) name then
+    if let some k ← foldKindOfTimed? (t ++ `timed) then
+      if let some why ← emitFoldTimeBound k (t ++ `timed) name then
         throwError "`{name}` is not proved: {why}"
       return
+    let s ← saveState
+    let whyF? ← try foldSPTreeTimeBound (t ++ `timed) name
+      catch e => do
+        if e.isInterrupt then throw e
+        pure (some e.toMessageData)
+    let some whyF := whyF? | return
+    s.restore
     let r ← mirrorTimeBound (t ++ `timed) name
-    if let .proved := r then return
+    if let .proved := r then
+      reportFallback name whyF
+      return
     if let some why ← emitTimeBound (t ++ `timed) name then
       if let .refused w := r then
-        throwError "`{name}` is not proved: {why}\nalong the bound of the pure step: {w}"
-      throwError "`{name}` is not proved: {why}"
+        throwError "`{name}` is not proved: {why}\nalong the bound of the pure step: {w}\n\
+          by the fold rule: {whyF}"
+      throwError "`{name}` is not proved: {why}\nby the fold rule: {whyF}"
+    reportFallback name whyF
 
 end
 
