@@ -10,6 +10,7 @@ public import CatCryptCore.Core.SPTreeTimed
 public import PolyFun.PFunctor.Handler.Sum
 public import PolyFun.PFunctor.Handler.Free
 public import CatCryptCore.ForMathlib.PFunctorChargeUnder
+public import CatCryptCore.ForMathlib.PFunctorRestrict
 public import CatCryptCore.Core.SPTreeTimedOps
 public import CatCryptCore.XDijkstra.XTimedMonad
 import all CatCryptCore.Core.SPTreeTimed
@@ -360,6 +361,26 @@ theorem le_and_timeBound_iff_wpFold_chargeUnder (x : ℕ × SPTree.Timed α) (n 
         (fun _ => 0) ≤ n := by
   rw [stepToFreeMT, wpFold_chargeUnder_liftBind_le_iff, timeBound_iff_wpFold_chargeUnder]
   exact and_congr_right fun _ => ⟨fun h _ _ => h, fun h => h PUnit.unit trivial⟩
+
+/-- The time bound of a probabilistic tree is the worst-case charge of its tick tree restricted
+to the supports of its sampling nodes. -/
+theorem timeBound_iff_wpFold_charge_restrict (s : SPTree.Timed α) (t : ℕ) :
+    s.TimeBound t ↔
+      wpFold (OpSpec.charge (P := SPSigT.restrict spAllows)
+          (fun a => ((tickCost a : ℕ) : ℕ∞)))
+        ((toFreeMT s).restrict spAllows) (fun _ => 0) ≤ t := by
+  rw [timeBound_iff_wpFold_chargeUnder, FreeM.wpFold_chargeUnder_eq_restrict]
+  exact Iff.rfl
+
+/-- The step cost followed by a time bound on the tree is the bound on the worst-case charge of
+the step-prefixed tick tree restricted to the supports of its sampling nodes. -/
+theorem le_and_timeBound_iff_wpFold_charge_restrict (x : ℕ × SPTree.Timed α) (n : ℕ) :
+    (x.1 ≤ n ∧ x.2.TimeBound (n - x.1)) ↔
+      wpFold (OpSpec.charge (P := SPSigT.restrict spAllows)
+          (fun a => ((tickCost a : ℕ) : ℕ∞)))
+        ((stepToFreeMT x).restrict spAllows) (fun _ => 0) ≤ n := by
+  rw [le_and_timeBound_iff_wpFold_chargeUnder, FreeM.wpFold_chargeUnder_eq_restrict]
+  exact Iff.rfl
 
 /-- The bind clause of the tick tree: the charge fold of a costed bind is the charge fold of the
 FreeM bind of the tick tree with the step-prefixed tick trees of the continuation, for every
