@@ -188,10 +188,10 @@ theorem defaultDrHom {G : Type} [CG : CyclicGroup G] (encG : G → Vector UInt8 
     (hX : ∀ x T, x25519_scalarmult (encE x) (encG T) = encG (CyclicGroup.elemPow T x)) :
     ExtractedCorrespondence.DrHom G (hkdfRoot (libcruxRootKdf encG))
       (Signal.FSAEAD.toPRG libcrux_fsaeadConfig) (Signal.FSAEAD.toAEAD libcrux_fsaeadConfig) 32
-      vecToArrayInt (vecToArrayInt ∘ encG) (vecToArrayInt ∘ encE) vecToArrayInt vecToArrayInt
+      vecToArrayInt (vecToArrayInt ∘ encG) (vecToArrayInt ∘ encE) id vecToArrayInt vecToArrayInt
       vecToArrayInt where
   dh_eq x T := by
-    simp only [Doubleratchet.x25519, Function.comp_apply, decodeKey_vecToArrayInt, hX]
+    simp only [Doubleratchet.x25519, Function.comp_apply, decodeKey_vecToArrayInt, hX, id_eq]
   root_rk_eq rk I := by
     simp only [Doubleratchet.hkdf_expand, Doubleratchet.hkdf_extract, decodeKey_vecToArrayInt,
       decodeKey_repeat_one, Function.comp_apply, hkdfRoot, libcruxRootKdf, libcruxKdfRk,
@@ -226,7 +226,7 @@ noncomputable abbrev signalDRLibcrux (encG : G → Vector UInt8 32)
     (encE : CG.Exp → Vector UInt8 32) (msgs : List (List (Vector UInt8 32))) :
     Unit → SPComp (SMView (Array Int) (Array Int)) :=
   signalDRExtracted (Vector UInt8 32) G 32 vecToArrayInt (vecToArrayInt ∘ encG)
-    (vecToArrayInt ∘ encE) vecToArrayInt msgs
+    (vecToArrayInt ∘ encE) id vecToArrayInt msgs
 
 /-- The encoded ideal game of `signalDRLibcrux`. -/
 noncomputable abbrev signalDRLibcruxIdeal (encG : G → Vector UInt8 32)
@@ -242,8 +242,8 @@ instance signalDRLibcrux_pureGame (msgs : List (List (Vector UInt8 32))) :
   ⟨fun u => by
     cases u
     change SPComp.IsPure (signalDRExtracted (Vector UInt8 32) G 32 vecToArrayInt
-      (vecToArrayInt ∘ encG) (vecToArrayInt ∘ encE) vecToArrayInt msgs ())
-    rw [signalDRExtracted_eq (defaultDrHom encG encE hX.out)]
+      (vecToArrayInt ∘ encG) (vecToArrayInt ∘ encE) id vecToArrayInt msgs ())
+    rw [signalDRExtracted_eq (defaultDrHom encG encE hX.out) (SDistr.bind_pure _)]
     exact SPComp.bind_isPure (PureGame.isPure (G := signalDRReal G (libcruxRootKdf encG)
       libcrux_fsaeadConfig msgs) ()) fun _ => SPComp.pure_isPure _⟩
 
@@ -261,7 +261,8 @@ instance signalDRLibcrux_gameAdvBound (msgs : List (List (Vector UInt8 32))) :
     GameAdvBoundC (signalDRLibcrux G encG encE msgs) (signalDRLibcruxIdeal G encG msgs)
       (fun _ A => signalDRBound G (libcruxRootKdf encG) libcrux_fsaeadConfig msgs
         (A ∘ encView (vecToArrayInt ∘ encG) vecToArrayInt)) :=
-  ⟨fun _ A => signalDR_extracted_advantage_le (defaultDrHom encG encE hX.out) msgs A⟩
+  ⟨fun _ A => signalDR_extracted_advantage_le_of_uniform (defaultDrHom encG encE hX.out)
+    (SDistr.bind_pure _) msgs A⟩
 
 /-- **UC security of the extracted Signal double ratchet.** The secure-messaging game of one
 session of `doubleratchet-hax` (`Uninitialized_establish`, `Session_send`, `Session_dh_ratchet`,
