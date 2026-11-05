@@ -69,56 +69,85 @@ certificate, in the form of the cost judgment of EasyCrypt (Barbosa et al., CCS 
 - an erasure theorem `B.erase_timed`, checked by the kernel, stating that removing the costs
   gives `B`;
 - a time theorem bounding the time of the costed form by the time of the costed adversary plus
-  a constant, or, for a simulator whose state grows, plus `a + b·i` at activation `i` or
-  `b·|e|` in the size of the event `e`.
+  a constant; a simulator bounds each step by `a + b·Φ(s)` for a potential `Φ` on its state that
+  each event `e` raises by at most `c·|e|`, so that its time is polynomial in the number of
+  activations and in its import, the notion of polynomial time of universal composability
+  (Canetti); a constant, `a + b·i` at activation `i` and `b·|e|` are instances.
 
-The certificates rest on four ideas.
+The certificates rest on five results.
 
-1. Costs on the syntax of programs. Programs are trees of registered kinds: sampling programs
-   (`SPTree`), oracle adversaries and oracle programs, and quantum instruments
-   ([`register_tree_kind`](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/Tactics/DeriveTimed.lean),
-   [`qInstrKind`](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/Quantum/QTreeKind.lean)).
-   The costed form is obtained by translating the term node by node, and primitive operations
-   are priced by `timed_cost` registrations. An operation without a price, or a field whose
-   type is a computation of no registered kind, is refused, never priced at zero
-   ([`ComputationType`](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/Tactics/ComputationType.lean)).
-2. Unknown code behind a costed witness. A time theorem quantifies over costed adversaries
-   whose erasure is the adversary and whose time is bounded, so the bound of a reduction is
-   relative to the adversary's time; running an adversary against an oracle implementation
-   costs its time plus its queries times the cost of one answer
-   ([`OracleAdv.Timed.timeBound_simulate`](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/Crypto/OracleAdversaryTimed.lean)).
-3. Derivation by tactics. `derive_timed` and `derive_reduction` derive the costed form, its
-   erasure theorem and a time bound of a program, inlining the costed forms of its callees;
-   [`derive_timed_structure`](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/Tactics/DeriveTimedStructure.lean)
-   gives a structure of programs (a reactive system, a strategy, a simulator) its costed
-   mirror; [`derive_simulator`](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/Tactics/DeriveSimulator.lean)
-   certifies a simulator built by composition, tensor and relabelling, and
-   [`derive_hybrid_time`](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/Tactics/DeriveSimulator.lean)
-   assembles the time theorem of a hybrid from the bounds of its steps;
-   [`derive_cost`](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/Tactics/DeriveCost.lean)
-   derives the cost of a recursive data function, and
+1. A cost translation proved sound once. `derive_timed` and `derive_reduction` translate a
+   program into its costed form by a call-by-value translation: a function type `A → B` becomes
+   `A → ℕ × B̂`, a closure carries the cost of its body, and an effect tree carries the cost of
+   each step as a tick; an operation without a registered price is refused, never priced at
+   zero. On the deep language `D`, whose cost model is that of the weak call-by-value λ-calculus
+   L of Forster and Kunze (ITP 2019), reasonable for time (Forster, Kunze and Roth, POPL 2020),
+   the same charges form a translation `Tm.dt` of terms, and one theorem relates it to `D`'s
+   step count for every term of the fragment: the step count is at most the derived time plus
+   an allowance fixed by the syntax, and erasing the costs gives the term's denotation
+   ([`Tm.dt_timedSim`, `Tm.cost_le_dt`, `Tm.dt_erase`](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/Complexity/D/TranslateDt.lean);
+   the cost reading of `D`'s trees is a morphism of trees,
+   [`CTree.costTree_bind`](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/Complexity/D/Translate.lean)).
+   The erasure theorem makes each certificate a statement about the named program, the
+   property that calf (Niu, Sterling, Grodin and Harper, POPL 2022) obtains from its
+   extensional phase.
+2. One cost semantics for interaction trees. Sampling programs, oracle adversaries, oracle
+   programs, quantum instruments and QROM circuits are free monads over polynomial functors
+   with tick operations, and the time bound of each is the charge fold of PolyFun over its tree,
+   for steps, binds and `AllRet`
+   ([SPTree](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/Core/SPTreeTimedFree.lean),
+   [oracle adversaries](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/Crypto/OracleAdversaryFree.lean),
+   [oracle programs](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/Crypto/Signatures/OracleProgTimedFree.lean),
+   [quantum](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/Quantum/QTreeKindFree.lean)).
+   At a sampling node the fold ranges over the support of the distribution: it is the charge
+   fold of the program restricted along the inclusion of the sub-container of allowed answers
+   ([`PFunctor.restrict`, `wpFold_chargeUnder_eq_restrict`](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/ForMathlib/PFunctorRestrict.lean),
+   [`SPTree.Timed.timeBound_iff_wpFold_charge_restrict`](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/Core/SPTreeTimedFree.lean)).
+   Substitution and simulation of an oracle adversary are interpretations by handlers
+   ([`toFreeM_subst`, `toFreeM_simulate`](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/Crypto/OracleAdversaryFreeBridge.lean)),
+   so EasyCrypt's rule for a program run against oracle implementations, its own time plus its
+   queries times the cost of one answer (Barbosa et al., CCS 2021), is the transfer of a charge
+   bound along a handler
+   ([`wpFold_chargeUnder_liftM_le`](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/ForMathlib/PFunctorChargeVec.lean),
+   [`OracleAdv.Timed.timeBound_simulate`](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/Crypto/OracleAdversaryTimed.lean)).
+3. Composition of certificates by use counts. A certificate is a vector bound with one
+   component for each resource of a program: its own ticks, each adversary, each oracle and each
+   certified callee. Implementing a resource by a certified program composes the bounds as
+   morphisms of the Diller–Nahm category of containers (Moss and von Glehn, LICS 2018): uses
+   multiply, and the cost of a composite is `c₂ + n₂·c₁`
+   ([`useBound_liftM`, `useBound_liftM_clocked`](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/Container/DNCert.lean),
+   [`Clocked.toDN_comp`](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/Container/DillerNahm.lean)).
+   The derivation tactics use a certified callee through its certificate instead of deriving
+   it again at each call site.
+4. Realization indexed by budgets. Realization against environments of bounded time is a
+   relation indexed by budgets (the time of an activation, the number of activations, the time
+   of the distinguisher and the import), and a context acts on budgets by a monotone affine map:
+   if `X` realizes `Y` at the budget that a context assigns, the context applied to `X` realizes
+   it applied to `Y`, sequentially and in parallel, classical and quantum
+   ([`realizesTime_map`, `realizes_map_comp`](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/Crypto/UCPullbackCost.lean),
+   [`realizes_par_timed`](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/Crypto/UCParallelTimed.lean),
+   [`QRealizesQB.cascade_timed`](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/Quantum/QPullbackCost.lean)).
+   Potential certificates of simulators compose by the constructors of a simulator, the
+   potentials adding and the import created between two composed simulators counted at every
+   activation
+   ([`PotentialBound`](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/Crypto/UCSimulatorCostPot.lean),
+   [`Simulator.comp.timeBoundPot_timed`](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/Crypto/UCSimulatorCostPotComp.lean)),
+   and a reduction of an environment through such a simulator stays within a budget whose
+   import component bounds the simulator's work
+   ([`MultiHybrid.toImportPullback`, `potCert_comp_runBound_import`](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/Crypto/UCPullbackCostPot.lean)).
+5. Symbolic and concrete closing of bounds. `time_bound`, `derive_time_bound` and
    [`derive_time_rec`](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/Tactics/DeriveTimeRec.lean)
-   proves a bound supplied by the user for a recursive costed tree or cost by induction. Two
-   ratchets keep the number of uncertified reductions and of hand-written costed forms from
-   rising.
-4. Composition. Costed environment pullbacks carry bounds over whole runs (activations, rounds
-   and the distinguisher) through every context of the composition law, classical and quantum
-   ([`CostedPullback.pull_envTimeBound`](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/Crypto/UCPullbackCost.lean),
-   [`QRealizesQB.cascade_timed`](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/Quantum/QPullbackCost.lean));
-   parallel composition holds against environments of bounded time, each component realizing
-   against environments whose activation cost grows by that of the other component
-   ([`realizes_par_timed`](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/Crypto/UCParallelTimed.lean)).
+   close bounds that stay symbolic in the adversary's time and query counts, from registered
+   costs and length bounds; PolyFun's `cost_bound` closes concrete programs over finite answer
+   types; both prove the same charge-fold predicate.
+   [`derive_simulator`](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/Tactics/DeriveSimulator.lean)
+   and `derive_hybrid_time` assemble the certificate of a simulator from the bounds of its
+   steps, and two ratchets keep the number of uncertified reductions and of hand-written costed
+   forms from rising.
 
-The derived costs are related to an operational cost model: `D` is a deep call-by-value
-language with the cost model of the weak call-by-value λ-calculus L of Forster and Kunze (ITP
-2019), which Forster, Kunze and Roth showed reasonable for time (POPL 2020). A reduction is
-reflected into `D` by a certifying extraction in the style of Forster and Kunze, and
-[`link_timed`](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/Tactics/LinkTimed.lean)
-proves that the costed form simulates the reflected term and that the cost of the term in `D`
-is at most the time of the costed form plus a constant
-([D](CatCryptCore/Complexity/D/README.md)). The conventions, the laws of the costed trees and
-the comparison with other cost analyses are in the
-[guide](CatCryptCore/Crypto/ConcreteSecurity.md).
+The conventions, the laws of the costed trees and the comparison with other cost analyses are
+in the [guide](CatCryptCore/Crypto/ConcreteSecurity.md); the language `D` is described in its
+[README](CatCryptCore/Complexity/D/README.md).
 
 ## Build
 
