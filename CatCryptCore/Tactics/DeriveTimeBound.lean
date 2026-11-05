@@ -1840,7 +1840,8 @@ partial def splitWith? (cx : FoldCx) (Φ : Expr) (k : FoldKind) (hX ca body : Ex
   let some sf := k.stepFold | return none
   let t' ← reduceHead t
   let some y := CatCrypt.Tactics.AutoTime.sndOf? t' | return none
-  let some o := findFst ca y | return none
+  -- the charge is in the normal form of `reduceProjs`, so `y` is matched in that form
+  let some o := findFst ca (← reduceProjs y) | return none
   if ca == o then
     let y' ← reduceHead y
     let readable := y'.isAppOfArity ``ite 5 || y'.isAppOfArity ``dite 5 ||
@@ -1857,7 +1858,7 @@ partial def splitWith? (cx : FoldCx) (Φ : Expr) (k : FoldKind) (hX ca body : Ex
       if y'.getAppFn.isConstOf bnd && y'.getAppNumArgs ≥ 2 then
         let A := y'.getArg! (y'.getAppNumArgs - 2)
         if let some S := CatCrypt.Tactics.AutoTime.sndOf? (← reduceHead A) then
-          if let some oS := findFst e S then
+          if let some oS := findFst e (← reduceProjs S) then
             let e₀ := e.replace fun s => if s == oS then some (mkNatLit 0) else none
             let hc ← omegaEq ca (mkAddN (mkAddN e₀ oS) o)
             let (m, pe) ← costBoundWith (fun cx Φ x => foldBound cx Φ x (fuel - 1)) cx e₀
