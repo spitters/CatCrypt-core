@@ -299,6 +299,7 @@ public import CatCryptCore.Crypto.AKE.X3DHSquareHops
 public import CatCryptCore.Crypto.AKE.X3DHSquareGDH
 public import CatCryptCore.Crypto.AKE.X3DHPassive
 public import CatCryptCore.Crypto.AKE.X3DHPassiveHops
+public import CatCryptCore.Crypto.AKE.X3DHPassiveKeygen
 public import CatCryptCore.Crypto.AKE.X3DHPassiveHopsTimed
 public import CatCryptCore.Crypto.AKE.X3DHDeniability
 public import CatCryptCore.Crypto.AKE.PQXDHSquare
@@ -320,6 +321,7 @@ public import CatCryptCore.Crypto.EdDSA.Bridge
 public import CatCryptCore.Crypto.AKE.X3DH.Extraction.X3dh_haxpipe
 public import CatCryptCore.Crypto.AKE.X3DH.EdDSA_Bridge
 public import CatCryptCore.Crypto.AKE.X3DH.ExtractedCorrespondence
+public import CatCryptCore.Crypto.AKE.X3DH.PassiveG25519
 public import CatCryptCore.Crypto.AKE.X3DH.SurfaceDeps
 public import CatCryptCore.Crypto.AKE.X3DH.SquareCorrespondence
 public import CatCryptCore.Crypto.AKE.PQXDH.Extraction.Pqxdh_haxpipe
