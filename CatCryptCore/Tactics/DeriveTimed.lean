@@ -122,6 +122,25 @@ companion is built where the function is created and read where the function is 
   any other constructor (`List`) hold tables (`ι`), as
   the functions received from a tree do.
 
+Rule (g), carrier records. A structure with a carrier-type field (`T : Type` with functions
+over `T`, a tree type), or with a field whose type depends on another field (a record holding
+such a structure and a value of its carrier), has no mirror. On the class of programs in which
+each such record reaching a field application comes from a binder (or a field path of one)
+along computed records that keep it, its function fields are field paths of that binder, priced
+by their companions over the binder's carrier:
+
+* a record computed by a `let`, a structure update or a non-recursive definition reduces, by
+  unfolding to a constructor application and projecting, to the binder's path (`carrierPath?`);
+* a record returned by a structural or well-founded recursion that keeps the path (each
+  recursive call passes a record whose path reduces to the same path of the parameter,
+  `keepsPaths`) has the path of the argument it was called with, by the equation of the paths
+  proved by functional induction on the recursion, along which the binder's companion is cast
+  (`carrierPathRec?`); the cost of the recursion takes the same companions at every call.
+
+A recursion that replaces such a record (a call at a record whose path is another path) is
+refused, and a record built in the program from functions that are not fields of a binder is
+outside the class.
+
 A binder of the reduction whose type is such a structure keeps the convention of field paths
 (below), so that a scheme or a kit passed as a binder has the cost companions of its applied
 fields as further binders; a binder whose type is a sum holding functions is a costed value.
@@ -290,6 +309,24 @@ The erasure theorem of a recursion whose result holds functions (`SPTree (Fin n 
 proved by induction with each induction hypothesis
 `(R.timed ys).2.erase.bind (fun y => ret (ε y)) = R ys` used from right to left
 (`rewriteRecHyps`), so that the recursive call becomes the erased costed call followed by `ε`.
+
+Rule (f), erasure along changing companions. On the class of structural or well-founded
+recursions whose arguments or results hold functions and whose recursive calls pass computed
+companions (an accumulator updated by `Function.update` at a value bound by a node or decided by
+an `if`, outputs collected by `Fin.cons` or `Fin.snoc` around the recursive call), the erasure
+induction is over the costed form at every binder, companions included, so each induction
+hypothesis is stated at the companion that the recursive call passes, whatever expression of
+the incoming companions it is. Before the hypotheses are used, each one that is a match of the
+recursion's arguments on their constructors or a conjunction is reduced to its conjuncts, a
+conjunct quantified over the value bound by a node being kept quantified so that `simp`
+rewrites the recursive call under the node's binder, and the conjuncts are rewritten with the
+case hypotheses that the case split of the goal introduced (`normRecHyps`); a recursive call is
+found in the goal up to instances (`kabstract`), and a hypothesis that is a copy of a used one
+(one per occurrence of the call: its step cost and its costed tree) is cleared with it.
+The erasure theorem of a joint costed value (rule (d)) whose result holds a record with
+function fields, which the erasure `ε` rebuilds field by field, is closed with the induction
+hypotheses split into their component equations (`splitCtorHyps`, R15), so that a goal that
+holds up to the structure eta of that record is rewritten by the record's component.
 
 A recursive data function without a registered cost is priced by its cost derived on demand
 with `derive_cost` (`deriveCostCore`), by its own recursion. A derived cost takes, after the
@@ -2718,17 +2755,148 @@ def rewriteRecHyps (c : Name) (g : MVarId) : MetaM MVarId := g.withContext do
       let some (ty, lhs, rhs) := (← instantiateMVars (← inferType pf)).eq? | continue
       unless rhs.isAppOf c do continue
       let gt ← instantiateMVars (← g.getType)
-      unless (gt.find? (· == rhs)).isSome do continue
+      -- The occurrences of `rhs` up to instances (`kabstract`): the recursive call in the goal,
+      -- from the equation lemma, and in the hypothesis, from the induction, may spell the
+      -- arguments of a constructor pattern (`n + 1`) with different instances.
+      let abst ← kabstract gt rhs
+      unless abst.hasLooseBVars do continue
       -- The occurrences of `rhs` replaced by `lhs`, by congruence with the motive that
       -- abstracts them.
-      let motive ← withLocalDeclD `z ty fun z => do
-        mkLambdaFVars #[z] (gt.replace fun s => if s == rhs then some z else none)
+      let motive := Expr.lam `z ty abst .default
       unless ← isTypeCorrect motive do continue
       let gNew := (mkApp motive lhs).headBeta
       g ← g.replaceTargetEq gNew (← mkEqSymm (← mkCongrArg motive pf))
       used := used.push d.fvarId
-  -- A used hypothesis is cleared, so that a later `simp [*]` does not rewrite back.
-  for h in used do g ← g.tryClear h
+  -- A used hypothesis is cleared, so that a later `simp [*]` does not rewrite back; so is a
+  -- copy of it (functional induction states one hypothesis per occurrence of the recursive
+  -- call, and the step cost and the costed tree of one call are two occurrences).
+  let usedTys ← g.withContext do used.mapM fun h => do instantiateMVars (← h.getType)
+  let copies ← g.withContext do
+    (← getLCtx).foldlM (init := #[]) fun acc d => do
+      if d.isImplementationDetail || used.contains d.fvarId then return acc
+      let ty ← instantiateMVars d.type
+      return if usedTys.contains ty then acc.push d.fvarId else acc
+  for h in used ++ copies do g ← g.tryClear h
+  return g
+
+/-- The conjuncts of the proof `pf` of `ty`, each with its type: a type headed by a matcher on
+constructors is reduced (at default transparency), a conjunction is split, `True` is dropped,
+and any other proposition (an equation, or one quantified over the values bound by a node or
+over companions) is a conjunct. -/
+partial def recConjuncts (pf ty : Expr) : MetaM (Array (Expr × Expr)) := do
+  let ty' ← whnf (← instantiateMVars ty)
+  if ty'.isAppOfArity ``And 2 then
+    return (← recConjuncts (mkApp3 (mkConst ``And.left) (ty'.getArg! 0) (ty'.getArg! 1) pf)
+        (ty'.getArg! 0)) ++
+      (← recConjuncts (mkApp3 (mkConst ``And.right) (ty'.getArg! 0) (ty'.getArg! 1) pf)
+        (ty'.getArg! 1))
+  if ty'.isConstOf ``True then return #[]
+  return #[(pf, ty')]
+
+/-- The induction hypotheses of an erasure theorem by functional induction, in the form in which
+`simp` rewrites with them (rule (f)): each hypothesis that mentions the source `c` or its costed
+form `t` and whose type is a match of the recursion's arguments on their constructors or a
+conjunction is replaced by its conjuncts (`recConjuncts`), and the conjuncts are rewritten with
+the case hypotheses of the goal (the hypotheses that mention neither `c` nor `t`: the condition
+of an `if` that a case split decided) and the reductions of `if` at a decided condition, so that
+they read as the goal reads after the split. A conjunct quantified over the value bound by a
+node (`∀ b, (t … (g' b) (gc' b)).2.erase … = c … (g' b)`) rewrites the recursive call under the
+node's binder, at the companion that the costed form passes, whatever expression of the
+incoming companions it is: the hypothesis is stated at the call of the costed form, so the
+companion is not fixed by the induction. Returns `none` when the rewriting closes the goal (a
+case hypothesis contradicts a conjunct). -/
+def normRecHyps (c t : Name) (g : MVarId) : MetaM (Option MVarId) := g.withContext do
+  let mut g := g
+  let mut news : Array Name := #[]
+  let mentions (e : Expr) : Bool := e.containsConst fun n => n == c || n == t
+  for d in ← getLCtx do
+    if d.isImplementationDetail then continue
+    let ty ← instantiateMVars d.type
+    unless ← isProp ty do continue
+    unless mentions ty do continue
+    let ty' ← whnf ty
+    let matchHead := isMatcherCore (← getEnv) ty.consumeMData.getAppFn.constName
+    unless ty'.isAppOfArity ``And 2 || ty'.isConstOf ``True || matchHead do continue
+    let cs ← recConjuncts d.toExpr ty
+    let mut g' := g
+    for (pf, cty) in cs do
+      let (_, g'') ← (← g'.assert d.userName cty pf).intro1P
+      g' := g''
+    g := (← g'.tryClear d.fvarId)
+    news := news.push d.userName
+  if news.isEmpty then return some g
+  g.withContext do
+    let lctx ← getLCtx
+    let mut thms : SimpTheorems := {}
+    for n in #[``ite_true, ``ite_false, ``dite_true, ``dite_false, ``Bool.false_eq_true,
+        ``eq_self_iff_true, ``not_false_eq_true, ``not_true_eq_false] do
+      thms ← thms.addConst n
+    let mut targets : Array FVarId := #[]
+    for d in lctx do
+      if d.isImplementationDetail then continue
+      let ty ← instantiateMVars d.type
+      unless ← isProp ty do continue
+      if mentions ty then
+        if news.contains d.userName then targets := targets.push d.fvarId
+      else
+        thms ← thms.add (.fvar d.fvarId) #[] d.toExpr
+    if targets.isEmpty then return some g
+    let ctx ← Simp.mkContext (simpTheorems := #[thms])
+      (congrTheorems := ← getSimpCongrTheorems)
+    let s ← saveState
+    try
+      let (r, _) ← simpGoal g ctx (simplifyTarget := false) (fvarIdsToSimp := targets)
+      return r.map (·.2)
+    catch _ =>
+      s.restore
+      return some g
+
+/-- The component equations of `pf : lhs = rhs` when `lhs` is a constructor application of a
+structure (a pair, a record with function fields as the erasure `ε` rebuilds it field by
+field): `aᵢ = S.fᵢ rhs` for each data field `aᵢ` of `lhs`, by congruence with the projection,
+and recursively the components of each `aᵢ` that is itself a constructor application. -/
+partial def ctorComponents (pf lhs rhs : Expr) (acc : Array (Expr × Expr) := #[]) :
+    MetaM (Array (Expr × Expr)) := do
+  let l := lhs.consumeMData
+  let some cv ← isConstructorApp? l | return acc
+  let env ← getEnv
+  unless isStructure env cv.induct do return acc
+  unless l.getAppNumArgs == cv.numParams + cv.numFields do return acc
+  let fields := getStructureFields env cv.induct
+  let lt ← inferType l
+  let mut acc := acc
+  for i in [0:fields.size] do
+    let fi := l.getArg! (cv.numParams + i)
+    if ← isProp (← inferType fi) then continue
+    if ← isTypeFormerType (← inferType fi) then continue
+    let projFn := cv.induct ++ fields[i]!
+    let st ← saveState
+    try
+      let f ← withLocalDeclD `z lt fun z => do mkLambdaFVars #[z] (← mkAppM projFn #[z])
+      let rhsI ← mkAppM projFn #[rhs]
+      let eqT ← mkEq fi rhsI
+      let pfI ← mkExpectedTypeHint (← mkCongrArg f pf) eqT
+      acc := acc.push (pfI, eqT)
+      acc ← ctorComponents pfI fi rhsI acc
+    catch _ => st.restore
+  return acc
+
+/-- The induction hypotheses `(c.timed ys)…` `= c ys` of an erasure theorem whose left side is a
+constructor application (R15: the erasure `ε` of a joint costed value rebuilds a tuple and the
+records with function fields in it field by field) split into their component equations
+(`ctorComponents`), so that a goal that holds only up to structure eta, with a record rebuilt
+from the projections of the costed call on one side and the projection of the call of `c` on
+the other, is rewritten by the component of that record. -/
+def splitCtorHyps (c : Name) (g : MVarId) : MetaM MVarId := g.withContext do
+  let mut g := g
+  for d in ← getLCtx do
+    if d.isImplementationDetail then continue
+    let ty ← instantiateMVars d.type
+    let some (_, lhs, rhs) := ty.consumeMData.eq? | continue
+    unless rhs.isAppOf c do continue
+    for (pf, ety) in ← ctorComponents d.toExpr lhs rhs do
+      let (_, g') ← (← g.assert d.userName ety pf).intro1P
+      g := g'
   return g
 
 /-- The applications of the constant `t` in `e`, outermost first. -/
@@ -2935,6 +3103,107 @@ def reduceFieldArg (e : Expr) : MetaM Expr := do
   let s' ← reduceStructArg s
   if s' == s.consumeMData then return e
   return replaceProjArg e s'
+
+/-- Rule (g), carrier records along computed records: the structure argument `s` of a field
+reduced to a field path of the binders, when one is reached by taking the values of `let`s,
+unfolding definitions at default transparency to a constructor application and projecting:
+`(l.add x).st` and `l'.st` with `l' := l.add x` are `l.st` when `Loc.add l x` unfolds to
+`{ l with tree := … }`. A record with a carrier-type field (`Store` with `T : Type` and
+functions over `T`) has no mirror (its fields depend on the carrier); when it is a field of a
+record that the program updates elsewhere (`Loc` with `st : Store` and `tree : st.T`), its
+function fields are priced by the cost companions of the binder's path that it reduces to. -/
+partial def carrierPath? (ctx : Ctx) (s : Expr) (fuel : Nat := 16) : MetaM (Option Expr) := do
+  let s := s.consumeMData
+  if ← isFieldPath ctx s then return some s
+  if fuel == 0 then return none
+  let some (_, i, s₀) ← projStep? s | return none
+  let mut v := s₀.consumeMData
+  for _ in [0:8] do
+    let .fvar id := v | break
+    let some val ← id.getValue? | break
+    v := val.consumeMData
+  if let some f ← projectCore? (← whnf v) i then
+    return ← carrierPath? ctx f (fuel - 1)
+  let some s₀' ← carrierPath? ctx s₀ (fuel - 1) | return none
+  let s' := replaceProjArg s s₀'
+  if ← isFieldPath ctx s' then return some s' else return none
+
+/-- Whether a recursive call keeps the field paths `paths` of the binder `x` at its argument
+`a` (rule (g)): `a` is `x`, or each path of `x`, at `a`, reduces by `carrierPath?` to the same
+path of `x`, so that the recursive call passes the same cost companions. The bound variables of
+`a` (the variables of the case of the recursion) are instantiated by metavariables. -/
+def keepsPaths (ctx : Ctx) (paths : Array Expr) (x a : Expr) : MetaM Bool := do
+  if a == x then return true
+  let s ← saveState
+  try
+    let ms ← (List.range a.looseBVarRange).toArray.mapM fun _ => mkFreshExprMVar none
+    let a := a.instantiate ms
+    for p in paths do
+      unless p.containsFVar x.fvarId! do continue
+      let p' := p.replaceFVar x a
+      let some (_, _, sa) ← projStep? p' | s.restore; return false
+      let some s' ← carrierPath? ctx sa | s.restore; return false
+      unless (← instantiateMVars (replaceProjArg p' s')) == p do
+        s.restore
+        return false
+    s.restore
+    return true
+  catch _ =>
+    s.restore
+    return false
+
+/-- Rule (g), carrier records along recursions: the structure argument `s` of a field, a
+projection path `π r` whose root `r` is, through `let`s, a call `g as` of a recursive
+definition, when the recursion keeps the path: for an argument `as[j]` of the type of `g as`,
+`π as[j]` reduces to a field path `s'` of the binders (`carrierPath?`) and `π (g ys) = π ys[j]`
+is proved for all `ys` by functional induction on `g` (each case by the equations of `g`, the
+induction hypotheses and `rfl`). Returns `s'` and the proof of `s = s'`. -/
+def carrierPathRec? (ctx : Ctx) (s : Expr) : TermElabM (Option (Expr × Expr)) := do
+  let s := s.consumeMData
+  if s.hasLooseBVars then return none
+  let root ← pathRoot s
+  if root == s then return none
+  let mut v := root
+  for _ in [0:8] do
+    let .fvar id := v | break
+    let some val ← id.getValue? | break
+    v := val.consumeMData
+  let .const g lvls := v.getAppFn | return none
+  let env ← getEnv
+  unless (Structural.eqnInfoExt.find? env g).isSome || (WF.eqnInfoExt.find? env g).isSome do
+    return none
+  let vargs := v.getAppArgs
+  let vt ← inferType v
+  let π ← withLocalDeclD `r vt fun r => do
+    mkLambdaFVars #[r] (s.replace fun e => if e.consumeMData == root then some r else none)
+  for j in [0:vargs.size] do
+    let st ← saveState
+    try
+      unless ← isDefEq (← inferType vargs[j]!) vt do
+        st.restore
+        continue
+      let some s' ← carrierPath? ctx (mkApp π vargs[j]!).headBeta | st.restore; continue
+      let gc := Lean.mkConst g lvls
+      let stmt ← forallTelescope (← inferType gc) fun ys _ => do
+        unless ys.size == vargs.size do throwError "arity"
+        let lhs := (mkApp π (mkAppN gc ys)).headBeta
+        let rhs := (mkApp π ys[j]!).headBeta
+        mkForallFVars ys (← mkEq lhs rhs)
+      let mv ← mkFreshExprMVar stmt
+      let rem ← Tactic.run mv.mvarId! (Tactic.evalTactic (← `(tactic|
+        (intros; fun_induction $(mkIdent g):ident <;>
+          (try simp only [$(mkIdent g):ident, *]) <;> (try rfl)))))
+      unless rem.isEmpty do
+        st.restore
+        continue
+      let pf ← instantiateMVars (mkAppN mv vargs)
+      if pf.hasExprMVar then
+        st.restore
+        continue
+      return some (s', ← mkExpectedTypeHint pf (← mkEq s s'))
+    catch _ =>
+      st.restore
+  return none
 
 /-- The key of the field path `p = S.f ps s` of a callee at a structure `s` computed by a
 definition: `s`, or the value of the `let` that binds it, is an application `g as bs` of a
@@ -3922,6 +4191,29 @@ partial def costConst (ctx : Ctx) (e : Expr) (c : Name) (args : Array Expr) :
         let p' ← reduceFieldArg p
         if p' != p then
           return add (← costOf ctx args[info.numParams]!) (← costOf ctx (mkAppN p' rest))
+      -- A field of a carrier record below a computed record that reduces to a field path of
+      -- the binders (rule (g), `carrierPath?`): the structure is priced, and the field is
+      -- priced at the binder's path.
+      if !info.fromClass && !p.hasLooseBVars then
+        let s := args[info.numParams]!
+        unless ← isFieldPath ctx s do
+          if let some s' ← carrierPath? ctx s then
+            return add (← costOf ctx s) (← costOf ctx (mkAppN (replaceProjArg p s') rest))
+          -- Below a record returned by a recursion that keeps the path (`carrierPathRec?`): the
+          -- companion of the binder's path, cast along the proved equation of the paths.
+          if let some (s', h) ← carrierPathRec? ctx s then
+            let p' := replaceProjArg p s'
+            if let some r := ctx.fieldRec? then
+              unless (← r.get).contains p' do r.modify (·.push p')
+              return add (← costOf ctx s) (add (natE 1) (← argsCost ctx rest))
+            if let some (_, cc) := ctx.fields.find? (·.1 == p') then
+              let ccT ← inferType cc
+              let body ← kabstract ccT s'
+              let motive := Expr.lam `z (← inferType s) body .default
+              let heq ← mkCongrArg motive (← mkEqSymm h)
+              let cc' ← mkAppM ``cast #[heq, cc]
+              return add (← costOf ctx s)
+                (add (natE 1) (add (mkAppN cc' rest) (← argsCost ctx rest)))
       -- A function field of a structure below a data path with a binder (`Z.input.2.f x`):
       -- the costed closure of the field in the costed value of the data path, applied.
       if !info.fromClass then
@@ -4704,6 +4996,12 @@ partial def deriveHatValue (ctx : Ctx) (c : Name) (joint : Bool := false) :
   let proof ← Term.withoutErrToSorry do
     let mv ← mkFreshExprMVar eType
     let rem ← Tactic.run mv.mvarId! (Tactic.evalTactic tac)
+    -- A goal left up to structure eta of a record in the result: the induction hypotheses
+    -- split into their component equations, and the closer again (R15).
+    let rem ← rem.flatMapM fun g => do
+      let g' ← splitCtorHyps c g
+      if g' == g then return [g]
+      Tactic.run g' (Tactic.evalTactic close)
     unless rem.isEmpty do
       fail m!"the erasure theorem `{eraseName}` is not closed by functional induction and \
         unfolding; goals left:{indentD (MessageData.joinSep (rem.map (.ofGoal ·)) "\n")}"
@@ -4997,11 +5295,16 @@ partial def deriveTimed (ctx : Ctx) (c : Name) : TermElabM Unit := do
           let fixed := (List.range xs.size).filter fun i =>
             used.any fun (p, _) => p.containsFVar xs[i]!.fvarId!
           let need := fixed.foldl (fun m i => max m (i + 1)) 0
-          let bad := b.find? fun s => s.isAppOf c && s.getAppNumArgs ≥ need &&
+          -- A recursive call that changes such a structure keeps its priced paths when they
+          -- reduce to the same paths at the new argument (`keepsPaths`, rule (g)).
+          let pathsU := used.map (·.1)
+          let calls := (appsOfConst c b).filter fun s => s.getAppNumArgs ≥ need &&
             fixed.any fun i => s.getArg! i != xs[i]!
-          if let some s := bad then
-            fail m!"the recursive call `{s}` changes a structure or instance whose applied \
-              fields are priced by cost companions"
+          for s in calls do
+            for i in fixed do
+              unless ← keepsPaths ctx pathsU xs[i]! (s.getArg! i) do
+                fail m!"the recursive call `{s}` changes a structure or instance whose applied \
+                  fields are priced by cost companions"
         let (tType, tValue, _) ← build used
         let bs := bs ++ used.map (·.2)
         for x in xs do
@@ -5292,11 +5595,18 @@ partial def deriveTimed (ctx : Ctx) (c : Name) : TermElabM Unit := do
         -- so that the recursive call of `R` becomes the erased costed call followed by `ε`,
         -- which the continuation's lemmas (`bind_assoc`, `bind_ret`) absorb.
         let s ← saveState
+        -- Each case's induction hypotheses are first reduced to their conjuncts
+        -- (`normRecHyps`), so that `simp` rewrites a recursive call under a node's binder.
+        let afterInd ← `(tactic| ((try simp only [$lemmas,*]) <;> (try (repeat' split))))
         let byTimed ← try
-            some <$> Tactic.run mv.mvarId! (Tactic.evalTactic (← `(tactic|
+            let gs ← Tactic.run mv.mvarId! (Tactic.evalTactic (← `(tactic|
               ($intros; fun_induction $indTerm:term <;>
-                (try unfold $(mkIdent c):ident) <;>
-                (try simp only [$lemmas,*]) <;> (try (repeat' split))))))
+                (try unfold $(mkIdent c):ident)))))
+            let mut gs' := []
+            for g in gs do
+              let some g ← normRecHyps c timedName g | continue
+              gs' := gs' ++ (← Tactic.run g (Tactic.evalTactic afterInd))
+            pure (some gs')
           catch _ =>
             s.restore
             pure none
@@ -5305,12 +5615,15 @@ partial def deriveTimed (ctx : Ctx) (c : Name) : TermElabM Unit := do
         let (gs, bySource) ← match byTimed with
           | some gs => pure (gs, false)
           | none => do
-            let gs ← Tactic.run mv.mvarId! (Tactic.evalTactic (← `(tactic|
-              ($intros; $srcInd <;>
-                (try simp only [$lemmas,*]) <;> (try (repeat' split))))))
-            pure (gs, true)
+            let gs ← Tactic.run mv.mvarId! (Tactic.evalTactic (← `(tactic| ($intros; $srcInd))))
+            let mut gs' := []
+            for g in gs do
+              let some g ← normRecHyps c timedName g | continue
+              gs' := gs' ++ (← Tactic.run g (Tactic.evalTactic afterInd))
+            pure (gs', true)
         let mut rem := []
         for g in gs do
+          let some g ← normRecHyps c timedName g | continue
           let g ← if bySource then instRecHyps timedName g else pure g
           let g ← rewriteRecHyps c g
           rem := rem ++ (← Tactic.run g (Tactic.evalTactic close))
@@ -5565,11 +5878,13 @@ partial def deriveCostCore (units : Array Name) (c : Name) : TermElabM Unit := d
           let fixed := (List.range xs.size).filter fun i =>
             paths.any fun p => p.containsFVar xs[i]!.fvarId!
           let need := fixed.foldl (fun m i => max m (i + 1)) 0
-          let bad := b.find? fun s => s.isAppOf c && s.getAppNumArgs ≥ need &&
+          let calls := (appsOfConst c b).filter fun s => s.getAppNumArgs ≥ need &&
             fixed.any fun i => s.getArg! i != xs[i]!
-          if let some s := bad then
-            throwError "derive_cost: the recursive call `{s}` changes a structure whose applied \
-              fields are priced by cost companions"
+          for s in calls do
+            for i in fixed do
+              unless ← keepsPaths ctx paths xs[i]! (s.getArg! i) do
+                throwError "derive_cost: the recursive call `{s}` changes a structure whose \
+                  applied fields are priced by cost companions"
         let cType ← mkForallFVars (bs ++ cs) (mkConst ``Nat)
         let ps ← unitPrefixes units b
         withLocalDeclD `rec (← mkForallFVars bs (mkConst ``Nat)) fun recF => do
