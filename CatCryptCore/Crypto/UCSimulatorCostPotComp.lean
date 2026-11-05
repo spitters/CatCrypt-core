@@ -6,6 +6,7 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Crypto.UCSimulatorCostPot
+public import CatCryptCore.Crypto.UCSimulatorCostMono
 
 /-!
 # Potential time bounds of costed simulators under composition
@@ -24,7 +25,16 @@ The certificate `Simulator.Timed.PotCert T a b c` is a potential time bound with
 passed on at the outer ports and import measures linear in the size (`ImportLinear`). The
 constant, graded and size-graded time bounds of costed simulators are potential time bounds,
 the size-graded one when the composites are built with the size `0` on the middle answers
-(`Simulator.Timed.TimeBoundSizedZero`).
+(`Simulator.Timed.TimeBoundSizedZero`). A costed simulator at other views has the potential time
+bounds of the costed simulator.
+
+The potential time bound `Hybrid.Timed.PotentialBound A gE gO hEG hO a b` of a costed one-call
+hybrid machine is the one-call form of `MultiHybrid.Timed.PotentialBound`, with a `pre` and a
+`post` clause; the costed one-call multi-call hybrid `Hybrid.Timed.ofHybrid π A` has it at the
+constant `a + 1`. A machine whose steps cost at most `a + b * g x` on the input `x` has it with the
+potential `0`; a machine that runs the `post` step of `A` followed by a continuation whose cost is
+linear in the import that `A` passes on has it with the potential of `A`, since that import is
+bounded by the potential clause of `A`.
 
 ## Main definitions
 
@@ -37,12 +47,20 @@ the size-graded one when the composites are built with the size `0` on the middl
   answers of the inner factor of every composite.
 * `MultiHybrid.Timed.PotentialBound.mono`: a potential time bound at larger constants and
   received imports and smaller imports passed on.
+* `Hybrid.Timed.PotentialBound`: the potential time bound of a costed one-call hybrid machine;
+  `Hybrid.Timed.PotentialBound.ofStepBound`, `Hybrid.Timed.PotentialBound.wrapPost`: the
+  potential time bound of a step bound linear in the import and of a wrapped machine.
+* `Hybrid.Timed.ofHybrid`, `Hybrid.Timed.PotentialBound.ofHybrid`: the costed one-call
+  multi-call hybrid and its potential time bound.
 
 ## Main results
 
 * `Simulator.ofMultiHybrid.timeBoundPot_timed`, `Simulator.ofMultiHybridHat.timeBoundPot_timed`,
   `Simulator.comp.timeBoundPot_timed`, `Simulator.mapPorts.timeBoundPot_timed`,
   `Simulator.tensor.timeBoundPot_timed`: the constructor rules.
+* `Simulator.mono.timeBoundPot_timed`, `Simulator.mono.calls`, `Simulator.mono.msgBound`: a
+  costed simulator at other views.
+* `Hybrid.Timed.ofHybrid_erases`: erasure of the costed one-call multi-call hybrid.
 * `Simulator.Timed.TimeBoundPot.mono`: monotonicity in the constants and imports.
 * `Simulator.Timed.TimeBound.timeBoundPot`, `Simulator.Timed.TimeBoundGraded.timeBoundPot`,
   `Simulator.Timed.TimeBoundSizedZero.timeBoundPot`: the instances, and their certificates
@@ -53,6 +71,9 @@ the size-graded one when the composites are built with the size `0` on the middl
 @[expose] public section
 
 set_option autoImplicit false
+
+derive_reduction CatCrypt.Crypto.UCTransparent.MultiHybrid.ofHybrid
+
 
 namespace CatCrypt.Crypto.UCTransparent
 
@@ -392,6 +413,202 @@ theorem tensor.timeBoundPot_timed {π : MultiHybrid σ E O EG OG}
   obtain ⟨_, _, _, rfl⟩ := hE'
   exact ofMultiHybrid.timeBoundPot_timed (MultiHybrid.Timed.PotentialBound.tensor _ _ rfl rfl P P')
 
+/-- A costed simulator at other views has the inner events per activation of the costed
+simulator. -/
+theorem mono.calls (T : Simulator.Timed E O EG OG V W) (V' : PubView E O) (W' : PubView EG OG) :
+    (T.mono V' W').calls = T.calls := by
+  induction T with
+  | ofMultiHybrid πT => rfl
+  | ofMultiHybridHat εσ εE εO εEG εOG πT => rfl
+  | comp T₁ T₂ ih₁ ih₂ => simp only [Simulator.Timed.mono, Simulator.Timed.calls, ih₁, ih₂]
+  | mapPorts T f g ih => simp only [Simulator.Timed.mono, Simulator.Timed.calls, ih]
+
+/-- A costed simulator at other views passes the messages across its inner interfaces per
+activation of the costed simulator. -/
+theorem mono.msgBound (T : Simulator.Timed E O EG OG V W) (V' : PubView E O)
+    (W' : PubView EG OG) : (T.mono V' W').msgBound = T.msgBound := by
+  induction T with
+  | ofMultiHybrid πT => rfl
+  | ofMultiHybridHat εσ εE εO εEG εOG πT => rfl
+  | comp T₁ T₂ ih₁ ih₂ =>
+    simp only [Simulator.Timed.mono, Simulator.Timed.msgBound, mono.calls, ih₁, ih₂]
+  | mapPorts T f g ih => simp only [Simulator.Timed.mono, Simulator.Timed.msgBound, ih]
+
+/-- **Potential running time of a costed simulator at other views**: the potential time bound
+of the costed simulator. -/
+theorem mono.timeBoundPot_timed {T : Simulator.Timed E O EG OG V W} {gE : E → ℕ}
+    {gO : OG → ℕ} {hEG : EG → ℕ} {hO : O → ℕ} {a b : ℕ} (hT : T.TimeBoundPot gE gO hEG hO a b)
+    (V' : PubView E O) (W' : PubView EG OG) :
+    (T.mono V' W').TimeBoundPot gE gO hEG hO a b := by
+  induction T generalizing a b with
+  | ofMultiHybrid πT => exact hT
+  | ofMultiHybridHat εσ εE εO εEG εOG πT => exact hT
+  | comp T₁ T₂ ih₁ ih₂ =>
+    obtain ⟨κ, gM, hM, gEM, hEM, a₁, b₁, a₂, b₂, h₁, h₂, hE, hA, h3, h4⟩ := hT
+    refine ⟨κ, gM, hM, gEM, hEM, a₁, b₁, a₂, b₂, ih₁ h₁ _ _, ih₂ h₂ _ _, hE, hA, ?_, h4⟩
+    simp only [Simulator.Timed.msgBound] at h3 ⊢
+    simpa only [mono.calls, mono.msgBound] using h3
+  | mapPorts T f g ih =>
+    obtain ⟨gM, hM, hf, hg, h⟩ := hT
+    exact ⟨gM, hM, hf, hg, ih h _ _⟩
+
 end Simulator
+
+namespace Hybrid.Timed
+
+variable {σ E O EG OG : Type}
+
+/-- The potential time bound of a costed one-call hybrid machine, with the import `gE` of the
+outer events and `gO` of the answers it receives, the import `hEG` of the inner events and `hO`
+of the outer outputs it passes on, and the constants `a`, `b`: an invariant `Inv` and a potential
+`Φ` on the states, with `Inv` at the initial state, such that a `pre` step on `e` from a state
+`s` of `Inv` costs at most `a + b * (Φ s + gE e)` and returns states `s'` of `Inv` with inner
+events `g` where `Φ s' + hEG g ≤ Φ s + gE e`, and likewise a `post` step on `o` with `gO o` and
+the import `hO` of its outputs. -/
+structure PotentialBound (A : Hybrid.Timed σ E O EG OG) (gE : E → ℕ) (gO : OG → ℕ)
+    (hEG : EG → ℕ) (hO : O → ℕ) (a b : ℕ) where
+  /-- The invariant on the states. -/
+  Inv : σ → Prop
+  /-- The potential of a state. -/
+  Φ : σ → ℕ
+  /-- The initial state satisfies the invariant. -/
+  init : Inv A.init
+  /-- The time and the potential clause of a `pre` step. -/
+  pre : ∀ s e, Inv s →
+    SPTree.Timed.stepTime (A.preCost s e, A.pre s e) ≤ a + b * (Φ s + gE e) ∧
+    SPTree.Timed.AllRet (fun y => Inv y.1 ∧ Φ y.1 + hEG y.2 ≤ Φ s + gE e) (A.pre s e)
+  /-- The time and the potential clause of a `post` step. -/
+  post : ∀ s o, Inv s →
+    SPTree.Timed.stepTime (A.postCost s o, A.post s o) ≤ a + b * (Φ s + gO o) ∧
+    SPTree.Timed.AllRet (fun y => Inv y.1 ∧ Φ y.1 + hO y.2 ≤ Φ s + gO o) (A.post s o)
+
+variable {A : Hybrid.Timed σ E O EG OG} {gE : E → ℕ} {gO : OG → ℕ} {hEG : EG → ℕ}
+  {hO : O → ℕ} {a b : ℕ}
+
+namespace PotentialBound
+
+/-- **A step bound linear in the import is a potential time bound** with the potential `0`: if a
+`pre` step on `e` costs at most `a + b * gE e` and passes on inner events of import at most
+`gE e`, and a `post` step on `o` costs at most `a + b * gO o` and passes on outputs of import at
+most `gO o`, the costed one-call hybrid machine has the potential time bound `a`, `b` on every
+state. -/
+def ofStepBound
+    (hpre : ∀ s e, SPTree.Timed.stepTime (A.preCost s e, A.pre s e) ≤ a + b * gE e ∧
+      SPTree.Timed.AllRet (fun y => hEG y.2 ≤ gE e) (A.pre s e))
+    (hpost : ∀ s o, SPTree.Timed.stepTime (A.postCost s o, A.post s o) ≤ a + b * gO o ∧
+      SPTree.Timed.AllRet (fun y => hO y.2 ≤ gO o) (A.post s o)) :
+    A.PotentialBound gE gO hEG hO a b where
+  Inv _ := True
+  Φ _ := 0
+  init := trivial
+  pre s e _ := ⟨by simpa only [Nat.zero_add] using (hpre s e).1,
+    SPTree.Timed.allRet_mono (fun _ hy => ⟨trivial, by simpa only [Nat.zero_add] using hy⟩) _
+      (hpre s e).2⟩
+  post s o _ := ⟨by simpa only [Nat.zero_add] using (hpost s o).1,
+    SPTree.Timed.allRet_mono (fun _ hy => ⟨trivial, by simpa only [Nat.zero_add] using hy⟩) _
+      (hpost s o).2⟩
+
+/-- **Conservation through a wrapped hybrid machine**: let `A'` run the `pre` steps of `A` at
+an extra cost `c`, and as a `post` step on `o` the `post` step of `A` followed by a continuation
+`k s o` at an extra cost `c`. If the continuation on an output `y` of a state of the invariant
+costs at most `a' + b' * hO y.2` and passes on an output whose import together with the
+potential is at most `Φ y.1 + hO y.2`, then `A'` has the potential time bound with the constants
+`a + a' + c` and `b + b'` and the potential of `A`: the import `A` passes on to the continuation
+is bounded by the potential clause of `A`. -/
+def wrapPost {O' : Type} {A' : Hybrid.Timed σ E O' EG OG} {hO' : O' → ℕ} {a' b' c : ℕ}
+    (P : A.PotentialBound gE gO hEG hO a b) (hinit : A'.init = A.init)
+    (hpre : ∀ s e, SPTree.Timed.stepTime (A'.preCost s e, A'.pre s e) ≤
+        c + SPTree.Timed.stepTime (A.preCost s e, A.pre s e) ∧
+      ∀ Q, SPTree.Timed.AllRet Q (A.pre s e) → SPTree.Timed.AllRet Q (A'.pre s e))
+    (k : σ → OG → σ × O → ℕ × SPTree.Timed (σ × O'))
+    (hpost : ∀ s o, SPTree.Timed.stepTime (A'.postCost s o, A'.post s o) ≤
+        c + A.postCost s o + SPTree.Timed.stepTime ((A.post s o).bind (k s o)) ∧
+      ∀ Q, SPTree.Timed.AllRet Q ((A.post s o).bind (k s o)).2 →
+        SPTree.Timed.AllRet Q (A'.post s o))
+    (hk : ∀ s o y, P.Inv y.1 → SPTree.Timed.stepTime (k s o y) ≤ a' + b' * hO y.2 ∧
+      SPTree.Timed.AllRet (fun z => P.Inv z.1 ∧ P.Φ z.1 + hO' z.2 ≤ P.Φ y.1 + hO y.2)
+        (k s o y).2) :
+    A'.PotentialBound gE gO hEG hO' (a + a' + c) (b + b') where
+  Inv := P.Inv
+  Φ := P.Φ
+  init := hinit ▸ P.init
+  pre s e hs := by
+    refine ⟨?_, (hpre s e).2 _ (P.pre s e hs).2⟩
+    have := (hpre s e).1
+    have := (P.pre s e hs).1
+    have := Nat.add_mul b b' (P.Φ s + gE e)
+    omega
+  post s o hs := by
+    obtain ⟨ht, hr⟩ := P.post s o hs
+    refine ⟨?_, (hpost s o).2 _ ((SPTree.Timed.allRet_bind _ _ _).2
+      (SPTree.Timed.allRet_mono (fun y hy => SPTree.Timed.allRet_mono
+        (fun z hz => ⟨hz.1, by omega⟩) _ (hk s o y hy.1).2) _ hr))⟩
+    have hb := SPTree.Timed.stepTime_bind_le_of_allRet (A.post s o) (k s o)
+      (a' + b' * (P.Φ s + gO o)) hr fun y hy => le_trans (hk s o y hy.1).1
+        (Nat.add_le_add_left (Nat.mul_le_mul_left b' (by omega)) a')
+    have h1 := (hpost s o).1
+    have := Nat.add_mul b b' (P.Φ s + gO o)
+    simp only [SPTree.Timed.stepTime] at ht hb h1 ⊢
+    omega
+
+end PotentialBound
+
+/-- The costed one-call multi-call hybrid of the costed hybrid machine `A`: the costed form
+`MultiHybrid.ofHybrid.timed π` with the steps and cost companions of `A`. -/
+noncomputable def ofHybrid (π : Hybrid σ E O EG OG) (A : Hybrid.Timed σ E O EG OG) :
+    MultiHybrid.Timed σ E O EG OG :=
+  MultiHybrid.ofHybrid.timed π A.pre A.preCost A.post A.postCost
+
+/-- **Erasure of the costed one-call multi-call hybrid**: the costed one-call multi-call hybrid
+of a costed hybrid machine that erases to `π` erases to `MultiHybrid.ofHybrid π`. -/
+theorem ofHybrid_erases {π : Hybrid σ E O EG OG} (hA : A.Erases π) :
+    (ofHybrid π A).Erases (MultiHybrid.ofHybrid π) := by
+  obtain ⟨_, _, rfl⟩ := hA
+  exact MultiHybrid.ofHybrid.erase_timed _ _ _ _ _ (fun _ _ => rfl) (fun _ _ => rfl)
+
+/-- **Potential running time of the costed one-call multi-call hybrid**: a potential time bound
+of a costed hybrid machine that erases to `π` is a potential time bound of its costed one-call
+multi-call hybrid, with the same potential and the constant `a + 1`. -/
+def PotentialBound.ofHybrid {π : Hybrid σ E O EG OG} (hA : A.Erases π)
+    (P : A.PotentialBound gE gO hEG hO a b) :
+    (ofHybrid π A).PotentialBound gE gO hEG hO (a + 1) b where
+  Inv := P.Inv
+  Φ := P.Φ
+  init := by
+    obtain ⟨_, _, rfl⟩ := hA
+    exact P.init
+  start s e hs := by
+    obtain ⟨ht, hr⟩ := P.pre s e hs
+    have hb := SPTree.Timed.stepTime_bind_le (A.pre s e)
+      (fun x => (0, SPTree.Timed.ret (x.1, (Sum.inl x.2 : EG ⊕ O)))) 0
+      (fun _ => by simp [SPTree.Timed.stepTime, SPTree.Timed.time_ret])
+    refine ⟨?_, ?_⟩
+    · simp only [Hybrid.Timed.ofHybrid, MultiHybrid.ofHybrid.timed,
+        MultiHybrid.ofHybrid.start.tree.timed, SPTree.Timed.delay, SPTree.Timed.stepTime] at ht hb ⊢
+      omega
+    · simp only [Hybrid.Timed.ofHybrid, MultiHybrid.ofHybrid.timed,
+        MultiHybrid.ofHybrid.start.tree.timed, SPTree.Timed.delay]
+      exact (SPTree.Timed.allRet_bind _ _ _).2 (SPTree.Timed.allRet_mono (fun _ hy => hy) _ hr)
+  resume s o hs := by
+    obtain ⟨ht, hr⟩ := P.post s o hs
+    have hb := SPTree.Timed.stepTime_bind_le (A.post s o)
+      (fun x => (0, SPTree.Timed.ret (x.1, (Sum.inr x.2 : EG ⊕ O)))) 0
+      (fun _ => by simp [SPTree.Timed.stepTime, SPTree.Timed.time_ret])
+    refine ⟨?_, ?_⟩
+    · simp only [Hybrid.Timed.ofHybrid, MultiHybrid.ofHybrid.timed,
+        MultiHybrid.ofHybrid.resume.tree.timed, SPTree.Timed.delay,
+        SPTree.Timed.stepTime] at ht hb ⊢
+      omega
+    · simp only [Hybrid.Timed.ofHybrid, MultiHybrid.ofHybrid.timed,
+        MultiHybrid.ofHybrid.resume.tree.timed, SPTree.Timed.delay]
+      exact (SPTree.Timed.allRet_bind _ _ _).2 (SPTree.Timed.allRet_mono (fun _ hy => hy) _ hr)
+  finish s o hs := by
+    obtain ⟨ht, hr⟩ := P.post s o hs
+    refine ⟨?_, hr⟩
+    simp only [Hybrid.Timed.ofHybrid, MultiHybrid.ofHybrid.timed,
+      MultiHybrid.ofHybrid.finish.tree.timed, SPTree.Timed.stepTime] at ht ⊢
+    omega
+
+end Hybrid.Timed
 
 end CatCrypt.Crypto.UCTransparent
