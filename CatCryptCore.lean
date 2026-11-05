@@ -31,6 +31,7 @@ public import CatCryptCore.Core.SPTree
 public import CatCryptCore.Core.SPTreeTimed
 public import CatCryptCore.Core.SPTreeFree
 public import CatCryptCore.ForMathlib.PFunctorChargeUnder
+public import CatCryptCore.ForMathlib.PFunctorRestrict
 public import CatCryptCore.Core.SPTreeTimedFree
 public import CatCryptCore.Core.SPTreeTimedOps
 public import CatCryptCore.Core.StdDoBridge
