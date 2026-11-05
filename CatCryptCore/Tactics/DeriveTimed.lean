@@ -162,7 +162,21 @@ a first-order domain of the typed measures of Forster and Kunze):
   one; a tree binder keeps its plain costed type, and a tree argument of a callee whose
   binder takes the plain type is passed with its results erased (`ε`);
 * a pair, an `if` and a call of a non-recursive definition holding functions are translated
-  componentwise, by branch and by unfolding.
+  componentwise, by branch and by unfolding;
+* a match whose arms return functions, applied to its discriminants and no further argument,
+  is translated by branch (rule (a)), so the values its arms compute are charged once, when
+  the closure is built; a matcher applied to further arguments is a partial application;
+* a `let` of a function value that is a case analysis, a saturated call or a partial
+  application to a computed data argument is kept (`keepsFnLet`, rule (c)): its value is
+  priced once and its local is read as a costed closure; any other function `let` is
+  substituted.
+
+On the class `TabState` (function-valued state `X → Y` with first-order `X`, built from tables,
+`Function.update`, case analyses on data present at the build whose arms are of the class, and
+calls of non-recursive definitions whose bodies are of the class), every value computed while a
+closure is built is charged at the build, and each companion is a constant plus the companion it
+replaces; a closure `fun x => e` written in the source is outside the class and keeps the cost
+of `e` at each read.
 
 The costed tree of a reduction whose result holds functions has the costed result type, and
 its erasure theorem is `(R.timed xs').2.erase.bind (fun y => ret (ε y)) = R xs`, with
@@ -1917,6 +1931,30 @@ def keepsLet (t v : Expr) : MetaM Bool := do
   if (← hatTy? t).isSome then return false
   return true
 
+/-- Whether `let x : t := v` of a function value is kept as a `let` (rule (c) of the class
+`TabState`, see `tv`), so that the values `v` computes are charged once, when the closure is
+built, and each read of `x` costs one plus its companion: `t` is a function type with a costed
+form (`hatTy?`) and `v` is a computation, the application of a constant to arguments that is a
+case analysis (a matcher, `ite`, `dite`), a call of a definition applied to all the binders of
+its value, or a partial application of a definition to a data argument that `keepsLet` keeps
+(`Function.update q k (q k ++ [v])`). A local, a constant, a closure `fun x => e` written in the
+source (whose companion is the cost of `e` at each read), a projection path and a partial
+application of values are substituted. -/
+def keepsFnLet (t v : Expr) : MetaM Bool := do
+  unless (← whnfR t).isForall do return false
+  if (← hatTy? t).isNone then return false
+  if ← isLocalProjPath v then return false
+  let v := v.consumeMData
+  let .const c _ := v.getAppFn | return false
+  let args := v.getAppArgs
+  if args.isEmpty then return false
+  if (← getProjectionFnInfo? c).isSome then return false
+  let env ← getEnv
+  if isCaseHead env c then return true
+  let some (.defnInfo dv) := env.find? c | return false
+  if args.size ≥ dv.value.getNumHeadLambdas then return true
+  args.anyM fun a => do return (← isDataExpr a) && (← keepsLet (← inferType a) a)
+
 /-- A `let` applied to arguments with the application pushed into its body,
 `(let x := v; f) a ⇝ let x := v; f a` (beta-reduced, through nested `let`s), so that the
 `let` is priced once by the rule for `let`. Any other term is returned unchanged. -/
@@ -2938,6 +2976,15 @@ partial def costOf (ctx : Ctx) (e : Expr) : TermElabM Expr := do
   | .fvar _ | .lit _ | .lam .. | .forallE .. | .sort _ => return natE 0
   | .proj _ _ s => costOf ctx s
   | .letE n t v b _ =>
+    if ← keepsFnLet t v then
+      -- A function value (rule (c)): its costed value is bound by a second `let`; each read
+      -- of the local is an application of that costed closure. A value without a costed form
+      -- is substituted.
+      let some ht ← hatTy? t | fail m!"internal: the `let` of `{v}`"
+      let some (cv, vh) ← tvTry? ctx v | return ← costOf ctx (b.instantiate1 v)
+      return ← withLetDecl n t v fun x => withLetDecl (n.appendAfter "Hat") ht vh fun xh => do
+        let ctx' := { ctx with locals := ctx.locals.insert x.fvarId! ⟨.hat, xh, none⟩ }
+        return add cv (← mkLetFVars #[x, xh] (← costOf ctx' (b.instantiate1 x)))
     unless ← keepsLet t v do return ← costOf ctx (b.instantiate1 v)
     -- The value is priced once; the body with a local of cost zero in its place.
     let cv ← costOf ctx v
@@ -3113,11 +3160,32 @@ partial def closureApp (ctx : Ctx) (c : Expr) (args : Array Expr) :
     rest := rest.extract k rest.size
   return (cost, cur)
 
+/-- `tv ctx v`, or `none` when `v` has no costed form, with the state and the references of
+`ctx` restored. -/
+partial def tvTry? (ctx : Ctx) (v : Expr) : TermElabM (Option (Expr × Expr)) := do
+  let s ← saveState
+  let recs ← ctx.fieldRec?.mapM (·.get)
+  let unf ← ctx.unfolded?.mapM (·.get)
+  let fnu ← ctx.fnUnfolded?.mapM (·.get)
+  try some <$> tv ctx v catch _ => do
+    s.restore
+    if let (some r, some a) := (ctx.fieldRec?, recs) then r.set a
+    if let (some r, some a) := (ctx.unfolded?, unf) then r.set a
+    if let (some r, some a) := (ctx.fnUnfolded?, fnu) then r.set a
+    return none
+
 /-- The cost and the costed value (`hatTy?`) of the data term `e`; for a term whose type
 holds no function, its cost and `e`. A closure costs nothing to build and its companion is
 the cost of its body; a partial application of a constant evaluates its arguments when it is
-built; a pair, an `if` and a call of a definition are translated componentwise, by branch and
-by unfolding. -/
+built; a pair, an `if`, a match whose arms return functions and a call of a definition are
+translated componentwise, by branch and by unfolding; a `let` of a function value that
+`keepsFnLet` keeps is priced once and its local read as a costed closure. On the class
+`TabState` (function-valued state `X → Y` with first-order `X`, built from tables,
+`Function.update`, case analyses on data present at the build whose arms are of the class, and
+calls of non-recursive definitions whose bodies are of the class) every value computed while a
+closure is built is charged at the build, and each companion is a constant plus the companion it
+replaces; a closure `fun x => e` written in the source is outside the class and keeps the cost of
+`e` at each read. -/
 partial def tv (ctx : Ctx) (e : Expr) : TermElabM (Expr × Expr) := do
   let e := pushLetApp e.consumeMData.headBeta
   let e ← if ← reduceFnAliases then pushIteApp e else pure e
@@ -3129,6 +3197,14 @@ partial def tv (ctx : Ctx) (e : Expr) : TermElabM (Expr × Expr) := do
   let tw ← whnfR t
   match e with
   | .letE n lt v b _ =>
+    if ← keepsFnLet lt v then
+      -- A function value (rule (c)), bound as in `costOf`.
+      let some lht ← hatTy? lt | fail m!"internal: the `let` of `{v}`"
+      let some (cv, vh) ← tvTry? ctx v | return ← tv ctx (b.instantiate1 v)
+      return ← withLetDecl n lt v fun x => withLetDecl (n.appendAfter "Hat") lht vh fun xh => do
+        let ctx' := { ctx with locals := ctx.locals.insert x.fvarId! ⟨.hat, xh, none⟩ }
+        let (cb, vb) ← tv ctx' (b.instantiate1 x)
+        return (add cv (← mkLetFVars #[x, xh] cb), ← mkLetFVars #[x, xh] vb)
     unless ← keepsLet lt v do return ← tv ctx (b.instantiate1 v)
     let cv ← costOf ctx v
     withLetDecl n lt v fun x => do
@@ -3240,7 +3316,13 @@ partial def tv (ctx : Ctx) (e : Expr) : TermElabM (Expr × Expr) := do
       return (add (natE 1) (add (← propCost ctx args[1]!)
           (mkApp5 (mkConst ``dite [Level.one]) (mkConst ``Nat) args[1]! args[2]! ct ce)),
         mkApp5 (mkConst ``dite [lvl]) ht args[1]! args[2]! vt ve)
-    if tw.isForall then
+    -- A match whose arms return functions, applied to its discriminants and no further
+    -- argument (rule (a)): a case analysis on data present when the closure is built, translated
+    -- by branch below, so that the values its arms compute are charged once. A matcher applied
+    -- to further arguments (one of which is the point) is a partial application.
+    let fnCase ← do
+      if let some app ← matchMatcherApp? e then pure app.remaining.isEmpty else pure false
+    if tw.isForall && !fnCase then
       -- A call of a non-recursive definition applied to all the binders of its value, whose
       -- result is a function: its body, priced once when the closure is built.
       if let some r ← unfoldFnCall? ctx e then return r
@@ -3878,12 +3960,14 @@ partial def tr (ctx : Ctx) (e : Expr) : TermElabM Expr := do
     | fail m!"`{e}` is not a tree of a registered kind"
   match e with
   | .letE n t v b _ =>
-    unless ← keepsLet t v do return ← tr ctx (b.instantiate1 v)
+    let fnLet ← keepsFnLet t v
+    unless fnLet || (← keepsLet t v) do return ← tr ctx (b.instantiate1 v)
     if let some ht ← hatTy? t then
-      -- A `let` of a value holding functions (a state structure): its costed value is bound by
-      -- a second `let` and shared by every use, in the step cost and in the costed tree. A
-      -- value without a costed form (a field that is a function into an untimed computation)
-      -- is priced by the rule below, which prices only the fields the body uses.
+      -- A `let` of a value holding functions (a state structure, or a function value by rule
+      -- (c)): its costed value is bound by a second `let` and shared by every use, in the step
+      -- cost and in the costed tree. A value without a costed form (a field that is a function
+      -- into an untimed computation) is priced by the rule below, which prices only the fields
+      -- the body uses; a function value without a costed form is substituted.
       let s ← saveState
       let recs ← ctx.fieldRec?.mapM (·.get)
       let unf ← ctx.unfolded?.mapM (·.get)
@@ -3900,6 +3984,7 @@ partial def tr (ctx : Ctx) (e : Expr) : TermElabM Expr := do
           let p ← tr ctx' (b.instantiate1 x)
           return T.mkPair (add cv (← mkLetFVars #[x, xh] (T.fstOf p)))
             (← mkLetFVars #[x, xh] (T.sndOf p))
+      if fnLet then return ← tr ctx (b.instantiate1 v)
     -- The value is priced once, in front; the costed tree keeps the `let`.
     let cv ← costOf ctx v
     withLetDecl n t v fun x => do
