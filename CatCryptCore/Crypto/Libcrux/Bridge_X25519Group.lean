@@ -31,6 +31,7 @@ group element `g^e` with `e` drawn from `signedClamp`: the sign is not seen by t
 
 * `X25519Hom.scalarmult_pow`, `X25519Hom.base_eq` — X25519 as exponentiation by `clampE`
 * `X25519Hom.shared_eq` — `x25519_scalarmult a (x25519_base b) = encU (g^(clampE a · clampE b))`
+* `X25519Hom.scalarmult_elemPow` — `x25519_scalarmult sk (encU T) = encU (T ^ signedE (sk, b))`
 * `x25519Commutes_of_hom` — `X25519Hom B → X25519Commutes`
 * `concreteDDH_X25519_keygen_snd` — `concreteDDH_X25519.keygen.map Prod.snd =
   (sampleFrom signedClamp).map (encU ∘ pow)`
@@ -149,6 +150,19 @@ theorem cyclicGroup_pow_eq (e : ZMod curve25519SubgroupOrder) :
 /-- Exponent multiplication in `G25519 B` is multiplication in `ZMod ℓ`. -/
 theorem cyclicGroup_expMul_eq (a b : ZMod curve25519SubgroupOrder) :
     (CyclicGroup.expMul (G := G25519 B) a b) = a * b := rfl
+
+/-- **X25519 as exponentiation by the signed clamped scalar**: under `X25519Hom B`, X25519 with
+the key `sk` on the encoding of `T` is the encoding of `T ^ signedE (sk, b)`, for either sign
+`b`. -/
+theorem X25519Hom.scalarmult_elemPow (h : X25519Hom B) (sk : Vector UInt8 32) (b : Bool)
+    (T : G25519 B) :
+    x25519_scalarmult sk (encU T) = encU (CyclicGroup.elemPow T (signedE (sk, b))) := by
+  obtain ⟨e, rfl⟩ := g25519Pow_surjective (B := B) T
+  rw [h.scalarmult_pow, ← cyclicGroup_pow_eq e, CyclicGroup.elemPow_pow, cyclicGroup_pow_eq,
+    cyclicGroup_expMul_eq]
+  cases b
+  · simp only [signedE, Bool.false_eq_true, ↓reduceIte, mul_neg, encU_pow_neg, mul_comm]
+  · simp only [signedE, ↓reduceIte, mul_comm]
 
 /-- A draw of an exponent of `G25519 B` from `signedClamp` is a uniform key and a uniform
 sign. -/
