@@ -264,8 +264,11 @@ public import CatCryptCore.Crypto.OracleSubst
 public import CatCryptCore.Crypto.OracleEval
 public import CatCryptCore.Crypto.OracleCollision
 public import CatCryptCore.Crypto.TV
+public import CatCryptCore.Crypto.SDistTV
+public import CatCryptCore.Crypto.TVHops
 public import CatCryptCore.Crypto.SampledGame
 public import CatCryptCore.Crypto.SampledGameTimed
+public import CatCryptCore.Crypto.SamplerCert
 public import CatCryptCore.Crypto.Assumptions.DDHSampled
 public import CatCryptCore.Crypto.Constructions.ECBCPRFFlag
 public import CatCryptCore.Crypto.Constructions.MACDomainExtension
