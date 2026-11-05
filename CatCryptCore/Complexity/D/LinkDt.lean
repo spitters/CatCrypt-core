@@ -35,6 +35,7 @@ function and `treeEntry` for a tree function, related to their D values by `SimE
 ## Main results
 
 * `TimedSimTree.of_treeLe`, `TimedSim.of_costLe`, `CostLe.bind`, `TreeLe.refl`
+* `foldl_timedCost_mono`: the registered cost of `List.foldl` is monotone in the step cost
 * `Ty.hat_eq_val`, `Sim.cast_eq`, `Sim.cast_self`
 * `SimEnv.nil`, `SimEnv.consE`, `SimE.dataEntry`, `SimE.treeEntry`
 * `Tm.timedSim_of_costLe`
@@ -173,6 +174,18 @@ theorem TimedSim.of_costLe {α β γ : Type} {R : α → γ → Prop} {S : α �
   TimedSimTree.of_treeLe hS
     (TimedSimTree.mono h (Nat.add_le_add_left (Nat.mul_le_mul_left K hxy.1) n)) hxy.2
 
+/-- The registered cost of a left fold is monotone in the cost of its step. -/
+theorem foldl_timedCost_mono {α β : Type} (f : α → β → α) {c c' : α → β → ℕ}
+    (h : ∀ a b, c a b ≤ c' a b) (init : α) (l : List β) :
+    List.foldl.timedCost f c init l ≤ List.foldl.timedCost f c' init l := by
+  induction l generalizing init with
+  | nil => simp [List.foldl.timedCost]
+  | cons b l ih =>
+    have := h init b
+    have := ih (f init b)
+    simp [List.foldl.timedCost]
+    omega
+
 /-! ## First-order translated values -/
 
 /-- At a first-order type, the translated values are the values of D. -/
@@ -308,7 +321,8 @@ theorem SimE.dataEntry {a b : Ty} (ha : a.FO) (hb : b.FO) {f : Val a → Val b}
   have hv := Sim.cast_eq a ha huv
   subst hv
   rw [hg]
-  exact TimedSim.stepN_ret (Sim.cast_self b hb _) (by have := hC (cast (Ty.hat_eq_val a ha) u); omega)
+  have := hC (cast (Ty.hat_eq_val a ha) u)
+  exact TimedSim.stepN_ret (Sim.cast_self b hb _) (by omega)
 
 /-- The entry of a tree function `F` between first-order types. -/
 noncomputable def treeEntry {a b : Ty} (ha : a.FO) (hb : b.FO)

@@ -53,6 +53,37 @@ statement, and aligned with the binders of `T.timed`:
   re-pairing of its argument (`v.1`, `v.2`, `(v.1, v.2)`), which `derive_timed` charges nothing
   for, has the step of its application paid by the allowance (`DSim.appFree`).
 
+## The route through the soundness theorem
+
+For a D-term `t` in the fragment `Tm.InDtFrag` at a first-order type, with an allowance
+`t.allow` that reduces to a numeral, `link_timed` first builds the translated environment `η` of
+the telescope (`EnvHat.consE` of the cast of a data value, `dataEntry` of a data function value
+and its cost companion, `treeEntry` of a costed tree function value) and proves
+`CostLe (fun a b => cast _ a = b) (t.dt η) (T.timed …)`: the costed form of `derive_timed` is
+above the charges of `Tm.dt` stated on D's syntax. The comparison is one rule over both costed
+trees after reduction to head normal form:
+
+* equal constructors (`ret`, `sample`, `get`, `set`, `fail`) compare their leaves by definitional
+  equality and their step costs as side goals, a child's step cost and subtree at one variable;
+* binds stuck at their first tree compare the first trees with equal leaves and the
+  continuations pointwise (`CostLe.bind`), and record the inequality of their step costs as a
+  fact for the side goals;
+* a tree, a leaf or a step cost whose reduction is stuck at a variable of type `Bool`, a sum,
+  `Option`, a list or a pair is split on that variable, both sides at once;
+* definitionally equal trees are equal (`TreeLe.refl`);
+* a side goal is closed by `omega` on the step costs with the first components of costed pairs,
+  `callCost` and decided conditionals reduced, definitionally equal atoms identified, the facts
+  of its context, `callCost_le_one`, and for two registered costs of the same left fold the
+  monotonicity in the step cost (`foldl_timedCost_mono`) when the step costs compare.
+
+`Tm.timedSim_of_costLe` then gives `T.d_timedSim` from `Tm.dt_timedSim`, `T.d_cost_le` follows
+as below, and `TimedSim.run_eq` gives `T.d_run`: at a query-free evaluation, `T.d` means the
+compiled erasure of `T.timed`. The statements are those of the walk. When the route does not
+apply (an allowance with the charge `callCost` of a type parameter, a call of a projection
+method that `derive_timed` charges nothing for, constructs outside the fragment), the walk below
+proves the theorems and the docstring of `T.d_timedSim` records why the route did not apply;
+when the walk also fails, the error reports both reasons.
+
 ## The walk
 
 The proof is a walk over the D-term, one rule of `CatCryptCore.Complexity.D.TimedLink` per
@@ -77,6 +108,8 @@ whose type differs from their D representation (`Option`).
 ## Main definitions
 
 * `link_timed x`: the command.
+* `DtState`, `DtM`, `provePair`, `proveTree`, `closeSideD`, `dtRoute`: the comparison of the
+  route through the soundness theorem.
 
 ## Main results
 
@@ -641,25 +674,22 @@ def solveSide (g : MVarId) : TermElabM Unit := g.withContext do
 
 /-! ## The route through the soundness theorem of `Tm.dt` -/
 
-/-- The state of a comparison of two costed trees: the step-cost side goals, and the facts
-`x.1 ≤ y.1` of the stuck binds compared so far. -/
+/-- The state of a comparison of two costed trees: the facts `x.1 ≤ y.1` of the stuck binds
+compared so far. -/
 structure DtState where
-  /-- The step-cost side goals. -/
-  sides : Array MVarId := #[]
-  /-- Proofs of inequalities between step costs. -/
-  facts : Array Expr := #[]
+  /-- Proofs of inequalities between step costs, each with the variables of its context. -/
+  facts : Array (Expr × Array FVarId) := #[]
 
 /-- The comparison monad. -/
-abbrev DtM := StateRefT DtState MetaM
+abbrev DtM := StateRefT DtState TermElabM
 
 /-- A refusal of the comparison. -/
 def failD {α : Type} (msg : MessageData) : DtM α := throwError m!"{msg}"
 
-/-- Record a step-cost side goal of the comparison. -/
-def sideD (g : MVarId) : DtM Unit := modify fun s => { s with sides := s.sides.push g }
-
 /-- Record a fact between step costs. -/
-def factD (pf : Expr) : DtM Unit := modify fun s => { s with facts := s.facts.push pf }
+def factD (pf : Expr) : DtM Unit := do
+  let fvs := (← getLCtx).getFVarIds
+  modify fun s => { s with facts := s.facts.push (pf, fvs) }
 
 /-- Apply the rule `c` to the goal `g`: unify its conclusion and return its binders. -/
 def applyRuleD (g : MVarId) (c : Name) : MetaM (Std.HashMap Name Expr) := do
@@ -674,28 +704,31 @@ list. -/
 def splittable (T : Expr) : MetaM Bool := do
   let T ← whnfD T
   return T.isConstOf ``Bool || T.isAppOfArity ``Sum 2 || T.isAppOfArity ``Option 1 ||
-    T.isAppOfArity ``List 1
+    T.isAppOfArity ``List 1 || T.isAppOfArity ``Prod 2
 
 /-- The variable on which the reduction of `e` is stuck, if `e` is an elimination (a matcher, a
 recursor, a projection) of a splittable variable (`splittable`), through eliminations of
 eliminations. -/
 partial def stuckVar? (e : Expr) : MetaM (Option FVarId) := do
+  let discr (d : Expr) : MetaM (Option FVarId) := do
+    let d ← whnfD d
+    if let .fvar fv := d then
+      if (← fv.getDecl).isLet then return none
+      return if ← splittable (← fv.getType) then some fv else none
+    stuckVar? d
   let e ← whnfD e
   match e with
-  | .fvar fv =>
-    if (← fv.getDecl).isLet then return none
-    return if ← splittable (← fv.getType) then some fv else none
-  | .proj _ _ s => stuckVar? s
+  | .proj _ _ s => discr s
   | _ =>
     let .const n _ := e.getAppFn | return none
     let args := e.getAppArgs
     if let some info ← getMatcherInfo? n then
       for i in [info.numParams + 1 : info.numParams + 1 + info.numDiscrs] do
         if h : i < args.size then
-          if let some fv ← stuckVar? args[i] then return some fv
+          if let some fv ← discr args[i] then return some fv
       return none
     if let some (.recInfo rv) := (← getEnv).find? n then
-      if h : rv.getMajorIdx < args.size then return ← stuckVar? args[rv.getMajorIdx]
+      if h : rv.getMajorIdx < args.size then return ← discr args[rv.getMajorIdx]
     return none
 
 /-- The first variable on which one of `es` is stuck. -/
@@ -710,32 +743,44 @@ def splitOn (g : MVarId) (fv : FVarId) : MetaM (Array MVarId) := do
 
 /-- The step-cost expression `e` with `+`, `*` and numerals kept, the first component of a
 costed pair reduced to the component, `callCost` of a type reduced to its value or kept with
-the fact `callCost_le_one`, and any other subterm an atom. -/
+the fact `callCost_le_one`, a subterm that reduces to a numeral (a decided conditional) that
+numeral, and any other subterm an atom. -/
 partial def normCost (e : Expr) : StateRefT (Array Expr) MetaM Expr := do
   let e := (← instantiateMVars e).headBeta
   if e.isAppOfArity ``HAdd.hAdd 6 || e.isAppOfArity ``HMul.hMul 6 then
     return mkApp2 e.appFn!.appFn! (← normCost (e.getArg! 4)) (← normCost (e.getArg! 5))
   if e.isAppOf ``OfNat.ofNat || e.isRawNatLit then return e
   if e.isLet || e.isMData then return ← normCost (← whnfCore e)
-  let pr? : Option Expr :=
-    if e.isAppOfArity ``Prod.fst 3 then some e.appArg!
-    else match e with
-      | .proj ``Prod 0 s => some s
+  -- A projection of a costed pair or of a costed closure, applied to further arguments.
+  let pr? : Option (Nat × Expr × Array Expr) :=
+    let f := e.getAppFn
+    let as := e.getAppArgs
+    if (f.isConstOf ``Prod.fst || f.isConstOf ``Prod.snd) && as.size ≥ 3 then
+      some (if f.isConstOf ``Prod.fst then 0 else 1, as[2]!, as.extract 3 as.size)
+    else match f with
+      | .proj ``Prod i s => some (i, s, as)
       | _ => none
-  if let some P := pr? then
+  if let some (i, P, extra) := pr? then
     let P' ← whnfD P
-    if P'.isAppOfArity ``Prod.mk 4 then return ← normCost (P'.getArg! 2)
-    return ← mkAppM ``Prod.fst #[P']
+    if P'.isAppOfArity ``Prod.mk 4 then
+      return ← normCost (mkAppN (P'.getArg! (2 + i)) extra).headBeta
+    if i == 0 && extra.isEmpty then return ← mkAppM ``Prod.fst #[P']
+    return e
+  if e.isAppOfArity ``Tm.allow 3 then
+    if let some k ← (evalNat (← reduce e)).run then return mkNatLit k
+    return e
   if e.isAppOfArity ``callCost 1 then
     if let some k ← (evalNat (← whnfD e)).run then return mkNatLit k
     modify (·.push (mkApp (mkConst ``callCost_le_one) e.appArg!))
     return e
+  if let some k ← (evalNat (← whnfD e)).run then return mkNatLit k
   return e
 
 /-- Close the step-cost side goal `g` by `omega`, after `normCost` and the identification of
 definitionally equal atoms (`canonAtoms`), with the facts whose variables are in its context;
 when `omega` fails, split on a variable on which an atom is stuck and close each case. -/
-partial def closeSideD (facts : Array Expr) (fuel : Nat) (g : MVarId) : TermElabM Unit :=
+partial def closeSideD (facts : Array (Expr × Array FVarId)) (fuel : Nat) (g : MVarId) :
+    TermElabM Unit :=
   g.withContext do
   if ← g.isAssigned then return
   let ty ← instantiateMVars (← g.getType)
@@ -746,9 +791,8 @@ partial def closeSideD (facts : Array Expr) (fuel : Nat) (g : MVarId) : TermElab
   let mut extra : Array Expr := #[]
   let ((a', b'), ex) ← (do pure (← normCost a, ← normCost b)).run #[]
   extra := extra ++ ex
-  for f in facts do
-    let f ← instantiateMVars f
-    if f.hasMVar || f.hasAnyFVar (fun fv => !lctx.contains fv) then continue
+  for (f, fvs) in facts do
+    unless fvs.all lctx.contains do continue
     let some (_, _, x, y) := (← instantiateMVars (← inferType f)).app4? ``LE.le | continue
     let ((x', y'), ex) ← (do pure (← normCost x, ← normCost y)).run #[]
     extra := extra ++ ex
@@ -762,18 +806,46 @@ partial def closeSideD (facts : Array Expr) (fuel : Nat) (g : MVarId) : TermElab
         let t ← mkAppM ``LE.le #[← canonAtoms x, ← canonAtoms y]
         pure ({ userName := `hf, type := t, value := f } : Hypothesis)
       pure (t, hyps)).run #[]
-  let g' ← g.replaceTargetDefEq tgt
-  let (_, g') ← g'.assertHypotheses hyps
+  -- Registered fold costs of the same fold: the monotonicity in the step cost, when the step
+  -- costs compare (`foldl_timedCost_mono`).
+  let mut hyps := hyps
+  if fuel > 0 then
+    let folds := atoms.filter (·.isAppOfArity ``List.foldl.timedCost 6)
+    for x in folds do
+      for y in folds do
+        if x == y then continue
+        let (xa, ya) := (x.getAppArgs, y.getAppArgs)
+        unless ← isDefEq xa[2]! ya[2]! <&&> isDefEq xa[4]! ya[4]! <&&> isDefEq xa[5]! ya[5]! do
+          continue
+        let st ← saveState
+        try
+          let hT ← withLocalDeclD `a xa[0]! fun a => withLocalDeclD `b xa[1]! fun b => do
+            mkForallFVars #[a, b] (← mkAppM ``LE.le #[(mkApp2 xa[3]! a b).headBeta,
+              (mkApp2 ya[3]! a b).headBeta])
+          let h ← mkFreshExprMVar hT
+          let (_, gh) ← h.mvarId!.introN 2
+          closeSideD facts (fuel - 1) gh
+          let pf ← mkAppM ``foldl_timedCost_mono #[xa[2]!, ← instantiateMVars h, xa[4]!, xa[5]!]
+          hyps := hyps.push { userName := `hf, type := ← mkAppM ``LE.le #[x, y], value := pf }
+        catch _ => st.restore
+  let st ← saveState
   let ok ← try
+      let g' ← g.replaceTargetDefEq tgt
+      let (_, g') ← g'.assertHypotheses hyps
       let rest ← Tactic.run g' (Tactic.evalTactic (← `(tactic| omega)))
       pure rest.isEmpty
     catch _ => pure false
   if ok then return
+  st.restore
   if fuel > 0 then
     if let some fv ← firstStuck? atoms then
       for g'' in ← splitOn g fv do closeSideD facts (fuel - 1) g''
       return
-  throwError "the step-cost inequality{indentExpr ty}\nis not closed"
+  throwError "the step-cost inequality{indentExpr tgt}\nis not closed by `omega` with the \
+    facts{indentD (MessageData.joinSep (hyps.toList.map (m!"{·.type}")) ", ")}"
+
+/-- Close a step-cost side goal of the comparison with the facts recorded so far. -/
+def sideD (g : MVarId) : DtM Unit := do closeSideD (← get).facts 8 g
 
 /-- The bind whose tree the costed tree `T` is, when `T` is the tree of a costed bind stuck at
 its first tree. -/
@@ -800,6 +872,16 @@ partial def proveLeaf (g : MVarId) : DtM Unit := g.withContext do
     return
   failD m!"the leaves{indentExpr l}\nand{indentExpr r}\ndiffer"
 
+/-- Close the goal `h : ∀ x, P x` by `prove` at a fresh variable, the proof abstracted once it is
+complete. -/
+def underBinder (h : Expr) (prove : MVarId → DtM Unit) : DtM Unit := do
+  let hT ← instantiateMVars (← inferType h)
+  let .forallE n T _ _ := hT | throwError "the goal{indentExpr hT}\nis not universal"
+  withLocalDeclD n T fun x => do
+    let g ← mkFreshExprMVar (hT.bindingBody!.instantiate1 x)
+    prove g.mvarId!
+    h.mvarId!.assign (← mkLambdaFVars #[x] (← instantiateMVars g))
+
 mutual
 
 /-- Prove the goal `TreeLe S A B` node by node: equal constructors, binds stuck at their first
@@ -811,23 +893,35 @@ partial def proveTree (g : MVarId) : DtM Unit := g.withContext do
   let A ← whnfD (ty.getArg! 3)
   let B ← whnfD (ty.getArg! 4)
   let g ← g.replaceTargetDefEq (mkAppN ty.getAppFn ((ty.getAppArgs.set! 3 A).set! 4 B))
-  let node (c : Name) (hasK : Bool) (single : Bool) : DtM Unit := do
+  let node (c : Name) (single : Bool) : DtM Unit := do
     let m ← applyRuleD g c
-    let hc := (← arg m `hc).mvarId!
-    if single then sideD hc else sideD (← hc.intro1).2
-    if hasK then
-      let hk := (← arg m `hk).mvarId!
-      if single then proveTree hk else proveTree (← hk.intro1).2
+    let hc ← arg m `hc
+    let hk ← arg m `hk
+    if single then
+      proveTree hk.mvarId!
+      sideD hc.mvarId!
+    else
+      -- The step cost and the subtree of a child are compared at the same variable.
+      let hcT ← instantiateMVars (← inferType hc)
+      let hkT ← instantiateMVars (← inferType hk)
+      let .forallE n T _ _ := hcT | failD m!"the node rule `{c}` has no child binder"
+      withLocalDeclD n T fun x => do
+        let gc ← mkFreshExprMVar (hcT.bindingBody!.instantiate1 x)
+        let gk ← mkFreshExprMVar (hkT.bindingBody!.instantiate1 x)
+        proveTree gk.mvarId!
+        sideD gc.mvarId!
+        hc.mvarId!.assign (← mkLambdaFVars #[x] (← instantiateMVars gc))
+        hk.mvarId!.assign (← mkLambdaFVars #[x] (← instantiateMVars gk))
   match A.getAppFn.constName?, B.getAppFn.constName? with
   | some ``SPTree.Timed.ret, some ``SPTree.Timed.ret =>
     let m ← applyRuleD g ``TreeLe.ret
     proveLeaf (← arg m `h).mvarId!
-  | some ``SPTree.Timed.sample, some ``SPTree.Timed.sample => node ``TreeLe.sample true false
+  | some ``SPTree.Timed.sample, some ``SPTree.Timed.sample => node ``TreeLe.sample false
   | some ``SPTree.Timed.sampleDist, some ``SPTree.Timed.sampleDist =>
-    node ``TreeLe.sampleDist true false
-  | some ``SPTree.Timed.get, some ``SPTree.Timed.get => node ``TreeLe.get true false
-  | some ``SPTree.Timed.set, some ``SPTree.Timed.set => node ``TreeLe.set true true
-  | some ``SPTree.Timed.load, some ``SPTree.Timed.load => node ``TreeLe.load true true
+    node ``TreeLe.sampleDist false
+  | some ``SPTree.Timed.get, some ``SPTree.Timed.get => node ``TreeLe.get false
+  | some ``SPTree.Timed.set, some ``SPTree.Timed.set => node ``TreeLe.set true
+  | some ``SPTree.Timed.load, some ``SPTree.Timed.load => node ``TreeLe.load true
   | some ``SPTree.Timed.fail, some ``SPTree.Timed.fail => discard <| applyRuleD g ``TreeLe.fail
   | _, _ =>
     if let (some P, some P') := (← bindView? A, ← bindView? B) then
@@ -835,7 +929,7 @@ partial def proveTree (g : MVarId) : DtM Unit := g.withContext do
         ty.getArg! 2, P, P'])
       let m ← applyRuleD h.mvarId! ``CostLe.bind
       proveTree (← arg m `hA).mvarId!
-      provePair (← (← arg m `hk).mvarId!.intro1).2
+      underBinder (← arg m `hk) provePair
       factD (← mkAppM ``CostLe.fst_le #[h])
       let pf ← mkAppM ``CostLe.tree #[h]
       unless ← isDefEq (← inferType pf) (← g.getType) do
@@ -847,7 +941,7 @@ partial def proveTree (g : MVarId) : DtM Unit := g.withContext do
       return
     if ← isDefEq A B then
       let m ← applyRuleD g ``TreeLe.refl
-      proveLeaf (← (← arg m `hS).mvarId!.intro1).2
+      underBinder (← arg m `hS) proveLeaf
       return
     failD m!"the costed trees{indentExpr A}\nand{indentExpr B}\ndiffer in shape"
 
@@ -866,8 +960,8 @@ partial def provePair (g : MVarId) : DtM Unit := g.withContext do
       for g' in ← splitOn g fv do provePair g'
       return
   let m ← applyRuleD g ``CostLe.mk
-  sideD (← arg m `hc).mvarId!
   proveTree (← arg m `h).mvarId!
+  sideD (← arg m `hc).mvarId!
 
 end
 
@@ -966,8 +1060,7 @@ def dtRoute (kinds : Std.HashMap FVarId Kind) (t τ ρ X : Expr) : TermElabM (Ex
     mkLambdaFVars #[a, b] (← mkEq (← mkAppM ``cast #[p, a]) b)
   let hX ← mkFreshExprMVar (mkAppN (mkConst ``CostLe) #[hatτ, valτ, S,
     ← mkAppM ``Tm.dt #[t, η], X])
-  let ((), st) ← (provePair hX.mvarId!).run {}
-  for g in st.sides do closeSideD st.facts 8 g
+  let ((), _) ← (provePair hX.mvarId!).run {}
   let hX ← instantiateMVars hX
   if hX.hasMVar then throwError "the comparison has unassigned parts"
   return (← mkAppM ``Tm.timedSim_of_costLe #[t, hfrag, hτ, hρ, hX], k)
@@ -1165,30 +1258,34 @@ partial def linkTimed (tree : Name) : TermElabM Unit := do
           throwError "link_timed: `{timedN}` does not unfold"
         let some tunf ← unfoldDefinition? dC | throwError "link_timed: `{dN}` does not unfold"
         let s ← saveState
-        let viaDt : Except String (Expr × Nat) ← try
+        let viaDt : Except MessageData (Expr × Nat) ← try
             pure (.ok (← dtRoute kinds dC τ rho timedApp))
           catch ex => do
-            let msg ← ex.toMessageData.toString
             s.restore
-            pure (.error msg)
+            pure (.error ex.toMessageData)
+        let dtWhy : MessageData := match viaDt with
+          | .error m => m
+          | .ok _ => m!""
         let (pf, k, route) ← match viaDt.toOption with
           | some (pf, k) => pure (pf, k, "through the soundness theorem `Tm.dt_timedSim`")
           | none => do
-            let n ← mkFreshExprMVar (mkConst ``Nat)
-            let main ← mkFreshExprMVar
-              (← mkAppM ``TSim #[E, one, n, Xunf.headBeta, tunf.headBeta, rho])
-            let ((), sides) ← ((solveT main.mvarId!).run kinds).run #[]
-            for sg in sides.reverse do solveSide sg
-            let nv ← instantiateMVars n
-            let some k ← (evalNat nv).run |
-              throwError "link_timed: the allowance{indentExpr nv}\nis not a numeral"
-            let pf ← instantiateMVars main
-            if pf.hasMVar then
-              throwError "link_timed: the derivation has unassigned parts{indentExpr pf}"
-            let why := match viaDt with
-              | .error m => (m.replace "\n" " ").take 300
-              | .ok _ => ""
-            pure (pf, k, s!"by the walk; the soundness theorem does not apply: {why}")
+            try
+              let n ← mkFreshExprMVar (mkConst ``Nat)
+              let main ← mkFreshExprMVar
+                (← mkAppM ``TSim #[E, one, n, Xunf.headBeta, tunf.headBeta, rho])
+              let ((), sides) ← ((solveT main.mvarId!).run kinds).run #[]
+              for sg in sides.reverse do solveSide sg
+              let nv ← instantiateMVars n
+              let some k ← (evalNat nv).run |
+                throwError "link_timed: the allowance{indentExpr nv}\nis not a numeral"
+              let pf ← instantiateMVars main
+              if pf.hasMVar then
+                throwError "link_timed: the derivation has unassigned parts{indentExpr pf}"
+              let why := ((← dtWhy.toString).replace "\n" " ").take 300
+              pure (pf, k, s!"by the walk; the soundness theorem does not apply: {why}")
+            catch ex =>
+              throwError "{ex.toMessageData}\nlink_timed: the route through the soundness \
+                theorem `Tm.dt_timedSim` does not apply either: {dtWhy}"
         let stmtT ← mkAppM ``TimedSim
           #[E, one, mkNatLit k, timedApp, ← mkAppM ``Tm.eval #[dC, rho]]
         let allB := statics ++ binders
