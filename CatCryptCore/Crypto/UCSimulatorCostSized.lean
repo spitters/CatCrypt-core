@@ -21,14 +21,24 @@ of the answers: a step on the event or answer `x` from a state of `Inv i` costs 
 graded time bound is a size-graded one of every size (`TimeBoundGraded.timeBoundSized`).
 
 The size-graded time bound of a costed simulator, `Simulator.Timed.TimeBoundSized T sE sO a b c`,
-counts sizes at the outer ports of `T` only: the parts of a composite are bounded with the size
-`0` on the middle interface, and a relabelled simulator by a size on its events that the
-relabelling does not increase.
+counts sizes at the outer ports of `T` and at the answers of the middle interface of a
+composite: the outer factor of a composite is bounded with a size `sM` on the answers of the
+inner factor, the inner factor with the size `0` on its events, and every answer `o` of the inner
+factor has size `sM o` at most the time of the step that returns it
+(`Simulator.Timed.AnswerSizeLe`). A relabelled simulator is bounded by a size on its events that
+the relabelling does not increase.
+
+The bound of the size of an answer by the time of its step is a field of the certificate, since a
+return costs nothing and a costed step may return a list of any length at time `0`. At the size
+`0` on the middle answers the field holds for every simulator
+(`Simulator.Timed.AnswerSizeLe.zero`).
 
 ## Main definitions
 
 * `MultiHybrid.Timed.TimeBoundSized`: the size-graded time bound of a costed multi-call
   simulator.
+* `MultiHybrid.Timed.AnswerSizeLe`, `Simulator.Timed.AnswerSizeLe`: the answers of a costed
+  simulator have sizes at most the times of the steps that return them.
 * `Simulator.Timed.TimeBoundSized`: the size-graded time bound of a costed simulator.
 
 ## Main results
@@ -37,6 +47,8 @@ relabelling does not increase.
   `MultiHybrid.Timed.TimeBoundSized.timeBoundGraded`: the graded time bound as a size-graded one,
   and the size-graded time bound on bounded sizes as a graded one.
 * `MultiHybrid.Timed.tensor_timeBoundSized`: the costed tensor on the invariant `tensorInv`.
+* `Simulator.comp.timeBoundSized_timed_of_answerSizeLe`: the size-graded bound of a composite
+  whose outer factor is bounded with the sizes of the answers of the inner factor.
 * `Simulator.ofMultiHybrid.timeBoundSized_timed`, `Simulator.ofMultiHybridHat.timeBoundSized_timed`,
   `Simulator.comp.timeBoundSized_timed`, `Simulator.mapPorts.timeBoundSized_timed`,
   `Simulator.tensor.timeBoundSized_timed`: the size-graded bounds of the constructors.
@@ -179,16 +191,63 @@ theorem tensor_timeBoundSized {σ' E' O' EG' OG' : Type} (π : MultiHybrid σ E 
       have := Nat.mul_le_mul_right (sO' o) (le_max_right c c')
       omega
 
+/-- The answers of a costed multi-call simulator have sizes `sA` at most the time of the step
+that returns them: from every state, an outer output of a `start` step on `e` or of a `resume`
+step on `o`, and the output of a `finish` step on `o`, has size at most the time of that step. -/
+def AnswerSizeLe (A : MultiHybrid.Timed σ E O EG OG) (sA : O → ℕ) : Prop :=
+  (∀ s e, SPTree.Timed.AllRet (fun y => ∀ o, y.2 = Sum.inr o →
+    sA o ≤ SPTree.Timed.stepTime (A.startCost s e, A.start s e)) (A.start s e)) ∧
+  (∀ s o, SPTree.Timed.AllRet (fun y => ∀ o', y.2 = Sum.inr o' →
+    sA o' ≤ SPTree.Timed.stepTime (A.resumeCost s o, A.resume s o)) (A.resume s o)) ∧
+  (∀ s o, SPTree.Timed.AllRet (fun y =>
+    sA y.2 ≤ SPTree.Timed.stepTime (A.finishCost s o, A.finish s o)) (A.finish s o))
+
+/-- Every costed multi-call simulator has answers of size `0` at most the times of its steps. -/
+theorem AnswerSizeLe.zero (A : MultiHybrid.Timed σ E O EG OG) : A.AnswerSizeLe fun _ => 0 :=
+  ⟨fun _ _ => SPTree.Timed.allRet_of_forall (fun _ _ _ => Nat.zero_le _) _,
+    fun _ _ => SPTree.Timed.allRet_of_forall (fun _ _ _ => Nat.zero_le _) _,
+    fun _ _ => SPTree.Timed.allRet_of_forall (fun _ => Nat.zero_le _) _⟩
+
+/-- Answer sizes bounded by the times of the steps bound every smaller size. -/
+theorem AnswerSizeLe.mono {A : MultiHybrid.Timed σ E O EG OG} {sA sA' : O → ℕ}
+    (h : A.AnswerSizeLe sA) (hA : ∀ o, sA' o ≤ sA o) : A.AnswerSizeLe sA' :=
+  ⟨fun s e => SPTree.Timed.allRet_mono (fun _ hy o ho => (hA o).trans (hy o ho)) _ (h.1 s e),
+    fun s o => SPTree.Timed.allRet_mono (fun _ hy o' ho => (hA o').trans (hy o' ho)) _
+      (h.2.1 s o),
+    fun s o => SPTree.Timed.allRet_mono (fun y hy => (hA y.2).trans hy) _ (h.2.2 s o)⟩
+
 end MultiHybrid.Timed
 
 namespace Simulator.Timed
 
+/-- The answers of a costed simulator have sizes `sA` at most the times of the steps that
+return them: those of a costed multi-call simulator, through the erasure map of the outer
+outputs for one on costed outputs; those of the outer factor of a composite; those of the
+simulator of a relabelling, at the size of the relabelled answers. -/
+def AnswerSizeLe : {E O EG OG : Type} → {V : PubView E O} → {W : PubView EG OG} →
+    Simulator.Timed E O EG OG V W → (O → ℕ) → Prop
+  | _, _, _, _, _, _, .ofMultiHybrid πT, sA => πT.AnswerSizeLe sA
+  | _, _, _, _, _, _, .ofMultiHybridHat _ _ εO _ _ πT, sA => πT.AnswerSizeLe fun o => sA (εO o)
+  | _, _, _, _, _, _, .comp T₁ _, sA => AnswerSizeLe T₁ sA
+  | _, _, _, _, _, _, .mapPorts T _ g, sA => AnswerSizeLe T fun o => sA (g o)
+
+/-- Every costed simulator has answers of size `0` at most the times of its steps. -/
+theorem AnswerSizeLe.zero {E O EG OG : Type} {V : PubView E O} {W : PubView EG OG}
+    (T : Simulator.Timed E O EG OG V W) : T.AnswerSizeLe fun _ => 0 := by
+  induction T with
+  | ofMultiHybrid πT => exact MultiHybrid.Timed.AnswerSizeLe.zero πT
+  | ofMultiHybridHat εσ εE εO εEG εOG πT => exact MultiHybrid.Timed.AnswerSizeLe.zero πT
+  | comp T₁ T₂ ih₁ _ => exact ih₁
+  | mapPorts T f g ih => exact ih
+
 /-- The size-graded time bound `a`, `b`, `c` of a costed simulator with the sizes `sE` of its
 outer events and `sO` of its answers: a costed multi-call simulator has a size-graded time bound
-on some invariant, through the erasure maps of the ports for one on costed events; the parts of
-a costed composite have size-graded time bounds with the size `0` on the middle interface and
-constants that sum to at most `a`, `b` and `c`; a relabelled simulator has the size-graded time
-bound of its simulator at a size on its events that the relabelling does not increase. -/
+on some invariant, through the erasure maps of the ports for one on costed events; the outer
+factor of a costed composite has a size-graded time bound with a size `sM` on the answers of the
+inner factor, the inner factor one with the size `0` on its events and answers of size `sM` at
+most the times of its steps, with constants that sum to at most `a`, `b` and `c`; a relabelled
+simulator has the size-graded time bound of its simulator at a size on its events that the
+relabelling does not increase. -/
 def TimeBoundSized : {E O EG OG : Type} → {V : PubView E O} → {W : PubView EG OG} →
     Simulator.Timed E O EG OG V W → (E → ℕ) → (OG → ℕ) → ℕ → ℕ → ℕ → Prop
   | _, _, _, _, _, _, .ofMultiHybrid (σ := σ) πT, sE, sO, a, b, c =>
@@ -196,9 +255,10 @@ def TimeBoundSized : {E O EG OG : Type} → {V : PubView E O} → {W : PubView E
   | _, _, _, _, _, _, .ofMultiHybridHat (σHat := σHat) _ εE _ _ εOG πT, sE, sO, a, b, c =>
     ∃ Inv : ℕ → σHat → Prop,
       πT.TimeBoundSized Inv (fun e => sE (εE e)) (fun o => sO (εOG o)) a b c
-  | _, _, _, _, _, _, .comp T₁ T₂, sE, sO, a, b, c => ∃ a₁ b₁ c₁ a₂ b₂ c₂,
-    TimeBoundSized T₁ sE (fun _ => 0) a₁ b₁ c₁ ∧ TimeBoundSized T₂ (fun _ => 0) sO a₂ b₂ c₂ ∧
-      a₁ + a₂ ≤ a ∧ b₁ + b₂ ≤ b ∧ c₁ + c₂ ≤ c
+  | _, _, _, _, _, _, .comp (OM := OM) T₁ T₂, sE, sO, a, b, c =>
+    ∃ (sM : OM → ℕ) (a₁ b₁ c₁ a₂ b₂ c₂ : ℕ),
+    TimeBoundSized T₁ sE sM a₁ b₁ c₁ ∧ TimeBoundSized T₂ (fun _ => 0) sO a₂ b₂ c₂ ∧
+      AnswerSizeLe T₂ sM ∧ a₁ + a₂ ≤ a ∧ b₁ + b₂ ≤ b ∧ c₁ + c₂ ≤ c
   | _, _, _, _, _, _, .mapPorts T f _, sE, sO, a, b, c =>
     ∃ sM, (∀ e, sM (f e) ≤ sE e) ∧ TimeBoundSized T sM sO a b c
 
@@ -219,9 +279,9 @@ theorem TimeBoundSized.mono {E O EG OG : Type} {V : PubView E O} {W : PubView EG
     obtain ⟨sM, hM, hT⟩ := h
     exact ⟨sM, fun e => (hM e).trans (hE e), ih hT ha hb hc (fun _ => le_rfl) hO⟩
   | comp T₁ T₂ ih₁ ih₂ =>
-    obtain ⟨a₁, b₁, c₁, a₂, b₂, c₂, h₁, h₂, h3, h4, h5⟩ := h
-    exact ⟨a₁, b₁, c₁, a₂, b₂, c₂, ih₁ h₁ le_rfl le_rfl le_rfl hE fun _ => le_rfl,
-      ih₂ h₂ le_rfl le_rfl le_rfl (fun _ => le_rfl) hO, by omega, by omega, by omega⟩
+    obtain ⟨sM, a₁, b₁, c₁, a₂, b₂, c₂, h₁, h₂, hM, h3, h4, h5⟩ := h
+    exact ⟨sM, a₁, b₁, c₁, a₂, b₂, c₂, ih₁ h₁ le_rfl le_rfl le_rfl hE fun _ => le_rfl,
+      ih₂ h₂ le_rfl le_rfl le_rfl (fun _ => le_rfl) hO, hM, by omega, by omega, by omega⟩
 
 /-- A graded time bound of a costed simulator is a size-graded time bound of every size, with
 the constant `0` of the size. -/
@@ -238,7 +298,8 @@ theorem TimeBoundGraded.timeBoundSized {E O EG OG : Type} {V : PubView E O} {W :
   | mapPorts T f g ih => exact ⟨fun _ => 0, fun _ => Nat.zero_le _, ih h _ sO⟩
   | comp T₁ T₂ ih₁ ih₂ =>
     obtain ⟨a₁, b₁, a₂, b₂, h₁, h₂, h3, h4⟩ := h
-    exact ⟨a₁, b₁, 0, a₂, b₂, 0, ih₁ h₁ sE _, ih₂ h₂ _ sO, h3, h4, le_rfl⟩
+    exact ⟨fun _ => 0, a₁, b₁, 0, a₂, b₂, 0, ih₁ h₁ sE _, ih₂ h₂ _ sO, AnswerSizeLe.zero T₂, h3,
+      h4, le_rfl⟩
 
 end Simulator.Timed
 
@@ -277,13 +338,24 @@ theorem mapPorts.timeBoundSized_timed {T : Simulator.Timed EM OM EG OG U W} {sM 
   ⟨sM, fun _ => le_rfl, hT⟩
 
 /-- **Size-graded running time of a costed composite**: the sums of the constants of its parts,
-bounded with the size `0` on the middle interface. -/
+the outer factor bounded with the size `sM` on the answers of the inner factor, whose answers
+have size `sM` at most the times of the steps that return them. -/
+theorem comp.timeBoundSized_timed_of_answerSizeLe {T₁ : Simulator.Timed E O EM OM V U}
+    {T₂ : Simulator.Timed EM OM EG OG U W} {sE : E → ℕ} {sM : OM → ℕ} {sO : OG → ℕ}
+    {a₁ b₁ c₁ a₂ b₂ c₂ : ℕ} (h₁ : T₁.TimeBoundSized sE sM a₁ b₁ c₁)
+    (h₂ : T₂.TimeBoundSized (fun _ => 0) sO a₂ b₂ c₂) (hM : T₂.AnswerSizeLe sM) :
+    (T₁.comp T₂).TimeBoundSized sE sO (a₁ + a₂) (b₁ + b₂) (c₁ + c₂) :=
+  ⟨sM, a₁, b₁, c₁, a₂, b₂, c₂, h₁, h₂, hM, le_rfl, le_rfl, le_rfl⟩
+
+/-- **Size-graded running time of a costed composite** at the size `0` on the answers of the
+inner factor: the sums of the constants of its parts. This is the form `derive_simulator`
+applies. -/
 theorem comp.timeBoundSized_timed {T₁ : Simulator.Timed E O EM OM V U}
     {T₂ : Simulator.Timed EM OM EG OG U W} {sE : E → ℕ} {sO : OG → ℕ} {a₁ b₁ c₁ a₂ b₂ c₂ : ℕ}
     (h₁ : T₁.TimeBoundSized sE (fun _ => 0) a₁ b₁ c₁)
     (h₂ : T₂.TimeBoundSized (fun _ => 0) sO a₂ b₂ c₂) :
     (T₁.comp T₂).TimeBoundSized sE sO (a₁ + a₂) (b₁ + b₂) (c₁ + c₂) :=
-  ⟨a₁, b₁, c₁, a₂, b₂, c₂, h₁, h₂, le_rfl, le_rfl, le_rfl⟩
+  comp.timeBoundSized_timed_of_answerSizeLe h₁ h₂ (Simulator.Timed.AnswerSizeLe.zero T₂)
 
 /-- **Size-graded running time of the costed tensor**: if `πT` and `π'T` erase to `π` and `π'`
 and have size-graded time bounds `a`, `b`, `c` and `a'`, `b'`, `c'`, the costed tensor has the
