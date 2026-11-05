@@ -383,8 +383,8 @@ syntax (name := timeRecTreesStx) "time_rec_trees" : tactic
 /-- The bound `τ` applied to the binders and bound variables `pool` of the names of its
 binders; `τ` itself when it is a natural number. A binder of `τ` whose name is not in `pool`
 is matched with the next binder of `pool` of an inaccessible name (a binder of a pattern
-definition) and of the same type, which then takes the name in `τ` (the second
-component). -/
+definition) and of the same type, with the earlier binders of `τ` replaced by their arguments,
+which then takes the name in `τ` (the second component). -/
 def applyByName (τ : Expr) (pool : Array Expr) : MetaM (Expr × Array (FVarId × Name)) := do
   let ty ← whnf (← inferType τ)
   if ty.isConstOf ``Nat then return (τ, #[])
@@ -404,7 +404,9 @@ def applyByName (τ : Expr) (pool : Array Expr) : MetaM (Expr × Array (FVarId �
           if found.isSome then break
           if args.contains p then continue
           unless (← p.fvarId!.getUserName).hasMacroScopes do continue
-          if ← isDefEq (← inferType p) (← inferType y) then
+          -- The type of `y` with the earlier binders of `τ` replaced by their arguments.
+          let yTy := (← inferType y).replaceFVars (ys.extract 0 args.size) args
+          if ← isDefEq (← inferType p) yTy then
             found := some p
             renames := renames.push (p.fvarId!, n)
       let some p := found
