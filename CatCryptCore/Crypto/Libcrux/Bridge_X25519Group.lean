@@ -7,6 +7,7 @@ module
 
 public import CatCryptCore.Crypto.Libcrux.Bridge_X25519
 public import CatCryptCore.Crypto.KeyAgreement.Curve25519Subgroup
+public import CatCryptCore.Crypto.Assumptions.DDHSampled
 
 /-!
 # X25519 as exponentiation in the prime-order subgroup of Curve25519
@@ -33,6 +34,14 @@ group element `g^e` with `e` drawn from `signedClamp`: the sign is not seen by t
 * `x25519Commutes_of_hom` — `X25519Hom B → X25519Commutes`
 * `concreteDDH_X25519_keygen_snd` — `concreteDDH_X25519.keygen.map Prod.snd =
   (sampleFrom signedClamp).map (encU ∘ pow)`
+* `ddhSampled_realizes_X25519` — the views of the DDH games of `concreteDDH_X25519`, the ideal
+  value drawn by key generation, are the DDH games of `G25519 B` at `signedClamp`, encoded by
+  `encU3`
+* `DDH_AdvantageK_X25519_le` — `DDH_AdvantageK concreteDDH_X25519 A ≤
+  DDH_Advantage (G25519 B) (encodedRed encU3 A) + 5 * Δ25519`
+
+The reduction `encodedRed encU3 A` encodes the three group elements and runs `A`; its time
+certificate is that of `encodedRed`, instantiated in `Bridge_X25519GroupTimed`.
 -/
 
 @[expose] public section
@@ -45,6 +54,7 @@ open CatCrypt.Core CatCrypt.Prob CatCrypt.NonUniform CatCrypt.Crypto CatCrypt.Cr
 open CatCrypt.Crypto.Assumptions
 open CatCrypt.Crypto.Libcrux.Extraction.Libcrux_specs
 open CatCrypt.Crypto.Libcrux.Bridge_X25519
+open CatCryptCore.Examples.CyclicGroupDDH
 open scoped ENNReal
 
 variable {B : Curve25519Point}
@@ -129,5 +139,75 @@ theorem concreteDDH_X25519_keygen_snd (h : X25519Hom B) :
   congr 1
   funext sk
   exact (dead_sampleFrom SDistr.mass_uniform _).symm
+
+/-! ## The DDH games of `concreteDDH_X25519` in the subgroup -/
+
+/-- Exponentiation in `G25519 B` is `g25519Pow`. -/
+theorem cyclicGroup_pow_eq (e : ZMod curve25519SubgroupOrder) :
+    (CyclicGroup.pow e : G25519 B) = g25519Pow e := rfl
+
+/-- Exponent multiplication in `G25519 B` is multiplication in `ZMod ℓ`. -/
+theorem cyclicGroup_expMul_eq (a b : ZMod curve25519SubgroupOrder) :
+    (CyclicGroup.expMul (G := G25519 B) a b) = a * b := rfl
+
+/-- A draw of an exponent of `G25519 B` from `signedClamp` is a uniform key and a uniform
+sign. -/
+theorem sampleFrom_signedClamp_bind_exp {β : Type} (k : CyclicGroup.Exp (G25519 B) → SPComp β) :
+    (sampleFrom (α := CyclicGroup.Exp (G25519 B)) signedClamp).bind k =
+      (SPComp.sample (Vector UInt8 32)).bind fun sk =>
+        (SPComp.sample Bool).bind fun b => k (signedE (sk, b)) :=
+  sampleFrom_signedClamp_bind k
+
+/-- The encoding of a triple of group elements, componentwise. -/
+noncomputable def encU3 (t : DDHTriple (G25519 B)) :
+    Vector UInt8 32 × Vector UInt8 32 × Vector UInt8 32 :=
+  (encU t.1, encU t.2.1, encU t.2.2)
+
+/-- The encoding of `g^(±a · ±b)` is the encoding of `g^(a · b)`. -/
+theorem encU_pow_signedE_mul (sk₁ sk₂ : Vector UInt8 32) (b₁ b₂ : Bool) :
+    encU (g25519Pow (signedE (sk₁, b₁) * signedE (sk₂, b₂)) : G25519 B) =
+      encU (g25519Pow (clampE sk₁ * clampE sk₂) : G25519 B) := by
+  cases b₁ <;> cases b₂ <;>
+    simp [signedE, encU_pow_neg]
+
+/-- A uniform sign drawn and not used is dropped. -/
+theorem sample_bool_bind_const {β : Type} (k : SPComp β) :
+    (SPComp.sample Bool).bind (fun _ => k) = k :=
+  dead_sampleFrom SDistr.mass_uniform k
+
+/-- **The DDH games of `concreteDDH_X25519` realized in the subgroup**: under `X25519Hom B`, the
+real view and the view with the ideal value drawn by key generation are the DDH games of
+`G25519 B` with exponents drawn from `signedClamp`, encoded by `encU3`. -/
+theorem ddhSampled_realizes_X25519 (h : X25519Hom B) :
+    Realizes (DDH_ViewReal concreteDDH_X25519) (DDH_ViewIdealK concreteDDH_X25519)
+      (ddhSampled (G25519 B)) signedClamp encU3 where
+  real := by
+    simp only [DDH_ViewReal, SampledGame.realAt, ddhSampled, sampleFrom_replicateFin_succ_bind,
+      sampleFrom_replicateFin_zero_bind, SPComp.map, SPComp.bind_assoc, SPComp.pure_bind,
+      sampleFrom_signedClamp_bind_exp, concreteDDH_X25519, encU3, Fin.cons_zero, Fin.cons_one,
+      cyclicGroup_pow_eq, cyclicGroup_expMul_eq, encU_pow_signedE, encU_pow_signedE_mul,
+      h.base_eq, h.scalarmult_pow, sample_bool_bind_const]
+  ideal := by
+    have h2 : ∀ x y z : CyclicGroup.Exp (G25519 B),
+        (Fin.cons x (Fin.cons y (Fin.cons z Fin.elim0)) : Fin 3 → _) 2 = z := fun _ _ _ => rfl
+    simp only [DDH_ViewIdealK, h2, SampledGame.idealAt, ddhSampled,
+      sampleFrom_replicateFin_succ_bind, sampleFrom_replicateFin_zero_bind, SPComp.map,
+      SPComp.bind_assoc, SPComp.pure_bind, sampleFrom_signedClamp_bind_exp, concreteDDH_X25519,
+      encU3, Fin.cons_zero, Fin.cons_one, cyclicGroup_pow_eq, encU_pow_signedE, h.base_eq,
+      sample_bool_bind_const]
+
+/-- **DDH at X25519 bytes from DDH in the prime-order subgroup**: under `X25519Hom B`, the DDH
+advantage at `concreteDDH_X25519`, with the ideal value drawn by key generation, is at most the
+DDH advantage in `G25519 B` of the reduction `encodedRed encU3 A`, plus `Δ25519` for each of
+the five exponent draws. -/
+theorem DDH_AdvantageK_X25519_le (h : X25519Hom B) (A : DDH_Adversary (Vector UInt8 32)) :
+    DDH_AdvantageK concreteDDH_X25519 A ≤
+      CatCryptCore.Examples.CyclicGroupDDH.DDH_Advantage (G25519 B)
+        (encodedRed encU3 fun t => A t.1 t.2.1 t.2.2) + 5 * Δ25519 := by
+  rw [DDH_AdvantageK_eq_advantageA, DDH_Advantage_eq_advAt]
+  have hR := advantageA_le_of_realizes (ddhSampled (G25519 B)) signedClampCert encU3
+    (ddhSampled_realizes_X25519 h) fun t => A t.1 t.2.1 t.2.2
+  norm_num [ddhSampled] at hR
+  exact hR
 
 end CatCrypt.Crypto.Libcrux.Bridge_X25519Group
