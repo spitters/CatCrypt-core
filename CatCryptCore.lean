@@ -97,6 +97,7 @@ public import CatCryptCore.Complexity.D.Asymptotic
 public import CatCryptCore.Complexity.HandlerCost
 public import CatCryptCore.Complexity.D.Link
 public import CatCryptCore.Complexity.D.Translate
+public import CatCryptCore.Complexity.D.TranslateDt
 public import CatCryptCore.XDijkstra.XErrMonad
 public import CatCryptCore.XDijkstra.XAdvantageHybrid
 public import CatCryptCore.XDijkstra.Rel.XRelMvcgenControl
