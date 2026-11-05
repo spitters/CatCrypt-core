@@ -7,6 +7,8 @@ module
 
 public import CatCryptCore.Quantum.QTreeKind
 public import CatCryptCore.Crypto.Party.ProgECost
+public import CatCryptCore.ForMathlib.PFunctorChargeUnder
+public import CatCryptCore.Tactics.TimeFoldRegistry
 
 /-!
 # Costed quantum instruments as free monads with tick nodes
@@ -38,6 +40,13 @@ fold, budget.
   a costed instrument is the bound on the charge fold and the roll bound of its tick tree
 * `QInstrT.stepTimeBound_iff_wpFold_charge`, `QInstrT.stepTimeBound_iff_isRollBound` — the same
   for `StepTimeBound`
+* `ProgECost.toFreeM_bind` — the image of a bind of party programs is the bind of the images
+* `QInstrT.wpFold_chargeUnder_stepToFreeMT`, `QInstrT.wpFold_stepToFreeMT_bind` — the charge
+  fold of a step-prefixed costed instrument is its step cost plus the charge fold of its
+  instrument, and the charge fold of a costed bind is the charge fold of the bind of the images
+* `QInstrT.wpFold_toFreeMT_placeLeft_le`, `QInstrT.wpFold_toFreeMT_placeRight_le` — placement
+  keeps the bounds on the charge fold, the combinator laws of the fold rule
+* `QInstrT.qInstrFold` — the record of the kind for the fold rule (`register_time_fold`)
 -/
 
 @[expose] public section
@@ -120,3 +129,88 @@ theorem stepTimeBound_iff_isRollBound (x : ℕ × QInstrT A α B) (n : ℕ) :
   rw [stepTimeBound_iff_wpFold_charge, FreeM.isRollBound_iff_wpFold_charge]
 
 end CatCrypt.Quantum.ReactiveUC.QInstrT
+
+namespace CatCrypt.Crypto.Party.ProgECost
+
+/-- The image of a bind of party programs is the bind of the images. -/
+theorem toFreeM_bind {Q E O α β : Type} (p : ProgE Q E O α) (g : α → ProgE Q E O β) :
+    ProgECost.toFreeM (p.bind g) = (ProgECost.toFreeM p).bind fun a => ProgECost.toFreeM (g a) := by
+  induction p <;> simp only [ProgECost.toFreeM, ProgE.bind, PFunctor.FreeM.bind, *] <;>
+    (congr 1; funext d; first | exact d.elim | (rename_i ih; exact ih d))
+
+end CatCrypt.Crypto.Party.ProgECost
+
+namespace CatCrypt.Quantum.ReactiveUC.QInstrT
+
+open _root_.Quantum
+
+variable {A : Type} [Fintype A] {α β : Type}
+
+/-- The charge fold of a step-prefixed costed instrument, with every tick answer allowed, is its
+step cost plus the charge fold of its instrument. -/
+theorem wpFold_chargeUnder_stepToFreeMT {B : α → Type} [∀ a, Fintype (B a)]
+    (allows : (a : (Sig A).A) → (Sig A).B a → Prop)
+    (hA : ∀ n, allows (ProgECost.Op.opN (Costed.tick n)) (0 : ℕ)) (x : ℕ × QInstrT A α B)
+    (post : α → ℕ∞) :
+    FreeM.wpFold (OpSpec.chargeUnder (fun a => ((tickCost a : ℕ) : ℕ∞)) allows) (stepToFreeMT x)
+        post =
+      x.1 + FreeM.wpFold (OpSpec.chargeUnder (fun a => ((tickCost a : ℕ) : ℕ∞)) allows)
+        (toFreeMT x.2) post :=
+  FreeM.wpFold_chargeUnder_liftBind_const _ allows (ProgECost.Op.opN (Costed.tick x.1))
+    (hA x.1) _ post
+
+/-- The bind clause of the images: the charge fold of a costed bind is the charge fold of the
+bind of the image of its instrument with the step-prefixed images of its continuation. -/
+theorem wpFold_stepToFreeMT_bind (allows : (a : (Sig A).A) → (Sig A).B a → Prop)
+    (hA : ∀ n, allows (ProgECost.Op.opN (Costed.tick n)) (0 : ℕ)) (x : QInstrT A α fun _ => A)
+    (f : α → ℕ × QInstrT A β fun _ => A) (post : β → ℕ∞) :
+    FreeM.wpFold (OpSpec.chargeUnder (fun a => ((tickCost a : ℕ) : ℕ∞)) allows)
+        (stepToFreeMT (bind x f)) post =
+      FreeM.wpFold (OpSpec.chargeUnder (fun a => ((tickCost a : ℕ) : ℕ∞)) allows)
+        ((toFreeMT x).bind (stepToFreeMT ∘ f)) post := by
+  rw [wpFold_chargeUnder_stepToFreeMT allows hA]
+  change ((0 : ℕ) : ℕ∞) + FreeM.wpFold _ (ProgECost.toFreeM (x.toTree.bind _)) post = _
+  rw [ProgECost.toFreeM_bind, Nat.cast_zero, zero_add]
+  rfl
+
+/-- Placement on the left keeps the bounds on the charge fold of the image. -/
+theorem wpFold_toFreeMT_placeLeft_le {d : ℕ} (B C : Type) (iB : Fintype B) (iC : Fintype C)
+    (α : Type) (w : QInstrT (Fin d × B) α fun _ => Fin d × B) {n : ℕ}
+    (h : FreeM.wpFold (OpSpec.charge fun a => ((tickCost a : ℕ) : ℕ∞)) (toFreeMT w)
+      (fun _ => 0) ≤ n) :
+    FreeM.wpFold (OpSpec.charge fun a => ((tickCost a : ℕ) : ℕ∞))
+      (toFreeMT (placeLeft B C iB iC α w)) (fun _ => 0) ≤ n :=
+  (timeBound_iff_wpFold_charge _ n).1
+    ((@bound_placeLeft d B C iB iC α w n _).2 ((timeBound_iff_wpFold_charge w n).2 h))
+
+/-- Placement on the right keeps the bounds on the charge fold of the image. -/
+theorem wpFold_toFreeMT_placeRight_le {d : ℕ} (B C : Type) (iB : Fintype B) (iC : Fintype C)
+    (α : Type) (s : QInstrT (Fin d × C) α fun _ => Fin d × C) {n : ℕ}
+    (h : FreeM.wpFold (OpSpec.charge fun a => ((tickCost a : ℕ) : ℕ∞)) (toFreeMT s)
+      (fun _ => 0) ≤ n) :
+    FreeM.wpFold (OpSpec.charge fun a => ((tickCost a : ℕ) : ℕ∞))
+      (toFreeMT (placeRight B C iB iC α s)) (fun _ => 0) ≤ n :=
+  (timeBound_iff_wpFold_charge _ n).1
+    ((@bound_placeRight d B C iB iC α s n _).2 ((timeBound_iff_wpFold_charge s n).2 h))
+
+open CatCrypt.Tactics.TimeFold in
+/-- The record of costed instruments for the fold rule: the images in the signature of party
+programs, the charge `tickCost`, every answer allowed, the bind `QInstrT.bind` and the
+placement laws. -/
+meta def qInstrFold : FoldKind where
+  timed := ``CatCrypt.Quantum.ReactiveUC.QInstrT
+  sig := ``CatCrypt.Quantum.ReactiveUC.QInstrT.Sig
+  charge := ``CatCrypt.Quantum.ReactiveUC.QInstrT.tickCost
+  toFreeMT := ``CatCrypt.Quantum.ReactiveUC.QInstrT.toFreeMT
+  stepToFreeMT := ``CatCrypt.Quantum.ReactiveUC.QInstrT.stepToFreeMT
+  timeBoundIff := ``CatCrypt.Quantum.ReactiveUC.QInstrT.timeBound_iff_wpFold_charge
+  stepTimeBoundIff := ``CatCrypt.Quantum.ReactiveUC.QInstrT.stepTimeBound_iff_wpFold_charge
+  stepFold := some ``CatCrypt.Quantum.ReactiveUC.QInstrT.wpFold_chargeUnder_stepToFreeMT
+  bind := some ``CatCrypt.Quantum.ReactiveUC.QInstrT.bind
+  bindFold := some ``CatCrypt.Quantum.ReactiveUC.QInstrT.wpFold_stepToFreeMT_bind
+  laws := #[``CatCrypt.Quantum.ReactiveUC.QInstrT.wpFold_toFreeMT_placeLeft_le,
+    ``CatCrypt.Quantum.ReactiveUC.QInstrT.wpFold_toFreeMT_placeRight_le]
+
+end CatCrypt.Quantum.ReactiveUC.QInstrT
+
+register_time_fold CatCrypt.Quantum.ReactiveUC.QInstrT.qInstrFold

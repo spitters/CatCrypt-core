@@ -31,13 +31,18 @@ public import PolyFun.PFunctor.Free.WP.Charge
   of `x` satisfying a demonic invariant, on `f`, add to a bound on `x.bind f`
 * `PFunctor.FreeM.isRollBound_iff_wpFold_chargeUnder_true` — with every answer allowed, the
   bound is the subtractive roll bound
+* `PFunctor.FreeM.wpFold_chargeUnder_pure_le`, `PFunctor.FreeM.wpFold_chargeUnder_liftBind_le`,
+  `PFunctor.FreeM.wpFold_chargeUnder_bind_le_add`, `PFunctor.FreeM.wpFold_ite_le_max_enat`,
+  `PFunctor.FreeM.wpFold_dite_le_max_enat` — the clauses of the fold rule of
+  `derive_time_bound`, each bound a natural number cast to `ℕ∞`
+* `PFunctor.FreeM.wpFold_demonicUnder_true` — the trivial leaf invariant
 -/
 
 @[expose] public section
 
 set_option autoImplicit false
 
-universe uA uB w
+universe uA uB w uX uY
 
 namespace PFunctor
 
@@ -165,6 +170,128 @@ theorem isRollBound_iff_wpFold_chargeUnder_true (c : P.A → ℕ) (x : FreeM P �
       wpFold (OpSpec.chargeUnder (fun a => (c a : ℕ∞)) fun _ _ => True) x (fun _ => 0) ≤
         n := by
   rw [OpSpec.chargeUnder_true, isRollBound_iff_wpFold_charge]
+
+/-! ## The clauses of the fold rule
+
+Each clause bounds the charge fold of a program by a natural number cast to `ℕ∞` from the
+bounds of its parts, so that a bound computed clause by clause is a term of `ℕ`. -/
+
+section Rule
+
+variable {X Y : Type uX}
+
+/-- The cast of naturals into `ℕ∞` is monotone. -/
+theorem enat_natCast_le {m n : ℕ} (h : m ≤ n) : (m : ℕ∞) ≤ (n : ℕ∞) := by
+  exact_mod_cast h
+
+/-- A return charges nothing. -/
+theorem wpFold_chargeUnder_pure_le (c : P.A → ℕ) (allows : (a : P.A) → P.B a → Prop) (x : X)
+    (n : ℕ) :
+    wpFold (OpSpec.chargeUnder (fun a => (c a : ℕ∞)) allows) (FreeM.pure x : FreeM P X)
+      (fun _ => 0) ≤ (n : ℕ∞) :=
+  zero_le
+
+/-- A call at `a` is bounded by a bound `m` of its charge plus a bound `n` of its continuation at
+every allowed answer. -/
+theorem wpFold_chargeUnder_liftBind_le (c : P.A → ℕ) (allows : (a : P.A) → P.B a → Prop)
+    (a : P.A) (r : P.B a → FreeM P X) (m n : ℕ) (hc : c a ≤ m)
+    (hr : ∀ b, allows a b →
+      wpFold (OpSpec.chargeUnder (fun a => (c a : ℕ∞)) allows) (r b) (fun _ => 0) ≤ (n : ℕ∞)) :
+    wpFold (OpSpec.chargeUnder (fun a => (c a : ℕ∞)) allows) (FreeM.liftBind a r)
+      (fun _ => 0) ≤ ((m + n : ℕ) : ℕ∞) := by
+  rw [wpFold_liftBind, OpSpec.chargeUnder_apply, Nat.cast_add]
+  exact add_le_add (by exact_mod_cast hc) (iSup₂_le hr)
+
+/-- The bind clause with natural-number bounds: a bound `m` of `x` and a bound `n` of `f a` at
+every return `a` satisfying the leaf invariant `I` of `x` add to a bound of `x.bind f`. -/
+theorem wpFold_chargeUnder_bind_le_add (c : P.A → ℕ) (allows : (a : P.A) → P.B a → Prop)
+    (x : FreeM P X) (f : X → FreeM P Y) (I : X → Prop) (m n : ℕ)
+    (hx : wpFold (OpSpec.chargeUnder (fun a => (c a : ℕ∞)) allows) x (fun _ => 0) ≤ (m : ℕ∞))
+    (hf : ∀ a, I a →
+      wpFold (OpSpec.chargeUnder (fun a => (c a : ℕ∞)) allows) (f a) (fun _ => 0) ≤ (n : ℕ∞))
+    (hI : wpFold (OpSpec.demonicUnder allows) x I) :
+    wpFold (OpSpec.chargeUnder (fun a => (c a : ℕ∞)) allows) (x.bind f) (fun _ => 0) ≤
+      ((m + n : ℕ) : ℕ∞) := by
+  rw [Nat.cast_add]
+  exact wpFold_chargeUnder_bind_le _ allows hx hf hI
+
+/-- Every return satisfies the trivial invariant. -/
+theorem wpFold_demonicUnder_true (allows : (a : P.A) → P.B a → Prop) (x : FreeM P X) :
+    wpFold (OpSpec.demonicUnder allows) x (fun _ => True) := by
+  induction x with
+  | pure a => trivial
+  | lift_bind a r ih => exact fun b _ => ih b
+
+/-- A call whose continuation ignores the answer keeps the leaf invariant of the continuation. -/
+theorem wpFold_demonicUnder_liftBind_const (allows : (a : P.A) → P.B a → Prop) (a : P.A)
+    {y : FreeM P X} {I : X → Prop} (h : wpFold (OpSpec.demonicUnder allows) y I) :
+    wpFold (OpSpec.demonicUnder allows) (FreeM.liftBind a fun _ => y) I :=
+  fun _ _ => h
+
+/-- An `if` of programs is bounded in `ℕ∞` by the maximum of the bounds of its branches. -/
+theorem wpFold_ite_le_max_enat (Φ : OpSpec P ℕ∞) (p : Prop) [Decidable p] (x y : FreeM P X)
+    (post : X → ℕ∞) {m n : ℕ} (hx : wpFold Φ x post ≤ (m : ℕ∞)) (hy : wpFold Φ y post ≤ (n : ℕ∞)) :
+    wpFold Φ (if p then x else y) post ≤ ((max m n : ℕ) : ℕ∞) := by
+  split
+  · exact hx.trans (enat_natCast_le (le_max_left m n))
+  · exact hy.trans (enat_natCast_le (le_max_right m n))
+
+/-- A dependent `if` of programs is bounded in `ℕ∞` by the maximum of the bounds of its
+branches. -/
+theorem wpFold_dite_le_max_enat (Φ : OpSpec P ℕ∞) (p : Prop) [Decidable p] (x : p → FreeM P X)
+    (y : ¬p → FreeM P X) (post : X → ℕ∞) {m n : ℕ} (hx : ∀ h, wpFold Φ (x h) post ≤ (m : ℕ∞))
+    (hy : ∀ h, wpFold Φ (y h) post ≤ (n : ℕ∞)) :
+    wpFold Φ (if h : p then x h else y h) post ≤ ((max m n : ℕ) : ℕ∞) := by
+  split
+  · exact (hx _).trans (enat_natCast_le (le_max_left m n))
+  · exact (hy _).trans (enat_natCast_le (le_max_right m n))
+
+/-- A natural number below a fold bounded by `m` is at most `m`. -/
+theorem natCast_le_of_le_trans {a m : ℕ} {w' : ℕ∞} (h₁ : (a : ℕ∞) ≤ w') (h₂ : w' ≤ (m : ℕ∞)) :
+    a ≤ m := by
+  exact_mod_cast h₁.trans h₂
+
+/-- A summand of a fold bounded by `n` is bounded by `n`: `s = d + w` and `s ≤ n` give `w ≤ n`
+(the charge fold of the tree of a step-prefixed tree is at most the charge fold of the step-prefixed
+tree). -/
+theorem enat_le_of_add_eq {s w' : ℕ∞} {d n : ℕ} (hs : s = (d : ℕ∞) + w') (h : s ≤ (n : ℕ∞)) :
+    w' ≤ (n : ℕ∞) :=
+  le_trans (by rw [hs]; exact le_add_self) h
+
+/-- The arithmetic of a step: `X = ca + w` with `ca ≤ m` and `w ≤ n` gives `X ≤ m + n`. -/
+theorem enat_eq_add_le {X' w' : ℕ∞} {ca m n : ℕ} (hX : X' = (ca : ℕ∞) + w') (hc : ca ≤ m)
+    (hn : w' ≤ (n : ℕ∞)) : X' ≤ ((m + n : ℕ) : ℕ∞) := by
+  rw [hX, Nat.cast_add]
+  exact add_le_add (enat_natCast_le hc) hn
+
+/-- A bound `m ≤ n` weakens a bound of a fold. -/
+theorem wpFold_le_natCast_of_le {w' : ℕ∞} {m n : ℕ} (h : w' ≤ (m : ℕ∞))
+    (hmn : m ≤ n) : w' ≤ (n : ℕ∞) :=
+  h.trans (enat_natCast_le hmn)
+
+/-- The arithmetic of a split tick: `X = ca + w` and `s = d + w` with `ca = e + d`, `e ≤ m` and
+`s ≤ n` give `X ≤ m + n`. -/
+theorem enat_split_le {X' s w' : ℕ∞} {ca e d m n : ℕ} (hX : X' = (ca : ℕ∞) + w')
+    (hs : s = (d : ℕ∞) + w') (hc : ca = e + d) (he : e ≤ m) (hn : s ≤ (n : ℕ∞)) :
+    X' ≤ ((m + n : ℕ) : ℕ∞) := by
+  rw [hX, hc, Nat.cast_add, add_assoc, ← hs, Nat.cast_add]
+  exact add_le_add (enat_natCast_le he) hn
+
+/-- The arithmetic of a tick split twice: `X = ca + w`, `s = d + w`, `s = u`, `v = d' + u`
+with `ca = e + d' + d`, `e ≤ m` and `v ≤ n` give `X ≤ m + n`. -/
+theorem enat_split₂_le {X' s w' u v : ℕ∞} {ca e d d' m n : ℕ} (hX : X' = (ca : ℕ∞) + w')
+    (hs : s = (d : ℕ∞) + w') (hsu : s = u) (hv : v = (d' : ℕ∞) + u) (hc : ca = e + d' + d)
+    (he : e ≤ m) (hn : v ≤ (n : ℕ∞)) : X' ≤ ((m + n : ℕ) : ℕ∞) := by
+  rw [hX, hc, Nat.cast_add, Nat.cast_add, add_assoc, add_assoc, ← hs, hsu, ← hv, Nat.cast_add]
+  exact add_le_add (enat_natCast_le he) hn
+
+/-- The worst-case charge fold is the charge fold with every answer allowed. -/
+theorem wpFold_charge_eq_chargeUnder_true {R : Type w} [CompleteLattice R] [Add R]
+    (c : P.A → R) (x : FreeM P X) (post : X → R) :
+    wpFold (OpSpec.charge c) x post = wpFold (OpSpec.chargeUnder c fun _ _ => True) x post := by
+  rw [OpSpec.chargeUnder_true]
+
+end Rule
 
 end FreeM
 
