@@ -169,11 +169,29 @@ a first-order domain of the typed measures of Forster and Kunze):
 * a `let` of a function value that is a case analysis, a saturated call or a partial
   application to a computed data argument is kept (`keepsFnLet`, rule (c)): its value is
   priced once and its local is read as a costed closure; any other function `let` is
-  substituted.
+  substituted;
+* a call of a recursive data function (structural or well-founded) whose result is a function,
+  applied to all the binders of its equation body, is priced through its costed value
+  `c.timed`, which returns the cost of the call with the costed closure, both by the recursion
+  of `c` (`recFnJoint?`, `deriveHatValue` with `joint`, rule (d)): the values the recursion
+  computes before it returns the closure are charged once, at the call, a recursive call
+  passes the companion of its updated arguments, and the erasure theorem is
+  `ε (c.timed xs).2 = c (ε xs)`; a recursive function applied to fewer arguments (one whose
+  recursion runs on the point) is a partial application;
+* a left or right fold over a list (`List.foldl`, `List.foldr`) whose accumulator is a
+  function `X → Y` with first-order `Y` is the fold of the costed step over the costed
+  accumulator, `foldlHat f f̂ î l` with `f̂ ĝ x` the costed value of `f (ε ĝ) x`, the
+  accumulator read in the step as a costed closure (`foldHat?`, rule (e)); it costs one plus
+  the registered cost of the fold at the costed accumulator type, with the step cost
+  `fun ĝ x => cost (f (ε ĝ) x)`, plus the costs of the initial accumulator and the list; its
+  erasure is `foldlHat_fst`, and `foldlHat_snd_le` bounds its companion by `B + d · |l|` for a
+  step that raises the companion by at most `d`.
 
 On the class `TabState` (function-valued state `X → Y` with first-order `X`, built from tables,
-`Function.update`, case analyses on data present at the build whose arms are of the class, and
-calls of non-recursive definitions whose bodies are of the class), every value computed while a
+`Function.update`, case analyses on data present at the build whose arms are of the class,
+calls of non-recursive definitions whose bodies are of the class, structural or well-founded
+recursions whose results are of the class, and left and right folds over lists whose
+accumulator is of the class), every value computed while a
 closure is built is charged at the build, and each companion is a constant plus the companion it
 replaces; a closure `fun x => e` written in the source is outside the class and keeps the cost
 of `e` at each read.
@@ -800,6 +818,75 @@ theorem sum_companion_le (g r B d : ℕ) (cost : ℕ → ℕ) (h : ∀ i, cost i
   | succ g ih =>
     rw [List.range_succ, List.map_append, List.sum_append]
     have hg := h g
+    grind
+
+universe uA uC uB
+
+/-- The costed left fold at an accumulator `α` holding functions, whose costed values have type
+`α × C`: `List.foldl f' i l`, with the plain step `f` as a further argument, so that the erasure
+lemma `foldlHat_fst` determines `f` from its left side. -/
+@[expose] def foldlHat {α : Type uA} {C : Type uC} {β : Type uB} (_f : α → β → α)
+    (f' : α × C → β → α × C) (i : α × C) (l : List β) : α × C :=
+  List.foldl f' i l
+
+/-- The erasure of the costed left fold: the left fold of the plain step from the erased
+accumulator, when the costed step erases to the plain step. -/
+theorem foldlHat_fst {α : Type uA} {C : Type uC} {β : Type uB} (f : α → β → α)
+    (f' : α × C → β → α × C) (h : ∀ a x, (f' a x).1 = f a.1 x) (i : α × C) (l : List β) :
+    (foldlHat f f' i l).1 = List.foldl f i.1 l := by
+  induction l generalizing i with
+  | nil => rfl
+  | cons x l ih =>
+    simp only [foldlHat, List.foldl_cons] at ih ⊢
+    rw [ih, h]
+
+/-- The costed right fold at an accumulator `α` holding functions, whose costed values have type
+`α × C`: `List.foldr f' i l`, with the plain step `f` as a further argument (`foldrHat_fst`). -/
+@[expose] def foldrHat {α : Type uA} {C : Type uC} {β : Type uB} (_f : β → α → α)
+    (f' : β → α × C → α × C) (i : α × C) (l : List β) : α × C :=
+  List.foldr f' i l
+
+/-- The erasure of the costed right fold: the right fold of the plain step from the erased
+accumulator, when the costed step erases to the plain step. -/
+theorem foldrHat_fst {α : Type uA} {C : Type uC} {β : Type uB} (f : β → α → α)
+    (f' : β → α × C → α × C) (h : ∀ x a, (f' x a).1 = f x a.1) (i : α × C) (l : List β) :
+    (foldrHat f f' i l).1 = List.foldr f i.1 l := by
+  induction l with
+  | nil => rfl
+  | cons x l ih =>
+    simp only [foldrHat, List.foldr_cons] at ih ⊢
+    rw [h, ih]
+
+/-- **Reads after a costed left fold.** A costed step that raises the bound of the companion by
+at most `d` (an update: `d = 3`, `updateCompanion_le`) leaves the companion of the fold bounded
+by `B + d · |l|` when that of the initial accumulator is bounded by `B`. -/
+theorem foldlHat_snd_le {α : Type uA} {X : Type uC} {β : Type uB} (f : α → β → α)
+    (f' : α × (X → ℕ) → β → α × (X → ℕ)) {d : ℕ}
+    (hs : ∀ a x M, (∀ y, a.2 y ≤ M) → ∀ y, (f' a x).2 y ≤ M + d) (l : List β) :
+    ∀ (i : α × (X → ℕ)) (B : ℕ), (∀ y, i.2 y ≤ B) →
+      ∀ y, (foldlHat f f' i l).2 y ≤ B + d * l.length := by
+  induction l with
+  | nil => simp [foldlHat]
+  | cons x l ih =>
+    intro i B h y
+    have := ih (f' i x) (B + d) (hs i x B h) y
+    simp only [foldlHat, List.foldl_cons, List.length_cons] at this ⊢
+    grind
+
+/-- **Reads after a costed right fold.** A costed step that raises the bound of the companion by
+at most `d` leaves the companion of the fold bounded by `B + d · |l|` when that of the initial
+accumulator is bounded by `B`. -/
+theorem foldrHat_snd_le {α : Type uA} {X : Type uC} {β : Type uB} (f : β → α → α)
+    (f' : β → α × (X → ℕ) → α × (X → ℕ)) {d : ℕ}
+    (hs : ∀ x a M, (∀ y, a.2 y ≤ M) → ∀ y, (f' x a).2 y ≤ M + d) (l : List β)
+    (i : α × (X → ℕ)) (B : ℕ) (h : ∀ y, i.2 y ≤ B) :
+    ∀ y, (foldrHat f f' i l).2 y ≤ B + d * l.length := by
+  induction l with
+  | nil => simpa [foldrHat] using h
+  | cons x l ih =>
+    intro y
+    have := hs x _ _ ih y
+    simp only [foldrHat, List.foldr_cons, List.length_cons] at this ⊢
     grind
 
 end CatCrypt.Tactics.DeriveTimed
@@ -2966,6 +3053,14 @@ def warnChoice (ctx : Ctx) (e : Expr) (c : Name) : MetaM Unit := do
   warnOnce m!"derive_timed: {ctx.subject} computes `{e}` by Classical.choice; it has no \
     running time" (some head)
 
+/-- The rewriting lemmas of an erasure theorem whose costed form, with constants `used`, holds a
+costed fold (`foldHat?`): the erasure of the fold, whose side condition, the erasure of the
+step, is closed by the same lemmas under its binders. -/
+def foldHatLemmas (used : Array Name) : Array Name :=
+  if used.contains ``foldlHat || used.contains ``foldrHat then
+    #[``foldlHat_fst, ``foldrHat_fst, ``implies_true]
+  else #[]
+
 mutual
 
 /-- The cost of evaluating the data term `e`. -/
@@ -3179,10 +3274,14 @@ holds no function, its cost and `e`. A closure costs nothing to build and its co
 the cost of its body; a partial application of a constant evaluates its arguments when it is
 built; a pair, an `if`, a match whose arms return functions and a call of a definition are
 translated componentwise, by branch and by unfolding; a `let` of a function value that
-`keepsFnLet` keeps is priced once and its local read as a costed closure. On the class
-`TabState` (function-valued state `X → Y` with first-order `X`, built from tables,
-`Function.update`, case analyses on data present at the build whose arms are of the class, and
-calls of non-recursive definitions whose bodies are of the class) every value computed while a
+`keepsFnLet` keeps is priced once and its local read as a costed closure; a call of a recursive
+data function whose result is a function is priced through its costed value with its cost
+(`recFnJoint?`), and a fold whose accumulator is a function is the fold of the costed step
+(`foldHat?`). On the class `TabState` (function-valued state `X → Y` with first-order `X`, built
+from tables, `Function.update`, case analyses on data present at the build whose arms are of the
+class, calls of non-recursive definitions whose bodies are of the class, structural or
+well-founded recursions whose results are of the class, and left and right folds over lists whose
+accumulator is of the class) every value computed while a
 closure is built is charged at the build, and each companion is a constant plus the companion it
 replaces; a closure `fun x => e` written in the source is outside the class and keeps the cost of
 `e` at each read. -/
@@ -3323,6 +3422,11 @@ partial def tv (ctx : Ctx) (e : Expr) : TermElabM (Expr × Expr) := do
     let fnCase ← do
       if let some app ← matchMatcherApp? e then pure app.remaining.isEmpty else pure false
     if tw.isForall && !fnCase then
+      -- A fold whose accumulator is a function (rule (e)): the fold of the costed step. A call
+      -- of a recursive data function applied to all the binders of its equation body, whose
+      -- result is a function (rule (d)): its costed value with its cost, by its recursion.
+      if let some r ← foldHat? ctx e then return r
+      if let some r ← recFnJoint? ctx e then return r
       -- A call of a non-recursive definition applied to all the binders of its value, whose
       -- result is a function: its body, priced once when the closure is built.
       if let some r ← unfoldFnCall? ctx e then return r
@@ -3444,6 +3548,99 @@ partial def unfoldFnCall? (ctx : Ctx) (e : Expr) : TermElabM (Option (Expr × Ex
     if let (some r, some a) := (ctx.fnUnfolded?, fnu) then r.set a
     return none
 
+/-- The costs of the arguments `args` of a call of the data function `f` whose costed value
+takes them by their binder kinds (`hatArgs`): data by `costOf`, data holding functions and
+functions with a costed form by the cost of their costed value (`tv`). -/
+partial def hatArgsCost (ctx : Ctx) (f : Expr) (args : Array Expr) : TermElabM Expr := do
+  let kinds ← argKinds f args
+  let mut cs := #[]
+  for h : i in [0:args.size] do
+    let a := args[i]
+    match kinds[i]!.1 with
+    | .static => pure ()
+    | .data => cs := cs.push (← costOf ctx a)
+    | .hat => cs := cs.push (← tv ctx a).1
+    | .fn =>
+      if (← hatTy? (← inferType a)).isSome then cs := cs.push (← tv ctx a).1
+      else cs := cs.push (← costOf ctx a)
+    | .tree | .treeFn => fail m!"the data function `{f}` takes the tree `{a}`"
+  return sum cs
+
+/-- The cost and the costed value of the call `e = c args` of a recursive data function `c`
+(structural or well-founded) applied to all the binders of its equation body, whose result is a
+function (rule (d) of the class `TabState`): `c.timed` (`deriveHatValue` with `joint`) returns
+the cost of the call with its costed value, both by the recursion of `c`, so that the values the
+recursion computes before it returns the closure are charged once, at the call, and the
+companion of the result is that of the closure the recursion returns. The call costs one plus
+the first component plus the costs of the arguments. A recursive call in the derivation of
+`c.timed` is a call of the local standing for it. `none` when `e` is not such a call or the
+costed value of `c` is not derived. -/
+partial def recFnJoint? (ctx : Ctx) (e : Expr) : TermElabM (Option (Expr × Expr)) := do
+  let f := e.getAppFn.consumeMData
+  let .const c _ := f | return none
+  let args := e.getAppArgs
+  let env ← getEnv
+  let body ← match Structural.eqnInfoExt.find? env c, WF.eqnInfoExt.find? env c with
+    | some i, _ => pure i.value
+    | _, some i => pure i.value
+    | _, _ => return none
+  unless args.size == body.getNumHeadLambdas do return none
+  let t ← Core.betaReduce (← inferType e)
+  unless (← whnfR t).isForall do return none
+  if (← hatTy? t).isNone then return none
+  -- The result is a function in the equation body of `c`, not by the instance of a type
+  -- parameter (a fold at a function-valued accumulator, rule (e)).
+  let ownFn ← lambdaTelescope body fun _ b => do return (← whnfR (← inferType b)).isForall
+  unless ownFn do return none
+  -- A costed value that is not derived (its erasure theorem not closed): the call is a partial
+  -- application, as for a function outside the class.
+  let s ← saveState
+  let some target ← (try some <$> match ctx.selfHat? with
+      | some (self, rec) => if self == c then pure rec else ensureHat ctx c f (joint := true)
+      | none => ensureHat ctx c f (joint := true)
+    catch _ => do s.restore; pure none) | return none
+  let out ← hatArgs ctx f args
+  let arity ← forallTelescope (← inferType target) fun ys _ => pure ys.size
+  unless out.size == arity do
+    fail m!"the recursive `{c}` returns a function and is applied to {args.size} arguments, \
+      not to all binders of its costed value"
+  let call := mkAppN target out
+  let cost := add (natE 1) (add (← mkAppM ``Prod.fst #[call]) (← hatArgsCost ctx f args))
+  return some (cost, ← mkAppM ``Prod.snd #[call])
+
+/-- The cost and the costed value of the fold `e = List.foldl f init l` (or
+`List.foldr f init l`) whose accumulator is a function `X → Y` with a first-order codomain
+(rule (e) of the class `TabState`): the fold of the costed step over the costed accumulator,
+`foldlHat f f̂ î l` with `f̂ ĝ x` the costed value of `f (ε ĝ) x` and `î` that of `init`, priced
+by the registered cost of the fold at the costed accumulator type with the step cost
+`fun ĝ x => cost (f (ε ĝ) x)`, one unit for the call and the costs of `init` and `l`. In the
+step, the accumulator is read as a costed closure. `none` when `e` is not such a fold. -/
+partial def foldHat? (ctx : Ctx) (e : Expr) : TermElabM (Option (Expr × Expr)) := do
+  let left := e.isAppOfArity ``List.foldl 5
+  unless left || e.isAppOfArity ``List.foldr 5 do return none
+  let args := e.getAppArgs
+  let acc := if left then args[0]! else args[1]!
+  let elt := if left then args[1]! else args[0]!
+  unless (← whnfR acc).isForall do return none
+  let some accHat ← hatTy? acc | return none
+  let hw ← whnfR accHat
+  unless hw.isAppOfArity ``Prod 2 do return none
+  unless ← isDefEq (hw.getArg! 0) acc do return none
+  let costName := if left then `List.foldl.timedCost else `List.foldr.timedCost
+  unless (← getEnv).contains costName do return none
+  let f := args[2]!
+  let (ci, iHat) ← tv ctx args[3]!
+  let (fHat, sc) ← withLocalDeclD `gHat accHat fun gh => withLocalDeclD `x elt fun x =>
+    withLocalDeclD `g acc fun g => do
+      let ctx' := { ctx with locals := ctx.locals.insert g.fvarId! ⟨.hat, gh, none⟩ }
+      let (cs, vs) ← tv ctx' (if left then mkApp2 f g x else mkApp2 f x g).headBeta
+      let eg ← mkAppM ``Prod.fst #[gh]
+      let bs := if left then #[gh, x] else #[x, gh]
+      return (← mkLambdaFVars bs (vs.replaceFVar g eg), ← mkLambdaFVars bs (cs.replaceFVar g eg))
+  let v ← mkAppM (if left then ``foldlHat else ``foldrHat) #[f, fHat, iHat, args[4]!]
+  let c ← mkAppM costName #[fHat, sc, iHat, args[4]!]
+  return some (add (natE 1) (add c (add ci (← costOf ctx args[4]!))), v)
+
 /-- The companion of the closure `e = f args` of type `tw`: the cost of `f args ys` at fresh
 arguments `ys`, with each data argument that is not a variable, a literal or a closure
 standing for its value at no cost. -/
@@ -3523,6 +3720,13 @@ partial def costConst (ctx : Ctx) (e : Expr) (c : Name) (args : Array Expr) :
     return ← argsCost ctx (args.extract ci.numParams args.size)
   if freeConstants.contains c then
     return ← argsCost ctx args
+  -- A call of a recursive data function with a function result (rule (d)) and a fold whose
+  -- accumulator is a function (rule (e)), the result applied to any further arguments.
+  if let some (cost, _) ← recFnJoint? ctx e then return cost
+  if (c == ``List.foldl || c == ``List.foldr) && args.size ≥ 5 then
+    if let some (cost, v) ← foldHat? ctx (mkAppN f (args.extract 0 5)) then
+      if args.size == 5 then return cost
+      return add cost (← closureApp ctx v (args.extract 5 args.size)).1
   -- A partial application is a closure.
   let arity ← forallTelescope (← inferType f) fun ys _ => pure ys.size
   if args.size < arity then return ← argsCost ctx args
@@ -4283,14 +4487,16 @@ partial def ensureTimed (ctx : Ctx) (c : Name) (f : Expr) : TermElabM Expr := do
   return mkConst name f.constLevels!
 
 /-- The costed value `c.timed` of the recursive data function `c` whose result holds functions,
-at the universe levels of `f`: registered, or derived now (`deriveHatValue`). -/
-partial def ensureHat (ctx : Ctx) (c : Name) (f : Expr) : TermElabM Expr := do
+at the universe levels of `f`: registered, or derived now (`deriveHatValue`, with the cost of
+the call when `joint`). -/
+partial def ensureHat (ctx : Ctx) (c : Name) (f : Expr) (joint : Bool := false) :
+    TermElabM Expr := do
   let name := c ++ ctx.suffix
   unless (← getEnv).contains name do
     if ctx.visiting.contains c then
       fail m!"`{c}` is reached again while its costed value is derived (mutual recursion)"
     try
-      deriveHatValue { suffix := ctx.suffix, visiting := ctx.visiting.insert c } c
+      deriveHatValue { suffix := ctx.suffix, visiting := ctx.visiting.insert c } c joint
     catch ex =>
       throwError m!"derive_timed: while deriving the costed value of the recursive data \
         function `{c}`:\n{ex.toMessageData}"
@@ -4321,24 +4527,37 @@ with the projection lemmas `c.erase_timed_<i>`, one for each component of the er
 (`epsLeaves`). The binders are those of a costed form (`withBinders`); the body is the one Lean
 keeps for the equation lemmas of `c`, translated by `tv` with a recursive call standing for a
 call of `c.timed`, so that `c.timed` is defined by the recursion of `c`. The erasure theorem is
-proved by functional induction on `c.timed`. -/
-partial def deriveHatValue (ctx : Ctx) (c : Name) : TermElabM Unit := do
+proved by functional induction on `c.timed`.
+
+With `joint` (a function result, rule (d) of the class `TabState`), the binders are those of the
+equation body of `c`, before the point of its result, and `c.timed xs` is the pair of the cost
+of the call and the costed value, both by the recursion of `c`; the erasure theorem is
+`ε (c.timed xs).2 = c (ε xs)`. -/
+partial def deriveHatValue (ctx : Ctx) (c : Name) (joint : Bool := false) :
+    TermElabM Unit := do
   let env ← getEnv
   let some info := env.find? c | fail m!"unknown constant `{c}`"
   let name := c ++ ctx.suffix
   let eraseName := c ++ Name.mkSimple ("erase_" ++ ctx.suffix.toString)
   if env.contains name then fail m!"`{name}` already exists"
   let levels := info.levelParams.map mkLevelParam
-  let value ← costValue c info
+  let value ← if joint then
+      match Structural.eqnInfoExt.find? env c, WF.eqnInfoExt.find? env c with
+      | some i, _ => pure i.value
+      | _, some i => pure i.value
+      | _, _ => fail m!"`{c}` is not a recursive definition"
+    else costValue c info
   let (hType, hValue) ← lambdaTelescope value fun xs b => do
     let rt ← inferType b
     let some hrt ← hatTy? rt | fail m!"internal: the result of `{c}` holds no function"
+    let hrt ← if joint then mkAppM ``Prod #[mkConst ``Nat, hrt] else pure hrt
     for x in xs do
       if (← classify (← inferType x)) matches .tree | .treeFn then
         fail m!"the recursive data function `{c}` takes the tree `{x}`"
     withBinders { ctx with top := xs.map (·.fvarId!) } xs fun ctx bs _ => do
       withLocalDeclD `rec (← mkForallFVars bs hrt) fun recF => do
-        let (_, v) ← tv { ctx with selfHat? := some (c, recF) } b
+        let (cb, v) ← tv { ctx with selfHat? := some (c, recF) } b
+        let v ← if joint then mkAppM ``Prod.mk #[cb, v] else pure v
         let v := v.replaceFVars (ctx.hatSubst.map (·.1)) (ctx.hatSubst.map (·.2))
         let self ← mkLambdaFVars bs (mkAppN (mkConst name levels) bs)
         let v ← instantiateMVars (← Core.betaReduce (v.replaceFVar recF self))
@@ -4355,6 +4574,7 @@ partial def deriveHatValue (ctx : Ctx) (c : Name) : TermElabM Unit := do
     let rt ← inferType b
     withBinders { ctx with top := xs.map (·.fvarId!) } xs fun _ bs args => do
       let call := mkAppN (mkConst name levels) bs
+      let call ← if joint then mkAppM ``Prod.snd #[call] else pure call
       let rhs := mkAppN (mkConst c levels) args
       let eq ← mkEq (← epsE rt call) rhs
       let explicit ← bs.mapM fun b => return (← b.fvarId!.getBinderInfo).isExplicit
@@ -4372,15 +4592,19 @@ partial def deriveHatValue (ctx : Ctx) (c : Name) : TermElabM Unit := do
     if ← reduceFnAliases then #[`eq_rec_constant, ``cast_eq] else #[]
   let simpLemmas : Array Name := (if wfC then #[] else #[name, c]) ++ callees ++ castLemmas ++
     (if hValue.getUsedConstants.contains ``ite then
-      #[``CatCrypt.Tactics.DeriveTimed.boolRec_eq_ite] else #[])
+      #[``CatCrypt.Tactics.DeriveTimed.boolRec_eq_ite] else #[]) ++
+    foldHatLemmas hValue.getUsedConstants
   let lemmas : Array (TSyntax `Lean.Parser.Tactic.simpLemma) ←
     simpLemmas.mapM fun n => `(Lean.Parser.Tactic.simpLemma| $(mkIdent n):ident)
   let ids : Array (TSyntax `ident) := (Array.range explicit.size).map fun i =>
     mkIdent (Name.mkSimple s!"x{i}")
   let explicitIds := (ids.zip explicit).filterMap fun (i, e) => if e then some i else none
   let intros ← if ids.isEmpty then `(tactic| skip) else `(tactic| intro $ids*)
+  -- A goal left: the hypotheses reduced too (an induction hypothesis under the match of the
+  -- cost of a joint costed value, the conditions of a case split in the source).
   let close ← `(tactic| ((try simp only [$lemmas,*, *]) <;> (try (repeat' split)) <;>
-    (try simp only [$lemmas,*, *]) <;> (try rfl)))
+    (try simp only [$lemmas,*, *]) <;> (try rfl) <;>
+    (try simp_all only [$lemmas,*, ite_true, ite_false, Bool.false_eq_true])))
   let tac ← if wfC then
       `(tactic| ($intros; fun_induction $(mkIdent name):ident $explicitIds* <;>
         (try unfold $(mkIdent c):ident) <;> (try unfold $(mkIdent name):ident) <;>
@@ -4775,6 +4999,7 @@ partial def deriveTimed (ctx : Ctx) (c : Name) : TermElabM Unit := do
         #[``dite_true, ``dite_false, ``ite_true, ``ite_false, ``Bool.false_eq_true]
       else #[]) ++
       (if used.contains ``ite then #[``CatCrypt.Tactics.DeriveTimed.boolRec_eq_ite] else #[]) ++
+      foldHatLemmas used ++
       -- The erasure of a costed value of an inductive type encoded as a sum (`sumInduct?`) and
       -- the fields of its patterns read by `Sum.elim`, reduced at a constructor.
       (if (used ++ eType.getUsedConstants).contains ``Sum.elim then
