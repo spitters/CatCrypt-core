@@ -620,7 +620,23 @@ partial def boundStep (bs : Bounds) (x : Expr) : MetaM Expr := do
         return mkAddN (← boundCost bs c) (← boundStep bs y)
     return mkAddN (← boundCost bs e) (← boundTree bs t)
   if x.isAppOfArity ``SPTree.Timed.delay 3 then
-    return mkAddN (← boundCost bs (x.getArg! 1)) (← boundStep bs (x.getArg! 2))
+    let e := x.getArg! 1
+    let z := x.getArg! 2
+    -- `delay (c + y.1) (y.2.bind f)`: the pair `y` (a call of a costed callee) followed by `f`,
+    -- bounded by one bound of `y`, so that its step cost and its tree are not bounded apart
+    if z.isAppOfArity ``SPTree.Timed.bind 4 then
+      if let some y := CatCrypt.Tactics.AutoTime.sndOf? (z.getArg! 2) then
+        let fsts := (CatCrypt.Tactics.AutoTime.appsOf e #[]).filter fun o =>
+          match CatCrypt.Tactics.AutoTime.fstOf? o with
+          | some y' => y' == y
+          | none => false
+        if let some o := fsts[0]? then
+          let c := e.replace fun s => if s == o then some (mkNatLit 0) else none
+          let f := z.getArg! 3
+          let α := z.getArg! 0
+          let k ← withFresh α fun v => boundStep bs (f.beta #[v])
+          return mkAddN (← boundCost bs c) (mkAddN (← boundStep bs y) k)
+    return mkAddN (← boundCost bs e) (← boundStep bs z)
   if x.isAppOfArity ``SPTree.Timed.map 5 then
     let a := x.getArg! 4
     let fc := x.getArg! 3

@@ -332,6 +332,12 @@ indexed by the arguments that compute the structure, plus the costs of the `xᵢ
 Costed forms and costs are exposed definitions in a `module` file, so that importing modules
 unfold them. A reduction valued in `PMF` is refused: a distribution has no cost structure.
 
+A call of a certified computation `c` (`certExt`: a computation whose tree `c.tree`,
+compile equation, costed form `c.tree.timed` and erasure theorem are registered, by
+`derive_reduction c` or by `@[certified]`) is reflected by `derive_reduction` as the call of
+`c.tree`, which this module prices by the step cost of `c.tree.timed` (the rule for a call of a
+reduction above) without unfolding `c`; the erasure theorem uses `c.tree.erase_timed`.
+
 Calls of reductions without a costed form are derived on demand. A derivation fails, with
 the reason, on a function stored in data that is not a costed closure as above (a local
 function without a cost companion applied, a function in a list), a field of a structure that
@@ -410,6 +416,8 @@ one unit for each arithmetic operation (`CatCryptCore/Crypto/ConcreteSecurity.md
 * `treeKinds` — the table of tree kinds
 * `treeKindExt`, `register_tree_kind k` — the registered tree kinds
 * `Interp`, `interpExt`, `register_interpreter i` — the registered interpreters
+* `CertEntry`, `certExt`, `isCertified`, `@[certified]` — the registry of certified
+  computations, whose calls `derive_reduction` reflects as calls of their trees
 * `optionDispatch` — the case analysis of an optional value, written as a `match`
 
 ## Main results
@@ -971,6 +979,12 @@ register_option derive_timed.maxDepth : Nat := {
 }
 
 /-- Whether a condition is priced by what decides it (option `derive_timed.priceProps`). -/
+register_option derive_reduction.certifiedCalls : Bool := {
+  defValue := true
+  descr := "derive_reduction reflects a call of a certified computation as the call of its \
+    tree; when false, the call is unfolded"
+}
+
 register_option derive_timed.priceProps : Bool := {
   defValue := false
   descr := "derive_timed, derive_cost and derive_reduction price a condition by what decides \
@@ -1348,6 +1362,82 @@ def treeTy? (t : Expr) : MetaM (Option TreeTy) := do
   for k in ← treeKinds do
     if t.isAppOfArity k.tree k.nParams then return some ⟨k, t.getAppArgs⟩
   return none
+
+/-- A certified computation `c`: a computation whose computation tree, compile equation, costed
+form and erasure theorem exist, so that a call of `c` in a reduction is reflected as the call of
+its tree and priced by its costed form, and is not unfolded. `kind` is the tree type of the
+kind of `c.tree` (`SPTree`); the names are those of `c.tree`, `c.compile_tree`, `c.tree.timed`,
+`c.tree.erase_timed` and the time theorem `c.tree.timeBound_timed`, which may be declared after
+the registration (`derive_time_bound c.tree`) and is looked up by name where it is used. -/
+structure CertEntry where
+  const : Name
+  kind : Name
+  tree : Name
+  compileTree : Name
+  timed : Name
+  eraseTimed : Name
+  timeBound : Name
+  deriving Inhabited
+
+/-- The registry of certified computations, filled by `derive_reduction` when it succeeds on a
+computation and by the attribute `@[certified]` on a form written by hand; the entries of
+imported modules first. -/
+initialize certExt : SimplePersistentEnvExtension CertEntry (NameMap CertEntry) ←
+  registerSimplePersistentEnvExtension {
+    addEntryFn := fun m e => m.insert e.const e
+    addImportedFn := fun as =>
+      as.foldl (fun m a => a.foldl (fun m e => m.insert e.const e) m) {}
+  }
+
+/-- The registry entry of the computation `c`, when it is certified. -/
+def certEntry? (env : Environment) (c : Name) : Option CertEntry :=
+  (certExt.getState env).find? c
+
+/-- Whether the computation `c` is certified (`certExt`). -/
+def isCertified (env : Environment) (c : Name) : Bool :=
+  (certEntry? env c).isSome
+
+/-- Whether `t` is the tree `c.tree` of a certified computation `c`. -/
+def isCertifiedTree (env : Environment) (t : Name) : Bool :=
+  match t with
+  | .str c "tree" => isCertified env c
+  | _ => false
+
+/-- Register `c` as certified, with the costed form named by `suffix` (`c.tree.timed` by
+default). The tree `c.tree`, the compile equation `c.compile_tree`, the costed form and its
+erasure theorem must exist, and the result of `c.tree` after its binders must be a tree of a
+registered kind. A computation already registered keeps its entry. -/
+def registerCertified (c : Name) (suffix : Name := `timed) : MetaM Unit := do
+  let env ← getEnv
+  if isCertified env c then return
+  let tree := c ++ `tree
+  let eraseSfx := Name.mkSimple ("erase_" ++ suffix.toString)
+  let names := #[tree, c ++ `compile_tree, tree ++ suffix, tree ++ eraseSfx]
+  for n in names do
+    unless env.contains n do
+      throwError "certified: `{c}` has no `{n}`"
+  let kind ← forallTelescopeReducing (← getConstInfo tree).type fun _ b => do
+    let some T ← treeTy? b
+      | throwError "certified: the result of `{tree}` is not a tree of a registered kind"
+    return T.kind.tree
+  let entry : CertEntry :=
+    { const := c, kind := kind, tree := tree, compileTree := c ++ `compile_tree,
+      timed := tree ++ suffix, eraseTimed := tree ++ eraseSfx,
+      timeBound := tree ++ `timeBound_timed }
+  modifyEnv fun env => certExt.addEntry env entry
+
+/-- `@[certified]` on a computation `c` registers it as certified (`registerCertified`): its
+tree `c.tree`, compile equation `c.compile_tree`, costed form `c.tree.timed` and erasure theorem
+`c.tree.erase_timed`, written and checked by hand, are used at every call of `c` in place of its
+unfolding. The attribute is written after these declarations, `attribute [certified] c`. -/
+initialize registerBuiltinAttribute {
+  name := `certified
+  descr := "Register a computation whose tree, compile equation and costed form exist"
+  add := fun decl _ kind => do
+    unless kind == .global do throwError "certified: the attribute is global"
+    MetaM.run' (registerCertified decl)
+  applicationTime := .afterCompilation
+}
 
 namespace TreeTy
 
