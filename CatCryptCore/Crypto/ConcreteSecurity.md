@@ -95,6 +95,22 @@ for the hash, `tH` for answering a hash query, `tv` for the view map, which comp
 elements of the CKA transcript, and `c` for the bookkeeping of each query of the multi-key
 reduction (the rank of its index, the table lookup and the state update).
 
+A certificate is produced in three stages, described in the paragraphs below and indexed in the
+tactic registry ([Tactics/AGENTS.md](../Tactics/AGENTS.md)).
+
+1. Instrumentation. `derive_timed`, `derive_reduction` and `derive_simulator` define the
+   costed form of a reduction or a simulator from its code and prove its erasure theorem, which
+   the kernel checks; `derive_timed_structure` gives a structure of stages its costed mirror
+   and erasure relation; `derive_cost` defines the cost of a data function, which the others
+   use at its calls.
+2. Cost semantics. The time bound `TimeBound` of each registered tree kind is equivalent to a
+   bound on the worst-case fold of a charge over a free-monad image of the costed tree, so the
+   kinds share one reading of a budget and the query bounds of §3 are the same fold at another
+   charge (*Time bounds as charge folds* below).
+3. Closing the bound. `time_bound`, `derive_time_bound` and `derive_time_rec` prove the time
+   theorem, with the time of the adversary, its query counts and the costs of the primitives
+   as symbolic bound variables and hypotheses.
+
 `derive_timed R` ([DeriveTimed.lean](../Tactics/DeriveTimed.lean)) defines `R.timed` and proves
 `R.erase_timed` for a reduction whose result is an oracle tree or an `SPTree`. A binder that is
 a tree, or a function into trees, becomes its costed mirror, and each function-typed binder,
@@ -122,7 +138,21 @@ of its body; a partial application evaluates its arguments when it is built; app
 closure costs one plus its companion at the argument; a sampled function is a table, applied at
 unit cost. `Function.update f a v` is priced from its definition, with companion
 `fun x => 2 + (if x = a then 0 else 1 + fCost x)`, so the companion of a table records the
-updates that built it. A simulation whose state holds functions is translated to
+updates that built it. Three further constructions are priced at the build: a `let` of a
+function value that is a case analysis, a saturated call or a partial application to a
+computed argument is kept and its value priced once (`keepsFnLet`); a recursive data function
+whose result is a function is priced through its costed value `c.timed`, which returns the cost
+of the call with the costed closure, both by the recursion of `c`, with erasure
+`ε (c.timed xs).2 = c (ε xs)` (`recFnJoint?`); and a left or right fold over a list with a
+function accumulator is the fold `foldlHat` (`foldrHat`) of the costed step over the costed
+accumulator, erased by `foldlHat_fst`, its companion bounded by `B + d · |l|` when each step
+raises it by at most `d` (`foldlHat_snd_le`). On the class `TabState` of function-valued states
+with a first-order domain built from tables, `Function.update`, case analyses on data present
+at the build, calls of non-recursive definitions, recursions and folds of the class, every value
+computed while a closure is built is charged once, at the build, and each companion is a
+constant plus the companion it replaces, so a read after `k` updates is a chain of `k`
+lookups. A closure `fun x => e` written in the source is outside the class and keeps the cost
+of `e` at each read. A simulation whose state holds functions is translated to
 `OracleAdv.Timed.simulateHat`, whose state carries the companions from query to query; its
 erasure theorem `erase_simulateHat_bind` needs only the erasure theorem of the handler. A
 reduction whose result holds functions has the erasure theorem
@@ -180,7 +210,19 @@ bound is the cost of the tree with every atom replaced by its bound, normalised 
 atoms. `time_bound` follows the path costs of the tree node by node with one rule lemma per
 node, splits on the decisions of the tree and of its step costs, reads the time theorems of
 derived callees as sources, and closes each arithmetic leaf by `omega`, `linarith` or
-`nlinarith`. A continuation is bounded only at the values its prefix can return: the tactic
+`nlinarith`. A length `l.length` in a leaf is related to its bound by the equations of the list
+functions and by the theorems tagged `@[length_bound]` (`l.length ≤ b` or `l.length = b`),
+instantiated at it (`addLengthFacts`); `derive_time_bound` uses the same theorems to state the
+bound of a `match` whose alternatives fold over a list built from a matched value, replacing the
+length by its bound free of the pattern variable (`rewriteLengths`). A costed tree, a costed
+oracle adversary or a registered cost defined by recursion has no bound that `derive_time_bound`
+can compute, since the recursive call is not unfolded; `derive_time_rec … using τ`
+([DeriveTimeRec.lean](../Tactics/DeriveTimeRec.lean)) takes the bound `τ` from the user, as a
+number or as a function whose binders are matched by name, or by type and position for the
+binders a pattern definition leaves unnamed (also when a type depends on an earlier binder),
+and proves it by functional or structural induction, `time_bound` closing each case with the
+induction hypotheses as sources. Its data mode proves `f.timedCost_le` for a recursive
+registered cost, which `derive_time_bound` then reads. A continuation is bounded only at the values its prefix can return: the tactic
 `allret_bound` proves the leaf invariant `AllRet P t` of a prefix, and the bind rule takes the
 continuation's bound under that invariant. A reduction that computes its result without
 sampling, state or calls has its time theorem proved along the recursion that computes the
@@ -191,7 +233,62 @@ table, a list of notices) has the graded bound `MultiHybrid.Timed.TimeBoundGrade
 ([UCSimulatorCostGraded.lean](UCSimulatorCostGraded.lean)): step `i` costs at most `a + b * i`,
 so `q` activations cost at most `q * a + b * (q * (q - 1) / 2)`
 (`MultiHybrid.Timed.TimeBoundGraded.actRun_time_le`), and at `b = 0` the graded bound is the
-invariant bound `MultiHybrid.Timed.TimeBoundInv`.
+invariant bound `MultiHybrid.Timed.TimeBoundInv`. A bundled simulator built from
+`Simulator.ofMultiHybrid`, `comp`, `tensor`, `mapPorts` and `mono` is certified by
+`derive_simulator S` ([DeriveSimulator.lean](../Tactics/DeriveSimulator.lean)), which defines
+`S.timed` and proves `S.erase_timed` and `S.timeBound_timed`: the bound is the largest step
+bound of a leaf, the sum of the bounds of a composite and the bound of the inner simulator of a
+relabelling, and a leaf with a graded or size-graded time theorem gives the graded
+(`S.timeBoundGraded_timed`) or size-graded (`S.timeBoundSized_timed`) bound. `derive_hybrid_time R`
+proves the time theorem of a costed hybrid or multi-call hybrid from the time theorems of its
+steps.
+
+Time bounds as charge folds. Each costed tree translates to a tree of the free monad
+`PFunctor.FreeM P` of a polynomial functor `P` of the PolyFun library, extended by tick positions
+`tick n` that charge `n` units and have one direction; the step cost of each direction of a node
+becomes a tick after that direction. The time bound of each registered tree kind is equivalent
+to the bound of the worst-case fold `wpFold` of the charge `OpSpec.charge` over this tick tree,
+and to PolyFun's subtractive roll bound `IsRollBound`:
+
+| Tree kind | Equivalence |
+|---|---|
+| oracle adversaries | `OracleAdv.Timed.timeBound_iff_wpFold_charge`, `OracleAdv.Timed.timeBound_iff_isRollBound` ([OracleAdversaryFree.lean](OracleAdversaryFree.lean)) |
+| computation trees `SPTree` | `SPTree.Timed.timeBound_iff_wpFold_chargeUnder` ([SPTreeTimedFree.lean](../Core/SPTreeTimedFree.lean)) |
+| oracle programs | `OracleProg.Timed.timeBound_iff_wpFold_charge`, `OracleProg.Timed.stepTimeBound_iff_wpFold_charge` ([OracleProgTimedFree.lean](Signatures/OracleProgTimedFree.lean)) |
+| quantum instruments | `QInstrT.timeBound_iff_wpFold_charge`, `QInstrT.stepTimeBound_iff_wpFold_charge` ([QTreeKindFree.lean](../Quantum/QTreeKindFree.lean)) |
+| QROM circuits, single and multi-round | `QAdvT.timeBound_iff_wpFold_charge`, `QAdvMRT.timeBound_iff_wpFold_charge` and their `stepTimeBound` forms ([QAdvTreeKindFree.lean](../Quantum/QROM/QAdvTreeKindFree.lean)) |
+
+A sampling node `sampleDist β μ` of an `SPTree` answers only within the support of `μ`, so its
+fold is the charge restricted to the answers a handler can return, `OpSpec.chargeUnder`
+([PFunctorChargeUnder.lean](../ForMathlib/PFunctorChargeUnder.lean)), which is `OpSpec.charge`
+when every answer is allowed (`OpSpec.chargeUnder_true`); its bind clause
+`FreeM.wpFold_chargeUnder_bind_le` adds a bound on a prefix to a bound on the continuation at
+the returns of the prefix. Along the same translation of oracle adversaries
+([OracleAdversaryFreeBridge.lean](OracleAdversaryFreeBridge.lean)), `bind` is `FreeM.bind`
+(`OracleAdv.toFreeM_bind`), `subst` is interpretation by a free handler
+(`OracleAdv.toFreeM_subst`) and `simulate` is the run of a stateful handler
+(`OracleAdv.toFreeM_simulate`), and the query bounds of §3 are the same fold at a charge that
+is zero at sampling nodes and the weight of the query at a query node
+(`OracleAdv.isQueryBoundBy_iff_wpFold_charge`, `OracleAdv.isQueryBound_iff_wpFold_charge`), so
+the time and the query counts of an adversary are two charges over one tree.
+
+Composition with time budgets. `RealizesTime X Y n o q tD b`
+([UCPullbackCost.lean](UCPullbackCost.lean)) states that `X` realizes `Y` with bound `b` against
+every environment whose activations cost at most `n`, whose observations cost at most `o`, which
+activates at most `q` times and whose distinguisher costs at most `tD`. A multi-call hybrid with
+a costed machine whose steps cost at most `a`, `r` and `f` is a costed pullback
+(`MultiHybrid.toCostedPullback`, [UCParallelTimed.lean](UCParallelTimed.lean)) whose reduced
+environment costs `a + 6` more per activation, `f + r + 4` more per observation and one more for
+the distinguisher, and makes `fuel + 1` activations per activation of the environment. The two
+contexts of a parallel composition have costed forms derived by `derive_reduction` and fuel
+`0`, so they keep the activation count, and their start step costs at most `s + 3` when an
+activation of the fixed component costs at most `s` (`MultiHybrid.parCtxL.timed_timeBound`,
+`MultiHybrid.parCtxR.timed_timeBound`). With the time-graded composition theorem for two holes
+(`CostedPullback.realizesTime_twoHole`) this gives `realizes_par_timed`: if `X` realizes `X'`
+against environments of time `(n + (sY + 9), o + 4, q, tD + 1)` and `Y` realizes `Y'` against
+those of time `(n + (sX + 9), o + 4, q, tD + 1)`, where `sY` and `sX` bound the activations of
+costed forms of `Y` and `X'`, then `X.par Y` realizes `X'.par Y'` against environments of time
+`(n, o, q, tD)`, with the sum of the two bounds at the reduced environments.
 
 A derived step cost follows from the code of the reduction by these rules. A costed form written
 by hand carries step costs chosen by its author, which the kernel checks only through the
