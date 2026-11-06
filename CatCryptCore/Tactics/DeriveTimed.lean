@@ -2816,7 +2816,11 @@ def normRecHyps (c t : Name) (g : MVarId) : MetaM (Option MVarId) := g.withConte
     unless mentions ty do continue
     let ty' ← whnf ty
     let matchHead := isMatcherCore (← getEnv) ty.consumeMData.getAppFn.constName
-    unless ty'.isAppOfArity ``And 2 || ty'.isConstOf ``True || matchHead do continue
+    unless ty'.isAppOfArity ``And 2 || ty'.isConstOf ``True || matchHead do
+      -- A hypothesis quantified over the companions (rule (h)) is kept whole and rewritten with
+      -- the case hypotheses below.
+      if ty.isForall then news := news.push d.userName
+      continue
     let cs ← recConjuncts d.toExpr ty
     let mut g' := g
     for (pf, cty) in cs do
@@ -5331,7 +5335,15 @@ partial def deriveTimed (ctx : Ctx) (c : Name) : TermElabM Unit := do
             srcPos := match srcPos, bs.idxOf? a with
               | some ps, some i => some (ps.push i)
               | _, _ => none
-        let explicit := (explicit, srcPos)
+        -- The positions of the cost companions among the binders of the costed form: binders
+        -- that are not arguments of `c` whose type ends in `ℕ` (rule (h)).
+        let mut compPos : Array Nat := #[]
+        for b in bs, i in [0:bs.size] do
+          if args.contains b then continue
+          let isComp ← forallTelescopeReducing (← inferType b) fun _ r => do
+            return (← whnfR r).isConstOf ``Nat
+          if isComp then compPos := compPos.push i
+        let explicit := (explicit, srcPos, compPos)
         -- The field paths whose cost companions the costed form takes, as a function of the
         -- binders of `c`: a caller passes its companions for them (`callTimed`).
         let fp? ← if used.isEmpty then pure none else do
@@ -5403,7 +5415,7 @@ partial def deriveTimed (ctx : Ctx) (c : Name) : TermElabM Unit := do
       (if used.any (·.getPrefix == ``optionDispatch) then
         #[``Option.elim_none, ``Option.elim_some, ``Option.map_none, ``Option.map_some]
       else #[])
-  let (nBinders, srcPos) := nBinders
+  let (nBinders, srcPos, compPos) := nBinders
   let ids : Array (TSyntax `ident) := (Array.range nBinders.size).map fun i =>
     mkIdent (Name.mkSimple s!"x{i}")
   -- The functional induction on the costed form at every binder, implicit ones included: a type
@@ -5414,9 +5426,21 @@ partial def deriveTimed (ctx : Ctx) (c : Name) : TermElabM Unit := do
   -- binders of `c`, or, when an argument of `c` is the erasure of a costed binder (a tree or a
   -- function into trees, `fun x => (k x).erase`), at the application of `c` in the goal, the
   -- right side `c (ε xs)` of the erasure theorem.
-  let srcInd : TSyntax `tactic ← match srcIds? with
+  -- The companions are generalized (rule (h)): a recursive call that passes a companion
+  -- computed from the incoming one is an instance of the induction hypothesis.
+  let compIds : Array (TSyntax `ident) := compPos.filterMap (ids[·]?)
+  -- Where a companion cannot be generalized, the induction is the one without.
+  let srcIndPlain : TSyntax `tactic ← match srcIds? with
     | some srcIds => `(tactic| fun_induction $(mkIdent c):ident $srcIds*)
     | none => `(tactic| fun_induction $(mkIdent c):ident)
+  let srcInd : TSyntax `tactic ← if compIds.isEmpty then pure srcIndPlain else
+    match srcIds? with
+    | some srcIds => `(tactic| first
+        | fun_induction $(mkIdent c):ident $srcIds* generalizing $compIds*
+        | $srcIndPlain:tactic)
+    | none => `(tactic| first
+        | fun_induction $(mkIdent c):ident generalizing $compIds*
+        | $srcIndPlain:tactic)
   let lemmas : Array (TSyntax `Lean.Parser.Tactic.simpLemma) ←
     simpLemmas.mapM fun n => `(Lean.Parser.Tactic.simpLemma| $(mkIdent n):ident)
   -- The side conditions of `erase_simulateHat_bind` are equations under binders, discharged
