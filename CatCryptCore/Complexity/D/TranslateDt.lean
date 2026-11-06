@@ -36,8 +36,12 @@ value (`TimedSim` at allowance `0` for a function variable).
 The soundness theorem `Tm.dt_timedSim` states, for a term of the fragment `Tm.InDtFrag` in
 related environments, `TimedSim (Sim τ) 1 t.allow (t.dt η) (t.eval ρ)`: the evaluation of
 `t` has the effect nodes of `t.dt η` and at most `t.allow` plus its charges as steps on every
-path. Its corollaries are the cost bound `Tm.cost_le_dt` and the meaning of the erasure
-`Tm.dt_run`, `Tm.dt_erase`.
+path. It holds at any charge `cc a ≤ 1` of a call of a function variable (`Tm.dtC_timedSim`,
+with allowance `Tm.allowC cc`): the β-step of the call is paid by its charge and by the
+allowance `1 - cc a`. At the charge `1` of every call, the allowance does not depend on the
+argument types, so that it reduces to a numeral at a type `base MF` for a variable `MF`, where
+`callCost` is undecided. Its corollaries are the cost bound `Tm.cost_le_dt` and the meaning of the
+erasure `Tm.dt_run`, `Tm.dt_erase`.
 
 The fragment: variables of a type other than a function type, calls of function variables and
 of pure costed closures, abstractions with a pure body (`Tm.Pure`: no effect and no call of a
@@ -49,13 +53,15 @@ cost (on words and `Bool`), `sample`, `get`, `set`, `query` and `fail`. Operatio
 ## Main definitions
 
 * `Ty.hat`, `Ty.hatE`, `Sim`, `SimE`, `EnvHat`, `SimEnv`
-* `Tm.dt`, `Tm.allow`, `Tm.Pure`, `Tm.InDtFrag`, `iterCost`
+* `Tm.dtC`, `Tm.allowC`: the charges and the allowance at a charge `cc a ≤ 1` of a call;
+  `Tm.dt`, `Tm.allow`: at the charge `callCost` of `derive_timed`
+* `Tm.Pure`, `Tm.InDtFrag`, `iterCost`
 
 ## Main results
 
 * `TimedSimTree.bindCont`, `TimedSim.bindCont`: the costed bind against a D bind under any
   continuation.
-* `Tm.dt_timedSim`, `Tm.cost_le_dt`, `Tm.dt_run`, `Tm.dt_erase`
+* `Tm.dtC_timedSim`, `Tm.dt_timedSim`, `Tm.cost_le_dt`, `Tm.dt_run`, `Tm.dt_erase`
 -/
 
 @[expose] public section
@@ -403,137 +409,89 @@ theorem eq_var_of_headVar? {t : Tm Γ τ} {y : Var Γ τ} (h : t.headVar? = some
     t = .var y := by
   cases t <;> simp_all [headVar?]
 
-/-- The allowance of a term: the β-steps of D that the charges of `derive_timed` leave out, one
-per `letE` and `seq` and one per call on `unit`; the allowance of the body of an abstraction is
-part of the cost of its closure. -/
-def allow : {Γ : List Ty} → {τ : Ty} → Tm Γ τ → ℕ
-  | _, _, .app (a := a) f x => f.allow + x.allow + (1 - callCost a)
-  | _, _, .letE e b => e.allow + b.allow + 1
-  | _, _, .seq e b => e.allow + b.allow + 1
-  | _, _, .prim _ x => x.allow
-  | _, _, .pair x y => x.allow + y.allow
-  | _, _, .fst p => p.allow
-  | _, _, .snd p => p.allow
-  | _, _, .inl x => x.allow
-  | _, _, .inr x => x.allow
-  | _, _, .case s l r => s.allow + max l.allow r.allow
-  | _, _, .ite c t e => c.allow + max t.allow e.allow
-  | _, _, .cons x xs => x.allow + xs.allow
-  | _, _, .lcase xs n c => xs.allow + max n.allow c.allow
-  | _, _, .foldl f i xs => f.allow + i.allow + xs.allow
-  | _, _, .iter n f i => n.allow + f.allow + i.allow
-  | _, _, .set _ _ x => x.allow
-  | _, _, .query _ _ x => x.allow
+/-- The allowance of a term at the charge `cc a` of a call of a function variable on an argument
+of type `a`: the β-steps of D that the charges leave out, one per `letE` and `seq` and `1 - cc a`
+per call; the allowance of the body of an abstraction is part of the cost of its closure. -/
+def allowC (cc : Ty → ℕ) : {Γ : List Ty} → {τ : Ty} → Tm Γ τ → ℕ
+  | _, _, .app (a := a) f x => f.allowC cc + x.allowC cc + (1 - cc a)
+  | _, _, .letE e b => e.allowC cc + b.allowC cc + 1
+  | _, _, .seq e b => e.allowC cc + b.allowC cc + 1
+  | _, _, .prim _ x => x.allowC cc
+  | _, _, .pair x y => x.allowC cc + y.allowC cc
+  | _, _, .fst p => p.allowC cc
+  | _, _, .snd p => p.allowC cc
+  | _, _, .inl x => x.allowC cc
+  | _, _, .inr x => x.allowC cc
+  | _, _, .case s l r => s.allowC cc + max (l.allowC cc) (r.allowC cc)
+  | _, _, .ite c t e => c.allowC cc + max (t.allowC cc) (e.allowC cc)
+  | _, _, .cons x xs => x.allowC cc + xs.allowC cc
+  | _, _, .lcase xs n c => xs.allowC cc + max (n.allowC cc) (c.allowC cc)
+  | _, _, .foldl f i xs => f.allowC cc + i.allowC cc + xs.allowC cc
+  | _, _, .iter n f i => n.allowC cc + f.allowC cc + i.allowC cc
+  | _, _, .set _ _ x => x.allowC cc
+  | _, _, .query _ _ x => x.allowC cc
   | _, _, _ => 0
 
-/-- A bound of `1 - callCost a` decided on the head constructor of `a` alone: one at a finite
-ground type `base f`, which may be `unit`, and zero at the other types, where a call costs one.
-It reduces to a numeral at `base f` for a variable `f`. -/
-def unitBound : Ty → ℕ
-  | .base _ => 1
-  | _ => 0
-
-/-- The step a call leaves out is bounded by `unitBound`. -/
-theorem one_sub_callCost_le_unitBound (a : Ty) : 1 - callCost a ≤ unitBound a := by
-  cases a <;> simp [unitBound, callCost]
-
-/-- The allowance `allow` with the step of a call bounded by `unitBound` of its argument type: a
-numeral bound of `allow` for a term whose types are built from constructors of `Ty`, finite
-ground types `base f` included at a variable `f`. -/
-def allowB : {Γ : List Ty} → {τ : Ty} → Tm Γ τ → ℕ
-  | _, _, .app (a := a) f x => f.allowB + x.allowB + unitBound a
-  | _, _, .letE e b => e.allowB + b.allowB + 1
-  | _, _, .seq e b => e.allowB + b.allowB + 1
-  | _, _, .prim _ x => x.allowB
-  | _, _, .pair x y => x.allowB + y.allowB
-  | _, _, .fst p => p.allowB
-  | _, _, .snd p => p.allowB
-  | _, _, .inl x => x.allowB
-  | _, _, .inr x => x.allowB
-  | _, _, .case s l r => s.allowB + max l.allowB r.allowB
-  | _, _, .ite c t e => c.allowB + max t.allowB e.allowB
-  | _, _, .cons x xs => x.allowB + xs.allowB
-  | _, _, .lcase xs n c => xs.allowB + max n.allowB c.allowB
-  | _, _, .foldl f i xs => f.allowB + i.allowB + xs.allowB
-  | _, _, .iter n f i => n.allowB + f.allowB + i.allowB
-  | _, _, .set _ _ x => x.allowB
-  | _, _, .query _ _ x => x.allowB
-  | _, _, _ => 0
-
-/-- The allowance is at most its bound `allowB`. -/
-theorem allow_le_allowB : ∀ {Γ : List Ty} {τ : Ty} (t : Tm Γ τ), t.allow ≤ t.allowB := by
-  intro Γ τ t
-  induction t with
-  | @app _ a _ f x ihf ihx =>
-    have := one_sub_callCost_le_unitBound a
-    simp only [allow, allowB]
-    omega
-  | case s l r ihs ihl ihr =>
-    have := max_le_max ihl ihr
-    simp only [allow, allowB]
-    omega
-  | ite c t e ihc iht ihe =>
-    have := max_le_max iht ihe
-    simp only [allow, allowB]
-    omega
-  | lcase xs n c ihx ihn ihc =>
-    have := max_le_max ihn ihc
-    simp only [allow, allowB]
-    omega
-  | _ => simp only [allow, allowB]; omega
-
-/-- The costed tree of the charges of `derive_timed` for a term; outside the fragment
-`InDtFrag` it is `fail`. An abstraction is the pure costed closure that reads the value of its
-body at the leaf and costs the allowance and the step cost of the body. -/
-noncomputable def dt : {Γ : List Ty} → {τ : Ty} → Tm Γ τ → EnvHat Γ → ℕ × SPTree.Timed τ.hat
+/-- The costed tree of the charges of `derive_timed` for a term, a call of a function variable on
+an argument of type `a` charged `cc a`; outside the fragment `InDtFrag` it is `fail`. An
+abstraction is the pure costed closure that reads the value of its body at the leaf and costs the
+allowance and the step cost of the body. -/
+noncomputable def dtC (cc : Ty → ℕ) :
+    {Γ : List Ty} → {τ : Ty} → Tm Γ τ → EnvHat Γ → ℕ × SPTree.Timed τ.hat
   | _, τ, .var x, η => τ.read (η τ x)
   | _, _, .lam (b := b) body, η =>
-    (0, .ret (fun u => b.pureVal (body.dt (η.cons u)).2,
-      fun u => body.allow + (body.dt (η.cons u)).1))
+    (0, .ret (fun u => b.pureVal (body.dtC cc (η.cons u)).2,
+      fun u => body.allowC cc + (body.dtC cc (η.cons u)).1))
   | _, _, .app (a := a) f x, η =>
     match f.headVar? with
-    | some y => bindT (x.dt η) fun u => SPTree.Timed.delay (callCost a) (η _ y u)
-    | none => bindT (f.dt η) fun p => bindT (x.dt η) fun u => (1 + p.2 u, .ret (p.1 u))
-  | _, _, .letE e b, η => bindT (e.dt η) fun u => b.dt (η.cons u)
-  | _, _, .seq e b, η => bindT (e.dt η) fun _ => b.dt η
+    | some y => bindT (x.dtC cc η) fun u => SPTree.Timed.delay (cc a) (η _ y u)
+    | none => bindT (f.dtC cc η) fun p => bindT (x.dtC cc η) fun u => (1 + p.2 u, .ret (p.1 u))
+  | _, _, .letE e b, η => bindT (e.dtC cc η) fun u => b.dtC cc (η.cons u)
+  | _, _, .seq e b, η => bindT (e.dtC cc η) fun _ => b.dtC cc η
   | _, _, .natLit n, _ => (0, .ret n)
   | _, _, .lit _ v, _ => (0, .ret v)
-  | _, _, .prim p x, η => bindT (x.dt η) fun u => (1, .ret (p.applyHat u))
-  | _, _, .pair x y, η => bindT (x.dt η) fun u => bindT (y.dt η) fun w => (0, .ret (u, w))
-  | _, _, .fst p, η => bindT (p.dt η) fun u => (0, .ret u.1)
-  | _, _, .snd p, η => bindT (p.dt η) fun u => (0, .ret u.2)
+  | _, _, .prim p x, η => bindT (x.dtC cc η) fun u => (1, .ret (p.applyHat u))
+  | _, _, .pair x y, η => bindT (x.dtC cc η) fun u => bindT (y.dtC cc η) fun w => (0, .ret (u, w))
+  | _, _, .fst p, η => bindT (p.dtC cc η) fun u => (0, .ret u.1)
+  | _, _, .snd p, η => bindT (p.dtC cc η) fun u => (0, .ret u.2)
   | _, _, .inl (a := a) (b := b) x, η =>
-    bindT (x.dt η) fun u => (0, .ret (Sum.inl u : a.hat ⊕ b.hat))
+    bindT (x.dtC cc η) fun u => (0, .ret (Sum.inl u : a.hat ⊕ b.hat))
   | _, _, .inr (a := a) (b := b) x, η =>
-    bindT (x.dt η) fun u => (0, .ret (Sum.inr u : a.hat ⊕ b.hat))
+    bindT (x.dtC cc η) fun u => (0, .ret (Sum.inr u : a.hat ⊕ b.hat))
   | _, _, .case (a := a) (b := b) s l r, η =>
-    bindT (s.dt η) fun (u : a.hat ⊕ b.hat) =>
-      SPTree.Timed.delay 1 (Sum.elim (fun x => l.dt (η.cons x)) (fun y => r.dt (η.cons y)) u)
+    bindT (s.dtC cc η) fun (u : a.hat ⊕ b.hat) =>
+      SPTree.Timed.delay 1 (Sum.elim (fun x => l.dtC cc (η.cons x)) (fun y => r.dtC cc (η.cons y)) u)
   | _, _, .ite c t e, η =>
-    bindT (c.dt η) fun (b : Bool) => SPTree.Timed.delay 1 (bif b then t.dt η else e.dt η)
+    bindT (c.dtC cc η) fun (b : Bool) => SPTree.Timed.delay 1 (bif b then t.dtC cc η else e.dtC cc η)
   | _, _, .nil (a := a), _ => (0, .ret ([] : List a.hat))
   | _, _, .cons (a := a) x xs, η =>
-    bindT (x.dt η) fun u => bindT (xs.dt η) fun (l : List a.hat) => (0, .ret (u :: l))
+    bindT (x.dtC cc η) fun u => bindT (xs.dtC cc η) fun (l : List a.hat) => (0, .ret (u :: l))
   | _, _, .lcase (a := a) xs n c, η =>
-    bindT (xs.dt η) fun (l : List a.hat) => SPTree.Timed.delay 1
+    bindT (xs.dtC cc η) fun (l : List a.hat) => SPTree.Timed.delay 1
       (match l with
-        | [] => n.dt η
-        | x :: l' => c.dt ((η.cons (σ := .list a) l').cons x))
+        | [] => n.dtC cc η
+        | x :: l' => c.dtC cc ((η.cons (σ := .list a) l').cons x))
   | _, _, .foldl (a := a) (c := c) f i xs, η =>
-    bindT (f.dt η) fun (p : Ty.hat (.arr (.prod c a) c)) => bindT (i.dt η) fun acc =>
-      bindT (xs.dt η) fun (l : List a.hat) =>
+    bindT (f.dtC cc η) fun (p : Ty.hat (.arr (.prod c a) c)) => bindT (i.dtC cc η) fun acc =>
+      bindT (xs.dtC cc η) fun (l : List a.hat) =>
         (List.foldl.timedCost (fun x y => p.1 (x, y)) (fun x y => p.2 (x, y)) acc l,
           .ret (List.foldl (fun x y => p.1 (x, y)) acc l))
   | _, _, .iter (c := c) n f i, η =>
-    bindT (n.dt η) fun (k : ℕ) => bindT (f.dt η) fun (p : Ty.hat (.arr c c)) =>
-      bindT (i.dt η) fun acc => (iterCost p acc k, .ret (p.1^[k] acc))
+    bindT (n.dtC cc η) fun (k : ℕ) => bindT (f.dtC cc η) fun (p : Ty.hat (.arr c c)) =>
+      bindT (i.dtC cc η) fun acc => (iterCost p acc k, .ret (p.1^[k] acc))
   | _, _, .sample f, _ =>
     (0, .sample f.den (FTy.instFintype f) (FTy.instNonempty f) (fun _ => 0) fun v => .ret v)
   | _, _, .get n f, _ => (0, .get (f.loc n) (fun _ => 0) fun v => .ret v)
-  | _, _, .set n f x, η => bindT (x.dt η) fun u => (0, .set (f.loc n) u 0 (.ret ()))
-  | _, _, .query _ r x, η => bindT (x.dt η) fun _ =>
+  | _, _, .set n f x, η => bindT (x.dtC cc η) fun u => (0, .set (f.loc n) u 0 (.ret ()))
+  | _, _, .query _ r x, η => bindT (x.dtC cc η) fun _ =>
     (0, .sample r.den (FTy.instFintype r) (FTy.instNonempty r) (fun _ => 0) fun v => .ret v)
   | _, _, .fail, _ => (0, .fail)
+
+/-- The allowance at the charges of `derive_timed`: `callCost`, one per call and none on `unit`. -/
+def allow (t : Tm Γ τ) : ℕ := t.allowC callCost
+
+/-- The costed tree of the charges of `derive_timed`: `dtC` at the charge `callCost` of a call. -/
+noncomputable def dt (t : Tm Γ τ) (η : EnvHat Γ) : ℕ × SPTree.Timed τ.hat := t.dtC callCost η
 
 /-- The pure terms: no effect and no call of a function variable. Their costed trees are
 leaves (`dt_pure`), so that an abstraction with a pure body is a pure costed closure. -/
@@ -561,59 +519,59 @@ def Pure : {Γ : List Ty} → {τ : Ty} → Tm Γ τ → Prop
   | _, _, _ => False
 
 /-- The costed tree of a pure term is a leaf. -/
-theorem dt_pure : ∀ {Γ : List Ty} {τ : Ty} (t : Tm Γ τ), t.Pure →
-    ∀ η : EnvHat Γ, ∃ u, (t.dt η).2 = .ret u := by
+theorem dtC_pure (cc : Ty → ℕ) : ∀ {Γ : List Ty} {τ : Ty} (t : Tm Γ τ), t.Pure →
+    ∀ η : EnvHat Γ, ∃ u, (t.dtC cc η).2 = .ret u := by
   intro Γ τ t
   induction t with
   | @var _ σ x =>
     intro ht η
-    cases σ <;> simp_all [Pure, Ty.isArr, dt, Ty.read]
+    cases σ <;> simp_all [Pure, Ty.isArr, dtC, Ty.read]
   | lam b ih => intro _ η; exact ⟨_, rfl⟩
   | app f x ihf ihx =>
     intro ht η
     obtain ⟨hv, hf, hx⟩ := ht
     obtain ⟨p, hp⟩ := ihf hf η
     obtain ⟨u, hu⟩ := ihx hx η
-    simp [dt, hv, bindT, SPTree.Timed.delay, hp, hu, SPTree.Timed.bind]
+    simp [dtC, hv, bindT, SPTree.Timed.delay, hp, hu, SPTree.Timed.bind]
   | letE e b ihe ihb =>
     intro ht η
     obtain ⟨u, hu⟩ := ihe ht.1 η
     obtain ⟨w, hw⟩ := ihb ht.2 (η.cons u)
-    simp [dt, bindT, SPTree.Timed.delay, hu, hw, SPTree.Timed.bind]
+    simp [dtC, bindT, SPTree.Timed.delay, hu, hw, SPTree.Timed.bind]
   | seq e b ihe ihb =>
     intro ht η
     obtain ⟨u, hu⟩ := ihe ht.1 η
     obtain ⟨w, hw⟩ := ihb ht.2 η
-    simp [dt, bindT, SPTree.Timed.delay, hu, hw, SPTree.Timed.bind]
+    simp [dtC, bindT, SPTree.Timed.delay, hu, hw, SPTree.Timed.bind]
   | natLit n => intro _ η; exact ⟨_, rfl⟩
   | lit f v => intro _ η; exact ⟨_, rfl⟩
   | prim p x ih =>
     intro ht η
     obtain ⟨u, hu⟩ := ih ht η
-    simp [dt, bindT, SPTree.Timed.delay, hu, SPTree.Timed.bind]
+    simp [dtC, bindT, SPTree.Timed.delay, hu, SPTree.Timed.bind]
   | pair x y ihx ihy =>
     intro ht η
     obtain ⟨u, hu⟩ := ihx ht.1 η
     obtain ⟨w, hw⟩ := ihy ht.2 η
-    simp only [dt, bindT, SPTree.Timed.delay, hu, hw, SPTree.Timed.bind]
+    simp only [dtC, bindT, SPTree.Timed.delay, hu, hw, SPTree.Timed.bind]
     exact ⟨_, rfl⟩
   | fst p ih =>
     intro ht η
     obtain ⟨u, hu⟩ := ih ht η
-    simp [dt, bindT, SPTree.Timed.delay, hu, SPTree.Timed.bind]
+    simp [dtC, bindT, SPTree.Timed.delay, hu, SPTree.Timed.bind]
   | snd p ih =>
     intro ht η
     obtain ⟨u, hu⟩ := ih ht η
-    simp [dt, bindT, SPTree.Timed.delay, hu, SPTree.Timed.bind]
+    simp [dtC, bindT, SPTree.Timed.delay, hu, SPTree.Timed.bind]
   | inl x ih =>
     intro ht η
     obtain ⟨u, hu⟩ := ih ht η
-    simp only [dt, bindT, SPTree.Timed.delay, hu, SPTree.Timed.bind]
+    simp only [dtC, bindT, SPTree.Timed.delay, hu, SPTree.Timed.bind]
     exact ⟨_, rfl⟩
   | inr x ih =>
     intro ht η
     obtain ⟨u, hu⟩ := ih ht η
-    simp only [dt, bindT, SPTree.Timed.delay, hu, SPTree.Timed.bind]
+    simp only [dtC, bindT, SPTree.Timed.delay, hu, SPTree.Timed.bind]
     exact ⟨_, rfl⟩
   | case s l r ihs ihl ihr =>
     intro ht η
@@ -621,26 +579,26 @@ theorem dt_pure : ∀ {Γ : List Ty} {τ : Ty} (t : Tm Γ τ), t.Pure →
     cases u with
     | inl x =>
       obtain ⟨w, hw⟩ := ihl ht.2.1 (η.cons x)
-      simp [dt, bindT, SPTree.Timed.delay, hu, hw, SPTree.Timed.bind]
+      simp [dtC, bindT, SPTree.Timed.delay, hu, hw, SPTree.Timed.bind]
     | inr y =>
       obtain ⟨w, hw⟩ := ihr ht.2.2 (η.cons y)
-      simp [dt, bindT, SPTree.Timed.delay, hu, hw, SPTree.Timed.bind]
+      simp [dtC, bindT, SPTree.Timed.delay, hu, hw, SPTree.Timed.bind]
   | ite c t e ihc iht ihe =>
     intro ht η
     obtain ⟨u, hu⟩ := ihc ht.1 η
     cases u with
     | false =>
       obtain ⟨w, hw⟩ := ihe ht.2.2 η
-      simp [dt, bindT, SPTree.Timed.delay, hu, hw, SPTree.Timed.bind]
+      simp [dtC, bindT, SPTree.Timed.delay, hu, hw, SPTree.Timed.bind]
     | true =>
       obtain ⟨w, hw⟩ := iht ht.2.1 η
-      simp [dt, bindT, SPTree.Timed.delay, hu, hw, SPTree.Timed.bind]
+      simp [dtC, bindT, SPTree.Timed.delay, hu, hw, SPTree.Timed.bind]
   | nil => intro _ η; exact ⟨_, rfl⟩
   | cons x xs ihx ihxs =>
     intro ht η
     obtain ⟨u, hu⟩ := ihx ht.1 η
     obtain ⟨w, hw⟩ := ihxs ht.2 η
-    simp only [dt, bindT, SPTree.Timed.delay, hu, hw, SPTree.Timed.bind]
+    simp only [dtC, bindT, SPTree.Timed.delay, hu, hw, SPTree.Timed.bind]
     exact ⟨_, rfl⟩
   | lcase xs n c ihxs ihn ihc =>
     intro ht η
@@ -648,22 +606,22 @@ theorem dt_pure : ∀ {Γ : List Ty} {τ : Ty} (t : Tm Γ τ), t.Pure →
     cases u with
     | nil =>
       obtain ⟨w, hw⟩ := ihn ht.2.1 η
-      simp [dt, bindT, SPTree.Timed.delay, hu, hw, SPTree.Timed.bind]
+      simp [dtC, bindT, SPTree.Timed.delay, hu, hw, SPTree.Timed.bind]
     | cons x l =>
       obtain ⟨w, hw⟩ := ihc ht.2.2 ((η.cons (σ := .list _) l).cons x)
-      simp [dt, bindT, SPTree.Timed.delay, hu, hw, SPTree.Timed.bind]
+      simp [dtC, bindT, SPTree.Timed.delay, hu, hw, SPTree.Timed.bind]
   | foldl f i xs ihf ihi ihxs =>
     intro ht η
     obtain ⟨p, hp⟩ := ihf ht.1 η
     obtain ⟨u, hu⟩ := ihi ht.2.1 η
     obtain ⟨w, hw⟩ := ihxs ht.2.2 η
-    simp [dt, bindT, SPTree.Timed.delay, hp, hu, hw, SPTree.Timed.bind]
+    simp [dtC, bindT, SPTree.Timed.delay, hp, hu, hw, SPTree.Timed.bind]
   | iter n f i ihn ihf ihi =>
     intro ht η
     obtain ⟨k, hk⟩ := ihn ht.1 η
     obtain ⟨p, hp⟩ := ihf ht.2.1 η
     obtain ⟨u, hu⟩ := ihi ht.2.2 η
-    simp [dt, bindT, SPTree.Timed.delay, hk, hp, hu, SPTree.Timed.bind]
+    simp [dtC, bindT, SPTree.Timed.delay, hk, hp, hu, SPTree.Timed.bind]
   | sample f => intro ht; simp [Pure] at ht
   | get n f => intro ht; simp [Pure] at ht
   | set n f x ih => intro ht; simp [Pure] at ht
@@ -747,22 +705,24 @@ theorem iterT_sim {c : Ty} {p : Ty.hat (.arr c c)} {g : Val (.arr c c)}
 
 /-! ## Soundness -/
 
-/-- Soundness of the charges of `derive_timed` on D: in related environments, the evaluation of
-a term of the fragment is simulated by its costed tree at factor `1` and allowance
-`t.allow`. -/
-theorem dt_timedSim : ∀ {Γ : List Ty} {τ : Ty} (t : Tm Γ τ), t.InDtFrag →
-    ∀ {η : EnvHat Γ} {ρ : Env Γ}, SimEnv η ρ → TimedSim (Sim τ) 1 t.allow (t.dt η) (t.eval ρ) := by
+/-- Soundness of the charges on D at any charge `cc a ≤ 1` of a call: in related environments,
+the evaluation of a term of the fragment is simulated by its costed tree `t.dtC cc η` at factor
+`1` and allowance `t.allowC cc`. The β-step of a call is paid by its charge `cc a` and by the
+allowance `1 - cc a`. -/
+theorem dtC_timedSim (cc : Ty → ℕ) (hcc : ∀ a, cc a ≤ 1) :
+    ∀ {Γ : List Ty} {τ : Ty} (t : Tm Γ τ), t.InDtFrag → ∀ {η : EnvHat Γ} {ρ : Env Γ},
+      SimEnv η ρ → TimedSim (Sim τ) 1 (t.allowC cc) (t.dtC cc η) (t.eval ρ) := by
   intro Γ τ t
   induction t with
   | var x => intro ht η ρ hρ; exact SimE.read _ ht (hρ _ x)
   | @lam _ a b body ih =>
     intro ht η ρ hρ
     refine TimedSim.ret fun u v huv => ?_
-    obtain ⟨w₀, hw₀⟩ := dt_pure body ht.2 (η.cons u)
+    obtain ⟨w₀, hw₀⟩ := dtC_pure cc body ht.2 (η.cons u)
     obtain ⟨m, w, he, hm, hw⟩ := TimedSim.ret_inv hw₀ (ih ht.1 (hρ.cons huv))
     refine ⟨m, w, he, ?_, ?_⟩
     · simpa using hm
-    · change Sim b (b.pureVal (body.dt (η.cons u)).2) w
+    · change Sim b (b.pureVal (body.dtC cc (η.cons u)).2) w
       rw [hw₀]
       exact hw
   | @app _ a b f x ihf ihx =>
@@ -771,39 +731,39 @@ theorem dt_timedSim : ∀ {Γ : List Ty} {τ : Ty} (t : Tm Γ τ), t.InDtFrag �
     | some y =>
       obtain rfl := eq_var_of_headVar? hv
       have hev : (Tm.app (.var y) x).eval ρ = (x.eval ρ).bind fun v => .tick (ρ _ y v) := rfl
-      have hdt : (Tm.app (.var y) x).dt η =
-          bindT (x.dt η) fun u => SPTree.Timed.delay (callCost a) (η _ y u) := by
-        simp [dt, headVar?]
+      have hdt : (Tm.app (.var y) x).dtC cc η =
+          bindT (x.dtC cc η) fun u => SPTree.Timed.delay (cc a) (η _ y u) := by
+        simp [dtC, headVar?]
       rw [hev, hdt]
-      refine (TimedSim.bindCont (m := 1 - callCost a) (ihx ht.2 hρ) fun u v huv => ?_).mono
-        (by simp only [allow]; omega)
+      refine (TimedSim.bindCont (m := 1 - cc a) (ihx ht.2 hρ) fun u v huv => ?_).mono
+        (by simp only [allowC]; omega)
       have h0 : TimedSim (Sim b) 1 0 (η _ y u) (ρ _ y v) := hρ _ y u v huv
-      have hc := callCost_le_one a
-      exact (TimedSim.delay_tick_le (m := 1 - callCost a) h0 (by omega)).mono (by omega)
+      have hc := hcc a
+      exact (TimedSim.delay_tick_le (m := 1 - cc a) h0 (by omega)).mono (by omega)
     | none =>
       have hf : f.InDtFrag := by simpa [hv] using ht.1
       have hev : (Tm.app f x).eval ρ =
           (f.eval ρ).bind fun g => (x.eval ρ).bind fun v => .tick (g v) := rfl
-      have hdt : (Tm.app f x).dt η = bindT (f.dt η) fun p =>
-          bindT (x.dt η) fun u => (1 + p.2 u, .ret (p.1 u)) := by
-        simp [dt, hv]
+      have hdt : (Tm.app f x).dtC cc η = bindT (f.dtC cc η) fun p =>
+          bindT (x.dtC cc η) fun u => (1 + p.2 u, .ret (p.1 u)) := by
+        simp [dtC, hv]
       rw [hev, hdt]
-      refine (TimedSim.bindCont (m := x.allow + 0) (ihf hf hρ) fun p g hpg =>
-        TimedSim.bindCont (ihx ht.2 hρ) fun u v huv => ?_).mono (by simp only [allow]; omega)
+      refine (TimedSim.bindCont (m := x.allowC cc + 0) (ihf hf hρ) fun p g hpg =>
+        TimedSim.bindCont (ihx ht.2 hρ) fun u v huv => ?_).mono (by simp only [allowC]; omega)
       obtain ⟨m, w, hg, hm, hw⟩ := hpg u v huv
       rw [hg]
       exact TimedSim.stepN_ret (m := m + 1) hw (by omega)
   | letE e b ihe ihb =>
     intro ht η ρ hρ
     rw [Tm.eval_letE]
-    exact (TimedSim.bind (m := b.allow + 1) (ihe ht.1 hρ) fun u v huv =>
-      TimedSimTree.tick (ihb ht.2 (hρ.cons huv)) (by omega)).mono (by simp only [allow]; omega)
+    exact (TimedSim.bind (m := b.allowC cc + 1) (ihe ht.1 hρ) fun u v huv =>
+      TimedSimTree.tick (ihb ht.2 (hρ.cons huv)) (by omega)).mono (by simp only [allowC]; omega)
   | seq e b ihe ihb =>
     intro ht η ρ hρ
     have hev : (Tm.seq e b).eval ρ = (e.eval ρ).bind fun _ => .tick (b.eval ρ) := rfl
     rw [hev]
-    exact (TimedSim.bind (m := b.allow + 1) (ihe ht.1 hρ) fun u v huv =>
-      TimedSimTree.tick (ihb ht.2 hρ) (by omega)).mono (by simp only [allow]; omega)
+    exact (TimedSim.bind (m := b.allowC cc + 1) (ihe ht.1 hρ) fun u v huv =>
+      TimedSimTree.tick (ihb ht.2 hρ) (by omega)).mono (by simp only [allowC]; omega)
   | natLit n => intro _ η ρ _; exact TimedSim.ret rfl
   | lit f v => intro _ η ρ _; exact TimedSim.ret rfl
   | @prim _ a b p x ih =>
@@ -812,7 +772,7 @@ theorem dt_timedSim : ∀ {Γ : List Ty} {τ : Ty} (t : Tm Γ τ), t.InDtFrag �
         (x.eval ρ).bind fun v => stepN CTree.tick (p.cost v) (.ret (p.apply v)) := rfl
     rw [hev]
     refine (TimedSim.bindCont (m := 0) (ih ht.2 hρ) fun u v huv => ?_).mono
-      (by simp only [allow]; omega)
+      (by simp only [allowC]; omega)
     rw [p.cost_eq_one_of_unitCost ht.1 v]
     refine TimedSim.stepN_ret ?_ (by omega)
     rw [Sim.toVal_eq _ p.fo.1 huv]
@@ -823,40 +783,40 @@ theorem dt_timedSim : ∀ {Γ : List Ty} {τ : Ty} (t : Tm Γ τ), t.InDtFrag �
         (x.eval ρ).bind fun u => (y.eval ρ).bind fun v => .ret ((u, v) : Val a × Val b) := rfl
     rw [hev]
     exact (TimedSim.bindCont (ihx ht.1 hρ) fun _ _ huv => TimedSim.bindCont (m := 0)
-      (ihy ht.2 hρ) fun _ _ huv' => TimedSim.ret ⟨huv, huv'⟩).mono (by simp only [allow]; omega)
+      (ihy ht.2 hρ) fun _ _ huv' => TimedSim.ret ⟨huv, huv'⟩).mono (by simp only [allowC]; omega)
   | @fst _ a b p ih =>
     intro ht η ρ hρ
     have hev : (Tm.fst p).eval ρ = (p.eval ρ).bind fun (v : Val a × Val b) => .ret v.1 := rfl
     rw [hev]
     exact (TimedSim.bindCont (m := 0) (ih ht hρ) fun _ _ huv => TimedSim.ret huv.1).mono
-      (by simp only [allow]; omega)
+      (by simp only [allowC]; omega)
   | @snd _ a b p ih =>
     intro ht η ρ hρ
     have hev : (Tm.snd p).eval ρ = (p.eval ρ).bind fun (v : Val a × Val b) => .ret v.2 := rfl
     rw [hev]
     exact (TimedSim.bindCont (m := 0) (ih ht hρ) fun _ _ huv => TimedSim.ret huv.2).mono
-      (by simp only [allow]; omega)
+      (by simp only [allowC]; omega)
   | @inl _ a b x ih =>
     intro ht η ρ hρ
     have hev : (Tm.inl (b := b) x).eval ρ =
         (x.eval ρ).bind fun v => .ret (Sum.inl v : Val a ⊕ Val b) := rfl
     rw [hev]
     exact (TimedSim.bindCont (m := 0) (ih ht hρ) fun _ _ huv =>
-      TimedSim.ret (Sum.LiftRel.inl huv)).mono (by simp only [allow]; omega)
+      TimedSim.ret (Sum.LiftRel.inl huv)).mono (by simp only [allowC]; omega)
   | @inr _ a b x ih =>
     intro ht η ρ hρ
     have hev : (Tm.inr (a := a) x).eval ρ =
         (x.eval ρ).bind fun v => .ret (Sum.inr v : Val a ⊕ Val b) := rfl
     rw [hev]
     exact (TimedSim.bindCont (m := 0) (ih ht hρ) fun _ _ huv =>
-      TimedSim.ret (Sum.LiftRel.inr huv)).mono (by simp only [allow]; omega)
+      TimedSim.ret (Sum.LiftRel.inr huv)).mono (by simp only [allowC]; omega)
   | @case _ a b c s l r ihs ihl ihr =>
     intro ht η ρ hρ
     have hev : (Tm.case s l r).eval ρ = (s.eval ρ).bind fun (v : Val a ⊕ Val b) =>
         .tick (Sum.elim (fun x => l.eval (ρ.cons x)) (fun y => r.eval (ρ.cons y)) v) := rfl
     rw [hev]
-    refine (TimedSim.bindCont (m := max l.allow r.allow + 0) (ihs ht.1 hρ)
-      fun u v huv => ?_).mono (by simp only [allow]; omega)
+    refine (TimedSim.bindCont (m := max (l.allowC cc) (r.allowC cc) + 0) (ihs ht.1 hρ)
+      fun u v huv => ?_).mono (by simp only [allowC]; omega)
     refine TimedSim.delay_tick_le ?_ (by omega)
     cases huv with
     | inl h => exact (ihl ht.2.1 (hρ.cons h)).mono (by omega)
@@ -866,8 +826,8 @@ theorem dt_timedSim : ∀ {Γ : List Ty} {τ : Ty} (t : Tm Γ τ), t.InDtFrag �
     have hev : (Tm.ite c t e).eval ρ =
         (c.eval ρ).bind fun (b : Bool) => .tick (bif b then t.eval ρ else e.eval ρ) := rfl
     rw [hev]
-    refine (TimedSim.bindCont (m := max t.allow e.allow + 0) (ihc ht.1 hρ)
-      fun b b' hb => ?_).mono (by simp only [allow]; omega)
+    refine (TimedSim.bindCont (m := max (t.allowC cc) (e.allowC cc) + 0) (ihc ht.1 hρ)
+      fun b b' hb => ?_).mono (by simp only [allowC]; omega)
     have hb' : b = b' := hb
     subst hb'
     refine TimedSim.delay_tick_le ?_ (by omega)
@@ -882,15 +842,15 @@ theorem dt_timedSim : ∀ {Γ : List Ty} {τ : Ty} (t : Tm Γ τ), t.InDtFrag �
     rw [hev]
     exact (TimedSim.bindCont (ihx ht.1 hρ) fun _ _ huv => TimedSim.bindCont (m := 0)
       (ihxs ht.2 hρ) fun _ _ huv' => TimedSim.ret (List.Forall₂.cons huv huv')).mono
-      (by simp only [allow]; omega)
+      (by simp only [allowC]; omega)
   | @lcase _ a c xs n cb ihxs ihn ihc =>
     intro ht η ρ hρ
     have hev : (Tm.lcase xs n cb).eval ρ = (xs.eval ρ).bind fun (l : List (Val a)) =>
         .tick (listCase l (n.eval ρ) fun x l' =>
           cb.eval ((ρ.cons (τ := .list a) l').cons x)) := rfl
     rw [hev]
-    refine (TimedSim.bindCont (m := max n.allow cb.allow + 0) (ihxs ht.1 hρ)
-      fun u v huv => ?_).mono (by simp only [allow]; omega)
+    refine (TimedSim.bindCont (m := max (n.allowC cc) (cb.allowC cc) + 0) (ihxs ht.1 hρ)
+      fun u v huv => ?_).mono (by simp only [allowC]; omega)
     refine TimedSim.delay_tick_le ?_ (by omega)
     cases huv with
     | nil => exact (ihn ht.2.1 hρ).mono (by omega)
@@ -903,7 +863,7 @@ theorem dt_timedSim : ∀ {Γ : List Ty} {τ : Ty} (t : Tm Γ τ), t.InDtFrag �
     refine (TimedSim.bindCont (ihf ht.1 hρ) fun p g hpg =>
       TimedSim.bindCont (ihi ht.2.1 hρ) fun acc v hacc =>
       TimedSim.bindCont (m := 0) (ihxs ht.2.2 hρ) fun l l' hl => ?_).mono
-      (by simp only [allow]; omega)
+      (by simp only [allowC]; omega)
     obtain ⟨m, w, he, hm, hw⟩ := foldT_sim hpg hl hacc
     rw [he]
     exact TimedSim.stepN_ret hw (by omega)
@@ -915,7 +875,7 @@ theorem dt_timedSim : ∀ {Γ : List Ty} {τ : Ty} (t : Tm Γ τ), t.InDtFrag �
     refine (TimedSim.bindCont (ihn ht.1 hρ) fun k k' hk =>
       TimedSim.bindCont (ihf ht.2.1 hρ) fun p g hpg =>
       TimedSim.bindCont (m := 0) (ihi ht.2.2 hρ) fun acc v hacc => ?_).mono
-      (by simp only [allow]; omega)
+      (by simp only [allowC]; omega)
     have hk' : k = k' := hk
     subst hk'
     obtain ⟨m, w, he, hm, hw⟩ := iterT_sim hpg k hacc
@@ -931,7 +891,7 @@ theorem dt_timedSim : ∀ {Γ : List Ty} {τ : Ty} (t : Tm Γ τ), t.InDtFrag �
         (x.eval ρ).bind fun v => .set n f v (.ret (() : Unit)) := rfl
     rw [hev]
     refine (TimedSim.bindCont (m := 0) (ih ht hρ) fun u v huv => ?_).mono
-      (by simp only [allow]; omega)
+      (by simp only [allowC]; omega)
     have h' : u = v := huv
     subst h'
     exact TimedSim.set le_rfl n f u (TimedSim.ret rfl)
@@ -940,9 +900,16 @@ theorem dt_timedSim : ∀ {Γ : List Ty} {τ : Ty} (t : Tm Γ τ), t.InDtFrag �
     have hev : (Tm.query d r x).eval ρ = (x.eval ρ).bind fun v => .query d r v .ret := rfl
     rw [hev]
     refine (TimedSim.bindCont (m := 0) (ih ht hρ) fun _ v _ => ?_).mono
-      (by simp only [allow]; omega)
+      (by simp only [allowC]; omega)
     exact TimedSim.query le_rfl d r v fun _ => TimedSim.ret rfl
   | fail => intro _ η ρ _; exact TimedSim.fail
+
+/-- Soundness of the charges of `derive_timed` on D: in related environments, the evaluation of
+a term of the fragment is simulated by its costed tree at factor `1` and allowance
+`t.allow`. -/
+theorem dt_timedSim {Γ : List Ty} {τ : Ty} (t : Tm Γ τ) (ht : t.InDtFrag) {η : EnvHat Γ}
+    {ρ : Env Γ} (hρ : SimEnv η ρ) : TimedSim (Sim τ) 1 t.allow (t.dt η) (t.eval ρ) :=
+  dtC_timedSim callCost callCost_le_one t ht hρ
 
 /-- The cost of a term of the fragment is at most its allowance plus the time of its costed
 tree. -/

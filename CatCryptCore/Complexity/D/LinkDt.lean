@@ -20,6 +20,14 @@ the theorem through which `link_timed` proves the simulation of a definition in 
 `Tm.dt_timedSim`: per definition only `CostLe` between the costed form of `derive_timed` and
 `t.dt η` remains, a comparison of two costed trees of the same shape.
 
+`TreeLeA S D A B` and `CostLeA S e d x y` relax the comparison by a deficit: on every path the
+step costs of the lower tree may exceed those of the upper one by at most `D` (by `e` in front and
+`d` in the tree), and the upper tree simulates at the allowance raised by the deficit
+(`TimedSimTree.of_treeLeA`, `TimedSim.of_costLeA`). This is the comparison that pays the unit
+call of a free function value from the allowance, as the walk does (`DSim.appFree`):
+`Tm.timedSim_of_costLeA` states the simulation from `CostLeA` at any charge `cc a ≤ 1` of a call
+(`Tm.dtC`), at the allowance `t.allowC cc + (e + d)`.
+
 At a first-order type, translated values and values of D are the same type (`Ty.hat_eq_val`)
 and related exactly when they are equal up to the cast (`Sim.cast_eq`, `Sim.cast_self`). At a
 concrete type the cast is the identity by definitional unfolding. The translated environment of
@@ -29,16 +37,18 @@ function and `treeEntry` for a tree function, related to their D values by `SimE
 
 ## Main definitions
 
-* `TreeLe`, `CostLe`
+* `TreeLe`, `CostLe`; `TreeLeA`, `CostLeA`: up to a deficit
 * `EnvHat.nil`, `EnvHat.consE`, `dataEntry`, `treeEntry`
 
 ## Main results
 
 * `TimedSimTree.of_treeLe`, `TimedSim.of_costLe`, `CostLe.bind`, `TreeLe.refl`
+* `TimedSimTree.of_treeLeA`, `TimedSim.of_costLeA`, `CostLeA.bind`, `TreeLeA.mono`,
+  `TreeLeA.of_treeLe`
 * `foldl_timedCost_mono`: the registered cost of `List.foldl` is monotone in the step cost
 * `Ty.hat_eq_val`, `Sim.cast_eq`, `Sim.cast_self`
 * `SimEnv.nil`, `SimEnv.consE`, `SimE.dataEntry`, `SimE.treeEntry`
-* `Tm.timedSim_of_costLe`
+* `Tm.timedSim_of_costLe`, `Tm.timedSim_of_costLeA`
 -/
 
 @[expose] public section
@@ -609,19 +619,20 @@ theorem Tm.timedSim_of_costLe {Γ : List Ty} {τ : Ty} (t : Tm Γ τ) (ht : t.In
   TimedSim.of_costLe (fun _ _ _ hab haw => hab.symm.trans (Sim.cast_eq τ hτ haw).symm)
     (Tm.dt_timedSim t ht hρ) hX
 
-/-- A costed tree `X` above the charges `t.dt η` of a first-order term of the fragment up to the
-deficits `e` and `d` simulates its evaluation at any bound `k` of the allowance `t.allow` plus
-`e + d`, with leaves equal to the values of D: the steps of the charges that `X` leaves out (the
-unit call of a function value that the costed form charges nothing for) are paid from the
-allowance. With `k = t.allowB` (`Tm.allow_le_allowB`) the allowance is a numeral when the
-argument types of the calls are built from constructors of `Ty`. -/
-theorem Tm.timedSim_of_costLeA {Γ : List Ty} {τ : Ty} (t : Tm Γ τ) (ht : t.InDtFrag)
-    (hτ : τ.FO) {η : EnvHat Γ} {ρ : Env Γ} (hρ : SimEnv η ρ) {k e d : ℕ} (hk : t.allow ≤ k)
-    {X : ℕ × SPTree.Timed (Val τ)}
-    (hX : CostLeA (fun a b => cast (Ty.hat_eq_val τ hτ) a = b) e d (t.dt η) X) :
-    TimedSim (fun a w => a = w) 1 (k + (e + d)) X (t.eval ρ) := by
+/-- A costed tree `X` above the charges `t.dtC cc η` (at a charge `cc a ≤ 1` of a call) of a
+first-order term of the fragment up to the deficits `e` in front and `d` in the tree simulates
+its evaluation at the allowance `t.allowC cc + (e + d)`, with leaves equal to the values of D:
+the steps of the charges that `X` leaves out are paid from the allowance. These are the unit call
+of a function value that the costed form charges nothing for (a projection or re-pairing, as the
+walk pays it by `DSim.appFree`), and, at the charge `1` of every call, the call on `unit`, which
+the costed form charges nothing for. -/
+theorem Tm.timedSim_of_costLeA (cc : Ty → ℕ) (hcc : ∀ a, cc a ≤ 1) {Γ : List Ty} {τ : Ty}
+    (t : Tm Γ τ) (ht : t.InDtFrag) (hτ : τ.FO) {η : EnvHat Γ} {ρ : Env Γ} (hρ : SimEnv η ρ)
+    {e d : ℕ} {X : ℕ × SPTree.Timed (Val τ)}
+    (hX : CostLeA (fun a b => cast (Ty.hat_eq_val τ hτ) a = b) e d (t.dtC cc η) X) :
+    TimedSim (fun a w => a = w) 1 (t.allowC cc + (e + d)) X (t.eval ρ) := by
   have h := TimedSim.of_costLeA (fun _ _ _ hab haw => hab.symm.trans (Sim.cast_eq τ hτ haw).symm)
-    (TimedSim.mono (Tm.dt_timedSim t ht hρ) hk) hX
+    (Tm.dtC_timedSim cc hcc t ht hρ) hX
   rwa [Nat.one_mul] at h
 
 /-- The meaning of a simulation with equal leaves at a query-free D tree. -/
