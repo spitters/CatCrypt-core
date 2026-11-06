@@ -29,6 +29,9 @@ group element `g^e` with `e` drawn from `signedClamp`: the sign is not seen by t
 
 ## Main results
 
+* `concreteDDH_X25519_keygen_bind_discard`, `concreteDDH_X25519_keygen_dh_comm` — the key
+  generation `(sk, x25519_base sk)` discarded is the identity, and DH commutativity over it
+  under `X25519Commutes`
 * `X25519Hom.scalarmult_pow`, `X25519Hom.base_eq` — X25519 as exponentiation by `clampE`
 * `X25519Hom.shared_eq` — `x25519_scalarmult a (x25519_base b) = encU (g^(clampE a · clampE b))`
 * `X25519Hom.scalarmult_elemPow` — `x25519_scalarmult sk (encU T) = encU (T ^ signedE (sk, b))`
@@ -57,6 +60,31 @@ open CatCrypt.Crypto.Libcrux.Extraction.Libcrux_specs
 open CatCrypt.Crypto.Libcrux.Bridge_X25519
 open CatCryptCore.Examples.CyclicGroupDDH
 open scoped ENNReal
+
+/-! ## Key generation of `concreteDDH_X25519` -/
+
+/-- Discarding the result of the key generation of `concreteDDH_X25519` is the identity. -/
+theorem concreteDDH_X25519_keygen_bind_discard {β : Type} (rest : SPComp β) :
+    SPComp.bind concreteDDH_X25519.keygen (fun _ => rest) = rest := by
+  simp only [concreteDDH_X25519, SPComp.bind_assoc, SPComp.pure_bind]
+  funext h
+  simp only [SPComp.bind, SPComp.sample]
+  rw [SDistr.bind_assoc]
+  simp only [SDistr.pure_bind]
+  exact SDistr.uniform_bind_const (rest h)
+
+/-- DH commutativity over the key generation of `concreteDDH_X25519`, from `X25519Commutes`:
+`X25519(sk₁, pk₂)` and `X25519(sk₂, pk₁)` may be exchanged for two generated key pairs. -/
+theorem concreteDDH_X25519_keygen_dh_comm (hX : X25519Commutes) {α : Type}
+    (f : (Vector UInt8 32 × Vector UInt8 32) → (Vector UInt8 32 × Vector UInt8 32) →
+      Vector UInt8 32 → SPComp α) :
+    (concreteDDH_X25519.keygen.bind fun p₁ => concreteDDH_X25519.keygen.bind fun p₂ =>
+        f p₁ p₂ (x25519_scalarmult p₁.1 p₂.2)) =
+      (concreteDDH_X25519.keygen.bind fun p₁ => concreteDDH_X25519.keygen.bind fun p₂ =>
+        f p₁ p₂ (x25519_scalarmult p₂.1 p₁.2)) := by
+  have hc : ∀ a b : Vector UInt8 32,
+      x25519_scalarmult a (x25519_base b) = x25519_scalarmult b (x25519_base a) := hX
+  simp only [concreteDDH_X25519, SPComp.bind_assoc, SPComp.pure_bind, hc]
 
 variable {B : Curve25519Point}
 
