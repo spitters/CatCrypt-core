@@ -434,12 +434,41 @@ a condition is also priced by what decides it (`pricedProp?`): `x ∈ l` on a li
 comparison of elements, and a definition valued in `Prop` as one plus its unfolded body, each
 argument priced once. The list costs are registered in `CatCryptCore.Tactics.StdCosts`.
 
-A decision (`ite`, `dite`, `Decidable.decide`) whose `Decidable` instance is classical
-(`classicalIn?`: it mentions `Classical.choice` or a `noncomputable` constant in a data
-position) and a data term headed by a choice constant (`choiceConstants`: `Exists.choose`,
-`Classical.choose`, `Classical.epsilon`, …) are derived as before and reported by a warning
-naming the declaration whose cost is derived: the time bound charges no algorithm for them.
-`#classical_cost_audit` reports the same occurrences in the costed forms of an environment.
+Rule (n), classical decisions. In the cost model every decision is a step of an algorithm. A
+decision procedure is classical when it has no algorithm: its head, one of its instance
+arguments, the body of a `fun` or the value of a local bound by a `let` that it reaches is
+`Classical.choice` or a constant marked `noncomputable` that the compiler does not implement
+by other code (`ClassicalCostAudit.classicalDecision?`, `isClassicalConst`): the instances
+`Classical.propDecidable`, `Classical.dec`, `Classical.decEq`, `Classical.decPred`, a
+`Decidable` instance built from them (`instDecidableAnd` of a classical component,
+`instBEqOfDecidableEq (Classical.decEq α)`), or a noncomputable instance. A constant marked
+`noncomputable` with a `@[csimp]` replacement, an `@[implemented_by]` or an `@[extern]`
+implementation has one (Lean 4.35 marks `Bool.or`, `Bool.and` and `Bool.not` `noncomputable`
+and compiles them through `@[csimp]` replacements). The data a procedure decides is not part of
+it: `instDecidableEqBool b true` decides `b = true` computably whatever computes `b`, whose cost
+is priced as data. The class: a decision `ite c t e`, `dite c t e` or `decide c` whose instance is
+classical, a classical decision procedure evaluated as data (`match Classical.decEq α a b with`), a
+classical decision procedure passed to a registered primitive (the decision instance of a decidable
+predicate of rule (i), `Finset.filter p` with `Classical.decPred p`), and the method of a classical
+instance taken as a cost companion (rule (k)). Each is refused, with a message
+naming the declaration whose cost is derived, the condition (or the type of the procedure),
+the classical instance and the fix: a computable decision procedure, that is a `[Decidable c]`,
+`[DecidablePred p]` or `[DecidableEq α]` binder (priced by the cost of the condition, or by its
+cost companion under rule (k)) or a computable instance at the concrete type (the instance
+found without `open Classical`). A computable instance is priced as before: by the cost of its
+condition (`propCost`, with the predicate companions of rule (i) and the default
+`derive_timed.priceProps`), and in the method of an instance by its evaluation (rule (k)). A
+definition from a library that decides by a classical instance is refused where the
+derivation unfolds it, unless it is a registered primitive, whose registered cost is that of an
+algorithm on a computable representation: `Finsupp.single`, to which `Polynomial.C`,
+`Polynomial.monomial` and `Polynomial.X` unfold and whose support Mathlib decides by
+`Classical.decEq`, is registered in `CatCryptCore.Tactics.StdCostsPoly` as the write of one
+coefficient. There is no option that turns the refusal off. A data term headed by a choice
+constant (`choiceConstants`: `Exists.choose`, `Classical.choose`, `Classical.epsilon`, …) is not
+a decision: it is derived as before and reported by a warning naming the declaration whose cost
+is derived, and the derivation fails only where it unfolds `Classical.choice` itself, which has
+no definition to price. `#classical_cost_audit` reports the classical decisions and choices of
+the costed forms of an environment, which a hand-written costed form can still hold.
 
 A registered primitive `f` has a cost `f.timedCost`, a definition taking the arguments of
 `f`, each function-typed argument followed by its cost companion, and returning `ℕ`; the
@@ -493,8 +522,9 @@ instance of an equality depends on what it is:
   body of a decision function, of type `Decidable p` (`isDecisionBody`), is priced in the same
   mode, so that the decisions of its components are priced by their instances in turn.
 
-A method that neither case prices (an opaque function, a classical decision) is refused, with a
-message that names the method, the instance and the reason. Outside the method of an instance and
+A method that neither case prices (an opaque function, a classical decision, the latter with
+the message of rule (n)) is refused, with a message that names the method, the instance and the
+reason. Outside the method of an instance and
 the body of a decision function, a condition costs its data arguments and its instance is not
 read, as before: an `if a = b` in a reduction with a `[DecidableEq K]` binder takes no companion.
 The costs of `List.lookup`, `List.erase`, `List.idxOf`, `List.elem` and `List.beq` registered in
@@ -535,6 +565,7 @@ mirror, nor a field of a structure value as below, nor a field of a value of a c
 `Finset.prod`, `Finset.univ`, `Finset.range`, `Finset.erase`, `Finset.card` and
 `Finset.filter` are registered in `CatCryptCore.Tactics.StdCosts`), a closure over a domain
 that is not finite built into data whose type has no costed form (rules (j) and (m)), a method of an instance that rule (k) does not price,
+a decision by a classical instance (rule (n)),
 a recursive data
 function whose cost `derive_cost` does not derive (a class method on a local instance in its
 body needs `derive_cost (unit := …)`), a `match` whose motive depends on its
@@ -3881,11 +3912,24 @@ def warnOnce (msg : MessageData) (key? : Option String := none) : MetaM Unit := 
     if (← m.data.toString).startsWith key then return
   logWarning md
 
-/-- Warns when the decision of the condition `p` by the instance `inst` is classical. -/
-def warnClassicalDecision (ctx : Ctx) (p inst : Expr) : MetaM Unit := do
-  let some h ← ClassicalCostAudit.classicalIn? inst | return
-  warnOnce m!"derive_timed: {ctx.subject} decides `{p}` by a classical instance (`{h}`); \
-    its time bound does not charge this decision"
+/-- The fix named by the refusals of rule (n). -/
+def classicalDecisionFix : MessageData :=
+  m!"decide it by a computable instance: a `[Decidable _]`, `[DecidablePred _]` or \
+    `[DecidableEq _]` binder, or a computable instance at the concrete type"
+
+/-- Refuses the decision of the condition `p` by the instance `inst` when the instance is
+classical (rule (n)): its decision procedure reaches a constant without an algorithm
+(`ClassicalCostAudit.classicalDecision?`). -/
+def refuseClassicalDecision (ctx : Ctx) (p inst : Expr) : MetaM Unit := do
+  let some h ← ClassicalCostAudit.classicalDecision? inst | return
+  let within := if h == inst.consumeMData then m!"" else m!" (in the instance `{inst}`)"
+  fail m!"{ctx.subject} decides `{p}` by the classical instance `{h}`{within}, which has no \
+    running time (rule (n)); {classicalDecisionFix}"
+
+/-- The condition `p` of a decision procedure `e : Decidable p`, or `none` when `e` is not one. -/
+def decisionCond? (e : Expr) : MetaM (Option Expr) := do
+  let t ← whnfR (← inferType e)
+  return if t.isAppOfArity ``Decidable 1 then some t.appArg! else none
 
 /-- Warns when the data term `e`, an application of the constant `c`, is computed by choice.
 One warning per declaration: the unfolding of `Exists.choose` reaches the further choice
@@ -4037,6 +4081,10 @@ partial def instMethodCompanion? (ctx : Ctx) (who : MessageData) (p : Expr) :
     TermElabM (Option Expr) := do
   let p := p.consumeMData
   let some inst ← instOfPath? ctx p | return none
+  if let some h ← ClassicalCostAudit.classicalDecision? inst then
+    fail m!"{who} takes the cost of the method `{p}` of the instance `{inst}`, whose decision \
+      procedure is the classical instance `{h}`, which has no running time (rule (n)); \
+      {classicalDecisionFix}"
   let ctx' := { ctx with priceInsts := true }
   try
     let c ← forallTelescope (← whnfFnR (← inferType p)) fun ys _ => do
@@ -4279,7 +4327,7 @@ partial def tv (ctx : Ctx) (e : Expr) : TermElabM (Expr × Expr) := do
       return (add ca cb, ← mkAppM ``Prod.mk #[va, vb])
     if let some e' ← boolRecIte? e then return ← tv ctx e'
     if (f.isConstOf ``ite || f.isConstOf ``dite) && args.size == 5 then
-      warnClassicalDecision ctx args[1]! args[2]!
+      refuseClassicalDecision ctx args[1]! args[2]!
     if f.isConstOf ``ite && args.size == 5 then
       let (ca, va) ← tv ctx args[3]!
       let (cb, vb) ← tv ctx args[4]!
@@ -4556,6 +4604,18 @@ partial def costArgs (ctx : Ctx) (f : Expr) (args : Array Expr) (reg? : Option E
   let kinds ← argKinds f args (decPreds := reg?.isSome)
   let mut out := #[]
   for a in args, (k, bt) in kinds do
+    -- Rule (n): a decision procedure passed to a registered primitive (the decision instance of
+    -- a decidable predicate, rule (i)) is computable.
+    if reg?.isSome then
+      if (← whnfR bt).isAppOfArity ``Decidable 1 || (← isDecisionType bt) then
+        if let some h ← ClassicalCostAudit.classicalDecision? a then
+          let within := if h == a.consumeMData then m!"" else m!" (in the instance `{a}`)"
+          let fm := match f with
+            | .const c _ => MessageData.ofConstName c
+            | _ => m!"{f}"
+          fail m!"{ctx.subject} passes to `{fm}` the decision procedure of `{bt}` by the \
+            classical instance `{h}`{within}, which has no running time (rule (n)); \
+            {classicalDecisionFix}"
     out := out.push a
     if k == .treeFn then out := out.push (← companionOf ctx a)
     else if k == .fn then
@@ -4654,6 +4714,10 @@ partial def costConst (ctx : Ctx) (e : Expr) (c : Name) (args : Array Expr) :
   let env ← getEnv
   let f := e.getAppFn
   warnChoice ctx e c
+  -- Rule (n): a decision procedure without an algorithm evaluated as data
+  -- (`match Classical.decEq α a b with`) is refused.
+  if ClassicalCostAudit.isClassicalConst env c then
+    if let some p ← decisionCond? e then refuseClassicalDecision ctx p e
   if let some (.ctorInfo ci) := env.find? c then
     -- Rules (j) and (m): a closure built into data whose type has no costed form is tabulated
     -- over its finite domain, and refused when the domain is not finite.
@@ -4770,11 +4834,11 @@ partial def costConst (ctx : Ctx) (e : Expr) (c : Name) (args : Array Expr) :
   -- A comparison of words decided at one unit: `decide (a < b)` is priced by the rule for
   -- `Decidable.decide` below.
   if c == ``Decidable.decide && args.size == 2 then
-    warnClassicalDecision ctx args[0]! args[1]!
+    refuseClassicalDecision ctx args[0]! args[1]!
     return add (natE 1) (← decisionCost ctx args[0]! args[1]!)
   if let some e' ← boolRecIte? e then return ← costOf ctx e'
   if (c == ``ite || c == ``dite) && args.size == 5 then
-    warnClassicalDecision ctx args[1]! args[2]!
+    refuseClassicalDecision ctx args[1]! args[2]!
   if c == ``ite && args.size == 5 then
     return add (natE 1) (add (← decisionCost ctx args[1]! args[2]!)
       (iteNatE args[1]! args[2]! (← costOf ctx args[3]!) (← costOf ctx args[4]!)))
@@ -5015,6 +5079,9 @@ partial def mapMatch (ctx : Ctx) (e resultType : Expr)
   -- path into one (`t.2` of a costed state `t`).
   let mut hatDiscrs : Array (Option Expr) := #[]
   for d in app.discrs, j in [0:app.discrs.size] do
+    -- Rule (n): a decision procedure matched on (`match Classical.decEq α a b with`) is
+    -- computable.
+    if let some p ← decisionCond? d then refuseClassicalDecision ctx p d
     if let some Td ← treeTy? (← inferType d) then
       fail m!"a recursion over an {Td.kind.noun}: a match on the {Td.kind.noun} `{d}`; register \
         a costed form written by hand"
@@ -5362,7 +5429,7 @@ partial def trConst (ctx : Ctx) (e : Expr) (c : Name) (args : Array Expr) (T : T
   -- `some` is a branch and not a function discriminant.
   if let some e' ← optionDispatch? e then return ← tr ctx e'
   if (c == ``ite || c == ``dite) && n == 5 then
-    warnClassicalDecision ctx args[1]! args[2]!
+    refuseClassicalDecision ctx args[1]! args[2]!
   if c == ``ite && n == 5 then
     let pt ← tr ctx args[3]!
     let pe ← tr ctx args[4]!

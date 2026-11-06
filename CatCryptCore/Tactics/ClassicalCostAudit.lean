@@ -6,18 +6,33 @@ Authors: CatCrypt Contributors
 module
 
 public import Lean
+public meta import Lean.Compiler.CSimpAttr
+public meta import Lean.Compiler.ImplementedByAttr
+public meta import Lean.Compiler.ExternAttr
 
 /-!
 # Classical decisions and choice in costed forms
 
 A time certificate charges the steps of an algorithm. A decision `if c then … else …` whose
 `Decidable c` instance is classical, and a data term computed by `Classical.choice`, have no
-algorithm, so a cost assigned to them is not a running time. This module detects both.
+algorithm, so a cost assigned to them is not a running time. This module detects both;
+`derive_timed` refuses a decision by a classical instance (rule (n) of
+`CatCryptCore.Tactics.DeriveTimed`).
 
-* `classicalIn? e` — a subterm of `e` in a data position (not a closed proof or type) that is
-  `Classical.choice` or a constant marked `noncomputable`. A `Decidable` instance with such a
-  subterm is classical. Constants are not unfolded: the compiler refuses a computable
-  definition that mentions a noncomputable constant in a data position.
+* `isClassicalConst env c` — the constant `c` has no algorithm: it is `Classical.choice`, or it
+  is marked `noncomputable` and the compiler has no implementation of it (`hasCompilerImpl`: a
+  `@[csimp]` replacement, an `@[implemented_by]` or an `@[extern]` implementation). Lean 4.35
+  marks `Bool.or`, `Bool.and`, `Bool.not` and `List.flatten` `noncomputable` and compiles them
+  through their `@[csimp]` replacements, so the mark alone does not say that a constant has no
+  algorithm.
+* `classicalDecision? h` — the part of the decision procedure `h` (a `Decidable` instance, or a
+  function into such instances, such as a `DecidableEq α`) that has no algorithm: a constant
+  without an algorithm at its head, in an instance argument, under a `fun`, or in the value of a
+  local bound by a `let`. The data that the procedure decides (`b` in `instDecidableEqBool b
+  true`, the operands of `Nat.decEq a b`) is not part of the procedure: its cost is the cost of
+  computing it, priced as data. A local instance without a value (an instance binder) is
+  computable: the caller supplies it. Constants are not unfolded: the compiler refuses a
+  computable definition that mentions a constant without an algorithm in a data position.
 * `choiceConstants` — the constants that compute data by choice.
 * `classicalHits e` — the decisions (`ite`, `dite`, `Decidable.decide`) of `e` by a classical
   instance, the other occurrences of a classical `Decidable` instance, and the applications of
@@ -44,37 +59,60 @@ def choiceConstants : Array Name :=
   #[``Classical.choice, ``Classical.choose, ``Exists.choose, ``Classical.epsilon,
     ``Classical.indefiniteDescription, ``Classical.strongIndefiniteDescription]
 
-/-- Whether the constant `c` has no algorithm: `Classical.choice`, or marked `noncomputable`. -/
+/-- Whether the compiler implements the constant `c` by other code: a `@[csimp]` replacement
+(`Bool.or` by `Bool.Internal.or`), an `@[implemented_by]` or an `@[extern]` implementation. -/
+def hasCompilerImpl (env : Environment) (c : Name) : Bool :=
+  (Compiler.CSimp.ext.getState env).map.contains c ||
+    (Compiler.getImplementedBy? env c).isSome || isExtern env c
+
+/-- Whether the constant `c` has no algorithm: `Classical.choice`, or marked `noncomputable`
+without an implementation of the compiler (`hasCompilerImpl`). -/
 def isClassicalConst (env : Environment) (c : Name) : Bool :=
-  c == ``Classical.choice || isNoncomputable env c
+  c == ``Classical.choice || (isNoncomputable env c && !hasCompilerImpl env c)
 
-/-- Whether the argument `a` is in a data position: an open term, or a closed term that is
-neither a proof nor a type. -/
-def isDataArg (a : Expr) : MetaM Bool := do
-  if a.hasLooseBVars then return true
-  try return !(← isProof a) && !(← isType a) catch _ => return true
+/-- Which of the arguments `args` of the function `f` are instances: an instance-implicit binder
+of `f`, or an argument, not a proof, whose type is a class (an instance passed explicitly, as to
+`decidable_of_iff`). -/
+def instArgs (f : Expr) (args : Array Expr) : MetaM (Array Bool) := do
+  let info? ← try some <$> getFunInfoNArgs f args.size catch _ => pure none
+  args.mapIdxM fun i a => do
+    if let some info := info? then
+      if let some p := info.paramInfo[i]? then
+        if p.isInstImplicit then return true
+    try
+      if ← isProof a then return false
+      return (← isClass? (← inferType a)).isSome
+    catch _ => return false
 
-/-- A subterm of `e` in a data position that is `Classical.choice` or an application of a
-constant marked `noncomputable`; `none` when there is none. A `Decidable` instance `e` with
-such a subterm is classical. -/
-partial def classicalIn? (e : Expr) : MetaM (Option Expr) := do
-  let e := e.consumeMData
+/-- The part of the decision procedure `e` without an algorithm (`isClassicalConst`): a constant
+without an algorithm at its head, in an instance argument (`instArgs`), under a `fun`, or in the
+value of a local bound by a `let`; `none` when the procedure is computable. A part under a binder
+that mentions the bound variable is reported as the whole `fun` or `let`. The data arguments,
+which the procedure decides, are not read. -/
+partial def classicalDecision? (e : Expr) : MetaM (Option Expr) := do
+  let e := (← instantiateMVars e).consumeMData.headBeta
   match e with
   | .const c _ => return if isClassicalConst (← getEnv) c then some e else none
+  | .fvar id =>
+    let some v ← (try id.getValue? catch _ => pure none) | return none
+    classicalDecision? v
   | .app .. =>
     let f := e.getAppFn
+    let args := e.getAppArgs
     if let .const c _ := f then
       if isClassicalConst (← getEnv) c then return some e
-    else if let some h ← classicalIn? f then return some h
-    for a in e.getAppArgs do
-      if ← isDataArg a then
-        if let some h ← classicalIn? a then return some h
+    else if let some h ← classicalDecision? f then return some h
+    for a in args, isInst in ← instArgs f args do
+      if isInst then
+        if let some h ← classicalDecision? a then return some h
     return none
-  | .lam _ _ b _ => classicalIn? b
-  | .letE _ _ v b _ =>
-    if let some h ← classicalIn? v then return some h
-    classicalIn? b
-  | .proj _ _ s => classicalIn? s
+  | .lam n t b bi => withLocalDecl n bi t fun x => do
+    let some h ← classicalDecision? (b.instantiate1 x) | return none
+    return some (if h.containsFVar x.fvarId! then e else h)
+  | .letE n t v b _ => withLetDecl n t v fun x => do
+    let some h ← classicalDecision? (b.instantiate1 x) | return none
+    return some (if h.containsFVar x.fvarId! then e else h)
+  | .proj _ _ s => classicalDecision? s
   | _ => return none
 
 /-- A finding of `classicalHits`. -/
@@ -118,11 +156,11 @@ partial def hitsGo (r : IO.Ref (Array Hit)) (seen : IO.Ref (Std.HashSet Expr)) (
       if choiceConstants.contains c then
         r.modify (·.push (.choice e))
         return
-      if isNoncomputable (← getEnv) c && (← isDecidableConst c) then
+      if isClassicalConst (← getEnv) c && (← isDecidableConst c) then
         r.modify (·.push (.inst e))
         return
       if let some (cond, inst) := decisionArgs? c args then
-        if (← classicalIn? inst).isSome then
+        if (← classicalDecision? inst).isSome then
           r.modify (·.push (.decision cond inst))
           for a in args, i in [0:args.size] do
             unless i == (if c == ``Decidable.decide then 1 else 2) do hitsGo r seen a
@@ -131,7 +169,7 @@ partial def hitsGo (r : IO.Ref (Array Hit)) (seen : IO.Ref (Std.HashSet Expr)) (
     for a in args do hitsGo r seen a
   | .const c _ =>
     if choiceConstants.contains c then r.modify (·.push (.choice e))
-    else if isNoncomputable (← getEnv) c && (← isDecidableConst c) then
+    else if isClassicalConst (← getEnv) c && (← isDecidableConst c) then
       r.modify (·.push (.inst e))
   | .lam _ t b _ | .forallE _ t b _ => hitsGo r seen t; hitsGo r seen b
   | .letE _ t v b _ => hitsGo r seen t; hitsGo r seen v; hitsGo r seen b

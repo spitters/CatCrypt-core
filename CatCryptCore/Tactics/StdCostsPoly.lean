@@ -20,15 +20,22 @@ program, so its costs are registered by `timed_cost`, not derived:
   `2 * (P.natDegree + 1)`;
 * `Polynomial.coeff P` — the coefficient function `ℕ →₀ R` of `P`, which is the
   representation of `P`, `0`;
-* `Finsupp.toFun f a` — one read of a finitely supported function at a point, `1`.
+* `Finsupp.toFun f a` — one read of a finitely supported function at a point, `1`;
+* `Finsupp.single a b` — the finitely supported function with the one value `b` at `a`, the
+  representation of a polynomial term (`Polynomial.C b`, `Polynomial.monomial n b`,
+  `Polynomial.X` unfold to it): one coefficient written, `1`. Its Mathlib definition computes
+  its support by deciding `b = 0` with `Classical.decEq`, a decision that `derive_timed` refuses
+  (rule (n) of `CatCryptCore.Tactics.DeriveTimed`); on a coefficient array the term is one
+  write, which decides nothing.
 
 A coefficient read `P.coeff i` is the coercion `DFunLike.coe (Polynomial.coeff P) i`, which
 unfolds to `Finsupp.toFun (Polynomial.coeff P) i` and so costs one read.
 
 ## Main results
 
-* `Polynomial.eval.timedCost`, `Polynomial.coeff.timedCost`, `Finsupp.toFun.timedCost` —
-  the registered costs
+* `Polynomial.eval.timedCost`, `Polynomial.coeff.timedCost`, `Finsupp.toFun.timedCost`,
+  `Finsupp.single.timedCost` — the registered costs
+* `Finsupp.single.timedCost_eq` — a polynomial term costs one unit
 -/
 
 @[expose] public section
@@ -41,3 +48,10 @@ timed_cost Polynomial.eval := fun (R : Type _) [Semiring R] (_ : R) (P : Polynom
 timed_cost Polynomial.coeff := fun (R : Type _) [Semiring R] (_ : Polynomial R) => 0
 
 timed_cost Finsupp.toFun := fun (α : Type _) (M : Type _) [Zero M] (_ : α →₀ M) (_ : α) => 1
+
+timed_cost Finsupp.single := fun (α : Type _) (M : Type _) [Zero M] (_ : α) (_ : M) => 1
+
+/-- A polynomial term costs the write of one coefficient. -/
+theorem Finsupp.single.timedCost_eq (α M : Type*) [Zero M] (a : α) (b : M) :
+    Finsupp.single.timedCost α M a b = 1 := by
+  simp [Finsupp.single.timedCost]
