@@ -225,23 +225,25 @@ fields are field paths or are priced through the value (rule (g), `isValueField`
 
 Table writes, registered calls with a function result. The registered arity of a primitive `c`
 is the number of its arguments that its registered cost takes: the binders of `c.timedCost`
-less its cost companions (`registeredArity?`). An application of a registered primitive at its
-registered arity is a complete application, priced by its registered cost (one unit plus the
-registered cost plus the costs of the arguments), even when its arity is below the binders of
-its declared type and its result is a function; the result is a table. Rule (j) applies to
-closures only: a `fun`, a partial application below the registered arity, or a partial
-application of a constant without a registered cost. The case in view is the table write:
-`Function.update f a v` on a table `f` is the write of `v` at `a`, registered in
-`CatCryptCore.Tactics.StdCosts` at arity six and at no cost beyond the unit of the call
-(`Function.update.timedCost_eq`), so that the write costs one unit plus the costs of its
-arguments. A function argument of such a call takes its cost companion only when the
-registered cost has a binder for it (`costArgs` with `fnByBinder`): the write does not read
-`f`, its registered cost takes no companion of `f`, and `f` may be a component read from data,
-which has none and a later read of the written table, a table read, one unit plus the cost of its
-argument. The equality test on keys is a decision priced as conditions are: a read applied
-directly to the write, `Function.update f a v x`, is beyond the registered arity and is priced by
-the definition, an `if` on `x = a`. In a costed closure (`hatTy?`) the write is translated as
-before, a partial application whose companion is the read of the definition.
+less its cost companions (`registeredArity?`). In data whose type has no costed form (the
+components of a constructor application checked by rule (j), `Ctx.inTableData`), an
+application of a registered primitive at its registered arity is a complete application,
+priced by its registered cost (one unit plus the registered cost plus the costs of the
+arguments), even when its arity is below the binders of its declared type and its result is a
+function; the result is a table. Rule (j) applies to closures only: a `fun`, a partial
+application below the registered arity, or a partial application of a constant without a
+registered cost (`isClosureValue`). The case in view is the table write: `Function.update f a
+v` on a table `f` is the write of `v` at `a`, registered in `CatCryptCore.Tactics.StdCosts` at
+arity six and at no cost beyond the unit of the call (`Function.update.timedCost_eq`), so that
+the write costs one unit plus the costs of its arguments, and a later read of the written
+table, a table read, one unit plus the cost of its argument. A function argument of such a call
+takes its cost companion only when the registered cost has a binder for it (`costArgs` with
+`fnByBinder`): the write does not read `f`, its registered cost takes no companion of `f`, and
+`f` may be a component read from data, which has none. The equality test on keys is a decision
+priced as conditions are: a read applied directly to the write, `Function.update f a v x`, is
+beyond the registered arity and is priced by the definition, an `if` on `x = a`. In a costed
+closure (`hatTy?`) the write is translated as before, a partial application whose companion is
+the read of the definition.
 
 On the class `TabState` (function-valued state `X → Y` with first-order `X`, built from tables,
 `Function.update`, case analyses on data present at the build whose arms are of the class,
@@ -1040,6 +1042,10 @@ which field paths start, the reference collecting the field paths without a cost
 members of a mutual block), each with the local that stands for its cost (`selfCosts`). -/
 structure Ctx where
   locals : FVarIdMap LocalInfo := {}
+  /-- Whether the term priced is a component of data whose type has no costed form (the
+  arguments of a constructor application checked by rule (j)), where a registered call at its
+  registered arity is a table write. -/
+  inTableData : Bool := false
   self? : Option (Name × Expr) := none
   suffix : Name := `timed
   depth : Nat := 0
@@ -2784,6 +2790,17 @@ partial def hasClosureComponent (v : Expr) : MetaM Bool := do
   if v.isAppOfArity ``Option.some 2 then return ← hasClosureComponent (v.getArg! 1)
   isClosureValue v
 
+/-- Whether the value `v`, read through the constructors that `unmirroredClosure?` follows, has a
+component that is a registered call at its registered arity (`isRegisteredCall`). -/
+partial def hasRegisteredComponent (v : Expr) : MetaM Bool := do
+  let v := v.consumeMData.headBeta
+  if v.isAppOfArity ``Prod.mk 4 then
+    return (← hasRegisteredComponent (v.getArg! 2)) || (← hasRegisteredComponent (v.getArg! 3))
+  if v.isAppOfArity ``Sum.inl 3 || v.isAppOfArity ``Sum.inr 3 then
+    return ← hasRegisteredComponent (v.getArg! 2)
+  if v.isAppOfArity ``Option.some 2 then return ← hasRegisteredComponent (v.getArg! 1)
+  isRegisteredCall v
+
 /-- Refuse the constructor application `e` when it builds a closure at a function position of
 its type that has no costed form (rule (j), `unmirroredClosure?`): its type has no costed value
 (`hatTy?`), so the closure would be built at cost zero and its applications read as a table. -/
@@ -4349,8 +4366,14 @@ partial def costConst (ctx : Ctx) (e : Expr) (c : Name) (args : Array Expr) :
   if let some (.ctorInfo ci) := env.find? c then
     -- Rule (j): a closure built into data whose type has no costed form is refused.
     checkUnmirroredClosure e
+    -- In data without a costed form, a registered call at its registered arity is a table
+    -- write, priced by its registered cost.
+    let ctx' ← if ctx.inTableData then pure ctx else do
+      if (← hasRegisteredComponent e) && (← hatTy? (← inferType e)).isNone then
+        pure { ctx with inTableData := true }
+      else pure ctx
     -- The parameters of the inductive type are not arguments of the call.
-    return ← argsCost ctx (args.extract ci.numParams args.size)
+    return ← argsCost ctx' (args.extract ci.numParams args.size)
   if freeConstants.contains c then
     return ← argsCost ctx args
   -- A call of a recursive data function with a function result (rule (d)) and a fold whose
@@ -4365,7 +4388,7 @@ partial def costConst (ctx : Ctx) (e : Expr) (c : Name) (args : Array Expr) :
   -- registered cost, whose result is a table.
   let reg := c ++ `timedCost
   let regArity? ← registeredArity? c
-  if regArity? == some args.size then
+  if ctx.inTableData && regArity? == some args.size then
     let regArgs ← costArgs ctx f args (some (← mkConstWithFreshMVarLevels reg))
       (fnByBinder := true)
     let regE ← mkAppOptM reg (regArgs.map some)
