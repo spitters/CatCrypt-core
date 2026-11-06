@@ -439,6 +439,44 @@ the existing kind of a function, with a target in `Prop`, rather than a new kind
 is the only difference, and a new kind would add an arm to every case analysis on kinds without
 changing the translation anywhere else.
 
+Rule (k), instance methods as cost companions. The class: a field path `p` of the cost of a callee
+(a registered or derived cost, or the costed form of a reduction through `R.timed.fieldPaths`),
+taken at the arguments of a call, whose instance is not a field of a binder of the caller
+(`instOfPath?`): a method `m ps inst` of a class whose instance `inst` is neither a local nor a
+field path (`BEq.beq` of `instBEqOfDecidableEq d` at a concrete key type, or at a decision binder
+`d` of the reduction), or a decision procedure `∀ a b, Decidable (a = b)` that is not a local
+(`instDecidableEqNat`, passed for the instance binder of a callee). Its companion is the cost of
+the method as derived, `fun ys => cost (p ys)` at fresh arguments (`instMethodCompanion?`): the
+instance is unfolded to its method (`BEq.beq` of `instBEqOfDecidableEq d` is
+`fun a b => decide (a = b)`, decided by the instance `d a b`), which is priced by the rules above,
+with the decision of an equality priced by evaluating its instance as data (`Ctx.priceInsts`,
+`decisionCost`; a negation, conjunction or disjunction by its components). Which rule prices the
+instance of an equality depends on what it is:
+
+* a decision binder `d` of the reduction (an instance binder `[DecidableEq K]`,
+  `isDecisionBinder`): a function binder, whose application `d a b` is a call priced by its cost
+  companion `dCost : K → K → ℕ`, the cost of its equality test (`instCost` for an anonymous
+  instance binder). The companion is a further binder after the binders of `R`, recorded by the
+  first pass as a field path is, so that a time theorem states a bound on it as on any other
+  companion. The same companion prices `d` applied anywhere in data (`match decEq a b with`);
+* an instance at a concrete type: its registered cost when one exists
+  (`CatCryptCore.Tactics.StdCosts` registers the unit of the call for `ℕ`, `Bool`, `Fin n` and
+  `BitVec w`, and the cost of `List.beq`, linear in the length, for lists), otherwise its
+  definition, unfolded (`instDecidableEqProd`, the instance of a type with `deriving
+  DecidableEq`), or, for a recursive decision function, its cost derived by `derive_cost`. The
+  body of a decision function, of type `Decidable p` (`isDecisionBody`), is priced in the same
+  mode, so that the decisions of its components are priced by their instances in turn.
+
+A method that neither case prices (an opaque function, a classical decision) is refused, with a
+message that names the method, the instance and the reason. Outside the method of an instance and
+the body of a decision function, a condition costs its data arguments and its instance is not
+read, as before: an `if a = b` in a reduction with a `[DecidableEq K]` binder takes no companion.
+The costs of `List.lookup`, `List.erase`, `List.idxOf`, `List.elem` and `List.beq` registered in
+`StdCosts` charge `BEq.beq` one unit and take no companion (`derive_cost (unit := BEq.beq)`), so a
+call of them is outside the class and its comparisons remain a trusted unit; the same functions
+derived on demand in a module that does not import `StdCosts` take the companion of `BEq.beq`,
+which this rule supplies.
+
 A field `m` of a computed structure `g b₁ … bₖ`, where `g` is a field path (`kit.aead`) or a
 local function with a cost companion, applied as `(g b₁ … bₖ).m x₁ … xₙ`, is priced as the
 structure `g b₁ … bₖ` by the rules above, plus one, plus its cost companion
@@ -463,7 +501,8 @@ registered cost, an operation on a quotient type
 (`Finset`, `Multiset`, `Quot`) without a registered cost (the costs of `Finset.sum`,
 `Finset.prod`, `Finset.univ`, `Finset.range`, `Finset.erase`, `Finset.card` and
 `Finset.filter` are registered in `CatCryptCore.Tactics.StdCosts`), a closure built into data
-whose type has no costed form (rule (j)), a recursive data
+whose type has no costed form (rule (j)), a method of an instance that rule (k) does not price,
+a recursive data
 function whose cost `derive_cost` does not derive (a class method on a local instance in its
 body needs `derive_cost (unit := …)`), a `match` whose motive depends on its
 discriminants, a match on an oracle tree that is not a binder, a recursive call that changes a
@@ -1061,6 +1100,9 @@ structure Ctx where
   arguments of a constructor application checked by rule (j)), where a registered call at its
   registered arity is a table write. -/
   inTableData : Bool := false
+  /-- Whether the term priced is the method of an instance or the body of a decision function
+  (rule (k)), where the decision of an equality is priced by evaluating its instance. -/
+  priceInsts : Bool := false
   self? : Option (Name × Expr) := none
   suffix : Name := `timed
   depth : Nat := 0
@@ -2653,6 +2695,32 @@ def isDecisionOf (p t : Expr) : MetaM Bool := do
     let q := b.appArg!.headBeta
     return q.getAppFn == p && q.getAppArgs == zs
 
+/-- Whether `t` is the type of a decision procedure `∀ a₁ … aₙ, Decidable (p a₁ … aₙ)`, `n ≥ 1`
+(`DecidableEq K`, `DecidableRel r`), up to reducible unfolding (rule (k)). -/
+def isDecisionType (t : Expr) : MetaM Bool := do
+  forallTelescope (← whnfR t) fun zs b => do
+    if zs.isEmpty then return false
+    return (← whnfR b).isAppOfArity ``Decidable 1
+
+/-- Whether `f` is a decision binder of the reduction: a binder (`Ctx.top`) whose type is a
+decision procedure (`isDecisionType`), such as an instance binder `[DecidableEq K]` (rule (k)). -/
+def isDecisionBinder (ctx : Ctx) (f : Expr) : MetaM Bool := do
+  let .fvar id := f.consumeMData | return false
+  unless ctx.top.contains id do return false
+  isDecisionType (← inferType f)
+
+/-- Whether `b` is the body of a decision function, of type `Decidable p` (rule (k)). -/
+def isDecisionBody (b : Expr) : MetaM Bool := do
+  return (← whnfR (← inferType b)).isAppOfArity ``Decidable 1
+
+/-- Whether `e` is priced as data in `ctx`: data (`isDataExpr`), or, in the method of an instance
+or the body of a decision function (`Ctx.priceInsts`, rule (k)), a decision of type `Decidable p`,
+which is evaluated there as data although its type is a class. -/
+def isPricedExpr (ctx : Ctx) (e : Expr) : MetaM Bool := do
+  if ← isDataExpr e then return true
+  unless ctx.priceInsts do return false
+  isDecisionBody e
+
 /-- Whether `t` is a predicate type `α₁ → … → αₙ → Prop`, `n ≥ 1`, as `forallTelescopeReducing`
 reads it: the binders written in `t`, then those of the weak head normal form of the rest. The
 written binders are read first; when the rest is a sort or an application of an inductive type,
@@ -3313,6 +3381,24 @@ def isFieldPathStep (ctx : Ctx) (p : Expr) : MetaM Bool := do
   if p.isApp then return ← isFieldPath ctx p.appArg!
   return false
 
+/-- The instance of a field path `p` of a callee's cost whose instance is not a field of a binder
+(rule (k)): for a method `m ps inst` of a class, the instance `inst`, when it is neither a local
+nor a field path (`instBEqOfDecidableEq d` for `BEq.beq`); for a decision procedure
+(`isDecisionType`) that is not a local, `p` itself (`instDecidableEqNat`). `none` for any other
+path, and for a field path or a step below one, which keep their own companions. -/
+def instOfPath? (ctx : Ctx) (p : Expr) : MetaM (Option Expr) := do
+  let p := p.consumeMData
+  if p.hasLooseBVars || p.isFVar then return none
+  if (← isFieldPath ctx p) || (← isFieldPathStep ctx p) then return none
+  if let .const m _ := p.getAppFn then
+    if let some info ← getProjectionFnInfo? m then
+      if info.fromClass && p.getAppNumArgs == info.numParams + 1 then
+        let inst := p.appArg!
+        if inst.consumeMData.isFVar then return none
+        return some inst
+  if ← isDecisionType (← inferType p) then return some p
+  return none
+
 /-- The start of the projection path `e`: the term whose projections it takes. -/
 partial def pathRoot (e : Expr) : MetaM Expr := do
   match ← projStep? e with
@@ -3765,7 +3851,7 @@ mutual
 /-- The cost of evaluating the data term `e`. -/
 partial def costOf (ctx : Ctx) (e : Expr) : TermElabM Expr := do
   let e := pushLetApp e.consumeMData.headBeta
-  unless ← isDataExpr e do return natE 0
+  unless ← isPricedExpr ctx e do return natE 0
   match e with
   | .fvar _ | .lit _ | .lam .. | .forallE .. | .sort _ => return natE 0
   | .proj _ _ s => costOf ctx s
@@ -3792,7 +3878,7 @@ partial def costOf (ctx : Ctx) (e : Expr) : TermElabM Expr := do
 partial def argsCost (ctx : Ctx) (args : Array Expr) : TermElabM Expr := do
   let mut cs := #[]
   for a in args do
-    if ← isDataExpr a then cs := cs.push (← costOf ctx a)
+    if ← isPricedExpr ctx a then cs := cs.push (← costOf ctx a)
   return sum cs
 
 /-- The cost of a condition: the costs of the data arguments of the proposition, or, with the
@@ -3805,6 +3891,26 @@ partial def propCost (ctx : Ctx) (p : Expr) : TermElabM Expr := do
   if ← priceProps then
     if let some c ← pricedProp? ctx p then return c
   argsCost ctx p.getAppArgs
+
+/-- The cost of deciding the condition `p` by its instance `h`. Outside the method of an instance
+and the body of a decision function (`Ctx.priceInsts`), the cost of the condition (`propCost`),
+which does not read the instance. Inside (rule (k)), an equality `a = b` is decided by evaluating
+its instance applied to `a` and `b`, priced as data: a decision binder by its cost companion, a
+decision with a registered cost by that cost, any other by its definition; `¬`, `∧` and `∨` by
+their components; any other condition, and an instance that is a local, by `propCost`. -/
+partial def decisionCost (ctx : Ctx) (p h : Expr) : TermElabM Expr := do
+  unless ctx.priceInsts do return ← propCost ctx p
+  let p := p.consumeMData
+  let h := h.consumeMData
+  if p.isAppOfArity ``Not 1 && h.isAppOfArity ``instDecidableNot 2 then
+    return ← decisionCost ctx p.appArg! h.appArg!
+  if (p.isAppOfArity ``And 2 && h.isAppOfArity ``instDecidableAnd 4) ||
+      (p.isAppOfArity ``Or 2 && h.isAppOfArity ``instDecidableOr 4) then
+    return add (← decisionCost ctx (p.getArg! 0) (h.getArg! 2))
+      (← decisionCost ctx (p.getArg! 1) (h.getArg! 3))
+  if p.isAppOfArity ``Eq 3 && (h.isApp || h.isConst) then
+    return ← costOf ctx h
+  propCost ctx p
 
 /-- The cost of the condition `p` by what decides it: for `x ∈ l` on a list, of the call
 `List.elem x l`; for `l₁ = l₂` or `l₁ ≠ l₂` on lists, of the call `List.beq l₁ l₂`; for a
@@ -3861,6 +3967,27 @@ partial def companionOf (ctx : Ctx) (a : Expr) : TermElabM Expr := do
   let t ← whnfR (← inferType a)
   forallTelescope t fun ys _ => do
     mkLambdaFVars ys (← costOf ctx (mkAppN a ys).headBeta)
+
+/-- The method companion of the field path `p` of a callee's cost (`who`) whose instance is not a
+field of a binder (`instOfPath?`, rule (k)): `fun ys => cost (p ys)`, the cost of the method at
+fresh arguments as derived, with the decisions of equalities priced by their instances
+(`Ctx.priceInsts`, `decisionCost`). `BEq.beq` of `instBEqOfDecidableEq d` unfolds to
+`fun a b => decide (a = b)`, whose decision is `d a b`: the cost companion of `d` for a decision
+binder of the reduction, the registered or derived cost of `d` otherwise. `none` when `p` is not
+such a path; a method that is not priced is refused, naming the instance. -/
+partial def instMethodCompanion? (ctx : Ctx) (who : MessageData) (p : Expr) :
+    TermElabM (Option Expr) := do
+  let p := p.consumeMData
+  let some inst ← instOfPath? ctx p | return none
+  let ctx' := { ctx with priceInsts := true }
+  try
+    let c ← forallTelescope (← whnfFnR (← inferType p)) fun ys _ => do
+      mkLambdaFVars ys (← costOf ctx' (mkAppN p ys).headBeta)
+    return some c
+  catch ex =>
+    fail m!"{who} takes the cost of the method `{p}` of the instance `{inst}`, which is not a \
+      field of a binder of the reduction, and the method is not priced (rule (k)):\
+      {indentD ex.toMessageData}"
 
 /-- The costed value of a path `e` into a costed value: a local of kind `hat` (its costed
 value), a local function with a cost companion (the costed closure of the two, with the
@@ -4099,7 +4226,7 @@ partial def tv (ctx : Ctx) (e : Expr) : TermElabM (Expr × Expr) := do
       let (ca, va) ← tv ctx args[3]!
       let (cb, vb) ← tv ctx args[4]!
       let lvl ← getLevel ht
-      return (add (natE 1) (add (← propCost ctx args[1]!)
+      return (add (natE 1) (add (← decisionCost ctx args[1]! args[2]!)
           (iteNatE args[1]! args[2]! ca cb)),
         mkApp5 (mkConst ``ite [lvl]) ht args[1]! args[2]! va vb)
     if f.isConstOf ``dite && args.size == 5 then
@@ -4111,7 +4238,7 @@ partial def tv (ctx : Ctx) (e : Expr) : TermElabM (Expr × Expr) := do
       let (ct, vt) ← branch args[3]!
       let (ce, ve) ← branch args[4]!
       let lvl ← getLevel ht
-      return (add (natE 1) (add (← propCost ctx args[1]!)
+      return (add (natE 1) (add (← decisionCost ctx args[1]! args[2]!)
           (mkApp5 (mkConst ``dite [Level.one]) (mkConst ``Nat) args[1]! args[2]! ct ce)),
         mkApp5 (mkConst ``dite [lvl]) ht args[1]! args[2]! vt ve)
     -- A match whose arms return functions, applied to its discriminants and no further
@@ -4419,6 +4546,17 @@ partial def costApp (ctx : Ctx) (e : Expr) : TermElabM Expr := do
       -- A function under a non-reducible name (`def T := A → B`) held in data is a table.
       unless (← whnfR (← inferType f)).isForall do
         return add (natE 1) (← argsCost ctx args)
+      -- A decision binder of the reduction applied (`d a b` for `[DecidableEq K]`, rule (k)): a
+      -- call of a function binder, priced by its cost companion, a further binder recorded by
+      -- the first pass as a field path is.
+      if let some (_, cc) := ctx.fields.find? (·.1 == f) then
+        let arity ← forallTelescope (← whnfR (← inferType cc)) fun ys _ => pure ys.size
+        if args.size == arity then
+          return add (natE 1) (add (mkAppN cc args) (← argsCost ctx args))
+      if let some r := ctx.fieldRec? then
+        if ← isDecisionBinder ctx f then
+          unless (← r.get).contains f do r.modify (·.push f)
+          return add (natE 1) (← argsCost ctx args)
       fail m!"a function bound in data: the local `{f}` in `{e}` has no cost companion"
   | .const c _ => costConst ctx e c args
   | .proj S i s =>
@@ -4518,8 +4656,12 @@ partial def costConst (ctx : Ctx) (e : Expr) (c : Name) (args : Array Expr) :
           else
             fail m!"the cost `{reg}` takes the cost of the field `{p}`, whose key `{key}` has \
               no cost companion"
+        else if let some cc ← instMethodCompanion? ctx m!"the cost `{reg}`" p then
+          -- A method of an instance that is not a field of a binder: its cost as derived.
+          fieldArgs := fieldArgs.push cc
         else if let some r := ctx.fieldRec? then
-          if !p.hasLooseBVars && (p.isLambda || (← isFieldPathStep ctx p)) then
+          if !p.hasLooseBVars && (p.isLambda || (← isFieldPathStep ctx p) ||
+              (← isDecisionBinder ctx p)) then
             unless (← r.get).contains p do r.modify (·.push p)
           missing := true
         else
@@ -4548,17 +4690,17 @@ partial def costConst (ctx : Ctx) (e : Expr) (c : Name) (args : Array Expr) :
   -- `Decidable.decide` below.
   if c == ``Decidable.decide && args.size == 2 then
     warnClassicalDecision ctx args[0]! args[1]!
-    return add (natE 1) (← propCost ctx args[0]!)
+    return add (natE 1) (← decisionCost ctx args[0]! args[1]!)
   if let some e' ← boolRecIte? e then return ← costOf ctx e'
   if (c == ``ite || c == ``dite) && args.size == 5 then
     warnClassicalDecision ctx args[1]! args[2]!
   if c == ``ite && args.size == 5 then
-    return add (natE 1) (add (← propCost ctx args[1]!)
+    return add (natE 1) (add (← decisionCost ctx args[1]! args[2]!)
       (iteNatE args[1]! args[2]! (← costOf ctx args[3]!) (← costOf ctx args[4]!)))
   if c == ``dite && args.size == 5 then
     let ct ← withEta args[3]! 1 fun hs b => do mkLambdaFVars hs (← costOf ctx b)
     let ce ← withEta args[4]! 1 fun hs b => do mkLambdaFVars hs (← costOf ctx b)
-    return add (natE 1) (add (← propCost ctx args[1]!)
+    return add (natE 1) (add (← decisionCost ctx args[1]! args[2]!)
       (mkApp5 (mkConst ``dite [Level.one]) (mkConst ``Nat) args[1]! args[2]! ct ce))
   if ← isMatcher c then
     return ← costMatch ctx e
@@ -5140,12 +5282,12 @@ partial def trConst (ctx : Ctx) (e : Expr) (c : Name) (args : Array Expr) (T : T
     let pt ← tr ctx args[3]!
     let pe ← tr ctx args[4]!
     let i := mkApp5 (mkConst ``ite [Level.succ Level.one]) T.pairType args[1]! args[2]! pt pe
-    return T.delayE (add (natE 1) (← propCost ctx args[1]!)) i
+    return T.delayE (add (natE 1) (← decisionCost ctx args[1]! args[2]!)) i
   if c == ``dite && n == 5 then
     let pt ← withEta args[3]! 1 fun hs b => do mkLambdaFVars hs (← tr ctx b)
     let pe ← withEta args[4]! 1 fun hs b => do mkLambdaFVars hs (← tr ctx b)
     let i := mkApp5 (mkConst ``dite [Level.succ Level.one]) T.pairType args[1]! args[2]! pt pe
-    return T.delayE (add (natE 1) (← propCost ctx args[1]!)) i
+    return T.delayE (add (natE 1) (← decisionCost ctx args[1]! args[2]!)) i
   if ← isMatcher c then
     -- A match on an oracle-tree binder is translated as its case analysis.
     if let some app ← matchMatcherApp? e then
@@ -5546,6 +5688,10 @@ partial def callTimed (ctx : Ctx) (e target : Expr) (args : Array Expr) (T : Tre
           else if ← isValueField ctx p then
             -- A field of a structure value: priced at the structure's value.
             out := out.push (← companionOf ctx p)
+          else if let some cc ← instMethodCompanion? ctx
+              m!"the costed form of the callee `{e.getAppFn}`" p then
+            -- A method of an instance that is not a field of a binder: its cost as derived.
+            out := out.push cc
           else if let some r := ctx.fieldRec? then
             unless (← r.get).contains p do r.modify (·.push p)
             out := out.push (← mkFreshExprMVar (← pathCompanionType p))
@@ -6296,7 +6442,9 @@ partial def deriveCostCore (units : Array Name) (c : Name) : TermElabM Unit := d
         let cType ← mkForallFVars (bs ++ cs) (mkConst ``Nat)
         let ps ← unitPrefixes units b
         withLocalDeclD `rec (← mkForallFVars bs (mkConst ``Nat)) fun recF => do
-          let cost ← costWithUnits { ctx with selfCosts := #[(c, recF)], fields := fcs } ps b
+          let dec ← isDecisionBody b
+          let cost ← costWithUnits
+            { ctx with selfCosts := #[(c, recF)], fields := fcs, priceInsts := dec } ps b
           let cost ← instantiateMVars cost
           if cost.hasMVar then
             throwError "derive_cost: the cost of `{c}` has unassigned universes"
@@ -6353,7 +6501,8 @@ partial def deriveCostBlock (units : Array Name) (c : Name) (block : Array Name)
       withBinders { top := xs.map (·.fvarId!) } xs fun ctx bs _ => do
         withFieldCosts paths fun fcs => do
           let cs := fcs.map (·.2)
-          let cost ← costWithUnits { ctx with selfCosts, fields := fcs }
+          let dec ← isDecisionBody b
+          let cost ← costWithUnits { ctx with selfCosts, fields := fcs, priceInsts := dec }
             (← unitPrefixes units b) b
           let cost ← instantiateMVars cost
           if cost.hasMVar then
@@ -6441,8 +6590,10 @@ partial def recordFieldPaths (units : Array Name) (c : Name) (xs : Array Expr) (
     let ps ← unitPrefixes units b
     withLocalDeclD `rec (← mkForallFVars bs (mkConst ``Nat)) fun recF => do
       try
+        let dec ← isDecisionBody b
         discard <| costWithUnits
-          { ctx with selfCosts := #[(c, recF)] ++ others, fieldRec? := some r } ps b
+          { ctx with selfCosts := #[(c, recF)] ++ others, fieldRec? := some r,
+                     priceInsts := dec } ps b
       catch _ => pure ()
     r.get
 

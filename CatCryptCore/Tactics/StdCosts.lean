@@ -57,6 +57,10 @@ their definitions through `Array.toList`, so their costs are linear in the size.
 * `Finset.sum.timedCost_le`, `Finset.prod.timedCost_le` — `(k + 1) * s.card` for summand costs
   at most `k`; `Finset.univ.timedCost_fin` — enumerating `Fin n` costs `n`
 * `Function.update.timedCost_eq` — a table write costs nothing beyond the unit of the call
+* `instDecidableEqNat.timedCost_eq`, `instDecidableEqBool.timedCost_eq`,
+  `instDecidableEqFin.timedCost_eq`, `instDecidableEqBitVec.timedCost_eq` — deciding the equality
+  of two words costs nothing beyond the unit of the call; `instDecidableEqList.timedCost_le` —
+  deciding the equality of two lists costs at most `5 * min l₁.length l₂.length + 1`
 * `Finset.empty.timedCost_eq`, `Multiset.cons.timedCost_eq` — the empty set and adding an
   element to a multiset cost one unit
 
@@ -671,5 +675,47 @@ theorem Function.update.timedCost_eq {α : Sort*} {β : α → Sort*} [Decidable
     (f : (a : α) → β a) (a : α) (v : β a) :
     Function.update.timedCost α β f a v = 0 := by
   simp [Function.update.timedCost]
+
+
+/-! Registered costs of the decisions of equality at the base types, read where rule (k) of
+`CatCryptCore.Tactics.DeriveTimed` evaluates the instance of a decision of equality (the method of
+an instance that is not a field of a binder, the body of a decision function). Natural numbers,
+Booleans, elements of `Fin n` and bit vectors are words compared at once: their decision costs
+nothing beyond the unit of the call. Two lists are compared element by element, at the cost of
+`List.beq`, linear in the length of the shorter list. -/
+timed_cost instDecidableEqNat := fun (_ _ : ℕ) => 0
+timed_cost Nat.decEq := fun (_ _ : ℕ) => 0
+timed_cost instDecidableEqBool := fun (_ _ : Bool) => 0
+timed_cost Bool.decEq := fun (_ _ : Bool) => 0
+timed_cost instDecidableEqFin := fun (n : ℕ) (_ _ : Fin n) => 0
+timed_cost instDecidableEqBitVec := fun (w : ℕ) (_ _ : BitVec w) => 0
+timed_cost instDecidableEqList := fun (α : Type _) [DecidableEq α] (l₁ l₂ : List α) =>
+  List.beq.timedCost l₁ l₂
+
+/-- Deciding the equality of two natural numbers costs nothing beyond the unit of the call. -/
+theorem instDecidableEqNat.timedCost_eq (a b : ℕ) : instDecidableEqNat.timedCost a b = 0 := by
+  simp [instDecidableEqNat.timedCost]
+
+/-- Deciding the equality of two Booleans costs nothing beyond the unit of the call. -/
+theorem instDecidableEqBool.timedCost_eq (a b : Bool) :
+    instDecidableEqBool.timedCost a b = 0 := by
+  simp [instDecidableEqBool.timedCost]
+
+/-- Deciding the equality of two elements of `Fin n` costs nothing beyond the unit of the
+call. -/
+theorem instDecidableEqFin.timedCost_eq (n : ℕ) (a b : Fin n) :
+    instDecidableEqFin.timedCost n a b = 0 := by
+  simp [instDecidableEqFin.timedCost]
+
+/-- Deciding the equality of two bit vectors costs nothing beyond the unit of the call. -/
+theorem instDecidableEqBitVec.timedCost_eq (w : ℕ) (a b : BitVec w) :
+    instDecidableEqBitVec.timedCost w a b = 0 := by
+  simp [instDecidableEqBitVec.timedCost]
+
+/-- Deciding the equality of two lists costs at most five units per element of the shorter and
+one more. -/
+theorem instDecidableEqList.timedCost_le {α : Type*} [DecidableEq α] (l₁ l₂ : List α) :
+    instDecidableEqList.timedCost α l₁ l₂ ≤ 5 * min l₁.length l₂.length + 1 :=
+  List.beq.timedCost_le l₁ l₂
 
 end
