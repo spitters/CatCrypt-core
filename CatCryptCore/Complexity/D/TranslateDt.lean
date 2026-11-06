@@ -426,6 +426,62 @@ def allow : {Γ : List Ty} → {τ : Ty} → Tm Γ τ → ℕ
   | _, _, .query _ _ x => x.allow
   | _, _, _ => 0
 
+/-- A bound of `1 - callCost a` decided on the head constructor of `a` alone: one at a finite
+ground type `base f`, which may be `unit`, and zero at the other types, where a call costs one.
+It reduces to a numeral at `base f` for a variable `f`. -/
+def unitBound : Ty → ℕ
+  | .base _ => 1
+  | _ => 0
+
+/-- The step a call leaves out is bounded by `unitBound`. -/
+theorem one_sub_callCost_le_unitBound (a : Ty) : 1 - callCost a ≤ unitBound a := by
+  cases a <;> simp [unitBound, callCost]
+
+/-- The allowance `allow` with the step of a call bounded by `unitBound` of its argument type: a
+numeral bound of `allow` for a term whose types are built from constructors of `Ty`, finite
+ground types `base f` included at a variable `f`. -/
+def allowB : {Γ : List Ty} → {τ : Ty} → Tm Γ τ → ℕ
+  | _, _, .app (a := a) f x => f.allowB + x.allowB + unitBound a
+  | _, _, .letE e b => e.allowB + b.allowB + 1
+  | _, _, .seq e b => e.allowB + b.allowB + 1
+  | _, _, .prim _ x => x.allowB
+  | _, _, .pair x y => x.allowB + y.allowB
+  | _, _, .fst p => p.allowB
+  | _, _, .snd p => p.allowB
+  | _, _, .inl x => x.allowB
+  | _, _, .inr x => x.allowB
+  | _, _, .case s l r => s.allowB + max l.allowB r.allowB
+  | _, _, .ite c t e => c.allowB + max t.allowB e.allowB
+  | _, _, .cons x xs => x.allowB + xs.allowB
+  | _, _, .lcase xs n c => xs.allowB + max n.allowB c.allowB
+  | _, _, .foldl f i xs => f.allowB + i.allowB + xs.allowB
+  | _, _, .iter n f i => n.allowB + f.allowB + i.allowB
+  | _, _, .set _ _ x => x.allowB
+  | _, _, .query _ _ x => x.allowB
+  | _, _, _ => 0
+
+/-- The allowance is at most its bound `allowB`. -/
+theorem allow_le_allowB : ∀ {Γ : List Ty} {τ : Ty} (t : Tm Γ τ), t.allow ≤ t.allowB := by
+  intro Γ τ t
+  induction t with
+  | @app _ a _ f x ihf ihx =>
+    have := one_sub_callCost_le_unitBound a
+    simp only [allow, allowB]
+    omega
+  | case s l r ihs ihl ihr =>
+    have := max_le_max ihl ihr
+    simp only [allow, allowB]
+    omega
+  | ite c t e ihc iht ihe =>
+    have := max_le_max iht ihe
+    simp only [allow, allowB]
+    omega
+  | lcase xs n c ihx ihn ihc =>
+    have := max_le_max ihn ihc
+    simp only [allow, allowB]
+    omega
+  | _ => simp only [allow, allowB]; omega
+
 /-- The costed tree of the charges of `derive_timed` for a term; outside the fragment
 `InDtFrag` it is `fail`. An abstraction is the pure costed closure that reads the value of its
 body at the leaf and costs the allowance and the step cost of the body. -/
