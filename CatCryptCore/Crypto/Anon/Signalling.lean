@@ -10,6 +10,7 @@ public import CatCryptCore.Crypto.PRPPRFSwitching
 public import CatCryptCore.Crypto.SDist
 public import CatCryptCore.Crypto.Signatures.EUFCMAPMF
 public import CatCryptCore.Tactics.DeriveTimed
+public import CatCryptCore.Tactics.DerivePMF
 
 /-!
 # Anonymous signalling from a membership proof, a PRF nullifier and a signed group root
@@ -467,6 +468,12 @@ derive_timed sigRed
 
 derive_timed crRedTree
 
+/- The collision reduction is a computation `liftPMF p` of the distribution of the run of the
+collision tree against the oracle that answers no query: its costed form is the costed tree of
+that run (`CatCryptCore.Tactics.DerivePMF`), the costed collision tree at the algorithms of `S`,
+and its erasure theorem states that the erased costed tree has the distribution of `crRed`. -/
+derive_timed crRed
+
 section Time
 
 open OracleAdv.Timed
@@ -549,47 +556,46 @@ theorem crRedTree.timeBound_timed {KR : Type} [Fintype KR] [Nonempty KR]
   have := hX hk L o.2.2.1 o.2.2.2
   exact ⟨by omega, trivial⟩
 
-/-- The costed form of `crRed`: the costed collision tree at the algorithms of `S`. -/
-noncomputable def crRed.timed [DecidableEq N] {K E M Pf : Type}
-    (S : Scheme H K E N M Pf Root Path PK SK Sig) (keygenCost : S.sig.KR → ℕ)
+/-- **Time of `crRed`.** The costed collision tree (`crRedTree.timeBound_timed`) with each
+algorithm of `S` priced as a call, one unit more than its cost companion, run against the
+oracle that answers no query, with one unit for the call of the tree: with the companions
+bounded by `k`, `sg`, `r`, `x`, `g` and `f`, time at most `19 + 3 * k + sg + r + x + g + f`. -/
+theorem crRed.timeBound_timed {K E M Pf : Type}
+    (S : Scheme H K E N M Pf Root Path PK SK Sig) (group : H.Key → PK → PMF (List N))
+    (groupCost : H.Key → PK → ℕ) (forge : H.Key → PK → List N → Sig → PMF (Root × Sig × N × Path))
+    (forgeCost : H.Key → PK → List N → Sig → ℕ) (hk : H.Key) (keygenCost : S.sig.KR → ℕ)
     (signCost : SK → Root → ℕ) (rootCost : H.Key → List N → ℕ)
-    (extractCost : H.Key → List N → N → Path → ℕ)
-    (group : H.Key → PK → PMF (List N)) (groupCost : H.Key → PK → ℕ)
-    (forge : H.Key → PK → List N → Sig → PMF (Root × Sig × N × Path))
-    (forgeCost : H.Key → PK → List N → Sig → ℕ) (hk : H.Key) :
-    ℕ × OracleAdv.Timed Unit Unit (H.Input × H.Input) :=
-  crRedTree.timed S.sig.keygen keygenCost S.sig.sign signCost S.acc.root rootCost S.acc.extract
-    extractCost group groupCost forge forgeCost hk
-
-/-- The costed form of `crRed` erases to the collision tree that `crRed` runs. -/
-theorem crRed.erase_timed [DecidableEq N] {K E M Pf : Type}
-    (S : Scheme H K E N M Pf Root Path PK SK Sig) (keygenCost : S.sig.KR → ℕ)
-    (signCost : SK → Root → ℕ) (rootCost : H.Key → List N → ℕ)
-    (extractCost : H.Key → List N → N → Path → ℕ)
-    (group : H.Key → PK → PMF (List N)) (groupCost : H.Key → PK → ℕ)
-    (forge : H.Key → PK → List N → Sig → PMF (Root × Sig × N × Path))
-    (forgeCost : H.Key → PK → List N → Sig → ℕ) (hk : H.Key) :
-    crRed S group forge hk = liftPMF (runNoQuery
-      (crRed.timed S keygenCost signCost rootCost extractCost group groupCost forge forgeCost
-        hk).2.erase) := by
-  rw [crRed.timed, crRedTree.erase_timed]
-  rfl
-
-/-- **Time of `crRed`**, the bound of `crRedTree.timeBound_timed` at the algorithms of `S`. -/
-theorem crRed.timeBound_timed [DecidableEq N] {K E M Pf : Type}
-    (S : Scheme H K E N M Pf Root Path PK SK Sig) (keygenCost : S.sig.KR → ℕ)
-    (signCost : SK → Root → ℕ) (rootCost : H.Key → List N → ℕ)
-    (extractCost : H.Key → List N → N → Path → ℕ)
-    (group : H.Key → PK → PMF (List N)) (groupCost : H.Key → PK → ℕ)
-    (forge : H.Key → PK → List N → Sig → PMF (Root × Sig × N × Path))
-    (forgeCost : H.Key → PK → List N → Sig → ℕ) {k sg r x g f : ℕ}
+    (extractCost : H.Key → List N → N → Path → ℕ) {k sg r x g f : ℕ}
     (hK : ∀ kr, keygenCost kr ≤ k) (hSg : ∀ sk m, signCost sk m ≤ sg)
     (hR : ∀ hk L, rootCost hk L ≤ r) (hX : ∀ hk L y p, extractCost hk L y p ≤ x)
-    (hG : ∀ hk pk, groupCost hk pk ≤ g) (hF : ∀ hk pk L σ, forgeCost hk pk L σ ≤ f)
-    (hk : H.Key) :
-    StepTimeBound (crRed.timed S keygenCost signCost rootCost extractCost group groupCost forge
-      forgeCost hk) (12 + 3 * k + sg + r + x + g + f) :=
-  crRedTree.timeBound_timed _ _ _ _ _ _ _ _ _ _ _ _ hK hSg hR hX hG hF hk
+    (hG : ∀ hk pk, groupCost hk pk ≤ g) (hF : ∀ hk pk L σ, forgeCost hk pk L σ ≤ f) :
+    StepTimeBound (crRed.timed S group groupCost forge forgeCost hk keygenCost signCost rootCost
+      extractCost) (19 + 3 * k + sg + r + x + g + f) := by
+  have hT := crRedTree.timeBound_timed S.sig.keygen (fun a => 1 + keygenCost a) S.sig.sign
+    (fun a b => 1 + signCost a b) S.acc.root (fun a b => 1 + rootCost a b) S.acc.extract
+    (fun a b c d => 1 + extractCost a b c d) group groupCost forge forgeCost (k := k + 1)
+    (sg := sg + 1) (r := r + 1) (x := x + 1) (fun kr => by have := hK kr; omega)
+    (fun sk m => by have := hSg sk m; omega) (fun hk L => by have := hR hk L; omega)
+    (fun hk L y p => by have := hX hk L y p; omega) hG hF hk
+  have hq : (crRedTree.timed S.sig.keygen (fun a => 1 + keygenCost a) S.sig.sign
+      (fun a b => 1 + signCost a b) S.acc.root (fun a b => 1 + rootCost a b) S.acc.extract
+      (fun a b c d => 1 + extractCost a b c d) group groupCost forge forgeCost
+      hk).2.erase.IsQueryBound 0 := by
+    rw [crRedTree.erase_timed]
+    exact fun _ _ _ _ => trivial
+  have hs := timeBound_simulate (fun s d => delay 1 (crRed.pmfStep.timed s d)) (t := 1)
+    (fun _ _ => ⟨le_rfl, trivial⟩) hT.2 hq ()
+  have hb := timeBound_bind hs.2 (n := 0)
+    (f := fun y => ((0 : ℕ), (ret y.1 : OracleAdv.Timed Empty Empty (H.Input × H.Input))))
+    fun _ => ⟨le_rfl, trivial⟩
+  have hd := stepTimeBound_delay (c := 1 + (crRedTree.timed S.sig.keygen
+    (fun a => 1 + keygenCost a) S.sig.sign (fun a b => 1 + signCost a b) S.acc.root
+    (fun a b => 1 + rootCost a b) S.acc.extract (fun a b c d => 1 + extractCost a b c d) group
+    groupCost forge forgeCost hk).1 + (simulate (fun s d => delay 1 (crRed.pmfStep.timed s d))
+      (crRedTree.timed S.sig.keygen (fun a => 1 + keygenCost a) S.sig.sign
+        (fun a b => 1 + signCost a b) S.acc.root (fun a b => 1 + rootCost a b) S.acc.extract
+        (fun a b c d => 1 + extractCost a b c d) group groupCost forge forgeCost hk).2 ()).1) hb
+  exact hd.mono (by have := hT.1; have := hs.1; omega)
 
 end Time
 

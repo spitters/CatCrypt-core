@@ -858,7 +858,8 @@ noncomputable def o6Pmf (n : ℕ) : PMF ℕ := PMF.pure n
 /--
 error: derive_timed: no cost structure: `CatCrypt.Tactics.DeriveTimedTest.o6Pmf` is valued in
 `PMF`, a distribution without a program; write it as an oracle tree or a computation tree
-(`SPComp`) to derive its time
+(`SPComp`) to derive its time, or, for a sampling program, import
+`CatCryptCore.Tactics.DerivePMF`
 -/
 #guard_msgs (whitespace := lax) in
 derive_timed o6Pmf

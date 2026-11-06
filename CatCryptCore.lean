@@ -148,6 +148,7 @@ public import CatCryptCore.Tactics.StdCosts
 public import CatCryptCore.Tactics.StdCostsPoly
 public import CatCryptCore.Tactics.ComputationType
 public import CatCryptCore.Tactics.DeriveTimedStructure
+public import CatCryptCore.Tactics.DerivePMF
 public import CatCryptCore.Tactics.DeriveTimeRec
 public import CatCryptCore.Tactics.ScottInduction
 public import CatCryptCore.Tactics.LoopRewriteAttr
@@ -215,6 +216,7 @@ public import CatCryptCore.Crypto.MultiQueryPRF
 public import CatCryptCore.Crypto.MultiKeyPRF
 public import CatCryptCore.Crypto.OracleAdversary
 public import CatCryptCore.Crypto.OracleAdversaryTimed
+public import CatCryptCore.Crypto.OracleAdversaryDist
 public import CatCryptCore.Crypto.OracleUpTo
 public import CatCryptCore.Crypto.OracleAdversaryRelabelTimed
 public import CatCryptCore.Crypto.OracleForkingLemma

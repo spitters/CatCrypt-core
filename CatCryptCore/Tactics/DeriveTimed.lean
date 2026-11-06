@@ -484,7 +484,14 @@ structure `g b₁ … bₖ` by the rules above, plus one, plus its cost companio
 indexed by the arguments that compute the structure, plus the costs of the `xᵢ`.
 
 Costed forms and costs are exposed definitions in a `module` file, so that importing modules
-unfold them. A reduction valued in `PMF` is refused: a distribution has no cost structure.
+unfold them. A reduction valued in `PMF` is refused by this module: a distribution given by its
+mass function has no cost structure. A distribution written as a sampling program (`PMF.pure`,
+`PMF.bind`, `PMF.map`, uniform sampling, the run `OracleAdv.run O A s` of a costed adversary
+against a stateful oracle given as a function), and a computation `liftPMF p` of one, are
+derived by the rule of `CatCryptCore.Tactics.DerivePMF`, an elaborator of `derive_timed` tried
+before this one when that module is imported: the distribution is reflected into an oracle tree
+over the empty interface, whose costed form is derived by the rules of this module, each sample
+a `rand` node and each oracle call priced by the costed program of the oracle's step.
 
 A call of a certified computation `c` (`certExt`: a computation whose tree `c.tree`,
 compile equation, costed form `c.tree.timed` and erasure theorem are registered, by
@@ -5739,7 +5746,8 @@ partial def deriveTimed (ctx : Ctx) (c : Name) : TermElabM Unit := do
     return (← whnfR (← inferType b)).isAppOf ``PMF
   if resultPMF then
     fail m!"no cost structure: `{c}` is valued in `PMF`, a distribution without a program; \
-      write it as an oracle tree or a computation tree (`SPComp`) to derive its time"
+      write it as an oracle tree or a computation tree (`SPComp`) to derive its time, or, for \
+      a sampling program, import `CatCryptCore.Tactics.DerivePMF`"
   -- A tree binder whose results hold functions: its results are lifted to costed closures.
   let binderHat ← lambdaTelescope value fun xs _ => xs.anyM fun x => do
     forallTelescope (← whnfR (← inferType x)) fun _ b => do
