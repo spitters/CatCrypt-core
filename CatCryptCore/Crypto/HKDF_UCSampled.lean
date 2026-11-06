@@ -37,6 +37,8 @@ values (`uniformList`).
   sampler
 * `Extract_IKM_AdvantageK`, `Extract_AdvantageK`, `Expand_Seq_AdvantageK` — their advantages at
   a sampler `μ`
+* `Extract_Keygen_Advantage` — the Extract advantage with the input keying material the public
+  part of a key pair and a uniform salt
 
 ## Main results
 
@@ -49,6 +51,9 @@ values (`uniformList`).
   generation whose public part is `encU (g^e)` with `e` drawn from `signedClamp`, the
   advantage is at most the advantage at the encoding of a uniform element of `G25519 B` plus
   `Δ25519`
+* `extract_keygen_le`, `extract_keygen_G25519_le` — `Extract_Keygen_Advantage` is at most the
+  largest advantage over the salt with the input keying material drawn from the reference
+  sampler, plus the certified bound
 -/
 
 @[expose] public section
@@ -158,6 +163,13 @@ noncomputable def Extract_AdvantageK (H : HKDFDef W) (ikm : W) (μ : SDistr W)
 noncomputable def Expand_Seq_AdvantageK (H : HKDFDef W) (qs : List (List W → W))
     (μ : SDistr W) (A : List W → SPComp Bool) : ℝ≥0∞ :=
   (expandSeqSampled H qs).advAt μ A
+
+/-- The Extract advantage with the input keying material the public part of a key pair of
+`kg` and a uniform salt, against a uniform PRK. -/
+noncomputable def Extract_Keygen_Advantage {S : Type} (H : HKDFDef W) (kg : SPComp (S × W))
+    (A : W → SPComp Bool) : ℝ≥0∞ :=
+  AdvantageA (kg.bind fun x => (SPComp.sample W).bind fun salt =>
+    SPComp.pure (H.extract salt x.2)) extract_ideal A
 
 /-! ## The uniform sampler -/
 
@@ -269,6 +281,21 @@ theorem expand_seq_keygen_le (hkg : kg.map Prod.snd = sampleFrom c.μ) (H : HKDF
   rw [show encodedRed id A = A from rfl] at h
   simpa [Expand_Seq_AdvantageK, expandSeqSampled, encodedRed] using h
 
+/-- **Extract with the input keying material drawn by key generation**: for heap-independent
+key generation whose public part is drawn from `c.μ`, the advantage of `A` is at most the
+largest advantage over the salt with the input keying material drawn from the reference
+sampler `c.ν`, plus `c.δ`. -/
+theorem extract_keygen_le (hkg : kg.map Prod.snd = sampleFrom c.μ) (hpure : SPComp.IsPure kg)
+    (H : HKDFDef W) (A : W → SPComp Bool) :
+    Extract_Keygen_Advantage H kg A ≤ (⨆ salt : W, Extract_IKM_AdvantageK H salt c.ν A) + c.δ := by
+  unfold Extract_Keygen_Advantage
+  rw [SPComp.isPure_bind_comm_left kg (SPComp.sample W) _ hpure,
+    show (extract_ideal : SPComp W) = (SPComp.sample W).bind fun _ => extract_ideal from
+      (CatCrypt.Relational.dead_sample _).symm]
+  refine advantageA_sample_bind _ _ A _ fun salt => ?_
+  exact (extract_ikm_keygen_le kg c hkg H salt A).trans
+    (add_le_add_left (le_iSup (fun s => Extract_IKM_AdvantageK H s c.ν A) salt) _)
+
 end Keygen
 
 /-! ## Curve25519 public keys -/
@@ -302,6 +329,20 @@ theorem extract_ikm_G25519_le
         ((SDistr.uniform (ZMod curve25519SubgroupOrder)).bind fun e =>
           SDistr.pure (encU (g25519Pow (B := B) e))) A + Δ25519 :=
   extract_ikm_keygen_le kg _ (keygen_snd_signedClamp kg hkg) H salt A
+
+/-- **Extract with the input keying material drawn by Curve25519 key generation**: for
+heap-independent key generation whose public part is `encU (g^e)` with `e` drawn from
+`signedClamp`, the advantage of `A` is at most the largest advantage over the salt with the
+input keying material the encoding of a uniform element of `G25519 B`, plus `Δ25519`. -/
+theorem extract_keygen_G25519_le
+    (hkg : kg.map Prod.snd = (sampleFrom signedClamp).map (encU ∘ (g25519Pow (B := B))))
+    (hpure : SPComp.IsPure kg) (H : HKDFDef (Vector UInt8 32))
+    (A : Vector UInt8 32 → SPComp Bool) :
+    Extract_Keygen_Advantage H kg A ≤
+      (⨆ salt : Vector UInt8 32, Extract_IKM_AdvantageK H salt
+        ((SDistr.uniform (ZMod curve25519SubgroupOrder)).bind fun e =>
+          SDistr.pure (encU (g25519Pow (B := B) e))) A) + Δ25519 :=
+  extract_keygen_le kg _ (keygen_snd_signedClamp kg hkg) hpure H A
 
 /-- **Extract keyed by Curve25519 key generation, salt side**: as `extract_ikm_G25519_le`,
 with the salt drawn by key generation. -/
