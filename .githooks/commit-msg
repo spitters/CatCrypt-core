@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# commit-msg: the message gate.
+exec bash "$(git rev-parse --show-toplevel)/scripts/commit-msg-gate.sh" "$1"
