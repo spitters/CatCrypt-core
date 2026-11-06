@@ -24,6 +24,7 @@ sampler `μ` by `μ'` moves the loop by at most `k * tvDist μ μ'`.
 ## Main results
 
 * `tvDist_le_one_sub_of_mul_le` — if `c • Q ≤ P` pointwise, then `tvDist P Q ≤ 1 - c`
+* `firstSome_eq_some` — a first success is the success of an element of the sequence
 * `firstSome_eq_map_firstSome` — the first success of a function that factors through `h`
 * `rejectLoop_succ` — one attempt, then the loop of `k` attempts on failure
 * `rejectLoop_bind_pure` — the loop over the image of a sampler
@@ -56,6 +57,21 @@ def firstSome {X Y : Type*} (f : X → Option Y) : {n : ℕ} → (Fin n → X) �
     (xs : Fin n → X) :
     firstSome f (Fin.cons x xs : Fin (n + 1) → X) = (f x).or (firstSome f xs) := by
   simp only [firstSome, Fin.cons_zero, Fin.tail_cons]
+
+/-- A first success is a success of some element of the sequence. -/
+theorem firstSome_eq_some {X Y : Type*} (f : X → Option Y) :
+    ∀ {n : ℕ} (xs : Fin n → X) {y : Y}, firstSome f xs = some y → ∃ i, f (xs i) = some y
+  | 0, _, _, h => by simp at h
+  | _ + 1, xs, y, h => by
+    simp only [firstSome] at h
+    cases hx : f (xs 0) with
+    | some z =>
+      rw [hx, Option.some_or] at h
+      exact ⟨0, hx.trans h⟩
+    | none =>
+      rw [hx, Option.none_or] at h
+      obtain ⟨i, hi⟩ := firstSome_eq_some f (Fin.tail xs) h
+      exact ⟨i.succ, hi⟩
 
 /-- The first success of a function with the argument attached, forgetting the argument, is
 the first success of the function. -/
