@@ -50,7 +50,8 @@ example (s t : Multiset ℕ) : unionM.timedCost s t = 1 + Multiset.ndunion.timed
 example (s : Finset ℕ) :
     imgF.timedCost s = 1 + Finset.image.timedCost ℕ ℕ (· + 1) (fun _ => 1) s := rfl
 
-example (s : Finset ℕ) : filtF.timedCost s = 1 + Finset.filter.timedCost ℕ (· < 3) s := rfl
+example (s : Finset ℕ) :
+    filtF.timedCost s = 1 + Finset.filter.timedCost ℕ (· < 3) (fun _ => 0) s := rfl
 
 /-- A corruption structure with two function fields. -/
 structure Corr where
