@@ -228,6 +228,16 @@ theorem Extract_AdvantageK_uniform (H : HKDFDef W) (ikm : W) (A : W → SPComp B
     SampledGame.idealAt, extractSaltSampled, sampleFrom_replicateFin_one_bind,
     sampleFrom_replicateFin_zero_bind, sampleFrom_uniform, Extract_Advantage, extract_real]
 
+/-- The Extract advantage with the salt drawn from `μ` is the advantage against one draw from
+`μ` followed by Extract. -/
+theorem Extract_AdvantageK_eq (H : HKDFDef W) (ikm : W) (μ : SDistr W)
+    (A : W → SPComp Bool) :
+    Extract_AdvantageK H ikm μ A =
+      AdvantageA ((sampleFrom μ).bind fun x => SPComp.pure (H.extract x ikm)) extract_ideal A := by
+  simp only [Extract_AdvantageK, SampledGame.advAt, SampledGame.realAt,
+    SampledGame.idealAt, extractSaltSampled, sampleFrom_replicateFin_one_bind,
+    sampleFrom_replicateFin_zero_bind]
+
 /-- At the uniform sampler, the multi-query Expand advantage with the PRK drawn from the
 sampler is `Expand_Seq_Advantage`. -/
 theorem Expand_Seq_AdvantageK_uniform (H : HKDFDef W) (qs : List (List W → W))
