@@ -6,6 +6,7 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Tactics.DeriveCost
+public import Mathlib.Data.FinEnum
 
 /-!
 # Derived costs of list and array functions
@@ -452,7 +453,8 @@ end
 
 /-! ## Finite sums and enumerations
 
-Registered costs: enumerating `Finset.univ` costs one unit per element of the type and
+Registered costs: enumerating `Finset.univ` costs one unit per element of the type, and so does
+the list `FinEnum.toList α` of a type with a `FinEnum` enumeration, and
 enumerating `Finset.range n` costs `n` units; the empty set and adding an element to a
 multiset (`Multiset.cons`, the step of a `Finset` literal) cost one unit; removing an element
 from `s` costs `s.card` units, one comparison per element; a sum or a product over `s` costs, beyond the
@@ -461,6 +463,8 @@ a sum is that of a fold over any list enumerating `s` (`Finset.sum.timedCost_eq_
 is well defined on the quotient. -/
 
 timed_cost Finset.univ := fun (α : Type _) [Fintype α] => Fintype.card α
+
+timed_cost FinEnum.toList := fun (α : Type _) [FinEnum α] => FinEnum.card α
 
 timed_cost Finset.range := fun (n : ℕ) => n
 
