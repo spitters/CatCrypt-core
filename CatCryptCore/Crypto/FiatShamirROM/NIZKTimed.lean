@@ -18,13 +18,13 @@ special-soundness extractor once at cost `tExt`, after the adversary with the ch
 query run against the random oracle, which uses the adversary once at the cost of the
 challenger's query and of the `qH + 1` oracle steps, each at most `tH + tF + 1`. By
 `Clocked.time_comp`, the price of the composite Diller–Nahm morphism at the time `T` of the
-adversary is `tExt + 2 * (1 + (tH + tF + 1) * (qH + 1) + T)`.
+adversary is `tExt + 2 * (2 + (tH + tF + 1) * (qH + 1) + T)`.
 
 ## Main definitions
 
 * `ksExtractor.clock` — the extractor: two uses, cost `tExt`
 * `ksWithVerify.clock` — the adversary with the challenger's query against the oracle: one use,
-  cost `1 + (tH + tF + 1) * (qH + 1)`
+  cost `2 + (tH + tF + 1) * (qH + 1)`
 
 ## Main results
 
@@ -49,11 +49,11 @@ def ksExtractor.clock (tExt : ℕ) : Clocked Unit Unit where
 
 /-- The clock of the adversary with the challenger's query run against the random oracle with
 step cost `tH` and fork decision cost `tF`: the adversary is used once, and the challenger's
-query and the `qH + 1` oracle steps cost `1 + (tH + tF + 1) * (qH + 1)`. -/
+query and the `qH + 1` oracle steps cost `2 + (tH + tF + 1) * (qH + 1)`. -/
 def ksWithVerify.clock (tH tF qH : ℕ) : Clocked Unit Unit where
   fn _ := ()
   uses _ := 1
-  cost _ := 1 + (tH + tF + 1) * (qH + 1)
+  cost _ := 2 + (tH + tF + 1) * (qH + 1)
 
 section Knowledge
 

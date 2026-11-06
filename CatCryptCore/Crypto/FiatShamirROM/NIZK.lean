@@ -57,7 +57,7 @@ signing-oracle simulation of `FiatShamirROM.StatHVZK` applies.
   `ε·(ε/(qH + 1) − 1/|Ch|) ≤ ksExtractProb A`
 * `ksExtractor.run_erase_timed`, `ksExtractor.timeBound_timed` — the costed extractor
   has the distribution of `ksExtractor A` and time at most
-  `2 * (T + 1 + (tH + tF + 1) * (qH + 1)) + tExt`
+  `2 * (T + 2 + (tH + tF + 1) * (qH + 1)) + tExt`
 * `Sigma.statHVZKAt_nizkProtocol`, `Sigma.keyBoundAt_nizkProtocol` — statistical HVZK
   and the commitment bound at every pair of the relation give those of the protocol of
   the proving oracle
@@ -405,25 +405,17 @@ theorem ksExtractProb_ge (hSS : P.SpecialSound) {qH : ℕ} (A : KSAdversary P Si
 
 /-! ### The costed extractor -/
 
-/-- The costed adversary followed by the challenger's query. -/
-def ksWithVerify.timed
-    (A' : OracleAdv.Timed (P.NizkInput Sid) P.Ch (Sid × P.Stmt × P.NizkProof)) :
-    ℕ × OracleAdv.Timed (P.NizkInput Sid) P.Ch (Sid × P.Stmt × P.NizkProof) :=
-  A'.bind fun y => (0, .query (ksInput y) (fun _ => 0) fun _ => .ret y)
-
-omit [DecidableEq Sid] [DecidableEq P.Stmt] in
-theorem ksWithVerify.erase_timed
-    (A' : OracleAdv.Timed (P.NizkInput Sid) P.Ch (Sid × P.Stmt × P.NizkProof)) :
-    (ksWithVerify.timed A').2.erase = ksWithVerify A'.erase := by
-  rw [ksWithVerify.timed, OracleAdv.Timed.erase_bind]
-  rfl
+-- The costed adversary followed by the challenger's query, `ksWithVerify.timed` with its
+-- erasure theorem `ksWithVerify.erase_timed`: the step cost of the challenger's query, the call
+-- of `ksInput` at the output, is one unit.
+derive_timed ksWithVerify
 
 omit [DecidableEq Sid] [DecidableEq P.Stmt] in
 theorem ksWithVerify.timeBound_timed
     {A' : OracleAdv.Timed (P.NizkInput Sid) P.Ch (Sid × P.Stmt × P.NizkProof)} {T : ℕ}
-    (hT : A'.TimeBound T) : OracleAdv.Timed.StepTimeBound (ksWithVerify.timed A') (T + 1) :=
+    (hT : A'.TimeBound T) : OracleAdv.Timed.StepTimeBound (ksWithVerify.timed A') (T + 2) :=
   OracleAdv.Timed.timeBound_bind hT fun _ =>
-    ⟨Nat.zero_le _, le_rfl, fun _ => ⟨Nat.zero_le _, trivial⟩⟩
+    ⟨Nat.le_succ 1, by simp, fun _ => ⟨Nat.zero_le _, trivial⟩⟩
 
 /-- The costed forking extractor: the costed adversary `A'` with the challenger's query,
 run as the costed forking run (`OracleForking.forkRun.timedK`) against the random
@@ -451,7 +443,7 @@ theorem ksExtractor.run_erase_timed {qH : ℕ} (A : KSAdversary P Sid qH)
   rfl
 
 /-- **Time of the forking extractor.** With `A'` of time `T` and at most `qH` queries, the
-costed extractor has time at most `2 * (T + 1 + (tH + tF + 1) * (qH + 1)) + tExt`: the
+costed extractor has time at most `2 * (T + 2 + (tH + tF + 1) * (qH + 1)) + tExt`: the
 adversary with the challenger's query is run at most twice, each query is charged its
 step, its node and the fork decision, and the special-soundness extractor is called
 once. -/
@@ -459,7 +451,7 @@ theorem ksExtractor.timeBound_timed {qH : ℕ} (A : KSAdversary P Sid qH)
     {A' : OracleAdv.Timed (P.NizkInput Sid) P.Ch (Sid × P.Stmt × P.NizkProof)}
     (hA : A'.erase = A.run) (tH tF tExt : ℕ) {T : ℕ} (hT : A'.TimeBound T) :
     OracleAdv.Timed.StepTimeBound (ksExtractor.timed tH tF tExt A')
-      (2 * (T + 1 + (tH + tF + 1) * (qH + 1)) + tExt) := by
+      (2 * (T + 2 + (tH + tF + 1) * (qH + 1)) + tExt) := by
   have hw := ksWithVerify.timeBound_timed hT
   have hq : (ksWithVerify.timed A').2.erase.IsQueryBoundBy (fun _ => tH + tF + 1)
       ((tH + tF + 1) * (qH + 1)) := by
