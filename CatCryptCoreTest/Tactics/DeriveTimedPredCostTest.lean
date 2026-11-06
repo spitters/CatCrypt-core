@@ -25,7 +25,12 @@ Rule (j): a closure built into data whose type has no costed form is refused.
 * a table write `Function.update q p xs` stored in data without a costed form, a registered call
   at its registered arity, and a read of the written table;
 * the refusal of a closure `fun p => q p ++ xs` stored in the same position;
-* a table write in a state type that is an abbreviation of a tuple holding a table.
+* a table write in a state type that is an abbreviation of a tuple holding a table;
+* a decidable predicate whose type is written through a type-valued definition, which the
+  syntactic reading of binder types leaves to the reducing telescope;
+* the refusal of a partial application of a constant stored in data without a costed form;
+* a complete application at the arity of its declared type, whose result is a function under a
+  type-valued definition, stored in such data as a table.
 -/
 
 @[expose] public section
@@ -279,5 +284,63 @@ derive_timed pushStepTree
 example (n : ℕ) (q : ℕ → List ℕ) (qCost : ℕ → ℕ) (b : Bool) (p x : ℕ) :
     (pushStepTree.timed n q qCost b p x).2.erase = pushStepTree n q b p x :=
   pushStepTree.erase_timed n q qCost b p x
+
+/-! ### (i) A decidable predicate whose type is written through a definition -/
+
+/-- Predicates on the naturals, a type-valued definition. -/
+def NatPred : Type := ℕ → Prop
+
+/-- The number of elements of `l` satisfying `p`, a predicate of type `NatPred` (a primitive with
+a registered cost). -/
+def countSatN (p : NatPred) [DecidablePred p] (l : List ℕ) : ℕ :=
+  (l.filter fun a => decide (p a)).length
+
+timed_cost countSatN := fun (_p : NatPred) (pCost : ℕ → ℕ) [DecidablePred _p] (l : List ℕ) =>
+  (l.map fun a => 1 + pCost a).sum + 1
+
+/-- The number of elements of `l` whose image under `costly` exceeds 3. -/
+def countBigN (l : List ℕ) : ℕ := countSatN (fun n => 3 < costly n) l
+
+derive_cost countBigN
+
+/-- The binder type `NatPred` is a predicate type after unfolding: the registered cost charges
+the companion `fun n => 1 + costly.timedCost n` per element, as in (c). -/
+example (l : List ℕ) :
+    countBigN.timedCost l = (l.map costly.timedCost).sum + 2 * l.length + 2 := by
+  simp only [countBigN.timedCost, countSatN.timedCost]
+  induction l with
+  | nil => simp
+  | cons a l ih => simp only [List.map_cons, List.sum_cons, List.length_cons] at ih ⊢; omega
+
+/-! ### (j) A partial application of a constant stored in data is refused -/
+
+/-- The sum of two naturals. -/
+def addN (n m : ℕ) : ℕ := n + m
+
+/-- A step that stores the partial application `addN n`. -/
+def addStep (n : ℕ) : Option (ℕ × (ℕ → ℕ)) := some (n, addN n)
+
+/--
+error: derive_timed: a function bound in data: the value `some (n, addN n)` of type
+`Option (ℕ × (ℕ → ℕ))` builds the closure `addN n` of type `ℕ → ℕ` at the position Option.some →
+Prod.snd; the type has no costed form, so the closure would cost nothing to build and its
+applications would not be charged (rule (j))
+-/
+#guard_msgs (whitespace := lax) in
+derive_cost addStep
+
+/-! ### (k) A complete application with a function result under a definition -/
+
+/-- Functions on the naturals, a type-valued definition. -/
+def NatFn : Type := ℕ → ℕ
+
+/-- The function adding `n`, declared with one binder and a result of type `NatFn`. -/
+def adder (n : ℕ) : NatFn := fun m => m + n
+
+/-- A step that stores `adder n`, a complete application at the arity of the declared type of
+`adder`: the result is a table, not a closure built in the data. -/
+def adderStep (n : ℕ) : Option (ℕ × NatFn) := some (n, adder n)
+
+derive_cost adderStep
 
 end CatCrypt.Tactics.DeriveTimedPredCostTest

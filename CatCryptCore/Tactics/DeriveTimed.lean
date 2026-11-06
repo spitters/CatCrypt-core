@@ -245,6 +245,21 @@ beyond the registered arity and is priced by the definition, an `if` on `x = a`.
 closure (`hatTy?`) the write is translated as before, a partial application whose companion is
 the read of the definition.
 
+The order of the tests of rules (i) and (j) and of table data. These tests read declared types
+and values before they reduce a type or look up a registered cost, and they decide what reading
+everything at every application decides, so the class of accepted programs is the same; only the
+order of evaluation differs. The arity of an applied constant or local is read off its declared
+type (`declaredArity`, the size of the telescope that `forallTelescope` would open). A
+constructor application inspects its type (`hatTy?`) for table data only when one of its
+components is a registered call (`hasRegisteredComponent`), and for rule (j) only when one of its
+components builds a closure (`hasClosureComponent`). A registered cost is looked up only for an
+application with fewer arguments than the binders of the declared type of its head
+(`isRegisteredCall`), and in the pricing of a call only for a constant that has one. A decision
+instance is searched for only when the binders written in the type of the primitive include an
+instance binder or are fewer than its arguments (`decPredArgs`, `noInstBinders`). A binder type
+is a predicate type (`isPredType`) by its written binders when the rest is a sort or an
+application of an inductive type, and by the reducing telescope otherwise.
+
 On the class `TabState` (function-valued state `X → Y` with first-order `X`, built from tables,
 `Function.update`, case analyses on data present at the build whose arms are of the class,
 calls of non-recursive definitions whose bodies are of the class, structural or well-founded
@@ -2638,19 +2653,48 @@ def isDecisionOf (p t : Expr) : MetaM Bool := do
     let q := b.appArg!.headBeta
     return q.getAppFn == p && q.getAppArgs == zs
 
+/-- Whether `t` is a predicate type `α₁ → … → αₙ → Prop`, `n ≥ 1`, as `forallTelescopeReducing`
+reads it: the binders written in `t`, then those of the weak head normal form of the rest. The
+written binders are read first; when the rest is a sort or an application of an inductive type,
+its weak head normal form is itself, and the answer is read off without opening the telescope.
+Otherwise the telescope decides. An evaluation order with the same result. -/
+def isPredType (t : Expr) : MetaM Bool := do
+  let env ← getEnv
+  let rec written : Expr → Nat → Option Bool
+    | .forallE _ _ b _, n => written b (n + 1)
+    | .sort l, n => some (n > 0 && (Expr.sort l).isProp)
+    | e, _ => match e.getAppFn with
+      | .const c _ => match env.find? c with
+        | some (.inductInfo _) => some false
+        | _ => none
+      | _ => none
+  if let some r := written t 0 then return r
+  forallTelescopeReducing t fun ys b => pure (!ys.isEmpty && b.isProp)
+
+/-- Whether the first `n` binders of `t` are written in `t` (leading `∀`s, no reduction) and none
+of them is an instance binder. -/
+def noInstBinders : Expr → Nat → Bool
+  | _, 0 => true
+  | .forallE _ _ b bi, n + 1 => !bi.isInstImplicit && noInstBinders b n
+  | _, _ + 1 => false
+
 /-- The positions of the decidable predicates among the binders of the function `f` at the
 arguments `args` (rule (i)): a binder `p : α₁ → … → αₙ → Prop`, `n ≥ 1`, followed among the
-binders of `f` by a decision instance for `p` (`isDecisionOf`). -/
+binders of `f` by a decision instance for `p` (`isDecisionOf`). The type of `f` is first read
+syntactically: when its first `args.size` binders are written and none is an instance binder
+(`noInstBinders`), the telescope, which reduces only past the written binders, would find no
+decision instance, and none is opened; an evaluation order with the same result. -/
 def decPredArgs (f : Expr) (args : Array Expr) : MetaM (Array Bool) := do
-  forallBoundedTelescope (← inferType f) (some args.size) fun xs _ => do
+  let ft ← inferType f
+  if noInstBinders ft args.size then return Array.replicate args.size false
+  forallBoundedTelescope ft (some args.size) fun xs _ => do
     let mut out := Array.replicate args.size false
     -- A decision instance is an instance binder; without one there is no decidable predicate.
     let insts ← xs.mapM fun x => return (← x.fvarId!.getBinderInfo).isInstImplicit
     unless insts.any id do return out
     for i in [0:xs.size] do
       unless insts[i + 1:].toArray.any id do break
-      let isPred ← forallTelescopeReducing (← inferType xs[i]!) fun ys b =>
-        pure (!ys.isEmpty && b.isProp)
+      let isPred ← isPredType (← inferType xs[i]!)
       unless isPred do continue
       for j in [i + 1:xs.size] do
         unless insts[j]! do continue
@@ -2681,6 +2725,15 @@ def isCtorName (env : Environment) (n : Name) : Bool :=
   | some (.ctorInfo _) => true
   | _ => false
 
+/-- The number of binders of the type `t`, read without reduction and through metadata. -/
+def declaredBinders (t : Expr) : Nat := Id.run do
+  let mut full := 0
+  let mut t := t.consumeMData
+  while t.isForall do
+    full := full + 1
+    t := t.bindingBody!.consumeMData
+  return full
+
 /-- The registered arity of the constant `c`: the number of arguments of `c` that its registered
 cost `c.timedCost` takes, when it is smaller than the number of binders of the declared type of
 `c` (a primitive whose result is a function, `Function.update f a v`); `none` when `c` has no
@@ -2694,11 +2747,7 @@ def registeredArity? (c : Name) : MetaM (Option Nat) := do
   let some ci := env.find? c | return none
   -- Read off the declared types, without reduction: the binders of `c`, and those of its
   -- registered cost less the companions.
-  let mut full := 0
-  let mut t := ci.type.consumeMData
-  while t.isForall do
-    full := full + 1
-    t := t.bindingBody!.consumeMData
+  let full := declaredBinders ci.type
   let mut n := 0
   let mut r := ri.type.consumeMData
   while r.isForall do
@@ -2719,20 +2768,41 @@ arity of its declared type: its head is a constant whose registered arity
 registered cost, even when its result is a function, and is not a closure (rule (j)). -/
 def isRegisteredCall (e : Expr) : MetaM Bool := do
   let .const c _ := e.getAppFn.consumeMData | return false
+  -- A registered arity is below the binders of the declared type (`registeredArity?`): an
+  -- application with as many arguments is no such call, and no registered cost is looked up for
+  -- it (a lookup that fails, the common case, is the costly one). The same answer as looking up.
+  let some ci := (← getEnv).find? c | return false
+  unless e.getAppNumArgs < declaredBinders ci.type do return false
   return (← registeredArity? c) == some e.getAppNumArgs
+
+/-- The number of leading `∀` binders of `t`, read syntactically: the size of the telescope that
+`forallTelescope` opens on `t` (no reduction, metadata not consumed), without creating locals. -/
+def leadingForalls : Expr → Nat
+  | .forallE _ _ b _ => leadingForalls b + 1
+  | _ => 0
+
+/-- The number of binders of the declared type of the constant or local `f`, the arity
+`forallTelescope (← inferType f)` counts: the type of a constant (its universe parameters do not
+change its binders) or of a local declaration, read by `leadingForalls`. -/
+def declaredArity (f : Expr) : MetaM Nat := do
+  match f with
+  | .const c _ => return leadingForalls (← getConstInfo c).type
+  | .fvar id => return leadingForalls (← id.getDecl).type
+  | _ => return leadingForalls (← inferType f)
 
 /-- Whether the value `v` builds a closure: a `fun`, or a partial application of a constant or
 of a local (fewer arguments than the binders of its declared type, which is not unfolded). An
 application of a registered primitive at its registered arity (`isRegisteredCall`) is a
-complete application, not a closure. -/
+complete application, not a closure. The arity is read off the declared type (`declaredArity`),
+and the registered arity only for an application below it: an evaluation order that decides the
+same values as reading both for every application. -/
 def isClosureValue (v : Expr) : MetaM Bool := do
   let v := v.consumeMData.headBeta
   if v.isLambda then return true
   let f := v.getAppFn.consumeMData
   unless f.isConst || (f.isFVar && v.isApp) do return false
-  if ← isRegisteredCall v then return false
-  let arity ← forallTelescope (← inferType f) fun ys _ => pure ys.size
-  return v.getAppNumArgs < arity
+  unless v.getAppNumArgs < (← declaredArity f) do return false
+  return !(← isRegisteredCall v)
 
 /-- The closure that the data value `v` of type `t` places at a function position of `t` that
 has no costed form (rule (j)), with its type, the path of components to it and the type-valued
@@ -2772,7 +2842,10 @@ partial def unmirroredClosure? (t v : Expr) (path : Array String := #[])
   let isCtorVal ← match vf with
     | .const n _ => pure (isCtorName (← getEnv) n)
     | _ => pure false
-  unless isCtorVal || (← isClosureValue v) do return none
+  -- The closure test runs only for a value that is not a constructor application (written as
+  -- `isCtorVal || (← …)`, it would run before the test).
+  if !isCtorVal then
+    unless ← isClosureValue v do return none
   let tw' ← whnf tw
   if tw' == tw then return none
   unmirroredClosure? tw' v path (unfolded.push c) (fuel - 1)
@@ -4301,7 +4374,7 @@ partial def costArgs (ctx : Ctx) (f : Expr) (args : Array Expr) (reg? : Option E
     out := out.push a
     if k == .treeFn then out := out.push (← companionOf ctx a)
     else if k == .fn then
-      let isPred ← forallTelescopeReducing bt fun ys b => pure (!ys.isEmpty && b.isProp)
+      let isPred ← isPredType bt
       if !isPred then
         -- With `fnByBinder` (a registered call at its registered arity), a function argument
         -- takes its companion only when the registered cost has a binder for it.
@@ -4367,11 +4440,13 @@ partial def costConst (ctx : Ctx) (e : Expr) (c : Name) (args : Array Expr) :
     -- Rule (j): a closure built into data whose type has no costed form is refused.
     checkUnmirroredClosure e
     -- In data without a costed form, a registered call at its registered arity is a table
-    -- write, priced by its registered cost.
-    let ctx' ← if ctx.inTableData then pure ctx else do
-      if (← hasRegisteredComponent e) && (← hatTy? (← inferType e)).isNone then
-        pure { ctx with inTableData := true }
-      else pure ctx
+    -- write, priced by its registered cost. The type is inspected only when a component is such
+    -- a call: written as `(← a) && (← b)`, both actions would run before the test.
+    let mut ctx' := ctx
+    unless ctx.inTableData do
+      if ← hasRegisteredComponent e then
+        if (← hatTy? (← inferType e)).isNone then
+          ctx' := { ctx with inTableData := true }
     -- The parameters of the inductive type are not arguments of the call.
     return ← argsCost ctx' (args.extract ci.numParams args.size)
   if freeConstants.contains c then
@@ -4386,15 +4461,20 @@ partial def costConst (ctx : Ctx) (e : Expr) (c : Name) (args : Array Expr) :
   -- A registered primitive applied at its registered arity, below the arity of its declared
   -- type (a table write `Function.update f a v`): a complete application, priced by its
   -- registered cost, whose result is a table.
+  -- The registered arity is read only for a constant with a registered cost: a constant without
+  -- one, the common case, is looked up once. The environment is the one `registeredArity?`
+  -- reads, and no step between this point and the test of a registered cost below changes it.
   let reg := c ++ `timedCost
-  let regArity? ← registeredArity? c
+  let hasReg := (← getEnv).contains reg
+  let regArity? ← if hasReg then registeredArity? c else pure none
   if ctx.inTableData && regArity? == some args.size then
     let regArgs ← costArgs ctx f args (some (← mkConstWithFreshMVarLevels reg))
       (fnByBinder := true)
     let regE ← mkAppOptM reg (regArgs.map some)
     return add (natE 1) (add regE (← argsCost ctx args))
-  -- A partial application is a closure.
-  let arity ← forallTelescope (← inferType f) fun ys _ => pure ys.size
+  -- A partial application is a closure. The arity is read off the declared type
+  -- (`declaredArity`, the count of the telescope of `inferType f`, without opening it).
+  let arity ← declaredArity f
   if args.size < arity then return ← argsCost ctx args
   if isCasesOnRecursor env c then
     return ← costCases ctx e c args
@@ -4403,7 +4483,7 @@ partial def costConst (ctx : Ctx) (e : Expr) (c : Name) (args : Array Expr) :
     return add (natE 1) (add (mkAppN sc (← costArgs ctx f args)) (← argsCost ctx args))
   -- A registered primitive applied beyond its registered arity (a read `Function.update f a v
   -- x` of a write) is priced by its definition, as a call without a registered cost.
-  if env.contains reg && regArity?.isNone then
+  if hasReg && regArity?.isNone then
     let regArgs ← costArgs ctx f args (some (← mkConstWithFreshMVarLevels reg))
     let regE ← mkAppOptM reg (regArgs.map some)
     -- A derived cost that takes the cost companions of field paths of `c`'s binders: the
