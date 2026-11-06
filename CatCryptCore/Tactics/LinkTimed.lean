@@ -55,34 +55,55 @@ statement, and aligned with the binders of `T.timed`:
 
 ## The route through the soundness theorem
 
-For a D-term `t` in the fragment `Tm.InDtFrag` at a first-order type, with an allowance
-`t.allow` that reduces to a numeral, `link_timed` first builds the translated environment `η` of
-the telescope (`EnvHat.consE` of the cast of a data value, `dataEntry` of a data function value
-and its cost companion, `treeEntry` of a costed tree function value) and proves
-`CostLe (fun a b => cast _ a = b) (t.dt η) (T.timed …)`: the costed form of `derive_timed` is
-above the charges of `Tm.dt` stated on D's syntax. The comparison is one rule over both costed
-trees after reduction to head normal form:
+For a D-term `t` in the fragment `Tm.InDtFrag` at a first-order type, `link_timed` first builds
+the translated environment `η` of the telescope (`EnvHat.consE` of the cast of a data value,
+`dataEntry` of a data function value and its cost companion, `treeEntry` of a costed tree
+function value) and proves `CostLeA (fun a b => cast _ a = b) e d (t.dtC cc η) (T.timed …)`:
+the costed form of `derive_timed` is above the charges of `Tm.dtC` stated on D's syntax, up to
+deficits `e` in front and `d` in the tree that the allowance pays (`Tm.timedSim_of_costLeA`).
+
+The charge of a call. The class: terms whose calls of function variables are at arguments of
+any type of D, the finite ground types `base MF` of type parameters `MF` included. `cc` is
+`callCost` (`Tm.dt`, `Tm.allow`) when `t.allow` reduces to a numeral; otherwise, when a call is
+at an argument of type `base MF` with `MF` a variable, where `callCost (base MF)` is undecided,
+every call is charged `1` (`cc = fun _ => 1`, `Tm.dtC_timedSim`), whose allowance
+`t.allowC cc` does not depend on the argument types and reduces to a numeral. A call on `unit`,
+which `derive_timed` charges nothing for, is then a deficit of one.
+
+The deficit. The class: terms with calls of free function values (a projection or re-pairing
+`v.1`, `v.2`, `(v.1, v.2)` of a matched argument, `Kind.freeFn`), which `derive_timed` charges
+nothing for while `Tm.dtC` charges the unit call. As the walk pays that step from the allowance
+(`DSim.appFree`), the comparison closes a step-cost side goal `c ≤ c' + e` at the least deficit
+`e` up to the slack: the number of calls of free function values in `t`, at the charge `1` of
+every call plus the number of calls on `unit`. The deficits add along a path (`TreeLeA`) and the
+allowance of the statement is `t.allowC cc + (e + d)`. With no such call the slack is `0` and
+the comparison is `CostLe`, without deficit.
+
+The comparison is one rule over both costed trees after reduction to head normal form:
 
 * equal constructors (`ret`, `sample`, `get`, `set`, `fail`) compare their leaves by definitional
   equality and their step costs as side goals, a child's step cost and subtree at one variable;
+  the deficit of the node is the deficit of its step cost plus that of its subtrees;
 * binds stuck at their first tree compare the first trees with equal leaves and the
-  continuations pointwise (`CostLe.bind`), and record the inequality of their step costs as a
+  continuations pointwise (`CostLeA.bind`), and record the inequality of their step costs as a
   fact for the side goals;
 * a tree, a leaf or a step cost whose reduction is stuck at a variable of type `Bool`, a sum,
-  `Option`, a list or a pair is split on that variable, both sides at once;
-* definitionally equal trees are equal (`TreeLe.refl`);
+  `Option`, a list or a pair is split on that variable, both sides at once, at the largest
+  deficit of the cases (`TreeLeA.mono`, `CostLeA.mono`);
+* definitionally equal trees are equal (`TreeLeA.refl`);
 * a side goal is closed by `omega` on the step costs with the first components of costed pairs,
   `callCost` and decided conditionals reduced, definitionally equal atoms identified, the facts
   of its context, `callCost_le_one`, and for two registered costs of the same left fold the
   monotonicity in the step cost (`foldl_timedCost_mono`) when the step costs compare.
 
-`Tm.timedSim_of_costLe` then gives `T.d_timedSim` from `Tm.dt_timedSim`, `T.d_cost_le` follows
+`Tm.timedSim_of_costLeA` then gives `T.d_timedSim` from `Tm.dtC_timedSim`, `T.d_cost_le` follows
 as below, and `TimedSim.run_eq` gives `T.d_run`: at a query-free evaluation, `T.d` means the
-compiled erasure of `T.timed`. The statements are those of the walk. When the route does not
-apply (an allowance with the charge `callCost` of a type parameter, a call of a projection
-method that `derive_timed` charges nothing for, constructs outside the fragment), the walk below
-proves the theorems and the docstring of `T.d_timedSim` records why the route did not apply;
-when the walk also fails, the error reports both reasons.
+compiled erasure of `T.timed`. The statements are those of the walk, and the docstring of
+`T.d_timedSim` names the charge and the deficit. When the route does not apply (constructs
+outside the fragment, costed trees of another shape, such as a costed bind whose continuation
+returns a projection of a costed table, which the walk removes by `TSim.bindRet`), the walk
+below proves the theorems and the docstring of `T.d_timedSim` records why the route did not
+apply; when the walk also fails, the error reports both reasons.
 
 ## The walk
 
@@ -108,7 +129,8 @@ whose type differs from their D representation (`Option`).
 ## Main definitions
 
 * `link_timed x`: the command.
-* `DtState`, `DtM`, `provePair`, `proveTree`, `closeSideD`, `dtRoute`: the comparison of the
+* `DtState`, `DtM`, `provePair`, `proveTree`, `closeSideD`, `sideD`, `splitIdx`,
+  `countFree`, `dtRoute`: the comparison of the
   route through the soundness theorem.
 
 ## Main results

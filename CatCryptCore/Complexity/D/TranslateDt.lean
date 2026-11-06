@@ -460,9 +460,11 @@ noncomputable def dtC (cc : Ty → ℕ) :
     bindT (x.dtC cc η) fun u => (0, .ret (Sum.inr u : a.hat ⊕ b.hat))
   | _, _, .case (a := a) (b := b) s l r, η =>
     bindT (s.dtC cc η) fun (u : a.hat ⊕ b.hat) =>
-      SPTree.Timed.delay 1 (Sum.elim (fun x => l.dtC cc (η.cons x)) (fun y => r.dtC cc (η.cons y)) u)
+      SPTree.Timed.delay 1
+        (Sum.elim (fun x => l.dtC cc (η.cons x)) (fun y => r.dtC cc (η.cons y)) u)
   | _, _, .ite c t e, η =>
-    bindT (c.dtC cc η) fun (b : Bool) => SPTree.Timed.delay 1 (bif b then t.dtC cc η else e.dtC cc η)
+    bindT (c.dtC cc η) fun (b : Bool) =>
+      SPTree.Timed.delay 1 (bif b then t.dtC cc η else e.dtC cc η)
   | _, _, .nil (a := a), _ => (0, .ret ([] : List a.hat))
   | _, _, .cons (a := a) x xs, η =>
     bindT (x.dtC cc η) fun u => bindT (xs.dtC cc η) fun (l : List a.hat) => (0, .ret (u :: l))
