@@ -14,13 +14,14 @@ public import CatCryptCore.Core.SPTree
 Rule (i) of `CatCryptCore.Tactics.DeriveTimed`: a predicate argument of a registered primitive
 followed by a decision instance for it has a cost companion, the cost of deciding the predicate
 at each argument, which the registered cost charges (`Finset.filter`: once per element).
-Rule (j): a closure built into data whose type has no costed form is refused.
+Rule (j): a closure built into data whose type has no costed form is refused when its domain is
+not finite; rule (m): a closure over a finite domain is tabulated where it is built.
 
 * a filter by a predicate whose decision calls a costly function, charged per element;
 * a filter by a relation with a `DecidableRel` instance on pairs, and a registered primitive
   taking a relation and its `DecidableRel` instance;
 * a registered primitive taking a predicate and its `DecidablePred` instance;
-* the refusal of a closure stored in a value of a type computed by recursion;
+* the tabulation of a closure over `Fin 2` stored in a value of a type computed by recursion;
 * the cardinality of a filter by a costly predicate;
 * a table write `Function.update q p xs` stored in data without a costed form, a registered call
   at its registered arity, and a read of the written table;
@@ -184,7 +185,7 @@ derive_timed countCostlyTree
 example (s : Finset ℕ) : (countCostlyTree.timed s).2.erase = countCostlyTree s :=
   countCostlyTree.erase_timed s
 
-/-! ### (d) A closure stored in a value of a type computed by recursion -/
+/-! ### (d) A closure over a finite domain stored in a value of a type computed by recursion -/
 
 /-- Trees of depth `n` with binary branching, a type computed by recursion on `n`. -/
 def FTree : ℕ → Type
@@ -196,15 +197,17 @@ def grow : (n : ℕ) → ℕ → Option (FTree n)
   | 0, x => some x
   | n + 1, x => if h : (grow n x).isSome then some (x, fun _ => (grow n x).get h) else none
 
-/--
-error: derive_timed: a function bound in data: the value `some (x, fun x_1 ↦ (grow n x).get h)`
-of type `Option (FTree (n + 1))` builds the closure `fun x_1 ↦ (grow n x).get h` of type
-`Fin 2 → FTree n` at the position Option.some → Prod.snd (reached by unfolding
-[`CatCrypt.Tactics.DeriveTimedPredCostTest.FTree`]); the type has no costed form, so the closure
-would cost nothing to build and its applications would not be charged (rule (j))
--/
-#guard_msgs (whitespace := lax) in
 derive_cost grow
+
+/-- The children of a node, a closure over `Fin 2`, are tabulated where they are built (rule (m)):
+each of the two entries evaluates `(grow n x).get h`, which calls `grow n x` again, so the cost
+more than doubles from one level to the next. -/
+example (n x : ℕ) : grow.timedCost (n + 1) x =
+    1 + (1 + (1 + (1 + grow.timedCost n x + 1) +
+      if (grow n x).isSome = true then ∑ _a : Fin 2, (1 + (1 + grow.timedCost n x + 1))
+      else 0)) := by
+  rw [grow.timedCost.eq_2, dite_eq_ite]
+
 
 /-! ### (f) A table write stored in data without a costed form -/
 
@@ -253,7 +256,8 @@ def appendStep (s : ℕ) (q : ℕ → List ℕ) (xs : List ℕ) : Option (ℕ ×
 error: derive_timed: a function bound in data: the value `some (s, fun p ↦ q p ++ xs)` of type
 `Option (ℕ × (ℕ → List ℕ))` builds the closure `fun p ↦ q p ++ xs` of type `ℕ → List ℕ` at the
 position Option.some → Prod.snd; the type has no costed form, so the closure would cost nothing
-to build and its applications would not be charged (rule (j))
+to build and its applications would not be charged (rule (j)), and its domain is not finite, so it
+is not tabulated where it is built (rule (m))
 -/
 #guard_msgs (whitespace := lax) in
 derive_cost appendStep
@@ -324,7 +328,8 @@ def addStep (n : ℕ) : Option (ℕ × (ℕ → ℕ)) := some (n, addN n)
 error: derive_timed: a function bound in data: the value `some (n, addN n)` of type
 `Option (ℕ × (ℕ → ℕ))` builds the closure `addN n` of type `ℕ → ℕ` at the position Option.some →
 Prod.snd; the type has no costed form, so the closure would cost nothing to build and its
-applications would not be charged (rule (j))
+applications would not be charged (rule (j)), and its domain is not finite, so it is not
+tabulated where it is built (rule (m))
 -/
 #guard_msgs (whitespace := lax) in
 derive_cost addStep

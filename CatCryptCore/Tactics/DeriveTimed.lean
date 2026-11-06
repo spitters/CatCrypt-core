@@ -214,14 +214,40 @@ Rule (j), closures in data without a costed form. A constructor application (`Pr
 `Sum.inl`, `Sum.inr`, `some`, nested) priced as data, whose type has no costed value
 (`hatTy?`, `mirrorStruct?`) and which places a closure (a `fun` or a partial application) at a
 position that, after `whnfR` and unfolding of type-valued definitions, is a function type (a pi
-type that is not a proposition, a type former or an instance), is refused, with a message naming
-the type, the closure, the path of components to it and the definitions unfolded
-(`unmirroredClosure?`). The case in view is a type computed by recursion, `Tree Y (r :: rs)`,
+type that is not a proposition, a type former or an instance), is refused when the domain of the
+closure is not finite, with a message naming the type, the closure, the path of components to it
+and the definitions unfolded (`unmirroredClosures`); a closure over a finite domain is tabulated
+(rule (m) below). The case in view is a type computed by recursion, `Tree Y (r :: rs)`,
 unfolded to `r.M × (Fin r.k → r.C × Tree Y rs)`. Such a value is not costed as first-order data,
 which would build the closure at cost zero and never charge its applications. A function at
 such a position that is not built there (a binder, the result of a call, a component read from
 data) is read as a table, as before. A structure other than a pair is not entered: its function
 fields are field paths or are priced through the value (rule (g), `isValueField`).
+
+Rule (l), functions read from a value of a computed type. The class: a projection `s.f`, applied
+to arguments (`s.2 c`), of a value `s` whose type is a type-valued definition that does not
+unfold at reducible transparency and unfolds by `whnf` to a structure (`underTypeDef`): a type
+computed by recursion at a constructor, such as the strategy `Strategy Y (r :: rs)`, unfolded to
+`r.M × (r.C → Strategy Y rs)`, whose second component is the continuation of the strategy at
+each challenge. Such a type has no costed form (`hatTy?` reads types at reducible transparency),
+so a binder or a local of that type is first-order data, and the functions it holds are tables,
+as a local function under a non-reducible name is: the application costs one unit plus the cost
+of `s` and the costs of its arguments. The cost of computing the function held in `s` is not
+charged by this rule; it is charged where the value is built, as its components are (rule (m)
+for a closure). A cost companion indexed by the components of such a value would need a costed
+family `T̂ : I → Type` defined by the recursion of `T`, with its erasure and lift by the same
+recursion; none is implemented.
+
+Rule (m), tabulated closures. The class: a closure `v` of rule (j), placed in data whose type has
+no costed form, whose function type `(y₁ : X₁) → … → (yₙ : Xₙ) → Y` has finite domains: each `Xᵢ`
+is data with a `Fintype` instance (`finiteDomains?`: `Fin n`, `Bool`, a type with a `FinEnum`
+enumeration). Such a closure is evaluated at every point of its domain where it is built: it
+costs `∑ y₁, … ∑ yₙ, cost (v y₁ … yₙ)` (`Finset.sum` over `Finset.univ`, `tabulateClosures`), the
+cost of its body at each point, and its applications are table reads at one unit. This is the
+cost of the strict evaluation of a finite function into a table, after which each read costs
+one unit, whatever the number of reads. The children
+`fun j => L.get (Fin.castLE h j)` of a node of a transcript tree, `Fin r.k → r.C × Tree Y rs`,
+are tabulated at the cost of the `r.k` reads of the list of kept pairs.
 
 Table writes, registered calls with a function result. The registered arity of a primitive `c`
 is the number of its arguments that its registered cost takes: the binders of `c.timedCost`
@@ -503,12 +529,12 @@ Calls of reductions without a costed form are derived on demand. A derivation fa
 the reason, on a function stored in data that is not a costed closure as above (a local
 function without a cost companion applied, a function in a list), a field of a structure that
 is neither a field path, nor a field of a computed structure, nor a field of a structure with a
-mirror, nor a field of a structure value as below, an opaque data function without a
-registered cost, an operation on a quotient type
+mirror, nor a field of a structure value as below, nor a field of a value of a computed type
+(rule (l)), an opaque data function without a registered cost, an operation on a quotient type
 (`Finset`, `Multiset`, `Quot`) without a registered cost (the costs of `Finset.sum`,
 `Finset.prod`, `Finset.univ`, `Finset.range`, `Finset.erase`, `Finset.card` and
-`Finset.filter` are registered in `CatCryptCore.Tactics.StdCosts`), a closure built into data
-whose type has no costed form (rule (j)), a method of an instance that rule (k) does not price,
+`Finset.filter` are registered in `CatCryptCore.Tactics.StdCosts`), a closure over a domain
+that is not finite built into data whose type has no costed form (rules (j) and (m)), a method of an instance that rule (k) does not price,
 a recursive data
 function whose cost `derive_cost` does not derive (a class method on a local instance in its
 body needs `derive_cost (unit := …)`), a `match` whose motive depends on its
@@ -2881,30 +2907,30 @@ def isClosureValue (v : Expr) : MetaM Bool := do
   unless v.getAppNumArgs < (← declaredArity f) do return false
   return !(← isRegisteredCall v)
 
-/-- The closure that the data value `v` of type `t` places at a function position of `t` that
-has no costed form (rule (j)), with its type, the path of components to it and the type-valued
-definitions unfolded on the way; `none` when there is no such closure. The walk follows the
-constructors of `v` (`Prod.mk`, `Sum.inl`, `Sum.inr`, `some`) into the components of `t`, after
-`whnfR` and, where the head of `t` is a type-valued definition (`Tree Y (r :: rs)`), after
+/-- The closures that the data value `v` of type `t` places at function positions of `t` that
+have no costed form (rules (j) and (m)), each with its type, the path of components to it and the
+type-valued definitions unfolded on the way, in the order of the components. The walk follows
+the constructors of `v` (`Prod.mk`, `Sum.inl`, `Sum.inr`, `some`) into the components of `t`,
+after `whnfR` and, where the head of `t` is a type-valued definition (`Tree Y (r :: rs)`), after
 unfolding it by `whnf`. A position of a proposition, a type former or an instance is not a
 function position; a structure other than a pair is not entered (its function fields are field
 paths or are priced through the value, rule (g)). -/
-partial def unmirroredClosure? (t v : Expr) (path : Array String := #[])
+partial def unmirroredClosures (t v : Expr) (path : Array String := #[])
     (unfolded : Array Name := #[]) (fuel : Nat := 32) :
-    MetaM (Option (Expr × Expr × Array String × Array Name)) := do
-  if fuel == 0 then return none
+    MetaM (Array (Expr × Expr × Array String × Array Name)) := do
+  if fuel == 0 then return #[]
   let v := v.consumeMData.headBeta
-  if ← isProp t then return none
-  if ← isTypeFormerType t then return none
-  if (← isClass? t).isSome then return none
+  if ← isProp t then return #[]
+  if ← isTypeFormerType t then return #[]
+  if (← isClass? t).isSome then return #[]
   let tw ← whnfR t
   if tw.isForall then
-    return if ← isClosureValue v then some (v, t, path, unfolded) else none
+    return if ← isClosureValue v then #[(v, t, path, unfolded)] else #[]
   let go (t' v' : Expr) (step : String) :=
-    unmirroredClosure? t' v' (path.push step) unfolded (fuel - 1)
+    unmirroredClosures t' v' (path.push step) unfolded (fuel - 1)
   if tw.isAppOfArity ``Prod 2 && v.isAppOfArity ``Prod.mk 4 then
-    if let some r ← go (tw.getArg! 0) (v.getArg! 2) "Prod.fst" then return some r
-    return ← go (tw.getArg! 1) (v.getArg! 3) "Prod.snd"
+    return (← go (tw.getArg! 0) (v.getArg! 2) "Prod.fst") ++
+      (← go (tw.getArg! 1) (v.getArg! 3) "Prod.snd")
   if tw.isAppOfArity ``Sum 2 && v.isAppOfArity ``Sum.inl 3 then
     return ← go (tw.getArg! 0) (v.getArg! 2) "Sum.inl"
   if tw.isAppOfArity ``Sum 2 && v.isAppOfArity ``Sum.inr 3 then
@@ -2913,8 +2939,8 @@ partial def unmirroredClosure? (t v : Expr) (path : Array String := #[])
     return ← go (tw.getArg! 0) (v.getArg! 1) "Option.some"
   -- A type-valued definition, unfolded where the value is a constructor application or a
   -- closure.
-  let .const c _ := tw.getAppFn | return none
-  let some (.defnInfo _) := (← getEnv).find? c | return none
+  let .const c _ := tw.getAppFn | return #[]
+  let some (.defnInfo _) := (← getEnv).find? c | return #[]
   let vf := v.getAppFn.consumeMData
   let isCtorVal ← match vf with
     | .const n _ => pure (isCtorName (← getEnv) n)
@@ -2922,12 +2948,52 @@ partial def unmirroredClosure? (t v : Expr) (path : Array String := #[])
   -- The closure test runs only for a value that is not a constructor application (written as
   -- `isCtorVal || (← …)`, it would run before the test).
   if !isCtorVal then
-    unless ← isClosureValue v do return none
+    unless ← isClosureValue v do return #[]
   let tw' ← whnf tw
-  if tw' == tw then return none
-  unmirroredClosure? tw' v path (unfolded.push c) (fuel - 1)
+  if tw' == tw then return #[]
+  unmirroredClosures tw' v path (unfolded.push c) (fuel - 1)
 
-/-- Whether the value `v`, read through the constructors that `unmirroredClosure?` follows
+/-- Whether the value `s` has a type that is a type-valued definition which `whnfR` does not
+unfold and `whnf` does (rule (l)): a type computed by recursion at a constructor, such as
+`Strategy Y (r :: rs)`, which unfolds to `r.M × (r.C → Strategy Y rs)`. Such a type has no costed
+form (`hatTy?` reads types at reducible transparency), so the functions of the value are tables. -/
+def underTypeDef (s : Expr) : MetaM Bool := do
+  let tw ← whnfR (← inferType s)
+  let .const c _ := tw.getAppFn | return false
+  let some (.defnInfo _) := (← getEnv).find? c | return false
+  return (← whnf tw) != tw
+
+/-- The finite domains of a closure of type `ft` (rule (m)): the binders of the telescope of
+`ft` at reducible transparency, when each is data of a type with a `Fintype` instance (`Fin n`,
+`Bool`, a finite enumeration); `none` when a binder is a proposition, a type or an instance, or
+its type has no such instance. -/
+def finiteDomains? (ft : Expr) : MetaM (Option Nat) := do
+  forallTelescope (← whnfFnR ft) fun ys _ => do
+    if ys.isEmpty then return none
+    for y in ys do
+      let yt ← inferType y
+      if ← isProp yt then return none
+      if ← isTypeFormerType yt then return none
+      if (← isClass? yt).isSome then return none
+      let some fin ← observing? (mkAppM ``Fintype #[yt]) | return none
+      if (← synthInstance? fin).isNone then return none
+    return some ys.size
+
+/-- The refusal of rule (j): the closure `v` of type `ft`, at the position `path` of the value `e`
+of type `t`, reached by unfolding the definitions `unfolded`, has a domain that is not finite, so
+it is not tabulated (rule (m)), and the type has no costed form. -/
+def failUnmirroredClosure {β : Type} (e t v ft : Expr) (path : Array String)
+    (unfolded : Array Name) : MetaM β := do
+  let pos := if path.isEmpty then m!"the value itself" else
+    m!"the position {String.intercalate " → " path.toList}"
+  let unf := if unfolded.isEmpty then m!"" else
+    m!" (reached by unfolding {unfolded.toList.map fun n => m!"`{n}`"})"
+  fail m!"a function bound in data: the value `{e}` of type `{t}` builds the closure `{v}` of \
+    type `{ft}` at {pos}{unf}; the type has no costed form, so the closure would cost nothing \
+    to build and its applications would not be charged (rule (j)), and its domain is not finite, \
+    so it is not tabulated where it is built (rule (m))"
+
+/-- Whether the value `v`, read through the constructors that `unmirroredClosures` follows
 (`Prod.mk`, `Sum.inl`, `Sum.inr`, `some`), has a component that builds a closure
 (`isClosureValue`). It reads the value only, so that rule (j) inspects types only for values
 that build a closure. -/
@@ -2940,7 +3006,7 @@ partial def hasClosureComponent (v : Expr) : MetaM Bool := do
   if v.isAppOfArity ``Option.some 2 then return ← hasClosureComponent (v.getArg! 1)
   isClosureValue v
 
-/-- Whether the value `v`, read through the constructors that `unmirroredClosure?` follows, has a
+/-- Whether the value `v`, read through the constructors that `unmirroredClosures` follows, has a
 component that is a registered call at its registered arity (`isRegisteredCall`). -/
 partial def hasRegisteredComponent (v : Expr) : MetaM Bool := do
   let v := v.consumeMData.headBeta
@@ -2950,23 +3016,6 @@ partial def hasRegisteredComponent (v : Expr) : MetaM Bool := do
     return ← hasRegisteredComponent (v.getArg! 2)
   if v.isAppOfArity ``Option.some 2 then return ← hasRegisteredComponent (v.getArg! 1)
   isRegisteredCall v
-
-/-- Refuse the constructor application `e` when it builds a closure at a function position of
-its type that has no costed form (rule (j), `unmirroredClosure?`): its type has no costed value
-(`hatTy?`), so the closure would be built at cost zero and its applications read as a table. -/
-def checkUnmirroredClosure (e : Expr) : MetaM Unit := do
-  -- The value is read first: the types are inspected only when a closure sits at a component.
-  unless ← hasClosureComponent e do return
-  let t ← inferType e
-  if (← hatTy? t).isSome then return
-  let some (v, ft, path, unfolded) ← unmirroredClosure? t e | return
-  let pos := if path.isEmpty then m!"the value itself" else
-    m!"the position {String.intercalate " → " path.toList}"
-  let unf := if unfolded.isEmpty then m!"" else
-    m!" (reached by unfolding {unfolded.toList.map fun n => m!"`{n}`"})"
-  fail m!"a function bound in data: the value `{e}` of type `{t}` builds the closure `{v}` of \
-    type `{ft}` at {pos}{unf}; the type has no costed form, so the closure would cost nothing \
-    to build and its applications would not be charged (rule (j))"
 
 /-- Whether the registered cost `reg`, applied to `pre`, takes next the cost companion of a
 predicate of type `pt = α₁ → … → αₙ → Prop`: an explicit binder of type `α₁ → … → αₙ → ℕ` that
@@ -4577,6 +4626,28 @@ partial def costApp (ctx : Ctx) (e : Expr) : TermElabM Expr := do
     costConst ctx (mkAppN pf args) (S ++ field) (pf.getAppArgs ++ args)
   | _ => fail m!"the application `{e}` is not headed by a constant or a local"
 
+/-- The cost of tabulating the closures that the constructor application `e` places at function
+positions of its type that have no costed form (rule (m)): a closure `v` of type
+`(y₁ : X₁) → … → (yₙ : Xₙ) → Y` whose domains `Xᵢ` are finite (`finiteDomains?`) is evaluated at
+every point of its domain where it is built, at the cost `∑ y₁, … ∑ yₙ, cost (v y₁ … yₙ)`, and
+its applications are table reads. A closure whose domain is not finite is refused (rule (j)).
+Zero when `e` builds no closure or its type has a costed form (`hatTy?`). -/
+partial def tabulateClosures (ctx : Ctx) (e : Expr) : TermElabM Expr := do
+  -- The value is read first: the types are inspected only when a closure sits at a component.
+  unless ← hasClosureComponent e do return natE 0
+  let t ← inferType e
+  if (← hatTy? t).isSome then return natE 0
+  let mut cs := #[]
+  for (v, ft, path, unfolded) in ← unmirroredClosures t e do
+    let some n ← finiteDomains? ft | failUnmirroredClosure e t v ft path unfolded
+    cs := cs.push (← forallBoundedTelescope (← whnfFnR ft) n fun ys _ => do
+      let mut acc ← costOf ctx (mkAppN v ys).headBeta
+      for y in ys.reverse do
+        let univ ← mkAppOptM ``Finset.univ #[← inferType y, none]
+        acc ← mkAppM ``Finset.sum #[univ, ← mkLambdaFVars #[y] acc]
+      return acc)
+  return sum cs
+
 /-- The cost of an application of the constant `c`. -/
 partial def costConst (ctx : Ctx) (e : Expr) (c : Name) (args : Array Expr) :
     TermElabM Expr := do
@@ -4584,8 +4655,9 @@ partial def costConst (ctx : Ctx) (e : Expr) (c : Name) (args : Array Expr) :
   let f := e.getAppFn
   warnChoice ctx e c
   if let some (.ctorInfo ci) := env.find? c then
-    -- Rule (j): a closure built into data whose type has no costed form is refused.
-    checkUnmirroredClosure e
+    -- Rules (j) and (m): a closure built into data whose type has no costed form is tabulated
+    -- over its finite domain, and refused when the domain is not finite.
+    let tab ← tabulateClosures ctx e
     -- In data without a costed form, a registered call at its registered arity is a table
     -- write, priced by its registered cost. The type is inspected only when a component is such
     -- a call: written as `(← a) && (← b)`, both actions would run before the test.
@@ -4595,7 +4667,7 @@ partial def costConst (ctx : Ctx) (e : Expr) (c : Name) (args : Array Expr) :
         if (← hatTy? (← inferType e)).isNone then
           ctx' := { ctx with inTableData := true }
     -- The parameters of the inductive type are not arguments of the call.
-    return ← argsCost ctx' (args.extract ci.numParams args.size)
+    return add tab (← argsCost ctx' (args.extract ci.numParams args.size))
   if freeConstants.contains c then
     return ← argsCost ctx args
   -- A call of a recursive data function with a function result (rule (d)) and a fold whose
@@ -4834,6 +4906,10 @@ partial def costConst (ctx : Ctx) (e : Expr) (c : Name) (args : Array Expr) :
             let (cs, vs) ← tv ctx s
             let comp ← mirrorProj m.fieldTypes.size i vs
             return add cs (← closureApp ctx comp rest).1
+      -- A function component of a value whose type is a type-valued definition that does not
+      -- unfold at reducible transparency (rule (l), `underTypeDef`), applied: a table read.
+      if ← underTypeDef s then
+        return add (← costOf ctx s) (add (natE 1) (← argsCost ctx rest))
       fail m!"a function bound in data: the field `{c}` is applied in `{e}`"
     return ← argsCost ctx args
   -- An operation on finite sets or multisets is defined through a quotient, whose internals

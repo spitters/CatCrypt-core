@@ -28,13 +28,14 @@ messages (`HistBound`).
 ## Cost model
 
 The registered costs of `OracleAdversaryTimed`: one unit per `rand` and per `query` node.
-The signature table of the simulation (`mapQ.timed`, `simSign.timed`, `simTable.timed`) is
-derived by `derive_timed`, so its step costs follow from the code by the cost rules of
+The signature table of the simulation (`mapQ.timed`, `simSign.timed`, `simTable.timed`) and the
+adversary call (`simAdv.timed`) are derived by `derive_timed`, so its step costs follow from the code by the cost rules of
 `CatCryptCore.Tactics.DeriveTimed` and the registered costs of `List.map` and `List.filter`,
 with the cost companions of its primitives (`dsign`, `ω.ks`, `Corruption.CorruptionStatus`)
 bounded by the fields of `ReductionCost`. The trusted base is the cost record `ReductionCost`:
 
-* `adv` — one call of the adversary on its inputs;
+* `adv` — one call of the adversary on its inputs; in the simulation it bounds the cost
+  companions `bakeCost` and `rcvCost` of the adversary's stages in the derived `simAdv.timed`;
 * `sign` — one signature with a known signing key (signing for the parties other than the
   target party, and the signature table of the real execution); in the simulation it bounds
   the cost companion of `dsign`;
@@ -53,6 +54,8 @@ bounded by the fields of `ReductionCost`. The trusted base is the cost record `R
 * `ReductionCost`, `Adversary.OutputBound`, `HistBound`
 * `forger.timed` — the costed forger; `collFinder.timed` — the costed collision finder
 * `mapQ.timed`, `simSign.timed`, `simTable.timed` — the derived costed signature table
+* `simAdv.timed` — the derived costed adversary call: the table, then the adversary's stage at
+  its cost companion
 * `entryCost`, `stepCost`, `phaseCost` — the costs of one entry of the signature table, of
   one simulated party step and of one phase
 
@@ -103,6 +106,15 @@ theorem stepTimeBound_stepBind {x : ℕ × OracleAdv.Timed D R α}
   (OracleAdv.Timed.stepTimeBound_delay (c := x.1) (OracleAdv.Timed.timeBound_bind hx.2 hf)).mono
     (by have := hx.1; omega)
 
+/-- Times add under `stepBind` when the continuation is bounded on the leaves of the first tree
+only (`OracleAdv.Timed.timeBound_bind_of_allRet`). -/
+theorem stepTimeBound_stepBind_of_allRet {P : α → Prop} {x : ℕ × OracleAdv.Timed D R α}
+    {f : α → ℕ × OracleAdv.Timed D R β} {m n : ℕ} (hx : OracleAdv.Timed.StepTimeBound x m)
+    (hP : OracleAdv.Timed.AllRet P x.2) (hf : ∀ a, P a → OracleAdv.Timed.StepTimeBound (f a) n) :
+    OracleAdv.Timed.StepTimeBound (stepBind x f) (m + n) :=
+  (OracleAdv.Timed.stepTimeBound_delay (c := x.1)
+    (OracleAdv.Timed.timeBound_bind_of_allRet hx.2 hP hf)).mono (by have := hx.1; omega)
+
 theorem stepTimeBound_ret (a : α) (n : ℕ) :
     OracleAdv.Timed.StepTimeBound ((0, .ret a) : ℕ × OracleAdv.Timed D R α) n :=
   ⟨Nat.zero_le n, trivial⟩
@@ -139,7 +151,7 @@ end StepBind
 
 /-- The cost parameters of the reductions: the trusted base of the time statements. -/
 structure ReductionCost where
-  /-- One call of the adversary on its inputs. -/
+  /-- One call of the adversary on its inputs: a bound on the cost companions of its stages. -/
   adv : ℕ
   /-- One signature with a known signing key: a bound on the cost companion of `dsign`. -/
   sign : ℕ
@@ -164,10 +176,11 @@ def entryCost (cost : ReductionCost) : ℕ :=
   20 + cost.sign + cost.key + cost.corrupt
 
 /-- The cost of one simulated party step when the history has at most `h` messages: one
-entry of the signature table per message and the fixed steps of the table, the adversary
-call, the forgery search and the step of the protocol. -/
+entry of the signature table per message and the fixed steps of the table and of the derived
+adversary call `simAdv.timed`, the adversary's stage, the forgery search and the step of the
+protocol. -/
 def stepCost (cost : ReductionCost) (h : ℕ) : ℕ :=
-  h * entryCost cost + (6 + (cost.adv + (cost.find + cost.step)))
+  h * entryCost cost + (10 + (cost.adv + (cost.find + cost.step)))
 
 /-- The cost of one phase of `m` party steps when the history has at most `h` messages. -/
 def phaseCost (cost : ReductionCost) (m h : ℕ) : ℕ :=
@@ -397,36 +410,61 @@ theorem simTable.stepTimeBound_timed (hist : History Tx Hash (Fin np))
   unfold entryCost
   nlinarith
 
-/-- The costed adversary call of the simulation, continued by `f` on the output of the
-adversary: the signature table, then the adversary at cost `cost.adv`. -/
-noncomputable def simCall.timed (c : CallInput Tx Hash np A.AdvState)
-    (f : AdvOut Tx Hash np Sig × A.AdvState → ℕ × FProg.Timed Tx Hash np Sig) :
-    ℕ × FProg.Timed Tx Hash np Sig :=
-  stepBind (simTable.timed Sch i ω c.hist (fun _ _ => cost.sign) (fun _ => cost.key)
-      (fun _ => cost.corrupt)) fun tbl =>
-    OracleAdv.Timed.delay cost.adv (f (match c.msgs with
-      | none => A.bake (simPub i pk ω) c.sl c.hist tbl c.mb c.st
-      | some ms => A.rcv (simPub i pk ω) ms c.sl c.hist tbl c.mb c.st))
+-- The costed adversary call of the simulation, `simAdv.timed` with its erasure theorem
+-- `simAdv.erase_timed`: the derived `simTable.timed`, then the stage `A.bake` or `A.rcv` of
+-- the adversary at its cost companion `bakeCost` or `rcvCost`, field paths of `A`.
+derive_timed simAdv
 
-theorem simCall.erase_timed (c : CallInput Tx Hash np A.AdvState)
-    (f : AdvOut Tx Hash np Sig × A.AdvState → ℕ × FProg.Timed Tx Hash np Sig) :
-    (simCall.timed Sch A cost i pk ω c f).2.erase =
-      (simAdv Sch A i pk ω c).bind fun r => (f r).2.erase := by
-  simp only [simCall.timed, simAdv, erase_stepBind, simTable.erase_timed, OracleAdv.bind_assoc]
-  rfl
+/-- The time of the costed adversary call: the signature table and the adversary's stage, with
+its cost companions at most `cost.adv` and the companions of the table at most `cost.sign`,
+`cost.key` and `cost.corrupt`. -/
+theorem simAdv.stepTimeBound_timed (c : CallInput Tx Hash np A.AdvState)
+    {bakeCost : PubInfo Tx Hash np n Hz PK → ℕ → History Tx Hash (Fin np) →
+      List (Block Tx Hash (Fin np) × Sig) → MessagePool Tx Hash (Fin np) → A.AdvState → ℕ}
+    {rcvCost : PubInfo Tx Hash np n Hz PK → Messages Tx Hash (Fin np) → ℕ →
+      History Tx Hash (Fin np) → List (Block Tx Hash (Fin np) × Sig) →
+        MessagePool Tx Hash (Fin np) → A.AdvState → ℕ}
+    {dsignCost : SK → Block Tx Hash (Fin np) → ℕ} {ksCost corruptCost : Fin np → ℕ}
+    (hb : ∀ u s h t m a, bakeCost u s h t m a ≤ cost.adv)
+    (hr : ∀ u ms s h t m a, rcvCost u ms s h t m a ≤ cost.adv)
+    (hd : ∀ sk b, dsignCost sk b ≤ cost.sign) (hk : ∀ p, ksCost p ≤ cost.key)
+    (hc : ∀ p, corruptCost p ≤ cost.corrupt) :
+    OracleAdv.Timed.StepTimeBound
+      (simAdv.timed Sch A i pk ω c bakeCost rcvCost dsignCost ksCost corruptCost)
+      (c.hist.length * entryCost cost + 10 + cost.adv) := by
+  rw [simAdv.timed]
+  have ht := simTable.stepTimeBound_timed Sch cost i ω c.hist hd hk hc
+  refine (OracleAdv.Timed.stepTimeBound_delay
+    (OracleAdv.Timed.timeBound_bind ht.2 (n := cost.adv + 3) fun tbl => ?_)).mono ?_
+  · refine ⟨?_, trivial⟩
+    split
+    · have := hb (simPub i pk ω) c.sl c.hist tbl c.mb c.st
+      omega
+    · rename_i ms _
+      have := hr (simPub i pk ω) ms c.sl c.hist tbl c.mb c.st
+      omega
+  · have := ht.1
+    omega
 
-theorem simCall.stepTimeBound_timed {ℓ : ℕ} (hA : A.OutputBound ℓ)
-    (c : CallInput Tx Hash np A.AdvState)
-    {f : AdvOut Tx Hash np Sig × A.AdvState → ℕ × FProg.Timed Tx Hash np Sig} {t : ℕ}
-    (hf : ∀ r, r.1.length ≤ ℓ → OracleAdv.Timed.StepTimeBound (f r) t) :
-    OracleAdv.Timed.StepTimeBound (simCall.timed Sch A cost i pk ω c f)
-      (c.hist.length * entryCost cost + 6 + (cost.adv + t)) :=
-  stepTimeBound_stepBind (simTable.stepTimeBound_timed Sch cost i ω c.hist (fun _ _ => le_rfl)
-      (fun _ => le_rfl) (fun _ => le_rfl)) fun tbl =>
-    OracleAdv.Timed.stepTimeBound_delay (hf _ (by
-      split
-      · exact hA.1 _ _ _ _ _ _
-      · exact hA.2 _ _ _ _ _ _ _))
+/-- Every output of the costed adversary call satisfies the output bound of the adversary. -/
+theorem simAdv.allRet_timed {ℓ : ℕ} (hA : A.OutputBound ℓ) (c : CallInput Tx Hash np A.AdvState)
+    (bakeCost : PubInfo Tx Hash np n Hz PK → ℕ → History Tx Hash (Fin np) →
+      List (Block Tx Hash (Fin np) × Sig) → MessagePool Tx Hash (Fin np) → A.AdvState → ℕ)
+    (rcvCost : PubInfo Tx Hash np n Hz PK → Messages Tx Hash (Fin np) → ℕ →
+      History Tx Hash (Fin np) → List (Block Tx Hash (Fin np) × Sig) →
+        MessagePool Tx Hash (Fin np) → A.AdvState → ℕ)
+    (dsignCost : SK → Block Tx Hash (Fin np) → ℕ) (ksCost corruptCost : Fin np → ℕ) :
+    OracleAdv.Timed.AllRet (fun r => r.1.length ≤ ℓ)
+      (simAdv.timed Sch A i pk ω c bakeCost rcvCost dsignCost ksCost corruptCost).2 := by
+  rw [simAdv.timed]
+  have hT : ∀ T : OracleAdv.Timed (Block Tx Hash (Fin np)) Sig
+      (List (Block Tx Hash (Fin np) × Sig)), OracleAdv.Timed.AllRet (fun _ => True) T := by
+    intro T
+    induction T <;> simp_all [OracleAdv.Timed.AllRet]
+  exact OracleAdv.Timed.allRet_bind (hT _) fun tbl _ => by
+    split
+    · exact hA.1 _ _ _ _ _ _
+    · exact hA.2 _ _ _ _ _ _ _
 
 theorem stepCall_hist (bake : Bool) (p : Fin np) (M : GS P ω A) :
     letI := ω.params P; letI := ω.bparams P
@@ -438,7 +476,9 @@ noncomputable def simStep.timed (bake : Bool) (p : Fin np) (M : GS P ω A)
     (k : GS P ω A → ℕ × FProg.Timed Tx Hash np Sig) : ℕ × FProg.Timed Tx Hash np Sig :=
   letI := ω.params P; letI := ω.bparams P
   if (M.state_map p).isSome && is_corrupt p then
-    simCall.timed Sch A cost i pk ω (stepCall P A ω bake p M) fun r =>
+    stepBind (simAdv.timed Sch A i pk ω (stepCall P A ω bake p M)
+        (fun _ _ _ _ _ _ => cost.adv) (fun _ _ _ _ _ _ _ => cost.adv) (fun _ _ => cost.sign)
+        (fun _ => cost.key) (fun _ => cost.corrupt)) fun r =>
       match findForgery Sch i (simPks i pk ω) (stepCall P A ω bake p M) r.1 with
       | some fg => (cost.find, .ret fg)
       | none => OracleAdv.Timed.delay (cost.find + cost.step)
@@ -451,7 +491,7 @@ theorem simStep.erase_timed (bake : Bool) (p : Fin np) (M : GS P ω A)
       simStep Sch P A i pk ω bake p M fun M' => (k M').2.erase := by
   unfold simStep.timed simStep
   split
-  · rw [simCall.erase_timed]
+  · rw [erase_stepBind, simAdv.erase_timed]
     congr 1
     funext r
     cases findForgery Sch i (simPks i pk ω) (stepCall P A ω bake p M) r.1 <;> rfl
@@ -533,8 +573,10 @@ theorem simStep.stepTimeBound_timed (bake : Bool) (p : Fin np) {h : ℕ} {M : GS
   let _ := ω.params P; let _ := ω.bparams P; let _ := mkExec Sch false P ω A
   unfold simStep.timed
   split
-  · refine (simCall.stepTimeBound_timed Sch A cost i pk ω hA _
-      (t := cost.find + cost.step + T) fun r hr => ?_).mono ?_
+  · refine (stepTimeBound_stepBind_of_allRet (n := cost.find + cost.step + T)
+      (simAdv.stepTimeBound_timed Sch A cost i pk ω _ (fun _ _ _ _ _ _ => le_rfl)
+        (fun _ _ _ _ _ _ _ => le_rfl) (fun _ _ => le_rfl) (fun _ => le_rfl) (fun _ => le_rfl))
+      (simAdv.allRet_timed Sch A i pk ω hA _ _ _ _ _ _) fun r hr => ?_).mono ?_
     · split
       · exact ⟨by omega, trivial⟩
       · refine OracleAdv.Timed.stepTimeBound_delay (hk _ ⟨?_, ?_⟩)
