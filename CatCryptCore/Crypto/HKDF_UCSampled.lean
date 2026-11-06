@@ -37,6 +37,8 @@ values (`uniformList`).
   sampler
 * `Extract_IKM_AdvantageK`, `Extract_AdvantageK`, `Expand_Seq_AdvantageK` — their advantages at
   a sampler `μ`
+* `Expand_Seq_AdvantageKG kg` — the multi-query Expand advantage with the PRK the public part
+  of a key pair drawn by `kg`
 
 ## Main results
 
@@ -159,6 +161,12 @@ noncomputable def Expand_Seq_AdvantageK (H : HKDFDef W) (qs : List (List W → W
     (μ : SDistr W) (A : List W → SPComp Bool) : ℝ≥0∞ :=
   (expandSeqSampled H qs).advAt μ A
 
+/-- The multi-query Expand advantage with the PRK the public part of a key pair drawn by
+`kg`. -/
+noncomputable def Expand_Seq_AdvantageKG {S : Type} (kg : SPComp (S × W)) (H : HKDFDef W)
+    (qs : List (List W → W)) (A : List W → SPComp Bool) : ℝ≥0∞ :=
+  AdvantageA (kg.bind fun x => SPComp.pure (expandSeq H x.2 [] qs)) (uniformList W qs.length) A
+
 /-! ## The uniform sampler -/
 
 /-- One draw from `μ` followed by `k`. -/
@@ -253,9 +261,8 @@ generation drawn from `c.μ`, the advantage of `A` against the multi-query Expan
 most the advantage at the reference sampler `c.ν` plus `c.δ`. -/
 theorem expand_seq_keygen_le (hkg : kg.map Prod.snd = sampleFrom c.μ) (H : HKDFDef W)
     (qs : List (List W → W)) (A : List W → SPComp Bool) :
-    AdvantageA (kg.bind fun x => SPComp.pure (expandSeq H x.2 [] qs))
-        (uniformList W qs.length) A ≤
-      Expand_Seq_AdvantageK H qs c.ν A + c.δ := by
+    Expand_Seq_AdvantageKG kg H qs A ≤ Expand_Seq_AdvantageK H qs c.ν A + c.δ := by
+  unfold Expand_Seq_AdvantageKG
   have h := advantageA_le_of_realizes (expandSeqSampled H qs) c id
     (P := kg.bind fun x => SPComp.pure (expandSeq H x.2 [] qs))
     (Q := uniformList W qs.length)
@@ -321,8 +328,7 @@ theorem expand_seq_G25519_le
     (hkg : kg.map Prod.snd = (sampleFrom signedClamp).map (encU ∘ (g25519Pow (B := B))))
     (H : HKDFDef (Vector UInt8 32)) (qs : List (List (Vector UInt8 32) → Vector UInt8 32))
     (A : List (Vector UInt8 32) → SPComp Bool) :
-    AdvantageA (kg.bind fun x => SPComp.pure (expandSeq H x.2 [] qs))
-        (uniformList (Vector UInt8 32) qs.length) A ≤
+    Expand_Seq_AdvantageKG kg H qs A ≤
       Expand_Seq_AdvantageK H qs
         ((SDistr.uniform (ZMod curve25519SubgroupOrder)).bind fun e =>
           SDistr.pure (encU (g25519Pow (B := B) e))) A + Δ25519 :=
