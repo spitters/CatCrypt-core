@@ -139,7 +139,11 @@ by their companions over the binder's carrier:
 
 A recursion that replaces such a record (a call at a record whose path is another path) is
 refused, and a record built in the program from functions that are not fields of a binder is
-outside the class.
+outside the class. So is a record read from data without a binder path (an entry of an optional
+table `p ↦ some l`, a record returned by a class method): its function fields have no companion,
+and an optional structure is a table. Covering it needs a dependent mirror `Σ l, C l`, with
+`C l` the companions of the function fields over the carrier of `l`, an optional such mirror, and
+companions for the fields of records returned by class methods; none is implemented.
 
 A binder of the reduction whose type is such a structure keeps the convention of field paths
 (below), so that a scheme or a kit passed as a binder has the cost companions of its applied
@@ -323,6 +327,16 @@ rewrites the recursive call under the node's binder, and the conjuncts are rewri
 case hypotheses that the case split of the goal introduced (`normRecHyps`); a recursive call is
 found in the goal up to instances (`kabstract`), and a hypothesis that is a copy of a used one
 (one per occurrence of the call: its step cost and its costed tree) is cleared with it.
+Rule (h), source induction over the companions. On the class of recursions of rule (f) whose
+erasure is proved by functional induction on the source `c` (a costed form with no functional
+induction of its own, or an argument of `c` that is the erasure of a costed tree binder, such as
+a computation `S.wrap : M → SPComp X` of a record, so that the induction runs at the call of `c`
+in the goal), the induction generalizes the cost companions of the costed form (its binders
+that are not arguments of `c` and whose type ends in `ℕ`). Each induction hypothesis is then
+quantified over the companions as well as over the values bound by nodes, and so is an instance
+at the computed companion that a recursive call under a node's binder passes; such a hypothesis
+is kept whole and rewritten with the case hypotheses of the split (`normRecHyps`). Where a
+companion cannot be generalized, the induction is the one without.
 The erasure theorem of a joint costed value (rule (d)) whose result holds a record with
 function fields, which the erasure `ε` rebuilds field by field, is closed with the induction
 hypotheses split into their component equations (`splitCtorHyps`, R15), so that a goal that
@@ -2816,7 +2830,11 @@ def normRecHyps (c t : Name) (g : MVarId) : MetaM (Option MVarId) := g.withConte
     unless mentions ty do continue
     let ty' ← whnf ty
     let matchHead := isMatcherCore (← getEnv) ty.consumeMData.getAppFn.constName
-    unless ty'.isAppOfArity ``And 2 || ty'.isConstOf ``True || matchHead do continue
+    unless ty'.isAppOfArity ``And 2 || ty'.isConstOf ``True || matchHead do
+      -- A hypothesis quantified over the companions (rule (h)) is kept whole and rewritten with
+      -- the case hypotheses below.
+      if ty.isForall then news := news.push d.userName
+      continue
     let cs ← recConjuncts d.toExpr ty
     let mut g' := g
     for (pf, cty) in cs do
@@ -5331,7 +5349,15 @@ partial def deriveTimed (ctx : Ctx) (c : Name) : TermElabM Unit := do
             srcPos := match srcPos, bs.idxOf? a with
               | some ps, some i => some (ps.push i)
               | _, _ => none
-        let explicit := (explicit, srcPos)
+        -- The positions of the cost companions among the binders of the costed form: binders
+        -- that are not arguments of `c` whose type ends in `ℕ` (rule (h)).
+        let mut compPos : Array Nat := #[]
+        for b in bs, i in [0:bs.size] do
+          if args.contains b then continue
+          let isComp ← forallTelescopeReducing (← inferType b) fun _ r => do
+            return (← whnfR r).isConstOf ``Nat
+          if isComp then compPos := compPos.push i
+        let explicit := (explicit, srcPos, compPos)
         -- The field paths whose cost companions the costed form takes, as a function of the
         -- binders of `c`: a caller passes its companions for them (`callTimed`).
         let fp? ← if used.isEmpty then pure none else do
@@ -5403,7 +5429,7 @@ partial def deriveTimed (ctx : Ctx) (c : Name) : TermElabM Unit := do
       (if used.any (·.getPrefix == ``optionDispatch) then
         #[``Option.elim_none, ``Option.elim_some, ``Option.map_none, ``Option.map_some]
       else #[])
-  let (nBinders, srcPos) := nBinders
+  let (nBinders, srcPos, compPos) := nBinders
   let ids : Array (TSyntax `ident) := (Array.range nBinders.size).map fun i =>
     mkIdent (Name.mkSimple s!"x{i}")
   -- The functional induction on the costed form at every binder, implicit ones included: a type
@@ -5414,9 +5440,21 @@ partial def deriveTimed (ctx : Ctx) (c : Name) : TermElabM Unit := do
   -- binders of `c`, or, when an argument of `c` is the erasure of a costed binder (a tree or a
   -- function into trees, `fun x => (k x).erase`), at the application of `c` in the goal, the
   -- right side `c (ε xs)` of the erasure theorem.
-  let srcInd : TSyntax `tactic ← match srcIds? with
+  -- The companions are generalized (rule (h)): a recursive call that passes a companion
+  -- computed from the incoming one is an instance of the induction hypothesis.
+  let compIds : Array (TSyntax `ident) := compPos.filterMap (ids[·]?)
+  -- Where a companion cannot be generalized, the induction is the one without.
+  let srcIndPlain : TSyntax `tactic ← match srcIds? with
     | some srcIds => `(tactic| fun_induction $(mkIdent c):ident $srcIds*)
     | none => `(tactic| fun_induction $(mkIdent c):ident)
+  let srcInd : TSyntax `tactic ← if compIds.isEmpty then pure srcIndPlain else
+    match srcIds? with
+    | some srcIds => `(tactic| first
+        | fun_induction $(mkIdent c):ident $srcIds* generalizing $compIds*
+        | $srcIndPlain:tactic)
+    | none => `(tactic| first
+        | fun_induction $(mkIdent c):ident generalizing $compIds*
+        | $srcIndPlain:tactic)
   let lemmas : Array (TSyntax `Lean.Parser.Tactic.simpLemma) ←
     simpLemmas.mapM fun n => `(Lean.Parser.Tactic.simpLemma| $(mkIdent n):ident)
   -- The side conditions of `erase_simulateHat_bind` are equations under binders, discharged
