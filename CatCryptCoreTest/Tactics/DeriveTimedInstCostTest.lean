@@ -56,7 +56,7 @@ def findKey {α β : Type} [BEq α] (a : α) : List (α × β) → Option β
 derive_cost findKey
 
 /-- The cost of the lookup takes the cost companion of the comparison of keys. -/
-example {α β : Type} [BEq α] (a : α) (l : List (α × β)) (beqCost : α → α → ℕ) : ℕ :=
+noncomputable example {α β : Type} [BEq α] (a : α) (l : List (α × β)) (beqCost : α → α → ℕ) : ℕ :=
   findKey.timedCost a l beqCost
 
 /-- The lookup costs at most `k + 4` per entry and one more, for comparisons of cost at most

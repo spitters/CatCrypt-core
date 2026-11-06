@@ -395,7 +395,7 @@ theorem delTimeP_le (rs : PSt S (W ⊕ W) K PK SK SS C) (inp : Inst → Option (
     (he : ∀ x y, expCost x y ≤ te) :
     delTimeP G a b O OCost X Y mulCost toFunCost expCost rs inp x r ip ≤
       300 + 30 * (tO + tm + te + tf) + 2 * ((3 * (tO + tm + te + tf) + 80) * rs.ro.length) := by
-  unfold delTimeP
+  unfold delTimeP X3DHSquareGDH.liftSt
   time_bound
 
 omit [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K]
