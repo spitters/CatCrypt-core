@@ -44,7 +44,8 @@ derive_cost manyAbove
 example (k t : ℕ) (s : Finset ℕ) :
     manyAbove.timedCost k t s ≤ 2 * s.card + 6 := by
   have h := Finset.card_filter_le s fun n => t < n
-  simp only [manyAbove.timedCost, Finset.card.timedCost_eq, Finset.filter.timedCost]; omega
+  simp only [manyAbove.timedCost, Finset.card.timedCost_eq, Finset.filter.timedCost_eq]
+  simp; omega
 
 /-- A tree that returns the number of elements of `range n`. -/
 noncomputable def cardTree (n : ℕ) : SPTree ℕ := SPTree.ret (Finset.range n).card

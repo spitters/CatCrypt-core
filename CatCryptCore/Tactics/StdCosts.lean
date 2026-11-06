@@ -49,6 +49,7 @@ their definitions through `Array.toList`, so their costs are linear in the size.
   order of `Fin.foldl_succ`, so that it does not depend on the definition of `Fin.foldl`)
 * `Finset.toList.timedCost_eq` — enumerating `s` costs `s.card + 1`
 * `Finset.card.timedCost_eq` — the cardinality of `s` costs `s.card + 1`
+* `Finset.filter.timedCost_eq` — filtering `s` costs `∑ i ∈ s, pCost i + s.card + 1`
 * `Array.push.timedCost_le`, `Array.getD.timedCost_le`, `Array.get!Internal.timedCost_le` —
   linear bounds in the size
 * `Finset.sum.timedCost_eq_list`, `Finset.prod.timedCost_eq_list` — the registered cost of a
@@ -564,13 +565,14 @@ multiset against at most all elements of both, and costs `card s * (card s + car
 it depends on the multisets through their cardinalities, so it is well defined on the quotient.
 The image of `s` maps each element (one unit and the cost of `f`) and deduplicates the result
 at the cost of `Multiset.toFinset`. Filtering `s` decides the predicate once per element, at
-one unit each, and one more. -/
+one unit and the cost companion `pCost` of the predicate (rule (i) of
+`CatCryptCore.Tactics.DeriveTimed`), and one more. -/
 timed_cost Multiset.ndunion := fun (α : Type _) [DecidableEq α] (s t : Multiset α) =>
   Multiset.card s * (Multiset.card s + Multiset.card t + 1) + 1
 timed_cost Finset.image := fun (α β : Type _) [DecidableEq β] (_f : α → β) (fCost : α → ℕ)
   (s : Finset α) => ∑ i ∈ s, (1 + fCost i) + s.card * (s.card + 1) + 1
-timed_cost Finset.filter := fun (α : Type _) (p : α → Prop) [DecidablePred p]
-  (s : Finset α) => s.card + 1
+timed_cost Finset.filter := fun (α : Type _) (_p : α → Prop) (pCost : α → ℕ)
+  [DecidablePred _p] (s : Finset α) => ∑ i ∈ s, (1 + pCost i) + 1
 
 /-! Registered cost of the cardinality. `Finset.card s` is the length of any list representing
 `s`, read in one pass: one unit per element and one more, the cost of enumerating `s`
@@ -579,17 +581,22 @@ quotient.
 
 The operations on `Finset` whose function argument is priced by its cost companion are those
 whose registered cost takes, after the function `f : α → β`, its companion `fCost : α → ℕ` and
-charges `fCost i` once per element `i`: `Finset.sum`, `Finset.prod` and `Finset.image`. The
-front gives a companion to an argument of function type whose codomain is data; a predicate
-`p : α → Prop` is a type former, which the front treats as static, so `Finset.filter` is not of
-this class and its registered cost charges one unit per decision, not the cost of deciding
-`p`. -/
+charges `fCost i` once per element `i`: `Finset.sum`, `Finset.prod`, `Finset.image`, and
+`Finset.filter`, whose predicate `p : α → Prop` is followed by the instance `DecidablePred p`
+and so has as companion `pCost i`, the cost of deciding `p i` (rule (i) of
+`CatCryptCore.Tactics.DeriveTimed`). -/
 timed_cost Finset.card := fun (α : Type _) (s : Finset α) => s.card + 1
 
 /-- The cardinality of `s` costs one unit per element and one more. -/
 theorem Finset.card.timedCost_eq {α : Type*} (s : Finset α) :
     Finset.card.timedCost α s = s.card + 1 := by
   simp [Finset.card.timedCost]
+
+/-- Filtering `s` costs the decisions of the predicate, one unit per element and one more. -/
+theorem Finset.filter.timedCost_eq {α : Type*} (p : α → Prop) (pCost : α → ℕ)
+    [DecidablePred p] (s : Finset α) :
+    Finset.filter.timedCost α p pCost s = ∑ i ∈ s, pCost i + s.card + 1 := by
+  simp [Finset.filter.timedCost, Finset.sum_add_distrib, add_comm]
 
 /-- Enumerating `s` as a list costs one unit per element and one more. -/
 theorem Finset.toList.timedCost_eq {α : Type*} (s : Finset α) :

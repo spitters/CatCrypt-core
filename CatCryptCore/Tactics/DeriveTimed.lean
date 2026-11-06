@@ -210,6 +210,19 @@ a first-order domain of the typed measures of Forster and Kunze):
   erasure is `foldlHat_fst`, and `foldlHat_snd_le` bounds its companion by `B + d · |l|` for a
   step that raises the companion by at most `d`.
 
+Rule (j), closures in data without a costed form. A constructor application (`Prod.mk`,
+`Sum.inl`, `Sum.inr`, `some`, nested) priced as data, whose type has no costed value
+(`hatTy?`, `mirrorStruct?`) and which places a closure (a `fun` or a partial application) at a
+position that, after `whnfR` and unfolding of type-valued definitions, is a function type (a pi
+type that is not a proposition, a type former or an instance), is refused, with a message naming
+the type, the closure, the path of components to it and the definitions unfolded
+(`unmirroredClosure?`). The case in view is a type computed by recursion, `Tree Y (r :: rs)`,
+unfolded to `r.M × (Fin r.k → r.C × Tree Y rs)`. Such a value is not costed as first-order data,
+which would build the closure at cost zero and never charge its applications. A function at
+such a position that is not built there (a binder, the result of a call, a component read from
+data) is read as a table, as before. A structure other than a pair is not entered: its function
+fields are field paths or are priced through the value (rule (g), `isValueField`).
+
 On the class `TabState` (function-valued state `X → Y` with first-order `X`, built from tables,
 `Function.update`, case analyses on data present at the build whose arms are of the class,
 calls of non-recursive definitions whose bodies are of the class, structural or well-founded
@@ -374,6 +387,21 @@ in its result type returns plain results (`SPComp.seqFin.tree.timed`,
 `CatCryptCore.Core.CodeSequenceTimed`); called at a result type holding functions, its results
 are lifted to costed closures of companion zero (`ι`), as the results of a tree binder are.
 
+Rule (i), decidable predicates of registered primitives. The class: an argument
+`p : α₁ → … → αₙ → Prop` (`n ≥ 1`) of a registered primitive that is followed, among the
+primitive's arguments, by a decision instance for `p` (`DecidablePred p`, `DecidableRel p` or
+`∀ a₁ … aₙ, Decidable (p a₁ … aₙ)`; `decPredArgs`). In the arguments of the registered cost
+(`costArgs`), such an argument has the kind of a function (`argKinds` with `decPreds`) and is
+followed by its cost companion `pCost : α₁ → … → αₙ → ℕ`, where `pCost a` is the cost of deciding
+`p a`, computed as the cost of a condition (`propCost`, including the option
+`derive_timed.priceProps`), when the registered cost takes a binder of that type right after `p`
+(`takesPredCompanion`). `Finset.filter` is registered in this form, with the companion charged
+once per element. A registered cost without that binder (a cost derived by `derive_cost` for a
+definition taking a decidable predicate, whose binder `p` is static) takes `p` alone. The kind is
+the existing kind of a function, with a target in `Prop`, rather than a new kind: the companion
+is the only difference, and a new kind would add an arm to every case analysis on kinds without
+changing the translation anywhere else.
+
 A field `m` of a computed structure `g b₁ … bₖ`, where `g` is a field path (`kit.aead`) or a
 local function with a cost companion, applied as `(g b₁ … bₖ).m x₁ … xₙ`, is priced as the
 structure `g b₁ … bₖ` by the rules above, plus one, plus its cost companion
@@ -396,8 +424,9 @@ is neither a field path, nor a field of a computed structure, nor a field of a s
 mirror, nor a field of a structure value as below, an opaque data function without a
 registered cost, an operation on a quotient type
 (`Finset`, `Multiset`, `Quot`) without a registered cost (the costs of `Finset.sum`,
-`Finset.prod`, `Finset.univ`, `Finset.range` and `Finset.erase` are registered in
-`CatCryptCore.Tactics.StdCosts`), a recursive data
+`Finset.prod`, `Finset.univ`, `Finset.range`, `Finset.erase`, `Finset.card` and
+`Finset.filter` are registered in `CatCryptCore.Tactics.StdCosts`), a closure built into data
+whose type has no costed form (rule (j)), a recursive data
 function whose cost `derive_cost` does not derive (a class method on a local instance in its
 body needs `derive_cost (unit := …)`), a `match` whose motive depends on its
 discriminants, a match on an oracle tree that is not a binder, a recursive call that changes a
@@ -2573,15 +2602,135 @@ def withEta {β : Type} (f : Expr) (n : Nat) (k : Array Expr → Expr → TermEl
     unless ys.size == n do fail m!"`{f}` takes fewer than {n} arguments"
     k ys (mkAppN f ys).headBeta
 
-/-- The kinds of the binders of the function `f` at the arguments `args`. -/
-def argKinds (f : Expr) (args : Array Expr) : MetaM (Array (Kind × Expr)) := do
+/-- Whether the type `t` is a decision instance for the predicate `p`: `DecidablePred p`,
+`DecidableRel p` or `∀ a₁ … aₙ, Decidable (p a₁ … aₙ)`, up to reducible unfolding. -/
+def isDecisionOf (p t : Expr) : MetaM Bool := do
+  forallTelescope (← whnfR t) fun zs b => do
+    if zs.isEmpty then return false
+    let b ← whnfR b
+    unless b.isAppOfArity ``Decidable 1 do return false
+    let q := b.appArg!.headBeta
+    return q.getAppFn == p && q.getAppArgs == zs
+
+/-- The positions of the decidable predicates among the binders of the function `f` at the
+arguments `args` (rule (i)): a binder `p : α₁ → … → αₙ → Prop`, `n ≥ 1`, followed among the
+binders of `f` by a decision instance for `p` (`isDecisionOf`). -/
+def decPredArgs (f : Expr) (args : Array Expr) : MetaM (Array Bool) := do
+  forallBoundedTelescope (← inferType f) (some args.size) fun xs _ => do
+    let mut out := Array.replicate args.size false
+    for i in [0:xs.size] do
+      let isPred ← forallTelescopeReducing (← inferType xs[i]!) fun ys b =>
+        pure (!ys.isEmpty && b.isProp)
+      unless isPred do continue
+      for j in [i + 1:xs.size] do
+        if ← isDecisionOf xs[i]! (← inferType xs[j]!) then
+          out := out.set! i true
+          break
+    return out
+
+/-- The kinds of the binders of the function `f` at the arguments `args`. With `decPreds`
+(the arguments of a registered cost, `costArgs`), a decidable predicate (`decPredArgs`) has the
+kind `fn`: its cost companion is the cost of deciding it at each argument (rule (i)). -/
+def argKinds (f : Expr) (args : Array Expr) (decPreds : Bool := false) :
+    MetaM (Array (Kind × Expr)) := do
+  let preds ← if decPreds then decPredArgs f args else pure #[]
   let mut ty ← inferType f
   let mut out := #[]
-  for a in args do
+  for h : i in [0:args.size] do
+    let a := args[i]
     let .forallE _ bt body _ ← whnf ty | fail m!"`{f}` is applied to too many arguments"
-    out := out.push (← classify bt, bt)
+    let k ← if preds[i]?.getD false then pure Kind.fn else classify bt
+    out := out.push (k, bt)
     ty := body.instantiate1 a
   return out
+
+/-- Whether `n` is a constructor in `env`. -/
+def isCtorName (env : Environment) (n : Name) : Bool :=
+  match env.find? n with
+  | some (.ctorInfo _) => true
+  | _ => false
+
+/-- Whether the value `v` builds a closure: a `fun`, or a partial application of a constant or
+of a local (fewer arguments than the binders of its declared type, which is not unfolded). -/
+def isClosureValue (v : Expr) : MetaM Bool := do
+  let v := v.consumeMData.headBeta
+  if v.isLambda then return true
+  let f := v.getAppFn.consumeMData
+  unless f.isConst || (f.isFVar && v.isApp) do return false
+  let arity ← forallTelescope (← inferType f) fun ys _ => pure ys.size
+  return v.getAppNumArgs < arity
+
+/-- The closure that the data value `v` of type `t` places at a function position of `t` that
+has no costed form (rule (j)), with its type, the path of components to it and the type-valued
+definitions unfolded on the way; `none` when there is no such closure. The walk follows the
+constructors of `v` (`Prod.mk`, `Sum.inl`, `Sum.inr`, `some`) into the components of `t`, after
+`whnfR` and, where the head of `t` is a type-valued definition (`Tree Y (r :: rs)`), after
+unfolding it by `whnf`. A position of a proposition, a type former or an instance is not a
+function position; a structure other than a pair is not entered (its function fields are field
+paths or are priced through the value, rule (g)). -/
+partial def unmirroredClosure? (t v : Expr) (path : Array String := #[])
+    (unfolded : Array Name := #[]) (fuel : Nat := 32) :
+    MetaM (Option (Expr × Expr × Array String × Array Name)) := do
+  if fuel == 0 then return none
+  let v := v.consumeMData.headBeta
+  if ← isProp t then return none
+  if ← isTypeFormerType t then return none
+  if (← isClass? t).isSome then return none
+  let tw ← whnfR t
+  if tw.isForall then
+    return if ← isClosureValue v then some (v, t, path, unfolded) else none
+  let go (t' v' : Expr) (step : String) :=
+    unmirroredClosure? t' v' (path.push step) unfolded (fuel - 1)
+  if tw.isAppOfArity ``Prod 2 && v.isAppOfArity ``Prod.mk 4 then
+    if let some r ← go (tw.getArg! 0) (v.getArg! 2) "Prod.fst" then return some r
+    return ← go (tw.getArg! 1) (v.getArg! 3) "Prod.snd"
+  if tw.isAppOfArity ``Sum 2 && v.isAppOfArity ``Sum.inl 3 then
+    return ← go (tw.getArg! 0) (v.getArg! 2) "Sum.inl"
+  if tw.isAppOfArity ``Sum 2 && v.isAppOfArity ``Sum.inr 3 then
+    return ← go (tw.getArg! 1) (v.getArg! 2) "Sum.inr"
+  if tw.isAppOfArity ``Option 1 && v.isAppOfArity ``Option.some 2 then
+    return ← go (tw.getArg! 0) (v.getArg! 1) "Option.some"
+  -- A type-valued definition, unfolded where the value is a constructor application or a
+  -- closure.
+  let .const c _ := tw.getAppFn | return none
+  let some (.defnInfo _) := (← getEnv).find? c | return none
+  let vf := v.getAppFn.consumeMData
+  let isCtorVal ← match vf with
+    | .const n _ => pure (isCtorName (← getEnv) n)
+    | _ => pure false
+  unless isCtorVal || (← isClosureValue v) do return none
+  let tw' ← whnf tw
+  if tw' == tw then return none
+  unmirroredClosure? tw' v path (unfolded.push c) (fuel - 1)
+
+/-- Refuse the constructor application `e` when it builds a closure at a function position of
+its type that has no costed form (rule (j), `unmirroredClosure?`): its type has no costed value
+(`hatTy?`), so the closure would be built at cost zero and its applications read as a table. -/
+def checkUnmirroredClosure (e : Expr) : MetaM Unit := do
+  let t ← inferType e
+  if (← hatTy? t).isSome then return
+  let some (v, ft, path, unfolded) ← unmirroredClosure? t e | return
+  let pos := if path.isEmpty then m!"the value itself" else
+    m!"the position {String.intercalate " → " path.toList}"
+  let unf := if unfolded.isEmpty then m!"" else
+    m!" (reached by unfolding {unfolded.toList.map fun n => m!"`{n}`"})"
+  fail m!"a function bound in data: the value `{e}` of type `{t}` builds the closure `{v}` of \
+    type `{ft}` at {pos}{unf}; the type has no costed form, so the closure would cost nothing \
+    to build and its applications would not be charged (rule (j))"
+
+/-- Whether the registered cost `reg`, applied to `pre`, takes next the cost companion of a
+predicate of type `pt = α₁ → … → αₙ → Prop`: an explicit binder of type `α₁ → … → αₙ → ℕ` that
+is not an instance (rule (i)). -/
+def takesPredCompanion (reg : Expr) (pre : Array Expr) (pt : Expr) : MetaM Bool := do
+  let mut ty ← inferType reg
+  for a in pre do
+    let .forallE _ _ b _ ← whnf ty | return false
+    ty := b.instantiate1 a
+  let .forallE _ d _ bi ← whnf ty | return false
+  if bi.isInstImplicit then return false
+  if (← isClass? d).isSome then return false
+  let ct ← forallTelescopeReducing pt fun ys _ => mkForallFVars ys (mkConst ``Nat)
+  isDefEq d ct
 
 /-- The trailing arguments of `e` to which `roles` apply. -/
 def trailing (e : Expr) (args : Array Expr) (roles : Array ArgRole) : MetaM (Array Expr) := do
@@ -4035,13 +4184,25 @@ partial def partialAppCompanion (ctx : Ctx) (e tw f : Expr) (args : Array Expr) 
     return c.replaceFVars (zs.map (·.1)) (zs.map (·.2))
 
 /-- The arguments of a registered cost: each function-typed argument followed by its cost
-companion. -/
-partial def costArgs (ctx : Ctx) (f : Expr) (args : Array Expr) : TermElabM (Array Expr) := do
-  let kinds ← argKinds f args
+companion. For the registered cost `reg?` of a primitive, a decidable predicate `p` (rule (i))
+is followed by its companion `fun a => cost of deciding p a` (`propCost`) when the binder of
+`reg?` after `p` has the companion's type; a registered cost without that binder (a cost
+derived by `derive_cost`, whose binder `p` is static) takes `p` alone. -/
+partial def costArgs (ctx : Ctx) (f : Expr) (args : Array Expr) (reg? : Option Expr := none) :
+    TermElabM (Array Expr) := do
+  let kinds ← argKinds f args (decPreds := reg?.isSome)
   let mut out := #[]
-  for a in args, (k, _) in kinds do
+  for a in args, (k, bt) in kinds do
     out := out.push a
-    if k == .fn || k == .treeFn then out := out.push (← companionOf ctx a)
+    if k == .treeFn then out := out.push (← companionOf ctx a)
+    else if k == .fn then
+      let isPred ← forallTelescopeReducing bt fun ys b => pure (!ys.isEmpty && b.isProp)
+      if !isPred then out := out.push (← companionOf ctx a)
+      else if let some reg := reg? then
+        if ← takesPredCompanion reg out bt then
+          let c ← forallTelescopeReducing (← inferType a) fun ys _ => do
+            mkLambdaFVars ys (← propCost ctx (mkAppN a ys).headBeta)
+          out := out.push c
   return out
 
 /-- The cost of the application `e` of a constant or a local. -/
@@ -4093,6 +4254,8 @@ partial def costConst (ctx : Ctx) (e : Expr) (c : Name) (args : Array Expr) :
   let f := e.getAppFn
   warnChoice ctx e c
   if let some (.ctorInfo ci) := env.find? c then
+    -- Rule (j): a closure built into data whose type has no costed form is refused.
+    checkUnmirroredClosure e
     -- The parameters of the inductive type are not arguments of the call.
     return ← argsCost ctx (args.extract ci.numParams args.size)
   if freeConstants.contains c then
@@ -4114,7 +4277,7 @@ partial def costConst (ctx : Ctx) (e : Expr) (c : Name) (args : Array Expr) :
   if let some (_, sc) := ctx.selfCosts.find? (·.1 == c) then
     return add (natE 1) (add (mkAppN sc (← costArgs ctx f args)) (← argsCost ctx args))
   if env.contains reg then
-    let regArgs ← costArgs ctx f args
+    let regArgs ← costArgs ctx f args (some (← mkConstWithFreshMVarLevels reg))
     let regE ← mkAppOptM reg (regArgs.map some)
     -- A derived cost that takes the cost companions of field paths of `c`'s binders: the
     -- caller passes its companions for the same paths at the arguments of the call.
