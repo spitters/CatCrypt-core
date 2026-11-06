@@ -100,15 +100,6 @@ noncomputable def ddh_of_cdh (A : CDH_Adversary W) : DDH_Adversary W :=
     let answer ← A g_a g_b
     SPComp.pure (decide (answer = challenge))
 
-/-- A continuation whose success probability is at most `ε` from every state keeps the
-    success probability of the composed computation at most `ε`. -/
-private theorem prTrue_bind_le_const {α : Type} (c : SPComp α) (k : α → SPComp Bool)
-    (ε : ℝ≥0∞) (h₀ : Heap) (hk : ∀ a h', prTrue (k a) h' ≤ ε) :
-    prTrue (c.bind k) h₀ ≤ ε :=
-  (ForkingLemma.prTrue_bind_mono_const ε c k (fun _ => SPComp.pure true) h₀ fun a h' => by
-      rw [ForkingLemma.prTrue_pure_bool]; simpa using hk a h').trans
-    (mul_le_of_le_one_right' (prTrue_le_one _ _))
-
 /-- A value computed by `c` equals a uniform `r ← W` sampled before `c` runs with
     probability at most `1/|W|`. -/
 theorem prTrue_sample_guess (c : SPComp W) (h₀ : Heap) :

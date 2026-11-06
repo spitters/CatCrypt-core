@@ -189,6 +189,19 @@ theorem prTrue_bind_eq_weighted {α : Type*}
   | none => simp [SDistr.fail, PMF.pure_apply]
   | some pp => rfl
 
+/-- If every continuation accepts with probability at most `c` from every value and heap,
+    so does the bind. -/
+theorem prTrue_bind_le_const {α : Type} (X : SPComp α) (K : α → SPComp Bool) (h₀ : Heap)
+    (c : ℝ≥0∞) (hK : ∀ a h', prTrue (K a) h' ≤ c) : prTrue (SPComp.bind X K) h₀ ≤ c := by
+  rw [prTrue_bind_eq_weighted]
+  calc ∑' p, (X h₀ : PMF _) p * (match p with | some ⟨a, h'⟩ => prTrue (K a) h' | none => 0)
+      ≤ ∑' p, (X h₀ : PMF _) p * c := by
+        refine ENNReal.tsum_le_tsum fun p => ?_
+        rcases p with _ | ⟨a, h'⟩
+        · simp
+        · exact mul_le_mul_right (hK a h') _
+    _ = c := by rw [ENNReal.tsum_mul_right, PMF.tsum_coe, one_mul]
+
 /-- Helper for left PPL: weighted average of ε-close values is ε-close.
     Uses `prTrue_bind_eq_weighted` to reduce to a weighted-sum inequality. -/
 theorem absDiff_prTrue_bind_le {α : Type*}

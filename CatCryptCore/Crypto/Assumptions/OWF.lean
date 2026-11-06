@@ -184,15 +184,6 @@ noncomputable def prg_distinguisher_of_owf_inverter
     let s' ← A_owf y
     SPComp.pure (decide (G.stretch s' = y))
 
-/-- A continuation whose success probability is at most `ε` from every state keeps the
-    success probability of the composed computation at most `ε`. -/
-private theorem prTrue_bind_le_const {α : Type} (c : SPComp α) (k : α → SPComp Bool)
-    (ε : ℝ≥0∞) (h₀ : Heap) (hk : ∀ a h', prTrue (k a) h' ≤ ε) :
-    prTrue (c.bind k) h₀ ≤ ε :=
-  (ForkingLemma.prTrue_bind_mono_const ε c k (fun _ => SPComp.pure true) h₀ fun a h' => by
-      rw [ForkingLemma.prTrue_pure_bool]; simpa using hk a h').trans
-    (mul_le_of_le_one_right' (prTrue_le_one _ _))
-
 /-- The real PRG game run against `prg_distinguisher_of_owf_inverter G A_owf` is the OWF
     game of `owf_of_prg G.stretch` against `A_owf`. -/
 theorem owf_game_eq_prg_real (G : PRGDef W W) (A_owf : OWF_Adversary W) :
