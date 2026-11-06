@@ -17,6 +17,9 @@ children indexed by `Bool`.
   nodes (`xorT_den`), its cost (`xorT_cost`: a step per node visited, the β-step of each call of
   a recursive result and one per XOR), and the bound by the charges of `Tm.dt` from the
   soundness theorem at every tree (`xorT_cost_le_dt`).
+* `xorT_den_all`: the denotation of `xorT` at every tree is the recursion `xorF`, by the rule of
+  the eliminator (`Reflect.Den.fold`); `isLeafT_dsim`: a case analysis by the eliminator costs one
+  step, by the linking rule of the eliminator (`TimedLink.DSim.fold`).
 * `nodeT`: a node built by `con` from a function of its two children; the function is
   evaluated at both positions, a β-step and the conditional at each (`nodeT_cost`).
 -/
@@ -73,6 +76,41 @@ theorem xorT_inDtFrag : xorT.InDtFrag := by
 theorem xorT_cost_le_dt {η : EnvHat [tree]} {ρ : Env [tree]} (hρ : SimEnv η ρ) :
     xorT.cost ρ ≤ xorT.allow + SPTree.Timed.stepTime (xorT.dt η) :=
   cost_le_dt xorT xorT_inDtFrag hρ
+
+/-- The XOR of the bytes of a tree, by recursion on the value. -/
+def xorF : WType (Sig.den treeSig).2 → BitVec 8
+  | ⟨.inl _, _⟩ => 0
+  | ⟨.inr n, kids⟩ =>
+    let m : BitVec 8 := n
+    m ^^^ (xorF (kids false) ^^^ xorF (kids true))
+
+/-- The denotation of `xorT` at every tree, by the rule of the eliminator: its step functions
+denote `xorF` at every node whose recursive results are the values of `xorF` at its children. -/
+theorem xorT_den_all (w : Val tree) : Reflect.Den xorT (Env.nil.cons w) (xorF w) := by
+  unfold xorT
+  exact Reflect.Den.fold treeSig_fo (Reflect.Den.pair (Reflect.Den.lam _ _) (Reflect.Den.lam _ _))
+    (Reflect.Den.var .here _) fun a kids => by rcases a with _ | n <;> rfl
+
+/-- Whether a tree is a leaf: a case analysis, the eliminator whose steps apply no recursive
+result. -/
+def isLeafT : Tm [tree] .bool :=
+  fold treeSig_fo (pair (lam (lit .bool true)) (lam (lit .bool false))) (var .here)
+
+/-- Whether a value is a leaf. -/
+def isLeafF : WType (Sig.den treeSig).2 → Bool
+  | ⟨.inl _, _⟩ => true
+  | ⟨.inr _, _⟩ => false
+
+/-- The case analysis costs one step plus its branch, here nothing: by the rule of the
+eliminator at the cost `0` of every node. -/
+theorem isLeafT_dsim (w : Val tree) :
+    TimedLink.DSim 1 0 (1 + 0 + 0) isLeafT (Env.nil.cons w) (isLeafF w) := by
+  unfold isLeafT
+  exact TimedLink.DSim.fold (C := fun _ => 0) le_rfl treeSig_fo
+    (gv := (((fun _ => .ret true) : Val (.arr .unit .bool)),
+      ((fun _ => .ret false) : Val (.arr (Sig.altTy (.word 8) (some .bool) tree .bool) .bool))))
+    (by rfl)
+    (TimedLink.DSim.var .here) fun a _ _ _ => ⟨0, by rcases a with _ | n <;> rfl, le_rfl⟩
 
 /-- A leaf built by `con`. -/
 def leafT {Γ : List Ty} : Tm Γ tree := con treeSig_fo (inl (lit .unit ()))

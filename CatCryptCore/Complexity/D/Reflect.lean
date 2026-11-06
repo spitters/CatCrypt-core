@@ -100,7 +100,9 @@ words, `+ - *` and numerals on `Fin m` and `ZMod m`, `&&`, `||`, `!`, `^^` on `B
 natural number into `Fin m` or `ZMod m`; `decide` of `=`, `≠`, `<`, `≤`, `∧`, `∨`, `¬` over
 these (`=`, `≠` and `<` on residues); pairs and projections; `Sum.inl`,
 `Sum.inr`, `some`, `none`, `[]`, `::`, `id`; `if`, `bif`, `Option.elim`, `Sum.elim` and
-matches on `Bool`, `Option`, `Sum`, `List` (non-recursive, as `lcase`) and pairs; `List.foldl`
+matches on `Bool`, `Option`, `Sum`, `List` (non-recursive, as `lcase`) and pairs, also written
+as the case analyses `casesOn` and, for `Bool`, `Option`, `Sum` and pairs, as the recursors
+`rec` at a constant motive; `List.foldl`
 as `foldl` and `Nat.iterate` as `iter`; in `SPComp`, `pure`, `bind` (and `do`), `SPComp.fail`,
 `SPComp.sample` of a finite ground type,
 `SPComp.get` and `SPComp.set` at a location `FTy.loc f n`, and the application of a parameter;
@@ -308,6 +310,36 @@ theorem iter {c : Ty} {n : Tm Γ .nat} {f : Tm Γ (.arr c c)} {i : Tm Γ c} {k :
   show (i.den ρ).bind (fun acc => iterT (fun t => t) F acc k) = _
   rw [hi]
   exact iterT_id hs k acc
+
+/-- `Den` at a constructor: the denotation of the argument, and the node its constructor builds
+from it in the denotation (the function of the children applied at every position). -/
+theorem con {S : Sig} (hS : S.FO) {x : Tm Γ (S.conTy (.mu S))} {v : Val (S.conTy (.mu S))}
+    {w : Val (.mu S)} (hx : Den x ρ v)
+    (h : conAt (X := .mu S) (fun t => t) S (fun a k => (WType.mk a k : Val (.mu S))) v = .ret w) :
+    Den (.con hS x) ρ w := by
+  show (x.den ρ).bind (fun v =>
+    conAt (X := .mu S) (fun t => t) S (fun a k => (WType.mk a k : Val (.mu S))) v) = _
+  rw [hx, CTree.bind_ret]
+  exact h
+
+/-- `Den` at the eliminator, by induction on the value: when the step functions denote the
+recursion `F` at every node whose recursive results are the values of `F` at its children, the
+eliminator denotes `F` at the value. -/
+theorem fold {S : Sig} {c : Ty} (hS : S.FO) {g : Tm Γ (S.stepsTy (.mu S) c)} {x : Tm Γ (.mu S)}
+    {gv : Val (S.stepsTy (.mu S) c)} {w : Val (.mu S)} (hg : Den g ρ gv) (hx : Den x ρ w)
+    {F : WType (Sig.den S).2 → Val c}
+    (hF : ∀ a kids, stepAt S gv a kids (fun j => .ret (F (kids j))) = .ret (F ⟨a, kids⟩)) :
+    Den (.fold hS g x) ρ (F w) := by
+  have key : ∀ w : WType (Sig.den S).2, foldW gv w = .ret (F w) := by
+    intro w
+    induction w with
+    | mk a kids ih =>
+      show stepAt S gv a kids (fun j => foldW gv (kids j)) = _
+      rw [show (fun j => foldW gv (kids j)) = fun j => CTree.ret (F (kids j)) from funext ih]
+      exact hF a kids
+  show (g.den ρ).bind (fun gv => (x.den ρ).bind fun w => foldW gv w) = _
+  rw [hg, CTree.bind_ret, hx, CTree.bind_ret]
+  exact key w
 
 /-! ### Decisions of propositions -/
 
@@ -655,6 +687,27 @@ theorem decBool {x : Tm Γ .bool} {c : ℕ} {b : Bool} (hx : CEq x ρ c b) :
     CEq x ρ c (decide (b = true)) := by
   have e : b = decide (b = true) := by simp
   exact e ▸ hx
+
+/-- `CEq` at the eliminator, by induction on the value: when at every node whose recursive
+results are leaves of the values of `F` after `C` ticks at the children the step is a leaf of
+`F` after `C` ticks at the node, the eliminator costs the step functions, the argument, one
+step and `C` at the value. -/
+theorem fold {S : Sig} {c : Ty} (hS : S.FO) {g : Tm Γ (S.stepsTy (.mu S) c)} {x : Tm Γ (.mu S)}
+    {cg cx : ℕ} {gv : Val (S.stepsTy (.mu S) c)} {w : Val (.mu S)} (hg : CEq g ρ cg gv)
+    (hx : CEq x ρ cx w) {F : WType (Sig.den S).2 → Val c} {C : WType (Sig.den S).2 → ℕ}
+    (hF : ∀ a kids (rec : (Sig.den S).2 a → CTree (Val c)),
+      (∀ j, rec j = stepN CTree.tick (C (kids j)) (.ret (F (kids j)))) →
+        stepAt S gv a kids rec = stepN CTree.tick (C ⟨a, kids⟩) (.ret (F ⟨a, kids⟩))) :
+    CEq (.fold hS g x) ρ (cg + (cx + (C w + 1))) (F w) := by
+  have key : ∀ w : WType (Sig.den S).2,
+      foldW gv w = stepN CTree.tick (C w) (.ret (F w)) := by
+    intro w
+    induction w with
+    | mk a kids ih => exact hF a kids _ ih
+  show (g.eval ρ).bind (fun gv => (x.eval ρ).bind fun w => CTree.tick (foldW gv w)) = _
+  rw [hg, stepN_ret_bind, hx, stepN_ret_bind, key w]
+  show stepN CTree.tick cg (stepN CTree.tick cx (stepN CTree.tick (C w + 1) (.ret (F w)))) = _
+  rw [stepN_tick_add, stepN_tick_add, Nat.add_assoc]
 
 end CEq
 
@@ -1567,6 +1620,13 @@ partial def goConst (ctx : Ctx) (e : Expr) (c : Name) (args : Array Expr) : M Re
   | ``List.casesOn, 5 => goLcase ctx e args[0]! args[2]! args[3]!.headBeta args[4]!
   | ``Prod.casesOn, 5 => goProdCase ctx e args[3]! args[4]! false
   | ``Sum.elim, 6 => goCaseSum ctx e args[0]! args[1]! args[5]! args[3]! args[4]!
+  -- The recursors of the types without recursive constructor arguments, at a constant motive,
+  -- are their case analyses (minor premises first, the major premise last).
+  | ``Bool.rec, 4 =>
+    goCond ctx e (← inferType (ctx.subst e)) args[3]! args[2]!.headBeta args[1]!.headBeta
+  | ``Option.rec, 5 => goCaseOpt ctx e args[0]! args[4]! args[2]!.headBeta args[3]!
+  | ``Sum.rec, 6 => goCaseSum ctx e args[0]! args[1]! args[5]! args[3]! args[4]!
+  | ``Prod.rec, 5 => goProdCase ctx e args[4]! args[3]! false
   | ``Option.elim, 5 => goCaseOpt ctx e args[0]! args[2]! args[3]! args[4]!
   | ``id, 2 =>
     let r ← goP ctx args[1]!

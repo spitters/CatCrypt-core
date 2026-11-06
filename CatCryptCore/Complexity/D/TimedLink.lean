@@ -40,7 +40,10 @@ a primitive operation), at the factor `K ≥ 1`.
   `TSim.bind`, `TSim.ite`, `TSim.call`, `TSim.call0`, and `TSim.le_fst`, `TSim.mono`,
   `TSim.cost_le`.
 * Data rules `DSim.var`, `DSim.lit`, `DSim.natLit`, `DSim.pair`, `DSim.fst`, `DSim.snd`,
-  `DSim.prim`, `DSim.decide`, `DSim.app`, `DSim.letE`, `DSim.ite`, `DSim.le`.
+  `DSim.prim`, `DSim.decide`, `DSim.app`, `DSim.letE`, `DSim.ite`, `DSim.le`, and for the
+  inductive types `DSim.con` (a constructor, its children tabulated) and `DSim.fold` (the
+  eliminator against a cost `C` of a structural recursion, one per call plus the body, by
+  induction on the value).
 -/
 
 @[expose] public section
@@ -179,6 +182,52 @@ theorem le {t : Tm Γ τ} {v : Val τ} {n n' c c' : ℕ} (hn : n ≤ n') (hc : c
     (h : DSim K n c t ρ v) : DSim K n' c' t ρ v := by
   obtain ⟨m, hm, l⟩ := h
   exact ⟨m, hm, by have := Nat.mul_le_mul_left K hc; omega⟩
+
+/-- A constructor of an inductive type: the evaluation of its argument, and the tabulation of its
+children (`conAt`) within the allowance `n₀` and `K` times the charge `cc`. -/
+theorem con {S : Sig} (hS : S.FO) {x : Tm Γ (S.conTy (.mu S))} {v : Val (S.conTy (.mu S))}
+    {w : Val (.mu S)} {n n₀ c cc : ℕ} (hx : DSim K n c x ρ v)
+    (h : ∃ m, conAt (X := .mu S) CTree.tick S (fun a k => (WType.mk a k : Val (.mu S))) v =
+      stepN CTree.tick m (.ret w) ∧ m ≤ n₀ + K * cc) :
+    DSim K (n + n₀) (c + cc) (.con hS x) ρ w := by
+  obtain ⟨mx, hmx, lx⟩ := hx
+  obtain ⟨m, hm, lm⟩ := h
+  refine ⟨mx + m, ?_, ?_⟩
+  · show (x.eval ρ).bind (fun v =>
+      conAt (X := .mu S) CTree.tick S (fun a k => (WType.mk a k : Val (.mu S))) v) = _
+    rw [hmx, stepN_ret_bind, hm, stepN_tick_add]
+  · rw [Nat.mul_add]
+    omega
+
+/-- The eliminator of an inductive type, by induction on the value: when at every node whose
+recursive results are leaves of the values of `F` within `K` times the charge `C` at the
+children, the step is a leaf of `F` within `K` times `C` at the node, the eliminator is within
+the allowance of its argument and `K` times one plus the charge of its argument plus `C` at the
+value. With `C` the cost of a structural recursion of `derive_timed` (one per call plus the
+body), the node condition is the step equation of that cost. -/
+theorem fold (hK : 1 ≤ K) {S : Sig} {c : Ty} (hS : S.FO) {g : Tm Γ (S.stepsTy (.mu S) c)}
+    {x : Tm Γ (.mu S)} {gv : Val (S.stepsTy (.mu S) c)} {w : Val (.mu S)} {n cx : ℕ}
+    (hg : CEq g ρ 0 gv) (hx : DSim K n cx x ρ w) {F : WType (Sig.den S).2 → Val c}
+    {C : WType (Sig.den S).2 → ℕ}
+    (hF : ∀ a kids (rec : (Sig.den S).2 a → CTree (Val c)),
+      (∀ j, ∃ m, rec j = stepN CTree.tick m (.ret (F (kids j))) ∧ m ≤ K * C (kids j)) →
+        ∃ m, stepAt S gv a kids rec = stepN CTree.tick m (.ret (F ⟨a, kids⟩)) ∧
+          m ≤ K * C ⟨a, kids⟩) :
+    DSim K n (1 + cx + C w) (.fold hS g x) ρ (F w) := by
+  have key : ∀ w : WType (Sig.den S).2,
+      ∃ m, foldW gv w = stepN CTree.tick m (.ret (F w)) ∧ m ≤ K * C w := by
+    intro w
+    induction w with
+    | mk a kids ih => exact hF a kids _ ih
+  obtain ⟨mx, hmx, lx⟩ := hx
+  obtain ⟨m, hm, lm⟩ := key w
+  refine ⟨mx + (m + 1), ?_, ?_⟩
+  · show (g.eval ρ).bind (fun gv => (x.eval ρ).bind fun w => CTree.tick (foldW gv w)) = _
+    rw [hg, stepN_ret_bind, hmx, stepN_ret_bind, hm]
+    show stepN CTree.tick 0 (stepN CTree.tick mx (stepN CTree.tick (m + 1) (.ret (F w)))) = _
+    rw [stepN_tick_add, stepN_tick_add, Nat.zero_add]
+  · rw [Nat.mul_add, Nat.mul_add, Nat.mul_one]
+    omega
 
 end DSim
 
