@@ -251,8 +251,8 @@ theorem exp_eq_cdhIn_iff {u : S} (hu : u ≠ 0) (gen X Y k : W) :
   conv_rhs => rw [← G.pub_dlog k, G.pub.injective.eq_iff]
   grind
 
-/-- The group as a `DHPAKE` with one password and identity masks, `dh x Y = Y^x`; its
-    `cdhDef` is the CDH group of `G`. -/
+/-- The group as a `DHPAKE` with one password and identity masks, `dh x Y = Y^x`; the
+    `cdhDef` of its protocol with sampled public values is the CDH group of `G`. -/
 def toDHPAKE : DHPAKE S W PUnit where
   pubEquiv := G.pub
   dh x Y := G.exp Y x
@@ -380,8 +380,8 @@ abbrev PassiveAdversary (W : Type) := W → W → SPComp W
     generator `g^c`. -/
 noncomputable def passiveGame [SampleableType W] (c : S) (A : PassiveAdversary W) :
     SPComp Bool :=
-  SPComp.bind (cdhDef G.toDHPAKE).keygen fun ka =>
-  SPComp.bind (cdhDef G.toDHPAKE).keygen fun kb =>
+  SPComp.bind (cdhDef G.toDHPAKE.toSampled).keygen fun ka =>
+  SPComp.bind (cdhDef G.toDHPAKE.toSampled).keygen fun kb =>
   SPComp.bind (A ka.2 kb.2) fun k => SPComp.pure (decide (k = G.exp kb.2 (G.dlog ka.1 * c⁻¹)))
 
 /-- **The CDH reduction for passive sessions.** On the CDH challenge `(g^a, g^b)` it runs
@@ -395,7 +395,7 @@ noncomputable def passiveCDHReduction (c : S) (A : PassiveAdversary W) : CDH_Adv
     `passiveCDHReduction G c A`. -/
 theorem passiveGame_eq_cdh [SampleableType W] {c : S} (hc : c ≠ 0) (A : PassiveAdversary W) :
     prTrue (passiveGame G c A) Heap.empty =
-      CDH_Advantage (cdhDef G.toDHPAKE) (passiveCDHReduction G c A) := by
+      CDH_Advantage (cdhDef G.toDHPAKE.toSampled) (passiveCDHReduction G c A) := by
   have hiff : ∀ (k Y : W) (a : S), (k = G.exp Y (a * c⁻¹)) ↔ (G.exp k c = G.exp Y a) := by
     intro k Y a
     rw [G.exp_eq k, G.exp_eq Y, G.exp_eq Y, G.pub.injective.eq_iff]
