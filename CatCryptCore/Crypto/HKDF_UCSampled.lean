@@ -37,6 +37,8 @@ values (`uniformList`).
   sampler
 * `Extract_IKM_AdvantageK`, `Extract_AdvantageK`, `Expand_Seq_AdvantageK` — their advantages at
   a sampler `μ`
+* `Extract_IKM_AdvantageKG` — the Extract advantage with the input keying material the public
+  part of a draw of key generation
 
 ## Main results
 
@@ -159,6 +161,12 @@ noncomputable def Expand_Seq_AdvantageK (H : HKDFDef W) (qs : List (List W → W
     (μ : SDistr W) (A : List W → SPComp Bool) : ℝ≥0∞ :=
   (expandSeqSampled H qs).advAt μ A
 
+/-- The Extract advantage at the salt `salt` with the input keying material the public part of
+a draw of the key generation `kg`, against a uniform PRK. -/
+noncomputable def Extract_IKM_AdvantageKG {S : Type} (H : HKDFDef W) (salt : W)
+    (kg : SPComp (S × W)) (A : W → SPComp Bool) : ℝ≥0∞ :=
+  AdvantageA (kg.bind fun x => SPComp.pure (H.extract salt x.2)) extract_ideal A
+
 /-! ## The uniform sampler -/
 
 /-- One draw from `μ` followed by `k`. -/
@@ -215,8 +223,7 @@ key generation drawn from `c.μ`, the advantage of `A` against the Extract game 
 advantage at the reference sampler `c.ν` plus `c.δ`. -/
 theorem extract_ikm_keygen_le (hkg : kg.map Prod.snd = sampleFrom c.μ) (H : HKDFDef W)
     (salt : W) (A : W → SPComp Bool) :
-    AdvantageA (kg.bind fun x => SPComp.pure (H.extract salt x.2)) extract_ideal A ≤
-      Extract_IKM_AdvantageK H salt c.ν A + c.δ := by
+    Extract_IKM_AdvantageKG H salt kg A ≤ Extract_IKM_AdvantageK H salt c.ν A + c.δ := by
   have h := advantageA_le_of_realizes (extractIKMSampled H salt) c id
     (P := kg.bind fun x => SPComp.pure (H.extract salt x.2)) (Q := extract_ideal)
     { real := by
@@ -227,7 +234,7 @@ theorem extract_ikm_keygen_le (hkg : kg.map Prod.snd = sampleFrom c.μ) (H : HKD
         simp only [SampledGame.idealAt, extractIKMSampled, sampleFrom_replicateFin_zero_bind] }
     A
   rw [show encodedRed id A = A from rfl] at h
-  simpa [Extract_IKM_AdvantageK, extractIKMSampled, encodedRed] using h
+  simpa [Extract_IKM_AdvantageKG, Extract_IKM_AdvantageK, extractIKMSampled, encodedRed] using h
 
 /-- **Extract keyed by key generation, salt side**: with the salt the public part of key
 generation drawn from `c.μ`, the advantage of `A` against the Extract game is at most the
@@ -297,7 +304,7 @@ theorem extract_ikm_G25519_le
     (hkg : kg.map Prod.snd = (sampleFrom signedClamp).map (encU ∘ (g25519Pow (B := B))))
     (H : HKDFDef (Vector UInt8 32)) (salt : Vector UInt8 32)
     (A : Vector UInt8 32 → SPComp Bool) :
-    AdvantageA (kg.bind fun x => SPComp.pure (H.extract salt x.2)) extract_ideal A ≤
+    Extract_IKM_AdvantageKG H salt kg A ≤
       Extract_IKM_AdvantageK H salt
         ((SDistr.uniform (ZMod curve25519SubgroupOrder)).bind fun e =>
           SDistr.pure (encU (g25519Pow (B := B) e))) A + Δ25519 :=
