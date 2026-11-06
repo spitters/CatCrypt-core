@@ -26,7 +26,9 @@ step costs of the lower tree may exceed those of the upper one by at most `D` (b
 (`TimedSimTree.of_treeLeA`, `TimedSim.of_costLeA`). This is the comparison that pays the unit
 call of a free function value from the allowance, as the walk does (`DSim.appFree`):
 `Tm.timedSim_of_costLeA` states the simulation from `CostLeA` at any charge `cc a ≤ 1` of a call
-(`Tm.dtC`), at the allowance `t.allowC cc + (e + d)`.
+(`Tm.dtC`), at the allowance `t.allowC cc + (e + d)`. A costed bind whose continuation returns a
+function `g` of the bound value at zero cost is compared as its tree with the leaf relation
+composed with `g` (`TreeLeA.map_right`, `TreeLeA.map_left`).
 
 At a first-order type, translated values and values of D are the same type (`Ty.hat_eq_val`)
 and related exactly when they are equal up to the cast (`Sim.cast_eq`, `Sim.cast_self`). At a
@@ -45,6 +47,9 @@ function and `treeEntry` for a tree function, related to their D values by `SimE
 * `TimedSimTree.of_treeLe`, `TimedSim.of_costLe`, `CostLe.bind`, `TreeLe.refl`
 * `TimedSimTree.of_treeLeA`, `TimedSim.of_costLeA`, `CostLeA.bind`, `TreeLeA.mono`,
   `TreeLeA.of_treeLe`
+* `TreeLeA.map_right`, `TreeLeA.map_left`, `CostLeA.map_right`, `CostLeA.map_left`: a costed bind
+  whose continuation returns a function `g` of the bound value at zero cost is its tree with the
+  leaves mapped by `g`, at the same deficits
 * `foldl_timedCost_mono`: the registered cost of `List.foldl` is monotone in the step cost
 * `Ty.hat_eq_val`, `Sim.cast_eq`, `Sim.cast_self`
 * `SimEnv.nil`, `SimEnv.consE`, `SimE.dataEntry`, `SimE.treeEntry`
@@ -372,6 +377,82 @@ theorem bind {γ δ ε : Type} {S : γ → δ → Prop} {d₁ e₂ d₂ : ℕ} {
     obtain ⟨f, g, hf, hfg, h1, h2⟩ := ih
     refine ⟨0, D + e₂ + d₂, Nat.zero_le _, by omega, Nat.zero_le _, ?_⟩
     exact .load (e + f) g (by omega) h2 (by omega)
+
+end CostLeA
+
+/-! ## The leaf map at zero cost
+
+A costed bind `B.bind fun y => (0, ret (g y))`, whose continuation returns a function `g` of the
+bound value at zero cost, is the costed tree `B` with its leaves mapped by `g` at the same step
+costs (`SPTree.Timed.map g fun _ => 0` by definition), its own step cost `0`
+(`SPTree.Timed.bind_ret_fst`). On either side of a comparison it is read as `B` with the leaf
+relation composed with `g`, at the same deficits. -/
+
+namespace TreeLeA
+
+variable {α β : Type}
+
+/-- The leaves of the upper tree mapped by `g` at zero cost: same nodes and step costs, the
+leaf relation `S'` reached from `S` through `g`. -/
+theorem map_right {β' : Type} {S : α → β → Prop} {S' : α → β' → Prop} {g : β → β'} {D : ℕ}
+    {A : SPTree.Timed α} {B : SPTree.Timed β} (h : TreeLeA S D A B)
+    (hS : ∀ a b, S a b → S' a (g b)) :
+    TreeLeA S' D A (B.bind fun y => (0, .ret (g y))).2 := by
+  induction h with
+  | ret h => exact .ret (hS _ _ h)
+  | sample e d hc _ hd ih =>
+    exact .sample e d (fun x => by simpa [SPTree.Timed.bind_ret_fst] using hc x) ih hd
+  | sampleDist e d hc _ hd ih =>
+    exact .sampleDist e d (fun x => by simpa [SPTree.Timed.bind_ret_fst] using hc x) ih hd
+  | get e d hc _ hd ih =>
+    exact .get e d (fun x => by simpa [SPTree.Timed.bind_ret_fst] using hc x) ih hd
+  | set e d hc _ hd ih =>
+    exact .set e d (by simpa [SPTree.Timed.bind_ret_fst] using hc) ih hd
+  | fail => exact .fail
+  | load e d hc _ hd ih =>
+    exact .load e d (by simpa [SPTree.Timed.bind_ret_fst] using hc) ih hd
+
+/-- The leaves of the lower tree mapped by `g` at zero cost: same nodes and step costs, the
+leaf relation `S'` reached from `S` through `g`. -/
+theorem map_left {α' : Type} {S : α → β → Prop} {S' : α' → β → Prop} {g : α → α'} {D : ℕ}
+    {A : SPTree.Timed α} {B : SPTree.Timed β} (h : TreeLeA S D A B)
+    (hS : ∀ a b, S a b → S' (g a) b) :
+    TreeLeA S' D (A.bind fun y => (0, .ret (g y))).2 B := by
+  induction h with
+  | ret h => exact .ret (hS _ _ h)
+  | sample e d hc _ hd ih =>
+    exact .sample e d (fun x => by simpa [SPTree.Timed.bind_ret_fst] using hc x) ih hd
+  | sampleDist e d hc _ hd ih =>
+    exact .sampleDist e d (fun x => by simpa [SPTree.Timed.bind_ret_fst] using hc x) ih hd
+  | get e d hc _ hd ih =>
+    exact .get e d (fun x => by simpa [SPTree.Timed.bind_ret_fst] using hc x) ih hd
+  | set e d hc _ hd ih =>
+    exact .set e d (by simpa [SPTree.Timed.bind_ret_fst] using hc) ih hd
+  | fail => exact .fail
+  | load e d hc _ hd ih =>
+    exact .load e d (by simpa [SPTree.Timed.bind_ret_fst] using hc) ih hd
+
+end TreeLeA
+
+namespace CostLeA
+
+variable {α β : Type}
+
+/-- A costed pair above the step cost `0` and the tree `B` is above the leaf map of `B` at zero
+cost, at the same deficits. -/
+theorem map_right {β' : Type} {S : α → β → Prop} {S' : α → β' → Prop} {g : β → β'} {e d : ℕ}
+    {x : ℕ × SPTree.Timed α} {B : SPTree.Timed β} (h : CostLeA S e d x (0, B))
+    (hS : ∀ a b, S a b → S' a (g b)) :
+    CostLeA S' e d x (B.bind fun y => (0, .ret (g y))) :=
+  ⟨by rw [SPTree.Timed.bind_ret_fst]; exact h.1, h.2.map_right hS⟩
+
+/-- The leaf map at zero cost of a tree `A` is below what the costed pair of step cost `0` and
+`A` is below, at the same deficits. -/
+theorem map_left {α' : Type} {S : α → β → Prop} {S' : α' → β → Prop} {g : α → α'} {e d : ℕ}
+    {A : SPTree.Timed α} {y : ℕ × SPTree.Timed β} (h : CostLeA S e d (0, A) y)
+    (hS : ∀ a b, S a b → S' (g a) b) :
+    CostLeA S' e d (A.bind fun y => (0, .ret (g y))) y :=
+  ⟨by rw [SPTree.Timed.bind_ret_fst]; exact h.1, h.2.map_left hS⟩
 
 end CostLeA
 

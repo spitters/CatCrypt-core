@@ -87,6 +87,15 @@ The comparison is one rule over both costed trees after reduction to head normal
 * binds stuck at their first tree compare the first trees with equal leaves and the
   continuations pointwise (`CostLeA.bind`), and record the inequality of their step costs as a
   fact for the side goals;
+* the leaf map at zero cost. The class: a costed bind `B.bind k` whose continuation is
+  `k y = (0, ret (g y))` for a function `g` of the bound value, on either side of the comparison.
+  Such a bind is the costed tree `B` with its leaves mapped by `g` at the same step costs, its
+  own step cost `0` (`SPTree.Timed.bind_ret_fst`, recorded as a fact for the side goals). It is
+  compared as `B` with the leaf relation composed with `g`, `S a (g b)` on the upper side
+  (`TreeLeA.map_right`) and `S (g a) b` on the lower side (`TreeLeA.map_left`), at the same
+  deficits. When both sides are stuck binds, `CostLeA.bind` is tried first and the leaf map is
+  read when it fails (first trees with different leaves, such as a call on the term side against
+  a costed call followed by a sample and a table on the costed side, then projected);
 * a tree, a leaf or a step cost whose reduction is stuck at a variable of type `Bool`, a sum,
   `Option`, a list or a pair is split on that variable, both sides at once, at the largest
   deficit of the cases (`TreeLeA.mono`, `CostLeA.mono`);
@@ -100,9 +109,7 @@ The comparison is one rule over both costed trees after reduction to head normal
 as below, and `TimedSim.run_eq` gives `T.d_run`: at a query-free evaluation, `T.d` means the
 compiled erasure of `T.timed`. The statements are those of the walk, and the docstring of
 `T.d_timedSim` names the charge and the deficit. When the route does not apply (constructs
-outside the fragment, costed trees of another shape, such as a costed bind whose continuation
-returns a projection of a costed table, which the walk removes by `TSim.bindRet`), the walk
-below proves the theorems and the docstring of `T.d_timedSim` records why the route did not
+outside the fragment, costed trees of another shape), the walk below proves the theorems and the docstring of `T.d_timedSim` records why the route did not
 apply; when the walk also fails, the error reports both reasons.
 
 ## The walk
@@ -129,8 +136,8 @@ whose type differs from their D representation (`Option`).
 ## Main definitions
 
 * `link_timed x`: the command.
-* `DtState`, `DtM`, `provePair`, `proveTree`, `closeSideD`, `sideD`, `splitIdx`,
-  `countFree`, `dtRoute`: the comparison of the
+* `DtState`, `DtM`, `provePair`, `proveTree`, `closeSideD`, `sideD`, `splitIdx`, `leafMap?`,
+  `leafMapGoal`, `countFree`, `dtRoute`: the comparison of the
   route through the soundness theorem.
 
 ## Main results
@@ -956,6 +963,45 @@ def bindView? (T : Expr) : MetaM (Option Expr) := do
   let P ← whnfD P
   return if P.isAppOfArity ``SPTree.Timed.bind 4 then some P else none
 
+/-- The tree `B` and the leaf map `g` when the costed pair `P` is `B.bind fun y => (0, ret (g y))`:
+a costed bind whose continuation returns a function of the bound value at zero cost. -/
+def leafMap? (P : Expr) : MetaM (Option (Expr × Expr)) := do
+  let P ← instantiateMVars P
+  unless P.isAppOfArity ``SPTree.Timed.bind 4 do return none
+  let .lam n T body _ := (← instantiateMVars (P.getArg! 3)) | return none
+  withLocalDeclD n T fun y => do
+    let b ← whnfD (body.instantiate1 y)
+    unless b.isAppOfArity ``Prod.mk 4 do return none
+    unless (← (evalNat (← instantiateMVars (b.getArg! 2))).run) == some 0 do return none
+    let r ← whnfD (b.getArg! 3)
+    unless r.isAppOfArity ``SPTree.Timed.ret 2 do return none
+    return some (P.getArg! 2, ← mkLambdaFVars #[y] r.appArg!)
+
+/-- Read the goal `g : TreeLeA S D A B` with `A` (`left`) or `B` the tree of the costed bind
+`A₀.bind fun y => (0, ret (g' y))` (`leafMap?`) as the goal on `A₀` with the leaf relation
+composed with `g'` (`TreeLeA.map_left`, `TreeLeA.map_right`), and return that goal. The step cost
+`0` of the bind (`SPTree.Timed.bind_ret_fst`) becomes a fact for the side goals. -/
+def leafMapGoal (g : MVarId) (left : Bool) (A₀ g' : Expr) : DtM MVarId := g.withContext do
+  let ty ← instantiateMVars (← g.getType)
+  let (α, β, S', D, A, B) :=
+    (ty.getArg! 0, ty.getArg! 1, ty.getArg! 2, ty.getArg! 3, ty.getArg! 4, ty.getArg! 5)
+  let δ := (← whnfD (← inferType g')).bindingDomain!
+  let (a₀, b₀) := if left then (δ, β) else (α, δ)
+  let S ← withLocalDeclD `a a₀ fun a => withLocalDeclD `b b₀ fun b => do
+    let r := if left then mkApp2 S' (mkApp g' a).headBeta b else mkApp2 S' a (mkApp g' b).headBeta
+    mkLambdaFVars #[a, b] r.headBeta
+  let hS ← withLocalDeclD `a a₀ fun a => withLocalDeclD `b b₀ fun b => do
+    withLocalDeclD `h (mkApp2 S a b).headBeta fun h => mkLambdaFVars #[a, b, h] h
+  let h ← mkFreshExprMVar (mkAppN (mkConst ``TreeLeA) #[a₀, b₀, S, D, (if left then A₀ else A),
+    (if left then B else A₀)])
+  let pf := if left then mkAppN (mkConst ``TreeLeA.map_left) #[δ, β, α, S, S', g', D, A₀, B, h, hS]
+    else mkAppN (mkConst ``TreeLeA.map_right) #[α, δ, β, S, S', g', D, A, A₀, h, hS]
+  unless ← isDefEq (← inferType pf) ty do
+    failD m!"the leaf map{indentExpr g'}\ndoes not match{indentExpr ty}"
+  g.assign pf
+  factD (← mkAppM ``Nat.le_of_eq #[← mkAppM ``SPTree.Timed.bind_ret_fst #[A₀, g']])
+  return h.mvarId!
+
 /-- Close the goal `S a b` of two leaves: `S` applied is an equation between definitionally
 equal sides, after a split on a variable on which a side is stuck. -/
 partial def proveLeaf (g : MVarId) : DtM Unit := g.withContext do
@@ -1023,7 +1069,11 @@ partial def proveTree (g : MVarId) : DtM Unit := g.withContext do
   | some ``SPTree.Timed.load, some ``SPTree.Timed.load => node ``TreeLeA.load' true
   | some ``SPTree.Timed.fail, some ``SPTree.Timed.fail => discard <| applyRuleD g ``TreeLeA.fail0
   | _, _ =>
-    if let (some P, some P') := (← bindView? A, ← bindView? B) then
+    let vA ← bindView? A
+    let vB ← bindView? B
+    let lA ← match vA with | some P => leafMap? P | none => pure none
+    let lB ← match vB with | some P => leafMap? P | none => pure none
+    let stuckBinds (P P' : Expr) : DtM Unit := do
       let h ← mkFreshExprMVar (mkAppN (mkConst ``CostLeA) #[ty.getArg! 0, ty.getArg! 1,
         ty.getArg! 2, ← mkFreshExprMVar (mkConst ``Nat), ← mkFreshExprMVar (mkConst ``Nat), P, P'])
       let m ← applyRuleD h.mvarId! ``CostLeA.bind
@@ -1034,6 +1084,24 @@ partial def proveTree (g : MVarId) : DtM Unit := g.withContext do
       unless ← isDefEq (← inferType pf) (← g.getType) do
         failD m!"the stuck binds{indentExpr P}\nand{indentExpr P'}\ndo not match"
       g.assign pf
+    if let (some P, some P') := (vA, vB) then
+      if lA.isNone && lB.isNone then
+        stuckBinds P P'
+        return
+      -- A leaf map at zero cost on a side: the stuck binds first, else the leaf map.
+      let s ← (saveState : TermElabM _)
+      let st ← get
+      try
+        stuckBinds P P'
+        return
+      catch _ =>
+        s.restore
+        set st
+    if let some (B₀, g') := lB then
+      proveTree (← leafMapGoal g false B₀ g')
+      return
+    if let some (A₀, g') := lA then
+      proveTree (← leafMapGoal g true A₀ g')
       return
     if let some fv ← firstStuck? #[A, B] then
       splitIdx g fv [3] ``TreeLeA.mono proveTree
