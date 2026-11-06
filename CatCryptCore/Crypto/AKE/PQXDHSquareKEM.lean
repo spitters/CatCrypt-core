@@ -696,10 +696,10 @@ def isCreate (t : SimSt S W K PK SK SS C) : OEv W SS C → Bool
 
 omit [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K]
   [DecidableEq SS] in
-open Classical in
 /-- The event `e` completes the initiator session of the guess `g`, with peer the responder of
-`g`, by an encapsulation to the public key `pk`. -/
-noncomputable def isEnc (pk : PK) (t : SimSt S W K PK SK SS C) : OEv W SS C → Bool
+`g`, by an encapsulation to the public key `pk`; the test of the public key is decided by the
+equality of public keys. -/
+def isEnc [DecidableEq PK] (pk : PK) (t : SimSt S W K PK SK SS C) : OEv W SS C → Bool
   | .inr (.complete sid pid) =>
     decide (sid = g.1 ∧ pid = g.2.1) &&
       match t.1.x.st.recs (sid, pid), t.1.x.eph (sid, pid) with
@@ -719,7 +719,8 @@ def subKP (kp : PK × SK) (t : SimSt S W K PK SK SS C) (e : OEv W SS C)
 omit [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K]
   [DecidableEq SS] in
 /-- The draw with the encapsulation `kc` at the completion of the initiator session of `g`. -/
-noncomputable def subKC (pk : PK) (kc : SS × C) (t : SimSt S W K PK SK SS C) (e : OEv W SS C)
+noncomputable def subKC [DecidableEq PK]
+    (pk : PK) (kc : SS × C) (t : SimSt S W K PK SK SS C) (e : OEv W SS C)
     (r : PDraw S K PK SK SS C × K) : PDraw S K PK SK SS C × K :=
   ((r.1.1, r.1.2.1, if isEnc g pk t e then some kc else r.1.2.2), r.2)
 
@@ -730,7 +731,7 @@ noncomputable def gw1O (kp : PK × SK) (t : WSt S W K PK SK SS C) (e : OEv W SS 
 
 /-- **The simulated world with the challenge sampled eagerly**: the KEM key pair `kp` of the
 responder session of `g` and the encapsulation `kc` of its initiator session. -/
-noncomputable def gwO (kp : PK × SK) (kc : SS × C) (t : WSt S W K PK SK SS C)
+noncomputable def gwO [DecidableEq PK] (kp : PK × SK) (kc : SS × C) (t : WSt S W K PK SK SS C)
     (e : OEv W SS C) : PMF (OOut S W K PK C × WSt S W K PK SK SS C) :=
   (simDist P (encPk t.1.1.1 e)).map fun r =>
     wStep P G t e (subKC g kp.1 kc t.1.1 e (subKP g kp t.1.1 e r))
@@ -755,7 +756,7 @@ theorem isCreate_recs {t : SimSt S W K PK SK SS C × St K} {e : OEv W SS C}
 
 omit [Fintype S] [Fintype K] [Nonempty K] in
 /-- The completion of the initiator session of `g` by an encapsulation sets its key. -/
-theorem isEnc_key {pk : PK} {t : SimSt S W K PK SK SS C × St K} {e : OEv W SS C}
+theorem isEnc_key [DecidableEq PK] {pk : PK} {t : SimSt S W K PK SK SS C × St K} {e : OEv W SS C}
     (h : isEnc g pk t.1 e = true) (r : PDraw S K PK SK SS C × K) (kc : SS × C)
     (hr : r.1.2.2 = some kc) :
     ∃ ri, (simWorldD P G t e r).1.1.1.x.st.recs (gI g) = some ri ∧ ri.key.isSome := by
@@ -790,7 +791,7 @@ theorem isCreate_encPk {t : SimSt S W K PK SK SS C} {e : OEv W SS C}
 
 omit [Field S] [Fintype S] [Fintype K] [Nonempty K] [Inhabited K] [SampleableType W]
   [DecidableEq SS] in
-theorem isEnc_encPk {pk : PK} {t : SimSt S W K PK SK SS C} {e : OEv W SS C}
+theorem isEnc_encPk [DecidableEq PK] {pk : PK} {t : SimSt S W K PK SK SS C} {e : OEv W SS C}
     (h : isEnc g pk t e = true) : encPk t.1 e = some pk ∧ isCreate g t e = false := by
   rcases e with _ | (_ | _ | _ | _ | _ | _ | ⟨sid, pid⟩ | _ | _) <;>
     simp only [isEnc, Bool.and_eq_true, decide_eq_true_eq, Bool.false_eq_true] at h
@@ -807,7 +808,7 @@ theorem isEnc_encPk {pk : PK} {t : SimSt S W K PK SK SS C} {e : OEv W SS C}
 
 omit [Field S] [Fintype S] [Fintype K] [Nonempty K] [Inhabited K] [SampleableType W]
   [DecidableEq SS] in
-theorem isEnc_key_none {pk : PK} {t : SimSt S W K PK SK SS C} {e : OEv W SS C}
+theorem isEnc_key_none [DecidableEq PK] {pk : PK} {t : SimSt S W K PK SK SS C} {e : OEv W SS C}
     (h : isEnc g pk t e = true) : ∃ ri, t.1.x.st.recs (gI g) = some ri ∧ ri.key = none := by
   rcases e with _ | (_ | _ | _ | _ | _ | _ | ⟨sid, pid⟩ | _ | _) <;>
     simp only [isEnc, Bool.and_eq_true, decide_eq_true_eq, Bool.false_eq_true] at h
@@ -864,7 +865,7 @@ theorem flag_w_eq_gw1 (E : WSt S W K PK SK SS C → Prop)
 
 open Classical in
 /-- **Eager sampling of the encapsulation of the initiator session of `g`.** -/
-theorem flag_gw1_eq_gw (E : WSt S W K PK SK SS C → Prop) (kp : PK × SK)
+theorem flag_gw1_eq_gw [DecidableEq PK] (E : WSt S W K PK SK SS C → Prop) (kp : PK × SK)
     (B : OracleAdv (OEv W SS C) (OOut S W K PK C) Bool) :
     (OracleAdv.run (OracleAdv.flagWhen (fun _ _ x => E x.2) (gw1O P G g kp)) B
         (wInit, false)).toOuterMeasure {y | y.2.2 = true} =
@@ -1030,7 +1031,8 @@ omit [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabite
 /-- The draw of the world of the reduction: the public key `pk` without secret key at the start
 of the responder session of `g`, the encapsulation `(none, cs)` at the completion of its
 initiator session, and the draws of the simulator with concrete shared secrets otherwise. -/
-noncomputable def liftD (pk : PK) (cs : C) (t : SimSt S W K PK (Option SK) (Option SS) C)
+noncomputable def liftD [DecidableEq PK]
+    (pk : PK) (cs : C) (t : SimSt S W K PK (Option SK) (Option SS) C)
     (e : OEv W SS C) (r : PDraw S K PK SK SS C × K) :
     PDraw S K PK (Option SK) (Option SS) C × K :=
   ((r.1.1, if isCreate g t (liftE e) then (pk, none) else (r.1.2.1.1, some r.1.2.1.2),
@@ -1060,14 +1062,16 @@ abbrev YSt (S W K PK SK SS C : Type) :=
   (SimSt S W K PK (Option SK) (Option SS) C × St K) × List SS
 
 /-- A step of the world of the reduction on the draw `r`. -/
-noncomputable def yStep (pk : PK) (cs : C) (dec : C → Option SS) (t : YSt S W K PK SK SS C)
+noncomputable def yStep [DecidableEq PK]
+    (pk : PK) (cs : C) (dec : C → Option SS) (t : YSt S W K PK SK SS C)
     (e : OEv W SS C) (r : PDraw S K PK SK SS C × K) : OOut S W K PK C × YSt S W K PK SK SS C :=
   ((simWorldD (symP P cs dec) G t.1 (liftE e) (liftD g pk cs t.1.1 e r)).2,
     ((simWorldD (symP P cs dec) G t.1 (liftE e) (liftD g pk cs t.1.1 e r)).1,
       t.2 ++ (newVal P cs dec t.1.1 e r).toList))
 
 /-- **The oracle of the world of the reduction.** -/
-noncomputable def yO (pk : PK) (cs : C) (dec : C → Option SS) (t : YSt S W K PK SK SS C)
+noncomputable def yO [DecidableEq PK]
+    (pk : PK) (cs : C) (dec : C → Option SS) (t : YSt S W K PK SK SS C)
     (e : OEv W SS C) : PMF (OOut S W K PK C × YSt S W K PK SK SS C) :=
   (simDist P (encPk t.1.1.1 (liftE e))).map (yStep P G g pk cs dec t e)
 
@@ -1129,7 +1133,8 @@ theorem isCreate_iSim (k : SS) (sk : SK) (s : SimSt S W K PK (Option SK) (Option
 
 omit [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K]
   [DecidableEq SS] [DecidableEq C] in
-theorem isEnc_iSim (k : SS) (sk : SK) (pk : PK) (s : SimSt S W K PK (Option SK) (Option SS) C)
+theorem isEnc_iSim [DecidableEq PK]
+    (k : SS) (sk : SK) (pk : PK) (s : SimSt S W K PK (Option SK) (Option SS) C)
     (e : OEv W SS C) : isEnc g pk (iSim k sk s) e = isEnc g pk s (liftE e) := by
   rcases e with _ | (_ | _ | _ | _ | _ | _ | ⟨sid, pid⟩ | _ | _) <;> try rfl
   simp only [isEnc, liftE, iSim, iP_x]
@@ -1331,7 +1336,7 @@ theorem deliver_branch {k : SS} (sk : SK) (rs : PSt S W K PK (Option SK) (Option
 omit [Fintype S] [Fintype K] [Nonempty K] [DecidableEq C] in
 open Classical in
 /-- **`complete` commutes with the interpretation.** -/
-theorem complete_iSim {pk : PK} {sk : SK} {k : SS} {cs : C}
+theorem complete_iSim [DecidableEq PK] {pk : PK} {sk : SK} {k : SS} {cs : C}
     (s : SimSt S W K PK (Option SK) (Option SS) C) (hG : Good g pk cs k s.1 s.2.1)
     (sid : SessionId) (pid : PartyId) (d : Draw S K) (kc : Option (SS × C))
     (hv : kc.map Prod.fst ≠ some k) :
@@ -1563,7 +1568,8 @@ omit [Fintype S] [Fintype K] [Nonempty K] in
 on a draw that brings no concrete challenge key into the world of the reduction, the real start
 with the eager challenge, from the interpreted state, is the interpretation of the start of the
 world of the reduction, which keeps the invariant. -/
-theorem start_iSim {pk : PK} {sk : SK} {k : SS} {cs : C} (hc : P.decaps sk cs = some k)
+theorem start_iSim [DecidableEq PK]
+    {pk : PK} {sk : SK} {k : SS} {cs : C} (hc : P.decaps sk cs = some k)
     (s : SimSt S W K PK (Option SK) (Option SS) C) (hG : Good g pk cs k s.1 s.2.1)
     (e : OEv W SS C) (r : PDraw S K PK SK SS C × K)
     (hv : newVal P cs (P.decaps sk) s e r ≠ some k) :
@@ -1655,7 +1661,8 @@ theorem start_iSim {pk : PK} {sk : SK} {k : SS} {cs : C} (hc : P.decaps sk cs = 
 
 omit [Fintype S] [Fintype K] [Nonempty K] in
 /-- **A step of the simulated world commutes with the interpretation.** -/
-theorem world_iSim {pk : PK} {sk : SK} {k : SS} {cs : C} (hc : P.decaps sk cs = some k)
+theorem world_iSim [DecidableEq PK]
+    {pk : PK} {sk : SK} {k : SS} {cs : C} (hc : P.decaps sk cs = some k)
     (s : SimSt S W K PK (Option SK) (Option SS) C) (f : St K) (hG : Good g pk cs k s.1 s.2.1)
     (e : OEv W SS C) (r : PDraw S K PK SK SS C × K)
     (hv : newVal P cs (P.decaps sk) s e r ≠ some k) :
@@ -1740,7 +1747,8 @@ open Classical in
 hit.** For a correct challenge, the KEM part of the bad event at the guess `g` in the world with
 the eager challenge is at most the probability that the world of the reduction receives the
 challenge key as a concrete shared secret. -/
-theorem gw_le_y {pk : PK} {sk : SK} {k : SS} {cs : C} (hc : P.decaps sk cs = some k)
+theorem gw_le_y [DecidableEq PK]
+    {pk : PK} {sk : SK} {k : SS} {cs : C} (hc : P.decaps sk cs = some k)
     (B : OracleAdv (OEv W SS C) (OOut S W K PK C) Bool) :
     (OracleAdv.run (OracleAdv.flagWhen (fun _ _ x => EG P G g x.2.1.1 x.2.2)
         (gwO P G g (pk, sk) (k, cs))) B (wInit, false)).toOuterMeasure {y | y.2.2 = true} ≤
@@ -1810,7 +1818,8 @@ noncomputable def stepRedQ {σ E A V Q Ans Out : Type} (need : σ → E → Opti
   (OracleAdv.simulate (stepImplQ need μ step) B s₀).bind fun p => .ret (ext p.2)
 
 /-- A step of the world of the reduction with the answer of the decapsulation oracle. -/
-noncomputable def kemStep (pk : PK) (cs : C) (oa : Option (Option SS)) (t : YSt S W K PK SK SS C)
+noncomputable def kemStep [DecidableEq PK]
+    (pk : PK) (cs : C) (oa : Option (Option SS)) (t : YSt S W K PK SK SS C)
     (e : OEv W SS C) (r : PDraw S K PK SK SS C × K) :
     YSt S W K PK SK SS C × OOut S W K PK C :=
   let p := yStep P G g pk cs (fun _ => oa.getD none) t e r; (p.2, p.1)
@@ -1819,7 +1828,8 @@ noncomputable def kemStep (pk : PK) (cs : C) (oa : Option (Option SS)) (t : YSt 
 challenge encapsulation `cs` and the key `k`, it runs the oracle adversary `B` against the world
 of the reduction, answering each delivered encapsulation other than `cs` with the decapsulation
 oracle, and outputs whether `k` is among the concrete shared secrets of the world. -/
-noncomputable def kemRedRun (B : OracleAdv (OEv W SS C) (OOut S W K PK C) Bool) (pk : PK)
+noncomputable def kemRedRun [DecidableEq PK]
+    (B : OracleAdv (OEv W SS C) (OOut S W K PK C) Bool) (pk : PK)
     (cs : C) (k : SS) : OracleAdv C (Option SS) Bool :=
   stepRedQ (fun _ e => needQ cs e) (fun t e => simDist P (encPk t.1.1.1 (liftE e)))
     (kemStep P G g pk cs) (fun t => decide (k ∈ t.2)) B yInit
@@ -1827,7 +1837,8 @@ noncomputable def kemRedRun (B : OracleAdv (OEv W SS C) (OOut S W K PK C) Bool) 
 /-- The answer of the reduction to an event of the adversary: the query to the decapsulation
 oracle that the event needs, a draw of the simulated world, and a step of the world of the
 reduction with the answer of the oracle. -/
-noncomputable def implK (pk : PK) (cs : C) (t : YSt S W K PK SK SS C) (e : OEv W SS C) :
+noncomputable def implK [DecidableEq PK]
+    (pk : PK) (cs : C) (t : YSt S W K PK SK SS C) (e : OEv W SS C) :
     OracleAdv C (Option SS) (OOut S W K PK C × YSt S W K PK SK SS C) :=
   match needQ cs e with
   | some c => .query c fun a => .rand (simDist P (encPk t.1.1.1 (liftE e))) fun r =>
@@ -1836,7 +1847,8 @@ noncomputable def implK (pk : PK) (cs : C) (t : YSt S W K PK SK SS C) (e : OEv W
       let p := kemStep P G g pk cs none t e r; .ret (p.2, p.1)
 
 /-- The reduction asks at most as many decapsulation queries as the adversary asks queries. -/
-theorem kemRedRun_isQueryBound {B : OracleAdv (OEv W SS C) (OOut S W K PK C) Bool} {q : ℕ}
+theorem kemRedRun_isQueryBound [DecidableEq PK]
+    {B : OracleAdv (OEv W SS C) (OOut S W K PK C) Bool} {q : ℕ}
     (hB : B.IsQueryBound q) (pk : PK) (cs : C) (k : SS) :
     (kemRedRun P G g B pk cs k).IsQueryBound q := by
   have h := OracleAdv.isQueryBound_simulate_mul (c := 1) (impl := implK P G g pk cs)
@@ -1853,14 +1865,16 @@ theorem kemRedRun_isQueryBound {B : OracleAdv (OEv W SS C) (OOut S W K PK C) Boo
 
 /-- **The IND-CCA reduction at the guess `g`**, for an oracle adversary with at most `q`
 queries. -/
-noncomputable def kemRed (B : OracleAdv (OEv W SS C) (OOut S W K PK C) Bool) {q : ℕ}
+noncomputable def kemRed [DecidableEq PK]
+    (B : OracleAdv (OEv W SS C) (OOut S W K PK C) Bool) {q : ℕ}
     (hB : B.IsQueryBound q) : KEM.Games.INDCCAAdversary PK SS C q :=
   ⟨kemRedRun P G g B, kemRedRun_isQueryBound P G g hB⟩
 
 omit [Fintype S] [Fintype K] [Nonempty K] in
 /-- A step of the world of the reduction reads the decapsulation oracle only at the delivered
 encapsulation of a `send` other than the challenge. -/
-theorem yStep_congr {pk : PK} {cs : C} {d₁ d₂ : C → Option SS} (t : YSt S W K PK SK SS C)
+theorem yStep_congr [DecidableEq PK]
+    {pk : PK} {cs : C} {d₁ d₂ : C → Option SS} (t : YSt S W K PK SK SS C)
     (e : OEv W SS C) (r : PDraw S K PK SK SS C × K)
     (hd : ∀ sid pid w c, e = .inr (.send sid pid w c) → c ≠ cs → d₁ c = d₂ c) :
     yStep P G g pk cs d₁ t e r = yStep P G g pk cs d₂ t e r := by
@@ -1898,7 +1912,7 @@ theorem needQ_some {cs : C} {e : OEv W SS C} {c : C} (h : needQ cs e = some c) :
 
 /-- **The reduction against the decapsulation oracle is the world of the reduction** with the
 decapsulation under the challenge secret key. -/
-theorem simOracle_implK (pk : PK) (cs : C) (sk : SK) (t : YSt S W K PK SK SS C)
+theorem simOracle_implK [DecidableEq PK] (pk : PK) (cs : C) (sk : SK) (t : YSt S W K PK SK SS C)
     (e : OEv W SS C) :
     OracleAdv.simOracle (implK P G g pk cs) (KEM.Games.decapsOracle P sk cs) (t, ()) e =
       (yO P G g pk cs (P.decaps sk) t e).map fun x => (x.1, (x.2, ())) := by
@@ -1926,7 +1940,8 @@ theorem simOracle_implK (pk : PK) (cs : C) (sk : SK) (t : YSt S W K PK SK SS C)
 
 /-- **The output of the reduction** against the decapsulation oracle of the challenge: whether
 the key is among the concrete shared secrets of the final state of the world of the reduction. -/
-theorem run_kemRedRun (B : OracleAdv (OEv W SS C) (OOut S W K PK C) Bool) (pk : PK) (cs : C)
+theorem run_kemRedRun [DecidableEq PK]
+    (B : OracleAdv (OEv W SS C) (OOut S W K PK C) Bool) (pk : PK) (cs : C)
     (sk : SK) (k : SS) :
     (OracleAdv.run (KEM.Games.decapsOracle P sk cs) (kemRedRun P G g B pk cs k) ()).map
         Prod.fst =
@@ -1986,7 +2001,7 @@ variable {S W K PK SK SS C : Type} [Field S] [Fintype S] [SampleableType W] [Fin
   (P : Scheme PK SK SS C) (G : DHGroup S W) (g : Guess)
 
 omit [Fintype SS] [Nonempty SS] in
-theorem yO_len (pk : PK) (cs : C) (dec : C → Option SS) (t : YSt S W K PK SK SS C)
+theorem yO_len [DecidableEq PK] (pk : PK) (cs : C) (dec : C → Option SS) (t : YSt S W K PK SK SS C)
     (e : OEv W SS C) : ∀ x ∈ (yO P G g pk cs dec t e).support, x.2.2.length ≤ t.2.length + 1 := by
   intro x hx
   simp only [yO, PMF.support_map, Set.mem_image] at hx
@@ -2052,7 +2067,7 @@ theorem bind_true_le {α : Type} (p : PMF α) (f : α → PMF Bool) (c : ℝ≥0
 omit [Fintype SS] [Nonempty SS] in
 /-- A run of the world of the reduction by an adversary with at most `q` queries receives at
 most `q` concrete shared secrets. -/
-theorem run_yO_len (pk : PK) (cs : C) (dec : C → Option SS)
+theorem run_yO_len [DecidableEq PK] (pk : PK) (cs : C) (dec : C → Option SS)
     (B : OracleAdv (OEv W SS C) (OOut S W K PK C) Bool) {q : ℕ} (hB : B.IsQueryBound q) :
     ∀ x ∈ (OracleAdv.run (yO P G g pk cs dec) B yInit).support, x.2.2.length ≤ q := by
   intro x hx
@@ -2062,7 +2077,8 @@ theorem run_yO_len (pk : PK) (cs : C) (dec : C → Option SS)
 
 /-- **The random case of the IND-CCA game of the reduction**: at most `q` over the number of
 shared secrets, for an adversary with at most `q` queries. -/
-theorem indccaGame_false_le (B : OracleAdv (OEv W SS C) (OOut S W K PK C) Bool) {q : ℕ}
+theorem indccaGame_false_le [DecidableEq PK]
+    (B : OracleAdv (OEv W SS C) (OOut S W K PK C) Bool) {q : ℕ}
     (hB : B.IsQueryBound q) :
     (KEM.Games.indccaGame P (kemRed P G g B hB) false) true ≤
       (q : ℝ≥0∞) * (Fintype.card SS : ℝ≥0∞)⁻¹ := by
@@ -2074,7 +2090,8 @@ theorem indccaGame_false_le (B : OracleAdv (OEv W SS C) (OOut S W K PK C) Bool) 
 
 /-- **The real case of the IND-CCA game of the reduction**: the probability that the world of
 the reduction with the challenge receives the encapsulated key. -/
-theorem indccaGame_true_eq (B : OracleAdv (OEv W SS C) (OOut S W K PK C) Bool) {q : ℕ}
+theorem indccaGame_true_eq [DecidableEq PK]
+    (B : OracleAdv (OEv W SS C) (OOut S W K PK C) Bool) {q : ℕ}
     (hB : B.IsQueryBound q) :
     (KEM.Games.indccaGame P (kemRed P G g B hB) true) true =
       ∑' kp, P.keygen kp * ∑' kc, P.encaps kp.1 kc *
@@ -2101,7 +2118,7 @@ omit [Fintype SS] [Nonempty SS] in
 open Classical in
 /-- The flag of the challenge key in the world of the reduction is the probability that the
 final state holds it. -/
-theorem flag_y_le (pk : PK) (cs : C) (dec : C → Option SS) (k : SS)
+theorem flag_y_le [DecidableEq PK] (pk : PK) (cs : C) (dec : C → Option SS) (k : SS)
     (B : OracleAdv (OEv W SS C) (OOut S W K PK C) Bool) :
     (OracleAdv.run (OracleAdv.flagWhen (fun _ _ x => k ∈ x.2.2)
         (yO P G g pk cs dec)) B (yInit, false)).toOuterMeasure {y | y.2.2 = true} ≤
@@ -2119,7 +2136,7 @@ theorem flag_y_le (pk : PK) (cs : C) (dec : C → Option SS) (k : SS)
 open Classical in
 /-- **The KEM part of the bad event at a guess, under the real case of IND-CCA**: at most the
 real case of the IND-CCA game of the reduction plus the correctness error of the KEM. -/
-theorem flagEG_le (B : OracleAdv (OEv W SS C) (OOut S W K PK C) Bool) {q : ℕ}
+theorem flagEG_le [DecidableEq PK] (B : OracleAdv (OEv W SS C) (OOut S W K PK C) Bool) {q : ℕ}
     (hB : B.IsQueryBound q) :
     (OracleAdv.run (OracleAdv.flagWhen (fun _ _ x => EG P G g x.2.1.1 x.2.2) (wO P G)) B
         (wInit, false)).toOuterMeasure {y | y.2.2 = true} ≤
@@ -2153,7 +2170,8 @@ theorem indccaGame_true_le [DecidableEq C] {q : ℕ} (A : KEM.Games.INDCCAAdvers
 
 open Classical in
 /-- **The KEM part of the bad event at a guess under IND-CCA.** -/
-theorem flagEG_le_indcca (B : OracleAdv (OEv W SS C) (OOut S W K PK C) Bool) {q : ℕ}
+theorem flagEG_le_indcca [DecidableEq PK]
+    (B : OracleAdv (OEv W SS C) (OOut S W K PK C) Bool) {q : ℕ}
     (hB : B.IsQueryBound q) :
     (OracleAdv.run (OracleAdv.flagWhen (fun _ _ x => EG P G g x.2.1.1 x.2.2) (wO P G)) B
         (wInit, false)).toOuterMeasure {y | y.2.2 = true} ≤
@@ -2183,7 +2201,7 @@ variable {S W K PK SK SS C : Type} [Field S] [Fintype S] [SampleableType W] [Fin
 /-- The bound of the KEM route: the sum over the guesses of `I × N × N` of the IND-CCA
 advantage of the reduction at the guess, the correctness error of the KEM, and the number of
 queries over the number of shared secrets. -/
-noncomputable def kemBound (I : Finset SessionId) (N : Finset PartyId)
+noncomputable def kemBound [DecidableEq PK] (I : Finset SessionId) (N : Finset PartyId)
     (B : OracleAdv (OEv W SS C) (OOut S W K PK C) Bool) {q : ℕ} (hB : B.IsQueryBound q) :
     ℝ≥0∞ :=
   ∑ g ∈ I ×ˢ N ×ˢ N, (KEM.Games.indccaAdvantage P (kemRed P G g B hB) + P.corrErr +
@@ -2195,7 +2213,7 @@ starts sessions only with session identifiers of `I` between parties of `N` and 
 queries, the probability of the KEM part of the bad event at matched sessions is at most the sum
 over the guesses `g` of `I × N × N` of the IND-CCA advantage of the reduction `kemRed P G g B`,
 the correctness error of the KEM, and `q` over the number of shared secrets. -/
-theorem partBad_kem_le (I : Finset SessionId) (N : Finset PartyId)
+theorem partBad_kem_le [DecidableEq PK] (I : Finset SessionId) (N : Finset PartyId)
     (B : OracleAdv (OEv W SS C) (OOut S W K PK C) Bool) (hS : SessInK I N B) {q : ℕ}
     (hB : B.IsQueryBound q) :
     partBad P G (PQHitKemM P G) B ≤ kemBound P G I N B hB :=
@@ -2208,7 +2226,7 @@ adversary `B` that names only parties of `N`, starts sessions only with session 
 `I`, and asks at most `q` queries, the bad event is at most its part at unmatched sessions, which
 only the route of Diffie–Hellman bounds, plus the minimum of the gap Diffie–Hellman sum and the
 KEM bound for its part at matched sessions. -/
-theorem badGame_le_min (I : Finset SessionId) (N : Finset PartyId)
+theorem badGame_le_min [DecidableEq PK] (I : Finset SessionId) (N : Finset PartyId)
     (B : OracleAdv (OEv W SS C) (OOut S W K PK C) Bool) (hN : NamesInP N B) (hS : SessInK I N B)
     {q : ℕ} (hB : B.IsQueryBound q) :
     badGame P G B true ≤ partBad P G (PQHitDhM P G) B +
@@ -2221,7 +2239,7 @@ theorem badGame_le_min (I : Finset SessionId) (N : Finset PartyId)
 
 open Classical in
 /-- The same bound with the Diffie–Hellman part bounded by the gap Diffie–Hellman sum. -/
-theorem badGame_le_gapDH_min (I : Finset SessionId) (N : Finset PartyId)
+theorem badGame_le_gapDH_min [DecidableEq PK] (I : Finset SessionId) (N : Finset PartyId)
     (B : OracleAdv (OEv W SS C) (OOut S W K PK C) Bool) (hN : NamesInP N B) (hS : SessInK I N B)
     {q : ℕ} (hB : B.IsQueryBound q) :
     badGame P G B true ≤
@@ -2235,7 +2253,7 @@ open Classical in
 `B`: the gap Diffie–Hellman sum plus the minimum of the gap Diffie–Hellman sum and the KEM bound,
 when `B` names only parties of `N`, starts sessions only with session identifiers of `I` and
 asks at most `q` queries, and `⊤` otherwise. -/
-noncomputable def minBoundP (I : Finset SessionId) (N : Finset PartyId) (q : ℕ)
+noncomputable def minBoundP [DecidableEq PK] (I : Finset SessionId) (N : Finset PartyId) (q : ℕ)
     (B : OracleAdv (OEv W SS C) (OOut S W K PK C) Bool) : ℝ≥0∞ :=
   if h : NamesInP N B ∧ SessInK I N B ∧ B.IsQueryBound q then
     ∑ a ∈ N, ∑ b ∈ N, GapDH_Advantage (gapDHDef G) (pqGdhRed G P a b B) +
@@ -2250,7 +2268,7 @@ session identifiers of `I` and asks at most `q` queries, the distance between th
 protocol and the simulator running with `F_AKE` is at most the gap Diffie–Hellman sum plus the
 minimum of the gap Diffie–Hellman sum and the KEM bound `kemBound`; the bound is `⊤` for the other
 environments. -/
-theorem pqxdh_realizesSim_min (I : Finset SessionId) (N : Finset PartyId) (q : ℕ) :
+theorem pqxdh_realizesSim_min [DecidableEq PK] (I : Finset SessionId) (N : Finset PartyId) (q : ℕ) :
     RealizesSim (pqxdhReal (K := K) P G) (F_AKE (SPComp.sample K) true) (pqxdhSim P G)
       (fun _ Z => minBoundP P G I N q
         ((OProt.oracle (Q := OEv W SS C) (A := OOut S W K PK C)).reduction Z)) :=

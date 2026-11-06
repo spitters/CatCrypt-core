@@ -60,8 +60,8 @@ the stage of the costed IND-CCA reduction in time at most
 without hypotheses on the costs of the step and of the extraction. The draws of the world are
 the distribution `simDist` of a step, priced at one unit with the public key it reads, so that
 the key generation and the encapsulation of the KEM enter through the draw and not through the
-step. The decisions `isEnc` of `liftD` use a classical instance (the scheme has no decidable
-equality of public keys), and `derive_reduction` does not charge them.
+step. The decisions `isEnc` of `liftD` compare public keys by the instance binder
+`[DecidableEq PK]`, and `derive_reduction` charges them by the cost of their conditions.
 
 `derive_reduction` refuses the step as one program, `SPComp.pure (kemStep P G g pk cs oa t e r)`:
 
@@ -321,7 +321,8 @@ def sizeY (t : YSt S W K PK SK SS C) : ℕ :=
 
 omit [Fintype S] [Fintype K] [Nonempty K] in
 /-- A step of the world of the reduction adds at most two to its size. -/
-theorem sizeY_kemStep (pk : PK) (cs : C) (oa : Option (Option SS)) (t : YSt S W K PK SK SS C)
+theorem sizeY_kemStep [DecidableEq PK]
+    (pk : PK) (cs : C) (oa : Option (Option SS)) (t : YSt S W K PK SK SS C)
     (e : OEv W SS C) (r : PDraw S K PK SK SS C × K) :
     sizeY (kemStep P G g pk cs oa t e r).1 ≤ sizeY t + 2 := by
   have h := simStartD_size (symP P cs (fun _ => oa.getD none)) G t.1.1 (liftE e)
@@ -335,7 +336,8 @@ theorem sizeY_kemStep (pk : PK) (cs : C) (oa : Option (Option SS)) (t : YSt S W 
 decision `needQ`, the draws of the simulated world, the step `kemStep` and the extraction of
 the membership of the key `k`, with any cost companions, erases to the program `kemRedRun` of
 the IND-CCA reduction `kemRed`. -/
-theorem kemRed_erase_timed (pk : PK) (cs : C) (k : SS) (needCost : YSt S W K PK SK SS C →
+theorem kemRed_erase_timed [DecidableEq PK]
+    (pk : PK) (cs : C) (k : SS) (needCost : YSt S W K PK SK SS C →
     OEv W SS C → ℕ) (μCost : YSt S W K PK SK SS C → OEv W SS C → ℕ)
     (stepCost : Option (Option SS) → YSt S W K PK SK SS C → OEv W SS C →
       PDraw S K PK SK SS C × K → ℕ) (extCost : YSt S W K PK SK SS C → ℕ)
@@ -352,7 +354,8 @@ most `Ext n`, with `F` and `Ext` monotone. Then for a costed oracle adversary `B
 with at most `q` queries, the costed reduction, whose erasure is the program of `kemRed`, runs
 in time at most `T + q · (F (2q) + 7) + Ext (2q) + 1`: a step adds at most two to the size of
 the state. -/
-theorem kemRed_timeBound (pk : PK) (cs : C) (k : SS) (needCost : YSt S W K PK SK SS C →
+theorem kemRed_timeBound [DecidableEq PK]
+    (pk : PK) (cs : C) (k : SS) (needCost : YSt S W K PK SK SS C →
     OEv W SS C → ℕ) (μCost : YSt S W K PK SK SS C → OEv W SS C → ℕ)
     (stepCost : Option (Option SS) → YSt S W K PK SK SS C → OEv W SS C →
       PDraw S K PK SK SS C × K → ℕ) (extCost : YSt S W K PK SK SS C → ℕ) (F Ext : ℕ → ℕ)
@@ -433,7 +436,7 @@ variable {S W K PK SK SS C : Type} [Field S] [Fintype S] [SampleableType W] [Fin
 /-- **The costed tree of the program erases to `kemRedRun`** at the draws of the simulated
 world, the step `kemStep`, the membership of the key in the received shared secrets and the
 initial state `yInit`, for any cost companions. -/
-theorem kemRedRun.compile_tree (μCost : YSt S W K PK SK SS C → OEv W SS C → ℕ)
+theorem kemRedRun.compile_tree [DecidableEq PK] (μCost : YSt S W K PK SK SS C → OEv W SS C → ℕ)
     (stepCost : PK → C → Option (Option SS) → YSt S W K PK SK SS C → OEv W SS C →
       PDraw S K PK SK SS C × K → ℕ) (extCost : SS → YSt S W K PK SK SS C → ℕ)
     (B : OracleAdv.Timed (OEv W SS C) (OOut S W K PK C) Bool) (pk : PK) (cs : C) (k : SS) :
@@ -446,7 +449,7 @@ theorem kemRedRun.compile_tree (μCost : YSt S W K PK SK SS C → OEv W SS C →
 state of size `n` together at most `F n` and the cost of the extraction at most `Ext n`, `F` and
 `Ext` monotone, a costed oracle adversary `B` of time `T` with at most `q` queries gives the
 costed tree of `kemRedRun` a time of at most `1 + (T + q · (F (2q) + 11) + Ext (2q) + 2)`. -/
-theorem kemRedRun.timeBound_timed (pk : PK) (cs : C) (k : SS)
+theorem kemRedRun.timeBound_timed [DecidableEq PK] (pk : PK) (cs : C) (k : SS)
     (μCost : YSt S W K PK SK SS C → OEv W SS C → ℕ)
     (stepCost : PK → C → Option (Option SS) → YSt S W K PK SK SS C → OEv W SS C →
       PDraw S K PK SK SS C × K → ℕ) (extCost : SS → YSt S W K PK SK SS C → ℕ) (F Ext : ℕ → ℕ)
@@ -475,7 +478,7 @@ theorem kemRedRun.timeBound_timed (pk : PK) (cs : C) (k : SS)
 
 /-- **The costed IND-CCA reduction erases to `kemRed`**: at a costed adversary `B'` erasing to
 `B`, the derived costed form of `kemRed.tree` erases to `kemRed P G g B hB`. -/
-theorem kemRed.compile_tree (μCost : YSt S W K PK SK SS C → OEv W SS C → ℕ)
+theorem kemRed.compile_tree [DecidableEq PK] (μCost : YSt S W K PK SK SS C → OEv W SS C → ℕ)
     (stepCost : PK → C → Option (Option SS) → YSt S W K PK SK SS C → OEv W SS C →
       PDraw S K PK SK SS C × K → ℕ) (extCost : SS → YSt S W K PK SK SS C → ℕ)
     (B : OracleAdv (OEv W SS C) (OOut S W K PK C) Bool) {q : ℕ} (hB : B.IsQueryBound q)
@@ -489,7 +492,7 @@ theorem kemRed.compile_tree (μCost : YSt S W K PK SK SS C → OEv W SS C → �
 for every public key and challenge, the stage of the costed reduction takes at most
 `2 + (T + q · (F (2q) + 11) + Ext (2q) + 2)` for a costed adversary of time `T` erasing to an
 adversary with at most `q` queries. -/
-theorem kemRed.timeBound_timed (μCost : YSt S W K PK SK SS C → OEv W SS C → ℕ)
+theorem kemRed.timeBound_timed [DecidableEq PK] (μCost : YSt S W K PK SK SS C → OEv W SS C → ℕ)
     (stepCost : PK → C → Option (Option SS) → YSt S W K PK SK SS C → OEv W SS C →
       PDraw S K PK SK SS C × K → ℕ) (extCost : SS → YSt S W K PK SK SS C → ℕ) (F Ext : ℕ → ℕ)
     (hF : Monotone F) (hE : Monotone Ext)
@@ -535,7 +538,7 @@ noncomputable def kNeedCP (cs : C) (e : OEv W SS C) : SPComp (Option C) := SPCom
 noncomputable def kEncPkCP (s : PSt S W K PK (Option SK) (Option SS) C) (e : OEv W SS C) :
     SPComp (Option PK) := SPComp.pure (encPk s (liftE e))
 
-noncomputable def kLiftCP (pk : PK) (cs : C) (t : SimY S W K PK SK SS C)
+noncomputable def kLiftCP [DecidableEq PK] (pk : PK) (cs : C) (t : SimY S W K PK SK SS C)
     (e : OEv W SS C) (r : PDraw S K PK SK SS C × K) :
     SPComp (PDraw S K PK (Option SK) (Option SS) C × K) :=
   SPComp.pure (liftD g pk cs t e r)
@@ -763,7 +766,7 @@ noncomputable def kStartTime (decaps : Option SK → C → Option (Option SS))
 decapsulation oracle and the draw `r`: the lift of the draw, the start of the simulator over
 the symbolic KEM, the finish with `F_AKE`, the concrete shared secret brought by the event and
 its append to the list of received shared secrets. -/
-noncomputable def kemStepTime (pk : PK) (cs : C) (oa : Option (Option SS))
+noncomputable def kemStepTime [DecidableEq PK] (pk : PK) (cs : C) (oa : Option (Option SS))
     (t : YSt S W K PK SK SS C) (e : OEv W SS C) (r : PDraw S K PK SK SS C × K) : ℕ :=
   SPTree.Timed.stepTime (kLiftCP.tree.timed g pk cs (liftY t.1.1) e r (fun _ => 0) (fun _ => 0)
       (fun _ => 0)) +
@@ -824,7 +827,7 @@ theorem kApp_time (l : List SS) (o : Option SS) :
 
 omit [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K]
   [DecidableEq SS] [DecidableEq C] in
-theorem kLift_time (pk : PK) (cs : C) (t : SimY S W K PK SK SS C) (e : OEv W SS C)
+theorem kLift_time [DecidableEq PK] (pk : PK) (cs : C) (t : SimY S W K PK SK SS C) (e : OEv W SS C)
     (r : PDraw S K PK SK SS C × K) :
     SPTree.Timed.stepTime (kLiftCP.tree.timed g pk cs (liftY t) e r (fun _ => 0) (fun _ => 0)
       (fun _ => 0)) ≤ 100 := by
@@ -964,10 +967,11 @@ theorem kemStepBound_mono (tc te tD : ℕ) : Monotone (kemStepBound tc te tD) :=
 
 theorem kemExtBound_mono : Monotone kemExtBound := fun _ _ h => by unfold kemExtBound; omega
 
+omit [Fintype S] [Fintype K] [Nonempty K] in
 /-- **The time of a step** of the world of the reduction, with the times of the query decision
 and of the draw, from a state of size at most `n` whose functionality has at most `n` notices,
 is at most `kemStepBound … n`. -/
-theorem kemStepTime_le (pk : PK) (cs : C) (oa : Option (Option SS)) {n : ℕ}
+theorem kemStepTime_le [DecidableEq PK] (pk : PK) (cs : C) (oa : Option (Option SS)) {n : ℕ}
     (t : YSt S W K PK SK SS C) (hs : sizeY t ≤ n) (hf : t.1.2.notices.length ≤ n)
     (e : OEv W SS C) (r : PDraw S K PK SK SS C × K) {tc te tD : ℕ}
     (hc : ∀ a b, coeCost a b ≤ tc) (he : ∀ a b, expCost a b ≤ te)
@@ -1102,7 +1106,8 @@ variable {S W K PK SK SS C : Type} [Field S] [Fintype S] [SampleableType W] [Fin
 
 omit [Fintype S] [Fintype K] [Nonempty K] in
 /-- A step of the world of the reduction adds at most one notice to the state of `F_AKE`. -/
-theorem fNotices_kemStep (pk : PK) (cs : C) (oa : Option (Option SS)) (t : YSt S W K PK SK SS C)
+theorem fNotices_kemStep [DecidableEq PK]
+    (pk : PK) (cs : C) (oa : Option (Option SS)) (t : YSt S W K PK SK SS C)
     (e : OEv W SS C) (r : PDraw S K PK SK SS C × K) :
     (kemStep P G g pk cs oa t e r).1.1.2.notices.length ≤ t.1.2.notices.length + 1 := by
   simp only [kemStep, yStep, simWorldD]
@@ -1116,7 +1121,8 @@ decision, of the draw and of a step from a state of size at most `2i` whose func
 at most `i` notices together be at most `F i`, and the cost of the extraction from such a state
 at most `Ext i`, with `F` monotone. Then for a costed oracle adversary `B` of time `T` with at
 most `q` queries the costed reduction runs in time at most `T + q · (F q + 7) + Ext q + 1`. -/
-theorem kemRed_timeBound_inv (pk : PK) (cs : C) (k : SS) (needCost : YSt S W K PK SK SS C →
+theorem kemRed_timeBound_inv [DecidableEq PK]
+    (pk : PK) (cs : C) (k : SS) (needCost : YSt S W K PK SK SS C →
     OEv W SS C → ℕ) (μCost : YSt S W K PK SK SS C → OEv W SS C → ℕ)
     (stepCost : Option (Option SS) → YSt S W K PK SK SS C → OEv W SS C →
       PDraw S K PK SK SS C × K → ℕ) (extCost : YSt S W K PK SK SS C → ℕ) (F Ext : ℕ → ℕ)
@@ -1150,7 +1156,7 @@ queries gives a costed reduction, whose erasure is the program of `kemRed`
 (`kemRed_erase_timed`), of time at most `T + q · (kemStepBound … (2q) + 7) + kemExtBound (2q) + 1`,
 for costs of the public value of an exponent at most `tc`, of exponentiation at most `te` and of
 decapsulation at most `tD`: the time of the adversary plus a polynomial of degree two in `q`. -/
-theorem kemRed_timeBound_cost (pk : PK) (cs : C) (k : SS)
+theorem kemRed_timeBound_cost [DecidableEq PK] (pk : PK) (cs : C) (k : SS)
     (B : OracleAdv.Timed (OEv W SS C) (OOut S W K PK C) Bool) {T q : ℕ} (hB : B.TimeBound T)
     (hq : B.erase.IsQueryBound q) {tc te tD : ℕ} (hc : ∀ a b, coeCost a b ≤ tc)
     (he : ∀ a b, expCost a b ≤ te) (hD : ∀ sk c, decCost sk c ≤ tD) :
@@ -1170,7 +1176,7 @@ theorem kemRed_timeBound_cost (pk : PK) (cs : C) (k : SS)
 `kemRedRun`, at the draw of cost `kemDrawTime`, the step `kemStep` of cost `kemStepTime` and the
 extraction of cost `kemExtTime`, runs in time at most
 `1 + (T + q · (kemStepBound … (2q) + 11) + kemExtBound (2q) + 2)`. -/
-theorem kemRedRun.timeBound_cost (pk : PK) (cs : C) (k : SS)
+theorem kemRedRun.timeBound_cost [DecidableEq PK] (pk : PK) (cs : C) (k : SS)
     (B : OracleAdv.Timed (OEv W SS C) (OOut S W K PK C) Bool) {T q : ℕ} (hB : B.TimeBound T)
     (hq : B.erase.IsQueryBound q) {tc te tD : ℕ} (hc : ∀ a b, coeCost a b ≤ tc)
     (he : ∀ a b, expCost a b ≤ te) (hD : ∀ sk c, decCost sk c ≤ tD) :
@@ -1201,7 +1207,8 @@ theorem kemRedRun.timeBound_cost (pk : PK) (cs : C) (k : SS)
 which erases to `kemRed P G g B hB` (`kemRed.compile_tree`), takes at most
 `2 + (T + q · (kemStepBound … (2q) + 11) + kemExtBound (2q) + 2)`, without hypotheses on the
 costs of the step and of the extraction. -/
-theorem kemRed.timeBound_cost (B : OracleAdv (OEv W SS C) (OOut S W K PK C) Bool) {q : ℕ}
+theorem kemRed.timeBound_cost [DecidableEq PK]
+    (B : OracleAdv (OEv W SS C) (OOut S W K PK C) Bool) {q : ℕ}
     (hB : B.IsQueryBound q) (B' : OracleAdv.Timed (OEv W SS C) (OOut S W K PK C) Bool)
     (hB' : B'.erase = B) {T : ℕ} (hT : B'.TimeBound T) {tc te tD : ℕ}
     (hc : ∀ a b, coeCost a b ≤ tc) (he : ∀ a b, expCost a b ≤ te)
