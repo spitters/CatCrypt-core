@@ -34,6 +34,12 @@ The class is the distributions built from
   `derive_timed` translates as a tree binder (a costed tree, and for a function its cost
   companion `D_fCost`);
 * `if`, `if h :`, a `match` with a motive constant in its discriminants, and a `let`;
+* a case analysis by a recursor, `C.casesOn x alt₁ … altₙ` or `C.rec alt₁ … altₙ x` of a type
+  `C` without indices whose constructors have no recursive argument (`Sum.rec`, to which
+  `Sum.elim` reduces), at a motive constant in `x`;
+* a structural recursion over an oracle-tree binder `A` of `R` (the eliminator rule): the
+  recursive calls of `R` in the body that Lean keeps for its equations, and the distribution `p`
+  of a pattern `.rand p k` of `A`, a sample of the adversary;
 * a call of a non-recursive definition whose body is in the class, unfolded with its
   arguments bound once (`bindArgs`), as `derive_timed` unfolds a data definition;
 
@@ -42,7 +48,10 @@ and, for a computation, `liftPMF p` of such a `p`.
 Such a distribution is reflected into an oracle tree over the empty interface (`reflect`),
 `R.pmfTree : … → OracleAdv Empty Empty α`, node by node: `PMF.pure a` is `ret a`, `PMF.bind p f`
 is `OracleAdv.bind`, `PMF.map f p` is the bind of the tree of `p` with `ret ∘ f`, a uniform
-sample is one `rand` node returning its sample, and `OracleAdv.run O A s` is the simulation
+sample is one `rand` node returning its sample, a sample `p` of the adversary is the node
+`rand p k'` with the trees `k'` of the continuation, a case analysis by a recursor is the case
+analysis `C.casesOn x t₁ … tₙ` over the trees of its alternatives (its proof the case analysis
+of `x` over their proofs), and `OracleAdv.run O A s` is the simulation
 `OracleAdv.simulate (R.pmfStep ys) A s` whose program `R.pmfStep ys s d` is the tree of `O s d`:
 a definition over the locals `ys` that the step mentions (`R.pmfStep_2`, … for further runs),
 whose costed form `derive_timed` derives on demand with its own erasure theorem, as for a
@@ -52,6 +61,14 @@ its branches. The theorem
 `R.dist_pmfTree : (R.pmfTree xs).dist = R xs` (for a computation,
 `liftPMF (R.pmfTree xs).dist = R xs`) is assembled from the lemmas `OracleAdv.dist_*_of` of
 `CatCryptCore.Crypto.OracleAdversaryDist`, one per node, and checked by the kernel.
+
+For a distribution `R` defined by structural recursion over an oracle-tree binder (the
+eliminator rule, `reflectRec`), each recursive call `R ys` is reflected as the call
+`R.pmfTree ys` and its proof is the hypothesis of the recursion at `ys`: `R.pmfTree` is defined by
+the recursion of `R`, and `R.dist_pmfTree` by the recursion of its proof, from the unfolding
+equations of `R.pmfTree` and `R` (an induction over the tree, checked by the kernel). The costed
+form of `R.pmfTree`, a recursion over the tree binder, is derived by the rule of `derive_timed`
+for a case analysis of a tree binder.
 
 `derive_timed` then derives the costed form of the tree `R.pmfTree` by the rules of
 `CatCryptCore.Tactics.DeriveTimed` (binders, cost companions, field paths, the pricing of data),
@@ -85,8 +102,10 @@ A distribution outside the class is refused, with a message that names the const
 * a measure without a sampling program: a construction of `Mathlib` other than those above
   (`PMF.ofFintype`, `PMF.normalize`, `PMF.bernoulli`, `PMF.uniformOfFinset`), a definition
   without a value;
-* a recursive definition valued in `PMF`, a `match` whose motive depends on its discriminants or
-  whose alternatives do not reduce on their patterns (overlapping patterns);
+* a definition valued in `PMF` by well-founded recursion or by structural recursion over data
+  other than an oracle tree, a recursive computation (`liftPMF` of a recursive distribution is
+  derived instead), a `match` or a case analysis whose motive depends on its discriminants, a
+  `match` whose alternatives do not reduce on their patterns (overlapping patterns);
 * a computation whose body is not `liftPMF` of a distribution.
 
 The extension is an elaborator of the syntax of `derive_timed`, tried before the elaborator of
@@ -97,6 +116,8 @@ derives or refuses.
 
 * `reflect` — the oracle tree over the empty interface of a distribution in the class, with the
   proof that its distribution is the given one
+* `reflectCases` — a case analysis by a recursor over the trees of its alternatives
+* `reflectRec` — `R.pmfTree` and `R.dist_pmfTree` of a structural recursion over an oracle tree
 * `derivePMF` — `R.pmfTree`, `R.dist_pmfTree`, then `derive_timed R.pmfTree`, `R.timed` and
   `R.erase_timed`
 -/
@@ -151,6 +172,12 @@ structure RCtx where
   steps : IO.Ref Nat
   /-- The universe parameters of the reduction. -/
   levelParams : List Name := []
+  /-- In the reflection of a recursive reduction `R`: its name, the name of its tree `R.pmfTree`
+  and the hypothesis `∀ xs, (R.pmfTree xs).dist = R xs` of the recursion. -/
+  recCall? : Option (Name × Expr × Expr) := none
+  /-- The distributions of the `rand` nodes of oracle-tree binders matched on (the field `p` of a
+  pattern `.rand p k`): the samples of the adversary, each a `rand` node at its unit. -/
+  randDists : Array FVarId := #[]
 
 /-- The field `S.f D` of a structure binder `D` of the reduction heading the tree `A`
 (`D.run x y`), when its type is a tree or a function into trees that does not mention `D`. -/
@@ -255,6 +282,16 @@ partial def reflectConst (rc : RCtx) (e : Expr) (c : Name) (args : Array Expr) (
     let a := args[1]!
     let t := mkApp4 (Lean.mkConst ``CatCrypt.Crypto.OracleAdv.ret) E E α a
     return (t, mkApp2 (Lean.mkConst ``CatCrypt.Crypto.OracleAdv.dist_ret) α a)
+  if c == ``PMF.bind && args.size == 4 && args[2]!.consumeMData.isFVar &&
+      rc.randDists.contains args[2]!.consumeMData.fvarId! then
+    -- A sample of the adversary: the distribution of a `rand` node of an oracle-tree binder,
+    -- a `rand` node of the tree.
+    let β := args[0]!
+    let p := args[2]!
+    let (k, _, hf) ← reflectFn rc args[3]! β
+    let t := mkAppN (Lean.mkConst ``CatCrypt.Crypto.OracleAdv.rand) #[E, E, α, β, p, k]
+    let h ← mkAppM ``congrArg #[mkApp3 e.getAppFn β α p, ← mkAppM ``funext #[hf]]
+    return (t, h)
   if c == ``PMF.bind && args.size == 4 then
     let β := args[0]!
     let p := args[2]!
@@ -316,7 +353,14 @@ partial def reflectConst (rc : RCtx) (e : Expr) (c : Name) (args : Array Expr) (
     failP m!"a measure without a sampling program: `{e}` is the distribution `{c}`, which is \
       not among the sampling constructs `PMF.pure`, `PMF.bind`, `PMF.map`, \
       `PMF.uniformFintype`"
+  if let some (iv, isRec) ← dataCases? c then
+    return ← reflectCases rc e iv isRec args α
   let env ← getEnv
+  if let some (rn, rt, ih) := rc.recCall? then
+    if c == rn then
+      -- A recursive call of the reduction: the call of its tree, its proof the hypothesis of the
+      -- recursion at the arguments.
+      return (mkAppN rt args, mkAppN ih args)
   if (Structural.eqnInfoExt.find? env c).isSome || (WF.eqnInfoExt.find? env c).isSome then
     failP m!"the distribution `{e}` is a call of the recursive definition `{c}`, which the \
       reflection does not unfold"
@@ -331,6 +375,51 @@ partial def reflectConst (rc : RCtx) (e : Expr) (c : Name) (args : Array Expr) (
   let v := d.value.instantiateLevelParams d.levelParams e.getAppFn.constLevels!
   let body ← bindArgs v args 0
   reflect { rc with depth := rc.depth + 1 } body
+
+/-- The reflection of a case analysis by a recursor, `C.casesOn x alt₁ … altₙ` or `C.rec alt₁ …
+altₙ x` of a type `C` whose constructors have no recursive argument, at a motive constant in
+`x`: the case analysis `C.casesOn x t₁ … tₙ` over the trees of the alternatives at the fields of
+their constructors, and the case analysis of `x` at the motive
+`fun y => (C.casesOn y t₁ … tₙ).dist = e[y/x]` over their proofs, which holds by reduction at
+each constructor. -/
+partial def reflectCases (rc : RCtx) (e : Expr) (iv : InductiveVal) (isRec : Bool)
+    (args : Array Expr) (α : Expr) : TermElabM (Expr × Expr) := do
+  let arity := iv.numParams + 2 + iv.numCtors
+  unless args.size == arity do
+    failP m!"the case analysis `{e}` is applied to further arguments"
+  let params := args.extract 0 iv.numParams
+  let majorPos := if isRec then arity - 1 else iv.numParams + 1
+  let major := args[majorPos]!
+  let minors := if isRec then args.extract (iv.numParams + 1) (arity - 1)
+    else args.extract (iv.numParams + 2) arity
+  let majorTy ← inferType major
+  let depends ← withLocalDeclD `y majorTy fun y => do
+    return (← instantiateMVars (mkApp args[iv.numParams]! y).headBeta).containsFVar y.fvarId!
+  if depends then
+    failP m!"the case analysis `{e}` has a motive that depends on its major premise"
+  let treeTy := emptyTreeTy α
+  let motiveT ← withLocalDeclD `y majorTy fun y => mkLambdaFVars #[y] treeTy
+  let mut alts := #[]
+  let mut pfs := #[]
+  for i in [0:iv.numCtors] do
+    let ctor ← getConstInfoCtor iv.ctors[i]!
+    let (a, p) ← withEta minors[i]! ctor.numFields fun fs b => do
+      let (t, h) ← reflect rc b
+      return (← mkLambdaFVars fs t, ← mkLambdaFVars fs h)
+    alts := alts.push a
+    pfs := pfs.push p
+  let lvls := e.getAppFn.constLevels!.drop 1
+  let casesName := iv.name ++ `casesOn
+  let tree := mkAppN (Lean.mkConst casesName (Level.succ Level.one :: lvls))
+    (params ++ #[motiveT, major] ++ alts)
+  let motiveP ← withLocalDeclD `y majorTy fun y => do
+    let tr := mkAppN (Lean.mkConst casesName (Level.succ Level.one :: lvls))
+      (params ++ #[motiveT, y] ++ alts)
+    mkLambdaFVars #[y] (← mkEq (distE α tr) (mkAppN e.getAppFn (args.set! majorPos y)))
+  let pf := mkAppN (Lean.mkConst casesName (Level.zero :: lvls)) (params ++ #[motiveP, major] ++ pfs)
+  unless ← isTypeCorrect pf do
+    failP m!"internal: the reflection of the case analysis `{e}` does not check"
+  return (tree, pf)
 
 /-- The reflection of a function `f : X → PMF γ` (a continuation of a bind, a branch of a
 dependent `if`): the tree function, the function as a lambda, and the pointwise proof
@@ -396,8 +485,23 @@ partial def reflectMatch (rc : RCtx) (e : Expr) (α : Expr) : TermElabM (Expr ×
   let motive' ← lambdaTelescope app.motive fun xs _ => mkLambdaFVars xs treeTy
   let mut alts' := #[]
   let mut pfs := #[]
-  for alt in app.alts, n in app.altNumParams do
-    let (a', p') ← forallBoundedTelescope (← inferType alt) n fun ys _ => do
+  -- The types of the alternatives at the motive, whose results show their patterns.
+  -- The motive and the discriminants stay abstract, so that the instantiation does not reduce
+  -- the motive at the patterns.
+  let matcherTy ← inferType (mkAppN (Lean.mkConst app.matcherName app.matcherLevels.toList)
+    app.params)
+  let altTys ← forallBoundedTelescope matcherTy (some (1 + app.discrs.size + app.alts.size))
+    fun as _ => (as.extract (1 + app.discrs.size) as.size).mapM fun a => inferType a
+  for alt in app.alts, n in app.altNumParams, altTy in altTys do
+    let (a', p') ← forallBoundedTelescope altTy n fun ys body => do
+      -- The distribution `p` of a pattern `.rand p k` of an oracle tree is a sample of the
+      -- adversary.
+      let mut rds := rc.randDists
+      for y in ys do
+        if (body.find? fun s => s.isAppOfArity ``CatCrypt.Crypto.OracleAdv.rand 6 &&
+            s.getAppArgs[4]! == y).isSome then
+          rds := rds.push y.fvarId!
+      let rc := { rc with randDists := rds }
       let (t, h) ← reflect rc (mkAppN alt ys).headBeta
       return (← mkLambdaFVars ys t, ← mkLambdaFVars ys h)
     alts' := alts'.push a'
@@ -464,6 +568,74 @@ partial def funextN (f g h : Expr) (n : Nat) : MetaM Expr := do
     mkLambdaFVars #[y] (← funextN (mkApp f y).headBeta (mkApp g y).headBeta (mkApp h y) (n - 1))
   mkAppM ``funext #[inner]
 
+/-- The tree `c.pmfTree` and the theorem `c.dist_pmfTree` of a distribution `c` defined by
+structural recursion over an oracle-tree binder (the eliminator rule): the body that Lean keeps
+for the equations of `c`, in which a recursive call is an application of `c`, is reflected with
+each recursive call `c ys` the call `c.pmfTree ys` of the tree and its proof the hypothesis of the
+recursion at `ys`; `c.pmfTree` is defined by that recursion, and `c.dist_pmfTree` by the
+recursion of its proof, from the unfolding equations of `c.pmfTree` and `c`. -/
+def reflectRec (c : Name) (info : ConstantInfo) (treeName distName : Name) :
+    TermElabM Unit := do
+  let levels := info.levelParams.map mkLevelParam
+  let value ← costValue c info
+  let (tType, tValue, dType, hBody) ← lambdaTelescope value fun xs b => do
+    let b := b.consumeMData
+    let some α ← pmfArg? (← inferType b) | failP m!"internal: `{c}` is not a distribution"
+    unless ← xs.anyM (fun x => return (← treeTy? (← inferType x)).isSome) do
+      failP m!"`{c}` is a recursive definition valued in `PMF` whose recursion is not over an \
+        oracle-tree binder: a distribution defined by recursion over data has no sampling \
+        program of a fixed shape"
+    let tType ← mkForallFVars xs (emptyTreeTy α)
+    let distEq (f : Expr) : MetaM Expr := do
+      mkForallFVars xs (← mkEq (distE α (mkAppN f xs)) (mkAppN (Lean.mkConst c levels) xs))
+    withLocalDeclD `rec tType fun recF => do
+      withLocalDeclD `ih (← distEq recF) fun ih => do
+        let fr ← IO.mkRef (#[] : Array Expr)
+        let sr ← IO.mkRef 0
+        let rc : RCtx :=
+          { top := xs.map (·.fvarId!), fields := fr, base := c, steps := sr
+            levelParams := info.levelParams, recCall? := some (c, recF, ih) }
+        let (t, h) ← reflect rc b
+        unless (← fr.get).isEmpty do
+          failP m!"`{c}` is a recursive definition valued in `PMF` that runs a field of a \
+            structure binder against an oracle, which the recursive reflection does not \
+            abstract"
+        let tree := Lean.mkConst treeName levels
+        let t' := t.replaceFVar recF tree
+        let h' := (h.replaceFVar recF tree).replaceFVar ih (Lean.mkConst distName levels)
+        return (tType, ← mkLambdaFVars xs t', ← distEq tree, ← mkLambdaFVars xs h')
+  addTimedDef treeName info.levelParams tType tValue
+  let some treeEq ← getUnfoldEqnFor? treeName (nonRec := true)
+    | failP m!"internal: `{treeName}` has no unfolding equation"
+  let some srcEq ← getUnfoldEqnFor? c (nonRec := true)
+    | failP m!"internal: `{c}` has no unfolding equation"
+  -- `(c.pmfTree xs).dist = (body of c.pmfTree).dist = body of c = c xs`.
+  let dValue ← forallTelescope dType fun xs _ => do
+    let eqd := mkAppN (Lean.mkConst treeEq levels) xs
+    let some (T, _, _) := (← inferType eqd).eq?
+      | failP m!"internal: `{treeEq}` is not an equation"
+    let distF ← withLocalDeclD `t T fun t => do mkLambdaFVars #[t] (distE T.appArg! t)
+    let e1 ← mkCongrArg distF eqd
+    let hx := (hBody.beta xs)
+    let e3 ← mkEqSymm (mkAppN (Lean.mkConst srcEq levels) xs)
+    mkLambdaFVars xs (← mkEqTrans e1 (← mkEqTrans hx e3))
+  let saved := (← getThe Core.State).messages
+  modifyThe Core.State fun st => { st with messages := {} }
+  let outcome ← try
+      addPreDefinitions ({}, {}) #[{
+        ref := .missing, kind := .theorem, levelParams := info.levelParams, modifiers := {},
+        declName := distName, binders := .missing, type := dType, value := dValue,
+        termination := .none }]
+      pure none
+    catch ex => pure (some ex.toMessageData)
+  let msgs := (← getThe Core.State).messages
+  modifyThe Core.State fun st => { st with messages := saved }
+  if let some why := outcome then
+    failP m!"internal: the recursive reflection of `{c}` does not check: {why}"
+  if msgs.hasErrors then
+    failP m!"internal: the recursive reflection of `{c}` does not check: \
+      {MessageData.joinSep (msgs.toList.map (·.data)) "\n"}"
+
 /-- **The costed form of a distribution-valued reduction.** Reflect the body of `c` into the
 tree `c.pmfTree` with `c.dist_pmfTree`, derive `c.pmfTree.timed`, and state `c.timed` (the costed
 form `c.pmfTree.timed`) with `c.erase_timed`. A tree-valued field `D.f` of a structure binder `D`
@@ -472,10 +644,14 @@ run against an oracle is a further binder `D_f` of `c.pmfTree`, after the binder
 def derivePMF (suffix : Name) (c : Name) (sh : Shape) : TermElabM Unit := do
   let some (info, value) ← etaValue c | failP m!"`{c}` has no definition to translate"
   let env ← getEnv
-  if (Structural.eqnInfoExt.find? env c).isSome || (WF.eqnInfoExt.find? env c).isSome then
-    failP m!"`{c}` is a recursive definition valued in `PMF`, which the reflection does not \
-      unfold: a distribution defined by recursion over a tree has no sampling program of a \
-      fixed shape; write it as the run of the tree against an oracle"
+  if (WF.eqnInfoExt.find? env c).isSome then
+    failP m!"`{c}` is a definition valued in `PMF` by well-founded recursion, which the \
+      reflection does not unfold: its recursion has no eliminator; write it by structural \
+      recursion over an oracle-tree binder, or as the run of the tree against an oracle"
+  let structRec := (Structural.eqnInfoExt.find? env c).isSome
+  if structRec && sh != .pmf then
+    failP m!"`{c}` is a recursive computation; write it as `liftPMF` of a recursive \
+      distribution"
   let levels := info.levelParams.map mkLevelParam
   let treeName := c ++ `pmfTree
   let distName := c ++ `dist_pmfTree
@@ -485,7 +661,15 @@ def derivePMF (suffix : Name) (c : Name) (sh : Shape) : TermElabM Unit := do
     if (← getEnv).contains n then failP m!"`{n}` already exists"
   -- The reflection, under the binders of `c`; the fields of structure binders run against an
   -- oracle are abstracted (`fieldAbs`, over the binders of `c`).
-  let (tType, tValue, dType, dValue, α, fieldAbs) ← lambdaTelescope value fun xs b => do
+  let (tType, tValue, dType, dValue, α, fieldAbs) ← if structRec then do
+      reflectRec c info treeName distName
+      let α ← lambdaTelescope value fun xs b => do
+        let some α ← pmfArg? (← inferType b.consumeMData) | failP m!"internal: `{c}`"
+        return α.abstract xs
+      let n ← lambdaTelescope value fun xs _ => pure xs.size
+      pure (mkSort Level.zero, mkSort Level.zero, mkSort Level.zero, mkSort Level.zero, α,
+        ((#[] : Array Expr), n))
+    else lambdaTelescope value fun xs b => do
     let b := b.consumeMData
     let p := if sh == .lift then b.appArg! else b
     let some α ← pmfArg? (← inferType p) | failP m!"internal: `{c}` is not a distribution"
@@ -528,9 +712,10 @@ def derivePMF (suffix : Name) (c : Name) (sh : Shape) : TermElabM Unit := do
       return (tType, tValue, dType, dValue, α.abstract xs, flds.map (·.abstract xs), xs.size)
   let (fieldAbs, nxs) := fieldAbs
   let αAbs := α
-  addTimedDef treeName info.levelParams tType tValue
-  try addThm distName info.levelParams dType dValue
-  catch ex => failP m!"internal: the reflection of `{c}` does not check: {ex.toMessageData}"
+  unless structRec do
+    addTimedDef treeName info.levelParams tType tValue
+    try addThm distName info.levelParams dType dValue
+    catch ex => failP m!"internal: the reflection of `{c}` does not check: {ex.toMessageData}"
   -- The costed form of the tree, by the rules of `derive_timed`.
   try deriveTimed { suffix } treeName
   catch ex =>

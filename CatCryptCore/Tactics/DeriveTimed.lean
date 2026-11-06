@@ -340,6 +340,8 @@ Costs follow call-by-value evaluation:
 * `if` and `match` cost one, plus the costs of the condition or the discriminants, plus the
   cost of the branch taken; a match of a tree whose motive depends on its discriminants
   (`SPTree (Fin n → X)` on `n`) has the costed tree type at each discriminant as its motive;
+* a tree-valued case analysis by a recursor on data costs one, plus the cost of the major
+  premise, plus the cost of the branch taken, as a `match` (rule (o) below);
 * constructors, literals, numerals, casts, projections and variables cost nothing beyond
   their arguments (the parameters of a constructor's inductive type are not among them), and
   a closure costs nothing to build;
@@ -478,6 +480,21 @@ cost of `f`. A reduction whose costed form is written by hand is registered by d
 in its result type returns plain results (`SPComp.seqFin.tree.timed`,
 `CatCryptCore.Core.CodeSequenceTimed`); called at a result type holding functions, its results
 are lifted to costed closures of companion zero (`ι`), as the results of a tree binder are.
+
+Rule (o), case analyses by a recursor. The class: a tree-valued case analysis
+`C.casesOn x alt₁ … altₙ`, or `C.rec alt₁ … altₙ x` of a type `C` whose constructors have no
+recursive argument (its minor premises take the fields only), of data `x` without a costed
+form, of an inductive type `C` without indices other than the tree types, at a motive constant
+in `x`. The equation compiler produces such a case analysis inside an alternative for a nested
+constructor pattern (`| .query (.inl key) k => …` of a recursion over an oracle-tree binder is
+`OracleAdv.casesOn` and, in its `query` alternative, `Sum.casesOn` of the query). It is
+translated as the case analysis `C.casesOn x alt'₁ … alt'ₙ` of the same `x`, whose alternatives
+are the costed trees of the alternatives at the fields of their constructors, behind one unit
+plus the cost of `x` (`trCases`): the charge of a `match`. In the erasure proof the major premise
+of such a case analysis on a local is split by `derive_timed_cases_data`, so that the source
+reduces at the constructor. A case analysis whose motive depends on its major premise, or whose
+major premise has a costed form, is refused with a message naming it. A case analysis of
+data valued in data keeps the rule of `costCases`.
 
 Rule (i), decidable predicates of registered primitives. The class: an argument
 `p : α₁ → … → αₙ → Prop` (`n ≥ 1`) of a registered primitive that is followed, among the
@@ -1117,6 +1134,11 @@ theorem foldrHat_snd_le {α : Type uA} {X : Type uC} {β : Type uB} (f : β → 
     simp only [foldrHat, List.foldr_cons, List.length_cons] at this ⊢
     grind
 
+/-- In an erasure proof of rule (o): a case split on the major premise of the first case
+analysis `C.casesOn x …` in the goal (or `C.rec … x` of a type without recursive constructor
+arguments, to which `simp` unfolds it) whose major premise `x` is a local. -/
+syntax (name := casesDataTac) "derive_timed_cases_data" : tactic
+
 end CatCrypt.Tactics.DeriveTimed
 
 meta section
@@ -1124,6 +1146,35 @@ meta section
 namespace CatCrypt.Tactics.DeriveTimed
 
 open Lean Elab Meta Term Command
+
+@[tactic casesDataTac] def evalCasesData : Lean.Elab.Tactic.Tactic := fun _ => do
+  let g ← Lean.Elab.Tactic.getMainGoal
+  g.withContext do
+    let t ← instantiateMVars (← g.getType)
+    let env ← getEnv
+    let major? (s : Expr) : Option Expr :=
+      match s.getAppFn with
+      | .const n _ =>
+        match env.find? n.getPrefix with
+        | some (.inductInfo iv) =>
+          let pos? := if iv.numIndices != 0 then none
+            else if n == iv.name ++ `casesOn then some (iv.numParams + 1)
+            else if n == iv.name ++ `rec && !iv.isRec && iv.all.length == 1 then
+              some (iv.numParams + 1 + iv.numCtors)
+            else none
+          match pos? with
+          | some i =>
+            match s.getAppArgs[i]? with
+            | some x => if x.isFVar then some x else none
+            | none => none
+          | none => none
+        | _ => none
+      | _ => none
+    let some s := t.find? fun s => (major? s).isSome
+      | throwError "derive_timed_cases_data: no case analysis on a local in the goal"
+    let some x := major? s | throwError "derive_timed_cases_data: internal"
+    let gs ← g.cases x.fvarId!
+    Lean.Elab.Tactic.replaceMainGoal (gs.map (·.mvarId)).toList
 
 /-- How a binder of a reduction is translated. -/
 inductive Kind where
@@ -3948,6 +3999,20 @@ def foldHatLemmas (used : Array Name) : Array Name :=
     #[``foldlHat_fst, ``foldrHat_fst, ``implies_true]
   else #[]
 
+/-- The inductive type of a case analysis `C.casesOn`, or of a recursor `C.rec` of a type `C`
+without indices whose constructors have no recursive argument (its minor premises take the
+fields only), with whether it is the recursor: the case analyses of rule (o). The oracle-tree
+types, whose case analysis on a binder is a handler of its nodes, are excluded. -/
+def dataCases? (c : Name) : MetaM (Option (InductiveVal × Bool)) := do
+  let env ← getEnv
+  let some (.inductInfo iv) := env.find? c.getPrefix | return none
+  unless iv.numIndices == 0 && iv.numNested == 0 && iv.all.length == 1 do return none
+  if iv.name == ``CatCrypt.Crypto.OracleAdv || iv.name == ``CatCrypt.Core.SPTree then
+    return none
+  if c == iv.name ++ `casesOn then return some (iv, false)
+  if c == iv.name ++ `rec && !iv.isRec then return some (iv, true)
+  return none
+
 mutual
 
 /-- The cost of evaluating the data term `e`. -/
@@ -5459,6 +5524,9 @@ partial def trConst (ctx : Ctx) (e : Expr) (c : Name) (args : Array Expr) (T : T
     return T.delayE (add (natE 1) cd) e'
   if c == ``CatCrypt.Crypto.OracleAdv.casesOn then
     return ← trTreeCases ctx e args T
+  -- Rule (o): a tree-valued case analysis by a recursor on data.
+  if (← dataCases? c).isSome then
+    return ← trCases ctx e c args T
   -- A tree-valued field of a field path (`S.kem.encaps pk`, a program of a scheme structure):
   -- a primitive, whose oracle tree runs at the unit cost of its nodes and whose computation
   -- is priced by its cost companion, indexed by the arguments of the field.
@@ -5533,6 +5601,44 @@ partial def trTreeCases (ctx : Ctx) (e : Expr) (args : Array Expr) (T : TreeTy) 
   -- The unit of the case analysis is charged in each alternative, so that the case analysis
   -- heads the costed form and Lean derives its equations.
   return mkAppN cases #[altRet, altRand, altQuery]
+
+/-- Rule (o): the tree-valued case analysis `C.casesOn x alt₁ … altₙ` (or `C.rec alt₁ … altₙ x`
+of a type `C` whose constructors have no recursive argument) of data `x` of an inductive type
+without indices, at a motive constant in `x`: the case analysis `C.casesOn x alt'₁ … alt'ₙ` of
+the same `x` whose alternatives are the costed trees of the alternatives at the fields of their
+constructors, behind one unit plus the cost of `x`, the charge of a `match`. -/
+partial def trCases (ctx : Ctx) (e : Expr) (c : Name) (args : Array Expr) (T : TreeTy) :
+    TermElabM Expr := do
+  let some (iv, isRec) ← dataCases? c
+    | fail m!"`{c}` is not the case analysis of an inductive type"
+  let arity := iv.numParams + 2 + iv.numCtors
+  unless args.size == arity do
+    fail m!"the case analysis `{e}` has a motive that depends on further arguments"
+  let params := args.extract 0 iv.numParams
+  let motive := args[iv.numParams]!
+  let (major, minors) := if isRec then
+      (args[arity - 1]!, args.extract (iv.numParams + 1) (arity - 1))
+    else (args[iv.numParams + 1]!, args.extract (iv.numParams + 2) arity)
+  let depends ← withLocalDeclD `x (← inferType major) fun x => do
+    let b ← instantiateMVars (mkApp motive x).headBeta
+    return b.containsFVar x.fvarId!
+  if depends then
+    fail m!"the case analysis `{e}` has a motive that depends on its major premise"
+  if (← hatTy? (← inferType major)).isSome || (treeLocal? ctx major).isSome then
+    fail m!"the case analysis `{e}` is of `{major}`, which has a costed form; write it as a \
+      `match` with constructor patterns"
+  let motive' ← withLocalDeclD `x (← inferType major) fun x => mkLambdaFVars #[x] T.pairType
+  let mut minors' := #[]
+  for i in [0:iv.numCtors] do
+    let ctor ← getConstInfoCtor iv.ctors[i]!
+    minors' := minors'.push (← withEta minors[i]! ctor.numFields fun fs b => do
+      mkLambdaFVars fs (← tr ctx b))
+  let lvl ← getLevel T.pairType
+  let levels := match e.getAppFn.constLevels! with
+    | _ :: ls => lvl :: ls
+    | [] => []
+  let cases := mkAppN (mkConst (iv.name ++ `casesOn) levels) (params ++ #[motive', major] ++ minors')
+  return T.delayE (add (natE 1) (← costOf ctx major)) cases
 
 /-- The costed form of the reduction `c` at the universe levels of `f`: registered, or
 derived now. -/
@@ -6130,14 +6236,27 @@ partial def deriveTimed (ctx : Ctx) (c : Name) : TermElabM Unit := do
   -- by the same lemmas. `simp` with a discharger traverses a shared costed value once per
   -- occurrence, so a non-recursive costed form is closed first without the discharger (then by
   -- the `if` closer below), and with it only when goals remain.
+  -- Rule (o): a tree-valued case analysis in the costed form (a case analysis of data whose
+  -- motive is a costed tree type), whose major premise is split in the erasure proof.
+  let casesSplit ← if (tValue.find? fun t =>
+        match t.getAppFn with
+        | .const n _ =>
+          (envNow.find? n.getPrefix).any (fun i => i matches .inductInfo _) &&
+            n == n.getPrefix ++ `casesOn &&
+            !(kinds.any fun k => k.timed == n.getPrefix || k.tree == n.getPrefix) &&
+            (t.getAppArgs.any fun a => match a with
+              | .lam _ _ b _ => b.isAppOfArity ``Prod 2
+              | _ => false)
+        | _ => false).isSome then `(tactic| (try (repeat' derive_timed_cases_data)))
+    else `(tactic| skip)
   let mkClose (lemmas : Array (TSyntax `Lean.Parser.Tactic.simpLemma)) (disch : Bool) :
       TermElabM (TSyntax `tactic) :=
     if hatLemmas.isEmpty || !disch then
-      `(tactic| ((try simp only [$lemmas,*, *]) <;> (try (repeat' split)) <;>
+      `(tactic| ((try simp only [$lemmas,*, *]) <;> (try (repeat' split)) <;> $casesSplit <;>
         (try simp only [$lemmas,*, *]) <;> (try rfl)))
     else
       `(tactic| ((try simp (disch := (intros; simp only [$lemmas,*])) only [$lemmas,*, *]) <;>
-        (try (repeat' split)) <;>
+        (try (repeat' split)) <;> $casesSplit <;>
         (try simp (disch := (intros; simp only [$lemmas,*])) only [$lemmas,*, *]) <;>
         (try rfl)))
   let close ← mkClose lemmas recursive
