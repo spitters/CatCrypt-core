@@ -6,6 +6,7 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Crypto.ForkingLemma
+public import Mathlib.Data.FinEnum
 
 /-!
 # Tree-forking lemma for multi-round public-coin interactions
@@ -16,8 +17,8 @@ error of Attema–Cramer–Kohl.
 
 ## Model
 
-A round (`Round`) has a finite nonempty challenge set `C`, a prover message type
-`M` and an arity `k`. A deterministic prover strategy (`Strategy Y rs`) for the
+A round (`Round`) has a finite nonempty challenge set `C` with a fixed enumeration
+(`FinEnum C`), a prover message type `M` and an arity `k`. A deterministic prover strategy (`Strategy Y rs`) for the
 round list `rs` sends a message at each round and, after the last challenge, an
 output `Y`. A probabilistic prover is `P : SPComp (Strategy Y rs)`: a distribution
 over strategies, which is the random-tape view of a prover that the rewinding
@@ -34,10 +35,11 @@ the challenges on its path.
 ## Extractor
 
 `extract` is the rewinding extractor on a strategy: at a node of round `i` it
-rewinds the prover once for each challenge in `Cᵢ` (at most `|Cᵢ|` rewinds per
-node, so at most `∏ |Cᵢ|` prover runs in total), keeps the challenges whose
-subtree extraction succeeds, and returns a node built from the first `kᵢ` of them
-when there are at least `kᵢ`. `treeExtractor P` runs it on a strategy drawn from
+rewinds the prover once for each challenge in `Cᵢ`, in the order of the enumeration
+`FinEnum.toList Cᵢ` (at most `|Cᵢ|` rewinds per node, so at most `∏ |Cᵢ|` prover
+runs in total), keeps the challenges whose subtree extraction succeeds together with
+the extracted subtree, and returns a node whose `j`-th child is the `j`-th kept pair
+when at least `kᵢ` are kept. Each sub-extraction is computed once. `treeExtractor P` runs it on a strategy drawn from
 `P`. Every output tree is accepting and consistent (`extract_sound`).
 
 ## Main results
@@ -79,7 +81,9 @@ open scoped ENNReal
 
 /-- One round of a public-coin interaction: the prover sends a message of type `M`,
 the verifier answers with a uniform challenge from the finite nonempty set `C`, and
-special soundness asks for `k` distinct challenges at this round. -/
+special soundness asks for `k` distinct challenges at this round. The challenge set
+carries an enumeration (`FinEnum C`), the order in which the extractor tries the
+challenges; its `Fintype` instance is the one Mathlib derives from it. -/
 structure Round : Type 1 where
   /-- Challenge set. -/
   C : Type
@@ -87,10 +91,10 @@ structure Round : Type 1 where
   M : Type
   /-- Arity of the transcript tree at this round. -/
   k : ℕ
-  [fintype : Fintype C]
+  [finEnum : FinEnum C]
   [nonempty : Nonempty C]
 
-attribute [instance] Round.fintype Round.nonempty
+attribute [instance] Round.finEnum Round.nonempty
 
 /-- Full transcript of the rounds `rs`: one message and one challenge per round. -/
 def Transcript : List Round → Type
@@ -138,20 +142,65 @@ noncomputable def runAccept : (rs : List Round) → (Transcript rs → Y → Boo
         runAccept rs (fun t y => V (s.1, c, t) y) (s.2 c)
 
 /-- The rewinding tree extractor on a deterministic strategy. At a node of round `r`
-it runs the sub-extractor once for every challenge in `r.C`, and succeeds with the
-first `r.k` challenges (in the order of `Finset.equivFin`) whose sub-extraction
-succeeds, when there are at least `r.k` of them. -/
-noncomputable def extract : (rs : List Round) → (Transcript rs → Y → Bool) →
+it runs the sub-extractor once for every challenge of `r.C`, in the order of
+`FinEnum.toList r.C`, keeps the pairs `(c, T)` whose sub-extraction at `c` returned
+the tree `T`, and succeeds when at least `r.k` pairs are kept; the `j`-th child of the
+returned node is the `j`-th kept pair. -/
+def extract : (rs : List Round) → (Transcript rs → Y → Bool) →
     Strategy Y rs → Option (Tree Y rs)
   | [], V, s => if V () s then some s else none
   | r :: rs, V, s =>
-      if h : r.k ≤ (Finset.univ.filter fun c : r.C =>
-          (extract rs (fun t y => V (s.1, c, t) y) (s.2 c)).isSome).card then
-        some (s.1, fun j =>
-          let c := (Finset.equivFin _).symm (Fin.castLE h j)
-          (c.1, (extract rs (fun t y => V (s.1, c.1, t) y) (s.2 c.1)).get
-            (Finset.mem_filter.mp c.2).2))
+      let L := (FinEnum.toList r.C).filterMap fun c =>
+        (extract rs (fun t y => V (s.1, c, t) y) (s.2 c)).map fun T => (c, T)
+      if h : r.k ≤ L.length then
+        some (s.1, fun j => L.get (Fin.castLE h j))
       else none
+
+/-- The challenges kept by `filterMap` with a pairing function are the challenges on
+which the function succeeds. -/
+theorem map_fst_filterMap_pair {α β : Type} (f : α → Option β) : ∀ l : List α,
+    (l.filterMap fun c => (f c).map fun T => (c, T)).map Prod.fst =
+      l.filter fun c => (f c).isSome
+  | [] => rfl
+  | c :: l => by
+      cases hf : f c <;>
+        simp [hf, map_fst_filterMap_pair f l]
+
+/-- A kept pair `(c, T)` records a successful call `f c = some T`. -/
+theorem mem_filterMap_pair {α β : Type} (f : α → Option β) (l : List α) (c : α) (T : β)
+    (h : (c, T) ∈ l.filterMap fun c => (f c).map fun T => (c, T)) : f c = some T := by
+  obtain ⟨a, -, ha⟩ := List.mem_filterMap.mp h
+  obtain ⟨T', hT', hEq⟩ := Option.map_eq_some_iff.mp ha
+  cases hEq
+  exact hT'
+
+/-- The number of challenges of the enumeration satisfying `p` is the cardinality of
+the corresponding filter of `Finset.univ`. -/
+theorem length_filter_toList {C : Type} [FinEnum C] (p : C → Bool) :
+    ((FinEnum.toList C).filter p).length = (Finset.univ.filter fun c => p c = true).card := by
+  rw [← List.toFinset_card_of_nodup ((FinEnum.nodup_toList).filter _)]
+  congr 1
+  ext c
+  simp
+
+/-- Unfolding of `extract` at a node of round `r`. -/
+theorem extract_cons_eq (r : Round) (rs : List Round)
+    (V : Transcript (r :: rs) → Y → Bool) (s : Strategy Y (r :: rs)) :
+    extract (r :: rs) V s =
+      let L := (FinEnum.toList r.C).filterMap fun c =>
+        (extract rs (fun t y => V (s.1, c, t) y) (s.2 c)).map fun T => (c, T)
+      if h : r.k ≤ L.length then some (s.1, fun j => L.get (Fin.castLE h j)) else none :=
+  rfl
+
+/-- The number of kept pairs at a node is the number of challenges with a successful
+sub-extraction. -/
+theorem extract_length_kept (r : Round) (rs : List Round)
+    (V : Transcript (r :: rs) → Y → Bool) (s : Strategy Y (r :: rs)) :
+    ((FinEnum.toList r.C).filterMap fun c =>
+        (extract rs (fun t y => V (s.1, c, t) y) (s.2 c)).map fun T => (c, T)).length =
+      (Finset.univ.filter fun c : r.C =>
+        (extract rs (fun t y => V (s.1, c, t) y) (s.2 c)).isSome).card := by
+  rw [← List.length_map (f := Prod.fst), map_fst_filterMap_pair, length_filter_toList]
 
 /-- Extraction at a leaf succeeds exactly when `V` accepts. -/
 theorem extract_nil_isSome (V : Transcript [] → Y → Bool) (s : Strategy Y []) :
@@ -166,10 +215,11 @@ theorem extract_cons_isSome (r : Round) (rs : List Round)
     (extract (r :: rs) V s).isSome = true ↔
       r.k ≤ (Finset.univ.filter fun c : r.C =>
         (extract rs (fun t y => V (s.1, c, t) y) (s.2 c)).isSome).card := by
-  simp only [extract]
+  rw [extract_cons_eq, ← extract_length_kept]
+  dsimp only
   split_ifs with h
   · exact iff_of_true rfl h
-  · simp [h]
+  · exact iff_of_false Bool.false_ne_true h
 
 /-- Every tree output by the extractor is accepting and consistent with the
 strategy. -/
@@ -182,15 +232,29 @@ theorem extract_sound : ∀ (rs : List Round) (V : Transcript rs → Y → Bool)
       cases hT
       exact ⟨hV, rfl⟩
   | r :: rs, V, s, T, hT => by
-      simp only [extract] at hT
+      rw [extract_cons_eq] at hT
+      dsimp only at hT
       split_ifs at hT with h
       cases hT
+      set L := (FinEnum.toList r.C).filterMap fun c =>
+        (extract rs (fun t y => V (s.1, c, t) y) (s.2 c)).map fun T => (c, T) with hL
+      have hmem : ∀ j : Fin r.k,
+          extract rs (fun t y => V (s.1, (L.get (Fin.castLE h j)).1, t) y)
+            (s.2 (L.get (Fin.castLE h j)).1) = some (L.get (Fin.castLE h j)).2 :=
+        fun j => mem_filterMap_pair (fun c => extract rs (fun t y => V (s.1, c, t) y) (s.2 c))
+          (FinEnum.toList r.C) _ _ (List.get_mem L _)
       refine ⟨⟨?_, fun j => ?_⟩, rfl, fun j => ?_⟩
       · intro j₁ j₂ hj
-        exact (Fin.castLE_injective h) ((Finset.equivFin _).symm.injective
-          (Subtype.ext hj))
-      · exact (extract_sound rs _ _ _ (Option.some_get _).symm).1
-      · exact (extract_sound rs _ _ _ (Option.some_get _).symm).2
+        have hnd : (L.map Prod.fst).Nodup := by
+          rw [hL, map_fst_filterMap_pair]
+          exact FinEnum.nodup_toList.filter _
+        have key : ∀ i₁ i₂ : Fin L.length, (L.get i₁).1 = (L.get i₂).1 → i₁ = i₂ := by
+          intro i₁ i₂ he
+          exact Fin.ext ((hnd.getElem_inj_iff (hi := by simp) (hj := by simp)).mp
+            (by simpa using he))
+        exact Fin.castLE_injective h (key _ _ hj)
+      · exact (extract_sound rs _ _ _ (hmem j)).1
+      · exact (extract_sound rs _ _ _ (hmem j)).2
 
 /-! ## Knowledge error -/
 
@@ -253,7 +317,7 @@ theorem knowledgeError_lt_one (rs : List Round)
   exact ENNReal.sub_lt_self ENNReal.one_ne_top one_ne_zero (hpos rs hk)
 
 /-- For a single round of arity 2 the knowledge error is `1/|C|`. -/
-theorem knowledgeError_single_two (C : Type) [Fintype C] [Nonempty C] (M : Type) :
+theorem knowledgeError_single_two (C : Type) [FinEnum C] [Nonempty C] (M : Type) :
     knowledgeError [{ C := C, M := M, k := 2 }] = (Fintype.card C : ℝ≥0∞)⁻¹ := by
   simp only [knowledgeError, survival_cons, survival_nil, mul_one, Round.survival]
   have hle : (Fintype.card C : ℝ≥0∞)⁻¹ ≤ 1 := by
@@ -460,11 +524,11 @@ section Fork
 
 open ForkingLemma
 
-variable {X Cm R : Type} [Fintype R] [Nonempty R]
+variable {X Cm R : Type} [FinEnum R] [Nonempty R]
 
 /-- The single round of the two-branch forking lemma: challenge set `R`, no
 prover message (the commitment is part of the strategy draw), arity `2`. -/
-def forkRound (R : Type) [Fintype R] [Nonempty R] : Round := { C := R, M := Unit, k := 2 }
+def forkRound (R : Type) [FinEnum R] [Nonempty R] : Round := { C := R, M := Unit, k := 2 }
 
 theorem knowledgeError_forkRound :
     knowledgeError [forkRound R] = (Fintype.card R : ℝ≥0∞)⁻¹ :=
