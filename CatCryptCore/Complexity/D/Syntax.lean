@@ -28,13 +28,35 @@ Terms `Tm Γ τ` are intrinsically typed and scoped: `Γ : List Ty` is the conte
 and `seq`; literals `natLit` and `lit` (ground values of type `FTy`); primitive operations
 `prim` (`Prim`); pairs with `fst`, `snd`; sums with `inl`, `inr` and `case`; `ite`; lists with
 `nil`, `cons` and the constructor match `lcase`; the recursion schemes `foldl` (over a list)
-and `iter` (over `ℕ`); the effects `sample`, `get`, `set`, `query` and `fail`. An effect is an
+and `iter` (over `ℕ`); the constructors `con` and the eliminator `fold` of the inductive types
+`mu S`; the effects `sample`, `get`, `set`, `query` and `fail`. An effect is an
 expression in call-by-value style (Moggi's λc): `letE (sample f) b` samples and continues with
 the D-term `b`, which is the continuation of the effect.
 
+## Inductive types
+
+A signature `S : Sig` is a list of constructors, each with a field type `a : Ty` and recursive
+positions `k : Option FTy`: none, or one child per element of a finite ground type `f`. The first
+constructor has no recursive position, so that `mu S` is inhabited (`Val.default`); every
+inductive type with a constructor without recursive argument has such a signature, its
+constructors reordered. Lists, binary trees (`some .bool`), oracle trees whose answers range
+over a finite ground type `r` (`some r`) and strategies with challenges in a finite ground type
+are instances; `list` is kept as a type of its own. The values of `mu S` are the W-type of the
+shapes and positions of `S` (`Sig.den`).
+
+* `con hS x`: the node of the constructor that the argument `x : S.conTy (mu S)` selects (a
+  sum over the constructors, the first innermost); a constructor with positions `some f` takes
+  its field and a function from `f` to its children.
+* `fold hS g x`: the eliminator at a constant motive `c`, a paramorphism: `g : S.stepsTy (mu S)
+  c` pairs one step function per constructor, which receives the field, and for positions
+  `some f` the children and the recursive results as functions of the positions. A case
+  analysis on a value of `mu S` is the `fold` whose steps do not apply the recursive results.
+
+Both require a first-order signature (`hS : S.FO`): the fields of a node are data.
+
 ## Recursion
 
-D has no general fixed point. Recursion is structural, through `foldl` and `iter`, so that
+D has no general fixed point. Recursion is structural, through `foldl`, `iter` and `fold`, so that
 every term denotes a total function and the evaluator is defined by structural recursion on
 the term without fuel. For the reflection of Lean definitions (G3b) this means that a
 definition by structural recursion on `List` or `ℕ` is reflected through `foldl`, `iter` or
@@ -70,6 +92,10 @@ row G3d):
 
 * `Ty`, `Val`: the types and their values; a function value is a Lean function
   `Val a → CTree (Val b)` into costed trees.
+* `Sig`, `RecPos`, `Sig.den`, `Val.default`: signatures of inductive types, their recursive
+  positions, shapes and positions, and an inhabitant of every type.
+* `Sig.conTy`, `Sig.stepsTy`: the argument type of the constructors and the type of the step
+  functions of an eliminator.
 * `Var`, `Env`: variables and environments.
 * `Prim`, `Prim.apply`, `Prim.cost`: the primitive operations, their functions and their
   costs.
@@ -86,6 +112,8 @@ namespace CatCrypt.Complexity.D
 
 /-! ## Types and values -/
 
+mutual
+
 /-- The types of D. -/
 inductive Ty : Type where
   /-- A finite ground type. -/
@@ -100,7 +128,23 @@ inductive Ty : Type where
   | arr (a b : Ty)
   /-- Lists. -/
   | list (a : Ty)
-  deriving DecidableEq
+  /-- The inductive type of the signature `S`: its values are the well-founded trees whose
+  nodes are the constructors of `S`. -/
+  | mu (S : Sig)
+
+/-- Signatures of polynomial inductive types: a list of constructors, the first of which has no
+recursive position (so that the type is inhabited), each with a field type and the recursive
+positions `k`: none (`k = none`) or a family indexed by a finite ground type (`k = some f`, one
+child per element of `f.den`). -/
+inductive Sig : Type where
+  /-- The first constructor, with the field type `a` and no recursive position. -/
+  | base (a : Ty)
+  /-- A further constructor, with the field type `a` and the recursive positions `k`. -/
+  | ext (S : Sig) (a : Ty) (k : Option FTy)
+
+end
+
+deriving instance DecidableEq for Ty
 
 namespace Ty
 
@@ -113,19 +157,37 @@ abbrev word (w : ℕ) : Ty := base (.word w)
 /-- The residues modulo `n + 1`. -/
 abbrev fin (n : ℕ) : Ty := base (.fin n)
 
-/-- First-order types: no function type occurs. -/
-def FO : Ty → Prop
-  | base _ => True
-  | nat => True
-  | prod a b => a.FO ∧ b.FO
-  | sum a b => a.FO ∧ b.FO
-  | arr _ _ => False
-  | list a => a.FO
-
 end Ty
 
+mutual
+
+/-- First-order types: no function type occurs. -/
+def Ty.FO : Ty → Prop
+  | .base _ => True
+  | .nat => True
+  | .prod a b => a.FO ∧ b.FO
+  | .sum a b => a.FO ∧ b.FO
+  | .arr _ _ => False
+  | .list a => a.FO
+  | .mu S => S.FO
+
+/-- First-order signatures: every field type is first-order. -/
+def Sig.FO : Sig → Prop
+  | .base a => a.FO
+  | .ext S a _ => S.FO ∧ a.FO
+
+end
+
+/-- The recursive positions of a constructor: none, or the elements of a finite ground type. -/
+def RecPos : Option FTy → Type
+  | none => Empty
+  | some f => f.den
+
+mutual
+
 /-- The values of a type. A function value is a Lean function into costed trees; the
-evaluator produces such functions only from `lam`, so their costs are those of the bodies. -/
+evaluator produces such functions only from `lam`, so their costs are those of the bodies. The
+values of `mu S` are the W-type of the shapes and positions of `S` (`Sig.den`). -/
 def Val : Ty → Type
   | .base f => f.den
   | .nat => ℕ
@@ -133,6 +195,65 @@ def Val : Ty → Type
   | .sum a b => Val a ⊕ Val b
   | .arr a b => Val a → CTree (Val b)
   | .list a => List (Val a)
+  | .mu S => WType (Sig.den S).2
+
+/-- The shapes and positions of a signature: a shape is a constructor with the value of its
+field (a sum over the constructors), its positions those of the constructor. -/
+def Sig.den : Sig → (A : Type) × (A → Type)
+  | .base a => ⟨Val a, fun _ => Empty⟩
+  | .ext S a k => ⟨(Sig.den S).1 ⊕ Val a, Sum.elim (Sig.den S).2 fun _ => RecPos k⟩
+
+end
+
+mutual
+
+/-- A value of every type: the inhabitant built from the first constructor of a signature. -/
+def Val.default : (τ : Ty) → Val τ
+  | .base f => (FTy.instInhabited f).default
+  | .nat => (0 : ℕ)
+  | .prod a b => (Val.default a, Val.default b)
+  | .sum a _ => Sum.inl (Val.default a)
+  | .arr _ _ => fun _ => .fail
+  | .list _ => ([] : List _)
+  | .mu S => WType.mk (Sig.leaf S).1 fun p => ((Sig.leaf S).2 p).elim
+
+/-- A shape of a signature without positions: the first constructor at a value of its field. -/
+def Sig.leaf : (S : Sig) → (x : (Sig.den S).1) × ((Sig.den S).2 x → Empty)
+  | .base a => ⟨Val.default a, id⟩
+  | .ext S _ _ => ⟨Sum.inl (Sig.leaf S).1, (Sig.leaf S).2⟩
+
+end
+
+/-! ## Constructor and eliminator types -/
+
+namespace Sig
+
+/-- The argument type of the constructor with field `a` and positions `k`, its children of type
+`X`: the field, and for positions `some f` a function from `f` to the children. -/
+def kidTy (a : Ty) : Option FTy → Ty → Ty
+  | none, _ => a
+  | some f, X => .prod a (.arr (.base f) X)
+
+/-- The argument type of the step at the constructor with field `a` and positions `k`, its
+children of type `X` and its recursive results of type `c`: the field, and for positions
+`some f` the children and the recursive results as functions of the positions. -/
+def altTy (a : Ty) : Option FTy → Ty → Ty → Ty
+  | none, _, _ => a
+  | some f, X, c => .prod a (.prod (.arr (.base f) X) (.arr (.base f) c))
+
+/-- The argument of a constructor of `S`, its children of type `X`: the sum over the constructors,
+the first innermost. -/
+def conTy : Sig → Ty → Ty
+  | .base a, _ => a
+  | .ext S a k, X => .sum (S.conTy X) (kidTy a k X)
+
+/-- The step functions of an eliminator of `S` into `c`, the children of type `X`: one function
+per constructor, paired, the first innermost. -/
+def stepsTy : Sig → Ty → Ty → Ty
+  | .base a, _, c => .arr a c
+  | .ext S a k, X, c => .prod (S.stepsTy X c) (.arr (altTy a k X c) c)
+
+end Sig
 
 /-! ## Variables and environments -/
 
@@ -313,6 +434,13 @@ inductive Tm : List Ty → Ty → Type where
   | set {Γ : List Ty} (n : ℕ) (f : FTy) : Tm Γ (.base f) → Tm Γ .unit
   | query {Γ : List Ty} (d r : FTy) : Tm Γ (.base d) → Tm Γ (.base r)
   | fail {Γ : List Ty} {τ : Ty} : Tm Γ τ
+  /-- A constructor of `mu S`, from the argument of its constructor type `S.conTy (mu S)`; the
+  children at its recursive positions are given by a function of the positions. -/
+  | con {Γ : List Ty} {S : Sig} (hS : S.FO) : Tm Γ (S.conTy (.mu S)) → Tm Γ (.mu S)
+  /-- The eliminator of `mu S` at the constant motive `c`, with one step function per
+  constructor; a step receives the field, the children and the recursive results. -/
+  | fold {Γ : List Ty} {S : Sig} {c : Ty} (hS : S.FO) :
+      Tm Γ (S.stepsTy (.mu S) c) → Tm Γ (.mu S) → Tm Γ c
 
 namespace Tm
 
@@ -366,6 +494,8 @@ def Tm.rename {Γ Δ : List Ty} {τ : Ty} : Tm Γ τ → Ren Γ Δ → Tm Δ τ
   | .set n f x, r => .set n f (x.rename r)
   | .query d r' x, r => .query d r' (x.rename r)
   | .fail, _ => .fail
+  | .con hS x, r => .con hS (x.rename r)
+  | .fold hS g x, r => .fold hS (g.rename r) (x.rename r)
 
 /-- A closed term in any context. -/
 def Tm.weaken {Γ : List Ty} {τ : Ty} (t : Tm [] τ) : Tm Γ τ :=

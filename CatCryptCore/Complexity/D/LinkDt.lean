@@ -543,6 +543,7 @@ theorem Ty.hat_eq_val : ∀ τ : Ty, τ.FO → τ.hat = Val τ
   | .sum a b, h => congrArg₂ Sum (Ty.hat_eq_val a h.1) (Ty.hat_eq_val b h.2)
   | .arr _ _, h => h.elim
   | .list a, h => congrArg List (Ty.hat_eq_val a h)
+  | .mu _, _ => rfl
 
 theorem cast_prod {A A' B B' : Type} (pa : A = A') (pb : B = B') (p : (A × B) = (A' × B'))
     (x : A × B) : cast p x = (cast pa x.1, cast pb x.2) := by
@@ -587,6 +588,7 @@ theorem Ty.toVal_eq_cast : ∀ (τ : Ty) (h : τ.FO) (u : τ.hat),
     have ha : a.toVal h = cast (Ty.hat_eq_val a h) := funext fun x => Ty.toVal_eq_cast a h x
     rw [ha]
     exact (cast_list (Ty.hat_eq_val a h) _ u).symm
+  | .mu _, _, _ => rfl
 
 /-- At a first-order type, the translated value of a value of D is its cast. -/
 theorem Ty.ofVal_eq_cast : ∀ (τ : Ty) (h : τ.FO) (v : Val τ),
@@ -612,6 +614,7 @@ theorem Ty.ofVal_eq_cast : ∀ (τ : Ty) (h : τ.FO) (v : Val τ),
       funext fun x => Ty.ofVal_eq_cast a h x
     rw [ha]
     exact (cast_list (Ty.hat_eq_val a h).symm _ v).symm
+  | .mu _, _, _ => rfl
 
 /-- At a first-order type, a value of D related to a translated value is its cast. -/
 theorem Sim.cast_eq (τ : Ty) (h : τ.FO) {u : τ.hat} {v : Val τ} (hs : Sim τ u v) :

@@ -152,8 +152,8 @@ Lean function `Val a → CTree (Val b)` into costed trees, so the evaluator is a
 interpreter: it is defined by structural recursion on the term, and a closure is produced
 only by evaluating a `lam`.
 
-Recursion is structural: `foldl` over lists, `iter` over `ℕ`, and the constructor match
-`lcase`. There is no general fixed point, so every term denotes a total function and neither
+Recursion is structural: `foldl` over lists, `iter` over `ℕ`, the constructor match
+`lcase`, and the eliminator `fold` of the inductive types `mu S`. There is no general fixed point, so every term denotes a total function and neither
 the evaluator nor the denotation needs fuel. A Lean definition by structural recursion on a
 list or a natural number is reflected through these schemes; a definition by well-founded
 recursion needs a bound on its recursion depth, which becomes the count of an `iter`.
@@ -161,3 +161,27 @@ recursion needs a bound on its recursion depth, which becomes the count of an `i
 Unlike L, which encodes data by Scott encodings and counts their β-steps, D has native
 products, sums, lists and primitive operations; a constructor or a projection costs nothing
 and a branch costs one step, the convention of `derive_timed`.
+
+## Inductive types
+
+`Ty.mu S` is the polynomial inductive type of a signature `S : Sig`: a list of constructors,
+each with a first-order field type and recursive positions that are none or indexed by a finite
+ground type, the first constructor without recursive position. Its values are the W-type of
+its shapes and positions (`Sig.den`). Lists (kept as the type `list` of their own), binary
+trees, oracle trees with answers in a finite ground type and strategies with challenges in a
+finite ground type are instances.
+
+* `con`: a node from the argument of its constructor; the children of a constructor with
+  positions are given by a function of the positions, applied at every position (`tabT`): a
+  constructor costs nothing of its own, its children one β-step and the body each.
+* `fold`: the eliminator at a constant motive, a paramorphism with one step function per
+  constructor, which receives the field, the children and the recursive results; one step per
+  node it visits plus the step function there, the recursive results evaluated when the step
+  applies them, as a call of a structural recursion costs one plus its body. A case analysis
+  is the `fold` that applies no recursive result.
+
+The charges of `Tm.dt` (`TranslateDt`) price `con` by the tabulation of its children
+(`tabCost`, `conHat`) and `fold` by one plus the step at the root and one plus the step at a
+child per application of its result (`foldHat`); the soundness theorem `Tm.dtC_timedSim`
+covers both, by induction on the signature and on the value (`conAt_sim`, `foldW_sim`). Tests:
+`CatCryptCoreTest/Complexity/D/MuTest.lean`.
