@@ -48,6 +48,7 @@ their definitions through `Array.toList`, so their costs are linear in the size.
   `(k + 3) * n + 1` for step costs at most `k` (a registered cost defined by recursion in the
   order of `Fin.foldl_succ`, so that it does not depend on the definition of `Fin.foldl`)
 * `Finset.toList.timedCost_eq` — enumerating `s` costs `s.card + 1`
+* `Finset.card.timedCost_eq` — the cardinality of `s` costs `s.card + 1`
 * `Array.push.timedCost_le`, `Array.getD.timedCost_le`, `Array.get!Internal.timedCost_le` —
   linear bounds in the size
 * `Finset.sum.timedCost_eq_list`, `Finset.prod.timedCost_eq_list` — the registered cost of a
@@ -570,6 +571,25 @@ timed_cost Finset.image := fun (α β : Type _) [DecidableEq β] (_f : α → β
   (s : Finset α) => ∑ i ∈ s, (1 + fCost i) + s.card * (s.card + 1) + 1
 timed_cost Finset.filter := fun (α : Type _) (p : α → Prop) [DecidablePred p]
   (s : Finset α) => s.card + 1
+
+/-! Registered cost of the cardinality. `Finset.card s` is the length of any list representing
+`s`, read in one pass: one unit per element and one more, the cost of enumerating `s`
+(`Finset.toList`). It depends on `s` through its cardinality, so it is well defined on the
+quotient.
+
+The operations on `Finset` whose function argument is priced by its cost companion are those
+whose registered cost takes, after the function `f : α → β`, its companion `fCost : α → ℕ` and
+charges `fCost i` once per element `i`: `Finset.sum`, `Finset.prod` and `Finset.image`. The
+front gives a companion to an argument of function type whose codomain is data; a predicate
+`p : α → Prop` is a type former, which the front treats as static, so `Finset.filter` is not of
+this class and its registered cost charges one unit per decision, not the cost of deciding
+`p`. -/
+timed_cost Finset.card := fun (α : Type _) (s : Finset α) => s.card + 1
+
+/-- The cardinality of `s` costs one unit per element and one more. -/
+theorem Finset.card.timedCost_eq {α : Type*} (s : Finset α) :
+    Finset.card.timedCost α s = s.card + 1 := by
+  simp [Finset.card.timedCost]
 
 /-- Enumerating `s` as a list costs one unit per element and one more. -/
 theorem Finset.toList.timedCost_eq {α : Type*} (s : Finset α) :

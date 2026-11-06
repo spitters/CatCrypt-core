@@ -1068,18 +1068,19 @@ section QuotientRefusal
 
 open CatCrypt.Core
 
-/-- The cardinality of a finite set, an operation on a quotient without a registered cost. -/
-noncomputable def tCardT (s : Finset ℕ) : SPTree ℕ :=
-  SPTree.ret s.card
+/-- The powerset of a finite set, an operation on a quotient without a registered cost. -/
+noncomputable def tPowersetT (s : Finset ℕ) : SPTree (Finset (Finset ℕ)) :=
+  SPTree.ret s.powerset
 
 /--
-error: derive_timed: needs a registered primitive: `Finset.card` is an operation on a quotient
-type (`Finset`, `Multiset`) without a registered cost `Finset.card.timedCost`; the costs of
+error: derive_timed: needs a registered primitive: `Finset.powerset` is an operation on a
+quotient type (`Finset`, `Multiset`) without a registered cost `Finset.powerset.timedCost`; the
+costs of
 `Finset.sum`, `Finset.prod`, `Finset.univ`, `Finset.range` and `Finset.erase` are registered in
 `CatCryptCore.Tactics.StdCosts`, which the module must import
 -/
 #guard_msgs (whitespace := lax) in
-derive_timed tCardT
+derive_timed tPowersetT
 
 end QuotientRefusal
 
