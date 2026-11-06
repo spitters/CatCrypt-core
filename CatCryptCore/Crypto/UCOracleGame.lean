@@ -126,6 +126,35 @@ noncomputable def reduction (P : OProt τ E O Q A) (Z : Env (Strat ζ E O) ζ) :
     OracleAdv Q A Bool :=
   P.reduce Z.input Z.dist Z.input.rounds Z.input.init P.init Z.heap
 
+/-- **Queries of `reduce`.** If every activation of `P` asks at most `m` queries, `reduce` with
+`n` remaining activations asks at most `n * m`. -/
+theorem isQueryBound_reduce (P : OProt τ E O Q A) (Z : Strat ζ E O) (dist : ζ → SPComp Bool)
+    {m : ℕ} (hP : ∀ t e, (P.step t e).IsQueryBound m) :
+    ∀ (n : ℕ) (z : ζ) (t : τ) (h : Heap), (P.reduce Z dist n z t h).IsQueryBound (n * m) := by
+  intro n
+  induction n with
+  | zero => intro z t h o; rcases o with _ | _ <;> trivial
+  | succ n ih =>
+    intro z t h o
+    rcases o with _ | ⟨⟨z₁, e⟩, h₁⟩
+    · trivial
+    · have hb := OracleAdv.isQueryBound_bind (hP t e) (f := fun p =>
+        OracleAdv.rand (Z.obs z₁ p.2 h₁) fun o' => match o' with
+          | none => .ret false
+          | some (z₂, h₂) => P.reduce Z dist n z₂ p.1 h₂) (n := n * m) fun p o' => by
+        rcases o' with _ | ⟨z₂, h₂⟩
+        · trivial
+        · exact ih z₂ p.1 h₂
+      rwa [Nat.add_comm, ← Nat.succ_mul] at hb
+
+/-- **Queries of the reduction of `OProt.oracle`**: one query per activation of the
+environment. -/
+theorem isQueryBound_oracle_reduction (Z : Env (Strat ζ Q A) ζ) :
+    ((OProt.oracle (Q := Q) (A := A)).reduction Z).IsQueryBound Z.input.rounds := by
+  have h := isQueryBound_reduce (OProt.oracle (Q := Q) (A := A)) Z.input Z.dist (m := 1)
+    (fun _ _ _ => trivial) Z.input.rounds Z.input.init () Z.heap
+  rwa [Nat.mul_one] at h
+
 /-- The acceptance probability of a run of `Z` against `P.plug orc s₀` is the probability that
 `reduce` outputs `true` against `orc`. -/
 theorem prTrue_loop_plug (P : OProt τ E O Q A) (orc : S → Q → PMF (A × S)) (s₀ : S)
