@@ -8,6 +8,7 @@ module
 public import CatCryptCore.Crypto.PAKE.CPaceChan
 public import CatCryptCore.Crypto.UCSimulatorTimed
 public import CatCryptCore.Crypto.UCWakeTimed
+public import CatCryptCore.Crypto.UCSimulatorCostPotComp
 public import CatCryptCore.Tactics.DeriveReduction
 public import CatCryptCore.Tactics.DeriveSimulator
 public import CatCryptCore.Tactics.DeriveTimeBound
