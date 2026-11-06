@@ -45,6 +45,7 @@ values (`uniformList`).
 * `extract_ikm_keygen_le`, `extract_salt_keygen_le`, `expand_seq_keygen_le` — for key
   generation whose public part is drawn from `c.μ`, the advantage against the game keyed by
   key generation is at most the advantage at `c.ν` plus `c.δ`
+* `extract_ikm_keygen_bind_le` — the same for the Extract game followed by a continuation
 * `extract_ikm_G25519_le`, `extract_salt_G25519_le`, `expand_seq_G25519_le` — for key
   generation whose public part is `encU (g^e)` with `e` drawn from `signedClamp`, the
   advantage is at most the advantage at the encoding of a uniform element of `G25519 B` plus
@@ -268,6 +269,22 @@ theorem expand_seq_keygen_le (hkg : kg.map Prod.snd = sampleFrom c.μ) (H : HKDF
     A
   rw [show encodedRed id A = A from rfl] at h
   simpa [Expand_Seq_AdvantageK, expandSeqSampled, encodedRed] using h
+
+/-- **Extract keyed by key generation, under a continuation**: a game that runs `k` on the
+Extract output at the input keying material the public part of key generation drawn from
+`c.μ`, against the game that runs `k` on a uniform PRK. The advantage of `A` is at most the
+Extract advantage at the reference sampler `c.ν` of the distinguisher that runs `k` and then
+`A`, plus `c.δ`. -/
+theorem extract_ikm_keygen_bind_le (hkg : kg.map Prod.snd = sampleFrom c.μ) (H : HKDFDef W)
+    (salt : W) {V : Type} (k : W → SPComp V) (A : V → SPComp Bool) :
+    AdvantageA (kg.bind fun x => k (H.extract salt x.2)) (extract_ideal.bind k) A ≤
+      Extract_IKM_AdvantageK H salt c.ν (fun p => (k p).bind A) + c.δ := by
+  have h : (kg.bind fun x => k (H.extract salt x.2)) =
+      (kg.bind fun x => SPComp.pure (H.extract salt x.2)).bind k := by
+    rw [SPComp.bind_assoc]
+    simp only [SPComp.pure_bind]
+  rw [h, CatCrypt.Relational.advantage_factorization]
+  exact extract_ikm_keygen_le kg c hkg H salt _
 
 end Keygen
 
