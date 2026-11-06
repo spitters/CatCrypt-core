@@ -42,6 +42,8 @@ values (`uniformList`).
 
 * `Extract_IKM_AdvantageK_uniform`, `Extract_AdvantageK_uniform`,
   `Expand_Seq_AdvantageK_uniform` — at the uniform sampler, the existing advantages
+* `Extract_IKM_AdvantageK_eq` — at any sampler `μ`, the advantage against one draw from `μ`
+  followed by Extract
 * `extract_ikm_keygen_le`, `extract_salt_keygen_le`, `expand_seq_keygen_le` — for key
   generation whose public part is drawn from `c.μ`, the advantage against the game keyed by
   key generation is at most the advantage at `c.ν` plus `c.δ`
@@ -178,6 +180,16 @@ theorem Extract_IKM_AdvantageK_uniform (H : HKDFDef W) (salt : W) (A : W → SPC
     SampledGame.idealAt, extractIKMSampled, sampleFrom_replicateFin_one_bind,
     sampleFrom_replicateFin_zero_bind, sampleFrom_uniform, Extract_IKM_Advantage,
     extract_ikm_real]
+
+/-- The Extract advantage with the input keying material drawn from `μ` is the advantage
+against one draw from `μ` followed by Extract. -/
+theorem Extract_IKM_AdvantageK_eq (H : HKDFDef W) (salt : W) (μ : SDistr W)
+    (A : W → SPComp Bool) :
+    Extract_IKM_AdvantageK H salt μ A =
+      AdvantageA ((sampleFrom μ).bind fun x => SPComp.pure (H.extract salt x)) extract_ideal A := by
+  simp only [Extract_IKM_AdvantageK, SampledGame.advAt, SampledGame.realAt,
+    SampledGame.idealAt, extractIKMSampled, sampleFrom_replicateFin_one_bind,
+    sampleFrom_replicateFin_zero_bind]
 
 /-- At the uniform sampler, the Extract advantage with the salt drawn from the sampler is
 `Extract_Advantage`. -/
