@@ -25,6 +25,7 @@ sampler `μ` by `μ'` moves the loop by at most `k * tvDist μ μ'`.
 
 * `tvDist_le_one_sub_of_mul_le` — if `c • Q ≤ P` pointwise, then `tvDist P Q ≤ 1 - c`
 * `firstSome_eq_some` — a first success is the success of an element of the sequence
+* `firstSome_eq_none_iff` — the first success is `none` exactly when every value fails
 * `firstSome_eq_map_firstSome` — the first success of a function that factors through `h`
 * `rejectLoop_succ` — one attempt, then the loop of `k` attempts on failure
 * `rejectLoop_bind_pure` — the loop over the image of a sampler
@@ -34,6 +35,11 @@ sampler `μ` by `μ'` moves the loop by at most `k * tvDist μ μ'`.
   k * tvDist μ μ'`
 * `tvDist_uniform_bind_injective_le` — the image of a uniform distribution under an injection
   into `α` is within `(|α| - |β|) / |α|` of uniform on `α`
+* `SDistr.apply_le_add_tvDist`, `apply_some_none_le_tvDist` — the mass of an outcome under two
+  laws differs by at most their distance; a loop fails with probability at most its distance to
+  a law of successes
+* `tvDist_bind_le_of_eq_off`, `advantageA_sampleFrom_bind_le_of_eq_off` — continuations that
+  agree off a set `bad` give distributions and games at distance at most the mass of `bad`
 -/
 
 @[expose] public section
@@ -72,6 +78,14 @@ theorem firstSome_eq_some {X Y : Type*} (f : X → Option Y) :
       rw [hx, Option.none_or] at h
       obtain ⟨i, hi⟩ := firstSome_eq_some f (Fin.tail xs) h
       exact ⟨i.succ, hi⟩
+
+/-- The first success is `none` exactly when every value fails. -/
+theorem firstSome_eq_none_iff {X Y : Type*} (f : X → Option Y) :
+    ∀ {n : ℕ} (xs : Fin n → X), firstSome f xs = none ↔ ∀ i, f (xs i) = none
+  | 0, _ => by simp
+  | _ + 1, xs => by
+    simp only [firstSome, Option.or_eq_none_iff, firstSome_eq_none_iff f (Fin.tail xs),
+      Fin.forall_fin_succ, Fin.tail]
 
 /-- The first success of a function with the argument attached, forgetting the argument, is
 the first success of the function. -/
@@ -264,6 +278,24 @@ private theorem bind_pure_some_apply_none {Y : Type*} (ν : SDistr Y) :
   | none => simp [SDistr.fail_apply_some]
   | some y' => simp [SDistr.pure_apply_some]
 
+/-- The mass of an outcome is at most its mass under `Q` plus `tvDist P Q`. -/
+theorem SDistr.apply_le_add_tvDist {α : Type*} (P Q : SDistr α) (x : Option α) :
+    P x ≤ Q x + tvDist P Q := by
+  classical
+  have hf : ∀ y : Option α, (if y = x then 1 else 0 : ℝ≥0∞) ≤ 1 := fun y => by
+    split_ifs <;> simp
+  have h := le_iSup₂_of_le (f := fun (f : Option α → ℝ≥0∞) (_ : ∀ y, f y ≤ 1) =>
+    absDiff (∑' y, P y * f y) (∑' y, Q y * f y)) (fun y => if y = x then 1 else 0) hf le_rfl
+  simp only [mul_ite, mul_one, mul_zero, tsum_ite_eq] at h
+  exact tsub_le_iff_left.1 ((le_max_left _ _).trans h)
+
+/-- A law on `Option Y` puts on `none` at most its distance to the image of a law under
+`some`. -/
+theorem apply_some_none_le_tvDist {Y : Type*} (P : SDistr (Option Y)) (ν : SDistr Y) :
+    P (some none) ≤ tvDist P (ν.bind fun y => SDistr.pure (some y)) := by
+  have h := SDistr.apply_le_add_tvDist P (ν.bind fun y => SDistr.pure (some y)) (some none)
+  rwa [bind_pure_some_apply_none, zero_add] at h
+
 /-- **The bounded rejection loop is within `r^k` of the target law**: when one attempt
 succeeds with value `y` with probability at least `s * ν y` and fails with probability at least
 `r`, `s + r = 1`, the first success among `k` attempts is at total variation distance at most
@@ -331,5 +363,52 @@ theorem tvDist_uniform_bind_injective_le {α β : Type} [Fintype α] [Fintype β
       div_eq_mul_inv]
     rw [Finset.filter_not, Finset.filter_mem_eq_inter, Finset.univ_inter, Finset.card_sdiff,
       Finset.inter_univ, Finset.card_univ, hS]
+
+/-! ## Identical until a bad event -/
+
+/-- The mass of `y` under the image of `d` by `g` is the mass of the preimage of `y`. -/
+theorem SDistr.bind_pure_apply_eq_tsum_indicator {α β : Type*} (d : SDistr α) (g : α → β)
+    (y : β) :
+    (d.bind fun x => SDistr.pure (g x)) (some y) =
+      ∑' x, {x | g x = y}.indicator (fun x => d (some x)) x := by
+  classical
+  rw [SDistr.bind, PMF.bind_apply, SDistr.tsum_option_eq_add]
+  simp only [SDistr.fail_apply_some, mul_zero, zero_add, SDistr.pure_apply_some, mul_ite,
+    mul_one, Set.indicator, Set.mem_ofPred_eq]
+
+/-- **Identical until bad**: continuations that agree off a set `bad` give distributions at
+total variation distance at most the mass of `bad`. -/
+theorem tvDist_bind_le_of_eq_off {α β : Type*} (d : SDistr α) (K₁ K₂ : α → SDistr β)
+    (bad : Set α) (h : ∀ a ∉ bad, K₁ a = K₂ a) :
+    tvDist (d.bind K₁) (d.bind K₂) ≤ ∑' a, bad.indicator (fun a => d (some a)) a := by
+  refine iSup₂_le fun f hf => ?_
+  rw [SDistr.tsum_bind_mul, SDistr.tsum_bind_mul]
+  have key : ∀ K K' : α → SDistr β, (∀ a ∉ bad, K a = K' a) →
+      d none * f none + ∑' a, d (some a) * ∑' y, K a y * f y ≤
+        d none * f none + ∑' a, d (some a) * ∑' y, K' a y * f y +
+          ∑' a, bad.indicator (fun a => d (some a)) a := by
+    intro K K' hK
+    rw [add_assoc, ← ENNReal.tsum_add]
+    refine add_le_add le_rfl (ENNReal.tsum_le_tsum fun a => ?_)
+    by_cases ha : a ∈ bad
+    · rw [Set.indicator_of_mem ha]
+      exact le_add_left (mul_le_of_le_one_right' (tsum_mul_le_one' (K a) f hf))
+    · rw [hK a ha, Set.indicator_of_notMem ha, add_zero]
+  exact absDiff_le_of_le_add' (key K₁ K₂ h) (key K₂ K₁ fun a ha => (h a ha).symm)
+
+/-- **Identical until bad for games**: two games that draw from `μ` and continue identically
+off a set `bad` have advantage at most the mass of `bad`. -/
+theorem advantageA_sampleFrom_bind_le_of_eq_off {X V : Type} (μ : SDistr X)
+    (k₁ k₂ : X → SPComp V) (bad : Set X) (h : ∀ x ∉ bad, k₁ x = k₂ x)
+    (A : V → SPComp Bool) :
+    AdvantageA ((sampleFrom μ).bind k₁) ((sampleFrom μ).bind k₂) A ≤
+      ∑' x, bad.indicator (fun x => μ (some x)) x := by
+  have hA : AdvantageA ((sampleFrom μ).bind k₁) ((sampleFrom μ).bind k₂) A =
+      absDiff (prTrue (((sampleFrom μ).bind k₁).bind A) Heap.empty)
+        (prTrue (((sampleFrom μ).bind k₂).bind A) Heap.empty) := rfl
+  rw [hA]
+  refine (absDiff_prTrue_bind_le_tvDist_gen _ _ A Heap.empty).trans ?_
+  rw [sampleFrom_bind_apply, sampleFrom_bind_apply]
+  exact tvDist_bind_le_of_eq_off μ _ _ bad fun x hx => by rw [h x hx]
 
 end CatCrypt.Crypto
