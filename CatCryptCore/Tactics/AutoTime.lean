@@ -122,7 +122,9 @@ context), and, when it mentions variables that the right side does not (a bound 
 companion), its bound free of them (`boundFree?`: a premise `∀ x y, fCost x y ≤ ?k` closed by
 the bound of the companion at fresh arguments, a value of `Fin n` by `n`, the length of a list
 built by `List.ofFn`, `map` or `zip` by its equation or by a theorem tagged `@[length_bound]`,
-a length by an invariant); for every length `l.length` of the leaf, the instance of each
+a length by an invariant, the length of a list defined by cases whose cases are list literals
+by the longest literal (`lengthByCases?`); a premise `∀ y ∈ M.map f, P y` read at the members
+of `M`); for every length `l.length` of the leaf, the instance of each
 theorem tagged `@[length_bound]` at it (`addLengthFacts`). A summand
 `m₁` of the left side that is a `match` and a summand `m₂` of the right side that is a `match`
 of the same matcher on the same discriminants are compared by cases
@@ -177,6 +179,7 @@ the current namespaces.
 * `time_bound_simps` — the simp set of unfolding equations
 * `@[length_bound]` — the registry of bounds `(…).length ≤ b` read by `boundFree?` and
   `addLengthFacts`
+* `lengthByCases?` — the length of a list defined by cases, bounded by its longest literal
 -/
 
 public section
@@ -1407,12 +1410,86 @@ def lengthEqLemmas : List Name := [``List.length_ofFn, ``List.length_map, ``List
   ``List.length_zipWith, ``List.length_range, ``List.length_replicate, ``List.length_cons,
   ``List.length_append, ``List.length_reverse]
 
+/-- Whether `ty` is a premise over the members of a map, `∀ y, y ∈ List.map f l → P y`. -/
+def isMemMapPremise (ty : Expr) : Bool :=
+  match ty with
+  | .forallE _ _ (.forallE _ m _ _) _ =>
+    m.isAppOfArity ``Membership.mem 5 &&
+      ((m.getArg! 3).isAppOfArity ``List.map 4 || (m.getArg! 4).isAppOfArity ``List.map 4)
+  | _ => false
+
+/-- The number of elements of a list literal `a₁ :: … :: aₙ :: []`. -/
+partial def literalLength? (l : Expr) : Option Nat :=
+  if l.isAppOfArity ``List.nil 1 then some 0
+  else if l.isAppOfArity ``List.cons 3 then (literalLength? (l.getArg! 2)).map (· + 1)
+  else none
+
+/-- The cases of the goal `g : List.length X ≤ r` of a list `X` defined by cases: a list literal
+is a leaf, whose length is recorded in `leaves` and, when `close`, compared with `r` by
+`Nat.ble` (`Nat.le_of_ble_eq_true`); an `if`, an `if h :` and a `match` are split
+(`splitIfTarget?`, `Split.splitMatch`); any other list has its head definition unfolded. `false`
+when a case is none of these. -/
+partial def lengthCasesGoal (g : MVarId) (close : Bool) (leaves : IO.Ref (Array Nat))
+    (fuel : Nat := 16) : MetaM Bool := g.withContext do
+  if fuel == 0 then return false
+  let ty ← instantiateMVars (← g.getType)
+  let some (l, r) := natLe? ty | return false
+  unless l.isAppOfArity ``List.length 2 do return false
+  let X := l.appArg!.headBeta
+  if let some n := literalLength? (← whnfR X) then
+    leaves.modify (·.push n)
+    if close then
+      g.assign (mkApp3 (mkConst ``Nat.le_of_ble_eq_true) l r (← mkEqRefl (mkConst ``Bool.true)))
+    return true
+  if X.isAppOfArity ``ite 5 || X.isAppOfArity ``dite 5 then
+    let some (s₁, s₂) ← splitIfTarget? g | return false
+    for gi in [s₁.mvarId, s₂.mvarId] do
+      unless ← lengthCasesGoal gi close leaves (fuel - 1) do return false
+    return true
+  if (← matchMatcherApp? X).isSome then
+    let gs ← try Split.splitMatch g X catch _ => return false
+    for gi in gs do
+      unless ← lengthCasesGoal gi close leaves (fuel - 1) do return false
+    return true
+  let some n := X.getAppFn.constName? | return false
+  unless (← getConstInfo n).isDefinition do return false
+  let some X' ← withDefault (unfoldDefinition? X) | return false
+  let X' := X'.headBeta
+  if X' == X then return false
+  let l' ← mkAppM ``List.length #[X']
+  lengthCasesGoal (← g.replaceTargetDefEq (← mkAppM ``LE.le #[l', r])) close leaves (fuel - 1)
+
+/-- The bound of the length `e = (f as).length` of a list defined by cases, each case a list
+literal (a function returning `[a]` at one constructor and `[]` at the others): the maximum `n`
+of the lengths of the literals (found by the case splits of `lengthCasesGoal`), with the proof
+of `e ≤ n` by the same splits, each case closed by `Nat.ble`. -/
+def lengthByCases? (e : Expr) : MetaM (Option (Expr × Expr)) := do
+  let s ← saveState
+  try
+    let leaves ← IO.mkRef #[]
+    let g₀ ← mkFreshExprSyntheticOpaqueMVar (← mkAppM ``LE.le #[e, mkNatLit 0])
+    let found ← lengthCasesGoal g₀.mvarId! false leaves
+    let n := (← leaves.get).foldl max 0
+    s.restore
+    unless found do return none
+    let b := mkNatLit n
+    let g ← mkFreshExprSyntheticOpaqueMVar (← mkAppM ``LE.le #[e, b])
+    unless ← lengthCasesGoal g.mvarId! true (← IO.mkRef #[]) do s.restore; return none
+    let pf ← instantiateMVars g
+    if pf.hasExprMVar then s.restore; return none
+    return some (b, pf)
+  catch _ =>
+    s.restore
+    return none
+
 mutual
 
 /-- Close the proposition `mid` from the context: a local hypothesis whose type unifies with
 it, or, for `∀ x, l ≤ ?r` with `?r` unassigned, `?r := l` by reflexivity when `l` does not
 mention `x`, and (when `deep`) `?r` the bound of `l` free of `x` and of the variables `outer`
-with its proof (`boundFree?`). -/
+with its proof (`boundFree?`). When these fail, a premise
+`∀ y ∈ M.map f, P y` (with `deep`) is closed by `List.forall_mem_map` from
+`∀ a ∈ M, P (f a)`, closed in turn. -/
 partial def closeByContext (mid : MVarId) (fuel : Nat := 32) (deep : Bool := true)
     (outer : Array FVarId := #[]) : MetaM Bool := mid.withContext do
   let ty ← instantiateMVars (← mid.getType)
@@ -1437,8 +1514,24 @@ partial def closeByContext (mid : MVarId) (fuel : Nat := 32) (deep : Bool := tru
         mid.assign (← mkLambdaFVars xs pf)
         return true
     catch _ => pure false
-  unless ok do s.restore
-  return ok
+  if ok then return true
+  s.restore
+  if deep && fuel > 0 && isMemMapPremise ty then
+    let s ← saveState
+    let ok ← try
+        let c ← mkConstWithFreshMVarLevels ``List.forall_mem_map
+        let (ms, _, iff) ← forallMetaTelescopeReducing (← inferType c)
+        if iff.isAppOfArity ``Iff 2 && (← isDefEq (iff.getArg! 0) ty) then
+          let m' ← mkFreshExprMVar (← instantiateMVars (iff.getArg! 1))
+          if ← closeByContext m'.mvarId! (fuel - 1) deep outer then
+            mid.assign (← mkAppM ``Iff.mpr #[← instantiateMVars (mkAppN c ms), m'])
+            pure true
+          else pure false
+        else pure false
+      catch _ => pure false
+    if ok then return true
+    s.restore
+  return false
 
 /-- A bound of the natural number `e` that does not mention the variables `xs`, with a proof
 of `e ≤ bound`: `e` with `Nat.le_refl` when it does not mention them; a sum, product, maximum
@@ -1453,8 +1546,9 @@ closed by `closeByContext` (a premise
 `∀ y, fCost y ≤ ?k` on a cost companion argument by the bound of the body of `fCost` at fresh
 `y`; when the bound of the instance is not free of `xs`, again with the premise bound free of
 `xs` as well), followed by the bound of its right side; an atom by a local hypothesis
-`∀ y, g y ≤ c` (a cost companion, or a length bounded by an invariant). `none` when no clause
-gives a bound free of `xs`. -/
+`∀ y, g y ≤ c` (a cost companion, or a length bounded by an invariant); a length of a list
+defined by cases whose cases are list literals by the longest literal (`lengthByCases?`).
+`none` when no clause gives a bound free of `xs`. -/
 partial def boundFree? (xs : Array FVarId) (e : Expr) (fuel : Nat) :
     MetaM (Option (Expr × Expr)) := do
   if fuel == 0 then return none
@@ -1551,6 +1645,8 @@ partial def boundFree? (xs : Array FVarId) (e : Expr) (fuel : Nat) :
       unless b.hasExprMVar || pf.hasExprMVar || xs.any b.containsFVar do
         return some (b, pf)
     st.restore
+  if e.isAppOfArity ``List.length 2 then
+    if let some r ← lengthByCases? e then return some r
   return none
 
 end

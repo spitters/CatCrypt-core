@@ -10,6 +10,7 @@ public import CatCryptCore.Tactics.DeriveReduction
 public import CatCryptCore.Tactics.TimeFoldRegistry
 public import CatCryptCore.Core.SPTreeTimedFree
 public import CatCryptCore.Crypto.OracleAdversaryFree
+public import CatCryptCore.ForMathlib.ListLength
 
 /-!
 # The time theorem of a costed computation tree
@@ -222,6 +223,36 @@ the maximum of the leaf bounds. A vector theorem is stated with `derive_time_bou
 without it whenever the scalar rule fails on a kind with a vector charge (a composite whose time
 depends on the query count of a binder).
 
+**Length hypotheses.** Class: a charge, or a premise `∀ s, c s ≤ ?k` of a registered cost lemma
+(the test of `List.find?.timedCost_le`), to be bounded free of a variable `x` on which it depends
+only through the lengths of lists computed from `x`, under a hypothesis of the context that
+bounds the length of a list in `x` (`h : L.length ≤ n`, the leaf invariant `al.2.length ≤ q * ℓ`
+that the `AllRet` conjunct of a law supplies at the continuation of a bind). The bound is found
+in three steps, each one clause of `bfree?` and `AutoTime.boundFree?`:
+
+1. each length of a derived list is rewritten to a bound in the lengths of its sources: by the
+   equations of `AutoTime.lengthEqLemmas` (`map`, `append`, `zip`, …) and by the theorems tagged
+   `@[length_bound]`, among them `List.length_filter_le`, `List.length_filterMap_le`,
+   `List.length_take` and the bounds `List.length_flatMap_le_mul` (`(l.flatMap f).length ≤
+   w * l.length` when every `f a` with `a ∈ l` has length at most `w`) and
+   `List.length_flatten_le_mul` of `ForMathlib/ListLength.lean`. A premise of such a theorem or
+   of a cost lemma over the members of a map, `∀ y ∈ M.map f, P y` (the premise of
+   `List.flatten.timedCost_le` at `L = M.map f`), is read at the members of `M` as
+   `∀ a ∈ M, P (f a)` (`List.forall_mem_map`). The per-element length `(f a).length` at a fresh
+   `a` is bounded by a theorem tagged `@[length_bound]` at `f`, else, when `f` is a definition
+   by cases whose cases are list literals, by the longest literal, proved by splitting its
+   `if`s and `match`es as the leaf-length rule splits a tree (`AutoTime.lengthByCases?`);
+2. the length bounded by the hypothesis is replaced by its bound (the clause of the local
+   hypotheses), and the bounds of step 1 are composed with it by `Nat.le_trans`, monotonically
+   through the sums, products and maxima of the cost expressions (`Nat.add_le_add`,
+   `Nat.mul_le_mul`, `max_le_max`), without a case analysis on the variable;
+3. the premise is closed by the existing closer (`closeBound`, `AutoTime.closeByContext`) at the
+   bound so found, and the cost by the right side of its lemma at that bound.
+
+The result is free of `x`; a per-element cost that itself reads a list computed from `x` (a
+membership test among the first components of a flat map of the log) is bounded in the same way
+inside the premise, so the bound of a search is a polynomial in the bound `n` of the hypothesis.
+
 **Standalone tactic.** `time_fold` runs the rule on a goal
 `wpFold (OpSpec.chargeUnder c allows) x (fun _ => 0) ≤ B` or
 `wpFold (OpSpec.charge c) x (fun _ => 0) ≤ B` over any program `x` of a free monad, programs
@@ -266,6 +297,11 @@ theorem dite_le_max_of {c : Prop} [Decidable c] {t : c → ℕ} {f : ¬c → ℕ
     exact le_max_of_le_left (ht h)
   · rw [dite_eq_right h]
     exact le_max_of_le_right (hf h)
+
+/- The lengths of lists derived from a list by filtering, a prefix, a flat map and a
+flattening, bounded by the length of their source (`AutoTime.boundFree?`, `addLengthFacts`). -/
+attribute [length_bound] List.length_filter_le List.length_filterMap_le List.length_take
+  List.length_flatMap_le_mul List.length_flatten_le_mul
 
 open Lean Meta Elab Term Command CatCrypt.Core CatCrypt.Tactics.TimeFold
 
