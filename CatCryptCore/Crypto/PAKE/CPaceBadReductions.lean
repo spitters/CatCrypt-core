@@ -417,6 +417,105 @@ theorem mem_support_jointSim [Fintype S] [DecidableEq W] [DecidableEq Pw] [Finty
 variable [Fintype S] [DecidableEq S] [DecidableEq W] [Fintype Pw] [DecidableEq Pw] [Fintype K]
   [Nonempty K] [Inhabited K]
 
+/-- A new party draws a secret `z` with `Q s z`, at the state `s` before the step. -/
+def NewSecret (Q : JS S W Pw K → S → Prop) (s s' : JS S W Pw K) : Prop :=
+  ∃ pid z, s.1.1.1.zs pid = none ∧ s'.1.1.1.zs pid = some z ∧ Q s z
+
+open Classical in
+/-- **A new secret in a set of small probability.** Let a uniform secret satisfy `Q s` with
+probability at most `Ψ s · ε`, and let a step of the joint world increase `Ψ` by at most `c`.
+For
+an oracle adversary with at most `q` queries, a new party draws a secret with `Q` with
+probability at most `2 (Ψ s₀ + c q) ε`: two parties draw a secret. -/
+theorem run_flag_newSecret_le (td : Pw → Sˣ) (Q : JS S W Pw K → S → Prop)
+    (Ψ : JS S W Pw K → ℕ) (c : ℕ) (ε : ℝ≥0∞)
+    (hΨ : ∀ (s : JSt S W Pw K) (e : OEv Pw W), ∀ x ∈ (jointSim G td s e).support,
+      Ψ x.2.1 ≤ Ψ s.1 + c)
+    (hQ : ∀ s, (PMF.uniformFintype S).toOuterMeasure {z | Q s z} ≤ Ψ s * ε)
+    (B : OracleAdv (OEv Pw W) (OOut W K) Bool) (q : ℕ) (hB : B.IsQueryBound q) :
+    (OracleAdv.run (OracleAdv.flagWhen (fun s (_ : OEv Pw W) x => NewSecret Q s.1 x.2.1)
+      (jointSim G td)) B (jointInit G, false)).toOuterMeasure {y | y.2.2 = true} ≤
+      2 * ((Ψ (jointInit G).1 + c * q) * ε) := by
+  classical
+  have hstep : ∀ (s : JSt S W Pw K) (e : OEv Pw W),
+      ((∀ x ∈ (jointSim G td s e).support,
+          freshCount x.2.1.1.1.1 + 1 ≤ freshCount s.1.1.1.1) ∧
+        (jointSim G td s e).toOuterMeasure {x | NewSecret Q s.1 x.2.1} ≤ Ψ s.1 * ε) ∨
+      ∀ x ∈ (jointSim G td s e).support, ¬ NewSecret Q s.1 x.2.1 ∧
+        freshCount x.2.1.1.1.1 ≤ freshCount s.1.1.1.1 := by
+    intro s e
+    by_cases hc : ∃ sid pid peer role pw, e = .inl (.newSession sid pid peer role pw) ∧
+        sid = 0 ∧ pid ≤ 1 ∧ s.1.1.1.1.info pid = none
+    · obtain ⟨sid, pid, peer, role, pw, rfl, hc⟩ := hc
+      have hnew : ∀ r : (S × K) × K × K,
+          (simWorldD G td (setTd td s.1.1) (.inl (.newSession sid pid peer role pw)) r).1.1.1.info
+            = Function.update s.1.1.1.1.info pid (some (peer, role)) ∧
+          (simWorldD G td (setTd td s.1.1) (.inl (.newSession sid pid peer role pw)) r).1.1.1.zs
+            = if Active sid pid peer = true then Function.update s.1.1.1.1.zs pid (some r.1.1)
+              else s.1.1.1.1.zs := by
+        intro r
+        obtain ⟨hz, hi⟩ := simWorldD_zs G td (setTd td s.1.1)
+          (.inl (.newSession sid pid peer role pw)) r
+        rw [hz, hi]
+        exact honStepD_new ({ s.1.1.1.1 with td := some td }) r.1.1 hc
+      left
+      refine ⟨fun x hx => ?_, ?_⟩
+      · obtain ⟨r, hr⟩ := mem_support_jointSim G hx
+        rw [hr]
+        exact freshCount_update hc.2.1 hc.2.2 _ _ (hnew r).1
+      · rw [jointSim, PMF.toOuterMeasure_map_apply]
+        refine (MeasureTheory.measure_mono
+          (μ := (PMF.uniformFintype ((S × K) × K × K)).toOuterMeasure)
+          (t := {r | Q s.1 r.1.1}) ?_).trans ?_
+        · intro r hr
+          obtain ⟨pid', z, h0, h1, hm⟩ := hr
+          simp only [jointD] at h1
+          rw [(hnew r).2] at h1
+          have hz : z = r.1.1 := by
+            split_ifs at h1
+            · by_cases hp : pid' = pid
+              · subst hp
+                simpa using h1.symm
+              · rw [Function.update_of_ne hp, h0] at h1
+                exact absurd h1 (by simp)
+            · rw [h0] at h1
+              exact absurd h1 (by simp)
+          subst hz
+          exact hm
+        · have hu : (PMF.uniformFintype ((S × K) × K × K)).map (fun r => r.1.1) =
+              PMF.uniformFintype S := by
+            rw [show (fun r : (S × K) × K × K => r.1.1) = Prod.fst ∘ Prod.fst from rfl,
+              ← PMF.map_comp, PMF.map_uniform_fst, PMF.map_uniform_fst]
+          calc _ = ((PMF.uniformFintype ((S × K) × K × K)).map (fun r => r.1.1)).toOuterMeasure
+                {z | Q s.1 z} := by rw [PMF.toOuterMeasure_map_apply]; rfl
+            _ ≤ _ := by rw [hu]; exact hQ s.1
+    · right
+      intro x hx
+      obtain ⟨r, hr⟩ := mem_support_jointSim G hx
+      obtain ⟨hz, hi⟩ := simWorldD_zs G td (setTd td s.1.1) e r
+      have hold : (simWorldD G td (setTd td s.1.1) e r).1.1.1.info = s.1.1.1.1.info ∧
+          (simWorldD G td (setTd td s.1.1) e r).1.1.1.zs = s.1.1.1.1.zs := by
+        rw [hz, hi]
+        rcases e with h | a
+        · refine honStepD_old _ _ _ fun sid pid peer role ho hcond => hc ?_
+          rcases h with ⟨sid', pid', peer', role', pw'⟩ | ⟨sid', pid'⟩
+          · simp only [honPub, Option.some.injEq, Prod.mk.injEq] at ho
+            obtain ⟨rfl, rfl, rfl, rfl⟩ := ho
+            exact ⟨_, _, _, _, pw', rfl, hcond⟩
+          · simp [honPub] at ho
+        · exact ⟨rfl, rfl⟩
+      rw [hr]
+      refine ⟨fun ⟨pid', z, h0, h1, _⟩ => ?_, le_of_eq (by simp [freshCount, hold.1])⟩
+      rw [hold.2, h0] at h1
+      exact absurd h1 (by simp)
+  have h := OracleAdv.run_flagWhen_le_potential (jointSim G td)
+    (fun s _ x => NewSecret Q s.1 x.2.1) (fun s => freshCount s.1.1.1.1) (fun s => Ψ s.1)
+    c (Ψ (jointInit G).1 + c * q) ε hΨ hstep B q hB (jointInit G) le_rfl
+  refine h.trans (le_of_eq ?_)
+  simp only [freshCount, jointInit, simProt]
+  push_cast
+  ring
+
 /-- **The new-message collision experiment.** For an oracle adversary with at most `q`
 queries, a new party's message occurs in an earlier input of `H2` with probability at most
 `12 q / |S|`: two parties draw a secret, and the tables hold at most `3 q` inputs. -/
@@ -442,85 +541,11 @@ theorem collStepExp_le (B : OracleAdv (OEv Pw W) (OOut W K) Bool) (q : ℕ)
       rw [e2] at hp
       rcases hh with hh | ⟨_, hh⟩ <;> rcases hp with hp | ⟨_, hp⟩ <;>
         rcases hR with hR | ⟨_, hR⟩ <;> simp only [hh, hp, hR, List.length_cons] <;> omega
-    have hstep : ∀ (s : JSt S W Pw K) (e : OEv Pw W),
-        ((∀ x ∈ (jointSim G td s e).support,
-            freshCount x.2.1.1.1.1 + 1 ≤ freshCount s.1.1.1.1) ∧
-          (jointSim G td s e).toOuterMeasure {x | CollStep G s.1 x.2.1} ≤
-            msgCount s.1 * (Fintype.card S : ℝ≥0∞)⁻¹) ∨
-        ∀ x ∈ (jointSim G td s e).support, ¬ CollStep G s.1 x.2.1 ∧
-          freshCount x.2.1.1.1.1 ≤ freshCount s.1.1.1.1 := by
-      intro s e
-      by_cases hc : ∃ sid pid peer role pw, e = .inl (.newSession sid pid peer role pw) ∧
-          sid = 0 ∧ pid ≤ 1 ∧ s.1.1.1.1.info pid = none
-      · obtain ⟨sid, pid, peer, role, pw, rfl, hc⟩ := hc
-        have hnew : ∀ r : (S × K) × K × K,
-            (simWorldD G td (setTd td s.1.1) (.inl (.newSession sid pid peer role pw)) r).1.1.1.info
-              = Function.update s.1.1.1.1.info pid (some (peer, role)) ∧
-            (simWorldD G td (setTd td s.1.1) (.inl (.newSession sid pid peer role pw)) r).1.1.1.zs
-              = if Active sid pid peer = true then Function.update s.1.1.1.1.zs pid (some r.1.1)
-                else s.1.1.1.1.zs := by
-          intro r
-          obtain ⟨hz, hi⟩ := simWorldD_zs G td (setTd td s.1.1)
-            (.inl (.newSession sid pid peer role pw)) r
-          rw [hz, hi]
-          exact honStepD_new ({ s.1.1.1.1 with td := some td }) r.1.1 hc
-        left
-        refine ⟨fun x hx => ?_, ?_⟩
-        · obtain ⟨r, hr⟩ := mem_support_jointSim G hx
-          rw [hr]
-          exact freshCount_update hc.2.1 hc.2.2 _ _ (hnew r).1
-        · rw [jointSim, PMF.toOuterMeasure_map_apply]
-          refine (MeasureTheory.measure_mono
-            (μ := (PMF.uniformFintype ((S × K) × K × K)).toOuterMeasure)
-            (t := {r | InMsgs s.1 (G.pub r.1.1)}) ?_).trans ?_
-          · intro r hr
-            obtain ⟨pid', z, h0, h1, hm⟩ := hr
-            simp only [jointD] at h1
-            rw [(hnew r).2] at h1
-            have hz : z = r.1.1 := by
-              split_ifs at h1
-              · by_cases hp : pid' = pid
-                · subst hp
-                  simpa using h1.symm
-                · rw [Function.update_of_ne hp, h0] at h1
-                  exact absurd h1 (by simp)
-              · rw [h0] at h1
-                exact absurd h1 (by simp)
-            subst hz
-            exact hm
-          · have hu : (PMF.uniformFintype ((S × K) × K × K)).map (fun r => r.1.1) =
-                PMF.uniformFintype S := by
-              rw [show (fun r : (S × K) × K × K => r.1.1) = Prod.fst ∘ Prod.fst from rfl,
-                ← PMF.map_comp, PMF.map_uniform_fst, PMF.map_uniform_fst]
-            calc _ = ((PMF.uniformFintype ((S × K) × K × K)).map (fun r => r.1.1)).toOuterMeasure
-                  {z | InMsgs s.1 (G.pub z)} := by rw [PMF.toOuterMeasure_map_apply]; rfl
-              _ ≤ _ := by rw [hu]; exact uniform_inMsgs_le G s.1
-      · right
-        intro x hx
-        obtain ⟨r, hr⟩ := mem_support_jointSim G hx
-        obtain ⟨hz, hi⟩ := simWorldD_zs G td (setTd td s.1.1) e r
-        have hold : (simWorldD G td (setTd td s.1.1) e r).1.1.1.info = s.1.1.1.1.info ∧
-            (simWorldD G td (setTd td s.1.1) e r).1.1.1.zs = s.1.1.1.1.zs := by
-          rw [hz, hi]
-          rcases e with h | a
-          · refine honStepD_old _ _ _ fun sid pid peer role ho hcond => hc ?_
-            rcases h with ⟨sid', pid', peer', role', pw'⟩ | ⟨sid', pid'⟩
-            · simp only [honPub, Option.some.injEq, Prod.mk.injEq] at ho
-              obtain ⟨rfl, rfl, rfl, rfl⟩ := ho
-              exact ⟨_, _, _, _, pw', rfl, hcond⟩
-            · simp [honPub] at ho
-          · exact ⟨rfl, rfl⟩
-        rw [hr]
-        refine ⟨fun ⟨pid', z, h0, h1, _⟩ => ?_, le_of_eq (by simp [freshCount, hold.1])⟩
-        rw [hold.2, h0] at h1
-        exact absurd h1 (by simp)
-    have h := OracleAdv.run_flagWhen_le_potential (jointSim G td)
-      (fun s _ x => CollStep G s.1 x.2.1) (fun s => freshCount s.1.1.1.1) (fun s => msgCount s.1)
-      6 (6 * q) (Fintype.card S : ℝ≥0∞)⁻¹ hΨ hstep B q hB (jointInit G)
-      (by simp [msgCount, jointInit, simProt])
+    have h := run_flag_newSecret_le G td (fun s z => InMsgs s (G.pub z)) msgCount 6
+      (Fintype.card S : ℝ≥0∞)⁻¹ hΨ (uniform_inMsgs_le G) B q hB
     refine h.trans (le_of_eq ?_)
-    simp only [freshCount, jointInit, simProt]
-    push_cast
+    simp only [msgCount, jointInit, simProt]
+    simp only [List.length_nil, add_zero, mul_zero, Nat.cast_ofNat]
     ring
   unfold collStepExp flagExp
   rw [PMF.bind_apply]
@@ -531,6 +556,452 @@ theorem collStepExp_le (B : OracleAdv (OEv Pw W) (OOut W K) Bool) (q : ℕ)
         exact (flagExp_inner_apply G td (fun _ s s' => CollStep G s s') B).trans_le (hinner td)
     _ = _ := by rw [ENNReal.tsum_mul_right, PMF.tsum_coe, one_mul]
 
+open Classical in
+/-- **A new party draws the secret zero** with probability at most `2 / |S|`. -/
+theorem run_flag_newZero_le (td : Pw → Sˣ) (B : OracleAdv (OEv Pw W) (OOut W K) Bool) (q : ℕ)
+    (hB : B.IsQueryBound q) :
+    (OracleAdv.run (OracleAdv.flagWhen (fun s (_ : OEv Pw W) x =>
+      NewSecret (fun _ z => z = (0 : S)) s.1 x.2.1) (jointSim G td)) B
+        (jointInit G, false)).toOuterMeasure {y | y.2.2 = true} ≤
+      2 * (Fintype.card S : ℝ≥0∞)⁻¹ := by
+  classical
+  have hQ : ∀ s : JS S W Pw K, (PMF.uniformFintype S).toOuterMeasure {z | z = (0 : S)} ≤
+      ((fun _ => 1 : JS S W Pw K → ℕ) s : ℝ≥0∞) * (Fintype.card S : ℝ≥0∞)⁻¹ := by
+    intro s
+    rw [PMF.toOuterMeasure_uniformFintype_apply, div_eq_mul_inv]
+    gcongr
+    exact Fintype.card_le_one_iff.mpr fun a b =>
+      Subtype.ext ((show a.1 = 0 from a.2).trans (show b.1 = 0 from b.2).symm)
+  have h := run_flag_newSecret_le G td (fun _ z => z = (0 : S)) (fun _ => 1) 0
+    (Fintype.card S : ℝ≥0∞)⁻¹ (fun _ _ _ _ => le_rfl) hQ B q hB
+  simpa using h
+
 end Collision
+
+/-! ## The simulated world with handles
+
+The simulator uses the secret `z` of a party only through its message `g^z` and the CPace match
+test of `z`. The simulated world with handles stores a handle `u` in place of the secret, computes
+the message from the handle, and asks the match test, and `H1`, as oracle queries. A reduction
+answers the queries from its challenge; at the ideal answers `hAns` of a family of bijections
+`zOf pid`, the run is the run of the simulated world with the secrets `zOf pid u`
+(`simOracle_hImpl`). -/
+
+section Handles
+
+/-- A query of the simulated world with handles: `H1` at a password, or the match test of the
+party `pid` with handle `u` of the key `k` for the peer message `peer` and the password `pw`. -/
+abbrev HQ (S W Pw : Type) := Pw ⊕ (PartyId × S × Pw × W × W)
+
+/-- An answer: a generator, or the bit of a match test. -/
+abbrev HA (W : Type) := W ⊕ Bool
+
+/-- The bit of an answer. -/
+def ansBit {W : Type} : HA W → Bool
+  | .inr b => b
+  | .inl _ => false
+
+/-- The generator of an answer, and `d` for a bit. -/
+def ansGen {W : Type} (d : W) : HA W → W
+  | .inl Y => Y
+  | .inr _ => d
+
+variable {S W Pw K : Type} [Field S] (G : DHGroup S W)
+
+/-- The extraction of the party `pid` with handle `u` for the peer message `peer` and the key
+`k`: the first candidate whose match test is answered positively. -/
+def extractO (pid : PartyId) (u : S) (peer k : W) :
+    List Pw → OracleAdv (HQ S W Pw) (HA W) (Option Pw)
+  | [] => .ret none
+  | pw :: rest => .query (.inr (pid, u, pw, peer, k)) fun a =>
+    bif ansBit a then .ret (some pw) else extractO pid u peer k rest
+
+/-- `extractAt` with a handle. -/
+def extractAtO (cands : List Pw) (u : S) (pid : PartyId) (x : Inp W) :
+    OracleAdv (HQ S W Pw) (HA W) (Option Pw) :=
+  extractO pid u (if pid = 0 then x.2.2.1 else x.2.1) x.2.2.2 cands
+
+variable [DecidableEq W]
+
+/-- `lateAt` with handles. -/
+def lateAtO (c : SimCore S W Pw K) (x : Inp W) (pid : PartyId) :
+    OracleAdv (HQ S W Pw) (HA W) (Option Pw) :=
+  match c.pend pid, c.zs pid with
+  | some T, some u => if x.tr = T then extractAtO c.cands u pid x else .ret none
+  | _, _ => .ret none
+
+/-- `lateTarget` with handles. -/
+def lateTargetO (c : SimCore S W Pw K) (x : Inp W) :
+    OracleAdv (HQ S W Pw) (HA W) (Option (PartyId × Pw)) :=
+  (lateAtO c x 0).bind fun o => match o with
+    | some pw => .ret (some (0, pw))
+    | none => (lateAtO c x 1).bind fun o' => .ret (o'.map fun pw => (1, pw))
+
+/-- `findMatch` with a handle, over the entries `l` of the table of `H2`. -/
+def findMatchO (cands : List Pw) (u : S) (pid : PartyId) (T : Role × W × W) :
+    List (Inp W × K) → OracleAdv (HQ S W Pw) (HA W) (Option (Pw × K))
+  | [] => .ret none
+  | e :: rest =>
+    if e.1.tr = T then (extractAtO cands u pid e.1).bind fun o => match o with
+      | some pw => .ret (some (pw, e.2))
+      | none => findMatchO cands u pid T rest
+    else findMatchO cands u pid T rest
+
+variable [Inhabited K]
+
+/-- `sendCore` with handles and the message function `msgF`. -/
+def sendCoreO (msgF : PartyId → S → W) (c : SimCore S W Pw K) (pid : PartyId) (m : W) :
+    OracleAdv (HQ S W Pw) (HA W) (SimCore S W Pw K × Dec Pw W K) :=
+  match c.zs pid, c.info pid with
+  | some u, some (_, role) =>
+    if c.keyed pid = false ∧ m ≠ G.pub 0 then
+      if (c.zs (1 - pid)).map (msgF (1 - pid)) = some m then
+        .ret ({ c with keyed := Function.update c.keyed pid true, phase := .done },
+          sCall (.newKey 0 pid default))
+      else
+        (findMatchO c.cands u pid (h2Inp pid role (msgF pid u) m m).tr c.h2).bind fun fm =>
+          match fm with
+          | some (pw, k) =>
+            .ret ({ c with keyed := Function.update c.keyed pid true, phase := .key pid k },
+              sCall (.testPwd 0 pid pw))
+          | none =>
+            .ret ({ c with
+                    keyed := Function.update c.keyed pid true
+                    phase := .key pid default
+                    pend := Function.update c.pend pid
+                      (some (h2Inp pid role (msgF pid u) m m).tr) },
+              sCall (.registerTest 0 pid))
+    else .ret ({ c with phase := .rest }, sOut .ack)
+  | _, _ => .ret ({ c with phase := .rest }, sOut .ack)
+
+/-- `h2CoreD` with handles. -/
+def h2CoreO (c : SimCore S W Pw K) (x : Inp W) (k : K) :
+    OracleAdv (HQ S W Pw) (HA W) (SimCore S W Pw K × Dec Pw W K) :=
+  (lateTargetO c x).bind fun lt => match lt with
+    | some (pid, pw) =>
+      .ret ({ c with pend := Function.update c.pend pid none, phase := .late x },
+        sCall (.lateTestPwd 0 pid pw))
+    | none => .ret ({ c with h2 := (x, k) :: c.h2, phase := .rest }, sOut (.hash k))
+
+variable [DecidableEq Pw]
+
+/-- `advCoreD` with handles: `H1` is a query. -/
+def advCoreO (msgF : PartyId → S → W) (c : SimCore S W Pw K) (a : RAEv Pw W) (k : K) :
+    OracleAdv (HQ S W Pw) (HA W) (SimCore S W Pw K × Dec Pw W K) :=
+  match a with
+  | .idle => .ret ({ c with phase := .rest }, sOut .ack)
+  | .poll => .ret ({ c with phase := .fwd }, sCall .poll)
+  | .msg pid => .ret ({ c with phase := .rest }, sOut (.msg ((c.zs pid).map (msgF pid))))
+  | .h1 pw => .query (.inl pw) fun ans =>
+    .ret ({ c with cands := if pw ∈ c.cands then c.cands else c.cands ++ [pw], phase := .rest },
+      sOut (.gen (ansGen (G.pub 0) ans)))
+  | .h2 x =>
+    match c.h2.lookup x with
+    | some k' => .ret ({ c with phase := .rest }, sOut (.hash k'))
+    | none => h2CoreO c x k
+  | .send pid m => sendCoreO G msgF c pid m
+
+/-- `simStartD` with handles: a new party stores the drawn value as its handle. -/
+def simStartO (msgF : PartyId → S → W) (s : SimSt S W Pw K) (e : OEv Pw W) (r : S × K) :
+    OracleAdv (HQ S W Pw) (HA W) (SimSt S W Pw K × Dec Pw W K) :=
+  match e with
+  | .inl h => .ret ((honStepD s.1 (honPub h) r.1, s.2), .inl (.inl h))
+  | .inr (.h2 x) =>
+    match s.2.lookup x with
+    | some k => .ret (({ s.1 with phase := .rest }, s.2), sOut (.hash k))
+    | none => (advCoreO G msgF s.1 (.h2 x) r.2).bind fun p => .ret ((p.1, s.2), p.2)
+  | .inr a => (advCoreO G msgF s.1 a r.2).bind fun p => .ret ((p.1, s.2), p.2)
+
+variable [Fintype S] [Fintype K] [Nonempty K]
+
+/-- **The simulated world with handles**: one uniform draw, the start of the simulator with
+handles, and the end of the activation with `F_lePAKE` as in `simWorldD`. -/
+noncomputable def hImpl (msgF : PartyId → S → W) (t : SimSt S W Pw K × St Pw K)
+    (e : OEv Pw W) :
+    OracleAdv (HQ S W Pw) (HA W) (OOut W K × (SimSt S W Pw K × St Pw K)) :=
+  .rand (PMF.uniformFintype ((S × K) × K × K)) fun r =>
+    (simStartO G msgF t.1 e r.1).bind fun st =>
+      .ret ((drive1D fStepD simResumeV simAnswer st.1 st.2 t.2 r.2).2.2,
+        ((drive1D fStepD simResumeV simAnswer st.1 st.2 t.2 r.2).1,
+          (drive1D fStepD simResumeV simAnswer st.1 st.2 t.2 r.2).2.1))
+
+end Handles
+
+/-! ### The ideal answers -/
+
+section Ideal
+
+variable {S W Pw K : Type} [Field S] [DecidableEq W] (G : DHGroup S W)
+  (zOf : PartyId → S → S) (td : Pw → Sˣ)
+
+/-- **The ideal answers** for the bijections `zOf pid` and the table `td` of `H1`: `H1` answers
+`g^{td pw}`, and the match test of the party `pid` with handle `u` is the CPace match test of
+the secret `zOf pid u`. -/
+def hAns : HQ S W Pw → HA W
+  | .inl pw => .inl (G.pub (td pw))
+  | .inr (pid, u, pw, peer, k) => .inr ((kit G td).matchTest (zOf pid u) peer k pw)
+
+/-- The oracle of the ideal answers. -/
+noncomputable def hOracle (_ : Unit) (q : HQ S W Pw) : PMF (HA W × Unit) :=
+  PMF.pure (hAns G zOf td q, ())
+
+/-- The core of the simulated world of a core with handles: the secrets `zOf pid u` and the
+table `td` of `H1`. -/
+def reconC (c : SimCore S W Pw K) : SimCore S W Pw K :=
+  { c with td := some td, zs := fun pid => (c.zs pid).map (zOf pid) }
+
+theorem run_hOracle_extractO (pid : PartyId) (u : S) (peer k : W) (cands : List Pw) :
+    OracleAdv.run (hOracle G zOf td) (extractO pid u peer k cands) () =
+      PMF.pure ((kit G td).extract (zOf pid u) cands peer k, ()) := by
+  induction cands with
+  | nil => simp [extractO, DHExtractKit.extract]
+  | cons pw rest ih =>
+    simp only [extractO, OracleAdv.run_query, hOracle, PMF.pure_bind, hAns, ansBit]
+    cases h : (kit G td).matchTest (zOf pid u) peer k pw
+    · simp [ih, DHExtractKit.extract, h]
+    · simp [DHExtractKit.extract, h]
+
+theorem run_hOracle_extractAtO (cands : List Pw) (u : S) (pid : PartyId) (x : Inp W) :
+    OracleAdv.run (hOracle G zOf td) (extractAtO cands u pid x) () =
+      PMF.pure (extractAt G td cands (zOf pid u) pid x, ()) :=
+  run_hOracle_extractO G zOf td _ _ _ _ _
+
+theorem run_hOracle_findMatchO (cands : List Pw) (u : S) (pid : PartyId) (T : Role × W × W)
+    (l : List (Inp W × K)) :
+    OracleAdv.run (hOracle G zOf td) (findMatchO cands u pid T l) () =
+      PMF.pure (l.findSome? (fun e => if e.1.tr = T then
+        (extractAt G td cands (zOf pid u) pid e.1).map fun pw => (pw, e.2) else none), ()) := by
+  induction l with
+  | nil => simp [findMatchO]
+  | cons e rest ih =>
+    by_cases hT : e.1.tr = T
+    · simp only [findMatchO, hT, ite_true, OracleAdv.run_bind, run_hOracle_extractAtO,
+        PMF.pure_bind, List.findSome?_cons]
+      cases extractAt G td cands (zOf pid u) pid e.1 <;> simp [ih]
+    · simp [findMatchO, hT, ih]
+
+theorem run_hOracle_lateAtO (c : SimCore S W Pw K) (x : Inp W) (pid : PartyId) :
+    OracleAdv.run (hOracle G zOf td) (lateAtO c x pid) () =
+      PMF.pure (lateAt G td (reconC zOf td c) x pid, ()) := by
+  unfold lateAtO lateAt reconC
+  dsimp only
+  cases hp : c.pend pid <;> cases hz : c.zs pid <;> simp
+  split_ifs <;> simp [run_hOracle_extractAtO]
+
+theorem run_hOracle_lateTargetO (c : SimCore S W Pw K) (x : Inp W) :
+    OracleAdv.run (hOracle G zOf td) (lateTargetO c x) () =
+      PMF.pure (lateTarget G td (reconC zOf td c) x, ()) := by
+  unfold lateTargetO lateTarget
+  rw [OracleAdv.run_bind, run_hOracle_lateAtO, PMF.pure_bind]
+  cases lateAt G td (reconC zOf td c) x 0
+  · simp [OracleAdv.run_bind, run_hOracle_lateAtO]
+  · simp
+
+variable [Inhabited K] (msgF : PartyId → S → W)
+  (hmsg : ∀ pid u, msgF pid u = G.pub (zOf pid u))
+include hmsg
+
+theorem run_hOracle_sendCoreO (c : SimCore S W Pw K) (pid : PartyId) (m : W) :
+    (OracleAdv.run (hOracle G zOf td) (sendCoreO G msgF c pid m) ()).map
+        (fun x => (reconC zOf td x.1.1, x.1.2)) =
+      PMF.pure (sendCore G td (reconC zOf td c) pid m) := by
+  have hm : ∀ p, (c.zs p).map (msgF p) = ((c.zs p).map (zOf p)).map G.pub := fun p => by
+    rw [Option.map_map]
+    exact congrArg (fun f => (c.zs p).map f) (funext (hmsg p))
+  unfold sendCoreO sendCore
+  cases hz : c.zs pid with
+  | none => simp [reconC, hz, PMF.pure_map]
+  | some u =>
+    cases hi : c.info pid with
+    | none => simp [reconC, hz, hi, PMF.pure_map]
+    | some pr =>
+      obtain ⟨peer, role⟩ := pr
+      simp only [reconC, hz, hi, Option.map_some]
+      simp only [← hm (1 - pid), ← hmsg pid u]
+      split_ifs with h₁ h₂
+      · simp [PMF.pure_map]
+      · rw [OracleAdv.run_bind, run_hOracle_findMatchO, PMF.pure_bind]
+        simp only [findMatch]
+        cases List.findSome? (fun e => if e.1.tr = (h2Inp pid role (msgF pid u) m m).tr then
+          Option.map (fun pw => (pw, e.2)) (extractAt G td c.cands (zOf pid u) pid e.1)
+          else none) c.h2 with
+        | none => simp [PMF.pure_map]
+        | some p => obtain ⟨pw, k⟩ := p; simp [PMF.pure_map]
+      · simp [PMF.pure_map]
+
+omit [Inhabited K] hmsg in
+theorem run_hOracle_h2CoreO (c : SimCore S W Pw K) (x : Inp W) (k : K) :
+    (OracleAdv.run (hOracle G zOf td) (h2CoreO c x k) ()).map
+        (fun x => (reconC zOf td x.1.1, x.1.2)) =
+      PMF.pure (h2CoreD G td (reconC zOf td c) x k) := by
+  unfold h2CoreO h2CoreD
+  rw [OracleAdv.run_bind, run_hOracle_lateTargetO, PMF.pure_bind]
+  cases lateTarget G td (reconC zOf td c) x with
+  | none => simp [reconC, PMF.pure_map]
+  | some p => obtain ⟨pid, pw⟩ := p; simp [reconC, PMF.pure_map]
+
+variable [DecidableEq Pw]
+
+theorem run_hOracle_advCoreO (c : SimCore S W Pw K) (a : RAEv Pw W) (k : K) :
+    (OracleAdv.run (hOracle G zOf td) (advCoreO G msgF c a k) ()).map
+        (fun x => (reconC zOf td x.1.1, x.1.2)) =
+      PMF.pure (advCoreD G td (reconC zOf td c) a k) := by
+  cases a with
+  | idle => simp [advCoreO, advCoreD, reconC, PMF.pure_map]
+  | poll => simp [advCoreO, advCoreD, reconC, PMF.pure_map]
+  | msg pid =>
+    have hm : (c.zs pid).map (msgF pid) = ((c.zs pid).map (zOf pid)).map G.pub := by
+      rw [Option.map_map]
+      exact congrArg (fun f => (c.zs pid).map f) (funext (hmsg pid))
+    simp [advCoreO, advCoreD, reconC, PMF.pure_map, hm]
+  | h1 pw => simp [advCoreO, advCoreD, reconC, PMF.pure_map, hOracle, hAns, ansGen]; rfl
+  | h2 x =>
+    simp only [advCoreO, advCoreD]
+    have hl : (reconC zOf td c).h2 = c.h2 := rfl
+    rw [hl]
+    cases c.h2.lookup x with
+    | some k' => simp [reconC, PMF.pure_map]
+    | none => exact run_hOracle_h2CoreO G zOf td c x k
+  | send pid m => exact run_hOracle_sendCoreO G zOf td msgF hmsg c pid m
+
+/-- The secret of a new party from the drawn handle. -/
+def zMapE : OEv Pw W → S → S
+  | .inl (.newSession _ pid _ _ _) => zOf pid
+  | _ => id
+
+omit [DecidableEq W] [Inhabited K] [DecidableEq Pw] hmsg in
+theorem reconC_honStepD (c : SimCore S W Pw K) (h : LeHEv Pw) (z : S) :
+    reconC zOf td (honStepD c (honPub h) z) =
+      honStepD (reconC zOf td c) (honPub h) (zMapE (W := W) zOf (.inl h) z) := by
+  rcases h with ⟨sid, pid, peer, role, pw⟩ | ⟨sid, pid⟩
+  · show reconC zOf td { honCoreD c sid pid peer role z with phase := .fwd } =
+      { honCoreD (reconC zOf td c) sid pid peer role (zOf pid z) with phase := .fwd }
+    unfold honCoreD
+    have hi : (reconC zOf td c).info = c.info := rfl
+    rw [hi]
+    split_ifs
+    · simp only [reconC]
+      congr 1
+      funext p
+      by_cases hp : p = pid
+      · subst hp; simp
+      · simp [Function.update_of_ne hp]
+    · rfl
+    · rfl
+  · rfl
+
+omit [Field S] [DecidableEq W] [Inhabited K] [DecidableEq Pw] hmsg in
+/-- A bind whose continuation is a point mass at a function of a map with a point mass value. -/
+theorem bind_pure_of_map {α β γ : Type} (p : PMF α) (F₀ : α → β) (k : β → γ) (v : β)
+    (h : p.map F₀ = PMF.pure v) : (p.bind fun a => PMF.pure (k (F₀ a))) = PMF.pure (k v) := by
+  rw [show (fun a => PMF.pure (k (F₀ a))) = PMF.pure ∘ (k ∘ F₀) from rfl,
+    PMF.bind_pure_comp,
+    ← PMF.map_comp, h, PMF.pure_map]
+
+theorem run_hOracle_simStartO (s : SimSt S W Pw K) (e : OEv Pw W) (r : S × K) :
+    (OracleAdv.run (hOracle G zOf td) (simStartO G msgF s e r) ()).map
+        (fun x => ((reconC zOf td x.1.1.1, x.1.1.2), x.1.2)) =
+      PMF.pure (simStartD G td (reconC zOf td s.1, s.2) e (zMapE zOf e r.1, r.2)) := by
+  rcases e with h | a
+  · simp only [simStartO, OracleAdv.run_ret, PMF.pure_map, simStartD, simCoreD]
+    rw [reconC_honStepD]
+  · have hadv := run_hOracle_advCoreO G zOf td msgF hmsg s.1 a r.2
+    cases a
+    case h2 x =>
+      simp only [simStartO, simStartD]
+      cases hs : s.2.lookup x with
+      | some k => simp [reconC, PMF.pure_map]
+      | none =>
+        simp only [OracleAdv.run_bind, OracleAdv.run_ret, PMF.map_bind, PMF.pure_map]
+        exact bind_pure_of_map _
+          (fun a : (SimCore S W Pw K × Dec Pw W K) × Unit => (reconC zOf td a.1.1, a.1.2))
+          (fun y => ((y.1, s.2), y.2)) _ hadv
+    all_goals
+      simp only [simStartO, simStartD, simCoreD, OracleAdv.run_bind, OracleAdv.run_ret,
+        PMF.map_bind, PMF.pure_map]
+      exact bind_pure_of_map _
+        (fun a : (SimCore S W Pw K × Dec Pw W K) × Unit => (reconC zOf td a.1.1, a.1.2))
+        (fun y => ((y.1, s.2), y.2)) _ hadv
+
+omit [DecidableEq W] hmsg in
+/-- The end of an activation commutes with the reconstruction of the core. -/
+theorem drive1D_reconC (st : SimSt S W Pw K) (d : Dec Pw W K) (t : St Pw K) (k : K × K) :
+    drive1D fStepD simResumeV simAnswer (reconC zOf td st.1, st.2) d t k =
+      ((reconC zOf td (drive1D fStepD simResumeV simAnswer st d t k).1.1,
+        (drive1D fStepD simResumeV simAnswer st d t k).1.2),
+        (drive1D fStepD simResumeV simAnswer st d t k).2.1,
+        (drive1D fStepD simResumeV simAnswer st d t k).2.2) := by
+  obtain ⟨⟨td', cands, info, zs, keyed, pend, h2, phase⟩, pr⟩ := st
+  rcases d with g | o
+  · cases phase <;> simp [drive1D, simResumeV, simAnswer, reconC]
+  · simp [drive1D]
+
+/-- The state of the simulated world of a state with handles. -/
+def reconW (t : SimSt S W Pw K × St Pw K) : SimSt S W Pw K × St Pw K :=
+  ((reconC zOf td t.1.1, t.1.2), t.2)
+
+/-- The draw of the simulated world from the draw of the simulated world with handles. -/
+def drawMap (e : OEv Pw W) (r : (S × K) × K × K) : (S × K) × K × K :=
+  ((zMapE (W := W) zOf e r.1.1, r.1.2), r.2)
+
+theorem run_hOracle_hStep [Fintype S] [Fintype K] [Nonempty K] (t : SimSt S W Pw K × St Pw K)
+    (e : OEv Pw W) (r : (S × K) × K × K) :
+    (OracleAdv.run (hOracle G zOf td) ((simStartO G msgF t.1 e r.1).bind fun st =>
+      .ret ((drive1D fStepD simResumeV simAnswer st.1 st.2 t.2 r.2).2.2,
+        ((drive1D fStepD simResumeV simAnswer st.1 st.2 t.2 r.2).1,
+          (drive1D fStepD simResumeV simAnswer st.1 st.2 t.2 r.2).2.1))) ()).map
+        (fun x => (x.1.1, reconW zOf td x.1.2)) =
+      PMF.pure (simWorldD G td (reconW zOf td t) e (drawMap zOf e r)).swap := by
+  rw [OracleAdv.run_bind, PMF.map_bind]
+  simp only [OracleAdv.run_ret, PMF.pure_map]
+  have h := bind_pure_of_map _
+    (fun x : (SimSt S W Pw K × Dec Pw W K) × Unit => ((reconC zOf td x.1.1.1, x.1.1.2), x.1.2))
+    (fun y => ((drive1D fStepD simResumeV simAnswer y.1 y.2 t.2 r.2).2.2,
+      ((drive1D fStepD simResumeV simAnswer y.1 y.2 t.2 r.2).1,
+        (drive1D fStepD simResumeV simAnswer y.1 y.2 t.2 r.2).2.1)))
+    _ (run_hOracle_simStartO G zOf td msgF hmsg t.1 e r.1)
+  refine Eq.trans ?_ h
+  refine congrArg _ (funext fun x => ?_)
+  rw [drive1D_reconC]
+  rfl
+
+/-- **The simulated world with handles at the ideal answers.** For bijections `zOf pid`, a step
+of `hImpl` against the ideal answers, with the reconstructed state, is the step of the simulated
+world with the table of `H1` as the key. -/
+theorem simOracle_hImpl [Fintype S] [DecidableEq S] [Fintype Pw] [Fintype K] [Nonempty K]
+    (zE : PartyId → S ≃ S)
+    (hzE : ∀ p, ⇑(zE p) = zOf p) (t : SimSt S W Pw K × St Pw K) (e : OEv Pw W) :
+    (OracleAdv.simOracle (hImpl G msgF) (hOracle G zOf td) (t, ()) e).map
+        (fun y => (y.1, reconW zOf td y.2.1)) =
+      (idealGame G).oracle td (reconW zOf td t) e := by
+  rw [idealGame_oracle_eq]
+  have hset : setTd td (reconW zOf td t) = reconW zOf td t := rfl
+  rw [hset]
+  have hd : (PMF.uniformFintype ((S × K) × K × K)).map (drawMap zOf e) =
+      PMF.uniformFintype ((S × K) × K × K) := by
+    let φ : S ≃ S := match e with
+      | .inl (.newSession _ pid _ _ _) => zE pid
+      | _ => Equiv.refl S
+    have hφ : ∀ z, φ z = zMapE (W := W) zOf e z := by
+      intro z
+      rcases e with (⟨_, pid, _, _, _⟩ | _) | _ <;> simp [φ, zMapE, hzE]
+    have : drawMap zOf e = (φ.prodCongr (Equiv.refl K)).prodCongr (Equiv.refl (K × K)) := by
+      funext r
+      obtain ⟨⟨a, b⟩, c⟩ := r
+      simp only [drawMap, Equiv.prodCongr_apply, Equiv.coe_refl, Prod.map_apply, id, hφ]
+    rw [this, PMF.uniformFintype_map_equiv]
+  simp only [OracleAdv.simOracle, hImpl, OracleAdv.run_rand, PMF.map_bind, PMF.map_comp]
+  calc _ = (PMF.uniformFintype ((S × K) × K × K)).bind fun r =>
+        PMF.pure (simWorldD G td (reconW zOf td t) e (drawMap zOf e r)).swap := by
+        refine congrArg _ (funext fun r => ?_)
+        rw [← run_hOracle_hStep G zOf td msgF hmsg t e r]
+        rfl
+    _ = ((PMF.uniformFintype ((S × K) × K × K)).map (drawMap zOf e)).map fun r =>
+        (simWorldD G td (reconW zOf td t) e r).swap := by
+        rw [PMF.map_comp]
+        exact PMF.bind_pure_comp _ _
+    _ = _ := by rw [hd]
+
+end Ideal
 
 end CatCrypt.Crypto.PAKE.CPaceBadReductions
