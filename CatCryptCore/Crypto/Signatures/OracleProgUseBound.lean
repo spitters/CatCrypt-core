@@ -6,6 +6,8 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Container.DNCert
+public import CatCryptCore.Crypto.Signatures.OracleProgTimedFree
+public import CatCryptCore.Tactics.TimeFoldRegistry
 
 /-!
 # Time and query counts of oracle programs as one vector charge
@@ -63,6 +65,23 @@ The query bound of an erased oracle program is a charge fold of its free tree
   `T + q * (t + 2 * ℓ + 1)`) and `q * q'` queries, by `Container.useBound_liftM_clocked`
 * `OracleProg.Timed.timeBound_bindQueries`, `OracleProg.Timed.timeBound_collectLog` — the time
   components, without a query bound on the handler
+* `OracleProg.Timed.wpFold_queryCharge_le_of_useBound`,
+  `OracleProg.Timed.wpFold_tickCost_le_of_useBound`, `OracleProg.Timed.useBound_of_wpFold_le` —
+  a use bound is the pair of its component folds
+* `OracleProg.Timed.wpFold_tickCost_bindQueries_le`,
+  `OracleProg.Timed.wpFold_queryCharge_bindQueries_le`,
+  `OracleProg.Timed.wpFold_tickCost_collectLog_le`,
+  `OracleProg.Timed.wpFold_queryCharge_collectLog_le` — the component laws of the handler
+  combinators, the latter two with the leaf invariant `al.2.length ≤ q * ℓ` of the records
+
+## The record of the fold rule
+
+`OracleProg.Timed.oracleProgUseFold` refines the record `oracleProgFold` of
+`OracleProgTimedFree.lean` by the vector charge `useCharge`: the component readings, the
+component laws, the step and bind equations at `queryCharge`, the join and the reading
+`useBound_step_iff`, and the leaf invariant of a bind (`allRet_bind_of_forall`). The modules
+importing this one read the refined record (`TimeFoldRegistry.lean`), so that
+`derive_time_bound` states the query count of an oracle program beside its time.
 -/
 
 @[expose] public section
@@ -752,6 +771,149 @@ theorem timeBound_collectLog {h : Q → ℕ × Timed I O (R × List L)} {t ℓ :
   simp [queryDemand]
   ring
 
+/-! ## The components of the vector charge, read by the fold rule -/
+
+/-- The query component of a use bound at `budget q T`. -/
+theorem wpFold_queryCharge_le_of_useBound (cost : I → ℕ) {X : Type} {x : FreeM (SigT I O) X}
+    {q T : ℕ} (hx : UseBound (useCharge cost) (fun _ _ => True) x (budget q T)) :
+    wpFold (OpSpec.chargeUnder (fun a => ((queryCharge cost a : ℕ) : ℕ∞)) fun _ _ => True) x
+      (fun _ => 0) ≤ q :=
+  (useBound_iff _ _ _ _).1 hx false
+
+/-- The tick component of a use bound at `budget q T`. -/
+theorem wpFold_tickCost_le_of_useBound (cost : I → ℕ) {X : Type} {x : FreeM (SigT I O) X}
+    {q T : ℕ} (hx : UseBound (useCharge cost) (fun _ _ => True) x (budget q T)) :
+    wpFold (OpSpec.chargeUnder (fun a => ((tickCost a : ℕ) : ℕ∞)) fun _ _ => True) x
+      (fun _ => 0) ≤ T :=
+  (useBound_iff _ _ _ _).1 hx true
+
+/-- **The use bound from its components.** Bounds on the query and the tick folds of a program
+are its use bound at `budget q T`. -/
+theorem useBound_of_wpFold_le (cost : I → ℕ) {X : Type} {x : FreeM (SigT I O) X} {q T : ℕ}
+    (hq : wpFold (OpSpec.chargeUnder (fun a => ((queryCharge cost a : ℕ) : ℕ∞))
+      fun _ _ => True) x (fun _ => 0) ≤ q)
+    (hT : wpFold (OpSpec.chargeUnder (fun a => ((tickCost a : ℕ) : ℕ∞)) fun _ _ => True) x
+      (fun _ => 0) ≤ T) :
+    UseBound (useCharge cost) (fun _ _ => True) x (budget q T) := by
+  rw [useBound_iff, Bool.forall_bool]
+  exact ⟨hq, hT⟩
+
+/-- The query fold of a step-prefixed program: its leading tick charges no query. -/
+theorem wpFold_queryCharge_stepToFreeMT (cost : I → ℕ) (x : ℕ × Timed I O α) (post : α → ℕ∞) :
+    wpFold (OpSpec.chargeUnder (fun a => ((queryCharge cost a : ℕ) : ℕ∞)) fun _ _ => True)
+        (stepToFreeMT x) post =
+      ((queryCharge cost (.inr x.1 : (SigT I O).A) : ℕ) : ℕ∞) +
+        wpFold (OpSpec.chargeUnder (fun a => ((queryCharge cost a : ℕ) : ℕ∞)) fun _ _ => True)
+          (toFreeMT x.2) post :=
+  wpFold_stepToFreeMT_eq _ x post
+
+/-- The query fold of a costed bind is the query fold of the bind of the tick trees. -/
+theorem wpFold_queryCharge_stepToFreeMT_bind (cost : I → ℕ) {β : Type} (p : Timed I O α)
+    (f : α → ℕ × Timed I O β) (post : β → ℕ∞) :
+    wpFold (OpSpec.chargeUnder (fun a => ((queryCharge cost a : ℕ) : ℕ∞)) fun _ _ => True)
+        (stepToFreeMT (p.bind f)) post =
+      wpFold (OpSpec.chargeUnder (fun a => ((queryCharge cost a : ℕ) : ℕ∞)) fun _ _ => True)
+        ((toFreeMT p).bind (stepToFreeMT ∘ f)) post := by
+  rw [wpFold_stepToFreeMT_bind_of_tickAdditive (tickAdditive_queryCharge cost), wpFold_bind']
+  rfl
+
+/-- The use bound at `budget q T` of a program from the use bound at `budget q ⊤` and the time
+component alone. -/
+private theorem useBound_budget_of (cost : I → ℕ) {X : Type} {x : FreeM (SigT I O) X} {q T : ℕ}
+    (hq : wpFold (OpSpec.chargeUnder (fun a => ((queryCharge cost a : ℕ) : ℕ∞))
+      fun _ _ => True) x (fun _ => 0) ≤ q)
+    (hT : wpFold (OpSpec.chargeUnder (fun a => ((tickCost a : ℕ) : ℕ∞)) fun _ _ => True) x
+      (fun _ => 0) ≤ T) :
+    UseBound (useCharge cost) (fun _ _ => True) x (budget (q : ℕ∞) (T : ℕ∞)) :=
+  useBound_of_wpFold_le cost hq hT
+
+/-- **The tick law of `bindQueries`.** A program with tick fold `T` and query fold `q`, each
+query replaced by a handler program of tick fold `t`, has tick fold `T + q * t`. -/
+theorem wpFold_tickCost_bindQueries_le {h : I → ℕ × Timed I' O' O} {p : Timed I O α}
+    {T q t : ℕ}
+    (hp : wpFold (OpSpec.chargeUnder (fun a => ((tickCost a : ℕ) : ℕ∞)) fun _ _ => True)
+      (toFreeMT p) (fun _ => 0) ≤ T)
+    (hq : wpFold (OpSpec.chargeUnder (fun a => ((queryCharge (fun _ => 1) a : ℕ) : ℕ∞))
+      fun _ _ => True) (toFreeMT p) (fun _ => 0) ≤ q)
+    (hh : ∀ i, wpFold (OpSpec.chargeUnder (fun a => ((tickCost a : ℕ) : ℕ∞)) fun _ _ => True)
+      (stepToFreeMT (h i)) (fun _ => 0) ≤ t) :
+    wpFold (OpSpec.chargeUnder (fun a => ((tickCost a : ℕ) : ℕ∞)) fun _ _ => True)
+      (stepToFreeMT (bindQueries h p)) (fun _ => 0) ≤ ((T + q * t : ℕ) : ℕ∞) := by
+  have hu := useBound_bindQueries (fun _ => 0) (useBound_budget_of _ hq hp)
+    (d := budget ⊤ t) fun i => by
+      rw [useBound_iff, Bool.forall_bool]
+      exact ⟨le_top, hh i⟩
+  refine ((useBound_iff _ _ _ _).1 hu true).trans (le_of_eq ?_)
+  simp [queryDemand]
+
+/-- **The query law of `bindQueries`.** A program with query fold `q` at unit cost, each query
+replaced by a handler program of query fold `q'`, has query fold `q * q'`. -/
+theorem wpFold_queryCharge_bindQueries_le (cost' : I' → ℕ) {h : I → ℕ × Timed I' O' O}
+    {p : Timed I O α} {q q' : ℕ}
+    (hq : wpFold (OpSpec.chargeUnder (fun a => ((queryCharge (fun _ => 1) a : ℕ) : ℕ∞))
+      fun _ _ => True) (toFreeMT p) (fun _ => 0) ≤ q)
+    (hh : ∀ i, wpFold (OpSpec.chargeUnder (fun a => ((queryCharge cost' a : ℕ) : ℕ∞))
+      fun _ _ => True) (stepToFreeMT (h i)) (fun _ => 0) ≤ q') :
+    wpFold (OpSpec.chargeUnder (fun a => ((queryCharge cost' a : ℕ) : ℕ∞)) fun _ _ => True)
+      (stepToFreeMT (bindQueries h p)) (fun _ => 0) ≤ ((q * q' : ℕ) : ℕ∞) := by
+  have hu := useBound_bindQueries cost' (u := budget q ⊤) (d := budget q' ⊤) (by
+      rw [useBound_iff, Bool.forall_bool]
+      exact ⟨hq, le_top⟩) fun i => by
+      rw [useBound_iff, Bool.forall_bool]
+      exact ⟨hh i, le_top⟩
+  refine ((useBound_iff _ _ _ _).1 hu false).trans (le_of_eq ?_)
+  simp [queryDemand]
+
+/-- **The tick law of `collectLog`.** A program with tick fold `T` and query fold `q`, each
+query replaced by a handler program of tick fold `t` whose records have length at most `ℓ`,
+has tick fold `T + q * (t + 2 * ℓ + 1)`, and its records have length at most `q * ℓ`. -/
+theorem wpFold_tickCost_collectLog_le {h : Q → ℕ × Timed I O (R × List L)} {p : Timed Q R α}
+    {T q t ℓ : ℕ}
+    (hp : wpFold (OpSpec.chargeUnder (fun a => ((tickCost a : ℕ) : ℕ∞)) fun _ _ => True)
+      (toFreeMT p) (fun _ => 0) ≤ T)
+    (hq : wpFold (OpSpec.chargeUnder (fun a => ((queryCharge (fun _ => 1) a : ℕ) : ℕ∞))
+      fun _ _ => True) (toFreeMT p) (fun _ => 0) ≤ q)
+    (hh : ∀ x, wpFold (OpSpec.chargeUnder (fun a => ((tickCost a : ℕ) : ℕ∞)) fun _ _ => True)
+      (stepToFreeMT (h x)) (fun _ => 0) ≤ t)
+    (hl : ∀ x, (h x).2.AllRet fun rl => rl.2.length ≤ ℓ) :
+    wpFold (OpSpec.chargeUnder (fun a => ((tickCost a : ℕ) : ℕ∞)) fun _ _ => True)
+        (stepToFreeMT (collectLog h p)) (fun _ => 0) ≤ ((T + q * (t + 2 * ℓ + 1) : ℕ) : ℕ∞) ∧
+      (collectLog h p).2.AllRet fun al => al.2.length ≤ q * ℓ := by
+  refine ⟨?_, allRet_collectLog hl ((queryCostLe_erase_iff_wpFold_charge _ _ _).2 ?_)⟩
+  · have hu := useBound_collectLog (fun _ => 0) (useBound_budget_of _ hq hp)
+      (d := budget ⊤ t) (fun x => by
+        rw [useBound_iff, Bool.forall_bool]
+        exact ⟨le_top, hh x⟩) hl
+    refine ((useBound_iff _ _ _ _).1 hu true).trans (le_of_eq ?_)
+    simp [queryDemand]
+    ring
+  · rw [← OpSpec.chargeUnder_true]
+    exact hq
+
+/-- **The query law of `collectLog`.** A program with query fold `q` at unit cost, each query
+replaced by a handler program of query fold `q'` whose records have length at most `ℓ`, has
+query fold `q * q'`, and its records have length at most `q * ℓ`. -/
+theorem wpFold_queryCharge_collectLog_le (cost : I → ℕ) {h : Q → ℕ × Timed I O (R × List L)}
+    {p : Timed Q R α} {q q' ℓ : ℕ}
+    (hq : wpFold (OpSpec.chargeUnder (fun a => ((queryCharge (fun _ => 1) a : ℕ) : ℕ∞))
+      fun _ _ => True) (toFreeMT p) (fun _ => 0) ≤ q)
+    (hh : ∀ x, wpFold (OpSpec.chargeUnder (fun a => ((queryCharge cost a : ℕ) : ℕ∞))
+      fun _ _ => True) (stepToFreeMT (h x)) (fun _ => 0) ≤ q')
+    (hl : ∀ x, (h x).2.AllRet fun rl => rl.2.length ≤ ℓ) :
+    wpFold (OpSpec.chargeUnder (fun a => ((queryCharge cost a : ℕ) : ℕ∞)) fun _ _ => True)
+        (stepToFreeMT (collectLog h p)) (fun _ => 0) ≤ ((q * q' : ℕ) : ℕ∞) ∧
+      (collectLog h p).2.AllRet fun al => al.2.length ≤ q * ℓ := by
+  refine ⟨?_, allRet_collectLog hl ((queryCostLe_erase_iff_wpFold_charge _ _ _).2 ?_)⟩
+  · have hu := useBound_collectLog cost (u := budget q ⊤) (d := budget q' ⊤) (by
+        rw [useBound_iff, Bool.forall_bool]
+        exact ⟨hq, le_top⟩) (fun x => by
+        rw [useBound_iff, Bool.forall_bool]
+        exact ⟨hh x, le_top⟩) hl
+    refine ((useBound_iff _ _ _ _).1 hu false).trans (le_of_eq ?_)
+    simp [queryDemand]
+  · rw [← OpSpec.chargeUnder_true]
+    exact hq
+
 end Handlers
 
 end Timed
@@ -759,3 +921,26 @@ end Timed
 end OracleProg
 
 end CatCrypt.Crypto
+
+open CatCrypt.Tactics.TimeFold in
+/-- The record of costed oracle programs refined by the vector charge `useCharge` at
+`{query, tick}`: the query fold read by the further step and bind equations, the components of
+a use bound read as fold facts, the component laws of `bindQueries` and `collectLog`, and the
+use bound of a step-prefixed program joined from its components and read as its time bound and
+query count. -/
+meta def CatCrypt.Crypto.OracleProg.Timed.oracleProgUseFold : FoldKind :=
+  { CatCrypt.Crypto.OracleProg.Timed.oracleProgFold with
+    hypIffs := #[``CatCrypt.Crypto.OracleProg.Timed.wpFold_queryCharge_le_of_useBound,
+      ``CatCrypt.Crypto.OracleProg.Timed.wpFold_tickCost_le_of_useBound]
+    laws := #[``CatCrypt.Crypto.OracleProg.Timed.wpFold_tickCost_bindQueries_le,
+      ``CatCrypt.Crypto.OracleProg.Timed.wpFold_queryCharge_bindQueries_le,
+      ``CatCrypt.Crypto.OracleProg.Timed.wpFold_tickCost_collectLog_le,
+      ``CatCrypt.Crypto.OracleProg.Timed.wpFold_queryCharge_collectLog_le]
+    stepFolds := #[``CatCrypt.Crypto.OracleProg.Timed.wpFold_queryCharge_stepToFreeMT]
+    bindFolds := #[``CatCrypt.Crypto.OracleProg.Timed.wpFold_queryCharge_stepToFreeMT_bind]
+    allRetBind := some ``CatCrypt.Crypto.OracleProg.Timed.allRet_bind_of_forall
+    useCharge := some ``CatCrypt.Crypto.OracleProg.useCharge
+    useJoin := some ``CatCrypt.Crypto.OracleProg.Timed.useBound_of_wpFold_le
+    useStepIff := some ``CatCrypt.Crypto.OracleProg.Timed.useBound_step_iff }
+
+register_time_fold CatCrypt.Crypto.OracleProg.Timed.oracleProgUseFold

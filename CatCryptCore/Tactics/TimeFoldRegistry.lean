@@ -39,18 +39,34 @@ Each field names a constant of the environment:
 * `bind`, `bindFold` — the bind of the kind and the equation of the charge fold of
   `stepToFreeMT (A.bind f)` with the charge fold of `(toFreeMT A).bind (stepToFreeMT ∘ f)`;
 * `allRet` — the leaf invariant `AllRet Q t` of the kind, read at the conclusions of callees,
-  and `allRetFold`, its implication to the demonic fold of `toFreeMT t` under `allows`;
+  `allRetFold`, its implication to the demonic fold of `toFreeMT t` under `allows`, and
+  `allRetBind`, the invariant of a bind from the invariant of every continuation (the
+  leaf-length rule of `derive_time_bound`);
 * `timeLe` — `(t.time : ℕ∞) ≤ wpFold (OpSpec.charge c) (toFreeMT t) (fun _ => 0)`, for a kind
   whose trees occur as charges of positions of another kind (the computation node of an oracle
   program charges the time of its costed tree);
 * `laws` — the combinator laws: theorems concluding a bound on the charge fold of the image of a
-  combinator application from bounds on the charge folds of the images of its arguments.
+  combinator application from bounds on the charge folds of the images of its arguments;
+* `stepFolds`, `bindFolds` — the equations of `stepFold` and `bindFold` at the further charges
+  of the components of a vector charge;
+* `useCharge`, `useJoin`, `useStepIff` — a vector charge of the kind: its constant `C`, the
+  theorem concluding the use bound `UseBound (C cost) allows x v` of a program from bounds on the
+  charge folds of its components (its premises, in the order of the components), and the
+  equivalence of the use bound of a step-prefixed image with a statement (the time bound and the
+  query count of an oracle program). The readings of a use bound as its component folds are
+  among `hypIffs`, the component laws of a combinator among `laws`.
+
+A kind registered again with the same tree type, signature, charge and images refines its record:
+the modules that import the second registration read the second record. The vector charge of
+oracle programs is registered in this way by the module that defines it, above the module that
+registers the kind.
 
 ## Main definitions
 
 * `FoldKind` — the record of a kind
 * `foldKindExt`, `register_time_fold k` — the registry
-* `foldKinds` — the registered records
+* `FoldKind.refines` — a registration refining an earlier one
+* `foldKinds` — the registered records, each refined record at its last refinement
 -/
 
 public section
@@ -95,10 +111,22 @@ structure FoldKind where
   allRet : Option Name := none
   /-- `AllRet Q t → wpFold (OpSpec.demonicUnder allows) (toFreeMT t) Q`. -/
   allRetFold : Option Name := none
+  /-- `(∀ a, AllRet Q (f a).2) → AllRet Q (A.bind f).2`, read by the leaf-length rule. -/
+  allRetBind : Option Name := none
   /-- `(t.time : ℕ∞) ≤ wpFold (OpSpec.charge c) (toFreeMT t) (fun _ => 0)`. -/
   timeLe : Option Name := none
   /-- The combinator laws. -/
   laws : Array Name := #[]
+  /-- The equations of `stepFold` at the further component charges of a vector charge. -/
+  stepFolds : Array Name := #[]
+  /-- The equations of `bindFold` at the further component charges of a vector charge. -/
+  bindFolds : Array Name := #[]
+  /-- The constant `C` of the vector charge `C cost` of the kind. -/
+  useCharge : Option Name := none
+  /-- The use bound `UseBound (C cost) allows x v` from the bounds of its component folds. -/
+  useJoin : Option Name := none
+  /-- The use bound of a step-prefixed image as a statement. -/
+  useStepIff : Option Name := none
   deriving Inhabited, Repr
 
 /-- The records registered by `register_time_fold`, the records of imported modules first. -/
@@ -108,9 +136,17 @@ initialize foldKindExt : SimplePersistentEnvExtension FoldKind (Array FoldKind) 
     addImportedFn := fun as => as.foldl (· ++ ·) #[]
   }
 
-/-- The registered records. -/
+/-- Whether `k` refines `k₀`: the same tree type, signature, charge and images. -/
+def FoldKind.refines (k k₀ : FoldKind) : Bool :=
+  k.timed == k₀.timed && k.sig == k₀.sig && k.charge == k₀.charge &&
+    k.toFreeMT == k₀.toFreeMT && k.stepToFreeMT == k₀.stepToFreeMT
+
+/-- The registered records, a refined record replaced by its last refinement. -/
 def foldKinds : CoreM (Array FoldKind) :=
-  return foldKindExt.getState (← getEnv)
+  return (foldKindExt.getState (← getEnv)).foldl (init := #[]) fun acc k =>
+    match acc.findIdx? (·.timed == k.timed) with
+    | some i => acc.set! i k
+    | none => acc.push k
 
 /-- The record whose costed tree type has the head `n`. -/
 def foldKindOf? (n : Name) : CoreM (Option FoldKind) :=
@@ -132,11 +168,14 @@ syntax (name := registerTimeFoldCmd) "register_time_fold " ident : command
 def elabRegisterTimeFold : CommandElab := fun stx => do
   let n ← liftCoreM <| realizeGlobalConstNoOverload stx[1]
   let k ← liftCoreM <| evalFoldKind n
-  if (← liftCoreM foldKinds).any (·.timed == k.timed) then
-    throwError "register_time_fold: the tree type `{k.timed}` already has a record"
+  if let some k₀ := (← liftCoreM foldKinds).find? (·.timed == k.timed) then
+    unless k.refines k₀ do
+      throwError "register_time_fold: the tree type `{k.timed}` already has a record with \
+        another signature, charge or image"
   let names := #[k.timed, k.sig, k.charge, k.toFreeMT, k.stepToFreeMT, k.timeBoundIff,
-      k.stepTimeBoundIff] ++ k.hypIffs ++ k.concls ++ k.laws ++
-    ([k.allows, k.stepFold, k.bind, k.bindFold, k.allRet, k.allRetFold, k.timeLe].filterMap id)
+      k.stepTimeBoundIff] ++ k.hypIffs ++ k.concls ++ k.laws ++ k.stepFolds ++ k.bindFolds ++
+    ([k.allows, k.stepFold, k.bind, k.bindFold, k.allRet, k.allRetFold, k.allRetBind, k.timeLe,
+      k.useCharge, k.useJoin, k.useStepIff].filterMap id)
   for c in names do
     unless (← getEnv).contains c do
       throwError "register_time_fold: `{c}` is not a constant"

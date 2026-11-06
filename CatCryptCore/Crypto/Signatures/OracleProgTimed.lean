@@ -65,6 +65,10 @@ The costed mirror `Signatures.EUFCMAAdversary.Timed` of EUF-CMA adversaries is d
 
 * `OracleProg.Timed.erase_bind` — erasure commutes with sequencing
 * `OracleProg.Timed.timeBound_bind` — times add under sequencing
+* `OracleProg.Timed.AllRet.mono`, `OracleProg.Timed.allRet_bind`,
+  `OracleProg.Timed.allRet_bind_of_forall` — leaf invariants along sequencing
+* `OracleProg.Timed.allRet_collectLog` — the records collected from `q` queries, each of length
+  at most `ℓ`, have length at most `q * ℓ`
 * `OracleProg.Timed.erase_bindQueries`, `OracleProg.Timed.erase_collectLog`,
   `OracleProg.Timed.erase_runWith` — erasure of the handler combinators and the interpretation
 * `OracleProg.Timed.erase_runWith_eq`, `OracleProg.Timed.compile_runWithTree` — the costed
@@ -229,6 +233,32 @@ theorem timeBound_bind_of_allRet {Q : α → Prop} {p : Timed I O α}
       (n := m + n - t.time) (by omega)
     exact ⟨h3.1, h3.2⟩
 
+/-- A leaf invariant implies every weaker one. -/
+theorem AllRet.mono {Q Q' : α → Prop} {p : Timed I O α} (hp : p.AllRet Q)
+    (h : ∀ a, Q a → Q' a) : p.AllRet Q' := by
+  induction p with
+  | pure a => exact h a hp
+  | query i c k ih => exact fun o => ih o (hp o)
+  | lift γ t c k ih => exact fun b => ih b (hp b)
+
+/-- A leaf invariant of a program and, at the leaves satisfying it, a leaf invariant of the
+continuation give the latter at the leaves of the sequenced program. -/
+theorem allRet_bind {Q : α → Prop} {Q' : β → Prop} {p : Timed I O α}
+    {f : α → ℕ × Timed I O β} (hp : p.AllRet Q) (hf : ∀ a, Q a → (f a).2.AllRet Q') :
+    (p.bind f).2.AllRet Q' := by
+  induction p with
+  | pure a => exact hf a hp
+  | query i c k ih => exact fun o => ih o (hp o)
+  | lift γ t c k ih => exact fun b => ih b (hp b)
+
+/-- A leaf invariant of every continuation is a leaf invariant of the sequenced program. -/
+theorem allRet_bind_of_forall {Q' : β → Prop} (p : Timed I O α) {f : α → ℕ × Timed I O β}
+    (hf : ∀ a, (f a).2.AllRet Q') : (p.bind f).2.AllRet Q' := by
+  induction p with
+  | pure a => exact hf a
+  | query i c k ih => exact fun o => ih o
+  | lift γ t c k ih => exact fun b => ih b
+
 /-! ### Replacing queries by handler programs -/
 
 section Handlers
@@ -273,6 +303,27 @@ theorem erase_collectLog (h : Q → ℕ × Timed I O (R × List L)) (p : Timed Q
   | query x c k ih =>
     simp only [collectLog, delay, erase_bind, ih, erase, OracleProg.collectLog]
   | lift γ t c k ih => simp only [collectLog, erase, OracleProg.collectLog, ih]
+
+/-- **The records collected from a program with at most `q` queries**, each handler record list
+of length at most `ℓ`, have length at most `q * ℓ`. -/
+theorem allRet_collectLog {h : Q → ℕ × Timed I O (R × List L)} {ℓ : ℕ}
+    (hl : ∀ x, (h x).2.AllRet fun rl => rl.2.length ≤ ℓ) {p : Timed Q R α} {q : ℕ}
+    (hq : QueryCostLe (fun _ => 1) p.erase q) :
+    (collectLog h p).2.AllRet fun al => al.2.length ≤ q * ℓ := by
+  induction p generalizing q with
+  | pure a => simp [collectLog, AllRet]
+  | query x c k ih =>
+    obtain ⟨hq1, hqk⟩ := hq
+    simp only at hq1 hqk
+    simp only [collectLog, delay]
+    refine allRet_bind (hl x) fun rl hrl => ?_
+    refine allRet_bind (ih rl.1 (hqk rl.1)) fun al hal => ?_
+    have e : (q - 1) * ℓ + ℓ = q * ℓ := by
+      obtain ⟨r, rfl⟩ : ∃ r, q = r + 1 := ⟨q - 1, by omega⟩
+      simp [Nat.add_mul]
+    simp only [AllRet, List.length_append]
+    omega
+  | lift γ t c k ih => exact fun b => ih b (hq b)
 
 end Handlers
 
