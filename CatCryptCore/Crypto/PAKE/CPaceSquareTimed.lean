@@ -25,9 +25,10 @@ and each update of a table of the parties adds three units to its cost companion
 `SimInv i` bounds these lengths and companions by `i` and `3 i` after `i` activations, and keeps
 the queried passwords distinct, so that a search of the candidates costs at most
 `(15 + t_coe + t_exp) · card Pw + 1`; the test that a password is among the queried ones
-walks the same list, at most `4 · card Pw + 1`, within that bound. A step from a state of `SimInv i` then costs at most
-`a + b i` (`simProt.timeBoundGraded_timed`), the graded form for simulators whose state grows
-with the activations, and `derive_simulator` lifts it to `cpaceSim`.
+walks the same list, at most `4 · card Pw + 1`, within that bound. A step from a state of
+`SimInv i` then costs at most `a + b i` (`simProt.timeBoundGraded_timed`), the graded form for
+simulators whose state grows with the activations, and `derive_simulator` lifts it to
+`cpaceSim`.
 
 No module imports this file.
 
