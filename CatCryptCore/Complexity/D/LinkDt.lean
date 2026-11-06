@@ -20,6 +20,14 @@ the theorem through which `link_timed` proves the simulation of a definition in 
 `Tm.dt_timedSim`: per definition only `CostLe` between the costed form of `derive_timed` and
 `t.dt η` remains, a comparison of two costed trees of the same shape.
 
+`TreeLeA S D A B` and `CostLeA S e d x y` relax the comparison by a deficit: on every path the
+step costs of the lower tree may exceed those of the upper one by at most `D` (by `e` in front and
+`d` in the tree), and the upper tree simulates at the allowance raised by the deficit
+(`TimedSimTree.of_treeLeA`, `TimedSim.of_costLeA`). This is the comparison that pays the unit
+call of a free function value from the allowance, as the walk does (`DSim.appFree`):
+`Tm.timedSim_of_costLeA` states the simulation from `CostLeA` at any charge `cc a ≤ 1` of a call
+(`Tm.dtC`), at the allowance `t.allowC cc + (e + d)`.
+
 At a first-order type, translated values and values of D are the same type (`Ty.hat_eq_val`)
 and related exactly when they are equal up to the cast (`Sim.cast_eq`, `Sim.cast_self`). At a
 concrete type the cast is the identity by definitional unfolding. The translated environment of
@@ -29,16 +37,18 @@ function and `treeEntry` for a tree function, related to their D values by `SimE
 
 ## Main definitions
 
-* `TreeLe`, `CostLe`
+* `TreeLe`, `CostLe`; `TreeLeA`, `CostLeA`: up to a deficit
 * `EnvHat.nil`, `EnvHat.consE`, `dataEntry`, `treeEntry`
 
 ## Main results
 
 * `TimedSimTree.of_treeLe`, `TimedSim.of_costLe`, `CostLe.bind`, `TreeLe.refl`
+* `TimedSimTree.of_treeLeA`, `TimedSim.of_costLeA`, `CostLeA.bind`, `TreeLeA.mono`,
+  `TreeLeA.of_treeLe`
 * `foldl_timedCost_mono`: the registered cost of `List.foldl` is monotone in the step cost
 * `Ty.hat_eq_val`, `Sim.cast_eq`, `Sim.cast_self`
 * `SimEnv.nil`, `SimEnv.consE`, `SimE.dataEntry`, `SimE.treeEntry`
-* `Tm.timedSim_of_costLe`
+* `Tm.timedSim_of_costLe`, `Tm.timedSim_of_costLeA`
 -/
 
 @[expose] public section
@@ -173,6 +183,262 @@ theorem TimedSim.of_costLe {α β γ : Type} {R : α → γ → Prop} {S : α �
     (hxy : CostLe S x y) : TimedSim R' K n y t :=
   TimedSimTree.of_treeLe hS
     (TimedSimTree.mono h (Nat.add_le_add_left (Nat.mul_le_mul_left K hxy.1) n)) hxy.2
+
+/-! ## Costed trees above costed trees up to a deficit -/
+
+/-- `TreeLeA S D A B`: the costed tree `B` has the nodes of `A` in the same order, the leaves are
+related by `S`, and on every path the step costs of `A` exceed those of `B` by at most `D` in
+total: at a child `x` of a node the step cost of `A` is at most the one of `B` plus `e x`, the
+subtree has deficit `d x`, and `e x + d x ≤ D`. -/
+inductive TreeLeA {α β : Type} (S : α → β → Prop) : ℕ → SPTree.Timed α → SPTree.Timed β → Prop
+    where
+  /-- Related leaves. -/
+  | ret {D : ℕ} {a : α} {b : β} (h : S a b) : TreeLeA S D (.ret a) (.ret b)
+  /-- Samples of the same type. -/
+  | sample {D : ℕ} {γ : Type} {finγ finγ' : Fintype γ} {neγ neγ' : Nonempty γ} {c c' : γ → ℕ}
+      {k : γ → SPTree.Timed α} {k' : γ → SPTree.Timed β} (e d : γ → ℕ)
+      (hc : ∀ x, c x ≤ c' x + e x) (hk : ∀ x, TreeLeA S (d x) (k x) (k' x))
+      (hd : ∀ x, e x + d x ≤ D) :
+      TreeLeA S D (.sample γ finγ neγ c k) (.sample γ finγ' neγ' c' k')
+  /-- Samples of the same distribution. -/
+  | sampleDist {D : ℕ} {γ : Type} {μ : Prob.SDistr γ} {c c' : γ → ℕ} {k : γ → SPTree.Timed α}
+      {k' : γ → SPTree.Timed β} (e d : γ → ℕ) (hc : ∀ x, c x ≤ c' x + e x)
+      (hk : ∀ x, TreeLeA S (d x) (k x) (k' x)) (hd : ∀ x, e x + d x ≤ D) :
+      TreeLeA S D (.sampleDist γ μ c k) (.sampleDist γ μ c' k')
+  /-- Reads of the same location. -/
+  | get {D : ℕ} {l : Location} {c c' : l.ty → ℕ} {k : l.ty → SPTree.Timed α}
+      {k' : l.ty → SPTree.Timed β} (e d : l.ty → ℕ) (hc : ∀ x, c x ≤ c' x + e x)
+      (hk : ∀ x, TreeLeA S (d x) (k x) (k' x)) (hd : ∀ x, e x + d x ≤ D) :
+      TreeLeA S D (.get l c k) (.get l c' k')
+  /-- Writes of the same value to the same location. -/
+  | set {D : ℕ} {l : Location} {v : l.ty} {c c' : ℕ} {A : SPTree.Timed α} {B : SPTree.Timed β}
+      (e d : ℕ) (hc : c ≤ c' + e) (hk : TreeLeA S d A B) (hd : e + d ≤ D) :
+      TreeLeA S D (.set l v c A) (.set l v c' B)
+  /-- Failure. -/
+  | fail {D : ℕ} : TreeLeA S D .fail .fail
+  /-- Loads of the same heap. -/
+  | load {D : ℕ} {h₀ : Heap} {c c' : ℕ} {A : SPTree.Timed α} {B : SPTree.Timed β}
+      (e d : ℕ) (hc : c ≤ c' + e) (hk : TreeLeA S d A B) (hd : e + d ≤ D) :
+      TreeLeA S D (.load h₀ c A) (.load h₀ c' B)
+
+/-- `CostLeA S e d x y`: the step cost in front of `x` is at most the one of `y` plus `e`, and the
+tree of `y` is above the tree of `x` up to the deficit `d` (`TreeLeA`). -/
+def CostLeA {α β : Type} (S : α → β → Prop) (e d : ℕ) (x : ℕ × SPTree.Timed α)
+    (y : ℕ × SPTree.Timed β) : Prop :=
+  x.1 ≤ y.1 + e ∧ TreeLeA S d x.2 y.2
+
+namespace TreeLeA
+
+variable {α β : Type} {S : α → β → Prop}
+
+/-- A larger deficit. -/
+theorem mono {D : ℕ} {A : SPTree.Timed α} {B : SPTree.Timed β} (h : TreeLeA S D A B) {D' : ℕ}
+    (hD : D ≤ D') : TreeLeA S D' A B := by
+  cases h with
+  | ret h => exact .ret h
+  | sample e d hc hk hd => exact .sample e d hc hk fun x => (hd x).trans hD
+  | sampleDist e d hc hk hd => exact .sampleDist e d hc hk fun x => (hd x).trans hD
+  | get e d hc hk hd => exact .get e d hc hk fun x => (hd x).trans hD
+  | set e d hc hk hd => exact .set e d hc hk (hd.trans hD)
+  | fail => exact .fail
+  | load e d hc hk hd => exact .load e d hc hk (hd.trans hD)
+
+/-- A tree above another without deficit is above it at any deficit. -/
+theorem of_treeLe {A : SPTree.Timed α} {B : SPTree.Timed β} (h : TreeLe S A B) (D : ℕ) :
+    TreeLeA S D A B := by
+  induction h generalizing D with
+  | ret h => exact .ret h
+  | sample hc _ ih =>
+    exact .sample (fun _ => 0) (fun _ => D) (fun x => (hc x).trans (Nat.le_add_right _ _))
+      (fun x => ih x D) fun _ => (Nat.zero_add D).le
+  | sampleDist hc _ ih =>
+    exact .sampleDist (fun _ => 0) (fun _ => D) (fun x => (hc x).trans (Nat.le_add_right _ _))
+      (fun x => ih x D) fun _ => (Nat.zero_add D).le
+  | get hc _ ih =>
+    exact .get (fun _ => 0) (fun _ => D) (fun x => (hc x).trans (Nat.le_add_right _ _))
+      (fun x => ih x D) fun _ => (Nat.zero_add D).le
+  | set hc _ ih => exact .set 0 D (hc.trans (Nat.le_add_right _ _)) (ih D) (Nat.zero_add D).le
+  | fail => exact .fail
+  | load hc _ ih => exact .load 0 D (hc.trans (Nat.le_add_right _ _)) (ih D) (Nat.zero_add D).le
+
+/-- A costed tree is above itself at deficit `0` when its leaves are related to themselves. -/
+theorem refl {S : α → α → Prop} (hS : ∀ a, S a a) (A : SPTree.Timed α) : TreeLeA S 0 A A :=
+  of_treeLe (TreeLe.refl hS A) 0
+
+/-- The node rules with one deficit `e` of the step cost and one deficit `d` of the subtrees at
+every child, the deficit of the node `e + d`. -/
+theorem sample' {e d : ℕ} {γ : Type} {finγ finγ' : Fintype γ} {neγ neγ' : Nonempty γ}
+    {c c' : γ → ℕ} {k : γ → SPTree.Timed α} {k' : γ → SPTree.Timed β}
+    (hc : ∀ x, c x ≤ c' x + e) (hk : ∀ x, TreeLeA S d (k x) (k' x)) :
+    TreeLeA S (e + d) (.sample γ finγ neγ c k) (.sample γ finγ' neγ' c' k') :=
+  .sample (fun _ => e) (fun _ => d) hc hk fun _ => le_rfl
+
+theorem sampleDist' {e d : ℕ} {γ : Type} {μ : Prob.SDistr γ} {c c' : γ → ℕ}
+    {k : γ → SPTree.Timed α} {k' : γ → SPTree.Timed β} (hc : ∀ x, c x ≤ c' x + e)
+    (hk : ∀ x, TreeLeA S d (k x) (k' x)) :
+    TreeLeA S (e + d) (.sampleDist γ μ c k) (.sampleDist γ μ c' k') :=
+  .sampleDist (fun _ => e) (fun _ => d) hc hk fun _ => le_rfl
+
+theorem get' {e d : ℕ} {l : Location} {c c' : l.ty → ℕ} {k : l.ty → SPTree.Timed α}
+    {k' : l.ty → SPTree.Timed β} (hc : ∀ x, c x ≤ c' x + e)
+    (hk : ∀ x, TreeLeA S d (k x) (k' x)) : TreeLeA S (e + d) (.get l c k) (.get l c' k') :=
+  .get (fun _ => e) (fun _ => d) hc hk fun _ => le_rfl
+
+theorem set' {e d : ℕ} {l : Location} {v : l.ty} {c c' : ℕ} {A : SPTree.Timed α}
+    {B : SPTree.Timed β} (hc : c ≤ c' + e) (hk : TreeLeA S d A B) :
+    TreeLeA S (e + d) (.set l v c A) (.set l v c' B) :=
+  .set e d hc hk le_rfl
+
+theorem load' {e d : ℕ} {h₀ : Heap} {c c' : ℕ} {A : SPTree.Timed α} {B : SPTree.Timed β}
+    (hc : c ≤ c' + e) (hk : TreeLeA S d A B) :
+    TreeLeA S (e + d) (.load h₀ c A) (.load h₀ c' B) :=
+  .load e d hc hk le_rfl
+
+/-- Leaves and failures at deficit `0`. -/
+theorem ret0 {a : α} {b : β} (h : S a b) : TreeLeA S 0 (.ret a) (.ret b) := .ret h
+
+theorem fail0 : TreeLeA S 0 (.fail : SPTree.Timed α) (.fail : SPTree.Timed β) := .fail
+
+end TreeLeA
+
+namespace CostLeA
+
+variable {α β : Type} {S : α → β → Prop}
+
+theorem mk {e d c c' : ℕ} {A : SPTree.Timed α} {B : SPTree.Timed β} (hc : c ≤ c' + e)
+    (h : TreeLeA S d A B) : CostLeA S e d (c, A) (c', B) :=
+  ⟨hc, h⟩
+
+/-- The step costs in front of costed trees above each other up to a deficit. -/
+theorem fst_le {e d : ℕ} {x : ℕ × SPTree.Timed α} {y : ℕ × SPTree.Timed β}
+    (h : CostLeA S e d x y) : x.1 ≤ y.1 + e :=
+  h.1
+
+/-- The trees of costed trees above each other up to a deficit. -/
+theorem tree {e d : ℕ} {x : ℕ × SPTree.Timed α} {y : ℕ × SPTree.Timed β}
+    (h : CostLeA S e d x y) : TreeLeA S d x.2 y.2 :=
+  h.2
+
+/-- Larger deficits. -/
+theorem mono {e d e' d' : ℕ} {x : ℕ × SPTree.Timed α} {y : ℕ × SPTree.Timed β}
+    (h : CostLeA S e d x y) (he : e ≤ e') (hd : d ≤ d') : CostLeA S e' d' x y :=
+  ⟨h.1.trans (Nat.add_le_add_left he _), h.2.mono hd⟩
+
+/-- A costed tree above another without deficit. -/
+theorem of_costLe {x : ℕ × SPTree.Timed α} {y : ℕ × SPTree.Timed β} (h : CostLe S x y)
+    (e d : ℕ) : CostLeA S e d x y :=
+  ⟨h.1.trans (Nat.le_add_right _ _), TreeLeA.of_treeLe h.2 d⟩
+
+/-- The deficit of a bind: the first trees with equal leaves at deficit `d₁`, the continuations
+at deficits `e₂` in front and `d₂` in the tree. On a path the front deficit of the continuation
+is spent either in front of the bind (when the first tree is a leaf) or at the node of the first
+tree above it, so that the bind has deficit `e₂` in front and `d₁ + e₂ + d₂` in the tree. -/
+theorem bind {γ δ ε : Type} {S : γ → δ → Prop} {d₁ e₂ d₂ : ℕ} {A A' : SPTree.Timed ε}
+    {k : ε → ℕ × SPTree.Timed γ} {k' : ε → ℕ × SPTree.Timed δ}
+    (hA : TreeLeA (fun a b => a = b) d₁ A A') (hk : ∀ a, CostLeA S e₂ d₂ (k a) (k' a)) :
+    CostLeA S e₂ (d₁ + e₂ + d₂) (A.bind k) (A'.bind k') := by
+  -- On a path the front deficit `f ≤ e₂` and the tree deficit `g` of the bind sum to at most
+  -- `d₁ + e₂ + d₂`.
+  suffices H : ∃ f g, f ≤ e₂ ∧ f + g ≤ d₁ + e₂ + d₂ ∧ (A.bind k).1 ≤ (A'.bind k').1 + f ∧
+      TreeLeA S g (A.bind k).2 (A'.bind k').2 by
+    obtain ⟨f, g, hf, hfg, h1, h2⟩ := H
+    exact ⟨h1.trans (Nat.add_le_add_left hf _), h2.mono (by omega)⟩
+  induction hA with
+  | ret h =>
+    subst h
+    exact ⟨e₂, d₂, le_rfl, by omega, (hk _).1, (hk _).2⟩
+  | @sample D _ _ _ _ _ _ _ _ _ e d hc _ hd ih =>
+    choose f g hf hfg h1 h2 using ih
+    refine ⟨0, D + e₂ + d₂, Nat.zero_le _, by omega, Nat.zero_le _, ?_⟩
+    exact .sample (fun x => e x + f x) g (fun x => by have := hc x; have := h1 x; simp; omega)
+      h2 fun x => by have := hd x; have := hfg x; omega
+  | @sampleDist D _ _ _ _ _ _ e d hc _ hd ih =>
+    choose f g hf hfg h1 h2 using ih
+    refine ⟨0, D + e₂ + d₂, Nat.zero_le _, by omega, Nat.zero_le _, ?_⟩
+    exact .sampleDist (fun x => e x + f x) g
+      (fun x => by have := hc x; have := h1 x; simp; omega)
+      h2 fun x => by have := hd x; have := hfg x; omega
+  | @get D _ _ _ _ _ e d hc _ hd ih =>
+    choose f g hf hfg h1 h2 using ih
+    refine ⟨0, D + e₂ + d₂, Nat.zero_le _, by omega, Nat.zero_le _, ?_⟩
+    exact .get (fun x => e x + f x) g (fun x => by have := hc x; have := h1 x; simp; omega)
+      h2 fun x => by have := hd x; have := hfg x; omega
+  | @set D _ _ _ _ _ _ e d hc _ hd ih =>
+    obtain ⟨f, g, hf, hfg, h1, h2⟩ := ih
+    refine ⟨0, D + e₂ + d₂, Nat.zero_le _, by omega, Nat.zero_le _, ?_⟩
+    exact .set (e + f) g (by omega) h2 (by omega)
+  | fail => exact ⟨0, 0, Nat.zero_le _, Nat.zero_le _, Nat.zero_le _, .fail⟩
+  | @load D _ _ _ _ _ e d hc _ hd ih =>
+    obtain ⟨f, g, hf, hfg, h1, h2⟩ := ih
+    refine ⟨0, D + e₂ + d₂, Nat.zero_le _, by omega, Nat.zero_le _, ?_⟩
+    exact .load (e + f) g (by omega) h2 (by omega)
+
+end CostLeA
+
+/-- A costed tree above a costed tree that simulates a D tree, up to the deficit `D`, simulates
+it at the allowance raised by `K * D`: each step that the deficit leaves out is paid by the
+allowance. -/
+theorem TimedSimTree.of_treeLeA {α β γ : Type} {R : α → γ → Prop} {S : α → β → Prop}
+    {R' : β → γ → Prop} {K : ℕ} (hS : ∀ a b w, S a b → R a w → R' b w) {n : ℕ}
+    {A : SPTree.Timed α} {t : CTree γ} (h : TimedSimTree R K n A t) :
+    ∀ {D : ℕ} {B : SPTree.Timed β}, TreeLeA S D A B → TimedSimTree R' K (n + K * D) B t := by
+  induction h with
+  | ret hr => intro D B hB; cases hB with | ret hs => exact .ret (hS _ _ _ hs hr)
+  | tick _ hm ih => intro D B hB; exact .tick (ih hB) (by omega)
+  | sample f e m _ hm ih =>
+    intro D B hB
+    cases hB with
+    | sample ec dc hc hk hd =>
+      refine .sample f e (fun b => m b + K * dc b) (fun b => ih b (hk b)) fun b => ?_
+      have h1 := Nat.mul_le_mul_left K (hc b)
+      have h2 := Nat.mul_le_mul_left K (hd b)
+      rw [Nat.mul_add] at h1 h2
+      have := hm b
+      omega
+  | get i f m _ hm ih =>
+    intro D B hB
+    cases hB with
+    | get ec dc hc hk hd =>
+      refine .get i f (fun x => m x + K * dc x) (fun x => ih x (hk x)) fun x => ?_
+      have h1 := Nat.mul_le_mul_left K (hc x)
+      have h2 := Nat.mul_le_mul_left K (hd x)
+      rw [Nat.mul_add] at h1 h2
+      have := hm x
+      omega
+  | set i f v m _ hm ih =>
+    intro D B hB
+    cases hB with
+    | set ec dc hc hk hd =>
+      refine .set i f v (m + K * dc) (ih hk) ?_
+      have h1 := Nat.mul_le_mul_left K hc
+      have h2 := Nat.mul_le_mul_left K hd
+      rw [Nat.mul_add] at h1 h2
+      omega
+  | fail => intro D B hB; cases hB with | fail => exact .fail
+  | query d r x m _ hm ih =>
+    intro D B hB
+    cases hB with
+    | @sample _ _ _ finγ' _ _ _ _ _ _ ec dc hc hk hd =>
+      obtain rfl : finγ' = FTy.instFintype r := Subsingleton.elim _ _
+      refine .query d r x (fun y => m y + K * dc y) (fun y => ih y (hk y)) fun y => ?_
+      have h1 := Nat.mul_le_mul_left K (hc y)
+      have h2 := Nat.mul_le_mul_left K (hd y)
+      rw [Nat.mul_add] at h1 h2
+      have := hm y
+      omega
+
+/-- A costed tree above a costed tree that simulates a D tree, up to the deficits `e` in front
+and `d` in the tree, simulates it at the allowance raised by `K * (e + d)`. -/
+theorem TimedSim.of_costLeA {α β γ : Type} {R : α → γ → Prop} {S : α → β → Prop}
+    {R' : β → γ → Prop} {K n e d : ℕ} (hS : ∀ a b w, S a b → R a w → R' b w)
+    {x : ℕ × SPTree.Timed α} {y : ℕ × SPTree.Timed β} {t : CTree γ} (h : TimedSim R K n x t)
+    (hxy : CostLeA S e d x y) : TimedSim R' K (n + K * (e + d)) y t := by
+  have h' := TimedSimTree.of_treeLeA hS h hxy.2
+  refine TimedSimTree.mono h' ?_
+  have h1 := Nat.mul_le_mul_left K hxy.1
+  rw [Nat.mul_add] at h1
+  rw [Nat.mul_add]
+  omega
 
 /-- The registered cost of a left fold is monotone in the cost of its step. -/
 theorem foldl_timedCost_mono {α β : Type} (f : α → β → α) {c c' : α → β → ℕ}
@@ -352,6 +618,22 @@ theorem Tm.timedSim_of_costLe {Γ : List Ty} {τ : Ty} (t : Tm Γ τ) (ht : t.In
     TimedSim (fun a w => a = w) 1 t.allow X (t.eval ρ) :=
   TimedSim.of_costLe (fun _ _ _ hab haw => hab.symm.trans (Sim.cast_eq τ hτ haw).symm)
     (Tm.dt_timedSim t ht hρ) hX
+
+/-- A costed tree `X` above the charges `t.dtC cc η` (at a charge `cc a ≤ 1` of a call) of a
+first-order term of the fragment up to the deficits `e` in front and `d` in the tree simulates
+its evaluation at the allowance `t.allowC cc + (e + d)`, with leaves equal to the values of D:
+the steps of the charges that `X` leaves out are paid from the allowance. These are the unit call
+of a function value that the costed form charges nothing for (a projection or re-pairing, as the
+walk pays it by `DSim.appFree`), and, at the charge `1` of every call, the call on `unit`, which
+the costed form charges nothing for. -/
+theorem Tm.timedSim_of_costLeA (cc : Ty → ℕ) (hcc : ∀ a, cc a ≤ 1) {Γ : List Ty} {τ : Ty}
+    (t : Tm Γ τ) (ht : t.InDtFrag) (hτ : τ.FO) {η : EnvHat Γ} {ρ : Env Γ} (hρ : SimEnv η ρ)
+    {e d : ℕ} {X : ℕ × SPTree.Timed (Val τ)}
+    (hX : CostLeA (fun a b => cast (Ty.hat_eq_val τ hτ) a = b) e d (t.dtC cc η) X) :
+    TimedSim (fun a w => a = w) 1 (t.allowC cc + (e + d)) X (t.eval ρ) := by
+  have h := TimedSim.of_costLeA (fun _ _ _ hab haw => hab.symm.trans (Sim.cast_eq τ hτ haw).symm)
+    (Tm.dtC_timedSim cc hcc t ht hρ) hX
+  rwa [Nat.one_mul] at h
 
 /-- The meaning of a simulation with equal leaves at a query-free D tree. -/
 theorem TimedSim.run_eq {α : Type} {K n : ℕ} {x : ℕ × SPTree.Timed α} {t : CTree α}
