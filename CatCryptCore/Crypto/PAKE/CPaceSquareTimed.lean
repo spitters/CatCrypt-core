@@ -24,7 +24,8 @@ The table of `H2` and the list of programmed inputs grow by at most one entry pe
 and each update of a table of the parties adds three units to its cost companion. The invariant
 `SimInv i` bounds these lengths and companions by `i` and `3 i` after `i` activations, and keeps
 the queried passwords distinct, so that a search of the candidates costs at most
-`(15 + t_coe + t_exp) · card Pw + 1`. A step from a state of `SimInv i` then costs at most
+`(15 + t_coe + t_exp) · card Pw + 1`; the test that a password is among the queried ones
+walks the same list, at most `4 · card Pw + 1`, within that bound. A step from a state of `SimInv i` then costs at most
 `a + b i` (`simProt.timeBoundGraded_timed`), the graded form for simulators whose state grows
 with the activations, and `derive_simulator` lifts it to `cpaceSim`.
 
@@ -233,6 +234,9 @@ theorem core_time_nodup (e : OEv Pw W) (i : ℕ) (x : ((Pw → Sˣ) × (Pw → �
     | h1 pw =>
       have := hc (G.pub) (x.1.1 pw)
       have := hh x.2.2.1 [pw] hn
+      have := List.elem.timedCost_le pw x.2.2.1
+      have : 4 * x.2.2.1.length ≤ (15 + tc + te) * Fintype.card Pw :=
+        Nat.mul_le_mul (by omega) hn.length_le_card
       simp only [simProt.start.tree.match_12.timed, hx0]
       split_ifs <;> simp [SPTree.Timed.stepTime, SPTree.Timed.delay, SPTree.Timed.time_ret] <;>
         omega
