@@ -21,7 +21,11 @@ Rule (j): a closure built into data whose type has no costed form is refused.
   taking a relation and its `DecidableRel` instance;
 * a registered primitive taking a predicate and its `DecidablePred` instance;
 * the refusal of a closure stored in a value of a type computed by recursion;
-* the cardinality of a filter by a costly predicate.
+* the cardinality of a filter by a costly predicate;
+* a table write `Function.update q p xs` stored in data without a costed form, a registered call
+  at its registered arity, and a read of the written table;
+* the refusal of a closure `fun p => q p ++ xs` stored in the same position;
+* a table write in a state type that is an abbreviation of a tuple holding a table.
 -/
 
 @[expose] public section
@@ -196,5 +200,84 @@ would cost nothing to build and its applications would not be charged (rule (j))
 -/
 #guard_msgs (whitespace := lax) in
 derive_cost grow
+
+/-! ### (f) A table write stored in data without a costed form -/
+
+/-- A step that writes `xs` at `p` in the table `q` and returns the new table with `s`. -/
+def writeStep (s : ℕ) (q : ℕ → List ℕ) (p : ℕ) (xs : List ℕ) : Option (ℕ × (ℕ → List ℕ)) :=
+  some (s, Function.update q p xs)
+
+derive_cost writeStep
+
+/-- The write is the registered call: one unit plus the costs of its arguments. The cost
+companion `qCost` of `q` is not charged, since the write does not read `q`. -/
+example (s : ℕ) (q : ℕ → List ℕ) (qCost : ℕ → ℕ) (p : ℕ) (xs : List ℕ) :
+    writeStep.timedCost s q qCost p xs = 1 := by
+  simp [writeStep.timedCost, Function.update.timedCost_eq]
+
+/-- A tree that returns `writeStep s q p xs`. -/
+noncomputable def writeStepTree (s : ℕ) (q : ℕ → List ℕ) (p : ℕ) (xs : List ℕ) :
+    SPTree (Option (ℕ × (ℕ → List ℕ))) :=
+  SPTree.ret (writeStep s q p xs)
+
+derive_timed writeStepTree
+
+example (s : ℕ) (q : ℕ → List ℕ) (qCost : ℕ → ℕ) (p : ℕ) (xs : List ℕ) :
+    (writeStepTree.timed s q qCost p xs).2.erase = writeStepTree s q p xs :=
+  writeStepTree.erase_timed s q qCost p xs
+
+/-- A tree that reads the table `q` at `p'`. -/
+noncomputable def readTree (q : ℕ → List ℕ) (p' : ℕ) : SPTree (List ℕ) := SPTree.ret (q p')
+
+derive_timed readTree
+
+/-- Read after write: the write, one unit plus its arguments (values, at no cost), and a read of
+the written table, a table read (companion zero), one unit plus its argument. -/
+example (s : ℕ) (q : ℕ → List ℕ) (qCost : ℕ → ℕ) (p p' : ℕ) (xs : List ℕ) :
+    writeStep.timedCost s q qCost p xs +
+      (readTree.timed (Function.update q p xs) (fun _ => 0) p').1 = 1 + 1 := by
+  simp [writeStep.timedCost, readTree.timed, Function.update.timedCost_eq]
+
+/-! ### (g) A closure stored in the same position is refused -/
+
+/-- A step that stores the closure `fun p => q p ++ xs`. -/
+def appendStep (s : ℕ) (q : ℕ → List ℕ) (xs : List ℕ) : Option (ℕ × (ℕ → List ℕ)) :=
+  some (s, fun p => q p ++ xs)
+
+/--
+error: derive_timed: a function bound in data: the value `some (s, fun p ↦ q p ++ xs)` of type
+`Option (ℕ × (ℕ → List ℕ))` builds the closure `fun p ↦ q p ++ xs` of type `ℕ → List ℕ` at the
+position Option.some → Prod.snd; the type has no costed form, so the closure would cost nothing
+to build and its applications would not be charged (rule (j))
+-/
+#guard_msgs (whitespace := lax) in
+derive_cost appendStep
+
+/-! ### (h) A table write in a state type that abbreviates a tuple -/
+
+/-- A state: a counter, a table of queues and a flag. -/
+abbrev QState := ℕ × (ℕ → List ℕ) × Bool
+
+/-- A step that appends `x` to the queue at `p` and counts the step. -/
+def pushStep (n : ℕ) (q : ℕ → List ℕ) (b : Bool) (p x : ℕ) : Option QState :=
+  some (n + 1, Function.update q p (q p ++ [x]), b)
+
+derive_cost pushStep
+
+/-- On a table `q`: the read of `q` at `p`, the append, the write and the successor. -/
+example (n : ℕ) (q : ℕ → List ℕ) (b : Bool) (p x : ℕ) :
+    pushStep.timedCost n q (fun _ => 0) b p x = 2 * (q p).length + 5 := by
+  simp [pushStep.timedCost, Function.update.timedCost_eq, List.append.timedCost_eq]; omega
+
+/-- A tree that returns `pushStep n q b p x`. -/
+noncomputable def pushStepTree (n : ℕ) (q : ℕ → List ℕ) (b : Bool) (p x : ℕ) :
+    SPTree (Option QState) :=
+  SPTree.ret (pushStep n q b p x)
+
+derive_timed pushStepTree
+
+example (n : ℕ) (q : ℕ → List ℕ) (qCost : ℕ → ℕ) (b : Bool) (p x : ℕ) :
+    (pushStepTree.timed n q qCost b p x).2.erase = pushStepTree n q b p x :=
+  pushStepTree.erase_timed n q qCost b p x
 
 end CatCrypt.Tactics.DeriveTimedPredCostTest

@@ -223,6 +223,26 @@ such a position that is not built there (a binder, the result of a call, a compo
 data) is read as a table, as before. A structure other than a pair is not entered: its function
 fields are field paths or are priced through the value (rule (g), `isValueField`).
 
+Table writes, registered calls with a function result. The registered arity of a primitive `c`
+is the number of its arguments that its registered cost takes: the binders of `c.timedCost`
+less its cost companions (`registeredArity?`). An application of a registered primitive at its
+registered arity is a complete application, priced by its registered cost (one unit plus the
+registered cost plus the costs of the arguments), even when its arity is below the binders of
+its declared type and its result is a function; the result is a table. Rule (j) applies to
+closures only: a `fun`, a partial application below the registered arity, or a partial
+application of a constant without a registered cost. The case in view is the table write:
+`Function.update f a v` on a table `f` is the write of `v` at `a`, registered in
+`CatCryptCore.Tactics.StdCosts` at arity six and at no cost beyond the unit of the call
+(`Function.update.timedCost_eq`), so that the write costs one unit plus the costs of its
+arguments. A function argument of such a call takes its cost companion only when the
+registered cost has a binder for it (`costArgs` with `fnByBinder`): the write does not read
+`f`, its registered cost takes no companion of `f`, and `f` may be a component read from data,
+which has none and a later read of the written table, a table read, one unit plus the cost of its
+argument. The equality test on keys is a decision priced as conditions are: a read applied
+directly to the write, `Function.update f a v x`, is beyond the registered arity and is priced by
+the definition, an `if` on `x = a`. In a costed closure (`hatTy?`) the write is translated as
+before, a partial application whose companion is the read of the definition.
+
 On the class `TabState` (function-valued state `X → Y` with first-order `X`, built from tables,
 `Function.update`, case analyses on data present at the build whose arms are of the class,
 calls of non-recursive definitions whose bodies are of the class, structural or well-founded
@@ -2618,11 +2638,16 @@ binders of `f` by a decision instance for `p` (`isDecisionOf`). -/
 def decPredArgs (f : Expr) (args : Array Expr) : MetaM (Array Bool) := do
   forallBoundedTelescope (← inferType f) (some args.size) fun xs _ => do
     let mut out := Array.replicate args.size false
+    -- A decision instance is an instance binder; without one there is no decidable predicate.
+    let insts ← xs.mapM fun x => return (← x.fvarId!.getBinderInfo).isInstImplicit
+    unless insts.any id do return out
     for i in [0:xs.size] do
+      unless insts[i + 1:].toArray.any id do break
       let isPred ← forallTelescopeReducing (← inferType xs[i]!) fun ys b =>
         pure (!ys.isEmpty && b.isProp)
       unless isPred do continue
       for j in [i + 1:xs.size] do
+        unless insts[j]! do continue
         if ← isDecisionOf xs[i]! (← inferType xs[j]!) then
           out := out.set! i true
           break
@@ -2650,13 +2675,56 @@ def isCtorName (env : Environment) (n : Name) : Bool :=
   | some (.ctorInfo _) => true
   | _ => false
 
+/-- The registered arity of the constant `c`: the number of arguments of `c` that its registered
+cost `c.timedCost` takes, when it is smaller than the number of binders of the declared type of
+`c` (a primitive whose result is a function, `Function.update f a v`); `none` when `c` has no
+registered cost or its registered cost takes all the arguments. It is the number of binders of
+the registered cost less its cost companions: a binder that is a function type ending in `ℕ`
+and follows an explicit function argument that is not an instance (the companion of that
+argument, `costArgs`). -/
+def registeredArity? (c : Name) : MetaM (Option Nat) := do
+  let env ← getEnv
+  let some ri := env.find? (c ++ `timedCost) | return none
+  let some ci := env.find? c | return none
+  -- Read off the declared types, without reduction: the binders of `c`, and those of its
+  -- registered cost less the companions.
+  let mut full := 0
+  let mut t := ci.type.consumeMData
+  while t.isForall do
+    full := full + 1
+    t := t.bindingBody!.consumeMData
+  let mut n := 0
+  let mut r := ri.type.consumeMData
+  while r.isForall do
+    n := n + 1
+    let d := r.bindingDomain!
+    let isFnArg := d.isForall && !r.bindingInfo!.isInstImplicit && !d.getForallBody.isSort
+    r := r.bindingBody!.consumeMData
+    -- The companion of a function argument is skipped.
+    if isFnArg && r.isForall then
+      let d' := r.bindingDomain!
+      if d'.isForall && d'.getForallBody.isConstOf ``Nat then
+        r := r.bindingBody!.consumeMData
+  return if n < full then some n else none
+
+/-- Whether the application `e` is a complete application of a registered primitive below the
+arity of its declared type: its head is a constant whose registered arity
+(`registeredArity?`) is the number of its arguments. Such an application is priced by its
+registered cost, even when its result is a function, and is not a closure (rule (j)). -/
+def isRegisteredCall (e : Expr) : MetaM Bool := do
+  let .const c _ := e.getAppFn.consumeMData | return false
+  return (← registeredArity? c) == some e.getAppNumArgs
+
 /-- Whether the value `v` builds a closure: a `fun`, or a partial application of a constant or
-of a local (fewer arguments than the binders of its declared type, which is not unfolded). -/
+of a local (fewer arguments than the binders of its declared type, which is not unfolded). An
+application of a registered primitive at its registered arity (`isRegisteredCall`) is a
+complete application, not a closure. -/
 def isClosureValue (v : Expr) : MetaM Bool := do
   let v := v.consumeMData.headBeta
   if v.isLambda then return true
   let f := v.getAppFn.consumeMData
   unless f.isConst || (f.isFVar && v.isApp) do return false
+  if ← isRegisteredCall v then return false
   let arity ← forallTelescope (← inferType f) fun ys _ => pure ys.size
   return v.getAppNumArgs < arity
 
@@ -2703,10 +2771,25 @@ partial def unmirroredClosure? (t v : Expr) (path : Array String := #[])
   if tw' == tw then return none
   unmirroredClosure? tw' v path (unfolded.push c) (fuel - 1)
 
+/-- Whether the value `v`, read through the constructors that `unmirroredClosure?` follows
+(`Prod.mk`, `Sum.inl`, `Sum.inr`, `some`), has a component that builds a closure
+(`isClosureValue`). It reads the value only, so that rule (j) inspects types only for values
+that build a closure. -/
+partial def hasClosureComponent (v : Expr) : MetaM Bool := do
+  let v := v.consumeMData.headBeta
+  if v.isAppOfArity ``Prod.mk 4 then
+    return (← hasClosureComponent (v.getArg! 2)) || (← hasClosureComponent (v.getArg! 3))
+  if v.isAppOfArity ``Sum.inl 3 || v.isAppOfArity ``Sum.inr 3 then
+    return ← hasClosureComponent (v.getArg! 2)
+  if v.isAppOfArity ``Option.some 2 then return ← hasClosureComponent (v.getArg! 1)
+  isClosureValue v
+
 /-- Refuse the constructor application `e` when it builds a closure at a function position of
 its type that has no costed form (rule (j), `unmirroredClosure?`): its type has no costed value
 (`hatTy?`), so the closure would be built at cost zero and its applications read as a table. -/
 def checkUnmirroredClosure (e : Expr) : MetaM Unit := do
+  -- The value is read first: the types are inspected only when a closure sits at a component.
+  unless ← hasClosureComponent e do return
   let t ← inferType e
   if (← hatTy? t).isSome then return
   let some (v, ft, path, unfolded) ← unmirroredClosure? t e | return
@@ -4043,7 +4126,8 @@ partial def unfoldFnCall? (ctx : Ctx) (e : Expr) : TermElabM (Option (Expr × Ex
   let args := e.getAppArgs
   let env ← getEnv
   let some (.defnInfo dv) := env.find? c | return none
-  if env.contains (c ++ `timedCost) || freeConstants.contains c then return none
+  if (env.contains (c ++ `timedCost) && (← registeredArity? c).isNone) ||
+      freeConstants.contains c then return none
   if (Structural.eqnInfoExt.find? env c).isSome || (WF.eqnInfoExt.find? env c).isSome then
     return none
   if isCaseHead env c || isCasesOnRecursor env c then return none
@@ -4187,9 +4271,13 @@ partial def partialAppCompanion (ctx : Ctx) (e tw f : Expr) (args : Array Expr) 
 companion. For the registered cost `reg?` of a primitive, a decidable predicate `p` (rule (i))
 is followed by its companion `fun a => cost of deciding p a` (`propCost`) when the binder of
 `reg?` after `p` has the companion's type; a registered cost without that binder (a cost
-derived by `derive_cost`, whose binder `p` is static) takes `p` alone. -/
-partial def costArgs (ctx : Ctx) (f : Expr) (args : Array Expr) (reg? : Option Expr := none) :
-    TermElabM (Array Expr) := do
+derived by `derive_cost`, whose binder `p` is static) takes `p` alone. With `fnByBinder` (a
+registered call at its registered arity, `registeredArity?`), any function argument is followed
+by its companion only when the binder of `reg?` after it has the companion's type: a registered
+cost that does not read a function argument (the table write `Function.update f a v`) takes no
+companion for it. -/
+partial def costArgs (ctx : Ctx) (f : Expr) (args : Array Expr) (reg? : Option Expr := none)
+    (fnByBinder : Bool := false) : TermElabM (Array Expr) := do
   let kinds ← argKinds f args (decPreds := reg?.isSome)
   let mut out := #[]
   for a in args, (k, bt) in kinds do
@@ -4197,7 +4285,12 @@ partial def costArgs (ctx : Ctx) (f : Expr) (args : Array Expr) (reg? : Option E
     if k == .treeFn then out := out.push (← companionOf ctx a)
     else if k == .fn then
       let isPred ← forallTelescopeReducing bt fun ys b => pure (!ys.isEmpty && b.isProp)
-      if !isPred then out := out.push (← companionOf ctx a)
+      if !isPred then
+        -- With `fnByBinder` (a registered call at its registered arity), a function argument
+        -- takes its companion only when the registered cost has a binder for it.
+        if let (true, some reg) := (fnByBinder, reg?) then
+          if ← takesPredCompanion reg out bt then out := out.push (← companionOf ctx a)
+        else out := out.push (← companionOf ctx a)
       else if let some reg := reg? then
         if ← takesPredCompanion reg out bt then
           let c ← forallTelescopeReducing (← inferType a) fun ys _ => do
@@ -4267,16 +4360,27 @@ partial def costConst (ctx : Ctx) (e : Expr) (c : Name) (args : Array Expr) :
     if let some (cost, v) ← foldHat? ctx (mkAppN f (args.extract 0 5)) then
       if args.size == 5 then return cost
       return add cost (← closureApp ctx v (args.extract 5 args.size)).1
+  -- A registered primitive applied at its registered arity, below the arity of its declared
+  -- type (a table write `Function.update f a v`): a complete application, priced by its
+  -- registered cost, whose result is a table.
+  let reg := c ++ `timedCost
+  let regArity? ← registeredArity? c
+  if regArity? == some args.size then
+    let regArgs ← costArgs ctx f args (some (← mkConstWithFreshMVarLevels reg))
+      (fnByBinder := true)
+    let regE ← mkAppOptM reg (regArgs.map some)
+    return add (natE 1) (add regE (← argsCost ctx args))
   -- A partial application is a closure.
   let arity ← forallTelescope (← inferType f) fun ys _ => pure ys.size
   if args.size < arity then return ← argsCost ctx args
   if isCasesOnRecursor env c then
     return ← costCases ctx e c args
   -- A registered cost.
-  let reg := c ++ `timedCost
   if let some (_, sc) := ctx.selfCosts.find? (·.1 == c) then
     return add (natE 1) (add (mkAppN sc (← costArgs ctx f args)) (← argsCost ctx args))
-  if env.contains reg then
+  -- A registered primitive applied beyond its registered arity (a read `Function.update f a v
+  -- x` of a write) is priced by its definition, as a call without a registered cost.
+  if env.contains reg && regArity?.isNone then
     let regArgs ← costArgs ctx f args (some (← mkConstWithFreshMVarLevels reg))
     let regE ← mkAppOptM reg (regArgs.map some)
     -- A derived cost that takes the cost companions of field paths of `c`'s binders: the

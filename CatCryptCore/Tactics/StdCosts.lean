@@ -56,6 +56,7 @@ their definitions through `Array.toList`, so their costs are linear in the size.
   sum or product over `s` is that of a fold over `s.toList`
 * `Finset.sum.timedCost_le`, `Finset.prod.timedCost_le` — `(k + 1) * s.card` for summand costs
   at most `k`; `Finset.univ.timedCost_fin` — enumerating `Fin n` costs `n`
+* `Function.update.timedCost_eq` — a table write costs nothing beyond the unit of the call
 * `Finset.empty.timedCost_eq`, `Multiset.cons.timedCost_eq` — the empty set and adding an
   element to a multiset cost one unit
 
@@ -652,5 +653,23 @@ theorem Fin.foldl.timedCost_const (n : ℕ) (f : α → Fin n → α) (c : ℕ) 
   | succ n ih =>
     have h := ih (fun x i => f x i.succ) (f init 0)
     rw [Fin.foldl.timedCost_succ, h, Nat.mul_succ]; omega
+
+/-! Registered cost of a table write. `Function.update f a v`, on a table `f`, is the write of `v`
+at `a`: a registered primitive whose registered arity is six (`α`, `β`, the decision instance,
+`f`, `a`, `v`), below the seven binders of its declared type, so that its application to `f a v`
+is a complete application whose result is a table (`registeredArity?` of
+`CatCryptCore.Tactics.DeriveTimed`). The write costs nothing beyond the unit of the call, so the
+call costs one unit plus the costs of its arguments. The registered cost takes no cost companion
+of `f`, since the write does not read `f`, so that `f` may be a component read from data. A read of the written table is a table read, one unit plus the cost
+of its argument; a read `Function.update f a v x` applied directly to the write is priced by the
+definition, its test `x = a` a decision priced as conditions are. -/
+timed_cost Function.update := fun (α : Sort _) (β : α → Sort _) [DecidableEq α]
+  (_f : (a : α) → β a) (_a : α) (_v : β _a) => 0
+
+/-- Writing `v` at `a` costs nothing beyond the unit of the call. -/
+theorem Function.update.timedCost_eq {α : Sort*} {β : α → Sort*} [DecidableEq α]
+    (f : (a : α) → β a) (a : α) (v : β a) :
+    Function.update.timedCost α β f a v = 0 := by
+  simp [Function.update.timedCost]
 
 end
