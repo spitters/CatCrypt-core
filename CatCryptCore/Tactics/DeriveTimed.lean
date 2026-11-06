@@ -402,7 +402,7 @@ definition is bound by one `let` and priced once (`bindArgsShared`). Unfolding i
 the option `derive_timed.maxDepth` (default 16) nested definitions.
 
 A condition costs its data arguments, through `¬`, `∧` and `∨` without short-circuit; its
-`Decidable` instance is not read. With the option `derive_timed.priceProps` (default `false`),
+`Decidable` instance is not read. With the option `derive_timed.priceProps` (default `true`),
 a condition is also priced by what decides it (`pricedProp?`): `x ∈ l` on a list as the call
 `List.elem x l`, `l₁ = l₂` and `l₁ ≠ l₂` on lists as the call `List.beq l₁ l₂`, at one unit per
 comparison of elements, and a definition valued in `Prop` as one plus its unfolded body, each
@@ -1149,7 +1149,7 @@ register_option derive_reduction.certifiedCalls : Bool := {
 }
 
 register_option derive_timed.priceProps : Bool := {
-  defValue := false
+  defValue := true
   descr := "derive_timed, derive_cost and derive_reduction price a condition by what decides \
     it: membership and equality on lists by List.elem and List.beq, and a definition valued in \
     Prop by its unfolded body"
@@ -1182,8 +1182,10 @@ by its name, so that a command of this module runs before the option's initializ
 tests of the module). -/
 def maxDepth : CoreM Nat := return (← getOptions).get `derive_timed.maxDepth (16 : Nat)
 
-/-- The option `derive_timed.priceProps`, read by its name as `maxDepth` reads its option. -/
-def priceProps : CoreM Bool := return (← getOptions).get `derive_timed.priceProps false
+/-- The option `derive_timed.priceProps`, read by its name as `maxDepth` reads its option. Its
+default is `true`, given here as well as in the registration, since `Options.get` with a default
+returns that default for an unset option. -/
+def priceProps : CoreM Bool := return (← getOptions).get `derive_timed.priceProps true
 
 /-- The option `derive_timed.reduceFnAliases`, read by its name as `maxDepth` reads its option. -/
 def reduceFnAliases : CoreM Bool :=

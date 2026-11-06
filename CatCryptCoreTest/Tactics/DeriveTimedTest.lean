@@ -33,8 +33,9 @@ computation fields (one without arguments, whose cost companion is a number) and
 two-stage oracle adversary whose proof field bounds a tree field, and a field of a computed
 structure `(kit.aead iv).enc` priced by a companion indexed by the nonce. A recursion over the
 adversary (`logRed`, the shape of the PRF-to-MAC reduction) is derived as a recursion over its
-costed tree, and `logRed.timeBound_timed` bounds its time through
-`OracleAdv.Timed.timeBound_fold`. The last tests pin
+costed tree, and `logRed.timeBound_timed` bounds its time by induction on that tree: the test
+`r.1 ∈ log`, priced by a walk of the log, reads a log that grows with the queries. The last tests
+pin
 the pricing of a class method on a local instance by a companion (and of an algebraic
 operation on a local instance at one unit) and the refusal of an
 opaque constant. The costed-closure tests derive a state table updated by `Function.update`
@@ -529,32 +530,39 @@ example {D T : Type} [DecidableEq D] [BEq T] (A : OracleAdv.Timed D T (D × T)) 
     (beqCost : T → T → ℕ) : (logRed.timed A log beqCost).2.erase = logRed A.erase log :=
   logRed.erase_timed A log beqCost
 
-/-- The derived costed form of a recursion over the adversary is a handler of its nodes: a
-forger of time `n` gives time `4 * n + 4 + e` when a comparison of tags costs at most `e`. -/
+/-- The derived costed form of a recursion over the adversary: from a log `log`, a forger of time
+`n` gives time `8 * n + 4 * |log| + 6 + e` when a comparison of tags costs at most `e`. The final
+test walks the log, which grows by one entry per query of the forger. -/
 theorem logRed.timeBound_timed {D T : Type} [DecidableEq D] [BEq T] (beqCost : T → T → ℕ)
     {e : ℕ} (he : ∀ x y, beqCost x y ≤ e) {A : OracleAdv.Timed D T (D × T)} {n : ℕ}
     (hA : A.TimeBound n) (log : List D) :
-    OracleAdv.Timed.StepTimeBound (logRed.timed A log beqCost) ((1 + 3) * n + (4 + e)) := by
-  refine OracleAdv.Timed.timeBound_fold (fun A s => logRed.timed A s beqCost) ?_ ?_ ?_ hA log
-  · intro a s
+    OracleAdv.Timed.StepTimeBound (logRed.timed A log beqCost)
+      (8 * n + 4 * log.length + (6 + e)) := by
+  induction A generalizing n log with
+  | ret a =>
+    have hl := List.elem.timedCost_le a.1 log
     simp only [logRed.timed, OracleAdv.Timed.delay]
-    split <;> simp_all [OracleAdv.Timed.StepTimeBound, OracleAdv.Timed.TimeBound]
+    split <;> simp only [OracleAdv.Timed.StepTimeBound, OracleAdv.Timed.TimeBound, and_true,
+      Nat.add_zero]
     · omega
     · exact ⟨by omega, by omega, fun y => by have := he a.2 y; omega⟩
-  · intro γ p c k s M hM0 hM hk
+  | rand p c k ih =>
+    obtain ⟨h0, hk⟩ := hA
     rw [logRed.timed]
     simp only [OracleAdv.Timed.StepTimeBound, OracleAdv.Timed.TimeBound]
     refine ⟨by omega, by omega, fun b => ?_⟩
-    have h1 := hM b
-    have h2 := hk b s
-    exact ⟨by have := h2.1; omega, h2.2.mono (by omega)⟩
-  · intro d c k s M hM0 hM hk
+    have h1 := hk b
+    have h2 := ih b h1.2 log
+    exact ⟨by have := h2.1; have := h1.1; omega, h2.2.mono (by have := h1.1; omega)⟩
+  | query d c k ih =>
+    obtain ⟨h0, hk⟩ := hA
     rw [logRed.timed]
     simp only [OracleAdv.Timed.StepTimeBound, OracleAdv.Timed.TimeBound]
     refine ⟨by omega, by omega, fun b => ?_⟩
-    have h1 := hM b
-    have h2 := hk b (d :: s)
-    exact ⟨by have := h2.1; omega, h2.2.mono (by omega)⟩
+    have h1 := hk b
+    have h2 := ih b h1.2 (d :: log)
+    simp only [List.length_cons] at h2
+    exact ⟨by have := h2.1; have := h1.1; omega, h2.2.mono (by have := h1.1; omega)⟩
 
 /-! ## Refusals -/
 
