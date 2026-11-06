@@ -89,7 +89,7 @@ that cannot be answered, a uniform challenge vector is bad with probability at m
   erase to the extractor and the inverter
 * `Params.logExtractor.timeBound_timed`, `Params.inverter.timeBound_timed` — their times:
   `tExt`, and `T + (tV + V(tV + 1)) + ((tH + 1)(qH + V) + (tS + 1)qS) + tOut` for a
-  costed forger of time `T`
+  costed forger of time `T`, with `tV` a bound of one derived verifier step
 
 A distinguisher on the verification games has advantage at most the EUF-CMA advantage
 (`FiatShamirROM.advantageA_eufcmaGame_le`, in `FiatShamirROM/Verification.lean`).
@@ -1478,12 +1478,14 @@ theorem inverter_eq (hS : P.D.Sound) (hK : 0 < P.D.K) {qH qS : ℕ}
     P.inverter M A = slReductionCls (P.logExtractor M hS hK (P.tableBound qH qS)) A := rfl
 
 /-- The costed inverter on the statement `x`: the costed verified run of `A' x` in the
-instrumented simulated game, at step cost `tH` per hash and `tS` per signing query and `tV`
-per verifier step, followed by the extraction at cost `tOut`. -/
-noncomputable def inverter.timed (qH qS tV tH tS tOut : ℕ)
+instrumented simulated game, at step cost `tH` per hash and `tS` per signing query, with the
+verifier's queries at the cost companion `vkeyCost` of `vkey`, followed by the extraction at
+cost `tOut`. -/
+noncomputable def inverter.timed (qH qS : ℕ) (vkeyCost : (P.protocol M).VkeyCost)
+    (tH tS tOut : ℕ)
     (A' : P.D.Y → OracleAdv.Timed (P.protocol M).Query (P.protocol M).Answer
       (P.protocol M).Forgery) (x : P.D.Y) : ℕ × OracleAdv.Timed Empty Empty P.D.X :=
-  timedRun tV tOut (toOracle (slStep (P.tableBound qH qS) (P.Bad M) x))
+  timedRun vkeyCost tOut (toOracle (slStep (P.tableBound qH qS) (P.Bad M) x))
     (Sum.elim (fun _ => tH) fun _ => tS) ((Protocol.Tables.empty, false), false)
     (fun y => P.ext M x y.2.1.1 y.1) x (A' x)
 
@@ -1491,26 +1493,28 @@ noncomputable def inverter.timed (qH qS tV tH tS tOut : ℕ)
 theorem inverter.run_erase_timed {qH qS : ℕ} (A : (P.protocol M).Adversary qH qS)
     (A' : P.D.Y → OracleAdv.Timed (P.protocol M).Query (P.protocol M).Answer
       (P.protocol M).Forgery)
-    (hA : ∀ x, (A' x).erase = A.run x) (tV tH tS tOut : ℕ) {U : Type}
-    (O' : U → Empty → PMF (Empty × U)) (u : U) (x : P.D.Y) :
-    (OracleAdv.run O' (inverter.timed P M qH qS tV tH tS tOut A' x).2.erase u).map
+    (hA : ∀ x, (A' x).erase = A.run x) (vkeyCost : (P.protocol M).VkeyCost) (tH tS tOut : ℕ)
+    {U : Type} (O' : U → Empty → PMF (Empty × U)) (u : U) (x : P.D.Y) :
+    (OracleAdv.run O' (inverter.timed P M qH qS vkeyCost tH tS tOut A' x).2.erase u).map
       Prod.fst = P.inverter M A x := by
   rw [inverter.timed, timedRun.run_erase, hA]
   rfl
 
-/-- **Time of the costed inverter.** With `A'` of time `T`, the costed inverter has time
-at most `T + (tV + V * (tV + 1)) + ((tH + 1) * (qH + V) + (tS + 1) * qS) + tOut`. -/
+/-- **Time of the costed inverter.** With `A'` of time `T` and `tV` a bound of one verifier
+step (`Protocol.VerifyCostLe`), the costed inverter has time at most
+`T + (tV + V * (tV + 1)) + ((tH + 1) * (qH + V) + (tS + 1) * qS) + tOut`. -/
 theorem inverter.timeBound_timed {qH qS : ℕ} (A : (P.protocol M).Adversary qH qS)
     {A' : P.D.Y → OracleAdv.Timed (P.protocol M).Query (P.protocol M).Answer
       (P.protocol M).Forgery}
-    (hA : ∀ x, (A' x).erase = A.run x) (tV tH tS tOut : ℕ) {T : ℕ}
+    (hA : ∀ x, (A' x).erase = A.run x) (vkeyCost : (P.protocol M).VkeyCost) (tV : ℕ)
+    (hV : (P.protocol M).VerifyCostLe vkeyCost tV) (tH tS tOut : ℕ) {T : ℕ}
     (hT : ∀ x, (A' x).TimeBound T) (x : P.D.Y) :
-    OracleAdv.Timed.StepTimeBound (inverter.timed P M qH qS tV tH tS tOut A' x)
+    OracleAdv.Timed.StepTimeBound (inverter.timed P M qH qS vkeyCost tH tS tOut A' x)
       (T + (tV + (P.protocol M).V * (tV + 1)) +
         ((tH + 1) * (qH + (P.protocol M).V) + (tS + 1) * qS) + tOut) := by
   have hq : IsQueryBound₂ (A' x).erase qH qS := by
     rw [hA]; exact A.isQueryBound x
-  exact timedRun.timeBound (G := P.protocol M) tV tOut
+  exact timedRun.timeBound (G := P.protocol M) vkeyCost tV hV tOut
     (toOracle (slStep (P.tableBound qH qS) (P.Bad M) x)) (Sum.elim (fun _ => tH) fun _ => tS)
     ((Protocol.Tables.empty, false), false) (fun y => P.ext M x y.2.1.1 y.1) x
     (tH := tH) (tS := tS) (fun _ => le_rfl) (hT x) hq

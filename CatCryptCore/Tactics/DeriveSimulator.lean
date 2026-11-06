@@ -8,6 +8,7 @@ module
 public import CatCryptCore.Crypto.UCSimulatorCostMono
 public import CatCryptCore.Tactics.DeriveReduction
 public import CatCryptCore.Tactics.DeriveTimeBound
+public import CatCryptCore.Tactics.StatePotential
 
 /-!
 # Costed forms of bundled simulators
@@ -91,6 +92,21 @@ the outer events and `sO` of the answers as implicit binders: the size-graded ru
 relabellings, and the graded bound with the constant `0` of the size for the other nodes
 (`Simulator.Timed.TimeBoundGraded.timeBoundSized`).
 
+When a leaf has a potential time bound `f.potentialBound_timed` (`derive_hybrid_time (potential)
+f`, `StatePotential.lean`), the command proves instead `S.timeBoundPot_timed : … →
+(S.timed …).TimeBoundPot gE gO hEG hO a b d` and, when the outer ports have instances of
+`ImportSize` and `PotLeSize`, the certificate `S.potCert_timed : … → (S.timed …).PotCert a b c d`.
+The rule, over the constructions above: a potential leaf by
+`Simulator.ofMultiHybrid.timeBoundPot_timed` (or its form on costed states when the port
+erasures are identities); a composite by `Simulator.comp.timeBoundPot_timed` with the least
+`κ ≤ κMax` (`16`) for which the middle interface conserves import, `gEM ≤ hEM + κ` and
+`gM ≤ hM + κ`, closed by simplification and `omega` on the measures; a relabelling by
+`Simulator.mapPorts.timeBoundPot_timed`; a change of views by `Simulator.mono.timeBoundPot_timed`;
+a subterm without a potential leaf through the instance theorems
+`Simulator.Timed.TimeBoundGraded.timeBoundPot` and `Simulator.Timed.TimeBound.timeBoundPot`.
+A composite whose middle interface does not conserve import (a factor that creates import at an
+answer, by copying its state into it) is refused with the four measures of the interface.
+
 ## Main definitions
 
 * `derive_simulator S` — define `S.timed`, prove `S.erase_timed` and `S.timeBound_timed`
@@ -99,6 +115,8 @@ relabellings, and the graded bound with the constant `0` of the size for the oth
 * `derive_hybrid_time R` — prove `R.timeBound_timed` for the costed form `R.timed` of a hybrid
   machine (`Hybrid.Timed` or `MultiHybrid.Timed`) from the time theorems of its steps, the trees
   `R.st.tree` or, for a costed form on costed states, `R.st.treeHat`
+* `derive_hybrid_time (potential) R` — define the potential time bound `R.potentialBound_timed`
+  of the costed multi-call simulator `R.timed` (rule and class in `StatePotential.lean`)
 * `derive_simulator (suffix := s) S` — the same with the costed forms and theorems named by `s`
   in place of `timed` (`S.s`, `S.erase_s`, `S.timeBoundGraded_s`), reading those of its
   multi-call simulators and deriving the missing ones by `derive_reduction (suffix := s)`; a leaf
@@ -870,6 +888,513 @@ def deriveSized (c : Name) (levelParams : List Name) (T Tc : Expr) (timedBs : Ar
       { name := c ++ (← sfxName "timeBoundSized"), levelParams, type := tty,
         value := ← mkLambdaFVars tBs tpf })
 
+/-! ### Potential time bounds -/
+
+/-- The value of a closed numeral expression built from numerals, `+`, `*` and `max`. -/
+partial def natVal? (e : Expr) : MetaM (Option Nat) := do
+  if let some n ← evalNat e |>.run then return some n
+  let e := e.headBeta
+  if e.isAppOfArity ``Max.max 4 then
+    let (some a, some b) := (← natVal? (e.getArg! 2), ← natVal? (e.getArg! 3)) | return none
+    return some (max a b)
+  if e.isAppOfArity ``HAdd.hAdd 6 then
+    let (some a, some b) := (← natVal? (e.getArg! 4), ← natVal? (e.getArg! 5)) | return none
+    return some (a + b)
+  return none
+
+/-- The linear form of a step bound over the locals `deps` (the state and the input): a numeral
+part, the terms not mentioning `deps`, and the sum of the numeral coefficients of the terms that
+mention them. A sum adds; a multiple by a numeral scales; a `max`, an `if` and a match are bounded
+by the larger numeral part, both symbolic parts and the larger coefficient; a truncated difference
+by its left side; a term with a fact `t = r` or `t ≤ r` in `facts` by the form of `r`; any other
+term mentioning `deps` is an atom of coefficient `1`. -/
+partial def linForm (deps : Array Expr) (facts : Array (Expr × Expr)) (e : Expr) :
+    MetaM (Nat × Array Expr × Nat) := do
+  let e ← instantiateMVars e.headBeta
+  if let some n ← natVal? e then return (n, #[], 0)
+  if !deps.any (fun d => e.containsFVar d.fvarId!) then return (0, #[e], 0)
+  if e.isAppOfArity ``HAdd.hAdd 6 then
+    let (n₁, s₁, k₁) ← linForm deps facts (e.getArg! 4)
+    let (n₂, s₂, k₂) ← linForm deps facts (e.getArg! 5)
+    return (n₁ + n₂, s₁ ++ s₂, k₁ + k₂)
+  if e.isAppOfArity ``HMul.hMul 6 then
+    if let some c ← evalNat (e.getArg! 4) |>.run then
+      let (n, s, k) ← linForm deps facts (e.getArg! 5)
+      return (c * n, s.map fun t => mkNatMul (mkNatLit c) t, c * k)
+    if let some c ← evalNat (e.getArg! 5) |>.run then
+      let (n, s, k) ← linForm deps facts (e.getArg! 4)
+      return (c * n, s.map fun t => mkNatMul (mkNatLit c) t, c * k)
+  if e.isAppOfArity ``HSub.hSub 6 then return ← linForm deps facts (e.getArg! 4)
+  let two (a b : Expr) : MetaM (Nat × Array Expr × Nat) := do
+    let (n₁, s₁, k₁) ← linForm deps facts a
+    let (n₂, s₂, k₂) ← linForm deps facts b
+    return (max n₁ n₂, s₁ ++ s₂, max k₁ k₂)
+  if e.isAppOfArity ``Max.max 4 then return ← two (e.getArg! 2) (e.getArg! 3)
+  if e.isAppOfArity ``ite 5 then return ← two (e.getArg! 3) (e.getArg! 4)
+  for (l, r) in facts do
+    if l == e then return ← linForm deps facts r
+  return (0, #[], 1)
+
+/-- The facts `t = r` and `t ≤ r` over `ℕ` of the local context. -/
+def natFacts : MetaM (Array (Expr × Expr)) := do
+  let mut out := #[]
+  for d in ← getLCtx do
+    if d.isImplementationDetail then continue
+    let ty ← instantiateMVars d.type
+    if let some (t, l, r) := ty.eq? then
+      if t.isConstOf ``Nat then out := out.push (l, r)
+    else if let some (t, l, r) := ty.le? then
+      if t.isConstOf ``Nat then out := out.push (l, r)
+  return out
+
+/-- The fields `(cost, step)` of the costed multi-call simulator and the input type of each step:
+`start` on `E`, `resume` and `finish` on `OG`. -/
+def potSteps : Array (Name × Name × Name × Nat) :=
+  #[(`start, ``MultiHybrid.Timed.startCost, ``MultiHybrid.Timed.start, 1),
+    (`resume, ``MultiHybrid.Timed.resumeCost, ``MultiHybrid.Timed.resume, 4),
+    (`finish, ``MultiHybrid.Timed.finishCost, ``MultiHybrid.Timed.finish, 4)]
+
+/-- The step theorem `R.st.tr.timeBound_timed` of a step of the costed form `A` of `R`, unified with
+the time of the step at a fresh state and input: the bound and the proof as functions of the state
+and the input. The binders left open are recorded in `bounds` and `hyps`; they do not mention the
+state or the input. -/
+def potStepBound (bounds hyps : IO.Ref (Array (MVarId × BinderInfo))) (R st cost tree : Name)
+    (A σ X : Expr) : MetaM (Expr × Expr) := do
+  let tr ← treeName R
+  let thmN := R ++ st ++ tr ++ (← sfxName "timeBound")
+  unless (← getEnv).contains thmN do
+    throwError "derive_hybrid_time (potential): the step theorem `{thmN}` is missing; run \
+      `derive_time_bound {R ++ st ++ tr}` first"
+  let thm ← mkConstWithFreshMVarLevels thmN
+  let (ms, bis, concl) ← forallMetaTelescopeReducing (← inferType thm)
+  let sM ← mkFreshExprMVar σ
+  let xM ← mkFreshExprMVar X
+  let lhs ← mkAppM ``CatCrypt.Core.SPTree.Timed.stepTime
+    #[← mkAppM ``Prod.mk #[← mkAppM cost #[A, sM, xM], ← mkAppM tree #[A, sM, xM]]]
+  let BM ← mkFreshExprMVar (mkConst ``Nat)
+  unless ← isDefEqFolding (R ++ st ++ tr ++ (← sfx)) (← instantiateMVars concl)
+      (← mkAppM ``LE.le #[lhs, BM]) do
+    throwError "derive_hybrid_time (potential): `{thmN}` does not bound the step `{st}` \
+      of{indentExpr A}"
+  let (.mvar sm, .mvar xm) := (← instantiateMVars sM, ← instantiateMVars xM)
+    | throwError "derive_hybrid_time (potential): `{thmN}` bounds the step `{st}` only at some \
+        states or inputs"
+  for m in ms, bi in bis do
+    if bi.isInstImplicit && !(← m.mvarId!.isAssigned) then
+      if let some inst ← synthInstance? (← instantiateMVars (← inferType m)) then
+        discard <| isDefEq m inst
+  for m in ms do closeConstBound m.mvarId!
+  let rest ← ms.filterM fun m => do
+    let m' ← instantiateMVars m
+    return m'.isMVar && m'.mvarId! != sm && m'.mvarId! != xm
+  for m in rest do
+    if ((← instantiateMVars (← inferType m)).findMVar? fun v => v == sm || v == xm).isSome then
+      throwError "derive_hybrid_time (potential): a hypothesis of `{thmN}` depends on the state \
+        or the input of the step"
+  recordOpen bounds hyps .implicit rest
+  withLocalDeclD `s σ fun s => withLocalDeclD `x X fun x => do
+    sm.assign s
+    xm.assign x
+    let B ← mkLambdaFVars #[s, x] (← instantiateMVars BM)
+    let pf ← mkLambdaFVars #[s, x] (← instantiateMVars (mkAppN thm ms))
+    return (B, pf)
+
+/-- The measure `fun x => k + pot x` on `X`. -/
+def recvMeasure (X : Expr) (k : Nat) : MetaM Expr :=
+  withLocalDeclD `x X fun x => do
+    mkLambdaFVars #[x] (← mkAppM ``HAdd.hAdd #[mkNatLit k,
+      ← mkAppM ``StatePotential.pot #[x]])
+
+/-- The measure `pot` on `X` when `pass` holds, `fun _ => 0` otherwise. -/
+def passMeasure (X : Expr) (pass : Bool) : MetaM Expr :=
+  withLocalDeclD `x X fun x => do
+    mkLambdaFVars #[x] (← if pass then mkAppM ``StatePotential.pot #[x] else pure (mkNatLit 0))
+
+/-- The field goals `init`, `start`, `resume`, `finish` of the potential time bound
+`A.PotentialBound gE gO hEG hO a b` with the invariant `inv` and the potential `pot` of `σ`. -/
+def potFields (A σ gE gO hEG hO a b : Expr) : MetaM (Expr × Array Expr) := do
+  let c ← mkConstWithFreshMVarLevels ``MultiHybrid.Timed.PotentialBound.mk
+  let (ms, _, ty) ← forallMetaTelescopeReducing (← inferType c)
+  let target ← mkAppM ``MultiHybrid.Timed.PotentialBound #[A, gE, gO, hEG, hO, a, b]
+  unless ← isDefEq ty target do throwError "derive_hybrid_time (potential): no potential bound"
+  let n := ms.size
+  let inv ← withLocalDeclD `s σ fun s => do mkLambdaFVars #[s] (← mkAppM ``StatePotential.inv #[s])
+  let pot ← withLocalDeclD `s σ fun s => do mkLambdaFVars #[s] (← mkAppM ``StatePotential.pot #[s])
+  discard <| isDefEq ms[n - 6]! inv
+  discard <| isDefEq ms[n - 5]! pot
+  let mut goals := #[]
+  for i in [n - 4:n] do
+    let g ← mkFreshExprSyntheticOpaqueMVar (← instantiateMVars (← inferType ms[i]!))
+    ms[i]!.mvarId!.assign g
+    goals := goals.push g
+  return (← instantiateMVars (mkAppN c ms), goals)
+
+open CatCrypt.Tactics.StatePotential in
+/-- Prove the potential clause of the field goal `g` (`∀ s x, inv s → time ∧ clause`), leaving the
+time part: the time goal, after introducing the state, the input and the invariant. -/
+def potClausePart (defs : Array Name) (g : Expr) (time : Bool) :
+    TermElabM (Option (MVarId × Expr × Expr)) := do
+  let (fvs, g') ← g.mvarId!.introN 3
+  g'.withContext do
+  let [gt, gc] ← g'.apply (mkConst ``And.intro [])
+    | throwError "derive_hybrid_time (potential): a field is not a conjunction"
+  clauseClose defs gc
+  if time then return some (gt, mkFVar fvs[0]!, mkFVar fvs[1]!)
+  return none
+
+open CatCrypt.Tactics.StatePotential CatCrypt.Tactics.AutoTime in
+/-- Prove the time part `gt : stepTime … ≤ a + b * (pot s + g x)` from the step bound `pf`. -/
+def potTimePart (gt : MVarId) (pf s x : Expr) : TermElabM Unit := gt.withContext do
+  let pf := pf.beta #[s, x]
+  let some (_, _, B) := (← instantiateMVars (← inferType pf)).le?
+    | throwError "derive_hybrid_time (potential): the step theorem is not a bound"
+  let some (_, _, R) := (← instantiateMVars (← gt.getType)).le?
+    | throwError "derive_hybrid_time (potential): the time goal is not a bound"
+  let h ← mkFreshExprSyntheticOpaqueMVar (← mkAppM ``LE.le #[B, R])
+  gt.assign (← mkAppM ``le_trans #[pf, h])
+  let some g ← simpAll #[] h.mvarId! | return
+  let g ← splitHyps g
+  let g ← addCostFacts g
+  let g ← addLengthFacts g
+  omegaWithFacts g
+
+open CatCrypt.Tactics.StatePotential in
+/-- Define `R.potentialBound_timed` (see the module docstring of `StatePotential.lean` for the
+rule and its class of simulators). -/
+def derivePotential (R : Name) : TermElabM Unit := do
+  let tName := R ++ (← sfx)
+  let info ← getConstInfo tName
+  let lvls := info.levelParams.map mkLevelParam
+  forallTelescope info.type fun xs ty => do
+  let ty ← whnfR ty
+  unless ty.isAppOfArity ``MultiHybrid.Timed 5 do
+    throwError "derive_hybrid_time (potential): `{tName}` is not a \
+      `MultiHybrid.Timed`{indentExpr ty}"
+  let tys := ty.getAppArgs
+  let σ := tys[0]!
+  for T in tys do
+    if (← synthInstance? (← mkAppM ``StatePotential #[T])).isNone then
+      throwError "derive_hybrid_time (potential): no instance `StatePotential {T}`; the potential \
+        of a state or the import of a message of this type is to be given by an instance"
+  let A := mkAppN (mkConst tName lvls) xs
+  let bounds ← IO.mkRef #[]
+  let hyps ← IO.mkRef #[]
+  let mut stepBs := #[]
+  for (st, cost, tree, xi) in potSteps do
+    stepBs := stepBs.push (← potStepBound bounds hyps R st cost tree A σ tys[xi]!)
+  withMVarsAsFVars ((← bounds.get) ++ (← hyps.get)) 0 #[] fun tFvs => do
+  let stepBs ← stepBs.mapM fun (B, pf) => return (← instantiateMVars B, ← instantiateMVars pf)
+  let defs := (← treeDefs R).push tName
+  -- the constants `a`, `b` from the linear forms of the step bounds
+  let mut nA := 0
+  let mut syms : Array Expr := #[]
+  let mut kB := 0
+  for (B, _) in stepBs, (_, _, _, xi) in potSteps do
+    let (n, sy, k) ← withLocalDeclD `s σ fun s => withLocalDeclD `x tys[xi]! fun x => do
+      let g ← mkFreshExprSyntheticOpaqueMVar (← mkAppM ``LE.le #[B.beta #[s, x], mkNatLit 0])
+      let g ← CatCrypt.Tactics.AutoTime.addCostFacts g.mvarId!
+      let g ← CatCrypt.Tactics.AutoTime.addLengthFacts g
+      g.withContext do linForm #[s, x] (← natFacts) (B.beta #[s, x])
+    nA := max nA n
+    for t in sy do unless syms.contains t do syms := syms.push t
+    kB := max kB k
+  let a ← syms.foldlM (fun acc t => mkAppM ``HAdd.hAdd #[acc, t]) (mkNatLit nA)
+  let b := mkNatLit kB
+  -- the search of the imports created and of the measures passed on
+  let tryClause (i : Nat) (κE κO : Nat) (pE pO : Bool) : TermElabM Bool := do
+    let s ← saveState
+    try
+      let (_, goals) ← potFields A σ (← recvMeasure tys[1]! κE) (← recvMeasure tys[4]! κO)
+        (← passMeasure tys[3]! pE) (← passMeasure tys[2]! pO) a b
+      discard <| potClausePart defs goals[i + 1]! false
+      s.restore
+      return true
+    catch _ =>
+      s.restore
+      return false
+  let least (i : Nat) (pE pO : Bool) : TermElabM (Option Nat) := do
+    let ok (k : Nat) := if i == 0 then tryClause i k 0 pE pO else tryClause i 0 k pE pO
+    unless ← ok κMax do return none
+    let mut lo := 0
+    let mut hi := κMax
+    while lo < hi do
+      let mid := (lo + hi) / 2
+      if ← ok mid then hi := mid else lo := mid + 1
+    return some lo
+  let mut found : Option (Nat × Nat × Bool × Bool) := none
+  for (pE, pO) in [(true, true), (true, false), (false, true), (false, false)] do
+    let some kE ← least 0 pE pO | continue
+    let some kR ← least 1 pE pO | continue
+    let some kF ← least 2 pE pO | continue
+    found := some (kE, max kR kF, pE, pO)
+    break
+  let some (κE, κO, pE, pO) := found | do
+    for i in [0:3] do
+      let (_, goals) ← potFields A σ (← recvMeasure tys[1]! κMax) (← recvMeasure tys[4]! κMax)
+        (← passMeasure tys[3]! false) (← passMeasure tys[2]! false) a b
+      try discard <| potClausePart defs goals[i + 1]! false
+      catch e =>
+        throwError "derive_hybrid_time (potential): the potential clause of the step \
+          `{potSteps[i]!.1}` of `{R}`, `Φ s' + h y ≤ Φ s + (κ + pot x)`, does not close for \
+          `κ = {κMax}` and the measures `0` passed on:{indentD e.toMessageData}"
+    throwError "derive_hybrid_time (potential): no potential bound of `{R}`"
+  let gE ← recvMeasure tys[1]! κE
+  let gO ← recvMeasure tys[4]! κO
+  let hEG ← passMeasure tys[3]! pE
+  let hO ← passMeasure tys[2]! pO
+  let (val, goals) ← potFields A σ gE gO hEG hO a b
+  -- init
+  if let some g0 ← simpAll defs goals[0]!.mvarId! then potClose g0
+  for i in [0:3] do
+    let some (gt, s, x) ← potClausePart defs goals[i + 1]! true | unreachable!
+    try potTimePart gt (stepBs[i]!.2) s x
+    catch e =>
+      throwError "derive_hybrid_time (potential): the step bound of `{potSteps[i]!.1}` of `{R}`, \
+        {indentExpr (stepBs[i]!.1)}\nis not bounded by `a + b * (Φ s + g x)` with \
+        `a = {a}`, `b = {b}`: a term of it is not a summand of the potential of the state or of \
+        the input{indentD e.toMessageData}"
+  let val ← instantiateMVars val
+  if val.hasExprMVar then throwError "derive_hybrid_time (potential): the proof is incomplete"
+  let bs := xs ++ tFvs
+  CatCrypt.Tactics.DeriveTimed.addTimedDef (R ++ (← sfxName "potentialBound"))
+    info.levelParams (← mkForallFVars bs (← inferType val)) (← mkLambdaFVars bs val)
+
+/-- The potential time bound `f.potentialBound_timed` of the costed multi-call simulator of a leaf
+`T` (`A` an application of `f.timed`), when it exists. -/
+def potThm? (T : Expr) : MetaM (Option Name) := do
+  let T ← instantiateMVars T
+  unless T.isAppOf ``Simulator.Timed.ofMultiHybridHat ||
+      T.isAppOf ``Simulator.Timed.ofMultiHybrid do return none
+  let .const ft _ := T.appArg!.getAppFn | return none
+  let g := ft.getPrefix ++ (← sfxName "potentialBound")
+  return if (← getEnv).contains g then some g else none
+
+/-- Whether a leaf of the costed simulator `T` of the node has a potential time bound. -/
+partial def nodePot (T : Expr) : Node → MetaM Bool
+  | .leaf .. => return (← potThm? T).isSome
+  | .comp _ n₁ n₂ => do
+    let T ← instantiateMVars T
+    return (← nodePot T.appFn!.appArg! n₁) || (← nodePot T.appArg! n₂)
+  | .mapPorts _ n .. | .mono _ n .. => do
+    let T ← instantiateMVars T
+    let args := T.getAppArgs
+    nodePot args[args.size - 3]! n
+  | _ => return false
+
+/-- The measures and constants `gE gO hEG hO a b d` of a proof of `T.TimeBoundPot …`. -/
+def potArgs (pf : Expr) : MetaM (Array Expr) := do
+  let ty ← instantiateMVars (← inferType pf)
+  return ty.getAppArgs.extract 7 14
+
+open CatCrypt.Tactics.StatePotential in
+/-- Prove `∀ m, g m ≤ h m + κ` over `X` by simplification and `omega`, or fail. -/
+def measureLe (X g h : Expr) (κ : Nat) : TermElabM (Option Expr) := do
+  let ty ← withLocalDeclD `m X fun m => do
+    mkForallFVars #[m] (← mkAppM ``LE.le #[g.beta #[m],
+      ← mkAppM ``HAdd.hAdd #[h.beta #[m], mkNatLit κ]])
+  let mv ← mkFreshExprSyntheticOpaqueMVar ty
+  let s ← saveState
+  try
+    let (_, g') ← mv.mvarId!.intro1
+    if let some g'' ← simpAll #[] g' then
+      let gs ← Tactic.run g'' (Tactic.evalTactic (← `(tactic| omega)))
+      unless gs.isEmpty do throwError "open"
+    return some (← instantiateMVars mv)
+  catch _ =>
+    s.restore
+    return none
+
+/-- The theorem `n` applied to metavariables, its type unified with `expected` first and its
+explicit binders then assigned to `args` in order. -/
+def applyConstE (n : Name) (args : Array Expr) (expected : Expr) : MetaM Expr := do
+  let c ← mkConstWithFreshMVarLevels n
+  let (ms, bis, ty) ← forallMetaTelescopeReducing (← inferType c)
+  unless ← isDefEq ty expected do
+    throwError "derive_simulator: `{n}` has type{indentExpr ty}\nexpected{indentExpr expected}"
+  let mut j := 0
+  for m in ms, bi in bis do
+    if bi.isExplicit then
+      let some a := args[j]? | throwError "derive_simulator: too few arguments for `{n}`"
+      j := j + 1
+      unless ← isDefEq (← inferType m) (← inferType a) do
+        throwError "derive_simulator: the argument `{a}` of `{n}` has \
+          type{indentExpr (← inferType a)}\nexpected{indentExpr (← inferType m)}"
+      m.mvarId!.assign a
+  for m in ms do
+    unless ← m.mvarId!.isAssigned do
+      throwError "derive_simulator: an argument of `{n}` is not determined{indentExpr ty}"
+  instantiateMVars (mkAppN c ms)
+
+/-- The potential time-bound proof `T.TimeBoundPot gE gO hEG hO a b d` of the costed simulator
+`T` of the node: a leaf with a potential time bound `f.potentialBound_timed` by
+`Simulator.ofMultiHybrid.timeBoundPot_timed` (or its form on costed states, whose port erasures are
+identities) with no import created; a composite by `Simulator.comp.timeBoundPot_timed` with the
+least `κ ≤ κMax` for which the middle interface conserves import (`gEM ≤ hEM + κ`,
+`gM ≤ hM + κ`, by simplification and `omega` on the measures); a relabelling by
+`Simulator.mapPorts.timeBoundPot_timed` with the import `gM ∘ f` of the events and the import
+`pot` of the outputs when `pot (g o) ≤ hM o` closes, else `0`; a change of views by
+`Simulator.mono.timeBoundPot_timed`; a subterm with no potential leaf by the instance theorems
+`Simulator.Timed.TimeBoundGraded.timeBoundPot` or `Simulator.Timed.TimeBound.timeBoundPot`. -/
+partial def timeNodePot (bounds hyps : IO.Ref (Array (MVarId × BinderInfo))) (T : Expr)
+    (n : Node) : TermElabM Expr := do
+  let T ← instantiateMVars T
+  unless ← nodePot T n do
+    if ← nodeGraded T n then
+      return (← applyConst ``Simulator.Timed.TimeBoundGraded.timeBoundPot
+        #[← timeNodeGraded bounds hyps T n]).1
+    return (← applyConst ``Simulator.Timed.TimeBound.timeBoundPot
+      #[← timeNode bounds hyps T n]).1
+  match n with
+  | .leaf .. =>
+    let some g ← potThm? T | throwError "derive_simulator: no potential bound"
+    let A := T.appArg!
+    let thm ← mkConstWithFreshMVarLevels g
+    let (ms, _, concl) ← forallMetaTelescopeReducing (← inferType thm)
+    let concl ← instantiateMVars concl
+    unless ← isDefEq (concl.getArg! 5) A do
+      throwError "derive_simulator: `{g}` does not bound{indentExpr A}"
+    recordOpen bounds hyps .implicit ms
+    let P ← instantiateMVars (mkAppN thm ms)
+    let ps := concl.getAppArgs
+    let expected ← mkAppM ``Simulator.Timed.TimeBoundPot
+      #[T, ps[6]!, ps[7]!, ps[8]!, ps[9]!, ps[10]!, ps[11]!, mkNatLit 0]
+    if T.isAppOf ``Simulator.Timed.ofMultiHybridHat then
+      let ta := T.getAppArgs
+      let εs := ta.extract (ta.size - 6) (ta.size - 1)
+      for ε in #[εs[1]!, εs[2]!, εs[3]!, εs[4]!] do
+        let dom := (← inferType ε).bindingDomain!
+        unless ← isDefEq ε (← withLocalDeclD `x dom fun x => mkLambdaFVars #[x] x) do
+          throwError "derive_simulator: the potential bound `{g}` is on costed events; its \
+            port erasure{indentExpr ε}\nis not the identity"
+      return ← applyConstE ``Simulator.ofMultiHybridHat.timeBoundPot_timed #[P] expected
+    return (← applyConst ``Simulator.ofMultiHybrid.timeBoundPot_timed #[P] expected).1
+  | .comp _ n₁ n₂ =>
+    let p₁ ← timeNodePot bounds hyps T.appFn!.appArg! n₁
+    let p₂ ← timeNodePot bounds hyps T.appArg! n₂
+    let a₁ ← potArgs p₁
+    let a₂ ← potArgs p₂
+    let ts ← portTypes T.appFn!.appArg!
+    let mut found := none
+    for κ in [0:CatCrypt.Tactics.StatePotential.κMax + 1] do
+      let some hE ← measureLe ts[2]! a₂[0]! a₁[2]! κ | continue
+      let some hA ← measureLe ts[3]! a₁[1]! a₂[3]! κ | continue
+      found := some (hE, hA)
+      break
+    let some (hE, hA) := found
+      | throwError "derive_simulator: the middle interface of the composite{indentExpr T}\n\
+          does not conserve import up to `κ ≤ {CatCrypt.Tactics.StatePotential.κMax}` per \
+          message: the inner \
+          factor receives events of import{indentExpr a₂[0]!}\nwhere the outer factor passes \
+          on{indentExpr a₁[2]!}\n\
+          and the outer factor receives answers of import{indentExpr a₁[1]!}\nwhere the inner \
+          factor passes on{indentExpr a₂[3]!}"
+    return (← applyConst ``Simulator.comp.timeBoundPot_timed #[p₁, p₂, hE, hA]).1
+  | .mapPorts _ n₀ f g _ _ =>
+    let args := T.getAppArgs
+    let p ← timeNodePot bounds hyps args[args.size - 3]! n₀
+    let ps ← potArgs p
+    let ts ← portTypes T
+    let gE ← withLocalDeclD `e ts[0]! fun e => do mkLambdaFVars #[e] (ps[0]!.beta #[f.beta #[e]])
+    let hf ← withLocalDeclD `e ts[0]! fun e => do
+      mkLambdaFVars #[e] (← mkAppM ``le_refl #[ps[0]!.beta #[f.beta #[e]]])
+    let OM := (← inferType g).bindingDomain!
+    let pot ← passMeasure ts[1]! true
+    let gpot ← withLocalDeclD `o OM fun o => do mkLambdaFVars #[o] (pot.beta #[g.beta #[o]])
+    let (hO, hg) ← match ← (do
+        if (← synthInstance? (← mkAppM ``StatePotential #[ts[1]!])).isNone then return none
+        measureLe OM gpot ps[3]! 0) with
+      | some h => pure (pot, ← withLocalDeclD `o OM fun o => do
+          mkLambdaFVars #[o] (← mkAppM ``le_of_le_of_eq #[mkApp h o,
+            ← mkAppM ``Nat.add_zero #[ps[3]!.beta #[o]]]))
+      | none => pure (← passMeasure ts[1]! false, ← withLocalDeclD `o OM fun o => do
+          mkLambdaFVars #[o] (← mkAppM ``Nat.zero_le #[ps[3]!.beta #[o]]))
+    let expected ← mkAppM ``Simulator.Timed.TimeBoundPot
+      #[T, gE, ps[1]!, ps[2]!, hO, ps[4]!, ps[5]!, ps[6]!]
+    return ← applyConstE ``Simulator.mapPorts.timeBoundPot_timed #[p, f, g, hf, hg] expected
+  | .mono _ n₀ .. =>
+    let args := T.getAppArgs
+    let p ← timeNodePot bounds hyps args[args.size - 3]! n₀
+    return (← applyConst ``Simulator.mono.timeBoundPot_timed
+      #[p, args[args.size - 2]!, args[args.size - 1]!]).1
+  | _ => throwError "derive_simulator: no potential rule"
+
+/-- Prove `c.timeBoundPot_timed` and, when the outer ports have instances of `ImportSize` and
+`PotLeSize`, `c.potCert_timed`, for the costed form `Tc` of `c` when a leaf has a potential time
+bound: the potential rules of `timeNodePot`; the certificate passes on no import at the outer
+ports (`Simulator.Timed.TimeBoundPot.mono`) and has the import measures at most `k + pot` with the
+least `k ≤ κMax`, linear in the size with the constant `k + 1` (`ImportLinear.of_le_pot`). -/
+def derivePot (c : Name) (levelParams : List Name) (T Tc : Expr) (timedBs : Array Expr)
+    (node : Node) : TermElabM Unit := do
+  let bounds ← IO.mkRef #[]
+  let thyps ← IO.mkRef #[]
+  let tpf ← timeNodePot bounds thyps T node
+  refuseAssumedBounds c (← thyps.get)
+  let mut recorded := #[]
+  for (m, bi) in (← bounds.get) ++ (← thyps.get) do
+    unless ← m.isAssigned do recorded := recorded.push (m, bi)
+  let mut data := #[]
+  let mut props := #[]
+  for m in ← getMVars tpf do
+    unless recorded.any (·.1 == m) do
+      if ← isProp (← m.getType) then props := props.push (m, BinderInfo.default)
+      else data := data.push (m, BinderInfo.implicit)
+  withMVarsAsFVars (data ++ recorded ++ props) 0 #[] fun tFvs => do
+    let tpf ← instantiateMVars tpf
+    if tpf.hasExprMVar then throwError "derive_simulator: the potential time proof is incomplete"
+    let tBs := timedBs ++ tFvs
+    let ps ← potArgs tpf
+    let concl ← mkAppM ``Simulator.Timed.TimeBoundPot #[Tc, ps[0]!, ps[1]!, ps[2]!, ps[3]!,
+      ps[4]!, ps[5]!, ps[6]!]
+    let pf ← mkExpectedTypeHint tpf concl
+    addDecl (Declaration.thmDecl
+      { name := c ++ (← sfxName "timeBoundPot"), levelParams,
+        type := ← mkForallFVars tBs concl, value := ← mkLambdaFVars tBs pf })
+    let ts ← portTypes T
+    let some _ ← synthInstance? (← mkAppM ``ImportSize #[ts[0]!]) | return
+    let some _ ← synthInstance? (← mkAppM ``ImportSize #[ts[3]!]) | return
+    let pot (X : Expr) := passMeasure X true
+    let some _ ← synthInstance? (← mkAppOptM ``PotLeSize #[ts[0]!, none, none]) | return
+    let some _ ← synthInstance? (← mkAppOptM ``PotLeSize #[ts[3]!, none, none]) | return
+    let mut found := none
+    for k in [0:CatCrypt.Tactics.StatePotential.κMax + 1] do
+      let kE ← withLocalDeclD `e ts[0]! fun e => do
+        mkLambdaFVars #[e] (← mkAppM ``HAdd.hAdd #[mkNatLit k, (← pot ts[0]!).beta #[e]])
+      let kO ← withLocalDeclD `o ts[3]! fun o => do
+        mkLambdaFVars #[o] (← mkAppM ``HAdd.hAdd #[mkNatLit k, (← pot ts[3]!).beta #[o]])
+      let some hE ← measureLe ts[0]! ps[0]! kE 0 | continue
+      let some hO ← measureLe ts[3]! ps[1]! kO 0 | continue
+      found := some (k, hE, hO)
+      break
+    let some (k, hE, hO) := found
+      | throwError "derive_simulator: the import measures of `{c}` are not at most `k + pot` for \
+          `k ≤ {CatCrypt.Tactics.StatePotential.κMax}`:{indentExpr ps[0]!}{indentExpr ps[1]!}"
+    let fix (X h : Expr) : MetaM Expr := withLocalDeclD `x X fun x => do
+      mkLambdaFVars #[x] (← mkAppM ``le_of_le_of_eq #[mkApp h x, ← mkAppM ``Nat.add_zero
+        #[← mkAppM ``HAdd.hAdd #[mkNatLit k, ← mkAppM ``StatePotential.pot #[x]]]])
+    let hL ← mkAppM ``ImportLinear.of_le_pot #[mkNatLit k, ← fix ts[0]! hE, ← fix ts[3]! hO]
+    let zero (X : Expr) := passMeasure X false
+    let zle (X h : Expr) : MetaM Expr := withLocalDeclD `x X fun x => do
+      mkLambdaFVars #[x] (← mkAppM ``Nat.zero_le #[h.beta #[x]])
+    let lle (X h : Expr) : MetaM Expr := withLocalDeclD `x X fun x => do
+      mkLambdaFVars #[x] (← mkAppM ``le_refl #[h.beta #[x]])
+    let pf0 ← mkAppOptM ``Simulator.Timed.TimeBoundPot.mono
+      #[none, none, none, none, none, none, none, none, none, none, none, none,
+        some (← zero ts[2]!),
+        none, some (← zero ts[1]!), none, none, none, none, none, none, some pf,
+        some (← mkAppM ``le_refl #[ps[4]!]), some (← mkAppM ``le_refl #[ps[5]!]),
+        some (← mkAppM ``le_refl #[ps[6]!]), some (← lle ts[0]! ps[0]!),
+        some (← lle ts[3]! ps[1]!), some (← zle ts[2]! ps[2]!), some (← zle ts[1]! ps[3]!)]
+    let cty ← mkAppM ``Simulator.Timed.PotCert #[Tc, ps[4]!, ps[5]!, mkNatLit (k + 1), ps[6]!]
+    let p₁ := (← whnfD cty).appArg!
+    let p₂ := (← whnfD (p₁.beta #[ps[0]!])).appArg!
+    let cert ← mkAppOptM ``Exists.intro #[none, some p₁, some ps[0]!,
+      some (← mkAppOptM ``Exists.intro #[none, some p₂, some ps[1]!,
+        some (← mkAppM ``And.intro #[pf0, hL])])]
+    addDecl (Declaration.thmDecl
+      { name := c ++ (← sfxName "potCert"), levelParams,
+        type := ← mkForallFVars tBs cty, value := ← mkLambdaFVars tBs
+          (← mkExpectedTypeHint cert cty) })
+
 /-- Define `c.timed` and prove `c.erase_timed` and `c.timeBound_timed` for a simulator `c`
 whose costed multi-call simulators have their costed forms and step theorems; when a leaf has a
 graded time theorem (`f.timeBoundGraded_timed`, a step from a state after `j` activations
@@ -902,6 +1427,9 @@ def deriveSimulator (c : Name) : TermElabM Unit := do
       let eName := c ++ (← sfxName "erase")
       addDecl (Declaration.thmDecl
         { name := eName, levelParams := info.levelParams, type := ety, value := evalue })
+    if ← nodePot T node then
+      derivePot c info.levelParams T Tc timedBs node
+      return
     let bounds ← IO.mkRef #[]
     let thyps ← IO.mkRef #[]
     if ← nodeGraded T node then
@@ -979,13 +1507,15 @@ end
 /-- `derive_hybrid_time R` proves the time theorem `R.timeBound_timed` of the costed form
 `R.timed` of a hybrid machine (`Hybrid.Timed` or `MultiHybrid.Timed`) from the time theorems
 `R.st.tree.timeBound_timed` (or `R.st.treeHat.timeBound_timed`) of its steps. -/
-syntax (name := deriveHybridTimeCmd) "derive_hybrid_time " ident : command
+syntax (name := deriveHybridTimeCmd) "derive_hybrid_time " ("(" &"potential" ") ")? ident :
+  command
 
-/-- Elaborate `derive_hybrid_time R`. -/
+/-- Elaborate `derive_hybrid_time R` and `derive_hybrid_time (potential) R`. -/
 @[command_elab deriveHybridTimeCmd]
 meta def elabDeriveHybridTime : CommandElab := fun stx => do
-  let R ← liftTermElabM <| realizeGlobalConstNoOverloadWithInfo stx[1]
-  liftTermElabM <| deriveHybridTime R
+  let R ← liftTermElabM <| realizeGlobalConstNoOverloadWithInfo stx[2]
+  if stx[1].getNumArgs == 0 then liftTermElabM <| deriveHybridTime R
+  else liftTermElabM <| derivePotential R
 
 /-- `derive_simulator S` defines the costed form `S.timed` of a bundled simulator `S` built
 from `Simulator.ofMultiHybrid`, `Simulator.comp`, `Simulator.tensor`, `Simulator.mapPorts` and

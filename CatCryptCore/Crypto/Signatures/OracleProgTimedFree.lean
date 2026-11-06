@@ -8,6 +8,7 @@ module
 public import CatCryptCore.Crypto.Signatures.OracleProgTimed
 public import CatCryptCore.Core.SPTreeTimedFree
 public import CatCryptCore.ForMathlib.PFunctorChargeUnder
+public import CatCryptCore.Tactics.TimeFoldRegistry
 
 /-!
 # Costed oracle programs as free monads with a tick operation
@@ -212,3 +213,23 @@ end Timed
 end OracleProg
 
 end CatCrypt.Crypto
+
+open CatCrypt.Tactics.TimeFold in
+/-- The record of costed oracle programs for the fold rule: the tick trees over `SigT` with the
+charge `tickCost` (the time of the costed tree of a computation node) and every answer allowed.
+-/
+meta def CatCrypt.Crypto.OracleProg.Timed.oracleProgFold : FoldKind where
+  timed := ``CatCrypt.Crypto.OracleProg.Timed
+  sig := ``CatCrypt.Crypto.OracleProg.SigT
+  charge := ``CatCrypt.Crypto.OracleProg.tickCost
+  toFreeMT := ``CatCrypt.Crypto.OracleProg.Timed.toFreeMT
+  stepToFreeMT := ``CatCrypt.Crypto.OracleProg.Timed.stepToFreeMT
+  timeBoundIff := ``CatCrypt.Crypto.OracleProg.Timed.timeBound_iff_wpFold_charge
+  stepTimeBoundIff := ``CatCrypt.Crypto.OracleProg.Timed.stepTimeBound_iff_wpFold_chargeUnder
+  stepFold := some ``CatCrypt.Crypto.OracleProg.Timed.wpFold_chargeUnder_stepToFreeMT
+  bind := some ``CatCrypt.Crypto.OracleProg.Timed.bind
+  bindFold := some ``CatCrypt.Crypto.OracleProg.Timed.wpFold_stepToFreeMT_bind
+  allRet := some ``CatCrypt.Crypto.OracleProg.Timed.AllRet
+  allRetFold := some ``CatCrypt.Crypto.OracleProg.Timed.allRet_iff_wpFold_demonicUnder
+
+register_time_fold CatCrypt.Crypto.OracleProg.Timed.oracleProgFold

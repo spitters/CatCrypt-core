@@ -88,6 +88,10 @@ The certificates rest on five results.
    ([`Tm.dt_timedSim`, `Tm.cost_le_dt`, `Tm.dt_erase`](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/Complexity/D/TranslateDt.lean);
    the cost reading of `D`'s trees is a morphism of trees,
    [`CTree.costTree_bind`](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/Complexity/D/Translate.lean)).
+   A condition is charged the cost of the procedure that decides it, an instance method is a
+   cost companion of its class argument, and a reduction valued in distributions is reflected
+   into an oracle tree whose output distribution is the reduction's, checked by the kernel
+   ([`DerivePMF`](https://github.com/spitters/CatCrypt-core/blob/main/CatCryptCore/Tactics/DerivePMF.lean)).
    The erasure theorem makes each certificate a statement about the named program, the
    property that calf (Niu, Sterling, Grodin and Harper, POPL 2022) obtains from its
    extensional phase.

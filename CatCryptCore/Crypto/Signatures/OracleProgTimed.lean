@@ -40,8 +40,9 @@ costed programs (role `pairFn`).
 
 Replacing each query of a program by a handler program, and interpreting a program against an
 oracle, cost the time of the program plus, per query, the time of the handler or oracle
-(`timeBound_bindQueries`, `timeBound_collectLog`, `stepTime_runWith_le`); the query unit of
-the program is not counted twice. Prepending the records of a query to the records of the rest
+(`stepTime_runWith_le` here; `timeBound_bindQueries` and `timeBound_collectLog`, with the query
+count of the composite, in `CatCryptCore.Crypto.Signatures.OracleProgUseBound`, as instances of
+the composition rule of use bounds). Prepending the records of a query to the records of the rest
 costs `2 * l + 1` for records of length `l`, the registered cost of `List.append`.
 
 The costed mirror `Signatures.EUFCMAAdversary.Timed` of EUF-CMA adversaries is derived here by
@@ -64,12 +65,14 @@ The costed mirror `Signatures.EUFCMAAdversary.Timed` of EUF-CMA adversaries is d
 
 * `OracleProg.Timed.erase_bind` — erasure commutes with sequencing
 * `OracleProg.Timed.timeBound_bind` — times add under sequencing
+* `OracleProg.Timed.AllRet.mono`, `OracleProg.Timed.allRet_bind`,
+  `OracleProg.Timed.allRet_bind_of_forall` — leaf invariants along sequencing
+* `OracleProg.Timed.allRet_collectLog` — the records collected from `q` queries, each of length
+  at most `ℓ`, have length at most `q * ℓ`
 * `OracleProg.Timed.erase_bindQueries`, `OracleProg.Timed.erase_collectLog`,
   `OracleProg.Timed.erase_runWith` — erasure of the handler combinators and the interpretation
 * `OracleProg.Timed.erase_runWith_eq`, `OracleProg.Timed.compile_runWithTree` — the costed
   interpretation erases to `runWithTree`, which compiles to `OracleProg.runWith`
-* `OracleProg.Timed.timeBound_bindQueries` — time `T + q * t`
-* `OracleProg.Timed.timeBound_collectLog` — time `T + q * (t + 2 * ℓ + 1)`
 * `OracleProg.Timed.stepTime_runWith_le` — the cost law of the interpretation: time
   `T + q * (t + 2 * ℓ + 1)` for a program of time `T` with `q` queries against an oracle of time
   `t` with log entries of length at most `ℓ`
@@ -230,6 +233,32 @@ theorem timeBound_bind_of_allRet {Q : α → Prop} {p : Timed I O α}
       (n := m + n - t.time) (by omega)
     exact ⟨h3.1, h3.2⟩
 
+/-- A leaf invariant implies every weaker one. -/
+theorem AllRet.mono {Q Q' : α → Prop} {p : Timed I O α} (hp : p.AllRet Q)
+    (h : ∀ a, Q a → Q' a) : p.AllRet Q' := by
+  induction p with
+  | pure a => exact h a hp
+  | query i c k ih => exact fun o => ih o (hp o)
+  | lift γ t c k ih => exact fun b => ih b (hp b)
+
+/-- A leaf invariant of a program and, at the leaves satisfying it, a leaf invariant of the
+continuation give the latter at the leaves of the sequenced program. -/
+theorem allRet_bind {Q : α → Prop} {Q' : β → Prop} {p : Timed I O α}
+    {f : α → ℕ × Timed I O β} (hp : p.AllRet Q) (hf : ∀ a, Q a → (f a).2.AllRet Q') :
+    (p.bind f).2.AllRet Q' := by
+  induction p with
+  | pure a => exact hf a hp
+  | query i c k ih => exact fun o => ih o (hp o)
+  | lift γ t c k ih => exact fun b => ih b (hp b)
+
+/-- A leaf invariant of every continuation is a leaf invariant of the sequenced program. -/
+theorem allRet_bind_of_forall {Q' : β → Prop} (p : Timed I O α) {f : α → ℕ × Timed I O β}
+    (hf : ∀ a, (f a).2.AllRet Q') : (p.bind f).2.AllRet Q' := by
+  induction p with
+  | pure a => exact hf a
+  | query i c k ih => exact fun o => ih o
+  | lift γ t c k ih => exact fun b => ih b
+
 /-! ### Replacing queries by handler programs -/
 
 section Handlers
@@ -253,38 +282,6 @@ theorem erase_bindQueries (h : I → ℕ × Timed I' O' O) (p : Timed I O α) :
     simp only [bindQueries, delay, erase_bind, ih, erase, OracleProg.bindQueries]
   | lift γ t c k ih => simp only [bindQueries, erase, OracleProg.bindQueries, ih]
 
-/-- **Time of replacing queries by handler programs.** A program of time `T` with at most `q`
-queries, each replaced by a handler program of time at most `t`, runs in time `T + q * t`. -/
-theorem timeBound_bindQueries {h : I → ℕ × Timed I' O' O} {t : ℕ}
-    (hh : ∀ i, StepTimeBound (h i) t) {p : Timed I O α} {T q : ℕ} (hp : p.TimeBound T)
-    (hq : QueryCostLe (fun _ => 1) p.erase q) :
-    StepTimeBound (bindQueries h p) (T + q * t) := by
-  induction p generalizing T q with
-  | pure a => exact ⟨Nat.zero_le _, trivial⟩
-  | query i c k ih =>
-    obtain ⟨hT, hk⟩ := hp
-    obtain ⟨hq1, hqk⟩ := hq
-    simp only at hq1 hqk
-    obtain ⟨q', rfl⟩ : ∃ q', q = q' + 1 := ⟨q - 1, by omega⟩
-    have hb := timeBound_bind (hh i).2 (n := T - 1 + q' * t)
-      (f := fun o => delay (c o) (bindQueries h (k o))) fun o => by
-        have hc := (hk o).1
-        have hi := ih o (hk o).2 (by simpa using hqk o)
-        exact (stepTimeBound_delay hi).mono (by omega)
-    have hh1 := (hh i).1
-    refine (stepTimeBound_delay hb).mono ?_
-    rw [Nat.succ_mul]
-    omega
-  | lift γ u c k ih =>
-    refine ⟨Nat.zero_le _, ?_⟩
-    simp only [bindQueries, Nat.sub_zero]
-    refine ⟨by have := hp.1; omega, fun b => ?_⟩
-    have hc := (hp.2 b).1
-    have hu := hp.1
-    obtain ⟨h1, h2⟩ := ih b (hp.2 b).2 (hq b)
-    dsimp only
-    exact ⟨by omega, h2.mono (by omega)⟩
-
 /-- The costed form of `OracleProg.collectLog`: each query `x` is replaced by the
 step-prefixed handler program `h x`, and the records of the handler are prepended to the
 records of the rest at the cost `2 * l + 1` of appending a list of length `l`, the registered
@@ -307,48 +304,26 @@ theorem erase_collectLog (h : Q → ℕ × Timed I O (R × List L)) (p : Timed Q
     simp only [collectLog, delay, erase_bind, ih, erase, OracleProg.collectLog]
   | lift γ t c k ih => simp only [collectLog, erase, OracleProg.collectLog, ih]
 
-/-- **Time of collecting the records of handler programs.** A program of time `T` with at most
-`q` queries, each replaced by a handler program of time at most `t` whose records have length
-at most `ℓ`, runs in time `T + q * (t + 2 * ℓ + 1)`. -/
-theorem timeBound_collectLog {h : Q → ℕ × Timed I O (R × List L)} {t ℓ : ℕ}
-    (hh : ∀ x, StepTimeBound (h x) t) (hl : ∀ x, (h x).2.AllRet fun rl => rl.2.length ≤ ℓ)
-    {p : Timed Q R α} {T q : ℕ} (hp : p.TimeBound T)
+/-- **The records collected from a program with at most `q` queries**, each handler record list
+of length at most `ℓ`, have length at most `q * ℓ`. -/
+theorem allRet_collectLog {h : Q → ℕ × Timed I O (R × List L)} {ℓ : ℕ}
+    (hl : ∀ x, (h x).2.AllRet fun rl => rl.2.length ≤ ℓ) {p : Timed Q R α} {q : ℕ}
     (hq : QueryCostLe (fun _ => 1) p.erase q) :
-    StepTimeBound (collectLog h p) (T + q * (t + 2 * ℓ + 1)) := by
-  induction p generalizing T q with
-  | pure a => exact ⟨Nat.zero_le _, trivial⟩
+    (collectLog h p).2.AllRet fun al => al.2.length ≤ q * ℓ := by
+  induction p generalizing q with
+  | pure a => simp [collectLog, AllRet]
   | query x c k ih =>
-    obtain ⟨hT, hk⟩ := hp
     obtain ⟨hq1, hqk⟩ := hq
     simp only at hq1 hqk
-    obtain ⟨q', rfl⟩ : ∃ q', q = q' + 1 := ⟨q - 1, by omega⟩
-    have hb := timeBound_bind_of_allRet (hh x).2 (hl x)
-      (n := T - 1 + q' * (t + 2 * ℓ + 1) + (2 * ℓ + 1))
-      (f := fun rl => delay (c rl.1) (delay (collectLog h (k rl.1)).1
-        ((collectLog h (k rl.1)).2.bind fun al =>
-          (2 * rl.2.length + 1, pure (al.1, rl.2 ++ al.2))))) fun rl hrl => by
-        have hc := (hk rl.1).1
-        have hi := ih rl.1 (hk rl.1).2 (by simpa using hqk rl.1)
-        have hg := timeBound_bind hi.2 (n := 2 * ℓ + 1)
-          (f := fun al => (2 * rl.2.length + 1, pure (al.1, rl.2 ++ al.2)))
-          fun _ => ⟨by omega, trivial⟩
-        have hd := stepTimeBound_delay (c := c rl.1)
-          (stepTimeBound_delay (c := (collectLog h (k rl.1)).1) hg)
-        have hi1 := hi.1
-        exact hd.mono (by omega)
-    have hh1 := (hh x).1
-    refine (stepTimeBound_delay hb).mono ?_
-    rw [Nat.succ_mul q']
+    simp only [collectLog, delay]
+    refine allRet_bind (hl x) fun rl hrl => ?_
+    refine allRet_bind (ih rl.1 (hqk rl.1)) fun al hal => ?_
+    have e : (q - 1) * ℓ + ℓ = q * ℓ := by
+      obtain ⟨r, rfl⟩ : ∃ r, q = r + 1 := ⟨q - 1, by omega⟩
+      simp [Nat.add_mul]
+    simp only [AllRet, List.length_append]
     omega
-  | lift γ u c k ih =>
-    refine ⟨Nat.zero_le _, ?_⟩
-    simp only [collectLog, Nat.sub_zero]
-    refine ⟨by have := hp.1; omega, fun b => ?_⟩
-    have hc := (hp.2 b).1
-    have hu := hp.1
-    obtain ⟨h1, h2⟩ := ih b (hp.2 b).2 (hq b)
-    dsimp only
-    exact ⟨by omega, h2.mono (by omega)⟩
+  | lift γ t c k ih => exact fun b => ih b (hq b)
 
 end Handlers
 

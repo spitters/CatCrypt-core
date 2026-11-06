@@ -19,7 +19,8 @@ With the option set, a condition is priced by what decides it:
   same test written inline, and the argument of the definition is priced once;
 * a reduction with a priced condition keeps its erasure theorem.
 
-Without the option, each of these conditions costs its data arguments only.
+The option is on by default. With the option set to `false`, each of these conditions costs its
+data arguments only.
 -/
 
 @[expose] public section
@@ -106,6 +107,7 @@ example (ℓ : ℕ) (c : List ℕ) :
 /-- `memProg` priced without the option. -/
 def memOffProg (x : ℕ) (l : List ℕ) : ℕ := if x ∈ l then 0 else 1
 
+set_option derive_timed.priceProps false in
 derive_cost memOffProg
 
 example (x : ℕ) (l : List ℕ) : memOffProg.timedCost x l = 1 := by
@@ -114,6 +116,7 @@ example (x : ℕ) (l : List ℕ) : memOffProg.timedCost x l = 1 := by
 /-- `eqProg` priced without the option. -/
 def eqOffProg (a b : List ℕ) : ℕ := if a = b then 0 else 1
 
+set_option derive_timed.priceProps false in
 derive_cost eqOffProg
 
 example (a b : List ℕ) : eqOffProg.timedCost a b = 1 := by
@@ -122,10 +125,37 @@ example (a b : List ℕ) : eqOffProg.timedCost a b = 1 := by
 /-- `refProg` priced without the option. -/
 def refOffProg (ℓ : ℕ) (c : List ℕ) : ℕ := if Refused ℓ c then 0 else 1
 
+set_option derive_timed.priceProps false in
 derive_cost refOffProg
 
 example (ℓ : ℕ) (c : List ℕ) : refOffProg.timedCost ℓ c = 1 := by
   unfold refOffProg.timedCost; omega
+
+/-! ## With the default -/
+
+/-- `memProg` priced at the default of the option. -/
+def memDefProg (x : ℕ) (l : List ℕ) : ℕ := if x ∈ l then 0 else 1
+
+derive_cost memDefProg
+
+example (x : ℕ) (l : List ℕ) : memDefProg.timedCost x l = 2 + List.elem.timedCost x l := by
+  unfold memDefProg.timedCost; omega
+
+/-- `eqProg` priced at the default of the option. -/
+def eqDefProg (a b : List ℕ) : ℕ := if a = b then 0 else 1
+
+derive_cost eqDefProg
+
+example (a b : List ℕ) : eqDefProg.timedCost a b = 2 + List.beq.timedCost a b := by
+  unfold eqDefProg.timedCost; omega
+
+/-- `refProg` priced at the default of the option. -/
+def refDefProg (ℓ : ℕ) (c : List ℕ) : ℕ := if Refused ℓ c then 0 else 1
+
+derive_cost refDefProg
+
+example (ℓ : ℕ) (c : List ℕ) : refDefProg.timedCost ℓ c = 3 + List.length.timedCost c := by
+  unfold refDefProg.timedCost; omega
 
 /-! ## A reduction -/
 

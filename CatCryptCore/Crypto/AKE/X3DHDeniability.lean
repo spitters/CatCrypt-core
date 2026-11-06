@@ -111,6 +111,9 @@ noncomputable def x3dh_judge_sim (P : X3DHParams W) : SPComp (X3DH_JudgeView W) 
 
 derive_reduction x3dh_responder_sim
 
+-- `x3dh_judge_sim` keeps the tree that inlines `x3dh_responder_sim`: its time theorem
+-- `x3dh_judge_sim.tree.timeBound_timed` is stated for that form
+set_option derive_reduction.certifiedCalls false in
 derive_reduction x3dh_judge_sim
 
 /-- **Time of the responder's simulator**: one key generation of time at most `Tk`, the

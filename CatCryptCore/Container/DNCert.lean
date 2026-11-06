@@ -38,6 +38,8 @@ count of each resource times the time of its implementation.
   allowed answers of an open tick tree, with the tick at `none` and resource `i` at `some i`
 * `CatCrypt.Container.Clocked.useVec`, `CatCrypt.Container.Clocked.callDemand` — the use vector of
   a costed function with use counts, and the demand of a call implemented by it
+* `CatCrypt.Container.Clocked.time` — the time of one use of the output when one use of the
+  input takes time `T`: `cost + uses * T`
 
 ## Main results
 
@@ -48,6 +50,10 @@ count of each resource times the time of its implementation.
 * `CatCrypt.Container.useBound_liftM_clocked`, `CatCrypt.Container.Clocked.useVec_comp_eq_count`
   — the composition rule at `{call, tick}` is `Clocked.comp`, whose counts are those of the
   composite Diller–Nahm morphism
+* `CatCrypt.Container.Clocked.time_eq_price`, `CatCrypt.Container.Clocked.time_comp` — the time is
+  the price of a data token of the Diller–Nahm morphism, and the time of a composite is the time
+  of the consumer at the time of the producer (`DNLens.price_comp`); the rewinding extractors
+  (`ForkingLemma.forkAlg.clock`, `FiatShamirROM.ksExtractor.clock`) are priced this way
 * `CatCrypt.Container.wpFold_liftM_callHandler_le` — the price of a use bound bounds the charge
   fold of the interpreted open tree
 * `SPTree.Timed.timeBound_of_useBound`, `OracleAdv.Timed.timeBound_of_useBound`,
@@ -210,6 +216,44 @@ theorem useVec_comp_eq_count (g : Clocked Y Z) (f : Clocked X Y) (a : X) (b : Bo
     (comp g f).useVec a b =
       (((DNLens.comp (toDN g) (toDN f)).toFunB a false).count b : ℕ∞) := by
   rw [useVec_eq_count, toDN_comp]
+
+/-- The time of one use of the output of `h` at `a` when one use of the input takes time `T`:
+the cost plus the uses times `T`. -/
+def time (h : Clocked X Y) (T : ℕ) (a : X) : ℕ :=
+  h.cost a + h.uses a * T
+
+/-- The price of the tokens of `clockPos X` at which a data token costs `T` and a clock tick
+costs one unit. -/
+def timePrice (T : ℕ) : ∀ _ : X, Bool → ℕ :=
+  fun _ b => bif b then 1 else T
+
+/-- The time is the price of a data token of the Diller–Nahm morphism at `timePrice T`. -/
+theorem time_eq_price (h : Clocked X Y) (T : ℕ) (a : X) :
+    h.time T a = (toDN h).price (timePrice T) a false := by
+  rw [price_toDN]
+  simp only [time, timePrice, Bool.cond_false, Bool.cond_true, mul_one]
+  omega
+
+/-- A tick of the Diller–Nahm morphism costs one unit at `timePrice T`. -/
+theorem price_toDN_true (h : Clocked X Y) (T : ℕ) (a : X) :
+    (toDN h).price (timePrice T) a true = 1 := by
+  simp [DNLens.price, toDN, clockBack, timePrice]
+
+/-- **The time of a composite.** One use of the output of `comp g f` takes the time of `g` at
+`f.fn a` when one use of its input takes the time of `f` at `a`: the price of the composite
+Diller–Nahm morphism is the price under `g` of the price under `f` (`DNLens.price_comp`). -/
+theorem time_comp (g : Clocked Y Z) (f : Clocked X Y) (T : ℕ) (a : X) :
+    (comp g f).time T a = g.time (f.time T a) (f.fn a) := by
+  have h1 := price_toDN_true f T a
+  rw [time_eq_price, toDN_comp, DNLens.price_comp, time_eq_price f]
+  change ((clockBack (g.uses (f.fn a)) (g.cost (f.fn a)) false).map _).sum = _
+  simp [clockBack, time, Multiset.map_nsmul, Multiset.sum_nsmul, h1]
+  omega
+
+/-- The time is monotone in the time of a use of the input. -/
+theorem time_mono (h : Clocked X Y) {T T' : ℕ} (hT : T ≤ T') (a : X) :
+    h.time T a ≤ h.time T' a :=
+  Nat.add_le_add_left (Nat.mul_le_mul_left _ hT) _
 
 end Clocked
 
