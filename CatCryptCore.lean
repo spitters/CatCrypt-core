@@ -98,6 +98,7 @@ public import CatCryptCore.Complexity.HandlerCost
 public import CatCryptCore.Complexity.D.Link
 public import CatCryptCore.Complexity.D.Translate
 public import CatCryptCore.Complexity.D.TranslateDt
+public import CatCryptCore.Complexity.D.LinkDt
 public import CatCryptCore.XDijkstra.XErrMonad
 public import CatCryptCore.XDijkstra.XAdvantageHybrid
 public import CatCryptCore.XDijkstra.Rel.XRelMvcgenControl
@@ -147,6 +148,7 @@ public import CatCryptCore.Tactics.StdCosts
 public import CatCryptCore.Tactics.StdCostsPoly
 public import CatCryptCore.Tactics.ComputationType
 public import CatCryptCore.Tactics.DeriveTimedStructure
+public import CatCryptCore.Tactics.DerivePMF
 public import CatCryptCore.Tactics.DeriveTimeRec
 public import CatCryptCore.Tactics.ScottInduction
 public import CatCryptCore.Tactics.LoopRewriteAttr
@@ -214,6 +216,7 @@ public import CatCryptCore.Crypto.MultiQueryPRF
 public import CatCryptCore.Crypto.MultiKeyPRF
 public import CatCryptCore.Crypto.OracleAdversary
 public import CatCryptCore.Crypto.OracleAdversaryTimed
+public import CatCryptCore.Crypto.OracleAdversaryDist
 public import CatCryptCore.Crypto.OracleUpTo
 public import CatCryptCore.Crypto.OracleAdversaryRelabelTimed
 public import CatCryptCore.Crypto.OracleForkingLemma
@@ -232,6 +235,7 @@ public import CatCryptCore.Crypto.FiatShamirROM.KeyRecovery
 public import CatCryptCore.Crypto.FiatShamirROM.KeyRecoveryMult
 public import CatCryptCore.Crypto.FiatShamirROM.KeyRecoveryFlag
 public import CatCryptCore.Crypto.FiatShamirROM.Timed
+public import CatCryptCore.Crypto.FiatShamirROM.NIZKTimed
 public import CatCryptCore.Crypto.FiatShamirROM.Bridge
 public import CatCryptCore.Crypto.SPCompPMF
 public import CatCryptCore.Crypto.PRPPRFSwitching
@@ -629,6 +633,7 @@ public import CatCryptCore.Container.CodeCost
 public import CatCryptCore.Container.CodeRel
 public import CatCryptCore.Container.DillerNahm
 public import CatCryptCore.Container.DNCert
+public import CatCryptCore.Crypto.Signatures.OracleProgUseBound
 public import CatCryptCore.Container.CwF
 public import CatCryptCore.Container.CwFPi
 public import CatCryptCore.Crypto.Party.ProgECost

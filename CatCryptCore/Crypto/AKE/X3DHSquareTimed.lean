@@ -96,18 +96,19 @@ theorem lt1_time (s : SimHat S W K) (sid : UCTransparent.FAKE.SessionId)
     grind [Finset.sup_eq_bot_iff, Nat.bot_eq_zero]
 
 omit [DecidableEq W] [Fintype K] [Nonempty K] [Inhabited K] in
-/-- The first lookup of long-term secrets keeps the notices and the key-derivation table and
-raises the cost companion of the secrets by at most three. -/
+/-- The first lookup of long-term secrets keeps the notices, the key-derivation table and the
+cost companion of the corrupt parties, and raises the cost companion of the secrets by at most
+three. -/
 theorem lt1_allRet (s : SimHat S W K) (sid : UCTransparent.FAKE.SessionId)
     (pid : UCTransparent.FAKE.PartyId) {T : ℕ} (hc : ∀ p, s.1.2.1.2 p ≤ T) :
     SPTree.Timed.AllRet (fun y => y.2.2.2.2 = s.1.2.2.2 ∧ y.2.1.2.2.1 = s.1.1.2.2.1 ∧
-        ∀ p, y.2.2.1.2 p ≤ T + 3)
+        (∀ p, y.2.2.1.2 p ≤ T + 3) ∧ y.2.1.2.1.2 = s.1.1.2.1.2)
       (simProt.start.tree.match_3.timed s sid pid s.1.2.1.2).2 := by
   simp only [simProt.start.tree.match_3.timed]
   split
-  · exact ⟨rfl, rfl, fun p => by have := hc p; grind⟩
+  · exact ⟨rfl, rfl, fun p => by have := hc p; grind, rfl⟩
   · intro b
-    refine ⟨rfl, rfl, fun p => ?_⟩
+    refine ⟨rfl, rfl, fun p => ?_, rfl⟩
     have := hc p
     dsimp only
     split <;> omega
@@ -124,14 +125,16 @@ theorem lt2_time (r : UCTransparent.FAKE.Rec K) (x : (S × S) × RSt S W K) (h :
     grind [Finset.sup_eq_bot_iff, Nat.bot_eq_zero]
 
 omit [DecidableEq W] [Fintype K] [Nonempty K] [Inhabited K] in
-/-- The second lookup of long-term secrets keeps the notices and the key-derivation table. -/
+/-- The second lookup of long-term secrets keeps the notices and the key-derivation table, and
+takes the cost companion of the corrupt parties from the costed state `h`. -/
 theorem lt2_allRet (r : UCTransparent.FAKE.Rec K) (x : (S × S) × RSt S W K) (h : RHat S W K) :
-    SPTree.Timed.AllRet (fun y => y.2.2.2.2 = x.2.ro ∧ y.2.1.2.2.1 = x.2.st.notices)
+    SPTree.Timed.AllRet (fun y => y.2.2.2.2 = x.2.ro ∧ y.2.1.2.2.1 = x.2.st.notices ∧
+        y.2.1.2.1.2 = h.1.2.1.2)
       (simProt.start.tree.match_4.timed r x h).2 := by
   simp only [simProt.start.tree.match_4.timed, SPTree.Timed.delay]
   split
-  · exact ⟨rfl, rfl⟩
-  · exact fun _ => ⟨rfl, rfl⟩
+  · exact ⟨rfl, rfl, rfl⟩
+  · exact fun _ => ⟨rfl, rfl, rfl⟩
 
 omit [Fintype S] [Inhabited K] in
 /-- The key derivation at the input of the initiator in `complete` costs at most
@@ -161,12 +164,14 @@ theorem kdfIni_allRet (G : PAKE.DHExtract.DHGroup S W) (sid : UCTransparent.FAKE
   · exact fun _ => le_rfl
 
 /-- The `complete` step of the costed simulator (`simComplete`), from a costed state whose cost
-companions of the long-term secrets and of the inputs vanish, costs at most
-`40 + 3 t_coe + 3 t_toFun + 8 t_exp + 5 L` on a key-derivation table of length `L`. -/
+companions of the long-term secrets, of the inputs and of the corrupt parties vanish, costs at
+most `60 + 3 t_coe + 3 t_toFun + 8 t_exp + 5 L` on a key-derivation table of length `L`. The
+test `Exposed` reads the corrupt parties at their cost companion. -/
 theorem complete_time (G : PAKE.DHExtract.DHGroup S W) (x : SimHat S W K)
     (coe : S ≃ W → S → W) (coeCost : S ≃ W → S → ℕ) (sid : UCTransparent.FAKE.SessionId)
     (pid : UCTransparent.FAKE.PartyId) (expCost : W → S → ℕ) (toFunCost : S → ℕ)
-    (hlt : x.1.2.1.2 = fun _ => 0) (hinp : x.2.1.2 = fun _ => 0) {tc te tf : ℕ}
+    (hlt : x.1.2.1.2 = fun _ => 0) (hinp : x.2.1.2 = fun _ => 0)
+    (hcor : x.1.1.2.1.2 = fun _ => 0) {tc te tf : ℕ}
     (hc : ∀ a b, coeCost a b ≤ tc) (he : ∀ a b, expCost a b ≤ te)
     (hf : ∀ a, toFunCost a ≤ tf) :
     SPTree.Timed.stepTime (simProt.start.tree.match_7.timed G x coe coeCost sid pid
@@ -187,13 +192,18 @@ theorem complete_time (G : PAKE.DHExtract.DHGroup S W) (x : SimHat S W K)
           (Nat.add_le_add_left (stepTime_bind_bind_le 1 1 _ _ _
             (lt1_time x sid pid (T := 0) fun p => by simp [hlt])
             (lt1_allRet x sid pid (T := 0) fun p => by simp [hlt])
-            (fun a ha => lt2_time r _ a.2 (T := 0 + 3) ha.2.2)
+            (fun a ha => lt2_time r _ a.2 (T := 0 + 3) ha.2.2.1)
             (fun a _ => lt2_allRet r _ a.2)
-            (TF := 7 + 3 * tc + 4 * te + 1 + (15 + 3 * tf + 4 * te + 5 * x.1.2.2.2.length))
+            (TF := 7 + 3 * tc + 4 * te + 4 + (15 + 3 * tf + 4 * te + 5 * x.1.2.2.2.length))
             ?_) 3) _) 1) _) ?_
         · intro a b ha hb
-          refine le_trans (stepTime_cost_le _ _ (TC := 7 + 3 * tc + 4 * te)
-            (TD := 15 + 3 * tf + 4 * te + 5 * x.1.2.2.2.length) ?_ ?_) le_rfl
+          have hE : b.2.1.2.1.2 = fun _ => 0 := hb.2.2.trans (ha.2.2.2.trans hcor)
+          have key : ∀ {γ : Type} (C E : ℕ) (D : ℕ × SPTree.Timed γ) {TC TD : ℕ}, C ≤ TC →
+              SPTree.Timed.stepTime D ≤ TD →
+                SPTree.Timed.stepTime (C + (E + D.1), D.2) ≤ TC + E + TD :=
+            fun C E D hC hD => by simp only [SPTree.Timed.stepTime] at hD ⊢; omega
+          refine le_trans (key _ _ _ (TC := 7 + 3 * tc + 4 * te)
+            (TD := 15 + 3 * tf + 4 * te + 5 * x.1.2.2.2.length) ?_ ?_) ?_
           · grind
           · split_ifs
             · refine le_trans (stepTime_delay_bind_const_le 1 2 _ _
@@ -204,6 +214,8 @@ theorem complete_time (G : PAKE.DHExtract.DHGroup S W) (x : SimHat S W K)
             all_goals
               simp only [SPTree.Timed.stepTime, SPTree.Timed.time_ret, hinp]
               split <;> omega
+          · simp only [hE]
+            omega
         · split <;> (try split_ifs) <;> omega
       · simp only [SPTree.Timed.stepTime, SPTree.Timed.time_ret]
         split <;> (try split_ifs) <;> omega
@@ -238,12 +250,14 @@ theorem kdfRes_allRet (G : PAKE.DHExtract.DHGroup S W) (sid : UCTransparent.FAKE
   · exact fun _ => le_rfl
 
 /-- The `send` step of the costed simulator (`simSend`), from a costed state whose cost
-companions of the long-term secrets and of the inputs vanish, costs at most
-`60 + 3 t_coe + 3 t_toFun + 8 t_exp + 5 L` on a key-derivation table of length `L`. -/
+companions of the long-term secrets, of the inputs and of the corrupt parties vanish, costs at
+most `60 + 3 t_coe + 3 t_toFun + 8 t_exp + 5 L` on a key-derivation table of length `L`. The
+test `Exposed` reads the corrupt parties at their cost companion. -/
 theorem send_time (G : PAKE.DHExtract.DHGroup S W) (x : SimHat S W K)
     (coe : S ≃ W → S → W) (coeCost : S ≃ W → S → ℕ) (sid : UCTransparent.FAKE.SessionId)
     (pid : UCTransparent.FAKE.PartyId) (e : W) (expCost : W → S → ℕ) (toFunCost : S → ℕ)
-    (hlt : x.1.2.1.2 = fun _ => 0) (hinp : x.2.1.2 = fun _ => 0) {tc te tf : ℕ}
+    (hlt : x.1.2.1.2 = fun _ => 0) (hinp : x.2.1.2 = fun _ => 0)
+    (hcor : x.1.1.2.1.2 = fun _ => 0) {tc te tf : ℕ}
     (hc : ∀ a b, coeCost a b ≤ tc) (he : ∀ a b, expCost a b ≤ te)
     (hf : ∀ a, toFunCost a ≤ tf) :
     SPTree.Timed.stepTime (simProt.start.tree.match_11.timed G x coe coeCost sid pid e expCost
@@ -263,13 +277,18 @@ theorem send_time (G : PAKE.DHExtract.DHGroup S W) (x : SimHat S W K)
         (stepTime_bind_bind_le 1 1 _ _ _
           (lt1_time x sid pid (T := 0) fun p => by simp [hlt])
           (lt1_allRet x sid pid (T := 0) fun p => by simp [hlt])
-          (fun a ha => lt2_time r _ a.2 (T := 0 + 3) ha.2.2)
+          (fun a ha => lt2_time r _ a.2 (T := 0 + 3) ha.2.2.1)
           (fun a _ => lt2_allRet r _ a.2)
-          (TF := 7 + 3 * tc + 4 * te + 1 + (15 + 3 * tf + 4 * te + 5 * x.1.2.2.2.length))
+          (TF := 7 + 3 * tc + 4 * te + 4 + (15 + 3 * tf + 4 * te + 5 * x.1.2.2.2.length))
           ?_) 3) _) ?_
       · intro a b ha hb
-        refine le_trans (stepTime_cost_le _ _ (TC := 7 + 3 * tc + 4 * te)
-          (TD := 15 + 3 * tf + 4 * te + 5 * x.1.2.2.2.length) ?_ ?_) le_rfl
+        have hE : b.2.1.2.1.2 = fun _ => 0 := hb.2.2.trans (ha.2.2.2.trans hcor)
+        have key : ∀ {γ : Type} (C E : ℕ) (D : ℕ × SPTree.Timed γ) {TC TD : ℕ}, C ≤ TC →
+            SPTree.Timed.stepTime D ≤ TD →
+              SPTree.Timed.stepTime (C + (E + D.1), D.2) ≤ TC + E + TD :=
+          fun C E D hC hD => by simp only [SPTree.Timed.stepTime] at hD ⊢; omega
+        refine le_trans (key _ _ _ (TC := 7 + 3 * tc + 4 * te)
+          (TD := 15 + 3 * tf + 4 * te + 5 * x.1.2.2.2.length) ?_ ?_) ?_
         · grind
         · split_ifs
           · refine le_trans (stepTime_delay_bind_const_le 1 2 _ _
@@ -280,6 +299,8 @@ theorem send_time (G : PAKE.DHExtract.DHGroup S W) (x : SimHat S W K)
           all_goals
             simp only [SPTree.Timed.stepTime, SPTree.Timed.time_ret, hinp]
             split <;> omega
+        · simp only [hE]
+          omega
       · omega
     · simp only [SPTree.Timed.stepTime, SPTree.Timed.time_ret]
       omega
@@ -301,7 +322,8 @@ theorem start_complete_time (G : PAKE.DHExtract.DHGroup S W) (coe : S ≃ W → 
   simp only [SPTree.Timed.stepTime_delay, simProt.start.tree.match_13.timed]
   rw [stepTime_pair]
   refine le_trans (Nat.add_le_add_left (Nat.add_le_add_left (Nat.add_le_add_left
-    (complete_time G _ coe coeCost sid pid expCost toFunCost (by rfl) (by rfl) hc he hf) _)
+    (complete_time G _ coe coeCost sid pid expCost toFunCost (by rfl) (by rfl) (by rfl) hc he
+      hf) _)
     _) _) ?_
   dsimp only
   omega
@@ -321,7 +343,8 @@ theorem start_send_time (G : PAKE.DHExtract.DHGroup S W) (coe : S ≃ W → S �
   simp only [SPTree.Timed.stepTime_delay, simProt.start.tree.match_13.timed]
   rw [stepTime_pair]
   refine le_trans (Nat.add_le_add_left (Nat.add_le_add_left (Nat.add_le_add_left
-    (send_time G _ coe coeCost sid pid e expCost toFunCost (by rfl) (by rfl) hc he hf) _)
+    (send_time G _ coe coeCost sid pid e expCost toFunCost (by rfl) (by rfl) (by rfl) hc he
+      hf) _)
     _) _) ?_
   dsimp only
   omega

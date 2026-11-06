@@ -7,6 +7,8 @@ module
 
 public import CatCryptCore.Consensus.PoSNSB.Prob.Collision
 public import CatCryptCore.Crypto.OracleAdversaryTimed
+public import CatCryptCore.Tactics.DeriveTimed
+public import CatCryptCore.Tactics.StdCosts
 
 /-!
 # PoS-NSB: running time of the two reductions
@@ -26,11 +28,19 @@ messages (`HistBound`).
 ## Cost model
 
 The registered costs of `OracleAdversaryTimed`: one unit per `rand` and per `query` node.
-The trusted base is the cost record `ReductionCost`:
+The signature table of the simulation (`mapQ.timed`, `simSign.timed`, `simTable.timed`) is
+derived by `derive_timed`, so its step costs follow from the code by the cost rules of
+`CatCryptCore.Tactics.DeriveTimed` and the registered costs of `List.map` and `List.filter`,
+with the cost companions of its primitives (`dsign`, `ω.ks`, `Corruption.CorruptionStatus`)
+bounded by the fields of `ReductionCost`. The trusted base is the cost record `ReductionCost`:
 
 * `adv` — one call of the adversary on its inputs;
 * `sign` — one signature with a known signing key (signing for the parties other than the
-  target party, and the signature table of the real execution);
+  target party, and the signature table of the real execution); in the simulation it bounds
+  the cost companion of `dsign`;
+* `key` — one read of the key table `ω.ks` of the seed, a bound on its cost companion;
+* `corrupt` — one query of the corruption status of a party, a bound on the cost companion of
+  `Corruption.CorruptionStatus`;
 * `find` — the search of one adversary output for a forgery of the target party;
 * `step` — one party step of the protocol besides the adversary call: honest baking and
   receiving (lottery evaluation, hashing of the parent block, tree update), the acceptance
@@ -42,7 +52,9 @@ The trusted base is the cost record `ReductionCost`:
 
 * `ReductionCost`, `Adversary.OutputBound`, `HistBound`
 * `forger.timed` — the costed forger; `collFinder.timed` — the costed collision finder
-* `stepCost`, `phaseCost` — the costs of one simulated party step and of one phase
+* `mapQ.timed`, `simSign.timed`, `simTable.timed` — the derived costed signature table
+* `entryCost`, `stepCost`, `phaseCost` — the costs of one entry of the signature table, of
+  one simulated party step and of one phase
 
 ## Main results
 
@@ -95,26 +107,29 @@ theorem stepTimeBound_ret (a : α) (n : ℕ) :
     OracleAdv.Timed.StepTimeBound ((0, .ret a) : ℕ × OracleAdv.Timed D R α) n :=
   ⟨Nat.zero_le n, trivial⟩
 
-/-- The costed form of `mapQ`: run the step-prefixed program `g` on every element. -/
-def mapQ.timed (g : β → ℕ × OracleAdv.Timed D R γ) :
-    List β → ℕ × OracleAdv.Timed D R (List γ)
-  | [] => (0, .ret [])
-  | b :: bs => stepBind (g b) fun x => stepBind (mapQ.timed g bs) fun xs => (0, .ret (x :: xs))
+-- The costed form of `mapQ`, `mapQ.timed g gCost` with its erasure theorem
+-- `mapQ.erase_timed`: the costed program `g b` with its cost companion `gCost b` on every
+-- element, derived by `derive_timed`.
+derive_timed mapQ
 
-theorem mapQ.erase_timed (g : β → ℕ × OracleAdv.Timed D R γ) (l : List β) :
-    (mapQ.timed g l).2.erase = mapQ (fun b => (g b).2.erase) l := by
+/-- `mapQ.timed g gCost l` takes time at most `|l| * (t + 3) + 1` when the program on every
+element, with its companion, takes time at most `t`. -/
+theorem mapQ.stepTimeBound_timed {g : β → OracleAdv.Timed D R γ} {gCost : β → ℕ} {t : ℕ}
+    (hg : ∀ b, OracleAdv.Timed.StepTimeBound (gCost b, g b) t) (l : List β) :
+    OracleAdv.Timed.StepTimeBound (mapQ.timed g gCost l) (l.length * (t + 3) + 1) := by
   induction l with
-  | nil => rfl
-  | cons b bs ih => simp only [mapQ.timed, mapQ, erase_stepBind, ih]; rfl
-
-theorem mapQ.stepTimeBound_timed {g : β → ℕ × OracleAdv.Timed D R γ} {t : ℕ}
-    (hg : ∀ b, OracleAdv.Timed.StepTimeBound (g b) t) (l : List β) :
-    OracleAdv.Timed.StepTimeBound (mapQ.timed g l) (l.length * t) := by
-  induction l with
-  | nil => exact stepTimeBound_ret _ _
+  | nil =>
+    rw [mapQ.timed]
+    exact ⟨by simp [OracleAdv.Timed.delay], trivial⟩
   | cons b bs ih =>
-    refine (stepTimeBound_stepBind (hg b) fun x =>
-      stepTimeBound_stepBind ih fun xs => stepTimeBound_ret _ 0).mono ?_
+    rw [mapQ.timed]
+    have h := OracleAdv.Timed.stepTimeBound_delay (c := 1) (OracleAdv.Timed.stepTimeBound_delay
+      (c := 1 + gCost b) (OracleAdv.Timed.timeBound_bind (hg b).2 fun x =>
+        OracleAdv.Timed.stepTimeBound_delay (c := 1 + (mapQ.timed g gCost bs).1)
+          (OracleAdv.Timed.timeBound_bind ih.2 fun xs => stepTimeBound_ret (x :: xs) 0)))
+    refine h.mono ?_
+    have h1 := (hg b).1
+    have h2 := ih.1
     simp only [List.length_cons, Nat.succ_mul]
     omega
 
@@ -126,8 +141,13 @@ end StepBind
 structure ReductionCost where
   /-- One call of the adversary on its inputs. -/
   adv : ℕ
-  /-- One signature with a known signing key. -/
+  /-- One signature with a known signing key: a bound on the cost companion of `dsign`. -/
   sign : ℕ
+  /-- One read of the key table of the seed: a bound on the cost companion of `ω.ks`. -/
+  key : ℕ
+  /-- One query of the corruption status of a party: a bound on the cost companion of
+  `Corruption.CorruptionStatus`. -/
+  corrupt : ℕ
   /-- The search of one adversary output for a forgery of the target party. -/
   find : ℕ
   /-- One party step of the protocol besides the adversary call. -/
@@ -137,11 +157,17 @@ structure ReductionCost where
   /-- One pair of the collision search. -/
   pair : ℕ
 
+/-- The cost of one entry of the signature table in the derived `simTable.timed`: the map,
+the filter of the honest blocks with one corruption query, the costed signature with one key
+read and one signature, and the steps of `mapQ.timed`. -/
+def entryCost (cost : ReductionCost) : ℕ :=
+  20 + cost.sign + cost.key + cost.corrupt
+
 /-- The cost of one simulated party step when the history has at most `h` messages: one
-entry of the signature table per message, the adversary call, the forgery search and the
-step of the protocol. -/
+entry of the signature table per message and the fixed steps of the table, the adversary
+call, the forgery search and the step of the protocol. -/
 def stepCost (cost : ReductionCost) (h : ℕ) : ℕ :=
-  h * (1 + cost.sign) + (cost.adv + (cost.find + cost.step))
+  h * entryCost cost + (6 + (cost.adv + (cost.find + cost.step)))
 
 /-- The cost of one phase of `m` party steps when the history has at most `h` messages. -/
 def phaseCost (cost : ReductionCost) (m h : ℕ) : ℕ :=
@@ -150,7 +176,7 @@ def phaseCost (cost : ReductionCost) (m h : ℕ) : ℕ :=
 theorem stepCost_mono (cost : ReductionCost) {h h' : ℕ} (hh : h ≤ h') :
     stepCost cost h ≤ stepCost cost h' := by
   unfold stepCost
-  have := Nat.mul_le_mul_right (1 + cost.sign) hh
+  have := Nat.mul_le_mul_right (entryCost cost) hh
   omega
 
 theorem phaseCost_mono (cost : ReductionCost) (m : ℕ) {h h' : ℕ} (hh : h ≤ h') :
@@ -322,47 +348,62 @@ variable (Sch : PSigScheme (Block Tx Hash (Fin np)) PK SK Sig) [hS : Sch.Determi
   (P : Protocol Tx Hash np n Hz) (A : Adversary Tx Hash np n Hz PK Sig) (cost : ReductionCost)
   (i : Fin np) (pk : PK) (ω : Seed Tx Hash np n Hz PK SK)
 
-/-- The costed signature of a block in the simulation: a signing query for party `i`, a
-local signature at cost `cost.sign` for the other parties. -/
-def simSign.timed (b : Block Tx Hash (Fin np)) :
-    ℕ × OracleAdv.Timed (Block Tx Hash (Fin np)) Sig (Block Tx Hash (Fin np) × Sig) :=
-  if b.bid = i then (0, .query b (fun _ => 0) fun σ => .ret (b, σ))
-  else (cost.sign, .ret (b, hS.dsign (ω.ks b.bid).2 b))
+-- The costed signature of a block in the simulation, `simSign.timed` with its erasure theorem
+-- `simSign.erase_timed`: a signing query for party `i`, a local signature for the other
+-- parties at the cost companions `dsignCost` of `dsign` and `ksCost` of the key table `ω.ks`.
+derive_timed simSign
 
-theorem simSign.erase_timed (b : Block Tx Hash (Fin np)) :
-    (simSign.timed Sch cost i ω b).2.erase = simSign Sch i ω b := by
-  unfold simSign.timed simSign
-  split <;> rfl
-
-theorem simSign.stepTimeBound_timed (b : Block Tx Hash (Fin np)) :
-    OracleAdv.Timed.StepTimeBound (simSign.timed Sch cost i ω b) (1 + cost.sign) := by
-  unfold simSign.timed
+omit [Corruption (Fin np)] in
+theorem simSign.stepTimeBound_timed (b : Block Tx Hash (Fin np))
+    {dsignCost : SK → Block Tx Hash (Fin np) → ℕ} {ksCost : Fin np → ℕ}
+    (hd : ∀ sk b, dsignCost sk b ≤ cost.sign) (hk : ∀ p, ksCost p ≤ cost.key) :
+    OracleAdv.Timed.StepTimeBound (simSign.timed Sch i ω b dsignCost ksCost)
+      (3 + cost.sign + cost.key) := by
+  rw [simSign.timed]
+  have h1 := hd (ω.ks b.bid).2 b
+  have h2 := hk b.bid
   split
-  · exact ⟨Nat.zero_le _, by omega, fun _ => ⟨Nat.zero_le _, trivial⟩⟩
-  · exact ⟨by omega, trivial⟩
+  · exact ⟨by simp only [OracleAdv.Timed.delay]; omega,
+      by simp only [OracleAdv.Timed.delay]; omega, fun _ => ⟨Nat.zero_le _, trivial⟩⟩
+  · exact ⟨by simp only [OracleAdv.Timed.delay]; omega, trivial⟩
 
-/-- The costed signature table of a history in the simulation. -/
-def simTable.timed (hist : History Tx Hash (Fin np)) :
-    ℕ × OracleAdv.Timed (Block Tx Hash (Fin np)) Sig (List (Block Tx Hash (Fin np) × Sig)) :=
-  mapQ.timed (simSign.timed Sch cost i ω) ((hist.map get_block).filter honest_block)
+-- The costed signature table of a history in the simulation, `simTable.timed` with its erasure
+-- theorem `simTable.erase_timed`: the derived `mapQ.timed` of `simSign.timed` over the honest
+-- blocks, with the cost companion `CorruptionStatusCost` of the corruption status.
+derive_timed simTable
 
-theorem simTable.erase_timed (hist : History Tx Hash (Fin np)) :
-    (simTable.timed Sch cost i ω hist).2.erase = simTable Sch i ω hist := by
-  simp only [simTable.timed, simTable, mapQ.erase_timed, simSign.erase_timed]
-
-theorem simTable.stepTimeBound_timed (hist : History Tx Hash (Fin np)) :
-    OracleAdv.Timed.StepTimeBound (simTable.timed Sch cost i ω hist)
-      (hist.length * (1 + cost.sign)) := by
-  refine (mapQ.stepTimeBound_timed (simSign.stepTimeBound_timed Sch cost i ω) _).mono ?_
-  refine Nat.mul_le_mul_right _ ?_
-  simpa using List.length_filter_le honest_block (hist.map get_block)
+theorem simTable.stepTimeBound_timed (hist : History Tx Hash (Fin np))
+    {dsignCost : SK → Block Tx Hash (Fin np) → ℕ} {ksCost corruptCost : Fin np → ℕ}
+    (hd : ∀ sk b, dsignCost sk b ≤ cost.sign) (hk : ∀ p, ksCost p ≤ cost.key)
+    (hc : ∀ p, corruptCost p ≤ cost.corrupt) :
+    OracleAdv.Timed.StepTimeBound (simTable.timed Sch i ω hist dsignCost ksCost corruptCost)
+      (hist.length * entryCost cost + 6) := by
+  rw [simTable.timed]
+  have hm := mapQ.stepTimeBound_timed (g := fun b => (simSign.timed Sch i ω b dsignCost ksCost).2)
+    (gCost := fun b => 1 + (simSign.timed Sch i ω b dsignCost ksCost).1)
+    (t := 4 + cost.sign + cost.key)
+    (fun b => by
+      have h := simSign.stepTimeBound_timed Sch cost i ω b hd hk
+      exact ⟨by have := h.1; omega, h.2.mono (by have := h.1; omega)⟩)
+    ((hist.map get_block).filter honest_block)
+  have hf := List.filter.timedCost_le honest_block (fun b => 4 + corruptCost b.bid)
+    (k := 4 + cost.corrupt) (fun b => by have := hc b.bid; omega) (hist.map get_block)
+  have hmap := List.map.timedCost_le get_block (fun _ => 2) (k := 2) (fun _ => le_rfl) hist
+  have hl : ((hist.map get_block).filter honest_block).length ≤ hist.length := by
+    simpa using List.length_filter_le honest_block (hist.map get_block)
+  have hl2 := Nat.mul_le_mul_right (4 + cost.sign + cost.key + 3) hl
+  simp only [List.length_map] at hf
+  refine (OracleAdv.Timed.stepTimeBound_delay hm).mono ?_
+  unfold entryCost
+  nlinarith
 
 /-- The costed adversary call of the simulation, continued by `f` on the output of the
 adversary: the signature table, then the adversary at cost `cost.adv`. -/
-def simCall.timed (c : CallInput Tx Hash np A.AdvState)
+noncomputable def simCall.timed (c : CallInput Tx Hash np A.AdvState)
     (f : AdvOut Tx Hash np Sig × A.AdvState → ℕ × FProg.Timed Tx Hash np Sig) :
     ℕ × FProg.Timed Tx Hash np Sig :=
-  stepBind (simTable.timed Sch cost i ω c.hist) fun tbl =>
+  stepBind (simTable.timed Sch i ω c.hist (fun _ _ => cost.sign) (fun _ => cost.key)
+      (fun _ => cost.corrupt)) fun tbl =>
     OracleAdv.Timed.delay cost.adv (f (match c.msgs with
       | none => A.bake (simPub i pk ω) c.sl c.hist tbl c.mb c.st
       | some ms => A.rcv (simPub i pk ω) ms c.sl c.hist tbl c.mb c.st))
@@ -379,8 +420,9 @@ theorem simCall.stepTimeBound_timed {ℓ : ℕ} (hA : A.OutputBound ℓ)
     {f : AdvOut Tx Hash np Sig × A.AdvState → ℕ × FProg.Timed Tx Hash np Sig} {t : ℕ}
     (hf : ∀ r, r.1.length ≤ ℓ → OracleAdv.Timed.StepTimeBound (f r) t) :
     OracleAdv.Timed.StepTimeBound (simCall.timed Sch A cost i pk ω c f)
-      (c.hist.length * (1 + cost.sign) + (cost.adv + t)) :=
-  stepTimeBound_stepBind (simTable.stepTimeBound_timed Sch cost i ω c.hist) fun tbl =>
+      (c.hist.length * entryCost cost + 6 + (cost.adv + t)) :=
+  stepTimeBound_stepBind (simTable.stepTimeBound_timed Sch cost i ω c.hist (fun _ _ => le_rfl)
+      (fun _ => le_rfl) (fun _ => le_rfl)) fun tbl =>
     OracleAdv.Timed.stepTimeBound_delay (hf _ (by
       split
       · exact hA.1 _ _ _ _ _ _
@@ -392,7 +434,7 @@ theorem stepCall_hist (bake : Bool) (p : Fin np) (M : GS P ω A) :
   cases bake <;> rfl
 
 /-- The costed party step of the simulation, continued by `k` on the next state. -/
-def simStep.timed (bake : Bool) (p : Fin np) (M : GS P ω A)
+noncomputable def simStep.timed (bake : Bool) (p : Fin np) (M : GS P ω A)
     (k : GS P ω A → ℕ × FProg.Timed Tx Hash np Sig) : ℕ × FProg.Timed Tx Hash np Sig :=
   letI := ω.params P; letI := ω.bparams P
   if (M.state_map p).isSome && is_corrupt p then
@@ -416,7 +458,7 @@ theorem simStep.erase_timed (bake : Bool) (p : Fin np) (M : GS P ω A)
   · rfl
 
 /-- The costed steps of a list of parties in the simulation, continued by `k`. -/
-def simFold.timed (bake : Bool) (N : GS P ω A) :
+noncomputable def simFold.timed (bake : Bool) (N : GS P ω A) :
     List (Fin np) → (GS P ω A → ℕ × FProg.Timed Tx Hash np Sig) →
       ℕ × FProg.Timed Tx Hash np Sig
   | [], k => k N
@@ -433,7 +475,8 @@ theorem simFold.erase_timed (bake : Bool) (N : GS P ω A) (l : List (Fin np))
 
 /-- The costed phase of the simulation, continued by `k`: the phase transition at cost
 `cost.phase`, then the party steps. -/
-def simPhase.timed (N : GS P ω A) (k : GS P ω A → ℕ × FProg.Timed Tx Hash np Sig) :
+noncomputable def simPhase.timed (N : GS P ω A)
+    (k : GS P ω A → ℕ × FProg.Timed Tx Hash np Sig) :
     ℕ × FProg.Timed Tx Hash np Sig :=
   letI := ω.params P; letI := ω.bparams P
   match N.progress with
@@ -454,7 +497,7 @@ theorem simPhase.erase_timed (N : GS P ω A) (k : GS P ω A → ℕ × FProg.Tim
   cases N.progress <;> simp only [OracleAdv.Timed.delay, simFold.erase_timed]
 
 /-- The costed first `j` phases of the simulation, continued by `k`. -/
-def simTrace.timed : ℕ → (GS P ω A → ℕ × FProg.Timed Tx Hash np Sig) →
+noncomputable def simTrace.timed : ℕ → (GS P ω A → ℕ × FProg.Timed Tx Hash np Sig) →
     ℕ × FProg.Timed Tx Hash np Sig
   | 0, k => k (sTrace Sch P ω A false 0)
   | j + 1, k => simTrace.timed j fun M => simPhase.timed Sch P A cost i pk ω M k
@@ -468,7 +511,7 @@ theorem simTrace.erase_timed (j : ℕ) (k : GS P ω A → ℕ × FProg.Timed Tx 
 
 /-- The costed program of the forger: the simulation of `K` phases, then the query of the
 genesis block. -/
-def forgerProg.timed (K : ℕ) : ℕ × FProg.Timed Tx Hash np Sig :=
+noncomputable def forgerProg.timed (K : ℕ) : ℕ × FProg.Timed Tx Hash np Sig :=
   simTrace.timed Sch P A cost i pk ω K fun _ =>
     (0, .query P.GB (fun _ => 0) fun σ => .ret (P.GB, σ))
 
@@ -510,7 +553,7 @@ theorem simStep.stepTimeBound_timed (bake : Bool) (p : Fin np) {h : ℕ} {M : GS
             simp only [ite_true, flood_msgs_adv_history, List.length_append, List.length_map]
             omega
     · rw [stepCall_hist]
-      have := Nat.mul_le_mul_right (1 + cost.sign) hM.2
+      have := Nat.mul_le_mul_right (entryCost cost) hM.2
       unfold stepCost
       omega
   · refine (OracleAdv.Timed.stepTimeBound_delay
@@ -789,7 +832,7 @@ theorem execWork_le (ω : Seed Tx Hash np n Hz PK SK) (K : ℕ) :
   have hs : ((traceCalls Sch P ω A K).map fun c => cost.adv + c.hist.length * cost.sign).sum ≤
       (traceCalls Sch P ω A K).length *
         (cost.adv + K * (P.IP.length * (ℓ + 1)) * cost.sign) := by
-    have := List.sum_le_card_nsmul ((traceCalls Sch P ω A K).map fun c =>
+    have := List.sum_le_length_nsmul ((traceCalls Sch P ω A K).map fun c =>
       cost.adv + c.hist.length * cost.sign) (cost.adv + K * (P.IP.length * (ℓ + 1)) * cost.sign)
       (by
         intro x hx

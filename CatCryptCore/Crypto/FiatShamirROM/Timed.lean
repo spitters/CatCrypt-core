@@ -11,6 +11,7 @@ public import CatCryptCore.Crypto.FiatShamirROM.KeyRecoveryFlag
 public import CatCryptCore.Crypto.FiatShamirROM.ProgFlag
 public import CatCryptCore.Crypto.FiatShamirROM.Reduction
 public import CatCryptCore.Crypto.Signatures.EUFCMAPMF
+public import CatCryptCore.Tactics.StdCosts
 
 /-!
 # Running time of the Fiat–Shamir ROM reductions
@@ -53,8 +54,11 @@ has time at most
 The registered costs of `CatCryptCore.Crypto.OracleAdversaryTimed`: one unit per `rand`
 and per `query` node. The following costs are parameters:
 
-* `tV` — computing one verifier point `G.vkey x m σ vs` and appending a value to `vs`;
-  it is charged once before the first verifier query and once after each;
+* `tV` — a bound on one verifier step of the derived `verifyQueries.timed`: the cost
+  companion `vkeyCost` of the field `G.vkey` at `vs`, the append of one value to `vs`
+  (`2 |vs| + 1`) and the case analyses of the step (`Protocol.VerifyCostLe`); it is not a
+  free parameter: the time theorems take it with the hypothesis that it bounds the
+  derived cost at every list of at most `V` values;
 * `tH` — the local computation of one hash step of the oracle (a table lookup and an
   update), charged after the `rand` node that samples the step; at a designated point of
   the marker game `tMk` more is charged, the evaluation of the markers;
@@ -76,7 +80,10 @@ fresh values at the markers) is one distribution, sampled at one `rand` node.
 * `OracleAdv.Timed.oracleStep`, `OracleAdv.Timed.runOracle` — a stateful oracle call as
   one `rand` node, and the run of a costed adversary against a stateful oracle
 * `OracleAdv.Timed.stepBind` — sequencing of a step-prefixed tree
-* `verifyQueries.timed`, `withVerify.timed` — the verifier's queries with step costs
+* `verifyQueries.timed` — the verifier's queries, derived by `derive_timed`; `withVerify.timed`
+  — the costed adversary followed by them
+* `Protocol.VkeyCost`, `Protocol.VerifyCostLe` — the cost companion of `G.vkey` and its bound
+  `tV`
 * `timedRun` — the costed form of `(OracleAdv.run O (withVerify x A) s₀).map out`
 * `slReductionMk.timed`, `slReductionCls.timed`, `slReduction.timed`,
   `recReduction.timed`, `hybRunOf.timed`, `hybDistByOf.timed`, `hybDistByP.timed`
@@ -166,6 +173,72 @@ theorem timeBound_simulate_of_isQueryBoundBy {S : Type}
     have hi := himpl s d
     have h := stepTimeBound_delay (c := (impl s d).1) (timeBound_bind hi.2 hk')
     exact h.mono (by have := hi.1; have := hA.1; omega)
+
+/-- **Simulation time with a cost per query and a state invariant.** Let `Inv i` hold of the
+states reached after `i` queries: a program of `impl` answering `d` from a state with `Inv i` has
+time at most `t d + g i` and returns states with `Inv (i + 1)`. Then an adversary of time `T` with
+at most `q` queries, whose query costs `t d` sum to at most `n` on every path, simulated from a
+state with `Inv i`, has time at most `T + n + ∑_{j < q} g (i + j)`. A handler that reads a log
+growing by one entry per query has such a time, with `g` linear. -/
+theorem timeBound_simulate_inv_of_isQueryBoundBy {S : Type}
+    (impl : S → D → ℕ × Timed D' R' (R × S)) (t : D → ℕ) (g : ℕ → ℕ) (Inv : ℕ → S → Prop)
+    (himpl : ∀ i s d, Inv i s →
+      StepTimeBound (impl s d) (t d + g i) ∧ AllRet (fun y => Inv (i + 1) y.2) (impl s d).2)
+    {A : Timed D R α} {T n q : ℕ} (hA : A.TimeBound T)
+    (hn : A.erase.IsQueryBoundBy t n) (hq : A.erase.IsQueryBound q) (i : ℕ) (s : S)
+    (hs : Inv i s) :
+    StepTimeBound (simulate impl A s) (T + n + ∑ j ∈ Finset.range q, g (i + j)) := by
+  induction A generalizing T n q i s with
+  | ret a => exact ⟨Nat.zero_le _, trivial⟩
+  | rand p c k ih =>
+    have h1 := hA.1
+    simp only [simulate, stepTimeBound_zero, timeBound_rand_iff]
+    refine ⟨by omega, fun b => ?_⟩
+    have h2 := (hA.2 b).1
+    exact (stepTimeBound_delay (c := c b) (ih b (hA.2 b).2 (hn b) (hq b) i s hs)).mono (by omega)
+  | query d c k ih =>
+    cases q with
+    | zero => exact (hq : False).elim
+    | succ q =>
+      obtain ⟨hd, hnk⟩ := hn
+      have hsum : ∑ j ∈ Finset.range (q + 1), g (i + j) =
+          ∑ j ∈ Finset.range q, g (i + 1 + j) + g i := by
+        rw [Finset.sum_range_succ']
+        simp only [Nat.add_zero]
+        congr 1
+        exact Finset.sum_congr rfl fun j _ => by rw [Nat.add_assoc, Nat.add_comm 1 j]
+      rw [hsum]
+      have hk : ∀ x : R × S, Inv (i + 1) x.2 →
+          StepTimeBound (delay (c x.1) (simulate impl (k x.1) x.2))
+            (T - 1 + (n - t d) + ∑ j ∈ Finset.range q, g (i + 1 + j)) := fun x hx =>
+        (stepTimeBound_delay (ih x.1 (hA.2 x.1).2 (hnk x.1) (hq x.1) (i + 1) x.2 hx)).mono
+          (by have := (hA.2 x.1).1; omega)
+      have hi := himpl i s d hs
+      have h := stepTimeBound_delay (c := (impl s d).1)
+        (timeBound_bind_of_allRet hi.1.2 hi.2 hk)
+      exact h.mono (by have := hi.1.1; have := hA.1; omega)
+
+/-- **Results of a simulation under a state invariant.** When a program of `impl` from a state
+with `Inv i` returns states with `Inv (i + 1)`, an adversary with at most `q` queries, simulated
+from a state with `Inv i`, returns results of the adversary and a state with `Inv (i + j)` for
+some `j ≤ q`. -/
+theorem allRet_simulate_inv {S : Type} (impl : S → D → ℕ × Timed D' R' (R × S))
+    (Inv : ℕ → S → Prop)
+    (himpl : ∀ i s d, Inv i s → AllRet (fun y => Inv (i + 1) y.2) (impl s d).2)
+    {P : α → Prop} {A : Timed D R α} {q : ℕ} (hP : AllRet P A)
+    (hq : A.erase.IsQueryBound q) (i : ℕ) (s : S) (hs : Inv i s) :
+    AllRet (fun y => P y.1 ∧ ∃ j ≤ q, Inv (i + j) y.2) (simulate impl A s).2 := by
+  induction A generalizing q i s with
+  | ret a => exact ⟨hP, 0, Nat.zero_le _, hs⟩
+  | rand p c k ih => exact fun b => ih b (hP b) (hq b) i s hs
+  | query d c k ih =>
+    cases q with
+    | zero => exact (hq : False).elim
+    | succ q =>
+      refine allRet_bind (himpl i s d hs) fun x hx => ?_
+      refine allRet_mono (fun y hy => ?_) (ih x.1 (hP x.1) (hq x.1) (i + 1) x.2 hx)
+      obtain ⟨hy1, j, hj, hy2⟩ := hy
+      exact ⟨hy1, j + 1, by omega, by grind⟩
 
 /-! ## Runs against a stateful oracle -/
 
@@ -409,7 +482,7 @@ theorem forkRun.timeBound_timedK (u : D → ℕ) (ht : ∀ d, t d + 1 ≤ u d)
   induction A generalizing T n s g M with
   | ret a =>
     refine (hg _).mono ?_
-    simp only [Option.isNone_none, cond_true]
+    simp only [Option.isNone_none, Bool.cond_true]
     omega
   | rand p c k ih =>
     have h1 := hA.1
@@ -443,7 +516,7 @@ theorem forkRun.timeBound_timedK (u : D → ℕ) (ht : ∀ d, t d + 1 ≤ u d)
       split_ifs with hr
       · rw [Bool.and_eq_true] at hr
         have hn := hr.1
-        simp only [hn, cond_true]
+        simp only [hn, Bool.cond_true]
         refine ⟨by omega, (OracleAdv.Timed.timeBound_rand_iff _ _ _ _).2
           ⟨by omega, fun e₂ => ?_⟩⟩
         have h3 := (hA.2 (f e₂).1).1
@@ -493,57 +566,72 @@ theorem withVerify_eq_bind (x : G.Stmt) (A : OracleAdv G.Query G.Answer G.Forger
   | rand p k ih => simp only [withVerify, OracleAdv.bind, ih]
   | query d k ih => simp only [withVerify, OracleAdv.bind, ih]
 
-/-- The costed verifier's queries: after each answer, the next verifier point is
-computed at cost `tV`. -/
-def verifyQueries.timed (tV : ℕ) (x : G.Stmt) (m : G.Msg) (σ : G.Sig) :
-    ℕ → List G.Ch → OracleAdv.Timed G.Query G.Answer G.Forgery
-  | 0, _ => .ret (m, σ)
-  | n + 1, acc => .query (.inl (G.vkey x m σ acc)) (fun _ => tV) fun a => match a with
-    | .inl e => verifyQueries.timed tV x m σ n (acc ++ [e])
-    | .inr _ => .ret (m, σ)
+-- The costed verifier's queries, `verifyQueries.timed` with its erasure theorem
+-- `verifyQueries.erase_timed`: the step costs of the code, with the cost companion `vkeyCost`
+-- of the field `G.vkey` of the protocol.
+derive_timed verifyQueries
 
-theorem verifyQueries.erase_timed (tV : ℕ) (x : G.Stmt) (m : G.Msg) (σ : G.Sig) (n : ℕ)
-    (acc : List G.Ch) :
-    (verifyQueries.timed tV x m σ n acc).erase = verifyQueries x m σ n acc := by
-  induction n generalizing acc with
-  | zero => rfl
-  | succ n ih =>
-    simp only [verifyQueries.timed, verifyQueries, OracleAdv.Timed.erase]
-    congr 1
-    funext a
-    cases a with
-    | inl e => exact ih _
-    | inr _ => rfl
+/-- The cost companion of the verifier point `G.vkey x m σ vs`. -/
+abbrev _root_.CatCrypt.Crypto.FiatShamirROM.Protocol.VkeyCost (G : Protocol) : Type :=
+  G.Stmt → G.Msg → G.Sig → List G.Ch → ℕ
 
-theorem verifyQueries.timeBound_timed (tV : ℕ) (x : G.Stmt) (m : G.Msg) (σ : G.Sig)
-    (n : ℕ) (acc : List G.Ch) :
-    (verifyQueries.timed tV x m σ n acc).TimeBound (n * (tV + 1)) := by
+/-- `tV` bounds one verifier step of `verifyQueries.timed`: the cost companion of `G.vkey` at a
+list `vs` of at most `V` values, the append of one value to `vs` (`2 |vs| + 1`) and the case
+analyses of the step. -/
+def _root_.CatCrypt.Crypto.FiatShamirROM.Protocol.VerifyCostLe (G : Protocol)
+    (vkeyCost : G.VkeyCost) (tV : ℕ) : Prop :=
+  ∀ x m σ (vs : List G.Ch), vs.length ≤ G.V → vkeyCost x m σ vs + 2 * vs.length + 6 ≤ tV
+
+/-- `n` verifier queries after the values `acc` take time at most `n * (tV + 1) + 1` when `tV`
+bounds each of their steps. -/
+theorem verifyQueries.timeBound_timed (vkeyCost : G.VkeyCost) (tV : ℕ) (x : G.Stmt) (m : G.Msg)
+    (σ : G.Sig) (n : ℕ) (acc : List G.Ch)
+    (hV : ∀ acc' : List G.Ch, acc'.length < acc.length + n →
+      vkeyCost x m σ acc' + 2 * acc'.length + 6 ≤ tV) :
+    OracleAdv.Timed.StepTimeBound (verifyQueries.timed x m σ n acc vkeyCost)
+      (n * (tV + 1) + 1) := by
   induction n generalizing acc with
-  | zero => trivial
+  | zero =>
+    rw [verifyQueries.timed]
+    simp [OracleAdv.Timed.delay, OracleAdv.Timed.StepTimeBound, OracleAdv.Timed.TimeBound]
   | succ n ih =>
+    rw [verifyQueries.timed]
+    have hv := hV acc (by omega)
+    simp only [OracleAdv.Timed.delay, OracleAdv.Timed.StepTimeBound, OracleAdv.Timed.TimeBound]
     rw [Nat.succ_mul]
-    refine ⟨by omega, fun a => ⟨show tV ≤ _ by omega, ?_⟩⟩
+    refine ⟨by omega, by omega, fun a => ?_⟩
     cases a with
-    | inl e => exact (ih _).mono (by dsimp only; omega)
-    | inr _ => trivial
+    | inl e =>
+      have h := ih (acc ++ [e]) fun acc' h' => hV acc' (by simp at h'; omega)
+      dsimp only
+      have hf := List.append.timedCost_eq acc [e]
+      exact ⟨by have := h.1; omega, h.2.mono (by omega)⟩
+    | inr _ =>
+      dsimp only
+      exact ⟨by omega, trivial⟩
 
-/-- The costed form of `withVerify x`: the adversary `A'`, then `tV` for the first
-verifier point and the verifier's queries. -/
-def withVerify.timed (tV : ℕ) (x : G.Stmt) (A' : OracleAdv.Timed G.Query G.Answer G.Forgery) :
-    ℕ × OracleAdv.Timed G.Query G.Answer G.Forgery :=
-  A'.bind fun f => (tV, verifyQueries.timed tV x f.1 f.2 G.V [])
-
-theorem withVerify.erase_timed (tV : ℕ) (x : G.Stmt)
+/-- The costed form of `withVerify x`: the adversary `A'`, then the derived verifier's
+queries. -/
+noncomputable def withVerify.timed (vkeyCost : G.VkeyCost) (x : G.Stmt)
     (A' : OracleAdv.Timed G.Query G.Answer G.Forgery) :
-    (withVerify.timed tV x A').2.erase = withVerify x A'.erase := by
+    ℕ × OracleAdv.Timed G.Query G.Answer G.Forgery :=
+  A'.bind fun f => verifyQueries.timed x f.1 f.2 G.V [] vkeyCost
+
+theorem withVerify.erase_timed (vkeyCost : G.VkeyCost) (x : G.Stmt)
+    (A' : OracleAdv.Timed G.Query G.Answer G.Forgery) :
+    (withVerify.timed vkeyCost x A').2.erase = withVerify x A'.erase := by
   rw [withVerify.timed, OracleAdv.Timed.erase_bind, withVerify_eq_bind]
   simp only [verifyQueries.erase_timed]
 
-theorem withVerify.timeBound_timed (tV : ℕ) (x : G.Stmt)
+theorem withVerify.timeBound_timed (vkeyCost : G.VkeyCost) (tV : ℕ)
+    (hV : G.VerifyCostLe vkeyCost tV) (x : G.Stmt)
     {A' : OracleAdv.Timed G.Query G.Answer G.Forgery} {T : ℕ} (hT : A'.TimeBound T) :
-    OracleAdv.Timed.StepTimeBound (withVerify.timed tV x A') (T + (tV + G.V * (tV + 1))) :=
+    OracleAdv.Timed.StepTimeBound (withVerify.timed vkeyCost x A')
+      (T + (tV + G.V * (tV + 1))) :=
   OracleAdv.Timed.timeBound_bind hT fun f =>
-    ⟨by omega, (verifyQueries.timeBound_timed tV x f.1 f.2 G.V []).mono (by omega)⟩
+    (verifyQueries.timeBound_timed vkeyCost tV x f.1 f.2 G.V []
+      fun acc' h => hV x f.1 f.2 acc' (by simp at h; omega)).mono
+      (by have := hV x f.1 f.2 [] (by simp); omega)
 
 /-- The verified run of an adversary with at most `qH` hash and `qS` signing queries
 has query costs at most `(tH + 1) * (qH + V) + (tS + 1) * qS` for a cost `t` of at most
@@ -569,23 +657,25 @@ variable {G : Protocol}
 /-- **The costed verified run.** The costed adversary `A'` with the verifier's queries,
 run against the stateful oracle `O` from `s₀` with step cost `t d` per call at `d`,
 followed by the output map `out` at cost `tOut`; a tree over the empty interface. -/
-def timedRun {S β : Type} (tV tOut : ℕ) (O : S → G.Query → PMF (G.Answer × S))
+noncomputable def timedRun {S β : Type} (vkeyCost : G.VkeyCost) (tOut : ℕ)
+    (O : S → G.Query → PMF (G.Answer × S))
     (t : G.Query → ℕ) (s₀ : S) (out : G.Forgery × S → β) (x : G.Stmt)
     (A' : OracleAdv.Timed G.Query G.Answer G.Forgery) : ℕ × OracleAdv.Timed Empty Empty β :=
   OracleAdv.Timed.stepBind
-    (OracleAdv.Timed.delay (withVerify.timed tV x A').1
-      (OracleAdv.Timed.runOracle O t (withVerify.timed tV x A').2 s₀))
+    (OracleAdv.Timed.delay (withVerify.timed vkeyCost x A').1
+      (OracleAdv.Timed.runOracle O t (withVerify.timed vkeyCost x A').2 s₀))
     fun y => (tOut, .ret (out y))
 
 /-- Under any oracle, the costed verified run has the output distribution of
 `(OracleAdv.run O (withVerify x A'.erase) s₀).map out`. -/
-theorem timedRun.run_erase {S U β : Type} (tV tOut : ℕ) (O : S → G.Query → PMF (G.Answer × S))
+theorem timedRun.run_erase {S U β : Type} (vkeyCost : G.VkeyCost) (tOut : ℕ)
+    (O : S → G.Query → PMF (G.Answer × S))
     (t : G.Query → ℕ) (s₀ : S) (out : G.Forgery × S → β) (x : G.Stmt)
     (A' : OracleAdv.Timed G.Query G.Answer G.Forgery) (O' : U → Empty → PMF (Empty × U))
     (u : U) :
-    (OracleAdv.run O' (timedRun tV tOut O t s₀ out x A').2.erase u).map Prod.fst =
+    (OracleAdv.run O' (timedRun vkeyCost tOut O t s₀ out x A').2.erase u).map Prod.fst =
       (OracleAdv.run O (withVerify x A'.erase) s₀).map out := by
-  rw [← withVerify.erase_timed tV, ← OracleAdv.Timed.run_erase_runOracle O t O' _ s₀ u,
+  rw [← withVerify.erase_timed vkeyCost, ← OracleAdv.Timed.run_erase_runOracle O t O' _ s₀ u,
     timedRun, OracleAdv.Timed.erase_stepBind, OracleAdv.run_bind, PMF.map_bind, PMF.map_comp]
   simp only [OracleAdv.Timed.delay, OracleAdv.Timed.erase, OracleAdv.run_ret, PMF.pure_map]
   rw [PMF.map]
@@ -595,18 +685,19 @@ theorem timedRun.run_erase {S U β : Type} (tV tOut : ℕ) (O : S → G.Query �
 `qS` signing queries, and a step cost of at most `tH` per hash and `tS` per signing call,
 the costed run has time at most
 `T + (tV + V * (tV + 1)) + ((tH + 1) * (qH + V) + (tS + 1) * qS) + tOut`. -/
-theorem timedRun.timeBound {S β : Type} (tV tOut : ℕ) (O : S → G.Query → PMF (G.Answer × S))
+theorem timedRun.timeBound {S β : Type} (vkeyCost : G.VkeyCost) (tV : ℕ)
+    (hV : G.VerifyCostLe vkeyCost tV) (tOut : ℕ) (O : S → G.Query → PMF (G.Answer × S))
     (t : G.Query → ℕ) (s₀ : S) (out : G.Forgery × S → β) (x : G.Stmt) {tH tS : ℕ}
     (ht : ∀ d, t d ≤ Sum.elim (fun _ => tH) (fun _ => tS) d)
     {A' : OracleAdv.Timed G.Query G.Answer G.Forgery} {T qH qS : ℕ} (hT : A'.TimeBound T)
     (hq : IsQueryBound₂ A'.erase qH qS) :
-    OracleAdv.Timed.StepTimeBound (timedRun tV tOut O t s₀ out x A')
+    OracleAdv.Timed.StepTimeBound (timedRun vkeyCost tOut O t s₀ out x A')
       (T + (tV + G.V * (tV + 1)) + ((tH + 1) * (qH + G.V) + (tS + 1) * qS) + tOut) := by
-  have hw := withVerify.timeBound_timed tV x hT
+  have hw := withVerify.timeBound_timed vkeyCost tV hV x hT
   have hqw := isQueryBoundBy_withVerify_succ x t ht hq
-  rw [← withVerify.erase_timed tV] at hqw
+  rw [← withVerify.erase_timed vkeyCost] at hqw
   have hr := OracleAdv.Timed.timeBound_runOracle (D' := Empty) (R' := Empty) O t hw.2 hqw s₀
-  have hd := OracleAdv.Timed.stepTimeBound_delay (c := (withVerify.timed tV x A').1) hr
+  have hd := OracleAdv.Timed.stepTimeBound_delay (c := (withVerify.timed vkeyCost x A').1) hr
   have hb := OracleAdv.Timed.timeBound_stepBind (n := tOut) hd
     (f := fun y => (tOut, (OracleAdv.Timed.ret (out y) : OracleAdv.Timed Empty Empty β)))
     fun _ => ⟨le_rfl, trivial⟩
@@ -628,18 +719,19 @@ def slCostTimedMk (M : Markers κ) (tH tMk tS : ℕ) : G.Query → ℕ :=
 
 /-- The costed marker straight-line reduction on the statement `x`. -/
 noncomputable def slReductionMk.timed (E : G.LogExtractorMk rel N κ M ε εS)
-    (tV tH tMk tS tOut : ℕ) (A' : G.Stmt → OracleAdv.Timed G.Query G.Answer G.Forgery)
+    (vkeyCost : G.VkeyCost) (tH tMk tS tOut : ℕ)
+    (A' : G.Stmt → OracleAdv.Timed G.Query G.Answer G.Forgery)
     (x : G.Stmt) : ℕ × OracleAdv.Timed Empty Empty G.Wit :=
-  timedRun tV tOut (toOracle (slStepMk N M E.Bad x)) (slCostTimedMk M tH tMk tS)
+  timedRun vkeyCost tOut (toOracle (slStepMk N M E.Bad x)) (slCostTimedMk M tH tMk tS)
     ((Protocol.Tables.empty, false), false) (fun y => E.ext x y.2.1.1 y.1) x (A' x)
 
 /-- Under any oracle, the costed marker reduction has the output distribution of
 `slReductionMk E A`. -/
 theorem slReductionMk.run_erase_timed (E : G.LogExtractorMk rel N κ M ε εS) {qH qS : ℕ}
     (A : G.Adversary qH qS) (A' : G.Stmt → OracleAdv.Timed G.Query G.Answer G.Forgery)
-    (hA : ∀ x, (A' x).erase = A.run x) (tV tH tMk tS tOut : ℕ) {U : Type}
+    (hA : ∀ x, (A' x).erase = A.run x) (vkeyCost : G.VkeyCost) (tH tMk tS tOut : ℕ) {U : Type}
     (O' : U → Empty → PMF (Empty × U)) (u : U) (x : G.Stmt) :
-    (OracleAdv.run O' (slReductionMk.timed E tV tH tMk tS tOut A' x).2.erase u).map
+    (OracleAdv.run O' (slReductionMk.timed E vkeyCost tH tMk tS tOut A' x).2.erase u).map
       Prod.fst = slReductionMk E A x := by
   rw [slReductionMk.timed, timedRun.run_erase, hA]
   rfl
@@ -649,11 +741,12 @@ reduction has time at most
 `T + (tV + V * (tV + 1)) + ((tH + tMk + 1) * (qH + V) + (tS + 1) * qS) + tOut`. -/
 theorem slReductionMk.timeBound_timed (E : G.LogExtractorMk rel N κ M ε εS) {qH qS : ℕ}
     (A : G.Adversary qH qS) {A' : G.Stmt → OracleAdv.Timed G.Query G.Answer G.Forgery}
-    (hA : ∀ x, (A' x).erase = A.run x) (tV tH tMk tS tOut : ℕ) {T : ℕ}
+    (hA : ∀ x, (A' x).erase = A.run x) (vkeyCost : G.VkeyCost)
+    (tV : ℕ) (hV : G.VerifyCostLe vkeyCost tV) (tH tMk tS tOut : ℕ) {T : ℕ}
     (hT : ∀ x, (A' x).TimeBound T) (x : G.Stmt) :
-    OracleAdv.Timed.StepTimeBound (slReductionMk.timed E tV tH tMk tS tOut A' x)
+    OracleAdv.Timed.StepTimeBound (slReductionMk.timed E vkeyCost tH tMk tS tOut A' x)
       (T + (tV + G.V * (tV + 1)) + ((tH + tMk + 1) * (qH + G.V) + (tS + 1) * qS) + tOut) :=
-  timedRun.timeBound tV tOut _ _ _ _ x
+  timedRun.timeBound vkeyCost tV hV tOut _ _ _ _ x
     (fun d => by
       cases d with
       | inl k => cases h : M.des k <;> simp [slCostTimedMk, h]
@@ -662,18 +755,19 @@ theorem slReductionMk.timeBound_timed (E : G.LogExtractorMk rel N κ M ε εS) {
 
 /-- The costed class-wise straight-line reduction on the statement `x`. -/
 noncomputable def slReductionCls.timed (E : G.LogExtractorCls rel N κ ε εS)
-    (tV tH tS tOut : ℕ) (A' : G.Stmt → OracleAdv.Timed G.Query G.Answer G.Forgery)
+    (vkeyCost : G.VkeyCost) (tH tS tOut : ℕ)
+    (A' : G.Stmt → OracleAdv.Timed G.Query G.Answer G.Forgery)
     (x : G.Stmt) : ℕ × OracleAdv.Timed Empty Empty G.Wit :=
-  timedRun tV tOut (toOracle (slStep N E.Bad x)) (Sum.elim (fun _ => tH) fun _ => tS)
+  timedRun vkeyCost tOut (toOracle (slStep N E.Bad x)) (Sum.elim (fun _ => tH) fun _ => tS)
     ((Protocol.Tables.empty, false), false) (fun y => E.ext x y.2.1.1 y.1) x (A' x)
 
 /-- Under any oracle, the costed class-wise reduction has the output distribution of
 `slReductionCls E A`. -/
 theorem slReductionCls.run_erase_timed (E : G.LogExtractorCls rel N κ ε εS) {qH qS : ℕ}
     (A : G.Adversary qH qS) (A' : G.Stmt → OracleAdv.Timed G.Query G.Answer G.Forgery)
-    (hA : ∀ x, (A' x).erase = A.run x) (tV tH tS tOut : ℕ) {U : Type}
+    (hA : ∀ x, (A' x).erase = A.run x) (vkeyCost : G.VkeyCost) (tH tS tOut : ℕ) {U : Type}
     (O' : U → Empty → PMF (Empty × U)) (u : U) (x : G.Stmt) :
-    (OracleAdv.run O' (slReductionCls.timed E tV tH tS tOut A' x).2.erase u).map
+    (OracleAdv.run O' (slReductionCls.timed E vkeyCost tH tS tOut A' x).2.erase u).map
       Prod.fst = slReductionCls E A x := by
   rw [slReductionCls.timed, timedRun.run_erase, hA]
   rfl
@@ -683,27 +777,29 @@ costed reduction has time at most
 `T + (tV + V * (tV + 1)) + ((tH + 1) * (qH + V) + (tS + 1) * qS) + tOut`. -/
 theorem slReductionCls.timeBound_timed (E : G.LogExtractorCls rel N κ ε εS) {qH qS : ℕ}
     (A : G.Adversary qH qS) {A' : G.Stmt → OracleAdv.Timed G.Query G.Answer G.Forgery}
-    (hA : ∀ x, (A' x).erase = A.run x) (tV tH tS tOut : ℕ) {T : ℕ}
+    (hA : ∀ x, (A' x).erase = A.run x) (vkeyCost : G.VkeyCost)
+    (tV : ℕ) (hV : G.VerifyCostLe vkeyCost tV) (tH tS tOut : ℕ) {T : ℕ}
     (hT : ∀ x, (A' x).TimeBound T) (x : G.Stmt) :
-    OracleAdv.Timed.StepTimeBound (slReductionCls.timed E tV tH tS tOut A' x)
+    OracleAdv.Timed.StepTimeBound (slReductionCls.timed E vkeyCost tH tS tOut A' x)
       (T + (tV + G.V * (tV + 1)) + ((tH + 1) * (qH + G.V) + (tS + 1) * qS) + tOut) :=
-  timedRun.timeBound tV tOut _ _ _ _ x (fun _ => le_rfl) (hT x)
+  timedRun.timeBound vkeyCost tV hV tOut _ _ _ _ x (fun _ => le_rfl) (hT x)
     (by rw [hA]; exact A.isQueryBound x)
 
 /-- The costed straight-line reduction on the statement `x`. -/
 noncomputable def slReduction.timed {ε : ℝ≥0∞} (E : G.LogExtractor rel N ε)
-    (tV tH tS tOut : ℕ) (A' : G.Stmt → OracleAdv.Timed G.Query G.Answer G.Forgery)
+    (vkeyCost : G.VkeyCost) (tH tS tOut : ℕ)
+    (A' : G.Stmt → OracleAdv.Timed G.Query G.Answer G.Forgery)
     (x : G.Stmt) : ℕ × OracleAdv.Timed Empty Empty G.Wit :=
-  timedRun tV tOut (toOracle (slStep N E.Bad x)) (Sum.elim (fun _ => tH) fun _ => tS)
+  timedRun vkeyCost tOut (toOracle (slStep N E.Bad x)) (Sum.elim (fun _ => tH) fun _ => tS)
     ((Protocol.Tables.empty, false), false) (fun y => E.ext x y.2.1.1 y.1) x (A' x)
 
 /-- Under any oracle, the costed straight-line reduction has the output distribution of
 `slReduction E A`. -/
 theorem slReduction.run_erase_timed {ε : ℝ≥0∞} (E : G.LogExtractor rel N ε) {qH qS : ℕ}
     (A : G.Adversary qH qS) (A' : G.Stmt → OracleAdv.Timed G.Query G.Answer G.Forgery)
-    (hA : ∀ x, (A' x).erase = A.run x) (tV tH tS tOut : ℕ) {U : Type}
+    (hA : ∀ x, (A' x).erase = A.run x) (vkeyCost : G.VkeyCost) (tH tS tOut : ℕ) {U : Type}
     (O' : U → Empty → PMF (Empty × U)) (u : U) (x : G.Stmt) :
-    (OracleAdv.run O' (slReduction.timed E tV tH tS tOut A' x).2.erase u).map
+    (OracleAdv.run O' (slReduction.timed E vkeyCost tH tS tOut A' x).2.erase u).map
       Prod.fst = slReduction E A x := by
   rw [slReduction.timed, timedRun.run_erase, hA]
   rfl
@@ -713,11 +809,12 @@ has time at most
 `T + (tV + V * (tV + 1)) + ((tH + 1) * (qH + V) + (tS + 1) * qS) + tOut`. -/
 theorem slReduction.timeBound_timed {ε : ℝ≥0∞} (E : G.LogExtractor rel N ε) {qH qS : ℕ}
     (A : G.Adversary qH qS) {A' : G.Stmt → OracleAdv.Timed G.Query G.Answer G.Forgery}
-    (hA : ∀ x, (A' x).erase = A.run x) (tV tH tS tOut : ℕ) {T : ℕ}
+    (hA : ∀ x, (A' x).erase = A.run x) (vkeyCost : G.VkeyCost)
+    (tV : ℕ) (hV : G.VerifyCostLe vkeyCost tV) (tH tS tOut : ℕ) {T : ℕ}
     (hT : ∀ x, (A' x).TimeBound T) (x : G.Stmt) :
-    OracleAdv.Timed.StepTimeBound (slReduction.timed E tV tH tS tOut A' x)
+    OracleAdv.Timed.StepTimeBound (slReduction.timed E vkeyCost tH tS tOut A' x)
       (T + (tV + G.V * (tV + 1)) + ((tH + 1) * (qH + G.V) + (tS + 1) * qS) + tOut) :=
-  timedRun.timeBound tV tOut _ _ _ _ x (fun _ => le_rfl) (hT x)
+  timedRun.timeBound vkeyCost tV hV tOut _ _ _ _ x (fun _ => le_rfl) (hT x)
     (by rw [hA]; exact A.isQueryBound x)
 
 end StraightLine
@@ -730,9 +827,10 @@ variable {G : Protocol} {κ : G.Classes} {rel : G.Stmt → G.Wit → Prop}
 
 /-- The costed key-recovery reduction on the statement `x`. -/
 noncomputable def recReduction.timed (ρ : G.Recovery κ rel) (dflt : G.Stmt → G.Wit)
-    (tV tH tS tOut : ℕ) (A' : G.Stmt → OracleAdv.Timed G.Query G.Answer G.Forgery)
+    (vkeyCost : G.VkeyCost) (tH tS tOut : ℕ)
+    (A' : G.Stmt → OracleAdv.Timed G.Query G.Answer G.Forgery)
     (x : G.Stmt) : ℕ × OracleAdv.Timed Empty Empty G.Wit :=
-  timedRun tV tOut (toOracle (simStep x)) (Sum.elim (fun _ => tH) fun _ => tS)
+  timedRun vkeyCost tOut (toOracle (simStep x)) (Sum.elim (fun _ => tH) fun _ => tS)
     (Protocol.Tables.empty, false)
     (fun y => (ρ.recover x (y.2.1.prog ++ y.2.1.hash)).getD (dflt x)) x (A' x)
 
@@ -741,9 +839,9 @@ noncomputable def recReduction.timed (ρ : G.Recovery κ rel) (dflt : G.Stmt →
 theorem recReduction.run_erase_timed (ρ : G.Recovery κ rel) (dflt : G.Stmt → G.Wit)
     {qH qS : ℕ} (A : G.Adversary qH qS)
     (A' : G.Stmt → OracleAdv.Timed G.Query G.Answer G.Forgery)
-    (hA : ∀ x, (A' x).erase = A.run x) (tV tH tS tOut : ℕ) {U : Type}
+    (hA : ∀ x, (A' x).erase = A.run x) (vkeyCost : G.VkeyCost) (tH tS tOut : ℕ) {U : Type}
     (O' : U → Empty → PMF (Empty × U)) (u : U) (x : G.Stmt) :
-    (OracleAdv.run O' (recReduction.timed ρ dflt tV tH tS tOut A' x).2.erase u).map
+    (OracleAdv.run O' (recReduction.timed ρ dflt vkeyCost tH tS tOut A' x).2.erase u).map
       Prod.fst = recReduction ρ dflt A x := by
   rw [recReduction.timed, timedRun.run_erase, hA]
   rfl
@@ -754,11 +852,12 @@ has time at most
 theorem recReduction.timeBound_timed (ρ : G.Recovery κ rel) (dflt : G.Stmt → G.Wit)
     {qH qS : ℕ} (A : G.Adversary qH qS)
     {A' : G.Stmt → OracleAdv.Timed G.Query G.Answer G.Forgery}
-    (hA : ∀ x, (A' x).erase = A.run x) (tV tH tS tOut : ℕ) {T : ℕ}
+    (hA : ∀ x, (A' x).erase = A.run x) (vkeyCost : G.VkeyCost)
+    (tV : ℕ) (hV : G.VerifyCostLe vkeyCost tV) (tH tS tOut : ℕ) {T : ℕ}
     (hT : ∀ x, (A' x).TimeBound T) (x : G.Stmt) :
-    OracleAdv.Timed.StepTimeBound (recReduction.timed ρ dflt tV tH tS tOut A' x)
+    OracleAdv.Timed.StepTimeBound (recReduction.timed ρ dflt vkeyCost tH tS tOut A' x)
       (T + (tV + G.V * (tV + 1)) + ((tH + 1) * (qH + G.V) + (tS + 1) * qS) + tOut) :=
-  timedRun.timeBound tV tOut _ _ _ _ x (fun _ => le_rfl) (hT x)
+  timedRun.timeBound vkeyCost tV hV tOut _ _ _ _ x (fun _ => le_rfl) (hT x)
     (by rw [hA]; exact A.isQueryBound x)
 
 end Recovery
@@ -865,19 +964,21 @@ theorem hybRunOf.timeBound_timed (sgn : G.SignStep) (D D' : G.Sampler) (k : ℕ)
 adversary `A' xw.1` with the verifier's queries, run by `hybRunOf.timed`. -/
 noncomputable def hybDistByOf.timed (sgn : G.SignStep)
     (P : G.Stmt → G.Forgery × (G.Tables × Bool) → Bool) (D D' : G.Sampler) (k : ℕ)
-    (tV tH tS tOut : ℕ) (A' : G.Stmt → OracleAdv.Timed G.Query G.Answer G.Forgery)
+    (vkeyCost : G.VkeyCost) (tH tS tOut : ℕ)
+    (A' : G.Stmt → OracleAdv.Timed G.Query G.Answer G.Forgery)
     (xw : G.Stmt × G.Wit) :
     ℕ × OracleAdv.Timed (G.Msg × (G.Tables × Bool)) (G.Answer × (G.Tables × Bool)) Bool :=
-  OracleAdv.Timed.delay (withVerify.timed tV xw.1 (A' xw.1)).1
-    (hybRunOf.timed sgn D D' k xw (P xw.1) tH tS tOut 0 (withVerify.timed tV xw.1 (A' xw.1)).2
+  OracleAdv.Timed.delay (withVerify.timed vkeyCost xw.1 (A' xw.1)).1
+    (hybRunOf.timed sgn D D' k xw (P xw.1) tH tS tOut 0 (withVerify.timed vkeyCost xw.1 (A' xw.1)).2
       (Protocol.Tables.empty, false))
 
 theorem hybDistByOf.erase_timed (sgn : G.SignStep)
     (P : G.Stmt → G.Forgery × (G.Tables × Bool) → Bool) (D D' : G.Sampler) (k : ℕ)
     {qH qS : ℕ} (A : G.Adversary qH qS)
     (A' : G.Stmt → OracleAdv.Timed G.Query G.Answer G.Forgery)
-    (hA : ∀ x, (A' x).erase = A.run x) (tV tH tS tOut : ℕ) (xw : G.Stmt × G.Wit) :
-    (hybDistByOf.timed sgn P D D' k tV tH tS tOut A' xw).2.erase =
+    (hA : ∀ x, (A' x).erase = A.run x) (vkeyCost : G.VkeyCost) (tH tS tOut : ℕ)
+    (xw : G.Stmt × G.Wit) :
+    (hybDistByOf.timed sgn P D D' k vkeyCost tH tS tOut A' xw).2.erase =
       hybDistByOf sgn P D D' k A xw := by
   rw [hybDistByOf.timed, OracleAdv.Timed.delay, hybRunOf.erase_timed, withVerify.erase_timed,
     hA]
@@ -887,35 +988,37 @@ theorem hybDistByOf.timeBound_timed (sgn : G.SignStep)
     (P : G.Stmt → G.Forgery × (G.Tables × Bool) → Bool) (D D' : G.Sampler) (k : ℕ)
     {qH qS : ℕ} (A : G.Adversary qH qS)
     {A' : G.Stmt → OracleAdv.Timed G.Query G.Answer G.Forgery}
-    (hA : ∀ x, (A' x).erase = A.run x) (tV tH tS tOut : ℕ) {T : ℕ}
+    (hA : ∀ x, (A' x).erase = A.run x) (vkeyCost : G.VkeyCost)
+    (tV : ℕ) (hV : G.VerifyCostLe vkeyCost tV) (tH tS tOut : ℕ) {T : ℕ}
     (hT : ∀ x, (A' x).TimeBound T) (xw : G.Stmt × G.Wit) :
-    OracleAdv.Timed.StepTimeBound (hybDistByOf.timed sgn P D D' k tV tH tS tOut A' xw)
+    OracleAdv.Timed.StepTimeBound (hybDistByOf.timed sgn P D D' k vkeyCost tH tS tOut A' xw)
       (T + (tV + G.V * (tV + 1)) + ((tH + 1) * (qH + G.V) + (tS + 1) * qS) + tOut) := by
-  have hw := withVerify.timeBound_timed tV xw.1 (hT xw.1)
+  have hw := withVerify.timeBound_timed vkeyCost tV hV xw.1 (hT xw.1)
   have hq := isQueryBoundBy_withVerify_succ xw.1 (Sum.elim (fun _ => tH) fun _ => tS)
     (fun _ => le_rfl) (A := (A' xw.1).erase) (by rw [hA]; exact A.isQueryBound xw.1)
-  rw [← withVerify.erase_timed tV] at hq
+  rw [← withVerify.erase_timed vkeyCost] at hq
   have hr := hybRunOf.timeBound_timed sgn D D' k xw (P xw.1) tH tS tOut hw.2
     (hq.of_cost_le fun d => by cases d <;> rfl) 0 (Protocol.Tables.empty, false)
   have hd := OracleAdv.Timed.stepTimeBound_delay
-    (c := (withVerify.timed tV xw.1 (A' xw.1)).1) hr
+    (c := (withVerify.timed vkeyCost xw.1 (A' xw.1)).1) hr
   exact hd.mono (by have := hw.1; omega)
 
 /-- The costed `k`-th hybrid distinguisher with the programmed flag. -/
 noncomputable def hybDistByP.timed (P : G.Stmt → G.Forgery × (G.Tables × Bool) → Bool)
-    (D D' : G.Sampler) (k : ℕ) (tV tH tS tOut : ℕ)
+    (D D' : G.Sampler) (k : ℕ) (vkeyCost : G.VkeyCost) (tH tS tOut : ℕ)
     (A' : G.Stmt → OracleAdv.Timed G.Query G.Answer G.Forgery) (xw : G.Stmt × G.Wit) :
     ℕ × OracleAdv.Timed (G.Msg × (G.Tables × Bool)) (G.Answer × (G.Tables × Bool)) Bool :=
-  hybDistByOf.timed attSignP P D D' k tV tH tS tOut A' xw
+  hybDistByOf.timed attSignP P D D' k vkeyCost tH tS tOut A' xw
 
 /-- Erasing the step costs of the costed hybrid distinguisher with the programmed flag
 gives `hybDistByP P D D' k A`. -/
 theorem hybDistByP.erase_timed (P : G.Stmt → G.Forgery × (G.Tables × Bool) → Bool)
     (D D' : G.Sampler) (k : ℕ) {qH qS : ℕ} (A : G.Adversary qH qS)
     (A' : G.Stmt → OracleAdv.Timed G.Query G.Answer G.Forgery)
-    (hA : ∀ x, (A' x).erase = A.run x) (tV tH tS tOut : ℕ) (xw : G.Stmt × G.Wit) :
-    (hybDistByP.timed P D D' k tV tH tS tOut A' xw).2.erase = hybDistByP P D D' k A xw :=
-  hybDistByOf.erase_timed attSignP P D D' k A A' hA tV tH tS tOut xw
+    (hA : ∀ x, (A' x).erase = A.run x) (vkeyCost : G.VkeyCost) (tH tS tOut : ℕ)
+    (xw : G.Stmt × G.Wit) :
+    (hybDistByP.timed P D D' k vkeyCost tH tS tOut A' xw).2.erase = hybDistByP P D D' k A xw :=
+  hybDistByOf.erase_timed attSignP P D D' k A A' hA vkeyCost tH tS tOut xw
 
 /-- **Time of the hybrid distinguisher with the programmed flag.** With `A'` of time
 `T`, the costed distinguisher has time at most
@@ -923,11 +1026,12 @@ theorem hybDistByP.erase_timed (P : G.Stmt → G.Forgery × (G.Tables × Bool) �
 theorem hybDistByP.timeBound_timed (P : G.Stmt → G.Forgery × (G.Tables × Bool) → Bool)
     (D D' : G.Sampler) (k : ℕ) {qH qS : ℕ} (A : G.Adversary qH qS)
     {A' : G.Stmt → OracleAdv.Timed G.Query G.Answer G.Forgery}
-    (hA : ∀ x, (A' x).erase = A.run x) (tV tH tS tOut : ℕ) {T : ℕ}
+    (hA : ∀ x, (A' x).erase = A.run x) (vkeyCost : G.VkeyCost)
+    (tV : ℕ) (hV : G.VerifyCostLe vkeyCost tV) (tH tS tOut : ℕ) {T : ℕ}
     (hT : ∀ x, (A' x).TimeBound T) (xw : G.Stmt × G.Wit) :
-    OracleAdv.Timed.StepTimeBound (hybDistByP.timed P D D' k tV tH tS tOut A' xw)
+    OracleAdv.Timed.StepTimeBound (hybDistByP.timed P D D' k vkeyCost tH tS tOut A' xw)
       (T + (tV + G.V * (tV + 1)) + ((tH + 1) * (qH + G.V) + (tS + 1) * qS) + tOut) :=
-  hybDistByOf.timeBound_timed attSignP P D D' k A hA tV tH tS tOut hT xw
+  hybDistByOf.timeBound_timed attSignP P D D' k A hA vkeyCost tV hV tH tS tOut hT xw
 
 end Hybrid
 
@@ -941,21 +1045,24 @@ variable {P : Sigma} {M : Type} [DecidableEq M]
 the verifier's queries, run as the costed forking run (`OracleForking.forkRun.timedK`)
 against the simulated oracle with step cost `tH` per hash and `tS` per signing call and
 fork decision cost `tF`, followed by the extractor at cost `tExt`. -/
-noncomputable def extractReduction.timed (tV tH tS tF tExt : ℕ)
+noncomputable def extractReduction.timed (vkeyCost : (P.toProtocol M).VkeyCost)
+    (tH tS tF tExt : ℕ)
     (A' : P.Stmt → OracleAdv.Timed (Query P M) (Answer P) (Forgery P M)) (x : P.Stmt) :
     ℕ × OracleAdv.Timed Empty Empty P.Wit :=
-  OracleAdv.Timed.delay (withVerify.timed tV x (A' x)).1
+  OracleAdv.Timed.delay (withVerify.timed vkeyCost x (A' x)).1
     (forkRun.timedK (simStep (G := P.toProtocol M) x) hashCount (hitAt x)
-      (Sum.elim (fun _ => tH) fun _ => tS) tF (withVerify.timed tV x (A' x)).2
+      (Sum.elim (fun _ => tH) fun _ => tS) tF (withVerify.timed vkeyCost x (A' x)).2
       (Protocol.Tables.empty, false) fun r => (tExt, .ret (extractW x r)))
 
 /-- Under any oracle, the costed relation reduction has the output distribution of
 `extractReduction A`. -/
 theorem extractReduction.run_erase_timed {qH qS : ℕ} (A : Adversary P M qH qS)
     (A' : P.Stmt → OracleAdv.Timed (Query P M) (Answer P) (Forgery P M))
-    (hA : ∀ x, (A' x).erase = A.run x) (tV tH tS tF tExt : ℕ) {U : Type}
+    (hA : ∀ x, (A' x).erase = A.run x) (vkeyCost : (P.toProtocol M).VkeyCost)
+    (tH tS tF tExt : ℕ)
+    {U : Type}
     (O' : U → Empty → PMF (Empty × U)) (u : U) (x : P.Stmt) :
-    (OracleAdv.run O' (extractReduction.timed tV tH tS tF tExt A' x).2.erase u).map
+    (OracleAdv.run O' (extractReduction.timed vkeyCost tH tS tF tExt A' x).2.erase u).map
       Prod.fst = extractReduction A x := by
   rw [extractReduction.timed, OracleAdv.Timed.delay,
     forkRun.run_erase_timedK _ _ _ _ _ (simStep_plain x) (simStep_hashCount_fresh x)
@@ -971,15 +1078,16 @@ its step, its node and the fork decision, each signing query its step and its no
 the extractor is called once. -/
 theorem extractReduction.timeBound_timed {qH qS : ℕ} (A : Adversary P M qH qS)
     {A' : P.Stmt → OracleAdv.Timed (Query P M) (Answer P) (Forgery P M)}
-    (hA : ∀ x, (A' x).erase = A.run x) (tV tH tS tF tExt : ℕ) {T : ℕ}
+    (hA : ∀ x, (A' x).erase = A.run x) (vkeyCost : (P.toProtocol M).VkeyCost)
+    (tV : ℕ) (hV : (P.toProtocol M).VerifyCostLe vkeyCost tV) (tH tS tF tExt : ℕ) {T : ℕ}
     (hT : ∀ x, (A' x).TimeBound T) (x : P.Stmt) :
-    OracleAdv.Timed.StepTimeBound (extractReduction.timed tV tH tS tF tExt A' x)
+    OracleAdv.Timed.StepTimeBound (extractReduction.timed vkeyCost tH tS tF tExt A' x)
       (2 * (T + (tV + (P.toProtocol M).V * (tV + 1)) +
         ((tH + tF + 1) * (qH + (P.toProtocol M).V) + (tS + 1) * qS)) + tExt) := by
-  have hw := withVerify.timeBound_timed tV x (hT x)
+  have hw := withVerify.timeBound_timed vkeyCost tV hV x (hT x)
   have hq := isQueryBoundBy_withVerify_succ x (Sum.elim (fun _ => tH + tF) fun _ => tS)
     (fun _ => le_rfl) (A := (A' x).erase) (by rw [hA]; exact A.isQueryBound x)
-  rw [← withVerify.erase_timed tV] at hq
+  rw [← withVerify.erase_timed vkeyCost] at hq
   have hr := forkRun.timeBound_timedK (simStep (G := P.toProtocol M) x) hashCount (hitAt x)
     (Sum.elim (fun _ => tH) fun _ => tS) tF _
     (fun d => by cases d <;> simp)
@@ -989,7 +1097,7 @@ theorem extractReduction.timeBound_timed {qH qS : ℕ} (A : Adversary P M qH qS)
       | inr m => simp [simStep] at h)
     _ _ hw.2 hq le_rfl (Protocol.Tables.empty, false)
     (fun r => (tExt, .ret (extractW x r))) tExt fun _ => ⟨by omega, trivial⟩
-  exact (OracleAdv.Timed.stepTimeBound_delay (c := (withVerify.timed tV x (A' x)).1) hr).mono
+  exact (OracleAdv.Timed.stepTimeBound_delay (c := (withVerify.timed vkeyCost x (A' x)).1) hr).mono
     (by have := hw.1; omega)
 
 end Rewinding

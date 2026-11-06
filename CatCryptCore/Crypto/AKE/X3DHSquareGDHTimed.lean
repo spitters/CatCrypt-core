@@ -376,7 +376,7 @@ theorem delTime_le (rs : RSt S (W ⊕ W) K) (inp : Inst → Option (Inp (W ⊕ W
     (he : ∀ x y, expCost x y ≤ te) :
     delTime G a b O OCost X Y mulCost toFunCost expCost rs inp x r ip ≤
       200 + 20 * (tO + tm + te + tf) + (3 * (tO + tm + te + tf) + 60) * rs.ro.length := by
-  unfold delTime
+  unfold delTime liftSt
   time_bound
 
 omit [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K] in

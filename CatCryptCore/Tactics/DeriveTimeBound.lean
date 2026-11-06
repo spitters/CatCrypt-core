@@ -10,6 +10,7 @@ public import CatCryptCore.Tactics.DeriveReduction
 public import CatCryptCore.Tactics.TimeFoldRegistry
 public import CatCryptCore.Core.SPTreeTimedFree
 public import CatCryptCore.Crypto.OracleAdversaryFree
+public import CatCryptCore.ForMathlib.ListLength
 
 /-!
 # The time theorem of a costed computation tree
@@ -190,6 +191,68 @@ charge fold (the time of a sampling node with an unbounded family of continuatio
 reason of the rule (`reportFallback`). Kind detection is the lookup of the head of the codomain
 in the registry (`kindOfType?`, `foldKindOfTimed?`).
 
+**Vector charges.** A kind registered with a vector charge (`FoldKind.useCharge`; the charge
+`useCharge cost` of oracle programs at `{query, tick}`, `OracleProgUseBound.lean`) is read by the
+same rule, one component at a time. A binder of the kind gets two bound variables, its query
+count `q_A` and its time `T_A`, and one hypothesis, its use bound
+`∀ ys, UseBound (useCharge 1) _ (img (A ys)) (budget q_A T_A)` (queries counted at unit cost,
+`useHypAt`); it is read as one fold fact per component (`toFoldFacts`, through the readings
+`wpFold_queryCharge_le_of_useBound`, `wpFold_tickCost_le_of_useBound` among
+`FoldKind.hypIffs`). The use bound of the step-prefixed image of the costed term is the join
+`FoldKind.useJoin` (`useBound_of_wpFold_le`) of its component folds, each bounded by the fold
+rule at its own charge, and the theorem is read back by `FoldKind.useStepIff`
+(`useBound_step_iff`): `StepTimeBound x T ∧ QueryCostLe (fun _ => 1) x.2.erase q`
+(`emitUseTimeBound`). The clauses at the query component are the clauses above at the charge
+`queryCharge`: a computation node and a tick charge no query, a query its cost; the step and bind
+equations at that charge are `FoldKind.stepFolds`, `FoldKind.bindFolds`. A bind, a delay, a
+computation node and an `if` are thus bounded componentwise, an `if` by the pointwise maximum.
+The components meet at the handler combinators, whose component laws (`FoldKind.laws`) bound one
+component of the composite from several components of their arguments: the tick fold of
+`bindQueries h p` is `T + q * t` from the tick fold `T` and the query fold `q` of `p` and the
+tick fold `t` of the handler, its query fold `q * q'`; `collectLog` adds `2 * ℓ + 1` per query
+for records of length at most `ℓ` and gives the leaf invariant `al.2.length ≤ q * ℓ` of its
+result, read as the leaf invariant of the bind that follows it (a law is tried at the first
+program of a bind, `foldBind`). A law applies only at an application of its combinator.
+
+The premise `∀ x, AllRet (fun rl => rl.2.length ≤ ?ℓ) (h x).2` of a law is proved by the
+**leaf-length rule** (`closeLeafLen`): the leaf invariant is unfolded at each node of the tree
+(an introduced answer), the tree `y.2` of a pair is read through its head, a bind of the kind
+through `FoldKind.allRetBind`, an `if` and a `match` are split, and at each leaf the value is
+bounded free of the bound variables (a numeral when it reduces to one, else `bfree?`); `?ℓ` is
+the maximum of the leaf bounds. A vector theorem is stated with `derive_time_bound +queries`, and
+without it whenever the scalar rule fails on a kind with a vector charge (a composite whose time
+depends on the query count of a binder).
+
+**Length hypotheses.** Class: a charge, or a premise `∀ s, c s ≤ ?k` of a registered cost lemma
+(the test of `List.find?.timedCost_le`), to be bounded free of a variable `x` on which it depends
+only through the lengths of lists computed from `x`, under a hypothesis of the context that
+bounds the length of a list in `x` (`h : L.length ≤ n`, the leaf invariant `al.2.length ≤ q * ℓ`
+that the `AllRet` conjunct of a law supplies at the continuation of a bind). The bound is found
+in three steps, each one clause of `bfree?` and `AutoTime.boundFree?`:
+
+1. each length of a derived list is rewritten to a bound in the lengths of its sources: by the
+   equations of `AutoTime.lengthEqLemmas` (`map`, `append`, `zip`, …) and by the theorems tagged
+   `@[length_bound]`, among them `List.length_filter_le`, `List.length_filterMap_le`,
+   `List.length_take` and the bounds `List.length_flatMap_le_mul` (`(l.flatMap f).length ≤
+   w * l.length` when every `f a` with `a ∈ l` has length at most `w`) and
+   `List.length_flatten_le_mul` of `ForMathlib/ListLength.lean`. A premise of such a theorem or
+   of a cost lemma over the members of a map, `∀ y ∈ M.map f, P y` (the premise of
+   `List.flatten.timedCost_le` at `L = M.map f`), is read at the members of `M` as
+   `∀ a ∈ M, P (f a)` (`List.forall_mem_map`). The per-element length `(f a).length` at a fresh
+   `a` is bounded by a theorem tagged `@[length_bound]` at `f`, else, when `f` is a definition
+   by cases whose cases are list literals, by the longest literal, proved by splitting its
+   `if`s and `match`es as the leaf-length rule splits a tree (`AutoTime.lengthByCases?`);
+2. the length bounded by the hypothesis is replaced by its bound (the clause of the local
+   hypotheses), and the bounds of step 1 are composed with it by `Nat.le_trans`, monotonically
+   through the sums, products and maxima of the cost expressions (`Nat.add_le_add`,
+   `Nat.mul_le_mul`, `max_le_max`), without a case analysis on the variable;
+3. the premise is closed by the existing closer (`closeBound`, `AutoTime.closeByContext`) at the
+   bound so found, and the cost by the right side of its lemma at that bound.
+
+The result is free of `x`; a per-element cost that itself reads a list computed from `x` (a
+membership test among the first components of a flat map of the log) is bounded in the same way
+inside the premise, so the bound of a search is a polynomial in the bound `n` of the hypothesis.
+
 **Standalone tactic.** `time_fold` runs the rule on a goal
 `wpFold (OpSpec.chargeUnder c allows) x (fun _ => 0) ≤ B` or
 `wpFold (OpSpec.charge c) x (fun _ => 0) ≤ B` over any program `x` of a free monad, programs
@@ -210,6 +273,8 @@ hypotheses `∀ ys, f ys ≤ t` its cost companions.
 * `mirrorTimeBound` — the procedure for a pure step, along the bound
 * `closePremises` — the premises of the time theorem of a callee, bound families by maxima
 * `foldBound` — the fold rule: the bound of a charge fold with its proof
+* `closeLeafLen` — the leaf-length rule
+* `useHypAt`, `emitUseTimeBound` — the use bound of a binder and the theorem with query count
 * `emitFoldTimeBound` — the procedure for a costed tree of a registered kind
 * `foldSPTreeTimeBound` — the procedure for a costed `SPTree` by the fold rule
 * `time_fold` — the fold rule as a tactic
@@ -232,6 +297,11 @@ theorem dite_le_max_of {c : Prop} [Decidable c] {t : c → ℕ} {f : ¬c → ℕ
     exact le_max_of_le_left (ht h)
   · rw [dite_eq_right h]
     exact le_max_of_le_right (hf h)
+
+/- The lengths of lists derived from a list by filtering, a prefix, a flat map and a
+flattening, bounded by the length of their source (`AutoTime.boundFree?`, `addLengthFacts`). -/
+attribute [length_bound] List.length_filter_le List.length_filterMap_le List.length_take
+  List.length_flatMap_le_mul List.length_flatten_le_mul
 
 open Lean Meta Elab Term Command CatCrypt.Core CatCrypt.Tactics.TimeFold
 
@@ -738,18 +808,67 @@ partial def normalizeSum (e : Expr) : MetaM Expr := do
     | none => mkNatLit k
     | some s => if k == 0 then s else mkAddN s (mkNatLit k)
 
+/-- The instance of the join `J` of a vector charge (`FoldKind.useJoin`) at the program `x`: its
+metavariables, with every function into `ℕ` among them (the cost of a query) assigned the
+constant `1`, so that the use bound counts queries, and its conclusion. -/
+def useJoinAt (J : Name) (x : Expr) : MetaM (Array Expr × Expr × Expr) := do
+  let cJ ← mkConstWithFreshMVarLevels J
+  let (ms, _, concl) ← forallMetaTelescope (← inferType cJ)
+  unless concl.getAppNumArgs ≥ 2 do throwError "`{J}` does not conclude a use bound"
+  unless ← isDefEq concl.appFn!.appArg! x do throwError "`{J}` does not apply to{indentExpr x}"
+  for m in ms do
+    let mid := m.mvarId!
+    if ← mid.isAssigned then continue
+    let ty ← whnfR (← instantiateMVars (← mid.getType))
+    if let .forallE n d b _ := ty then
+      if !b.hasLooseBVars && (← whnfR b).isConstOf ``Nat then
+        mid.assign (.lam n d (mkNatLit 1) .default)
+  return (ms, cJ, concl)
+
+/-- The use bound `UseBound (C 1) allows x (budget q T)` of the program `x` at the vector charge
+of `k`, counting queries (`useJoinAt`), with `q` and `T` the two bound arguments of the
+conclusion of the join. -/
+def useHypAt (k : FoldKind) (x q T : Expr) : MetaM Expr := do
+  let some J := k.useJoin | throwError "the kind `{k.timed}` has no vector charge"
+  let (ms, _, concl) ← useJoinAt J x
+  let bnds ← ms.filterM fun m => do
+    if ← m.mvarId!.isAssigned then return false
+    return (← whnfR (← instantiateMVars (← inferType m))).isConstOf ``Nat
+  unless bnds.size == 2 do throwError "`{J}`: the two bounds of the use bound"
+  unless (← isDefEq bnds[0]! q) && (← isDefEq bnds[1]! T) do throwError "`{J}`: the bounds"
+  let r ← instantiateMVars concl
+  if r.hasExprMVar then throwError "`{J}` is not determined by its program"
+  return r
+
 /-- The bound variables and hypotheses of the bounded binders `xs`, in order, passed to `k`
-with the bounds. -/
+with the bounds. With `vec`, a binder of a kind with a vector charge (`FoldKind.useJoin`) has
+two bound variables, its query count `q_A` and its time `T_A`, and the hypothesis
+`∀ ys, UseBound (C 1) allows (img (A ys)) (budget q_A T_A)` on the image of its tree
+(`useHypAt`). -/
 partial def withBounds {γ : Type} (xs : Array Expr) (i : Nat) (bs : Bounds)
     (vars hyps : Array Expr) (k : Bounds → Array Expr → Array Expr → TermElabM γ)
-    (oadv : Bool := false) : TermElabM γ := do
+    (oadv : Bool := false) (vec : Bool := false) : TermElabM γ := do
   if h : i < xs.size then
     let x := xs[i]
     let t ← inferType x
     match ← roleOf t oadv with
-    | none => withBounds xs (i + 1) bs vars hyps k oadv
+    | none => withBounds xs (i + 1) bs vars hyps k oadv vec
     | some r =>
       let n := (← x.fvarId!.getUserName).eraseMacroScopes
+      if let .kind := r then
+        if vec then
+          if let some (kd, step) ← kindOfType? t then
+            if kd.useJoin.isSome then
+              return ← withLocalDecl (Name.mkSimple ("q_" ++ n.toString)) .implicit natE
+                fun q => withLocalDecl (Name.mkSimple ("T_" ++ n.toString)) .implicit natE
+                fun v => do
+                let hTy ← forallTelescopeReducing t fun ys _ => do
+                  let img ← mkAppM (if step then kd.stepToFreeMT else kd.toFreeMT)
+                    #[mkAppN x ys]
+                  mkForallFVars ys (← useHypAt kd img q v)
+                withLocalDeclD (Name.mkSimple ("h_" ++ n.toString)) hTy fun hx =>
+                  withBounds xs (i + 1) (bs.push (x.fvarId!, v, r)) (vars.push q |>.push v)
+                    (hyps.push hx) k oadv vec
       let vName := match r with
         | .tree | .kind => Name.mkSimple ("T_" ++ n.toString)
         | .key => Name.mkSimple ("G_" ++ n.toString)
@@ -767,7 +886,7 @@ partial def withBounds {γ : Type} (xs : Array Expr) (i : Nat) (bs : Bounds)
           mkForallFVars ys concl
         withLocalDeclD (Name.mkSimple ("h_" ++ n.toString)) hTy fun hx =>
           withBounds xs (i + 1) (bs.push (x.fvarId!, v, r)) (vars.push v) (hyps.push hx) k
-            oadv
+            oadv vec
   else k bs vars hyps
 
 /-- The heartbeat budget, in thousands, of the proof of one time theorem by `time_bound`. -/
@@ -1518,18 +1637,19 @@ def lemmaImp (L : Name) (rev : Bool) :
   let pL := mkAppN cL ls.pop
   return some (ls.pop, A, lt, fun p => pure (mkApp pL p))
 
-/-- The fold facts of the proof `h : ∀ ys, body`: `body` a bound on a charge fold, or the left
-side of a registered equivalence or implication from a time-bound predicate to a bound on a
-charge fold (`FoldKind.timeBoundIff`, `FoldKind.stepTimeBoundIff`, `FoldKind.hypIffs`). -/
-def toFoldFact? (h : Expr) : MetaM (Option Expr) := do
-  let ty ← instantiateMVars (← inferType h)
-  forallTelescopeReducing ty fun ys body => do
+/-- The fold facts of `h : ty` read under the binders of `ty` (`reducing`: of its weak head normal
+form); see `toFoldFacts`. -/
+def toFoldFactsWith (h ty : Expr) (reducing : Bool) : MetaM (Array Expr) := do
+  let tele : (Array Expr → Expr → MetaM (Array Expr)) → MetaM (Array Expr) :=
+    if reducing then forallTelescopeReducing ty else forallTelescope ty
+  tele fun ys body => do
     let hb := mkAppN h ys
     if (foldLe? body).isSome then
-      let some (Φ, _, _, r) := foldLe? body | return none
-      unless (natOfCast? r).isSome do return none
-      unless (← chargeOf? Φ).isSome do return none
-      return some (← mkLambdaFVars ys (← normFold hb))
+      let some (Φ, _, _, r) := foldLe? body | return #[]
+      unless (natOfCast? r).isSome do return #[]
+      unless (← chargeOf? Φ).isSome do return #[]
+      return #[← mkLambdaFVars ys (← normFold hb)]
+    let mut out := #[]
     for k in ← foldKinds do
       for L in #[k.timeBoundIff, k.stepTimeBoundIff] ++ k.hypIffs do
         let st ← saveState
@@ -1540,10 +1660,28 @@ def toFoldFact? (h : Expr) : MetaM (Option Expr) := do
                 let pf ← instantiateMVars (← mk hb)
                 let pty ← instantiateMVars (← inferType pf)
                 if !pf.hasExprMVar && (foldLe? pty).isSome then
-                  return some (← mkLambdaFVars ys (← normFold pf))
+                  let f ← instantiateMVars (← mkLambdaFVars ys (← normFold pf))
+                  st.restore
+                  out := out.push f
+                  continue
         catch _ => pure ()
         st.restore
-    return none
+    return out
+
+/-- The fold facts of the proof `h : ∀ ys, body`: `body` a bound on a charge fold, or the left
+side of a registered equivalence or implication from a time-bound predicate to a bound on a
+charge fold (`FoldKind.timeBoundIff`, `FoldKind.stepTimeBoundIff`, `FoldKind.hypIffs`). A use
+bound at a vector charge gives one fact per component (its readings among `hypIffs`); its
+binders are read without unfolding the use bound, whose order on vectors is pointwise. -/
+def toFoldFacts (h : Expr) : MetaM (Array Expr) := do
+  let ty ← instantiateMVars (← inferType h)
+  let r ← toFoldFactsWith h ty false
+  if !r.isEmpty then return r
+  toFoldFactsWith h ty true
+
+/-- The first fold fact of the proof `h` (`toFoldFacts`). -/
+def toFoldFact? (h : Expr) : MetaM (Option Expr) :=
+  return (← toFoldFacts h)[0]?
 
 /-- The bound of the program `x` from a fold fact of `cx` whose program unifies with `x`. -/
 def factAt? (cx : FoldCx) (Φ x : Expr) : MetaM (Option FoldB) := do
@@ -1595,6 +1733,19 @@ def eqAt (n : Name) (lhs : Expr) : MetaM Expr := do
   let e ← instantiateMVars (mkAppN c ms)
   if e.hasExprMVar then throwError "eqAt: `{n}` is not determined by its left side"
   return e
+
+/-- The first of the equations `ns` that applies at `lhs` (`eqAt`): the equation of a kind at
+its charge, then its equations at the further component charges of a vector charge. -/
+def eqAtAny (ns : Array Name) (lhs : Expr) : MetaM Expr := do
+  let mut err : MessageData := m!"eqAtAny: no equation"
+  for n in ns do
+    let st ← saveState
+    try
+      return ← eqAt n lhs
+    catch e =>
+      st.restore
+      err := e.toMessageData
+  throwError err
 
 /-- The charge fold `wpFold Φ x post`. -/
 def foldOf (Φ x post : Expr) : MetaM Expr :=
@@ -1749,6 +1900,117 @@ def newFVars (l₀ l : LocalContext) : Array FVarId :=
   l.foldl (init := #[]) fun acc d =>
     if l₀.contains d.fvarId || d.isImplementationDetail then acc else acc.push d.fvarId
 
+/-! ## The leaf-length rule -/
+
+/-- The bound of the value `l : ℕ` at a leaf, free of the variables `avoid`, with the proof of
+`l ≤ b`: a numeral when `l` reduces to one (the length of a list literal), else `bfree?`. -/
+def leafValueBound (avoid : Array FVarId) (l : Expr) : MetaM (Expr × Expr) := do
+  let r ← withTransparency .default <| Meta.reduce l
+  if let some n := r.nat? <|> r.rawNatLit? then
+    let b := mkNatLit n
+    return (b, ← mkExpectedTypeHint (mkApp (mkConst ``Nat.le_refl) b) (mkNatLe l b))
+  match ← bfree? avoid l with
+  | some r => return r
+  | none => throwError "no bound of the leaf value{indentExpr l}\nfree of the values bound in \
+      the program"
+
+/-- The leaf invariant `ty = AllRet Q t` unfolded at a constructor of `t`: the definition of the
+invariant applied once and its match reduced (`Q a` at a leaf, `∀ o, AllRet Q (k o)` at a node);
+`none` when `t` exposes no constructor. -/
+def unfoldAllRet? (ty : Expr) : MetaM (Option Expr) := do
+  let some ty' ← withDefault (unfoldDefinition? ty) | return none
+  let ty' ← whnfCore ty'.headBeta
+  if ty'.isForall || (CatCrypt.Tactics.AutoTime.natLe? ty').isSome then return some ty'
+  return none
+
+/-- **The leaf-length rule.** A goal `AllRet (fun v => e v ≤ ?ℓ) t` of a kind `k` (its leaf
+invariant `FoldKind.allRet`), proved by recursion over `t`: at a leaf `pure a` the bound of
+`e a` (`leafValueBound`) is recorded with a delayed goal `b ≤ ?ℓ` in `leaves`; a node is the
+invariant at every answer (an introduced variable); the tree `y.2` of a pair is the tree of the
+pair `y` after its head is unfolded; a bind of the kind is the invariant of every continuation
+(`FoldKind.allRetBind`); an `if`, an `if h :`
+and a `match` (of trees or of pairs) are split; any other tree has its head unfolded. The bounds
+avoid every variable introduced below `l₀`. -/
+partial def leafLenGoal (k : FoldKind) (avoid : Array FVarId) (l₀ : LocalContext) (g : MVarId)
+    (leaves : IO.Ref (Array (MVarId × Expr))) (fuel : Nat := 64) : TermElabM Unit := do
+  if fuel == 0 then throwError "the leaf-length rule exhausted its depth"
+  g.withContext do
+  let ty ← whnfR (← instantiateMVars (← g.getType))
+  if ty.isForall then
+    let (_, g') ← g.intro1
+    return ← leafLenGoal k avoid l₀ g' leaves (fuel - 1)
+  if let some (l, r) := CatCrypt.Tactics.AutoTime.natLe? ty then
+    let av := avoid ++ newFVars l₀ (← getLCtx)
+    let (b, pf) ← leafValueBound av l
+    if av.any b.containsFVar then
+      throwError "the bound of the leaf value{indentExpr l}\nmentions a bound value"
+    let d ← mkFreshExprSyntheticOpaqueMVar (mkNatLe b r)
+    g.assign (← mkAppM ``Nat.le_trans #[pf, d])
+    leaves.modify (·.push (d.mvarId!, b))
+    return
+  let some ar := k.allRet | throwError "the kind `{k.timed}` has no leaf invariant"
+  unless ty.isAppOf ar && ty.getAppNumArgs ≥ 2 do
+    throwError "the leaf-length rule reads no clause at{indentExpr ty}"
+  if let some ty' ← unfoldAllRet? ty then
+    return ← leafLenGoal k avoid l₀ (← g.replaceTargetDefEq ty') leaves (fuel - 1)
+  let t := ty.appArg!
+  let retarget (t' : Expr) : TermElabM Unit := do
+    leafLenGoal k avoid l₀ (← g.replaceTargetDefEq (mkApp ty.appFn! t')) leaves (fuel - 1)
+  let split (e : Expr) : TermElabM Bool := do
+    if e.isAppOfArity ``ite 5 || e.isAppOfArity ``dite 5 then
+      let some (s₁, s₂) ← splitIfTarget? g | return false
+      for gi in [s₁.mvarId, s₂.mvarId] do leafLenGoal k avoid l₀ gi leaves (fuel - 1)
+      return true
+    if (← matchMatcherApp? e).isSome then
+      for gi in ← Split.splitMatch g e do leafLenGoal k avoid l₀ gi leaves (fuel - 1)
+      return true
+    return false
+  if ← split t then return
+  if let some y := CatCrypt.Tactics.AutoTime.sndOf? t then
+    let y' ← reduceHead y
+    if y'.isAppOfArity ``Prod.mk 4 then return ← retarget (y'.getArg! 3)
+    if let (some bnd, some ab) := (k.bind, k.allRetBind) then
+      if y'.getAppFn.isConstOf bnd then
+        let gs ← (← g.replaceTargetDefEq (mkApp ty.appFn! (← mkAppM ``Prod.snd #[y']))).apply
+          (← mkConstWithFreshMVarLevels ab)
+        for gi in gs do
+          unless ← gi.isAssigned do leafLenGoal k avoid l₀ gi leaves (fuel - 1)
+        return
+    if ← split y' then return
+    if y' != y then return ← retarget (← mkAppM ``Prod.snd #[y'])
+  let t' ← exposeTree k (← reduceHead t)
+  if t' != t then return ← retarget t'
+  throwError "the leaf-length rule reads no clause at the tree{indentExpr t}"
+
+/-- Whether `ty` is a leaf-length premise `∀ ys, AllRet (fun v => e v ≤ ?ℓ) t` of the kind `k`,
+with `?ℓ` an unassigned metavariable; the metavariable. -/
+def leafLenPremise? (k : FoldKind) (ty : Expr) : MetaM (Option MVarId) := do
+  let some ar := k.allRet | return none
+  forallTelescopeReducing ty fun _ body => do
+    unless body.isAppOf ar && body.getAppNumArgs ≥ 2 do return none
+    let Q := body.appFn!.appArg!
+    let .lam _ _ qb _ := Q | return none
+    let some (_, r) := CatCrypt.Tactics.AutoTime.natLe? qb | return none
+    match ← instantiateMVars r with
+    | .mvar m => return if ← m.isAssigned then none else some m
+    | _ => return none
+
+/-- The leaf-length rule at the premise `mid` (`leafLenPremise?`): `?ℓ` is the maximum of the
+bounds of the leaves, each delayed goal closed by `maxChain`. -/
+def closeLeafLen (k : FoldKind) (avoid : Array FVarId) (mid : MVarId) (ℓ : MVarId) :
+    TermElabM Unit := do
+  let leaves ← IO.mkRef #[]
+  leafLenGoal k avoid (← mid.getDecl).lctx mid leaves
+  let ls ← leaves.get
+  let mut uniq : Array Expr := #[]
+  for (_, b) in ls do
+    unless uniq.contains b do uniq := uniq.push b
+  let (M, ups) ← if uniq.isEmpty then pure (mkNatLit 0, #[]) else maxChain uniq
+  unless ← isDefEq (mkMVar ℓ) M do throwError "the leaf-length rule: the bound"
+  for (d, b) in ls do
+    let some j := uniq.idxOf? b | throwError "the leaf-length rule: a leaf"
+    d.assign ups[j]!
+
 mutual
 
 /-- **The fold rule.** The bound of the charge fold `wpFold Φ x (fun _ => 0)` of the program `x`,
@@ -1868,7 +2130,8 @@ partial def splitWith? (cx : FoldCx) (Φ : Expr) (k : FoldKind) (hX ca body : Ex
   let post ← zeroPost body
   let st ← saveState
   try
-    let hs ← eqAt sf (← foldOf Φ (← mkAppM k.stepToFreeMT #[y]) post)
+    let hs ← eqAtAny (#[sf] ++ k.stepFolds)
+      (← foldOf Φ (← mkAppM k.stepToFreeMT #[y]) post)
     if let (some bnd, some bf) := (k.bind, k.bindFold) then
       let y' ← reduceHead y
       if y'.getAppFn.isConstOf bnd && y'.getAppNumArgs ≥ 2 then
@@ -1878,7 +2141,8 @@ partial def splitWith? (cx : FoldCx) (Φ : Expr) (k : FoldKind) (hX ca body : Ex
             let e₀ := e.replace fun s => if s == oS then some (mkNatLit 0) else none
             let hc ← omegaEq ca (mkAddN (mkAddN e₀ oS) o)
             let (m, pe) ← costBoundWith (fun cx Φ x => foldBound cx Φ x (fuel - 1)) cx e₀
-            let hsu ← eqAt bf (← foldOf Φ (← mkAppM k.stepToFreeMT #[y']) post)
+            let hsu ← eqAtAny (#[bf] ++ k.bindFolds)
+              (← foldOf Φ (← mkAppM k.stepToFreeMT #[y']) post)
             let hsuTy ← instantiateMVars (← inferType hsu)
             let bindProg := (hsuTy.getArg! 2).getArg! 4
             let tS := bindProg.getArg! 3
@@ -1890,7 +2154,7 @@ partial def splitWith? (cx : FoldCx) (Φ : Expr) (k : FoldKind) (hX ca body : Ex
             let gFold ← withLocalDeclD `a (← inferType g).bindingDomain! fun a => do
               mkLambdaFVars #[a] (← foldOf Φ (g.beta #[a]) post)
             let e1 ← mkAppM ``PFunctor.FreeM.wpFold_bind' #[Φ, stepS, g, post]
-            let e2 ← eqAt sf (← foldOf Φ stepS gFold)
+            let e2 ← eqAtAny (#[sf] ++ k.stepFolds) (← foldOf Φ stepS gFold)
             let e3 ← mkEqSymm (← mkAppM ``PFunctor.FreeM.wpFold_bind' #[Φ, tS, g, post])
             let e2ty ← instantiateMVars (← inferType e2)
             let castS := (e2ty.getArg! 2).getArg! 4
@@ -1914,7 +2178,7 @@ charge `y.1` plus the bound of `toFreeMT y.2`. -/
 partial def foldStep (cx : FoldCx) (Φ : Expr) (k : FoldKind) (sf : Name) (x : Expr)
     (fuel : Nat) : TermElabM FoldB := do
   let post ← zeroPost x
-  let hX ← eqAt sf (← foldOf Φ x post)
+  let hX ← eqAtAny (#[sf] ++ k.stepFolds) (← foldOf Φ x post)
   let hty ← instantiateMVars (← inferType hX)
   let rhs := hty.getArg! 2
   let some ca0 := natOfCast? (rhs.getArg! 4) | throwError "foldStep: {rhs}"
@@ -1936,7 +2200,10 @@ partial def foldBind (cx : FoldCx) (Φ c allows x : Expr) (fuel : Nat) : TermEla
   let leaf? : Option FoldB ← do
     if let some r ← factAt? cx Φ x0 then pure (some r)
     else match ← imageOf? x0 with
-      | some (k, step, t) => calleeFold? cx k step Φ allows x0 t
+      | some (k, step, t) => do
+        match ← calleeFold? cx k step Φ allows x0 t with
+        | some r => pure (some r)
+        | none => k.laws.findSomeM? fun L => lawFold? cx Φ x0 L fuel
       | none => pure none
   if leaf?.isNone then
     let mut x0' ← whnfR x0
@@ -2092,7 +2359,7 @@ partial def imageClause? (cx : FoldCx) (Φ : Expr) (k : FoldKind) (step : Bool) 
         return some (← foldBound cx Φ (mkApp x.appFn! (y'.getArg! 3)) (fuel - 1))
       let post ← zeroPost x
       let sy ← mkAppM k.stepToFreeMT #[y]
-      let hs ← eqAt sf (← foldOf Φ sy post)
+      let hs ← eqAtAny (#[sf] ++ k.stepFolds) (← foldOf Φ sy post)
       let r ← foldBound cx Φ sy (fuel - 1)
       let pf ← mkAppM ``PFunctor.FreeM.enat_le_of_add_eq #[hs, r.proof]
       return some { bound := r.bound, proof := pf }
@@ -2100,7 +2367,7 @@ partial def imageClause? (cx : FoldCx) (Φ : Expr) (k : FoldKind) (step : Bool) 
     if let (some bnd, some bf) := (k.bind, k.bindFold) then
       if t.getAppFn.isConstOf bnd && t.getAppNumArgs ≥ 2 then
         let post ← zeroPost x
-        let eq ← eqAt bf (← foldOf Φ x post)
+        let eq ← eqAtAny (#[bf] ++ k.bindFolds) (← foldOf Φ x post)
         let eqTy ← instantiateMVars (← inferType eq)
         let r ← foldBound cx Φ ((eqTy.getArg! 2).getArg! 4) (fuel - 1)
         return some { bound := r.bound, proof := ← mkAppM ``Eq.trans_le #[eq, r.proof] }
@@ -2108,17 +2375,28 @@ partial def imageClause? (cx : FoldCx) (Φ : Expr) (k : FoldKind) (step : Bool) 
     if let some r ← lawFold? cx Φ x L fuel then return some r
   return none
 
-/-- A combinator law `L`: a theorem concluding `wpFold Φ' x' (fun _ => 0) ≤ ↑B` whose program
-unifies with `x`; each premise that bounds a charge fold (under binders) is proved by the fold
-rule, its bound assigned to the metavariable of the premise, and the other premises are closed
-by `closePremises`. -/
+/-- A combinator law `L`: a theorem concluding `wpFold Φ' x' (fun _ => 0) ≤ ↑B`, or that bound
+and a leaf invariant `AllRet Q t` (`FoldKind.allRet`, the leaf invariant of the result), whose
+program unifies with `x`; each premise that bounds a charge fold (under binders) is proved by the
+fold rule at its own charge (a component law of a vector charge bounds one component from
+others), its bound assigned to the metavariable of the premise; a leaf-length premise
+`∀ ys, AllRet (fun v => e v ≤ ?ℓ) t` is proved by the leaf-length rule (`closeLeafLen`); the
+other premises are closed by `closePremises`. -/
 partial def lawFold? (cx : FoldCx) (Φ x : Expr) (L : Name) (fuel : Nat) :
     TermElabM (Option FoldB) := do
   let st ← saveState
   try
     let cL ← mkConstWithFreshMVarLevels L
     let (ms, _, concl) ← forallMetaTelescopeReducing (← inferType cL)
-    let some (Φl, xl, _, r) := foldLe? (← whnfR concl) | st.restore; return none
+    let concl ← whnfR concl
+    let isAnd := concl.isAppOfArity ``And 2
+    let core := if isAnd then concl.getArg! 0 else concl
+    let some (Φl, xl, _, r) := foldLe? core | st.restore; return none
+    -- a law of a combinator applies only at an application of that combinator
+    if xl.getAppNumArgs > 0 && x.getAppNumArgs > 0 then
+      if let (some cl, some cx') := (xl.appArg!.getAppFn.constName?,
+          (← whnfR x.appArg!).getAppFn.constName?) then
+        if cl != cx' && !(← getEnv).isConstructor cl then st.restore; return none
     unless ← isDefEq xl x do st.restore; return none
     unless ← isDefEq (← normSpec Φl) Φ do st.restore; return none
     for m in ms do
@@ -2134,12 +2412,28 @@ partial def lawFold? (cx : FoldCx) (Φ x : Expr) (L : Name) (fuel : Nat) :
         unless ← isDefEq np rr.bound do
           throwError "the bound of an argument of a combinator mentions its binders"
         mid.assign (← mkLambdaFVars ys (← denormFold Φp rr.proof))
+    let img? ← imageOf? x
+    if let some (k, _, _) := img? then
+      for m in ms do
+        let mid := m.mvarId!
+        if ← mid.isAssigned then continue
+        let ty ← instantiateMVars (← mid.getType)
+        unless ← isProp ty do continue
+        if let some ℓ ← leafLenPremise? k ty then closeLeafLen k cx.avoid mid ℓ
     unless ← closePremises cx.avoid ms do st.restore; return none
-    let pf ← normFold (← instantiateMVars (mkAppN cL ms))
+    let pc ← instantiateMVars (mkAppN cL ms)
+    let pf ← normFold (← if isAnd then mkAppM ``And.left #[pc] else pure pc)
     let some n := natOfCast? (← instantiateMVars r) | st.restore; return none
     let n ← instantiateMVars n
     if pf.hasExprMVar || n.hasExprMVar then st.restore; return none
-    return some { bound := n, proof := pf }
+    let mut inv : Option (Expr × Expr) := none
+    if isAnd then
+      if let (some (k, step, _), some (_, allows, _)) := (img?, ← chargeOf? Φ) then
+        let i ← instantiateMVars (concl.getArg! 1)
+        if let some ar := k.allRet then
+          if i.getAppFn.isConstOf ar then
+            inv ← invFold? k step allows x (← mkAppM ``And.right #[pc])
+    return some { bound := n, proof := pf, inv }
   catch ex =>
     if ex.isInterrupt || ex.isRuntime then throw ex
     st.restore
@@ -2153,7 +2447,7 @@ def contextFacts : MetaM (Array Expr) := do
   for d in ← getLCtx do
     if d.isImplementationDetail then continue
     unless ← isProp d.type do continue
-    if let some f ← toFoldFact? d.toExpr then out := out.push f
+    out := out ++ (← toFoldFacts d.toExpr)
   return out
 
 /-- The functions of the local context bounded by a hypothesis `∀ ys, f ys ≤ t` over `ℕ`: the
@@ -2283,7 +2577,7 @@ def emitFoldTimeBound (k : FoldKind) (c name : Name) : TermElabM (Option Message
     withBounds xs 0 #[] #[] #[] (oadv := true) fun bs vars hyps => do
       let mut facts := #[]
       for h in hyps do
-        if let some f ← toFoldFact? h then facts := facts.push f
+        facts := facts ++ (← toFoldFacts h)
       let avoid := bs.filterMap fun (f, _, r) => match r with
         | .cost => some f
         | _ => none
@@ -2308,6 +2602,76 @@ def emitFoldTimeBound (k : FoldKind) (c name : Name) : TermElabM (Option Message
       let pf ← instantiateMVars (← close (← denormFold Φ pf0))
       if pf.hasSorry || pf.hasExprMVar then return some m!"the proof is incomplete"
       let goal ← instantiateMVars goal
+      let ty ← mkForallFVars (xs ++ vars ++ hyps) goal
+      let val ← mkLambdaFVars (xs ++ vars ++ hyps) pf
+      try
+        addDecl (Declaration.thmDecl
+          { name, levelParams := info.levelParams, type := ty, value := val })
+      catch e => return some m!"the proof is not accepted: {e.toMessageData}"
+      return none
+
+/-- The bound `B` of the fold rule on the program `x` at the charge reading `Φ`, normalised
+(`normalizeSum`) when `arithLe` proves the normalised bound above it, with the proof of
+`wpFold Φ x (fun _ => 0) ≤ ↑B` over `Φ` itself. -/
+def foldNormalized (cx : FoldCx) (Φ x : Expr) : TermElabM (Expr × Expr) := do
+  let r ← foldBound cx (← normSpec Φ) x
+  let B ← instantiateMVars r.bound
+  let Bn ← normalizeSum B
+  let mut bound := B
+  let mut pf := r.proof
+  if Bn != B then
+    try
+      let le ← arithLe B Bn
+      pf ← mkAppM ``PFunctor.FreeM.wpFold_le_natCast_of_le #[pf, le]
+      bound := Bn
+    catch _ => pure ()
+  return (bound, ← denormFold Φ pf)
+
+/-- State and prove `name`, the time theorem with query count of the costed tree `c` of the kind
+`k` with a vector charge: every binder tree of a kind with a vector charge has a use bound
+(`withBounds` with `vec`), read as one fold fact per component (`toFoldFacts`); the use bound
+of the step-prefixed image of `c xs` is the join `FoldKind.useJoin` of its component folds, each
+bounded by the fold rule at its own charge, and the theorem is the right side of
+`FoldKind.useStepIff` at the joined bounds (the time bound and the query count of an oracle
+program). Returns the reason when the theorem is not proved. -/
+def emitUseTimeBound (k : FoldKind) (c name : Name) : TermElabM (Option MessageData) := do
+  let (some J, some U) := (k.useJoin, k.useStepIff)
+    | return some m!"the kind `{k.timed}` has no vector charge"
+  let info ← getConstInfo c
+  let lvls := info.levelParams.map mkLevelParam
+  forallTelescope info.type fun xs _ => do
+    withBounds xs 0 #[] #[] #[] (oadv := true) (vec := true) fun bs vars hyps => do
+      let mut facts := #[]
+      for h in hyps do
+        facts := facts ++ (← toFoldFacts h)
+      let avoid := bs.filterMap fun (f, _, r) => match r with
+        | .cost => some f
+        | _ => none
+      let x := mkAppN (Lean.mkConst c lvls) xs
+      let img ← mkAppM k.stepToFreeMT #[x]
+      let (ms, cJ, _) ← try useJoinAt J img catch e => return some e.toMessageData
+      for m in ms do
+        let mid := m.mvarId!
+        if ← mid.isAssigned then continue
+        let ty ← instantiateMVars (← mid.getType)
+        unless ← isProp ty do continue
+        let some (Φp, xp, _, rp) := foldLe? ty | return some m!"`{J}`: the premise{indentExpr ty}"
+        let some np := natOfCast? rp | return some m!"`{J}`: the bound of{indentExpr ty}"
+        let (b, pf) ← try foldNormalized { facts, avoid } Φp xp
+          catch e => return some m!"no bound of the component{indentExpr Φp}\n{e.toMessageData}"
+        unless ← isDefEq np b do return some m!"the bound of a component"
+        mid.assign pf
+      let pj ← instantiateMVars (mkAppN cJ ms)
+      if pj.hasExprMVar then return some m!"the use bound is not determined"
+      let cU ← mkConstWithFreshMVarLevels U
+      let (us, _, ut) ← forallMetaTelescope (← inferType cU)
+      unless ut.isAppOfArity ``Iff 2 do return some m!"`{U}` is not an equivalence"
+      unless ← isDefEq (ut.getArg! 0) (← inferType pj) do
+        return some m!"`{U}` does not read the use bound{indentExpr (← inferType pj)}"
+      let goal ← instantiateMVars (ut.getArg! 1)
+      let pf ← instantiateMVars (← mkAppM ``Iff.mp #[mkAppN cU us, pj])
+      if pf.hasSorry || pf.hasExprMVar || goal.hasExprMVar then
+        return some m!"the proof is incomplete"
       let ty ← mkForallFVars (xs ++ vars ++ hyps) goal
       let val ← mkLambdaFVars (xs ++ vars ++ hyps) pf
       try
@@ -2368,20 +2732,30 @@ def isOracleTimed (c : Name) : MetaM Bool := do
 
 /-- `derive_time_bound R.tree` states and proves `R.tree.timeBound_timed`, the time theorem of
 `R.tree.timed` (see the module docstring): by the fold rule for a costed tree of a registered
-kind (`emitFoldTimeBound`); for a costed `SPTree` by the fold rule first
-(`foldSPTreeTimeBound`), else along its bound for a pure step body (`mirrorTimeBound`), else by
+kind (`emitFoldTimeBound`), and for a kind with a vector charge, when that fails or with
+`+queries`, with the query count beside the time (`emitUseTimeBound`); for a costed `SPTree`
+by the fold rule first (`foldSPTreeTimeBound`), else along its bound for a pure step body (`mirrorTimeBound`), else by
 `time_bound` (`emitTimeBound`); it fails with the reasons when the theorem is not proved. -/
-syntax (name := deriveTimeBoundCmd) "derive_time_bound " ident : command
+syntax (name := deriveTimeBoundCmd) "derive_time_bound " ("+queries ")? ident : command
 
 @[command_elab deriveTimeBoundCmd]
 def elabDeriveTimeBound : CommandElab := fun stx => do
   liftTermElabM do
-    let t ← realizeGlobalConstNoOverloadWithInfo stx[1]
+    let queries := !stx[1].isNone
+    let t ← realizeGlobalConstNoOverloadWithInfo stx[2]
     let name := t ++ `timeBound_timed
     if let some k ← foldKindOfTimed? (t ++ `timed) then
-      if let some why ← emitFoldTimeBound k (t ++ `timed) name then
-        throwError "`{name}` is not proved: {why}"
-      return
+      if queries then
+        if let some why ← emitUseTimeBound k (t ++ `timed) name then
+          throwError "`{name}` is not proved: {why}"
+        return
+      let s ← saveState
+      let some why ← emitFoldTimeBound k (t ++ `timed) name | return
+      if k.useJoin.isSome then
+        s.restore
+        let some whyU ← emitUseTimeBound k (t ++ `timed) name | return
+        throwError "`{name}` is not proved: {why}\nwith the query counts: {whyU}"
+      throwError "`{name}` is not proved: {why}"
     let s ← saveState
     let whyF? ← try foldSPTreeTimeBound (t ++ `timed) name
       catch e => do

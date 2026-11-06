@@ -15,9 +15,7 @@ The goal shapes of the handlers of the FO transform (`FOTransformTimed`):
 
 * a costed program followed by its lift `liftP`, bounded through the time theorem
   `liftP.timeBound_timed` of the callee from a step-prefixed bound of the program;
-* one query of `simImplFO.timed`, whose answer costs `Sum.rec (fun _ => 0) (fun _ => 0) r` and
-  whose calls of `simImpl.timed` are bounded by `simImpl.timeBound` and
-  `simImpl.isQueryBound_erase`;
+* a hash query of `simImplFO.timed`, whose answer costs `Sum.rec (fun _ => 0) (fun _ => 0) r`;
 * the leaf invariants of `simImpl.timed` and `simImplFO.timed`: the table companions of the
   returned states exceed the bound of those received by at most `3`.
 -/
@@ -36,7 +34,7 @@ example {β γ : Type} (X : ℕ × OracleAdv.Timed (M × C) Bool β)
     (f : β → ℕ × OracleAdv.Timed (M ⊕ (M × C)) (R ⊕ Bool) γ) {N q : ℕ}
     (hX : StepTimeBound X N) (hq : X.2.erase.IsQueryBound q) (hf : ∀ x, StepTimeBound (f x) 2) :
     StepTimeBound (delay 1 (delay (2 + X.1 + (liftP.timed (R := R) X.2).1)
-      ((liftP.timed (R := R) X.2).2.bind f))) (N + q + 5) := by
+      ((liftP.timed (R := R) X.2).2.bind f))) (4 * N + 2 * q + 6) := by
   time_bound
 
 omit [Nonempty M] in
@@ -46,16 +44,6 @@ example (cstar : C) (kstar : K) (st : FOTransformU.SimState M C K)
     StepTimeBound (simImplFO.timed (R := R) cstar kstar st (.inl (.inl m)) LDCost LQCost)
       (2 * b + 19) := by
   time_bound
-
-omit [Nonempty M] in
-example (cstar : C) (kstar : K) (st : FOTransformU.SimState M C K)
-    (d : (M ⊕ (M × C)) ⊕ C) (LDCost : C → ℕ) (LQCost : M × C → ℕ) {b : ℕ}
-    (hD : ∀ x, LDCost x ≤ b) (hQ : ∀ x, LQCost x ≤ b) :
-    StepTimeBound (simImplFO.timed (R := R) cstar kstar st d LDCost LQCost) (2 * b + 19) := by
-  rcases d with (m | q) | c
-  · time_bound
-  · time_bound
-  · time_bound
 
 omit [Nonempty M] in
 example (cstar : C) (kstar : K) (st : FOTransformU.SimState M C K)

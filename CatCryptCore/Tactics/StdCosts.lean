@@ -48,12 +48,19 @@ their definitions through `Array.toList`, so their costs are linear in the size.
   `(k + 3) * n + 1` for step costs at most `k` (a registered cost defined by recursion in the
   order of `Fin.foldl_succ`, so that it does not depend on the definition of `Fin.foldl`)
 * `Finset.toList.timedCost_eq` — enumerating `s` costs `s.card + 1`
+* `Finset.card.timedCost_eq` — the cardinality of `s` costs `s.card + 1`
+* `Finset.filter.timedCost_eq` — filtering `s` costs `∑ i ∈ s, pCost i + s.card + 1`
 * `Array.push.timedCost_le`, `Array.getD.timedCost_le`, `Array.get!Internal.timedCost_le` —
   linear bounds in the size
 * `Finset.sum.timedCost_eq_list`, `Finset.prod.timedCost_eq_list` — the registered cost of a
   sum or product over `s` is that of a fold over `s.toList`
 * `Finset.sum.timedCost_le`, `Finset.prod.timedCost_le` — `(k + 1) * s.card` for summand costs
   at most `k`; `Finset.univ.timedCost_fin` — enumerating `Fin n` costs `n`
+* `Function.update.timedCost_eq` — a table write costs nothing beyond the unit of the call
+* `instDecidableEqNat.timedCost_eq`, `instDecidableEqBool.timedCost_eq`,
+  `instDecidableEqFin.timedCost_eq`, `instDecidableEqBitVec.timedCost_eq` — deciding the equality
+  of two words costs nothing beyond the unit of the call; `instDecidableEqList.timedCost_le` —
+  deciding the equality of two lists costs at most `5 * min l₁.length l₂.length + 1`
 * `Finset.empty.timedCost_eq`, `Multiset.cons.timedCost_eq` — the empty set and adding an
   element to a multiset cost one unit
 
@@ -563,13 +570,38 @@ multiset against at most all elements of both, and costs `card s * (card s + car
 it depends on the multisets through their cardinalities, so it is well defined on the quotient.
 The image of `s` maps each element (one unit and the cost of `f`) and deduplicates the result
 at the cost of `Multiset.toFinset`. Filtering `s` decides the predicate once per element, at
-one unit each, and one more. -/
+one unit and the cost companion `pCost` of the predicate (rule (i) of
+`CatCryptCore.Tactics.DeriveTimed`), and one more. -/
 timed_cost Multiset.ndunion := fun (α : Type _) [DecidableEq α] (s t : Multiset α) =>
   Multiset.card s * (Multiset.card s + Multiset.card t + 1) + 1
 timed_cost Finset.image := fun (α β : Type _) [DecidableEq β] (_f : α → β) (fCost : α → ℕ)
   (s : Finset α) => ∑ i ∈ s, (1 + fCost i) + s.card * (s.card + 1) + 1
-timed_cost Finset.filter := fun (α : Type _) (p : α → Prop) [DecidablePred p]
-  (s : Finset α) => s.card + 1
+timed_cost Finset.filter := fun (α : Type _) (_p : α → Prop) (pCost : α → ℕ)
+  [DecidablePred _p] (s : Finset α) => ∑ i ∈ s, (1 + pCost i) + 1
+
+/-! Registered cost of the cardinality. `Finset.card s` is the length of any list representing
+`s`, read in one pass: one unit per element and one more, the cost of enumerating `s`
+(`Finset.toList`). It depends on `s` through its cardinality, so it is well defined on the
+quotient.
+
+The operations on `Finset` whose function argument is priced by its cost companion are those
+whose registered cost takes, after the function `f : α → β`, its companion `fCost : α → ℕ` and
+charges `fCost i` once per element `i`: `Finset.sum`, `Finset.prod`, `Finset.image`, and
+`Finset.filter`, whose predicate `p : α → Prop` is followed by the instance `DecidablePred p`
+and so has as companion `pCost i`, the cost of deciding `p i` (rule (i) of
+`CatCryptCore.Tactics.DeriveTimed`). -/
+timed_cost Finset.card := fun (α : Type _) (s : Finset α) => s.card + 1
+
+/-- The cardinality of `s` costs one unit per element and one more. -/
+theorem Finset.card.timedCost_eq {α : Type*} (s : Finset α) :
+    Finset.card.timedCost α s = s.card + 1 := by
+  simp [Finset.card.timedCost]
+
+/-- Filtering `s` costs the decisions of the predicate, one unit per element and one more. -/
+theorem Finset.filter.timedCost_eq {α : Type*} (p : α → Prop) (pCost : α → ℕ)
+    [DecidablePred p] (s : Finset α) :
+    Finset.filter.timedCost α p pCost s = ∑ i ∈ s, pCost i + s.card + 1 := by
+  simp [Finset.filter.timedCost, Finset.sum_add_distrib, add_comm]
 
 /-- Enumerating `s` as a list costs one unit per element and one more. -/
 theorem Finset.toList.timedCost_eq {α : Type*} (s : Finset α) :
@@ -625,5 +657,65 @@ theorem Fin.foldl.timedCost_const (n : ℕ) (f : α → Fin n → α) (c : ℕ) 
   | succ n ih =>
     have h := ih (fun x i => f x i.succ) (f init 0)
     rw [Fin.foldl.timedCost_succ, h, Nat.mul_succ]; omega
+
+/-! Registered cost of a table write. `Function.update f a v`, on a table `f`, is the write of `v`
+at `a`: a registered primitive whose registered arity is six (`α`, `β`, the decision instance,
+`f`, `a`, `v`), below the seven binders of its declared type, so that its application to `f a v`
+is a complete application whose result is a table (`registeredArity?` of
+`CatCryptCore.Tactics.DeriveTimed`). The write costs nothing beyond the unit of the call, so the
+call costs one unit plus the costs of its arguments. The registered cost takes no cost companion
+of `f`, since the write does not read `f`, so that `f` may be a component read from data. A read of the written table is a table read, one unit plus the cost
+of its argument; a read `Function.update f a v x` applied directly to the write is priced by the
+definition, its test `x = a` a decision priced as conditions are. -/
+timed_cost Function.update := fun (α : Sort _) (β : α → Sort _) [DecidableEq α]
+  (_f : (a : α) → β a) (_a : α) (_v : β _a) => 0
+
+/-- Writing `v` at `a` costs nothing beyond the unit of the call. -/
+theorem Function.update.timedCost_eq {α : Sort*} {β : α → Sort*} [DecidableEq α]
+    (f : (a : α) → β a) (a : α) (v : β a) :
+    Function.update.timedCost α β f a v = 0 := by
+  simp [Function.update.timedCost]
+
+
+/-! Registered costs of the decisions of equality at the base types, read where rule (k) of
+`CatCryptCore.Tactics.DeriveTimed` evaluates the instance of a decision of equality (the method of
+an instance that is not a field of a binder, the body of a decision function). Natural numbers,
+Booleans, elements of `Fin n` and bit vectors are words compared at once: their decision costs
+nothing beyond the unit of the call. Two lists are compared element by element, at the cost of
+`List.beq`, linear in the length of the shorter list. -/
+timed_cost instDecidableEqNat := fun (_ _ : ℕ) => 0
+timed_cost Nat.decEq := fun (_ _ : ℕ) => 0
+timed_cost instDecidableEqBool := fun (_ _ : Bool) => 0
+timed_cost Bool.decEq := fun (_ _ : Bool) => 0
+timed_cost instDecidableEqFin := fun (n : ℕ) (_ _ : Fin n) => 0
+timed_cost instDecidableEqBitVec := fun (w : ℕ) (_ _ : BitVec w) => 0
+timed_cost instDecidableEqList := fun (α : Type _) [DecidableEq α] (l₁ l₂ : List α) =>
+  List.beq.timedCost l₁ l₂
+
+/-- Deciding the equality of two natural numbers costs nothing beyond the unit of the call. -/
+theorem instDecidableEqNat.timedCost_eq (a b : ℕ) : instDecidableEqNat.timedCost a b = 0 := by
+  simp [instDecidableEqNat.timedCost]
+
+/-- Deciding the equality of two Booleans costs nothing beyond the unit of the call. -/
+theorem instDecidableEqBool.timedCost_eq (a b : Bool) :
+    instDecidableEqBool.timedCost a b = 0 := by
+  simp [instDecidableEqBool.timedCost]
+
+/-- Deciding the equality of two elements of `Fin n` costs nothing beyond the unit of the
+call. -/
+theorem instDecidableEqFin.timedCost_eq (n : ℕ) (a b : Fin n) :
+    instDecidableEqFin.timedCost n a b = 0 := by
+  simp [instDecidableEqFin.timedCost]
+
+/-- Deciding the equality of two bit vectors costs nothing beyond the unit of the call. -/
+theorem instDecidableEqBitVec.timedCost_eq (w : ℕ) (a b : BitVec w) :
+    instDecidableEqBitVec.timedCost w a b = 0 := by
+  simp [instDecidableEqBitVec.timedCost]
+
+/-- Deciding the equality of two lists costs at most five units per element of the shorter and
+one more. -/
+theorem instDecidableEqList.timedCost_le {α : Type*} [DecidableEq α] (l₁ l₂ : List α) :
+    instDecidableEqList.timedCost α l₁ l₂ ≤ 5 * min l₁.length l₂.length + 1 :=
+  List.beq.timedCost_le l₁ l₂
 
 end
