@@ -17,17 +17,19 @@ public import CatCryptCore.Tactics.AutoTime
 `liftP A` asks each plaintext-checking query of `A` as the right summand of the combined
 oracle and reads its answer back through `Sum.elim`; it is the relabelling
 `OracleAdv.mapQueryAnswer` (`liftP_eq_mapQueryAnswer`). Its costed form `liftP.timed` is
-registered for `derive_timed` in the binder convention of `CatCryptCore.Tactics.DeriveTimed`.
+derived by `derive_timed`, by structural recursion over the costed adversary.
 
 ## Cost model
 
 The registered costs of `CatCryptCore.Crypto.OracleAdversaryTimed`: one unit per `rand` and
-per `query` node. The query relabelling `Sum.inr` is a constructor and free; reading an
-answer back through `Sum.elim` costs one unit, charged on the continuation of the query.
+per `query` node, and the cost rules of `CatCryptCore.Tactics.DeriveTimed`: the case analysis
+of a node costs one unit, the recursive call on its continuation two, and reading an answer
+back through `Sum.elim` two more, charged on the continuation of the query. The query
+relabelling `Sum.inr` is a constructor and free.
 
 ## Main definitions
 
-* `liftP.timed` — the costed form of `liftP`
+* `liftP.timed` — the costed form of `liftP`, derived by `derive_timed`
 * `uRedRun.timed`, `uRedROM.timed` — the costed forms of the OW-PCA reduction, derived by
   `derive_timed` and `derive_reduction`
 
@@ -38,18 +40,18 @@ answer back through `Sum.elim` costs one unit, charged on the continuation of th
 * `liftP.bind_ret` — `(liftP X).bind (fun y => .ret (f y)) = liftP (X.bind fun y => .ret (f y))`,
   the naturality lemma that `derive_timed` uses at a call of `liftP` at a costed state
 * `liftP.timeBound_timed` — an adversary of time `T` with at most `q` queries gives time at
-  most `T + q`
+  most `4 T + 2 q + 1`
 * `isQueryBound_of_bind_ret`, `allRet_mapQueryAnswer` — query bounds and result invariants
   through a result map and a relabelling
 * `simImpl.isQueryBound_erase`, `liftP.stepTimeBound_bind` — the query bound of the erased
   handler and the time of a lifted handler followed by its result map
 * `simImpl.timeBound`, `simImplFO.timeBound` — one query of the costed handlers, with table
-  companions at most `b`, takes time at most `2 b + 13` and `2 b + 19`
+  companions at most `b`, takes time at most `2 b + 13` and `8 b + 60`
 * `simImpl.allRet_le`, `simImplFO.allRet_le` — the table companions grow by at most `3` per
   query
 * `uRedRun.timeBound`, `uRedROM.timeBound` — the costed reduction `uRedRun.timed` (from
   `derive_timed`) and the costed adversary `uRedROM.timed` (from `derive_reduction`) take time at
-  most `rc + T + ∑_{j < q} (6 j + 20) + 5` (`+ 6` for `uRedROM`)
+  most `rc + T + ∑_{j < q} (24 j + 61) + 5` (`+ 6` for `uRedROM`)
 -/
 
 @[expose] public section
@@ -66,16 +68,7 @@ theorem liftP_eq_mapQueryAnswer {M C R α : Type} (A : OracleAdv (M × C) Bool �
   | rand p k ih => simp only [liftP, OracleAdv.mapQueryAnswer, ih]
   | query d k ih => simp only [liftP, OracleAdv.mapQueryAnswer, ih]
 
-/-- The costed form of `liftP`: one unit per query for reading the answer back. -/
-noncomputable def liftP.timed {M C R α : Type} (A : OracleAdv.Timed (M × C) Bool α) :
-    ℕ × OracleAdv.Timed (M ⊕ (M × C)) (R ⊕ Bool) α :=
-  (0, A.mapQueryAnswer Sum.inr (fun _ => 0) (fun a => a.elim (fun _ => false) id) fun _ => 1)
-
-/-- Erasing the step costs of `liftP.timed A` gives `liftP` of the erased adversary. -/
-theorem liftP.erase_timed {M C R α : Type} (A : OracleAdv.Timed (M × C) Bool α) :
-    (liftP.timed (R := R) A).2.erase = liftP A.erase := by
-  rw [liftP_eq_mapQueryAnswer]
-  exact OracleAdv.Timed.erase_mapQueryAnswer _ _ _ _ A
+derive_timed liftP
 
 /-- `liftP` commutes with a bind into `ret`: relabelling the queries and then mapping the
 result is mapping the result and then relabelling. -/
@@ -87,14 +80,36 @@ theorem liftP.bind_ret {M C R α β : Type} (X : OracleAdv (M × C) Bool α) (f 
   | query q k ih => simp only [liftP, OracleAdv.bind, ih]
 
 /-- An adversary of time `T` with at most `q` queries gives a lift of time at most
-`T + q`. -/
+`4 T + 2 q + 1`: a `rand` node costs three units beyond its own and a query five, of which a
+query's unit and the cost of its continuation count in `T`. -/
 theorem liftP.timeBound_timed {M C R α : Type} {A : OracleAdv.Timed (M × C) Bool α} {T q : ℕ}
     (hA : A.TimeBound T) (hq : A.erase.IsQueryBound q) :
-    OracleAdv.Timed.StepTimeBound (liftP.timed (R := R) A) (T + q) := by
-  have h := OracleAdv.Timed.timeBound_mapQueryAnswer (Sum.inr (α := M)) (fun _ => 0)
-    (fun a : R ⊕ Bool => a.elim (fun _ => false) id) (fun _ => 1) (t₀ := 0) (u₀ := 1)
-    (fun _ => le_rfl) (fun _ => le_rfl) hA hq
-  simpa [liftP.timed, OracleAdv.Timed.stepTimeBound_zero] using h
+    OracleAdv.Timed.StepTimeBound (liftP.timed (R := R) A) (4 * T + 2 * q + 1) := by
+  induction A generalizing T q with
+  | ret a =>
+    rw [liftP.timed]
+    simp [OracleAdv.Timed.StepTimeBound, OracleAdv.Timed.TimeBound]
+  | rand p c k ih =>
+    rw [liftP.timed]
+    simp only [OracleAdv.Timed.StepTimeBound, OracleAdv.Timed.TimeBound]
+    have h1 := hA.1
+    refine ⟨by omega, by omega, fun b => ?_⟩
+    have h2 := (hA.2 b).1
+    have h3 := ih b (hA.2 b).2 (hq b)
+    exact ⟨by have := h3.1; omega, h3.2.mono (by omega)⟩
+  | query d c k ih =>
+    cases q with
+    | zero => exact (hq : False).elim
+    | succ q =>
+    rw [liftP.timed]
+    simp only [OracleAdv.Timed.StepTimeBound, OracleAdv.Timed.TimeBound]
+    have h1 := hA.1
+    refine ⟨by omega, by omega, fun b => ?_⟩
+    have h2 := (hA.2 (Sum.elim (fun _ => false) id b)).1
+    have h3 := ih (Sum.elim (fun _ => false) id b) (hA.2 _).2 (hq _)
+    have h4 : (Sum.casesOn b (fun _ => 0) fun _ => 0 : ℕ) = 0 := by cases b <;> rfl
+    simp only [h4]
+    exact ⟨by have := h3.1; omega, h3.2.mono (by omega)⟩
 
 derive_timed uRedRun
 
@@ -129,13 +144,13 @@ theorem simImpl.isQueryBound_erase (cstar : C) (kstar : K) (st : FOTransformU.Si
 
 omit [Nonempty R] [Nonempty M] [DecidableEq M] [DecidableEq C] in
 /-- A costed program `X` followed by its lift `liftP`, a result map of cost `2` and the
-delays that `derive_timed` inserts takes time at most `N + q + 5`, for `X` of time `N` with
-at most `q` queries. -/
+delays that `derive_timed` inserts takes time at most `4 N + 2 q + 6`, for `X` of time `N`
+with at most `q` queries. -/
 theorem liftP.stepTimeBound_bind {β γ : Type} (X : ℕ × OracleAdv.Timed (M × C) Bool β)
     (f : β → ℕ × OracleAdv.Timed (M ⊕ (M × C)) (R ⊕ Bool) γ) {N q : ℕ}
     (hX : StepTimeBound X N) (hq : X.2.erase.IsQueryBound q) (hf : ∀ x, StepTimeBound (f x) 2) :
     StepTimeBound (delay 1 (delay (2 + X.1 + (liftP.timed (R := R) X.2).1)
-      ((liftP.timed (R := R) X.2).2.bind f))) (N + q + 5) := by
+      ((liftP.timed (R := R) X.2).2.bind f))) (4 * N + 2 * q + 6) := by
   have h := liftP.timeBound_timed (R := R) hX.2 hq
   have hB := timeBound_bind h.2 hf
   have h1 := hX.1
@@ -150,6 +165,15 @@ theorem allRet_mapQueryAnswer {D D' R₁ R₂ α : Type} (g : D → D') (t : D �
   | ret a => exact hA
   | rand p c k ih => exact fun b => ih b (hA b)
   | query d c k ih => exact fun r => ih (h r) (hA (h r))
+
+omit [Nonempty R] [Nonempty M] [DecidableEq M] [DecidableEq C] in
+/-- The lift `liftP.timed` keeps the results of a costed program. -/
+theorem liftP.allRet_le {D R' α : Type} {P : α → Prop} {A : OracleAdv.Timed (D × R') Bool α}
+    (hA : AllRet P A) : AllRet P (liftP.timed (R := R) A).2 := by
+  induction A with
+  | ret a => rw [liftP.timed]; exact hA
+  | rand p c k ih => rw [liftP.timed]; exact fun b => ih b (hA b)
+  | query d c k ih => rw [liftP.timed]; exact fun r => ih _ (hA _)
 
 omit [Nonempty M] in
 /-- The costed handler `simImpl.timed` returns tables whose companions exceed the bound `b`
@@ -180,11 +204,11 @@ theorem simImpl.timeBound (cstar : C) (kstar : K) (st : FOTransformU.SimState M 
 
 omit [Nonempty M] in
 /-- One query of the costed handler `simImplFO.timed`, with the two table companions at most
-`b`, takes time at most `2 b + 19`. -/
+`b`, takes time at most `8 b + 60`. -/
 theorem simImplFO.timeBound (cstar : C) (kstar : K) (st : FOTransformU.SimState M C K)
     (d : (M ⊕ (M × C)) ⊕ C) (LDCost : C → ℕ) (LQCost : M × C → ℕ) {b : ℕ}
     (hD : ∀ x, LDCost x ≤ b) (hQ : ∀ x, LQCost x ≤ b) :
-    StepTimeBound (simImplFO.timed (R := R) cstar kstar st d LDCost LQCost) (2 * b + 19) := by
+    StepTimeBound (simImplFO.timed (R := R) cstar kstar st d LDCost LQCost) (8 * b + 60) := by
   have hs : ∀ s : R ⊕ Bool, (@Sum.rec R Bool (fun _ => ℕ) (fun _ => 0) (fun _ => 0) s) = 0 :=
     fun s => by cases s <;> rfl
   rcases d with (m | q) | c
@@ -192,7 +216,8 @@ theorem simImplFO.timeBound (cstar : C) (kstar : K) (st : FOTransformU.SimState 
   all_goals
     simp only [simImplFO.timed]
     refine (liftP.stepTimeBound_bind _ _ (simImpl.timeBound cstar kstar st _ LDCost LQCost hD hQ)
-      (simImpl.isQueryBound_erase cstar kstar st _ LDCost LQCost) fun x => ?_).mono (by simp)
+      (simImpl.isQueryBound_erase cstar kstar st _ LDCost LQCost) fun x => ?_).mono
+      (by simp; omega)
     rcases x with ⟨_ | _, _⟩ <;> exact ⟨le_rfl, trivial⟩
 
 omit [Nonempty M] in
@@ -209,19 +234,19 @@ theorem simImplFO.allRet_le (cstar : C) (kstar : K) (st : FOTransformU.SimState 
       fun x => (hQ x).trans (Nat.le_add_right _ _)⟩
   all_goals
     simp only [simImplFO.timed, delay]
-    exact allRet_bind (allRet_mapQueryAnswer _ _ _ _
+    exact allRet_bind (liftP.allRet_le
       (simImpl.allRet_le cstar kstar st _ LDCost LQCost hD hQ)) fun _ h => h
 
 /-- **Time of `uRedRun.timed`.** With the call of `B.run pk c` of cost at most `rc`, and
 `B.run pk c k` of time at most `T` with at most `q` queries for every `k`, the costed
-reduction takes time at most `rc + T + ∑_{j < q} (6 j + 20) + 5`: query `j` meets table
+reduction takes time at most `rc + T + ∑_{j < q} (24 j + 61) + 5`: query `j` meets table
 companions of at most `3 j`. -/
 theorem uRedRun.timeBound {qRO qD : ℕ} (B : Games.ROM2INDCCAAdversary PK K C M R (M × C) K qRO qD)
     (pk : PK) (c : C) (runCost : PK → C → K → ℕ) {rc T q : ℕ}
     (hr : ∀ k, runCost pk c k ≤ rc) (hA : ∀ k, (ofAdv (B.run pk c k)).TimeBound T)
     (hq : ∀ k, (B.run pk c k).IsQueryBound q) :
     StepTimeBound (uRedRun.timed B pk c runCost)
-      (rc + T + ∑ j ∈ Finset.range q, (2 * (3 * (0 + j)) + 20) + 5) := by
+      (rc + T + ∑ j ∈ Finset.range q, (8 * (3 * (0 + j)) + 61) + 5) := by
   unfold uRedRun.timed
   refine stepTimeBound_zero.2 ⟨by omega, fun kstar => ?_⟩
   have himpl : ∀ (i : ℕ) (s : ((C → Option K) × (C → ℕ)) × ((M × C → Option K) × (M × C → ℕ)) ×
@@ -229,7 +254,7 @@ theorem uRedRun.timeBound {qRO qD : ℕ} (B : Games.ROM2INDCCAAdversary PK K C M
       ((∀ x, s.1.2 x ≤ 3 * i) ∧ (∀ x, s.2.1.2 x ≤ 3 * i)) →
       StepTimeBound (delay 1 (simImplFO.timed (R := R) c kstar
           { LD := s.1.1, LQ := s.2.1.1, found := s.2.2 } d s.1.2 s.2.1.2))
-        (2 * (3 * i) + 20) ∧
+        (8 * (3 * i) + 61) ∧
       AllRet (fun y => (∀ x, y.2.1.2 x ≤ 3 * (i + 1)) ∧ (∀ x, y.2.2.1.2 x ≤ 3 * (i + 1)))
         (delay 1 (simImplFO.timed (R := R) c kstar
           { LD := s.1.1, LQ := s.2.1.1, found := s.2.2 } d s.1.2 s.2.1.2)).2 := by
@@ -247,7 +272,7 @@ theorem uRedRun.timeBound {qRO qD : ℕ} (B : Games.ROM2INDCCAAdversary PK K C M
     (fun st a => delay 1 (simImplFO.timed (R := R) c kstar
       { LD := st.1.1, LQ := st.2.1.1, found := st.2.2 } a st.1.2 st.2.1.2))
     (fun i s => (∀ x, s.1.2 x ≤ 3 * i) ∧ (∀ x, s.2.1.2 x ≤ 3 * i))
-    (fun i => 2 * (3 * i) + 20) himpl (hA kstar)
+    (fun i => 8 * (3 * i) + 61) himpl (hA kstar)
     (by simpa using hq kstar) 0
     ((fun _ => none, fun _ => 0), (fun _ => none, fun _ => 0), none)
     ⟨fun _ => Nat.zero_le _, fun _ => Nat.zero_le _⟩
@@ -273,7 +298,7 @@ theorem uRedROM.timeBound {qRO qD : ℕ}
     (hA : ∀ pk c k, (ofAdv (B.run pk c k)).TimeBound T)
     (hq : ∀ pk c k, (B.run pk c k).IsQueryBound q) :
     (uRedROM.timed B runCost).TimeBound
-      (rc + T + ∑ j ∈ Finset.range q, (2 * (3 * (0 + j)) + 20) + 6) :=
+      (rc + T + ∑ j ∈ Finset.range q, (8 * (3 * (0 + j)) + 61) + 6) :=
   fun pk c => by
     unfold uRedROM.timed
     dsimp only
