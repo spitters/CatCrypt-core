@@ -244,8 +244,8 @@ is data with a `Fintype` instance (`finiteDomains?`: `Fin n`, `Bool`, a type wit
 enumeration). Such a closure is evaluated at every point of its domain where it is built: it
 costs `∑ y₁, … ∑ yₙ, cost (v y₁ … yₙ)` (`Finset.sum` over `Finset.univ`, `tabulateClosures`), the
 cost of its body at each point, and its applications are table reads at one unit. This is the
-cost of the strict evaluation of a finite function into a table, an upper bound on the cost of
-the reads that its consumers make, whatever their number. The children
+cost of the strict evaluation of a finite function into a table, after which each read costs
+one unit, whatever the number of reads. The children
 `fun j => L.get (Fin.castLE h j)` of a node of a transcript tree, `Fin r.k → r.C × Tree Y rs`,
 are tabulated at the cost of the `r.k` reads of the list of kept pairs.
 
