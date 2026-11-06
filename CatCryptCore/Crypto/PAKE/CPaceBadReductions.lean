@@ -1656,6 +1656,112 @@ theorem dm_ideal_le_eager (x : S) (hx : x ≠ 0) (td : Pw → Sˣ)
     decide_eq_true_eq] at hz ⊢
   exact doubleMatch_of_DMc G x td z.2.1 z.2.2.2 hz.1
 
+open Classical in
+/-- The double match on queried passwords with a secret other than zero, in the joint world, is
+bounded by its probability at the end of the simulated world. -/
+theorem dmc_flag_le (td : Pw → Sˣ) (B : OracleAdv (OEv Pw W) (OOut W K) Bool) :
+    (OracleAdv.run (OracleAdv.flagWhen (fun _ _ x => DMc G td x.2.1.1.1) (jointSim G td)) B
+        (jointInit G, false)).toOuterMeasure {y | y.2.2 = true} ≤
+      (OracleAdv.run (idealStep G td) B (setTd td (hInit G))).toOuterMeasure
+        {y | DMc G td y.2.1} := by
+  rw [jointSim_flag_eq G td (fun y => DMc G td y.1) B]
+  have h₁ := OracleAdv.run_flagWhen_le_of_inv (idealStep G td) (fun _ _ x => DMc G td x.2.1)
+    (fun _ _ x => DMc G td x.2.1 ∧ ZsInv x.2.1.1) (fun t => ZsInv t.1.1)
+    (fun t e ht x hx => by
+      have hI := (ideal_step_frame G td t ht e x hx).1
+      by_cases hd : DMc G td x.2.1
+      · exact Or.inl ⟨hd, hI⟩
+      · exact Or.inr ⟨hd, hI⟩) B (hInit G) (fun _ _ => rfl)
+  have h₂ := OracleAdv.run_flagWhen_le_final (idealStep G td)
+    (fun y => DMc G td y.1 ∧ ZsInv y.1.1) (fun t e ht x hx => by
+      obtain ⟨hI, hz, hi, hc, hd⟩ := ideal_step_frame G td t ht.2 e x hx
+      exact ⟨DMc_stable G td hz hi hc hd ht.1, hI⟩) B (hInit G)
+  refine h₁.trans (h₂.trans ?_)
+  rw [← run_idealStep_setTd G td B (hInit G), PMF.toOuterMeasure_map_apply]
+  exact PMF.toOuterMeasure_mono _ fun y hy => hy.1.1
+
+/-- **The double-match experiment.** For an oracle adversary `B` with at most `q` queries, the
+probability of a double match is at most twice the success probability of the strong SDH
+reduction of the double-match adversary `dmAdv G B`, plus the probability of an unqueried match and
+`3 / |S|`. -/
+theorem dmExp_le [Inhabited Pw] (B : OracleAdv (OEv Pw W) (OOut W K) Bool) (q : ℕ)
+    (hB : B.IsQueryBound q) :
+    dmExp G B true ≤ 2 * ssdhGame G (ssdhReduction G (CPaceH1.matchWrap (dmAdv G B))) true +
+      uqExp G B true + 3 * (Fintype.card S : ℝ≥0∞)⁻¹ := by
+  classical
+  set ε : ℝ≥0∞ := (Fintype.card S : ℝ≥0∞)⁻¹
+  set Q : (Pw → Sˣ) → ℝ≥0∞ := fun td =>
+    (OracleAdv.run (idealStep G td) B (setTd td (hInit G))).toOuterMeasure {y | DMc G td y.2.1}
+  have hinner : ∀ td : Pw → Sˣ,
+      ((OracleAdv.run (OracleAdv.flagWhen (fun s _ x => DMst G td x.2.1.1.1) (jointSim G td)) B
+        (jointInit G, false)).map fun y => y.2.2) true ≤
+      Q td + ((OracleAdv.run (OracleAdv.flagWhen (fun s _ x => UQst G td x.2.1.1.1)
+        (jointSim G td)) B (jointInit G, false)).map fun y => y.2.2) true + 2 * ε := by
+    intro td
+    rw [flagExp_inner_apply G td (fun td _ s' => DMst G td s'.1.1) B,
+      flagExp_inner_apply G td (fun td _ s' => UQst G td s'.1.1) B]
+    exact (dm_flag_split G td B).trans (add_le_add (add_le_add (dmc_flag_le G td B) le_rfl)
+      (z0_flag_le G td B q hB))
+  have hQ : ∑' td : Pw → Sˣ, PMF.uniformFintype (Pw → Sˣ) td * Q td ≤
+      CPaceH1.eagerGame G (dmAdv G B) true + ε := by
+    have hsplit : ∑' td : Pw → Sˣ, PMF.uniformFintype (Pw → Sˣ) td * Q td =
+        ∑' z : S, PMF.uniformFintype S z *
+          ∑' td : Pw → Sˣ, PMF.uniformFintype (Pw → Sˣ) td * Q td := by
+      rw [ENNReal.tsum_mul_right, PMF.tsum_coe, one_mul]
+    rw [hsplit, CPaceH1.eagerGame, PMF.bind_apply]
+    calc _ ≤ ∑' z : S, (PMF.uniformFintype S z * (if z = 0 then 1 else 0) +
+          PMF.uniformFintype S z * ((PMF.uniformFintype (Pw → Sˣ)).bind fun td =>
+            (OracleAdv.run (CPaceH1.eagerOracle CPaceH1.Query.pw
+              (CPaceH1.cpaceStep G (G.pub z)) td) (dmAdv G B (G.pub z)) []).map
+              fun y => decide (CPaceH1.DoubleMatch y.2)) true) := by
+          refine ENNReal.tsum_le_tsum fun z => ?_
+          rw [← mul_add]
+          gcongr
+          by_cases hz : z = 0
+          · simp only [hz, ↓reduceIte]
+            refine le_add_right ?_
+            calc _ ≤ ∑' td : Pw → Sˣ, PMF.uniformFintype (Pw → Sˣ) td * 1 :=
+                  ENNReal.tsum_le_tsum fun td => by
+                    gcongr
+                    exact (MeasureTheory.measure_mono (Set.subset_univ _)).trans_eq
+                      ((PMF.toOuterMeasure_apply_eq_one_iff _ _).mpr (Set.subset_univ _))
+              _ = 1 := by rw [ENNReal.tsum_mul_right, PMF.tsum_coe, one_mul]
+          · simp only [hz, ↓reduceIte, zero_add, PMF.bind_apply]
+            exact ENNReal.tsum_le_tsum fun td => by gcongr; exact dm_ideal_le_eager G z hz td B
+      _ = ε + _ := by
+          rw [ENNReal.tsum_add]
+          congr 1
+          rw [tsum_eq_single 0 fun z hz => by simp [hz]]
+          simp [ε]
+      _ = _ := add_comm _ _
+  have hE : CPaceH1.eagerGame G (dmAdv G B) true ≤
+      2 * ssdhGame G (ssdhReduction G (CPaceH1.matchWrap (dmAdv G B))) true := by
+    rw [← CPaceH1.lazyGame_eq_eagerGame]
+    exact CPaceH1.lazyGame_le_ssdhGame G _
+  unfold dmExp uqExp flagExp
+  rw [PMF.bind_apply, PMF.bind_apply]
+  calc _ ≤ ∑' td : Pw → Sˣ, (PMF.uniformFintype (Pw → Sˣ) td * Q td +
+        PMF.uniformFintype (Pw → Sˣ) td *
+          ((OracleAdv.run (OracleAdv.flagWhen (fun s _ x => UQst G td x.2.1.1.1)
+            (jointSim G td)) B (jointInit G, false)).map fun y => y.2.2) true +
+        PMF.uniformFintype (Pw → Sˣ) td * (2 * ε)) := by
+        refine ENNReal.tsum_le_tsum fun td => ?_
+        rw [← mul_add, ← mul_add]
+        gcongr
+        exact hinner td
+    _ = ∑' td : Pw → Sˣ, PMF.uniformFintype (Pw → Sˣ) td * Q td +
+        ∑' td : Pw → Sˣ, PMF.uniformFintype (Pw → Sˣ) td *
+          ((OracleAdv.run (OracleAdv.flagWhen (fun s _ x => UQst G td x.2.1.1.1)
+            (jointSim G td)) B (jointInit G, false)).map fun y => y.2.2) true + 2 * ε := by
+        rw [ENNReal.tsum_add, ENNReal.tsum_add, ENNReal.tsum_mul_right, PMF.tsum_coe, one_mul]
+    _ ≤ (2 * ssdhGame G (ssdhReduction G (CPaceH1.matchWrap (dmAdv G B))) true + ε) +
+        ∑' td : Pw → Sˣ, PMF.uniformFintype (Pw → Sˣ) td *
+          ((OracleAdv.run (OracleAdv.flagWhen (fun s _ x => UQst G td x.2.1.1.1)
+            (jointSim G td)) B (jointInit G, false)).map fun y => y.2.2) true + 2 * ε := by
+        gcongr
+        exact hQ.trans (add_le_add hE le_rfl)
+    _ = _ := by ring
+
 end DM
 
 end CatCrypt.Crypto.PAKE.CPaceBadReductions
