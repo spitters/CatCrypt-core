@@ -139,7 +139,11 @@ by their companions over the binder's carrier:
 
 A recursion that replaces such a record (a call at a record whose path is another path) is
 refused, and a record built in the program from functions that are not fields of a binder is
-outside the class.
+outside the class. So is a record read from data without a binder path (an entry of an optional
+table `p ↦ some l`, a record returned by a class method): its function fields have no companion,
+and an optional structure is a table. Covering it needs a dependent mirror `Σ l, C l`, with
+`C l` the companions of the function fields over the carrier of `l`, an optional such mirror, and
+companions for the fields of records returned by class methods; none is implemented.
 
 A binder of the reduction whose type is such a structure keeps the convention of field paths
 (below), so that a scheme or a kit passed as a binder has the cost companions of its applied
@@ -323,6 +327,16 @@ rewrites the recursive call under the node's binder, and the conjuncts are rewri
 case hypotheses that the case split of the goal introduced (`normRecHyps`); a recursive call is
 found in the goal up to instances (`kabstract`), and a hypothesis that is a copy of a used one
 (one per occurrence of the call: its step cost and its costed tree) is cleared with it.
+Rule (h), source induction over the companions. On the class of recursions of rule (f) whose
+erasure is proved by functional induction on the source `c` (a costed form with no functional
+induction of its own, or an argument of `c` that is the erasure of a costed tree binder, such as
+a computation `S.wrap : M → SPComp X` of a record, so that the induction runs at the call of `c`
+in the goal), the induction generalizes the cost companions of the costed form (its binders
+that are not arguments of `c` and whose type ends in `ℕ`). Each induction hypothesis is then
+quantified over the companions as well as over the values bound by nodes, and so is an instance
+at the computed companion that a recursive call under a node's binder passes; such a hypothesis
+is kept whole and rewritten with the case hypotheses of the split (`normRecHyps`). Where a
+companion cannot be generalized, the induction is the one without.
 The erasure theorem of a joint costed value (rule (d)) whose result holds a record with
 function fields, which the erasure `ε` rebuilds field by field, is closed with the induction
 hypotheses split into their component equations (`splitCtorHyps`, R15), so that a goal that
