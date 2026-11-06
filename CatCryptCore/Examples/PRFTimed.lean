@@ -36,7 +36,9 @@ per `query` node; `F k x` costs `FCost k x`, its cost companion; the rules of
 `CatCryptCore.Tactics.DeriveTimed` for the bookkeeping; the registered costs of
 `CatCryptCore.Tactics.StdCosts` for the lookup in the table (`List.lookup`, a comparison at one
 unit), the set of used answers (`List.map`, `List.toFinset`) and the enumeration of the domain
-(`Finset.univ`, its cardinality).
+(`Finset.univ`, its cardinality). The test that a fresh answer exists,
+`(PRPPRF.usedAnswers t)ᶜ.Nonempty`, is a definition valued in `Prop` and costs one unit and its
+data arguments (`derive_timed.priceProps`).
 
 ## Main results
 
@@ -170,7 +172,7 @@ theorem simRP.timeBound {D : Type} [Fintype D] [Nonempty D] [DecidableEq D] {α 
     obtain ⟨hT, hk⟩ := hA
     have hL := List.lookup.timedCost_le d t
     have hM := List.map.timedCost_le Prod.snd (fun _ => 0) (k := 0) (fun _ => le_rfl) t
-    have hX : ∀ y, ∀ o ≤ t.length ^ 2 + 9 * t.length + 2 * Fintype.card D + 21,
+    have hX : ∀ y, ∀ o ≤ t.length ^ 2 + 9 * t.length + 2 * Fintype.card D + 22,
         o + c y + simRPTime (Fintype.card D) (t.length + 1) (T - 1 - c y) ≤
           simRPTime (Fintype.card D) t.length T := fun y o ho => by
       have e : T = (T - 1 - c y) + 1 + c y := by have := (hk y).1; omega
@@ -203,11 +205,11 @@ theorem simRP.timeBound {D : Type} [Fintype D] [Nonempty D] [DecidableEq D] {α 
       have := hS y (6 + List.lookup.timedCost d t) (by omega)
       exact ⟨by omega, h2.mono (by omega)⟩
     · simp only [delay, StepTimeBound, OracleAdv.Timed.TimeBound]
-      have := hX y₀ _ (le_refl (t.length ^ 2 + 9 * t.length + 2 * Fintype.card D + 21))
+      have := hX y₀ _ (le_refl (t.length ^ 2 + 9 * t.length + 2 * Fintype.card D + 22))
       refine ⟨by omega, by omega, fun r => ⟨by omega, by omega, fun y => ?_⟩⟩
       obtain ⟨h1, h2⟩ := ih y ((d, r) :: t) (hk y).2
       rw [List.length_cons] at h1 h2
-      have := hX y _ (le_refl (t.length ^ 2 + 9 * t.length + 2 * Fintype.card D + 21))
+      have := hX y _ (le_refl (t.length ^ 2 + 9 * t.length + 2 * Fintype.card D + 22))
       exact ⟨by omega, h2.mono (by omega)⟩
 
 open CatCrypt.Crypto.OracleAdv.Timed in
