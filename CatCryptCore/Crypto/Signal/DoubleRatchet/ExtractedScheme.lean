@@ -30,54 +30,52 @@ them; the crate performs both in one call, `Session_dh_ratchet`. Its two halves 
 root key and the receiving chain key; the remote public key becomes `T`) and
 `sessionRatchetStep` (the root step on `dh sk remote_pk` for the new key pair `(sk, pk)`, which
 gives the next root key and the sending chain key), and `Session_dh_ratchet` is the second
-after the first (`Session_dh_ratchet_eq`). The scheme `drExtractedSM`:
+after the first (`Session_dh_ratchet_eq`). The first epoch of the initiator is opened by
+`Uninitialized_establish`, the transition of the crate from `Uninitialized` to `Session`: on the
+root key, the new key pair and the remote public value it computes the same root step and holds
+its chain key as the sending chain key and no receiving chain key. The scheme `drExtractedSM`:
 
 * `init` — a uniform secret key `x₀` of `Sk` and a uniform root key; both parties start in the
-  session `drInitSession` with the encoded root key, empty chain keys, the key pair
+  session `drInitSession` with the encoded root key, no chain keys, the key pair
   `(x₀, g ^ decE x₀)` and the remote public value `g ^ decE x₀`, as in the CKA initialisation
   of ACD;
-* `ratchet` — `sessionRatchetStep` with the fresh key pair `(y, g ^ decE y)` of the secret key
-  `y`, and the public value `g ^ decE y`;
+* `ratchet` — `drOpen` with the fresh key pair `(y, g ^ decE y)` of the secret key `y`, and the
+  public value `g ^ decE y`: a session without a receiving chain key has received no epoch of
+  the peer, and `drOpen` opens its epoch by `Uninitialized_establish` on its root key and its
+  remote public value; a session with a receiving chain key opens it by `sessionRatchetStep`.
+  In the games the first case is the first epoch of the initiator: every later epoch is opened
+  after the receipt of an epoch of the peer (`CKAGameSt.canSend`);
 * `recv` — `sessionRecvStep`;
 * `send` — `Session_send` under the ghost hooks `keyGhost`, which hand out the message key, and
-  `aead_encrypt` of the plaintext with the associated data of the message under that key; a
-  session whose sending chain key is empty refuses;
-* `expose` — the key material of the session: the root key, the chain keys, the key pair and
-  the remote public value (`drExpose`); the counters `send_n`, `recv_n` and `step`, which the
-  transcript of the queries determines, are not part of it;
+  `aead_encrypt` of the plaintext with the associated data of the message under that key;
+  `Session_send` refuses on a session without a sending chain key, and so does the scheme;
+* `expose` — the key material of the session: the root key, the chain keys (`none` for an
+  absent chain), the key pair and the remote public value (`drExpose`); the counters `send_n`,
+  `recv_n` and `step`, which the transcript of the queries determines, are not part of it;
 * `idealCt` — the encoding of a uniform model ciphertext.
-
-`Uninitialized_establish` is `sessionRatchetStep` from a session holding the root key and the
-remote public value, except that it stores the initial root key as the receiving chain key
-(`Uninitialized_establish_eq`). A corruption of the initiator after `Uninitialized_establish`
-and before its first `Session_dh_ratchet` would reveal the initial root key, which the state of
-the ACD construction at that point does not hold: with the secret key and the remote public
-value revealed by the same corruption, it yields the initial sending chain key of the first
-epoch, hence the message keys already used in it. The scheme therefore opens the first epoch of
-the initiator by `sessionRatchetStep` from `drInitSession`.
 
 ## The simulation
 
 `drRel` relates a session to a party state of the ACD construction: the root key, the chain
-keys (`encOpt`, the empty array for an absent chain), the secret key, its public value and the
-remote public value are the encodings of the components. Under `DrHom` and with chain
-encodings that are never empty, `drExtracted_sim` proves that `drExtractedSM` simulates
-`acdSM (dhCKAOf G decE) R F D` along `drRel`, with public values encoded by `encG`, ciphertexts
-by `encC`, corruption answers by `drEncLeak` and initial states by `drEncInit`. The CKA of the
-model is `dhCKAOf G decE`, the Diffie–Hellman CKA whose secret keys are the uniform elements of
-`Sk` with exponents `decE`: the extracted secret keys are drawn from `Sk` and revealed by a
-corruption, so the model draws and reveals the same keys.
+keys (`none` for an absent chain), the secret key, its public value and the remote public value
+are the encodings of the components. Under `DrHom`, `drExtracted_sim` proves that
+`drExtractedSM` simulates `acdSM (dhCKAOf G decE) R F D` along `drRel`, with public values
+encoded by `encG`, ciphertexts by `encC`, corruption answers by `drEncLeak` and initial states
+by `drEncInit`. The CKA of the model is `dhCKAOf G decE`, the Diffie–Hellman CKA whose secret
+keys are the uniform elements of `Sk` with exponents `decE`: the extracted secret keys are drawn
+from `Sk` and revealed by a corruption, so the model draws and reveals the same keys.
 
 ## Main definitions
 
 * `sessionRecvStep`, `sessionRatchetStep` — the halves of `Session_dh_ratchet`
+* `drOpen` — opening an epoch: `Uninitialized_establish` without a receiving chain,
+  `sessionRatchetStep` otherwise
 * `drInitSession`, `drExpose`, `drExtractedSM` — the extracted scheme
-* `encOpt`, `drRel`, `drEncLeak`, `drEncInit` — the encodings of the simulation
+* `drRel`, `drEncLeak`, `drEncInit` — the encodings of the simulation
 
 ## Main results
 
-* `Session_dh_ratchet_eq`, `Uninitialized_establish_eq` — the session functions of the crate in
-  terms of the halves
+* `Session_dh_ratchet_eq` — the Diffie–Hellman ratchet of the crate in terms of the halves
 * `drExtracted_sim` — the extracted scheme simulates the ACD construction
 * `drExtracted_corruptAdvantage_eq`, `drExtracted_adaptiveAdvantage_eq` — the games of the
   extracted scheme are those of the ACD construction at the encoded adversary
@@ -107,15 +105,15 @@ variable [inst : DoubleratchetDeps]
 public value. -/
 def sessionRecvStep (x : Session_T) (T : Array Int) : Session_T :=
   Session (kdf_rk («Session.root_key» x) (dh («Session.my_sk» x) T)).1 («Session.send_ck» x)
-    (kdf_rk («Session.root_key» x) (dh («Session.my_sk» x) T)).2 («Session.send_n» x)
+    (some (kdf_rk («Session.root_key» x) (dh («Session.my_sk» x) T)).2) («Session.send_n» x)
     («Session.recv_n» x) («Session.my_sk» x) («Session.my_pk» x) T («.step» x)
 
 /-- The sending half of `Session_dh_ratchet` with the new key pair `(sk, pk)`: the root step on
 `dh sk remote_pk` gives the next root key and the sending chain key. -/
 def sessionRatchetStep (x : Session_T) (sk pk : Array Int) : Session_T :=
   Session (kdf_rk («Session.root_key» x) (dh sk («Session.remote_pk» x))).1
-    (kdf_rk («Session.root_key» x) (dh sk («Session.remote_pk» x))).2 («Session.recv_ck» x)
-    0 0 sk pk («Session.remote_pk» x) (Hax.add («.step» x) 1)
+    (some (kdf_rk («Session.root_key» x) (dh sk («Session.remote_pk» x))).2)
+    («Session.recv_ck» x) 0 0 sk pk («Session.remote_pk» x) (Hax.add («.step» x) 1)
 
 /-- **The Diffie–Hellman ratchet of the crate is its receiving half followed by its sending
 half.** -/
@@ -125,34 +123,27 @@ theorem Session_dh_ratchet_eq (x : Session_T) (g T sk pk : Array Int) :
   obtain ⟨a, b, c, d, e, f, i, j, k⟩ := x
   rfl
 
-/-- **Establishing a session is the sending half, with the initial root key as receiving
-chain key.** `Uninitialized_establish` on the root key `rk`, the key pair `(sk, pk)` and the
-remote public value `rpk` gives the root key and the sending chain key of `sessionRatchetStep`
-from any session with the root key `rk` and the remote public value `rpk`, and stores `rk` as
-its receiving chain key. -/
-theorem Uninitialized_establish_eq (u : Uninitialized_T) (g rk sk pk rpk : Array Int)
-    (sc rc sk₀ pk₀ : Array Int) (sn rn st : Int) :
-    (Uninitialized_establish u g rk sk pk rpk).1 =
-      Session («Session.root_key» (sessionRatchetStep (Session rk sc rc sn rn sk₀ pk₀ rpk st)
-          sk pk))
-        («Session.send_ck» (sessionRatchetStep (Session rk sc rc sn rn sk₀ pk₀ rpk st) sk pk))
-        rk 0 0 sk pk rpk 0 :=
-  rfl
+/-- **Opening an epoch** with the new key pair `(sk, pk)`. A session without a receiving chain
+key has received no epoch of the peer: it opens the epoch by `Uninitialized_establish` on its
+root key, the new key pair and its remote public value. A session with a receiving chain key
+opens it by the sending half `sessionRatchetStep` of `Session_dh_ratchet`. -/
+def drOpen (x : Session_T) (sk pk : Array Int) : Session_T :=
+  match «Session.recv_ck» x with
+  | none =>
+    (Uninitialized_establish Uninitialized #[] («Session.root_key» x) sk pk
+      («Session.remote_pk» x)).1
+  | some _ => sessionRatchetStep x sk pk
 
 /-! ## The scheme -/
 
-/-- The encoding of an optional chain state: the empty array for an absent chain. -/
-def encOpt {Sa : Type} (encS : Sa → Array Int) : Option Sa → Array Int
-  | none => #[]
-  | some sa => encS sa
-
-/-- The initial session of a party: the root key `rk`, empty chain keys, the key pair
-`(sk, pk)` and the remote public value `rpk`. -/
-def drInitSession (rk sk pk rpk : Array Int) : Session_T := Session rk #[] #[] 0 0 sk pk rpk 0
+/-- The initial session of a party: the root key `rk`, no chain keys, the key pair `(sk, pk)`
+and the remote public value `rpk`. -/
+def drInitSession (rk sk pk rpk : Array Int) : Session_T := Session rk none none 0 0 sk pk rpk 0
 
 /-- The corruption answers of the extracted scheme: root key, sending and receiving chain
-keys, secret key, public key and remote public value. -/
-abbrev DrLeak := Array Int × Array Int × Array Int × Array Int × Array Int × Array Int
+keys (`none` for an absent chain), secret key, public key and remote public value. -/
+abbrev DrLeak :=
+  Array Int × Option (Array Int) × Option (Array Int) × Array Int × Array Int × Array Int
 
 /-- The key material of a session. -/
 def drExpose (x : Session_T) : DrLeak :=
@@ -176,12 +167,10 @@ noncomputable def drExtractedSM (ptLen : Int) (encR : RK → Array Int) (encG : 
     SPComp.pure (encG (CG.pow (decE x)),
       drInitSession (encR rk) (encSk x) (encG (CG.pow (decE x))) (encG (CG.pow (decE x))),
       drInitSession (encR rk) (encSk x) (encG (CG.pow (decE x))) (encG (CG.pow (decE x))))
-  ratchet x y := (sessionRatchetStep x (encSk y) (encG (CG.pow (decE y))), encG (CG.pow (decE y)))
+  ratchet x y := (drOpen x (encSk y) (encG (CG.pow (decE y))), encG (CG.pow (decE y)))
   recv := sessionRecvStep
-  send x m :=
-    if «Session.send_ck» x = #[] then none
-    else some ((@Session_send (keyGhost inst) x #[]).1,
-      aead_encrypt (@Session_send (keyGhost inst) x #[]).2 (encW m.1) ptLen (encW m.2))
+  send x m := (@Session_send (keyGhost inst) x #[]).1.map fun x' =>
+    (x', aead_encrypt (@Session_send (keyGhost inst) x #[]).2 (encW m.1) ptLen (encW m.2))
   expose := drExpose
   idealCt := (PMF.uniformFintype Ct).map encC
 
@@ -200,35 +189,35 @@ session are the encodings of the components. -/
 def drRel (encR : RK → Array Int) (encG : G → Array Int) (encSk : Sk → Array Int)
     (decE : Sk → CG.Exp) (encS : Sa → Array Int) (x' : Session_T)
     (x : SMPartySt (G × Sk) RK Sa) : Prop :=
-  «Session.root_key» x' = encR x.rk ∧ «Session.send_ck» x' = encOpt encS x.snd ∧
-    «Session.recv_ck» x' = encOpt encS x.rcv ∧ «Session.my_sk» x' = encSk x.ck.2 ∧
+  «Session.root_key» x' = encR x.rk ∧ «Session.send_ck» x' = x.snd.map encS ∧
+    «Session.recv_ck» x' = x.rcv.map encS ∧ «Session.my_sk» x' = encSk x.ck.2 ∧
     «Session.my_pk» x' = encG (CG.pow (decE x.ck.2)) ∧ «Session.remote_pk» x' = encG x.ck.1
 
 /-- The encoding of a corruption answer of the ACD construction as one of the extracted
 scheme. -/
 def drEncLeak (encR : RK → Array Int) (encG : G → Array Int) (encSk : Sk → Array Int)
     (decE : Sk → CG.Exp) (encS : Sa → Array Int) (x : SMPartySt (G × Sk) RK Sa) : DrLeak :=
-  (encR x.rk, encOpt encS x.snd, encOpt encS x.rcv, encSk x.ck.2, encG (CG.pow (decE x.ck.2)),
+  (encR x.rk, x.snd.map encS, x.rcv.map encS, encSk x.ck.2, encG (CG.pow (decE x.ck.2)),
     encG x.ck.1)
 
 /-- The encoding of a party state of the ACD construction as a session with zero counters. -/
 def drEncInit (encR : RK → Array Int) (encG : G → Array Int) (encSk : Sk → Array Int)
     (decE : Sk → CG.Exp) (encS : Sa → Array Int) (x : SMPartySt (G × Sk) RK Sa) : Session_T :=
-  Session (encR x.rk) (encOpt encS x.snd) (encOpt encS x.rcv) 0 0 (encSk x.ck.2)
+  Session (encR x.rk) (x.snd.map encS) (x.rcv.map encS) 0 0 (encSk x.ck.2)
     (encG (CG.pow (decE x.ck.2))) (encG x.ck.1) 0
 
 variable {R : PRGDef (RK × G) (RK × Sa)} {F : PRGDef Sa (W × Sa)} {D : AEADDef W Ct}
   {ptLen : Int} {encR : RK → Array Int} {encG : G → Array Int} {encSk : Sk → Array Int}
   {decE : Sk → CG.Exp} {encS : Sa → Array Int} {encW : W → Array Int} {encC : Ct → Array Int}
 
-/-- **The extracted double ratchet simulates the ACD construction.** Under `DrHom`, and when no
-chain state is encoded by the empty array, the scheme `drExtractedSM` simulates
-`acdSM (dhCKAOf G decE) R F D` along `drRel`, with public values encoded by `encG`, ciphertexts
-by `encC`, corruption answers by `drEncLeak` and initial states by `drEncInit`. Opening an epoch
-is `kdf_rk_enc` and `dh_enc` at the remote public value; receiving is the same at the received
-value; sending is `session_send_enc` and the equation of the AEAD. -/
-theorem drExtracted_sim (h : DrHom G R F D ptLen encR encG encSk decE encS encW encC)
-    (hS : ∀ sa, encS sa ≠ #[]) :
+/-- **The extracted double ratchet simulates the ACD construction.** Under `DrHom`, the scheme
+`drExtractedSM` simulates `acdSM (dhCKAOf G decE) R F D` along `drRel`, with public values
+encoded by `encG`, ciphertexts by `encC`, corruption answers by `drEncLeak` and initial states
+by `drEncInit`. Opening an epoch is `establish_enc` from a session without a receiving chain
+key and `kdf_rk_enc` and `dh_enc` at the remote public value otherwise; receiving is
+`kdf_rk_enc` and `dh_enc` at the received value; sending is `session_send_enc` and the equation
+of the AEAD, and `session_send_none` on an absent sending chain. -/
+theorem drExtracted_sim (h : DrHom G R F D ptLen encR encG encSk decE encS encW encC) :
     (drExtractedSM RK ptLen encR encG encSk decE encW encC).Sim
       (acdSM (dhCKAOf G decE) R F D) (drRel encR encG encSk decE encS) encG encC
       (drEncLeak encR encG encSk decE encS) (drEncInit encR encG encSk decE encS) where
@@ -241,14 +230,27 @@ theorem drExtracted_sim (h : DrHom G R F D ptLen encR encG encSk decE encS encW 
     obtain ⟨a, b, c, d, e, f, i, j, k⟩ := x'
     simp only [«Session.root_key», «Session.send_ck», «Session.recv_ck», «Session.my_sk»,
       «Session.my_pk», «Session.remote_pk»] at hrk hsnd hrcv hsk hpk hrpk
-    subst hrk hrpk
-    refine ⟨⟨?_, ?_, ?_, rfl, rfl, rfl⟩, rfl⟩
-    · simp only [drExtractedSM, sessionRatchetStep, acdSM, CKACoins.sendR, Session,
-        «Session.root_key», «Session.remote_pk», dh_enc h, kdf_rk_enc h]
-    · simp only [drExtractedSM, sessionRatchetStep, acdSM, CKACoins.sendR, Session,
-        «Session.root_key», «Session.send_ck», «Session.remote_pk», dh_enc h, kdf_rk_enc h,
-        encOpt]
-    · exact hrcv
+    subst hrk hrpk hrcv
+    cases hr : x.rcv with
+    | none =>
+      refine ⟨⟨?_, ?_, ?_, rfl, rfl, rfl⟩, rfl⟩
+      · simp only [drExtractedSM, drOpen, hr, Option.map_none, «Session.recv_ck»,
+          «Session.root_key», «Session.remote_pk», establish_enc h, acdSM, CKACoins.sendR]
+      · simp only [drExtractedSM, drOpen, hr, Option.map_none, «Session.recv_ck»,
+          «Session.root_key», «Session.send_ck», «Session.remote_pk», establish_enc h, acdSM,
+          CKACoins.sendR, Option.map_some]
+      · simp only [drExtractedSM, drOpen, hr, Option.map_none, «Session.recv_ck»,
+          «Session.root_key», «Session.remote_pk», establish_enc h, acdSM]
+    | some sa =>
+      refine ⟨⟨?_, ?_, ?_, rfl, rfl, rfl⟩, rfl⟩
+      · simp only [drExtractedSM, drOpen, hr, Option.map_some, «Session.recv_ck»,
+          sessionRatchetStep, acdSM, CKACoins.sendR, Session, «Session.root_key»,
+          «Session.remote_pk», dh_enc h, kdf_rk_enc h]
+      · simp only [drExtractedSM, drOpen, hr, Option.map_some, «Session.recv_ck»,
+          sessionRatchetStep, acdSM, CKACoins.sendR, Session, «Session.root_key»,
+          «Session.send_ck», «Session.remote_pk», dh_enc h, kdf_rk_enc h]
+      · simp only [drExtractedSM, drOpen, hr, Option.map_some, «Session.recv_ck»,
+          sessionRatchetStep, acdSM, Session]
   recv x' x T hx := by
     obtain ⟨hrk, hsnd, hrcv, hsk, hpk, hrpk⟩ := hx
     obtain ⟨a, b, c, d, e, f, i, j, k⟩ := x'
@@ -259,25 +261,20 @@ theorem drExtracted_sim (h : DrHom G R F D ptLen encR encG encSk decE encS encW 
     · simp only [drExtractedSM, sessionRecvStep, acdSM, dhCKAOf, Session, «Session.root_key»,
         «Session.my_sk», dh_enc h, kdf_rk_enc h]
     · simp only [drExtractedSM, sessionRecvStep, acdSM, dhCKAOf, Session, «Session.root_key»,
-        «Session.my_sk», «Session.recv_ck», dh_enc h, kdf_rk_enc h, encOpt]
+        «Session.my_sk», «Session.recv_ck», dh_enc h, kdf_rk_enc h, Option.map_some]
   send x' x m hx := by
     obtain ⟨hrk, hsnd, hrcv, hsk, hpk, hrpk⟩ := hx
     obtain ⟨a, b, c, d, e, f, i, j, k⟩ := x'
     simp only [«Session.root_key», «Session.send_ck», «Session.recv_ck», «Session.my_sk»,
       «Session.my_pk», «Session.remote_pk»] at hrk hsnd hrcv hsk hpk hrpk
+    subst hsnd
     cases hx : x.snd with
     | none =>
-      rw [hx] at hsnd
-      simp only [encOpt] at hsnd
-      subst hsnd
-      simp only [drExtractedSM, acdSM, hx, «Session.send_ck», ite_true, Option.map_none]
+      simp only [drExtractedSM, acdSM, hx, Option.map_none, session_send_none]
       exact Option.Rel.none
     | some sa =>
-      rw [hx] at hsnd
-      simp only [encOpt] at hsnd
-      subst hsnd
-      simp only [drExtractedSM, acdSM, hx, «Session.send_ck», hS sa, ite_false,
-        Option.map_some, session_send_enc (inst := keyGhost inst) h.ghost]
+      simp only [drExtractedSM, acdSM, hx, Option.map_some,
+        session_send_enc (inst := keyGhost inst) h.ghost]
       refine Option.Rel.some ⟨⟨hrk, rfl, hrcv, hsk, hpk, hrpk⟩, h.aead_eq _ _ _⟩
   expose x' x hx := by
     obtain ⟨hrk, hsnd, hrcv, hsk, hpk, hrpk⟩ := hx
@@ -293,12 +290,12 @@ omit [Fintype Sa] [Nonempty Sa] [DecidableEq RK] [DecidableEq G] in
 Under `DrHom`, the advantage of an adversary `A` against `drExtractedSM` is the advantage in
 `sm_corrupt_game (dhCKAOf G decE) R F D` of `A` with the answers encoded and relabelled. -/
 theorem drExtracted_corruptAdvantage_eq
-    (h : DrHom G R F D ptLen encR encG encSk decE encS encW encC) (hS : ∀ sa, encS sa ≠ #[])
+    (h : DrHom G R F D ptLen encR encG encSk decE encS encW encC)
     (ΔFS ΔPCS : ℕ) (A : SMSchemeAdv (Array Int) W (Array Int) DrLeak) :
     (drExtractedSM RK ptLen encR encG encSk decE encW encC).corruptAdvantage ΔFS ΔPCS A =
       SM_Corrupt_Advantage (dhCKAOf G decE) R F D ΔFS ΔPCS
         (A.comap encG encC (drEncLeak encR encG encSk decE encS)).toSM := by
-  rw [(drExtracted_sim h hS).corruptAdvantage_eq,
+  rw [(drExtracted_sim h).corruptAdvantage_eq,
     acdSM_corruptAdvantage_eq (dhCKAOf G decE) (dhCKAOf_correct G decE) (dhInitPOf G decE)
       (dhCKAOf_init_eq G decE) (dhInitPOf_rel G decE)]
 
@@ -308,7 +305,7 @@ game over `drExtractedSM` is at most the CKA corruption advantages of `smcCKARed
 advantages of the root KDF `R` at `smcRootRed` and the FS-AEAD advantage at `smcFSRed`, for the
 CKA `dhCKAOf G decE` and the adversary `A` with the answers encoded and relabelled. -/
 theorem drExtracted_corruptAdvantage_le
-    (h : DrHom G R F D ptLen encR encG encSk decE encS encW encC) (hS : ∀ sa, encS sa ≠ #[])
+    (h : DrHom G R F D ptLen encR encG encSk decE encS encW encC)
     {ΔFS ΔPCS : ℕ} (hFS : 2 ≤ ΔFS) (hPCS : 1 ≤ ΔPCS)
     (A : SMSchemeAdv (Array Int) W (Array Int) DrLeak) :
     (drExtractedSM RK ptLen encR encG encSk decE encW encC).corruptAdvantage ΔFS ΔPCS A ≤
@@ -318,7 +315,7 @@ theorem drExtracted_corruptAdvantage_le
           (dhInitPOf G decE) (A.comap encG encC (drEncLeak encR encG encSk decE encS)).toSM) +
         FSAEAD_Corrupt_Advantage F D (smcFSRed (dhCKAOf G decE) R F D ΔFS ΔPCS
           (dhInitPOf G decE) (A.comap encG encC (drEncLeak encR encG encSk decE encS)).toSM) := by
-  rw [(drExtracted_sim h hS).corruptAdvantage_eq]
+  rw [(drExtracted_sim h).corruptAdvantage_eq]
   exact acdSM_corruptAdvantage_le (dhCKAOf G decE) (dhCKAOfCoins_sound G decE)
     (dhCKAOf_correct G decE) (dhInitPOf G decE) (dhCKAOf_init_eq G decE) (dhInitPOf_rel G decE)
     R F D hFS hPCS _
@@ -329,7 +326,7 @@ with an adaptive challenge epoch is at most the sum over the epochs `e` of the C
 FS-AEAD terms at the guessing reduction `smGuessAdv ΔFS ΔPCS _ e` of `A` with the answers
 encoded and relabelled. -/
 theorem drExtracted_adaptiveAdvantage_le
-    (h : DrHom G R F D ptLen encR encG encSk decE encS encW encC) (hS : ∀ sa, encS sa ≠ #[])
+    (h : DrHom G R F D ptLen encR encG encSk decE encS encW encC)
     {ΔFS ΔPCS : ℕ} (hFS : 2 ≤ ΔFS) (hPCS : 1 ≤ ΔPCS)
     (A : Array Int → OracleAdv (SMQuery W) (SMSchemeAns (Array Int) (Array Int) DrLeak) Bool) :
     (drExtractedSM RK ptLen encR encG encSk decE encW encC).adaptiveAdvantage ΔFS ΔPCS A ≤
@@ -345,7 +342,7 @@ theorem drExtracted_adaptiveAdvantage_le
           (dhInitPOf G decE) (smGuessAdv ΔFS ΔPCS (fun T => ((A (encG T)).mapQueryAnswer id
             (SMSchemeAns.map encG encC (drEncLeak encR encG encSk decE encS))).mapQueryAnswer
               id SMAns.toScheme) e))) := by
-  rw [(drExtracted_sim h hS).adaptiveAdvantage_eq]
+  rw [(drExtracted_sim h).adaptiveAdvantage_eq]
   exact acdSM_adaptiveAdvantage_le (dhCKAOf G decE) (dhCKAOfCoins_sound G decE)
     (dhCKAOf_correct G decE) (dhInitPOf G decE) (dhCKAOf_init_eq G decE) (dhInitPOf_rel G decE)
     R F D hFS hPCS _
