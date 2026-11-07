@@ -340,6 +340,7 @@ public import CatCryptCore.Crypto.Messaging.CKA
 public import CatCryptCore.Crypto.Messaging.CKACorrupt
 public import CatCryptCore.Crypto.Messaging.CKAACD
 public import CatCryptCore.Crypto.Messaging.SMCorrupt
+public import CatCryptCore.Crypto.Messaging.SMScheme
 public import CatCryptCore.Crypto.Messaging.SignalStack
 public import CatCryptCore.Crypto.Messaging.SealedSender
 public import CatCryptCore.Crypto.Messaging.SignalStackSealed
