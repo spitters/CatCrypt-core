@@ -41,7 +41,10 @@ secret, and the match tests and the points of `H1` are answered by oracle querie
 For bijections `zOf pid` from handles to secrets, `simOracle_hImpl` identifies the step under the
 oracle `hOracle` with the step `idealStep` of the ideal game at the reconstructed state `reconW`.
 The reduction `dmAdv` runs the adversary against `hImpl` with `zOf pid u = x · u`, and the
-reduction `psRed` with `zOf pid u = c_pid + u`.
+reduction `psAdv` with `zOf pid u = c_pid + u`. Both are instances of `OracleAdv.stepRedO`, an
+oracle adversary run against a world stepped by oracle programs, a final program and a
+translation of the queries of these programs: `dmAdv` directly, and `psAdv` through its program
+`psProg`, whose output distribution is that of `psAdv` (`psOut_eq`).
 
 ## Main results
 
@@ -53,7 +56,7 @@ reduction `psRed` with `zOf pid u = c_pid + u`.
   Diffie–Hellman advantage of `ssdhReduction G (CPaceH1.matchWrap (dmAdv G B))`, plus the
   unqueried-match experiment and `3 / |S|`.
 * `psExp_le`: the passive-session experiment has probability at most the gap Diffie–Hellman
-  advantage of `psRed G B`.
+  advantage of `psAdv G B`.
 * `cpaceBadBound_le`: `cpaceBadBound G B ≤ cpaceConcreteBound G q B`, with the trapdoor
   collision bounded by `tdCollProb_le`.
 * `cpace_realizesSim_concrete`: CPace realizes `F_lePAKE` behind `cpaceSim` with the bound
@@ -165,6 +168,16 @@ theorem simOracle_map_inner {D' R' S U U' : Type} (impl : S → D → OracleAdv 
       simOracle impl O'' (s, g u) d := by
   simp only [simOracle, PMF.map_comp, ← run_map_state O' O'' g hO (impl s d) u]
   rfl
+
+/-- **A reduction that runs an oracle adversary against a world stepped by oracle programs.**
+The oracle adversary `B` is run from the state `s₀` against the oracle that answers a query `e` in
+the state `t` by the program `impl t e` (the answer and the new state), then the program `fin`
+runs on the final state; the queries of these programs are answered by the programs `trans` from
+the state `t₀`. The output is that of `fin`. -/
+noncomputable def stepRedO {τ ρ E A D' R' Out : Type} (impl : σ → E → OracleAdv D R (A × σ))
+    (fin : σ → OracleAdv D R Out) (trans : τ → D → OracleAdv D' R' (R × τ))
+    (B : OracleAdv E A ρ) (s₀ : σ) (t₀ : τ) : OracleAdv D' R' Out :=
+  (simulate trans ((simulate impl B s₀).bind fun p => fin p.2) t₀).bind fun p => .ret p.1
 
 end CatCrypt.Crypto.OracleAdv
 
@@ -680,7 +693,7 @@ def extractO (pid : PartyId) (u : S) (peer k : W) :
     List Pw → OracleAdv (HQ S W Pw) (HA W) (Option Pw)
   | [] => .ret none
   | pw :: rest => .query (.inr (pid, u, pw, peer, k)) fun a =>
-    bif ansBit a then .ret (some pw) else extractO pid u peer k rest
+    if ansBit a = true then .ret (some pw) else extractO pid u peer k rest
 
 /-- `extractAt` with a handle. -/
 def extractAtO (cands : List Pw) (u : S) (pid : PartyId) (x : Inp W) :
@@ -1476,14 +1489,14 @@ def queryAll : List (HQ S W Pw) → OracleAdv (HQ S W Pw) (HA W) Unit
   | [] => .ret ()
   | q :: l => .query q fun _ => queryAll l
 
-/-- **The double-match adversary of the CPace experiment.** On the simulated message `X` it runs
-the oracle adversary `B` against the simulated world with handles, a party with handle `u` sending
-`X^u`, then asks the match tests of the final sweep, all translated by `dmTrans`. -/
+/-- **The double-match adversary of the CPace experiment**: `stepRedO` on the simulated message
+`X`. It runs the oracle adversary `B` against the simulated world with handles, a party with
+handle `u` sending `X^u`, then asks the match tests of the final sweep, all translated by
+`dmTrans`. -/
 noncomputable def dmAdv (B : OracleAdv (OEv Pw W) (OOut W K) Bool) :
     CPaceH1.CPaceAdversary W Pw Unit := fun X =>
-  (OracleAdv.simulate (dmTrans G)
-    ((OracleAdv.simulate (hImpl G (msgDM G X)) B (hInit G)).bind fun p =>
-      queryAll (sweepQ p.2.1)) ()).bind fun _ => .ret ()
+  OracleAdv.stepRedO (hImpl G (msgDM G X)) (fun s => queryAll (sweepQ s.1)) (dmTrans G) B
+    (hInit G) ()
 
 /-- The log of the CPace experiment after a translated query. -/
 def dmLog (x : S) (td : Pw → Sˣ) : HQ S W Pw → CPaceH1.MatchLog W Pw → CPaceH1.MatchLog W Pw
@@ -1627,8 +1640,8 @@ theorem run_dmAdv (x : S) (td : Pw → Sˣ) (B : OracleAdv (OEv Pw W) (OOut W K)
           (CPaceH1.eagerOracle CPaceH1.Query.pw (CPaceH1.cpaceStep G (G.pub x)) td))) B
         (hInit G, ((), []))).map fun z =>
           ((), (sweepQ z.2.1.1).foldl (fun lg q => dmLog G x td q lg) z.2.2.2) := by
-  simp only [dmAdv, OracleAdv.run_bind, OracleAdv.run_simulate, OracleAdv.run_ret,
-    PMF.map_bind]
+  simp only [dmAdv, OracleAdv.stepRedO, OracleAdv.run_bind, OracleAdv.run_simulate,
+    OracleAdv.run_ret, PMF.map_bind]
   simp only [PMF.bind_map, Function.comp_def, PMF.bind_bind]
   rw [← PMF.bind_pure_comp]
   refine congrArg _ (funext fun z => ?_)
@@ -1913,8 +1926,53 @@ noncomputable def psOut (B : OracleAdv (OEv Pw W) (OOut W K) Bool) (O : W → W 
       (OracleAdv.simulate (hImpl G (msgPS G A B')) B (hInit G)) ()).map fun y =>
         psExtract G O A B' td y.1.2
 
-/-- **The gap Diffie–Hellman reduction for passive sessions.** -/
-noncomputable def psRed [SampleableType W] (B : OracleAdv (OEv Pw W) (OOut W K) Bool) :
+/-- **The program of the passive-session reduction**: it draws the table of `H1` and runs
+`stepRedO` with the simulated world with handles, a party with handle `u` sending its challenge
+value times `g^u`, the final output `psExtract`, and the answers `psAns` to the queries of the
+world with handles. -/
+noncomputable def psProg (B : OracleAdv (OEv Pw W) (OOut W K) Bool) (O : W → W → W → Bool)
+    (A B' : W) : OracleAdv Empty Empty W :=
+  .rand (PMF.uniformFintype (Pw → Sˣ)) fun td =>
+    OracleAdv.stepRedO (hImpl G (msgPS G A B')) (fun s => .ret (psExtract G O A B' td s))
+      (fun (_ : Unit) q => .ret (psAns G O A B' td q, ())) B (hInit G) ()
+
+/-- The output distribution of the passive-session reduction is the output of its program
+`psProg`. -/
+theorem psOut_eq (B : OracleAdv (OEv Pw W) (OOut W K) Bool) (O : W → W → W → Bool) (A B' : W) :
+    psOut G B O A B' =
+      (OracleAdv.run (fun (_ : Unit) (q : Empty) => q.elim) (psProg G B O A B') ()).map
+        Prod.fst := by
+  simp only [psOut, psProg, OracleAdv.stepRedO, OracleAdv.run_rand, PMF.map_bind,
+    OracleAdv.run_bind, OracleAdv.run_simulate, OracleAdv.run_ret, PMF.pure_map]
+  refine congrArg _ (funext fun td => ?_)
+  let impl : Unit → HQ S W Pw → OracleAdv Empty Empty (HA W × Unit) :=
+    fun _ q => .ret (psAns G O A B' td q, ())
+  let emp : Unit → Empty → PMF (Empty × Unit) := fun _ q => q.elim
+  have hin : ∀ {β : Type} (X : OracleAdv (HQ S W Pw) (HA W) β) (u : Unit × Unit),
+      (OracleAdv.run (OracleAdv.simOracle impl emp) X u).map (Prod.map id fun _ => ()) =
+        OracleAdv.run (psOracle G O A B' td) X () := fun X u =>
+    OracleAdv.run_map_state _ _ (fun _ => ())
+      (fun s d => by simp [impl, OracleAdv.simOracle, psOracle, PMF.pure_map]) X u
+  have hout := OracleAdv.run_map_state
+    (OracleAdv.simOracle (hImpl G (msgPS G A B')) (OracleAdv.simOracle impl emp))
+    (OracleAdv.simOracle (hImpl G (msgPS G A B')) (psOracle G O A B' td))
+    (Prod.map id fun _ => ())
+    (fun s d => by
+      simp only [OracleAdv.simOracle, Prod.map_fst, Prod.map_snd, id]
+      rw [← hin (hImpl G (msgPS G A B') s.1 d) s.2, PMF.map_comp, PMF.map_comp]
+      rfl)
+    B (hInit G, (), ())
+  dsimp only [Prod.map_apply, id_eq] at hout
+  rw [← hout]
+  simp only [PMF.bind_bind, PMF.pure_bind]
+  rw [show (fun a : (Bool × (SimSt S W Pw K × St Pw K)) × Unit × Unit =>
+      PMF.pure ((psExtract G O A B' td a.1.2, a.2.1), a.2.2).1.1) =
+      PMF.pure ∘ (fun a => psExtract G O A B' td a.1.2) from rfl, PMF.bind_pure_comp]
+  simp only [PMF.map_comp]
+  rfl
+
+/-- **The gap Diffie–Hellman adversary for passive sessions.** -/
+noncomputable def psAdv [SampleableType W] (B : OracleAdv (OEv Pw W) (OOut W K) Bool) :
     GapDH_Adversary W :=
   fun O A B' => liftPMF (psOut G B O A B')
 
@@ -2070,8 +2128,8 @@ variable {S W Pw K : Type} [Field S] [Fintype S] [DecidableEq S] [SampleableType
 
 /-- **The advantage of the passive-session reduction** as a probability over the challenge
 exponents. -/
-theorem gapDH_advantage_psRed (B : OracleAdv (OEv Pw W) (OOut W K) Bool) :
-    GapDH_Advantage (AKE.X3DHSquareGDH.gapDHDef G) (psRed G B) =
+theorem gapDH_advantage_psAdv (B : OracleAdv (OEv Pw W) (OOut W K) Bool) :
+    GapDH_Advantage (AKE.X3DHSquareGDH.gapDHDef G) (psAdv G B) =
       ((PMF.uniformFintype S).bind fun a => (PMF.uniformFintype S).bind fun b =>
         (psOut G B (ddhOracle (AKE.X3DHSquareGDH.gapDHDef G)) (G.pub a) (G.pub b)).map
           fun c => decide (c = G.pub (a * b))) true := by
@@ -2082,7 +2140,7 @@ theorem gapDH_advantage_psRed (B : OracleAdv (OEv Pw W) (OOut W K) Bool) :
   unfold GapDH_Game
   have hk : (AKE.X3DHSquareGDH.gapDHDef G).keygen =
       liftPMF ((PMF.uniformFintype S).map fun s => (G.pub s, G.pub s)) := rfl
-  simp only [SPComp.monad_bind_eq, psRed, hk]
+  simp only [SPComp.monad_bind_eq, psAdv, hk]
   rw [liftPMF_bind_apply, PMF.bind_map]
   conv_rhs => unfold liftPMF
   rw [PMF.map_bind]
@@ -2132,10 +2190,10 @@ theorem ps_ideal_le (a b : S) (td : Pw → Sˣ)
       hz.1.1 hz.1.2)
 
 /-- **The passive-session experiment** is bounded by the gap Diffie–Hellman advantage of the
-explicit reduction `psRed G B`, which runs the simulated world with the two parties' messages
+explicit reduction `psAdv G B`, which runs the simulated world with the two parties' messages
 shifted from the challenge and decides the match tests with the decision oracle. -/
 theorem psExp_le (B : OracleAdv (OEv Pw W) (OOut W K) Bool) :
-    psExp G B true ≤ GapDH_Advantage (AKE.X3DHSquareGDH.gapDHDef G) (psRed G B) := by
+    psExp G B true ≤ GapDH_Advantage (AKE.X3DHSquareGDH.gapDHDef G) (psAdv G B) := by
   classical
   set F : S → S → (Pw → Sˣ) → ℝ≥0∞ := fun a b td =>
     ((OracleAdv.run (psOracle G (ddhOracle (AKE.X3DHSquareGDH.gapDHDef G)) (G.pub a)
@@ -2166,10 +2224,10 @@ theorem psExp_le (B : OracleAdv (OEv Pw W) (OOut W K) Bool) :
           rw [← run_idealStep_setTd G td B (hInit G), PMF.toOuterMeasure_map_apply]
           rfl
       _ ≤ F a b td := ps_ideal_le G a b td B
-  have hgap : GapDH_Advantage (AKE.X3DHSquareGDH.gapDHDef G) (psRed G B) =
+  have hgap : GapDH_Advantage (AKE.X3DHSquareGDH.gapDHDef G) (psAdv G B) =
       ∑' a : S, PMF.uniformFintype S a * ∑' b : S, PMF.uniformFintype S b *
         ∑' td : Pw → Sˣ, PMF.uniformFintype (Pw → Sˣ) td * F a b td := by
-    rw [gapDH_advantage_psRed, PMF.bind_apply]
+    rw [gapDH_advantage_psAdv, PMF.bind_apply]
     refine tsum_congr fun a => ?_
     rw [PMF.bind_apply]
     refine congrArg _ (tsum_congr fun b => ?_)
@@ -2707,7 +2765,7 @@ the collision of `H1`, the zero secrets and the new-message collision. -/
 noncomputable def cpaceConcreteBound (q : ℕ) (B : OracleAdv (OEv Pw W) (OOut W K) Bool) :
     ℝ≥0∞ :=
   2 * ssdhGame G (ssdhReduction G (CPaceH1.matchWrap (dmAdv G B))) true +
-    GapDH_Advantage (AKE.X3DHSquareGDH.gapDHDef G) (psRed G B) +
+    GapDH_Advantage (AKE.X3DHSquareGDH.gapDHDef G) (psAdv G B) +
     (2 * ((Fintype.card Pw : ℝ≥0∞) * (((4 * q : ℕ) : ℝ≥0∞) * (Fintype.card Sˣ : ℝ≥0∞)⁻¹)) +
       ((Fintype.card Pw ^ 2 : ℕ) : ℝ≥0∞) / Fintype.card Sˣ +
       (7 + 12 * q) * (Fintype.card S : ℝ≥0∞)⁻¹)
@@ -2723,7 +2781,7 @@ theorem cpaceBadBound_le (B : OracleAdv (OEv Pw W) (OOut W K) Bool) (q : ℕ)
   unfold cpaceBadBound cpaceConcreteBound
   calc _ ≤ (2 * ssdhGame G (ssdhReduction G (CPaceH1.matchWrap (dmAdv G B))) true +
         uqExp G B true + 3 * (Fintype.card S : ℝ≥0∞)⁻¹) + uqExp G B true +
-        GapDH_Advantage (AKE.X3DHSquareGDH.gapDHDef G) (psRed G B) +
+        GapDH_Advantage (AKE.X3DHSquareGDH.gapDHDef G) (psAdv G B) +
         (((Fintype.card Pw ^ 2 : ℕ) : ℝ≥0∞) / Fintype.card Sˣ +
           12 * q * (Fintype.card S : ℝ≥0∞)⁻¹) := by
         gcongr
@@ -2732,7 +2790,7 @@ theorem cpaceBadBound_le (B : OracleAdv (OEv Pw W) (OOut W K) Bool) (q : ℕ)
           2 * (Fintype.card S : ℝ≥0∞)⁻¹) + 3 * (Fintype.card S : ℝ≥0∞)⁻¹) +
         ((Fintype.card Pw : ℝ≥0∞) * (((4 * q : ℕ) : ℝ≥0∞) * (Fintype.card Sˣ : ℝ≥0∞)⁻¹) +
           2 * (Fintype.card S : ℝ≥0∞)⁻¹) +
-        GapDH_Advantage (AKE.X3DHSquareGDH.gapDHDef G) (psRed G B) +
+        GapDH_Advantage (AKE.X3DHSquareGDH.gapDHDef G) (psAdv G B) +
         (((Fintype.card Pw ^ 2 : ℕ) : ℝ≥0∞) / Fintype.card Sˣ +
           12 * q * (Fintype.card S : ℝ≥0∞)⁻¹) := by
         gcongr
@@ -2742,7 +2800,7 @@ theorem cpaceBadBound_le (B : OracleAdv (OEv Pw W) (OOut W K) Bool) (q : ℕ)
 `Z`, the distance between the real CPace protocol and the simulator running with `F_lePAKE` is at
 most `cpaceConcreteBound G q B` at the oracle adversary `B = OProt.oracle.reduction Z`, which asks
 at most `q = Z.input.rounds` queries: twice the strong SDH advantage of
-`ssdhReduction G (matchWrap (dmAdv G B))`, the gap Diffie–Hellman advantage of `psRed G B`, and
+`ssdhReduction G (matchWrap (dmAdv G B))`, the gap Diffie–Hellman advantage of `psAdv G B`, and
 statistical terms in `q`, `|Pw|`, `|S|` and `|Sˣ|`. -/
 theorem cpace_realizesSim_concrete :
     RealizesSim (cpaceReal G (K := K)) (F_lePAKE (Pw := Pw) (SPComp.sample K)) (cpaceSim G)
