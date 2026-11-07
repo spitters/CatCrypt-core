@@ -115,7 +115,8 @@ end SampledGame
 advantage is at most the advantage of the encoding reduction against `G` at the reference
 sampler, plus `c.δ` per draw. -/
 theorem advantageA_le_of_realizes {X V W : Type} {P Q : SPComp W} (G : SampledGame X V)
-    (c : SamplerCert X) (enc : V → W) (h : Realizes P Q G c.μ enc) (A : W → SPComp Bool) :
+    (c : SamplerCert X) (enc : V → W) (h : SampledRealizes P Q G c.μ enc)
+    (A : W → SPComp Bool) :
     AdvantageA P Q A ≤ G.advAt c.ν (encodedRed enc A) + (G.nR + G.nI) * c.δ := by
   rw [h.advantageA_eq]
   exact G.advAt_le c _

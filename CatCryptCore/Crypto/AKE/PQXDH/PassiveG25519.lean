@@ -89,7 +89,7 @@ pairs and a uniform KEM input, and the uniform key, are the game `kdfSampled B P
 sampler `signedClamp`. -/
 theorem kdfSampled_realizes_X25519 (h : X25519Hom B)
     (P : PassiveParams (Vector UInt8 32) PK SK C Sd) (hP : P.dh = concreteDDH_X25519) :
-    Realizes (KDF_Random_RealK P) KDF_Random_Ideal (kdfSampled B P.kdf) signedClamp id where
+    SampledRealizes (KDF_Random_RealK P) KDF_Random_Ideal (kdfSampled B P.kdf) signedClamp id where
   real := by
     have h2 : ∀ x y z w : ZMod curve25519SubgroupOrder,
         (Fin.cons x (Fin.cons y (Fin.cons z (Fin.cons w Fin.elim0))) : Fin 4 → _) 2 = z :=
