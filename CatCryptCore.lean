@@ -378,6 +378,7 @@ public import CatCryptCore.Crypto.PAKE.CPaceSquare
 public import CatCryptCore.Crypto.PAKE.CPaceHops
 public import CatCryptCore.Crypto.PAKE.CPaceBad
 public import CatCryptCore.Crypto.PAKE.CPaceBound
+public import CatCryptCore.Crypto.PAKE.CPaceBadReductions
 public import CatCryptCore.Crypto.PAKE.CPaceChan
 public import CatCryptCore.Crypto.PAKE.CPaceChanTimed
 public import CatCryptCore.Crypto.Signatures.Threshold
