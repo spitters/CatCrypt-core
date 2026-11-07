@@ -16,18 +16,22 @@ public import CatCryptCore.Crypto.AdvantageMap
 The haxpipeT extraction of the Rust crate `x3dh-hax` (`X3dh.create_bundle`, `X3dh.initiate`,
 `X3dh.respond`) computes on byte arrays under an instance of `X3dh.X3dhDeps`. Its key
 derivation takes a session context, the session identifier, the initiator and the responder,
-as its first argument. An encoding `enc : W → Array Int` of the model's values and an encoding
-`encCtx` of the contexts that carry the Diffie-Hellman and KDF operations of the instance to a
-Diffie-Hellman record `dh` and a context KDF `kdfCtx` (`X3dhHom`) make the extracted functions
-at the context `encCtx (sid, a, b)` compute the encodings of the model's session keys, and the
-extracted session the encoding of the model session `x3dh_real` of the parameters
+as its first argument. `X3dh.initiate` and `X3dh.respond` apply the input check `valid_pub` to
+the peer public keys they receive and return `none` when one fails it; otherwise they return
+`some` of `X3dh.initiate_checked` and `X3dh.respond_checked`, which compute the key. An
+encoding `enc : W → Array Int` of the model's values and an encoding `encCtx` of the contexts
+that carry the Diffie-Hellman and KDF operations of the instance to a Diffie-Hellman record
+`dh` and a context KDF `kdfCtx`, and under which the encoded public keys pass the check
+(`X3dhHom`), make the checked functions at the context `encCtx (sid, a, b)` compute the
+encodings of the model's session keys, the wrappers return `some` of them on encoded public
+keys, and the extracted session the encoding of the model session `x3dh_real` of the parameters
 `ctxParams dh kdfCtx (sid, a, b)`, whose four-argument KDF is `kdfCtx` at that context.
 
 ## Main definitions
 
 * `X3dhCtx` — a session context: the session, the initiator and the responder.
 * `X3dhHom dh encCtx kdfCtx enc pub` — the equations of `dh_pub`, `dh` and `kdf` on encoded
-  arguments.
+  arguments, and the check `valid_pub` on encoded public keys.
 * `ctxParams dh kdfCtx c` — the passive-model parameters with the KDF `kdfCtx c`.
 * `encOut enc` — the encoding of a session key and a transcript.
 * `x3dh_extracted dh enc ctx` — five key generations, `create_bundle` and `initiate` (with the
@@ -36,10 +40,12 @@ extracted session the encoding of the model session `x3dh_real` of the parameter
 
 ## Main results
 
-* `initiate_enc`, `respond_enc` — the extracted session keys at encoded keys and an encoded
-  context are the encodings of the context KDF of the four Diffie-Hellman values.
+* `initiate_eq_some`, `respond_eq_some` — on encoded public keys of the peer, `initiate` and
+  `respond` return `some` of `initiate_checked` and `respond_checked`.
+* `initiate_enc`, `respond_enc` — the session keys of the checked functions at encoded keys
+  and an encoded context are the encodings of the context KDF of the four Diffie-Hellman values.
 * `respond_agree` — the keys of the initiator and the responder coincide when `dh.ecdh`
-  commutes on public keys.
+  commutes on public keys; `initiate_respond_agree` states it for `initiate` and `respond`.
 * `x3dh_extracted_eq` — at the context `encCtx (sid, a, b)`, the extracted session is
   `(x3dh_real (ctxParams dh kdfCtx (sid, a, b))).map (encOut enc)`.
 * `x3dh_extracted_advantage_le` — the advantage of every distinguisher `D` between the
@@ -67,7 +73,8 @@ variable {W : Type} [SampleableType W]
 
 /-- An encoding `enc` of the model's values and an encoding `encCtx` of the contexts that carry
 the operations of the `X3dh.X3dhDeps` instance in scope to the model: `dh_pub` to the
-public-key map `pub`, `dh` to `dh.ecdh` and `kdf` at the context `encCtx c` to `kdfCtx c`. -/
+public-key map `pub`, `dh` to `dh.ecdh` and `kdf` at the context `encCtx c` to `kdfCtx c`; the
+input check `valid_pub` accepts the encoding of every public key `pub x`. -/
 structure X3dhHom [X3dh.X3dhDeps] (dh : DDHDef W) (encCtx : X3dhCtx → Array Int)
     (kdfCtx : X3dhCtx → W → W → W → W → W) (enc : W → Array Int) (pub : W → W) :
     Prop where
@@ -75,6 +82,7 @@ structure X3dhHom [X3dh.X3dhDeps] (dh : DDHDef W) (encCtx : X3dhCtx → Array In
   dh : ∀ x y, X3dh.dh (enc x) (enc y) = enc (dh.ecdh x y)
   kdf : ∀ c a b d e,
     X3dh.kdf (encCtx c) (enc a) (enc b) (enc d) (enc e) = enc (kdfCtx c a b d e)
+  valid_pub : ∀ x, X3dh.valid_pub (enc (pub x)) = true
 
 /-- The parameters of the passive model at the context `c`: the Diffie-Hellman record `dh` and
 the four-argument KDF `kdfCtx c`. -/
@@ -97,32 +105,51 @@ theorem create_bundle_enc (h : X3dhHom dh encCtx kdfCtx enc pub) (b s o : W) :
       (enc (pub b), enc (pub s), enc (pub o), X3dh.sign (enc b) (enc (pub s))) := by
   simp only [X3dh.create_bundle, X3dh.X3dhPreKeyBundle, h.dh_pub]
 
-/-- **Initiator key.** With the one-time prekey, the session key of `initiate` at the context
-`encCtx c`, encoded private keys and a bundle of encoded public keys is the encoding of the
-context KDF of the four Diffie-Hellman values. -/
+/-- **The initiator's input check.** On a bundle of encoded public keys, `initiate` returns
+`some` of `initiate_checked`. -/
+theorem initiate_eq_some (h : X3dhHom dh encCtx kdfCtx enc pub) (ctx ik ek : Array Int)
+    (B S O : W) (sig : Array Int) (use_opk : Bool) :
+    X3dh.initiate ctx ik ek (enc (pub B), enc (pub S), enc (pub O), sig) use_opk =
+      some (X3dh.initiate_checked ctx ik ek (enc (pub B), enc (pub S), enc (pub O), sig)
+        use_opk) := by
+  simp only [X3dh.initiate, X3dh.«.ik», X3dh.«.spk», X3dh.«.opk», Hax.band, Hax.bor,
+    h.valid_pub, Bool.true_and, Bool.or_true, ↓reduceIte]
+
+/-- **The responder's input check.** On a message of encoded public keys, `respond` returns
+`some` of `respond_checked`. -/
+theorem respond_eq_some (h : X3dhHom dh encCtx kdfCtx enc pub) (ctx ik spk opk : Array Int)
+    (A E : W) (opk_id : Array Int) (use_opk : Bool) :
+    X3dh.respond ctx ik spk opk (enc (pub A), enc (pub E), opk_id) use_opk =
+      some (X3dh.respond_checked ctx ik spk opk (enc (pub A), enc (pub E), opk_id) use_opk) := by
+  simp only [X3dh.respond, X3dh.«.ik_a», X3dh.«.ek_a», Hax.band, h.valid_pub, Bool.and_self,
+    ↓reduceIte]
+
+/-- **Initiator key.** With the one-time prekey, the session key of `initiate_checked` at the
+context `encCtx c`, encoded private keys and a bundle of encoded public keys is the encoding of
+the context KDF of the four Diffie-Hellman values. -/
 theorem initiate_enc (h : X3dhHom dh encCtx kdfCtx enc pub) (c : X3dhCtx) (a e B S O : W)
     (sig : Array Int) :
-    (X3dh.initiate (encCtx c) (enc a) (enc e) (enc B, enc S, enc O, sig) true).1 =
+    (X3dh.initiate_checked (encCtx c) (enc a) (enc e) (enc B, enc S, enc O, sig) true).1 =
       enc (kdfCtx c (dh.ecdh a S) (dh.ecdh e B) (dh.ecdh e S) (dh.ecdh e O)) := by
-  simp only [X3dh.initiate, X3dh.«.ik», X3dh.«.spk», X3dh.«.opk», ↓reduceIte,
+  simp only [X3dh.initiate_checked, X3dh.«.ik», X3dh.«.spk», X3dh.«.opk», ↓reduceIte,
     h.dh, h.kdf]
 
-/-- The message of `initiate` at encoded private keys holds the encoded public keys and the
-identifier of the one-time prekey. -/
+/-- The message of `initiate_checked` at encoded private keys holds the encoded public keys and
+the identifier of the one-time prekey. -/
 theorem initiate_msg_enc (h : X3dhHom dh encCtx kdfCtx enc pub) (ctx : Array Int) (a e : W)
     (bundle : X3dh.X3dhPreKeyBundle_T) :
-    (X3dh.initiate ctx (enc a) (enc e) bundle true).2.1 =
+    (X3dh.initiate_checked ctx (enc a) (enc e) bundle true).2.1 =
       (enc (pub a), enc (pub e), #[0, 0, 0, 1]) := by
-  simp only [X3dh.initiate, X3dh.X3dhInitMessage, ↓reduceIte, h.dh_pub]
+  simp only [X3dh.initiate_checked, X3dh.X3dhInitMessage, ↓reduceIte, h.dh_pub]
 
-/-- **Responder key.** With the one-time prekey, the session key of `respond` at the context
-`encCtx c`, encoded private keys and a message of encoded public keys is the encoding of the
-context KDF of the four Diffie-Hellman values. -/
+/-- **Responder key.** With the one-time prekey, the session key of `respond_checked` at the
+context `encCtx c`, encoded private keys and a message of encoded public keys is the encoding
+of the context KDF of the four Diffie-Hellman values. -/
 theorem respond_enc (h : X3dhHom dh encCtx kdfCtx enc pub) (c : X3dhCtx) (b s o A E : W)
     (opk_id : Array Int) :
-    X3dh.respond (encCtx c) (enc b) (enc s) (enc o) (enc A, enc E, opk_id) true =
+    X3dh.respond_checked (encCtx c) (enc b) (enc s) (enc o) (enc A, enc E, opk_id) true =
       enc (kdfCtx c (dh.ecdh s A) (dh.ecdh b E) (dh.ecdh s E) (dh.ecdh o E)) := by
-  simp only [X3dh.respond, X3dh.«.ik_a», X3dh.«.ek_a», ↓reduceIte, h.dh,
+  simp only [X3dh.respond_checked, X3dh.«.ik_a», X3dh.«.ek_a», ↓reduceIte, h.dh,
     h.kdf]
 
 /-- **Key agreement.** When `dh.ecdh` commutes on the public keys of `pub`, the responder's
@@ -130,19 +157,36 @@ key at the context `encCtx c` from the initiator's message is the initiator's ke
 context. -/
 theorem respond_agree (h : X3dhHom dh encCtx kdfCtx enc pub)
     (hc : ECDHSym.CommutesOnPub dh.ecdh pub) (c : X3dhCtx) (a e b s o : W) :
-    X3dh.respond (encCtx c) (enc b) (enc s) (enc o)
-        (X3dh.initiate (encCtx c) (enc a) (enc e)
+    X3dh.respond_checked (encCtx c) (enc b) (enc s) (enc o)
+        (X3dh.initiate_checked (encCtx c) (enc a) (enc e)
           (X3dh.create_bundle (enc b) (enc s) (enc o)) true).2.1
         true =
-      (X3dh.initiate (encCtx c) (enc a) (enc e)
+      (X3dh.initiate_checked (encCtx c) (enc a) (enc e)
         (X3dh.create_bundle (enc b) (enc s) (enc o)) true).1 := by
   rw [initiate_msg_enc h, create_bundle_enc h, initiate_enc h, respond_enc h,
     hc s a, hc b e, hc s e, hc o e]
 
+/-- **Key agreement of the checked exchange.** When `dh.ecdh` commutes on the public keys of
+`pub`, `initiate` at the context `encCtx c` accepts the bundle of encoded private keys of the
+responder, and `respond` accepts the message it returns and derives the initiator's key. -/
+theorem initiate_respond_agree (h : X3dhHom dh encCtx kdfCtx enc pub)
+    (hc : ECDHSym.CommutesOnPub dh.ecdh pub) (c : X3dhCtx) (a e b s o : W) :
+    ∃ k m v, X3dh.initiate (encCtx c) (enc a) (enc e)
+        (X3dh.create_bundle (enc b) (enc s) (enc o)) true = some (k, m, v) ∧
+      X3dh.respond (encCtx c) (enc b) (enc s) (enc o) m true = some k := by
+  let r := X3dh.initiate_checked (encCtx c) (enc a) (enc e)
+    (X3dh.create_bundle (enc b) (enc s) (enc o)) true
+  refine ⟨r.1, r.2.1, r.2.2, ?_, ?_⟩
+  · rw [create_bundle_enc h, initiate_eq_some h, ← create_bundle_enc h]
+  · have hk := respond_agree h hc c a e b s o
+    rw [initiate_msg_enc h] at hk ⊢
+    rw [respond_eq_some h, hk]
+
 /-- The extracted session at the context `ctx` and the flag `use_opk`: five key generations,
 `create_bundle` and `initiate` at `ctx` and `use_opk` on the encoded private keys, the session
-key and the transcript `(ik_A, ik_B, ek, spk_B, opk_B)` read from the message and the
-bundle. -/
+key and the transcript `(ik_A, ik_B, ek, spk_B, opk_B)` read from the message and the bundle.
+When a key of the bundle fails the input check, `initiate` returns `none` and the session reads
+the default value; on a bundle of encoded public keys it returns `some` (`initiate_eq_some`). -/
 noncomputable def x3dh_extractedAt (dh : DDHDef W) (enc : W → Array Int) (ctx : Array Int)
     (use_opk : Bool) : SPComp (Array Int × X3DHTranscript (Array Int)) :=
   dh.keygen.bind fun ik_a => dh.keygen.bind fun ik_b =>
@@ -150,7 +194,7 @@ noncomputable def x3dh_extractedAt (dh : DDHDef W) (enc : W → Array Int) (ctx 
   dh.keygen.bind fun ek =>
   SPComp.pure
     (let bundle := X3dh.create_bundle (enc ik_b.1) (enc spk_b.1) (enc opk_b.1)
-     let r := X3dh.initiate ctx (enc ik_a.1) (enc ek.1) bundle use_opk
+     let r := (X3dh.initiate ctx (enc ik_a.1) (enc ek.1) bundle use_opk).getD default
      (r.1, X3dh.«.ik_a» r.2.1, X3dh.«.ik» bundle, X3dh.«.ek_a» r.2.1, X3dh.«.spk» bundle,
        X3dh.«.opk» bundle))
 
@@ -169,13 +213,14 @@ theorem x3dh_extracted_eq (h : X3dhHom dh encCtx kdfCtx enc pub)
       (x3dh_real (ctxParams dh kdfCtx (sid, a, b))).map (encOut enc) := by
   have hk : ∀ i b' s o e : W,
       (let bundle := X3dh.create_bundle (enc b') (enc s) (enc o)
-       let r := X3dh.initiate (encCtx (sid, a, b)) (enc i) (enc e) bundle true
+       let r := (X3dh.initiate (encCtx (sid, a, b)) (enc i) (enc e) bundle true).getD default
        (r.1, X3dh.«.ik_a» r.2.1, X3dh.«.ik» bundle, X3dh.«.ek_a» r.2.1, X3dh.«.spk» bundle,
          X3dh.«.opk» bundle)) =
       encOut enc (kdfCtx (sid, a, b) (dh.ecdh i (pub s)) (dh.ecdh e (pub b'))
         (dh.ecdh e (pub s)) (dh.ecdh e (pub o)), (pub i, pub b', pub e, pub s, pub o)) := by
     intro i b' s o e
-    simp only [create_bundle_enc h, initiate_msg_enc h, initiate_enc h, encOut,
+    simp only [create_bundle_enc h, initiate_eq_some h, Option.getD_some, initiate_msg_enc h,
+      initiate_enc h, encOut,
       X3dh.«.ik_a», X3dh.«.ik», X3dh.«.ek_a», X3dh.«.spk», X3dh.«.opk»]
   simp only [x3dh_extracted, x3dh_extractedAt, x3dh_real, x3dh_hyb, ctxParams, SPComp.map,
     ECDHSym.keygen_bind hkg, SPComp.bind_assoc, SPComp.pure_bind]
@@ -217,32 +262,32 @@ def X3dhKdf3Hom (encCtx : X3dhCtx → Array Int) (enc : W → Array Int)
 
 variable {kdf3Ctx : X3dhCtx → W → W → W → W}
 
-/-- **Initiator key without the one-time prekey.** The session key of `initiate` at the
+/-- **Initiator key without the one-time prekey.** The session key of `initiate_checked` at the
 context `encCtx c`, encoded private keys and a bundle of encoded public keys is the encoding of
 `kdf3Ctx c` of the three Diffie-Hellman values. -/
 theorem initiate_noOpk_enc (h : X3dhHom dh encCtx kdfCtx enc pub)
     (h3 : X3dhKdf3Hom encCtx enc kdf3Ctx) (c : X3dhCtx) (a e B S O : W) (sig : Array Int) :
-    (X3dh.initiate (encCtx c) (enc a) (enc e) (enc B, enc S, enc O, sig) false).1 =
+    (X3dh.initiate_checked (encCtx c) (enc a) (enc e) (enc B, enc S, enc O, sig) false).1 =
       enc (kdf3Ctx c (dh.ecdh a S) (dh.ecdh e B) (dh.ecdh e S)) := by
-  simp only [X3dh.initiate, X3dh.«.ik», X3dh.«.spk», Bool.false_eq_true, ↓reduceIte, h.dh,
+  simp only [X3dh.initiate_checked, X3dh.«.ik», X3dh.«.spk», Bool.false_eq_true, ↓reduceIte, h.dh,
     h3 _ _ _ _]
 
-/-- The message of `initiate` without the one-time prekey holds the encoded public keys and
-the identifier `0`. -/
+/-- The message of `initiate_checked` without the one-time prekey holds the encoded public keys
+and the identifier `0`. -/
 theorem initiate_msg_noOpk_enc (h : X3dhHom dh encCtx kdfCtx enc pub) (ctx : Array Int)
     (a e : W) (bundle : X3dh.X3dhPreKeyBundle_T) :
-    (X3dh.initiate ctx (enc a) (enc e) bundle false).2.1 =
+    (X3dh.initiate_checked ctx (enc a) (enc e) bundle false).2.1 =
       (enc (pub a), enc (pub e), #[0, 0, 0, 0]) := by
-  simp only [X3dh.initiate, X3dh.X3dhInitMessage, Bool.false_eq_true, ↓reduceIte, h.dh_pub]
+  simp only [X3dh.initiate_checked, X3dh.X3dhInitMessage, Bool.false_eq_true, ↓reduceIte, h.dh_pub]
 
-/-- **Responder key without the one-time prekey.** The session key of `respond` at the context
-`encCtx c`, encoded private keys and a message of encoded public keys is the encoding of
+/-- **Responder key without the one-time prekey.** The session key of `respond_checked` at the
+context `encCtx c`, encoded private keys and a message of encoded public keys is the encoding of
 `kdf3Ctx c` of the three Diffie-Hellman values. -/
 theorem respond_noOpk_enc (h : X3dhHom dh encCtx kdfCtx enc pub)
     (h3 : X3dhKdf3Hom encCtx enc kdf3Ctx) (c : X3dhCtx) (b s o A E : W) (opk_id : Array Int) :
-    X3dh.respond (encCtx c) (enc b) (enc s) (enc o) (enc A, enc E, opk_id) false =
+    X3dh.respond_checked (encCtx c) (enc b) (enc s) (enc o) (enc A, enc E, opk_id) false =
       enc (kdf3Ctx c (dh.ecdh s A) (dh.ecdh b E) (dh.ecdh s E)) := by
-  simp only [X3dh.respond, X3dh.«.ik_a», X3dh.«.ek_a», Bool.false_eq_true, ↓reduceIte, h.dh,
+  simp only [X3dh.respond_checked, X3dh.«.ik_a», X3dh.«.ek_a», Bool.false_eq_true, ↓reduceIte, h.dh,
     h3 _ _ _ _]
 
 /-- **Key agreement without the one-time prekey.** When `dh.ecdh` commutes on the public keys
@@ -251,11 +296,11 @@ initiator's key at the same context. -/
 theorem respond_noOpk_agree (h : X3dhHom dh encCtx kdfCtx enc pub)
     (h3 : X3dhKdf3Hom encCtx enc kdf3Ctx) (hc : ECDHSym.CommutesOnPub dh.ecdh pub)
     (c : X3dhCtx) (a e b s o : W) :
-    X3dh.respond (encCtx c) (enc b) (enc s) (enc o)
-        (X3dh.initiate (encCtx c) (enc a) (enc e)
+    X3dh.respond_checked (encCtx c) (enc b) (enc s) (enc o)
+        (X3dh.initiate_checked (encCtx c) (enc a) (enc e)
           (X3dh.create_bundle (enc b) (enc s) (enc o)) false).2.1
         false =
-      (X3dh.initiate (encCtx c) (enc a) (enc e)
+      (X3dh.initiate_checked (encCtx c) (enc a) (enc e)
         (X3dh.create_bundle (enc b) (enc s) (enc o)) false).1 := by
   rw [initiate_msg_noOpk_enc h, create_bundle_enc h, initiate_noOpk_enc h h3,
     respond_noOpk_enc h h3, hc s a, hc b e, hc s e]
@@ -272,13 +317,14 @@ theorem x3dh_extracted_noOpk_eq (h : X3dhHom dh encCtx kdfCtx enc pub)
         (encOut enc) := by
   have hk : ∀ i b' s o e : W,
       (let bundle := X3dh.create_bundle (enc b') (enc s) (enc o)
-       let r := X3dh.initiate (encCtx (sid, a, b)) (enc i) (enc e) bundle false
+       let r := (X3dh.initiate (encCtx (sid, a, b)) (enc i) (enc e) bundle false).getD default
        (r.1, X3dh.«.ik_a» r.2.1, X3dh.«.ik» bundle, X3dh.«.ek_a» r.2.1, X3dh.«.spk» bundle,
          X3dh.«.opk» bundle)) =
       encOut enc (kdf3Ctx (sid, a, b) (dh.ecdh i (pub s)) (dh.ecdh e (pub b'))
         (dh.ecdh e (pub s)), (pub i, pub b', pub e, pub s, pub o)) := by
     intro i b' s o e
-    simp only [create_bundle_enc h, initiate_msg_noOpk_enc h, initiate_noOpk_enc h h3, encOut,
+    simp only [create_bundle_enc h, initiate_eq_some h, Option.getD_some,
+      initiate_msg_noOpk_enc h, initiate_noOpk_enc h h3, encOut,
       X3dh.«.ik_a», X3dh.«.ik», X3dh.«.ek_a», X3dh.«.spk», X3dh.«.opk»]
   simp only [x3dh_extractedAt, x3dh_real, x3dh_hyb, noOpkParams, ctxParams, SPComp.map,
     ECDHSym.keygen_bind hkg, SPComp.bind_assoc, SPComp.pure_bind]
