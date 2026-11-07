@@ -2340,6 +2340,193 @@ theorem simWorldD_congr (T₁ T₂ : Pw → Sˣ) (t : SimSt S W Pw K × St Pw K)
     CPaceHops.simWorldD G T₁ t e r = CPaceHops.simWorldD G T₂ t e r := by
   simp only [CPaceHops.simWorldD, simStartD_congr G T₁ T₂ t.1 e h he]
 
+/-- **A match for the unqueried password `pw₀`** by a party with a secret other than zero. -/
+def UQp (td : Pw → Sˣ) (pw₀ : Pw) (s : SimSt S W Pw K) : Prop :=
+  ∃ pid x z, s.1.zs pid = some z ∧ z ≠ 0 ∧ InDom s x ∧ pw₀ ∉ s.1.cands ∧
+    Matches G td s.1 pid pw₀ x
+
+/-- A match for the password `pw₀` by a party with a secret other than zero. -/
+def Mt (td : Pw → Sˣ) (pw₀ : Pw) (s : SimSt S W Pw K) : Prop :=
+  ∃ pid x z, s.1.zs pid = some z ∧ z ≠ 0 ∧ InDom s x ∧ Matches G td s.1 pid pw₀ x
+
+omit [Fintype S] [DecidableEq S] [DecidableEq Pw] [Fintype K] [Nonempty K] [Inhabited K] in
+theorem uq_split (td : Pw → Sˣ) (s : SimSt S W Pw K) (h : UQst G td s) :
+    (∃ pw₀ ∈ (Finset.univ : Finset Pw), UQp G td pw₀ s) ∨ Z0 s := by
+  obtain ⟨pid, x, pw, hx, hc, hm⟩ := h
+  obtain ⟨z, peer, role, hz, -⟩ := id hm
+  by_cases hz0 : z = 0
+  · exact Or.inr ⟨pid, hz0 ▸ hz⟩
+  · exact Or.inl ⟨pw, Finset.mem_univ _, pid, x, z, hz, hz0, hx, hc, hm⟩
+
+omit [Fintype Pw] [Fintype K] [Nonempty K] [Inhabited K] in
+/-- **A fresh trapdoor matches with probability at most `1 / |Sˣ|`**: for a secret `z ≠ 0`, the
+match test of a fixed key against the trapdoor `t` of `pw₀` passes for at most one `t`. -/
+theorem uniform_matchTest_le (td : Pw → Sˣ) (pw₀ : Pw) {z : S} (hz : z ≠ 0) (peer k : W) :
+    (PMF.uniformFintype Sˣ).toOuterMeasure
+        {t | (kit G (Function.update td pw₀ t)).matchTest z peer k pw₀ = true} ≤
+      (Fintype.card Sˣ : ℝ≥0∞)⁻¹ := by
+  classical
+  have huniq : ∀ a b : Sˣ,
+      (kit G (Function.update td pw₀ a)).matchTest z peer k pw₀ = true →
+      (kit G (Function.update td pw₀ b)).matchTest z peer k pw₀ = true → a = b := by
+    intro a b ha hb
+    simp only [kit, DHExtractKit.matchTest, cpaceKit, Function.update_self,
+      Bool.and_eq_true, decide_eq_true_eq] at ha hb
+    have h := G.exp_injective ha.1 (ha.2.trans hb.2.symm)
+    have h' : ((a : Sˣ) : S)⁻¹ = ((b : Sˣ) : S)⁻¹ := mul_left_cancel₀ hz h
+    exact Units.ext (inv_injective h')
+  rw [PMF.toOuterMeasure_uniformFintype_apply, div_eq_mul_inv]
+  conv_rhs => rw [← one_mul (Fintype.card Sˣ : ℝ≥0∞)⁻¹]
+  gcongr
+  exact_mod_cast Fintype.card_le_one_iff.mpr fun a b => Subtype.ext (huniq a.1 b.1 a.2 b.2)
+
+omit [Fintype Pw] [Fintype K] [Nonempty K] [Inhabited K] in
+/-- **A match for `pw₀` against a fresh trapdoor**: over the trapdoor `t` of `pw₀`, a state whose
+tables hold `n` inputs has a match for `pw₀` with probability at most `2 n / |Sˣ|`. -/
+theorem uniform_Mt_le (td : Pw → Sˣ) (pw₀ : Pw) (s : SimSt S W Pw K) (hI : ZsInv s.1) :
+    (PMF.uniformFintype Sˣ).toOuterMeasure {t | Mt G (Function.update td pw₀ t) pw₀ s} ≤
+      ((2 * (s.2.length + s.1.h2.length) : ℕ) : ℝ≥0∞) * (Fintype.card Sˣ : ℝ≥0∞)⁻¹ := by
+  classical
+  let keys : List (Inp W) := s.2.map Prod.fst ++ s.1.h2.map Prod.fst
+  let E : Inp W × PartyId → Set Sˣ := fun p => {t | ∃ z, s.1.zs p.2 = some z ∧ z ≠ 0 ∧
+    (kit G (Function.update td pw₀ t)).matchTest z (peerMsg p.2 p.1) p.1.2.2.2 pw₀ = true}
+  have hsub : {t | Mt G (Function.update td pw₀ t) pw₀ s} ⊆
+      ⋃ p ∈ keys.toFinset ×ˢ ({0, 1} : Finset PartyId), E p := by
+    intro t ht
+    obtain ⟨pid, x, z, hz, hz0, hx, hm⟩ := ht
+    obtain ⟨z', peer, role, hz', -, -, hmt⟩ := hm
+    rw [hz] at hz'
+    cases hz'
+    have hp : pid ≤ 1 := by
+      by_contra hp
+      have := hI pid (Or.inr (Nat.lt_of_not_le hp))
+      rw [hz] at this
+      exact absurd this (by simp)
+    have hxk : x ∈ keys := mem_keys_of_inDom (fun _ u => u) (fun _ => 1) (s, initSt) x
+      (by
+        unfold InDom simLk at hx ⊢
+        exact hx)
+    simp only [Set.mem_iUnion]
+    refine ⟨(x, pid), ?_, z, hz, hz0, hmt⟩
+    simp only [Finset.mem_product, List.mem_toFinset, Finset.mem_insert, Finset.mem_singleton]
+    exact ⟨hxk, Nat.le_one_iff_eq_zero_or_eq_one.1 hp⟩
+  have hE : ∀ p, (PMF.uniformFintype Sˣ).toOuterMeasure (E p) ≤ (Fintype.card Sˣ : ℝ≥0∞)⁻¹ := by
+    intro p
+    cases hzs : s.1.zs p.2 with
+    | none =>
+      have : E p = ∅ := by
+        ext t; simp [E, hzs]
+      rw [this, MeasureTheory.measure_empty]
+      exact zero_le
+    | some z =>
+      by_cases hz0 : z = 0
+      · have : E p = ∅ := by
+          ext t; simp [E, hzs, hz0]
+        rw [this, MeasureTheory.measure_empty]
+        exact zero_le
+      · refine (MeasureTheory.measure_mono fun t ht => ?_).trans
+          (uniform_matchTest_le G td pw₀ hz0 (peerMsg p.2 p.1) p.1.2.2.2)
+        obtain ⟨z', hz', -, hm⟩ := ht
+        rw [hzs] at hz'
+        cases hz'
+        exact hm
+  calc _ ≤ _ := MeasureTheory.measure_mono hsub
+    _ ≤ ∑ p ∈ keys.toFinset ×ˢ ({0, 1} : Finset PartyId),
+        (PMF.uniformFintype Sˣ).toOuterMeasure (E p) :=
+      MeasureTheory.measure_biUnion_finset_le _ _
+    _ ≤ ∑ _p ∈ keys.toFinset ×ˢ ({0, 1} : Finset PartyId), (Fintype.card Sˣ : ℝ≥0∞)⁻¹ :=
+      Finset.sum_le_sum fun p _ => hE p
+    _ ≤ _ := by
+      rw [Finset.sum_const, nsmul_eq_mul]
+      gcongr
+      rw [Finset.card_product]
+      have h1 : keys.toFinset.card ≤ s.2.length + s.1.h2.length := by
+        refine (List.toFinset_card_le keys).trans ?_
+        simp [keys]
+      have h2 : ({0, 1} : Finset PartyId).card ≤ 2 := Finset.card_le_two
+      nlinarith
+
+/-- A match for `pw₀` is kept by a step of the simulated world. -/
+theorem Mt_stable (td T : Pw → Sˣ) (pw₀ : Pw) (t : SimSt S W Pw K × St Pw K) (ht : ZsInv t.1.1)
+    (e : OEv Pw W) (r : (S × K) × K × K) (h : Mt G td pw₀ t.1) :
+    Mt G td pw₀ (CPaceHops.simWorldD G T (setTd T t) e r).1.1 := by
+  obtain ⟨-, hz, hi, -, hd⟩ := simWorldD_step_frame G T t ht e r
+  obtain ⟨pid, x, z, hzs, hz0, hx, hm⟩ := h
+  exact ⟨pid, x, z, hz pid z hzs, hz0, hd x hx, matches_stable G td hz hi hm⟩
+
+/-- **The tables of the simulated world** hold at most `2 q` inputs after `q` queries. -/
+theorem idealStep_entries_le (T : Pw → Sˣ) (B : OracleAdv (OEv Pw W) (OOut W K) Bool) (q : ℕ)
+    (hB : B.IsQueryBound q) :
+    ∀ y ∈ (OracleAdv.run (idealStep G T) B (hInit G)).support,
+      y.2.1.2.length + y.2.1.1.h2.length ≤ 2 * q := by
+  have hA : B.IsQueryBoundBy (fun _ => 2) (2 * q) := by
+    simpa using hB.isQueryBoundBy_one.mul_left 2
+  have h := OracleAdv.run_card_le_of_mem_support (idealStep G T)
+    (fun s => s.1.2.length + s.1.1.h2.length) (fun _ => 2) (fun s e x hx => by
+      obtain ⟨r, -, rfl⟩ := (PMF.mem_support_map_iff _ _ _).1 hx
+      obtain ⟨-, hh, hp⟩ := simWorldD_cands_h2 G T (setTd T s) e r
+      have e1 : (setTd T s).1.1.h2 = s.1.1.h2 := rfl
+      have e2 : (setTd T s).1.2 = s.1.2 := rfl
+      rw [e1] at hh
+      rw [e2] at hp
+      show (CPaceHops.simWorldD G T (setTd T s) e r).1.1.2.length +
+        (CPaceHops.simWorldD G T (setTd T s) e r).1.1.1.h2.length ≤ _
+      rcases hh with hh | ⟨_, hh⟩ <;> rcases hp with hp | ⟨_, hp⟩ <;>
+        simp only [hh, hp, List.length_cons] <;> omega) B (2 * q) hA (hInit G)
+  intro y hy
+  have := h y hy
+  simpa [hInit, simProt] using this
+
+open Classical in
+/-- **The coupling at an unqueried password.** Until `pw₀` is queried at `H1`, the simulated world
+does not read the trapdoor of `pw₀`: the unqueried-match flag for `pw₀` under the table
+`update td pw₀ t` is set with at most the probability of the same flag under
+`update td pw₀ 1`. -/
+theorem uqp_flag_le_coupling (td : Pw → Sˣ) (pw₀ : Pw) (t : Sˣ)
+    (B : OracleAdv (OEv Pw W) (OOut W K) Bool) :
+    (OracleAdv.run (OracleAdv.flagWhen (fun _ _ x => UQp G (Function.update td pw₀ t) pw₀ x.2.1)
+        (idealStep G (Function.update td pw₀ t))) B (hInit G, false)).toOuterMeasure
+        {y | y.2.2 = true} ≤
+      (OracleAdv.run (OracleAdv.flagWhen (fun _ _ x => UQp G (Function.update td pw₀ t) pw₀ x.2.1)
+        (idealStep G (Function.update td pw₀ 1))) B (hInit G, false)).toOuterMeasure
+        {y | y.2.2 = true} := by
+  set T₁ := Function.update td pw₀ t
+  set T₂ := Function.update td pw₀ 1
+  have hT : ∀ pw, pw ≠ pw₀ → T₁ pw = T₂ pw := fun pw hpw => by
+    simp only [T₁, T₂, Function.update_of_ne hpw]
+  refine AKE.X3DHSquareGDH.flag_le_of_coupling
+    (fun s d r => (CPaceHops.simWorldD G T₁ (setTd T₁ s) d r).swap)
+    (fun s d r => (CPaceHops.simWorldD G T₂ (setTd T₂ s) d r).swap)
+    (fun s₁ s₂ => setTd T₂ s₁ = setTd T₂ s₂) (fun s => pw₀ ∈ s.1.1.cands)
+    (fun s => UQp G T₁ pw₀ s.1) (fun s => UQp G T₁ pw₀ s.1) ?_ ?_ ?_ ?_ B (hInit G) (hInit G) rfl
+  · intro s d r hs
+    exact (simWorldD_cands_h2 G T₁ (setTd T₁ s) d r).1 pw₀ hs
+  · intro s hs ⟨_, _, _, _, _, _, hc, _⟩
+    exact hc hs
+  · intro s₁ s₂ h hb
+    have : UQp G T₁ pw₀ (setTd T₂ s₂).1 := h ▸ hb
+    exact this
+  · intro s₁ s₂ d r h
+    by_cases hd : pw₀ ∈ s₁.1.1.cands
+    · exact Or.inl ((simWorldD_cands_h2 G T₁ (setTd T₁ s₁) d r).1 pw₀ hd)
+    by_cases he : d = .inr (.h1 pw₀)
+    · left
+      subst he
+      have hc := (simWorldD_frame G T₁ (setTd T₁ s₁) (.inr (.h1 pw₀)) r).2.2.1
+      show pw₀ ∈ (CPaceHops.simWorldD G T₁ (setTd T₁ s₁) (.inr (.h1 pw₀)) r).1.1.1.cands
+      rw [hc]
+      simp only [simStartD, simCoreD, advCoreD]
+      split_ifs with h'
+      · exact h'
+      · simp
+    right
+    have hcong := simWorldD_congr G T₁ T₂ (setTd T₁ s₁) d
+      (fun pw hpw => hT pw fun h => hd (h ▸ hpw))
+      (fun pw hpw => hT pw fun h => he (h ▸ hpw)) r
+    have h₂ : setTd T₂ s₂ = setTd T₂ s₁ := h.symm
+    rw [hcong, h₂, simWorldD_setTd, simWorldD_setTd]
+    exact ⟨rfl, rfl⟩
+
 end UQ
 
 end CatCrypt.Crypto.PAKE.CPaceBadReductions
