@@ -341,6 +341,7 @@ public import CatCryptCore.Crypto.AKE.X3DH.ExtractedCorrespondence
 public import CatCryptCore.Crypto.AKE.X3DH.PassiveG25519
 public import CatCryptCore.Crypto.AKE.X3DH.SurfaceDeps
 public import CatCryptCore.Crypto.AKE.X3DH.SquareCorrespondence
+public import CatCryptCore.Crypto.AKE.PQXDH.SquareCorrespondence
 public import CatCryptCore.Crypto.AKE.PQXDH.Extraction.Pqxdh_haxpipe
 public import CatCryptCore.Crypto.AKE.PQXDH.ExtractedCorrespondence
 public import CatCryptCore.Crypto.AKE.PQXDH.PassiveG25519
@@ -356,6 +357,7 @@ public import CatCryptCore.Crypto.Messaging.SignalStack
 public import CatCryptCore.Crypto.Messaging.SealedSender
 public import CatCryptCore.Crypto.Messaging.SignalStackSealed
 public import CatCryptCore.Crypto.Messaging.SignalStackUC
+public import CatCryptCore.Crypto.Messaging.SignalStackSM
 public import CatCryptCore.Crypto.Messaging.FSAEAD
 public import CatCryptCore.Crypto.Messaging.DoubleRatchet
 public import CatCryptCore.Crypto.Signal.FSAEAD
