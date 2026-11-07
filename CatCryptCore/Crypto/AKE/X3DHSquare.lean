@@ -20,6 +20,12 @@ replaces the initiator's ephemeral key on its way to the responder causes the tw
 different keys. Below, `F_AKE` names this variant. Corruption in `F_AKE` is adaptive; the real
 protocol and the simulator use it statically.
 
+**Algorithms.** `AKEAlg S W` is the record of the algorithms of the protocol: the public key of
+a secret and the inputs of the key derivation computed by the initiator and by the responder.
+`x3dhRealOf A` is the real protocol of the record `A`, with secrets drawn uniformly from `S`;
+X3DH over a group `G : DHGroup S W` is the record `x3dhAlg G` (also the coercion of `G`), and
+`x3dhReal G` is `x3dhRealOf (x3dhAlg G)`.
+
 **Real protocol.** `x3dhReal G` runs X3DH (Marlinspike and Perrin, *The X3DH Key Agreement
 Protocol*, 2016) for every session, over the group `G : DHGroup S W` and with the key-derivation
 function a lazily sampled random function into `K`. The variant:
@@ -56,15 +62,17 @@ The simulator reads no key of `F_AKE` (`simProt_opaque`).
 
 **Results.** The simulator running with `F_AKE` is a system whose steps do not read the heap; it
 is at distance `0` from the oracle system of the game `simGame G` (`simWorld_realizes`). The
-square is the oracle-game bound `x3dh_realizesSim_oracleGame`: `x3dhReal G` realizes `F_AKE`
-behind `x3dhSim G` with bound, at the environment `Z`, the advantage of the oracle adversary
-`OProt.oracle.reduction Z` between `realGame G` and `simGame G`.
+square is the oracle-game bound `x3dh_realizesSim_oracleGame`: `x3dhRealOf (x3dhAlg G)`
+realizes `F_AKE` behind `x3dhSim G` with bound, at the environment `Z`, the advantage of the
+oracle adversary `OProt.oracle.reduction Z` between `realGame G` and `simGame G`.
 
 ## Main definitions
 
 * `Inp`, `aliceInp`, `bobInp`: the inputs of the key derivation.
+* `AKEAlg`, `x3dhAlg`: the record of the algorithms, and its instance at a group.
 * `RSt`, `RAEv`, `ROut`: the state and the adversary port of the real protocol.
-* `realGame`, `x3dhReal`: the real protocol as an oracle game and as a system.
+* `realGame`, `x3dhRealOf`: the real protocol of a record as an oracle game and as a system.
+* `x3dhReal`: the real X3DH protocol over a group, `x3dhRealOf (x3dhAlg G)`.
 * `simStart`: the start of an activation of the simulator, a computation over uniform draws of
   the secrets and of the key-derivation values (`ltStep`, `roStep`, `deliver`).
 * `simProt`, `x3dhSim`: the simulator.
@@ -139,6 +147,36 @@ theorem aliceInp_eq_bobInp (sid : SessionId) (a b : PartyId) (ikA ek ikB spkB op
 
 end Inputs
 
+/-! ## The algorithms of the protocol -/
+
+/-- **The algorithms of an X3DH key exchange.** Secrets are scalars `S`, public keys are values
+`W`, and a party computes the input of the key derivation from its own secrets and the public
+keys of its peer:
+* `pub` is the public key of a secret;
+* `initInp sid a b ik ek IKB SPKB OPKB` is the input of the initiator `a` with identity secret
+  `ik` and ephemeral secret `ek`, for the responder `b` with public identity key `IKB`, signed
+  prekey `SPKB` and one-time prekey `OPKB`;
+* `respInp sid a b IKA E ik spk opk` is the input of the responder `b` with identity secret `ik`,
+  signed-prekey secret `spk` and one-time-prekey secret `opk`, for the initiator `a` with public
+  identity key `IKA`, on the ephemeral public key `E`.
+The real protocol `x3dhRealOf` is defined for every record; the secrets are drawn uniformly
+from `S`. X3DH over a group `G` is the record `x3dhAlg G`. -/
+structure AKEAlg (S W : Type) where
+  /-- The public key of a secret. -/
+  pub : S → W
+  /-- The input of the key derivation of the initiator. -/
+  initInp : SessionId → PartyId → PartyId → S → S → W → W → W → Inp W
+  /-- The input of the key derivation of the responder. -/
+  respInp : SessionId → PartyId → PartyId → W → W → S → S → S → Inp W
+
+/-- **The algorithms of X3DH over the group `G`**: the public key `g^s`, and the inputs
+`aliceInp G` and `bobInp G`. -/
+abbrev x3dhAlg {S W : Type} [Field S] (G : DHGroup S W) : AKEAlg S W :=
+  ⟨G.pub, aliceInp G, bobInp G⟩
+
+/-- A group gives the algorithms of X3DH over it. -/
+instance {S W : Type} [Field S] : Coe (DHGroup S W) (AKEAlg S W) := ⟨x3dhAlg⟩
+
 /-! ## The real protocol -/
 
 /-- The state of the real protocol: the session records, corrupt parties and notices as in
@@ -190,8 +228,7 @@ inductive ROut (S W K : Type) where
 
 section Real
 
-variable {S W K : Type} [Field S] [Fintype S] [DecidableEq W] [Fintype K]
-  [Nonempty K]
+variable {S W K : Type} [Fintype S] [Nonempty S] [DecidableEq W] [Fintype K] [Nonempty K]
 
 /-- The long-term secrets of the party `pid`, sampled at their first use. -/
 noncomputable def ltAt (s : RSt S W K) (pid : PartyId) : PMF ((S × S) × RSt S W K) :=
@@ -219,10 +256,10 @@ noncomputable def realHon (s : RSt S W K) : HEv → PMF (HOut K × RSt S W K)
     else PMF.pure (.ok, s)
   | .getKey sid pid => PMF.pure (.key (keyOf s.st (sid, pid)), s)
 
-variable (G : DHGroup S W)
+variable (A : AKEAlg S W)
 
 /-- The public session key of the session `x`. -/
-def ephPubOf (s : RSt S W K) (x : Inst) : Option W := (s.eph x).map G.pub
+def ephPubOf (s : RSt S W K) (x : Inst) : Option W := (s.eph x).map A.pub
 
 /-- The one-time prekey of the responder `b` in `sid`, if `b` has a responder session there. -/
 def opkOf (s : RSt S W K) (sid : SessionId) (b : PartyId) : Option S :=
@@ -231,7 +268,7 @@ def opkOf (s : RSt S W K) (sid : SessionId) (b : PartyId) : Option S :=
   | none => none
 
 /-- The completion of the initiator session `x = (sid, a)`: its key is the key derivation at
-`aliceInp`. -/
+the initiator's input `A.initInp`. -/
 noncomputable def completeStep (s : RSt S W K) (x : Inst) : PMF (ROut S W K × RSt S W K) :=
   match s.st.recs x, s.eph x with
   | some r, some ek =>
@@ -239,21 +276,21 @@ noncomputable def completeStep (s : RSt S W K) (x : Inst) : PMF (ROut S W K × R
     | some opk =>
       if r.role = .initiator ∧ r.key.isNone then
         (ltAt s x.2).bind fun la => (ltAt la.2 r.peer).bind fun lb =>
-          (roAt lb.2.ro (aliceInp G x.1 x.2 r.peer la.1.1 ek (G.pub lb.1.1) (G.pub lb.1.2)
-            (G.pub opk))).map fun p => (.ack, keyed lb.2 x r p.1 p.2)
+          (roAt lb.2.ro (A.initInp x.1 x.2 r.peer la.1.1 ek (A.pub lb.1.1) (A.pub lb.1.2)
+            (A.pub opk))).map fun p => (.ack, keyed lb.2 x r p.1 p.2)
       else PMF.pure (.ack, s)
     | none => PMF.pure (.ack, s)
   | _, _ => PMF.pure (.ack, s)
 
 /-- The completion of the responder session `x = (sid, b)` on the ephemeral public key `e`: its
-key is the key derivation at `bobInp`. -/
+key is the key derivation at the responder's input `A.respInp`. -/
 noncomputable def sendStep (s : RSt S W K) (x : Inst) (e : W) : PMF (ROut S W K × RSt S W K) :=
   match s.st.recs x, s.eph x with
   | some r, some opk =>
     if r.role = .responder ∧ r.key.isNone then
       (ltAt s x.2).bind fun lb => (ltAt lb.2 r.peer).bind fun la =>
-        (roAt la.2.ro (bobInp G x.1 r.peer x.2 (G.pub la.1.1) e lb.1.1 lb.1.2 opk)).map fun p =>
-          (.ack, keyed la.2 x r p.1 p.2)
+        (roAt la.2.ro (A.respInp x.1 r.peer x.2 (A.pub la.1.1) e lb.1.1 lb.1.2 opk)).map
+          fun p => (.ack, keyed la.2 x r p.1 p.2)
     else PMF.pure (.ack, s)
   | _, _ => PMF.pure (.ack, s)
 
@@ -267,32 +304,39 @@ noncomputable def corruptRStep (s : RSt S W K) (pid : PartyId) :
 noncomputable def realAdv (s : RSt S W K) : RAEv W → PMF (ROut S W K × RSt S W K)
   | .idle => PMF.pure (.ack, s)
   | .poll => PMF.pure (.notice (pollStep s.st).2, { s with st := (pollStep s.st).1 })
-  | .pub pid => (ltAt s pid).map fun l => (.pub (G.pub l.1.1) (G.pub l.1.2), l.2)
-  | .ephPub sid pid => PMF.pure (.eph (ephPubOf G s (sid, pid)), s)
+  | .pub pid => (ltAt s pid).map fun l => (.pub (A.pub l.1.1) (A.pub l.1.2), l.2)
+  | .ephPub sid pid => PMF.pure (.eph (ephPubOf A s (sid, pid)), s)
   | .corrupt pid => corruptRStep s pid
-  | .complete sid pid => completeStep G s (sid, pid)
-  | .send sid pid e => sendStep G s (sid, pid) e
+  | .complete sid pid => completeStep A s (sid, pid)
+  | .send sid pid e => sendStep A s (sid, pid) e
   | .kdf x => (roAt s.ro x).map fun p => (.hash p.1, { s with ro := p.2 })
 
 /-- The initial state of the real protocol. -/
 def rInit : RSt S W K := ⟨initSt, fun _ => none, fun _ => none, []⟩
 
-/-- **The real X3DH game**: a trivial key, and the oracle is the step of the real protocol. -/
+/-- **The real game of the algorithms `A`**: a trivial key, and the oracle is the step of the
+real protocol. -/
 noncomputable def realGame : KeyedGame (HEv ⊕ RAEv W) (HOut K ⊕ ROut S W K) where
   Key := Unit
   State := RSt S W K
   keyDist := PMF.pure ()
   oracle _ s
     | .inl h => (realHon s h).map fun p => (.inl p.1, p.2)
-    | .inr a => (realAdv G s a).map fun p => (.inr p.1, p.2)
+    | .inr a => (realAdv A s a).map fun p => (.inr p.1, p.2)
   init := rInit
 
-/-- **The real X3DH protocol** as a system: each event is a query to the oracle of
-`realGame G`. -/
-noncomputable def x3dhReal :=
-  (OProt.oracle (Q := HEv ⊕ RAEv W) (A := HOut K ⊕ ROut S W K)).sys (realGame G)
+/-- **The real protocol of the algorithms `A`** as a system: each event is a query to the oracle
+of `realGame A`. -/
+noncomputable def x3dhRealOf :=
+  (OProt.oracle (Q := HEv ⊕ RAEv W) (A := HOut K ⊕ ROut S W K)).sys (realGame A)
 
 end Real
+
+/-- **The real X3DH protocol** over the group `G`: the real protocol of the algorithms
+`x3dhAlg G`. -/
+noncomputable def x3dhReal {S W K : Type} [Field S] [Fintype S] [DecidableEq W] [Fintype K]
+    [Nonempty K] (G : DHGroup S W) :=
+  x3dhRealOf (K := K) (x3dhAlg G)
 
 /-! ## The simulator -/
 
@@ -598,14 +642,16 @@ theorem simWorld_realizes :
   pureGame_realizes _ _
 
 /-- **X3DH realizes `F_AKE` behind `x3dhSim`, in oracle-game form.** For every environment `Z`,
-the distance between the real X3DH protocol and the simulator running with `F_AKE` is at most
-the advantage of the oracle adversary `OProt.oracle.reduction Z` between the real game
-`realGame G` and the simulated game `simGame G`. -/
+the distance between the real protocol of the algorithms `x3dhAlg G` (the real X3DH protocol
+`x3dhReal G`) and the simulator running with `F_AKE` is at most the advantage of the oracle
+adversary `OProt.oracle.reduction Z` between the real game `realGame G` and the simulated game
+`simGame G`. -/
 theorem x3dh_realizesSim_oracleGame :
-    RealizesSim (x3dhReal (K := K) G) (F_AKE (SPComp.sample K) true) (x3dhSim G)
+    RealizesSim (x3dhRealOf (K := K) (x3dhAlg G)) (F_AKE (SPComp.sample K) true) (x3dhSim G)
       (fun _ Z => KeyedGame.advantage (realGame G) (simGame G) (OProt.oracle.reduction Z)) :=
   fun ζ Z => le_of_le_of_eq
-    ((Realizes.trans (Realizes.ofOracleGame OProt.oracle (realGame G) (simGame G))
+    ((Realizes.trans
+      (Realizes.ofOracleGame OProt.oracle (realGame (K := K) (x3dhAlg G)) (simGame G))
       (simWorld_realizes G)) ζ Z) (add_zero _)
 
 end SimWorld
