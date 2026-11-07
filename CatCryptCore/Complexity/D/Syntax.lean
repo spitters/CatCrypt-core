@@ -43,19 +43,21 @@ constructor has no recursive position, so that `mu S` is inhabited (`Val.default
 inductive type with a constructor without recursive argument has such a signature, its
 constructors reordered. Lists, binary trees (`some .bool`), oracle trees whose answers range
 over a finite ground type `r` (`some r`) and strategies with challenges in a finite ground type
-are instances; `list` is kept as a type of its own. The values of `mu S` are the W-type of the
-shapes and positions of `S` (`Sig.den`).
+are instances; `list` is kept as a type of its own. The values of `mu S` are the W-type whose
+shapes are a constructor `c : S.Ctor` with a value of its field (`S.Fld c`) and whose positions
+are those of the constructor (`S.Pos c`), so that the positions of two nodes of one constructor
+are the same type (`Sig.den`). A field may hold functions: the logical relation and the
+translation relate two nodes of one constructor by their fields and their children
+(`WLift`).
 
-* `con hS x`: the node of the constructor that the argument `x : S.conTy (mu S)` selects (a
+* `con x`: the node of the constructor that the argument `x : S.conTy (mu S)` selects (a
   sum over the constructors, the first innermost); a constructor with positions `some f` takes
   its field and the table of its children, a value of `pi f fun _ => mu S`.
-* `fold hS g x`: the eliminator at a constant motive `c`, a paramorphism: `g : S.stepsTy (mu S)
+* `fold g x`: the eliminator at a constant motive `c`, a paramorphism: `g : S.stepsTy (mu S)
   c` pairs one step function per constructor, which receives the field, and for positions
   `some f` the table of the children and the recursive results as a function of the
   positions. A case
   analysis on a value of `mu S` is the `fold` whose steps do not apply the recursive results.
-
-Both require a first-order signature (`hS : S.FO`): the fields of a node are data.
 
 ## Dependent products and sums
 
@@ -113,8 +115,9 @@ row G3d):
 * `Ty`, `Val`: the types and their values; a function value is a Lean function
   `Val a → CTree (Val b)` into costed trees; `Ty.pi`, `Ty.sig`: dependent products and sums over
   a finite ground index.
-* `Sig`, `RecPos`, `Sig.den`, `Val.default`: signatures of inductive types, their recursive
-  positions, shapes and positions, and an inhabitant of every type.
+* `Sig`, `RecPos`, `Sig.Ctor`, `Sig.Pos`, `Sig.Fld`, `Sig.den`, `Val.default`: signatures of
+  inductive types, their recursive positions, their constructors with their positions and
+  fields, shapes and positions, and an inhabitant of every type.
 * `Sig.conTy`, `Sig.stepsTy`: the argument type of the constructors and the type of the step
   functions of an eliminator.
 * `Var`, `Env`: variables and environments.
@@ -210,11 +213,24 @@ def RecPos : Option FTy → Type
   | none => Empty
   | some f => f.den
 
+/-- The constructors of a signature: those of the prefix, and the last one. -/
+def Sig.Ctor : Sig → Type
+  | .base _ => Unit
+  | .ext S _ _ => Sig.Ctor S ⊕ Unit
+
+/-- The recursive positions of a constructor of a signature: they depend on the constructor
+only. -/
+def Sig.Pos : (S : Sig) → S.Ctor → Type
+  | .base _, _ => Empty
+  | .ext S _ _, .inl c => Sig.Pos S c
+  | .ext _ _ k, .inr _ => RecPos k
+
 mutual
 
 /-- The values of a type. A function value is a Lean function into costed trees; the
 evaluator produces such functions only from `lam`, so their costs are those of the bodies. The
-values of `mu S` are the W-type of the shapes and positions of `S` (`Sig.den`). -/
+values of `mu S` are the W-type whose shapes are a constructor with the value of its field and
+whose positions are those of the constructor (`Sig.den`). -/
 def Val : Ty → Type
   | .base f => f.den
   | .nat => ℕ
@@ -222,17 +238,22 @@ def Val : Ty → Type
   | .sum a b => Val a ⊕ Val b
   | .arr a b => Val a → CTree (Val b)
   | .list a => List (Val a)
-  | .mu S => WType (Sig.den S).2
+  | .mu S => WType (fun s : (c : S.Ctor) × Sig.Fld S c => S.Pos s.1)
   | .pi f B => (j : f.den) → Val (B j)
   | .sig f B => (j : f.den) × Val (B j)
 
-/-- The shapes and positions of a signature: a shape is a constructor with the value of its
-field (a sum over the constructors), its positions those of the constructor. -/
-def Sig.den : Sig → (A : Type) × (A → Type)
-  | .base a => ⟨Val a, fun _ => Empty⟩
-  | .ext S a k => ⟨(Sig.den S).1 ⊕ Val a, Sum.elim (Sig.den S).2 fun _ => RecPos k⟩
+/-- The values of the field of a constructor of a signature. -/
+def Sig.Fld : (S : Sig) → S.Ctor → Type
+  | .base a, _ => Val a
+  | .ext S _ _, .inl c => Sig.Fld S c
+  | .ext _ a _, .inr _ => Val a
 
 end
+
+/-- The shapes and positions of a signature: a shape is a constructor with the value of its
+field, its positions those of the constructor. -/
+def Sig.den (S : Sig) : (A : Type) × (A → Type) :=
+  ⟨(c : S.Ctor) × S.Fld c, fun s => S.Pos s.1⟩
 
 mutual
 
@@ -249,9 +270,9 @@ def Val.default : (τ : Ty) → Val τ
   | .sig f B => ⟨(FTy.instInhabited f).default, Val.default (B (FTy.instInhabited f).default)⟩
 
 /-- A shape of a signature without positions: the first constructor at a value of its field. -/
-def Sig.leaf : (S : Sig) → (x : (Sig.den S).1) × ((Sig.den S).2 x → Empty)
-  | .base a => ⟨Val.default a, id⟩
-  | .ext S _ _ => ⟨Sum.inl (Sig.leaf S).1, (Sig.leaf S).2⟩
+def Sig.leaf : (S : Sig) → (x : (c : S.Ctor) × S.Fld c) × (S.Pos x.1 → Empty)
+  | .base a => ⟨⟨(), Val.default a⟩, id⟩
+  | .ext S _ _ => ⟨⟨.inl (Sig.leaf S).1.1, (Sig.leaf S).1.2⟩, (Sig.leaf S).2⟩
 
 end
 
@@ -469,10 +490,10 @@ inductive Tm : List Ty → Ty → Type where
   | fail {Γ : List Ty} {τ : Ty} : Tm Γ τ
   /-- A constructor of `mu S`, from the argument of its constructor type `S.conTy (mu S)`; the
   children at its recursive positions are given by a table over the positions. -/
-  | con {Γ : List Ty} {S : Sig} (hS : S.FO) : Tm Γ (S.conTy (.mu S)) → Tm Γ (.mu S)
+  | con {Γ : List Ty} {S : Sig} : Tm Γ (S.conTy (.mu S)) → Tm Γ (.mu S)
   /-- The eliminator of `mu S` at the constant motive `c`, with one step function per
   constructor; a step receives the field, the children and the recursive results. -/
-  | fold {Γ : List Ty} {S : Sig} {c : Ty} (hS : S.FO) :
+  | fold {Γ : List Ty} {S : Sig} {c : Ty} :
       Tm Γ (S.stepsTy (.mu S) c) → Tm Γ (.mu S) → Tm Γ c
   /-- The table of the components `ts j`, one at every element `j` of the index. -/
   | ptab {Γ : List Ty} {f : FTy} {B : f.den → Ty} : ((j : f.den) → Tm Γ (B j)) → Tm Γ (.pi f B)
@@ -538,8 +559,8 @@ def Tm.rename {Γ Δ : List Ty} : {τ : Ty} → Tm Γ τ → Ren Γ Δ → Tm Δ
   | _, .set n f x, r => .set n f (x.rename r)
   | _, .query d r' x, r => .query d r' (x.rename r)
   | _, .fail, _ => .fail
-  | _, .con hS x, r => .con hS (x.rename r)
-  | _, .fold hS g x, r => .fold hS (g.rename r) (x.rename r)
+  | _, .con x, r => .con (x.rename r)
+  | _, .fold g x, r => .fold (g.rename r) (x.rename r)
   | _, .ptab ts, r => .ptab fun j => (ts j).rename r
   | _, .papp (B := B) t j, r => .papp (t.rename r) j
   | _, .spair j x, r => .spair j (x.rename r)

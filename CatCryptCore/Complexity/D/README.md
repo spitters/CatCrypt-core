@@ -193,11 +193,15 @@ constructs (`tabDep_stepN` for the table), and with it `Tm.cost_le_dt`, `Tm.dt_r
 ## Inductive types
 
 `Ty.mu S` is the polynomial inductive type of a signature `S : Sig`: a list of constructors,
-each with a first-order field type and recursive positions that are none or indexed by a finite
-ground type, the first constructor without recursive position. Its values are the W-type of
-its shapes and positions (`Sig.den`). Lists (kept as the type `list` of their own), binary
-trees, oracle trees with answers in a finite ground type and strategies with challenges in a
-finite ground type are instances.
+each with a field type and recursive positions that are none or indexed by a finite ground
+type, the first constructor without recursive position. Its values are the W-type whose shapes
+are a constructor `c : S.Ctor` with a value of its field (`S.Fld c`) and whose positions are
+those of the constructor (`S.Pos c`). A field may hold functions: the logical relation `ValRel`
+and the relation `Sim` of the translation are, at `mu S`, the lifting `WLift` over the W-type
+(two nodes of one constructor with related fields and related children), and the translated
+values `Ty.hat (mu S)` are the W-type of the translated fields (`Sig.hatF`). Lists (kept as the
+type `list` of their own), binary trees, oracle trees with answers in a finite ground type and
+strategies with challenges in a finite ground type are instances.
 
 * `con`: a node from the argument of its constructor; the children of a constructor with
   positions `some f` are a table, a value of the dependent product `pi f fun _ => mu S`, whose

@@ -284,7 +284,7 @@ theorem valRel_eraseArr : (τ : Ty) → τ.FOArr → (v : Val τ) → ValRel τ 
   | .prod a b, h, v => (ValRel.iff_eq_of_FO (.prod a b) h v v).2 rfl
   | .sum a b, h, v => (ValRel.iff_eq_of_FO (.sum a b) h v v).2 rfl
   | .list a, h, v => (ValRel.iff_eq_of_FO (.list a) h v v).2 rfl
-  | .mu _, _, _ => rfl
+  | .mu S, h, v => (ValRel.iff_eq_of_FO (.mu S) h v v).2 rfl
   | .pi f B, h, v => (ValRel.iff_eq_of_FO (.pi f B) h v v).2 rfl
   | .sig f B, h, v => (ValRel.iff_eq_of_FO (.sig f B) h v v).2 rfl
 

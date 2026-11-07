@@ -186,9 +186,9 @@ theorem le {t : Tm Γ τ} {v : Val τ} {n n' c c' : ℕ} (hn : n ≤ n') (hc : c
 
 /-- A constructor of an inductive type: the evaluation of its argument, the node at no cost of
 its own, its children being the table in the argument. -/
-theorem con {S : Sig} (hS : S.FO) {x : Tm Γ (S.conTy (.mu S))} {v : Val (S.conTy (.mu S))}
+theorem con {S : Sig} {x : Tm Γ (S.conTy (.mu S))} {v : Val (S.conTy (.mu S))}
     {n c : ℕ} (hx : DSim K n c x ρ v) :
-    DSim K n c (.con hS x) ρ (conAt (X := .mu S) S (fun a k => (WType.mk a k : Val (.mu S))) v) := by
+    DSim K n c (.con x) ρ (conAt (X := .mu S) S (fun a k => (WType.mk a k : Val (.mu S))) v) := by
   obtain ⟨mx, hmx, lx⟩ := hx
   refine ⟨mx, ?_, lx⟩
   show (x.eval ρ).bind (fun v =>
@@ -201,7 +201,7 @@ children, the step is a leaf of `F` within `K` times `C` at the node, the elimin
 the allowance of its argument and `K` times one plus the charge of its argument plus `C` at the
 value. With `C` the cost of a structural recursion of `derive_timed` (one per call plus the
 body), the node condition is the step equation of that cost. -/
-theorem fold (hK : 1 ≤ K) {S : Sig} {c : Ty} (hS : S.FO) {g : Tm Γ (S.stepsTy (.mu S) c)}
+theorem fold (hK : 1 ≤ K) {S : Sig} {c : Ty} {g : Tm Γ (S.stepsTy (.mu S) c)}
     {x : Tm Γ (.mu S)} {gv : Val (S.stepsTy (.mu S) c)} {w : Val (.mu S)} {n cx : ℕ}
     (hg : CEq g ρ 0 gv) (hx : DSim K n cx x ρ w) {F : WType (Sig.den S).2 → Val c}
     {C : WType (Sig.den S).2 → ℕ}
@@ -209,7 +209,7 @@ theorem fold (hK : 1 ≤ K) {S : Sig} {c : Ty} (hS : S.FO) {g : Tm Γ (S.stepsTy
       (∀ j, ∃ m, rec j = stepN CTree.tick m (.ret (F (kids j))) ∧ m ≤ K * C (kids j)) →
         ∃ m, stepAt S gv a kids rec = stepN CTree.tick m (.ret (F ⟨a, kids⟩)) ∧
           m ≤ K * C ⟨a, kids⟩) :
-    DSim K n (1 + cx + C w) (.fold hS g x) ρ (F w) := by
+    DSim K n (1 + cx + C w) (.fold g x) ρ (F w) := by
   have key : ∀ w : WType (Sig.den S).2,
       ∃ m, foldW gv w = stepN CTree.tick m (.ret (F w)) ∧ m ≤ K * C w := by
     intro w
@@ -230,12 +230,12 @@ the eliminator is a leaf of `F t` within `K` times the charge `C t` (a statement
 induction on `t`, whose step at a constructor is the node condition of the companion `C`), the
 eliminator at the encoding of `t` is within the allowance of its argument and `K` times one plus
 the charge of its argument plus `C t`. -/
-theorem foldEnc (hK : 1 ≤ K) {S : Sig} {c : Ty} (hS : S.FO) {g : Tm Γ (S.stepsTy (.mu S) c)}
+theorem foldEnc (hK : 1 ≤ K) {S : Sig} {c : Ty} {g : Tm Γ (S.stepsTy (.mu S) c)}
     {x : Tm Γ (.mu S)} {gv : Val (S.stepsTy (.mu S) c)} {T : Type} {enc : T → Val (.mu S)}
     {F : T → Val c} {C : T → ℕ} {t : T} {n cx : ℕ} (hg : CEq g ρ 0 gv)
     (hx : DSim K n cx x ρ (enc t))
     (hF : ∀ t, ∃ m, foldW gv (enc t) = stepN CTree.tick m (.ret (F t)) ∧ m ≤ K * C t) :
-    DSim K n (1 + cx + C t) (.fold hS g x) ρ (F t) := by
+    DSim K n (1 + cx + C t) (.fold g x) ρ (F t) := by
   obtain ⟨mx, hmx, lx⟩ := hx
   obtain ⟨m, hm, lm⟩ := hF t
   refine ⟨mx + (m + 1), ?_, ?_⟩

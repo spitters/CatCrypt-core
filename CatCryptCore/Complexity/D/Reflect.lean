@@ -121,10 +121,11 @@ the constructors, one without recursive argument first and the others in their o
 fields of a constructor (its arguments that are not recursive) are the product of their D
 types; its recursive arguments are one family of children, indexed by `unit` (one child),
 `bool` (two: the first at `false`) or `fin (n - 1)` (`n ≥ 3`, read by `pick`), or a function
-`k : R → T` indexed by the finite ground type of `R`. The command defines `T.dSig`, the proof
-`T.dSig_fo` that its fields are first-order, and the encoding `T.dEnc : T → Val (mu T.dSig)` by
-`T.rec`: a constructor is the node (`Sig.node`) of its encoded fields and the table of the
-encodings of its children. A value of `T` in a parameter, a result or a field is its encoding,
+`k : R → T` indexed by the finite ground type of `R`. The command defines `T.dSig` and the
+encoding `T.dEnc : T → Val (mu T.dSig)` by `T.rec`: a constructor is the node (`Sig.node`) of
+its encoded fields and the table of the encodings of its children. A field holding a data
+function `f : A → B` is encoded by its pure closure `fun v => .ret (f v)` and applied in a step as
+a parameter is. A value of `T` in a parameter, a result or a field is its encoding,
 as an `Option` is `optEnc`; a type parameter `α` of `T` is a finite ground type `αF` of these
 definitions (`T.dEnc αF : T αF.den → …`).
 
@@ -151,7 +152,8 @@ The rules:
 
 A recursion over a type outside the class (`List`, `ℕ`), a mutual recursion, a recursive call
 on a value that is not a child and a match on the recursion argument with nested patterns are
-refused with messages naming them; a field holding a function is refused (`Sig.FO`). The cost
+refused with messages naming them, and so are a field holding a computation, a field of a
+curried function type and a constructor application whose field holds a function. The cost
 theorem is not derived for the constructs `con` and `fold`.
 
 ## Main definitions
@@ -375,9 +377,9 @@ theorem iter {c : Ty} {n : Tm Γ .nat} {f : Tm Γ (.arr c c)} {i : Tm Γ c} {k :
 
 /-- `Den` at a constructor: the node its constructor builds from the denotation of the
 argument, the children of a constructor with positions being the table in the argument. -/
-theorem con {S : Sig} (hS : S.FO) {x : Tm Γ (S.conTy (.mu S))} {v : Val (S.conTy (.mu S))}
+theorem con {S : Sig} {x : Tm Γ (S.conTy (.mu S))} {v : Val (S.conTy (.mu S))}
     (hx : Den x ρ v) :
-    Den (.con hS x) ρ (conAt (X := .mu S) S (fun a k => (WType.mk a k : Val (.mu S))) v) := by
+    Den (.con x) ρ (conAt (X := .mu S) S (fun a k => (WType.mk a k : Val (.mu S))) v) := by
   show (x.den ρ).bind (fun v =>
     .ret (conAt (X := .mu S) S (fun a k => (WType.mk a k : Val (.mu S))) v)) = _
   rw [hx, CTree.bind_ret]
@@ -385,11 +387,11 @@ theorem con {S : Sig} (hS : S.FO) {x : Tm Γ (S.conTy (.mu S))} {v : Val (S.conT
 /-- `Den` at the eliminator, by induction on the value: when the step functions denote the
 recursion `F` at every node whose recursive results are the values of `F` at its children, the
 eliminator denotes `F` at the value. -/
-theorem fold {S : Sig} {c : Ty} (hS : S.FO) {g : Tm Γ (S.stepsTy (.mu S) c)} {x : Tm Γ (.mu S)}
+theorem fold {S : Sig} {c : Ty} {g : Tm Γ (S.stepsTy (.mu S) c)} {x : Tm Γ (.mu S)}
     {gv : Val (S.stepsTy (.mu S) c)} {w : Val (.mu S)} (hg : Den g ρ gv) (hx : Den x ρ w)
     {F : WType (Sig.den S).2 → Val c}
     (hF : ∀ a kids, stepAt S gv a kids (fun j => .ret (F (kids j))) = .ret (F ⟨a, kids⟩)) :
-    Den (.fold hS g x) ρ (F w) := by
+    Den (.fold g x) ρ (F w) := by
   have key : ∀ w : WType (Sig.den S).2, foldW gv w = .ret (F w) := by
     intro w
     induction w with
@@ -404,20 +406,20 @@ theorem fold {S : Sig} {c : Ty} (hS : S.FO) {g : Tm Γ (S.stepsTy (.mu S) c)} {x
 /-- `Den` at the eliminator over the encoded values of a type `T`: when the eliminator at the
 encoding `enc t` of every `t : T` is the leaf `F t` (a statement proved by induction on `t`), the
 eliminator at the encoding of `t` denotes `F t`. -/
-theorem foldEnc {S : Sig} {c : Ty} (hS : S.FO) {g : Tm Γ (S.stepsTy (.mu S) c)}
+theorem foldEnc {S : Sig} {c : Ty} {g : Tm Γ (S.stepsTy (.mu S) c)}
     {x : Tm Γ (.mu S)} {gv : Val (S.stepsTy (.mu S) c)} {T : Type} {enc : T → Val (.mu S)}
     {F : T → Val c} {t : T} (hg : Den g ρ gv) (hx : Den x ρ (enc t))
-    (hF : ∀ t, foldW gv (enc t) = .ret (F t)) : Den (.fold hS g x) ρ (F t) := by
+    (hF : ∀ t, foldW gv (enc t) = .ret (F t)) : Den (.fold g x) ρ (F t) := by
   show (g.den ρ).bind (fun gv => (x.den ρ).bind fun w => foldW gv w) = _
   rw [hg, CTree.bind_ret, hx, CTree.bind_ret]
   exact hF t
 
 /-- `Den` at the eliminator at a function motive applied to an argument: the eliminator at the
 value `w` is a leaf whose function, applied to the value of the argument, is the leaf `v`. -/
-theorem foldApp {S : Sig} {a b : Ty} (hS : S.FO) {g : Tm Γ (S.stepsTy (.mu S) (.arr a b))}
+theorem foldApp {S : Sig} {a b : Ty} {g : Tm Γ (S.stepsTy (.mu S) (.arr a b))}
     {x : Tm Γ (.mu S)} {z : Tm Γ a} {gv : Val (S.stepsTy (.mu S) (.arr a b))} {w : Val (.mu S)}
     {u : Val a} {v : Val b} (hg : Den g ρ gv) (hx : Den x ρ w) (hz : Den z ρ u)
-    (h : (foldW gv w).bind (fun G => G u) = .ret v) : Den (.app (.fold hS g x) z) ρ v := by
+    (h : (foldW gv w).bind (fun G => G u) = .ret v) : Den (.app (.fold g x) z) ρ v := by
   show (((g.den ρ).bind fun gv => (x.den ρ).bind fun w => foldW gv w)).bind
     (fun G => (z.den ρ).bind fun u => G u) = _
   rw [hg, CTree.bind_ret, hx, CTree.bind_ret, hz]
@@ -796,13 +798,13 @@ theorem decBool {x : Tm Γ .bool} {c : ℕ} {b : Bool} (hx : CEq x ρ c b) :
 results are leaves of the values of `F` after `C` ticks at the children the step is a leaf of
 `F` after `C` ticks at the node, the eliminator costs the step functions, the argument, one
 step and `C` at the value. -/
-theorem fold {S : Sig} {c : Ty} (hS : S.FO) {g : Tm Γ (S.stepsTy (.mu S) c)} {x : Tm Γ (.mu S)}
+theorem fold {S : Sig} {c : Ty} {g : Tm Γ (S.stepsTy (.mu S) c)} {x : Tm Γ (.mu S)}
     {cg cx : ℕ} {gv : Val (S.stepsTy (.mu S) c)} {w : Val (.mu S)} (hg : CEq g ρ cg gv)
     (hx : CEq x ρ cx w) {F : WType (Sig.den S).2 → Val c} {C : WType (Sig.den S).2 → ℕ}
     (hF : ∀ a kids (rec : (Sig.den S).2 a → CTree (Val c)),
       (∀ j, rec j = stepN CTree.tick (C (kids j)) (.ret (F (kids j)))) →
         stepAt S gv a kids rec = stepN CTree.tick (C ⟨a, kids⟩) (.ret (F ⟨a, kids⟩))) :
-    CEq (.fold hS g x) ρ (cg + (cx + (C w + 1))) (F w) := by
+    CEq (.fold g x) ρ (cg + (cx + (C w + 1))) (F w) := by
   have key : ∀ w : WType (Sig.den S).2,
       foldW gv w = stepN CTree.tick (C w) (.ret (F w)) := by
     intro w
@@ -1122,7 +1124,8 @@ recursive arguments as one family of children, indexed by `unit` (one child), `b
 `false` the first, `true` the second) or `fin (n - 1)` (`n ≥ 3`, `pick`), or a function
 `k : R → T` into the type indexed by the finite ground type of `R`. A value is represented by
 its encoding `T.dEnc : T → Val (mu T.dSig)`, defined by `T.rec` as the node (`Sig.node`) of the
-encoded fields and the encodings of the children; `T.dSig_fo` is the first-order signature. A
+encoded fields and the encodings of the children (a field holding a function by its pure
+closure). A
 type parameter of `T` is a finite ground type `αF` of these definitions, at `αF.den`. -/
 
 /-- The recursive arguments of a constructor: none, `n ≥ 1` arguments of the type, or one
@@ -1164,7 +1167,7 @@ structure IndRep where
   ind : Name
   /-- The parameters of the type in the source. -/
   params : Array Expr
-  /-- The arguments of `T.dSig`, `T.dSig_fo` and `T.dEnc`: the finite ground type of a type
+  /-- The arguments of `T.dSig` and `T.dEnc`: the finite ground type of a type
   parameter, any other parameter itself. -/
   dArgs : Array Expr
   /-- The constructors in the order of the signature. -/
@@ -1172,8 +1175,6 @@ structure IndRep where
   deriving Inhabited
 
 def IndRep.sig (r : IndRep) : Expr := mkAppN (mkConst (r.ind ++ `dSig)) r.dArgs
-
-def IndRep.fo (r : IndRep) : Expr := mkAppN (mkConst (r.ind ++ `dSig_fo)) r.dArgs
 
 def IndRep.enc (r : IndRep) : Expr := mkAppN (mkConst (r.ind ++ `dEnc)) r.dArgs
 
@@ -1237,36 +1238,6 @@ def kidTable (sh : RecShape) (V : Expr) (vs : Array Expr) : MetaM Expr := do
   | .fn _ => return vs[0]!
   | .noKids => return default
 
-/-- A proof that the D type `τ` is first-order. -/
-partial def foPf (τ : Expr) : MetaM Expr := do
-  let args := τ.getAppArgs
-  match τ.getAppFn.constName?, args.size with
-  | some ``Ty.base, 1 | some ``Ty.nat, 0 => return mkConst ``True.intro
-  | some ``Ty.prod, 2 | some ``Ty.sum, 2 =>
-    return mkApp4 (mkConst ``And.intro) (mkApp (mkConst ``Ty.FO) args[0]!)
-      (mkApp (mkConst ``Ty.FO) args[1]!) (← foPf args[0]!) (← foPf args[1]!)
-  | some ``Ty.list, 1 => foPf args[0]!
-  | some ``Ty.mu, 1 =>
-    let S := args[0]!
-    let .const sn _ := S.getAppFn | throwError "reflect_d: the signature `{S}` is not generated"
-    let some I := (match sn with | .str I "dSig" => some I | _ => none)
-      | throwError "reflect_d: the signature `{S}` is not generated"
-    return mkAppN (mkConst (I ++ `dSig_fo)) S.getAppArgs
-  | some ``Ty.arr, 2 =>
-    throwError "reflect_d: a field of an inductive type holds a function (`{τ}`); the signatures \
-      of D have first-order fields"
-  | _, _ => throwError "reflect_d: the D type `{τ}` of a field"
-
-/-- A proof that the signature of the constructors `cs` is first-order. -/
-def sigFoPf (cs : Array CtorRep) : MetaM Expr := do
-  let pre := sigPrefixes cs
-  let mut pf ← foPf cs[0]!.fieldTy
-  for i in [1:cs.size] do
-    let c := cs[i]!
-    pf := mkApp4 (mkConst ``And.intro) (mkApp (mkConst ``Sig.FO) pre[i - 1]!)
-      (mkApp (mkConst ``Ty.FO) c.fieldTy) pf (← foPf c.fieldTy)
-  return pf
-
 /-- Whether the constant `c` is declared in the Lean, Std or Mathlib libraries. -/
 def libraryConst (c : Name) : MetaM Bool := do
   let env ← getEnv
@@ -1297,6 +1268,19 @@ where
       let R := valE (mkApp3 (mkConst ``Sig.kidTy) c.fieldTy c.posE X)
       if j == l + 1 then mkApp3 (mkConst ``Sum.inr [0, 0]) L R v
       else mkApp3 (mkConst ``Sum.inl [0, 0]) L R (go l v)
+
+/-- The encoding of a field that holds a data function `A → B` (D type `arr a b`): its pure
+closure `fun v => .ret (f v)`, a function value of D whose application denotes `f`. A field of a
+curried function type is refused. -/
+def fnEncoder? (A τ : Expr) : MetaM (Option Expr) := do
+  let some (a, b) := tyArgs2 `arr τ | return none
+  let .forallE _ dom cod _ ← whnf A | return none
+  if (← whnf cod).isForall then
+    throwError "reflect_d: a field of the curried function type `{A}`; a field holds a function \
+      of one argument"
+  let _ := dom
+  return some (.lam `f A (.lam `v (valE a)
+    (mkApp2 (mkConst ``CTree.ret) (valE b) (mkApp (.bvar 1) (.bvar 0))) .default) .default)
 
 mutual
 
@@ -1398,7 +1382,7 @@ partial def ctorReps (I : Name) (params : Array Expr) : MetaM (Array CtorRep) :=
           let (τ, encd) ← tyOf A
           fields := fields.push i
           fieldTys := fieldTys.push τ
-          fieldEnc := fieldEnc.push (← if encd then encoder? A else pure none)
+          fieldEnc := fieldEnc.push (← if encd then encoder? A else fnEncoder? A τ)
       let shape ← match fnPos with
         | some f =>
           if recs.size != 1 then
@@ -1428,9 +1412,10 @@ partial def withDParams {α : Type} (fuel : Nat) (ty : Expr) (dbs srcs : Array E
       let a := mkApp (mkConst ``FTy.den) f
       withDParams (fuel - 1) (b.instantiate1 a) (dbs.push f) (srcs.push a) k
   else
-    withLocalDeclD n T fun x => withDParams (fuel - 1) (b.instantiate1 x) (dbs.push x) (srcs.push x) k
+    withLocalDeclD n T fun x =>
+      withDParams (fuel - 1) (b.instantiate1 x) (dbs.push x) (srcs.push x) k
 
-/-- Define `I.dSig`, `I.dSig_fo` and `I.dEnc` when they do not exist. -/
+/-- Define `I.dSig` and `I.dEnc` when they do not exist. -/
 partial def ensureIndDecls (I : Name) : MetaM Unit := do
   if (← getEnv).contains (I ++ `dEnc) then return
   let ind ← getConstInfoInduct I
@@ -1440,13 +1425,6 @@ partial def ensureIndDecls (I : Name) : MetaM Unit := do
     addExposedDef (I ++ `dSig) (← mkForallFVars dbs (mkConst ``Sig)) (← mkLambdaFVars dbs pre.back!)
       s!"The signature of D of the inductive type `{I}`, generated by `reflect_d`."
     let r : IndRep := { ind := I, params := srcs, dArgs := dbs, ctors := cs }
-    let foT := mkApp (mkConst ``Sig.FO) r.sig
-    let foV ← mkExpectedTypeHint (← sigFoPf cs) foT
-    let foName := I ++ `dSig_fo
-    let foType ← mkForallFVars dbs foT
-    let foValue ← mkLambdaFVars dbs foV
-    let foDecl : TheoremVal := { name := foName, levelParams := [], type := foType, value := foValue }
-    withExporting (isExporting := (← getEnv).header.isModule) <| addDecl (.thmDecl foDecl)
     let X := r.ty
     let selfTy := r.srcTy
     let motive ← withLocalDeclD `t selfTy fun t => mkLambdaFVars #[t] (valE X)
@@ -1468,7 +1446,8 @@ partial def ensureIndDecls (I : Name) : MetaM Unit := do
           | none => pure fv
           | some f => do
             let tab ← kidTable c.shape (valE X) ihs
-            let piTy := mkApp2 (mkConst ``Ty.pi) f (.lam `_ (mkApp (mkConst ``FTy.den) f) X .default)
+            let piTy :=
+              mkApp2 (mkConst ``Ty.pi) f (.lam `_ (mkApp (mkConst ``FTy.den) f) X .default)
             pure <| mkApp4 (mkConst ``Prod.mk [0, 0]) (valE c.fieldTy) (valE piTy) fv tab
         mkLambdaFVars xs (mkApp2 (mkConst ``Sig.node) r.sig (injVal cs pre X j payload))
       minors := minors.set! c.declIdx m
@@ -2178,6 +2157,9 @@ partial def goCon (ctx : Ctx) (e : Expr) (r : IndRep) (c : CtorRep) (args : Arra
   let np := r.params.size
   unless args.size == np + c.arity do fail m!"the partial application `{e}` of a constructor"
   let cargs := args.extract np args.size
+  if c.fieldTys.any (fun τ => (tyArgs2 `arr τ).isSome) then
+    fail m!"the constructor application `{e}`, whose field holds a function: a function of the \
+      source is not its pure closure in D by definition"
   let X := r.ty
   -- The fields, as a right-nested tuple.
   let rfs ← c.fields.mapM fun i => goP ctx cargs[i]!
@@ -2252,8 +2234,8 @@ partial def goCon (ctx : Ctx) (e : Expr) (r : IndRep) (c : CtorRep) (args : Arra
         return (mkAppN (mkConst ``Tm.inl) #[Γ, L, R, tm'],
           ← ifPf (mkAppOptM ``Den.inl #[none, none, none, R, none, none, pf']))
   let (itm, ipf) ← inj (r.ctors.size - 1) arg.tm arg.pf
-  let tm := mkAppN (mkConst ``Tm.con) #[Γ, r.sig, r.fo, itm]
-  let pf ← ifPf (mkAppOptM ``Den.con #[none, none, r.sig, r.fo, itm, none, ipf])
+  let tm := mkAppN (mkConst ``Tm.con) #[Γ, r.sig, itm]
+  let pf ← ifPf (mkAppOptM ``Den.con #[none, none, r.sig, itm, none, ipf])
   finish ctx e tm X pf
 
 /-- The tuple of the translations `rs`: `()` for none, the right-nested pairs. -/
@@ -2315,9 +2297,18 @@ partial def goIndCases (ctx : Ctx) (e : Expr) (r : IndRep) (major : Expr)
     ctx' := { ctx' with kids := [] }
     for h : l in [0:c.fields.size] do
       let y := xs[c.fields[l]]!
-      let dv := match c.fieldEnc[l]! with | some f => mkApp f y | none => y
+      let dv := match c.fieldEnc[l]! with | some f => (mkApp f y).headBeta | none => y
+      -- A field holding a data function is applied as a parameter: its D value is the pure
+      -- closure of the function, whose application denotes it by definition.
+      let fn? ← match tyArgs2 `arr c.fieldTys[l]! with
+        | some (a, b) => do
+          let h ← withLocalDeclD `v (valE a) fun v => do
+            let w := mkApp2 (mkConst ``CTree.ret) (valE b) (mkApp y v)
+            mkLambdaFVars #[v] (← mkExpectedTypeHint (← mkEqRefl w) (← mkEq (mkApp dv v) w))
+          pure (some (Fn.param dv h default false 1))
+        | none => pure none
       ctx' := ctx'.push { fvar := y.fvarId!, level := ctx.depth, path := pre' ++ paths[l]!,
-                          baseTy := aTy, val := y, dval := dv }
+                          baseTy := aTy, val := y, dval := dv, fn := fn? }
     if let some fr := rec? then
       let some f := c.shape.fty? | pure ()
       let recEn : Entry := { fvar := ← mkFreshFVarId, level := ctx.depth, path := [true, true],
@@ -2361,7 +2352,7 @@ partial def goIndCases (ctx : Ctx) (e : Expr) (r : IndRep) (major : Expr)
     let lamTm := mkAppN (mkConst ``Tm.lam) #[Γ, altTyOf c, cTy, steps[j]!.tm]
     gtm := mkAppN (mkConst ``Tm.pair) #[Γ, gTy, tyC `arr #[altTyOf c, cTy], gtm, lamTm]
     gTy := mkApp3 (mkConst ``Sig.stepsTy) pre[j]! X cTy
-  let foldTm := mkAppN (mkConst ``Tm.fold) #[Γ, S, cTy, r.fo, gtm, rm.tm]
+  let foldTm := mkAppN (mkConst ``Tm.fold) #[Γ, S, cTy, gtm, rm.tm]
   -- The fold of a structural recursion records its source for `link_timed`: the recursive
   -- constant, the position of the recursion argument and, for each other argument, the de Bruijn
   -- index of the D variable that holds it (`-` for an argument that is no variable).
@@ -2427,8 +2418,10 @@ partial def goIndCases (ctx : Ctx) (e : Expr) (r : IndRep) (major : Expr)
                   mkLambdaFVars #[a] (mkApp r.enc (mkApp xs[c.recs[0]!]! a))
               | _ => kidTable c.shape (valE X) (c.recs.map fun i => mkApp r.enc xs[i]!)
             let recV ← withLocalDeclD `j (mkApp (mkConst ``FTy.den) f) fun j =>
-              mkLambdaFVars #[j] (mkAppN (mkConst ``foldW) #[S, cTy, gv, (mkApp encKids j).headBeta])
-            let piTy := mkApp2 (mkConst ``Ty.pi) f (.lam `_ (mkApp (mkConst ``FTy.den) f) X .default)
+              mkLambdaFVars #[j]
+                (mkAppN (mkConst ``foldW) #[S, cTy, gv, (mkApp encKids j).headBeta])
+            let piTy :=
+              mkApp2 (mkConst ``Ty.pi) f (.lam `_ (mkApp (mkConst ``FTy.den) f) X .default)
             let arrTy := tyC `arr #[tyBase f, cTy]
             let inner := mkApp4 (mkConst ``Prod.mk [0, 0]) (valE piTy) (valE arrTy) encKids recV
             pure (mkApp4 (mkConst ``Prod.mk [0, 0]) (valE c.fieldTy)
@@ -2444,12 +2437,12 @@ partial def goIndCases (ctx : Ctx) (e : Expr) (r : IndRep) (major : Expr)
   let pf ← if hasAcc then do
       let zs0 := init.map ctx.subst
       let h0 ← mkExpectedTypeHint (mkAppN (elim srcMajor) zs0) (stmt srcMajor zs0)
-      mkAppOptM ``Den.foldApp #[none, none, S, Y, cRes, r.fo, gtm, rm.tm, zr.tm, gv,
+      mkAppOptM ``Den.foldApp #[none, none, S, Y, cRes, gtm, rm.tm, zr.tm, gv,
         mkApp r.enc srcMajor, zr.dv, F srcMajor zs0, hg, rm.pf, zr.pf, h0]
     else do
       let hF ← withLocalDeclD `t selfTy fun t => mkLambdaFVars #[t] (elim t)
       let Fl ← withLocalDeclD `t selfTy fun t => mkLambdaFVars #[t] (F t #[])
-      mkAppOptM ``Den.foldEnc #[none, none, S, cTy, r.fo, gtm, rm.tm, gv, selfTy, r.enc, Fl,
+      mkAppOptM ``Den.foldEnc #[none, none, S, cTy, gtm, rm.tm, gv, selfTy, r.enc, Fl,
         srcMajor, hg, rm.pf, hF]
   finish ctx e tm cRes pf
 

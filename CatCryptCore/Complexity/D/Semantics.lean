@@ -54,9 +54,11 @@ constructors are; `scase` and `fcase` place one step node and continue with the 
 ## Adequacy
 
 Function values of the two instances differ (the evaluator's closures carry ticks), so they
-are related by a logical relation `ValRel`: equality at ground types and at inductive types,
-whose fields are first-order, the lifting `CTree.Rel` at function types, componentwise at
-dependent products and at the common index of dependent pairs. `Tm.interp_rel` is the fundamental lemma: in related environments the
+are related by a logical relation `ValRel`: equality at ground types, the lifting `CTree.Rel` at
+function types, componentwise at dependent products and at the common index of dependent pairs,
+and at an inductive type the lifting `WLift` over the W-type: two nodes of one constructor with
+related fields and related children, so that a field may hold functions. `Tm.interp_rel` is the
+fundamental lemma: in related environments the
 evaluator and the denotation give related trees. At first-order types `ValRel` is equality,
 so the evaluator with its ticks erased is the denotation (`Tm.eval_erase`), and both have the
 same meaning in `SPComp` (`Tm.run_eval`).
@@ -83,10 +85,10 @@ for a constructor with positions to the children and the results as functions of
 positions. -/
 def stepAt {X c : Ty} : (S : Sig) → Val (S.stepsTy X c) → (a : (Sig.den S).1) →
     ((Sig.den S).2 a → Val X) → ((Sig.den S).2 a → CTree (Val c)) → CTree (Val c)
-  | .base _, g, x, _, _ => g x
-  | .ext S _ _, g, .inl x, kids, rec => stepAt S g.1 x kids rec
-  | .ext _ _ none, g, .inr x, _, _ => g.2 x
-  | .ext _ a (some f), g, .inr x, kids, rec =>
+  | .base _, g, ⟨_, x⟩, _, _ => g x
+  | .ext S _ _, g, ⟨.inl c, x⟩, kids, rec => stepAt S g.1 ⟨c, x⟩ kids rec
+  | .ext _ _ none, g, ⟨.inr _, x⟩, _, _ => g.2 x
+  | .ext _ a (some f), g, ⟨.inr _, x⟩, kids, rec =>
     let g' : Val (.arr (Sig.altTy a (some f) X c) c) := g.2
     g' ((x, kids, rec) : Val a × ((f.den → Val X) × (f.den → CTree (Val c))))
 
@@ -165,13 +167,13 @@ def tabDep (f : FTy) {X : f.den → Type} (d : (j : f.den) → X j)
 a constructor with positions are the table in its argument. -/
 def conAt {X : Ty} : (S : Sig) → ((a : (Sig.den S).1) → ((Sig.den S).2 a → Val X) → Val X) →
     Val (S.conTy X) → Val X
-  | .base _, mk, v => mk v fun p => Empty.elim p
-  | .ext S _ none, mk, .inl v => conAt S (fun a k => mk (.inl a) k) v
-  | .ext _ _ none, mk, .inr v => mk (.inr v) fun p => Empty.elim p
-  | .ext S _ (some _), mk, .inl v => conAt S (fun a k => mk (.inl a) k) v
+  | .base _, mk, v => mk ⟨(), v⟩ fun p => Empty.elim p
+  | .ext S _ none, mk, .inl v => conAt S (fun a k => mk ⟨.inl a.1, a.2⟩ k) v
+  | .ext _ _ none, mk, .inr v => mk ⟨.inr (), v⟩ fun p => Empty.elim p
+  | .ext S _ (some _), mk, .inl v => conAt S (fun a k => mk ⟨.inl a.1, a.2⟩ k) v
   | .ext _ a (some f), mk, .inr v =>
     let v' : Val a × (f.den → Val X) := v
-    mk (.inr v'.1) v'.2
+    mk ⟨.inr (), v'.1⟩ v'.2
 
 /-- The value of `mu S` that a constructor builds from its argument `v`: the node of the shape and
 the children that `v` selects. -/
@@ -218,9 +220,9 @@ def Tm.interp {Γ : List Ty} : {τ : Ty} → Tm Γ τ → Env Γ → CTree (Val 
   | _, .set n f x, ρ => (Tm.interp x ρ).bind fun v => .set n f v (.ret (() : Unit))
   | _, .query d r x, ρ => (Tm.interp x ρ).bind fun v => .query d r v .ret
   | _, .fail, _ => .fail
-  | _, .con (S := S) _ x, ρ =>
+  | _, .con (S := S) x, ρ =>
     (Tm.interp x ρ).bind fun v => .ret (conAt S (fun a k => (WType.mk a k : Val (.mu S))) v)
-  | _, .fold _ g x, ρ =>
+  | _, .fold g x, ρ =>
     (Tm.interp g ρ).bind fun gv => (Tm.interp x ρ).bind fun w => tk (foldW gv w)
   | _, .ptab (f := f) (B := B) ts, ρ =>
     tabDep f (fun j => Val.default (B j)) fun j => Tm.interp (ts j) ρ
@@ -253,8 +255,35 @@ end Tm
 
 /-! ## The logical relation -/
 
+/-- The lifting of a relation on the fields of the constructors to W-types whose shapes are a
+constructor with its field and whose positions depend on the constructor only: two nodes are
+related when they have the same constructor, related fields and related children. -/
+inductive WLift {C : Type} {F G P : C → Type} (R : (c : C) → F c → G c → Prop) :
+    WType (fun s : (c : C) × F c => P s.1) → WType (fun s : (c : C) × G c => P s.1) → Prop
+  | mk {c : C} {x : F c} {y : G c} {k : P c → WType (fun s : (c : C) × F c => P s.1)}
+      {k' : P c → WType (fun s : (c : C) × G c => P s.1)} :
+      R c x y → (∀ p, WLift R (k p) (k' p)) → WLift R ⟨⟨c, x⟩, k⟩ ⟨⟨c, y⟩, k'⟩
+
+/-- The lifting of equality is equality. -/
+theorem WLift.iff_eq {C : Type} {F P : C → Type} {R : (c : C) → F c → F c → Prop}
+    (hR : ∀ c x y, R c x y ↔ x = y) (u v : WType (fun s : (c : C) × F c => P s.1)) :
+    WLift R u v ↔ u = v := by
+  constructor
+  · intro h
+    induction h with
+    | mk hxy _ ih =>
+      rw [(hR _ _ _).1 hxy, funext ih]
+  · rintro rfl
+    induction u with
+    | mk a k ih =>
+      obtain ⟨c, x⟩ := a
+      exact .mk ((hR c x x).2 rfl) ih
+
+mutual
+
 /-- The logical relation between the values of the evaluator and of the denotation: equality
-at ground types, the lifting `CTree.Rel` at function types. -/
+at ground types, the lifting `CTree.Rel` at function types, the lifting `WLift` of the relation
+of the fields at inductive types. -/
 def ValRel : (τ : Ty) → Val τ → Val τ → Prop
   | .base _, u, v => u = v
   | .nat, u, v => u = v
@@ -262,9 +291,17 @@ def ValRel : (τ : Ty) → Val τ → Val τ → Prop
   | .sum a b, u, v => Sum.LiftRel (ValRel a) (ValRel b) u v
   | .arr a b, f, g => ∀ x y, ValRel a x y → CTree.Rel (ValRel b) (f x) (g y)
   | .list a, u, v => List.Forall₂ (ValRel a) u v
-  | .mu _, u, v => u = v
+  | .mu S, u, v => WLift (P := S.Pos) (Sig.FldRel S) u v
   | .pi _ B, u, v => ∀ j, ValRel (B j) (u j) (v j)
   | .sig _ B, u, v => ∃ e : u.1 = v.1, ValRel (B v.1) (e ▸ u.2) v.2
+
+/-- The logical relation at the fields of the constructors of a signature. -/
+def Sig.FldRel : (S : Sig) → (c : S.Ctor) → S.Fld c → S.Fld c → Prop
+  | .base a, _, x, y => ValRel a x y
+  | .ext S _ _, .inl c, x, y => Sig.FldRel S c x y
+  | .ext _ a _, .inr _, x, y => ValRel a x y
+
+end
 
 /-- Pointwise related environments. -/
 def EnvRel {Γ : List Ty} (ρ δ : Env Γ) : Prop := ∀ τ (x : Var Γ τ), ValRel τ (ρ τ x) (δ τ x)
@@ -275,6 +312,8 @@ theorem EnvRel.cons {Γ : List Ty} {τ : Ty} {ρ δ : Env Γ} (h : EnvRel ρ δ)
   cases x with
   | here => exact huv
   | there y => exact h σ y
+
+mutual
 
 /-- At first-order types the logical relation is equality. -/
 theorem ValRel.iff_eq_of_FO : (τ : Ty) → τ.FO → ∀ u v : Val τ, ValRel τ u v ↔ u = v
@@ -306,7 +345,7 @@ theorem ValRel.iff_eq_of_FO : (τ : Ty) → τ.FO → ∀ u v : Val τ, ValRel �
     have hab : ValRel a = (· = ·) := funext fun x => funext fun y => propext (ha x y)
     rw [hab, List.forall₂_eq_eq_eq]
     exact Iff.rfl
-  | .mu _, _, _, _ => Iff.rfl
+  | .mu S, h, u, v => WLift.iff_eq (fun c x y => Sig.FldRel.iff_eq_of_FO S h c x y) u v
   | .pi f B, h, u, v => by
     change (j : f.den) → Val (B j) at u v
     show (∀ j, ValRel (B j) (u j) (v j)) ↔ u = v
@@ -324,6 +363,15 @@ theorem ValRel.iff_eq_of_FO : (τ : Ty) → τ.FO → ∀ u v : Val τ, ValRel �
       obtain ⟨rfl, hx⟩ := Sigma.mk.inj_iff.1 he
       cases hx
       exact ⟨rfl, (ValRel.iff_eq_of_FO (B i) (h i) x x).2 rfl⟩
+
+/-- At the fields of a first-order signature the logical relation is equality. -/
+theorem Sig.FldRel.iff_eq_of_FO : (S : Sig) → S.FO → ∀ (c : S.Ctor) (x y : S.Fld c),
+    Sig.FldRel S c x y ↔ x = y
+  | .base a, h, _, x, y => ValRel.iff_eq_of_FO a h x y
+  | .ext S _ _, h, .inl c, x, y => Sig.FldRel.iff_eq_of_FO S h.1 c x y
+  | .ext _ a _, h, .inr _, x, y => ValRel.iff_eq_of_FO a h.2 x y
+
+end
 
 theorem Prim.rel {a b : Ty} (p : Prim a b) {u v : Val a} (h : ValRel a u v) :
     ValRel b (p.apply u) (p.apply v) := by
@@ -471,7 +519,8 @@ theorem tabTab_ret (r : FTy) (tr : ∀ {Y : Type}, (r.den → CTree Y) → CTree
     ∀ (q : ℕ) (w : (Fin q → r.den) → X), tabTab r tr q (fun v => .ret (w v)) = .ret w
   | 0, w => by
     rw [tabTab, CTree.bind_ret]
-    exact congrArg CTree.ret (funext fun v => by rw [show v = Fin.elim0 from funext fun i => i.elim0])
+    exact congrArg CTree.ret
+      (funext fun v => by rw [show v = Fin.elim0 from funext fun i => i.elim0])
   | q + 1, w => by
     rw [tabTab]
     have hin : ∀ a : r.den, tabTab r tr q
@@ -500,55 +549,51 @@ theorem tabDep_ret (f : FTy) {X : f.den → Type} (d : (j : f.den) → X j) (w :
   rw [tabT_ret f (fun j => (⟨j, w j⟩ : (j : f.den) × X j)), CTree.bind_ret]
   exact congrArg CTree.ret (funext fun j => sigmaAt_mk (FTy.decEq f) d j (w j))
 
-/-- A constructor at related arguments builds equal nodes, the children of a first-order
-signature being equal. -/
-theorem conAt_rel {X : Ty} (hX : ∀ x y, ValRel X x y → x = y) : ∀ (S : Sig), S.FO →
-    ∀ (mk : (a : (Sig.den S).1) → ((Sig.den S).2 a → Val X) → Val X) {u v : Val (S.conTy X)},
-      ValRel (S.conTy X) u v → conAt S mk u = conAt S mk v
-  | .base a, hS, mk, u, v, huv => by
-    have he : u = v := (ValRel.iff_eq_of_FO a hS u v).1 huv
-    subst he
-    rfl
-  | .ext S a none, hS, mk, u, v, huv => by
+/-- A constructor at related arguments builds related nodes: `R` holds of the nodes that `mk`
+and `mk'` build from related fields and related children. -/
+theorem conAt_rel {X : Ty} {R : Val X → Val X → Prop} : ∀ (S : Sig)
+    (mk mk' : (a : (Sig.den S).1) → ((Sig.den S).2 a → Val X) → Val X),
+    (∀ (c : S.Ctor) (x y : S.Fld c) (k k' : S.Pos c → Val X), Sig.FldRel S c x y →
+      (∀ p, ValRel X (k p) (k' p)) → R (mk ⟨c, x⟩ k) (mk' ⟨c, y⟩ k')) →
+    ∀ {u v : Val (S.conTy X)}, ValRel (S.conTy X) u v → R (conAt S mk u) (conAt S mk' v)
+  | .base _, _, _, hmk, _, _, huv => hmk () _ _ _ _ huv fun p => p.elim
+  | .ext S a none, mk, mk', hmk, u, v, huv => by
     have h' : Sum.LiftRel (ValRel (S.conTy X)) (ValRel a) u v := huv
     cases h' with
-    | inl h => exact conAt_rel hX S hS.1 _ h
-    | inr h =>
-      have he := (ValRel.iff_eq_of_FO a hS.2 _ _).1 h
-      subst he
-      rfl
-  | .ext S a (some f), hS, mk, u, v, huv => by
+    | inl h =>
+      exact conAt_rel S (fun a k => mk ⟨.inl a.1, a.2⟩ k) (fun a k => mk' ⟨.inl a.1, a.2⟩ k)
+        (fun c x y k k' hxy hk => hmk (.inl c) x y k k' hxy hk) h
+    | inr h => exact hmk (.inr ()) _ _ _ _ h fun p => p.elim
+  | .ext S a (some f), mk, mk', hmk, u, v, huv => by
     have h' : Sum.LiftRel (ValRel (S.conTy X)) (ValRel (.prod a (.pi f fun _ => X))) u v := huv
     cases h' with
-    | inl h => exact conAt_rel hX S hS.1 _ h
-    | @inr x y h =>
-      have he : x.1 = y.1 := (ValRel.iff_eq_of_FO a hS.2 _ _).1 h.1
-      have hk : x.2 = y.2 := funext fun j => hX _ _ (h.2 j)
-      show mk (.inr x.1) x.2 = mk (.inr y.1) y.2
-      rw [he, hk]
+    | inl h =>
+      exact conAt_rel S (fun a k => mk ⟨.inl a.1, a.2⟩ k) (fun a k => mk' ⟨.inl a.1, a.2⟩ k)
+        (fun c x y k k' hxy hk => hmk (.inl c) x y k k' hxy hk) h
+    | inr h => exact hmk (.inr ()) _ _ _ _ h.1 h.2
 
-/-- A step of an eliminator at related step functions and related recursive results gives
-related trees, the fields of a first-order signature being related to themselves. -/
-theorem stepAt_rel {X c : Ty} (hX : ∀ x : Val X, ValRel X x x) : ∀ (S : Sig), S.FO →
-    ∀ {g g' : Val (S.stepsTy X c)}, ValRel _ g g' → ∀ (a : (Sig.den S).1)
-      (kids : (Sig.den S).2 a → Val X) {rec rec' : (Sig.den S).2 a → CTree (Val c)},
-      (∀ j, CTree.Rel (ValRel c) (rec j) (rec' j)) →
-        CTree.Rel (ValRel c) (stepAt S g a kids rec) (stepAt S g' a kids rec')
-  | .base a, hS, _, _, hg, x, _, _, _, _ => hg x x ((ValRel.iff_eq_of_FO a hS x x).2 rfl)
-  | .ext S _ _, hS, _, _, hg, .inl x, kids, _, _, hr => stepAt_rel hX S hS.1 hg.1 x kids hr
-  | .ext _ a none, hS, _, _, hg, .inr x, _, _, _, _ =>
-    hg.2 x x ((ValRel.iff_eq_of_FO a hS.2 x x).2 rfl)
-  | .ext _ a (some _), hS, _, _, hg, .inr x, kids, _, _, hr =>
-    hg.2 _ _ ⟨(ValRel.iff_eq_of_FO a hS.2 x x).2 rfl,
-      fun j => hX (kids j), fun j j' hj => by subst hj; exact hr j⟩
+/-- A step of an eliminator at related step functions, related fields, related children and
+related recursive results gives related trees. -/
+theorem stepAt_rel {X c : Ty} : ∀ (S : Sig) {g g' : Val (S.stepsTy X c)}, ValRel _ g g' →
+    ∀ {c₀ : S.Ctor} {x y : S.Fld c₀}, Sig.FldRel S c₀ x y →
+    ∀ {kids kids' : S.Pos c₀ → Val X}, (∀ p, ValRel X (kids p) (kids' p)) →
+    ∀ {rec rec' : S.Pos c₀ → CTree (Val c)}, (∀ j, CTree.Rel (ValRel c) (rec j) (rec' j)) →
+      CTree.Rel (ValRel c) (stepAt S g ⟨c₀, x⟩ kids rec) (stepAt S g' ⟨c₀, y⟩ kids' rec')
+  | .base _, _, _, hg, _, _, _, hxy, _, _, _, _, _, _ => hg _ _ hxy
+  | .ext S _ _, _, _, hg, .inl _, _, _, hxy, _, _, hk, _, _, hr =>
+    stepAt_rel S hg.1 (c₀ := _) hxy hk hr
+  | .ext _ _ none, _, _, hg, .inr _, _, _, hxy, _, _, _, _, _, _ => hg.2 _ _ hxy
+  | .ext _ _ (some _), _, _, hg, .inr _, _, _, hxy, _, _, hk, _, _, hr =>
+    hg.2 _ _ ⟨hxy, hk, fun j j' hj => by subst hj; exact hr j⟩
 
-/-- The eliminator at related step functions: the evaluator and the denotation give related
-trees at every value. -/
-theorem foldW_rel {S : Sig} {c : Ty} (hS : S.FO) {g g' : Val (S.stepsTy (.mu S) c)}
-    (hg : ValRel _ g g') (w : WType (Sig.den S).2) :
-    CTree.Rel (ValRel c) (foldW g w) (foldW g' w) := by
-  induction w with
-  | mk a kids ih => exact stepAt_rel (X := .mu S) (fun _ => rfl) S hS hg a kids ih
+/-- The eliminator at related step functions and related values: the evaluator and the
+denotation give related trees. -/
+theorem foldW_rel {S : Sig} {c : Ty} {g g' : Val (S.stepsTy (.mu S) c)} (hg : ValRel _ g g')
+    {w w' : Val (.mu S)} (hw : ValRel (.mu S) w w') :
+    CTree.Rel (ValRel c) (foldW g w) (foldW g' w') := by
+  change WLift (P := S.Pos) (Sig.FldRel S) w w' at hw
+  induction hw with
+  | mk hxy hk ih => exact stepAt_rel (X := .mu S) S hg hxy hk ih
 
 namespace Tm
 
@@ -622,15 +667,13 @@ theorem interp_rel {Γ : List Ty} {τ : Ty} (t : Tm Γ τ) :
       subst huv
       exact .query d r u fun _ => .ret rfl
   | fail => intro ρ δ h; exact .fail
-  | @con _ S hS x ih =>
+  | @con _ S x ih =>
     intro ρ δ h
-    exact (ih h).bind fun u v huv => .ret (conAt_rel (X := .mu S) (fun _ _ e => e) S hS _ huv)
-  | @fold _ S c hS g x ihg ihx =>
+    exact (ih h).bind fun u v huv => .ret (conAt_rel (R := ValRel (.mu S)) S _ _
+      (fun _ _ _ _ _ hxy hk => WLift.mk hxy hk) huv)
+  | @fold _ S c g x ihg ihx =>
     intro ρ δ h
-    exact (ihg h).bind fun gv gv' hg => (ihx h).bind fun w w' hw => by
-      change w = w' at hw
-      subst hw
-      exact .tick (foldW_rel hS hg w)
+    exact (ihg h).bind fun gv gv' hg => (ihx h).bind fun w w' hw => .tick (foldW_rel hg hw)
   | @ptab _ f B ts ih =>
     intro ρ δ h
     exact tabDep_rel f fun j => ih j h

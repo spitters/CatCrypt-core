@@ -535,6 +535,8 @@ theorem foldl_timedCost_mono {α β : Type} (f : α → β → α) {c c' : α �
 
 /-! ## First-order translated values -/
 
+mutual
+
 /-- At a first-order type, the translated values are the values of D. -/
 theorem Ty.hat_eq_val : ∀ τ : Ty, τ.FO → τ.hat = Val τ
   | .base _, _ => rfl
@@ -543,11 +545,34 @@ theorem Ty.hat_eq_val : ∀ τ : Ty, τ.FO → τ.hat = Val τ
   | .sum a b, h => congrArg₂ Sum (Ty.hat_eq_val a h.1) (Ty.hat_eq_val b h.2)
   | .arr _ _, h => h.elim
   | .list a, h => congrArg List (Ty.hat_eq_val a h)
-  | .mu _, _ => rfl
+  | .mu S, h => congrArg (fun F : S.Ctor → Type => WType (fun s : (c : S.Ctor) × F c => S.Pos s.1))
+      (funext fun c => Sig.hatF_eq_fld S h c)
   | .pi f B, h => congrArg (fun F : f.den → Type => (j : f.den) → F j)
       (funext fun j => Ty.hat_eq_val (B j) (h j))
   | .sig f B, h => congrArg (fun F : f.den → Type => (j : f.den) × F j)
       (funext fun j => Ty.hat_eq_val (B j) (h j))
+
+/-- At a first-order signature, the translated fields are the fields of D. -/
+theorem Sig.hatF_eq_fld : ∀ (S : Sig), S.FO → ∀ c : S.Ctor, S.hatF c = S.Fld c
+  | .base a, h, _ => Ty.hat_eq_val a h
+  | .ext S _ _, h, .inl c => Sig.hatF_eq_fld S h.1 c
+  | .ext _ a _, h, .inr _ => Ty.hat_eq_val a h.2
+
+end
+
+/-- A cast between W-types whose fields are cast is the map of the cast of the fields. -/
+theorem cast_wmapF {C : Type} {F G P : C → Type} (e : ∀ c, F c = G c)
+    (p : WType (fun s : (c : C) × F c => P s.1) = WType (fun s : (c : C) × G c => P s.1))
+    (u : WType (fun s : (c : C) × F c => P s.1)) :
+    cast p u = wmapF (fun c x => cast (e c) x) u := by
+  have hFG : F = G := funext e
+  subst hFG
+  simp only [cast_eq]
+  induction u with
+  | mk a k ih =>
+    obtain ⟨c, x⟩ := a
+    show WType.mk ⟨c, x⟩ k = WType.mk ⟨c, x⟩ (fun q => wmapF _ (k q))
+    exact congrArg _ (funext ih)
 
 theorem cast_prod {A A' B B' : Type} (pa : A = A') (pb : B = B') (p : (A × B) = (A' × B'))
     (x : A × B) : cast p x = (cast pa x.1, cast pb x.2) := by
@@ -581,6 +606,8 @@ theorem cast_sigma {I : Type} {A A' : I → Type} (pa : ∀ j, A j = A' j)
   obtain rfl : A = A' := funext pa
   rfl
 
+mutual
+
 /-- At a first-order type, the value of D of a translated value is its cast. -/
 theorem Ty.toVal_eq_cast : ∀ (τ : Ty) (h : τ.FO) (u : τ.hat),
     τ.toVal h u = cast (Ty.hat_eq_val τ h) u
@@ -604,7 +631,13 @@ theorem Ty.toVal_eq_cast : ∀ (τ : Ty) (h : τ.FO) (u : τ.hat),
     have ha : a.toVal h = cast (Ty.hat_eq_val a h) := funext fun x => Ty.toVal_eq_cast a h x
     rw [ha]
     exact (cast_list (Ty.hat_eq_val a h) _ u).symm
-  | .mu _, _, _ => rfl
+  | .mu S, h, u => by
+    have e := cast_wmapF (P := S.Pos) (fun c => Sig.hatF_eq_fld S h c) (Ty.hat_eq_val (.mu S) h) u
+    refine Eq.trans ?_ e.symm
+    show wmapF (P := S.Pos) (fun c x => Sig.toValF S h c x) u = _
+    congr 1
+    funext c x
+    exact Sig.toValF_eq_cast S h c x
   | .pi f B, h, u =>
     (funext fun j => Ty.toVal_eq_cast (B j) (h j) (u j)).trans
       (cast_pi (fun j => Ty.hat_eq_val (B j) (h j)) (Ty.hat_eq_val (.pi f B) h) u).symm
@@ -613,6 +646,17 @@ theorem Ty.toVal_eq_cast : ∀ (τ : Ty) (h : τ.FO) (u : τ.hat),
     show (⟨u.1, (B u.1).toVal (h u.1) u.2⟩ : (j : f.den) × Val (B j)) = _
     rw [Ty.toVal_eq_cast (B u.1) (h u.1) u.2]
     exact (cast_sigma (fun j => Ty.hat_eq_val (B j) (h j)) (Ty.hat_eq_val (.sig f B) h) u).symm
+
+/-- At a first-order signature, the field of D of a translated field is its cast. -/
+theorem Sig.toValF_eq_cast : ∀ (S : Sig) (h : S.FO) (c : S.Ctor) (x : S.hatF c),
+    Sig.toValF S h c x = cast (Sig.hatF_eq_fld S h c) x
+  | .base a, h, _, x => Ty.toVal_eq_cast a h x
+  | .ext S _ _, h, .inl c, x => Sig.toValF_eq_cast S h.1 c x
+  | .ext _ a _, h, .inr _, x => Ty.toVal_eq_cast a h.2 x
+
+end
+
+mutual
 
 /-- At a first-order type, the translated value of a value of D is its cast. -/
 theorem Ty.ofVal_eq_cast : ∀ (τ : Ty) (h : τ.FO) (v : Val τ),
@@ -638,7 +682,14 @@ theorem Ty.ofVal_eq_cast : ∀ (τ : Ty) (h : τ.FO) (v : Val τ),
       funext fun x => Ty.ofVal_eq_cast a h x
     rw [ha]
     exact (cast_list (Ty.hat_eq_val a h).symm _ v).symm
-  | .mu _, _, _ => rfl
+  | .mu S, h, v => by
+    have e := cast_wmapF (P := S.Pos) (fun c => (Sig.hatF_eq_fld S h c).symm)
+      (Ty.hat_eq_val (.mu S) h).symm v
+    refine Eq.trans ?_ e.symm
+    show wmapF (P := S.Pos) (fun c x => Sig.ofValF S h c x) v = _
+    congr 1
+    funext c x
+    exact Sig.ofValF_eq_cast S h c x
   | .pi f B, h, v =>
     (funext fun j => Ty.ofVal_eq_cast (B j) (h j) (v j)).trans
       (cast_pi (fun j => (Ty.hat_eq_val (B j) (h j)).symm) (Ty.hat_eq_val (.pi f B) h).symm
@@ -649,6 +700,15 @@ theorem Ty.ofVal_eq_cast : ∀ (τ : Ty) (h : τ.FO) (v : Val τ),
     rw [Ty.ofVal_eq_cast (B v.1) (h v.1) v.2]
     exact (cast_sigma (fun j => (Ty.hat_eq_val (B j) (h j)).symm)
       (Ty.hat_eq_val (.sig f B) h).symm v).symm
+
+/-- At a first-order signature, the translated field of a field of D is its cast. -/
+theorem Sig.ofValF_eq_cast : ∀ (S : Sig) (h : S.FO) (c : S.Ctor) (x : S.Fld c),
+    Sig.ofValF S h c x = cast (Sig.hatF_eq_fld S h c).symm x
+  | .base a, h, _, x => Ty.ofVal_eq_cast a h x
+  | .ext S _ _, h, .inl c, x => Sig.ofValF_eq_cast S h.1 c x
+  | .ext _ a _, h, .inr _, x => Ty.ofVal_eq_cast a h.2 x
+
+end
 
 /-- At a first-order type, a value of D related to a translated value is its cast. -/
 theorem Sim.cast_eq (τ : Ty) (h : τ.FO) {u : τ.hat} {v : Val τ} (hs : Sim τ u v) :

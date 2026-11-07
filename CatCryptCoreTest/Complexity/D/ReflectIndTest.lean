@@ -24,8 +24,9 @@ Each definition below is fresh and reflected with its denotation theorem:
   `Ask.depthAt` (a fixed argument);
 * `Seq α` (a type parameter, at `BitVec 8`): `Seq.count` under `countPlus` (an instance argument
   and a fixed argument);
+* `Fns` (a field holding a function, its pure closure): `Fns.applyAll`;
 * refusals: a recursion over `List`, a type without a constructor without recursive argument, a
-  field holding a function, a nested inductive type.
+  nested inductive type.
 -/
 
 @[expose] public section
@@ -147,6 +148,27 @@ example (b : Bool) (t : Ask) :
     Ask.depthAt.d.den ((Env.nil.cons (τ := .bool) b).cons t.dEnc) = .ret (t.depthAt b) :=
   Ask.depthAt.d_den b t
 
+/-! ## A field holding a function -/
+
+/-- A list of byte functions: a field holds a function, represented by its pure closure. -/
+inductive Fns where
+  | nil
+  | cons (f : BitVec 8 → BitVec 8) (rest : Fns)
+
+/-- The composite of the functions applied to a byte, the head last. -/
+def Fns.applyAll (x : BitVec 8) : Fns → BitVec 8
+  | .nil => x
+  | .cons f r => f (r.applyAll x)
+
+reflect_d Fns.applyAll
+
+example (x : BitVec 8) (t : Fns) :
+    Fns.applyAll.d.den ((Env.nil.cons (τ := .word 8) x).cons t.dEnc) = .ret (t.applyAll x) :=
+  Fns.applyAll.d_den x t
+
+/-- The field of the signature is a function type of D. -/
+example : Fns.dSig = .ext (.base .unit) (.arr (.word 8) (.word 8)) (some .unit) := rfl
+
 /-! ## A type parameter -/
 
 /-- Sequences of a type parameter. -/
@@ -194,23 +216,6 @@ def Loop.flag : Loop → Bool
 /-- error: reflect_d: the inductive type `CatCrypt.Complexity.D.ReflectIndTest.Loop` has no constructor without a recursive argument; the first constructor of a signature of D has none -/
 #guard_msgs in
 reflect_d Loop.flag
-
-/-- A type whose field holds a function. -/
-inductive Fn where
-  | leaf
-  | node (f : Bool → BitVec 8) (r : Fn)
-
-/-- Its first value at `true`. -/
-def Fn.first : Fn → BitVec 8
-  | .leaf => 0
-  | .node f _ => f true
-
-/--
-error: reflect_d: a field of an inductive type holds a function (`(Ty.base FTy.bool).arr
-  (Ty.base (FTy.word 8))`); the signatures of D have first-order fields
--/
-#guard_msgs in
-reflect_d Fn.first
 
 /-- A nested inductive type. -/
 inductive Rose where
