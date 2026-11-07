@@ -356,6 +356,7 @@ public import CatCryptCore.Crypto.Signal.DoubleRatchet.ChainKDF
 public import CatCryptCore.Crypto.Signal.DoubleRatchet.Primitives
 public import CatCryptCore.Crypto.Signal.DoubleRatchet.Extraction.Doubleratchet_haxpipe
 public import CatCryptCore.Crypto.Signal.DoubleRatchet.ExtractedCorrespondence
+public import CatCryptCore.Crypto.Signal.DoubleRatchet.ExtractedScheme
 public import CatCryptCore.Crypto.Signal.DoubleRatchet.SurfaceDeps
 public import CatCryptCore.Crypto.Signal.RatchetChainHybrid
 public import CatCryptCore.Crypto.Signal.Zkgroup.Lizard
