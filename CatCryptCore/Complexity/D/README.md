@@ -224,5 +224,8 @@ recursors of `Bool`, `Option`, `Sum` and pairs, and maps a Lean inductive type `
 value of `T` and a structural recursion over `T` are `fold`, a recursive call on a child the
 application of the recursive results at its position, and a recursion whose other arguments
 change the eliminator at a function motive (module docstring of `Reflect`, "Inductive types and
-structural recursion"). Tests: `CatCryptCoreTest/Complexity/D/MuTest.lean`, `ReflectRecTest.lean`,
-`ReflectIndTest.lean`.
+structural recursion"). `link_timed` links the fold of a structural recursion to the costed form
+of `derive_timed`, whose companion `f.timedCost` is defined by the same recursion
+(`TimedLink.DSim.foldEnc`, the node condition the equation of the companion at each
+constructor). Tests: `CatCryptCoreTest/Complexity/D/MuTest.lean`, `ReflectRecTest.lean`,
+`ReflectIndTest.lean`, `CatCryptCoreTest/Tactics/LinkTimedFoldTest.lean`.

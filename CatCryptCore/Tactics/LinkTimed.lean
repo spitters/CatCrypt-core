@@ -120,7 +120,22 @@ data term (`TSim.letE`) or of a computation (`TSim.bind`), a call of a tree func
 arguments (`TSim.call`) or on `unit` (`TSim.call0`), `ite`, `fail`, and a data leaf
 (`TSim.ret`); data terms by `DSim.var`, `lit`, `natLit`, `pair`, `fst`, `snd`, `inl`, `inr`,
 `letE`, `prim` (and `decide` for the atom of a condition), `app` of a data function value and
-`appFree` of a projection or re-pairing value. A costed bind whose continuation returns a
+`appFree` of a projection or re-pairing value, a data conditional (`DSim.iteIf`, charged the
+branch it takes, and `DSim.decBool` for the condition `if b` of a Boolean).
+
+The eliminator of a structural recursion. The class: a `fold` that `reflect_d` marks with its
+source (a structural recursion `f` over a Lean inductive type `T` whose other arguments are
+fixed variables of the D-term), the call charged by the companion `f.timedCost` of
+`derive_timed`, defined by the same recursion. The rule is `DSim.foldEnc` at `C := f.timedCost`:
+the scrutinee is walked first, its value the encoding `T.dEnc t`; the other arguments are read
+from the environment; the induction over `T` (`T.rec`) takes at each constructor the walk of its
+step at the node of its fields, its children and its recursive results, where a recursive call
+on a child is `DSim.appRec` with the induction hypothesis at the child (its step count chosen by
+`Exists.choose`), and the node condition, the allowance and the charge of the step within the
+companion at the constructor, is closed by the equations of the companion and `omega`
+(`DSim.node`). A case analysis on a value of `T` (charged inline by `derive_timed`), an
+eliminator at a function motive (a recursion with an accumulator) and a constructor (the table
+`ptab` of its children) are refused with messages naming them. A costed bind whose continuation returns a
 projection or re-pairing of its argument at zero cost (the projection of a costed table onto its
 plain value) is removed by `TSim.bindRet`, the leaves then related through that map. The two
 branches of an `ite` are derived each
@@ -248,6 +263,9 @@ inductive Kind where
   | treeFn (hA : Expr)
   /-- A tree function value on `unit`, simulated by the costed tree (`hp`). -/
   | tree0 (hp : Expr)
+  /-- The recursive results of a step of an eliminator: the induction hypotheses at the children
+  (`ihs`, at the positions `poss`), or at a function of children (`fnIh`). -/
+  | recFn (poss ihs : Array Expr) (fnIh : Option Expr)
   deriving Inhabited
 
 /-- The walk monad: the kinds of the D function values; the state holds the step-cost side
@@ -345,7 +363,9 @@ def dsimArgs (ty : Expr) : MetaM (Array Expr) := do
 value. `loc` counts the binders of `e` above the environment `ρ`. -/
 partial def isData (ρ : Expr) (loc : Nat) (e : Expr) : LinkM Bool := do
   let e ← instantiateMVars e
+  if let .mdata _ e' := e then return ← isData ρ loc e'
   match e.getAppFn.constName?, e.getAppNumArgs with
+  | some ``Tm.fold, 6 => isData ρ loc (e.getArg! 5)
   | some ``Tm.var, 3 => return true
   | some ``Tm.lit, 3 => return true
   | some ``Tm.natLit, 2 => return true
@@ -397,6 +417,10 @@ partial def solveD (g : MVarId) : LinkM Unit := g.withContext do
   let as ← dsimArgs (← g.getType)
   let t ← instantiateMVars as[5]!
   let ρ := as[6]!
+  if let .mdata kv t' := t then
+    if kv.contains `dFold.fn then return ← solveFold g kv t'
+    return ← solveD g
+  if let some (x, kd) ← recCall? ρ t then return ← solveRecCall g x kd
   match t.getAppFn.constName?, t.getAppNumArgs with
   | some ``Tm.var, 3 =>
     setVal g (← envNth ρ (← varIdx (t.getArg! 2)))
@@ -423,6 +447,12 @@ partial def solveD (g : MVarId) : LinkM Unit := g.withContext do
     let m ← applyRule g ``DSim.letE
     solveD (← arg m `he).mvarId!
     solveD (← arg m `hb).mvarId!
+  | some ``Tm.ite, 5 =>
+    let m ← applyRule g ``DSim.iteIf
+    closeWith (← arg m `hK) (← mkAppM ``Nat.le_refl #[as[2]!])
+    solveCond (← arg m `hb).mvarId!
+    solveD (← arg m `ht).mvarId!
+    solveD (← arg m `he).mvarId!
   | some ``Tm.prim, 5 =>
     let m ← applyRule g ``DSim.prim
     solveD (← arg m `hx).mvarId!
@@ -451,15 +481,245 @@ partial def solveD (g : MVarId) : LinkM Unit := g.withContext do
       let v ← instantiateMVars (← arg m `v)
       closeWith (← arg m `hg) (mkApp hg v)
       closeWith (← arg m `hm) (mkApp hFC v)
-    | _ => failL m!"the application `{t}` is not a call of a data function value"
+    | _ => failL m!"the application `{t}` is not a call of a data function value (an eliminator \
+        at a function motive, the reflection of a recursion with an accumulator, is not linked)"
+  | some ``Tm.fold, 6 =>
+    failL m!"the eliminator{indentExpr t}\nis not the fold of a structural recursion with fixed \
+      other arguments (a case analysis on a value of an inductive type, which `derive_timed` \
+      charges inline, is not linked)"
+  | some ``Tm.con, 4 =>
+    failL m!"the constructor{indentExpr t}\nof an inductive type: the table of its children \
+      (`ptab`) is outside the fragment of link_timed"
   | _, _ => failL m!"the data construct `{t.getAppFn}` is outside the fragment of link_timed"
+
+/-- A recursive call in a step of an eliminator: the application of the recursive results at a
+position (`DSim.appRec`), its cost the induction hypothesis at the child (`Exists.choose`). -/
+partial def solveRecCall (g : MVarId) (x : Expr) (kd : Kind) : LinkM Unit := g.withContext do
+  let as ← dsimArgs (← g.getType)
+  let ρ := as[6]!
+  let .recFn poss ihs fnIh := kd | failL m!"internal: a recursive call"
+  let m ← applyRule g ``DSim.appRec
+  closeWith (← arg m `hK) (← mkAppM ``Nat.le_refl #[as[2]!])
+  closeWith (← arg m `hF) (← mkAppM ``Reflect.CEq.snd #[← mkAppM ``Reflect.CEq.snd
+    #[← mkAppM ``Reflect.CEq.var #[x, ρ]]])
+  solveD (← arg m `hx).mvarId!
+  let v ← instantiateMVars (← arg m `v)
+  let ih ← match fnIh with
+    | some h => pure (mkApp h v)
+    | none => do
+      let mut found := none
+      for p in poss, h in ihs do
+        if found.isNone && (← isDefEq p v) then found := some h
+      let some h := found | failL m!"the recursive call at the position `{v}`, which is not a \
+        literal of a child"
+      pure h
+  let spec ← mkAppM ``Exists.choose_spec #[ih]
+  closeWith (← arg m `hg) (← mkAppM ``And.left #[spec])
+  closeWith (← arg m `hm) (← mkAppM ``And.right #[spec])
+
+/-- The eliminator of a structural recursion `f` over a Lean inductive type (a fold that
+`reflect_d` marks with its source): `DSim.foldEnc` with the cost companion `f.timedCost` of
+`derive_timed`, its induction over the type built from the walk of each step at the node of its
+constructor, whose node condition is the equation of the companion at the constructor. -/
+partial def solveFold (g : MVarId) (kv : KVMap) (t : Expr) : LinkM Unit := g.withContext do
+  let as ← dsimArgs (← g.getType)
+  let K := as[2]!
+  let ρ := as[6]!
+  let f := kv.getName `dFold.fn
+  let pos := kv.getNat `dFold.pos
+  let fixed := (kv.getString `dFold.fixed).splitOn ","
+  let ta := t.getAppArgs
+  unless t.isAppOfArity ``Tm.fold 6 do failL m!"internal: the fold{indentExpr t}"
+  let (Γ, S, cTy, hS, gtm, x) := (ta[0]!, ta[1]!, ta[2]!, ta[3]!, ta[4]!, ta[5]!)
+  let comp := f ++ `timedCost
+  unless (← getEnv).contains comp do
+    failL m!"the structural recursion `{f}` has no cost companion `{comp}` (derive_timed \
+      derives it for a callee)"
+  -- The scrutinee, its value the encoding of a source value.
+  let nx ← mkFreshExprMVar (mkConst ``Nat)
+  let cx ← mkFreshExprMVar (mkConst ``Nat)
+  let w ← mkFreshExprMVar (mkApp (mkConst ``Val) (mkApp (mkConst ``Ty.mu) S))
+  let hx ← mkFreshExprMVar (mkAppN (mkConst ``DSim) #[Γ, mkApp (mkConst ``Ty.mu) S, K, nx, cx, x, ρ, w])
+  solveD hx.mvarId!
+  let w ← whnfR (← instantiateMVars w)
+  let .const encN _ := w.getAppFn | failL m!"the scrutinee of the fold of `{f}` has the value \
+    {w}, which is not the encoding of a source value"
+  unless encN matches .str _ "dEnc" do
+    failL m!"the scrutinee of the fold of `{f}` has the value {w}, which is not the encoding of \
+      a source value"
+  let t0 := w.appArg!
+  let enc := w.appFn!
+  let T ← inferType t0
+  let some r ← Reflect.Impl.indRep? T | failL m!"the type `{T}` of the scrutinee of `{f}`"
+  -- The other arguments of the recursion, read from the environment.
+  let decode (v : Expr) : MetaM Expr := do
+    let v ← whnfR v
+    match v.getAppFn with
+    | .const n _ => if n == ``Reflect.optEnc || n matches .str _ "dEnc" then return v.appArg!
+                    else return v
+    | _ => return v
+  let mut args : Array Expr := #[]
+  for i in [0:fixed.length] do
+    let k := fixed[i]!
+    if i == pos then args := args.push t0
+    else match k.toNat? with
+      | some k => args := args.push (← decode (← envNth ρ k))
+      | none => failL m!"the argument {i} of the structural recursion `{f}` is not a variable of \
+          the D-term"
+  let srcAt (t' : Expr) : Expr := mkAppN (mkConst f) (args.set! pos t')
+  let resTy ← inferType (srcAt t0)
+  let E ← match ← Reflect.Impl.encoder? resTy with
+    | some e => pure e
+    | none => withLocalDeclD `v resTy fun v => mkLambdaFVars #[v] v
+  let compTy ← inferType (mkConst comp)
+  let compArity ← forallTelescope compTy fun ys _ => pure ys.size
+  unless compArity == args.size do
+    failL m!"the cost companion `{comp}` takes {compArity} arguments, `{f}` {args.size}"
+  let Fl ← withLocalDeclD `t T fun t' => do mkLambdaFVars #[t'] (mkApp E (srcAt t')).headBeta
+  let Cl ← withLocalDeclD `t T fun t' => do mkLambdaFVars #[t'] (mkAppN (mkConst comp) (args.set! pos t'))
+  -- The steps: a tuple of closures, at no cost.
+  let rec ceqSteps (e : Expr) : MetaM Expr := do
+    let e ← instantiateMVars e
+    if e.isAppOfArity ``Tm.pair 5 then
+      return ← mkAppM ``Reflect.CEq.pair #[← ceqSteps (e.getArg! 3), ← ceqSteps (e.getArg! 4)]
+    if e.isAppOfArity ``Tm.lam 4 then return ← mkAppM ``Reflect.CEq.lam #[e.getArg! 3, ρ]
+    throwError "link_timed: the steps of the fold of `{f}` are not a tuple of λ-terms{indentExpr e}"
+  let hg ← ceqSteps gtm
+  let gv := (← instantiateMVars (← inferType hg)).appArg!
+  let rec lams (e : Expr) : Array Expr :=
+    if e.isAppOfArity ``Tm.pair 5 then lams (e.getArg! 3) ++ #[e.getArg! 4] else #[e]
+  let stepLams := lams gtm
+  unless stepLams.size == r.ctors.size do failL m!"internal: the steps of the fold of `{f}`"
+  let X := mkApp (mkConst ``Ty.mu) S
+  let stmt (t' : Expr) : MetaM Expr := do
+    withLocalDeclD `m (mkConst ``Nat) fun mv => do
+      let lhs := mkAppN (mkConst ``foldW) #[S, cTy, gv, mkApp enc t']
+      let rhs ← mkAppM ``stepN #[mkConst ``CTree.tick, mv,
+        mkApp2 (mkConst ``CTree.ret) (mkApp (mkConst ``Val) cTy) (mkApp Fl t').headBeta]
+      let body := mkAnd (← mkEq lhs rhs) (← mkAppM ``LE.le #[mv, ← mkAppM ``HMul.hMul
+        #[K, (mkApp Cl t').headBeta]])
+      mkAppM ``Exists #[← mkLambdaFVars #[mv] body]
+  let motive ← withLocalDeclD `t T fun t' => do mkLambdaFVars #[t'] (← stmt t')
+  let ind ← getConstInfoInduct r.ind
+  let eqns ← match ← getEqnsFor? comp with
+    | some es => pure es
+    | none => failL m!"the cost companion `{comp}` has no equations"
+  let mut minors := Array.replicate ind.numCtors (default : Expr)
+  for c in r.ctors, lamE in stepLams do
+    let lamE ← instantiateMVars lamE
+    let aTy := lamE.getArg! 1
+    let body := lamE.getArg! 3
+    let ctorTy ← instantiateForall (← getConstInfoCtor c.name).type r.params
+    let mn ← forallTelescope ctorTy fun xs _ => do
+      let ihTys ← c.recs.mapM fun i => do
+        let xi := xs[i]!
+        match ← whnf (← inferType xi) with
+        | .forallE n R _ bi => withLocalDecl n bi R fun a => do
+            mkForallFVars #[a] (mkApp motive (mkApp xi a)).headBeta
+        | _ => pure (mkApp motive xi).headBeta
+      withLocalDeclsDND (ihTys.mapIdx fun i T => (Name.mkSimple s!"ih{i}", T)) fun ihs => do
+        let fvals := (c.fields.zip c.fieldEnc).map fun (i, en) => match en with
+          | some e => mkApp e xs[i]!
+          | none => xs[i]!
+        let fv := Reflect.Impl.fieldTupleVal fvals.toList c.fieldTys.toList
+        let val := fun τ => mkApp (mkConst ``Val) τ
+        let finish (vv : Expr) (kd? : Option (Expr × Kind)) : LinkM Expr := do
+          let ρ' := mkAppN (mkConst ``Env.cons) #[Γ, aTy, vv, ρ]
+          let nb ← mkFreshExprMVar (mkConst ``Nat)
+          let cb ← mkFreshExprMVar (mkConst ``Nat)
+          let wb ← mkFreshExprMVar (val cTy)
+          let hb ← mkFreshExprMVar (mkAppN (mkConst ``DSim) #[mkApp3 (mkConst ``List.cons [0])
+            (mkConst ``Ty) aTy Γ, cTy, K, nb, cb, body, ρ', wb])
+          match kd? with
+          | some (fvr, kd) => withReader (·.insert fvr.fvarId! kd) (solveD hb.mvarId!)
+          | none => solveD hb.mvarId!
+          let goalB ← mkAppM ``LE.le #[← mkAppM ``HAdd.hAdd #[nb, ← mkAppM ``HMul.hMul #[K, cb]],
+            ← mkAppM ``HMul.hMul #[K, (mkApp Cl (mkAppN (mkConst c.name) (r.params ++ xs))).headBeta]]
+          let hB ← mkFreshExprMVar (← instantiateMVars goalB)
+          let ids : Array (TSyntax `Lean.Parser.Tactic.simpLemma) ← eqns.mapM fun n =>
+            `(Lean.Parser.Tactic.simpLemma| $(mkIdent n):ident)
+          let rest ← try
+              Tactic.run hB.mvarId! (Tactic.evalTactic
+                (← `(tactic| (simp only [$ids,*]; (try split_ifs) <;> omega))))
+            catch ex =>
+              failL m!"the node condition of the constructor `{c.name}` of the fold of `{f}`, \
+                the step against the equation of `{comp}`,{indentExpr (← instantiateMVars goalB)}\
+                \nis not closed: {ex.toMessageData}"
+          unless rest.isEmpty do
+            failL m!"the node condition{indentExpr (← instantiateMVars goalB)}\nis not closed"
+          let pf ← mkAppM ``DSim.node #[← instantiateMVars hb, ← instantiateMVars hB]
+          let goal := (mkApp motive (mkAppN (mkConst c.name) (r.params ++ xs))).headBeta
+          mkExpectedTypeHint pf goal
+        let pf ← match c.shape.fty? with
+          | none => finish fv none
+          | some fy => do
+            let encKids ← match c.shape with
+              | .fn _ => withLocalDeclD `a (mkApp (mkConst ``FTy.den) fy) fun a =>
+                  mkLambdaFVars #[a] (mkApp enc (mkApp xs[c.recs[0]!]! a))
+              | _ => Reflect.Impl.kidTable c.shape (val X) (c.recs.map fun i => mkApp enc xs[i]!)
+            let recV ← withLocalDeclD `j (mkApp (mkConst ``FTy.den) fy) fun j =>
+              mkLambdaFVars #[j] (mkAppN (mkConst ``foldW) #[S, cTy, gv, (mkApp encKids j).headBeta])
+            let piTy := mkApp2 (mkConst ``Ty.pi) fy (.lam `_ (mkApp (mkConst ``FTy.den) fy) X .default)
+            let arrTy := mkApp2 (mkConst ``Ty.arr) (mkApp (mkConst ``Ty.base) fy) cTy
+            withLetDecl `rec (val arrTy) recV fun recF => do
+              let inner := mkApp4 (mkConst ``Prod.mk [0, 0]) (val piTy) (val arrTy) encKids recF
+              let vv := mkApp4 (mkConst ``Prod.mk [0, 0]) (val c.fieldTy)
+                (val (mkApp2 (mkConst ``Ty.prod) piTy arrTy)) fv inner
+              let poss ← (List.range c.recs.size).toArray.mapM fun i => do
+                match c.shape with
+                | .fn _ => pure default
+                | _ => Reflect.Impl.posLit c.shape i
+              let fnIh := match c.shape with | .fn _ => some ihs[0]! | _ => none
+              let pf ← finish vv (some (recF, .recFn poss ihs fnIh))
+              mkLetFVars #[recF] pf
+        mkLambdaFVars (xs ++ ihs) pf
+    minors := minors.set! c.declIdx mn
+  let hF ← withLocalDeclD `t T fun t' => do
+    mkLambdaFVars #[t'] (mkAppN (mkConst (r.ind ++ `rec) [Level.zero])
+      (r.params ++ #[motive] ++ minors ++ #[t']))
+  let m ← applyRule g ``DSim.foldEnc fun m => do
+    for (n, v) in [(`hS, hS), (`g, gtm), (`x, x), (`gv, gv), (`T, T), (`enc, enc), (`F, Fl),
+        (`C, Cl), (`t, t0)] do
+      closeWith (← arg m n) v
+  closeWith (← arg m `hK) (← mkAppM ``Nat.le_refl #[K])
+  closeWith (← arg m `hg) hg
+  closeWith (← arg m `hx) (← instantiateMVars hx)
+  closeWith (← arg m `hF) hF
+
+/-- The recursive results of a step of an eliminator applied, `app (snd (snd (var x))) a`: the
+variable and the kind of its recursive results. -/
+partial def recCall? (ρ t : Expr) : LinkM (Option (Expr × Kind)) := do
+  unless t.isAppOfArity ``Tm.app 5 do return none
+  let F ← instantiateMVars (t.getArg! 3)
+  unless F.isAppOfArity ``Tm.snd 4 do return none
+  let F' ← instantiateMVars (F.getArg! 3)
+  unless F'.isAppOfArity ``Tm.snd 4 do return none
+  let V ← instantiateMVars (F'.getArg! 3)
+  unless V.isAppOfArity ``Tm.var 3 do return none
+  let x := V.getArg! 2
+  let v ← instantiateMVars (← envNth ρ (← varIdx x))
+  unless v.isAppOfArity ``Prod.mk 4 do return none
+  let v2 := v.getArg! 3
+  unless v2.isAppOfArity ``Prod.mk 4 do return none
+  let .fvar fv := v2.getArg! 3 | return none
+  match (← read)[fv]? with
+  | some kd@(.recFn ..) => return some (x, kd)
+  | _ => return none
 
 /-- Derive the `DSim` goal `g` of the condition of a conditional: an operation at its head is a
 decision atom (`DSim.decide`). -/
 partial def solveCond (g : MVarId) : LinkM Unit := g.withContext do
   let as ← dsimArgs (← g.getType)
   let t ← instantiateMVars as[5]!
-  unless t.isAppOfArity ``Tm.prim 5 do return ← solveD g
+  unless t.isAppOfArity ``Tm.prim 5 do
+    -- A Boolean term read as the decision of its truth (`if b`), or a decision computed so.
+    let s ← (Term.saveState : TermElabM Term.SavedState)
+    try
+      let m ← applyRule g ``DSim.decBool
+      return ← solveD (← arg m `h).mvarId!
+    catch _ =>
+      (s.restore : TermElabM Unit)
+      return ← solveD g
   let m ← applyRule g ``DSim.decide
   solveD (← arg m `hx).mvarId!
   let hp ← arg m `hp
@@ -1201,6 +1461,7 @@ partial def envHat (kinds : Std.HashMap FVarId Kind) (ρ : Expr) : MetaM (Expr �
         pure (← mkLambdaFVars #[x] (ts.getArg! 5), ← mkLambdaFVars #[x] hp)
       pure (← mkAppOptM ``treeEntry (#[a, b, ha, hb, F].map some),
         ← mkAppOptM ``SimE.treeEntry (#[a, b, ha, hb, F, v, hA].map some))
+    | some (.recFn ..) => throwError "the recursive results of a step are not in the environment"
     | none => do
       let hσ ← proveRed (mkApp (mkConst ``Ty.FO) σ)
       let p ← mkAppM ``Eq.symm #[← mkAppM ``Ty.hat_eq_val #[σ, hσ]]

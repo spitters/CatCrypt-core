@@ -43,7 +43,8 @@ a primitive operation), at the factor `K ≥ 1`.
   `DSim.prim`, `DSim.decide`, `DSim.app`, `DSim.letE`, `DSim.ite`, `DSim.le`, and for the
   inductive types `DSim.con` (a constructor, free, its children a table) and `DSim.fold` (the
   eliminator against a cost `C` of a structural recursion, one per call plus the body, by
-  induction on the value).
+  induction on the value); over the encoded values of a Lean type `DSim.foldEnc`, with
+  `DSim.appRec` (a recursive result applied in a step) and `DSim.node` (the node condition).
 -/
 
 @[expose] public section
@@ -223,6 +224,71 @@ theorem fold (hK : 1 ≤ K) {S : Sig} {c : Ty} (hS : S.FO) {g : Tm Γ (S.stepsTy
     rw [stepN_tick_add, stepN_tick_add, Nat.zero_add]
   · rw [Nat.mul_add, Nat.mul_add, Nat.mul_one]
     omega
+
+/-- The eliminator over the encoded values of a type `T`: when at the encoding of every `t : T`
+the eliminator is a leaf of `F t` within `K` times the charge `C t` (a statement proved by
+induction on `t`, whose step at a constructor is the node condition of the companion `C`), the
+eliminator at the encoding of `t` is within the allowance of its argument and `K` times one plus
+the charge of its argument plus `C t`. -/
+theorem foldEnc (hK : 1 ≤ K) {S : Sig} {c : Ty} (hS : S.FO) {g : Tm Γ (S.stepsTy (.mu S) c)}
+    {x : Tm Γ (.mu S)} {gv : Val (S.stepsTy (.mu S) c)} {T : Type} {enc : T → Val (.mu S)}
+    {F : T → Val c} {C : T → ℕ} {t : T} {n cx : ℕ} (hg : CEq g ρ 0 gv)
+    (hx : DSim K n cx x ρ (enc t))
+    (hF : ∀ t, ∃ m, foldW gv (enc t) = stepN CTree.tick m (.ret (F t)) ∧ m ≤ K * C t) :
+    DSim K n (1 + cx + C t) (.fold hS g x) ρ (F t) := by
+  obtain ⟨mx, hmx, lx⟩ := hx
+  obtain ⟨m, hm, lm⟩ := hF t
+  refine ⟨mx + (m + 1), ?_, ?_⟩
+  · show (g.eval ρ).bind (fun gv => (x.eval ρ).bind fun w => CTree.tick (foldW gv w)) = _
+    rw [hg, stepN_ret_bind, hmx, stepN_ret_bind, hm]
+    show stepN CTree.tick 0 (stepN CTree.tick mx (stepN CTree.tick (m + 1) (.ret (F t)))) = _
+    rw [stepN_tick_add, stepN_tick_add, Nat.zero_add]
+  · rw [Nat.mul_add, Nat.mul_add, Nat.mul_one]
+    omega
+
+/-- A data conditional charged its condition and the branch it takes, as `derive_timed` charges a
+conditional in data: the β-step is paid by the unit charge, the branches have allowances of their
+own. -/
+theorem iteIf (hK : 1 ≤ K) {P : Prop} [Decidable P] {bt : Tm Γ .bool} {t e : Tm Γ τ}
+    {u w : Val τ} {n₁ n₂ n₃ cb ct ce : ℕ} (hb : DSim K n₁ cb bt ρ (Decidable.decide P))
+    (ht : DSim K n₂ ct t ρ u) (he : DSim K n₃ ce e ρ w) :
+    DSim K (n₁ + (n₂ + n₃)) (1 + cb + if P then ct else ce) (.ite bt t e) ρ
+      (if P then u else w) := by
+  obtain ⟨mb, hmb, lb⟩ := hb
+  obtain ⟨mt, hmt, lt⟩ := ht
+  obtain ⟨me, hme, le⟩ := he
+  refine ⟨mb + ((if P then mt else me) + 1), CEq.ite id hmb hmt hme, ?_⟩
+  by_cases hP : P
+  · simp only [hP, if_true]
+    rw [Nat.mul_add, Nat.mul_add, Nat.mul_one]
+    omega
+  · simp only [hP, if_false]
+    rw [Nat.mul_add, Nat.mul_add, Nat.mul_one]
+    omega
+
+/-- A Boolean term as the decision of its truth, the condition of `if b`. -/
+theorem decBool {x : Tm Γ .bool} {b : Bool} {n c : ℕ} (h : DSim K n c x ρ b) :
+    DSim K n c x ρ (Decidable.decide (b = true)) := by
+  have e : b = Decidable.decide (b = true) := by simp
+  exact e ▸ h
+
+/-- A data term within its allowance and charge evaluates within any bound `B` above them: the
+node condition of an eliminator. -/
+theorem node {t : Tm Γ τ} {v : Val τ} {n c B : ℕ} (h : DSim K n c t ρ v) (hB : n + K * c ≤ B) :
+    ∃ m, CEq t ρ m v ∧ m ≤ B := by
+  obtain ⟨m, hm, l⟩ := h
+  exact ⟨m, hm, by omega⟩
+
+/-- A recursive result applied in a step of an eliminator: the β-step and its `m ≤ K * d` steps
+against the charge `1 + d` of the recursive call. -/
+theorem appRec (hK : 1 ≤ K) {F : Tm Γ (.arr a b)} {x : Tm Γ a} {g : Val (.arr a b)} {v : Val a}
+    {w : Val b} {n c d m : ℕ} (hF : CEq F ρ 0 g) (hx : DSim K n c x ρ v)
+    (hg : g v = stepN CTree.tick m (.ret w)) (hm : m ≤ K * d) :
+    DSim K n (1 + d + c) (.app F x) ρ w := by
+  obtain ⟨mx, hmx, l⟩ := hx
+  refine ⟨0 + mx + (m + 1), CEq.app hF hmx hg, ?_⟩
+  rw [Nat.mul_add, Nat.mul_add, Nat.mul_one]
+  omega
 
 end DSim
 

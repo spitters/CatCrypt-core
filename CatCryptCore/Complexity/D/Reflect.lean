@@ -671,6 +671,10 @@ theorem cost_eq {τ : Ty} {t : Tm Γ τ} {c : ℕ} {v : Val τ} (h : CEq t ρ c 
 
 theorem var {τ : Ty} (x : Var Γ τ) (ρ : Env Γ) : CEq (.var x) ρ 0 (ρ τ x) := rfl
 
+/-- `CEq` at a λ-term, an unfolding of `Tm.eval`: its value is the closure, at no cost. -/
+theorem lam {a b : Ty} (t : Tm (a :: Γ) b) (ρ : Env Γ) :
+    CEq (.lam t) ρ 0 (fun v => t.eval (ρ.cons v)) := rfl
+
 theorem natLit (n : ℕ) (ρ : Env Γ) : CEq (.natLit n) ρ 0 n := rfl
 
 theorem lit (f : FTy) (v : f.den) (ρ : Env Γ) : CEq (.lit f v) ρ 0 v := rfl
@@ -2358,6 +2362,21 @@ partial def goIndCases (ctx : Ctx) (e : Expr) (r : IndRep) (major : Expr)
     gtm := mkAppN (mkConst ``Tm.pair) #[Γ, gTy, tyC `arr #[altTyOf c, cTy], gtm, lamTm]
     gTy := mkApp3 (mkConst ``Sig.stepsTy) pre[j]! X cTy
   let foldTm := mkAppN (mkConst ``Tm.fold) #[Γ, S, cTy, r.fo, gtm, rm.tm]
+  -- The fold of a structural recursion records its source for `link_timed`: the recursive
+  -- constant, the position of the recursion argument and, for each other argument, the de Bruijn
+  -- index of the D variable that holds it (`-` for an argument that is no variable).
+  let foldTm := match rec? with
+    | some fr =>
+      if hasAcc then foldTm else
+      let fixed := (List.range fr.args.size).map fun i =>
+        if i == fr.pos then "*" else
+        match ctx.entries.find? (fun en => en.val == fr.args[i]! && en.path.isEmpty) with
+        | some en => toString (ctx.depth - 1 - en.level)
+        | none => "-"
+      let kv : KVMap := (((({} : KVMap).insert `dFold.fn (.ofName fr.fn)).insert `dFold.pos
+        (.ofNat fr.pos)).insert `dFold.fixed (.ofString (",".intercalate fixed)))
+      .mdata kv foldTm
+    | none => foldTm
   let zr ← if hasAcc then tupleRes ctx (← init.mapM (goP ctx)) else pure default
   let tm := if hasAcc then mkAppN (mkConst ``Tm.app) #[Γ, Y, cRes, foldTm, zr.tm] else foldTm
   if ← synMode then return { tm, ty := cRes, pf := mkConst ``True.intro, val := default,
