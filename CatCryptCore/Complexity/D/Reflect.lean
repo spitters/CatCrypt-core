@@ -109,8 +109,20 @@ as `foldl` and `Nat.iterate` as `iter`; in `SPComp`, `pure`, `bind` (and `do`), 
 `SPComp.get` and `SPComp.set` at a location `FTy.loc f n`, and the application of a parameter;
 in `SPTree`, `ret`, `sample` of a finite ground type, `get`, `set`, `fail`, `SPTree.bind`, `if`
 and the application of a parameter.
-A constant outside the Lean, Std and Mathlib libraries is unfolded. Any other construct is
-refused with a message naming it.
+A constant outside the Lean, Std and Mathlib libraries is unfolded, except a certified callee
+(below). Any other construct is refused with a message naming it.
+
+## Calls of certified callees
+
+The class: a call `c e₁ … eₙ`, in a computation or a tree, of a definition `c` with a D-term `c.d`
+over its parameters alone (no static parameter), a denotation theorem `c.d_den` over the oracle and
+`n` data parameters whose values are their D values, and a certificate `c.d_timedSim` of
+`link_timed`. The call is the `let` of `e₁ … eₙ₋₁` and the call of the closure of `c.d` renamed into
+the caller's context by `Ren.liftN` on `eₙ`: `.app (.lam (c.d.rename (Ren.liftN Δ))) eₙ`. Its
+derivation is `c.d_den` at the arguments (`DenM.certCall`, through `Env.prepend` and
+`Env.comp_prepend_liftN`), and the body of `c` is not reflected again; `link_timed` applies the
+certificate at the call. A callee with a function, type or instance parameter is unfolded as
+before.
 
 ## Inductive types and structural recursion
 
@@ -639,6 +651,59 @@ theorem treeIte {c : Ty} {P : Prop} [Decidable P] {b : Tm Γ .bool} {t e : Tm Γ
     (he : DenM O e ρ y.compile) : DenM O (.ite b t e) ρ (if P then x else y).compile := by
   rw [apply_ite SPTree.compile]
   exact ite hb ht he
+
+end DenM
+
+/-! ### Calls of certified callees
+
+A call `c e₁ … eₙ` of a definition `c` with a D-term `c.d : Tm Δ τ` over its parameters and a
+certificate `c.d_timedSim` is reflected as the call of the closure of `c.d` renamed into the
+context of the caller: the first `n - 1` arguments bound by `let`, the last one the argument of
+the closure, whose body `c.d.rename (Ren.liftN Δ)` reads the parameters at the innermost
+variables. Its meaning is that of `c.d` at the environment of the arguments (`DenM.certCall`),
+so the body of `c` is not reflected again. -/
+
+/-- The renaming from the empty context. -/
+def _root_.CatCrypt.Complexity.D.Ren.nil (Γ : List Ty) : Ren [] Γ := fun _ x => nomatch x
+
+/-- The renaming of a context `Δ` onto the innermost variables of `Δ ++ Γ`. -/
+def _root_.CatCrypt.Complexity.D.Ren.liftN {Γ : List Ty} : (Δ : List Ty) → Ren Δ (Δ ++ Γ)
+  | [] => Ren.nil Γ
+  | _ :: Δ => (Ren.liftN Δ).lift
+
+/-- The environment `ρc` of `Δ` in front of the environment `ρ` of `Γ`. -/
+def _root_.CatCrypt.Complexity.D.Env.prepend {Γ : List Ty} :
+    {Δ : List Ty} → Env Δ → Env Γ → Env (Δ ++ Γ)
+  | [], _, ρ => ρ
+  | _ :: _, ρc, ρ => (Env.prepend (fun τ x => ρc τ (.there x)) ρ).cons (ρc _ .here)
+
+/-- The innermost variables of an environment in front read through `Ren.liftN` are that
+environment. -/
+theorem _root_.CatCrypt.Complexity.D.Env.comp_prepend_liftN {Γ : List Ty} {Δ : List Ty}
+    (ρc : Env Δ) (ρ : Env Γ) :
+    (Env.prepend ρc ρ).comp (Ren.liftN Δ) = ρc := by
+  induction Δ with
+  | nil => exact funext fun _ => funext fun x => nomatch x
+  | cons σ Δ ih =>
+    change ((Env.prepend (fun τ x => ρc τ (.there x)) ρ).cons (ρc σ .here)).comp
+      (Ren.liftN Δ).lift = ρc
+    refine (Env.comp_lift _ _ _).trans ?_
+    refine (congrArg (fun ρ' => Env.cons (Γ := Δ) (τ := σ) (ρc σ .here) ρ') (ih _)).trans ?_
+    funext τ x
+    cases x <;> rfl
+
+namespace DenM
+
+variable {O : CTree.Oracle} {Γ : List Ty}
+
+/-- A certified callee read through `Ren.liftN` at an environment in front means the callee at
+that environment. -/
+theorem certCall {Δ : List Ty} {τ : Ty} {t : Tm Δ τ} {ρc : Env Δ} {c : SPComp (Val τ)}
+    (h : DenM O t ρc c) (ρ : Env Γ) :
+    DenM O (t.rename (Ren.liftN Δ)) (Env.prepend ρc ρ) c := by
+  show ((t.rename (Ren.liftN Δ)).interp (fun t => t) (Env.prepend ρc ρ)).run O = c
+  rw [Tm.interp_rename, Env.comp_prepend_liftN]
+  exact h
 
 end DenM
 
@@ -2816,6 +2881,7 @@ partial def goM (ctx : Ctx) (e : Expr) : M Res := do
         ctx.rho, aTy, rn.ty, ro.tm, rn.tm, rs.tm, ro.val, rn.val, S, ro.pf, rn.pf, hr]))
     | ``Prod.casesOn, 5 => goProdCase ctx e args[3]! args[4]! true
     | _, _ =>
+      if let some r ← certCall? ctx e c args false then return r
       if (← isMatcher c) || (← unfoldable c) then goM ctx (← deltaApp c e)
       else fail m!"the computation `{e}` (head `{c}`)"
   | .fvar _ | .lam .. =>
@@ -2878,6 +2944,81 @@ partial def treeCont (ctx : Ctx) (k ty : Expr) : M (Res × Expr × Option Expr �
     let rb ← goT ((ctx.bind ty x).push en) (body.instantiate1 x)
     let (hkc, dep) ← contCost x rb.cpf
     return (rb, ← ifPf (mkLambdaFVars #[x] rb.pf), hkc, dep)
+
+/-- A call `c e₁ … eₙ` of a certified callee `c` in a computation (`tree` for an `SPTree`): `c.d`
+is a D-term over the parameters of `c` alone, `c.d_den` is stated over the oracle and `n` data
+parameters, and `c.d_timedSim` exists. The call is the `let` of the first `n - 1` arguments and
+the call of the closure of `c.d` renamed into the context (`Ren.liftN`) on the last; its
+derivation is `c.d_den` at the arguments (`DenM.certCall`), and the body of `c` is not
+reflected again. `none` when `c` is not such a callee. -/
+partial def certCall? (ctx : Ctx) (e : Expr) (c : Name) (args : Array Expr) (tree : Bool) :
+    M (Option Res) := do
+  let env ← getEnv
+  unless env.contains (c ++ `d_timedSim) && env.contains (c ++ `d_den) do return none
+  let some (.defnInfo di) := env.find? (c ++ `d) | return none
+  unless di.levelParams.isEmpty do return none
+  let cd := mkConst (c ++ `d)
+  let dTy ← whnfR (← inferType cd)
+  unless dTy.isAppOfArity ``Tm 2 do return none
+  let Δ := dTy.getArg! 0
+  let τ := dTy.getArg! 1
+  let some (_, tysIn) := (← instantiateMVars Δ).listLit? | return none
+  let n := tysIn.length
+  unless n ≥ 1 && n == args.size do return none
+  let denTy ← inferType (mkConst (c ++ `d_den))
+  let srcTys ← forallTelescopeReducing denTy fun xs _ => do
+    if xs.size != n + 1 then return none
+    return some (← (xs.extract 1 xs.size).mapM fun x => inferType x)
+  let some srcTys := srcTys | return none
+  -- the parameters in order, the first outermost
+  let tys := tysIn.reverse.toArray
+  for i in [0:n] do
+    let ai := ctx.subst args[i]!
+    unless ← isDefEq (← inferType ai) srcTys[i]! do return none
+    let (σ, _) ← tyOf (← inferType ai)
+    unless ← isDefEq σ tys[i]! do return none
+  let mut c' := ctx
+  let mut binds : Array (Expr × Res × Ctx) := #[]
+  for i in [0:n - 1] do
+    let ra ← goP c' args[i]!
+    binds := binds.push (tys[i]!, ra, c')
+    let y ← mkFreshFVarId
+    c' := (c'.bind tys[i]! ra.dv).push
+      { fvar := y, level := c'.depth, path := [], baseTy := tys[i]!, val := ra.val,
+        dval := ra.dv, fn := ra.fn }
+  let raN ← goP c' args[n - 1]!
+  let σN := tys[n - 1]!
+  let ΓN := c'.gamma
+  let ren ← mkAppOptM ``Ren.liftN #[some ctx.gamma, some Δ]
+  let body := mkAppN (mkConst ``Tm.rename) #[Δ, mkApp3 (mkConst ``List.cons [.zero]) (mkConst ``Ty) σN ΓN, τ, cd,
+    ren]
+  let mut tm := mkAppN (mkConst ``Tm.app) #[ΓN, σN, τ,
+    mkAppN (mkConst ``Tm.lam) #[ΓN, σN, τ, body], raN.tm]
+  let mut pf := mkConst ``True.intro
+  unless ← synMode do
+    let C ← if tree then mkAppM ``SPTree.compile #[ctx.subst e] else pure (ctx.subst e)
+    let vals := (binds.map (·.2.1.val)).push raN.val
+    let dvs := (binds.map (·.2.1.dv)).push raN.dv
+    let mut ρc := mkConst ``Env.nil
+    let mut Δi : List Expr := []
+    for i in [0:n] do
+      ρc := mkAppN (mkConst ``Env.cons) #[gammaE Δi, tys[i]!, dvs[i]!, ρc]
+      Δi := tys[i]! :: Δi
+    let hd ← mkExpectedTypeHint (mkAppN (mkConst (c ++ `d_den)) (#[ctx.oracle] ++ vals))
+      (denME ctx.oracle Δ τ cd ρc C)
+    let ρN := c'.rho
+    let h1 ← mkExpectedTypeHint (← denMApp ctx ``DenM.certCall #[hd, ctx.rho])
+      (denME ctx.oracle (mkApp3 (mkConst ``List.cons [.zero]) (mkConst ``Ty) σN ΓN) τ body
+        (mkAppN (mkConst ``Env.cons) #[ΓN, σN, raN.dv, ρN]) C)
+    let hlam ← mkAppM ``Den.lam #[body, ρN]
+    pf ← denMApp c' ``DenM.app #[hlam, raN.pf, h1]
+  for i' in [0:n - 1] do
+    let i := n - 2 - i'
+    let (σ, ra, ci) := binds[i]!
+    tm := mkAppN (mkConst ``Tm.letE) #[ci.gamma, σ, τ, ra.tm, tm]
+    unless ← synMode do
+      pf ← denMApp ci ``DenM.letEPure #[ra.pf, pf]
+  if tree then return some (← finishT ctx e tm τ pf) else return some (← finishM ctx e tm τ pf)
 
 /-- A computation tree (`SPTree`): its meaning is its compilation (`DenM.tree*`). -/
 partial def goT (ctx : Ctx) (e : Expr) : M Res := do
@@ -2966,6 +3107,7 @@ partial def goT (ctx : Ctx) (e : Expr) : M Res := do
           none, none, hb, rt.pf, re.pf]
       finishT ctx e tm rt.ty pf (← iteCost P inst rc rt re)
     | _, _ =>
+      if let some r ← certCall? ctx e c args true then return r
       if (← isMatcher c) || (← unfoldable c) then goT ctx (← deltaApp c e)
       else fail m!"the tree `{e}` (head `{c}`)"
   | .fvar _ | .lam .. =>

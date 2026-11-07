@@ -256,3 +256,29 @@ of `derive_timed`, whose companion `f.timedCost` is defined by the same recursio
 (`TimedLink.DSim.foldEnc`, the node condition the equation of the companion at each
 constructor). Tests: `CatCryptCoreTest/Complexity/D/MuTest.lean`, `ReflectRecTest.lean`,
 `ReflectIndTest.lean`, `CatCryptCoreTest/Tactics/LinkTimedFoldTest.lean`.
+
+## The interpretation in the Diller–Nahm category
+
+`DillerNahm` relates the charges of `Tm.dtC` to the Diller–Nahm category of containers
+(`CatCryptCore/Container/DillerNahm.lean`; Moss and von Glehn, *Dialectica models of type theory*,
+LICS 2018, §8).
+
+* The substitution theorem `Tm.dtC_subst`: a certified callee `g : Tm (a :: Γ) b` of the
+  fragment, effectful or not, substituted for the function variable of `t` is simulated by the
+  charges of `t` at the entry `calleeEntry cc g η` of the callee, each call charged the charge of
+  the call and the cost of the callee at its argument (`Tm.dtC_call_calleeEntry`); it is the
+  soundness theorem of `t` at that entry, related to the closure of `g` by the soundness theorem
+  of `g`. `Tm.cost_subst_le` and `Tm.dtC_subst_letE` (the β-redex) follow.
+* The functor of the pure fragment: a type is the container `Ty.dn τ = clockPos τ.hat` (a data
+  token and a clock tick at each translated value), a pure term in the context of one more
+  variable its costed closure `Tm.costedC` and the Diller–Nahm morphism `Tm.dnC`, whose backward
+  map sends a data token to its demand. The variable is the identity (`Tm.dnC_var`), and the
+  composite by substitution `Tm.letComp s t` is the composite of the morphisms with the clock tick
+  of the β-step between them (`Tm.dnC_letComp`, with `Tm.dtC_rename`). `Tm.dnC_bounds` is the
+  soundness theorem at the abstraction: the evaluation is a leaf after at most the ticks of the
+  demand.
+* `reflect_d` reflects a call of a callee with a certificate `c.d_timedSim` as the closure of
+  `c.d` renamed into the caller's context (`Ren.liftN`), and `link_timed` applies the certificate
+  at the call (`TSim.certCall`), without walking the body of the callee again. Test:
+  `CatCryptCoreTest/Tactics/LinkTimedCertTest.lean`.
+

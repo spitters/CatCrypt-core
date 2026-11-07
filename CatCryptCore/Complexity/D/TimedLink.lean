@@ -38,7 +38,8 @@ a primitive operation), at the factor `K ≥ 1`.
   front of the costed tree, and weakening of that step cost.
 * Tree rules `TSim.ret`, `TSim.fail`, `TSim.sample`, `TSim.get`, `TSim.set`, `TSim.letE`,
   `TSim.bind`, `TSim.ite`, `TSim.call`, `TSim.call0`, and `TSim.le_fst`, `TSim.mono`,
-  `TSim.cost_le`.
+  `TSim.cost_le`; `TSim.certCall`, the closure of a certified callee at the arguments of a call,
+  simulated by the certificate of the callee.
 * Data rules `DSim.var`, `DSim.lit`, `DSim.natLit`, `DSim.pair`, `DSim.fst`, `DSim.snd`,
   `DSim.prim`, `DSim.decide`, `DSim.app`, `DSim.letE`, `DSim.ite`, `DSim.le`, and for the
   inductive types `DSim.con` (a constructor, free, its children a table) and `DSim.fold` (the
@@ -259,10 +260,10 @@ theorem iteIf (hK : 1 ≤ K) {P : Prop} [Decidable P] {bt : Tm Γ .bool} {t e : 
   obtain ⟨me, hme, le⟩ := he
   refine ⟨mb + ((if P then mt else me) + 1), CEq.ite id hmb hmt hme, ?_⟩
   by_cases hP : P
-  · simp only [hP, if_true]
+  · simp only [hP, ite_true]
     rw [Nat.mul_add, Nat.mul_add, Nat.mul_one]
     omega
-  · simp only [hP, if_false]
+  · simp only [hP, ite_false]
     rw [Nat.mul_add, Nat.mul_add, Nat.mul_one]
     omega
 
@@ -421,6 +422,17 @@ theorem call (hK : 1 ≤ K) {F : Tm Γ (.arr a τ)} {x : Tm Γ a} {g : Val (.arr
   have hcK := Nat.mul_le_mul_left K hc
   rw [Nat.mul_add, Nat.mul_add, Nat.mul_one] at hcK
   exact TimedSim.eval_app_ceq hF hm hg (by omega)
+
+/-- The closure of a certified callee `t` renamed into the context of the caller
+(`Ren.liftN`), at an environment in front, is simulated by what simulates the callee at that
+environment: its certificate applies at the call, and the body of the callee is not walked
+again. -/
+theorem certCall {Δ : List Ty} {σ : Ty} {t : Tm Δ σ} {ρc : Env Δ} {E : α → Val σ → Prop}
+    {n : ℕ} {x : ℕ × SPTree.Timed α} (h : TimedSim E K n x (t.eval ρc)) (ρ' : Env Γ) :
+    TimedSim E K n x ((t.rename (Ren.liftN Δ)).eval (Env.prepend ρc ρ')) := by
+  unfold Tm.eval
+  rw [Tm.interp_rename, Env.comp_prepend_liftN]
+  exact h
 
 /-- A call of a tree function value on `unit`, the reflection of a tree without arguments: the
 β-step has no counterpart in the costed tree and is paid by the allowance. -/

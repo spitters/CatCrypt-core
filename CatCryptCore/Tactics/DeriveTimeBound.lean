@@ -231,6 +231,16 @@ the maximum of the leaf bounds. A vector theorem is stated with `derive_time_bou
 without it whenever the scalar rule fails on a kind with a vector charge (a composite whose time
 depends on the query count of a binder).
 
+**The use bound beside the time theorem.** For a kind with a vector charge, `derive_time_bound`
+also states `R.useBound_timed`: the use bound `UseBound (C 1) allows (stepToFreeMT (R.timed …))
+(budget q T)` of the costed term, the join of its component folds before it is read back as the
+time theorem, over the use-bound hypotheses of its binders. It is the demand of the term as a
+Diller–Nahm morphism at `{query, tick}` (`CatCryptCore/Container/DNCert.lean`): its query count
+and its ticks, which compose by the use vectors of `Clocked.comp` (`useBound_liftM_clocked`). It
+is emitted whenever the use bound is proved, with `+queries`, when the scalar rule fails on such
+a kind, and beside a time theorem of the scalar rule; a use bound that is not proved there leaves
+the time theorem as it is.
+
 **Length hypotheses.** Class: a charge, or a premise `∀ s, c s ≤ ?k` of a registered cost lemma
 (the test of `List.find?.timedCost_le`), to be bounded free of a variable `x` on which it depends
 only through the lengths of lists computed from `x`, under a hypothesis of the context that
@@ -336,7 +346,8 @@ hypotheses `∀ ys, f ys ≤ t` its cost companions.
 * `affineLe` — the affine bound of a cost in one atom
 * `potentialOf`, `growthLeaf`, `growthBind`, `foldSimulation?` — the simulation rule
 * `costBoundLemmas` — the registered bounds of a cost read by `bfree?`
-* `useHypAt`, `emitUseTimeBound` — the use bound of a binder and the theorem with query count
+* `useHypAt`, `emitUseTimeBound` — the use bound of a binder, the theorem with query count and
+  the use bound `R.useBound_timed`
 * `emitFoldTimeBound` — the procedure for a costed tree of a registered kind
 * `foldSPTreeTimeBound` — the procedure for a costed `SPTree` by the fold rule
 * `time_fold` — the fold rule as a tactic
@@ -3187,7 +3198,8 @@ of the step-prefixed image of `c xs` is the join `FoldKind.useJoin` of its compo
 bounded by the fold rule at its own charge, and the theorem is the right side of
 `FoldKind.useStepIff` at the joined bounds (the time bound and the query count of an oracle
 program). Returns the reason when the theorem is not proved. -/
-def emitUseTimeBound (k : FoldKind) (c name : Name) : TermElabM (Option MessageData) := do
+def emitUseTimeBound (k : FoldKind) (c name : Name) (useName : Option Name := none)
+    (timeThm : Bool := true) : TermElabM (Option MessageData) := do
   let (some J, some U) := (k.useJoin, k.useStepIff)
     | return some m!"the kind `{k.timed}` has no vector charge"
   let info ← getConstInfo c
@@ -3216,6 +3228,15 @@ def emitUseTimeBound (k : FoldKind) (c name : Name) : TermElabM (Option MessageD
         mid.assign pf
       let pj ← instantiateMVars (mkAppN cJ ms)
       if pj.hasExprMVar then return some m!"the use bound is not determined"
+      if let some un := useName then
+        if pj.hasSorry then return some m!"the use bound is incomplete"
+        try
+          addDecl (Declaration.thmDecl
+            { name := un, levelParams := info.levelParams,
+              type := ← mkForallFVars (xs ++ vars ++ hyps) (← inferType pj),
+              value := ← mkLambdaFVars (xs ++ vars ++ hyps) pj })
+        catch e => return some m!"the use bound is not accepted: {e.toMessageData}"
+      unless timeThm do return none
       let cU ← mkConstWithFreshMVarLevels U
       let (us, _, ut) ← forallMetaTelescope (← inferType cU)
       unless ut.isAppOfArity ``Iff 2 do return some m!"`{U}` is not an equivalence"
@@ -3286,7 +3307,8 @@ def isOracleTimed (c : Name) : MetaM Bool := do
 /-- `derive_time_bound R.tree` states and proves `R.tree.timeBound_timed`, the time theorem of
 `R.tree.timed` (see the module docstring): by the fold rule for a costed tree of a registered
 kind (`emitFoldTimeBound`), and for a kind with a vector charge, when that fails or with
-`+queries`, with the query count beside the time (`emitUseTimeBound`); for a costed `SPTree`
+`+queries`, with the query count beside the time (`emitUseTimeBound`), and for a kind with a vector
+charge also the use bound `R.tree.useBound_timed` when it is proved; for a costed `SPTree`
 by the fold rule first (`foldSPTreeTimeBound`), else along its bound for a pure step body (`mirrorTimeBound`), else by
 `time_bound` (`emitTimeBound`); it fails with the reasons when the theorem is not proved. -/
 syntax (name := deriveTimeBoundCmd) "derive_time_bound " ("+queries ")? ident : command
@@ -3297,16 +3319,28 @@ def elabDeriveTimeBound : CommandElab := fun stx => do
     let queries := !stx[1].isNone
     let t ← realizeGlobalConstNoOverloadWithInfo stx[2]
     let name := t ++ `timeBound_timed
+    let useName := t ++ `useBound_timed
     if let some k ← foldKindOfTimed? (t ++ `timed) then
       if queries then
-        if let some why ← emitUseTimeBound k (t ++ `timed) name then
+        if let some why ← emitUseTimeBound k (t ++ `timed) name (useName := some useName) then
           throwError "`{name}` is not proved: {why}"
         return
       let s ← saveState
-      let some why ← emitFoldTimeBound k (t ++ `timed) name | return
+      let some why ← emitFoldTimeBound k (t ++ `timed) name | do
+        -- The use bound beside the time theorem, when the kind has a vector charge and the use
+        -- bound is proved; the time theorem stands without it.
+        if k.useJoin.isSome then
+          let s' ← saveState
+          let r ← try
+              emitUseTimeBound k (t ++ `timed) name (useName := some useName) (timeThm := false)
+            catch e => do
+              if e.isInterrupt then throw e
+              pure (some e.toMessageData)
+          if r.isSome then s'.restore
+        return
       if k.useJoin.isSome then
         s.restore
-        let some whyU ← emitUseTimeBound k (t ++ `timed) name | return
+        let some whyU ← emitUseTimeBound k (t ++ `timed) name (useName := some useName) | return
         throwError "`{name}` is not proved: {why}\nwith the query counts: {whyU}"
       throwError "`{name}` is not proved: {why}"
     let s ← saveState

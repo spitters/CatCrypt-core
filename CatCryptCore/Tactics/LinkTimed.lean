@@ -123,6 +123,19 @@ arguments (`TSim.call`) or on `unit` (`TSim.call0`), `ite`, `fail`, and a data l
 `appFree` of a projection or re-pairing value, a data conditional (`DSim.iteIf`, charged the
 branch it takes, and `DSim.decBool` for the condition `if b` of a Boolean).
 
+Calls of certified callees. The class: a call that `reflect_d` reflects as the closure of the
+D-term `c.d` of a callee with a certificate `c.d_timedSim` (`Reflect.Impl.certCall?`,
+`certClosure?`), on the last argument after the `let` of the others. The rule is `TSim.call` with
+the closure (`Reflect.CEq.lam`) and, at the value of the arguments, the certificate of the callee
+(`TSim.certCall`): the callee is linked at the call by its certificate, as a function variable
+of the substitution theorem `Tm.dtC_subst` is by its entry, and its body is not walked again. The
+call is charged the unit of a call of `derive_timed` and the step cost of the costed form of the
+callee; the allowance adds the allowance of the certificate. Its costed tree is read in head
+normal form, and a bind whose first tree is such a call is unified with the projections of its
+split pair reduced (`applyRuleProj`), so that its step cost is not taken from the costed form of
+the callee. The route through the soundness theorem does not apply to such a term (the closure
+of an effectful callee is outside `Tm.InDtFrag`).
+
 The eliminator of a structural recursion. The class: a `fold` that `reflect_d` marks with its
 source (a structural recursion `f` over a Lean inductive type `T` whose other arguments are
 fixed variables of the D-term), the call charged by the companion `f.timedCost` of
@@ -152,6 +165,7 @@ whose type differs from their D representation (`Option`).
 ## Main definitions
 
 * `link_timed x`: the command.
+* `certClosure?`, `envPeel`, `applyRuleProj`: the call of a certified callee.
 * `DtState`, `DtM`, `provePair`, `proveTree`, `closeSideD`, `sideD`, `splitIdx`, `leafMap?`,
   `leafMapGoal`, `countFree`, `dtRoute`: the comparison of the
   route through the soundness theorem.
@@ -322,6 +336,26 @@ def applyRule (g : MVarId) (c : Name)
   g.assign pf
   return m
 
+/-- `applyRule` with the projections of pairs in the conclusion reduced after `pre`: a step-prefixed
+tree split into fresh metavariables by `pre` enters the unification through its components, so
+that a component is not assigned by unifying the pair with the costed form of a callee whose
+projection the goal holds. -/
+def applyRuleProj (g : MVarId) (c : Name)
+    (pre : Std.HashMap Name Expr → MetaM Unit := fun _ => pure ()) :
+    LinkM (Std.HashMap Name Expr) := do
+  let (pf, m, concl) ← instRule c
+  pre m
+  let concl ← Meta.transform (← instantiateMVars concl) (post := fun e => do
+    if (e.isAppOfArity ``Prod.fst 3 || e.isAppOfArity ``Prod.snd 3) &&
+        (e.getArg! 2).isAppOfArity ``Prod.mk 4 then
+      return .done ((e.getArg! 2).getArg! (if e.isAppOfArity ``Prod.fst 3 then 2 else 3))
+    return .continue)
+  let gty ← g.getType
+  unless ← isDefEq concl gty do
+    failL m!"the rule `{c}` does not apply to{indentExpr (← instantiateMVars gty)}"
+  g.assign pf
+  return m
+
 /-- The `i`-th value of the syntactic environment `ρ` (a chain of `Env.cons`). -/
 partial def envNth (ρ : Expr) (i : Nat) : MetaM Expr := do
   let ρ ← instantiateMVars ρ
@@ -344,6 +378,31 @@ def kindOfVar (ρ F : Expr) : LinkM (Option Kind) := do
   let v ← whnf (← envNth ρ (← varIdx (F.getArg! 2)))
   let .fvar fv := v | return none
   return (← read)[fv]?
+
+/-- The callee `c` and its parameter context `Δ` when `F` is the closure of a certified callee
+that `reflect_d` built at a call (`Reflect.Impl.certCall?`): `Tm.lam` of `c.d` renamed by
+`Ren.liftN Δ`, with the certificate `c.d_timedSim` in the environment. -/
+def certClosure? (F : Expr) : MetaM (Option (Name × Expr)) := do
+  let F ← instantiateMVars F
+  unless F.isAppOfArity ``Tm.lam 4 do return none
+  let body := F.getArg! 3
+  unless body.isAppOfArity ``Tm.rename 5 do return none
+  unless (body.getArg! 4).isAppOfArity ``Ren.liftN 2 do return none
+  let .const cd _ := body.getArg! 3 | return none
+  let .str c "d" := cd | return none
+  unless (← getEnv).contains (c ++ `d_timedSim) do return none
+  return some (c, body.getArg! 0)
+
+/-- The first `k` values of the syntactic environment `ρ` (a chain of `Env.cons`), innermost
+first, and the environment below them. -/
+partial def envPeel (ρ : Expr) : Nat → MetaM (Array Expr × Expr)
+  | 0 => return (#[], ρ)
+  | k + 1 => do
+    let ρ ← instantiateMVars ρ
+    unless ρ.isAppOfArity ``Env.cons 4 do
+      throwError "link_timed: the environment `{ρ}` is not a chain of `Env.cons`"
+    let (vs, ρ0) ← envPeel (ρ.getArg! 3) k
+    return (#[ρ.getArg! 2] ++ vs, ρ0)
 
 /-- Record a step-cost side goal. -/
 def side (mv : Expr) : LinkM Unit := modify (·.push mv.mvarId!)
@@ -869,13 +928,41 @@ partial def solveT (g : MVarId) : LinkM Unit := g.withContext do
         solveT (← arg m `hb).mvarId!
         side (← arg m `hc)
       else
-        let m ← applyRule (← conv g) ``TSim.bind (splitPair · `x)
+        let m ← if (← certClosure? (e.getArg! 3)).isSome && e.isAppOfArity ``Tm.app 5 then
+            applyRuleProj (← conv g) ``TSim.bind (splitPair · `x)
+          else applyRule (← conv g) ``TSim.bind (splitPair · `x)
         solveT (← arg m `hs).mvarId!
         let (_, g1) ← (← arg m `hk).mvarId!.intro1
         let (_, g2) ← g1.intro1
         let (h, g3) ← g2.intro1
         solveT (← Lean.Meta.subst g3 h)
   | some ``Tm.app, 5 =>
+    if let some (c, Δ) ← certClosure? (t.getArg! 3) then
+      -- A call of a certified callee: its certificate at the arguments of the call.
+      let some (_, tys) := (← instantiateMVars Δ).listLit? |
+        failL m!"the parameter context `{Δ}` of `{c}` is not a list"
+      -- The costed tree of the call in head normal form, so that its tree is read off the
+      -- costed form of the callee and not off a projection of the caller's.
+      let gty ← instantiateMVars (← g.getType)
+      let g0 ← g.replaceTargetDefEq
+        (mkAppN gty.getAppFn (gty.getAppArgs.set! 6 (← whnf (gty.getArg! 6))))
+      let g' ← conv g0
+      let (_, A) ← costedParts (← tsimArgs (← g'.getType))[6]!
+      let m ← applyRule g' ``TSim.call fun m => do
+        let y ← arg m `y
+        let p ← mkAppM ``Prod.mk #[← mkFreshExprMVar (mkConst ``Nat), A]
+        unless ← isDefEq y p do throwError "link_timed: the call does not split"
+      closeWith (← arg m `hK) one
+      let F := t.getArg! 3
+      closeWith (← arg m `hF) (← mkAppM ``Reflect.CEq.lam #[F.getArg! 3, ρ])
+      solveD (← arg m `hx).mvarId!
+      let u ← instantiateMVars (← arg m `u)
+      let (inner, ρ0) ← envPeel ρ (tys.length - 1)
+      let vs := inner.reverse.push u
+      let h ← mkAppM ``TSim.certCall #[← mkAppM (c ++ `d_timedSim) vs, ρ0]
+      closeWith (← arg m `hg) h
+      side (← arg m `hc)
+      return
     match ← kindOfVar ρ (t.getArg! 3) with
     | some (.treeFn hA) =>
       let m ← applyRule (← conv g) ``TSim.call (splitPair · `y)
