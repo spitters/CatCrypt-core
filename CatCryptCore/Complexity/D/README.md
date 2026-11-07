@@ -282,3 +282,20 @@ LICS 2018, §8).
   at the call (`TSim.certCall`), without walking the body of the callee again. Test:
   `CatCryptCoreTest/Tactics/LinkTimedCertTest.lean`.
 
+## The types of D in the polynomial model
+
+`PolyModel` places the types of D in the polynomial model of type theory (von Glehn;
+`CatCryptCore/Container/`). The codes with their values form a universe in the sense of Awodey's
+natural models (`univPoly Val`), and so do the codes with their translated values
+(`univPoly Ty.hat`). `pi f B` and `sig f B` are the Π- and Σ-codes of that universe at the finite
+ground codes (`piStr`, `sigStr`, and `piStrHat`, `sigStrHat` for the translation), `mu S` and
+`imu f S i` its W-codes (`wStr`, `iwStr`): the values of `mu S` are Mathlib's W-type of the
+container `Sig.den S` (a `PFunctor`) and those of `imu f S i` the indexed W-type
+`Container.IPW` of the indexed container `ISig.cont S` (PolyFun's `IPFunctor`). A function type
+translates to the costed function `Container.Costed` of the Diller–Nahm model. The logical
+relations `ValRel` and `Sim` at inductive types are the relators `Container.WLift`,
+`Container.IWLift` of the W-types (`CatCryptCore/Container/WTypes.lean`, with the maps of fields
+`Container.wmapF`, `Container.iwmapF`), and `Sim` at a function type is the bound of the
+evaluation by the demand of the Diller–Nahm morphism of the costed function
+(`Sim.arr_iff_demand`).
+

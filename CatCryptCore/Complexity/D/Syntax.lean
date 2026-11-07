@@ -6,6 +6,8 @@ Authors: CatCrypt Contributors
 module
 
 public import CatCryptCore.Complexity.D.Tree
+public import CatCryptCore.Container.WTypes
+public import Mathlib.Data.PFunctor.Univariate.Basic
 
 /-!
 # Syntax of the deep language D
@@ -46,9 +48,9 @@ over a finite ground type `r` (`some r`) and strategies with challenges in a fin
 are instances; `list` is kept as a type of its own. The values of `mu S` are the W-type whose
 shapes are a constructor `c : S.Ctor` with a value of its field (`S.Fld c`) and whose positions
 are those of the constructor (`S.Pos c`), so that the positions of two nodes of one constructor
-are the same type (`Sig.den`). A field may hold functions: the logical relation and the
-translation relate two nodes of one constructor by their fields and their children
-(`WLift`).
+are the same type: the W-type of the container `Sig.den S` (a `PFunctor`) of the polynomial
+model. A field may hold functions: the logical relation and the translation relate two nodes of
+one constructor by their fields and their children (the relator `Container.WLift`).
 
 * `con x`: the node of the constructor that the argument `x : S.conTy (mu S)` selects (a
   sum over the constructors, the first innermost); a constructor with positions `some f` takes
@@ -68,7 +70,8 @@ so that a constructor at one index takes children at others (a strategy of a rou
 continuations at the next round, a tree whose depth bound decreases). The index ranges over
 `f.den`, defined before `Ty`, as the index of `pi` and `sig` does; an index over the values of a
 type of D would make `Ty` and `Val` inductive-recursive. The values are the indexed W-type `IW`
-of the constructors with their fields, each child at the index of its position.
+of the constructors with their fields, each child at the index of its position: the indexed
+W-type `Container.IPW` of that indexed container (`CatCryptCore/Container/WTypes.lean`).
 
 * `icon x`: the node at the index `i` of the constructor of `S i` that `x` selects, its children
   a table whose component at `p` is at the index `nx p`.
@@ -164,10 +167,11 @@ def RecPos : Option FTy → Type
   | some f => f.den
 
 /-- Indexed W-types: at the index `i`, a shape `a : A i` and, at each position `b : B i a`, a child
-at the index `nx i a b`. -/
-inductive IW {I : Type} (A : I → Type) (B : (i : I) → A i → Type)
-    (nx : (i : I) → (a : A i) → B i a → I) : I → Type where
-  | mk (i : I) (a : A i) (k : (b : B i a) → IW A B nx (nx i a b)) : IW A B nx i
+at the index `nx i a b`; the indexed W-type `Container.IPW` of the indexed container with shapes
+`A`, positions `B` and child indices `nx`. -/
+abbrev IW {I : Type} (A : I → Type) (B : (i : I) → A i → Type)
+    (nx : (i : I) → (a : A i) → B i a → I) : I → Type :=
+  Container.IPW ⟨A, B, nx⟩
 
 mutual
 
@@ -321,9 +325,10 @@ def ISig.Fld {f : FTy} : (S : ISig f) → S.Ctor → Type
 
 end
 
-/-- The shapes and positions of a signature: a shape is a constructor with the value of its
-field, its positions those of the constructor. -/
-def Sig.den (S : Sig) : (A : Type) × (A → Type) :=
+/-- The container of a signature: a shape is a constructor with the value of its field, its
+positions those of the constructor. The values of `mu S` are its W-type `(Sig.den S).W`, Mathlib's
+`WType` of its positions. -/
+def Sig.den (S : Sig) : PFunctor.{0, 0} :=
   ⟨(c : S.Ctor) × S.Fld c, fun s => S.Pos s.1⟩
 
 mutual
@@ -339,7 +344,7 @@ def Val.default : (τ : Ty) → Val τ
   | .mu S => WType.mk (Sig.leaf S).1 fun p => ((Sig.leaf S).2 p).elim
   | .pi _ B => fun j => Val.default (B j)
   | .sig f B => ⟨(FTy.instInhabited f).default, Val.default (B (FTy.instInhabited f).default)⟩
-  | .imu _ S i => IW.mk i (ISig.leaf (S i)).1 fun p => ((ISig.leaf (S i)).2 p).elim
+  | .imu _ S i => Container.IPW.mk i (ISig.leaf (S i)).1 fun p => ((ISig.leaf (S i)).2 p).elim
 
 /-- A shape of a signature without positions: the first constructor at a value of its field. -/
 def Sig.leaf : (S : Sig) → (x : (c : S.Ctor) × S.Fld c) × (S.Pos x.1 → Empty)

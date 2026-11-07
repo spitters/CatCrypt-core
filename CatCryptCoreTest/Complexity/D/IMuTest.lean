@@ -48,11 +48,11 @@ abbrev dtree (d : Fin 3) : Ty := .imu (.fin 2) dSig d
 
 /-- The leaf at depth `d` with the byte `x`. -/
 def leafI (d : Fin 3) (x : BitVec 8) : Val (dtree d) :=
-  IW.mk d ⟨.inl (), x⟩ fun p => Empty.elim p
+  Container.IPW.mk d ⟨.inl (), x⟩ fun p => Empty.elim p
 
 /-- The node at depth `d` with the byte `x` and the children `l` (at `false`) and `r`. -/
 def nodeIV (d : Fin 3) (x : BitVec 8) (l r : Val (dtree (predF d))) : Val (dtree d) :=
-  IW.mk d ⟨.inr (), x⟩ fun b => bif b then r else l
+  Container.IPW.mk d ⟨.inr (), x⟩ fun b => bif b then r else l
 
 /-- The XOR of the bytes of a tree, at the constant motive `word 8`: the same steps at every
 depth. -/

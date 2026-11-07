@@ -100,6 +100,7 @@ public import CatCryptCore.Complexity.D.Translate
 public import CatCryptCore.Complexity.D.TranslateDt
 public import CatCryptCore.Complexity.D.LinkDt
 public import CatCryptCore.Complexity.D.DillerNahm
+public import CatCryptCore.Complexity.D.PolyModel
 public import CatCryptCore.XDijkstra.XErrMonad
 public import CatCryptCore.XDijkstra.XAdvantageHybrid
 public import CatCryptCore.XDijkstra.Rel.XRelMvcgenControl
@@ -611,6 +612,7 @@ public import CatCryptCore.Crypto.Party.SyntacticCategory
 public import CatCryptCore.Crypto.Party.StoreHybrid
 public import CatCryptCore.Crypto.Party.SecretStateHybrid
 public import CatCryptCore.Crypto.Party.LoopTimed
+public import CatCryptCore.Container.WTypes
 public import CatCryptCore.Container.Code
 public import CatCryptCore.Container.QuotientFree
 public import CatCryptCore.Container.CodeCost

@@ -221,13 +221,13 @@ variable {Γ : List Ty} {ρ σ τ : Ty}
 of the others: the value and the cost of its pure costed closure, the translation of the
 abstraction (`dtC_lam`). -/
 noncomputable def costedC (cc : Ty → ℕ) (t : Tm (σ :: Γ) τ) (η : EnvHat Γ) :
-    Container.Costed σ.hat τ.hat where
-  fn u := τ.pureVal (t.dtC cc (η.cons u)).2
-  cost u := t.allowC cc + (t.dtC cc (η.cons u)).1
+    Container.Costed σ.hat τ.hat :=
+  (fun u => τ.pureVal (t.dtC cc (η.cons u)).2, fun u => t.allowC cc + (t.dtC cc (η.cons u)).1)
 
-/-- The abstraction of a term translates to its costed function. -/
+/-- The abstraction of a term translates to its costed function, a value of
+`Ty.hat (.arr σ τ) = Costed σ.hat τ.hat`. -/
 theorem dtC_lam (cc : Ty → ℕ) (t : Tm (σ :: Γ) τ) (η : EnvHat Γ) :
-    (Tm.lam t).dtC cc η = (0, .ret ((t.costedC cc η).fn, (t.costedC cc η).cost)) :=
+    (Tm.lam t).dtC cc η = (0, .ret (t.costedC cc η)) :=
   rfl
 
 /-- The Diller–Nahm morphism of a term in the context of one more variable: its costed function,
@@ -311,7 +311,7 @@ theorem dnC_bounds (cc : Ty → ℕ) (hcc : ∀ a, cc a ≤ 1) (t : Tm (σ :: Γ
     (huv : Sim σ u v) :
     ∃ m w, t.eval (ρ'.cons v) = stepN CTree.tick m (.ret w) ∧
       m ≤ ((t.dnC cc η).toFunB u false).count true ∧ Sim τ ((t.dnC cc η).toFunA u) w := by
-  have h : TimedSimTree (Sim (.arr σ τ)) 1 _ (.ret ((t.costedC cc η).fn, (t.costedC cc η).cost))
+  have h : TimedSimTree (Sim (.arr σ τ)) 1 _ (.ret (t.costedC cc η))
       (.ret fun v => t.eval (ρ'.cons v)) := dtC_timedSim cc hcc (Tm.lam t) ⟨ht, hp⟩ hρ
   cases h with
   | ret hs =>

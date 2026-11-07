@@ -401,10 +401,10 @@ recursion `F` at every node whose recursive results are the values of `F` at its
 eliminator denotes `F` at the value. -/
 theorem fold {S : Sig} {c : Ty} {g : Tm Γ (S.stepsTy (.mu S) c)} {x : Tm Γ (.mu S)}
     {gv : Val (S.stepsTy (.mu S) c)} {w : Val (.mu S)} (hg : Den g ρ gv) (hx : Den x ρ w)
-    {F : WType (Sig.den S).2 → Val c}
+    {F : (Sig.den S).W → Val c}
     (hF : ∀ a kids, stepAt S gv a kids (fun j => .ret (F (kids j))) = .ret (F ⟨a, kids⟩)) :
     Den (.fold g x) ρ (F w) := by
-  have key : ∀ w : WType (Sig.den S).2, foldW gv w = .ret (F w) := by
+  have key : ∀ w : (Sig.den S).W, foldW gv w = .ret (F w) := by
     intro w
     induction w with
     | mk a kids ih =>
@@ -865,12 +865,12 @@ results are leaves of the values of `F` after `C` ticks at the children the step
 step and `C` at the value. -/
 theorem fold {S : Sig} {c : Ty} {g : Tm Γ (S.stepsTy (.mu S) c)} {x : Tm Γ (.mu S)}
     {cg cx : ℕ} {gv : Val (S.stepsTy (.mu S) c)} {w : Val (.mu S)} (hg : CEq g ρ cg gv)
-    (hx : CEq x ρ cx w) {F : WType (Sig.den S).2 → Val c} {C : WType (Sig.den S).2 → ℕ}
-    (hF : ∀ a kids (rec : (Sig.den S).2 a → CTree (Val c)),
+    (hx : CEq x ρ cx w) {F : (Sig.den S).W → Val c} {C : (Sig.den S).W → ℕ}
+    (hF : ∀ a kids (rec : (Sig.den S).B a → CTree (Val c)),
       (∀ j, rec j = stepN CTree.tick (C (kids j)) (.ret (F (kids j)))) →
         stepAt S gv a kids rec = stepN CTree.tick (C ⟨a, kids⟩) (.ret (F ⟨a, kids⟩))) :
     CEq (.fold g x) ρ (cg + (cx + (C w + 1))) (F w) := by
-  have key : ∀ w : WType (Sig.den S).2,
+  have key : ∀ w : (Sig.den S).W,
       foldW gv w = stepN CTree.tick (C w) (.ret (F w)) := by
     intro w
     induction w with

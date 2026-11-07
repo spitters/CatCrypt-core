@@ -572,38 +572,6 @@ theorem ISig.hatF_eq_fld {f : FTy} : ∀ (S : ISig f), S.FO → ∀ c : S.Ctor, 
 
 end
 
-/-- A cast between indexed W-types whose fields are cast is the map of the cast of the
-fields. -/
-theorem cast_iwmapF {I : Type} {C : I → Type} {F G P : (i : I) → C i → Type}
-    {nx : (i : I) → (c : C i) → P i c → I} (e : ∀ i c, F i c = G i c) {i : I}
-    (p : IW (fun i => (c : C i) × F i c) (fun i a => P i a.1) (fun i a p => nx i a.1 p) i =
-      IW (fun i => (c : C i) × G i c) (fun i a => P i a.1) (fun i a p => nx i a.1 p) i)
-    (u : IW (fun i => (c : C i) × F i c) (fun i a => P i a.1) (fun i a p => nx i a.1 p) i) :
-    cast p u = iwmapF (fun i c x => cast (e i c) x) u := by
-  have hFG : F = G := funext fun i => funext (e i)
-  subst hFG
-  simp only [cast_eq]
-  clear p e
-  induction u with
-  | mk i a k ih =>
-    obtain ⟨c, x⟩ := a
-    show IW.mk i ⟨c, x⟩ k = IW.mk i ⟨c, x⟩ (fun q => iwmapF _ (k q))
-    exact congrArg _ (funext ih)
-
-/-- A cast between W-types whose fields are cast is the map of the cast of the fields. -/
-theorem cast_wmapF {C : Type} {F G P : C → Type} (e : ∀ c, F c = G c)
-    (p : WType (fun s : (c : C) × F c => P s.1) = WType (fun s : (c : C) × G c => P s.1))
-    (u : WType (fun s : (c : C) × F c => P s.1)) :
-    cast p u = wmapF (fun c x => cast (e c) x) u := by
-  have hFG : F = G := funext e
-  subst hFG
-  simp only [cast_eq]
-  induction u with
-  | mk a k ih =>
-    obtain ⟨c, x⟩ := a
-    show WType.mk ⟨c, x⟩ k = WType.mk ⟨c, x⟩ (fun q => wmapF _ (k q))
-    exact congrArg _ (funext ih)
-
 theorem cast_prod {A A' B B' : Type} (pa : A = A') (pb : B = B') (p : (A × B) = (A' × B'))
     (x : A × B) : cast p x = (cast pa x.1, cast pb x.2) := by
   subst pa
@@ -662,9 +630,9 @@ theorem Ty.toVal_eq_cast : ∀ (τ : Ty) (h : τ.FO) (u : τ.hat),
     rw [ha]
     exact (cast_list (Ty.hat_eq_val a h) _ u).symm
   | .mu S, h, u => by
-    have e := cast_wmapF (P := S.Pos) (fun c => Sig.hatF_eq_fld S h c) (Ty.hat_eq_val (.mu S) h) u
+    have e := Container.cast_wmapF (P := S.Pos) (fun c => Sig.hatF_eq_fld S h c) (Ty.hat_eq_val (.mu S) h) u
     refine Eq.trans ?_ e.symm
-    show wmapF (P := S.Pos) (fun c x => Sig.toValF S h c x) u = _
+    show Container.wmapF (P := S.Pos) (fun c x => Sig.toValF S h c x) u = _
     congr 1
     funext c x
     exact Sig.toValF_eq_cast S h c x
@@ -677,12 +645,12 @@ theorem Ty.toVal_eq_cast : ∀ (τ : Ty) (h : τ.FO) (u : τ.hat),
     rw [Ty.toVal_eq_cast (B u.1) (h u.1) u.2]
     exact (cast_sigma (fun j => Ty.hat_eq_val (B j) (h j)) (Ty.hat_eq_val (.sig f B) h) u).symm
   | .imu f S i, h, u => by
-    have e := cast_iwmapF
+    have e := Container.cast_iwmapF
         (C := fun j => (S j).Ctor) (P := fun j c => (S j).Pos c)
         (nx := fun j c p => (S j).nx c p) (fun j c => ISig.hatF_eq_fld (S j) (h j) c)
       (Ty.hat_eq_val (.imu f S i) h) u
     refine Eq.trans ?_ e.symm
-    show iwmapF
+    show Container.iwmapF
         (C := fun j => (S j).Ctor) (P := fun j c => (S j).Pos c)
         (nx := fun j c p => (S j).nx c p) (fun j c x => ISig.toValF (S j) (h j) c x) u = _
     congr 1
@@ -734,10 +702,10 @@ theorem Ty.ofVal_eq_cast : ∀ (τ : Ty) (h : τ.FO) (v : Val τ),
     rw [ha]
     exact (cast_list (Ty.hat_eq_val a h).symm _ v).symm
   | .mu S, h, v => by
-    have e := cast_wmapF (P := S.Pos) (fun c => (Sig.hatF_eq_fld S h c).symm)
+    have e := Container.cast_wmapF (P := S.Pos) (fun c => (Sig.hatF_eq_fld S h c).symm)
       (Ty.hat_eq_val (.mu S) h).symm v
     refine Eq.trans ?_ e.symm
-    show wmapF (P := S.Pos) (fun c x => Sig.ofValF S h c x) v = _
+    show Container.wmapF (P := S.Pos) (fun c x => Sig.ofValF S h c x) v = _
     congr 1
     funext c x
     exact Sig.ofValF_eq_cast S h c x
@@ -752,12 +720,12 @@ theorem Ty.ofVal_eq_cast : ∀ (τ : Ty) (h : τ.FO) (v : Val τ),
     exact (cast_sigma (fun j => (Ty.hat_eq_val (B j) (h j)).symm)
       (Ty.hat_eq_val (.sig f B) h).symm v).symm
   | .imu f S i, h, v => by
-    have e := cast_iwmapF
+    have e := Container.cast_iwmapF
         (C := fun j => (S j).Ctor) (P := fun j c => (S j).Pos c)
         (nx := fun j c p => (S j).nx c p) (fun j c => (ISig.hatF_eq_fld (S j) (h j) c).symm)
       (Ty.hat_eq_val (.imu f S i) h).symm v
     refine Eq.trans ?_ e.symm
-    show iwmapF
+    show Container.iwmapF
         (C := fun j => (S j).Ctor) (P := fun j c => (S j).Pos c)
         (nx := fun j c p => (S j).nx c p) (fun j c x => ISig.ofValF (S j) (h j) c x) v = _
     congr 1

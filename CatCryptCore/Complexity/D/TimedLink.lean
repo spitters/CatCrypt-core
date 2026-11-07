@@ -204,14 +204,14 @@ value. With `C` the cost of a structural recursion of `derive_timed` (one per ca
 body), the node condition is the step equation of that cost. -/
 theorem fold (hK : 1 ≤ K) {S : Sig} {c : Ty} {g : Tm Γ (S.stepsTy (.mu S) c)}
     {x : Tm Γ (.mu S)} {gv : Val (S.stepsTy (.mu S) c)} {w : Val (.mu S)} {n cx : ℕ}
-    (hg : CEq g ρ 0 gv) (hx : DSim K n cx x ρ w) {F : WType (Sig.den S).2 → Val c}
-    {C : WType (Sig.den S).2 → ℕ}
-    (hF : ∀ a kids (rec : (Sig.den S).2 a → CTree (Val c)),
+    (hg : CEq g ρ 0 gv) (hx : DSim K n cx x ρ w) {F : (Sig.den S).W → Val c}
+    {C : (Sig.den S).W → ℕ}
+    (hF : ∀ a kids (rec : (Sig.den S).B a → CTree (Val c)),
       (∀ j, ∃ m, rec j = stepN CTree.tick m (.ret (F (kids j))) ∧ m ≤ K * C (kids j)) →
         ∃ m, stepAt S gv a kids rec = stepN CTree.tick m (.ret (F ⟨a, kids⟩)) ∧
           m ≤ K * C ⟨a, kids⟩) :
     DSim K n (1 + cx + C w) (.fold g x) ρ (F w) := by
-  have key : ∀ w : WType (Sig.den S).2,
+  have key : ∀ w : (Sig.den S).W,
       ∃ m, foldW gv w = stepN CTree.tick m (.ret (F w)) ∧ m ≤ K * C w := by
     intro w
     induction w with

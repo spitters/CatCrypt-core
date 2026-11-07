@@ -8,6 +8,7 @@ module
 public import CatCryptCore.Complexity.D.Translate
 public import CatCryptCore.Complexity.D.TimedLink
 public import CatCryptCore.Tactics.StdCosts
+public import CatCryptCore.Container.DillerNahm
 
 /-!
 # The charges of `derive_timed` on D terms, with one soundness theorem
@@ -35,13 +36,14 @@ charges of `derive_timed`.
 Values are translated by `Ty.hat`, by recursion on the code: a first-order type to its values,
 an inductive type to the W-type of its constructors with their translated fields (`Sig.hatF`),
 so that a field may hold a pure costed closure, a function type to a pure costed closure, a
-function and its cost, a dependent product `pi f B` to the table of the translated components, a dependent
+function and its cost, the costed function `Container.Costed` of the Diller–Nahm model (whose
+morphism is `Container.Costed.toDN`), a dependent product `pi f B` to the table of the translated components, a dependent
 sum `sig f B` to the dependent pair of an index and a translated value of `B j`. An environment `EnvHat Γ` gives a variable of function
 type a costed tree for each argument (`Ty.hatE`), so that a function variable is an effectful
 parameter, as in the telescope of `link_timed`. `Sim` relates translated values and values of
 D (the step equation of a data function at function types), `SimE` an environment entry and a
 value (`TimedSim` at allowance `0` for a function variable); at an inductive type `Sim` is the
-lifting `WLift` of `Sim` at the fields over the W-type: two nodes of one constructor with
+lifting `Container.WLift` of `Sim` at the fields over the W-type: two nodes of one constructor with
 related fields and related children.
 
 The soundness theorem `Tm.dt_timedSim` states, for a term of the fragment `Tm.InDtFrag` in
@@ -67,7 +69,8 @@ components (a table is built from data, as an abstraction with a pure body), `pa
 ## Main definitions
 
 * `Ty.hat`, `Sig.hatF`, `ISig.hatF`, `Ty.hatE`, `Sim`, `Sig.SimF`, `ISig.SimF`, `SimE`,
-  `EnvHat`, `SimEnv`, `wmapF`, `iwmapF`
+  `EnvHat`, `SimEnv` (the maps `Container.wmapF`, `Container.iwmapF` of the fields of W-types are
+  in `CatCryptCore/Container/WTypes.lean`)
 * `conHatI`, `stepHatI`, `foldHatI`: the translated node, step and eliminator of an indexed
   family
 * `tabCost`, `conHat`, `stepHat`, `foldHat`: the charge of a tabulation, the translated node of
@@ -198,7 +201,7 @@ def Ty.hat : Ty → Type
   | .nat => ℕ
   | .prod a b => Ty.hat a × Ty.hat b
   | .sum a b => Ty.hat a ⊕ Ty.hat b
-  | .arr a b => (Ty.hat a → Ty.hat b) × (Ty.hat a → ℕ)
+  | .arr a b => Container.Costed (Ty.hat a) (Ty.hat b)
   | .list a => List (Ty.hat a)
   | .mu S => WType (fun s : (c : S.Ctor) × Sig.hatF S c => S.Pos s.1)
   | .pi f B => (j : f.den) → Ty.hat (B j)
@@ -218,18 +221,6 @@ def ISig.hatF {f : FTy} : (S : ISig f) → S.Ctor → Type
   | .ext S a _ _ => Sum.elim (ISig.hatF S) fun _ => Ty.hat a
 
 end
-
-/-- The map of the fields of an indexed W-type whose shapes are a constructor with its field. -/
-def iwmapF {I : Type} {C : I → Type} {F G P : (i : I) → C i → Type}
-    {nx : (i : I) → (c : C i) → P i c → I} (m : (i : I) → (c : C i) → F i c → G i c) :
-    {i : I} → IW (fun i => (c : C i) × F i c) (fun i a => P i a.1) (fun i a p => nx i a.1 p) i →
-      IW (fun i => (c : C i) × G i c) (fun i a => P i a.1) (fun i a p => nx i a.1 p) i
-  | _, .mk i ⟨c, x⟩ k => .mk i ⟨c, m i c x⟩ fun p => iwmapF m (k p)
-
-/-- The map of the fields of a W-type whose shapes are a constructor with its field. -/
-def wmapF {C : Type} {F G P : C → Type} (m : (c : C) → F c → G c) :
-    WType (fun s : (c : C) × F c => P s.1) → WType (fun s : (c : C) × G c => P s.1)
-  | ⟨⟨c, x⟩, k⟩ => ⟨⟨c, m c x⟩, fun p => wmapF m (k p)⟩
 
 /-- The translated environment entries: a variable of function type is a costed tree for each
 argument, a variable of any other type a translated value. -/
@@ -288,10 +279,10 @@ def Ty.toVal : (τ : Ty) → τ.FO → τ.hat → Val τ
   | .sum a b, h, u => Sum.map (a.toVal h.1) (b.toVal h.2) u
   | .arr _ _, h, _ => False.elim h
   | .list a, h, u => List.map (a.toVal h) u
-  | .mu S, h, u => wmapF (P := S.Pos) (fun c x => Sig.toValF S h c x) u
+  | .mu S, h, u => Container.wmapF (P := S.Pos) (fun c x => Sig.toValF S h c x) u
   | .pi _ B, h, u => fun j => (B j).toVal (h j) (u j)
   | .sig _ B, h, u => ⟨u.1, (B u.1).toVal (h u.1) u.2⟩
-  | .imu _ S _, h, u => iwmapF
+  | .imu _ S _, h, u => Container.iwmapF
       (C := fun j => (S j).Ctor) (P := fun j c => (S j).Pos c) (nx := fun j c p => (S j).nx c p)
       (fun j c x => ISig.toValF (S j) (h j) c x) u
 
@@ -320,10 +311,10 @@ def Ty.ofVal : (τ : Ty) → τ.FO → Val τ → τ.hat
   | .sum a b, h, v => Sum.map (a.ofVal h.1) (b.ofVal h.2) v
   | .arr _ _, h, _ => False.elim h
   | .list a, h, v => List.map (a.ofVal h) v
-  | .mu S, h, v => wmapF (P := S.Pos) (fun c x => Sig.ofValF S h c x) v
+  | .mu S, h, v => Container.wmapF (P := S.Pos) (fun c x => Sig.ofValF S h c x) v
   | .pi _ B, h, v => fun j => (B j).ofVal (h j) (v j)
   | .sig _ B, h, v => ⟨v.1, (B v.1).ofVal (h v.1) v.2⟩
-  | .imu _ S _, h, v => iwmapF
+  | .imu _ S _, h, v => Container.iwmapF
       (C := fun j => (S j).Ctor) (P := fun j c => (S j).Pos c) (nx := fun j c p => (S j).nx c p)
       (fun j c x => ISig.ofValF (S j) (h j) c x) v
 
@@ -346,8 +337,8 @@ mutual
 
 /-- Translated values and values of D: equal at ground types, componentwise at products, sums
 and lists, at a function type the step equation of a data function, its steps bounded by the
-cost of the closure, and at an inductive type the lifting `WLift` of the relation of the fields:
-two nodes of one constructor with related fields and related children. -/
+cost of the closure, and at an inductive type the lifting `Container.WLift` of the relation of the
+fields: two nodes of one constructor with related fields and related children. -/
 def Sim : (τ : Ty) → τ.hat → Val τ → Prop
   | .base _, u, v => u = v
   | .nat, u, v => u = v
@@ -356,10 +347,10 @@ def Sim : (τ : Ty) → τ.hat → Val τ → Prop
   | .arr a b, p, g => ∀ u v, Sim a u v →
       ∃ m w, g v = stepN CTree.tick m (.ret w) ∧ m ≤ p.2 u ∧ Sim b (p.1 u) w
   | .list a, u, v => List.Forall₂ (Sim a) u v
-  | .mu S, u, v => WLift (P := S.Pos) (Sig.SimF S) u v
+  | .mu S, u, v => Container.WLift (P := S.Pos) (Sig.SimF S) u v
   | .pi _ B, u, v => ∀ j, Sim (B j) (u j) (v j)
   | .sig _ B, u, v => ∃ e : u.1 = v.1, Sim (B v.1) (e ▸ u.2) v.2
-  | .imu _ S _, u, v => IWLift
+  | .imu _ S _, u, v => Container.IWLift
       (C := fun j => (S j).Ctor) (P := fun j c => (S j).Pos c) (nx := fun j c p => (S j).nx c p)
       (fun j c x y => ISig.SimF (S j) c x y) u v
 
@@ -426,7 +417,7 @@ theorem Sim.toVal_eq : ∀ (τ : Ty) (h : τ.FO) {u : τ.hat} {v : Val τ}, Sim 
     | nil => rfl
     | cons hx _ ihl => exact congrArg₂ List.cons (Sim.toVal_eq a h hx) ihl
   | .mu S, h, u, v, hs => by
-    change WLift (P := S.Pos) (Sig.SimF S) u v at hs
+    change Container.WLift (P := S.Pos) (Sig.SimF S) u v at hs
     induction hs with
     | @mk c x y k k' hxy _ ih =>
       have e1 := Sig.SimF.toVal_eq S h c hxy
@@ -446,18 +437,18 @@ theorem Sim.toVal_eq : ∀ (τ : Ty) (h : τ.FO) {u : τ.hat} {v : Val τ}, Sim 
     rw [← Sim.toVal_eq (B i) (h i) hxy]
   | .imu f S _, h, u, v, hs => by
     have h' : ∀ j, (S j).FO := h
-    show v = iwmapF
+    show v = Container.iwmapF
         (C := fun j => (S j).Ctor) (P := fun j c => (S j).Pos c)
         (nx := fun j c p => (S j).nx c p) (fun j c x => ISig.toValF (S j) (h' j) c x) u
     clear h
-    change IWLift
+    change Container.IWLift
         (C := fun j => (S j).Ctor) (P := fun j c => (S j).Pos c)
         (nx := fun j c p => (S j).nx c p) (fun j c x y => ISig.SimF (S j) c x y) u v at hs
     induction hs with
     | @mk i c x y k k' hxy _ ih =>
       have e1 := ISig.SimF.toVal_eq (S i) (h' i) c hxy
       subst e1
-      have e2 : k' = fun p => iwmapF
+      have e2 : k' = fun p => Container.iwmapF
           (C := fun j => (S j).Ctor) (P := fun j c => (S j).Pos c) (nx := fun j c p => (S j).nx c p)
           (fun j c x => ISig.toValF (S j) (h' j) c x) (k p) := funext ih
       subst e2
@@ -503,22 +494,22 @@ theorem Sim.ofVal : ∀ (τ : Ty) (h : τ.FO) (v : Val τ), Sim τ (τ.ofVal h v
     induction v with
     | mk a k ih =>
       obtain ⟨c, y⟩ := a
-      exact WLift.mk (Sig.SimF.ofVal S h c y) ih
+      exact Container.WLift.mk (Sig.SimF.ofVal S h c y) ih
   | .pi _ B, h, v => fun j => Sim.ofVal (B j) (h j) (v j)
   | .sig _ B, h, v => ⟨rfl, Sim.ofVal (B v.1) (h v.1) v.2⟩
   | .imu _ S _, h, v => by
     have h' : ∀ j, (S j).FO := h
-    show IWLift
+    show Container.IWLift
         (C := fun j => (S j).Ctor) (P := fun j c => (S j).Pos c)
         (nx := fun j c p => (S j).nx c p) (fun j c x y => ISig.SimF (S j) c x y)
-      (iwmapF
+      (Container.iwmapF
           (C := fun j => (S j).Ctor) (P := fun j c => (S j).Pos c)
           (nx := fun j c p => (S j).nx c p) (fun j c x => ISig.ofValF (S j) (h' j) c x) v) v
     clear h
     induction v with
     | mk i a k ih =>
       obtain ⟨c, y⟩ := a
-      exact IWLift.mk
+      exact Container.IWLift.mk
           (C := fun j => (S j).Ctor) (P := fun j c => (S j).Pos c)
           (nx := fun j c p => (S j).nx c p) (R := fun j c x y => ISig.SimF (S j) c x y)
         (ISig.SimF.ofVal (S i) (h' i) c y) ih
@@ -585,7 +576,8 @@ theorem Ty.hat_nonempty : ∀ τ : Ty, Nonempty τ.hat
   | .pi _ B => ⟨fun j => Classical.choice (Ty.hat_nonempty (B j))⟩
   | .sig f B => ⟨⟨(FTy.instInhabited f).default,
       Classical.choice (Ty.hat_nonempty (B (FTy.instInhabited f).default))⟩⟩
-  | .imu _ S i => ⟨IW.mk i ⟨(ISig.leaf (S i)).1.1, Classical.choice (ISig.hatF_nonempty (S i) _)⟩
+  | .imu _ S i => ⟨Container.IPW.mk i
+      ⟨(ISig.leaf (S i)).1.1, Classical.choice (ISig.hatF_nonempty (S i) _)⟩
       fun p => ((ISig.leaf (S i)).2 p).elim⟩
 
 /-- Every translated field is inhabited. -/
@@ -884,7 +876,7 @@ noncomputable def dtC (cc : Ty → ℕ) :
     (1 + (foldHat p w).2, .ret (foldHat p w).1)
   | _, _, .icon (f := f) (S := S) (i := i) x, η => bindT (x.dtC cc η) fun u =>
     (0, .ret (conHatI (X := fun j => .imu f S j) (S i)
-      (fun a k => (IW.mk i a k : Ty.hat (.imu f S i))) u))
+      (fun a k => (Container.IPW.mk i a k : Ty.hat (.imu f S i))) u))
   | _, _, .ifold (c := c) g x, η => bindT (g.dtC cc η) fun p => bindT (x.dtC cc η) fun w =>
     (1 + (foldHatI (c := c) p w).2, .ret (foldHatI (c := c) p w).1)
   | _, _, .ptab (f := f) (B := B) ts, η =>
@@ -1300,7 +1292,7 @@ theorem tabDep_stepN (f : FTy) {X : f.den → Type} (d : (j : f.den) → X j)
 that `mkH` and `mk` build from related fields and related children. -/
 theorem conAt_sim {S₀ : Sig} {R : Ty.hat (.mu S₀) → Val (.mu S₀) → Prop} : ∀ (S : Sig)
     (mkH : (a : (c : S.Ctor) × S.hatF c) → (S.Pos a.1 → Ty.hat (.mu S₀)) → Ty.hat (.mu S₀))
-    (mk : (a : (Sig.den S).1) → ((Sig.den S).2 a → Val (.mu S₀)) → Val (.mu S₀)),
+    (mk : (a : (Sig.den S).A) → ((Sig.den S).B a → Val (.mu S₀)) → Val (.mu S₀)),
     (∀ (c : S.Ctor) (x : S.hatF c) (y : S.Fld c) (k : S.Pos c → Ty.hat (.mu S₀))
       (k' : S.Pos c → Val (.mu S₀)), Sig.SimF S c x y → (∀ p, Sim (.mu S₀) (k p) (k' p)) →
       R (mkH ⟨c, x⟩ k) (mk ⟨c, y⟩ k')) →
@@ -1349,7 +1341,7 @@ theorem foldW_sim {S : Sig} {c : Ty} {p : Ty.hat (S.stepsTy (.mu S) c)}
     (hw : Sim (.mu S) wH w) :
     ∃ m v, foldW g w = stepN CTree.tick m (.ret v) ∧ m ≤ (foldHat p wH).2 ∧
       Sim c (foldHat p wH).1 v := by
-  change WLift (P := S.Pos) (Sig.SimF S) wH w at hw
+  change Container.WLift (P := S.Pos) (Sig.SimF S) wH w at hw
   induction hw with
   | mk hxy hk ih => exact stepAt_sim S hpg hxy hk ih
 
@@ -1416,7 +1408,7 @@ theorem foldIW_sim {f : FTy} {S : f.den → ISig f} {c : f.den → Ty}
     {wH : Ty.hat (.imu f S i)} {w : Val (.imu f S i)} (hw : Sim (.imu f S i) wH w) :
     ∃ m v, foldIW g w = stepN CTree.tick m (.ret v) ∧ m ≤ (foldHatI p wH).2 ∧
       Sim (c i) (foldHatI p wH).1 v := by
-  change IWLift
+  change Container.IWLift
       (C := fun j => (S j).Ctor) (P := fun j c => (S j).Pos c)
       (nx := fun j c p => (S j).nx c p) (fun j c x y => ISig.SimF (S j) c x y) wH w at hw
   induction hw with
@@ -1630,7 +1622,7 @@ theorem dtC_timedSim (cc : Ty → ℕ) (hcc : ∀ a, cc a ≤ 1) :
     refine (TimedSim.bindCont (m := 0) (ih ht hρ) fun u v huv => ?_).mono
       (by simp only [allowC]; omega)
     have he : Sim (.mu S) _ _ := conAt_sim (R := Sim (.mu S)) S _ _
-      (fun _ _ _ _ _ hxy hk => WLift.mk hxy hk) huv
+      (fun _ _ _ _ _ hxy hk => Container.WLift.mk hxy hk) huv
     exact TimedSim.stepN_ret (m := 0) he (by omega)
   | @fold _ S c g x ihg ihx =>
     intro ht η ρ hρ
@@ -1647,13 +1639,13 @@ theorem dtC_timedSim (cc : Ty → ℕ) (hcc : ∀ a, cc a ≤ 1) :
     intro ht η ρ hρ
     have hev : (Tm.icon x).eval ρ = (x.eval ρ).bind fun v =>
         .ret (conAtI (X := fun j => .imu f S j) (S i)
-          (fun a k => (IW.mk i a k : Val (.imu f S i))) v) := rfl
+          (fun a k => (Container.IPW.mk i a k : Val (.imu f S i))) v) := rfl
     rw [hev]
     refine (TimedSim.bindCont (m := 0) (ih ht hρ) fun u v huv => ?_).mono
       (by simp only [allowC]; omega)
     have he : Sim (.imu f S i) _ _ := conAtI_sim (X := fun j => .imu f S j)
       (R := Sim (.imu f S i)) (S i) _ _
-      (fun _ _ _ _ _ hxy hk => IWLift.mk
+      (fun _ _ _ _ _ hxy hk => Container.IWLift.mk
           (C := fun j => (S j).Ctor) (P := fun j c => (S j).Pos c) (nx := fun j c p => (S j).nx c p)
         (R := fun j c x y => ISig.SimF (S j) c x y) hxy hk) huv
     exact TimedSim.stepN_ret (m := 0) he (by omega)

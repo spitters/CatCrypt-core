@@ -175,31 +175,38 @@ theorem nsmul_bind {α : Type u} {β : Type v} (n : ℕ) (s : Multiset α) (k : 
 
 /-! ## Costed functions -/
 
-/-- A first-order costed function: a function with the cost of its evaluation at each argument. -/
-@[ext] structure Costed (X : Type u) (Y : Type v) where
-  /-- The function. -/
-  fn : X → Y
-  /-- The cost of evaluating `fn` at an argument. -/
-  cost : X → ℕ
+/-- A first-order costed function: a function with the cost of its evaluation at each argument,
+the form `(X → Y) × (X → ℕ)` of the costed function types of the time certificates and of the
+translated function types of D (`CatCrypt.Complexity.D.Ty.hat`). -/
+abbrev Costed (X : Type u) (Y : Type v) : Type (max u v) := (X → Y) × (X → ℕ)
 
 namespace Costed
 
 variable {X : Type u} {Y : Type v} {Z : Type w} {W : Type u₁}
 
+/-- The function. -/
+abbrev fn (h : Costed X Y) : X → Y := h.1
+
+/-- The cost of evaluating `fn` at an argument. -/
+abbrev cost (h : Costed X Y) : X → ℕ := h.2
+
+@[simp] theorem fn_mk (f : X → Y) (c : X → ℕ) : fn (f, c) = f := rfl
+
+@[simp] theorem cost_mk (f : X → Y) (c : X → ℕ) : cost (f, c) = c := rfl
+
+/-- Costed functions with equal functions and equal costs are equal. -/
+@[ext] theorem ext {f g : Costed X Y} (hfn : f.fn = g.fn) (hc : f.cost = g.cost) : f = g :=
+  Prod.ext hfn hc
+
 /-- The identity costs nothing. -/
-protected def id (X : Type u) : Costed X X where
-  fn a := a
-  cost _ := 0
+protected def id (X : Type u) : Costed X X := (fun a => a, fun _ => 0)
 
 /-- One clock tick: the identity at cost one, the step of a β-redex. -/
-def tick (X : Type u) : Costed X X where
-  fn a := a
-  cost _ := 1
+def tick (X : Type u) : Costed X X := (fun a => a, fun _ => 1)
 
 /-- The composite costs the cost of `f` at the argument plus the cost of `g` at the result. -/
-def comp (g : Costed Y Z) (f : Costed X Y) : Costed X Z where
-  fn a := g.fn (f.fn a)
-  cost a := f.cost a + g.cost (f.fn a)
+def comp (g : Costed Y Z) (f : Costed X Y) : Costed X Z :=
+  (fun a => g.fn (f.fn a), fun a => f.cost a + g.cost (f.fn a))
 
 /-- The identity is a left unit. -/
 @[simp] theorem id_comp (f : Costed X Y) : comp (Costed.id Y) f = f := by
@@ -509,9 +516,7 @@ theorem isLinear_toDN (h : Costed X Y) : IsLinear (toDN h) :=
 /-- A costed function is a linear element of the Diller–Nahm morphisms. -/
 def equivIsLinear : Costed X Y ≃ {g : DNLens (clockPos X) (clockPos Y) // IsLinear g} where
   toFun h := ⟨toDN h, isLinear_toDN h⟩
-  invFun g :=
-    { fn := g.1.toFunA
-      cost a := Multiset.count true (g.1.toFunB a false) }
+  invFun g := (g.1.toFunA, fun a => Multiset.count true (g.1.toFunB a false))
   left_inv h := by
     ext a
     · rfl

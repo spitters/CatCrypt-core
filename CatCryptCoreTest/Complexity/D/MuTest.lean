@@ -82,7 +82,7 @@ theorem xorT_cost_le_dt {η : EnvHat [tree]} {ρ : Env [tree]} (hρ : SimEnv η 
   cost_le_dt xorT xorT_inDtFrag hρ
 
 /-- The XOR of the bytes of a tree, by recursion on the value. -/
-def xorF : WType (Sig.den treeSig).2 → BitVec 8
+def xorF : (Sig.den treeSig).W → BitVec 8
   | ⟨⟨.inl _, _⟩, _⟩ => 0
   | ⟨⟨.inr _, n⟩, kids⟩ =>
     let m : BitVec 8 := n
@@ -101,7 +101,7 @@ def isLeafT : Tm [tree] .bool :=
   fold (pair (lam (lit .bool true)) (lam (lit .bool false))) (var .here)
 
 /-- Whether a value is a leaf. -/
-def isLeafF : WType (Sig.den treeSig).2 → Bool
+def isLeafF : (Sig.den treeSig).W → Bool
   | ⟨⟨.inl _, _⟩, _⟩ => true
   | ⟨⟨.inr _, _⟩, _⟩ => false
 
@@ -192,10 +192,10 @@ theorem applyAllT_eval_erase (w : Val fnList) (hw : ValRel fnList w w) :
 of them. -/
 theorem fnCons_rel (f : BitVec 8 → BitVec 8) {l : Val fnList} (hl : ValRel fnList l l) :
     ValRel fnList (fnCons f l) (fnCons f l) :=
-  WLift.mk (fun x y hxy => by subst hxy; exact .ret rfl) fun _ => hl
+  Container.WLift.mk (fun x y hxy => by subst hxy; exact .ret rfl) fun _ => hl
 
 theorem applyAllT_inDtFrag : applyAllT.InDtFrag := by
-  simp [applyAllT, InDtFrag, Tm.Pure, headVar?, Ty.isArr, Prim.unitCost]
+  simp [applyAllT, InDtFrag, Tm.Pure, headVar?, Ty.isArr]
 
 /-- The soundness theorem at a field holding a function: the cost of `applyAllT` is bounded by
 its allowance and the charges of `Tm.dt` in every environment related to a translated one, a
