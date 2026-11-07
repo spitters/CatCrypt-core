@@ -344,26 +344,27 @@ theorem pqComplete_eq_map (s : PSt S W K PK SK SS C) (x : Inst) :
       PMF.pure b = (pDist (S := S) (K := K) P o).map fun _ => b := fun o b =>
           (map_fun_const _ _).symm
   cases hr : s.x.st.recs x with
-  | none => simp only [pqComplete, pqCompleteD, hr, map_fun_const]
+  | none => simp only [pqComplete, pqCompleteK, pqCompleteD, hr, map_fun_const]
   | some rc =>
     cases he : s.x.eph x with
-    | none => simp only [pqComplete, pqCompleteD, hr, he, map_fun_const]
+    | none => simp only [pqComplete, pqCompleteK, pqCompleteD, hr, he, map_fun_const]
     | some ek =>
       cases ho : opkOf s.x x.1 rc.peer with
-      | none => simp only [pqComplete, pqCompleteD, hr, he, ho, map_fun_const]
+      | none => simp only [pqComplete, pqCompleteK, pqCompleteD, hr, he, ho, map_fun_const]
       | some opk =>
         cases hk : pkOf s x.1 rc.peer with
-        | none => simp only [pqComplete, pqCompleteD, hr, he, ho, hk, map_fun_const]
+        | none => simp only [pqComplete, pqCompleteK, pqCompleteD, hr, he, ho, hk, map_fun_const]
         | some pk =>
           have hpk : encPk s (.inr (.complete x.1 x.2)) = some pk := by
             simp only [encPk, hr, hk]
           rw [hpk, pDist_map_enc P pk _ (fun d kc => pqCompleteD G s x d kc) (fun _ => rfl)]
           by_cases hc : rc.role = .initiator ∧ rc.key.isNone
-          · simp only [pqComplete, pqCompleteD, hr, he, ho, hk, hc, and_self, ↓reduceIte,
-              ltAt_eq_map, roAt_eq_map, PMF.bind_map, PMF.map_comp, Function.comp_def]
+          · simp only [pqComplete, pqCompleteK, X3DHSquare.lazyKDF, pqCompleteD, hr, he, ho, hk, hc,
+              and_self, ↓reduceIte, ltAt_eq_map, roAt_eq_map, PMF.bind_map, PMF.map_comp,
+              Function.comp_def]
             exact lt_lt_ro_bind _ _
-          · simp only [pqComplete, pqCompleteD, hr, he, ho, hk, hc, ↓reduceIte, map_fun_const,
-              PMF.bind_const]
+          · simp only [pqComplete, pqCompleteK, pqCompleteD, hr, he, ho, hk, hc, ↓reduceIte,
+              map_fun_const, PMF.bind_const]
 
 /-- `pqSend` is the image of a draw under `pqSendD`. -/
 theorem pqSend_eq_map (s : PSt S W K PK SK SS C) (x : Inst) (e : W) (c : C) :
@@ -373,22 +374,22 @@ theorem pqSend_eq_map (s : PSt S W K PK SK SS C) (x : Inst) (e : W) (c : C) :
     (map_fun_const _ _).symm
   change _ = (PMF.uniformFintype (Draw S K)).map fun d => pqSendD P G s x e c d
   cases hr : s.x.st.recs x with
-  | none => simp only [pqSend, pqSendD, hr, hP]
+  | none => simp only [pqSend, pqSendK, pqSendD, hr, hP]
   | some rc =>
     cases he : s.x.eph x with
-    | none => simp only [pqSend, pqSendD, hr, he, hP]
+    | none => simp only [pqSend, pqSendK, pqSendD, hr, he, hP]
     | some opk =>
       cases hk : s.kem x with
-      | none => simp only [pqSend, pqSendD, hr, he, hk, hP]
+      | none => simp only [pqSend, pqSendK, pqSendD, hr, he, hk, hP]
       | some kp =>
         cases hd : P.decaps kp.2 c with
-        | none => simp only [pqSend, pqSendD, hr, he, hk, hd, hP]
+        | none => simp only [pqSend, pqSendK, pqSendD, hr, he, hk, hd, hP]
         | some ss =>
           by_cases hc : rc.role = .responder ∧ rc.key.isNone
-          · simp only [pqSend, pqSendD, hr, he, hk, hd, hc, and_self, ↓reduceIte, ltAt_eq_map,
-              roAt_eq_map, PMF.bind_map, PMF.map_comp, Function.comp_def]
+          · simp only [pqSend, pqSendK, X3DHSquare.lazyKDF, pqSendD, hr, he, hk, hd, hc, and_self,
+              ↓reduceIte, ltAt_eq_map, roAt_eq_map, PMF.bind_map, PMF.map_comp, Function.comp_def]
             exact lt_lt_ro_map _
-          · simp only [pqSend, pqSendD, hr, he, hk, hd, hc, ↓reduceIte, hP]
+          · simp only [pqSend, pqSendK, pqSendD, hr, he, hk, hd, hc, ↓reduceIte, hP]
 
 /-- **The oracle of the real game** is the image of a draw under `realD`. -/
 theorem realGame_oracle_eq (s : PSt S W K PK SK SS C) (e : OEv W SS C) :
@@ -401,8 +402,9 @@ theorem realGame_oracle_eq (s : PSt S W K PK SK SS C) (e : OEv W SS C) :
     ⟨sid, pid⟩ | pid | ⟨sid, pid⟩ | ⟨sid, pid, e, c⟩ | x)
   · by_cases h : (s.x.st.recs (sid, pid)).isNone = true
     · by_cases hr : role = .responder
-      · simp only [realGame, pqHon, realHon, realD, h, hr, and_self, ↓reduceIte, PMF.bind_map,
-          PMF.map_bind, PMF.map_comp, Function.comp_def]
+      · simp only [realGame, realGameK, pqHonK, X3DHSquare.lazyKDF, realHon, X3DHSquare.realHonK,
+          realD, h, hr, and_self, ↓reduceIte, PMF.bind_map, PMF.map_bind,
+          Function.comp_def, PMF.pure_map, PMF.bind_bind, PMF.pure_bind]
         rw [pDist_map_kp (γ := OOut S W K PK C × PSt S W K PK SK SS C) P _ _
           (fun r kp => ((Sum.inl HOut.ok : OOut S W K PK C), { s with
             x := { s.x with st := addSession s.x.st (sid, pid) peer .responder,
@@ -413,8 +415,8 @@ theorem realGame_oracle_eq (s : PSt S W K PK SK SS C) (e : OEv W SS C) :
             x := { s.x with st := addSession s.x.st (sid, pid) peer .responder,
                             eph := Function.update s.x.eph (sid, pid) (some y) },
             kem := Function.update s.kem (sid, pid) (some kp) }))).symm
-      · simp only [realGame, pqHon, realHon, realD, h, hr, and_false, ↓reduceIte, PMF.bind_map,
-          Function.comp_def]
+      · simp only [realGame, realGameK, pqHonK, X3DHSquare.lazyKDF, realHon, X3DHSquare.realHonK,
+          realD, h, hr, and_false, ↓reduceIte, PMF.pure_map, PMF.bind_bind, PMF.pure_bind]
         rw [pDist_map_fst (γ := OOut S W K PK C × PSt S W K PK SK SS C) P _ _
           (fun r => ((Sum.inl HOut.ok : OOut S W K PK C), { s with
             x := { s.x with st := addSession s.x.st (sid, pid) peer role,
@@ -423,20 +425,25 @@ theorem realGame_oracle_eq (s : PSt S W K PK SK SS C) (e : OEv W SS C) :
         change PMF.map _ ((PMF.uniformFintype S).map _) = _
         rw [PMF.map_comp, map_uniform_eq_map_prod_fst (A := S) (B := (S × S) × (S × S) × K)]
         rfl
-    · simp only [realGame, pqHon, realHon, realD, h, Bool.false_eq_true, false_and, ↓reduceIte,
-        PMF.pure_bind, PMF.pure_map, map_fun_const]
-  · simp only [realGame, pqHon, realD, PMF.pure_map, map_fun_const]
-  · simp only [realGame, pqAdv, onX, realAdv, realD, PMF.pure_map, map_fun_const]
-  · simp only [realGame, pqAdv, onX, realAdv, realD, PMF.pure_map, map_fun_const]
-  · simp only [realGame, pqAdv, onX, realAdv, realD, PMF.map_comp]
+    · simp only [realGame, realGameK, pqHonK, X3DHSquare.lazyKDF, realHon, X3DHSquare.realHonK,
+        realD, h, Bool.false_eq_true, false_and, ↓reduceIte, PMF.pure_bind, PMF.pure_map,
+        map_fun_const]
+  · simp only [realGame, realGameK, pqHonK, realD, PMF.pure_map, map_fun_const]
+  · simp only [realGame, realGameK, pqAdvK, onX, realAdv,
+    X3DHSquare.realAdvK, realD,PMF.pure_map, map_fun_const]
+  · simp only [realGame, realGameK, pqAdvK, onX, realAdv,
+    X3DHSquare.realAdvK, realD,PMF.pure_map, map_fun_const]
+  · simp only [realGame, realGameK, pqAdvK, onX, realAdv,
+    X3DHSquare.realAdvK, realD,PMF.map_comp]
     rw [pDist_map_fst (γ := OOut S W K PK C × PSt S W K PK SK SS C) P _ _ (fun r => ((Sum.inr
         (Sum.inl (ROut.pub (G.pub (ltD s.x pid r.2.1).1.1)
       (G.pub (ltD s.x pid r.2.1).1.2))) : OOut S W K PK C), { s with x := (ltD s.x pid r.2.1).2 }))
           (fun _ => rfl)]
     exact ltAt_map_eq s.x pid _
-  · simp only [realGame, pqAdv, onX, realAdv, realD, PMF.pure_map, map_fun_const]
-  · simp only [realGame, pqAdv, realD, PMF.pure_map, map_fun_const]
-  · simp only [realGame, pqAdv, onX, corruptRStep]
+  · simp only [realGame, realGameK, pqAdvK, onX, realAdv,
+    X3DHSquare.realAdvK, realD,PMF.pure_map, map_fun_const]
+  · simp only [realGame, realGameK, pqAdvK, realD, PMF.pure_map, map_fun_const]
+  · simp only [realGame, realGameK, pqAdvK, onX, corruptRStep]
     by_cases h : Named s.x.st pid = true
     · simp only [realD, h, ↓reduceIte, PMF.pure_map, map_fun_const]
     · simp only [realD, h, Bool.false_eq_true, ↓reduceIte, PMF.map_comp]
@@ -446,14 +453,15 @@ theorem realGame_oracle_eq (s : PSt S W K PK SK SS C) (e : OEv W SS C) :
         { s with x := { (ltD s.x pid r.2.1).2 with
                           st := corruptStep (ltD s.x pid r.2.1).2.st pid } })) (fun _ => rfl)]
       exact ltAt_map_eq s.x pid _
-  · simp only [realGame, pqAdv, realD, pqComplete_eq_map, PMF.map_comp]
+  · simp only [realGame, realGameK, pqAdvK, realD, ← pqComplete.eq_1, pqComplete_eq_map,
+      PMF.map_comp]
     rfl
-  · simp only [realGame, pqAdv, realD, pqSend_eq_map, PMF.map_comp]
+  · simp only [realGame, realGameK, pqAdvK, realD, ← pqSend.eq_1, pqSend_eq_map, PMF.map_comp]
     rw [pDist_map_fst (γ := OOut S W K PK C × PSt S W K PK SK SS C) P _ _ (fun r => ((Sum.inr
         (pqSendD P G s (sid, pid) e c r).1 :
       OOut S W K PK C), (pqSendD P G s (sid, pid) e c r).2)) (fun _ => rfl)]
     rfl
-  · simp only [realGame, pqAdv, realD, roAt_eq_map, PMF.map_comp]
+  · simp only [realGame, realGameK, pqAdvK, X3DHSquare.lazyKDF, realD, roAt_eq_map, PMF.map_comp]
     rw [pDist_map_fst (γ := OOut S W K PK C × PSt S W K PK SK SS C) P _ _ (fun r => ((Sum.inr
         (Sum.inl (ROut.hash (roDet s.ro x r.2.2.2).1)) :
       OOut S W K PK C), { s with ro := (roDet s.ro x r.2.2.2).2 })) (fun _ => rfl),

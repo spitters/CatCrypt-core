@@ -61,8 +61,11 @@ input is again unqueried. Either route bounds the distance at a session.
 ## Main definitions
 
 * `PInp`: the inputs of the key derivation.
-* `PSt`, `PAEv`, `POut`: the state and the adversary port of the real protocol.
-* `realGame`, `pqxdhReal`: the real protocol as an oracle game and as a system.
+* `PStT`, `PSt`, `PAEv`, `POut`: the state and the adversary port of the real protocol.
+* `realGameK`, `pqxdhRealK`: the real protocol with a key-derivation operation `KDFOp` as an
+  oracle game and as a system; `realGame` and `pqxdhReal` are their applications at `lazyKDF`.
+* `eagerKernel`: the pool of keys of the pending sessions, the kernel from `lazyKDF` to
+  `eagerKDF`.
 * `KemOps`, `kemOps`: the operations of a KEM as computations, and those of `P`.
 * `simProtK`, `pqxdhSimK`: the simulator over the operations of a KEM.
 * `simProt`, `pqxdhSim`: the simulator.
@@ -74,6 +77,8 @@ input is again unqueried. Either route bounds the distance at a session.
 * `simWorld_realizes`.
 * `pqxdh_realizesSim_oracleGame`: PQXDH realizes `F_AKE` behind `pqxdhSim` with the oracle-game
   bound.
+* `pqxdhRealOf_lazy_eager`: the real protocol with lazily sampled and with eagerly drawn
+  key-derivation values are at distance `0`.
 -/
 
 @[expose] public section
@@ -89,7 +94,7 @@ open CatCrypt.Crypto.PAKE.CPaceSquare (roAt PureNF pureNF_pure pureNF_sample Pur
   PureNF.bind withSub_pureNF pureGame pureGame_realizes sampleFrom_ofPMF_eq_liftPMF)
 open CatCrypt.Crypto.AKE.X3DHSquare (Inp aliceInp bobInp RSt ROut RAEv ltAt Named keyed realHon
   ephPubOf opkOf corruptRStep realAdv rInit FEv FOut subView F_AKE_pureNF ltStep ltStep_pureNF
-  roStep roStep_pureNF)
+  roStep roStep_pureNF KDFOp lazyKDF eagerKDF)
 open CatCrypt.NonUniform (sampleFrom ofPMF)
 open CatCrypt.Crypto.KEM.Games (Scheme)
 open PubView (eqView)
@@ -100,19 +105,23 @@ open scoped ENNReal
 /-- An input of the key derivation: the input of X3DH and the shared secret of the KEM. -/
 abbrev PInp (W SS : Type) := Inp W × SS
 
-/-- The state of the real protocol: the state of X3DH (session records, long-term secrets and
-the Diffie–Hellman secrets of sessions; its key-derivation table is not used), the KEM key pair
-of each responder session, the encapsulation of each completed initiator session, and the table
-of the key derivation. -/
-structure PSt (S W K PK SK SS C : Type) where
+/-- The state of the real protocol with key-derivation state `T`: the state of X3DH (session
+records, long-term secrets and the Diffie–Hellman secrets of sessions; its key-derivation table
+is not used), the KEM key pair of each responder session, the encapsulation of each completed
+initiator session, and the state of the key derivation. -/
+structure PStT (S W K PK SK C T : Type) where
   /-- The state of X3DH. -/
   x : RSt S W K
   /-- The KEM key pair of a responder session. -/
   kem : Inst → Option (PK × SK)
   /-- The encapsulation of a completed initiator session. -/
   ct : Inst → Option C
-  /-- The table of the key derivation. -/
-  ro : List (PInp W SS × K)
+  /-- The state of the key derivation. -/
+  ro : T
+
+/-- The state of the real protocol with the key derivation `lazyKDF`, whose state is the table
+of the key derivation. -/
+abbrev PSt (S W K PK SK SS C : Type) := PStT S W K PK SK C (List (PInp W SS × K))
 
 /-- Events of the adversary port of the real protocol. -/
 inductive PAEv (W SS C : Type) where
@@ -143,42 +152,52 @@ abbrev POut (S W K PK C : Type) := ROut S W K ⊕ (Option PK × Option C)
 section Real
 
 variable {S W K PK SK SS C : Type} [Field S] [Fintype S] [DecidableEq W] [Fintype K]
-  [Nonempty K] [DecidableEq SS]
+  [Nonempty K] [DecidableEq SS] {T : Type}
 
 /-- A step on the state of X3DH, with its output. -/
-noncomputable def onX (s : PSt S W K PK SK SS C) (c : PMF (ROut S W K × RSt S W K)) :
-    PMF (POut S W K PK C × PSt S W K PK SK SS C) :=
+noncomputable def onX (s : PStT S W K PK SK C T) (c : PMF (ROut S W K × RSt S W K)) :
+    PMF (POut S W K PK C × PStT S W K PK SK C T) :=
   c.map fun p => (.inl p.1, { s with x := p.2 })
 
 /-- The KEM public key of the responder session of `b` in `sid`, if any. -/
-def pkOf (s : PSt S W K PK SK SS C) (sid : SessionId) (b : PartyId) : Option PK :=
+def pkOf (s : PStT S W K PK SK C T) (sid : SessionId) (b : PartyId) : Option PK :=
   (s.kem (sid, b)).map Prod.fst
 
-/-- The state with the key `k` and the table `ro` at the session `x` with record `r`. -/
-def pKeyed (s : PSt S W K PK SK SS C) (x : Inst) (r : Rec K) (k : K)
-    (ro : List (PInp W SS × K)) : PSt S W K PK SK SS C :=
+/-- The state with the key `k` and the key-derivation state `ro` at the session `x` with record
+`r`. -/
+def pKeyed (s : PStT S W K PK SK C T) (x : Inst) (r : Rec K) (k : K) (ro : T) :
+    PStT S W K PK SK C T :=
   { s with x := keyed s.x x r k s.x.ro, ro := ro }
 
-variable (P : Scheme PK SK SS C)
+variable (P : Scheme PK SK SS C) (κ : KDFOp T (PInp W SS) K)
 
-/-- A step of the honest port of the real protocol: a new session draws its Diffie–Hellman
-secret, and a new responder session also its KEM key pair. -/
-noncomputable def pqHon (s : PSt S W K PK SK SS C) :
-    HEv → PMF (HOut K × PSt S W K PK SK SS C)
+/-- A step of the honest port of the real protocol with the key derivation `κ`: a new session
+draws its Diffie–Hellman secret, a new responder session also its KEM key pair, and a new
+session starts in `κ`. -/
+noncomputable def pqHonK (s : PStT S W K PK SK C T) :
+    HEv → PMF (HOut K × PStT S W K PK SK C T)
   | .newSession sid pid peer role =>
     (realHon s.x (.newSession sid pid peer role)).bind fun p =>
-      if (s.x.st.recs (sid, pid)).isNone ∧ role = .responder then
+      (if (s.x.st.recs (sid, pid)).isNone ∧ role = .responder then
         P.keygen.map fun kp =>
-          (p.1, { s with x := p.2, kem := Function.update s.kem (sid, pid) (some kp) })
-      else PMF.pure (p.1, { s with x := p.2 })
+          { s with x := p.2, kem := Function.update s.kem (sid, pid) (some kp) }
+      else PMF.pure { s with x := p.2 }).bind fun s₁ =>
+      (if (s.x.st.recs (sid, pid)).isNone then κ.start s.ro (sid, pid) else PMF.pure s.ro).map
+        fun t => (p.1, { s₁ with ro := t })
   | .getKey sid pid => PMF.pure (.key (keyOf s.x.st (sid, pid)), s)
+
+/-- A step of the honest port of the real protocol with the lazily sampled key derivation. -/
+noncomputable def pqHon (s : PSt S W K PK SK SS C) :
+    HEv → PMF (HOut K × PSt S W K PK SK SS C) :=
+  pqHonK P lazyKDF s
 
 variable (G : DHGroup S W)
 
-/-- The completion of the initiator session `x = (sid, a)`: it encapsulates to the KEM public
-key of its peer, and its key is the key derivation at `aliceInp` and the shared secret. -/
-noncomputable def pqComplete (s : PSt S W K PK SK SS C) (x : Inst) :
-    PMF (POut S W K PK C × PSt S W K PK SK SS C) :=
+/-- The completion of the initiator session `x = (sid, a)` with the key derivation `κ`: it
+encapsulates to the KEM public key of its peer, and its key is the key derivation of `x` at
+`aliceInp` and the shared secret. -/
+noncomputable def pqCompleteK (s : PStT S W K PK SK C T) (x : Inst) :
+    PMF (POut S W K PK C × PStT S W K PK SK C T) :=
   match s.x.st.recs x, s.x.eph x with
   | some r, some ek =>
     match opkOf s.x x.1 r.peer, pkOf s x.1 r.peer with
@@ -186,7 +205,7 @@ noncomputable def pqComplete (s : PSt S W K PK SK SS C) (x : Inst) :
       if r.role = .initiator ∧ r.key.isNone then
         (ltAt s.x x.2).bind fun la => (ltAt la.2 r.peer).bind fun lb =>
           (P.encaps pk).bind fun kc =>
-            (roAt s.ro (aliceInp G x.1 x.2 r.peer la.1.1 ek (G.pub lb.1.1) (G.pub lb.1.2)
+            (κ.derive s.ro x (aliceInp G x.1 x.2 r.peer la.1.1 ek (G.pub lb.1.1) (G.pub lb.1.2)
               (G.pub opk), kc.1)).map fun q =>
                 (.inl .ack, pKeyed { s with x := lb.2, ct := Function.update s.ct x (some kc.2) }
                   x r q.1 q.2)
@@ -195,53 +214,77 @@ noncomputable def pqComplete (s : PSt S W K PK SK SS C) (x : Inst) :
   | _, _ => PMF.pure (.inl .ack, s)
 
 /-- The completion of the responder session `x = (sid, b)` on the ephemeral public key `e` and
-the encapsulation `c`: when `c` decapsulates to `ss`, its key is the key derivation at `bobInp`
-and `ss`; a rejected encapsulation is ignored. -/
-noncomputable def pqSend (s : PSt S W K PK SK SS C) (x : Inst) (e : W) (c : C) :
-    PMF (POut S W K PK C × PSt S W K PK SK SS C) :=
+the encapsulation `c` with the key derivation `κ`: when `c` decapsulates to `ss`, its key is the
+key derivation of `x` at `bobInp` and `ss`; a rejected encapsulation is ignored. -/
+noncomputable def pqSendK (s : PStT S W K PK SK C T) (x : Inst) (e : W) (c : C) :
+    PMF (POut S W K PK C × PStT S W K PK SK C T) :=
   match s.x.st.recs x, s.x.eph x, s.kem x with
   | some r, some opk, some kp =>
     match P.decaps kp.2 c with
     | some ss =>
       if r.role = .responder ∧ r.key.isNone then
         (ltAt s.x x.2).bind fun lb => (ltAt lb.2 r.peer).bind fun la =>
-          (roAt s.ro (bobInp G x.1 r.peer x.2 (G.pub la.1.1) e lb.1.1 lb.1.2 opk, ss)).map
+          (κ.derive s.ro x (bobInp G x.1 r.peer x.2 (G.pub la.1.1) e lb.1.1 lb.1.2 opk, ss)).map
             fun q => (.inl .ack, pKeyed { s with x := la.2 } x r q.1 q.2)
       else PMF.pure (.inl .ack, s)
     | none => PMF.pure (.inl .ack, s)
   | _, _, _ => PMF.pure (.inl .ack, s)
 
-/-- A step of the adversary port of the real protocol. The events of X3DH that do not complete a
-session are steps of `realAdv` on the state of X3DH. -/
-noncomputable def pqAdv (s : PSt S W K PK SK SS C) :
-    PAEv W SS C → PMF (POut S W K PK C × PSt S W K PK SK SS C)
+/-- The completion of the initiator session `x` with the lazily sampled key derivation. -/
+noncomputable def pqComplete (s : PSt S W K PK SK SS C) (x : Inst) :
+    PMF (POut S W K PK C × PSt S W K PK SK SS C) :=
+  pqCompleteK P lazyKDF G s x
+
+/-- The completion of the responder session `x` with the lazily sampled key derivation. -/
+noncomputable def pqSend (s : PSt S W K PK SK SS C) (x : Inst) (e : W) (c : C) :
+    PMF (POut S W K PK C × PSt S W K PK SK SS C) :=
+  pqSendK P lazyKDF G s x e c
+
+/-- A step of the adversary port of the real protocol with the key derivation `κ`. The events of
+X3DH that do not complete a session are steps of `realAdv` on the state of X3DH. -/
+noncomputable def pqAdvK (s : PStT S W K PK SK C T) :
+    PAEv W SS C → PMF (POut S W K PK C × PStT S W K PK SK C T)
   | .idle => onX s (realAdv G s.x .idle)
   | .poll => onX s (realAdv G s.x .poll)
   | .pub pid => onX s (realAdv G s.x (.pub pid))
   | .ephPub sid pid => onX s (realAdv G s.x (.ephPub sid pid))
   | .pqPub sid pid => PMF.pure (.inr (pkOf s sid pid, s.ct (sid, pid)), s)
   | .corrupt pid => onX s (corruptRStep s.x pid)
-  | .complete sid pid => pqComplete P G s (sid, pid)
-  | .send sid pid e c => pqSend P G s (sid, pid) e c
-  | .kdf x => (roAt s.ro x).map fun p => (.inl (.hash p.1), { s with ro := p.2 })
+  | .complete sid pid => pqCompleteK P κ G s (sid, pid)
+  | .send sid pid e c => pqSendK P κ G s (sid, pid) e c
+  | .kdf x => (κ.query s.ro x).map fun p => (.inl (.hash p.1), { s with ro := p.2 })
+
+/-- A step of the adversary port of the real protocol with the lazily sampled key derivation. -/
+noncomputable def pqAdv (s : PSt S W K PK SK SS C) :
+    PAEv W SS C → PMF (POut S W K PK C × PSt S W K PK SK SS C) :=
+  pqAdvK P lazyKDF G s
 
 /-- The initial state of the real protocol. -/
 def pInit : PSt S W K PK SK SS C := ⟨rInit, fun _ => none, fun _ => none, []⟩
 
-/-- **The real PQXDH game**: a trivial key, and the oracle is the step of the real protocol. -/
-noncomputable def realGame : KeyedGame (HEv ⊕ PAEv W SS C) (HOut K ⊕ POut S W K PK C) where
+/-- **The real PQXDH game with the key derivation `κ`**: a trivial key, and the oracle is the
+step of the real protocol. -/
+noncomputable def realGameK : KeyedGame (HEv ⊕ PAEv W SS C) (HOut K ⊕ POut S W K PK C) where
   Key := Unit
-  State := PSt S W K PK SK SS C
+  State := PStT S W K PK SK C T
   keyDist := PMF.pure ()
   oracle _ s
-    | .inl h => (pqHon P s h).map fun p => (.inl p.1, p.2)
-    | .inr a => (pqAdv P G s a).map fun p => (.inr p.1, p.2)
-  init := pInit
+    | .inl h => (pqHonK P κ s h).map fun p => (.inl p.1, p.2)
+    | .inr a => (pqAdvK P κ G s a).map fun p => (.inr p.1, p.2)
+  init := ⟨rInit, fun _ => none, fun _ => none, κ.init⟩
 
-/-- **The real PQXDH protocol** as a system: each event is a query to the oracle of
-`realGame P G`. -/
-noncomputable def pqxdhReal :=
-  (OProt.oracle (Q := HEv ⊕ PAEv W SS C) (A := HOut K ⊕ POut S W K PK C)).sys (realGame P G)
+/-- **The real PQXDH game**, with the key derivation a lazily sampled random function. -/
+noncomputable def realGame : KeyedGame (HEv ⊕ PAEv W SS C) (HOut K ⊕ POut S W K PK C) :=
+  realGameK P lazyKDF G
+
+/-- **The real PQXDH protocol with the key derivation `κ`** as a system: each event is a query
+to the oracle of `realGameK P κ G`. -/
+noncomputable def pqxdhRealK :=
+  (OProt.oracle (Q := HEv ⊕ PAEv W SS C) (A := HOut K ⊕ POut S W K PK C)).sys (realGameK P κ G)
+
+/-- **The real PQXDH protocol** as a system, with the key derivation a lazily sampled random
+function. -/
+noncomputable def pqxdhReal := pqxdhRealK P (lazyKDF (D := PInp W SS) (K := K)) G
 
 end Real
 
@@ -592,5 +635,214 @@ theorem pqxdh_realizesSim_oracleGame :
       (simWorld_realizes P G)) ζ Z) (add_zero _)
 
 end SimWorld
+
+/-! ## The key derivation drawn in advance -/
+
+section LazyEager
+
+open CatCrypt.Crypto.AKE.X3DHSquare (pendingOf nodup_pendingOf pendingOf_addSession
+  pendingOf_pollStep drawPool_perm drawPool_bind_eagerKDF drawPool_pendingOf_setRec ltAt_eq_ltDraw
+  realAdvK realHonK)
+
+variable {S W K PK SK SS C : Type} [Field S] [Fintype S] [DecidableEq W] [Fintype K]
+  [Nonempty K] [DecidableEq SS]
+
+/-- The state `s` with the key-derivation state `t`. -/
+def pWithRo {T T' : Type} (s : PStT S W K PK SK C T) (t : T') : PStT S W K PK SK C T' :=
+  ⟨s.x, s.kem, s.ct, t⟩
+
+/-- **The kernel from lazy to eager key derivation**: the pool of keys of the pending sessions,
+drawn independently and uniformly, beside the table. -/
+noncomputable def eagerKernel (s : PSt S W K PK SK SS C) :
+    PMF (PStT S W K PK SK C (List (PInp W SS × K) × (Inst → Option K))) :=
+  (drawPool (pendingOf s.x.st)).map fun pool => pWithRo s (s.ro, pool)
+
+variable (P : Scheme PK SK SS C)
+
+/-- **The honest port, lazy and eager.** -/
+theorem eagerKernel_pqHonK (s : PSt S W K PK SK SS C) (h : HEv) :
+    ((eagerKernel s).bind fun s' => pqHonK P eagerKDF s' h) =
+      (pqHonK P lazyKDF s h).bind fun p => (eagerKernel p.2).map fun s' => (p.1, s') := by
+  simp only [eagerKernel, PMF.bind_map, Function.comp_def]
+  cases h with
+  | newSession sid pid peer role =>
+    by_cases hx : (s.x.st.recs (sid, pid)).isNone
+    · have hn : s.x.st.recs (sid, pid) = none := Option.isNone_iff_eq_none.1 hx
+      simp only [pqHonK, realHon, realHonK, pWithRo, hx, ↓reduceIte, true_and, eagerKDF,
+        lazyKDF, PMF.pure_map, PMF.map_comp, PMF.bind_bind, PMF.pure_bind, Function.comp_def]
+      split_ifs with hr <;> simp only [PMF.bind_map, PMF.map_bind, PMF.map_comp, PMF.pure_bind,
+        Function.comp_def, drawPool_perm (pendingOf_addSession s.x.st (sid, pid) peer role hn),
+        drawPool]
+      · rw [PMF.bind_comm]
+        refine congrArg _ (funext fun a => ?_)
+        rw [PMF.bind_comm]
+        refine congrArg _ (funext fun kp => ?_)
+        simp only [← PMF.bind_pure_comp]
+        exact PMF.bind_comm _ _ _
+      · rw [PMF.bind_comm]
+        refine congrArg _ (funext fun a => ?_)
+        simp only [← PMF.bind_pure_comp]
+        exact PMF.bind_comm _ _ _
+    · simp only [pqHonK, realHon, realHonK, pWithRo, hx, Bool.false_eq_true, ↓reduceIte,
+        false_and, PMF.pure_bind, PMF.pure_map, PMF.map_comp, Function.comp_def]
+      rfl
+  | getKey sid pid =>
+    simp only [pqHonK, pWithRo, PMF.pure_bind, PMF.map_comp, Function.comp_def]
+    rfl
+
+variable (G : DHGroup S W)
+
+/-- **The adversary port, lazy and eager.** -/
+theorem eagerKernel_pqAdvK (s : PSt S W K PK SK SS C) (e : PAEv W SS C) :
+    ((eagerKernel s).bind fun s' => pqAdvK P eagerKDF G s' e) =
+      (pqAdvK P lazyKDF G s e).bind fun p => (eagerKernel p.2).map fun s' => (p.1, s') := by
+  simp only [eagerKernel, PMF.bind_map, Function.comp_def]
+  cases e with
+  | idle =>
+    simp only [pqAdvK, onX, realAdv, realAdvK, pWithRo, PMF.pure_bind, PMF.pure_map,
+      PMF.map_comp, Function.comp_def]
+    rfl
+  | poll =>
+    simp only [pqAdvK, onX, realAdv, realAdvK, pWithRo, PMF.pure_bind, PMF.pure_map,
+      PMF.map_comp, Function.comp_def, pendingOf_pollStep]
+    rfl
+  | pub pid =>
+    simp only [pqAdvK, onX, realAdv, realAdvK, ltAt_eq_ltDraw, pWithRo, PMF.map_comp,
+      PMF.bind_map, Function.comp_def]
+    simp only [← PMF.bind_pure_comp]
+    exact PMF.bind_comm _ _ _
+  | ephPub sid pid =>
+    simp only [pqAdvK, onX, realAdv, realAdvK, pWithRo, PMF.pure_bind, PMF.pure_map,
+      PMF.map_comp, Function.comp_def]
+    rfl
+  | pqPub sid pid =>
+    simp only [pqAdvK, pWithRo, PMF.pure_bind, PMF.map_comp, Function.comp_def]
+    rfl
+  | corrupt pid =>
+    simp only [pqAdvK, onX, corruptRStep]
+    by_cases hN : Named s.x.st pid
+    · simp only [hN, ↓reduceIte, pWithRo, PMF.pure_bind, PMF.pure_map, PMF.map_comp,
+        Function.comp_def]
+      rfl
+    · simp only [hN, Bool.false_eq_true, ↓reduceIte, ltAt_eq_ltDraw, pWithRo, PMF.map_comp,
+        PMF.bind_map, Function.comp_def]
+      simp only [← PMF.bind_pure_comp]
+      exact PMF.bind_comm _ _ _
+  | kdf x =>
+    simp only [pqAdvK, pWithRo, eagerKDF, lazyKDF, PMF.map_comp, PMF.bind_map,
+      Function.comp_def]
+    simp only [← PMF.bind_pure_comp]
+    exact PMF.bind_comm _ _ _
+  | complete sid pid =>
+    simp only [pqAdvK, pqCompleteK]
+    have hop : ∀ (t : List (PInp W SS × K) × (Inst → Option K)) (b : PartyId),
+        opkOf (pWithRo s t).x sid b = opkOf s.x sid b := fun _ _ => rfl
+    have hpk : ∀ (t : List (PInp W SS × K) × (Inst → Option K)) (b : PartyId),
+        pkOf (pWithRo s t) sid b = pkOf s sid b := fun _ _ => rfl
+    cases hr : s.x.st.recs (sid, pid) with
+    | none =>
+      simp only [pWithRo, hr, PMF.pure_bind, PMF.map_comp, Function.comp_def]
+      rfl
+    | some r =>
+      cases he : s.x.eph (sid, pid) with
+      | none =>
+        simp only [pWithRo, hr, he, PMF.pure_bind, PMF.map_comp, Function.comp_def]
+        rfl
+      | some ek =>
+        simp only [hop, hpk]
+        cases ho : opkOf s.x sid r.peer with
+        | none =>
+          simp only [pWithRo, hr, he, ho, PMF.pure_bind, PMF.map_comp, Function.comp_def]
+          rfl
+        | some opk =>
+          cases hk : pkOf s sid r.peer with
+          | none =>
+            simp only [pWithRo, hr, he, ho, hk, PMF.pure_bind, PMF.map_comp, Function.comp_def]
+            rfl
+          | some pk =>
+            by_cases hc : r.role = .initiator ∧ r.key.isNone
+            · simp only [pWithRo, hr, he, ho, hk, hc, and_self, ↓reduceIte, ltAt_eq_ltDraw,
+                lazyKDF, pKeyed, keyed, PMF.bind_map, PMF.bind_bind, PMF.map_comp,
+                Function.comp_def]
+              simp only [drawPool_pendingOf_setRec]
+              rw [PMF.bind_comm]
+              refine congrArg _ (funext fun qa => ?_)
+              rw [PMF.bind_comm]
+              refine congrArg _ (funext fun qb => ?_)
+              rw [PMF.bind_comm]
+              refine congrArg _ (funext fun kc => ?_)
+              exact drawPool_bind_eagerKDF (D := PInp W SS) s.ro _ (nodup_pendingOf _) _ _
+                fun p pool => (Sum.inl ROut.ack, (⟨⟨setRec s.x.st (sid, pid)
+                  ⟨r.peer, .initiator, r.status, some p.1⟩, qb.2, s.x.eph, s.x.ro⟩, s.kem,
+                  Function.update s.ct (sid, pid) (some kc.2), (p.2, pool)⟩ :
+                    PStT S W K PK SK C (List (PInp W SS × K) × (Inst → Option K))))
+            · simp only [pWithRo, hr, he, ho, hk, hc, ↓reduceIte, PMF.pure_bind, PMF.map_comp,
+                Function.comp_def]
+              rfl
+  | send sid pid e c =>
+    simp only [pqAdvK, pqSendK]
+    cases hr : s.x.st.recs (sid, pid) with
+    | none =>
+      simp only [pWithRo, hr, PMF.pure_bind, PMF.map_comp, Function.comp_def]
+      rfl
+    | some r =>
+      cases he : s.x.eph (sid, pid) with
+      | none =>
+        simp only [pWithRo, hr, he, PMF.pure_bind, PMF.map_comp, Function.comp_def]
+        rfl
+      | some opk =>
+        cases hm : s.kem (sid, pid) with
+        | none =>
+          simp only [pWithRo, hr, he, hm, PMF.pure_bind, PMF.map_comp, Function.comp_def]
+          rfl
+        | some kp =>
+          cases hd : P.decaps kp.2 c with
+          | none =>
+            simp only [pWithRo, hr, he, hm, hd, PMF.pure_bind, PMF.map_comp, Function.comp_def]
+            rfl
+          | some ss =>
+            by_cases hc : r.role = .responder ∧ r.key.isNone
+            · simp only [pWithRo, hr, he, hm, hd, hc, and_self, ↓reduceIte, ltAt_eq_ltDraw,
+                lazyKDF, pKeyed, keyed, PMF.bind_map, PMF.bind_bind, PMF.map_comp,
+                Function.comp_def]
+              simp only [drawPool_pendingOf_setRec]
+              rw [PMF.bind_comm]
+              refine congrArg _ (funext fun qb => ?_)
+              rw [PMF.bind_comm]
+              refine congrArg _ (funext fun qa => ?_)
+              exact drawPool_bind_eagerKDF (D := PInp W SS) s.ro _ (nodup_pendingOf _) _ _
+                fun p pool => (Sum.inl ROut.ack, (⟨⟨setRec s.x.st (sid, pid)
+                  ⟨r.peer, .responder, r.status, some p.1⟩, qa.2, s.x.eph, s.x.ro⟩, s.kem,
+                  s.ct, (p.2, pool)⟩ :
+                    PStT S W K PK SK C (List (PInp W SS × K) × (Inst → Option K))))
+            · simp only [pWithRo, hr, he, hm, hd, hc, ↓reduceIte, PMF.pure_bind, PMF.map_comp,
+                Function.comp_def]
+              rfl
+
+/-- **Lazy and eager key derivation in the real PQXDH protocol.** The real protocol with the key
+derivation a lazily sampled random function and the real protocol with each session's
+key-derivation value drawn in advance at its start (`eagerKDF`) are at distance `0`. -/
+theorem pqxdhRealOf_lazy_eager :
+    Realizes (pqxdhReal (K := K) P G) (pqxdhRealK P eagerKDF G) fun _ _ => 0 := by
+  refine Realizes.ofKernel _ (realGameK P lazyKDF G) (realGameK P eagerKDF G) id
+    (PMF.map_id _).symm eagerKernel (fun _ => True) ?_ trivial ?_ fun _ _ _ _ _ _ => trivial
+  · simp [eagerKernel, realGameK, pendingOf, initSt, rInit, drawPool, PMF.pure_map, pWithRo,
+      lazyKDF, eagerKDF]
+  · intro _ s q _
+    cases q with
+    | inl h =>
+      have e := congrArg (PMF.map fun p => (Sum.inl (β := POut S W K PK C) p.1, p.2))
+        (eagerKernel_pqHonK (W := W) P s h)
+      simp only [realGameK, id, PMF.map_bind, PMF.bind_map, PMF.map_comp,
+        Function.comp_def] at e ⊢
+      exact e
+    | inr a =>
+      have e := congrArg (PMF.map fun p => (Sum.inr (α := HOut K) p.1, p.2))
+        (eagerKernel_pqAdvK P G s a)
+      simp only [realGameK, id, PMF.map_bind, PMF.bind_map, PMF.map_comp,
+        Function.comp_def] at e ⊢
+      exact e
+
+end LazyEager
 
 end CatCrypt.Crypto.AKE.PQXDHSquare
