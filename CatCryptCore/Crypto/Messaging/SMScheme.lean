@@ -53,8 +53,9 @@ to the receiver. When the CKA is correct along a relation `J` of the states of t
 and the next receiver (`CKACorrect`), the receiver derives the same output, and
 `smCorruptGame_acd` proves that `smCorruptGame (acdSM C R G D)` is `sm_corrupt_game` with the
 answers relabelled; `smAdaptiveGame_acd` proves the same for the adaptive game. The CKA
-`dhCKAOf decE` is the Diffie–Hellman CKA whose secret keys are drawn uniformly from a key space
-`Sk` and act through the exponent map `decE`; it is correct (`dhCKAOf_correct`).
+`dhCKAOf decE` of `CatCryptCore.Crypto.Messaging.CKACorrupt` is the Diffie–Hellman CKA whose
+secret keys are drawn uniformly from a key space `Sk` and act through the exponent map `decE`;
+it is correct (`dhCKAOf_correct`).
 
 ## Transfer
 
@@ -74,8 +75,8 @@ mention no particular scheme: a scheme that simulates `acdSM` inherits every bou
   `smCorruptGame`, `SMScheme.corruptAdvantage` — schemes and the corruption game over them
 * `smSchemeAdOracle`, `smAdaptiveGame`, `SMScheme.adaptiveAdvantage` — the game with an
   adaptive challenge epoch
-* `acdSM`, `CKACorrect`, `dhCKAOf` — the ACD construction, CKA correctness, the
-  Diffie–Hellman CKA over a key space
+* `acdSM`, `CKACorrect`, `dhKeyRel` — the ACD construction, CKA correctness, the correctness
+  relation of the Diffie–Hellman CKA over a key space
 * `SMScheme.Sim`, `SMSchemeAdv.comap` — simulations of schemes and the relabelled adversary
 
 ## Main results
@@ -89,8 +90,8 @@ mention no particular scheme: a scheme that simulates `acdSM` inherits every bou
   `sm_corrupt_advantage_le` and `sm_adaptive_corrupt_advantage_le` for `acdSM`
 * `smCorruptGame_sim`, `smAdaptiveGame_sim`, `SMScheme.Sim.corruptAdvantage_eq`,
   `SMScheme.Sim.adaptiveAdvantage_eq` — the transfer along a simulation
-* `dhCKAOf_correct`, `dhCKAOfCoins_sound`, `dhCKAOf_init_eq` — the Diffie–Hellman CKA over a
-  key space
+* `dhCKAOf_correct`, `dhInitPOf_rel` — correctness of the Diffie–Hellman CKA over a key
+  space
 -/
 
 set_option autoImplicit false
@@ -864,35 +865,6 @@ end ACD
 section DHKeys
 
 variable (G : Type) [CG : CyclicGroup G] {Sk : Type} [Fintype Sk] [Nonempty Sk]
-
-/-- **The Diffie–Hellman CKA over a key space.** Secret keys are drawn uniformly from `Sk`
-and act as the exponents `decE x`. A party state `(h, y)` holds the last public value `h` of
-the peer, used when sending, and the own last secret key `y`, used when receiving. Sending
-draws `x` and outputs `g ^ decE x` with the key `h ^ decE x`; receiving `T` derives
-`T ^ decE y`. The corruption of a party reveals its secret key, not only its exponent. -/
-noncomputable def dhCKAOf (decE : Sk → CG.Exp) : CKADef (G × Sk) G G where
-  init := SPComp.bind (SPComp.sample Sk) fun x =>
-    SPComp.pure (CG.pow (decE x), (CG.pow (decE x), x), (CG.pow (decE x), x))
-  send s := SPComp.bind (SPComp.sample Sk) fun x =>
-    SPComp.pure ((s.1, x), CG.pow (decE x), CyclicGroup.elemPow s.1 (decE x))
-  recv r T := ((T, r.2), CyclicGroup.elemPow T (decE r.2))
-
-/-- The sending algorithm of `dhCKAOf` with its secret key as explicit randomness. -/
-noncomputable instance dhCKAOfCoins (decE : Sk → CG.Exp) : CKACoins (dhCKAOf G decE) Sk where
-  sendR s x := ((s.1, x), CG.pow (decE x), CyclicGroup.elemPow s.1 (decE x))
-
-/-- The explicit-randomness sending algorithm of `dhCKAOf` is its sending algorithm. -/
-theorem dhCKAOfCoins_sound (decE : Sk → CG.Exp) : CKACoins.Sound (dhCKAOf G decE) := by
-  intro s
-  simp only [dhCKAOf, CKACoins.sendR]
-
-/-- The distribution of the initialisation of `dhCKAOf`. -/
-noncomputable def dhInitPOf (decE : Sk → CG.Exp) : PMF (G × (G × Sk) × (G × Sk)) :=
-  (PMF.uniformFintype Sk).map fun x => (CG.pow (decE x), (CG.pow (decE x), x), (CG.pow (decE x), x))
-
-theorem dhCKAOf_init_eq (decE : Sk → CG.Exp) :
-    (dhCKAOf G decE).init = liftPMF (dhInitPOf G decE) := by
-  simp only [dhCKAOf, dhInitPOf, sample_eq_liftPMF, liftPMF_bind_pure]
 
 /-- The correctness relation of `dhCKAOf`: the public value held by the next sender is the
 public value of the secret key of the next receiver. -/
