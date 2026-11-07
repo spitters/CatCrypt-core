@@ -83,7 +83,8 @@ initiator `a` and responder `b` that `O` accepts for `(IK_a, SPK_b)` (`extractR`
 * `pairBad_le_gapDH`: the bad event of a pair is at most the GDH advantage of `gdhRed`.
 * `badGame_le_gapDH`: `badGame G B true ≤ ∑ a ∈ P, ∑ b ∈ P, GapDH_Advantage (gapDHDef G)
   (gdhRed G a b B)` for `B` naming only parties of `P`.
-* `x3dh_realizesSim_gapDH`: X3DH realizes `F_AKE` behind `x3dhSim` with the bound `gdhBound`.
+* `x3dh_realizesSim_gapDH`: the real protocol `x3dhRealOf (x3dhAlg G)` of the algorithms of X3DH
+  realizes `F_AKE` behind `x3dhSim` with the bound `gdhBound`.
 -/
 
 @[expose] public section
@@ -1851,12 +1852,13 @@ noncomputable def gdhBound (P : Finset PartyId) (B : OracleAdv (OEv W) (OOut S W
 
 /-- **X3DH realizes `F_AKE` behind `x3dhSim` under the gap Diffie–Hellman assumption.** For
 every finite set of parties `P` and every environment `Z` whose oracle reduction
-`OProt.oracle.reduction Z` names only parties of `P`, the distance between the real X3DH protocol
-and the simulator running with `F_AKE` is at most the sum over the pairs `(a, b)` of `P` of the
-gap Diffie–Hellman advantages of the reductions `gdhRed G a b (OProt.oracle.reduction Z)`; the
-bound is `⊤` for the other environments. -/
+`OProt.oracle.reduction Z` names only parties of `P`, the distance between the real protocol of
+the algorithms `x3dhAlg G` (the real X3DH protocol `x3dhReal G`) and the simulator running with
+`F_AKE` is at most the sum over the pairs `(a, b)` of `P` of the gap Diffie–Hellman advantages of
+the reductions `gdhRed G a b (OProt.oracle.reduction Z)`; the bound is `⊤` for the other
+environments. -/
 theorem x3dh_realizesSim_gapDH (P : Finset PartyId) :
-    RealizesSim (x3dhReal (K := K) G) (F_AKE (SPComp.sample K) true) (x3dhSim G)
+    RealizesSim (x3dhRealOf (K := K) (x3dhAlg G)) (F_AKE (SPComp.sample K) true) (x3dhSim G)
       (fun _ Z => gdhBound G P ((OProt.oracle (Q := OEv W) (A := OOut S W K)).reduction Z)) :=
   fun ζ Z => (x3dh_realizesSim_oracleGame G ζ Z).trans (by
     by_cases hN : NamesIn P ((OProt.oracle (Q := OEv W) (A := OOut S W K)).reduction Z)

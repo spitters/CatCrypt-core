@@ -276,8 +276,12 @@ public import CatCryptCore.Crypto.SamplerCert
 public import CatCryptCore.Crypto.RejectionLoop
 public import CatCryptCore.Crypto.Assumptions.DDHSampled
 public import CatCryptCore.Crypto.KeyAgreement.Curve25519Subgroup
+public import CatCryptCore.Crypto.KeyAgreement.X25519Spec
+public import CatCryptCore.Crypto.KeyAgreement.Curve25519LadderU
+public import CatCryptCore.Crypto.KeyAgreement.Curve25519BasePoint
 public import CatCryptCore.Crypto.Libcrux.Bridge_X25519Group
 public import CatCryptCore.Crypto.Libcrux.Bridge_X25519GroupTimed
+public import CatCryptCore.Crypto.KeyAgreement.Curve25519DHGroup
 public import CatCryptCore.Crypto.KeyAgreement.BytesModSampler
 public import CatCryptCore.Crypto.Constructions.ECBCPRFFlag
 public import CatCryptCore.Crypto.Constructions.MACDomainExtension

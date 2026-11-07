@@ -738,9 +738,9 @@ theorem x3dh_advantage_le_diffGame (B : OracleAdv (OEv W) (OOut S W K) Bool) :
   have hagree : ∀ (s : JSt S W K) (e : OEv W) (x : OOut S W K × JSt S W K), ¬ JointBad s e x →
       jointReal G s e x = jointSim G s e x :=
     fun s e x hx => jointReal_apply_eq G s e x (by simpa [JointBad] using hx)
-  have hR : (OracleAdv.run ((realGame G).oracle ()) B (realGame G).init).map Prod.fst =
+  have hR : (OracleAdv.run ((realGame (x3dhAlg G)).oracle ()) B (realGame G).init).map Prod.fst =
       (OracleAdv.run (jointReal G) B jointInit).map Prod.fst := by
-    have h := OracleAdv.run_map_state (jointReal G) ((realGame G).oracle ())
+    have h := OracleAdv.run_map_state (jointReal G) ((realGame (K := K) (x3dhAlg G)).oracle ())
       (fun s' => s'.1.2) (fun s e => jointReal_map G s e) B jointInit
     calc _ = ((OracleAdv.run (jointReal G) B jointInit).map
           (Prod.map id fun s' => s'.1.2)).map Prod.fst := (congrArg (PMF.map Prod.fst) h).symm
