@@ -273,6 +273,8 @@ public import CatCryptCore.Crypto.TVHops
 public import CatCryptCore.Crypto.SampledGame
 public import CatCryptCore.Crypto.SampledGameTimed
 public import CatCryptCore.Crypto.SamplerCert
+public import CatCryptCore.Crypto.SamplerCertOracle
+public import CatCryptCore.Crypto.KDFLazyEager
 public import CatCryptCore.Crypto.RejectionLoop
 public import CatCryptCore.Crypto.Assumptions.DDHSampled
 public import CatCryptCore.Crypto.KeyAgreement.Curve25519Subgroup
@@ -345,6 +347,7 @@ public import CatCryptCore.Crypto.Messaging.CKACorrupt
 public import CatCryptCore.Crypto.Messaging.CKAACD
 public import CatCryptCore.Crypto.Messaging.SMCorrupt
 public import CatCryptCore.Crypto.Messaging.SMScheme
+public import CatCryptCore.Crypto.Messaging.SMMultiChallenge
 public import CatCryptCore.Crypto.Messaging.SignalStack
 public import CatCryptCore.Crypto.Messaging.SealedSender
 public import CatCryptCore.Crypto.Messaging.SignalStackSealed
@@ -361,6 +364,7 @@ public import CatCryptCore.Crypto.Signal.DoubleRatchet.Primitives
 public import CatCryptCore.Crypto.Signal.DoubleRatchet.Extraction.Doubleratchet_haxpipe
 public import CatCryptCore.Crypto.Signal.DoubleRatchet.ExtractedCorrespondence
 public import CatCryptCore.Crypto.Signal.DoubleRatchet.ExtractedScheme
+public import CatCryptCore.Crypto.Signal.DoubleRatchet.ExtractedMultiChallenge
 public import CatCryptCore.Crypto.Signal.DoubleRatchet.SurfaceDeps
 public import CatCryptCore.Crypto.Signal.RatchetChainHybrid
 public import CatCryptCore.Crypto.Signal.Zkgroup.Lizard
