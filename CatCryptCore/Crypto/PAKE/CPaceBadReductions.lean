@@ -7,6 +7,7 @@ module
 
 public import CatCryptCore.Crypto.PAKE.CPaceBound
 public import CatCryptCore.Crypto.AKE.X3DHSquareGDH
+public import CatCryptCore.Crypto.OracleCollision
 
 /-!
 # Explicit bounds for the bad events of the CPace square
@@ -2526,6 +2527,144 @@ theorem uqp_flag_le_coupling (td : Pw → Sˣ) (pw₀ : Pw) (t : Sˣ)
     have h₂ : setTd T₂ s₂ = setTd T₂ s₁ := h.symm
     rw [hcong, h₂, simWorldD_setTd, simWorldD_setTd]
     exact ⟨rfl, rfl⟩
+
+open Classical in
+/-- **The unqueried-match flag of one password**, averaged over the table of `H1`, is at most
+`4 q / |Sˣ|` for an oracle adversary with at most `q` queries. -/
+theorem uqp_avg_le (pw₀ : Pw) (B : OracleAdv (OEv Pw W) (OOut W K) Bool) (q : ℕ)
+    (hB : B.IsQueryBound q) :
+    ∑' td : Pw → Sˣ, PMF.uniformFintype (Pw → Sˣ) td *
+      (OracleAdv.run (OracleAdv.flagWhen (fun _ _ x => UQp G td pw₀ x.2.1) (idealStep G td)) B
+        (hInit G, false)).toOuterMeasure {y | y.2.2 = true} ≤
+      ((4 * q : ℕ) : ℝ≥0∞) * (Fintype.card Sˣ : ℝ≥0∞)⁻¹ := by
+  set ε : ℝ≥0∞ := (Fintype.card Sˣ : ℝ≥0∞)⁻¹
+  set f : (Pw → Sˣ) → (Pw → Sˣ) → ℝ≥0∞ := fun T td =>
+    (OracleAdv.run (OracleAdv.flagWhen (fun _ _ x => UQp G T pw₀ x.2.1) (idealStep G td)) B
+      (hInit G, false)).toOuterMeasure {y | y.2.2 = true}
+  have hF : ∀ T td, ((OracleAdv.run (OracleAdv.flagWhen (fun _ _ x => UQp G T pw₀ x.2.1)
+      (idealStep G td)) B (hInit G, false)).map fun y => y.2.2) true = f T td := by
+    intro T td
+    rw [← PMF.toOuterMeasure_apply_singleton, PMF.toOuterMeasure_map_apply]
+    rfl
+  have hupd := congrArg (fun p : PMF Bool => p true)
+    (OracleAdv.uniform_bind_eq_bind_update (R := Sˣ) pw₀ fun td =>
+      (OracleAdv.run (OracleAdv.flagWhen (fun _ _ x => UQp G td pw₀ x.2.1) (idealStep G td)) B
+        (hInit G, false)).map fun y => y.2.2)
+  simp only [PMF.bind_apply, hF] at hupd
+  -- the fixed-trapdoor bound
+  have hfix : ∀ g : Pw → Sˣ, ∑' r : Sˣ, PMF.uniformFintype Sˣ r *
+      f (Function.update g pw₀ r) (Function.update g pw₀ r) ≤ ((4 * q : ℕ) : ℝ≥0∞) * ε := by
+    intro g
+    set O₂ := idealStep G (Pw := Pw) (K := K) (Function.update g pw₀ 1)
+    have hstep : ∀ r : Sˣ, f (Function.update g pw₀ r) (Function.update g pw₀ r) ≤
+        (OracleAdv.run O₂ B (hInit G)).toOuterMeasure
+          {y | Mt G (Function.update g pw₀ r) pw₀ y.2.1 ∧ ZsInv y.2.1.1} := by
+      intro r
+      refine (uqp_flag_le_coupling G g pw₀ r B).trans ?_
+      have h₀ := OracleAdv.run_flagWhen_mono O₂
+        (fun _ _ x => UQp G (Function.update g pw₀ r) pw₀ x.2.1)
+        (fun _ _ x => Mt G (Function.update g pw₀ r) pw₀ x.2.1)
+        (fun _ _ x ⟨pid, y, z, hz, hz0, hy, _, hm⟩ => ⟨pid, y, z, hz, hz0, hy, hm⟩) B (hInit G)
+      have h₁ := OracleAdv.run_flagWhen_le_of_inv O₂
+        (fun _ _ x => Mt G (Function.update g pw₀ r) pw₀ x.2.1)
+        (fun _ _ x => Mt G (Function.update g pw₀ r) pw₀ x.2.1 ∧ ZsInv x.2.1.1)
+        (fun t => ZsInv t.1.1) (fun t e ht x hx => by
+          have hI := (ideal_step_frame G _ t ht e x hx).1
+          by_cases hd : Mt G (Function.update g pw₀ r) pw₀ x.2.1
+          · exact Or.inl ⟨hd, hI⟩
+          · exact Or.inr ⟨hd, hI⟩) B (hInit G) (fun _ _ => rfl)
+      have h₂ := AKE.X3DHSquareGDH.run_flag_le_final O₂
+        (fun y => Mt G (Function.update g pw₀ r) pw₀ y.1 ∧ ZsInv y.1.1) (fun t e ht x hx => by
+          obtain ⟨rr, -, rfl⟩ := (PMF.mem_support_map_iff _ _ _).1 hx
+          exact ⟨Mt_stable G _ _ pw₀ t ht.2 e rr ht.1,
+            (simWorldD_step_frame G _ t ht.2 e rr).1⟩) B (hInit G)
+      exact h₀.trans (h₁.trans h₂)
+    calc _ ≤ ∑' r : Sˣ, PMF.uniformFintype Sˣ r * (OracleAdv.run O₂ B (hInit G)).toOuterMeasure
+          {y | Mt G (Function.update g pw₀ r) pw₀ y.2.1 ∧ ZsInv y.2.1.1} :=
+          ENNReal.tsum_le_tsum fun r => by gcongr; exact hstep r
+      _ = ∑' y, (OracleAdv.run O₂ B (hInit G)) y * (PMF.uniformFintype Sˣ).toOuterMeasure
+          {r | Mt G (Function.update g pw₀ r) pw₀ y.2.1 ∧ ZsInv y.2.1.1} := by
+          simp only [OracleAdv.toOuterMeasure_eq_tsum_ite, ← ENNReal.tsum_mul_left]
+          rw [ENNReal.tsum_comm]
+          refine tsum_congr fun y => tsum_congr fun r => ?_
+          ring
+      _ ≤ ∑' y, (OracleAdv.run O₂ B (hInit G)) y * (((4 * q : ℕ) : ℝ≥0∞) * ε) := by
+          refine ENNReal.tsum_le_tsum fun y => ?_
+          by_cases hy : y ∈ (OracleAdv.run O₂ B (hInit G)).support
+          · gcongr
+            by_cases hI : ZsInv y.2.1.1
+            · refine (MeasureTheory.measure_mono fun r hr => hr.1).trans
+                ((uniform_Mt_le G g pw₀ y.2.1 hI).trans ?_)
+              refine mul_le_mul' (Nat.cast_le.mpr ?_) le_rfl
+              have := idealStep_entries_le G _ B q hB y hy
+              omega
+            · simp [hI]
+          · simp [(PMF.apply_eq_zero_iff _ _).2 hy]
+      _ = _ := by rw [ENNReal.tsum_mul_right, PMF.tsum_coe, one_mul]
+  calc _ = ∑' r : Sˣ, PMF.uniformFintype Sˣ r * ∑' g : Pw → Sˣ,
+        PMF.uniformFintype (Pw → Sˣ) g * f (Function.update g pw₀ r) (Function.update g pw₀ r) :=
+        hupd
+    _ = ∑' g : Pw → Sˣ, PMF.uniformFintype (Pw → Sˣ) g * ∑' r : Sˣ, PMF.uniformFintype Sˣ r *
+        f (Function.update g pw₀ r) (Function.update g pw₀ r) := by
+        simp only [← ENNReal.tsum_mul_left]
+        rw [ENNReal.tsum_comm]
+        refine tsum_congr fun g => tsum_congr fun r => ?_
+        ring
+    _ ≤ ∑' g : Pw → Sˣ, PMF.uniformFintype (Pw → Sˣ) g * (((4 * q : ℕ) : ℝ≥0∞) * ε) :=
+        ENNReal.tsum_le_tsum fun g => by gcongr; exact hfix g
+    _ = _ := by rw [ENNReal.tsum_mul_right, PMF.tsum_coe, one_mul]
+
+/-- **The unqueried-match experiment.** For an oracle adversary with at most `q` queries, a match
+for a password not queried at `H1` has probability at most `|Pw| · 4 q / |Sˣ| + 2 / |S|`: for each
+password, its trapdoor is not read before its query, and the tables hold at most `2 q` inputs. -/
+theorem uqExp_le (B : OracleAdv (OEv Pw W) (OOut W K) Bool) (q : ℕ) (hB : B.IsQueryBound q) :
+    uqExp G B true ≤ (Fintype.card Pw : ℝ≥0∞) * (((4 * q : ℕ) : ℝ≥0∞) *
+      (Fintype.card Sˣ : ℝ≥0∞)⁻¹) + 2 * (Fintype.card S : ℝ≥0∞)⁻¹ := by
+  classical
+  have hinner : ∀ td : Pw → Sˣ,
+      ((OracleAdv.run (OracleAdv.flagWhen (fun s _ x => UQst G td x.2.1.1.1) (jointSim G td)) B
+        (jointInit G, false)).map fun y => y.2.2) true ≤
+      ∑ pw₀ ∈ (Finset.univ : Finset Pw),
+        (OracleAdv.run (OracleAdv.flagWhen (fun _ _ x => UQp G td pw₀ x.2.1) (idealStep G td)) B
+          (hInit G, false)).toOuterMeasure {y | y.2.2 = true} +
+        2 * (Fintype.card S : ℝ≥0∞)⁻¹ := by
+    intro td
+    rw [flagExp_inner_apply G td (fun td _ s' => UQst G td s'.1.1) B]
+    have h₁ := OracleAdv.run_flagWhen_mono (jointSim G td) (fun _ _ x => UQst G td x.2.1.1.1)
+      (fun _ _ x => (∃ pw₀ ∈ (Finset.univ : Finset Pw), UQp G td pw₀ x.2.1.1.1) ∨ Z0 x.2.1.1.1)
+      (fun _ _ x h => uq_split G td _ h) B (jointInit G)
+    have h₂ := OracleAdv.run_flagWhen_or_le (jointSim G td)
+      (fun _ _ x => ∃ pw₀ ∈ (Finset.univ : Finset Pw), UQp G td pw₀ x.2.1.1.1)
+      (fun _ _ x => Z0 x.2.1.1.1) B (jointInit G)
+    have h₃ := jointSim_flag_eq G td
+      (fun y => ∃ pw₀ ∈ (Finset.univ : Finset Pw), UQp G td pw₀ y.1) B
+    have h₄ := AKE.X3DHSquareGDH.run_flag_union_le (idealStep G td)
+      (fun pw₀ y => UQp G td pw₀ y.1) Finset.univ B (hInit G)
+    refine h₁.trans (h₂.trans (add_le_add ?_ (z0_flag_le G td B q hB)))
+    exact (congrArg (fun p => PMF.toOuterMeasure p {y | y.2.2 = true})
+      (OracleAdv.run_flagWhen_inst _ _ _ _ _ _)).trans_le (h₃.trans_le
+      ((congrArg (fun p => PMF.toOuterMeasure p {y | y.2.2 = true})
+        (OracleAdv.run_flagWhen_inst _ _ _ _ _ _)).trans_le h₄))
+  unfold uqExp flagExp
+  rw [PMF.bind_apply]
+  calc _ ≤ ∑' td : Pw → Sˣ, PMF.uniformFintype (Pw → Sˣ) td *
+        (∑ pw₀ ∈ (Finset.univ : Finset Pw),
+          (OracleAdv.run (OracleAdv.flagWhen (fun _ _ x => UQp G td pw₀ x.2.1) (idealStep G td))
+            B (hInit G, false)).toOuterMeasure {y | y.2.2 = true} +
+          2 * (Fintype.card S : ℝ≥0∞)⁻¹) :=
+        ENNReal.tsum_le_tsum fun td => by gcongr; exact hinner td
+    _ = ∑ pw₀ ∈ (Finset.univ : Finset Pw), ∑' td : Pw → Sˣ, PMF.uniformFintype (Pw → Sˣ) td *
+          (OracleAdv.run (OracleAdv.flagWhen (fun _ _ x => UQp G td pw₀ x.2.1) (idealStep G td))
+            B (hInit G, false)).toOuterMeasure {y | y.2.2 = true} +
+        2 * (Fintype.card S : ℝ≥0∞)⁻¹ := by
+        simp only [mul_add, Finset.mul_sum]
+        rw [ENNReal.tsum_add, ENNReal.tsum_mul_right, PMF.tsum_coe, one_mul,
+          Summable.tsum_finsetSum fun _ _ => ENNReal.summable]
+    _ ≤ ∑ _pw₀ ∈ (Finset.univ : Finset Pw), ((4 * q : ℕ) : ℝ≥0∞) * (Fintype.card Sˣ : ℝ≥0∞)⁻¹ +
+        2 * (Fintype.card S : ℝ≥0∞)⁻¹ := by
+        gcongr with pw₀
+        exact uqp_avg_le G pw₀ B q hB
+    _ = _ := by rw [Finset.sum_const, Finset.card_univ, nsmul_eq_mul]
 
 end UQ
 
