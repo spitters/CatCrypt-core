@@ -241,6 +241,18 @@ is emitted whenever the use bound is proved, with `+queries`, when the scalar ru
 a kind, and beside a time theorem of the scalar rule; a use bound that is not proved there leaves
 the time theorem as it is.
 
+**Majorants of cost companions.** With the option `derive_time_bound.majorants`, a cost companion
+`fCost : X₁ → … → ℕ` with a list argument gets, in place of the uniform bound `t_fCost`, a monotone
+majorant `M_fCost : ℕ → ℕ` in the length of its last list argument: the hypotheses
+`Monotone M_fCost` and `∀ ys, fCost ys ≤ M_fCost (ys i).length` (`CatCrypt.Core.CostMaj` along the
+length; a uniform bound is the constant majorant, `costMaj_const_iff`). The companion at the
+arguments `a` is bounded by `M_fCost (a i).length`, and where that length reads a value bound in the
+tree, by `M_fCost` at its bound (`rewriteMajorants`, and the clause of `AutoTime.boundFree?` for a
+function with a `Monotone` hypothesis): the bound is monotone in the majorant, at the bounds of the
+lengths found by the length rules below, so it composes without a case analysis on the arguments
+(the monotone functional interpretation, Kohlenbach, *Applied Proof Theory*, Ch. 6). Tests in
+`DeriveTimeBoundMajTest`.
+
 **Length hypotheses.** Class: a charge, or a premise `∀ s, c s ≤ ?k` of a registered cost lemma
 (the test of `List.find?.timedCost_le`), to be bounded free of a variable `x` on which it depends
 only through the lengths of lists computed from `x`, under a hypothesis of the context that
@@ -420,6 +432,29 @@ open Lean Meta Elab Term Command CatCrypt.Core CatCrypt.Tactics.TimeFold
 
 meta section
 
+/-- Whether a cost companion with a list argument is bounded by a majorant (option
+`derive_time_bound.majorants`). -/
+register_option derive_time_bound.majorants : Bool := {
+  defValue := false
+  descr := "derive_time_bound states a cost companion with a list argument through a monotone \
+    majorant in the length of its last list argument (CatCrypt.Core.CostMaj) instead of a uniform \
+    bound"
+}
+
+
+/-- The index of the last argument of the cost companion type `t` whose type is a list, if any. -/
+def lastListArg? (t : Expr) : MetaM (Option Nat) := do
+  forallTelescopeReducing t fun ys _ => do
+    let mut r := none
+    for i in [0:ys.size] do
+      if (← whnfR (← inferType ys[i]!)).isAppOfArity ``List 1 then r := some i
+    return r
+
+/-- The bound of the cost companion `v` of a binder (`Bounds`) at its arguments: `v` itself for a
+uniform bound, the instance of the majorant `fun ys => M (ys i).length` for a majorant. -/
+def boundAt (v : Expr) (args : Array Expr) : Expr :=
+  if v.isLambda then v.beta args else v
+
 /-- The role of a binder of a costed tree in its time theorem. -/
 inductive Role where
   /-- A function into costed trees: its time is bounded pointwise. -/
@@ -573,13 +608,27 @@ def rewriteLengths (b : FVarId) (e : Expr) : MetaM Expr :=
     if r.containsFVar b then return .done s
     return .done r)
 
+/-- `e` with every application `M s` of a function with a hypothesis `Monotone M` (the majorant of
+a cost companion, `CatCrypt.Core.CostMaj`) whose argument mentions `b` replaced by `M` at the
+bound of `s` free of `b` (`AutoTime.boundFree?`): a bound monotone in the majorant. -/
+def rewriteMajorants (b : FVarId) (e : Expr) : MetaM Expr :=
+  Meta.transform e (pre := fun s => do
+    unless s.containsFVar b do return .done s
+    let .fvar _ := s.getAppFn | return .continue
+    unless s.getAppNumArgs == 1 do return .continue
+    let some (r, _) ← CatCrypt.Tactics.AutoTime.boundFree? #[b] s 64 | return .continue
+    if r.containsFVar b then return .continue
+    return .done r)
+
 /-- The fresh variable `b : γ` in `k`, which must not occur in the result after the registered
-costs that mention it are replaced by their closed forms (`rewriteCosts`). -/
+costs that mention it are replaced by their closed forms (`rewriteCosts`) and the majorants that
+read it by their values at its bounds (`rewriteMajorants`). -/
 def withFresh (γ : Expr) (k : Expr → MetaM Expr) : MetaM Expr :=
   withLocalDeclD `b γ fun b => do
     let r ← k b
     let r ← instantiateMVars r
     let r ← if r.containsFVar b.fvarId! then rewriteCosts b.fvarId! r else pure r
+    let r ← if r.containsFVar b.fvarId! then rewriteMajorants b.fvarId! r else pure r
     if r.containsFVar b.fvarId! then
       throwError "the bound depends on a bound value{indentExpr r}"
     return r
@@ -749,7 +798,7 @@ partial def boundCost (bs : Bounds) (e : Expr) : MetaM Expr := do
     -- the step cost of a pair is at most its time
     return ← boundStep bs y
   if let .fvar f := e.getAppFn then
-    if let some (_, v, .cost) := bs.find? (·.1 == f) then return v
+    if let some (_, v, .cost) := bs.find? (·.1 == f) then return boundAt v e.getAppArgs
   -- a `match` in a cost: the maximum of the bounds of its alternatives, or, when a bound
   -- mentions a pattern variable, the `match` of the bounds of its alternatives
   if let some m ← matchMatcherApp? e then
@@ -983,6 +1032,21 @@ partial def withBounds {γ : Type} (xs : Array Expr) (i : Nat) (bs : Bounds)
                 withLocalDeclD (Name.mkSimple ("h_" ++ n.toString)) hTy fun hx =>
                   withBounds xs (i + 1) (bs.push (x.fvarId!, v, r)) (vars.push q |>.push v)
                     (hyps.push hx) k oadv vec qs
+      if let .cost := r then
+        if derive_time_bound.majorants.get (← getOptions) then
+          if let some li ← lastListArg? t then
+            -- a monotone majorant `M_f` in the length of the last list argument
+            let fnE ← mkArrow natE natE
+            return ← withLocalDecl (Name.mkSimple ("M_" ++ n.toString)) .implicit fnE fun M => do
+              withLocalDeclD (Name.mkSimple ("hM_" ++ n.toString)) (← mkAppM ``Monotone #[M])
+                fun hM => do
+              let (hTy, v) ← forallTelescopeReducing t fun ys _ => do
+                let b := mkApp M (← mkAppM ``List.length #[ys[li]!])
+                pure (← mkForallFVars ys (← mkAppM ``LE.le #[mkAppN x ys, b]),
+                  ← mkLambdaFVars ys b)
+              withLocalDeclD (Name.mkSimple ("h_" ++ n.toString)) hTy fun hx =>
+                withBounds xs (i + 1) (bs.push (x.fvarId!, v, r)) (vars.push M)
+                  (hyps.push hM |>.push hx) k oadv vec qs
       let vName := match r with
         | .tree | .kind => Name.mkSimple ("T_" ++ n.toString)
         | .key => Name.mkSimple ("G_" ++ n.toString)
@@ -1220,7 +1284,7 @@ partial def mirrorCost (hs : HBounds) (pvs : Array (Array FVarId)) (e : Expr) :
     throwError "mirror: the step cost of a subtree"
   if let .fvar f := e.getAppFn then
     if let some (_, v, .cost, h) := hs.find? (·.1 == f) then
-      return (v, mkAppN h e.getAppArgs)
+      return (boundAt v e.getAppArgs, mkAppN h e.getAppArgs)
   if let some m ← matchMatcherApp? e then
     let mut bnds : Array Expr := #[]
     let mut pfs : Array Expr := #[]
@@ -1271,7 +1335,11 @@ def mirrorTimeBound (c name : Name) : TermElabM MirrorResult := do
   let lvls := info.levelParams.map mkLevelParam
   forallTelescope info.type fun xs _ => do
     withBounds xs 0 #[] #[] #[] fun bs vars hyps => do
-      let hs : HBounds := (bs.zip hyps).map fun ((f, v, r), h) => (f, v, r, h)
+      -- each bound with the hypothesis on its binder (a majorant also has its monotonicity)
+      let hs : HBounds ← bs.mapM fun (f, v, r) => do
+        let some h ← hyps.findM? fun h => return (← inferType h).containsFVar f
+          | throwError "mirror: no hypothesis on a bounded binder"
+        return (f, v, r, h)
       let x := mkAppN (Lean.mkConst c lvls) xs
       -- the pair as `boundStep` reads it
       let body ← reduceHead x

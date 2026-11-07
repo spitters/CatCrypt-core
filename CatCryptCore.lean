@@ -21,6 +21,7 @@ public import CatCryptCore.Prob.SchwartzZippel
 public import CatCryptCore.Prob.SchwartzZippelGaloisRing
 public import CatCryptCore.Prob.XorBij
 public import CatCryptCore.Prob.SDistrChain
+public import CatCryptCore.Core.CostMajorant
 public import CatCryptCore.Core.Basic
 public import CatCryptCore.Core.Location
 public import CatCryptCore.Core.Heap

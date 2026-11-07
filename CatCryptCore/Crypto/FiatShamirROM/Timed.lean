@@ -12,6 +12,7 @@ public import CatCryptCore.Crypto.FiatShamirROM.ProgFlag
 public import CatCryptCore.Crypto.FiatShamirROM.Reduction
 public import CatCryptCore.Crypto.Signatures.EUFCMAPMF
 public import CatCryptCore.Tactics.StdCosts
+public import CatCryptCore.Core.CostMajorant
 
 /-!
 # Running time of the Fiat–Shamir ROM reductions
@@ -83,7 +84,8 @@ fresh values at the markers) is one distribution, sampled at one `rand` node.
 * `verifyQueries.timed` — the verifier's queries, derived by `derive_timed`; `withVerify.timed`
   — the costed adversary followed by them
 * `Protocol.VkeyCost`, `Protocol.VerifyCostLe` — the cost companion of `G.vkey` and its bound
-  `tV`
+  `tV`; `Protocol.verifyCostLe_of_costMajOn`, that bound from a monotone majorant of the
+  companion
 * `timedRun` — the costed form of `(OracleAdv.run O (withVerify x A) s₀).map out`
 * `slReductionMk.timed`, `slReductionCls.timed`, `slReduction.timed`,
   `recReduction.timed`, `hybRunOf.timed`, `hybDistByOf.timed`, `hybDistByP.timed`
@@ -581,6 +583,18 @@ analyses of the step. -/
 def _root_.CatCrypt.Crypto.FiatShamirROM.Protocol.VerifyCostLe (G : Protocol)
     (vkeyCost : G.VkeyCost) (tV : ℕ) : Prop :=
   ∀ x m σ (vs : List G.Ch), vs.length ≤ G.V → vkeyCost x m σ vs + 2 * vs.length + 6 ≤ tV
+
+/-- **The verifier step through a majorant.** A monotone majorant `M` of the cost companion of
+`G.vkey` in the length of its list, on the lists of at most `G.V` values (`CostMajOn`), bounds one
+verifier step by its value at `G.V`, the append and the case analyses: the hypothesis
+`VerifyCostLe` of the time theorems below at `M G.V + 2 * G.V + 6`. -/
+theorem _root_.CatCrypt.Crypto.FiatShamirROM.Protocol.verifyCostLe_of_costMajOn (G : Protocol)
+    (vkeyCost : G.VkeyCost) {M : ℕ → ℕ}
+    (hM : ∀ x m σ, CostMajOn G.V List.length M (vkeyCost x m σ)) :
+    G.VerifyCostLe vkeyCost (M G.V + 2 * G.V + 6) := by
+  intro x m σ vs hvs
+  have := (hM x m σ).le_bound hvs
+  omega
 
 /-- `n` verifier queries after the values `acc` take time at most `n * (tV + 1) + 1` when `tV`
 bounds each of their steps. -/
