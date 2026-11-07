@@ -12,11 +12,11 @@ public import Lean
 
 A known-answer check compares a computed value with an expected one on concrete data. It
 belongs in a source file only if it is cheap, so every such check carries its budget and
-fails the build at its own line when the budget is exceeded.
+is reported at its own line when the budget is exceeded.
 
 * `#kat t` evaluates the Boolean or decidable term `t` with the compiled evaluator, as
-  `#guard` does, and fails when `t` is false, when elaborating it exceeds the heartbeat
-  budget, or when the whole check takes longer than the millisecond budget.
+  `#guard` does, and fails when `t` is false or when elaborating it exceeds the heartbeat
+  budget; a check that takes longer than the millisecond budget is reported as below.
 * `#kat_kernel t` states `t` and closes it by `decide +kernel` under the same heartbeat
   budget, which bounds the kernel's reduction as well as elaboration, and applies the same
   millisecond budget.
@@ -29,9 +29,12 @@ that is not a positive integer is ignored), so that a slower machine scales ever
 budget at once; the heartbeat budget is machine-independent and is not scaled.
 
 The millisecond budget is measured, not enforced during evaluation: compiled code does
-not poll for cancellation, so an evaluation that exceeds it runs to completion and the
-check fails afterwards. The heartbeat budget is enforced during elaboration and kernel
-checking.
+not poll for cancellation, so an evaluation that exceeds it runs to completion and is
+reported afterwards. An overrun is an error when the environment variable
+`CATCRYPT_KAT_STRICT` is `1`, as the development scripts and CI set it, and a warning
+otherwise, so that a build on a slower or busier machine than the one the budgets were set
+on still succeeds. A false check and a heartbeat overrun are errors in both cases. The
+heartbeat budget is enforced during elaboration and kernel checking.
 
 ## Main definitions
 
@@ -76,8 +79,13 @@ def msScale : IO Nat := do
 def msBudget (opts : Options) : IO Nat := do
   return kat.ms.get opts * (← msScale)
 
-/-- Run a command with `maxHeartbeats` set to the `kat.heartbeats` budget, and fail when it
-takes longer than the scaled `kat.ms` budget. -/
+/-- Whether a wall-clock overrun is an error: `CATCRYPT_KAT_STRICT` is `1`. -/
+def strict : IO Bool := do
+  return (← IO.getEnv "CATCRYPT_KAT_STRICT") == some "1"
+
+/-- Run a command with `maxHeartbeats` set to the `kat.heartbeats` budget, and report when
+it takes longer than the scaled `kat.ms` budget: an error under `strict`, a warning
+otherwise. -/
 def runBudgeted (cmd : Syntax) : CommandElabM Unit := do
   let opts ← getOptions
   let ms ← msBudget opts
@@ -87,7 +95,8 @@ def runBudgeted (cmd : Syntax) : CommandElabM Unit := do
     elabCommand cmd
   let dt := (← IO.monoMsNow) - t0
   if dt > ms then
-    throwError "known-answer check took {dt} ms, over its budget of {ms} ms"
+    let msg := m!"known-answer check took {dt} ms, over its budget of {ms} ms"
+    if ← strict then throwError msg else logWarning msg
 
 @[command_elab kat]
 def elabKat : CommandElab := fun stx => do
