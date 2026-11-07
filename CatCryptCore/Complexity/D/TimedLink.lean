@@ -38,9 +38,14 @@ a primitive operation), at the factor `K ≥ 1`.
   front of the costed tree, and weakening of that step cost.
 * Tree rules `TSim.ret`, `TSim.fail`, `TSim.sample`, `TSim.get`, `TSim.set`, `TSim.letE`,
   `TSim.bind`, `TSim.ite`, `TSim.call`, `TSim.call0`, and `TSim.le_fst`, `TSim.mono`,
-  `TSim.cost_le`.
+  `TSim.cost_le`; `TSim.certCall`, the closure of a certified callee at the arguments of a call,
+  simulated by the certificate of the callee.
 * Data rules `DSim.var`, `DSim.lit`, `DSim.natLit`, `DSim.pair`, `DSim.fst`, `DSim.snd`,
-  `DSim.prim`, `DSim.decide`, `DSim.app`, `DSim.letE`, `DSim.ite`, `DSim.le`.
+  `DSim.prim`, `DSim.decide`, `DSim.app`, `DSim.letE`, `DSim.ite`, `DSim.le`, and for the
+  inductive types `DSim.con` (a constructor, free, its children a table) and `DSim.fold` (the
+  eliminator against a cost `C` of a structural recursion, one per call plus the body, by
+  induction on the value); over the encoded values of a Lean type `DSim.foldEnc`, with
+  `DSim.appRec` (a recursive result applied in a step) and `DSim.node` (the node condition).
 -/
 
 @[expose] public section
@@ -180,6 +185,112 @@ theorem le {t : Tm Γ τ} {v : Val τ} {n n' c c' : ℕ} (hn : n ≤ n') (hc : c
   obtain ⟨m, hm, l⟩ := h
   exact ⟨m, hm, by have := Nat.mul_le_mul_left K hc; omega⟩
 
+/-- A constructor of an inductive type: the evaluation of its argument, the node at no cost of
+its own, its children being the table in the argument. -/
+theorem con {S : Sig} {x : Tm Γ (S.conTy (.mu S))} {v : Val (S.conTy (.mu S))}
+    {n c : ℕ} (hx : DSim K n c x ρ v) :
+    DSim K n c (.con x) ρ (conAt (X := .mu S) S (fun a k => (WType.mk a k : Val (.mu S))) v) := by
+  obtain ⟨mx, hmx, lx⟩ := hx
+  refine ⟨mx, ?_, lx⟩
+  show (x.eval ρ).bind (fun v =>
+    .ret (conAt (X := .mu S) S (fun a k => (WType.mk a k : Val (.mu S))) v)) = _
+  rw [hmx, stepN_ret_bind]
+
+/-- The eliminator of an inductive type, by induction on the value: when at every node whose
+recursive results are leaves of the values of `F` within `K` times the charge `C` at the
+children, the step is a leaf of `F` within `K` times `C` at the node, the eliminator is within
+the allowance of its argument and `K` times one plus the charge of its argument plus `C` at the
+value. With `C` the cost of a structural recursion of `derive_timed` (one per call plus the
+body), the node condition is the step equation of that cost. -/
+theorem fold (hK : 1 ≤ K) {S : Sig} {c : Ty} {g : Tm Γ (S.stepsTy (.mu S) c)}
+    {x : Tm Γ (.mu S)} {gv : Val (S.stepsTy (.mu S) c)} {w : Val (.mu S)} {n cx : ℕ}
+    (hg : CEq g ρ 0 gv) (hx : DSim K n cx x ρ w) {F : (Sig.den S).W → Val c}
+    {C : (Sig.den S).W → ℕ}
+    (hF : ∀ a kids (rec : (Sig.den S).B a → CTree (Val c)),
+      (∀ j, ∃ m, rec j = stepN CTree.tick m (.ret (F (kids j))) ∧ m ≤ K * C (kids j)) →
+        ∃ m, stepAt S gv a kids rec = stepN CTree.tick m (.ret (F ⟨a, kids⟩)) ∧
+          m ≤ K * C ⟨a, kids⟩) :
+    DSim K n (1 + cx + C w) (.fold g x) ρ (F w) := by
+  have key : ∀ w : (Sig.den S).W,
+      ∃ m, foldW gv w = stepN CTree.tick m (.ret (F w)) ∧ m ≤ K * C w := by
+    intro w
+    induction w with
+    | mk a kids ih => exact hF a kids _ ih
+  obtain ⟨mx, hmx, lx⟩ := hx
+  obtain ⟨m, hm, lm⟩ := key w
+  refine ⟨mx + (m + 1), ?_, ?_⟩
+  · show (g.eval ρ).bind (fun gv => (x.eval ρ).bind fun w => CTree.tick (foldW gv w)) = _
+    rw [hg, stepN_ret_bind, hmx, stepN_ret_bind, hm]
+    show stepN CTree.tick 0 (stepN CTree.tick mx (stepN CTree.tick (m + 1) (.ret (F w)))) = _
+    rw [stepN_tick_add, stepN_tick_add, Nat.zero_add]
+  · rw [Nat.mul_add, Nat.mul_add, Nat.mul_one]
+    omega
+
+/-- The eliminator over the encoded values of a type `T`: when at the encoding of every `t : T`
+the eliminator is a leaf of `F t` within `K` times the charge `C t` (a statement proved by
+induction on `t`, whose step at a constructor is the node condition of the companion `C`), the
+eliminator at the encoding of `t` is within the allowance of its argument and `K` times one plus
+the charge of its argument plus `C t`. -/
+theorem foldEnc (hK : 1 ≤ K) {S : Sig} {c : Ty} {g : Tm Γ (S.stepsTy (.mu S) c)}
+    {x : Tm Γ (.mu S)} {gv : Val (S.stepsTy (.mu S) c)} {T : Type} {enc : T → Val (.mu S)}
+    {F : T → Val c} {C : T → ℕ} {t : T} {n cx : ℕ} (hg : CEq g ρ 0 gv)
+    (hx : DSim K n cx x ρ (enc t))
+    (hF : ∀ t, ∃ m, foldW gv (enc t) = stepN CTree.tick m (.ret (F t)) ∧ m ≤ K * C t) :
+    DSim K n (1 + cx + C t) (.fold g x) ρ (F t) := by
+  obtain ⟨mx, hmx, lx⟩ := hx
+  obtain ⟨m, hm, lm⟩ := hF t
+  refine ⟨mx + (m + 1), ?_, ?_⟩
+  · show (g.eval ρ).bind (fun gv => (x.eval ρ).bind fun w => CTree.tick (foldW gv w)) = _
+    rw [hg, stepN_ret_bind, hmx, stepN_ret_bind, hm]
+    show stepN CTree.tick 0 (stepN CTree.tick mx (stepN CTree.tick (m + 1) (.ret (F t)))) = _
+    rw [stepN_tick_add, stepN_tick_add, Nat.zero_add]
+  · rw [Nat.mul_add, Nat.mul_add, Nat.mul_one]
+    omega
+
+/-- A data conditional charged its condition and the branch it takes, as `derive_timed` charges a
+conditional in data: the β-step is paid by the unit charge, the branches have allowances of their
+own. -/
+theorem iteIf (hK : 1 ≤ K) {P : Prop} [Decidable P] {bt : Tm Γ .bool} {t e : Tm Γ τ}
+    {u w : Val τ} {n₁ n₂ n₃ cb ct ce : ℕ} (hb : DSim K n₁ cb bt ρ (Decidable.decide P))
+    (ht : DSim K n₂ ct t ρ u) (he : DSim K n₃ ce e ρ w) :
+    DSim K (n₁ + (n₂ + n₃)) (1 + cb + if P then ct else ce) (.ite bt t e) ρ
+      (if P then u else w) := by
+  obtain ⟨mb, hmb, lb⟩ := hb
+  obtain ⟨mt, hmt, lt⟩ := ht
+  obtain ⟨me, hme, le⟩ := he
+  refine ⟨mb + ((if P then mt else me) + 1), CEq.ite id hmb hmt hme, ?_⟩
+  by_cases hP : P
+  · simp only [hP, ite_true]
+    rw [Nat.mul_add, Nat.mul_add, Nat.mul_one]
+    omega
+  · simp only [hP, ite_false]
+    rw [Nat.mul_add, Nat.mul_add, Nat.mul_one]
+    omega
+
+/-- A Boolean term as the decision of its truth, the condition of `if b`. -/
+theorem decBool {x : Tm Γ .bool} {b : Bool} {n c : ℕ} (h : DSim K n c x ρ b) :
+    DSim K n c x ρ (Decidable.decide (b = true)) := by
+  have e : b = Decidable.decide (b = true) := by simp
+  exact e ▸ h
+
+/-- A data term within its allowance and charge evaluates within any bound `B` above them: the
+node condition of an eliminator. -/
+theorem node {t : Tm Γ τ} {v : Val τ} {n c B : ℕ} (h : DSim K n c t ρ v) (hB : n + K * c ≤ B) :
+    ∃ m, CEq t ρ m v ∧ m ≤ B := by
+  obtain ⟨m, hm, l⟩ := h
+  exact ⟨m, hm, by omega⟩
+
+/-- A recursive result applied in a step of an eliminator: the β-step and its `m ≤ K * d` steps
+against the charge `1 + d` of the recursive call. -/
+theorem appRec (hK : 1 ≤ K) {F : Tm Γ (.arr a b)} {x : Tm Γ a} {g : Val (.arr a b)} {v : Val a}
+    {w : Val b} {n c d m : ℕ} (hF : CEq F ρ 0 g) (hx : DSim K n c x ρ v)
+    (hg : g v = stepN CTree.tick m (.ret w)) (hm : m ≤ K * d) :
+    DSim K n (1 + d + c) (.app F x) ρ w := by
+  obtain ⟨mx, hmx, l⟩ := hx
+  refine ⟨0 + mx + (m + 1), CEq.app hF hmx hg, ?_⟩
+  rw [Nat.mul_add, Nat.mul_add, Nat.mul_one]
+  omega
+
 end DSim
 
 namespace TSim
@@ -311,6 +422,17 @@ theorem call (hK : 1 ≤ K) {F : Tm Γ (.arr a τ)} {x : Tm Γ a} {g : Val (.arr
   have hcK := Nat.mul_le_mul_left K hc
   rw [Nat.mul_add, Nat.mul_add, Nat.mul_one] at hcK
   exact TimedSim.eval_app_ceq hF hm hg (by omega)
+
+/-- The closure of a certified callee `t` renamed into the context of the caller
+(`Ren.liftN`), at an environment in front, is simulated by what simulates the callee at that
+environment: its certificate applies at the call, and the body of the callee is not walked
+again. -/
+theorem certCall {Δ : List Ty} {σ : Ty} {t : Tm Δ σ} {ρc : Env Δ} {E : α → Val σ → Prop}
+    {n : ℕ} {x : ℕ × SPTree.Timed α} (h : TimedSim E K n x (t.eval ρc)) (ρ' : Env Γ) :
+    TimedSim E K n x ((t.rename (Ren.liftN Δ)).eval (Env.prepend ρc ρ')) := by
+  unfold Tm.eval
+  rw [Tm.interp_rename, Env.comp_prepend_liftN]
+  exact h
 
 /-- A call of a tree function value on `unit`, the reflection of a tree without arguments: the
 β-step has no counterpart in the costed tree and is paid by the allowance. -/

@@ -89,8 +89,9 @@ values (`CLe.letESup`).
 Types: `ℕ`, `Bool`, `Unit`, `BitVec w` for a numeral `w`, `Fin m` and `ZMod m` for a modulus
 `m` that is a positive numeral or of the form `n + 1`, tables `Fin q → R` of a finite ground
 type `R` (the finite ground type `FTy.tab q f`), products, sums and lists of these;
-`Option α` as `α`'s sum with `Unit`, at the parameters, the result and the scrutinees of
-matches; functions as parameters, `let`-bound values and arguments of λ-terms.
+`Option α` as `α`'s sum with `Unit`, and a Lean inductive type `T` as `mu T.dSig` (below), at
+the parameters, the result, the scrutinees of matches and the fields of an inductive type;
+functions as parameters, `let`-bound values and arguments of λ-terms.
 
 Terms: variables, `fun`, application (a λ-term applied to a datum is the `let` of the
 datum), `let`, numerals and the literals `true`, `false`, `()`
@@ -100,18 +101,77 @@ words, `+ - *` and numerals on `Fin m` and `ZMod m`, `&&`, `||`, `!`, `^^` on `B
 natural number into `Fin m` or `ZMod m`; `decide` of `=`, `≠`, `<`, `≤`, `∧`, `∨`, `¬` over
 these (`=`, `≠` and `<` on residues); pairs and projections; `Sum.inl`,
 `Sum.inr`, `some`, `none`, `[]`, `::`, `id`; `if`, `bif`, `Option.elim`, `Sum.elim` and
-matches on `Bool`, `Option`, `Sum`, `List` (non-recursive, as `lcase`) and pairs; `List.foldl`
+matches on `Bool`, `Option`, `Sum`, `List` (non-recursive, as `lcase`) and pairs, also written
+as the case analyses `casesOn` and, for `Bool`, `Option`, `Sum` and pairs, as the recursors
+`rec` at a constant motive; `List.foldl`
 as `foldl` and `Nat.iterate` as `iter`; in `SPComp`, `pure`, `bind` (and `do`), `SPComp.fail`,
 `SPComp.sample` of a finite ground type,
 `SPComp.get` and `SPComp.set` at a location `FTy.loc f n`, and the application of a parameter;
 in `SPTree`, `ret`, `sample` of a finite ground type, `get`, `set`, `fail`, `SPTree.bind`, `if`
 and the application of a parameter.
-A constant outside the Lean, Std and Mathlib libraries is unfolded. Any other construct is
-refused with a message naming it.
+A constant outside the Lean, Std and Mathlib libraries is unfolded, except a certified callee
+(below). Any other construct is refused with a message naming it.
+
+## Calls of certified callees
+
+The class: a call `c e₁ … eₙ`, in a computation or a tree, of a definition `c` with a D-term `c.d`
+over its parameters alone (no static parameter), a denotation theorem `c.d_den` over the oracle and
+`n` data parameters whose values are their D values, and a certificate `c.d_timedSim` of
+`link_timed`. The call is the `let` of `e₁ … eₙ₋₁` and the call of the closure of `c.d` renamed into
+the caller's context by `Ren.liftN` on `eₙ`: `.app (.lam (c.d.rename (Ren.liftN Δ))) eₙ`. Its
+derivation is `c.d_den` at the arguments (`DenM.certCall`, through `Env.prepend` and
+`Env.comp_prepend_liftN`), and the body of `c` is not reflected again; `link_timed` applies the
+certificate at the call. A callee with a function, type or instance parameter is unfolded as
+before.
+
+## Inductive types and structural recursion
+
+The class: an inductive type `T` outside the Lean, Std and Mathlib libraries, not a structure,
+without indices, universe parameters, mutual or nested occurrences, with a constructor without
+recursive argument, whose type parameters are finite ground types. Its signature `T.dSig` lists
+the constructors, one without recursive argument first and the others in their order; the
+fields of a constructor (its arguments that are not recursive) are the product of their D
+types; its recursive arguments are one family of children, indexed by `unit` (one child),
+`bool` (two: the first at `false`) or `fin (n - 1)` (`n ≥ 3`, read by `pick`), or a function
+`k : R → T` indexed by the finite ground type of `R`. The command defines `T.dSig` and the
+encoding `T.dEnc : T → Val (mu T.dSig)` by `T.rec`: a constructor is the node (`Sig.node`) of
+its encoded fields and the table of the encodings of its children. A field holding a data
+function `f : A → B` is encoded by its pure closure `fun v => .ret (f v)` and applied in a step as
+a parameter is. A value of `T` in a parameter, a result or a field is its encoding,
+as an `Option` is `optEnc`; a type parameter `α` of `T` is a finite ground type `αF` of these
+definitions (`T.dEnc αF : T αF.den → …`).
+
+The rules:
+
+* a constructor applied to its arguments is `con` of the injection of the tuple of its fields
+  and the table `ptab` of its children (`Den.con`, `Den.ptab`);
+* a case analysis `T.casesOn` at a constant motive (a `match` on a value of `T`) is the
+  eliminator `fold` whose step at each constructor is its alternative; its derivation is
+  `Den.foldEnc` with the case analysis of the scrutinee at the motive
+  `fun t => foldW gv (T.dEnc t) = .ret (E (… t …))`, each alternative's derivation at the node of
+  the constructor;
+* a structural recursion `f` over `T` (the body Lean keeps for its equations,
+  `Structural.eqnInfoExt`, a match on the recursion argument) is the same eliminator, whose steps
+  receive the recursive results: a recursive call `f ys (kid j)` on the child at position `j`,
+  at the other arguments `ys` unchanged, is the application of the recursive results at `j`
+  (`app (snd (snd v)) (lit j)`, a call `f ys (k e)` on a function of children at `e`), and its
+  derivation is the induction hypothesis of `T.rec` at the child (`Den.app`);
+* a recursion whose arguments `zs` other than the recursion argument change in its recursive
+  calls (an accumulator) is the eliminator at the motive `arr Y c`, `Y` the tuple of the changing
+  arguments, applied to their initial values: each step is a closure of `Y`, a recursive call
+  the recursive result at the child applied to the tuple of its new arguments (`Den.foldApp`,
+  `Den.app2`, the induction at the motive quantified over the changing arguments).
+
+A recursion over a type outside the class (`List`, `ℕ`), a mutual recursion, a recursive call
+on a value that is not a child and a match on the recursion argument with nested patterns are
+refused with messages naming them, and so are a field holding a computation, a field of a
+curried function type and a constructor application whose field holds a function. The cost
+theorem is not derived for the constructs `con` and `fold`.
 
 ## Main definitions
 
 * `Den`, `DenM`: the judgements; `optEnc`: the representation of `Option`.
+* `pick`: the child at a position of `fin (n - 1)`.
 * `CEq`, `CLe`: the cost judgements.
 * `reflect_d f`: the command.
 -/
@@ -128,6 +188,24 @@ open CatCrypt.Core
 def optEnc {α : Type} : Option α → Unit ⊕ α
   | none => .inl ()
   | some x => .inr x
+
+/-- The element at `n` of the list `x :: xs`, its last element beyond its length: the child at a
+position of `fin (n - 1)` of a constructor with `n ≥ 3` recursive arguments. -/
+def pick {X : Type} : X → List X → ℕ → X
+  | x, [], _ => x
+  | x, _ :: _, 0 => x
+  | _, y :: ys, n + 1 => pick y ys n
+
+/-- Elements related pairwise are related at every position. -/
+theorem pick_rel {X Y : Type} (Q : X → Y → Prop) {x : X} {y : Y} {xs : List X} {ys : List Y}
+    (h : Q x y) (hs : List.Forall₂ Q xs ys) : ∀ n, Q (pick x xs n) (pick y ys n) := by
+  induction hs generalizing x y with
+  | nil => intro n; exact h
+  | cons hab _ ih =>
+    intro n
+    cases n with
+    | zero => exact h
+    | succ n => exact ih hab n
 
 /-- The denotation of `t` in `ρ` is the leaf `v`. -/
 def Den {Γ : List Ty} {τ : Ty} (t : Tm Γ τ) (ρ : Env Γ) (v : Val τ) : Prop :=
@@ -308,6 +386,74 @@ theorem iter {c : Ty} {n : Tm Γ .nat} {f : Tm Γ (.arr c c)} {i : Tm Γ c} {k :
   show (i.den ρ).bind (fun acc => iterT (fun t => t) F acc k) = _
   rw [hi]
   exact iterT_id hs k acc
+
+/-- `Den` at a constructor: the node its constructor builds from the denotation of the
+argument, the children of a constructor with positions being the table in the argument. -/
+theorem con {S : Sig} {x : Tm Γ (S.conTy (.mu S))} {v : Val (S.conTy (.mu S))}
+    (hx : Den x ρ v) :
+    Den (.con x) ρ (conAt (X := .mu S) S (fun a k => (WType.mk a k : Val (.mu S))) v) := by
+  show (x.den ρ).bind (fun v =>
+    .ret (conAt (X := .mu S) S (fun a k => (WType.mk a k : Val (.mu S))) v)) = _
+  rw [hx, CTree.bind_ret]
+
+/-- `Den` at the eliminator, by induction on the value: when the step functions denote the
+recursion `F` at every node whose recursive results are the values of `F` at its children, the
+eliminator denotes `F` at the value. -/
+theorem fold {S : Sig} {c : Ty} {g : Tm Γ (S.stepsTy (.mu S) c)} {x : Tm Γ (.mu S)}
+    {gv : Val (S.stepsTy (.mu S) c)} {w : Val (.mu S)} (hg : Den g ρ gv) (hx : Den x ρ w)
+    {F : (Sig.den S).W → Val c}
+    (hF : ∀ a kids, stepAt S gv a kids (fun j => .ret (F (kids j))) = .ret (F ⟨a, kids⟩)) :
+    Den (.fold g x) ρ (F w) := by
+  have key : ∀ w : (Sig.den S).W, foldW gv w = .ret (F w) := by
+    intro w
+    induction w with
+    | mk a kids ih =>
+      show stepAt S gv a kids (fun j => foldW gv (kids j)) = _
+      rw [show (fun j => foldW gv (kids j)) = fun j => CTree.ret (F (kids j)) from funext ih]
+      exact hF a kids
+  show (g.den ρ).bind (fun gv => (x.den ρ).bind fun w => foldW gv w) = _
+  rw [hg, CTree.bind_ret, hx, CTree.bind_ret]
+  exact key w
+
+/-- `Den` at the eliminator over the encoded values of a type `T`: when the eliminator at the
+encoding `enc t` of every `t : T` is the leaf `F t` (a statement proved by induction on `t`), the
+eliminator at the encoding of `t` denotes `F t`. -/
+theorem foldEnc {S : Sig} {c : Ty} {g : Tm Γ (S.stepsTy (.mu S) c)}
+    {x : Tm Γ (.mu S)} {gv : Val (S.stepsTy (.mu S) c)} {T : Type} {enc : T → Val (.mu S)}
+    {F : T → Val c} {t : T} (hg : Den g ρ gv) (hx : Den x ρ (enc t))
+    (hF : ∀ t, foldW gv (enc t) = .ret (F t)) : Den (.fold g x) ρ (F t) := by
+  show (g.den ρ).bind (fun gv => (x.den ρ).bind fun w => foldW gv w) = _
+  rw [hg, CTree.bind_ret, hx, CTree.bind_ret]
+  exact hF t
+
+/-- `Den` at the eliminator at a function motive applied to an argument: the eliminator at the
+value `w` is a leaf whose function, applied to the value of the argument, is the leaf `v`. -/
+theorem foldApp {S : Sig} {a b : Ty} {g : Tm Γ (S.stepsTy (.mu S) (.arr a b))}
+    {x : Tm Γ (.mu S)} {z : Tm Γ a} {gv : Val (S.stepsTy (.mu S) (.arr a b))} {w : Val (.mu S)}
+    {u : Val a} {v : Val b} (hg : Den g ρ gv) (hx : Den x ρ w) (hz : Den z ρ u)
+    (h : (foldW gv w).bind (fun G => G u) = .ret v) : Den (.app (.fold g x) z) ρ v := by
+  show (((g.den ρ).bind fun gv => (x.den ρ).bind fun w => foldW gv w)).bind
+    (fun G => (z.den ρ).bind fun u => G u) = _
+  rw [hg, CTree.bind_ret, hx, CTree.bind_ret, hz]
+  exact h
+
+/-- `Den` at a function applied to two arguments, the first application a tree whose leaf is
+applied to the second. -/
+theorem app2 {a y b : Ty} {f : Tm Γ (.arr a (.arr y b))} {x : Tm Γ a} {z : Tm Γ y}
+    {F : Val (.arr a (.arr y b))} {v : Val a} {u : Val y} {w : Val b} (hf : Den f ρ F)
+    (hx : Den x ρ v) (hz : Den z ρ u) (h : (F v).bind (fun G => G u) = .ret w) :
+    Den (.app (.app f x) z) ρ w := by
+  show (((f.den ρ).bind fun g => (x.den ρ).bind fun v => g v)).bind
+    (fun G => (z.den ρ).bind fun u => G u) = _
+  rw [hf, CTree.bind_ret, hx, CTree.bind_ret, hz]
+  exact h
+
+/-- `Den` at a table: the dependent function of the values of its components. -/
+theorem ptab {f : FTy} {B : f.den → Ty} {ts : (j : f.den) → Tm Γ (B j)}
+    {v : (j : f.den) → Val (B j)} (h : ∀ j, Den (ts j) ρ (v j)) : Den (.ptab ts) ρ v := by
+  show tabDep f (fun j => Val.default (B j)) (fun j => (ts j).den ρ) = _
+  rw [show (fun j => (ts j).den ρ) = fun j => CTree.ret (v j) from funext h]
+  exact tabDep_ret f _ v
 
 /-! ### Decisions of propositions -/
 
@@ -508,6 +654,59 @@ theorem treeIte {c : Ty} {P : Prop} [Decidable P] {b : Tm Γ .bool} {t e : Tm Γ
 
 end DenM
 
+/-! ### Calls of certified callees
+
+A call `c e₁ … eₙ` of a definition `c` with a D-term `c.d : Tm Δ τ` over its parameters and a
+certificate `c.d_timedSim` is reflected as the call of the closure of `c.d` renamed into the
+context of the caller: the first `n - 1` arguments bound by `let`, the last one the argument of
+the closure, whose body `c.d.rename (Ren.liftN Δ)` reads the parameters at the innermost
+variables. Its meaning is that of `c.d` at the environment of the arguments (`DenM.certCall`),
+so the body of `c` is not reflected again. -/
+
+/-- The renaming from the empty context. -/
+def _root_.CatCrypt.Complexity.D.Ren.nil (Γ : List Ty) : Ren [] Γ := fun _ x => nomatch x
+
+/-- The renaming of a context `Δ` onto the innermost variables of `Δ ++ Γ`. -/
+def _root_.CatCrypt.Complexity.D.Ren.liftN {Γ : List Ty} : (Δ : List Ty) → Ren Δ (Δ ++ Γ)
+  | [] => Ren.nil Γ
+  | _ :: Δ => (Ren.liftN Δ).lift
+
+/-- The environment `ρc` of `Δ` in front of the environment `ρ` of `Γ`. -/
+def _root_.CatCrypt.Complexity.D.Env.prepend {Γ : List Ty} :
+    {Δ : List Ty} → Env Δ → Env Γ → Env (Δ ++ Γ)
+  | [], _, ρ => ρ
+  | _ :: _, ρc, ρ => (Env.prepend (fun τ x => ρc τ (.there x)) ρ).cons (ρc _ .here)
+
+/-- The innermost variables of an environment in front read through `Ren.liftN` are that
+environment. -/
+theorem _root_.CatCrypt.Complexity.D.Env.comp_prepend_liftN {Γ : List Ty} {Δ : List Ty}
+    (ρc : Env Δ) (ρ : Env Γ) :
+    (Env.prepend ρc ρ).comp (Ren.liftN Δ) = ρc := by
+  induction Δ with
+  | nil => exact funext fun _ => funext fun x => nomatch x
+  | cons σ Δ ih =>
+    change ((Env.prepend (fun τ x => ρc τ (.there x)) ρ).cons (ρc σ .here)).comp
+      (Ren.liftN Δ).lift = ρc
+    refine (Env.comp_lift _ _ _).trans ?_
+    refine (congrArg (fun ρ' => Env.cons (Γ := Δ) (τ := σ) (ρc σ .here) ρ') (ih _)).trans ?_
+    funext τ x
+    cases x <;> rfl
+
+namespace DenM
+
+variable {O : CTree.Oracle} {Γ : List Ty}
+
+/-- A certified callee read through `Ren.liftN` at an environment in front means the callee at
+that environment. -/
+theorem certCall {Δ : List Ty} {τ : Ty} {t : Tm Δ τ} {ρc : Env Δ} {c : SPComp (Val τ)}
+    (h : DenM O t ρc c) (ρ : Env Γ) :
+    DenM O (t.rename (Ren.liftN Δ)) (Env.prepend ρc ρ) c := by
+  show ((t.rename (Ren.liftN Δ)).interp (fun t => t) (Env.prepend ρc ρ)).run O = c
+  rw [Tm.interp_rename, Env.comp_prepend_liftN]
+  exact h
+
+end DenM
+
 /-! ### Cost judgements
 
 `CEq t ρ c v`: the evaluation takes exactly `c` steps to the value `v`; `CLe t ρ B`: it costs
@@ -538,6 +737,10 @@ theorem cost_eq {τ : Ty} {t : Tm Γ τ} {c : ℕ} {v : Val τ} (h : CEq t ρ c 
   rw [Tm.cost, h, cost_stepN_tick, CTree.cost_ret, Nat.add_zero]
 
 theorem var {τ : Ty} (x : Var Γ τ) (ρ : Env Γ) : CEq (.var x) ρ 0 (ρ τ x) := rfl
+
+/-- `CEq` at a λ-term, an unfolding of `Tm.eval`: its value is the closure, at no cost. -/
+theorem lam {a b : Ty} (t : Tm (a :: Γ) b) (ρ : Env Γ) :
+    CEq (.lam t) ρ 0 (fun v => t.eval (ρ.cons v)) := rfl
 
 theorem natLit (n : ℕ) (ρ : Env Γ) : CEq (.natLit n) ρ 0 n := rfl
 
@@ -656,6 +859,27 @@ theorem decBool {x : Tm Γ .bool} {c : ℕ} {b : Bool} (hx : CEq x ρ c b) :
   have e : b = decide (b = true) := by simp
   exact e ▸ hx
 
+/-- `CEq` at the eliminator, by induction on the value: when at every node whose recursive
+results are leaves of the values of `F` after `C` ticks at the children the step is a leaf of
+`F` after `C` ticks at the node, the eliminator costs the step functions, the argument, one
+step and `C` at the value. -/
+theorem fold {S : Sig} {c : Ty} {g : Tm Γ (S.stepsTy (.mu S) c)} {x : Tm Γ (.mu S)}
+    {cg cx : ℕ} {gv : Val (S.stepsTy (.mu S) c)} {w : Val (.mu S)} (hg : CEq g ρ cg gv)
+    (hx : CEq x ρ cx w) {F : (Sig.den S).W → Val c} {C : (Sig.den S).W → ℕ}
+    (hF : ∀ a kids (rec : (Sig.den S).B a → CTree (Val c)),
+      (∀ j, rec j = stepN CTree.tick (C (kids j)) (.ret (F (kids j)))) →
+        stepAt S gv a kids rec = stepN CTree.tick (C ⟨a, kids⟩) (.ret (F ⟨a, kids⟩))) :
+    CEq (.fold g x) ρ (cg + (cx + (C w + 1))) (F w) := by
+  have key : ∀ w : (Sig.den S).W,
+      foldW gv w = stepN CTree.tick (C w) (.ret (F w)) := by
+    intro w
+    induction w with
+    | mk a kids ih => exact hF a kids _ ih
+  show (g.eval ρ).bind (fun gv => (x.eval ρ).bind fun w => CTree.tick (foldW gv w)) = _
+  rw [hg, stepN_ret_bind, hx, stepN_ret_bind, key w]
+  show stepN CTree.tick cg (stepN CTree.tick cx (stepN CTree.tick (C w + 1) (.ret (F w)))) = _
+  rw [stepN_tick_add, stepN_tick_add, Nat.add_assoc]
+
 end CEq
 
 namespace CLe
@@ -767,6 +991,39 @@ structure Entry where
   fn : Option Fn := none
   deriving Inhabited
 
+/-- The arguments of a structural recursion that change in its recursive calls (an accumulator):
+their positions, source types, D types and encodings. -/
+structure AccInfo where
+  chg : Array Nat := #[]
+  srcTys : Array Expr := #[]
+  tys : Array Expr := #[]
+  encs : Array (Option Expr) := #[]
+  deriving Inhabited
+
+/-- A structural recursion over a represented inductive type: the recursive constant, its
+universe levels, its arguments (in the source, substituted), the position of the recursion
+argument and the changing arguments. -/
+structure RecFrame where
+  fn : Name
+  levels : List Level
+  args : Array Expr
+  pos : Nat
+  acc : AccInfo := {}
+  deriving Inhabited
+
+/-- A child of the node of the enclosing recursion: its variable, whether it is a function into
+the children, its position (a literal, for a child), the induction hypothesis at it (in the
+derivation), the recursion and the entry of the recursive results. -/
+structure Kid where
+  fvar : FVarId
+  fnChild : Bool
+  pos : Expr
+  posTy : Expr
+  ih : Expr
+  frame : RecFrame
+  recEntry : Entry
+  deriving Inhabited
+
 /-- A translation context: the source variables, the D context (innermost first), the
 environment and the oracle of the denotation theorem. -/
 structure Ctx where
@@ -778,6 +1035,9 @@ structure Ctx where
   methods : List (Expr × Expr) := []
   /-- The types with an equality method, each with the variable of that method. -/
   eqMethods : List (Expr × Expr) := []
+  /-- The children of the node of the enclosing structural recursion, whose recursive calls are
+  the applications of its recursive results. -/
+  kids : List Kid := []
   deriving Inhabited
 
 /-- A translated subterm: the D-term, its type, its derivation, its source value, its D value
@@ -919,7 +1179,178 @@ partial def ftyOf (T : Expr) : MetaM Expr := do
   throwError "reflect_d: `{T}` is not a finite ground type (Bool, Unit, BitVec w, Fin m, ZMod m, \
     Fin q → R)"
 
-/-- The D type of a source type; the flag marks `Option`, represented by `optEnc`. -/
+/-! ### Inductive types of the source
+
+A Lean inductive type `T` without indices, outside the Lean, Std and Mathlib libraries and not a
+structure, is represented by `mu S` for its signature `T.dSig` (`IndRep`): its constructors,
+one without recursive argument first and the others in their order; the fields of a
+constructor (its arguments that are not recursive) as the product of their D types; its
+recursive arguments as one family of children, indexed by `unit` (one child), `bool` (two:
+`false` the first, `true` the second) or `fin (n - 1)` (`n ≥ 3`, `pick`), or a function
+`k : R → T` into the type indexed by the finite ground type of `R`. A value is represented by
+its encoding `T.dEnc : T → Val (mu T.dSig)`, defined by `T.rec` as the node (`Sig.node`) of the
+encoded fields and the encodings of the children (a field holding a function by its pure
+closure). A
+type parameter of `T` is a finite ground type `αF` of these definitions, at `αF.den`. -/
+
+/-- The recursive arguments of a constructor: none, `n ≥ 1` arguments of the type, or one
+function `R → T` into the type, whose positions are the finite ground type `f` of `R`. -/
+inductive RecShape where
+  | noKids
+  | direct (n : Nat)
+  | fn (f : Expr)
+  deriving Inhabited
+
+/-- The finite ground type of the positions of a constructor with recursive arguments. -/
+def RecShape.fty? : RecShape → Option Expr
+  | .noKids => none
+  | .direct 1 => some (mkConst ``FTy.unit)
+  | .direct 2 => some (mkConst ``FTy.bool)
+  | .direct n => some (mkApp (mkConst ``FTy.fin) (mkNatLit (n - 1)))
+  | .fn f => some f
+
+/-- A constructor of a represented inductive type, at given parameters. -/
+structure CtorRep where
+  name : Name
+  /-- Its index among the constructors of the type. -/
+  declIdx : Nat
+  /-- The number of its arguments after the parameters. -/
+  arity : Nat
+  /-- The positions of its fields among its arguments. -/
+  fields : Array Nat
+  /-- The D types of the fields. -/
+  fieldTys : Array Expr
+  /-- The encodings of the fields (`none`: a field represented by itself). -/
+  fieldEnc : Array (Option Expr)
+  /-- The positions of its recursive arguments among its arguments. -/
+  recs : Array Nat
+  shape : RecShape
+  deriving Inhabited
+
+/-- A Lean inductive type represented by `mu T.dSig`. -/
+structure IndRep where
+  ind : Name
+  /-- The parameters of the type in the source. -/
+  params : Array Expr
+  /-- The arguments of `T.dSig` and `T.dEnc`: the finite ground type of a type
+  parameter, any other parameter itself. -/
+  dArgs : Array Expr
+  /-- The constructors in the order of the signature. -/
+  ctors : Array CtorRep
+  deriving Inhabited
+
+def IndRep.sig (r : IndRep) : Expr := mkAppN (mkConst (r.ind ++ `dSig)) r.dArgs
+
+def IndRep.enc (r : IndRep) : Expr := mkAppN (mkConst (r.ind ++ `dEnc)) r.dArgs
+
+def IndRep.ty (r : IndRep) : Expr := tyC `mu #[r.sig]
+
+/-- The source type `T ps`. -/
+def IndRep.srcTy (r : IndRep) : Expr := mkAppN (mkConst r.ind) r.params
+
+/-- The D type of the fields of a constructor: `unit` for none, the right-nested product. -/
+def fieldTupleTy : List Expr → Expr
+  | [] => tyUnit
+  | [τ] => τ
+  | τ :: τs => tyC `prod #[τ, fieldTupleTy τs]
+
+/-- The value of the fields `vs` of D types `τs`, right-nested. -/
+def fieldTupleVal : List Expr → List Expr → Expr
+  | [], _ => Lean.mkConst ``PUnit.unit [Level.one]
+  | [v], _ => v
+  | v :: vs, τ :: τs =>
+    mkApp4 (mkConst ``Prod.mk [0, 0]) (valE τ) (valE (fieldTupleTy τs)) v (fieldTupleVal vs τs)
+  | _, _ => default
+
+/-- The paths of the fields in their tuple. -/
+def fieldPaths : Nat → List (List Bool)
+  | 0 => []
+  | 1 => [[]]
+  | n + 1 => [false] :: (fieldPaths n).map (true :: ·)
+
+def CtorRep.fieldTy (c : CtorRep) : Expr := fieldTupleTy c.fieldTys.toList
+
+/-- The positions `k : Option FTy` of a constructor. -/
+def CtorRep.posE (c : CtorRep) : Expr :=
+  match c.shape.fty? with
+  | none => mkApp (mkConst ``Option.none [0]) (mkConst ``FTy)
+  | some f => mkApp2 (mkConst ``Option.some [0]) (mkConst ``FTy) f
+
+/-- The prefixes `S₀, …, S_{m-1}` of the signature of the constructors `cs` (written out). -/
+def sigPrefixes (cs : Array CtorRep) : Array Expr := Id.run do
+  let mut out := #[]
+  for h : i in [0:cs.size] do
+    let c := cs[i]
+    if i == 0 then out := out.push (mkApp (mkConst ``Sig.base) c.fieldTy)
+    else out := out.push (mkApp3 (mkConst ``Sig.ext) out[i - 1]! c.fieldTy c.posE)
+  return out
+
+/-- The table of the children `vs` of a constructor of shape `sh`, of element type `V` (a Lean
+type): constant at `unit`, `cond` at `bool`, `pick` at `fin (n - 1)`, the function itself for a
+function into the type. -/
+def kidTable (sh : RecShape) (V : Expr) (vs : Array Expr) : MetaM Expr := do
+  match sh with
+  | .direct 1 =>
+    return Expr.lam `_ (mkApp (mkConst ``FTy.den) (mkConst ``FTy.unit)) vs[0]! .default
+  | .direct 2 =>
+    return Expr.lam `b (mkConst ``Bool)
+      (mkApp4 (mkConst ``cond [Level.one]) V (.bvar 0) vs[1]! vs[0]!) .default
+  | .direct n =>
+    let l ← mkListLit V (vs.extract 1 vs.size).toList
+    let dom := mkApp (mkConst ``FTy.den) (mkApp (mkConst ``FTy.fin) (mkNatLit (n - 1)))
+    let b := mkApp4 (mkConst ``pick) V vs[0]! l (mkApp2 (mkConst ``Fin.val) (mkNatLit n) (.bvar 0))
+    return Expr.lam `i dom b .default
+  | .fn _ => return vs[0]!
+  | .noKids => return default
+
+/-- Whether the constant `c` is declared in the Lean, Std or Mathlib libraries. -/
+def libraryConst (c : Name) : MetaM Bool := do
+  let env ← getEnv
+  match env.getModuleIdxFor? c with
+  | none => return false
+  | some idx =>
+    let root := env.header.moduleNames[idx.toNat]!.getRoot
+    return [`Init, `Std, `Lean, `Mathlib, `Batteries, `Qq, `Aesop].contains root
+
+/-- Add a definition, exposed in a `module` file so that importing modules unfold it. -/
+def addExposedDef (name : Name) (type value : Expr) (doc : String) : MetaM Unit := do
+  let dv : DefinitionVal :=
+    { name, levelParams := [], type := ← instantiateMVars type,
+      value := ← instantiateMVars value, hints := .regular 0, safety := .safe }
+  withExporting (isExporting := (← getEnv).header.isModule) <| addDecl (.defnDecl dv)
+  addDocStringCore name doc
+
+/-- The injection of the argument `v` of the constructor `j` (in the order of the signature) into
+the sum over the constructors, at the value level. -/
+def injVal (cs : Array CtorRep) (pre : Array Expr) (X : Expr) (j : Nat) (v : Expr) : Expr :=
+  go (cs.size - 1) v
+where
+  go : Nat → Expr → Expr
+    | 0, v => v
+    | l + 1, v =>
+      let c := cs[l + 1]!
+      let L := valE (mkApp2 (mkConst ``Sig.conTy) pre[l]! X)
+      let R := valE (mkApp3 (mkConst ``Sig.kidTy) c.fieldTy c.posE X)
+      if j == l + 1 then mkApp3 (mkConst ``Sum.inr [0, 0]) L R v
+      else mkApp3 (mkConst ``Sum.inl [0, 0]) L R (go l v)
+
+/-- The encoding of a field that holds a data function `A → B` (D type `arr a b`): its pure
+closure `fun v => .ret (f v)`, a function value of D whose application denotes `f`. A field of a
+curried function type is refused. -/
+def fnEncoder? (A τ : Expr) : MetaM (Option Expr) := do
+  let some (a, b) := tyArgs2 `arr τ | return none
+  let .forallE _ dom cod _ ← whnf A | return none
+  if (← whnf cod).isForall then
+    throwError "reflect_d: a field of the curried function type `{A}`; a field holds a function \
+      of one argument"
+  let _ := dom
+  return some (.lam `f A (.lam `v (valE a)
+    (mkApp2 (mkConst ``CTree.ret) (valE b) (mkApp (.bvar 1) (.bvar 0))) .default) .default)
+
+mutual
+
+/-- The D type of a source type; the flag marks an encoded type: `Option`, represented by
+`optEnc`, or an inductive type `T`, represented by `T.dEnc`. -/
 partial def tyOf (T : Expr) : MetaM (Expr × Bool) := do
   if let some γ ← spcompArg? T then
     throwError "reflect_d: the computation type `SPComp {γ}` occurs inside a data type"
@@ -952,18 +1383,168 @@ partial def tyOf (T : Expr) : MetaM (Expr × Bool) := do
   | some ``Sum, 2 => return (tyC `sum #[(← tyFO args[0]!).1, (← tyFO args[1]!).1], false)
   | some ``List, 1 => return (tyC `list #[(← tyFO args[0]!).1], false)
   | some ``Option, 1 => return (tyC `sum #[tyUnit, (← tyFO args[0]!).1], true)
-  | _, _ => throwError "reflect_d: the type `{T}` has no representation in D"
+  | _, _ =>
+    if let some r ← indRep? T then return (r.ty, true)
+    throwError "reflect_d: the type `{T}` has no representation in D"
 where
-  /-- A type represented by itself: no `Option` occurs in it. -/
+  /-- A type represented by itself: no encoded type occurs in it. -/
   tyFO (T : Expr) : MetaM (Expr × Bool) := do
     let r ← tyOf T
-    if r.2 then throwError "reflect_d: `Option` inside the type `{T}`"
+    if r.2 then
+      throwError "reflect_d: the encoded type (`Option` or an inductive type) inside the type \
+        `{T}`; it is represented only as a parameter, a result, a field or a scrutinee"
     return r
+
+/-- The encoding of the values of the source type `T` when it is encoded (`Option` or an
+inductive type): the function from `T` to the values of its D type. -/
+partial def encoder? (T : Expr) : MetaM (Option Expr) := do
+  let T ← whnf T
+  if T.isAppOfArity ``Option 1 then return some (mkApp (mkConst ``optEnc) T.appArg!)
+  if let some r ← indRep? T then return some r.enc
+  return none
+
+/-- The constructors of the inductive type `I` at the parameters `params`, in the order of its
+signature. -/
+partial def ctorReps (I : Name) (params : Array Expr) : MetaM (Array CtorRep) := do
+  let ind ← getConstInfoInduct I
+  let selfTy := mkAppN (mkConst I) params
+  let isSelf (A : Expr) : Bool := A.getAppFn.isConstOf I
+  let mut reps : Array CtorRep := #[]
+  for h : k in [0:ind.ctors.length] do
+    let cn := ind.ctors[k]!
+    let cinfo ← getConstInfoCtor cn
+    let rep ← forallTelescope (← instantiateForall cinfo.type params) fun xs _ => do
+      let mut fields := #[]
+      let mut fieldTys := #[]
+      let mut fieldEnc := #[]
+      let mut recs := #[]
+      let mut fnPos : Option Expr := none
+      for h : i in [0:xs.size] do
+        let A ← whnf (← inferType xs[i])
+        if A.hasAnyFVar (fun fv => xs.any (·.fvarId! == fv)) then
+          throwError "reflect_d: the field `{xs[i]}` of the constructor `{cn}` has a type \
+            depending on another field"
+        if isSelf A then
+          unless A == selfTy do
+            throwError "reflect_d: the constructor `{cn}` has a child at other parameters"
+          recs := recs.push i
+        else if A.find? (fun s => s.isConstOf I) |>.isSome then
+          let some (R, B) := (match A with
+              | .forallE _ R B _ => if B.hasLooseBVars then none else some (R, B)
+              | _ => none)
+            | throwError "reflect_d: the argument `{xs[i]}` of the constructor `{cn}` holds the \
+                type `{I}` other than as a child or a function into children (a nested \
+                inductive type)"
+          unless (← whnf B) == selfTy do
+            throwError "reflect_d: the argument `{xs[i]}` of the constructor `{cn}` is a \
+              function into `{B}` (a nested inductive type)"
+          if fnPos.isSome then
+            throwError "reflect_d: the constructor `{cn}` has two functions into children; the \
+              positions of a constructor are one family"
+          fnPos := some (← ftyOf R)
+          recs := recs.push i
+        else
+          let (τ, encd) ← tyOf A
+          fields := fields.push i
+          fieldTys := fieldTys.push τ
+          fieldEnc := fieldEnc.push (← if encd then encoder? A else fnEncoder? A τ)
+      let shape ← match fnPos with
+        | some f =>
+          if recs.size != 1 then
+            throwError "reflect_d: the constructor `{cn}` has children and a function into \
+              children; the positions of a constructor are one family"
+          pure (RecShape.fn f)
+        | none => pure (if recs.isEmpty then RecShape.noKids else RecShape.direct recs.size)
+      return { name := cn, declIdx := k, arity := xs.size, fields, fieldTys, fieldEnc, recs,
+               shape : CtorRep }
+    reps := reps.push rep
+  let some first := reps.findIdx? (fun c => match c.shape with | .noKids => true | _ => false)
+    | throwError "reflect_d: the inductive type `{I}` has no constructor without a recursive \
+        argument; the first constructor of a signature of D has none"
+  return #[reps[first]!] ++ (reps.eraseIdx! first)
+
+/-- Under binders for the parameters of `I` (a finite ground type `αF` for a type parameter, read
+at `αF.den`), `k dbs srcs` with the binders and the parameters in the source. -/
+partial def withDParams {α : Type} (fuel : Nat) (ty : Expr) (dbs srcs : Array Expr)
+    (k : Array Expr → Array Expr → MetaM α) : MetaM α := do
+  if fuel == 0 then return ← k dbs srcs
+  let ty ← whnf ty
+  let .forallE n T b _ := ty | k dbs srcs
+  if T.isSort then
+    unless T == mkSort Level.one do
+      throwError "reflect_d: the type parameter `{n}` of an inductive type is not in `Type`"
+    withLocalDeclD (n.appendAfter "F") (mkConst ``FTy) fun f => do
+      let a := mkApp (mkConst ``FTy.den) f
+      withDParams (fuel - 1) (b.instantiate1 a) (dbs.push f) (srcs.push a) k
+  else
+    withLocalDeclD n T fun x =>
+      withDParams (fuel - 1) (b.instantiate1 x) (dbs.push x) (srcs.push x) k
+
+/-- Define `I.dSig` and `I.dEnc` when they do not exist. -/
+partial def ensureIndDecls (I : Name) : MetaM Unit := do
+  if (← getEnv).contains (I ++ `dEnc) then return
+  let ind ← getConstInfoInduct I
+  withDParams ind.numParams ind.type #[] #[] fun dbs srcs => do
+    let cs ← ctorReps I srcs
+    let pre := sigPrefixes cs
+    addExposedDef (I ++ `dSig) (← mkForallFVars dbs (mkConst ``Sig)) (← mkLambdaFVars dbs pre.back!)
+      s!"The signature of D of the inductive type `{I}`, generated by `reflect_d`."
+    let r : IndRep := { ind := I, params := srcs, dArgs := dbs, ctors := cs }
+    let X := r.ty
+    let selfTy := r.srcTy
+    let motive ← withLocalDeclD `t selfTy fun t => mkLambdaFVars #[t] (valE X)
+    let recC := mkAppN (mkConst (I ++ `rec) [Level.one]) (srcs.push motive)
+    let minorTys ← forallBoundedTelescope (← inferType recC) ind.numCtors fun ms _ =>
+      ms.mapM inferType
+    let mut minors := Array.replicate ind.numCtors (default : Expr)
+    for h : j in [0:cs.size] do
+      let c := cs[j]
+      let m ← forallTelescope minorTys[c.declIdx]! fun xs _ => do
+        let args := xs.extract 0 c.arity
+        let ihs := xs.extract c.arity xs.size
+        let fvals ← (c.fields.zip c.fieldEnc).mapM fun (i, en) => do
+          match en with
+          | some f => return mkApp f args[i]!
+          | none => return args[i]!
+        let fv := fieldTupleVal fvals.toList c.fieldTys.toList
+        let payload ← match c.shape.fty? with
+          | none => pure fv
+          | some f => do
+            let tab ← kidTable c.shape (valE X) ihs
+            let piTy :=
+              mkApp2 (mkConst ``Ty.pi) f (.lam `_ (mkApp (mkConst ``FTy.den) f) X .default)
+            pure <| mkApp4 (mkConst ``Prod.mk [0, 0]) (valE c.fieldTy) (valE piTy) fv tab
+        mkLambdaFVars xs (mkApp2 (mkConst ``Sig.node) r.sig (injVal cs pre X j payload))
+      minors := minors.set! c.declIdx m
+    let encT ← mkForallFVars dbs (← mkArrow selfTy (valE X))
+    let encV ← mkLambdaFVars dbs (← withLocalDeclD `t selfTy fun t =>
+      mkLambdaFVars #[t] (mkApp (mkAppN recC minors) t))
+    addExposedDef (I ++ `dEnc) encT encV
+      s!"The encoding of the values of `{I}` as values of D, generated by `reflect_d`."
+
+/-- The representation of the source type `T` when it is an inductive type of the class above. -/
+partial def indRep? (T : Expr) : MetaM (Option IndRep) := do
+  let T ← whnf T
+  let .const I lvls := T.getAppFn | return none
+  let env ← getEnv
+  let some (.inductInfo ind) := env.find? I | return none
+  if isStructure env I || (← libraryConst I) then return none
+  unless lvls.isEmpty && ind.numIndices == 0 && ind.all.length == 1 && ind.numNested == 0 do
+    throwError "reflect_d: the inductive type `{T}` is not represented in D (universe \
+      parameters, indices, a mutual or a nested inductive type)"
+  let params := T.getAppArgs
+  unless params.size == ind.numParams do return none
+  ensureIndDecls I
+  let dArgs ← forallBoundedTelescope ind.type ind.numParams fun ps _ =>
+    (ps.zip params).mapM fun (p, a) => do
+      if (← inferType p).isSort then ftyOf a else pure a
+  return some { ind := I, params, dArgs, ctors := ← ctorReps I params }
+
+end
 
 /-- The D value of a source value of type `T`. -/
 def encode (T v : Expr) : MetaM Expr := do
-  let T ← whnf T
-  if T.isAppOfArity ``Option 1 then return mkApp2 (mkConst ``optEnc) T.appArg! v
+  if let some f ← encoder? T then return mkApp f v
   return v
 
 /-! ### Contexts and terms -/
@@ -1282,11 +1863,10 @@ partial def applyMR (ctx : Ctx) (rf : Res) (ra : Res) (srcs : Array Expr) : M Re
 /-- The result type and representation of a branching node of source type `T`:
 `(c, β, E)`. -/
 partial def branchRep (T : Expr) : M (Expr × Expr × Expr) := do
-  let (c, isOpt) ← tyOf T
-  if isOpt then
-    let T ← whnf T
-    let α := T.appArg!
-    return (c, mkApp (mkConst ``Option [Level.zero]) α, mkApp (mkConst ``optEnc) α)
+  let (c, isEnc) ← tyOf T
+  if isEnc then
+    let some E ← encoder? T | fail m!"internal: the encoding of `{T}`"
+    return (c, T, E)
   return (c, valE c, .lam `v (valE c) (.bvar 0) .default)
 
 /-- A generic binder of source type `T` with name `n`, as a declared variable. -/
@@ -1567,15 +2147,489 @@ partial def goConst (ctx : Ctx) (e : Expr) (c : Name) (args : Array Expr) : M Re
   | ``List.casesOn, 5 => goLcase ctx e args[0]! args[2]! args[3]!.headBeta args[4]!
   | ``Prod.casesOn, 5 => goProdCase ctx e args[3]! args[4]! false
   | ``Sum.elim, 6 => goCaseSum ctx e args[0]! args[1]! args[5]! args[3]! args[4]!
+  -- The recursors of the types without recursive constructor arguments, at a constant motive,
+  -- are their case analyses (minor premises first, the major premise last).
+  | ``Bool.rec, 4 =>
+    goCond ctx e (← inferType (ctx.subst e)) args[3]! args[2]!.headBeta args[1]!.headBeta
+  | ``Option.rec, 5 => goCaseOpt ctx e args[0]! args[4]! args[2]!.headBeta args[3]!
+  | ``Sum.rec, 6 => goCaseSum ctx e args[0]! args[1]! args[5]! args[3]! args[4]!
+  | ``Prod.rec, 5 => goProdCase ctx e args[4]! args[3]! false
   | ``Option.elim, 5 => goCaseOpt ctx e args[0]! args[2]! args[3]! args[4]!
   | ``id, 2 =>
     let r ← goP ctx args[1]!
     finish ctx e r.tm r.ty r.pf r.fn r.cpf
   | _, _ =>
+    let env ← getEnv
+    -- A recursive call of the enclosing structural recursion.
+    if let some k := ctx.kids.head? then
+      if c == k.frame.fn then return ← goRecCall ctx e args
+    -- A constructor of a represented inductive type.
+    if let some (.ctorInfo ci) := env.find? c then
+      if let some r ← indRep? (← inferType (ctx.subst e)) then
+        if r.ind == ci.induct then
+          let some cr := r.ctors.find? (·.name == c) | fail m!"internal: `{c}`"
+          return ← goCon ctx e r cr args
+    -- A case analysis on a value of a represented inductive type.
+    if let .str I "casesOn" := c then
+      if let some (.inductInfo ind) := env.find? I then
+        let np := ind.numParams
+        if args.size == np + 2 + ind.numCtors && ind.numIndices == 0 then
+          if let some r ← indRep? (← inferType (ctx.subst args[np + 1]!)) then
+            let motive ← Core.betaReduce (← instantiateMVars args[np]!)
+            let constMotive := match motive.consumeMData with
+              | .lam _ _ b _ => !b.hasLooseBVars
+              | _ => false
+            unless constMotive do
+              fail m!"the case analysis `{e}`, whose motive depends on the scrutinee"
+            let lvls := e.getAppFn.constLevels!
+            let sargs := args.map ctx.subst
+            let alts := args.extract (np + 2) args.size
+            return ← goIndCases ctx e r args[np + 1]! (fun _ => pure alts) none
+              (fun t _ => mkAppN (mkConst c lvls) (sargs.set! (np + 1) t)) #[]
+    -- A structural recursion.
+    if (Structural.eqnInfoExt.find? env c).isSome then return ← goStructRec ctx e c args
     if (← isMatcher c) || (← unfoldable c) then goP ctx (← deltaApp c e)
     else if c.isStr && (c.getString! == "brecOn" || c.getString! == "rec") then
       fail m!"the recursion `{c}` (use List.foldl or Nat.iterate)"
     else fail m!"the constant `{c}` in `{e}`"
+
+/-- Head β-reduction through metadata: an alternative of a matcher unfolded to `casesOn` applies
+the alternative of the source to its fields. -/
+partial def headBetaMData (e : Expr) : Expr :=
+  let e' := e.consumeMData.headBeta
+  match e'.getAppFn.consumeMData with
+  | f@(.lam ..) => if e'.getAppNumArgs > 0 then headBetaMData (mkAppN f e'.getAppArgs) else e'
+  | _ => e'
+
+/-- The literal of the element `i` of a finite ground type of positions. -/
+partial def posLit (sh : RecShape) (i : Nat) : MetaM Expr := do
+  match sh with
+  | .direct 1 => return Lean.mkConst ``PUnit.unit [Level.one]
+  | .direct 2 => return if i == 0 then mkConst ``Bool.false else mkConst ``Bool.true
+  | .direct n =>
+    let pf := mkApp3 (mkConst ``of_decide_eq_true)
+      (mkApp4 (mkConst ``LT.lt [0]) (mkConst ``Nat) (mkConst ``instLTNat) (mkNatLit i) (mkNatLit n))
+      (mkApp2 (mkConst ``Nat.decLt) (mkNatLit i) (mkNatLit n))
+      (mkApp2 (mkConst ``Eq.refl [1]) (mkConst ``Bool) (mkConst ``Bool.true))
+    return mkApp3 (mkConst ``Fin.mk) (mkNatLit n) (mkNatLit i) pf
+  | _ => throwError "reflect_d: internal: a position literal"
+
+/-- A constructor of a represented inductive type applied to its arguments: `con` of the
+injection of its fields and the table of its children (`ptab`). -/
+partial def goCon (ctx : Ctx) (e : Expr) (r : IndRep) (c : CtorRep) (args : Array Expr) :
+    M Res := do
+  let Γ := ctx.gamma
+  let np := r.params.size
+  unless args.size == np + c.arity do fail m!"the partial application `{e}` of a constructor"
+  let cargs := args.extract np args.size
+  if c.fieldTys.any (fun τ => (tyArgs2 `arr τ).isSome) then
+    fail m!"the constructor application `{e}`, whose field holds a function: a function of the \
+      source is not its pure closure in D by definition"
+  let X := r.ty
+  -- The fields, as a right-nested tuple.
+  let rfs ← c.fields.mapM fun i => goP ctx cargs[i]!
+  let mut fr : Res ← if rfs.isEmpty then do
+      let u := Lean.mkConst ``PUnit.unit [Level.one]
+      let f := mkConst ``FTy.unit
+      pure { tm := mkApp3 (mkConst ``Tm.lit) Γ f u, ty := tyUnit,
+             pf := ← ifPf (mkAppM ``Den.lit #[f, u, ctx.rho]), val := u, dv := u : Res }
+    else pure rfs.back!
+  for i in (List.range (rfs.size - 1)).reverse do
+    let x := rfs[i]!
+    fr := { tm := mkAppN (mkConst ``Tm.pair) #[Γ, x.ty, fr.ty, x.tm, fr.tm],
+            ty := tyC `prod #[x.ty, fr.ty], pf := ← ifPf (mkAppM ``Den.pair #[x.pf, fr.pf]),
+            val := default, dv := default }
+  -- The children, as a table.
+  let arg ← match c.shape.fty? with
+    | none => pure fr
+    | some f => do
+      if let .fn _ := c.shape then
+        fail m!"the constructor application `{e}`, whose children are a function: its table is \
+          not built"
+      let rks ← c.recs.mapM fun i => goP ctx cargs[i]!
+      let tmTy := mkApp2 (mkConst ``Tm) Γ X
+      let ts ← kidTable c.shape tmTy (rks.map (·.tm))
+      let B := Expr.lam `_ (mkApp (mkConst ``FTy.den) f) X .default
+      let piTy := mkApp2 (mkConst ``Ty.pi) f B
+      let tab := mkApp4 (mkConst ``Tm.ptab) Γ f B ts
+      let tabPf ← ifPf do
+        let vs ← kidTable c.shape (valE X) (rks.map (·.dv))
+        let hj ← withLocalDeclD `j (mkApp (mkConst ``FTy.den) f) fun j => do
+          let motive ← withLocalDeclD `j (mkApp (mkConst ``FTy.den) f) fun j' =>
+            mkLambdaFVars #[j'] (denE Γ X (mkApp ts j').headBeta ctx.rho (mkApp vs j').headBeta)
+          let pf ← match c.shape with
+            | .direct 1 => pure rks[0]!.pf
+            | .direct 2 =>
+              pure <| mkApp4 (mkConst ``Bool.rec [Level.zero]) motive rks[0]!.pf rks[1]!.pf j
+            | .direct n => do
+              let Q ← withLocalDeclD `t tmTy fun t => withLocalDeclD `v (valE X) fun v => do
+                mkLambdaFVars #[t, v] (denE Γ X t ctx.rho v)
+              let mut fa := mkApp3 (mkConst ``List.Forall₂.nil [0, 0]) tmTy (valE X) Q
+              for k in (List.range (n - 1)).reverse do
+                let rk := rks[k + 1]!
+                let tl := rks.extract (k + 2) rks.size
+                fa := mkAppN (mkConst ``List.Forall₂.cons [0, 0])
+                  #[tmTy, valE X, Q, rk.tm, rk.dv, ← mkListLit tmTy (tl.map (·.tm)).toList,
+                    ← mkListLit (valE X) (tl.map (·.dv)).toList, rk.pf, fa]
+              pure <| mkAppN (mkConst ``pick_rel) #[tmTy, valE X, Q, rks[0]!.tm, rks[0]!.dv,
+                ← mkListLit tmTy (rks.extract 1 rks.size |>.map (·.tm)).toList,
+                ← mkListLit (valE X) (rks.extract 1 rks.size |>.map (·.dv)).toList, rks[0]!.pf, fa,
+                mkApp2 (mkConst ``Fin.val) (mkNatLit n) j]
+            | _ => fail m!"internal: the table of `{e}`"
+          mkLambdaFVars #[j] (← mkExpectedTypeHint pf (mkApp motive j).headBeta)
+        mkAppOptM ``Den.ptab #[none, none, f, B, ts, vs, hj]
+      let fr' := fr
+      pure { tm := mkAppN (mkConst ``Tm.pair) #[Γ, fr'.ty, piTy, fr'.tm, tab],
+             ty := tyC `prod #[fr'.ty, piTy], pf := ← ifPf (mkAppM ``Den.pair #[fr'.pf, tabPf]),
+             val := default, dv := default : Res }
+  -- The injection into the sum over the constructors.
+  let pre := sigPrefixes r.ctors
+  let some j := r.ctors.findIdx? (·.declIdx == c.declIdx) | fail m!"internal: `{e}`"
+  let rec inj : Nat → Expr → Expr → M (Expr × Expr)
+    | 0, tm, pf => return (tm, pf)
+    | l + 1, tm, pf => do
+      let c' := r.ctors[l + 1]!
+      let L := mkApp2 (mkConst ``Sig.conTy) pre[l]! X
+      let R := mkApp3 (mkConst ``Sig.kidTy) c'.fieldTy c'.posE X
+      if j == l + 1 then
+        return (mkAppN (mkConst ``Tm.inr) #[Γ, L, R, tm],
+          ← ifPf (mkAppOptM ``Den.inr #[none, none, L, none, none, none, pf]))
+      else
+        let (tm', pf') ← inj l tm pf
+        return (mkAppN (mkConst ``Tm.inl) #[Γ, L, R, tm'],
+          ← ifPf (mkAppOptM ``Den.inl #[none, none, none, R, none, none, pf']))
+  let (itm, ipf) ← inj (r.ctors.size - 1) arg.tm arg.pf
+  let tm := mkAppN (mkConst ``Tm.con) #[Γ, r.sig, itm]
+  let pf ← ifPf (mkAppOptM ``Den.con #[none, none, r.sig, itm, none, ipf])
+  finish ctx e tm X pf
+
+/-- The tuple of the translations `rs`: `()` for none, the right-nested pairs. -/
+partial def tupleRes (ctx : Ctx) (rs : Array Res) : M Res := do
+  let Γ := ctx.gamma
+  if rs.isEmpty then
+    let u := Lean.mkConst ``PUnit.unit [Level.one]
+    let f := mkConst ``FTy.unit
+    return { tm := mkApp3 (mkConst ``Tm.lit) Γ f u, ty := tyUnit,
+             pf := ← ifPf (mkAppM ``Den.lit #[f, u, ctx.rho]), val := u, dv := u }
+  let mut acc := rs.back!
+  for i in (List.range (rs.size - 1)).reverse do
+    let x := rs[i]!
+    acc := { tm := mkAppN (mkConst ``Tm.pair) #[Γ, x.ty, acc.ty, x.tm, acc.tm],
+             ty := tyC `prod #[x.ty, acc.ty], pf := ← ifPf (mkAppM ``Den.pair #[x.pf, acc.pf]),
+             val := default, dv := default }
+  return acc
+
+/-- A case analysis on a value of a represented inductive type, or, with `rec?`, the match of a
+structural recursion on its recursion argument: the eliminator `fold` whose step at a
+constructor is its alternative (`altsAt zs`, the alternatives at the changing arguments `zs`); in
+a recursion, a recursive call on a child is the application of the recursive results at its
+position. A recursion whose arguments at the positions `acc.chg` change (an accumulator) is the
+eliminator at the motive `arr Y c`, `Y` the tuple of the changing arguments, applied to their
+initial values `init`; each step is then a closure of `Y`. `srcAt t' zs` is the source term at
+the scrutinee `t'` and the changing arguments `zs`. -/
+partial def goIndCases (ctx : Ctx) (e : Expr) (r : IndRep) (major : Expr)
+    (altsAt : Array Expr → MetaM (Array Expr)) (rec? : Option RecFrame)
+    (srcAt : Expr → Array Expr → Expr) (init : Array Expr) : M Res := do
+  let Γ := ctx.gamma
+  let (cRes, _, E) ← branchRep (← inferType (ctx.subst e))
+  let acc := (rec?.map (·.acc)).getD {}
+  let hasAcc := !acc.chg.isEmpty
+  let Y := fieldTupleTy acc.tys.toList
+  let cTy := if hasAcc then tyC `arr #[Y, cRes] else cRes
+  let X := r.ty
+  let S := r.sig
+  let rm ← goP ctx major
+  let pre := sigPrefixes r.ctors
+  let altTyOf (c : CtorRep) : Expr := match c.shape.fty? with
+    | none => c.fieldTy
+    | some f => tyC `prod #[c.fieldTy, tyC `prod #[mkApp2 (mkConst ``Ty.pi) f
+        (.lam `_ (mkApp (mkConst ``FTy.den) f) X .default), tyC `arr #[tyBase f, cTy]]]
+  let accVal (zs : Array Expr) : Expr :=
+    fieldTupleVal ((acc.encs.zip zs).map fun (en, z) => match en with
+      | some f => mkApp f z
+      | none => z).toList acc.tys.toList
+  -- The translation of the alternative of `c` under its arguments `xs`, the hypotheses `ihs` and
+  -- the changing arguments `zs`, its bound value `vv`, the recursive results `recV`: the body of
+  -- the step function.
+  let step (c : CtorRep) (xs ihs zs : Array Expr) (vv recV : Expr) : M Res := do
+    let alts ← altsAt zs
+    let alt ← etaN ctx alts[c.declIdx]! c.arity
+    let body := headBetaMData (mkAppN alt xs)
+    let aTy := altTyOf c
+    let pre' := match c.shape.fty? with | none => [] | some _ => [false]
+    let paths := fieldPaths c.fields.size
+    let mut ctx' := ctx.bind aTy vv
+    ctx' := { ctx' with kids := [] }
+    for h : l in [0:c.fields.size] do
+      let y := xs[c.fields[l]]!
+      let dv := match c.fieldEnc[l]! with | some f => (mkApp f y).headBeta | none => y
+      -- A field holding a data function is applied as a parameter: its D value is the pure
+      -- closure of the function, whose application denotes it by definition.
+      let fn? ← match tyArgs2 `arr c.fieldTys[l]! with
+        | some (a, b) => do
+          let h ← withLocalDeclD `v (valE a) fun v => do
+            let w := mkApp2 (mkConst ``CTree.ret) (valE b) (mkApp y v)
+            mkLambdaFVars #[v] (← mkExpectedTypeHint (← mkEqRefl w) (← mkEq (mkApp dv v) w))
+          pure (some (Fn.param dv h default false 1))
+        | none => pure none
+      ctx' := ctx'.push { fvar := y.fvarId!, level := ctx.depth, path := pre' ++ paths[l]!,
+                          baseTy := aTy, val := y, dval := dv, fn := fn? }
+    if let some fr := rec? then
+      let some f := c.shape.fty? | pure ()
+      let recEn : Entry := { fvar := ← mkFreshFVarId, level := ctx.depth, path := [true, true],
+                             baseTy := aTy, val := recV, dval := recV }
+      let mut ks := []
+      for h : i in [0:c.recs.size] do
+        let fnChild := match c.shape with | .fn _ => true | _ => false
+        let pos ← if fnChild then pure default else posLit c.shape i
+        ks := { fvar := xs[c.recs[i]]!.fvarId!, fnChild, pos, posTy := f,
+                ih := ihs.getD i default, frame := fr, recEntry := recEn : Kid } :: ks
+      ctx' := { ctx' with kids := ks }
+    unless hasAcc do return ← goP ctx' body
+    let zpaths := fieldPaths zs.size
+    let mut ctx'' := ctx'.bind Y (accVal zs)
+    for h : l in [0:zs.size] do
+      let z := zs[l]
+      let dv := match acc.encs[l]! with | some f => mkApp f z | none => z
+      ctx'' := ctx''.push { fvar := z.fvarId!, level := ctx.depth + 1, path := zpaths[l]!,
+                            baseTy := Y, val := z, dval := dv }
+    let rb ← goP ctx'' body
+    return { rb with tm := mkAppN (mkConst ``Tm.lam) #[ctx'.gamma, Y, cRes, rb.tm] }
+  let ctorTy (c : CtorRep) : MetaM Expr := do
+    instantiateForall (← getConstInfoCtor c.name).type r.params
+  let zDecls := acc.srcTys.mapIdx fun i T => (Name.mkSimple s!"z{i}", T)
+  -- The steps without derivations: the D-terms.
+  let mut steps : Array Res := #[]
+  for c in r.ctors do
+    let rb ← withReader (fun _ => true) <| forallTelescope (← ctorTy c) fun xs _ =>
+      withLocalDeclsDND zDecls fun zs => do
+        let rb ← step c xs #[] zs default default
+        if rb.tm.hasAnyFVar (fun fv => (xs ++ zs).any (·.fvarId! == fv)) then
+          fail m!"the alternative of `{c.name}` in `{e}` gives a D-term that depends on a field \
+            (a literal or a width)"
+        return rb
+    steps := steps.push rb
+  -- The tuple of the steps, first innermost.
+  let mut gtm := mkAppN (mkConst ``Tm.lam) #[Γ, altTyOf r.ctors[0]!, cTy, steps[0]!.tm]
+  let mut gTy := mkApp3 (mkConst ``Sig.stepsTy) pre[0]! X cTy
+  for h : j in [1:r.ctors.size] do
+    let c := r.ctors[j]!
+    let lamTm := mkAppN (mkConst ``Tm.lam) #[Γ, altTyOf c, cTy, steps[j]!.tm]
+    gtm := mkAppN (mkConst ``Tm.pair) #[Γ, gTy, tyC `arr #[altTyOf c, cTy], gtm, lamTm]
+    gTy := mkApp3 (mkConst ``Sig.stepsTy) pre[j]! X cTy
+  let foldTm := mkAppN (mkConst ``Tm.fold) #[Γ, S, cTy, gtm, rm.tm]
+  -- The fold of a structural recursion records its source for `link_timed`: the recursive
+  -- constant, the position of the recursion argument and, for each other argument, the de Bruijn
+  -- index of the D variable that holds it (`-` for an argument that is no variable).
+  let foldTm := match rec? with
+    | some fr =>
+      if hasAcc then foldTm else
+      let fixed := (List.range fr.args.size).map fun i =>
+        if i == fr.pos then "*" else
+        match ctx.entries.find? (fun en => en.val == fr.args[i]! && en.path.isEmpty) with
+        | some en => toString (ctx.depth - 1 - en.level)
+        | none => "-"
+      let kv : KVMap := (((({} : KVMap).insert `dFold.fn (.ofName fr.fn)).insert `dFold.pos
+        (.ofNat fr.pos)).insert `dFold.fixed (.ofString (",".intercalate fixed)))
+      .mdata kv foldTm
+    | none => foldTm
+  let zr ← if hasAcc then tupleRes ctx (← init.mapM (goP ctx)) else pure default
+  let tm := if hasAcc then mkAppN (mkConst ``Tm.app) #[Γ, Y, cRes, foldTm, zr.tm] else foldTm
+  if ← synMode then return { tm, ty := cRes, pf := mkConst ``True.intro, val := default,
+                             dv := default }
+  -- The derivation of the steps: the closures, paired.
+  let mut gpf ← mkAppM ``Den.lam #[steps[0]!.tm, ctx.rho]
+  for h : j in [1:r.ctors.size] do
+    gpf ← mkAppM ``Den.pair #[gpf, ← mkAppM ``Den.lam #[steps[j]!.tm, ctx.rho]]
+  let gv := (← instantiateMVars (← inferType gpf)).appArg!
+  let hg ← mkExpectedTypeHint gpf (denE Γ (mkApp3 (mkConst ``Sig.stepsTy) S X cTy) gtm ctx.rho gv)
+  let selfTy := r.srcTy
+  let srcMajor := ctx.subst major
+  let F (t : Expr) (zs : Array Expr) : Expr := (mkApp E (srcAt t zs)).headBeta
+  let stmt (t : Expr) (zs : Array Expr) : Expr :=
+    let fw := mkAppN (mkConst ``foldW) #[S, cTy, gv, mkApp r.enc t]
+    let lhs := if hasAcc then
+        mkAppN (mkConst ``CTree.bind) #[valE cTy, valE cRes, fw,
+          .lam `G (valE cTy) (mkApp (.bvar 0) (accVal zs)) .default]
+      else fw
+    mkApp3 (mkConst ``Eq [1]) (mkApp (mkConst ``CTree) (valE cRes)) lhs
+      (mkApp2 (mkConst ``CTree.ret) (valE cRes) (F t zs))
+  let motive ← withLocalDeclD `t selfTy fun t => withLocalDeclsDND zDecls fun zs => do
+    mkLambdaFVars #[t] (← mkForallFVars zs (stmt t zs))
+  -- The minor premises: the derivation of each alternative at its bound value.
+  let ind ← getConstInfoInduct r.ind
+  let mut minors := Array.replicate ind.numCtors (default : Expr)
+  for c in r.ctors do
+    let m ← forallTelescope (← ctorTy c) fun xs _ => do
+      let ihTys ← if rec?.isSome then c.recs.mapM fun i => do
+          let x := xs[i]!
+          let A ← whnf (← inferType x)
+          match A with
+          | .forallE n R _ bi => withLocalDecl n bi R fun a => do
+              mkForallFVars #[a] (mkApp motive (mkApp x a)).headBeta
+          | _ => pure (mkApp motive x).headBeta
+        else pure #[]
+      withLocalDeclsDND (ihTys.mapIdx fun i T => (Name.mkSimple s!"ih{i}", T)) fun ihs => do
+      withLocalDeclsDND zDecls fun zs => do
+        let fvals := (c.fields.zip c.fieldEnc).map fun (i, en) => match en with
+          | some f => mkApp f xs[i]!
+          | none => xs[i]!
+        let fv := fieldTupleVal fvals.toList c.fieldTys.toList
+        let (vv, recV) ← match c.shape.fty? with
+          | none => pure (fv, default)
+          | some f => do
+            let encKids ← match c.shape with
+              | .fn _ => withLocalDeclD `a (mkApp (mkConst ``FTy.den) f) fun a =>
+                  mkLambdaFVars #[a] (mkApp r.enc (mkApp xs[c.recs[0]!]! a))
+              | _ => kidTable c.shape (valE X) (c.recs.map fun i => mkApp r.enc xs[i]!)
+            let recV ← withLocalDeclD `j (mkApp (mkConst ``FTy.den) f) fun j =>
+              mkLambdaFVars #[j]
+                (mkAppN (mkConst ``foldW) #[S, cTy, gv, (mkApp encKids j).headBeta])
+            let piTy :=
+              mkApp2 (mkConst ``Ty.pi) f (.lam `_ (mkApp (mkConst ``FTy.den) f) X .default)
+            let arrTy := tyC `arr #[tyBase f, cTy]
+            let inner := mkApp4 (mkConst ``Prod.mk [0, 0]) (valE piTy) (valE arrTy) encKids recV
+            pure (mkApp4 (mkConst ``Prod.mk [0, 0]) (valE c.fieldTy)
+              (valE (tyC `prod #[piTy, arrTy])) fv inner, recV)
+        let rb ← step c xs ihs zs vv recV
+        let goal := stmt (mkAppN (mkConst c.name) (r.params ++ xs)) zs
+        mkLambdaFVars (xs ++ ihs ++ zs) (← mkExpectedTypeHint rb.pf goal)
+    minors := minors.set! c.declIdx m
+  let elim (t : Expr) : Expr := if rec?.isSome then
+      mkAppN (mkConst (r.ind ++ `rec) [Level.zero]) (r.params ++ #[motive] ++ minors ++ #[t])
+    else
+      mkAppN (mkConst (r.ind ++ `casesOn) [Level.zero]) (r.params ++ #[motive, t] ++ minors)
+  let pf ← if hasAcc then do
+      let zs0 := init.map ctx.subst
+      let h0 ← mkExpectedTypeHint (mkAppN (elim srcMajor) zs0) (stmt srcMajor zs0)
+      mkAppOptM ``Den.foldApp #[none, none, S, Y, cRes, gtm, rm.tm, zr.tm, gv,
+        mkApp r.enc srcMajor, zr.dv, F srcMajor zs0, hg, rm.pf, zr.pf, h0]
+    else do
+      let hF ← withLocalDeclD `t selfTy fun t => mkLambdaFVars #[t] (elim t)
+      let Fl ← withLocalDeclD `t selfTy fun t => mkLambdaFVars #[t] (F t #[])
+      mkAppOptM ``Den.foldEnc #[none, none, S, cTy, gtm, rm.tm, gv, selfTy, r.enc, Fl,
+        srcMajor, hg, rm.pf, hF]
+  finish ctx e tm cRes pf
+
+/-- A recursive call of the enclosing recursion on a child of the node: the recursive results
+applied at the position of the child, and to the tuple of the changing arguments of the call. -/
+partial def goRecCall (ctx : Ctx) (e : Expr) (args : Array Expr) : M Res := do
+  let some k0 := ctx.kids.head? | fail m!"internal: `{e}`"
+  let fr := k0.frame
+  unless args.size == fr.args.size do
+    fail m!"the recursive call `{e}` at another number of arguments"
+  for h : i in [0:args.size] do
+    if i != fr.pos && !fr.acc.chg.contains i && ctx.subst args[i] != fr.args[i]! then
+      fail m!"internal: the recursive call `{e}` changes the argument `{fr.args[i]!}`"
+  let a := args[fr.pos]!.consumeMData
+  let (kid, arg?) ← match a with
+    | .fvar fv => match ctx.kids.find? (fun k => k.fvar == fv && !k.fnChild) with
+      | some k => pure (k, none)
+      | none => fail m!"the recursive call `{e}` on `{a}`, which is not a child of the node"
+    | .app (.fvar fv) x => match ctx.kids.find? (fun k => k.fvar == fv && k.fnChild) with
+      | some k => pure (k, some x)
+      | none => fail m!"the recursive call `{e}` on `{a}`, which is not a child of the node"
+    | _ => fail m!"the recursive call `{e}` on `{a}`, which is not a child of the node"
+  let rf ← refVar ctx kid.recEntry
+  let some (_, cTy) := tyArgs2 `arr rf.ty | fail m!"internal: `{e}`"
+  let f := kid.posTy
+  let ja ← match arg? with
+    | some x => goP ctx x
+    | none => do
+      let tm := mkApp3 (mkConst ``Tm.lit) ctx.gamma f kid.pos
+      pure { tm, ty := tyBase f, pf := ← ifPf (mkAppM ``Den.lit #[f, kid.pos, ctx.rho]),
+             val := kid.pos, dv := kid.pos : Res }
+  let app1 := mkAppN (mkConst ``Tm.app) #[ctx.gamma, tyBase f, cTy, rf.tm, ja.tm]
+  let hasAcc := !fr.acc.chg.isEmpty
+  let (cRes, _, E) ← branchRep (← inferType (ctx.subst e))
+  let zsSrc := fr.acc.chg.map fun i => args[i]!
+  let zr ← if hasAcc then tupleRes ctx (← zsSrc.mapM (goP ctx)) else pure default
+  let Y := fieldTupleTy fr.acc.tys.toList
+  let tm := if hasAcc then mkAppN (mkConst ``Tm.app) #[ctx.gamma, Y, cRes, app1, zr.tm] else app1
+  let pf ← ifPf do
+    let ih := match arg? with
+      | some _ => mkApp kid.ih ja.dv
+      | none => kid.ih
+    let w := (mkApp E (ctx.subst e)).headBeta
+    let recJ := mkApp kid.recEntry.dval ja.dv
+    if hasAcc then
+      let h := mkAppN ih (zsSrc.map ctx.subst)
+      let lhs := mkAppN (mkConst ``CTree.bind) #[valE cTy, valE cRes, recJ,
+        .lam `G (valE cTy) (mkApp (.bvar 0) zr.dv) .default]
+      let h ← mkExpectedTypeHint h (← mkEq lhs (mkApp2 (mkConst ``CTree.ret) (valE cRes) w))
+      mkAppM ``Den.app2 #[rf.pf, ja.pf, zr.pf, h]
+    else
+      let h ← mkExpectedTypeHint ih (← mkEq recJ (mkApp2 (mkConst ``CTree.ret) (valE cTy) w))
+      mkAppM ``Den.app #[rf.pf, ja.pf, h]
+  finish ctx e tm cRes pf
+
+/-- The calls of the constant `c` in `e`, by their arguments. -/
+partial def collectCalls (c : Name) (e : Expr) : Array (Array Expr) :=
+  go e #[]
+where
+  go (e : Expr) (acc : Array (Array Expr)) : Array (Array Expr) :=
+    match e with
+    | .app .. =>
+      let acc := if e.getAppFn.isConstOf c then acc.push e.getAppArgs else acc
+      e.getAppArgs.foldl (fun a x => go x a) (go e.getAppFn acc)
+    | .lam _ t b _ | .forallE _ t b _ => go b (go t acc)
+    | .letE _ t v b _ => go b (go v (go t acc))
+    | .mdata _ b | .proj _ _ b => go b acc
+    | _ => acc
+
+/-- A structural recursion over a represented inductive type: its body, a match on the recursion
+argument, as the eliminator (`goIndCases`); the arguments that change in its recursive calls
+are the argument of the eliminator at a function motive. -/
+partial def goStructRec (ctx : Ctx) (e : Expr) (c : Name) (args : Array Expr) : M Res := do
+  let env ← getEnv
+  let some info := Structural.eqnInfoExt.find? env c | fail m!"internal: `{c}`"
+  if info.declNames.size > 1 then
+    fail m!"the mutual structural recursion `{c}`"
+  let lvls := e.getAppFn.constLevels!
+  let value := info.value.instantiateLevelParams info.levelParams lvls
+  let rec arity : Expr → Nat
+    | .lam _ _ b _ => arity b + 1
+    | _ => 0
+  unless args.size == arity value do
+    fail m!"the structural recursion `{c}` applied to {args.size} arguments, its equations take \
+      {arity value}"
+  let pos := info.recArgPos
+  let major := args[pos]!
+  let some r ← indRep? (← inferType (ctx.subst major))
+    | fail m!"the structural recursion `{c}` over `{← inferType (ctx.subst major)}`, which is \
+        not a represented inductive type (use List.foldl or Nat.iterate)"
+  -- The arguments that change in a recursive call.
+  let chg ← lambdaTelescope value fun ys b => do
+    let calls := collectCalls c b
+    let mut chg := #[]
+    for h : i in [0:ys.size] do
+      if i != pos && calls.any (fun as => as.size > i && as[i]! != ys[i]) then chg := chg.push i
+    return chg
+  let srcTys ← chg.mapM fun i => inferType (ctx.subst args[i]!)
+  let reps ← srcTys.mapM fun T => do
+    let (τ, encd) ← tyOf T
+    return (τ, ← if encd then encoder? T else pure none)
+  let acc : AccInfo := { chg, srcTys, tys := reps.map (·.1), encs := reps.map (·.2) }
+  let casesOn := r.ind ++ `casesOn
+  let np := r.params.size
+  let altsAt (zs : Array Expr) : MetaM (Array Expr) := do
+    let args' := (chg.zip zs).foldl (fun as (i, z) => as.set! i z) args
+    let mut body := (value.beta args').headBeta
+    if let .const m _ := body.getAppFn then
+      if ← isMatcher m then body := ((← (deltaApp m body).run true |>.run' #[])).headBeta
+    let bargs := body.getAppArgs
+    unless body.getAppFn.isConstOf casesOn && bargs.size == np + 2 + r.ctors.size &&
+        bargs[np + 1]! == major do
+      throwError "reflect_d: the structural recursion `{c}` is not a match on its recursion \
+        argument with one alternative per constructor: {body}"
+    return bargs.extract (np + 2) bargs.size
+  let _ ← (withLocalDeclsDND (srcTys.mapIdx fun i T => (Name.mkSimple s!"z{i}", T)) altsAt :
+    MetaM (Array Expr))
+  let fr : RecFrame := { fn := c, levels := lvls, args := args.map ctx.subst, pos, acc }
+  goIndCases ctx e r major altsAt (some fr)
+    (fun t zs => mkAppN (mkConst c lvls)
+      ((chg.zip zs).foldl (fun as (i, z) => as.set! i z) ((args.map ctx.subst).set! pos t)))
+    (chg.map fun i => args[i]!)
 
 partial def goCond (ctx : Ctx) (e T b t f : Expr) : M Res := do
   let Γ := ctx.gamma
@@ -1827,6 +2881,7 @@ partial def goM (ctx : Ctx) (e : Expr) : M Res := do
         ctx.rho, aTy, rn.ty, ro.tm, rn.tm, rs.tm, ro.val, rn.val, S, ro.pf, rn.pf, hr]))
     | ``Prod.casesOn, 5 => goProdCase ctx e args[3]! args[4]! true
     | _, _ =>
+      if let some r ← certCall? ctx e c args false then return r
       if (← isMatcher c) || (← unfoldable c) then goM ctx (← deltaApp c e)
       else fail m!"the computation `{e}` (head `{c}`)"
   | .fvar _ | .lam .. =>
@@ -1889,6 +2944,81 @@ partial def treeCont (ctx : Ctx) (k ty : Expr) : M (Res × Expr × Option Expr �
     let rb ← goT ((ctx.bind ty x).push en) (body.instantiate1 x)
     let (hkc, dep) ← contCost x rb.cpf
     return (rb, ← ifPf (mkLambdaFVars #[x] rb.pf), hkc, dep)
+
+/-- A call `c e₁ … eₙ` of a certified callee `c` in a computation (`tree` for an `SPTree`): `c.d`
+is a D-term over the parameters of `c` alone, `c.d_den` is stated over the oracle and `n` data
+parameters, and `c.d_timedSim` exists. The call is the `let` of the first `n - 1` arguments and
+the call of the closure of `c.d` renamed into the context (`Ren.liftN`) on the last; its
+derivation is `c.d_den` at the arguments (`DenM.certCall`), and the body of `c` is not
+reflected again. `none` when `c` is not such a callee. -/
+partial def certCall? (ctx : Ctx) (e : Expr) (c : Name) (args : Array Expr) (tree : Bool) :
+    M (Option Res) := do
+  let env ← getEnv
+  unless env.contains (c ++ `d_timedSim) && env.contains (c ++ `d_den) do return none
+  let some (.defnInfo di) := env.find? (c ++ `d) | return none
+  unless di.levelParams.isEmpty do return none
+  let cd := mkConst (c ++ `d)
+  let dTy ← whnfR (← inferType cd)
+  unless dTy.isAppOfArity ``Tm 2 do return none
+  let Δ := dTy.getArg! 0
+  let τ := dTy.getArg! 1
+  let some (_, tysIn) := (← instantiateMVars Δ).listLit? | return none
+  let n := tysIn.length
+  unless n ≥ 1 && n == args.size do return none
+  let denTy ← inferType (mkConst (c ++ `d_den))
+  let srcTys ← forallTelescopeReducing denTy fun xs _ => do
+    if xs.size != n + 1 then return none
+    return some (← (xs.extract 1 xs.size).mapM fun x => inferType x)
+  let some srcTys := srcTys | return none
+  -- the parameters in order, the first outermost
+  let tys := tysIn.reverse.toArray
+  for i in [0:n] do
+    let ai := ctx.subst args[i]!
+    unless ← isDefEq (← inferType ai) srcTys[i]! do return none
+    let (σ, _) ← tyOf (← inferType ai)
+    unless ← isDefEq σ tys[i]! do return none
+  let mut c' := ctx
+  let mut binds : Array (Expr × Res × Ctx) := #[]
+  for i in [0:n - 1] do
+    let ra ← goP c' args[i]!
+    binds := binds.push (tys[i]!, ra, c')
+    let y ← mkFreshFVarId
+    c' := (c'.bind tys[i]! ra.dv).push
+      { fvar := y, level := c'.depth, path := [], baseTy := tys[i]!, val := ra.val,
+        dval := ra.dv, fn := ra.fn }
+  let raN ← goP c' args[n - 1]!
+  let σN := tys[n - 1]!
+  let ΓN := c'.gamma
+  let ren ← mkAppOptM ``Ren.liftN #[some ctx.gamma, some Δ]
+  let body := mkAppN (mkConst ``Tm.rename) #[Δ, mkApp3 (mkConst ``List.cons [.zero]) (mkConst ``Ty) σN ΓN, τ, cd,
+    ren]
+  let mut tm := mkAppN (mkConst ``Tm.app) #[ΓN, σN, τ,
+    mkAppN (mkConst ``Tm.lam) #[ΓN, σN, τ, body], raN.tm]
+  let mut pf := mkConst ``True.intro
+  unless ← synMode do
+    let C ← if tree then mkAppM ``SPTree.compile #[ctx.subst e] else pure (ctx.subst e)
+    let vals := (binds.map (·.2.1.val)).push raN.val
+    let dvs := (binds.map (·.2.1.dv)).push raN.dv
+    let mut ρc := mkConst ``Env.nil
+    let mut Δi : List Expr := []
+    for i in [0:n] do
+      ρc := mkAppN (mkConst ``Env.cons) #[gammaE Δi, tys[i]!, dvs[i]!, ρc]
+      Δi := tys[i]! :: Δi
+    let hd ← mkExpectedTypeHint (mkAppN (mkConst (c ++ `d_den)) (#[ctx.oracle] ++ vals))
+      (denME ctx.oracle Δ τ cd ρc C)
+    let ρN := c'.rho
+    let h1 ← mkExpectedTypeHint (← denMApp ctx ``DenM.certCall #[hd, ctx.rho])
+      (denME ctx.oracle (mkApp3 (mkConst ``List.cons [.zero]) (mkConst ``Ty) σN ΓN) τ body
+        (mkAppN (mkConst ``Env.cons) #[ΓN, σN, raN.dv, ρN]) C)
+    let hlam ← mkAppM ``Den.lam #[body, ρN]
+    pf ← denMApp c' ``DenM.app #[hlam, raN.pf, h1]
+  for i' in [0:n - 1] do
+    let i := n - 2 - i'
+    let (σ, ra, ci) := binds[i]!
+    tm := mkAppN (mkConst ``Tm.letE) #[ci.gamma, σ, τ, ra.tm, tm]
+    unless ← synMode do
+      pf ← denMApp ci ``DenM.letEPure #[ra.pf, pf]
+  if tree then return some (← finishT ctx e tm τ pf) else return some (← finishM ctx e tm τ pf)
 
 /-- A computation tree (`SPTree`): its meaning is its compilation (`DenM.tree*`). -/
 partial def goT (ctx : Ctx) (e : Expr) : M Res := do
@@ -1977,6 +3107,7 @@ partial def goT (ctx : Ctx) (e : Expr) : M Res := do
           none, none, hb, rt.pf, re.pf]
       finishT ctx e tm rt.ty pf (← iteCost P inst rc rt re)
     | _, _ =>
+      if let some r ← certCall? ctx e c args true then return r
       if (← isMatcher c) || (← unfoldable c) then goT ctx (← deltaApp c e)
       else fail m!"the tree `{e}` (head `{c}`)"
   | .fvar _ | .lam .. =>
@@ -2355,7 +3486,9 @@ def reflect (c : Name) : Term.TermElabM Unit := do
         us := us.push u
       return us
     params 1024 info.type { rho := mkConst ``Env.nil, used, inType } fun ps bodyT => do
-      let body := info.value.beta ps.args
+      let body := if (Structural.eqnInfoExt.find? (← getEnv) c).isSome then
+          mkAppN (mkConst c) ps.args
+        else info.value.beta ps.args
       let (ms, eqTys) ← if ps.insts.isEmpty then pure (#[], #[])
         else scanMethods ps.statics ps.insts ps.recs body 8 (#[], #[])
       let ms := ms.qsort (fun a b => a.approxDepth.toNat > b.approxDepth.toNat)

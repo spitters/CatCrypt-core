@@ -1,0 +1,207 @@
+/-
+Copyright (c) 2026 CatCrypt Contributors. All rights reserved.
+Released under MIT license as described in the file LICENSE.
+Authors: CatCrypt Contributors
+-/
+module
+
+public import CatCryptCore.Complexity.D.TranslateDt
+
+/-!
+# Inductive types of D: tests
+
+Binary trees of bytes, `tree = mu treeSig` with a leaf and a node holding a byte and two
+children indexed by `Bool`.
+
+* `xorT`: the XOR of the bytes of a tree by the eliminator; its denotation on a tree of two
+  nodes (`xorT_den`), its cost (`xorT_cost`: a step per node visited, the β-step of each call of
+  a recursive result and one per XOR), and the bound by the charges of `Tm.dt` from the
+  soundness theorem at every tree (`xorT_cost_le_dt`).
+* `xorT_den_all`: the denotation of `xorT` at every tree is the recursion `xorF`, by the rule of
+  the eliminator (`Reflect.Den.fold`); `isLeafT_dsim`: a case analysis by the eliminator costs one
+  step, by the linking rule of the eliminator (`TimedLink.DSim.fold`).
+* `nodeT`: a node built by `con` from the table of its two children (`ptab`); the constructor
+  and the table of leaves cost nothing (`nodeT_cost`).
+* `xorAccT`: the eliminator at the motive `arr (word 8) (word 8)`, a recursion whose accumulator
+  changes, with its denotation and the bound by the charges of `Tm.dt` (`xorAccT_cost_le_dt`).
+* `fnList`, lists whose field holds a function on bytes: `applyAllT` applies the functions by the
+  eliminator, with its denotation, adequacy in an environment related by the lifting over the
+  W-type (`applyAllT_eval_erase`, `fnCons_rel`) and the bound by the charges of `Tm.dt`
+  (`applyAllT_cost_le_dt`).
+-/
+
+@[expose] public section
+
+set_option autoImplicit false
+
+namespace CatCrypt.Complexity.D.MuTest
+
+open CatCrypt.Core Tm
+
+/-- The signature of binary trees of bytes: a leaf, and a node with a byte and its children
+indexed by `Bool`. -/
+def treeSig : Sig := .ext (.base .unit) (.word 8) (some .bool)
+
+/-- Binary trees of bytes. -/
+abbrev tree : Ty := .mu treeSig
+
+/-- The leaf: the first constructor with its field `()`. -/
+def leafV : Val tree := WType.mk ⟨.inl (), ()⟩ fun p => Empty.elim p
+
+/-- The node with the byte `n` and the children `l` (at `false`) and `r` (at `true`). -/
+def nodeV (n : BitVec 8) (l r : Val tree) : Val tree :=
+  WType.mk ⟨.inr (), n⟩ fun b => bif b then r else l
+
+/-- The XOR of the bytes of a tree: `0` at the leaf, the byte XOR the results of the children
+at a node. -/
+def xorT : Tm [tree] (.word 8) :=
+  fold
+    (pair (lam (lit (.word 8) (0 : BitVec 8)))
+      (lam (prim (.wxor 8) (pair (fst (var .here))
+        (prim (.wxor 8) (pair (app (snd (snd (var .here))) (lit .bool false))
+          (app (snd (snd (var .here))) (lit .bool true))))))))
+    (var .here)
+
+/-- The tree of two nodes `5 (3 leaf leaf) leaf`. -/
+def t2 : Val tree := nodeV 5 (nodeV 3 leafV leafV) leafV
+
+theorem xorT_den : xorT.den (Env.nil.cons t2) = .ret (5 ^^^ 3 : BitVec 8) := by
+  rfl
+
+/-- The cost on `t2`: a step at the root, a β-step per call of a recursive result (four, two at
+each node), and two XORs per node. -/
+theorem xorT_cost : xorT.cost (Env.nil.cons t2) = 9 := by
+  decide +kernel
+
+theorem xorT_inDtFrag : xorT.InDtFrag := by
+  simp [xorT, InDtFrag, Tm.Pure, headVar?, Ty.isArr, Prim.unitCost]
+
+/-- The cost of `xorT` is bounded by its allowance and the charges of `Tm.dt` at every tree. -/
+theorem xorT_cost_le_dt {η : EnvHat [tree]} {ρ : Env [tree]} (hρ : SimEnv η ρ) :
+    xorT.cost ρ ≤ xorT.allow + SPTree.Timed.stepTime (xorT.dt η) :=
+  cost_le_dt xorT xorT_inDtFrag hρ
+
+/-- The XOR of the bytes of a tree, by recursion on the value. -/
+def xorF : (Sig.den treeSig).W → BitVec 8
+  | ⟨⟨.inl _, _⟩, _⟩ => 0
+  | ⟨⟨.inr _, n⟩, kids⟩ =>
+    let m : BitVec 8 := n
+    m ^^^ (xorF (kids false) ^^^ xorF (kids true))
+
+/-- The denotation of `xorT` at every tree, by the rule of the eliminator: its step functions
+denote `xorF` at every node whose recursive results are the values of `xorF` at its children. -/
+theorem xorT_den_all (w : Val tree) : Reflect.Den xorT (Env.nil.cons w) (xorF w) := by
+  unfold xorT
+  exact Reflect.Den.fold (Reflect.Den.pair (Reflect.Den.lam _ _) (Reflect.Den.lam _ _))
+    (Reflect.Den.var .here _) fun a kids => by rcases a with ⟨_ | _, n⟩ <;> rfl
+
+/-- Whether a tree is a leaf: a case analysis, the eliminator whose steps apply no recursive
+result. -/
+def isLeafT : Tm [tree] .bool :=
+  fold (pair (lam (lit .bool true)) (lam (lit .bool false))) (var .here)
+
+/-- Whether a value is a leaf. -/
+def isLeafF : (Sig.den treeSig).W → Bool
+  | ⟨⟨.inl _, _⟩, _⟩ => true
+  | ⟨⟨.inr _, _⟩, _⟩ => false
+
+/-- The case analysis costs one step plus its branch, here nothing: by the rule of the
+eliminator at the cost `0` of every node. -/
+theorem isLeafT_dsim (w : Val tree) :
+    TimedLink.DSim 1 0 (1 + 0 + 0) isLeafT (Env.nil.cons w) (isLeafF w) := by
+  unfold isLeafT
+  exact TimedLink.DSim.fold (S := treeSig) (C := fun _ => 0) le_rfl
+    (gv := (((fun _ => .ret true) : Val (.arr .unit .bool)),
+      ((fun _ => .ret false) : Val (.arr (Sig.altTy (.word 8) (some .bool) tree .bool) .bool))))
+    (by rfl)
+    (TimedLink.DSim.var .here) fun a _ _ _ => ⟨0, by rcases a with ⟨_ | _, n⟩ <;> rfl, le_rfl⟩
+
+/-- A leaf built by `con`. -/
+def leafT {Γ : List Ty} : Tm Γ tree := con (inl (lit .unit ()))
+
+/-- A node with the byte `5` and two leaves, its children a table over the positions. -/
+def nodeT : Tm [] tree :=
+  con (inr (pair (lit (.word 8) (5 : BitVec 8)) (ptab fun _ => leafT)))
+
+/-- A constructor is free, and so is the table of its children, whose components are leaves. -/
+theorem nodeT_cost : nodeT.cost Env.nil = 0 := by
+  decide +kernel
+
+/-- The XOR of the bytes of a tree into an accumulator, the recursion whose other argument
+changes: the eliminator at the motive `arr (word 8) (word 8)`, each step a closure of the
+accumulator that passes it through the left child, then the right child, after the byte. -/
+def xorAccT : Tm [tree] (.arr (.word 8) (.word 8)) :=
+  fold
+    (pair (lam (lam (var .here)))
+      (lam (lam (app (app (snd (snd (var (.there .here)))) (lit .bool true))
+        (app (app (snd (snd (var (.there .here)))) (lit .bool false))
+          (prim (.wxor 8) (pair (var .here) (fst (var (.there .here))))))))))
+    (var .here)
+
+/-- The accumulator `1` through `t2`. -/
+theorem xorAccT_den : (app xorAccT (lit (.word 8) (1 : BitVec 8))).den (Env.nil.cons t2) =
+    .ret (1 ^^^ 5 ^^^ 3 : BitVec 8) := by
+  rfl
+
+theorem xorAccT_inDtFrag : xorAccT.InDtFrag := by
+  simp [xorAccT, InDtFrag, Tm.Pure, headVar?, Ty.isArr, Prim.unitCost]
+
+/-- The eliminator at a function motive is covered by the soundness theorem: the cost of the
+closure is bounded by its allowance and the charges of `Tm.dt` at every tree. -/
+theorem xorAccT_cost_le_dt {η : EnvHat [tree]} {ρ : Env [tree]} (hρ : SimEnv η ρ) :
+    xorAccT.cost ρ ≤ xorAccT.allow + SPTree.Timed.stepTime (xorAccT.dt η) :=
+  cost_le_dt xorAccT xorAccT_inDtFrag hρ
+
+/-! ## A field holding a function -/
+
+/-- The signature of lists of byte functions: a nil, and a cons holding a function on bytes and
+one child. -/
+def fnSig : Sig := .ext (.base .unit) (.arr (.word 8) (.word 8)) (some .unit)
+
+/-- Lists of byte functions. -/
+abbrev fnList : Ty := .mu fnSig
+
+/-- The nil. -/
+def fnNil : Val fnList := WType.mk ⟨.inl (), ()⟩ fun p => Empty.elim p
+
+/-- The cons of the pure closure of `f` and `l`. -/
+def fnCons (f : BitVec 8 → BitVec 8) (l : Val fnList) : Val fnList :=
+  WType.mk ⟨.inr (), fun v => .ret (f v)⟩ fun _ => l
+
+/-- The composite of the functions applied to `0`, the head last: the eliminator applies the
+function of the field to the recursive result at the child. -/
+def applyAllT : Tm [fnList] (.word 8) :=
+  fold (pair (lam (lit (.word 8) (0 : BitVec 8)))
+      (lam (app (fst (var .here)) (app (snd (snd (var .here))) (lit .unit ())))))
+    (var .here)
+
+/-- Two successors after `0`. -/
+theorem applyAllT_den :
+    applyAllT.den (Env.nil.cons (fnCons (· + 1) (fnCons (· + 1) fnNil))) = .ret (2 : BitVec 8) := by
+  rfl
+
+/-- Adequacy at a field holding a function: in an environment related to itself (the lifting of
+the relation of the fields over the W-type), the evaluator with its ticks erased is the
+denotation. -/
+theorem applyAllT_eval_erase (w : Val fnList) (hw : ValRel fnList w w) :
+    (applyAllT.eval (Env.nil.cons w)).erase = applyAllT.den (Env.nil.cons w) :=
+  ((applyAllT.interp_rel (EnvRel.cons (fun _ x => by cases x) hw)).mono
+    fun u v huv => (ValRel.iff_eq_of_FO (.word 8) trivial u v).1 huv).erase_eq
+
+/-- The pure closures of Lean functions on bytes are related to themselves, and so is every list
+of them. -/
+theorem fnCons_rel (f : BitVec 8 → BitVec 8) {l : Val fnList} (hl : ValRel fnList l l) :
+    ValRel fnList (fnCons f l) (fnCons f l) :=
+  Container.WLift.mk (fun x y hxy => by subst hxy; exact .ret rfl) fun _ => hl
+
+theorem applyAllT_inDtFrag : applyAllT.InDtFrag := by
+  simp [applyAllT, InDtFrag, Tm.Pure, headVar?, Ty.isArr]
+
+/-- The soundness theorem at a field holding a function: the cost of `applyAllT` is bounded by
+its allowance and the charges of `Tm.dt` in every environment related to a translated one, a
+translated list holding pure costed closures. -/
+theorem applyAllT_cost_le_dt {η : EnvHat [fnList]} {ρ : Env [fnList]} (hρ : SimEnv η ρ) :
+    applyAllT.cost ρ ≤ applyAllT.allow + SPTree.Timed.stepTime (applyAllT.dt η) :=
+  cost_le_dt applyAllT applyAllT_inDtFrag hρ
+
+end CatCrypt.Complexity.D.MuTest

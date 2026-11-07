@@ -96,6 +96,19 @@ instance FTy.instInhabited : (f : FTy) → Inhabited f.den
 
 instance FTy.instNonempty (f : FTy) : Nonempty f.den := ⟨default⟩
 
+/-- The decision of equality on a finite ground type. It is not an instance: a type parameter of
+`reflect_d` is a finite ground type `MF` at `MF.den`, whose `DecidableEq` instance is a binder of
+its theorems. -/
+def FTy.decEq : (f : FTy) → DecidableEq f.den
+  | .unit => inferInstanceAs (DecidableEq Unit)
+  | .bool => inferInstanceAs (DecidableEq Bool)
+  | .word w => inferInstanceAs (DecidableEq (BitVec w))
+  | .fin n => inferInstanceAs (DecidableEq (Fin (n + 1)))
+  | .tab q r =>
+    letI := FTy.decEq r
+    letI := FTy.instFintype r
+    inferInstanceAs (DecidableEq (Fin q → r.den))
+
 /-- The heap location with identifier `n` holding a value of type `f`. -/
 def FTy.loc (f : FTy) (n : ℕ) : Location := { id := n, ty := f.den }
 

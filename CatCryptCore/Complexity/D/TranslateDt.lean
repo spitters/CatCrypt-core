@@ -8,6 +8,7 @@ module
 public import CatCryptCore.Complexity.D.Translate
 public import CatCryptCore.Complexity.D.TimedLink
 public import CatCryptCore.Tactics.StdCosts
+public import CatCryptCore.Container.DillerNahm
 
 /-!
 # The charges of `derive_timed` on D terms, with one soundness theorem
@@ -19,19 +20,31 @@ argument), a conditional and a match on a sum or a list cost one plus the scruti
 branch taken, constructors, projections, literals, variables and abstractions are free, an
 operation on words or `Bool` costs one, a left fold costs the registered cost
 `List.foldl.timedCost` of its step closure, an iteration one plus the step per round
-(`iterCost`), and a `sample`, `get`, `set` or `query` node costs its unit. `Tm.allow t` counts
+(`iterCost`), a constructor `con` nothing, its children being a table (`conHat`), as
+`derive_timed` charges a constructor, an eliminator `fold` one plus
+the cost of the step function of the root, a recursive result one plus the cost of the step
+function at the child each time the step applies it (`foldHat`, `stepHat`), a table `ptab` the
+sum of the charges of its components (`tabCost`), a read `papp` and a pair `spair` nothing, a
+case analysis `scase` on a dependent pair or `fcase` on a finite ground value one plus the
+scrutinee and the branch taken, and a `sample`, `get`, `set` or `query` node costs its unit. `Tm.allow t` counts
 on the syntax the β-steps of D that these charges leave out: one per `letE` and `seq`, one per
 call on `unit`.
 This is the cost model of the call-by-value λ-calculus of Forster and Kunze (*A Certifying
 Extraction with Time Bounds from Coq to Call-By-Value Lambda Calculus*, ITP 2019), with the
 charges of `derive_timed`.
 
-Values are translated by `Ty.hat`: a first-order type to its values, a function type to a pure
-costed closure, a function and its cost. An environment `EnvHat Γ` gives a variable of function
+Values are translated by `Ty.hat`, by recursion on the code: a first-order type to its values,
+an inductive type to the W-type of its constructors with their translated fields (`Sig.hatF`),
+so that a field may hold a pure costed closure, a function type to a pure costed closure, a
+function and its cost, the costed function `Container.Costed` of the Diller–Nahm model (whose
+morphism is `Container.Costed.toDN`), a dependent product `pi f B` to the table of the translated components, a dependent
+sum `sig f B` to the dependent pair of an index and a translated value of `B j`. An environment `EnvHat Γ` gives a variable of function
 type a costed tree for each argument (`Ty.hatE`), so that a function variable is an effectful
 parameter, as in the telescope of `link_timed`. `Sim` relates translated values and values of
 D (the step equation of a data function at function types), `SimE` an environment entry and a
-value (`TimedSim` at allowance `0` for a function variable).
+value (`TimedSim` at allowance `0` for a function variable); at an inductive type `Sim` is the
+lifting `Container.WLift` of `Sim` at the fields over the W-type: two nodes of one constructor with
+related fields and related children.
 
 The soundness theorem `Tm.dt_timedSim` states, for a term of the fragment `Tm.InDtFrag` in
 related environments, `TimedSim (Sim τ) 1 t.allow (t.dt η) (t.eval ρ)`: the evaluation of
@@ -46,13 +59,22 @@ erasure `Tm.dt_run`, `Tm.dt_erase`.
 The fragment: variables of a type other than a function type, calls of function variables and
 of pure costed closures, abstractions with a pure body (`Tm.Pure`: no effect and no call of a
 function variable), `letE`, `seq`, literals, pairs and projections, sums and `case`, lists and
-`lcase`, `ite`, `foldl` and `iter` with a step that is a pure costed closure, operations of unit
-cost (on words and `Bool`), `sample`, `get`, `set`, `query` and `fail`. Operations on `ℕ` and on
+`lcase`, `ite`, `foldl` and `iter` with a step that is a pure costed closure, `con`, `fold` with
+step functions that are pure costed closures, `ptab` with pure
+components (a table is built from data, as an abstraction with a pure body), `papp`, `spair`,
+`scase` and `fcase`, operations of unit cost (on words and `Bool`), `sample`, `get`, `set`,
+`query` and `fail`. Operations on `ℕ` and on
 `Fin (n + 1)` are outside it.
 
 ## Main definitions
 
-* `Ty.hat`, `Ty.hatE`, `Sim`, `SimE`, `EnvHat`, `SimEnv`
+* `Ty.hat`, `Sig.hatF`, `ISig.hatF`, `Ty.hatE`, `Sim`, `Sig.SimF`, `ISig.SimF`, `SimE`,
+  `EnvHat`, `SimEnv` (the maps `Container.wmapF`, `Container.iwmapF` of the fields of W-types are
+  in `CatCryptCore/Container/WTypes.lean`)
+* `conHatI`, `stepHatI`, `foldHatI`: the translated node, step and eliminator of an indexed
+  family
+* `tabCost`, `conHat`, `stepHat`, `foldHat`: the charge of a tabulation, the translated node of
+  a constructor, the charges of a step and of an eliminator over translated nodes
 * `Tm.dtC`, `Tm.allowC`: the charges and the allowance at a charge `cc a ≤ 1` of a call;
   `Tm.dt`, `Tm.allow`: at the charge `callCost` of `derive_timed`
 * `Tm.Pure`, `Tm.InDtFrag`, `iterCost`
@@ -61,6 +83,12 @@ cost (on words and `Bool`), `sample`, `get`, `set`, `query` and `fail`. Operatio
 
 * `TimedSimTree.bindCont`, `TimedSim.bindCont`: the costed bind against a D bind under any
   continuation.
+* `tabT_stepN`, `stepAt_sim`, `foldW_sim`: a tabulation and an eliminator at pure costed
+  closures are leaves within their charges, by induction on the signature and on the relation
+  of the values; `conAt_sim`: a constructor builds a node related to the translated node of its
+  translated argument; `conAtI_sim`, `stepAtI_sim`, `foldIW_sim` for indexed families
+* `tabCost_add`, `tabDep_stepN`: the charge of a tabulation is additive, and a dependent
+  tabulation of leaves is a leaf within the sum of their costs
 * `Tm.dtC_timedSim`, `Tm.dt_timedSim`, `Tm.cost_le_dt`, `Tm.dt_run`, `Tm.dt_erase`
 -/
 
@@ -163,15 +191,36 @@ end TimedSim
 
 /-! ## Translated values -/
 
+mutual
+
 /-- The translated values of a type: a function type is a pure costed closure, a function and
-its cost; the other types have their values. -/
+its cost; an inductive type is the W-type of its constructors with their translated fields; the
+other types have their values. -/
 def Ty.hat : Ty → Type
   | .base f => f.den
   | .nat => ℕ
   | .prod a b => Ty.hat a × Ty.hat b
   | .sum a b => Ty.hat a ⊕ Ty.hat b
-  | .arr a b => (Ty.hat a → Ty.hat b) × (Ty.hat a → ℕ)
+  | .arr a b => Container.Costed (Ty.hat a) (Ty.hat b)
   | .list a => List (Ty.hat a)
+  | .mu S => WType (fun s : (c : S.Ctor) × Sig.hatF S c => S.Pos s.1)
+  | .pi f B => (j : f.den) → Ty.hat (B j)
+  | .sig f B => (j : f.den) × Ty.hat (B j)
+  | .imu _ S i => IW (fun j => (c : (S j).Ctor) × ISig.hatF (S j) c) (fun j a => (S j).Pos a.1)
+      (fun j a p => (S j).nx a.1 p) i
+
+/-- The translated fields of the constructors of a signature. -/
+def Sig.hatF : (S : Sig) → S.Ctor → Type
+  | .base a, _ => Ty.hat a
+  | .ext S _ _, .inl c => Sig.hatF S c
+  | .ext _ a _, .inr _ => Ty.hat a
+
+/-- The translated fields of the constructors of an indexed signature. -/
+def ISig.hatF {f : FTy} : (S : ISig f) → S.Ctor → Type
+  | .base a => fun _ => Ty.hat a
+  | .ext S a _ _ => Sum.elim (ISig.hatF S) fun _ => Ty.hat a
+
+end
 
 /-- The translated environment entries: a variable of function type is a costed tree for each
 argument, a variable of any other type a translated value. -/
@@ -182,6 +231,10 @@ def Ty.hatE : Ty → Type 1
   | .sum a b => ULift (Ty.hat (.sum a b))
   | .arr a b => Ty.hat a → ℕ × SPTree.Timed (Ty.hat b)
   | .list a => ULift (Ty.hat (.list a))
+  | .mu S => ULift (Ty.hat (.mu S))
+  | .pi f B => ULift (Ty.hat (.pi f B))
+  | .sig f B => ULift (Ty.hat (.sig f B))
+  | .imu f S i => ULift (Ty.hat (.imu f S i))
 
 /-- Whether a type is a function type. -/
 def Ty.isArr : Ty → Bool
@@ -197,6 +250,10 @@ noncomputable def Ty.ofHat : (τ : Ty) → τ.hat → τ.hatE
   | .sum _ _, u => ⟨u⟩
   | .arr _ _, p => fun u => (p.2 u, .ret (p.1 u))
   | .list _, u => ⟨u⟩
+  | .mu _, u => ⟨u⟩
+  | .pi _ _, u => ⟨u⟩
+  | .sig _ _, u => ⟨u⟩
+  | .imu _ _ _, u => ⟨u⟩
 
 /-- The costed tree of a variable read: the entry as a value at no cost; a variable of
 function type is not read as a value. -/
@@ -207,6 +264,12 @@ noncomputable def Ty.read : (τ : Ty) → τ.hatE → ℕ × SPTree.Timed τ.hat
   | .sum _ _, u => (0, .ret u.down)
   | .arr _ _, _ => (0, .fail)
   | .list _, u => (0, .ret u.down)
+  | .mu _, u => (0, .ret u.down)
+  | .pi _ _, u => (0, .ret u.down)
+  | .sig _ _, u => (0, .ret u.down)
+  | .imu _ _ _, u => (0, .ret u.down)
+
+mutual
 
 /-- The value of D of a translated first-order value. -/
 def Ty.toVal : (τ : Ty) → τ.FO → τ.hat → Val τ
@@ -216,6 +279,29 @@ def Ty.toVal : (τ : Ty) → τ.FO → τ.hat → Val τ
   | .sum a b, h, u => Sum.map (a.toVal h.1) (b.toVal h.2) u
   | .arr _ _, h, _ => False.elim h
   | .list a, h, u => List.map (a.toVal h) u
+  | .mu S, h, u => Container.wmapF (P := S.Pos) (fun c x => Sig.toValF S h c x) u
+  | .pi _ B, h, u => fun j => (B j).toVal (h j) (u j)
+  | .sig _ B, h, u => ⟨u.1, (B u.1).toVal (h u.1) u.2⟩
+  | .imu _ S _, h, u => Container.iwmapF
+      (C := fun j => (S j).Ctor) (P := fun j c => (S j).Pos c) (nx := fun j c p => (S j).nx c p)
+      (fun j c x => ISig.toValF (S j) (h j) c x) u
+
+/-- The field of D of a translated field of a first-order signature. -/
+def Sig.toValF : (S : Sig) → S.FO → (c : S.Ctor) → S.hatF c → S.Fld c
+  | .base a, h, _, x => a.toVal h x
+  | .ext S _ _, h, .inl c, x => Sig.toValF S h.1 c x
+  | .ext _ a _, h, .inr _, x => a.toVal h.2 x
+
+/-- The field of D of a translated field of a first-order indexed signature. -/
+def ISig.toValF {f : FTy} : (S : ISig f) → S.FO → (c : S.Ctor) → S.hatF c → S.Fld c
+  | .base a, h => fun _ x => a.toVal h x
+  | .ext S a _ _, h => fun c => match c with
+    | .inl c => ISig.toValF S h.1 c
+    | .inr _ => fun x => a.toVal h.2 x
+
+end
+
+mutual
 
 /-- The translated value of a first-order value of D. -/
 def Ty.ofVal : (τ : Ty) → τ.FO → Val τ → τ.hat
@@ -225,10 +311,34 @@ def Ty.ofVal : (τ : Ty) → τ.FO → Val τ → τ.hat
   | .sum a b, h, v => Sum.map (a.ofVal h.1) (b.ofVal h.2) v
   | .arr _ _, h, _ => False.elim h
   | .list a, h, v => List.map (a.ofVal h) v
+  | .mu S, h, v => Container.wmapF (P := S.Pos) (fun c x => Sig.ofValF S h c x) v
+  | .pi _ B, h, v => fun j => (B j).ofVal (h j) (v j)
+  | .sig _ B, h, v => ⟨v.1, (B v.1).ofVal (h v.1) v.2⟩
+  | .imu _ S _, h, v => Container.iwmapF
+      (C := fun j => (S j).Ctor) (P := fun j c => (S j).Pos c) (nx := fun j c p => (S j).nx c p)
+      (fun j c x => ISig.ofValF (S j) (h j) c x) v
+
+/-- The translated field of a field of D of a first-order signature. -/
+def Sig.ofValF : (S : Sig) → S.FO → (c : S.Ctor) → S.Fld c → S.hatF c
+  | .base a, h, _, x => a.ofVal h x
+  | .ext S _ _, h, .inl c, x => Sig.ofValF S h.1 c x
+  | .ext _ a _, h, .inr _, x => a.ofVal h.2 x
+
+/-- The translated field of a field of D of a first-order indexed signature. -/
+def ISig.ofValF {f : FTy} : (S : ISig f) → S.FO → (c : S.Ctor) → S.Fld c → S.hatF c
+  | .base a, h => fun _ x => a.ofVal h x
+  | .ext S a _ _, h => fun c => match c with
+    | .inl c => ISig.ofValF S h.1 c
+    | .inr _ => fun x => a.ofVal h.2 x
+
+end
+
+mutual
 
 /-- Translated values and values of D: equal at ground types, componentwise at products, sums
-and lists, and at a function type the step equation of a data function, its steps bounded by
-the cost of the closure. -/
+and lists, at a function type the step equation of a data function, its steps bounded by the
+cost of the closure, and at an inductive type the lifting `Container.WLift` of the relation of the
+fields: two nodes of one constructor with related fields and related children. -/
 def Sim : (τ : Ty) → τ.hat → Val τ → Prop
   | .base _, u, v => u = v
   | .nat, u, v => u = v
@@ -237,6 +347,27 @@ def Sim : (τ : Ty) → τ.hat → Val τ → Prop
   | .arr a b, p, g => ∀ u v, Sim a u v →
       ∃ m w, g v = stepN CTree.tick m (.ret w) ∧ m ≤ p.2 u ∧ Sim b (p.1 u) w
   | .list a, u, v => List.Forall₂ (Sim a) u v
+  | .mu S, u, v => Container.WLift (P := S.Pos) (Sig.SimF S) u v
+  | .pi _ B, u, v => ∀ j, Sim (B j) (u j) (v j)
+  | .sig _ B, u, v => ∃ e : u.1 = v.1, Sim (B v.1) (e ▸ u.2) v.2
+  | .imu _ S _, u, v => Container.IWLift
+      (C := fun j => (S j).Ctor) (P := fun j c => (S j).Pos c) (nx := fun j c p => (S j).nx c p)
+      (fun j c x y => ISig.SimF (S j) c x y) u v
+
+/-- `Sim` at the fields of the constructors of a signature. -/
+def Sig.SimF : (S : Sig) → (c : S.Ctor) → S.hatF c → S.Fld c → Prop
+  | .base a, _, x, y => Sim a x y
+  | .ext S _ _, .inl c, x, y => Sig.SimF S c x y
+  | .ext _ a _, .inr _, x, y => Sim a x y
+
+/-- `Sim` at the fields of the constructors of an indexed signature. -/
+def ISig.SimF {f : FTy} : (S : ISig f) → (c : S.Ctor) → S.hatF c → S.Fld c → Prop
+  | .base a => fun _ x y => Sim a x y
+  | .ext S a _ _ => fun c => match c with
+    | .inl c => ISig.SimF S c
+    | .inr _ => fun x y => Sim a x y
+
+end
 
 /-- Environment entries and values of D: `Sim` at a type other than a function type; at a
 function type, the costed tree of each related argument simulates the call at allowance
@@ -248,6 +379,10 @@ def SimE : (τ : Ty) → τ.hatE → Val τ → Prop
   | .sum a b, u, v => Sim (.sum a b) u.down v
   | .arr a b, F, g => ∀ u v, Sim a u v → TimedSim (Sim b) 1 0 (F u) (g v)
   | .list a, u, v => Sim (.list a) u.down v
+  | .mu S, u, v => Sim (.mu S) u.down v
+  | .pi f B, u, v => Sim (.pi f B) u.down v
+  | .sig f B, u, v => Sim (.sig f B) u.down v
+  | .imu f S i, u, v => Sim (.imu f S i) u.down v
 
 /-- Translated environments. -/
 def EnvHat (Γ : List Ty) : Type 1 := (τ : Ty) → Var Γ τ → τ.hatE
@@ -264,46 +399,140 @@ def SimEnv {Γ : List Ty} (η : EnvHat Γ) (ρ : Env Γ) : Prop :=
 
 /-! ## Lemmas on translated values -/
 
+mutual
+
 /-- At a first-order type, a value of D related to a translated value is its value of D. -/
 theorem Sim.toVal_eq : ∀ (τ : Ty) (h : τ.FO) {u : τ.hat} {v : Val τ}, Sim τ u v →
-    v = τ.toVal h u := by
-  intro τ
-  induction τ with
-  | base f => intro _ u v hs; exact hs.symm
-  | nat => intro _ u v hs; exact hs.symm
-  | prod a b iha ihb =>
-    intro h u v hs
-    exact Prod.ext (iha h.1 hs.1) (ihb h.2 hs.2)
-  | sum a b iha ihb =>
-    intro h u v hs
+    v = τ.toVal h u
+  | .base _, _, _, _, hs => hs.symm
+  | .nat, _, _, _, hs => hs.symm
+  | .prod a b, h, _, _, hs => Prod.ext (Sim.toVal_eq a h.1 hs.1) (Sim.toVal_eq b h.2 hs.2)
+  | .sum a b, h, _, _, hs => by
     cases hs with
-    | inl hs => exact congrArg Sum.inl (iha h.1 hs)
-    | inr hs => exact congrArg Sum.inr (ihb h.2 hs)
-  | arr a b _ _ => intro h; exact h.elim
-  | list a ih =>
-    intro h u v hs
+    | inl hs => exact congrArg Sum.inl (Sim.toVal_eq a h.1 hs)
+    | inr hs => exact congrArg Sum.inr (Sim.toVal_eq b h.2 hs)
+  | .arr _ _, h, _, _, _ => h.elim
+  | .list a, h, _, _, hs => by
     induction hs with
     | nil => rfl
-    | cons hx _ ihl => exact congrArg₂ List.cons (ih h hx) ihl
+    | cons hx _ ihl => exact congrArg₂ List.cons (Sim.toVal_eq a h hx) ihl
+  | .mu S, h, u, v, hs => by
+    change Container.WLift (P := S.Pos) (Sig.SimF S) u v at hs
+    induction hs with
+    | @mk c x y k k' hxy _ ih =>
+      have e1 := Sig.SimF.toVal_eq S h c hxy
+      subst e1
+      have e2 : k' = fun p => Ty.toVal (.mu S) h (k p) := funext ih
+      subst e2
+      rfl
+  | .pi _ B, h, _, _, hs => funext fun j => Sim.toVal_eq (B j) (h j) (hs j)
+  | .sig f B, h, u, v, hs => by
+    change (j : f.den) × Ty.hat (B j) at u
+    change (j : f.den) × Val (B j) at v
+    obtain ⟨i, x⟩ := u
+    obtain ⟨j, y⟩ := v
+    change ∃ e : i = j, Sim (B j) (e ▸ x) y at hs
+    obtain ⟨rfl, hxy⟩ := hs
+    show (⟨i, y⟩ : (j : f.den) × Val (B j)) = ⟨i, (B i).toVal (h i) x⟩
+    rw [← Sim.toVal_eq (B i) (h i) hxy]
+  | .imu f S _, h, u, v, hs => by
+    have h' : ∀ j, (S j).FO := h
+    show v = Container.iwmapF
+        (C := fun j => (S j).Ctor) (P := fun j c => (S j).Pos c)
+        (nx := fun j c p => (S j).nx c p) (fun j c x => ISig.toValF (S j) (h' j) c x) u
+    clear h
+    change Container.IWLift
+        (C := fun j => (S j).Ctor) (P := fun j c => (S j).Pos c)
+        (nx := fun j c p => (S j).nx c p) (fun j c x y => ISig.SimF (S j) c x y) u v at hs
+    induction hs with
+    | @mk i c x y k k' hxy _ ih =>
+      have e1 := ISig.SimF.toVal_eq (S i) (h' i) c hxy
+      subst e1
+      have e2 : k' = fun p => Container.iwmapF
+          (C := fun j => (S j).Ctor) (P := fun j c => (S j).Pos c) (nx := fun j c p => (S j).nx c p)
+          (fun j c x => ISig.toValF (S j) (h' j) c x) (k p) := funext ih
+      subst e2
+      rfl
+
+/-- At the fields of a first-order signature, a field of D related to a translated field is its
+field of D. -/
+theorem Sig.SimF.toVal_eq : ∀ (S : Sig) (h : S.FO) (c : S.Ctor) {x : S.hatF c} {y : S.Fld c},
+    Sig.SimF S c x y → y = Sig.toValF S h c x
+  | .base a, h, _, _, _, hs => Sim.toVal_eq a h hs
+  | .ext S _ _, h, .inl c, _, _, hs => Sig.SimF.toVal_eq S h.1 c hs
+  | .ext _ a _, h, .inr _, _, _, hs => Sim.toVal_eq a h.2 hs
+
+/-- At the fields of a first-order indexed signature, a field of D related to a translated field
+is its field of D. -/
+theorem ISig.SimF.toVal_eq {f : FTy} : ∀ (S : ISig f) (h : S.FO) (c : S.Ctor) {x : S.hatF c}
+    {y : S.Fld c}, ISig.SimF S c x y → y = ISig.toValF S h c x
+  | .base a, h, _, _, _, hs => Sim.toVal_eq a h hs
+  | .ext S a _ _, h, c, _, _, hs => by
+    cases c with
+    | inl c => exact ISig.SimF.toVal_eq S h.1 c hs
+    | inr _ => exact Sim.toVal_eq a h.2 hs
+
+end
+
+mutual
 
 /-- At a first-order type, the translated value of a value of D is related to it. -/
-theorem Sim.ofVal : ∀ (τ : Ty) (h : τ.FO) (v : Val τ), Sim τ (τ.ofVal h v) v := by
-  intro τ
-  induction τ with
-  | base f => intro _ v; rfl
-  | nat => intro _ v; rfl
-  | prod a b iha ihb => intro h v; exact ⟨iha h.1 v.1, ihb h.2 v.2⟩
-  | sum a b iha ihb =>
-    intro h v
+theorem Sim.ofVal : ∀ (τ : Ty) (h : τ.FO) (v : Val τ), Sim τ (τ.ofVal h v) v
+  | .base _, _, _ => rfl
+  | .nat, _, _ => rfl
+  | .prod a b, h, v => ⟨Sim.ofVal a h.1 v.1, Sim.ofVal b h.2 v.2⟩
+  | .sum a b, h, v => by
     cases v with
-    | inl x => exact Sum.LiftRel.inl (iha h.1 x)
-    | inr y => exact Sum.LiftRel.inr (ihb h.2 y)
-  | arr a b _ _ => intro h; exact h.elim
-  | list a ih =>
-    intro h v
+    | inl x => exact Sum.LiftRel.inl (Sim.ofVal a h.1 x)
+    | inr y => exact Sum.LiftRel.inr (Sim.ofVal b h.2 y)
+  | .arr _ _, h, _ => h.elim
+  | .list a, h, v => by
     induction v with
     | nil => exact List.Forall₂.nil
-    | cons x xs ihl => exact List.Forall₂.cons (ih h x) ihl
+    | cons x xs ihl => exact List.Forall₂.cons (Sim.ofVal a h x) ihl
+  | .mu S, h, v => by
+    induction v with
+    | mk a k ih =>
+      obtain ⟨c, y⟩ := a
+      exact Container.WLift.mk (Sig.SimF.ofVal S h c y) ih
+  | .pi _ B, h, v => fun j => Sim.ofVal (B j) (h j) (v j)
+  | .sig _ B, h, v => ⟨rfl, Sim.ofVal (B v.1) (h v.1) v.2⟩
+  | .imu _ S _, h, v => by
+    have h' : ∀ j, (S j).FO := h
+    show Container.IWLift
+        (C := fun j => (S j).Ctor) (P := fun j c => (S j).Pos c)
+        (nx := fun j c p => (S j).nx c p) (fun j c x y => ISig.SimF (S j) c x y)
+      (Container.iwmapF
+          (C := fun j => (S j).Ctor) (P := fun j c => (S j).Pos c)
+          (nx := fun j c p => (S j).nx c p) (fun j c x => ISig.ofValF (S j) (h' j) c x) v) v
+    clear h
+    induction v with
+    | mk i a k ih =>
+      obtain ⟨c, y⟩ := a
+      exact Container.IWLift.mk
+          (C := fun j => (S j).Ctor) (P := fun j c => (S j).Pos c)
+          (nx := fun j c p => (S j).nx c p) (R := fun j c x y => ISig.SimF (S j) c x y)
+        (ISig.SimF.ofVal (S i) (h' i) c y) ih
+
+/-- At the fields of a first-order signature, the translated field of a field of D is related to
+it. -/
+theorem Sig.SimF.ofVal : ∀ (S : Sig) (h : S.FO) (c : S.Ctor) (y : S.Fld c),
+    Sig.SimF S c (Sig.ofValF S h c y) y
+  | .base a, h, _, y => Sim.ofVal a h y
+  | .ext S _ _, h, .inl c, y => Sig.SimF.ofVal S h.1 c y
+  | .ext _ a _, h, .inr _, y => Sim.ofVal a h.2 y
+
+/-- At the fields of a first-order indexed signature, the translated field of a field of D is
+related to it. -/
+theorem ISig.SimF.ofVal {f : FTy} : ∀ (S : ISig f) (h : S.FO) (c : S.Ctor) (y : S.Fld c),
+    ISig.SimF S c (ISig.ofValF S h c y) y
+  | .base a, h, _, y => Sim.ofVal a h y
+  | .ext S a _ _, h, c, y => by
+    cases c with
+    | inl c => exact ISig.SimF.ofVal S h.1 c y
+    | inr _ => exact Sim.ofVal a h.2 y
+
+end
 
 /-- A related translated value is a related environment entry. -/
 theorem SimE.ofHat (τ : Ty) {u : τ.hat} {v : Val τ} (hs : Sim τ u v) :
@@ -332,6 +561,8 @@ theorem SimEnv.cons {Γ : List Ty} {σ : Ty} {η : EnvHat Γ} {ρ : Env Γ} {u :
   | here => exact SimE.ofHat σ hs
   | there y => exact hρ _ y
 
+mutual
+
 /-- Every translated type is inhabited. -/
 theorem Ty.hat_nonempty : ∀ τ : Ty, Nonempty τ.hat
   | .base f => FTy.instNonempty f
@@ -340,6 +571,30 @@ theorem Ty.hat_nonempty : ∀ τ : Ty, Nonempty τ.hat
   | .sum a _ => ⟨Sum.inl (Classical.choice (Ty.hat_nonempty a))⟩
   | .arr _ b => ⟨(fun _ => Classical.choice (Ty.hat_nonempty b), fun _ => 0)⟩
   | .list _ => ⟨[]⟩
+  | .mu S => ⟨WType.mk ⟨(Sig.leaf S).1.1, Classical.choice (Sig.hatF_nonempty S _)⟩
+      fun p => ((Sig.leaf S).2 p).elim⟩
+  | .pi _ B => ⟨fun j => Classical.choice (Ty.hat_nonempty (B j))⟩
+  | .sig f B => ⟨⟨(FTy.instInhabited f).default,
+      Classical.choice (Ty.hat_nonempty (B (FTy.instInhabited f).default))⟩⟩
+  | .imu _ S i => ⟨Container.IPW.mk i
+      ⟨(ISig.leaf (S i)).1.1, Classical.choice (ISig.hatF_nonempty (S i) _)⟩
+      fun p => ((ISig.leaf (S i)).2 p).elim⟩
+
+/-- Every translated field is inhabited. -/
+theorem Sig.hatF_nonempty : ∀ (S : Sig) (c : S.Ctor), Nonempty (S.hatF c)
+  | .base a, _ => Ty.hat_nonempty a
+  | .ext S _ _, .inl c => Sig.hatF_nonempty S c
+  | .ext _ a _, .inr _ => Ty.hat_nonempty a
+
+/-- Every translated field of an indexed signature is inhabited. -/
+theorem ISig.hatF_nonempty {f : FTy} : ∀ (S : ISig f) (c : S.Ctor), Nonempty (S.hatF c)
+  | .base a, _ => Ty.hat_nonempty a
+  | .ext S a _ _, c => by
+    cases c with
+    | inl c => exact ISig.hatF_nonempty S c
+    | inr _ => exact Ty.hat_nonempty a
+
+end
 
 /-- The value of a costed tree that is a leaf; a chosen value at any other tree. -/
 noncomputable def Ty.pureVal (τ : Ty) : SPTree.Timed τ.hat → τ.hat
@@ -366,7 +621,9 @@ theorem TimedSim.ret_inv {α β : Type} {R : α → β → Prop} {K n : ℕ} {x 
 /-! ## The charges on D syntax -/
 
 /-- The charge of a call on an argument of type `a`: one, and none on `unit`. -/
-def callCost (a : Ty) : ℕ := if a = .unit then 0 else 1
+def callCost : Ty → ℕ
+  | .base .unit => 0
+  | _ => 1
 
 /-- The charge of a call is at most one. -/
 theorem callCost_le_one (a : Ty) : callCost a ≤ 1 := by
@@ -377,6 +634,115 @@ closure per round. -/
 def iterCost {c : Ty} (p : Ty.hat (.arr c c)) : c.hat → ℕ → ℕ
   | _, 0 => 0
   | acc, k + 1 => 1 + p.2 acc + iterCost p (p.1 acc) k
+
+/-- The charge of a tabulation over `Fin n` at the costs `c`: their sum, in the order of
+`tabFin`. -/
+def tabCostFin : (n : ℕ) → (Fin n → ℕ) → ℕ
+  | 0, _ => 0
+  | n + 1, c => c 0 + tabCostFin n fun i => c i.succ
+
+/-- The charge of a tabulation over the functions `Fin q → r.den`, from the charge `tc` of a
+tabulation over `r`. -/
+def tabCostTab (r : FTy) (tc : (r.den → ℕ) → ℕ) : (q : ℕ) → ((Fin q → r.den) → ℕ) → ℕ
+  | 0, c => c Fin.elim0
+  | q + 1, c => tc fun a => tabCostTab r tc q fun h => c (Fin.cons a h : Fin (q + 1) → r.den)
+
+/-- The charge of a tabulation over a finite ground type at the costs `c`: their sum over the
+elements, in the order of `tabT`. -/
+def tabCost : (f : FTy) → (f.den → ℕ) → ℕ
+  | .unit, c => c ()
+  | .bool, c => c false + c true
+  | .word w, c => tabCostFin (2 ^ w) fun i => c (BitVec.ofFin i)
+  | .fin n, c => tabCostFin (n + 1) c
+  | .tab q r, c => tabCostTab r (tabCost r) q c
+
+/-- The translated node of a constructor of `S` at a translated argument, built by `mk`; the
+children of a constructor with positions are the table in its argument. -/
+def conHat {S₀ : Sig} : (S : Sig) →
+    ((a : (c : S.Ctor) × S.hatF c) → (S.Pos a.1 → Ty.hat (.mu S₀)) → Ty.hat (.mu S₀)) →
+    Ty.hat (S.conTy (.mu S₀)) → Ty.hat (.mu S₀)
+  | .base _, mk, u => mk ⟨(), u⟩ fun p => Empty.elim p
+  | .ext S _ none, mk, .inl u => conHat S (fun b k => mk ⟨.inl b.1, b.2⟩ k) u
+  | .ext _ _ none, mk, .inr u => mk ⟨.inr (), u⟩ fun p => Empty.elim p
+  | .ext S _ (some _), mk, .inl u => conHat S (fun b k => mk ⟨.inl b.1, b.2⟩ k) u
+  | .ext _ a (some f), mk, .inr u =>
+    let u' : a.hat × (f.den → Ty.hat (.mu S₀)) := u
+    mk ⟨.inr (), u'.1⟩ u'.2
+
+/-- The costed step of an eliminator of `S` at a translated node of constructor and field `a`,
+from the translated step functions `p`, the translated children `kids` and the costed recursive
+results `rec`: the value and the cost of the step function of the constructor at the field, the
+children and the results. -/
+noncomputable def stepHat {S₀ : Sig} {c : Ty} : (S : Sig) →
+    Ty.hat (S.stepsTy (.mu S₀) c) → (a : (c : S.Ctor) × S.hatF c) →
+    (S.Pos a.1 → Ty.hat (.mu S₀)) → (S.Pos a.1 → c.hat × ℕ) → c.hat × ℕ
+  | .base a, p, ⟨_, x⟩, _, _ =>
+    let p' : (a.hat → c.hat) × (a.hat → ℕ) := p
+    (p'.1 x, p'.2 x)
+  | .ext S _ _, p, ⟨.inl c', x⟩, kids, rec => stepHat S p.1 ⟨c', x⟩ kids rec
+  | .ext _ a none, p, ⟨.inr _, x⟩, _, _ =>
+    let p' : (a.hat → c.hat) × (a.hat → ℕ) := p.2
+    (p'.1 x, p'.2 x)
+  | .ext _ a (some f), p, ⟨.inr _, x⟩, kids, rec =>
+    let p' : Ty.hat (.arr (Sig.altTy a (some f) (.mu S₀) c) c) := p.2
+    let arg : a.hat × ((f.den → Ty.hat (.mu S₀)) × ((f.den → c.hat) × (f.den → ℕ))) :=
+      (x, kids, (fun j => (rec j).1, fun j => (rec j).2))
+    (p'.1 arg, p'.2 arg)
+
+/-- The costed eliminator of `mu S` with the translated step functions `p`: the value and the
+cost of the step at each node, its recursive results the costed eliminator at the children. -/
+noncomputable def foldHat {S : Sig} {c : Ty} (p : Ty.hat (S.stepsTy (.mu S) c)) :
+    Ty.hat (.mu S) → c.hat × ℕ
+  | ⟨a, kids⟩ => stepHat S p a kids fun j => foldHat p (kids j)
+
+/-- The translated node of a constructor of a signature of an indexed family at a translated
+argument, built by `mk`. -/
+def conHatI {f : FTy} {X : f.den → Ty} {R : Type} : (S : ISig f) →
+    ((a : (c : S.Ctor) × S.hatF c) → ((p : S.Pos a.1) → Ty.hat (X (S.nx a.1 p))) → R) →
+    Ty.hat (S.conTy X) → R
+  | .base _, mk, u => mk ⟨(), u⟩ fun p => Empty.elim p
+  | .ext S _ none _, mk, u =>
+    match (u : Ty.hat (S.conTy X) ⊕ Ty.hat _) with
+    | .inl u => conHatI S (fun a k => mk ⟨.inl a.1, a.2⟩ k) u
+    | .inr u => mk ⟨.inr (), u⟩ fun p => Empty.elim p
+  | .ext S a (some h) nx, mk, u =>
+    match (u : Ty.hat (S.conTy X) ⊕ (a.hat × ((p : h.den) → Ty.hat (X (nx p))))) with
+    | .inl u => conHatI S (fun a k => mk ⟨.inl a.1, a.2⟩ k) u
+    | .inr u => mk ⟨.inr (), u.1⟩ u.2
+
+/-- The costed step of an eliminator at a signature of an indexed family, at a translated node:
+the value and the cost of the step function of the constructor at the field, the children and
+the costed recursive results, each recursive result a costed closure on `unit`. -/
+noncomputable def stepHatI {f : FTy} {X c : f.den → Ty} {r : Ty} : (S : ISig f) →
+    Ty.hat (S.stepsTy X c r) → (a : (c' : S.Ctor) × S.hatF c') →
+    ((p : S.Pos a.1) → Ty.hat (X (S.nx a.1 p))) → ((p : S.Pos a.1) → (c (S.nx a.1 p)).hat × ℕ) →
+    r.hat × ℕ
+  | .base a, p, x, _, _ =>
+    let p' : (a.hat → r.hat) × (a.hat → ℕ) := p
+    (p'.1 x.2, p'.2 x.2)
+  | .ext S a none _, p, ⟨c', x⟩, kids, rec =>
+    match c', x, kids, rec with
+    | .inl c'', x, kids, rec => stepHatI S p.1 ⟨c'', x⟩ kids rec
+    | .inr _, x, _, _ =>
+      let p' : (a.hat → r.hat) × (a.hat → ℕ) := p.2
+      (p'.1 x, p'.2 x)
+  | .ext S a (some h) nx, p, ⟨c', x⟩, kids, rec =>
+    match c', x, kids, rec with
+    | .inl c'', x, kids, rec => stepHatI S p.1 ⟨c'', x⟩ kids rec
+    | .inr _, x, kids, rec =>
+      let p' : Ty.hat (.arr (ISig.altTy a (some h) nx X c) r) := p.2
+      let arg : a.hat × (((q : h.den) → Ty.hat (X (nx q))) ×
+          ((q : h.den) → (Unit → (c (nx q)).hat) × (Unit → ℕ))) :=
+        (x, kids, fun q => (fun _ => (rec q).1, fun _ => (rec q).2))
+      (p'.1 arg, p'.2 arg)
+
+/-- The costed eliminator of an indexed family with the table `p` of translated step functions:
+the value and the cost of the step at each node, its recursive results the costed eliminator at
+the children. -/
+noncomputable def foldHatI {f : FTy} {S : f.den → ISig f} {c : f.den → Ty}
+    (p : (j : f.den) → Ty.hat ((S j).stepsTy (fun j' => .imu f S j') c (c j))) :
+    {i : f.den} → Ty.hat (.imu f S i) → (c i).hat × ℕ
+  | _, .mk i a kids => stepHatI (S i) (p i) a kids fun q => foldHatI p (kids q)
 
 /-- Whether `derive_timed` and D both charge a primitive operation one step: the operations on
 words and `Bool`. -/
@@ -430,7 +796,23 @@ def allowC (cc : Ty → ℕ) : {Γ : List Ty} → {τ : Ty} → Tm Γ τ → ℕ
   | _, _, .iter n f i => n.allowC cc + f.allowC cc + i.allowC cc
   | _, _, .set _ _ x => x.allowC cc
   | _, _, .query _ _ x => x.allowC cc
-  | _, _, _ => 0
+  | _, _, .con x => x.allowC cc
+  | _, _, .fold g x => g.allowC cc + x.allowC cc
+  | _, _, .icon x => x.allowC cc
+  | _, _, .ifold (c := _) g x => g.allowC cc + x.allowC cc
+  | _, _, .ptab (f := f) ts => tabCost f fun j => (ts j).allowC cc
+  | _, _, .papp (B := B) t _ => t.allowC cc
+  | _, _, .spair _ x => x.allowC cc
+  | _, _, .scase s ks => s.allowC cc + Finset.univ.sup fun j => (ks j).allowC cc
+  | _, _, .fcase i ks => i.allowC cc + Finset.univ.sup fun j => (ks j).allowC cc
+  | _, _, .var _ => 0
+  | _, _, .lam _ => 0
+  | _, _, .natLit _ => 0
+  | _, _, .lit _ _ => 0
+  | _, _, .nil => 0
+  | _, _, .sample _ => 0
+  | _, _, .get _ _ => 0
+  | _, _, .fail => 0
 
 /-- The costed tree of the charges of `derive_timed` for a term, a call of a function variable on
 an argument of type `a` charged `cc a`; outside the fragment `InDtFrag` it is `fail`. An
@@ -488,6 +870,27 @@ noncomputable def dtC (cc : Ty → ℕ) :
   | _, _, .query _ r x, η => bindT (x.dtC cc η) fun _ =>
     (0, .sample r.den (FTy.instFintype r) (FTy.instNonempty r) (fun _ => 0) fun v => .ret v)
   | _, _, .fail, _ => (0, .fail)
+  | _, _, .con (S := S) x, η => bindT (x.dtC cc η) fun u =>
+    (0, .ret (conHat S (fun a k => (WType.mk a k : Ty.hat (.mu S))) u))
+  | _, _, .fold g x, η => bindT (g.dtC cc η) fun p => bindT (x.dtC cc η) fun w =>
+    (1 + (foldHat p w).2, .ret (foldHat p w).1)
+  | _, _, .icon (f := f) (S := S) (i := i) x, η => bindT (x.dtC cc η) fun u =>
+    (0, .ret (conHatI (X := fun j => .imu f S j) (S i)
+      (fun a k => (Container.IPW.mk i a k : Ty.hat (.imu f S i))) u))
+  | _, _, .ifold (c := c) g x, η => bindT (g.dtC cc η) fun p => bindT (x.dtC cc η) fun w =>
+    (1 + (foldHatI (c := c) p w).2, .ret (foldHatI (c := c) p w).1)
+  | _, _, .ptab (f := f) (B := B) ts, η =>
+    (tabCost f fun j => ((ts j).dtC cc η).1,
+      .ret fun j => (B j).pureVal ((ts j).dtC cc η).2)
+  | _, _, .papp (B := B) t j, η =>
+    bindT (t.dtC cc η) fun (u : (j : _) → (B j).hat) => (0, .ret (u j))
+  | _, _, .spair (f := f) (B := B) j x, η =>
+    bindT (x.dtC cc η) fun u => (0, .ret (⟨j, u⟩ : (j : f.den) × (B j).hat))
+  | _, _, .scase (f := f) (B := B) s ks, η =>
+    bindT (s.dtC cc η) fun (u : (j : f.den) × (B j).hat) =>
+      SPTree.Timed.delay 1 ((ks u.1).dtC cc (η.cons u.2))
+  | _, _, .fcase (f := f) i ks, η =>
+    bindT (i.dtC cc η) fun (j : f.den) => SPTree.Timed.delay 1 ((ks j).dtC cc η)
 
 /-- The allowance at the charges of `derive_timed`: `callCost`, one per call and none on `unit`. -/
 def allow (t : Tm Γ τ) : ℕ := t.allowC callCost
@@ -518,7 +921,20 @@ def Pure : {Γ : List Ty} → {τ : Ty} → Tm Γ τ → Prop
   | _, _, .lcase xs n c => xs.Pure ∧ n.Pure ∧ c.Pure
   | _, _, .foldl f i xs => f.Pure ∧ i.Pure ∧ xs.Pure
   | _, _, .iter n f i => n.Pure ∧ f.Pure ∧ i.Pure
-  | _, _, _ => False
+  | _, _, .con x => x.Pure
+  | _, _, .fold g x => g.Pure ∧ x.Pure
+  | _, _, .icon x => x.Pure
+  | _, _, .ifold (c := _) g x => g.Pure ∧ x.Pure
+  | _, _, .ptab ts => ∀ j, (ts j).Pure
+  | _, _, .papp (B := B) t _ => t.Pure
+  | _, _, .spair _ x => x.Pure
+  | _, _, .scase s ks => s.Pure ∧ ∀ j, (ks j).Pure
+  | _, _, .fcase i ks => i.Pure ∧ ∀ j, (ks j).Pure
+  | _, _, .sample _ => False
+  | _, _, .get _ _ => False
+  | _, _, .set _ _ _ => False
+  | _, _, .query _ _ _ => False
+  | _, _, .fail => False
 
 /-- The costed tree of a pure term is a leaf. -/
 theorem dtC_pure (cc : Ty → ℕ) : ∀ {Γ : List Ty} {τ : Ty} (t : Tm Γ τ), t.Pure →
@@ -629,6 +1045,51 @@ theorem dtC_pure (cc : Ty → ℕ) : ∀ {Γ : List Ty} {τ : Ty} (t : Tm Γ τ)
   | set n f x ih => intro ht; simp [Pure] at ht
   | query d r x ih => intro ht; simp [Pure] at ht
   | fail => intro ht; simp [Pure] at ht
+  | con x ih =>
+    intro ht η
+    obtain ⟨u, hu⟩ := ih ht η
+    simp only [dtC, bindT, SPTree.Timed.delay, hu, SPTree.Timed.bind]
+    exact ⟨_, rfl⟩
+  | fold g x ihg ihx =>
+    intro ht η
+    obtain ⟨p, hp⟩ := ihg ht.1 η
+    obtain ⟨w, hw⟩ := ihx ht.2 η
+    simp only [dtC, bindT, SPTree.Timed.delay, hp, hw, SPTree.Timed.bind]
+    exact ⟨_, rfl⟩
+  | icon x ih =>
+    intro ht η
+    obtain ⟨u, hu⟩ := ih ht η
+    simp only [dtC, bindT, SPTree.Timed.delay, hu, SPTree.Timed.bind]
+    exact ⟨_, rfl⟩
+  | ifold g x ihg ihx =>
+    intro ht η
+    obtain ⟨p, hp⟩ := ihg ht.1 η
+    obtain ⟨w, hw⟩ := ihx ht.2 η
+    simp only [dtC, bindT, SPTree.Timed.delay, hp, hw, SPTree.Timed.bind]
+    exact ⟨_, rfl⟩
+  | ptab ts ih => intro _ η; exact ⟨_, rfl⟩
+  | papp t j ih =>
+    intro ht η
+    obtain ⟨u, hu⟩ := ih ht η
+    simp only [dtC, bindT, SPTree.Timed.delay, hu, SPTree.Timed.bind]
+    exact ⟨_, rfl⟩
+  | spair j x ih =>
+    intro ht η
+    obtain ⟨u, hu⟩ := ih ht η
+    simp only [dtC, bindT, SPTree.Timed.delay, hu, SPTree.Timed.bind]
+    exact ⟨_, rfl⟩
+  | scase s ks ihs ihks =>
+    intro ht η
+    obtain ⟨u, hu⟩ := ihs ht.1 η
+    obtain ⟨w, hw⟩ := ihks u.1 (ht.2 u.1) (η.cons u.2)
+    simp only [dtC, bindT, SPTree.Timed.delay, hu, hw, SPTree.Timed.bind]
+    exact ⟨_, rfl⟩
+  | fcase i ks ihi ihks =>
+    intro ht η
+    obtain ⟨u, hu⟩ := ihi ht.1 η
+    obtain ⟨w, hw⟩ := ihks u (ht.2 u) η
+    simp only [dtC, bindT, SPTree.Timed.delay, hu, hw, SPTree.Timed.bind]
+    exact ⟨_, rfl⟩
 
 /-- The fragment of the soundness theorem: variables of a type other than a function type,
 calls of a function variable or of a pure costed closure, abstractions with a pure body,
@@ -660,6 +1121,15 @@ def InDtFrag : {Γ : List Ty} → {τ : Ty} → Tm Γ τ → Prop
   | _, _, .set _ _ x => x.InDtFrag
   | _, _, .query _ _ x => x.InDtFrag
   | _, _, .fail => True
+  | _, _, .con x => x.InDtFrag
+  | _, _, .fold g x => g.InDtFrag ∧ x.InDtFrag
+  | _, _, .icon x => x.InDtFrag
+  | _, _, .ifold (c := _) g x => g.InDtFrag ∧ x.InDtFrag
+  | _, _, .ptab ts => ∀ j, (ts j).InDtFrag ∧ (ts j).Pure
+  | _, _, .papp (B := B) t _ => t.InDtFrag
+  | _, _, .spair _ x => x.InDtFrag
+  | _, _, .scase s ks => s.InDtFrag ∧ ∀ j, (ks j).InDtFrag
+  | _, _, .fcase i ks => i.InDtFrag ∧ ∀ j, (ks j).InDtFrag
 
 /-- A left fold of D with a step related to a pure costed closure, from related accumulators
 over related lists, is a leaf after at most the registered cost of `List.foldl` in ticks, at a
@@ -704,6 +1174,245 @@ theorem iterT_sim {c : Ty} {p : Ty.hat (.arr c c)} {g : Val (.arr c c)}
       rfl
     · simp only [iterCost]
       omega
+
+/-! ## Inductive types -/
+
+/-- A tabulation over `Fin n` of trees that are leaves after `m i` ticks is the leaf of their
+values after `tabCostFin n m` ticks. -/
+theorem tabFin_stepN {X : Type} : ∀ (n : ℕ) {g : Fin n → CTree X} {m : Fin n → ℕ}
+    {w : Fin n → X}, (∀ i, g i = stepN CTree.tick (m i) (.ret (w i))) →
+      tabFin n g = stepN CTree.tick (tabCostFin n m) (.ret w)
+  | 0, _, _, w, _ => by
+    show CTree.ret Fin.elim0 = CTree.ret w
+    exact congrArg CTree.ret (funext fun i => i.elim0)
+  | n + 1, g, m, w, hg => by
+    have ih := tabFin_stepN n (g := fun i => g i.succ) (m := fun i => m i.succ)
+      (w := fun i => w i.succ) fun i => hg i.succ
+    rw [tabFin, hg 0, Reflect.stepN_ret_bind, ih, Reflect.stepN_ret_bind, Reflect.stepN_tick_add]
+    exact congrArg _ (congrArg CTree.ret (Fin.cons_self_tail w))
+
+theorem tabTab_stepN (r : FTy) (tr : ∀ {Y : Type}, (r.den → CTree Y) → CTree (r.den → Y))
+    (tc : (r.den → ℕ) → ℕ)
+    (htr : ∀ {Y : Type} {g : r.den → CTree Y} {m : r.den → ℕ} {w : r.den → Y},
+      (∀ a, g a = stepN CTree.tick (m a) (.ret (w a))) →
+        tr g = stepN CTree.tick (tc m) (.ret w))
+    {X : Type} : ∀ (q : ℕ) {g : (Fin q → r.den) → CTree X} {m : (Fin q → r.den) → ℕ}
+      {w : (Fin q → r.den) → X}, (∀ v, g v = stepN CTree.tick (m v) (.ret (w v))) →
+      tabTab r tr q g = stepN CTree.tick (tabCostTab r tc q m) (.ret w)
+  | 0, g, m, w, hg => by
+    rw [tabTab, hg Fin.elim0, Reflect.stepN_ret_bind]
+    refine congrArg _ (congrArg CTree.ret (funext fun v => ?_))
+    rw [show v = Fin.elim0 from funext fun i => i.elim0]
+  | q + 1, g, m, w, hg => by
+    have hin := fun a => tabTab_stepN r tr tc htr q
+      (g := fun h => g (Fin.cons a h : Fin (q + 1) → r.den))
+      (m := fun h => m (Fin.cons a h : Fin (q + 1) → r.den))
+      (w := fun h => w (Fin.cons a h : Fin (q + 1) → r.den)) fun h => hg _
+    rw [tabTab, htr hin, Reflect.stepN_ret_bind]
+    exact congrArg _ (congrArg CTree.ret (funext fun v => by simp only [Fin.cons_self_tail]))
+
+/-- A tabulation of trees that are leaves after `m j` ticks is the leaf of their values after
+`tabCost f m` ticks. -/
+theorem tabT_stepN : ∀ (f : FTy) {X : Type} {g : f.den → CTree X} {m : f.den → ℕ}
+    {w : f.den → X}, (∀ j, g j = stepN CTree.tick (m j) (.ret (w j))) →
+      tabT f g = stepN CTree.tick (tabCost f m) (.ret w)
+  | .unit, X, g, m, w, hg => by
+    rw [tabT, hg (), Reflect.stepN_ret_bind]
+    rfl
+  | .bool, X, g, m, w, hg => by
+    rw [tabT, hg false, Reflect.stepN_ret_bind, hg true, Reflect.stepN_ret_bind,
+      Reflect.stepN_tick_add]
+    exact congrArg _ (congrArg CTree.ret (funext fun b => by cases b <;> rfl))
+  | .word n, X, g, m, w, hg => by
+    rw [tabT, tabFin_stepN (2 ^ n) (m := fun i => m (BitVec.ofFin i))
+      (w := fun i => w (BitVec.ofFin i)) fun i => hg _, Reflect.stepN_ret_bind]
+    rfl
+  | .fin n, X, g, m, w, hg => tabFin_stepN (n + 1) hg
+  | .tab q r, X, g, m, w, hg =>
+    tabTab_stepN r (fun g' => tabT r g') (tabCost r) (fun h => tabT_stepN r h) q hg
+
+theorem tabCostFin_mono : ∀ (n : ℕ) {c c' : Fin n → ℕ}, (∀ i, c i ≤ c' i) →
+    tabCostFin n c ≤ tabCostFin n c'
+  | 0, _, _, _ => le_rfl
+  | n + 1, _, _, h => Nat.add_le_add (h 0) (tabCostFin_mono n fun i => h i.succ)
+
+theorem tabCostTab_mono (r : FTy) (tc : (r.den → ℕ) → ℕ)
+    (htc : ∀ {c c' : r.den → ℕ}, (∀ a, c a ≤ c' a) → tc c ≤ tc c') :
+    ∀ (q : ℕ) {c c' : (Fin q → r.den) → ℕ}, (∀ v, c v ≤ c' v) →
+      tabCostTab r tc q c ≤ tabCostTab r tc q c'
+  | 0, _, _, h => h _
+  | q + 1, _, _, h => htc fun _ => tabCostTab_mono r tc htc q fun _ => h _
+
+/-- The charge of a tabulation is monotone in the costs. -/
+theorem tabCost_mono : ∀ (f : FTy) {c c' : f.den → ℕ}, (∀ j, c j ≤ c' j) →
+    tabCost f c ≤ tabCost f c'
+  | .unit, _, _, h => h ()
+  | .bool, _, _, h => Nat.add_le_add (h false) (h true)
+  | .word n, _, _, h => tabCostFin_mono (2 ^ n) fun _ => h _
+  | .fin n, _, _, h => tabCostFin_mono (n + 1) h
+  | .tab q r, _, _, h => tabCostTab_mono r (tabCost r) (fun h' => tabCost_mono r h') q h
+
+theorem tabCostFin_add : ∀ (n : ℕ) (c c' : Fin n → ℕ),
+    tabCostFin n (fun i => c i + c' i) = tabCostFin n c + tabCostFin n c'
+  | 0, _, _ => rfl
+  | n + 1, c, c' => by
+    simp only [tabCostFin, tabCostFin_add n (fun i => c i.succ) (fun i => c' i.succ)]
+    omega
+
+theorem tabCostTab_add (r : FTy) (tc : (r.den → ℕ) → ℕ)
+    (htc : ∀ c c' : r.den → ℕ, tc (fun a => c a + c' a) = tc c + tc c') :
+    ∀ (q : ℕ) (c c' : (Fin q → r.den) → ℕ),
+      tabCostTab r tc q (fun v => c v + c' v) = tabCostTab r tc q c + tabCostTab r tc q c'
+  | 0, _, _ => rfl
+  | q + 1, c, c' => by
+    simp only [tabCostTab, tabCostTab_add r tc htc q]
+    exact htc _ _
+
+/-- The charge of a tabulation is additive in the costs. -/
+theorem tabCost_add : ∀ (f : FTy) (c c' : f.den → ℕ),
+    tabCost f (fun j => c j + c' j) = tabCost f c + tabCost f c'
+  | .unit, _, _ => rfl
+  | .bool, c, c' => by simp only [tabCost]; omega
+  | .word n, _, _ => tabCostFin_add (2 ^ n) _ _
+  | .fin n, _, _ => tabCostFin_add (n + 1) _ _
+  | .tab q r, _, _ => tabCostTab_add r (tabCost r) (tabCost_add r) q _ _
+
+/-- A dependent tabulation of trees that are leaves after `m j` ticks is the leaf of their values
+after `tabCost f m` ticks. -/
+theorem tabDep_stepN (f : FTy) {X : f.den → Type} (d : (j : f.den) → X j)
+    {g : (j : f.den) → CTree (X j)} {m : f.den → ℕ} {w : (j : f.den) → X j}
+    (hg : ∀ j, g j = stepN CTree.tick (m j) (.ret (w j))) :
+    tabDep f d g = stepN CTree.tick (tabCost f m) (.ret w) := by
+  have ht := tabT_stepN f (g := fun j => (g j).bind fun x => .ret (⟨j, x⟩ : (j : f.den) × X j))
+    (m := m) (w := fun j => ⟨j, w j⟩) fun j => by rw [hg j, Reflect.stepN_ret_bind]
+  rw [tabDep, ht, Reflect.stepN_ret_bind]
+  exact congrArg _ (congrArg CTree.ret (funext fun j => sigmaAt_mk (FTy.decEq f) d j (w j)))
+
+/-- A constructor at an argument of D related to a translated argument: `R` holds of the nodes
+that `mkH` and `mk` build from related fields and related children. -/
+theorem conAt_sim {S₀ : Sig} {R : Ty.hat (.mu S₀) → Val (.mu S₀) → Prop} : ∀ (S : Sig)
+    (mkH : (a : (c : S.Ctor) × S.hatF c) → (S.Pos a.1 → Ty.hat (.mu S₀)) → Ty.hat (.mu S₀))
+    (mk : (a : (Sig.den S).A) → ((Sig.den S).B a → Val (.mu S₀)) → Val (.mu S₀)),
+    (∀ (c : S.Ctor) (x : S.hatF c) (y : S.Fld c) (k : S.Pos c → Ty.hat (.mu S₀))
+      (k' : S.Pos c → Val (.mu S₀)), Sig.SimF S c x y → (∀ p, Sim (.mu S₀) (k p) (k' p)) →
+      R (mkH ⟨c, x⟩ k) (mk ⟨c, y⟩ k')) →
+    ∀ {u : Ty.hat (S.conTy (.mu S₀))} {v : Val (S.conTy (.mu S₀))}, Sim _ u v →
+      R (conHat S mkH u) (conAt S mk v)
+  | .base _, _, _, hmk, _, _, hs => hmk () _ _ _ _ hs fun p => p.elim
+  | .ext S a none, mkH, mk, hmk, u, v, hs => by
+    have h' : Sum.LiftRel (Sim (S.conTy (.mu S₀))) (Sim a) u v := hs
+    cases h' with
+    | inl h =>
+      exact conAt_sim S (fun b k => mkH ⟨.inl b.1, b.2⟩ k) (fun b k => mk ⟨.inl b.1, b.2⟩ k)
+        (fun c x y k k' hxy hk => hmk (.inl c) x y k k' hxy hk) h
+    | inr h => exact hmk (.inr ()) _ _ _ _ h fun p => p.elim
+  | .ext S a (some f), mkH, mk, hmk, u, v, hs => by
+    have h' : Sum.LiftRel (Sim (S.conTy (.mu S₀))) (Sim (.prod a (.pi f fun _ => .mu S₀))) u
+        v := hs
+    cases h' with
+    | inl h =>
+      exact conAt_sim S (fun b k => mkH ⟨.inl b.1, b.2⟩ k) (fun b k => mk ⟨.inl b.1, b.2⟩ k)
+        (fun c x y k k' hxy hk => hmk (.inl c) x y k k' hxy hk) h
+    | inr h => exact hmk (.inr ()) _ _ _ _ h.1 h.2
+
+/-- A step of an eliminator at step functions related to translated step functions, at related
+fields and children, at recursive results that are leaves within their costs: a leaf after at
+most the cost of `stepHat`, related to its value. -/
+theorem stepAt_sim {S₀ : Sig} {c : Ty} : ∀ (S : Sig)
+    {p : Ty.hat (S.stepsTy (.mu S₀) c)} {g : Val (S.stepsTy (.mu S₀) c)}, Sim _ p g →
+    ∀ {c₀ : S.Ctor} {x : S.hatF c₀} {y : S.Fld c₀}, Sig.SimF S c₀ x y →
+    ∀ {kidsH : S.Pos c₀ → Ty.hat (.mu S₀)} {kids : S.Pos c₀ → Val (.mu S₀)},
+      (∀ q, Sim (.mu S₀) (kidsH q) (kids q)) →
+    ∀ {recD : S.Pos c₀ → CTree (Val c)} {recH : S.Pos c₀ → c.hat × ℕ},
+      (∀ j, ∃ m w, recD j = stepN CTree.tick m (.ret w) ∧ m ≤ (recH j).2 ∧ Sim c (recH j).1 w) →
+      ∃ m w, stepAt S g ⟨c₀, y⟩ kids recD = stepN CTree.tick m (.ret w) ∧
+        m ≤ (stepHat S p ⟨c₀, x⟩ kidsH recH).2 ∧ Sim c (stepHat S p ⟨c₀, x⟩ kidsH recH).1 w
+  | .base _, _, _, hpg, _, _, _, hxy, _, _, _, _, _, _ => hpg _ _ hxy
+  | .ext S _ _, _, _, hpg, .inl _, _, _, hxy, _, _, hk, _, _, hr =>
+    stepAt_sim S hpg.1 (c₀ := _) hxy hk hr
+  | .ext _ _ none, _, _, hpg, .inr _, _, _, hxy, _, _, _, _, _, _ => hpg.2 _ _ hxy
+  | .ext _ _ (some _), _, _, hpg, .inr _, _, _, hxy, _, _, hk, _, _, hr =>
+    hpg.2 _ _ ⟨hxy, hk, fun j j' hj => by subst hj; exact hr j⟩
+
+/-- The eliminator at step functions related to translated step functions, at related values:
+a leaf after at most the cost of `foldHat`, related to its value. -/
+theorem foldW_sim {S : Sig} {c : Ty} {p : Ty.hat (S.stepsTy (.mu S) c)}
+    {g : Val (S.stepsTy (.mu S) c)} (hpg : Sim _ p g) {wH : Ty.hat (.mu S)} {w : Val (.mu S)}
+    (hw : Sim (.mu S) wH w) :
+    ∃ m v, foldW g w = stepN CTree.tick m (.ret v) ∧ m ≤ (foldHat p wH).2 ∧
+      Sim c (foldHat p wH).1 v := by
+  change Container.WLift (P := S.Pos) (Sig.SimF S) wH w at hw
+  induction hw with
+  | mk hxy hk ih => exact stepAt_sim S hpg hxy hk ih
+
+/-- A constructor of a signature of an indexed family at an argument of D related to a translated
+argument: `R` holds of the nodes that `mkH` and `mk` build from related fields and children. -/
+theorem conAtI_sim {f : FTy} {X : f.den → Ty} {T U : Type} {R : T → U → Prop} : ∀ (S : ISig f)
+    (mkH : (a : (c : S.Ctor) × S.hatF c) → ((p : S.Pos a.1) → Ty.hat (X (S.nx a.1 p))) → T)
+    (mk : (a : (c : S.Ctor) × S.Fld c) → ((p : S.Pos a.1) → Val (X (S.nx a.1 p))) → U),
+    (∀ (c : S.Ctor) (x : S.hatF c) (y : S.Fld c) (k : (p : S.Pos c) → Ty.hat (X (S.nx c p)))
+      (k' : (p : S.Pos c) → Val (X (S.nx c p))), ISig.SimF S c x y →
+      (∀ p, Sim _ (k p) (k' p)) → R (mkH ⟨c, x⟩ k) (mk ⟨c, y⟩ k')) →
+    ∀ {u : Ty.hat (S.conTy X)} {v : Val (S.conTy X)}, Sim _ u v →
+      R (conHatI S mkH u) (conAtI S mk v)
+  | .base _, _, _, hmk, _, _, hs => hmk () _ _ _ _ hs fun p => p.elim
+  | .ext S a none nx, mkH, mk, hmk, u, v, hs => by
+    have h' : Sum.LiftRel (Sim (S.conTy X)) (Sim a) u v := hs
+    cases h' with
+    | inl h =>
+      exact conAtI_sim S (fun b k => mkH ⟨.inl b.1, b.2⟩ k) (fun b k => mk ⟨.inl b.1, b.2⟩ k)
+        (fun c x y k k' hxy hk => hmk (.inl c) x y k k' hxy hk) h
+    | inr h => exact hmk (.inr ()) _ _ _ _ h fun p => p.elim
+  | .ext S a (some g) nx, mkH, mk, hmk, u, v, hs => by
+    have h' : Sum.LiftRel (Sim (S.conTy X)) (Sim (.prod a (.pi g fun p => X (nx p)))) u v := hs
+    cases h' with
+    | inl h =>
+      exact conAtI_sim S (fun b k => mkH ⟨.inl b.1, b.2⟩ k) (fun b k => mk ⟨.inl b.1, b.2⟩ k)
+        (fun c x y k k' hxy hk => hmk (.inl c) x y k k' hxy hk) h
+    | inr h => exact hmk (.inr ()) _ _ _ _ h.1 h.2
+
+/-- A step of an eliminator of an indexed family at step functions related to translated step
+functions, at related fields and children, at recursive results that are leaves within their
+costs: a leaf after at most the cost of `stepHatI`, related to its value. -/
+theorem stepAtI_sim {f : FTy} {X c : f.den → Ty} {r : Ty} : ∀ (S : ISig f)
+    {p : Ty.hat (S.stepsTy X c r)} {g : Val (S.stepsTy X c r)}, Sim _ p g →
+    ∀ {c₀ : S.Ctor} {x : S.hatF c₀} {y : S.Fld c₀}, ISig.SimF S c₀ x y →
+    ∀ {kidsH : (q : S.Pos c₀) → Ty.hat (X (S.nx c₀ q))}
+      {kids : (q : S.Pos c₀) → Val (X (S.nx c₀ q))},
+      (∀ q, Sim _ (kidsH q) (kids q)) →
+    ∀ {recD : (q : S.Pos c₀) → CTree (Val (c (S.nx c₀ q)))}
+      {recH : (q : S.Pos c₀) → (c (S.nx c₀ q)).hat × ℕ},
+      (∀ q, ∃ m w, recD q = stepN CTree.tick m (.ret w) ∧ m ≤ (recH q).2 ∧ Sim _ (recH q).1 w) →
+      ∃ m w, stepAtI S g ⟨c₀, y⟩ kids recD = stepN CTree.tick m (.ret w) ∧
+        m ≤ (stepHatI S p ⟨c₀, x⟩ kidsH recH).2 ∧ Sim r (stepHatI S p ⟨c₀, x⟩ kidsH recH).1 w
+  | .base _, _, _, hpg, _, _, _, hxy, _, _, _, _, _, _ => hpg _ _ hxy
+  | .ext S _ none _, _, _, hpg, c₀, _, _, hxy, _, _, hk, _, _, hr => by
+    cases c₀ with
+    | inl c₀ => exact stepAtI_sim S hpg.1 (c₀ := c₀) hxy hk hr
+    | inr _ => exact hpg.2 _ _ hxy
+  | .ext S _ (some _) _, _, _, hpg, c₀, _, _, hxy, _, _, hk, _, _, hr => by
+    cases c₀ with
+    | inl c₀ => exact stepAtI_sim S hpg.1 (c₀ := c₀) hxy hk hr
+    | inr _ =>
+      refine hpg.2 _ _ ⟨hxy, hk, fun q u v _ => ?_⟩
+      obtain ⟨m, w, he, hm, hw⟩ := hr q
+      exact ⟨m, w, he, hm, hw⟩
+
+/-- The eliminator of an indexed family at step functions related to translated step
+functions, at related values: a leaf after at most the cost of `foldHatI`, related to its
+value. -/
+theorem foldIW_sim {f : FTy} {S : f.den → ISig f} {c : f.den → Ty}
+    {p : (j : f.den) → Ty.hat ((S j).stepsTy (fun j' => .imu f S j') c (c j))}
+    {g : (j : f.den) → Val ((S j).stepsTy (fun j' => .imu f S j') c (c j))}
+    (hpg : Sim (.pi f fun j => (S j).stepsTy (fun j' => .imu f S j') c (c j)) p g) {i : f.den}
+    {wH : Ty.hat (.imu f S i)} {w : Val (.imu f S i)} (hw : Sim (.imu f S i) wH w) :
+    ∃ m v, foldIW g w = stepN CTree.tick m (.ret v) ∧ m ≤ (foldHatI p wH).2 ∧
+      Sim (c i) (foldHatI p wH).1 v := by
+  change Container.IWLift
+      (C := fun j => (S j).Ctor) (P := fun j c => (S j).Pos c)
+      (nx := fun j c p => (S j).nx c p) (fun j c x y => ISig.SimF (S j) c x y) wH w at hw
+  induction hw with
+  | mk hxy hk ih => exact stepAtI_sim (S _) (hpg _) hxy hk ih
 
 /-! ## Soundness -/
 
@@ -905,6 +1614,116 @@ theorem dtC_timedSim (cc : Ty → ℕ) (hcc : ∀ a, cc a ≤ 1) :
       (by simp only [allowC]; omega)
     exact TimedSim.query le_rfl d r v fun _ => TimedSim.ret rfl
   | fail => intro _ η ρ _; exact TimedSim.fail
+  | @con _ S x ih =>
+    intro ht η ρ hρ
+    have hev : (Tm.con x).eval ρ = (x.eval ρ).bind fun v =>
+        .ret (conAt (X := .mu S) S (fun a k => (WType.mk a k : Val (.mu S))) v) := rfl
+    rw [hev]
+    refine (TimedSim.bindCont (m := 0) (ih ht hρ) fun u v huv => ?_).mono
+      (by simp only [allowC]; omega)
+    have he : Sim (.mu S) _ _ := conAt_sim (R := Sim (.mu S)) S _ _
+      (fun _ _ _ _ _ hxy hk => Container.WLift.mk hxy hk) huv
+    exact TimedSim.stepN_ret (m := 0) he (by omega)
+  | @fold _ S c g x ihg ihx =>
+    intro ht η ρ hρ
+    have hev : (Tm.fold g x).eval ρ = (g.eval ρ).bind fun gv =>
+        (x.eval ρ).bind fun w => .tick (foldW gv w) := rfl
+    rw [hev]
+    refine (TimedSim.bindCont (ihg ht.1 hρ) fun p gv hpg =>
+      TimedSim.bindCont (m := 0) (ihx ht.2 hρ) fun wH w hw => ?_).mono
+      (by simp only [allowC]; omega)
+    obtain ⟨m, v, he, hm, hv⟩ := foldW_sim hpg hw
+    rw [show CTree.tick (foldW gv w) = stepN CTree.tick (m + 1) (.ret v) by rw [he]; rfl]
+    exact TimedSim.stepN_ret hv (by omega)
+  | @icon _ f S i x ih =>
+    intro ht η ρ hρ
+    have hev : (Tm.icon x).eval ρ = (x.eval ρ).bind fun v =>
+        .ret (conAtI (X := fun j => .imu f S j) (S i)
+          (fun a k => (Container.IPW.mk i a k : Val (.imu f S i))) v) := rfl
+    rw [hev]
+    refine (TimedSim.bindCont (m := 0) (ih ht hρ) fun u v huv => ?_).mono
+      (by simp only [allowC]; omega)
+    have he : Sim (.imu f S i) _ _ := conAtI_sim (X := fun j => .imu f S j)
+      (R := Sim (.imu f S i)) (S i) _ _
+      (fun _ _ _ _ _ hxy hk => Container.IWLift.mk
+          (C := fun j => (S j).Ctor) (P := fun j c => (S j).Pos c) (nx := fun j c p => (S j).nx c p)
+        (R := fun j c x y => ISig.SimF (S j) c x y) hxy hk) huv
+    exact TimedSim.stepN_ret (m := 0) he (by omega)
+  | @ifold _ f S c i g x ihg ihx =>
+    intro ht η ρ hρ
+    have hev : (Tm.ifold g x).eval ρ = (g.eval ρ).bind fun gv =>
+        (x.eval ρ).bind fun w => .tick (foldIW (c := c) gv w) := rfl
+    rw [hev]
+    refine (TimedSim.bindCont (ihg ht.1 hρ) fun p gv hpg =>
+      TimedSim.bindCont (m := 0) (ihx ht.2 hρ) fun wH w hw => ?_).mono
+      (by simp only [allowC]; omega)
+    obtain ⟨m, v, he, hm, hv⟩ := foldIW_sim hpg hw
+    rw [show CTree.tick (foldIW gv w) = stepN CTree.tick (m + 1) (.ret v) by rw [he]; rfl]
+    exact TimedSim.stepN_ret hv (by omega)
+  | @ptab _ f B ts ih =>
+    intro ht η ρ hρ
+    have ht : ∀ j, (ts j).InDtFrag ∧ (ts j).Pure := ht
+    have hk : ∀ j, ∃ (m : ℕ) (w : Val (B j)), (ts j).eval ρ = stepN CTree.tick m (.ret w) ∧
+        m ≤ (ts j).allowC cc + ((ts j).dtC cc η).1 ∧
+          Sim (B j) ((B j).pureVal ((ts j).dtC cc η).2) w := fun j => by
+      obtain ⟨u, hu⟩ := dtC_pure cc (ts j) (ht j).2 η
+      obtain ⟨m, w, he, hm, hw⟩ := TimedSim.ret_inv hu (ih j (ht j).1 hρ)
+      refine ⟨m, w, he, by simpa using hm, ?_⟩
+      rw [hu]
+      exact hw
+    choose m w he hm hw using hk
+    have hev : (Tm.ptab ts).eval ρ = stepN CTree.tick (tabCost f m) (.ret w) :=
+      tabDep_stepN f _ he
+    rw [hev]
+    refine TimedSim.stepN_ret (show Sim (.pi f B) _ w from hw) ?_
+    have hle := tabCost_mono f hm
+    rw [tabCost_add] at hle
+    simp only [allowC]
+    omega
+  | @papp _ f B t j ih =>
+    intro ht η ρ hρ
+    have hev : (Tm.papp t j).eval ρ =
+        (t.eval ρ).bind fun (v : (j : f.den) → Val (B j)) => .ret (v j) := rfl
+    rw [hev]
+    exact (TimedSim.bindCont (m := 0) (ih ht hρ) fun _ _ huv => TimedSim.ret (huv j)).mono
+      (by simp only [allowC]; omega)
+  | @spair _ f B j x ih =>
+    intro ht η ρ hρ
+    have hev : (Tm.spair j x).eval ρ =
+        (x.eval ρ).bind fun v => .ret (⟨j, v⟩ : (j : f.den) × Val (B j)) := rfl
+    rw [hev]
+    exact (TimedSim.bindCont (m := 0) (ih ht hρ) fun _ _ huv =>
+      TimedSim.ret (show Sim (.sig f B) ⟨j, _⟩ ⟨j, _⟩ from ⟨rfl, huv⟩)).mono
+      (by simp only [allowC]; omega)
+  | @scase _ f B c s ks ihs ihks =>
+    intro ht η ρ hρ
+    have hev : (Tm.scase s ks).eval ρ = (s.eval ρ).bind fun (v : (j : f.den) × Val (B j)) =>
+        .tick ((ks v.1).eval (ρ.cons v.2)) := rfl
+    rw [hev]
+    refine (TimedSim.bindCont (m := (Finset.univ.sup fun j => (ks j).allowC cc) + 0)
+      (ihs ht.1 hρ) fun u v huv => ?_).mono (by simp only [allowC]; omega)
+    change (j : f.den) × Ty.hat (B j) at u
+    change (j : f.den) × Val (B j) at v
+    obtain ⟨i, x⟩ := u
+    obtain ⟨j, y⟩ := v
+    change ∃ e : i = j, Sim (B j) (e ▸ x) y at huv
+    obtain ⟨rfl, hxy⟩ := huv
+    refine TimedSim.delay_tick_le ?_ (by omega)
+    exact (ihks i (ht.2 i) (hρ.cons hxy)).mono
+      (Finset.le_sup (f := fun j => (ks j).allowC cc) (Finset.mem_univ i))
+  | @fcase _ f c i ks ihi ihks =>
+    intro ht η ρ hρ
+    have hev : (Tm.fcase i ks).eval ρ =
+        (i.eval ρ).bind fun (j : f.den) => .tick ((ks j).eval ρ) := rfl
+    rw [hev]
+    refine (TimedSim.bindCont (m := (Finset.univ.sup fun j => (ks j).allowC cc) + 0)
+      (ihi ht.1 hρ) fun u v huv => ?_).mono (by simp only [allowC]; omega)
+    change f.den at u v
+    have huv' : u = v := huv
+    subst huv'
+    refine TimedSim.delay_tick_le ?_ (by omega)
+    exact (ihks u (ht.2 u) hρ).mono
+      (Finset.le_sup (f := fun j => (ks j).allowC cc) (Finset.mem_univ u))
 
 /-- Soundness of the charges of `derive_timed` on D: in related environments, the evaluation of
 a term of the fragment is simulated by its costed tree at factor `1` and allowance

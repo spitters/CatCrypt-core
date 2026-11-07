@@ -7,6 +7,7 @@ Authors: CatCrypt Contributors
 module
 
 -- Lemmas for Mathlib (the upstream queue)
+public import CatCryptCore.ForMathlib.GeometricMean
 public import CatCryptCore.ForMathlib.LawvereMetric
 public import CatCryptCore.ForMathlib
 public import CatCryptCore.ForMathlib.Order.ScottInduction
@@ -21,6 +22,7 @@ public import CatCryptCore.Prob.SchwartzZippel
 public import CatCryptCore.Prob.SchwartzZippelGaloisRing
 public import CatCryptCore.Prob.XorBij
 public import CatCryptCore.Prob.SDistrChain
+public import CatCryptCore.Core.CostMajorant
 public import CatCryptCore.Core.Basic
 public import CatCryptCore.Core.Location
 public import CatCryptCore.Core.Heap
@@ -99,6 +101,8 @@ public import CatCryptCore.Complexity.D.Link
 public import CatCryptCore.Complexity.D.Translate
 public import CatCryptCore.Complexity.D.TranslateDt
 public import CatCryptCore.Complexity.D.LinkDt
+public import CatCryptCore.Complexity.D.DillerNahm
+public import CatCryptCore.Complexity.D.PolyModel
 public import CatCryptCore.XDijkstra.XErrMonad
 public import CatCryptCore.XDijkstra.XAdvantageHybrid
 public import CatCryptCore.XDijkstra.Rel.XRelMvcgenControl
@@ -273,6 +277,8 @@ public import CatCryptCore.Crypto.TVHops
 public import CatCryptCore.Crypto.SampledGame
 public import CatCryptCore.Crypto.SampledGameTimed
 public import CatCryptCore.Crypto.SamplerCert
+public import CatCryptCore.Crypto.SamplerCertOracle
+public import CatCryptCore.Crypto.KDFLazyEager
 public import CatCryptCore.Crypto.RejectionLoop
 public import CatCryptCore.Crypto.Assumptions.DDHSampled
 public import CatCryptCore.Crypto.KeyAgreement.Curve25519Subgroup
@@ -345,6 +351,7 @@ public import CatCryptCore.Crypto.Messaging.CKACorrupt
 public import CatCryptCore.Crypto.Messaging.CKAACD
 public import CatCryptCore.Crypto.Messaging.SMCorrupt
 public import CatCryptCore.Crypto.Messaging.SMScheme
+public import CatCryptCore.Crypto.Messaging.SMMultiChallenge
 public import CatCryptCore.Crypto.Messaging.SignalStack
 public import CatCryptCore.Crypto.Messaging.SealedSender
 public import CatCryptCore.Crypto.Messaging.SignalStackSealed
@@ -361,6 +368,7 @@ public import CatCryptCore.Crypto.Signal.DoubleRatchet.Primitives
 public import CatCryptCore.Crypto.Signal.DoubleRatchet.Extraction.Doubleratchet_haxpipe
 public import CatCryptCore.Crypto.Signal.DoubleRatchet.ExtractedCorrespondence
 public import CatCryptCore.Crypto.Signal.DoubleRatchet.ExtractedScheme
+public import CatCryptCore.Crypto.Signal.DoubleRatchet.ExtractedMultiChallenge
 public import CatCryptCore.Crypto.Signal.DoubleRatchet.SurfaceDeps
 public import CatCryptCore.Crypto.Signal.RatchetChainHybrid
 public import CatCryptCore.Crypto.Signal.Zkgroup.Lizard
@@ -634,6 +642,9 @@ public import CatCryptCore.Crypto.Party.SyntacticCategory
 public import CatCryptCore.Crypto.Party.StoreHybrid
 public import CatCryptCore.Crypto.Party.SecretStateHybrid
 public import CatCryptCore.Crypto.Party.LoopTimed
+public import CatCryptCore.Container.Amortized
+public import CatCryptCore.Container.ExpectedDN
+public import CatCryptCore.Container.WTypes
 public import CatCryptCore.Container.Code
 public import CatCryptCore.Container.QuotientFree
 public import CatCryptCore.Container.CodeCost
@@ -802,6 +813,7 @@ public import CatCryptCore.Crypto.Assumptions.HardCoreTimed
 public import CatCryptCore.Crypto.BLSSig.SecurityTimed
 public import CatCryptCore.Crypto.Commitment.PedersenUCTimed
 public import CatCryptCore.Crypto.GeneralForkingLemmaTimed
+public import CatCryptCore.Crypto.TreeForkingLemmaTimed
 public import CatCryptCore.Crypto.OT.DualModeOTTimed
 public import CatCryptCore.Crypto.OT.GamesTimed
 public import CatCryptCore.Crypto.OTExtension.IKNPTimed

@@ -15,7 +15,8 @@ Fresh costed oracle programs, none taken from a protocol: a program with two que
 program whose queries are answered by a handler program (`bindQueries`), and a binder program
 whose queries are answered by a handler with records (`collectLog`), followed by a continuation
 whose cost is the length of the collected records. `derive_time_bound +queries` states the
-query count beside the time, from one use bound on each binder program.
+query count beside the time, from one use bound on each binder program, and `derive_time_bound`
+states the use bound `R.useBound_timed` beside the time theorem (`twoQ`, `oneQ`, `bq`).
 -/
 
 @[expose] public section
@@ -40,6 +41,31 @@ example (x : ℕ) :
     Timed.StepTimeBound (twoQ.timed x) 6 ∧ QueryCostLe (fun _ => 1) (twoQ.timed x).2.erase 2 :=
   twoQ.timeBound_timed x
 
+/-- The use bound beside the time theorem: two queries and six ticks, the demand of `twoQ` at
+`{query, tick}`. -/
+example (x : ℕ) :
+    UseBound (useCharge fun _ => 1) (fun _ _ => True) (Timed.stepToFreeMT (twoQ.timed x))
+      (budget 2 6) :=
+  twoQ.useBound_timed x
+
+/-- The name of `oneQ.timed`. -/
+def oneQ : Unit := ()
+
+/-- One query on `x` at step cost `2`, behind one unit. -/
+def oneQ.timed (x : ℕ) : ℕ × Timed ℕ ℕ ℕ :=
+  (1, .query x (fun _ => 2) fun o => .pure o)
+
+derive_time_bound oneQ
+
+/-- The time theorem of the scalar rule, and the use bound beside it: one query and four
+ticks. -/
+example (x : ℕ) : Timed.StepTimeBound (oneQ.timed x) 4 := oneQ.timeBound_timed x
+
+example (x : ℕ) :
+    UseBound (useCharge fun _ => 1) (fun _ _ => True) (Timed.stepToFreeMT (oneQ.timed x))
+      (budget 1 4) :=
+  oneQ.useBound_timed x
+
 /-- A handler program: one unit, then one query on `0`, answering whether the answer is zero. -/
 def hdl (i : Bool) : ℕ × Timed ℕ ℕ Bool :=
   (1, .query (if i then 0 else 1) (fun _ => 0) fun o => .pure (decide (o = 0)))
@@ -63,6 +89,10 @@ example (A : ℕ → Timed Bool Bool ℕ) (x : ℕ) {q T : ℕ}
       QueryCostLe (fun _ => 1) (bq.timed A x).2.erase q := by
   obtain ⟨h1, h2⟩ := bq.timeBound_timed A x hA
   exact ⟨h1.mono (by omega), by simpa using h2⟩
+
+/-- The use bound of `bq` over the use bounds of its binder: the query count of `A` times the one
+query of the handler, the composition law of the use vectors (`useBound_liftM_clocked`). -/
+example := @bq.useBound_timed
 
 /-- A handler program with records: one query on `i`, at step cost `1`, and the record
 `[i, i]`. -/

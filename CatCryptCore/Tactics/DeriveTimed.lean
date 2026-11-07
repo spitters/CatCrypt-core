@@ -214,14 +214,40 @@ Rule (j), closures in data without a costed form. A constructor application (`Pr
 `Sum.inl`, `Sum.inr`, `some`, nested) priced as data, whose type has no costed value
 (`hatTy?`, `mirrorStruct?`) and which places a closure (a `fun` or a partial application) at a
 position that, after `whnfR` and unfolding of type-valued definitions, is a function type (a pi
-type that is not a proposition, a type former or an instance), is refused, with a message naming
-the type, the closure, the path of components to it and the definitions unfolded
-(`unmirroredClosure?`). The case in view is a type computed by recursion, `Tree Y (r :: rs)`,
+type that is not a proposition, a type former or an instance), is refused when the domain of the
+closure is not finite, with a message naming the type, the closure, the path of components to it
+and the definitions unfolded (`unmirroredClosures`); a closure over a finite domain is tabulated
+(rule (m) below). The case in view is a type computed by recursion, `Tree Y (r :: rs)`,
 unfolded to `r.M × (Fin r.k → r.C × Tree Y rs)`. Such a value is not costed as first-order data,
 which would build the closure at cost zero and never charge its applications. A function at
 such a position that is not built there (a binder, the result of a call, a component read from
 data) is read as a table, as before. A structure other than a pair is not entered: its function
 fields are field paths or are priced through the value (rule (g), `isValueField`).
+
+Rule (l), functions read from a value of a computed type. The class: a projection `s.f`, applied
+to arguments (`s.2 c`), of a value `s` whose type is a type-valued definition that does not
+unfold at reducible transparency and unfolds by `whnf` to a structure (`underTypeDef`): a type
+computed by recursion at a constructor, such as the strategy `Strategy Y (r :: rs)`, unfolded to
+`r.M × (r.C → Strategy Y rs)`, whose second component is the continuation of the strategy at
+each challenge. Such a type has no costed form (`hatTy?` reads types at reducible transparency),
+so a binder or a local of that type is first-order data, and the functions it holds are tables,
+as a local function under a non-reducible name is: the application costs one unit plus the cost
+of `s` and the costs of its arguments. The cost of computing the function held in `s` is not
+charged by this rule; it is charged where the value is built, as its components are (rule (m)
+for a closure). A cost companion indexed by the components of such a value would need a costed
+family `T̂ : I → Type` defined by the recursion of `T`, with its erasure and lift by the same
+recursion; none is implemented.
+
+Rule (m), tabulated closures. The class: a closure `v` of rule (j), placed in data whose type has
+no costed form, whose function type `(y₁ : X₁) → … → (yₙ : Xₙ) → Y` has finite domains: each `Xᵢ`
+is data with a `Fintype` instance (`finiteDomains?`: `Fin n`, `Bool`, a type with a `FinEnum`
+enumeration). Such a closure is evaluated at every point of its domain where it is built: it
+costs `∑ y₁, … ∑ yₙ, cost (v y₁ … yₙ)` (`Finset.sum` over `Finset.univ`, `tabulateClosures`), the
+cost of its body at each point, and its applications are table reads at one unit. This is the
+cost of the strict evaluation of a finite function into a table, after which each read costs
+one unit, whatever the number of reads. The children
+`fun j => L.get (Fin.castLE h j)` of a node of a transcript tree, `Fin r.k → r.C × Tree Y rs`,
+are tabulated at the cost of the `r.k` reads of the list of kept pairs.
 
 Table writes, registered calls with a function result. The registered arity of a primitive `c`
 is the number of its arguments that its registered cost takes: the binders of `c.timedCost`
@@ -314,6 +340,8 @@ Costs follow call-by-value evaluation:
 * `if` and `match` cost one, plus the costs of the condition or the discriminants, plus the
   cost of the branch taken; a match of a tree whose motive depends on its discriminants
   (`SPTree (Fin n → X)` on `n`) has the costed tree type at each discriminant as its motive;
+* a tree-valued case analysis by a recursor on data costs one, plus the cost of the major
+  premise, plus the cost of the branch taken, as a `match` (rule (o) below);
 * constructors, literals, numerals, casts, projections and variables cost nothing beyond
   their arguments (the parameters of a constructor's inductive type are not among them), and
   a closure costs nothing to build;
@@ -408,12 +436,41 @@ a condition is also priced by what decides it (`pricedProp?`): `x ∈ l` on a li
 comparison of elements, and a definition valued in `Prop` as one plus its unfolded body, each
 argument priced once. The list costs are registered in `CatCryptCore.Tactics.StdCosts`.
 
-A decision (`ite`, `dite`, `Decidable.decide`) whose `Decidable` instance is classical
-(`classicalIn?`: it mentions `Classical.choice` or a `noncomputable` constant in a data
-position) and a data term headed by a choice constant (`choiceConstants`: `Exists.choose`,
-`Classical.choose`, `Classical.epsilon`, …) are derived as before and reported by a warning
-naming the declaration whose cost is derived: the time bound charges no algorithm for them.
-`#classical_cost_audit` reports the same occurrences in the costed forms of an environment.
+Rule (n), classical decisions. In the cost model every decision is a step of an algorithm. A
+decision procedure is classical when it has no algorithm: its head, one of its instance
+arguments, the body of a `fun` or the value of a local bound by a `let` that it reaches is
+`Classical.choice` or a constant marked `noncomputable` that the compiler does not implement
+by other code (`ClassicalCostAudit.classicalDecision?`, `isClassicalConst`): the instances
+`Classical.propDecidable`, `Classical.dec`, `Classical.decEq`, `Classical.decPred`, a
+`Decidable` instance built from them (`instDecidableAnd` of a classical component,
+`instBEqOfDecidableEq (Classical.decEq α)`), or a noncomputable instance. A constant marked
+`noncomputable` with a `@[csimp]` replacement, an `@[implemented_by]` or an `@[extern]`
+implementation has one (Lean 4.35 marks `Bool.or`, `Bool.and` and `Bool.not` `noncomputable`
+and compiles them through `@[csimp]` replacements). The data a procedure decides is not part of
+it: `instDecidableEqBool b true` decides `b = true` computably whatever computes `b`, whose cost
+is priced as data. The class: a decision `ite c t e`, `dite c t e` or `decide c` whose instance is
+classical, a classical decision procedure evaluated as data (`match Classical.decEq α a b with`), a
+classical decision procedure passed to a registered primitive (the decision instance of a decidable
+predicate of rule (i), `Finset.filter p` with `Classical.decPred p`), and the method of a classical
+instance taken as a cost companion (rule (k)). Each is refused, with a message
+naming the declaration whose cost is derived, the condition (or the type of the procedure),
+the classical instance and the fix: a computable decision procedure, that is a `[Decidable c]`,
+`[DecidablePred p]` or `[DecidableEq α]` binder (priced by the cost of the condition, or by its
+cost companion under rule (k)) or a computable instance at the concrete type (the instance
+found without `open Classical`). A computable instance is priced as before: by the cost of its
+condition (`propCost`, with the predicate companions of rule (i) and the default
+`derive_timed.priceProps`), and in the method of an instance by its evaluation (rule (k)). A
+definition from a library that decides by a classical instance is refused where the
+derivation unfolds it, unless it is a registered primitive, whose registered cost is that of an
+algorithm on a computable representation: `Finsupp.single`, to which `Polynomial.C`,
+`Polynomial.monomial` and `Polynomial.X` unfold and whose support Mathlib decides by
+`Classical.decEq`, is registered in `CatCryptCore.Tactics.StdCostsPoly` as the write of one
+coefficient. There is no option that turns the refusal off. A data term headed by a choice
+constant (`choiceConstants`: `Exists.choose`, `Classical.choose`, `Classical.epsilon`, …) is not
+a decision: it is derived as before and reported by a warning naming the declaration whose cost
+is derived, and the derivation fails only where it unfolds `Classical.choice` itself, which has
+no definition to price. `#classical_cost_audit` reports the classical decisions and choices of
+the costed forms of an environment, which a hand-written costed form can still hold.
 
 A registered primitive `f` has a cost `f.timedCost`, a definition taking the arguments of
 `f`, each function-typed argument followed by its cost companion, and returning `ℕ`; the
@@ -423,6 +480,21 @@ cost of `f`. A reduction whose costed form is written by hand is registered by d
 in its result type returns plain results (`SPComp.seqFin.tree.timed`,
 `CatCryptCore.Core.CodeSequenceTimed`); called at a result type holding functions, its results
 are lifted to costed closures of companion zero (`ι`), as the results of a tree binder are.
+
+Rule (o), case analyses by a recursor. The class: a tree-valued case analysis
+`C.casesOn x alt₁ … altₙ`, or `C.rec alt₁ … altₙ x` of a type `C` whose constructors have no
+recursive argument (its minor premises take the fields only), of data `x` without a costed
+form, of an inductive type `C` without indices other than the tree types, at a motive constant
+in `x`. The equation compiler produces such a case analysis inside an alternative for a nested
+constructor pattern (`| .query (.inl key) k => …` of a recursion over an oracle-tree binder is
+`OracleAdv.casesOn` and, in its `query` alternative, `Sum.casesOn` of the query). It is
+translated as the case analysis `C.casesOn x alt'₁ … alt'ₙ` of the same `x`, whose alternatives
+are the costed trees of the alternatives at the fields of their constructors, behind one unit
+plus the cost of `x` (`trCases`): the charge of a `match`. In the erasure proof the major premise
+of such a case analysis on a local is split by `derive_timed_cases_data`, so that the source
+reduces at the constructor. A case analysis whose motive depends on its major premise, or whose
+major premise has a costed form, is refused with a message naming it. A case analysis of
+data valued in data keeps the rule of `costCases`.
 
 Rule (i), decidable predicates of registered primitives. The class: an argument
 `p : α₁ → … → αₙ → Prop` (`n ≥ 1`) of a registered primitive that is followed, among the
@@ -467,8 +539,9 @@ instance of an equality depends on what it is:
   body of a decision function, of type `Decidable p` (`isDecisionBody`), is priced in the same
   mode, so that the decisions of its components are priced by their instances in turn.
 
-A method that neither case prices (an opaque function, a classical decision) is refused, with a
-message that names the method, the instance and the reason. Outside the method of an instance and
+A method that neither case prices (an opaque function, a classical decision, the latter with
+the message of rule (n)) is refused, with a message that names the method, the instance and the
+reason. Outside the method of an instance and
 the body of a decision function, a condition costs its data arguments and its instance is not
 read, as before: an `if a = b` in a reduction with a `[DecidableEq K]` binder takes no companion.
 The costs of `List.lookup`, `List.erase`, `List.idxOf`, `List.elem` and `List.beq` registered in
@@ -499,22 +572,17 @@ compile equation, costed form `c.tree.timed` and erasure theorem are registered,
 `c.tree`, which this module prices by the step cost of `c.tree.timed` (the rule for a call of a
 reduction above) without unfolding `c`; the erasure theorem uses `c.tree.erase_timed`.
 
-A call of a certified computation `c` (`certExt`: a computation whose tree `c.tree`,
-compile equation, costed form `c.tree.timed` and erasure theorem are registered, by
-`derive_reduction c` or by `@[certified]`) is reflected by `derive_reduction` as the call of
-`c.tree`, which this module prices by the step cost of `c.tree.timed` (the rule for a call of a
-reduction above) without unfolding `c`; the erasure theorem uses `c.tree.erase_timed`.
-
 Calls of reductions without a costed form are derived on demand. A derivation fails, with
 the reason, on a function stored in data that is not a costed closure as above (a local
 function without a cost companion applied, a function in a list), a field of a structure that
 is neither a field path, nor a field of a computed structure, nor a field of a structure with a
-mirror, nor a field of a structure value as below, an opaque data function without a
-registered cost, an operation on a quotient type
+mirror, nor a field of a structure value as below, nor a field of a value of a computed type
+(rule (l)), an opaque data function without a registered cost, an operation on a quotient type
 (`Finset`, `Multiset`, `Quot`) without a registered cost (the costs of `Finset.sum`,
 `Finset.prod`, `Finset.univ`, `Finset.range`, `Finset.erase`, `Finset.card` and
-`Finset.filter` are registered in `CatCryptCore.Tactics.StdCosts`), a closure built into data
-whose type has no costed form (rule (j)), a method of an instance that rule (k) does not price,
+`Finset.filter` are registered in `CatCryptCore.Tactics.StdCosts`), a closure over a domain
+that is not finite built into data whose type has no costed form (rules (j) and (m)), a method of an instance that rule (k) does not price,
+a decision by a classical instance (rule (n)),
 a recursive data
 function whose cost `derive_cost` does not derive (a class method on a local instance in its
 body needs `derive_cost (unit := …)`), a `match` whose motive depends on its
@@ -1066,6 +1134,11 @@ theorem foldrHat_snd_le {α : Type uA} {X : Type uC} {β : Type uB} (f : β → 
     simp only [foldrHat, List.foldr_cons, List.length_cons] at this ⊢
     grind
 
+/-- In an erasure proof of rule (o): a case split on the major premise of the first case
+analysis `C.casesOn x …` in the goal (or `C.rec … x` of a type without recursive constructor
+arguments, to which `simp` unfolds it) whose major premise `x` is a local. -/
+syntax (name := casesDataTac) "derive_timed_cases_data" : tactic
+
 end CatCrypt.Tactics.DeriveTimed
 
 meta section
@@ -1073,6 +1146,35 @@ meta section
 namespace CatCrypt.Tactics.DeriveTimed
 
 open Lean Elab Meta Term Command
+
+@[tactic casesDataTac] def evalCasesData : Lean.Elab.Tactic.Tactic := fun _ => do
+  let g ← Lean.Elab.Tactic.getMainGoal
+  g.withContext do
+    let t ← instantiateMVars (← g.getType)
+    let env ← getEnv
+    let major? (s : Expr) : Option Expr :=
+      match s.getAppFn with
+      | .const n _ =>
+        match env.find? n.getPrefix with
+        | some (.inductInfo iv) =>
+          let pos? := if iv.numIndices != 0 then none
+            else if n == iv.name ++ `casesOn then some (iv.numParams + 1)
+            else if n == iv.name ++ `rec && !iv.isRec && iv.all.length == 1 then
+              some (iv.numParams + 1 + iv.numCtors)
+            else none
+          match pos? with
+          | some i =>
+            match s.getAppArgs[i]? with
+            | some x => if x.isFVar then some x else none
+            | none => none
+          | none => none
+        | _ => none
+      | _ => none
+    let some s := t.find? fun s => (major? s).isSome
+      | throwError "derive_timed_cases_data: no case analysis on a local in the goal"
+    let some x := major? s | throwError "derive_timed_cases_data: internal"
+    let gs ← g.cases x.fvarId!
+    Lean.Elab.Tactic.replaceMainGoal (gs.map (·.mvarId)).toList
 
 /-- How a binder of a reduction is translated. -/
 inductive Kind where
@@ -2887,30 +2989,30 @@ def isClosureValue (v : Expr) : MetaM Bool := do
   unless v.getAppNumArgs < (← declaredArity f) do return false
   return !(← isRegisteredCall v)
 
-/-- The closure that the data value `v` of type `t` places at a function position of `t` that
-has no costed form (rule (j)), with its type, the path of components to it and the type-valued
-definitions unfolded on the way; `none` when there is no such closure. The walk follows the
-constructors of `v` (`Prod.mk`, `Sum.inl`, `Sum.inr`, `some`) into the components of `t`, after
-`whnfR` and, where the head of `t` is a type-valued definition (`Tree Y (r :: rs)`), after
+/-- The closures that the data value `v` of type `t` places at function positions of `t` that
+have no costed form (rules (j) and (m)), each with its type, the path of components to it and the
+type-valued definitions unfolded on the way, in the order of the components. The walk follows
+the constructors of `v` (`Prod.mk`, `Sum.inl`, `Sum.inr`, `some`) into the components of `t`,
+after `whnfR` and, where the head of `t` is a type-valued definition (`Tree Y (r :: rs)`), after
 unfolding it by `whnf`. A position of a proposition, a type former or an instance is not a
 function position; a structure other than a pair is not entered (its function fields are field
 paths or are priced through the value, rule (g)). -/
-partial def unmirroredClosure? (t v : Expr) (path : Array String := #[])
+partial def unmirroredClosures (t v : Expr) (path : Array String := #[])
     (unfolded : Array Name := #[]) (fuel : Nat := 32) :
-    MetaM (Option (Expr × Expr × Array String × Array Name)) := do
-  if fuel == 0 then return none
+    MetaM (Array (Expr × Expr × Array String × Array Name)) := do
+  if fuel == 0 then return #[]
   let v := v.consumeMData.headBeta
-  if ← isProp t then return none
-  if ← isTypeFormerType t then return none
-  if (← isClass? t).isSome then return none
+  if ← isProp t then return #[]
+  if ← isTypeFormerType t then return #[]
+  if (← isClass? t).isSome then return #[]
   let tw ← whnfR t
   if tw.isForall then
-    return if ← isClosureValue v then some (v, t, path, unfolded) else none
+    return if ← isClosureValue v then #[(v, t, path, unfolded)] else #[]
   let go (t' v' : Expr) (step : String) :=
-    unmirroredClosure? t' v' (path.push step) unfolded (fuel - 1)
+    unmirroredClosures t' v' (path.push step) unfolded (fuel - 1)
   if tw.isAppOfArity ``Prod 2 && v.isAppOfArity ``Prod.mk 4 then
-    if let some r ← go (tw.getArg! 0) (v.getArg! 2) "Prod.fst" then return some r
-    return ← go (tw.getArg! 1) (v.getArg! 3) "Prod.snd"
+    return (← go (tw.getArg! 0) (v.getArg! 2) "Prod.fst") ++
+      (← go (tw.getArg! 1) (v.getArg! 3) "Prod.snd")
   if tw.isAppOfArity ``Sum 2 && v.isAppOfArity ``Sum.inl 3 then
     return ← go (tw.getArg! 0) (v.getArg! 2) "Sum.inl"
   if tw.isAppOfArity ``Sum 2 && v.isAppOfArity ``Sum.inr 3 then
@@ -2919,8 +3021,8 @@ partial def unmirroredClosure? (t v : Expr) (path : Array String := #[])
     return ← go (tw.getArg! 0) (v.getArg! 1) "Option.some"
   -- A type-valued definition, unfolded where the value is a constructor application or a
   -- closure.
-  let .const c _ := tw.getAppFn | return none
-  let some (.defnInfo _) := (← getEnv).find? c | return none
+  let .const c _ := tw.getAppFn | return #[]
+  let some (.defnInfo _) := (← getEnv).find? c | return #[]
   let vf := v.getAppFn.consumeMData
   let isCtorVal ← match vf with
     | .const n _ => pure (isCtorName (← getEnv) n)
@@ -2928,12 +3030,52 @@ partial def unmirroredClosure? (t v : Expr) (path : Array String := #[])
   -- The closure test runs only for a value that is not a constructor application (written as
   -- `isCtorVal || (← …)`, it would run before the test).
   if !isCtorVal then
-    unless ← isClosureValue v do return none
+    unless ← isClosureValue v do return #[]
   let tw' ← whnf tw
-  if tw' == tw then return none
-  unmirroredClosure? tw' v path (unfolded.push c) (fuel - 1)
+  if tw' == tw then return #[]
+  unmirroredClosures tw' v path (unfolded.push c) (fuel - 1)
 
-/-- Whether the value `v`, read through the constructors that `unmirroredClosure?` follows
+/-- Whether the value `s` has a type that is a type-valued definition which `whnfR` does not
+unfold and `whnf` does (rule (l)): a type computed by recursion at a constructor, such as
+`Strategy Y (r :: rs)`, which unfolds to `r.M × (r.C → Strategy Y rs)`. Such a type has no costed
+form (`hatTy?` reads types at reducible transparency), so the functions of the value are tables. -/
+def underTypeDef (s : Expr) : MetaM Bool := do
+  let tw ← whnfR (← inferType s)
+  let .const c _ := tw.getAppFn | return false
+  let some (.defnInfo _) := (← getEnv).find? c | return false
+  return (← whnf tw) != tw
+
+/-- The finite domains of a closure of type `ft` (rule (m)): the binders of the telescope of
+`ft` at reducible transparency, when each is data of a type with a `Fintype` instance (`Fin n`,
+`Bool`, a finite enumeration); `none` when a binder is a proposition, a type or an instance, or
+its type has no such instance. -/
+def finiteDomains? (ft : Expr) : MetaM (Option Nat) := do
+  forallTelescope (← whnfFnR ft) fun ys _ => do
+    if ys.isEmpty then return none
+    for y in ys do
+      let yt ← inferType y
+      if ← isProp yt then return none
+      if ← isTypeFormerType yt then return none
+      if (← isClass? yt).isSome then return none
+      let some fin ← observing? (mkAppM ``Fintype #[yt]) | return none
+      if (← synthInstance? fin).isNone then return none
+    return some ys.size
+
+/-- The refusal of rule (j): the closure `v` of type `ft`, at the position `path` of the value `e`
+of type `t`, reached by unfolding the definitions `unfolded`, has a domain that is not finite, so
+it is not tabulated (rule (m)), and the type has no costed form. -/
+def failUnmirroredClosure {β : Type} (e t v ft : Expr) (path : Array String)
+    (unfolded : Array Name) : MetaM β := do
+  let pos := if path.isEmpty then m!"the value itself" else
+    m!"the position {String.intercalate " → " path.toList}"
+  let unf := if unfolded.isEmpty then m!"" else
+    m!" (reached by unfolding {unfolded.toList.map fun n => m!"`{n}`"})"
+  fail m!"a function bound in data: the value `{e}` of type `{t}` builds the closure `{v}` of \
+    type `{ft}` at {pos}{unf}; the type has no costed form, so the closure would cost nothing \
+    to build and its applications would not be charged (rule (j)), and its domain is not finite, \
+    so it is not tabulated where it is built (rule (m))"
+
+/-- Whether the value `v`, read through the constructors that `unmirroredClosures` follows
 (`Prod.mk`, `Sum.inl`, `Sum.inr`, `some`), has a component that builds a closure
 (`isClosureValue`). It reads the value only, so that rule (j) inspects types only for values
 that build a closure. -/
@@ -2946,7 +3088,7 @@ partial def hasClosureComponent (v : Expr) : MetaM Bool := do
   if v.isAppOfArity ``Option.some 2 then return ← hasClosureComponent (v.getArg! 1)
   isClosureValue v
 
-/-- Whether the value `v`, read through the constructors that `unmirroredClosure?` follows, has a
+/-- Whether the value `v`, read through the constructors that `unmirroredClosures` follows, has a
 component that is a registered call at its registered arity (`isRegisteredCall`). -/
 partial def hasRegisteredComponent (v : Expr) : MetaM Bool := do
   let v := v.consumeMData.headBeta
@@ -2956,23 +3098,6 @@ partial def hasRegisteredComponent (v : Expr) : MetaM Bool := do
     return ← hasRegisteredComponent (v.getArg! 2)
   if v.isAppOfArity ``Option.some 2 then return ← hasRegisteredComponent (v.getArg! 1)
   isRegisteredCall v
-
-/-- Refuse the constructor application `e` when it builds a closure at a function position of
-its type that has no costed form (rule (j), `unmirroredClosure?`): its type has no costed value
-(`hatTy?`), so the closure would be built at cost zero and its applications read as a table. -/
-def checkUnmirroredClosure (e : Expr) : MetaM Unit := do
-  -- The value is read first: the types are inspected only when a closure sits at a component.
-  unless ← hasClosureComponent e do return
-  let t ← inferType e
-  if (← hatTy? t).isSome then return
-  let some (v, ft, path, unfolded) ← unmirroredClosure? t e | return
-  let pos := if path.isEmpty then m!"the value itself" else
-    m!"the position {String.intercalate " → " path.toList}"
-  let unf := if unfolded.isEmpty then m!"" else
-    m!" (reached by unfolding {unfolded.toList.map fun n => m!"`{n}`"})"
-  fail m!"a function bound in data: the value `{e}` of type `{t}` builds the closure `{v}` of \
-    type `{ft}` at {pos}{unf}; the type has no costed form, so the closure would cost nothing \
-    to build and its applications would not be charged (rule (j))"
 
 /-- Whether the registered cost `reg`, applied to `pre`, takes next the cost companion of a
 predicate of type `pt = α₁ → … → αₙ → Prop`: an explicit binder of type `α₁ → … → αₙ → ℕ` that
@@ -3838,11 +3963,24 @@ def warnOnce (msg : MessageData) (key? : Option String := none) : MetaM Unit := 
     if (← m.data.toString).startsWith key then return
   logWarning md
 
-/-- Warns when the decision of the condition `p` by the instance `inst` is classical. -/
-def warnClassicalDecision (ctx : Ctx) (p inst : Expr) : MetaM Unit := do
-  let some h ← ClassicalCostAudit.classicalIn? inst | return
-  warnOnce m!"derive_timed: {ctx.subject} decides `{p}` by a classical instance (`{h}`); \
-    its time bound does not charge this decision"
+/-- The fix named by the refusals of rule (n). -/
+def classicalDecisionFix : MessageData :=
+  m!"decide it by a computable instance: a `[Decidable _]`, `[DecidablePred _]` or \
+    `[DecidableEq _]` binder, or a computable instance at the concrete type"
+
+/-- Refuses the decision of the condition `p` by the instance `inst` when the instance is
+classical (rule (n)): its decision procedure reaches a constant without an algorithm
+(`ClassicalCostAudit.classicalDecision?`). -/
+def refuseClassicalDecision (ctx : Ctx) (p inst : Expr) : MetaM Unit := do
+  let some h ← ClassicalCostAudit.classicalDecision? inst | return
+  let within := if h == inst.consumeMData then m!"" else m!" (in the instance `{inst}`)"
+  fail m!"{ctx.subject} decides `{p}` by the classical instance `{h}`{within}, which has no \
+    running time (rule (n)); {classicalDecisionFix}"
+
+/-- The condition `p` of a decision procedure `e : Decidable p`, or `none` when `e` is not one. -/
+def decisionCond? (e : Expr) : MetaM (Option Expr) := do
+  let t ← whnfR (← inferType e)
+  return if t.isAppOfArity ``Decidable 1 then some t.appArg! else none
 
 /-- Warns when the data term `e`, an application of the constant `c`, is computed by choice.
 One warning per declaration: the unfolding of `Exists.choose` reaches the further choice
@@ -3860,6 +3998,20 @@ def foldHatLemmas (used : Array Name) : Array Name :=
   if used.contains ``foldlHat || used.contains ``foldrHat then
     #[``foldlHat_fst, ``foldrHat_fst, ``implies_true]
   else #[]
+
+/-- The inductive type of a case analysis `C.casesOn`, or of a recursor `C.rec` of a type `C`
+without indices whose constructors have no recursive argument (its minor premises take the
+fields only), with whether it is the recursor: the case analyses of rule (o). The oracle-tree
+types, whose case analysis on a binder is a handler of its nodes, are excluded. -/
+def dataCases? (c : Name) : MetaM (Option (InductiveVal × Bool)) := do
+  let env ← getEnv
+  let some (.inductInfo iv) := env.find? c.getPrefix | return none
+  unless iv.numIndices == 0 && iv.numNested == 0 && iv.all.length == 1 do return none
+  if iv.name == ``CatCrypt.Crypto.OracleAdv || iv.name == ``CatCrypt.Core.SPTree then
+    return none
+  if c == iv.name ++ `casesOn then return some (iv, false)
+  if c == iv.name ++ `rec && !iv.isRec then return some (iv, true)
+  return none
 
 mutual
 
@@ -3994,6 +4146,10 @@ partial def instMethodCompanion? (ctx : Ctx) (who : MessageData) (p : Expr) :
     TermElabM (Option Expr) := do
   let p := p.consumeMData
   let some inst ← instOfPath? ctx p | return none
+  if let some h ← ClassicalCostAudit.classicalDecision? inst then
+    fail m!"{who} takes the cost of the method `{p}` of the instance `{inst}`, whose decision \
+      procedure is the classical instance `{h}`, which has no running time (rule (n)); \
+      {classicalDecisionFix}"
   let ctx' := { ctx with priceInsts := true }
   try
     let c ← forallTelescope (← whnfFnR (← inferType p)) fun ys _ => do
@@ -4236,7 +4392,7 @@ partial def tv (ctx : Ctx) (e : Expr) : TermElabM (Expr × Expr) := do
       return (add ca cb, ← mkAppM ``Prod.mk #[va, vb])
     if let some e' ← boolRecIte? e then return ← tv ctx e'
     if (f.isConstOf ``ite || f.isConstOf ``dite) && args.size == 5 then
-      warnClassicalDecision ctx args[1]! args[2]!
+      refuseClassicalDecision ctx args[1]! args[2]!
     if f.isConstOf ``ite && args.size == 5 then
       let (ca, va) ← tv ctx args[3]!
       let (cb, vb) ← tv ctx args[4]!
@@ -4513,6 +4669,18 @@ partial def costArgs (ctx : Ctx) (f : Expr) (args : Array Expr) (reg? : Option E
   let kinds ← argKinds f args (decPreds := reg?.isSome)
   let mut out := #[]
   for a in args, (k, bt) in kinds do
+    -- Rule (n): a decision procedure passed to a registered primitive (the decision instance of
+    -- a decidable predicate, rule (i)) is computable.
+    if reg?.isSome then
+      if (← whnfR bt).isAppOfArity ``Decidable 1 || (← isDecisionType bt) then
+        if let some h ← ClassicalCostAudit.classicalDecision? a then
+          let within := if h == a.consumeMData then m!"" else m!" (in the instance `{a}`)"
+          let fm := match f with
+            | .const c _ => MessageData.ofConstName c
+            | _ => m!"{f}"
+          fail m!"{ctx.subject} passes to `{fm}` the decision procedure of `{bt}` by the \
+            classical instance `{h}`{within}, which has no running time (rule (n)); \
+            {classicalDecisionFix}"
     out := out.push a
     if k == .treeFn then out := out.push (← companionOf ctx a)
     else if k == .fn then
@@ -4583,15 +4751,42 @@ partial def costApp (ctx : Ctx) (e : Expr) : TermElabM Expr := do
     costConst ctx (mkAppN pf args) (S ++ field) (pf.getAppArgs ++ args)
   | _ => fail m!"the application `{e}` is not headed by a constant or a local"
 
+/-- The cost of tabulating the closures that the constructor application `e` places at function
+positions of its type that have no costed form (rule (m)): a closure `v` of type
+`(y₁ : X₁) → … → (yₙ : Xₙ) → Y` whose domains `Xᵢ` are finite (`finiteDomains?`) is evaluated at
+every point of its domain where it is built, at the cost `∑ y₁, … ∑ yₙ, cost (v y₁ … yₙ)`, and
+its applications are table reads. A closure whose domain is not finite is refused (rule (j)).
+Zero when `e` builds no closure or its type has a costed form (`hatTy?`). -/
+partial def tabulateClosures (ctx : Ctx) (e : Expr) : TermElabM Expr := do
+  -- The value is read first: the types are inspected only when a closure sits at a component.
+  unless ← hasClosureComponent e do return natE 0
+  let t ← inferType e
+  if (← hatTy? t).isSome then return natE 0
+  let mut cs := #[]
+  for (v, ft, path, unfolded) in ← unmirroredClosures t e do
+    let some n ← finiteDomains? ft | failUnmirroredClosure e t v ft path unfolded
+    cs := cs.push (← forallBoundedTelescope (← whnfFnR ft) n fun ys _ => do
+      let mut acc ← costOf ctx (mkAppN v ys).headBeta
+      for y in ys.reverse do
+        let univ ← mkAppOptM ``Finset.univ #[← inferType y, none]
+        acc ← mkAppM ``Finset.sum #[univ, ← mkLambdaFVars #[y] acc]
+      return acc)
+  return sum cs
+
 /-- The cost of an application of the constant `c`. -/
 partial def costConst (ctx : Ctx) (e : Expr) (c : Name) (args : Array Expr) :
     TermElabM Expr := do
   let env ← getEnv
   let f := e.getAppFn
   warnChoice ctx e c
+  -- Rule (n): a decision procedure without an algorithm evaluated as data
+  -- (`match Classical.decEq α a b with`) is refused.
+  if ClassicalCostAudit.isClassicalConst env c then
+    if let some p ← decisionCond? e then refuseClassicalDecision ctx p e
   if let some (.ctorInfo ci) := env.find? c then
-    -- Rule (j): a closure built into data whose type has no costed form is refused.
-    checkUnmirroredClosure e
+    -- Rules (j) and (m): a closure built into data whose type has no costed form is tabulated
+    -- over its finite domain, and refused when the domain is not finite.
+    let tab ← tabulateClosures ctx e
     -- In data without a costed form, a registered call at its registered arity is a table
     -- write, priced by its registered cost. The type is inspected only when a component is such
     -- a call: written as `(← a) && (← b)`, both actions would run before the test.
@@ -4601,7 +4796,7 @@ partial def costConst (ctx : Ctx) (e : Expr) (c : Name) (args : Array Expr) :
         if (← hatTy? (← inferType e)).isNone then
           ctx' := { ctx with inTableData := true }
     -- The parameters of the inductive type are not arguments of the call.
-    return ← argsCost ctx' (args.extract ci.numParams args.size)
+    return add tab (← argsCost ctx' (args.extract ci.numParams args.size))
   if freeConstants.contains c then
     return ← argsCost ctx args
   -- A call of a recursive data function with a function result (rule (d)) and a fold whose
@@ -4704,11 +4899,11 @@ partial def costConst (ctx : Ctx) (e : Expr) (c : Name) (args : Array Expr) :
   -- A comparison of words decided at one unit: `decide (a < b)` is priced by the rule for
   -- `Decidable.decide` below.
   if c == ``Decidable.decide && args.size == 2 then
-    warnClassicalDecision ctx args[0]! args[1]!
+    refuseClassicalDecision ctx args[0]! args[1]!
     return add (natE 1) (← decisionCost ctx args[0]! args[1]!)
   if let some e' ← boolRecIte? e then return ← costOf ctx e'
   if (c == ``ite || c == ``dite) && args.size == 5 then
-    warnClassicalDecision ctx args[1]! args[2]!
+    refuseClassicalDecision ctx args[1]! args[2]!
   if c == ``ite && args.size == 5 then
     return add (natE 1) (add (← decisionCost ctx args[1]! args[2]!)
       (iteNatE args[1]! args[2]! (← costOf ctx args[3]!) (← costOf ctx args[4]!)))
@@ -4840,6 +5035,10 @@ partial def costConst (ctx : Ctx) (e : Expr) (c : Name) (args : Array Expr) :
             let (cs, vs) ← tv ctx s
             let comp ← mirrorProj m.fieldTypes.size i vs
             return add cs (← closureApp ctx comp rest).1
+      -- A function component of a value whose type is a type-valued definition that does not
+      -- unfold at reducible transparency (rule (l), `underTypeDef`), applied: a table read.
+      if ← underTypeDef s then
+        return add (← costOf ctx s) (add (natE 1) (← argsCost ctx rest))
       fail m!"a function bound in data: the field `{c}` is applied in `{e}`"
     return ← argsCost ctx args
   -- An operation on finite sets or multisets is defined through a quotient, whose internals
@@ -4945,6 +5144,9 @@ partial def mapMatch (ctx : Ctx) (e resultType : Expr)
   -- path into one (`t.2` of a costed state `t`).
   let mut hatDiscrs : Array (Option Expr) := #[]
   for d in app.discrs, j in [0:app.discrs.size] do
+    -- Rule (n): a decision procedure matched on (`match Classical.decEq α a b with`) is
+    -- computable.
+    if let some p ← decisionCond? d then refuseClassicalDecision ctx p d
     if let some Td ← treeTy? (← inferType d) then
       fail m!"a recursion over an {Td.kind.noun}: a match on the {Td.kind.noun} `{d}`; register \
         a costed form written by hand"
@@ -5292,7 +5494,7 @@ partial def trConst (ctx : Ctx) (e : Expr) (c : Name) (args : Array Expr) (T : T
   -- `some` is a branch and not a function discriminant.
   if let some e' ← optionDispatch? e then return ← tr ctx e'
   if (c == ``ite || c == ``dite) && n == 5 then
-    warnClassicalDecision ctx args[1]! args[2]!
+    refuseClassicalDecision ctx args[1]! args[2]!
   if c == ``ite && n == 5 then
     let pt ← tr ctx args[3]!
     let pe ← tr ctx args[4]!
@@ -5322,6 +5524,9 @@ partial def trConst (ctx : Ctx) (e : Expr) (c : Name) (args : Array Expr) (T : T
     return T.delayE (add (natE 1) cd) e'
   if c == ``CatCrypt.Crypto.OracleAdv.casesOn then
     return ← trTreeCases ctx e args T
+  -- Rule (o): a tree-valued case analysis by a recursor on data.
+  if (← dataCases? c).isSome then
+    return ← trCases ctx e c args T
   -- A tree-valued field of a field path (`S.kem.encaps pk`, a program of a scheme structure):
   -- a primitive, whose oracle tree runs at the unit cost of its nodes and whose computation
   -- is priced by its cost companion, indexed by the arguments of the field.
@@ -5396,6 +5601,44 @@ partial def trTreeCases (ctx : Ctx) (e : Expr) (args : Array Expr) (T : TreeTy) 
   -- The unit of the case analysis is charged in each alternative, so that the case analysis
   -- heads the costed form and Lean derives its equations.
   return mkAppN cases #[altRet, altRand, altQuery]
+
+/-- Rule (o): the tree-valued case analysis `C.casesOn x alt₁ … altₙ` (or `C.rec alt₁ … altₙ x`
+of a type `C` whose constructors have no recursive argument) of data `x` of an inductive type
+without indices, at a motive constant in `x`: the case analysis `C.casesOn x alt'₁ … alt'ₙ` of
+the same `x` whose alternatives are the costed trees of the alternatives at the fields of their
+constructors, behind one unit plus the cost of `x`, the charge of a `match`. -/
+partial def trCases (ctx : Ctx) (e : Expr) (c : Name) (args : Array Expr) (T : TreeTy) :
+    TermElabM Expr := do
+  let some (iv, isRec) ← dataCases? c
+    | fail m!"`{c}` is not the case analysis of an inductive type"
+  let arity := iv.numParams + 2 + iv.numCtors
+  unless args.size == arity do
+    fail m!"the case analysis `{e}` has a motive that depends on further arguments"
+  let params := args.extract 0 iv.numParams
+  let motive := args[iv.numParams]!
+  let (major, minors) := if isRec then
+      (args[arity - 1]!, args.extract (iv.numParams + 1) (arity - 1))
+    else (args[iv.numParams + 1]!, args.extract (iv.numParams + 2) arity)
+  let depends ← withLocalDeclD `x (← inferType major) fun x => do
+    let b ← instantiateMVars (mkApp motive x).headBeta
+    return b.containsFVar x.fvarId!
+  if depends then
+    fail m!"the case analysis `{e}` has a motive that depends on its major premise"
+  if (← hatTy? (← inferType major)).isSome || (treeLocal? ctx major).isSome then
+    fail m!"the case analysis `{e}` is of `{major}`, which has a costed form; write it as a \
+      `match` with constructor patterns"
+  let motive' ← withLocalDeclD `x (← inferType major) fun x => mkLambdaFVars #[x] T.pairType
+  let mut minors' := #[]
+  for i in [0:iv.numCtors] do
+    let ctor ← getConstInfoCtor iv.ctors[i]!
+    minors' := minors'.push (← withEta minors[i]! ctor.numFields fun fs b => do
+      mkLambdaFVars fs (← tr ctx b))
+  let lvl ← getLevel T.pairType
+  let levels := match e.getAppFn.constLevels! with
+    | _ :: ls => lvl :: ls
+    | [] => []
+  let cases := mkAppN (mkConst (iv.name ++ `casesOn) levels) (params ++ #[motive', major] ++ minors')
+  return T.delayE (add (natE 1) (← costOf ctx major)) cases
 
 /-- The costed form of the reduction `c` at the universe levels of `f`: registered, or
 derived now. -/
@@ -5993,14 +6236,27 @@ partial def deriveTimed (ctx : Ctx) (c : Name) : TermElabM Unit := do
   -- by the same lemmas. `simp` with a discharger traverses a shared costed value once per
   -- occurrence, so a non-recursive costed form is closed first without the discharger (then by
   -- the `if` closer below), and with it only when goals remain.
+  -- Rule (o): a tree-valued case analysis in the costed form (a case analysis of data whose
+  -- motive is a costed tree type), whose major premise is split in the erasure proof.
+  let casesSplit ← if (tValue.find? fun t =>
+        match t.getAppFn with
+        | .const n _ =>
+          (envNow.find? n.getPrefix).any (fun i => i matches .inductInfo _) &&
+            n == n.getPrefix ++ `casesOn &&
+            !(kinds.any fun k => k.timed == n.getPrefix || k.tree == n.getPrefix) &&
+            (t.getAppArgs.any fun a => match a with
+              | .lam _ _ b _ => b.isAppOfArity ``Prod 2
+              | _ => false)
+        | _ => false).isSome then `(tactic| (try (repeat' derive_timed_cases_data)))
+    else `(tactic| skip)
   let mkClose (lemmas : Array (TSyntax `Lean.Parser.Tactic.simpLemma)) (disch : Bool) :
       TermElabM (TSyntax `tactic) :=
     if hatLemmas.isEmpty || !disch then
-      `(tactic| ((try simp only [$lemmas,*, *]) <;> (try (repeat' split)) <;>
+      `(tactic| ((try simp only [$lemmas,*, *]) <;> (try (repeat' split)) <;> $casesSplit <;>
         (try simp only [$lemmas,*, *]) <;> (try rfl)))
     else
       `(tactic| ((try simp (disch := (intros; simp only [$lemmas,*])) only [$lemmas,*, *]) <;>
-        (try (repeat' split)) <;>
+        (try (repeat' split)) <;> $casesSplit <;>
         (try simp (disch := (intros; simp only [$lemmas,*])) only [$lemmas,*, *]) <;>
         (try rfl)))
   let close ← mkClose lemmas recursive

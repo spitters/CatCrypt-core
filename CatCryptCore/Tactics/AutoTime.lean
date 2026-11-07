@@ -1546,7 +1546,10 @@ closed by `closeByContext` (a premise
 `∀ y, fCost y ≤ ?k` on a cost companion argument by the bound of the body of `fCost` at fresh
 `y`; when the bound of the instance is not free of `xs`, again with the premise bound free of
 `xs` as well), followed by the bound of its right side; an atom by a local hypothesis
-`∀ y, g y ≤ c` (a cost companion, or a length bounded by an invariant); a length of a list
+`∀ y, g y ≤ c` (a cost companion, or a length bounded by an invariant); an application `M s` of a
+function with a hypothesis `Monotone M` (a majorant of a cost companion, `CatCrypt.Core.CostMaj`)
+by `M` at the bound of `s`, and, when no local bound is free of `xs`, a local bound `M s` that reads
+them bounded in this way; a length of a list
 defined by cases whose cases are list literals by the longest literal (`lengthByCases?`).
 `none` when no clause gives a bound free of `xs`. -/
 partial def boundFree? (xs : Array FVarId) (e : Expr) (fuel : Nat) :
@@ -1632,6 +1635,17 @@ partial def boundFree? (xs : Array FVarId) (e : Expr) (fuel : Nat) :
               unless xs.any b.containsFVar do
                 return some (b, ← mkAppM ``Nat.le_trans #[pf, pb])
         st.restore
+  -- a monotone function applied: the function at the bound of its argument (a majorant of a
+  -- cost companion, `CatCrypt.Core.CostMaj`), its monotonicity a hypothesis of the context
+  if let .fvar _ := e.getAppFn then
+    if e.getAppNumArgs == 1 then
+      let M := e.appFn!
+      for ld in (← getLCtx) do
+        if ld.isImplementationDetail then continue
+        let ty ← instantiateMVars ld.type
+        unless ty.isAppOfArity ``Monotone 5 && ty.appArg! == M do continue
+        if let some (a, pa) ← boundFree? xs e.appArg! (fuel - 1) then
+          return some (mkApp M a, mkApp3 ld.toExpr e.appArg! a pa)
   for ld in (← getLCtx) do
     if ld.isImplementationDetail then continue
     let st ← saveState
@@ -1647,6 +1661,22 @@ partial def boundFree? (xs : Array FVarId) (e : Expr) (fuel : Nat) :
     st.restore
   if e.isAppOfArity ``List.length 2 then
     if let some r ← lengthByCases? e then return some r
+  -- a local bound that reads the variables, as a majorant at the size of an argument
+  -- (`CatCrypt.Core.CostMaj`): its bound in turn
+  for ld in (← getLCtx) do
+    if ld.isImplementationDetail then continue
+    let st ← saveState
+    let (ms, _, body) ← forallMetaTelescopeReducing (← instantiateMVars ld.type)
+    let some (l, b) := natLe? body | st.restore; continue
+    if l.getAppFn.isMVar || (← ms.anyM fun m => do isProp (← inferType m)) then
+      st.restore; continue
+    if ← withReducible (isDefEq l e) then
+      let b ← instantiateMVars b
+      let pf ← instantiateMVars (mkAppN ld.toExpr ms)
+      if !b.hasExprMVar && !pf.hasExprMVar && b.getAppFn.isFVar then
+        if let some (b', pb) ← boundFree? xs b (fuel - 1) then
+          return some (b', ← mkAppM ``Nat.le_trans #[pf, pb])
+    st.restore
   return none
 
 end

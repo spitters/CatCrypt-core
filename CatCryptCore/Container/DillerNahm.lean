@@ -31,7 +31,9 @@ input, and the costs compose by `c₂ + n₂ * c₁`.
   in it;
 * `DNLens.price` — the value of a demanded multiset under a price of the input positions;
 * `Costed`, `Costed.toLens`, `Costed.toDN` — costed functions and the two embeddings;
+  `Costed.tick`, the identity at one clock tick;
 * `Clocked`, `Clocked.toDN`, `Clocked.toAffineLens` — costed functions with use counts;
+  `Clocked.time`, `Clocked.timePrice` — the time of one use and the price of the tokens;
 * `VecCosted`, `VecCosted.toDN` — costs in `ι →₀ ℕ`, one clock for each resource `i`;
 * `DNLens.pair` — the pairing into the product, whose positions are the sum of the positions.
 
@@ -45,7 +47,11 @@ input, and the costs compose by `c₂ + n₂ * c₁`.
   costed function is a linear Diller–Nahm morphism;
 * `Clocked.toDN_comp`, `Clocked.equivIsClocked` — uses multiply, and the cost of a composite is
   `c₂ + n₂ * c₁`;
-* `Clocked.toAffineLens_comp` — the same composition law on the lenses with positions `ℕ → ℕ`;
+* `Clocked.time_eq_price`, `Clocked.time_comp` — the time `cost + uses * T` of a costed function
+  with use counts is the price of a data token of its morphism, and the time of a composite is the
+  time of the consumer at the time of the producer (`DNLens.price_comp`);
+* `Clocked.toAffineLens_comp` — the same composition law on the lenses with positions `ℕ → ℕ`, a
+  corollary of `Clocked.time_comp`;
 * `VecCosted.toDN_comp` — the additive composition law of query counts;
 * `DNLens.pair_comp_fst`, `DNLens.pair_comp_snd`, `DNLens.eq_pair` — the universal property of
   the pairing;
@@ -169,26 +175,38 @@ theorem nsmul_bind {α : Type u} {β : Type v} (n : ℕ) (s : Multiset α) (k : 
 
 /-! ## Costed functions -/
 
-/-- A first-order costed function: a function with the cost of its evaluation at each argument. -/
-@[ext] structure Costed (X : Type u) (Y : Type v) where
-  /-- The function. -/
-  fn : X → Y
-  /-- The cost of evaluating `fn` at an argument. -/
-  cost : X → ℕ
+/-- A first-order costed function: a function with the cost of its evaluation at each argument,
+the form `(X → Y) × (X → ℕ)` of the costed function types of the time certificates and of the
+translated function types of D (`CatCrypt.Complexity.D.Ty.hat`). -/
+abbrev Costed (X : Type u) (Y : Type v) : Type (max u v) := (X → Y) × (X → ℕ)
 
 namespace Costed
 
 variable {X : Type u} {Y : Type v} {Z : Type w} {W : Type u₁}
 
+/-- The function. -/
+abbrev fn (h : Costed X Y) : X → Y := h.1
+
+/-- The cost of evaluating `fn` at an argument. -/
+abbrev cost (h : Costed X Y) : X → ℕ := h.2
+
+@[simp] theorem fn_mk (f : X → Y) (c : X → ℕ) : fn (f, c) = f := rfl
+
+@[simp] theorem cost_mk (f : X → Y) (c : X → ℕ) : cost (f, c) = c := rfl
+
+/-- Costed functions with equal functions and equal costs are equal. -/
+@[ext] theorem ext {f g : Costed X Y} (hfn : f.fn = g.fn) (hc : f.cost = g.cost) : f = g :=
+  Prod.ext hfn hc
+
 /-- The identity costs nothing. -/
-protected def id (X : Type u) : Costed X X where
-  fn a := a
-  cost _ := 0
+protected def id (X : Type u) : Costed X X := (fun a => a, fun _ => 0)
+
+/-- One clock tick: the identity at cost one, the step of a β-redex. -/
+def tick (X : Type u) : Costed X X := (fun a => a, fun _ => 1)
 
 /-- The composite costs the cost of `f` at the argument plus the cost of `g` at the result. -/
-def comp (g : Costed Y Z) (f : Costed X Y) : Costed X Z where
-  fn a := g.fn (f.fn a)
-  cost a := f.cost a + g.cost (f.fn a)
+def comp (g : Costed Y Z) (f : Costed X Y) : Costed X Z :=
+  (fun a => g.fn (f.fn a), fun a => f.cost a + g.cost (f.fn a))
 
 /-- The identity is a left unit. -/
 @[simp] theorem id_comp (f : Costed X Y) : comp (Costed.id Y) f = f := by
@@ -351,13 +369,51 @@ def equivIsClocked : Clocked X Y ≃ {g : DNLens (clockPos X) (clockPos Y) // Is
     · exact (multiset_bool_decomp (g.toFunB a false)).symm
     · exact (hg a).symm
 
+/-- The time of one use of the output of `h` at `a` when one use of the input takes time `T`:
+the cost plus the uses times `T`. -/
+def time (h : Clocked X Y) (T : ℕ) (a : X) : ℕ :=
+  h.cost a + h.uses a * T
+
+/-- The price of the tokens of `clockPos X` at which a data token costs `T` and a clock tick
+costs one unit. -/
+def timePrice (T : ℕ) : ∀ _ : X, Bool → ℕ :=
+  fun _ b => bif b then 1 else T
+
+/-- The time is the price of a data token of the Diller–Nahm morphism at `timePrice T`. -/
+theorem time_eq_price (h : Clocked X Y) (T : ℕ) (a : X) :
+    h.time T a = (toDN h).price (timePrice T) a false := by
+  rw [price_toDN]
+  simp only [time, timePrice, Bool.cond_false, Bool.cond_true, mul_one]
+  omega
+
+/-- A tick of the Diller–Nahm morphism costs one unit at `timePrice T`. -/
+theorem price_toDN_true (h : Clocked X Y) (T : ℕ) (a : X) :
+    (toDN h).price (timePrice T) a true = 1 := by
+  simp [DNLens.price, toDN, clockBack, timePrice]
+
+/-- **The time of a composite.** One use of the output of `comp g f` takes the time of `g` at
+`f.fn a` when one use of its input takes the time of `f` at `a`: the price of the composite
+Diller–Nahm morphism is the price under `g` of the price under `f` (`DNLens.price_comp`). -/
+theorem time_comp (g : Clocked Y Z) (f : Clocked X Y) (T : ℕ) (a : X) :
+    (comp g f).time T a = g.time (f.time T a) (f.fn a) := by
+  have h1 := price_toDN_true f T a
+  rw [time_eq_price, toDN_comp, DNLens.price_comp, time_eq_price f]
+  change ((clockBack (g.uses (f.fn a)) (g.cost (f.fn a)) false).map _).sum = _
+  simp [clockBack, time, Multiset.map_nsmul, Multiset.sum_nsmul, h1]
+  omega
+
+/-- The time is monotone in the time of a use of the input. -/
+theorem time_mono (h : Clocked X Y) {T T' : ℕ} (hT : T ≤ T') (a : X) :
+    h.time T a ≤ h.time T' a :=
+  Nat.add_le_add_left (Nat.mul_le_mul_left _ hT) _
+
 /-- The lens of a costed function with use counts, on the positions `ℕ → ℕ`: the backward map
-precomposes the affine map `T ↦ cost a + uses a * T`, from the time of the input to the time of
-the output. -/
+precomposes the affine map `T ↦ cost a + uses a * T`, the time `h.time T a` of the output from the
+time of the input. -/
 def toAffineLens (h : Clocked X Y) :
     Lens (⟨X, fun _ => ℕ → ℕ⟩ : PFunctor) (⟨Y, fun _ => ℕ → ℕ⟩ : PFunctor) where
   toFunA := h.fn
-  toFunB a (k : ℕ → ℕ) := fun T => k (h.cost a + h.uses a * T)
+  toFunB a (k : ℕ → ℕ) := fun T => k (h.time T a)
 
 /-- The lens of the identity is the identity lens. -/
 theorem toAffineLens_id :
@@ -367,14 +423,13 @@ theorem toAffineLens_id :
   simp
 
 /-- The lens of a composite is the composite lens: the law `n₂ * n₁`, `c₂ + n₂ * c₁` of the
-Diller–Nahm form holds for ordinary lenses with the positions `ℕ → ℕ`. -/
+Diller–Nahm form holds for ordinary lenses with the positions `ℕ → ℕ`. It is the time of a
+composite (`time_comp`), the price of the composite Diller–Nahm morphism. -/
 theorem toAffineLens_comp (g : Clocked Y Z) (f : Clocked X Y) :
     toAffineLens (comp g f) = Lens.comp (toAffineLens g) (toAffineLens f) := by
   refine congrArg (Lens.mk _) (funext fun a => funext fun k => funext fun T => ?_)
-  change k (g.cost (f.fn a) + g.uses (f.fn a) * f.cost a + g.uses (f.fn a) * f.uses a * T) =
-    k (g.cost (f.fn a) + g.uses (f.fn a) * (f.cost a + f.uses a * T))
-  congr 1
-  rw [Nat.mul_add, Nat.add_assoc, Nat.mul_assoc]
+  change k ((comp g f).time T a) = k (g.time (f.time T a) (f.fn a))
+  rw [time_comp]
 
 /-- The lens of the use counts determines the costed function. -/
 theorem toAffineLens_injective : Function.Injective (toAffineLens : Clocked X Y → _) := by
@@ -461,9 +516,7 @@ theorem isLinear_toDN (h : Costed X Y) : IsLinear (toDN h) :=
 /-- A costed function is a linear element of the Diller–Nahm morphisms. -/
 def equivIsLinear : Costed X Y ≃ {g : DNLens (clockPos X) (clockPos Y) // IsLinear g} where
   toFun h := ⟨toDN h, isLinear_toDN h⟩
-  invFun g :=
-    { fn := g.1.toFunA
-      cost a := Multiset.count true (g.1.toFunB a false) }
+  invFun g := (g.1.toFunA, fun a => Multiset.count true (g.1.toFunB a false))
   left_inv h := by
     ext a
     · rfl

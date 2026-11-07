@@ -13,16 +13,17 @@ public import CatCryptCore.Crypto.Libcrux.Bridge_X25519Group
 
 The passive PQXDH bound with the replaced Diffie-Hellman values drawn by key generation
 (`pqxdh_advantage_le_K`) at parameters whose Diffie-Hellman record is X25519
-(`P.dh = concreteDDH_X25519`), under the RFC 7748 correctness of X25519 on the subgroup
-`G25519 B` (`X25519Hom B`). The KEM advantage of the hop-0 reduction is unchanged. Each of the
-four DDH advantages `DDH_AdvantageK concreteDDH_X25519` is at most the standard DDH advantage
-in `G25519 B` of the reduction encoding the triple (`DDH_AdvantageK_X25519_le`), plus
-`5 * Δ25519`. The KDF game over key generation is the encoded sampled game `kdfSampled B kdf`
-at the sampler `signedClamp`: the KDF applied to the encodings `encU (g^e)` of four subgroup
-elements and a uniform KEM input; at the uniform sampler its advantage is
-`KDF_G25519_Advantage B kdf A`, the KDF as an extractor on the encodings of four uniform
-subgroup elements and a uniform 32-byte string, and the change of sampler costs `4 * Δ25519`.
-The session bound has `24 * Δ25519` in total.
+(`P.dh = x25519DDHOf sm bp` for X25519 functions `sm`, `bp`), under their RFC 7748 correctness
+on the subgroup `G25519 B` (`X25519HomOf sm bp B`); at the libcrux functions
+(`P.dh = concreteDDH_X25519`) the hypothesis is `X25519Hom B`. The KEM advantage of the hop-0
+reduction is unchanged. Each of the four DDH advantages `DDH_AdvantageK (x25519DDHOf sm bp)` is
+at most the standard DDH advantage in `G25519 B` of the reduction encoding the triple
+(`DDH_AdvantageK_x25519DDHOf_le`), plus `5 * Δ25519`. The KDF game over key generation is the
+encoded sampled game `kdfSampled B kdf` at the sampler `signedClamp`: the KDF applied to the
+encodings `encU (g^e)` of four subgroup elements and a uniform KEM input; at the uniform sampler
+its advantage is `KDF_G25519_Advantage B kdf A`, the KDF as an extractor on the encodings of
+four uniform subgroup elements and a uniform 32-byte string, and the change of sampler costs
+`4 * Δ25519`. The session bound has `24 * Δ25519` in total.
 
 ## Main definitions
 
@@ -34,12 +35,13 @@ The session bound has `24 * Δ25519` in total.
 
 ## Main results
 
-* `kdfSampled_realizes_X25519` — `KDF_Random_RealK` and the uniform key at X25519 are the
-  game `kdfSampled B P.kdf` at `signedClamp`
-* `KDF_Random_AdvantageK_X25519_le` — `KDF_Random_AdvantageK ≤ KDF_G25519_Advantage + 4 * Δ25519`
-* `pqxdh_advantage_le_G25519` — for every distinguisher `D`, the advantage between the real
-  and the ideal session at X25519 is at most `pqxdhG25519Bound` at the KI adversary of `D`
-  plus `24 * Δ25519`
+* `kdfSampled_realizes_x25519DDHOf`, `kdfSampled_realizes_X25519` — `KDF_Random_RealK` and
+  the uniform key at X25519 functions are the game `kdfSampled B P.kdf` at `signedClamp`
+* `KDF_Random_AdvantageK_x25519DDHOf_le`, `KDF_Random_AdvantageK_X25519_le` —
+  `KDF_Random_AdvantageK ≤ KDF_G25519_Advantage + 4 * Δ25519`
+* `pqxdh_advantage_le_G25519_of_hom`, `pqxdh_advantage_le_G25519` — for every distinguisher
+  `D`, the advantage between the real and the ideal session at X25519 functions is at most
+  `pqxdhG25519Bound` at the KI adversary of `D` plus `24 * Δ25519`
 -/
 
 @[expose] public section
@@ -81,14 +83,16 @@ noncomputable def KDF_G25519_Advantage (B : Curve25519Point)
 
 variable {B : Curve25519Point} [Fact (addOrderOf B = curve25519SubgroupOrder)]
 variable {PK SK C Sd : Type} [SampleableType Sd]
+variable {sm : Vector UInt8 32 → Vector UInt8 32 → Vector UInt8 32}
+  {bp : Vector UInt8 32 → Vector UInt8 32}
 
 omit [SampleableType Sd] in
-/-- **The KDF game of X25519 realized in the subgroup**: under `X25519Hom B`, for parameters
-whose Diffie-Hellman record is `concreteDDH_X25519`, the KDF on the public parts of four key
-pairs and a uniform KEM input, and the uniform key, are the game `kdfSampled B P.kdf` at the
-sampler `signedClamp`. -/
-theorem kdfSampled_realizes_X25519 (h : X25519Hom B)
-    (P : PassiveParams (Vector UInt8 32) PK SK C Sd) (hP : P.dh = concreteDDH_X25519) :
+/-- **The KDF game of X25519 functions realized in the subgroup**: under `X25519HomOf sm bp B`,
+for parameters whose Diffie-Hellman record is `x25519DDHOf sm bp`, the KDF on the public parts
+of four key pairs and a uniform KEM input, and the uniform key, are the game
+`kdfSampled B P.kdf` at the sampler `signedClamp`. -/
+theorem kdfSampled_realizes_x25519DDHOf (h : X25519HomOf sm bp B)
+    (P : PassiveParams (Vector UInt8 32) PK SK C Sd) (hP : P.dh = x25519DDHOf sm bp) :
     SampledRealizes (KDF_Random_RealK P) KDF_Random_Ideal (kdfSampled B P.kdf) signedClamp id where
   real := by
     have h2 : ∀ x y z w : ZMod curve25519SubgroupOrder,
@@ -99,11 +103,34 @@ theorem kdfSampled_realizes_X25519 (h : X25519Hom B)
       fun _ _ _ _ => rfl
     simp only [KDF_Random_RealK, hP, SampledGame.realAt, kdfSampled, h2, h3,
       sampleFrom_replicateFin_succ_bind, sampleFrom_replicateFin_zero_bind, SPComp.map_id,
-      SPComp.bind_assoc, SPComp.pure_bind, sampleFrom_signedClamp_bind, concreteDDH_X25519,
+      SPComp.bind_assoc, SPComp.pure_bind, sampleFrom_signedClamp_bind,
       Fin.cons_zero, Fin.cons_one, encU_pow_signedE, h.base_eq, sample_bool_bind_const]
   ideal := by
     simp only [KDF_Random_Ideal, SampledGame.idealAt, kdfSampled,
       sampleFrom_replicateFin_zero_bind, SPComp.map_id]
+
+omit [SampleableType Sd] in
+/-- **The KDF game of X25519 realized in the subgroup**: under `X25519Hom B`, for parameters
+whose Diffie-Hellman record is `concreteDDH_X25519`, the KDF on the public parts of four key
+pairs and a uniform KEM input, and the uniform key, are the game `kdfSampled B P.kdf` at the
+sampler `signedClamp`. -/
+theorem kdfSampled_realizes_X25519 (h : X25519Hom B)
+    (P : PassiveParams (Vector UInt8 32) PK SK C Sd) (hP : P.dh = concreteDDH_X25519) :
+    SampledRealizes (KDF_Random_RealK P) KDF_Random_Ideal (kdfSampled B P.kdf) signedClamp id :=
+  kdfSampled_realizes_x25519DDHOf h P hP
+
+omit [SampleableType Sd] in
+/-- **The KDF game over key generation of X25519 functions**: under `X25519HomOf sm bp B`, its
+advantage is at most the advantage against the KDF on the encodings of four uniform subgroup
+elements and a uniform KEM input, plus `Δ25519` for each of the four exponent draws. -/
+theorem KDF_Random_AdvantageK_x25519DDHOf_le (h : X25519HomOf sm bp B)
+    (P : PassiveParams (Vector UInt8 32) PK SK C Sd) (hP : P.dh = x25519DDHOf sm bp)
+    (A : Vector UInt8 32 → SPComp Bool) :
+    KDF_Random_AdvantageK P A ≤ KDF_G25519_Advantage B P.kdf A + 4 * Δ25519 := by
+  have hR := advantageA_le_of_realizes (kdfSampled B P.kdf) signedClampCert id
+    (kdfSampled_realizes_x25519DDHOf h P hP) A
+  norm_num [kdfSampled] at hR
+  exact hR
 
 omit [SampleableType Sd] in
 /-- **The KDF game over key generation at X25519**: under `X25519Hom B`, its advantage is at
@@ -112,11 +139,8 @@ uniform KEM input, plus `Δ25519` for each of the four exponent draws. -/
 theorem KDF_Random_AdvantageK_X25519_le (h : X25519Hom B)
     (P : PassiveParams (Vector UInt8 32) PK SK C Sd) (hP : P.dh = concreteDDH_X25519)
     (A : Vector UInt8 32 → SPComp Bool) :
-    KDF_Random_AdvantageK P A ≤ KDF_G25519_Advantage B P.kdf A + 4 * Δ25519 := by
-  have hR := advantageA_le_of_realizes (kdfSampled B P.kdf) signedClampCert id
-    (kdfSampled_realizes_X25519 h P hP) A
-  norm_num [kdfSampled] at hR
-  exact hR
+    KDF_Random_AdvantageK P A ≤ KDF_G25519_Advantage B P.kdf A + 4 * Δ25519 :=
+  KDF_Random_AdvantageK_x25519DDHOf_le h P hP A
 
 /-- The bound of the PQXDH session at X25519: the KEM advantage of the hop-0 reduction, the
 standard DDH advantages in `G25519 B` of the four Diffie-Hellman hop reductions composed with
@@ -136,6 +160,32 @@ noncomputable def pqxdhG25519Bound (B : Curve25519Point)
       (encodedRed encU3 fun t => ddhRedK4 P A t.1 t.2.1 t.2.2) +
     KDF_G25519_Advantage B P.kdf (kdfReduction P A)
 
+/-- **PQXDH at X25519 functions from a KEM assumption and DDH in the prime-order subgroup.**
+Under `X25519HomOf sm bp B`, for parameters whose Diffie-Hellman record is `x25519DDHOf sm bp`
+and every distinguisher `D` of the key and the transcript, the advantage of `D` between the
+real and the ideal session is at most `pqxdhG25519Bound B P` at `kiAdversaryOfDistinguisher P D`,
+plus `24 * Δ25519`: `5 * Δ25519` for each of the four DDH hops and `4 * Δ25519` for the four
+Diffie-Hellman inputs of the KDF. -/
+theorem pqxdh_advantage_le_G25519_of_hom (h : X25519HomOf sm bp B)
+    (P : PassiveParams (Vector UInt8 32) PK SK C Sd) (hP : P.dh = x25519DDHOf sm bp)
+    (D : Vector UInt8 32 × PQXDHTranscript (Vector UInt8 32) PK C → SPComp Bool) :
+    AdvantageA (pqxdh_real P) (pqxdh_ideal P) D ≤
+      pqxdhG25519Bound B P (kiAdversaryOfDistinguisher P D) + 24 * Δ25519 := by
+  have hK := pqxdh_advantage_le_K P
+    (hP ▸ x25519DDHOf_symmetric (x25519CommutesOf_of_hom h)) D
+  refine hK.trans ?_
+  set A := kiAdversaryOfDistinguisher P D
+  have h1 := DDH_AdvantageK_x25519DDHOf_le h (ddhRed1 P A)
+  have h2 := DDH_AdvantageK_x25519DDHOf_le h (ddhRedK2 P A)
+  have h3 := DDH_AdvantageK_x25519DDHOf_le h (ddhRedK3 P A)
+  have h4 := DDH_AdvantageK_x25519DDHOf_le h (ddhRedK4 P A)
+  have h5 := KDF_Random_AdvantageK_x25519DDHOf_le h P hP (kdfReduction P A)
+  rw [← hP] at h1 h2 h3 h4
+  unfold pqxdhKIReductionBoundK pqxdhG25519Bound
+  refine (add_le_add (add_le_add (add_le_add (add_le_add (add_le_add le_rfl h1) h2) h3) h4)
+    h5).trans (le_of_eq ?_)
+  ring
+
 /-- **PQXDH at X25519 from a KEM assumption and DDH in the prime-order subgroup.** Under
 `X25519Hom B`, for parameters whose Diffie-Hellman record is `concreteDDH_X25519` and every
 distinguisher `D` of the key and the transcript, the advantage of `D` between the real and the
@@ -146,20 +196,7 @@ theorem pqxdh_advantage_le_G25519 (h : X25519Hom B)
     (P : PassiveParams (Vector UInt8 32) PK SK C Sd) (hP : P.dh = concreteDDH_X25519)
     (D : Vector UInt8 32 × PQXDHTranscript (Vector UInt8 32) PK C → SPComp Bool) :
     AdvantageA (pqxdh_real P) (pqxdh_ideal P) D ≤
-      pqxdhG25519Bound B P (kiAdversaryOfDistinguisher P D) + 24 * Δ25519 := by
-  have hK := pqxdh_advantage_le_K P
-    (hP ▸ concreteDDH_X25519_symmetric (x25519Commutes_of_hom h)) D
-  refine hK.trans ?_
-  set A := kiAdversaryOfDistinguisher P D
-  have h1 := DDH_AdvantageK_X25519_le h (ddhRed1 P A)
-  have h2 := DDH_AdvantageK_X25519_le h (ddhRedK2 P A)
-  have h3 := DDH_AdvantageK_X25519_le h (ddhRedK3 P A)
-  have h4 := DDH_AdvantageK_X25519_le h (ddhRedK4 P A)
-  have h5 := KDF_Random_AdvantageK_X25519_le h P hP (kdfReduction P A)
-  rw [← hP] at h1 h2 h3 h4
-  unfold pqxdhKIReductionBoundK pqxdhG25519Bound
-  refine (add_le_add (add_le_add (add_le_add (add_le_add (add_le_add le_rfl h1) h2) h3) h4)
-    h5).trans (le_of_eq ?_)
-  ring
+      pqxdhG25519Bound B P (kiAdversaryOfDistinguisher P D) + 24 * Δ25519 :=
+  pqxdh_advantage_le_G25519_of_hom h P hP D
 
 end CatCrypt.Crypto.Signal.PQXDH.G25519

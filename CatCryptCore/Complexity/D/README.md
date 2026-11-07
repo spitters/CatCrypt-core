@@ -78,8 +78,10 @@ and the decisions of `=`, `≠`, `<`, `≤`, `∧`, `∨`, `¬`; pairs and proje
 matches on `Bool`, `Option`, `Sum`, pairs and lists (non-recursive, as `lcase`); `List.foldl`
 as `foldl` and `Nat.iterate` as `iter`; `pure`, `bind`, `SPComp.sample` of a finite ground
 type, `SPComp.get` and `SPComp.set` at a location `FTy.loc f n`. A constant outside the Lean,
-Std and Mathlib libraries is unfolded; a recursive definition, a type without representation
-and any other constant are refused with a message naming them.
+Std and Mathlib libraries is unfolded; a Lean inductive type is `mu` of its signature and a
+structural recursion over it the eliminator `fold` (section "Inductive types"); any other
+recursive definition, a type without representation and any other constant are refused with a
+message naming them.
 
 ## What is proved
 
@@ -152,8 +154,8 @@ Lean function `Val a → CTree (Val b)` into costed trees, so the evaluator is a
 interpreter: it is defined by structural recursion on the term, and a closure is produced
 only by evaluating a `lam`.
 
-Recursion is structural: `foldl` over lists, `iter` over `ℕ`, and the constructor match
-`lcase`. There is no general fixed point, so every term denotes a total function and neither
+Recursion is structural: `foldl` over lists, `iter` over `ℕ`, the constructor match
+`lcase`, and the eliminator `fold` of the inductive types `mu S`. There is no general fixed point, so every term denotes a total function and neither
 the evaluator nor the denotation needs fuel. A Lean definition by structural recursion on a
 list or a natural number is reflected through these schemes; a definition by well-founded
 recursion needs a bound on its recursion depth, which becomes the count of an `iter`.
@@ -161,3 +163,138 @@ recursion needs a bound on its recursion depth, which becomes the count of an `i
 Unlike L, which encodes data by Scott encodings and counts their β-steps, D has native
 products, sums, lists and primitive operations; a constructor or a projection costs nothing
 and a branch costs one step, the convention of `derive_timed`.
+
+## Dependent products and sums
+
+`Ty.pi f B` and `Ty.sig f B` are the dependent product and sum of a family `B : f.den → Ty` over
+a finite ground index `f` (`FTy`), so that a type computed from a finite datum, such as a record
+whose field types depend on a tag or a table of types `beta : Fin n → Type`, is a code of D.
+The index ranges over `f.den`, defined before `Ty`: an index over the values of a type of D
+would make `Ty` and `Val` an inductive-recursive pair, which Lean's kernel does not provide.
+`Val`, `ValRel`, `Ty.hat` and `Sim` are defined by recursion on the code: a dependent function
+of the values of the family, a dependent pair of an index and a value, and the translated
+values are the table of the translated components and the dependent pair of translated
+values.
+
+* `ptab ts`: a table, its components evaluated in the order of `tabT` (`tabDep`); it costs the
+  sum of its components and nothing of its own. `papp t j`: the component at a static index,
+  free.
+* `spair j x`: a pair at a static index, free; `scase s ks`: the branch of the index of a pair,
+  one step plus the branch.
+* `fcase i ks`: the branch at the value of a finite ground value, one step plus the branch. A
+  read of a table at a computed index is `fcase i fun j => papp t j`: one step, the read of a
+  tabulated function of `derive_timed` (rule (m)).
+
+The charges of `Tm.dt` are the same, a table charged the sum of the charges of its pure
+components (`tabCost`, `tabCost_add`); the soundness theorem `Tm.dtC_timedSim` covers the five
+constructs (`tabDep_stepN` for the table), and with it `Tm.cost_le_dt`, `Tm.dt_run` and
+`Tm.dt_erase`. Test: `CatCryptCoreTest/Complexity/D/PiSigTest.lean`.
+
+## Indexed inductive families
+
+`Ty.imu f S i` is the inductive family over a finite ground index `f` of the indexed signatures
+`S : f.den → ISig f`, at the index `i`: a further constructor of an indexed signature names, at
+each recursive position, the index of the child there. Its values are the indexed W-type `IW` of
+the constructors with their fields. The index ranges over `f.den`, a type defined before `Ty`: an
+index over the values of a type of D would make `Ty` and `Val` an inductive-recursive pair. A
+static index needs no family: a type computed by recursion on a parameter is a code of D.
+
+* `icon`: the node at its index, its children a table whose component at a position is at the
+  index that position names; free.
+* `ifold`: the eliminator at a motive family `c : f.den → Ty`, from a value at `i` to `c i`, the
+  step functions a table over the indices; a step receives the field, the table of the children
+  and the table of the recursive results, closures on `unit` at the types of the motive at the
+  indices of the children; one step per node visited plus the step there, as `fold`.
+
+`ValRel` and `Sim` at `imu` are the lifting `IWLift` over the indexed W-type and
+`Ty.hat (imu f S i)` the indexed W-type of the translated fields; the charges of `Tm.dt` price
+`icon` at nothing (`conHatI`) and `ifold` as `fold` (`foldHatI`), and the soundness theorem
+`Tm.dtC_timedSim` covers both (`conAtI_sim`, `foldIW_sim`). Test:
+`CatCryptCoreTest/Complexity/D/IMuTest.lean` (binary trees of bounded depth, an eliminator at a
+constant motive and one into a motive family whose type changes with the depth).
+
+## Inductive types
+
+`Ty.mu S` is the polynomial inductive type of a signature `S : Sig`: a list of constructors,
+each with a field type and recursive positions that are none or indexed by a finite ground
+type, the first constructor without recursive position. Its values are the W-type whose shapes
+are a constructor `c : S.Ctor` with a value of its field (`S.Fld c`) and whose positions are
+those of the constructor (`S.Pos c`). A field may hold functions: the logical relation `ValRel`
+and the relation `Sim` of the translation are, at `mu S`, the lifting `WLift` over the W-type
+(two nodes of one constructor with related fields and related children), and the translated
+values `Ty.hat (mu S)` are the W-type of the translated fields (`Sig.hatF`). Lists (kept as the
+type `list` of their own), binary trees, oracle trees with answers in a finite ground type and
+strategies with challenges in a finite ground type are instances.
+
+* `con`: a node from the argument of its constructor; the children of a constructor with
+  positions `some f` are a table, a value of the dependent product `pi f fun _ => mu S`, whose
+  components are evaluated where the table is built (`ptab`): a constructor costs nothing, as
+  `derive_timed` charges a constructor.
+* `fold`: the eliminator at a constant motive, a paramorphism with one step function per
+  constructor, which receives the field, the children and the recursive results; one step per
+  node it visits plus the step function there, the recursive results evaluated when the step
+  applies them, as a call of a structural recursion costs one plus its body. A case analysis
+  is the `fold` that applies no recursive result.
+
+The charges of `Tm.dt` (`TranslateDt`) price `con` at nothing (`conHat`) and `fold` by one plus
+the step at the root and one plus the step at a child per application of its result
+(`foldHat`); the soundness theorem `Tm.dtC_timedSim`
+covers both, by induction on the signature and on the value (`conAt_sim`, `foldW_sim`). The
+judgements of `Reflect` have the rules `Den.con`, `Den.fold` (the eliminator denotes a recursion
+`F` when its steps denote `F` at every node whose recursive results are the values of `F` at its
+children), `Den.foldEnc` (the eliminator over the encoded values of a Lean type, by induction on
+that type), `Den.foldApp` (at a function motive) and `CEq.fold`; `TimedLink` has the construct
+rules `DSim.con` and `DSim.fold` (the eliminator against the cost of a structural recursion, one
+per call plus the body). `reflect_d` reads the case analyses written with `casesOn` and with the
+recursors of `Bool`, `Option`, `Sum` and pairs, and maps a Lean inductive type `T` to
+`mu T.dSig` with the encoding `T.dEnc` generated by `T.rec`: a constructor is `con`, a match on a
+value of `T` and a structural recursion over `T` are `fold`, a recursive call on a child the
+application of the recursive results at its position, and a recursion whose other arguments
+change the eliminator at a function motive (module docstring of `Reflect`, "Inductive types and
+structural recursion"). `link_timed` links the fold of a structural recursion to the costed form
+of `derive_timed`, whose companion `f.timedCost` is defined by the same recursion
+(`TimedLink.DSim.foldEnc`, the node condition the equation of the companion at each
+constructor). Tests: `CatCryptCoreTest/Complexity/D/MuTest.lean`, `ReflectRecTest.lean`,
+`ReflectIndTest.lean`, `CatCryptCoreTest/Tactics/LinkTimedFoldTest.lean`.
+
+## The interpretation in the Diller–Nahm category
+
+`DillerNahm` relates the charges of `Tm.dtC` to the Diller–Nahm category of containers
+(`CatCryptCore/Container/DillerNahm.lean`; Moss and von Glehn, *Dialectica models of type theory*,
+LICS 2018, §8).
+
+* The substitution theorem `Tm.dtC_subst`: a certified callee `g : Tm (a :: Γ) b` of the
+  fragment, effectful or not, substituted for the function variable of `t` is simulated by the
+  charges of `t` at the entry `calleeEntry cc g η` of the callee, each call charged the charge of
+  the call and the cost of the callee at its argument (`Tm.dtC_call_calleeEntry`); it is the
+  soundness theorem of `t` at that entry, related to the closure of `g` by the soundness theorem
+  of `g`. `Tm.cost_subst_le` and `Tm.dtC_subst_letE` (the β-redex) follow.
+* The functor of the pure fragment: a type is the container `Ty.dn τ = clockPos τ.hat` (a data
+  token and a clock tick at each translated value), a pure term in the context of one more
+  variable its costed closure `Tm.costedC` and the Diller–Nahm morphism `Tm.dnC`, whose backward
+  map sends a data token to its demand. The variable is the identity (`Tm.dnC_var`), and the
+  composite by substitution `Tm.letComp s t` is the composite of the morphisms with the clock tick
+  of the β-step between them (`Tm.dnC_letComp`, with `Tm.dtC_rename`). `Tm.dnC_bounds` is the
+  soundness theorem at the abstraction: the evaluation is a leaf after at most the ticks of the
+  demand.
+* `reflect_d` reflects a call of a callee with a certificate `c.d_timedSim` as the closure of
+  `c.d` renamed into the caller's context (`Ren.liftN`), and `link_timed` applies the certificate
+  at the call (`TSim.certCall`), without walking the body of the callee again. Test:
+  `CatCryptCoreTest/Tactics/LinkTimedCertTest.lean`.
+
+## The types of D in the polynomial model
+
+`PolyModel` places the types of D in the polynomial model of type theory (von Glehn;
+`CatCryptCore/Container/`). The codes with their values form a universe in the sense of Awodey's
+natural models (`univPoly Val`), and so do the codes with their translated values
+(`univPoly Ty.hat`). `pi f B` and `sig f B` are the Π- and Σ-codes of that universe at the finite
+ground codes (`piStr`, `sigStr`, and `piStrHat`, `sigStrHat` for the translation), `mu S` and
+`imu f S i` its W-codes (`wStr`, `iwStr`): the values of `mu S` are Mathlib's W-type of the
+container `Sig.den S` (a `PFunctor`) and those of `imu f S i` the indexed W-type
+`Container.IPW` of the indexed container `ISig.cont S` (PolyFun's `IPFunctor`). A function type
+translates to the costed function `Container.Costed` of the Diller–Nahm model. The logical
+relations `ValRel` and `Sim` at inductive types are the relators `Container.WLift`,
+`Container.IWLift` of the W-types (`CatCryptCore/Container/WTypes.lean`, with the maps of fields
+`Container.wmapF`, `Container.iwmapF`), and `Sim` at a function type is the bound of the
+evaluation by the demand of the Diller–Nahm morphism of the costed function
+(`Sim.arr_iff_demand`).
