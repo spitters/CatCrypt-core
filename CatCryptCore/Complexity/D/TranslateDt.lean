@@ -745,7 +745,7 @@ noncomputable def foldHatI {f : FTy} {S : f.den → ISig f} {c : f.den → Ty}
   | _, .mk i a kids => stepHatI (S i) (p i) a kids fun q => foldHatI p (kids q)
 
 /-- Whether `derive_timed` and D both charge a primitive operation one step: the operations on
-words and `Bool`. -/
+words and `Bool`, and the reads and writes of stores and of finite ground tables. -/
 def Prim.unitCost {a b : Ty} : Prim a b → Bool
   | .natAdd | .natSub | .natMul | .natDiv | .natMod | .natEq | .natLt => false
   | .finAdd _ | .finSub _ | .finMul _ | .finEq _ | .finLt _ | .finOfNat _ | .finToNat _ =>

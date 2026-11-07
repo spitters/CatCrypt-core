@@ -128,7 +128,10 @@ D-term `c.d` of a callee with a certificate `c.d_timedSim` (`Reflect.Impl.certCa
 `certClosure?`), on the last argument after the `let` of the others. The rule is `TSim.call` with
 the closure (`Reflect.CEq.lam`) and, at the value of the arguments, the certificate of the callee
 (`TSim.certCall`): the callee is linked at the call by its certificate, as a function variable
-of the substitution theorem `Tm.dtC_subst` is by its entry, and its body is not walked again. The
+of the substitution theorem `Tm.dtC_subst` is by its entry, and its body is not walked again. At
+a function parameter of the callee the argument is a data function value of the caller passed
+through, whose step equation and cost bound are the premises of the certificate there
+(`certArgs`). The
 call is charged the unit of a call of `derive_timed` and the step cost of the costed form of the
 callee; the allowance adds the allowance of the certificate. Its costed tree is read in head
 normal form, and a bind whose first tree is such a call is unified with the projections of its
@@ -165,7 +168,7 @@ whose type differs from their D representation (`Option`).
 ## Main definitions
 
 * `link_timed x`: the command.
-* `certClosure?`, `envPeel`, `applyRuleProj`: the call of a certified callee.
+* `certClosure?`, `envPeel`, `certArgs`, `applyRuleProj`: the call of a certified callee.
 * `DtState`, `DtM`, `provePair`, `proveTree`, `closeSideD`, `sideD`, `splitIdx`, `leafMap?`,
   `leafMapGoal`, `countFree`, `dtRoute`: the comparison of the
   route through the soundness theorem.
@@ -403,6 +406,47 @@ partial def envPeel (ρ : Expr) : Nat → MetaM (Array Expr × Expr)
       throwError "link_timed: the environment `{ρ}` is not a chain of `Env.cons`"
     let (vs, ρ0) ← envPeel (ρ.getArg! 3) k
     return (#[ρ.getArg! 2] ++ vs, ρ0)
+
+/-- The certificate `c.d_timedSim` at the D values `vs` of the parameters of `c`, outermost
+first. A data parameter takes its value. A function parameter, whose binders in the certificate
+are the function, its companion, its D value, the D cost, the step equation and the bound of the
+D cost by the companion, is filled from a data function value of the caller passed through (a
+variable of kind `dataFn` or `freeFn`): its D value, and its step equation and bound, from which
+the function, the companion and the D cost are read by unification. -/
+def certArgs (c : Name) (vs : Array Expr) : LinkM Expr := do
+  let cert := Lean.mkConst (c ++ `d_timedSim)
+  let (ms, _, _) ← forallMetaTelescopeReducing (← inferType cert)
+  let mut k := 0
+  let mut i := 0
+  while k < ms.size && i < vs.size do
+    let grp ← if k + 5 < ms.size then do
+        let T ← whnfR (← inferType ms[k + 2]!)
+        pure (T.isAppOfArity ``Val 1 && T.appArg!.isAppOfArity ``Ty.arr 2)
+      else pure false
+    if grp then
+      let v ← whnf (← instantiateMVars vs[i]!)
+      let some (hg, hFC) ← (do
+          let .fvar fv := v | pure none
+          match (← read)[fv]? with
+          | some (.dataFn hg hFC) | some (.freeFn hg hFC) => pure (some (hg, hFC))
+          | _ => pure none) |
+        failL m!"the argument `{vs[i]!}` of the function parameter of `{c}` is not a data \
+          function value of the caller"
+      unless ← isDefEq ms[k + 2]! v do failL m!"the D value `{v}` at the call of `{c}`"
+      unless ← isDefEq (← inferType ms[k + 4]!) (← inferType hg) do
+        failL m!"the step equation of `{v}` at the call of `{c}`"
+      ms[k + 4]!.mvarId!.assign hg
+      unless ← isDefEq (← inferType ms[k + 5]!) (← inferType hFC) do
+        failL m!"the cost bound of `{v}` at the call of `{c}`"
+      ms[k + 5]!.mvarId!.assign hFC
+      k := k + 6
+    else
+      unless ← isDefEq ms[k]! vs[i]! do failL m!"the argument `{vs[i]!}` of `{c}`"
+      k := k + 1
+    i := i + 1
+  let pf ← instantiateMVars (mkAppN cert (ms.extract 0 k))
+  if pf.hasExprMVar then failL m!"the certificate of `{c}` at the call is not determined"
+  return pf
 
 /-- Record a step-cost side goal. -/
 def side (mv : Expr) : LinkM Unit := modify (·.push mv.mvarId!)
@@ -959,7 +1003,7 @@ partial def solveT (g : MVarId) : LinkM Unit := g.withContext do
       let u ← instantiateMVars (← arg m `u)
       let (inner, ρ0) ← envPeel ρ (tys.length - 1)
       let vs := inner.reverse.push u
-      let h ← mkAppM ``TSim.certCall #[← mkAppM (c ++ `d_timedSim) vs, ρ0]
+      let h ← mkAppM ``TSim.certCall #[← certArgs c vs, ρ0]
       closeWith (← arg m `hg) h
       side (← arg m `hc)
       return

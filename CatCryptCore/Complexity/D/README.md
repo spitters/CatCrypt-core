@@ -190,6 +190,38 @@ components (`tabCost`, `tabCost_add`); the soundness theorem `Tm.dtC_timedSim` c
 constructs (`tabDep_stepN` for the table), and with it `Tm.cost_le_dt`, `Tm.dt_run` and
 `Tm.dt_erase`. Test: `CatCryptCoreTest/Complexity/D/PiSigTest.lean`.
 
+## Stores
+
+A store `Ty.store f a` is the dependent product over a finite ground index `f` at the constant
+family `a`: its values are the tables `f.den → Val a`. It is read and written at a computed
+index by two primitive operations of one step each, `Prim.sget` and `Prim.sset` (the write is
+`Function.update` at the decision of equality of the source); a finite ground table
+`FTy.tab (n + 1) r` has the same two operations, `Prim.tget` and `Prim.tset`. As primitives they
+enter the evaluator, `Tm.dtC` and the soundness theorem `Tm.dtC_timedSim` through the existing
+case of primitive operations (`Prim.unitCost`), and `Prim.fo` covers them by the field `ha` of
+first-order values of a store.
+
+`reflect_d` represents a function type `X → Y` at a component of a product, a sum or a list,
+with `X` a finite ground type and `Y` first-order data that `Ty.foB` accepts and that is not a
+table of a finite ground type, as `Ty.store`; it reflects `t i` and `Function.update t i v` on a
+store or a table as these operations, and refuses a function parameter written by
+`Function.update`.
+
+The unit charge is the word-RAM convention at an index of `log N` bits for a table of `N`
+entries. A program of D with `k` store operations on stores of `N` entries is simulated on a
+pointer machine or a Turing machine by a balanced tree per store at `O(log N)` steps per
+operation times the size of an entry, and a store used after it was written costs no more with
+path copying (Driscoll, Sarnak, Sleator, Tarjan, *Making data structures persistent*, JCSS
+38(1), 1989); this simulation is not proved here.
+
+`derive_timed` charges a write to table data `Function.update t i v` one unit plus
+`Function.update.timedCost` and its arguments, and a table read one unit plus its argument;
+a table under a name that does not unfold at reducible transparency is such data, and
+`link_timed` links it by `DSim.prim`. A table held in the state at a type with a costed form is
+a costed closure for `derive_timed` (the write's companion is the read of the definition), which
+D does not represent. Tests: `CatCryptCoreTest/Complexity/D/StoreTest.lean`,
+`CatCryptCoreTest/Tactics/LinkTimedStoreTest.lean`.
+
 ## Indexed inductive families
 
 `Ty.imu f S i` is the inductive family over a finite ground index `f` of the indexed signatures

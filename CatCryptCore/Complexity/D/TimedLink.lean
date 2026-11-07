@@ -77,6 +77,14 @@ theorem le_fst {c c' : ℕ} {A : SPTree.Timed α} {t : CTree β} (hc : c ≤ c')
 
 end TimedSim
 
+/-- The closure of a body evaluated in exactly `c v` steps to `F v` at every argument has the
+step equation of a data function value of `link_timed`'s telescope: the closure of `CEq.lam`
+applied to `v` takes `c v` steps to `F v`. -/
+theorem Reflect.CEq.closure_stepN {Γ : List Ty} {ρ : Env Γ} {a b : Ty} {body : Tm (a :: Γ) b}
+    {c : Val a → ℕ} {F : Val a → Val b} (h : ∀ v, Reflect.CEq body (ρ.cons v) (c v) (F v)) :
+    ∀ v, (fun v => body.eval (ρ.cons v)) v = stepN CTree.tick (c v) (.ret (F v)) :=
+  h
+
 namespace TimedLink
 
 variable {Γ : List Ty} {ρ : Env Γ} {α γ β : Type} {τ a b : Ty} {K : ℕ}

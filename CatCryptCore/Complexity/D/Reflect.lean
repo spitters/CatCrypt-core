@@ -88,7 +88,9 @@ values (`CLe.letESup`).
 
 Types: `ℕ`, `Bool`, `Unit`, `BitVec w` for a numeral `w`, `Fin m` and `ZMod m` for a modulus
 `m` that is a positive numeral or of the form `n + 1`, tables `Fin q → R` of a finite ground
-type `R` (the finite ground type `FTy.tab q f`), products, sums and lists of these;
+type `R` (the finite ground type `FTy.tab q f`), products, sums and lists of these; at a
+component of a product, a sum or a list, a store `X → Y` of a finite ground type `X` and
+first-order data `Y` that is not a table (`Ty.store`);
 `Option α` as `α`'s sum with `Unit`, and a Lean inductive type `T` as `mu T.dSig` (below), at
 the parameters, the result, the scrutinees of matches and the fields of an inductive type;
 functions as parameters, `let`-bound values and arguments of λ-terms.
@@ -99,7 +101,9 @@ and `BitVec.ofNat w n`; the operations `+ - * / %` on `ℕ`, `+ - * &&& ||| ^^^ 
 words, `+ - *` and numerals on `Fin m` and `ZMod m`, `&&`, `||`, `!`, `^^` on `Bool`,
 `BitVec.ofNat`, `BitVec.toNat`, `BitVec.setWidth`, `Fin.val`, `ZMod.val` and the cast of a
 natural number into `Fin m` or `ZMod m`; `decide` of `=`, `≠`, `<`, `≤`, `∧`, `∨`, `¬` over
-these (`=`, `≠` and `<` on residues); pairs and projections; `Sum.inl`,
+these (`=`, `≠` and `<` on residues); the read `t i` and the write `Function.update t i v` of a
+store (`Prim.sget`, `Prim.sset`) or of a table (`Prim.tget`, `Prim.tset`), a function
+parameter written by `Function.update` refused; pairs and projections; `Sum.inl`,
 `Sum.inr`, `some`, `none`, `[]`, `::`, `id`; `if`, `bif`, `Option.elim`, `Sum.elim` and
 matches on `Bool`, `Option`, `Sum`, `List` (non-recursive, as `lcase`) and pairs, also written
 as the case analyses `casesOn` and, for `Bool`, `Option`, `Sum` and pairs, as the recursors
@@ -121,8 +125,12 @@ over its parameters alone (no static parameter), a denotation theorem `c.d_den` 
 the caller's context by `Ren.liftN` on `eₙ`: `.app (.lam (c.d.rename (Ren.liftN Δ))) eₙ`. Its
 derivation is `c.d_den` at the arguments (`DenM.certCall`, through `Env.prepend` and
 `Env.comp_prepend_liftN`), and the body of `c` is not reflected again; `link_timed` applies the
-certificate at the call. A callee with a function, type or instance parameter is unfolded as
-before.
+certificate at the call. At a function parameter of `c`, whose binders in `c.d_den` are the
+function, its D value and its hypothesis, the argument is of one of two classes
+(`certFnArg?`): a function parameter of the caller, whose hypothesis is passed through, or a
+λ-term with a pure body over a source type represented by itself, whose hypothesis is the
+derivation of the body at a fresh argument. A callee with a type or instance parameter, or a
+call with another function argument, is unfolded as before.
 
 ## Inductive types and structural recursion
 
@@ -1379,9 +1387,9 @@ partial def tyOf (T : Expr) : MetaM (Expr × Bool) := do
   | some ``Bool, 0 => return (tyBool, false)
   | some ``PUnit, 0 => return (tyUnit, false)
   | some ``BitVec, 1 => return (tyBase (← ftyOf T), false)
-  | some ``Prod, 2 => return (tyC `prod #[(← tyFO args[0]!).1, (← tyFO args[1]!).1], false)
-  | some ``Sum, 2 => return (tyC `sum #[(← tyFO args[0]!).1, (← tyFO args[1]!).1], false)
-  | some ``List, 1 => return (tyC `list #[(← tyFO args[0]!).1], false)
+  | some ``Prod, 2 => return (tyC `prod #[(← tyComp args[0]!).1, (← tyComp args[1]!).1], false)
+  | some ``Sum, 2 => return (tyC `sum #[(← tyComp args[0]!).1, (← tyComp args[1]!).1], false)
+  | some ``List, 1 => return (tyC `list #[(← tyComp args[0]!).1], false)
   | some ``Option, 1 => return (tyC `sum #[tyUnit, (← tyFO args[0]!).1], true)
   | _, _ =>
     if let some r ← indRep? T then return (r.ty, true)
@@ -1394,6 +1402,23 @@ where
       throwError "reflect_d: the encoded type (`Option` or an inductive type) inside the type \
         `{T}`; it is represented only as a parameter, a result, a field or a scrutinee"
     return r
+  /-- A component type (of a product, a sum or a list): a store `Ty.store f a` for a function
+  type `X → Y` with `X` of the finite ground type `f` and `Y` first-order data of the D type `a`
+  that `Ty.foB` accepts and that is not a finite ground table; otherwise as `tyFO`. -/
+  tyComp (T : Expr) : MetaM (Expr × Bool) := do
+    if let some s ← storeTy? T then return (s, false)
+    tyFO T
+  /-- The store type of a function type `X → Y` at a component position, or `none`. -/
+  storeTy? (T : Expr) : MetaM (Option Expr) := do
+    if (← tabTy? T).isSome then
+      if (← observing? (ftyOf T)).isSome then return none
+    let .forallE _ X Y _ ← whnf T | return none
+    if Y.hasLooseBVars then return none
+    if (← spcompArg? Y).isSome || (← treeArg? Y).isSome then return none
+    let some f ← observing? (ftyOf X) | return none
+    let some (a, false) ← observing? (tyOf Y) | return none
+    unless ← isDefEq (mkApp (mkConst ``Ty.foB) a) (mkConst ``Bool.true) do return none
+    return some (mkApp2 (mkConst ``Ty.store) f a)
 
 /-- The encoding of the values of the source type `T` when it is encoded (`Option` or an
 inductive type): the function from `T` to the values of its D type. -/
@@ -1716,6 +1741,7 @@ partial def goP (ctx : Ctx) (e : Expr) : M Res := do
     if let some (x, rest) := methodMatch? ctx fn args then
       if rest.isEmpty then return ← goP ctx x
       return ← applyAll ctx e x rest false
+    if let some r ← goRead? ctx e then return r
     match fn with
     | .const c _ => goConst ctx e c args
     | .lam n T body _ =>
@@ -1976,16 +2002,83 @@ partial def goDecide (ctx : Ctx) (P : Expr) : M Res := do
       (← costPf #[x.cpf] fun ys => mkAppM ``CEq.decNot ys)
   | _, _ => fail m!"the proposition `{P}` in a condition"
 
-/-- A primitive operation applied to the translations of `xs` (paired when two). -/
+/-- A primitive operation applied to the translations of `xs`, as one right-nested tuple when
+there are several. -/
 partial def goPrim (ctx : Ctx) (e p inTy outTy : Expr) (xs : Array Expr) : M Res := do
+  goPrimR ctx e p inTy outTy (← xs.mapM (goP ctx))
+
+/-- The proof `Ty.FO_of_foB rfl` that the code `a` is first-order. -/
+partial def foPf (a : Expr) : Expr :=
+  mkApp2 (mkConst ``Ty.FO_of_foB) a
+    (mkApp2 (mkConst ``Eq.refl [Level.one]) (mkConst ``Bool) (mkConst ``Bool.true))
+
+/-- The finite ground type `q`, `r` of a D type `base (tab q r)`, or `none`. -/
+partial def tabOf? (t : Expr) : Option (Expr × Expr) :=
+  if t.isAppOfArity ``Ty.base 1 && t.appArg!.isAppOfArity ``FTy.tab 2 then
+    some (t.appArg!.appFn!.appArg!, t.appArg!.appArg!)
+  else none
+
+/-- A read `t i` of a store (`Prim.sget`) or of a finite ground table (`Prim.tget`): `t` a
+variable or a projection whose D type is `Ty.store f a` or `base (tab q r)`. `none` for any
+other application. -/
+partial def goRead? (ctx : Ctx) (e : Expr) : M (Option Res) := do
+  let .app g i := e | return none
+  let hd := g.getAppFn.consumeMData
+  let upd := hd.isConstOf ``Function.update && g.getAppNumArgs == 6
+  unless upd || hd.isFVar || hd.isProj || hd.isConstOf ``Prod.fst ||
+      hd.isConstOf ``Prod.snd do
+    return none
+  if hd.isFVar && !(ctx.entries.any (·.fvar == hd.fvarId!)) then return none
+  let some rg ← (if upd then do pure (some (← goP ctx g))
+      else try pure (some (← goP ctx g)) catch _ => pure none) | return none
+  let t := rg.ty
+  if t.isAppOfArity ``Ty.store 2 then
+    let f := t.appFn!.appArg!
+    let a := t.appArg!
+    let p := mkApp3 (mkConst ``Prim.sget) f a (foPf a)
+    return some (← goPrimR ctx e p (tyC `prod #[t, tyBase f]) a #[rg, ← goP ctx i])
+  if let some (q, r) := tabOf? t then
+    let n ← modPred q
+    let p := mkApp2 (mkConst ``Prim.tget) n r
+    return some (← goPrimR ctx e p (tyC `prod #[t, tyBase (mkApp (mkConst ``FTy.fin) n)])
+      (tyBase r) #[rg, ← goP ctx i])
+  return none
+
+/-- A write `Function.update t i v` of a store (`Prim.sset`, at the decision of equality of the
+source) or of a finite ground table (`Prim.tset`). A function value that is not a store (a
+function parameter) is refused. -/
+partial def goUpdate (ctx : Ctx) (e : Expr) (args : Array Expr) : M Res := do
+  let rt ← goP ctx args[3]!
+  let t := rt.ty
+  if t.isAppOfArity ``Ty.store 2 then
+    let f := t.appFn!.appArg!
+    let a := t.appArg!
+    let p := mkApp4 (mkConst ``Prim.sset) f a (foPf a) (ctx.subst args[2]!)
+    return ← goPrimR ctx e p (tyC `prod #[t, tyC `prod #[tyBase f, a]]) t
+      #[rt, ← goP ctx args[4]!, ← goP ctx args[5]!]
+  if let some (q, r) := tabOf? t then
+    let n ← modPred q
+    let p := mkApp2 (mkConst ``Prim.tset) n r
+    return ← goPrimR ctx e p
+      (tyC `prod #[t, tyC `prod #[tyBase (mkApp (mkConst ``FTy.fin) n), tyBase r]]) t
+      #[rt, ← goP ctx args[4]!, ← goP ctx args[5]!]
+  if (tyArgs2 `arr t).isSome then
+    fail m!"a function parameter written by Function.update in `{e}`; pass the table as a \
+      component of the state"
+  fail m!"the write `{e}` of a value of D type `{t}`"
+
+/-- A primitive operation applied to translated arguments, as one right-nested tuple when there
+are several. -/
+partial def goPrimR (ctx : Ctx) (e p inTy outTy : Expr) (rs : Array Res) : M Res := do
   let Γ := ctx.gamma
-  let rs ← xs.mapM (goP ctx)
-  let (atm, apf, acpf) ← if h : rs.size = 2 then do
-      let x := rs[0]; let y := rs[1]
-      pure (mkAppN (mkConst ``Tm.pair) #[Γ, x.ty, y.ty, x.tm, y.tm],
-        ← ifPf (mkAppM ``Den.pair #[x.pf, y.pf]),
-        ← costPf #[x.cpf, y.cpf] fun ys => mkAppM ``CEq.pair ys)
-    else pure (rs[0]!.tm, rs[0]!.pf, rs[0]!.cpf)
+  -- the arguments as one right-nested tuple
+  let mut (atm, aty, apf, acpf) := (rs.back!.tm, rs.back!.ty, rs.back!.pf, rs.back!.cpf)
+  for i in (List.range (rs.size - 1)).reverse do
+    let x := rs[i]!
+    apf ← ifPf (mkAppM ``Den.pair #[x.pf, apf])
+    acpf ← costPf #[x.cpf, acpf] fun ys => mkAppM ``CEq.pair ys
+    atm := mkAppN (mkConst ``Tm.pair) #[Γ, x.ty, aty, x.tm, atm]
+    aty := tyC `prod #[x.ty, aty]
   let tm := mkAppN (mkConst ``Tm.prim) #[Γ, inTy, outTy, p, atm]
   finish ctx e tm outTy (← ifPf (mkAppM ``Den.prim #[p, apf])) none
     (← costPf #[acpf] fun ys => mkAppM ``CEq.prim #[p, ys[0]!])
@@ -2075,6 +2168,7 @@ partial def goConst (ctx : Ctx) (e : Expr) (c : Name) (args : Array Expr) : M Re
     let some n ← finMod? (ctx.subst args[0]!) | fail m!"the cast `{e}`"
     goPrim ctx e (mkApp (mkConst ``Prim.finOfNat) n) tyNat
       (tyBase (mkApp (mkConst ``FTy.fin) n)) #[args[2]!]
+  | ``Function.update, 6 => goUpdate ctx e args
   | ``Decidable.decide, 2 =>
     let r ← goDecide ctx args[0]!
     finish ctx e r.tm tyBool r.pf none r.cpf
@@ -2945,6 +3039,30 @@ partial def treeCont (ctx : Ctx) (k ty : Expr) : M (Res × Expr × Option Expr �
     let (hkc, dep) ← contCost x rb.cpf
     return (rb, ← ifPf (mkLambdaFVars #[x] rb.pf), hkc, dep)
 
+/-- The argument `a` at a function parameter of a certified callee: its translation and the
+hypothesis that the callee's denotation theorem takes for that parameter. Two classes: a
+function parameter of the caller (its own hypothesis, passed through), and a λ-term with a pure
+body over a source type represented by itself (the derivation of the body at a fresh
+argument). `none` for any other argument. -/
+partial def certFnArg? (ctx : Ctx) (a : Expr) : M (Option (Res × Expr)) := do
+  let ra ← goP ctx a
+  match ra.fn with
+  | some (.param _ h _ _ 1) => return some (ra, h)
+  | some (.clo (.lam n T body bi) id false) =>
+    if ← synMode then return some (ra, mkConst ``True.intro)
+    let c0 := (← get)[id]!
+    let T' := c0.subst T
+    if (← encoder? T').isSome then return none
+    let (aTy, _) ← tyOf T'
+    let h ← withLocalDecl n bi T' fun y => do
+      let c0' := (c0.bind aTy y).push
+        { fvar := y.fvarId!, level := c0.depth, path := [], baseTy := aTy, val := y,
+          dval := y }
+      let rb ← goP c0' (body.instantiate1 y)
+      mkLambdaFVars #[y] rb.pf
+    return some (ra, h)
+  | _ => return none
+
 /-- A call `c e₁ … eₙ` of a certified callee `c` in a computation (`tree` for an `SPTree`): `c.d`
 is a D-term over the parameters of `c` alone, `c.d_den` is stated over the oracle and `n` data
 parameters, and `c.d_timedSim` exists. The call is the `let` of the first `n - 1` arguments and
@@ -2966,27 +3084,48 @@ partial def certCall? (ctx : Ctx) (e : Expr) (c : Name) (args : Array Expr) (tre
   let n := tysIn.length
   unless n ≥ 1 && n == args.size do return none
   let denTy ← inferType (mkConst (c ++ `d_den))
-  let srcTys ← forallTelescopeReducing denTy fun xs _ => do
-    if xs.size != n + 1 then return none
-    return some (← (xs.extract 1 xs.size).mapM fun x => inferType x)
-  let some srcTys := srcTys | return none
+  -- the source type of each parameter, and whether it is a function parameter, whose binders
+  -- in `c.d_den` are the function, its D value and its hypothesis
+  let groups ← forallTelescopeReducing denTy fun xs _ => do
+    let mut out : Array (Expr × Bool) := #[]
+    let mut k := 1
+    while k < xs.size do
+      let T ← inferType xs[k]!
+      if T.hasAnyFVar (fun fv => xs.any (·.fvarId! == fv)) then return none
+      let fnGroup ← if k + 2 < xs.size then do
+          pure ((← inferType xs[k + 1]!).isAppOfArity ``Val 1 && (← whnf T).isForall)
+        else pure false
+      out := out.push (T, fnGroup)
+      k := k + (if fnGroup then 3 else 1)
+    return some out
+  let some groups := groups | return none
+  unless groups.size == n do return none
   -- the parameters in order, the first outermost
   let tys := tysIn.reverse.toArray
   for i in [0:n] do
     let ai := ctx.subst args[i]!
-    unless ← isDefEq (← inferType ai) srcTys[i]! do return none
+    unless ← isDefEq (← inferType ai) groups[i]!.1 do return none
     let (σ, _) ← tyOf (← inferType ai)
     unless ← isDefEq σ tys[i]! do return none
+  -- the argument at `i`, with the hypothesis of a function parameter
+  let argAt (c' : Ctx) (i : Nat) : M (Option (Res × Option Expr)) := do
+    if groups[i]!.2 then
+      let some (ra, h) ← certFnArg? c' args[i]! | return none
+      return some (ra, some h)
+    return some (← goP c' args[i]!, none)
   let mut c' := ctx
   let mut binds : Array (Expr × Res × Ctx) := #[]
+  let mut hyps : Array (Option Expr) := #[]
   for i in [0:n - 1] do
-    let ra ← goP c' args[i]!
+    let some (ra, h) ← argAt c' i | return none
+    hyps := hyps.push h
     binds := binds.push (tys[i]!, ra, c')
     let y ← mkFreshFVarId
     c' := (c'.bind tys[i]! ra.dv).push
       { fvar := y, level := c'.depth, path := [], baseTy := tys[i]!, val := ra.val,
         dval := ra.dv, fn := ra.fn }
-  let raN ← goP c' args[n - 1]!
+  let some (raN, hN) ← argAt c' (n - 1) | return none
+  hyps := hyps.push hN
   let σN := tys[n - 1]!
   let ΓN := c'.gamma
   let ren ← mkAppOptM ``Ren.liftN #[some ctx.gamma, some Δ]
@@ -3004,7 +3143,12 @@ partial def certCall? (ctx : Ctx) (e : Expr) (c : Name) (args : Array Expr) (tre
     for i in [0:n] do
       ρc := mkAppN (mkConst ``Env.cons) #[gammaE Δi, tys[i]!, dvs[i]!, ρc]
       Δi := tys[i]! :: Δi
-    let hd ← mkExpectedTypeHint (mkAppN (mkConst (c ++ `d_den)) (#[ctx.oracle] ++ vals))
+    let mut denArgs := #[ctx.oracle]
+    for i in [0:n] do
+      denArgs := match hyps[i]! with
+        | some h => denArgs ++ #[vals[i]!, dvs[i]!, h]
+        | none => denArgs.push vals[i]!
+    let hd ← mkExpectedTypeHint (mkAppN (mkConst (c ++ `d_den)) denArgs)
       (denME ctx.oracle Δ τ cd ρc C)
     let ρN := c'.rho
     let h1 ← mkExpectedTypeHint (← denMApp ctx ``DenM.certCall #[hd, ctx.rho])

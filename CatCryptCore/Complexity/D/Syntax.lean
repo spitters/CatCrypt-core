@@ -135,7 +135,8 @@ row G3d):
 
 * `Ty`, `Val`: the types and their values; a function value is a Lean function
   `Val a → CTree (Val b)` into costed trees; `Ty.pi`, `Ty.sig`: dependent products and sums over
-  a finite ground index.
+  a finite ground index; `Ty.store`: a store, the dependent product at a constant family.
+* `Ty.foB`, `Ty.FO_of_foB`: a decision of first-order-ness on the codes without binders.
 * `Sig`, `RecPos`, `Sig.Ctor`, `Sig.Pos`, `Sig.Fld`, `Sig.den`, `Val.default`: signatures of
   inductive types, their recursive positions, their constructors with their positions and
   fields, shapes and positions, and an inhabitant of every type.
@@ -234,6 +235,9 @@ abbrev bool : Ty := base .bool
 abbrev word (w : ℕ) : Ty := base (.word w)
 /-- The residues modulo `n + 1`. -/
 abbrev fin (n : ℕ) : Ty := base (.fin n)
+/-- A store over the finite ground index `f` with values of type `a`: the dependent product at
+a constant family. Its values are the tables `f.den → Val a`. -/
+abbrev store (f : FTy) (a : Ty) : Ty := .pi f fun _ => a
 
 end Ty
 
@@ -263,6 +267,31 @@ def ISig.FO {f : FTy} : ISig f → Prop
   | .ext S a _ _ => S.FO ∧ a.FO
 
 end
+
+/-- A decision of first-order-ness on the codes built from finite ground types, `nat`,
+products, sums and lists; it is `false` at the other codes. `reflect_d` supplies the
+first-order-ness of the values of a store at a closed code by `Ty.FO_of_foB rfl`. -/
+def Ty.foB : Ty → Bool
+  | .base _ => true
+  | .nat => true
+  | .prod a b => a.foB && b.foB
+  | .sum a b => a.foB && b.foB
+  | .list a => a.foB
+  | _ => false
+
+/-- A code that `Ty.foB` accepts is first-order. -/
+theorem Ty.FO_of_foB : {a : Ty} → a.foB = true → a.FO
+  | .base _, _ => trivial
+  | .nat, _ => trivial
+  | .prod a b, h => by
+    simp only [foB, Bool.and_eq_true] at h
+    exact ⟨FO_of_foB h.1, FO_of_foB h.2⟩
+  | .sum a b, h => by
+    simp only [foB, Bool.and_eq_true] at h
+    exact ⟨FO_of_foB h.1, FO_of_foB h.2⟩
+  | .list a, h => FO_of_foB (a := a) h
+  | .arr _ _, h | .mu _, h | .pi _ _, h | .sig _ _, h | .imu _ _ _, h => by
+    simp [foB] at h
 
 /-- The constructors of a signature: those of the prefix, and the last one. -/
 def Sig.Ctor : Sig → Type
@@ -453,7 +482,8 @@ def Env.cons {Γ : List Ty} {τ : Ty} (v : Val τ) (ρ : Env Γ) : Env (τ :: Γ
 /-! ## Primitive operations -/
 
 /-- The primitive operations on `ℕ`, `Bool`, fixed-width words and the residues
-`Fin (n + 1)`. Binary operations take a pair. -/
+`Fin (n + 1)`, and the read and write of a store (`Ty.store`) or of a finite ground table at a
+computed index. Binary operations take a pair. -/
 inductive Prim : Ty → Ty → Type where
   | natAdd : Prim (.prod .nat .nat) .nat
   | natSub : Prim (.prod .nat .nat) .nat
@@ -487,6 +517,18 @@ inductive Prim : Ty → Ty → Type where
   | finLt (n : ℕ) : Prim (.prod (.fin n) (.fin n)) .bool
   | finOfNat (n : ℕ) : Prim .nat (.fin n)
   | finToNat (n : ℕ) : Prim (.fin n) .nat
+  /-- The read of a store at an index: one step. -/
+  | sget (f : FTy) (a : Ty) (ha : a.FO) : Prim (.prod (.store f a) (.base f)) a
+  /-- The write of a value at an index of a store: one step. The decision of equality is the
+  one of the source, so that the value is `Function.update` at the source's instance. -/
+  | sset (f : FTy) (a : Ty) (ha : a.FO) (dec : DecidableEq f.den) :
+      Prim (.prod (.store f a) (.prod (.base f) a)) (.store f a)
+  /-- The read of a finite ground table `Fin (n + 1) → r`: one step. -/
+  | tget (n : ℕ) (r : FTy) : Prim (.prod (.base (.tab (n + 1) r)) (.base (.fin n))) (.base r)
+  /-- The write of a finite ground table: one step. -/
+  | tset (n : ℕ) (r : FTy) :
+      Prim (.prod (.base (.tab (n + 1) r)) (.prod (.base (.fin n)) (.base r)))
+        (.base (.tab (n + 1) r))
 
 /-- The function computed by a primitive operation. -/
 def Prim.apply {a b : Ty} : Prim a b → Val a → Val b
@@ -522,6 +564,10 @@ def Prim.apply {a b : Ty} : Prim a b → Val a → Val b
   | .finLt n => fun (x : Fin (n + 1) × Fin (n + 1)) => (decide (x.1 < x.2) : Bool)
   | .finOfNat n => fun (x : ℕ) => (⟨x % (n + 1), Nat.mod_lt _ (Nat.succ_pos n)⟩ : Fin (n + 1))
   | .finToNat n => fun (x : Fin (n + 1)) => x.val
+  | .sget _ _ _ => fun x => x.1 x.2
+  | .sset _ _ _ dec => fun x => @Function.update _ _ dec x.1 x.2.1 x.2.2
+  | .tget _ _ => fun x => x.1 x.2
+  | .tset _ _ => fun x => Function.update x.1 x.2.1 x.2.2
 
 /-- The cost of a primitive operation at an argument, in evaluation steps. On `ℕ` it is
 logarithmic in the bit lengths `Nat.size` of the arguments: addition, subtraction and the
@@ -534,7 +580,8 @@ low `w` bits of its argument. The operations on the residues `Fin (n + 1)` cost 
 length `s = Nat.size (n + 1)` of the modulus, since the modulus may grow with a security
 parameter: addition, subtraction and the comparisons `s + 1`, multiplication `s * s + 1`,
 reduction of a natural number `x` (`finOfNat`) `size x * s + 1`; reading the representative
-(`finToNat`) costs one step. -/
+(`finToNat`) costs one step. The read and the write of a store or of a finite ground table cost
+one step, the word-RAM convention for a table of `N` entries at a word width of `log N` bits. -/
 def Prim.cost {a b : Ty} : Prim a b → Val a → ℕ
   | .natAdd => fun (x : ℕ × ℕ) => max x.1.size x.2.size + 1
   | .natSub => fun (x : ℕ × ℕ) => max x.1.size x.2.size + 1
@@ -568,9 +615,14 @@ def Prim.cost {a b : Ty} : Prim a b → Val a → ℕ
   | .finLt n => fun _ => (n + 1).size + 1
   | .finOfNat n => fun (x : ℕ) => x.size * (n + 1).size + 1
   | .finToNat _ => fun _ => 1
+  | .sget _ _ _ => fun _ => 1
+  | .sset _ _ _ _ => fun _ => 1
+  | .tget _ _ => fun _ => 1
+  | .tset _ _ => fun _ => 1
 
+/-- The argument and result types of a primitive operation are first-order. -/
 theorem Prim.fo {a b : Ty} (p : Prim a b) : a.FO ∧ b.FO := by
-  cases p <;> simp [Ty.FO]
+  cases p <;> simp_all [Ty.FO]
 
 /-! ## Terms -/
 
