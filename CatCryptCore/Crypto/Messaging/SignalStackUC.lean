@@ -36,7 +36,8 @@ it keeps a copy of the real state, draws the long-term and session secrets, forw
 events, answers `poll`, `pub`, `ephPub` and `kdf` on its copy, refuses or forwards `corrupt`
 under the static rule of X3DH, and on `complete` and `send` passes the key-derivation value to
 `newKey` for an exposed session and a placeholder key to `newKey` or `newKeyUnlinked` otherwise.
-The honest answers of `F_SC` pass unchanged; the simulator never reads them (`simSC_opaque`).
+The answers of `F_SC` on the honest port pass unchanged; the simulator never reads them
+(`simSC_opaque`).
 
 **The proof.** The cascade theorem of the X3DH square (`SignalStack.signal_stack_realizes`)
 replaces `x3dhReal G` by `F_AKE` behind `x3dhSim G`. Behind the simulator, this stack is
@@ -72,13 +73,20 @@ in the world `hyb i`; it is `0` for environments that read each session key at m
 * `WSt`, `world`, `hyb`, `chalWorld`: the hybrid worlds; `WInv` their invariant.
 * `hopRed`: the reduction of a step of the hybrid argument.
 * `scBound`, `signalBound`: the bounds.
-* `simSCOver`, `simSC`, `scSim`: the simulator.
+* `keyLayer`: the key layer over a key exchange with any adversary outputs.
+* `FwdData`, `IsFwd`: forwarding simulators over `F_AKE`.
+* `simSCOver`, `chanSim`: a forwarding simulator over `F_SC`; `simSC`, `scSim`: the simulator of
+  the Signal stack.
 
 ## Main results
 
 * `FR_realizes_F_SC`: `FR realV` realizes `F_SC realV idealV` with `scBound`.
 * `hyb_step`: one step of the hybrid argument.
-* `stack_ideal_stepMap`: the stack over `F_AKE` behind the X3DH simulator is `simSC G` over `FR`.
+* `stack_realizes_FSC_of`: **KE-then-channel composition**: a key exchange that realizes `F_AKE`
+  behind an opaque forwarding simulator `π`, followed by the key layer, realizes `F_SC` behind
+  `chanSim π F`.
+* `stack_ideal_stepMap_of`, `stack_ideal_stepMap`: a forwarding simulator over `F_AKE` followed
+  by the key layer is its wrapper over `FR`.
 * `simSC_opaque`: opacity of the simulator.
 * `signal_stack_realizes_FSC`: **the Signal stack realizes `F_SC` behind `scSim G`** with the gap
   Diffie–Hellman bound and the sum over the keys of the secure-messaging advantages of `hopRed`
@@ -118,7 +126,7 @@ section Chan
 
 variable {K V : Type}
 
-/-- The honest answer to `getKey` at the session `x`: the view `f r k` when the session `x` has
+/-- The answer on the honest port to `getKey` at the session `x`: the view `f r k` when the session `x` has
 the record `r` and the key `k`, and no key otherwise. -/
 noncomputable def chanOut (f : Rec K → K → SPComp V) (t : St K) (x : Inst) :
     SPComp (HOut V) :=
@@ -1534,38 +1542,227 @@ abbrev scOuterView {S W K V : Type} : PubView (OEv W) (HOut V ⊕ ROut S W K) :=
 /-- The view of `F_SC`. -/
 abbrev scSubView {K V : Type} : PubView (FEv K) (HOut V ⊕ AOut) := scHonView.sum eqView
 
-variable {S W K V : Type}
+section Generic
 
-/-- A decision of the X3DH simulator as a decision over `F_SC`: a call passes, an adversary
-output passes, and an honest output (which the X3DH simulator does not produce) is an
-acknowledgement. -/
-def decV : Dec S W K → FEv K ⊕ (HOut V ⊕ ROut S W K)
+variable {K V AE R σ : Type}
+
+/-- **The key layer** over a key exchange with adversary outputs `R`: on the output
+`key (some k)` of the honest port, the view `sm k` keyed by `k`; every other output passes. -/
+noncomputable def keyLayer (sm : K → SPComp V) : Sys Unit (HOut K ⊕ R) (HOut V ⊕ R) where
+  init := ()
+  step _ o := match o with
+    | .inl .ok => SPComp.pure ((), .inl .ok)
+    | .inl (.key none) => SPComp.pure ((), .inl (.key none))
+    | .inl (.key (some k)) => SPComp.map (fun v => ((), .inl (.key (some v)))) (sm k)
+    | .inr r => SPComp.pure ((), .inr r)
+
+/-- The key layer of views that never fail never fails. -/
+theorem keyLayer_noFail {sm : K → SPComp V} (hsm : ∀ k, SPComp.NoFail (sm k)) (u : Unit)
+    (o : HOut K ⊕ R) : SPComp.NoFail ((keyLayer sm).step u o) := by
+  rcases o with (_ | (_ | k)) | r
+  · exact SPComp.pure_noFail _
+  · exact SPComp.pure_noFail _
+  · simp only [keyLayer, SPComp.map]
+    exact Assumptions.SPComp.bind_noFail (hsm k) fun _ => SPComp.pure_noFail _
+  · exact SPComp.pure_noFail _
+
+/-- The forwarding data of a simulator over `F_AKE` with states `σ` and adversary outputs `R`:
+the state after an answer of `F_AKE`, the adversary output stored in a state (`none` forwards
+the answer of the honest port), and the output on an adversary answer in the forwarding
+phase. -/
+structure FwdData (σ R : Type) where
+  /-- The state after an answer of the functionality. -/
+  reset : σ → σ
+  /-- The stored adversary output of a state; `none` forwards the answer on the honest port. -/
+  phase : σ → Option R
+  /-- The output on an adversary answer in the forwarding phase. -/
+  ack : R
+
+/-- The answer of a forwarding simulator to an answer of the functionality: at the phase `none`,
+the answer on the honest port, and `ack` for an answer on the adversary port; at `some r`, the
+stored output `r`. -/
+def fwdOut (ack : R) : Option R → HOut V ⊕ AOut → HOut V ⊕ R
+  | none, .inl o => .inl o
+  | none, .inr _ => .inr ack
+  | some r, _ => .inr r
+
+/-- A decision of a simulator over `F_AKE` as a decision over `F_SC`: a call passes, an
+adversary output passes, and an honest output is an acknowledgement. -/
+def decK : FEv K ⊕ (HOut K ⊕ R) → FEv K ⊕ (HOut V ⊕ R)
   | .inl ev => .inl ev
   | .inr (.inl _) => .inr (.inl .ok)
   | .inr (.inr r) => .inr (.inr r)
 
-/-- The answer of the simulator to an answer of `F_SC`: in the phase `fwd`, the answer on the
-honest port, and an acknowledgement for an answer on the adversary port; otherwise the stored
-output. -/
-def simOutV : Phase S W K → HOut V ⊕ AOut → HOut V ⊕ ROut S W K
-  | .fwd, .inl o => .inl o
-  | .fwd, .inr _ => .inr .ack
-  | .out r, _ => .inr r
-
-/-- **A multi-call simulator over `F_SC`** wrapping a multi-call simulator `π` over `F_AKE`:
-its `start` step is that of `π` with the decision read over `F_SC` (`decV`), and an answer of
-`F_SC` is answered by `simOutV` at the phase of the state. -/
-noncomputable def simSCOver
-    (π : MultiHybrid (SimSt S W K) (OEv W) (OOut S W K) (FEv K) (FOut K)) :
-    MultiHybrid (SimSt S W K) (OEv W) (HOut V ⊕ ROut S W K) (FEv K) (HOut V ⊕ AOut) where
+/-- **A multi-call simulator over `F_SC`** wrapping a multi-call simulator `π` over `F_AKE`
+with the forwarding data `F`: its `start` step is that of `π` with the decision read over
+`F_SC` (`decK`), and an answer of `F_SC` is answered by `fwdOut` at the phase of the state. -/
+noncomputable def simSCOver (π : MultiHybrid σ (HEv ⊕ AE) (HOut K ⊕ R) (FEv K) (FOut K))
+    (F : FwdData σ R) :
+    MultiHybrid σ (HEv ⊕ AE) (HOut V ⊕ R) (FEv K) (HOut V ⊕ AOut) where
   init := π.init
   fuel := 0
-  start s e := SPComp.map (fun q => (q.1, decV q.2)) (π.start s e)
-  resume s o := SPComp.pure ((s.1, s.2.1, .fwd), .inr (simOutV s.2.2 o))
-  finish s o := SPComp.pure ((s.1, s.2.1, .fwd), simOutV s.2.2 o)
+  start s e := SPComp.map (fun q => (q.1, decK q.2)) (π.start s e)
+  resume s o := SPComp.pure (F.reset s, .inr (fwdOut F.ack (F.phase s) o))
+  finish s o := SPComp.pure (F.reset s, fwdOut F.ack (F.phase s) o)
   start_noFail s e := map_noFail _ (π.start_noFail s e)
   resume_noFail _ _ := SPComp.pure_noFail _
   finish_noFail _ _ := SPComp.pure_noFail _
+
+/-- **A forwarding simulator** over `F_AKE` for the data `F`: one call per activation, every
+answer of `F_AKE` answered by `fwdOut` at the phase of the state, and no honest output from the
+`start` step. -/
+structure IsFwd (π : MultiHybrid σ (HEv ⊕ AE) (HOut K ⊕ R) (FEv K) (FOut K))
+    (F : FwdData σ R) : Prop where
+  /-- One call per activation. -/
+  fuel_eq : π.fuel = 0
+  /-- The answer to `F_AKE` is `fwdOut` at the phase of the state. -/
+  finish_eq : ∀ s o, π.finish s o = SPComp.pure (F.reset s, fwdOut F.ack (F.phase s) o)
+  /-- The `start` step outputs nothing on the honest port. -/
+  start_noHon : ∀ s e q, IsOutcome (π.start s e) q → ∀ h, q.2 ≠ .inr (.inl h)
+
+/-- Every decision over `F_SC` is related to itself. -/
+theorem decSC_rel (d : FEv K ⊕ (HOut V ⊕ R)) :
+    PubView.StepRel ((scHonView (V := V)).sum (eqView (E := AE) (O := R)))
+      (scSubView (K := K) (V := V)) d d := by
+  rcases d with (h | a) | (o | o)
+  · exact Sum.LiftRel.inl rfl
+  · exact Sum.LiftRel.inr rfl
+  · exact Sum.LiftRel.inl trivial
+  · exact Sum.LiftRel.inr rfl
+
+/-- The answers of a forwarding simulator to related answers of `F_SC` are related. -/
+theorem fwdOut_rel (ack : R) (ph : Option R) {o o' : HOut V ⊕ AOut}
+    (h : (scSubView (K := K)).out o o') :
+    ((scHonView (V := V)).sum (eqView (E := AE) (O := R))).out (fwdOut ack ph o)
+      (fwdOut ack ph o') := by
+  cases ph with
+  | none =>
+    cases h with
+    | inl _ => exact Sum.LiftRel.inl trivial
+    | inr _ => exact Sum.LiftRel.inr rfl
+  | some r => exact Sum.LiftRel.inr rfl
+
+/-- **Opacity of the wrapper**: its state and its decisions depend on its events and not on the
+answers of `F_SC` on the honest port. -/
+theorem simSCOver_opaque (π : MultiHybrid σ (HEv ⊕ AE) (HOut K ⊕ R) (FEv K) (FOut K))
+    (F : FwdData σ R) :
+    (simSCOver (V := V) π F).Opaque ((scHonView (V := V)).sum (eqView (E := AE) (O := R)))
+      scSubView := by
+  refine ⟨Eq, rfl, ?_, ?_, ?_⟩
+  · rintro s _ e e' rfl he
+    have he' : e = e' := by
+      cases he with
+      | inl h => exact congrArg Sum.inl h
+      | inr h => exact congrArg Sum.inr h
+    subst he'
+    exact rHoare_conseq (fun _ _ h => h)
+      (fun _ _ _ _ hp => by obtain ⟨rfl, rfl⟩ := hp; exact ⟨rfl, rfl, decSC_rel _⟩)
+      (rHoare_refl _)
+  · rintro s _ o o' rfl ho
+    exact rHoare_ret fun _ _ hh => ⟨hh, rfl, fwdOut_rel _ _ ho⟩
+  · rintro s _ o o' rfl ho
+    exact rHoare_ret fun _ _ hh => ⟨hh, rfl, fwdOut_rel _ _ ho⟩
+
+/-- **The simulator over `F_SC` of a forwarding simulator `π` over `F_AKE`**, bundled: the
+wrapper `simSCOver π F` with its opacity. -/
+noncomputable def chanSim (π : MultiHybrid σ (HEv ⊕ AE) (HOut K ⊕ R) (FEv K) (FOut K))
+    (F : FwdData σ R) :
+    Simulator (HEv ⊕ AE) (HOut V ⊕ R) (FEv K) (HOut V ⊕ AOut)
+      ((scHonView (V := V)).sum (eqView (E := AE) (O := R))) scSubView :=
+  Simulator.ofMultiHybrid (simSCOver π F) (simSCOver_opaque π F)
+
+/-- The key layer on an answer of a forwarding simulator to an adversary answer of
+`F_AKE`. -/
+theorem keyLayer_fwdOut_inr (realV : K → SPComp V) (ack : R) (ph : Option R) (a : AOut) :
+    (keyLayer realV).step () (fwdOut ack ph (.inr a)) =
+      SPComp.pure ((), fwdOut ack ph (.inr a)) := by
+  cases ph <;> rfl
+
+/-- The key layer on the key of a session is the channel output of the real stack. -/
+theorem keyLayer_key (realV : K → SPComp V) (t : St K) (x : Inst) :
+    (keyLayer (R := R) realV).step () (.inl (.key (keyOf t x))) =
+      SPComp.map (fun o => ((), .inl o)) (chanOut (fun _ k => realV k) t x) := by
+  unfold chanOut keyOf
+  rcases hx : t.recs x with _ | r
+  · simp [keyLayer, SPComp.map]
+  · rcases hk : r.key with _ | k
+    · simp [keyLayer, hk, SPComp.map]
+    · simp [keyLayer, hk, SPComp.map, SPComp.bind_assoc]
+
+/-- The channel output of views that neither touch the heap nor fail neither touches the heap
+nor fails. -/
+theorem chanOut_pureNF {f : Rec K → K → SPComp V}
+    (hf : ∀ r k, SPComp.IsPure (f r k) ∧ SPComp.NoFail (f r k)) (t : St K) (x : Inst) :
+    SPComp.IsPure (chanOut f t x) ∧ SPComp.NoFail (chanOut f t x) := by
+  unfold chanOut
+  split
+  · split
+    · exact ((CatCrypt.Crypto.PAKE.CPaceSquare.PureNF.map _ (hf _ _)))
+    · exact CatCrypt.Crypto.PAKE.CPaceSquare.pureNF_pure _
+  · exact CatCrypt.Crypto.PAKE.CPaceSquare.pureNF_pure _
+
+/-- **A forwarding simulator over `F_AKE` followed by the key layer is its wrapper over the real
+stack `FR`** (composition plumbing): the cascade of `π` running with `F_AKE` and the key layer
+and `simSCOver π F` running with `FR realV` have the same steps, up to the unit state of the
+layer. -/
+theorem stack_ideal_stepMap_of [Fintype K] [Nonempty K]
+    (π : MultiHybrid σ (HEv ⊕ AE) (HOut K ⊕ R) (FEv K) (FOut K)) (F : FwdData σ R)
+    (hF : IsFwd π F) (realV : K → SPComp V)
+    (hR : ∀ k, SPComp.IsPure (realV k) ∧ SPComp.NoFail (realV k)) :
+    Sys.StepMapOn ((simSCOver (V := V) π F).withSub (FR realV))
+      ((π.withSub (F_AKE (SPComp.sample K) true)).seq (keyLayer realV))
+      (fun _ => True) (fun p => (p, ())) where
+  init_inv := trivial
+  init_map := rfl
+  pres _ _ _ _ _ := trivial
+  step p e _ := by
+    rcases p with ⟨s, t⟩
+    rw [Sys.seq_step]
+    simp only [MultiHybrid.withSub, simSCOver, hF.fuel_eq, SPComp.map, SPComp.bind_assoc,
+      SPComp.pure_bind]
+    refine bind_congr_isOutcome fun r hr => ?_
+    have hn := hF.start_noHon s e r hr
+    rcases r with ⟨s', (ev | (h | ro))⟩
+    · simp only [MultiHybrid.drive, decK, hF.finish_eq, SPComp.bind_assoc, SPComp.pure_bind]
+      rcases ev with (⟨sid, pid, peer, role⟩ | ⟨sid, pid⟩) | ev
+      · cases F.phase s' <;> simp [FR, chanHon, F_AKE, honSys, honStep, keyLayer, fwdOut,
+          SPComp.map, SPComp.pure_bind]
+      · have hc := chanOut_pureNF (fun _ k => hR k) t (sid, pid)
+        cases F.phase s' with
+        | none =>
+          simp only [FR, F_AKE, Sys.ofPorts_step_inl, chanHon, honSys, honStep, SPComp.map,
+            SPComp.bind_assoc, SPComp.pure_bind, fwdOut]
+          have hk := keyLayer_key (R := R) realV t (sid, pid)
+          simp only [SPComp.map] at hk
+          rw [hk]
+          simp only [SPComp.bind_assoc, SPComp.pure_bind]
+        | some r =>
+          simp only [FR, F_AKE, Sys.ofPorts_step_inl, chanHon, honSys, honStep, SPComp.map,
+            SPComp.bind_assoc, SPComp.pure_bind, fwdOut, keyLayer]
+          exact bind_const_of_isPure hc.1 hc.2 _
+      · simp only [FR, F_AKE, Sys.ofPorts_step_inr, SPComp.map, SPComp.bind_assoc,
+          SPComp.pure_bind]
+        congr 1; funext q
+        rw [keyLayer_fwdOut_inr]
+        simp only [SPComp.pure_bind]
+    · exact (hn h rfl).elim
+    · simp [MultiHybrid.drive, decK, keyLayer, SPComp.map, SPComp.pure_bind]
+
+end Generic
+
+variable {S W K V : Type}
+
+/-- The stored adversary output of a phase of the X3DH simulator: none in the phase `fwd`. -/
+def phaseOut : Phase S W K → Option (ROut S W K)
+  | .fwd => none
+  | .out r => some r
+
+/-- **The forwarding data of the X3DH simulator**: the phase `fwd` after an answer of `F_AKE`,
+the output stored in the phase, and the acknowledgement `ack`. -/
+def x3dhFwd : FwdData (SimSt S W K) (ROut S W K) where
+  reset s := (s.1, s.2.1, .fwd)
+  phase s := phaseOut s.2.2
+  ack := .ack
 
 variable [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K]
   (G : DHGroup S W)
@@ -1578,54 +1775,18 @@ key-derivation value to an exposed session, `newKey` or `newKeyUnlinked` with a 
 key otherwise. The honest outputs of `F_SC` (the views of the channel) pass unchanged. -/
 noncomputable def simSC :
     MultiHybrid (SimSt S W K) (OEv W) (HOut V ⊕ ROut S W K) (FEv K) (HOut V ⊕ AOut) :=
-  simSCOver (simProt G)
-
-omit [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K] in
-/-- Every decision over `F_SC` is related to itself. -/
-theorem decV_rel (d : FEv K ⊕ (HOut V ⊕ ROut S W K)) :
-    PubView.StepRel (scOuterView (S := S) (W := W) (K := K) (V := V))
-      (scSubView (K := K) (V := V)) d d := by
-  rcases d with (h | a) | (o | o)
-  · exact Sum.LiftRel.inl rfl
-  · exact Sum.LiftRel.inr rfl
-  · exact Sum.LiftRel.inl trivial
-  · exact Sum.LiftRel.inr rfl
-
-omit [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K] in
-/-- The answers of the simulator to related answers of `F_SC` are related. -/
-theorem simOutV_rel (ph : Phase S W K) {o o' : HOut V ⊕ AOut}
-    (h : (scSubView (K := K)).out o o') :
-    (scOuterView (S := S) (W := W) (K := K)).out (simOutV ph o) (simOutV ph o') := by
-  cases ph with
-  | fwd =>
-    cases h with
-    | inl _ => exact Sum.LiftRel.inl trivial
-    | inr _ => exact Sum.LiftRel.inr rfl
-  | out r => exact Sum.LiftRel.inr rfl
+  simSCOver (simProt G) x3dhFwd
 
 /-- **Opacity of the simulator**: its state and its decisions depend on its events and not on
-the honest answers of `F_SC`. -/
+the answers of `F_SC` on the honest port. -/
 theorem simSC_opaque :
-    (simSC (V := V) G).Opaque (scOuterView (K := K)) scSubView := by
-  refine ⟨Eq, rfl, ?_, ?_, ?_⟩
-  · rintro s _ e e' rfl he
-    have he' : e = e' := by
-      cases he with
-      | inl h => exact congrArg Sum.inl h
-      | inr h => exact congrArg Sum.inr h
-    subst he'
-    exact rHoare_conseq (fun _ _ h => h)
-      (fun _ _ _ _ hp => by obtain ⟨rfl, rfl⟩ := hp; exact ⟨rfl, rfl, decV_rel _⟩)
-      (rHoare_refl _)
-  · rintro s _ o o' rfl ho
-    exact rHoare_ret fun _ _ hh => ⟨hh, rfl, simOutV_rel _ ho⟩
-  · rintro s _ o o' rfl ho
-    exact rHoare_ret fun _ _ hh => ⟨hh, rfl, simOutV_rel _ ho⟩
+    (simSC (V := V) G).Opaque (scOuterView (K := K)) scSubView :=
+  simSCOver_opaque _ _
 
 /-- **The simulator of the Signal stack** as a bundled opaque simulator over `F_SC`. -/
 noncomputable def scSim : Simulator (OEv W) (HOut V ⊕ ROut S W K) (FEv K) (HOut V ⊕ AOut)
     scOuterView scSubView :=
-  Simulator.ofMultiHybrid (simSC G) (simSC_opaque G)
+  chanSim (simProt G) x3dhFwd
 
 /-- A decision that is not an honest output. -/
 def NoHon (d : Dec S W K) : Prop := ∀ h, d ≠ .inr (.inl h)
@@ -1703,36 +1864,21 @@ theorem simStart_noHon (s : SimSt S W K) (e : OEv W) {q : SimSt S W K × Dec S W
   · exact noHon_map (fun _ _ h => by simp at h) hq
 
 omit [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K] in
-/-- The ratchet layer on an answer of the X3DH simulator to an adversary answer of `F_AKE`. -/
-theorem smLayer_simOut_inr (realV : K → SPComp V) (ph : Phase S W K) (a : AOut) :
-    (smLayer (S := S) (W := W) realV).step () (simOut ph (.inr a)) =
-      SPComp.pure ((), simOutV ph (.inr a)) := by
-  cases ph <;> rfl
+/-- The ratchet layer of the X3DH stack is the key layer at the adversary outputs of X3DH. -/
+theorem smLayer_eq_keyLayer (realV : K → SPComp V) :
+    smLayer (S := S) (W := W) realV = keyLayer realV := by
+  unfold smLayer keyLayer
+  congr 1
+  funext u o
+  rcases o with (_ | (_ | k)) | r <;> rfl
 
-omit [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K] in
-/-- The ratchet layer on the key of a session is the channel output of the real stack. -/
-theorem smLayer_key (realV : K → SPComp V) (t : St K) (x : Inst) :
-    (smLayer (S := S) (W := W) realV).step () (.inl (.key (keyOf t x))) =
-      SPComp.map (fun o => ((), .inl o)) (chanOut (fun _ k => realV k) t x) := by
-  unfold chanOut keyOf
-  rcases hx : t.recs x with _ | r
-  · simp [smLayer, SPComp.map]
-  · rcases hk : r.key with _ | k
-    · simp [smLayer, hk, SPComp.map]
-    · simp [smLayer, hk, SPComp.map, SPComp.bind_assoc]
-
-omit [Field S] [Fintype S] [SampleableType W] [Fintype K] [Nonempty K] [Inhabited K] in
-/-- The channel output of views that neither touch the heap nor fail neither touches the heap
-nor fails. -/
-theorem chanOut_pureNF {f : Rec K → K → SPComp V}
-    (hf : ∀ r k, SPComp.IsPure (f r k) ∧ SPComp.NoFail (f r k)) (t : St K) (x : Inst) :
-    SPComp.IsPure (chanOut f t x) ∧ SPComp.NoFail (chanOut f t x) := by
-  unfold chanOut
-  split
-  · split
-    · exact ((CatCrypt.Crypto.PAKE.CPaceSquare.PureNF.map _ (hf _ _)))
-    · exact CatCrypt.Crypto.PAKE.CPaceSquare.pureNF_pure _
-  · exact CatCrypt.Crypto.PAKE.CPaceSquare.pureNF_pure _
+/-- **The X3DH simulator is a forwarding simulator** for the data `x3dhFwd`. -/
+theorem simProt_isFwd : IsFwd (simProt (K := K) G) x3dhFwd where
+  fuel_eq := rfl
+  finish_eq s o := by
+    rcases s with ⟨a, b, ph⟩
+    cases ph <;> rcases o with o | o <;> rfl
+  start_noHon s e _ hq := simStart_noHon G s e hq
 
 /-- **The stack over `F_AKE` behind the X3DH simulator is the simulator `simSC` over the real
 stack `FR`** (composition plumbing): the cascade of `x3dhIdeal G` and the ratchet layer and
@@ -1740,42 +1886,9 @@ stack `FR`** (composition plumbing): the cascade of `x3dhIdeal G` and the ratche
 theorem stack_ideal_stepMap (realV : K → SPComp V)
     (hR : ∀ k, SPComp.IsPure (realV k) ∧ SPComp.NoFail (realV k)) :
     Sys.StepMapOn ((simSC (V := V) G).withSub (FR realV)) ((x3dhIdeal G).seq (smLayer realV))
-      (fun _ => True) (fun p => (p, ())) where
-  init_inv := trivial
-  init_map := rfl
-  pres _ _ _ _ _ := trivial
-  step p e _ := by
-    rcases p with ⟨s, t⟩
-    rw [Sys.seq_step]
-    simp only [x3dhIdeal, x3dhSim, Simulator.ofMultiHybrid, MultiHybrid.withSub, simSC, simSCOver,
-      simProt, SPComp.map, SPComp.bind_assoc, SPComp.pure_bind]
-    refine bind_congr_isOutcome fun r hr => ?_
-    have hn := simStart_noHon G s e hr
-    rcases r with ⟨⟨a, b, ph⟩, (ev | (h | ro))⟩
-    · simp only [MultiHybrid.drive, decV, SPComp.bind_assoc, SPComp.pure_bind]
-      rcases ev with (⟨sid, pid, peer, role⟩ | ⟨sid, pid⟩) | ev
-      · cases ph <;> simp [FR, chanHon, F_AKE, honSys, honStep, smLayer, simOut, simOutV,
-          SPComp.map, SPComp.pure_bind]
-      · have hc := chanOut_pureNF (fun _ k => hR k) t (sid, pid)
-        cases ph with
-        | fwd =>
-          simp only [FR, F_AKE, Sys.ofPorts_step_inl, chanHon, honSys, honStep, SPComp.map,
-            SPComp.bind_assoc, SPComp.pure_bind, simOut, simOutV]
-          have hk := smLayer_key (S := S) (W := W) realV t (sid, pid)
-          simp only [SPComp.map] at hk
-          rw [hk]
-          simp only [SPComp.bind_assoc, SPComp.pure_bind]
-        | out r =>
-          simp only [FR, F_AKE, Sys.ofPorts_step_inl, chanHon, honSys, honStep, SPComp.map,
-            SPComp.bind_assoc, SPComp.pure_bind, simOut, simOutV, smLayer]
-          exact bind_const_of_isPure hc.1 hc.2 _
-      · simp only [FR, F_AKE, Sys.ofPorts_step_inr, SPComp.map, SPComp.bind_assoc,
-          SPComp.pure_bind]
-        congr 1; funext q
-        rw [smLayer_simOut_inr]
-        simp only [SPComp.pure_bind]
-    · exact (hn h rfl).elim
-    · simp [MultiHybrid.drive, decV, smLayer, SPComp.map, SPComp.pure_bind]
+      (fun _ => True) (fun p => (p, ())) := by
+  rw [smLayer_eq_keyLayer]
+  exact stack_ideal_stepMap_of (simProt G) x3dhFwd (simProt_isFwd G) realV hR
 
 end Sim
 
@@ -1798,6 +1911,26 @@ theorem F_SC_idleAt {V : Type} (realV : K → SPComp V) (idealV : SPComp V) :
     MultiHybrid.IdleAt (F_SC realV idealV) (.inr .idle) (.inr .ack) := fun t => by
   simp [F_SC, advSys, SPComp.map]
 
+omit [Field S] [Fintype S] [SampleableType W] in
+/-- **The wrapper over `FR` realizes the wrapper over `F_SC`**: for views that neither touch the
+heap nor fail, `simSCOver π F` over `FR realV` realizes `simSCOver π F` over
+`F_SC realV idealV` with `scBound` at the environment reduced through the wrapper. -/
+theorem simSCOver_realizes {σ AE R V : Type}
+    (π : MultiHybrid σ (HEv ⊕ AE) (HOut K ⊕ R) (FEv K) (FOut K)) (F : FwdData σ R)
+    (realV : K → SPComp V) (idealV : SPComp V)
+    (hR : ∀ k, SPComp.IsPure (realV k) ∧ SPComp.NoFail (realV k))
+    (hI : SPComp.IsPure idealV ∧ SPComp.NoFail idealV) :
+    Realizes ((simSCOver (V := V) π F).withSub (FR realV))
+      ((simSCOver π F).withSub (F_SC realV idealV))
+      (fun _ Z => scBound realV idealV ((simSCOver π F).reduceEnv (.inr .idle) Z)) := by
+  intro ζ Z
+  have h := MultiHybrid.adv_withSub (simSCOver (V := V) π F) (.inr .idle) (.inr .ack)
+    (.inr .ack) (FR realV) (F_SC realV idealV) (FR_idleAt realV) (F_SC_idleAt realV idealV) Z
+  unfold adv at h
+  change Env.gap _ _ Z ≤ _
+  rw [h]
+  exact FR_realizes_F_SC realV idealV hR hI _ _
+
 /-- **The simulator over `F_AKE` with the ratchet realizes the simulator over `F_SC`**: for
 views that neither touch the heap nor fail, `simSC G` over `FR realV` realizes `simSC G` over
 `F_SC realV idealV` with `scBound` at the environment reduced through the simulator. -/
@@ -1805,14 +1938,45 @@ theorem simSC_realizes {V : Type} (realV : K → SPComp V) (idealV : SPComp V)
     (hR : ∀ k, SPComp.IsPure (realV k) ∧ SPComp.NoFail (realV k))
     (hI : SPComp.IsPure idealV ∧ SPComp.NoFail idealV) :
     Realizes ((simSC (V := V) G).withSub (FR realV)) ((simSC G).withSub (F_SC realV idealV))
-      (fun _ Z => scBound realV idealV ((simSC G).reduceEnv (.inr .idle) Z)) := by
+      (fun _ Z => scBound realV idealV ((simSC G).reduceEnv (.inr .idle) Z)) :=
+  simSCOver_realizes _ _ realV idealV hR hI
+
+/-- **KE-then-channel composition, generic in the key exchange** (genuine UC). Let the key
+exchange `X` realize `F_AKE` with uniform keys and unlinked delivery behind the opaque
+forwarding simulator `π` with the bound `ε`, and let the views `realV k` and `idealV` neither
+touch the heap nor fail.
+
+*Ideal functionality.* `F_SC realV idealV`.
+
+*Real world.* `X` followed by the key layer `keyLayer realV`, which keys the view `realV` with
+the session key of every `getKey` answer of `X`.
+
+*Simulator.* `chanSim π F`: `π` with its decisions read over `F_SC`; it forwards the honest
+answers of `F_SC` at the phases where `π` forwards those of `F_AKE`.
+
+*Bound.* For every environment `Z`, the bound `ε` at the environment reduced through the key
+layer, plus `scBound realV idealV` at the environment reduced through the simulator. -/
+theorem stack_realizes_FSC_of {τ σ AE R V : Type} (X : Sys τ (HEv ⊕ AE) (HOut K ⊕ R))
+    (π : MultiHybrid σ (HEv ⊕ AE) (HOut K ⊕ R) (FEv K) (FOut K))
+    (hπ : π.Opaque ((keHonView (K := K)).sum (eqView (E := AE) (O := R))) subView)
+    (F : FwdData σ R) (hF : IsFwd π F)
+    {ε : (ζ : Type) → Env (Strat ζ (HEv ⊕ AE) (HOut K ⊕ R)) ζ → ℝ≥0∞}
+    (hX : RealizesSim X (F_AKE (SPComp.sample K) true) (Simulator.ofMultiHybrid π hπ) ε)
+    (realV : K → SPComp V) (idealV : SPComp V)
+    (hR : ∀ k, SPComp.IsPure (realV k) ∧ SPComp.NoFail (realV k))
+    (hI : SPComp.IsPure idealV ∧ SPComp.NoFail idealV) :
+    RealizesSim (X.seq (keyLayer realV)) (F_SC realV idealV) (chanSim π F)
+      (fun ζ Z => ε (ζ × Unit)
+          ((Hybrid.seqCtxR (E := HEv ⊕ AE) (keyLayer realV)
+            (keyLayer_noFail fun k => (hR k).2)).reduceEnv Z) +
+        scBound realV idealV ((simSCOver π F).reduceEnv (.inr .idle) Z)) := by
+  have hA := realizes_seq_left (keyLayer realV) (keyLayer_noFail fun k => (hR k).2) hX
+  have hB := realizes_symm (stack_ideal_stepMap_of π F hF realV hR).realizes
+  have hC := simSCOver_realizes π F realV idealV hR hI
   intro ζ Z
-  have h := MultiHybrid.adv_withSub (simSC (V := V) G) (.inr .idle) (.inr .ack) (.inr .ack)
-    (FR realV) (F_SC realV idealV) (FR_idleAt realV) (F_SC_idleAt realV idealV) Z
-  unfold adv at h
-  change Env.gap _ _ Z ≤ _
-  rw [h]
-  exact FR_realizes_F_SC realV idealV hR hI _ _
+  have h := ((hA.trans hB).trans hC) ζ Z
+  simp only [add_zero] at h
+  exact h
 
 variable {Sc Msg Key Sa M Ct : Type} [SampleableType M] [SampleableType Ct] [Fintype Key]
   [Nonempty Key] [Fintype Sa] [Nonempty Sa]
@@ -1868,7 +2032,7 @@ draws all long-term and session secrets, forwards the honest events, answers `po
 `ephPub` and `kdf` on its copy, refuses or forwards `corrupt` under the static rule of X3DH, and
 on `complete` and `send` computes the key-derivation input of the session and calls `newKey` with
 the key-derivation value for an exposed session and `newKey` or `newKeyUnlinked` with a
-placeholder key otherwise. It never reads an honest answer of `F_SC`.
+placeholder key otherwise. It never reads an answer of `F_SC` on the honest port.
 
 *Bound.* For a CKA that neither touches the heap nor fails, for every finite set of parties `P`
 and every environment `Z`, the distance is at most `signalBound`: the gap Diffie–Hellman bound
@@ -1885,14 +2049,14 @@ theorem signal_stack_realizes_FSC (P : Finset PartyId) {C : CKADef Sc Msg Key}
       (signalBound G P C R Gp D msgs hC) := by
   have hR : ∀ k, SPComp.IsPure (smRealAt C R Gp D msgs k) ∧
       SPComp.NoFail (smRealAt C R Gp D msgs k) := fun k => smRealAt_pureNF hC R Gp D msgs k
-  have hA := signal_stack_realizes G P (smRealAt C R Gp D msgs) fun k => (hR k).2
-  have hB := realizes_symm (stack_ideal_stepMap G (smRealAt C R Gp D msgs) hR).realizes
-  have hC' := simSC_realizes G (smRealAt C R Gp D msgs) (sm_ideal C msgs) hR
+  have h := stack_realizes_FSC_of (x3dhReal (K := K) G) (simProt G) (simProt_opaque G) x3dhFwd
+    (simProt_isFwd G) (x3dh_realizesSim_gapDH G P) (smRealAt C R Gp D msgs) (sm_ideal C msgs) hR
     (sm_ideal_pureNF hC msgs)
   intro ζ Z
-  have h := ((hA.trans hB).trans hC') ζ Z
-  refine h.trans (le_of_eq ?_)
-  simp only [signalBound, scBound, add_zero, SM_Advantage, sm_real_eq_bind_smRealAt]
+  rw [smLayer_eq_keyLayer]
+  refine (h ζ Z).trans (le_of_eq ?_)
+  simp only [signalBound, scBound, SM_Advantage, sm_real_eq_bind_smRealAt, smLayer_eq_keyLayer]
+  rfl
 
 end Stack
 
