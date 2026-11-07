@@ -88,6 +88,13 @@ mention no particular scheme: a scheme that simulates `acdSM` inherits every bou
   `acdSM_adaptiveAdvantage_eq` — the games of `acdSM` are those of `SMCorrupt`
 * `acdSM_corruptAdvantage_le`, `acdSM_adaptiveAdvantage_le` — the bounds of
   `sm_corrupt_advantage_le` and `sm_adaptive_corrupt_advantage_le` for `acdSM`
+* `acdSM_adaptiveAdvantage_le_of_isQueryBound` — for an adversary asking at most `q` queries,
+  the bound of `sm_adaptive_corrupt_advantage_le_of_isQueryBound`, a finite sum over the epochs
+  `e ≤ q`; `SMSchemeAdv.toSM_play_isQueryBound`, `SMSchemeAdv.comap_play_isQueryBound` — the
+  relabellings keep the query bound
+* `acdSM_dhCKAOf_adaptiveAdvantage_le_of_isQueryBound` — for the Diffie–Hellman CKA over a key
+  space, the CKA terms of each epoch as DDH advantages of `ckaCorruptDDHRedOf`, with the charge
+  `(q + 1) * 8 * c.δ` of the sampler certificate `c` over the `q + 1` epochs
 * `smCorruptGame_sim`, `smAdaptiveGame_sim`, `SMScheme.Sim.corruptAdvantage_eq`,
   `SMScheme.Sim.adaptiveAdvantage_eq` — the transfer along a simulation
 * `dhCKAOf_correct`, `dhInitPOf_rel` — correctness of the Diffie–Hellman CKA over a key
@@ -391,6 +398,14 @@ def SMSchemeAdv.toSM (A : SMSchemeAdv Msg W Ct (SMPartySt Sc RK Sa)) :
     SMCorruptAdv Sc Msg RK Sa W Ct where
   tStar := A.tStar
   play t T := (A.play t T).mapQueryAnswer id SMAns.toScheme
+
+omit [Fintype Rand] [Nonempty Rand] [SampleableType W] [SampleableType Ct] [Fintype RK]
+  [Nonempty RK] in
+/-- The relabelled adversary `A.toSM` keeps the query bound of `A`. -/
+theorem SMSchemeAdv.toSM_play_isQueryBound {A : SMSchemeAdv Msg W Ct (SMPartySt Sc RK Sa)}
+    {q : ℕ} (hA : ∀ t T, (A.play t T).IsQueryBound q) (t : ℕ) (T : Msg) :
+    (A.toSM.play t T).IsQueryBound q :=
+  OracleAdv.isQueryBound_mapQueryAnswer _ _ (hA t T)
 
 /-- The invariant of `sm_corrupt_game` under which its root output in transit is the one the
 receiver derives: the counters are reachable; when a party may send, `J` relates its state to
@@ -856,6 +871,29 @@ theorem acdSM_adaptiveAdvantage_le (C : CKADef Sc Msg Key) [CKACoins C Rand]
   rw [acdSM_adaptiveAdvantage_eq C hJ initP hinit hJi]
   exact sm_adaptive_corrupt_advantage_le C hS initP hinit R G D hFS hPCS _
 
+/-- **The game over `acdSM` with an adaptive challenge epoch, for an adversary with a query
+bound**: the bound of `sm_adaptive_corrupt_advantage_le_of_isQueryBound` at the relabelled
+adversary, which keeps the query bound `q` of `A`; the sum runs over the epochs `e ≤ q`. -/
+theorem acdSM_adaptiveAdvantage_le_of_isQueryBound (C : CKADef Sc Msg Key) [CKACoins C Rand]
+    (hS : CKACoins.Sound C) {J : Sc → Sc → Prop} (hJ : CKACorrect C J)
+    (initP : PMF (Msg × Sc × Sc)) (hinit : C.init = liftPMF initP)
+    (hJi : ∀ i ∈ initP.support, J i.2.1 i.2.2) (R : PRGDef (RK × Key) (RK × Sa))
+    (G : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) {ΔFS ΔPCS : ℕ} (hFS : 2 ≤ ΔFS)
+    (hPCS : 1 ≤ ΔPCS) {q : ℕ}
+    (A : Msg → OracleAdv (SMQuery W) (SMSchemeAns Msg Ct (SMPartySt Sc RK Sa)) Bool)
+    (hA : ∀ T, (A T).IsQueryBound q) :
+    (acdSM C R G D).adaptiveAdvantage ΔFS ΔPCS A ≤
+      ∑ e ∈ Finset.range (q + 1), (∑ b : Bool, CKA_Corrupt_Advantage C ΔFS ΔPCS
+            (smcCKARed R G D b (smGuessAdv ΔFS ΔPCS
+              (fun T => (A T).mapQueryAnswer id SMAns.toScheme) e)) +
+        ∑ b : Bool, PRFPRNG_Advantage R (smcRootRed C R G D ΔFS ΔPCS b initP
+          (smGuessAdv ΔFS ΔPCS (fun T => (A T).mapQueryAnswer id SMAns.toScheme) e)) +
+        FSAEAD_Corrupt_Advantage G D (smcFSRed C R G D ΔFS ΔPCS initP
+          (smGuessAdv ΔFS ΔPCS (fun T => (A T).mapQueryAnswer id SMAns.toScheme) e))) := by
+  rw [acdSM_adaptiveAdvantage_eq C hJ initP hinit hJi]
+  exact sm_adaptive_corrupt_advantage_le_of_isQueryBound C hS initP hinit R G D hFS hPCS _
+    fun T => OracleAdv.isQueryBound_mapQueryAnswer _ _ (hA T)
+
 end ACDBounds
 
 end ACD
@@ -888,6 +926,60 @@ theorem dhInitPOf_rel (decE : Sk → CG.Exp) :
   rfl
 
 end DHKeys
+
+section DHBounds
+
+variable (G : Type) [CG : CyclicGroup G] [DecidableEq G] {Sk RK Sa W Ct : Type} [Fintype Sk]
+  [Nonempty Sk] [SampleableType W] [SampleableType Ct] [Fintype RK] [Nonempty RK]
+  [DecidableEq RK] [Fintype Sa] [Nonempty Sa]
+
+/-- **The Diffie–Hellman ACD construction over a key space with an adaptive challenge epoch,
+from DDH.** Let the secret keys of `dhCKAOf G decE` be drawn uniformly from `Sk` and act
+through the exponent map `decE`, and let `c` certify the distance of the drawn exponents to
+uniform ones. With `2 ≤ ΔFS` and `2 ≤ ΔPCS`, the advantage of every adversary `A` asking at most
+`q` queries in the game over `acdSM (dhCKAOf G decE) R F D` with an adaptive challenge epoch is
+at most the sum over the epochs `e ≤ q` of the DDH advantages of the reductions
+`ckaCorruptDDHRedOf`, the PRF-PRNG terms and the FS-AEAD term at the guessing reduction, plus
+`(q + 1) * 8 * c.δ`: the charge `4 * c.δ` of `dhCKAOf_corrupt_advantage_le` for each of the two
+CKA terms of each epoch. -/
+theorem acdSM_dhCKAOf_adaptiveAdvantage_le_of_isQueryBound (decE : Sk → CG.Exp)
+    (c : SamplerCert CG.Exp) (hμ : c.μ = (SDistr.uniform Sk).bind fun x => SDistr.pure (decE x))
+    (hν : c.ν = SDistr.uniform CG.Exp) (R : PRGDef (RK × G) (RK × Sa))
+    (F : PRGDef Sa (W × Sa)) (D : AEADDef W Ct) {ΔFS ΔPCS : ℕ} (hFS : 2 ≤ ΔFS)
+    (hPCS : 2 ≤ ΔPCS) {q : ℕ}
+    (A : G → OracleAdv (SMQuery W) (SMSchemeAns G Ct (SMPartySt (G × Sk) RK Sa)) Bool)
+    (hA : ∀ T, (A T).IsQueryBound q) :
+    (acdSM (dhCKAOf G decE) R F D).adaptiveAdvantage ΔFS ΔPCS A ≤
+      ∑ e ∈ Finset.range (q + 1), (∑ b : Bool, DDH_Advantage G
+            (ckaCorruptDDHRedOf (G := G) decE ΔFS ΔPCS (smcCKARed R F D b (smGuessAdv ΔFS ΔPCS
+              (fun T => (A T).mapQueryAnswer id SMAns.toScheme) e))) +
+        ∑ b : Bool, PRFPRNG_Advantage R (smcRootRed (dhCKAOf G decE) R F D ΔFS ΔPCS b
+          (dhInitPOf G decE)
+          (smGuessAdv ΔFS ΔPCS (fun T => (A T).mapQueryAnswer id SMAns.toScheme) e)) +
+        FSAEAD_Corrupt_Advantage F D (smcFSRed (dhCKAOf G decE) R F D ΔFS ΔPCS
+          (dhInitPOf G decE)
+          (smGuessAdv ΔFS ΔPCS (fun T => (A T).mapQueryAnswer id SMAns.toScheme) e))) +
+        (q + 1) * 8 * c.δ := by
+  refine (acdSM_adaptiveAdvantage_le_of_isQueryBound (dhCKAOf G decE)
+    (dhCKAOfCoins_sound G decE) (dhCKAOf_correct G decE) (dhInitPOf G decE)
+    (dhCKAOf_init_eq G decE) (dhInitPOf_rel G decE) R F D hFS (le_trans (by norm_num) hPCS) A
+    hA).trans ?_
+  have hc : ((q : ℝ≥0∞) + 1) * 8 * c.δ =
+      ∑ e ∈ Finset.range (q + 1), ∑ b : Bool, 4 * c.δ := by
+    simp only [Finset.sum_const, Finset.card_range, Finset.card_univ, Fintype.card_bool,
+      nsmul_eq_mul, Nat.cast_add, Nat.cast_one, Nat.cast_ofNat]
+    ring
+  rw [hc, ← Finset.sum_add_distrib]
+  refine Finset.sum_le_sum fun e _ => ?_
+  have key : ∀ a b x y d : ℝ≥0∞, a ≤ b + d → a + x + y ≤ b + x + y + d := by
+    intro a b x y d h
+    calc a + x + y ≤ b + d + x + y := by gcongr
+      _ = b + x + y + d := by ring
+  refine key _ _ _ _ _ ?_
+  rw [← Finset.sum_add_distrib]
+  exact Finset.sum_le_sum fun b _ => dhCKAOf_corrupt_advantage_le decE c hμ hν hFS hPCS _
+
+end DHBounds
 
 /-! ## Simulations of schemes and the transfer of the games -/
 
@@ -941,6 +1033,15 @@ def SMSchemeAdv.comap (encP : Pub → Pub') (encC : Ct → Ct') (encL : Leak →
     (A : SMSchemeAdv Pub' W Ct' Leak') : SMSchemeAdv Pub W Ct Leak where
   tStar := A.tStar
   play t T := (A.play t (encP T)).mapQueryAnswer id (SMSchemeAns.map encP encC encL)
+
+omit [Fintype Rand] [Nonempty Rand] in
+/-- The adversary with encoded answers `A.comap encP encC encL` keeps the query bound of
+`A`. -/
+theorem SMSchemeAdv.comap_play_isQueryBound {encP : Pub → Pub'} {encC : Ct → Ct'}
+    {encL : Leak → Leak'} {A : SMSchemeAdv Pub' W Ct' Leak'} {q : ℕ}
+    (hA : ∀ t T, (A.play t T).IsQueryBound q) (t : ℕ) (T : Pub) :
+    ((A.comap encP encC encL).play t T).IsQueryBound q :=
+  OracleAdv.isQueryBound_mapQueryAnswer _ _ (hA t (encP T))
 
 theorem SMSchemeSt.Related.upd {ρ : St' → St → Prop} {encP : Pub → Pub'}
     {s' : SMSchemeSt St' Pub'} {s : SMSchemeSt St Pub} (h : SMSchemeSt.Related ρ encP s' s)
