@@ -22,6 +22,8 @@ children indexed by `Bool`.
   step, by the linking rule of the eliminator (`TimedLink.DSim.fold`).
 * `nodeT`: a node built by `con` from the table of its two children (`ptab`); the constructor
   and the table of leaves cost nothing (`nodeT_cost`).
+* `xorAccT`: the eliminator at the motive `arr (word 8) (word 8)`, a recursion whose accumulator
+  changes, with its denotation and the bound by the charges of `Tm.dt` (`xorAccT_cost_le_dt`).
 -/
 
 @[expose] public section
@@ -122,5 +124,30 @@ def nodeT : Tm [] tree :=
 /-- A constructor is free, and so is the table of its children, whose components are leaves. -/
 theorem nodeT_cost : nodeT.cost Env.nil = 0 := by
   decide +kernel
+
+/-- The XOR of the bytes of a tree into an accumulator, the recursion whose other argument
+changes: the eliminator at the motive `arr (word 8) (word 8)`, each step a closure of the
+accumulator that passes it through the left child, then the right child, after the byte. -/
+def xorAccT : Tm [tree] (.arr (.word 8) (.word 8)) :=
+  fold treeSig_fo
+    (pair (lam (lam (var .here)))
+      (lam (lam (app (app (snd (snd (var (.there .here)))) (lit .bool true))
+        (app (app (snd (snd (var (.there .here)))) (lit .bool false))
+          (prim (.wxor 8) (pair (var .here) (fst (var (.there .here))))))))))
+    (var .here)
+
+/-- The accumulator `1` through `t2`. -/
+theorem xorAccT_den : (app xorAccT (lit (.word 8) (1 : BitVec 8))).den (Env.nil.cons t2) =
+    .ret (1 ^^^ 5 ^^^ 3 : BitVec 8) := by
+  rfl
+
+theorem xorAccT_inDtFrag : xorAccT.InDtFrag := by
+  simp [xorAccT, InDtFrag, Tm.Pure, headVar?, Ty.isArr, Prim.unitCost]
+
+/-- The eliminator at a function motive is covered by the soundness theorem: the cost of the
+closure is bounded by its allowance and the charges of `Tm.dt` at every tree. -/
+theorem xorAccT_cost_le_dt {η : EnvHat [tree]} {ρ : Env [tree]} (hρ : SimEnv η ρ) :
+    xorAccT.cost ρ ≤ xorAccT.allow + SPTree.Timed.stepTime (xorAccT.dt η) :=
+  cost_le_dt xorAccT xorAccT_inDtFrag hρ
 
 end CatCrypt.Complexity.D.MuTest
