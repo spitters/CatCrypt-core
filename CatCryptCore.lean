@@ -278,6 +278,7 @@ public import CatCryptCore.Crypto.Assumptions.DDHSampled
 public import CatCryptCore.Crypto.KeyAgreement.Curve25519Subgroup
 public import CatCryptCore.Crypto.Libcrux.Bridge_X25519Group
 public import CatCryptCore.Crypto.Libcrux.Bridge_X25519GroupTimed
+public import CatCryptCore.Crypto.KeyAgreement.Curve25519DHGroup
 public import CatCryptCore.Crypto.KeyAgreement.BytesModSampler
 public import CatCryptCore.Crypto.Constructions.ECBCPRFFlag
 public import CatCryptCore.Crypto.Constructions.MACDomainExtension
